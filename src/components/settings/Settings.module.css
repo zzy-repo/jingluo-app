@@ -43,7 +43,14 @@
   cursor: pointer;
   user-select: none;
   outline: none;
-  transition: background-color var(--ds-transition-duration) var(--ds-ease-in-out);
+  transition:
+    background-color var(--ds-transition-duration) var(--ds-ease-in-out),
+    transform var(--motion-duration-press) var(--motion-ease-ios);
+
+  /* 按压反馈：110ms 只动 transform */
+  &:active {
+    transform: scale(0.97);
+  }
 
   svg {
     flex-shrink: 0;
@@ -185,7 +192,14 @@
   cursor: pointer;
   user-select: none;
   outline: none;
-  transition: background-color var(--ds-transition-duration) var(--ds-ease-in-out);
+  transition:
+    background-color var(--ds-transition-duration) var(--ds-ease-in-out),
+    transform var(--motion-duration-press) var(--motion-ease-ios);
+
+  /* 按压反馈：110ms 只动 transform */
+  &:active {
+    transform: scale(0.97);
+  }
 
   &:hover,
   &.themeOptionSelected {
@@ -361,6 +375,15 @@
     height: calc(100% - 64px);
     max-height: 800px;
     border-radius: 24px 24px 0 0;
+    /* 移动端：底部弹层，滑入 / 滑落都只动 transform（时长略长，行程更大） */
+    --modal-motion-duration: var(--motion-duration-slow);
+    transform: translateY(0);
+    will-change: transform;
+
+    &[data-motion-state='closed'] {
+      opacity: 0;
+      transform: translateY(100%);
+    }
   }
 
   .dialogMain {
@@ -465,6 +488,11 @@
   line-height: 24px;
   font-weight: 500;
   cursor: pointer;
+  transition: transform var(--motion-duration-press) var(--motion-ease-ios);
+
+  &:active:not(:disabled) {
+    transform: scale(0.97);
+  }
 
   &:disabled {
     opacity: 0.45;

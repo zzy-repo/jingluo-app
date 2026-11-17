@@ -9,11 +9,15 @@
   background-color: transparent;
   cursor: pointer;
   font-size: 16px;
-  transition: background-color var(--ds-transition-duration) var(--ds-ease-in-out);
+  transition:
+    background-color var(--ds-transition-duration) var(--ds-ease-in-out),
+    transform var(--motion-duration-press) var(--motion-ease-ios);
   outline: none;
 
   &:active:not(:disabled) {
     background-color: var(--dsw-alias-interactive-bg-hover);
+    /* 按压反馈：110ms 只动 transform */
+    transform: scale(0.92);
   }
 
   @media (hover: hover) {

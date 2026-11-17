@@ -28,8 +28,23 @@ const syncPageBackground = () => {
   document.querySelector('meta[name="theme-color"]')?.setAttribute('content', backgroundColor)
 }
 
+/**
+ * 主题切换时给整个壳一次 180ms 的 opacity 淡入（只有 transform/opacity 里的 opacity，
+ * 不改布局）。系统开启「减少动态效果」时由 motion.css 直接 animation: none。
+ */
+let themeFadeTimer: ReturnType<typeof setTimeout> | undefined
+const playThemeFade = () => {
+  const root = document.documentElement
+  root.classList.remove('ds-theme-fade')
+  // 读一次布局，保证同名动画能被重新触发（不参与动画的属性，不影响帧率）
+  void root.offsetWidth
+  root.classList.add('ds-theme-fade')
+  clearTimeout(themeFadeTimer)
+  themeFadeTimer = setTimeout(() => root.classList.remove('ds-theme-fade'), 240)
+}
+
 /** 同步页面主题、根画布背景和支持 theme-color 的浏览器栏。 */
-const applyTheme = (theme: Theme) => {
+const applyTheme = (theme: Theme, animate = true) => {
   const body = document.body
   // 主题切换帧禁用过渡，使页面颜色同步更新
   body.classList.add('change-theme')
@@ -48,6 +63,10 @@ const applyTheme = (theme: Theme) => {
   setTimeout(() => {
     body.classList.remove('change-theme')
   }, 0)
+  // 首屏直接铺好，不做淡入；之后每次手动 / 系统切换才轻微淡入
+  if (animate) {
+    playThemeFade()
+  }
 }
 
 let appliedTheme: Theme | null = null
@@ -55,8 +74,9 @@ let appliedTheme: Theme | null = null
 const syncTheme = () => {
   const theme = resolveTheme(useSettings.getState().themePreference, getOsTheme())
   if (theme !== appliedTheme) {
+    const first = appliedTheme === null
     appliedTheme = theme
-    applyTheme(theme)
+    applyTheme(theme, !first)
   }
 }
 

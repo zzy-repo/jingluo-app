@@ -6,6 +6,7 @@ import { setSiderCollapsed } from '../../services/settings.js'
 import { groupSessions } from '../../services/chat/sessionGroups.js'
 import { newChat, removeSession, useChatStore } from '../../services/chat/store.js'
 import type { SessionSummary } from '../../services/chat/types.js'
+import { MOTION_EXIT, usePresence } from '../../utils/usePresence.js'
 import { Button } from '../base/Button.js'
 import { IconButton } from '../base/IconButton.js'
 import { Modal } from '../base/Modal.js'
@@ -140,16 +141,24 @@ export const Sider = ({ mobile = false }: { mobile?: boolean }) => {
   )
 }
 
-/** 移动端抽屉：浮在页面上方，点空白区域关闭。 */
+/** 移动端抽屉：浮在页面上方，点空白区域关闭。关闭时保留 DOM 播完滑出动画再卸载。 */
 export const MobileSider = () => {
   const open = useMobileSider((state) => state.open)
-  if (!open) {
+  const { mounted, visible } = usePresence(open, MOTION_EXIT.drawer)
+  if (!mounted) {
     return null
   }
   return (
     <>
-      <div className={styles.drawerMask} onClick={closeMobileSider} />
-      <div className={styles.drawer}>
+      <div
+        className={clsx(styles.drawerMask, visible ? styles.drawerMaskOpen : styles.drawerHidden)}
+        onClick={closeMobileSider}
+        aria-hidden="true"
+      />
+      <div
+        className={clsx(styles.drawer, visible ? styles.drawerOpen : styles.drawerClosed)}
+        data-motion-state={visible ? 'open' : 'closed'}
+      >
         <Sider mobile />
       </div>
     </>

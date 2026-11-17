@@ -1,9 +1,10 @@
 import clsx from 'clsx'
-import { useEffect, useId, useRef, type ReactNode } from 'react'
+import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { useTranslate } from '../../i18n/index.js'
 import { IconCloseOutline16 } from './icons.js'
 import { IconButton } from './IconButton.js'
+import { prefersReducedMotion } from '../../utils/usePresence.js'
 import styles from './Modal.module.css'
 
 /** 当前打开的弹窗，后打开的在末尾；叠放时 Esc 只关闭最上层 */
@@ -17,6 +18,7 @@ export const Modal = ({
   closable = false,
   className,
   mainClassName,
+  visible = true,
   onClose,
 }: {
   title: ReactNode
@@ -27,10 +29,32 @@ export const Modal = ({
   className?: string
   /** 内容区的 class */
   mainClassName?: string
+  /**
+   * 是否处于打开状态。调用方要自己保留挂载（配合 usePresence）才能播完退出动画；
+   * 默认为 true：直接挂载出来时只播进入动画。
+   */
+  visible?: boolean
   onClose: () => void
 }) => {
   const t = useTranslate()
   const titleId = useId()
+  // 挂载后下一帧再切到「打开」，让首次出现也有淡入 / 滑入过渡，而不是瞬间跳出
+  const [entered, setEntered] = useState(false)
+  useEffect(() => {
+    if (prefersReducedMotion()) {
+      setEntered(true)
+      return
+    }
+    let inner = 0
+    const outer = requestAnimationFrame(() => {
+      inner = requestAnimationFrame(() => setEntered(true))
+    })
+    return () => {
+      cancelAnimationFrame(outer)
+      cancelAnimationFrame(inner)
+    }
+  }, [])
+  const shown = entered && visible
   const onCloseRef = useRef(onClose)
   onCloseRef.current = onClose
   useEffect(() => {
@@ -51,6 +75,7 @@ export const Modal = ({
   return createPortal(
     <div
       className={styles.overlay}
+      data-motion-state={shown ? 'open' : 'closed'}
       onMouseDown={(event) => event.target === event.currentTarget && onClose()}
     >
       <div
@@ -58,6 +83,7 @@ export const Modal = ({
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
+        data-motion-state={shown ? 'open' : 'closed'}
       >
         <div className={styles.header}>
           <div id={titleId} className={styles.title}>

@@ -2,6 +2,26 @@
 
 本文件记录 deepseek-app 的重要变更，版本倒序排列。
 
+## 1.4.0-beta.2 (2026-11-17) — 动效优化
+
+> 只优化「外壳」的交互动效（侧边栏、设置弹窗、按钮按压、列表切项、主题切换），**消息流一律不碰**：
+> 流式打字机、思考块、气泡、附件预览、搜索卡片的 DOM 与 CSS 相对 1.4.0-beta.1 逐字未变（`git diff` 为空）。
+
+- 新增动效令牌层 `src/app/motion.css`：iOS 风格缓动 `cubic-bezier(0.32, 0.72, 0, 1)`，
+  时长按压 110ms / 淡入淡出 180ms / 常规 220ms / 抽屉 280ms；全部只用于 `transform` 与 `opacity`
+- 侧边栏（移动端抽屉）：从左侧 `translateX(-100% → 0)` 滑入，遮罩同步 `opacity 0 → 1` 淡入；
+  关闭反向滑出，**DOM 保留到退出动画结束再卸载**，动画期间遮罩仍可点击关闭、不会「点不动」
+- 设置弹窗：移动端改为底部弹层 `translateY(100% → 0)` 滑起 + 遮罩淡入淡出；桌面端保留居中缩放淡入
+  （`scale 0.97 → 1`）；关闭时同样等动画播完再卸载；遮罩拆成独立伪元素层，压暗与背景模糊一起淡入淡出
+- 按钮 / 列表项按压反馈：`:active` 时 `transform: scale(0.96)`（图标按钮 0.92、列表行 `opacity .7`），110ms 回弹
+- 会话列表切项：选中项 `opacity .82 → 1` 轻微淡入（≤180ms）；主题切换：整壳 `opacity` 淡入 180ms
+- 无障碍：`prefers-reduced-motion: reduce` 下所有动效时长降为 0.01ms，动画类名 `animation: none`，
+  且抽屉 / 弹窗不排帧、不保留退出时长的 DOM（实测 `transition-duration = 1e-05s`）
+- 技术约束：`src/` 下 37 个 CSS 文件没有任何 `transition`/`animation` 动 `width/height/top/left/margin` 等布局属性，
+  相对 1.4.0-beta.1 也没有引入 `transform`/`opacity` 之外的新动画属性（由 `tests/test.motion.spec.mjs` 自动校验）
+- 新增验收 `tests/test.motion.spec.mjs`：中间帧截图 + 计算样式断言 + reduced-motion + 静态属性检查 + 功能回归（mock 上游）
+- 版本号：versionCode 9 / versionName 1.4.0-beta.2（本轮仅本地验证与 5181 部署，未发布 APK / 未打 tag）
+
 ## 1.4.0-beta.1 (2026-11-17) — 内测版
 
 > 内测版包：服务地址与模型已固定，用户只需填写 API Key。下载页与 GitHub Release 均标注「内测版」（pre-release）。

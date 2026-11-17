@@ -50,3 +50,21 @@ console error = 0；并输出截图到 `docs/ui/1.4.0-beta.1-*.png`。
 
 `mock-anthropic.mjs` 是 node 标准库实现的 mock 上游（默认监听 `123.207.199.196:60010`），回标准 Anthropic SSE，
 并把收到的每个请求（含请求体）记到 `/tmp/mock-anthropic-requests.jsonl` 供断言。
+
+## 交互动效验收（1.4.0-beta.2）
+
+```bash
+cd /root/deepseek-app && node tests/test.motion.spec.mjs
+```
+
+覆盖外壳动效（侧边栏抽屉、设置弹窗、按钮按压、会话列表切项、主题切换），完全不涉及消息流：
+
+- 中间帧：侧边栏 / 设置弹窗在 t=80/150/250ms 各截一张（`docs/ui/motion-*.png`），
+  同时读 `getComputedStyle().transform` 的中间值，证明是渐变而不是瞬变
+- 计算样式：侧边栏打开后 `transform = matrix(1, 0, 0, 1, 0, 0)`；关闭过程中 `tx < 0` 且 DOM 仍在（退出动画不被吞）
+- reduced-motion：`page.emulateMedia({ reducedMotion: 'reduce' })` 下 `transition-duration = 1e-05s`、主题淡入 `animation: none`
+- 静态检查：`src/` 下没有任何 `transition`/`animation` 动布局属性；相对基线提交 `68f9342` 没新增 `transform`/`opacity` 之外的动画属性
+- 消息流冻结：`git diff 68f9342 -- src/components/messages src/components/chatInput` 必须为空
+- 功能回归：侧边栏能点会话、设置能开能关、发消息正常（上游用 `page.route` 打桩，不需要真实 IP）
+
+被测页面默认是 `dist/`（内测构建产物）上的独立静态服务（端口 5292），可用 `APP_URL` / `DIST_DIR` / `PORT` 覆盖。

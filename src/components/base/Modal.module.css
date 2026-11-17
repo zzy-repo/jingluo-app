@@ -6,15 +6,39 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background-color: rgba(0, 0, 0, var(--overlay-opacity));
-  backdrop-filter: blur(2px);
 
   [data-ds-dark-theme] & {
     --overlay-opacity: 0.6;
   }
 }
 
+/*
+ * 遮罩单独一层：压暗 + 背景模糊一起淡入淡出，只动 opacity。
+ * 放在伪元素上，卡片本身的 transform 才不会连带放大模糊范围。
+ */
+.overlay::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  background-color: rgba(0, 0, 0, var(--overlay-opacity));
+  backdrop-filter: blur(2px);
+  opacity: 1;
+  transition: opacity var(--motion-duration-fade) var(--motion-ease-ios);
+}
+
+/* 关闭态：遮罩淡出，且不再拦截点击（退出动画期间不阻塞交互） */
+.overlay[data-motion-state='closed'] {
+  pointer-events: none;
+
+  &::before {
+    opacity: 0;
+  }
+}
+
 .content {
+  position: relative;
+  z-index: 1;
   display: flex;
   flex-direction: column;
   box-sizing: border-box;
@@ -31,6 +55,16 @@
     0 0 1px 0 rgba(0, 0, 0, 0.2),
     0 0 4px 0 rgba(0, 0, 0, 0.02),
     0 12px 32px 0 rgba(0, 0, 0, 0.08);
+  /* 桌面端：缩放 + 淡入；移动端底部弹层把持续时间换成 --motion-duration-slow */
+  transition:
+    transform var(--modal-motion-duration, var(--motion-duration-base)) var(--motion-ease-ios),
+    opacity var(--motion-duration-fade) var(--motion-ease-ios);
+}
+
+/* 关闭态：轻微下移 + 缩小 + 淡出（:where() 不增加权重，方便设置弹窗按端覆盖） */
+:where(.content)[data-motion-state='closed'] {
+  opacity: 0;
+  transform: translateY(8px) scale(0.97);
 }
 
 .header {

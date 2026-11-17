@@ -57,7 +57,14 @@
     0 -2px 2px rgba(72, 104, 178, 0.04),
     0 2px 2px rgba(106, 111, 117, 0.09),
     0 1px 2px rgba(72, 104, 178, 0.08);
-  transition: box-shadow 0.3s ease;
+  transition:
+    box-shadow 0.3s ease,
+    transform var(--motion-duration-press) var(--motion-ease-ios);
+
+  /* 按压反馈：只动 transform，110ms 内完成，不阻塞点击 */
+  &:active:not(:disabled) {
+    transform: scale(0.97);
+  }
 
   &:hover {
     box-shadow:
@@ -138,6 +145,11 @@
   cursor: pointer;
   user-select: none;
   outline: none;
+  transition: transform var(--motion-duration-press) var(--motion-ease-ios);
+
+  &:active:not(:disabled) {
+    transform: scale(0.97);
+  }
 
   &:hover {
     background-color: var(--dsw-specific-sidebar-nav-item-hover);
@@ -198,12 +210,41 @@
   bottom: 0;
   left: 0;
   z-index: 800;
+  /* 只在合成层上滑入滑出：transform 由 --motion-* 令牌驱动，不碰 left/width */
+  transform: translateX(-100%);
+  transition: transform var(--motion-duration-slow) var(--motion-ease-ios);
+}
+
+.drawerOpen {
+  transform: translateX(0);
+}
+
+.drawerClosed {
+  transform: translateX(-100%);
 }
 
 .drawerMask {
   position: absolute;
   inset: 0;
   z-index: 799;
+  background-color: rgba(0, 0, 0, 0.28);
+  /* 遮罩只淡入淡出，不参与布局 */
+  opacity: 0;
+  transition: opacity var(--motion-duration-fade) var(--motion-ease-ios);
+
+  [data-ds-dark-theme] & {
+    background-color: rgba(0, 0, 0, 0.5);
+  }
+}
+
+.drawerMaskOpen {
+  opacity: 1;
+}
+
+/* 退出动画期间放行点击，避免不可见的遮罩吞掉后续操作 */
+.drawerHidden {
+  opacity: 0;
+  pointer-events: none;
 }
 
 .mobile {

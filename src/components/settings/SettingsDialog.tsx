@@ -32,6 +32,7 @@ import { showToast } from '../base/toastState.js'
 import { ApiConfigFields, ApiKeyConfirm, useApiKeyEditor } from './ApiConfigFields.js'
 import { ChatBackgroundField } from './ChatBackgroundField.js'
 import { closeSettings, useSettingsDialog, type SettingsSection } from './settingsDialogState.js'
+import { MOTION_EXIT, usePresence } from '../../utils/usePresence.js'
 import styles from './Settings.module.css'
 
 /**
@@ -40,7 +41,9 @@ import styles from './Settings.module.css'
  */
 export const SettingsDialog = () => {
   const open = useSettingsDialog((state) => state.open)
-  return open ? <SettingsContent /> : null
+  // 关闭时先留 DOM 播完退出动画（移动端底部滑落 / 桌面端缩小淡出）再卸载
+  const { mounted, visible } = usePresence(open, MOTION_EXIT.modal)
+  return mounted ? <SettingsContent visible={visible} /> : null
 }
 
 const sections: { value: SettingsSection; label: TranslationKey; icon: ReactNode }[] = [
@@ -52,7 +55,7 @@ const sections: { value: SettingsSection; label: TranslationKey; icon: ReactNode
   { value: 'data', label: 'settingDialogAsideDataOptionLabel', icon: <IconDataOutline16 /> },
 ]
 
-const SettingsContent = () => {
+const SettingsContent = ({ visible }: { visible: boolean }) => {
   const t = useTranslate()
   const isMobile = useIsMobile()
   // 打开时按调用方指定的分组选中，之后在弹窗内切换
@@ -68,6 +71,7 @@ const SettingsContent = () => {
       <Modal
         title={t('settings')}
         closable
+        visible={visible}
         className={styles.dialog}
         mainClassName={styles.dialogMain}
         onClose={() => {
