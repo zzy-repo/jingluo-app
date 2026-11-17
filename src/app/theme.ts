@@ -60,9 +60,11 @@ const applyTheme = (theme: Theme, animate = true) => {
   if (document.readyState === 'complete') {
     syncPageBackground()
   }
-  setTimeout(() => {
-    body.classList.remove('change-theme')
-  }, 0)
+  // 强制本次样式重算立刻落地（颜色切换本就不该有补间），随后同帧摘掉抑制类。
+  // 原来用 setTimeout(0) 摘除：主线程忙时这个 0ms 定时器会被拖到抽屉翻到「打开态」的那一帧，
+  // 于是 `body.change-theme * { transition: none !important }` 把抽屉的过渡一起打死（一帧 0→100% 瞬跳）。
+  void body.offsetHeight
+  body.classList.remove('change-theme')
   // 首屏直接铺好，不做淡入；之后每次手动 / 系统切换才轻微淡入
   if (animate) {
     playThemeFade()

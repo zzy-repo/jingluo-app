@@ -1,5 +1,5 @@
 import clsx from 'clsx'
-import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { useTranslate } from '../../i18n/index.js'
 import { IconCloseOutline16 } from './icons.js'
@@ -38,21 +38,23 @@ export const Modal = ({
 }) => {
   const t = useTranslate()
   const titleId = useId()
-  // 挂载后下一帧再切到「打开」，让首次出现也有淡入 / 滑入过渡，而不是瞬间跳出
+  // 挂载后同帧切到「打开」：先把「关闭态」真正算出来并落地，再切到打开态，
+  // 首次出现才有淡入 / 滑入过渡，而不是瞬间跳出。
   const [entered, setEntered] = useState(false)
-  useEffect(() => {
+  const contentRef = useRef<HTMLDivElement>(null)
+  useLayoutEffect(() => {
     if (prefersReducedMotion()) {
       setEntered(true)
       return
     }
-    let inner = 0
-    const outer = requestAnimationFrame(() => {
-      inner = requestAnimationFrame(() => setEntered(true))
-    })
-    return () => {
-      cancelAnimationFrame(outer)
-      cancelAnimationFrame(inner)
+    // 同步强制一次样式重算（读布局属性即 style+layout 落地），替代原来的双 rAF：
+    // 双 rAF 只保证两次回调，主线程忙时中间那帧会被合并掉，
+    // 元素第一次重算就已经带「打开态」→ transition 从未创建 → 一击到位（闪现）。
+    const el = contentRef.current
+    if (el) {
+      void el.getBoundingClientRect().height
     }
+    setEntered(true)
   }, [])
   const shown = entered && visible
   const onCloseRef = useRef(onClose)
@@ -79,6 +81,7 @@ export const Modal = ({
       onMouseDown={(event) => event.target === event.currentTarget && onClose()}
     >
       <div
+        ref={contentRef}
         className={clsx(styles.content, className)}
         role="dialog"
         aria-modal="true"

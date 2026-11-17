@@ -210,9 +210,10 @@
   bottom: 0;
   left: 0;
   z-index: 800;
-  /* 只在合成层上滑入滑出：transform 由 --motion-* 令牌驱动，不碰 left/width */
+  /* 只在合成层上滑入滑出：transform 由 --motion-* 令牌驱动，不碰 left/width。
+     关闭方向仍走 transition：退出不涉及「首帧」，且能从当前值反向打断。 */
   transform: translateX(-100%);
-  transition: transform var(--motion-duration-slow) var(--motion-ease-ios);
+  transition: transform var(--motion-duration-drawer) var(--motion-ease-drawer);
 }
 
 .drawerOpen {
@@ -223,14 +224,54 @@
   transform: translateX(-100%);
 }
 
+/*
+ * 进场用 @keyframes，而不是「先提交关闭态、下一帧再翻打开态」的 transition。
+ * animation 在元素插入的那一帧就以 from 值起跑（backwards 填充兜住首帧），
+ * 主线程忙、样式重算被合并/丢弃时也不会退化成「挂载即终态」→ 一击到位（闪现）。
+ * 用 backwards 而不是 both：both 的 forwards 部分会在动画结束后继续压住 transform，
+ * 于是关闭那一次 transition 根本不会跑（面板瞬间消失 + 遮罩还在淡出）。
+ * `data-enter` 只在「本次挂载的第一次打开」为 true：关闭中途再打开要走 transition
+ * 从当前值反向，否则键帧会从 -100% 重新起跑（先跳回屏外再滑出来）。
+ */
+.drawer[data-motion-state='open'][data-enter='true'] {
+  animation: ds-drawer-in var(--motion-duration-drawer) var(--motion-ease-drawer) backwards;
+}
+
+@keyframes ds-drawer-in {
+  from {
+    transform: translateX(-100%);
+  }
+
+  to {
+    transform: translateX(0);
+  }
+}
+
+/* 关闭动画期间不吃点击：否则抽屉压住菜单按钮，再点命中的是抽屉自己的「收起」→ 又关一次 */
+.drawer[data-motion-state='closed'] {
+  pointer-events: none;
+}
+
+/* 合成层提示只在动画期间挂（由 Sider.tsx 的 data-motion-active 控制），结束后摘掉，避免常驻占显存 */
+.drawer[data-motion-active='true'] {
+  will-change: transform;
+}
+
+/* 减少动态效果：直接到位，不播进场键帧（令牌时长虽已归零，这里再显式关掉动画类） */
+@media (prefers-reduced-motion: reduce) {
+  .drawer[data-motion-state='open'][data-enter='true'] {
+    animation: none;
+  }
+}
+
 .drawerMask {
   position: absolute;
   inset: 0;
   z-index: 799;
   background-color: rgba(0, 0, 0, 0.28);
-  /* 遮罩只淡入淡出，不参与布局 */
+  /* 遮罩只淡入淡出，不参与布局；与面板同为 240ms，避免「背景先到位、面板还在飘」 */
   opacity: 0;
-  transition: opacity var(--motion-duration-fade) var(--motion-ease-ios);
+  transition: opacity var(--motion-duration-drawer) var(--motion-ease-drawer);
 
   [data-ds-dark-theme] & {
     background-color: rgba(0, 0, 0, 0.5);

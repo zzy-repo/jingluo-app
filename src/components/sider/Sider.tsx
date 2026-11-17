@@ -1,5 +1,5 @@
 import clsx from 'clsx'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useState } from 'react'
 import { useTranslate } from '../../i18n/index.js'
 import { IconPanelLeftOutline16, IconSettingsOutline16, NewChatIcon } from '../base/icons.js'
 import { setSiderCollapsed } from '../../services/settings.js'
@@ -144,7 +144,40 @@ export const Sider = ({ mobile = false }: { mobile?: boolean }) => {
 /** 移动端抽屉：浮在页面上方，点空白区域关闭。关闭时保留 DOM 播完滑出动画再卸载。 */
 export const MobileSider = () => {
   const open = useMobileSider((state) => state.open)
-  const { mounted, visible } = usePresence(open, MOTION_EXIT.drawer)
+  const { mounted, visible, finishExit } = usePresence(open, MOTION_EXIT.drawer)
+  // 进场键帧只在「本次挂载的第一次打开」播放：关闭中途再打开要走 transition 从当前值反向，
+  // 否则键帧会从 -100% 重新起跑（先跳回屏外再滑出来）。
+  // 用 layout effect 而不是普通 effect：卸载/关闭的那一刻就把标记改好，下次提交前不再残留。
+  const [enterAnim, setEnterAnim] = useState(true)
+  // 合成层提示（will-change）只在动画期间挂，动画结束后摘掉，避免常驻占显存
+  const [motionActive, setMotionActive] = useState(true)
+
+  useLayoutEffect(() => {
+    if (!mounted) {
+      // 已卸载：下一次挂载要重新播一次进场
+      setEnterAnim(true)
+      return
+    }
+    if (!visible) {
+      // 本次挂载的进场周期结束，之后的「反向打开」都走 transition
+      setEnterAnim(false)
+    }
+  }, [mounted, visible])
+
+  useEffect(() => {
+    setMotionActive(true)
+    const timer = setTimeout(() => setMotionActive(false), MOTION_EXIT.drawer + 80)
+    return () => clearTimeout(timer)
+  }, [visible])
+
+  /** 退出过渡/动画真正结束才卸载（比纯定时器更贴「播完再摘」），子元素的过渡不算 */
+  const onMotionEnd = (event: { target: EventTarget; currentTarget: EventTarget }) => {
+    if (event.target !== event.currentTarget || open) {
+      return
+    }
+    finishExit()
+  }
+
   if (!mounted) {
     return null
   }
@@ -158,6 +191,10 @@ export const MobileSider = () => {
       <div
         className={clsx(styles.drawer, visible ? styles.drawerOpen : styles.drawerClosed)}
         data-motion-state={visible ? 'open' : 'closed'}
+        data-enter={enterAnim ? 'true' : undefined}
+        data-motion-active={motionActive ? 'true' : undefined}
+        onTransitionEnd={onMotionEnd}
+        onAnimationEnd={onMotionEnd}
       >
         <Sider mobile />
       </div>

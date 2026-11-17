@@ -1,22 +1,35 @@
 /*
- * 交互动效令牌（1.4.0-beta.2）
+ * 交互动效令牌（1.4.0-beta.2 起）
  *
  * 约束（技术红线）：
  * - 只允许动画 `transform` 与 `opacity`（GPU 合成层），不碰
  *   width / height / top / left / right / bottom / margin / padding 等会触发重排的属性；
- * - 缓动统一 iOS 风格 `cubic-bezier(0.32, 0.72, 0, 1)`，时长 200–300ms，按压反馈 110ms；
+ * - 按压反馈用 `--motion-ease-ios` + 110ms；抽屉 / 弹窗进出场用 `--motion-ease-drawer` + 240ms；
  * - 系统开启「减少动态效果」（prefers-reduced-motion: reduce）时，所有令牌降级为 0.01ms，
- *   由令牌驱动的 transition 一并归零，动画类名直接 animation: none。
+ *   由令牌驱动的 transition / animation 一并归零，动画类名直接 animation: none。
  *
  * 作用范围：仅「外壳」——侧边栏抽屉、设置弹窗、按钮 / 列表项按压、会话列表切项、主题切换。
  * 消息流（流式打字机、思考块、气泡、附件预览、搜索卡片）一律不参与，不受本文件影响。
  */
 :root {
   --motion-ease-ios: cubic-bezier(0.32, 0.72, 0, 1);
+  /*
+   * 抽屉 / 弹窗进出场专用缓动。
+   *
+   * 旧曲线 `(0.32, 0.72, 0, 1)` 起始斜率 2.25，前 20% 时间就走完 65.6% 距离、
+   * 单帧最大位移 72.3px（4.22× 平均速度），观感是「开头爆冲 + 后段拖尾」。
+   * 新曲线起始斜率 1.84：20% 时间点 51.3%、峰值/平均 2.95×，同时保留「点下即动」的起步感。
+   *
+   * 不要换成 `(0.22, 1, 0.36, 1)`：实测更陡（20% 时间点 67.4%、峰值 4.54×）；
+   * 也不要换成 `(0.4, 0, 0.2, 1)`：首帧只走 2.4px，会显得「点了没反应」。
+   */
+  --motion-ease-drawer: cubic-bezier(0.25, 0.46, 0.15, 1);
   --motion-duration-press: 110ms;
   --motion-duration-fade: 180ms;
-  --motion-duration-base: 220ms;
-  --motion-duration-slow: 280ms;
+  /* 抽屉 / 弹窗统一 240ms：面板与遮罩同一个时长、同一条曲线，消除「背景先到位、面板还在飘」 */
+  --motion-duration-drawer: 240ms;
+  --motion-duration-base: 240ms;
+  --motion-duration-slow: 240ms;
 }
 
 /* 主题切换：整壳轻微淡入，只动 opacity */
@@ -38,6 +51,7 @@ html.ds-theme-fade #root {
   :root {
     --motion-duration-press: 0.01ms;
     --motion-duration-fade: 0.01ms;
+    --motion-duration-drawer: 0.01ms;
     --motion-duration-base: 0.01ms;
     --motion-duration-slow: 0.01ms;
   }
