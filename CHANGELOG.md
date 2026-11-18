@@ -2,6 +2,40 @@
 
 本文件记录 deepseek-app 的重要变更，版本倒序排列。
 
+## 1.4.0-beta.10 (2026-11-18) — 额度只说积分、兑换更稳、已有 Key 可绑定
+
+- 新增：可以把已在用的 Key 绑定到本机设备码（额度面板里的「绑定已有 Key」入口），不必重新领取
+- 新增：卡密兑换迁到新通道，兑换成功率更稳；返回「兑换处理中」时会自动到账，不用反复提交
+- 新增：设备标识损坏时自动恢复，不再因为设备码异常领不到额度
+- 新增：思考过程默认折叠，可在设置里选「展开」或「完全不显示」，回复不再一屏全是推理
+- 修复：额度面板只显示积分，去掉「约可消费 ¥X」的折算（折算口径与服务端不一致，容易误导）
+- 修复：部分机型应用被系统回收后直接退出、聊天记录看起来「丢了」的问题（WebView 渲染进程死亡后自动重建界面，不再杀应用）
+- 修复：旧内核（Android 11 出厂 WebView）上缺少 `String.prototype.replaceAll` 导致整屏白屏的问题
+- 修复：导入大文件时不再误报「文件过大 200MB」（服务端没回总长时的判定错误）
+- 修复：反馈弹窗在手机上滑动会卡死、点不动的问题
+- 修复：回复中途断流现在能识别；等待首字过久会分级提示（5s / 30s / 60s），错误说明有中文
+- 修复：快速 / 专家模式真正进入请求，重启后仍保留上次选择
+- 修复：应用名统一为「鲸落」，清掉侧边栏残留的「API demo」字样
+- 修复：发布包不再可调试（历史版本存在该问题），提升本地数据安全
+- 新增：设置页数据管理里显示本机抖音号，点一下即可复制（#138）
+- 修复：下单必须带 cid，非法 cid 不再进入购买流程（#135）
+- 修复：长对话的请求体按上下文预算裁剪，只裁较早历史并保持消息配对完整（#122）
+- 修复：窄屏下设置页「反馈与日志」的文本列被压成单字符宽（#57）
+- 修复：导入归档时按真实导出的条目顺序处理（#32）
+- 修复：导入时被跳过的损坏条目会带到界面上，逐条给出位置与原因（#49）
+- 内测版本，建议保留重要聊天记录；遇到问题请通过反馈入口提交
+
+> 内部验收记录（不进 dl 用户说明）：
+  - 源码范围：origin/main e84dab8（含 #72 7595b10、#75 018ee56、#73 8243c38、#46 363e569、#60 00f89c2、#25 02bc8d9、#24 c35c6c0、#30 68b8f3a、#41 717f8a4、#69 2ab0c1d、#44 3ca31ea、#86 3a3db4e、#79 e84dab8）
+  - 合并前 rebase：本分支已 rebase 到 `origin/main` `2a4cc33`（领先 e84dab8 的 29 个提交：含 #135 `18b44f3`、#138 `bbc4520`、#49 `a562131`、#122 `58ac948`/`45a3a12`、#57 `45a8b04`、#32 `7684a60` 等），squash 合并后的 main 提交即打包基准
+  - 版本取值：version 1.4.0-beta.10 / androidVersionCode 17。本次实测线上 `releases.json` 的 latest = `1.4.0-beta.9` / versionCode 16 → 按「latest+1」取 17，与 issue 里记录的 16 一致，无需修正
+  - 已跑门禁（真实输出）：`pnpm run type` 退出码 0；`pnpm run lint` → `Found 0 warnings and 0 errors.`（163 files / 100 rules）；`pnpm test` → `Total 32: PASS 32, FAIL 0`
+  - check:legacy（`node scripts/check-bundle-syntax.mjs`，跑本次新 build 的 dist）：`词法层违规 0 个；AST 层违规 0 个`、`运行时 API … 违规 0 个`、`结论：合格`（#79 补齐 `replaceAll` polyfill 后由 31 处违规归零）
+  - `pnpm run build:internal` → `Rspack compiled successfully in 757 ms`；`npx cap sync android` → `Sync finished`
+  - #63（`9de2778`）只改 integration 测试的关弹窗辅助函数（CDP 连发触摸后 tap 不合成 click 时补一次 click），无用户可见变更，故不进上面的用户说明
+  - #86 的如实状态：入口与错误码文案已上线，成功路径**尚未用真实 Key 在真机验证**（issue #86 仍 open），不要把它读成「已完整验证」
+  - 未完成：release APK 未产出。本机没有已发布证书（`e7c5baee…aa8a1` 的 `/root/.android/debug.keystore`，本机 `~/.android/debug.keystore` 是 `a3c9adaf…`），按约束未改 `EXPECTED_CERT_SHA256`、未换证书，`assembleRelease` 未执行；五项人工核对（versionCode / ARTIFACT_VARIANT / 签名指纹 / sha256+体积 / debuggable）因此全部未做
+
 ## 1.4.0-beta.9 (2026-11-18) — 修复低内核机型白屏
 
 - 修复：部分机型（WebView 版本较低）打开即白屏的问题
