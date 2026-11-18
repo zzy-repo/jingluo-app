@@ -1,0 +1,83 @@
+// [layer: device | existing single emulator; installs only with INSTALL_APK=1]
+import { execFileSync } from 'node:child_process'
+import { mkdirSync, writeFileSync } from 'node:fs'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
+const adb = (...args) => execFileSync('/root/android-sdk/platform-tools/adb', ['-s', 'emulator-5554', ...args], { encoding: 'utf8' }).trim()
+const wait = ms => new Promise(resolve => setTimeout(resolve, ms))
+const dir = path.join(root, 'docs/ui')
+mkdirSync(dir, { recursive: true })
+if (process.env.INSTALL_APK === '1') adb('install', '-r', path.join(root, 'android/app/build/outputs/apk/debug/app-debug.apk'))
+adb('shell', 'am', 'start', '-n', 'com.example.deepseekchat/.MainActivity')
+await wait(2500)
+const pid = adb('shell', 'pidof', 'com.example.deepseekchat')
+adb('forward', 'tcp:9537', `localabstract:webview_devtools_remote_${pid}`)
+const targets = await (await fetch('http://127.0.0.1:9537/json')).json()
+const socket = new WebSocket(targets.find(target => target.type === 'page').webSocketDebuggerUrl)
+await new Promise((resolve, reject) => { socket.onopen = resolve; socket.onerror = reject })
+let seq = 0
+const pending = new Map()
+socket.onmessage = event => { const data = JSON.parse(event.data); if (pending.has(data.id)) { const { resolve, reject } = pending.get(data.id); pending.delete(data.id); data.error ? reject(data.error) : resolve(data.result) } }
+const send = (method, params = {}) => new Promise((resolve, reject) => { const id = ++seq; pending.set(id, { resolve, reject }); socket.send(JSON.stringify({ id, method, params })) })
+const evaluate = async expression => { const data = await send('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true, userGesture: true }); if (data.exceptionDetails) throw new Error(JSON.stringify(data.exceptionDetails)); return data.result.value }
+const click = text => evaluate(`(() => { const el = [...document.querySelectorAll('button,[role="tab"]')].find(el => el.textContent.trim() === ${JSON.stringify(text)}); if (!el) return document.body.innerText; el.click(); return 'ok' })()`)
+const screenshot = name => writeFileSync(path.join(dir, `${name}.png`), execFileSync('/root/android-sdk/platform-tools/adb', ['-s', 'emulator-5554', 'exec-out', 'screencap', '-p']))
+try {
+  console.log('SYSTEM', adb('shell', 'getprop', 'ro.build.version.release'), 'SDK', adb('shell', 'getprop', 'ro.build.version.sdk'))
+  console.log('WEBVIEW', adb('shell', 'dumpsys', 'webviewupdate'))
+  // Enable only the existing diagnostics test handle, never patch app JavaScript.
+  await send('Page.navigate', { url: 'https://localhost/?diag-debug' })
+  await wait(2000)
+  console.log('BODY', await evaluate('document.body.innerText'))
+  await evaluate(`(() => { window.__diagnostics.setFeedbackTransport({ name: 'offline-device', send: async () => ({ok:false,error:'network'}) }); window.__diagnostics.recordError('offline SAF diagnostic marker sk-SYNTHETICSECRET123456789012345', {'http.status':503, token:'DEVICE_PRIVATE_TOKEN', content:'DEVICE_PRIVATE_CHAT'}); })()`)
+  if (!(await evaluate('document.querySelectorAll("[role=dialog]").length'))) {
+    console.log('SIDER', await evaluate(`(() => { const b = [...document.querySelectorAll('button')].find(b => /侧边栏|sidebar|menu|菜单/i.test(b.getAttribute('aria-label') ?? '')); if(b)b.click(); return [...document.querySelectorAll('button')].map(b=>b.textContent.trim()+'|'+b.getAttribute('aria-label')) })()`))
+    await click('设置')
+  }
+  console.log('DATA', await click('数据管理'))
+  console.log('FEEDBACK', await click('写反馈'))
+  await wait(500)
+  adb('shell', 'svc', 'wifi', 'disable'); adb('shell', 'svc', 'data', 'disable')
+  await send('Network.enable')
+  await send('Network.emulateNetworkConditions', { offline: true, latency: 0, downloadThroughput: 0, uploadThroughput: 0 })
+  await evaluate(`(() => {const input=document.querySelector('#feedback-description'); Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(input,'Offline upload attempt retains this description'); input.dispatchEvent(new Event('input',{bubbles:true}));})()`)
+  await click('提交'); await wait(300)
+  screenshot('feedback-export-android-upload-failed')
+  const before = await evaluate('window.__diagnostics.getDiagnosticsLogCount()')
+  console.log('SAVE', await click('保存日志文件'))
+  await wait(1200)
+  adb('shell', 'uiautomator', 'dump', '/sdcard/feedback-saf.xml')
+  console.log('SAF', adb('shell', 'cat', '/sdcard/feedback-saf.xml'))
+  screenshot('feedback-export-android-saf')
+  // Cancel first: no upload success, no clear and form remains.
+  adb('shell', 'input', 'keyevent', '4'); await wait(600)
+  console.log('CANCEL', await evaluate('document.body.innerText'))
+  if (!(await evaluate(`document.body.innerText.includes('已取消保存')`))) throw new Error('missing cancelled notice')
+  if ((await evaluate('window.__diagnostics.getDiagnosticsLogCount()')) < before) throw new Error('logs lost on cancel')
+  console.log('SAVE2', await click('保存日志文件')); await wait(800)
+  adb('shell', 'uiautomator', 'dump', '/sdcard/feedback-saf.xml')
+  const xml = adb('shell', 'cat', '/sdcard/feedback-saf.xml')
+  const node = [...xml.matchAll(/<node\b[^>]*>/g)].map(match => match[0]).find(node => /(?:text="(?:SAVE|保存)"|resource-id="android:id\/button1")/.test(node))
+  if (!node) throw new Error('SAF save button missing: ' + xml)
+  const bounds = /bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"/.exec(node)
+  adb('shell', 'input', 'tap', String(Math.floor((+bounds[1] + +bounds[3]) / 2)), String(Math.floor((+bounds[2] + +bounds[4]) / 2)))
+  await wait(1500)
+  console.log('SAVED', await evaluate('document.body.innerText'))
+  if (!(await evaluate(`document.body.innerText.includes('已保存到系统文件选择器中所选位置')`))) throw new Error('missing saved notice')
+  if ((await evaluate('window.__diagnostics.getDiagnosticsLogCount()')) < before) throw new Error('logs lost on save')
+  screenshot('feedback-export-android-saved')
+  const files = adb('shell', 'ls', '/sdcard/Download').split('\n').filter(name => name.startsWith('deepseek-feedback-') && name.endsWith('.json')).sort()
+  const name = files.at(-1)
+  if (!name) throw new Error('no downloaded file')
+  const text = adb('shell', 'cat', '/sdcard/Download/' + name)
+  const data = JSON.parse(text)
+  if (!data.logs.length || data.lastSubmissionFailure?.code !== 'network') throw new Error('missing logs/failure in saved JSON')
+  for (const secret of ['DEVICE_PRIVATE_TOKEN','DEVICE_PRIVATE_CHAT','SYNTHETICSECRET','Offline upload attempt retains this description']) if (text.includes(secret)) throw new Error('privacy leak: ' + secret)
+  writeFileSync(path.join(dir, 'feedback-export-android-sample.json'), text)
+  console.log('PASS native offline SAF cancellation/save + real Downloads JSON', name, Buffer.byteLength(text))
+} finally {
+  await send('Network.emulateNetworkConditions', { offline: false, latency: 0, downloadThroughput: -1, uploadThroughput: -1 }).catch(() => {})
+  adb('shell', 'svc', 'wifi', 'enable'); adb('shell', 'svc', 'data', 'enable')
+  socket.close()
+}
