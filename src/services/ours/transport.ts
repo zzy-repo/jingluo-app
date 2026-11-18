@@ -18,9 +18,10 @@
  * 付款完成后收银台按 return_url 回跳，地址栏带 ?no=<out_trade_no>&order_token=<token>，
  * 由 services/ours/returnParams.ts 在启动时解析 → 进「订单查询」。
  *
- * 原生的兜底：CapacitorHttp 的 disableRedirects 理论上会带回 302 + location 头，
- * 但这一条在真机上还没验证过；读不到 location 时再走 CheckoutBrowser.resolveLocation
- * （原生 HttpURLConnection，instanceFollowRedirects=false）取一次 Location。
+ * 原生的建单（Issue #142）：/buy **只**走 `CheckoutBrowser.resolveLocation` 一次 ——
+ * CapacitorHttp 的 disableRedirects 在 web 实现里根本不生效（302 会被跟随，状态码变成下一跳的，
+ * 网关 429 就被当成本次下单失败），所以「取 Location」这件事只交给我们自己的 Java 实现
+ * （HttpURLConnection + setInstanceFollowRedirects(false)）。其它业务请求照旧走 CapacitorHttp。
  */
 import type { LinkedMessage } from '../../i18n/index.js'
 import { ensureCustomerId, parseCustomerId, readCachedCustomerId } from './customerId.js'
@@ -47,23 +48,58 @@ const reasonOf = (error: unknown): 'timeout' | 'network' => {
     : 'network'
 }
 
-/** 3xx 但响应头里没有 location（部分实现会把它丢掉）：问一次原生插件 */
-const nativeLocationFallback = async (
-  request: OursHttpRequest,
-  status: number
-): Promise<string> => {
-  if (status < 300 || status >= 400 || request.method !== 'GET') {
-    return ''
+/** 原生建单请求：只有 /buy 这一个 GET 需要读 3xx 的 Location */
+const isBuyRequest = (request: OursHttpRequest): boolean => {
+  if (request.method !== 'GET') {
+    return false
   }
   try {
-    const resolved = await CheckoutBrowser.resolveLocation({ url: request.url })
-    return (resolved.location ?? '').trim()
+    return /\/buy$/u.test(new URL(request.url).pathname)
   } catch {
-    return ''
+    return false
+  }
+}
+
+/**
+ * 原生 /buy：**只**走 CheckoutBrowser.resolveLocation 一次（Issue #142）。
+ *
+ * 为什么不用 CapacitorHttp：
+ *  - CapacitorHttp 的 web 实现根本不读 disableRedirects（@capacitor/core 只透传
+ *    method/headers/body），302 会被跟随到收银台/网关那一跳，`status` 也就变成了**那一跳**的
+ *    状态码；网关一限流（429），客户端就把别人的状态码当成本次下单的结果，界面出「请求过于频繁」，
+ *    而真正的收银台地址已经在跟随中被丢掉了 —— 用户点一次「去支付」，什么也打不开。
+ *  - resolveLocation 是我们自己的 Java 实现：
+ *    `setInstanceFollowRedirects(false)` + 10s 超时，只回 `{status, location}`，
+ *    拿到的状态码一定属于 /buy 这一跳。
+ *  - 顺带把「一次点击打两次 /buy」也去掉了：老实现 302 但没带回 location 头时会**再问一次**
+ *    插件，而 /buy 每 GET 一次就新建一张单。
+ */
+const nativeBuyRequest = async (request: OursHttpRequest): Promise<OursHttpResult> => {
+  let timer: ReturnType<typeof setTimeout> | null = null
+  try {
+    const timeout = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new Error('timeout')), request.timeoutMs)
+    })
+    const resolved = await Promise.race([CheckoutBrowser.resolveLocation({ url: request.url }), timeout])
+    const status = typeof resolved.status === 'number' ? resolved.status : 0
+    const raw = (resolved.location ?? '').trim()
+    // Location 允许是相对地址：按 /buy 的源补全，后面 parseCheckoutTarget 才认得出 https
+    const location = raw.startsWith('/') ? `${new URL(request.url).origin}${raw}` : raw
+    // 正文没用（302 没有正文，429 的正文只是给日志看的），状态码由 messageKeyFor 映射
+    return { kind: 'response', status, text: '', location }
+  } catch (error) {
+    return { kind: reasonOf(error) }
+  } finally {
+    if (timer !== null) {
+      clearTimeout(timer)
+    }
   }
 }
 
 const nativeRequest = async (request: OursHttpRequest): Promise<OursHttpResult> => {
+  if (isBuyRequest(request)) {
+    return nativeBuyRequest(request)
+  }
   try {
     const response = await CapacitorHttp.request({
       url: request.url,
@@ -78,9 +114,7 @@ const nativeRequest = async (request: OursHttpRequest): Promise<OursHttpResult> 
       disableRedirects: true,
     })
     const rawHeaders = (response.headers ?? {}) as Record<string, string>
-    const headerLocation = (rawHeaders.location ?? rawHeaders.Location ?? '').trim()
-    const location =
-      headerLocation !== '' ? headerLocation : await nativeLocationFallback(request, response.status)
+    const location = (rawHeaders.location ?? rawHeaders.Location ?? '').trim()
     const text =
       typeof response.data === 'string' ? response.data : JSON.stringify(response.data ?? null)
     return { kind: 'response', status: response.status, text, location }

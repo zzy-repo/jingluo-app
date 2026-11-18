@@ -1,0 +1,66 @@
+
+[W390] 网页版点「去支付」= 浏览器顶层导航（390px）
+  ok   [390] 套餐名来自 /api/plans：新人特惠 1 元额度
+  ok   [390] /buy 只有一次顶层导航（document），没有 fetch
+  ok   [390] 页面自己没对 /buy 发过 fetch/xhr
+  ok   [390] /buy 带 plan=newbie
+  ok   [390] /buy 带 cid=1024
+  ok   [390] 落在收银台桩页（能进入收银台）
+  ok   [390] 没有频率提示
+
+[W360] 网页版点「去支付」= 浏览器顶层导航（360px）
+  ok   [360] 套餐名来自 /api/plans：新人特惠 1 元额度
+  ok   [360] /buy 只有一次顶层导航（document），没有 fetch
+  ok   [360] 页面自己没对 /buy 发过 fetch/xhr
+  ok   [360] /buy 带 plan=newbie
+  ok   [360] /buy 带 cid=1024
+  ok   [360] 落在收银台桩页（能进入收银台）
+  ok   [360] 没有频率提示
+
+[N1] 原生 + 客户端跟随 302（CapacitorHttp web 实现行为）→ 网关 429
+  · App 侧原生调用：["CapacitorHttp.request","CapacitorHttp.request"]
+  · 提示文案："当前环境拿不到收银台地址，请在 App 内购买或改用卡密兑换"
+  · 已打开收银台：[]
+  FAIL App 不对 /buy 发程序化 HTTP 请求（拿不到第三跳的状态码）
+       期望 0
+       实际 1
+  ok   提示里没有「请求过于频繁」（实际：当前环境拿不到收银台地址，请在 App 内购买或改用卡密兑换）
+  FAIL 提示仍是默认说明（没有把网关状态当成下单结果）
+       期望 "支付在系统浏览器里完成（支付宝），回到 App 自动查单。价格与积分由服务端下发。"
+       实际 "当前环境拿不到收银台地址，请在 App 内购买或改用卡密兑换"
+  FAIL 系统浏览器打开了 /buy 下发的收银台地址
+       期望 ["https://pay.xiaodouap.cn/submit.php?money=1.00&name=%E6%96%B0%E4%BA%BA%E7%89%B9%E6%83%A0%201%20%E5%85%83%E9%A2%9D%E5%BA%A6&out_trade_no=CP20261118231003NEWBIE&order_token=tok-142-native"]
+       实际 []
+  ok   只对 /buy 发一次原生请求（每次 GET 都建单）
+
+[N2] 原生 + /buy 自己回 429（服务端限流仍然要提示）
+  · 提示文案："支付在系统浏览器里完成（支付宝），回到 App 自动查单。价格与积分由服务端下发。"
+  FAIL 真正的 429 仍然显示频率提示（不把限流吞成别的错误）
+       期望 "请求过于频繁，请稍后重试"
+       实际 "支付在系统浏览器里完成（支付宝），回到 App 自动查单。价格与积分由服务端下发。"
+  FAIL 不打开收银台
+       期望 []
+       实际 ["https://pay.xiaodouap.cn/submit.php?money=1.00&name=%E6%96%B0%E4%BA%BA%E7%89%B9%E6%83%A0%201%20%E5%85%83%E9%A2%9D%E5%BA%A6&out_trade_no=CP20261118231003NEWBIE&order_token=tok-142-native"]
+  ok   只对 /buy 发一次原生请求（不重试、不连点放大）
+
+[N3] 原生 + 正常 302 → 一次请求打开收银台
+  · App 侧原生调用：["CapacitorHttp.request","CapacitorHttp.request","CheckoutBrowser.open","CapacitorHttp.request"]
+  FAIL 取 302 只发一次原生请求
+       期望 1
+       实际 0
+  FAIL 取 302 的地址带 plan=newbie（undefined）
+  FAIL 取 302 的地址带 cid=1024
+  ok   系统浏览器打开收银台
+  ok   没有错误提示（实际：支付在系统浏览器里完成（支付宝），回到 App 自动查单。价格与积分由服务端下发。）
+  ok   只对 /buy 发一次带 cid 的原生请求（每次 GET 都会建单，绝不能多打）
+
+通过 20 项，失败 8 项
+失败项：
+ - App 不对 /buy 发程序化 HTTP 请求（拿不到第三跳的状态码）
+ - 提示仍是默认说明（没有把网关状态当成下单结果）
+ - 系统浏览器打开了 /buy 下发的收银台地址
+ - 真正的 429 仍然显示频率提示（不把限流吞成别的错误）
+ - 不打开收银台
+ - 取 302 只发一次原生请求
+ - 取 302 的地址带 plan=newbie（undefined）
+ - 取 302 的地址带 cid=1024

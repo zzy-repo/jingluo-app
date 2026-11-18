@@ -607,7 +607,9 @@ export const startCheckout = async (
     )
     return { kind: 'ok', checkout: target, replacedUnpaidOrder }
   }
-  if (result.status === 0 || location === '') {
+  // Issue #142：4xx/5xx 优先按状态码给错误（/buy 自己被限流就要说限流），
+  // 只有「没有响应状态」或「3xx/2xx 却没有 Location」才算拿不到收银台地址。
+  if (result.status === 0 || (location === '' && result.status < 400)) {
     return { kind: 'no-location' }
   }
   if (isOpenableCheckout(location)) {
