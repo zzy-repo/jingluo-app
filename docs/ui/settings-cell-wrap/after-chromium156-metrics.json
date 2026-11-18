@@ -1,0 +1,200 @@
+{
+  "app": "http://127.0.0.1:5419",
+  "exe": "/root/.cache/ms-playwright/chromium-1248/chrome-linux64/chrome",
+  "rows": [
+    {
+      "viewport": "390x844",
+      "panelW": 366,
+      "cell": {
+        "w": 342,
+        "h": 138,
+        "x": 24,
+        "flex": "0 0 auto",
+        "minWidth": "0px",
+        "wrap": "wrap",
+        "padRight": "0px"
+      },
+      "text": {
+        "w": 342,
+        "h": 62,
+        "x": 24,
+        "flex": "1 1 100%",
+        "minWidth": "0px",
+        "wrap": "nowrap",
+        "padRight": "0px"
+      },
+      "actions": {
+        "w": 342,
+        "h": 44,
+        "x": 24,
+        "flex": "1 0 100%",
+        "minWidth": "0px",
+        "wrap": "wrap",
+        "padRight": "0px"
+      },
+      "label": {
+        "w": 342,
+        "h": 22,
+        "x": 24,
+        "flex": "0 1 auto",
+        "minWidth": "auto",
+        "wrap": "nowrap",
+        "padRight": "0px"
+      },
+      "labelLineCount": 1,
+      "labelText": "反馈与日志",
+      "buttons": [
+        {
+          "text": "写反馈",
+          "w": 72,
+          "x": 158,
+          "y": 698
+        },
+        {
+          "text": "检查日志完整性",
+          "w": 128,
+          "x": 238,
+          "y": 698
+        }
+      ],
+      "cellRight": 366,
+      "allRows": [
+        {
+          "label": "导入历史对话",
+          "textW": 262,
+          "labelLines": 1,
+          "actionsW": 72,
+          "rowW": 342,
+          "rowH": 104,
+          "overflowX": 0
+        },
+        {
+          "label": "导出所有历史对话",
+          "textW": 262,
+          "labelLines": 1,
+          "actionsW": 72,
+          "rowW": 342,
+          "rowH": 86,
+          "overflowX": 0
+        },
+        {
+          "label": "反馈与日志",
+          "textW": 342,
+          "labelLines": 1,
+          "actionsW": 342,
+          "rowW": 342,
+          "rowH": 138,
+          "overflowX": 0
+        },
+        {
+          "label": "删除所有对话",
+          "textW": 262,
+          "labelLines": 1,
+          "actionsW": 72,
+          "rowW": 342,
+          "rowH": 68,
+          "overflowX": 0
+        }
+      ],
+      "docScrollW": 390,
+      "overflow": false
+    },
+    {
+      "viewport": "360x780",
+      "panelW": 336,
+      "cell": {
+        "w": 312,
+        "h": 138,
+        "x": 24,
+        "flex": "0 0 auto",
+        "minWidth": "0px",
+        "wrap": "wrap",
+        "padRight": "0px"
+      },
+      "text": {
+        "w": 312,
+        "h": 62,
+        "x": 24,
+        "flex": "1 1 100%",
+        "minWidth": "0px",
+        "wrap": "nowrap",
+        "padRight": "0px"
+      },
+      "actions": {
+        "w": 312,
+        "h": 44,
+        "x": 24,
+        "flex": "1 0 100%",
+        "minWidth": "0px",
+        "wrap": "wrap",
+        "padRight": "0px"
+      },
+      "label": {
+        "w": 312,
+        "h": 22,
+        "x": 24,
+        "flex": "0 1 auto",
+        "minWidth": "auto",
+        "wrap": "nowrap",
+        "padRight": "0px"
+      },
+      "labelLineCount": 1,
+      "labelText": "反馈与日志",
+      "buttons": [
+        {
+          "text": "写反馈",
+          "w": 72,
+          "x": 128,
+          "y": 634
+        },
+        {
+          "text": "检查日志完整性",
+          "w": 128,
+          "x": 208,
+          "y": 634
+        }
+      ],
+      "cellRight": 336,
+      "allRows": [
+        {
+          "label": "导入历史对话",
+          "textW": 232,
+          "labelLines": 1,
+          "actionsW": 72,
+          "rowW": 312,
+          "rowH": 122,
+          "overflowX": 0
+        },
+        {
+          "label": "导出所有历史对话",
+          "textW": 232,
+          "labelLines": 1,
+          "actionsW": 72,
+          "rowW": 312,
+          "rowH": 86,
+          "overflowX": 0
+        },
+        {
+          "label": "反馈与日志",
+          "textW": 312,
+          "labelLines": 1,
+          "actionsW": 312,
+          "rowW": 312,
+          "rowH": 138,
+          "overflowX": 0
+        },
+        {
+          "label": "删除所有对话",
+          "textW": 232,
+          "labelLines": 1,
+          "actionsW": 72,
+          "rowW": 312,
+          "rowH": 68,
+          "overflowX": 0
+        }
+      ],
+      "docScrollW": 360,
+      "overflow": false
+    }
+  ]
+}

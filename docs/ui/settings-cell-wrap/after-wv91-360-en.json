@@ -1,0 +1,250 @@
+{
+  "page": {
+    "url": "https://localhost/",
+    "title": "API 使用 demo",
+    "innerWidth": 360,
+    "innerHeight": 728,
+    "dpr": 1.5,
+    "webviewVersion": "Mozilla/5.0 (Linux; Android 12; sdk_gphone64_x86_64 Build/SE1A.220826.008; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/91.0.4472.114 Mobile Safari/537.36"
+  },
+  "metrics": {
+    "viewport": {
+      "w": 360,
+      "h": 728,
+      "dpr": 1.5
+    },
+    "panelW": 336,
+    "panelOverflowX": 0,
+    "docOverflow": false,
+    "rows": [
+      {
+        "label": "Import chat history",
+        "row": {
+          "w": 312,
+          "h": 104,
+          "x": 24,
+          "y": 128,
+          "flex": "0 0 auto",
+          "minWidth": "0px",
+          "flexWrap": "nowrap",
+          "padRight": "0px",
+          "wordBreak": "break-word",
+          "overflowWrap": "normal"
+        },
+        "text": {
+          "w": 232,
+          "h": 80,
+          "x": 24,
+          "y": 140,
+          "flex": "1 1 0px",
+          "minWidth": "0px",
+          "flexWrap": "nowrap",
+          "padRight": "8px",
+          "wordBreak": "break-word",
+          "overflowWrap": "anywhere"
+        },
+        "actions": {
+          "w": 72,
+          "h": 44,
+          "x": 264,
+          "y": 158,
+          "flex": "0 1 auto",
+          "minWidth": "0px",
+          "flexWrap": "wrap",
+          "padRight": "0px",
+          "wordBreak": "break-word",
+          "overflowWrap": "normal"
+        },
+        "labelLines": 1,
+        "buttons": [
+          {
+            "text": "Upload",
+            "w": 72,
+            "x": 264,
+            "y": 158
+          }
+        ]
+      },
+      {
+        "label": "Import from link",
+        "row": {
+          "w": 312,
+          "h": 146,
+          "x": 24,
+          "y": 232,
+          "flex": "0 0 auto",
+          "minWidth": "0px",
+          "flexWrap": "wrap",
+          "padRight": "0px",
+          "wordBreak": "break-word",
+          "overflowWrap": "normal"
+        },
+        "text": {
+          "w": 312,
+          "h": 62,
+          "x": 24,
+          "y": 244,
+          "flex": "1 1 auto",
+          "minWidth": "0px",
+          "flexWrap": "nowrap",
+          "padRight": "8px",
+          "wordBreak": "break-word",
+          "overflowWrap": "anywhere"
+        },
+        "actions": null,
+        "labelLines": 1,
+        "buttons": []
+      },
+      {
+        "label": "Export all chats",
+        "row": {
+          "w": 312,
+          "h": 122,
+          "x": 24,
+          "y": 378,
+          "flex": "0 0 auto",
+          "minWidth": "0px",
+          "flexWrap": "nowrap",
+          "padRight": "0px",
+          "wordBreak": "break-word",
+          "overflowWrap": "normal"
+        },
+        "text": {
+          "w": 211.7,
+          "h": 98,
+          "x": 24,
+          "y": 390,
+          "flex": "1 1 0px",
+          "minWidth": "0px",
+          "flexWrap": "nowrap",
+          "padRight": "8px",
+          "wordBreak": "break-word",
+          "overflowWrap": "anywhere"
+        },
+        "actions": {
+          "w": 92.3,
+          "h": 44,
+          "x": 243.7,
+          "y": 417,
+          "flex": "0 1 auto",
+          "minWidth": "0px",
+          "flexWrap": "wrap",
+          "padRight": "0px",
+          "wordBreak": "break-word",
+          "overflowWrap": "normal"
+        },
+        "labelLines": 1,
+        "buttons": [
+          {
+            "text": "Download",
+            "w": 92.3,
+            "x": 243.7,
+            "y": 417
+          }
+        ]
+      },
+      {
+        "label": "Feedback & logs",
+        "row": {
+          "w": 312,
+          "h": 138,
+          "x": 24,
+          "y": 500,
+          "flex": "0 0 auto",
+          "minWidth": "0px",
+          "flexWrap": "wrap",
+          "padRight": "0px",
+          "wordBreak": "break-word",
+          "overflowWrap": "normal"
+        },
+        "text": {
+          "w": 312,
+          "h": 62,
+          "x": 24,
+          "y": 512,
+          "flex": "1 1 100%",
+          "minWidth": "0px",
+          "flexWrap": "nowrap",
+          "padRight": "0px",
+          "wordBreak": "break-word",
+          "overflowWrap": "anywhere"
+        },
+        "actions": {
+          "w": 312,
+          "h": 44,
+          "x": 24,
+          "y": 582,
+          "flex": "1 0 100%",
+          "minWidth": "0px",
+          "flexWrap": "wrap",
+          "padRight": "0px",
+          "wordBreak": "break-word",
+          "overflowWrap": "normal"
+        },
+        "labelLines": 1,
+        "buttons": [
+          {
+            "text": "Send feedback",
+            "w": 122.2,
+            "x": 54.2,
+            "y": 582
+          },
+          {
+            "text": "Check log coverage",
+            "w": 151.6,
+            "x": 184.4,
+            "y": 582
+          }
+        ]
+      },
+      {
+        "label": "Delete all chats",
+        "row": {
+          "w": 312,
+          "h": 68,
+          "x": 24,
+          "y": 638,
+          "flex": "0 0 auto",
+          "minWidth": "0px",
+          "flexWrap": "nowrap",
+          "padRight": "0px",
+          "wordBreak": "break-word",
+          "overflowWrap": "normal"
+        },
+        "text": {
+          "w": 232,
+          "h": 22,
+          "x": 24,
+          "y": 661,
+          "flex": "1 1 0px",
+          "minWidth": "0px",
+          "flexWrap": "nowrap",
+          "padRight": "8px",
+          "wordBreak": "break-word",
+          "overflowWrap": "anywhere"
+        },
+        "actions": {
+          "w": 72,
+          "h": 44,
+          "x": 264,
+          "y": 650,
+          "flex": "0 1 auto",
+          "minWidth": "0px",
+          "flexWrap": "wrap",
+          "padRight": "0px",
+          "wordBreak": "break-word",
+          "overflowWrap": "normal"
+        },
+        "labelLines": 1,
+        "buttons": [
+          {
+            "text": "Delete",
+            "w": 72,
+            "x": 264,
+            "y": 650
+          }
+        ]
+      }
+    ]
+  }
+}

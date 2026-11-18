@@ -1,0 +1,250 @@
+{
+  "page": {
+    "url": "https://localhost/",
+    "title": "API 使用 demo",
+    "innerWidth": 360,
+    "innerHeight": 728,
+    "dpr": 1.5,
+    "webviewVersion": "Mozilla/5.0 (Linux; Android 12; sdk_gphone64_x86_64 Build/SE1A.220826.008; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/91.0.4472.114 Mobile Safari/537.36"
+  },
+  "metrics": {
+    "viewport": {
+      "w": 360,
+      "h": 728,
+      "dpr": 1.5
+    },
+    "panelW": 336,
+    "panelOverflowX": 0,
+    "docOverflow": false,
+    "rows": [
+      {
+        "label": "导入历史对话",
+        "row": {
+          "w": 312,
+          "h": 86,
+          "x": 24,
+          "y": 182,
+          "flex": "0 0 auto",
+          "minWidth": "0px",
+          "flexWrap": "nowrap",
+          "padRight": "0px",
+          "wordBreak": "break-word",
+          "overflowWrap": "normal"
+        },
+        "text": {
+          "w": 232,
+          "h": 62,
+          "x": 24,
+          "y": 194,
+          "flex": "1 1 0px",
+          "minWidth": "0px",
+          "flexWrap": "nowrap",
+          "padRight": "8px",
+          "wordBreak": "break-word",
+          "overflowWrap": "anywhere"
+        },
+        "actions": {
+          "w": 72,
+          "h": 44,
+          "x": 264,
+          "y": 203,
+          "flex": "0 1 auto",
+          "minWidth": "0px",
+          "flexWrap": "wrap",
+          "padRight": "0px",
+          "wordBreak": "break-word",
+          "overflowWrap": "normal"
+        },
+        "labelLines": 1,
+        "buttons": [
+          {
+            "text": "上传",
+            "w": 72,
+            "x": 264,
+            "y": 203
+          }
+        ]
+      },
+      {
+        "label": "从链接导入",
+        "row": {
+          "w": 312,
+          "h": 146,
+          "x": 24,
+          "y": 268,
+          "flex": "0 0 auto",
+          "minWidth": "0px",
+          "flexWrap": "wrap",
+          "padRight": "0px",
+          "wordBreak": "break-word",
+          "overflowWrap": "normal"
+        },
+        "text": {
+          "w": 312,
+          "h": 62,
+          "x": 24,
+          "y": 280,
+          "flex": "1 1 auto",
+          "minWidth": "0px",
+          "flexWrap": "nowrap",
+          "padRight": "8px",
+          "wordBreak": "break-word",
+          "overflowWrap": "anywhere"
+        },
+        "actions": null,
+        "labelLines": 1,
+        "buttons": []
+      },
+      {
+        "label": "导出所有历史对话",
+        "row": {
+          "w": 312,
+          "h": 86,
+          "x": 24,
+          "y": 414,
+          "flex": "0 0 auto",
+          "minWidth": "0px",
+          "flexWrap": "nowrap",
+          "padRight": "0px",
+          "wordBreak": "break-word",
+          "overflowWrap": "normal"
+        },
+        "text": {
+          "w": 232,
+          "h": 62,
+          "x": 24,
+          "y": 426,
+          "flex": "1 1 0px",
+          "minWidth": "0px",
+          "flexWrap": "nowrap",
+          "padRight": "8px",
+          "wordBreak": "break-word",
+          "overflowWrap": "anywhere"
+        },
+        "actions": {
+          "w": 72,
+          "h": 44,
+          "x": 264,
+          "y": 435,
+          "flex": "0 1 auto",
+          "minWidth": "0px",
+          "flexWrap": "wrap",
+          "padRight": "0px",
+          "wordBreak": "break-word",
+          "overflowWrap": "normal"
+        },
+        "labelLines": 1,
+        "buttons": [
+          {
+            "text": "下载",
+            "w": 72,
+            "x": 264,
+            "y": 435
+          }
+        ]
+      },
+      {
+        "label": "反馈与日志",
+        "row": {
+          "w": 312,
+          "h": 138,
+          "x": 24,
+          "y": 500,
+          "flex": "0 0 auto",
+          "minWidth": "0px",
+          "flexWrap": "wrap",
+          "padRight": "0px",
+          "wordBreak": "break-word",
+          "overflowWrap": "normal"
+        },
+        "text": {
+          "w": 312,
+          "h": 62,
+          "x": 24,
+          "y": 512,
+          "flex": "1 1 100%",
+          "minWidth": "0px",
+          "flexWrap": "nowrap",
+          "padRight": "0px",
+          "wordBreak": "break-word",
+          "overflowWrap": "anywhere"
+        },
+        "actions": {
+          "w": 312,
+          "h": 44,
+          "x": 24,
+          "y": 582,
+          "flex": "1 0 100%",
+          "minWidth": "0px",
+          "flexWrap": "wrap",
+          "padRight": "0px",
+          "wordBreak": "break-word",
+          "overflowWrap": "normal"
+        },
+        "labelLines": 1,
+        "buttons": [
+          {
+            "text": "写反馈",
+            "w": 72,
+            "x": 128,
+            "y": 582
+          },
+          {
+            "text": "检查日志完整性",
+            "w": 128,
+            "x": 208,
+            "y": 582
+          }
+        ]
+      },
+      {
+        "label": "删除所有对话",
+        "row": {
+          "w": 312,
+          "h": 68,
+          "x": 24,
+          "y": 638,
+          "flex": "0 0 auto",
+          "minWidth": "0px",
+          "flexWrap": "nowrap",
+          "padRight": "0px",
+          "wordBreak": "break-word",
+          "overflowWrap": "normal"
+        },
+        "text": {
+          "w": 232,
+          "h": 22,
+          "x": 24,
+          "y": 661,
+          "flex": "1 1 0px",
+          "minWidth": "0px",
+          "flexWrap": "nowrap",
+          "padRight": "8px",
+          "wordBreak": "break-word",
+          "overflowWrap": "anywhere"
+        },
+        "actions": {
+          "w": 72,
+          "h": 44,
+          "x": 264,
+          "y": 650,
+          "flex": "0 1 auto",
+          "minWidth": "0px",
+          "flexWrap": "wrap",
+          "padRight": "0px",
+          "wordBreak": "break-word",
+          "overflowWrap": "normal"
+        },
+        "labelLines": 1,
+        "buttons": [
+          {
+            "text": "删除",
+            "w": 72,
+            "x": 264,
+            "y": 650
+          }
+        ]
+      }
+    ]
+  }
+}
