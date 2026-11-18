@@ -211,6 +211,7 @@ export const zh = {
   settingsModelsRefresh: '刷新',
   settingsModelsEmpty: '接口返回空模型列表，可直接手动输入。',
   settingsModelsFailed: '模型列表加载失败，可直接手动输入。',
+  settingsModelsAvailable: '可选模型',
   settingsTest: '测试',
   settingsTesting: '测试中…',
   settingsTestOk: '连接成功（HTTP {status}），共 {count} 个模型：{models}',

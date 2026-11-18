@@ -331,16 +331,6 @@ export type ProviderProbeResult = {
 }
 
 
-/** 解析原生/Web 返回的 JSON 字符串或已解析对象；坏 JSON 返回空列表。 */
-export const parseModelPayload = (payload: unknown): string[] => {
-  if (typeof payload !== 'string') return pickModelIds(payload)
-  try {
-    return pickModelIds(JSON.parse(payload))
-  } catch {
-    return []
-  }
-}
-
 /**
  * 连通性测试：GET {baseUrl}{paths.models}，鉴权头按当前 spec。
  * 超时、断网/跨域、非 2xx、返回网页、非 JSON 分别给出可读原因，不抛异常。

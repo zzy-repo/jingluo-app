@@ -224,6 +224,7 @@ export const en = {
   settingsModelsRefresh: 'Refresh',
   settingsModelsEmpty: 'The endpoint returned no models; you can enter one manually.',
   settingsModelsFailed: 'Could not load models; you can enter one manually.',
+  settingsModelsAvailable: 'Available models',
   settingsTest: 'Test',
   settingsTesting: 'Testing…',
   settingsTestOk: 'Connected (HTTP {status}); {count} models: {models}',

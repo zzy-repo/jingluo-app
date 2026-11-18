@@ -308,22 +308,28 @@ const ModelField = ({ spec }: { spec: ProviderSpec }) => {
   }, [spec.kind, baseUrl, apiKey])
 
   const options = models.includes(value.trim()) || !value.trim() ? models : [value.trim(), ...models]
+  const [open, setOpen] = useState(false)
   return (
     <div className={styles.cell}>
       <div className={styles.apiKey}>
         <div className={styles.label}>{t('settingsModelLabel')}</div>
         <div className={styles.apiKeyInput}>
-          <input
-            type="text" list={`models-${spec.kind}`} placeholder={fallback || t('settingsModelPlaceholder')}
-            autoComplete="off" spellCheck={false} aria-label={t('settingsModelLabel')} value={value}
-            onChange={(event) => { setValue(event.target.value); setError(null) }}
-            onKeyDown={(event) => { if (event.key === 'Enter' && !event.nativeEvent.isComposing) save() }}
-            onBlur={save}
-          />
+          <div className={styles.modelPicker}>
+            <input
+              type="text" placeholder={fallback || t('settingsModelPlaceholder')}
+              autoComplete="off" spellCheck={false} aria-label={t('settingsModelLabel')} value={value}
+              onFocus={() => setOpen(true)}
+              onChange={(event) => { setValue(event.target.value); setError(null); setOpen(true) }}
+              onKeyDown={(event) => { if (event.key === 'Escape') setOpen(false); if (event.key === 'Enter' && !event.nativeEvent.isComposing) { save(); setOpen(false) } }}
+              onBlur={() => window.setTimeout(() => setOpen(false), 120)}
+            />
+            {open && options.length > 0 ? <div className={styles.modelOptions} role="listbox" aria-label={t('settingsModelsAvailable')}>
+              {options.map((model) => <button key={model} type="button" role="option" aria-selected={model === value} className={styles.modelOption} onMouseDown={(event) => event.preventDefault()} onClick={() => { setValue(model); setOpen(false); window.setTimeout(save, 0) }}>{model}</button>)}
+            </div> : null}
+          </div>
           <button type="button" className={styles.confirm} onClick={() => void loadModels()} disabled={status === 'loading'}>
             {status === 'loading' ? t('settingsModelsLoading') : t('settingsModelsRefresh')}
           </button>
-          <datalist id={`models-${spec.kind}`}>{options.map((model) => <option key={model} value={model} />)}</datalist>
         </div>
         {status === 'empty' ? <div className={styles.description}>{t('settingsModelsEmpty')}</div> : null}
         {status === 'error' ? <div className={styles.error}>{t('settingsModelsFailed')}</div> : null}
