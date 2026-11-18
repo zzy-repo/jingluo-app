@@ -146,7 +146,12 @@ console.log('\n[4] consumeOrderReturn：认出回跳 → 清地址栏 → 落盘
   const win = fakeWindow(`/?no=${OUT_TRADE_NO}&order_token=${ORDER_TOKEN}&plan=p1`)
   const storage = fakeStorage()
   const result = consumeOrderReturn(win, { now: () => 1763000000000, storage })
-  eq(result, { outTradeNo: OUT_TRADE_NO, orderToken: ORDER_TOKEN }, '返回单号与令牌')
+  // Issue #157：返回值多一个 replacedUnpaidOrder（这次覆盖掉了一笔未完成旧单才为 true）
+  eq(
+    result,
+    { outTradeNo: OUT_TRADE_NO, orderToken: ORDER_TOKEN, replacedUnpaidOrder: false },
+    '返回单号与令牌（+ #157 的「是否覆盖了未完成旧单」）'
+  )
   eq(win.replaced.length, 1, '只清一次地址栏')
   eq(win.replaced[0], '/?plan=p1', '地址栏去掉 no / order_token，保留其它参数')
   const stored = readStoredOrder(storage)
@@ -170,7 +175,7 @@ console.log('\n[4] consumeOrderReturn：认出回跳 → 清地址栏 → 落盘
   const win2 = fakeWindow(`/?no=${OUT_TRADE_NO}&order_token=${ORDER_TOKEN}`)
   eq(
     consumeOrderReturn(win2, { storage: broken }),
-    { outTradeNo: OUT_TRADE_NO, orderToken: ORDER_TOKEN },
+    { outTradeNo: OUT_TRADE_NO, orderToken: ORDER_TOKEN, replacedUnpaidOrder: false },
     '存储不可用时仍返回回跳参数（本次查单照跑）'
   )
   eq(win2.replaced[0], '/', '没有其它参数时地址栏回到 pathname')

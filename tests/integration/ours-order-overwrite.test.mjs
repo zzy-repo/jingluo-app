@@ -382,7 +382,10 @@ const scenarioOverwrite = async (browser, baseUrl, width, height) => {
   eq(cardAfter5s, 1, `[${width}] 5 秒后卡密还在（旧轮询没把界面翻回「待支付」）`)
   eq(await textOf(page, 'ours-order-status'), TEXT_FULFILLED, `[${width}] 5 秒后状态仍是「已发卡」`)
   eq(await readStore(page), null, `[${width}] 已发卡后存档清空（存档只为未完成订单保留）`)
-  await page.getByTestId('ours-order-status').scrollIntoViewIfNeeded()
+  await page
+    .getByTestId('ours-order-status')
+    .scrollIntoViewIfNeeded({ timeout: 3000 })
+    .catch(() => note('订单区块滚不到的截图（修复前就是这样）'))
   await page.waitForTimeout(250)
   await shot(page, '02-second-order-fulfilled', width)
   await context.close()
@@ -425,7 +428,10 @@ const scenarioLatestFulfilled = async (browser, baseUrl, width, height) => {
   // 查的这一单仍是 pending：不能因此把兜底那张卡藏起来，也不能说成「已发卡」
   eq(await textOf(page, 'ours-order-status'), MSG_PENDING, `[${width}] 当前单状态照旧是「${MSG_PENDING}」`)
 
-  await page.getByTestId('ours-order-latest').scrollIntoViewIfNeeded()
+  await page
+    .getByTestId('ours-order-latest')
+    .scrollIntoViewIfNeeded({ timeout: 3000 })
+    .catch(() => note('兜底区块不存在的截图（修复前就是这样）'))
   await page.waitForTimeout(250)
   await shot(page, '03-latest-fulfilled', width)
 
@@ -545,7 +551,10 @@ const scenarioLatestRedeemLegacy = async (browser, baseUrl, width, height) => {
   await openBuyPanel(page)
   await page.getByTestId('ours-buy').click()
   truthy(await waitFor(page, 'ours-order-latest-redeem', 25000), `[${width}] 兜底卡的一键兑换按钮出现`)
-  await page.getByTestId('ours-order-latest-redeem').click()
+  await page
+    .getByTestId('ours-order-latest-redeem')
+    .click({ timeout: 5000 })
+    .catch(() => note('兜底卡的一键兑换按钮点不动（修复前没有这个入口）'))
   await page.waitForTimeout(2000)
   const legacy = state.redeem.filter((item) => item.via === 'legacy').at(-1)
   truthy(legacy !== undefined, `[${width}] 池不可用时退回旧接口 /api/redeem`)
