@@ -318,7 +318,7 @@
   box-sizing: border-box;
   border: 1px solid var(--dsw-alias-border-l2-darkmode-thin);
   border-radius: 8px;
-  background-color: var(--dsw-alias-bg-primary);
+  background-color: var(--dsw-specific-login-input, #fff);
   opacity: 1;
   box-shadow: 0 6px 18px rgb(0 0 0 / 22%);
 }
@@ -330,7 +330,7 @@
   min-height: 44px;
   padding: 10px 12px;
   border: 0;
-  background-color: var(--dsw-alias-bg-primary);
+  background-color: var(--dsw-specific-login-input, #fff);
   color: inherit;
   line-height: 22px;
   text-align: left;
