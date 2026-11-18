@@ -8,6 +8,7 @@
 //   [2] startCheckout（原生路径）用的仍是同一个入口，行为不变
 //   [3] parseOrderReturn：`?no=` 与 `?order_token=` 都齐才算回跳，缺一个就不查单
 //   [4] consumeOrderReturn：认出回跳 → 清地址栏参数 → 落盘（供弹层续查）
+//   [4b] replacedUnpaidOrder（#157）：只有「覆盖 30 分钟内的另一笔存档」才是 true
 //   [5] 没有回跳参数时：不查单、不动地址栏、不写存档
 //   [6] orderStore：读写往返 / 坏数据 / 无 storage 都不抛
 import { registerHooks } from 'node:module'
@@ -31,7 +32,7 @@ const { buyUrl, OURS_API_BASE, parseOrderReturn, startCheckout } = await import(
 const { consumeOrderReturn, ORDER_RETURN_KEYS, stripOrderReturn } = await import(
   '../../src/services/ours/returnParams.ts'
 )
-const { ORDER_STORAGE_KEY, readStoredOrder, writeStoredOrder } = await import(
+const { ORDER_RESUME_MAX_AGE_MS, ORDER_STORAGE_KEY, readStoredOrder, writeStoredOrder } = await import(
   '../../src/services/ours/orderStore.ts'
 )
 
@@ -179,6 +180,73 @@ console.log('\n[4] consumeOrderReturn：认出回跳 → 清地址栏 → 落盘
     '存储不可用时仍返回回跳参数（本次查单照跑）'
   )
   eq(win2.replaced[0], '/', '没有其它参数时地址栏回到 pathname')
+}
+
+// ------------------------------------------- [4b] replacedUnpaidOrder（Issue #157）
+// 语义（见 src/services/ours/returnParams.ts:70-85 与 orderStore.ts:13）：
+//   网页版付款回跳时单号只能靠 ?no=&order_token= 带回来，所以**覆盖存档就发生在
+//   consumeOrderReturn 里**。只有下面三条同时成立，replacedUnpaidOrder 才为 true：
+//     (1) 旧存档确实存在（readStoredOrder 认得）
+//     (2) 旧存档的单号与本次回跳不同（同单号 = 刷新/重复回跳，什么都没被覆盖）
+//     (3) 旧存档 startedAt 距今 ≤ ORDER_RESUME_MAX_AGE_MS（30 分钟，闭区间）
+//   即「上一笔还没完成的订单被这一单顶掉了」，界面据此提示「上一笔未支付订单已失效」。
+//   「未完成」没有独立标记，30 分钟窗口就是唯一判据（订单本身 15 分钟就过期）。
+//   注意：单号不同但旧存档很老（>30 分钟）时是 false —— 那种旧单早已不在续查窗口内，
+//   再提示「上一笔失效」会误导用户。
+console.log('\n[4b] replacedUnpaidOrder：只有覆盖 30 分钟内的另一笔存档才是 true')
+{
+  const NOW = 1763000000000
+  const OLD_OUT_TRADE_NO = 'CP2026111816090000AAAAAAAA'
+  /** 先塞一份「上一笔」存档，模拟上一次下单/回跳留下的痕迹 */
+  const seed = (storage, outTradeNo, startedAt) =>
+    writeStoredOrder({ outTradeNo, orderToken: 'old-order-token', planId: 'p1', startedAt }, storage)
+  const consume = (storage) =>
+    consumeOrderReturn(fakeWindow(`/?no=${OUT_TRADE_NO}&order_token=${ORDER_TOKEN}`), {
+      now: () => NOW,
+      storage,
+    })
+
+  // 1) 窗口内 + 单号不同 → 真的覆盖了一笔未支付订单
+  {
+    const storage = fakeStorage()
+    seed(storage, OLD_OUT_TRADE_NO, NOW - 60 * 1000)
+    eq(
+      consume(storage),
+      { outTradeNo: OUT_TRADE_NO, orderToken: ORDER_TOKEN, replacedUnpaidOrder: true },
+      '一分钟前的旧单被覆盖 → true（完整返回形状）'
+    )
+    eq(readStoredOrder(storage)?.outTradeNo, OUT_TRADE_NO, '存档换成新单号（旧单不再续查）')
+    eq(readStoredOrder(storage)?.orderToken, ORDER_TOKEN, '存档里的令牌也换成新单的')
+    eq(readStoredOrder(storage)?.startedAt, NOW, '存档时间换成这次回跳的时间')
+    eq(readStoredOrder(storage)?.planId, '', '回跳单没有套餐信息 → planId 空串')
+  }
+
+  // 2) 恰好卡在窗口边界：实现是 `<=`（闭区间），仍算被覆盖
+  {
+    const storage = fakeStorage()
+    seed(storage, OLD_OUT_TRADE_NO, NOW - ORDER_RESUME_MAX_AGE_MS)
+    eq(consume(storage)?.replacedUnpaidOrder, true, '旧存档恰好 30 分钟 → 仍为 true（闭区间）')
+  }
+
+  // 3) 超过窗口 1ms：旧单早就不自动续查了，不该再提示「上一笔失效」
+  {
+    const storage = fakeStorage()
+    seed(storage, OLD_OUT_TRADE_NO, NOW - ORDER_RESUME_MAX_AGE_MS - 1)
+    eq(consume(storage)?.replacedUnpaidOrder, false, '旧存档超过 30 分钟 → false')
+  }
+
+  // 4) 单号相同（付款页刷新 / 重复回跳同一单）→ 没有覆盖任何东西
+  {
+    const storage = fakeStorage()
+    seed(storage, OUT_TRADE_NO, NOW - 60 * 1000)
+    eq(consume(storage)?.replacedUnpaidOrder, false, '单号相同（重复回跳）→ false')
+  }
+
+  // 5) 没有旧存档（第一次下单就付款回来）→ false
+  {
+    const storage = fakeStorage()
+    eq(consume(storage)?.replacedUnpaidOrder, false, '首次回跳、没有旧存档 → false')
+  }
 }
 
 console.log('\n[5] 没有回跳参数：不查单、不动地址栏、不写存档')
