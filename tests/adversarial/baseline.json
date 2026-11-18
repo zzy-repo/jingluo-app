@@ -105,14 +105,10 @@
       "bucket": "C 极端环境",
       "file": "c1-trickle.mjs",
       "title": "滴流下载（一直有进展但很慢）",
-      "verdict": "known-defect",
-      "construct": "1MB 归档、每块 4KB 延迟 600ms、总预算 1200ms。",
-      "expect": "有进展的慢链路应能区分「无进展卡死」与「总预算耗尽」；至少文案不能与「一直在收字节」矛盾。",
-      "actual": "1216ms 终态 historyImportUrlStalled（文案「下载长时间无响应」），而实际 2 次请求共收到 4096 字节；诊断 reason 记为 stalled，不区分预算耗尽。",
-      "defect": {
-        "severity": "medium",
-        "note": "总预算（120s）与包体上限（200MB）不自洽：需要稳定 ≥1.67MB/s 才可能成功；且预算耗尽被写成「长时间无响应」，与真实原因不符。"
-      }
+      "verdict": "green",
+      "construct": "1MB 归档、首块 4KB 后按 CHUNK_TARGET_MS 自适应放大、每块延迟 600ms、总预算压到 1200ms。",
+      "expect": "有进展的慢链路也必须给出有限时间内的失败终态，且终态与诊断要能区分「无进展卡死（stalled）」与「总预算耗尽（deadline）」；文案不得与「一直在收字节」矛盾。",
+      "actual": "1208ms 终态 historyImportUrlDeadline（文案「下载超时：已超过 1 分钟上限（已下载 … / 共 …），可重试」），2 次请求共收到 4096 字节；诊断 reason=deadline 且未混入 stalled，与「长时间无响应」明确区分，5/5 项符合期望。此前这条记为 known-defect 是用例侧错误叠出来的假缺陷：选项名写成 downloadBudgetMs（src 自 #64 起叫 downloadMaxTotalMs），1.2s 预算从未生效，于是走默认 30 分钟预算把 1MB 下完，「压根没有失败终态」被误读成「预算耗尽被报成无响应」。"
     },
     "c2": {
       "bucket": "C 极端环境",

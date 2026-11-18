@@ -79,4 +79,6 @@ node scripts/compat/probe.mjs --list                         # 46 条特性及�
 
 ## 只想看缺陷
 
-看 `baseline.json` 里 `verdict: "known-defect"` 的四条（a2 / a3 / c1 / c2 / c3）：它们的红色断言就是真产品缺陷，附了严重度与影响面。**不要为了让它们变绿去改断言或改产品代码**——确认缺陷被修之后再更新 baseline。
+看 `baseline.json` 里 `verdict: "known-defect"` 的用例：**当前无**——15 条全是 `green`（a2 / a3 / c2 / c3 在各自修复单里转绿；c1 在 2026-11-19 的修正里查明是**假缺陷**：用例传了 `src/` 里不存在的选项名 `downloadBudgetMs`，1.2s 预算从未生效，外加两处断言写错、一处靠硬编码常量才算绿，产品本身没问题）。
+
+判定方向规则：`--record` **只翻 green / known-defect，从不重写 `construct` / `expect` / `actual` 文本**，也不会动 REGRESSION 项（变绿 / 变红都算信号，要人判）。所以**缺陷确认修复后跑 `node tests/adversarial/run-adversarial.mjs --record` 同步 baseline，再人工复核判定方向**——只跑 `--record` 不复核，就会留下一句和代码对不上的手写描述（c1 的记录就这样漂了：`actual` 写着 `historyImportUrlStalled`，而那时用例连预算都没传进去）。
