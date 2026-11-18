@@ -26,13 +26,15 @@ public class ExportTextPlugin extends Plugin {
     public synchronized void start(PluginCall call) {
         if (activeOutput != null) { call.reject("已有导出正在进行", "BUSY"); return; }
         String name = call.getString("name", "deepseek-export.txt").replaceAll("[^a-zA-Z0-9._-]", "_");
+        String mimeType = call.getString("mimeType", "text/plain");
+        if (!mimeType.equals("text/plain") && !mimeType.equals("application/json")) { call.reject("文件类型不支持", "INVALID_MIME"); return; }
         try {
             activeFile = new File(getContext().getCacheDir(), "export-" + UUID.randomUUID() + ".part");
             activeOutput = new FileOutputStream(activeFile);
             activeBytes = 0;
             Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
             intent.addCategory(Intent.CATEGORY_OPENABLE);
-            intent.setType("text/plain");
+            intent.setType(mimeType);
             intent.putExtra(Intent.EXTRA_TITLE, name);
             startActivityForResult(call, intent, "exportResult");
         } catch (Exception error) { cleanup(); call.reject("打开保存位置失败", "START_FAILED"); }
@@ -52,7 +54,7 @@ public class ExportTextPlugin extends Plugin {
         if (activeOutput == null || activeFile == null || destination == null) { call.reject("没有正在进行的导出", "NO_EXPORT"); return; }
         try {
             activeOutput.flush(); activeOutput.getFD().sync(); activeOutput.close(); activeOutput = null;
-            try (FileInputStream input = new FileInputStream(activeFile); FileOutputStream output = new FileOutputStream(getContext().getContentResolver().openFileDescriptor(destination, "w").getFileDescriptor())) {
+            try (FileInputStream input = new FileInputStream(activeFile); android.os.ParcelFileDescriptor descriptor = getContext().getContentResolver().openFileDescriptor(destination, "w"); FileOutputStream output = new FileOutputStream(descriptor.getFileDescriptor())) {
                 byte[] buffer = new byte[32768]; int count;
                 while ((count = input.read(buffer)) != -1) output.write(buffer, 0, count);
                 output.flush();
@@ -67,7 +69,7 @@ public class ExportTextPlugin extends Plugin {
     @ActivityCallback
     private synchronized void exportResult(PluginCall call, ActivityResult result) {
         if (result.getResultCode() != android.app.Activity.RESULT_OK || result.getData() == null || result.getData().getData() == null) {
-            cleanup(); call.reject("已取消保存", "CANCELLED"); return;
+            cleanup(); JSObject response = new JSObject(); response.put("status", "cancelled"); call.resolve(response); return;
         }
         destination = result.getData().getData();
         JSObject response = new JSObject(); response.put("id", UUID.randomUUID().toString()); call.resolve(response);

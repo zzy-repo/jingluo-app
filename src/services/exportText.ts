@@ -1,7 +1,7 @@
 import { Capacitor, registerPlugin } from '@capacitor/core'
 
 interface ExportTextBridge {
-  start(options: { name: string; mimeType: string }): Promise<{ id: string }>
+  start(options: { name: string; mimeType: string }): Promise<{ id?: string; status?: 'ready' | 'cancelled' }>
   writeChunk(options: { id: string; data: string }): Promise<void>
   finish(options: { id: string }): Promise<{ status: 'saved' | 'cancelled' }>
   abort(options: { id: string }): Promise<void>
@@ -29,17 +29,17 @@ const chunkUtf8 = (text: string): string[] => {
 }
 
 export const saveText = async (options: { filename: string; mimeType: string; text: string }): Promise<'saved' | 'cancelled'> => {
-  if (!Capacitor.isNativePlatform()) {
-    throw new Error('NATIVE_EXPORT_UNAVAILABLE')
-  }
-  const { id } = await nativeExport.start({ name: options.filename, mimeType: options.mimeType })
+  if (!Capacitor.isNativePlatform()) throw new Error('NATIVE_EXPORT_UNAVAILABLE')
+  let id: string | undefined
   try {
-    for (const data of chunkUtf8(options.text)) {
-      await nativeExport.writeChunk({ id, data })
-    }
+    const started = await nativeExport.start({ name: options.filename, mimeType: options.mimeType })
+    if (started.status === 'cancelled' || !started.id) return 'cancelled'
+    id = started.id
+    for (const data of chunkUtf8(options.text)) await nativeExport.writeChunk({ id, data })
     return (await nativeExport.finish({ id })).status
   } catch (error) {
-    await nativeExport.abort({ id }).catch(() => {})
+    if (id) await nativeExport.abort({ id }).catch(() => {})
+    if ((error as { code?: string })?.code === 'CANCELLED') return 'cancelled'
     throw error
   }
 }
