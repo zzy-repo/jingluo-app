@@ -28,6 +28,30 @@ gh issue edit <n> --remove-label status:review --add-label status:done
 gh issue close <n>
 ```
 
+### 网络：GitHub 必须走代理
+
+本机直连 github 不通（`github.com` 被解析到 `57.155.223.240`；`git fetch` 报
+`RPC failed; curl 28 ... port 443`，`git push` 报 `GnuTLS recv error (-110)`）。
+**所有** fetch / push / ls-remote / gh 命令都要带代理，否则表现为超时或 TLS 中断：
+
+```bash
+export https_proxy=http://127.0.0.1:7890
+export http_proxy=http://127.0.0.1:7890
+
+# 一次性写法（不常驻环境变量）
+timeout 120 env https_proxy=http://127.0.0.1:7890 http_proxy=http://127.0.0.1:7890 \
+  git fetch origin --prune
+timeout 120 env https_proxy=http://127.0.0.1:7890 http_proxy=http://127.0.0.1:7890 \
+  git push --force-with-lease=<branch>:<old-sha> origin <branch>
+
+# 不依赖本地 ref 缓存的复核（推完必查）
+timeout 60 env https_proxy=http://127.0.0.1:7890 git ls-remote --heads origin <branch>
+# socks5 亦可：-x socks5h://127.0.0.1:7890，或 ALL_PROXY=socks5h://127.0.0.1:7890
+```
+
+磁盘卫生（清 `node_modules` 不删 worktree）见
+[`docs/RELEASE-MANUAL.md`](docs/RELEASE-MANUAL.md) 第 10 节第 6 条。
+
 ## 禁止
 
 - 提交真实 API Key、管理 Token、签名下载链接

@@ -282,6 +282,61 @@ adb logcat -d | tail -50
    有改动就先 commit 或 `git stash`（`worktree remove` 遇脏目录会拒绝，别加 `--force` 硬删）。
 5. 不写自动清理脚本：删除是不可逆操作，谁在用哪个 worktree 只有当下的人知道，必须人看 `git worktree list` 再动手。
 
+6. **清 `node_modules` 而不是删 worktree**（磁盘紧张时首选，比删 worktree 安全得多）：
+
+   先分清哪些 worktree 的 `node_modules` 是**真目录**、哪些只是**软链**——软链只有 31 字节，清它毫无意义：
+
+   ```bash
+   for d in /root/worktrees/*/; do
+     [ -e "$d/node_modules" ] || continue
+     printf '%-40s %s\n' "$d" \
+       "$( [ -L "$d/node_modules" ] && echo "symlink -> $(readlink "$d/node_modules")" \
+          || du -sh "$d/node_modules" | cut -f1 )"
+   done
+   ```
+
+   只清同时满足以下三条的 worktree 的 `node_modules`，其余一律不动：
+
+   - 不在保留名单：`deepseek-integration-next`、`deepseek-release-beta8-full`、`deepseek-compat-matrix`、`deepseek-test-baseline`、`deepseek-pr16`、`deepseek-issue-standard`、`deepseek-merge-pr16`、`deepseek-legacy-bundle-v2`，以及任何 `release/*` 分支的 worktree；
+   - `node_modules` 是真目录，不是软链；
+   - 该 worktree 内**除 `node_modules` 外**的文件最近 90 分钟没有改动：
+     ```bash
+     find <wt> -path <wt>/node_modules -prune -o -type f -newermt '-90 minutes' -print -quit
+     ```
+
+   执行（只删这一个目录；源码、未跟踪证据、`.git` 全留）：
+
+   ```bash
+   before=$(du -sb <wt>/node_modules | cut -f1)
+   rm -rf <wt>/node_modules
+   echo "<wt> freed $before bytes, now $(du -sh <wt> | cut -f1)"
+   ```
+
+   要再跑构建 / 测试时，一行还原成共享依赖（仓库里多数 worktree 本来就是这个形态，`/root/deepseek-app/node_modules` 是唯一的真实副本，别删它）：
+
+   ```bash
+   ln -s /root/deepseek-app/node_modules <wt>/node_modules
+   ```
+
+   **事实基线（2026-11-18 实测）**：`/root/worktrees` 下 29 个 worktree 显示「有 node_modules」，其中只有 **12 个是真目录**（各约 320 MB），另外 **19 个是 31 字节软链**指向 `/root/deepseek-app/node_modules`；按 29 × 320 MB 估占用会误判磁盘。当日按上述三条清掉 10 个真目录，`/root/worktrees` 从 **4.07 GiB 降到 1.40 GiB（−2.68 GiB）**，worktree 数量不变、源码与未跟踪证据零丢失。
+
+7. **连不上 GitHub 时先查代理**：本机直连不通（`github.com` 被解析到 `57.155.223.240`，`git fetch` 报 `RPC failed; curl 28 ... port 443`，`git push` 报 `GnuTLS recv error (-110)`）。所有 fetch / push / ls-remote 必须走代理 `127.0.0.1:7890`（http 与 socks5 均可用）：
+
+   ```bash
+   export https_proxy=http://127.0.0.1:7890
+   export http_proxy=http://127.0.0.1:7890
+
+   # 一次性写法（不常驻环境变量）
+   timeout 120 env https_proxy=http://127.0.0.1:7890 http_proxy=http://127.0.0.1:7890 \
+     git fetch origin --prune
+   timeout 120 env https_proxy=http://127.0.0.1:7890 http_proxy=http://127.0.0.1:7890 \
+     git push --force-with-lease=<branch>:<old-sha> origin <branch>
+
+   # 不依赖本地 ref 缓存的复核（推完必查）
+   timeout 60 env https_proxy=http://127.0.0.1:7890 git ls-remote --heads origin <branch>
+   # socks5 亦可：-x socks5h://127.0.0.1:7890，或 ALL_PROXY=socks5h://127.0.0.1:7890
+   ```
+
 ---
 
 ## 11. 门禁没了，最小自检还是要跑
