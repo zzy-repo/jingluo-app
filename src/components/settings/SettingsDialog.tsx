@@ -37,6 +37,7 @@ import { showToast } from '../base/toastState.js'
 import { ApiConfigFields, ApiKeyConfirm, useApiKeyEditor } from './ApiConfigFields.js'
 import { AppUpdateField } from './AppUpdateField.js'
 import { ChatBackgroundField } from './ChatBackgroundField.js'
+import { OursServicesRow } from './OursServicesDialog.js'
 import { FeedbackDialog } from './FeedbackDialog.js'
 import { closeSettings, useSettingsDialog, type SettingsSection } from './settingsDialogState.js'
 import { MOTION_EXIT, usePresence } from '../../utils/usePresence.js'
@@ -117,6 +118,8 @@ const SettingsContent = ({ visible }: { visible: boolean }) => {
           ) : (
             <>
               <ApiConfigFields editor={apiKeyEditor} />
+              {/* 额度查询 / 套餐 / 卡密兑换 / 订单状态：只在「我们的渠道」下出现 */}
+              <OursServicesRow />
               <ChatBackgroundField />
               <ImportHistory historyImport={historyImport} disabled={historyBusy} />
               <ExportHistory disabled={historyBusy} />
