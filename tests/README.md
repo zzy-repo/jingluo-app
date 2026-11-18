@@ -18,6 +18,26 @@ tests/
 
 ---
 
+## 0. 协作隔离与小步运行（test-runtime）
+
+- 开发各用独立 worktree/分支；先检查目录和分支不存在，再从已确认的 `origin/main` 建立。worktree 隔离文件与索引，**不隔离 CPU、内存、端口、浏览器或 pnpm store**。UI/clipboard 工作期间只跑下面的轻量 fixture，别启动全仓并发。
+- 发布使用固定 commit 的独立工作树和私有产物目录，记录 commit、构建类型、构建参数、产物哈希；不要把正在开发的工作树或共享 `dist/` 当发布源。标准/内测产物分开且只读复用，路径本身不证明版本或构建类型。
+- 本轮审计定位的重复编译热点：`diagnostics-contract` 原先每次强制 rspack build；`auto-title` 缺标准包时隐式 build，且输出硬编码。仅改这两套：注入 `STANDARD_DIST_DIR`（auto-title 也接受 `DIST_DIR`），contract 的 `DIST_DIR` 指内测包；缺 `index.html` 立即失败，**不自动 rebuild**。需要构建时先向协作者报告，再由产物拥有者单次构建、记录固定 commit；本轮没有构建。
+- 两套 suite 改用共享静态服务 helper：`listen(0)` 原子分配 loopback 端口，启动成功后才进入浏览器步骤；关闭自身 server 并等待完成。显式 `PORT` / `STANDARD_PORT` 仍支持，发布服务必须记录并独占所选端口。其他 suite 的固定端口、截图路径和生命周期尚未全面迁移。
+- runner 串行，每个文件默认 180 秒 deadline；`--timeout-ms` 可显式调整，超时报 TIMEOUT 和非零退出。实时透传 stdout/stderr、记录墙钟总耗时和 JSON；无匹配（包括 `--list`）返回 1，参数错误返回 2。不自动重试：`--case` 精确指定文件，`--failed-from` 仅选择前份 JSON 的失败文件，可叠加 `--case` 缩小。
+- 每个 case 使用 `mkdtemp` 并注入 `TEST_TMP_DIR` / `TMPDIR` / `TMP` / `TEMP`，完成后移除。POSIX 为自身子进程创建独立进程组，正常完成、超时与中断均只清理该组，TERM 后升级 KILL，等待管道关闭；不按名称清理其他服务。Windows 当前仅清理直接子进程，完整后代回收仍待实现；脱离进程组的 daemon 也不在此保证内。
+
+```bash
+# 无依赖、无浏览器、无 build 的基础设施回归
+node --test tests/unit/test-runtime.test.mjs
+node tests/run-layer.mjs unit --case test-runtime.test.mjs --json /tmp/runtime-result.json
+node tests/run-layer.mjs integration --case auto-title.test.mjs --timeout-ms 180000 --json /tmp/title-result.json
+node tests/run-layer.mjs integration --failed-from /tmp/title-result.json --case auto-title.test.mjs
+# 在上面的 integration 命令前注入已有产物；不在测试脚本里编译
+# STANDARD_DIST_DIR=/private/artifacts/COMMIT/standard
+# DIST_DIR=/private/artifacts/COMMIT/internal（仅 contract 还需要此包）
+```
+
 ## 1. 环境要求
 
 | 项 | 要求 | 说明 |
@@ -63,7 +83,7 @@ node tests/run-layer.mjs integration --bail          # 第一个失败就停
 会被第一个 `exit` 带走），汇总 PASS/FAIL 与耗时，任一失败退出码非 0。用例如果改写成 `node:test`
 风格（文件里 `import 'node:test'`），runner 会自动改用 `node --test <file>`。
 `tests/integration/` 里「自己起静态服务」的用例（internal-build / motion / diagnostics /
-diagnostics-contract / auto-title）**不吃外部 `APP_URL`**，runner 会把 `APP_URL` 清空让它们用默认端口。
+diagnostics-contract / auto-title）**不吃外部 `APP_URL`**，runner 会把 `APP_URL` 清空；其中 auto-title / diagnostics-contract 已使用随机临时端口，其余仍沿用历史默认端口。
 
 | 层 | 命令 | 预计耗时 | 前置条件 |
 | --- | --- | --- | --- |
@@ -89,7 +109,7 @@ E2E_API_KEY=sk-xxx node tests/e2e/real-upstream.test.mjs
 | --- | --- |
 | `integration/paths` `provider-anthropic` `caps` `request-body` `upstream-html` `probe-auth` `probe-nokey` `legacy-config` `url-import-web` `url-import-native` `mode-switch` `full-acceptance` | 一份**标准构建**挂在 `APP_URL`（默认 5181）；语音相关用例要求 `127.0.0.1` 这类安全上下文 |
 | `integration/internal-build` `motion` `diagnostics` | 一份**内测构建**（`pnpm build:internal`）在 `dist/`；`internal-build` 还要 `ip addr add 123.207.199.196/32 dev lo` |
-| `integration/auto-title` `diagnostics-contract` | 无外部前置：自己 `DIST_OUT=dist-standard` 构建 + 自己起静态服务（会占端口 5295/5296） |
+| `integration/auto-title` `diagnostics-contract` | 预构建标准包 `STANDARD_DIST_DIR`（默认 dist-standard）；contract 另需内测包 `DIST_DIR`。只读复用、不隐式构建；自建服务默认随机 loopback 端口 |
 | `integration/mode-switch-plain` | 两份产物：`PLAIN_URL`（当前标准构建）/ `BASELINE_URL`（改动前 baseline），默认 5191 / 5192 |
 | `e2e/real-upstream` | `E2E_API_KEY` + 真上游；**跑之前确认上游 IP 没被绑在 lo 上**（`ip addr del 123.207.199.196/32 dev lo`） |
 | `e2e/diagnostics-upload` | 真实反馈后端可达（会真的提交一条反馈） |

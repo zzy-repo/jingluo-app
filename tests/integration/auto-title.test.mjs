@@ -3,8 +3,8 @@
 //
 //   cd /root/deepseek-app && node tests/integration/auto-title.test.mjs
 //
-// 被测页面是**标准构建**（用户可切换服务类型、自填地址），脚本自己构建到 dist-standard/
-// （DIST_OUT 环境变量，不动部署用的 dist/）并拉起静态服务；上游全部用 page.route 打桩，
+// 被测页面是预构建标准产物（STANDARD_DIST_DIR / DIST_DIR），脚本只读复用并起临时端口服务；
+// 上游全部用 page.route 打桩，
 // 不连任何外网、不依赖真实 IP。
 //
 // 断言（对应任务书 9 条验收）：
@@ -19,17 +19,15 @@
 //   [9] console error = 0
 //   [10] 附加：OpenAI 兼容模式的标题请求走 {base}/v1/chat/completions（任务书要求的接口分流）
 //   [11] 附加：部署验证——对 http://127.0.0.1:5181（可用 DEPLOY_URL 覆盖）再跑一遍成功路径，不可达则跳过
-import { execFileSync, spawn } from 'node:child_process'
-import { existsSync } from 'node:fs'
+import { serveDist, requireDist } from '../helpers/runtime.mjs'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import { chromium } from 'playwright'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const ROOT = path.resolve(HERE, '../..')
-const STANDARD_DIST = process.env.STANDARD_DIST_DIR || path.join(ROOT, 'dist-standard')
-const PORT = process.env.PORT || '5294'
-const APP_URL = process.env.APP_URL || `http://127.0.0.1:${PORT}`
+const STANDARD_DIST = await requireDist(process.env.STANDARD_DIST_DIR || process.env.DIST_DIR || path.join(ROOT, 'dist-standard'))
+let APP_URL
 const KEY = 'sk-auto-title-acceptance-key'
 const REPLY = '验收用 mock 回复。'
 /** 「去掉语气前缀 → 取前 20 字符 → 回退到句读处 → 补省略号」的期望值 */
@@ -48,41 +46,14 @@ const note = (message) => {
   console.log(`  ·   ${message}`)
 }
 
-// ---------- 0) 标准构建 + 静态服务 ----------
-if (!existsSync(path.join(STANDARD_DIST, 'index.html'))) {
-  console.log('· 构建标准产物到 dist-standard（DIST_OUT=dist-standard）…')
-  execFileSync(
-    path.join(ROOT, 'node_modules', '.bin', 'rspack'),
-    ['build', '-c', 'rspack.config.ts'],
-    {
-      cwd: ROOT,
-      env: { ...process.env, NODE_ENV: 'production', DIST_OUT: 'dist-standard' },
-      stdio: 'inherit',
-    }
-  )
-}
-const children = []
-const staticServer = spawn(
-  'python3',
-  ['-m', 'http.server', PORT, '--bind', '127.0.0.1', '--directory', STANDARD_DIST],
-  {
-    cwd: ROOT,
-    stdio: 'ignore',
-  }
-)
-children.push(staticServer)
-const cleanup = () => {
-  for (const child of children) {
-    try {
-      child.kill('SIGTERM')
-    } catch {
-      // 已退出
-    }
-  }
-}
-await new Promise((resolve) => setTimeout(resolve, 900))
-
-const browser = await chromium.launch()
+// ---------- 0) Reuse a private prebuilt artifact; bind port atomically ----------
+const staticServer = await serveDist(STANDARD_DIST, { port: process.env.PORT || 0 })
+APP_URL = staticServer.url
+const cleanup = () => staticServer.close()
+let browser
+try { browser = await chromium.launch() }
+catch (error) { await cleanup(); throw error }
+try {
 const allConsoleErrors = []
 /** 浏览器对非 2xx 响应的资源日志（HTTP 500 用例必然产生），口径同 tests/integration/full-acceptance.test.mjs */
 const allResourceNoise = []
@@ -810,8 +781,9 @@ await runTitleScenario({
   }
 }
 
-await browser.close()
-cleanup()
+} finally {
+  try { await browser.close() } finally { await cleanup() }
+}
 
 console.log(`\n${failures.length === 0 ? 'PASS' : 'FAIL'} tests/integration/auto-title.test.mjs`)
 if (evidence.length > 0) {

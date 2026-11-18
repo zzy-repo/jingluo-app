@@ -1,180 +1,81 @@
 #!/usr/bin/env node
-// 分层测试 runner（适配器，不重写任何既有用例）
-//
-//   node tests/run-layer.mjs unit                 纯逻辑，秒级
-//   node tests/run-layer.mjs integration          浏览器 + mock 上游，分钟级
-//   node tests/run-layer.mjs e2e                  真上游 + 真 UI（需 E2E_API_KEY）
-//   node tests/run-layer.mjs device               模拟器/真机（需 adb + 已启动的 AVD）
-//   node tests/run-layer.mjs all                  依次跑 unit → integration
-//
-// 可选参数：
-//   --only <子串>   只跑文件名包含该子串的用例（例：--only motion）
-//   --bail          第一个失败就停
-//   --list          只列出将执行的用例，不执行
-//
-// 为什么不直接 import()：仓库里的用例都是「自执行 + process.exit()」风格的历史脚本
-// （自建 assert + 打印 ok/✗）。同进程 import() 会被第一个 process.exit() 直接带走，
-// 所以这里统一用子进程执行、退出码判定，既不动用例也能汇总 PASS/FAIL。
-// 用例若改用 node:test（import 'node:test'），runner 会自动改用 `node --test <file>` 执行。
-//
-// 所有用例的 cwd 都是仓库根目录（与历史跑法一致），因此测试内的相对路径（dist/、docs/ui/）不变。
-import { spawn } from 'node:child_process'
-import { readdir, readFile } from 'node:fs/promises'
+// Sequential adapter for legacy self-executing scripts and node:test files.
+import { readdir, readFile, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { runCase } from './helpers/runtime.mjs'
 
 const TESTS_DIR = path.dirname(fileURLToPath(import.meta.url))
 const ROOT = path.resolve(TESTS_DIR, '..')
-
-const LAYERS = {
-  unit: { dir: 'unit', hint: '纯逻辑、零浏览器、毫秒级' },
-  integration: { dir: 'integration', hint: '浏览器 + mock 上游、分钟级' },
-  e2e: { dir: 'e2e', hint: '真上游 + 真 UI，需要 E2E_API_KEY' },
-  device: { dir: 'device', hint: '模拟器/真机，需要 adb + AVD' },
-}
-
-const argv = process.argv.slice(2)
-const flags = new Set(argv.filter((a) => a.startsWith('--') && a !== '--only'))
-const onlyIndex = argv.indexOf('--only')
-const only = onlyIndex >= 0 ? argv[onlyIndex + 1] : ''
-const layerArg = argv.find((a) => !a.startsWith('--') && a !== only) || ''
-
-const plan = layerArg === 'all' ? ['unit', 'integration'] : layerArg ? [layerArg] : []
-if (plan.length === 0 || plan.some((layer) => !LAYERS[layer])) {
-  console.error('用法：node tests/run-layer.mjs <unit|integration|e2e|device|all> [--only <子串>] [--bail] [--list]')
-  console.error(`可用层：${Object.keys(LAYERS).join(', ')}, all`)
-  process.exit(2)
-}
-
-/** 该层要跑的文件（按文件名排序，保证输出稳定） */
-const filesOf = async (layer) => {
-  const dir = path.join(TESTS_DIR, LAYERS[layer].dir)
-  let names = []
-  try {
-    names = (await readdir(dir)).filter((name) => name.endsWith('.test.mjs'))
-  } catch {
-    return []
-  }
-  return names
-    .filter((name) => (only ? name.includes(only) : true))
-    .sort()
-    .map((name) => path.join(dir, name))
-}
-
+const LAYERS = ['unit', 'integration', 'e2e', 'device']
+const SELF_SERVED = new Set(['internal-build', 'motion', 'diagnostics', 'diagnostics-contract', 'auto-title'].map((s) => `${s}.test.mjs`))
 const rel = (file) => path.relative(ROOT, file).split(path.sep).join('/')
 
-// 自己起静态服务的用例（它们自己 build/serve 那一份产物）：这些用例绝不能被外部的
-// APP_URL 覆盖，否则「整层一起跑」时会去打标准构建而全部失败。清空 APP_URL 让它们
-// 回落到自己的 default（127.0.0.1:<自己的端口>）。
-const SELF_SERVED = new Set([
-  'internal-build.test.mjs',
-  'motion.test.mjs',
-  'diagnostics.test.mjs',
-  'diagnostics-contract.test.mjs',
-  'auto-title.test.mjs',
-])
-
-/** 用 node:test 写的用例走 `node --test`，历史自执行脚本直接 `node <file>` */
-const usesNodeTest = async (file) =>
-  /from\s+['"]node:test['"]|require\(['"]node:test['"]\)/.test(await readFile(file, 'utf8'))
-
-const runFile = async (file) =>
-  new Promise((resolve) => {
-    const nodeTest = usesNodeTestCache.get(file)
-    const args = nodeTest ? ['--test', file] : [file]
-    const startedAt = Date.now()
-    const env = { ...process.env }
-    if (SELF_SERVED.has(path.basename(file))) env.APP_URL = ''
-    const child = spawn(process.execPath, args, {
-      cwd: ROOT,
-      env,
-      stdio: ['ignore', 'pipe', 'pipe'],
-    })
-    const tail = []
-    const keep = (chunk) => {
-      tail.push(chunk.toString())
-      if (tail.length > 400) tail.splice(0, tail.length - 400)
+async function main() {
+  const argv = process.argv.slice(2)
+  let layer, only = '', caseName = '', json, failedFrom, timeoutMs = 180000
+  const flags = new Set()
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i]
+    if (['--only', '--case', '--json', '--failed-from', '--timeout-ms'].includes(arg)) {
+      const value = argv[++i]
+      if (!value || value.startsWith('--')) throw new Error(`Missing value: ${arg}`)
+      if (arg === '--only') only = value
+      if (arg === '--case') caseName = value
+      if (arg === '--json') json = value
+      if (arg === '--failed-from') failedFrom = value
+      if (arg === '--timeout-ms') timeoutMs = Number(value)
+    } else if (['--bail', '--list'].includes(arg)) flags.add(arg)
+    else if (!arg.startsWith('-') && !layer) layer = arg
+    else throw new Error(`Unknown argument: ${arg}`)
+  }
+  if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1) throw new Error('timeout-ms must be a positive integer')
+  const plan = layer === 'all' ? ['unit', 'integration'] : [layer]
+  if (plan.some((name) => !LAYERS.includes(name))) throw new Error('Usage: node tests/run-layer.mjs <unit|integration|e2e|device|all> [--only substring] [--case exact-path] [--timeout-ms 180000] [--json result.json] [--failed-from result.json] [--bail] [--list]')
+  let failed
+  if (failedFrom) {
+    const report = JSON.parse(await readFile(failedFrom, 'utf8'))
+    if (!Array.isArray(report.results) || report.results.some((r) => typeof r.file !== 'string' || typeof r.ok !== 'boolean')) throw new Error('Invalid previous report')
+    failed = new Set(report.results.filter((r) => !r.ok).map((r) => r.file))
+  }
+  const selected = []
+  for (const name of plan) {
+    // Missing/unreadable layer is an infrastructure error, never an empty PASS.
+    const names = await readdir(path.join(TESTS_DIR, name))
+    for (const basename of names.filter((n) => n.endsWith('.test.mjs')).sort()) {
+      const file = path.join(TESTS_DIR, name, basename)
+      if (only && !basename.includes(only)) continue
+      if (caseName && caseName !== rel(file) && caseName !== basename) continue
+      if (failed && !failed.has(rel(file))) continue
+      selected.push({ layer: name, file })
     }
-    child.stdout.on('data', (chunk) => {
-      process.stdout.write(chunk)
-      keep(chunk)
-    })
-    child.stderr.on('data', (chunk) => {
-      process.stderr.write(chunk)
-      keep(chunk)
-    })
-    child.on('error', (error) => {
-      resolve({ ok: false, ms: Date.now() - startedAt, tail: [String(error)] })
-    })
-    child.on('close', (code, signal) => {
-      resolve({ ok: code === 0 && !signal, ms: Date.now() - startedAt, tail })
-    })
-  })
-
-const usesNodeTestCache = new Map()
-
-const main = async () => {
-  const all = []
-  for (const layer of plan) {
-    const files = await filesOf(layer)
-    all.push({ layer, files })
   }
-
-  const total = all.reduce((sum, { files }) => sum + files.length, 0)
-  if (total === 0) {
-    console.error(`没有匹配的用例（layer=${plan.join('/')}${only ? `, only=${only}` : ''}）`)
-    process.exit(1)
-  }
-
-  if (flags.has('--list')) {
-    for (const { layer, files } of all) {
-      console.log(`[${layer}] ${LAYERS[layer].hint}`)
-      for (const file of files) console.log(`  ${rel(file)}`)
-    }
-    return 0
-  }
-
-  for (const { files } of all) {
-    for (const file of files) usesNodeTestCache.set(file, await usesNodeTest(file))
-  }
-
+  const started = performance.now()
   const results = []
-  for (const { layer, files } of all) {
-    console.log(`\n${'='.repeat(70)}\n== 层：${layer}（${LAYERS[layer].hint}，${files.length} 个文件）\n${'='.repeat(70)}`)
-    for (const file of files) {
-      console.log(`\n${'-'.repeat(70)}\n>> ${rel(file)}\n${'-'.repeat(70)}`)
-      const result = await runFile(file)
-      results.push({ layer, file, ...result })
-      console.log(`<< ${result.ok ? 'PASS' : 'FAIL'} ${rel(file)}（${(result.ms / 1000).toFixed(1)}s）`)
-      if (!result.ok && flags.has('--bail')) {
-        console.log('\n（--bail：遇到失败即停止）')
-        return summarize(results)
-      }
-    }
+  if (flags.has('--list')) {
+    for (const item of selected) console.log(`[${item.layer}] ${rel(item.file)}`)
+    return selected.length ? 0 : 1
   }
-  return summarize(results)
-
-  function summarize(list) {
-    const failed = list.filter((r) => !r.ok)
-    console.log(`\n${'='.repeat(70)}\n== 汇总\n${'='.repeat(70)}`)
-    let current = ''
-    for (const r of list) {
-      if (r.layer !== current) {
-        current = r.layer
-        console.log(`[${current}]`)
-      }
-      console.log(`  ${r.ok ? 'PASS' : 'FAIL'}  ${rel(r.file)}  ${(r.ms / 1000).toFixed(1)}s`)
-    }
-    const ms = list.reduce((sum, r) => sum + r.ms, 0)
-    console.log(`\n共 ${list.length} 个文件：通过 ${list.length - failed.length}，失败 ${failed.length}（总耗时 ${(ms / 1000).toFixed(1)}s）`)
-    if (failed.length > 0) {
-      console.log('失败用例：')
-      for (const r of failed) console.log(`  - ${rel(r.file)}`)
-      return 1
-    }
-    console.log('全部通过 ✅')
-    return 0
+  let interrupted = false
+  for (const item of selected) {
+    console.log(`\n>> ${rel(item.file)} (timeout ${timeoutMs}ms)`)
+    const env = { ...process.env }
+    if (SELF_SERVED.has(path.basename(item.file))) env.APP_URL = ''
+    const result = await runCase(item.file, { cwd: ROOT, env, timeoutMs })
+    results.push({ layer: item.layer, file: rel(item.file), ...result })
+    console.log(`<< ${result.ok ? 'PASS' : result.timedOut ? 'TIMEOUT' : 'FAIL'} ${rel(item.file)} (${result.ms}ms)`)
+    if (result.interrupted) { interrupted = true; break }
+    if (!result.ok && flags.has('--bail')) break
   }
+  const failedCount = results.filter((r) => !r.ok).length
+  const totalMs = Math.round(performance.now() - started)
+  const report = { version: 1, totalMs, selected: selected.length, executed: results.length, passed: results.length - failedCount, failed: failedCount, results }
+  if (json) await writeFile(path.resolve(json), JSON.stringify(report, null, 2) + '\n')
+  if (!selected.length) console.error('No matching cases')
+  console.log(`\nTotal ${results.length}: PASS ${report.passed}, FAIL ${failedCount}; elapsed ${totalMs}ms`)
+  for (const r of results.filter((r) => !r.ok)) console.log(`Rerun: node tests/run-layer.mjs ${r.layer} --case ${r.file}`)
+  return interrupted ? 130 : selected.length && !failedCount ? 0 : 1
 }
 
-process.exit(await main())
+try { process.exitCode = await main() }
+catch (error) { console.error(error.message); process.exitCode = 2 }
