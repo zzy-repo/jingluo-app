@@ -11,6 +11,8 @@ import { registerHooks } from 'node:module'
 
 const stub = (name) => new URL(`../fixtures/url-import-stubs/${name}`, import.meta.url).href
 const limitModule = new URL('../../src/services/chat/history/importLimit.ts', import.meta.url).href
+// 失败原因分档（issue #111）同样用真模块：它不碰浏览器/网络，没有替换的必要
+const failureModule = new URL('../../src/services/chat/history/importFailure.ts', import.meta.url).href
 
 registerHooks({
   resolve(specifier, context, nextResolve) {
@@ -29,6 +31,9 @@ registerHooks({
     // 上限常量（issue #34）用**真模块**，本层断言的就是那个默认值，不能替换成桩
     if (specifier === './importLimit.js') {
       return { url: limitModule, shortCircuit: true }
+    }
+    if (specifier === './importFailure.js') {
+      return { url: failureModule, shortCircuit: true }
     }
     return nextResolve(specifier, context)
   },

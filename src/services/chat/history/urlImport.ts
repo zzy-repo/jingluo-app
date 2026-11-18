@@ -2,6 +2,7 @@ import { Capacitor, CapacitorHttp, type HttpResponse } from '@capacitor/core'
 import { errorMeta, record, recordAction, recordEvent, redactUrl } from '../../diagnostics/collector.js'
 import { importHistory } from '../backup.js'
 import { BackupError, fail } from './errors.js'
+import { classifyImportFailure, isBrowserOnline } from './importFailure.js'
 import { maxImportMegabytes, resolveMaxImportBytes, DEFAULT_MAX_IMPORT_BYTES } from './importLimit.js'
 
 /**
@@ -600,9 +601,13 @@ const fetchChunk = async (
         : fail('historyImportUrlTimeout')
     }
     if (isUnreachable(error)) {
-      recordDownloadFailure('unreachable', url, startedAt, { 'download.bytes': downloaded }, error)
-      trace?.({ at: Date.now() - startedAt, kind: 'error', bytes: downloaded, totalBytes: total, message: 'unreachable' })
-      return fail('historyImportUrlOffline')
+      // 「够不到网络」不再一律说成断网（#111）：ECONNREFUSED 说明链路通、对面没在监听，
+      // 与真的没网（DNS 失败 / navigator.onLine === false）是两回事，文案必须分开。
+      const refused = classifyImportFailure({ error, online: isBrowserOnline() }) === 'refused'
+      const reason = refused ? 'refused' : 'unreachable'
+      recordDownloadFailure(reason, url, startedAt, { 'download.bytes': downloaded }, error)
+      trace?.({ at: Date.now() - startedAt, kind: 'error', bytes: downloaded, totalBytes: total, message: reason })
+      return fail(refused ? 'historyImportUrlRefused' : 'historyImportUrlOffline')
     }
     if (isStreamBroken(error)) {
       recordDownloadFailure('interrupted', url, startedAt, { 'download.bytes': downloaded, percent }, error)

@@ -149,6 +149,7 @@ export const zh = {
   historyImportUrlBadSignature: '链接无效（签名错误），请重新复制完整链接',
   historyImportUrlForbidden: '没有权限访问该链接（403）：{detail}',
   historyImportUrlOffline: '网络已断开，请检查网络后重试',
+  historyImportUrlRefused: '连接被拒绝：服务器没有接受连接（服务未启动或被防火墙拦截），请稍后重试',
   historyImportUrlInterrupted: '网络连接中断（已下载 {percent}%），请检查网络后重试',
   historyImportUrlTimeoutPartial: '下载超时（已下载 {percent}%），请换更快的网络',
   historyImportUrlStalled: '下载长时间无响应，已自动停止（{done}/{total}）；可点「重试」重新下载',
