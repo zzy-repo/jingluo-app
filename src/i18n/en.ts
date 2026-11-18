@@ -658,4 +658,6 @@ export const en = {
   settingDouyinDescription: 'Tap the ID to copy it, then search for it in Douyin.',
   settingDouyinCopyAria: 'Copy Douyin ID',
   settingDouyinCopied: 'Douyin ID copied',
+  oursErrCustomerNeedsKey:
+    'Claim an API Key in the app first (without a Key we cannot resolve your customer id, so nothing was ordered)',
 } satisfies Record<keyof typeof zh, string>

@@ -23,7 +23,7 @@
  * （原生 HttpURLConnection，instanceFollowRedirects=false）取一次 Location。
  */
 import type { LinkedMessage } from '../../i18n/index.js'
-import { ensureCustomerId, readCachedCustomerId } from './customerId.js'
+import { ensureCustomerId, parseCustomerId, readCachedCustomerId } from './customerId.js'
 import { Capacitor, CapacitorHttp, registerPlugin } from '@capacitor/core'
 import { isOpenableCheckout, type OursHttpRequest, type OursHttpResult } from './api.js'
 
@@ -167,14 +167,16 @@ export const withBuyCustomerId = (url: string, customerId: number | null): strin
   if (!/\/buy$/u.test(parsed.pathname)) {
     return raw
   }
-  const existing = (parsed.searchParams.get('cid') ?? '').trim()
-  if (existing !== '') {
+  // Issue #135：`cid=` / `cid=NaN` / `cid=0` 在后端看来等于「没带 cid」，必须是正整数才算数。
+  const existing = parseCustomerId(parsed.searchParams.get('cid'))
+  if (existing !== null) {
     return parsed.href
   }
-  if (customerId === null) {
+  const cid = parseCustomerId(customerId)
+  if (cid === null) {
     return null
   }
-  parsed.searchParams.set('cid', String(customerId))
+  parsed.searchParams.set('cid', String(cid))
   return parsed.href
 }
 
@@ -221,5 +223,5 @@ export const setCustomerMissingNotice = (next: CustomerMissingNotice | null): vo
 }
 
 const warnMissingCustomerId = (): void => {
-  customerMissingNotice?.({ key: 'oursErrCustomerMissing' })
+  customerMissingNotice?.({ key: 'oursErrCustomerNeedsKey' })
 }

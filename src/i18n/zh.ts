@@ -637,4 +637,6 @@ export const zh = {
   settingDouyinDescription: '点一下号码即可复制，去抖音搜索就能找到。',
   settingDouyinCopyAria: '复制抖音号',
   settingDouyinCopied: '抖音号已复制',
+  oursErrCustomerNeedsKey:
+    '请先在 App 内领取 Key（没有 Key 就拿不到客户编号，本次没有下单）',
 } as const

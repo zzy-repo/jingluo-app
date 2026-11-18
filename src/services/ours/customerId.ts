@@ -120,7 +120,9 @@ export const ensureCustomerId = async (storage?: OrderStorage | null): Promise<n
   } catch {
     fresh = null
   }
-  resolved = fresh
+  // Issue #135：只记住**成功**的结果。失败（启动时还没网、设备还没绑定、还没领 Key）
+  // 以前会被记成「这个会话没有 cid」，之后每次点「去支付」都被直接拒绝，直到重启 App。
+  resolved = fresh === null ? undefined : fresh
   if (fresh !== null) {
     cacheCustomerId(fresh, storage)
   }

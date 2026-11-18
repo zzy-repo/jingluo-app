@@ -140,8 +140,8 @@ console.log('[1] /buy 必须带 cid（下单归属该客户）')
   eq(missing.kind === 'error' ? missing.code : '', 'CUSTOMER_ID_MISSING', '1.8 错误码 CUSTOMER_ID_MISSING')
   eq(
     missing.kind === 'error' ? missing.messageKey : '',
-    'oursErrCustomerMissing',
-    '1.9 有可展示的提示文案 key'
+    'oursErrCustomerNeedsKey',
+    '1.9 有可展示的提示文案 key（Issue #135：告知用户先领 Key）'
   )
   eq(blind.calls.length, 0, '1.10 一个请求都不发（绝不发不带 cid 的 /buy）')
 

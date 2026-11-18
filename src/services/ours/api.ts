@@ -33,7 +33,7 @@
 
 import { maskCard, maskKey } from './mask.js'
 import { ORDER_RESUME_MAX_AGE_MS, readStoredOrder, writeStoredOrder, type OrderStorage } from './orderStore.js'
-import { ensureCustomerId, readCachedCustomerId } from './customerId.js'
+import { ensureCustomerId, parseCustomerId, readCachedCustomerId } from './customerId.js'
 
 export { maskCard, maskDeviceId, maskKey, maskTail } from './mask.js'
 
@@ -118,6 +118,7 @@ export type OursMessageKey =
   | 'oursErrOrderTokenMissing'
   | 'oursErrCheckoutUnsupported'
   | 'oursErrCustomerMissing'
+  | 'oursErrCustomerNeedsKey'
   | 'oursOrderStatusPending'
   | 'oursOrderStatusPaid'
   | 'oursOrderStatusFulfilled'
@@ -463,8 +464,12 @@ export const buyUrl = (
   const base = `${OURS_API_BASE}/buy?plan=${encodeURIComponent(planId.trim())}`
   // Issue #115：下单一律带 cid（订单归属该客户）；显式传 null 表示「明知道没有 cid」，
   // 那就不要拼 cid —— 调用方（navigateTopLevel / startCheckout）会因此拒绝下单，而不是悄悄建单。
-  const cid = customerId === undefined ? readCachedCustomerId(storage) : customerId
-  return cid === null || cid === undefined ? base : `${base}&cid=${cid}`
+  // Issue #135：空串 / NaN / 0 / 负数一律按「没有 cid」处理 —— 拼出 `&cid=` 或 `&cid=NaN`
+  // 在后端看来就是「没带 cid」，又会退化成一张不属于任何人的单（新人 ¥1 能被无限次购买）。
+  const cid = parseCustomerId(
+    customerId === undefined ? readCachedCustomerId(storage) : customerId
+  )
+  return cid === null ? base : `${base}&cid=${cid}`
 }
 
 /** 付款回跳时地址栏带回来的查询参数：`?no=<out_trade_no>&order_token=<token>` */
@@ -557,12 +562,15 @@ export const startCheckout = async (
   }
   // Issue #115：拿不到 cid 就不下单。宁可让用户看到一句明确的提示，也不要建一张
   // 不知道属于谁的单——那正是「付了钱还显示等待支付」的成因。
-  const customerId =
+  const resolvedCustomerId =
     options.customerId === undefined
       ? (readCachedCustomerId(options.storage) ?? (await ensureCustomerId(options.storage)))
       : options.customerId
-  if (customerId === null || customerId === undefined) {
-    return { kind: 'error', code: 'CUSTOMER_ID_MISSING', messageKey: 'oursErrCustomerMissing' }
+  // Issue #135：0 / NaN / 空串 / 负数都不是「客户编号」，一律当没有 —— 否则会建出一张
+  // 后端认不出归属的单（付款后 /api/orders 查不到，App 一直显示「等待支付」）。
+  const customerId = parseCustomerId(resolvedCustomerId)
+  if (customerId === null) {
+    return { kind: 'error', code: 'CUSTOMER_ID_MISSING', messageKey: 'oursErrCustomerNeedsKey' }
   }
   const result = await transport({
     method: 'GET',

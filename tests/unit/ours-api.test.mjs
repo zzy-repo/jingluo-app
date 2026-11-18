@@ -219,7 +219,8 @@ console.log('\n[4] /buy：GET 一次、不跟随、从 Location 的 return_url �
   const refused = await startCheckout('p1', transport, { customerId: null })
   eq(refused.kind, 'error', '没有 cid → 直接报错')
   eq(refused.kind === 'error' ? refused.code : '', 'CUSTOMER_ID_MISSING', '错误码 CUSTOMER_ID_MISSING')
-  eq(zh[refused.kind === 'error' ? refused.messageKey : 'oursErrPlanMissing'], zh.oursErrCustomerMissing, '提示「缺少客户编号」')
+  // Issue #135：拿不到 cid 时的文案改成「请先在 App 内领取 Key」（新人多半还没有 Key）
+  eq(zh[refused.kind === 'error' ? refused.messageKey : 'oursErrPlanMissing'], zh.oursErrCustomerNeedsKey, '提示「请先在 App 内领取 Key」')
   eq(calls.length, 0, '一次 /buy 都没发（没有 cid 的下单会把单建到别人名下）')
 }
 

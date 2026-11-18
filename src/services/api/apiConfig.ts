@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { captureStateSnapshot, recordAction } from '../diagnostics/collector.js'
+import { cacheCustomerId, resetCustomerIdCache } from '../ours/customerId.js'
 import {
   DEFAULT_PROVIDER_KIND,
   getSpec,
@@ -224,8 +225,16 @@ export const setProviderKind = (kind: ProviderKind) => {
 /** 保存 API Key；空值等于清除（回到未配置状态） */
 export const setApiKey = (apiKey: string) => {
   const value = apiKey.trim()
+  const previous = getApiKey()
   write(CONFIG_KEYS.apiKey, value || null)
   useApiConfig.setState({ apiKey: value })
+  // Issue #135：换 Key 等于换账号，cid 是跟着人走的。旧 cid 留着会把新账号的订单挂到上一个
+  // 客户名下（付了钱 `/api/orders` 还是查不到，App 一直「等待支付」），所以换号就丢弃，
+  // 下次下单重新解析。同一把 Key 重复保存不动缓存，免得每次保存都白丢一次往返。
+  if (previous !== value) {
+    resetCustomerIdCache()
+    cacheCustomerId(null)
+  }
   // 只记「有没有 / 多长」，密钥原文绝不进日志
   recordAction('config_change', 'provider-api-key', {
     result: value ? 'saved' : 'cleared',
