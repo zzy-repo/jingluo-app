@@ -19,7 +19,9 @@ import {
   canImportFromUrl,
   importHistoryFromUrl,
   UrlImportCancelled,
+  type UrlImportProgress,
 } from '../../services/chat/history/urlImport.js'
+import { copyText } from '../../utils/clipboard.js'
 import { useIsMobile } from '../../app/viewport.js'
 import { useChatStore } from '../../services/chat/store.js'
 import {
@@ -297,7 +299,8 @@ const TtsVoiceSetting = () => {
 
 /**
  * 覆盖导入的二次确认，叠在设置弹窗上。
- * 链接导入在这一步之后还要下载，所以下载期间弹窗不关闭、按钮显示「下载中...」，可随时取消。
+ * 链接导入在这一步之后还要下载 → 解析 → 导入，全程不关闭弹窗：
+ * 逐阶段显示「已下载 8.4MB/20.2MB（42%）」这类真实进度，任何时候都能取消。
  */
 const ImportConfirm = ({
   historyImport,
@@ -305,7 +308,8 @@ const ImportConfirm = ({
   historyImport: ReturnType<typeof useHistoryImport>
 }) => {
   const t = useTranslate()
-  const downloading = historyImport.downloading
+  const progress = historyImport.progress
+  const percent = progressPercent(progress)
   return (
     <Modal
       title={t('historyImportConfirmTitle')}
@@ -319,16 +323,31 @@ const ImportConfirm = ({
           <Button
             variant="dangerOutlined"
             size="m"
-            disabled={downloading}
+            disabled={progress !== null}
             onClick={() => void historyImport.confirm()}
           >
-            {t(downloading ? 'historyImportUrlDownloading' : 'historyImportConfirm')}
+            {t(progress === null ? 'historyImportConfirm' : 'historyImportUrlDownloading')}
           </Button>
         </>
       }
     >
       <div className={styles.importConfirmText}>
-        {t(downloading ? 'historyImportUrlDownloadingHint' : 'historyImportConfirmDescription')}
+        {progress === null ? (
+          t('historyImportConfirmDescription')
+        ) : (
+          <div className={styles.progressBlock}>
+            <div className={styles.progressLabel}>{progressLabel(t, progress)}</div>
+            {percent === null ? null : (
+              <div className={styles.progressTrack}>
+                <div
+                  className={styles.progressFill}
+                  style={{ transform: `scaleX(${percent / 100})` }}
+                />
+              </div>
+            )}
+            <div className={styles.description}>{t('historyImportUrlDownloadingHint')}</div>
+          </div>
+        )}
       </div>
     </Modal>
   )
@@ -400,6 +419,15 @@ const errorStatus = (key: TranslationKey, error: unknown): Status => ({
   error: true,
 })
 
+/** 状态的最终文案（含失败原因），供显示与复制共用。 */
+const statusText = (t: ReturnType<typeof useTranslate>, status: Status): string =>
+  status === null
+    ? ''
+    : t(status.key, {
+        ...status.params,
+        ...(status.reason ? { message: t(status.reason, status.params) } : {}),
+      })
+
 /** 说明文字：有状态就显示状态（失败标红），否则显示静态说明。 */
 const CellText = ({ status, description }: { status: Status; description?: string }) => {
   const t = useTranslate()
@@ -408,14 +436,103 @@ const CellText = ({ status, description }: { status: Status; description?: strin
   }
   return (
     <div className={clsx(styles.description, status?.error && styles.error)}>
-      {status
-        ? t(status.key, {
-            ...status.params,
-            ...(status.reason ? { message: t(status.reason, status.params) } : {}),
-          })
-        : description}
+      {status ? statusText(t, status) : description}
     </div>
   )
+}
+
+/** 失败原因一眼能看完的字符数；更长的（带服务端原文）折叠到 4 行，可展开、可复制。 */
+const DETAIL_CLAMP_CHARS = 60
+
+/**
+ * 失败提示：默认最多 4 行（360dp 宽也不会被裁切），可展开看全文，
+ * 并可一键复制（长按选中复制同样可用）——用户反馈问题时要能把原文贴出来。
+ */
+const ErrorNotice = ({ text }: { text: string }) => {
+  const t = useTranslate()
+  const [expanded, setExpanded] = useState(false)
+  const long = text.length > DETAIL_CLAMP_CHARS
+  return (
+    <div className={styles.errorBox}>
+      <div className={clsx(styles.error, long && !expanded && styles.errorClamped)}>{text}</div>
+      {long || text.includes('403') ? (
+        <div className={styles.errorActions}>
+          {long ? (
+            <button
+              type="button"
+              className={styles.errorAction}
+              onClick={() => setExpanded((value) => !value)}
+            >
+              {t(expanded ? 'detailsCollapse' : 'detailsExpand')}
+            </button>
+          ) : null}
+          <button
+            type="button"
+            className={styles.errorAction}
+            onClick={() => void copyText(text).then((ok) => !ok && showToast(t('copyFailed')))}
+          >
+            {t('copy')}
+          </button>
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
+/** 字节数：弱网下「已下载 16KB」这种小数值也要看得见，所以 KB 之前不换算成小数。 */
+const formatBytes = (bytes: number): string => {
+  if (bytes < 1024) {
+    return `${bytes}B`
+  }
+  if (bytes < 1024 * 1024) {
+    return `${(bytes / 1024).toFixed(bytes < 10 * 1024 ? 1 : 0)}KB`
+  }
+  return `${(bytes / 1024 / 1024).toFixed(1)}MB`
+}
+
+/** 分阶段文案：下载（字节/百分比）→ 解析 → 导入（n/总数），取代原来恒定的「下载中...」。 */
+const progressLabel = (
+  t: ReturnType<typeof useTranslate>,
+  progress: UrlImportProgress
+): string => {
+  if (progress.phase === 'downloading') {
+    const done = formatBytes(progress.downloadedBytes)
+    if (progress.totalBytes === undefined || progress.totalBytes === 0) {
+      return t('historyImportUrlDownloadingBytes', { done })
+    }
+    const percent = Math.min(99, Math.round((progress.downloadedBytes / progress.totalBytes) * 100))
+    return t('historyImportUrlDownloadingProgress', {
+      done,
+      total: formatBytes(progress.totalBytes),
+      percent,
+    })
+  }
+  if (progress.phase === 'decoding') {
+    return t('historyImportUrlDecoding')
+  }
+  return progress.totalSessions === undefined
+    ? t('historyImportUrlImportingCount', { processed: progress.processed })
+    : t('historyImportUrlImporting', {
+        processed: progress.processed,
+        total: progress.totalSessions,
+      })
+}
+
+/** 进度条百分比：只在能算出比例时显示（下载有总大小 / 导入有会话总数）。 */
+const progressPercent = (progress: UrlImportProgress | null): number | null => {
+  if (!progress) {
+    return null
+  }
+  if (progress.phase === 'downloading') {
+    if (!progress.totalBytes) {
+      return null
+    }
+    return Math.min(100, Math.round((progress.downloadedBytes / progress.totalBytes) * 100))
+  }
+  if (progress.phase === 'importing' && progress.totalSessions) {
+    return Math.min(100, Math.round((progress.processed / progress.totalSessions) * 100))
+  }
+  return null
 }
 
 const SettingCell = ({
@@ -443,26 +560,61 @@ const SettingCell = ({
 /** 导入源：本地文件，或原生端的直链（先下载再走同一条导入链路）。 */
 type ImportSource = { kind: 'file'; file: File } | { kind: 'url'; url: string }
 
+/** 进度刷新的最小间隔：块之间本来就有 ~1s，这层节流保证不会每条进度都 setState。 */
+const PROGRESS_MIN_INTERVAL_MS = 100
+
+/** 链接导入的失败原因：直接展示原因本身（不再套「从链接导入失败：」前缀），关键信息在前半句。 */
+const urlErrorStatus = (error: unknown): Status =>
+  error instanceof BackupError
+    ? { key: error.key, params: error.params, error: true }
+    : {
+        key: 'historyImportFromUrlFailed',
+        params: { message: error instanceof Error ? error.message : String(error) },
+        error: true,
+      }
+
 /**
  * 导入状态：选中来源后先提示覆盖，确认后才真正导入。
- * 链接导入多一段下载：下载期间 modal 保持打开（按钮「下载中...」），取消后丢弃结果、界面立即恢复。
+ * 链接导入多一段「分阶段进度」：下载（字节/百分比）→ 解析 → 导入 n/总数；
+ * 进度节流 100ms，取消后界面上立刻回到可重试状态（下载结果被丢弃，不写任何数据）。
  */
 const useHistoryImport = () => {
   const [source, setSource] = useState<ImportSource | null>(null)
   const [busy, setBusy] = useState(false)
-  const [downloading, setDownloading] = useState(false)
+  const [progress, setProgress] = useState<UrlImportProgress | null>(null)
   const [status, setStatus] = useState<ImportStatus | null>(null)
   const [url, setUrl] = useState('')
   const importing = useRef(false)
   // 取消后仍可能有已发出的下载在跑：用自增的 run 标记作废旧结果，不影响新的一轮导入。
   const run = useRef(0)
   const abort = useRef<AbortController | null>(null)
+  const latest = useRef<UrlImportProgress | null>(null)
+  const lastEmit = useRef(0)
+
+  /** 节流后的进度写入：阶段变化立即生效，同一阶段最多 100ms 一次。 */
+  const emitProgress = (next: UrlImportProgress) => {
+    const previous = latest.current
+    const phaseChanged = previous === null || previous.phase !== next.phase
+    const now = Date.now()
+    if (!phaseChanged && now - lastEmit.current < PROGRESS_MIN_INTERVAL_MS) {
+      return
+    }
+    lastEmit.current = now
+    latest.current = next
+    setProgress(next)
+  }
+
+  const resetProgress = () => {
+    latest.current = null
+    lastEmit.current = 0
+    setProgress(null)
+  }
 
   const finish = (id: number) => {
     if (run.current === id) {
       importing.current = false
       setBusy(false)
-      setDownloading(false)
+      resetProgress()
     }
   }
 
@@ -478,13 +630,16 @@ const useHistoryImport = () => {
     }
   }
 
-  /** 下载 + 导入；取消后 (signal.aborted) 不提示、不写入。 */
+  /** 下载 + 解析 + 导入；取消后 (signal.aborted) 不提示、不写入。 */
   const importLink = async (link: string) => {
     const controller = new AbortController()
     abort.current = controller
-    setDownloading(true)
+    emitProgress({ phase: 'downloading', downloadedBytes: 0 })
     try {
-      const count = await importHistoryFromUrl(link, { signal: controller.signal })
+      const count = await importHistoryFromUrl(link, {
+        signal: controller.signal,
+        onProgress: emitProgress,
+      })
       setSource(null)
       setStatus({
         target: 'url',
@@ -492,10 +647,13 @@ const useHistoryImport = () => {
       })
     } catch (error) {
       if (controller.signal.aborted || error instanceof UrlImportCancelled) {
+        // 取消：不提示失败，界面上什么错误都不留。
+        setSource(null)
+        resetProgress()
         return
       }
       setSource(null)
-      setStatus({ target: 'url', message: errorStatus('historyImportFromUrlFailed', error) })
+      setStatus({ target: 'url', message: urlErrorStatus(error) })
     }
   }
 
@@ -520,27 +678,37 @@ const useHistoryImport = () => {
     }
   }
 
-  /** 取消：关闭弹窗并丢弃结果（CapacitorHttp 不能 abort，只能不再采用它的返回值）。 */
+  /** 取消：关闭弹窗并丢弃结果（CapacitorHttp 不能 abort，只能不发新块、不再采用它的返回值）。 */
   const cancel = () => {
     run.current += 1
     importing.current = false
     abort.current?.abort()
     abort.current = null
-    setDownloading(false)
+    resetProgress()
     setBusy(false)
     setSource(null)
+  }
+
+  /** 重试：从当前链接重新走一遍完整流程（下载 → 解析 → 导入）。 */
+  const retry = () => {
+    if (importing.current || url.trim() === '') {
+      return
+    }
+    setStatus(null)
+    setSource({ kind: 'url', url })
   }
 
   return {
     source,
     busy,
-    downloading,
+    progress,
     status,
     url,
     setUrl,
     selectFile: (file: File) => setSource({ kind: 'file', file }),
     selectUrl: () => setSource({ kind: 'url', url }),
     cancel,
+    retry,
     confirm,
   }
 }
@@ -611,14 +779,18 @@ const ImportHistoryUrl = ({
 }) => {
   const t = useTranslate()
   const blocked = disabled || historyImport.url.trim() === ''
+  const status = historyImport.status?.target === 'url' ? historyImport.status.message : null
+  const running = historyImport.progress !== null
   return (
     <div className={clsx(styles.cell, styles.row, styles.linkCell)}>
       <div className={styles.text}>
         <div className={styles.label}>{t('historyImportFromUrl')}</div>
-        <CellText
-          status={historyImport.status?.target === 'url' ? historyImport.status.message : null}
-          description={t('historyImportUrlDescription')}
-        />
+        {status?.error ? (
+          // 失败原因可能很长（带服务端原文）：换行 + 最多 4 行 + 可展开、可复制。
+          <ErrorNotice text={statusText(t, status)} />
+        ) : (
+          <CellText status={status} description={t('historyImportUrlDescription')} />
+        )}
       </div>
       <div className={styles.linkActions}>
         <div className={clsx(styles.apiKeyInput, styles.linkInput)}>
@@ -639,14 +811,26 @@ const ImportHistoryUrl = ({
             }}
           />
         </div>
+        {status?.error ? (
+          // 失败后不必回设置页重来：点一下就从这个链接重走完整流程。
+          <Button
+            variant="outlined"
+            size="m"
+            className={clsx(styles.cellButton, styles.retryButton)}
+            disabled={blocked || running}
+            onClick={() => historyImport.retry()}
+          >
+            {t('retry')}
+          </Button>
+        ) : null}
         <Button
           variant="outlined"
           size="m"
           className={clsx(styles.cellButton, styles.uploadButton)}
-          disabled={blocked}
+          disabled={blocked || running}
           onClick={() => historyImport.selectUrl()}
         >
-          {t(historyImport.downloading ? 'historyImportUrlDownloading' : 'historyImportUrlStart')}
+          {t(running ? 'historyImportUrlDownloading' : 'historyImportUrlStart')}
         </Button>
       </div>
     </div>

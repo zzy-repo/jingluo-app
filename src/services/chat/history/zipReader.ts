@@ -228,6 +228,18 @@ const readEntryOffset = async (file: File, entry: Entry, boundary: number) => {
   return start
 }
 
+/**
+ * 只解析中央目录、列出条目名（不读任何数据）：用于导入前拿到会话总数，让进度能显示 n/总数。
+ * 目录损坏时返回空数组，调用方退化为不显示总数（真正的校验仍由 readArchive 负责）。
+ */
+export const listArchivePaths = async (file: File): Promise<string[]> => {
+  try {
+    return (await readDirectory(file)).entries.map((entry) => entry.path)
+  } catch {
+    return []
+  }
+}
+
 export type ArchiveEntry = {
   path: string
   size: number

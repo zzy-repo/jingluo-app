@@ -109,11 +109,15 @@
 
 .text {
   display: flex;
-  flex: 1 0 0;
+  flex: 1 1 auto;
   flex-direction: column;
   gap: 4px;
   min-width: 0;
   padding-right: 48px;
+  /* 长错误信息 / 长链接必须换行：360dp 宽下整句都要能看见（原来不换行会溢出到 547px 被裁切） */
+  white-space: normal;
+  word-break: break-word;
+  overflow-wrap: anywhere;
 }
 
 .label {
@@ -131,7 +135,8 @@
 }
 
 .linkCell .text {
-  flex: 1 0 auto;
+  flex: 1 1 auto;
+  min-width: 0;
   padding-right: 8px;
 }
 
@@ -299,12 +304,94 @@
   font-size: 12px;
   line-height: 18px;
   color: var(--dsw-alias-label-tertiary);
+  white-space: normal;
+  word-break: break-word;
+  overflow-wrap: anywhere;
 }
 
 .error {
   font-size: 12px;
   line-height: 18px;
   color: var(--dsw-alias-state-error-primary);
+  white-space: normal;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
+/* 失败提示：默认最多 4 行，超出由「展开」看全文；文案可选中复制 */
+.errorBox {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.errorClamped {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 4;
+  line-clamp: 4;
+  overflow: hidden;
+}
+
+.errorActions {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.errorAction {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--dsw-alias-brand-text);
+  font: inherit;
+  font-size: 12px;
+  line-height: 18px;
+  cursor: pointer;
+
+  &:hover {
+    text-decoration: underline;
+  }
+}
+
+.retryButton {
+  padding: 0 13px;
+}
+
+/* 导入进度：阶段文案 + 细进度条 */
+.progressBlock {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.progressLabel {
+  font-size: 14px;
+  line-height: 22px;
+  color: var(--dsw-alias-label-primary);
+  white-space: normal;
+  word-break: break-word;
+}
+
+.progressTrack {
+  width: 100%;
+  height: 4px;
+  border-radius: 2px;
+  background-color: var(--dsw-alias-border-l2);
+  overflow: hidden;
+}
+
+/* 进度用 transform 而不是 width：只走合成层，不触发布局动画（motion 断言也只看 opacity/transform） */
+.progressFill {
+  width: 100%;
+  height: 100%;
+  border-radius: 2px;
+  background-color: var(--dsw-alias-brand-primary);
+  transform: scaleX(0);
+  transform-origin: left center;
+  transition: transform var(--ds-transition-duration) var(--ds-ease-in-out);
 }
 
 .apiKey {

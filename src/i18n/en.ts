@@ -131,6 +131,21 @@ export const en = {
   historyImportUrlDescription:
     'Paste the DeepSeek export ZIP link; the app downloads it directly (Android app only).',
   historyImportUrlPlaceholder: 'https://…/deepseek_data.zip',
+  historyImportUrlDownloadingProgress: 'Downloading… {done}/{total} ({percent}%)',
+  historyImportUrlDownloadingBytes: 'Downloading… {done} downloaded',
+  historyImportUrlDecoding: 'Parsing…',
+  historyImportUrlImporting: 'Importing… {processed}/{total} chats',
+  historyImportUrlImportingCount: 'Importing… {processed} chats processed',
+  historyImportUrlExpired:
+    'The download link has expired. Export your history again from DeepSeek and retry.',
+  historyImportUrlBadSignature: 'Invalid link (signature mismatch). Copy the full link again.',
+  historyImportUrlForbidden: 'No access to this link (403): {detail}',
+  historyImportUrlOffline: 'Network disconnected. Check your connection and retry.',
+  historyImportUrlTimeoutPartial:
+    'Download timed out ({percent}% downloaded). Try a faster network.',
+  historyImportCancelled: 'Import cancelled',
+  detailsExpand: 'Show more',
+  detailsCollapse: 'Show less',
   historyImportUrlDownloading: 'Downloading...',
   historyImportUrlDownloadingHint:
     'Downloading and importing. A ~20MB export can take tens of seconds; please keep this screen open.',
