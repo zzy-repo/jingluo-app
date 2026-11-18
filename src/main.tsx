@@ -11,6 +11,12 @@ import './app/theme.css'
 import './app/global.css'
 import './app/motion.css'
 
+// The ES5 HTML guard runs before the deferred bundle, including parse/import failures.
+// Keep its actionable message visible rather than replacing it with a partial React tree.
+if ((window as Window & { __DEEPSEEK_COMPATIBILITY_ERROR__?: string[] }).__DEEPSEEK_COMPATIBILITY_ERROR__) {
+  throw new Error('WEBVIEW_CAPABILITY_MISSING')
+}
+
 ensureKatex()
 setupTheme()
 

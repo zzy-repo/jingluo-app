@@ -1,12 +1,45 @@
 <!doctype html>
 <html lang="zh-CN">
   <head>
-    <meta charset="utf-8" />
+    <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <meta name="theme-color" content="#ffffff" />
     <title>API 使用 demo</title>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root"><div id="compatibility-error" hidden></div></div>
+    <!-- Keep this guard ES5-only: old WebViews must see a diagnostic instead of a blank root. -->
+    <script>
+      (function () {
+        var missing = []
+        if (!window.Promise) missing.push('Promise')
+        if (!window.fetch) missing.push('fetch')
+        if (!window.URL) missing.push('URL')
+        if (!Object.hasOwn) missing.push('Object.hasOwn')
+        if (!Array.prototype.at) missing.push('Array.prototype.at')
+        if (!window.CSS || !window.CSS.escape) missing.push('CSS.escape')
+        if (!window.AbortController) missing.push('AbortController')
+        if (!window.TextDecoder) missing.push('TextDecoder')
+        if (!window.ResizeObserver) missing.push('ResizeObserver')
+        function showFailure(details) {
+          var box = document.getElementById('compatibility-error')
+          if (!box) return
+          box.hidden = false
+          box.style.cssText = 'margin:24px 16px;padding:16px;border:1px solid #f0b8b8;border-radius:12px;background:#fff7f7;color:#7b2020;font:15px/1.6 sans-serif'
+          box.textContent = '页面启动失败。请更新 Android System WebView 或浏览器后重试；仍失败请反馈组件版本与以下信息：' + details
+        }
+        if (missing.length) {
+          showFailure('缺少：' + missing.join(', '))
+          window.__DEEPSEEK_COMPATIBILITY_ERROR__ = missing
+        }
+        window.addEventListener('error', function (event) {
+          showFailure(event.message || '脚本资源加载失败')
+        }, true)
+        window.addEventListener('unhandledrejection', function () {
+          showFailure('启动任务异常')
+        })
+      })()
+    </script>
+    <noscript>需要启用 JavaScript 才能使用。</noscript>
   </body>
 </html>
