@@ -35,8 +35,13 @@ import { maskCard, maskKey } from './mask.js'
 
 export { maskCard, maskDeviceId, maskKey, maskTail } from './mask.js'
 
-/** 卡密 / 支付服务地址（HTTPS）：价格、积分、发卡、兑换都问它 */
-export const OURS_API_BASE = 'https://apia.ecsafe.cn'
+/**
+ * 卡密 / 支付服务地址（HTTPS）：价格、积分、发卡、兑换都问它。
+ * ⚠️ 测试构建（TEST_OURS_API_BASE）可覆盖为本地 mock；正式构建该常量为空串，行为不变。
+ */
+export const OURS_API_BASE: string =
+  (typeof __TEST_OURS_API_BASE__ === 'undefined' ? '' : __TEST_OURS_API_BASE__).trim() ||
+  'https://apia.ecsafe.cn'
 
 /**
  * 购买是否放开。

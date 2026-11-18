@@ -150,6 +150,10 @@ export const createConfig = ({
       __INTERNAL_BUILD__: JSON.stringify(internalBuild),
       __APP_VERSION__: JSON.stringify(appVersion),
       __APP_VERSION_CODE__: JSON.stringify(readVersionCode()),
+      // ⚠️ 仅测试构建：真机联调本地 mock 时把两个服务地址指到宿主机（10.0.2.2）。
+      //    默认空串 → 源码回落硬编码地址，正式构建行为不变。
+      __TEST_INVITE_API_BASE__: JSON.stringify(process.env.TEST_INVITE_API_BASE?.trim() ?? ''),
+      __TEST_OURS_API_BASE__: JSON.stringify(process.env.TEST_OURS_API_BASE?.trim() ?? ''),
     }),
     new rspack.CopyRspackPlugin({
       patterns: [{ from: path.resolve(root, 'LICENSE'), to: 'LICENSE', toType: 'file' }],

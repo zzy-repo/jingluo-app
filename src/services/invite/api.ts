@@ -24,8 +24,13 @@
 
 import type { OursHttpResult, OursTransport } from '../ours/api.js'
 
-/** 邀请 / 额度服务地址：明文 HTTP，见文件头的安全说明 */
-export const INVITE_API_BASE = 'http://62.106.70.167:60013'
+/**
+ * 邀请 / 额度服务地址：明文 HTTP，见文件头的安全说明。
+ * ⚠️ 测试构建（TEST_INVITE_API_BASE）可覆盖为本地 mock；正式构建该常量为空串，行为不变。
+ */
+export const INVITE_API_BASE: string =
+  (typeof __TEST_INVITE_API_BASE__ === 'undefined' ? '' : __TEST_INVITE_API_BASE__).trim() ||
+  'http://62.106.70.167:60013'
 
 export const INVITE_TIMEOUTS = {
   apply: 15000,

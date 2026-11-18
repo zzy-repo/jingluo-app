@@ -20,6 +20,14 @@ declare const __APP_VERSION__: string
 /** Android versionCode（取自 package.json 的 androidVersionCode），由 rspack 的 DefinePlugin 注入 */
 declare const __APP_VERSION_CODE__: number
 
+/**
+ * ⚠️ 仅测试构建：把邀请服务 / 卡密支付服务的 base URL 覆盖成指定值（真机联调本地 mock 用）。
+ * 由 rspack.config.ts 从环境变量 TEST_INVITE_API_BASE / TEST_OURS_API_BASE 注入；
+ * 非测试构建是空串，源码回落硬编码地址。Node 单测取不到该常量，用 typeof 兜底。
+ */
+declare const __TEST_INVITE_API_BASE__: string
+declare const __TEST_OURS_API_BASE__: string
+
 /** Prism 语言包通过副作用注册到全局 Prism */
 declare module 'prismjs/components/*' {}
 
