@@ -297,31 +297,37 @@
 
 .modelPicker {
   position: relative;
+  z-index: 20;
   flex: 1;
   min-width: 0;
 }
 
 .modelOptions {
   position: absolute;
-  z-index: 3;
+  z-index: 30;
   top: calc(100% + 4px);
   right: 0;
   left: 0;
-  max-height: 180px;
+  max-height: min(180px, 30vh);
   overflow-y: auto;
+  box-sizing: border-box;
   border: 1px solid var(--dsw-alias-border-l2-darkmode-thin);
   border-radius: 8px;
-  background: var(--dsw-alias-bg-primary);
+  background-color: var(--dsw-alias-bg-primary);
+  opacity: 1;
   box-shadow: 0 6px 18px rgb(0 0 0 / 22%);
 }
 
 .modelOption {
-  display: block;
+  display: flex;
+  align-items: center;
   width: 100%;
-  padding: 8px 10px;
+  min-height: 44px;
+  padding: 10px 12px;
   border: 0;
-  background: transparent;
+  background-color: var(--dsw-alias-bg-primary);
   color: inherit;
+  line-height: 22px;
   text-align: left;
   cursor: pointer;
 }
