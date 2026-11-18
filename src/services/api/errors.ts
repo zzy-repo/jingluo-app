@@ -8,12 +8,40 @@ export type ApiErrorCondition =
   | 'unauthorized'
   | 'insufficientBalance'
   | 'tooLarge'
+  /**
+   * 上下文太长（#122）：413 或上游明说「超出上下文上限」。
+   * 它和「参数错 / 服务端故障」不是一回事：重试解决不了，用户要么开新会话，要么删几条早期消息。
+   */
+  | 'contextLimit'
   | 'rateLimited'
   | 'serverBusy'
   | 'network'
   /** 流已开始但没收到 message_stop：连接中断，和「请求没发出去」要分开 */
   | 'interrupted'
   | 'other'
+
+/**
+ * 上游说「上下文太长」的原文特征：各家措辞不同，命中任意一条就归到 contextLimit。
+ * 只用来认「确实超长」，不含泛泛的报错词，避免把无关 400 也引到「开新会话」那条路上。
+ */
+export const CONTEXT_LIMIT_PATTERNS: RegExp[] = [
+  /context_length_exceeded/i,
+  /maximum context length/i,
+  /context window/i,
+  /context length/i,
+  /prompt is too long/i,
+  /input is too long/i,
+  /too many tokens/i,
+  /exceeds? the (?:maximum )?(?:context|token)/i,
+  /上下文(?:长度)?[^。]{0,10}超/,
+  /超出[^。]{0,10}上下文/,
+]
+
+/** 这段文字是不是「上下文太长」（上游原文、日志、归档里的 message 都能喂进来） */
+export const isContextLimitMessage = (text: string | undefined): boolean =>
+  typeof text === 'string' && text.length > 0
+    ? CONTEXT_LIMIT_PATTERNS.some((pattern) => pattern.test(text))
+    : false
 
 /** 按 HTTP 状态码归类；没有状态码（请求没到达服务端）时按网络问题处理 */
 export const classifyStatus = (status: number | undefined): ApiErrorCondition => {
@@ -42,6 +70,10 @@ export const classifyApiError = (error: unknown): ApiErrorCondition => {
   // 断流优先：它可能带着底层报错（network error / aborted），不能并进网络问题
   if (error.kind === 'interrupted') {
     return 'interrupted'
+  }
+  // 413 本身就是请求体超限；上游用文字说「上下文太长」时状态码常是 400，也要认出来
+  if (error.status === 413 || isContextLimitMessage([error.message, error.detail ?? ''].join('\n'))) {
+    return 'contextLimit'
   }
   if (error.status === undefined) {
     return error.kind === 'network' ? 'network' : 'other'

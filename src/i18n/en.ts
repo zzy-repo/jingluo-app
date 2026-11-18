@@ -88,6 +88,9 @@ export const en = {
   completionServerBusyToast: 'Server busy, please try again later.',
   unknownError: 'Unknown error',
   replyUnknownError: 'The reply did not finish due to an unknown error. Please regenerate.',
+  /** Context over the model limit (#122): retrying will not help, offer two ways out */
+  replyContextLimit:
+    'This conversation is over the model’s context limit, so the request was not sent. Start a new session to continue, or delete a few older messages and try again.',
   replyStreamInterrupted:
     'The connection was interrupted and the reply is incomplete. What was received is kept — you can regenerate.',
   replyWaitingFirstToken: 'Waiting for the response',

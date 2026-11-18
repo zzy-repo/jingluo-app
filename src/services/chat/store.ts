@@ -1402,14 +1402,22 @@ const streamReply = async (sessionId: string, initial: AssistantMessage, request
           })
           break
         }
+        // 上下文超长（#122）：和普通失败分开，界面换成能照着做的固定文案，上游原文只进日志
+        const condition = classifyApiError(error)
+        const notice =
+          condition === 'contextLimit'
+            ? { key: 'replyContextLimit' as const }
+            : error instanceof ApiError
+              ? error.localMessage
+              : undefined
         // 失败必录：请求阶段、HTTP 状态、耗时、错误原文一次记全
         record('error', 'error', 'chat stream failed', {
           stage: preparing ? 'upload' : 'stream',
           durationMs: Date.now() - startedAt,
           // 用户在界面上会看到什么：条件分类 + i18n 文案 key（用来核实「到底有没有提示」）
-          'ui.condition': classifyApiError(error),
-          ...(error instanceof ApiError && error.localMessage
-            ? { 'ui.notice': error.localMessage.key }
+          'ui.condition': condition,
+          ...(notice
+            ? { 'ui.notice': notice.key }
             : { 'ui.notice': error instanceof ApiError ? error.kind : 'unknown' }),
           // 断流等情况的原始报错原文：只进日志，界面上给固定文案
           ...(error instanceof ApiError && error.detail ? { 'error.detail': error.detail } : {}),
@@ -1460,7 +1468,7 @@ const streamReply = async (sessionId: string, initial: AssistantMessage, request
             kind: error.kind,
             message: error.message,
             status: error.status,
-            localMessage: error.localMessage,
+            localMessage: notice,
           })
         } else {
           reply = settleReply(reply, 'error', Date.now(), {

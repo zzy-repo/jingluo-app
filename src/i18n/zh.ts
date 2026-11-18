@@ -83,6 +83,9 @@ export const zh = {
   completionServerBusyToast: '服务器繁忙，请稍后再试',
   unknownError: '未知错误',
   replyUnknownError: '回答没有完成，出现了未知错误，可以重新生成',
+  /** 上下文超出模型上限（#122）：重试没用，给两条能走的路 */
+  replyContextLimit:
+    '这段对话已经超出模型的上下文上限，这次请求没能发出去。可以开一个新会话继续，或者删掉几条较早的消息后再试',
   replyStreamInterrupted: '连接中断，回答没有接收完整；已收到的内容已保留，可以重新生成',
   replyWaitingFirstToken: '正在等待响应',
   replyWaitingSlow: '服务响应较慢，仍在等待',

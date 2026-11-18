@@ -1,5 +1,5 @@
 import { isTranslationKey, translate } from '../../i18n/index.js'
-import { classifyStatus } from '../api/errors.js'
+import { classifyStatus, isContextLimitMessage } from '../api/errors.js'
 import type { AssistantMessage } from './types.js'
 
 export type Notice = {
@@ -41,6 +41,10 @@ export const describeReply = (reply: AssistantMessage): Notice | null => {
     }
     if (kind === 'network') {
       return { text: translate('commonNetworkErrorToast') }
+    }
+    // 上游说「上下文太长」（#122）：这不是重试能解决的，给能照着做的建议
+    if (status === 413 || isContextLimitMessage(message)) {
+      return { text: localized || translate('replyContextLimit') }
     }
     switch (classifyStatus(status)) {
       case 'unauthorized':
