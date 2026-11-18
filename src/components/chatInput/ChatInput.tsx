@@ -35,6 +35,7 @@ import { VoiceButton } from './VoiceButton.js'
 import { Spectrum } from './Spectrum.js'
 import { useTranslate } from '../../i18n/index.js'
 import styles from './ChatInput.module.css'
+import { readTextFile, TextImportError } from '../../utils/textFile.js'
 
 /** 输入框：自适应高度的文本框 + 文件 + 深度思考与智能搜索开关 + 语音输入 + 发送 / 停止 */
 export const ChatInput = memo(function ChatInput({ sessionId }: { sessionId: string | null }) {
@@ -111,25 +112,17 @@ const Input = ({ sessionId }: { sessionId: string | null }) => {
   )
   const dragging = useFileDrop(acceptFiles)
   const importTextFile = async (file: File) => {
-    if (file.size > 8 * 1024 * 1024) { showToast('TXT 文件超过 8MB 上限'); return }
     try {
-      const reader = file.stream().getReader()
-      const decoder = new TextDecoder()
-      let imported = ''
-      for (;;) {
-        const part = await reader.read()
-        if (part.done) { break }
-        imported += decoder.decode(part.value, { stream: true })
-        if (imported.length % (256 * 1024) < part.value.length) { await new Promise<void>((resolve) => setTimeout(resolve, 0)) }
-      }
-      imported += decoder.decode()
+      const imported = await readTextFile(file)
       const current = getDraft(sessionId).text
       const textarea = textareaRef.current
       const start = textarea?.selectionStart ?? current.length
       const end = textarea?.selectionEnd ?? current.length
       setText(current.slice(0, start) + imported + current.slice(end))
       showToast('TXT 已导入输入框')
-    } catch { showToast('TXT 文件读取失败，请重试') }
+    } catch (error) {
+      showToast(error instanceof TextImportError && error.code === 'too-large' ? 'TXT 文件超过 8MB 上限' : 'TXT 文件读取失败，请重试')
+    }
   }
 
   /** 转写结果插入到光标处，并把光标移到插入内容之后 */
