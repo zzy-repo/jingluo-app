@@ -1,0 +1,78 @@
+{
+  "phase": "p1-chat",
+  "api": 36,
+  "startedAt": "2026-11-18T19:40:31.029Z",
+  "text": "你好，请只回一句话。",
+  "baseUrlKey": "chat-demo:base-url:openai",
+  "baseUrl": {
+    "legacy": null,
+    "openai": "http://140.210.13.146:60010",
+    "model": "deepseek-v4.1-flash",
+    "kind": "openai",
+    "keySet": true
+  },
+  "device": {
+    "model": "sdk_gphone64_x86_64",
+    "device": "emu64xa",
+    "release": "16",
+    "sdk": "36",
+    "abi": "x86_64",
+    "buildId": "BE2A.250530.026.F3",
+    "webViewVersionLine": "versionName=133.0.6943.137",
+    "webViewUpdate": [
+      "  Current WebView package (name, version): (com.google.android.webview, 133.0.6943.137)",
+      "    Valid package com.google.android.webview (versionName: 133.0.6943.137, versionCode: 694313738, targetSdkVersion: 34) is  installed/enabled for all users"
+    ],
+    "wmSize": "Physical size: 1080x1920",
+    "wmDensity": "Physical density: 420",
+    "memTotal": "MemTotal:        2018816 kB"
+  },
+  "boot": {
+    "booted": true,
+    "boxText": null,
+    "bodyTextHead": "How can I help you?\nFast mode\nExpert mode\nDeepThink\nSearch\nAI-generated, for reference only\nSettings\nGeneral\nData\nChannel\nDeepSeek Official\nAPI Key\nConnection test\nTest\nChat background\nStored on this device only (IndexedDB), never uploaded; resized to 1600px max edge\n—\nUpload\nClear\nImport chat histo"
+  },
+  "config": {
+    "kind": "openai",
+    "baseUrl": "http://140.210.13.146:60010",
+    "model": "deepseek-v4.1-flash",
+    "keyLength": 56
+  },
+  "closedSettings": {
+    "closed": false,
+    "reason": "no-dialog"
+  },
+  "before": {
+    "rows": 0,
+    "hasTextarea": true
+  },
+  "typed": {
+    "value": "你好，请只回一句话。"
+  },
+  "clicked": {
+    "clicked": true
+  },
+  "samples": [
+    {
+      "at": 13,
+      "rows": 2,
+      "stop": true,
+      "lastTail": "",
+      "error": null
+    }
+  ],
+  "firstTextMs": 2203,
+  "finalBody": "你好呀，我在。",
+  "finalRows": 2,
+  "texts": [
+    "New chat",
+    "Double-tap to top",
+    "你好，请只回一句话。",
+    "你好呀，我在。",
+    "AI-generated, for reference only"
+  ],
+  "failureText": null,
+  "pidAlive": "2442",
+  "verdict": "TEXT_OK",
+  "finishedAt": "2026-11-18T19:40:39.540Z"
+}

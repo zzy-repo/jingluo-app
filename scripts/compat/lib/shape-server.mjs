@@ -79,7 +79,9 @@ const server = createServer((req, res) => {
           res.end()
         }
       }, 3000)
-      req.on('close', () => clearInterval(timer))
+      // Node 里 IncomingMessage 的 'close' 在请求体读完就已触发，用它清理会让滴流只发第 1 段；
+      // 必须挂到响应上（客户端真的断开时才清）
+      res.on('close', () => clearInterval(timer))
       return
     }
     // ok

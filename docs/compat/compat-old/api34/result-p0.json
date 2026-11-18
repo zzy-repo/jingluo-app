@@ -1,0 +1,206 @@
+{
+  "phase": "p0-fallback + p1-whitescreen",
+  "api": 34,
+  "avd": "compat-api34",
+  "startedAt": "2026-11-18T19:31:24.045Z",
+  "device": {
+    "model": "sdk_gphone64_x86_64",
+    "device": "emu64xa",
+    "release": "14",
+    "sdk": "34",
+    "abi": "x86_64",
+    "buildId": "UE1A.230829.050",
+    "webViewVersionLine": "versionName=113.0.5672.136",
+    "webViewUpdate": [
+      "  Current WebView package (name, version): (com.google.android.webview, 113.0.5672.136)",
+      "    Valid package com.google.android.webview (versionName: 113.0.5672.136, versionCode: 567263637, targetSdkVersion: 34) is  installed/enabled for all users"
+    ],
+    "wmSize": "Physical size: 1080x1920",
+    "wmDensity": "Physical density: 420",
+    "memTotal": "MemTotal:        2021100 kB"
+  },
+  "install": {
+    "elapsedMs": 2891,
+    "output": "Performing Streamed Install\r\nSuccess",
+    "apk": "D:\\all_project\\runs\\compat34\\android\\app\\build\\outputs\\apk\\debug\\app-debug.apk"
+  },
+  "coldStart": {
+    "elapsedMs": 3493,
+    "output": "Starting: Intent { cmp=com.example.deepseekchat/.MainActivity }\r\nStatus: ok\r\nLaunchState: COLD\r\nActivity: com.example.deepseekchat/.MainActivity\r\nTotalTime: 3385\r\nWaitTime: 3395\r\nComplete",
+    "clearError": null
+  },
+  "samples": [
+    {
+      "at": 2,
+      "shot": "D:\\all_project\\runs\\compat34\\docs\\compat\\compat-old/api34/shots/t02s.png",
+      "page": {
+        "url": "https://localhost/",
+        "title": "鲸落",
+        "booted": true,
+        "compatibilityError": null,
+        "boxPresent": false,
+        "boxHidden": null,
+        "boxText": null,
+        "bodyTextLength": 1106,
+        "bodyTextHead": "How can I help you?\nFast mode\nExpert mode\nDeepThink\nSearch\nAI-generated, for reference only\nSettings\nGeneral\nData\nChannel\nDeepSeek Official\nAPI Key\nConnection test\nTest\nChat background\nStored on this device only (IndexedDB), never uploaded; resized to 1600px max edge\n—\nUpload\nClear\nImport chat histo",
+        "rootChildren": 1,
+        "rootHtmlLength": 15042,
+        "readyState": "complete",
+        "userAgent": "Mozilla/5.0 (Linux; Android 14; sdk_gphone64_x86_64 Build/UE1A.230829.050; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/113.0.5672.136 Mobile Safari/537.36",
+        "hasTextarea": true
+      },
+      "cdpError": null,
+      "uiTexts": [
+        "Bluetooth keeps stopping",
+        "App info",
+        "Close app"
+      ]
+    },
+    {
+      "at": 8.1,
+      "shot": "D:\\all_project\\runs\\compat34\\docs\\compat\\compat-old/api34/shots/t06s.png",
+      "page": {
+        "url": "https://localhost/",
+        "title": "鲸落",
+        "booted": true,
+        "compatibilityError": null,
+        "boxPresent": false,
+        "boxHidden": null,
+        "boxText": null,
+        "bodyTextLength": 1106,
+        "bodyTextHead": "How can I help you?\nFast mode\nExpert mode\nDeepThink\nSearch\nAI-generated, for reference only\nSettings\nGeneral\nData\nChannel\nDeepSeek Official\nAPI Key\nConnection test\nTest\nChat background\nStored on this device only (IndexedDB), never uploaded; resized to 1600px max edge\n—\nUpload\nClear\nImport chat histo",
+        "rootChildren": 1,
+        "rootHtmlLength": 15042,
+        "readyState": "complete",
+        "userAgent": "Mozilla/5.0 (Linux; Android 14; sdk_gphone64_x86_64 Build/UE1A.230829.050; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/113.0.5672.136 Mobile Safari/537.36",
+        "hasTextarea": true
+      },
+      "cdpError": null,
+      "uiTexts": [
+        "Bluetooth keeps stopping",
+        "App info",
+        "Close app"
+      ]
+    },
+    {
+      "at": 13,
+      "shot": "D:\\all_project\\runs\\compat34\\docs\\compat\\compat-old/api34/shots/t13s.png",
+      "page": {
+        "url": "https://localhost/",
+        "title": "鲸落",
+        "booted": true,
+        "compatibilityError": null,
+        "boxPresent": false,
+        "boxHidden": null,
+        "boxText": null,
+        "bodyTextLength": 1106,
+        "bodyTextHead": "How can I help you?\nFast mode\nExpert mode\nDeepThink\nSearch\nAI-generated, for reference only\nSettings\nGeneral\nData\nChannel\nDeepSeek Official\nAPI Key\nConnection test\nTest\nChat background\nStored on this device only (IndexedDB), never uploaded; resized to 1600px max edge\n—\nUpload\nClear\nImport chat histo",
+        "rootChildren": 1,
+        "rootHtmlLength": 15042,
+        "readyState": "complete",
+        "userAgent": "Mozilla/5.0 (Linux; Android 14; sdk_gphone64_x86_64 Build/UE1A.230829.050; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/113.0.5672.136 Mobile Safari/537.36",
+        "hasTextarea": true
+      },
+      "cdpError": null,
+      "uiTexts": [
+        "Bluetooth keeps stopping",
+        "App info",
+        "Close app"
+      ]
+    },
+    {
+      "at": 20,
+      "shot": "D:\\all_project\\runs\\compat34\\docs\\compat\\compat-old/api34/shots/t20s.png",
+      "page": {
+        "url": "https://localhost/",
+        "title": "鲸落",
+        "booted": true,
+        "compatibilityError": null,
+        "boxPresent": false,
+        "boxHidden": null,
+        "boxText": null,
+        "bodyTextLength": 1106,
+        "bodyTextHead": "How can I help you?\nFast mode\nExpert mode\nDeepThink\nSearch\nAI-generated, for reference only\nSettings\nGeneral\nData\nChannel\nDeepSeek Official\nAPI Key\nConnection test\nTest\nChat background\nStored on this device only (IndexedDB), never uploaded; resized to 1600px max edge\n—\nUpload\nClear\nImport chat histo",
+        "rootChildren": 1,
+        "rootHtmlLength": 15042,
+        "readyState": "complete",
+        "userAgent": "Mozilla/5.0 (Linux; Android 14; sdk_gphone64_x86_64 Build/UE1A.230829.050; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/113.0.5672.136 Mobile Safari/537.36",
+        "hasTextarea": true
+      },
+      "cdpError": null,
+      "uiTexts": [
+        "Bluetooth keeps stopping",
+        "App info",
+        "Close app"
+      ]
+    }
+  ],
+  "logcat": {
+    "file": "D:\\all_project\\runs\\compat34\\docs\\compat\\compat-old/api34/logcat-api34.txt",
+    "consoleLines": [
+      "11-18 19:32:23.446   553  1599 I ActivityManager: Start proc 3220:com.google.android.webview:sandboxed_process0:org.chromium.content.app.SandboxedProcessService0:0/u0ai9000 for  {com.example.deepseekchat/org.chromium.content.app.SandboxedProcessService0:0}",
+      "11-18 19:32:23.540  3220  3220 I cr_WebViewApkApp: Launched version=113.0.5672.136 minSdkVersion=29 isBundle=false processName=com.google.android.webview:sandboxed_process0:org.chromium.content.app.SandboxedProcessService0:0",
+      "11-18 19:32:23.635  3120  3240 W chromium: [WARNING:dns_config_service_android.cc(115)] Failed to read DnsConfig.",
+      "11-18 19:32:25.538  3120  3120 I chromium: [INFO:CONSOLE(349)] \"%cnative %cDiagnosticsDevice.snapshot (#9576713) font-weight: lighter; color: gray font-weight: bold; color: #000\", source:  (349)",
+      "11-18 19:32:25.555  3120  3120 I chromium: [INFO:CONSOLE(350)] \"[object Object]\", source:  (350)",
+      "11-18 19:32:25.555  3120  3120 I chromium: [INFO:CONSOLE(351)] \"console.groupEnd\", source:  (351)",
+      "11-18 19:32:25.568  3120  3120 W MessageQueue: \tat org.chromium.support_lib_boundary.util.BoundaryInterfaceReflectionUtil$InvocationHandlerWithDelegateGetter.invoke(BoundaryInterfaceReflectionUtil.java:159)",
+      "11-18 19:32:25.568  3120  3120 W MessageQueue: \tat org.chromium.android_webview.WebMessageListenerHolder.onPostMessage(chromium-TrichromeWebViewGoogle6432.apk-stable-567263637:53)",
+      "11-18 19:32:25.871  3120  3120 W cr_AwContents: \tat org.chromium.android_webview.AwContents.m(chromium-TrichromeWebViewGoogle6432.apk-stable-567263637:10)",
+      "11-18 19:32:25.871  3120  3120 W cr_AwContents: \tat org.chromium.android_webview.AwContents.h(chromium-TrichromeWebViewGoogle6432.apk-stable-567263637:2)",
+      "11-18 19:32:25.871  3120  3120 W cr_AwContents: \tat com.android.webview.chromium.WebViewChromium.evaluateJavaScript(chromium-TrichromeWebViewGoogle6432.apk-stable-567263637:37)",
+      "11-18 19:32:25.874  3120  3120 W cr_AwContents: \tat org.chromium.android_webview.AwContents.m(chromium-TrichromeWebViewGoogle6432.apk-stable-567263637:10)",
+      "11-18 19:32:25.874  3120  3120 W cr_AwContents: \tat org.chromium.android_webview.AwContents.h(chromium-TrichromeWebViewGoogle6432.apk-stable-567263637:2)",
+      "11-18 19:32:25.874  3120  3120 W cr_AwContents: \tat com.android.webview.chromium.WebViewChromium.evaluateJavaScript(chromium-TrichromeWebViewGoogle6432.apk-stable-567263637:37)",
+      "11-18 19:32:30.197  3542  3542 D nativeloader: InitDefaultPublicLibraries for_preload=1: libandroid.so:libaaudio.so:libamidi.so:libbinder_ndk.so:libc.so:libcamera2ndk.so:libdl.so:libEGL.so:libGLESv1_CM.so:libGLESv2.so:libGLESv3.so:libicu.so:libicui18n.so:libicuuc.so:libjnigraphics.so:liblog.so:libmediandk.so:libm.so:libnativehelper.so:libnativewindow.so:libOpenMAXAL.so:libOpenSLES.so:libRS.so:libstdc++.so:libsync.so:libvulkan.so:libwebviewchromium_plat_support.so:libz.so",
+      "11-18 19:32:30.745  2267  2527 W A       : \tat org.chromium.net.impl.CronetUrlRequest.onError(:com.google.android.gms.dynamite_cronetdynamite@231818047@23.18.18 (190800-0):2)",
+      "11-18 19:32:33.508  3742  3742 D nativeloader: InitDefaultPublicLibraries for_preload=1: libandroid.so:libaaudio.so:libamidi.so:libbinder_ndk.so:libc.so:libcamera2ndk.so:libdl.so:libEGL.so:libGLESv1_CM.so:libGLESv2.so:libGLESv3.so:libicu.so:libicui18n.so:libicuuc.so:libjnigraphics.so:liblog.so:libmediandk.so:libm.so:libnativehelper.so:libnativewindow.so:libOpenMAXAL.so:libOpenSLES.so:libRS.so:libstdc++.so:libsync.so:libvulkan.so:libwebviewchromium_plat_support.so:libz.so",
+      "11-18 19:32:34.770   553   584 I ActivityManager: Start proc 3843:com.android.chrome/u0a150 for service {com.android.chrome/org.chromium.chrome.browser.customtabs.CustomTabsConnectionService}",
+      "11-18 19:32:38.546  4140  4140 D nativeloader: InitDefaultPublicLibraries for_preload=1: libandroid.so:libaaudio.so:libamidi.so:libbinder_ndk.so:libc.so:libcamera2ndk.so:libdl.so:libEGL.so:libGLESv1_CM.so:libGLESv2.so:libGLESv3.so:libicu.so:libicui18n.so:libicuuc.so:libjnigraphics.so:liblog.so:libmediandk.so:libm.so:libnativehelper.so:libnativewindow.so:libOpenMAXAL.so:libOpenSLES.so:libRS.so:libstdc++.so:libsync.so:libvulkan.so:libwebviewchromium_plat_support.so:libz.so",
+      "11-18 19:32:38.979  2267  2528 W A       : \tat org.chromium.net.impl.CronetUrlRequest.onError(:com.google.android.gms.dynamite_cronetdynamite@231818047@23.18.18 (190800-0):2)",
+      "11-18 19:32:38.980  2267  2528 W A       : \tat org.chromium.net.impl.CronetUrlRequest.onError(:com.google.android.gms.dynamite_cronetdynamite@231818047@23.18.18 (190800-0):2)",
+      "11-18 19:32:45.663  4388  4388 D nativeloader: InitDefaultPublicLibraries for_preload=1: libandroid.so:libaaudio.so:libamidi.so:libbinder_ndk.so:libc.so:libcamera2ndk.so:libdl.so:libEGL.so:libGLESv1_CM.so:libGLESv2.so:libGLESv3.so:libicu.so:libicui18n.so:libicuuc.so:libjnigraphics.so:liblog.so:libmediandk.so:libm.so:libnativehelper.so:libnativewindow.so:libOpenMAXAL.so:libOpenSLES.so:libRS.so:libstdc++.so:libsync.so:libvulkan.so:libwebviewchromium_plat_support.so:libz.so",
+      "11-18 19:32:47.058  2267  2527 W A       : \tat org.chromium.net.impl.CronetUrlRequest.onError(:com.google.android.gms.dynamite_cronetdynamite@231818047@23.18.18 (190800-0):2)",
+      "11-18 19:32:47.059  2267  2527 W A       : \tat org.chromium.net.impl.CronetUrlRequest.onError(:com.google.android.gms.dynamite_cronetdynamite@231818047@23.18.18 (190800-0):2)",
+      "11-18 19:32:55.087  2267  2527 W A       : \tat org.chromium.net.impl.CronetUrlRequest.onError(:com.google.android.gms.dynamite_cronetdynamite@231818047@23.18.18 (190800-0):2)",
+      "11-18 19:32:55.088  2267  2527 W A       : \tat org.chromium.net.impl.CronetUrlRequest.onError(:com.google.android.gms.dynamite_cronetdynamite@231818047@23.18.18 (190800-0):2)",
+      "11-18 19:32:56.164  4547  4547 D nativeloader: InitDefaultPublicLibraries for_preload=1: libandroid.so:libaaudio.so:libamidi.so:libbinder_ndk.so:libc.so:libcamera2ndk.so:libdl.so:libEGL.so:libGLESv1_CM.so:libGLESv2.so:libGLESv3.so:libicu.so:libicui18n.so:libicuuc.so:libjnigraphics.so:liblog.so:libmediandk.so:libm.so:libnativehelper.so:libnativewindow.so:libOpenMAXAL.so:libOpenSLES.so:libRS.so:libstdc++.so:libsync.so:libvulkan.so:libwebviewchromium_plat_support.so:libz.so"
+    ],
+    "syntaxErrors": []
+  },
+  "notes": [],
+  "final": {
+    "shot": "D:\\all_project\\runs\\compat34\\docs\\compat\\compat-old/api34/shots/t-final.png",
+    "page": {
+      "url": "https://localhost/",
+      "title": "鲸落",
+      "booted": true,
+      "compatibilityError": null,
+      "boxPresent": false,
+      "boxHidden": null,
+      "boxText": null,
+      "bodyTextLength": 1106,
+      "bodyTextHead": "How can I help you?\nFast mode\nExpert mode\nDeepThink\nSearch\nAI-generated, for reference only\nSettings\nGeneral\nData\nChannel\nDeepSeek Official\nAPI Key\nConnection test\nTest\nChat background\nStored on this device only (IndexedDB), never uploaded; resized to 1600px max edge\n—\nUpload\nClear\nImport chat histo",
+      "rootChildren": 1,
+      "rootHtmlLength": 15042,
+      "readyState": "complete",
+      "userAgent": "Mozilla/5.0 (Linux; Android 14; sdk_gphone64_x86_64 Build/UE1A.230829.050; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/113.0.5672.136 Mobile Safari/537.36",
+      "hasTextarea": true
+    },
+    "pid": "3120",
+    "uiTexts": [
+      "Bluetooth keeps stopping",
+      "App info",
+      "Close app"
+    ]
+  },
+  "verdict": {
+    "fallbackBranch": null,
+    "fallbackText": null,
+    "booted": true,
+    "compatibilityErrorValue": null,
+    "syntaxErrorInLogcat": false,
+    "appAliveAtEnd": true
+  },
+  "finishedAt": "2026-11-18T19:32:58.383Z"
+}

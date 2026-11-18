@@ -43,18 +43,56 @@ $ adb shell dumpsys package com.google.android.webview | grep versionName
   同一炸弹包在 91 上峰值只有 83 的四分之一左右，**归档解析的内存行为随 WebView 版本变化**，这是实测值，不是推测。
 - **1MB / 10MB / 50MB / truncated 四档在本档未测**（不拿 83 的数字外推成 91 的结论）。
 
-## P3 · 弱网（六态：跑了，但没有有效观测）
+## P3 · 弱网（六态重跑：六态全部有可判定行为）
 
-`result-p3.json` 跑完六态：`s0-ok`(30s) / `s1-hold`(100s) / `s2-cut`(40s) / `s3-trickle`(70s) / `s4-unreachable`(100s) / `s5-offline`(60s)，
-形状服务 `10.0.2.2:5419`。
+**本节是重跑结果，覆盖上一版「六态跑了但没有有效观测」。**
+上一版六态 `firstTextMs=null`、`rows=0`、`finalBody=""`，是测具问题，产品侧无结论。
+修了两处后才拿到数据：
 
-**但六态全部 `firstTextMs=null`、`rows=0`、`finalBody` 为空串，`finalStop=false`** —— 采样器一次都没命中会话区。
-截图 `shots/p3-s0-ok.png` … `p3-s5-offline.png` 六张在，但没有可判定的产品行为。
+1. 渠道没落在请求路径上 —— 只写了 `chat-demo:base-url:openai`，但本构建默认渠道是 `deepseek`，
+   消息根本没打到形状服务；现在 `prepare()` 显式写 `chat-demo:provider-kind=openai` + 模型 + key，再关掉首启设置弹层。
+2. `firstTextMs` 被占位文案污染 —— 每条消息都有 `Waiting for the response` 占位行，旧采样把它当成「首字」，
+   于是六态首字全都「≈5 s」。现在只认去掉占位/状态行之后还剩下的正文。
 
-→ 本档 P3 记为**未取得结论**：不是通过，也不是失败。要重做，先得有可用会话（真实 key 或 fake backend），
-再让 `p3-net.mjs` 的采样选择器命中消息容器。
+形状服务 `10.0.2.2:5419`，死端口 `10.0.2.2:5418` 作不可达对照；**每态记服务端实际收到的请求行数**，请求数为 0 的档不算产品观测。
 
-WebView 109 上的弱网既有结论见 #150（滴流无限 streaming）与 #154（断网误分类）。
+| 态 | 服务端收到 | 首字（去掉占位后） | 行数 | 终态文案（页面原文） | 自动重试 | 卡死不可恢复 |
+| --- | --- | --- | --- | --- | --- | --- |
+| `s0-ok` | 4 | 102 ms | 2 | `这是对照组：正常 200 + SSE 分片，回答完整收尾。` | 0 | 否 |
+| `s1-hold` | 6（原请求 + 2 次重试） | 15036 ms | 2 | `Request timed out (15s with no response). Check your network and try again.` | 2 | 否（有解释、可再发） |
+| `s2-cut` | 2 | 71 ms | 2 | 先收到两段正文，随后追加 `The connection was interrupted and the reply is incomplete. What was received is kept — you can regenerate.` | 0 | 否 |
+| `s3-trickle` | 4 | 48 ms | 2 | 8 段全部到达、21.1 s 自然收尾，无错误文案 | 0 | 否 |
+| `s4-unreachable` | **0**（连接被拒） | 49 ms（重试文案） | 2 | `Network Error. Please check your network status.` | 2 | 否 |
+| `s5-offline` | **0**（飞行模式） | 50 ms（重试文案） | 2 | `Network Error. Please check your network status.` | 2 | 否 |
+
+### 逐态结论
+
+- **`s0-ok` 对照组通过**：102 ms 出首字、1.07 s 收尾、零重试 —— 说明后面五态的异常都是形状服务造的，不是链路先天坏。
+- **`s1-hold`（半死连接 / 一个字节都不回）**：15 s 无响应 → 自动重试 2 次（服务端确实收到 3 组 `POST`），
+  48 s 落到 `Request timed out (15s with no response).`，**文案明确、可重发、进程存活**。与 WebView 109 的既有结论同向（#133 记录的行为），无新增缺陷。
+- **`s2-cut`（回两段后 socket 被 destroy）**：已收正文**保留**并追加「连接中断、回复不完整、可重新生成」的说明，
+  没有把半截回答伪装成完整回答。这是本档最干净的一条降级路径。
+- **`s3-trickle`（每 3 s 一段、共 8 段）**：8 段全部落到界面、21.1 s 自然收尾、无超时误杀、无重试。
+  即「有内容持续到达时不会误判网络故障」。
+- **`s4-unreachable`（端口没人监听）**：重试 2 次后 3.1 s 结束，文案 `Network Error. Please check your network status.`；服务端 0 请求，符合预期。
+- **`s5-offline`（飞行模式，形态服务就是 `s0-ok` 那个地址）**：3.07 s 结束，文案与 `s4` **逐字相同**：
+  `Network Error. Please check your network status.` —— **设备离线与「服务端拒绝连接」拿到同一条提示**，
+  这与 #154（断网被归为普通网络异常、不能让用户区分「我没网」还是「服务坏了」）**同向复现**，属继承问题，不是本档新增。
+
+### 与 WebView 109 基线的对照
+
+| 行为 | 109（#133 / #150 / #154 既有取证） | 本档 91 |
+| --- | --- | --- |
+| hold：无字节 → 重试 2 次后给明确超时文案 | 一致 | **一致** |
+| cut：断流保留半截 + 提示可重生成 | 一致 | **一致** |
+| trickle：慢速滴流不误判、跑完收尾 | 109 上曾记「滴流无限 streaming」（#150） | 本档 **8 段跑完 21 s 自然收尾**，未见无限 streaming |
+| offline：与不可达共用一条 `Network Error` | 一致（#154） | **一致** |
+
+trickle 一项与 #150 描述不同，但**不能据此说 #150 不成立**：#150 的复现形态（长时间连接、真实上游、特定间隔）与本档形状服务
+（8 段 × 3 s、24 s 内结束）不是同一条件。本档只能记「8 段滴流不误杀」。
+
+> 上一版把「六态无观测」写成结论风险很大 —— 那六张截图当时其实只拍到空会话。现在六态各有一张带真实文案的截图
+> `shots/p3-{s0-ok,s1-hold,s2-cut,s3-trickle,s4-unreachable,s5-offline}.png`。
 
 ## P4 · 排版抽查（390 / 360 CSS px）
 
@@ -94,5 +132,5 @@ node scripts/compat/p4-layout.mjs --api 31
 - 真机、厂商 ROM：未测（本档为模拟器）
 - P0 兜底页三出口：未单独跑（主包正常启动，三条出口都不触发）
 - P2 的 1MB / 10MB / 50MB / truncated 四档：未测
-- P3：跑了六态但没有有效观测，不出结论
+- P3：六态已重跑取得数据；`trickle` 只覆盖「8 段 / 24 s 内结束」这一种形态，长期慢速连接（#150 的复现条件）未测
 - P4 的 `session` / `import-confirm` 两屏：未测

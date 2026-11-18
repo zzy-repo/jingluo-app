@@ -19,31 +19,45 @@ $ adb shell dumpsys package com.google.android.webview | grep versionName
 
 「兜底页三条出口都验证过」这句话**不适用于本档** —— 出口 ② 的正向证据在 `api26/`、`api28/`、`api29/`。
 
-## P2 · 导入（三档全部未到终态 —— 测具失效，不是产品结论）
+## P2 · 导入（三档全部跑到终态；上一轮的「测具失效」已修，本轮为重跑）
 
-三档（`bomb-1000x` / `corrupt-branch` / `edge-200mb`）结果一致：
+**这一节是重跑结果，覆盖上一版「三档全部未到终态 —— 测具失效」的记录。**
+上一轮（WebView 109）三档 `requestCount=0`、`typed.state.value` 是形状服务根地址、按钮 `disabled`，
+判定为**测具失效、不出产品结论**。本轮把输入注入从 CDP 直接写 React 受控 `<input type="url">`
+换成**系统输入通道**（`adb shell input tap` + `input text`），同一台设备、同一份 APK、同三档归档重跑：
 
-| 档位 | `verdict` | `timedOut` | `requestCount` | `requestBytes` | PSS 峰值 | 证据 |
+| 档位 | `verdict` | `timedOut` | `requestCount` | `requestBytes` | PSS 峰值 | 终态文案（页面原文） |
 | --- | --- | --- | --- | --- | --- | --- |
-| `bomb-1000x` | `NO_TERMINAL_TEXT` | `true` | 0 | 0 | 102,823 KB | `result-p2-bomb-1000x.json` |
-| `corrupt-branch` | `NO_TERMINAL_TEXT` | `true` | 0 | 0 | 104,046 KB | `result-p2-corrupt-branch.json` |
-| `edge-200mb` | `NO_TERMINAL_TEXT` | `true` | 0 | 0 | 94,572 KB | `result-p2-edge-200mb.json` |
+| `bomb-1000x` | `TERMINAL_TEXT` | `false` | 4 | 66,112 | 101,810 KB | `This ZIP is damaged: its file directory cannot be read, so the file may be truncated or repacked by another tool.` |
+| `corrupt-branch` | `TERMINAL_TEXT` | `false` | 1 | 2,164 | 104,762 KB | `Imported 2 chats, skipped 2 damaged items` |
+| `edge-200mb` | `TERMINAL_TEXT` | `false` | 54 | 209,715,200（正好 200 MiB） | 179,494 KB | `Import from link failed: The requested file could not be read, typically due to permission problems that have occurred after a reference to a file was acquired.` |
 
-### 根因：测具没能把 URL 写进链接框
+取证条件：`compat-api33`（Android 13，WebView `109.0.5414.123`），APK 6,319,781 B（sha256 `b765bf7e4fee…`，与本轮 34/35/36 同一份），安装 `Success`（6025 ms），`am start -W` 4347 ms，
+形状服务监听 `0.0.0.0:5411`，每个归档一段 Range 响应；`pidSeen` 全程一个 pid（3996 / 4350 / 4557），
+`timedOut=false`，说明三档都是**自然走到终态**、不是测具超时收场。
 
-json 里的直接证据：
+### 三档各自说明了什么
 
-- `typed.state.value` = `http://10.0.2.2:5398/v1` —— 这是**测具自己形状服务的根地址**，不是归档 URL
-  （正确值形如 `http://10.0.2.2:5398/a/<档>.zip`）。`corrupt-branch` 档更把两串粘在一起：
-  `http://10.0.2.2:5398http://10.0.2.2/v1`。
-- `typed.state.importDisabled` = `true`，于是 `startClick.clicked=false`、`startClick.reason="disabled"`；
-  `confirmClick.clicked=false`。
-- 全程 `requestCount=0`，形状服务一次请求都没收到，所以三档只可能是超时。
+- **`bomb-1000x`（ZIP 目录炸弹）**：只取了前两个 Range（`bytes=0-4095` → 206/4096 B，`bytes=4096-8296` → 206/4201 B）
+  就停下并给出「目录读不出来」的明确文案，`requestBytes` 停在 66 KB，**没有把炸弹整体拉下来**。内存峰值 101,810 KB，进程存活。
+- **`corrupt-branch`（坏分支）**：1 次请求 2,164 B 走完，UI 落到「导入 2 条、跳过 2 个损坏项」，
+  侧栏出现 `30 Days` / `好会话` / `坏会话` 三条真实会话 —— **部分成功路径在 109 上是通的**。
+- **`edge-200mb`（200MB 上限档）**：Range 服务被完整拉满 **209,715,200 B（整整 200 MiB）**，耗时 42.7 s，
+  然后**报错**：`Import from link failed: The requested file could not be read …`。
+  PSS 峰值 179,494 KB（约 175 MB），进程没死、UI 没白屏，但**下载完了却读不出来**。
 
-即：**测具向 React 受控 `<input type="url">` 写值的方式在 WebView 109 上没生效**（同样的手法在 83 / 91 上成功），
-按钮一直是禁用态，链路根本没启动。**本档 P2 不出任何产品结论**：不说「109 导入失败」，也不说「109 通过」。
+### 产品问题（另开单跟踪，本档只留证据）
 
-修法在测具侧（`scripts/compat/lib/cdp.mjs` 的输入注入方式，需改用原生 `input text` 或 React 认可的输入事件序列），不改产品。
+`edge-200mb` 这条是**真实产品缺陷**，不是测具问题：服务端字节数与 Range 序列证明 200 MiB 全部传到设备（`requestBytes=209715200`），
+之后链路在「把已下载的 blob 交给解压」这一步失败，用户看到的是把内部读文件失败直接抛出来的英文文案。
+复现：`bash scripts/compat/run-p2.sh 33 edge-200mb`，判据 = `requestBytes` 等于 200 MiB 且终态出现 `Import from link failed`。
+（该问题另开 Issue，不在本 PR 改产品代码。）
+
+### 上一版结论为什么错
+
+不是产品在 109 上「导入坏了」，而是**测具写不进受控输入框**：`typed.state.value` 是形状服务根地址、`importDisabled=true`、
+`requestCount=0` —— 链路根本没启动。改成系统输入通道后 `typed.state.value` 与归档 URL 一致、`importDisabled=false`，
+`requestCount>0`，门禁通过（本轮起点就是「服务端请求数必须 > 0，否则只记测具失效」）。
 
 ## P3 · 弱网
 
@@ -71,7 +85,7 @@ json 里的直接证据：
 export PATH="/d/android-sdk/platform-tools:$PATH"
 export ANDROID_AVD_HOME=D:/android-avd ANDROID_HOME=/d/android-sdk ANDROID_SDK_ROOT=/d/android-sdk
 node scripts/compat/boot.mjs --avd deepseek-api33
-bash scripts/compat/run-p2.sh 33        # 三档（当前测具在 109 上失效，需先修输入注入）
+bash scripts/compat/run-p2.sh 33        # 三档；已改用系统输入通道（adb shell input tap/text）
 node scripts/compat/p4-layout.mjs --api 33
 ```
 
@@ -84,6 +98,6 @@ node scripts/compat/p4-layout.mjs --api 33
 
 - 真机：未测（模拟器）
 - P0 兜底页三出口：未单独跑（主包正常启动）
-- P2：三档因测具失效**未取得结论**，需修输入注入后重跑
+- P2：三档已跑到终态（见上表）；`bomb-1000x` 只跑到「拒收炸弹」这一层，**更深的嵌套炸弹档未测**
 - P3：未跑（109 的弱网结论引用 #150 / #154 既有取证）
 - P4 的 `session` / `import-confirm` 两屏：未测

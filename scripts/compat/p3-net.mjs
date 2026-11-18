@@ -15,6 +15,7 @@
  * 用法：node scripts/compat/p3-net.mjs --api 26 [--scenario s1-hold] [--port 5419]
  */
 import { spawn } from 'node:child_process'
+import { fileURLToPath } from 'node:url'
 import { writeFileSync } from 'node:fs'
 import { ADB, ensureDir, environment, evidenceDir, now, screencap, shell, sleep } from './lib/device.mjs'
 import { attach } from './lib/cdp.mjs'
@@ -62,6 +63,15 @@ const runScenario = async (cdp, baseUrl, budgetMs) => {
     sendButton.click()
 
     // 只认真正的失败/中断/重试文案，避免把正文里的「网络」当错误（#133 第二轮踩过这个坑）
+    // 占位/状态行不是「模型正文」：上一轮 firstTextMs 全是 5s，就是把它当成了首字
+    const STATUS = [/^Waiting for the response$/i, /^Retrying \(attempt \d+ of \d+\)$/i, /^Thinking\.\.\.$/i, /^$/, /^Stop$/i]
+    const contentOf = (text) => {
+      const kept = String(text)
+        .split(String.fromCharCode(10))
+        .map((line) => line.trim())
+        .filter((line) => line && !STATUS.some((re) => re.test(line)))
+      return kept.join(' | ')
+    }
     const failurePattern = /Retrying|retrying|timed out|Request timed out|connection was interrupted|Network Error|went wrong|Something went wrong|failed to|Request failed/i
     const stopAlive = () =>
       [...document.querySelectorAll('button[aria-label]')].some((node) => /stop|停止/i.test(node.getAttribute('aria-label') || ''))
@@ -85,7 +95,10 @@ const runScenario = async (cdp, baseUrl, budgetMs) => {
       const elapsed = Math.round(performance.now() - sentAt)
       const body = lastBody()
       const stop = stopAlive()
-      if (body.length > 0 && firstTextMs === null) firstTextMs = elapsed
+      if (firstTextMs === null && contentOf(body).length > 0) {
+        firstTextMs = elapsed
+        timeline.push({ at: elapsed, kind: 'first-content', body: contentOf(body).slice(0, 160) })
+      }
       if (stop) streamingSeen = true
       if (/Retrying/i.test(body) && body !== lastRetryText) {
         retryCount += 1
@@ -111,6 +124,7 @@ const runScenario = async (cdp, baseUrl, budgetMs) => {
       failureText,
       settledAtMs,
       finalBody: lastBody().slice(0, 600),
+      firstContent: firstTextMs === null ? null : contentOf(lastBody()).slice(0, 200),
       finalStop: stopAlive(),
       rows: document.querySelectorAll('[data-row-id]').length,
       timeline,
@@ -126,6 +140,41 @@ const SCENARIOS = [
   { name: 's4-unreachable', url: `http://10.0.2.2:${DEAD_PORT}/v1`, budget: 100_000 },
 ]
 
+/**
+ * 前置：把渠道切成 openai 兼容并写一把哑 Key。
+ * 不这么做的话，标准构建默认渠道是「DeepSeek 官方」，`chat-demo:base-url:openai` 根本不会被读，
+ * 消息会打到没有 Key 的官方地址 —— 上一轮 api31 的 result-p3.json 全是 null 就是掉在这上面
+ * （不是产品结论）。顺带把首次启动自动弹出的设置页关掉，否则点不到发送按钮。
+ */
+const prepare = async (cdp) => {
+  const closed = await cdp.evaluate(
+    `(() => {
+      localStorage.setItem('chat-demo:provider-kind', 'openai')
+      localStorage.setItem('chat-demo:model:openai', 'deepseek-v4.1-flash')
+      if (!localStorage.getItem('chat-demo:api-key')) localStorage.setItem('chat-demo:api-key', 'sk-p3-dummy')
+      return { kind: localStorage.getItem('chat-demo:provider-kind'), model: localStorage.getItem('chat-demo:model:openai'), keySet: Boolean(localStorage.getItem('chat-demo:api-key')) }
+    })()`,
+    15_000
+  )
+  console.log(`[${now()}] 前置渠道：${JSON.stringify(closed)}`)
+  await cdp.evaluate('location.reload()').catch(() => {})
+  await sleep(4000)
+  const dialog = await cdp.evaluate(
+    `(() => {
+      const dialog = document.querySelector('[role="dialog"], [aria-modal="true"]')
+      if (!dialog) return { closed: false, reason: 'no-dialog' }
+      const close = [...dialog.querySelectorAll('button[aria-label]')].find((node) => /^close|关闭$/i.test((node.getAttribute('aria-label') || '').trim()))
+      if (!close) return { closed: false, reason: 'no-close-button' }
+      close.click()
+      return { closed: true }
+    })()`,
+    15_000
+  )
+  console.log(`[${now()}] 关设置弹层：${JSON.stringify(dialog)}`)
+  await sleep(1200)
+  return { channel: closed, dialog }
+}
+
 const main = async () => {
   const outDir = ensureDir(evidenceDir(API))
   ensureDir(`${outDir}/shots`)
@@ -138,19 +187,37 @@ const main = async () => {
     scenarios: [],
   }
 
-  const server = spawn(process.execPath, [new URL('./lib/shape-server.mjs', import.meta.url).pathname], {
+  const serverLog = []
+  const server = spawn(process.execPath, [fileURLToPath(new URL('./lib/shape-server.mjs', import.meta.url))], {
     env: { ...process.env, SHAPE_PORT: String(PORT) },
-    stdio: 'ignore',
+    stdio: ['ignore', 'pipe', 'pipe'],
     detached: false,
   })
+  // 整形服务的输出就是「请求到底有没有打到宿主」的唯一硬证据，必须收下来
+  for (const stream of [server.stdout, server.stderr]) {
+    stream?.setEncoding('utf8')
+    stream?.on('data', (chunk) => {
+      for (const line of String(chunk).split(/\r?\n/)) {
+        if (line.trim()) serverLog.push(line.trim())
+      }
+    })
+  }
   await sleep(1200)
+  if (!serverLog.some((line) => line.includes('整形服务已就绪'))) {
+    console.error(`整形服务没起来（端口 ${PORT}）：${serverLog.join(' | ') || '(无输出)'}`)
+    process.exit(4)
+  }
+  console.log(`[${now()}] 整形服务就绪：${serverLog[0]}`)
 
   const { cdp } = await attach()
   try {
+    result.prepare = await prepare(cdp)
     for (const scenario of SCENARIOS.filter((item) => !ONLY || item.name === ONLY)) {
       console.log(`[${now()}] === ${scenario.name} ${scenario.url}`)
+      const logFrom = serverLog.length
       const outcome = await runScenario(cdp, scenario.url, scenario.budget)
-      result.scenarios.push({ scenario: scenario.name, url: scenario.url, budgetMs: scenario.budget, ...outcome })
+      const seen = serverLog.slice(logFrom).filter((line) => /\s(GET|POST|OPTIONS)\s/.test(line))
+      result.scenarios.push({ scenario: scenario.name, url: scenario.url, budgetMs: scenario.budget, serverRequests: seen, serverRequestCount: seen.length, ...outcome })
       console.log(
         `  ${JSON.stringify({
           retryCount: outcome.retryCount,
@@ -171,8 +238,10 @@ const main = async () => {
       console.log(`[${now()}] === s5-offline`)
       shell('cmd', 'connectivity', 'airplane-mode', 'enable')
       await sleep(3000)
+      const logFrom = serverLog.length
       const outcome = await runScenario(cdp, `http://10.0.2.2:${PORT}/ok/v1`, 60_000)
-      result.scenarios.push({ scenario: 's5-offline', url: 'http://10.0.2.2/ok/v1 (airplane-mode)', budgetMs: 60_000, ...outcome })
+      const seen = serverLog.slice(logFrom).filter((line) => /\s(GET|POST|OPTIONS)\s/.test(line))
+      result.scenarios.push({ scenario: 's5-offline', url: 'http://10.0.2.2/ok/v1 (airplane-mode)', budgetMs: 60_000, serverRequests: seen, serverRequestCount: seen.length, ...outcome })
       console.log(`  offline: ${JSON.stringify({ failureAtMs: outcome.failureAtMs, failureText: outcome.failureText })}`)
       screencap(`${outDir}/shots/p3-s5-offline.png`)
       shell('cmd', 'connectivity', 'airplane-mode', 'disable')
@@ -183,6 +252,7 @@ const main = async () => {
     server.kill()
   }
 
+  result.serverLog = serverLog.slice(-400)
   writeFileSync(`${outDir}/result-p3.json`, `${JSON.stringify(result, null, 2)}\n`)
   console.log(`证据：${outDir}/result-p3.json`)
 }

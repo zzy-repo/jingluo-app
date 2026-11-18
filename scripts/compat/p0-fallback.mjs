@@ -229,7 +229,11 @@ const main = async () => {
   }
 }
 
-main().catch(async (error) => {
+// 显式 exit：CDP 的 WebSocket 不 close 的话 Node 会一直挂着不退出，
+// 上一轮就是「结果已落盘但进程不退」→ 被外层 kill → 连带杀掉 detached 的模拟器。
+main()
+  .then(() => process.exit(0))
+  .catch(async (error) => {
   console.error(`失败：${error.message}`)
   if (!ATTACH && !KEEP) {
     try {
