@@ -26,6 +26,8 @@
 
         </activity>
 
+        <meta-data android:name="com.example.deepseekchat.ARTIFACT_VARIANT" android:value="${artifactVariant}" />
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"
@@ -40,4 +42,5 @@
     <!-- Permissions -->
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 </manifest>

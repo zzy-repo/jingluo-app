@@ -35,6 +35,7 @@ import { Modal } from '../base/Modal.js'
 import { Select } from '../base/Select.js'
 import { showToast } from '../base/toastState.js'
 import { ApiConfigFields, ApiKeyConfirm, useApiKeyEditor } from './ApiConfigFields.js'
+import { AppUpdateField } from './AppUpdateField.js'
 import { ChatBackgroundField } from './ChatBackgroundField.js'
 import { FeedbackDialog } from './FeedbackDialog.js'
 import { closeSettings, useSettingsDialog, type SettingsSection } from './settingsDialogState.js'
@@ -109,6 +110,7 @@ const SettingsContent = ({ visible }: { visible: boolean }) => {
               <ThemeSetting />
               <LocaleSetting />
               <TtsVoiceSetting />
+              <AppUpdateField />
               {/* 「位置信息」已从设置页移除（1.4.0-beta.1）：location 仍在 store 里读取，
                   只用于 latest_reminder 快照，界面上不再暴露入口。 */}
             </>

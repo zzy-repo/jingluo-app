@@ -6,6 +6,12 @@ apply plugin: 'com.android.application'
 // ---------------------------------------------------------------------------
 def keystorePropertiesFile = rootProject.file("../keystore/keystore.properties")
 
+def updateVariant = providers.gradleProperty('artifactVariant').orElse(System.getenv('INTERNAL_BUILD') == '1' ? 'internal' : 'standard').get()
+if (!(updateVariant in ['internal', 'standard'])) throw new GradleException('artifactVariant must be internal or standard')
+if (System.getenv('INTERNAL_BUILD') != null && updateVariant != (System.getenv('INTERNAL_BUILD') == '1' ? 'internal' : 'standard')) {
+    throw new GradleException('artifactVariant conflicts with INTERNAL_BUILD')
+}
+
 android {
     namespace = "com.example.deepseekchat"
     compileSdk = rootProject.ext.compileSdkVersion
@@ -13,6 +19,7 @@ android {
         applicationId "com.example.deepseekchat"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
+        manifestPlaceholders = [artifactVariant: updateVariant]
         versionCode 11
         versionName "1.4.0-beta.4"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
