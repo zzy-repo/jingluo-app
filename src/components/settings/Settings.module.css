@@ -594,10 +594,22 @@
 @media not all and (min-width: 768px) {
   .backgroundRow {
     flex-wrap: wrap;
+    /* WebView < 84 不实现 flex gap（#159）：间距改由下面的 margin 显式给，
+       否则新内核上 gap + margin 会叠加成 24px */
+    row-gap: 0;
+  }
+
+  /* 文本块独占一行：basis 100%（同 .wrapActionsCell 的做法）。
+     不能靠 gap 触发换行 —— 旧 Blink 上 flex gap 恒为 0，flex-basis:0 的文本列
+     与 basis:100% 的动作行刚好凑满一行而不折断，文本列被压成 0 宽，
+     标题/副标题遂逐字竖排（#159） */
+  .backgroundText {
+    flex: 1 1 100%;
   }
 
   .backgroundAction {
     flex: 1 0 100%;
+    margin-top: 12px;
     justify-content: flex-end;
   }
 
