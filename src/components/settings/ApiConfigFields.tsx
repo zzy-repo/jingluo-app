@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { IconEditOutline16 } from '../base/icons.js'
 import {
   getBaseUrl,
@@ -262,9 +262,14 @@ const BaseUrlField = ({ spec }: { spec: ProviderSpec }) => {
 const ModelField = ({ spec }: { spec: ProviderSpec }) => {
   const t = useTranslate()
   const stored = useApiConfig((state) => state.model)
+  const baseUrl = useApiConfig((state) => state.baseUrl)
+  const apiKey = useApiConfig((state) => state.apiKey)
   const fallback = spec.defaults?.model ?? ''
   const [value, setValue] = useState(stored || fallback)
+  const [models, setModels] = useState<string[]>([])
+  const [status, setStatus] = useState<'idle' | 'loading' | 'ready' | 'empty' | 'error'>('idle')
   const [error, setError] = useState<TranslationKey | null>(null)
+  const requestId = useRef(0)
 
   useEffect(() => {
     setValue(stored || fallback)
@@ -283,30 +288,45 @@ const ModelField = ({ spec }: { spec: ProviderSpec }) => {
     setValue(value.trim())
   }
 
+  const loadModels = async () => {
+    const id = ++requestId.current
+    setStatus('loading')
+    const result = await probeProvider({ baseUrl: baseUrl || spec.defaults?.baseUrl || '', apiKey })
+    if (id !== requestId.current) return
+    if (!result.ok) {
+      setModels([])
+      setStatus('error')
+      return
+    }
+    setModels(result.models)
+    setStatus(result.models.length ? 'ready' : 'empty')
+  }
+
+  useEffect(() => {
+    if (apiKey && (baseUrl || spec.defaults?.baseUrl)) void loadModels()
+    return () => { requestId.current++ }
+  }, [spec.kind, baseUrl, apiKey])
+
+  const options = models.includes(value.trim()) || !value.trim() ? models : [value.trim(), ...models]
   return (
     <div className={styles.cell}>
       <div className={styles.apiKey}>
         <div className={styles.label}>{t('settingsModelLabel')}</div>
         <div className={styles.apiKeyInput}>
           <input
-            type="text"
-            placeholder={fallback || t('settingsModelPlaceholder')}
-            autoComplete="off"
-            spellCheck={false}
-            aria-label={t('settingsModelLabel')}
-            value={value}
-            onChange={(event) => {
-              setValue(event.target.value)
-              setError(null)
-            }}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter' && !event.nativeEvent.isComposing) {
-                save()
-              }
-            }}
+            type="text" list={`models-${spec.kind}`} placeholder={fallback || t('settingsModelPlaceholder')}
+            autoComplete="off" spellCheck={false} aria-label={t('settingsModelLabel')} value={value}
+            onChange={(event) => { setValue(event.target.value); setError(null) }}
+            onKeyDown={(event) => { if (event.key === 'Enter' && !event.nativeEvent.isComposing) save() }}
             onBlur={save}
           />
+          <button type="button" className={styles.confirm} onClick={() => void loadModels()} disabled={status === 'loading'}>
+            {status === 'loading' ? t('settingsModelsLoading') : t('settingsModelsRefresh')}
+          </button>
+          <datalist id={`models-${spec.kind}`}>{options.map((model) => <option key={model} value={model} />)}</datalist>
         </div>
+        {status === 'empty' ? <div className={styles.description}>{t('settingsModelsEmpty')}</div> : null}
+        {status === 'error' ? <div className={styles.error}>{t('settingsModelsFailed')}</div> : null}
         {error ? <div className={styles.error}>{t(error)}</div> : null}
       </div>
     </div>

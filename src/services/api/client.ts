@@ -1,3 +1,4 @@
+import { Capacitor, CapacitorHttp } from '@capacitor/core'
 import { translate, type TranslationMessage } from '../../i18n/index.js'
 import {
   getBaseUrl,
@@ -377,17 +378,37 @@ export const probeProvider = async (
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), timeoutMs)
   try {
-    const response = await fetch(`${baseUrl}${getCurrentSpec().paths.models}`, {
-      method: 'GET',
-      headers: authHeaders(config.apiKey, { baseUrl }),
-      signal: controller.signal,
-    })
-    const text = await response.text().catch(() => '')
-    if (isHtmlResponse(response)) {
-      return { ok: false, status: response.status, models: [], reason: 'html' }
+    const url = `${baseUrl}${getCurrentSpec().paths.models}`
+    let status: number
+    let text: string
+    let statusText = ''
+    let contentType = ''
+    if (Capacitor.isNativePlatform()) {
+      const response = await CapacitorHttp.get({ url, headers: authHeaders(config.apiKey, { baseUrl }) })
+      status = response.status
+      text = typeof response.data === 'string' ? response.data : JSON.stringify(response.data ?? '')
+      statusText = response.status.toString()
+      contentType = 'application/json'
+    } else {
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: authHeaders(config.apiKey, { baseUrl }),
+        signal: controller.signal,
+      })
+      status = response.status
+      statusText = response.statusText
+      contentType = response.headers.get('content-type') ?? ''
+      text = await response.text().catch(() => '')
+      if (isHtmlResponse(response)) {
+        return { ok: false, status, models: [], reason: 'html' }
+      }
     }
-    if (!response.ok) {
-      let message = text || response.statusText
+    const responseLike = { status, statusText, headers: { get: (name: string) => name.toLowerCase() === 'content-type' ? contentType : null } }
+    if (isHtmlResponse(responseLike as Response)) {
+      return { ok: false, status, models: [], reason: 'html' }
+    }
+    if (status < 200 || status >= 300) {
+      let message = text || statusText
       try {
         const body: unknown = JSON.parse(text)
         if (isErrorBody(body)) {
@@ -396,7 +417,7 @@ export const probeProvider = async (
       } catch {
         // 非 JSON 错误体直接展示原文
       }
-      return { ok: false, status: response.status, models: [], reason: 'http', message }
+      return { ok: false, status, models: [], reason: 'http', message }
     }
     let body: unknown
     try {
@@ -404,13 +425,13 @@ export const probeProvider = async (
     } catch {
       return {
         ok: false,
-        status: response.status,
+        status,
         models: [],
         reason: 'json',
         message: text.slice(0, 200),
       }
     }
-    return { ok: true, status: response.status, models: pickModelIds(body) }
+    return { ok: true, status, models: pickModelIds(body) }
   } catch (error) {
     if (controller.signal.aborted) {
       return { ok: false, models: [], reason: 'timeout' }
