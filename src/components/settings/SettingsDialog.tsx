@@ -44,7 +44,13 @@ import { AppUpdateField } from './AppUpdateField.js'
 import { ChatBackgroundField } from './ChatBackgroundField.js'
 import { OursServicesRow } from './OursServicesDialog.js'
 import { FeedbackDialog } from './FeedbackDialog.js'
-import { closeSettings, useSettingsDialog, type SettingsSection } from './settingsDialogState.js'
+import {
+  closeSettings,
+  setPaymentRecordsOpen,
+  useSettingsDialog,
+  type SettingsSection,
+} from './settingsDialogState.js'
+import { PaymentRecordsDialog } from './PaymentRecordsDialog.js'
 import { MOTION_EXIT, usePresence } from '../../utils/usePresence.js'
 import styles from './Settings.module.css'
 
@@ -80,6 +86,8 @@ const SettingsContent = ({ visible }: { visible: boolean }) => {
   // 反馈弹窗：integrity=true 表示从「检查日志完整性」进入，自检面板默认展开
   const [feedback, setFeedback] = useState({ open: false, integrity: false })
   const replacingHistory = useChatStore((state) => state.importingHistory)
+  // 付款记录弹层开合：引用「我们的渠道」那套同层叠放（zIndex 由弹层自己抬高）
+  const paymentRecordsOpen = useSettingsDialog((state) => state.paymentRecordsOpen)
   const historyBusy = historyImport.busy || historyDelete.busy || replacingHistory
   // 覆盖确认 / 删除确认叠在设置之上时，设置层的 X 与点击遮罩一律不可用：
   // 那层遮罩是全屏的，第一次点击只会落到上层的「取消」上，用户会以为 X 坏了、
@@ -134,6 +142,24 @@ const SettingsContent = ({ visible }: { visible: boolean }) => {
               <ChatBackgroundField />
               <ImportHistory historyImport={historyImport} disabled={historyBusy} />
               <ExportHistory disabled={historyBusy} />
+              {/* 付款记录（Issue #115）：下单带 cid、覆盖单号之后，用户终于能看到
+                  「钱付了、记在哪一单、卡密是什么」——只读历史，刷新不产生新订单 */}
+              <SettingCell
+                label={t('oursPayRecordsTitle')}
+                description={t('oursPayRecordsEntryDescription')}
+                status={null}
+                action={
+                  <Button
+                    variant="outlined"
+                    size="m"
+                    className={styles.cellButton}
+                    data-testid="payment-records-open"
+                    onClick={() => setPaymentRecordsOpen(true)}
+                  >
+                    {t('oursPayRecordsEntryAction')}
+                  </Button>
+                }
+              />
               <SettingCell
                 label={t('feedbackCellLabel')}
                 description={t('feedbackCellDescription')}
@@ -182,6 +208,7 @@ const SettingsContent = ({ visible }: { visible: boolean }) => {
       </Modal>
       {historyImport.source ? <ImportConfirm historyImport={historyImport} /> : null}
       {historyDelete.opened ? <DeleteAllConfirm historyDelete={historyDelete} /> : null}
+      {paymentRecordsOpen ? <PaymentRecordsDialog onClose={() => setPaymentRecordsOpen(false)} /> : null}
       <FeedbackDialog
         open={feedback.open}
         integrity={feedback.integrity}

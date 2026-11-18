@@ -32,6 +32,8 @@
  */
 
 import { maskCard, maskKey } from './mask.js'
+import { ORDER_RESUME_MAX_AGE_MS, readStoredOrder, writeStoredOrder, type OrderStorage } from './orderStore.js'
+import { ensureCustomerId, readCachedCustomerId } from './customerId.js'
 
 export { maskCard, maskDeviceId, maskKey, maskTail } from './mask.js'
 
@@ -115,6 +117,7 @@ export type OursMessageKey =
   | 'oursErrOrderNotFound'
   | 'oursErrOrderTokenMissing'
   | 'oursErrCheckoutUnsupported'
+  | 'oursErrCustomerMissing'
   | 'oursOrderStatusPending'
   | 'oursOrderStatusPaid'
   | 'oursOrderStatusFulfilled'
@@ -452,8 +455,17 @@ export const isOpenableCheckout = (url: string): boolean => /^https:\/\//i.test(
  * 绝不能用 `fetch(..., { redirect: 'manual' })` 去读它：规范规定跨域时只能拿到
  * `opaqueredirect`（status 0、没有 header），读不到 Location，也看不到目标 URL。
  */
-export const buyUrl = (planId: string): string =>
-  `${OURS_API_BASE}/buy?plan=${encodeURIComponent(planId.trim())}`
+export const buyUrl = (
+  planId: string,
+  customerId?: number | null,
+  storage?: OrderStorage | null
+): string => {
+  const base = `${OURS_API_BASE}/buy?plan=${encodeURIComponent(planId.trim())}`
+  // Issue #115：下单一律带 cid（订单归属该客户）；显式传 null 表示「明知道没有 cid」，
+  // 那就不要拼 cid —— 调用方（navigateTopLevel / startCheckout）会因此拒绝下单，而不是悄悄建单。
+  const cid = customerId === undefined ? readCachedCustomerId(storage) : customerId
+  return cid === null || cid === undefined ? base : `${base}&cid=${cid}`
+}
 
 /** 付款回跳时地址栏带回来的查询参数：`?no=<out_trade_no>&order_token=<token>` */
 export type OursOrderReturn = { outTradeNo: string; orderToken: string }
@@ -513,7 +525,7 @@ export const parseCheckoutTarget = (rawUrl: string): OursCheckout | null => {
 }
 
 export type OursCheckoutResult =
-  | { kind: 'ok'; checkout: OursCheckout }
+  | { kind: 'ok'; checkout: OursCheckout; replacedUnpaidOrder: boolean }
   /** 拿不到 Location（原生插件也读不到 302 头）→ 界面提示换条路，不猜单号 */
   | { kind: 'no-location' }
   | { kind: 'error'; code: string; messageKey: OursMessageKey }
@@ -527,17 +539,34 @@ export type OursCheckoutResult =
  *  - 网页版不该调用本函数：浏览器里 `fetch(redirect:'manual')` 只能拿到 opaqueredirect，
  *    永远拿不到 Location。网页版的正确做法是让浏览器顶层跳转到 buyUrl(planId)。
  */
+export type OursCheckoutOptions = {
+  /** 下单归属客户（cid）。不传就按「缓存 → provider」自己解析；显式 null 表示已知没有 */
+  customerId?: number | null
+  /** 注入存储（单测用）；默认浏览器 localStorage */
+  storage?: OrderStorage | null
+}
+
 export const startCheckout = async (
   planId: string,
-  transport: OursTransport
+  transport: OursTransport,
+  options: OursCheckoutOptions = {}
 ): Promise<OursCheckoutResult> => {
   const id = planId.trim()
   if (id === '') {
     return { kind: 'error', code: 'PLAN_MISSING', messageKey: 'oursErrPlanMissing' }
   }
+  // Issue #115：拿不到 cid 就不下单。宁可让用户看到一句明确的提示，也不要建一张
+  // 不知道属于谁的单——那正是「付了钱还显示等待支付」的成因。
+  const customerId =
+    options.customerId === undefined
+      ? (readCachedCustomerId(options.storage) ?? (await ensureCustomerId(options.storage)))
+      : options.customerId
+  if (customerId === null || customerId === undefined) {
+    return { kind: 'error', code: 'CUSTOMER_ID_MISSING', messageKey: 'oursErrCustomerMissing' }
+  }
   const result = await transport({
     method: 'GET',
-    url: buyUrl(id),
+    url: buyUrl(id, customerId, options.storage),
     headers: { Accept: 'text/html,application/xhtml+xml' },
     timeoutMs: OURS_TIMEOUTS.buy,
     followRedirects: false,
@@ -552,7 +581,23 @@ export const startCheckout = async (
   const location = (result.location ?? '').trim()
   const target = location !== '' ? parseCheckoutTarget(location) : null
   if (target !== null) {
-    return { kind: 'ok', checkout: target }
+    // Issue #115：每次建单成功都**覆盖**本地存档，轮询只跟最新这一单。
+    // 旧实现只在弹层里写一次，连点两次「去支付」时存档可能停在上一单，回跳后就查错了单。
+    const previous = readStoredOrder(options.storage)
+    const replacedUnpaidOrder =
+      previous !== null &&
+      previous.outTradeNo !== target.outTradeNo &&
+      Date.now() - previous.startedAt <= ORDER_RESUME_MAX_AGE_MS
+    writeStoredOrder(
+      {
+        outTradeNo: target.outTradeNo,
+        orderToken: target.orderToken,
+        planId: id,
+        startedAt: Date.now(),
+      },
+      options.storage
+    )
+    return { kind: 'ok', checkout: target, replacedUnpaidOrder }
   }
   if (result.status === 0 || location === '') {
     return { kind: 'no-location' }

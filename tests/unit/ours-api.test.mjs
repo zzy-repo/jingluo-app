@@ -201,10 +201,10 @@ console.log('\n[4] /buy：GET 一次、不跟随、从 Location 的 return_url �
   const { transport, calls } = fakeTransport([
     { kind: 'response', status: 302, text: '', location: REAL_LOCATION },
   ])
-  const result = await startCheckout('p1', transport)
+  const result = await startCheckout('p1', transport, { customerId: 10 })
   eq(calls.length, 1, '只发一次（每发一次就会新建订单）')
   eq(calls[0].method, 'GET', 'method 是 GET')
-  eq(calls[0].url, `${OURS_API_BASE}/buy?plan=p1`, '/buy?plan=p1')
+  eq(calls[0].url, `${OURS_API_BASE}/buy?plan=p1&cid=10`, '/buy?plan=p1&cid=10（Issue #115：下单带 cid）')
   eq(calls[0].followRedirects, false, 'followRedirects=false（禁跟随）')
   eq(result.kind, 'ok', '拿到收银台信息')
   eq(result.checkout.payUrl, REAL_LOCATION, 'payUrl 就是 302 的 Location')
@@ -213,11 +213,22 @@ console.log('\n[4] /buy：GET 一次、不跟随、从 Location 的 return_url �
   eq(isOpenableCheckout(result.checkout.payUrl), true, '收银台是 https，可用系统浏览器打开')
 }
 
+// Issue #115：拿不到 cid 时**一次请求都不发** —— 宁可不卖，也不建「不知道属于谁」的单
+{
+  const { transport, calls } = fakeTransport([{ kind: 'response', status: 302, text: '', location: REAL_LOCATION }])
+  const refused = await startCheckout('p1', transport, { customerId: null })
+  eq(refused.kind, 'error', '没有 cid → 直接报错')
+  eq(refused.kind === 'error' ? refused.code : '', 'CUSTOMER_ID_MISSING', '错误码 CUSTOMER_ID_MISSING')
+  eq(zh[refused.kind === 'error' ? refused.messageKey : 'oursErrPlanMissing'], zh.oursErrCustomerMissing, '提示「缺少客户编号」')
+  eq(calls.length, 0, '一次 /buy 都没发（没有 cid 的下单会把单建到别人名下）')
+}
+
 console.log('\n[5] /buy 的失败面：明文收银台 / 缺令牌 / 网页版拿不到 Location')
 {
   const plain = await startCheckout(
     'p1',
-    fakeTransport([{ kind: 'response', status: 302, text: '', location: 'http://pay.example.com/x' }]).transport
+    fakeTransport([{ kind: 'response', status: 302, text: '', location: 'http://pay.example.com/x' }]).transport,
+    { customerId: 10 }
   )
   eq(plain.kind, 'error', 'http 收银台不认')
   eq(zh[plain.messageKey], '当前环境拿不到收银台地址，请在 App 内购买或改用卡密兑换', '明文收银台文案')
@@ -226,14 +237,16 @@ console.log('\n[5] /buy 的失败面：明文收银台 / 缺令牌 / 网页版�
     'p1',
     fakeTransport([
       { kind: 'response', status: 302, text: '', location: 'https://pay.example.com/checkout/abc' },
-    ]).transport
+    ]).transport,
+    { customerId: 10 }
   )
   eq(noToken.kind, 'error', '只有 https 地址没有单号/令牌 → 直接报错')
   eq(zh[noToken.messageKey], '缺少订单令牌，无法查询', '缺令牌文案')
 
   const opaque = await startCheckout(
     'p1',
-    fakeTransport([{ kind: 'response', status: 0, text: '' }]).transport
+    fakeTransport([{ kind: 'response', status: 0, text: '' }]).transport,
+    { customerId: 10 }
   )
   eq(opaque.kind, 'no-location', '网页版 opaqueredirect（status 0）→ no-location')
 
@@ -241,7 +254,8 @@ console.log('\n[5] /buy 的失败面：明文收银台 / 缺令牌 / 网页版�
   // 拿不到 Location 就说 no-location，绝不拿 body/URL 去猜单号
   const followed = await startCheckout(
     'p1',
-    fakeTransport([{ kind: 'response', status: 200, text: '<html>checkout</html>', location: '' }]).transport
+    fakeTransport([{ kind: 'response', status: 200, text: '<html>checkout</html>', location: '' }]).transport,
+    { customerId: 10 }
   )
   eq(followed.kind, 'no-location', '跟随后的 200 页面不被当作收银台地址')
 
@@ -486,7 +500,7 @@ console.log('\n[10] 脱敏与「不写 console」')
   try {
     await probeApiKey(KEY, fakeTransport([json(200, { api_key: KEY, valid: true })]).transport)
     await fetchPlans(fakeTransport([json(200, { plans: [{ id: 'p1', price: 3, points: 300 }] })]).transport)
-    await startCheckout('p1', fakeTransport([{ kind: 'response', status: 302, text: '', location: REAL_LOCATION }]).transport)
+    await startCheckout('p1', fakeTransport([{ kind: 'response', status: 302, text: '', location: REAL_LOCATION }]).transport, { customerId: 10 })
     await redeemCard(
       { cardNo: CARD, apiKey: KEY, requestId: requestIdForCard(CARD) },
       fakeTransport([{ kind: 'response', status: 202, text: '{"code":"CREDIT_PENDING"}' }]).transport

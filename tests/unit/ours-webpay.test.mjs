@@ -107,9 +107,9 @@ console.log('\n[2] startCheckout（原生）与 buyUrl 同源，行为不变')
     calls.push(request)
     return { kind: 'response', status: 302, text: '', location: '' }
   }
-  const result = await startCheckout('p1', transport)
+  const result = await startCheckout('p1', transport, { customerId: 10 })
   eq(calls.length, 1, '原生只发一次 /buy')
-  eq(calls[0].url, buyUrl('p1'), '原生请求的 URL 就是 buyUrl(p1)')
+  eq(calls[0].url, buyUrl('p1', 10), '原生请求的 URL 就是 buyUrl(p1, 10)（与网页版同一个带 cid 的地址）')
   eq(calls[0].followRedirects, false, '原生仍然不跟随重定向')
   eq(result.kind, 'no-location', '读不到 Location → no-location（不猜单号）')
 }
@@ -227,9 +227,22 @@ console.log('\n[7] 源码防回归：网页版购买只有一个出口（window.
   const source = (relative) => readFileSync(new URL(relative, import.meta.url), 'utf8')
   const transport = source('../../src/services/ours/transport.ts')
   const dialog = source('../../src/components/settings/OursServicesDialog.tsx')
+  // Issue #115：顶层导航前必须补 cid —— 不带 cid 的 /buy 建出来的单不知道属于谁，
+  // 付完款 App 只能一直显示「等待支付」（就是这次事故）。所以这里断言两件事：
+  // 导航只发生在 withBuyCustomerId 放行之后的地址上，且仍然只有 window.location.assign 一个出口。
   truthy(
-    /export const navigateTopLevel = \(url: string\): void => \{\s*window\.location\.assign\(url\)/u.test(transport),
-    'navigateTopLevel 的实现就是 window.location.assign(url)（顶层导航）'
+    /export const navigateTopLevel = \(url: string\): void => \{\s*const ready = withBuyCustomerId\(url, readCachedCustomerId\(\)\)/u.test(
+      transport
+    ),
+    'navigateTopLevel 先补 cid 再导航（withBuyCustomerId + 已知 cid 走同步分支）'
+  )
+  truthy(
+    /if \(ready !== null\) \{\s*window\.location\.assign\(ready\)/u.test(transport),
+    'navigateTopLevel 的同步分支就是 window.location.assign(补过 cid 的地址)'
+  )
+  truthy(
+    !/window\.location\.assign\(url\)/u.test(transport),
+    '不再出现 window.location.assign(url)：原样跳转（可能不带 cid）的写法被禁止'
   )
   truthy(
     dialog.includes('navigateTopLevel(buyUrl(planId))'),

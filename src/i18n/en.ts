@@ -555,6 +555,28 @@ export const en = {
   autoTitlePromptLength: 'Target length: about 8–14 characters for Chinese, or 3–5 words for English.',
   autoTitlePromptFallback:
     'If the message carries too little information, still give a short best-guess title (for example "Greetings"), without explanation.',
+  // Issue #115: payment records (cid on order creation / overwritten order number / order history)
+  oursErrCustomerMissing:
+    'Missing customer id (cid), so no order was created. Try again shortly, or fill in your API key first',
+  oursPayRecordsTitle: 'Payment records',
+  oursPayRecordsEntryDescription: 'Paid orders, amounts, card last 4 digits and redemption state',
+  oursPayRecordsEntryAction: 'View',
+  oursPayRecordsTotalPaid: 'Total paid',
+  oursPayRecordsEmpty: 'No payment records yet. Once you buy a plan and pay, every order shows up here.',
+  oursPayRecordsLoading: 'Loading payment records…',
+  oursPayRecordsRefresh: 'Refresh',
+  oursPayRecordsStatusPending: 'Awaiting payment',
+  oursPayRecordsStatusCompleted: 'Completed',
+  oursPayRecordsStatusExpired: 'Expired',
+  oursPayRecordsNotRedeemed: 'Not redeemed',
+  oursPayRecordsRedeemed: 'Redeemed',
+  oursPayRecordsViewCard: 'View card code',
+  oursPayRecordsHideCard: 'Hide card code',
+  oursPayRecordsCopyCard: 'Copy card code',
+  oursPayRecordsCopied: 'Card code copied',
+  oursPayRecordsCardTail: 'Card',
+  oursPayRecordsNeedKey: 'Fill in your API key to see the payment records of this account',
+  oursPayRecordsReplacedHint: 'The previous unpaid order was replaced by the new one, so the latest applies',
   // Issue #45: unified request timeout notice (kept apart from network failure and 4xx/5xx)
   requestTimeout: 'Request timed out ({seconds}s with no response). Check your network and try again.',
 } satisfies Record<keyof typeof zh, string>

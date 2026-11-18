@@ -22,6 +22,8 @@
  * 但这一条在真机上还没验证过；读不到 location 时再走 CheckoutBrowser.resolveLocation
  * （原生 HttpURLConnection，instanceFollowRedirects=false）取一次 Location。
  */
+import type { LinkedMessage } from '../../i18n/index.js'
+import { ensureCustomerId, readCachedCustomerId } from './customerId.js'
 import { Capacitor, CapacitorHttp, registerPlugin } from '@capacitor/core'
 import { isOpenableCheckout, type OursHttpRequest, type OursHttpResult } from './api.js'
 
@@ -145,6 +147,38 @@ export const openCheckout = async (url: string): Promise<boolean> => {
 }
 
 /**
+ * 给我们的购买地址补上 cid 参数（Issue #115：下单一律带 cid）。
+ *
+ * 返回 null 表示「这条地址不能跳」：
+ *  - 是我们的购买入口、但拿不到 cid → 不跳（建单必须知道订单属于谁）；
+ *  - 地址解析不了 / 不是购买入口 → 原样返回，不干扰别的导航。
+ */
+export const withBuyCustomerId = (url: string, customerId: number | null): string | null => {
+  const raw = url.trim()
+  if (raw === '') {
+    return null
+  }
+  let parsed: URL
+  try {
+    parsed = new URL(raw)
+  } catch {
+    return raw
+  }
+  if (!/\/buy$/u.test(parsed.pathname)) {
+    return raw
+  }
+  const existing = (parsed.searchParams.get('cid') ?? '').trim()
+  if (existing !== '') {
+    return parsed.href
+  }
+  if (customerId === null) {
+    return null
+  }
+  parsed.searchParams.set('cid', String(customerId))
+  return parsed.href
+}
+
+/**
  * 网页版购买：让浏览器做**顶层导航**到 /buy?plan=<id>（Issue #36 的技术订正）。
  *
  * 为什么不是 fetch：`fetch(url, { redirect: 'manual' })` 在跨域时按规范只能拿到
@@ -154,5 +188,38 @@ export const openCheckout = async (url: string): Promise<boolean> => {
  * 为什么不用 window.open：回跳要落在**同一个标签页**，才能把 ?no=&order_token= 带回我们的页面。
  */
 export const navigateTopLevel = (url: string): void => {
-  window.location.assign(url)
+  const ready = withBuyCustomerId(url, readCachedCustomerId())
+  if (ready !== null) {
+    window.location.assign(ready)
+    return
+  }
+  // 缓存里还没有 cid：先解析一次再跳。解析不出来就**不跳**——宁可什么都不发生，
+  // 也不要建一张不带 cid 的单（Issue #115 那次付款后一直「等待支付」的成因）。
+  void ensureCustomerId()
+    .then((customerId) => {
+      const target = withBuyCustomerId(url, customerId)
+      if (target !== null) {
+        window.location.assign(target)
+      } else {
+        warnMissingCustomerId()
+      }
+      return target
+    })
+    .catch(() => null)
+}
+
+/**
+ * 兜底的用户提示：网页版才走这条同步路径（原生那边 startCheckout 会返回明确错误码给界面）。
+ * 提示通道由 main.tsx 注入（`showToast`），服务层不 import 组件，也不弹原生 alert。
+ */
+type CustomerMissingNotice = (message: LinkedMessage) => void
+
+let customerMissingNotice: CustomerMissingNotice | null = null
+
+export const setCustomerMissingNotice = (next: CustomerMissingNotice | null): void => {
+  customerMissingNotice = next
+}
+
+const warnMissingCustomerId = (): void => {
+  customerMissingNotice?.({ key: 'oursErrCustomerMissing' })
 }

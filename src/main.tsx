@@ -8,6 +8,13 @@ import { setupTheme } from './app/theme.js'
 import { readDiagnosticsFacts } from './app/diagnosticsContext.js'
 import { openOursServices } from './components/settings/settingsDialogState.js'
 import { consumeOrderReturn } from './services/ours/returnParams.js'
+import { getApiKey } from './services/api/apiConfig.js'
+import { fetchCustomerIdFromProfile, setCustomerIdProvider } from './services/ours/customerId.js'
+import { fetchPaymentRecords } from './services/ours/paymentRecords.js'
+import { httpTransport, setCustomerMissingNotice } from './services/ours/transport.js'
+import { showToast } from './components/base/toastState.js'
+import { INVITE_API_BASE } from './services/invite/api.js'
+import { ensureDeviceId } from './services/invite/device.js'
 import {
   initDiagnostics,
   installDiagnosticsDebugHandle,
@@ -39,6 +46,29 @@ installDiagnosticsDebugHandle()
 if (consumeOrderReturn(window) !== null) {
   openOursServices()
 }
+
+// 下单归属客户（cid）的来源（Issue #115）：/buy 不带 cid 就会建出一张不知道属于谁的单，
+// 付款成功后 App 只能一直显示「等待支付」。这里把「怎么拿到 cid」注入给业务层：
+//  1. 有 API Key：直接用 GET /api/orders 返回的 customer_id（实测唯一可靠的来源）；
+//  2. 没有 Key（还没绑定的首购用户）：退回设备码通道 GET <invite>/me?device_id=…。
+// 两条都失败就返回 null —— 业务层会拒绝下单，而不是发出一次没有 cid 的 /buy。
+// 拿不到 cid 时（网页版「去支付」）用 App 自己的轻提示，不弹原生 alert
+setCustomerMissingNotice((message) => showToast(message))
+
+setCustomerIdProvider(async () => {
+  const key = getApiKey()
+  if (key !== '') {
+    const records = await fetchPaymentRecords(key, httpTransport)
+    if (records.kind === 'ok' && records.data.customerId !== null) {
+      return records.data.customerId
+    }
+  }
+  return fetchCustomerIdFromProfile({
+    base: INVITE_API_BASE,
+    deviceId: ensureDeviceId(),
+    transport: httpTransport,
+  })
+})
 
 // 根部包一层错误边界：渲染期异常不再是整屏白屏，而是一张可读的错误页（issue #28）
 createRoot(document.getElementById('root') as HTMLElement).render(

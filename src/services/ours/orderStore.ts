@@ -30,7 +30,7 @@ export type OrderStorage = {
 }
 
 /** 浏览器里的 localStorage；没有（Node / 隐私模式抛错）就返回 null，调用方按「没有存档」处理 */
-const browserStorage = (): OrderStorage | null => {
+export const browserStorage = (): OrderStorage | null => {
   try {
     return typeof localStorage === 'undefined' ? null : localStorage
   } catch {
