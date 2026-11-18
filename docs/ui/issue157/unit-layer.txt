@@ -1,0 +1,3882 @@
+
+>> tests/unit/api-request-timeout.test.mjs (timeout 180000ms)
+TAP version 13
+# Subtest: 永不 resolve 的请求：超时后必须拒绝，错误可与网络失败区分（改动前永久挂起）
+ok 1 - 永不 resolve 的请求：超时后必须拒绝，错误可与网络失败区分（改动前永久挂起）
+  ---
+  duration_ms: 42.150043
+  type: 'test'
+  ...
+# Subtest: 三类失败互不混淆：超时 / 网络失败 / 4xx / 5xx
+ok 2 - 三类失败互不混淆：超时 / 网络失败 / 4xx / 5xx
+  ---
+  duration_ms: 260.673009
+  type: 'test'
+  ...
+# Subtest: 默认超时与 probeProvider 同口径（15s），且可配置；非法值回到默认
+ok 3 - 默认超时与 probeProvider 同口径（15s），且可配置；非法值回到默认
+  ---
+  duration_ms: 0.476711
+  type: 'test'
+  ...
+# Subtest: 调用方传入的超时优先于全局配置
+ok 4 - 调用方传入的超时优先于全局配置
+  ---
+  duration_ms: 31.506254
+  type: 'test'
+  ...
+# Subtest: 调用方主动取消：抛原始 abort，不伪装成超时
+ok 5 - 调用方主动取消：抛原始 abort，不伪装成超时
+  ---
+  duration_ms: 20.90376
+  type: 'test'
+  ...
+# Subtest: 超时只约束响应头：流式正文读得久也不被误杀
+ok 6 - 超时只约束响应头：流式正文读得久也不被误杀
+  ---
+  duration_ms: 152.366829
+  type: 'test'
+  ...
+# Subtest: 超时文案 zh / en 都有且带秒数占位符
+ok 7 - 超时文案 zh / en 都有且带秒数占位符
+  ---
+  duration_ms: 3.723526
+  type: 'test'
+  ...
+1..7
+# tests 7
+# suites 0
+# pass 7
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 1643.612125
+<< PASS tests/unit/api-request-timeout.test.mjs (1869ms)
+
+>> tests/unit/app-update.test.mjs (timeout 180000ms)
+TAP version 13
+# Subtest: strict code ordering, variant isolation, stable/prerelease are independent of variants
+ok 1 - strict code ordering, variant isolation, stable/prerelease are independent of variants
+  ---
+  duration_ms: 12.068882
+  type: 'test'
+  ...
+# Subtest: legacy rows are visible but not eligible; no MD5 fallback
+ok 2 - legacy rows are visible but not eligible; no MD5 fallback
+  ---
+  duration_ms: 74.891735
+  type: 'test'
+  ...
+# Subtest: malformed records and ambiguous maximum code fail closed
+ok 3 - malformed records and ambiguous maximum code fail closed
+  ---
+  duration_ms: 9.100802
+  type: 'test'
+  ...
+# Subtest: relative APK path only: no credentials, traversal, absolute URLs, queries or encodings
+ok 4 - relative APK path only: no credentials, traversal, absolute URLs, queries or encodings
+  ---
+  duration_ms: 0.562682
+  type: 'test'
+  ...
+# Subtest: manifest fetch is anonymous, nonredirecting, cancellable and injectable
+ok 5 - manifest fetch is anonymous, nonredirecting, cancellable and injectable
+  ---
+  duration_ms: 273.971988
+  type: 'test'
+  ...
+# Subtest: cached/downloaded results, progress filtering and listener cleanup
+ok 6 - cached/downloaded results, progress filtering and listener cleanup
+  ---
+  duration_ms: 8.06554
+  type: 'test'
+  ...
+# Subtest: cancel actively reaches bridge and ignores late completion/progress
+ok 7 - cancel actively reaches bridge and ignores late completion/progress
+  ---
+  duration_ms: 9.496294
+  type: 'test'
+  ...
+# Subtest: hash/package/signature/network failures propagate and release listener
+ok 8 - hash/package/signature/network failures propagate and release listener
+  ---
+  duration_ms: 8.307602
+  type: 'test'
+  ...
+1..8
+# tests 8
+# suites 0
+# pass 8
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 1240.660923
+<< PASS tests/unit/app-update.test.mjs (1598ms)
+
+>> tests/unit/archive-fixture-roundtrip.test.mjs (timeout 180000ms)
+TAP version 13
+# Subtest: 夹具 8 会话 / 每会话 512KB 图片：真实导入跑通，会话与图片一一对上
+ok 1 - 夹具 8 会话 / 每会话 512KB 图片：真实导入跑通，会话与图片一一对上
+  ---
+  duration_ms: 180.063144
+  type: 'test'
+  ...
+# Subtest: 夹具 40 会话同规模（设备用例规模）：真实导入跑通
+ok 2 - 夹具 40 会话同规模（设备用例规模）：真实导入跑通
+  ---
+  duration_ms: 524.048063
+  type: 'test'
+  ...
+1..2
+# tests 2
+# suites 0
+# pass 2
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 1102.692211
+<< PASS tests/unit/archive-fixture-roundtrip.test.mjs (1406ms)
+
+>> tests/unit/auto-title-backpressure.test.mjs (timeout 180000ms)
+TAP version 13
+# Subtest: [1] 并发上限：同时最多 N 个在飞，第 N+1 个排队而不是直接发
+ok 1 - [1] 并发上限：同时最多 N 个在飞，第 N+1 个排队而不是直接发
+  ---
+  duration_ms: 215.18433
+  type: 'test'
+  ...
+# Subtest: [2] 队列上限：溢出的明确跳过并计数，不打到上游也不静默吞
+ok 2 - [2] 队列上限：溢出的明确跳过并计数，不打到上游也不静默吞
+  ---
+  duration_ms: 97.623691
+  type: 'test'
+  ...
+# Subtest: [3] 429 与普通失败可区分：限流单独计数，不当成功
+ok 3 - [3] 429 与普通失败可区分：限流单独计数，不当成功
+  ---
+  duration_ms: 12.70716
+  type: 'test'
+  ...
+# Subtest: [4] 排队中被取消：不打上游、不占坑，标题仍回退本地截取
+ok 4 - [4] 排队中被取消：不打上游、不占坑，标题仍回退本地截取
+  ---
+  duration_ms: 32.508483
+  type: 'test'
+  ...
+1..4
+# tests 4
+# suites 0
+# pass 4
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 1140.347228
+<< PASS tests/unit/auto-title-backpressure.test.mjs (1306ms)
+
+>> tests/unit/auto-title-prompt-i18n.test.mjs (timeout 180000ms)
+
+[1] zh / en 都有自动标题提示词 key
+[2] en 下 prompt 与每条文案都不含中文
+[4] zh 下 prompt 逐字不变
+
+PASS 23/23
+<< PASS tests/unit/auto-title-prompt-i18n.test.mjs (1418ms)
+
+>> tests/unit/auto-title-stream.test.mjs (timeout 180000ms)
+TAP version 13
+# Subtest: [1] 两个分支的标题请求都必须是 stream:true
+ok 1 - [1] 两个分支的标题请求都必须是 stream:true
+  ---
+  duration_ms: 322.279207
+  type: 'test'
+  ...
+# Subtest: [2] 增量够用就断：读到标题行即断开，剩余分块不再拉取
+ok 2 - [2] 增量够用就断：读到标题行即断开，剩余分块不再拉取
+  ---
+  duration_ms: 9.382681
+  type: 'test'
+  ...
+# Subtest: [3] 流式下的 429 仍记 throttled，且不给半截标题当成功
+ok 3 - [3] 流式下的 429 仍记 throttled，且不给半截标题当成功
+  ---
+  duration_ms: 24.871908
+  type: 'test'
+  ...
+# Subtest: [4] 流内错误帧：半截内容不当标题，回退本地截取且不抛错
+ok 4 - [4] 流内错误帧：半截内容不当标题，回退本地截取且不抛错
+  ---
+  duration_ms: 7.792623
+  type: 'test'
+  ...
+# Subtest: [5] 网关忽略 stream:true 回了 JSON：仍能拿到标题（老行为不回归）
+ok 5 - [5] 网关忽略 stream:true 回了 JSON：仍能拿到标题（老行为不回归）
+  ---
+  duration_ms: 10.616038
+  type: 'test'
+  ...
+1..5
+# tests 5
+# suites 0
+# pass 5
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 2215.74848
+<< PASS tests/unit/auto-title-stream.test.mjs (2680ms)
+
+>> tests/unit/bind-key.test.mjs (timeout 180000ms)
+TAP version 13
+# Subtest: [1] 200 成功：POST /bind，报文只有 device_id + api_key，返回 key 可落盘
+ok 1 - [1] 200 成功：POST /bind，报文只有 device_id + api_key，返回 key 可落盘
+  ---
+  duration_ms: 18.881116
+  type: 'test'
+  ...
+# Subtest: [2] already_bound:true 按成功处理：没有错误态，文案不说「已绑定过」
+ok 2 - [2] already_bound:true 按成功处理：没有错误态，文案不说「已绑定过」
+  ---
+  duration_ms: 0.924374
+  type: 'test'
+  ...
+# Subtest: [3] 四个错误码各有中文文案，与 issue 表格原文逐字一致
+ok 3 - [3] 四个错误码各有中文文案，与 issue 表格原文逐字一致
+  ---
+  duration_ms: 0.776782
+  type: 'test'
+  ...
+# Subtest: [3b] 只有状态码没有 code 时也有可读文案
+ok 4 - [3b] 只有状态码没有 code 时也有可读文案
+  ---
+  duration_ms: 6.691692
+  type: 'test'
+  ...
+# Subtest: [4] adopted_points 不进返回值，也不出现在任何用户可见文案里
+ok 5 - [4] adopted_points 不进返回值，也不出现在任何用户可见文案里
+  ---
+  duration_ms: 1.307645
+  type: 'test'
+  ...
+# Subtest: [5] 主链路 NETWORK / TIMEOUT / ROUTE_MISSING → 兜底备用域名，结果标记 via=fallback
+ok 6 - [5] 主链路 NETWORK / TIMEOUT / ROUTE_MISSING → 兜底备用域名，结果标记 via=fallback
+  ---
+  duration_ms: 18.195059
+  type: 'test'
+  ...
+# Subtest: [5b] 兜底也失败时如实报错，不假装成功
+ok 7 - [5b] 兜底也失败时如实报错，不假装成功
+  ---
+  duration_ms: 6.051263
+  type: 'test'
+  ...
+# Subtest: [5c] 业务错误不兜底：400 invalid_api_key 只打一次主链路
+ok 8 - [5c] 业务错误不兜底：400 invalid_api_key 只打一次主链路
+  ---
+  duration_ms: 0.341756
+  type: 'test'
+  ...
+# Subtest: [6] device_id 用本地已持久化的那个；缺失 / 非法则按 \#72 规则生成并落盘
+ok 9 - [6] device_id 用本地已持久化的那个；缺失 / 非法则按 \#72 规则生成并落盘
+  ---
+  duration_ms: 46.578491
+  type: 'test'
+  ...
+# Subtest: [6b] device_id / api_key 缺失时先本地拦下，不发请求
+ok 10 - [6b] device_id / api_key 缺失时先本地拦下，不发请求
+  ---
+  duration_ms: 15.065705
+  type: 'test'
+  ...
+# Subtest: [6c] Key 首尾空白被裁掉，粘贴时不至于因为空格失败
+ok 11 - [6c] Key 首尾空白被裁掉，粘贴时不至于因为空格失败
+  ---
+  duration_ms: 0.508163
+  type: 'test'
+  ...
+# Subtest: [7] 整条链路不打印 Key / 设备码
+ok 12 - [7] 整条链路不打印 Key / 设备码
+  ---
+  duration_ms: 0.554135
+  type: 'test'
+  ...
+1..12
+# tests 12
+# suites 0
+# pass 12
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 1481.393093
+<< PASS tests/unit/bind-key.test.mjs (1824ms)
+
+>> tests/unit/chat-context-budget-long-session.test.mjs (timeout 180000ms)
+TAP version 13
+#   单轮回答实测 2455 字符（造数 2455 字符）
+#   真实历史：420 轮 / 840 条消息 / 1407520 字符 / 2812000 B / 估算 469174 token
+# Subtest: 真实 420 轮会话：走 store 全链路建出长历史
+ok 1 - 真实 420 轮会话：走 store 全链路建出长历史
+  ---
+  duration_ms: 15108.718146
+  type: 'test'
+  ...
+#   同一份真实历史（420 轮）在四种预算下的真实请求体：
+#   裁剪前（关掉两道闸 = 修复前代码的行为）：840 条消息 / 请求体 2522654 B / 估算 373739 token / 未裁剪（全量 420 轮都发出去）
+#   只条数闸：402 条消息 / 请求体 1205710 B / 估算 178870 token / 裁掉 219 轮（保留 200 / 共 419），字符 1191591→570191，token 397197→190064，reason=rounds
+#   只 token 闸：254 条消息 / 请求体 759786 B / 估算 112714 token / 裁掉 293 轮（保留 126 / 共 419），字符 1191591→359291，token 397197→119764，reason=tokens
+#   默认预算（裁剪后）：254 条消息 / 请求体 759786 B / 估算 112714 token / 裁掉 293 轮（保留 126 / 共 419），字符 1191591→359291，token 397197→119764，reason=tokens
+#   裁剪报告原文：上下文预算：裁掉 293/419 轮（保留 126 轮），字符 1191591→359291，估算 token 397197→119764，上限 120000 token / 200 轮，触发 tokens
+#   系统前缀 55 字符，裁剪前后逐字节相同："该助手为DeepSeek，由深度求索公司创造。\\n2026-11-19,Thursday,Web,English"…
+#   latest_reminder：折叠进系统前缀，2 行（420 轮本会堆 420 行）
+# Subtest: 裁剪前后对比：字节 / 估算 token / 轮数（同一份真实历史）
+ok 2 - 裁剪前后对比：字节 / 估算 token / 轮数（同一份真实历史）
+  ---
+  duration_ms: 272.676185
+  type: 'test'
+  ...
+#   续写请求：257 条消息 / 760065 B / 估算 119862 token；裁剪报告：上下文预算：裁掉 293/420 轮（保留 127 轮），字符 1191884→359584，估算 token 397295→119862，上限 120000 token / 200 轮，触发 tokens
+#   续写前缀原文保留："正在续写：幂等键用会话 id + 版本号拼接，先落到本地队列"
+#   直调报告：上下文预算：裁掉 293/421 轮（保留 128 轮），字符 1192151→359851，估算 token 397384→119951，上限 120000 token / 200 轮，触发 tokens
+# Subtest: 续写前缀与系统前缀一起长在真历史里也不被裁掉
+ok 3 - 续写前缀与系统前缀一起长在真历史里也不被裁掉
+  ---
+  duration_ms: 107.883697
+  type: 'test'
+  ...
+# Subtest: 裁剪统计口径与 toRequestMessages 直调一致（防两套数字）
+ok 4 - 裁剪统计口径与 toRequestMessages 直调一致（防两套数字）
+  ---
+  duration_ms: 6.68422
+  type: 'test'
+  ...
+1..4
+# tests 4
+# suites 0
+# pass 4
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 17526.453014
+<< PASS tests/unit/chat-context-budget-long-session.test.mjs (17802ms)
+
+>> tests/unit/chat-context-limit-error.test.mjs (timeout 180000ms)
+TAP version 13
+#   认出的原文特征：6 条（400 + 各家措辞）
+#   未误判的原文：3 条；既有分类（401/429/503）未受影响
+#   超限文案：这段对话已经超出模型的上下文上限，这次请求没能发出去。可以开一个新会话继续，或者删掉几条较早的消息后再试
+#   兜底文案：回答没有完成，出现了未知错误，可以重新生成
+# Subtest: 分类：上游说「上下文太长」的常见原文都归 contextLimit
+ok 1 - 分类：上游说「上下文太长」的常见原文都归 contextLimit
+  ---
+  duration_ms: 7.45966
+  type: 'test'
+  ...
+# Subtest: 分类：413 本体就是请求体超限，也归 contextLimit
+ok 2 - 分类：413 本体就是请求体超限，也归 contextLimit
+  ---
+  duration_ms: 0.31197
+  type: 'test'
+  ...
+# Subtest: 分类：无关的 400 不许被误判成 contextLimit
+ok 3 - 分类：无关的 400 不许被误判成 contextLimit
+  ---
+  duration_ms: 1.394069
+  type: 'test'
+  ...
+# Subtest: 分类：上下文超限不可重试（重试解决不了长度问题）
+ok 4 - 分类：上下文超限不可重试（重试解决不了长度问题）
+  ---
+  duration_ms: 0.471898
+  type: 'test'
+  ...
+# Subtest: 文案：上下文超限的提示必须和「未知错误」兜底不同，且能照着做
+ok 5 - 文案：上下文超限的提示必须和「未知错误」兜底不同，且能照着做
+  ---
+  duration_ms: 2.510039
+  type: 'test'
+  ...
+# Subtest: 文案：413 也走同一句可操作提示，不是「超大文件」那套
+ok 6 - 文案：413 也走同一句可操作提示，不是「超大文件」那套
+  ---
+  duration_ms: 0.274692
+  type: 'test'
+  ...
+# Subtest: 全链路：上游返回上下文超限，只发一次请求，界面给可操作提示
+ok 7 - 全链路：上游返回上下文超限，只发一次请求，界面给可操作提示
+  ---
+  duration_ms: 278.571074
+  type: 'test'
+  ...
+# Subtest: 全链路：413 同样只发一次请求，提示同一句话
+ok 8 - 全链路：413 同样只发一次请求，提示同一句话
+  ---
+  duration_ms: 14.599499
+  type: 'test'
+  ...
+# Subtest: 上游原文仍在日志里（不丢证据），但不上界面
+ok 9 - 上游原文仍在日志里（不丢证据），但不上界面
+  ---
+  duration_ms: 18.107406
+  type: 'test'
+  ...
+# Subtest: 识别清单是导出的常量，报告里能逐条列出来
+ok 10 - 识别清单是导出的常量，报告里能逐条列出来
+  ---
+  duration_ms: 0.766909
+  type: 'test'
+  ...
+#   全链路：1 次请求，localMessage=replyContextLimit，界面「这段对话已经超出模型的上下文上限，这次请求没能发出去。可以开一个新会话继续，或者删掉几条较早的消息后再试」
+#   日志字段：stage,durationMs,ui.condition,ui.notice,error.name,error.msg
+#   日志：ui.condition=contextLimit ui.notice=replyContextLimit
+#   认得 10 条原文特征：context_length_exceeded | maximum context length | context window | context length | prompt is too long | input is too long | too many tokens | exceeds? the (?:maximum )?(?:context|token) | 上下文(?:长度)?[^。]{0,10}超 | 超出[^。]{0,10}上下文
+1..10
+# tests 10
+# suites 0
+# pass 10
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 1485.95378
+<< PASS tests/unit/chat-context-limit-error.test.mjs (1625ms)
+
+>> tests/unit/chat-retry-retryable.test.mjs (timeout 180000ms)
+TAP version 13
+# Subtest: 断网：连续失败后自动重试，最终拿到回答（不是直接报错）
+ok 1 - 断网：连续失败后自动重试，最终拿到回答（不是直接报错）
+  ---
+  duration_ms: 432.491895
+  type: 'test'
+  ...
+# Subtest: 5xx：服务端繁忙可按上限重试，达到上限就放弃并保留繁忙报错
+ok 2 - 5xx：服务端繁忙可按上限重试，达到上限就放弃并保留繁忙报错
+  ---
+  duration_ms: 45.69774
+  type: 'test'
+  ...
+# Subtest: 超时：kind=timeout 同样自动重试，按上限放弃后报超时
+ok 3 - 超时：kind=timeout 同样自动重试，按上限放弃后报超时
+  ---
+  duration_ms: 371.113186
+  type: 'test'
+  ...
+# Subtest: 4xx 鉴权类：401 重试无用，一次失败就收尾
+ok 4 - 4xx 鉴权类：401 重试无用，一次失败就收尾
+  ---
+  duration_ms: 24.32265
+  type: 'test'
+  ...
+# Subtest: 用户停止：abort 不算可重试错误，立刻按已停止收尾
+ok 5 - 用户停止：abort 不算可重试错误，立刻按已停止收尾
+  ---
+  duration_ms: 39.215018
+  type: 'test'
+  ...
+# Subtest: 重试期间界面提示「正在第 N 次重试」，且中英文案带次数与上限占位符
+ok 6 - 重试期间界面提示「正在第 N 次重试」，且中英文案带次数与上限占位符
+  ---
+  duration_ms: 29.658759
+  type: 'test'
+  ...
+# Subtest: 重试判定是纯函数：abort 优先，4xx 不重试，可重试错误按上限收敛
+ok 7 - 重试判定是纯函数：abort 优先，4xx 不重试，可重试错误按上限收敛
+  ---
+  duration_ms: 5.859636
+  type: 'test'
+  ...
+1..7
+# tests 7
+# suites 0
+# pass 7
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 2611.509967
+<< PASS tests/unit/chat-retry-retryable.test.mjs (2946ms)
+
+>> tests/unit/chat-stream-interrupt.test.mjs (timeout 180000ms)
+TAP version 13
+# Subtest: 断流：没有 message_stop 就结束，抛可识别的断流错误
+ok 1 - 断流：没有 message_stop 就结束，抛可识别的断流错误
+  ---
+  duration_ms: 259.134083
+  type: 'test'
+  ...
+# Subtest: 断流：读到一半响应体报错，同样是断流且原文留给日志
+ok 2 - 断流：读到一半响应体报错，同样是断流且原文留给日志
+  ---
+  duration_ms: 2.303973
+  type: 'test'
+  ...
+# Subtest: 断流：中止请求仍按用户停止处理，不误报断流
+ok 3 - 断流：中止请求仍按用户停止处理，不误报断流
+  ---
+  duration_ms: 13.369499
+  type: 'test'
+  ...
+# Subtest: 正常流：message_stop 收尾，不误判断流、不产生提示
+ok 4 - 正常流：message_stop 收尾，不误判断流、不产生提示
+  ---
+  duration_ms: 9.375994
+  type: 'test'
+  ...
+# Subtest: 本地化：中英文案各自落地，未知英文原文不上界面
+ok 5 - 本地化：中英文案各自落地，未知英文原文不上界面
+  ---
+  duration_ms: 18.805914
+  type: 'test'
+  ...
+1..5
+# tests 5
+# suites 0
+# pass 5
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 1816.626899
+<< PASS tests/unit/chat-stream-interrupt.test.mjs (2135ms)
+
+>> tests/unit/chat-wait-notice.test.mjs (timeout 180000ms)
+TAP version 13
+# Subtest: 首字等待提示：5s 之前不打扰
+ok 1 - 首字等待提示：5s 之前不打扰
+  ---
+  duration_ms: 13.122293
+  type: 'test'
+  ...
+# Subtest: 首字等待提示：5s / 30s / 60s 逐级升级
+ok 2 - 首字等待提示：5s / 30s / 60s 逐级升级
+  ---
+  duration_ms: 0.275351
+  type: 'test'
+  ...
+# Subtest: 首字等待提示：只有 60s 档给停止/重试入口
+ok 3 - 首字等待提示：只有 60s 档给停止/重试入口
+  ---
+  duration_ms: 12.910991
+  type: 'test'
+  ...
+# Subtest: 首字等待提示：文案中英齐备并按任务书措辞
+ok 4 - 首字等待提示：文案中英齐备并按任务书措辞
+  ---
+  duration_ms: 4.822282
+  type: 'test'
+  ...
+# Subtest: 首字等待提示：定时器清单与分档一一对应
+ok 5 - 首字等待提示：定时器清单与分档一一对应
+  ---
+  duration_ms: 0.343264
+  type: 'test'
+  ...
+# Subtest: 挂载点契约：store 写提示、消息组件渲染并给出口
+ok 6 - 挂载点契约：store 写提示、消息组件渲染并给出口
+  ---
+  duration_ms: 7.99983
+  type: 'test'
+  ...
+1..6
+# tests 6
+# suites 0
+# pass 6
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 1034.505822
+<< PASS tests/unit/chat-wait-notice.test.mjs (1314ms)
+
+>> tests/unit/context-budget.test.mjs (timeout 180000ms)
+TAP version 13
+#   1000 轮：401 条消息 / 385670 B；4000 轮：401 条消息 / 386070 B
+#   1000 轮裁剪后：401 条消息 / 141639 字符 / 估算 47213 token（默认预算 120000 token / 200 轮）
+# Subtest: [红] 请求体不随历史轮次线性增长：1000 轮与 4000 轮体积相同
+ok 1 - [红] 请求体不随历史轮次线性增长：1000 轮与 4000 轮体积相同
+  ---
+  duration_ms: 208.046491
+  type: 'test'
+  ...
+# Subtest: [红] 1000 轮历史的请求体落在预算内（token 估算闸 + 条数闸）
+ok 2 - [红] 1000 轮历史的请求体落在预算内（token 估算闸 + 条数闸）
+  ---
+  duration_ms: 26.191701
+  type: 'test'
+  ...
+# Subtest: 未超预算时原样保留全部轮次（默认预算不裁正常会话）
+ok 3 - 未超预算时原样保留全部轮次（默认预算不裁正常会话）
+  ---
+  duration_ms: 5.112701
+  type: 'test'
+  ...
+# Subtest: 超预算按成对丢弃最旧轮，且不留孤立回答 / 孤立提问
+ok 4 - 超预算按成对丢弃最旧轮，且不留孤立回答 / 孤立提问
+  ---
+  duration_ms: 2.916377
+  type: 'test'
+  ...
+# Subtest: token 估算闸生效：字符超预算时按轮裁掉最旧部分
+ok 5 - token 估算闸生效：字符超预算时按轮裁掉最旧部分
+  ---
+  duration_ms: 0.535077
+  type: 'test'
+  ...
+# Subtest: 裁剪不产生悬空的 latest_reminder 快照
+ok 6 - 裁剪不产生悬空的 latest_reminder 快照
+  ---
+  duration_ms: 3.837027
+  type: 'test'
+  ...
+# Subtest: 只剩最后一轮时仍能发出：预算再小也保留最近一对 + 本轮提问
+ok 7 - 只剩最后一轮时仍能发出：预算再小也保留最近一对 + 本轮提问
+  ---
+  duration_ms: 0.66
+  type: 'test'
+  ...
+# Subtest: 本轮提问永不截断，续写前缀也不丢
+ok 8 - 本轮提问永不截断，续写前缀也不丢
+  ---
+  duration_ms: 0.643196
+  type: 'test'
+  ...
+# Subtest: 预算可配置且带保守默认值，裁剪有统计口径
+ok 9 - 预算可配置且带保守默认值，裁剪有统计口径
+  ---
+  duration_ms: 1.172028
+  type: 'test'
+  ...
+# Subtest: 裁剪有可观测量：报告给出裁掉多少轮 / 多少字符
+ok 10 - 裁剪有可观测量：报告给出裁掉多少轮 / 多少字符
+  ---
+  duration_ms: 1.01273
+  type: 'test'
+  ...
+# Subtest: 未发生裁剪时不回调，保持零开销
+ok 11 - 未发生裁剪时不回调，保持零开销
+  ---
+  duration_ms: 0.398341
+  type: 'test'
+  ...
+1..11
+# tests 11
+# suites 0
+# pass 11
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 1018.169481
+<< PASS tests/unit/context-budget.test.mjs (1349ms)
+
+>> tests/unit/copy-limit.test.mjs (timeout 180000ms)
+  ok  [1a] 阈值是 512 KiB（524288）
+  ok  [1b] ASCII 每字符 1 字节（3）
+  ok  [1c] 中文每字符 3 字节（6）
+  ok  [1d] emoji 每字符 4 字节（代理对不重复计）（4）
+  ok  [1e] 空串 0 字节（0）
+  ok  [2a] 正好 512 KiB 不算超限（false）
+  ok  [2b] 多 1 字节即超限（true）
+  ok  [2c] 中文按 3 字节计：174763 字 = 524289 字节即超限（true）
+  ok  [2d] 中文 174762 字 = 524286 字节仍可复制（false）
+  ok  [3a] 中文 200000 字 = 600000 字节（600000）
+  ok  [3b] 中文 200000 字超限（true）
+  ok  [3c] 140000 个 emoji 是 280000 个 UTF-16 单元（280000）
+  ok  [3d] 但 UTF-8 是 560000 字节（560000）
+  ok  [3e] 字符数远小于阈值、按字节判定仍超限（true）
+  ok  [4a] 正好 512 KiB 显示 512（512）
+  ok  [4b] 600000 字节向上取整为 586 KiB（586）
+
+共 16 项断言
+PASS tests/unit/copy-limit.test.mjs
+<< PASS tests/unit/copy-limit.test.mjs (880ms)
+
+>> tests/unit/diagnostics-system-info.test.mjs (timeout 180000ms)
+TAP version 13
+# Subtest: native success fixture is cached once and carries app facts
+ok 1 - native success fixture is cached once and carries app facts
+  ---
+  duration_ms: 21.495639
+  type: 'test'
+  ...
+# Subtest: native failure falls back without blocking and keeps browser facts
+ok 2 - native failure falls back without blocking and keeps browser facts
+  ---
+  duration_ms: 9.815239
+  type: 'test'
+  ...
+# Subtest: API<26 provider is explicitly unknown and sensitive identifiers are absent
+ok 3 - API<26 provider is explicitly unknown and sensitive identifiers are absent
+  ---
+  duration_ms: 7.527006
+  type: 'test'
+  ...
+1..3
+# tests 3
+# suites 0
+# pass 3
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 622.980375
+<< PASS tests/unit/diagnostics-system-info.test.mjs (952ms)
+
+>> tests/unit/dialog-open-no-apply.test.mjs (timeout 180000ms)
+TAP version 13
+# Subtest: [1] 本地无 Key、用户未做选择 → 不发任何写请求
+ok 1 - [1] 本地无 Key、用户未做选择 → 不发任何写请求
+  ---
+  duration_ms: 21.171782
+  type: 'test'
+  ...
+# Subtest: [2] 本地有 Key、/me 404 device_not_found → 只读 /me，不补 /apply
+ok 2 - [2] 本地有 Key、/me 404 device_not_found → 只读 /me，不补 /apply
+  ---
+  duration_ms: 0.950317
+  type: 'test'
+  ...
+# Subtest: [2b] 本地有 Key、/me 200 → 正常读到档案
+ok 3 - [2b] 本地有 Key、/me 200 → 正常读到档案
+  ---
+  duration_ms: 21.756721
+  type: 'test'
+  ...
+# Subtest: [3] 显式选「我已有 Key」→ 只发 POST /bind
+ok 4 - [3] 显式选「我已有 Key」→ 只发 POST /bind
+  ---
+  duration_ms: 0.716284
+  type: 'test'
+  ...
+# Subtest: [4] 显式选「领取新 Key」→ /apply 照旧
+ok 5 - [4] 显式选「领取新 Key」→ /apply 照旧
+  ---
+  duration_ms: 0.510827
+  type: 'test'
+  ...
+1..5
+# tests 5
+# suites 0
+# pass 5
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 1315.315184
+<< PASS tests/unit/dialog-open-no-apply.test.mjs (1601ms)
+
+>> tests/unit/douyin-account.test.mjs (timeout 180000ms)
+
+[1] 复制出去的值
+
+[2] 复制成功 / 失败对应的提示
+
+[3] zh / en 文案成对且非空
+
+[4] 提示 key 能翻译出真实文案
+
+PASS douyin-account：28 条断言全通过
+<< PASS tests/unit/douyin-account.test.mjs (890ms)
+
+>> tests/unit/enter-key-mode.test.mjs (timeout 180000ms)
+TAP version 13
+# Subtest: A 设置项存在：默认档是「回车发送」= 修复前写死的行为
+ok 1 - A 设置项存在：默认档是「回车发送」= 修复前写死的行为
+  ---
+  duration_ms: 1.325554
+  type: 'test'
+  ...
+# Subtest: B 三档可切换、立即生效、跨重启持久化，脏值回落默认
+ok 2 - B 三档可切换、立即生效、跨重启持久化，脏值回落默认
+  ---
+  duration_ms: 65.202658
+  type: 'test'
+  ...
+# Subtest: C 三档语义：回车发送 / Ctrl+Cmd 回车发送 / 只换行必须点按钮
+ok 3 - C 三档语义：回车发送 / Ctrl+Cmd 回车发送 / 只换行必须点按钮
+  ---
+  duration_ms: 0.492606
+  type: 'test'
+  ...
+# Subtest: D 输入法合成期：三档任何组合都不发送（独立用例）
+ok 4 - D 输入法合成期：三档任何组合都不发送（独立用例）
+  ---
+  duration_ms: 0.661312
+  type: 'test'
+  ...
+# Subtest: E 软键盘回车键文案随档位 + ChatInput 真的接线（不再写死）
+ok 5 - E 软键盘回车键文案随档位 + ChatInput 真的接线（不再写死）
+  ---
+  duration_ms: 0.468386
+  type: 'test'
+  ...
+# Subtest: F i18n 键成对、设置面板末尾追加且不动阅读设置
+ok 6 - F i18n 键成对、设置面板末尾追加且不动阅读设置
+  ---
+  duration_ms: 72.618424
+  type: 'test'
+  ...
+1..6
+# tests 6
+# suites 0
+# pass 6
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 1268.448387
+<< PASS tests/unit/enter-key-mode.test.mjs (1630ms)
+
+>> tests/unit/error-report.test.mjs (timeout 180000ms)
+TAP version 13
+# Subtest: report carries version / stage / error / component stack / js stack / store summary
+ok 1 - report carries version / stage / error / component stack / js stack / store summary
+  ---
+  duration_ms: 11.29777
+  type: 'test'
+  ...
+# Subtest: report never leaks keys, tokens, signed params or full URLs
+ok 2 - report never leaks keys, tokens, signed params or full URLs
+  ---
+  duration_ms: 4.820302
+  type: 'test'
+  ...
+# Subtest: scrubReportText is the copy-time second boundary
+ok 3 - scrubReportText is the copy-time second boundary
+  ---
+  duration_ms: 2.537512
+  type: 'test'
+  ...
+# Subtest: long stacks are clipped and oversized reports are capped
+ok 4 - long stacks are clipped and oversized reports are capped
+  ---
+  duration_ms: 2.859132
+  type: 'test'
+  ...
+# Subtest: facts=null degrades to unknown instead of throwing
+ok 5 - facts=null degrades to unknown instead of throwing
+  ---
+  duration_ms: 0.692584
+  type: 'test'
+  ...
+# Subtest: collector meta has stage/reason/name/message/first component frame, no body
+ok 6 - collector meta has stage/reason/name/message/first component frame, no body
+  ---
+  duration_ms: 10.181461
+  type: 'test'
+  ...
+# Subtest: non-Error throws still produce a readable report and meta
+ok 7 - non-Error throws still produce a readable report and meta
+  ---
+  duration_ms: 0.465394
+  type: 'test'
+  ...
+1..7
+# tests 7
+# suites 0
+# pass 7
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 468.68974
+<< PASS tests/unit/error-report.test.mjs (653ms)
+
+>> tests/unit/export-text-bridge.test.mjs (timeout 180000ms)
+TAP version 13
+# Subtest: SAF start cancellation is not saved and sends no body or finish
+ok 1 - SAF start cancellation is not saved and sends no body or finish
+  ---
+  duration_ms: 3.882232
+  type: 'test'
+  ...
+# Subtest: chunk writes respect 48KiB UTF8 and reconstruct the exact JSON text
+ok 2 - chunk writes respect 48KiB UTF8 and reconstruct the exact JSON text
+  ---
+  duration_ms: 66.401562
+  type: 'test'
+  ...
+# Subtest: legacy WebView without TextEncoder still chunks and saves
+ok 3 - legacy WebView without TextEncoder still chunks and saves
+  ---
+  duration_ms: 0.508642
+  type: 'test'
+  ...
+# Subtest: write failure aborts, propagates, and never returns saved
+ok 4 - write failure aborts, propagates, and never returns saved
+  ---
+  duration_ms: 4.519916
+  type: 'test'
+  ...
+1..4
+# tests 4
+# suites 0
+# pass 4
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 743.475103
+<< PASS tests/unit/export-text-bridge.test.mjs (1021ms)
+
+>> tests/unit/feedback-draft.test.mjs (timeout 180000ms)
+TAP version 13
+# Subtest: 初始状态没有草稿
+ok 1 - 初始状态没有草稿
+  ---
+  duration_ms: 1.539335
+  type: 'test'
+  ...
+# Subtest: 写入后读回：描述 / 联系方式 / 分类 / 选过截图 全部保留
+ok 2 - 写入后读回：描述 / 联系方式 / 分类 / 选过截图 全部保留
+  ---
+  duration_ms: 14.454047
+  type: 'test'
+  ...
+# Subtest: 读出来是副本：调用方改字段不会污染内部草稿
+ok 3 - 读出来是副本：调用方改字段不会污染内部草稿
+  ---
+  duration_ms: 0.309304
+  type: 'test'
+  ...
+# Subtest: 只填了联系方式也算草稿（空描述不等于没内容）
+ok 4 - 只填了联系方式也算草稿（空描述不等于没内容）
+  ---
+  duration_ms: 1.741638
+  type: 'test'
+  ...
+# Subtest: 只有截图没文本：仍算草稿，用于重开时提示重新选图
+ok 5 - 只有截图没文本：仍算草稿，用于重开时提示重新选图
+  ---
+  duration_ms: 0.261236
+  type: 'test'
+  ...
+# Subtest: 空草稿等于没有草稿：打开又原样关掉不留空壳
+ok 6 - 空草稿等于没有草稿：打开又原样关掉不留空壳
+  ---
+  duration_ms: 0.234903
+  type: 'test'
+  ...
+# Subtest: clearFeedbackDraft 清掉草稿
+ok 7 - clearFeedbackDraft 清掉草稿
+  ---
+  duration_ms: 0.289212
+  type: 'test'
+  ...
+# Subtest: 隐私：草稿模块不落盘、不进日志、不上报（静态守卫）
+ok 8 - 隐私：草稿模块不落盘、不进日志、不上报（静态守卫）
+  ---
+  duration_ms: 48.229247
+  type: 'test'
+  ...
+1..8
+# tests 8
+# suites 0
+# pass 8
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 425.656457
+<< PASS tests/unit/feedback-draft.test.mjs (688ms)
+
+>> tests/unit/feedback-export.test.mjs (timeout 180000ms)
+TAP version 13
+# Subtest: offline/empty export retains metadata and failure, never calls network
+ok 1 - offline/empty export retains metadata and failure, never calls network
+  ---
+  duration_ms: 5.874043
+  type: 'test'
+  ...
+# Subtest: second-boundary redaction covers keys/tokens/signed URLs/chat/payment/console
+ok 2 - second-boundary redaction covers keys/tokens/signed URLs/chat/payment/console
+  ---
+  duration_ms: 1.949945
+  type: 'test'
+  ...
+# Subtest: does not reuse upload clipping; 500 full collector-size logs survive under 4MiB
+ok 3 - does not reuse upload clipping; 500 full collector-size logs survive under 4MiB
+  ---
+  duration_ms: 71.494674
+  type: 'test'
+  ...
+# Subtest: oversize exports have valid JSON, marked omissions and an exact UTF8 boundary
+ok 4 - oversize exports have valid JSON, marked omissions and an exact UTF8 boundary
+  ---
+  duration_ms: 223.833568
+  type: 'test'
+  ...
+# Subtest: snapshot read failure exports last visible snapshot without mutating logs
+ok 5 - snapshot read failure exports last visible snapshot without mutating logs
+  ---
+  duration_ms: 0.593525
+  type: 'test'
+  ...
+# Subtest: save success/cancellation/failure remain distinct and retain diagnostics/form
+ok 6 - save success/cancellation/failure remain distinct and retain diagnostics/form
+  ---
+  duration_ms: 5.478982
+  type: 'test'
+  ...
+1..6
+# tests 6
+# suites 0
+# pass 6
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 897.421859
+<< PASS tests/unit/feedback-export.test.mjs (1159ms)
+
+>> tests/unit/feedback-images.test.mjs (timeout 180000ms)
+TAP version 13
+# Subtest: 单图映射与无截图兼容
+ok 1 - 单图映射与无截图兼容
+  ---
+  duration_ms: 10.988881
+  type: 'test'
+  ...
+# Subtest: 中文、emoji、换行与 JSON 转义按整个 UTF-8 body 预算；关键错误保留
+ok 2 - 中文、emoji、换行与 JSON 转义按整个 UTF-8 body 预算；关键错误保留
+  ---
+  duration_ms: 449.655273
+  type: 'test'
+  ...
+# Subtest: 413/network/timeout 降级重试保留同一截图和关键错误
+ok 3 - 413/network/timeout 降级重试保留同一截图和关键错误
+  ---
+  duration_ms: 64.50546
+  type: 'test'
+  ...
+# Subtest: 大图有界重压缩，失败或仍超限明确报错且零请求
+ok 4 - 大图有界重压缩，失败或仍超限明确报错且零请求
+  ---
+  duration_ms: 31.039602
+  type: 'test'
+  ...
+# Subtest: 关键错误本身超预算不静默裁掉，也不发超限请求
+ok 5 - 关键错误本身超预算不静默裁掉，也不发超限请求
+  ---
+  duration_ms: 18.994206
+  type: 'test'
+  ...
+# Subtest: 原生 CapacitorHttp 首次与重试沿用 images
+ok 6 - 原生 CapacitorHttp 首次与重试沿用 images
+  ---
+  duration_ms: 1.035162
+  type: 'test'
+  ...
+1..6
+# tests 6
+# suites 0
+# pass 6
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 943.810817
+<< PASS tests/unit/feedback-images.test.mjs (1100ms)
+
+>> tests/unit/format-points-i18n.test.mjs (timeout 180000ms)
+
+[1] zh / en 都有积分单位 key，键名对齐
+
+[2] en：含 points、不含「积分」（全部调用点）
+  en 实际渲染：formatPoints(100) = "100 points" / formatPlanMeta = "¥3.00 · 300 points"
+
+[3] zh：全部调用点与修复前逐字一致
+
+[4] 数值格式化规则不变（trunc + 千分位，非有限数按 0）
+
+PASS format-points-i18n：45 条断言全通过
+<< PASS tests/unit/format-points-i18n.test.mjs (532ms)
+
+>> tests/unit/import-archive-manifest.test.mjs (timeout 180000ms)
+TAP version 13
+# Subtest: 首个条目不是 manifest：给出 backupManifestNotFirst 并说明实际/期望条目
+ok 1 - 首个条目不是 manifest：给出 backupManifestNotFirst 并说明实际/期望条目
+  ---
+  duration_ms: 6.716807
+  type: 'test'
+  ...
+# Subtest: 空包（只有目录条目、没有任何文件）：给出 backupEmptyArchive
+ok 2 - 空包（只有目录条目、没有任何文件）：给出 backupEmptyArchive
+  ---
+  duration_ms: 1.059756
+  type: 'test'
+  ...
+# Subtest: 条目数据 CRC 不符：ArchiveError 带出条目名与序号，不再折叠成 backupIncomplete
+ok 3 - 条目数据 CRC 不符：ArchiveError 带出条目名与序号，不再折叠成 backupIncomplete
+  ---
+  duration_ms: 1.784969
+  type: 'test'
+  ...
+# Subtest: 中央目录读不到（截断包）：给出 backupArchiveUnreadable
+ok 4 - 中央目录读不到（截断包）：给出 backupArchiveUnreadable
+  ---
+  duration_ms: 0.875907
+  type: 'test'
+  ...
+# Subtest: 四条新文案 zh/en 都在，占位符对齐且 en 下不出现中文
+ok 5 - 四条新文案 zh/en 都在，占位符对齐且 en 下不出现中文
+  ---
+  duration_ms: 2.168118
+  type: 'test'
+  ...
+# Subtest: 正例回归：manifest 在首位且版本合法时照旧通过
+ok 6 - 正例回归：manifest 在首位且版本合法时照旧通过
+  ---
+  duration_ms: 1.37071
+  type: 'test'
+  ...
+1..6
+# tests 6
+# suites 0
+# pass 6
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 456.90321
+<< PASS tests/unit/import-archive-manifest.test.mjs (602ms)
+
+>> tests/unit/import-archive-unclassified.test.mjs (timeout 180000ms)
+TAP version 13
+# Subtest: 图片排在它所属会话之前：给出 backupEntryOutOfOrder，带序号 / 条目名 / 当前会话
+ok 1 - 图片排在它所属会话之前：给出 backupEntryOutOfOrder，带序号 / 条目名 / 当前会话
+  ---
+  duration_ms: 10.599568
+  type: 'test'
+  ...
+# Subtest: 索引已读到但会话没被导入：给出 backupEntryUnreferenced，带序号 / 条目名
+ok 2 - 索引已读到但会话没被导入：给出 backupEntryUnreferenced，带序号 / 条目名
+  ---
+  duration_ms: 3.800889
+  type: 'test'
+  ...
+# Subtest: 两条新文案 zh/en 成对、占位符对齐、en 下无中文，既有 key 未被删改
+ok 3 - 两条新文案 zh/en 成对、占位符对齐、en 下无中文，既有 key 未被删改
+  ---
+  duration_ms: 2.776249
+  type: 'test'
+  ...
+1..3
+# tests 3
+# suites 0
+# pass 3
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 452.92724
+<< PASS tests/unit/import-archive-unclassified.test.mjs (659ms)
+
+>> tests/unit/import-budget-vs-stall.test.mjs (timeout 180000ms)
+TAP version 13
+# Subtest: ① 一直在收字节但总预算先耗尽 → 判「超出下载时限」，不是「长时间无响应」
+ok 1 - ① 一直在收字节但总预算先耗尽 → 判「超出下载时限」，不是「长时间无响应」
+  ---
+  duration_ms: 626.360724
+  type: 'test'
+  ...
+# Subtest: ② 零字节增长（真停滞）→ 仍判「长时间无响应」
+ok 2 - ② 零字节增长（真停滞）→ 仍判「长时间无响应」
+  ---
+  duration_ms: 300.17672
+  type: 'test'
+  ...
+# Subtest: ③ 两档的用户文案互不相同且各自说人话（中文/英文都覆盖）
+ok 3 - ③ 两档的用户文案互不相同且各自说人话（中文/英文都覆盖）
+  ---
+  duration_ms: 0.711485
+  type: 'test'
+  ...
+1..3
+# tests 3
+# suites 0
+# pass 3
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 1282.946023
+<< PASS tests/unit/import-budget-vs-stall.test.mjs (1380ms)
+
+>> tests/unit/import-clock-monotonic.test.mjs (timeout 180000ms)
+TAP version 13
+#   前跳 1h：终态 null、请求 2 次、trace 7 条
+# Subtest: ① 系统时间前跳 1 小时：健康链路不得被判超时/停滞（修复前报 historyImportUrlDeadline）
+ok 1 - ① 系统时间前跳 1 小时：健康链路不得被判超时/停滞（修复前报 historyImportUrlDeadline）
+  ---
+  duration_ms: 67.161962
+  type: 'test'
+  ...
+#   回拨 1h：trace 3 条、at = [0, 200, 302]、durationMs = [302]
+# Subtest: ② 系统时间回拨 1 小时：trace.at 与 durationMs 一律 >= 0（修复前为 −3600000ms）
+ok 2 - ② 系统时间回拨 1 小时：trace.at 与 durationMs 一律 >= 0（修复前为 −3600000ms）
+  ---
+  duration_ms: 312.163509
+  type: 'test'
+  ...
+1..2
+# tests 2
+# suites 0
+# pass 2
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 812.026804
+<< PASS tests/unit/import-clock-monotonic.test.mjs (958ms)
+
+>> tests/unit/import-error-copy.test.mjs (timeout 180000ms)
+TAP version 13
+#     -> key=historyImportUrlOffline params=null
+# Subtest: ① 真的没有网络（DNS 失败）→ 沿用现有那句「网络已断开」
+ok 1 - ① 真的没有网络（DNS 失败）→ 沿用现有那句「网络已断开」
+  ---
+  duration_ms: 312.622503
+  type: 'test'
+  ...
+#     -> key=historyImportUrlRefused params=null
+#     -> key=historyImportUrlHttp params={"status":503}
+# Subtest: ② 连接被拒绝 / 服务未监听（ECONNREFUSED）→ 不能说成「网络已断开」
+ok 2 - ② 连接被拒绝 / 服务未监听（ECONNREFUSED）→ 不能说成「网络已断开」
+  ---
+  duration_ms: 302.165795
+  type: 'test'
+  ...
+# Subtest: ③ 服务可达但返回错误（503）→ 单独一档，且带上状态码
+ok 3 - ③ 服务可达但返回错误（503）→ 单独一档，且带上状态码
+  ---
+  duration_ms: 1.351139
+  type: 'test'
+  ...
+#     -> key=historyImportUrlOffline params=null
+#     -> key=historyImportUrlRefused params=null
+#     -> offline=historyImportUrlOffline refused=historyImportUrlRefused server=historyImportUrlHttp
+#     -> 网络已断开，请检查网络后重试  |  连接被拒绝：服务器没有接受连接（服务未启动或被防火墙拦截），请稍后重试  |  链接返回了异常状态（HTTP {status}），请确认链接是否仍然有效
+#     -> en.historyImportUrlOffline = Network disconnected. Check your connection and retry.
+#     -> en.historyImportUrlRefused = Connection refused: the server did not accept the connection (service down or blocked by a firewall). Try again later.
+#     -> en.historyImportUrlHttp = The link returned an error status (HTTP {status}). Check that it is still valid.
+# Subtest: ④ 三档文案互不相同（这就是 \#111 的核心断言）
+ok 4 - ④ 三档文案互不相同（这就是 \#111 的核心断言）
+  ---
+  duration_ms: 603.375648
+  type: 'test'
+  ...
+# Subtest: ⑤ en 字典下这三档都不含中文（否则用户会看到中英混排）
+ok 5 - ⑤ en 字典下这三档都不含中文（否则用户会看到中英混排）
+  ---
+  duration_ms: 0.673412
+  type: 'test'
+  ...
+# Subtest: ⑥ 纯函数分类：offline / refused / server 三档，且 navigator.onLine === false 一律算断网
+ok 6 - ⑥ 纯函数分类：offline / refused / server 三档，且 navigator.onLine === false 一律算断网
+  ---
+  duration_ms: 1.906527
+  type: 'test'
+  ...
+1..6
+# tests 6
+# suites 0
+# pass 6
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 1526.104165
+<< PASS tests/unit/import-error-copy.test.mjs (1706ms)
+
+>> tests/unit/import-hardening.test.mjs (timeout 180000ms)
+TAP version 13
+# Subtest: 缺口 1：index 排在会话文件之前 → 整包照常导入（顺序不是格式的一部分）
+ok 1 - 缺口 1：index 排在会话文件之前 → 整包照常导入（顺序不是格式的一部分）
+  ---
+  duration_ms: 12.797132
+  type: 'test'
+  ...
+# Subtest: 缺口 1（反向）：标准顺序 manifest → 会话 → index 仍然成功，没被改坏
+ok 2 - 缺口 1（反向）：标准顺序 manifest → 会话 → index 仍然成功，没被改坏
+  ---
+  duration_ms: 3.996006
+  type: 'test'
+  ...
+# Subtest: 缺口 1（反向）：index 先到 + 会话后跟自己的图片目录，图片照样落到会话上
+ok 3 - 缺口 1（反向）：index 先到 + 会话后跟自己的图片目录，图片照样落到会话上
+  ---
+  duration_ms: 3.856847
+  type: 'test'
+  ...
+# Subtest: 缺口 2：同名条目 → backupEntryDuplicated，带出冲突路径，提示里点明「重复」
+ok 4 - 缺口 2：同名条目 → backupEntryDuplicated，带出冲突路径，提示里点明「重复」
+  ---
+  duration_ms: 1.492637
+  type: 'test'
+  ...
+# Subtest: 缺口 2：目录与文件同名（a/ 与 a）也算重复
+ok 5 - 缺口 2：目录与文件同名（a/ 与 a）也算重复
+  ---
+  duration_ms: 2.627334
+  type: 'test'
+  ...
+# Subtest: 缺口 2（反向）：没有重名的正常包不受影响
+ok 6 - 缺口 2（反向）：没有重名的正常包不受影响
+  ---
+  duration_ms: 4.313227
+  type: 'test'
+  ...
+# Subtest: 缺口 2：新文案 zh / en 成对、占位符对齐、en 下不出现中文
+ok 7 - 缺口 2：新文案 zh / en 成对、占位符对齐、en 下不出现中文
+  ---
+  duration_ms: 0.505579
+  type: 'test'
+  ...
+# Subtest: 缺口 3：解压后 20MB 的高度可压缩条目 → 被解压闸拒绝，且不写入暂存
+ok 8 - 缺口 3：解压后 20MB 的高度可压缩条目 → 被解压闸拒绝，且不写入暂存
+  ---
+  duration_ms: 330.309439
+  type: 'test'
+  ...
+# Subtest: 缺口 3（反向）：10MB 全是同一字符的合法会话（比值高但体量小）照常导入
+ok 9 - 缺口 3（反向）：10MB 全是同一字符的合法会话（比值高但体量小）照常导入
+  ---
+  duration_ms: 620.254363
+  type: 'test'
+  ...
+# Subtest: 缺口 3（反向）：正常压缩比的包（3–10:1）照常导入
+ok 10 - 缺口 3（反向）：正常压缩比的包（3–10:1）照常导入
+  ---
+  duration_ms: 15.092677
+  type: 'test'
+  ...
+# Subtest: 缺口 3（反向）：声明解压尺寸撒谎（4GB）→ 拒绝，且不按声明预分配
+ok 11 - 缺口 3（反向）：声明解压尺寸撒谎（4GB）→ 拒绝，且不按声明预分配
+  ---
+  duration_ms: 11.948271
+  type: 'test'
+  ...
+# Subtest: 缺口 4：259 字节的条目名（正常长名）照常接受
+ok 12 - 缺口 4：259 字节的条目名（正常长名）照常接受
+  ---
+  duration_ms: 3.641387
+  type: 'test'
+  ...
+# Subtest: 缺口 4：60019 字节的条目名 → 超上限被拒绝，不再一路进到路径校验
+ok 13 - 缺口 4：60019 字节的条目名 → 超上限被拒绝，不再一路进到路径校验
+  ---
+  duration_ms: 19.750949
+  type: 'test'
+  ...
+# Subtest: 缺口 4：名字开头带 U+FEFF 的 manifest 归一化成 manifest.json 后照常导入
+ok 14 - 缺口 4：名字开头带 U+FEFF 的 manifest 归一化成 manifest.json 后照常导入
+  ---
+  duration_ms: 4.848524
+  type: 'test'
+  ...
+1..14
+# tests 14
+# suites 0
+# pass 14
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 1494.17696
+<< PASS tests/unit/import-hardening.test.mjs (1581ms)
+
+>> tests/unit/import-network-classification.test.mjs (timeout 180000ms)
+TAP version 13
+#   离线：终态 historyImportUrlOffline、请求 2 次、包体 4096B
+#   禁用端口：终态 historyImportUrlInvalid、请求 1 次
+# Subtest: ① TypeError: Failed to fetch + navigator.onLine=false → 判「网络已断开」（修复前报网络异常）
+ok 1 - ① TypeError: Failed to fetch + navigator.onLine=false → 判「网络已断开」（修复前报网络异常）
+  ---
+  duration_ms: 316.747052
+  type: 'test'
+  ...
+# Subtest: ② net::ERR_UNSAFE_PORT（永久不可用）→ 不重试（修复前会重试 2 次）
+ok 2 - ② net::ERR_UNSAFE_PORT（永久不可用）→ 不重试（修复前会重试 2 次）
+  ---
+  duration_ms: 1.680079
+  type: 'test'
+  ...
+#   瞬时：终态 historyImportUrlNetwork、请求 2 次
+# Subtest: ③ 瞬时失败（在线）→ 仍按「网络异常」重试 2 次（放宽分类不许把重试删掉）
+ok 3 - ③ 瞬时失败（在线）→ 仍按「网络异常」重试 2 次（放宽分类不许把重试删掉）
+  ---
+  duration_ms: 302.789502
+  type: 'test'
+  ...
+#   超时：终态 historyImportUrlTimeout、请求 2 次
+# Subtest: ④ 读超时 → 仍重试并报「下载超时」（不是离线、也不是永久失败）
+ok 4 - ④ 读超时 → 仍重试并报「下载超时」（不是离线、也不是永久失败）
+  ---
+  duration_ms: 302.136937
+  type: 'test'
+  ...
+1..4
+# tests 4
+# suites 0
+# pass 4
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 1326.502167
+<< PASS tests/unit/import-network-classification.test.mjs (1405ms)
+
+>> tests/unit/import-partial-skip.test.mjs (timeout 180000ms)
+TAP version 13
+# Subtest: 一条消息分支坏掉时，只丢这条消息，其余消息照常导入
+ok 1 - 一条消息分支坏掉时，只丢这条消息，其余消息照常导入
+  ---
+  duration_ms: 3.902367
+  type: 'test'
+  ...
+# Subtest: 整个会话都坏时，该会话进 skipped 而不是抛错
+ok 2 - 整个会话都坏时，该会话进 skipped 而不是抛错
+  ---
+  duration_ms: 0.373358
+  type: 'test'
+  ...
+# Subtest: replaceHistory：写入返回 skipped 时照常提交，并把 skipped 记进 state
+ok 3 - replaceHistory：写入返回 skipped 时照常提交，并把 skipped 记进 state
+  ---
+  duration_ms: 1.141071
+  type: 'test'
+  ...
+# Subtest: replaceHistory：写入中途失败时，已写入的会话不整包回滚
+ok 4 - replaceHistory：写入中途失败时，已写入的会话不整包回滚
+  ---
+  duration_ms: 1.541588
+  type: 'test'
+  ...
+1..4
+# tests 4
+# suites 0
+# pass 4
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 1001.134789
+<< PASS tests/unit/import-partial-skip.test.mjs (1103ms)
+
+>> tests/unit/import-size-limit.test.mjs (timeout 180000ms)
+TAP version 13
+# Subtest: A：本地文件导入必须按默认上限拒绝「超限」文件，且拒绝发生在解析之前
+ok 1 - A：本地文件导入必须按默认上限拒绝「超限」文件，且拒绝发生在解析之前
+  ---
+  duration_ms: 6.607681
+  type: 'test'
+  ...
+# Subtest: B：恰好等于上限的文件不能被误拒（边界不缩水）
+ok 2 - B：恰好等于上限的文件不能被误拒（边界不缩水）
+  ---
+  duration_ms: 6.634861
+  type: 'test'
+  ...
+# Subtest: C：上限可配置——调小后同一条链路必须按新值拒绝
+ok 3 - C：上限可配置——调小后同一条链路必须按新值拒绝
+  ---
+  duration_ms: 3.135869
+  type: 'test'
+  ...
+# Subtest: D：上限只有一个来源，不是散落的魔法数
+ok 4 - D：上限只有一个来源，不是散落的魔法数
+  ---
+  duration_ms: 0.760472
+  type: 'test'
+  ...
+# Subtest: E：从链接导入仍然按默认上限拒绝（回归：默认值不许被偷偷改小/改大）
+ok 5 - E：从链接导入仍然按默认上限拒绝（回归：默认值不许被偷偷改小/改大）
+  ---
+  duration_ms: 27.559322
+  type: 'test'
+  ...
+# Subtest: F：从链接导入也吃同一个可配置上限
+ok 6 - F：从链接导入也吃同一个可配置上限
+  ---
+  duration_ms: 0.754483
+  type: 'test'
+  ...
+1..6
+# tests 6
+# suites 0
+# pass 6
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 570.131302
+<< PASS tests/unit/import-size-limit.test.mjs (645ms)
+
+>> tests/unit/import-skipped-ui.test.mjs (timeout 180000ms)
+TAP version 13
+# Subtest: [1] 部分合法 + 部分不可识别：3 个会话入库，skipped 带出消息与会话两级定位
+ok 1 - [1] 部分合法 + 部分不可识别：3 个会话入库，skipped 带出消息与会话两级定位
+  ---
+  duration_ms: 17.117957
+  type: 'test'
+  ...
+# Subtest: [2] 完全不损坏的包：skipped 为空，导入行为与现在一致
+ok 2 - [2] 完全不损坏的包：skipped 为空，导入行为与现在一致
+  ---
+  duration_ms: 4.826941
+  type: 'test'
+  ...
+# Subtest: [3] UI 层拿真实 skipped 渲染：条数、会话标题、消息 id、原因文案都在
+ok 3 - [3] UI 层拿真实 skipped 渲染：条数、会话标题、消息 id、原因文案都在
+  ---
+  duration_ms: 14.658754
+  type: 'test'
+  ...
+# Subtest: [4] 放宽但不放水：索引里列了、包里却没有的会话仍然整包失败（backupIncomplete）
+ok 4 - [4] 放宽但不放水：索引里列了、包里却没有的会话仍然整包失败（backupIncomplete）
+  ---
+  duration_ms: 3.25478
+  type: 'test'
+  ...
+# Subtest: [5] 新增文案 zh / en 成对、占位符对齐、en 下无中文，既有 key 未被删改
+ok 5 - [5] 新增文案 zh / en 成对、占位符对齐、en 下无中文，既有 key 未被删改
+  ---
+  duration_ms: 1.689625
+  type: 'test'
+  ...
+1..5
+# tests 5
+# suites 0
+# pass 5
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 568.110359
+<< PASS tests/unit/import-skipped-ui.test.mjs (724ms)
+
+>> tests/unit/intl-displaynames-fallback.test.mjs (timeout 180000ms)
+TAP version 13
+# Subtest: A1 宿主没有 Intl.DisplayNames 时模块仍可加载（顶层不许直接构造）
+ok 1 - A1 宿主没有 Intl.DisplayNames 时模块仍可加载（顶层不许直接构造）
+  ---
+  duration_ms: 145.787024
+  type: 'test'
+  ...
+# Subtest: A2 缺失时返回可用地区名：不是空串、不是抛错
+ok 2 - A2 缺失时返回可用地区名：不是空串、不是抛错
+  ---
+  duration_ms: 2.552233
+  type: 'test'
+  ...
+# Subtest: A3 缺失时全量 regionCodes × 两个 locale 都有名字（表必须覆盖整张清单）
+ok 3 - A3 缺失时全量 regionCodes × 两个 locale 都有名字（表必须覆盖整张清单）
+  ---
+  duration_ms: 3.656909
+  type: 'test'
+  ...
+# Subtest: A4 地区名覆写仍然优先于内建名（政治正确的那几条不能被降级冲掉）
+ok 4 - A4 地区名覆写仍然优先于内建名（政治正确的那几条不能被降级冲掉）
+  ---
+  duration_ms: 0.434852
+  type: 'test'
+  ...
+# Subtest: A5 半吊子实现（构造器在但构造就抛）也不许把调用方带崩
+ok 5 - A5 半吊子实现（构造器在但构造就抛）也不许把调用方带崩
+  ---
+  duration_ms: 1.173565
+  type: 'test'
+  ...
+# Subtest: A6 宿主有原生实现时优先用原生（降级不是默认路径）
+ok 6 - A6 宿主有原生实现时优先用原生（降级不是默认路径）
+  ---
+  duration_ms: 0.676471
+  type: 'test'
+  ...
+# Subtest: A7 源码层锁：Intl.DisplayNames 必须带 typeof 存在性探测，不许再裸调
+ok 7 - A7 源码层锁：Intl.DisplayNames 必须带 typeof 存在性探测，不许再裸调
+  ---
+  duration_ms: 0.752922
+  type: 'test'
+  ...
+# Subtest: B1 缺 Intl.DisplayNames 时守卫命中「缺少：」分支并点名该 API
+ok 8 - B1 缺 Intl.DisplayNames 时守卫命中「缺少：」分支并点名该 API
+  ---
+  duration_ms: 2.723677
+  type: 'test'
+  ...
+# Subtest: B2 能力齐全时不误报（WebView 81+ 与新版浏览器不受影响）
+ok 9 - B2 能力齐全时不误报（WebView 81+ 与新版浏览器不受影响）
+  ---
+  duration_ms: 1.450089
+  type: 'test'
+  ...
+# Subtest: B3 静默白屏兜底没被改动：12 秒不启动仍然报超时
+ok 10 - B3 静默白屏兜底没被改动：12 秒不启动仍然报超时
+  ---
+  duration_ms: 2.260431
+  type: 'test'
+  ...
+# Subtest: B4 守卫补完还是 ES5：老内核解析得了才救得了场
+ok 11 - B4 守卫补完还是 ES5：老内核解析得了才救得了场
+  ---
+  duration_ms: 0.705505
+  type: 'test'
+  ...
+1..11
+# tests 11
+# suites 0
+# pass 11
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 477.158526
+<< PASS tests/unit/intl-displaynames-fallback.test.mjs (553ms)
+
+>> tests/unit/legacy-boot-guard.test.mjs (timeout 180000ms)
+TAP version 13
+# Subtest: 能力齐全时不打扰用户：不显示提示，也不往 window 上留错误标记
+ok 1 - 能力齐全时不打扰用户：不显示提示，也不往 window 上留错误标记
+  ---
+  duration_ms: 5.210675
+  type: 'test'
+  ...
+# Subtest: 极端内核（没有 fetch）给出可读提示，且写明 WebView 与缺什么
+ok 2 - 极端内核（没有 fetch）给出可读提示，且写明 WebView 与缺什么
+  ---
+  duration_ms: 4.673369
+  type: 'test'
+  ...
+# Subtest: 补过的 API 不算致命缺失：Object.hasOwn / at / structuredClone 全没有也不报错
+ok 3 - 补过的 API 不算致命缺失：Object.hasOwn / at / structuredClone 全没有也不报错
+  ---
+  duration_ms: 3.777174
+  type: 'test'
+  ...
+# Subtest: 启动期脚本报错：把原始错误消息显示出来，且不被后续错误覆盖
+ok 4 - 启动期脚本报错：把原始错误消息显示出来，且不被后续错误覆盖
+  ---
+  duration_ms: 1.289622
+  type: 'test'
+  ...
+# Subtest: 静默白屏兜底：入口 12 秒内没启动就报错；启动了就不吵
+ok 5 - 静默白屏兜底：入口 12 秒内没启动就报错；启动了就不吵
+  ---
+  duration_ms: 3.156758
+  type: 'test'
+  ...
+# Subtest: 守卫本体是 ES5：老内核解析不了新语法时它还得能跑
+ok 6 - 守卫本体是 ES5：老内核解析不了新语法时它还得能跑
+  ---
+  duration_ms: 0.486352
+  type: 'test'
+  ...
+# Subtest: 守卫在 <head>/<body> 里先于业务包，且提示容器就在 \#root 下
+ok 7 - 守卫在 <head>/<body> 里先于业务包，且提示容器就在 \#root 下
+  ---
+  duration_ms: 0.396425
+  type: 'test'
+  ...
+1..7
+# tests 7
+# suites 0
+# pass 7
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 389.524927
+<< PASS tests/unit/legacy-boot-guard.test.mjs (565ms)
+
+>> tests/unit/legacy-bundle-target.test.mjs (timeout 180000ms)
+TAP version 13
+# Subtest: A browserslist 以 chrome 83 为下限（产物语法唯一来源）
+ok 1 - A browserslist 以 chrome 83 为下限（产物语法唯一来源）
+  ---
+  duration_ms: 1.478231
+  type: 'test'
+  ...
+# Subtest: B rspack 目标来自 package.json，且没有把下限写死回 105
+ok 2 - B rspack 目标来自 package.json，且没有把下限写死回 105
+  ---
+  duration_ms: 0.584218
+  type: 'test'
+  ...
+# Subtest: C 入口第一件事就是运行时补齐，比 React 早
+ok 3 - C 入口第一件事就是运行时补齐，比 React 早
+  ---
+  duration_ms: 0.758561
+  type: 'test'
+  ...
+# Subtest: D 每处 dvh 都有同值 vh 回退（统一写法：变量/字面量 + dvh 只放在 @supports 里）
+ok 4 - D 每处 dvh 都有同值 vh 回退（统一写法：变量/字面量 + dvh 只放在 @supports 里）
+  ---
+  duration_ms: 13.713199
+  type: 'test'
+  ...
+# Subtest: E-1 产物自检：全部 JS 能用 Chrome 83 的语法解析（无 ||= / &&= / ??= / 类静态块）
+ok 5 - E-1 产物自检：全部 JS 能用 Chrome 83 的语法解析（无 ||= / &&= / ??= / 类静态块） # SKIP dist/ 没有产物（dist/static/js 或 dist/static/css 为空）：先跑 `pnpm run build:internal`（或 `pnpm run build`）再来核对产物
+  ---
+  duration_ms: 0.182847
+  type: 'test'
+  ...
+# Subtest: E-2 产物自检：CSS 里没有裸 dvh，且守卫在业务包之前
+ok 6 - E-2 产物自检：CSS 里没有裸 dvh，且守卫在业务包之前 # SKIP dist/ 没有产物（dist/static/js 或 dist/static/css 为空）：先跑 `pnpm run build:internal`（或 `pnpm run build`）再来核对产物
+  ---
+  duration_ms: 0.151686
+  type: 'test'
+  ...
+# Subtest: F-1 自造产物 fixture：E-1/E-2 的判定在「有产物且含违规」时真的会红（闸门不是摆设）
+ok 7 - F-1 自造产物 fixture：E-1/E-2 的判定在「有产物且含违规」时真的会红（闸门不是摆设）
+  ---
+  duration_ms: 107.264704
+  type: 'test'
+  ...
+1..7
+# tests 7
+# suites 0
+# pass 5
+# fail 0
+# cancelled 0
+# skipped 2
+# todo 0
+# duration_ms 281.315935
+<< PASS tests/unit/legacy-bundle-target.test.mjs (355ms)
+
+>> tests/unit/legacy-polyfills.test.mjs (timeout 180000ms)
+TAP version 13
+# Subtest: 模拟 WebView 83：入口 polyfill 装上后 Object.hasOwn / at / structuredClone 真的能用
+ok 1 - 模拟 WebView 83：入口 polyfill 装上后 Object.hasOwn / at / structuredClone 真的能用
+  ---
+  duration_ms: 97.350634
+  type: 'test'
+  ...
+# Subtest: structuredClone 降级：不可深拷贝的值按引用透传而不是整条链路抛错
+ok 2 - structuredClone 降级：不可深拷贝的值按引用透传而不是整条链路抛错
+  ---
+  duration_ms: 3.126232
+  type: 'test'
+  ...
+# Subtest: 幂等：重复 install 不会重复定义，方法引用保持不变
+ok 3 - 幂等：重复 install 不会重复定义，方法引用保持不变
+  ---
+  duration_ms: 0.963625
+  type: 'test'
+  ...
+# Subtest: 不覆盖原生实现：宿主已有（更新的 WebView）时原样保留
+ok 4 - 不覆盖原生实现：宿主已有（更新的 WebView）时原样保留
+  ---
+  duration_ms: 0.647588
+  type: 'test'
+  ...
+1..4
+# tests 4
+# suites 0
+# pass 4
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 347.504317
+<< PASS tests/unit/legacy-polyfills.test.mjs (472ms)
+
+>> tests/unit/legacy-replace-all.test.mjs (timeout 180000ms)
+TAP version 13
+# Subtest: 补丁前：WebView 83 上没有 replaceAll，裸调用就是 TypeError；装上后可用
+ok 1 - 补丁前：WebView 83 上没有 replaceAll，裸调用就是 TypeError；装上后可用
+  ---
+  duration_ms: 114.431993
+  type: 'test'
+  ...
+# Subtest: 字符串 search：全量替换 / 不重叠 / 空串 / 元字符按字面量
+ok 2 - 字符串 search：全量替换 / 不重叠 / 空串 / 元字符按字面量
+  ---
+  duration_ms: 0.921439
+  type: 'test'
+  ...
+# Subtest: 正则 search：带 g 才允许，不带 g 按规范抛 TypeError
+ok 3 - 正则 search：带 g 才允许，不带 g 按规范抛 TypeError
+  ---
+  duration_ms: 0.447636
+  type: 'test'
+  ...
+# Subtest: 替换串语义：$& / $1 / $$ / $` / $' 走 GetSubstitution 展开（split/join 实现会红）
+ok 4 - 替换串语义：$& / $1 / $$ / $` / $' 走 GetSubstitution 展开（split/join 实现会红）
+  ---
+  duration_ms: 0.302677
+  type: 'test'
+  ...
+# Subtest: 返回新串、不改入参；字符串 search 与正则 search 都不写回原值
+ok 5 - 返回新串、不改入参；字符串 search 与正则 search 都不写回原值
+  ---
+  duration_ms: 1.667919
+  type: 'test'
+  ...
+# Subtest: 不覆盖原生实现：宿主已有（更新的 WebView）时原样保留
+ok 6 - 不覆盖原生实现：宿主已有（更新的 WebView）时原样保留
+  ---
+  duration_ms: 0.512161
+  type: 'test'
+  ...
+1..6
+# tests 6
+# suites 0
+# pass 6
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 315.589808
+<< PASS tests/unit/legacy-replace-all.test.mjs (404ms)
+
+>> tests/unit/legacy-webview-compat.test.mjs (timeout 180000ms)
+TAP version 13
+# Subtest: 没有 toSorted 时 toLocalSession 能正常导入会话（真实调用路径）
+ok 1 - 没有 toSorted 时 toLocalSession 能正常导入会话（真实调用路径） # SKIP toLocal.ts 在 strip-only 模式下不可加载（ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX）；用 NODE_OPTIONS=--experimental-transform-types 跑真实路径
+  ---
+  duration_ms: 1.37718
+  type: 'test'
+  ...
+# Subtest: 没有 toReversed 时 store 的发送/重试路径不因该 API 抛错（真实调用路径）
+ok 2 - 没有 toReversed 时 store 的发送/重试路径不因该 API 抛错（真实调用路径）
+  ---
+  duration_ms: 381.380635
+  type: 'test'
+  ...
+# Subtest: 调用点静态核查：src 里不再使用 toSorted/toReversed
+ok 3 - 调用点静态核查：src 里不再使用 toSorted/toReversed
+  ---
+  duration_ms: 0.781803
+  type: 'test'
+  ...
+1..3
+# tests 3
+# suites 0
+# pass 2
+# fail 0
+# cancelled 0
+# skipped 1
+# todo 0
+# duration_ms 934.265366
+<< PASS tests/unit/legacy-webview-compat.test.mjs (1126ms)
+
+>> tests/unit/message-list-virtual.test.mjs (timeout 180000ms)
+TAP version 13
+# Subtest: N=500：只挂载视口附近的节点，不是 500 条全渲染
+ok 1 - N=500：只挂载视口附近的节点，不是 500 条全渲染
+  ---
+  duration_ms: 36.095574
+  type: 'test'
+  ...
+# Subtest: N=5000：挂载节点数与 N=500 同量级，不随总条数线性增长
+ok 2 - N=5000：挂载节点数与 N=500 同量级，不随总条数线性增长
+  ---
+  duration_ms: 5.606668
+  type: 'test'
+  ...
+# Subtest: 滚到中段：窗口跟着视口走，命中中间的消息
+ok 3 - 滚到中段：窗口跟着视口走，命中中间的消息
+  ---
+  duration_ms: 1.536295
+  type: 'test'
+  ...
+# Subtest: 贴底（sticky）：最后一条必须挂载，自动滚到底与流式跟随才有内容
+ok 4 - 贴底（sticky）：最后一条必须挂载，自动滚到底与流式跟随才有内容
+  ---
+  duration_ms: 2.493441
+  type: 'test'
+  ...
+# Subtest: 高度未知：按估值占位，滚动高度不塌且挂载数仍有限
+ok 5 - 高度未知：按估值占位，滚动高度不塌且挂载数仍有限
+  ---
+  duration_ms: 2.408754
+  type: 'test'
+  ...
+# Subtest: 高度实测后覆盖估值：后续偏移跟着实测值走，不按固定高度错位
+ok 6 - 高度实测后覆盖估值：后续偏移跟着实测值走，不按固定高度错位
+  ---
+  duration_ms: 0.280963
+  type: 'test'
+  ...
+# Subtest: 流式增长：最后一条变大后总高度跟着变大，前后不重叠
+ok 7 - 流式增长：最后一条变大后总高度跟着变大，前后不重叠
+  ---
+  duration_ms: 0.506061
+  type: 'test'
+  ...
+1..7
+# tests 7
+# suites 0
+# pass 7
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 527.767955
+<< PASS tests/unit/message-list-virtual.test.mjs (626ms)
+
+>> tests/unit/mobile-header-scroll-top.test.mjs (timeout 180000ms)
+TAP version 13
+# Subtest: A 双击标题：逐帧平滑滚到首条（单调递减，最后一帧落在 0）
+ok 1 - A 双击标题：逐帧平滑滚到首条（单调递减，最后一帧落在 0）
+  ---
+  duration_ms: 2.952862
+  type: 'test'
+  ...
+# Subtest: B 跟随逻辑抢不回位置：动画每帧重写偏移，离底后跟随被关掉
+ok 2 - B 跟随逻辑抢不回位置：动画每帧重写偏移，离底后跟随被关掉
+  ---
+  duration_ms: 0.370171
+  type: 'test'
+  ...
+# Subtest: C 流式追加不抢回位置
+ok 3 - C 流式追加不抢回位置
+  ---
+  duration_ms: 0.38393
+  type: 'test'
+  ...
+# Subtest: D 已经贴在首条：无副作用
+ok 4 - D 已经贴在首条：无副作用
+  ---
+  duration_ms: 1.684312
+  type: 'test'
+  ...
+# Subtest: E 短会话没得滚：无副作用
+ok 5 - E 短会话没得滚：无副作用
+  ---
+  duration_ms: 0.469663
+  type: 'test'
+  ...
+# Subtest: F 长会话（虚拟化）：首条消息不在 DOM 里也能回到首条
+ok 6 - F 长会话（虚拟化）：首条消息不在 DOM 里也能回到首条
+  ---
+  duration_ms: 0.343314
+  type: 'test'
+  ...
+# Subtest: G 找不到滚动层（欢迎页 / 无会话）：返回 false 不抛错
+ok 7 - G 找不到滚动层（欢迎页 / 无会话）：返回 false 不抛错
+  ---
+  duration_ms: 0.302458
+  type: 'test'
+  ...
+# Subtest: H 连续双击：后一次接管前一次，仍然停在首条
+ok 8 - H 连续双击：后一次接管前一次，仍然停在首条
+  ---
+  duration_ms: 1.94304
+  type: 'test'
+  ...
+# Subtest: I 接线：标题双击 → scrollToFirstMessage，标题区 ≥44px，有提示，单击行为不变
+ok 9 - I 接线：标题双击 → scrollToFirstMessage，标题区 ≥44px，有提示，单击行为不变
+  ---
+  duration_ms: 0.996888
+  type: 'test'
+  ...
+# Subtest: J i18n：新增文案 zh/en 成对且不同
+ok 10 - J i18n：新增文案 zh/en 成对且不同
+  ---
+  duration_ms: 35.62824
+  type: 'test'
+  ...
+1..10
+# tests 10
+# suites 0
+# pass 10
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 344.934097
+<< PASS tests/unit/mobile-header-scroll-top.test.mjs (498ms)
+
+>> tests/unit/modal-touch-scroll.test.mjs (timeout 180000ms)
+TAP version 13
+# Subtest: A 高度链退化：可滚容器内部的触摸不能被静默锁死
+ok 1 - A 高度链退化：可滚容器内部的触摸不能被静默锁死
+  ---
+  duration_ms: 1.964841
+  type: 'test'
+  ...
+# Subtest: B 锁生效场景：目标不在任何可滚容器里，仍然 preventDefault
+ok 2 - B 锁生效场景：目标不在任何可滚容器里，仍然 preventDefault
+  ---
+  duration_ms: 0.288222
+  type: 'test'
+  ...
+# Subtest: B2 多指手势放行（双指缩放交给浏览器）
+ok 3 - B2 多指手势放行（双指缩放交给浏览器）
+  ---
+  duration_ms: 0.226787
+  type: 'test'
+  ...
+# Subtest: C Modal 侧：scale !== 1 时也要写出 --modal-viewport-height
+ok 4 - C Modal 侧：scale !== 1 时也要写出 --modal-viewport-height
+  ---
+  duration_ms: 0.374242
+  type: 'test'
+  ...
+# Subtest: C2 Modal.tsx 真的用了 syncModalViewport（静态接线检查）
+ok 5 - C2 Modal.tsx 真的用了 syncModalViewport（静态接线检查）
+  ---
+  duration_ms: 0.668694
+  type: 'test'
+  ...
+# Subtest: D 可滚容器滚到顶/到底的边界不误锁
+ok 6 - D 可滚容器滚到顶/到底的边界不误锁
+  ---
+  duration_ms: 0.29995
+  type: 'test'
+  ...
+# Subtest: E 判定不再依赖 scrollHeight/clientHeight 现测（静态反向检查）
+ok 7 - E 判定不再依赖 scrollHeight/clientHeight 现测（静态反向检查）
+  ---
+  duration_ms: 0.337232
+  type: 'test'
+  ...
+# Subtest: F Settings.module.css 的滚动容器有不依赖视口变量的兜底上界
+ok 8 - F Settings.module.css 的滚动容器有不依赖视口变量的兜底上界
+  ---
+  duration_ms: 0.762077
+  type: 'test'
+  ...
+1..8
+# tests 8
+# suites 0
+# pass 8
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 337.013877
+<< PASS tests/unit/modal-touch-scroll.test.mjs (417ms)
+
+>> tests/unit/model-picker-parser.test.mjs (timeout 180000ms)
+TAP version 13
+# Subtest: model response parser handles object, JSON string, invalid JSON, and empty/status fixtures
+ok 1 - model response parser handles object, JSON string, invalid JSON, and empty/status fixtures
+  ---
+  duration_ms: 472.889271
+  type: 'test'
+  ...
+1..1
+# tests 1
+# suites 0
+# pass 1
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 759.951669
+<< PASS tests/unit/model-picker-parser.test.mjs (998ms)
+
+>> tests/unit/model-probe-status.test.mjs (timeout 180000ms)
+TAP version 13
+# Subtest: mock status and timeout mapping
+ok 1 - mock status and timeout mapping
+  ---
+  duration_ms: 41.960716
+  type: 'test'
+  ...
+1..1
+# tests 1
+# suites 0
+# pass 1
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 375.930757
+<< PASS tests/unit/model-probe-status.test.mjs (509ms)
+
+>> tests/unit/openai-adapter.test.mjs (timeout 180000ms)
+
+[3] 翻译器：干净流的事件序列
+  喂入的 OpenAI SSE：
+    data: {"id":"chatcmpl-accept","object":"chat.completion.chunk","model":"gpt-4o-mini","choices":[{"index":0,"delta":{"role":"assistant","content":""},"finish_reason":null}]}
+    
+    data: {"id":"chatcmpl-accept","choices":[{"index":0,"delta":{"content":"你好"},"finish_reason":null}]}
+    
+    data: {"id":"chatcmpl-accept","choices":[{"index":0,"delta":{"content":"，世界"},"finish_reason":null}]}
+    
+    data: {"id":"chatcmpl-accept","choices":[{"index":0,"delta":{"content":"！"},"finish_reason":null}]}
+    
+    data: {"id":"chatcmpl-accept","choices":[],"usage":{"prompt_tokens":12,"completion_tokens":7,"total_tokens":19}}
+    
+    data: {"id":"chatcmpl-accept","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}
+    
+    data: [DONE]
+  ok  [3] 事件序列 = ["message_start","content_block_start","content_block_delta","content_block_delta","content_block_delta","content_block_stop","message_delta","message_stop"]
+  ok  [3] 三个 text_delta 拼出的正文 = "你好，世界！"
+  ok  [3] content_block_start 是 index 0 的空 text 块 = {"type":"text","text":""}
+  ok  [3] content_block_start.index = 0
+  ok  [3] content_block_stop.index = 0
+  ok  [3] finish_reason=stop → stop_reason = "end_turn"
+  ok  [3] message_delta 带 usage（prompt_tokens/completion_tokens → Anthropic 计费字段） = {"input_tokens":12,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"output_tokens":7}
+  ok  [3] message_start 带上游 id = "chatcmpl-accept"
+  产出的事件序列（实际输出）：
+    {"type":"message_start","message":{"id":"chatcmpl-accept","model":"gpt-4o-mini","usage":{"input_tokens":0,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"output_tokens":0}}}
+    {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}
+    {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"你好"}}
+    {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"，世界"}}
+    {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"！"}}
+    {"type":"content_block_stop","index":0}
+    {"type":"message_delta","delta":{"stop_reason":"end_turn","stop_sequence":null},"usage":{"input_tokens":12,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"output_tokens":7}}
+    {"type":"message_stop"}
+
+[4] 翻译器：脏数据容错
+  ok  [4a] 空 choices 流正常结束（未卡死） = "done"
+  ok  [4a] 空 choices 的事件序列（无内容块） = ["message_start","message_delta","message_stop"]
+  ok  [4b] 缺 [DONE] 的断流不抛错、不卡死 = "done"
+  ok  [4b] 断流也补齐 content_block_stop/message_delta/message_stop = ["message_start","content_block_start","content_block_delta","content_block_stop","message_delta","message_stop"]
+  ok  [4b] 缺 finish_reason 时 stop_reason 兜底 = "end_turn"
+  ok  [4c] 注释行/非法 JSON 混流不抛错、不卡死 = "done"
+  ok  [4c] 脏流仍然产出合法事件序列 = ["message_start","content_block_start","content_block_delta","content_block_stop","message_delta","message_stop"]
+  ok  [4c] 多 choices 只取 index 0，且 delta 空对象被忽略 = "第一条"
+  ok  [4c] content_filter→refusal 之后 length→max_tokens（后者为准） = "max_tokens"
+  ok  [4d] 空流不卡死 = "done"
+  ok  [4d] 空流事件序列 = ["message_start","message_delta","message_stop"]
+  ok  [4e] finish_reason stop → stop_reason = "end_turn"
+  ok  [4e] finish_reason length → stop_reason = "max_tokens"
+  ok  [4e] finish_reason tool_calls → stop_reason = "end_turn"
+  ok  [4e] finish_reason content_filter → stop_reason = "refusal"
+  ok  [4e] finish_reason something_new → stop_reason = "end_turn"
+
+[2b] 请求体转换（纯函数）
+  ok  [2b] system 进头部 + 丢弃图片/思考/latest_reminder = [{"role":"system","content":"该助手为DeepSeek，由深度求索公司创造。"},{"role":"user","content":"你好"},{"role":"assistant","content":"你好，我是助手。"},{"role":"user","content":"这张图是什么"}]
+  ok  [2b] stream: true 必带 = true
+  ok  [2b] 剥离 safety_check/title/tools/thinking = false
+  ok  [2b] block 数组只取 text 块拼接 = "甲\n\n乙"
+
+共 28 项断言
+PASS tests/unit/openai-adapter.test.mjs
+<< PASS tests/unit/openai-adapter.test.mjs (3162ms)
+
+>> tests/unit/ours-api.test.mjs (timeout 180000ms)
+
+[1] 套餐：价格与积分取服务端，渲染模板可拼
+  ok  只请求一次 = 1
+  ok  method = "GET"
+  ok  套餐 URL = "https://apia.ecsafe.cn/api/plans"
+  ok  卡密服务走 HTTPS = "https://apia.ecsafe.cn"
+  ok  状态 = "success"
+  ok  enabled=false 的套餐被过滤 = 2
+  ok  价格来自服务端（p1 = 3） = 3
+  ok  积分来自服务端（p1 = 300） = 300
+  ok  价格文案 = "¥3.00"
+  ok  积分文案 = "300 积分"
+  ok  套餐行渲染文案 = "¥3.00 · 300 积分"
+  ok  非法 JSON → error = "error"
+  ok  非法 JSON 文案 key = "oursPlansFailed"
+  ok  断网文案 = "网络不可用，请稍后重试"
+  ok  购买入口已放开（服务端价格与套餐一致） = true
+
+[2] 额度只显示积分：不做 points → 人民币折算（#75）
+  ok  额度整行文案：只有积分 = "300 积分"
+  ok  额度整行文案：100 积分不折算 = "100 积分"
+  ok  不再导出 pointsToYuan = "undefined"
+  ok  不再导出 formatYuan = "undefined"
+  ok  不再导出 POINTS_PER_YUAN = "undefined"
+  ok  zh/en 额度相关文案里没有 ¥ 折算残留 = []
+  ok  额度文案里没有 token
+  ok  额度文案里没有美元符号
+  ok  文案里没有 USD
+
+[3] Key 校验：只回答有效/无效，不碰额度
+  ok  valid=true → valid = "valid"
+  ok  Key 只露尾 6 位 = "••••654321"
+  ok  URL 不带 query = "https://apia.ecsafe.cn/api/balance"
+  ok  Authorization 头 = "Bearer sk-ours-unit-test-654321"
+  ok  URL 里没有完整 Key
+  ok  返回值里没有额度字段（额度只认邀请服务）
+  ok  valid=false → invalid = "invalid"
+  ok  超时 = "timeout"
+  ok  断网 = "network"
+  ok  非法 JSON = "invalid-json"
+  ok  空 Key 一次请求都不发 = 0
+  ok  空 Key → invalid = "invalid"
+
+[4] /buy：GET 一次、不跟随、从 Location 的 return_url 取 order_token
+  ok  只发一次（每发一次就会新建订单） = 1
+  ok  method 是 GET = "GET"
+  ok  /buy?plan=p1&cid=10（Issue #115：下单带 cid） = "https://apia.ecsafe.cn/buy?plan=p1&cid=10"
+  ok  followRedirects=false（禁跟随） = false
+  ok  拿到收银台信息 = "ok"
+  ok  payUrl 就是 302 的 Location = "https://pay.xiaodouap.cn/submit.php?pid=10268375&type=alipay&out_trade_no=CP2026111816102637F0F8AA&notify_url=https%3A%2F%2Fapia.ecsafe.cn%2Fnotify&return_url=https%3A%2F%2Fapia.ecsafe.cn%2Freturn%3Fno%3DCP2026111816102637F0F8AA%26order_token%3DLsx2M8cBadOaJrXElnZBLISmtImUtfp9&name=%E5%85%A5%E9%97%A8%E5%8C%85&money=3.00&sitename=muse2api&sign=da74773b105616c2eeed1821d788ab5b&sign_type=MD5"
+  ok  out_trade_no 从 Location 解析 = "CP2026111816102637F0F8AA"
+  ok  order_token 从 return_url 解析（查单必需） = "Lsx2M8cBadOaJrXElnZBLISmtImUtfp9"
+  ok  收银台是 https，可用系统浏览器打开 = true
+  ok  没有 cid → 直接报错 = "error"
+  ok  错误码 CUSTOMER_ID_MISSING = "CUSTOMER_ID_MISSING"
+  ok  提示「请先在 App 内领取 Key」 = "请先在 App 内领取 Key（没有 Key 就拿不到客户编号，本次没有下单）"
+  ok  一次 /buy 都没发（没有 cid 的下单会把单建到别人名下） = 0
+
+[5] /buy 的失败面：明文收银台 / 缺令牌 / 网页版拿不到 Location
+  ok  http 收银台不认 = "error"
+  ok  明文收银台文案 = "当前环境拿不到收银台地址，请在 App 内购买或改用卡密兑换"
+  ok  只有 https 地址没有单号/令牌 → 直接报错 = "error"
+  ok  缺令牌文案 = "缺少订单令牌，无法查询"
+  ok  网页版 opaqueredirect（status 0）→ no-location = "no-location"
+  ok  跟随后的 200 页面不被当作收银台地址 = "no-location"
+  ok  parseCheckoutTarget 拒绝 http = null
+  ok  缺 order_token 时不当作可用收银台 = null
+
+[6] 查单：只有 fulfilled 有卡密，展示只留尾 4 位
+  ok  缺 order_token 一次请求都不发 = 0
+  ok  缺 order_token 报错 = "oursErrOrderTokenMissing"
+  ok  查单成功 = "ok"
+  ok  状态 = "fulfilled"
+  ok  amount_fen = 300
+  ok  展示用卡密只有尾 4 位 = "••••4471"
+  ok  完整卡密只在内存字段 cardNo（供一键兑换） = "CARD-8f3a9b7c2d-4471"
+  ok  expire_at 是 Unix 秒 = 1794990326
+  ok  查单带 out_trade_no
+  ok  查单带 order_token
+  ok  查单 URL 不含服务 Key
+  ok  查单不跟随重定向 = false
+  ok  未发卡时没有卡密尾号 = ""
+  ok  未发卡时内存卡密为空 = ""
+  ok  403 文案 = "鉴权失败，请重新领取或填写 Key 后再试"
+  ok  pending 文案 = "待支付"
+  ok  fulfilled 文案 = "已发卡"
+
+[7] 轮询状态机：2s、≤60s、终态即停、paid 继续轮、可取消
+  ok  轮询到终态 = "ok"
+  ok  轮询次数 = 3
+  ok  每次间隔 2000ms = [2000,2000]
+  ok  onUpdate 每次都回调 = ["pending","paid","fulfilled"]
+  ok  终态卡密只留尾 4 位 = "••••4471"
+  ok  总耗时 ≤60s
+  ok  一直 pending → 60s 后停（超时不重复下单） = "timeout"
+  ok  超时上限 ≤60s
+  ok  60s / 2s → 31 次（首查 + 30 次间隔） = 31
+  ok  间隔恒为 2000ms
+  ok  shouldStop → 立刻取消（关弹层不再轮询） = "cancelled"
+  ok  无 token 直接失败 = "error"
+  ok  无 token 一次都不轮询 = 0
+
+[8] 兑换：request_id 固定用卡密；202 是「处理中」不是失败
+  ok  request_id = 卡密（去空格） = "CARD-8f3a9b7c2d-4471"
+  ok  成功 = "success"
+  ok  到账积分 = 300
+  ok  结果只带卡密尾 4 位 = "••••4471"
+  ok  method = "POST"
+  ok  URL（Key 不进 query） = "https://apia.ecsafe.cn/api/redeem"
+  ok  请求体字段 = ["api_key","card_no","request_id"]
+  ok  request_id 就是卡密 = "CARD-8f3a9b7c2d-4471"
+  ok  成功文案（不再带 ¥ 折算） = "兑换成功，+300 积分"
+  ok  结果不含完整 Key
+  ok  第一次超时 = "error"
+  ok  超时可重试 = true
+  ok  重发成功 = "success"
+  ok  重发复用同一 request_id = "CARD-8f3a9b7c2d-4471"
+  ok  202 CREDIT_PENDING → pending（不是失败） = "pending"
+  ok  202 文案 = "兑换处理中，请稍后刷新额度查看"
+  ok  202 文案里没有「失败」
+  ok  code=CREDIT_PENDING 也说 pending = "pending"
+
+[9] 兑换错误码：五类各有一句能看的文案
+  ok  API_KEY_INVALID 仍是错误 = "error"
+  ok  API_KEY_INVALID → Key 无效，请重新领取或填写 = "Key 无效，请重新领取或填写"
+  ok  API_KEY_INVALID retryable=false = false
+  ok  API_KEY_INVALID 结果不含完整卡密
+  ok  API_KEY_INVALID 不暴露服务端 request_id
+  ok  CARD_ALREADY_USED 仍是错误 = "error"
+  ok  CARD_ALREADY_USED → 该卡密已被使用，不要重复提交 = "该卡密已被使用，不要重复提交"
+  ok  CARD_ALREADY_USED retryable=false = false
+  ok  CARD_ALREADY_USED 结果不含完整卡密
+  ok  CARD_ALREADY_USED 不暴露服务端 request_id
+  ok  CARD_NOT_FOUND 仍是错误 = "error"
+  ok  CARD_NOT_FOUND → 卡密不存在，请核对后重试 = "卡密不存在，请核对后重试"
+  ok  CARD_NOT_FOUND retryable=false = false
+  ok  CARD_NOT_FOUND 结果不含完整卡密
+  ok  CARD_NOT_FOUND 不暴露服务端 request_id
+  ok  VERIFY_UNAVAILABLE 仍是错误 = "error"
+  ok  VERIFY_UNAVAILABLE → 积分服务暂时不可用，请稍后重试 = "积分服务暂时不可用，请稍后重试"
+  ok  VERIFY_UNAVAILABLE retryable=true = true
+  ok  VERIFY_UNAVAILABLE 结果不含完整卡密
+  ok  VERIFY_UNAVAILABLE 不暴露服务端 request_id
+  ok  RATE_LIMITED 仍是错误 = "error"
+  ok  RATE_LIMITED → 请求过于频繁，请稍后重试 = "请求过于频繁，请稍后重试"
+  ok  RATE_LIMITED retryable=false = false
+  ok  RATE_LIMITED 结果不含完整卡密
+  ok  RATE_LIMITED 不暴露服务端 request_id
+  ok  空卡密直接拒绝 = "oursErrCardMissing"
+  ok  空卡密一次请求都不发 = 0
+  ok  没有 Key 直接拒绝 = "oursErrKeyMissing"
+  ok  没有 Key 一次请求都不发 = 0
+
+[10] 脱敏与「不写 console」
+  ok  maskKey 尾 6 位 = "••••654321"
+  ok  太短的 Key 全部遮掉 = "••••"
+  ok  maskCard 尾 4 位 = "••••4471"
+  ok  i18n 文案里没有 Key 形态的串
+  ok  i18n 文案里没有卡密形态的串
+  ok  订单状态文案 key 存在
+  ok  整条链路一条 console 都没写 = 0
+  ok  日志里没有完整 Key
+  ok  日志里没有完整卡密
+
+✓ 全部通过（143 项检查）
+<< PASS tests/unit/ours-api.test.mjs (351ms)
+
+>> tests/unit/ours-cid-order.test.mjs (timeout 180000ms)
+
+[1] 空 / 非法 cid 不许进 URL（需求 4：禁止拼出 &cid=）
+  ok  1.1 空串 cid 不拼（不能出现 &cid=） = "https://apia.ecsafe.cn/buy?plan=newbie"
+  ok  1.2 NaN cid 不拼（不能出现 &cid=NaN） = "https://apia.ecsafe.cn/buy?plan=newbie"
+  ok  1.3 0 不能当成客户编号 = "https://apia.ecsafe.cn/buy?plan=newbie"
+  ok  1.4 负数不能当成客户编号 = "https://apia.ecsafe.cn/buy?plan=newbie"
+  ok  1.5 显式传入的非法值同样不拼 = "https://apia.ecsafe.cn/buy?plan=newbie"
+  ok  1.6 地址里已有的 cid=NaN 要被补正成真的 cid = "https://apia.ecsafe.cn/buy?plan=newbie&cid=7"
+  ok  1.7 地址里已有的 cid=0 要被补正 = "https://apia.ecsafe.cn/buy?plan=newbie&cid=7"
+  ok  1.8 已有的 cid 非法、又拿不到真 cid 时：不跳（不能把 NaN 发给后端） = null
+  ok  1.9 startCheckout 收到空串 cid 时报 CUSTOMER_ID_MISSING = "CUSTOMER_ID_MISSING"
+  ok  1.10 空串 cid 时一个 /buy 请求都不发 = 0
+
+[2] 真实调用序列：去支付的最终地址必须带 cid（本地假 /me + 假 /buy，真 fetch）
+  ok  2.1 跳了一次 = 1
+  ok  2.2 最终地址带 cid=7：https://apia.ecsafe.cn/buy?plan=newbie&cid=7
+  ok  2.3 先问了 /me（服务端真实收到）：/me?device_id=dev-abc123
+  ok  2.4 第二次点「去支付」也跳了 = 2
+  ok  2.5 第二次地址同样带 cid=7：https://apia.ecsafe.cn/buy?plan=newbie&cid=7
+  ok  2.6 拿不到 cid：一次都不跳（绝不发不带 cid 的 /buy） = 0
+  ok  2.7 给了用户一句提示 = 1
+  ok  2.8 提示文案是「请先在 App 内领取 Key」 = "oursErrCustomerNeedsKey"
+
+[3] 时序：一次解析失败不许把整个会话钉死
+  ok  3.1 第一次拿不到（启动时还没网 / 还没绑设备） = null
+  ok  3.2 第二次点「去支付」要重新解析，能拿到 cid = 11
+  ok  3.3 provider 真的被问了第二次 = 2
+  ok  3.4 解析过一次失败后，再下单能成功 = "ok"
+  ok  3.5 这一单带 cid=11：https://apia.ecsafe.cn/buy?plan=newbie&cid=11
+
+[4] 换 Key 不串单：旧 cid 必须丢掉
+  ok  4.1 A 账号：缓存 cid=7 = 7
+  ok  4.2 换成 B 账号后，A 的 cid 必须消失 = null
+  ok  4.3 同一把 Key 再保存一次不清缓存 = 11
+  ok  4.4 清除 Key 也要清 cid = null
+
+[5] 回归：有 cid 时照旧，文案 zh/en 成对
+  ok  5.1 数字 cid 照旧拼进地址 = "https://apia.ecsafe.cn/buy?plan=newbie&cid=7"
+  ok  5.2 数字串 cid 归一化后拼进地址 = "https://apia.ecsafe.cn/buy?plan=newbie&cid=7"
+  ok  5.3 缓存里的 cid 自动补上 = "https://apia.ecsafe.cn/buy?plan=newbie&cid=7"
+  ok  5.4 startCheckout 正常返回 = "ok"
+  ok  5.5 原生路径的 /buy 带 cid=7：https://apia.ecsafe.cn/buy?plan=newbie&cid=7
+  ok  5.6 zh 有「请先在 App 内领取 Key」
+  ok  5.7 en 文案成对
+
+ours-cid-order: 全部通过（34 项）
+<< PASS tests/unit/ours-cid-order.test.mjs (1451ms)
+
+>> tests/unit/ours-invite.test.mjs (timeout 180000ms)
+
+[1] 设备码：长度/字符集/持久化/坏值重建
+  ok  生成长度（d- + 32 位十六进制） = 34
+  ok  符合服务端字符集 /^[A-Za-z0-9._:-]{8,128}$/
+  ok  带 d- 前缀，一眼看出是设备码
+  ok  落在 8–128 位之间
+  ok  两次生成不相同
+  ok  7 位太短 → 非法 = false
+  ok  含空格 → 非法 = false
+  ok  含非白名单字符 → 非法 = false
+  ok  超 128 位 → 非法 = false
+  ok  允许的字符集全用上 → 合法 = true
+  ok  首次生成 = true
+  ok  第二次读到同一个设备码 = "d-afa2ea53c975c9da937586e2082d87ca"
+  ok  第二次不再重建（created=false） = false
+  ok  已写进存储 = "d-afa2ea53c975c9da937586e2082d87ca"
+  ok  存储 key 固定（不随渠道切换变化） = "chat-demo:ours-device-id"
+  ok  非法已存值 → 重建 = true
+  ok  重建后合法
+  ok  坏值被覆盖
+
+[2] /apply：201 首次 / 200 已申请，同一 device_id 幂等
+  ok  两次调用只发两次请求（重试安全） = 2
+  ok  method = "POST"
+  ok  /apply = "http://62.106.70.167:60013/apply"
+  ok  邀请服务地址（明文 HTTP） = "http://62.106.70.167:60013"
+  ok  请求体只有 device_id = {"device_id":"d-0123456789abcdef0123456789abcdef"}
+  ok  不跟随重定向 = false
+  ok  201 → ok = "ok"
+  ok  201 → firstTime = true
+  ok  拿到 Key = "sk-live-unit-test-11223344556677889900aabbccddeeff"
+  ok  邀请码 = "G7TA7UR3"
+  ok  剩余积分 = 130
+  ok  200 → ok = "ok"
+  ok  200 → 不是首次（幂等） = false
+  ok  幂等返回同一把 Key = "sk-live-unit-test-11223344556677889900aabbccddeeff"
+  ok  响应里没有 key → 报错 = "error"
+  ok  缺 Key 文案 = "服务端没有返回 Key，请重试"
+  ok  断网文案 = "网络不可用，请稍后重试"
+  ok  断网可重试 = true
+  ok  超时文案 = "请求超时，请稍后重试"
+  ok  空 device_id 一次请求都不发 = 0
+  ok  空 device_id 文案 = "设备码缺失，无法完成操作"
+
+[3] /me：解析档案，device_id 走 query，没有 key
+  ok  method = "GET"
+  ok  /me?device_id=… = "http://62.106.70.167:60013/me?device_id=d-0123456789abcdef0123456789abcdef"
+  ok  ok = "ok"
+  ok  remaining_points = 130
+  ok  quota_points = 150
+  ok  used_points = 20
+  ok  invited_count = 2
+  ok  max_invites = 20
+  ok  key_status = "active"
+  ok  /me 结果里没有 key
+  ok  device_not_found 文案 = "服务端没有这个设备码的记录，请点「领取 / 重新领取」"
+  ok  缺字段 → null = null
+  ok  缺 remaining_points → null = null
+  ok  null → null = null
+  ok  额度为 0 仍然能解析（不是错误） = 0
+  ok  缺的数值字段补 0 = 0
+
+[4] 绑定邀请码：成功 → reward_points；大小写规范化
+  ok  转大写去空格 = "G7TA7UR3"
+  ok  形状校验 = true
+  ok  太短 = false
+  ok  method = "POST"
+  ok  /redeem = "http://62.106.70.167:60013/redeem"
+  ok  请求体（邀请码已规范化） = {"device_id":"d-0123456789abcdef0123456789abcdef","invite_code":"G7TA7UR3"}
+  ok  ok = "ok"
+  ok  reward_points = 20
+  ok  synced = true
+  ok  响应带档案时直接用 = 130
+  ok  没有档案也算成功 = "ok"
+  ok  界面据此再查一次 /me = null
+  ok  空邀请码一次请求都不发 = 0
+  ok  空邀请码文案 = "请先填写邀请码"
+
+[5] 邀请码全部错误码 → 各自能看的文案
+  ok  device_not_found 是错误 = "error"
+  ok  device_not_found 保留服务端 code = "device_not_found"
+  ok  device_not_found → 服务端没有这个设备码的记录，请点「领取 / 重新领取」 = "服务端没有这个设备码的记录，请点「领取 / 重新领取」"
+  ok  device_not_found retryable=false = false
+  ok  device_not_found 结果不含完整 device_id
+  ok  invalid_code 是错误 = "error"
+  ok  invalid_code 保留服务端 code = "invalid_code"
+  ok  invalid_code → 邀请码无效，请核对后重试 = "邀请码无效，请核对后重试"
+  ok  invalid_code retryable=false = false
+  ok  invalid_code 结果不含完整 device_id
+  ok  own_code 是错误 = "error"
+  ok  own_code 保留服务端 code = "own_code"
+  ok  own_code → 不能填自己的邀请码 = "不能填自己的邀请码"
+  ok  own_code retryable=false = false
+  ok  own_code 结果不含完整 device_id
+  ok  already_redeemed 是错误 = "error"
+  ok  already_redeemed 保留服务端 code = "already_redeemed"
+  ok  already_redeemed → 已经绑定过邀请码，不能重复绑定 = "已经绑定过邀请码，不能重复绑定"
+  ok  already_redeemed retryable=false = false
+  ok  already_redeemed 结果不含完整 device_id
+  ok  code_exhausted 是错误 = "error"
+  ok  code_exhausted 保留服务端 code = "code_exhausted"
+  ok  code_exhausted → 这个邀请码的奖励名额已用完 = "这个邀请码的奖励名额已用完"
+  ok  code_exhausted retryable=false = false
+  ok  code_exhausted 结果不含完整 device_id
+  ok  rate_limited 是错误 = "error"
+  ok  rate_limited 保留服务端 code = "rate_limited"
+  ok  rate_limited → 操作太频繁，请稍后再试 = "操作太频繁，请稍后再试"
+  ok  rate_limited retryable=true = true
+  ok  rate_limited 结果不含完整 device_id
+  ok  没有 code 时用 HTTP_404 = "HTTP_404"
+  ok  404 兜底文案 = "服务端没有这个设备码的记录，请点「领取 / 重新领取」"
+
+[6] 隐私：不写 console、返回值不带完整凭据
+  ok  整条链路一条 console 都没写 = 0
+  ok  日志里没有完整 Key
+  ok  日志里没有完整 device_id
+  ok  i18n 文案里没有 Key 形态的串
+
+✓ 全部通过（105 项检查）
+<< PASS tests/unit/ours-invite.test.mjs (427ms)
+
+>> tests/unit/ours-order-overwrite.test.mjs (timeout 180000ms)
+
+[1] 存档是覆盖，不是追加
+  ok  1.1 第二次写入覆盖第一次（只剩一个存档 key） = "CP202611182359489D46C638"
+  ok  1.2 令牌一起换掉 = "tok-paid"
+  ok  1.3 全局只有一个存档 key（不是列表） = 1
+  ok  1.4 写 null 即清空 = null
+
+[2] 存档变化通知（进程内 + 跨标签页）
+  ok  2.1 写存档通知一次 = 1
+  ok  2.2 别的标签页写了同一个 key → 也通知 = 2
+  ok  2.3 别的 key 的变化不打扰订单轮询 = 2
+  ok  2.4 localStorage.clear()（key=null）当作存档可能变了 = 3
+  ok  2.5 退订后不再通知 = 3
+  ok  2.6 写入与清空都通知 = 2
+
+[3] pollOrder：存档一换，旧的那次轮询自己切到新单
+  ok  3.1 轮询以「已发卡」收尾（不是查旧单查到超时） = "ok"
+  ok  3.2 换单回调带着新单号与新令牌 = [{"outTradeNo":"CP202611182359489D46C638","orderToken":"tok-paid"}]
+  ok  3.3 换单后一次都没有再问旧单 = ["CP202611182105334E806605","CP202611182359489D46C638","CP202611182359489D46C638"]
+  ok  3.4 新单用的是新令牌（旧的查不到新单，会 403） = true
+  ok  3.5 界面回调里单号跟着换 = ["CP202611182105334E806605","CP202611182359489D46C638","CP202611182359489D46C638"]
+  ok  3.6 拿到第二单的卡密 = "MUSE-3CYP-5NA3-AHSE-A3SR"
+  ok  3.7 只有 3 次查询（旧单 1 次 + 新单 2 次），没有两个轮询各查各的 = 3
+
+[4] 换单时 60s 预算重新计时
+  ok  4.1 换单后重新给满预算 → 能等到新单发卡（不是沿用旧单的余量立刻超时） = "ok"
+  ok  4.2 真的等到了新单发卡那一刻（t=8000ms）
+
+[5] /api/order 的兜底字段 latest_fulfilled
+  ok  5.1 查询成功 = "ok"
+  ok  5.2 解析出兜底单号 = "CP202611182359489D46C638"
+  ok  5.3 兜底卡密（完整卡号只在内存里） = "MUSE-3CYP-5NA3-AHSE-A3SR"
+  ok  5.4 界面只显示尾号 = "••••A3SR"
+  ok  5.5 金额（元） = 1
+  ok  5.6 支付时间（秒） = 1795015210
+  ok  5.7 当前单状态照旧 pending（不冒充已发卡） = "pending"
+  ok  5.8 兜底记录没有卡密就不展示（不摆一张空卡） = null
+  ok  5.9 自己这单已发卡时不看兜底字段 = null
+  ok  5.10 服务端没带这个字段时是 null = null
+
+[6] consumeOrderReturn：回跳覆盖旧存档时要能报出来
+  ok  6.1 回跳单号被认出来 = "CP202611182359489D46C638"
+  ok  6.2 覆盖掉一笔未完成旧单 → 要求界面提示「上一笔未支付订单已失效」 = true
+  ok  6.3 存档已被覆盖成回跳那一单 = "CP202611182359489D46C638"
+  ok  6.4 同一个单号再回跳一次不算「覆盖」 = false
+  ok  6.5 超过 30 分钟的旧存档本来就不会再查，不提示 = false
+
+ours-order-overwrite: 全部通过（34 项）
+<< PASS tests/unit/ours-order-overwrite.test.mjs (375ms)
+
+>> tests/unit/ours-payment-records.test.mjs (timeout 180000ms)
+[1] /buy 必须带 cid（下单归属该客户）
+  ok  1.1 buyUrl 带上套餐：https://apia.ecsafe.cn/buy?plan=p1&cid=10
+  ok  1.2 buyUrl 带上 cid=10：https://apia.ecsafe.cn/buy?plan=p1&cid=10
+  ok  1.3 buyUrl 从缓存补 cid：https://apia.ecsafe.cn/buy?plan=p1&cid=10
+  ok  1.4 startCheckout 成功 = "ok"
+  ok  1.5 只发一次 /buy = 1
+  ok  1.6 startCheckout 发出的 /buy 带 cid：https://apia.ecsafe.cn/buy?plan=p1&cid=10
+  ok  1.7 没有 customer_id 时返回错误 = "error"
+  ok  1.8 错误码 CUSTOMER_ID_MISSING = "CUSTOMER_ID_MISSING"
+  ok  1.9 有可展示的提示文案 key（Issue #135：告知用户先领 Key） = "oursErrCustomerNeedsKey"
+  ok  1.10 一个请求都不发（绝不发不带 cid 的 /buy） = 0
+  ok  1.11 /buy?plan= 只在 api.ts 的 buyUrl 里拼（没有漏掉的构造点） = []
+[2] 连续两次下单：存档必须是最新单号
+  ok  2.1 第一单下单成功 = "ok"
+  ok  2.2 第二单下单成功 = "ok"
+  ok  2.3 第一单没有可覆盖的旧单 = false
+  ok  2.4 第二单覆盖了上一笔未支付订单 = true
+  ok  2.5 本地存档是最新单号（旧实现在此红） = "CP20261118211300BBBBBBBB"
+  ok  2.6 令牌也是最新单的 = "Qq7w1ZtNeWmRkPvCyGuHjXbA4dEsF3Ln"
+  ok  2.7 套餐跟着最新单 = "p2"
+  ok  2.8 按最新单查单成功 = "ok"
+  ok  2.9 查的是最新单号：https://apia.ecsafe.cn/api/order?out_trade_no=CP20261118211300BBBBBBBB&order_token=Qq7w1ZtNeWmRkPvCyGuHjXbA4dEsF3Ln
+  ok  2.10 用的是最新单的令牌
+[3] /api/orders 解析：金额 / 状态 / 时间 / 卡号后 4 位 / total_paid_yuan
+  ok  3.1 空列表也解析出 customer_id = 10
+  ok  3.2 total_paid_yuan 原样读回 = 0
+  ok  3.3 空列表不报错 = []
+  ok  3.4 total_paid_yuan 读回 = 3.1
+  ok  3.5 两笔订单 = 2
+  ok  3.6 最新的排在前面 = "CP20261118211300BBBBBBBB"
+  ok  3.7 FULFILLED → 已完成 = "completed"
+  ok  3.8 金额换成元（39.00） = 39
+  ok  3.9 支付时间读回（秒） = 1766900560
+  ok  3.10 EXPIRED → 已过期 = "expired"
+  ok  3.11 卡号后 4 位 QHJ5：••••QHJ5
+  ok  3.12 列表里的尾号不含完整卡密
+  ok  3.13 完整卡密只给「查看卡密 / 去兑换」 = "MUSE-XWBF-J4TZ-WHSQ-QHJ5"
+  ok  3.14 PENDING → 待支付 = "pending"
+  ok  3.15 最多 50 条 = 50
+  ok  3.16 最新的一笔在最前面 = "CP59"
+  ok  3.17 第 50 条是倒数第 50 新 = "CP10"
+  ok  3.18 坏数据返回 null = null
+[4] fetchPaymentRecords：鉴权 / 两账号隔离 / cid 落缓存
+  ok  4.1 拉取成功 = "ok"
+  ok  4.2 打的是 /api/orders = "https://apia.ecsafe.cn/api/orders"
+  ok  4.3 带 Bearer Key = "Bearer sk-live-test"
+  ok  4.4 顺带拿到 customer_id = 10
+  ok  4.5 customer_id 落进缓存（下单时用它拼 cid） = 10
+  ok  4.6 无效 Key 报错而不是「没有订单」 = "error"
+  ok  4.7 错误码 UNAUTHORIZED = "UNAUTHORIZED"
+  ok  4.8 提示 Key 无效（与 api.ts 的 401 文案同一个 key，全 App 口径一致） = "oursErrUnauthorized"
+  ok  4.9 另一个账号：列表为空（看不到别人的订单） = 0
+  ok  4.10 没 Key 直接报错 = "error"
+  ok  4.11 没 Key 不发请求 = 0
+
+ours-payment-records: 全部通过（50 项）
+<< PASS tests/unit/ours-payment-records.test.mjs (303ms)
+
+>> tests/unit/ours-purchases.test.mjs (timeout 180000ms)
+TAP version 13
+# Subtest: \#158 示例 JSON 完整解析（金额 / 积分 / 中文状态 / 卡号 / 时间 / 累计实付）
+ok 1 - \#158 示例 JSON 完整解析（金额 / 积分 / 中文状态 / 卡号 / 时间 / 累计实付）
+  ---
+  duration_ms: 10.44916
+  type: 'test'
+  ...
+# Subtest: 状态大小写无关；非法状态归 failed 且保留后端中文
+ok 2 - 状态大小写无关；非法状态归 failed 且保留后端中文
+  ---
+  duration_ms: 0.503576
+  type: 'test'
+  ...
+# Subtest: status 过滤：fulfilled / pending / expired 拼进 query，不传则不带该参数
+ok 3 - status 过滤：fulfilled / pending / expired 拼进 query，不传则不带该参数
+  ---
+  duration_ms: 3.073513
+  type: 'test'
+  ...
+# Subtest: limit 夹取：0 / 负数 / 非数字 → 20，1000 → 100；offset 负数 → 0
+ok 4 - limit 夹取：0 / 负数 / 非数字 → 20，1000 → 100；offset 负数 → 0
+  ---
+  duration_ms: 1.097334
+  type: 'test'
+  ...
+# Subtest: orders 不是数组 / 缺 total / 元素不是对象 → 不崩，给安全默认值
+ok 5 - orders 不是数组 / 缺 total / 元素不是对象 → 不崩，给安全默认值
+  ---
+  duration_ms: 2.458034
+  type: 'test'
+  ...
+# Subtest: amount_yuan / 时间是字符串或垃圾值 → 数字照解，垃圾给默认值
+ok 6 - amount_yuan / 时间是字符串或垃圾值 → 数字照解，垃圾给默认值
+  ---
+  duration_ms: 0.510321
+  type: 'test'
+  ...
+# Subtest: maskCardNo：完整卡号只留后 4 位，短卡号不整条泄露，null → 空
+ok 7 - maskCardNo：完整卡号只留后 4 位，短卡号不整条泄露，null → 空
+  ---
+  duration_ms: 0.59664
+  type: 'test'
+  ...
+# Subtest: hasNextPage：offset + orders.length < total
+ok 8 - hasNextPage：offset + orders.length < total
+  ---
+  duration_ms: 0.452767
+  type: 'test'
+  ...
+# Subtest: 401 与超时是两种可区分的错误：401 要重填 Key 且不可重试，超时可重试
+ok 9 - 401 与超时是两种可区分的错误：401 要重填 Key 且不可重试，超时可重试
+  ---
+  duration_ms: 1.642813
+  type: 'test'
+  ...
+# Subtest: 没填 Key 不发请求；2xx 但不是对象 → badResponse
+ok 10 - 没填 Key 不发请求；2xx 但不是对象 → badResponse
+  ---
+  duration_ms: 0.911484
+  type: 'test'
+  ...
+# Subtest: 走真实 transport：Key 只在 Authorization 头，URL 里只有 limit/offset/status
+ok 11 - 走真实 transport：Key 只在 Authorization 头，URL 里只有 limit/offset/status
+  ---
+  duration_ms: 72.319976
+  type: 'test'
+  ...
+# Subtest: 真实 transport 的超时 / 断网被区分开，错误文案里没有 Key
+ok 12 - 真实 transport 的超时 / 断网被区分开，错误文案里没有 Key
+  ---
+  duration_ms: 0.860205
+  type: 'test'
+  ...
+1..12
+# tests 12
+# suites 0
+# pass 12
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 645.281448
+<< PASS tests/unit/ours-purchases.test.mjs (724ms)
+
+>> tests/unit/ours-webpay.test.mjs (timeout 180000ms)
+
+[1] buyUrl：网页版顶层导航的目标
+  ok  buyUrl(p1) = "https://apia.ecsafe.cn/buy?plan=p1"
+  ok  base 是 HTTPS 支付域名（跨域顶层跳转的目标） = "https://apia.ecsafe.cn"
+  ok  plan id 去空白 = "https://apia.ecsafe.cn/buy?plan=p2"
+  ok  plan id 做 URL 编码（不让用户输入改变查询串结构） = "https://apia.ecsafe.cn/buy?plan=a%26b%3Dc"
+  ok  顶层跳转目标是 https（明文地址不开）
+
+[2] startCheckout（原生）与 buyUrl 同源，行为不变
+  ok  原生只发一次 /buy = 1
+  ok  原生请求的 URL 就是 buyUrl(p1, 10)（与网页版同一个带 cid 的地址） = "https://apia.ecsafe.cn/buy?plan=p1&cid=10"
+  ok  原生仍然不跟随重定向 = false
+  ok  读不到 Location → no-location（不猜单号） = "no-location"
+
+[3] parseOrderReturn：`no` + `order_token` 都齐才算回跳
+  ok  标准回跳参数（收银台 return_url 的结构） = {"outTradeNo":"CP2026111816102637F0F8AA","orderToken":"Lsx2M8cBadOaJrXElnZBLISmtImUtfp9"}
+  ok  不带问号也认 = {"outTradeNo":"CP2026111816102637F0F8AA","orderToken":"Lsx2M8cBadOaJrXElnZBLISmtImUtfp9"}
+  ok  out_trade_no 是 no 的别名 = {"outTradeNo":"CP2026111816102637F0F8AA","orderToken":"Lsx2M8cBadOaJrXElnZBLISmtImUtfp9"}
+  ok  多余参数不影响 = {"outTradeNo":"CP2026111816102637F0F8AA","orderToken":"Lsx2M8cBadOaJrXElnZBLISmtImUtfp9"}
+  ok  只有单号（没有令牌）→ 不查单 = null
+  ok  只有令牌（没有单号）→ 不查单 = null
+  ok  空查询串 → 不查单 = null
+  ok  只有 plan → 不查单（正常打开页面绝不查单） = null
+  ok  空白值不算数 = null
+
+[4] consumeOrderReturn：认出回跳 → 清地址栏 → 落盘
+  ok  返回单号与令牌（+ #157 的「是否覆盖了未完成旧单」） = {"outTradeNo":"CP2026111816102637F0F8AA","orderToken":"Lsx2M8cBadOaJrXElnZBLISmtImUtfp9","replacedUnpaidOrder":false}
+  ok  只清一次地址栏 = 1
+  ok  地址栏去掉 no / order_token，保留其它参数 = "/?plan=p1"
+  ok  存档里的单号 = "CP2026111816102637F0F8AA"
+  ok  存档里的 order_token（没有它查单 403） = "Lsx2M8cBadOaJrXElnZBLISmtImUtfp9"
+  ok  回跳单没有套餐信息 → planId 空串 = ""
+  ok  存档时间用注入的 now（续查窗口按它算） = 1763000000000
+  ok  存储不可用时仍返回回跳参数（本次查单照跑） = {"outTradeNo":"CP2026111816102637F0F8AA","orderToken":"Lsx2M8cBadOaJrXElnZBLISmtImUtfp9","replacedUnpaidOrder":false}
+  ok  没有其它参数时地址栏回到 pathname = "/"
+
+[5] 没有回跳参数：不查单、不动地址栏、不写存档
+  ok  返回 null（不进入订单查询） = null
+  ok  不调用 replaceState = []
+  ok  不写存档 = 0
+  ok  缺 order_token 时同样不查单 = null
+  ok  缺令牌时也不动地址栏 = []
+
+[6] orderStore / stripOrderReturn
+  ok  没有存档时返回 null = null
+  ok  写入后可读回 = "p1"
+  ok  写 null 即删除存档 = null
+  ok  坏 JSON 当作没有存档 = null
+  ok  缺 order_token 的存档不认（查单必 403） = null
+  ok  storage 为 null 时写入不抛
+  ok  stripOrderReturn 只删三个回跳键 = "/?plan=p1"
+  ok  没有查询串时保留 pathname + hash = "/x#y"
+  ok  回跳键名单（no 与 out_trade_no 同义） = ["no","out_trade_no","order_token"]
+
+[7] 源码防回归：网页版购买只有一个出口（window.location.assign）
+  ok  navigateTopLevel 先补 cid 再导航（withBuyCustomerId + 已知 cid 走同步分支）
+  ok  navigateTopLevel 的同步分支就是 window.location.assign(补过 cid 的地址)
+  ok  不再出现 window.location.assign(url)：原样跳转（可能不带 cid）的写法被禁止
+  ok  「去支付」的网页版分支调用 navigateTopLevel(buyUrl(planId))
+  ok  定位到「去支付」的实现（buy）
+  ok  「去支付」里没有 fetch(（网页版不再自己发请求读 302）
+  ok  「去支付」里没有 redirect: manual（读不到 Location 的写法）
+  ok  网页版分支在 startCheckout 之前就返回（原生那条路径没被动到）
+  ok  「网页版拿不到收银台地址 → 请在 App 内购买」的旧提示已删除
+
+✓ 全部通过（50 项检查）
+<< PASS tests/unit/ours-webpay.test.mjs (308ms)
+
+>> tests/unit/provider-ours.test.mjs (timeout 180000ms)
+TAP version 13
+# Subtest: ours 渠道契约：OpenAI 协议 + Bearer + 内置新地址/模型
+ok 1 - ours 渠道契约：OpenAI 协议 + Bearer + 内置新地址/模型
+  ---
+  duration_ms: 4.062589
+  type: 'test'
+  ...
+# Subtest: ours 迁移：旧 base/model 被 locked defaults 覆盖，用户 Key 保留
+ok 2 - ours 迁移：旧 base/model 被 locked defaults 覆盖，用户 Key 保留
+  ---
+  duration_ms: 0.462731
+  type: 'test'
+  ...
+# Subtest: 另外三个渠道不受影响
+ok 3 - 另外三个渠道不受影响
+  ---
+  duration_ms: 0.597312
+  type: 'test'
+  ...
+1..3
+# tests 3
+# suites 0
+# pass 3
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 461.716358
+<< PASS tests/unit/provider-ours.test.mjs (554ms)
+
+>> tests/unit/purchases-ui.test.mjs (timeout 180000ms)
+TAP version 13
+# Subtest: [1] 有数据：套餐名 / 实付金额 / 后端 status_text / 本地时间 / 卡号后 4 位 都在，完整卡号不在
+ok 1 - [1] 有数据：套餐名 / 实付金额 / 后端 status_text / 本地时间 / 卡号后 4 位 都在，完整卡号不在
+  ---
+  duration_ms: 28.821209
+  type: 'test'
+  ...
+# Subtest: [2] 空：给空态文案、不渲染列表，条数为 0
+ok 2 - [2] 空：给空态文案、不渲染列表，条数为 0
+  ---
+  duration_ms: 2.888545
+  type: 'test'
+  ...
+# Subtest: [2b] 空（筛选态）：文案换成「换个筛选看看」，跟「还没买过」区分开
+ok 3 - [2b] 空（筛选态）：文案换成「换个筛选看看」，跟「还没买过」区分开
+  ---
+  duration_ms: 2.853675
+  type: 'test'
+  ...
+# Subtest: [3] 错误：可重试的 kind 给中文文案 + 重试按钮，界面里没有英文原文
+ok 4 - [3] 错误：可重试的 kind 给中文文案 + 重试按钮，界面里没有英文原文
+  ---
+  duration_ms: 5.122603
+  type: 'test'
+  ...
+# Subtest: [3b] 错误：401 引导去填 Key，不给「重试」（重试没用）
+ok 5 - [3b] 错误：401 引导去填 Key，不给「重试」（重试没用）
+  ---
+  duration_ms: 0.814063
+  type: 'test'
+  ...
+# Subtest: [3c] 错误：没有 API Key 时一条请求都不发
+ok 6 - [3c] 错误：没有 API Key 时一条请求都不发
+  ---
+  duration_ms: 3.794153
+  type: 'test'
+  ...
+# Subtest: [3d] 错误：未知 kind 也落到本地化兜底文案（不漏英文）
+ok 7 - [3d] 错误：未知 kind 也落到本地化兜底文案（不漏英文）
+  ---
+  duration_ms: 0.408277
+  type: 'test'
+  ...
+# Subtest: [4] 分页：limit=20 恒定，offset 透传，prev/next 可用态跟 hasNextPage 一致
+ok 8 - [4] 分页：limit=20 恒定，offset 透传，prev/next 可用态跟 hasNextPage 一致
+  ---
+  duration_ms: 23.841473
+  type: 'test'
+  ...
+# Subtest: [5] tab 切换：四个 tab 分别把 status 传成 fulfilled / pending / expired / 不带筛选
+ok 9 - [5] tab 切换：四个 tab 分别把 status 传成 fulfilled / pending / expired / 不带筛选
+  ---
+  duration_ms: 1.010211
+  type: 'test'
+  ...
+# Subtest: [5b] tab 切换：只有当前 tab 带 aria-selected，点别的 tab 会回传该 tab（并回到第一页）
+ok 10 - [5b] tab 切换：只有当前 tab 带 aria-selected，点别的 tab 会回传该 tab（并回到第一页）
+  ---
+  duration_ms: 4.377505
+  type: 'test'
+  ...
+# Subtest: [6] issued → 有「去兑换」按钮，点了走兑换分支（不碰支付）
+ok 11 - [6] issued → 有「去兑换」按钮，点了走兑换分支（不碰支付）
+  ---
+  duration_ms: 1.885593
+  type: 'test'
+  ...
+# Subtest: [6b] pending → 有「去支付」（文案复用既有 oursBuyAction），点了走支付分支
+ok 12 - [6b] pending → 有「去支付」（文案复用既有 oursBuyAction），点了走支付分支
+  ---
+  duration_ms: 0.704179
+  type: 'test'
+  ...
+# Subtest: [6c] redeemed → 显示「已兑换」，展开后才把完整卡号放进 DOM，收起后消失
+ok 13 - [6c] redeemed → 显示「已兑换」，展开后才把完整卡号放进 DOM，收起后消失
+  ---
+  duration_ms: 2.34503
+  type: 'test'
+  ...
+# Subtest: [6d] 已过期 / 失败 / 已支付未发卡 都没有主操作，也不给展开卡号
+ok 14 - [6d] 已过期 / 失败 / 已支付未发卡 都没有主操作，也不给展开卡号
+  ---
+  duration_ms: 0.630772
+  type: 'test'
+  ...
+# Subtest: [7] 加载中：只显示加载文案，不显示列表 / 分页 / 累计金额数字
+ok 15 - [7] 加载中：只显示加载文案，不显示列表 / 分页 / 累计金额数字
+  ---
+  duration_ms: 0.510545
+  type: 'test'
+  ...
+# Subtest: [8] 时间格式化：秒 / 毫秒都能认，非法值给占位符，且用本地时区
+ok 16 - [8] 时间格式化：秒 / 毫秒都能认，非法值给占位符，且用本地时区
+  ---
+  duration_ms: 0.266212
+  type: 'test'
+  ...
+# Subtest: [9] 文案：新增 key 在 zh / en 都成对，占位符对齐，en 下不含中文
+ok 17 - [9] 文案：新增 key 在 zh / en 都成对，占位符对齐，en 下不含中文
+  ---
+  duration_ms: 0.846008
+  type: 'test'
+  ...
+1..17
+# tests 17
+# suites 0
+# pass 17
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 680.95522
+<< PASS tests/unit/purchases-ui.test.mjs (772ms)
+
+>> tests/unit/reading-settings.test.mjs (timeout 180000ms)
+TAP version 13
+# Subtest: A 阅读设置三项的默认值等于改造前的现状
+ok 1 - A 阅读设置三项的默认值等于改造前的现状
+  ---
+  duration_ms: 1.242734
+  type: 'test'
+  ...
+# Subtest: B 三项可改动、立即生效、跨重启持久化，脏值回落默认
+ok 2 - B 三项可改动、立即生效、跨重启持久化，脏值回落默认
+  ---
+  duration_ms: 10.128578
+  type: 'test'
+  ...
+# Subtest: C token 层：默认档逐值等于改造前的字号 / 字重 / 行高
+ok 3 - C token 层：默认档逐值等于改造前的字号 / 字重 / 行高
+  ---
+  duration_ms: 5.295067
+  type: 'test'
+  ...
+# Subtest: C2 字体 token 由阅读 token 驱动，不再散落魔法数
+ok 4 - C2 字体 token 由阅读 token 驱动，不再散落魔法数
+  ---
+  duration_ms: 0.749261
+  type: 'test'
+  ...
+# Subtest: D 只作用于消息区：设置面板与输入框不引用阅读 token
+ok 5 - D 只作用于消息区：设置面板与输入框不引用阅读 token
+  ---
+  duration_ms: 2.079319
+  type: 'test'
+  ...
+# Subtest: E 接线：设置写入根元素 data-*，main 起步时应用，设置面板渲染三项
+ok 6 - E 接线：设置写入根元素 data-*，main 起步时应用，设置面板渲染三项
+  ---
+  duration_ms: 2.58521
+  type: 'test'
+  ...
+# Subtest: F i18n：阅读设置的键 zh/en 成对且文案不同
+ok 7 - F i18n：阅读设置的键 zh/en 成对且文案不同
+  ---
+  duration_ms: 12.437632
+  type: 'test'
+  ...
+1..7
+# tests 7
+# suites 0
+# pass 7
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 333.142032
+<< PASS tests/unit/reading-settings.test.mjs (422ms)
+
+>> tests/unit/redeem-pool.test.mjs (timeout 180000ms)
+
+[1] 兑换改地址：POST 62.106:60013/redeem-card，body 只有 {card_no, api_key}
+  ok  redeemCardAtPool 已导出
+  ok  redeemCardMigrated（池 + 旧接口兜底）已导出
+  ok  REDEEM_POOL_URL = "http://62.106.70.167:60013/redeem-card"
+  ok  只发一次请求 = 1
+  ok  method = "POST"
+  ok  url 打本机池 = "http://62.106.70.167:60013/redeem-card"
+  ok  content-type = "application/json"
+  ok  followRedirects=false = false
+  ok  body 只有 card_no + api_key（无 request_id） = {"card_no":"MUSE-8f3a-9b7c-2d44-71bb","api_key":"sk-ours-unit-test-654321"}
+  ok  200 → success = "success"
+  ok  points 取服务端 = 300
+  ok  remaining_points 取服务端 = 620
+  ok  via=pool = "pool"
+  ok  卡密只露尾 4 位 = "71bb"
+
+[2] 200 duplicate:true 按成功处理
+  ok  duplicate:true 不是错误 = "success"
+  ok  duplicate 标记透传 = true
+  ok  重复提交给「已到账」文案 = "oursRedeemDuplicate"
+  ok  重复提交的文案不含「失败」
+
+[3] 四个返回码的中文文案
+  ok  card_not_found → error = "error"
+  ok  card_not_found code 透传 = "card_not_found"
+  ok  card_not_found messageKey = "oursErrCardNotFoundOrExpired"
+  ok  card_not_found 文案含「卡密不存在或已失效」：卡密不存在或已失效
+  ok  card_used → error = "error"
+  ok  card_used code 透传 = "card_used"
+  ok  card_used messageKey = "oursErrCardUsed"
+  ok  card_used 文案含「该卡密已被使用」：该卡密已被使用，不要重复提交
+  ok  api_key_invalid → error = "error"
+  ok  api_key_invalid code 透传 = "api_key_invalid"
+  ok  api_key_invalid messageKey = "oursErrApiKeyNotIssued"
+  ok  api_key_invalid 文案含「请先在 App 内领取 Key」：请先在 App 内领取 Key 再兑换
+
+[4] 旧 /api/redeem 兜底 + CARD_LEASED 文案与 card_used 区分开
+  ok  池失败后恰好兜底一次 = 2
+  ok  兜底打旧 /api/redeem = "https://apia.ecsafe.cn/api/redeem"
+  ok  兜底 request_id 固定用卡密 = "MUSE-8f3a-9b7c-2d44-71bb"
+  ok  兜底成功 = "success"
+  ok  via=legacy = "legacy"
+  ok  池 404 无语义体 → 兜底一次 = 2
+  ok  兜底命中旧接口 = "legacy"
+  ok  CARD_LEASED → error = "error"
+  ok  CARD_LEASED messageKey = "oursErrCardLeased"
+  ok  CARD_LEASED 文案：该卡密已转入 App 兑换通道，请在 App 内兑换
+  ok  CARD_LEASED 文案不含「已被使用」
+  ok  CARD_LEASED 与 card_used 文案确实不同
+
+[5] 202 CREDIT_PENDING / VERIFY_PENDING 一律「处理中」
+  ok  CREDIT_PENDING → pending = "pending"
+  ok  CREDIT_PENDING code 透传 = "CREDIT_PENDING"
+  ok  CREDIT_PENDING 不带错误文案
+  ok  CREDIT_PENDING 文案：兑换处理中，稍后自动到账
+  ok  CREDIT_PENDING 文案不出现失败 / 换卡
+  ok  VERIFY_PENDING → pending = "pending"
+  ok  VERIFY_PENDING code 透传 = "VERIFY_PENDING"
+  ok  VERIFY_PENDING 不带错误文案
+  ok  VERIFY_PENDING 文案：兑换处理中，稍后自动到账
+  ok  VERIFY_PENDING 文案不出现失败 / 换卡
+  ok  202 空响应体也是处理中 = "pending"
+
+[6] device_not_found 自愈：/apply → 存 key → 重试一次
+  ok  runWithDeviceSelfHeal 已导出
+  ok  自愈后拿到结果 = "ok"
+  ok  healed=true = true
+  ok  原请求 + /apply + 重试一次 = 3 条请求 = 3
+  ok  /apply 是 POST = "POST"
+  ok  /apply 地址 = "http://62.106.70.167:60013/apply"
+  ok  /apply body 带 device_id = {"device_id":"d-old"}
+  ok  重试的是原请求 = "http://62.106.70.167:60013/me?device_id=d-old"
+  ok  自愈后把 key 存下来 = ["sk-healed-000111"]
+  ok  重试结果返回给界面 = 320
+
+[7] 只重试一次；invalid_device 重生成；429 / 409 不重试
+  ok  两次 device_not_found → 报错 = "error"
+  ok  总请求数 3（原请求 + apply + 重试 1 次），没有死循环 = 3
+  ok  invalid_device 触发了重新生成 = ["d-broken"]
+  ok  重新生成后成功 = "ok"
+  ok  后续用新 device_id = "d-regenerated-0001"
+  ok  重试用的是新 device_id
+  ok  429 不重试 = 1
+  ok  429 → error = "error"
+  ok  429 messageKey = "oursInviteErrApplyRateLimited"
+  ok  429 文案：今天领取次数过多，请明天再试
+  ok  409 already_redeemed 不重试 = 1
+  ok  409 → error = "error"
+  ok  409 messageKey = "oursInviteErrAlreadyClaimed"
+  ok  device_not_found 不作为用户可见错误暴露
+
+[8] 设备码可见可备份 + 只提示一次
+  ok  shouldShowDeviceBackupHint 已导出
+  ok  首次打开要提示 = true
+  ok  标记后不再提示 = false
+  ok  备份提示文案：设备码就是你的账号凭据：请复制备份，清理站点数据或换机后无法找回。
+
+[9] 价格取 /api/plans；客户端不暴露图片 / 文件输入入口
+  ok  设置/兑换弹层没有 file 输入
+  ok  设置/兑换弹层没有 accept= 选择器
+  ok  兑换弹层没有图片预览
+  ok  价格来自 fetchPlans(/api/plans)
+  ok  弹层里没有硬编码价格 = []
+  ok  套餐请求打 /api/plans
+  ok  服务层没有写死 p1/p2 价格与积分
+  ok  取套餐打 /api/plans = "https://apia.ecsafe.cn/api/plans"
+  ok  套餐解析成功 = "success"
+  ok  p1 价格来自服务端 = "¥0.10 · 300 积分"
+  ok  p2 价格来自服务端 = "¥39.00 · 3,900 积分"
+
+[10] 本地 stub 服务器：验证真实发出的报文（不是打真机/真服务）
+  ok  stub 200 → success = "success"
+  ok  stub remaining_points = 900
+  ok  stub 收到 POST = "POST"
+  ok  stub 收到 /redeem-card = "/redeem-card"
+  ok  stub 收到的 body = {"card_no":"MUSE-8f3a-9b7c-2d44-71bb","api_key":"sk-ours-unit-test-654321"}
+  ok  stub 收到 json content-type = "application/json"
+  ok  stub 404 → error = "error"
+  ok  stub 404 card_not_found = "card_not_found"
+
+[10b] stub 端口必须能被 fetch 使用；并发两份实例互不踩
+  ok  6566 在 bad-port 名单上，fetch 连不上（实测 bad port 6566: on the undici/WHATWG bad-port list, fetch can never reach it）
+  ok  显式要拒连端口 6566 时直接拒绝，不发坏地址（bad port 6566: on the undici/WHATWG bad-port list, fetch can never reach it）
+  ok  两份并发 stub 端口不同 = false
+  ok  stub 端口不在 fetch 拒连名单 = false
+  ok  并发第一份 stub 跑通 = "success"
+  ok  并发第二份 stub 跑通 = "success"
+  ok  第一份 stub 只收到自己那一个请求 = 1
+  ok  第二份 stub 只收到自己那一个请求 = 1
+
+[11] i18n：新 key 中英齐全，既有 key 未被改写
+  ok  zh.oursErrCardLeased 存在
+  ok  en.oursErrCardLeased 存在
+  ok  zh.oursErrCardNotFoundOrExpired 存在
+  ok  en.oursErrCardNotFoundOrExpired 存在
+  ok  zh.oursErrApiKeyNotIssued 存在
+  ok  en.oursErrApiKeyNotIssued 存在
+  ok  zh.oursRedeemProcessing 存在
+  ok  en.oursRedeemProcessing 存在
+  ok  zh.oursRedeemDuplicate 存在
+  ok  en.oursRedeemDuplicate 存在
+  ok  zh.oursRedeemRefreshBalance 存在
+  ok  en.oursRedeemRefreshBalance 存在
+  ok  zh.oursDeviceBackupHint 存在
+  ok  en.oursDeviceBackupHint 存在
+  ok  zh.oursDeviceBackupHintOk 存在
+  ok  en.oursDeviceBackupHintOk 存在
+  ok  zh.oursInviteErrApplyRateLimited 存在
+  ok  en.oursInviteErrApplyRateLimited 存在
+  ok  zh.oursInviteErrAlreadyClaimed 存在
+  ok  en.oursInviteErrAlreadyClaimed 存在
+  ok  appName 仍是「鲸落」（既有行未被改） = "鲸落"
+  ok  既有 oursRedeemPending 未被改写 = "兑换处理中，请稍后刷新额度查看"
+  ok  既有 oursErrCardUsed 未被改写 = "该卡密已被使用，不要重复提交"
+  ok  既有 oursInviteErrRateLimited 未被改写 = "操作太频繁，请稍后再试"
+
+✓ 全部通过（132 项检查）
+<< PASS tests/unit/redeem-pool.test.mjs (634ms)
+
+>> tests/unit/render-process-gone.test.mjs (timeout 180000ms)
+TAP version 13
+# Subtest: MainActivity takes over onRenderProcessGone and never hands it back
+ok 1 - MainActivity takes over onRenderProcessGone and never hands it back
+  ---
+  duration_ms: 10.858807
+  type: 'test'
+  ...
+# Subtest: recovery is hardened: null bridge, reentrancy, post, recreate guard
+ok 2 - recovery is hardened: null bridge, reentrancy, post, recreate guard
+  ---
+  duration_ms: 6.072463
+  type: 'test'
+  ...
+# Subtest: the decision layer is pure Java and always returns true
+ok 3 - the decision layer is pure Java and always returns true
+  ---
+  duration_ms: 1.674262
+  type: 'test'
+  ...
+# Subtest: recovery is visible in diagnostics (native record -> JS log)
+ok 4 - recovery is visible in diagnostics (native record -> JS log)
+  ---
+  duration_ms: 3.209339
+  type: 'test'
+  ...
+# Subtest: a JVM regression test exists for the guard contract
+ok 5 - a JVM regression test exists for the guard contract
+  ---
+  duration_ms: 1.284994
+  type: 'test'
+  ...
+1..5
+# tests 5
+# suites 0
+# pass 5
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 197.029231
+<< PASS tests/unit/render-process-gone.test.mjs (356ms)
+
+>> tests/unit/rotate-key.test.mjs (timeout 180000ms)
+TAP version 13
+# Subtest: [1] 发起：POST /rotate，body 只有 device_id，不带旧 Key
+ok 1 - [1] 发起：POST /rotate，body 只有 device_id，不带旧 Key
+  ---
+  duration_ms: 4.10818
+  type: 'test'
+  ...
+# Subtest: [2] 成功：新 Key 立刻落盘一次，剩余额度与换前一致（额度不丢）
+ok 2 - [2] 成功：新 Key 立刻落盘一次，剩余额度与换前一致（额度不丢）
+  ---
+  duration_ms: 0.526174
+  type: 'test'
+  ...
+# Subtest: [3] 旧 Key 失效处理：本地只留新 Key，排查字段不外泄
+ok 3 - [3] 旧 Key 失效处理：本地只留新 Key，排查字段不外泄
+  ---
+  duration_ms: 0.434433
+  type: 'test'
+  ...
+# Subtest: [3b] 服务端返回的还是原 Key：照样算成功，但标记 replaced=false 让界面别说「已换」
+ok 4 - [3b] 服务端返回的还是原 Key：照样算成功，但标记 replaced=false 让界面别说「已换」
+  ---
+  duration_ms: 0.340017
+  type: 'test'
+  ...
+# Subtest: [4] 失败不破坏本地旧 Key：网络不通
+ok 5 - [4] 失败不破坏本地旧 Key：网络不通
+  ---
+  duration_ms: 0.356066
+  type: 'test'
+  ...
+# Subtest: [4] 失败不破坏本地旧 Key：请求超时
+ok 6 - [4] 失败不破坏本地旧 Key：请求超时
+  ---
+  duration_ms: 0.23334
+  type: 'test'
+  ...
+# Subtest: [4] 失败不破坏本地旧 Key：404 device_not_found
+ok 7 - [4] 失败不破坏本地旧 Key：404 device_not_found
+  ---
+  duration_ms: 0.397825
+  type: 'test'
+  ...
+# Subtest: [4] 失败不破坏本地旧 Key：400 invalid_device
+ok 8 - [4] 失败不破坏本地旧 Key：400 invalid_device
+  ---
+  duration_ms: 0.225317
+  type: 'test'
+  ...
+# Subtest: [4] 失败不破坏本地旧 Key：500 internal
+ok 9 - [4] 失败不破坏本地旧 Key：500 internal
+  ---
+  duration_ms: 0.567372
+  type: 'test'
+  ...
+# Subtest: [4] 失败不破坏本地旧 Key：429 rate_limited
+ok 10 - [4] 失败不破坏本地旧 Key：429 rate_limited
+  ---
+  duration_ms: 0.579015
+  type: 'test'
+  ...
+# Subtest: [4b] 设备码读不到：本地先拦下，一条请求都不发，旧 Key 不动
+ok 11 - [4b] 设备码读不到：本地先拦下，一条请求都不发，旧 Key 不动
+  ---
+  duration_ms: 0.377529
+  type: 'test'
+  ...
+# Subtest: [5] 200 但没有 key：不落盘，报 KEY_MISSING（否则本地会存一把空 Key）
+ok 12 - [5] 200 但没有 key：不落盘，报 KEY_MISSING（否则本地会存一把空 Key）
+  ---
+  duration_ms: 0.289935
+  type: 'test'
+  ...
+# Subtest: [6] device_not_found 不自愈：绝不补 POST /apply（那会静默发一把新 Key）
+ok 13 - [6] device_not_found 不自愈：绝不补 POST /apply（那会静默发一把新 Key）
+  ---
+  duration_ms: 0.310843
+  type: 'test'
+  ...
+# Subtest: [6b] 400 invalid_device 不重生设备码、不重发：交用户重启 App（issue 文案）
+ok 14 - [6b] 400 invalid_device 不重生设备码、不重发：交用户重启 App（issue 文案）
+  ---
+  duration_ms: 0.298007
+  type: 'test'
+  ...
+# Subtest: [7] 主链路不通 → 兜底 https://apia.ecsafe.cn/invite/rotate，且只兜一次
+ok 15 - [7] 主链路不通 → 兜底 https://apia.ecsafe.cn/invite/rotate，且只兜一次
+  ---
+  duration_ms: 0.468097
+  type: 'test'
+  ...
+# Subtest: [7b] 业务错误（400）不兜底：请求已经到服务端并被处理，重发没意义
+ok 16 - [7b] 业务错误（400）不兜底：请求已经到服务端并被处理，重发没意义
+  ---
+  duration_ms: 0.313367
+  type: 'test'
+  ...
+# Subtest: [7c] 兜底也不通：报错且旧 Key 不动
+ok 17 - [7c] 兜底也不通：报错且旧 Key 不动
+  ---
+  duration_ms: 0.29214
+  type: 'test'
+  ...
+# Subtest: [8] 三个错误码文案与 issue 表格逐字一致
+ok 18 - [8] 三个错误码文案与 issue 表格逐字一致
+  ---
+  duration_ms: 0.153041
+  type: 'test'
+  ...
+# Subtest: [8b] 二次确认文案必须写明「旧 Key 立即失效」+「换出后无法找回」
+ok 19 - [8b] 二次确认文案必须写明「旧 Key 立即失效」+「换出后无法找回」
+  ---
+  duration_ms: 0.37568
+  type: 'test'
+  ...
+# Subtest: [8c] zh / en 的文案 key 一一对应（新增键只加不改）
+ok 20 - [8c] zh / en 的文案 key 一一对应（新增键只加不改）
+  ---
+  duration_ms: 2.021343
+  type: 'test'
+  ...
+# Subtest: [9] 隐私：整条链路一条 console 都没有，返回值不含完整设备码
+ok 21 - [9] 隐私：整条链路一条 console 都没有，返回值不含完整设备码
+  ---
+  duration_ms: 0.574015
+  type: 'test'
+  ...
+# Subtest: [10] 设置页有「更换 Key」入口 + 二次确认弹窗 + 置灰防连点
+ok 22 - [10] 设置页有「更换 Key」入口 + 二次确认弹窗 + 置灰防连点
+  ---
+  duration_ms: 0.445723
+  type: 'test'
+  ...
+# Subtest: [10b] UI 用同一个传输层 + 同一个落盘入口，成功后立刻刷新余额
+ok 23 - [10b] UI 用同一个传输层 + 同一个落盘入口，成功后立刻刷新余额
+  ---
+  duration_ms: 0.344331
+  type: 'test'
+  ...
+1..23
+# tests 23
+# suites 0
+# pass 23
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 488.542683
+<< PASS tests/unit/rotate-key.test.mjs (609ms)
+
+>> tests/unit/session-repair.test.mjs (timeout 180000ms)
+TAP version 13
+# Subtest: files=null (the exact corruption from \#28) is repaired to [] and reported
+ok 1 - files=null (the exact corruption from \#28) is repaired to [] and reported
+  ---
+  duration_ms: 6.004642
+  type: 'test'
+  ...
+# Subtest: messages=null is repaired to [] and reported
+ok 2 - messages=null is repaired to [] and reported
+  ---
+  duration_ms: 0.358005
+  type: 'test'
+  ...
+# Subtest: unusable entries are dropped, usable ones kept, drops are counted
+ok 3 - unusable entries are dropped, usable ones kept, drops are counted
+  ---
+  duration_ms: 0.547708
+  type: 'test'
+  ...
+# Subtest: files with unusable entries keep the good ones and report the count
+ok 4 - files with unusable entries keep the good ones and report the count
+  ---
+  duration_ms: 0.439911
+  type: 'test'
+  ...
+# Subtest: blocks=null on an assistant message degrades to [] (still renders)
+ok 5 - blocks=null on an assistant message degrades to [] (still renders)
+  ---
+  duration_ms: 0.39978
+  type: 'test'
+  ...
+# Subtest: healthy session keeps object identity and reports nothing
+ok 6 - healthy session keeps object identity and reports nothing
+  ---
+  duration_ms: 0.335243
+  type: 'test'
+  ...
+# Subtest: linear sessions still get parentId / selectedChildId after repair
+ok 7 - linear sessions still get parentId / selectedChildId after repair
+  ---
+  duration_ms: 0.364458
+  type: 'test'
+  ...
+# Subtest: branch sessions keep their own selection while being repaired
+ok 8 - branch sessions keep their own selection while being repaired
+  ---
+  duration_ms: 0.29817
+  type: 'test'
+  ...
+1..8
+# tests 8
+# suites 0
+# pass 8
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 434.606562
+<< PASS tests/unit/session-repair.test.mjs (570ms)
+
+>> tests/unit/shot-mobile.test.mjs (timeout 180000ms)
+TAP version 13
+# Subtest: parseArgs
+    # Subtest: 什么都不给时全部走默认值
+    ok 1 - 什么都不给时全部走默认值
+      ---
+      duration_ms: 1.242052
+      type: 'test'
+      ...
+    # Subtest: --page/--viewport 支持逗号分隔
+    ok 2 - --page/--viewport 支持逗号分隔
+      ---
+      duration_ms: 1.926147
+      type: 'test'
+      ...
+    # Subtest: --out/--dist/--port 透传，--list 与 --help 是开关
+    ok 3 - --out/--dist/--port 透传，--list 与 --help 是开关
+      ---
+      duration_ms: 0.489095
+      type: 'test'
+      ...
+    # Subtest: 环境变量兜底，命令行优先
+    ok 4 - 环境变量兜底，命令行优先
+      ---
+      duration_ms: 0.422337
+      type: 'test'
+      ...
+    # Subtest: 不认识的参数与非法端口直接报错，不静默忽略
+    ok 5 - 不认识的参数与非法端口直接报错，不静默忽略
+      ---
+      duration_ms: 0.875116
+      type: 'test'
+      ...
+    1..5
+ok 1 - parseArgs
+  ---
+  duration_ms: 6.825927
+  type: 'suite'
+  ...
+# Subtest: resolveViewports
+    # Subtest: 空值给出两档默认视口
+    ok 1 - 空值给出两档默认视口
+      ---
+      duration_ms: 0.579017
+      type: 'test'
+      ...
+    # Subtest: all / both 展开成两档
+    ok 2 - all / both 展开成两档
+      ---
+      duration_ms: 0.689889
+      type: 'test'
+      ...
+    # Subtest: 去重且保留顺序
+    ok 3 - 去重且保留顺序
+      ---
+      duration_ms: 0.475441
+      type: 'test'
+      ...
+    # Subtest: 不支持的档位报错并列出可选值
+    ok 4 - 不支持的档位报错并列出可选值
+      ---
+      duration_ms: 0.501235
+      type: 'test'
+      ...
+    1..4
+ok 2 - resolveViewports
+  ---
+  duration_ms: 2.912709
+  type: 'suite'
+  ...
+# Subtest: resolvePages
+    # Subtest: 空值等于全部场景
+    ok 1 - 空值等于全部场景
+      ---
+      duration_ms: 0.448291
+      type: 'test'
+      ...
+    # Subtest: 按给定顺序返回并去重
+    ok 2 - 按给定顺序返回并去重
+      ---
+      duration_ms: 0.203718
+      type: 'test'
+      ...
+    # Subtest: 名字拼错要报错，不能静默截零张
+    ok 3 - 名字拼错要报错，不能静默截零张
+      ---
+      duration_ms: 0.224774
+      type: 'test'
+      ...
+    # Subtest: 三个验收场景都在注册表里，且各自指向 docs/ui 目录
+    ok 4 - 三个验收场景都在注册表里，且各自指向 docs/ui 目录
+      ---
+      duration_ms: 0.412409
+      type: 'test'
+      ...
+    1..4
+ok 3 - resolvePages
+  ---
+  duration_ms: 1.5627
+  type: 'suite'
+  ...
+# Subtest: shotFileName / shotDir
+    # Subtest: 文件名是 <场景>-<状态>-<宽度>.png
+    ok 1 - 文件名是 <场景>-<状态>-<宽度>.png
+      ---
+      duration_ms: 0.374073
+      type: 'test'
+      ...
+    # Subtest: 空片段、带路径分隔符或空白的片段都拒绝
+    ok 2 - 空片段、带路径分隔符或空白的片段都拒绝
+      ---
+      duration_ms: 0.447434
+      type: 'test'
+      ...
+    # Subtest: 每档视口一个子目录
+    ok 3 - 每档视口一个子目录
+      ---
+      duration_ms: 0.167918
+      type: 'test'
+      ...
+    1..3
+ok 4 - shotFileName / shotDir
+  ---
+  duration_ms: 1.179574
+  type: 'suite'
+  ...
+1..4
+# tests 16
+# suites 4
+# pass 16
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 1213.563297
+<< PASS tests/unit/shot-mobile.test.mjs (1380ms)
+
+>> tests/unit/stream-idle-timeout.test.mjs (timeout 180000ms)
+TAP version 13
+# Subtest: 流式阶段长时间没有新数据：必须收口成空闲超时错误，不能无限等待
+ok 1 - 流式阶段长时间没有新数据：必须收口成空闲超时错误，不能无限等待
+  ---
+  duration_ms: 409.109532
+  type: 'test'
+  ...
+# Subtest: 反例：一直有数据时，总时长远超阈值也不许超时
+ok 2 - 反例：一直有数据时，总时长远超阈值也不许超时
+  ---
+  duration_ms: 1081.761547
+  type: 'test'
+  ...
+# Subtest: 超时后已收内容保留，提示可读、可重试，且不复用「无响应」语义
+ok 3 - 超时后已收内容保留，提示可读、可重试，且不复用「无响应」语义
+  ---
+  duration_ms: 318.713315
+  type: 'test'
+  ...
+# Subtest: 阈值的默认值有据可依，且可配置；非法值回默认（不允许关掉超时）
+ok 4 - 阈值的默认值有据可依，且可配置；非法值回默认（不允许关掉超时）
+  ---
+  duration_ms: 0.586496
+  type: 'test'
+  ...
+1..4
+# tests 4
+# suites 0
+# pass 4
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 2333.329471
+<< PASS tests/unit/stream-idle-timeout.test.mjs (2460ms)
+
+>> tests/unit/strip-literals-ast.test.mjs (timeout 180000ms)
+TAP version 13
+# Subtest: [1] 模板表达式里的正则不会吞掉它后面的真实代码（issue \#156 最小复现）
+ok 1 - [1] 模板表达式里的正则不会吞掉它后面的真实代码（issue \#156 最小复现）
+  ---
+  duration_ms: 42.733253
+  type: 'test'
+  ...
+# Subtest: [2] Intl.Segmenter 这类成员访问剥完仍然可见（词法层 / 运行时 API 层都靠它）
+ok 2 - [2] Intl.Segmenter 这类成员访问剥完仍然可见（词法层 / 运行时 API 层都靠它）
+  ---
+  duration_ms: 5.693621
+  type: 'test'
+  ...
+# Subtest: [3] 遮蔽不越界：字面量里的 ||= 不报，真实代码里的 ||= 照报
+ok 3 - [3] 遮蔽不越界：字面量里的 ||= 不报，真实代码里的 ||= 照报
+  ---
+  duration_ms: 9.188251
+  type: 'test'
+  ...
+# Subtest: [4] 形状契约：等长 + 换行不变 + positionOf 行列与原文一致
+ok 4 - [4] 形状契约：等长 + 换行不变 + positionOf 行列与原文一致
+  ---
+  duration_ms: 1.180697
+  type: 'test'
+  ...
+# Subtest: [5] acorn 缺失时的契约：明确失败，不静默降级成手写状态机
+ok 5 - [5] acorn 缺失时的契约：明确失败，不静默降级成手写状态机
+  ---
+  duration_ms: 1.523668
+  type: 'test'
+  ...
+# Subtest: [6] 解析不了的文件整份不遮蔽（宁可假红，绝不假绿）
+ok 6 - [6] 解析不了的文件整份不遮蔽（宁可假红，绝不假绿）
+  ---
+  duration_ms: 0.694745
+  type: 'test'
+  ...
+1..6
+# tests 6
+# suites 0
+# pass 6
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 349.044149
+<< PASS tests/unit/strip-literals-ast.test.mjs (557ms)
+
+>> tests/unit/test-runtime.test.mjs (timeout 180000ms)
+TAP version 13
+# Subtest: case success, failure, independent temp roots and cleanup
+ok 1 - case success, failure, independent temp roots and cleanup
+  ---
+  duration_ms: 170.859207
+  type: 'test'
+  ...
+# Subtest: timeout kills owned descendants, releases listener, keeps unrelated process
+ok 2 - timeout kills owned descendants, releases listener, keeps unrelated process
+  ---
+  duration_ms: 1842.952046
+  type: 'test'
+  ...
+# Subtest: prebuilt dist reuse is read-only, concurrent ports differ and close is awaited
+ok 3 - prebuilt dist reuse is read-only, concurrent ports differ and close is awaited
+  ---
+  duration_ms: 53.279564
+  type: 'test'
+  ...
+# Subtest: two suite entrypoints reuse injected dist without build, and fail missing dist
+ok 4 - two suite entrypoints reuse injected dist without build, and fail missing dist
+  ---
+  duration_ms: 1331.48988
+  type: 'test'
+  ...
+# Subtest: runner streams output before case exit (handshake, not buffered)
+ok 5 - runner streams output before case exit (handshake, not buffered)
+  ---
+  duration_ms: 448.101422
+  type: 'test'
+  ...
+# Subtest: CLI exact failure rerun, JSON, no-match, invalid arguments and node:test detection
+ok 6 - CLI exact failure rerun, JSON, no-match, invalid arguments and node:test detection
+  ---
+  duration_ms: 2276.189706
+  type: 'test'
+  ...
+# Subtest: port hygiene: dist ports stay fetchable, undici bad ports are never served
+ok 7 - port hygiene: dist ports stay fetchable, undici bad ports are never served
+  ---
+  duration_ms: 287.008876
+  type: 'test'
+  ...
+# Subtest: port helper discards bad ports handed out by the OS instead of serving them
+ok 8 - port helper discards bad ports handed out by the OS instead of serving them
+  ---
+  duration_ms: 16.203137
+  type: 'test'
+  ...
+1..8
+# tests 8
+# suites 0
+# pass 8
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 6717.50323
+<< PASS tests/unit/test-runtime.test.mjs (6789ms)
+
+>> tests/unit/thinking-display.test.mjs (timeout 180000ms)
+TAP version 13
+# Subtest: A 思考过程显示方式：默认折叠，可切换并可持久化
+ok 1 - A 思考过程显示方式：默认折叠，可切换并可持久化
+  ---
+  duration_ms: 15.59367
+  type: 'test'
+  ...
+# Subtest: B 折叠态：思考正文不挂 DOM，标题仍显示
+ok 2 - B 折叠态：思考正文不挂 DOM，标题仍显示
+  ---
+  duration_ms: 2.060515
+  type: 'test'
+  ...
+# Subtest: C 流式：思考进行中自动展开，结束后按设置收敛
+ok 3 - C 流式：思考进行中自动展开，结束后按设置收敛
+  ---
+  duration_ms: 0.481838
+  type: 'test'
+  ...
+# Subtest: D 隐藏档：不渲染思考文本也不占位，工具行仍保留
+ok 4 - D 隐藏档：不渲染思考文本也不占位，工具行仍保留
+  ---
+  duration_ms: 3.30509
+  type: 'test'
+  ...
+# Subtest: E 老数据：没有 thinking 标记的历史消息也能识别出思考内容
+ok 5 - E 老数据：没有 thinking 标记的历史消息也能识别出思考内容
+  ---
+  duration_ms: 0.541101
+  type: 'test'
+  ...
+# Subtest: F i18n：新键 zh/en 成对存在且文案不同
+ok 6 - F i18n：新键 zh/en 成对存在且文案不同
+  ---
+  duration_ms: 17.230453
+  type: 'test'
+  ...
+# Subtest: G 接线：ReplyArea 用这套逻辑并订阅设置
+ok 7 - G 接线：ReplyArea 用这套逻辑并订阅设置
+  ---
+  duration_ms: 4.020622
+  type: 'test'
+  ...
+1..7
+# tests 7
+# suites 0
+# pass 7
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 773.533058
+<< PASS tests/unit/thinking-display.test.mjs (884ms)
+
+>> tests/unit/update-manifest-compat.test.mjs (timeout 180000ms)
+TAP version 13
+# Subtest: 去掉 Array.prototype.toSorted 后 selectUpdate 仍可用（旧 WebView 兼容）
+ok 1 - 去掉 Array.prototype.toSorted 后 selectUpdate 仍可用（旧 WebView 兼容）
+  ---
+  duration_ms: 3.083871
+  type: 'test'
+  ...
+# Subtest: 同 code 歧义仍报 AMBIGUOUS_RELEASE（删除 toSorted 后同样成立）
+ok 2 - 同 code 歧义仍报 AMBIGUOUS_RELEASE（删除 toSorted 后同样成立）
+  ---
+  duration_ms: 0.724599
+  type: 'test'
+  ...
+1..2
+# tests 2
+# suites 0
+# pass 2
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 210.115704
+<< PASS tests/unit/update-manifest-compat.test.mjs (302ms)
+
+>> tests/unit/url-import-content-range.test.mjs (timeout 180000ms)
+TAP version 13
+# Subtest: A：206 缺 Content-Range 时 total 必须未知，且不能只拿到 4KB 就判完成
+ok 1 - A：206 缺 Content-Range 时 total 必须未知，且不能只拿到 4KB 就判完成
+  ---
+  duration_ms: 70.427447
+  type: 'test'
+  ...
+# Subtest: B：206 带 Content-Range bytes a-b/21195845 → total 取 total 段
+ok 2 - B：206 带 Content-Range bytes a-b/21195845 → total 取 total 段
+  ---
+  duration_ms: 105.465938
+  type: 'test'
+  ...
+# Subtest: C：206 带 Content-Range bytes a-b/* → total 视为未知（不回落块长）
+ok 3 - C：206 带 Content-Range bytes a-b/* → total 视为未知（不回落块长）
+  ---
+  duration_ms: 2.415269
+  type: 'test'
+  ...
+# Subtest: D：total 未知时按累计字节判超限（累计 > 200MB 仍然报超限）
+ok 4 - D：total 未知时按累计字节判超限（累计 > 200MB 仍然报超限）
+  ---
+  duration_ms: 4.173612
+  type: 'test'
+  ...
+# Subtest: E：整包 200 带 Content-Length → total 取 Content-Length
+ok 5 - E：整包 200 带 Content-Length → total 取 Content-Length
+  ---
+  duration_ms: 2.224404
+  type: 'test'
+  ...
+# Subtest: F：下载失败的 import_error 事件带 url.path 与 error.msg（\#19）
+ok 6 - F：下载失败的 import_error 事件带 url.path 与 error.msg（\#19）
+  ---
+  duration_ms: 1.514933
+  type: 'test'
+  ...
+1..6
+# tests 6
+# suites 0
+# pass 6
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 691.793203
+<< PASS tests/unit/url-import-content-range.test.mjs (860ms)
+
+>> tests/unit/url-import-stall.test.mjs (timeout 180000ms)
+TAP version 13
+# (node:1424083) ExperimentalWarning: The MockTimers API is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+#   慢速推进：假时长 153.6s、字节 3145728、请求 129 次
+# Subtest: 慢速但持续推进：总时长超过旧 120s 预算也不判死，最终成功
+ok 1 - 慢速但持续推进：总时长超过旧 120s 预算也不判死，最终成功
+  ---
+  duration_ms: 75.653875
+  type: 'test'
+  ...
+#   真停滞：idle 8000ms（窗口 8000ms）、已下载 1060864/2097152、假总时长 59.8s
+# Subtest: 真正停滞（拿到 1MB 后再无数据）：N 秒后判 stalled，文案含已下载/总数
+ok 2 - 真正停滞（拿到 1MB 后再无数据）：N 秒后判 stalled，文案含已下载/总数
+  ---
+  duration_ms: 21.018914
+  type: 'test'
+  ...
+#   续传：首次停在 1060864/2097152，第二次只补 1036288 字节，首请求 Range=bytes=1060864-1064959
+# Subtest: 重试续传：同链接第二次从已下载字节继续，不再从 0 开始
+ok 3 - 重试续传：同链接第二次从已下载字节继续，不再从 0 开始
+  ---
+  duration_ms: 12.823151
+  type: 'test'
+  ...
+# Subtest: 服务端不支持 Range（回 200 整包）：丢弃本地字节从头重下，并给出「已重新开始」文案
+ok 4 - 服务端不支持 Range（回 200 整包）：丢弃本地字节从头重下，并给出「已重新开始」文案
+  ---
+  duration_ms: 7.315397
+  type: 'test'
+  ...
+# Subtest: 防御性总上限：字节一直在增长但超过上限 → 判「下载超时」，不是 stalled
+ok 5 - 防御性总上限：字节一直在增长但超过上限 → 判「下载超时」，不是 stalled
+  ---
+  duration_ms: 11.136406
+  type: 'test'
+  ...
+# Subtest: 永久 pending 的原生 Promise（首块就没数据）：窗口到点必须有失败终态 + 心跳 + 结果可读
+ok 6 - 永久 pending 的原生 Promise（首块就没数据）：窗口到点必须有失败终态 + 心跳 + 结果可读
+  ---
+  duration_ms: 4.431573
+  type: 'test'
+  ...
+# Subtest: 坏包（非 ZIP）不保留续传点：下次重试仍从 0 开始
+ok 7 - 坏包（非 ZIP）不保留续传点：下次重试仍从 0 开始
+  ---
+  duration_ms: 2.769054
+  type: 'test'
+  ...
+# Subtest: 断流（unexpected end of stream）：仍是「连接被中断」，不被判成停滞
+ok 8 - 断流（unexpected end of stream）：仍是「连接被中断」，不被判成停滞
+  ---
+  duration_ms: 303.449013
+  type: 'test'
+  ...
+# Subtest: 无响应但最终 reject（读超时）：仍是超时分类，且期间有心跳
+ok 9 - 无响应但最终 reject（读超时）：仍是超时分类，且期间有心跳
+  ---
+  duration_ms: 601.295309
+  type: 'test'
+  ...
+# Subtest: 慢速分块：正常下完，仍以成功为终态且不留定时器
+ok 10 - 慢速分块：正常下完，仍以成功为终态且不留定时器
+  ---
+  duration_ms: 48.038163
+  type: 'test'
+  ...
+# Subtest: 取消：立刻给出取消终态，不误报下载失败、不留定时器
+ok 11 - 取消：立刻给出取消终态，不误报下载失败、不留定时器
+  ---
+  duration_ms: 420.898477
+  type: 'test'
+  ...
+# Subtest: 终态文案可读：停滞/超时/续传/重新开始 在 zh/en 里都有，且占位符齐备
+ok 12 - 终态文案可读：停滞/超时/续传/重新开始 在 zh/en 里都有，且占位符齐备
+  ---
+  duration_ms: 2.172607
+  type: 'test'
+  ...
+1..12
+# tests 12
+# suites 0
+# pass 12
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 1781.894808
+<< PASS tests/unit/url-import-stall.test.mjs (1885ms)
+
+Total 68: PASS 68, FAIL 0, SKIP(env) 0; elapsed 93936ms
