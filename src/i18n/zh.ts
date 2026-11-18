@@ -257,7 +257,7 @@ export const zh = {
   feedbackLogsCleared: '本地日志已清空',
   feedbackErrorNetwork: '网络失败：连不上反馈服务，请检查网络后重试',
   feedbackErrorTimeout: '请求超时，请稍后重试',
-  feedbackErrorTooLarge: '日志过大被服务端拒绝（413），已自动裁剪重试仍失败，请稍后再试',
+  feedbackErrorTooLarge: '截图、描述或关键日志超过上传预算（180 KiB）或服务端上限；请缩小截图或减少描述后重试，截图不会被自动移除',
   feedbackErrorUnauthorized: '上传凭证无效，请稍后重试或联系维护者',
   feedbackErrorRateLimited: '提交过于频繁，请稍后再试',
   feedbackErrorServer: '服务端异常，请稍后再试',

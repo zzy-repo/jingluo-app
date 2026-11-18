@@ -9,12 +9,8 @@ import {
   LEGACY_META_MAX,
   REQUEST_TIMEOUT_MS,
 } from './config.js'
-import {
-  refineErrorCode,
-  statusToErrorCode,
-  toFeedbackErrorCode,
-  utf8Bytes,
-} from './shared.js'
+import { refineErrorCode, statusToErrorCode, toFeedbackErrorCode, utf8Bytes } from './shared.js'
+import { compressScreenshot } from './transport.http.js'
 import type {
   FeedbackCategory,
   FeedbackPayload,
@@ -27,8 +23,8 @@ import type {
  * 后端**实际**接口的适配实现（实测契约，与 v1 设计不同）：
  *
  *   POST http://62.106.70.167:60012/feedback
- *   Body: { content, type, contact, version, log }     ← log 必须是【字符串】
- *   200: { ok: true, id: "<uuid>", logSize: 51200 }
+ *   Body: { content, type, contact, version, log, images?: string[] } ← 单图 data URL
+ *   200: { ok: true, id: "<uuid>", logSize: 51200, images: 1 }
  *   400: { ok: false, error: "log must be a string" }
  *   413: { ok: false, error: "payload too large" }
  *
@@ -153,6 +149,8 @@ export type LegacyLogBuild = {
 export type LegacyLogOptions = {
   /** 只保留 error + 最后一次 import_* / chat_* / state_snapshot（降级重试用） */
   errorsOnly?: boolean
+  /** 整包预算使用 JSON 转义后的日志字节数。 */
+  serialized?: boolean
 }
 
 /**
@@ -198,7 +196,9 @@ export const buildLegacyLog = (
   const compose = (selected: LogEntry[], omitted: number): string => {
     const mark =
       omitted > 0
-        ? [`[truncated] 省略了 ${omitted} 条较早日志（原始 ${Math.max(1, Math.round(rawBytes / 1024))} KB）`]
+        ? [
+            `[truncated] 省略了 ${omitted} 条较早日志（原始 ${Math.max(1, Math.round(rawBytes / 1024))} KB）`,
+          ]
         : []
     return [...mark, ...header, ...selected.map((entry) => lineOf.get(entry) ?? '')].join('\n')
   }
@@ -208,39 +208,31 @@ export const buildLegacyLog = (
     return { log, logBytes: utf8Bytes(log), omitted, truncated: omitted > 0 }
   }
 
+  const size = (text: string): number =>
+    options.serialized ? utf8Bytes(JSON.stringify(text)) - 2 : utf8Bytes(text)
+
   // 降级重试模式：只要 error + 关键事件，其余全部先丢掉
   let selected = options.errorsOnly ? logs.filter((entry) => keep.has(entry)) : logs.slice()
   let omitted = logs.length - selected.length
-  if (utf8Bytes(compose(selected, omitted)) <= limitBytes) {
+  if (size(compose(selected, omitted)) <= limitBytes) {
     return result(selected, omitted)
   }
 
   // 按优先级分档丢（同一档内从最旧开始）
   for (const priority of [0, 1, 2, 3]) {
-    const droppable = selected.filter((entry) => !keep.has(entry) && dropPriority(entry) === priority)
+    const droppable = selected.filter(
+      (entry) => !keep.has(entry) && dropPriority(entry) === priority
+    )
     for (const entry of droppable) {
       selected = selected.filter((item) => item !== entry)
       omitted += 1
-      if (utf8Bytes(compose(selected, omitted)) <= limitBytes) {
+      if (size(compose(selected, omitted)) <= limitBytes) {
         return result(selected, omitted)
       }
     }
   }
 
-  // 只剩保护条目还超限：从较旧的非 error 保护条目开始丢（error 尽量留到最后）
-  for (const entry of selected.filter((item) => item.level !== 'error')) {
-    selected = selected.filter((item) => item !== entry)
-    omitted += 1
-    if (utf8Bytes(compose(selected, omitted)) <= limitBytes) {
-      return result(selected, omitted)
-    }
-  }
-
-  // 极端情况：连 error 也太多，按比例砍
-  while (utf8Bytes(compose(selected, omitted)) > limitBytes && selected.length > 1) {
-    selected = selected.slice(Math.ceil(selected.length / 4))
-    omitted = logs.length - selected.length
-  }
+  // 保护条目即使超限也保留；由整包预算检查明确报错，而不是静默删除关键错误。
   return result(selected, omitted)
 }
 
@@ -250,6 +242,7 @@ export type LegacyRequestBody = {
   contact: string
   version: string
   log: string
+  images?: string[]
 }
 
 export type LegacyRequestBuild = {
@@ -262,8 +255,8 @@ export type LegacyRequestBuild = {
 /**
  * 组装 body 并把「序列化后体积」压到 LEGACY_BODY_MAX_BYTES 以内。
  *
- * 判定口径是 `JSON.stringify(body)` 的字节数（转义会膨胀 10–30%），所以按比例迭代收敛，
- * 而不是只看 log 的原始长度。
+ * 判定口径是 `JSON.stringify(body)` 的 UTF-8 字节数。
+ * 先扣除图片与固定字段的实际开销，再按 JSON 转义后的日志字节裁剪；关键日志超限由 send 报错。
  */
 export const buildLegacyRequest = (
   payload: FeedbackPayload,
@@ -275,19 +268,17 @@ export const buildLegacyRequest = (
     type: LEGACY_TYPE[payload.feedback.category] ?? 'other',
     contact: payload.feedback.contact ?? '',
     version: `${payload.app.version}(${payload.app.versionCode})`,
+    ...(payload.screenshot ? { images: [payload.screenshot] } : {}),
   }
-  let limit = limitBytes
-  let build = buildLegacyLog(payload, limit, options)
-  let body: LegacyRequestBody = { ...fields, log: build.log }
-  let bodyBytes = utf8Bytes(JSON.stringify(body))
-  for (let round = 0; round < 8 && bodyBytes >= LEGACY_BODY_MAX_BYTES && limit > 4 * 1024; round += 1) {
-    // 按比例收：留 5% 安全边际
-    limit = Math.max(4 * 1024, Math.floor(limit * (LEGACY_BODY_MAX_BYTES / bodyBytes) * 0.95))
-    build = buildLegacyLog(payload, limit, options)
-    body = { ...fields, log: build.log }
-    bodyBytes = utf8Bytes(JSON.stringify(body))
-  }
-  return { body, build, bodyBytes }
+  // 空 log 的整个 JSON 已包含 images、中文、引号/反斜杠等全部转义开销。
+  const fixedBytes = utf8Bytes(JSON.stringify({ ...fields, log: '' }))
+  const budget = Math.max(0, LEGACY_BODY_MAX_BYTES - fixedBytes)
+  const build = buildLegacyLog(payload, Math.min(limitBytes, budget), {
+    ...options,
+    serialized: true,
+  })
+  const body: LegacyRequestBody = { ...fields, log: build.log }
+  return { body, build, bodyBytes: utf8Bytes(JSON.stringify(body)) }
 }
 
 const readErrorText = (body: unknown): string => {
@@ -335,7 +326,11 @@ const parseJson = (text: string): unknown => {
  * 服务端实收日志明显小于本地发送量 → 说明被服务端截断了，打一条 warn 便于发现。
  * （oxlint 默认禁 console，这里是有意保留的运维提示，同时会被采集层的 console hook 记进日志）
  */
-const warnIfTruncated = (logSize: number | undefined, logBytes: number, bodyBytes: number): void => {
+const warnIfTruncated = (
+  logSize: number | undefined,
+  logBytes: number,
+  bodyBytes: number
+): void => {
   if (logSize === undefined || logSize === 0) {
     return
   }
@@ -355,13 +350,54 @@ export class LegacyTransport implements FeedbackTransport {
   readonly name = 'legacy'
 
   async send(payload: FeedbackPayload): Promise<FeedbackTransportResult> {
-    const primary = buildLegacyRequest(payload, LEGACY_LOG_MAX_BYTES)
+    let fitted = payload
+    let primary = buildLegacyRequest(fitted, LEGACY_LOG_MAX_BYTES)
+    // 手机截图编码结果有界收敛：最多 6 次，绝不删除截图；小图原样保留。
+    if (primary.bodyBytes > LEGACY_BODY_MAX_BYTES && payload.screenshot) {
+      for (const [edge, quality] of [
+        [1280, 0.72],
+        [1024, 0.6],
+        [800, 0.5],
+        [640, 0.4],
+        [480, 0.35],
+        [320, 0.3],
+      ]) {
+        try {
+          const screenshot = await compressScreenshot(payload.screenshot, edge, quality)
+          if (utf8Bytes(screenshot) < utf8Bytes(fitted.screenshot ?? '')) {
+            fitted = { ...payload, screenshot }
+            primary = buildLegacyRequest(fitted, LEGACY_LOG_MAX_BYTES)
+          }
+        } catch {
+          break
+        }
+        if (primary.bodyBytes <= LEGACY_BODY_MAX_BYTES) {
+          break
+        }
+      }
+    }
+    if (primary.bodyBytes > LEGACY_BODY_MAX_BYTES) {
+      return {
+        ok: false,
+        error: 'too_large',
+        detail: '截图或关键日志超过 180 KiB，请缩小截图或减少描述后重试；截图未丢弃',
+        logBytes: primary.build.logBytes,
+      }
+    }
     const first = await this.post(primary.body, primary.build.logBytes, primary.bodyBytes)
     if (first.ok || !isSizeishFailure(first.error)) {
       return first
     }
     // 降级重试一次：只保留 error + 关键事件，裁到 50KB（用户的问题描述不受影响）
-    const retry = buildLegacyRequest(payload, LEGACY_LOG_RETRY_BYTES, { errorsOnly: true })
+    const retry = buildLegacyRequest(fitted, LEGACY_LOG_RETRY_BYTES, { errorsOnly: true })
+    if (retry.bodyBytes > LEGACY_BODY_MAX_BYTES) {
+      return {
+        ok: false,
+        error: 'too_large',
+        detail: '截图与关键日志超过 180 KiB；截图未丢弃',
+        logBytes: retry.build.logBytes,
+      }
+    }
     const second = await this.post(retry.body, retry.build.logBytes, retry.bodyBytes)
     return second.ok ? { ...second, retried: true } : second
   }
@@ -397,7 +433,12 @@ export class LegacyTransport implements FeedbackTransport {
         const success = readSuccess(parsed)
         if (success) {
           warnIfTruncated(success.logSize, logBytes, bodyBytes)
-          return { ok: true, id: success.id, logBytes, ...(success.logSize === undefined ? {} : { logSize: success.logSize }) }
+          return {
+            ok: true,
+            id: success.id,
+            logBytes,
+            ...(success.logSize === undefined ? {} : { logSize: success.logSize }),
+          }
         }
         return { ok: false, error: 'server', detail: text.slice(0, 200), logBytes }
       }
@@ -440,7 +481,12 @@ export class LegacyTransport implements FeedbackTransport {
         const success = readSuccess(parsed)
         if (success) {
           warnIfTruncated(success.logSize, logBytes, bodyBytes)
-          return { ok: true, id: success.id, logBytes, ...(success.logSize === undefined ? {} : { logSize: success.logSize }) }
+          return {
+            ok: true,
+            id: success.id,
+            logBytes,
+            ...(success.logSize === undefined ? {} : { logSize: success.logSize }),
+          }
         }
         return { ok: false, error: 'server', logBytes }
       }

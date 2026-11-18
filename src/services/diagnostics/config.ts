@@ -12,8 +12,8 @@ export const FEEDBACK_BASE_URL = 'https://feedback.rose7.cn'
 export const CLIENT_TOKEN = 'REPLACE_ME'
 
 /**
- * 后端**实际**接口（实测）：无鉴权头、只认 content/type/contact/version 四个字段，
- * 体积上限很小（30KB 通过、60KB 返回 413），日志只能塞进 content 文本里。
+ * 后端实际接口：无鉴权头，接收 content/type/contact/version/log 与可选 images 数组；
+ * images 支持 raw base64 或 data URL。服务端请求上限 200KB，客户端整包预算 180 KiB。
  * 对应实现见 transport.legacy.ts。
  */
 export const LEGACY_FEEDBACK_URL = 'http://62.106.70.167:60012/feedback'

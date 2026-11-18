@@ -275,7 +275,7 @@ export const en = {
   feedbackLogsCleared: 'Local logs cleared',
   feedbackErrorNetwork: 'Network failure: cannot reach the feedback service; check your connection',
   feedbackErrorTimeout: 'Request timed out; try again later',
-  feedbackErrorTooLarge: 'Rejected as too large (413); the trimmed retry failed too, try again later',
+  feedbackErrorTooLarge: 'Screenshot, description or essential logs exceed the upload budget (180 KiB) or server limit. Use a smaller screenshot or shorter description; screenshots are never silently removed.',
   feedbackErrorUnauthorized: 'Upload credential is invalid; retry later or contact the maintainer',
   feedbackErrorRateLimited: 'Too many submissions; try again later',
   feedbackErrorServer: 'Server error; try again later',

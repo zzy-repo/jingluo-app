@@ -10,7 +10,7 @@ import type { FeedbackErrorCode } from './types.js'
 const ERROR_MESSAGE: Record<FeedbackErrorCode, string> = {
   network: '网络连接失败，请检查网络后重试',
   timeout: '请求超时（15 秒），请稍后重试',
-  too_large: '内容体积超过上限（服务端返回 413），请减少截图或日志后重试',
+  too_large: '截图、描述或关键日志超过上传预算（180 KiB）或服务端上限，请缩小截图或减少描述后重试；截图不会被自动移除',
   unauthorized: '上传凭证无效或已过期（401），请联系维护者确认 CLIENT_TOKEN',
   rate_limited: '提交过于频繁（429），请稍后重试',
   server: '反馈服务异常（服务端错误），请稍后重试',

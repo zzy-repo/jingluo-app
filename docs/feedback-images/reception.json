@@ -1,0 +1,15 @@
+{
+  "time": "2026-11-18T03:07:47.967157+00:00",
+  "endpoint": "http://62.106.70.167:60012/feedback",
+  "status": 200,
+  "requestBytes": 399,
+  "pngBytes": 79,
+  "pngSha256": "7e93b21c493bfaaf2d078e210a90ebe5c0aaff8222345b338ae5f0518bf50af0",
+  "response": {
+    "ok": true,
+    "id": "d64b8e8f-e392-47be-805f-b5fafb2ed5b7",
+    "logSize": 75,
+    "images": 1
+  },
+  "scope": "One self-generated PNG; only proves API acceptance/images count, not storage or later retrieval."
+}
