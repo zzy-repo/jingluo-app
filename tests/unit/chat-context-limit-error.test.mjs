@@ -108,7 +108,14 @@ const { setApiKey } = await import('../../src/services/api/apiConfig.ts')
 const { setDraftText } = await import('../../src/services/chat/drafts.ts')
 const { zh } = await import('../../src/i18n/zh.ts')
 const { en } = await import('../../src/i18n/en.ts')
+const { useSettings } = await import('../../src/services/settings.ts')
+const { pinLocale } = await import('../helpers/locale.mjs')
 const { useChatStore, initChat, sendMessage } = await import('../../src/services/chat/store.ts')
+
+// 本文件的期望值是中文文案（zh.replyContextLimit 等），而 settings.ts 的默认语言跟随
+// navigator.language（Node 里来自 shell 的 LANG）：不钉死就会 LANG=en_US 红、LANG=zh_CN 绿。
+// 这里用真实 store + 真实 translate 把语言钉在中文，不依赖 shell 环境变量（见 tests/helpers/locale.mjs）。
+assert.equal(pinLocale(useSettings), 'zh-CN', '界面语言必须钉在中文，不能跟随 shell 的 LANG')
 
 /** 上游真实报错原文：各家措辞不同，逐个都要认出来 */
 const UPSTREAM_TEXTS = [

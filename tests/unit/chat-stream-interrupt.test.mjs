@@ -52,6 +52,12 @@ const { translate } = await import('../../src/i18n/index.ts')
 const { useSettings } = await import('../../src/services/settings.ts')
 const { zh } = await import('../../src/i18n/zh.ts')
 const { en } = await import('../../src/i18n/en.ts')
+const { pinLocale } = await import('../helpers/locale.mjs')
+
+// 断流提示的断言看的是中文渲染结果（「连接中断」），而 settings.ts 的默认语言跟随
+// navigator.language（Node 里来自 shell 的 LANG）：不钉死就会 LANG=en_US 红、LANG=zh_CN 绿。
+// 默认钉在中文；需要英文的用例自己在局部切 locale（见下面的 localized 判定）。
+assert.equal(pinLocale(useSettings), 'zh-CN', '界面语言必须钉在中文，不能跟随 shell 的 LANG')
 
 const encoder = new TextEncoder()
 

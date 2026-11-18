@@ -71,6 +71,12 @@ const { setApiKey, setBaseUrl, setModel, setProviderKind } = await import(
 )
 const { zh } = await import('../../src/i18n/zh.ts')
 const { en } = await import('../../src/i18n/en.ts')
+const { useSettings } = await import('../../src/services/settings.ts')
+const { pinLocale } = await import('../helpers/locale.mjs')
+
+// 下面「文案要给出可操作的出口」断言的是中文措辞（停止 / 重新生成），而 settings.ts 的默认语言
+// 跟随 navigator.language（Node 里来自 shell 的 LANG）：不钉死就会 LANG=en_US 红、LANG=zh_CN 绿。
+assert.equal(pinLocale(useSettings), 'zh-CN', '界面语言必须钉在中文，不能跟随 shell 的 LANG')
 
 const KEY = 'sk-idle-timeout-test'
 const BODY = { model: 'deepseek-flash', messages: [{ role: 'user', content: '你好' }] }

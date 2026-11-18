@@ -47,6 +47,15 @@ const realFetch = globalThis.fetch
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
 /**
+ * 定时器允许提前多少毫秒：Node 的 setTimeout 不保证「不早于」预算，libuv 按毫秒取整 +
+ * 事件循环调度，实测 40ms 预算会跑出 39ms —— 拿 `elapsed >= 预算` 当断言，机器一换就偶发红
+ * （2026-11-19 复现：`应在 40ms 预算处收口（实际 39ms）`，同一分钟在另一台 LANG 下是绿的）。
+ * 判据要的只是「按预算收口」，不是「立刻失败」也不是「永久挂起」：下界给几毫秒容差即可，
+ * 1ms 内就返回的那种「没设超时」的 bug 照样会被抓住。
+ */
+const TIMER_EARLY_TOLERANCE_MS = 5
+
+/**
  * 永不 settle 的 fetch：只有拿到 abort 信号才以 AbortError 收尾。
  * 这是「上游不响应」的真实形态（不是 reject，是永远没有回音）。
  */
@@ -139,7 +148,10 @@ test('永不 resolve 的请求：超时后必须拒绝，错误可与网络失�
   assert.equal(outcome.error.code, 'request_timed_out', '超时要有机器可读的错误码')
   assert.equal(outcome.error.status, undefined, '超时没有 HTTP 状态码')
   assert.equal(outcome.error.localMessage?.key, 'requestTimeout', '超时要有自己的界面文案 key')
-  assert.ok(elapsed >= 40 && elapsed < 1500, `应在 40ms 预算处收口（实际 ${elapsed}ms）`)
+  assert.ok(
+    elapsed >= 40 - TIMER_EARLY_TOLERANCE_MS && elapsed < 1500,
+    `应在 40ms 预算处收口（实际 ${elapsed}ms）`
+  )
   assert.equal(calls.length, 1, '只发一次请求，超时后不再重发')
   assert.equal(calls[0].signal.aborted, true, '超时必须真的中断底层 fetch（不留悬挂连接）')
 })
