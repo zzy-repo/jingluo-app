@@ -743,6 +743,36 @@ const run = async () => {
     await browser.close()
   }
 
+  // ── 用例 20：大包不会被一次性搬运（旧单次路径 21MB 会冻 0.5s / 峰值 ~118MB） ──────
+  {
+    console.log('\n[case 20] 20MB 大包：分块搬运、主线程不长时间冻结')
+    const big = buildArchive({ sessionCount: 40, padBytes: 20 * 1024 * 1024 })
+    const { browser, page, consoleErrors } = await openApp(
+      { kind: 'base64-string', status: 200, range: true, chunkDelay: 20, data: base64(big.zip) },
+      { viewport: { width: 390, height: 780 } }
+    )
+    const longtasks = []
+    await page.evaluate(() => {
+      new PerformanceObserver((list) => {
+        for (const entry of list.getEntries()) window.__longtasks = (window.__longtasks ?? 0) + entry.duration
+        window.__longtaskMax = Math.max(window.__longtaskMax ?? 0, ...list.getEntries().map((e) => e.duration))
+      }).observe({ entryTypes: ['longtask'] })
+    })
+    await startUrlImport(page)
+    const { text } = await sampleUntil(page, (value) => /已导入|失败/.test(value), 180_000)
+    const calls = await page.evaluate(() => window.__capMock.calls.length)
+    const metrics = await page.evaluate(() => ({
+      max: Math.round(window.__longtaskMax ?? 0),
+      total: Math.round(window.__longtasks ?? 0),
+    }))
+    check(`20MB 包动用了 ${calls} 次分块请求（不是一次性整包）`, calls >= 2, `实际 ${calls}`)
+    check(`最长主线程任务 ${metrics.max}ms < 800ms`, metrics.max < 800, JSON.stringify(metrics))
+    check(`导入成功（${big.zip.length} 字节）`, /已导入 \d+ 个会话/.test(text), text.slice(0, 160))
+    check('console error = 0', consoleErrors.length === 0, consoleErrors.join(' | '))
+    void longtasks
+    await browser.close()
+  }
+
   if (failures.length > 0) {
     console.error(`\nFAIL 链接导入的分阶段进度/取消/失败分类：${failures.length} 条断言失败`)
     for (const failure of failures) {
