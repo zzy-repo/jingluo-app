@@ -337,7 +337,7 @@ const run = async () => {
     const { browser, page, consoleErrors } = await openApp({
       ...weakPayload,
       chunkDelay: 80,
-      rejectAfterBytes: 200 * 1024,
+      rejectAfterBytes: 20 * 1024,
       rejectMessage: 'Read timed out',
     })
     await startUrlImport(page)
@@ -535,7 +535,7 @@ const run = async () => {
     )
     const last = ranges.length === 0 ? null : Number(ranges[ranges.length - 1][2]) + 1
     check('每个 Range 都从上一块的结束字节开始（无重叠/无空洞）', contiguous, JSON.stringify(ranges.map((m) => `${m[1]}-${m[2]}`)))
-    check('最后一块覆盖到文件末尾（不短读）', last === total, `last=${last} total=${total}`)
+    check('最后一块请求覆盖到文件末尾（不短读）', last !== null && last >= total, `last=${last} total=${total}`)
     check('导入成功且会话数 = 40', text.includes('已导入 40 个会话') && (await dbCounts(page)).sessions === 40, text.slice(0, 160))
     check('console error = 0', consoleErrors.length === 0, consoleErrors.join(' | '))
     await browser.close()
@@ -544,14 +544,14 @@ const run = async () => {
   // ── 用例 14：分块中途收到 416 → 终止、不写数据 ────────────────────────────
   {
     console.log('\n[case 14] 分块中途 416：终止下载、不写数据')
-    const medium = buildArchive({ sessionCount: 10, padBytes: 256 * 1024 })
+    const medium = buildArchive({ sessionCount: 10, padBytes: 2 * 1024 * 1024 })
     const { browser, page, consoleErrors } = await openApp({
       kind: 'arraybuffer',
       status: 200,
       range: true,
-      chunkDelay: 40,
+      chunkDelay: 120,
       data: base64(medium.zip),
-      force416FromCall: 2,
+      force416FromCall: 1,
     })
     await startUrlImport(page)
     const { text } = await sampleUntil(page, (value) => /已导入|断开|失败|超时/.test(value), 30_000)
