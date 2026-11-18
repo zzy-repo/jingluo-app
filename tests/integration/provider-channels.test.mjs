@@ -11,7 +11,7 @@
 //   [3] Anthropic 协议：三件套（服务地址 / 模型 / API Key）；切过去后 Key 不丢；请求按填的值发出 /v1/messages
 //   [4] OpenAI 兼容：三件套；请求打到 /v1/chat/completions；搜索/附件/语音/思考入口全部不渲染（DOM 里没有）
 //   [5] 我们的渠道：只渲染 API Key（1 个 password 输入框），界面不出现后端地址与内置模型名；
-//       请求打到 http://62.106.70.167:60010/v1/chat/completions（OpenAI 协议）+ model deepseek-v4.1-flash，
+//       请求打到 http://140.210.13.146:60010/v1/chat/completions（OpenAI 协议）+ model deepseek-v4.1-flash，
 //       鉴权 Authorization: Bearer <key>（不带 x-api-key），且没有深度思考入口（该协议不提供）
 //   [6] 切换渠道后能力入口随之显隐（搜不到 DOM 节点，不是置灰）；刷新后渠道选择持久化
 //   [7] 四个渠道的设置页都不出现能力描述文案（基础对话 / 不支持 / 已关闭 / 仅支持 / capability / 能力）
@@ -36,7 +36,7 @@ const BASE_A = 'https://relay.example.com'
 const MODEL_A = 'claude-relay-model'
 const BASE_O = 'https://oai.example.com'
 const MODEL_O = 'gpt-relay-model'
-const OURS_HOST = 'http://62.106.70.167:60010'
+const OURS_HOST = 'http://140.210.13.146:60010'
 const OURS_URL = `${OURS_HOST}/v1/chat/completions`
 const OURS_MODEL = 'deepseek-v4.1-flash'
 /** 界面上禁止出现的能力描述（能不能用只体现在入口显隐上，不写文案） */
@@ -470,7 +470,7 @@ try {
   }
   await expectOnlyApiKey(dialog, '我们的渠道')
   const oursText = await dialog.innerText()
-  for (const secret of ['62.106.70.167', '60010', OURS_MODEL]) {
+  for (const secret of ['140.210.13.146', '60010', OURS_MODEL]) {
     if (oursText.includes(secret)) {
       bad(`我们的渠道把内置值露在界面上了：${secret}`)
     } else {

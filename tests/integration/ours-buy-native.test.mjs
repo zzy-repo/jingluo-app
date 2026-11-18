@@ -33,7 +33,7 @@ const DIST = process.env.DIST_DIR_STANDARD || path.join(ROOT, 'dist-standard')
 const SHOT_DIR = path.join(ROOT, 'docs/ui/issue142')
 
 const CARD_API = 'https://apia.ecsafe.cn'
-const INVITE_API = 'http://62.106.70.167:60013'
+const INVITE_API = 'http://140.210.13.146:60013'
 const PAY_HOST = 'https://pay.xiaodouap.cn'
 const CHECKOUT_URL =
   `${PAY_HOST}/submit.php?money=1.00&name=${encodeURIComponent('新人特惠 1 元额度')}` +

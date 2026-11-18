@@ -2,7 +2,7 @@
  * 「我已经有 Key」——把**已有的** Key 绑定到本机设备码（Issue #86）。
  *
  * 与 /apply（服务端给你的设备**发**一把 Key）是两条不同的链路：
- *   POST http://62.106.70.167:60013/bind   Content-Type: application/json
+ *   POST http://140.210.13.146:60013/bind   Content-Type: application/json
  *        { "device_id": "d-xxxxxxxxxxxxxxxx", "api_key": "sk-live-..." }
  *     → 200 { customer_id, invite_code, key, already_bound, adopted_points, bonus_points,
  *             invited_count, max_invites, quota_points, used_points, remaining_points, key_status }

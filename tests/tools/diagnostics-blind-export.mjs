@@ -8,7 +8,7 @@ import { writeFileSync } from 'node:fs'
 import { chromium } from 'playwright'
 
 const APP_URL = process.env.APP_URL || 'http://127.0.0.1:5181'
-const FEEDBACK_URL = 'http://62.106.70.167:60012/feedback'
+const FEEDBACK_URL = 'http://140.210.13.146:60012/feedback'
 const OUT_JSON = process.env.OUT_JSON || '/tmp/feedback-blind.json'
 const OUT_LOG = process.env.OUT_LOG || '/tmp/feedback-blind.log'
 

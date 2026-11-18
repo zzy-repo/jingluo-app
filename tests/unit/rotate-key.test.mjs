@@ -4,7 +4,7 @@
 // 运行：node --test tests/unit/rotate-key.test.mjs
 //
 // 覆盖（逐条对应 issue 的关闭条件 + 任务书「红」的三件事）：
-//   [1] 发起：POST http://62.106.70.167:60013/rotate，body 只有 {device_id}，**不带旧 Key**
+//   [1] 发起：POST http://140.210.13.146:60013/rotate，body 只有 {device_id}，**不带旧 Key**
 //   [2] 成功：返回的 key 立刻落盘一次；remaining_points 立即刷新且与换前一致（额度不丢）
 //   [3] 旧 Key 失效处理：成功后本地存档里只剩新 Key；previous_key_id / carried_used_points 不外泄
 //   [4] 失败绝不破坏本地旧 Key：NETWORK / TIMEOUT / 404 device_not_found / 400 invalid_device /
@@ -102,8 +102,8 @@ test('[1] 发起：POST /rotate，body 只有 device_id，不带旧 Key', async 
 
   assert.equal(calls.length, 1, '换一次 Key 只发一条请求')
   assert.equal(calls[0].method, 'POST')
-  assert.equal(calls[0].url, 'http://62.106.70.167:60013/rotate')
-  assert.equal(rotate.ROTATE_URL, 'http://62.106.70.167:60013/rotate')
+  assert.equal(calls[0].url, 'http://140.210.13.146:60013/rotate')
+  assert.equal(rotate.ROTATE_URL, 'http://140.210.13.146:60013/rotate')
   assert.equal(calls[0].followRedirects, false, '破坏性操作不许跟随 3xx 重放')
   assert.equal(calls[0].headers['Content-Type'], 'application/json')
   assert.deepEqual(JSON.parse(calls[0].body), { device_id: DEVICE_ID }, 'body 只有 device_id')

@@ -16,7 +16,7 @@ export const CLIENT_TOKEN = 'REPLACE_ME'
  * images 支持 raw base64 或 data URL。服务端请求上限 200KB，客户端整包预算 180 KiB。
  * 对应实现见 transport.legacy.ts。
  */
-export const LEGACY_FEEDBACK_URL = 'http://62.106.70.167:60012/feedback'
+export const LEGACY_FEEDBACK_URL = 'http://140.210.13.146:60012/feedback'
 
 /**
  * 体积策略（后端确认上限 200KB）：

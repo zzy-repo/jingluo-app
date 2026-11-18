@@ -406,6 +406,7 @@ adb logcat -d | tail -50
 ```bash
 pnpm type                # tsc
 pnpm lint                # oxlint
+pnpm check:ip            # 源码里不许有写死的上游 IP（#181）
 npm run test             # 单元
 npm run test:integration:baseline   # 集成：与基线比对，只判「不新增失败」
 npm run test:e2e         # e2e（含真实上游用例，需要 E2E_API_KEY）

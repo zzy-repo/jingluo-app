@@ -4,7 +4,7 @@
 //   cd /root/deepseek-app && DIST_DIR=$PWD/dist PORT=5291 node tests/integration/internal-build.test.mjs
 //
 // 被测页面是**内测构建**（INTERNAL_BUILD=1）：默认渠道是「我们的渠道」（ours），
-// 地址 http://62.106.70.167:60010 与模型 deepseek-v4.1-flash 内置在 providers.ts 的
+// 地址 http://140.210.13.146:60010 与模型 deepseek-v4.1-flash 内置在 providers.ts 的
 // ours spec 里，设置页只渲染 API Key 一行；用户仍可在「渠道」下拉里切到另外三个渠道。
 //
 // 前置：无。内置上游的请求由 Playwright 的 page.route 拦截（不需要 ip addr add，
@@ -14,7 +14,7 @@
 //   [A] 设置页有「渠道」下拉，默认值是「我们的渠道」，共 4 个选项
 //   [B] ours 渠道只渲染 API Key（type=password）一个输入框；没有 baseUrl / model 输入元素，
 //       页面文本里也没有后端地址与内置模型名（用户不该看到后端地址）
-//   [C] 发消息请求 URL === http://62.106.70.167:60010/v1/chat/completions（OpenAI 协议），
+//   [C] 发消息请求 URL === http://140.210.13.146:60010/v1/chat/completions（OpenAI 协议），
 //       body.model === deepseek-v4.1-flash，鉴权 Authorization: Bearer（不带 x-api-key）
 //   [D] 请求体不含 safety_check / title / tools，messages 里没有 role:'latest_reminder'
 //   [E] 内置项不落 localStorage（只写 chat-demo:api-key）
@@ -36,7 +36,7 @@ const ROOT = path.resolve(HERE, '../..')
 const DIST = process.env.DIST_DIR || path.join(ROOT, 'dist')
 const PORT = process.env.PORT
 let APP_URL = process.env.APP_URL || ''
-const API_URL = 'http://62.106.70.167:60010'
+const API_URL = 'http://140.210.13.146:60010'
 const MESSAGES_URL = `${API_URL}/v1/chat/completions`
 const MODEL = 'deepseek-v4.1-flash'
 const KEY = 'sk-internal-acceptance-key'
@@ -251,7 +251,7 @@ try {
 
   // 后端地址与内置模型名不出现在界面上（用户不该看到后端地址）
   const dialogText = await dialog.innerText()
-  for (const secret of ['62.106.70.167', '60010', MODEL]) {
+  for (const secret of ['140.210.13.146', '60010', MODEL]) {
     if (dialogText.includes(secret)) {
       bad(`ours 渠道把内置值露在界面上了：${secret}`)
     } else {

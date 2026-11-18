@@ -4,7 +4,7 @@
 // 运行：node tests/unit/redeem-pool.test.mjs
 //
 // 覆盖（逐条对应 issue 的 5 条关闭条件）：
-//   [1] 兑换改地址：POST http://62.106.70.167:60013/redeem-card，body 只有 {card_no, api_key}
+//   [1] 兑换改地址：POST http://140.210.13.146:60013/redeem-card，body 只有 {card_no, api_key}
 //   [2] 200 {ok,points,quota_points,remaining_points,duplicate}：duplicate:true 按成功处理
 //   [3] 404 card_not_found / 409 card_used / 400 api_key_invalid：四条中文文案各就各位
 //   [4] 保留旧 /api/redeem 兜底；409 CARD_LEASED 的文案必须与 card_used 区分开
@@ -83,7 +83,7 @@ console.log('\n[1] 兑换改地址：POST 62.106:60013/redeem-card，body 只有
 {
   truthy(typeof invite.redeemCardAtPool === 'function', 'redeemCardAtPool 已导出')
   truthy(typeof invite.redeemCardMigrated === 'function', 'redeemCardMigrated（池 + 旧接口兜底）已导出')
-  eq(invite.REDEEM_POOL_URL, 'http://62.106.70.167:60013/redeem-card', 'REDEEM_POOL_URL')
+  eq(invite.REDEEM_POOL_URL, 'http://140.210.13.146:60013/redeem-card', 'REDEEM_POOL_URL')
 
   const { transport, calls } = fakeTransport([
     json(200, { ok: true, points: 300, quota_points: 300, remaining_points: 620, duplicate: false }),
@@ -91,7 +91,7 @@ console.log('\n[1] 兑换改地址：POST 62.106:60013/redeem-card，body 只有
   const result = await invite.redeemCardMigrated({ cardNo: ` ${CARD} `, apiKey: ` ${KEY} ` }, transport)
   eq(calls.length, 1, '只发一次请求')
   eq(calls[0].method, 'POST', 'method')
-  eq(calls[0].url, 'http://62.106.70.167:60013/redeem-card', 'url 打本机池')
+  eq(calls[0].url, 'http://140.210.13.146:60013/redeem-card', 'url 打本机池')
   eq(calls[0].headers['Content-Type'], 'application/json', 'content-type')
   eq(calls[0].followRedirects, false, 'followRedirects=false')
   eq(JSON.parse(calls[0].body), { card_no: CARD, api_key: KEY }, 'body 只有 card_no + api_key（无 request_id）')
@@ -238,7 +238,7 @@ console.log('\n[6] device_not_found 自愈：/apply → 存 key → 重试一次
   eq(outcome.healed, true, 'healed=true')
   eq(calls.length, 3, '原请求 + /apply + 重试一次 = 3 条请求')
   eq(calls[1].method, 'POST', '/apply 是 POST')
-  eq(calls[1].url, 'http://62.106.70.167:60013/apply', '/apply 地址')
+  eq(calls[1].url, 'http://140.210.13.146:60013/apply', '/apply 地址')
   eq(JSON.parse(calls[1].body), { device_id: 'd-old' }, '/apply body 带 device_id')
   eq(calls[2].url, calls[0].url, '重试的是原请求')
   eq(saved, ['sk-healed-000111'], '自愈后把 key 存下来')

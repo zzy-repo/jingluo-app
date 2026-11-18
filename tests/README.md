@@ -111,11 +111,11 @@ E2E_API_KEY=sk-xxx node tests/e2e/real-upstream.test.mjs
 | 文件 | 需要什么 |
 | --- | --- |
 | `integration/paths` `provider-anthropic` `caps` `request-body` `upstream-html` `probe-auth` `probe-nokey` `probe-auth-protocols` `legacy-config` `url-import-web` `url-import-native` `mode-switch` `full-acceptance` | 一份**标准构建**挂在 `APP_URL`（默认 5181）；语音相关用例要求 `127.0.0.1` 这类安全上下文 |
-| `integration/internal-build` `motion` `diagnostics` | 一份**内测构建**（`pnpm build:internal`）在 `dist/`；`internal-build` 还要 `ip addr add 123.207.199.196/32 dev lo` |
+| `integration/internal-build` `motion` `diagnostics` | 一份**内测构建**（`pnpm build:internal`）在 `dist/`；`internal-build` 还要 `ip addr add 140.210.13.146/32 dev lo` |
 | `integration/auto-title` `diagnostics-contract` | 预构建标准包 `STANDARD_DIST_DIR`（默认 dist-standard）；contract 另需内测包 `DIST_DIR`。只读复用、不隐式构建；自建服务默认随机 loopback 端口 |
 | `integration/feedback-scroll` | 一份**独立构建**在 `dist-scroll/`（`DIST_OUT=dist-scroll NODE_ENV=production npx rspack build -c rspack.config.ts`）；脚本自己 `--directory dist-scroll` 起 5418 静态服务。先构建再跑，产物要和 `dist/` 的 `main.<hash>.js` 一致；**运行必须 `--timeout-ms 600000`**（实跑约 200s） |
 | `integration/mode-switch-plain` | 两份产物：`PLAIN_URL`（当前标准构建）/ `BASELINE_URL`（改动前 baseline），默认 5191 / 5192 |
-| `e2e/real-upstream` | `E2E_API_KEY` + 真上游；**跑之前确认上游 IP 没被绑在 lo 上**（`ip addr del 123.207.199.196/32 dev lo`） |
+| `e2e/real-upstream` | `E2E_API_KEY` + 真上游；**跑之前确认上游 IP 没被绑在 lo 上**（`ip addr del 140.210.13.146/32 dev lo`） |
 | `e2e/diagnostics-upload` | 真实反馈后端可达（会真的提交一条反馈） |
 | `device/url-import-device` | AVD + `adb`；脚本自己起 5227 提供 20MB 导入包 |
 
@@ -152,7 +152,7 @@ E2E_API_KEY=sk-xxx node tests/e2e/real-upstream.test.mjs
 3. **模拟器要 `-memory 1280`**：`-memory 2048` 会把这台 4G slice 打满后卡死。
 4. **断网测试用 `ip link set eth0 down`**：`svc wifi disable` 在 AVD 上无效（模拟器没有 wifi service 状态）。
 5. **内测包和标准包别混**：内测包 `pnpm build:internal`（上游/模型/服务类型钉死，设置页只剩 API Key），标准包 `pnpm build`（可自填地址）。内测类用例必须配内测包，标准类用例必须配标准包，否则断言会从「UI 没入口」开始一路失败。
-6. **上游 IP 绑回环是个开关**：跑 `internal-build` 前要 `ip addr add 123.207.199.196/32 dev lo`，跑 `e2e/real-upstream` 前要 `ip addr del 123.207.199.196/32 dev lo`（脚本会自检并给提示）。
+6. **上游 IP 绑回环是个开关**：跑 `internal-build` 前要 `ip addr add 140.210.13.146/32 dev lo`，跑 `e2e/real-upstream` 前要 `ip addr del 140.210.13.146/32 dev lo`（脚本会自检并给提示）。
 7. **`dist-standard/` 是测试副产物**：`auto-title` / `diagnostics-contract` 会自己 `DIST_OUT=dist-standard` 构建，已 gitignore；别把它当部署产物。
 8. **`feedback-scroll` 的 180s 默认超时会伪装成用例失败**：这条用例单次约 191~200s，`node tests/run-layer.mjs integration --case tests/integration/feedback-scroll.test.mjs --timeout-ms 600000`；直接 `node tests/integration/feedback-scroll.test.mjs` 不受 runner deadline 限制但同样要 ~200s。另外它读的是 `dist-scroll/`（不是 `dist/`），忘了建就会连不上 5418 或跑到旧产物。
 9. **端口冲突会伪装成断言失败**：静态服务端口被占时脚本可能连到旧服务。跑之前 `ss -ltnp | grep 5181` 看一眼。

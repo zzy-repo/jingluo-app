@@ -22,7 +22,7 @@ import type {
 /**
  * 后端**实际**接口的适配实现（实测契约，与 v1 设计不同）：
  *
- *   POST http://62.106.70.167:60012/feedback
+ *   POST http://140.210.13.146:60012/feedback
  *   Body: { content, type, contact, version, log, images?: string[] } ← 单图 data URL
  *   200: { ok: true, id: "<uuid>", logSize: 51200, images: 1 }
  *   400: { ok: false, error: "log must be a string" }

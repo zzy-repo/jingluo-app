@@ -116,6 +116,29 @@ const readHost = (baseUrl: string): string => {
 }
 
 /**
+ * 已下线的主机（写死 IP 时代的产品地址，#181 服务端迁移）：
+ * - 第一代：beta.5 之前的 Anthropic Messages 协议上游
+ * - 第二代：beta.8 及之前的对话上游（现行地址见 providers.ts 的 ours.defaults）
+ *
+ * 用户本地存过这些地址的话，升级后它们已经不通了；读到即视为「没配过」，
+ * 回落到当前 spec 的内置默认（对话上游 = `http://140.210.13.146:60010`）。
+ */
+/* check-ip-allow：这份名单就是「要丢掉哪些死地址」，出现字面量 IP 是它的用途 */
+export const LEGACY_HOSTS = ['123.207.199.196', '62.106.70.167'] as const
+
+/** 已存地址是否指向已下线的主机 */
+const isLegacyHost = (baseUrl: string): boolean => {
+  try {
+    return (LEGACY_HOSTS as readonly string[]).includes(new URL(baseUrl).hostname)
+  } catch {
+    return false
+  }
+}
+
+/** 丢掉指向已下线主机的已存地址（等同「没配过」） */
+const dropLegacyHost = (value: string): string => (isLegacyHost(value) ? '' : value)
+
+/**
  * 已保存的地址：
  * - 锁定渠道（ours）恒为空串：地址只认 spec.defaults
  * - DeepSeek 官方：读老用户那份共享的 chat-demo:base-url（1.2.2 只有它一个渠道），
@@ -128,12 +151,12 @@ const storedBaseUrl = (kind: ProviderKind): string => {
     return ''
   }
   if (kind === LEGACY_KIND) {
-    return normalizeBaseUrl(read(CONFIG_KEYS.baseUrl) ?? '') ?? ''
+    return dropLegacyHost(normalizeBaseUrl(read(CONFIG_KEYS.baseUrl) ?? '') ?? '')
   }
   if (!isUserField(spec, 'baseUrl')) {
     return ''
   }
-  return normalizeBaseUrl(read(scopedKey('baseUrl', kind)) ?? '') ?? ''
+  return dropLegacyHost(normalizeBaseUrl(read(scopedKey('baseUrl', kind)) ?? '') ?? '')
 }
 
 /** 已保存的模型：规则同地址（老用户那份 chat-demo:model 只属于 DeepSeek 官方） */

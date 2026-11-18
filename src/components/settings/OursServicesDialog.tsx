@@ -63,7 +63,7 @@ import styles from './OursServices.module.css'
  * 整个组件只在 kind === 'ours' 时渲染（其他渠道一条 DOM 都不留，见 OursServicesRow）。
  *
  * 两套后端（都在 services/ 里，纯逻辑 + 注入传输，单测覆盖）：
- *  - 邀请 / 额度服务 http://62.106.70.167:60013（明文 HTTP）：设备码、Key、邀请码、剩余积分
+ *  - 邀请 / 额度服务 http://140.210.13.146:60013（明文 HTTP）：设备码、Key、邀请码、剩余积分
  *  - 卡密 / 支付服务 https://apia.ecsafe.cn（HTTPS）：套餐、/buy 的 302 收银台、订单、卡密兑换
  *
  * 额度口径：**只认邀请服务的 remaining_points**，界面上只显示「N 积分」，不做人民币折算（#75）。

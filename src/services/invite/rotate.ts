@@ -1,7 +1,7 @@
 /**
  * 换一把 Key —— `POST /rotate`（Issue #90）。
  *
- *   POST http://62.106.70.167:60013/rotate   Content-Type: application/json
+ *   POST http://140.210.13.146:60013/rotate   Content-Type: application/json
  *        { "device_id": "d-xxxxxxxxxxxxxxxx" }        ← **只要设备码，不要旧 Key**
  *     → 200 { customer_id, invite_code, key, rotated, previous_key_id, carried_used_points,
  *             total_points, quota_points, remaining_points, key_status, bonus_points,

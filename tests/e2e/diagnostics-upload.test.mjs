@@ -4,7 +4,7 @@
 //   cd /root/deepseek-app && node tests/e2e/diagnostics-upload.test.mjs
 //
 // 被测页面默认是部署在 5181 的 dist（APP_URL 可覆盖），会**真实提交**到后端：
-//   POST http://62.106.70.167:60012/feedback  Body: { content, type, contact, version, log }
+//   POST http://140.210.13.146:60012/feedback  Body: { content, type, contact, version, log }
 //
 // 断言：
 //   [1] 真实提交成功，响应里的 logSize > 0，且等于我们发出的 log 字节数
@@ -16,7 +16,7 @@
 import { chromium } from 'playwright'
 
 const APP_URL = process.env.APP_URL || 'http://127.0.0.1:5181'
-const FEEDBACK_URL = 'http://62.106.70.167:60012/feedback'
+const FEEDBACK_URL = 'http://140.210.13.146:60012/feedback'
 const LOG_MAX_BYTES = 150 * 1024
 const LOG_RETRY_BYTES = 50 * 1024
 const BODY_MAX_BYTES = 180 * 1024
@@ -82,7 +82,7 @@ const openFeedbackDialog = async (page) => {
 
 try {
   // ---------- [1][2] 真实提交到后端 + 请求体结构 ----------
-  console.log('\n[1][2] 真实提交到 62.106.70.167:60012/feedback')
+  console.log('\n[1][2] 真实提交到 140.210.13.146:60012/feedback')
   {
     const { context, page, requests, responses } = await openFeedbackForm()
     // 先制造一点真实日志（含一次网络请求），保证 log 不是空的

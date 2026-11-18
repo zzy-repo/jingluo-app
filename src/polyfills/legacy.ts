@@ -395,7 +395,7 @@ const installRandomUUID = (): void => {
 // 带进来 31 处裸调用 —— WebView 83 上就是 `TypeError: s.replaceAll is not a function`，
 // 一个未捕获异常把整屏 React 卸掉（与 issue #27 白屏同形态）。
 //
-// 语义按规范 21.1.3.18 实现，两个点不能糊：
+// 语义按规范 21.1.3.18 实现（check-ip-allow：ECMA-262 条款号，不是 IP），两个点不能糊：
 //   1) search 是正则时必须带 g，不带 g 按规范抛 TypeError —— 不能悄悄降级成「只换第一个」；
 //   2) 替换串里的 $$ / $& / $` / $' / $1 不是字面量，要走 GetSubstitution 展开。
 //      用 split/join 拼的实现会把 `$&` 原样输出，与原生不等价（单测里有对照用例）。

@@ -1,7 +1,7 @@
 /**
  * 邀请 / 额度服务的客户端契约层（纯逻辑，网络通过注入的 transport 发出）。
  *
- * 服务端：http://62.106.70.167:60013 —— **明文 HTTP**（同一台机器上的对话上游也是 http，
+ * 服务端：http://140.210.13.146:60013 —— **明文 HTTP**（同一台机器上的对话上游也是 http，
  * 见 providers.ts 的 ours.defaults）。只承载设备码、邀请码、积分账本，不承载支付凭据：
  * 卡密与支付一律走 https://apia.ecsafe.cn（见 services/ours/api.ts）。
  *
@@ -27,7 +27,7 @@ import { redeemCard as redeemCardLegacy } from '../ours/api.js'
 import { createDeviceId } from './device.js'
 
 /** 邀请 / 额度服务地址：明文 HTTP，见文件头的安全说明 */
-export const INVITE_API_BASE = 'http://62.106.70.167:60013'
+export const INVITE_API_BASE = 'http://140.210.13.146:60013'
 
 export const INVITE_TIMEOUTS = {
   apply: 15000,
@@ -306,7 +306,7 @@ export const isInviteCodeShape = (value: string): boolean => /^[A-Z0-9]{4,16}$/.
 // ------------------------------------------------------------------ 卡密兑换迁本机池（Issue #72）
 
 /**
- * 卡密兑换改打本机池：POST http://62.106.70.167:60013/redeem-card
+ * 卡密兑换改打本机池：POST http://140.210.13.146:60013/redeem-card
  *
  * 为什么搬：旧链路 https://apia.ecsafe.cn/api/redeem 要走公网 + 跨机校验，实测直接超时
  * （curl: (28) timed out after 8015 ms, http_code=000）；本机池实测 0.98s 就能返回

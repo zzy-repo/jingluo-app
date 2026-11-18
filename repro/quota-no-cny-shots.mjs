@@ -16,7 +16,7 @@ const ROOT = path.resolve(HERE, '..')
 const APP_URL = process.env.APP_URL || 'http://127.0.0.1:8090'
 const OUT_DIR = path.join(ROOT, 'docs', 'ui', 'quota-no-cny')
 
-const INVITE_API = 'http://62.106.70.167:60013'
+const INVITE_API = 'http://140.210.13.146:60013'
 const CARD_API = 'https://apia.ecsafe.cn'
 const PAY_HOST = 'https://pay.xiaodouap.cn'
 

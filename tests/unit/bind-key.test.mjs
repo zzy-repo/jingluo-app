@@ -4,7 +4,7 @@
 // 运行：node --test tests/unit/bind-key.test.mjs
 //
 // 覆盖（逐条对应 issue 的关闭条件）：
-//   [1] 200 成功：POST http://62.106.70.167:60013/bind，body 只有 {device_id, api_key}
+//   [1] 200 成功：POST http://140.210.13.146:60013/bind，body 只有 {device_id, api_key}
 //   [2] already_bound:true **按成功处理**：不产生错误态、文案里不出现「已绑定过」
 //   [3] 四个错误码（400 invalid_device / 400 invalid_api_key / 409 key_already_bound /
 //       409 device_already_bound）各有中文文案，且与 issue 表格原文逐字一致
@@ -80,7 +80,7 @@ test('[1] 200 成功：POST /bind，报文只有 device_id + api_key，返回 ke
   assert.equal(result.kind, 'ok')
   assert.equal(calls.length, 1, '只发一次请求')
   assert.equal(calls[0].method, 'POST')
-  assert.equal(calls[0].url, 'http://62.106.70.167:60013/bind', '主链路地址')
+  assert.equal(calls[0].url, 'http://140.210.13.146:60013/bind', '主链路地址')
   assert.equal(calls[0].headers['Content-Type'], 'application/json')
   assert.deepEqual(JSON.parse(calls[0].body), { device_id: DEVICE_ID, api_key: API_KEY }, '请求体字段')
   assert.equal(calls[0].followRedirects, false)
@@ -179,7 +179,7 @@ test('[5] 主链路 NETWORK / TIMEOUT / ROUTE_MISSING → 兜底备用域名，�
 
     assert.equal(result.kind, 'ok', `${label} 兜底后成功`)
     assert.equal(calls.length, 2, `${label} 兜底恰好打两次`)
-    assert.equal(calls[0].url, 'http://62.106.70.167:60013/bind', `${label} 先打主链路`)
+    assert.equal(calls[0].url, 'http://140.210.13.146:60013/bind', `${label} 先打主链路`)
     assert.equal(calls[1].url, 'https://apia.ecsafe.cn/invite/bind', `${label} 再打备用域名`)
     assert.deepEqual(JSON.parse(calls[1].body), { device_id: DEVICE_ID, api_key: API_KEY }, `${label} 兜底报文一致`)
     assert.equal(result.via, 'fallback')

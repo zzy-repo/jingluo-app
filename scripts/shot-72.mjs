@@ -51,7 +51,7 @@ const run = async (width, height, tag) => {
   )
   const page = await context.newPage()
   // 只拦两套后端（截图用固定报文，不代表真实服务返回）
-  await context.route('http://62.106.70.167:60013/**', async (route) => {
+  await context.route('http://140.210.13.146:60013/**', async (route) => {
     const url = route.request().url()
     if (url.includes('/me')) return route.fulfill(json(200, PROFILE))
     if (url.includes('/apply')) return route.fulfill(json(201, PROFILE))

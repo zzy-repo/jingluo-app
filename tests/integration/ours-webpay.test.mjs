@@ -29,7 +29,7 @@ const DIST = process.env.DIST_DIR_STANDARD || path.join(ROOT, 'dist-standard')
 // serveDist 用 0 号端口原子分配，PORT 由实际监听端口回填。
 let PORT = process.env.PORT || ''
 let APP_URL = process.env.APP_URL || ''
-const INVITE_API = 'http://62.106.70.167:60013'
+const INVITE_API = 'http://140.210.13.146:60013'
 const CARD_API = 'https://apia.ecsafe.cn'
 const SHOT_DIR = path.join(ROOT, 'docs', 'ui')
 

@@ -1,5 +1,5 @@
 // [layer: unit | 依赖: 无（纯 Node，零浏览器，不发网络请求） | 耗时: <1s] 说明见 tests/README.md
-// 邀请 / 额度服务（http://62.106.70.167:60013）与设备码单测（Issue #21）。
+// 邀请 / 额度服务（http://140.210.13.146:60013）与设备码单测（Issue #21）。
 // 只 import src/services/invite/{api,device}.ts，用假 transport / 假存储断言行为，
 // 不碰 DOM、不发网络请求、不打印任何凭据。
 //
@@ -143,7 +143,7 @@ console.log('\n[2] /apply：201 首次 / 200 已申请，同一 device_id 幂等
   eq(calls.length, 2, '两次调用只发两次请求（重试安全）')
   eq(calls[0].method, 'POST', 'method')
   eq(calls[0].url, `${INVITE_API_BASE}/apply`, '/apply')
-  eq(INVITE_API_BASE, 'http://62.106.70.167:60013', '邀请服务地址（明文 HTTP）')
+  eq(INVITE_API_BASE, 'http://140.210.13.146:60013', '邀请服务地址（明文 HTTP）')
   eq(JSON.parse(calls[0].body), { device_id: DEVICE_ID }, '请求体只有 device_id')
   eq(calls[0].followRedirects, false, '不跟随重定向')
   eq(first.kind, 'ok', '201 → ok')

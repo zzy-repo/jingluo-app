@@ -1,6 +1,6 @@
 // 内测版验收用的本地 mock 上游：只用 node 标准库，不依赖任何真实上游（内测上游号池耗尽）。
 //
-//   node tests/mock-anthropic.mjs            # 监听 123.207.199.196:60010（需先把该 IP 绑到 lo）
+//   node tests/mock-anthropic.mjs            # 监听 140.210.13.146:60010（需先把该 IP 绑到 lo）
 //   node tests/mock-anthropic.mjs --host 127.0.0.1
 //
 // 行为（模拟内测版固定上游「只有 /v1/messages，没有 /anthropic 前缀」）：
@@ -15,7 +15,7 @@ import { appendFileSync, writeFileSync } from 'node:fs'
 
 const args = process.argv.slice(2)
 const hostArg = args.indexOf('--host')
-const HOST = hostArg >= 0 ? args[hostArg + 1] : process.env.MOCK_HOST || '123.207.199.196'
+const HOST = hostArg >= 0 ? args[hostArg + 1] : process.env.MOCK_HOST || '140.210.13.146'
 const PORT = Number(process.env.MOCK_PORT || 60010)
 export const LOG = process.env.MOCK_LOG || '/tmp/mock-anthropic-requests.jsonl'
 const REPLY_TEXT = process.env.MOCK_REPLY_TEXT || '内测版验收回复：固定服务地址与模型已生效，逐字流出。'

@@ -101,5 +101,5 @@ test('[4] 显式选「领取新 Key」→ /apply 照旧', async () => {
   const result = await applyForKey(DEVICE_ID, transport)
   assert.equal(result.kind, 'ok')
   assert.deepEqual(sent, ['POST /apply'], `领取只该发 /apply，实际：${JSON.stringify(sent)}`)
-  assert.equal(INVITE_API_BASE, 'http://62.106.70.167:60013')
+  assert.equal(INVITE_API_BASE, 'http://140.210.13.146:60013')
 })
