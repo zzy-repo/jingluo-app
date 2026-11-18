@@ -1,266 +1,59 @@
-# 旧版本 Android / WebView 兼容性取证（API 30 / API 31）
+# 旧版 Android / WebView 兼容性实测覆盖（API 26–33）
 
-> **结论口径（全文强制）**：本文所有结论均来自 **Android Emulator API\<NN\>（x86_64，非真实手机）**。
-> 不代表真机通过。真机、厂商 ROM（尤其 OPPO 老 WebView）**未测**。
+> **口径（全文强制）**：以下结论全部来自 **Android Emulator（x86_64，swiftshader_indirect）**，不是真机。
+> 真机、厂商 ROM（尤其线上反馈来源的老 WebView）**未测**，不得由本表外推。
+> 「未测」= **没跑过，不是通过**。WebView 版本一律取 `adb shell dumpsys package com.google.android.webview | grep versionName`
+> 的原始输出，**不按 Android 版本推断**。
 
-- 取证分支：`fact/compat-old`，基于 `27ac2fa`（1.4.0-beta.10, #140）
-- 被测产物：debug APK，`com.example.deepseekchat` v1.4.0-beta.10（versionCode 17），`targetSdkVersion=36`，`application-debuggable`
-- 构建：JDK 21 + Gradle 8.14.3 + AGP，`assembleDebug` → 6,305,279 B
-- 取证日期：2026-11-18
-
----
-
-## 环境更正（重要）
-
-工单原先记录「API 30 / 31 / 33 三个系统镜像均已在本地，离线可用，不用下载」。**该记录对 API 31 是错的。**
-
-实测 `/d/android-sdk/system-images/android-31/google_apis/x86_64/` 当时只有一个空壳，内含 `.installer/.installData`，**没有** `package.xml` / `system.img` / `ramdisk.img`。`avdmanager` 原始报错：
-
-```
-$ avdmanager create avd -n compat-api31 -k "system-images;android-31;google_apis;x86_64" -d pixel
-Error: Package path is not valid. Valid system image paths are:
-system-images;android-33;google_apis;x86_64
-system-images;android-30;google_apis;x86_64
-```
-
-即真正可用的只有 android-30 与 android-33。**这正是 #57 当时「没有 API-31 镜像所以无法复验」的真实原因，且该原因在本次取证开始时依然成立。**
-
-已修复：通过代理重跑
-
-```bash
-sdkmanager "system-images;android-31;google_apis;x86_64"   # 约 1.1 GB，Pkg.Revision=12
-```
-
-安装后目录含 `package.xml` / `source.properties` / `kernel-ranchu` / `ramdisk.img` / `build.prop` / `data` / `encryptionkey.img` / `VerifiedBootParams.textproto`，`avdmanager` 随即接受该路径并成功创建 AVD。
-
-**后续 lane 注意**：不要再假设「镜像都在本地」，创建 AVD 前先看 `system-images/<api>/<tag>/<abi>/package.xml` 是否存在。
+- 被测产物：debug APK `com.example.deepseekchat` 1.4.0-beta.10（versionCode 17，`minSdk 24`、`targetSdk 36`，`application-debuggable`），6,305,279 B
+- 构建：JDK 21 + Gradle 8.14.3 + AGP，`assembleDebug`
+- 取证日期：2026-11-18 ~ 2026-11-19
+- 测具：`scripts/compat/**`（`boot` / `p0-fallback` / `p2-import` / `p3-net` / `p4-layout` + `run-round.sh` 串行跑）。**每个数字都能在对应 `result-*.json` 里查到**，不在文档里另算。
 
 ---
 
-## ① WebView 真实版本（命令原始输出）
+## 覆盖总表
 
-### API 30
-```
-$ adb shell dumpsys package com.google.android.webview | grep versionName
-    versionName=83.0.4103.106
+**本表唯一事实来源 = 各目录下的 `result-*.json`。** 表与 json 冲突时以 json 为准，并回来改表。
 
-$ adb shell getprop ro.build.version.release    → 11
-$ adb shell getprop ro.build.version.sdk        → 30
-```
-**WebView = 83.0.4103.106**
+| AVD | Android | WebView（`dumpsys` 原行） | P0 兜底页 | P1 启动 | P2 导入 | P3 弱网 | P4 390/360 排版 |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `compat-api26` | 8.0 | `69.0.3497.100` | **命中出口②**：`booted=false`、`boxPresent=true`、`compatibilityError=null`、进程存活（`api26/result-p0.json`） | 非纯白屏，兜底卡出现（`api26/shots/`） | **不可达**：主包不启动，UI 起不来 | **不可达** | **不可达** |
+| `compat-api28` | 9 | `69.0.3497.100` | 同 api26（`api28/result-p0.json`） | 同 api26 | **不可达** | **不可达** | **不可达** |
+| `compat-api29` | 10 | `74.0.3729.185` | 同 api26（`api29/result-p0.json`） | 非纯白屏 | **不可达** | **不可达** | **不可达** |
+| `compat-api30` | 11 | `83.0.4103.106` | 不触发，`booted=true`、`boxPresent=false`（`api30/result-p0.json`） | 正常启动 | **7 档全跑，全部有终态**（`api30/result-p2-*.json`） | 未测 | 390/360 四屏横溢 0（`api30/result-p4.json`） |
+| `compat-api31` | 12 | `91.0.4472.114` | 未单独跑（P2/P4 期间页面正常启动） | 正常启动 | **3 档**（bomb / corrupt-branch / 200MB） | 六态跑完但**未采到正文**，无结论 | 390/360 四屏横溢 0（`api31/result-p4.json`） |
+| `deepseek-api33` | 13 | `109.0.5414.123` | 未单独跑（P4 期间页面正常，主界面 `bodyTextLength=52`） | 正常启动 | 三档**全部未到终态**（测具失效，非产品结论） | 109 既有结论见 #150 / #154 | 390/360 四屏横溢 0（`api33/result-p4.json`） |
 
-### API 31
-```
-$ adb shell dumpsys package com.google.android.webview | grep versionName
-    versionName=91.0.4472.114
-    versionName=91.0.4472.114
-
-$ adb shell getprop ro.build.version.release    → 12
-$ adb shell getprop ro.build.version.sdk        → 31
-```
-**WebView = 91.0.4472.114**
-
-（版本号一律取自 `dumpsys` 原始输出，未按 Android 版本推断。）
+各档细节在同目录 README：`api26/`、`api28/`、`api29/`、`api30/`、`api31/`、`api33/`。
 
 ---
 
-## ② 启动是否白屏 / logcat 是否出现 SyntaxError
+## P0 · 兜底页正向验证（API26 / 28 / 29）
 
-**两档都没有白屏，两档 logcat 都没有 SyntaxError。**
+兜底页（`src/index.html` 内联 ES5 守卫）实际有**三条**出口：
 
-```
-$ grep -c -i "SyntaxError\|Unexpected token" logcat-api30.txt  → 0
-$ grep -c -i "SyntaxError\|Unexpected token" logcat-api31.txt  → 0
-```
-
-即 #104 的根因症状 `Uncaught SyntaxError: Unexpected token '?'` **在 WebView 83 与 WebView 91 上均未复现**。这与「WebView 83 已支持可选链」的技术事实一致（可选链 Chrome 80+ 支持）。
-
-冷启动后 WebView 侧唯一出现的报错是无害的 Crashpad 目录与 EGL 回落（**逐字粘贴**，API 30）：
-
-```
-11-18 15:57:40.208  3427  3427 E chromium: [ERROR:filesystem_posix.cc(62)] mkdir /data/user/0/com.example.deepseekchat/cache/WebView/Crashpad: No such file or directory (2)
-11-18 15:57:40.855  3427  3580 E chromium: [ERROR:gl_surface_egl.cc(549)] eglChooseConfig failed with error EGL_SUCCESS
-11-18 15:57:40.881  3427  3580 E chromium: [ERROR:gl_surface_egl.cc(549)] eglChooseConfig failed with error EGL_SUCCESS
-```
-API 31 无 `E chromium` 行（`grep " E chromium" logcat-api31.txt` 无输出）。
-
----
-
-## ③ 兜底页（fallback）是否生效
-
-**未触发，且本轮无法用「缺少：」分支验证 —— 因为两档 WebView 都满足全部 12 项探测。**
-
-- 两档启动后都进入了**真实产品 UI**（主聊天页 / 设置页），说明 web bundle 正常执行完毕。
-- 兜底闸位于 `dist/index.html` 的内联 **classic script**（非 module），检测 12 项：`Promise / fetch / URL / AbortController / TextDecoder / ResizeObserver / CSS.escape / Object.defineProperty / Array.prototype.forEach / Map / Set / WeakMap`；缺项则显示
-  `页面启动失败。请更新 Android System WebView 或浏览器后重试；仍失败请反馈组件版本与以下信息：` + `缺少：<列表>`
-- 另有 12s 看门狗：`window.__DEEPSEEK_BOOTED__` 未置位即判定 `脚本 12 秒内没有启动（内核过旧或资源加载失败）`
-- WebView 83 / 91 对这 12 项**全部支持**，因此**两条兜底分支本轮都未走到**（既没有「缺少：」也没有「12 秒内没有启动」）。这是预期结果，但意味着**兜底页的正向有效性本轮未被证明**，需要更老的 WebView（< 80）才能真正验证。
-
----
-
-## ④ 主流程冒烟（4 项，逐项判定）
-
-| # | 项目 | 结果 | 依据 |
-|---|---|---|---|
-| 1 | 能进主界面 | **通过** | 主聊天页 UI 树含 `How can I help you?` / `Chat mode` / `Fast mode` / `Expert mode` / `DeepThink` / `Search` / `Voice input` / `Upload files` / `Send` / `AI-generated, for reference only`；截图 `api30/shot-api30-chat.png` |
-| 2 | 能发一条消息（fake key / fake backend） | **未测** | 本轮未搭 fake backend stub，也未配置 fake key；**不能记为通过** |
-| 3 | 设置页能打开 | **通过** | 首次启动自动弹出设置页，两档均正常渲染（见 ⑤ 截图） |
-| 4 | 设置 → 数据管理能打开 | **未通过** | 点击 `Data` 页签后内容**未切换**，仍显示 General 的 Channel / API Key / Connection test。置于灰底选中态却无内容变化。截图 `api30/shot-api30-data-tab.png` |
-
-> 说明：App 首次启动（无 API Key）会**自动打开设置页**，属预期行为，不是白屏也不是缺陷。
-
----
-
-## ⑤ 设置页 390 / 360 排版回归（#57 复验）—— 本轮重点
-
-视口换算：`css_px = 物理宽 / (density / 160)`，物理宽固定 1080。
-- **390 css** → `wm density 443`（1080×160/443 = 390）
-- **360 css** → `wm density 480`（1080×160/480 = 360）
-
-### API 30（WebView 83）—— **#57 复现，且比原描述更严重**
-
-绝对路径：
-- `D:\all_project\runs\compatold\docs\compat\compat-old\api30\shot-api30-390-settings.png`
-- `D:\all_project\runs\compatold\docs\compat\compat-old\api30\shot-api30-390-data.png`
-- `D:\all_project\runs\compatold\docs\compat\compat-old\api30\shot-api30-390-scrolled.png`
-- `D:\all_project\runs\compatold\docs\compat\compat-old\api30\shot-api30-360-scrolled.png`
-- `D:\all_project\runs\compatold\docs\compat\compat-old\api30\shot-api30-default.png`（原生 411 css）
-- `D:\all_project\runs\compatold\docs\compat\compat-old\api30\shot-api30-data-tab.png`
-- `D:\all_project\runs\compatold\docs\compat\compat-old\api30\shot-api30-chat.png`
-- `D:\all_project\runs\compatold\docs\compat\compat-old\api30\logcat-api30.txt`
-
-现象：
-1. **390 css**：`Chat background` 段标题塌成**每行一个字符**的竖排（`C` `h` `a` `t` `b` `a` `c` `k` 逐行向下），副标题整段同样竖排。
-2. **原生 411 css**（未改 density）同样竖排 —— 证明**不是 density override 造成的假象**，是真实 CSS 布局缺陷。
-3. **360 css**：恶化成**整个弹层横向溢出** —— 右上角 `×` 关闭按钮与 `Data` 页签被推出屏幕右边缘不可见，正文仍竖排。
-4. 表头 `Settings` / 页签 `General` / `Data` / 行标签 `Channel` / `API Key` / `Connection test` 渲染正常 —— 说明是**文本块宽度约束**失效（flex/grid 子项未给 `min-width:0` 类问题），不是整体缩放。
-
-### API 31（WebView 91）—— **#57 未复现**
-
-绝对路径：
-- `D:\all_project\runs\compatold\docs\compat\compat-old\api31\shot-api31-390-settings.png`
-- `D:\all_project\runs\compatold\docs\compat\compat-old\api31\shot-api31-360-settings.png`
-- `D:\all_project\runs\compatold\docs\compat\compat-old\api31\shot-api31-default.png`
-- `D:\all_project\runs\compatold\docs\compat\compat-old\api31\logcat-api31.txt`
-
-现象：390 与 360 两档**排版均正常** —— `Chat background` 单行完整，副标题 `Stored on this device only (IndexedDB), never uploaded; resized to 1600px max edge` 正常折成 2 行，`Upload` / `Clear` 按钮完整在屏内，`×` 与 `Data` 页签均未溢出。**#57 的修复在 WebView 91 上有效。**
-
----
-
-## ⑥ 与 API 33（WebView 109）基线的差异归因
-
-| 维度 | API 30 / WebView 83 | API 31 / WebView 91 | API 33 / WebView 109（基线） |
-|---|---|---|---|
-| 设置页 390/360 排版 | **塌成一列 + 360 横向溢出** | 正常 | 正常 |
-| 启动白屏 | 无 | 无 | 无 |
-| `?.` SyntaxError | 无 | 无 | 无 |
-| 兜底页触发 | 未触发 | 未触发 | 未触发 |
-
-**归因：`设置页排版塌陷` = WebView 版本差异导致，不是 Android 版本差异导致。**
-
-依据：
-1. API 30 与 API 31 同时跨越了「Android 11 → 12」和「WebView 83 → 91」两个变量，单看这两档无法区分。
-2. 但 API 33（WebView 109）与 API 31（WebView 91）**Android 版本不同、WebView 版本也不同，排版却都正常**；而 API 33 基线此前已确认正常。
-3. 结合 #57 历史：该排版问题此前是按「WebView 91 布局」修的，修复点在 CSS 层。**WebView 83 → 91 之间恰好是 `gap` / `flex-basis:auto` / `min-width:auto` 在 flex 子项上行为差异的典型区间**，与观察到的「文本块宽度塌陷」症状吻合。
-4. 因此结论是 **WebView 内核版本**决定，而非 Android 平台版本决定。（严格证明需在同一 Android 版本上换 WebView 版本对照，本轮未做 —— 见 ⑧。）
-
----
-
-## ⑦ 缺陷清单（**未修复**，仅取证）
-
-### D1 — 设置页在 WebView 83 下文本块塌成一列（严重）
-- **严重级：高**（可用性受损，设置页信息不可读；360 css 下关闭按钮不可达 = 无法退出设置页）
-- 环境：Android Emulator API30（x86_64，非真实手机），WebView 83.0.4103.106
-- 现象：`Chat background` 标题与副标题均每行一个字符竖排；360 css 下整个弹层横向溢出，`×` 与 `Data` 页签被推出屏幕外
-- 复现：100%（原生 411 / 390 / 360 三档均复现）
-- 证据：`api30/shot-api30-default.png`、`api30/shot-api30-390-scrolled.png`、`api30/shot-api30-360-scrolled.png`
-- 备注：疑似 flex/grid 子项缺少 `min-width: 0`（或 `flex-shrink`/`overflow-wrap` 在旧内核下行为差异），**未改代码，待统一开单**
-
-### D2 — 设置页 `Data` 页签点击后内容不切换（严重）
-- **严重级：高**（数据管理入口不可用）
-- 环境：Android Emulator API30（x86_64，非真实手机），WebView 83.0.4103.106
-- 现象：点击 `Data` 页签（灰底选中态）后，内容区仍为 General 的 Channel / API Key / Connection test，无任何变化
-- 证据：`api30/shot-api30-data-tab.png`
-- 备注：**未在 API 31 / API 33 上对照**，因此无法判断是 WebView 83 专属还是通用缺陷 —— 列入待查，**不要直接当 WebView 83 专属缺陷开单**
-
-### D3 — 冒烟项 2、4 未通过/未测
-- 见 ④ 表格。属**取证缺口**而非确认缺陷（D2 除外）。
-
----
-
-## ⑧ 未测边界
-
-1. **真机**：全程模拟器（x86_64），无任何真机结论。
-2. **其他厂商 ROM**：未测。**OPPO 等老 WebView 是 #104 线上症状的真实来源，本轮完全没覆盖** —— 这是最大缺口。
-3. **比 WebView 83 更老的内核**：未测。因此「兜底页的『缺少：』分支」与「12s 看门狗分支」**都未获正向验证**（83/91 全部满足 12 项探测）。
-4. **> API 33**：未测（API 34 / 35 / 36 未跑）。
-5. **Android < API 30**：未测（minSdk 24 下限方向未验证）。
-6. **同一 Android 版本换 WebView 版本对照**：未做 —— 所以 ⑥ 的归因是**强推断而非受控实验**。
-7. **发消息链路**：未测（无 fake backend）。
-8. **深色模式 / 横屏 / 多语言**：未测（本轮 locale 为 en-US，UI 呈现英文）。
-
----
-
-## 附：可复现命令
-
-```bash
-export MSYS_NO_PATHCONV=1; export ANDROID_AVD_HOME=D:/android-avd
-export ANDROID_HOME=/d/android-sdk; export ANDROID_SDK_ROOT=/d/android-sdk
-ADB=/d/android-sdk/platform-tools/adb.exe
-
-# 一次只开一台（AGENTS.md 硬规则）
-/d/android-sdk/emulator/emulator.exe -avd compat-api30 -no-snapshot -no-boot-anim -no-audio -gpu swiftshader_indirect &
-
-$ADB shell dumpsys package com.google.android.webview | grep versionName
-$ADB install -r "D:/all_project/runs/compatold/android/app/build/outputs/apk/debug/app-debug.apk"
-$ADB logcat -c && $ADB shell am start -n com.example.deepseekchat/.MainActivity
-$ADB logcat -d > logcat-api30.txt
-
-# 视口
-$ADB shell wm size 1080x1920
-$ADB shell wm density 443      # 390 css
-$ADB shell wm density 480      # 360 css
-$ADB shell wm density reset
-$ADB exec-out screencap -p > shot.png
-
-$ADB emu kill
-```
-
-## 附：AVD 保留情况
-
-保留且未被删除：`compat-api30`、`compat-api31`（本轮新建）、`deepseek-api33`、`probe33`（既有，未改动）。
-
----
-
-# P0 · 兜底页正向验证（2026-11-19 补测，API26 / API28 / API29）
-
-## 为什么要补这一档
-
-兜底页（`src/index.html` 内联 ES5 守卫）实际有**三条**出口，此前一条都没被触发过：
-
-| 出口 | 触发条件 | 文案 |
+| 出口 | 触发条件 | 文案尾部 |
 | --- | --- | --- |
 | ① 探针缺失 | 12 条特性探针任一不满足 | `…：缺少：<API 列表>` |
 | ② window error | 捕获到脚本错误（`addEventListener('error', …, true)`） | `…：<event.message>` |
 | ③ 12s 看门狗 | 探针齐但 `__DEEPSEEK_BOOTED__` 12 秒没置位 | `…：脚本 12 秒内没有启动（内核过旧或资源加载失败）` |
 
-在 WebView 83 / 91 / 109 上三条都不触发（主包正常启动）。只有在 WebView < 80（主包含可选链）才能实测。
+### 实测：69 / 74 命中出口②，不是出口①也不是③
 
-## 实测结果（三档一致）
-
-| AVD | WebView 原始版本行 | 兜底页 | 命中出口 | `__DEEPSEEK_BOOTED__` | `__DEEPSEEK_COMPATIBILITY_ERROR__` |
+| AVD | WebView | 兜底页 | 命中出口 | `__DEEPSEEK_BOOTED__` | `__DEEPSEEK_COMPATIBILITY_ERROR__` |
 | --- | --- | --- | --- | --- | --- |
-| compat-api26 | `versionName=69.0.3497.100` | 出现（非纯白） | ② window error | false | `null` |
-| compat-api28 | `versionName=69.0.3497.100` | 出现（非纯白） | ② window error | false | `null` |
-| compat-api29 | `versionName=74.0.3729.185` | 出现（非纯白） | ② window error | false | `null` |
+| `compat-api26` | `69.0.3497.100` | 出现（非纯白） | ② window error | `false`（2s/6s/13s/20s 四帧一致） | `null` |
+| `compat-api28` | `69.0.3497.100` | 出现（非纯白） | ② window error | `false` | `null` |
+| `compat-api29` | `74.0.3729.185` | 出现（非纯白） | ② window error | `false` | `null` |
 
-用户可见文案（三档逐字一致，四帧采样 2s/6s/13s/20s + 最终帧）：
+用户可见文案（三档逐字一致，`#compatibility-error` 的 `textContent`）：
 
 ```
 页面启动失败。请更新 Android System WebView 或浏览器后重试；仍失败请反馈组件版本与以下信息：Uncaught SyntaxError: Unexpected token ?
 ```
 
-logcat（三档同一条主包）：
+logcat（三档同一条，主包解析失败）：
 
 ```
 E Capacitor: JavaScript Error: {"type":"js.error","error":{"message":"Uncaught SyntaxError: Unexpected token ?","url":"https://localhost/static/js/main.030dd2a6.js","line":1,"col":249411,...}}
@@ -269,20 +62,183 @@ E Capacitor/Console: File: https://localhost/ - Line 811 - Msg: SyntaxError: Une
 
 结论：
 
-1. WebView 69 / 74 上**不是纯白屏** —— 兜底守卫确实接住了解析失败，卡片出现。
-2. 但落的是出口 ②，把**未本地化的英文原文**（`Uncaught SyntaxError: Unexpected token ?`）直接展示给用户，且 `__DEEPSEEK_COMPATIBILITY_ERROR__` 为 `null`（只有出口 ① 才写这个变量）→ 诊断链路拿不到结构化原因。
-3. 出口 ① / ③ 仍然**未触发过**（69/74 的 12 条探针全过；要触发 ① 需要 WebView < 64 或人为缺项）。
-4. 白屏边界实测：WebView 74 → 兜底卡；WebView 83 → 正常启动。中间 75–82 无系统镜像可用，**未测**（不做推断）。
+1. WebView 69 / 74 上**不是纯白屏** —— 兜底守卫接住了解析失败，卡片确实出现。
+2. 但落的是出口 ②：把**未本地化的英文原文**（`Uncaught SyntaxError: Unexpected token ?`）直接展示给用户；且 `__DEEPSEEK_COMPATIBILITY_ERROR__` 为 `null`（只有出口 ① 才写该变量），诊断链路拿不到结构化原因 → **#180**。
+3. 出口 ① / ③ 至今**一次都没被真正触发过**（69 / 74 的 12 条探针全过；要触发 ① 需 WebView < 64 或人为注入缺项）。
 
-## 覆盖总表（P0–P4）
+---
 
-| AVD / Android | WebView 原始版本（dumpsys） | P0 兜底页 | P1 白屏边界 | P2 导入 | P3 弱网 | P4 390/360 排版 |
-| --- | --- | --- | --- | --- | --- | --- |
-| compat-api26 | `versionName=69.0.3497.100` | 兜底出口②，文案泄漏英文原文（证据 `api26/`） | 非白屏（同上） | 未测：UI 不可达 | 未测：UI 不可达 | 未测：UI 不可达 |
-| compat-api28 | `versionName=69.0.3497.100` | 同上（`api28/`） | 非白屏 | 未测：UI 不可达 | 未测：UI 不可达 | 未测：UI 不可达 |
-| compat-api29 | `versionName=74.0.3729.185` | 同上（`api29/`） | 非白屏 | 未测：UI 不可达 | 未测：UI 不可达 | 未测：UI 不可达 |
-| compat-api30 | `versionName=83.0.4103.106` | 不触发，`booted=true`（`api30/result-p0.json`） | 正常启动 | 未测 | 未测 | 主界面 390css(391) / 360css(360) 横溢 0 元素；设置页/会话页未测（`api30/result-p4.json`） |
-| compat-api31 | `versionName=91.0.4472.114` | 不触发，`booted=true`（`api31/`） | 正常启动 | 未测 | 未测 | 未测（仅 #57 排版对照，见上） |
-| deepseek-api33 | `versionName=109.0.5414.123` | 不触发 | 正常启动 | 未测（109 既有结果见 #133） | 109 既有：48s 超时 / 滴流无限 streaming #150 / offline 误分类 #154 | 未测 |
+## P1 · 白屏边界
 
-「未测」= 没跑过，不是通过。P1（API 34/35/36「更高版本也不会炸」）未测：镜像尚未装完，本轮未跑。
+- 实测边界：**WebView 74 → 兜底卡片；WebView 83 → 正常启动。**
+- 中间 **75–82 没有可用系统镜像，未测**（不做任何推断）。
+- 更老的 < 69 未测。
+- 「更高版本也不会炸」（API 34 / 35 / 36）未测。
+
+---
+
+## P2 · 导入（链接导入 → 归档解析）
+
+方法：本机起 Range 服务（`10.0.2.2:5411`），App 逐段 206 下载后自行解析；每档前 `am force-stop` + `logcat -c` + 冷启动，
+约 1.5s 采样一次界面文案与 `dumpsys meminfo` 的 TOTAL PSS，直到出现终态文案或超时。
+
+### `compat-api30`（WebView 83）—— 七档全跑
+
+| 档位 | 服务端送出 | 终态 | PSS 峰值 | 证据 |
+| --- | --- | --- | --- | --- |
+| `ctrl-1mb` | 1,048,576 B / 8 段 | 导入成功 | 116,073 KB | `result-p2-ctrl-1mb.json` |
+| `ctrl-10mb` | 10,485,760 B / 11 段 | 导入成功 | 140,672 KB | `result-p2-ctrl-10mb.json` |
+| `ctrl-50mb` | 52,428,764 B / 63 段 | 导入成功 | **485,586 KB** | `result-p2-ctrl-50mb.json` |
+| `edge-200mb` | 209,715,200 B / 110 段（全量下完） | **失败**：`Import from link failed` | 363,500 KB | `result-p2-edge-200mb.json` |
+| `bomb-1000x` | 66,112 B（解压后 64 MB 同一字符） | 导入成功 | **481,587 KB** | `result-p2-bomb-1000x.json` |
+| `corrupt-branch` | 2,164 B | 导入 2 条、跳过 2 条损坏项，逐条给出会话名与消息号（#49 降级路径正常） | 315,625 KB | `result-p2-corrupt-branch.json` |
+| `truncated` | 2,306,867 B | 错误弹层：`This ZIP is damaged…` | 150,217 KB | `result-p2-truncated.json` |
+
+- **七档没有一次白屏，也没有一次进程被杀**：各档 pid 恒定，logcat 无对应包名 `Killing …(adj …)`；大档结束回到主界面有正文。
+  「导入白屏 / OOM」在 API30 + WebView 83 上**没有复现**。
+- 内存随**解压后**体积走：1 MB → 116 MB、10 MB → 141 MB、50 MB → 486 MB；64 MB 全同字符炸弹包 → 482 MB，与 50 MB 真实包同量级，
+  说明峰值由解压后的字符串决定，不是压缩比。1536 MB RAM 下未触发 `lowmemorykiller`。
+- 200MB 档：下载阶段 110 段全部成功、字节数完全等于 200 MB，**失败发生在读文件阶段**，抛的是 `File` / `FileReader` 的 DOMException 原文，
+  不是 `historyImportUrl*` 里的任何本地化文案 → 用户看到技术异常，且 200 MB 流量白费（见 `api30/README.md` P2-1）。
+
+### `compat-api31`（WebView 91）—— 交叉验证 3 档
+
+| 档位 | 服务端送出 | 终态 | PSS 峰值 | 证据 |
+| --- | --- | --- | --- | --- |
+| `bomb-1000x` | 66,112 B | 导入成功 | 132,800 KB | `result-p2-bomb-1000x.json` |
+| `corrupt-branch` | 2,164 B | 导入成功（损坏项降级） | 113,745 KB | `result-p2-corrupt-branch.json` |
+| `edge-200mb` | 209,715,200 B / 54 段 | **失败**：`Import from link failed` | 155,774 KB | `result-p2-edge-200mb.json` |
+
+1MB / 10MB / 50MB / truncated 四档**在 WebView 91 上未测**。
+
+### `deepseek-api33`（WebView 109）—— 三档未到终态，**不构成产品结论**
+
+三档（`bomb-1000x` / `corrupt-branch` / `edge-200mb`）全部 `timedOut=true`、`requestCount=0`、`verdict=NO_TERMINAL_TEXT`。
+
+原因是**测具**：`result-p2-*.json` 里 `typed.state.value` 记的是 `http://10.0.2.2:5398/v1`（测具自己形状服务的根地址），
+不是归档 URL；`corrupt-branch` 那档更把两串地址粘在一起（`http://10.0.2.2:5398http://10.0.2.2/v1`）。
+于是「Import link」按钮始终 `disabled`，`startClick.clicked=false / reason=disabled`，一次请求都没发出。
+→ 归因为**测具向 React 受控输入框写值失效**，产品侧无结论。
+
+---
+
+## P3 · 弱网（六态）
+
+`api31/result-p3.json` 跑完六态：`s0-ok`(30s) / `s1-hold`(100s) / `s2-cut`(40s) / `s3-trickle`(70s) / `s4-unreachable`(100s) / `s5-offline`(60s)。
+
+**但六态全部 `firstTextMs=null`、`rows=0`、`finalBody` 为空串** —— 采样选择器一次都没命中会话区，
+等于什么都没观测到。截图 `api31/shots/p3-s0-ok.png` … `p3-s5-offline.png` 六张在，但没有可判定的产品行为。
+
+→ P3 在 API31 上记为**未取得结论**（不是通过，也不是失败）。重做需要：先有可用会话（真实 key 或 fake backend），
+再让 `p3-net.mjs` 的采样器命中消息容器。WebView 109 的弱网结论引用既有单：滴流无限 streaming **#150**、断网误分类 **#154**。
+
+---
+
+## P4 · 排版（390 / 360 CSS px）
+
+视口换算：`css_px = 物理宽 / (density / 160)`，物理宽固定 1080。
+
+- **390 css** → `wm density 443`（1080×160/443）
+- **360 css** → `wm density 480`
+
+三档 × 二视口 × 四屏，`horizontalOverflow` 全为 **0**、`overflowElements` 全为空：
+
+| AVD | 390css（`innerWidth` / `scrollWidth`） | 360css | 四屏正文长度（390 / 360） | 证据 |
+| --- | --- | --- | --- | --- |
+| `compat-api30` | 391 / 391 | 360 / 360 | main 1025/1025、settings-general 775/775、settings-data 1062/1062、import-form 1062/1062 | `api30/result-p4.json` + `shots/p4-{390,360}css-*.png` |
+| `compat-api31` | 391 / 391 | 360 / 360 | main 1025/1008、settings-general 775/758、settings-data 1062/1045、import-form 1062/1045 | `api31/result-p4.json` |
+| `deepseek-api33` | 391 / 391 | 360 / 360 | main 52/52、settings-general 720/720、settings-data 1043/1043、import-form 1043/1043 | `api33/result-p4.json` |
+
+**未测屏（三档一致）**：
+
+- `session`（会话详情）：`skipped` = 「本机没有会话条目 / 设备上没有可打开的会话」—— 不拿主界面冒充。
+- `import-confirm`（导入确认弹层）：`skipped` = 「没有找到 Import link 按钮」—— 链接输入框为空时按钮 `disabled`，属预期；
+  该弹层的真实路径由 P2 覆盖。
+
+### 排版缺陷（已开单）
+
+- **#190**｜设置 → 数据「Chat backup」行文本列塌成单字符宽（WebView 83 / 91 × 390 / 360 / 412）。
+  证据 `api30/shots/p4-{390,360}css-settings-data.png`、`api31/shots/p4-{390,360}css-settings-data.png`。
+  该行纵向塌陷的同时右侧操作列被挤空，同屏 `Channel` / `API Key` / `Connection test` 都正常横排。
+- **#173**｜`CSS.supports('gap', '12px')` 在 WebView 83 上**假阳性**（返回 `true` 但 flex `gap` 实际不生效），71 处 `gap` 依赖待排查。
+  这是「用 `CSS.supports` 做特性检测」在旧内核上的坑，直接影响任何基于它做的兼容判定。
+
+> 本表只测**横向溢出**，不测列宽。所以「横溢 0」不等于「排版正常」—— #190 的塌陷就发生在横溢 0 的情况下。
+
+---
+
+## 归因：是 WebView 版本，不是 Android 版本
+
+| 维度 | WebView 83 / API30 | WebView 91 / API31 | WebView 109 / API33 |
+| --- | --- | --- | --- |
+| 主包启动 | 正常 | 正常 | 正常 |
+| `?.` SyntaxError | 无 | 无 | 无 |
+| 兜底页 | 不触发 | 不触发 | 不触发 |
+| 390/360 横向溢出 | 0 | 0 | 0 |
+
+WebView 83 / 91 / 109 跨了 Android 11 / 12 / 13 三个平台版本，启动与兜底行为一致；而 69 / 74（Android 8 / 10）全部因 `?.` 解析失败落兜底卡。
+即：**决定启动成败的是 WebView 内核版本，不是 Android 平台版本。**
+
+严格证明需要「同一 Android 版本换 WebView 版本」的受控对照，**本轮未做** —— 上面的归因是强推断，不是受控实验。
+
+---
+
+## 更正说明（旧结论被推翻）
+
+- **已删除条目 D2「设置 → 数据页签点击后内容不切换」—— 推翻。**
+  `api30/result-p4.json` 里 `settings-data` 屏与 `settings-general` 屏正文长度分别为 **1062 / 775**，文本内容也不同
+  （Data 屏出现 `Delete all chats`、支付记录等条目），说明点击后内容**确实切换了**。
+  当时记录到的「点了不切换」是首次冷启动自动弹出设置页时的**点击时机 / 未重绘**误判，不是产品缺陷。原条目作废，此处留痕。
+- **旧表「api30 P2 未测 / api31 P3 未测 / api33 P2+P4 未测」全部作废**：现已有对应 `result-*.json` 与截图，见上各表。
+
+---
+
+## 未测边界（汇总）
+
+1. **真机**：全程模拟器（x86_64），无任何真机结论。
+2. **厂商 ROM / OPPO 等老 WebView**：完全未覆盖 —— 这是线上症状的真实来源，也是最大缺口。
+3. **WebView 75–82**：无系统镜像，未测，**不得由 Android 版本推断**。
+4. **WebView < 69**：未测，因此兜底出口 ① / ③ 仍未获正向验证。
+5. **API 34 / 35 / 36**：未测。
+6. **同一 Android 版本换 WebView 版本对照**：未做（归因是强推断）。
+7. **发消息 / 收流式回复链路**：未测（无 fake backend、无 key）。
+8. **深色模式 / 横屏 / 多语言**：未测（本轮 locale 为 en-US，UI 呈现英文）。
+9. **P3 弱网**：跑了但没有有效观测（见 P3 节）。
+10. **P4 的 `session` / `import-confirm` 两屏**：三档均未测（选择器未命中 / 按钮 `disabled`）。
+11. **API31 的 P2 四档、API33 的 P2 全部**：未取得结论（前者未跑，后者测具失效）。
+
+---
+
+## 环境更正（仍然有效）
+
+工单曾记录「API 30 / 31 / 33 三个镜像均已在本地」。**该记录对 API 31 是错的**：
+`/d/android-sdk/system-images/android-31/google_apis/x86_64/` 当时只有空壳（`.installer/.installData`，无 `package.xml` / `system.img`），
+`avdmanager` 报 `Error: Package path is not valid. Valid system image paths are: …android-33…, …android-30…`。
+后经 `sdkmanager "system-images;android-31;google_apis;x86_64"`（约 1.1 GB）补齐才建出 AVD。
+
+**后续注意**：不要假设「镜像都在本地」，建 AVD 前先看 `system-images/<api>/<tag>/<abi>/package.xml` 在不在。
+
+---
+
+## 复跑方式
+
+```bash
+export MSYS_NO_PATHCONV=1; export ANDROID_AVD_HOME=D:/android-avd
+export ANDROID_HOME=/d/android-sdk; export ANDROID_SDK_ROOT=/d/android-sdk
+export PATH="/d/android-sdk/platform-tools:$PATH"
+
+# 一次只开一台（AGENTS.md 硬规则：不并发跑模拟器）
+node scripts/compat/boot.mjs --avd compat-api30          # 装 APK + 打印 WebView 原始版本行
+node scripts/compat/p0-fallback.mjs --avd compat-api26 --api 26 --no-kill
+bash scripts/compat/run-p2.sh 30                          # 7 档串行，每档落 result-p2-<档>.json + logcat
+node scripts/compat/p3-net.mjs --api 31                   # 六态弱网
+node scripts/compat/p4-layout.mjs --api 30                # 390 / 360 排版
+
+# 视口手工切换
+adb shell wm size 1080x1920; adb shell wm density 443     # 390 css
+adb shell wm density 480                                   # 360 css
+adb shell wm density reset
+adb emu kill
+```
+
+AVD 保留：`compat-api26`、`compat-api28`、`compat-api29`、`compat-api30`、`compat-api31`、`deepseek-api33`。
