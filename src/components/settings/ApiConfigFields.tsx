@@ -324,7 +324,7 @@ const ModelField = ({ spec }: { spec: ProviderSpec }) => {
               onBlur={() => window.setTimeout(() => setOpen(false), 120)}
             />
             {open && options.length > 0 ? <div className={styles.modelOptions} role="listbox" aria-label={t('settingsModelsAvailable')}>
-              {options.map((model) => <button key={model} type="button" role="option" aria-selected={model === value} className={styles.modelOption} onMouseDown={(event) => event.preventDefault()} onClick={() => { setValue(model); setOpen(false); window.setTimeout(save, 0) }}>{model}</button>)}
+              {options.map((model) => <button key={model} type="button" role="option" aria-selected={model === value} className={styles.modelOption} onMouseDown={(event) => event.preventDefault()} onClick={() => { setValue(model); setOpen(false); if (!setModel(model)) setError('settingsModelInvalid') }}>{model}</button>)}
             </div> : null}
           </div>
           <button type="button" className={styles.confirm} onClick={() => void loadModels()} disabled={status === 'loading'}>
