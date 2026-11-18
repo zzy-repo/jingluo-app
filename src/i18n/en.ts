@@ -180,6 +180,8 @@ export const en = {
   importTraceReasonForbidden: 'no permission (403)',
   importTraceReasonHttp: 'HTTP {status}',
   importTraceReasonStalled: 'stalled (downloaded {done})',
+  importTraceReasonTooLarge: 'too large (server declared {declared}, limit {size}MB)',
+  importTraceReasonTooLargeDownloaded: 'too large (downloaded {done}, limit {size}MB)',
   importTraceHeartbeat: 'still downloading… ({done} / {total} downloaded)',
   importTraceHeartbeatUnknown: 'still downloading… ({done} downloaded)',
   importTraceReasonFormat: 'invalid archive format',
@@ -196,7 +198,10 @@ export const en = {
   historyImportUrlTimeout: 'Download timed out. Check your network and try again.',
   historyImportUrlHttp:
     'The link returned an error status (HTTP {status}). Check that it is still valid.',
-  historyImportUrlTooLarge: 'The file exceeds the {size}MB limit and cannot be imported.',
+  historyImportUrlTooLarge:
+    'The file is too large: the server declared {declared}, over the {size}MB limit.',
+  historyImportUrlTooLargeDownloaded:
+    'The file is too large: downloaded {done}, over the {size}MB limit.',
   historyImportUrlNotZip:
     'Not a valid ZIP file. Check that the link points to a DeepSeek chat history export.',
   historyImportUrlBadResponse: 'The download response could not be parsed. Please try again.',

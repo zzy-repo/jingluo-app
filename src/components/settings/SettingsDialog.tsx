@@ -18,11 +18,13 @@ import {
 import {
   canImportFromUrl,
   importHistoryFromUrl,
+  MAX_ARCHIVE_BYTES,
   UrlImportCancelled,
   type ImportTraceEntry,
   type UrlImportProgress,
 } from '../../services/chat/history/urlImport.js'
 import { copyText } from '../../utils/clipboard.js'
+import { errorMeta, record } from '../../services/diagnostics/collector.js'
 import { useIsMobile } from '../../app/viewport.js'
 import { useChatStore } from '../../services/chat/store.js'
 import {
@@ -513,6 +515,45 @@ const redactTraceText = (text: string): string =>
       }
     })
 
+/**
+ * 失败原因的人话：只按 trace 里的 message 分类，未知一律落到 HTTP/网络。
+ * 超限的两档必须带数字（服务器声明值/已下载 vs 上限），这是 #24 的核心要求。
+ */
+const traceReason = (t: ReturnType<typeof useTranslate>, entry: ImportTraceEntry): string => {
+  switch (entry.message) {
+    case 'unreachable':
+      return t('importTraceReasonUnreachable')
+    case 'interrupted':
+      return t('importTraceReasonInterrupted')
+    case 'timeout':
+      return t('importTraceReasonTimeout')
+    case 'expired':
+      return t('importTraceReasonExpired')
+    case 'signature':
+      return t('importTraceReasonSignature')
+    case 'forbidden':
+      return t('importTraceReasonForbidden')
+    case 'stalled':
+      return t('importTraceReasonStalled', { done: formatBytes(entry.bytes ?? 0) })
+    case 'not-zip':
+      return t('importTraceReasonFormat')
+    case 'too-large':
+      return t('importTraceReasonTooLarge', {
+        declared: formatBytes(entry.totalBytes ?? 0),
+        size: maxMegabytes,
+      })
+    case 'too-large-downloaded':
+      return t('importTraceReasonTooLargeDownloaded', {
+        done: formatBytes(entry.bytes ?? 0),
+        size: maxMegabytes,
+      })
+    default:
+      return entry.status !== undefined && entry.status > 0
+        ? t('importTraceReasonHttp', { status: entry.status })
+        : t('importTraceReasonNetwork')
+  }
+}
+
 /** 一条详情的人话文案；拿不到总数/字节时不编数字。 */
 const traceLine = (t: ReturnType<typeof useTranslate>, entry: ImportTraceEntry): string => {
   switch (entry.kind) {
@@ -549,24 +590,7 @@ const traceLine = (t: ReturnType<typeof useTranslate>, entry: ImportTraceEntry):
       return t('importTraceCancel')
     case 'error':
     default: {
-      const reason =
-        entry.message === 'unreachable'
-          ? t('importTraceReasonUnreachable')
-          : entry.message === 'interrupted'
-            ? t('importTraceReasonInterrupted')
-            : entry.message === 'timeout'
-              ? t('importTraceReasonTimeout')
-              : entry.message === 'expired'
-                ? t('importTraceReasonExpired')
-                : entry.message === 'signature'
-                  ? t('importTraceReasonSignature')
-                  : entry.message === 'forbidden'
-                    ? t('importTraceReasonForbidden')
-                    : entry.message === 'stalled'
-                      ? t('importTraceReasonStalled', { done: formatBytes(entry.bytes ?? 0) })
-                      : entry.status !== undefined && entry.status > 0
-                        ? t('importTraceReasonHttp', { status: entry.status })
-                        : t('importTraceReasonNetwork')
+      const reason = traceReason(t, entry)
       const stage =
         entry.status === undefined || entry.status === 0
           ? t('importTraceStageDownload')
@@ -632,6 +656,9 @@ const formatBytes = (bytes: number): string => {
   }
   return `${(bytes / 1024 / 1024).toFixed(1)}MB`
 }
+
+/** 归档上限的 MB 数：文案里的「上限」必须与 urlImport 的判定同源，不能各写一份。 */
+const maxMegabytes = MAX_ARCHIVE_BYTES / 1024 / 1024
 
 /** 分阶段文案：下载（字节/百分比）→ 解析 → 导入（n/总数），取代原来恒定的「下载中...」。 */
 const progressLabel = (
@@ -717,6 +744,31 @@ const urlErrorStatus = (error: unknown): Status =>
       }
 
 /**
+ * 兜底埋点：导入链路的失败必须在诊断里留一条。
+ *
+ * 背景（Issue #24）：`tooLarge()` 直接 `fail()` 抛 BackupError，而这里以前的 catch 只 `setStatus`，
+ * 于是「文件过大」在日志里**一条都没有**——用户报「导入失败」时既看不到服务器声明了多大，
+ * 也无法判断是真超限还是头部解析误判。
+ *
+ * 分工：`historyImportUrl*`（下载/校验阶段）由 urlImport 在原处记录，字段更全（http.status、
+ * 已下载字节、原始 header）；这里若再记一条，`import_error` 的最后一条就会丢掉这些字段
+ * （诊断契约用例正是断言最后一条的 http.status）。所以本层只补「urlImport 之外」的失败，
+ * 例如 ZIP 解析/写库阶段的 BackupError 与未知错误。
+ */
+const recordImportFailure = (error: unknown) => {
+  if (error instanceof BackupError && error.key.startsWith('historyImportUrl')) {
+    return
+  }
+  record('import_error', 'error', 'import failed: settings catch', {
+    stage: 'url-import',
+    ...(error instanceof BackupError
+      ? { 'error.key': error.key, 'error.params': JSON.stringify(error.params ?? {}) }
+      : {}),
+    ...errorMeta(error),
+  })
+}
+
+/**
  * 导入状态：选中来源后先提示覆盖，确认后才真正导入。
  * 链接导入多一段「分阶段进度」：下载（字节/百分比）→ 解析 → 导入 n/总数；
  * 进度节流 100ms，取消后界面上立刻回到可重试状态（下载结果被丢弃，不写任何数据）。
@@ -777,7 +829,8 @@ const useHistoryImport = () => {
         target: 'file',
         message: { key: count === 1 ? 'historyImportedOne' : 'historyImported', params: { count } },
       })
-    } catch {
+    } catch (error) {
+      recordImportFailure(error)
       setStatus({ target: 'file', message: { key: 'historyImportFailed', error: true } })
     }
   }
@@ -806,6 +859,7 @@ const useHistoryImport = () => {
         resetProgress()
         return
       }
+      recordImportFailure(error)
       setSource(null)
       setStatus({ target: 'url', message: urlErrorStatus(error) })
     }

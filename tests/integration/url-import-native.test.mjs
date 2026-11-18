@@ -253,12 +253,11 @@ const run = async () => {
       },
     })
     await startUrlImport(page)
-    const tooLarge = page.getByText(/文件过大（200MB）/)
+    // #24 起：超限不再是「文件过大（200MB）」这种零信息文案，必须写出服务器声明值与上限
+    const tooLarge = page.getByText(/文件过大/)
     await tooLarge.waitFor({ timeout: 20000 })
-    check(
-      '提示「文件过大（200MB），暂不支持」',
-      /文件过大（200MB）/.test((await tooLarge.first().textContent()) ?? '')
-    )
+    const tooLargeText = (await tooLarge.first().textContent()) ?? ''
+    check('提示「文件过大」，并写出服务器声明值与上限', /文件过大/.test(tooLargeText) && /300\.0MB/.test(tooLargeText) && /200MB/.test(tooLargeText), tooLargeText)
     check('会话数仍为 0', (await sessionCount(page)) === 0)
     check('console error = 0', consoleErrors.length === 0, consoleErrors.join(' | '))
     await browser.close()

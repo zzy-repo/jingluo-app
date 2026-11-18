@@ -142,7 +142,16 @@ const throwIfCancelled = (signal?: AbortSignal) => {
   }
 }
 
-/** 响应头大小写不固定（Android 侧原样返回服务端头），按小写名字取。 */
+/**
+ * 响应头取值。三条来源事实决定了这里的写法（Capacitor 8.6.2）：
+ * - 键的大小写按服务端原样返回（`Content-Length` / `content-length` 都有），所以按小写名字匹配；
+ * - Android 侧 `HttpRequestHandler.buildResponseHeaders` 把 `Map<String,List<String>>` 用
+ *   `TextUtils.join(", ")` 拼成扁平的 string→string，同名多值会变成 `"8192, 8192"`；
+ *   Web 实现可能直接给数组，所以数组与逗号都要处理；
+ * - 值可能带前后空格。
+ * 旧实现直接 `String(headers[key])`：多值时 `Number("8192, 8192")` 是 NaN（大小被当成「未知」），
+ * 带空格或数组时则时好时坏。这里统一成「第一个非空值的第一个逗号段」。
+ */
 const headerValue = (
   headers: Record<string, string> | undefined,
   name: string
@@ -151,7 +160,21 @@ const headerValue = (
     return undefined
   }
   const key = Object.keys(headers).find((item) => item.toLowerCase() === name)
-  return key === undefined ? undefined : String(headers[key])
+  if (key === undefined) {
+    return undefined
+  }
+  const raw: unknown = headers[key]
+  const parts: unknown[] = Array.isArray(raw) ? raw : [raw]
+  for (const part of parts) {
+    if (part === undefined || part === null) {
+      continue
+    }
+    const first = String(part).split(',')[0]?.trim() ?? ''
+    if (first !== '') {
+      return first
+    }
+  }
+  return undefined
 }
 
 /** 响应头里的 Content-Length；拿不到（chunked / 被网关去掉）时返回 undefined。 */
@@ -164,7 +187,10 @@ const contentLength = (headers: Record<string, string> | undefined): number | un
   return Number.isSafeInteger(value) && value >= 0 ? value : undefined
 }
 
-/** `Content-Range: bytes 0-16383/21195845` 里的总大小；分段响应的权威来源。 */
+/**
+ * `Content-Range: bytes 0-16383/21195845` 里的总大小；分段响应的权威来源。
+ * 只认「斜杠后是纯数字」：`bytes 0-1023/*`（总量未知）与 `bytes *\/1234`（416 的形态）都不算。
+ */
 const contentRangeTotal = (headers: Record<string, string> | undefined): number | undefined => {
   const raw = headerValue(headers, 'content-range')
   const match = raw === undefined ? null : /\/(\d+)\s*$/.exec(raw)
@@ -175,7 +201,98 @@ const contentRangeTotal = (headers: Record<string, string> | undefined): number 
   return Number.isSafeInteger(value) && value > 0 ? value : undefined
 }
 
-const tooLarge = (): never => fail('historyImportUrlTooLarge', { size: maxMegabytes })
+/**
+ * 首响应的「大小证据」：原始 header 值 + 推出来的总量。
+ * 为什么要留原始值：这次的 P0（#24「文件过大」零日志）就是因为只留了结论、没留证据，
+ * 事后无法判断「服务器声明的 200MB+」到底是不是真的。
+ */
+type SizeObservation = {
+  contentLength?: string
+  contentRange?: string
+  total?: number
+  source: 'content-range' | 'content-length' | 'downloaded' | 'none'
+}
+
+/**
+ * 从响应头推出「归档总大小」。可信来源只有两种：
+ * - `206` + `Content-Range: bytes a-b/total`（分段响应的权威来源）；
+ * - `200`（服务端忽略 Range，整包已到手）的 `Content-Length`。
+ * `206` 但没有 `Content-Range` 时，`Content-Length` 只是**这一块**的长度，绝不能当成整包大小
+ * （旧实现会把它当 total：进度永远 99%、「不完整」判断失效 —— 见 #24 的回归用例）。
+ */
+const observeSize = (
+  headers: Record<string, string> | undefined,
+  status: number
+): SizeObservation => {
+  const contentLengthRaw = headerValue(headers, 'content-length')
+  const contentRangeRaw = headerValue(headers, 'content-range')
+  const fromRange = contentRangeTotal(headers)
+  if (fromRange !== undefined) {
+    return { contentLength: contentLengthRaw, contentRange: contentRangeRaw, total: fromRange, source: 'content-range' }
+  }
+  if (status === 200) {
+    const length = contentLength(headers)
+    if (length !== undefined) {
+      return { contentLength: contentLengthRaw, contentRange: contentRangeRaw, total: length, source: 'content-length' }
+    }
+  }
+  return { contentLength: contentLengthRaw, contentRange: contentRangeRaw, source: 'none' }
+}
+
+/**
+ * 日志 / 详情里的链接类别：scheme + host + 路径的扩展名。
+ * **不含** query 与 path 正文（预签名链接的 Signature / 对象名都在那里）。
+ */
+const urlSignature = (url: string): string => {
+  try {
+    const parsed = new URL(url)
+    const extension = /(\.[a-z0-9]{1,5})$/i.exec(parsed.pathname)
+    return `${parsed.protocol}//${parsed.host}/*${extension === null ? '' : extension[1].toLowerCase()}`
+  } catch {
+    return 'unparsable'
+  }
+}
+
+/**
+ * 超限终态：必须能回答「谁说的多大 / 上限多少 / 已下载多少」。
+ * - 写一条 `import_error`（reason=too-large，带 observed.* 原始 header 值与脱敏链接类别）；
+ * - 详情里留一条 `too-large`（UI 直接显示声明值 vs 上限）；
+ * - 用户文案带具体数字，不再是「文件过大（200MB）」这种零信息失败。
+ */
+const failTooLarge = (
+  observation: SizeObservation,
+  context: {
+    url: string
+    downloaded: number
+    startedAt: number
+    declared?: number
+    trace?: (entry: ImportTraceEntry) => void
+  }
+): never => {
+  const { url, downloaded, startedAt, declared, trace } = context
+  record('import_error', 'error', 'import download failed: too-large', {
+    stage: 'download',
+    reason: 'too-large',
+    'size.source': observation.source,
+    'download.bytes': downloaded,
+    'max.bytes': MAX_ARCHIVE_BYTES,
+    'max.size': formatSize(MAX_ARCHIVE_BYTES),
+    'observed.content-length': observation.contentLength ?? '(none)',
+    'observed.content-range': observation.contentRange ?? '(none)',
+    'url.signature': urlSignature(url),
+    ...(declared === undefined ? {} : { 'declared.bytes': declared, 'declared.size': formatSize(declared) }),
+  })
+  trace?.({
+    at: Date.now() - startedAt,
+    kind: 'error',
+    message: declared === undefined ? 'too-large-downloaded' : 'too-large',
+    bytes: downloaded,
+    ...(declared === undefined ? {} : { totalBytes: declared }),
+  })
+  return declared === undefined
+    ? fail('historyImportUrlTooLargeDownloaded', { done: formatSize(downloaded), size: maxMegabytes })
+    : fail('historyImportUrlTooLarge', { declared: formatSize(declared), size: maxMegabytes })
+}
 
 /**
  * 403 的错误页文本。
@@ -235,8 +352,10 @@ const fromBase64 = (value: string): Uint8Array<ArrayBuffer> => {
 const toBytes = (data: unknown): Uint8Array<ArrayBuffer> => {
   if (typeof data === 'string') {
     // 每个 base64 字符约 3/4 字节：超限的包不必解码，避免几十 MB 的字符串再膨胀一倍。
-    if (Math.floor((data.length * 3) / 4) > MAX_ARCHIVE_BYTES) {
-      tooLarge()
+    // 这里拿不到响应头、也不是「服务器声明的总量」，所以只按「已拿到的数据」记，不冒充声明值。
+    const estimated = Math.floor((data.length * 3) / 4)
+    if (estimated > MAX_ARCHIVE_BYTES) {
+      failTooLarge({ source: 'downloaded' }, { url: '', downloaded: estimated, startedAt: Date.now() })
     }
     return fromBase64(data)
   }
@@ -676,19 +795,57 @@ const downloadArchive = async (
       }
       let data: unknown = response.data
       response.data = null
-      const bytes = toBytes(data)
+      let bytes: Uint8Array<ArrayBuffer>
+      try {
+        bytes = toBytes(data)
+      } catch (error) {
+        // 解码/取值失败也是「下载阶段失败」，必须留一条（`historyImportUrlTooLarge*` 自己已经记过）。
+        if (!(error instanceof BackupError && error.key.startsWith('historyImportUrlTooLarge'))) {
+          recordDownloadFailure(
+            'bad-response',
+            url,
+            startedAt,
+            {
+              'download.bytes': state.downloaded,
+              ...(state.total === undefined ? {} : { 'download.total': state.total }),
+            },
+            error
+          )
+        }
+        throw error
+      }
       data = null
       if (state.total === undefined) {
-        state.total = contentRangeTotal(response.headers) ?? contentLength(response.headers)
-        if (state.total !== undefined && state.total > MAX_ARCHIVE_BYTES) {
-          tooLarge()
+        // 首响应头就是「大小」的唯一证据来源：原始值与推导结果都记下来（脱敏后进日志），
+        // 以后再出现「文件过大」不必再问用户文件多大。
+        const observation = observeSize(response.headers, status)
+        state.total = observation.total
+        recordEvent('import_stage', 'import: archive size observed', {
+          stage: 'download',
+          'http.status': status,
+          'size.source': observation.source,
+          'observed.content-length': observation.contentLength ?? '(none)',
+          'observed.content-range': observation.contentRange ?? '(none)',
+          'url.signature': urlSignature(url),
+          ...(observation.total === undefined ? {} : { 'declared.bytes': observation.total }),
+          'max.bytes': MAX_ARCHIVE_BYTES,
+        })
+        if (observation.total !== undefined && observation.total > MAX_ARCHIVE_BYTES) {
+          failTooLarge(observation, {
+            url,
+            downloaded: state.downloaded,
+            startedAt,
+            declared: observation.total,
+            trace,
+          })
         }
       }
       if (bytes.byteLength > 0) {
         chunks.push(bytes)
         state.downloaded += bytes.byteLength
         if (state.downloaded > MAX_ARCHIVE_BYTES) {
-          tooLarge()
+          // 头部没说大小（或说小了）：只能按真实到手字节拦，同样要带数字。
+          failTooLarge({ source: 'downloaded' }, { url, downloaded: state.downloaded, startedAt, trace })
         }
         options.onProgress?.({
           phase: 'downloading',
@@ -740,6 +897,12 @@ const downloadArchive = async (
     }
     const bytes = concatChunks(chunks, state.downloaded)
     if (!isZip(bytes)) {
+      // 下载成功但不是 ZIP：也要留一条（用户看到的是「不是有效的 ZIP 文件」，日志里得能对上）。
+      recordDownloadFailure('not-zip', url, startedAt, {
+        'download.bytes': state.downloaded,
+        ...(state.total === undefined ? {} : { 'download.total': state.total }),
+      })
+      trace?.({ at: Date.now() - startedAt, kind: 'error', bytes: state.downloaded, totalBytes: state.total, message: 'not-zip' })
       fail('historyImportUrlNotZip')
     }
     return new File([bytes], ARCHIVE_NAME, { type: 'application/zip' })
