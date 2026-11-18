@@ -197,7 +197,11 @@ test('E-1 产物自检：全部 JS 能用 Chrome 83 的语法解析（无 ||= / 
   assert.ok(result.files >= 40, `产物 JS 文件数异常：${result.files}`)
 
   // 主包单独再确认一遍：三个逻辑赋值运算符在**剥掉字面量之后**一次都不出现
-  const mainFile = jsFiles.find((file) => /\/main\.[0-9a-f]+\.js$/.test(file))
+  // 路径匹配不能写死分隔符：walk() 走 path.join，Windows 上产出的是
+  // `D:\...\dist\static\js\main.<hash>.js`，写死 /\/main\./ 会恒定匹配不到（假红）。
+  // 用 basename 比较，等价于把 [\\/] 写进正则，但也不受 walk() 的拼接方式影响；
+  // 反过来只认反斜杠会在 POSIX 上把这条测回假红，所以两边都不写死。
+  const mainFile = jsFiles.find((file) => /^main\.[0-9a-f]+\.js$/.test(path.basename(file)))
   assert.ok(mainFile, '找不到 main 包')
   const main = readFileSync(mainFile, 'utf8')
   const stripped = stripLiterals(main)
