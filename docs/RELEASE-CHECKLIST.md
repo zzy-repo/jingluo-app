@@ -395,3 +395,6 @@ node scripts/release-upload.mjs --apk $APK --dry-run
   （本单不动 workflow 文件）、以及「用 gh token 代替人推 tag」。
 - 代理与磁盘卫生（Windows 侧 `127.0.0.1:7897`、清 `node_modules` 不删 worktree）见
   [`docs/RELEASE-MANUAL.md`](RELEASE-MANUAL.md) §10。
+- **旧机下线本身不在本清单里**（是运维动作，不是发版动作）。下线前要先在三端口铺「请升级」响应、
+  至少留到下一次发版之后、观察 `426` 命中量衰减再关机；顺序、判据、nginx 骨架与责任人见
+  [`docs/server-migration.md`](server-migration.md) §5。**关机早于「请升级」响应 = 用户只看到网络错误。**

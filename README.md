@@ -55,6 +55,7 @@ build-apk.sh        APK 构建脚本
 docs/               设计与测试文档
 docs/RELEASE-CHECKLIST.md  发版执行清单（命令/判据/回滚，可跨机器交接）
 docs/RELEASE-MANUAL.md  发版手动清单（原理与单机全流程）
+docs/server-migration.md  服务端地址迁移台账（三代地址 / 过渡策略 C：旧机下线强制升级 / 下线执行清单）
 package.json        版本号唯一来源（version / androidVersionCode）
 dist/               构建产物（不纳入版本控制）
 ```
