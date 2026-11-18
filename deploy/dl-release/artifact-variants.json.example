@@ -1,0 +1,10 @@
+{
+  "_comment": "构建变体白名单：只用于【没有 APK 内标记】的历史包。新版本请让构建写入 APK 标记（见 docs/releases-manifest.md 4.1）。键必须是 APK 的 sha256（64 位小写 hex），服务端只读、不信任客户端。",
+  "apks": {
+    "70ffd85dbda2dad35038485466fc69a57d841c0d5dbcbd1d1a6224f61bb3f2d5": {
+      "variant": "internal",
+      "version": "1.4.0-beta.4",
+      "note": "依据 /tmp/rel-run2.log「6/9 构建并校验产物（internal）」+ INTERNAL_BUILD=1；状态文件 1.4.0-beta.4.json 的 commit 1d08b247 / code 11 / md5 28485902…2d21 与线上包一致"
+    }
+  }
+}

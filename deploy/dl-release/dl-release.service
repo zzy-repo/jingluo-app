@@ -1,0 +1,50 @@
+[Unit]
+Description=dl-release — APK 发布接口 (dl.rose7.cn/api/v1/release)
+Documentation=https://github.com/zzy-repo/deepseek-app/blob/main/docs/dl-release-api.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+Group=root
+WorkingDirectory=/opt/dl-release
+ExecStart=/opt/node-current/bin/node /opt/dl-release/server.mjs
+Restart=always
+RestartSec=2
+
+Environment=NODE_ENV=production
+Environment=DL_LISTEN_HOST=127.0.0.1
+Environment=DL_LISTEN_PORT=8799
+Environment=DL_TOKEN_FILE=/etc/dl-release/token
+Environment=DL_APK_DIR=/var/www/dl/apk
+Environment=DL_RELEASES_JSON=/var/www/dl/releases.json
+Environment=DL_PUBLIC_BASE=https://dl.rose7.cn
+Environment=DL_AAPT2=/opt/dl-release/bin/aapt2
+Environment=DL_REQUIRED_PACKAGE=com.example.deepseekchat
+Environment=DL_RATE_LIMIT_MAX=2
+Environment=DL_RATE_LIMIT_WINDOW_S=60
+# 构建变体：APK 内标记名 + 服务器侧 sha256 白名单（历史包补救通道）
+Environment=DL_VARIANT_MARKER=com.example.deepseekchat.ARTIFACT_VARIANT
+Environment=DL_VARIANTS_FILE=/etc/dl-release/artifact-variants.json
+
+# 日志只走 journald（journalctl -u dl-release），不落文件、不打印令牌
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=dl-release
+
+# 轻量加固：可写仅 /var/www/dl 与私有 /tmp（aapt2 需要临时目录）
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/www/dl
+ReadOnlyPaths=/etc/dl-release /opt/dl-release
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+PrivateDevices=true
+MemoryMax=1G
+
+[Install]
+WantedBy=multi-user.target

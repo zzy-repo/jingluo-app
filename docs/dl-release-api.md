@@ -67,7 +67,10 @@ curl -sS -X POST https://dl.rose7.cn/api/v1/release \
   "ok": true,
   "url": "https://dl.rose7.cn/apk/deepseek-chat-1.4.0-beta.4.apk",
   "latest": "1.4.0-beta.4",
-  "md5": "9f2c...（服务端自己算的）"
+  "md5": "9f2c...（服务端自己算的）",
+  "sha256": "70ffd8...（服务端自己算的）",
+  "artifactVariant": "internal",          // 判定不出来时为 null
+  "artifactVariantSource": "apk-manifest" // 或 "sha256-allowlist"；null 表示 unknown
 }
 ```
 
@@ -85,6 +88,7 @@ curl -sS -X POST https://dl.rose7.cn/api/v1/release \
 | 404 | `NOT_FOUND` | 路径不是 `/api/v1/release` |
 | 405 | `METHOD_NOT_ALLOWED` | 非 POST |
 | 409 | `VERSION_CONFLICT` | `versionCode` 不大于当前 `latest`（防降级），且版本号与 latest 不同 |
+| 409 | `VARIANT_CONFLICT` | APK 内变体标记与服务器 sha256 白名单不一致（不静默取一个） |
 | 413 | `PAYLOAD_TOO_LARGE` | APK > 50 MB（或整个请求体超限） |
 | 429 | `RATE_LIMITED` | 同 IP 每分钟超过 2 次，带 `Retry-After` |
 | 500 | `INTERNAL` | 写盘 / 状态文件更新等内部错误 |
@@ -99,13 +103,25 @@ curl -sS -X POST https://dl.rose7.cn/api/v1/release \
 | 4 | 解析真实 versionName/versionCode/packageName | `aapt2 dump badging`（二进制位于 `/opt/dl-release/bin/aapt2`，从 Google Maven `com.android.tools.build:aapt2` 的 `aapt2-<ver>-linux.jar` 解出；ECS 上原本没有 Android SDK） |
 | 5 | 包名白名单 | 必须是 `com.example.deepseekchat` |
 | 6 | 防降级 | APK 真值 `versionCode` 必须 > `releases.json` 当前 latest 的 `versionCode`，否则 `409` |
+| 6b | 算 sha256 | 与 md5 同时计算，写入记录，供 App 内更新做完整性强校验（App 不用 md5 决策） |
+| 6c | 判定构建变体 | APK 内 `com.example.deepseekchat.ARTIFACT_VARIANT` 标记（`aapt2 dump xmltree`）> 服务器 sha256 白名单 > unknown；**客户端 meta 不采信** |
 | 7 | 同版本重传 | `versionName` 与 latest 完全相同时允许覆盖（幂等），记录不重复出现，`releases[]` 数量不变 |
 
 ## 5. 副作用
 
 - APK 落到 `/var/www/dl/apk/deepseek-chat-<version>.apk`（文件名由**服务端解析出的 versionName** 决定，先写 `.upload-*` 临时文件再 `rename`，同一文件系统内原子替换）。
-- `releases.json` 原子更新：同目录临时文件 → `fsync` → `rename` → `fsync` 目录。结构保持 `latest` + `releases[]`（`version` / `versionCode` / `releasedAt` / `file` / `size` / `md5` / `changes` / `buildType` / `breaking`），按 `versionCode` 降序，新版本在首位。
+- `releases.json` 原子更新：同目录临时文件 → `fsync` → `rename` → `fsync` 目录。结构保持 `latest` + `releases[]`（`version` / `versionCode` / `releasedAt` / `file` / `size` / `md5` / `sha256` / `changes` / `buildType` / `breaking`，
+变体可判定时再加 `artifactVariant` + `artifactVariantSource`，判不出来就**不写**该字段），按 `versionCode` 降序，新版本在首位。
 - 失败路径不写任何生产文件（临时文件即删）。
+
+## 5b. 构建变体与白名单（2026-11 新增）
+
+- 上传时的 `meta.artifactVariant` **不被采信**，只记录一条 `meta_variant_ignored` 日志。
+- 变体判定优先级：APK 内标记（`aapt2 dump xmltree` 解析 `<meta-data name="com.example.deepseekchat.ARTIFACT_VARIANT">`）
+  → 服务器 sha256 白名单 `/etc/dl-release/artifact-variants.json` → unknown（不写字段，绝不默认 standard）。
+- 白名单格式：`{"apks": {"<sha256>": {"variant": "internal", "version": "1.4.0-beta.4", "note": "依据…"}}}`
+  （仅 root 可写，服务端只读；只用于没有标记的历史包）。
+- 详细契约见 `docs/releases-manifest.md`。
 
 ## 6. 限流与日志
 

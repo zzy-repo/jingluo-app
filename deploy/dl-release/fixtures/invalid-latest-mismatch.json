@@ -1,0 +1,161 @@
+{
+  "latest": "1.4.0-beta.3",
+  "releases": [
+    {
+      "version": "1.4.0-beta.4",
+      "versionCode": 11,
+      "releasedAt": "2026-11-18T10:29:05+08:00",
+      "file": "apk/deepseek-chat-1.4.0-beta.4.apk",
+      "size": 6213613,
+      "md5": "284859025e2a6c3e747c219756b22d21",
+      "changes": [
+        "新增反馈与日志入口：遇到问题时可在设置里填写说明并提交，提交成功后会得到一个反馈编号",
+        "新增四个渠道可选：DeepSeek 官方 / Anthropic 协议 / OpenAI 兼容 / 我们的渠道，设置里可随时切换",
+        "选择「我们的渠道」只需填写 API Key，地址和模型已内置，不用再配置",
+        "内测版本，建议保留重要聊天记录；遇到问题请通过反馈入口提交"
+      ],
+      "buildType": "prerelease",
+      "breaking": false,
+      "sha256": "70ffd85dbda2dad35038485466fc69a57d841c0d5dbcbd1d1a6224f61bb3f2d5",
+      "artifactVariant": "internal",
+      "artifactVariantSource": "sha256-allowlist"
+    },
+    {
+      "version": "1.4.0-beta.3",
+      "versionCode": 10,
+      "releasedAt": "2026-11-17T23:14:16+08:00",
+      "file": "apk/deepseek-chat-1.4.0-beta.3.apk",
+      "size": 6196188,
+      "md5": "94ebf3e7d8223b032a02322b7b41be14",
+      "changes": [
+        "新增：自动生成会话标题（Anthropic / OpenAI 兼容模式），失败自动回退到本地截取",
+        "修复：手动改名后标题不再被自动覆盖",
+        "优化：标题请求只喂首条消息并限制输出长度，降低 token 消耗"
+      ],
+      "breaking": false
+    },
+    {
+      "version": "1.4.0-beta.2",
+      "versionCode": 9,
+      "releasedAt": "2026-11-17T22:33:29+08:00",
+      "file": "apk/deepseek-chat-1.4.0-beta.2.apk",
+      "size": 6390575,
+      "md5": "a6b0d57bd82b55f38c18f37fefab432f",
+      "changes": [
+        "修复：API Key 在校验失败时不再丢失，上游不可达也能正常配置",
+        "新增：从 URL 直链导入历史会话（仅 App，支持公网导出链接）",
+        "新增：首页快速模式 / 专家模式切换",
+        "优化：侧边栏与设置弹窗动效，修复闪现与点击穿透"
+      ],
+      "breaking": false
+    },
+    {
+      "version": "1.4.0-beta.1",
+      "versionCode": 8,
+      "releasedAt": "2026-11-17T21:21:55+08:00",
+      "file": "apk/deepseek-chat-1.4.0-beta.1.apk",
+      "size": 6185928,
+      "md5": "10d000c1b69c4dc8f06c1e34c614a44d",
+      "changes": [
+        "内测版：服务地址与模型已固定，用户只需填写 API Key",
+        "移除位置信息设置",
+        "隐藏服务类型与配置编辑入口"
+      ],
+      "breaking": false
+    },
+    {
+      "version": "1.3.0",
+      "versionCode": 7,
+      "releasedAt": "2026-11-17T20:54:03+08:00",
+      "file": "apk/deepseek-chat-1.3.0.apk",
+      "size": 6186512,
+      "md5": "cb1e333a33db512770a210b8efcdd851",
+      "changes": [
+        "新增 OpenAI 兼容服务类型，支持 /v1/chat/completions 上游",
+        "内置 OpenAI SSE 到 Anthropic 事件流的翻译层，含脏数据容错",
+        "OpenAI 兼容模式仅保留基础对话，其余入口自动隐藏"
+      ],
+      "breaking": false
+    },
+    {
+      "version": "1.2.3",
+      "versionCode": 6,
+      "releasedAt": "2026-11-17T20:32:57+08:00",
+      "file": "apk/deepseek-chat-1.2.3.apk",
+      "size": 6185056,
+      "md5": "7a7905e3d6836421688d602ef7cf68d1",
+      "changes": [
+        "新增服务类型下拉：默认 DeepSeek 官方只需填 API Key，选 Anthropic 兼容可填服务地址与模型",
+        "Anthropic 兼容模式仅保留基础对话，其余入口自动隐藏",
+        "上游返回网页内容时给出明确错误，不再把 HTML 当回答显示"
+      ],
+      "breaking": false
+    },
+    {
+      "version": "1.2.2",
+      "versionCode": 5,
+      "releasedAt": "2026-11-17T19:51:58+08:00",
+      "file": "apk/deepseek-chat-1.2.2.apk",
+      "size": 6183196,
+      "md5": "0d25b4308609304024aaa8e813ded57f",
+      "changes": [
+        "修复设置页「测试」按钮误报 Invalid api key",
+        "未填 API Key 时直接提示请先填写"
+      ],
+      "breaking": false
+    },
+    {
+      "version": "1.2.1",
+      "versionCode": 4,
+      "releasedAt": "2026-11-17T19:20:45+08:00",
+      "file": "apk/deepseek-chat-1.2.1.apk",
+      "size": 6183036,
+      "md5": "ab903986a57336698deb768ac271e349",
+      "changes": [
+        "修复 Android 端填写 http 上游地址时提示无法连接的问题（WebView 混合内容限制）"
+      ],
+      "breaking": false
+    },
+    {
+      "version": "1.2.0",
+      "versionCode": 3,
+      "releasedAt": "2026-11-17T18:17:33+08:00",
+      "file": "apk/deepseek-chat-1.2.0.apk",
+      "size": 6183000,
+      "md5": "e5729dca806903a7467ba25aac16e756",
+      "changes": [
+        "新增聊天背景图：可上传本地图片作为聊天背景，图片仅保存在本设备",
+        "背景图自动适配亮色/暗色主题遮罩，保证文字可读",
+        "上传前自动压缩，最长边 1600px"
+      ],
+      "breaking": false
+    },
+    {
+      "version": "1.1.0",
+      "versionCode": 2,
+      "releasedAt": "2026-11-17T17:43:40+08:00",
+      "file": "apk/deepseek-chat-1.1.0.apk",
+      "size": 6180624,
+      "md5": "f7b3ce886b99752f8e26991bd338240b",
+      "changes": [
+        "新增服务地址（Service URL）自定义，可指向任意 Anthropic 兼容上游",
+        "新增模型（Model）自定义，可填上游真实模型名",
+        "API Key 支持连通性测试，显示 HTTP 状态与可用模型列表"
+      ],
+      "breaking": false
+    },
+    {
+      "version": "1.0.0",
+      "versionCode": 1,
+      "releasedAt": "2026-11-17T17:00:00+08:00",
+      "file": "apk/deepseek-chat-1.0.0.apk",
+      "size": 6178728,
+      "md5": "c8b2afc8a067345f134fc3db7ffe5ead",
+      "changes": [
+        "首个版本：DeepSeek 客户端套壳",
+        "支持自定义服务地址与模型"
+      ],
+      "breaking": false
+    }
+  ]
+}
