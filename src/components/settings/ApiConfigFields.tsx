@@ -318,7 +318,7 @@ const ModelField = ({ spec }: { spec: ProviderSpec }) => {
     window.setTimeout(() => { selecting.current = false }, 0)
   }
   return (
-    <div className={styles.cell}>
+    <div className={`${styles.cell} ${open ? styles.modelCellOpen : ''}`}>
       <div className={styles.apiKey}>
         <div className={styles.label}>{t('settingsModelLabel')}</div>
         <div className={styles.apiKeyInput}>
