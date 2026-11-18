@@ -1,4 +1,7 @@
 import clsx from 'clsx'
+import { Capacitor } from '@capacitor/core'
+import { saveFeedbackText } from '../../services/diagnostics/save.js'
+import { saveFeedbackExport } from '../../services/diagnostics/export.js'
 import { useRef, useState } from 'react'
 import { useTranslate, type TranslationKey } from '../../i18n/index.js'
 import {
@@ -33,6 +36,38 @@ import styles from './Settings.module.css'
 /** 日志预览最多显示的条数（实际提交的是最近 500 条 / 30 分钟，见 collector.ts） */
 const PREVIEW_LIMIT = 20
 
+const readInitialSnapshot = (): LogSnapshot => {
+  try {
+    return getDiagnosticsSnapshot()
+  } catch {
+    return {
+      schemaVersion: 1,
+      app: {
+        version: typeof __APP_VERSION__ === 'undefined' ? 'unknown' : __APP_VERSION__,
+        versionCode: 0,
+        buildType: 'unknown',
+        platform: 'unknown',
+      },
+      device: {
+        model: 'unknown',
+        androidVersion: 'unknown',
+        webviewVersion: 'unknown',
+        screen: 'unknown',
+        locale: 'unknown',
+      },
+      client: { clientId: '', sessionId: '' },
+      logs: [],
+    }
+  }
+}
+const readInitialCoverage = (): LogCoverage => {
+  try {
+    return inspectLogCoverage()
+  } catch {
+    return { count: 0, spanMs: 0, kinds: [], missing: [], warnings: [], actions: [] }
+  }
+}
+
 /** 错误码 → 文案 key：区分网络 / 超时 / 体积 / 限流 / 服务端 / 凭证 */
 const ERROR_KEYS: Record<FeedbackErrorCode, TranslationKey> = {
   network: 'feedbackErrorNetwork',
@@ -56,7 +91,7 @@ type Phase =
   | { kind: 'edit' }
   | { kind: 'submitting' }
   | { kind: 'done'; id: string; logSize?: number }
-  | { kind: 'failed'; code: FeedbackErrorCode; description: string }
+  | { kind: 'failed'; code: FeedbackErrorCode; description: string; at: number }
 
 const categories: { value: FeedbackCategory; label: TranslationKey }[] = [
   { value: 'bug', label: 'feedbackCategoryBug' },
@@ -91,9 +126,7 @@ export const FeedbackDialog = ({
   onClose: () => void
 }) => {
   const { mounted, visible } = usePresence(open, MOTION_EXIT.modal)
-  return mounted ? (
-    <FeedbackForm visible={visible} integrity={integrity} onClose={onClose} />
-  ) : null
+  return mounted ? <FeedbackForm visible={visible} integrity={integrity} onClose={onClose} /> : null
 }
 
 const FeedbackForm = ({
@@ -110,15 +143,58 @@ const FeedbackForm = ({
   const [contact, setContact] = useState('')
   const [category, setCategory] = useState<FeedbackCategory>('bug')
   // 打开时取一次快照：预览与提交用同一批日志，用户看到的就是要上传的
-  const [snapshot, setSnapshot] = useState<LogSnapshot>(() => getDiagnosticsSnapshot())
+  const [snapshot, setSnapshot] = useState<LogSnapshot>(readInitialSnapshot)
   // 提交前自检（条数 / 时间跨度 / 事件类型覆盖 / 缺失项）
-  const [coverage, setCoverage] = useState<LogCoverage>(() => inspectLogCoverage())
+  const [coverage, setCoverage] = useState<LogCoverage>(readInitialCoverage)
   const [previewOpen, setPreviewOpen] = useState(false)
   const [integrityOpen, setIntegrityOpen] = useState(integrity)
   const [screenshot, setScreenshot] = useState<string | null>(null)
   const [shotBusy, setShotBusy] = useState(false)
   const [phase, setPhase] = useState<Phase>({ kind: 'edit' })
   const [copied, setCopied] = useState(false)
+  const [exportBusy, setExportBusy] = useState(false)
+  const [exportNotice, setExportNotice] = useState('')
+  const exportInProgress = useRef(false)
+
+  const onExport = async () => {
+    if (exportInProgress.current) {
+      return
+    }
+    exportInProgress.current = true
+    setExportBusy(true)
+    setExportNotice('')
+    try {
+      const result = await saveFeedbackExport(
+        snapshot,
+        {
+          category,
+          ...(phase.kind === 'failed' ? { failure: { code: phase.code, at: phase.at } } : {}),
+        },
+        saveFeedbackText
+      )
+      if (result.status === 'saved') {
+        setExportNotice(
+          [
+            t(
+              Capacitor.isNativePlatform() ? 'feedbackExportNativeSaved' : 'feedbackExportWebSaved',
+              { filename: result.filename }
+            ),
+            result.snapshotReadFailed ? t('feedbackExportReadFailed') : '',
+            result.truncated ? t('feedbackExportTruncated') : '',
+          ]
+            .filter(Boolean)
+            .join(' ')
+        )
+      } else {
+        setExportNotice(
+          t(result.status === 'cancelled' ? 'feedbackExportCancelled' : 'feedbackExportFailed')
+        )
+      }
+    } finally {
+      setExportBusy(false)
+      exportInProgress.current = false
+    }
+  }
   const fileRef = useRef<HTMLInputElement>(null)
   const submitting = useRef(false)
 
@@ -128,8 +204,15 @@ const FeedbackForm = ({
   const canSubmit = description.trim() !== '' && phase.kind !== 'submitting'
 
   const refresh = () => {
-    setSnapshot(getDiagnosticsSnapshot())
-    setCoverage(inspectLogCoverage())
+    // A failed refresh must not replace the existing preview with empty logs.
+    try {
+      const nextSnapshot = getDiagnosticsSnapshot()
+      const nextCoverage = inspectLogCoverage()
+      setSnapshot(nextSnapshot)
+      setCoverage(nextCoverage)
+    } catch {
+      setExportNotice(t('feedbackExportReadFailed'))
+    }
   }
 
   const onPickScreenshot = async (file: File) => {
@@ -167,9 +250,22 @@ const FeedbackForm = ({
         })
         refresh()
       } else {
-        setPhase({ kind: 'failed', code: result.error, description: result.message })
+        setPhase({
+          kind: 'failed',
+          code: result.error,
+          description: result.message,
+          at: Date.now(),
+        })
         refresh()
       }
+    } catch {
+      setPhase({
+        kind: 'failed',
+        code: 'unknown',
+        description: t('feedbackErrorUnknown'),
+        at: Date.now(),
+      })
+      refresh()
     } finally {
       submitting.current = false
     }
@@ -263,6 +359,19 @@ const FeedbackForm = ({
               : ''}
           </div>
         ) : null}
+
+        <section className={styles.feedbackField} aria-label={t('feedbackExport')}>
+          <div className={styles.feedbackLabel}>{t('feedbackExport')}</div>
+          <div className={styles.feedbackHint}>{t('feedbackExportHint')}</div>
+          <Button variant="outlined" disabled={exportBusy} onClick={() => void onExport()}>
+            {t(exportBusy ? 'feedbackExportBusy' : 'feedbackSaveFile')}
+          </Button>
+          {exportNotice ? (
+            <div className={styles.feedbackHint} role="status">
+              {exportNotice}
+            </div>
+          ) : null}
+        </section>
 
         <div className={styles.feedbackField}>
           <label className={styles.feedbackLabel} htmlFor="feedback-description">
@@ -372,7 +481,9 @@ const FeedbackForm = ({
               <div>{t('feedbackIntegritySpan', { span: formatSpan(coverage.spanMs) })}</div>
               <div>
                 {t('feedbackIntegrityKinds', { count: coverage.kinds.length })}
-                {coverage.kinds.length > 0 ? `　${t('feedbackIntegrityKindList', { kinds: coverage.kinds.join(', ') })}` : ''}
+                {coverage.kinds.length > 0
+                  ? `　${t('feedbackIntegrityKindList', { kinds: coverage.kinds.join(', ') })}`
+                  : ''}
               </div>
               <div>{t('feedbackIntegrityMissing', { kinds: missingText })}</div>
               <div>{t('feedbackActionsLabel', { actions: coverage.actions.length })}</div>
@@ -387,7 +498,9 @@ const FeedbackForm = ({
               <div className={styles.feedbackHint}>{t('feedbackScreenshotReady')}</div>
             ) : null}
           </div>
-          {screenshot ? <img className={styles.feedbackShotPreview} src={screenshot} alt="" /> : null}
+          {screenshot ? (
+            <img className={styles.feedbackShotPreview} src={screenshot} alt="" />
+          ) : null}
           <Button
             variant="outlined"
             size="m"
