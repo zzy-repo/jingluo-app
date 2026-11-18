@@ -50,6 +50,12 @@ const RULES = [
   { match: /^src\/services\/diagnostics\//, tests: ['tests/unit/feedback-export', 'tests/unit/diagnostics-system-info', 'tests/integration/diagnostics-contract', 'tests/integration/feedback-export'] },
   { match: /^src\/components\/sider\/|^src\/components\/session\//, tests: ['tests/integration/motion', 'tests/integration/mode-switch', 'tests/integration/mode-switch-plain'] },
   { match: /^src\/components\/base\//, tests: ['tests/integration/motion'] },
+  // 剪贴板 / 超长文本保存（#2）：单测 + 浏览器回归
+  { match: /^src\/utils\/clipboard\.ts$|^src\/components\/messages\/CopyButton/, tests: ['tests/unit/copy-limit', 'tests/integration/copy-limit'] },
+  // 我们的渠道额度/卡密（#7）
+  { match: /^src\/services\/ours\//, tests: ['tests/unit/ours-api', 'tests/integration/ours-services'] },
+  // 链接导入分阶段进度（#25）
+  { match: /^src\/services\/chat\/history\/urlImport\.ts$/, tests: ['tests/unit/url-import-stall', 'tests/integration/url-import-stages', 'tests/integration/url-import-native'] },
   // 构建脚本 / 注入常量本身：产物形状变了，跑构建类用例
   { match: /^(rspack\.config\.ts|src\/index\.html)$/, tests: ['tests/integration/internal-build', 'tests/integration/auto-title'] },
   // Android 原生侧：node 层只能跑单测，其余归 device 层（本门禁不跑）
