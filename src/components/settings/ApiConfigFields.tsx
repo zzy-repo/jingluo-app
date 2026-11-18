@@ -309,6 +309,14 @@ const ModelField = ({ spec }: { spec: ProviderSpec }) => {
 
   const options = models.includes(value.trim()) || !value.trim() ? models : [value.trim(), ...models]
   const [open, setOpen] = useState(false)
+  const selecting = useRef(false)
+  const chooseModel = (model: string) => {
+    selecting.current = true
+    setValue(model)
+    setOpen(false)
+    if (!setModel(model)) setError('settingsModelInvalid')
+    window.setTimeout(() => { selecting.current = false }, 0)
+  }
   return (
     <div className={styles.cell}>
       <div className={styles.apiKey}>
@@ -321,10 +329,10 @@ const ModelField = ({ spec }: { spec: ProviderSpec }) => {
               onFocus={() => setOpen(true)}
               onChange={(event) => { setValue(event.target.value); setError(null); setOpen(true) }}
               onKeyDown={(event) => { if (event.key === 'Escape') setOpen(false); if (event.key === 'Enter' && !event.nativeEvent.isComposing) { save(); setOpen(false) } }}
-              onBlur={() => window.setTimeout(() => setOpen(false), 120)}
+              onBlur={() => { setOpen(false); if (!selecting.current) save() }}
             />
             {open && options.length > 0 ? <div className={styles.modelOptions} role="listbox" aria-label={t('settingsModelsAvailable')}>
-              {options.map((model) => <button key={model} type="button" role="option" aria-selected={model === value} className={styles.modelOption} onMouseDown={(event) => event.preventDefault()} onClick={() => { setValue(model); setOpen(false); if (!setModel(model)) setError('settingsModelInvalid') }}>{model}</button>)}
+              {options.map((model) => <button key={model} type="button" role="option" aria-selected={model === value} className={styles.modelOption} onMouseDown={(event) => event.preventDefault()} onClick={() => chooseModel(model)}>{model}</button>)}
             </div> : null}
           </div>
           <button type="button" className={styles.confirm} onClick={() => void loadModels()} disabled={status === 'loading'}>
