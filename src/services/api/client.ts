@@ -12,7 +12,7 @@ import type { ProviderSpec } from './providers.js'
 import { parseModelPayload } from './modelPayload.js'
 export { parseModelPayload, pickModelIds } from './modelPayload.js'
 import { readMessageEvent } from './parseEvent.js'
-import { readServerSentEvents } from './sse.js'
+import { StreamIdleTimeoutError, readServerSentEvents } from './sse.js'
 import type {
   ApiErrorBody,
   CreateMessageRequest,
@@ -33,7 +33,11 @@ const FILES_BETA = 'files-api-2025-04-14'
  * 流在 message_start 之后、message_stop 之前结束（连接被掐断、代理超时、读到一半报错）
  * 请求在超时预算内没拿到响应头
  */
-export type ApiErrorCode = 'upstream_returned_html' | 'stream_interrupted' | 'request_timed_out'
+export type ApiErrorCode =
+  | 'upstream_returned_html'
+  | 'stream_interrupted'
+  | 'request_timed_out'
+  | 'stream_idle'
 
 export type ApiErrorKind =
   /** 非 2xx 响应 */
@@ -48,6 +52,11 @@ export type ApiErrorKind =
   | 'protocol'
   /** 预算内没拿到响应头：上游把连接晾着（与没到达服务端、4xx/5xx 都不同） */
   | 'timeout'
+  /**
+   * 响应头已经到手、正文也开始了，但连续一段时间没有新数据（#150）。
+   * 与 timeout 的区别是失败发生的位置，与 interrupted 的区别是连接没断、只是不动。
+   */
+  | 'idle'
 
 export class ApiError extends Error {
   readonly kind: ApiErrorKind
@@ -137,6 +146,44 @@ export const setRequestTimeout = (ms: number): void => {
 }
 
 export const getRequestTimeout = (): number => requestTimeoutMs
+
+/**
+ * 流式正文的空闲超时（#150）：响应头到手之后，到「读到下一段数据」之间最多允许多久没动静。
+ *
+ * 为什么是 45 秒：
+ * - 15 秒（DEFAULT_REQUEST_TIMEOUT_MS）是建连预算，直接套到正文上太紧：弱网下长回答
+ *   几十秒才吐下一个分片是常事（#133 的 S3 就是每 3 秒来 1 个字节），照这个数会误杀正常回答；
+ * - 仓库里已有「连续 40 秒没有新字节就判死」的口径（history/urlImport.ts 的
+ *   DOWNLOAD_STALL_MS），同为弱网下载场景，取同一个量级，不另立一套判据；
+ * - 界面 60 秒会提示「等待时间过长，可以停止后重新生成」（streamNotice 的 stalled 档），
+ *   超时要在那之前落地，否则用户只看到一句「要不要停」却永远等不到结论；
+ * - 这是「空闲」口径不是总时长：每读到一段新数据就重新计时，长回答持续出字永远不会被杀。
+ */
+export const STREAM_IDLE_TIMEOUT_MS = 45000
+
+let streamIdleTimeoutMs = STREAM_IDLE_TIMEOUT_MS
+
+/** 空闲超时（毫秒）：合法正数生效，0 / NaN / 非数字一律回到默认，不做成「永不超时」 */
+export const setStreamIdleTimeout = (ms: number): void => {
+  streamIdleTimeoutMs = Number.isFinite(ms) && ms > 0 ? Math.round(ms) : STREAM_IDLE_TIMEOUT_MS
+}
+
+export const getStreamIdleTimeout = (): number => streamIdleTimeoutMs
+
+/**
+ * 空闲超时错误：独立的 kind + code，上层可以（也应该）与「请求超时」「断流」分开处理。
+ * 文案复用 replyWaitingStalled（「等待时间过长，可以停止后重新生成」）——语义是
+ * 「等了太久、还能重来」，不是 requestTimeout 的「没有响应」；新增 i18n key 会和并行
+ * 分支抢同一批文件，这一单先复用，等文案统一时再换专用 key（见 PR 说明）。
+ */
+const streamIdleTimedOut = (idleMs: number, detail?: string): ApiError =>
+  new ApiError(
+    'idle',
+    { key: 'replyWaitingStalled' },
+    undefined,
+    'stream_idle',
+    detail ?? `no data for ${idleMs}ms`
+  )
 
 /** 超时与「没到达服务端」「4xx/5xx」分开：它有自己的 kind / code / 文案 */
 const requestTimedOut = (timeoutMs: number, detail?: string): ApiError =>
@@ -351,15 +398,22 @@ async function* streamOpenAIMessage(
     throw await readErrorResponse(response, 'protocol', '')
   }
   try {
-    for await (const event of translateOpenAIStream(readServerSentEvents(response.body, signal), {
-      model: body.model,
-    })) {
+    for await (const event of translateOpenAIStream(
+      readServerSentEvents(response.body, signal, getStreamIdleTimeout()),
+      {
+        model: body.model,
+      }
+    )) {
       yield event
       if (event.type === 'message_stop') {
         return
       }
     }
   } catch (error) {
+    // 正文阶段长时间没有新数据（#150）：先认它，别并进「断流」
+    if (error instanceof StreamIdleTimeoutError) {
+      throw streamIdleTimedOut(error.idleMs, error.message)
+    }
     if (error instanceof OpenAIStreamError) {
       throw new ApiError('stream', error.message)
     }
@@ -401,7 +455,11 @@ export async function* streamMessage(
     throw await readErrorResponse(response, 'protocol', '')
   }
   try {
-    for await (const { event: eventName, data } of readServerSentEvents(response.body, signal)) {
+    for await (const { event: eventName, data } of readServerSentEvents(
+      response.body,
+      signal,
+      getStreamIdleTimeout()
+    )) {
       let payload: unknown
       try {
         payload = JSON.parse(data)
@@ -426,6 +484,11 @@ export async function* streamMessage(
       }
     }
   } catch (error) {
+    // 正文阶段长时间没有新数据（#150）：单独一类错误，保留已收内容并允许重试；
+    // 不能落到下面的 streamInterrupted，那会把「不动」说成「断了」。
+    if (error instanceof StreamIdleTimeoutError) {
+      throw streamIdleTimedOut(error.idleMs, error.message)
+    }
     // 上面的错误帧与中止请求已经有明确分类，原样上抛
     if (error instanceof ApiError || signal.aborted) {
       throw error

@@ -18,6 +18,11 @@ export type ApiErrorCondition =
   | 'network'
   /** 流已开始但没收到 message_stop：连接中断，和「请求没发出去」要分开 */
   | 'interrupted'
+  /**
+   * 正文阶段连续一段时间没有新数据（#150）：连接没断，只是不动。
+   * 和 interrupted（断了）分开归类，上层才能各自给文案与重试策略。
+   */
+  | 'idle'
   | 'other'
 
 /**
@@ -71,6 +76,10 @@ export const classifyApiError = (error: unknown): ApiErrorCondition => {
   if (error.kind === 'interrupted') {
     return 'interrupted'
   }
+  // 空闲超时同理：它没有状态码，但语义明确，不能落到下面的 other 里
+  if (error.kind === 'idle') {
+    return 'idle'
+  }
   // 413 本身就是请求体超限；上游用文字说「上下文太长」时状态码常是 400，也要认出来
   if (error.status === 413 || isContextLimitMessage([error.message, error.detail ?? ''].join('\n'))) {
     return 'contextLimit'
@@ -84,7 +93,8 @@ export const classifyApiError = (error: unknown): ApiErrorCondition => {
 /** 重试可能成功的情况：网络、超时、断流、限流、服务端繁忙；参数或鉴权类错误重试无用 */
 export const isRetryableApiError = (error: unknown): boolean => {
   // 超时等价于「这一轮没等到响应」：重试是有效的，不能因为没状态码就归到 other
-  if (error instanceof ApiError && error.kind === 'timeout') {
+  // 空闲超时（#150）同理：换一条连接通常就好了，用户不必自己点重试
+  if (error instanceof ApiError && (error.kind === 'timeout' || error.kind === 'idle')) {
     return true
   }
   const condition = classifyApiError(error)

@@ -39,6 +39,10 @@ export const describeReply = (reply: AssistantMessage): Notice | null => {
     if (kind === 'interrupted') {
       return { text: localized || translate('replyStreamInterrupted') }
     }
+    // 正文阶段长时间没有新数据（#150）：连接还在，只是上游不动了，说「等待时间过长」而不是「断网」
+    if (kind === 'idle') {
+      return { text: localized || translate('replyWaitingStalled') }
+    }
     if (kind === 'network') {
       return { text: translate('commonNetworkErrorToast') }
     }

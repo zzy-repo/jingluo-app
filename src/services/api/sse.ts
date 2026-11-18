@@ -99,12 +99,33 @@ export class ServerSentEventDecoder {
 }
 
 /**
+ * 「一个字节都没来」已经超过约定时长（#150）。
+ * 单独一类错误：它既不是连接断了（interrupted），也不是请求没发出去（timeout），
+ * 上层要能自己判断（保留已收内容、允许重试）。
+ */
+export class StreamIdleTimeoutError extends Error {
+  /** 判定为空闲超时用的阈值（毫秒） */
+  readonly idleMs: number
+
+  constructor(idleMs: number) {
+    super(`no data received for ${idleMs}ms`)
+    this.name = 'StreamIdleTimeoutError'
+    this.idleMs = idleMs
+  }
+}
+
+/**
  * 逐个产出字节流中的 SSE 事件；流读完即结束。
  * 中止或调用方提前退出时取消读取以释放连接，不依赖底层网络把中止传到响应体。
+ *
+ * `idleTimeoutMs` 是「空闲」口径，不是总时长：每收到一段新数据就重新计时，
+ * 所以长回答慢一点也不会被掐；只有上游不断也不动（#150 的 S3）才会到点。
+ * 不传 / 非正数表示不启用（autoTitle 等短请求不需要）。
  */
 export async function* readServerSentEvents(
   stream: ReadableStream<Uint8Array>,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  idleTimeoutMs = 0
 ): AsyncGenerator<ServerSentEvent> {
   const reader = stream.getReader()
   const onAbort = () => {
@@ -114,10 +135,35 @@ export async function* readServerSentEvents(
   // TextDecoder 默认会去掉开头的 BOM；stream: true 保证多字节字符跨分片时不被截断
   const textDecoder = new TextDecoder()
   const decoder = new ServerSentEventDecoder()
+  const idleBudget =
+    Number.isFinite(idleTimeoutMs) && idleTimeoutMs > 0 ? Math.round(idleTimeoutMs) : 0
+  /**
+   * 读下一段数据，同时给这次等待套一个空闲预算。
+   * 到点先取消读取（真正断开连接，不留悬挂 socket），再抛空闲超时。
+   */
+  const readWithinIdleBudget = async (): Promise<ReadableStreamReadResult<Uint8Array>> => {
+    if (!idleBudget) {
+      return reader.read()
+    }
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const idle = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => {
+        // 先判定超时，再断开连接：反过来会让 cancel 先把挂起的 read 结算成 done，
+        // 上层会把它当成「流正常结束」而不是空闲超时。
+        reject(new StreamIdleTimeoutError(idleBudget))
+        reader.cancel().catch(() => {})
+      }, idleBudget)
+    })
+    try {
+      return await Promise.race([reader.read(), idle])
+    } finally {
+      clearTimeout(timer)
+    }
+  }
   let finished = false
   try {
     for (;;) {
-      const { done, value } = await reader.read()
+      const { done, value } = await readWithinIdleBudget()
       if (done) {
         finished = true
         yield* decoder.push(textDecoder.decode())
