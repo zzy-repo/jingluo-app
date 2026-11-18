@@ -81,10 +81,61 @@ export const writeStoredOrder = (
   try {
     if (order === null) {
       storage.removeItem(ORDER_STORAGE_KEY)
-      return
+    } else {
+      storage.setItem(ORDER_STORAGE_KEY, JSON.stringify(order))
     }
-    storage.setItem(ORDER_STORAGE_KEY, JSON.stringify(order))
   } catch {
     // 存不进去只影响「重开设置后自动续查」，不影响本次轮询
+    return
+  }
+  notifyStoredOrder()
+}
+
+/**
+ * 存档变化通知（Issue #157）。
+ *
+ * 为什么需要它：存档是**单一真相**，但写它的地方不止一个（原生 /buy 的 startCheckout、
+ * 网页版付款回跳的 returnParams、另一个标签页的回跳）。轮询如果只在挂载时读一次，
+ * 就会抱着旧单号一直查下去 —— 那正是「付了款还显示等待支付」的第二个成因。
+ * 订阅后，任何一次写入都会让正在轮询的那一处重新读存档、必要时换单。
+ */
+type StoredOrderListener = () => void
+
+const listeners = new Set<StoredOrderListener>()
+
+const notifyStoredOrder = (): void => {
+  for (const listener of [...listeners]) {
+    try {
+      listener()
+    } catch {
+      // 单个订阅者出错不许影响写入方（写存档是主流程）
+    }
+  }
+}
+
+/**
+ * 订阅存档变化：进程内写入（writeStoredOrder）+ 跨标签页写入（storage 事件）都算。
+ * `win` 可注入（Node 单测传假 window）；不传就只订阅进程内通知。
+ */
+export const subscribeStoredOrder = (
+  listener: StoredOrderListener,
+  win?: { addEventListener?: (type: string, fn: (event: { key?: string | null }) => void) => void; removeEventListener?: (type: string, fn: (event: { key?: string | null }) => void) => void } | null
+): (() => void) => {
+  listeners.add(listener)
+  const onStorage = (event: { key?: string | null }): void => {
+    // key === null 是 localStorage.clear()：也当作存档可能变了
+    if (event.key === undefined || event.key === null || event.key === ORDER_STORAGE_KEY) {
+      listener()
+    }
+  }
+  const canListen = typeof win?.addEventListener === 'function'
+  if (canListen) {
+    win?.addEventListener?.('storage', onStorage)
+  }
+  return () => {
+    listeners.delete(listener)
+    if (canListen) {
+      win?.removeEventListener?.('storage', onStorage)
+    }
   }
 }

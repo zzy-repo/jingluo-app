@@ -16,7 +16,7 @@
  */
 
 import { parseOrderReturn, type OursOrderReturn } from './api.js'
-import { writeStoredOrder, type OrderStorage } from './orderStore.js'
+import { ORDER_RESUME_MAX_AGE_MS, readStoredOrder, writeStoredOrder, type OrderStorage } from './orderStore.js'
 
 /** 由我们负责从地址栏清掉的键（`no` 与 `out_trade_no` 是同一个单号的两种写法） */
 export const ORDER_RETURN_KEYS = ['no', 'out_trade_no', 'order_token'] as const
@@ -42,13 +42,22 @@ export const stripOrderReturn = (location: {
 }
 
 /**
+ * 回跳解析结果：单号 + 令牌，外加「这次覆盖掉了一笔还没完成的旧单」。
+ *
+ * Issue #157：网页版发起 /buy 时是顶层导航，拿不到 Location，也就拿不到新单号 ——
+ * 单号只能靠回跳参数带回来，所以**覆盖存档就发生在这里**。覆盖时如果旧存档是一笔
+ * 30 分钟内、单号不同的未完成订单，界面上要明确说一句「上一笔未支付订单已失效」。
+ */
+export type OursOrderReturnResult = OursOrderReturn & { replacedUnpaidOrder: boolean }
+
+/**
  * 读一次回跳参数：没有就返回 null（正常打开页面，不查单）；
- * 有则清掉地址栏参数 + 落盘，并把单号 / 令牌返回给调用方。
+ * 有则清掉地址栏参数 + 落盘（**覆盖**旧存档），并把单号 / 令牌返回给调用方。
  */
 export const consumeOrderReturn = (
   win: OrderReturnWindow,
   options: { now?: () => number; storage?: OrderStorage | null } = {}
-): OursOrderReturn | null => {
+): OursOrderReturnResult | null => {
   const parsed = parseOrderReturn(win.location.search)
   if (parsed === null) {
     return null
@@ -58,14 +67,20 @@ export const consumeOrderReturn = (
   } catch {
     // 清不掉地址栏不影响查单本身（只是刷新会再解析一次）
   }
+  const now = options.now?.() ?? Date.now()
+  const previous = readStoredOrder(options.storage)
+  const replacedUnpaidOrder =
+    previous !== null &&
+    previous.outTradeNo !== parsed.outTradeNo &&
+    now - previous.startedAt <= ORDER_RESUME_MAX_AGE_MS
   writeStoredOrder(
     {
       outTradeNo: parsed.outTradeNo,
       orderToken: parsed.orderToken,
       planId: '',
-      startedAt: options.now?.() ?? Date.now(),
+      startedAt: now,
     },
     options.storage
   )
-  return parsed
+  return { ...parsed, replacedUnpaidOrder }
 }

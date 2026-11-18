@@ -13,6 +13,7 @@ import {
   probeApiKey,
   startCheckout,
   type OursKeyProbe,
+  type OursLatestFulfilled,
   type OursMessageKey,
   type OursOrderStatus,
   type OursPlansState,
@@ -39,12 +40,22 @@ import {
   markDeviceBackupHintSeen,
   shouldShowDeviceBackupHint,
 } from '../../services/invite/device.js'
-import { readStoredOrder, writeStoredOrder, ORDER_RESUME_MAX_AGE_MS } from '../../services/ours/orderStore.js'
+import {
+  readStoredOrder,
+  subscribeStoredOrder,
+  writeStoredOrder,
+  ORDER_RESUME_MAX_AGE_MS,
+} from '../../services/ours/orderStore.js'
 import { httpTransport, isNativePlatform, navigateTopLevel, openCheckout } from '../../services/ours/transport.js'
 import { copyText } from '../../utils/clipboard.js'
 import { Button } from '../base/Button.js'
 import { Modal } from '../base/Modal.js'
-import { closeSettings, setOursServicesOpen, useSettingsDialog } from './settingsDialogState.js'
+import {
+  closeSettings,
+  consumeOursReplacedUnpaid,
+  setOursServicesOpen,
+  useSettingsDialog,
+} from './settingsDialogState.js'
 import styles from './OursServices.module.css'
 
 /**
@@ -82,6 +93,8 @@ type OrderView = {
   busy: boolean
   timedOut: boolean
   errorKey: OursMessageKey | null
+  /** 服务端兜底（Issue #157）：查的这一单没完成时，同 customer 最近一笔已完成订单 */
+  latestFulfilled: OursLatestFulfilled | null
 }
 
 /** 套餐列表默认选中的套餐 id（没有可用套餐就是 null） */
@@ -167,16 +180,48 @@ const OursServicesDialog = ({ onClose }: { onClose: () => void }) => {
 
   /** 完整卡密只留内存（「一键兑换」要用）：不进 localStorage、不进日志、不进文案 */
   const orderCardRef = useRef('')
+  /** 服务端兜底那张卡的完整卡密（同上，只留内存） */
+  const latestCardRef = useRef('')
   /** 关闭弹层 / 组件卸载时取消轮询 */
   const cancelled = useRef(false)
   const alive = useRef(true)
+  /**
+   * 轮询「代次」（Issue #157）。每次 runPoll 递增，旧的那次轮询在下一次 tick 自己退出。
+   *
+   * 之前只有一个 cancelled 布尔量，而且 runPoll 开头把它重置成 false —— 于是连点两次
+   * 「去支付」会有**两个轮询同时在跑**，各自把状态写回自己那一单：旧单每 2s 把界面从
+   * 「已发卡」翻回「待支付」，而服务端看到的是 App 一直在查那张没人付的旧单。
+   */
+  const pollRun = useRef(0)
+  /** 当前轮询盯着的单号 / 令牌（随时可能被最新存档换掉） */
+  const activeOrder = useRef<{ outTradeNo: string; orderToken: string } | null>(null)
+  /** 正在轮询的单号：同一单不重复起两条轮询（存档写入会触发订阅，别再叠一次） */
+  const runningFor = useRef<string | null>(null)
+  /** 「上一笔未支付订单已失效」只在真的覆盖过时提示（Issue #157） */
+  const [replacedUnpaid, setReplacedUnpaid] = useState(() => consumeOursReplacedUnpaid())
 
   useEffect(() => {
     alive.current = true
     cancelled.current = false
+    const stopWatching = subscribeStoredOrder(() => {
+      // 存档是单一真相：任何一次覆盖（原生 /buy、网页版回跳、另一个标签页）都要让轮询跟上
+      const stored = readStoredOrder()
+      if (stored === null || !alive.current) {
+        return
+      }
+      if (Date.now() - stored.startedAt >= ORDER_RESUME_MAX_AGE_MS) {
+        return
+      }
+      const active = activeOrder.current
+      if (active !== null && active.outTradeNo === stored.outTradeNo) {
+        return
+      }
+      void runPollRef.current({ outTradeNo: stored.outTradeNo, orderToken: stored.orderToken })
+    }, window)
     return () => {
       alive.current = false
       cancelled.current = true
+      stopWatching()
     }
   }, [])
 
@@ -259,40 +304,89 @@ const OursServicesDialog = ({ onClose }: { onClose: () => void }) => {
 
   // ---------------------------------------------------------------- 订单轮询
 
-  /** 轮询状态机在 services/ours/api.ts（单测覆盖），这里只负责渲染与取消 */
-  const runPoll = async (outTradeNo: string, orderToken: string) => {
+  /**
+   * 轮询状态机在 services/ours/api.ts（单测覆盖），这里只负责渲染与取消。
+   *
+   * 两处 Issue #157 的关键约束：
+   *  1. 每次 runPoll 拿一个新的「代次」（pollRun）；旧代次的轮询在下一 tick 自己停，
+   *     既不写状态也不写存档 —— 连点两次「去支付」不会出现两个轮询互相盖。
+   *  2. 轮询每 tick 都回读本地存档（latest），存档被覆盖就换到新单；展示用的单号
+   *     一律取**服务端返回的那一单**（next.outTradeNo），不再用发起时的闭包值。
+   */
+  const runPoll = async (initial: { outTradeNo: string; orderToken: string }) => {
+    if (runningFor.current === initial.outTradeNo) {
+      // 这一单已经在查了（下单时写存档会触发订阅，别再叠一条轮询上去）
+      return
+    }
+    const run = pollRun.current + 1
+    pollRun.current = run
     cancelled.current = false
+    activeOrder.current = { ...initial }
+    runningFor.current = initial.outTradeNo
     orderCardRef.current = ''
+    latestCardRef.current = ''
     setOrder({
-      outTradeNo,
-      orderToken,
+      outTradeNo: initial.outTradeNo,
+      orderToken: initial.orderToken,
       status: null,
       cardTail: '',
       busy: true,
       timedOut: false,
       errorKey: null,
+      latestFulfilled: null,
     })
+    const isCurrent = () => alive.current && pollRun.current === run
     const result = await pollOrder({
-      outTradeNo,
-      orderToken,
+      outTradeNo: initial.outTradeNo,
+      orderToken: initial.orderToken,
       transport: httpTransport,
-      onUpdate: (next) => {
-        if (!alive.current) {
+      // 存档是单一真相：重新下单后这里会读到新单号，轮询立刻切过去
+      latest: () => {
+        const stored = readStoredOrder()
+        return stored === null ? null : { outTradeNo: stored.outTradeNo, orderToken: stored.orderToken }
+      },
+      onSwitch: (next) => {
+        if (!isCurrent()) {
           return
         }
+        activeOrder.current = { ...next }
+        runningFor.current = next.outTradeNo
+        orderCardRef.current = ''
+        latestCardRef.current = ''
         setOrder({
-          outTradeNo,
-          orderToken,
+          outTradeNo: next.outTradeNo,
+          orderToken: next.orderToken,
+          status: null,
+          cardTail: '',
+          busy: true,
+          timedOut: false,
+          errorKey: null,
+          latestFulfilled: null,
+        })
+      },
+      onUpdate: (next) => {
+        if (!isCurrent()) {
+          return
+        }
+        orderCardRef.current = next.status === 'fulfilled' ? next.cardNo : ''
+        latestCardRef.current = next.latestFulfilled?.cardNo ?? ''
+        setOrder({
+          outTradeNo: next.outTradeNo,
+          orderToken: activeOrder.current?.orderToken ?? initial.orderToken,
           status: next.status,
           cardTail: next.cardTail,
           busy: true,
           timedOut: false,
           errorKey: null,
+          latestFulfilled: next.latestFulfilled,
         })
       },
-      shouldStop: () => cancelled.current || !alive.current,
+      shouldStop: () => cancelled.current || !isCurrent(),
     })
-    if (!alive.current || result.kind === 'cancelled') {
+    if (isCurrent()) {
+      runningFor.current = null
+    }
+    if (!isCurrent() || result.kind === 'cancelled') {
       return
     }
     if (result.kind === 'error') {
@@ -306,10 +400,12 @@ const OursServicesDialog = ({ onClose }: { onClose: () => void }) => {
           ? null
           : {
               ...current,
+              outTradeNo: result.order.outTradeNo,
               status: result.order.status,
               cardTail: result.order.cardTail,
               busy: false,
               timedOut: false,
+              latestFulfilled: result.order.latestFulfilled,
             }
       )
       writeStoredOrder(null)
@@ -323,11 +419,25 @@ const OursServicesDialog = ({ onClose }: { onClose: () => void }) => {
     setOrder((current) => (current === null ? null : { ...current, busy: false, timedOut: true }))
   }
 
+  /** 事件回调里用的最新 runPoll（避免闭包抓到旧的那一份） */
+  const runPollRef = useRef(runPoll)
+  runPollRef.current = runPoll
+
+  /**
+   * 「再查一次」必须查**最新存档**那单（Issue #157）：
+   * 之前用的是界面状态里的单号，一旦状态被旧轮询写脏，再查也还是在查旧单。
+   */
   const requeryOrder = async () => {
-    if (order === null) {
+    const stored = readStoredOrder()
+    const fresh =
+      stored !== null && Date.now() - stored.startedAt < ORDER_RESUME_MAX_AGE_MS
+        ? { outTradeNo: stored.outTradeNo, orderToken: stored.orderToken }
+        : null
+    const target = fresh ?? activeOrder.current ?? (order === null ? null : { outTradeNo: order.outTradeNo, orderToken: order.orderToken })
+    if (target === null) {
       return
     }
-    await runPoll(order.outTradeNo, order.orderToken)
+    await runPoll(target)
   }
 
   // ---------------------------------------------------------------- 绑定已有 Key（#86）
@@ -392,7 +502,7 @@ const OursServicesDialog = ({ onClose }: { onClose: () => void }) => {
       // 不该排队等额度与套餐。只有存过 order_token 的才查得到。
       const stored = readStoredOrder()
       if (stored !== null && Date.now() - stored.startedAt < ORDER_RESUME_MAX_AGE_MS) {
-        void runPoll(stored.outTradeNo, stored.orderToken)
+        void runPoll({ outTradeNo: stored.outTradeNo, orderToken: stored.orderToken })
       }
       const opened = await prepareDialogOpen({
         deviceId,
@@ -479,13 +589,11 @@ const OursServicesDialog = ({ onClose }: { onClose: () => void }) => {
       setBuyError('oursErrCheckoutUnsupported')
       return
     }
-    writeStoredOrder({
-      outTradeNo: result.checkout.outTradeNo,
-      orderToken: result.checkout.orderToken,
-      planId,
-      startedAt: Date.now(),
-    })
-    await runPoll(result.checkout.outTradeNo, result.checkout.orderToken)
+    // 存档由 startCheckout 在「拿到 Location 并解析出新单号」那一刻**覆盖**写法（api.ts），
+    // 这里不再重复写一份：两处写同一份存档只会给「谁最后写」留坑（Issue #157）。
+    // 覆盖掉一笔还没完成的旧单时明说一句，别让用户以为旧单还能付。
+    setReplacedUnpaid(result.replacedUnpaidOrder)
+    await runPoll({ outTradeNo: result.checkout.outTradeNo, orderToken: result.checkout.orderToken })
   }
 
   // ---------------------------------------------------------------- 兑换 / 邀请
@@ -1063,6 +1171,14 @@ const OursServicesDialog = ({ onClose }: { onClose: () => void }) => {
             >
               {orderStatusText(order)}
             </div>
+            <div className={styles.hint} data-testid="ours-order-no">
+              {t('oursOrderNo', { tail: order.outTradeNo.slice(-8) })}
+            </div>
+            {replacedUnpaid ? (
+              <div className={styles.hint} data-testid="ours-order-replaced">
+                {t('oursOrderReplaced')}
+              </div>
+            ) : null}
             {order.busy ? (
               <div className={styles.hint} data-testid="ours-order-waiting">
                 {t('oursOrderWaiting')}
@@ -1092,6 +1208,43 @@ const OursServicesDialog = ({ onClose }: { onClose: () => void }) => {
                     data-testid="ours-order-redeem"
                     disabled={redeemBusy}
                     onClick={() => void submitRedeem(orderCardRef.current)}
+                  >
+                    {redeemBusy ? t('oursRedeemBusy') : t('oursOrderRedeem')}
+                  </Button>
+                </div>
+              </>
+            ) : null}
+            {/* 服务端兜底（Issue #157）：正在查的这单没完成，但同 customer 名下最近有一笔已完成订单
+                → 直接把那张卡摆出来，并允许一键兑换（兑换逻辑与「发卡后一键兑换」同一套） */}
+            {order.latestFulfilled !== null ? (
+              <>
+                <div
+                  role="status"
+                  className={clsx(styles.value, styles.valueSuccess)}
+                  data-testid="ours-order-latest"
+                >
+                  {t('oursOrderLatestHint')}
+                </div>
+                <div className={styles.value} data-testid="ours-order-latest-card">
+                  {t('oursOrderLatestCard', {
+                    tail: order.latestFulfilled.cardTail,
+                    no: order.latestFulfilled.outTradeNo.slice(-8),
+                  })}
+                </div>
+                <div className={styles.actions}>
+                  <Button
+                    variant="outlined"
+                    size="s"
+                    data-testid="ours-order-latest-copy"
+                    onClick={() => void copy('card', latestCardRef.current)}
+                  >
+                    {copied === 'card' ? t('oursOrderCopyCardDone') : t('oursOrderCopyCard')}
+                  </Button>
+                  <Button
+                    size="s"
+                    data-testid="ours-order-latest-redeem"
+                    disabled={redeemBusy || !hasKey}
+                    onClick={() => void submitRedeem(latestCardRef.current)}
                   >
                     {redeemBusy ? t('oursRedeemBusy') : t('oursOrderRedeem')}
                   </Button>

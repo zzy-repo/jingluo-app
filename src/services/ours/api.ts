@@ -646,6 +646,22 @@ export type OursOrder = {
   /** 服务端给的是 Unix 秒；解析不出来就是 null */
   expireAtSeconds: number | null
   message: string
+  /**
+   * 服务端兜底（Issue #157）：查的这一单**还没完成**时，若同一 customer 名下
+   * 最近有一笔已完成订单，/api/order 会把它一起带回来。界面上必须直接展示那张卡。
+   */
+  latestFulfilled: OursLatestFulfilled | null
+}
+
+/** 兜底字段 `latest_fulfilled` 的解析结果（同 customer 最近一笔已完成/已发卡订单） */
+export type OursLatestFulfilled = {
+  outTradeNo: string
+  planId: string
+  amountYuan: number
+  /** 完整卡密：与 OursOrder.cardNo 一样只留内存，界面只显示 cardTail */
+  cardNo: string
+  cardTail: string
+  paidAtSeconds: number | null
 }
 
 export type OursOrderResult =
@@ -656,6 +672,38 @@ const parseOrderStatus = (value: string): OursOrderStatus | null =>
   value === 'pending' || value === 'paid' || value === 'fulfilled' || value === 'expired' || value === 'failed'
     ? value
     : null
+
+/**
+ * 解析兜底字段 `latest_fulfilled`（Issue #157）。
+ *
+ * 服务端只在**查询的订单还没完成**时才附上它；字段本身有三个必须项：
+ * 单号、卡密、金额。缺卡密的「已完成」记录对用户没有用（摆一张空卡），直接忽略。
+ */
+const parseLatestFulfilled = (record: Record<string, unknown> | null): OursLatestFulfilled | null => {
+  const nested = asRecord(record?.latest_fulfilled)
+  if (nested === null) {
+    return null
+  }
+  const outTradeNo = readString(nested, 'out_trade_no').trim()
+  const cardNo = readString(nested, 'card_no').trim()
+  if (outTradeNo === '' || cardNo === '') {
+    return null
+  }
+  const paidRaw = nested.paid_at
+  return {
+    outTradeNo,
+    planId: readString(nested, 'plan_id'),
+    amountYuan: readNumber(nested, 'amount_yuan') ?? 0,
+    cardNo,
+    cardTail: maskCard(cardNo),
+    paidAtSeconds:
+      typeof paidRaw === 'number' && Number.isFinite(paidRaw)
+        ? paidRaw
+        : typeof paidRaw === 'string' && /^\d+$/.test(paidRaw.trim())
+          ? Number(paidRaw.trim())
+          : null,
+  }
+}
 
 const parseOrder = (value: unknown): OursOrder | null => {
   const record = asRecord(value)
@@ -681,6 +729,7 @@ const parseOrder = (value: unknown): OursOrder | null => {
     cardNo: fulfilled ? cardNo.trim() : '',
     expireAtSeconds,
     message: readString(record, 'message'),
+    latestFulfilled: fulfilled ? null : parseLatestFulfilled(record),
   }
 }
 
@@ -738,6 +787,11 @@ export type OursPollResult =
  * - 到 60s 还没终态 → kind='timeout'（界面提示「稍后在订单查看卡密」，**不重复下单**）
  * - onUpdate 每次拿到新状态就回调一次（界面边轮边渲染）
  * - shouldStop 由界面注入（关闭弹层 / 切渠道时取消）
+ * - **latest 由界面注入（Issue #157）：每一轮先读一次本地最新存档**。重新下单后存档被覆盖，
+ *   还在跑的那次轮询必须在下一次 tick 就换到新单，而不是抱着旧单号查满 60s
+ *   —— 旧单永远 pending，用户付的却是新单，界面就一直「等待支付」。
+ *   换单时 60s 预算重新计时：新单是刚建的，理应重新给满 60s。
+ * - onSwitch 换单时回调一次（界面据此更新展示的单号）
  * sleep / now 也可注入，单测里用假时钟验证间隔与上限。
  */
 export const pollOrder = async (input: {
@@ -749,13 +803,16 @@ export const pollOrder = async (input: {
   sleep?: (ms: number) => Promise<void>
   now?: () => number
   onUpdate?: (order: OursOrder) => void
+  onSwitch?: (next: { outTradeNo: string; orderToken: string }) => void
+  latest?: () => { outTradeNo: string; orderToken: string } | null
   shouldStop?: () => boolean
 }): Promise<OursPollResult> => {
   const intervalMs = input.intervalMs ?? OURS_TIMEOUTS.poll.intervalMs
   const timeoutMs = input.timeoutMs ?? OURS_TIMEOUTS.poll.timeoutMs
   const sleep = input.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)))
   const now = input.now ?? Date.now
-  const started = now()
+  let current = { outTradeNo: input.outTradeNo, orderToken: input.orderToken }
+  let started = now()
   const maxAttempts = Math.max(1, Math.floor(timeoutMs / intervalMs) + 1)
   let attempts = 0
   let last: OursOrder | null = null
@@ -763,10 +820,19 @@ export const pollOrder = async (input: {
     if (input.shouldStop?.() === true) {
       return { kind: 'cancelled', order: last, attempts }
     }
-    const result = await queryOrder(
-      { outTradeNo: input.outTradeNo, orderToken: input.orderToken },
-      input.transport
-    )
+    // Issue #157：每轮先看一眼最新存档；换了单就换过去（并重开 60s 预算）
+    const newest = input.latest?.() ?? null
+    if (
+      newest !== null &&
+      newest.outTradeNo !== '' &&
+      (newest.outTradeNo !== current.outTradeNo || newest.orderToken !== current.orderToken)
+    ) {
+      current = { outTradeNo: newest.outTradeNo, orderToken: newest.orderToken }
+      started = now()
+      attempts = 0
+      input.onSwitch?.(current)
+    }
+    const result = await queryOrder(current, input.transport)
     attempts += 1
     if (result.kind === 'error') {
       return { kind: 'error', code: result.code, messageKey: result.messageKey }

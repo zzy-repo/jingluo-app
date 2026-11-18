@@ -17,6 +17,11 @@ export const useSettingsDialog = create(() => ({
   oursOpen: false,
   /** 付款记录弹层（Issue #115）：与「我们的渠道」弹层同层叠放，互不影响 */
   paymentRecordsOpen: false,
+  /**
+   * 这次打开弹层时刚覆盖掉一笔未完成订单（Issue #157）：
+   * 由付款回跳（consumeOrderReturn）带过来，弹层读一次就清掉，只提示一次。
+   */
+  oursReplacedUnpaid: false,
 }))
 
 export const openSettings = (section: SettingsSection) => {
@@ -40,9 +45,23 @@ export const setPaymentRecordsOpen = (open: boolean) => {
 }
 
 /** 付款回跳后直接进「订单查询」：打开设置并展开「我们的渠道」弹层 */
-export const openOursServices = () => {
+export const openOursServices = (options: { replacedUnpaidOrder?: boolean } = {}) => {
   // 弹层的叠放层级由 OursServicesDialog 的 Modal zIndex 显式抬高，不依赖挂载先后
-  useSettingsDialog.setState({ open: true, section: 'data', oursOpen: true })
+  useSettingsDialog.setState({
+    open: true,
+    section: 'data',
+    oursOpen: true,
+    oursReplacedUnpaid: options.replacedUnpaidOrder === true,
+  })
+}
+
+/** 弹层读完「上一笔未支付订单已失效」这条提示后清掉，避免下次打开还挂着（Issue #157） */
+export const consumeOursReplacedUnpaid = (): boolean => {
+  const replaced = useSettingsDialog.getState().oursReplacedUnpaid
+  if (replaced) {
+    useSettingsDialog.setState({ oursReplacedUnpaid: false })
+  }
+  return replaced
 }
 
 /** 没有 API Key 时打开设置并选中 API Key 所在的「数据管理」，返回是否已有 Key */
