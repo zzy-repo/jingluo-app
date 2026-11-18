@@ -337,6 +337,21 @@ const isStreamBroken = (error: unknown): boolean =>
   )
 
 /**
+ * 永久性失败：**地址本身**不可用，重试多少次都是同一个结果（#154）。
+ *
+ * - WHATWG 禁用端口：`net::ERR_UNSAFE_PORT`（1、7、6667 这类），Chromium 连试都不试就拒；
+ * - 协议/地址非法：`ERR_UNKNOWN_URL_SCHEME`、`ERR_DISALLOWED_URL_SCHEME`、`ERR_INVALID_URL`、
+ *   `ERR_ADDRESS_INVALID`。
+ *
+ * 刻意**不含** DNS 的 `ENOTFOUND` / `EAI_AGAIN`：DNS 抖动是瞬时的，宽带刚起、切换 Wi-Fi 时很常见，
+ * 必须留在可重试那一类；也不含任何超时/连接重置的形态（那是 #154 明确要求保留的重试）。
+ */
+const isPermanentFailure = (error: unknown): boolean =>
+  /err_unsafe_port|err_unknown_url_scheme|err_disallowed_url_scheme|err_invalid_url|err_invalid_url_scheme|err_address_invalid|err_unsupported_scheme/i.test(
+    errorText(error)
+  )
+
+/**
  * 「过了多久」的单调计时（#151）：把墙钟读数换算成一个**只增不减**的累计毫秒值。
  *
  * 为什么不直接读 Date.now()：它不单调。系统校时、用户改时间、NTP 跳变、休眠唤醒都会让
@@ -754,6 +769,23 @@ const fetchChunk = async (
         throw error
       }
       lastError = error
+      // 永久性错误（#154）：地址本身不可用（禁用端口 / 非法协议），重试多少次都一样，
+      // 立刻收工，不再白等 300ms 再试一次。离线时**不**套用这条：手机只是暂时没网，
+      // 错误串却常常与「端口被禁」长得一样，判离线更接近真相（见下面分类块的 offline 优先）。
+      if (isBrowserOnline() && isPermanentFailure(error)) {
+        const { startedAt, downloaded, total } = state
+        recordDownloadFailure('permanent', url, startedAt, { 'download.bytes': downloaded }, error)
+        trace?.({
+          at: elapsedSince(startedAt),
+          kind: 'error',
+          bytes: downloaded,
+          totalBytes: total,
+          message: 'permanent',
+        })
+        // 专属文案（historyImportUrlBlocked）留作 follow-up：本 lane 不动 src/i18n/**（#153 在改），
+        // 故复用「请输入以 http(s):// 开头的链接」——它指向**地址本身**有问题，不会诱导用户反复重试。
+        fail('historyImportUrlInvalid')
+      }
       // 弱网会在块中途丢流：同一起点更小的块重试即可续上
       if (attempt < CHUNK_RETRIES) {
         await new Promise((resolve) => setTimeout(resolve, 300 * (attempt + 1)))
@@ -764,6 +796,14 @@ const fetchChunk = async (
     const error = lastError
     const { startedAt, downloaded, total } = state
     const percent = total === undefined || total === 0 ? 0 : Math.round((downloaded / total) * 100)
+    // 离线优先（#154）：`navigator.onLine === false` 是最权威的信号，不必等错误串匹配。
+    // 真离线时 WebView 抛的是 `TypeError: Failed to fetch`，与被墙端口/中间设备拦截一模一样，
+    // 靠错误串永远分不出来 —— 过去就因此把「手机没网」报成了「网络异常，请检查网络连接」。
+    if (!isBrowserOnline()) {
+      recordDownloadFailure('offline', url, startedAt, { 'download.bytes': downloaded }, error)
+      trace?.({ at: elapsedSince(startedAt), kind: 'error', bytes: downloaded, totalBytes: total, message: 'offline' })
+      return fail('historyImportUrlOffline')
+    }
     if (isTimeout(error)) {
       // 超时且已经下到一半：说明链路慢，不是链接坏了。
       recordDownloadFailure('timeout', url, startedAt, { 'download.bytes': downloaded, percent }, error)
