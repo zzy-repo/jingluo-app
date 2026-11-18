@@ -174,8 +174,16 @@ export const importArchive = async (file: File, options: ImportArchiveOptions = 
         // 没有被引用的条目不保存，引用了但缺失的图片只展示文件名。
         const id = images.get(path)
         await (id === undefined ? skipEntry(entry) : saveImage(entry, id))
+      } else if (index) {
+        // 索引已读到：条目既不是会话文件，也不在任何已导入会话的图片目录下（#32）。
+        fail('backupEntryUnreferenced', { index: entryIndex, entry: path })
       } else {
-        fail('backupIncomplete')
+        // 索引还没读到，条目又不属于刚读到的那个会话的图片目录（#32：图片排在会话之前时走到这里）。
+        fail('backupEntryOutOfOrder', {
+          index: entryIndex,
+          entry: path,
+          session: currentSessionId ?? '',
+        })
       }
     }
   } catch (error) {

@@ -40,6 +40,10 @@ export const buildArchive = ({
   padBytes = 0,
 } = {}) => {
   const entries = { 'manifest.json': strToU8(JSON.stringify({ export_format_version: 3 })) }
+  // 图片条目必须排在 index 之后：与 src/services/chat/history/exportArchive.ts 的写出顺序一致
+  // （manifest → 全部会话 JSON → index → 全部图片）。图片夹在会话之间时，导入端在读到
+  // chat_session_index.json 之前只认「刚读到的那个会话」的 _files/ 条目，会判成内容不完整（#32）。
+  const imageEntries = {}
   const index = []
   // 会话标题里的序号让侧栏能直接看出导入数量
   const pad = String(Math.max(sessionCount, 2) - 1).length
@@ -69,7 +73,7 @@ export const buildArchive = ({
           },
         ],
       })
-      entries[exportPath] = imageBytes(imageSize)
+      imageEntries[exportPath] = imageBytes(imageSize)
     }
     entries[`chat_sessions/${id}.json`] = strToU8(
       JSON.stringify({
@@ -93,8 +97,10 @@ export const buildArchive = ({
   }
   entries['chat_session_index.json'] = strToU8(JSON.stringify(index))
   if (padBytes > 0) {
-    entries['chat_sessions/link-session-1_files/unreferenced.png'] = imageBytes(padBytes)
+    imageEntries['chat_sessions/link-session-1_files/unreferenced.png'] = imageBytes(padBytes)
   }
+  // 图片与撑大包体的未引用条目统一排在 index 之后，与真实导出顺序一致
+  Object.assign(entries, imageEntries)
   const zip = zipSync(entries, padBytes > 0 || imageSize > 0 ? { level: 0 } : {})
   return { zip, sessions: sessionCount, entries: Object.keys(entries).length }
 }

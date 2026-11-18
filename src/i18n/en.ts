@@ -113,6 +113,8 @@ export const en = {
   backupEmptyArchive: 'This ZIP contains no files. Please choose a DeepSeek chat history ZIP.',
   backupArchiveDamaged: 'This ZIP is damaged: entry #{index} ("{entry}") failed validation, so the file may be truncated or repacked by another tool.',
   backupArchiveUnreadable: 'This ZIP is damaged: its file directory cannot be read, so the file may be truncated or repacked by another tool.',
+  backupEntryOutOfOrder: 'Entry #{index} ("{entry}") comes after the session "{session}" but is not inside that session image folder, and the session index has not been read yet, so its session cannot be determined. Choose the original DeepSeek export ZIP instead of a repacked or reordered one.',
+  backupEntryUnreferenced: 'Entry #{index} ("{entry}") is neither a session file nor inside any imported session image folder. The ZIP may have been repacked or renamed; choose the original DeepSeek export ZIP.',
   settingsLocalePreference: 'Language',
   settingsTtsVoice: 'Read-aloud voice',
   settingsTtsVoiceStella: 'Stella (female)',

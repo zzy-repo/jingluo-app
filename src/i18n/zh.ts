@@ -107,6 +107,8 @@ export const zh = {
   backupEmptyArchive: 'ZIP 里没有任何文件，请选择 DeepSeek 导出的历史对话 ZIP 文件',
   backupArchiveDamaged: 'ZIP 结构损坏：读取第 {index} 个文件「{entry}」时校验失败，文件可能被截断或被其它工具重新打包',
   backupArchiveUnreadable: 'ZIP 结构损坏：读不到文件目录，文件可能被截断或被其它工具重新打包',
+  backupEntryOutOfOrder: '第 {index} 个文件「{entry}」排在会话「{session}」之后，却不属于该会话的图片目录；会话索引还没读到，无法判断它属于哪个会话。请选择 DeepSeek 导出的原始 ZIP，不要解压后重排文件',
+  backupEntryUnreferenced: '第 {index} 个文件「{entry}」既不是会话文件，也不属于任何已导入会话的图片目录；导入包可能被重排或改过名，请选择 DeepSeek 导出的原始 ZIP',
   settingsLocalePreference: '语言',
   settingsTtsVoice: '朗读音色',
   settingsTtsVoiceStella: '海星（女声）',

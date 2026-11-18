@@ -118,7 +118,8 @@ const corrupt = (page, mode) =>
 
 /** 走真实入口导入一份归档，造出「有用户消息 + 附件」的会话 */
 const seedViaImport = async (page, { keepConfirmOpen = false } = {}) => {
-  // imageBytes 留 0：fixture 里的图片是假 PNG 字节，导入端会尝试解码并整体失败（与本用例无关）
+  // imageBytes 留 0：旧版 fixture 把图片写在会话之前，导入端会判成「内容不完整」（#32 夹具问题，
+  // 已在夹具里修掉）；本用例只要一份能导入成功的普通会话，不需要图片。
   const { zip } = buildArchive({ sessionCount: 2, titlePrefix: TITLE_PREFIX })
   const dir = await mkdtemp(path.join(tmpdir(), 'deepseek-error-boundary-'))
   const zipPath = path.join(dir, 'deepseek_data.zip')

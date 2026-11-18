@@ -280,9 +280,10 @@ const sampleUntil = async (page, stop, timeoutMs = 40_000, intervalMs = 120) => 
 }
 
 const run = async () => {
-  // 注意：archive-fixture 的 imageBytes > 0 会生成导入端判为「内容不完整」的包（与本改动无关，
-  // 用普通「上传文件」链路同样失败），所以这里用无图片的包；真实 329 会话/含图片的包在
-  // 模拟器上用 /tmp/diag/archive.zip（真实 OBS 包副本）做设备验收。
+  // 说明：旧版 archive-fixture 把图片写在它所属会话之前，导入端会判成「内容不完整」
+  // （#32 已定性为夹具问题并在夹具里修掉，与导入端无关）。这里的包仍然不带图片 —— 本用例
+  // 只测分阶段进度，用不着图片；真实 329 会话/含图片的包在模拟器上用 /tmp/diag/archive.zip
+  // （真实 OBS 包副本）做设备验收。
   const archive = buildArchive({ sessionCount: 120, padBytes: 4 * 1024 * 1024 })
   const zipPayload = { kind: 'arraybuffer', status: 200, range: true, data: base64(archive.zip) }
   // 弱网用例用小包：块数够多（≥6 个采样点）但整体几秒内结束，不拖时间。
