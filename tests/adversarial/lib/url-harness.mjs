@@ -5,6 +5,8 @@ import { registerHooks } from 'node:module'
 
 const stub = (name) => new URL(`../../fixtures/url-import-stubs/${name}`, import.meta.url).href
 const limitModule = new URL('../../../src/services/chat/history/importLimit.ts', import.meta.url).href
+// 失败原因分档（#111 之后 urlImport.ts 新增的 .js 依赖）：用真模块，不替换（它不碰浏览器/网络）
+const failureModule = new URL('../../../src/services/chat/history/importFailure.ts', import.meta.url).href
 
 let installed = false
 
@@ -29,6 +31,9 @@ export const installUrlHooks = () => {
       }
       if (specifier === './importLimit.js') {
         return { url: limitModule, shortCircuit: true }
+      }
+      if (specifier === './importFailure.js') {
+        return { url: failureModule, shortCircuit: true }
       }
       return nextResolve(specifier, context)
     },

@@ -336,6 +336,47 @@ const isStreamBroken = (error: unknown): boolean =>
     errorText(error)
   )
 
+/**
+ * 「过了多久」的单调计时（#151）：把墙钟读数换算成一个**只增不减**的累计毫秒值。
+ *
+ * 为什么不直接读 Date.now()：它不单调。系统校时、用户改时间、NTP 跳变、休眠唤醒都会让
+ * 它整段跳——前跳让健康链路凭空「耗完」总上限（被误判成超时/停滞），回拨让耗时报成负数
+ * （详情里出现「−3600000ms」）。耗时与停滞判定只能读这里的累计值。
+ *
+ * 为什么不用 performance.now()：本仓库的停滞/总上限用例用 node:test 的假时钟驱动时间
+ * （`t.mock.timers.enable({ apis: ['setTimeout', 'setInterval', 'Date'] })`），它只假 Date；
+ * 换成 performance.now() 会让这些用例彻底失去时间控制——判定逻辑没变，却再也测不出来。
+ *
+ * 规则（每次读取时按「与上次读数的差」累计）：
+ * - 0 < delta <= CLOCK_JUMP_MS：正常流逝 → 计入
+ * - delta <= 0：回拨 → 当作「时间没走」，绝不让耗时倒退
+ * - delta > CLOCK_JUMP_MS：前跳 → 同样不计入，绝不让一次跳变凭空耗完总上限
+ *
+ * 阈值取 2 分钟：一次下载里真正的等待都被 requestRange 的 connect/read 超时（10s/12s）、
+ * 重试间隔（≤600ms）与停滞窗口（40s）压在 ~40s 以内，正常读数到不了 2 分钟；
+ * 而校时/改时间的跳变通常是分钟级往上。已知代价（未测边界）：应用在后台被挂起超过
+ * 2 分钟的空档不计入总耗时——宁可少报，也不误杀。
+ */
+const CLOCK_JUMP_MS = 2 * 60_000
+let clockWallAt = Date.now()
+let clockElapsed = 0
+
+const monotonicNow = (): number => {
+  const wall = Date.now()
+  const delta = wall - clockWallAt
+  if (delta > 0 && delta <= CLOCK_JUMP_MS) {
+    clockElapsed += delta
+  }
+  clockWallAt = wall
+  return clockElapsed
+}
+
+/**
+ * 「从 startedAt 到现在过了多少毫秒」：对外报出的耗时一律走这里。
+ * 单调源理论上不会倒退，仍再夹一次 0——详情里的耗时永远不许是负数。
+ */
+const elapsedSince = (startedAt: number): number => Math.max(0, Math.round(monotonicNow() - startedAt))
+
 /** 下载失败必录：阶段 + 已下载字节 + 耗时 + 错误原文（回查「导入没反应」靠这条）。 */
 const recordDownloadFailure = (
   reason: string,
@@ -346,7 +387,7 @@ const recordDownloadFailure = (
 ) =>
   record('import_error', 'error', `import download failed: ${reason}`, {
     stage: 'download',
-    durationMs: Date.now() - startedAt,
+    durationMs: elapsedSince(startedAt),
     reason,
     // 只留 path（签名与 token 都在 query 里），否则事后无法把一条失败对上具体文件（#19）
     'url.path': redactUrl(url),
@@ -427,7 +468,7 @@ const formatSize = (bytes: number): string => {
  * 这里**没有**「总时长超过 N 秒就判死」这一条：#38 的合法大包就是被那条误杀的。
  */
 const stallVerdict = (state: DownloadState): Error | null => {
-  const now = Date.now()
+  const now = monotonicNow()
   if (now >= state.deadline) {
     recordEvent('import_stage', 'import: download deadline exceeded', {
       stage: 'download',
@@ -440,7 +481,7 @@ const stallVerdict = (state: DownloadState): Error | null => {
     })
     return new DownloadDeadlineExceeded()
   }
-  const idleMs = now - state.lastProgressAt
+  const idleMs = elapsedSince(state.lastProgressAt)
   if (idleMs < state.stallMs) {
     return null
   }
@@ -494,14 +535,14 @@ const guardRequest = <T>(work: Promise<T>, state: DownloadState, signal?: AbortS
     }
     /** 到下一次「该看一眼」的时刻：停滞窗口与总上限取较早的那个 */
     const arm = () => {
-      const now = Date.now()
+      const now = monotonicNow()
       const stallAt = state.lastProgressAt + state.stallMs
       timer = setTimeout(onWake, Math.max(0, Math.min(stallAt, state.deadline) - now))
     }
     const onWake = () => {
       timer = undefined
       // 防御性总上限优先：它是「不管有没有进度都要收口」的硬线，不会被续期推翻
-      if (Date.now() >= state.deadline) {
+      if (monotonicNow() >= state.deadline) {
         discard()
         finish(() => reject(stallVerdict(state) ?? new DownloadDeadlineExceeded()))
         return
@@ -552,10 +593,10 @@ const startDownloadHeartbeat = (
 ): (() => void) => {
   let lastBytes = state.downloaded
   const timer = setInterval(() => {
-    const now = Date.now()
-    const elapsed = now - state.startedAt
+    const now = monotonicNow()
+    const elapsed = elapsedSince(state.startedAt)
     const delta = state.downloaded - lastBytes
-    const idleMs = now - state.lastProgressAt
+    const idleMs = elapsedSince(state.lastProgressAt)
     recordEvent('import_stage', 'import: download heartbeat', {
       stage: 'download',
       'download.bytes': state.downloaded,
@@ -621,20 +662,20 @@ const failForStatus = async (
     // 文案必须区分——用户看到「过期」才知道要回 DeepSeek 重新导出，看到「签名错误」才知道是链接被截断。
     if (/SignatureDoesNotMatch/i.test(detail)) {
       recordDownloadFailure('signature', url, startedAt, meta)
-      trace?.({ at: Date.now() - startedAt, kind: 'error', status, bytes: downloaded, totalBytes: total, message: 'signature' })
+      trace?.({ at: elapsedSince(startedAt), kind: 'error', status, bytes: downloaded, totalBytes: total, message: 'signature' })
       return fail('historyImportUrlBadSignature')
     }
     if (/RequestTimeTooSkewed|Expired/i.test(detail)) {
       recordDownloadFailure('expired', url, startedAt, meta)
-      trace?.({ at: Date.now() - startedAt, kind: 'error', status, bytes: downloaded, totalBytes: total, message: 'expired' })
+      trace?.({ at: elapsedSince(startedAt), kind: 'error', status, bytes: downloaded, totalBytes: total, message: 'expired' })
       return fail('historyImportUrlExpired')
     }
     recordDownloadFailure('forbidden', url, startedAt, meta)
-    trace?.({ at: Date.now() - startedAt, kind: 'error', status, bytes: downloaded, totalBytes: total, message: 'forbidden' })
+    trace?.({ at: elapsedSince(startedAt), kind: 'error', status, bytes: downloaded, totalBytes: total, message: 'forbidden' })
     return fail('historyImportUrlForbidden', { detail: detail === '' ? `HTTP ${status}` : detail })
   }
   recordDownloadFailure(`http-${status}`, url, startedAt, meta)
-  trace?.({ at: Date.now() - startedAt, kind: 'error', status, bytes: downloaded, totalBytes: total, message: `http-${status}` })
+  trace?.({ at: elapsedSince(startedAt), kind: 'error', status, bytes: downloaded, totalBytes: total, message: `http-${status}` })
   return fail('historyImportUrlHttp', { status })
 }
 
@@ -670,7 +711,7 @@ const fetchChunk = async (
   for (let attempt = 0; attempt <= CHUNK_RETRIES; attempt += 1) {
     // 重试时指数缩小块（4KB → 2KB → 1KB）：极差链路上也能一点点往前推，而不是整包重来
     const span = Math.max(MIN_CHUNK_BYTES / 4, Math.floor((to - from + 1) / 2 ** attempt))
-    const attemptStartedAt = Date.now()
+    const attemptStartedAt = monotonicNow()
     // 心跳据此说明「卡在哪一块、第几次尝试」（只读这份状态，不参与业务判断）
     state.from = from
     state.span = span
@@ -692,7 +733,7 @@ const fetchChunk = async (
         'request.span': span,
         attempt,
         'http.status': response.status,
-        elapsedMs: Date.now() - attemptStartedAt,
+        elapsedMs: elapsedSince(attemptStartedAt),
       })
       return { response, requested: span }
     } catch (error) {
@@ -701,7 +742,7 @@ const fetchChunk = async (
         'request.from': from,
         'request.span': span,
         attempt,
-        elapsedMs: Date.now() - attemptStartedAt,
+        elapsedMs: elapsedSince(attemptStartedAt),
         ...errorMeta(error),
       })
       // 停滞 / 总上限 / 取消都是终态：不再重试，也不当成网络错误去分类。
@@ -726,7 +767,7 @@ const fetchChunk = async (
     if (isTimeout(error)) {
       // 超时且已经下到一半：说明链路慢，不是链接坏了。
       recordDownloadFailure('timeout', url, startedAt, { 'download.bytes': downloaded, percent }, error)
-      trace?.({ at: Date.now() - startedAt, kind: 'error', bytes: downloaded, totalBytes: total, message: 'timeout' })
+      trace?.({ at: elapsedSince(startedAt), kind: 'error', bytes: downloaded, totalBytes: total, message: 'timeout' })
       return downloaded > 0
         ? fail('historyImportUrlTimeoutPartial', { percent })
         : fail('historyImportUrlTimeout')
@@ -737,16 +778,16 @@ const fetchChunk = async (
       const refused = classifyImportFailure({ error, online: isBrowserOnline() }) === 'refused'
       const reason = refused ? 'refused' : 'unreachable'
       recordDownloadFailure(reason, url, startedAt, { 'download.bytes': downloaded }, error)
-      trace?.({ at: Date.now() - startedAt, kind: 'error', bytes: downloaded, totalBytes: total, message: reason })
+      trace?.({ at: elapsedSince(startedAt), kind: 'error', bytes: downloaded, totalBytes: total, message: reason })
       return fail(refused ? 'historyImportUrlRefused' : 'historyImportUrlOffline')
     }
     if (isStreamBroken(error)) {
       recordDownloadFailure('interrupted', url, startedAt, { 'download.bytes': downloaded, percent }, error)
-      trace?.({ at: Date.now() - startedAt, kind: 'error', bytes: downloaded, totalBytes: total, message: 'interrupted', status: 0 })
+      trace?.({ at: elapsedSince(startedAt), kind: 'error', bytes: downloaded, totalBytes: total, message: 'interrupted', status: 0 })
       return fail('historyImportUrlInterrupted', { percent })
     }
     recordDownloadFailure('network', url, startedAt, { 'download.bytes': downloaded }, error)
-    trace?.({ at: Date.now() - startedAt, kind: 'error', bytes: downloaded, totalBytes: total, message: 'network' })
+    trace?.({ at: elapsedSince(startedAt), kind: 'error', bytes: downloaded, totalBytes: total, message: 'network' })
     return fail('historyImportUrlNetwork')
   }
 }
@@ -770,7 +811,7 @@ const downloadArchive = async (
   options: UrlImportOptions,
   trace?: (entry: ImportTraceEntry) => void
 ): Promise<File> => {
-  const startedAt = Date.now()
+  const startedAt = monotonicNow()
   const maxBytes = resolveMaxImportBytes(options.maxBytes)
   const stallMs = Math.max(1, options.downloadStallMs ?? DOWNLOAD_STALL_MS)
   const maxTotalMs = Math.max(1, options.downloadMaxTotalMs ?? DOWNLOAD_MAX_TOTAL_MS)
@@ -826,7 +867,7 @@ const downloadArchive = async (
       throwIfCancelled(options.signal)
       const from = state.downloaded
       const to = from + chunkSize - 1
-      const chunkStartedAt = Date.now()
+      const chunkStartedAt = monotonicNow()
       const { response, requested } = await fetchChunk(url, from, to, state, trace, options.signal)
       const status = response.status
       // 416：请求范围越界 = 上一块正好是最后一块（服务端更严格时走这里）。
@@ -847,7 +888,7 @@ const downloadArchive = async (
           'request.span': requested,
         })
         trace?.({
-          at: Date.now() - startedAt,
+          at: elapsedSince(startedAt),
           kind: 'restart',
           bytes: 0,
           totalBytes: state.total,
@@ -857,7 +898,7 @@ const downloadArchive = async (
         state.downloaded = 0
         // 200 的 Content-Length 就是整包大小，下面按新响应重新取（旧的 Range 总数可能过期）
         state.total = undefined
-        state.lastProgressAt = Date.now()
+        state.lastProgressAt = monotonicNow()
         lastTraceBytes = 0
         lastTracePercent = -1
       }
@@ -885,7 +926,7 @@ const downloadArchive = async (
         chunks.push(bytes)
         state.downloaded += bytes.byteLength
         // 停滞判定的唯一依据：真的收到新字节才重新计时（#38）
-        state.lastProgressAt = Date.now()
+        state.lastProgressAt = monotonicNow()
         if (state.downloaded > maxBytes) {
           tooLarge(maxBytes)
         }
@@ -900,13 +941,13 @@ const downloadArchive = async (
           const checkpoint =
             lastTraceBytes === 0 ||
             (percent !== undefined && percent !== lastTracePercent) ||
-            Date.now() - lastTraceAt >= 1000
+            monotonicNow() - lastTraceAt >= 1000
           if (checkpoint) {
             lastTraceBytes = state.downloaded
             lastTracePercent = percent ?? 0
-            lastTraceAt = Date.now()
+            lastTraceAt = monotonicNow()
             trace?.({
-              at: Date.now() - startedAt,
+              at: elapsedSince(startedAt),
               kind: 'download',
               bytes: state.downloaded,
               totalBytes: state.total,
@@ -920,7 +961,7 @@ const downloadArchive = async (
         break
       }
       // 自适应块大小：慢网小块、快网大块，进度大致每秒一次。
-      const elapsed = Math.max(1, Date.now() - chunkStartedAt)
+      const elapsed = Math.max(1, elapsedSince(chunkStartedAt))
       chunkSize = clamp((bytes.byteLength / elapsed) * CHUNK_TARGET_MS, MIN_CHUNK_BYTES, MAX_CHUNK_BYTES)
     }
     throwIfCancelled(options.signal)
@@ -971,7 +1012,7 @@ const downloadArchive = async (
       resume: downloaded > 0 ? 'yes' : 'no',
     }
     if (error instanceof DownloadStalled) {
-      const idleMs = Math.max(0, Date.now() - state.lastProgressAt)
+      const idleMs = elapsedSince(state.lastProgressAt)
       const seconds = Math.max(1, Math.round(state.stallMs / 1000))
       recordDownloadFailure('stalled', url, startedAt, {
         ...meta,
@@ -979,7 +1020,7 @@ const downloadArchive = async (
         'stall.ms': state.stallMs,
       })
       trace?.({
-        at: Date.now() - startedAt,
+        at: elapsedSince(startedAt),
         kind: 'error',
         bytes: downloaded,
         totalBytes: total,
@@ -999,7 +1040,7 @@ const downloadArchive = async (
       const minutes = Math.max(1, Math.round(maxTotalMs / 60_000))
       recordDownloadFailure('deadline', url, startedAt, { ...meta, 'max.total.ms': maxTotalMs })
       trace?.({
-        at: Date.now() - startedAt,
+        at: elapsedSince(startedAt),
         kind: 'error',
         bytes: downloaded,
         totalBytes: total,
@@ -1060,9 +1101,9 @@ export const importHistoryFromUrl = async (
   // 关联 id：导入链路的埋点靠它串起来（来自 coverage 分支的 correlation 埋点）
   const correlationId = newCorrelationId()
   recordAction('import_start', 'import-history-url', { correlationId, source: 'url' })
-  const startedAt = Date.now()
+  const startedAt = monotonicNow()
   const trace = options.onTrace
-  const emit = (entry: Omit<ImportTraceEntry, 'at'>) => trace?.({ at: Date.now() - startedAt, ...entry })
+  const emit = (entry: Omit<ImportTraceEntry, 'at'>) => trace?.({ at: elapsedSince(startedAt), ...entry })
   emit({ kind: 'start' })
   let lastSessionTraceAt = 0
   let lastImageTraceAt = 0
@@ -1082,7 +1123,7 @@ export const importHistoryFromUrl = async (
           processed: progress.sessions,
           totalSessions: progress.totalSessions,
         })
-        const now = Date.now()
+        const now = monotonicNow()
         // 会话总数是校验阶段算出来的：拿到就补一条「校验归档结束，共 N 个会话」
         if (!checkReported && progress.totalSessions !== undefined) {
           checkReported = true
