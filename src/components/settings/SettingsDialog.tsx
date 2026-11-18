@@ -434,7 +434,7 @@ const SettingCell = ({
       <div className={styles.label}>{label}</div>
       <CellText status={status} description={description} />
     </div>
-    {action}
+    <div className={styles.cellActions}>{action}</div>
   </div>
 )
 

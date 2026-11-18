@@ -95,6 +95,16 @@
   display: flex;
   align-items: center;
   gap: 8px;
+  min-width: 0;
+}
+
+.cellActions {
+  display: flex;
+  flex: 0 1 auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  min-width: 0;
 }
 
 .text {
@@ -445,7 +455,12 @@
   }
 
   .text {
+    flex: 1 1 0;
     padding-right: 8px;
+  }
+
+  .cellActions {
+    flex: 0 1 auto;
   }
 
   .cellButton {
