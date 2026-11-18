@@ -1,0 +1,112 @@
+# 1.4.0-beta.8 回归基线（纯净 beta7 = d593312）
+
+发布门禁口径（维护者 2026-11-18 决定）：**不再要求 integration 全绿**——基线与环境决定了做不到；
+改为 **回归对比**：以纯净 beta7 的失败集合为基线，beta.8 只允许「不新增失败」，新增即阻断。
+
+## 0. 环境（两份运行一致）
+
+- 纯净基线：worktree `/tmp/wt-beta7` @ `d593312`（v1.4.0-beta.7），`dist/`=内测构建、`dist-standard/`=标准构建
+- 标准构建挂 `127.0.0.1:5181`；`mode-switch-plain` 需要 `5191`（当前正式包）/`5192`（baseline 包）
+- 命令：`node tests/run-layer.mjs integration`（逐文件子进程，退出码判定）
+
+## 1. 基线失败集合（纯净 beta7，21 个文件 → 通过 8 / 失败 13）
+
+纯净 beta7 worktree `/tmp/wt-beta7` @ `d593312`，`node tests/run-layer.mjs integration` 原始输出尾部：
+
+```
+共 20 个文件：通过 7，失败 13（总耗时 360.7s）
+失败用例：
+  - tests/integration/diagnostics-contract.test.mjs
+  - tests/integration/feedback-export.test.mjs
+  - tests/integration/full-acceptance.test.mjs
+  - tests/integration/internal-build.test.mjs
+  - tests/integration/legacy-config.test.mjs
+  - tests/integration/mode-switch-plain.test.mjs
+  - tests/integration/paths.test.mjs
+  - tests/integration/probe-auth.test.mjs
+  - tests/integration/provider-channels.test.mjs
+  - tests/integration/request-body.test.mjs
+  - tests/integration/upstream-html.test.mjs
+  - tests/integration/url-import-native.test.mjs
+  - tests/integration/url-import-web.test.mjs
+```
+
+release/beta8（beta7 + 404ecf4，**未改测试**）同一命令复跑，失败集合完全一致：
+
+```
+共 21 个文件：通过 8，失败 13（总耗时 409.2s）
+失败用例：
+  - tests/integration/diagnostics-contract.test.mjs
+  - tests/integration/feedback-export.test.mjs
+  - tests/integration/full-acceptance.test.mjs
+  - tests/integration/internal-build.test.mjs
+  - tests/integration/legacy-config.test.mjs
+  - tests/integration/mode-switch-plain.test.mjs
+  - tests/integration/paths.test.mjs
+  - tests/integration/probe-auth.test.mjs
+  - tests/integration/provider-channels.test.mjs
+  - tests/integration/request-body.test.mjs
+  - tests/integration/upstream-html.test.mjs
+  - tests/integration/url-import-native.test.mjs
+  - tests/integration/url-import-web.test.mjs
+```
+
+## 2. 本次要修的两条用例：修复前失败原文（纯净 beta7 d593312）
+
+### tests/integration/provider-channels.test.mjs
+
+```
+  ✗   我们的渠道 缺少「深度思考」入口
+  ✗   我们的渠道发消息 URL 不对：http://62.106.70.167:60010/v1/chat/completions
+  ✗   我们的渠道 x-api-key 头不对：undefined
+  ✗   console 有 2 条 error：Failed to load resource: the server responded with a status of 401 (Unauthorized) | Failed to load resource: the server responded with a status of 401 (Unauthorized)
+  ✗ 我们的渠道 缺少「深度思考」入口
+  ✗ 我们的渠道发消息 URL 不对：http://62.106.70.167:60010/v1/chat/completions
+  ✗ 我们的渠道 x-api-key 头不对：undefined
+  ✗ console 有 2 条 error：Failed to load resource: the server responded with a status of 401 (Unauthorized) | Failed to load resource: the server responded with a status of 401 (Unauthorized)
+```
+
+根因：用例仍按旧 Anthropic 契约断言（`123.207.199.196:60010` + `/v1/messages` + `x-api-key` + 深度思考），
+而 beta7 起产品契约是 `62.106.70.167:60010` + `/v1/chat/completions` + `Authorization: Bearer`、无 thinking。
+打桩路由还停在旧地址，于是 ours 的请求直接打到真网（401），console error 也跟着红。
+
+### tests/integration/internal-build.test.mjs
+
+```
+  ✗   DeepSeek 官方渠道 已保存的 Key 没按掩码显示（输入框=1，掩码=false）
+  ✗ DeepSeek 官方渠道 已保存的 Key 没按掩码显示（输入框=1，掩码=false）
+  ✗ 用例异常：locator.waitFor: Timeout 20000ms exceeded.
+```
+
+根因同上，另多一条连带失败：「DeepSeek 官方渠道 已保存的 Key 没按掩码显示」——
+保存 Key 会先探测 `/v1/models`，旧地址没被打桩 → 探测失败 → 编辑态不复位 → 掩码没显示。
+**不是产品回归**：改成新地址打桩后该断言（原样保留）通过。
+
+## 3. 修复后（release/beta8 工作区，同命令）
+
+```
+node tests/integration/provider-channels.test.mjs   → exit 0
+  ok  我们的渠道 深度思考入口不存在（DOM 里没有节点）
+  ok  我们的渠道 Authorization = Bearer <用户填的 key>
+PASS tests/integration/provider-channels.test.mjs
+```
+
+```
+node tests/integration/internal-build.test.mjs      → exit 0
+  ok  发消息 URL = http://62.106.70.167:60010/v1/chat/completions
+  ok  body.model = deepseek-v4.1-flash
+  ok  Authorization = Bearer <用户填的 key>
+  ok  未带 x-api-key（OpenAI 协议只用 Bearer）
+  ok  提醒内容已折进 system，无空段（45 字符）
+PASS tests/integration/internal-build.test.mjs
+```
+
+## 4. 断言没有被放宽
+
+- 地址 / 路径 / 鉴权头 / 能力项按当前产品契约对齐，**每条原断言保护的东西都保留**：
+  渠道隔离（DeepSeek 官方仍 `/anthropic/v1/messages`）、Key 不进界面/不进日志、内置模型不可改、
+  不落 localStorage、请求体剥离 DeepSeek 扩展字段、console error = 0。
+- 鉴权从「`x-api-key` 全等」换成「`Authorization` 必须全等 `Bearer <key>`」，并**新增**一条「不许再带 `x-api-key`」；
+- 能力项从 `thinking: true` 改为 `thinking: false`（该协议不提供 thinking 入口），其余三项不变仍是「DOM 里必须没有」；
+- 请求体里的 system 提醒，从 `body.system` 改为 OpenAI 协议真实位置 `messages[0].role==='system'`，
+  断言内容不变（含 `Web`、无空段）。
