@@ -635,4 +635,20 @@ export const en = {
   settingDialogEnterKeySend: 'Enter sends (Shift + Enter for a new line)',
   settingDialogEnterKeyModifierSend: 'Ctrl / ⌘ + Enter sends (Enter for a new line)',
   settingDialogEnterKeyButtonOnly: 'Enter only adds a new line (use the send button)',
+  // Issue #49: tolerant import — damaged messages are truncated, damaged chats skipped, and the
+  // result view has to say which items were dropped and why.
+  historyImportedPartial: 'Imported {count} chats, skipped {skipped} damaged items',
+  historyImportSkippedTitle: 'Skipped {count} damaged items',
+  historyImportSkippedHint: 'The rest of the chats and messages were imported',
+  historyImportSkipScopeSession: 'Chat',
+  historyImportSkipScopeMessage: 'Message',
+  historyImportSkipScopeBranch: 'Branch',
+  historyImportSkipWhereSession: 'Chat "{session}" could not be read at all',
+  historyImportSkipWhereMessage: 'Message {message} in chat "{session}"',
+  historyImportSkipWhereBranch: 'Chat "{session}" branch pointing at {message}',
+  historyImportSkipMissingParent: 'missing parent message {parent}',
+  historyImportSkipReasonBranches:
+    'message branches are damaged (parent message missing, or roles do not connect)',
+  historyImportSkipReasonFiles:
+    'attachment data is damaged (image path escapes the folder, or the image is duplicated)',
 } satisfies Record<keyof typeof zh, string>

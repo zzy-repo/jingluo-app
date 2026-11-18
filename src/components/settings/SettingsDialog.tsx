@@ -15,6 +15,7 @@ import {
   exportHistory,
   importHistory,
 } from '../../services/chat/backup.js'
+import type { ImportSkip } from '../../services/chat/history/toLocal.js'
 import {
   canImportFromUrl,
   importHistoryFromUrl,
@@ -23,6 +24,7 @@ import {
   type UrlImportProgress,
 } from '../../services/chat/history/urlImport.js'
 import { copyText } from '../../utils/clipboard.js'
+import { ImportSkippedDetails, importedMessage } from './importSkipped.js'
 import { useIsMobile } from '../../app/viewport.js'
 import { useChatStore } from '../../services/chat/store.js'
 import {
@@ -805,6 +807,8 @@ const useHistoryImport = () => {
   const [progress, setProgress] = useState<UrlImportProgress | null>(null)
   const [trace, setTrace] = useState<ImportTraceEntry[]>([])
   const [status, setStatus] = useState<ImportStatus | null>(null)
+  // #49：这一次导入里被丢掉的条目（损坏的消息 / 整会话）。成功提示要带上条数，明细列在下面。
+  const [skipped, setSkipped] = useState<ImportSkip[]>([])
   const [url, setUrl] = useState('')
   const importing = useRef(false)
   // 取消后仍可能有已发出的下载在跑：用自增的 run 标记作废旧结果，不影响新的一轮导入。
@@ -851,10 +855,10 @@ const useHistoryImport = () => {
   const importFile = async (file: File) => {
     try {
       const count = await importHistory(file)
-      setStatus({
-        target: 'file',
-        message: { key: count === 1 ? 'historyImportedOne' : 'historyImported', params: { count } },
-      })
+      // 条数与明细都取自 store：importArchive 把跳过条目交回 store.importSkipped，这里只负责显示。
+      const dropped = useChatStore.getState().importSkipped
+      setSkipped(dropped)
+      setStatus({ target: 'file', message: importedMessage(count, dropped.length) })
     } catch {
       setStatus({ target: 'file', message: { key: 'historyImportFailed', error: true } })
     }
@@ -872,11 +876,10 @@ const useHistoryImport = () => {
         onProgress: emitProgress,
         onTrace: pushTrace,
       })
+      const dropped = useChatStore.getState().importSkipped
       setSource(null)
-      setStatus({
-        target: 'url',
-        message: { key: count === 1 ? 'historyImportedOne' : 'historyImported', params: { count } },
-      })
+      setSkipped(dropped)
+      setStatus({ target: 'url', message: importedMessage(count, dropped.length) })
     } catch (error) {
       if (controller.signal.aborted || error instanceof UrlImportCancelled) {
         // 取消：不提示失败，界面上什么错误都不留。
@@ -897,6 +900,7 @@ const useHistoryImport = () => {
     const id = run.current
     setBusy(true)
     setStatus(null)
+    setSkipped([])
     try {
       if (source.kind === 'file') {
         setSource(null)
@@ -936,6 +940,7 @@ const useHistoryImport = () => {
     progress,
     trace,
     status,
+    skipped,
     url,
     setUrl,
     selectFile: (file: File) => setSource({ kind: 'file', file }),
@@ -944,6 +949,17 @@ const useHistoryImport = () => {
     retry,
     confirm,
   }
+}
+
+/** 跳过明细的样式注入：组件自己不 import CSS，才能在裸 Node 单测里真渲染（tests/unit/import-skipped-ui.test.mjs）。 */
+const skippedClassNames = {
+  box: styles.traceBox,
+  header: styles.traceHeader,
+  title: styles.traceTitle,
+  list: styles.traceList,
+  row: styles.traceRow,
+  scope: styles.traceTime,
+  text: styles.traceText,
 }
 
 /** 导入 = 覆盖：用选中文件或链接替换本地全部会话与附件。 */
@@ -997,6 +1013,18 @@ const ImportHistory = ({
           </>
         }
       />
+      {historyImport.status?.target === 'file' && historyImport.skipped.length > 0 ? (
+        // #49：跳过了什么、为什么，摊开在导入这一项下面，不藏在折叠里
+        <div className={clsx(styles.cell, styles.row)}>
+          <div className={styles.text}>
+            <ImportSkippedDetails
+              skipped={historyImport.skipped}
+              t={t}
+              classNames={skippedClassNames}
+            />
+          </div>
+        </div>
+      ) : null}
       {native ? <ImportHistoryUrl historyImport={historyImport} disabled={disabled} /> : null}
     </>
   )
@@ -1025,6 +1053,13 @@ const ImportHistoryUrl = ({
           <CellText status={status} description={t('historyImportUrlDescription')} />
         )}
         <ImportTraceDetails entries={historyImport.trace} />
+        {historyImport.status?.target === 'url' && historyImport.skipped.length > 0 ? (
+          <ImportSkippedDetails
+            skipped={historyImport.skipped}
+            t={t}
+            classNames={skippedClassNames}
+          />
+        ) : null}
       </div>
       <div className={styles.linkActions}>
         <div className={clsx(styles.apiKeyInput, styles.linkInput)}>

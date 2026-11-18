@@ -1,0 +1,45 @@
+{
+  "page": "import-skipped",
+  "title": "#49 设置 → 数据管理 → 导入历史：部分损坏的包照样导入，界面列出跳过的条数与逐条定位",
+  "viewport": 390,
+  "size": "390×844",
+  "shots": [
+    "docs/ui/49-import-skipped/390/import-skipped-01-settings-data-before-import-390.png",
+    "docs/ui/49-import-skipped/390/import-skipped-02-import-confirm-390.png",
+    "docs/ui/49-import-skipped/390/import-skipped-03-import-skipped-details-390.png",
+    "docs/ui/49-import-skipped/390/import-skipped-04-import-skipped-closeup-390.png"
+  ],
+  "notes": [],
+  "skippedUi": {
+    "rows": 4,
+    "keys": [
+      "message:s3#2",
+      "branch:s3#2",
+      "message:s4#1",
+      "session:s4"
+    ],
+    "texts": [
+      "消息 会话「悬空父消息会话」第 #2 条消息 · 消息分支损坏（父消息缺失或角色接不上）（缺失的父消息 #99）",
+      "分支 会话「悬空父消息会话」当前指向 #2 · 消息分支损坏（父消息缺失或角色接不上）",
+      "消息 会话「整会话损坏」第 #1 条消息 · 消息分支损坏（父消息缺失或角色接不上）（缺失的父消息 #7）",
+      "会话 会话「整会话损坏」整段无法读取 · 消息分支损坏（父消息缺失或角色接不上）"
+    ],
+    "header": "跳过了 4 处损坏数据 其余会话与消息已正常导入",
+    "box": {
+      "x": 24,
+      "y": 638,
+      "width": 334,
+      "height": 184
+    },
+    "viewportWidth": 390,
+    "horizontalOverflow": false,
+    "rowsBeyondViewport": 0
+  },
+  "dialogText": "设置 通用设置 数据管理 渠道 DeepSeek 官方 API Key *************************** 连通性测试 测试 聊天背景 图片只保存在本机（IndexedDB），不会上传；最长边压缩到 1600px — 上传 清除 导入历史对话 已导入 3 个会话，跳过 4 处损坏数据 上传 跳过了 4 处损坏数据 其余会话与消息已正常导入 消息 会话「悬空父消息会话」第 #2 条消息 · 消息分支损坏（父消息缺失或角色接不上）（缺失的父消息 #99） 分支 会话「悬空父消息会话」当前指向 #2 · 消息分支损坏（父消息缺失或角色接不上） 消息 会话「整会话损坏」第 #1 条消息 · 消息分支损坏（父消息缺失或角色接不上）（缺失的父消息 #7） 会话 会话「整会话损坏」整段无法读取 · 消息分支损坏（父消息缺失或角色接不上） 导出所有历史对话 包含所有历史对话及本地图片原",
+  "state": {
+    "hasPartialStatus": true,
+    "rowsMatch": true,
+    "listsSessionTitles": true
+  },
+  "consoleErrors": []
+}

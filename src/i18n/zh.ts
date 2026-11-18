@@ -616,4 +616,17 @@ export const zh = {
   settingDialogEnterKeySend: '回车发送（Shift + 回车换行）',
   settingDialogEnterKeyModifierSend: 'Ctrl / ⌘ + 回车发送（回车换行）',
   settingDialogEnterKeyButtonOnly: '只换行（点发送按钮才发送）',
+  // Issue #49：导入容错——坏消息截断、坏会话跳过，界面要能说清「丢了哪几条、为什么」
+  historyImportedPartial: '已导入 {count} 个会话，跳过 {skipped} 处损坏数据',
+  historyImportSkippedTitle: '跳过了 {count} 处损坏数据',
+  historyImportSkippedHint: '其余会话与消息已正常导入',
+  historyImportSkipScopeSession: '会话',
+  historyImportSkipScopeMessage: '消息',
+  historyImportSkipScopeBranch: '分支',
+  historyImportSkipWhereSession: '会话「{session}」整段无法读取',
+  historyImportSkipWhereMessage: '会话「{session}」第 {message} 条消息',
+  historyImportSkipWhereBranch: '会话「{session}」当前指向 {message}',
+  historyImportSkipMissingParent: '缺失的父消息 {parent}',
+  historyImportSkipReasonBranches: '消息分支损坏（父消息缺失或角色接不上）',
+  historyImportSkipReasonFiles: '附件数据损坏（图片路径越界或重复）',
 } as const

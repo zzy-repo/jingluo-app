@@ -3,7 +3,7 @@ import { BackupError, fail } from './errors.js'
 import type { SessionIndexEntry } from './format.js'
 import { INDEX_PATH, MANIFEST_PATH, USER_PATH, parseSessionPath, sessionFilesDir } from './paths.js'
 import { checkManifest, readSessionFile, readSessionIndex } from './schema.js'
-import { toLocalSession } from './toLocal.js'
+import { toLocalSessionResult, type ImportSkip } from './toLocal.js'
 import {
   ArchiveError,
   isZipFile,
@@ -105,12 +105,23 @@ export type ImportArchiveOptions = {
  * 也支持会话与图片交错排列、index 位于末尾的条目顺序。
  * 会话读完立即暂存，只保留图片路径映射；图片全部读完后逐会话回填 MIME，不改变图片身份。
  * 写入导入暂存存储；调用方负责先清空暂存，成功后替换正式数据，失败时清理暂存。
+ *
+ * 容错（#49）：单个会话里的坏消息截断跳过、坏到整个会话都构造不出来时跳过整个会话，
+ * 都只记进返回的 `skipped`（界面据此列出「跳过了哪几条、为什么」），其余会话照常导入；
+ * 只有「一条会话都没写成」才算整包失败。
  */
-export const importArchive = async (file: File, options: ImportArchiveOptions = {}): Promise<void> => {
+export const importArchive = async (
+  file: File,
+  options: ImportArchiveOptions = {}
+): Promise<{ skipped: ImportSkip[] }> => {
   if (!(await isZipFile(file))) {
     fail('backupUnrecognized')
   }
   const imported = new Set<string>()
+  /** 会话文件读到了的会话（成功暂存或整会话跳过），它们的图片目录不算「无主条目」。 */
+  const handled = new Set<string>()
+  /** 本次导入被跳过的条目（损坏消息 / 损坏会话），调用方带进 state.importSkipped 给界面展示。 */
+  const skipped: ImportSkip[] = []
   const images = new Map<string, string>()
   /** 已保存的原件：文件 ID → MIME。同一图片出现在多个会话目录时只保存一次。 */
   const stored = new Map<string, string>()
@@ -153,12 +164,23 @@ export const importArchive = async (file: File, options: ImportArchiveOptions = 
         // 账号信息（已脱敏）不导入；文件可能缺失。
         await skipEntry(entry)
       } else if (sessionId !== null && !index) {
-        const local = toLocalSession(readSessionFile(await readJson(entry)))
-        if (local.session.id !== sessionId || imported.has(sessionId)) {
+        // #49：坏会话不再让整包失败。整会话都构造不出来时只跳过它，跳过的条目逐条带进 skipped。
+        const result = toLocalSessionResult(readSessionFile(await readJson(entry)))
+        if (imported.has(sessionId)) {
+          fail('backupIncomplete')
+        }
+        handled.add(sessionId)
+        currentSessionId = sessionId
+        skipped.push(...result.skipped)
+        if (!result.ok) {
+          options.onProgress?.({ sessions: imported.size, totalSessions: options.totalSessions })
+          continue
+        }
+        const local = result.session
+        if (local.session.id !== sessionId) {
           fail('backupIncomplete')
         }
         imported.add(sessionId)
-        currentSessionId = sessionId
         for (const [imagePath, id] of local.images) {
           images.set(imagePath, id)
         }
@@ -168,7 +190,7 @@ export const importArchive = async (file: File, options: ImportArchiveOptions = 
         index = readSessionIndex(await readJson(entry))
       } else if (
         index
-          ? imported.has(/^chat_sessions\/([^/]+)_files\//.exec(path)?.[1] ?? '')
+          ? handled.has(/^chat_sessions\/([^/]+)_files\//.exec(path)?.[1] ?? '')
           : currentSessionId && path.startsWith(sessionFilesDir(currentSessionId))
       ) {
         // 没有被引用的条目不保存，引用了但缺失的图片只展示文件名。
@@ -192,15 +214,17 @@ export const importArchive = async (file: File, options: ImportArchiveOptions = 
   if (!manifest) {
     fail('backupEmptyArchive')
   }
-  // index 只列出成功写出的会话，与会话文件一一对应。
+  // index 列出包里全部会话：暂存成功的、被整会话跳过的（#49）都算「读到了」；
+  // 索引里有却没读到会话文件、或暂存了却不在索引里，才是文件真的缺内容。
   const listed = new Set(index?.map((entry) => entry.id))
   if (
     !index ||
     listed.size !== index.length ||
-    listed.size !== imported.size ||
+    [...listed].some((id) => !imported.has(id) && !handled.has(id)) ||
     [...imported].some((id) => !listed.has(id))
   ) {
     fail('backupIncomplete')
   }
   await db.updateStagingFileTypes(stored)
+  return { skipped }
 }

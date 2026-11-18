@@ -25,8 +25,10 @@
 import { createReadStream } from 'node:fs'
 import { mkdir, stat, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:http'
+import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
+import { zipSync, strToU8 } from 'fflate'
 import { chromium } from 'playwright'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
@@ -349,6 +351,146 @@ const makeReadingSession = () => {
         now + 1
       ),
     ],
+  }
+}
+
+// ---------------------------------------------------------------- #49 导入跳过条目的样本包
+
+/** 与真实导出同序（manifest → 会话 JSON → 索引 → 图片），其中 s3 截断、s4 整会话无法构造 */
+const IMPORT_TIME = '2026-11-01T00:00:00.000Z'
+
+const importMessage = (id, parentId, role, content) => ({
+  id,
+  parent_id: parentId,
+  role,
+  status: 'FINISHED',
+  thinking_enabled: false,
+  search_enabled: false,
+  accumulated_token_usage: 0,
+  inserted_at: IMPORT_TIME,
+  fragments: [{ type: role === 'USER' ? 'REQUEST' : 'RESPONSE', content }],
+})
+
+const importSessionFile = ({ id, title, messages, imagePath }) => {
+  const list = [...messages]
+  if (imagePath !== undefined) {
+    list[0] = {
+      ...list[0],
+      fragments: [
+        ...list[0].fragments,
+        {
+          type: 'FILE',
+          files: [
+            {
+              id: 'f4',
+              file_name: 'image.png',
+              file_size: 128,
+              token_usage: null,
+              inserted_at: IMPORT_TIME,
+              export_path: imagePath,
+              is_image: true,
+              width: 512,
+              height: 512,
+            },
+          ],
+        },
+      ],
+    }
+  }
+  return strToU8(
+    JSON.stringify({
+      id,
+      title,
+      pinned: false,
+      current_message_id: list[list.length - 1].id,
+      inserted_at: IMPORT_TIME,
+      updated_at: IMPORT_TIME,
+      messages: list,
+    })
+  )
+}
+
+const importIndex = (sessions) =>
+  strToU8(
+    JSON.stringify(
+      sessions.map(({ id, title }) => ({
+        id,
+        title,
+        pinned: false,
+        message_count: 2,
+        inserted_at: IMPORT_TIME,
+        updated_at: IMPORT_TIME,
+      }))
+    )
+  )
+
+/** 写一个「部分合法 + 部分不可识别」的导出包到临时目录，返回路径 */
+const writeBrokenArchive = async () => {
+  const image = 'chat_sessions/s4_files/f4_image.png'
+  const png = new Uint8Array(128)
+  png.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
+  const archive = zipSync(
+    {
+      'manifest.json': strToU8(JSON.stringify({ export_format_version: 3 })),
+      'chat_sessions/s1.json': importSessionFile({
+        id: 's1',
+        title: '完好会话一',
+        messages: [importMessage(1, null, 'USER', '问题一'), importMessage(2, 1, 'ASSISTANT', '回答一')],
+      }),
+      'chat_sessions/s2.json': importSessionFile({
+        id: 's2',
+        title: '完好会话二',
+        messages: [importMessage(1, null, 'USER', '问题二'), importMessage(2, 1, 'ASSISTANT', '回答二')],
+      }),
+      'chat_sessions/s3.json': importSessionFile({
+        id: 's3',
+        title: '悬空父消息会话',
+        messages: [importMessage(1, null, 'USER', '问题三'), importMessage(2, 99, 'ASSISTANT', '回答三')],
+      }),
+      'chat_sessions/s4.json': importSessionFile({
+        id: 's4',
+        title: '整会话损坏',
+        messages: [importMessage(1, 7, 'ASSISTANT', '无主的回答')],
+        imagePath: image,
+      }),
+      'chat_session_index.json': importIndex([
+        { id: 's1', title: '完好会话一' },
+        { id: 's2', title: '完好会话二' },
+        { id: 's3', title: '悬空父消息会话' },
+        { id: 's4', title: '整会话损坏' },
+      ]),
+      [image]: png,
+    },
+    { level: 0 }
+  )
+  const file = path.join(tmpdir(), 'ds-49-broken-archive.zip')
+  await writeFile(file, Buffer.from(archive))
+  return file
+}
+
+/** 量「跳过了 N 处损坏数据」这块：条数、逐条定位文案、有没有横向溢出 */
+const measureSkippedBox = () => {
+  const node = document.querySelector('[data-skipped-box]')
+  if (node === null) {
+    return null
+  }
+  const rect = node.getBoundingClientRect()
+  const viewportWidth = document.documentElement.clientWidth
+  const rows = Array.from(node.querySelectorAll('[data-skipped-entry]'))
+  return {
+    rows: rows.length,
+    keys: rows.map((row) => row.getAttribute('data-skipped-entry')),
+    texts: rows.map((row) => (row.innerText ?? '').replace(/\s+/gu, ' ').trim()),
+    header: ((node.querySelector('[data-skipped-header]')?.innerText ?? '').replace(/\s+/gu, ' ').trim()),
+    box: {
+      x: Math.round(rect.x),
+      y: Math.round(rect.y),
+      width: Math.round(rect.width),
+      height: Math.round(rect.height),
+    },
+    viewportWidth,
+    horizontalOverflow: node.scrollWidth > node.clientWidth + 1,
+    rowsBeyondViewport: rows.filter((row) => row.getBoundingClientRect().right > viewportWidth + 1).length,
   }
 }
 
@@ -744,6 +886,70 @@ export const PAGES = {
       await shot('02-payment-records')
       await shot('03-payment-records-closeup', {
         clip: { x: dialog.box.x, y: dialog.box.y, width: dialog.box.width, height: dialog.box.height },
+      })
+    },
+  },
+
+  'import-skipped': {
+    dir: 'docs/ui/49-import-skipped',
+    title: '#49 设置 → 数据管理 → 导入历史：部分损坏的包照样导入，界面列出跳过的条数与逐条定位',
+    sessions: () => [makeReadingSession()],
+    mockOrders: false,
+    run: async (ctx) => {
+      const { page, shot, record, warn } = ctx
+      await openSettings(page, S.tabData)
+      await page.waitForTimeout(320)
+      await shot('01-settings-data-before-import')
+
+      const archive = await writeBrokenArchive()
+      const input = page.locator('input[type="file"][accept*="zip"]')
+      await input.waitFor({ state: 'attached', timeout: 10000 })
+      await input.setInputFiles(archive)
+      const confirm = page.getByRole('button', { name: '确认导入', exact: true })
+      await confirm.waitFor({ state: 'visible', timeout: 10000 })
+      await page.waitForTimeout(200)
+      await shot('02-import-confirm')
+      await confirm.click()
+
+      // 覆盖全部本地数据后才会重渲染；跳过明细在成功提示下面
+      const box = page.locator('[data-skipped-box]')
+      await box.waitFor({ state: 'visible', timeout: 30000 })
+      await page.waitForTimeout(600)
+      await box.scrollIntoViewIfNeeded()
+      await page.waitForTimeout(320)
+
+      const measured = await page.evaluate(measureSkippedBox)
+      record('skippedUi', measured)
+      const statusText = await page.evaluate(() => {
+        const dialog = document.querySelector('[role="dialog"]')
+        return ((dialog?.innerText ?? '').replace(/\s+/gu, ' ').trim() || '').slice(0, 400)
+      })
+      record('dialogText', statusText)
+      record('state', {
+        hasPartialStatus: /已导入 3 个会话，跳过 4 处损坏数据/u.test(statusText),
+        rowsMatch: measured !== null && measured.rows === 4,
+        listsSessionTitles: statusText.includes('悬空父消息会话') && statusText.includes('整会话损坏'),
+      })
+      if (measured === null) {
+        throw new Error('导入完成后没有渲染跳过明细（[data-skipped-box] 找不到）')
+      }
+      if (measured.rows !== 4) {
+        warn(`跳过明细条数为 ${measured.rows}，期望 4`)
+      }
+      if (measured.horizontalOverflow) {
+        warn(`跳过明细横向溢出：scrollWidth > clientWidth（视口 ${measured.viewportWidth}）`)
+      }
+      if (measured.rowsBeyondViewport > 0) {
+        warn(`${measured.rowsBeyondViewport} 行超出右边界（视口 ${measured.viewportWidth}）`)
+      }
+      await shot('03-import-skipped-details')
+      await shot('04-import-skipped-closeup', {
+        clip: {
+          x: Math.max(0, measured.box.x - 4),
+          y: Math.max(0, measured.box.y - 4),
+          width: Math.min(measured.box.width + 8, ctx.size.width),
+          height: measured.box.height + 8,
+        },
       })
     },
   },
