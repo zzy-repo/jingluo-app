@@ -101,7 +101,9 @@ const run = async () => {
   await confirmDialog.waitFor({ timeout: 5000 })
   await page.screenshot({ path: `${SHOT_DIR}1.4.0-beta.2-url-import-web-confirm.png` })
   await confirmDialog.getByRole('button', { name: '确认导入', exact: true }).click()
-  await page.getByText('已导入 1 个对话').waitFor({ timeout: 30000 })
+  // 文案契约（src/i18n/zh.ts）：1.4.0-beta.8 起「已导入 N 个对话」→「已导入 N 个会话」，
+  // 这里兼容两种措辞，避免每次改词都假红。
+  await page.getByText(/已导入 1 个(对话|会话)/).waitFor({ timeout: 30000 })
   check('上传导入后会话数 = 1', (await sessionCount(page)) === 1)
   check(
     '侧栏出现导入的会话',

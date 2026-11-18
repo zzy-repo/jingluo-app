@@ -86,6 +86,10 @@ test('two suite entrypoints reuse injected dist without build, and fail missing 
   await writeFile(path.join(dir, 'node_modules/playwright/package.json'), JSON.stringify({ type: 'module', exports: './index.mjs' }))
   await writeFile(path.join(dir, 'node_modules/playwright/index.mjs'), `export const chromium={launch:async()=>{throw new Error('MOCK_LAUNCH_REACHED')}}`)
   await cp(path.join(root, 'tests/helpers/runtime.mjs'), path.join(dir, 'tests/helpers/runtime.mjs'))
+  // 入口用例还会 import 产物守卫与 ours 契约 fixture，沙箱里要一并拷过去
+  await cp(path.join(root, 'tests/helpers/env.mjs'), path.join(dir, 'tests/helpers/env.mjs'))
+  await mkdir(path.join(dir, 'tests/fixtures'), { recursive: true })
+  await cp(path.join(root, 'tests/fixtures/ours-upstream.mjs'), path.join(dir, 'tests/fixtures/ours-upstream.mjs'))
   const dist = path.join(dir, 'prebuilt'); await mkdir(dist); await writeFile(path.join(dist, 'index.html'), 'immutable')
   for (const name of ['auto-title', 'diagnostics-contract']) {
     const file = path.join(dir, `tests/integration/${name}.test.mjs`)

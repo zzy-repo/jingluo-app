@@ -38,12 +38,15 @@ const REPLY = '动效验收用的 mock 回复。'
 /**
  * 对照基线提交：用于「有没有新增动画属性 / 消息流是否被改动」的静态检查。
  *
- * 注意（Issue #19 follow-up）：这个 SHA 是硬编码的，只验证「相对某个历史点没改动」。
- * 68f9342 之后 CopyButton.tsx 因「超长复制改保存 TXT」（#16 / #2）被合法改动过，
- * 所以基线前移到 #21/#26 之后的 main 顶点；以后再改这些文件时请同步更新本常量。
- * 长期方案是改成快照 fixture（同 mode-switch-plain 的做法），不在测试里钉 git SHA。
+ * 注意（Issue #19 follow-up）：以前这里钉死一个 SHA（68f9342），历史一往前挪就必然假红
+ * （CopyButton 因「超长复制改保存 TXT」/ #16 被合法改动过）。现在默认取「与 origin/main 的
+ * 分叉点」：在本分支上跑=只校验本分支没动消息流；在 main 上跑=基线即自身（不报红）。
+ * 想固定某个历史点仍然可以用 MOTION_BASE=<sha> 覆盖。
  */
-const BASE_COMMIT = process.env.MOTION_BASE || '637adfb'
+const BASE_COMMIT =
+  process.env.MOTION_BASE ||
+  execFileSync('git', ['merge-base', 'HEAD', 'origin/main'], { cwd: ROOT, encoding: 'utf8' }).trim() ||
+  'HEAD'
 
 /**
  * 【白名单】允许 transform / opacity 之外动画属性存在的文件（每条例外都必须写明理由）。
