@@ -62,6 +62,13 @@ APK=android/app/build/outputs/apk/release/app-release.apk
 
 - 做：这一段的 `- ` 条目会被脚本抽成 dl 的 `meta.changes`，也会进 GitHub Release notes（`release.yml` 从 `releases.json` 取）。
   **写用户看得懂的话**（「修复低内核机型白屏」），不要写「refactor xxx」。
+
+> **处在服务端迁移窗口期时（现在就是）**：本段 `changes` 里**必须**带一条给运维的提醒——旧机
+> `62.106.70.167` 下线前，先在旧 IP 的三个端口返回「请升级」响应并跑满到下一次发版之后
+> （对话端口要给可读错误、反馈端口不能回 200 假装成功）。老版本里没有任何版本检查逻辑，
+> 旧机一停，用户看到的是网络错误而不是「请升级」。给用户的 `changes` 也提一句「如遇连接失败请更新到最新版本」。
+> 详见 [`docs/server-migration.md`](server-migration.md) §2。
+
 - 成功判据：`head -20 CHANGELOG.md` 第一段就是本次版本。
 - 失败回滚：同上，未提交就 `git checkout -- CHANGELOG.md`。
 

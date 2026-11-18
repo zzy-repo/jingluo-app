@@ -432,3 +432,4 @@ npm run test:e2e         # e2e（含真实上游用例，需要 E2E_API_KEY）
 - 不自动修 APK 元信息不一致（aapt2 校验靠人做，§4.1）。
 - 不处理 `dist/` 缓存导致的旧产物：怀疑时 `rm -rf dist && pnpm build[:internal]` 再 `npx cap sync android`。
 - 不在 CI 里构建 APK、不上传 keystore（这条永远不变）。
+- 不负责服务端地址迁移的下线动作：三代地址、过渡策略（C 强制升级）、旧机停之前的「请升级」兜底响应、以及「下次先配域名再搬」的前向建议，都记在 [`docs/server-migration.md`](server-migration.md)。**发版前扫一眼那份文档，确认自己踩在迁移窗口期里没有。**
