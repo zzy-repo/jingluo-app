@@ -7,6 +7,93 @@
     <title>API 使用 demo</title>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root"><div id="compatibility-error" hidden></div></div>
+    <!--
+      低内核启动守卫（issue #13）。**这段必须是 ES5**：老 WebView 解析不了新语法时，
+      defer 的业务包整包不执行，只有这段还能跑。它的职责是兜底 —— 把「静默白屏」变成一句能读的提示，
+      主方案是构建降级 + src/polyfills/legacy.ts 的运行时补齐。
+      也因此这里**不检查** Object.hasOwn / Array.prototype.at / structuredClone：这些由上面的
+      polyfill 补齐，列进来会让 WebView 83（本体已能用）误报。
+    -->
+    <script>
+      (function () {
+        var REQUIRED = [
+          ['Promise', function () { return window.Promise }],
+          ['fetch', function () { return window.fetch }],
+          ['URL', function () { return window.URL }],
+          ['AbortController', function () { return window.AbortController }],
+          ['TextDecoder', function () { return window.TextDecoder }],
+          ['ResizeObserver', function () { return window.ResizeObserver }],
+          ['CSS.escape', function () { return window.CSS && window.CSS.escape }],
+          ['Object.defineProperty', function () { return Object.defineProperty }],
+          ['Array.prototype.forEach', function () { return Array.prototype.forEach }],
+          ['Map', function () { return window.Map }],
+          ['Set', function () { return window.Set }],
+          ['WeakMap', function () { return window.WeakMap }]
+        ]
+        var BOOT_DEADLINE_MS = 12000
+        var startedAt = Date.now()
+
+        function showFailure(details) {
+          var box = document.getElementById('compatibility-error')
+          // 已经有提示了就不覆盖（先报的具体原因比后到的“启动任务异常”有用）
+          if (!box || box.hidden === false) return
+          box.hidden = false
+          box.style.cssText =
+            'margin:24px 16px;padding:16px;border:1px solid #f0b8b8;border-radius:12px;' +
+            'background:#fff7f7;color:#7b2020;font:15px/1.6 sans-serif'
+          box.textContent =
+            '页面启动失败。请更新 Android System WebView 或浏览器后重试；' +
+            '仍失败请反馈组件版本与以下信息：' + details
+        }
+
+        function canBoot() {
+          return window.__DEEPSEEK_BOOTED__ === true
+        }
+
+        var missing = []
+        for (var index = 0; index < REQUIRED.length; index += 1) {
+          var probe = REQUIRED[index]
+          try {
+            if (!probe[1]()) missing.push(probe[0])
+          } catch (error) {
+            missing.push(probe[0])
+          }
+        }
+        if (missing.length) {
+          window.__DEEPSEEK_COMPATIBILITY_ERROR__ = missing
+          showFailure('缺少：' + missing.join(', '))
+        }
+
+        window.addEventListener(
+          'error',
+          function (event) {
+            showFailure((event && event.message) || '脚本资源加载失败')
+          },
+          true
+        )
+        window.addEventListener('unhandledrejection', function () {
+          showFailure('启动任务异常')
+        })
+
+        // 静默白屏兜底：脚本解析失败时部分内核不触发 error 事件，只能靠「一直没启动」判断。
+        var timer = setInterval(function () {
+          var box = document.getElementById('compatibility-error')
+          if (box && !box.hidden) {
+            clearInterval(timer)
+            return
+          }
+          if (canBoot()) {
+            clearInterval(timer)
+            return
+          }
+          if (Date.now() - startedAt > BOOT_DEADLINE_MS) {
+            clearInterval(timer)
+            showFailure('脚本 12 秒内没有启动（内核过旧或资源加载失败）')
+          }
+        }, 1000)
+      })()
+    </script>
+    <noscript>需要启用 JavaScript 才能使用。</noscript>
   </body>
 </html>

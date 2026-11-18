@@ -97,6 +97,8 @@
     position: fixed;
     top: var(--app-viewport-top, 0px);
     bottom: auto;
+    /* 低内核 WebView 不认 dvh（Chrome 108+）：先给 vh 回退，dvh 能解析时再覆盖（issue #13） */
+    height: var(--app-viewport-height, 100vh);
     height: var(--app-viewport-height, 100dvh);
   }
 }

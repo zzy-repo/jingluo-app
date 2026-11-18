@@ -222,6 +222,8 @@
 @media not all and (min-width: 768px) {
   .wrapper {
     flex-shrink: 0;
+    /* dvh 回退：WebView 83 只认 vh（issue #13） */
+    max-height: calc(var(--app-viewport-height, 100vh) - 120px);
     max-height: calc(var(--app-viewport-height, 100dvh) - 120px);
   }
 
