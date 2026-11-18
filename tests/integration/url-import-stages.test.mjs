@@ -5,10 +5,13 @@
 // mock 按请求里的 Range 头分块返回字节，因此走的是真实代码：
 // 分块下载 → base64 解码 → ZIP 校验 → importHistory → staging → IndexedDB。
 import { readFile } from 'node:fs/promises'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
 import { buildArchive, textPayload } from '../fixtures/archive-fixture.mjs'
 
 const APP_URL = (process.env.APP_URL || 'http://127.0.0.1:5181').replace(/\/+$/, '')
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 const LOCAL_DIST = new URL('../../dist/index.html', import.meta.url)
 
 /** 从任意 index.html 文本里取入口 bundle 名（main.<hash>.js） */
@@ -21,19 +24,30 @@ const bundleName = (html) => (html.match(/main\.[a-z0-9]+\.js/) || [])[0] || ''
  */
 const assertFreshBuild = async () => {
   console.log(`  被测地址 APP_URL=${APP_URL}`)
-  let local = ''
-  try {
-    local = bundleName(await readFile(LOCAL_DIST, 'utf8'))
-  } catch {
-    console.log('  （本机没有 dist/index.html，跳过陈旧构建比对；请确认 APP_URL 指向刚构建的产物）')
+  // 候选本地产物：dist（内测包）与 dist-standard（标准包）。按 APP_URL 实际提供的那份比对，
+  // 否则「APP_URL 指向 dist-standard、dist 里是内测包」会被误判成构建过期（假红）。
+  const candidates = [process.env.STANDARD_DIST_DIR, path.join(ROOT, 'dist-standard'), LOCAL_DIST]
+    .filter(Boolean)
+  const locals = []
+  for (const dir of candidates) {
+    try {
+      const hash = bundleName(await readFile(path.join(dir, 'index.html'), 'utf8'))
+      if (hash && !locals.includes(hash)) locals.push(hash)
+    } catch {
+      // 该目录没有产物
+    }
+  }
+  if (locals.length === 0) {
+    console.log('  （本机没有 dist/dist-standard 产物，跳过陈旧构建比对；请确认 APP_URL 指向刚构建的产物）')
     return
   }
   const html = await fetch(`${APP_URL}/`).then((response) => response.text())
   const served = bundleName(html)
-  if (local && served && local !== served) {
+  const local = served && locals.includes(served) ? served : locals[0]
+  if (local && served && !locals.includes(served)) {
     failures.push(
-      `被测页面构建过期：${APP_URL} 提供 ${served}，本仓库 dist 是 ${local} —— ` +
-        '请先 `pnpm build` 并用 `APP_URL` 指向新产物；这不是产品回归'
+      `被测页面构建过期：${APP_URL} 提供 ${served}，本机产物是 ${locals.join(' / ')} —— ` +
+        '请先重建产物并用 `APP_URL` 指向它；这不是产品回归'
     )
     console.error(`  ✗ 被测页面构建过期（${served} ≠ ${local}）`)
   } else {
