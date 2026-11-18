@@ -280,8 +280,8 @@ const FeedbackForm = ({
 
   const copyTicket = async (id: string) => {
     const ok = await copyText(id)
-    setCopied(ok)
-    if (ok) {
+    setCopied(ok === 'copied')
+    if (ok === 'copied') {
       showToast({ key: 'copied' })
     } else {
       showToast({ key: 'copyFailed', type: 'error' })

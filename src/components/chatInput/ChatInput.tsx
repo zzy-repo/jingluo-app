@@ -58,6 +58,7 @@ const Input = ({ sessionId }: { sessionId: string | null }) => {
   // 能力开关来自当前服务类型的 spec：不支持的入口直接不渲染
   const caps = getSpec(useApiConfig((state) => state.kind)).caps
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const textInputRef = useRef<HTMLInputElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const togglesRef = useRef<HTMLDivElement>(null)
 
@@ -109,6 +110,27 @@ const Input = ({ sessionId }: { sessionId: string | null }) => {
     [sessionId]
   )
   const dragging = useFileDrop(acceptFiles)
+  const importTextFile = async (file: File) => {
+    if (file.size > 8 * 1024 * 1024) { showToast('TXT 文件超过 8MB 上限'); return }
+    try {
+      const reader = file.stream().getReader()
+      const decoder = new TextDecoder()
+      let imported = ''
+      for (;;) {
+        const part = await reader.read()
+        if (part.done) { break }
+        imported += decoder.decode(part.value, { stream: true })
+        if (imported.length % (256 * 1024) < part.value.length) { await new Promise<void>((resolve) => setTimeout(resolve, 0)) }
+      }
+      imported += decoder.decode()
+      const current = getDraft(sessionId).text
+      const textarea = textareaRef.current
+      const start = textarea?.selectionStart ?? current.length
+      const end = textarea?.selectionEnd ?? current.length
+      setText(current.slice(0, start) + imported + current.slice(end))
+      showToast('TXT 已导入输入框')
+    } catch { showToast('TXT 文件读取失败，请重试') }
+  }
 
   /** 转写结果插入到光标处，并把光标移到插入内容之后 */
   const voice = useVoiceInput((transcript) => {
@@ -257,6 +279,24 @@ const Input = ({ sessionId }: { sessionId: string | null }) => {
               }}
             />
           ) : null}
+          <IconButton
+            size="m"
+            icon={<IconPaperclipOutline16 />}
+            tooltip="从 TXT 导入文本"
+            disabled={importingHistory}
+            onClick={() => textInputRef.current?.click()}
+          />
+          <input
+            ref={textInputRef}
+            type="file"
+            hidden
+            accept=".txt,text/plain"
+            onChange={(event) => {
+              const file = event.target.files?.[0]
+              if (file) { void importTextFile(file) }
+              event.target.value = ''
+            }}
+          />
           {caps.vision ? (
             <>
               <IconButton
