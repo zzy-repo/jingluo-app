@@ -131,12 +131,24 @@ INTERNAL_BUILD=1 NODE_ENV=production rspack build -c rspack.config.ts
 判定原则：**只用「相对基线没有新增失败」做门禁**，不要求基线本身全绿；
 但 `known-red` 必须带原因与 Issue，修好后从清单里删掉（否则 `FIXED?` 会一直提醒）。
 
-## 6. 当前基线（2026-11-18，origin/main@abf5c68 / 1.4.0-beta.7）
+## 6. 当前基线（2026-11-18，origin/main@b7b5750 / 1.4.0-beta.8 线）
 
-- 24 个集成文件，**期望全部 `pass`**（基线里没有 `known-red`）。
-- 实测：`node tests/run-layer.mjs integration --baseline` → 通过 24 / 失败 0 / 跳过 0（数字见 Issue #19 评论）。
-- 历史遗留的 6 条红已按「契约过期 / 环境依赖」修掉（改断言对齐现状、打桩集中到 fixture、端口自动发现、
-  产物自述校验），修复明细见 Issue #19 的评论。
+- 24 个集成文件：**23 条期望通过 + 1 条 known-red**。
+- 实测：
+
+```
+APP_URL=http://127.0.0.1:5301 node tests/run-layer.mjs integration --baseline --timeout-ms 300000
+
+Total 24: PASS 23, FAIL 1, SKIP(env) 0; elapsed 666232ms
+本次失败 1 / 基线登记红 1 / 新增失败 0 / 已转绿 0 / 跳过(环境) 0（共 24 个文件）
+相对基线没有新增失败 ✅
+```
+
+- 那条 known-red 是 `full-acceptance`：openai 兼容渠道点「测试」后探测请求未带 `Authorization`
+  （期望 `Bearer <key>`，实测 undefined）。在**未改动的 origin/main** 上同样复现，与本轮改动无关，
+  按「真实缺陷不进本单」的规则登记在 `integration-baseline.json` 的 `known-red` 段，待单开 Issue。
+- 历史遗留的 6 条红已按「契约过期 / 环境依赖」修掉（改断言对齐现状、打桩集中到 fixture、
+  端口自动发现、产物自述校验），修复明细见 Issue #19 的评论。
 
 ## 7. 排查顺序（红了一个文件时）
 
