@@ -98,3 +98,9 @@
     background: var(--dsw-alias-interactive-bg-hover);
   }
 }
+
+/* #173-fallback:start —— 由 node scripts/gen-flex-gap-fallback.mjs 生成，勿手改（issue #173） */
+:global(html[data-flex-gap-fallback]) .option > *:not(:last-child) {
+  margin-right: 8px;
+}
+/* #173-fallback:end */

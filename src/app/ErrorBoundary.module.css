@@ -93,3 +93,16 @@
     width: 100%;
   }
 }
+
+/* #173-fallback:start —— 由 node scripts/gen-flex-gap-fallback.mjs 生成，勿手改（issue #173） */
+:global(html[data-flex-gap-fallback]) .actions > *:not(:last-child) {
+  margin-right: 12px;
+  margin-bottom: 12px;
+}
+
+@media (max-width: 400px) {
+  :global(html[data-flex-gap-fallback]) .actions > *:not(:last-child) {
+    margin-bottom: 10px;
+  }
+}
+/* #173-fallback:end */

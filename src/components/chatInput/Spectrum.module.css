@@ -26,3 +26,9 @@
   transform-origin: center;
   will-change: transform;
 }
+
+/* #173-fallback:start —— 由 node scripts/gen-flex-gap-fallback.mjs 生成，勿手改（issue #173） */
+:global(html[data-flex-gap-fallback]) .spectrum > *:not(:last-child) {
+  margin-right: 3px;
+}
+/* #173-fallback:end */

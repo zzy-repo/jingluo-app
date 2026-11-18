@@ -159,3 +159,9 @@ body[data-ds-dark-theme] .modeOptionSelected {
     user-select: none;
   }
 }
+
+/* #173-fallback:start —— 由 node scripts/gen-flex-gap-fallback.mjs 生成，勿手改（issue #173） */
+:global(html[data-flex-gap-fallback]) .modeOption > *:not(:last-child) {
+  margin-right: 6px;
+}
+/* #173-fallback:end */

@@ -531,11 +531,16 @@ export const scanCss = (files) => {
         fallback = found.covered ? `${feature.fallbackUnit} 回退 ${found.covered}/${found.distinct}（${found.occurrences} 处）` : null
         missingFallback = found.missing
       } else if (feature.special === 'flex-gap') {
-        // flex 容器里的 gap 是 Chrome 84 才有的（老版本只支持 grid gap），命中即无回退
+        // flex 容器里的 gap 是 Chrome 84 才有的（老版本只支持 grid gap）。
+        // 仓库里的兜底由 scripts/gen-flex-gap-fallback.mjs 生成、挂在 html[data-flex-gap-fallback] 下，
+        // 文件里有这段就说明这些 gap 在 83 上有 margin 兜底（issue #173，运行时实测才打这个属性）。
         for (const block of blocks) {
           const isFlex = /display:\s*(?:inline-)?flex/.test(block)
           const hasGap = /(?:^|[{;])\s*(?:gap|row-gap|column-gap)\s*:/.test(block)
           if (isFlex && hasGap) count += 1
+        }
+        if (count && css.includes('data-flex-gap-fallback')) {
+          fallback = 'html[data-flex-gap-fallback] 下的 margin 兜底（运行时实测，issue #173）'
         }
       } else {
         count = countPattern(css, feature.pattern)

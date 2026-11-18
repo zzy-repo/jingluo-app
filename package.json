@@ -6,7 +6,12 @@
   "license": "MIT",
   "private": true,
   "type": "module",
-  "browserslist": ["chrome >= 83", "edge >= 83", "safari >= 16", "firefox >= 110"],
+  "browserslist": [
+    "chrome >= 83",
+    "edge >= 83",
+    "safari >= 16",
+    "firefox >= 110"
+  ],
   "scripts": {
     "dev": "rspack serve -c rspack.config.ts",
     "build": "rm -rf dist && NODE_ENV=production rspack build -c rspack.config.ts",
@@ -28,7 +33,9 @@
     "test:e2e": "node tests/run-layer.mjs e2e",
     "test:device": "node tests/run-layer.mjs device",
     "test:all": "npm run test && npm run test:integration",
-    "test:which": "node tests/which.mjs"
+    "test:which": "node tests/which.mjs",
+    "gen:gap": "node scripts/gen-flex-gap-fallback.mjs",
+    "check:gap": "node scripts/check-css-gap-fallback.mjs"
   },
   "dependencies": {
     "@types/katex": "^0.16.5",

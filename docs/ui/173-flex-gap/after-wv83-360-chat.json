@@ -1,0 +1,28 @@
+{
+ "tag": "after",
+ "page": "聊天页（欢迎态输入区）",
+ "ready": true,
+ "url": "https://localhost/",
+ "viewport": "360x728",
+ "chrome": "83.0.4103.106",
+ "ua": "Mozilla/5.0 (Linux; Android 11; sdk_gphone_x86_64 Build/RSR1.240422.006; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/83.0.4103.106 Mobile Safari/537.36",
+ "flexContainers": 13,
+ "gapContainers": 1,
+ "zeroedContainers": 0,
+ "zeroed": [],
+ "rows": [
+  {
+   "cls": "functionRow",
+   "tag": "div",
+   "dir": "row",
+   "wrap": false,
+   "rowGap": 8,
+   "colGap": 8,
+   "mainGap": 8,
+   "measured": [
+    8
+   ],
+   "minMeasured": 8
+  }
+ ]
+}

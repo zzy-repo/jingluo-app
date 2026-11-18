@@ -1,0 +1,406 @@
+{
+ "tag": "before91",
+ "page": "设置 → 数据",
+ "ready": true,
+ "url": "https://localhost/",
+ "viewport": "390x741",
+ "chrome": "91.0.4472.114",
+ "ua": "Mozilla/5.0 (Linux; Android 12; sdk_gphone64_x86_64 Build/SE1A.220826.008; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/91.0.4472.114 Mobile Safari/537.36",
+ "flexContainers": 87,
+ "gapContainers": 30,
+ "zeroedContainers": 0,
+ "zeroed": [],
+ "rows": [
+  {
+   "cls": "top",
+   "tag": "div",
+   "dir": "row",
+   "wrap": false,
+   "rowGap": 8,
+   "colGap": 8,
+   "mainGap": 8,
+   "measured": [
+    null
+   ],
+   "minMeasured": null
+  },
+  {
+   "cls": "functionRow",
+   "tag": "div",
+   "dir": "row",
+   "wrap": false,
+   "rowGap": 8,
+   "colGap": 8,
+   "mainGap": 8,
+   "measured": [
+    8
+   ],
+   "minMeasured": 8
+  },
+  {
+   "cls": "header-_83af2",
+   "tag": "div",
+   "dir": "row",
+   "wrap": false,
+   "rowGap": 8,
+   "colGap": 8,
+   "mainGap": 8,
+   "measured": [
+    264.8
+   ],
+   "minMeasured": 264.8
+  },
+  {
+   "cls": "navigation-_85c1b",
+   "tag": "div",
+   "dir": "row",
+   "wrap": false,
+   "rowGap": 4,
+   "colGap": 4,
+   "mainGap": 4,
+   "measured": [
+    4
+   ],
+   "minMeasured": 4
+  },
+  {
+   "cls": "row-_85c1b",
+   "tag": "div",
+   "dir": "row",
+   "wrap": false,
+   "rowGap": 8,
+   "colGap": 8,
+   "mainGap": 8,
+   "measured": [
+    8
+   ],
+   "minMeasured": 8
+  },
+  {
+   "cls": "apiKey-_85c1b",
+   "tag": "div",
+   "dir": "column",
+   "wrap": false,
+   "rowGap": 8,
+   "colGap": 8,
+   "mainGap": 8,
+   "measured": [
+    8
+   ],
+   "minMeasured": 8
+  },
+  {
+   "cls": "apiKey-_85c1b",
+   "tag": "div",
+   "dir": "column",
+   "wrap": false,
+   "rowGap": 8,
+   "colGap": 8,
+   "mainGap": 8,
+   "measured": [
+    8
+   ],
+   "minMeasured": 8
+  },
+  {
+   "cls": "row-_51745",
+   "tag": "div",
+   "dir": "row",
+   "wrap": false,
+   "rowGap": 8,
+   "colGap": 8,
+   "mainGap": 8,
+   "measured": [
+    8
+   ],
+   "minMeasured": 8
+  },
+  {
+   "cls": "rowText-_51745",
+   "tag": "div",
+   "dir": "column",
+   "wrap": false,
+   "rowGap": 4,
+   "colGap": 4,
+   "mainGap": 4,
+   "measured": [
+    4
+   ],
+   "minMeasured": 4
+  },
+  {
+   "cls": "cell-_85c1b backgroundRow-_85c1b",
+   "tag": "div",
+   "dir": "row",
+   "wrap": true,
+   "rowGap": 0,
+   "colGap": 12,
+   "mainGap": 12,
+   "measured": [
+    null
+   ],
+   "minMeasured": null
+  },
+  {
+   "cls": "backgroundText-_85c1b",
+   "tag": "div",
+   "dir": "column",
+   "wrap": false,
+   "rowGap": 4,
+   "colGap": 4,
+   "mainGap": 4,
+   "measured": [
+    4
+   ],
+   "minMeasured": 4
+  },
+  {
+   "cls": "backgroundAction-_85c1b",
+   "tag": "div",
+   "dir": "row",
+   "wrap": false,
+   "rowGap": 8,
+   "colGap": 8,
+   "mainGap": 8,
+   "measured": [
+    8,
+    8
+   ],
+   "minMeasured": 8
+  },
+  {
+   "cls": "cell-_85c1b row-_85c1b",
+   "tag": "div",
+   "dir": "row",
+   "wrap": false,
+   "rowGap": 8,
+   "colGap": 8,
+   "mainGap": 8,
+   "measured": [
+    8
+   ],
+   "minMeasured": 8
+  },
+  {
+   "cls": "text-_85c1b",
+   "tag": "div",
+   "dir": "column",
+   "wrap": false,
+   "rowGap": 4,
+   "colGap": 4,
+   "mainGap": 4,
+   "measured": [
+    4
+   ],
+   "minMeasured": 4
+  },
+  {
+   "cls": "cell-_85c1b row-_85c1b linkCell-_85c1b",
+   "tag": "div",
+   "dir": "row",
+   "wrap": true,
+   "rowGap": 8,
+   "colGap": 8,
+   "mainGap": 8,
+   "measured": [
+    null
+   ],
+   "minMeasured": null
+  },
+  {
+   "cls": "text-_85c1b",
+   "tag": "div",
+   "dir": "column",
+   "wrap": false,
+   "rowGap": 4,
+   "colGap": 4,
+   "mainGap": 4,
+   "measured": [
+    4
+   ],
+   "minMeasured": 4
+  },
+  {
+   "cls": "linkActions-_85c1b",
+   "tag": "div",
+   "dir": "row",
+   "wrap": false,
+   "rowGap": 8,
+   "colGap": 8,
+   "mainGap": 8,
+   "measured": [
+    8
+   ],
+   "minMeasured": 8
+  },
+  {
+   "cls": "cell-_85c1b row-_85c1b",
+   "tag": "div",
+   "dir": "row",
+   "wrap": false,
+   "rowGap": 8,
+   "colGap": 8,
+   "mainGap": 8,
+   "measured": [
+    8
+   ],
+   "minMeasured": 8
+  },
+  {
+   "cls": "text-_85c1b",
+   "tag": "div",
+   "dir": "column",
+   "wrap": false,
+   "rowGap": 4,
+   "colGap": 4,
+   "mainGap": 4,
+   "measured": [
+    4
+   ],
+   "minMeasured": 4
+  },
+  {
+   "cls": "cell-_85c1b row-_85c1b",
+   "tag": "div",
+   "dir": "row",
+   "wrap": false,
+   "rowGap": 8,
+   "colGap": 8,
+   "mainGap": 8,
+   "measured": [
+    8
+   ],
+   "minMeasured": 8
+  },
+  {
+   "cls": "text-_85c1b",
+   "tag": "div",
+   "dir": "column",
+   "wrap": false,
+   "rowGap": 4,
+   "colGap": 4,
+   "mainGap": 4,
+   "measured": [
+    4
+   ],
+   "minMeasured": 4
+  },
+  {
+   "cls": "cell-_85c1b row-_85c1b",
+   "tag": "div",
+   "dir": "row",
+   "wrap": false,
+   "rowGap": 8,
+   "colGap": 8,
+   "mainGap": 8,
+   "measured": [
+    8
+   ],
+   "minMeasured": 8
+  },
+  {
+   "cls": "text-_85c1b",
+   "tag": "div",
+   "dir": "column",
+   "wrap": false,
+   "rowGap": 4,
+   "colGap": 4,
+   "mainGap": 4,
+   "measured": [
+    4
+   ],
+   "minMeasured": 4
+  },
+  {
+   "cls": "cell-_85c1b row-_85c1b wrapActionsCell-_85c1b",
+   "tag": "div",
+   "dir": "row",
+   "wrap": true,
+   "rowGap": 8,
+   "colGap": 8,
+   "mainGap": 8,
+   "measured": [
+    null
+   ],
+   "minMeasured": null
+  },
+  {
+   "cls": "text-_85c1b",
+   "tag": "div",
+   "dir": "column",
+   "wrap": false,
+   "rowGap": 4,
+   "colGap": 4,
+   "mainGap": 4,
+   "measured": [
+    4
+   ],
+   "minMeasured": 4
+  },
+  {
+   "cls": "cellActions-_85c1b",
+   "tag": "div",
+   "dir": "row",
+   "wrap": true,
+   "rowGap": 8,
+   "colGap": 8,
+   "mainGap": 8,
+   "measured": [
+    8
+   ],
+   "minMeasured": 8
+  },
+  {
+   "cls": "cell-_85c1b row-_85c1b wrapActionsCell-_85c1b",
+   "tag": "div",
+   "dir": "row",
+   "wrap": true,
+   "rowGap": 8,
+   "colGap": 8,
+   "mainGap": 8,
+   "measured": [
+    null
+   ],
+   "minMeasured": null
+  },
+  {
+   "cls": "text-_85c1b",
+   "tag": "div",
+   "dir": "column",
+   "wrap": false,
+   "rowGap": 4,
+   "colGap": 4,
+   "mainGap": 4,
+   "measured": [
+    4
+   ],
+   "minMeasured": 4
+  },
+  {
+   "cls": "douyinPill-_85c1b",
+   "tag": "button",
+   "dir": "row",
+   "wrap": false,
+   "rowGap": 6,
+   "colGap": 6,
+   "mainGap": 6,
+   "measured": [
+    6
+   ],
+   "minMeasured": 6
+  },
+  {
+   "cls": "cell-_85c1b row-_85c1b",
+   "tag": "div",
+   "dir": "row",
+   "wrap": false,
+   "rowGap": 8,
+   "colGap": 8,
+   "mainGap": 8,
+   "measured": [
+    8
+   ],
+   "minMeasured": 8
+  }
+ ]
+}

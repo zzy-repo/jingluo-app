@@ -335,3 +335,25 @@
     cursor: not-allowed;
   }
 }
+
+/* #173-fallback:start —— 由 node scripts/gen-flex-gap-fallback.mjs 生成，勿手改（issue #173） */
+:global(html[data-flex-gap-fallback]) .attachments > *:not(:last-child) {
+  margin-right: 10px;
+}
+
+:global(html[data-flex-gap-fallback]) .functionRow > *:not(:last-child) {
+  margin-right: 8px;
+}
+
+:global(html[data-flex-gap-fallback]) .toggles > *:not(:last-child) {
+  margin-right: 10px;
+}
+
+:global(html[data-flex-gap-fallback]) .toggle > *:not(:last-child) {
+  margin-right: 4px;
+}
+
+:global(html[data-flex-gap-fallback]) .right > *:not(:last-child) {
+  margin-right: 4px;
+}
+/* #173-fallback:end */

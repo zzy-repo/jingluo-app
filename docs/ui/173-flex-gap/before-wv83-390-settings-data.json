@@ -1,0 +1,527 @@
+{
+ "tag": "before",
+ "page": "设置 → 数据",
+ "ready": true,
+ "url": "https://localhost/",
+ "viewport": "390x795",
+ "chrome": "83.0.4103.106",
+ "ua": "Mozilla/5.0 (Linux; Android 11; sdk_gphone_x86_64 Build/RSR1.240422.006; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/83.0.4103.106 Mobile Safari/537.36",
+ "flexContainers": 89,
+ "gapContainers": 30,
+ "zeroedContainers": 24,
+ "zeroed": [
+  {
+   "cls": "functionRow",
+   "dir": "row",
+   "gap": 8
+  },
+  {
+   "cls": "navigation-_85c1b",
+   "dir": "row",
+   "gap": 4
+  },
+  {
+   "cls": "row-_85c1b",
+   "dir": "row",
+   "gap": 8
+  },
+  {
+   "cls": "apiKey-_85c1b",
+   "dir": "column",
+   "gap": 8
+  },
+  {
+   "cls": "apiKey-_85c1b",
+   "dir": "column",
+   "gap": 8
+  },
+  {
+   "cls": "row-_51745",
+   "dir": "row",
+   "gap": 8
+  },
+  {
+   "cls": "rowText-_51745",
+   "dir": "column",
+   "gap": 4
+  },
+  {
+   "cls": "backgroundText-_85c1b",
+   "dir": "column",
+   "gap": 4
+  },
+  {
+   "cls": "backgroundAction-_85c1b",
+   "dir": "row",
+   "gap": 8
+  },
+  {
+   "cls": "cell-_85c1b row-_85c1b",
+   "dir": "row",
+   "gap": 8
+  },
+  {
+   "cls": "text-_85c1b",
+   "dir": "column",
+   "gap": 4
+  },
+  {
+   "cls": "text-_85c1b",
+   "dir": "column",
+   "gap": 4
+  },
+  {
+   "cls": "linkActions-_85c1b",
+   "dir": "row",
+   "gap": 8
+  },
+  {
+   "cls": "cell-_85c1b row-_85c1b",
+   "dir": "row",
+   "gap": 8
+  },
+  {
+   "cls": "text-_85c1b",
+   "dir": "column",
+   "gap": 4
+  },
+  {
+   "cls": "cell-_85c1b row-_85c1b",
+   "dir": "row",
+   "gap": 8
+  },
+  {
+   "cls": "text-_85c1b",
+   "dir": "column",
+   "gap": 4
+  },
+  {
+   "cls": "cell-_85c1b row-_85c1b",
+   "dir": "row",
+   "gap": 8
+  },
+  {
+   "cls": "text-_85c1b",
+   "dir": "column",
+   "gap": 4
+  },
+  {
+   "cls": "text-_85c1b",
+   "dir": "column",
+   "gap": 4
+  },
+  {
+   "cls": "cellActions-_85c1b",
+   "dir": "row",
+   "gap": 8
+  },
+  {
+   "cls": "text-_85c1b",
+   "dir": "column",
+   "gap": 4
+  },
+  {
+   "cls": "douyinPill-_85c1b",
+   "dir": "row",
+   "gap": 6
+  },
+  {
+   "cls": "cell-_85c1b row-_85c1b",
+   "dir": "row",
+   "gap": 8
+  }
+ ],
+ "rows": [
+  {
+   "cls": "top",
+   "tag": "div",
+   "dir": "row",
+   "wrap": false,
+   "rowGap": 8,
+   "colGap": 8,
+   "mainGap": 8,
+   "measured": [
+    null
+   ],
+   "minMeasured": null
+  },
+  {
+   "cls": "functionRow",
+   "tag": "div",
+   "dir": "row",
+   "wrap": false,
+   "rowGap": 8,
+   "colGap": 8,
+   "mainGap": 8,
+   "measured": [
+    0
+   ],
+   "minMeasured": 0
+  },
+  {
+   "cls": "header-_83af2",
+   "tag": "div",
+   "dir": "row",
+   "wrap": false,
+   "rowGap": 8,
+   "colGap": 8,
+   "mainGap": 8,
+   "measured": [
+    264.8
+   ],
+   "minMeasured": 264.8
+  },
+  {
+   "cls": "navigation-_85c1b",
+   "tag": "div",
+   "dir": "row",
+   "wrap": false,
+   "rowGap": 4,
+   "colGap": 4,
+   "mainGap": 4,
+   "measured": [
+    0
+   ],
+   "minMeasured": 0
+  },
+  {
+   "cls": "row-_85c1b",
+   "tag": "div",
+   "dir": "row",
+   "wrap": false,
+   "rowGap": 8,
+   "colGap": 8,
+   "mainGap": 8,
+   "measured": [
+    0
+   ],
+   "minMeasured": 0
+  },
+  {
+   "cls": "apiKey-_85c1b",
+   "tag": "div",
+   "dir": "column",
+   "wrap": false,
+   "rowGap": 8,
+   "colGap": 8,
+   "mainGap": 8,
+   "measured": [
+    0
+   ],
+   "minMeasured": 0
+  },
+  {
+   "cls": "apiKey-_85c1b",
+   "tag": "div",
+   "dir": "column",
+   "wrap": false,
+   "rowGap": 8,
+   "colGap": 8,
+   "mainGap": 8,
+   "measured": [
+    0
+   ],
+   "minMeasured": 0
+  },
+  {
+   "cls": "row-_51745",
+   "tag": "div",
+   "dir": "row",
+   "wrap": false,
+   "rowGap": 8,
+   "colGap": 8,
+   "mainGap": 8,
+   "measured": [
+    0
+   ],
+   "minMeasured": 0
+  },
+  {
+   "cls": "rowText-_51745",
+   "tag": "div",
+   "dir": "column",
+   "wrap": false,
+   "rowGap": 4,
+   "colGap": 4,
+   "mainGap": 4,
+   "measured": [
+    0
+   ],
+   "minMeasured": 0
+  },
+  {
+   "cls": "cell-_85c1b backgroundRow-_85c1b",
+   "tag": "div",
+   "dir": "row",
+   "wrap": true,
+   "rowGap": 0,
+   "colGap": 12,
+   "mainGap": 12,
+   "measured": [
+    null
+   ],
+   "minMeasured": null
+  },
+  {
+   "cls": "backgroundText-_85c1b",
+   "tag": "div",
+   "dir": "column",
+   "wrap": false,
+   "rowGap": 4,
+   "colGap": 4,
+   "mainGap": 4,
+   "measured": [
+    0
+   ],
+   "minMeasured": 0
+  },
+  {
+   "cls": "backgroundAction-_85c1b",
+   "tag": "div",
+   "dir": "row",
+   "wrap": false,
+   "rowGap": 8,
+   "colGap": 8,
+   "mainGap": 8,
+   "measured": [
+    0,
+    0
+   ],
+   "minMeasured": 0
+  },
+  {
+   "cls": "cell-_85c1b row-_85c1b",
+   "tag": "div",
+   "dir": "row",
+   "wrap": false,
+   "rowGap": 8,
+   "colGap": 8,
+   "mainGap": 8,
+   "measured": [
+    0
+   ],
+   "minMeasured": 0
+  },
+  {
+   "cls": "text-_85c1b",
+   "tag": "div",
+   "dir": "column",
+   "wrap": false,
+   "rowGap": 4,
+   "colGap": 4,
+   "mainGap": 4,
+   "measured": [
+    0
+   ],
+   "minMeasured": 0
+  },
+  {
+   "cls": "cell-_85c1b row-_85c1b linkCell-_85c1b",
+   "tag": "div",
+   "dir": "row",
+   "wrap": true,
+   "rowGap": 8,
+   "colGap": 8,
+   "mainGap": 8,
+   "measured": [
+    null
+   ],
+   "minMeasured": null
+  },
+  {
+   "cls": "text-_85c1b",
+   "tag": "div",
+   "dir": "column",
+   "wrap": false,
+   "rowGap": 4,
+   "colGap": 4,
+   "mainGap": 4,
+   "measured": [
+    0
+   ],
+   "minMeasured": 0
+  },
+  {
+   "cls": "linkActions-_85c1b",
+   "tag": "div",
+   "dir": "row",
+   "wrap": false,
+   "rowGap": 8,
+   "colGap": 8,
+   "mainGap": 8,
+   "measured": [
+    0
+   ],
+   "minMeasured": 0
+  },
+  {
+   "cls": "cell-_85c1b row-_85c1b",
+   "tag": "div",
+   "dir": "row",
+   "wrap": false,
+   "rowGap": 8,
+   "colGap": 8,
+   "mainGap": 8,
+   "measured": [
+    0
+   ],
+   "minMeasured": 0
+  },
+  {
+   "cls": "text-_85c1b",
+   "tag": "div",
+   "dir": "column",
+   "wrap": false,
+   "rowGap": 4,
+   "colGap": 4,
+   "mainGap": 4,
+   "measured": [
+    0
+   ],
+   "minMeasured": 0
+  },
+  {
+   "cls": "cell-_85c1b row-_85c1b",
+   "tag": "div",
+   "dir": "row",
+   "wrap": false,
+   "rowGap": 8,
+   "colGap": 8,
+   "mainGap": 8,
+   "measured": [
+    0
+   ],
+   "minMeasured": 0
+  },
+  {
+   "cls": "text-_85c1b",
+   "tag": "div",
+   "dir": "column",
+   "wrap": false,
+   "rowGap": 4,
+   "colGap": 4,
+   "mainGap": 4,
+   "measured": [
+    0
+   ],
+   "minMeasured": 0
+  },
+  {
+   "cls": "cell-_85c1b row-_85c1b",
+   "tag": "div",
+   "dir": "row",
+   "wrap": false,
+   "rowGap": 8,
+   "colGap": 8,
+   "mainGap": 8,
+   "measured": [
+    0
+   ],
+   "minMeasured": 0
+  },
+  {
+   "cls": "text-_85c1b",
+   "tag": "div",
+   "dir": "column",
+   "wrap": false,
+   "rowGap": 4,
+   "colGap": 4,
+   "mainGap": 4,
+   "measured": [
+    0
+   ],
+   "minMeasured": 0
+  },
+  {
+   "cls": "cell-_85c1b row-_85c1b wrapActionsCell-_85c1b",
+   "tag": "div",
+   "dir": "row",
+   "wrap": true,
+   "rowGap": 8,
+   "colGap": 8,
+   "mainGap": 8,
+   "measured": [
+    null
+   ],
+   "minMeasured": null
+  },
+  {
+   "cls": "text-_85c1b",
+   "tag": "div",
+   "dir": "column",
+   "wrap": false,
+   "rowGap": 4,
+   "colGap": 4,
+   "mainGap": 4,
+   "measured": [
+    0
+   ],
+   "minMeasured": 0
+  },
+  {
+   "cls": "cellActions-_85c1b",
+   "tag": "div",
+   "dir": "row",
+   "wrap": true,
+   "rowGap": 8,
+   "colGap": 8,
+   "mainGap": 8,
+   "measured": [
+    0
+   ],
+   "minMeasured": 0
+  },
+  {
+   "cls": "cell-_85c1b row-_85c1b wrapActionsCell-_85c1b",
+   "tag": "div",
+   "dir": "row",
+   "wrap": true,
+   "rowGap": 8,
+   "colGap": 8,
+   "mainGap": 8,
+   "measured": [
+    null
+   ],
+   "minMeasured": null
+  },
+  {
+   "cls": "text-_85c1b",
+   "tag": "div",
+   "dir": "column",
+   "wrap": false,
+   "rowGap": 4,
+   "colGap": 4,
+   "mainGap": 4,
+   "measured": [
+    0
+   ],
+   "minMeasured": 0
+  },
+  {
+   "cls": "douyinPill-_85c1b",
+   "tag": "button",
+   "dir": "row",
+   "wrap": false,
+   "rowGap": 6,
+   "colGap": 6,
+   "mainGap": 6,
+   "measured": [
+    0
+   ],
+   "minMeasured": 0
+  },
+  {
+   "cls": "cell-_85c1b row-_85c1b",
+   "tag": "div",
+   "dir": "row",
+   "wrap": false,
+   "rowGap": 8,
+   "colGap": 8,
+   "mainGap": 8,
+   "measured": [
+    0
+   ],
+   "minMeasured": 0
+  }
+ ]
+}

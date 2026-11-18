@@ -1143,3 +1143,156 @@
     min-height: 44px;
   }
 }
+
+/* #173-fallback:start —— 由 node scripts/gen-flex-gap-fallback.mjs 生成，勿手改（issue #173） */
+:global(html[data-flex-gap-fallback]) .navigation > *:not(:last-child) {
+  margin-bottom: 4px;
+}
+
+:global(html[data-flex-gap-fallback]) .navItem > *:not(:last-child) {
+  margin-right: 8px;
+}
+
+:global(html[data-flex-gap-fallback]) .row > *:not(:last-child) {
+  margin-right: 8px;
+}
+
+:global(html[data-flex-gap-fallback]) .cellActions > *:not(:last-child) {
+  margin-right: 8px;
+  margin-bottom: 8px;
+}
+
+:global(html[data-flex-gap-fallback]) .text > *:not(:last-child) {
+  margin-bottom: 4px;
+}
+
+:global(html[data-flex-gap-fallback]) .linkActions > *:not(:last-child) {
+  margin-right: 8px;
+}
+
+:global(html[data-flex-gap-fallback]) .locationSelectors > *:not(:last-child) {
+  margin-right: 16px;
+  margin-bottom: 16px;
+}
+
+:global(html[data-flex-gap-fallback]) .themeOptions > *:not(:last-child) {
+  margin-right: 12px;
+  margin-bottom: 12px;
+}
+
+:global(html[data-flex-gap-fallback]) .backgroundText > *:not(:last-child) {
+  margin-bottom: 4px;
+}
+
+:global(html[data-flex-gap-fallback]) .backgroundAction > *:not(:last-child) {
+  margin-right: 8px;
+}
+
+:global(html[data-flex-gap-fallback]) .errorBox > *:not(:last-child) {
+  margin-bottom: 2px;
+}
+
+:global(html[data-flex-gap-fallback]) .errorActions > *:not(:last-child) {
+  margin-right: 12px;
+}
+
+:global(html[data-flex-gap-fallback]) .traceBox > *:not(:last-child) {
+  margin-bottom: 2px;
+}
+
+:global(html[data-flex-gap-fallback]) .traceHeader > *:not(:last-child) {
+  margin-right: 8px;
+  margin-bottom: 8px;
+}
+
+:global(html[data-flex-gap-fallback]) .traceList > *:not(:last-child) {
+  margin-bottom: 2px;
+}
+
+:global(html[data-flex-gap-fallback]) .traceRow > *:not(:last-child) {
+  margin-right: 8px;
+}
+
+:global(html[data-flex-gap-fallback]) .progressBlock > *:not(:last-child) {
+  margin-bottom: 8px;
+}
+
+:global(html[data-flex-gap-fallback]) .apiKey > *:not(:last-child) {
+  margin-bottom: 8px;
+}
+
+:global(html[data-flex-gap-fallback]) .apiKeyInput > *:not(:last-child) {
+  margin-right: 12px;
+}
+
+@media not all and (min-width: 768px) {
+  :global(html[data-flex-gap-fallback]) .locationSelectors > *:not(:last-child) {
+    margin-right: 12px;
+  }
+}
+
+:global(html[data-flex-gap-fallback]) .deleteActions > *:not(:last-child) {
+  margin-right: 8px;
+  margin-bottom: 8px;
+}
+
+:global(html[data-flex-gap-fallback]) .feedbackBody > *:not(:last-child) {
+  margin-bottom: 4px;
+}
+
+:global(html[data-flex-gap-fallback]) .feedbackField > *:not(:last-child) {
+  margin-bottom: 6px;
+}
+
+:global(html[data-flex-gap-fallback]) .feedbackLabel > *:not(:last-child) {
+  margin-right: 2px;
+}
+
+:global(html[data-flex-gap-fallback]) .feedbackPreviewToggle > *:not(:last-child) {
+  margin-right: 8px;
+}
+
+:global(html[data-flex-gap-fallback]) .feedbackLogs > *:not(:last-child) {
+  margin-bottom: 2px;
+}
+
+:global(html[data-flex-gap-fallback]) .feedbackLogRow > *:not(:last-child) {
+  margin-right: 8px;
+}
+
+:global(html[data-flex-gap-fallback]) .feedbackTicket > *:not(:last-child) {
+  margin-right: 12px;
+}
+
+:global(html[data-flex-gap-fallback]) .feedbackTicketText > *:not(:last-child) {
+  margin-bottom: 2px;
+}
+
+:global(html[data-flex-gap-fallback]) .feedbackFooter > *:not(:last-child) {
+  margin-right: 8px;
+}
+
+:global(html[data-flex-gap-fallback]) .feedbackFooterColumn > *:not(:last-child) {
+  margin-bottom: 8px;
+}
+
+:global(html[data-flex-gap-fallback]) .feedbackIntegrity > *:not(:last-child) {
+  margin-bottom: 2px;
+}
+
+:global(html[data-flex-gap-fallback]) .feedbackTicketLine > *:not(:last-child) {
+  margin-right: 6px;
+  margin-bottom: 6px;
+}
+
+:global(html[data-flex-gap-fallback]) .douyinPill > *:not(:last-child) {
+  margin-right: 6px;
+}
+
+@media not all and (min-width: 768px) {
+  :global(html[data-flex-gap-fallback]) .navigation > *:not(:last-child) {
+    margin-bottom: 0;
+    margin-right: 4px;
+  }
+}
+/* #173-fallback:end */

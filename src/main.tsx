@@ -16,6 +16,7 @@ import { httpTransport, setCustomerMissingNotice } from './services/ours/transpo
 import { showToast } from './components/base/toastState.js'
 import { INVITE_API_BASE } from './services/invite/api.js'
 import { ensureDeviceId } from './services/invite/device.js'
+import { setupFlexGapFallback } from './utils/flexGap.js'
 import {
   initDiagnostics,
   installDiagnosticsDebugHandle,
@@ -34,6 +35,9 @@ if ((window as Window & { __DEEPSEEK_COMPATIBILITY_ERROR__?: string[] }).__DEEPS
 
 ensureKatex()
 setupTheme()
+// flex gap 兜底（issue #173）：WebView 83 的 CSS.supports('gap') 是假阳性（grid 支持、flex 不生效），
+// 只能实测；不支持才挂 html[data-flex-gap-fallback]，兜底间距全部写在该属性之下。
+setupFlexGapFallback()
 // 消息区阅读设置（#102）：首屏渲染前就把字号 / 字重 / 行高档位挂到根元素上
 setupReading()
 

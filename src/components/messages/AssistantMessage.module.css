@@ -165,3 +165,26 @@
     --search-row-site-logo-color: var(--dsw-alias-interactive-bg-hover);
   }
 }
+
+/* #173-fallback:start —— 由 node scripts/gen-flex-gap-fallback.mjs 生成，勿手改（issue #173） */
+:global(html[data-flex-gap-fallback]) .waiting > *:not(:last-child) {
+  margin-right: 6px;
+}
+
+:global(html[data-flex-gap-fallback]) .waitingDots > *:not(:last-child) {
+  margin-right: 4px;
+}
+
+:global(html[data-flex-gap-fallback]) .notice > *:not(:last-child) {
+  margin-right: 6px;
+}
+
+:global(html[data-flex-gap-fallback]) .bottom > *:not(:last-child) {
+  margin-right: 10px;
+  margin-bottom: 10px;
+}
+
+:global(html[data-flex-gap-fallback]) .actions > *:not(:last-child) {
+  margin-right: 10px;
+}
+/* #173-fallback:end */
