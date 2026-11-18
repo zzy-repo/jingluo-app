@@ -74,9 +74,16 @@
   outline: none;
 }
 
-@media (hover: none) {
+@media (hover: none), (pointer: coarse) {
   .action {
     display: flex;
+    width: 40px;
+    min-width: 40px;
+    justify-content: flex-end;
+  }
+
+  .pin {
+    margin-left: 2px;
   }
 }
 
