@@ -1,0 +1,211 @@
+{
+  "chromium": "156.0.8078.4",
+  "viewport": "360x780",
+  "locale": "en-US",
+  "app": "http://127.0.0.1:8090",
+  "results": [
+    {
+      "variant": "baseline",
+      "css": "(none)",
+      "rowW": 312,
+      "rowWrap": "nowrap",
+      "textW": 8,
+      "textFlex": "1 1 0px",
+      "textMinWidth": "0px",
+      "textPadRight": "8px",
+      "textMinContent": 20.2,
+      "textMaxContent": 620.5,
+      "actionsW": 296,
+      "actionsMaxContent": 298.1,
+      "labelLines": 13,
+      "buttons": [
+        {
+          "text": "Send feedback",
+          "w": 128.6,
+          "y": -343
+        },
+        {
+          "text": "Check log coverage",
+          "w": 161.5,
+          "y": -291
+        }
+      ],
+      "textOverflowX": 4,
+      "docOverflow": false
+    },
+    {
+      "variant": "text-min-width-96px",
+      "css": "[class*=\"text-\"]{min-width:96px !important}",
+      "rowW": 312,
+      "rowWrap": "nowrap",
+      "textW": 104,
+      "textFlex": "1 1 0px",
+      "textMinWidth": "96px",
+      "textPadRight": "8px",
+      "textMinContent": 104,
+      "textMaxContent": 620.5,
+      "actionsW": 200,
+      "actionsMaxContent": 298.1,
+      "labelLines": 2,
+      "buttons": [
+        {
+          "text": "Send feedback",
+          "w": 128.6,
+          "y": 534
+        },
+        {
+          "text": "Check log coverage",
+          "w": 161.5,
+          "y": 586
+        }
+      ],
+      "textOverflowX": 0,
+      "docOverflow": false
+    },
+    {
+      "variant": "text-flex-1-1-40%",
+      "css": "[class*=\"text-\"]{flex:1 1 40% !important}",
+      "rowW": 312,
+      "rowWrap": "nowrap",
+      "textW": 95.3,
+      "textFlex": "1 1 40%",
+      "textMinWidth": "0px",
+      "textPadRight": "8px",
+      "textMinContent": 20.2,
+      "textMaxContent": 620.5,
+      "actionsW": 208.7,
+      "actionsMaxContent": 298.1,
+      "labelLines": 2,
+      "buttons": [
+        {
+          "text": "Send feedback",
+          "w": 128.6,
+          "y": 543
+        },
+        {
+          "text": "Check log coverage",
+          "w": 161.5,
+          "y": 595
+        }
+      ],
+      "textOverflowX": 0,
+      "docOverflow": false
+    },
+    {
+      "variant": "text-flex-basis-auto",
+      "css": "[class*=\"text-\"]{flex:1 1 auto !important}",
+      "rowW": 312,
+      "rowWrap": "nowrap",
+      "textW": 207.1,
+      "textFlex": "1 1 auto",
+      "textMinWidth": "0px",
+      "textPadRight": "8px",
+      "textMinContent": 20.2,
+      "textMaxContent": 620.5,
+      "actionsW": 96.9,
+      "actionsMaxContent": 298.1,
+      "labelLines": 1,
+      "buttons": [
+        {
+          "text": "Send feedback",
+          "w": 128.6,
+          "y": 581
+        },
+        {
+          "text": "Check log coverage",
+          "w": 161.5,
+          "y": 633
+        }
+      ],
+      "textOverflowX": 0,
+      "docOverflow": false
+    },
+    {
+      "variant": "text-no-anywhere",
+      "css": "[class*=\"text-\"]{overflow-wrap:normal !important;word-break:normal !important}",
+      "rowW": 312,
+      "rowWrap": "nowrap",
+      "textW": 8,
+      "textFlex": "1 1 0px",
+      "textMinWidth": "0px",
+      "textPadRight": "8px",
+      "textMinContent": 71.4,
+      "textMaxContent": 620.5,
+      "actionsW": 296,
+      "actionsMaxContent": 298.1,
+      "labelLines": 3,
+      "buttons": [
+        {
+          "text": "Send feedback",
+          "w": 128.6,
+          "y": 1301
+        },
+        {
+          "text": "Check log coverage",
+          "w": 161.5,
+          "y": 1353
+        }
+      ],
+      "textOverflowX": 55,
+      "docOverflow": false
+    },
+    {
+      "variant": "row-flex-wrap",
+      "css": "[class*=\"row-\"]{flex-wrap:wrap !important}",
+      "rowW": 312,
+      "rowWrap": "wrap",
+      "textW": 312,
+      "textFlex": "1 1 0px",
+      "textMinWidth": "0px",
+      "textPadRight": "8px",
+      "textMinContent": 20.2,
+      "textMaxContent": 620.5,
+      "actionsW": 298.1,
+      "actionsMaxContent": 298.1,
+      "labelLines": 1,
+      "buttons": [
+        {
+          "text": "Send feedback",
+          "w": 128.6,
+          "y": 634
+        },
+        {
+          "text": "Check log coverage",
+          "w": 161.5,
+          "y": 634
+        }
+      ],
+      "textOverflowX": 0,
+      "docOverflow": false
+    },
+    {
+      "variant": "actions-full-row",
+      "css": "[class*=\"row-\"]{flex-wrap:wrap !important}[class*=\"cellActions-\"]{flex:1 0 100% !important}",
+      "rowW": 312,
+      "rowWrap": "wrap",
+      "textW": 312,
+      "textFlex": "1 1 0px",
+      "textMinWidth": "0px",
+      "textPadRight": "8px",
+      "textMinContent": 20.2,
+      "textMaxContent": 620.5,
+      "actionsW": 312,
+      "actionsMaxContent": 298.1,
+      "labelLines": 1,
+      "buttons": [
+        {
+          "text": "Send feedback",
+          "w": 128.6,
+          "y": 676
+        },
+        {
+          "text": "Check log coverage",
+          "w": 161.5,
+          "y": 676
+        }
+      ],
+      "textOverflowX": 0,
+      "docOverflow": false
+    }
+  ]
+}

@@ -1,0 +1,219 @@
+{
+  "app": "http://127.0.0.1:8090",
+  "locale": "zh-CN",
+  "exe": "bundled",
+  "rows": [
+    {
+      "viewport": "390x844",
+      "panelW": 366,
+      "cell": {
+        "w": 342,
+        "h": 140,
+        "x": 24,
+        "flex": "0 0 auto",
+        "minWidth": "0px",
+        "wrap": "nowrap",
+        "padRight": "0px"
+      },
+      "text": {
+        "w": 126,
+        "h": 116,
+        "x": 24,
+        "flex": "1 1 0px",
+        "minWidth": "0px",
+        "wrap": "nowrap",
+        "padRight": "8px"
+      },
+      "actions": {
+        "w": 208,
+        "h": 44,
+        "x": 158,
+        "flex": "0 1 auto",
+        "minWidth": "0px",
+        "wrap": "wrap",
+        "padRight": "0px"
+      },
+      "label": {
+        "w": 118,
+        "h": 22,
+        "x": 24,
+        "flex": "0 1 auto",
+        "minWidth": "auto",
+        "wrap": "nowrap",
+        "padRight": "0px"
+      },
+      "labelLineCount": 1,
+      "labelText": "反馈与日志",
+      "buttons": [
+        {
+          "text": "写反馈",
+          "w": 72,
+          "x": 158,
+          "y": 662
+        },
+        {
+          "text": "检查日志完整性",
+          "w": 128,
+          "x": 238,
+          "y": 662
+        }
+      ],
+      "cellRight": 366,
+      "allRows": [
+        {
+          "label": "导入历史对话",
+          "textW": 262,
+          "labelLines": 1,
+          "actionsW": 72,
+          "rowW": 342,
+          "rowH": 104,
+          "overflowX": 0
+        },
+        {
+          "label": "导出所有历史对话",
+          "textW": 262,
+          "labelLines": 1,
+          "actionsW": 72,
+          "rowW": 342,
+          "rowH": 86,
+          "overflowX": 0
+        },
+        {
+          "label": "付款记录",
+          "textW": 262,
+          "labelLines": 1,
+          "actionsW": 72,
+          "rowW": 342,
+          "rowH": 68,
+          "overflowX": 0
+        },
+        {
+          "label": "反馈与日志",
+          "textW": 126,
+          "labelLines": 1,
+          "actionsW": 208,
+          "rowW": 342,
+          "rowH": 140,
+          "overflowX": 0
+        },
+        {
+          "label": "删除所有对话",
+          "textW": 262,
+          "labelLines": 1,
+          "actionsW": 72,
+          "rowW": 342,
+          "rowH": 68,
+          "overflowX": 0
+        }
+      ],
+      "docScrollW": 390,
+      "overflow": false
+    },
+    {
+      "viewport": "360x780",
+      "panelW": 336,
+      "cell": {
+        "w": 312,
+        "h": 158,
+        "x": 24,
+        "flex": "0 0 auto",
+        "minWidth": "0px",
+        "wrap": "nowrap",
+        "padRight": "0px"
+      },
+      "text": {
+        "w": 96,
+        "h": 134,
+        "x": 24,
+        "flex": "1 1 0px",
+        "minWidth": "0px",
+        "wrap": "nowrap",
+        "padRight": "8px"
+      },
+      "actions": {
+        "w": 208,
+        "h": 44,
+        "x": 128,
+        "flex": "0 1 auto",
+        "minWidth": "0px",
+        "wrap": "wrap",
+        "padRight": "0px"
+      },
+      "label": {
+        "w": 88,
+        "h": 22,
+        "x": 24,
+        "flex": "0 1 auto",
+        "minWidth": "auto",
+        "wrap": "nowrap",
+        "padRight": "0px"
+      },
+      "labelLineCount": 1,
+      "labelText": "反馈与日志",
+      "buttons": [
+        {
+          "text": "写反馈",
+          "w": 72,
+          "x": 128,
+          "y": 589
+        },
+        {
+          "text": "检查日志完整性",
+          "w": 128,
+          "x": 208,
+          "y": 589
+        }
+      ],
+      "cellRight": 336,
+      "allRows": [
+        {
+          "label": "导入历史对话",
+          "textW": 232,
+          "labelLines": 1,
+          "actionsW": 72,
+          "rowW": 312,
+          "rowH": 122,
+          "overflowX": 0
+        },
+        {
+          "label": "导出所有历史对话",
+          "textW": 232,
+          "labelLines": 1,
+          "actionsW": 72,
+          "rowW": 312,
+          "rowH": 86,
+          "overflowX": 0
+        },
+        {
+          "label": "付款记录",
+          "textW": 232,
+          "labelLines": 1,
+          "actionsW": 72,
+          "rowW": 312,
+          "rowH": 86,
+          "overflowX": 0
+        },
+        {
+          "label": "反馈与日志",
+          "textW": 96,
+          "labelLines": 1,
+          "actionsW": 208,
+          "rowW": 312,
+          "rowH": 158,
+          "overflowX": 0
+        },
+        {
+          "label": "删除所有对话",
+          "textW": 232,
+          "labelLines": 1,
+          "actionsW": 72,
+          "rowW": 312,
+          "rowH": 68,
+          "overflowX": 0
+        }
+      ],
+      "docScrollW": 360,
+      "overflow": false
+    }
+  ]
+}

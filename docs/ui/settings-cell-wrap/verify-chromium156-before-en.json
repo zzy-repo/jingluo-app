@@ -1,0 +1,219 @@
+{
+  "app": "http://127.0.0.1:8090",
+  "locale": "en-US",
+  "exe": "bundled",
+  "rows": [
+    {
+      "viewport": "390x844",
+      "panelW": 366,
+      "cell": {
+        "w": 342,
+        "h": 628,
+        "x": 24,
+        "flex": "0 0 auto",
+        "minWidth": "0px",
+        "wrap": "nowrap",
+        "padRight": "0px"
+      },
+      "text": {
+        "w": 35.9,
+        "h": 604,
+        "x": 24,
+        "flex": "1 1 0px",
+        "minWidth": "0px",
+        "wrap": "nowrap",
+        "padRight": "8px"
+      },
+      "actions": {
+        "w": 298.1,
+        "h": 44,
+        "x": 67.9,
+        "flex": "0 1 auto",
+        "minWidth": "0px",
+        "wrap": "wrap",
+        "padRight": "0px"
+      },
+      "label": {
+        "w": 27.9,
+        "h": 132,
+        "x": 24,
+        "flex": "0 1 auto",
+        "minWidth": "auto",
+        "wrap": "nowrap",
+        "padRight": "0px"
+      },
+      "labelLineCount": 6,
+      "labelText": "Feedback & logs",
+      "buttons": [
+        {
+          "text": "Send feedback",
+          "w": 129,
+          "x": 68,
+          "y": 418
+        },
+        {
+          "text": "Check log coverage",
+          "w": 162,
+          "x": 204,
+          "y": 418
+        }
+      ],
+      "cellRight": 366,
+      "allRows": [
+        {
+          "label": "Import chat histor",
+          "textW": 257,
+          "labelLines": 1,
+          "actionsW": 77,
+          "rowW": 342,
+          "rowH": 140,
+          "overflowX": 0
+        },
+        {
+          "label": "Export all chats",
+          "textW": 236,
+          "labelLines": 1,
+          "actionsW": 98,
+          "rowW": 342,
+          "rowH": 122,
+          "overflowX": 0
+        },
+        {
+          "label": "Payment records",
+          "textW": 262,
+          "labelLines": 1,
+          "actionsW": 72,
+          "rowW": 342,
+          "rowH": 86,
+          "overflowX": 0
+        },
+        {
+          "label": "Feedback & logs",
+          "textW": 36,
+          "labelLines": 6,
+          "actionsW": 298,
+          "rowW": 342,
+          "rowH": 628,
+          "overflowX": 0
+        },
+        {
+          "label": "Delete all chats",
+          "textW": 261,
+          "labelLines": 1,
+          "actionsW": 73,
+          "rowW": 342,
+          "rowH": 68,
+          "overflowX": 0
+        }
+      ],
+      "docScrollW": 390,
+      "overflow": false
+    },
+    {
+      "viewport": "360x780",
+      "panelW": 336,
+      "cell": {
+        "w": 312,
+        "h": 1970,
+        "x": 24,
+        "flex": "0 0 auto",
+        "minWidth": "0px",
+        "wrap": "nowrap",
+        "padRight": "0px"
+      },
+      "text": {
+        "w": 8,
+        "h": 1946,
+        "x": 24,
+        "flex": "1 1 0px",
+        "minWidth": "0px",
+        "wrap": "nowrap",
+        "padRight": "8px"
+      },
+      "actions": {
+        "w": 296,
+        "h": 96,
+        "x": 40,
+        "flex": "0 1 auto",
+        "minWidth": "0px",
+        "wrap": "wrap",
+        "padRight": "0px"
+      },
+      "label": {
+        "w": 0,
+        "h": 286,
+        "x": 24,
+        "flex": "0 1 auto",
+        "minWidth": "auto",
+        "wrap": "nowrap",
+        "padRight": "0px"
+      },
+      "labelLineCount": 13,
+      "labelText": "Feedback & logs",
+      "buttons": [
+        {
+          "text": "Send feedback",
+          "w": 129,
+          "x": 207,
+          "y": -343
+        },
+        {
+          "text": "Check log coverage",
+          "w": 162,
+          "x": 174,
+          "y": -291
+        }
+      ],
+      "cellRight": 336,
+      "allRows": [
+        {
+          "label": "Import chat histor",
+          "textW": 227,
+          "labelLines": 1,
+          "actionsW": 77,
+          "rowW": 312,
+          "rowH": 158,
+          "overflowX": 0
+        },
+        {
+          "label": "Export all chats",
+          "textW": 206,
+          "labelLines": 1,
+          "actionsW": 98,
+          "rowW": 312,
+          "rowH": 122,
+          "overflowX": 0
+        },
+        {
+          "label": "Payment records",
+          "textW": 232,
+          "labelLines": 1,
+          "actionsW": 72,
+          "rowW": 312,
+          "rowH": 86,
+          "overflowX": 0
+        },
+        {
+          "label": "Feedback & logs",
+          "textW": 8,
+          "labelLines": 13,
+          "actionsW": 296,
+          "rowW": 312,
+          "rowH": 1970,
+          "overflowX": 4
+        },
+        {
+          "label": "Delete all chats",
+          "textW": 231,
+          "labelLines": 1,
+          "actionsW": 73,
+          "rowW": 312,
+          "rowH": 68,
+          "overflowX": 0
+        }
+      ],
+      "docScrollW": 360,
+      "overflow": false
+    }
+  ]
+}
