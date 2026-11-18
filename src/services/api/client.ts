@@ -329,7 +329,7 @@ export type ProviderProbeResult = {
 }
 
 /** 从各种中转的返回里尽量捞出模型 id：字符串数组或 { id / name / model } */
-const pickModelIds = (body: unknown): string[] => {
+export const pickModelIds = (body: unknown): string[] => {
   const readIds = (list: unknown): string[] => {
     if (!Array.isArray(list)) {
       return []
