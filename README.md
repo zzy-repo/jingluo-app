@@ -14,7 +14,7 @@
 
 1. **模型配置本地化**：`Service URL` / `Model` / `API Key` 三项不再硬编码，改为在设置界面内填写并保存在浏览器 localStorage，可随意切换自建或第三方 OpenAI 兼容网关，无需改代码重新打包。
 2. **Android 套壳**：使用 [Capacitor](https://capacitorjs.com/) 将构建产物打包为原生 Android 应用（`android/`）。
-3. **APK 构建与发布**：`build-apk.sh` 负责构建；**发布走手动清单**（[`docs/RELEASE-MANUAL.md`](docs/RELEASE-MANUAL.md)），不提供一键发版脚本 —— 见下方说明。
+3. **APK 构建与发布**：`build-apk.sh` 负责构建；**发布走清单**（执行看 [`docs/RELEASE-CHECKLIST.md`](docs/RELEASE-CHECKLIST.md)，原理看 [`docs/RELEASE-MANUAL.md`](docs/RELEASE-MANUAL.md)），不提供一键发版脚本 —— 见下方说明。
 
 ## 使用
 
@@ -23,7 +23,7 @@ pnpm install
 pnpm dev            # 本地开发
 ./build-apk.sh      # 构建 debug APK
 ./build-apk.sh release   # 构建 release APK
-# 发布：按 docs/RELEASE-MANUAL.md 的手动清单逐步执行（无一键脚本）
+# 发布：按 docs/RELEASE-CHECKLIST.md 逐步执行（无一键脚本；可脚本化的三段是 pnpm run release:check / release:upload / release:verify）
 ```
 
 设置页填写：
@@ -53,7 +53,8 @@ src/                前端源码（React）
 android/            Capacitor Android 工程
 build-apk.sh        APK 构建脚本
 docs/               设计与测试文档
-docs/RELEASE-MANUAL.md  发版手动清单
+docs/RELEASE-CHECKLIST.md  发版执行清单（命令/判据/回滚，可跨机器交接）
+docs/RELEASE-MANUAL.md  发版手动清单（原理与单机全流程）
 package.json        版本号唯一来源（version / androidVersionCode）
 dist/               构建产物（不纳入版本控制）
 ```

@@ -17,6 +17,13 @@
 手工清单的取舍：**每一步都是独立、可单独重跑的命令**，失败时只重跑那一步，不需要复原别人的工作区。
 代价是没有自动门禁与自动校验 —— 所以下面第 4 节那五项**人工核对必须逐项做**，这是发布前唯一的硬关卡。
 
+> **换人交接请直接用 [`docs/RELEASE-CHECKLIST.md`](RELEASE-CHECKLIST.md)**：它把流程钉成
+> 「阶段 A 定版本 → 阶段 B 构建（那台签名机）→ 阶段 C 上传（任意机 + 一枚令牌）→ 阶段 D 打 tag → 阶段 E 校验」，
+> 每步给命令 / 成功判据 / 失败回滚，并写清哪些步骤必须人工、哪些必须在签名机上做。
+> 脚本化部分见 §5 之前的三条命令（等价于本手册 §4/§5/§7 的自动化版本，不替代 §4 的人工核对）：
+> `pnpm run release:check`（版本号三处一致 + 产物自检）、`pnpm run release:upload`（multipart 上传，带 `--dry-run`）、
+> `pnpm run release:verify`（复核 `releases.json` 已生效 + 下载件三方 hash 一致）。
+
 `.github/workflows/release.yml` 的逻辑没有改：它仍然只在 tag 推送后**镜像**已上传的 APK 到 GitHub Release，
 不在 CI 里构建、不接触 keystore。
 
@@ -27,7 +34,7 @@
 | 项目 | 做法 | 校验 |
 | --- | --- | --- |
 | 签名材料 | 发布用 **release 构建类型**（`assembleRelease`，见 §3），签名指向已发布证书：`android/keystore/keystore.properties` 里 `storeFileRelease=/root/.android/debug.keystore`、`storePasswordRelease=android`、`keyAliasRelease=androiddebugkey` | `keytool -list -v -keystore /root/.android/debug.keystore -storepass android -alias androiddebugkey \| grep SHA256`，必须是 `e7c5baee…aa8a1` |
-| 发布令牌 | 在 ECS 上取：`ssh aliyun 'cat /etc/dl-release/token' > ~/.config/dl-release/token && chmod 600 ~/.config/dl-release/token` | `ls -l ~/.config/dl-release/token` 应为 `-rw-------`；**不 echo、不贴日志、不进仓库** |
+| 发布令牌 | **按人发放，不是自己去 ECS 上取**：找 dl-release 维护者要一枚（私密渠道给），然后三选一注入 —— `export DL_RELEASE_TOKEN=<release-token>` / 写 `~/.config/dl-release/token` 后 `chmod 600` / 用 `--token-file`。完整流程（含轮换与泄露止损）见 [`docs/RELEASE-CHECKLIST.md`](RELEASE-CHECKLIST.md) §4 | `ls -l ~/.config/dl-release/token` 应为 `-rw-------`；`node scripts/release-upload.mjs --apk <apk> --dry-run` 只回显令牌**来源与长度**；**不 echo、不贴日志、不进仓库** |
 | Android SDK / JDK | 默认 `/root/android-sdk`、JDK 21 | `ls $HOME/android-sdk/build-tools/`、`java -version` |
 | gh（只用于观察） | 可选 | `gh auth status`；Release 由 workflow 的内置 `GITHUB_TOKEN` 创建 |
 | 工作分支 | 从 `origin/main` 开 `release/<ver>` 分支发版，不直接改 `main` | `git status -sb`、`git log --oneline -1` |
@@ -207,7 +214,16 @@ BT=$HOME/android-sdk/build-tools/35.0.0        # 与实际 build-tools 版本对
 ## 5. 步骤 4 — 上传 dl.rose7.cn
 
 接口细节见 [`docs/dl-release-api.md`](dl-release-api.md)（`POST /api/v1/release`，multipart，Bearer 令牌）。
-服务端自己解析 APK 真身、自己算 MD5/sha256、原子更新 `releases.json`：
+服务端自己解析 APK 真身、自己算 MD5/sha256、原子更新 `releases.json`。
+
+**推荐用脚本（等价于下面这条 curl，额外替你对回包 sha256/md5/latest，令牌只回显来源与长度）：**
+
+```bash
+pnpm run release:upload -- --apk $APK --dry-run   # 先看要发什么，不发请求
+pnpm run release:upload -- --apk $APK             # 真上传
+```
+
+想自己拼请求就照下面这条 curl：
 
 ```bash
 APK=android/app/build/outputs/apk/release/app-release.apk
@@ -267,6 +283,15 @@ sha256sum /tmp/gh-$V/*.apk               # 与 dl、与本地三者一致
 
 - [ ] dl 下载的 sha256 == 本地构建产物 sha256
 - [ ] GitHub Release 资产的 sha256 == 同上
+
+**等价脚本（自动做上面第 1、2 条，并顺带校验记录字段与 `package.json` 口径）：**
+
+```bash
+pnpm run release:verify -- --version $V --apk android/app/build/outputs/apk/release/app-release.apk
+```
+
+它会把本地构建产物 / 线上记录 / dl 下载件三者算一遍 sha256 做对比，并把「还没打 tag」之后的下一步提示出来。
+GitHub Release 资产那一条仍需 `gh release download` 人工确认（脚本不碰 GitHub）。
 - [ ] `releases.json` 的 `versionCode` / `size` / `artifactVariant` 与本次一致
 
 ---
@@ -355,21 +380,21 @@ adb logcat -d | tail -50
 
    **事实基线（2026-11-18 实测）**：`/root/worktrees` 下 29 个 worktree 显示「有 node_modules」，其中只有 **12 个是真目录**（各约 320 MB），另外 **19 个是 31 字节软链**指向 `/root/deepseek-app/node_modules`；按 29 × 320 MB 估占用会误判磁盘。当日按上述三条清掉 10 个真目录，`/root/worktrees` 从 **4.07 GiB 降到 1.40 GiB（−2.68 GiB）**，worktree 数量不变、源码与未跟踪证据零丢失。
 
-7. **连不上 GitHub 时先查代理**：本机直连不通（`github.com` 被解析到 `57.155.223.240`，`git fetch` 报 `RPC failed; curl 28 ... port 443`，`git push` 报 `GnuTLS recv error (-110)`）。所有 fetch / push / ls-remote 必须走代理 `127.0.0.1:7890`（http 与 socks5 均可用）：
+7. **连不上 GitHub 时先查代理**：本机直连不通（`github.com` 被解析到 `57.155.223.240`，`git fetch` 报 `RPC failed; curl 28 ... port 443`，`git push` 报 `GnuTLS recv error (-110)`）。所有 fetch / push / ls-remote 必须走代理 `127.0.0.1:7897`（http 与 socks5 均可用）：
 
    ```bash
-   export https_proxy=http://127.0.0.1:7890
-   export http_proxy=http://127.0.0.1:7890
+   export https_proxy=http://127.0.0.1:7897
+   export http_proxy=http://127.0.0.1:7897
 
    # 一次性写法（不常驻环境变量）
-   timeout 120 env https_proxy=http://127.0.0.1:7890 http_proxy=http://127.0.0.1:7890 \
+   timeout 120 env https_proxy=http://127.0.0.1:7897 http_proxy=http://127.0.0.1:7897 \
      git fetch origin --prune
-   timeout 120 env https_proxy=http://127.0.0.1:7890 http_proxy=http://127.0.0.1:7890 \
+   timeout 120 env https_proxy=http://127.0.0.1:7897 http_proxy=http://127.0.0.1:7897 \
      git push --force-with-lease=<branch>:<old-sha> origin <branch>
 
    # 不依赖本地 ref 缓存的复核（推完必查）
-   timeout 60 env https_proxy=http://127.0.0.1:7890 git ls-remote --heads origin <branch>
-   # socks5 亦可：-x socks5h://127.0.0.1:7890，或 ALL_PROXY=socks5h://127.0.0.1:7890
+   timeout 60 env https_proxy=http://127.0.0.1:7897 git ls-remote --heads origin <branch>
+   # socks5 亦可：-x socks5h://127.0.0.1:7897，或 ALL_PROXY=socks5h://127.0.0.1:7897
    ```
 
 ---

@@ -35,18 +35,18 @@ gh issue close <n>
 **所有** fetch / push / ls-remote / gh 命令都要带代理，否则表现为超时或 TLS 中断：
 
 ```bash
-export https_proxy=http://127.0.0.1:7890
-export http_proxy=http://127.0.0.1:7890
+export https_proxy=http://127.0.0.1:7897
+export http_proxy=http://127.0.0.1:7897
 
 # 一次性写法（不常驻环境变量）
-timeout 120 env https_proxy=http://127.0.0.1:7890 http_proxy=http://127.0.0.1:7890 \
+timeout 120 env https_proxy=http://127.0.0.1:7897 http_proxy=http://127.0.0.1:7897 \
   git fetch origin --prune
-timeout 120 env https_proxy=http://127.0.0.1:7890 http_proxy=http://127.0.0.1:7890 \
+timeout 120 env https_proxy=http://127.0.0.1:7897 http_proxy=http://127.0.0.1:7897 \
   git push --force-with-lease=<branch>:<old-sha> origin <branch>
 
 # 不依赖本地 ref 缓存的复核（推完必查）
-timeout 60 env https_proxy=http://127.0.0.1:7890 git ls-remote --heads origin <branch>
-# socks5 亦可：-x socks5h://127.0.0.1:7890，或 ALL_PROXY=socks5h://127.0.0.1:7890
+timeout 60 env https_proxy=http://127.0.0.1:7897 git ls-remote --heads origin <branch>
+# socks5 亦可：-x socks5h://127.0.0.1:7897，或 ALL_PROXY=socks5h://127.0.0.1:7897
 ```
 
 磁盘卫生（清 `node_modules` 不删 worktree）见

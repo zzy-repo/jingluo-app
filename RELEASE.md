@@ -1,13 +1,16 @@
 # 发版入口
 
-> **发版操作看 [`docs/RELEASE-MANUAL.md`](docs/RELEASE-MANUAL.md)（纯手动清单）。**
+> **发版操作看 [`docs/RELEASE-CHECKLIST.md`](docs/RELEASE-CHECKLIST.md)（可跨机器交接的执行清单：命令 / 判据 / 回滚）。**
+> 单机全流程与原理说明看 [`docs/RELEASE-MANUAL.md`](docs/RELEASE-MANUAL.md)。
 > 本文件只保留「为什么这么改」的历史说明，不再写操作步骤 —— 两处写步骤必然有一处先过期。
 
 相关文档：
 
 | 文档 | 内容 |
 | --- | --- |
-| [`docs/RELEASE-MANUAL.md`](docs/RELEASE-MANUAL.md) | 发版手动清单：bump 版本号 → 构建 → 四项人工核对 → 上传 dl → push/tag → 下载比 hash → 模拟器烟测；含分支/worktree 卫生 |
+| [`docs/RELEASE-CHECKLIST.md`](docs/RELEASE-CHECKLIST.md) | **发版执行清单（换人也照着做）**：阶段 A 定版本 → B 构建（那台签名机）→ C 上传（任意机 + 一枚令牌）→ D 打 tag → E 校验；每步命令/成功判据/失败回滚 + 令牌注入 + 人工与机器边界 |
+| [`docs/RELEASE-MANUAL.md`](docs/RELEASE-MANUAL.md) | 发版手动清单（单机全流程与原理）：bump 版本号 → 构建 → 五项人工核对 → 上传 dl → push/tag → 下载比 hash → 模拟器烟测；含分支/worktree 卫生 |
+| `scripts/release-check.mjs` / `release-upload.mjs` / `release-verify.mjs`（`pnpm run release:check` / `release:upload` / `release:verify`） | 可脚本化的三段：版本号三处一致 + 产物自检、multipart 上传（`--dry-run` 可先看）、`releases.json` 生效与三方 hash 复核。退出码 0/1/2 = 通过/不通过/用法环境错误（一个字节都没发） |
 | [`docs/dl-release-api.md`](docs/dl-release-api.md) | `POST /api/v1/release` 上传接口（multipart、Bearer 令牌、服务端自校验 md5/sha256/变体） |
 | [`docs/releases-manifest.md`](docs/releases-manifest.md) | `releases.json` 契约与校验器 `scripts/validate-releases-manifest.mjs` |
 | [`.github/workflows/release.yml`](.github/workflows/release.yml) | tag `v*` 触发：从 dl 拉已发布 APK、校验 MD5、镜像成 GitHub Release（**不构建、不碰 keystore**） |
