@@ -31,16 +31,19 @@ const ZIP_MAGIC = [0x50, 0x4b, 3, 4]
  * 首块大小：慢网（模拟器 gsm 14.4kbps）下也要几秒内就出第一条「已下载 xx KB」，
  * 之后按实测速率自适应放大，快网 20MB 只发 6~10 个请求，几乎不增加开销。
  */
-const FIRST_CHUNK_BYTES = 16 * 1024
-const MIN_CHUNK_BYTES = 8 * 1024
+const FIRST_CHUNK_BYTES = 4 * 1024
+const MIN_CHUNK_BYTES = 4 * 1024
 const MAX_CHUNK_BYTES = 4 * 1024 * 1024
 
 /** 每块的目标耗时：按速率换算块大小，让进度大约每秒刷新一次。 */
 const CHUNK_TARGET_MS = 1200
 
+/** 单块失败重试次数：弱网（实测模拟器 gsm 14.4kbps）会在块中途丢流，重试同一起点即可续上。 */
+const CHUNK_RETRIES = 1
+
 /** 连接超时；读超时按块，断网/丢包最多等一块就报错，而不是等到 183 秒。 */
 const CONNECT_TIMEOUT_MS = 10_000
-const CHUNK_READ_TIMEOUT_MS = 20_000
+const CHUNK_READ_TIMEOUT_MS = 12_000
 
 /** 403 响应体里带 OBS 错误码；只解前面一小段足够判定。 */
 const ERROR_BODY_CHARS = 4096
@@ -203,7 +206,7 @@ const isTimeout = (error: unknown): boolean =>
 
 /** 断网 / 连接被拒 / DNS 失败：这些必须立刻报「网络已断开」，不能等成「超时」。 */
 const isOffline = (error: unknown): boolean =>
-  /net_error|failed to fetch|ioexception|unable to resolve host|network is unreachable|no address associated|connection reset|connection refused|connection aborted|remote host|broken pipe|econnreset|econnrefused|enotfound|ehostunreach|enetunreach|ssl|handshake|socket closed/i.test(
+  /net_error|failed to fetch|ioexception|unexpected end of stream|connection closed|connection shutdown|eof reached|unable to resolve host|network is unreachable|no address associated|connection reset|connection refused|connection aborted|remote host|broken pipe|econnreset|econnrefused|enotfound|ehostunreach|enetunreach|ssl|handshake|socket closed/i.test(
     error instanceof Error ? `${error.name} ${error.message}` : String(error)
   )
 
@@ -301,10 +304,24 @@ const fetchChunk = async (
   from: number,
   to: number,
   state: { startedAt: number; downloaded: number; total: number | undefined }
-): Promise<HttpResponse> => {
-  try {
-    return await requestRange(url, from, to)
-  } catch (error) {
+): Promise<{ response: HttpResponse; requested: number }> => {
+  let lastError: unknown
+  for (let attempt = 0; attempt <= CHUNK_RETRIES; attempt += 1) {
+    // 重试时指数缩小块（4KB → 2KB → 1KB）：极差链路上也能一点点往前推，而不是整包重来
+    const span = Math.max(MIN_CHUNK_BYTES / 4, Math.floor((to - from + 1) / 2 ** attempt))
+    try {
+      const response = await requestRange(url, from, from + span - 1)
+      return { response, requested: span }
+    } catch (error) {
+      lastError = error
+      // 弱网会在块中途丢流：同一起点更小的块重试即可续上
+      if (attempt < CHUNK_RETRIES) {
+        await new Promise((resolve) => setTimeout(resolve, 300 * (attempt + 1)))
+      }
+    }
+  }
+  {
+    const error = lastError
     const { startedAt, downloaded, total } = state
     const percent = total === undefined || total === 0 ? 0 : Math.round((downloaded / total) * 100)
     if (isTimeout(error)) {
@@ -342,7 +359,7 @@ const downloadArchive = async (url: string, options: UrlImportOptions): Promise<
     const from = downloaded
     const to = from + chunkSize - 1
     const chunkStartedAt = Date.now()
-    const response = await fetchChunk(url, from, to, {
+    const { response, requested } = await fetchChunk(url, from, to, {
       startedAt,
       downloaded,
       total,
@@ -380,8 +397,8 @@ const downloadArchive = async (url: string, options: UrlImportOptions): Promise<
       }
       options.onProgress?.({ phase: 'downloading', downloadedBytes: downloaded, totalBytes: total })
     }
-    // 200 = 服务端忽略了 Range，整包已经到手；不足一块 = 已经是最后一块。
-    if (status === 200 || bytes.byteLength < chunkSize) {
+    // 200 = 服务端忽略了 Range，整包已经到手；不足请求的那一块 = 已经是最后一块。
+    if (status === 200 || bytes.byteLength < requested) {
       break
     }
     // 自适应块大小：慢网小块、快网大块，进度大致每秒一次。
