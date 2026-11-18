@@ -37,6 +37,15 @@ declare const styles: {
   readonly "mobileConfirm": string;
   readonly "importConfirm": string;
   readonly "importConfirmText": string;
+  readonly "errorBox": string;
+  readonly "errorClamped": string;
+  readonly "errorActions": string;
+  readonly "errorAction": string;
+  readonly "retryButton": string;
+  readonly "progressBlock": string;
+  readonly "progressLabel": string;
+  readonly "progressTrack": string;
+  readonly "progressFill": string;
   readonly "deleteConfirm": string;
   readonly "deleteActions": string;
   readonly "feedbackDialog": string;

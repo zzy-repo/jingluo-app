@@ -72,13 +72,23 @@ export const checkArchiveFormat = async (file: File): Promise<void> => {
   fail('backupUnrecognized')
 }
 
+/** 导入进度：已处理会话数 / 会话总数（总数拿不到时不传，界面退化为只显示已处理数）。 */
+export type ImportArchiveProgress = { sessions: number; totalSessions?: number }
+
+/** 导入可选项：signal 用于取消（条目边界中断，暂存由调用方清理），onProgress 用于 n/总数 进度。 */
+export type ImportArchiveOptions = {
+  signal?: AbortSignal
+  totalSessions?: number
+  onProgress?: (progress: ImportArchiveProgress) => void
+}
+
 /**
  * 流式导入：manifest → user（不导入）→ 全部会话 JSON → index → 全部图片。
  * 也支持会话与图片交错排列、index 位于末尾的条目顺序。
  * 会话读完立即暂存，只保留图片路径映射；图片全部读完后逐会话回填 MIME，不改变图片身份。
  * 写入导入暂存存储；调用方负责先清空暂存，成功后替换正式数据，失败时清理暂存。
  */
-export const importArchive = async (file: File): Promise<void> => {
+export const importArchive = async (file: File, options: ImportArchiveOptions = {}): Promise<void> => {
   if (!(await isZipFile(file))) {
     fail('backupUnrecognized')
   }
@@ -103,6 +113,10 @@ export const importArchive = async (file: File): Promise<void> => {
 
   try {
     for await (const entry of readArchive(file)) {
+      // 取消只在条目边界生效：已写入暂存的条目会被调用方清空，正式数据一个字节都不动。
+      if (options.signal?.aborted) {
+        fail('historyImportCancelled')
+      }
       const { path } = entry
       const sessionId = parseSessionPath(path)
       if (!manifest) {
@@ -125,6 +139,7 @@ export const importArchive = async (file: File): Promise<void> => {
           images.set(imagePath, id)
         }
         await db.addStagingSession(local.session)
+        options.onProgress?.({ sessions: imported.size, totalSessions: options.totalSessions })
       } else if (path === INDEX_PATH && !index) {
         index = readSessionIndex(await readJson(entry))
       } else if (
