@@ -25,8 +25,11 @@ import { execFileSync } from 'node:child_process'
 import { writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
+import { defaultDist, verifyAppUrl } from '../helpers/env.mjs'
 
-const APP_URL = process.env.APP_URL || 'http://127.0.0.1:5181'
+const APP_URL = process.env.APP_URL || `http://127.0.0.1:${process.env.PORT || '5181'}`
+// 环境守卫：端口撞车 / 产物陈旧 → SKIP(env)，不产生假红（Issue #19）
+await verifyAppUrl(APP_URL, defaultDist(), { variant: 'standard' })
 const KEY = 'sk-acceptance-key'
 const DEEPSEEK_MODEL = 'deepseek-flash'
 const ANTHROPIC_MODEL = 'deepseek-v4.1-flash'

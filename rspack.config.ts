@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs'
+import { readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { defineConfig } from '@rspack/cli'
@@ -45,6 +45,45 @@ const readVersionName = (): string => pkg.version?.trim() ?? ''
  * 环境变量留给出包脚本（CI 传 tag 名）覆盖，本地构建直接吃 package.json —— 这是唯一权威来源。
  */
 const appVersion = process.env.APP_VERSION?.trim() || readVersionName()
+
+/**
+ * 产物自述文件（build-info.json）：写进输出目录的 variant / main hash / 构建时间 / 版本。
+ *
+ * 为什么需要：测试（tests/helpers/env.mjs）要能判断「dist 里这份产物是标准包还是内测包、
+ * 是不是比源码旧、端口上 serve 的是不是同一份」。没有它就只能靠猜，于是出现
+ * 「拿标准包跑内测用例」「5181 端口 serve 的是别的分支产物」这类假红（Issue #19）。
+ * 只写一个静态 JSON，不影响运行时代码与部署。
+ */
+const buildInfoPlugin = (variant: 'standard' | 'internal', version: string, outPath: string) => ({
+  apply(compiler: {
+    hooks: { afterEmit: { tapAsync: (name: string, handler: (compilation: unknown, callback: () => void) => void) => void } }
+  }) {
+    compiler.hooks.afterEmit.tapAsync('BuildInfoPlugin', (_compilation: unknown, callback: () => void) => {
+      try {
+        const out = path.resolve(root, outPath)
+        const mainFile =
+          readdirSync(path.join(out, 'static', 'js')).find((name) => /^main\.[a-z0-9]+\.js$/.test(name)) ?? ''
+        writeFileSync(
+          path.join(out, 'build-info.json'),
+          `${JSON.stringify(
+            {
+              variant,
+              main: mainFile,
+              hash: /^main\.([a-z0-9]+)\.js$/.exec(mainFile)?.[1] ?? null,
+              version,
+              builtAt: new Date().toISOString(),
+            },
+            null,
+            2
+          )}\n`
+        )
+      } catch {
+        // 写不出来不影响构建（测试会按「没有自述文件」降级判断）
+      }
+      callback()
+    })
+  },
+})
 
 const cssLoader = {
   loader: 'builtin:lightningcss-loader',
@@ -151,6 +190,7 @@ export const createConfig = ({
       __APP_VERSION__: JSON.stringify(appVersion),
       __APP_VERSION_CODE__: JSON.stringify(readVersionCode()),
     }),
+    buildInfoPlugin(internalBuild ? 'internal' : 'standard', appVersion, outputPath),
     new rspack.CopyRspackPlugin({
       patterns: [{ from: path.resolve(root, 'LICENSE'), to: 'LICENSE', toType: 'file' }],
     }),

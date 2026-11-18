@@ -1,0 +1,7 @@
+{
+  "_comment": "「改动前」正式包（1.4.0-beta.2 之前、无对话模式切换）的输入区功能性按钮快照，供 tests/integration/mode-switch-plain 当对比基准。历史做法是手工复制一份 dist-baseline 再起第二个端口（5192），产物不可复现、本机路径各不相同，导致该用例长期假红（Issue #19）。",
+  "recordedFrom": "构建产物 dist-baseline（application-version 0.1.1，2026-11-17 构建，早于模式切换控件引入）",
+  "recordedAt": "2026-11-18",
+  "modeSwitchRendered": false,
+  "functionRowButtons": ["上传文件", "发送", "智能搜索", "深度思考", "语音输入"]
+}

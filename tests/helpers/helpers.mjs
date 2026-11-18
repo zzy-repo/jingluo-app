@@ -1,5 +1,6 @@
 // 共享的 Playwright 步骤：打开设置 → 数据管理，并捕获 /models 探测请求。
 import { chromium } from 'playwright'
+import { defaultDist, verifyAppUrl } from './env.mjs'
 
 // 默认走 127.0.0.1：语音输入用例需要「安全上下文」（localhost/127.0.0.1）才拿到麦克风，
 // 局域网 IP（100.113.135.55）不是安全上下文，按钮会被置灰成「非 HTTPS 页面无法使用语音输入」。
@@ -8,6 +9,8 @@ export const FAKE_KEY = 'sk-testkey-0123456789'
 
 /** 启动浏览器并进入「干净」的应用状态：清掉 localStorage 里已保存的配置后重载 */
 export const openApp = async () => {
+  // 环境守卫：APP_URL 不可达 / serve 的不是本地 dist（端口撞车）/ 产物陈旧 → SKIP(env)，不产生假红
+  await verifyAppUrl(APP_URL, defaultDist(), { variant: 'standard' })
   // 伪造麦克风：语音输入用例要真的走一次 /v1/tools/asr（被测页需为 localhost/127.0.0.1 这类安全上下文）
   const browser = await chromium.launch({
     args: ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream'],

@@ -1,0 +1,154 @@
+{
+  "schemaVersion": 1,
+  "baseline": {
+    "ref": "origin/main@b7b5750（1.4.0-beta.8 线）",
+    "recordedAt": "2026-11-18",
+    "recordedBy": "Issue #19（集成测试基线红）",
+    "note": "记录「每个集成文件应该是什么状态」。判定口径只判「相对基线没有新增失败」，不追全绿。known-red 必须写 reason，修好后删除该条（runner 会把「记红却转绿」也报出来，防止基线腐烂）。"
+  },
+  "howToRun": {
+    "standardBuild": "NODE_ENV=production DIST_OUT=dist-standard rspack build -c rspack.config.ts",
+    "internalBuild": "INTERNAL_BUILD=1 NODE_ENV=production rspack build -c rspack.config.ts",
+    "serveStandard": "python3 -m http.server 5301 --bind 127.0.0.1 --directory dist-standard",
+    "command": "APP_URL=http://127.0.0.1:5301 node tests/run-layer.mjs integration --baseline --timeout-ms 300000",
+    "npmScript": "npm run test:integration:baseline",
+    "detail": "docs/testing.md"
+  },
+  "guards": {
+    "port": "自建静态服务的用例不再用固定端口：serveDir() 复用 tests/helpers/runtime.mjs 的 serveDist（进程内 HTTP 服务 + 0 号端口原子分配），退出即释放。曾经固定 5291~5296 / 5191 / 5397 / 5418，撞到其它任务遗留的服务就整批假红。",
+    "artifact": "用例开跑前调用 verifyAppUrl()/verifyDist()：地址不可达、端口上 serve 的不是这份产物、产物种类不对（内测/标准）、产物比源码旧 → 打印原因并 exit 77（SKIP(env)，不算失败）。",
+    "buildInfo": "每次构建在产物目录写 build-info.json（variant/main/hash/version/builtAt），守卫据此判断，不靠猜。",
+    "noImplicitBuild": "沿用 tests/helpers/runtime.mjs 的约定：用例不做隐式构建，缺产物就 SKIP(env) 并打印构建命令。"
+  },
+  "files": {
+    "auto-title.test.mjs": {
+      "expected": "pass",
+      "artifact": "self-built 标准包",
+      "reason": "自己构建/复用 dist-standard + 进程内静态服务（端口自动分配）"
+    },
+    "caps.test.mjs": {
+      "expected": "pass",
+      "artifact": "standard",
+      "reason": "外部 APP_URL 指向标准包"
+    },
+    "copy-limit.test.mjs": {
+      "expected": "pass",
+      "artifact": "standard(self-built)",
+      "reason": "自己构建 dist-copy-limit（DIST_DIR_STANDARD 可注入）；端口自动分配"
+    },
+    "diagnostics-contract.test.mjs": {
+      "expected": "pass",
+      "artifact": "internal+standard",
+      "reason": "两套产物各起服务；[A] 断言已对齐 import_error 现有字段（reason/download.bytes）；[B] 打桩路径改 /v1/chat/completions"
+    },
+    "diagnostics.test.mjs": {
+      "expected": "pass",
+      "artifact": "internal",
+      "reason": "内测产物 + 进程内静态服务"
+    },
+    "feedback-export.test.mjs": {
+      "expected": "pass",
+      "artifact": "standard",
+      "reason": "版本号从产物 meta[application-version] 读取，不再硬编码"
+    },
+    "feedback-scroll.test.mjs": {
+      "expected": "pass",
+      "artifact": "standard",
+      "reason": "产物默认 dist-standard（原写死 dist-scroll，无人产出）；端口自动分配；单次约 200s，需 --timeout-ms 300000"
+    },
+    "full-acceptance.test.mjs": {
+      "expected": "known-red",
+      "artifact": "standard",
+      "reason": "纯净 origin/main（b7b5750）上同样红：openai 兼容渠道点「测试」后探测请求 GET /v1/models 未带 Authorization（断言得到 undefined，期望 Bearer <key>）。已在未改动的 main worktree 上复现，与本轮改动无关；疑似产品缺陷（openai 渠道探测未带鉴权头），需单开 Issue 定位。",
+      "since": "2026-11-18 复现于 origin/main@b7b5750",
+      "followUp": "待开 Issue：openai 兼容渠道探测请求缺少 Authorization"
+    },
+    "internal-build.test.mjs": {
+      "expected": "pass",
+      "artifact": "internal",
+      "reason": "ours 契约已对齐（62.106.70.167:60010 + /v1/chat/completions + Bearer）"
+    },
+    "legacy-config.test.mjs": {
+      "expected": "pass",
+      "artifact": "standard",
+      "reason": "外部 APP_URL 指向标准包"
+    },
+    "mode-switch-plain.test.mjs": {
+      "expected": "pass",
+      "artifact": "standard",
+      "reason": "对比基准读 tests/fixtures/input-row-baseline.json；端口自动分配"
+    },
+    "mode-switch.test.mjs": {
+      "expected": "pass",
+      "artifact": "internal",
+      "reason": "打桩改走 tests/fixtures/ours-upstream.mjs；深度思考/智能搜索按 ours caps 断言不渲染"
+    },
+    "motion.test.mjs": {
+      "expected": "pass",
+      "artifact": "internal",
+      "reason": "打桩改走 ours fixture（OpenAI SSE）；BASE_COMMIT 前移到 637adfb（CopyButton 因 #16 合法改动）"
+    },
+    "ours-services.test.mjs": {
+      "expected": "pass",
+      "artifact": "standard",
+      "reason": "端口自动分配（原写死 5295）"
+    },
+    "paths.test.mjs": {
+      "expected": "pass",
+      "artifact": "standard",
+      "reason": "外部 APP_URL 指向标准包（曾因 5181 被别的服务占着而假红）"
+    },
+    "probe-auth.test.mjs": {
+      "expected": "pass",
+      "artifact": "standard",
+      "reason": "外部 APP_URL 指向标准包"
+    },
+    "probe-nokey.test.mjs": {
+      "expected": "pass",
+      "artifact": "standard",
+      "reason": "外部 APP_URL 指向标准包"
+    },
+    "provider-anthropic.test.mjs": {
+      "expected": "pass",
+      "artifact": "standard",
+      "reason": "外部 APP_URL 指向标准包"
+    },
+    "provider-channels.test.mjs": {
+      "expected": "pass",
+      "artifact": "standard",
+      "reason": "ours 契约已对齐；进程内静态服务 + 端口自动分配"
+    },
+    "request-body.test.mjs": {
+      "expected": "pass",
+      "artifact": "standard",
+      "reason": "外部 APP_URL 指向标准包"
+    },
+    "upstream-html.test.mjs": {
+      "expected": "pass",
+      "artifact": "standard",
+      "reason": "外部 APP_URL 指向标准包"
+    },
+    "url-import-native.test.mjs": {
+      "expected": "pass",
+      "artifact": "standard",
+      "reason": "外部 APP_URL 指向标准包"
+    },
+    "url-import-stages.test.mjs": {
+      "expected": "pass",
+      "artifact": "standard",
+      "reason": "外部 APP_URL 指向标准包"
+    },
+    "url-import-web.test.mjs": {
+      "expected": "pass",
+      "artifact": "standard",
+      "reason": "夹具参数 title → titlePrefix（曾静默失效）"
+    }
+  },
+  "knownRed": {
+    "full-acceptance.test.mjs": {
+      "reason": "纯净 origin/main（b7b5750）上同样红：openai 兼容渠道点「测试」后探测请求 GET /v1/models 未带 Authorization（断言得到 undefined，期望 Bearer <key>）。已在未改动的 main worktree 上复现，与本轮改动无关；疑似产品缺陷（openai 渠道探测未带鉴权头），需单开 Issue 定位。",
+      "since": "2026-11-18 复现于 origin/main@b7b5750",
+      "followUp": "待开 Issue：openai 兼容渠道探测请求缺少 Authorization"
+    }
+  }
+}

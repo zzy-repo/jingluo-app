@@ -28,13 +28,14 @@ import { mkdirSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import { chromium } from 'playwright'
+import { serveDir, verifyAppUrl, verifyDist } from '../helpers/env.mjs'
 import { capturePaths, selectProviderKind } from '../helpers/helpers.mjs'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const ROOT = path.resolve(HERE, '../..')
 const DIST = process.env.DIST_DIR || path.join(ROOT, 'dist')
-const PORT = process.env.PORT || '5291'
-const APP_URL = process.env.APP_URL || `http://127.0.0.1:${PORT}`
+const PORT = process.env.PORT
+let APP_URL = process.env.APP_URL || ''
 const API_URL = 'http://62.106.70.167:60010'
 const MESSAGES_URL = `${API_URL}/v1/chat/completions`
 const MODEL = 'deepseek-v4.1-flash'
@@ -63,6 +64,12 @@ const start = (command, args) => {
   return child
 }
 const cleanup = () => {
+  // 静态服务是进程内 http 服务（serveDir → runtime.serveDist），必须显式关，否则进程不退出
+  try {
+    served.kill()
+  } catch {
+    // 已关闭
+  }
   for (const child of children) {
     try {
       child.kill('SIGTERM')
@@ -73,8 +80,11 @@ const cleanup = () => {
 }
 
 // ---------- 0) 起静态服务（内测构建） ----------
-start('python3', ['-m', 'http.server', PORT, '--bind', '127.0.0.1', '--directory', DIST])
-await new Promise((resolve) => setTimeout(resolve, 800))
+// 产物守卫 + 端口自动分配（PORT 可注入）：固定 5291 撞到别的进程就会连到陌生产物 → 假红
+verifyDist(DIST, { variant: 'internal' })
+const served = await serveDir(DIST, { port: PORT, label: '内测产物 dist' })
+APP_URL = APP_URL || served.url
+await verifyAppUrl(APP_URL, DIST, { variant: 'internal' })
 
 const browser = await chromium.launch()
 const context = await browser.newContext({

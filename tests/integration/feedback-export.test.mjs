@@ -1,13 +1,19 @@
 // [layer: integration | isolated mobile viewport; no device or real backend]
 import assert from 'node:assert/strict'
-import { spawn } from 'node:child_process'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
+import { serveDir, verifyDist } from '../helpers/env.mjs'
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
-const port = 5397
-const server = spawn('python3', ['-m', 'http.server', String(port), '--bind', '127.0.0.1', '--directory', path.join(root, 'dist')], { stdio: 'ignore' })
+// 需要**标准包**（本用例要能打开反馈弹窗，内测包把入口钉死）。默认用 dist-standard，
+// 与「dist 里放内测包」的用例互不干扰；按 main 的约定不隐式构建，缺产物就 SKIP(env) 并给出构建命令。
+const STANDARD = process.env.DIST_STANDARD_DIR || path.join(root, 'dist-standard')
+// 环境守卫：产物缺失 / 陈旧 / 种类不对 → SKIP(env)，不产生假红（Issue #19）
+await verifyDist(STANDARD, { variant: 'standard' })
+// 端口自动发现（PORT 可注入），避免固定端口撞车
+const served = await serveDir(STANDARD, { port: process.env.PORT, label: '标准产物 dist-standard' })
+const port = served.port
 const browser = await chromium.launch({ headless: true })
 try {
   const context = await browser.newContext({ viewport: { width: 393, height: 851 }, isMobile: true, deviceScaleFactor: 1, locale: 'zh-CN', acceptDownloads: true })
@@ -43,7 +49,16 @@ try {
   const firstDownload = page.waitForEvent('download')
   await save.click()
   const first = await firstDownload
-  assert.match(first.suggestedFilename(), /deepseek-feedback-.*v1\.4\.0-beta\.6\.json$/)
+  // 版本号取自构建产物本身（rspack 注入的 meta[name=application-version]），
+  // 不再硬编码：以前写死 v1.4.0-beta.6，发到 beta.7 就假红（Issue #19）。
+  const buildVersion = await page.evaluate(
+    () => document.querySelector('meta[name="application-version"]')?.content ?? '',
+  )
+  assert.ok(buildVersion, '构建产物缺少 meta[name=application-version]（产物陈旧或不是本仓库构建）')
+  assert.match(
+    first.suggestedFilename(),
+    new RegExp(`deepseek-feedback-.*v${buildVersion.replace(/\./g, '\\.')}\\.json$`),
+  )
   const firstText = await readFile(await first.path(), 'utf8')
   assert.ok(!firstText.includes('PRIVATE_TOKEN'))
   assert.ok(!firstText.includes('PRIVATE_CHAT'))
@@ -69,4 +84,4 @@ try {
   assert.ok(!snapshot.logs.some(entry => entry.msg.includes('feedback-accepted')))
   await writeFile(path.join(out, 'feedback-export-sample.json'), text)
   console.log('PASS: mobile offline blank export + upload failure export; privacy; description/logs retained; no accepted event')
-} finally { await browser.close(); server.kill('SIGTERM') }
+} finally { await browser.close(); served.kill() }

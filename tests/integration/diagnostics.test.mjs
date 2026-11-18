@@ -26,12 +26,13 @@ import { mkdirSync, readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import { chromium } from 'playwright'
+import { serveDir, verifyAppUrl, verifyDist } from '../helpers/env.mjs'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const ROOT = path.resolve(HERE, '../..')
 const DIST = process.env.DIST_DIR || path.join(ROOT, 'dist')
-const PORT = process.env.PORT || '5293'
-const APP_URL = process.env.APP_URL || `http://127.0.0.1:${PORT}`
+const PORT = process.env.PORT
+let APP_URL = process.env.APP_URL || ''
 const MAX_PAYLOAD_BYTES = 2 * 1024 * 1024
 const TICKET = 'fb_20261118_a3f9'
 const SHOT_DIR = path.join(ROOT, 'docs', 'ui')
@@ -64,12 +65,19 @@ try {
 }
 
 const children = []
-const server = spawn('python3', ['-m', 'http.server', PORT, '--bind', '127.0.0.1', '--directory', DIST], {
-  cwd: ROOT,
-  stdio: ['ignore', 'pipe', 'pipe'],
-})
-children.push(server)
+verifyDist(DIST, { variant: 'internal' })
+// 端口自动发现（PORT 可注入），避免固定端口撞车
+const served = await serveDir(DIST, { port: PORT, label: '内测产物 dist' })
+APP_URL = APP_URL || served.url
+// 连外部 APP_URL 时也要校验「端口上那份产物」是不是内测包（防止撞到别人的标准包 → 假红）
+await verifyAppUrl(APP_URL, DIST, { variant: 'internal' })
 const cleanup = () => {
+  // 静态服务是进程内 http 服务（serveDir → runtime.serveDist），必须显式关，否则进程不退出
+  try {
+    served.kill()
+  } catch {
+    // 已关闭
+  }
   for (const child of children) {
     try {
       child.kill('SIGTERM')
@@ -78,8 +86,6 @@ const cleanup = () => {
     }
   }
 }
-await new Promise((resolve) => setTimeout(resolve, 700))
-
 const browser = await chromium.launch()
 const consoleErrors = []
 
