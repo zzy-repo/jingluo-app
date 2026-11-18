@@ -68,6 +68,35 @@ APK_WITH_MARKER=/path/marker.apk \
 bash deploy/dl-release/test/offline-check.sh
 ```
 
+## 临时文件托管（fixture，不进清单）
+
+给 App / 测试用的「真实 HTTPS 下载」样本文件，**不要**走发布接口：
+`POST /api/v1/release` 每次都会写 `releases.json`（且强制包名、versionCode 递增、变体判定），
+用它托管样本会污染用户可见清单。服务端没有「只上传不登记」的接口。
+
+最小做法（已验证）：直接从维护机把文件放到静态目录，纯文件托管：
+
+```bash
+RAND=$(head -c 6 /dev/urandom | od -An -tx1 | tr -d ' \n')
+NAME="update-fixture-${RAND}.apk"
+scp ./some.apk aliyun:/var/www/dl/apk/"$NAME"
+ssh aliyun "chmod 644 /var/www/dl/apk/$NAME"          # 644 root:root，Caddy 只读
+curl -sSI "https://dl.rose7.cn/apk/$NAME" | head -3    # 期望 200 + application/vnd.android.package-archive
+sha256sum ./some.apk                                   # 与下载侧核对
+```
+
+约束（照做，别省）：
+
+- **名字必须随机且带 `update-fixture-` 前缀**，避免被猜到；不进 `releases.json`、不在 `index.html` 里引用。
+- `/apk/` 没有目录列表（`curl -I https://dl.rose7.cn/apk/` 应 404），所以不进清单=页面不可见；
+  但**知道 URL 的人就能下载**（公开 HTTPS、无鉴权），只放不含敏感信息的样本。
+- **测完立即删除并确认 404**，这是清理闭环，不依赖任何缓存：
+  ```bash
+  ssh aliyun 'rm -f /var/www/dl/apk/update-fixture-XXXX.apk'
+  curl -sS -o /dev/null -w '%{http_code}\n' https://dl.rose7.cn/apk/update-fixture-XXXX.apk   # 期望 404
+  ```
+- 托管/删除都不需要重启 systemd 或 Caddy，也不改 `releases.json`、`latest`、tag。
+
 ## 契约文档
 
 - 清单字段（App 内更新与发布侧共同遵守）：`docs/releases-manifest.md`
