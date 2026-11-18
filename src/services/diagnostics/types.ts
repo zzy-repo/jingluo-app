@@ -76,6 +76,10 @@ export type AppInfo = {
 }
 
 export type SystemInfo = {
+  appVersionName?: string
+  appVersionCode?: number
+  artifactVariant?: string
+  appSource?: string
   androidSdk?: number
   androidRelease?: string
   manufacturer?: string

@@ -12,7 +12,7 @@ registerHooks({ resolve(specifier, context, nextResolve) {
 const { buildFeedbackExport, prepareFeedbackExport, saveFeedbackExport, MAX_EXPORT_BYTES } = await import('../../src/services/diagnostics/export.ts')
 const snapshot = (logs = []) => ({ schemaVersion: 1,
   app: { version: '1.4.0-beta.6', versionCode: 104006, platform: 'android', buildType: 'standard' },
-  device: { model: 'Pixel', androidVersion: '15', webviewVersion: '130', screen: '393x851', locale: 'zh-CN', system: { androidSdk: 35, androidRelease: '15', manufacturer: 'fixture', brand: 'fixture', webviewPackage: 'com.google.android.webview', webviewVersion: '130.0', online: true, capabilities: { toSorted: true, hasOwn: true, at: true, visualViewport: true, dvh: true }, nativePath: 'DiagnosticsDevice', browserPath: 'browser' } },
+  device: { model: 'Pixel', androidVersion: '15', webviewVersion: '130', screen: '393x851', locale: 'zh-CN', system: { appVersionName: '1.4.0-beta.7', appVersionCode: 104007, artifactVariant: 'standard', appSource: 'PackageManager', androidSdk: 35, androidRelease: '15', manufacturer: 'fixture', brand: 'fixture', webviewPackage: 'com.google.android.webview', webviewVersion: '130.0', online: true, capabilities: { toSorted: true, hasOwn: true, at: true, visualViewport: true, dvh: true }, nativePath: 'DiagnosticsDevice', browserPath: 'browser' } },
   client: { clientId: 'private-client', sessionId: 'private-session' }, logs,
   feedback: { contact: 'private@example.org', description: 'private-description' }, screenshot: 'private-image',
 })

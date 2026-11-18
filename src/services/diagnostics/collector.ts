@@ -496,6 +496,10 @@ const readBrowserSystemInfo = (): SystemInfo => {
   capabilities.visualViewport = !!w?.visualViewport
   try { capabilities.dvh = !!w && CSS.supports('height: 100dvh') } catch { capabilities.dvh = false }
   return {
+    appVersionName: readAppVersion(),
+    appVersionCode: readVersionCode(),
+    artifactVariant: readBuildType(),
+    appSource: 'build-macro-fallback',
     networkType: nav?.connection?.type ?? nav?.connection?.effectiveType ?? UNKNOWN,
     online: typeof nav?.onLine === 'boolean' ? nav.onLine : undefined,
     capabilities,

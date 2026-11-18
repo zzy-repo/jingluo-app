@@ -19,6 +19,10 @@ public class DiagnosticsDevicePlugin extends Plugin {
         if (info == null) return "unknown";
         return info.versionName == null ? "unknown" : info.versionName;
     }
+    private long versionCode(PackageInfo info) {
+        if (info == null) return 0L;
+        return Build.VERSION.SDK_INT >= 28 ? info.getLongVersionCode() : info.versionCode;
+    }
     @PluginMethod
     public void snapshot(PluginCall call) {
         try {
@@ -29,6 +33,13 @@ public class DiagnosticsDevicePlugin extends Plugin {
             out.put("brand", Build.BRAND == null ? "unknown" : Build.BRAND);
             out.put("model", Build.MODEL == null ? "unknown" : Build.MODEL);
             PackageManager pm = getContext().getPackageManager();
+            PackageInfo app = pm.getPackageInfo(getContext().getPackageName(), 0);
+            out.put("appVersionName", version(app));
+            out.put("appVersionCode", versionCode(app));
+            android.content.pm.ApplicationInfo appInfo = pm.getApplicationInfo(getContext().getPackageName(), PackageManager.GET_META_DATA);
+            String variant = appInfo.metaData == null ? "unknown" : appInfo.metaData.getString("com.example.deepseekchat.ARTIFACT_VARIANT", "unknown");
+            out.put("artifactVariant", variant);
+            out.put("appSource", "PackageManager");
             String webPackage = "unknown", webVersion = "unknown";
             if (Build.VERSION.SDK_INT >= 26) {
                 PackageInfo wi = WebView.getCurrentWebViewPackage();
