@@ -174,6 +174,7 @@ const SettingsContent = ({ visible }: { visible: boolean }) => {
                 label={t('feedbackCellLabel')}
                 description={t('feedbackCellDescription')}
                 status={null}
+                className={styles.wrapActionsCell}
                 action={
                   <>
                     <Button

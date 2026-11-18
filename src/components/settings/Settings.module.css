@@ -668,6 +668,22 @@
     min-height: 44px;
   }
 
+  /* 两个按钮并排的行（「反馈与日志」）：窄屏下 actions 的 min-content 已经吃掉大半行宽，
+     只剩 ~96px 给文本列，再被老内核的 flex 收缩计算一压就归零——WebView 91 上标题逐字竖排（#57）。
+     这里不赌收缩算法：文本独占一行，动作区整行下移后按自身宽度换行（同 .locationCell 的做法）。 */
+  .wrapActionsCell {
+    flex-wrap: wrap;
+  }
+
+  .wrapActionsCell .text {
+    flex: 1 1 100%;
+    padding-right: 0;
+  }
+
+  .wrapActionsCell .cellActions {
+    flex: 1 0 100%;
+  }
+
   .locationCell {
     gap: 12px;
   }
