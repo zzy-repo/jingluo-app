@@ -72,9 +72,23 @@ const DOWNLOAD_MAX_TOTAL_MS = 30 * 60_000
  * 并随每一次预算耗尽写进诊断（`min.bytes.per.sec`）——「常量不自洽」于是变成一次失败里看得见的事实，
  * 而不是要等人拿计算器算一遍才发现。
  *
- * 数值口径本身（是否保 200MB、要不要按实测带宽自适应）属于产品决定，见 #152 第 3 条，这里不替它选。
+ * 数值口径已定（#152 第 3 条，口径 A）：**维持 200MB + 30min**。理由是 200MB 归档要求 ≥0.9Mbps
+ * 在常见 4G 之上仍有余量，属合理门槛；降上限（口径 C）是对用户可见的功能回退，放宽总时限（口径 B）
+ * 让导入能挂近一小时反而更糟，自适应（口径 D）实现最重。所以这里不引入任何产品行为变更，
+ * 只把「链接太慢」从无法解释的失败变成可解释的失败。
+ *
+ * 写成函数 + 调用一次，而不是把 114 这个数写进诊断：关系是**推导**的，调常量时不用回来改代码。
  */
-const MIN_REQUIRED_BYTES_PER_SEC = DEFAULT_MAX_IMPORT_BYTES / (DOWNLOAD_MAX_TOTAL_MS / 1000)
+export const minRequiredBytesPerSec = (maxBytes: number, maxTotalMs: number): number => maxBytes / (maxTotalMs / 1000)
+
+/** 现行两个常量的组合及其推导出的所需最低带宽（预算耗尽的诊断里带的就是这一份）。 */
+export const importBudget = (): { maxBytes: number; maxTotalMs: number; minBytesPerSec: number } => {
+  const maxBytes = DEFAULT_MAX_IMPORT_BYTES
+  const maxTotalMs = DOWNLOAD_MAX_TOTAL_MS
+  return { maxBytes, maxTotalMs, minBytesPerSec: minRequiredBytesPerSec(maxBytes, maxTotalMs) }
+}
+
+const MIN_REQUIRED_BYTES_PER_SEC = importBudget().minBytesPerSec
 
 /**
  * 周期性心跳间隔：每 5s 一条「这一段新增了多少字节 + 已经多久没有新字节」，
@@ -1093,7 +1107,13 @@ const downloadArchive = async (
       const minutes = Math.max(1, Math.round(maxTotalMs / 60_000))
       // 预算耗尽 ≠ 无响应：字节其实一直在涨，只是没在下限内跑完（#152）。
       // 把「按当前常量至少要多快」一起记进诊断，常量之间一旦不自洽，这里当场就看得出来。
-      const budgetFields = { ...meta, 'max.total.ms': maxTotalMs, 'min.bytes.per.sec': MIN_REQUIRED_BYTES_PER_SEC }
+      const budgetFields = {
+        ...meta,
+        'max.total.ms': maxTotalMs,
+        'min.bytes.per.sec': MIN_REQUIRED_BYTES_PER_SEC,
+        // 与 stalled 那条对齐：不看这个数，日志里分不清「一直在推进但太慢」和「根本没动静」
+        'idle.ms': elapsedSince(state.lastProgressAt),
+      }
       recordDownloadFailure('deadline', url, startedAt, budgetFields)
       trace?.({
         at: elapsedSince(startedAt),

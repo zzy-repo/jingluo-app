@@ -47,7 +47,9 @@ registerHooks({
   },
 })
 
-const { importHistoryFromUrl } = await import('../../src/services/chat/history/urlImport.ts')
+const { importHistoryFromUrl, importBudget, minRequiredBytesPerSec } = await import(
+  '../../src/services/chat/history/urlImport.ts'
+)
 const { DEFAULT_MAX_IMPORT_BYTES } = await import('../../src/services/chat/history/importLimit.ts')
 const { zh } = await import('../../src/i18n/zh.ts')
 const { en } = await import('../../src/i18n/en.ts')
@@ -154,11 +156,16 @@ test('① 一直在收字节但总预算先耗尽 → 判「超出下载时限�
 
   // #152 第 2 项：两个常量的关系必须是**推导出来**并写进诊断的，
   // 否则「200MB ÷ 总上限」这类不自洽永远不会在任何一次失败里显形。
-  const requiredBps = DEFAULT_MAX_IMPORT_BYTES / (30 * 60)
   assert.equal(
     failures[0].fields['min.bytes.per.sec'],
-    requiredBps,
+    importBudget().minBytesPerSec,
     '预算耗尽的诊断里必须带「按当前两个常量，至少需要多少字节/秒才可能下完」这个推导值'
+  )
+  // 「一直在推进但没跑完」与「真的没动静」在诊断里也要能分开 —— 两个字段缺一不可
+  assert.equal(
+    typeof failures[0].fields['idle.ms'],
+    'number',
+    '预算耗尽的诊断要同时带 idle.ms（否则看日志分不清「在推进」还是「挂了」）'
   )
 })
 
@@ -195,4 +202,21 @@ test('③ 两档的用户文案互不相同且各自说人话（中文/英文都
     assert.match(zh[deadlineKey], /上限/, `预算耗尽文案应说明「超出上限」：${zh[deadlineKey]}`)
     assert.doesNotMatch(zh[deadlineKey], /没有收到新数据/, '预算耗尽文案不该说「没有收到新数据」')
   }
+})
+
+test('④ 所需最低带宽由两个常量推导而来（改任一侧结果都会变），不是写死的字面量', () => {
+  // 比例关系成立 = 它确实是个推导式，而不是「114KB/s」这种抄来的常量：
+  // 上限翻倍 ⇒ 要求翻倍；时限翻倍 ⇒ 要求减半；乘积回到原上限。
+  const base = minRequiredBytesPerSec(10 * 1024 * 1024, 60_000)
+  assert.equal(base, (10 * 1024 * 1024) / 60, '推导式 = 上限 ÷ 总秒数')
+  assert.equal(minRequiredBytesPerSec(20 * 1024 * 1024, 60_000), base * 2, '上限翻倍，所需带宽必须跟着翻倍')
+  assert.equal(minRequiredBytesPerSec(10 * 1024 * 1024, 120_000), base / 2, '时限翻倍，所需带宽必须减半')
+  assert.equal(base * 60, 10 * 1024 * 1024, '按推导值跑满总时限，正好传完上限那么多字节')
+
+  // 现行常量下：诊断里那个数必须**就是**用当前这两个常量算出来的那个数。
+  // 谁把上限调大（或总时限调短）而另一个没跟着改，这条断言就会用新值报出新的「所需最低带宽」。
+  const budget = importBudget()
+  assert.equal(budget.minBytesPerSec, minRequiredBytesPerSec(budget.maxBytes, budget.maxTotalMs))
+  assert.equal(budget.maxBytes, DEFAULT_MAX_IMPORT_BYTES, '诊断用的上限必须就是导入实际用的那一个（不许各写一份）')
+  assert.equal(budget.maxTotalMs > 0, true, '总时限必须是正数')
 })
