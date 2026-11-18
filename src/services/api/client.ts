@@ -384,7 +384,10 @@ export const probeProvider = async (
     let statusText = ''
     let contentType = ''
     if (Capacitor.isNativePlatform()) {
-      const response = await CapacitorHttp.get({ url, headers: authHeaders(config.apiKey, { baseUrl }) })
+      const response = await Promise.race([
+        CapacitorHttp.get({ url, headers: authHeaders(config.apiKey, { baseUrl }) }),
+        new Promise<never>((_, reject) => setTimeout(() => reject(new DOMException('Timed out', 'AbortError')), timeoutMs)),
+      ])
       status = response.status
       text = typeof response.data === 'string' ? response.data : JSON.stringify(response.data ?? '')
       statusText = response.status.toString()
