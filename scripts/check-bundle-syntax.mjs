@@ -264,7 +264,7 @@ export const stripLiterals = (code) => {
   return out.join('')
 }
 
-const positionOf = (code, index) => {
+export const positionOf = (code, index) => {
   const upto = code.slice(0, index)
   const line = upto.split('\n').length
   const column = index - (upto.lastIndexOf('\n') + 1) + 1
@@ -358,7 +358,7 @@ export const findForbiddenAst = (code) => {
 
 let acornCache
 /** acorn 是 @rspack 的传递依赖，不在 package.json 里；按 pnpm 的落盘位置找一遍 */
-const loadAcorn = () => {
+export const loadAcorn = () => {
   if (acornCache !== undefined) return acornCache
   acornCache = null
   const require = createRequire(import.meta.url)
