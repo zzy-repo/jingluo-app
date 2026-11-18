@@ -73,7 +73,7 @@ export const checkArchiveFormat = async (file: File): Promise<void> => {
 }
 
 /** 导入进度：已处理会话数 / 会话总数（总数拿不到时不传，界面退化为只显示已处理数）。 */
-export type ImportArchiveProgress = { sessions: number; totalSessions?: number }
+export type ImportArchiveProgress = { sessions: number; totalSessions?: number; images?: number }
 
 /** 导入可选项：signal 用于取消（条目边界中断，暂存由调用方清理），onProgress 用于 n/总数 进度。 */
 export type ImportArchiveOptions = {
@@ -109,6 +109,7 @@ export const importArchive = async (file: File, options: ImportArchiveOptions = 
     const type = imageType(new Uint8Array(await data.slice(0, 16).arrayBuffer()))
     await db.saveStagingFiles([{ id, blob: new Blob([data], { type }) }])
     stored.set(id, type)
+    options.onProgress?.({ sessions: imported.size, totalSessions: options.totalSessions, images: stored.size })
   }
 
   try {

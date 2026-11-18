@@ -42,6 +42,14 @@ declare const styles: {
   readonly "errorActions": string;
   readonly "errorAction": string;
   readonly "retryButton": string;
+  readonly "traceBox": string;
+  readonly "traceHeader": string;
+  readonly "traceTitle": string;
+  readonly "traceElapsed": string;
+  readonly "traceList": string;
+  readonly "traceRow": string;
+  readonly "traceTime": string;
+  readonly "traceText": string;
   readonly "progressBlock": string;
   readonly "progressLabel": string;
   readonly "progressTrack": string;

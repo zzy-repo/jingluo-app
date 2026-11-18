@@ -42,7 +42,11 @@ const obsError = (code, message) =>
  */
 const openApp = async (plan, { viewport = { width: 1280, height: 800 } } = {}) => {
   const browser = await chromium.launch()
-  const context = await browser.newContext({ locale: 'zh-CN', viewport })
+  const context = await browser.newContext({
+    locale: 'zh-CN',
+    viewport,
+    permissions: ['clipboard-read', 'clipboard-write'],
+  })
   await context.addInitScript((plan) => {
     window.androidBridge = { postMessage: () => {} }
     const toBytes = (value) => {
@@ -646,6 +650,65 @@ const run = async () => {
     check('提示「下载链接已过期」', /下载链接已过期/.test(text), text.slice(0, 200))
     check('已有 5 个会话保持不变（没有被半截包覆盖）', after.sessions === 5, JSON.stringify(after))
     check('暂存已清空', after.sessionsStaging === 0 && after.filesStaging === 0, JSON.stringify(after))
+    check('console error = 0', consoleErrors.length === 0, consoleErrors.join(' | '))
+    await browser.close()
+  }
+
+  // ── 用例 17：用户可见「导入详情」：真实字节、阶段、失败原因、复制脱敏 ──────────
+  {
+    console.log('\n[case 17] 导入详情：折叠可展开、真实字节、复制脱敏')
+    const small = buildArchive({ sessionCount: 5, padBytes: 256 * 1024 })
+    const { browser, page, consoleErrors } = await openApp({
+      kind: 'arraybuffer',
+      status: 200,
+      range: true,
+      chunkDelay: 120,
+      data: base64(small.zip),
+    })
+    await startUrlImport(page)
+    await page.getByText(/已导入 5 个会话/).waitFor({ timeout: 60_000 })
+    const toggle = page.getByRole('button', { name: '展开', exact: true })
+    check('有「导入详情」折叠入口', (await toggle.count()) >= 1)
+    check('折叠时默认不展开列表', (await page.getByText('开始导入').count()) === 0)
+    await toggle.first().click()
+    const rows = page.locator('ol li')
+    await rows.first().waitFor({ timeout: 5000 })
+    const lines = await rows.allInnerTexts()
+    const joined = lines.join('\n')
+    check('含「开始导入」', /开始导入/.test(joined), joined.slice(0, 200))
+    check('含真实下载字节（已下载 x/总量）', /已下载 [\d.]+(KB|MB|B) \/ [\d.]+(KB|MB)/.test(joined), joined.slice(0, 200))
+    check('含「校验归档结束，共 5 个会话」', /校验归档结束，共 5 个会话/.test(joined), joined.slice(0, 200))
+    check('含「导入会话 n/5」', /导入会话 \d+\/5/.test(joined), joined.slice(0, 200))
+    check('含「完成，共 5 个会话」', /完成，共 5 个会话/.test(joined), joined.slice(0, 200))
+    check('详情条数有上限（≤100）', lines.length <= 100, `实际 ${lines.length}`)
+    await page.getByRole('button', { name: '复制详情', exact: true }).click()
+    const copied = await page.evaluate(() => navigator.clipboard.readText())
+    check('复制内容含详情正文', /DeepSeek import details/.test(copied) && /完成，共 5 个会话/.test(copied), copied.slice(0, 120))
+    check('复制内容不含签名/密钥/桶域名', !/Signature=|AccessKeyId=|obs\.cn-east|https?:\/\//.test(copied), copied.slice(0, 200))
+    check('console error = 0', consoleErrors.length === 0, consoleErrors.join(' | '))
+    await page.screenshot({ path: `${SHOT_DIR}/trace-details-1280.png` })
+    await browser.close()
+  }
+
+  // ── 用例 18：失败时详情里能看到失败阶段/HTTP 状态，且复制仍脱敏 ────────────────
+  {
+    console.log('\n[case 18] 失败详情：阶段 + HTTP 403 + 原因，复制仍脱敏')
+    const expired = obsError('RequestTimeTooSkewed', 'Request has expired')
+    const { browser, page, consoleErrors } = await openApp({
+      kind: 'arraybuffer',
+      status: 403,
+      data: base64(expired),
+    })
+    await startUrlImport(page)
+    await page.getByText(/下载链接已过期/).waitFor({ timeout: 20_000 })
+    await page.getByRole('button', { name: '展开', exact: true }).first().click()
+    const lines = await page.locator('ol li').allInnerTexts()
+    const joined = lines.join('\n')
+    check('详情含「失败（下载）：链接已过期」', /失败（下载）：链接已过期/.test(joined), joined.slice(0, 240))
+    check('详情含「复制详情」可点', (await page.getByRole('button', { name: '复制详情', exact: true }).count()) === 1)
+    await page.getByRole('button', { name: '复制详情', exact: true }).click()
+    const copied = await page.evaluate(() => navigator.clipboard.readText())
+    check('失败详情复制不含签名/密钥', !/Signature=|AccessKeyId=|sk-/.test(copied), copied.slice(0, 200))
     check('console error = 0', consoleErrors.length === 0, consoleErrors.join(' | '))
     await browser.close()
   }
