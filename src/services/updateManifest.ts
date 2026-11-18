@@ -103,7 +103,9 @@ export const selectUpdate = (
   const eligible = candidates.filter(
     (row) => row.artifactVariant === variant && row.sha256 && row.buildType
   )
-  const sorted = eligible.toSorted((a, b) => b.versionCode - a.versionCode)
+  // 兼容旧 WebView：Array.prototype.toSorted 是 ES2023，ColorOS/旧 Android WebView 上会抛
+  // 「toSorted is not a function」。用不依赖新原型的写法（复制后 sort，不改入参）。
+  const sorted = [...eligible].sort((a, b) => b.versionCode - a.versionCode)
   // Duplicate code for the same variant/channel is ambiguous; do not pick an arbitrary file.
   if (sorted.length > 1 && sorted[0].versionCode === sorted[1].versionCode) {
     throw new Error('AMBIGUOUS_RELEASE')
