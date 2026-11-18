@@ -141,6 +141,8 @@ export const en = {
   historyImportUrlBadSignature: 'Invalid link (signature mismatch). Copy the full link again.',
   historyImportUrlForbidden: 'No access to this link (403): {detail}',
   historyImportUrlOffline: 'Network disconnected. Check your connection and retry.',
+  historyImportUrlInterrupted:
+    'Connection dropped ({percent}% downloaded). Check your network and retry.',
   historyImportUrlTimeoutPartial:
     'Download timed out ({percent}% downloaded). Try a faster network.',
   historyImportCancelled: 'Import cancelled',

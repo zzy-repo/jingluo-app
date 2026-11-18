@@ -331,6 +331,28 @@ const run = async () => {
     await browser.close()
   }
 
+  // ── 用例 3b：流被丢（unexpected end of stream）≠ 物理断网，文案单独一档 ─────────
+  {
+    console.log('\n[case 3b] 传输被中断（unexpected end of stream）：不说成「网络已断开」')
+    const { browser, page, consoleErrors } = await openApp({
+      ...weakPayload,
+      chunkDelay: 60,
+      rejectAfterBytes: 24 * 1024,
+      rejectMessage: 'unexpected end of stream on com.android.okhttp.Address@1be17ec1',
+    })
+    await startUrlImport(page)
+    const { text } = await sampleUntil(page, (value) => /连接中断|已导入|失败/.test(value), 30_000)
+    check(
+      '提示「网络连接中断（已下载 x%）」',
+      /网络连接中断（已下载 \d+%）/.test(text),
+      text.slice(0, 200)
+    )
+    check('不谎称「网络已断开」（无法证明是物理断网）', !/网络已断开/.test(text), text.slice(0, 200))
+    check('会话数仍为 0', (await dbCounts(page)).sessions === 0)
+    check('console error = 0', consoleErrors.length === 0, consoleErrors.join(' | '))
+    await browser.close()
+  }
+
   // ── 用例 4：弱网超时（已下载 > 0）→ 带百分比的超时文案 ─────────────────────
   {
     console.log('\n[case 4] 超时且已下载 > 0：提示已下载百分比')
@@ -556,7 +578,11 @@ const run = async () => {
     await startUrlImport(page)
     const { text } = await sampleUntil(page, (value) => /已导入|断开|失败|超时/.test(value), 30_000)
     const counts = await dbCounts(page)
-    check('中途 416 被当成终止而不是继续拼（报网络中断类错误）', /网络已断开|下载失败|下载超时/.test(text), text.slice(0, 200))
+    check(
+      '中途 416 被当成终止而不是继续拼（报连接中断/网络类错误）',
+      /网络连接中断|网络已断开|下载失败|下载超时/.test(text),
+      text.slice(0, 200)
+    )
     check('没有写入任何会话（也没有脏暂存）', counts.sessions === 0 && counts.sessionsStaging === 0, JSON.stringify(counts))
     check('console error = 0', consoleErrors.length === 0, consoleErrors.join(' | '))
     await browser.close()

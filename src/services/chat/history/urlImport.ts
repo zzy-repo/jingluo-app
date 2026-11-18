@@ -225,10 +225,26 @@ const serverDetail = (text: string): string => {
 const isTimeout = (error: unknown): boolean =>
   /timeout|timed out|time out/i.test(error instanceof Error ? `${error.name} ${error.message}` : String(error))
 
-/** 断网 / 连接被拒 / DNS 失败：这些必须立刻报「网络已断开」，不能等成「超时」。 */
-const isOffline = (error: unknown): boolean =>
-  /net_error|failed to fetch|ioexception|unexpected end of stream|connection closed|connection shutdown|eof reached|unable to resolve host|network is unreachable|no address associated|connection reset|connection refused|connection aborted|remote host|broken pipe|econnreset|econnrefused|enotfound|ehostunreach|enetunreach|ssl|handshake|socket closed/i.test(
-    error instanceof Error ? `${error.name} ${error.message}` : String(error)
+const errorText = (error: unknown): string =>
+  error instanceof Error ? `${error.name} ${error.message}` : String(error)
+
+/**
+ * 明确的「够不到网络」：DNS 解析失败 / 网络不可达 / 连接被拒 / 浏览器离线。
+ * 只有这些才敢说「网络已断开」——用户主动断网、飞行模式、DNS 挂了都属于这类。
+ */
+const isUnreachable = (error: unknown): boolean =>
+  /unable to resolve host|unknownhost|network is unreachable|no address associated|connection refused|failed to connect|econnrefused|enotfound|ehostunreach|enetunreach|net::err_internet_disconnected|net::err_name_not_resolved|net::err_network_changed|net_error/i.test(
+    errorText(error)
+  )
+
+/**
+ * 传输被中断：流被对端/中间设备丢掉（unexpected end of stream、连接重置、读超时后的半截连接…）。
+ * 这只证明「这条连接断了」，**不能**断言是物理断网（实测 14.4kbps 限速下 OBS 也会主动断流），
+ * 所以文案单独一档，并带上已下载比例，避免把责任错判给用户网络。
+ */
+const isStreamBroken = (error: unknown): boolean =>
+  /unexpected end of stream|connection reset|connection aborted|connection closed|connection shutdown|eof reached|broken pipe|socket closed|ioexception|stream|handshake|ssl/i.test(
+    errorText(error)
   )
 
 /** 下载失败必录：阶段 + 已下载字节 + 耗时 + 错误原文（回查「导入没反应」靠这条）。 */
@@ -354,9 +370,13 @@ const fetchChunk = async (
         ? fail('historyImportUrlTimeoutPartial', { percent })
         : fail('historyImportUrlTimeout')
     }
-    if (isOffline(error)) {
-      recordDownloadFailure('offline', url, startedAt, { 'download.bytes': downloaded }, error)
+    if (isUnreachable(error)) {
+      recordDownloadFailure('unreachable', url, startedAt, { 'download.bytes': downloaded }, error)
       return fail('historyImportUrlOffline')
+    }
+    if (isStreamBroken(error)) {
+      recordDownloadFailure('interrupted', url, startedAt, { 'download.bytes': downloaded, percent }, error)
+      return fail('historyImportUrlInterrupted', { percent })
     }
     recordDownloadFailure('network', url, startedAt, { 'download.bytes': downloaded }, error)
     return fail('historyImportUrlNetwork')
@@ -439,7 +459,9 @@ const downloadArchive = async (url: string, options: UrlImportOptions): Promise<
       'download.bytes': downloaded,
       'download.total': total,
     })
-    fail('historyImportUrlOffline')
+    fail('historyImportUrlInterrupted', {
+      percent: Math.round((downloaded / total) * 100),
+    })
   }
   const bytes = concatChunks(chunks, downloaded)
   if (!isZip(bytes)) {

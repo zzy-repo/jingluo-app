@@ -133,6 +133,7 @@ export const zh = {
   historyImportUrlBadSignature: '链接无效（签名错误），请重新复制完整链接',
   historyImportUrlForbidden: '没有权限访问该链接（403）：{detail}',
   historyImportUrlOffline: '网络已断开，请检查网络后重试',
+  historyImportUrlInterrupted: '网络连接中断（已下载 {percent}%），请检查网络后重试',
   historyImportUrlTimeoutPartial: '下载超时（已下载 {percent}%），请换更快的网络',
   historyImportCancelled: '导入已取消',
   detailsExpand: '展开',
