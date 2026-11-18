@@ -4,7 +4,7 @@
 //   cd /root/deepseek-app && DIST_DIR=$PWD/dist PORT=5291 node tests/integration/internal-build.test.mjs
 //
 // 被测页面是**内测构建**（INTERNAL_BUILD=1）：默认渠道是「我们的渠道」（ours），
-// 地址 http://123.207.199.196:60010 与模型 deepseek-v4.1-flash 内置在 providers.ts 的
+// 地址 http://62.106.70.167:60010 与模型 deepseek-v4.1-flash 内置在 providers.ts 的
 // ours spec 里，设置页只渲染 API Key 一行；用户仍可在「渠道」下拉里切到另外三个渠道。
 //
 // 前置：无。内置上游的请求由 Playwright 的 page.route 拦截（不需要 ip addr add，
@@ -14,7 +14,8 @@
 //   [A] 设置页有「渠道」下拉，默认值是「我们的渠道」，共 4 个选项
 //   [B] ours 渠道只渲染 API Key（type=password）一个输入框；没有 baseUrl / model 输入元素，
 //       页面文本里也没有后端地址与内置模型名（用户不该看到后端地址）
-//   [C] 发消息请求 URL === http://123.207.199.196:60010/v1/messages，body.model === deepseek-v4.1-flash
+//   [C] 发消息请求 URL === http://62.106.70.167:60010/v1/chat/completions（OpenAI 协议），
+//       body.model === deepseek-v4.1-flash，鉴权 Authorization: Bearer（不带 x-api-key）
 //   [D] 请求体不含 safety_check / title / tools，messages 里没有 role:'latest_reminder'
 //   [E] 内置项不落 localStorage（只写 chat-demo:api-key）
 //   [F] 切换渠道：Key 不丢、DeepSeek 官方渠道同样只有 API Key 一行、渠道选择落盘
@@ -34,8 +35,8 @@ const ROOT = path.resolve(HERE, '../..')
 const DIST = process.env.DIST_DIR || path.join(ROOT, 'dist')
 const PORT = process.env.PORT || '5291'
 const APP_URL = process.env.APP_URL || `http://127.0.0.1:${PORT}`
-const API_URL = 'http://123.207.199.196:60010'
-const MESSAGES_URL = `${API_URL}/v1/messages`
+const API_URL = 'http://62.106.70.167:60010'
+const MESSAGES_URL = `${API_URL}/v1/chat/completions`
 const MODEL = 'deepseek-v4.1-flash'
 const KEY = 'sk-internal-acceptance-key'
 const REPLY = '内测版验收回复：内置渠道已生效。'
@@ -89,8 +90,8 @@ page.on('console', (message) => {
 })
 page.on('pageerror', (error) => consoleErrors.push(`pageerror: ${error.message}`))
 
-/** 内置上游（ours 渠道）：拦截并回标准 Anthropic SSE，断言看浏览器实际发出的请求 */
-await page.route('http://123.207.199.196:60010/**', async (route) => {
+/** 内置上游（ours 渠道）：拦截并回 OpenAI 形状 SSE（chat.completion.chunk），断言看浏览器实际发出的请求 */
+await page.route(`${API_URL}/**`, async (route) => {
   if (route.request().url().includes('/models')) {
     await route.fulfill({
       status: 200,
@@ -103,47 +104,29 @@ await page.route('http://123.207.199.196:60010/**', async (route) => {
     status: 200,
     headers: { 'content-type': 'text/event-stream' },
     body: [
-      'event: message_start',
       `data: ${JSON.stringify({
-        type: 'message_start',
-        message: {
-          id: 'msg_mock_internal',
-          type: 'message',
-          role: 'assistant',
-          content: [],
-          model: MODEL,
-          stop_reason: null,
-          stop_sequence: null,
-          usage: { input_tokens: 12, output_tokens: 0 },
-        },
+        id: 'chatcmpl-mock-internal',
+        object: 'chat.completion.chunk',
+        choices: [{ index: 0, delta: { role: 'assistant', content: '' }, finish_reason: null }],
       })}`,
       '',
-      'event: content_block_start',
       `data: ${JSON.stringify({
-        type: 'content_block_start',
-        index: 0,
-        content_block: { type: 'text', text: '' },
+        id: 'chatcmpl-mock-internal',
+        choices: [{ index: 0, delta: { content: REPLY }, finish_reason: null }],
       })}`,
       '',
-      'event: content_block_delta',
       `data: ${JSON.stringify({
-        type: 'content_block_delta',
-        index: 0,
-        delta: { type: 'text_delta', text: REPLY },
+        id: 'chatcmpl-mock-internal',
+        choices: [],
+        usage: { prompt_tokens: 12, completion_tokens: 24, total_tokens: 36 },
       })}`,
       '',
-      'event: content_block_stop',
-      `data: ${JSON.stringify({ type: 'content_block_stop', index: 0 })}`,
-      '',
-      'event: message_delta',
       `data: ${JSON.stringify({
-        type: 'message_delta',
-        delta: { stop_reason: 'end_turn', stop_sequence: null },
-        usage: { output_tokens: 24 },
+        id: 'chatcmpl-mock-internal',
+        choices: [{ index: 0, delta: {}, finish_reason: 'stop' }],
       })}`,
       '',
-      'event: message_stop',
-      'data: {"type":"message_stop"}',
+      'data: [DONE]',
       '',
       '',
     ].join('\n'),
@@ -258,7 +241,7 @@ try {
 
   // 后端地址与内置模型名不出现在界面上（用户不该看到后端地址）
   const dialogText = await dialog.innerText()
-  for (const secret of ['123.207.199.196', '60010', MODEL]) {
+  for (const secret of ['62.106.70.167', '60010', MODEL]) {
     if (dialogText.includes(secret)) {
       bad(`ours 渠道把内置值露在界面上了：${secret}`)
     } else {
@@ -351,7 +334,8 @@ try {
   await shot('reply')
 
   const posts = requests.filter(
-    (request) => request.method === 'POST' && new URL(request.url).pathname === '/v1/messages'
+    (request) =>
+      request.method === 'POST' && new URL(request.url).pathname === '/v1/chat/completions'
   )
   note(
     `浏览器发出的请求：${requests.map((request) => `${request.method} ${request.url}`).join(' , ') || '（无）'}`
@@ -378,10 +362,15 @@ try {
     } else {
       ok(`body.model = ${body.model}`)
     }
-    if (hitHeaders['x-api-key'] !== KEY) {
-      bad(`x-api-key 头不对：${JSON.stringify(hitHeaders['x-api-key'])}`)
+    if (hitHeaders.authorization !== `Bearer ${KEY}`) {
+      bad(`Authorization 头不对：${JSON.stringify(hitHeaders.authorization)}`)
     } else {
-      ok('x-api-key = 用户填的 key')
+      ok('Authorization = Bearer <用户填的 key>')
+    }
+    if (hitHeaders['x-api-key']) {
+      bad(`不该再带 x-api-key：${JSON.stringify(hitHeaders['x-api-key'])}`)
+    } else {
+      ok('未带 x-api-key（OpenAI 协议只用 Bearer）')
     }
     if (hitHeaders['anthropic-version']) {
       bad(`不该带 anthropic-version（中转 CORS 预检会失败）：${hitHeaders['anthropic-version']}`)
@@ -404,7 +393,9 @@ try {
     } else {
       ok("messages 里没有 role:'latest_reminder'")
     }
-    const system = String(body.system ?? '')
+    // OpenAI 协议：system 提示词在 messages 头部的 {role:'system'} 行（body.system 不再存在）
+    const systemRow = (body.messages ?? []).find((message) => message.role === 'system')
+    const system = String(systemRow?.content ?? '')
     if (!system.includes('Web')) {
       bad(`提醒内容没有折进 system：${JSON.stringify(system)}`)
     } else if (/,,\s/.test(system)) {

@@ -2,8 +2,8 @@ apply plugin: 'com.android.application'
 
 // ---------------------------------------------------------------------------
 // 版本号唯一来源：仓库根 package.json
-//   "version":            "1.4.0-beta.7"  → Android versionName
-//   "androidVersionCode": 14              → Android versionCode
+//   "version":            "1.4.0-beta.8"  → Android versionName
+//   "androidVersionCode": 15              → Android versionCode
 // 发版只改 package.json 一处；缺字段或格式非法直接报错中止（不猜、不静默回退）。
 // ---------------------------------------------------------------------------
 def pkgJsonFile = rootProject.file('../package.json')

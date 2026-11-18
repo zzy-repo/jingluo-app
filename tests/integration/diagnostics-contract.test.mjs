@@ -13,21 +13,17 @@
 //   [E] 配置保存失败    → config_change + result 字段（用标准构建，服务地址可编辑）
 //   [F] 长任务          → longtask + durationMs
 //
-// 被测页面：内测构建 dist（默认 5295）与标准构建 dist-standard（默认 5296，脚本自己构建）。
-import { spawn, spawnSync } from 'node:child_process'
-import { readFileSync } from 'node:fs'
+// 被测页面：DIST_DIR 内测产物与 STANDARD_DIST_DIR 标准产物；只读复用，默认随机 loopback 端口。
+import { serveDist, requireDist } from '../helpers/runtime.mjs'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import { chromium } from 'playwright'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const ROOT = path.resolve(HERE, '../..')
-const INTERNAL_DIST = process.env.DIST_DIR || path.join(ROOT, 'dist')
-const STANDARD_DIST = process.env.STANDARD_DIST_DIR || path.join(ROOT, 'dist-standard')
-const INTERNAL_PORT = process.env.PORT || '5295'
-const STANDARD_PORT = process.env.STANDARD_PORT || '5296'
-const INTERNAL_URL = `http://127.0.0.1:${INTERNAL_PORT}`
-const STANDARD_URL = `http://127.0.0.1:${STANDARD_PORT}`
+const INTERNAL_DIST = await requireDist(process.env.DIST_DIR || path.join(ROOT, 'dist'))
+const STANDARD_DIST = await requireDist(process.env.STANDARD_DIST_DIR || path.join(ROOT, 'dist-standard'))
+let INTERNAL_URL, STANDARD_URL
 const API_KEY = 'sk-contract-test-key-0123456789'
 const ZIP_URL = 'https://obs.example.test/deepseek_data-2026-11-01.zip'
 
@@ -50,50 +46,19 @@ const check = (condition, passMessage, failMessage) => {
   }
 }
 
-// ---------- 0) 构建标准版（[E] 需要可编辑的服务地址）+ 起两套静态服务 ----------
+// ---------- 0) No implicit builds, no fixed shared ports ----------
+const internalServer = await serveDist(INTERNAL_DIST, { port: process.env.PORT || 0 })
+let standardServer, browser
 try {
-  readFileSync(path.join(INTERNAL_DIST, 'index.html'))
-} catch {
-  console.error(`缺少内测构建产物 ${INTERNAL_DIST}，先跑: pnpm build:internal`)
-  process.exit(1)
+  standardServer = await serveDist(STANDARD_DIST, { port: process.env.STANDARD_PORT || 0 })
+  browser = await chromium.launch()
+} catch (error) {
+  try { await standardServer?.close() } finally { await internalServer.close() }
+  throw error
 }
-console.log('\n[0] 构建标准版到 dist-standard（[E] 需要可编辑的服务地址）')
-const build = spawnSync('pnpm', ['exec', 'rspack', 'build', '-c', 'rspack.config.ts'], {
-  cwd: ROOT,
-  env: { ...process.env, DIST_OUT: 'dist-standard', NODE_ENV: 'production', INTERNAL_BUILD: '0' },
-  encoding: 'utf8',
-})
-if (build.status !== 0) {
-  console.error(build.stdout?.slice(-2000) ?? '')
-  console.error(build.stderr?.slice(-2000) ?? '')
-  console.error('标准构建失败')
-  process.exit(1)
-}
-ok('dist-standard 构建完成')
-
-const children = []
-const startServer = (port, dir) => {
-  const child = spawn('python3', ['-m', 'http.server', port, '--bind', '127.0.0.1', '--directory', dir], {
-    cwd: ROOT,
-    stdio: ['ignore', 'pipe', 'pipe'],
-  })
-  children.push(child)
-  return child
-}
-startServer(INTERNAL_PORT, INTERNAL_DIST)
-startServer(STANDARD_PORT, STANDARD_DIST)
-await new Promise((resolve) => setTimeout(resolve, 800))
-
-const browser = await chromium.launch()
-const cleanup = () => {
-  for (const child of children) {
-    try {
-      child.kill('SIGTERM')
-    } catch {
-      // 已退出
-    }
-  }
-}
+INTERNAL_URL = internalServer.url
+STANDARD_URL = standardServer.url
+const cleanup = () => Promise.all([internalServer.close(), standardServer.close()])
 
 /** 打开应用（?diag-debug 打开调试入口），可选：原生桥 mock、网络打桩 */
 const openApp = async ({ appUrl = INTERNAL_URL, native, routes, apiKey = true } = {}) => {
@@ -331,8 +296,7 @@ try {
 } catch (error) {
   failures.push(`用例异常：${error instanceof Error ? (error.stack ?? error.message) : String(error)}`)
 } finally {
-  await browser.close()
-  cleanup()
+  try { await browser.close() } finally { await cleanup() }
 }
 
 console.log(`\n${failures.length === 0 ? 'PASS' : 'FAIL'} tests/integration/diagnostics-contract.test.mjs`)

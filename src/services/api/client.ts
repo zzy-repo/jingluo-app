@@ -1,3 +1,4 @@
+import { Capacitor, CapacitorHttp } from '@capacitor/core'
 import { translate, type TranslationMessage } from '../../i18n/index.js'
 import {
   getBaseUrl,
@@ -9,6 +10,8 @@ import {
 } from './apiConfig.js'
 import { OpenAIStreamError, toOpenAIRequest, translateOpenAIStream } from './openaiAdapter.js'
 import type { ProviderSpec } from './providers.js'
+import { parseModelPayload } from './modelPayload.js'
+export { parseModelPayload, pickModelIds } from './modelPayload.js'
 import { readMessageEvent } from './parseEvent.js'
 import { readServerSentEvents } from './sse.js'
 import type {
@@ -327,40 +330,6 @@ export type ProviderProbeResult = {
   message?: string
 }
 
-/** 从各种中转的返回里尽量捞出模型 id：字符串数组或 { id / name / model } */
-const pickModelIds = (body: unknown): string[] => {
-  const readIds = (list: unknown): string[] => {
-    if (!Array.isArray(list)) {
-      return []
-    }
-    const ids: string[] = []
-    for (const item of list) {
-      if (typeof item === 'string') {
-        ids.push(item)
-      } else if (item && typeof item === 'object') {
-        const record = item as Record<string, unknown>
-        const id = record.id ?? record.name ?? record.model
-        if (typeof id === 'string') {
-          ids.push(id)
-        }
-      }
-    }
-    return ids
-  }
-  if (Array.isArray(body)) {
-    return readIds(body)
-  }
-  if (body && typeof body === 'object') {
-    const record = body as Record<string, unknown>
-    for (const key of ['data', 'models', 'model_list', 'result']) {
-      const ids = readIds(record[key])
-      if (ids.length) {
-        return ids
-      }
-    }
-  }
-  return []
-}
 
 /**
  * 连通性测试：GET {baseUrl}{paths.models}，鉴权头按当前 spec。
@@ -377,17 +346,40 @@ export const probeProvider = async (
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), timeoutMs)
   try {
-    const response = await fetch(`${baseUrl}${getCurrentSpec().paths.models}`, {
-      method: 'GET',
-      headers: authHeaders(config.apiKey, { baseUrl }),
-      signal: controller.signal,
-    })
-    const text = await response.text().catch(() => '')
-    if (isHtmlResponse(response)) {
-      return { ok: false, status: response.status, models: [], reason: 'html' }
+    const url = `${baseUrl}${getCurrentSpec().paths.models}`
+    let status: number
+    let text: string
+    let statusText = ''
+    let contentType = ''
+    if (Capacitor.isNativePlatform()) {
+      const response = await Promise.race([
+        CapacitorHttp.get({ url, headers: authHeaders(config.apiKey, { baseUrl }) }),
+        new Promise<never>((_, reject) => setTimeout(() => reject(new DOMException('Timed out', 'AbortError')), timeoutMs)),
+      ])
+      status = response.status
+      text = typeof response.data === 'string' ? response.data : JSON.stringify(response.data ?? '')
+      statusText = response.status.toString()
+      contentType = 'application/json'
+    } else {
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: authHeaders(config.apiKey, { baseUrl }),
+        signal: controller.signal,
+      })
+      status = response.status
+      statusText = response.statusText
+      contentType = response.headers.get('content-type') ?? ''
+      text = await response.text().catch(() => '')
+      if (isHtmlResponse(response)) {
+        return { ok: false, status, models: [], reason: 'html' }
+      }
     }
-    if (!response.ok) {
-      let message = text || response.statusText
+    const responseLike = { status, statusText, headers: { get: (name: string) => name.toLowerCase() === 'content-type' ? contentType : null } }
+    if (isHtmlResponse(responseLike as Response)) {
+      return { ok: false, status, models: [], reason: 'html' }
+    }
+    if (status < 200 || status >= 300) {
+      let message = text || statusText
       try {
         const body: unknown = JSON.parse(text)
         if (isErrorBody(body)) {
@@ -396,21 +388,24 @@ export const probeProvider = async (
       } catch {
         // 非 JSON 错误体直接展示原文
       }
-      return { ok: false, status: response.status, models: [], reason: 'http', message }
+      return { ok: false, status, models: [], reason: 'http', message }
     }
     let body: unknown
     try {
-      body = JSON.parse(text)
+      body = text
+      if (typeof body === 'string') {
+        body = JSON.parse(body)
+      }
     } catch {
       return {
         ok: false,
-        status: response.status,
+        status,
         models: [],
         reason: 'json',
         message: text.slice(0, 200),
       }
     }
-    return { ok: true, status: response.status, models: pickModelIds(body) }
+    return { ok: true, status, models: parseModelPayload(body) }
   } catch (error) {
     if (controller.signal.aborted) {
       return { ok: false, models: [], reason: 'timeout' }

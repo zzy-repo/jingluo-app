@@ -42,6 +42,30 @@ export const Modal = ({
   // 首次出现才有淡入 / 滑入过渡，而不是瞬间跳出。
   const [entered, setEntered] = useState(false)
   const contentRef = useRef<HTMLDivElement>(null)
+  const overlayRef = useRef<HTMLDivElement>(null)
+  // Portals live outside the app frame: follow the keyboard's visual viewport here too.
+  useLayoutEffect(() => {
+    const overlay = overlayRef.current
+    const viewport = window.visualViewport
+    const update = () => {
+      if (!overlay || (viewport && viewport.scale !== 1)) {
+        return
+      }
+      const height = viewport?.height ?? window.innerHeight
+      overlay.style.setProperty('--modal-viewport-height', `${height}px`)
+      overlay.style.top = `${viewport?.offsetTop ?? 0}px`
+      overlay.style.height = `${height}px`
+    }
+    update()
+    viewport?.addEventListener('resize', update)
+    viewport?.addEventListener('scroll', update)
+    window.addEventListener('resize', update)
+    return () => {
+      viewport?.removeEventListener('resize', update)
+      viewport?.removeEventListener('scroll', update)
+      window.removeEventListener('resize', update)
+    }
+  }, [])
   useLayoutEffect(() => {
     if (prefersReducedMotion()) {
       setEntered(true)
@@ -76,6 +100,7 @@ export const Modal = ({
 
   return createPortal(
     <div
+      ref={overlayRef}
       className={styles.overlay}
       data-motion-state={shown ? 'open' : 'closed'}
       onMouseDown={(event) => event.target === event.currentTarget && onClose()}

@@ -1,0 +1,1924 @@
+[
+  {
+    "name": "360x640-1",
+    "before": {
+      "top": 0,
+      "scrollHeight": 820,
+      "clientHeight": 464,
+      "overflow": "auto",
+      "dialogTop": 16,
+      "dialogBottom": 624,
+      "viewport": 640,
+      "buttons": [
+        {
+          "text": "关闭",
+          "y": 38,
+          "bottom": 66
+        },
+        {
+          "text": "保存日志文件",
+          "y": 178,
+          "bottom": 218
+        },
+        {
+          "text": "提交",
+          "y": 562,
+          "bottom": 602
+        }
+      ]
+    },
+    "after": {
+      "top": 356,
+      "scrollHeight": 820,
+      "clientHeight": 464,
+      "overflow": "auto",
+      "dialogTop": 16,
+      "dialogBottom": 624,
+      "viewport": 640,
+      "buttons": [
+        {
+          "text": "关闭",
+          "y": 38,
+          "bottom": 66
+        },
+        {
+          "text": "保存日志文件",
+          "y": -178,
+          "bottom": -138
+        },
+        {
+          "text": "提交",
+          "y": 562,
+          "bottom": 602
+        }
+      ]
+    },
+    "final": {
+      "top": 840,
+      "scrollHeight": 1304,
+      "clientHeight": 464,
+      "overflow": "auto",
+      "dialogTop": 16,
+      "dialogBottom": 624,
+      "viewport": 640,
+      "buttons": [
+        {
+          "text": "关闭",
+          "y": 38,
+          "bottom": 66
+        },
+        {
+          "text": "保存日志文件",
+          "y": -662,
+          "bottom": -622
+        },
+        {
+          "text": "提交",
+          "y": 562,
+          "bottom": 602
+        }
+      ]
+    },
+    "starts": [
+      {
+        "x": 32,
+        "y": 530,
+        "element": "DIV",
+        "className": "cell-_85c1b row-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 530,
+        "element": "DIV",
+        "className": "feedbackWarnings-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 530,
+        "element": "DIV",
+        "className": "feedbackWarnings-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 530,
+        "element": "DIV",
+        "className": "feedbackWarnings-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 530,
+        "element": "DIV",
+        "className": "feedbackWarnings-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 530,
+        "element": "DIV",
+        "className": "feedbackWarnings-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 530,
+        "element": "DIV",
+        "className": "feedbackWarnings-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 530,
+        "element": "DIV",
+        "className": "feedbackWarnings-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 530,
+        "element": "DIV",
+        "className": "feedbackWarnings-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 530,
+        "element": "DIV",
+        "className": "feedbackWarnings-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 530,
+        "element": "DIV",
+        "className": "feedbackWarnings-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 530,
+        "element": "DIV",
+        "className": "feedbackWarnings-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 530,
+        "element": "DIV",
+        "className": "feedbackWarnings-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 530,
+        "element": "DIV",
+        "className": "feedbackWarnings-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 530,
+        "element": "DIV",
+        "className": "feedbackWarnings-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 530,
+        "element": "DIV",
+        "className": "feedbackWarnings-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 530,
+        "element": "SPAN",
+        "className": ""
+      },
+      {
+        "x": 32,
+        "y": 530,
+        "element": "DIV",
+        "className": "cell-_85c1b row-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 530,
+        "element": "DIV",
+        "className": "cell-_85c1b row-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 530,
+        "element": "DIV",
+        "className": "cell-_85c1b row-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 530,
+        "element": "DIV",
+        "className": "cell-_85c1b row-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 530,
+        "element": "DIV",
+        "className": "cell-_85c1b row-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 530,
+        "element": "DIV",
+        "className": "cell-_85c1b row-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 530,
+        "element": "DIV",
+        "className": "cell-_85c1b row-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 530,
+        "element": "DIV",
+        "className": "cell-_85c1b row-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 530,
+        "element": "DIV",
+        "className": "cell-_85c1b row-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 530,
+        "element": "DIV",
+        "className": "cell-_85c1b row-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 530,
+        "element": "DIV",
+        "className": "cell-_85c1b row-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 530,
+        "element": "DIV",
+        "className": "cell-_85c1b row-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 530,
+        "element": "DIV",
+        "className": "cell-_85c1b row-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 530,
+        "element": "DIV",
+        "className": "cell-_85c1b row-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 530,
+        "element": "DIV",
+        "className": "cell-_85c1b row-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 530,
+        "element": "DIV",
+        "className": "cell-_85c1b row-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 530,
+        "element": "DIV",
+        "className": "cell-_85c1b row-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 530,
+        "element": "DIV",
+        "className": "cell-_85c1b row-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 530,
+        "element": "DIV",
+        "className": "cell-_85c1b row-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 530,
+        "element": "DIV",
+        "className": "cell-_85c1b row-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 530,
+        "element": "DIV",
+        "className": "cell-_85c1b row-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 530,
+        "element": "DIV",
+        "className": "cell-_85c1b row-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 530,
+        "element": "DIV",
+        "className": "cell-_85c1b row-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 530,
+        "element": "INPUT",
+        "className": "feedbackInput-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 530,
+        "element": "DIV",
+        "className": "feedbackField-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 530,
+        "element": "DIV",
+        "className": "feedbackWarnings-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 530,
+        "element": "DIV",
+        "className": "feedbackWarnings-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 530,
+        "element": "DIV",
+        "className": "feedbackWarnings-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 530,
+        "element": "DIV",
+        "className": "feedbackWarnings-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 530,
+        "element": "DIV",
+        "className": "feedbackWarnings-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 530,
+        "element": "DIV",
+        "className": "feedbackWarnings-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 530,
+        "element": "DIV",
+        "className": "feedbackWarnings-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 530,
+        "element": "DIV",
+        "className": "feedbackWarnings-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 530,
+        "element": "DIV",
+        "className": "feedbackWarnings-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 530,
+        "element": "DIV",
+        "className": "feedbackWarnings-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 530,
+        "element": "DIV",
+        "className": "feedbackWarnings-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 530,
+        "element": "DIV",
+        "className": "feedbackWarnings-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 530,
+        "element": "DIV",
+        "className": "feedbackWarnings-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 530,
+        "element": "DIV",
+        "className": "feedbackWarnings-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 530,
+        "element": "DIV",
+        "className": "feedbackWarnings-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 530,
+        "element": "DIV",
+        "className": "feedbackWarnings-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 530,
+        "element": "DIV",
+        "className": "feedbackWarnings-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 530,
+        "element": "DIV",
+        "className": "feedbackWarnings-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 530,
+        "element": "DIV",
+        "className": "feedbackWarnings-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 530,
+        "element": "DIV",
+        "className": "feedbackWarnings-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 530,
+        "element": "DIV",
+        "className": "feedbackWarnings-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 530,
+        "element": "DIV",
+        "className": "feedbackWarnings-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 606,
+        "element": "DIV",
+        "className": "cell-_85c1b row-_85c1b"
+      },
+      {
+        "x": 8,
+        "y": 494,
+        "element": "DIV",
+        "className": "scroll-_7ccaf"
+      }
+    ],
+    "mainRestored": {
+      "original": 1636,
+      "restored": 1307
+    }
+  },
+  {
+    "name": "360x780-1.3",
+    "before": {
+      "top": 0,
+      "scrollHeight": 977,
+      "clientHeight": 520,
+      "overflow": "auto",
+      "dialogTop": 56.390625,
+      "dialogBottom": 723.59375,
+      "viewport": 780,
+      "buttons": [
+        {
+          "text": "关闭",
+          "y": 79.984375,
+          "bottom": 107.984375
+        },
+        {
+          "text": "保存日志文件",
+          "y": 267.8125,
+          "bottom": 307.8125
+        },
+        {
+          "text": "提交",
+          "y": 661.59375,
+          "bottom": 701.59375
+        }
+      ]
+    },
+    "after": {
+      "top": 457,
+      "scrollHeight": 977,
+      "clientHeight": 520,
+      "overflow": "auto",
+      "dialogTop": 56.390625,
+      "dialogBottom": 723.59375,
+      "viewport": 780,
+      "buttons": [
+        {
+          "text": "关闭",
+          "y": 79.984375,
+          "bottom": 107.984375
+        },
+        {
+          "text": "保存日志文件",
+          "y": -189.1875,
+          "bottom": -149.1875
+        },
+        {
+          "text": "提交",
+          "y": 661.59375,
+          "bottom": 701.59375
+        }
+      ]
+    },
+    "final": {
+      "top": 954,
+      "scrollHeight": 1474,
+      "clientHeight": 520,
+      "overflow": "auto",
+      "dialogTop": 56.390625,
+      "dialogBottom": 723.59375,
+      "viewport": 780,
+      "buttons": [
+        {
+          "text": "关闭",
+          "y": 79.984375,
+          "bottom": 107.984375
+        },
+        {
+          "text": "保存日志文件",
+          "y": -686.1875,
+          "bottom": -646.1875
+        },
+        {
+          "text": "提交",
+          "y": 661.59375,
+          "bottom": 701.59375
+        }
+      ]
+    },
+    "starts": [
+      {
+        "x": 32,
+        "y": 629.59375,
+        "element": "INPUT",
+        "className": "feedbackInput-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 629.59375,
+        "element": "DIV",
+        "className": "feedbackWarnings-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 629.59375,
+        "element": "DIV",
+        "className": "feedbackWarnings-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 629.59375,
+        "element": "DIV",
+        "className": "feedbackWarnings-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 629.59375,
+        "element": "DIV",
+        "className": "feedbackWarnings-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 629.59375,
+        "element": "DIV",
+        "className": "feedbackWarnings-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 629.59375,
+        "element": "DIV",
+        "className": "feedbackWarnings-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 629.59375,
+        "element": "DIV",
+        "className": "feedbackWarnings-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 629.59375,
+        "element": "DIV",
+        "className": "feedbackWarnings-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 629.59375,
+        "element": "DIV",
+        "className": "feedbackWarnings-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 629.59375,
+        "element": "DIV",
+        "className": "feedbackWarnings-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 629.59375,
+        "element": "DIV",
+        "className": "feedbackWarnings-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 629.59375,
+        "element": "DIV",
+        "className": "feedbackWarnings-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 629.59375,
+        "element": "DIV",
+        "className": "feedbackWarnings-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 629.59375,
+        "element": "DIV",
+        "className": "feedbackWarnings-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 629.59375,
+        "element": "DIV",
+        "className": "feedbackWarnings-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 629.59375,
+        "element": "DIV",
+        "className": "feedbackIntegrity-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 629.59375,
+        "element": "INPUT",
+        "className": "feedbackInput-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 629.59375,
+        "element": "INPUT",
+        "className": "feedbackInput-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 629.59375,
+        "element": "INPUT",
+        "className": "feedbackInput-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 629.59375,
+        "element": "INPUT",
+        "className": "feedbackInput-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 629.59375,
+        "element": "INPUT",
+        "className": "feedbackInput-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 629.59375,
+        "element": "INPUT",
+        "className": "feedbackInput-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 629.59375,
+        "element": "INPUT",
+        "className": "feedbackInput-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 629.59375,
+        "element": "INPUT",
+        "className": "feedbackInput-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 629.59375,
+        "element": "INPUT",
+        "className": "feedbackInput-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 629.59375,
+        "element": "INPUT",
+        "className": "feedbackInput-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 629.59375,
+        "element": "INPUT",
+        "className": "feedbackInput-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 629.59375,
+        "element": "INPUT",
+        "className": "feedbackInput-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 629.59375,
+        "element": "INPUT",
+        "className": "feedbackInput-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 629.59375,
+        "element": "INPUT",
+        "className": "feedbackInput-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 629.59375,
+        "element": "INPUT",
+        "className": "feedbackInput-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 629.59375,
+        "element": "INPUT",
+        "className": "feedbackInput-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 629.59375,
+        "element": "INPUT",
+        "className": "feedbackInput-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 629.59375,
+        "element": "INPUT",
+        "className": "feedbackInput-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 629.59375,
+        "element": "INPUT",
+        "className": "feedbackInput-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 629.59375,
+        "element": "INPUT",
+        "className": "feedbackInput-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 629.59375,
+        "element": "INPUT",
+        "className": "feedbackInput-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 629.59375,
+        "element": "INPUT",
+        "className": "feedbackInput-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 629.59375,
+        "element": "INPUT",
+        "className": "feedbackInput-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 629.59375,
+        "element": "LABEL",
+        "className": "feedbackLabel-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 629.59375,
+        "element": "DIV",
+        "className": "feedbackIntegrity-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 629.59375,
+        "element": "DIV",
+        "className": "feedbackWarnings-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 629.59375,
+        "element": "DIV",
+        "className": "feedbackWarnings-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 629.59375,
+        "element": "DIV",
+        "className": "feedbackWarnings-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 629.59375,
+        "element": "DIV",
+        "className": "feedbackWarnings-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 629.59375,
+        "element": "DIV",
+        "className": "feedbackWarnings-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 629.59375,
+        "element": "DIV",
+        "className": "feedbackWarnings-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 629.59375,
+        "element": "DIV",
+        "className": "feedbackWarnings-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 629.59375,
+        "element": "DIV",
+        "className": "feedbackWarnings-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 629.59375,
+        "element": "DIV",
+        "className": "feedbackWarnings-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 629.59375,
+        "element": "DIV",
+        "className": "feedbackWarnings-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 629.59375,
+        "element": "DIV",
+        "className": "feedbackWarnings-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 629.59375,
+        "element": "DIV",
+        "className": "feedbackWarnings-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 629.59375,
+        "element": "DIV",
+        "className": "feedbackWarnings-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 629.59375,
+        "element": "DIV",
+        "className": "feedbackWarnings-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 629.59375,
+        "element": "DIV",
+        "className": "feedbackWarnings-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 629.59375,
+        "element": "DIV",
+        "className": "feedbackWarnings-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 629.59375,
+        "element": "DIV",
+        "className": "feedbackWarnings-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 629.59375,
+        "element": "DIV",
+        "className": "feedbackWarnings-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 629.59375,
+        "element": "DIV",
+        "className": "feedbackWarnings-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 629.59375,
+        "element": "DIV",
+        "className": "feedbackWarnings-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 629.59375,
+        "element": "DIV",
+        "className": "feedbackWarnings-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 629.59375,
+        "element": "DIV",
+        "className": "feedbackWarnings-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 746,
+        "element": "DIV",
+        "className": "label-_85c1b"
+      },
+      {
+        "x": 8,
+        "y": 634,
+        "element": "DIV",
+        "className": "scroll-_7ccaf"
+      }
+    ],
+    "mainRestored": {
+      "original": 1564,
+      "restored": 979
+    }
+  },
+  {
+    "name": "393x851-1.5",
+    "before": {
+      "top": 0,
+      "scrollHeight": 1058,
+      "clientHeight": 520,
+      "overflow": "auto",
+      "dialogTop": 89.5,
+      "dialogBottom": 761.5,
+      "viewport": 851,
+      "buttons": [
+        {
+          "text": "关闭",
+          "y": 115.5,
+          "bottom": 143.5
+        },
+        {
+          "text": "保存日志文件",
+          "y": 324.5,
+          "bottom": 364.5
+        },
+        {
+          "text": "提交",
+          "y": 699.5,
+          "bottom": 739.5
+        }
+      ]
+    },
+    "after": {
+      "top": 538,
+      "scrollHeight": 1058,
+      "clientHeight": 520,
+      "overflow": "auto",
+      "dialogTop": 89.5,
+      "dialogBottom": 761.5,
+      "viewport": 851,
+      "buttons": [
+        {
+          "text": "关闭",
+          "y": 115.5,
+          "bottom": 143.5
+        },
+        {
+          "text": "保存日志文件",
+          "y": -213.5,
+          "bottom": -173.5
+        },
+        {
+          "text": "提交",
+          "y": 699.5,
+          "bottom": 739.5
+        }
+      ]
+    },
+    "final": {
+      "top": 1041,
+      "scrollHeight": 1561,
+      "clientHeight": 520,
+      "overflow": "auto",
+      "dialogTop": 89.5,
+      "dialogBottom": 761.5,
+      "viewport": 851,
+      "buttons": [
+        {
+          "text": "关闭",
+          "y": 115.5,
+          "bottom": 143.5
+        },
+        {
+          "text": "保存日志文件",
+          "y": -716.5,
+          "bottom": -676.5
+        },
+        {
+          "text": "提交",
+          "y": 699.5,
+          "bottom": 739.5
+        }
+      ]
+    },
+    "starts": [
+      {
+        "x": 32,
+        "y": 667.5,
+        "element": "LABEL",
+        "className": "feedbackLabel-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 667.5,
+        "element": "DIV",
+        "className": "feedbackWarnings-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 667.5,
+        "element": "DIV",
+        "className": "feedbackWarnings-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 667.5,
+        "element": "DIV",
+        "className": "feedbackWarnings-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 667.5,
+        "element": "DIV",
+        "className": "feedbackWarnings-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 667.5,
+        "element": "DIV",
+        "className": "feedbackWarnings-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 667.5,
+        "element": "DIV",
+        "className": "feedbackWarnings-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 667.5,
+        "element": "DIV",
+        "className": "feedbackWarnings-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 667.5,
+        "element": "DIV",
+        "className": "feedbackWarnings-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 667.5,
+        "element": "DIV",
+        "className": "feedbackWarnings-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 667.5,
+        "element": "DIV",
+        "className": "feedbackWarnings-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 667.5,
+        "element": "DIV",
+        "className": "feedbackWarnings-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 667.5,
+        "element": "DIV",
+        "className": "feedbackWarnings-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 667.5,
+        "element": "DIV",
+        "className": "feedbackWarnings-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 667.5,
+        "element": "DIV",
+        "className": "feedbackWarnings-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 667.5,
+        "element": "DIV",
+        "className": "feedbackWarnings-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 667.5,
+        "element": "DIV",
+        "className": "feedbackIntegrity-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 667.5,
+        "element": "LABEL",
+        "className": "feedbackLabel-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 667.5,
+        "element": "LABEL",
+        "className": "feedbackLabel-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 667.5,
+        "element": "LABEL",
+        "className": "feedbackLabel-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 667.5,
+        "element": "LABEL",
+        "className": "feedbackLabel-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 667.5,
+        "element": "LABEL",
+        "className": "feedbackLabel-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 667.5,
+        "element": "LABEL",
+        "className": "feedbackLabel-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 667.5,
+        "element": "LABEL",
+        "className": "feedbackLabel-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 667.5,
+        "element": "LABEL",
+        "className": "feedbackLabel-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 667.5,
+        "element": "LABEL",
+        "className": "feedbackLabel-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 667.5,
+        "element": "LABEL",
+        "className": "feedbackLabel-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 667.5,
+        "element": "LABEL",
+        "className": "feedbackLabel-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 667.5,
+        "element": "LABEL",
+        "className": "feedbackLabel-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 667.5,
+        "element": "LABEL",
+        "className": "feedbackLabel-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 667.5,
+        "element": "LABEL",
+        "className": "feedbackLabel-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 667.5,
+        "element": "LABEL",
+        "className": "feedbackLabel-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 667.5,
+        "element": "LABEL",
+        "className": "feedbackLabel-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 667.5,
+        "element": "LABEL",
+        "className": "feedbackLabel-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 667.5,
+        "element": "LABEL",
+        "className": "feedbackLabel-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 667.5,
+        "element": "LABEL",
+        "className": "feedbackLabel-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 667.5,
+        "element": "LABEL",
+        "className": "feedbackLabel-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 667.5,
+        "element": "LABEL",
+        "className": "feedbackLabel-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 667.5,
+        "element": "LABEL",
+        "className": "feedbackLabel-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 667.5,
+        "element": "LABEL",
+        "className": "feedbackLabel-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 667.5,
+        "element": "TEXTAREA",
+        "className": "feedbackTextarea-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 667.5,
+        "element": "DIV",
+        "className": "feedbackIntegrity-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 667.5,
+        "element": "LI",
+        "className": ""
+      },
+      {
+        "x": 32,
+        "y": 667.5,
+        "element": "LI",
+        "className": ""
+      },
+      {
+        "x": 32,
+        "y": 667.5,
+        "element": "LI",
+        "className": ""
+      },
+      {
+        "x": 32,
+        "y": 667.5,
+        "element": "LI",
+        "className": ""
+      },
+      {
+        "x": 32,
+        "y": 667.5,
+        "element": "LI",
+        "className": ""
+      },
+      {
+        "x": 32,
+        "y": 667.5,
+        "element": "LI",
+        "className": ""
+      },
+      {
+        "x": 32,
+        "y": 667.5,
+        "element": "LI",
+        "className": ""
+      },
+      {
+        "x": 32,
+        "y": 667.5,
+        "element": "LI",
+        "className": ""
+      },
+      {
+        "x": 32,
+        "y": 667.5,
+        "element": "LI",
+        "className": ""
+      },
+      {
+        "x": 32,
+        "y": 667.5,
+        "element": "LI",
+        "className": ""
+      },
+      {
+        "x": 32,
+        "y": 667.5,
+        "element": "LI",
+        "className": ""
+      },
+      {
+        "x": 32,
+        "y": 667.5,
+        "element": "LI",
+        "className": ""
+      },
+      {
+        "x": 32,
+        "y": 667.5,
+        "element": "LI",
+        "className": ""
+      },
+      {
+        "x": 32,
+        "y": 667.5,
+        "element": "LI",
+        "className": ""
+      },
+      {
+        "x": 32,
+        "y": 667.5,
+        "element": "LI",
+        "className": ""
+      },
+      {
+        "x": 32,
+        "y": 667.5,
+        "element": "LI",
+        "className": ""
+      },
+      {
+        "x": 32,
+        "y": 667.5,
+        "element": "LI",
+        "className": ""
+      },
+      {
+        "x": 32,
+        "y": 667.5,
+        "element": "LI",
+        "className": ""
+      },
+      {
+        "x": 32,
+        "y": 667.5,
+        "element": "LI",
+        "className": ""
+      },
+      {
+        "x": 32,
+        "y": 667.5,
+        "element": "LI",
+        "className": ""
+      },
+      {
+        "x": 32,
+        "y": 667.5,
+        "element": "LI",
+        "className": ""
+      },
+      {
+        "x": 32,
+        "y": 667.5,
+        "element": "LI",
+        "className": ""
+      },
+      {
+        "x": 32,
+        "y": 817,
+        "element": "DIV",
+        "className": "description-_85c1b"
+      },
+      {
+        "x": 8,
+        "y": 705,
+        "element": "DIV",
+        "className": "scroll-_7ccaf"
+      }
+    ],
+    "mainRestored": {
+      "original": 1471,
+      "restored": 810
+    }
+  },
+  {
+    "name": "360x640-1.5-no-dvh",
+    "before": {
+      "top": 0,
+      "scrollHeight": 1058,
+      "clientHeight": 456,
+      "overflow": "auto",
+      "dialogTop": 16,
+      "dialogBottom": 624,
+      "viewport": 640,
+      "buttons": [
+        {
+          "text": "关闭",
+          "y": 42,
+          "bottom": 70
+        },
+        {
+          "text": "保存日志文件",
+          "y": 251,
+          "bottom": 291
+        },
+        {
+          "text": "提交",
+          "y": 562,
+          "bottom": 602
+        }
+      ]
+    },
+    "after": {
+      "top": 602,
+      "scrollHeight": 1058,
+      "clientHeight": 456,
+      "overflow": "auto",
+      "dialogTop": 16,
+      "dialogBottom": 624,
+      "viewport": 640,
+      "buttons": [
+        {
+          "text": "关闭",
+          "y": 42,
+          "bottom": 70
+        },
+        {
+          "text": "保存日志文件",
+          "y": -351,
+          "bottom": -311
+        },
+        {
+          "text": "提交",
+          "y": 562,
+          "bottom": 602
+        }
+      ]
+    },
+    "final": {
+      "top": 1222,
+      "scrollHeight": 1678,
+      "clientHeight": 456,
+      "overflow": "auto",
+      "dialogTop": 16,
+      "dialogBottom": 624,
+      "viewport": 640,
+      "buttons": [
+        {
+          "text": "关闭",
+          "y": 42,
+          "bottom": 70
+        },
+        {
+          "text": "保存日志文件",
+          "y": -971,
+          "bottom": -931
+        },
+        {
+          "text": "提交",
+          "y": 562,
+          "bottom": 602
+        }
+      ]
+    },
+    "starts": [
+      {
+        "x": 32,
+        "y": 530,
+        "element": "TEXTAREA",
+        "className": "feedbackTextarea-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 530,
+        "element": "DIV",
+        "className": "feedbackHint-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 530,
+        "element": "DIV",
+        "className": "feedbackWarnings-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 530,
+        "element": "DIV",
+        "className": "feedbackWarnings-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 530,
+        "element": "DIV",
+        "className": "feedbackWarnings-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 530,
+        "element": "DIV",
+        "className": "feedbackWarnings-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 530,
+        "element": "DIV",
+        "className": "feedbackWarnings-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 530,
+        "element": "DIV",
+        "className": "feedbackWarnings-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 530,
+        "element": "DIV",
+        "className": "feedbackWarnings-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 530,
+        "element": "DIV",
+        "className": "feedbackWarnings-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 530,
+        "element": "DIV",
+        "className": "feedbackWarnings-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 530,
+        "element": "DIV",
+        "className": "feedbackWarnings-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 530,
+        "element": "DIV",
+        "className": "feedbackWarnings-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 530,
+        "element": "DIV",
+        "className": "feedbackWarnings-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 530,
+        "element": "DIV",
+        "className": "feedbackWarnings-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 530,
+        "element": "DIV",
+        "className": "feedbackWarnings-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 530,
+        "element": "DIV",
+        "className": "feedbackIntegrity-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 530,
+        "element": "DIV",
+        "className": "label-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 530,
+        "element": "TEXTAREA",
+        "className": "feedbackTextarea-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 530,
+        "element": "TEXTAREA",
+        "className": "feedbackTextarea-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 530,
+        "element": "TEXTAREA",
+        "className": "feedbackTextarea-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 530,
+        "element": "TEXTAREA",
+        "className": "feedbackTextarea-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 530,
+        "element": "TEXTAREA",
+        "className": "feedbackTextarea-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 530,
+        "element": "TEXTAREA",
+        "className": "feedbackTextarea-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 530,
+        "element": "TEXTAREA",
+        "className": "feedbackTextarea-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 530,
+        "element": "TEXTAREA",
+        "className": "feedbackTextarea-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 530,
+        "element": "TEXTAREA",
+        "className": "feedbackTextarea-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 530,
+        "element": "TEXTAREA",
+        "className": "feedbackTextarea-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 530,
+        "element": "TEXTAREA",
+        "className": "feedbackTextarea-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 530,
+        "element": "TEXTAREA",
+        "className": "feedbackTextarea-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 530,
+        "element": "TEXTAREA",
+        "className": "feedbackTextarea-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 530,
+        "element": "TEXTAREA",
+        "className": "feedbackTextarea-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 530,
+        "element": "TEXTAREA",
+        "className": "feedbackTextarea-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 530,
+        "element": "TEXTAREA",
+        "className": "feedbackTextarea-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 530,
+        "element": "TEXTAREA",
+        "className": "feedbackTextarea-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 530,
+        "element": "TEXTAREA",
+        "className": "feedbackTextarea-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 530,
+        "element": "TEXTAREA",
+        "className": "feedbackTextarea-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 530,
+        "element": "TEXTAREA",
+        "className": "feedbackTextarea-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 530,
+        "element": "TEXTAREA",
+        "className": "feedbackTextarea-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 530,
+        "element": "TEXTAREA",
+        "className": "feedbackTextarea-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 530,
+        "element": "TEXTAREA",
+        "className": "feedbackTextarea-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 530,
+        "element": "OL",
+        "className": "feedbackLogs-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 530,
+        "element": "OL",
+        "className": "feedbackLogs-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 530,
+        "element": "DIV",
+        "className": "label-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 530,
+        "element": "LI",
+        "className": ""
+      },
+      {
+        "x": 32,
+        "y": 530,
+        "element": "LI",
+        "className": ""
+      },
+      {
+        "x": 32,
+        "y": 530,
+        "element": "LI",
+        "className": ""
+      },
+      {
+        "x": 32,
+        "y": 530,
+        "element": "LI",
+        "className": ""
+      },
+      {
+        "x": 32,
+        "y": 530,
+        "element": "LI",
+        "className": ""
+      },
+      {
+        "x": 32,
+        "y": 530,
+        "element": "LI",
+        "className": ""
+      },
+      {
+        "x": 32,
+        "y": 530,
+        "element": "LI",
+        "className": ""
+      },
+      {
+        "x": 32,
+        "y": 530,
+        "element": "LI",
+        "className": ""
+      },
+      {
+        "x": 32,
+        "y": 530,
+        "element": "LI",
+        "className": ""
+      },
+      {
+        "x": 32,
+        "y": 530,
+        "element": "LI",
+        "className": ""
+      },
+      {
+        "x": 32,
+        "y": 530,
+        "element": "LI",
+        "className": ""
+      },
+      {
+        "x": 32,
+        "y": 530,
+        "element": "LI",
+        "className": ""
+      },
+      {
+        "x": 32,
+        "y": 530,
+        "element": "LI",
+        "className": ""
+      },
+      {
+        "x": 32,
+        "y": 530,
+        "element": "LI",
+        "className": ""
+      },
+      {
+        "x": 32,
+        "y": 530,
+        "element": "LI",
+        "className": ""
+      },
+      {
+        "x": 32,
+        "y": 530,
+        "element": "LI",
+        "className": ""
+      },
+      {
+        "x": 32,
+        "y": 530,
+        "element": "LI",
+        "className": ""
+      },
+      {
+        "x": 32,
+        "y": 530,
+        "element": "LI",
+        "className": ""
+      },
+      {
+        "x": 32,
+        "y": 530,
+        "element": "LI",
+        "className": ""
+      },
+      {
+        "x": 32,
+        "y": 530,
+        "element": "LI",
+        "className": ""
+      },
+      {
+        "x": 32,
+        "y": 606,
+        "element": "DIV",
+        "className": "cell-_85c1b row-_85c1b"
+      }
+    ]
+  }
+]

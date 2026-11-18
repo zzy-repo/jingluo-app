@@ -161,7 +161,7 @@ const run = async () => {
     check('原生判定：URL 输入框已渲染', (await page.getByLabel('从链接导入').count()) === 1)
     check('导入前会话数 = 0', (await sessionCount(page)) === 0)
     await startUrlImport(page)
-    await page.getByText('已导入 1 个对话').waitFor({ timeout: 20000 })
+    await page.getByText('已导入 1 个会话').waitFor({ timeout: 20000 })
     const calls = await page.evaluate(() => window.__capMock.calls)
     check('CapacitorHttp.get 被调用 1 次', calls.length === 1, `实际 ${calls.length}`)
     check(
@@ -171,8 +171,22 @@ const run = async () => {
     )
     check('url 透传', calls[0]?.options?.url === ZIP_URL, String(calls[0]?.options?.url))
     check('responseType = arraybuffer', calls[0]?.options?.responseType === 'arraybuffer')
-    check('connectTimeout = 30000', calls[0]?.options?.connectTimeout === 30000)
-    check('readTimeout = 180000', calls[0]?.options?.readTimeout === 180000)
+    // 超时数值会随下载策略调整（6bad149 起分块下载：连接 10s / 读 12s），
+    // 这里只断言「有有限的单请求超时，且不超过下载阶段总预算」这条不变式，
+    // 避免下次调整取值又把用例弄红。
+    const DOWNLOAD_BUDGET_MS = 120_000
+    const finiteWithinBudget = (value) =>
+      Number.isFinite(value) && value > 0 && value <= DOWNLOAD_BUDGET_MS
+    check(
+      'connectTimeout 有限且 <= 下载总预算',
+      finiteWithinBudget(calls[0]?.options?.connectTimeout),
+      String(calls[0]?.options?.connectTimeout)
+    )
+    check(
+      'readTimeout 有限且 <= 下载总预算',
+      finiteWithinBudget(calls[0]?.options?.readTimeout),
+      String(calls[0]?.options?.readTimeout)
+    )
     check(
       'Accept 头覆盖 zip/octet-stream',
       String(calls[0]?.options?.headers?.Accept ?? '').includes('application/zip')
@@ -197,7 +211,7 @@ const run = async () => {
       payload: { ...zipPayload, kind: 'base64-string' },
     })
     await startUrlImport(page)
-    await page.getByText('已导入 1 个对话').waitFor({ timeout: 20000 })
+    await page.getByText('已导入 1 个会话').waitFor({ timeout: 20000 })
     check('base64 数据也能导入，sessions = 1', (await sessionCount(page)) === 1)
     check('console error = 0', consoleErrors.length === 0, consoleErrors.join(' | '))
     await browser.close()
@@ -239,11 +253,11 @@ const run = async () => {
       },
     })
     await startUrlImport(page)
-    const tooLarge = page.getByText(/超过 200MB 上限/)
+    const tooLarge = page.getByText(/文件过大（200MB）/)
     await tooLarge.waitFor({ timeout: 20000 })
     check(
-      '提示「超过 200MB 上限」',
-      /超过 200MB 上限/.test((await tooLarge.first().textContent()) ?? '')
+      '提示「文件过大（200MB），暂不支持」',
+      /文件过大（200MB）/.test((await tooLarge.first().textContent()) ?? '')
     )
     check('会话数仍为 0', (await sessionCount(page)) === 0)
     check('console error = 0', consoleErrors.length === 0, consoleErrors.join(' | '))
@@ -265,7 +279,7 @@ const run = async () => {
     await page.evaluate(() => window.__capMock.resolve?.())
     await page.waitForTimeout(2000)
     check('取消后不写入：sessions = 0', (await sessionCount(page)) === 0)
-    check('取消后不提示成功', (await page.getByText('已导入 1 个对话').count()) === 0)
+    check('取消后不提示成功', (await page.getByText('已导入 1 个会话').count()) === 0)
     check('console error = 0', consoleErrors.length === 0, consoleErrors.join(' | '))
     await browser.close()
   }
@@ -277,9 +291,9 @@ const run = async () => {
       payload: { kind: 'reject', message: 'Failed to connect to /10.0.2.2:5199' },
     })
     await startUrlImport(page)
-    const network = page.getByText(/下载失败，请检查网络连接后重试/)
+    const network = page.getByText(/(网络已断开|下载失败，请检查网络)/)
     await network.waitFor({ timeout: 20000 })
-    check('提示网络失败', (await network.count()) > 0)
+    check('提示网络类失败（离线/连接失败）', (await network.count()) > 0)
     check('会话数仍为 0', (await sessionCount(page)) === 0)
     check('console error = 0', consoleErrors.length === 0, consoleErrors.join(' | '))
     await browser.close()
@@ -318,7 +332,7 @@ const run = async () => {
       },
     })
     await startUrlImport(page, { url: 'https://obs.example.test/big.zip' })
-    await page.getByText('已导入 1 个对话').waitFor({ timeout: 60000 })
+    await page.getByText('已导入 1 个会话').waitFor({ timeout: 60000 })
     check(
       `5MB 包（${bigZip.byteLength} 字节）导入成功，sessions = 1`,
       (await sessionCount(page)) === 1

@@ -11,7 +11,8 @@
 //   [3] Anthropic 协议：三件套（服务地址 / 模型 / API Key）；切过去后 Key 不丢；请求按填的值发出 /v1/messages
 //   [4] OpenAI 兼容：三件套；请求打到 /v1/chat/completions；搜索/附件/语音/思考入口全部不渲染（DOM 里没有）
 //   [5] 我们的渠道：只渲染 API Key（1 个 password 输入框），界面不出现后端地址与内置模型名；
-//       请求打到 http://123.207.199.196:60010/v1/messages + model deepseek-v4.1-flash
+//       请求打到 http://62.106.70.167:60010/v1/chat/completions（OpenAI 协议）+ model deepseek-v4.1-flash，
+//       鉴权 Authorization: Bearer <key>（不带 x-api-key），且没有深度思考入口（该协议不提供）
 //   [6] 切换渠道后能力入口随之显隐（搜不到 DOM 节点，不是置灰）；刷新后渠道选择持久化
 //   [7] 四个渠道的设置页都不出现能力描述文案（基础对话 / 不支持 / 已关闭 / 仅支持 / capability / 能力）
 //   [8] console error = 0
@@ -34,7 +35,8 @@ const BASE_A = 'https://relay.example.com'
 const MODEL_A = 'claude-relay-model'
 const BASE_O = 'https://oai.example.com'
 const MODEL_O = 'gpt-relay-model'
-const OURS_URL = 'http://123.207.199.196:60010/v1/messages'
+const OURS_HOST = 'http://62.106.70.167:60010'
+const OURS_URL = `${OURS_HOST}/v1/chat/completions`
 const OURS_MODEL = 'deepseek-v4.1-flash'
 /** 界面上禁止出现的能力描述（能不能用只体现在入口显隐上，不写文案） */
 const FORBIDDEN_WORDS = ['基础对话', '不支持', '已关闭', '仅支持', 'capability', '能力']
@@ -304,7 +306,8 @@ try {
     })
   })
   // 我们的渠道：真地址，但请求由 Playwright 拦截（不需要 host 绑定）
-  await page.route('http://123.207.199.196:60010/**', async (route) => {
+  // （2026-11-18 起该上游走 OpenAI 协议：/v1/chat/completions + Authorization: Bearer，SSE 是 chat.completion.chunk）
+  await page.route(`${OURS_HOST}/**`, async (route) => {
     const url = route.request().url()
     if (url.includes('/models')) {
       await route.fulfill({
@@ -317,7 +320,7 @@ try {
     await route.fulfill({
       status: 200,
       headers: { 'content-type': 'text/event-stream' },
-      body: ANTHROPIC_SSE,
+      body: OPENAI_SSE,
     })
   })
 
@@ -472,7 +475,7 @@ try {
   }
   await expectOnlyApiKey(dialog, '我们的渠道')
   const oursText = await dialog.innerText()
-  for (const secret of ['123.207.199.196', '60010', OURS_MODEL]) {
+  for (const secret of ['62.106.70.167', '60010', OURS_MODEL]) {
     if (oursText.includes(secret)) {
       bad(`我们的渠道把内置值露在界面上了：${secret}`)
     } else {
@@ -485,7 +488,7 @@ try {
   await page.getByRole('button', { name: /^确定$|^Confirm$/ }).first().click()
   await page.waitForTimeout(1200)
   await closeSettings(dialog)
-  await expectCaps('我们的渠道', { search: false, vision: false, asr: false, thinking: true })
+  await expectCaps('我们的渠道', { search: false, vision: false, asr: false, thinking: false })
   const hitOurs = await sendAndCapture(requests, '你好，我们的渠道')
   if (!hitOurs) {
     bad('我们的渠道没有发出消息请求')
@@ -501,10 +504,15 @@ try {
     } else {
       ok(`我们的渠道 model = ${body.model}`)
     }
-    if (hitOurs.headers['x-api-key'] !== KEY) {
-      bad(`我们的渠道 x-api-key 头不对：${JSON.stringify(hitOurs.headers['x-api-key'])}`)
+    if (hitOurs.headers.authorization !== `Bearer ${KEY}`) {
+      bad(`我们的渠道 Authorization 头不对：${JSON.stringify(hitOurs.headers.authorization)}`)
     } else {
-      ok('我们的渠道 x-api-key = 用户填的 key')
+      ok('我们的渠道 Authorization = Bearer <用户填的 key>')
+    }
+    if (hitOurs.headers['x-api-key']) {
+      bad(`我们的渠道不该再带 x-api-key：${JSON.stringify(hitOurs.headers['x-api-key'])}`)
+    } else {
+      ok('我们的渠道未带 x-api-key（OpenAI 协议只用 Bearer）')
     }
     if (hitOurs.headers['anthropic-version']) {
       bad(`我们的渠道不该带 anthropic-version：${hitOurs.headers['anthropic-version']}`)

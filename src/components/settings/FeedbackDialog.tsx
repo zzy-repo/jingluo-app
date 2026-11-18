@@ -301,16 +301,6 @@ const FeedbackForm = ({
       onClose={phase.kind === 'submitting' ? () => undefined : onClose}
       footer={
         <div className={styles.feedbackFooterColumn}>
-          {phase.kind !== 'done' && coverage.warnings.length > 0 ? (
-            <div className={styles.feedbackWarnings} role="note">
-              <div className={styles.feedbackHint}>{t('feedbackWarningsTitle')}</div>
-              <ul>
-                {coverage.warnings.map((warning) => (
-                  <li key={warning}>{t(WARNING_KEYS[warning])}</li>
-                ))}
-              </ul>
-            </div>
-          ) : null}
           {phase.kind === 'done' ? (
             <div className={styles.feedbackFooter}>
               <Button variant="primary" onClick={onClose}>
@@ -554,6 +544,16 @@ const FeedbackForm = ({
             {t('feedbackClearLogs')}
           </Button>
         </div>
+        {phase.kind !== 'done' && coverage.warnings.length > 0 ? (
+          <div className={styles.feedbackWarnings} role="note">
+            <div className={styles.feedbackHint}>{t('feedbackWarningsTitle')}</div>
+            <ul>
+              {coverage.warnings.map((warning) => (
+                <li key={warning}>{t(WARNING_KEYS[warning])}</li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
       </div>
     </Modal>
   )

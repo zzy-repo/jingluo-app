@@ -1,0 +1,27 @@
+declare const styles: {
+  readonly "row": string;
+  readonly "rowText": string;
+  readonly "rowLabel": string;
+  readonly "rowDescription": string;
+  readonly "rowButton": string;
+  readonly "dialog": string;
+  readonly "main": string;
+  readonly "sections": string;
+  readonly "section": string;
+  readonly "sectionHead": string;
+  readonly "sectionTitle": string;
+  readonly "sectionAction": string;
+  readonly "value": string;
+  readonly "valueSuccess": string;
+  readonly "valueError": string;
+  readonly "hint": string;
+  readonly "plans": string;
+  readonly "plan": string;
+  readonly "planActive": string;
+  readonly "planName": string;
+  readonly "planMeta": string;
+  readonly "redeemForm": string;
+  readonly "input": string;
+  readonly "actions": string;
+};
+export = styles;

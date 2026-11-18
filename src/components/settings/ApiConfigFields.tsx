@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState, useCallback } from 'react'
 import { IconEditOutline16 } from '../base/icons.js'
 import {
   getBaseUrl,
@@ -262,9 +262,15 @@ const BaseUrlField = ({ spec }: { spec: ProviderSpec }) => {
 const ModelField = ({ spec }: { spec: ProviderSpec }) => {
   const t = useTranslate()
   const stored = useApiConfig((state) => state.model)
+  const baseUrl = useApiConfig((state) => state.baseUrl)
+  const apiKey = useApiConfig((state) => state.apiKey)
   const fallback = spec.defaults?.model ?? ''
   const [value, setValue] = useState(stored || fallback)
+  const [models, setModels] = useState<string[]>([])
+  const [status, setStatus] = useState<'idle' | 'loading' | 'ready' | 'empty' | 'error'>('idle')
   const [error, setError] = useState<TranslationKey | null>(null)
+  const requestId = useRef(0)
+  const defaultBaseUrl = spec.defaults?.baseUrl ?? ''
 
   useEffect(() => {
     setValue(stored || fallback)
@@ -283,30 +289,81 @@ const ModelField = ({ spec }: { spec: ProviderSpec }) => {
     setValue(value.trim())
   }
 
+  const loadModels = useCallback(async () => {
+    const id = ++requestId.current
+    setStatus('loading')
+    const result = await probeProvider({ baseUrl: baseUrl || defaultBaseUrl, apiKey })
+    if (id !== requestId.current) {
+      return
+    }
+    if (!result.ok) {
+      setModels([])
+      setStatus('error')
+      return
+    }
+    setModels(result.models)
+    setStatus(result.models.length ? 'ready' : 'empty')
+  }, [baseUrl, apiKey, defaultBaseUrl])
+
+  useEffect(() => {
+    if (apiKey && (baseUrl || defaultBaseUrl)) {
+      void loadModels()
+    }
+    const slot = requestId
+    return () => {
+      slot.current++
+    }
+  }, [spec.kind, baseUrl, apiKey, defaultBaseUrl, loadModels])
+
+  const options = models.includes(value.trim()) || !value.trim() ? models : [value.trim(), ...models]
+  const [open, setOpen] = useState(false)
+  const selecting = useRef(false)
+  const chooseModel = (model: string) => {
+    selecting.current = true
+    setValue(model)
+    setOpen(false)
+    if (!setModel(model)) {
+      setError('settingsModelInvalid')
+    }
+    window.setTimeout(() => { selecting.current = false }, 0)
+  }
   return (
-    <div className={styles.cell}>
+    <div className={`${styles.cell} ${open ? styles.modelCellOpen : ''}`}>
       <div className={styles.apiKey}>
         <div className={styles.label}>{t('settingsModelLabel')}</div>
         <div className={styles.apiKeyInput}>
-          <input
-            type="text"
-            placeholder={fallback || t('settingsModelPlaceholder')}
-            autoComplete="off"
-            spellCheck={false}
-            aria-label={t('settingsModelLabel')}
-            value={value}
-            onChange={(event) => {
-              setValue(event.target.value)
-              setError(null)
-            }}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter' && !event.nativeEvent.isComposing) {
-                save()
-              }
-            }}
-            onBlur={save}
-          />
+          <div className={styles.modelPicker}>
+            <input
+              type="text" placeholder={fallback || t('settingsModelPlaceholder')}
+              autoComplete="off" spellCheck={false} aria-label={t('settingsModelLabel')} value={value}
+              onFocus={() => setOpen(true)}
+              onChange={(event) => { setValue(event.target.value); setError(null); setOpen(true) }}
+              onKeyDown={(event) => {
+                if (event.key === 'Escape') {
+                  setOpen(false)
+                }
+                if (event.key === 'Enter' && !event.nativeEvent.isComposing) {
+                  save()
+                  setOpen(false)
+                }
+              }}
+              onBlur={() => {
+                setOpen(false)
+                if (!selecting.current) {
+                  save()
+                }
+              }}
+            />
+            {open && options.length > 0 ? <div className={styles.modelOptions} role="listbox" aria-label={t('settingsModelsAvailable')}>
+              {options.map((model) => <button key={model} type="button" role="option" aria-selected={model === value} className={styles.modelOption} onMouseDown={(event) => event.preventDefault()} onClick={() => chooseModel(model)}>{model}</button>)}
+            </div> : null}
+          </div>
+          <button type="button" className={styles.confirm} onClick={() => void loadModels()} disabled={status === 'loading'}>
+            {status === 'loading' ? t('settingsModelsLoading') : t('settingsModelsRefresh')}
+          </button>
         </div>
+        {status === 'empty' ? <div className={styles.description}>{t('settingsModelsEmpty')}</div> : null}
+        {status === 'error' ? <div className={styles.error}>{t('settingsModelsFailed')}</div> : null}
         {error ? <div className={styles.error}>{t(error)}</div> : null}
       </div>
     </div>

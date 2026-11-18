@@ -1,0 +1,897 @@
+[
+  {
+    "name": "360x640-1",
+    "before": {
+      "top": 0,
+      "scrollHeight": 744,
+      "clientHeight": 384,
+      "overflow": "auto",
+      "dialogTop": 16,
+      "dialogBottom": 624,
+      "viewport": 640,
+      "buttons": [
+        {
+          "text": "关闭",
+          "y": 38,
+          "bottom": 66
+        },
+        {
+          "text": "保存日志文件",
+          "y": 178,
+          "bottom": 218
+        },
+        {
+          "text": "提交",
+          "y": 562,
+          "bottom": 602
+        }
+      ]
+    },
+    "after": {
+      "top": 360,
+      "scrollHeight": 744,
+      "clientHeight": 384,
+      "overflow": "auto",
+      "dialogTop": 16,
+      "dialogBottom": 624,
+      "viewport": 640,
+      "buttons": [
+        {
+          "text": "关闭",
+          "y": 38,
+          "bottom": 66
+        },
+        {
+          "text": "保存日志文件",
+          "y": -182,
+          "bottom": -142
+        },
+        {
+          "text": "提交",
+          "y": 562,
+          "bottom": 602
+        }
+      ]
+    },
+    "final": {
+      "top": 360,
+      "scrollHeight": 744,
+      "clientHeight": 384,
+      "overflow": "auto",
+      "dialogTop": 16,
+      "dialogBottom": 624,
+      "viewport": 640,
+      "buttons": [
+        {
+          "text": "关闭",
+          "y": 38,
+          "bottom": 66
+        },
+        {
+          "text": "保存日志文件",
+          "y": -182,
+          "bottom": -142
+        },
+        {
+          "text": "提交",
+          "y": 562,
+          "bottom": 602
+        }
+      ]
+    },
+    "starts": [
+      {
+        "x": 32,
+        "y": 450,
+        "element": "LABEL",
+        "className": "feedbackLabel-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 450,
+        "element": "DIV",
+        "className": "label-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 450,
+        "element": "DIV",
+        "className": "cell-_85c1b row-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 450,
+        "element": "DIV",
+        "className": "cell-_85c1b row-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 450,
+        "element": "DIV",
+        "className": "cell-_85c1b row-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 450,
+        "element": "DIV",
+        "className": "cell-_85c1b row-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 450,
+        "element": "DIV",
+        "className": "cell-_85c1b row-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 450,
+        "element": "DIV",
+        "className": "cell-_85c1b row-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 450,
+        "element": "DIV",
+        "className": "cell-_85c1b row-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 450,
+        "element": "DIV",
+        "className": "cell-_85c1b row-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 450,
+        "element": "DIV",
+        "className": "cell-_85c1b row-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 450,
+        "element": "DIV",
+        "className": "cell-_85c1b row-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 450,
+        "element": "DIV",
+        "className": "cell-_85c1b row-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 450,
+        "element": "DIV",
+        "className": "cell-_85c1b row-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 450,
+        "element": "DIV",
+        "className": "cell-_85c1b row-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 450,
+        "element": "DIV",
+        "className": "cell-_85c1b row-_85c1b"
+      }
+    ]
+  },
+  {
+    "name": "360x780-1.3",
+    "before": {
+      "top": 0,
+      "scrollHeight": 925,
+      "clientHeight": 460,
+      "overflow": "auto",
+      "dialogTop": 16,
+      "dialogBottom": 764,
+      "viewport": 780,
+      "buttons": [
+        {
+          "text": "关闭",
+          "y": 39.59375,
+          "bottom": 67.59375
+        },
+        {
+          "text": "保存日志文件",
+          "y": 227.421875,
+          "bottom": 267.421875
+        },
+        {
+          "text": "提交",
+          "y": 702,
+          "bottom": 742
+        }
+      ]
+    },
+    "after": {
+      "top": 465,
+      "scrollHeight": 925,
+      "clientHeight": 460,
+      "overflow": "auto",
+      "dialogTop": 16,
+      "dialogBottom": 764,
+      "viewport": 780,
+      "buttons": [
+        {
+          "text": "关闭",
+          "y": 39.59375,
+          "bottom": 67.59375
+        },
+        {
+          "text": "保存日志文件",
+          "y": -237.578125,
+          "bottom": -197.578125
+        },
+        {
+          "text": "提交",
+          "y": 702,
+          "bottom": 742
+        }
+      ]
+    },
+    "final": {
+      "top": 465,
+      "scrollHeight": 925,
+      "clientHeight": 460,
+      "overflow": "auto",
+      "dialogTop": 16,
+      "dialogBottom": 764,
+      "viewport": 780,
+      "buttons": [
+        {
+          "text": "关闭",
+          "y": 39.59375,
+          "bottom": 67.59375
+        },
+        {
+          "text": "保存日志文件",
+          "y": -237.578125,
+          "bottom": -197.578125
+        },
+        {
+          "text": "提交",
+          "y": 702,
+          "bottom": 742
+        }
+      ]
+    },
+    "starts": [
+      {
+        "x": 32,
+        "y": 529.328125,
+        "element": "DIV",
+        "className": "feedbackField-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 529.328125,
+        "element": "DIV",
+        "className": "cell-_85c1b row-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 529.328125,
+        "element": "DIV",
+        "className": "cell-_85c1b row-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 529.328125,
+        "element": "DIV",
+        "className": "cell-_85c1b row-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 529.328125,
+        "element": "DIV",
+        "className": "cell-_85c1b row-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 529.328125,
+        "element": "DIV",
+        "className": "cell-_85c1b row-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 529.328125,
+        "element": "DIV",
+        "className": "cell-_85c1b row-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 529.328125,
+        "element": "DIV",
+        "className": "cell-_85c1b row-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 529.328125,
+        "element": "DIV",
+        "className": "cell-_85c1b row-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 529.328125,
+        "element": "DIV",
+        "className": "cell-_85c1b row-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 529.328125,
+        "element": "DIV",
+        "className": "cell-_85c1b row-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 529.328125,
+        "element": "DIV",
+        "className": "cell-_85c1b row-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 529.328125,
+        "element": "DIV",
+        "className": "cell-_85c1b row-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 529.328125,
+        "element": "DIV",
+        "className": "cell-_85c1b row-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 529.328125,
+        "element": "DIV",
+        "className": "cell-_85c1b row-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 529.328125,
+        "element": "DIV",
+        "className": "cell-_85c1b row-_85c1b"
+      }
+    ]
+  },
+  {
+    "name": "393x851-1.5",
+    "before": {
+      "top": 0,
+      "scrollHeight": 1176,
+      "clientHeight": 493,
+      "overflow": "auto",
+      "dialogTop": 16,
+      "dialogBottom": 835,
+      "viewport": 851,
+      "buttons": [
+        {
+          "text": "关闭",
+          "y": 42,
+          "bottom": 70
+        },
+        {
+          "text": "保存日志文件",
+          "y": 251,
+          "bottom": 291
+        },
+        {
+          "text": "提交",
+          "y": 773,
+          "bottom": 813
+        }
+      ]
+    },
+    "after": {
+      "top": 683,
+      "scrollHeight": 1176,
+      "clientHeight": 493,
+      "overflow": "auto",
+      "dialogTop": 16,
+      "dialogBottom": 835,
+      "viewport": 851,
+      "buttons": [
+        {
+          "text": "关闭",
+          "y": 42,
+          "bottom": 70
+        },
+        {
+          "text": "保存日志文件",
+          "y": -432,
+          "bottom": -392
+        },
+        {
+          "text": "提交",
+          "y": 773,
+          "bottom": 813
+        }
+      ]
+    },
+    "final": {
+      "top": 683,
+      "scrollHeight": 1176,
+      "clientHeight": 493,
+      "overflow": "auto",
+      "dialogTop": 16,
+      "dialogBottom": 835,
+      "viewport": 851,
+      "buttons": [
+        {
+          "text": "关闭",
+          "y": 42,
+          "bottom": 70
+        },
+        {
+          "text": "保存日志文件",
+          "y": -432,
+          "bottom": -392
+        },
+        {
+          "text": "提交",
+          "y": 773,
+          "bottom": 813
+        }
+      ]
+    },
+    "starts": [
+      {
+        "x": 32,
+        "y": 566.5,
+        "element": "DIV",
+        "className": "feedbackField-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 566.5,
+        "element": "SPAN",
+        "className": ""
+      },
+      {
+        "x": 32,
+        "y": 566.5,
+        "element": "DIV",
+        "className": "cell-_85c1b row-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 566.5,
+        "element": "DIV",
+        "className": "cell-_85c1b row-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 566.5,
+        "element": "DIV",
+        "className": "cell-_85c1b row-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 566.5,
+        "element": "DIV",
+        "className": "cell-_85c1b row-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 566.5,
+        "element": "DIV",
+        "className": "cell-_85c1b row-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 566.5,
+        "element": "DIV",
+        "className": "cell-_85c1b row-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 566.5,
+        "element": "DIV",
+        "className": "cell-_85c1b row-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 566.5,
+        "element": "DIV",
+        "className": "cell-_85c1b row-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 566.5,
+        "element": "DIV",
+        "className": "cell-_85c1b row-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 566.5,
+        "element": "DIV",
+        "className": "cell-_85c1b row-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 566.5,
+        "element": "DIV",
+        "className": "cell-_85c1b row-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 566.5,
+        "element": "DIV",
+        "className": "cell-_85c1b row-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 566.5,
+        "element": "DIV",
+        "className": "cell-_85c1b row-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 566.5,
+        "element": "DIV",
+        "className": "cell-_85c1b row-_85c1b"
+      }
+    ]
+  },
+  {
+    "name": "360x640-1.5-no-dvh",
+    "before": {
+      "top": 0,
+      "scrollHeight": 744,
+      "clientHeight": 744,
+      "overflow": "auto",
+      "dialogTop": -164,
+      "dialogBottom": 804,
+      "viewport": 640,
+      "buttons": [
+        {
+          "text": "关闭",
+          "y": -142,
+          "bottom": -114
+        },
+        {
+          "text": "保存日志文件",
+          "y": -2,
+          "bottom": 38
+        },
+        {
+          "text": "提交",
+          "y": 742,
+          "bottom": 782
+        }
+      ]
+    },
+    "after": {
+      "top": 0,
+      "scrollHeight": 744,
+      "clientHeight": 744,
+      "overflow": "auto",
+      "dialogTop": -164,
+      "dialogBottom": 804,
+      "viewport": 640,
+      "buttons": [
+        {
+          "text": "关闭",
+          "y": -142,
+          "bottom": -114
+        },
+        {
+          "text": "保存日志文件",
+          "y": -2,
+          "bottom": 38
+        },
+        {
+          "text": "提交",
+          "y": 742,
+          "bottom": 782
+        }
+      ]
+    },
+    "final": {
+      "top": 0,
+      "scrollHeight": 744,
+      "clientHeight": 744,
+      "overflow": "auto",
+      "dialogTop": -164,
+      "dialogBottom": 804,
+      "viewport": 640,
+      "buttons": [
+        {
+          "text": "关闭",
+          "y": -142,
+          "bottom": -114
+        },
+        {
+          "text": "保存日志文件",
+          "y": -2,
+          "bottom": 38
+        },
+        {
+          "text": "提交",
+          "y": 742,
+          "bottom": 782
+        }
+      ]
+    },
+    "starts": [
+      {
+        "x": 32,
+        "y": 622,
+        "element": "DIV",
+        "className": "feedbackHint-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 622,
+        "element": "DIV",
+        "className": "feedbackHint-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 622,
+        "element": "DIV",
+        "className": "feedbackHint-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 622,
+        "element": "DIV",
+        "className": "feedbackHint-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 622,
+        "element": "DIV",
+        "className": "feedbackHint-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 622,
+        "element": "DIV",
+        "className": "feedbackHint-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 622,
+        "element": "DIV",
+        "className": "feedbackHint-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 622,
+        "element": "DIV",
+        "className": "feedbackHint-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 622,
+        "element": "DIV",
+        "className": "feedbackHint-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 622,
+        "element": "DIV",
+        "className": "feedbackHint-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 622,
+        "element": "DIV",
+        "className": "feedbackHint-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 622,
+        "element": "DIV",
+        "className": "feedbackHint-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 622,
+        "element": "DIV",
+        "className": "feedbackHint-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 622,
+        "element": "DIV",
+        "className": "feedbackHint-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 622,
+        "element": "DIV",
+        "className": "feedbackHint-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 622,
+        "element": "DIV",
+        "className": "feedbackHint-_85c1b"
+      }
+    ]
+  },
+  {
+    "name": "360x640-1.5-keyboard",
+    "before": {
+      "top": 0,
+      "scrollHeight": 744,
+      "clientHeight": 384,
+      "overflow": "auto",
+      "dialogTop": 16,
+      "dialogBottom": 624,
+      "viewport": 340,
+      "buttons": [
+        {
+          "text": "关闭",
+          "y": 38,
+          "bottom": 66
+        },
+        {
+          "text": "保存日志文件",
+          "y": 178,
+          "bottom": 218
+        },
+        {
+          "text": "提交",
+          "y": 562,
+          "bottom": 602
+        }
+      ]
+    },
+    "after": {
+      "top": 360,
+      "scrollHeight": 744,
+      "clientHeight": 384,
+      "overflow": "auto",
+      "dialogTop": 16,
+      "dialogBottom": 624,
+      "viewport": 340,
+      "buttons": [
+        {
+          "text": "关闭",
+          "y": 38,
+          "bottom": 66
+        },
+        {
+          "text": "保存日志文件",
+          "y": -182,
+          "bottom": -142
+        },
+        {
+          "text": "提交",
+          "y": 562,
+          "bottom": 602
+        }
+      ]
+    },
+    "final": {
+      "top": 360,
+      "scrollHeight": 744,
+      "clientHeight": 384,
+      "overflow": "auto",
+      "dialogTop": 16,
+      "dialogBottom": 624,
+      "viewport": 340,
+      "buttons": [
+        {
+          "text": "关闭",
+          "y": 38,
+          "bottom": 66
+        },
+        {
+          "text": "保存日志文件",
+          "y": -182,
+          "bottom": -142
+        },
+        {
+          "text": "提交",
+          "y": 562,
+          "bottom": 602
+        }
+      ]
+    },
+    "starts": [
+      {
+        "x": 32,
+        "y": 322,
+        "element": "TEXTAREA",
+        "className": "feedbackTextarea-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 322,
+        "element": "DIV",
+        "className": "feedbackField-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 322,
+        "element": "DIV",
+        "className": "cell-_85c1b row-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 322,
+        "element": "DIV",
+        "className": "cell-_85c1b row-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 322,
+        "element": "DIV",
+        "className": "cell-_85c1b row-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 322,
+        "element": "DIV",
+        "className": "cell-_85c1b row-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 322,
+        "element": "DIV",
+        "className": "cell-_85c1b row-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 322,
+        "element": "DIV",
+        "className": "cell-_85c1b row-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 322,
+        "element": "DIV",
+        "className": "cell-_85c1b row-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 322,
+        "element": "DIV",
+        "className": "cell-_85c1b row-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 322,
+        "element": "DIV",
+        "className": "cell-_85c1b row-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 322,
+        "element": "DIV",
+        "className": "cell-_85c1b row-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 322,
+        "element": "DIV",
+        "className": "cell-_85c1b row-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 322,
+        "element": "DIV",
+        "className": "cell-_85c1b row-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 322,
+        "element": "DIV",
+        "className": "cell-_85c1b row-_85c1b"
+      },
+      {
+        "x": 32,
+        "y": 322,
+        "element": "DIV",
+        "className": "cell-_85c1b row-_85c1b"
+      }
+    ]
+  }
+]
