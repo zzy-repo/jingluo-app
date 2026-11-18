@@ -385,6 +385,18 @@ info "commit ${COMMIT_SHA:0:8}  chore: 发布 ${VER}"
 
 # ---------------------------------------------------------------- 6) 构建 + 强校验
 step "6/9 构建并校验产物（${BUILD_TYPE}）"
+# 工作区/隔离 worktree 通用：补齐 Android SDK 环境与 local.properties（与 build-apk.sh 一致）
+export ANDROID_HOME="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-$HOME/android-sdk}}"
+export ANDROID_SDK_ROOT="$ANDROID_HOME"
+[[ -d ${ANDROID_HOME} ]] || die "找不到 Android SDK: ${ANDROID_HOME}（export ANDROID_HOME=...）"
+if [[ -z ${JAVA_HOME:-} ]]; then
+  JB=$(command -v java || true); [[ -n ${JB} ]] || die '找不到 java（需要 JDK 21）'
+  JAVA_HOME=$(dirname "$(dirname "$(readlink -f "${JB}")")"); export JAVA_HOME
+fi
+if ! grep -qs "^sdk.dir=${ANDROID_HOME}$" "${ROOT_DIR}/android/local.properties"; then
+  printf 'sdk.dir=%s\n' "${ANDROID_HOME}" > "${ROOT_DIR}/android/local.properties"
+  info "写入 android/local.properties: sdk.dir=${ANDROID_HOME}"
+fi
 if (( SAME_ARTIFACT )) && [[ -s ${APK_SRC} ]]; then
   info "同 artifact 续发：复用现有 APK（md5 ${CUR_APK_MD5:0:8}…），跳过构建"
 elif [[ -n ${RELEASE_BUILD_CMD} ]]; then
