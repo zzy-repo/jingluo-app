@@ -504,8 +504,12 @@ const readBrowserSystemInfo = (): SystemInfo => {
 }
 
 const readSystemInfo = async (): Promise<SystemInfo> => {
-  if (systemInfoCache) return systemInfoCache
-  if (systemInfoPromise) return systemInfoPromise
+  if (systemInfoCache) {
+    return systemInfoCache
+  }
+  if (systemInfoPromise) {
+    return systemInfoPromise
+  }
   systemInfoPromise = (async () => {
     const browser = readBrowserSystemInfo()
     if (readPlatform() !== 'android') { systemInfoCache = browser; return browser }

@@ -12,7 +12,7 @@ registerHooks({ resolve(specifier, context, nextResolve) {
 const { buildFeedbackExport, prepareFeedbackExport, saveFeedbackExport, MAX_EXPORT_BYTES } = await import('../../src/services/diagnostics/export.ts')
 const snapshot = (logs = []) => ({ schemaVersion: 1,
   app: { version: '1.4.0-beta.6', versionCode: 104006, platform: 'android', buildType: 'standard' },
-  device: { model: 'Pixel', androidVersion: '15', webviewVersion: '130', screen: '393x851', locale: 'zh-CN' },
+  device: { model: 'Pixel', androidVersion: '15', webviewVersion: '130', screen: '393x851', locale: 'zh-CN', system: { androidSdk: 35, androidRelease: '15', manufacturer: 'fixture', brand: 'fixture', webviewPackage: 'com.google.android.webview', webviewVersion: '130.0', online: true, capabilities: { toSorted: true, hasOwn: true, at: true, visualViewport: true, dvh: true }, nativePath: 'DiagnosticsDevice', browserPath: 'browser' } },
   client: { clientId: 'private-client', sessionId: 'private-session' }, logs,
   feedback: { contact: 'private@example.org', description: 'private-description' }, screenshot: 'private-image',
 })
@@ -26,6 +26,8 @@ test('offline/empty export retains metadata and failure, never calls network', a
     const data = JSON.parse(file.text)
     assert.deepEqual(data.logs, [])
     assert.equal(data.app.version, '1.4.0-beta.6')
+    assert.equal(data.device.system.webviewPackage, 'com.google.android.webview')
+    assert.equal(data.device.system.capabilities.dvh, true)
     assert.deepEqual(data.lastSubmissionFailure, context.failure)
     assert.equal(data.delivery, 'local-only-not-submitted')
     assert.match(file.filename, /2026-11-18.*v1\.4\.0-beta\.6\.json$/)

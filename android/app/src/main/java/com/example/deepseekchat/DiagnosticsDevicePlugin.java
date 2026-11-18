@@ -19,9 +19,6 @@ public class DiagnosticsDevicePlugin extends Plugin {
         if (info == null) return "unknown";
         return info.versionName == null ? "unknown" : info.versionName;
     }
-    private String packageVersion(PackageManager pm, String name) {
-        try { return version(pm.getPackageInfo(name, 0)); } catch (Exception ignored) { return "unknown"; }
-    }
     @PluginMethod
     public void snapshot(PluginCall call) {
         try {
@@ -37,11 +34,9 @@ public class DiagnosticsDevicePlugin extends Plugin {
                 PackageInfo wi = WebView.getCurrentWebViewPackage();
                 if (wi != null) { webPackage = wi.packageName; webVersion = version(wi); }
             } else {
-                String[] candidates = {"com.google.android.webview", "com.android.webview", "com.google.android.gms"};
-                for (String candidate : candidates) {
-                    String found = packageVersion(pm, candidate);
-                    if (!"unknown".equals(found)) { webPackage = candidate; webVersion = found; break; }
-                }
+                // API <26 has no authoritative current-provider API. Do not guess from installed packages.
+                webPackage = "unknown";
+                webVersion = "unknown";
             }
             out.put("webviewPackage", webPackage);
             out.put("webviewVersion", webVersion);
