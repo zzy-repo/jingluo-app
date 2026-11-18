@@ -139,6 +139,7 @@ export const buildFeedbackExport = (
         'pixelRatio',
         'hardwareConcurrency',
         'deviceMemory',
+        'system',
       ]
         .filter((key) => key in snapshot.device)
         .map((key) => {

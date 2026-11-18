@@ -7,6 +7,7 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(AppUpdatePlugin.class);
         registerPlugin(ExportTextPlugin.class);
         registerPlugin(CheckoutBrowserPlugin.class);
+        registerPlugin(DiagnosticsDevicePlugin.class);
         super.onCreate(savedInstanceState);
     }
 }

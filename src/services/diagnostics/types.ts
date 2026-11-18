@@ -75,6 +75,22 @@ export type AppInfo = {
   platform: string
 }
 
+export type SystemInfo = {
+  androidSdk?: number
+  androidRelease?: string
+  manufacturer?: string
+  brand?: string
+  webviewPackage?: string
+  webviewVersion?: string
+  fontScale?: number
+  density?: number
+  networkType?: string
+  online?: boolean
+  capabilities?: Record<string, boolean>
+  nativePath?: string
+  browserPath?: string
+}
+
 export type DeviceInfo = {
   /** 机型；拿不到写 unknown */
   model: string
@@ -94,6 +110,8 @@ export type DeviceInfo = {
   hardwareConcurrency?: number
   /** 内存 GB（navigator.deviceMemory，非标准） */
   deviceMemory?: number
+  /** 单次采集并缓存的系统与运行时能力快照 */
+  system?: SystemInfo
 }
 
 export type ClientInfo = {

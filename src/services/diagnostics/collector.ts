@@ -10,6 +10,7 @@ import {
   type LogLevel,
   type LogMeta,
   type LogSnapshot,
+  type SystemInfo,
 } from './types.js'
 
 /**
@@ -482,7 +483,45 @@ const readWebExtras = () => {
   return extras
 }
 
-const readDeviceInfo = (): DeviceInfo => {
+let systemInfoCache: SystemInfo | undefined
+let systemInfoPromise: Promise<SystemInfo> | undefined
+
+const readBrowserSystemInfo = (): SystemInfo => {
+  const nav = typeof navigator === 'undefined' ? undefined : navigator as Navigator & { connection?: { type?: string; effectiveType?: string } }
+  const w = typeof window === 'undefined' ? undefined : window
+  const capabilities: Record<string, boolean> = {}
+  try { capabilities.toSorted = typeof Array.prototype.toSorted === 'function' } catch { capabilities.toSorted = false }
+  try { capabilities.hasOwn = typeof Object.hasOwn === 'function' } catch { capabilities.hasOwn = false }
+  try { capabilities.at = typeof Array.prototype.at === 'function' } catch { capabilities.at = false }
+  capabilities.visualViewport = !!w?.visualViewport
+  try { capabilities.dvh = !!w && CSS.supports('height: 100dvh') } catch { capabilities.dvh = false }
+  return {
+    networkType: nav?.connection?.type ?? nav?.connection?.effectiveType ?? UNKNOWN,
+    online: typeof nav?.onLine === 'boolean' ? nav.onLine : undefined,
+    capabilities,
+    browserPath: 'browser',
+  }
+}
+
+const readSystemInfo = async (): Promise<SystemInfo> => {
+  if (systemInfoCache) return systemInfoCache
+  if (systemInfoPromise) return systemInfoPromise
+  systemInfoPromise = (async () => {
+    const browser = readBrowserSystemInfo()
+    if (readPlatform() !== 'android') { systemInfoCache = browser; return browser }
+    try {
+      const bridge = Capacitor.registerPlugin<{ snapshot(): Promise<SystemInfo> }>('DiagnosticsDevice')
+      const native = await bridge.snapshot()
+      systemInfoCache = { ...browser, ...native, nativePath: 'DiagnosticsDevice' }
+    } catch {
+      systemInfoCache = { ...browser, nativePath: 'unavailable' }
+    }
+    return systemInfoCache
+  })()
+  return systemInfoPromise
+}
+
+const readDeviceInfo = (system?: SystemInfo): DeviceInfo => {
   const ua = typeof navigator === 'undefined' ? '' : navigator.userAgent
   const parsed = parseAndroidFromUA(ua)
   const screen =
@@ -498,6 +537,7 @@ const readDeviceInfo = (): DeviceInfo => {
     screen,
     locale: typeof navigator === 'undefined' ? UNKNOWN : navigator.language || UNKNOWN,
     ...readWebExtras(),
+    ...(system ? { system } : {}),
   }
 }
 
@@ -1169,7 +1209,8 @@ export const initCollector = async (options: CollectorOptions = {}): Promise<voi
     factsProvider = options.facts
   }
   const app = readAppInfo()
-  const device = readDeviceInfo()
+  const system = await readSystemInfo()
+  const device = readDeviceInfo(system)
   if (!launchRecorded) {
     launchRecorded = true
     // 启动即写：先落 app_launch，后面的 restore / hook 都不影响「缓冲区非空」。
@@ -1200,7 +1241,7 @@ export const getSnapshot = (): LogSnapshot => {
   return {
     schemaVersion: FEEDBACK_SCHEMA_VERSION,
     app: readAppInfo(),
-    device: readDeviceInfo(),
+    device: readDeviceInfo(systemInfoCache ?? readBrowserSystemInfo()),
     client: { clientId: readClientId(), sessionId: readSessionId() },
     logs: entries.slice(),
   }
