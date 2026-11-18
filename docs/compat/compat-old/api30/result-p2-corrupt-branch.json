@@ -1,0 +1,216 @@
+{
+  "phase": "p2-import",
+  "api": 30,
+  "archive": "corrupt-branch",
+  "startedAt": "2026-11-18T17:38:43.471Z",
+  "device": {
+    "model": "sdk_gphone_x86_64",
+    "device": "generic_x86_64_arm64",
+    "release": "11",
+    "sdk": "30",
+    "abi": "x86_64",
+    "buildId": "RSR1.240422.006",
+    "webViewVersionLine": "versionName=83.0.4103.106",
+    "webViewUpdate": [
+      "  Fallback logic enabled: false",
+      "  Current WebView package (name, version): (com.google.android.webview, 83.0.4103.106)",
+      "    Valid package com.google.android.webview (versionName: 83.0.4103.106, versionCode: 410410686, targetSdkVersion: 30) is  installed/enabled for all users"
+    ],
+    "wmSize": "Physical size: 1080x1920",
+    "wmDensity": "Physical density: 420",
+    "memTotal": "MemTotal:        2028176 kB"
+  },
+  "navigation": [
+    {
+      "step": "settings-open-at-start",
+      "open": true
+    },
+    {
+      "step": "tab-data",
+      "clicked": true,
+      "descriptor": {
+        "tag": "button",
+        "role": "tab",
+        "ariaLabel": null,
+        "placeholder": null,
+        "testId": null,
+        "type": "button",
+        "disabled": false,
+        "text": "Data",
+        "className": "navItem-_85c1b navItemActive-_85c1b"
+      }
+    },
+    {
+      "step": "verify",
+      "urlInputPresent": true,
+      "tabLabels": [
+        "General",
+        "Data"
+      ]
+    }
+  ],
+  "samples": [
+    {
+      "at": 0.9,
+      "pid": "7805",
+      "totalPssKb": 315625,
+      "meminfoLine": "TOTAL PSS:   315625            TOTAL RSS:   388880       TOTAL SWAP PSS:      150",
+      "booted": true,
+      "fallbackText": null,
+      "bodyTextLength": 1251,
+      "texts": [
+        "How can I help you?",
+        "Fast mode",
+        "Expert mode",
+        "DeepThink",
+        "Search",
+        "AI-generated, for reference only",
+        "Settings",
+        "Channel",
+        "DeepSeek Official",
+        "API Key",
+        "Connection test",
+        "Test",
+        "—",
+        "Upload",
+        "Clear",
+        "Import chat history",
+        "Importing chat history replaces all local chats and attachments. Supports ZIP files exported from DeepSeek.",
+        "Import from link",
+        "Paste the DeepSeek export ZIP link; the app downloads it directly (Android app only).",
+        "Show more",
+        "Import details (1)",
+        "Took 00:00.0",
+        "Copy details",
+        "Downloading...",
+        "Export all chats",
+        "Includes all chat history and locally stored images. Other attachments retain file details only. Your API Key is not included.",
+        "Payment records",
+        "Paid orders, amounts, card last 4 digits and redemption state",
+        "View",
+        "Feedback & logs"
+      ],
+      "cdpError": null
+    },
+    {
+      "at": 4.1,
+      "pid": "7805",
+      "totalPssKb": 304750,
+      "meminfoLine": "TOTAL PSS:   304750            TOTAL RSS:   378216       TOTAL SWAP PSS:      150",
+      "booted": true,
+      "fallbackText": null,
+      "bodyTextLength": 1376,
+      "texts": [
+        "How can I help you?",
+        "Fast mode",
+        "Expert mode",
+        "DeepThink",
+        "Search",
+        "AI-generated, for reference only",
+        "Settings",
+        "Channel",
+        "DeepSeek Official",
+        "API Key",
+        "Connection test",
+        "Test",
+        "—",
+        "Upload",
+        "Clear",
+        "Import chat history",
+        "Importing chat history replaces all local chats and attachments. Supports ZIP files exported from DeepSeek.",
+        "Import from link",
+        "Imported 2 chats, skipped 2 damaged items",
+        "Show more",
+        "Import details (6)",
+        "Took 00:03.6",
+        "Copy details",
+        "Skipped 2 damaged items",
+        "The rest of the chats and messages were imported",
+        "Message",
+        "Message #2 in chat \"坏会话\" · message branches are damaged (parent message missing, or roles do not connect)（missing parent message #999999）",
+        "Branch",
+        "Chat \"坏会话\" branch pointing at #2 · message branches are damaged (parent message missing, or roles do not connect)",
+        "Import link"
+      ],
+      "cdpError": null
+    }
+  ],
+  "requests": [],
+  "serverPort": 5411,
+  "typed": {
+    "typed": true,
+    "tap": {
+      "x": 422,
+      "y": 1072,
+      "dpr": 2.625
+    },
+    "state": {
+      "value": "http://10.0.2.2:5411/a/corrupt-branch",
+      "focused": true,
+      "importDisabled": false
+    }
+  },
+  "startClick": {
+    "clicked": true,
+    "descriptor": {
+      "tag": "button",
+      "role": null,
+      "ariaLabel": null,
+      "placeholder": null,
+      "testId": null,
+      "type": "button",
+      "disabled": false,
+      "text": "Import link",
+      "className": "button-_074b8 outlined-_074b8 m-_074b8 cellButton-_85c1b uploadButton-_85c1b"
+    }
+  },
+  "confirmClick": {
+    "clicked": true,
+    "descriptor": {
+      "tag": "button",
+      "role": null,
+      "ariaLabel": null,
+      "placeholder": null,
+      "testId": null,
+      "type": "button",
+      "disabled": false,
+      "text": "Import",
+      "className": "button-_074b8 dangerOutlined-_074b8 m-_074b8"
+    }
+  },
+  "terminal": "Imported \\d+ chats?",
+  "timedOut": false,
+  "pidSeen": [
+    "7805"
+  ],
+  "pssPeakKb": 315625,
+  "verdict": "TERMINAL_TEXT:Imported \\d+ chats?",
+  "serverRequests": [
+    {
+      "at": 1795023541940,
+      "method": "GET",
+      "path": "/a/corrupt-branch",
+      "range": "bytes=0-4095",
+      "total": 2164,
+      "status": 206,
+      "sent": 2164
+    }
+  ],
+  "requestCount": 1,
+  "requestBytes": 2164,
+  "logcat": {
+    "file": "D:\\all_project\\runs\\compatold\\docs\\compat\\compat-old/api30/logcat-p2-corrupt-branch.txt",
+    "kills": [
+      "11-18 17:38:28.837   505  2875 I ActivityManager: Killing 7529:com.example.deepseekchat/u0a167 (adj 0): stop com.example.deepseekchat due to from pid 7786",
+      "11-18 17:38:29.108   505  2875 I ActivityManager: Killing 7561:com.google.android.webview:sandboxed_process0:org.chromium.content.app.SandboxedProcessService0:0/u0a167i9 (adj 0): isolated not needed"
+    ],
+    "console": [
+      "11-18 17:38:29.108   505  2875 I ActivityManager: Killing 7561:com.google.android.webview:sandboxed_process0:org.chromium.content.app.SandboxedProcessService0:0/u0a167i9 (adj 0): isolated not needed",
+      "11-18 17:38:35.072   505   534 I ActivityManager: Start proc 7838:com.google.android.webview:sandboxed_process0:org.chromium.content.app.SandboxedProcessService0:0/u0i10 for  {com.example.deepseekchat/org.chromium.content.app.SandboxedProcessService0:0}",
+      "11-18 17:38:35.432  7805  7846 W chromium: [WARNING:dns_config_service_posix.cc(341)] Failed to read DnsConfig.",
+      "11-18 17:38:36.182  7805  7868 E chromium: [ERROR:gl_surface_egl.cc(549)] eglChooseConfig failed with error EGL_SUCCESS",
+      "11-18 17:38:36.372  7805  7868 E chromium: [ERROR:gl_surface_egl.cc(549)] eglChooseConfig failed with error EGL_SUCCESS"
+    ]
+  },
+  "finishedAt": "2026-11-18T17:39:05.700Z"
+}

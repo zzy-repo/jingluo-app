@@ -229,3 +229,60 @@ $ADB emu kill
 ## 附：AVD 保留情况
 
 保留且未被删除：`compat-api30`、`compat-api31`（本轮新建）、`deepseek-api33`、`probe33`（既有，未改动）。
+
+---
+
+# P0 · 兜底页正向验证（2026-11-19 补测，API26 / API28 / API29）
+
+## 为什么要补这一档
+
+兜底页（`src/index.html` 内联 ES5 守卫）实际有**三条**出口，此前一条都没被触发过：
+
+| 出口 | 触发条件 | 文案 |
+| --- | --- | --- |
+| ① 探针缺失 | 12 条特性探针任一不满足 | `…：缺少：<API 列表>` |
+| ② window error | 捕获到脚本错误（`addEventListener('error', …, true)`） | `…：<event.message>` |
+| ③ 12s 看门狗 | 探针齐但 `__DEEPSEEK_BOOTED__` 12 秒没置位 | `…：脚本 12 秒内没有启动（内核过旧或资源加载失败）` |
+
+在 WebView 83 / 91 / 109 上三条都不触发（主包正常启动）。只有在 WebView < 80（主包含可选链）才能实测。
+
+## 实测结果（三档一致）
+
+| AVD | WebView 原始版本行 | 兜底页 | 命中出口 | `__DEEPSEEK_BOOTED__` | `__DEEPSEEK_COMPATIBILITY_ERROR__` |
+| --- | --- | --- | --- | --- | --- |
+| compat-api26 | `versionName=69.0.3497.100` | 出现（非纯白） | ② window error | false | `null` |
+| compat-api28 | `versionName=69.0.3497.100` | 出现（非纯白） | ② window error | false | `null` |
+| compat-api29 | `versionName=74.0.3729.185` | 出现（非纯白） | ② window error | false | `null` |
+
+用户可见文案（三档逐字一致，四帧采样 2s/6s/13s/20s + 最终帧）：
+
+```
+页面启动失败。请更新 Android System WebView 或浏览器后重试；仍失败请反馈组件版本与以下信息：Uncaught SyntaxError: Unexpected token ?
+```
+
+logcat（三档同一条主包）：
+
+```
+E Capacitor: JavaScript Error: {"type":"js.error","error":{"message":"Uncaught SyntaxError: Unexpected token ?","url":"https://localhost/static/js/main.030dd2a6.js","line":1,"col":249411,...}}
+E Capacitor/Console: File: https://localhost/ - Line 811 - Msg: SyntaxError: Unexpected token ?
+```
+
+结论：
+
+1. WebView 69 / 74 上**不是纯白屏** —— 兜底守卫确实接住了解析失败，卡片出现。
+2. 但落的是出口 ②，把**未本地化的英文原文**（`Uncaught SyntaxError: Unexpected token ?`）直接展示给用户，且 `__DEEPSEEK_COMPATIBILITY_ERROR__` 为 `null`（只有出口 ① 才写这个变量）→ 诊断链路拿不到结构化原因。
+3. 出口 ① / ③ 仍然**未触发过**（69/74 的 12 条探针全过；要触发 ① 需要 WebView < 64 或人为缺项）。
+4. 白屏边界实测：WebView 74 → 兜底卡；WebView 83 → 正常启动。中间 75–82 无系统镜像可用，**未测**（不做推断）。
+
+## 覆盖总表（P0–P4）
+
+| AVD / Android | WebView 原始版本（dumpsys） | P0 兜底页 | P1 白屏边界 | P2 导入 | P3 弱网 | P4 390/360 排版 |
+| --- | --- | --- | --- | --- | --- | --- |
+| compat-api26 | `versionName=69.0.3497.100` | 兜底出口②，文案泄漏英文原文（证据 `api26/`） | 非白屏（同上） | 未测：UI 不可达 | 未测：UI 不可达 | 未测：UI 不可达 |
+| compat-api28 | `versionName=69.0.3497.100` | 同上（`api28/`） | 非白屏 | 未测：UI 不可达 | 未测：UI 不可达 | 未测：UI 不可达 |
+| compat-api29 | `versionName=74.0.3729.185` | 同上（`api29/`） | 非白屏 | 未测：UI 不可达 | 未测：UI 不可达 | 未测：UI 不可达 |
+| compat-api30 | `versionName=83.0.4103.106` | 不触发，`booted=true`（`api30/result-p0.json`） | 正常启动 | 未测 | 未测 | 主界面 390css(391) / 360css(360) 横溢 0 元素；设置页/会话页未测（`api30/result-p4.json`） |
+| compat-api31 | `versionName=91.0.4472.114` | 不触发，`booted=true`（`api31/`） | 正常启动 | 未测 | 未测 | 未测（仅 #57 排版对照，见上） |
+| deepseek-api33 | `versionName=109.0.5414.123` | 不触发 | 正常启动 | 未测（109 既有结果见 #133） | 109 既有：48s 超时 / 滴流无限 streaming #150 / offline 误分类 #154 | 未测 |
+
+「未测」= 没跑过，不是通过。P1（API 34/35/36「更高版本也不会炸」）未测：镜像尚未装完，本轮未跑。

@@ -1,0 +1,475 @@
+--------- beginning of main
+11-18 17:50:39.250   540   572 I libprocessgroup: Successfully killed process cgroup uid 99002 pid 4571 in 0ms
+11-18 17:50:39.288   715   810 D EGL_emulation: app_time_stats: avg=3361.10ms min=9.77ms max=20028.63ms count=6
+11-18 17:50:39.292   715   810 D EGL_emulation: app_time_stats: avg=794.65ms min=2.12ms max=7844.56ms count=10
+11-18 17:50:39.307  1239  1239 I GoogleInputMethodService: GoogleInputMethodService.onFinishInput():3420 
+11-18 17:50:39.308  1239  1239 I GoogleInputMethodService: GoogleInputMethodService.onStartInput():2002 
+11-18 17:50:39.309  1239  1239 I DeviceUnlockedTag: DeviceUnlockedTag.notifyDeviceLockStatusChanged():31 Notify device unlocked.
+--------- beginning of system
+11-18 17:50:40.378   540  2003 I ActivityTaskManager: START u0 {flg=0x10000000 cmp=com.example.deepseekchat/.MainActivity} from uid 2000
+11-18 17:50:40.378   540  2003 W ActivityTaskManager: Can't find TaskDisplayArea to determine support for multi window. Task id=21 attached=false
+11-18 17:50:40.380   540  2003 D CompatibilityChangeReporter: Compat change id reported: 174042980; UID 10145; state: DISABLED
+11-18 17:50:40.380   540  2003 D CompatibilityChangeReporter: Compat change id reported: 184838306; UID 10145; state: DISABLED
+11-18 17:50:40.381   540  2003 D CompatibilityChangeReporter: Compat change id reported: 185004937; UID 10145; state: DISABLED
+11-18 17:50:40.382   540  2003 D CompatibilityChangeReporter: Compat change id reported: 168419799; UID 10145; state: DISABLED
+11-18 17:50:40.384   715   801 D PhoneStartingWindowTypeAlgorithm: preferredStartingWindowType newTask:true taskSwitch:true processRunning:false allowTaskSnapshot:true activityCreated:false useEmptySplashScreen:true legacySplashScreen:false topIsHome:false
+11-18 17:50:40.384   715   801 D StartingSurfaceDrawer: addSplashScreen com.example.deepseekchat theme=7f0e0007 task=21 suggestType=3
+11-18 17:50:40.385   715   802 D StartingSurfaceDrawer: window attributes color: 0 icon null duration 0 brandImage null
+11-18 17:50:40.386   715   802 D SplashScreenView: Build android.window.SplashScreenView{eccd535 V.E...... ......ID 0,0-0,0}
+11-18 17:50:40.386   715   802 D SplashScreenView: Icon: view: null drawable: null size: 0
+11-18 17:50:40.386   715   802 D SplashScreenView: Branding: view: android.view.View{22b1dca G.ED..... ......I. 0,0-0,0 #10204a6 android:id/splashscreen_branding_view} drawable: null size w: 0 h: 0
+11-18 17:50:40.386   540   562 D CompatibilityChangeReporter: Compat change id reported: 135634846; UID 10145; state: DISABLED
+11-18 17:50:40.386   715   802 D StartingSurfaceDrawer: fillViewWithIcon surfaceWindowView android.window.SplashScreenView{eccd535 V.E...... ......ID 0,0-0,0}
+11-18 17:50:40.387   540   562 D CompatibilityChangeReporter: Compat change id reported: 177438394; UID 10145; state: DISABLED
+11-18 17:50:40.387   540   562 D CompatibilityChangeReporter: Compat change id reported: 135772972; UID 10145; state: DISABLED
+11-18 17:50:40.387   540   562 D CompatibilityChangeReporter: Compat change id reported: 135754954; UID 10145; state: ENABLED
+11-18 17:50:40.387   540   571 D CompatibilityChangeReporter: Compat change id reported: 143937733; UID 10145; state: ENABLED
+11-18 17:50:40.390   334   334 D Zygote  : Forked child process 4838
+11-18 17:50:40.392   540   571 I ActivityManager: Start proc 4838:com.example.deepseekchat/u0a145 for pre-top-activity {com.example.deepseekchat/com.example.deepseekchat.MainActivity}
+11-18 17:50:40.399  4838  4838 I le.deepseekcha: Late-enabling -Xcheck:jni
+11-18 17:50:40.402   352   352 D goldfish-address-space: claimShared: Ask to claim region [0x3f8957000 0x3f9140000]
+11-18 17:50:40.408   352   352 D goldfish-address-space: claimShared: Ask to claim region [0x3fa2e8000 0x3faad1000]
+11-18 17:50:40.410  4838  4838 W le.deepseekcha: Unexpected CPU variant for X86 using defaults: x86_64
+11-18 17:50:40.412   352   393 D goldfish-address-space: claimShared: Ask to claim region [0x3fd7bb000 0x3fdfa4000]
+11-18 17:50:40.423   430   444 I adbd    : jdwp connection from 4838
+11-18 17:50:40.444   409   409 I BpBinder: onLastStrongRef automatically unlinking death recipients: <uncached descriptor>
+11-18 17:50:40.454  4838  4838 D CompatibilityChangeReporter: Compat change id reported: 171979766; UID 10145; state: ENABLED
+11-18 17:50:40.475   978  1436 D EGL_emulation: app_time_stats: avg=150.68ms min=17.72ms max=1044.21ms count=8
+11-18 17:50:40.490  1357  1357 I GsaVoiceInteractionSrv: Handling ACTION_STOP_HOTWORD
+11-18 17:50:40.516   715   810 D EGL_emulation: app_time_stats: avg=202.32ms min=17.82ms max=1055.12ms count=6
+11-18 17:50:40.521   715   810 D EGL_emulation: app_time_stats: avg=204.65ms min=16.71ms max=1058.47ms count=6
+11-18 17:50:40.575  4838  4838 V GraphicsEnvironment: ANGLE Developer option for 'com.example.deepseekchat' set to: 'default'
+11-18 17:50:40.575  4838  4838 V GraphicsEnvironment: Neither updatable production driver nor prerelease driver is supported.
+11-18 17:50:40.576  4838  4838 D NetworkSecurityConfig: No Network Security Config specified, using platform default
+11-18 17:50:40.577  4838  4838 D NetworkSecurityConfig: No Network Security Config specified, using platform default
+11-18 17:50:40.647  4838  4859 D libEGL  : loaded /vendor/lib64/egl/libEGL_emulation.so
+11-18 17:50:40.650  4838  4859 D libEGL  : loaded /vendor/lib64/egl/libGLESv1_CM_emulation.so
+11-18 17:50:40.653  4838  4859 D libEGL  : loaded /vendor/lib64/egl/libGLESv2_emulation.so
+11-18 17:50:40.719  4838  4838 D AppCompatDelegate: Checking for metadata for AppLocalesMetadataHolderService : Service not found
+11-18 17:50:40.730   540  1993 W ActivityManager: Unable to start service Intent { act=android.service.smartspace.SmartspaceService cmp=com.google.android.as/com.google.android.apps.miphone.aiai.app.AiAiSmartspaceService } U=0: not found
+11-18 17:50:40.730   540  1993 W RemoteSmartspaceService: could not bind to Intent { act=android.service.smartspace.SmartspaceService cmp=com.google.android.as/com.google.android.apps.miphone.aiai.app.AiAiSmartspaceService } using flags 67112961
+11-18 17:50:40.731   540   540 W ActivityManager: Unbind failed: could not find connection for android.app.LoadedApk$ServiceDispatcher$InnerConnection@331c996
+11-18 17:50:40.733  1523  1523 I A       : onApplyWindowInsets: systemWindowInsets=Insets{left=0, top=63, right=0, bottom=126}
+11-18 17:50:40.734  1523  1523 I A       : onApplyWindowInsets: systemWindowInsets=Insets{left=0, top=63, right=0, bottom=126}
+11-18 17:50:40.797  4838  4838 W le.deepseekcha: Accessing hidden method Landroid/view/ViewGroup;->makeOptionalFitsSystemWindows()V (unsupported, reflection, allowed)
+11-18 17:50:40.805  1062  4453 E GCM     : Missing checkin config file
+11-18 17:50:40.806  1062  4453 W GCM     : GCM FAILED TO INITIALIZE - missing checkin
+11-18 17:50:40.807  1062  4453 E WakeLock: GCM_HB_ALARM release without a matched acquire!
+11-18 17:50:40.808  1062  4453 W WakeLock: GCM_HB_ALARM counter does not exist
+11-18 17:50:40.808  4838  4838 I WebViewFactory: Loading com.google.android.webview version 91.0.4472.114 (code 447211487)
+11-18 17:50:40.810  1062  4453 I AlarmManager: setExactAndAllowWhileIdle [name: GCM_CONN_ALARM type: 2 triggerAtMillis: 212014]
+11-18 17:50:40.811   540  3624 D CompatibilityChangeReporter: Compat change id reported: 171306433; UID 10100; state: ENABLED
+11-18 17:50:40.844  4838  4838 W le.deepseekcha: Accessing hidden method Landroid/os/Trace;->isTagEnabled(J)Z (unsupported, reflection, allowed)
+11-18 17:50:40.845  4838  4838 W le.deepseekcha: Accessing hidden method Landroid/os/Trace;->traceBegin(JLjava/lang/String;)V (unsupported, reflection, allowed)
+11-18 17:50:40.845  4838  4838 W le.deepseekcha: Accessing hidden method Landroid/os/Trace;->traceEnd(J)V (unsupported, reflection, allowed)
+11-18 17:50:40.845  4838  4838 W le.deepseekcha: Accessing hidden method Landroid/os/Trace;->asyncTraceBegin(JLjava/lang/String;I)V (unsupported, reflection, allowed)
+11-18 17:50:40.845  4838  4838 W le.deepseekcha: Accessing hidden method Landroid/os/Trace;->asyncTraceEnd(JLjava/lang/String;I)V (unsupported, reflection, allowed)
+11-18 17:50:40.853  4838  4864 I cr_VariationsUtils: Failed reading seed file "/data/user/0/com.example.deepseekchat/app_webview/variations_seed_new"
+11-18 17:50:40.853  4838  4864 I cr_VariationsUtils: Failed reading seed file "/data/user/0/com.example.deepseekchat/app_webview/variations_seed"
+11-18 17:50:40.858  4838  4838 I cr_LibraryLoader: Loaded native library version number "91.0.4472.114"
+11-18 17:50:40.859  4838  4838 I cr_CachingUmaRecorder: Flushed 6 samples from 6 histograms.
+11-18 17:50:40.865   540  3624 D CompatibilityChangeReporter: Compat change id reported: 135634846; UID 10145; state: DISABLED
+11-18 17:50:40.866   540   571 D CompatibilityChangeReporter: Compat change id reported: 143937733; UID 10145; state: ENABLED
+11-18 17:50:40.869   786   786 D Zygote  : Forked child process 4868
+11-18 17:50:40.870   540   571 I ActivityManager: Start proc 4868:com.google.android.webview:sandboxed_process0:org.chromium.content.app.SandboxedProcessService0:0/u0i3 for  {com.example.deepseekchat/org.chromium.content.app.SandboxedProcessService0:0}
+11-18 17:50:40.872  4868  4868 W ocessService0:: Unexpected CPU variant for X86 using defaults: x86_64
+11-18 17:50:40.878   430   444 I adbd    : jdwp connection from 4868
+11-18 17:50:40.880  4838  4881 W chromium: [WARNING:dns_config_service_android.cc(153)] Failed to read DnsConfig.
+11-18 17:50:40.886  4868  4868 D CompatibilityChangeReporter: Compat change id reported: 171979766; UID 99003; state: ENABLED
+11-18 17:50:40.891  4868  4868 D NetworkSecurityConfig: No Network Security Config specified, using platform default
+11-18 17:50:40.892  4868  4868 D NetworkSecurityConfig: No Network Security Config specified, using platform default
+11-18 17:50:40.893  4868  4868 I cr_ChildProcessService: Creating new ChildProcessService pid=4868
+11-18 17:50:40.898  4838  4838 D CompatibilityChangeReporter: Compat change id reported: 171228096; UID 10145; state: ENABLED
+11-18 17:50:40.915  4838  4838 D Capacitor: Starting BridgeActivity
+11-18 17:50:40.943  4838  4838 D Capacitor: Registering plugin instance: CapacitorCookies
+11-18 17:50:40.948  4838  4838 D Capacitor: Registering plugin instance: WebView
+11-18 17:50:40.949  4838  4838 D Capacitor: Registering plugin instance: CapacitorHttp
+11-18 17:50:40.950  4838  4838 D Capacitor: Registering plugin instance: SystemBars
+11-18 17:50:40.952  4838  4838 D Capacitor: Registering plugin instance: AppUpdate
+11-18 17:50:40.954  4838  4838 D Capacitor: Registering plugin instance: ExportText
+11-18 17:50:40.956  4838  4838 D Capacitor: Registering plugin instance: DiagnosticsDevice
+11-18 17:50:40.956  4838  4838 D Capacitor: Registering plugin instance: CheckoutBrowser
+11-18 17:50:40.966  4838  4838 W Capacitor: Unable to read file at path public/plugins
+11-18 17:50:40.969  4838  4838 D Capacitor: Loading app at https://localhost
+11-18 17:50:40.975  4838  4889 W le.deepseekcha: Accessing hidden method Landroid/media/AudioManager;->getOutputLatency(I)I (unsupported, reflection, allowed)
+11-18 17:50:40.980  4838  4889 W cr_media: Requires BLUETOOTH permission
+11-18 17:50:41.019  4838  4905 D HostConnection: createUnique: call
+11-18 17:50:41.020  4838  4905 D HostConnection: HostConnection::get() New Host Connection established 0x7f7d93d46c90, tid 4905
+11-18 17:50:41.026  4868  4900 I cr_LibraryLoader: Loaded native library version number "91.0.4472.114"
+11-18 17:50:41.026  4868  4900 I cr_CachingUmaRecorder: Flushed 1 samples from 1 histograms.
+11-18 17:50:41.026  4838  4905 D HostConnection: HostComposition ext ANDROID_EMU_CHECKSUM_HELPER_v1 ANDROID_EMU_native_sync_v2 ANDROID_EMU_dma_v1 ANDROID_EMU_direct_mem ANDROID_EMU_host_composition_v1 ANDROID_EMU_host_composition_v2 ANDROID_EMU_vulkan ANDROID_EMU_deferred_vulkan_commands ANDROID_EMU_vulkan_null_optional_strings ANDROID_EMU_vulkan_create_resources_with_requirements ANDROID_EMU_YUV_Cache ANDROID_EMU_vulkan_ignored_handles ANDROID_EMU_has_shared_slots_host_memory_allocator ANDROID_EMU_vulkan_free_memory_sync ANDROID_EMU_vulkan_shader_float16_int8 ANDROID_EMU_vulkan_async_queue_submit ANDROID_EMU_vulkan_queue_submit_with_commands ANDROID_EMU_sync_buffer_data ANDROID_EMU_vulkan_async_qsri ANDROID_EMU_read_color_buffer_dma GL_OES_EGL_image_external_essl3 GL_OES_vertex_array_object GL_KHR_texture_compression_astc_ldr ANDROID_EMU_host_side_tracing ANDROID_EMU_gles_max_version_3_0 
+11-18 17:50:41.027  4838  4838 I RenderProcessGone: 渲染进程接管已安装（onRenderProcessGone -> true）
+11-18 17:50:41.027   194   194 I hwservicemanager: getTransport: Cannot find entry android.hardware.configstore@1.0::ISurfaceFlingerConfigs/default in either framework or device VINTF manifest.
+11-18 17:50:41.031  4838  4905 D EGL_emulation: eglCreateContext: 0x7f7d93d46a50: maj 3 min 0 rcv 3
+11-18 17:50:41.031  4838  4905 D EGL_emulation: eglMakeCurrent: 0x7f7d93d46a50: ver 3 0 (tinfo 0x7f7fa6589080) (first time)
+11-18 17:50:41.031  4868  4900 W SystemServiceRegistry: No service published for: uimode
+11-18 17:50:41.041  4838  4905 D EGL_emulation: eglCreateContext: 0x7f7d93d46a50: maj 3 min 0 rcv 3
+11-18 17:50:41.055  4838  4838 D Capacitor: App started
+11-18 17:50:41.057  4838  4838 D Capacitor: App resumed
+11-18 17:50:41.080  4838  4891 D Capacitor: Handling local request: https://localhost/
+11-18 17:50:41.101  4838  4905 D EGL_emulation: eglCreateContext: 0x7f7d93d465d0: maj 3 min 0 rcv 3
+11-18 17:50:41.115  4838  4838 I Choreographer: Skipped 30 frames!  The application may be doing too much work on its main thread.
+11-18 17:50:41.120  4838  4878 D Capacitor: Handling local request: https://localhost/static/js/main.030dd2a6.js
+11-18 17:50:41.126  4838  4891 D Capacitor: Handling local request: https://localhost/static/css/main.9a1e3d66.css
+11-18 17:50:41.143  4838  4857 D HostConnection: createUnique: call
+11-18 17:50:41.144  4838  4857 D HostConnection: HostConnection::get() New Host Connection established 0x7f7d93d3f310, tid 4857
+11-18 17:50:41.149  4838  4857 D HostConnection: HostComposition ext ANDROID_EMU_CHECKSUM_HELPER_v1 ANDROID_EMU_native_sync_v2 ANDROID_EMU_dma_v1 ANDROID_EMU_direct_mem ANDROID_EMU_host_composition_v1 ANDROID_EMU_host_composition_v2 ANDROID_EMU_vulkan ANDROID_EMU_deferred_vulkan_commands ANDROID_EMU_vulkan_null_optional_strings ANDROID_EMU_vulkan_create_resources_with_requirements ANDROID_EMU_YUV_Cache ANDROID_EMU_vulkan_ignored_handles ANDROID_EMU_has_shared_slots_host_memory_allocator ANDROID_EMU_vulkan_free_memory_sync ANDROID_EMU_vulkan_shader_float16_int8 ANDROID_EMU_vulkan_async_queue_submit ANDROID_EMU_vulkan_queue_submit_with_commands ANDROID_EMU_sync_buffer_data ANDROID_EMU_vulkan_async_qsri ANDROID_EMU_read_color_buffer_dma GL_OES_EGL_image_external_essl3 GL_OES_vertex_array_object GL_KHR_texture_compression_astc_ldr ANDROID_EMU_host_side_tracing ANDROID_EMU_gles_max_version_3_0 
+11-18 17:50:41.150  4838  4857 W OpenGLRenderer: Failed to initialize 101010-2 format, error = EGL_SUCCESS
+11-18 17:50:41.153  4838  4857 D EGL_emulation: eglCreateContext: 0x7f7d93d3fe50: maj 3 min 0 rcv 3
+11-18 17:50:41.156  4838  4857 D EGL_emulation: eglMakeCurrent: 0x7f7d93d3fe50: ver 3 0 (tinfo 0x7f7fa6589100) (first time)
+11-18 17:50:41.176   409   704 E HWComposer: getSupportedContentTypes: getSupportedContentTypes failed for display 4619827259835644672: Unsupported (8)
+11-18 17:50:41.177   194   194 I hwservicemanager: getTransport: Cannot find entry android.hardware.graphics.mapper@4.0::IMapper/default in either framework or device VINTF manifest.
+11-18 17:50:41.178  4838  4857 I Gralloc4: mapper 4.x is not supported
+11-18 17:50:41.179  4838  4857 D HostConnection: createUnique: call
+11-18 17:50:41.179  4838  4857 D HostConnection: HostConnection::get() New Host Connection established 0x7f7d93d41110, tid 4857
+11-18 17:50:41.179  4838  4857 D goldfish-address-space: allocate: Ask for block of size 0x100
+11-18 17:50:41.179  4838  4857 D goldfish-address-space: allocate: ioctl allocate returned offset 0x3f7ffe000 size 0x2000
+11-18 17:50:41.180   194   194 I hwservicemanager: getTransport: Cannot find entry android.hardware.graphics.allocator@4.0::IAllocator/default in either framework or device VINTF manifest.
+11-18 17:50:41.180  4838  4857 W Gralloc4: allocator 4.x is not supported
+11-18 17:50:41.182   352   393 D goldfish-address-space: claimShared: Ask to claim region [0x3f816e000 0x3f8957000]
+11-18 17:50:41.187  4838  4857 D HostConnection: HostComposition ext ANDROID_EMU_CHECKSUM_HELPER_v1 ANDROID_EMU_native_sync_v2 ANDROID_EMU_dma_v1 ANDROID_EMU_direct_mem ANDROID_EMU_host_composition_v1 ANDROID_EMU_host_composition_v2 ANDROID_EMU_vulkan ANDROID_EMU_deferred_vulkan_commands ANDROID_EMU_vulkan_null_optional_strings ANDROID_EMU_vulkan_create_resources_with_requirements ANDROID_EMU_YUV_Cache ANDROID_EMU_vulkan_ignored_handles ANDROID_EMU_has_shared_slots_host_memory_allocator ANDROID_EMU_vulkan_free_memory_sync ANDROID_EMU_vulkan_shader_float16_int8 ANDROID_EMU_vulkan_async_queue_submit ANDROID_EMU_vulkan_queue_submit_with_commands ANDROID_EMU_sync_buffer_data ANDROID_EMU_vulkan_async_qsri ANDROID_EMU_read_color_buffer_dma GL_OES_EGL_image_external_essl3 GL_OES_vertex_array_object GL_KHR_texture_compression_astc_ldr ANDROID_EMU_host_side_tracing ANDROID_EMU_gles_max_version_3_0 
+11-18 17:50:41.189   352   393 D goldfish-address-space: claimShared: Ask to claim region [0x3f9aff000 0x3fa2e8000]
+11-18 17:50:41.192   352   393 D goldfish-address-space: claimShared: Ask to claim region [0x3faad1000 0x3fb2ba000]
+11-18 17:50:41.270   715   801 D StartingSurfaceDrawer: Task start finish, remove starting surface for task 21
+11-18 17:50:41.270   715   801 V StartingSurfaceDrawer: Removing splash screen window for task: 21
+11-18 17:50:41.276   540   559 I ActivityTaskManager: Displayed com.example.deepseekchat/.MainActivity: +892ms
+11-18 17:50:41.329  1239  1239 I GoogleInputMethodService: GoogleInputMethodService.onFinishInput():3420 
+11-18 17:50:41.329  1239  1239 I GoogleInputMethodService: GoogleInputMethodService.onStartInput():2002 
+11-18 17:50:41.334  1239  1239 I DeviceUnlockedTag: DeviceUnlockedTag.notifyDeviceLockStatusChanged():31 Notify device unlocked.
+11-18 17:50:41.570   540  2003 W InputManager-JNI: Input channel object 'b3be310 Splash Screen com.example.deepseekchat (client)' was disposed without first being removed with the input manager!
+11-18 17:50:41.577  1062  3442 I FontLog : Received query Noto Color Emoji Compat, URI content://com.google.android.gms.fonts [CONTEXT service_id=132 ]
+11-18 17:50:41.580  1062  3442 I FontLog : Query [emojicompat-emoji-font] resolved to {Noto Color Emoji Compat, wdth 100.0, wght 400, ital 0.0, bestEffort false} [CONTEXT service_id=132 ]
+11-18 17:50:41.587  1062  3442 I FontLog : Fetch {Noto Color Emoji Compat, wdth 100.0, wght 400, ital 0.0, bestEffort false} end status Status{statusCode=SUCCESS, resolution=null} [CONTEXT service_id=132 ]
+11-18 17:50:41.593  1062  3442 I FontLog : Pulling font file for id = 15, cache size = 8 [CONTEXT service_id=132 ]
+11-18 17:50:41.600  1062  3442 I FontLog : Pulling font file for id = 15, cache size = 8 [CONTEXT service_id=132 ]
+11-18 17:50:41.624  4838  4891 D Capacitor: Handling local request: https://localhost/static/js/async/8124.00cc9ebc.js
+11-18 17:50:41.642  4838  4891 D Capacitor: Handling local request: https://localhost/static/js/async/8855.e584e761.js
+11-18 17:50:41.655  4838  4881 D Capacitor: Handling local request: https://localhost/static/css/async/5188.c1aaf133.css
+11-18 17:50:41.657  4838  4891 D Capacitor: Handling local request: https://localhost/static/js/async/5188.b200521c.js
+11-18 17:50:41.670  4838  4838 I Capacitor/Console: File: https://localhost/ - Line 351 - Msg: [object Object]
+11-18 17:50:41.673  4838  4838 V Capacitor/Plugin: To native (Capacitor plugin): callbackId: 7701062, pluginId: DiagnosticsDevice, methodName: snapshot
+11-18 17:50:41.675  4838  4838 V Capacitor: callback: 7701062, pluginId: DiagnosticsDevice, methodName: snapshot, methodData: {}
+11-18 17:50:41.715  4838  4838 I Capacitor/Console: File: https://localhost/ - Line 335 - Msg: {"androidRelease":"12","androidSdk":31,"manufacturer":"Google","brand":"google","model":"sdk_gphone64_x86_64","appVersionName":"1.4.0-beta.10","appVersionCode":17,"artifactVariant":"standard","appSource":"PackageManager","webviewPackage":"com.google.android.webview","webviewVersion":"91.0.4472.114","density":3,"fontScale":1,"screenWidth":1080,"screenHeight":1794}
+11-18 17:50:41.724  4838  4838 W Capacitor/Console: File: https://localhost/static/js/main.030dd2a6.js - Line 5 - Msg: Capacitor plugin "DiagnosticsDevice" already registered. Cannot register plugins twice.
+11-18 17:50:41.728  4838  4838 I Capacitor/Console: File: https://localhost/ - Line 351 - Msg: [object Object]
+11-18 17:50:41.730  4838  4838 V Capacitor/Plugin: To native (Capacitor plugin): callbackId: 7701063, pluginId: DiagnosticsDevice, methodName: renderProcessEvents
+11-18 17:50:41.730  4838  4838 V Capacitor: callback: 7701063, pluginId: DiagnosticsDevice, methodName: renderProcessEvents, methodData: {}
+11-18 17:50:41.916  4838  4838 I Capacitor/Console: File: https://localhost/ - Line 335 - Msg: {"events":[],"source":"RenderProcessEventStore"}
+11-18 17:50:42.090  4838  4881 D Capacitor: Handling local request: https://localhost/favicon.ico
+11-18 17:50:42.310   812  4547 D NetworkMonitor/100: PROBE_FALLBACK http://play.googleapis.com/generate_204 Probe failed with exception java.net.SocketTimeoutException: failed to connect to play.googleapis.com/2001:4860:4847:400:: (port 80) from /fec0::5054:ff:fe12:3456 (port 54224) after 10000ms
+11-18 17:50:42.311   812  4547 D NetworkMonitor/100: isCaptivePortal: isSuccessful()=false isPortal()=false RedirectUrl=null isPartialConnectivity()=false Time=23035ms
+11-18 17:50:42.313   540   655 D ConnectivityService: [100 CELLULAR] validation failed
+11-18 17:50:43.007  1483  1483 D BoundBrokerSvc: onUnbind: Intent { act=com.google.android.gms.auth.api.phone.service.SmsRetrieverApiService.START dat=chimera-action: cmp=com.google.android.gms/.chimera.GmsApiService }
+11-18 17:50:43.310   540   570 W ActivityManager: Stopping service due to app idle: u0a135 -1m19s930ms com.google.pixel.exo/.core.PersistentService
+11-18 17:50:43.318  3758  3758 I Exo     : PersistentService: Exo PersistentService destroyed
+11-18 17:50:43.323  3758  3758 E ActivityThread: Service com.google.pixel.exo.core.PersistentService has leaked ServiceConnection com.google.pixel.exo.core.PersistentService$1@ab2cc8e that was originally bound here
+11-18 17:50:43.323  3758  3758 E ActivityThread: android.app.ServiceConnectionLeaked: Service com.google.pixel.exo.core.PersistentService has leaked ServiceConnection com.google.pixel.exo.core.PersistentService$1@ab2cc8e that was originally bound here
+11-18 17:50:43.323  3758  3758 E ActivityThread: 	at android.app.LoadedApk$ServiceDispatcher.<init>(LoadedApk.java:1934)
+11-18 17:50:43.323  3758  3758 E ActivityThread: 	at android.app.LoadedApk.getServiceDispatcherCommon(LoadedApk.java:1806)
+11-18 17:50:43.323  3758  3758 E ActivityThread: 	at android.app.LoadedApk.getServiceDispatcher(LoadedApk.java:1785)
+11-18 17:50:43.323  3758  3758 E ActivityThread: 	at android.app.ContextImpl.bindServiceCommon(ContextImpl.java:1966)
+11-18 17:50:43.323  3758  3758 E ActivityThread: 	at android.app.ContextImpl.bindService(ContextImpl.java:1897)
+11-18 17:50:43.323  3758  3758 E ActivityThread: 	at android.content.ContextWrapper.bindService(ContextWrapper.java:812)
+11-18 17:50:43.323  3758  3758 E ActivityThread: 	at com.google.pixel.exo.core.PersistentService.bindToWirecutter(PersistentService.java:131)
+11-18 17:50:43.323  3758  3758 E ActivityThread: 	at com.google.pixel.exo.core.PersistentService.onStartCommand(PersistentService.java:121)
+11-18 17:50:43.323  3758  3758 E ActivityThread: 	at android.app.ActivityThread.handleServiceArgs(ActivityThread.java:4639)
+11-18 17:50:43.323  3758  3758 E ActivityThread: 	at android.app.ActivityThread.access$2000(ActivityThread.java:247)
+11-18 17:50:43.323  3758  3758 E ActivityThread: 	at android.app.ActivityThread$H.handleMessage(ActivityThread.java:2091)
+11-18 17:50:43.323  3758  3758 E ActivityThread: 	at android.os.Handler.dispatchMessage(Handler.java:106)
+11-18 17:50:43.323  3758  3758 E ActivityThread: 	at android.os.Looper.loopOnce(Looper.java:201)
+11-18 17:50:43.323  3758  3758 E ActivityThread: 	at android.os.Looper.loop(Looper.java:288)
+11-18 17:50:43.323  3758  3758 E ActivityThread: 	at android.app.ActivityThread.main(ActivityThread.java:7839)
+11-18 17:50:43.323  3758  3758 E ActivityThread: 	at java.lang.reflect.Method.invoke(Native Method)
+11-18 17:50:43.323  3758  3758 E ActivityThread: 	at com.android.internal.os.RuntimeInit$MethodAndArgsCaller.run(RuntimeInit.java:548)
+11-18 17:50:43.323  3758  3758 E ActivityThread: 	at com.android.internal.os.ZygoteInit.main(ZygoteInit.java:1003)
+11-18 17:50:43.324   540   555 W ActivityManager: Unbind failed: could not find connection for android.os.BinderProxy@9c7eda8
+11-18 17:50:43.676  1523  1690 W NamedFutures: Timeout future task has been cancelled: 10000 milliseconds
+11-18 17:50:43.676  1523  1621 I GsaConfigFlagsSyncer: Flag sync cancelled.
+11-18 17:50:44.010  4838  4857 D EGL_emulation: app_time_stats: avg=337.87ms min=6.94ms max=1905.46ms count=8
+11-18 17:50:44.012  4838  4838 I Choreographer: Skipped 114 frames!  The application may be doing too much work on its main thread.
+11-18 17:50:44.031  4838  4922 I OpenGLRenderer: Davey! duration=1921ms; Flags=0, FrameTimelineVsyncId=4513, IntendedVsync=122977308832, Vsync=122977308832, InputEventId=0, HandleInputStart=122988981700, AnimationStart=122989009500, PerformTraversalsStart=122993004500, DrawStart=122993120500, FrameDeadline=123010642164, FrameInterval=122988950400, FrameStartTime=16666666, SyncQueued=122993544900, SyncStart=123004591300, IssueDrawCommandsStart=123004696400, SwapBuffers=124907860800, FrameCompleted=124909813600, DequeueBufferDuration=16700, QueueBufferDuration=439800, GpuCompleted=124909624600, SwapBuffersCompleted=124909813600, DisplayPresentTime=0, 
+11-18 17:50:44.175  4838  4922 I OpenGLRenderer: Davey! duration=1965ms; Flags=0, FrameTimelineVsyncId=4516, IntendedVsync=123010642164, Vsync=124910642088, InputEventId=0, HandleInputStart=124912366900, AnimationStart=124912382100, PerformTraversalsStart=124914834700, DrawStart=124914944500, FrameDeadline=123043975496, FrameInterval=124912229800, FrameStartTime=16666666, SyncQueued=124915498000, SyncStart=124995562600, IssueDrawCommandsStart=124995618600, SwapBuffers=125000351000, FrameCompleted=125056453000, DequeueBufferDuration=43600, QueueBufferDuration=671200, GpuCompleted=125056232600, SwapBuffersCompleted=125056453000, DisplayPresentTime=0, 
+11-18 17:50:46.503  4838  4929 D ProfileInstaller: Installing profile for com.example.deepseekchat
+11-18 17:50:48.198   540   563 D CompatibilityChangeReporter: Compat change id reported: 158002302; UID 10145; state: ENABLED
+11-18 17:50:48.796   540   540 D AutofillInlineSuggestionsRequestSession: onCreateInlineSuggestionsRequestLocked called: 1073741824:65538@595782026
+11-18 17:50:48.797   540  3624 D AutofillInlineSuggestionsRequestSession: onInlineSuggestionsUnsupported() called.
+11-18 17:50:48.797   540   555 D AutofillInlineSuggestionsRequestSession: onInlineSuggestionsSessionInvalidated() called.
+11-18 17:50:48.800  4838  4838 I AssistStructure: Flattened final assist data: 2832 bytes, containing 1 windows, 7 views
+11-18 17:50:48.805  1239  1239 I GoogleInputMethodService: GoogleInputMethodService.onStartInput():2002 
+11-18 17:50:48.806  1239  1239 I DeviceUnlockedTag: DeviceUnlockedTag.notifyDeviceLockStatusChanged():31 Notify device unlocked.
+11-18 17:50:48.806  1239  1239 W SessionManager: SessionManager.beginSession():53 Try to begin an already begun session [INPUT_SESSION], end it first
+11-18 17:50:48.806  4838  4838 D InputMethodManager: showSoftInput() view=com.getcapacitor.CapacitorWebView{a3b0cb7 VFEDHVC.. .F...... 0,0-1080,1731 #7f0800c2 app:id/webview aid=1073741824} flags=0 reason=SHOW_SOFT_INPUT
+11-18 17:50:48.807  1239  1239 I GoogleInputMethodService: GoogleInputMethodService.onStartInputView():2148 
+11-18 17:50:48.809  1062  1062 W svc     : Pending fill request while another request in the same session was triggered. [CONTEXT service_id=177 ]
+11-18 17:50:48.812  1239  1239 I DeviceUnlockedTag: DeviceUnlockedTag.notifyDeviceLockStatusChanged():31 Notify device unlocked.
+11-18 17:50:48.819   540   540 E RemoteAugmentedAutofillService: Bad service name for flags 1048704: com.google.android.as/com.google.android.apps.miphone.aiai.app.AiAiAugmentedAutofillService
+11-18 17:50:48.820   540   540 D AutofillInlineSuggestionsRequestSession: onInlineSuggestionsResponseLocked called for:1073741824:65538@595782026
+11-18 17:50:48.821   540   560 D AutofillUI: destroySaveUiUiThread(): already destroyed
+11-18 17:50:48.823   930   930 V InlineSuggestionRenderService: handleDestroySuggestionViews called for 0:595782026
+11-18 17:50:48.823  1483  1483 D BoundBrokerSvc: onBind: Intent { act=com.google.android.gms.auth.api.phone.service.SmsRetrieverApiService.START dat=chimera-action: cmp=com.google.android.gms/.chimera.GmsApiService }
+11-18 17:50:48.823  1483  1483 D BoundBrokerSvc: Loading bound service for intent: Intent { act=com.google.android.gms.auth.api.phone.service.SmsRetrieverApiService.START dat=chimera-action: cmp=com.google.android.gms/.chimera.GmsApiService }
+11-18 17:50:48.853  4838  4857 D EGL_emulation: app_time_stats: avg=605.40ms min=52.98ms max=4308.65ms count=8
+11-18 17:50:48.969  1239  1239 W InputConnectionWrapper: InputConnectionWrapper.recordDuration():1449 IPC IC_GET_SURROUNDING_TEXT took 156 ms
+11-18 17:50:48.969  1239  1239 I KeyboardViewUtil: KeyboardViewUtil.getKeyboardHeightRatio():166 systemKeyboardHeightRatio:1.000000; userKeyboardHeightRatio:1.000000.
+11-18 17:50:48.970  1239  1239 I AndroidIME: AbstractIme.onActivate():86 LatinIme.onActivate() : EditorInfo = inputType=URI imeActionName=GO dump=[inputType=0x11 imeOptions=0x12000002 privateImeOptions=null actionLabel=null actionId=0 initialSelStart=0 initialSelEnd=0 initialCapsMode=0x0 hintText=null label=null packageName=com.example.deepseekchat autofillId=1073741824 fieldId=2131230914 fieldName=null extras=null hintLocales=null contentMimeTypes=null ], IncognitoMode = false, DeviceLocked = false
+11-18 17:50:48.970  1239  1239 I Delight5Facilitator: Delight5Facilitator.initializeForIme():718 initializeForIme() : Locale = [en_US], layout = qwerty
+11-18 17:50:48.971  1239  1239 I VoiceInputManagerWrapper: VoiceInputManagerWrapper.cancelShutdown():54 cancelShutdown()
+11-18 17:50:48.971  1239  1239 I VoiceInputManagerWrapper: VoiceInputManagerWrapper.syncLanguagePacks():66 syncLanguagePacks()
+11-18 17:50:48.971  1239  1239 I LatinIme: LatinIme.updateEnableInlineSuggestionsOnDecoderSideFlags():1293 inline flag updated to:false
+11-18 17:50:48.972  1239  4211 I SpeechFactory: SpeechRecognitionFactory.maybeScheduleAutoPackDownloadForFallback():182 maybeScheduleAutoPackDownloadForFallback()
+11-18 17:50:48.972  1239  4211 I FallbackOnDeviceRecognitionProvider: FallbackOnDeviceRecognitionProvider.maybeScheduleAutoPackDownload():194 maybeScheduleAutoPackDownload() for language tag en-US
+11-18 17:50:48.975  1239  1239 I KeyboardWrapper: KeyboardWrapper.consumeEvent():287 Skip consuming an event as current keyboard is deactivated (state=0, keyboard existence=true)
+11-18 17:50:48.979  1239  1239 I KeyboardViewUtil: KeyboardViewUtil.calculateMaxKeyboardBodyHeight():62 leave 375 height for app when screen height:1794, header height:132 and isFullscreenMode:false, so the max keyboard body height is:1287
+11-18 17:50:48.980  1239  1239 I NormalModeController: NormalModeController.getKeyboardBodyViewHolderPaddingBottom():109 currentPrimeKeyboardType:SOFT systemPaddingBottom:-1
+11-18 17:50:48.982  1239  1239 I KeyboardViewUtil: KeyboardViewUtil.calculateMaxKeyboardBodyHeight():62 leave 375 height for app when screen height:1794, header height:132 and isFullscreenMode:false, so the max keyboard body height is:1287
+11-18 17:50:48.984  1239  1239 I NormalModeController: NormalModeController.getKeyboardBodyViewHolderPaddingBottom():109 currentPrimeKeyboardType:SOFT systemPaddingBottom:-1
+11-18 17:50:48.984   540  3624 I ActivityManager: Killing 3607:com.google.android.youtube/u0a124 (adj 975): empty #17
+11-18 17:50:48.990  1239  1239 I NormalModeController: NormalModeController.getKeyboardBodyViewHolderPaddingBottom():109 currentPrimeKeyboardType:SOFT systemPaddingBottom:-1
+11-18 17:50:48.994  1239  1239 I ConversationToQueryExtension: ConversationToQueryExtension.isEnabledForHostApp():220 Conv2Query not enabled due to current app [com.example.deepseekchat] not in allowlist
+11-18 17:50:48.994  1239  1239 I ConversationToQueryExtension: ConversationToQueryExtension.onActivate():130 onActivate() : Disabled by unsupported host app
+11-18 17:50:48.995  1239  1933 I Delight5Decoder: Delight5DecoderWrapper.setKeyboardLayout():434 setKeyboardLayout()
+11-18 17:50:48.997  1239  1239 I VoiceImeExtension: VoiceImeExtension.shouldStartVoiceInputAutomatically():354 No private IME option set to start voice input.
+11-18 17:50:49.008   352   393 D goldfish-address-space: claimShared: Ask to claim region [0x3fb2ba000 0x3fba61000]
+11-18 17:50:49.009   540  1993 D ConnectivityService: ConnectivityService NetworkRequestInfo binderDied(uid/pid:10124/3607, android.os.BinderProxy@1b64677)
+11-18 17:50:49.010   540  1993 D ConnectivityService: ConnectivityService NetworkRequestInfo binderDied(uid/pid:10124/3607, android.os.BinderProxy@b1e72e4)
+11-18 17:50:49.010   540  1993 D ConnectivityService: ConnectivityService NetworkRequestInfo binderDied(uid/pid:10124/3607, android.os.BinderProxy@350934d)
+11-18 17:50:49.010   540  1997 D ConnectivityService: ConnectivityService NetworkRequestInfo binderDied(uid/pid:10124/3607, android.os.BinderProxy@93ed313)
+11-18 17:50:49.010   540   655 D ConnectivityService: releasing NetworkRequest [ REQUEST id=91, [ Capabilities: INTERNET&NOT_RESTRICTED&TRUSTED&NOT_VCN_MANAGED Uid: 10124 RequestorUid: 10124 RequestorPkg: com.google.android.youtube] ] (release request)
+11-18 17:50:49.011   540  2990 D ConnectivityService: ConnectivityService NetworkRequestInfo binderDied(uid/pid:10124/3607, android.os.BinderProxy@be5e02)
+11-18 17:50:49.017   334   334 I Zygote  : Process 3607 exited due to signal 9 (Killed)
+11-18 17:50:49.023   715   810 D EGL_emulation: app_time_stats: avg=1696.46ms min=14.22ms max=8389.35ms count=5
+11-18 17:50:49.032   540  1994 I ActivityManager: Killing 1176:com.google.android.cellbroadcastreceiver/u0a139 (adj 985): empty #17
+11-18 17:50:49.038   540   572 I libprocessgroup: Successfully killed process cgroup uid 10124 pid 3607 in 46ms
+11-18 17:50:49.045   352   393 D goldfish-address-space: claimShared: Ask to claim region [0x3fa2e8000 0x3faa8f000]
+11-18 17:50:49.052  4838  4838 D InsetsController: show(ime(), fromIme=true)
+11-18 17:50:49.074   334   334 I Zygote  : Process 1176 exited due to signal 9 (Killed)
+11-18 17:50:49.084   352   393 D goldfish-address-space: claimShared: Ask to claim region [0x3f8957000 0x3f90fe000]
+11-18 17:50:49.084   540   572 I libprocessgroup: Successfully killed process cgroup uid 10139 pid 1176 in 45ms
+11-18 17:50:49.306   540   655 D ConnectivityService: releasing NetworkRequest [ REQUEST id=95, [ Capabilities: INTERNET&NOT_RESTRICTED&TRUSTED&NOT_VCN_MANAGED Uid: 10124 RequestorUid: 10124 RequestorPkg: com.google.android.youtube] ] (release request)
+11-18 17:50:49.307   540   655 D ConnectivityService: releasing NetworkRequest [ REQUEST id=100, [ Capabilities: INTERNET&NOT_RESTRICTED&TRUSTED&NOT_VCN_MANAGED Uid: 10124 RequestorUid: 10124 RequestorPkg: com.google.android.youtube] ] (release request)
+11-18 17:50:49.308   540   655 D ConnectivityService: releasing NetworkRequest [ REQUEST id=93, [ Capabilities: INTERNET&NOT_RESTRICTED&TRUSTED&NOT_VCN_MANAGED Uid: 10124 RequestorUid: 10124 RequestorPkg: com.google.android.youtube] ] (release request)
+11-18 17:50:49.316   540   563 W system_server: Long monitor contention with owner android.display (562) at void com.android.server.wm.WindowManagerService$H.handleMessage(android.os.Message)(WindowManagerService.java:5307) waiters=0 in void com.android.server.wm.WindowSurfacePlacer$Traverser.run() for 245ms
+11-18 17:50:49.318   540   555 W system_server: Long monitor contention with owner android.display (562) at void com.android.server.wm.WindowManagerService$H.handleMessage(android.os.Message)(WindowManagerService.java:5307) waiters=2 in boolean com.android.server.wm.WindowManagerService$LocalService.isHardKeyboardAvailable() for 166ms
+11-18 17:50:49.320   540   569 W system_server: Long monitor contention with owner Binder:540_1E (2003) at void com.android.server.am.ActivityManagerService$AppDeathRecipient.binderDied()(ActivityManagerService.java:1438) waiters=0 in void com.android.server.am.ContentProviderHelper.handleProviderRemoval(com.android.server.am.ContentProviderConnection, boolean, boolean) for 182ms
+11-18 17:50:49.677   540   540 D AutofillInlineSuggestionsRequestSession: onCreateInlineSuggestionsRequestLocked called: 1073741824:131074@1050970154
+11-18 17:50:49.678  4838  4838 I AssistStructure: Flattened final assist data: 2836 bytes, containing 1 windows, 7 views
+11-18 17:50:49.683  1239  1239 W InputContextProxy: InputContextProxy.applyClientDiffInternal():892 Ignore [FetchSuggestions] diff due to stale request: 98<100, inputStateId=95, lastInputStateId=96
+11-18 17:50:49.685  1239  1239 I InlineSuggestionCandidateViewController: InlineSuggestionCandidateViewController.textCandidatesUpdated():621 Not showing inline suggestion tooltip v2; has candidates
+11-18 17:50:49.689   540   555 D AutofillInlineSuggestionsRequestSession: onInlineSuggestionsSessionInvalidated() called.
+11-18 17:50:49.690   540   555 D AutofillInlineSuggestionsRequestSession: onInlineSuggestionsUnsupported() called.
+11-18 17:50:49.697  1062  1062 W svc     : Pending fill request while another request in the same session was triggered. [CONTEXT service_id=177 ]
+11-18 17:50:49.699   540   540 E RemoteAugmentedAutofillService: Bad service name for flags 1048704: com.google.android.as/com.google.android.apps.miphone.aiai.app.AiAiAugmentedAutofillService
+11-18 17:50:49.699   540   540 D AutofillInlineSuggestionsRequestSession: onInlineSuggestionsResponseLocked called for:1073741824:131074@1050970154
+11-18 17:50:49.699   540   560 D AutofillUI: destroySaveUiUiThread(): already destroyed
+11-18 17:50:49.700   930   930 V InlineSuggestionRenderService: handleDestroySuggestionViews called for 0:1050970154
+11-18 17:50:49.864  4838  4857 D EGL_emulation: app_time_stats: avg=111.90ms min=38.51ms max=288.14ms count=9
+11-18 17:50:49.998  1239  1239 W InputConnectionWrapper: InputConnectionWrapper.recordDuration():1449 IPC IC_GET_SURROUNDING_TEXT took 215 ms
+11-18 17:50:50.055  1239  1239 I InlineSuggestionCandidateViewController: InlineSuggestionCandidateViewController.textCandidatesUpdated():621 Not showing inline suggestion tooltip v2; has candidates
+11-18 17:50:50.132  1239  1239 W InputContextProxy: InputContextProxy.applyClientDiffInternal():892 Ignore [FetchSuggestions] diff due to stale request: 105<106, inputStateId=102, lastInputStateId=103
+11-18 17:50:50.135  1239  1239 I KeyboardViewController: KeyboardViewController.lambda$showSelfAndAncestors$6():594 current view doesn't has the priority com.google.android.apps.inputmethod.libs.framework.keyboard.widget.AccessPointsBar{645a5ce I.E...... ......ID 108,0-960,132 #7f0b0017 app:id/0_resource_name_obfuscated} to show itself, DEFAULT
+11-18 17:50:50.226  1239  1876 D EGL_emulation: app_time_stats: avg=120.72ms min=3.54ms max=517.25ms count=9
+11-18 17:50:50.331   333  4979 D resolv  : ResNSendHandler::run: 0 / {100 983140 100 983140 1073 1}
+11-18 17:50:50.332   333  4979 I resolv  : resolv_populate_res_for_net: netid=100
+11-18 17:50:50.332   333  4979 D resolv  : res_nsend
+11-18 17:50:50.332   333  4979 I resolv  : resolv_cache_lookup: lookup
+11-18 17:50:50.333   333  4979 I resolv  : resolv_cache_lookup: NOT IN CACHE (STALE ENTRY 0x77f9a687ef90DISCARDED)
+11-18 17:50:50.333   333  4979 I resolv  : _cache_remove_p: entry 4 removed (count=23)
+11-18 17:50:50.333   333  4979 I resolv  : resolv_populate_res_for_net: netid=100
+11-18 17:50:50.333   333  4979 I resolv  : res_stats_usable_server: NS stats: S 26 + E 0 + T 0 + I 0 = 26, rtt = 19, min_samples = 8
+11-18 17:50:50.333   333  4979 I resolv  : res_stats_usable_server: success rate 100
+11-18 17:50:50.333   333  4979 D resolv  : res_nsend: Querying server (# 1) address = 10.0.2.3:53
+11-18 17:50:50.334   333  4979 D resolv  : send_dg: new DG socket
+11-18 17:50:50.336   333  4979 I resolv  : get_timeout: using timeout of 5000 msec
+11-18 17:50:50.337   333  4979 I resolv  : retrying_poll: 58 retrying_poll
+11-18 17:50:50.337   333  4980 D resolv  : ResNSendHandler::run: 0 / {100 983140 100 983140 1073 1}
+11-18 17:50:50.337   333  4980 I resolv  : resolv_populate_res_for_net: netid=100
+11-18 17:50:50.337   333  4980 D resolv  : res_nsend
+11-18 17:50:50.337   333  4980 I resolv  : resolv_cache_lookup: lookup
+11-18 17:50:50.337   333  4980 I resolv  : resolv_cache_lookup: FOUND IN CACHE entry=0x77f99687c270
+11-18 17:50:50.337   333  4981 D resolv  : ResNSendHandler::run: 0 / {100 983140 100 983140 1073 1}
+11-18 17:50:50.337   333  4981 I resolv  : resolv_populate_res_for_net: netid=100
+11-18 17:50:50.337   333  4981 D resolv  : res_nsend
+11-18 17:50:50.337   333  4981 I resolv  : resolv_cache_lookup: lookup
+11-18 17:50:50.337   333  4981 I resolv  : resolv_cache_lookup: FOUND IN CACHE entry=0x77f9b6872c50
+11-18 17:50:50.340   333  4979 I resolv  : retrying_poll: 58 retrying_poll returning 1
+11-18 17:50:50.340   333  4979 I resolv  : res_nsend: used send_dg 60 terrno: 0
+11-18 17:50:50.340   333  4979 I resolv  : res_stats_set_sample: rcode = 0, sec = 3
+11-18 17:50:50.340   333  4979 I resolv  : res_cache_add_stats_sample_locked: adding sample to stats, next = 26, count = 26
+11-18 17:50:50.340   333  4979 D resolv  : res_nsend: got answer:
+11-18 17:50:50.340   333  4979 I resolv  : answer_getTTL: TTL = 106
+11-18 17:50:50.341   333  4979 I resolv  : _cache_add_p: entry 27 added (count=24)
+11-18 17:50:50.341   333  4979 I resolv  : cache_dump_mru_locked: MRU LIST (24):  27 3 19 26 25 2 24 7 23 22 21 20 10 9 18 17 16 15 11 12 14 13 6 5
+11-18 17:50:50.341   333  4982 D resolv  : ResNSendHandler::run: 0 / {100 983140 100 983140 1073 1}
+11-18 17:50:50.341   333  4982 I resolv  : resolv_populate_res_for_net: netid=100
+11-18 17:50:50.341   333  4982 D resolv  : res_nsend
+11-18 17:50:50.342   333  4982 I resolv  : resolv_cache_lookup: lookup
+11-18 17:50:50.342   333  4982 I resolv  : resolv_cache_lookup: NOT IN CACHE (STALE ENTRY 0x77f9b6874070DISCARDED)
+11-18 17:50:50.342   333  4982 I resolv  : _cache_remove_p: entry 2 removed (count=23)
+11-18 17:50:50.343   333  4982 I resolv  : resolv_populate_res_for_net: netid=100
+11-18 17:50:50.343   333  4982 I resolv  : res_stats_usable_server: NS stats: S 27 + E 0 + T 0 + I 0 = 27, rtt = 18, min_samples = 8
+11-18 17:50:50.343   333  4982 I resolv  : res_stats_usable_server: success rate 100
+11-18 17:50:50.343   333  4982 D resolv  : res_nsend: Querying server (# 1) address = 10.0.2.3:53
+11-18 17:50:50.343   333  4982 D resolv  : send_dg: new DG socket
+11-18 17:50:50.344   333  4982 I resolv  : get_timeout: using timeout of 5000 msec
+11-18 17:50:50.345   333  4982 I resolv  : retrying_poll: 58 retrying_poll
+11-18 17:50:50.345   812  4977 D NetworkMonitor/100: PROBE_DNS www.google.com 18ms OK 157.240.7.20,2001::1
+11-18 17:50:50.349   333  4982 I resolv  : retrying_poll: 58 retrying_poll returning 1
+11-18 17:50:50.349   333  4982 I resolv  : res_nsend: used send_dg 63 terrno: 0
+11-18 17:50:50.349   333  4982 I resolv  : res_stats_set_sample: rcode = 0, sec = 4
+11-18 17:50:50.349   333  4982 I resolv  : res_cache_add_stats_sample_locked: adding sample to stats, next = 27, count = 27
+11-18 17:50:50.349   333  4982 D resolv  : res_nsend: got answer:
+11-18 17:50:50.349   333  4982 I resolv  : answer_getTTL: TTL = 294
+11-18 17:50:50.349   333  4982 I resolv  : _cache_add_p: entry 28 added (count=24)
+11-18 17:50:50.349   333  4982 I resolv  : cache_dump_mru_locked: MRU LIST (24):  28 27 3 19 26 25 24 7 23 22 21 20 10 9 18 17 16 15 11 12 14 13 6 5
+11-18 17:50:50.356   812  4978 D NetworkMonitor/100: PROBE_DNS connectivitycheck.gstatic.com 26ms OK 202.101.48.98,240e:983:1a04:7::1002
+11-18 17:50:50.361   333  4983 D resolv  : GetAddrInfoHandler::run: {100 983140 100 983140 1073 1}
+11-18 17:50:50.361   333  4983 D resolv  : resolv_getaddrinfo: explore_fqdn(): ai_family=0 ai_socktype=1 ai_protocol=6
+11-18 17:50:50.363   333  4984 D resolv  : doQuery: (1, 28)
+11-18 17:50:50.363   333  4985 D resolv  : doQuery: (1, 1)
+11-18 17:50:50.363   333  4984 D resolv  : res_nmkquery: (QUERY, IN, AAAA)
+11-18 17:50:50.363   333  4984 D resolv  : res_nsend
+11-18 17:50:50.363   333  4984 I resolv  : resolv_cache_lookup: lookup
+11-18 17:50:50.363   333  4984 I resolv  : resolv_cache_lookup: FOUND IN CACHE entry=0x77f9b6872c50
+11-18 17:50:50.363   333  4984 D resolv  : doQuery: rcode=0, ancount=1
+11-18 17:50:50.364   333  4985 D resolv  : res_nmkquery: (QUERY, IN, A)
+11-18 17:50:50.364   333  4985 D resolv  : res_nsend
+11-18 17:50:50.364   333  4985 I resolv  : resolv_cache_lookup: lookup
+11-18 17:50:50.364   333  4985 I resolv  : resolv_cache_lookup: FOUND IN CACHE entry=0x77f9b6874070
+11-18 17:50:50.364   333  4985 D resolv  : doQuery: rcode=0, ancount=1
+11-18 17:50:50.365   333  4986 D resolv  : GetAddrInfoHandler::run: {100 983140 100 983140 1073 1}
+11-18 17:50:50.365   333  4986 D resolv  : resolv_getaddrinfo: explore_fqdn(): ai_family=0 ai_socktype=1 ai_protocol=6
+11-18 17:50:50.365   333  4987 D resolv  : doQuery: (1, 28)
+11-18 17:50:50.366   333  4987 D resolv  : res_nmkquery: (QUERY, IN, AAAA)
+11-18 17:50:50.366   333  4987 D resolv  : res_nsend
+11-18 17:50:50.366   333  4987 I resolv  : resolv_cache_lookup: lookup
+11-18 17:50:50.366   333  4987 I resolv  : resolv_cache_lookup: FOUND IN CACHE entry=0x77f9a687e5d0
+11-18 17:50:50.367   333  4988 D resolv  : doQuery: (1, 1)
+11-18 17:50:50.367  1239  1239 W InputContextProxy: InputContextProxy.applyClientDiffInternal():892 Ignore [FetchSuggestions] diff due to stale request: 113<115, inputStateId=110, lastInputStateId=111
+11-18 17:50:50.367   333  4988 D resolv  : res_nmkquery: (QUERY, IN, A)
+11-18 17:50:50.367   333  4988 D resolv  : res_nsend
+11-18 17:50:50.367   333  4988 I resolv  : resolv_cache_lookup: lookup
+11-18 17:50:50.367   333  4987 D resolv  : doQuery: rcode=0, ancount=1
+11-18 17:50:50.367   333  4988 I resolv  : resolv_cache_lookup: FOUND IN CACHE entry=0x77f99687c270
+11-18 17:50:50.368   333  4988 D resolv  : doQuery: rcode=0, ancount=1
+11-18 17:50:50.408   812  4978 D NetworkMonitor/100: PROBE_HTTP http://connectivitycheck.gstatic.com/generate_204 Probe failed with exception java.io.IOException: unexpected end of stream on com.android.okhttp.Address@df2cca14
+11-18 17:50:50.450  1239  1239 W InputContextProxy: InputContextProxy.applyClientDiffInternal():892 Ignore [FetchSuggestions] diff due to stale request: 116<118, inputStateId=113, lastInputStateId=114
+11-18 17:50:50.779  1239  1239 W InputContextProxy: InputContextProxy.applyClientDiffInternal():892 Ignore [FetchSuggestions] diff due to stale request: 126<127, inputStateId=123, lastInputStateId=124
+11-18 17:50:50.859  1239  1239 W InputContextProxy: InputContextProxy.applyClientDiffInternal():892 Ignore [FetchSuggestions] diff due to stale request: 128<129, inputStateId=125, lastInputStateId=126
+11-18 17:50:50.895  4838  4857 D EGL_emulation: app_time_stats: avg=56.37ms min=31.15ms max=115.63ms count=18
+11-18 17:50:50.958  1239  1239 I InlineSuggestionCandidateViewController: InlineSuggestionCandidateViewController.textCandidatesUpdated():621 Not showing inline suggestion tooltip v2; has candidates
+11-18 17:50:51.028  1569  3395 W FirebaseInstanceId: Token retrieval failed: SERVICE_NOT_AVAILABLE. Will retry token retrieval
+11-18 17:50:51.143   333  4991 D resolv  : GetAddrInfoHandler::run: {100 786532 100 983140 10101 0}
+11-18 17:50:51.143   333  4991 D resolv  : resolv_getaddrinfo: explore_fqdn(): ai_family=0 ai_socktype=1 ai_protocol=6
+11-18 17:50:51.144   333  4992 D resolv  : doQuery: (1, 28)
+11-18 17:50:51.145   333  4993 D resolv  : doQuery: (1, 1)
+11-18 17:50:51.145   333  4993 D resolv  : res_nmkquery: (QUERY, IN, A)
+11-18 17:50:51.145   333  4992 D resolv  : res_nmkquery: (QUERY, IN, AAAA)
+11-18 17:50:51.145   333  4992 D resolv  : res_nsend
+11-18 17:50:51.145   333  4993 D resolv  : res_nsend
+11-18 17:50:51.145   333  4992 I resolv  : resolv_cache_lookup: lookup
+11-18 17:50:51.145   333  4993 I resolv  : resolv_cache_lookup: lookup
+11-18 17:50:51.145   333  4992 I resolv  : resolv_cache_lookup: NOT IN CACHE
+11-18 17:50:51.145   333  4992 I resolv  : resolv_populate_res_for_net: netid=100
+11-18 17:50:51.145   333  4993 I resolv  : resolv_cache_lookup: NOT IN CACHE
+11-18 17:50:51.145   333  4993 I resolv  : resolv_populate_res_for_net: netid=100
+11-18 17:50:51.145   333  4992 I resolv  : res_stats_usable_server: NS stats: S 28 + E 0 + T 0 + I 0 = 28, rtt = 18, min_samples = 8
+11-18 17:50:51.145   333  4992 I resolv  : res_stats_usable_server: success rate 100
+11-18 17:50:51.146   333  4992 D resolv  : res_nsend: Querying server (# 1) address = 10.0.2.3:53
+11-18 17:50:51.146   333  4992 D resolv  : send_dg: new DG socket
+11-18 17:50:51.146   333  4992 I resolv  : get_timeout: using timeout of 5000 msec
+11-18 17:50:51.146   333  4992 I resolv  : retrying_poll: 58 retrying_poll
+11-18 17:50:51.149   333  4993 I resolv  : res_stats_usable_server: NS stats: S 28 + E 0 + T 0 + I 0 = 28, rtt = 18, min_samples = 8
+11-18 17:50:51.149   333  4993 I resolv  : res_stats_usable_server: success rate 100
+11-18 17:50:51.150   333  4993 D resolv  : res_nsend: Querying server (# 1) address = 10.0.2.3:53
+11-18 17:50:51.150   333  4993 D resolv  : send_dg: new DG socket
+11-18 17:50:51.150   333  4993 I resolv  : get_timeout: using timeout of 5000 msec
+11-18 17:50:51.150   333  4993 I resolv  : retrying_poll: 59 retrying_poll
+11-18 17:50:51.227   333  4993 I resolv  : retrying_poll: 59 retrying_poll returning 1
+11-18 17:50:51.227   333  4993 I resolv  : res_nsend: used send_dg 180 terrno: 0
+11-18 17:50:51.227   333  4993 I resolv  : res_stats_set_sample: rcode = 0, sec = 77
+11-18 17:50:51.227   333  4993 I resolv  : res_cache_add_stats_sample_locked: adding sample to stats, next = 28, count = 28
+11-18 17:50:51.227   333  4993 D resolv  : res_nsend: got answer:
+11-18 17:50:51.227   333  4993 I resolv  : answer_getTTL: TTL = 300
+11-18 17:50:51.227   333  4993 I resolv  : _cache_add_p: entry 29 added (count=25)
+11-18 17:50:51.227   333  4993 I resolv  : cache_dump_mru_locked: MRU LIST (25):  29 19 27 28 3 26 25 24 7 23 22 21 20 10 9 18 17 16 15 11 12 14 13 6 5
+11-18 17:50:51.228   333  4993 D resolv  : doQuery: rcode=0, ancount=8
+11-18 17:50:51.230  2011  2030 D libEGL  : loaded /vendor/lib64/egl/libEGL_emulation.so
+11-18 17:50:51.231  2011  2030 D libEGL  : loaded /vendor/lib64/egl/libGLESv1_CM_emulation.so
+11-18 17:50:51.231   333  4992 I resolv  : retrying_poll: 58 retrying_poll returning 1
+11-18 17:50:51.231   333  4992 I resolv  : res_nsend: used send_dg 276 terrno: 0
+11-18 17:50:51.231   333  4992 I resolv  : res_stats_set_sample: rcode = 0, sec = 85
+11-18 17:50:51.231   333  4992 I resolv  : res_cache_add_stats_sample_locked: adding sample to stats, next = 29, count = 29
+11-18 17:50:51.231   333  4992 D resolv  : res_nsend: got answer:
+11-18 17:50:51.231   333  4992 I resolv  : answer_getTTL: TTL = 300
+11-18 17:50:51.231   333  4992 I resolv  : _cache_add_p: entry 30 added (count=26)
+11-18 17:50:51.231   333  4992 I resolv  : cache_dump_mru_locked: MRU LIST (26):  30 29 19 27 28 3 26 25 24 7 23 22 21 20 10 9 18 17 16 15 11 12 14 13 6 5
+11-18 17:50:51.231   333  4992 D resolv  : doQuery: rcode=0, ancount=8
+11-18 17:50:51.232  2011  2030 D libEGL  : loaded /vendor/lib64/egl/libGLESv2_emulation.so
+11-18 17:50:51.249  2011  2030 D HostConnection: createUnique: call
+11-18 17:50:51.249  2011  2030 D HostConnection: HostConnection::get() New Host Connection established 0x7f7d93d4a890, tid 2030
+11-18 17:50:51.254  2011  2030 D HostConnection: HostComposition ext ANDROID_EMU_CHECKSUM_HELPER_v1 ANDROID_EMU_native_sync_v2 ANDROID_EMU_dma_v1 ANDROID_EMU_direct_mem ANDROID_EMU_host_composition_v1 ANDROID_EMU_host_composition_v2 ANDROID_EMU_vulkan ANDROID_EMU_deferred_vulkan_commands ANDROID_EMU_vulkan_null_optional_strings ANDROID_EMU_vulkan_create_resources_with_requirements ANDROID_EMU_YUV_Cache ANDROID_EMU_vulkan_ignored_handles ANDROID_EMU_has_shared_slots_host_memory_allocator ANDROID_EMU_vulkan_free_memory_sync ANDROID_EMU_vulkan_shader_float16_int8 ANDROID_EMU_vulkan_async_queue_submit ANDROID_EMU_vulkan_queue_submit_with_commands ANDROID_EMU_sync_buffer_data ANDROID_EMU_vulkan_async_qsri ANDROID_EMU_read_color_buffer_dma GL_OES_EGL_image_external_essl3 GL_OES_vertex_array_object GL_KHR_texture_compression_astc_ldr ANDROID_EMU_host_side_tracing ANDROID_EMU_gles_max_version_3_0 
+11-18 17:50:51.255   194   194 I hwservicemanager: getTransport: Cannot find entry android.hardware.configstore@1.0::ISurfaceFlingerConfigs/default in either framework or device VINTF manifest.
+11-18 17:50:51.258  2011  2030 D EGL_emulation: eglCreateContext: 0x7f7d93d4a950: maj 3 min 0 rcv 3
+11-18 17:50:51.259  2011  2030 D EGL_emulation: eglMakeCurrent: 0x7f7d93d4a950: ver 3 0 (tinfo 0x7f7fa5e75080) (first time)
+11-18 17:50:51.304  1239  1876 D EGL_emulation: app_time_stats: avg=215.54ms min=84.36ms max=538.84ms count=5
+11-18 17:50:51.508  2011  2030 D EGL_emulation: eglCreateContext: 0x7f7d93d47290: maj 3 min 0 rcv 3
+11-18 17:50:51.726  1239  1239 I GoogleInputMethodService: GoogleInputMethodService.onFinishInputView():2365 
+11-18 17:50:51.727  1239  1239 I InlineSuggestionCandidateViewController: InlineSuggestionCandidateViewController.setInlineSuggestionCandidateImpl():1163 set  to inlineSuggestionTextView
+11-18 17:50:51.728  1239  1239 I KeyboardWrapper: KeyboardWrapper.consumeEvent():287 Skip consuming an event as current keyboard is deactivated (state=0, keyboard existence=true)
+11-18 17:50:51.728  1239  1239 I VoiceInputManagerWrapper: VoiceInputManagerWrapper.shutdown():76 shutdown()
+11-18 17:50:51.729  1239  1239 I AndroidIME: AbstractIme.onDeactivate():207 LatinIme.onDeactivate()
+11-18 17:50:51.732  1239  1239 I GoogleInputMethodService: GoogleInputMethodService.onStartInput():2002 
+11-18 17:50:51.733  1239  1239 I DeviceUnlockedTag: DeviceUnlockedTag.notifyDeviceLockStatusChanged():31 Notify device unlocked.
+11-18 17:50:51.734  1239  1239 W SessionManager: SessionManager.beginSession():53 Try to begin an already begun session [INPUT_SESSION], end it first
+11-18 17:50:51.739   715   810 D EGL_emulation: app_time_stats: avg=230.88ms min=2.13ms max=2159.99ms count=11
+11-18 17:50:51.912  4838  4857 D EGL_emulation: app_time_stats: avg=169.48ms min=50.61ms max=351.21ms count=6
+11-18 17:50:52.650  4838  4838 I Capacitor/Console: File: https://localhost/ - Line 351 - Msg: [object Object]
+11-18 17:50:52.652  4838  4838 V Capacitor/Plugin: To native (Capacitor plugin): callbackId: 7701064, pluginId: CapacitorHttp, methodName: get
+11-18 17:50:52.652  4838  4838 V Capacitor: callback: 7701064, pluginId: CapacitorHttp, methodName: get, methodData: {"url":"http:\/\/10.0.2.2:5411\/a\/corrupt-branch","responseType":"arraybuffer","connectTimeout":10000,"readTimeout":12000,"headers":{"Accept":"application\/zip,application\/octet-stream,*\/*","Range":"bytes=0-4095"}}
+11-18 17:50:52.665  4838  4998 I CapacitorCookies: Getting cookies at: 'http://10.0.2.2:5411/a/corrupt-branch'
+11-18 17:50:52.741   540  2003 D ActivityManager: freezer override set to true
+11-18 17:50:52.778  4838  4853 I le.deepseekcha: Explicit concurrent copying GC freed 7682(452KB) AllocSpace objects, 0(0B) LOS objects, 49% free, 3766KB/7532KB, paused 438us,49us total 9.831ms
+11-18 17:50:52.804   540  2003 D ActivityManager: freezer override set to false
+11-18 17:50:52.923  4838  4874 D Capacitor: Handling local request: https://localhost/static/js/async/2785.d7819efc.js
+11-18 17:50:52.982  4838  4857 D EGL_emulation: app_time_stats: avg=151.64ms min=80.46ms max=377.58ms count=7
+11-18 17:50:52.986  4838  4838 I Capacitor/Console: File: https://localhost/ - Line 335 - Msg: {"status":206,"headers":{"Accept-Ranges":"bytes","Connection":"keep-alive","Content-Length":"2164","Content-Range":"bytes 0-2163/2164","Content-Type":"application/zip","Date":"Wed, 18 Nov 2026 17:50:52 GMT","Keep-Alive":"timeout=5","X-Android-Received-Millis":"1795024252835","X-Android-Response-Source":"NETWORK 206","X-Android-Selected-Protocol":"http/1.1","X-Android-Sent-Millis":"1795024252672"},"url":"http://10.0.2.2:5411/a/corrupt-branch","data":"UEsDBBQAAAgAAAAAIQAfyGIjGwAAABsAAAANAAAAbWFuaWZlc3QuanNvbnsiZXhwb3J0X2Zvcm1h\ndF92ZXJzaW9uIjozfVBLAwQUAAAIAAAAACEAUWJKr4QCAACEAgAAHgAAAGNoYXRfc2Vzc2lvbnMv\nc2Vzc2lvbi0wMDEuanNvbnsiaWQiOiJzZXNzaW9uLTAwMSIsInRpdGxlIjoi5aW95Lya6K+dIiwi\ncGlubmVkIjpmYWxzZSwiY3VycmVudF9tZXNzYWdlX2lkIjoyLCJpbnNlcnRlZF9hdCI6IjIwMjYt\nMTEtMDFUMDA6MDA6MDAuMDAwWiIsInVwZGF0ZWRfYXQiOiIyMDI2LTExLTAxVDAwOjAwOjAwLjAw\nMFoiLCJtZXNzYWdlcyI6W3siaWQiOjEsInBhcmVudF9pZCI6bnVsbCwicm9sZSI6IlVTRVIiLCJz\ndGF0dXMiOiJGSU5JU0hFRCIsInRoaW5raW5nX2VuYWJsZWQiOmZhbHNlLCJzZWFyY2hfZW5hYmxl\nZCI6ZmFsc2UsImFjY3VtdWxhdGVkX3Rva2VuX3VzYWdlIjowLCJpbnNlcnRlZF9hdCI6IjIwMjYt\nMTEtMDFUMDA6MDA6MDAuMDAwWiIsImZyYWdtZW50cyI6W3sidHlwZSI6IlJFUVVFU1QiLCJjb250\nZW50Ijoi6Zeu6aKYIDEifV19LHsiaWQiOjIsInBhcmVudF9pZCI6MSwicm9sZSI6IkFTU0lTVEFO\nVCIsInN0YXR1cyI6IkZJTklTSEVEIiwidGhpbmtpbmdfZW5hYmxlZCI6ZmFsc2UsInNlYXJjaF9l\nbmFibGVkIjpmYWxzZSwiYWNjdW11bGF0ZWRfdG9rZW5fdXNhZ2UiOjAsImluc2VydGVkX2F0Ijoi\nMjAyNi0xMS0wMVQwMDowMDowMC4wMDBaIiwiZnJhZ21lbnRzIjpbeyJ0eXBlIjoiUkVTUE9OU0Ui\nLCJjb250ZW50Ijoi5aW95Lya6K+d5q2j5paHIn1dfV19UEsDBBQAAAgAAAAAIQBgZaNdhgIAAIYC\nAAAeAAAAY2hhdF9zZXNzaW9ucy9zZXNzaW9uLTAwMi5qc29ueyJpZCI6InNlc3Npb24tMDAyIiwi\ndGl0bGUiOiLlnY/kvJror50iLCJwaW5uZWQiOmZhbHNlLCJjdXJyZW50X21lc3NhZ2VfaWQiOjIs\nImluc2VydGVkX2F0IjoiMjAyNi0xMS0wMVQwMDowMDowMC4wMDBaIiwidXBkYXRlZF9hdCI6IjIw\nMjYtMTEtMDFUMDA6MDA6MDAuMDAwWiIsIm1lc3NhZ2VzIjpbeyJpZCI6MSwicGFyZW50X2lkIjpu\ndWxsLCJyb2xlIjoiVVNFUiIsInN0YXR1cyI6IkZJTklTSEVEIiwidGhpbmtpbmdfZW5hYmxlZCI6\nZmFsc2UsInNlYXJjaF9lbmFibGVkIjpmYWxzZSwiYWNjdW11bGF0ZWRfdG9rZW5fdXNhZ2UiOjAs\nImluc2VydGVkX2F0IjoiMjAyNi0xMS0wMVQwMDowMDowMC4wMDBaIiwiZnJhZ21lbnRzIjpbeyJ0\neXBlIjoiUkVRVUVTVCIsImNvbnRlbnQiOiLpl67popggMSJ9XX0seyJpZCI6MiwicGFyZW50X2lk\nIjo5OTk5OTksInJvbGUiOiJBU1NJU1RBTlQiLCJzdGF0dXMiOiJGSU5JU0hFRCIsInRoaW5raW5n\nX2VuYWJsZWQiOmZhbHNlLCJzZWFyY2hfZW5hYmxlZCI6ZmFsc2UsImFjY3VtdWxhdGVkX3Rva2Vu\nX3VzYWdlIjowLCJpbnNlcnRlZF9hdCI6IjIwMjYtMTEtMDFUMDA6MDA6MDAuMDAwWiIsImZyYWdt\nZW50cyI6W3sidHlwZSI6IlJFU1BPTlNFIiwiY29udGVudCI6Iuato+W4uOS4gOadoSJ9XX1dfVBL\nAwQUAAAIAAAAACEA88D240kBAABJAQAAFwAAAGNoYXRfc2Vzc2lvbl9pbmRleC5qc29uW3siaWQi\nOiJzZXNzaW9uLTAwMSIsInRpdGxlIjoi5Lya6K+dIHNlc3Npb24tMDAxIiwicGlubmVkIjpmYWxz\nZSwibWVzc2FnZV9jb3VudCI6MiwiaW5zZXJ0ZWRfYXQiOiIyMDI2LTExLTAxVDAwOjAwOjAwLjAw\nMFoiLCJ1cGRhdGVkX2F0IjoiMjAyNi0xMS0wMVQwMDowMDowMC4wMDBaIn0seyJpZCI6InNlc3Np\nb24tMDAyIiwidGl0bGUiOiLkvJror50gc2Vzc2lvbi0wMDIiLCJwaW5uZWQiOmZhbHNlLCJtZXNz\nYWdlX2NvdW50IjoyLCJpbnNlcnRlZF9hdCI6IjIwMjYtMTEtMDFUMDA6MDA6MDAuMDAwWiIsInVw\nZGF0ZWRfYXQiOiIyMDI2LTExLTAxVDAwOjAwOjAwLjAwMFoifV1QSwECFAAUAAAIAAAAACEAH8hi\nIxsAAAAbAAAADQAAAAAAAAAAAAAAAAAAAAAAbWFuaWZlc3QuanNvblBLAQIUABQAAAgAAAAAIQBR\nYkqvhAIAAIQCAAAeAAAAAAAAAAAAAAAAAEYAAABjaGF0X3Nlc3Npb25zL3Nlc3Npb24tMDAxLmpz\nb25QSwECFAAUAAAIAAAAACEAYGWjXYYCAACGAgAAHgAAAAAAAAAAAAAAAAAGAwAAY2hhdF9zZXNz\naW9ucy9zZXNzaW9uLTAwMi5qc29uUEsBAhQAFAAACAAAAAAhAPPA9uNJAQAASQEAABcAAAAAAAAA\nAAAAAAAAyAUAAGNoYXRfc2Vzc2lvbl9pbmRleC5qc29uUEsFBgAAAAAEAAQAGAEAAEYHAAAAAA==\n"}
+11-18 17:50:53.115  1062  4969 I NetworkScheduler.Stats: Task com.google.android.gms/com.google.android.gms.auth.account.be.legacy.AuthCronService finished executing. cause:5 result: 3 elapsed_millis: 40045 uptime_millis: 40045 exec_start_elapsed_seconds: 93 [CONTEXT service_id=218 ]
+11-18 17:50:53.166  1062  4482 I NetworkScheduler.Stats: Task com.google.android.gms/com.google.android.gms.tapandpay.gcmtask.TapAndPayGcmTaskService started execution. cause:5 exec_start_elapsed_seconds: 134 [CONTEXT service_id=218 ]
+11-18 17:50:53.179  1062  4482 I NetworkScheduler.Stats: Task com.google.android.gms/com.google.android.gms.tapandpay.gcmtask.TapAndPayGcmTaskService finished executing. cause:5 result: 2 elapsed_millis: 36 uptime_millis: 36 exec_start_elapsed_seconds: 134 [CONTEXT service_id=218 ]
+11-18 17:50:53.217   352   393 D goldfish-address-space: claimShared: Ask to claim region [0x3f90fe000 0x3f98e7000]
+11-18 17:50:53.227   194   194 I hwservicemanager: getTransport: Cannot find entry android.hardware.graphics.mapper@4.0::IMapper/default in either framework or device VINTF manifest.
+11-18 17:50:53.249  5009  5013 I Gralloc4: mapper 4.x is not supported
+11-18 17:50:53.260  5009  5013 D HostConnection: createUnique: call
+11-18 17:50:53.261  5009  5013 D HostConnection: HostConnection::get() New Host Connection established 0x739bf2acdfd0, tid 5013
+11-18 17:50:53.261  5009  5013 D goldfish-address-space: allocate: Ask for block of size 0x100
+11-18 17:50:53.261  5009  5013 D goldfish-address-space: allocate: ioctl allocate returned offset 0x3f7ffe000 size 0x2000
+11-18 17:50:53.314  5009  5013 D HostConnection: HostComposition ext ANDROID_EMU_CHECKSUM_HELPER_v1 ANDROID_EMU_native_sync_v2 ANDROID_EMU_dma_v1 ANDROID_EMU_direct_mem ANDROID_EMU_host_composition_v1 ANDROID_EMU_host_composition_v2 ANDROID_EMU_vulkan ANDROID_EMU_deferred_vulkan_commands ANDROID_EMU_vulkan_null_optional_strings ANDROID_EMU_vulkan_create_resources_with_requirements ANDROID_EMU_YUV_Cache ANDROID_EMU_vulkan_ignored_handles ANDROID_EMU_has_shared_slots_host_memory_allocator ANDROID_EMU_vulkan_free_memory_sync ANDROID_EMU_vulkan_shader_float16_int8 ANDROID_EMU_vulkan_async_queue_submit ANDROID_EMU_vulkan_queue_submit_with_commands ANDROID_EMU_sync_buffer_data ANDROID_EMU_vulkan_async_qsri ANDROID_EMU_read_color_buffer_dma GL_OES_EGL_image_external_essl3 GL_OES_vertex_array_object GL_KHR_texture_compression_astc_ldr ANDROID_EMU_host_side_tracing ANDROID_EMU_gles_max_version_3_0 
+11-18 17:50:53.353   333  5014 D resolv  : GetAddrInfoHandler::run: {100 983140 100 983140 1073 1}
+11-18 17:50:53.353   333  5014 D resolv  : resolv_getaddrinfo: explore_fqdn(): ai_family=0 ai_socktype=1 ai_protocol=6
+11-18 17:50:53.357   333  5015 D resolv  : doQuery: (1, 28)
+11-18 17:50:53.358   333  5015 D resolv  : res_nmkquery: (QUERY, IN, AAAA)
+11-18 17:50:53.358   333  5015 D resolv  : res_nsend
+11-18 17:50:53.358   333  5015 I resolv  : resolv_cache_lookup: lookup
+11-18 17:50:53.358   333  5015 I resolv  : resolv_cache_lookup: FOUND IN CACHE entry=0x77f9a687e5d0
+11-18 17:50:53.359   333  5015 D resolv  : doQuery: rcode=0, ancount=1
+11-18 17:50:53.361   333  5016 D resolv  : doQuery: (1, 1)
+11-18 17:50:53.361   333  5016 D resolv  : res_nmkquery: (QUERY, IN, A)
+11-18 17:50:53.361   333  5016 D resolv  : res_nsend
+11-18 17:50:53.361   333  5016 I resolv  : resolv_cache_lookup: lookup
+11-18 17:50:53.361   333  5016 I resolv  : resolv_cache_lookup: FOUND IN CACHE entry=0x77f99687c270
+11-18 17:50:53.361   333  5016 D resolv  : doQuery: rcode=0, ancount=1
+11-18 17:50:54.020  4838  4857 D EGL_emulation: app_time_stats: avg=103.64ms min=53.60ms max=209.01ms count=10
+11-18 17:50:54.930  4031  4083 W FirebaseInstanceId: Token retrieval failed: SERVICE_NOT_AVAILABLE. Will retry token retrieval
+11-18 17:50:55.112   540  2003 D ActivityManager: freezer override set to true
+11-18 17:50:55.136  4838  4975 I le.deepseekcha: Explicit concurrent copying GC freed 5682(350KB) AllocSpace objects, 1(20KB) LOS objects, 49% free, 3751KB/7502KB, paused 439us,46us total 6.968ms
+11-18 17:50:55.151   540  2003 D ActivityManager: freezer override set to false
+11-18 17:50:55.239   352   393 D goldfish-address-space: claimShared: Ask to claim region [0x3ff451000 0x3ffc3a000]
+11-18 17:50:55.245   194   194 I hwservicemanager: getTransport: Cannot find entry android.hardware.graphics.mapper@4.0::IMapper/default in either framework or device VINTF manifest.
+11-18 17:50:55.245  5025  5026 I Gralloc4: mapper 4.x is not supported
+11-18 17:50:55.249  5025  5026 D HostConnection: createUnique: call
+11-18 17:50:55.250  5025  5026 D HostConnection: HostConnection::get() New Host Connection established 0x788c23c64750, tid 5026
+11-18 17:50:55.250  5025  5026 D goldfish-address-space: allocate: Ask for block of size 0x100
+11-18 17:50:55.250  5025  5026 D goldfish-address-space: allocate: ioctl allocate returned offset 0x3f7ffe000 size 0x2000
+11-18 17:50:55.254  5025  5026 D HostConnection: HostComposition ext ANDROID_EMU_CHECKSUM_HELPER_v1 ANDROID_EMU_native_sync_v2 ANDROID_EMU_dma_v1 ANDROID_EMU_direct_mem ANDROID_EMU_host_composition_v1 ANDROID_EMU_host_composition_v2 ANDROID_EMU_vulkan ANDROID_EMU_deferred_vulkan_commands ANDROID_EMU_vulkan_null_optional_strings ANDROID_EMU_vulkan_create_resources_with_requirements ANDROID_EMU_YUV_Cache ANDROID_EMU_vulkan_ignored_handles ANDROID_EMU_has_shared_slots_host_memory_allocator ANDROID_EMU_vulkan_free_memory_sync ANDROID_EMU_vulkan_shader_float16_int8 ANDROID_EMU_vulkan_async_queue_submit ANDROID_EMU_vulkan_queue_submit_with_commands ANDROID_EMU_sync_buffer_data ANDROID_EMU_vulkan_async_qsri ANDROID_EMU_read_color_buffer_dma GL_OES_EGL_image_external_essl3 GL_OES_vertex_array_object GL_KHR_texture_compression_astc_ldr ANDROID_EMU_host_side_tracing ANDROID_EMU_gles_max_version_3_0 
+--------- beginning of kernel
+11-18 17:50:54.860     0     0 I logd    : logdr: UID=2000 GID=2000 PID=5027 n tail=0 logMask=99 pid=0 start=0ns deadline=0ns

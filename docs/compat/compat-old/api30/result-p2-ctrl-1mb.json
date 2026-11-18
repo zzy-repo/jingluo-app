@@ -1,0 +1,363 @@
+{
+  "phase": "p2-import",
+  "api": 30,
+  "archive": "ctrl-1mb",
+  "startedAt": "2026-11-18T17:32:02.533Z",
+  "device": {
+    "model": "sdk_gphone_x86_64",
+    "device": "generic_x86_64_arm64",
+    "release": "11",
+    "sdk": "30",
+    "abi": "x86_64",
+    "buildId": "RSR1.240422.006",
+    "webViewVersionLine": "versionName=83.0.4103.106",
+    "webViewUpdate": [
+      "  Fallback logic enabled: false",
+      "  Current WebView package (name, version): (com.google.android.webview, 83.0.4103.106)",
+      "    Valid package com.google.android.webview (versionName: 83.0.4103.106, versionCode: 410410686, targetSdkVersion: 30) is  installed/enabled for all users"
+    ],
+    "wmSize": "Physical size: 1080x1920",
+    "wmDensity": "Physical density: 420",
+    "memTotal": "MemTotal:        2028176 kB"
+  },
+  "navigation": [
+    {
+      "step": "settings-open-at-start",
+      "open": true
+    },
+    {
+      "step": "tab-data",
+      "clicked": true,
+      "descriptor": {
+        "tag": "button",
+        "role": "tab",
+        "ariaLabel": null,
+        "placeholder": null,
+        "testId": null,
+        "type": "button",
+        "disabled": false,
+        "text": "Data",
+        "className": "navItem-_85c1b navItemActive-_85c1b"
+      }
+    },
+    {
+      "step": "verify",
+      "urlInputPresent": true,
+      "tabLabels": [
+        "General",
+        "Data"
+      ]
+    }
+  ],
+  "samples": [
+    {
+      "at": 1.2,
+      "pid": "6001",
+      "totalPssKb": 100999,
+      "meminfoLine": "TOTAL PSS:   100999            TOTAL RSS:   209396       TOTAL SWAP PSS:       17",
+      "booted": true,
+      "fallbackText": null,
+      "bodyTextLength": 1251,
+      "texts": [
+        "How can I help you?",
+        "Fast mode",
+        "Expert mode",
+        "DeepThink",
+        "Search",
+        "AI-generated, for reference only",
+        "Settings",
+        "Channel",
+        "DeepSeek Official",
+        "API Key",
+        "Connection test",
+        "Test",
+        "—",
+        "Upload",
+        "Clear",
+        "Import chat history",
+        "Importing chat history replaces all local chats and attachments. Supports ZIP files exported from DeepSeek.",
+        "Import from link",
+        "Paste the DeepSeek export ZIP link; the app downloads it directly (Android app only).",
+        "Show more",
+        "Import details (2)",
+        "Took 00:00.8",
+        "Copy details",
+        "Downloading...",
+        "Export all chats",
+        "Includes all chat history and locally stored images. Other attachments retain file details only. Your API Key is not included.",
+        "Payment records",
+        "Paid orders, amounts, card last 4 digits and redemption state",
+        "View",
+        "Feedback & logs"
+      ],
+      "cdpError": null
+    },
+    {
+      "at": 4.7,
+      "pid": "6001",
+      "totalPssKb": 102232,
+      "meminfoLine": "TOTAL PSS:   102232            TOTAL RSS:   210812       TOTAL SWAP PSS:       17",
+      "booted": true,
+      "fallbackText": null,
+      "bodyTextLength": 1255,
+      "texts": [
+        "How can I help you?",
+        "Fast mode",
+        "Expert mode",
+        "DeepThink",
+        "Search",
+        "AI-generated, for reference only",
+        "Settings",
+        "Channel",
+        "DeepSeek Official",
+        "API Key",
+        "Connection test",
+        "Test",
+        "—",
+        "Upload",
+        "Clear",
+        "Import chat history",
+        "Importing chat history replaces all local chats and attachments. Supports ZIP files exported from DeepSeek.",
+        "Import from link",
+        "Paste the DeepSeek export ZIP link; the app downloads it directly (Android app only).",
+        "Show more",
+        "Import details (5)",
+        "Took 00:04.6",
+        "Copy details",
+        "Downloading...",
+        "Export all chats",
+        "Includes all chat history and locally stored images. Other attachments retain file details only. Your API Key is not included.",
+        "Payment records",
+        "Paid orders, amounts, card last 4 digits and redemption state",
+        "View",
+        "Feedback & logs"
+      ],
+      "cdpError": null
+    },
+    {
+      "at": 6.6,
+      "pid": "6001",
+      "totalPssKb": 116073,
+      "meminfoLine": "TOTAL PSS:   116073            TOTAL RSS:   224652       TOTAL SWAP PSS:       17",
+      "booted": true,
+      "fallbackText": null,
+      "bodyTextLength": 1233,
+      "texts": [
+        "How can I help you?",
+        "Fast mode",
+        "Expert mode",
+        "DeepThink",
+        "Search",
+        "AI-generated, for reference only",
+        "Settings",
+        "Channel",
+        "DeepSeek Official",
+        "API Key",
+        "Connection test",
+        "Test",
+        "—",
+        "Upload",
+        "Clear",
+        "Import chat history",
+        "Importing chat history replaces all local chats and attachments. Supports ZIP files exported from DeepSeek.",
+        "Import from link",
+        "Paste the DeepSeek export ZIP link; the app downloads it directly (Android app only).",
+        "Show more",
+        "Import details (7)",
+        "Took 00:05.5",
+        "Copy details",
+        "Downloading...",
+        "Export all chats",
+        "Includes all chat history and locally stored images. Other attachments retain file details only. Your API Key is not included.",
+        "Payment records",
+        "Paid orders, amounts, card last 4 digits and redemption state",
+        "View",
+        "Feedback & logs"
+      ],
+      "cdpError": null
+    },
+    {
+      "at": 8.3,
+      "pid": "6001",
+      "totalPssKb": 115701,
+      "meminfoLine": "TOTAL PSS:   115701            TOTAL RSS:   224308       TOTAL SWAP PSS:       17",
+      "booted": true,
+      "fallbackText": null,
+      "bodyTextLength": 1011,
+      "texts": [
+        "How can I help you?",
+        "Fast mode",
+        "Expert mode",
+        "DeepThink",
+        "Search",
+        "AI-generated, for reference only",
+        "Settings",
+        "Channel",
+        "DeepSeek Official",
+        "API Key",
+        "Connection test",
+        "Test",
+        "—",
+        "Upload",
+        "Clear",
+        "Import chat history",
+        "Importing chat history replaces all local chats and attachments. Supports ZIP files exported from DeepSeek.",
+        "Import from link",
+        "Imported 1 chat",
+        "Show more",
+        "Import details (10)",
+        "Took 00:07.2",
+        "Copy details",
+        "Import link",
+        "Export all chats",
+        "Includes all chat history and locally stored images. Other attachments retain file details only. Your API Key is not included.",
+        "Payment records",
+        "Paid orders, amounts, card last 4 digits and redemption state",
+        "View",
+        "Feedback & logs"
+      ],
+      "cdpError": null
+    }
+  ],
+  "requests": [],
+  "serverPort": 5411,
+  "typed": {
+    "typed": true,
+    "tap": {
+      "x": 422,
+      "y": 1072,
+      "dpr": 2.625
+    },
+    "state": {
+      "value": "http://10.0.2.2:5411/a/ctrl-1mb",
+      "focused": true,
+      "importDisabled": false
+    }
+  },
+  "startClick": {
+    "clicked": true,
+    "descriptor": {
+      "tag": "button",
+      "role": null,
+      "ariaLabel": null,
+      "placeholder": null,
+      "testId": null,
+      "type": "button",
+      "disabled": false,
+      "text": "Import link",
+      "className": "button-_074b8 outlined-_074b8 m-_074b8 cellButton-_85c1b uploadButton-_85c1b"
+    }
+  },
+  "confirmClick": {
+    "clicked": true,
+    "descriptor": {
+      "tag": "button",
+      "role": null,
+      "ariaLabel": null,
+      "placeholder": null,
+      "testId": null,
+      "type": "button",
+      "disabled": false,
+      "text": "Import",
+      "className": "button-_074b8 dangerOutlined-_074b8 m-_074b8"
+    }
+  },
+  "terminal": "Imported \\d+ chats?",
+  "timedOut": false,
+  "pidSeen": [
+    "6001"
+  ],
+  "pssPeakKb": 116073,
+  "verdict": "TERMINAL_TEXT:Imported \\d+ chats?",
+  "serverRequests": [
+    {
+      "at": 1795023135260,
+      "method": "GET",
+      "path": "/a/ctrl-1mb",
+      "range": "bytes=0-4095",
+      "total": 1048576,
+      "status": 206,
+      "sent": 4096
+    },
+    {
+      "at": 1795023135945,
+      "method": "GET",
+      "path": "/a/ctrl-1mb",
+      "range": "bytes=4096-9864",
+      "total": 1048576,
+      "status": 206,
+      "sent": 5769
+    },
+    {
+      "at": 1795023136977,
+      "method": "GET",
+      "path": "/a/ctrl-1mb",
+      "range": "bytes=9865-22497",
+      "total": 1048576,
+      "status": 206,
+      "sent": 12633
+    },
+    {
+      "at": 1795023137408,
+      "method": "GET",
+      "path": "/a/ctrl-1mb",
+      "range": "bytes=22498-36853",
+      "total": 1048576,
+      "status": 206,
+      "sent": 14356
+    },
+    {
+      "at": 1795023137707,
+      "method": "GET",
+      "path": "/a/ctrl-1mb",
+      "range": "bytes=36854-102108",
+      "total": 1048576,
+      "status": 206,
+      "sent": 65255
+    },
+    {
+      "at": 1795023138165,
+      "method": "GET",
+      "path": "/a/ctrl-1mb",
+      "range": "bytes=102109-250134",
+      "total": 1048576,
+      "status": 206,
+      "sent": 148026
+    },
+    {
+      "at": 1795023138998,
+      "method": "GET",
+      "path": "/a/ctrl-1mb",
+      "range": "bytes=250135-603981",
+      "total": 1048576,
+      "status": 206,
+      "sent": 353847
+    },
+    {
+      "at": 1795023139671,
+      "method": "GET",
+      "path": "/a/ctrl-1mb",
+      "range": "bytes=603982-1095435",
+      "total": 1048576,
+      "status": 206,
+      "sent": 444594
+    }
+  ],
+  "requestCount": 8,
+  "requestBytes": 1048576,
+  "logcat": {
+    "file": "D:\\all_project\\runs\\compatold\\docs\\compat\\compat-old/api30/logcat-p2-ctrl-1mb.txt",
+    "kills": [
+      "11-18 17:31:53.341   505  1487 I ActivityManager: Killing 5772:com.example.deepseekchat/u0a167 (adj 0): stop com.example.deepseekchat due to from pid 5982",
+      "11-18 17:31:53.353   505  1487 I ActivityManager: Killing 5805:com.google.android.webview:sandboxed_process0:org.chromium.content.app.SandboxedProcessService0:0/u0a167i4 (adj 0): isolated not needed"
+    ],
+    "console": [
+      "11-18 17:31:53.353   505  1487 I ActivityManager: Killing 5805:com.google.android.webview:sandboxed_process0:org.chromium.content.app.SandboxedProcessService0:0/u0a167i4 (adj 0): isolated not needed",
+      "11-18 17:31:55.486   505   534 I ActivityManager: Start proc 6033:com.google.android.webview:sandboxed_process0:org.chromium.content.app.SandboxedProcessService0:0/u0i5 for  {com.example.deepseekchat/org.chromium.content.app.SandboxedProcessService0:0}",
+      "11-18 17:31:55.535  6001  6054 W chromium: [WARNING:dns_config_service_posix.cc(341)] Failed to read DnsConfig.",
+      "11-18 17:31:55.714  6001  6074 E chromium: [ERROR:gl_surface_egl.cc(549)] eglChooseConfig failed with error EGL_SUCCESS",
+      "11-18 17:31:55.773  6001  6074 E chromium: [ERROR:gl_surface_egl.cc(549)] eglChooseConfig failed with error EGL_SUCCESS"
+    ]
+  },
+  "finishedAt": "2026-11-18T17:32:23.605Z"
+}

@@ -1,0 +1,1314 @@
+{
+  "phase": "p3-net",
+  "api": 31,
+  "startedAt": "2026-11-18T17:55:12.329Z",
+  "device": {
+    "model": "sdk_gphone64_x86_64",
+    "device": "emulator64_x86_64_arm64",
+    "release": "12",
+    "sdk": "31",
+    "abi": "x86_64",
+    "buildId": "SE1A.220826.008",
+    "webViewVersionLine": "versionName=91.0.4472.114",
+    "webViewUpdate": [
+      "  Current WebView package (name, version): (com.google.android.webview, 91.0.4472.114)",
+      "    Valid package com.google.android.webview (versionName: 91.0.4472.114, versionCode: 447211487, targetSdkVersion: 31) is  installed/enabled for all users"
+    ],
+    "wmSize": "Physical size: 1080x1920",
+    "wmDensity": "Physical density: 420",
+    "memTotal": "MemTotal:        2015108 kB"
+  },
+  "shapePort": 5419,
+  "scenarios": [
+    {
+      "scenario": "s0-ok",
+      "url": "http://10.0.2.2:5419/ok/v1",
+      "budgetMs": 30000,
+      "retryCount": 0,
+      "firstTextMs": null,
+      "failureAtMs": null,
+      "failureText": null,
+      "settledAtMs": null,
+      "finalBody": "",
+      "finalStop": false,
+      "rows": 0,
+      "timeline": [
+        {
+          "at": 1000,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 3017,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 5033,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 7049,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 9049,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 11050,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 13066,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 15066,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 17083,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 19083,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 21083,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 23083,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 25084,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 27099,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 29100,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        }
+      ]
+    },
+    {
+      "scenario": "s1-hold",
+      "url": "http://10.0.2.2:5419/hold/v1",
+      "budgetMs": 100000,
+      "retryCount": 0,
+      "firstTextMs": null,
+      "failureAtMs": null,
+      "failureText": null,
+      "settledAtMs": null,
+      "finalBody": "",
+      "finalStop": false,
+      "rows": 0,
+      "timeline": [
+        {
+          "at": 1015,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 3016,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 5032,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 7032,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 9033,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 11049,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 13049,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 15066,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 17066,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 19069,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 21082,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 23083,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 25098,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 27098,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 29099,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 31099,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 33115,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 35115,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 37117,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 39117,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 41117,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 43131,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 45131,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 47132,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 49132,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 51132,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 53132,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 55132,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 57132,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 59132,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 61132,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 63133,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 65150,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 67150,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 69165,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 71166,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 73183,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 75199,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 77199,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 79200,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 81216,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 83232,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 85234,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 87248,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 89248,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 91248,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 93249,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 95251,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 97266,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 99267,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        }
+      ]
+    },
+    {
+      "scenario": "s2-cut",
+      "url": "http://10.0.2.2:5419/cut/v1",
+      "budgetMs": 40000,
+      "retryCount": 0,
+      "firstTextMs": null,
+      "failureAtMs": null,
+      "failureText": null,
+      "settledAtMs": null,
+      "finalBody": "",
+      "finalStop": false,
+      "rows": 0,
+      "timeline": [
+        {
+          "at": 1016,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 3016,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 5031,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 7033,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 9049,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 11065,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 13082,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 15083,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 17099,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 19114,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 21115,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 23115,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 25115,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 27115,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 29115,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 31117,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 33133,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 35148,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 37148,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 39149,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        }
+      ]
+    },
+    {
+      "scenario": "s3-trickle",
+      "url": "http://10.0.2.2:5419/trickle/v1",
+      "budgetMs": 70000,
+      "retryCount": 0,
+      "firstTextMs": null,
+      "failureAtMs": null,
+      "failureText": null,
+      "settledAtMs": null,
+      "finalBody": "",
+      "finalStop": false,
+      "rows": 0,
+      "timeline": [
+        {
+          "at": 1014,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 3014,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 5014,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 7016,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 9030,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 11031,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 13031,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 15031,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 17047,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 19048,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 21048,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 23049,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 25065,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 27081,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 29082,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 31097,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 33099,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 35099,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 37115,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 39133,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 41148,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 43148,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 45148,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 47148,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 49164,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 51164,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 53165,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 55182,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 57198,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 59199,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 61215,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 63231,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 65231,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 67231,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 69231,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        }
+      ]
+    },
+    {
+      "scenario": "s4-unreachable",
+      "url": "http://10.0.2.2:5418/v1",
+      "budgetMs": 100000,
+      "retryCount": 0,
+      "firstTextMs": null,
+      "failureAtMs": null,
+      "failureText": null,
+      "settledAtMs": null,
+      "finalBody": "",
+      "finalStop": false,
+      "rows": 0,
+      "timeline": [
+        {
+          "at": 1016,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 3031,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 5033,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 7048,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 9048,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 11048,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 13048,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 15049,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 17064,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 19065,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 21065,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 23065,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 25065,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 27065,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 29065,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 31066,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 33082,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 35083,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 37099,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 39116,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 41132,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 43132,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 45132,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 47132,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 49132,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 51132,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 53133,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 55133,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 57150,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 59165,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 61165,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 63166,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 65181,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 67183,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 69199,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 71216,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 73216,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 75216,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 77231,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 79231,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 81231,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 83231,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 85231,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 87231,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 89233,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 91248,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 93249,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 95249,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 97249,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 99265,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        }
+      ]
+    },
+    {
+      "scenario": "s5-offline",
+      "url": "http://10.0.2.2/ok/v1 (airplane-mode)",
+      "budgetMs": 60000,
+      "retryCount": 0,
+      "firstTextMs": null,
+      "failureAtMs": null,
+      "failureText": null,
+      "settledAtMs": null,
+      "finalBody": "",
+      "finalStop": false,
+      "rows": 0,
+      "timeline": [
+        {
+          "at": 1000,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 3016,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 5033,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 7033,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 9034,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 11034,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 13049,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 15050,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 17050,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 19067,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 21067,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 23083,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 25083,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 27083,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 29083,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 31083,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 33099,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 35100,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 37115,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 39115,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 41115,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 43116,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 45133,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 47150,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 49168,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 51183,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 53199,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 55200,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 57200,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        },
+        {
+          "at": 59201,
+          "kind": "sample",
+          "stop": false,
+          "body": ""
+        }
+      ]
+    }
+  ]
+}

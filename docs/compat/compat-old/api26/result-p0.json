@@ -1,0 +1,190 @@
+{
+  "phase": "p0-fallback + p1-whitescreen",
+  "api": 26,
+  "avd": "(attach)",
+  "startedAt": "2026-11-18T16:30:34.859Z",
+  "device": {
+    "model": "Android SDK built for x86_64",
+    "device": "generic_x86_64",
+    "release": "8.0.0",
+    "sdk": "26",
+    "abi": "x86_64",
+    "buildId": "OSR1.180418.026",
+    "webViewVersionLine": "versionName=69.0.3497.100",
+    "webViewUpdate": [
+      "  Fallback logic enabled: true",
+      "  Current WebView package (name, version): (com.android.chrome, 69.0.3497.100)",
+      "    Valid package com.android.chrome (versionName: 69.0.3497.100, versionCode: 349710067, targetSdkVersion: 28) is  installed/enabled for all users",
+      "    Valid package com.google.android.webview (versionName: 69.0.3497.100, versionCode: 349710065, targetSdkVersion: 28) is NOT installed/enabled for all users"
+    ],
+    "wmSize": "Physical size: 1080x1920",
+    "wmDensity": "Physical density: 420",
+    "memTotal": "MemTotal:        1530668 kB"
+  },
+  "install": {
+    "elapsedMs": 1213,
+    "output": "Performing Streamed Install\r\nSuccess",
+    "apk": "D:\\all_project\\runs\\compatold\\android\\app\\build\\outputs\\apk\\debug\\app-debug.apk"
+  },
+  "coldStart": {
+    "elapsedMs": 780,
+    "output": "Starting: Intent { cmp=com.example.deepseekchat/.MainActivity }\r\nStatus: ok\r\nActivity: com.example.deepseekchat/.MainActivity\r\nThisTime: 707\r\nTotalTime: 707\r\nWaitTime: 723\r\nComplete",
+    "clearError": "adb logcat -c 失败：failed to clear the 'main' log"
+  },
+  "samples": [
+    {
+      "at": 2,
+      "shot": "D:\\all_project\\runs\\compatold\\docs\\compat\\compat-old/api26/shots/t02s.png",
+      "page": {
+        "url": "https://localhost/",
+        "title": "鲸落",
+        "booted": false,
+        "compatibilityError": null,
+        "boxPresent": true,
+        "boxHidden": false,
+        "boxText": "页面启动失败。请更新 Android System WebView 或浏览器后重试；仍失败请反馈组件版本与以下信息：Uncaught SyntaxError: Unexpected token ?",
+        "bodyTextLength": 98,
+        "bodyTextHead": "页面启动失败。请更新 Android System WebView 或浏览器后重试；仍失败请反馈组件版本与以下信息：Uncaught SyntaxError: Unexpected token ?",
+        "rootChildren": 1,
+        "rootHtmlLength": 319,
+        "readyState": "complete",
+        "userAgent": "Mozilla/5.0 (Linux; Android 8.0.0; Android SDK built for x86_64 Build/OSR1.180418.026; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/69.0.3497.100 Mobile Safari/537.36",
+        "hasTextarea": false
+      },
+      "cdpError": null,
+      "uiTexts": [
+        "鲸落",
+        "页面启动失败。请更新 Android System WebView 或浏览器后重试；仍失败请反馈组件版本与以下信息：Uncaught SyntaxError: Unexpected token ?"
+      ]
+    },
+    {
+      "at": 6,
+      "shot": "D:\\all_project\\runs\\compatold\\docs\\compat\\compat-old/api26/shots/t06s.png",
+      "page": {
+        "url": "https://localhost/",
+        "title": "鲸落",
+        "booted": false,
+        "compatibilityError": null,
+        "boxPresent": true,
+        "boxHidden": false,
+        "boxText": "页面启动失败。请更新 Android System WebView 或浏览器后重试；仍失败请反馈组件版本与以下信息：Uncaught SyntaxError: Unexpected token ?",
+        "bodyTextLength": 98,
+        "bodyTextHead": "页面启动失败。请更新 Android System WebView 或浏览器后重试；仍失败请反馈组件版本与以下信息：Uncaught SyntaxError: Unexpected token ?",
+        "rootChildren": 1,
+        "rootHtmlLength": 319,
+        "readyState": "complete",
+        "userAgent": "Mozilla/5.0 (Linux; Android 8.0.0; Android SDK built for x86_64 Build/OSR1.180418.026; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/69.0.3497.100 Mobile Safari/537.36",
+        "hasTextarea": false
+      },
+      "cdpError": null,
+      "uiTexts": [
+        "鲸落",
+        "页面启动失败。请更新 Android System WebView 或浏览器后重试；仍失败请反馈组件版本与以下信息：Uncaught SyntaxError: Unexpected token ?"
+      ]
+    },
+    {
+      "at": 13,
+      "shot": "D:\\all_project\\runs\\compatold\\docs\\compat\\compat-old/api26/shots/t13s.png",
+      "page": {
+        "url": "https://localhost/",
+        "title": "鲸落",
+        "booted": false,
+        "compatibilityError": null,
+        "boxPresent": true,
+        "boxHidden": false,
+        "boxText": "页面启动失败。请更新 Android System WebView 或浏览器后重试；仍失败请反馈组件版本与以下信息：Uncaught SyntaxError: Unexpected token ?",
+        "bodyTextLength": 98,
+        "bodyTextHead": "页面启动失败。请更新 Android System WebView 或浏览器后重试；仍失败请反馈组件版本与以下信息：Uncaught SyntaxError: Unexpected token ?",
+        "rootChildren": 1,
+        "rootHtmlLength": 319,
+        "readyState": "complete",
+        "userAgent": "Mozilla/5.0 (Linux; Android 8.0.0; Android SDK built for x86_64 Build/OSR1.180418.026; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/69.0.3497.100 Mobile Safari/537.36",
+        "hasTextarea": false
+      },
+      "cdpError": null,
+      "uiTexts": [
+        "鲸落",
+        "页面启动失败。请更新 Android System WebView 或浏览器后重试；仍失败请反馈组件版本与以下信息：Uncaught SyntaxError: Unexpected token ?"
+      ]
+    },
+    {
+      "at": 20,
+      "shot": "D:\\all_project\\runs\\compatold\\docs\\compat\\compat-old/api26/shots/t20s.png",
+      "page": {
+        "url": "https://localhost/",
+        "title": "鲸落",
+        "booted": false,
+        "compatibilityError": null,
+        "boxPresent": true,
+        "boxHidden": false,
+        "boxText": "页面启动失败。请更新 Android System WebView 或浏览器后重试；仍失败请反馈组件版本与以下信息：Uncaught SyntaxError: Unexpected token ?",
+        "bodyTextLength": 98,
+        "bodyTextHead": "页面启动失败。请更新 Android System WebView 或浏览器后重试；仍失败请反馈组件版本与以下信息：Uncaught SyntaxError: Unexpected token ?",
+        "rootChildren": 1,
+        "rootHtmlLength": 319,
+        "readyState": "complete",
+        "userAgent": "Mozilla/5.0 (Linux; Android 8.0.0; Android SDK built for x86_64 Build/OSR1.180418.026; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/69.0.3497.100 Mobile Safari/537.36",
+        "hasTextarea": false
+      },
+      "cdpError": null,
+      "uiTexts": [
+        "鲸落",
+        "页面启动失败。请更新 Android System WebView 或浏览器后重试；仍失败请反馈组件版本与以下信息：Uncaught SyntaxError: Unexpected token ?"
+      ]
+    }
+  ],
+  "logcat": {
+    "file": "D:\\all_project\\runs\\compatold\\docs\\compat\\compat-old/api26/logcat-api26.txt",
+    "consoleLines": [
+      "11-18 16:30:41.473  4852  4852 I chromium: [INFO:library_loader_hooks.cc(36)] Chromium logging enabled: level = 0, default verbosity = 0",
+      "11-18 16:30:41.478  1876  2742 I ActivityManager: Start proc 4874:com.android.chrome:webview_service/u0a48 for service com.android.chrome/org.chromium.android_webview.services.VariationsSeedServer",
+      "11-18 16:30:41.482  4852  4852 I cr_BrowserStartup: Initializing chromium process, singleProcess=false",
+      "11-18 16:30:41.560  1876  2010 I ActivityManager: Start proc 4900:com.android.chrome:sandboxed_process0/u0i0 for webview_service com.example.deepseekchat/org.chromium.content.app.SandboxedProcessService0",
+      "11-18 16:30:41.722  4852  4931 E chromium: [ERROR:gl_surface_egl.cc(335)] eglChooseConfig failed with error EGL_SUCCESS",
+      "11-18 16:30:41.799  4900  4925 I chromium: [INFO:library_loader_hooks.cc(36)] Chromium logging enabled: level = 0, default verbosity = 0",
+      "11-18 16:30:41.943  4852  4931 E chromium: [ERROR:gl_surface_egl.cc(335)] eglChooseConfig failed with error EGL_SUCCESS",
+      "11-18 16:30:42.153  4852  4950 E Capacitor: JavaScript Error: {\"type\":\"js.error\",\"error\":{\"message\":\"Uncaught SyntaxError: Unexpected token ?\",\"url\":\"https://localhost/static/js/main.030dd2a6.js\",\"line\":1,\"col\":249411,\"errorObject\":\"{}\"}}",
+      "11-18 16:30:42.161  4852  4852 E Capacitor/Console: File: https://localhost/ - Line 811 - Msg: SyntaxError: Unexpected token ?",
+      "11-18 16:30:42.161  4852  4852 E Capacitor/Console: File: https://localhost/static/js/main.030dd2a6.js - Line 1 - Msg: Uncaught SyntaxError: Unexpected token ?"
+    ],
+    "syntaxErrors": [
+      "11-18 16:30:42.153  4852  4950 E Capacitor: JavaScript Error: {\"type\":\"js.error\",\"error\":{\"message\":\"Uncaught SyntaxError: Unexpected token ?\",\"url\":\"https://localhost/static/js/main.030dd2a6.js\",\"line\":1,\"col\":249411,\"errorObject\":\"{}\"}}",
+      "11-18 16:30:42.161  4852  4852 E Capacitor/Console: File: https://localhost/ - Line 811 - Msg: SyntaxError: Unexpected token ?",
+      "11-18 16:30:42.161  4852  4852 E Capacitor/Console: File: https://localhost/static/js/main.030dd2a6.js - Line 1 - Msg: Uncaught SyntaxError: Unexpected token ?"
+    ]
+  },
+  "notes": [],
+  "final": {
+    "shot": "D:\\all_project\\runs\\compatold\\docs\\compat\\compat-old/api26/shots/t-final.png",
+    "page": {
+      "url": "https://localhost/",
+      "title": "鲸落",
+      "booted": false,
+      "compatibilityError": null,
+      "boxPresent": true,
+      "boxHidden": false,
+      "boxText": "页面启动失败。请更新 Android System WebView 或浏览器后重试；仍失败请反馈组件版本与以下信息：Uncaught SyntaxError: Unexpected token ?",
+      "bodyTextLength": 98,
+      "bodyTextHead": "页面启动失败。请更新 Android System WebView 或浏览器后重试；仍失败请反馈组件版本与以下信息：Uncaught SyntaxError: Unexpected token ?",
+      "rootChildren": 1,
+      "rootHtmlLength": 319,
+      "readyState": "complete",
+      "userAgent": "Mozilla/5.0 (Linux; Android 8.0.0; Android SDK built for x86_64 Build/OSR1.180418.026; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/69.0.3497.100 Mobile Safari/537.36",
+      "hasTextarea": false
+    },
+    "pid": "4852",
+    "uiTexts": [
+      "鲸落",
+      "页面启动失败。请更新 Android System WebView 或浏览器后重试；仍失败请反馈组件版本与以下信息：Uncaught SyntaxError: Unexpected token ?"
+    ]
+  },
+  "verdict": {
+    "fallbackBranch": "other",
+    "fallbackText": "页面启动失败。请更新 Android System WebView 或浏览器后重试；仍失败请反馈组件版本与以下信息：Uncaught SyntaxError: Unexpected token ?",
+    "booted": false,
+    "compatibilityErrorValue": null,
+    "syntaxErrorInLogcat": true,
+    "appAliveAtEnd": true
+  },
+  "finishedAt": "2026-11-18T16:31:13.602Z"
+}

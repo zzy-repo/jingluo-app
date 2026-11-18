@@ -1,0 +1,323 @@
+{
+  "phase": "p2-import",
+  "api": 31,
+  "archive": "bomb-1000x",
+  "startedAt": "2026-11-18T17:50:26.613Z",
+  "device": {
+    "model": "sdk_gphone64_x86_64",
+    "device": "emulator64_x86_64_arm64",
+    "release": "12",
+    "sdk": "31",
+    "abi": "x86_64",
+    "buildId": "SE1A.220826.008",
+    "webViewVersionLine": "versionName=91.0.4472.114",
+    "webViewUpdate": [
+      "  Current WebView package (name, version): (com.google.android.webview, 91.0.4472.114)",
+      "    Valid package com.google.android.webview (versionName: 91.0.4472.114, versionCode: 447211487, targetSdkVersion: 31) is  installed/enabled for all users"
+    ],
+    "wmSize": "Physical size: 1080x1920",
+    "wmDensity": "Physical density: 420\r\nOverride density: 480",
+    "memTotal": "MemTotal:        2015108 kB"
+  },
+  "navigation": [
+    {
+      "step": "settings-open-at-start",
+      "open": true
+    },
+    {
+      "step": "tab-data",
+      "clicked": true,
+      "descriptor": {
+        "tag": "button",
+        "role": "tab",
+        "ariaLabel": null,
+        "placeholder": null,
+        "testId": null,
+        "type": "button",
+        "disabled": false,
+        "text": "Data",
+        "className": "navItem-_85c1b navItemActive-_85c1b"
+      }
+    },
+    {
+      "step": "verify",
+      "urlInputPresent": true,
+      "tabLabels": [
+        "General",
+        "Data"
+      ]
+    }
+  ],
+  "samples": [
+    {
+      "at": 0.8,
+      "pid": "4530",
+      "totalPssKb": 110937,
+      "meminfoLine": "TOTAL PSS:   110937            TOTAL RSS:   198372       TOTAL SWAP PSS:      266",
+      "booted": true,
+      "fallbackText": null,
+      "bodyTextLength": 1234,
+      "texts": [
+        "How can I help you?",
+        "Fast mode",
+        "Expert mode",
+        "AI-generated, for reference only",
+        "Settings",
+        "Channel",
+        "DeepSeek Official",
+        "API Key",
+        "Connection test",
+        "Test",
+        "Chat background",
+        "Stored on this device only (IndexedDB), never uploaded; resized to 1600px max edge",
+        "—",
+        "Upload",
+        "Clear",
+        "Import chat history",
+        "Importing chat history replaces all local chats and attachments. Supports ZIP files exported from DeepSeek.",
+        "Import from link",
+        "Paste the DeepSeek export ZIP link; the app downloads it directly (Android app only).",
+        "Show more",
+        "Import details (1)",
+        "Took 00:00.0",
+        "Copy details",
+        "Downloading...",
+        "Export all chats",
+        "Includes all chat history and locally stored images. Other attachments retain file details only. Your API Key is not included.",
+        "Payment records",
+        "Paid orders, amounts, card last 4 digits and redemption state",
+        "View",
+        "Feedback & logs"
+      ],
+      "cdpError": null
+    },
+    {
+      "at": 3.3,
+      "pid": "4530",
+      "totalPssKb": 132800,
+      "meminfoLine": "TOTAL PSS:   132800            TOTAL RSS:   222608       TOTAL SWAP PSS:      125",
+      "booted": true,
+      "fallbackText": null,
+      "bodyTextLength": 1216,
+      "texts": [
+        "How can I help you?",
+        "Fast mode",
+        "Expert mode",
+        "AI-generated, for reference only",
+        "Settings",
+        "Channel",
+        "DeepSeek Official",
+        "API Key",
+        "Connection test",
+        "Test",
+        "Chat background",
+        "Stored on this device only (IndexedDB), never uploaded; resized to 1600px max edge",
+        "—",
+        "Upload",
+        "Clear",
+        "Import chat history",
+        "Importing chat history replaces all local chats and attachments. Supports ZIP files exported from DeepSeek.",
+        "Import from link",
+        "Paste the DeepSeek export ZIP link; the app downloads it directly (Android app only).",
+        "Show more",
+        "Import details (6)",
+        "Took 00:01.1",
+        "Copy details",
+        "Downloading...",
+        "Export all chats",
+        "Includes all chat history and locally stored images. Other attachments retain file details only. Your API Key is not included.",
+        "Payment records",
+        "Paid orders, amounts, card last 4 digits and redemption state",
+        "View",
+        "Feedback & logs"
+      ],
+      "cdpError": null
+    },
+    {
+      "at": 5,
+      "pid": "4530",
+      "totalPssKb": 131630,
+      "meminfoLine": "TOTAL PSS:   131630            TOTAL RSS:   222492       TOTAL SWAP PSS:      126",
+      "booted": true,
+      "fallbackText": null,
+      "bodyTextLength": 1228,
+      "texts": [
+        "How can I help you?",
+        "Fast mode",
+        "Expert mode",
+        "AI-generated, for reference only",
+        "Settings",
+        "Channel",
+        "DeepSeek Official",
+        "API Key",
+        "Connection test",
+        "Test",
+        "Chat background",
+        "Stored on this device only (IndexedDB), never uploaded; resized to 1600px max edge",
+        "—",
+        "Upload",
+        "Clear",
+        "Import chat history",
+        "Importing chat history replaces all local chats and attachments. Supports ZIP files exported from DeepSeek.",
+        "Import from link",
+        "Paste the DeepSeek export ZIP link; the app downloads it directly (Android app only).",
+        "Show more",
+        "Import details (8)",
+        "Took 00:04.2",
+        "Copy details",
+        "Downloading...",
+        "Export all chats",
+        "Includes all chat history and locally stored images. Other attachments retain file details only. Your API Key is not included.",
+        "Payment records",
+        "Paid orders, amounts, card last 4 digits and redemption state",
+        "View",
+        "Feedback & logs"
+      ],
+      "cdpError": null
+    },
+    {
+      "at": 6.6,
+      "pid": "4530",
+      "totalPssKb": 131386,
+      "meminfoLine": "TOTAL PSS:   131386            TOTAL RSS:   221192       TOTAL SWAP PSS:      126",
+      "booted": true,
+      "fallbackText": null,
+      "bodyTextLength": 993,
+      "texts": [
+        "How can I help you?",
+        "Fast mode",
+        "Expert mode",
+        "AI-generated, for reference only",
+        "Settings",
+        "Channel",
+        "DeepSeek Official",
+        "API Key",
+        "Connection test",
+        "Test",
+        "Chat background",
+        "Stored on this device only (IndexedDB), never uploaded; resized to 1600px max edge",
+        "—",
+        "Upload",
+        "Clear",
+        "Import chat history",
+        "Importing chat history replaces all local chats and attachments. Supports ZIP files exported from DeepSeek.",
+        "Import from link",
+        "Imported 1 chat",
+        "Show more",
+        "Import details (9)",
+        "Took 00:05.5",
+        "Copy details",
+        "Import link",
+        "Export all chats",
+        "Includes all chat history and locally stored images. Other attachments retain file details only. Your API Key is not included.",
+        "Payment records",
+        "Paid orders, amounts, card last 4 digits and redemption state",
+        "View",
+        "Feedback & logs"
+      ],
+      "cdpError": null
+    }
+  ],
+  "requests": [],
+  "serverPort": 5411,
+  "typed": {
+    "typed": true,
+    "tap": {
+      "x": 392,
+      "y": 1099,
+      "dpr": 3
+    },
+    "state": {
+      "value": "http://10.0.2.2:5411/a/bomb-1000x",
+      "focused": true,
+      "importDisabled": false
+    }
+  },
+  "startClick": {
+    "clicked": true,
+    "descriptor": {
+      "tag": "button",
+      "role": null,
+      "ariaLabel": null,
+      "placeholder": null,
+      "testId": null,
+      "type": "button",
+      "disabled": false,
+      "text": "Import link",
+      "className": "button-_074b8 outlined-_074b8 m-_074b8 cellButton-_85c1b uploadButton-_85c1b"
+    }
+  },
+  "confirmClick": {
+    "clicked": true,
+    "descriptor": {
+      "tag": "button",
+      "role": null,
+      "ariaLabel": null,
+      "placeholder": null,
+      "testId": null,
+      "type": "button",
+      "disabled": false,
+      "text": "Import",
+      "className": "button-_074b8 dangerOutlined-_074b8 m-_074b8"
+    }
+  },
+  "terminal": "Imported \\d+ chats?",
+  "timedOut": false,
+  "pidSeen": [
+    "4530"
+  ],
+  "pssPeakKb": 132800,
+  "verdict": "TERMINAL_TEXT:Imported \\d+ chats?",
+  "serverRequests": [
+    {
+      "at": 1795024233075,
+      "method": "GET",
+      "path": "/a/bomb-1000x",
+      "range": "bytes=0-4095",
+      "total": 66112,
+      "status": 206,
+      "sent": 4096
+    },
+    {
+      "at": 1795024233363,
+      "method": "GET",
+      "path": "/a/bomb-1000x",
+      "range": "bytes=4096-10053",
+      "total": 66112,
+      "status": 206,
+      "sent": 5958
+    },
+    {
+      "at": 1795024233375,
+      "method": "GET",
+      "path": "/a/bomb-1000x",
+      "range": "bytes=10054-35496",
+      "total": 66112,
+      "status": 206,
+      "sent": 25443
+    },
+    {
+      "at": 1795024233395,
+      "method": "GET",
+      "path": "/a/bomb-1000x",
+      "range": "bytes=35497-1489382",
+      "total": 66112,
+      "status": 206,
+      "sent": 30615
+    }
+  ],
+  "requestCount": 4,
+  "requestBytes": 66112,
+  "logcat": {
+    "file": "D:\\all_project\\runs\\compatold\\docs\\compat\\compat-old/api31/logcat-p2-bomb-1000x.txt",
+    "kills": [],
+    "console": [
+      "11-18 17:50:19.693   540   571 I ActivityManager: Start proc 4571:com.google.android.webview:sandboxed_process0:org.chromium.content.app.SandboxedProcessService0:0/u0i2 for  {com.example.deepseekchat/org.chromium.content.app.SandboxedProcessService0:0}",
+      "11-18 17:50:19.761  4530  4589 W chromium: [WARNING:dns_config_service_android.cc(153)] Failed to read DnsConfig.",
+      "11-18 17:50:21.095  4530  4592 E chromium: [ERROR:leveldb_factory.cc(91)] Failed to open LevelDB database from /data/user/0/com.example.deepseekchat/app_webview/Default/IndexedDB/https_localhost_0.indexeddb.leveldb,Corruption: missing start of fragmented record(2)",
+      "11-18 17:50:21.097  4530  4592 E chromium: [ERROR:indexed_db_factory_impl.cc(695)] Got corruption for https://localhost, missing start of fragmented record",
+      "11-18 17:50:21.110  4530  4592 E chromium: [ERROR:indexed_db_factory_impl.cc(827)] IndexedDB recovering from a corrupted (and deleted) database."
+    ]
+  },
+  "finishedAt": "2026-11-18T17:50:39.137Z"
+}
