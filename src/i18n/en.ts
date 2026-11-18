@@ -170,9 +170,16 @@ export const en = {
   historyImportUrlTimeoutPartial:
     'Download timed out ({percent}% downloaded). Try a faster network.',
   historyImportUrlStalled:
-    'Download stalled and was stopped automatically ({done}/{total}). Tap Retry to download again.',
+    'Download stalled: no new data for {seconds}s ({done} / {total} downloaded). Retry to continue.',
   historyImportUrlStalledUnknownTotal:
-    'Download stalled and was stopped automatically ({done} downloaded). Tap Retry to download again.',
+    'Download stalled: no new data for {seconds}s ({done} downloaded). Retry to continue.',
+  historyImportUrlDeadline:
+    'Download timed out: over the {minutes}min cap ({done} / {total} downloaded). Retry to continue.',
+  historyImportUrlDeadlineUnknownTotal:
+    'Download timed out: over the {minutes}min cap ({done} downloaded). Retry to continue.',
+  historyImportUrlRestarted:
+    'This link does not support resuming, so the download restarted from the beginning.',
+  historyImportUrlResumed: 'Resumed from where the last attempt stopped ({done} downloaded).',
   historyImportCancelled: 'Import cancelled',
   importTraceTitle: 'Import details ({count})',
   importTraceCopy: 'Copy details',
@@ -198,9 +205,12 @@ export const en = {
   importTraceReasonSignature: 'signature mismatch',
   importTraceReasonForbidden: 'no permission (403)',
   importTraceReasonHttp: 'HTTP {status}',
-  importTraceReasonStalled: 'stalled (downloaded {done})',
-  importTraceHeartbeat: 'still downloading… ({done} / {total} downloaded)',
-  importTraceHeartbeatUnknown: 'still downloading… ({done} downloaded)',
+  importTraceReasonStalled: 'stalled (no new data for {seconds}s, {done} downloaded)',
+  importTraceReasonDeadline: 'download timed out (over the {minutes}min cap)',
+  importTraceHeartbeat: 'still downloading… ({done} / {total}, no new data for {idle}s)',
+  importTraceHeartbeatUnknown: 'still downloading… ({done}, no new data for {idle}s)',
+  importTraceResume: 'resumed from {done} (not from zero)',
+  importTraceRestart: 'link does not support resuming; restarted from the beginning',
   importTraceReasonFormat: 'invalid archive format',
   detailsExpand: 'Show more',
   detailsCollapse: 'Show less',

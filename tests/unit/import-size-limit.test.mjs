@@ -110,7 +110,7 @@ const serveDeclared = (declared) => {
 
 const runImportUrl = async (options = {}) =>
   importHistoryFromUrl(URL_OK, {
-    downloadBudgetMs: 30_000,
+    downloadStallMs: 30_000,
     heartbeatIntervalMs: 1_000,
     ...options,
   }).then(

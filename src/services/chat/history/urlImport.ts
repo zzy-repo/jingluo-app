@@ -48,19 +48,24 @@ const CONNECT_TIMEOUT_MS = 10_000
 const CHUNK_READ_TIMEOUT_MS = 12_000
 
 /**
- * 下载阶段的 wall-clock 总预算：覆盖首块与所有重试。
+ * 停滞判定窗口：**唯一**的失败判定依据——连续这么久「没有任何新字节」才判 stalled。
  *
- * 为什么必须有这一层：CapacitorHttp 没有 abort，实测原生层会把 Promise **永久挂起**
- * （120s 内只有 1 次请求、无重试、无任何终态），此时「单次请求超时」这条防线根本不会被触发，
- * 界面只能无限转圈。预算到点必须由 JS 写入失败终态，而不是继续等原生层。
- * 正常弱网实测 20MB 约 35s，这里留了 3 倍余量；到期后界面仍可「重试」。
+ * 为什么按「无进度」而不是「总墙钟」判：上一版用的是 120s 绝对总预算，结果 164.5MB 的
+ * **合法**导出包在约 0.5MB/s 的真实网络下必然超时（#38：三次分别在 47.4/54.3/65.4MB 处被误杀），
+ * 而字节其实一直在增长。慢但在推进的链路只能续期，不能判死；真正挂死（CapacitorHttp
+ * 原生 Promise 永久 pending、对端不再吐数据）的共同特征是「字节停住」，那才是要判的东西。
  */
-const DOWNLOAD_TOTAL_BUDGET_MS = 120_000
+const DOWNLOAD_STALL_MS = 40_000
 
 /**
- * 周期性心跳间隔：替代原来「一次性 15s 静默看门狗」。
- * 原生请求挂住时，每 5s 一条「最后活着的时刻 + 卡在哪一块 + 已下载多少」，
- * 只记录，不中止业务（真正兜底由 DOWNLOAD_TOTAL_BUDGET_MS 负责）。
+ * 防御性总上限：只防「一直在爬但永远下不完」的病态链路，不参与日常判定。
+ * 30 分钟对 200MB 上限的包意味着 ≥110KB/s 就能下完；164.5MB 实测约 5 分钟，余量充足。
+ */
+const DOWNLOAD_MAX_TOTAL_MS = 30 * 60_000
+
+/**
+ * 周期性心跳间隔：每 5s 一条「这一段新增了多少字节 + 已经多久没有新字节」，
+ * 日志里能直接区分「在推进」和「停滞」，也是原生请求挂住时唯一的在线证据。
  */
 const HEARTBEAT_INTERVAL_MS = 5_000
 
@@ -75,11 +80,19 @@ export class UrlImportCancelled extends Error {
   }
 }
 
-/** 整段下载的 wall-clock 预算耗尽：这是兜底终态，不是单次请求超时。 */
-class DownloadBudgetExceeded extends Error {
+/** 停滞终态：连续 stallMs 没有收到任何新字节（可续传重试）。 */
+class DownloadStalled extends Error {
   constructor() {
-    super('download budget exceeded')
-    this.name = 'DownloadBudgetExceeded'
+    super('download stalled')
+    this.name = 'DownloadStalled'
+  }
+}
+
+/** 防御性总上限耗尽：字节还在推进，但总时长超过 DOWNLOAD_MAX_TOTAL_MS。 */
+class DownloadDeadlineExceeded extends Error {
+  constructor() {
+    super('download deadline exceeded')
+    this.name = 'DownloadDeadlineExceeded'
   }
 }
 
@@ -99,6 +112,10 @@ export type ImportTraceKind =
   | 'download'
   /** 周期心跳：这一段没有任何新字节时的「还活着」标记（下载停滞的唯一在线证据） */
   | 'heartbeat'
+  /** 续传：上一轮失败后从已下载字节继续（不清零） */
+  | 'resume'
+  /** 服务端忽略 Range（回 200 整包）：已丢弃本地字节、从头重新下载 */
+  | 'restart'
   | 'check'
   | 'session'
   | 'image'
@@ -112,6 +129,8 @@ export type ImportTraceEntry = {
   /** 真实已下载字节；totalBytes 可能缺失（服务端没给 Content-Length/CONTENT-RANGE） */
   bytes?: number
   totalBytes?: number
+  /** 距上一次「字节增长」过去了多久（心跳/停滞条目用，毫秒） */
+  idleMs?: number
   sessions?: number
   totalSessions?: number
   images?: number
@@ -126,8 +145,13 @@ export type UrlImportOptions = {
   onProgress?: (progress: UrlImportProgress) => void
   /** 导入详情回调：节流与条数上限由 UI 负责，这里只按事实发生点上报。 */
   onTrace?: (entry: ImportTraceEntry) => void
-  /** 下载阶段总预算（毫秒）；默认 DOWNLOAD_TOTAL_BUDGET_MS，UI 不传，只在诊断/测试里调小。 */
-  downloadBudgetMs?: number
+  /**
+   * 停滞判定窗口（毫秒）：连续这么久没有新字节才判 stalled。
+   * 默认 DOWNLOAD_STALL_MS（40s），UI 不传，只在诊断/测试里调小。
+   */
+  downloadStallMs?: number
+  /** 防御性总上限（毫秒）；默认 DOWNLOAD_MAX_TOTAL_MS（30 分钟），同样只给诊断/测试用。 */
+  downloadMaxTotalMs?: number
   /** 心跳周期（毫秒）；默认 HEARTBEAT_INTERVAL_MS，同样只给诊断/测试用。 */
   heartbeatIntervalMs?: number
   /** 大小上限（字节）；默认 DEFAULT_MAX_IMPORT_BYTES，与本地文件导入同一个数字。UI 不传。 */
@@ -332,8 +356,9 @@ const recordDownloadFailure = (
   })
 
 /**
- * 整段下载的共享状态：心跳与总预算都读它（只读来记录，不改变业务结果）。
- * downloaded 是「已确认到手并计入 chunks」的字节，from/span/attempt 说明当前卡在哪一块。
+ * 整段下载的共享状态：停滞看门狗与心跳都读它（只读来记录/判定，不直接改业务结果）。
+ * downloaded 是「已确认到手并计入 chunks」的字节，from/span/attempt 说明当前卡在哪一块；
+ * lastProgressAt 是**停滞判定的唯一依据**——它只在真的收到新字节时前移。
  */
 type DownloadState = {
   startedAt: number
@@ -342,8 +367,43 @@ type DownloadState = {
   from: number
   span: number
   attempt: number
-  /** 整段下载的绝对截止时刻（= startedAt + 总预算） */
+  /** 最近一次「字节增长」的时刻：连续 stallMs 没有前移才判 stalled */
+  lastProgressAt: number
+  /** 停滞窗口（毫秒） */
+  stallMs: number
+  /** 防御性总上限的绝对截止时刻（= startedAt + 总上限） */
   deadline: number
+}
+
+/**
+ * 跨调用的续传点：上一次下载失败时已经到手的字节。
+ * 同一个链接再点「重试」时从这里续传（`Range: bytes=<downloaded>-…`），不再从 0 开始。
+ * 只有一份、只在「失败且已下到一部分」时保留；成功/取消/换链接都会清掉。
+ */
+type DownloadResumePoint = {
+  url: string
+  chunks: Uint8Array<ArrayBuffer>[]
+  downloaded: number
+  total: number | undefined
+}
+
+let resumePoint: DownloadResumePoint | null = null
+
+/**
+ * 值得续传的失败族：链路断/停，但已到手的字节仍然有效
+ * （超时、连接中断、网络错误/不可达）。包本身有问题的不在名单里（续也白续）。
+ */
+const RESUMABLE_ERROR_KEYS = new Set([
+  'historyImportUrlTimeout',
+  'historyImportUrlTimeoutPartial',
+  'historyImportUrlInterrupted',
+  'historyImportUrlNetwork',
+  'historyImportUrlOffline',
+])
+
+/** 主动丢弃续传点（成功、取消、换链接时调用），避免几十上百 MB 的块白占内存。 */
+const dropResumePoint = (): void => {
+  resumePoint = null
 }
 
 /** 字节 → 人话（与界面 formatBytes 同档：KB 之前不换算成小数）。 */
@@ -358,17 +418,64 @@ const formatSize = (bytes: number): string => {
 }
 
 /**
- * 给一次原生请求套上「整段下载剩余预算」与取消：
- * - 预算到期 → DownloadBudgetExceeded（由 downloadArchive 统一记失败终态）
+ * 停滞判定：现在就该判死吗？返回原因或 null。
+ *
+ * 只看两件事：
+ * - 防御性总上限（DOWNLOAD_MAX_TOTAL_MS，默认 30 分钟）→ DownloadDeadlineExceeded
+ * - 连续 stallMs 没有新字节（state.lastProgressAt 不前移）→ DownloadStalled
+ *
+ * 这里**没有**「总时长超过 N 秒就判死」这一条：#38 的合法大包就是被那条误杀的。
+ */
+const stallVerdict = (state: DownloadState): Error | null => {
+  const now = Date.now()
+  if (now >= state.deadline) {
+    recordEvent('import_stage', 'import: download deadline exceeded', {
+      stage: 'download',
+      'download.bytes': state.downloaded,
+      ...(state.total === undefined ? {} : { 'download.total': state.total }),
+      'request.from': state.from,
+      'request.span': state.span,
+      attempt: state.attempt,
+      'max.total.ms': state.deadline - state.startedAt,
+    })
+    return new DownloadDeadlineExceeded()
+  }
+  const idleMs = now - state.lastProgressAt
+  if (idleMs < state.stallMs) {
+    return null
+  }
+  recordEvent('import_stage', 'import: download stalled', {
+    stage: 'download',
+    'download.bytes': state.downloaded,
+    ...(state.total === undefined ? {} : { 'download.total': state.total }),
+    'request.from': state.from,
+    'request.span': state.span,
+    attempt: state.attempt,
+    'idle.ms': idleMs,
+    'stall.ms': state.stallMs,
+  })
+  return new DownloadStalled()
+}
+
+/**
+ * 给一次原生请求套上「停滞看门狗」与取消：
+ * - 连续 stallMs 没有新字节 → DownloadStalled（由 downloadArchive 统一记失败终态）
+ * - 总时长超过防御性上限 → DownloadDeadlineExceeded
  * - 用户取消 → UrlImportCancelled（取消优先于失败，不误报「下载失败」）
+ *
+ * 与上一版的差别（#38）：计时起点是 `state.lastProgressAt`，只要期间拿到新字节就重新计时，
+ * 慢但在推进的链路永远不会被这里判死；只有「字节真的停住」才会到点收口。
+ * 原生 Promise 可能永不 settle，所以每次请求都必须由这里给出终态，而不是等原生超时。
  *
  * 提前结束时把底层 Promise 的 rejection 吞掉：CapacitorHttp 不能 abort，
  * 迟到的原生响应必须彻底丢弃——不写入任何数据、不上报进度、也不变成未处理拒绝。
  */
-const withinBudget = <T>(work: Promise<T>, state: DownloadState, signal?: AbortSignal): Promise<T> =>
+const guardRequest = <T>(work: Promise<T>, state: DownloadState, signal?: AbortSignal): Promise<T> =>
   new Promise<T>((resolve, reject) => {
     let timer: ReturnType<typeof setTimeout> | undefined
     let settled = false
+    /** 上一次看到（并确认过）的字节数：用来判断这一轮窗口内是否真的有推进 */
+    let seen = state.downloaded
     const onAbort = () => finish(() => reject(new UrlImportCancelled()))
     const finish = (apply: () => void) => {
       if (settled) {
@@ -377,6 +484,7 @@ const withinBudget = <T>(work: Promise<T>, state: DownloadState, signal?: AbortS
       settled = true
       if (timer !== undefined) {
         clearTimeout(timer)
+        timer = undefined
       }
       signal?.removeEventListener('abort', onAbort)
       apply()
@@ -384,36 +492,47 @@ const withinBudget = <T>(work: Promise<T>, state: DownloadState, signal?: AbortS
     const discard = () => {
       work.catch(() => {})
     }
+    /** 到下一次「该看一眼」的时刻：停滞窗口与总上限取较早的那个 */
+    const arm = () => {
+      const now = Date.now()
+      const stallAt = state.lastProgressAt + state.stallMs
+      timer = setTimeout(onWake, Math.max(0, Math.min(stallAt, state.deadline) - now))
+    }
+    const onWake = () => {
+      timer = undefined
+      // 防御性总上限优先：它是「不管有没有进度都要收口」的硬线，不会被续期推翻
+      if (Date.now() >= state.deadline) {
+        discard()
+        finish(() => reject(stallVerdict(state) ?? new DownloadDeadlineExceeded()))
+        return
+      }
+      // 这一轮窗口内字节有增长 → 续期，绝不因为「总时长变长」判死（#38 的核心）
+      if (state.downloaded > seen) {
+        seen = state.downloaded
+        arm()
+        return
+      }
+      const verdict = stallVerdict(state)
+      if (verdict === null) {
+        arm()
+        return
+      }
+      discard()
+      finish(() => reject(verdict))
+    }
     if (signal?.aborted) {
       discard()
       finish(() => reject(new UrlImportCancelled()))
       return
     }
-    const remain = state.deadline - Date.now()
-    if (remain <= 0) {
-      recordEvent('import_stage', 'import: download budget exhausted', {
-        stage: 'download',
-        'download.bytes': state.downloaded,
-        'request.from': state.from,
-        'request.span': state.span,
-        attempt: state.attempt,
-      })
+    // 进来就已经该判死（上一块已经把窗口耗光）：不用再等一轮定时器
+    const verdict = stallVerdict(state)
+    if (verdict !== null) {
       discard()
-      finish(() => reject(new DownloadBudgetExceeded()))
+      finish(() => reject(verdict))
       return
     }
-    timer = setTimeout(() => {
-      recordEvent('import_stage', 'import: download budget exhausted', {
-        stage: 'download',
-        'download.bytes': state.downloaded,
-        'request.from': state.from,
-        'request.span': state.span,
-        attempt: state.attempt,
-        'budget.ms': state.deadline - state.startedAt,
-      })
-      discard()
-      finish(() => reject(new DownloadBudgetExceeded()))
-    }, remain)
+    arm()
     signal?.addEventListener('abort', onAbort, { once: true })
     work.then(
       (value) => finish(() => resolve(value)),
@@ -422,7 +541,8 @@ const withinBudget = <T>(work: Promise<T>, state: DownloadState, signal?: AbortS
   })
 
 /**
- * 周期心跳：原生请求被永久挂起时，日志里至少能看出「最后活着的时刻 + 卡在哪一块 + 已下载多少」。
+ * 周期心跳：带「最近这一段新增了多少字节」，日志能直接区分「在推进」还是「停滞」。
+ * 原生请求被永久挂起时，这是唯一的在线证据（卡在哪一块 + 已下载多少 + 已经多久没新字节）。
  * 只记录，不中止业务；调用方必须在 finally 里停（成功/失败/取消/卸载都不能留 interval）。
  */
 const startDownloadHeartbeat = (
@@ -430,23 +550,30 @@ const startDownloadHeartbeat = (
   trace: ((entry: ImportTraceEntry) => void) | undefined,
   intervalMs: number
 ): (() => void) => {
-  let lastBytes = -1
+  let lastBytes = state.downloaded
   const timer = setInterval(() => {
-    const elapsed = Date.now() - state.startedAt
+    const now = Date.now()
+    const elapsed = now - state.startedAt
+    const delta = state.downloaded - lastBytes
+    const idleMs = now - state.lastProgressAt
     recordEvent('import_stage', 'import: download heartbeat', {
       stage: 'download',
       'download.bytes': state.downloaded,
       ...(state.total === undefined ? {} : { 'download.total': state.total }),
+      // 最近这一段的新增字节：>0 = 在推进；=0 且 idle.ms 一直涨 = 停滞
+      'progress.bytes': delta,
+      'progress.state': delta > 0 ? 'advancing' : 'stalled',
+      'idle.ms': idleMs,
+      'stall.leftMs': Math.max(0, state.lastProgressAt + state.stallMs - now),
       'request.from': state.from,
       'request.span': state.span,
       attempt: state.attempt,
       elapsedMs: elapsed,
-      'budget.leftMs': Math.max(0, state.deadline - Date.now()),
     })
     // 详情只在「这一段时间没有新字节」时补一条：有进展时块级采样已经记过，
-    // 心跳的作用是证明还活着，不是刷进度。
-    if (state.downloaded === lastBytes) {
-      trace?.({ at: elapsed, kind: 'heartbeat', bytes: state.downloaded, totalBytes: state.total })
+    // 心跳的作用是证明还活着、以及停滞了多久，不是刷进度。
+    if (delta <= 0) {
+      trace?.({ at: elapsed, kind: 'heartbeat', bytes: state.downloaded, totalBytes: state.total, idleMs })
     }
     lastBytes = state.downloaded
   }, intervalMs)
@@ -558,7 +685,7 @@ const fetchChunk = async (
     try {
       // 兜底只看这一层：原生 Promise 可能永不 settle，所以每次请求都同时受
       // 「整段下载剩余预算」和「用户取消」约束，到期立刻结束而不是等原生超时。
-      const response = await withinBudget(requestRange(url, from, from + span - 1), state, signal)
+      const response = await guardRequest(requestRange(url, from, from + span - 1), state, signal)
       recordEvent('import_stage', 'import: native response', {
         stage: 'download',
         'request.from': from,
@@ -577,8 +704,12 @@ const fetchChunk = async (
         elapsedMs: Date.now() - attemptStartedAt,
         ...errorMeta(error),
       })
-      // 预算耗尽 / 取消都是终态：不再重试，也不当成网络错误去分类。
-      if (error instanceof DownloadBudgetExceeded || error instanceof UrlImportCancelled) {
+      // 停滞 / 总上限 / 取消都是终态：不再重试，也不当成网络错误去分类。
+      if (
+        error instanceof DownloadStalled ||
+        error instanceof DownloadDeadlineExceeded ||
+        error instanceof UrlImportCancelled
+      ) {
         throw error
       }
       lastError = error
@@ -624,10 +755,14 @@ const fetchChunk = async (
  * 分块下载并校验 ZIP。
  * 进度按字节实时上报；取消在块边界生效；失败按 断网 / 超时 / 403（过期·签名·其他）/ 超限 / 非 ZIP 分类。
  *
- * 兜底终态（本次新增，不改变任何既有超时/重试语义）：
- * - 整段下载有 wall-clock 总预算（DOWNLOAD_TOTAL_BUDGET_MS），覆盖首块与所有重试；
- *   原生 Promise 被永久挂起时由它给出失败终态，而不是无限转圈。
- * - 全程每 HEARTBEAT_INTERVAL_MS 一条心跳，日志/详情里能看出「最后活着的时刻」。
+ * 终态判定（#38 重写，核心是「按无进度判死」而不是「按总时长判死」）：
+ * - 停滞（DownloadStalled）：连续 DOWNLOAD_STALL_MS 没有新字节才判死；
+ *   慢但在推进的链路每拿到一块就会重新计时，因此不会被误杀（164.5MB 慢包不再被判死）。
+ * - 总上限（DownloadDeadlineExceeded）：防御性 30 分钟，只防「永远慢慢爬、永远下不完」。
+ * - 续传：失败时把已到手的块留在 resumePoint，同链接重试从 `state.downloaded` 续；
+ *   服务端忽略 Range（回 200 整包）时丢弃本地字节、从头重下并在详情里写明「已重新开始」。
+ * - 全程每 HEARTBEAT_INTERVAL_MS 一条心跳（带最近一段新增字节与 idle 时长），
+ *   日志/详情里能直接区分「在推进」和「停滞」。
  * - 心跳 interval 在成功/失败/取消/卸载的每条分支上都由 finally 停掉，不留残留。
  */
 const downloadArchive = async (
@@ -637,26 +772,51 @@ const downloadArchive = async (
 ): Promise<File> => {
   const startedAt = Date.now()
   const maxBytes = resolveMaxImportBytes(options.maxBytes)
-  const budgetMs = Math.max(1, options.downloadBudgetMs ?? DOWNLOAD_TOTAL_BUDGET_MS)
+  const stallMs = Math.max(1, options.downloadStallMs ?? DOWNLOAD_STALL_MS)
+  const maxTotalMs = Math.max(1, options.downloadMaxTotalMs ?? DOWNLOAD_MAX_TOTAL_MS)
+  // 续传点只对同一个链接有效；换链接立刻丢掉旧字节（否则会把两份包拼在一起）。
+  const resumed = resumePoint !== null && resumePoint.url === url ? resumePoint : null
+  if (resumed === null && resumePoint !== null) {
+    dropResumePoint()
+  }
   const state: DownloadState = {
     startedAt,
-    downloaded: 0,
-    total: undefined,
-    from: 0,
+    downloaded: resumed?.downloaded ?? 0,
+    total: resumed?.total,
+    from: resumed?.downloaded ?? 0,
     span: 0,
     attempt: 0,
-    deadline: startedAt + budgetMs,
+    lastProgressAt: startedAt,
+    stallMs,
+    deadline: startedAt + maxTotalMs,
   }
   recordEvent('import_stage', 'import: download archive', {
     stage: 'download',
-    'budget.ms': budgetMs,
+    'stall.ms': stallMs,
+    'max.total.ms': maxTotalMs,
+    'download.bytes': state.downloaded,
+    ...(state.total === undefined ? {} : { 'download.total': state.total }),
+    resume: resumed === null ? 'no' : 'yes',
   })
+  if (resumed !== null) {
+    // 续传：明确告知「从已下载的哪里继续」，重试不再从 0 开始（#38）
+    trace?.({ at: 0, kind: 'resume', bytes: resumed.downloaded, totalBytes: resumed.total })
+    options.onProgress?.({
+      phase: 'downloading',
+      downloadedBytes: resumed.downloaded,
+      totalBytes: resumed.total,
+    })
+  }
   const stopHeartbeat = startDownloadHeartbeat(
     state,
     trace,
     Math.max(1, options.heartbeatIntervalMs ?? HEARTBEAT_INTERVAL_MS)
   )
-  const chunks: Uint8Array<ArrayBuffer>[] = []
+  const chunks: Uint8Array<ArrayBuffer>[] = resumed === null ? [] : [...resumed.chunks]
+  /** 是否真的产出了可导入的文件：决定 finally 里要不要保留续传点 */
+  let delivered = false
+  /** 失败是否属于「字节没问题、只是链路断了」：只有这类才值得留着续传 */
+  let resumableFailure = false
   let chunkSize = FIRST_CHUNK_BYTES
   let lastTraceBytes = 0
   let lastTracePercent = -1
@@ -678,10 +838,28 @@ const downloadArchive = async (
         await failForStatus(response, url, startedAt, state.downloaded, state.total, trace)
       }
       if (status === 200 && from > 0) {
-        // 中途不再支持分段：继续拼会拼错，直接按失败处理（包体不完整）。
-        response.data = null
-        recordDownloadFailure('range-lost', url, startedAt, { 'download.bytes': state.downloaded })
-        fail('historyImportUrlBadResponse')
+        // 服务端忽略了 Range，直接回整包：不能把整包接在已下载的字节后面（会拼错、包体翻倍），
+        // 只能丢掉本地已下载的部分从头算，并把「已重新开始」写进详情（#38 要求明确告知）。
+        recordEvent('import_stage', 'import: range ignored, restart from zero', {
+          stage: 'download',
+          'download.bytes': state.downloaded,
+          'request.from': from,
+          'request.span': requested,
+        })
+        trace?.({
+          at: Date.now() - startedAt,
+          kind: 'restart',
+          bytes: 0,
+          totalBytes: state.total,
+          message: 'range-ignored',
+        })
+        chunks.length = 0
+        state.downloaded = 0
+        // 200 的 Content-Length 就是整包大小，下面按新响应重新取（旧的 Range 总数可能过期）
+        state.total = undefined
+        state.lastProgressAt = Date.now()
+        lastTraceBytes = 0
+        lastTracePercent = -1
       }
       let data: unknown = response.data
       response.data = null
@@ -706,6 +884,8 @@ const downloadArchive = async (
       if (bytes.byteLength > 0) {
         chunks.push(bytes)
         state.downloaded += bytes.byteLength
+        // 停滞判定的唯一依据：真的收到新字节才重新计时（#38）
+        state.lastProgressAt = Date.now()
         if (state.downloaded > maxBytes) {
           tooLarge(maxBytes)
         }
@@ -764,38 +944,84 @@ const downloadArchive = async (
     if (!isZipHead(chunks)) {
       fail('historyImportUrlNotZip')
     }
+    delivered = true
     const file = new File(chunks, ARCHIVE_NAME, { type: 'application/zip' })
     chunks.length = 0
     return file
   } catch (error) {
-    if (!(error instanceof DownloadBudgetExceeded)) {
-      throw error
+    // 只有「字节本身没问题、只是链路断了/停了」才留续传点；
+    // 包坏了（非 ZIP）、超限、403（过期/签名）继续从字节中间续也永远好不了，直接丢。
+    resumableFailure =
+      error instanceof DownloadStalled ||
+      error instanceof DownloadDeadlineExceeded ||
+      (error instanceof BackupError && RESUMABLE_ERROR_KEYS.has(error.key))
+    // 取消优先：用户点了取消时，看门狗只是把挂起的原生请求解开，不能算成「下载失败」。
+    if (error instanceof DownloadStalled || error instanceof DownloadDeadlineExceeded) {
+      throwIfCancelled(options.signal)
     }
-    // 取消优先：用户点了取消时，预算只是把挂起的原生请求解开，不能算成「下载失败」。
-    throwIfCancelled(options.signal)
     const { downloaded, total } = state
-    recordDownloadFailure('stalled', url, startedAt, {
+    const meta = {
       'download.bytes': downloaded,
       ...(total === undefined ? {} : { 'download.total': total }),
-      'budget.ms': budgetMs,
       'request.from': state.from,
       'request.span': state.span,
       attempt: state.attempt,
       retryable: 'yes',
-    })
-    trace?.({
-      at: Date.now() - startedAt,
-      kind: 'error',
-      bytes: downloaded,
-      totalBytes: total,
-      message: 'stalled',
-    })
-    // 终态必须可读：阶段（下载）+ 已下载/总字节 + 原因（长时间无响应）+ 可重试。
-    return total === undefined
-      ? fail('historyImportUrlStalledUnknownTotal', { done: formatSize(downloaded) })
-      : fail('historyImportUrlStalled', { done: formatSize(downloaded), total: formatSize(total) })
+      // 已到手一部分就能续传：重试不会再从 0 开始（#38）
+      resume: downloaded > 0 ? 'yes' : 'no',
+    }
+    if (error instanceof DownloadStalled) {
+      const idleMs = Math.max(0, Date.now() - state.lastProgressAt)
+      const seconds = Math.max(1, Math.round(state.stallMs / 1000))
+      recordDownloadFailure('stalled', url, startedAt, {
+        ...meta,
+        'idle.ms': idleMs,
+        'stall.ms': state.stallMs,
+      })
+      trace?.({
+        at: Date.now() - startedAt,
+        kind: 'error',
+        bytes: downloaded,
+        totalBytes: total,
+        idleMs,
+        message: 'stalled',
+      })
+      // 终态必须可读：卡住多久 + 已下载/总量 + 可重试（不再只说「长时间无响应」）
+      return total === undefined
+        ? fail('historyImportUrlStalledUnknownTotal', { done: formatSize(downloaded), seconds })
+        : fail('historyImportUrlStalled', {
+            done: formatSize(downloaded),
+            total: formatSize(total),
+            seconds,
+          })
+    }
+    if (error instanceof DownloadDeadlineExceeded) {
+      const minutes = Math.max(1, Math.round(maxTotalMs / 60_000))
+      recordDownloadFailure('deadline', url, startedAt, { ...meta, 'max.total.ms': maxTotalMs })
+      trace?.({
+        at: Date.now() - startedAt,
+        kind: 'error',
+        bytes: downloaded,
+        totalBytes: total,
+        message: 'deadline',
+      })
+      return total === undefined
+        ? fail('historyImportUrlDeadlineUnknownTotal', { done: formatSize(downloaded), minutes })
+        : fail('historyImportUrlDeadline', {
+            done: formatSize(downloaded),
+            total: formatSize(total),
+            minutes,
+          })
+    }
+    throw error
   } finally {
     stopHeartbeat()
+    // 续传点只在「可续的失败且已到手一部分」时保留；成功、取消、零字节、坏包都立刻丢掉。
+    if (delivered || !resumableFailure || options.signal?.aborted || state.downloaded === 0) {
+      dropResumePoint()
+    } else {
+      resumePoint = { url, chunks, downloaded: state.downloaded, total: state.total }
+    }
   }
 }
 
@@ -887,7 +1113,7 @@ export const importHistoryFromUrl = async (
       // 取消不是失败：单独记一条，便于区分「用户取消」与「链路失败」。
       record('warning', 'warn', 'import cancelled by user', {
         stage: 'url-import',
-        })
+      })
       emit({ kind: 'cancel' })
       throw error instanceof UrlImportCancelled ? error : new UrlImportCancelled()
     }

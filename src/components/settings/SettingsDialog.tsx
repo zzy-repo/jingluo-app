@@ -610,13 +610,23 @@ const traceLine = (t: ReturnType<typeof useTranslate>, entry: ImportTraceEntry):
             total: formatBytes(entry.totalBytes),
           })
     case 'heartbeat':
-      // 心跳：这一段没有任何新字节，只用来证明「最后活着的时刻」+ 已下载多少
+      // 心跳：这一段没有任何新字节，用来证明「最后活着的时刻」+ 已下载多少 + 停滞了多久
       return entry.totalBytes === undefined
-        ? t('importTraceHeartbeatUnknown', { done: formatBytes(entry.bytes ?? 0) })
+        ? t('importTraceHeartbeatUnknown', {
+            done: formatBytes(entry.bytes ?? 0),
+            idle: Math.round((entry.idleMs ?? 0) / 1000),
+          })
         : t('importTraceHeartbeat', {
             done: formatBytes(entry.bytes ?? 0),
             total: formatBytes(entry.totalBytes),
+            idle: Math.round((entry.idleMs ?? 0) / 1000),
           })
+    case 'resume':
+      // 续传：重试不再从 0 开始（#38）
+      return t('importTraceResume', { done: formatBytes(entry.bytes ?? 0) })
+    case 'restart':
+      // 服务端忽略 Range：已丢弃本地字节、从头重下，必须让用户看到
+      return t('importTraceRestart')
     case 'check':
       return entry.totalSessions === undefined
         ? t('importTraceCheckUnknown')
@@ -647,8 +657,15 @@ const traceLine = (t: ReturnType<typeof useTranslate>, entry: ImportTraceEntry):
                   : entry.message === 'forbidden'
                     ? t('importTraceReasonForbidden')
                     : entry.message === 'stalled'
-                      ? t('importTraceReasonStalled', { done: formatBytes(entry.bytes ?? 0) })
-                      : entry.status !== undefined && entry.status > 0
+                      ? t('importTraceReasonStalled', {
+                          done: formatBytes(entry.bytes ?? 0),
+                          seconds: Math.round((entry.idleMs ?? 0) / 1000),
+                        })
+                      : entry.message === 'deadline'
+                        ? t('importTraceReasonDeadline', {
+                            minutes: Math.max(1, Math.round(entry.at / 60_000)),
+                          })
+                        : entry.status !== undefined && entry.status > 0
                         ? t('importTraceReasonHttp', { status: entry.status })
                         : t('importTraceReasonNetwork')
       const stage =

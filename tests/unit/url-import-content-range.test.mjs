@@ -104,7 +104,7 @@ const runImport = async (options = {}) => {
   const progress = []
   const error = await importHistoryFromUrl(URL_OK, {
     onProgress: (entry) => progress.push(entry),
-    downloadBudgetMs: 30_000,
+    downloadStallMs: 30_000,
     heartbeatIntervalMs: 1_000,
     ...options,
   }).then(
