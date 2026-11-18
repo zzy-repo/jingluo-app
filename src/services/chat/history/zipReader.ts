@@ -4,16 +4,47 @@ const READ_CHUNK_BYTES = 256 * 1024
 // 控制每轮同步解压的工作量；输出交给调用方保存后才继续读取。
 const INFLATE_CHUNK_BYTES = 8 * 1024
 
+// 解压上限（#153 缺口 3）：只有「流式分块」不够，一个几十 KB 的条目就能解出几 GB。
+// 取值依据（实测于本机导出样例与红队用例）：
+// - 会话 JSON 是高度重复的固定结构，压缩比实测 3:1 ~ 10:1；图片本身已是压缩格式，约 1:1。
+//   上限给到正常文本的 20 倍（200:1），只拦「全零 / 高度重复」的炸弹（实测 32MB 全零 = 1004:1），
+//   正常备份不会被它拦下。
+const MAX_INFLATE_RATIO = 200
+// 比值闸只对解压后 ≥ 16MiB 的条目生效：小条目里上千倍的比值是正常现象
+// （10MB 全是同一字符的合法会话约 500:1，拦它属于误杀）。炸弹的体积也是几十 MB 起步。
+const RATIO_MIN_OUTPUT_BYTES = 16 * 1024 * 1024
+// 解压后总量闸：归档字节数的导入上限是 200MiB（importLimit.DEFAULT_MAX_IMPORT_BYTES），
+// 正常备份解压后 ≲ 3 倍，这里留到 4 倍（800MiB）。按中央目录声明的解压尺寸累计，
+// 因此在读第一个字节之前就能拒绝「声明尺寸撒谎 / 条目极多」的包。
+const MAX_INFLATE_TOTAL_BYTES = 800 * 1024 * 1024
+// 条目名长度上限：整条路径 1024 字节（解压出来要落成文件路径，Android/ext4 单段 255 字节）。
+// 导出里的路径段都很短，上限只拦明显异常的构造（实测有 60000 字节的条目名）。
+const MAX_PATH_BYTES = 1024
+
 /** ZIP 结构损坏或使用了不支持的特性 */
 export class ArchiveError extends Error {
-  constructor() {
+  /**
+   * reason=duplicate：同一个路径在包内出现了两次（#153 缺口 2），`target` 是那条冲突的路径；
+   * reason 为空：其它结构问题。调用方据此给出不同的错误码，别把重名折叠成「文件被截断」。
+   */
+  readonly reason?: 'duplicate'
+  readonly target?: string
+
+  constructor(reason?: 'duplicate', target?: string) {
     super('Invalid or unsupported history archive')
     this.name = 'ArchiveError'
+    this.reason = reason
+    this.target = target
   }
 }
 
 const invalid = (): never => {
   throw new ArchiveError()
+}
+
+/** 同名条目要带出冲突路径，让提示能点名是哪一条重复了。 */
+const duplicated = (path: string): never => {
+  throw new ArchiveError('duplicate', path)
 }
 
 /** 本地文件头签名 PK\x03\x04，用于在解析前区分 ZIP 与其他文件。 */
@@ -59,6 +90,10 @@ const checkExtra = (bytes: Uint8Array) => {
 }
 
 const decodePath = (bytes: Uint8Array, flags: number) => {
+  // #153 缺口 4：条目名长度上限（此前 60000 字节的名字也能进到路径校验里）。
+  if (bytes.length > MAX_PATH_BYTES) {
+    invalid()
+  }
   // 非 UTF-8 编码的 ZIP 文件名仅接受 ASCII，确保附件路径解码准确。
   if (!(flags & 0x800) && bytes.some((byte) => byte > 0x7f)) {
     invalid()
@@ -119,6 +154,8 @@ const readDirectory = async (file: File): Promise<{ entries: Entry[]; offset: nu
   }
   const entries: Entry[] = []
   const paths = new Set<string>()
+  /** 已累计的声明解压尺寸，用于「解压后总量」闸。 */
+  let inflatedTotal = 0
   let cursor = 0
   for (let index = 0; index < count; index++) {
     if (cursor + 46 > size) {
@@ -150,11 +187,22 @@ const readDirectory = async (file: File): Promise<{ entries: Entry[]; offset: nu
     ) {
       invalid()
     }
+    // #153 缺口 3：双闸都按中央目录声明的尺寸在「解压之前」判断。
+    if (entrySize > MAX_INFLATE_TOTAL_BYTES - inflatedTotal) {
+      invalid()
+    }
+    inflatedTotal += entrySize
+    if (entrySize >= RATIO_MIN_OUTPUT_BYTES && entrySize > compressedSize * MAX_INFLATE_RATIO) {
+      invalid()
+    }
     const name = await readBytes(file, offset + cursor + 46, nameLength)
     const path = decodePath(name, flags)
     // 目录和同名文件也不能互相覆盖。
     const identity = path.endsWith('/') ? path.slice(0, -1) : path
-    if (paths.has(identity) || (path.endsWith('/') && entrySize !== 0)) {
+    if (paths.has(identity)) {
+      duplicated(identity)
+    }
+    if (path.endsWith('/') && entrySize !== 0) {
       invalid()
     }
     paths.add(identity)

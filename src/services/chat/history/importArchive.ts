@@ -57,11 +57,16 @@ const requireManifestFirst = (found: string): never =>
 /**
  * ZIP 层失败（ArchiveError）要带出真实原因（#40）：能定位到条目就给条目名与序号，
  * 连目录都读不到就说文件被截断/被重新打包，不再一律折叠成 backupIncomplete。
+ * 同名条目（#153 缺口 2）按原因单列错误码，提示点名重复的那条路径。
  */
-const archiveFailure = (index: number, path: string | undefined): BackupError =>
-  path === undefined
+const archiveFailure = (index: number, path: string | undefined, error: ArchiveError): BackupError => {
+  if (error.reason === 'duplicate') {
+    return new BackupError('backupEntryDuplicated', { entry: error.target ?? path ?? '' })
+  }
+  return path === undefined
     ? new BackupError('backupArchiveUnreadable')
     : new BackupError('backupArchiveDamaged', { index, entry: path })
+}
 
 /**
  * 检查 ZIP 格式、首个 manifest 条目及格式版本。
@@ -85,7 +90,7 @@ export const checkArchiveFormat = async (file: File): Promise<void> => {
       return
     }
   } catch (error) {
-    throw error instanceof ArchiveError ? archiveFailure(index, path) : error
+    throw error instanceof ArchiveError ? archiveFailure(index, path, error) : error
   }
   fail('backupEmptyArchive')
 }
@@ -101,8 +106,8 @@ export type ImportArchiveOptions = {
 }
 
 /**
- * 流式导入：manifest → user（不导入）→ 全部会话 JSON → index → 全部图片。
- * 也支持会话与图片交错排列、index 位于末尾的条目顺序。
+ * 流式导入：manifest 首条，其余条目按物理顺序单遍处理（user 不导入，会话 JSON 立即暂存，
+ * index 与图片顺序无关）。也支持会话与图片交错排列、index 位于末尾或位于会话之前的顺序。
  * 会话读完立即暂存，只保留图片路径映射；图片全部读完后逐会话回填 MIME，不改变图片身份。
  * 写入导入暂存存储；调用方负责先清空暂存，成功后替换正式数据，失败时清理暂存。
  *
@@ -163,7 +168,9 @@ export const importArchive = async (
       } else if (path === USER_PATH && !index && imported.size === 0) {
         // 账号信息（已脱敏）不导入；文件可能缺失。
         await skipEntry(entry)
-      } else if (sessionId !== null && !index) {
+      } else if (sessionId !== null) {
+        // #153 缺口 1：会话文件与 index 的先后不是导出格式的一部分，index 先到也要照常导入；
+        // 目录里多出来的 / 缺掉的会话由末尾的完整性校验负责。
         // #49：坏会话不再让整包失败。整会话都构造不出来时只跳过它，跳过的条目逐条带进 skipped。
         const result = toLocalSessionResult(readSessionFile(await readJson(entry)))
         if (imported.has(sessionId)) {
@@ -209,7 +216,7 @@ export const importArchive = async (
       }
     }
   } catch (error) {
-    throw error instanceof ArchiveError ? archiveFailure(entryIndex, entryPath) : error
+    throw error instanceof ArchiveError ? archiveFailure(entryIndex, entryPath, error) : error
   }
   if (!manifest) {
     fail('backupEmptyArchive')

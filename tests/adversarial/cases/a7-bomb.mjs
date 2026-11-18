@@ -2,8 +2,8 @@
 // 构造方式：
 //   1) 32MB 全零数据压成 deflate（压缩比 ~1000:1），看导入端有没有解压上限；
 //   2) 中央目录与局部头把「解压后尺寸」写成 4GB，实际压缩数据只有几十 KB；
-//   3) 静态审计 zipReader 里有没有 MAX_* / ratio 之类的上限。
-// 期望：不能因为压缩比高就吃爆内存或长时间卡死；声明尺寸撒谎要拒绝而不是按声明预分配。
+//   3) 静态审计 zipReader 里有没有解压闸（压缩比 + 解压后总量）。
+// 期望：解压闸要拦住炸弹并给出拒绝提示（不能靠内存兜底），声明尺寸撒谎要拒绝而不是按声明预分配。
 import { readFileSync } from 'node:fs'
 import {
   archiveFile,
@@ -66,9 +66,11 @@ console.log(
   `  压缩比 ${ratio.toFixed(0)}:1（原文 ${(bombSession.length / MB).toFixed(1)}MB → 包体 ${(bytes.length / 1024).toFixed(0)}KB），耗时 ${elapsed}ms，RSS ${rssBefore}MB → ${rssAfter}MB`
 )
 check(
-  `1) 压缩比 ${ratio.toFixed(0)}:1 的 32MB 条目：不崩、耗时可接受（当前没有解压上限，只有内存上限兜底）`,
-  failure.ok && staged.sessions.length === 1 && elapsed < 30_000,
-  failure.ok ? `${elapsed}ms / ΔRSS ${rssAfter - rssBefore}MB` : `${failure.key} / ${failure.message}`
+  `1) 压缩比 ${ratio.toFixed(0)}:1 的 32MB 条目 → 被解压闸（压缩比 + 解压后总量）拒绝，且不爆内存`,
+  !failure.ok && staged.sessions.length === 0 && elapsed < 30_000 && rssAfter - rssBefore < 256,
+  failure.ok
+    ? `仍按原样导入（解压闸没生效）/ ${elapsed}ms / ΔRSS ${rssAfter - rssBefore}MB`
+    : `${failure.key} / ${elapsed}ms / ΔRSS ${rssAfter - rssBefore}MB`
 )
 
 // 2) 声明解压尺寸撒谎：写 4GB，实际只有几十 KB
@@ -87,13 +89,14 @@ check(
   `${liarFailure.key} / ΔRSS ${rssAfterLiar - rssBeforeLiar}MB`
 )
 
-// 3) 静态审计：有没有解压上限 / 压缩比上限
+// 3) 静态审计：解压上限（压缩比 + 解压后总量）与条目名长度上限都在
 const reader = readFileSync(new URL('../../../src/services/chat/history/zipReader.ts', import.meta.url), 'utf8')
-const capHits = reader.match(/MAX_[A-Z_]+|ratio|limit/gi) ?? []
+const caps = ['MAX_INFLATE_RATIO', 'RATIO_MIN_OUTPUT_BYTES', 'MAX_INFLATE_TOTAL_BYTES', 'MAX_PATH_BYTES']
+const missing = caps.filter((name) => !reader.includes(name))
 check(
-  '3) 记录现状：zipReader 里没有任何解压尺寸/压缩比上限（只有流式 8KB 分块，靠内存兜底）',
-  capHits.length === 0,
-  capHits.length === 0 ? '确认无上限常量' : `命中：${[...new Set(capHits)].join(', ')}`
+  '3) zipReader 里有解压闸（压缩比 + 解压后总量）与条目名长度上限常量',
+  missing.length === 0,
+  missing.length === 0 ? `齐备：${caps.join(', ')}` : `缺：${missing.join(', ')}`
 )
 
 const failed = checks.filter((item) => !item.pass)

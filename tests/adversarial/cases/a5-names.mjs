@@ -46,7 +46,7 @@ const indexOf = (ids) =>
     }))
   )
 
-// 1) 超长条目名：300 字节
+// 1) 超长条目名：259 字节（在 1024 字节上限之内，必须照常接受）
 const longName = `chat_sessions/${'a'.repeat(240)}.json`
 await resetStaging()
 const longBytes = buildZip([
@@ -55,22 +55,24 @@ const longBytes = buildZip([
 ])
 const longPaths = await listArchivePaths(archiveFile(longBytes))
 check(
-  `1) ${longName.length} 字节条目名 → 无长度上限，被接受（记录行为）`,
+  `1) ${longName.length} 字节条目名 → 未超上限，照常接受（不误杀正常附件名）`,
   longPaths.length === 2 && longPaths.includes(longName),
   `目录列出 ${longPaths.length} 个条目，最长 ${Math.max(0, ...longPaths.map((path) => path.length))} 字符`
 )
 
-// 2) 超长条目名：60000 字节（ZIP 允许到 65535）
+// 2) 超长条目名：60019 字节（ZIP 允许到 65535，但没有上限就能把路径校验和落盘撑爆）
 const hugeName = `chat_sessions/${'b'.repeat(60000)}.json`
 const hugeBytes = buildZip([
   { name: 'manifest.json', data: manifest },
   { name: hugeName, data: sessionJson('b'.repeat(60000)) },
 ])
 const hugePaths = await listArchivePaths(archiveFile(hugeBytes))
+await resetStaging()
+const hugeFailure = await captureFailure(() => importArchive(archiveFile(hugeBytes), { totalSessions: 1 }))
 check(
-  '2) 60000 字节条目名 → 不崩、按原样接受（仍是「无上限」）',
-  hugePaths.length === 2,
-  `包体 ${hugeBytes.length} 字节，条目名 ${hugeName.length} 字节`
+  '2) 60019 字节条目名 → 超上限被拒绝，不崩、不写入暂存',
+  !hugeFailure.ok && hugePaths.length === 0 && (await staging()).__staging.sessions.length === 0,
+  `${hugeFailure.key} / 目录列出 ${hugePaths.length} 个条目 / 暂存 ${(await staging()).__staging.sessions.length}`
 )
 
 // 3) manifest 内容带 UTF-8 BOM

@@ -650,4 +650,5 @@ export const zh = {
   settingDouyinCopied: '抖音号已复制',
   oursErrCustomerNeedsKey:
     '请先在 App 内领取 Key（没有 Key 就拿不到客户编号，本次没有下单）',
+  backupEntryDuplicated: '导入包里「{entry}」这条路径重复出现了两次，无法判断该用哪一条；请选择 DeepSeek 导出的原始 ZIP，不要解压后重新打包',
 } as const

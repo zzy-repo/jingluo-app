@@ -670,4 +670,5 @@ export const en = {
   settingDouyinCopied: 'Douyin ID copied',
   oursErrCustomerNeedsKey:
     'Claim an API Key in the app first (without a Key we cannot resolve your customer id, so nothing was ordered)',
+  backupEntryDuplicated: 'The entry "{entry}" appears twice in this ZIP, so it is impossible to tell which one to use. Choose the original DeepSeek export ZIP instead of a repacked one.',
 } satisfies Record<keyof typeof zh, string>

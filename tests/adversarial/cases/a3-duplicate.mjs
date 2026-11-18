@@ -42,9 +42,11 @@ const duplicateManifest = buildZip([
 ])
 const dup = await run(duplicateManifest)
 check(
-  '1) 同名条目重复 → 拒绝，且不写入任何暂存',
-  dup.failure.key === 'backupArchiveUnreadable' && dup.staging.sessions.length === 0,
-  `${dup.failure.key} / 暂存 ${dup.staging.sessions.length}`
+  '1) 同名条目重复 → 拒绝，错误码点名重复并带出冲突路径，且不写入任何暂存',
+  dup.failure.key === 'backupEntryDuplicated' &&
+    dup.failure.params?.entry === 'manifest.json' &&
+    dup.staging.sessions.length === 0,
+  `${dup.failure.key} / entry=${dup.failure.params?.entry} / 暂存 ${dup.staging.sessions.length}`
 )
 
 // 2) 诊断质量：重复条目应该能被用户看懂（「文件被截断 / 被重新打包」会把人带偏）
