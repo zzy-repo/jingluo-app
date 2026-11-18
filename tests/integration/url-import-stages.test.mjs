@@ -40,14 +40,22 @@ const obsError = (code, message) =>
  *   rejectAfter —— 已发出的请求数超过该值时改为 reject（模拟断网/超时）
  *   rejectMessage —— reject 的错误原文
  */
-const openApp = async (plan, { viewport = { width: 1280, height: 800 } } = {}) => {
+const openApp = async (plan, { viewport = { width: 1280, height: 800 }, oldWebview = false } = {}) => {
   const browser = await chromium.launch()
   const context = await browser.newContext({
     locale: 'zh-CN',
     viewport,
     permissions: ['clipboard-read', 'clipboard-write'],
   })
-  await context.addInitScript((plan) => {
+  await context.addInitScript(
+    ({ plan, oldWebview }) => {
+    if (oldWebview) {
+      // 旧 Android WebView（Chrome < 110）没有 ES2023 的数组新 API
+      delete Array.prototype.toSorted
+      delete Array.prototype.toReversed
+      delete Array.prototype.toSpliced
+      delete Array.prototype.with
+    }
     window.androidBridge = { postMessage: () => {} }
     const toBytes = (value) => {
       const binary = atob(value)
@@ -164,7 +172,9 @@ const openApp = async (plan, { viewport = { width: 1280, height: 800 } } = {}) =
         return respond(options)
       },
     }
-  }, plan)
+    },
+    { plan, oldWebview }
+  )
   const page = await context.newPage()
   const consoleErrors = []
   page.on('console', (message) => {
@@ -709,6 +719,26 @@ const run = async () => {
     await page.getByRole('button', { name: '复制详情', exact: true }).click()
     const copied = await page.evaluate(() => navigator.clipboard.readText())
     check('失败详情复制不含签名/密钥', !/Signature=|AccessKeyId=|sk-/.test(copied), copied.slice(0, 200))
+    check('console error = 0', consoleErrors.length === 0, consoleErrors.join(' | '))
+    await browser.close()
+  }
+
+  // ── 用例 19：旧 WebView（无 ES2023 数组 API）也能导入（toSorted 回归） ──────
+  {
+    console.log('\n[case 19] 旧 Android WebView：删掉 toSorted/toReversed/with 后仍能导入')
+    const archive = buildArchive({ sessionCount: 12, padBytes: 256 * 1024 })
+    const { browser, page, consoleErrors } = await openApp(
+      { kind: 'arraybuffer', status: 200, range: true, chunkDelay: 60, data: base64(archive.zip) },
+      { oldWebview: true }
+    )
+    const hasToSorted = await page.evaluate(() => typeof Array.prototype.toSorted)
+    check('确实模拟了旧 WebView（toSorted 不存在）', hasToSorted === 'undefined', String(hasToSorted))
+    await startUrlImport(page)
+    const { text } = await sampleUntil(page, (value) => /已导入|失败|toSorted/.test(value), 40_000)
+    check('没有出现 toSorted is not a function', !/toSorted is not a function/.test(text), text.slice(0, 200))
+    check('导入成功：已导入 12 个会话', /已导入 12 个会话/.test(text), text.slice(0, 200))
+    const counts = await dbCounts(page)
+    check('写库会话数 = 12', counts.sessions === 12, JSON.stringify(counts))
     check('console error = 0', consoleErrors.length === 0, consoleErrors.join(' | '))
     await browser.close()
   }

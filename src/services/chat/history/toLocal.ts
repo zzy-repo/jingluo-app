@@ -244,7 +244,10 @@ const toAssistant = (message: ChatMessage): AssistantMessage => {
  * current_message_id 到根的路径为当前分支；其余节点默认选中 id 最大的子消息。
  */
 const buildTree = (file: SessionFile): Pick<Session, 'messages' | 'rootMessageId'> => {
-  const sorted = file.messages.toSorted((a, b) => a.id - b.id)
+  // 用 [...array].sort() 而不是 Array.prototype.toSorted：后者是 ES2023（Chrome/WebView 110+），
+  // 旧 Android WebView 上会直接抛「e.messages.toSorted is not a function」，导入全部失败。
+  // 复制后再排序，保持「不改动入参」的原语义。
+  const sorted = [...file.messages].sort((a, b) => a.id - b.id)
   const byId = new Map<number, Message>()
   const messages = sorted.map((message) => {
     const { id, parent_id } = message
