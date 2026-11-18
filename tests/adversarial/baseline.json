@@ -1,0 +1,161 @@
+{
+  "note": "红队 / 对抗用例基线：verdict=green 表示用例全绿；known-defect 表示用例里有一条断言是「真产品缺陷」而故意保持红色。产生方式：node tests/adversarial/run-adversarial.mjs --record。全部结论为静态推断 / 单元级，无模拟器，不代表真机结论。",
+  "scope": "Issue #143 D 类：主动构造能打破旧 WebView 与弱环境的输入，暴露兼容性缺陷。",
+  "cases": {
+    "a1": {
+      "bucket": "A 畸形归档",
+      "file": "a1-truncated.mjs",
+      "title": "被截断的 ZIP / 声明尺寸撒谎",
+      "verdict": "green",
+      "construct": "把合法归档分别截在本地头、中央目录、EOCD 中间，以及把 declaredSize 改小。",
+      "expect": "拒绝并给出可读的「包损坏 / 读不到文件目录」提示，不得静默半导入。",
+      "actual": "backupArchiveDamaged / backupArchiveDamaged / backupArchiveUnreadable / backupArchiveDamaged，均无半导入。"
+    },
+    "a2": {
+      "bucket": "A 畸形归档",
+      "file": "a2-order.mjs",
+      "title": "条目顺序异常（index 在会话之前 / 交错）",
+      "verdict": "known-defect",
+      "construct": "把 chat_session_index.json 放到会话文件之前、把 manifest 放到非首位、交错两个会话的条目。",
+      "expect": "manifest 必须第一（产品语义），但 index 与会话的相对顺序不是格式的一部分，应能导入。",
+      "actual": "manifest 不在首位 → backupManifestNotFirst（正确）；index 先于会话 → backupIncomplete「文件内容不完整」（缺陷：顺序敏感）。",
+      "defect": {
+        "severity": "low-medium",
+        "note": "导入对条目顺序敏感：index 排在会话之前即被判「内容不完整」，提示误导。"
+      }
+    },
+    "a3": {
+      "bucket": "A 畸形归档",
+      "file": "a3-duplicate.mjs",
+      "title": "重复条目名 / 重复路径",
+      "verdict": "known-defect",
+      "construct": "同一包内写入两个同名 manifest.json 与两个同名会话文件。",
+      "expect": "拒绝并指出「重复条目」，或按最后一条覆盖并说明。",
+      "actual": "报「ZIP 结构损坏：读不到文件目录，文件可能被截断或被其它工具重新打包」，从不提重复（提示误导）。",
+      "defect": {
+        "severity": "low",
+        "note": "重复条目被并成结构损坏错误，用户无法据提示自查。"
+      }
+    },
+    "a4": {
+      "bucket": "A 畸形归档",
+      "file": "a4-traversal.mjs",
+      "title": "路径穿越 / 绝对路径 / 反斜杠 / 空名",
+      "verdict": "green",
+      "construct": "../ 与 ..\\、绝对路径 /etc/passwd、盘符 C:\\、反斜杠、空名、以 / 结尾的伪目录。",
+      "expect": "全部拒绝，且不得写出导入目录之外（路径校验在 readDirectory 里先做）。",
+      "actual": "12/12 全部按期望拒绝，无一落到暂存。"
+    },
+    "a5": {
+      "bucket": "A 畸形归档",
+      "file": "a5-names.mjs",
+      "title": "超长文件名 / BOM / UTF-16 文件名",
+      "verdict": "green",
+      "construct": "259 字节与 60019 字节的 manifest 名、﻿ 前缀名、UTF-16LE 编码的 JSON 体。",
+      "expect": "超长名与 BOM 前缀应按同名处理（解码后就是 manifest.json）；UTF-16 体应拒绝或按 JSON 解析。",
+      "actual": "超长名与 BOM 前缀均被接受（当前无长度上限）；UTF-16LE → backupInvalidJson；MANIFEST.JSON → backupManifestNotFirst。"
+    },
+    "a6": {
+      "bucket": "A 畸形归档",
+      "file": "a6-empty.mjs",
+      "title": "空 ZIP / 只有目录项 / 只有 manifest",
+      "verdict": "green",
+      "construct": "0 字节、22 字节 EOCD-only、只含目录条目、只含 manifest 的归档。",
+      "expect": "空包给出「无法识别 / 空归档」，不得崩溃；缺会话时应说明缺什么。",
+      "actual": "backupUnrecognized / backupEmptyArchive / backupManifestNotFirst（第一个文件是 chat_sessions/s1.json 这类绝对化描述）。"
+    },
+    "a7": {
+      "bucket": "A 畸形归档",
+      "file": "a7-bomb.mjs",
+      "title": "ZIP 炸弹 / 解压尺寸撒谎",
+      "verdict": "green",
+      "construct": "32MB 全零 padding（压缩比 1004:1，包体 33KB）+ 把 declaredSize 写成 4GB。",
+      "expect": "不崩、耗时可接受；声明尺寸撒谎要拒绝且不按声明预分配内存；同时记录是否存在解压上限。",
+      "actual": "32MB 条目正常导入：646ms、ΔRSS 174MB（无解压上限，只有内存兜底）；4GB 撒谎尺寸 → backupArchiveDamaged、ΔRSS 0MB。"
+    },
+    "a8": {
+      "bucket": "A 畸形归档",
+      "file": "a8-manifest.mjs",
+      "title": "manifest 字段类型错误 / 缺失 / 0 字节 / 版本越界",
+      "verdict": "green",
+      "construct": "valid JSON 但 version 为字符串/负数、字段类型错、缺 manifest、0 字节 manifest、version 3.5。",
+      "expect": "类型错误 → backupIncomplete 或版本错；缺/空 manifest → 明确报缺；更高版本 → 版本过新。",
+      "actual": "11/11 符合；其中 version: 3.5 被报「版本过新」（把小数当更高版本，属提示粒度问题，非缺陷）。"
+    },
+    "b1": {
+      "bucket": "B 巨大输入",
+      "file": "b1-huge-message.mjs",
+      "title": "单条 10MB 消息 + 100 万字符单行",
+      "verdict": "green",
+      "construct": "一条 10MB 回答（内含 100 万字符无换行单行），走真实 importArchive，再喂上下文预算。",
+      "expect": "导入不截断不超时；预算要把约 330 万 token 的单轮裁掉并说明。",
+      "actual": "导入 186ms、包体 11KB、内容长度一致；estimateChars=10485760 → 333334 token；selectRoundWindow 单轮超预算时 kept=1、reason=none（不报裁剪）。"
+    },
+    "b2": {
+      "bucket": "B 巨大输入",
+      "file": "b2-history-scale.mjs",
+      "title": "2000 轮历史 / 4000 行虚拟列表 / 500 会话索引",
+      "verdict": "green",
+      "construct": "2000 轮预算窗口、4000 行布局与贴顶/贴底窗口、500 会话一次导入、索引含重复 id。",
+      "expect": "窗口按 maxRounds 截断且是最新连续段；布局与留白自洽；500 会话全进暂存；重复 id 被指出。",
+      "actual": "kept=200 reason=rounds（0ms）；total=512760px（1ms）；top=[0,6) bottom=[3987,4000)；500 条进暂存；重复 id → backupIncomplete 但提示不提重复。"
+    },
+    "b3": {
+      "bucket": "B 巨大输入",
+      "file": "b3-emoji.mjs",
+      "title": "10 万 emoji / 10 万组合字符",
+      "verdict": "green",
+      "construct": "10 万 emoji（20 万码元）与 10 万 e+组合重音各走一遍导入与预算。",
+      "expect": "按码元计数、偏保守可接受；不能切出孤立代理；记录是否有字素切分能力。",
+      "actual": "两端都是 200000 码元 → 66667 token；导入原样存下（200000 码元 / 100000 码点）；175 个源文件里 Intl.Segmenter / grapheme 命中 0。"
+    },
+    "c1": {
+      "bucket": "C 极端环境",
+      "file": "c1-trickle.mjs",
+      "title": "滴流下载（一直有进展但很慢）",
+      "verdict": "known-defect",
+      "construct": "1MB 归档、每块 4KB 延迟 600ms、总预算 1200ms。",
+      "expect": "有进展的慢链路应能区分「无进展卡死」与「总预算耗尽」；至少文案不能与「一直在收字节」矛盾。",
+      "actual": "1216ms 终态 historyImportUrlStalled（文案「下载长时间无响应」），而实际 2 次请求共收到 4096 字节；诊断 reason 记为 stalled，不区分预算耗尽。",
+      "defect": {
+        "severity": "medium",
+        "note": "总预算（120s）与包体上限（200MB）不自洽：需要稳定 ≥1.67MB/s 才可能成功；且预算耗尽被写成「长时间无响应」，与真实原因不符。"
+      }
+    },
+    "c2": {
+      "bucket": "C 极端环境",
+      "file": "c2-clock.mjs",
+      "title": "系统时间前跳 / 回拨",
+      "verdict": "known-defect",
+      "construct": "包一层 Date.now，在第 3 次原生请求前后偏移 ±1 小时，链路本身健康。",
+      "expect": "健康链路不应因墙上时钟异常被判「长时间无响应」；trace 里不应出现负的时间差。",
+      "actual": "前跳 1 小时 → 3600004ms 后报 historyImportUrlStalled（把时钟跳变当成耗时）；回拨 1 小时 → trace 出现 5 条负 durationMs（最负 -3600000ms）。",
+      "defect": {
+        "severity": "medium",
+        "note": "预算与停滞判据用 Date.now 墙钟相减，时钟异常/回拨会误判超时并写出负耗时。"
+      }
+    },
+    "c3": {
+      "bucket": "C 极端环境",
+      "file": "c3-offline.mjs",
+      "title": "离线 / 不可用端口 / 通用 fetch 失败",
+      "verdict": "known-defect",
+      "construct": "原生桥对每个请求立刻抛错，错误形态分别取 net::ERR_INTERNET_DISCONNECTED、TypeError: Failed to fetch（同时 navigator.onLine=false）、net::ERR_UNSAFE_PORT。",
+      "expect": "明确的离线错误 → 网络已断开；通用 fetch 失败且 onLine=false 也应判离线；永久不可用端口不应作为可重试故障重试。",
+      "actual": "ERR_INTERNET_DISCONNECTED → historyImportUrlOffline（正确）；Failed to fetch + onLine=false → historyImportUrlNetwork（未判离线）；ERR_UNSAFE_PORT → historyImportUrlNetwork 并重试 2 次。",
+      "defect": {
+        "severity": "low-medium",
+        "note": "离线判据只看错误串白名单，navigator.onLine 与「永久不可用端口」都没纳入，导致通用网络错误被反复重试且提示「网络异常」。"
+      }
+    },
+    "d1": {
+      "bucket": "D 语法/API 探针",
+      "file": "d1-probe.mjs",
+      "title": "probe.mjs：哪一版 WebView 会出问题",
+      "verdict": "green",
+      "construct": "用 scripts/compat/probe.mjs 对 chromium79/83/91/109/120 判定 46 条语法与内置能力，并 --scan src 定位使用点。",
+      "expect": "每个目标给出不可用清单与最低可用版本；--json 可解析、退出码符合约定；源码里用到的不可用特性要被点名。",
+      "actual": "chromium79 23 项不可用、83 20 项、91 13 项、109 3 项、120 0 项；--list 46 条；--scan src 命中 legacy polyfill、drafts.ts、App.module.css 等处。"
+    }
+  }
+}
