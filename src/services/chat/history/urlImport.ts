@@ -64,6 +64,19 @@ const DOWNLOAD_STALL_MS = 40_000
 const DOWNLOAD_MAX_TOTAL_MS = 30 * 60_000
 
 /**
+ * 上面两个常量之间的**可校验关系**（#152）：按现行上限与总时限，链路至少要稳定跑这么快才可能下完。
+ *
+ * 现值 = DEFAULT_MAX_IMPORT_BYTES（200MB）÷ DOWNLOAD_MAX_TOTAL_MS（1800s）≈ 114KB/s ≈ 0.9Mbps，
+ * 常见移动网络都够，所以两者目前是自洽的。要点是它**推导**而来、不是手写的数：
+ * 谁把上限调大（或把总时限调短）而另一个不跟着动，这个"所需最低带宽"就会立刻变化，
+ * 并随每一次预算耗尽写进诊断（`min.bytes.per.sec`）——「常量不自洽」于是变成一次失败里看得见的事实，
+ * 而不是要等人拿计算器算一遍才发现。
+ *
+ * 数值口径本身（是否保 200MB、要不要按实测带宽自适应）属于产品决定，见 #152 第 3 条，这里不替它选。
+ */
+const MIN_REQUIRED_BYTES_PER_SEC = DEFAULT_MAX_IMPORT_BYTES / (DOWNLOAD_MAX_TOTAL_MS / 1000)
+
+/**
  * 周期性心跳间隔：每 5s 一条「这一段新增了多少字节 + 已经多久没有新字节」，
  * 日志里能直接区分「在推进」和「停滞」，也是原生请求挂住时唯一的在线证据。
  */
@@ -1078,12 +1091,16 @@ const downloadArchive = async (
     }
     if (error instanceof DownloadDeadlineExceeded) {
       const minutes = Math.max(1, Math.round(maxTotalMs / 60_000))
-      recordDownloadFailure('deadline', url, startedAt, { ...meta, 'max.total.ms': maxTotalMs })
+      // 预算耗尽 ≠ 无响应：字节其实一直在涨，只是没在下限内跑完（#152）。
+      // 把「按当前常量至少要多快」一起记进诊断，常量之间一旦不自洽，这里当场就看得出来。
+      const budgetFields = { ...meta, 'max.total.ms': maxTotalMs, 'min.bytes.per.sec': MIN_REQUIRED_BYTES_PER_SEC }
+      recordDownloadFailure('deadline', url, startedAt, budgetFields)
       trace?.({
         at: elapsedSince(startedAt),
         kind: 'error',
         bytes: downloaded,
         totalBytes: total,
+        idleMs: elapsedSince(state.lastProgressAt),
         message: 'deadline',
       })
       return total === undefined
