@@ -127,14 +127,10 @@
       "bucket": "C 极端环境",
       "file": "c3-offline.mjs",
       "title": "离线 / 不可用端口 / 通用 fetch 失败",
-      "verdict": "known-defect",
+      "verdict": "green",
       "construct": "原生桥对每个请求立刻抛错，错误形态分别取 net::ERR_INTERNET_DISCONNECTED、TypeError: Failed to fetch（同时 navigator.onLine=false）、net::ERR_UNSAFE_PORT。",
       "expect": "明确的离线错误 → 网络已断开；通用 fetch 失败且 onLine=false 也应判离线；永久不可用端口不应作为可重试故障重试。",
-      "actual": "ERR_INTERNET_DISCONNECTED → historyImportUrlOffline（正确）；Failed to fetch + onLine=false → historyImportUrlNetwork（未判离线）；ERR_UNSAFE_PORT → historyImportUrlNetwork 并重试 2 次。",
-      "defect": {
-        "severity": "low-medium",
-        "note": "离线判据只看错误串白名单，navigator.onLine 与「永久不可用端口」都没纳入，导致通用网络错误被反复重试且提示「网络异常」。"
-      }
+      "actual": "ERR_INTERNET_DISCONNECTED → historyImportUrlOffline；Failed to fetch + onLine=false → 判离线；ERR_UNSAFE_PORT → 直接判不可用、不再重试；4/4 项符合期望，#154 修好后此处只做基线对齐。"
     },
     "d1": {
       "bucket": "D 语法/API 探针",
