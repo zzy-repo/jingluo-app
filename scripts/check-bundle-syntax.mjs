@@ -10,12 +10,15 @@
 // TypeError = 静默白屏，而且这类问题在 Chrome/Playwright 上永远测不出来。所以要在产物层面卡死下限。
 //
 // 检查分三层：
-//   1) 词法层（零依赖）：先把字符串/模板/正则/注释剥成空格（保持长度与换行），再找
+//   1) 词法层：先把字符串/模板/正则/注释剥成空格（保持长度与换行），再找
 //      ES2021+ 才有的语法记号。剥字面量是必须的 —— prismjs 的语言定义里就有一条
 //      /--|\+\+|\*\*=?|=>|&&=?|\|\|=?|…/ 正则，直接 grep '&&=' 必然误报。
-//   2) 语法层（有 acorn 就跑）：用 acorn 真解析每个文件，AST 里断言没有逻辑赋值 / 类静态块 /
-//      私有类成员，并给出精确行列。仓库没把 acorn 列进 devDependencies（它是 @rspack 的传递依赖），
-//      拿不到时自动退化成只有词法层，并在报告里标注。
+//      剥离边界必须来自 acorn 的 AST（issue #156）：手写状态机在正则密集的压缩 chunk 上会把
+//      成片真实代码当成字面量吃掉，运行时 API 层跟着漏报（假绿）。
+//   2) 语法层：用 acorn 真解析每个文件，AST 里断言没有逻辑赋值 / 类静态块 / 私有类成员，并给出精确行列。
+//      仓库没把 acorn 列进 devDependencies（它是 @rspack 的传递依赖），但 1) 的剥离边界也来自它的
+//      AST，所以 acorn 拿不到时 **整条检查明确失败**（AcornUnavailableError / CLI exit 2），
+//      不存在「退化成只有词法层、然后假绿」这条路。
 //   3) 运行时 API 层（issue #39）：1)、2) 只管语法，`s.replaceAll('/','-')` 这种**内置 API 缺失**
 //      它们完全无感。这一层扫产物里出现的、Chrome 83 没有的内置 API，再去入口脚本里找
 //      legacy polyfill 标记；没补上就阻断。
@@ -72,194 +75,104 @@ const patternHits = (stripped, pattern, label) => {
   return hits
 }
 
-const isWordChar = (char) => char !== undefined && /[A-Za-z0-9_$]/.test(char)
+/* ── 字面量遮蔽（issue #156：边界只信 AST，不再手写状态机） ────────────────────
+ *
+ * 契约：stripLiterals(code) 返回与原文**等长、换行位置不变**的字符串；
+ * 字符串 / 模板片段 / 正则字面量 / 注释的内容一律换成空格，真实代码（标识符、成员访问、
+ * 点号、括号、运算符）原样保留。等长是为了让 positionOf() 能直接回算原文行列。
+ *
+ * 为什么不再手写状态机：压缩 chunk 里 '/' 既可能是正则也可能是除号，手写规则表一旦猜错，
+ * 后面成片的真实代码就被当成字面量吃掉（实测 main 包 10 691 段、单段最长 9 338 字符），
+ * 于是 Intl.Segmenter / Object.fromEntries / structuredClone 这类**真实调用点**在词法与
+ * 运行时 API 层一起消失，check:legacy 假绿。AST 不需要猜：解析器自己知道哪里是字面量。
+ */
 
-/** 正则字面量允许出现在这些字符/关键字之后（否则 '/' 就是除号） */
-const REGEX_AFTER_CHAR = new Set([
-  '(',
-  ',',
-  '=',
-  ':',
-  '[',
-  '!',
-  '&',
-  '|',
-  '?',
-  '{',
-  '}',
-  ';',
-  '+',
-  '-',
-  '*',
-  '%',
-  '~',
-  '^',
-  '<',
-  '>',
-  '',
-])
-const REGEX_AFTER_WORD = new Set([
-  'return',
-  'typeof',
-  'instanceof',
-  'in',
-  'of',
-  'new',
-  'delete',
-  'void',
-  'case',
-  'do',
-  'else',
-  'yield',
-  'await',
-  'throw',
-])
+/**
+ * acorn 拿不到时的显式失败。绝不退回手写状态机 —— 那正是 issue #156 的假绿来源。
+ * CLI 在 main() 里提前拦一次（exit 2 + 人话提示），这里是给库调用方（测试、matrix-scan）用的。
+ */
+export class AcornUnavailableError extends Error {
+  constructor() {
+    super(
+      'acorn 不可用：无法做 AST 级字面量剥离。手写状态机在压缩 chunk 上会误吞真实代码（issue #156），' +
+        '所以这里不再降级，直接失败。修复：pnpm install（acorn 是 @rspack 的传递依赖）'
+    )
+    this.name = 'AcornUnavailableError'
+    this.code = 'ACORN_UNAVAILABLE'
+  }
+}
+
+/** 解析缓存：同一份产物代码在一次运行里会被词法层 / 语法层 / 运行时 API 层各问一遍，只解析一次 */
+const PARSE_CACHE = new Map()
+const PARSE_CACHE_LIMIT = 16
+
+/**
+ * 用 acorn 解析一次产物代码并缓存（含注释区间）。
+ * ecmaVersion 2022 + sourceType script 与语法层完全一致：能通过解析的文件，遮蔽口径和
+ * 语法层口径必须来自同一次解析，否则两层会打架。
+ */
+const parseBundle = (code) => {
+  const acorn = loadAcorn()
+  if (!acorn) throw new AcornUnavailableError()
+  const cached = PARSE_CACHE.get(code)
+  if (cached) return cached
+  const comments = []
+  let result
+  try {
+    const ast = acorn.parse(code, {
+      ecmaVersion: 2022,
+      sourceType: 'script',
+      allowHashBang: true,
+      locations: true,
+      onComment: (block, text, start, end) => comments.push([start, end]),
+    })
+    result = { ok: true, ast, comments, version: acorn.version, error: null }
+  } catch (error) {
+    result = { ok: false, ast: null, comments: [], version: acorn.version, error }
+  }
+  if (PARSE_CACHE.size >= PARSE_CACHE_LIMIT) PARSE_CACHE.delete(PARSE_CACHE.keys().next().value)
+  PARSE_CACHE.set(code, result)
+  return result
+}
+
+/** AST 里所有「内容不该被 grep 看到」的区间：字符串/正则字面量、模板片段、注释 */
+const collectMaskRanges = (ast, comments) => {
+  const ranges = comments.map(([start, end]) => [start, end])
+  const walk = (node) => {
+    if (!node || typeof node.type !== 'string') return
+    if (node.type === 'Literal') {
+      // 数字 / 布尔 / null 里不可能藏语法记号或 API 名，只有字符串和正则需要抹
+      if (node.regex || typeof node.value === 'string') ranges.push([node.start, node.end])
+    } else if (node.type === 'TemplateElement') {
+      ranges.push([node.start, node.end])
+    }
+    for (const key of Object.keys(node)) {
+      if (key === 'loc' || key === 'range') continue
+      const child = node[key]
+      if (Array.isArray(child)) {
+        for (const item of child) if (item && typeof item.type === 'string') walk(item)
+      } else if (child && typeof child.type === 'string') walk(child)
+    }
+  }
+  walk(ast)
+  return ranges
+}
 
 /**
  * 把字符串/模板/正则/注释的内容替换成空格（长度与换行保持不变，便于回算行列）。
- * 只做词法剥离，不追求完整解析 —— 目的是让 grep 只看到真正的语法记号。
+ * 只抹 AST 认出来的字面量边界：标识符、成员访问（Intl.Segmenter、.replaceAll( …）不会被碰到。
+ *
+ * 解析不了的文件（理论上产物都该能解析）：**整份不遮蔽**。这样字符串/注释里的同名文本会多报
+ * （假红），但绝不会少报（假绿）；而且这份文件本身已经会被语法层报 parse-error 扣红。
  */
 export const stripLiterals = (code) => {
+  const parsed = parseBundle(code)
+  if (!parsed.ok) return code
   const out = code.split('')
-  const blank = (from, to) => {
-    for (let index = from; index < to && index < out.length; index += 1) {
+  for (const [start, end] of collectMaskRanges(parsed.ast, parsed.comments)) {
+    for (let index = start; index < end && index < out.length; index += 1) {
       if (out[index] !== '\n' && out[index] !== '\r') out[index] = ' '
     }
-  }
-  // 模板字面量里可以再嵌 ${ ... }，用栈记录「回到模板字符串」的位置
-  const templateStack = []
-  let index = 0
-  let lastChar = ''
-  let lastWord = ''
-
-  while (index < code.length) {
-    const char = code[index]
-    const next = code[index + 1]
-
-    if (char === '/' && next === '/') {
-      const end = code.indexOf('\n', index)
-      const stop = end < 0 ? code.length : end
-      blank(index, stop)
-      index = stop
-      continue
-    }
-    if (char === '/' && next === '*') {
-      const end = code.indexOf('*/', index + 2)
-      const stop = end < 0 ? code.length : end + 2
-      blank(index, stop)
-      index = stop
-      continue
-    }
-    if (char === "'" || char === '"') {
-      let cursor = index + 1
-      while (cursor < code.length) {
-        if (code[cursor] === '\\') {
-          cursor += 2
-          continue
-        }
-        if (code[cursor] === char) break
-        cursor += 1
-      }
-      blank(index + 1, cursor)
-      index = cursor + 1
-      lastChar = char
-      lastWord = ''
-      continue
-    }
-    if (char === '`') {
-      templateStack.push('template')
-      index += 1
-      lastChar = '`'
-      lastWord = ''
-      continue
-    }
-    if (char === '$' && next === '{' && templateStack.length) {
-      // 进入模板里的表达式：正常解析，直到配对的 '}'
-      templateStack.push('expression')
-      index += 2
-      lastChar = '{'
-      lastWord = ''
-      continue
-    }
-    if (
-      char === '}' &&
-      templateStack.length &&
-      templateStack[templateStack.length - 1] === 'expression'
-    ) {
-      templateStack.pop()
-      index += 1
-      lastChar = '}'
-      lastWord = ''
-      continue
-    }
-    if (templateStack.length && templateStack[templateStack.length - 1] === 'template') {
-      // 模板字面量正文：跳到下一个 ` 或 ${
-      let cursor = index
-      while (cursor < code.length) {
-        if (code[cursor] === '\\') {
-          cursor += 2
-          continue
-        }
-        if (code[cursor] === '`') break
-        if (code[cursor] === '$' && code[cursor + 1] === '{') break
-        cursor += 1
-      }
-      if (code[cursor] === '`') {
-        blank(index, cursor)
-        templateStack.pop()
-        index = cursor + 1
-      } else {
-        blank(index, cursor)
-        index = cursor
-      }
-      lastChar = '`'
-      lastWord = ''
-      continue
-    }
-    if (char === '/') {
-      const regexAllowed = isWordChar(lastChar)
-        ? REGEX_AFTER_WORD.has(lastWord)
-        : REGEX_AFTER_CHAR.has(lastChar)
-      if (regexAllowed) {
-        let cursor = index + 1
-        let inClass = false
-        while (cursor < code.length) {
-          const inner = code[cursor]
-          if (inner === '\\') {
-            cursor += 2
-            continue
-          }
-          if (inner === '[') inClass = true
-          else if (inner === ']') inClass = false
-          else if (inner === '/' && !inClass) break
-          else if (inner === '\n') break
-          cursor += 1
-        }
-        blank(index + 1, cursor)
-        // 跳过 flags
-        let flagsEnd = cursor + 1
-        while (flagsEnd < code.length && /[a-z]/i.test(code[flagsEnd])) flagsEnd += 1
-        blank(cursor + 1, flagsEnd)
-        index = flagsEnd
-        lastChar = '/'
-        lastWord = ''
-        continue
-      }
-    }
-
-    if (isWordChar(char)) {
-      let cursor = index
-      while (cursor < code.length && isWordChar(code[cursor])) cursor += 1
-      lastWord = code.slice(index, cursor)
-      lastChar = code[cursor - 1]
-      index = cursor
-      continue
-    }
-    if (!/\s/.test(char)) {
-      lastChar = char
-      lastWord = ''
-    }
-    index += 1
   }
   return out.join('')
 }
@@ -288,24 +201,24 @@ export const findForbiddenSyntax = (code) => {
 export const findForbiddenAst = (code) => {
   const acorn = loadAcorn()
   if (!acorn) return null
-  let ast
-  try {
-    // ecmaVersion 2022 才能解析类字段（Chrome 72 起就支持，属于允许范围），
-    // 禁用项由下面的 AST 断言逐个卡，不靠 parser 版本号兜。
-    ast = acorn.parse(code, {
-      ecmaVersion: 2022,
-      sourceType: 'script',
-      allowHashBang: true,
-      locations: true,
-    })
-  } catch (error) {
+  // 与 stripLiterals 共用同一次解析（ecmaVersion 2022 才能解析类字段，Chrome 72 起就支持，
+  // 属于允许范围；禁用项由下面的 AST 断言逐个卡，不靠 parser 版本号兜）
+  const parsed = parseBundle(code)
+  if (!parsed.ok) {
     return {
-      version: acorn.version,
+      version: parsed.version,
       findings: [
-        { kind: 'parse-error', why: '产品文件无法解析', token: error.message, line: 0, column: 0 },
+        {
+          kind: 'parse-error',
+          why: '产品文件无法解析',
+          token: parsed.error.message,
+          line: 0,
+          column: 0,
+        },
       ],
     }
   }
+  const ast = parsed.ast
   const findings = []
   const walk = (node) => {
     if (!node || typeof node !== 'object') return
@@ -698,6 +611,15 @@ const formatFindings = (findings) =>
     .join('\n')
 
 const main = () => {
+  // issue #156：词法层的遮蔽边界来自 acorn 的 AST，语法层也要 acorn。拿不到就明确失败退出，
+  // 不给「只剩词法层然后假绿」这条路（exit 2 = 环境不具备检查能力，与「产物不合格」区分开）。
+  if (!loadAcorn()) {
+    console.error('✗ 找不到 acorn：无法做 AST 级字面量剥离 + 语法解析，本次检查不成立（issue #156）')
+    console.error('  以前这里会自动退化成手写状态机，而它在压缩 chunk 上会误吞真实代码、把违规查成合格，')
+    console.error('  所以现在一律判失败，绝不静默降级。')
+    console.error('  修复：pnpm install（acorn 是 @rspack 的传递依赖，不在 package.json 里）')
+    process.exit(2)
+  }
   const distDir = path.resolve(ROOT, process.argv[2] ?? 'dist')
   const jsFiles = walkFiles(path.join(distDir, 'static', 'js'), '.js')
   const cssFiles = walkFiles(path.join(distDir, 'static', 'css'), '.css')
@@ -710,7 +632,7 @@ const main = () => {
   const runtime = checkRuntimeApis(distDir, jsFiles)
   console.log(`产物兼容性检查（语法 + 运行时 API）：${path.relative(ROOT, distDir) || '.'}`)
   console.log(
-    `  JS 文件 ${js.files} 个；词法层违规 ${js.lexical.length} 个；AST 层违规 ${js.ast.length} 个${js.acornVersion ? `（acorn ${js.acornVersion}, ecmaVersion 2022 + 禁用项断言）` : '（没有 acorn，只做了词法层）'}`
+    `  JS 文件 ${js.files} 个；词法层违规 ${js.lexical.length} 个；AST 层违规 ${js.ast.length} 个（acorn ${js.acornVersion ?? '缺失'}, ecmaVersion 2022 + 禁用项断言；字面量遮蔽 = acorn AST 边界）`,
   )
   console.log(
     `  dvh 声明 ${css.dvhTotal} 处；带 vh 回退 ${css.fallbackTotal} 处；问题 ${css.problems.length} 个`
