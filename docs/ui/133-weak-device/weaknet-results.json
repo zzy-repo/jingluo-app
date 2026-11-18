@@ -1,0 +1,632 @@
+[
+  {
+    "scenario": "s0-ok",
+    "url": "http://10.0.2.2:5399/ok/v1",
+    "expect": "正常流式完成，转圈与停止按钮都在结束时消失",
+    "spinnerFirstMs": null,
+    "spinnerGoneMs": null,
+    "stopSeenMs": 91,
+    "stopGoneMs": 1126,
+    "firstTextMs": 138,
+    "errorAtMs": null,
+    "errorText": null,
+    "finalBody": "这是对照组：正常 200 + SSE 分片，回答完整收尾。",
+    "finalSpinner": false,
+    "finalStop": false,
+    "rows": 2,
+    "timeline": [
+      {
+        "at": 91,
+        "body": "",
+        "spinner": false,
+        "stop": true
+      },
+      {
+        "at": 1099,
+        "body": "这是对照组：正常 200 + SSE 分片，回答完整收尾。",
+        "spinner": false,
+        "stop": true
+      },
+      {
+        "at": 2117,
+        "body": "这是对照组：正常 200 + SSE 分片，回答完整收尾。",
+        "spinner": false,
+        "stop": false
+      },
+      {
+        "at": 3132,
+        "body": "这是对照组：正常 200 + SSE 分片，回答完整收尾。",
+        "spinner": false,
+        "stop": false
+      },
+      {
+        "at": 4133,
+        "body": "这是对照组：正常 200 + SSE 分片，回答完整收尾。",
+        "spinner": false,
+        "stop": false
+      },
+      {
+        "at": 5148,
+        "body": "这是对照组：正常 200 + SSE 分片，回答完整收尾。",
+        "spinner": false,
+        "stop": false
+      },
+      {
+        "at": 6149,
+        "body": "这是对照组：正常 200 + SSE 分片，回答完整收尾。",
+        "spinner": false,
+        "stop": false
+      },
+      {
+        "at": 7150,
+        "body": "这是对照组：正常 200 + SSE 分片，回答完整收尾。",
+        "spinner": false,
+        "stop": false
+      },
+      {
+        "at": 8166,
+        "body": "这是对照组：正常 200 + SSE 分片，回答完整收尾。",
+        "spinner": false,
+        "stop": false
+      },
+      {
+        "at": 9167,
+        "body": "这是对照组：正常 200 + SSE 分片，回答完整收尾。",
+        "spinner": false,
+        "stop": false
+      },
+      {
+        "at": 10167,
+        "body": "这是对照组：正常 200 + SSE 分片，回答完整收尾。",
+        "spinner": false,
+        "stop": false
+      },
+      {
+        "at": 11184,
+        "body": "这是对照组：正常 200 + SSE 分片，回答完整收尾。",
+        "spinner": false,
+        "stop": false
+      },
+      {
+        "at": 12199,
+        "body": "这是对照组：正常 200 + SSE 分片，回答完整收尾。",
+        "spinner": false,
+        "stop": false
+      },
+      {
+        "at": 13200,
+        "body": "这是对照组：正常 200 + SSE 分片，回答完整收尾。",
+        "spinner": false,
+        "stop": false
+      },
+      {
+        "at": 14202,
+        "body": "这是对照组：正常 200 + SSE 分片，回答完整收尾。",
+        "spinner": false,
+        "stop": false
+      },
+      {
+        "at": 15215,
+        "body": "这是对照组：正常 200 + SSE 分片，回答完整收尾。",
+        "spinner": false,
+        "stop": false
+      },
+      {
+        "at": 16216,
+        "body": "这是对照组：正常 200 + SSE 分片，回答完整收尾。",
+        "spinner": false,
+        "stop": false
+      },
+      {
+        "at": 17233,
+        "body": "这是对照组：正常 200 + SSE 分片，回答完整收尾。",
+        "spinner": false,
+        "stop": false
+      },
+      {
+        "at": 18249,
+        "body": "这是对照组：正常 200 + SSE 分片，回答完整收尾。",
+        "spinner": false,
+        "stop": false
+      },
+      {
+        "at": 19250,
+        "body": "这是对照组：正常 200 + SSE 分片，回答完整收尾。",
+        "spinner": false,
+        "stop": false
+      },
+      {
+        "at": 20250,
+        "body": "这是对照组：正常 200 + SSE 分片，回答完整收尾。",
+        "spinner": false,
+        "stop": false
+      },
+      {
+        "at": 21266,
+        "body": "这是对照组：正常 200 + SSE 分片，回答完整收尾。",
+        "spinner": false,
+        "stop": false
+      },
+      {
+        "at": 22283,
+        "body": "这是对照组：正常 200 + SSE 分片，回答完整收尾。",
+        "spinner": false,
+        "stop": false
+      },
+      {
+        "at": 23283,
+        "body": "这是对照组：正常 200 + SSE 分片，回答完整收尾。",
+        "spinner": false,
+        "stop": false
+      },
+      {
+        "at": 24283,
+        "body": "这是对照组：正常 200 + SSE 分片，回答完整收尾。",
+        "spinner": false,
+        "stop": false
+      }
+    ]
+  },
+  {
+    "scenario": "s1-hold",
+    "url": "http://10.0.2.2:5399/hold/v1",
+    "expect": "15s 请求超时 → 可解释失败文案，转圈与停止按钮消失",
+    "spinnerFirstMs": null,
+    "spinnerGoneMs": null,
+    "stopSeenMs": 26,
+    "stopGoneMs": null,
+    "firstTextMs": 5021,
+    "errorAtMs": null,
+    "errorText": null,
+    "finalBody": "Waiting for the response",
+    "finalSpinner": false,
+    "finalStop": true,
+    "rows": 2,
+    "timeline": [
+      {
+        "at": 26,
+        "body": "",
+        "spinner": false,
+        "stop": true
+      },
+      {
+        "at": 1033,
+        "body": "",
+        "spinner": false,
+        "stop": true
+      },
+      {
+        "at": 2057,
+        "body": "",
+        "spinner": false,
+        "stop": true
+      },
+      {
+        "at": 3064,
+        "body": "",
+        "spinner": false,
+        "stop": true
+      },
+      {
+        "at": 4067,
+        "body": "",
+        "spinner": false,
+        "stop": true
+      },
+      {
+        "at": 5076,
+        "body": "Waiting for the response",
+        "spinner": false,
+        "stop": true
+      },
+      {
+        "at": 6091,
+        "body": "Waiting for the response",
+        "spinner": false,
+        "stop": true
+      },
+      {
+        "at": 7109,
+        "body": "Waiting for the response",
+        "spinner": false,
+        "stop": true
+      },
+      {
+        "at": 8117,
+        "body": "Waiting for the response",
+        "spinner": false,
+        "stop": true
+      },
+      {
+        "at": 9124,
+        "body": "Waiting for the response",
+        "spinner": false,
+        "stop": true
+      },
+      {
+        "at": 10128,
+        "body": "Waiting for the response",
+        "spinner": false,
+        "stop": true
+      },
+      {
+        "at": 11139,
+        "body": "Waiting for the response",
+        "spinner": false,
+        "stop": true
+      },
+      {
+        "at": 12161,
+        "body": "Waiting for the response",
+        "spinner": false,
+        "stop": true
+      },
+      {
+        "at": 13162,
+        "body": "Waiting for the response",
+        "spinner": false,
+        "stop": true
+      },
+      {
+        "at": 14173,
+        "body": "Waiting for the response",
+        "spinner": false,
+        "stop": true
+      },
+      {
+        "at": 15178,
+        "body": "Retrying (attempt 1 of 2)",
+        "spinner": false,
+        "stop": true
+      },
+      {
+        "at": 16182,
+        "body": "",
+        "spinner": false,
+        "stop": true
+      },
+      {
+        "at": 17186,
+        "body": "",
+        "spinner": false,
+        "stop": true
+      },
+      {
+        "at": 18200,
+        "body": "",
+        "spinner": false,
+        "stop": true
+      },
+      {
+        "at": 19210,
+        "body": "",
+        "spinner": false,
+        "stop": true
+      },
+      {
+        "at": 20223,
+        "body": "",
+        "spinner": false,
+        "stop": true
+      },
+      {
+        "at": 21233,
+        "body": "Waiting for the response",
+        "spinner": false,
+        "stop": true
+      },
+      {
+        "at": 22233,
+        "body": "Waiting for the response",
+        "spinner": false,
+        "stop": true
+      },
+      {
+        "at": 23234,
+        "body": "Waiting for the response",
+        "spinner": false,
+        "stop": true
+      },
+      {
+        "at": 24240,
+        "body": "Waiting for the response",
+        "spinner": false,
+        "stop": true
+      },
+      {
+        "at": 25246,
+        "body": "Waiting for the response",
+        "spinner": false,
+        "stop": true
+      },
+      {
+        "at": 26257,
+        "body": "Waiting for the response",
+        "spinner": false,
+        "stop": true
+      },
+      {
+        "at": 27263,
+        "body": "Waiting for the response",
+        "spinner": false,
+        "stop": true
+      },
+      {
+        "at": 28284,
+        "body": "Waiting for the response",
+        "spinner": false,
+        "stop": true
+      },
+      {
+        "at": 29288,
+        "body": "Waiting for the response",
+        "spinner": false,
+        "stop": true
+      },
+      {
+        "at": 30317,
+        "body": "Waiting for the response",
+        "spinner": false,
+        "stop": true
+      },
+      {
+        "at": 31317,
+        "body": "Retrying (attempt 2 of 2)",
+        "spinner": false,
+        "stop": true
+      },
+      {
+        "at": 32322,
+        "body": "Retrying (attempt 2 of 2)",
+        "spinner": false,
+        "stop": true
+      },
+      {
+        "at": 33332,
+        "body": "",
+        "spinner": false,
+        "stop": true
+      },
+      {
+        "at": 34333,
+        "body": "",
+        "spinner": false,
+        "stop": true
+      },
+      {
+        "at": 35349,
+        "body": "",
+        "spinner": false,
+        "stop": true
+      },
+      {
+        "at": 36356,
+        "body": "",
+        "spinner": false,
+        "stop": true
+      },
+      {
+        "at": 37374,
+        "body": "",
+        "spinner": false,
+        "stop": true
+      },
+      {
+        "at": 38383,
+        "body": "Waiting for the response",
+        "spinner": false,
+        "stop": true
+      },
+      {
+        "at": 39385,
+        "body": "Waiting for the response",
+        "spinner": false,
+        "stop": true
+      }
+    ]
+  },
+  {
+    "scenario": "s2-cut",
+    "url": "http://10.0.2.2:5399/cut/v1",
+    "expect": "半死连接 → 正文中断提示，不残留半句为已完成",
+    "spinnerFirstMs": null,
+    "spinnerGoneMs": null,
+    "stopSeenMs": 16,
+    "stopGoneMs": 1257,
+    "firstTextMs": 106,
+    "errorAtMs": 1257,
+    "errorText": "收到你的问题，我先看第一段：这个现象通常是依赖数组漏项。\n\nThe connection was interrupted and the reply is incomplete. What was received is kept — you can regenerate.",
+    "finalBody": "收到你的问题，我先看第一段：这个现象通常是依赖数组漏项。\n\nThe connection was interrupted and the reply is incomplete. What was received is kept — you can regenerate.",
+    "finalSpinner": false,
+    "finalStop": false,
+    "rows": 2,
+    "timeline": [
+      {
+        "at": 16,
+        "body": "",
+        "spinner": false,
+        "stop": true
+      },
+      {
+        "at": 1025,
+        "body": "收到你的问题，我先看第一段：这个现象通常是依赖数组漏项。",
+        "spinner": false,
+        "stop": true
+      },
+      {
+        "at": 1257,
+        "body": "收到你的问题，我先看第一段：这个现象通常是依赖数组漏项。\n\nThe connection was interrupted and the reply is incomplete. What was received is kept — you can regenerate.",
+        "spinner": false,
+        "stop": false
+      }
+    ]
+  },
+  {
+    "scenario": "s3-trickle",
+    "url": "http://10.0.2.2:5399/trickle/v1",
+    "expect": "龟速但活着 → 观察是否无限等待（体相阶段无超时）",
+    "spinnerFirstMs": null,
+    "spinnerGoneMs": null,
+    "stopSeenMs": 19,
+    "stopGoneMs": null,
+    "firstTextMs": 76,
+    "errorAtMs": 76,
+    "errorText": "慢速网络下第 1 段。",
+    "finalBody": "慢速网络下第 1 段。",
+    "finalSpinner": false,
+    "finalStop": true,
+    "rows": 2,
+    "timeline": [
+      {
+        "at": 19,
+        "body": "",
+        "spinner": false,
+        "stop": true
+      },
+      {
+        "at": 76,
+        "body": "慢速网络下第 1 段。",
+        "spinner": false,
+        "stop": true
+      }
+    ]
+  },
+  {
+    "scenario": "s4-unreachable",
+    "url": "http://10.0.2.2:5398/v1",
+    "expect": "连接被拒 → 网络错误文案",
+    "spinnerFirstMs": null,
+    "spinnerGoneMs": null,
+    "stopSeenMs": 24,
+    "stopGoneMs": null,
+    "firstTextMs": 5023,
+    "errorAtMs": null,
+    "errorText": null,
+    "finalBody": "",
+    "finalSpinner": false,
+    "finalStop": true,
+    "rows": 2,
+    "timeline": [
+      {
+        "at": 24,
+        "body": "",
+        "spinner": false,
+        "stop": true
+      },
+      {
+        "at": 1032,
+        "body": "",
+        "spinner": false,
+        "stop": true
+      },
+      {
+        "at": 2032,
+        "body": "",
+        "spinner": false,
+        "stop": true
+      },
+      {
+        "at": 3049,
+        "body": "",
+        "spinner": false,
+        "stop": true
+      },
+      {
+        "at": 4053,
+        "body": "",
+        "spinner": false,
+        "stop": true
+      },
+      {
+        "at": 5071,
+        "body": "Waiting for the response",
+        "spinner": false,
+        "stop": true
+      },
+      {
+        "at": 6081,
+        "body": "Waiting for the response",
+        "spinner": false,
+        "stop": true
+      },
+      {
+        "at": 7086,
+        "body": "Waiting for the response",
+        "spinner": false,
+        "stop": true
+      },
+      {
+        "at": 8097,
+        "body": "Waiting for the response",
+        "spinner": false,
+        "stop": true
+      },
+      {
+        "at": 9098,
+        "body": "Waiting for the response",
+        "spinner": false,
+        "stop": true
+      },
+      {
+        "at": 10098,
+        "body": "Waiting for the response",
+        "spinner": false,
+        "stop": true
+      },
+      {
+        "at": 11121,
+        "body": "Waiting for the response",
+        "spinner": false,
+        "stop": true
+      },
+      {
+        "at": 12142,
+        "body": "Waiting for the response",
+        "spinner": false,
+        "stop": true
+      },
+      {
+        "at": 13156,
+        "body": "Waiting for the response",
+        "spinner": false,
+        "stop": true
+      },
+      {
+        "at": 14162,
+        "body": "Waiting for the response",
+        "spinner": false,
+        "stop": true
+      },
+      {
+        "at": 15163,
+        "body": "Retrying (attempt 1 of 2)",
+        "spinner": false,
+        "stop": true
+      },
+      {
+        "at": 16163,
+        "body": "",
+        "spinner": false,
+        "stop": true
+      },
+      {
+        "at": 17174,
+        "body": "",
+        "spinner": false,
+        "stop": true
+      },
+      {
+        "at": 18194,
+        "body": "",
+        "spinner": false,
+        "stop": true
+      },
+      {
+        "at": 19204,
+        "body": "",
+        "spinner": false,
+        "stop": true
+      }
+    ]
+  }
+]

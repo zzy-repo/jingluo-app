@@ -1,0 +1,559 @@
+[
+  {
+    "scenario": "s1-hold-long",
+    "url": "http://10.0.2.2:5399/hold/v1",
+    "retryCount": 2,
+    "failureAtMs": 48049,
+    "failureText": "Request timed out (15s with no response). Check your network and try again.",
+    "settledAtMs": 48049,
+    "finalBody": "Request timed out (15s with no response). Check your network and try again.",
+    "finalStop": false,
+    "rows": 2,
+    "timeline": [
+      {
+        "at": 1010,
+        "kind": "sample",
+        "stop": true,
+        "body": ""
+      },
+      {
+        "at": 3016,
+        "kind": "sample",
+        "stop": true,
+        "body": ""
+      },
+      {
+        "at": 5016,
+        "kind": "sample",
+        "stop": true,
+        "body": "Waiting for the response"
+      },
+      {
+        "at": 7020,
+        "kind": "sample",
+        "stop": true,
+        "body": "Waiting for the response"
+      },
+      {
+        "at": 9022,
+        "kind": "sample",
+        "stop": true,
+        "body": "Waiting for the response"
+      },
+      {
+        "at": 11031,
+        "kind": "sample",
+        "stop": true,
+        "body": "Waiting for the response"
+      },
+      {
+        "at": 13033,
+        "kind": "sample",
+        "stop": true,
+        "body": "Waiting for the response"
+      },
+      {
+        "at": 15021,
+        "kind": "retry",
+        "body": "Retrying (attempt 1 of 2)"
+      },
+      {
+        "at": 15039,
+        "kind": "sample",
+        "stop": true,
+        "body": "Retrying (attempt 1 of 2)"
+      },
+      {
+        "at": 17048,
+        "kind": "sample",
+        "stop": true,
+        "body": ""
+      },
+      {
+        "at": 19056,
+        "kind": "sample",
+        "stop": true,
+        "body": ""
+      },
+      {
+        "at": 21058,
+        "kind": "sample",
+        "stop": true,
+        "body": "Waiting for the response"
+      },
+      {
+        "at": 23062,
+        "kind": "sample",
+        "stop": true,
+        "body": "Waiting for the response"
+      },
+      {
+        "at": 25073,
+        "kind": "sample",
+        "stop": true,
+        "body": "Waiting for the response"
+      },
+      {
+        "at": 27083,
+        "kind": "sample",
+        "stop": true,
+        "body": "Waiting for the response"
+      },
+      {
+        "at": 29083,
+        "kind": "sample",
+        "stop": true,
+        "body": "Waiting for the response"
+      },
+      {
+        "at": 31042,
+        "kind": "retry",
+        "body": "Retrying (attempt 2 of 2)"
+      },
+      {
+        "at": 31093,
+        "kind": "sample",
+        "stop": true,
+        "body": "Retrying (attempt 2 of 2)"
+      },
+      {
+        "at": 33099,
+        "kind": "sample",
+        "stop": true,
+        "body": ""
+      },
+      {
+        "at": 35104,
+        "kind": "sample",
+        "stop": true,
+        "body": ""
+      },
+      {
+        "at": 37108,
+        "kind": "sample",
+        "stop": true,
+        "body": ""
+      },
+      {
+        "at": 39120,
+        "kind": "sample",
+        "stop": true,
+        "body": "Waiting for the response"
+      },
+      {
+        "at": 41139,
+        "kind": "sample",
+        "stop": true,
+        "body": "Waiting for the response"
+      },
+      {
+        "at": 43149,
+        "kind": "sample",
+        "stop": true,
+        "body": "Waiting for the response"
+      },
+      {
+        "at": 45152,
+        "kind": "sample",
+        "stop": true,
+        "body": "Waiting for the response"
+      },
+      {
+        "at": 47157,
+        "kind": "sample",
+        "stop": true,
+        "body": "Waiting for the response"
+      }
+    ]
+  },
+  {
+    "scenario": "s3-trickle-long",
+    "url": "http://10.0.2.2:5399/trickle/v1",
+    "retryCount": 0,
+    "failureAtMs": null,
+    "failureText": null,
+    "settledAtMs": null,
+    "finalBody": "慢速网络下第 1 段。",
+    "finalStop": true,
+    "rows": 2,
+    "timeline": [
+      {
+        "at": 1016,
+        "kind": "sample",
+        "stop": true,
+        "body": "慢速网络下第 1 段。"
+      },
+      {
+        "at": 3032,
+        "kind": "sample",
+        "stop": true,
+        "body": "慢速网络下第 1 段。"
+      },
+      {
+        "at": 5032,
+        "kind": "sample",
+        "stop": true,
+        "body": "慢速网络下第 1 段。"
+      },
+      {
+        "at": 7033,
+        "kind": "sample",
+        "stop": true,
+        "body": "慢速网络下第 1 段。"
+      },
+      {
+        "at": 9033,
+        "kind": "sample",
+        "stop": true,
+        "body": "慢速网络下第 1 段。"
+      },
+      {
+        "at": 11033,
+        "kind": "sample",
+        "stop": true,
+        "body": "慢速网络下第 1 段。"
+      },
+      {
+        "at": 13049,
+        "kind": "sample",
+        "stop": true,
+        "body": "慢速网络下第 1 段。"
+      },
+      {
+        "at": 15049,
+        "kind": "sample",
+        "stop": true,
+        "body": "慢速网络下第 1 段。"
+      },
+      {
+        "at": 17066,
+        "kind": "sample",
+        "stop": true,
+        "body": "慢速网络下第 1 段。"
+      },
+      {
+        "at": 19067,
+        "kind": "sample",
+        "stop": true,
+        "body": "慢速网络下第 1 段。"
+      },
+      {
+        "at": 21082,
+        "kind": "sample",
+        "stop": true,
+        "body": "慢速网络下第 1 段。"
+      },
+      {
+        "at": 23082,
+        "kind": "sample",
+        "stop": true,
+        "body": "慢速网络下第 1 段。"
+      },
+      {
+        "at": 25083,
+        "kind": "sample",
+        "stop": true,
+        "body": "慢速网络下第 1 段。"
+      },
+      {
+        "at": 27099,
+        "kind": "sample",
+        "stop": true,
+        "body": "慢速网络下第 1 段。"
+      },
+      {
+        "at": 29099,
+        "kind": "sample",
+        "stop": true,
+        "body": "慢速网络下第 1 段。"
+      },
+      {
+        "at": 31099,
+        "kind": "sample",
+        "stop": true,
+        "body": "慢速网络下第 1 段。"
+      },
+      {
+        "at": 33099,
+        "kind": "sample",
+        "stop": true,
+        "body": "慢速网络下第 1 段。"
+      },
+      {
+        "at": 35115,
+        "kind": "sample",
+        "stop": true,
+        "body": "慢速网络下第 1 段。"
+      },
+      {
+        "at": 37118,
+        "kind": "sample",
+        "stop": true,
+        "body": "慢速网络下第 1 段。"
+      },
+      {
+        "at": 39132,
+        "kind": "sample",
+        "stop": true,
+        "body": "慢速网络下第 1 段。"
+      },
+      {
+        "at": 41132,
+        "kind": "sample",
+        "stop": true,
+        "body": "慢速网络下第 1 段。"
+      },
+      {
+        "at": 43133,
+        "kind": "sample",
+        "stop": true,
+        "body": "慢速网络下第 1 段。"
+      },
+      {
+        "at": 45150,
+        "kind": "sample",
+        "stop": true,
+        "body": "慢速网络下第 1 段。"
+      },
+      {
+        "at": 47166,
+        "kind": "sample",
+        "stop": true,
+        "body": "慢速网络下第 1 段。"
+      },
+      {
+        "at": 49167,
+        "kind": "sample",
+        "stop": true,
+        "body": "慢速网络下第 1 段。"
+      },
+      {
+        "at": 51181,
+        "kind": "sample",
+        "stop": true,
+        "body": "慢速网络下第 1 段。"
+      },
+      {
+        "at": 53182,
+        "kind": "sample",
+        "stop": true,
+        "body": "慢速网络下第 1 段。"
+      },
+      {
+        "at": 55183,
+        "kind": "sample",
+        "stop": true,
+        "body": "慢速网络下第 1 段。"
+      },
+      {
+        "at": 57199,
+        "kind": "sample",
+        "stop": true,
+        "body": "慢速网络下第 1 段。"
+      },
+      {
+        "at": 59200,
+        "kind": "sample",
+        "stop": true,
+        "body": "慢速网络下第 1 段。"
+      },
+      {
+        "at": 61200,
+        "kind": "sample",
+        "stop": true,
+        "body": "慢速网络下第 1 段。"
+      },
+      {
+        "at": 63200,
+        "kind": "sample",
+        "stop": true,
+        "body": "慢速网络下第 1 段。"
+      },
+      {
+        "at": 65200,
+        "kind": "sample",
+        "stop": true,
+        "body": "慢速网络下第 1 段。"
+      },
+      {
+        "at": 67215,
+        "kind": "sample",
+        "stop": true,
+        "body": "慢速网络下第 1 段。"
+      },
+      {
+        "at": 69215,
+        "kind": "sample",
+        "stop": true,
+        "body": "慢速网络下第 1 段。"
+      }
+    ]
+  },
+  {
+    "scenario": "s4-unreachable-long",
+    "url": "http://10.0.2.2:5398/v1",
+    "retryCount": 2,
+    "failureAtMs": 48055,
+    "failureText": "Request timed out (15s with no response). Check your network and try again.",
+    "settledAtMs": 48055,
+    "finalBody": "Request timed out (15s with no response). Check your network and try again.",
+    "finalStop": false,
+    "rows": 2,
+    "timeline": [
+      {
+        "at": 1021,
+        "kind": "sample",
+        "stop": true,
+        "body": ""
+      },
+      {
+        "at": 3034,
+        "kind": "sample",
+        "stop": true,
+        "body": ""
+      },
+      {
+        "at": 5037,
+        "kind": "sample",
+        "stop": true,
+        "body": "Waiting for the response"
+      },
+      {
+        "at": 7047,
+        "kind": "sample",
+        "stop": true,
+        "body": "Waiting for the response"
+      },
+      {
+        "at": 9056,
+        "kind": "sample",
+        "stop": true,
+        "body": "Waiting for the response"
+      },
+      {
+        "at": 11068,
+        "kind": "sample",
+        "stop": true,
+        "body": "Waiting for the response"
+      },
+      {
+        "at": 13078,
+        "kind": "sample",
+        "stop": true,
+        "body": "Waiting for the response"
+      },
+      {
+        "at": 15023,
+        "kind": "retry",
+        "body": "Retrying (attempt 1 of 2)"
+      },
+      {
+        "at": 15090,
+        "kind": "sample",
+        "stop": true,
+        "body": "Retrying (attempt 1 of 2)"
+      },
+      {
+        "at": 17106,
+        "kind": "sample",
+        "stop": true,
+        "body": ""
+      },
+      {
+        "at": 19123,
+        "kind": "sample",
+        "stop": true,
+        "body": ""
+      },
+      {
+        "at": 21123,
+        "kind": "sample",
+        "stop": true,
+        "body": "Waiting for the response"
+      },
+      {
+        "at": 23123,
+        "kind": "sample",
+        "stop": true,
+        "body": "Waiting for the response"
+      },
+      {
+        "at": 25160,
+        "kind": "sample",
+        "stop": true,
+        "body": "Waiting for the response"
+      },
+      {
+        "at": 27168,
+        "kind": "sample",
+        "stop": true,
+        "body": "Waiting for the response"
+      },
+      {
+        "at": 29188,
+        "kind": "sample",
+        "stop": true,
+        "body": "Waiting for the response"
+      },
+      {
+        "at": 31036,
+        "kind": "retry",
+        "body": "Retrying (attempt 2 of 2)"
+      },
+      {
+        "at": 31188,
+        "kind": "sample",
+        "stop": true,
+        "body": "Retrying (attempt 2 of 2)"
+      },
+      {
+        "at": 33206,
+        "kind": "sample",
+        "stop": true,
+        "body": ""
+      },
+      {
+        "at": 35215,
+        "kind": "sample",
+        "stop": true,
+        "body": ""
+      },
+      {
+        "at": 37215,
+        "kind": "sample",
+        "stop": true,
+        "body": ""
+      },
+      {
+        "at": 39230,
+        "kind": "sample",
+        "stop": true,
+        "body": "Waiting for the response"
+      },
+      {
+        "at": 41239,
+        "kind": "sample",
+        "stop": true,
+        "body": "Waiting for the response"
+      },
+      {
+        "at": 43245,
+        "kind": "sample",
+        "stop": true,
+        "body": "Waiting for the response"
+      },
+      {
+        "at": 45267,
+        "kind": "sample",
+        "stop": true,
+        "body": "Waiting for the response"
+      },
+      {
+        "at": 47273,
+        "kind": "sample",
+        "stop": true,
+        "body": "Waiting for the response"
+      }
+    ]
+  }
+]

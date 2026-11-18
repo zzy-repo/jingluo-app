@@ -1,0 +1,142 @@
+[
+  {
+    "total": 200,
+    "rounds": 100,
+    "cold": {
+      "readyAt": 229,
+      "listReadyAt": 258,
+      "navigationType": "reload"
+    },
+    "measured": {
+      "firstRowMs": 146,
+      "lastTextMs": 146,
+      "topFirstMs": 425,
+      "hostInfo": {
+        "scrollHeight": 29592,
+        "clientHeight": 538,
+        "scrollTop": 29054
+      },
+      "rowsAfterOpen": 12,
+      "rowsAfterTop": 3,
+      "domNodes": 218,
+      "messageRowsTotal": 200
+    },
+    "jsHeapMB": 10.6,
+    "javaHeap": "Java Heap:    10400                          27848",
+    "totalPss": "TOTAL PSS:    93400            TOTAL RSS:   169784       TOTAL SWAP PSS:      159",
+    "seeded": {
+      "sessions": 31,
+      "messages": 200,
+      "approxBytes": 133172
+    },
+    "shots": [
+      "D:/all_project/runs/fact133/docs/ui/133-weak-device/screens/133-long-200-bottom-360dp.png",
+      "D:/all_project/runs/fact133/docs/ui/133-weak-device/screens/133-long-200-top-360dp.png"
+    ]
+  },
+  {
+    "total": 1000,
+    "rounds": 500,
+    "cold": {
+      "readyAt": 237,
+      "listReadyAt": 255,
+      "navigationType": "reload"
+    },
+    "measured": {
+      "firstRowMs": 169,
+      "lastTextMs": 169,
+      "topFirstMs": 529,
+      "hostInfo": {
+        "scrollHeight": 125592,
+        "clientHeight": 538,
+        "scrollTop": 125054
+      },
+      "rowsAfterOpen": 12,
+      "rowsAfterTop": 3,
+      "domNodes": 218,
+      "messageRowsTotal": 1000
+    },
+    "jsHeapMB": 10.1,
+    "javaHeap": "Java Heap:    10404                          27852",
+    "totalPss": "TOTAL PSS:    94105            TOTAL RSS:   170492       TOTAL SWAP PSS:      159",
+    "seeded": {
+      "sessions": 31,
+      "messages": 1000,
+      "approxBytes": 487173
+    },
+    "shots": [
+      "D:/all_project/runs/fact133/docs/ui/133-weak-device/screens/133-long-1000-bottom-360dp.png",
+      "D:/all_project/runs/fact133/docs/ui/133-weak-device/screens/133-long-1000-top-360dp.png"
+    ]
+  },
+  {
+    "total": 2000,
+    "rounds": 1000,
+    "cold": {
+      "readyAt": 231,
+      "listReadyAt": 258,
+      "navigationType": "reload"
+    },
+    "measured": {
+      "firstRowMs": 249,
+      "lastTextMs": 250,
+      "topFirstMs": 551,
+      "hostInfo": {
+        "scrollHeight": 245592,
+        "clientHeight": 538,
+        "scrollTop": 245054
+      },
+      "rowsAfterOpen": 12,
+      "rowsAfterTop": 3,
+      "domNodes": 218,
+      "messageRowsTotal": 2000
+    },
+    "jsHeapMB": 17.1,
+    "javaHeap": "Java Heap:    10404                          27852",
+    "totalPss": "TOTAL PSS:    94368            TOTAL RSS:   170776       TOTAL SWAP PSS:      159",
+    "seeded": {
+      "sessions": 31,
+      "messages": 2000,
+      "approxBytes": 930675
+    },
+    "shots": [
+      "D:/all_project/runs/fact133/docs/ui/133-weak-device/screens/133-long-2000-bottom-360dp.png",
+      "D:/all_project/runs/fact133/docs/ui/133-weak-device/screens/133-long-2000-top-360dp.png"
+    ]
+  },
+  {
+    "total": 4000,
+    "rounds": 2000,
+    "cold": {
+      "readyAt": 226,
+      "listReadyAt": 260,
+      "navigationType": "reload"
+    },
+    "measured": {
+      "firstRowMs": 315,
+      "lastTextMs": 315,
+      "topFirstMs": 568,
+      "hostInfo": {
+        "scrollHeight": 485592,
+        "clientHeight": 538,
+        "scrollTop": 485054
+      },
+      "rowsAfterOpen": 12,
+      "rowsAfterTop": 3,
+      "domNodes": 218,
+      "messageRowsTotal": 4000
+    },
+    "jsHeapMB": 20.4,
+    "javaHeap": "Java Heap:    10416                          27864",
+    "totalPss": "TOTAL PSS:    94472            TOTAL RSS:   170880       TOTAL SWAP PSS:      159",
+    "seeded": {
+      "sessions": 31,
+      "messages": 4000,
+      "approxBytes": 1819675
+    },
+    "shots": [
+      "D:/all_project/runs/fact133/docs/ui/133-weak-device/screens/133-long-4000-bottom-360dp.png",
+      "D:/all_project/runs/fact133/docs/ui/133-weak-device/screens/133-long-4000-top-360dp.png"
+    ]
+  }
+]
