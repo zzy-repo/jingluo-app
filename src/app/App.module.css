@@ -97,6 +97,13 @@
     position: fixed;
     top: var(--app-viewport-top, 0px);
     bottom: auto;
-    height: var(--app-viewport-height, 100dvh);
+    /* 视口高度统一写法（issue #13）：变量优先（viewport.ts 用 visualViewport 写 px），缺省按视口高度。
+       dvh 只放在 @supports 里：低内核 WebView 83 上整条规则不存在，缺变量时仍是 100vh。
+       不要写成「vh 一条 + dvh 一条」的双声明 —— 83 在计算值阶段才失败，
+       会把已生效的 height 打成 auto（整页固定在 0 高度的塌陷）。 */
+    height: var(--app-viewport-height, 100vh);
+    @supports (height: 100dvh) {
+      height: var(--app-viewport-height, 100dvh);
+    }
   }
 }

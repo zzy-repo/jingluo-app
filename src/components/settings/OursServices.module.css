@@ -45,9 +45,11 @@
 /* ---------- 弹层 ---------- */
 .dialog {
   width: 440px;
-  /* dvh 回退：WebView 83 只认 vh（issue #13） */
+  /* 视口高度统一写法（issue #13）：dvh 一律放在 @supports 里，说明见 Settings.module.css .feedbackDialog */
   max-height: calc(100vh - 48px);
-  max-height: calc(100dvh - 48px);
+  @supports (max-height: 100dvh) {
+    max-height: calc(100dvh - 48px);
+  }
   padding-top: 20px;
 }
 
@@ -220,9 +222,11 @@
     align-self: flex-end;
     width: 100%;
     max-width: none;
-    /* dvh 回退：WebView 83 只认 vh（issue #13） */
+    /* 视口高度统一写法（issue #13）：同上，dvh 只在 @supports 里 */
     max-height: calc(100vh - 48px);
-    max-height: calc(100dvh - 48px);
+    @supports (max-height: 100dvh) {
+      max-height: calc(100dvh - 48px);
+    }
     border-radius: 24px 24px 0 0;
     --modal-motion-duration: var(--motion-duration-slow);
     transform: translateY(0);

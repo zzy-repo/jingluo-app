@@ -6,11 +6,13 @@
   "license": "MIT",
   "private": true,
   "type": "module",
+  "browserslist": ["chrome >= 83", "edge >= 83", "safari >= 16", "firefox >= 110"],
   "scripts": {
     "dev": "rspack serve -c rspack.config.ts",
     "build": "rm -rf dist && NODE_ENV=production rspack build -c rspack.config.ts",
     "build:internal": "rm -rf dist && INTERNAL_BUILD=1 NODE_ENV=production rspack build -c rspack.config.ts",
     "type": "tsc -p tsconfig.json",
+    "check:legacy": "node scripts/check-bundle-syntax.mjs",
     "lint": "oxlint src rspack.config.ts",
     "format": "oxfmt --write .",
     "test": "node tests/run-layer.mjs unit",

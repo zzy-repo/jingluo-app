@@ -748,7 +748,11 @@
 }
 
 .deleteConfirm {
-  max-height: calc(100dvh - 32px);
+  /* 视口高度统一写法（issue #13）：dvh 一律放在 @supports 里，说明见 .feedbackDialog */
+  max-height: calc(100vh - 32px);
+  @supports (max-height: 100dvh) {
+    max-height: calc(100dvh - 32px);
+  }
   overflow-y: auto;
 }
 
@@ -777,9 +781,16 @@
 .feedbackDialog {
   width: 560px;
   height: auto;
-  /* vh fallback also works before dynamic viewport units; Modal supplies keyboard height. */
-  max-height: calc(100vh - 32px);
+  /* 视口高度统一写法（issue #13）：变量优先 —— Modal.tsx 用 visualViewport 把 px 写进
+     --modal-viewport-height，键盘弹出时弹窗跟着缩短；变量缺省时按视口高度算。
+     低内核 WebView 83 不认 dvh（Chrome 108+），所以 dvh 只出现在 @supports 里：83 上整条规则
+     不存在，生效的只有上面那条带 vh 缺省值的声明。不要写成「vh 一条 + dvh 一条」的
+     双声明再让后者覆盖前者 —— 当 var() 的缺省值里带 dvh 时，83 是在「计算值」阶段才失败的，
+     会把已经生效的 vh 值打成 initial（max-height: none / height: auto），比没有回退更糟。 */
   max-height: calc(var(--modal-viewport-height, 100vh) - 32px);
+  @supports (max-height: 100dvh) {
+    max-height: calc(var(--modal-viewport-height, 100dvh) - 32px);
+  }
   padding-top: 22px;
   padding-bottom: max(22px, env(safe-area-inset-bottom, 0px));
 }
@@ -790,6 +801,8 @@
   flex-direction: column;
   min-height: 0;
   flex: 1 1 auto;
+  /* 这里不用 dvh/vh：可见高度由上面 .feedbackDialog 的 --modal-viewport-height 决定，
+     内容区只是在这个高度里自己滚动（max-height 只是个上限，不跟视口走）。 */
   max-height: 560px;
   overflow-y: auto;
   touch-action: pan-y;
@@ -970,6 +983,7 @@
   }
 
   .feedbackMain {
+    /* 同 .feedbackMain：上限固定值，视口高度由 .feedbackDialog 负责（issue #13） */
     max-height: 520px;
   }
 }
