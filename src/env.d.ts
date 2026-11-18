@@ -17,7 +17,7 @@ declare const __INTERNAL_BUILD__: boolean
 /** 应用版本号（package.json 的 version），由 rspack 的 DefinePlugin 注入；诊断信息里用它上报 */
 declare const __APP_VERSION__: string
 
-/** Android versionCode（取自 android/app/build.gradle），由 rspack 的 DefinePlugin 注入 */
+/** Android versionCode（取自 package.json 的 androidVersionCode），由 rspack 的 DefinePlugin 注入 */
 declare const __APP_VERSION_CODE__: number
 
 /** Prism 语言包通过副作用注册到全局 Prism */

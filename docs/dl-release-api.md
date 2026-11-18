@@ -165,6 +165,7 @@ set -a; . /opt/caddy/caddy.env; set +a
 4. 用内置 `GITHUB_TOKEN`（`permissions: contents: write`）`gh release create <tag> --target <commit sha> --notes-file notes.md`；Release 已存在则 `gh release upload --clobber` + `gh release edit`；
 5. 版本号含 `-beta` / `-rc` 时自动 `--prerelease`。
 
-> 迁移提示：`release-apk.sh` 现在仍是 scp + 远端脚本。切到 HTTP 后，脚本只需要在构建完成后调用
-> `POST https://dl.rose7.cn/api/v1/release`（`apk` + `meta`），再从响应的 `url`/`latest`/`md5` 取结果，
+> 发布方提示：一键发版脚本 `release-apk.sh` 已删除（原因见 [`RELEASE.md`](../RELEASE.md)），现在上传由
+> **发版人手工执行一条 `curl`** 完成，对应 [`docs/RELEASE-MANUAL.md`](RELEASE-MANUAL.md) 的步骤 4。
+> 手动上传时**必须人工核对响应里的 `sha256` / `artifactVariant` / `latest`**（脚本原来替你做的强校验现在归人）。
 > 不再需要 ssh/scp，也不需要远端改 `releases.json`。

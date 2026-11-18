@@ -7,29 +7,24 @@ import { rspack, type Configuration } from '@rspack/core'
 const dev = process.env.NODE_ENV !== 'production'
 const targets = ['chrome >= 105', 'edge >= 105', 'safari >= 16', 'firefox >= 110']
 const root = path.dirname(fileURLToPath(import.meta.url))
-// package.json 的 version 只是**网页示例的版本**（0.1.x），和 App 真实版本无关：
-// App 的发版版本号只认 android/app/build.gradle 的 versionName / versionCode。
-const { version: pkgVersion } = JSON.parse(
-  readFileSync(new URL('./package.json', import.meta.url), 'utf8')
-) as { version: string }
-
-const readGradle = (): string => {
-  try {
-    return readFileSync(path.resolve(root, 'android/app/build.gradle'), 'utf8')
-  } catch {
-    return ''
-  }
+// 版本号唯一来源：仓库根 package.json
+//   version            → App versionName（也注入 __APP_VERSION__，诊断上报用）
+//   androidVersionCode → App versionCode
+// android/app/build.gradle 的 versionName / versionCode 就是从这里读的，发版只改这一处。
+const pkg = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8')) as {
+  version?: string
+  androidVersionCode?: number
 }
 
 /** Android versionCode（诊断上报用，读不到记 0） */
-const readVersionCode = (): number => Number(/versionCode\s+(\d+)/.exec(readGradle())?.[1] ?? 0) || 0
+const readVersionCode = (): number => Number(pkg.androidVersionCode ?? 0) || 0
 
-/** App 版本名（诊断上报用，读不到回退 package.json） */
-const readVersionName = (): string => /versionName\s+"([^"]+)"/.exec(readGradle())?.[1] ?? pkgVersion
+/** App 版本名（诊断上报用） */
+const readVersionName = (): string => pkg.version?.trim() ?? ''
 
 /**
- * 构建期注入的版本号优先级：环境变量 APP_VERSION > gradle versionName > package.json。
- * 环境变量留给出包脚本（CI 传 tag 名）覆盖，本地构建直接吃 gradle —— 这是唯一权威来源。
+ * 构建期注入的版本号优先级：环境变量 APP_VERSION > package.json 的 version。
+ * 环境变量留给出包脚本（CI 传 tag 名）覆盖，本地构建直接吃 package.json —— 这是唯一权威来源。
  */
 const appVersion = process.env.APP_VERSION?.trim() || readVersionName()
 

@@ -1,10 +1,89 @@
 apply plugin: 'com.android.application'
 
 // ---------------------------------------------------------------------------
+// 版本号唯一来源：仓库根 package.json
+//   "version":            "1.4.0-beta.7"  → Android versionName
+//   "androidVersionCode": 14              → Android versionCode
+// 发版只改 package.json 一处；缺字段或格式非法直接报错中止（不猜、不静默回退）。
+// ---------------------------------------------------------------------------
+def pkgJsonFile = rootProject.file('../package.json')
+if (!pkgJsonFile.exists()) {
+    throw new GradleException("[version] 找不到 ${pkgJsonFile}：App 版本号的唯一来源，无法确定 versionName/versionCode")
+}
+def pkgJson
+try {
+    pkgJson = new groovy.json.JsonSlurper().parse(pkgJsonFile)
+} catch (Exception e) {
+    throw new GradleException("[version] 解析 ${pkgJsonFile} 失败：${e.message}")
+}
+def appVersionName = pkgJson.version?.toString()?.trim()
+if (!(appVersionName ==~ /\d+\.\d+\.\d+(?:-[0-9A-Za-z.]+)?/)) {
+    throw new GradleException("[version] package.json 的 version 缺失或格式非法（期望 x.y.z 或 x.y.z-beta.N）：'${appVersionName}'")
+}
+def rawVersionCode = pkgJson.androidVersionCode
+def appVersionCode = null
+if (rawVersionCode instanceof Number) {
+    appVersionCode = (rawVersionCode as Number).longValue()
+} else if (rawVersionCode?.toString()?.trim() ==~ /\d+/) {
+    appVersionCode = (rawVersionCode.toString().trim()) as Long
+}
+if (appVersionCode == null || appVersionCode <= 0) {
+    throw new GradleException("[version] package.json 的 androidVersionCode 缺失或非法（必须是正整数，且每次发版递增）：'${rawVersionCode}'")
+}
+
+// ---------------------------------------------------------------------------
 // 签名配置：凭据从 android/keystore/keystore.properties 读取（该文件已 gitignore）
 // 若文件缺失（例如全新 clone），构建脚本 build-apk.sh 会自动生成 keystore + properties。
+//
+// release 构建 fail-fast：缺 keystore.properties / 缺 release 字段 / keystore 文件不存在时
+// 直接 throw 中止。历史上缺凭据会「不签名」或回退 debug keystore，导致用错证书发布、
+// 已装用户无法覆盖升级。宁可构建失败，也不产出签名身份不确定的 release 包。
 // ---------------------------------------------------------------------------
-def keystorePropertiesFile = rootProject.file("../keystore/keystore.properties")
+// 路径相对于 gradle 根工程（android/），即 android/keystore/keystore.properties。
+// 注意：这里原来写成 rootProject.file("../keystore/...")，实际指向仓库根的 keystore/ ——
+// 那个目录从来不存在，所以历史上 release 构建永远「读不到凭据 → 不签名」。
+def keystorePropertiesFile = rootProject.file("keystore/keystore.properties")
+def keystoreProperties = new Properties()
+def keystorePropertiesExists = keystorePropertiesFile.exists()
+if (keystorePropertiesExists) {
+    keystorePropertiesFile.withInputStream { keystoreProperties.load(it) }
+}
+def RELEASE_KEY_FIELDS = ['storePasswordRelease', 'keyAliasRelease', 'keyPasswordRelease']
+def missingReleaseKeys = RELEASE_KEY_FIELDS.findAll { !keystoreProperties[it]?.toString()?.trim() }
+
+// 这条 gradle 命令是否会产出 release 产物（assembleRelease / bundleRelease / installRelease / build / assemble …）。
+// 认不出就按「会」处理：宁可误拦一次 debug 命令，也不产出签名身份不明的 release 包。
+def releaseTaskRequested = gradle.startParameter.taskNames.any { t ->
+    def leaf = t.toLowerCase().tokenize(':').last()
+    leaf.contains('release') || (leaf in ['build', 'assemble', 'bundle', 'install', 'package'])
+}
+def keystoreFixHint = '''
+       修复：在构建机上运行 ./build-apk.sh（首次运行会自动生成 android/keystore/ 下的
+             release.keystore / debug.keystore / keystore.properties），或从备份恢复
+             android/keystore/ 目录。该目录已在 .gitignore 中，切勿提交进仓库。
+'''.stripIndent()
+if (releaseTaskRequested) {
+    if (!keystorePropertiesExists) {
+        throw new GradleException("""
+[签名] release 构建缺少 android/keystore/keystore.properties，已中止。
+       不会退化成「不签名」或 debug 签名 —— 用错证书发布会让已装用户无法覆盖升级。
+       缺失文件：${keystorePropertiesFile}
+${keystoreFixHint}""".stripIndent())
+    }
+    if (missingReleaseKeys) {
+        throw new GradleException("""
+[签名] android/keystore/keystore.properties 缺少 release 字段：${missingReleaseKeys.join(', ')}，已中止。
+       文件：${keystorePropertiesFile}
+${keystoreFixHint}""".stripIndent())
+    }
+    def releaseStoreFile = file(keystoreProperties['storeFileRelease'] ?: '../keystore/release.keystore')
+    if (!releaseStoreFile.exists()) {
+        throw new GradleException("""
+[签名] keystore.properties 指向的 release keystore 不存在，已中止。
+       storeFileRelease = ${releaseStoreFile}
+${keystoreFixHint}""".stripIndent())
+    }
+}
 
 def updateVariant = providers.gradleProperty('artifactVariant').orElse(System.getenv('INTERNAL_BUILD') == '1' ? 'internal' : 'standard').get()
 if (!(updateVariant in ['internal', 'standard'])) throw new GradleException('artifactVariant must be internal or standard')
@@ -20,8 +99,9 @@ android {
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         manifestPlaceholders = [artifactVariant: updateVariant]
-        versionCode 14
-        versionName "1.4.0-beta.7"
+        // 唯一来源：仓库根 package.json（见文件顶部）
+        versionCode appVersionCode.toInteger()
+        versionName appVersionName
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -30,38 +110,38 @@ android {
         }
     }
     signingConfigs {
-        if (keystorePropertiesFile.exists()) {
-            def keystoreProperties = new Properties()
-            keystorePropertiesFile.withInputStream { keystoreProperties.load(it) }
-
+        if (keystorePropertiesExists) {
             debug {
                 storeFile file(keystoreProperties['storeFileDebug'] ?: '../keystore/debug.keystore')
                 storePassword keystoreProperties['storePasswordDebug']
                 keyAlias keystoreProperties['keyAliasDebug']
                 keyPassword keystoreProperties['keyPasswordDebug']
             }
-            release {
-                storeFile file(keystoreProperties['storeFileRelease'] ?: '../keystore/release.keystore')
-                storePassword keystoreProperties['storePasswordRelease']
-                keyAlias keystoreProperties['keyAliasRelease']
-                keyPassword keystoreProperties['keyPasswordRelease']
+            // 只有 release 凭据齐全时才定义（不齐全时 release 构建已在顶部 throw）
+            if (missingReleaseKeys.isEmpty()) {
+                release {
+                    storeFile file(keystoreProperties['storeFileRelease'] ?: '../keystore/release.keystore')
+                    storePassword keystoreProperties['storePasswordRelease']
+                    keyAlias keystoreProperties['keyAliasRelease']
+                    keyPassword keystoreProperties['keyPasswordRelease']
+                }
             }
         }
     }
     buildTypes {
         debug {
             // 显式使用 android/keystore/debug.keystore（而非 ~/.android/debug.keystore），保证可复现
-            if (keystorePropertiesFile.exists()) {
+            if (keystorePropertiesExists) {
                 signingConfig signingConfigs.debug
             }
         }
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
-            if (keystorePropertiesFile.exists()) {
+            // 凭据缺失时这里不配置签名，但该情况只会出现在非 release 命令里
+            // （release 命令已在文件顶部 GradleException 中止），不会产出未签名 release 包。
+            if (keystorePropertiesExists && missingReleaseKeys.isEmpty()) {
                 signingConfig signingConfigs.release
-            } else {
-                logger.warn("[build-apk] android/keystore/keystore.properties 缺失，release 将不签名；请运行 ./build-apk.sh 让其自动生成")
             }
         }
     }

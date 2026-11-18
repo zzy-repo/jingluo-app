@@ -65,7 +65,7 @@ export type FeedbackContent = {
 }
 
 export type AppInfo = {
-  /** 应用版本号：优先构建期注入（gradle versionName / APP_VERSION），web 兜底 package.json */
+  /** 应用版本号：优先构建期注入（APP_VERSION / package.json 的 version），web 兜底 package.json */
   version: string
   /** Android versionCode */
   versionCode: number
