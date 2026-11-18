@@ -19,6 +19,7 @@ import {
   canImportFromUrl,
   importHistoryFromUrl,
   UrlImportCancelled,
+  type ImportTraceEntry,
   type UrlImportProgress,
 } from '../../services/chat/history/urlImport.js'
 import { copyText } from '../../utils/clipboard.js'
@@ -479,6 +480,135 @@ const ErrorNotice = ({ text }: { text: string }) => {
   )
 }
 
+/** 详情条数上限：再多也没人看，且避免长会话把内存撑大。 */
+const MAX_TRACE_ENTRIES = 100
+
+/** 相对时间：mm:ss.S（少数几十秒的导入够用，也方便用户对着截图说“卡在这里”）。 */
+const traceTime = (ms: number): string => {
+  const total = Math.max(0, ms)
+  const minutes = Math.floor(total / 60_000)
+  const seconds = Math.floor((total % 60_000) / 1000)
+  const tenth = Math.floor((total % 1000) / 100)
+  return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}.${tenth}`
+}
+
+/**
+ * 复制到剪贴板前的兜底脱敏：
+ * 详情里本来就不存完整导URL（只有 redactUrl 后的路径），这里再把可能漏进来的
+ * 签名/密钥/查询串与超链接抹掉，避免用户把私密导出链接贴到反馈里。
+ */
+const redactTraceText = (text: string): string =>
+  text
+    .replace(/\b(Signature|AccessKeyId|Expires|X-Amz-[A-Za-z-]+)=[^&\s)]*/gi, '$1=***')
+    .replace(/sk-[A-Za-z0-9_-]{8,}/g, 'sk-***')
+    .replace(/https?:\/\/[^\s)]+/gi, (match) => {
+      try {
+        const url = new URL(match)
+        return `${url.protocol}//${url.host}/***`
+      } catch {
+        return '***'
+      }
+    })
+
+/** 一条详情的人话文案；拿不到总数/字节时不编数字。 */
+const traceLine = (t: ReturnType<typeof useTranslate>, entry: ImportTraceEntry): string => {
+  switch (entry.kind) {
+    case 'start':
+      return t('importTraceStart')
+    case 'download':
+      return entry.totalBytes === undefined
+        ? t('importTraceDownload', { done: formatBytes(entry.bytes ?? 0) })
+        : t('importTraceDownloadTotal', {
+            done: formatBytes(entry.bytes ?? 0),
+            total: formatBytes(entry.totalBytes),
+          })
+    case 'check':
+      return entry.totalSessions === undefined
+        ? t('importTraceCheckUnknown')
+        : t('importTraceCheck', { total: entry.totalSessions })
+    case 'session':
+      return entry.totalSessions === undefined
+        ? t('importTraceSessionUnknown', { done: entry.sessions ?? 0 })
+        : t('importTraceSession', { done: entry.sessions ?? 0, total: entry.totalSessions })
+    case 'image':
+      return t('importTraceImage', { count: entry.images ?? 0 })
+    case 'done':
+      return t('importTraceDone', { count: entry.sessions ?? 0 })
+    case 'cancel':
+      return t('importTraceCancel')
+    case 'error':
+    default: {
+      const reason =
+        entry.message === 'unreachable'
+          ? t('importTraceReasonUnreachable')
+          : entry.message === 'interrupted'
+            ? t('importTraceReasonInterrupted')
+            : entry.message === 'timeout'
+              ? t('importTraceReasonTimeout')
+              : entry.message === 'expired'
+                ? t('importTraceReasonExpired')
+                : entry.message === 'signature'
+                  ? t('importTraceReasonSignature')
+                  : entry.message === 'forbidden'
+                    ? t('importTraceReasonForbidden')
+                    : entry.status !== undefined && entry.status > 0
+                      ? t('importTraceReasonHttp', { status: entry.status })
+                      : t('importTraceReasonNetwork')
+      const stage =
+        entry.status === undefined || entry.status === 0
+          ? t('importTraceStageDownload')
+          : t('importTraceStageDownload')
+      return t('importTraceError', { stage, reason })
+    }
+  }
+}
+
+/**
+ * 「导入详情」：默认折叠，展开后是带时间的少量人话事件（下载真实字节/校验/会话/图片/完成/取消/失败）。
+ * 事实来自 urlImport 的 onTrace（与 diagnostics 同一处产生），最多 100 条，复制时再脱敏一遍。
+ */
+const ImportTraceDetails = ({ entries }: { entries: ImportTraceEntry[] }) => {
+  const t = useTranslate()
+  const [open, setOpen] = useState(false)
+  if (entries.length === 0) {
+    return null
+  }
+  const last = entries[entries.length - 1]
+  const copy = async () => {
+    const body = entries
+      .map((entry) => `${traceTime(entry.at)}  ${traceLine(t, entry)}`)
+      .join('\n')
+    const ok = await copyText(redactTraceText(`DeepSeek import details\n${body}`))
+    if (!ok) {
+      showToast(t('copyFailed'))
+    }
+  }
+  return (
+    <div className={styles.traceBox}>
+      <div className={styles.traceHeader}>
+        <button type="button" className={styles.errorAction} onClick={() => setOpen((value) => !value)}>
+          {open ? t('detailsCollapse') : t('detailsExpand')}
+        </button>
+        <span className={styles.traceTitle}>{t('importTraceTitle', { count: entries.length })}</span>
+        <span className={styles.traceElapsed}>{t('importTraceElapsed', { time: traceTime(last.at) })}</span>
+        <button type="button" className={styles.errorAction} onClick={() => void copy()}>
+          {t('importTraceCopy')}
+        </button>
+      </div>
+      {open ? (
+        <ol className={styles.traceList}>
+          {entries.map((entry, index) => (
+            <li key={`${entry.at}-${index}`} className={styles.traceRow}>
+              <span className={styles.traceTime}>{traceTime(entry.at)}</span>
+              <span className={styles.traceText}>{traceLine(t, entry)}</span>
+            </li>
+          ))}
+        </ol>
+      ) : null}
+    </div>
+  )
+}
+
 /** 字节数：弱网下「已下载 16KB」这种小数值也要看得见，所以 KB 之前不换算成小数。 */
 const formatBytes = (bytes: number): string => {
   if (bytes < 1024) {
@@ -582,6 +712,7 @@ const useHistoryImport = () => {
   const [source, setSource] = useState<ImportSource | null>(null)
   const [busy, setBusy] = useState(false)
   const [progress, setProgress] = useState<UrlImportProgress | null>(null)
+  const [trace, setTrace] = useState<ImportTraceEntry[]>([])
   const [status, setStatus] = useState<ImportStatus | null>(null)
   const [url, setUrl] = useState('')
   const importing = useRef(false)
@@ -610,6 +741,14 @@ const useHistoryImport = () => {
     setProgress(null)
   }
 
+  /** 详情只保留最近 100 条；节流在上游（urlImport）做过，这里只做上限与顺序。 */
+  const pushTrace = (entry: ImportTraceEntry) => {
+    setTrace((previous) => {
+      const next = [...previous, entry]
+      return next.length > MAX_TRACE_ENTRIES ? next.slice(next.length - MAX_TRACE_ENTRIES) : next
+    })
+  }
+
   const finish = (id: number) => {
     if (run.current === id) {
       importing.current = false
@@ -634,11 +773,13 @@ const useHistoryImport = () => {
   const importLink = async (link: string) => {
     const controller = new AbortController()
     abort.current = controller
+    setTrace([])
     emitProgress({ phase: 'downloading', downloadedBytes: 0 })
     try {
       const count = await importHistoryFromUrl(link, {
         signal: controller.signal,
         onProgress: emitProgress,
+        onTrace: pushTrace,
       })
       setSource(null)
       setStatus({
@@ -702,6 +843,7 @@ const useHistoryImport = () => {
     source,
     busy,
     progress,
+    trace,
     status,
     url,
     setUrl,
@@ -791,6 +933,7 @@ const ImportHistoryUrl = ({
         ) : (
           <CellText status={status} description={t('historyImportUrlDescription')} />
         )}
+        <ImportTraceDetails entries={historyImport.trace} />
       </div>
       <div className={styles.linkActions}>
         <div className={clsx(styles.apiKeyInput, styles.linkInput)}>

@@ -1,7 +1,7 @@
 import { Capacitor, CapacitorHttp, type HttpResponse } from '@capacitor/core'
 import { errorMeta, record, recordAction, recordEvent, redactUrl } from '../../diagnostics/collector.js'
 import { importHistory } from '../backup.js'
-import { fail } from './errors.js'
+import { BackupError, fail } from './errors.js'
 
 /**
  * 直链导入：用原生 HTTP 下载 ZIP 后交给既有的文件导入链路（importHistory）。
@@ -62,9 +62,41 @@ export type UrlImportProgress =
   | { phase: 'decoding' }
   | { phase: 'importing'; processed: number; totalSessions?: number }
 
+/**
+ * 用户可见的「导入详情」条目：和 diagnostics 的 record() 在同一处产生（单一事实源），
+ * 不给 UI 另开一条日志管道，也不从 console 抓。at 是相对本次导入开始的毫秒数。
+ * 注意：这里永远不含完整导出链接与会话正文，只带脱敏后的路径片段。
+ */
+export type ImportTraceKind =
+  | 'start'
+  | 'download'
+  | 'check'
+  | 'session'
+  | 'image'
+  | 'done'
+  | 'cancel'
+  | 'error'
+
+export type ImportTraceEntry = {
+  at: number
+  kind: ImportTraceKind
+  /** 真实已下载字节；totalBytes 可能缺失（服务端没给 Content-Length/CONTENT-RANGE） */
+  bytes?: number
+  totalBytes?: number
+  sessions?: number
+  totalSessions?: number
+  images?: number
+  /** HTTP 状态（失败时） */
+  status?: number
+  /** 一句人话的原因（已脱敏、已截断） */
+  message?: string
+}
+
 export type UrlImportOptions = {
   signal?: AbortSignal
   onProgress?: (progress: UrlImportProgress) => void
+  /** 导入详情回调：节流与条数上限由 UI 负责，这里只按事实发生点上报。 */
+  onTrace?: (entry: ImportTraceEntry) => void
 }
 
 /** 原生（APK）才具备绕过 CORS 的原生 HTTP；网页版不提供该能力。 */
@@ -287,7 +319,8 @@ const failForStatus = async (
   url: string,
   startedAt: number,
   downloaded: number,
-  total: number | undefined
+  total: number | undefined,
+  trace?: (entry: ImportTraceEntry) => void
 ): Promise<never> => {
   const status = response.status
   // 403：优先用响应体里的 OBS 错误码；body 为空时补发一次 text 请求再判定。
@@ -304,16 +337,20 @@ const failForStatus = async (
     // 文案必须区分——用户看到「过期」才知道要回 DeepSeek 重新导出，看到「签名错误」才知道是链接被截断。
     if (/SignatureDoesNotMatch/i.test(detail)) {
       recordDownloadFailure('signature', url, startedAt, meta)
+      trace?.({ at: Date.now() - startedAt, kind: 'error', status, bytes: downloaded, totalBytes: total, message: 'signature' })
       return fail('historyImportUrlBadSignature')
     }
     if (/RequestTimeTooSkewed|Expired/i.test(detail)) {
       recordDownloadFailure('expired', url, startedAt, meta)
+      trace?.({ at: Date.now() - startedAt, kind: 'error', status, bytes: downloaded, totalBytes: total, message: 'expired' })
       return fail('historyImportUrlExpired')
     }
     recordDownloadFailure('forbidden', url, startedAt, meta)
+    trace?.({ at: Date.now() - startedAt, kind: 'error', status, bytes: downloaded, totalBytes: total, message: 'forbidden' })
     return fail('historyImportUrlForbidden', { detail: detail === '' ? `HTTP ${status}` : detail })
   }
   recordDownloadFailure(`http-${status}`, url, startedAt, meta)
+  trace?.({ at: Date.now() - startedAt, kind: 'error', status, bytes: downloaded, totalBytes: total, message: `http-${status}` })
   return fail('historyImportUrlHttp', { status })
 }
 
@@ -342,7 +379,12 @@ const fetchChunk = async (
   url: string,
   from: number,
   to: number,
-  state: { startedAt: number; downloaded: number; total: number | undefined }
+  state: {
+    startedAt: number
+    downloaded: number
+    total: number | undefined
+    trace?: (entry: ImportTraceEntry) => void
+  }
 ): Promise<{ response: HttpResponse; requested: number }> => {
   let lastError: unknown
   for (let attempt = 0; attempt <= CHUNK_RETRIES; attempt += 1) {
@@ -361,24 +403,28 @@ const fetchChunk = async (
   }
   {
     const error = lastError
-    const { startedAt, downloaded, total } = state
+    const { startedAt, downloaded, total, trace } = state
     const percent = total === undefined || total === 0 ? 0 : Math.round((downloaded / total) * 100)
     if (isTimeout(error)) {
       // 超时且已经下到一半：说明链路慢，不是链接坏了。
       recordDownloadFailure('timeout', url, startedAt, { 'download.bytes': downloaded, percent }, error)
+      trace?.({ at: Date.now() - startedAt, kind: 'error', bytes: downloaded, totalBytes: total, message: 'timeout' })
       return downloaded > 0
         ? fail('historyImportUrlTimeoutPartial', { percent })
         : fail('historyImportUrlTimeout')
     }
     if (isUnreachable(error)) {
       recordDownloadFailure('unreachable', url, startedAt, { 'download.bytes': downloaded }, error)
+      trace?.({ at: Date.now() - startedAt, kind: 'error', bytes: downloaded, totalBytes: total, message: 'unreachable' })
       return fail('historyImportUrlOffline')
     }
     if (isStreamBroken(error)) {
       recordDownloadFailure('interrupted', url, startedAt, { 'download.bytes': downloaded, percent }, error)
+      trace?.({ at: Date.now() - startedAt, kind: 'error', bytes: downloaded, totalBytes: total, message: 'interrupted', status: 0 })
       return fail('historyImportUrlInterrupted', { percent })
     }
     recordDownloadFailure('network', url, startedAt, { 'download.bytes': downloaded }, error)
+    trace?.({ at: Date.now() - startedAt, kind: 'error', bytes: downloaded, totalBytes: total, message: 'network' })
     return fail('historyImportUrlNetwork')
   }
 }
@@ -387,7 +433,11 @@ const fetchChunk = async (
  * 分块下载并校验 ZIP。
  * 进度按字节实时上报；取消在块边界生效；失败按 断网 / 超时 / 403（过期·签名·其他）/ 超限 / 非 ZIP 分类。
  */
-const downloadArchive = async (url: string, options: UrlImportOptions): Promise<File> => {
+const downloadArchive = async (
+  url: string,
+  options: UrlImportOptions,
+  trace?: (entry: ImportTraceEntry) => void
+): Promise<File> => {
   const startedAt = Date.now()
   recordEvent('import_stage', 'import: download archive', {
     stage: 'download',
@@ -397,6 +447,9 @@ const downloadArchive = async (url: string, options: UrlImportOptions): Promise<
   let downloaded = 0
   let total: number | undefined
   let chunkSize = FIRST_CHUNK_BYTES
+  let lastTraceBytes = 0
+  let lastTracePercent = -1
+  let lastTraceAt = 0
   for (;;) {
     throwIfCancelled(options.signal)
     const from = downloaded
@@ -406,6 +459,7 @@ const downloadArchive = async (url: string, options: UrlImportOptions): Promise<
       startedAt,
       downloaded,
       total,
+      trace,
     })
     const status = response.status
     // 416：请求范围越界 = 上一块正好是最后一块（服务端更严格时走这里）。
@@ -414,7 +468,7 @@ const downloadArchive = async (url: string, options: UrlImportOptions): Promise<
       break
     }
     if (status !== 200 && status !== 206) {
-      await failForStatus(response, url, startedAt, downloaded, total)
+      await failForStatus(response, url, startedAt, downloaded, total, trace)
     }
     if (status === 200 && from > 0) {
       // 中途不再支持分段：继续拼会拼错，直接按失败处理（包体不完整）。
@@ -439,6 +493,17 @@ const downloadArchive = async (url: string, options: UrlImportOptions): Promise<
         tooLarge()
       }
       options.onProgress?.({ phase: 'downloading', downloadedBytes: downloaded, totalBytes: total })
+      {
+        // 详情里只留少量「人话」采样：首个、每跨 10%、以及至少 1s 间隔
+        const percent = total ? Math.floor((downloaded / total) * 10) : undefined
+        const checkpoint = lastTraceBytes === 0 || (percent !== undefined && percent !== lastTracePercent) || Date.now() - lastTraceAt >= 1000
+        if (checkpoint) {
+          lastTraceBytes = downloaded
+          lastTracePercent = percent ?? 0
+          lastTraceAt = Date.now()
+          trace?.({ at: Date.now() - startedAt, kind: 'download', bytes: downloaded, totalBytes: total })
+        }
+      }
     }
     // 200 = 服务端忽略了 Range，整包已经到手；不足请求的那一块 = 已经是最后一块。
     if (status === 200 || bytes.byteLength < requested) {
@@ -495,19 +560,53 @@ export const importHistoryFromUrl = async (
     fail('historyImportUrlInvalid')
   }
   recordAction('import_start', 'import-history-url', { source: 'url', 'url.path': redactUrl(link) })
+  const startedAt = Date.now()
+  const trace = options.onTrace
+  const emit = (entry: Omit<ImportTraceEntry, 'at'>) => trace?.({ at: Date.now() - startedAt, ...entry })
+  emit({ kind: 'start' })
+  let lastSessionTraceAt = 0
+  let lastImageTraceAt = 0
+  let lastImages = 0
+  let checkReported = false
   try {
-    const file = await downloadArchive(link, options)
+    const file = await downloadArchive(link, options, trace)
     // 下载期间点了取消：结果直接丢弃，不进入暂存与替换事务。
     throwIfCancelled(options.signal)
     options.onProgress?.({ phase: 'decoding' })
+    emit({ kind: 'check', bytes: file.size })
     return await importHistory(file, {
       signal: options.signal,
-      onProgress: (progress) =>
+      onProgress: (progress) => {
         options.onProgress?.({
           phase: 'importing',
           processed: progress.sessions,
           totalSessions: progress.totalSessions,
-        }),
+        })
+        const now = Date.now()
+        // 会话总数是校验阶段算出来的：拿到就补一条「校验归档结束，共 N 个会话」
+        if (!checkReported && progress.totalSessions !== undefined) {
+          checkReported = true
+          emit({ kind: 'check', totalSessions: progress.totalSessions })
+        }
+        // 会话进度：首个 + 每 1s 一条，避免把 329 条刷进详情
+        if (lastSessionTraceAt === 0 || now - lastSessionTraceAt >= 1000) {
+          lastSessionTraceAt = now
+          emit({
+            kind: 'session',
+            sessions: progress.sessions,
+            totalSessions: progress.totalSessions,
+          })
+        }
+        // 图片：数量变化且间隔 >= 1s 才记
+        if (progress.images !== undefined && progress.images !== lastImages && now - lastImageTraceAt >= 1000) {
+          lastImages = progress.images
+          lastImageTraceAt = now
+          emit({ kind: 'image', images: progress.images })
+        }
+      },
+    }).then((count) => {
+      emit({ kind: 'done', sessions: count })
+      return count
     })
   } catch (error) {
     if (options.signal?.aborted || error instanceof UrlImportCancelled) {
@@ -516,7 +615,13 @@ export const importHistoryFromUrl = async (
         stage: 'url-import',
         'url.path': redactUrl(link),
       })
+      emit({ kind: 'cancel' })
       throw error instanceof UrlImportCancelled ? error : new UrlImportCancelled()
+    }
+    // 下载阶段的失败已经在原处带过状态与原因；这里补「校验/导入阶段」的失败事实。
+    const isDownloadFailure = error instanceof BackupError && error.key.startsWith('historyImportUrl')
+    if (!isDownloadFailure) {
+      emit({ kind: 'error', message: error instanceof BackupError ? error.key : 'unknown' })
     }
     throw error
   }

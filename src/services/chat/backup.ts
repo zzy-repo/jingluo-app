@@ -43,7 +43,7 @@ export const exportHistory = (): Promise<{ name: string; blob: Blob }> =>
   })
 
 /** 导入进度：已处理会话数 / 会话总数（拿不到总数时不传）。 */
-export type ImportProgress = { sessions: number; totalSessions?: number }
+export type ImportProgress = { sessions: number; totalSessions?: number; images?: number }
 
 export type ImportHistoryOptions = {
   /** 取消：条目边界中断，暂存被清空，正式数据不变。 */
