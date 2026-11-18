@@ -89,7 +89,9 @@ const run = async () => {
   console.log('\n[web 2] 回归：本地文件上传仍可用')
   const dir = await mkdtemp(path.join(tmpdir(), 'deepseek-archive-'))
   const zipPath = path.join(dir, 'deepseek_data.zip')
-  await writeFile(zipPath, buildArchiveZip({ title: SESSION_TITLE }))
+  // 夹具参数是 titlePrefix（archive-fixture.mjs），过去传 title 会被静默忽略 →
+  // 会话标题落成默认的「链接导入测试会话 01」，后面按 SESSION_TITLE 找侧栏必然找不到。
+  await writeFile(zipPath, buildArchiveZip({ titlePrefix: SESSION_TITLE }))
   check('上传前会话数 = 0', (await sessionCount(page)) === 0)
   await page.locator('input[type="file"][accept*="zip"]').setInputFiles(zipPath)
   const confirmDialog = page.getByRole('dialog', { name: /确认导入历史对话/ })

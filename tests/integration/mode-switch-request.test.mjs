@@ -11,9 +11,16 @@
 import { chromium } from 'playwright'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { serveDir, verifyAppUrl, verifyDist } from '../helpers/env.mjs'
 
-const APP_URL = process.env.APP_URL || 'http://127.0.0.1:8090'
-const OUT_DIR = process.env.OUT_DIR || 'docs/ui/mode-switch'
+const HERE = path.dirname(fileURLToPath(import.meta.url))
+const ROOT = path.resolve(HERE, '../..')
+// 用正式产物（DeepSeek 官方渠道才有「快速/专家」），产物种类/新鲜度由 verifyDist 守
+const DIST =
+  process.env.DIST_DIR_STANDARD || process.env.STANDARD_DIST_DIR || path.join(ROOT, 'dist-standard')
+let APP_URL = process.env.APP_URL || ''
+const OUT_DIR = process.env.OUT_DIR || path.join(ROOT, 'docs/ui/mode-switch')
 const PROMPT = '同一个问题：把「快速 / 专家」讲清楚'
 const REPLY_TEXT = '模式请求对比回复。'
 
@@ -105,6 +112,13 @@ await context.addInitScript(() => {
   localStorage.setItem('chat-demo:api-key', 'sk-mode-request-probe')
   localStorage.setItem('chat-demo:provider-kind', 'deepseek')
 })
+
+// 环境下沉：以前固定连 127.0.0.1:8090 的 pnpm dev，没起服务或端口被别的东西占了就是假红。
+// 现在自己起静态服务（PORT 可注入），并校验端口上那份产物就是正式包。
+verifyDist(DIST, { variant: 'standard' })
+const served = await serveDir(DIST, { port: process.env.PORT, label: '正式产物 dist-standard' })
+APP_URL = APP_URL || served.url
+await verifyAppUrl(APP_URL, DIST, { variant: 'standard' })
 
 const page = await context.newPage()
 const pageErrors = []
@@ -205,6 +219,7 @@ for (const [width, height, name] of [
 expect(pageErrors.length === 0, '页面没有运行时报错', pageErrors.join(' | '))
 
 await browser.close()
+served.kill()
 if (failures.length) {
   console.error(`\n${failures.length} 项不通过`)
   process.exit(1)

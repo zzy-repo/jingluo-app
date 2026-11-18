@@ -21,10 +21,13 @@
 //   上述两项必须在已预约设备上用 adb logcat 取证，不能以本脚本的浏览器结果替代。
 import { execFileSync, spawn } from 'node:child_process'
 import { existsSync } from 'node:fs'
+import { createRequire } from 'node:module'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
 import { serveDir, verifyAppUrl } from '../helpers/env.mjs'
+
+const require = createRequire(import.meta.url)
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const ROOT = path.resolve(HERE, '../..')
@@ -55,9 +58,16 @@ let distDir = process.env.DIST_DIR_STANDARD || path.join(ROOT, 'dist-copy-limit'
 if (!existsSync(path.join(distDir, 'index.html'))) {
   distDir = path.join(ROOT, 'dist-copy-limit')
   console.log('· 构建被测产物到 dist-copy-limit（DIST_OUT=dist-copy-limit）…')
+  // Windows 上 node_modules/.bin/rspack 是无扩展名的 sh 脚本，execFileSync 直接 spawn 会 ENOENT；
+  // 用当前 node 跑 @rspack/cli 的 bin 入口（跨平台一致）。
+  const rspackCli = path.join(
+    path.dirname(require.resolve('@rspack/cli/package.json')),
+    'bin',
+    'rspack.js'
+  )
   execFileSync(
-    path.join(ROOT, 'node_modules', '.bin', 'rspack'),
-    ['build', '-c', 'rspack.config.ts'],
+    process.execPath,
+    [rspackCli, 'build', '-c', 'rspack.config.ts'],
     {
       cwd: ROOT,
       env: { ...process.env, NODE_ENV: 'production', DIST_OUT: 'dist-copy-limit' },

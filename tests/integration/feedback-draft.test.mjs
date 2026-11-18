@@ -6,21 +6,24 @@
 //
 // 需要先有标准包产物：npm run build（本用例不自己编译）。
 import assert from 'node:assert/strict'
-import { spawn } from 'node:child_process'
 import { mkdir } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
+import { serveDist } from '../helpers/runtime.mjs'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 const out = path.join(root, 'docs/ui/feedback-draft')
-const port = Number(process.env.PORT || 5399)
+// 端口不写死 5399：撞到无关服务时页面能打开但 __diagnostics 不存在，表现成「等 30s 超时」的假红
+let port = Number(process.env.PORT || 0)
 const DESCRIPTION = '草稿保留回归：输入后点取消'
 const CONTACT = 'draft@example.org'
 const SHOTS = []
 
 await mkdir(out, { recursive: true })
-const server = spawn('python3', ['-m', 'http.server', String(port), '--bind', '127.0.0.1', '--directory', path.join(root, 'dist')], { stdio: 'ignore' })
+// 进程内静态服务（不再 spawn python3 http.server）
+const server = await serveDist(path.join(root, 'dist'), { port })
+port = Number(new URL(server.url).port)
 const browser = await chromium.launch({ headless: true })
 
 /** 打开设置 → 数据管理 → 写反馈，返回表单元件 */
@@ -164,5 +167,5 @@ try {
   console.log('\nPASS: #31 草稿 取消保留 / 主动清空（二次确认）/ 提交成功清空 —— 390、360 两档通过')
 } finally {
   await browser.close()
-  server.kill('SIGTERM')
+  await server.close()
 }

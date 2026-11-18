@@ -115,13 +115,31 @@ expect((await textarea.inputValue()) === '正式包回归输入', '输入框可�
 const modeVisible = await page.getByRole('group', { name: /对话模式|Chat mode/ }).isVisible()
 expect(modeVisible, '正式包里模式切换同样渲染在问候语下方')
 
-const styles = await page.evaluate(() => {
-  const fast = document.querySelector('button[data-mode="fast"]')
-  const expert = document.querySelector('button[data-mode="expert"]')
-  return {
-    fast: { bg: getComputedStyle(fast).backgroundColor, color: getComputedStyle(fast).color },
-    expert: { bg: getComputedStyle(expert).backgroundColor, color: getComputedStyle(expert).color },
+const styles = await page.evaluate(async () => {
+  // 选中态是有 CSS 过渡的：直接读 computedStyle 会读到过渡中间值
+  // （实测 rgba(232, 237, 255, 0.647) / rgb(58, 77, 174)），慢机器上必假红。
+  // 期望值不放宽，只是等样式连续两次读数一致再断言。
+  const read = () => {
+    const fast = document.querySelector('button[data-mode="fast"]')
+    const expert = document.querySelector('button[data-mode="expert"]')
+    return {
+      fast: { bg: getComputedStyle(fast).backgroundColor, color: getComputedStyle(fast).color },
+      expert: { bg: getComputedStyle(expert).backgroundColor, color: getComputedStyle(expert).color },
+    }
   }
+  let previous = read()
+  for (let attempt = 0; attempt < 60; attempt += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    const next = read()
+    const stable =
+      next.fast.bg === previous.fast.bg &&
+      next.fast.color === previous.fast.color &&
+      next.expert.bg === previous.expert.bg &&
+      next.expert.color === previous.expert.color
+    if (stable) return next
+    previous = next
+  }
+  return previous
 })
 expect(
   styles.fast.bg === 'rgb(232, 237, 255)' && styles.fast.color === 'rgb(77, 107, 254)',

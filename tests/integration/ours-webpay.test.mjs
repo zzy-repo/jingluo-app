@@ -20,17 +20,22 @@ import { mkdirSync, writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import { chromium } from 'playwright'
+import { serveDist } from '../helpers/runtime.mjs'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const ROOT = path.resolve(HERE, '../..')
 const DIST = process.env.DIST_DIR_STANDARD || path.join(ROOT, 'dist-standard')
-const PORT = process.env.PORT || '5297'
-const APP_URL = process.env.APP_URL || `http://127.0.0.1:${PORT}`
+// 端口不再写死 5297：撞到别的任务遗留服务就整批假红（曾实测 5297 被占 → 收银台桩页 404）。
+// serveDist 用 0 号端口原子分配，PORT 由实际监听端口回填。
+let PORT = process.env.PORT || ''
+let APP_URL = process.env.APP_URL || ''
 const INVITE_API = 'http://62.106.70.167:60013'
 const CARD_API = 'https://apia.ecsafe.cn'
 const SHOT_DIR = path.join(ROOT, 'docs', 'ui')
 
 const KEY = 'sk-live-e2e-ours-8844220011aabbccddeeff'
+/** Issue #115：下单归属客户（cid），由 /me 的 customer_id 提供；顶层导航目标带 cid */
+const CUSTOMER_ID = 4210
 const OUT_TRADE_NO = 'CP2026111816102637F0F8AA'
 const ORDER_TOKEN = 'Lsx2M8cBadOaJrXElnZBLISmtImUtfp9'
 const ORDER_CARD = 'CARD-FULFILLED-9f8e7d'
@@ -70,6 +75,11 @@ const cleanup = () => {
       // 已退出
     }
   }
+  try {
+    staticServer.close().catch(() => {})
+  } catch {
+    // 服务还没起来
+  }
 }
 
 const browser = await chromium.launch()
@@ -84,9 +94,12 @@ const json = (status, body) => ({ status, headers: CORS, body: JSON.stringify(bo
 
 /** 打桩状态 + 计数器（每个用例重置） */
 const mock = { order: 'pending-then-fulfilled', orders: 0 }
-const calls = { apply: 0, me: 0, balance: 0, plans: 0, order: 0, redeem: 0 }
+const calls = { apply: 0, me: 0, balance: 0, plans: 0, order: 0, redeem: 0, redeemPool: 0 }
 
 const profile = () => ({
+  // Issue #115 / #135：没有 cid 时 navigateTopLevel 拒绝跳转（不发不带 cid 的 /buy），
+  // 打桩的 /me 必须给 customer_id，否则「去支付」根本不会导航。
+  customer_id: CUSTOMER_ID,
   invite_code: 'G7TA7UR3',
   invited_count: 0,
   max_invites: 20,
@@ -128,8 +141,10 @@ const LOCAL_CHECKOUT_URL = (port) => `http://127.0.0.1:${port}/${LOCAL_CHECKOUT_
 mkdirSync(DIST, { recursive: true })
 writeFileSync(path.join(DIST, LOCAL_CHECKOUT_STUB), CHECKOUT_STUB, 'utf8')
 
-start('python3', ['-m', 'http.server', PORT, '--bind', '127.0.0.1', '--directory', DIST])
-await new Promise((resolve) => setTimeout(resolve, 800))
+// 进程内静态服务（不再 spawn python3 http.server：Windows 上是 Store 占位符 / 不保证有 python）
+const staticServer = await serveDist(DIST, { port: Number(process.env.PORT || 0) })
+PORT = new URL(staticServer.url).port
+if (!process.env.APP_URL) APP_URL = staticServer.url
 
 /**
  * 全部后端打桩。`holdBuyMs` 用来把 /buy 的响应压一下，
@@ -154,6 +169,23 @@ const wireMock = async (page, options = {}) => {
     if (url.pathname === '/me') {
       calls.me += 1
       await route.fulfill(json(200, profile()))
+      return
+    }
+    if (url.pathname === '/redeem-card') {
+      // Issue #72：卡密兑换先打本机池 /redeem-card；旧 /api/redeem 只在池链路本身不通时兜底
+      calls.redeemPool += 1
+      const body = JSON.parse(request.postData() ?? '{}')
+      mock.remaining += 300
+      await route.fulfill(
+        json(200, {
+          ok: true,
+          card_no: body.card_no,
+          points: 300,
+          quota_points: 300,
+          remaining_points: mock.remaining,
+          duplicate: false,
+        })
+      )
       return
     }
     await route.fulfill(json(404, { error: { code: 'not_found', message: 'no such path' } }))
@@ -324,8 +356,8 @@ const runViewport = async ({ width, height, label }) => {
   const buyRequests = requests.filter((item) => item.url.startsWith(`${CARD_API}/buy`))
   eq(buyRequests.map((item) => item.type), ['document'], `${width}px：/buy 只被 document 导航请求过一次`)
   truthy(
-    buyRequests[0]?.url === `${CARD_API}/buy?plan=p1`,
-    `${width}px：顶层导航目标是 /buy?plan=p1（${buyRequests[0]?.url}）`
+    buyRequests[0]?.url === `${CARD_API}/buy?plan=p1&cid=${CUSTOMER_ID}`,
+    `${width}px：顶层导航目标是 /buy?plan=p1&cid=（${buyRequests[0]?.url}）`
   )
   eq(
     requests.filter((item) => item.url.startsWith(`${CARD_API}/buy`) && (item.type === 'fetch' || item.type === 'xhr'))
@@ -377,12 +409,30 @@ const runViewport = async ({ width, height, label }) => {
   await page.waitForTimeout(250)
   await shot('04-return-order-fulfilled')
 
+  // #100 / #86：网页版新设备要先显式「领取新 Key」，领到的 Key 才会写进当前渠道配置。
+  // 「一键兑换」提交时要用这个 Key（src 里空 Key 直接拒绝，不发请求），所以这是必经步骤。
+  if ((await page.getByTestId('ours-open-choice-claim').count()) > 0) {
+    await page.getByTestId('ours-open-choice-claim').click()
+    await page.waitForTimeout(900)
+  }
+  if ((await page.getByTestId('ours-claim-use').count()) > 0) {
+    await page.getByTestId('ours-claim-use').click()
+    await page.waitForTimeout(400)
+  }
+  eq(
+    await page.evaluate(() => window.localStorage.getItem('chat-demo:api-key')),
+    KEY,
+    `${width}px：领到 Key 后写进当前渠道（否则一键兑换发不出去）`
+  )
+
   // 一键兑换（把回跳拿到的卡密直接换额度）
-  const redeemBefore = calls.redeem
+  const redeemBefore = calls.redeemPool
   await page.getByTestId('ours-order-redeem').click()
   await page.waitForTimeout(900)
-  truthy(calls.redeem > redeemBefore, `${width}px：一键兑换打到 /api/redeem`)
-  truthy(/兑换成功/.test(await page.getByTestId('ours-redeem-result').innerText()), `${width}px：一键兑换成功`)
+  truthy(calls.redeemPool > redeemBefore, `${width}px：一键兑换打到本机池 /redeem-card（#72）`)
+  eq(calls.redeem, 0, `${width}px：池正常时不兜底旧 /api/redeem`)
+  const redeemText = await page.getByTestId('ours-redeem-result').innerText()
+  truthy(/兑换成功/.test(redeemText), `${width}px：一键兑换成功（${redeemText}）`)
 
   // 终态后存档清掉：再打开同 URL 不会重复查单
   eq(

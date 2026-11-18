@@ -1,154 +1,180 @@
 {
   "schemaVersion": 1,
   "baseline": {
-    "ref": "origin/main@b7b5750（1.4.0-beta.8 线）",
+    "ref": "origin/main@18b44f3（1.4.0-beta.9 线）",
     "recordedAt": "2026-11-18",
     "recordedBy": "Issue #19（集成测试基线红）",
-    "note": "记录「每个集成文件应该是什么状态」。判定口径只判「相对基线没有新增失败」，不追全绿。known-red 必须写 reason，修好后删除该条（runner 会把「记红却转绿」也报出来，防止基线腐烂）。"
+    "note": "逐个集成文件登记「应该是什么状态」，按当前 main 从零重登记（29 个文件）。判定只判「相对基线没有新增失败」：expected=pass 的跑红算新增失败；expected=known-red 的跑绿会报 FIXED? 提醒删条目，防基线腐烂。known-red 必须写清 reason + 证据 + followUp，禁止把环境问题塞进 known-red。"
   },
   "howToRun": {
-    "standardBuild": "NODE_ENV=production DIST_OUT=dist-standard rspack build -c rspack.config.ts",
-    "internalBuild": "INTERNAL_BUILD=1 NODE_ENV=production rspack build -c rspack.config.ts",
-    "serveStandard": "python3 -m http.server 5301 --bind 127.0.0.1 --directory dist-standard",
-    "command": "APP_URL=http://127.0.0.1:5301 node tests/run-layer.mjs integration --baseline --timeout-ms 300000",
-    "npmScript": "npm run test:integration:baseline",
-    "detail": "docs/testing.md"
+    "standardBuild": "NODE_ENV=production DIST_OUT=dist-standard npx rspack build -c rspack.config.ts",
+    "internalBuild": "INTERNAL_BUILD=1 NODE_ENV=production DIST_OUT=dist-internal npx rspack build -c rspack.config.ts",
+    "scrollBuild": "NODE_ENV=production DIST_OUT=dist-scroll npx rspack build -c rspack.config.ts",
+    "command": "STANDARD_DIST_DIR=$PWD/dist-standard DIST_DIR=$PWD/dist-internal pnpm test:integration",
+    "npmScript": "pnpm test:integration:baseline",
+    "detail": "docs/testing.md / docs/TESTING-POLICY.md",
+    "noManualServer": "不需要手动起静态服务：用例要么自己起（serveDir，端口 0 原子分配），要么由 runner 注入一份共享标准产物服务的 APP_URL。"
   },
   "guards": {
-    "port": "自建静态服务的用例不再用固定端口：serveDir() 复用 tests/helpers/runtime.mjs 的 serveDist（进程内 HTTP 服务 + 0 号端口原子分配），退出即释放。曾经固定 5291~5296 / 5191 / 5397 / 5418，撞到其它任务遗留的服务就整批假红。",
+    "port": "不再有固定端口：serveDir() 复用 tests/helpers/runtime.mjs 的 serveDist（进程内 HTTP 服务 + 0 号端口原子分配），退出即释放。历史上固定 5291~5296 / 5399 / 5181 / 5418 / 8090，撞上遗留服务就整批假红。",
     "artifact": "用例开跑前调用 verifyAppUrl()/verifyDist()：地址不可达、端口上 serve 的不是这份产物、产物种类不对（内测/标准）、产物比源码旧 → 打印原因并 exit 77（SKIP(env)，不算失败）。",
     "buildInfo": "每次构建在产物目录写 build-info.json（variant/main/hash/version/builtAt），守卫据此判断，不靠猜。",
+    "sharedServer": "run-layer 为「历史上靠外部 APP_URL」的 13 个文件统一起一份标准产物服务并注入 APP_URL（SELF_SERVED 的文件仍走 APP_URL=''），缺产物时报错信息里带构建命令。",
     "noImplicitBuild": "沿用 tests/helpers/runtime.mjs 的约定：用例不做隐式构建，缺产物就 SKIP(env) 并打印构建命令。"
   },
   "files": {
     "auto-title.test.mjs": {
       "expected": "pass",
-      "artifact": "self-built 标准包",
-      "reason": "自己构建/复用 dist-standard + 进程内静态服务（端口自动分配）"
+      "artifact": "standard",
+      "reason": "自起静态服务 + verifyAppUrl(standard)；产物用 STANDARD_DIST_DIR/DIST_DIR（默认 dist-standard），端口自动分配"
     },
     "caps.test.mjs": {
       "expected": "pass",
       "artifact": "standard",
-      "reason": "外部 APP_URL 指向标准包"
+      "reason": "runner 注入共享标准产物服务的 APP_URL（以前要手起 5181，漏了就整批假红）"
     },
     "copy-limit.test.mjs": {
       "expected": "pass",
-      "artifact": "standard(self-built)",
-      "reason": "自己构建 dist-copy-limit（DIST_DIR_STANDARD 可注入）；端口自动分配"
+      "artifact": "standard(自建)",
+      "reason": "自己构建 dist-copy-limit（DIST_DIR_STANDARD 可注入）+ 自起静态服务；端口自动分配"
     },
     "diagnostics-contract.test.mjs": {
       "expected": "pass",
-      "artifact": "internal+standard",
-      "reason": "两套产物各起服务；[A] 断言已对齐 import_error 现有字段（reason/download.bytes）；[B] 打桩路径改 /v1/chat/completions"
+      "artifact": "internal + standard",
+      "reason": "同时要内测产物（DIST_DIR）与标准产物（STANDARD_DIST_DIR），各起一个随机 loopback 服务，再按 variant 校验"
     },
     "diagnostics.test.mjs": {
       "expected": "pass",
       "artifact": "internal",
-      "reason": "内测产物 + 进程内静态服务"
+      "reason": "verifyDist(internal) 守卫产物种类；自起服务（PORT 可注入）"
+    },
+    "error-boundary.test.mjs": {
+      "expected": "pass",
+      "artifact": "standard",
+      "reason": "dist 上进程内 serveDist（端口 0 原子分配）"
+    },
+    "feedback-draft.test.mjs": {
+      "expected": "pass",
+      "artifact": "standard",
+      "reason": "自起静态服务（端口 0），不再固定 5399"
     },
     "feedback-export.test.mjs": {
       "expected": "pass",
       "artifact": "standard",
-      "reason": "版本号从产物 meta[application-version] 读取，不再硬编码"
+      "reason": "DIST_STANDARD_DIR 指向标准产物，verifyDist(standard) 守卫后自起服务"
     },
     "feedback-scroll.test.mjs": {
       "expected": "pass",
-      "artifact": "standard",
-      "reason": "产物默认 dist-standard（原写死 dist-scroll，无人产出）；端口自动分配；单次约 200s，需 --timeout-ms 300000"
+      "artifact": "standard(滚动专用)",
+      "reason": "SCROLL_DIST_DIR（默认 dist-scroll）滚动截图专用产物；自起服务 + SCROLL_PORT 可注入"
     },
     "full-acceptance.test.mjs": {
-      "expected": "known-red",
+      "expected": "pass",
       "artifact": "standard",
-      "reason": "纯净 origin/main（b7b5750）上同样红：openai 兼容渠道点「测试」后探测请求 GET /v1/models 未带 Authorization（断言得到 undefined，期望 Bearer <key>）。已在未改动的 main worktree 上复现，与本轮改动无关；疑似产品缺陷（openai 渠道探测未带鉴权头），需单开 Issue 定位。",
-      "since": "2026-11-18 复现于 origin/main@b7b5750",
-      "followUp": "待开 Issue：openai 兼容渠道探测请求缺少 Authorization"
+      "reason": "runner 注入共享标准产物服务的 APP_URL；产物缺失/陈旧由 verifyAppUrl 报 SKIP(env)"
     },
     "internal-build.test.mjs": {
       "expected": "pass",
       "artifact": "internal",
-      "reason": "ours 契约已对齐（62.106.70.167:60010 + /v1/chat/completions + Bearer）"
+      "reason": "verifyDist(internal) + 读 build-info.json 校验 main/variant；自起服务"
     },
     "legacy-config.test.mjs": {
       "expected": "pass",
       "artifact": "standard",
-      "reason": "外部 APP_URL 指向标准包"
+      "reason": "runner 注入共享标准产物服务的 APP_URL"
     },
     "mode-switch-plain.test.mjs": {
       "expected": "pass",
       "artifact": "standard",
-      "reason": "对比基准读 tests/fixtures/input-row-baseline.json；端口自动分配"
+      "reason": "自起服务（PORT 可注入）；PLAIN_URL/BASELINE_URL 可外部注入"
+    },
+    "mode-switch-request.test.mjs": {
+      "expected": "pass",
+      "artifact": "standard",
+      "reason": "自起服务（PORT 可注入）；以前固定连 127.0.0.1:8090 的 pnpm dev，没起服务就假红"
     },
     "mode-switch.test.mjs": {
       "expected": "pass",
       "artifact": "internal",
-      "reason": "打桩改走 tests/fixtures/ours-upstream.mjs；深度思考/智能搜索按 ours caps 断言不渲染"
+      "reason": "verifyDist(internal)；布局断言在能渲染模式的 DeepSeek 官方渠道上跑，ours 渠道单独断言「开关不渲染」"
     },
     "motion.test.mjs": {
       "expected": "pass",
       "artifact": "internal",
-      "reason": "打桩改走 ours fixture（OpenAI SSE）；BASE_COMMIT 前移到 637adfb（CopyButton 因 #16 合法改动）"
+      "reason": "verifyDist(internal) + MOTION_BASE/PORT 可注入；自起服务"
     },
     "ours-services.test.mjs": {
+      "expected": "known-red",
+      "artifact": "standard",
+      "reason": "DIST_DIR_STANDARD 标准产物 + mock 我们的服务端；27 项里 25 项绿，2 项（390/360 各一次）撞真实产品缺陷，见 knownRed"
+    },
+    "ours-webpay.test.mjs": {
       "expected": "pass",
       "artifact": "standard",
-      "reason": "端口自动分配（原写死 5295）"
+      "reason": "DIST_DIR_STANDARD 标准产物；下单/兑换按当前 ours 契约（兑换走 /redeem-card 池接口）打桩"
     },
     "paths.test.mjs": {
       "expected": "pass",
       "artifact": "standard",
-      "reason": "外部 APP_URL 指向标准包（曾因 5181 被别的服务占着而假红）"
+      "reason": "runner 注入共享标准产物服务的 APP_URL"
     },
     "probe-auth.test.mjs": {
       "expected": "pass",
       "artifact": "standard",
-      "reason": "外部 APP_URL 指向标准包"
+      "reason": "runner 注入共享标准产物服务的 APP_URL；上游由路由拦截伪造"
+    },
+    "probe-auth-protocols.test.mjs": {
+      "expected": "pass",
+      "artifact": "standard",
+      "reason": "runner 注入共享标准产物服务的 APP_URL；多协议探测全走 mock"
     },
     "probe-nokey.test.mjs": {
       "expected": "pass",
       "artifact": "standard",
-      "reason": "外部 APP_URL 指向标准包"
+      "reason": "runner 注入共享标准产物服务的 APP_URL；无 Key 场景不触网"
     },
     "provider-anthropic.test.mjs": {
       "expected": "pass",
       "artifact": "standard",
-      "reason": "外部 APP_URL 指向标准包"
+      "reason": "runner 注入共享标准产物服务的 APP_URL；上游 mock"
     },
     "provider-channels.test.mjs": {
       "expected": "pass",
       "artifact": "standard",
-      "reason": "ours 契约已对齐；进程内静态服务 + 端口自动分配"
+      "reason": "DIST_DIR_STANDARD 标准产物，自起服务后 verifyAppUrl(standard)"
     },
     "request-body.test.mjs": {
       "expected": "pass",
       "artifact": "standard",
-      "reason": "外部 APP_URL 指向标准包"
+      "reason": "runner 注入共享标准产物服务的 APP_URL；请求体断言不触网"
     },
     "upstream-html.test.mjs": {
       "expected": "pass",
       "artifact": "standard",
-      "reason": "外部 APP_URL 指向标准包"
+      "reason": "runner 注入共享标准产物服务的 APP_URL；上游返回 HTML 的场景用 mock"
     },
     "url-import-native.test.mjs": {
       "expected": "pass",
       "artifact": "standard",
-      "reason": "外部 APP_URL 指向标准包"
+      "reason": "runner 注入共享标准产物服务的 APP_URL；抓取阶段全 mock"
     },
     "url-import-stages.test.mjs": {
       "expected": "pass",
       "artifact": "standard",
-      "reason": "外部 APP_URL 指向标准包"
+      "reason": "runner 注入共享标准产物服务的 APP_URL + SHOT_DIR 截图目录；阶段竞态用 mock 控制"
     },
     "url-import-web.test.mjs": {
       "expected": "pass",
       "artifact": "standard",
-      "reason": "夹具参数 title → titlePrefix（曾静默失效）"
+      "reason": "runner 注入共享标准产物服务的 APP_URL；只看标题前缀"
     }
   },
   "knownRed": {
-    "full-acceptance.test.mjs": {
-      "reason": "纯净 origin/main（b7b5750）上同样红：openai 兼容渠道点「测试」后探测请求 GET /v1/models 未带 Authorization（断言得到 undefined，期望 Bearer <key>）。已在未改动的 main worktree 上复现，与本轮改动无关；疑似产品缺陷（openai 渠道探测未带鉴权头），需单开 Issue 定位。",
-      "since": "2026-11-18 复现于 origin/main@b7b5750",
-      "followUp": "待开 Issue：openai 兼容渠道探测请求缺少 Authorization"
+    "ours-services.test.mjs": {
+      "reason": "390px / 360px 各一次「DeepSeek 官方设置页没有我们的渠道文案」不过：把渠道切到 DeepSeek 官方后，「设置 → 数据」里仍渲染「付款记录」这一格，描述文案是「已支付订单、金额、卡密后 4 位与兑换状态」，命中了断言里的「卡密」。src/components/settings/SettingsDialog.tsx 第 154 行注释写着「额度查询 / 套餐 / 卡密兑换 / 订单状态：只在「我们的渠道」下出现」，但整块只有 <OursServicesRow /> 自己按渠道自藏，紧跟着的 payment-records-open（SettingCell，data-testid=payment-records-open）没有渠道判断，所以在官方渠道下也露出来。属产品缺陷，本轮不许动 src/**，断言保持不动、登记为基线红。其余 25 项（入口只在 ours 出现、设备码字符集、打开弹层不发 POST /apply、兑换走 /redeem-card 且不落 /api/redeem、不显示 ¥、日志与 DOM 不含完整 Key/卡密）全绿。",
+      "since": "2026-11-18 复现于 origin/main（18b44f3）标准产物 dist-standard，390×844 / 360×800 Chromium 视口",
+      "evidence": "截图 docs/ui/1.4.0-beta.8-ours-pay-*.png；探针打印 getByRole('dialog').first().innerText() 命中文本仅为「已支付订单、金额、卡密后 4 位与兑换状态」",
+      "followUp": "待开 Issue：DeepSeek 官方渠道设置页仍渲染「付款记录」入口（SettingsDialog.tsx payment-records-open 缺渠道守卫）"
     }
   }
 }

@@ -286,16 +286,19 @@ const run = async () => {
     await browser.close()
   }
 
-  // ── 用例 6：网络失败 → 提示检查网络 ───────────────────────────────────────
+  // ── 用例 6：连接被拒绝 → 提示「连接被拒绝」（#111 三档文案） ───────────────
   {
-    console.log('\n[case 6] 网络失败：提示「下载失败，请检查网络连接后重试」')
+    console.log('\n[case 6] 连接被拒绝：提示「连接被拒绝：服务器没有接受连接…」')
     const { browser, page, consoleErrors } = await openApp({
       payload: { kind: 'reject', message: 'Failed to connect to /10.0.2.2:5199' },
     })
     await startUrlImport(page)
-    const network = page.getByText(/(网络已断开|下载失败，请检查网络)/)
+    // #111 起失败分三档（src/services/chat/history/importFailure.ts）：真断网 / 连接被拒绝 / 服务端报错。
+    // 这条 mock 原文「Failed to connect to /10.0.2.2:5199」命中 REFUSED_PATTERN → refused 档，
+    // 文案是 historyImportUrlRefused，不再复用「网络已断开」。断言照旧要求出现失败提示，只是钉住正确那一档。
+    const network = page.getByText(/连接被拒绝/)
     await network.waitFor({ timeout: 20000 })
-    check('提示网络类失败（离线/连接失败）', (await network.count()) > 0)
+    check('提示「连接被拒绝」（refused 档，不再误报断网）', (await network.count()) > 0)
     check('会话数仍为 0', (await sessionCount(page)) === 0)
     check('console error = 0', consoleErrors.length === 0, consoleErrors.join(' | '))
     await browser.close()

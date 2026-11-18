@@ -348,10 +348,12 @@ const runTitleScenario = async ({
       } else {
         ok('[1] max_tokens = 32（最小化开销）')
       }
-      if (title.body.stream !== false) {
-        bad(`[1] 标题请求不是非流式：stream=${JSON.stringify(title.body.stream)}`)
+      // 契约变更（#93 / src/services/chat/autoTitle.ts）：标题请求改成流式，读到第一个非空行即断开，
+      // 不再是非流式一次性请求。这里断言的是「必须流式」，强度不变。
+      if (title.body.stream !== true) {
+        bad(`[1] 标题请求应为流式（stream=true）：实际 stream=${JSON.stringify(title.body.stream)}`)
       } else {
-        ok('[1] 非流式请求（stream=false）')
+        ok('[1] 流式请求（stream=true，拿到标题行即断开）')
       }
       if (title.body.thinking !== undefined) {
         bad(`[1] 标题请求不该带 thinking：${JSON.stringify(title.body.thinking)}`)

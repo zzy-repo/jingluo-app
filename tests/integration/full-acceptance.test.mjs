@@ -22,10 +22,19 @@
 // 8. console error = 0
 import http from 'node:http'
 import { execFileSync } from 'node:child_process'
-import { writeFileSync } from 'node:fs'
+import { mkdirSync, writeFileSync } from 'node:fs'
+import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
 import { defaultDist, verifyAppUrl } from '../helpers/env.mjs'
+
+// 证据目录：原来写死 /root/deepseek-app/...（Linux 一次性机器），在任何别的机器上都 ENOENT
+// → 整条用例「用例异常」，属于环境假红。改成相对仓库根解析。
+const ROOT = fileURLToPath(new URL('../..', import.meta.url))
+const SHOT_DIR = path.join(ROOT, 'docs', 'ui')
+const ACCEPT_DIR = path.join(ROOT, 'docs', 'acceptance')
+mkdirSync(SHOT_DIR, { recursive: true })
+mkdirSync(ACCEPT_DIR, { recursive: true })
 
 const APP_URL = process.env.APP_URL || `http://127.0.0.1:${process.env.PORT || '5181'}`
 // 环境守卫：端口撞车 / 产物陈旧 → SKIP(env)，不产生假红（Issue #19）
@@ -355,7 +364,7 @@ try {
   } else {
     ok('4) 脏数据用例全绿：空 choices、无 [DONE] 断流、`: ping` 注释行 → 不抛错、不卡死、正常结束')
   }
-  writeFileSync('/root/deepseek-app/docs/acceptance/1.3.0-translator-unit.log', translatorOut)
+  writeFileSync(ACCEPT_DIR + '/1.3.0-translator-unit.log', translatorOut)
 
   // ============ 7a. deepseek 模式：零影响 ============
   console.log('\n[7a] 回归：deepseek 模式')
@@ -474,7 +483,7 @@ try {
     note(`deepseek paths 命中次数 = ${JSON.stringify(dsPaths)}`)
   }
   await page.waitForTimeout(1200)
-  await page.screenshot({ path: '/root/deepseek-app/docs/ui/1.2.3-deepseek-full.png' })
+  await page.screenshot({ path: SHOT_DIR + '/1.2.3-deepseek-full.png' })
 
   // ============ 2/3. anthropic 模式：路径 + 字段剥离 + 流式文本 ============
   console.log('\n[7b] 回归：anthropic 模式路径与请求体')
@@ -563,7 +572,7 @@ try {
   } else {
     ok('「深度思考」保留可用')
   }
-  await page.screenshot({ path: '/root/deepseek-app/docs/ui/1.2.3-anthropic-caps.png' })
+  await page.screenshot({ path: SHOT_DIR + '/1.2.3-anthropic-caps.png' })
   // DOM 证据：把四个入口在 anthropic 模式下的实际 DOM 属性落盘（隐藏 or aria-disabled）
   const domDump = await page.evaluate(() => {
     const wanted = ['智能搜索', '上传文件', '语音输入', '朗读', '深度思考']
@@ -591,7 +600,7 @@ try {
     })
   })
   writeFileSync(
-    '/root/deepseek-app/docs/ui/1.2.3-anthropic-dom.txt',
+    SHOT_DIR + '/1.2.3-anthropic-dom.txt',
     `anthropic 模式入口 DOM（生成于 ${new Date().toISOString()}）\n${JSON.stringify(domDump, null, 2)}\n`
   )
   note('anthropic 入口 DOM 证据已写入 docs/ui/1.2.3-anthropic-dom.txt')
@@ -647,7 +656,7 @@ try {
   const errorNoticeBefore = await page.getByText(/上游返回网页|网络异常|服务器繁忙|API Key 无效/).count()
   await send('你好 openai')
   const openaiHit = await waitFor(async () => posts(mockOk.log, '/v1/chat/completions').length > 0)
-  await page.screenshot({ path: '/root/deepseek-app/docs/ui/1.3.0-openai-streaming.png' })
+  await page.screenshot({ path: SHOT_DIR + '/1.3.0-openai-streaming.png' })
   const openaiEntry = posts(mockOk.log, '/v1/chat/completions')[0]
   if (!openaiHit || !openaiEntry) {
     bad('1) 没有打到 /v1/chat/completions')
@@ -757,7 +766,7 @@ try {
   } else {
     ok('5) 结束后回到可发送状态（停止按钮已消失）')
   }
-  await page.screenshot({ path: '/root/deepseek-app/docs/ui/1.3.0-openai-done.png' })
+  await page.screenshot({ path: SHOT_DIR + '/1.3.0-openai-done.png' })
 
   // ============ 6a. openai 能力降级 ============
   console.log('\n[6] openai 模式能力降级')
@@ -787,11 +796,11 @@ try {
     }))
   })
   writeFileSync(
-    '/root/deepseek-app/docs/ui/1.3.0-openai-dom.txt',
+    SHOT_DIR + '/1.3.0-openai-dom.txt',
     `openai 模式入口 DOM 计数（生成于 ${new Date().toISOString()}）\n${JSON.stringify(openaiCapsDom, null, 2)}\n`
   )
   note(`openai 入口 DOM 计数 = ${JSON.stringify(openaiCapsDom)}`)
-  await page.screenshot({ path: '/root/deepseek-app/docs/ui/1.3.0-openai-caps.png' })
+  await page.screenshot({ path: SHOT_DIR + '/1.3.0-openai-caps.png' })
 
   // ============ 6b. 切回 deepseek：能力恢复 ============
   console.log('\n[6] 切回 deepseek 模式')

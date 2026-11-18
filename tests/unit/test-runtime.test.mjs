@@ -133,6 +133,8 @@ test('CLI exact failure rerun, JSON, no-match, invalid arguments and node:test d
   await cp(path.join(root, 'tests/run-layer.mjs'), path.join(dir, 'tests/run-layer.mjs'))
   await cp(path.join(root, 'tests/helpers/runtime.mjs'), path.join(dir, 'tests/helpers/runtime.mjs'))
   await cp(path.join(root, 'tests/helpers/ports.mjs'), path.join(dir, 'tests/helpers/ports.mjs'))
+  // run-layer 现在 import helpers/env.mjs（给靠 APP_URL 的用例注入共享标准产物服务），沙箱里要一并拷过去
+  await cp(path.join(root, 'tests/helpers/env.mjs'), path.join(dir, 'tests/helpers/env.mjs'))
   await writeFile(path.join(dir, 'tests/unit/pass.test.mjs'), `import test from 'node:test'; test('pass',()=>{});`)
   await writeFile(path.join(dir, 'tests/unit/fail.test.mjs'), 'process.exit(9)')
   const runner = path.join(dir, 'tests/run-layer.mjs'), report = path.join(dir, 'report.json')

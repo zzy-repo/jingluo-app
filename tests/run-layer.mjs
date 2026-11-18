@@ -4,6 +4,7 @@ import { readdir, readFile, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { runCase } from './helpers/runtime.mjs'
+import { serveDir } from './helpers/env.mjs'
 
 const TESTS_DIR = path.dirname(fileURLToPath(import.meta.url))
 const ROOT = path.resolve(TESTS_DIR, '..')
@@ -12,6 +13,17 @@ const SELF_SERVED = new Set([
   'internal-build', 'motion', 'mode-switch', 'diagnostics', 'diagnostics-contract', 'auto-title',
   'provider-channels', 'feedback-export', 'mode-switch-plain',
 ].map((s) => `${s}.test.mjs`))
+/**
+ * 这几个用例历史上是「外部先起一个静态服务，再 APP_URL=... 跑」（旧 README 让手起 5181）。
+ * 手起服务漏了就是整批假红，所以这里由 runner 统一起一份标准产物服务并把 APP_URL 注入进去；
+ * 用例自己已经能自起服务的（SELF_SERVED）不走这条路。
+ */
+const APP_URL_FILES = new Set([
+  'caps', 'paths', 'probe-auth', 'probe-auth-protocols', 'probe-nokey', 'provider-anthropic',
+  'request-body', 'upstream-html', 'url-import-native', 'url-import-stages', 'url-import-web',
+  'legacy-config', 'full-acceptance',
+].map((s) => `${s}.test.mjs`))
+
 /** 用例的环境守卫退出码：端口被占 / 产物种类不对 / 产物陈旧（SKIP(env)，不算失败） */
 const SKIP_CODE = 77
 /** 集成层基线清单：只判「相对基线没有新增失败」 */
@@ -64,10 +76,22 @@ async function main() {
     return selected.length ? 0 : 1
   }
   let interrupted = false
+  // 共享标准产物服务：只在真的有用例需要 APP_URL 时才起，退出即释放（端口 0 = 原子分配，不撞端口）
+  let sharedStd = null
+  const ensureSharedStd = async () => {
+    if (sharedStd) return sharedStd
+    const dir = process.env.STANDARD_DIST_DIR || process.env.DIST_DIR_STANDARD || path.join(ROOT, 'dist-standard')
+    sharedStd = await serveDir(dir, { port: 0, label: '共享标准产物 dist-standard' })
+    console.log(`
+共享标准产物服务：${dir} → ${sharedStd.url}`)
+    return sharedStd
+  }
   for (const item of selected) {
     console.log(`\n>> ${rel(item.file)} (timeout ${timeoutMs}ms)`)
     const env = { ...process.env }
-    if (SELF_SERVED.has(path.basename(item.file))) env.APP_URL = ''
+    const base = path.basename(item.file)
+    if (SELF_SERVED.has(base)) env.APP_URL = ''
+    else if (APP_URL_FILES.has(base) && !process.env.APP_URL) env.APP_URL = (await ensureSharedStd()).url
     const result = await runCase(item.file, { cwd: ROOT, env, timeoutMs })
     const skipped = result.code === SKIP_CODE
     const skipReason = skipped ? (/SKIP\(env\) (.+)/.exec(result.tail.join(''))?.[1] ?? '环境不满足').trim() : ''
@@ -78,6 +102,7 @@ async function main() {
     if (result.interrupted) { interrupted = true; break }
     if (!result.ok && flags.has('--bail')) break
   }
+  sharedStd?.kill()
   const failures = results.filter((r) => !r.ok && !r.skipped)
   const skips = results.filter((r) => r.skipped)
   const failedCount = failures.length

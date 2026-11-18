@@ -28,8 +28,9 @@ npm run test:integration:baseline
 单独一个文件（调试时最常用）：
 
 ```bash
-APP_URL=http://127.0.0.1:5301 node tests/integration/paths.test.mjs
+node tests/integration/paths.test.mjs                   # 由 runner 注入共享标准产物服务时最省事
 node tests/integration/internal-build.test.mjs          # 自己起服务、自己选端口
+APP_URL=http://127.0.0.1:5301 node tests/integration/caps.test.mjs   # 也可以自己指一份服务
 ```
 
 `--only <子串>` 只跑文件名含该子串的用例，`--list` 只列不跑，`--bail` 首个失败即停，
@@ -37,27 +38,29 @@ node tests/integration/internal-build.test.mjs          # 自己起服务、自�
 
 ## 2. 前置（标准包 + 内测包）
 
-集成层的 24 个文件分三类，产物要求不同：
+集成层的 29 个文件分三类，产物要求不同：
 
 | 类别 | 文件 | 产物 | 谁来 serve |
 | --- | --- | --- | --- |
-| 外部 `APP_URL` | `paths` `caps` `request-body` `upstream-html` `probe-auth` `probe-nokey` `legacy-config` `provider-anthropic` `url-import-web` `url-import-native` `url-import-stages` `full-acceptance` | **标准包** | 你自己（显式传 `APP_URL`，别指望默认端口干净） |
-| 自建服务（标准包） | `provider-channels` `ours-services` `feedback-export` `copy-limit` `auto-title` `diagnostics-contract` `mode-switch-plain` | **预构建**标准包（`dist-standard/`，或各自的 `DIST_*` 变量）；按 main 的约定**不隐式构建**，缺产物 → `SKIP(env)` 并打印构建命令 | 用例自己（`serveDist` / `serveDir`，端口自动分配） |
-| 自建服务（内测包） | `internal-build` `motion` `mode-switch` `diagnostics` | **内测包**（`dist/`） | 用例自己（端口自动分配） |
+| 靠 `APP_URL`（历史遗留写法） | `paths` `caps` `request-body` `upstream-html` `probe-auth` `probe-auth-protocols` `probe-nokey` `legacy-config` `provider-anthropic` `url-import-web` `url-import-native` `url-import-stages` `full-acceptance` | **标准包** | **runner 统一注入**：这 13 个文件跑之前，`run-layer` 起一份共享标准产物服务（端口 0）并把 `APP_URL` 传进去；自己传 `APP_URL` 时以你给的为准 |
+| 自建服务（标准包） | `provider-channels` `ours-services` `ours-webpay` `feedback-export` `feedback-draft` `error-boundary` `copy-limit` `auto-title` `mode-switch-plain` `mode-switch-request` `diagnostics-contract` | **预构建**标准包（`dist-standard/`，或各自的 `DIST_*` 变量）；按 main 的约定**不隐式构建**，缺产物 → `SKIP(env)` 并打印构建命令 | 用例自己（`serveDist` / `serveDir`，端口自动分配） |
+| 自建服务（内测包） | `internal-build` `motion` `mode-switch` `diagnostics` `feedback-scroll` | **内测包**（`dist-internal/`，或 `DIST_DIR` / `SCROLL_DIST_DIR` 指过去） | 用例自己（端口自动分配） |
 
 准备产物：
 
 ```bash
-# 标准包 → dist-standard（外部 APP_URL 用它，自建服务的标准包类用例也读它）
-NODE_ENV=production DIST_OUT=dist-standard rspack build -c rspack.config.ts
-python3 -m http.server 5301 --bind 127.0.0.1 --directory dist-standard &
-export APP_URL=http://127.0.0.1:5301
+# 标准包 → dist-standard（共享服务与标准包类用例都读它）
+NODE_ENV=production DIST_OUT=dist-standard npx rspack build -c rspack.config.ts
 
-# 内测包 → dist（内测类用例直接吃它）
-INTERNAL_BUILD=1 NODE_ENV=production rspack build -c rspack.config.ts
+# 内测包 → dist-internal（内测类用例吃它；也可以直接产出到 dist/）
+INTERNAL_BUILD=1 NODE_ENV=production DIST_OUT=dist-internal npx rspack build -c rspack.config.ts
+
+# 全量跑
+STANDARD_DIST_DIR=$PWD/dist-standard DIST_DIR=$PWD/dist-internal pnpm test:integration
 ```
 
-> 一次全量跑只需要**两份**产物：`dist-standard`（标准）+ `dist`（内测）。
+> 一次全量跑只需要**两份**产物：`dist-standard`（标准）+ 内测包（`dist-internal` 或 `dist`）。
+> **不需要手动起静态服务**：要么用例自己起，要么 runner 注入。
 > 用例**不做隐式构建**（沿用 `tests/helpers/runtime.mjs` 的约定：调用方提供预构建产物）；
 > 缺产物时打印构建命令并 `SKIP(env)`，不会静默编一份。别为单个用例反复重建，也别手工复制目录。
 
@@ -73,7 +76,8 @@ INTERNAL_BUILD=1 NODE_ENV=production rspack build -c rspack.config.ts
 - 自建服务的用例统一用 `serveDir(dir, { port })`：它是 `tests/helpers/runtime.mjs` 的 `serveDist()`
   的薄封装——`PORT` 没给就用 0 号端口由操作系统**原子分配**（连竞态都没有），进程内 HTTP 服务，退出即释放。
 - 想固定端口也可以：`PORT=5291 node tests/integration/internal-build.test.mjs`。
-- 外部 `APP_URL` 的用例请显式传 `APP_URL`，别指望某个默认端口是干净的。
+- 靠 `APP_URL` 的 13 个历史用例由 `run-layer` 注入一份共享标准产物服务（端口 0），
+  所以「忘了手起 5181」不再等于整批假红；想指着别的服务跑，显式给 `APP_URL` 即可。
 
 ## 4. 产物守卫与 `SKIP(env)`
 

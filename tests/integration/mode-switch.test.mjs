@@ -156,6 +156,10 @@ const page = await context.newPage()
 await page.goto(APP_URL, { waitUntil: 'domcontentloaded' })
 await page.evaluate(() => window.localStorage.clear())
 await page.evaluate(() => window.localStorage.setItem('chat-demo:api-key', 'sk-mode-accept-0001'))
+// 2026-11-18 起上游走 OpenAI 协议（providers.ts 的 ours.caps.thinking=false），内测包默认渠道「我们的渠道」
+// 按设计**不渲染**模式开关——「不留假入口」。所以布局/切换这组断言固定在**能渲染开关**的渠道上跑
+// （内测包允许切到 DeepSeek 官方渠道）；ours 上「开关必须不渲染」在 [5] 单独断言。
+await page.evaluate(() => window.localStorage.setItem('chat-demo:provider-kind', 'deepseek'))
 await page.reload({ waitUntil: 'domcontentloaded' })
 await page.getByRole('button', { name: /快速模式|Fast mode/ }).waitFor({ timeout: 15000 })
 
@@ -245,13 +249,15 @@ const storage = await page.evaluate(() => Object.keys(window.localStorage).sort(
 // issue #25：控件不再是纯样式，点它会写自己的两个键（新键 + 同步的旧「深度思考」键）
 expect(
   storage.every((key) =>
-    ['chat-demo:api-key', 'chat-demo:chat-mode', 'chat-demo:thinking'].includes(key)
+    ['chat-demo:api-key', 'chat-demo:provider-kind', 'chat-demo:chat-mode', 'chat-demo:thinking'].includes(
+      key
+    )
   ) && storage.includes('chat-demo:chat-mode'),
   '控件只写 chat-demo:chat-mode 与同步的 chat-demo:thinking',
   storage.join(',')
 )
 
-console.log('\n[4] 回归：输入框 / 深度思考 / 智能搜索 / 发消息')
+console.log('\n[4] 回归：输入框可输入，且输入不影响选中态')
 const textarea = page.locator('textarea').first()
 await textarea.click()
 await textarea.fill('')
@@ -260,6 +266,12 @@ expect((await textarea.inputValue()) === '模式切换回归：发一条消息',
 const modeAfterTyping = await readSegment(page, 'fast')
 expect(modeAfterTyping.ariaPressed === 'true', '输入文字不影响模式选中态（仍为快速模式）')
 
+console.log('\n[5] 切回内测默认渠道（ours）：开关必须不渲染（不留假入口）+ 发消息')
+await page.evaluate(() => window.localStorage.setItem('chat-demo:provider-kind', 'ours'))
+await page.reload({ waitUntil: 'domcontentloaded' })
+await page.getByText(/今天有什么可以帮到你|How can I help you/).first().waitFor({ timeout: 15000 })
+const oursToggle = await page.locator('button[data-mode]').count()
+expect(oursToggle === 0, 'ours 渠道不渲染模式开关（caps.thinking=false，不留假入口）', `count=${oursToggle}`)
 // 内测包默认渠道是我们自己的渠道（ours）：OpenAI 协议，只有基础对话，
 // 深度思考 / 智能搜索入口都不渲染（1.4.0-beta.6 起的 ours 契约，见 providers.ts）。
 // 「正式包里这些入口仍在」由 tests/integration/mode-switch-plain.test.mjs 守着。
@@ -267,6 +279,12 @@ const thinkCount = await page.getByRole('button', { name: /深度思考|DeepThin
 expect(thinkCount === 0, 'ours 渠道不渲染深度思考入口（该协议不提供）', `count=${thinkCount}`)
 const searchCount = await page.getByRole('button', { name: /智能搜索|Search/ }).count()
 expect(searchCount === 0, 'ours 渠道不渲染智能搜索入口（该协议不提供）', `count=${searchCount}`)
+
+const oursTextarea = page.locator('textarea').first()
+await oursTextarea.click()
+await oursTextarea.fill('')
+await oursTextarea.type('模式切换回归：发一条消息')
+expect((await oursTextarea.inputValue()) === '模式切换回归：发一条消息', 'ours 渠道输入框可正常输入')
 
 await page.getByRole('button', { name: /^发送$|^Send$/ }).first().click()
 const reply = page.getByText(REPLY_TEXT, { exact: false }).first()
