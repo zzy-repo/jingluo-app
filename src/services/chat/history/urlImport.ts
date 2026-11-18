@@ -114,6 +114,27 @@ const contentRangeTotal = (headers: Record<string, string> | undefined): number 
 
 const tooLarge = (): never => fail('historyImportUrlTooLarge', { size: maxMegabytes })
 
+/**
+ * 403 的错误页文本。
+ * 实测（Android CapacitorHttp，arraybuffer 模式）非 2xx 时 data 可能为空，
+ * 拿不到 OBS 的 <Code> 就分不出「链接过期」和「签名错误」——这时补发一个小 Range 的 text 请求读错误页。
+ */
+const fetchErrorBodyText = async (url: string): Promise<string> => {
+  try {
+    const response = await CapacitorHttp.get({
+      url,
+      responseType: 'text',
+      connectTimeout: CONNECT_TIMEOUT_MS,
+      readTimeout: CHUNK_READ_TIMEOUT_MS,
+      headers: { Accept: 'application/xml,text/xml,*/*', Range: 'bytes=0-2047' },
+    })
+    const data = response.data
+    return typeof data === 'string' ? data.slice(0, ERROR_BODY_CHARS) : ''
+  } catch {
+    return ''
+  }
+}
+
 /** 每批解码的 base64 字符数：约 3MB 输出，避免一次性生成几十 MB 的二进制字符串。 */
 const DECODE_CHUNK_CHARS = 4 * 1024 * 1024
 
@@ -245,15 +266,17 @@ const requestRange = async (url: string, from: number, to: number): Promise<Http
   })
 
 /** 非 2xx：403 按 OBS 错误码细分（链接过期 / 签名错误 / 其他），其余按状态码。 */
-const failForStatus = (
+const failForStatus = async (
   response: HttpResponse,
   url: string,
   startedAt: number,
   downloaded: number,
   total: number | undefined
-): never => {
+): Promise<never> => {
   const status = response.status
-  const detail = serverDetail(errorBodyText(response.data))
+  // 403：优先用响应体里的 OBS 错误码；body 为空时补发一次 text 请求再判定。
+  const rawDetail = serverDetail(errorBodyText(response.data))
+  const detail = status === 403 && rawDetail === '' ? serverDetail(await fetchErrorBodyText(url)) : rawDetail
   const meta = {
     'http.status': status,
     'download.bytes': downloaded,
@@ -371,7 +394,7 @@ const downloadArchive = async (url: string, options: UrlImportOptions): Promise<
       break
     }
     if (status !== 200 && status !== 206) {
-      failForStatus(response, url, startedAt, downloaded, total)
+      await failForStatus(response, url, startedAt, downloaded, total)
     }
     if (status === 200 && from > 0) {
       // 中途不再支持分段：继续拼会拼错，直接按失败处理（包体不完整）。

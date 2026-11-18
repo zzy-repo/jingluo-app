@@ -599,6 +599,7 @@ const run = async () => {
     const before = await dbCounts(page)
     check('第一次导入成功：5 个会话', before.sessions === 5, JSON.stringify(before))
 
+    const second = buildArchive({ sessionCount: 9, padBytes: 3 * 1024 * 1024 })
     // 第二段：同一页面里再导入一次，第 2 次请求起服务端改回 403（链接失效）
     await page.evaluate(
       ({ data, body }) => {
