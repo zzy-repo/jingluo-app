@@ -10,6 +10,8 @@ import {
 } from './apiConfig.js'
 import { OpenAIStreamError, toOpenAIRequest, translateOpenAIStream } from './openaiAdapter.js'
 import type { ProviderSpec } from './providers.js'
+import { parseModelPayload } from './modelPayload.js'
+export { parseModelPayload, pickModelIds } from './modelPayload.js'
 import { readMessageEvent } from './parseEvent.js'
 import { readServerSentEvents } from './sse.js'
 import type {
@@ -328,50 +330,6 @@ export type ProviderProbeResult = {
   message?: string
 }
 
-/** 从各种中转的返回里尽量捞出模型 id：字符串数组或 { id / name / model } */
-export const pickModelIds = (body: unknown): string[] => {
-  const readIds = (list: unknown): string[] => {
-    if (!Array.isArray(list)) {
-      return []
-    }
-    const ids: string[] = []
-    for (const item of list) {
-      if (typeof item === 'string') {
-        ids.push(item)
-      } else if (item && typeof item === 'object') {
-        const record = item as Record<string, unknown>
-        const id = record.id ?? record.name ?? record.model
-        if (typeof id === 'string') {
-          ids.push(id)
-        }
-      }
-    }
-    return ids
-  }
-  if (Array.isArray(body)) {
-    return readIds(body)
-  }
-  if (body && typeof body === 'object') {
-    const record = body as Record<string, unknown>
-    for (const key of ['data', 'models', 'model_list', 'result']) {
-      const ids = readIds(record[key])
-      if (ids.length) {
-        return ids
-      }
-    }
-  }
-  return []
-}
-
-/** 解析原生/Web 返回的 JSON 字符串或已解析对象；坏 JSON 返回空列表。 */
-export const parseModelPayload = (payload: unknown): string[] => {
-  if (typeof payload !== 'string') return pickModelIds(payload)
-  try {
-    return pickModelIds(JSON.parse(payload))
-  } catch {
-    return []
-  }
-}
 
 /**
  * 连通性测试：GET {baseUrl}{paths.models}，鉴权头按当前 spec。
@@ -445,7 +403,7 @@ export const probeProvider = async (
         message: text.slice(0, 200),
       }
     }
-    return { ok: true, status, models: pickModelIds(body) }
+    return { ok: true, status, models: parseModelPayload(body) }
   } catch (error) {
     if (controller.signal.aborted) {
       return { ok: false, models: [], reason: 'timeout' }
