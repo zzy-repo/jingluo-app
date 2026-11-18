@@ -17,7 +17,9 @@ try {
     throw new GradleException("[version] 解析 ${pkgJsonFile} 失败：${e.message}")
 }
 def appVersionName = pkgJson.version?.toString()?.trim()
-if (!(appVersionName ==~ /\d+\.\d+\.\d+(?:-[0-9A-Za-z.]+)?/)) {
+// internal/test-build 分支临时放宽：允许后缀里再带 -dev.N（内测包 1.4.0-beta.10-dev.1）；
+// 正式发版分支仍是 x.y.z / x.y.z-beta.N。此改动只存在于 internal/test-build，不推 main。
+if (!(appVersionName ==~ /\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?/)) {
     throw new GradleException("[version] package.json 的 version 缺失或格式非法（期望 x.y.z 或 x.y.z-beta.N）：'${appVersionName}'")
 }
 def rawVersionCode = pkgJson.androidVersionCode
