@@ -1,0 +1,252 @@
+/* 「我的购买」弹层（Issue #158）：列表 + 筛选 tab + 分页。
+ * 窄屏（390 / 360）不横向滚动：一律用 flex-wrap + min-width: 0 + 允许断词，
+ * 颜色全部走 theme.css 的 --dsw-alias-* 令牌，深色主题自动跟随（不写死 hex）。 */
+
+.dialog {
+  width: min(520px, calc(100vw - 32px));
+  max-height: min(680px, calc(100vh - 48px));
+}
+
+.main {
+  overflow-y: auto;
+  /* 内容再宽也不许把弹层撑出横向滚动条 */
+  overflow-x: hidden;
+}
+
+/* 展示层（PurchaseRecordsView.ts）渲染的唯一根节点：纵向间距统一在这里给 */
+.root {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+/* ---------------------------------------------------------------- 累计实付 */
+
+.summary {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.summaryLabel {
+  font-size: 13px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.summaryValue {
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--dsw-alias-label-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------------------------------------------------------------- 筛选 tab */
+
+.tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.tab {
+  flex: 0 0 auto;
+  padding: 6px 12px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 13px;
+  line-height: 1.4;
+  cursor: pointer;
+  /* 44px 是触摸目标下限；视觉高度靠 padding 撑，不挤压列表空间 */
+  min-height: 32px;
+}
+
+.tab:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.tabActive {
+  border-color: var(--dsw-alias-brand-primary);
+  color: var(--dsw-alias-brand-text);
+  background: var(--dsw-alias-interactive-bg-hover-accent);
+  font-weight: 600;
+}
+
+/* ---------------------------------------------------------------- 列表 */
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.item {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 10px;
+  background: var(--dsw-alias-bg-layer-3);
+  min-width: 0;
+}
+
+.itemHead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.planName {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--dsw-alias-label-primary);
+  /* 长套餐名断行，不把金额挤出去 */
+  overflow-wrap: anywhere;
+}
+
+.amount {
+  flex: none;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--dsw-alias-label-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+/* 状态文案用后端下发的 status_text，这里只负责上色，不改字 */
+.status {
+  flex: none;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--dsw-alias-label-secondary);
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.status[data-status='fulfilled'],
+.status[data-status='paid'] {
+  color: var(--dsw-static-green-900);
+  background: var(--dsw-static-green-100);
+
+  /* 深色下 green-100 是浅底浅字，必须换一套（仓库既有的主题覆盖写法，见 Modal.module.css） */
+  [data-ds-dark-theme] & {
+    color: var(--dsw-static-green-400);
+    background: rgba(78, 209, 126, 0.14);
+  }
+}
+
+.status[data-status='pending'] {
+  color: var(--dsw-alias-brand-text);
+  background: var(--dsw-alias-interactive-bg-hover-accent);
+}
+
+.status[data-status='failed'] {
+  color: var(--dsw-alias-state-error-primary);
+  background: var(--dsw-alias-interactive-bg-hover-danger);
+}
+
+.time,
+.cardTail,
+.redeemed {
+  flex: none;
+  font-variant-numeric: tabular-nums;
+}
+
+.cardTail {
+  overflow-wrap: anywhere;
+}
+
+.itemFoot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+/* 完整卡号只在用户点开之后才进 DOM：可换行，不撑宽 */
+.cardNo {
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+  word-break: break-all;
+}
+
+/* ---------------------------------------------------------------- 分页 / 状态 */
+
+.pager {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding-top: 4px;
+  border-top: 1px solid var(--dsw-alias-border-l2);
+}
+
+.count {
+  font-size: 13px;
+  color: var(--dsw-alias-label-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.hint {
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.error {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--dsw-alias-state-error-primary);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+/* 极窄档（360）再收一点内边距，避免金额与套餐名互相挤 */
+@media (max-width: 380px) {
+  .item {
+    padding: 10px 12px;
+  }
+
+  .summary {
+    padding: 10px 12px;
+  }
+}

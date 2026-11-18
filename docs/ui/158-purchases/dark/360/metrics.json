@@ -1,0 +1,16 @@
+{
+  "page": "purchases-dark",
+  "title": "#158 我的购买：深色主题下列表（颜色全部走主题变量，不写死 hex）",
+  "viewport": 360,
+  "size": "360×740",
+  "shots": [
+    "docs/ui/158-purchases/dark/360/purchases-dark-01-list-dark-360.png"
+  ],
+  "notes": [],
+  "theme": {
+    "dark": "dark",
+    "items": 3,
+    "summary": "累计实付¥138.80"
+  },
+  "consoleErrors": []
+}

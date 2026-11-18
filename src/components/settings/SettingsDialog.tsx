@@ -63,6 +63,7 @@ import {
   type SettingsSection,
 } from './settingsDialogState.js'
 import { PaymentRecordsDialog } from './PaymentRecordsDialog.js'
+import { PurchaseRecordsDialog } from './PurchaseRecordsDialog.js'
 import { MOTION_EXIT, usePresence } from '../../utils/usePresence.js'
 import styles from './Settings.module.css'
 
@@ -97,6 +98,8 @@ const SettingsContent = ({ visible }: { visible: boolean }) => {
   const historyDelete = useHistoryDelete()
   // 反馈弹窗：integrity=true 表示从「检查日志完整性」进入，自检面板默认展开
   const [feedback, setFeedback] = useState({ open: false, integrity: false })
+  // 「我的购买」弹层开合（Issue #158）：只在本组件内用，不需要跨模块共享状态
+  const [purchasesOpen, setPurchasesOpen] = useState(false)
   const replacingHistory = useChatStore((state) => state.importingHistory)
   // 付款记录弹层开合：引用「我们的渠道」那套同层叠放（zIndex 由弹层自己抬高）
   const paymentRecordsOpen = useSettingsDialog((state) => state.paymentRecordsOpen)
@@ -175,6 +178,22 @@ const SettingsContent = ({ visible }: { visible: boolean }) => {
                 }
               />
               <SettingCell
+                label={t('oursPurchasesTitle')}
+                description={t('oursPurchasesEntryDescription')}
+                status={null}
+                action={
+                  <Button
+                    variant="outlined"
+                    size="m"
+                    className={styles.cellButton}
+                    data-testid="purchases-open"
+                    onClick={() => setPurchasesOpen(true)}
+                  >
+                    {t('oursPurchasesEntryAction')}
+                  </Button>
+                }
+              />
+              <SettingCell
                 label={t('feedbackCellLabel')}
                 description={t('feedbackCellDescription')}
                 status={null}
@@ -225,6 +244,8 @@ const SettingsContent = ({ visible }: { visible: boolean }) => {
       {historyImport.source ? <ImportConfirm historyImport={historyImport} /> : null}
       {historyDelete.opened ? <DeleteAllConfirm historyDelete={historyDelete} /> : null}
       {paymentRecordsOpen ? <PaymentRecordsDialog onClose={() => setPaymentRecordsOpen(false)} /> : null}
+      {/* 「我的购买」（#158）：分页 / 筛选 / 卡片动作，叠放层级与付款记录一致 */}
+      {purchasesOpen ? <PurchaseRecordsDialog onClose={() => setPurchasesOpen(false)} /> : null}
       <FeedbackDialog
         open={feedback.open}
         integrity={feedback.integrity}

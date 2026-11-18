@@ -672,6 +672,38 @@ const measureReadingSample = (marker) => {
   }
 }
 
+/**
+ * 拦 `GET /api/orders`（#115 / #158 截图用）。
+ *
+ * 两个坑（踩过才写下来）：
+ *  1. 不能用通配 glob（两颗星后缀）去匹配：请求带查询串（`?limit=&offset=`）时整串匹配不上，
+ *     route 根本不触发，请求会真的发到线上域名再超时——截出来是「正在加载」的假象；
+ *  2. 跨域带 `Authorization` 头会先发 **OPTIONS 预检**，只回 GET 不够：
+ *     预检必须 204 + 一套 CORS 头，否则浏览器按 CORS 失败处理。
+ * 所以这里用正则匹配路径、GET 与 OPTIONS 都接住、并给齐 `Access-Control-*`。
+ */
+const routeOrders = async (context, makeBody) => {
+  await context.route(/\/api\/orders(?:\?|$)/u, async (route) => {
+    const request = route.request()
+    const headers = {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Headers': 'authorization,accept,content-type',
+      'Access-Control-Allow-Methods': 'GET,OPTIONS',
+      'Access-Control-Max-Age': '600',
+    }
+    if (request.method() === 'OPTIONS') {
+      await route.fulfill({ status: 204, headers })
+      return
+    }
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      headers,
+      body: JSON.stringify(makeBody(new URL(request.url()))),
+    })
+  })
+}
+
 // ---------------------------------------------------------------- UI 动作
 
 const S = {
@@ -776,6 +808,8 @@ const dialogClip = async (page, minHeight = 200) =>
  *  - `title`      一句话说明（`--list` 会打印）
  *  - `sessions`   IndexedDB fixture，返回要写进 `chat-demo` 的会话数组
  *  - `mockOrders` 是否把 `GET /api/orders` 换成空订单响应（只在付款记录场景打开）
+ *  - `mockPurchases` 用给定订单回真实的 `GET /api/orders`（带 limit/offset/status 过滤），
+ *    这样分页与筛选 tab 截到的是「真的走了一遍请求」的结果，见 #158
  *  - `run`        该场景的截图与量数步骤
  */
 export const PAGES = {
@@ -948,6 +982,260 @@ export const PAGES = {
       await shot('03-payment-records-closeup', {
         clip: { x: dialog.box.x, y: dialog.box.y, width: dialog.box.width, height: dialog.box.height },
       })
+    },
+  },
+
+  purchases: {
+    dir: 'docs/ui/158-purchases',
+    title: '#158 设置 → 数据管理 → 我的购买：列表 / 待支付筛选 / 展开完整卡号 / 空态（390 与 360 两档）',
+    sessions: () => [makeReadingSession()],
+    mockOrders: false,
+    // 时间按「秒」，与 /api/orders 一致；status 大写、status_text 中文，都是后端真实形状
+    mockPurchases: {
+      totalPaidYuan: 138.8,
+      orders: [
+        {
+          out_trade_no: 'CP202611190000001',
+          plan_id: 'starter',
+          plan_name: '体验套餐',
+          plan_points: 300,
+          amount_yuan: 1.0,
+          status: 'FULFILLED',
+          status_text: '已完成',
+          card_no: 'MUSE-3CYP-5NA3-AHSE-A3SR',
+          card_status: 'leased',
+          redeem_state: 'issued',
+          created_at: 1795055400,
+          paid_at: 1795055460,
+        },
+        {
+          out_trade_no: 'CP202611180000002',
+          plan_id: 'pro',
+          plan_name: '进阶套餐',
+          plan_points: 6000,
+          amount_yuan: 29.9,
+          status: 'FULFILLED',
+          status_text: '已完成',
+          card_no: 'MUSE-7QKD-2MPR-9XCE-B8TW',
+          card_status: 'used',
+          redeem_state: 'redeemed',
+          created_at: 1794969000,
+          paid_at: 1794969060,
+        },
+        {
+          out_trade_no: 'CP202611170000003',
+          plan_id: 'standard',
+          plan_name: '标准套餐',
+          plan_points: 1800,
+          amount_yuan: 9.9,
+          status: 'PENDING',
+          status_text: '待支付',
+          card_no: null,
+          card_status: null,
+          redeem_state: null,
+          created_at: 1794882600,
+          paid_at: null,
+        },
+        {
+          out_trade_no: 'CP202611160000004',
+          plan_id: 'starter',
+          plan_name: '体验套餐',
+          plan_points: 300,
+          amount_yuan: 1.0,
+          status: 'EXPIRED',
+          status_text: '已过期',
+          card_no: null,
+          card_status: null,
+          redeem_state: null,
+          created_at: 1794796200,
+          paid_at: null,
+        },
+        {
+          out_trade_no: 'CP202611150000005',
+          plan_id: 'premium',
+          plan_name: '尊享套餐',
+          plan_points: 22000,
+          amount_yuan: 99.0,
+          status: 'FULFILLED',
+          status_text: '已完成',
+          card_no: 'MUSE-5HTN-8VKB-3DRQ-C6YL',
+          card_status: 'used',
+          redeem_state: 'redeemed',
+          created_at: 1794709800,
+          paid_at: 1794709860,
+        },
+      ],
+    },
+    run: async (ctx) => {
+      const { page, shot, record } = ctx
+      // 量「有没有横向溢出」：视口 + 弹层根节点两级，外加把越界的元素点名
+      const measure = () =>
+        page.evaluate(() => {
+          const root = document.querySelector('[data-testid="purchases-root"]')
+          const viewportWidth = document.documentElement.clientWidth
+          const overflowing = []
+          if (root !== null) {
+            for (const node of root.querySelectorAll('*')) {
+              const rect = node.getBoundingClientRect()
+              if (rect.width > 0 && rect.right > viewportWidth + 1) {
+                overflowing.push({
+                  tag: node.tagName,
+                  right: Math.round(rect.right),
+                  text: (node.textContent ?? '').slice(0, 20),
+                })
+              }
+            }
+          }
+          return {
+            viewportWidth,
+            documentScrollWidth: Math.round(document.documentElement.scrollWidth),
+            rootWidth: root === null ? null : Math.round(root.getBoundingClientRect().width),
+            rootScrollWidth: root === null ? null : Math.round(root.scrollWidth),
+            rootClientWidth: root === null ? null : Math.round(root.clientWidth),
+            rootHorizontalOverflow:
+              root === null ? null : root.scrollWidth > root.clientWidth + 1,
+            overflowCount: overflowing.length,
+            overflowSamples: overflowing.slice(0, 5),
+            countText: document.querySelector('[data-testid="purchases-count"]')?.textContent ?? '',
+            itemCount: document.querySelectorAll('[data-testid="purchase-item"]').length,
+            hasRedeem: document.querySelector('[data-testid="purchase-redeem"]') !== null,
+            hasPay: document.querySelector('[data-testid="purchase-pay"]') !== null,
+            hasEmpty: document.querySelector('[data-testid="purchases-empty"]') !== null,
+          }
+        })
+
+      await openSettings(page, S.tabData)
+      const entry = page.locator('[data-testid="purchases-open"]')
+      await entry.scrollIntoViewIfNeeded()
+      await page.waitForTimeout(240)
+      await shot('01-settings-data-entry')
+
+      await entry.click()
+      const root = page.locator('[data-testid="purchases-root"]')
+      await root.waitFor({ state: 'visible', timeout: 10000 })
+      await page.waitForTimeout(700)
+      record('list', await measure())
+      await shot('02-list')
+
+      // 筛选 tab：待支付 —— 这一档只剩「去支付」，没有任何「去兑换」
+      await page.locator('[data-testid="purchases-tab-pending"]').click()
+      await page.waitForTimeout(500)
+      record('filtered', await measure())
+      await shot('03-filtered-pending')
+
+      // 回到全部，展开一条「已兑换」的完整卡号（只在用户点开之后才进 DOM）
+      await page.locator('[data-testid="purchases-tab-all"]').click()
+      await page.waitForTimeout(500)
+      const toggle = page.locator('[data-testid="purchase-card-toggle"]').first()
+      await toggle.scrollIntoViewIfNeeded()
+      await toggle.click()
+      await page.waitForTimeout(320)
+      record('expanded', await measure())
+      await shot('04-redeemed-expanded')
+
+      // 空态：把订单接口临时换成空列表再点「刷新」，走的是同一条真实请求路径
+      // （page 级 route 优先于 context 级，正则 + CORS 头的坑见 routeOrders 的注释）
+      await page.route(/\/api\/orders(?:\?|$)/u, (route) =>
+        route.fulfill({
+          status: route.request().method() === 'OPTIONS' ? 204 : 200,
+          headers: {
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Headers': 'authorization,accept,content-type',
+            'Access-Control-Allow-Methods': 'GET,OPTIONS',
+          },
+          ...(route.request().method() === 'OPTIONS'
+            ? {}
+            : {
+                contentType: 'application/json',
+                body: JSON.stringify({
+                  customer_id: 10,
+                  total: 0,
+                  limit: 20,
+                  offset: 0,
+                  total_paid_yuan: 0,
+                  orders: [],
+                }),
+              }),
+        })
+      )
+      await page.locator('[data-testid="purchases-refresh"]').click()
+      await page.waitForTimeout(600)
+      record('empty', await measure())
+      await shot('05-empty')
+    },
+  },
+
+  'purchases-dark': {
+    dir: 'docs/ui/158-purchases',
+    title: '#158 我的购买：深色主题下列表（颜色全部走主题变量，不写死 hex）',
+    sessions: () => [makeReadingSession()],
+    mockOrders: false,
+    colorScheme: 'dark',
+    // 与 purchases 场景同一套订单，只是浏览器按深色偏好渲染
+    mockPurchases: {
+      totalPaidYuan: 138.8,
+      orders: [
+        {
+          out_trade_no: 'CP202611190000001',
+          plan_id: 'starter',
+          plan_name: '体验套餐',
+          plan_points: 300,
+          amount_yuan: 1.0,
+          status: 'FULFILLED',
+          status_text: '已完成',
+          card_no: 'MUSE-3CYP-5NA3-AHSE-A3SR',
+          card_status: 'leased',
+          redeem_state: 'issued',
+          created_at: 1795055400,
+          paid_at: 1795055460,
+        },
+        {
+          out_trade_no: 'CP202611180000002',
+          plan_id: 'pro',
+          plan_name: '进阶套餐',
+          plan_points: 6000,
+          amount_yuan: 29.9,
+          status: 'FULFILLED',
+          status_text: '已完成',
+          card_no: 'MUSE-7QKD-2MPR-9XCE-B8TW',
+          card_status: 'used',
+          redeem_state: 'redeemed',
+          created_at: 1794969000,
+          paid_at: 1794969060,
+        },
+        {
+          out_trade_no: 'CP202611170000003',
+          plan_id: 'standard',
+          plan_name: '标准套餐',
+          plan_points: 1800,
+          amount_yuan: 9.9,
+          status: 'PENDING',
+          status_text: '待支付',
+          card_no: null,
+          card_status: null,
+          redeem_state: null,
+          created_at: 1794882600,
+          paid_at: null,
+        },
+      ],
+    },
+    run: async (ctx) => {
+      const { page, shot, record } = ctx
+      await openSettings(page, S.tabData)
+      const entry = page.locator('[data-testid="purchases-open"]')
+      await entry.scrollIntoViewIfNeeded()
+      await entry.click()
+      await page.locator('[data-testid="purchases-root"]').waitFor({ state: 'visible', timeout: 10000 })
+      await page.waitForTimeout(700)
+      record(
+        'theme',
+        await page.evaluate(() => ({
+          dark: document.body.getAttribute('data-ds-dark-theme'),
+          items: document.querySelectorAll('[data-testid="purchase-item"]').length,
+          summary: document.querySelector('[data-testid="purchases-summary"]')?.textContent ?? '',
+        }))
+      )
+      await shot('01-list-dark')
     },
   },
 
@@ -1167,7 +1455,8 @@ export const main = async (argv = process.argv.slice(2), env = process.env) => {
           locale: 'zh-CN',
           timezoneId: 'Asia/Shanghai',
           reducedMotion: 'reduce',
-          colorScheme: 'light',
+          // 深色主题要能出可复现的证据：场景可声明 `colorScheme: 'dark'`，默认 light
+          colorScheme: def.colorScheme ?? 'light',
           // 「点一下复制」类改动要能复核剪贴板真实内容，否则只能看 toast 猜
           permissions: ['clipboard-read', 'clipboard-write'],
         })
@@ -1185,13 +1474,32 @@ export const main = async (argv = process.argv.slice(2), env = process.env) => {
         if (def.mockOrders) {
           // 只拦只读的订单查询，回代码注释里记录的真实响应形状（orders 为空）：
           // 截到的是「真的没有订单」的空状态，不是伪造的订单列表
-          await context.route('**/api/orders', (route) =>
-            route.fulfill({
-              status: 200,
-              contentType: 'application/json',
-              body: JSON.stringify({ customer_id: 10, total_paid_yuan: 0.0, orders: [] }),
-            })
-          )
+          await routeOrders(context, () => ({ customer_id: 10, total_paid_yuan: 0.0, orders: [] }))
+        }
+
+        if (def.mockPurchases) {
+          // 只拦只读的订单查询，按真实契约回数据：`status` 大写、`status_text` 中文、
+          // 时间和金额都是数字（时间按秒，与服务端一致），并真的按 limit / offset / status 过滤。
+          // 分页与筛选 tab 截到的是「真的发了一次请求再渲染」的结果，不是摆拍。
+          const fixtureOrders = def.mockPurchases.orders
+          const fixtureTotalPaid = def.mockPurchases.totalPaidYuan
+          await routeOrders(context, (url) => {
+            const limit = Number(url.searchParams.get('limit') ?? 20)
+            const offset = Number(url.searchParams.get('offset') ?? 0)
+            const status = (url.searchParams.get('status') ?? '').trim().toUpperCase()
+            const matched =
+              status === ''
+                ? fixtureOrders
+                : fixtureOrders.filter((item) => String(item.status).toUpperCase() === status)
+            return {
+              customer_id: 10,
+              total: matched.length,
+              limit,
+              offset,
+              total_paid_yuan: fixtureTotalPaid,
+              orders: matched.slice(offset, offset + limit),
+            }
+          })
         }
         try {
           await mkdir(shotDir(outDir, viewport), { recursive: true })
