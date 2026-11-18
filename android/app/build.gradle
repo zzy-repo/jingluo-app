@@ -40,8 +40,10 @@ if (appVersionCode == null || appVersionCode <= 0) {
 // 已装用户无法覆盖升级。宁可构建失败，也不产出签名身份不确定的 release 包。
 // ---------------------------------------------------------------------------
 // 路径相对于 gradle 根工程（android/），即 android/keystore/keystore.properties。
-// 注意：这里原来写成 rootProject.file("../keystore/...")，实际指向仓库根的 keystore/ ——
-// 那个目录从来不存在，所以历史上 release 构建永远「读不到凭据 → 不签名」。
+// 历史：这里原来写成 rootProject.file("../keystore/...")，指向从未存在的仓库根 keystore/，
+// 所以本工程从来没有真正应用过文件里的 signingConfig —— 已发布包全是 AGP 默认的
+// /root/.android/debug.keystore 签的（e7c5baee…）。因此「把路径修对」本身就会换证书，
+// 下面加了 EXPECTED_CERT_SHA256 指纹闸门：路径生效但证书不符时构建直接失败，不会悄悄换签。
 def keystorePropertiesFile = rootProject.file("keystore/keystore.properties")
 def keystoreProperties = new Properties()
 def keystorePropertiesExists = keystorePropertiesFile.exists()
@@ -51,6 +53,48 @@ if (keystorePropertiesExists) {
 def RELEASE_KEY_FIELDS = ['storePasswordRelease', 'keyAliasRelease', 'keyPasswordRelease']
 def missingReleaseKeys = RELEASE_KEY_FIELDS.findAll { !keystoreProperties[it]?.toString()?.trim() }
 
+// ---------------------------------------------------------------------------
+// 已发布 APK 的签名证书指纹（SHA-256）。所有历史版本（含 1.4.0-beta.8）都是这一个：
+// /root/.android/debug.keystore 里的标准 debug key（AGP 在本工程没有显式 signingConfig 时
+// 用的默认 key）。换证书 = 已装用户无法覆盖升级，所以下面的所有签名配置都必须先过这道指纹闸门。
+//
+// 禁止顺手切换证书：想换成正式 release key，必须单独规划迁移（新包名 / 应用商店渠道 /
+// 引导用户重装），不能在这个仓库里悄悄改一行就算。
+// ---------------------------------------------------------------------------
+def EXPECTED_CERT_SHA256 = 'e7c5baee517ca2b2258950e934521f2fad448d00f72f2ff7297bdf4fa00aa8a1'
+
+/** 读 keystore 里某别名证书的 SHA-256；读不到返回 null（口令错误 / 文件缺失 / 别名不存在）。 */
+def certSha256Of = { String storeFileRel, Object storePass, Object alias ->
+    def f = file(storeFileRel)
+    if (!f.exists()) return null
+    def pass = (storePass ?: '').toString().toCharArray()
+    for (String type : ['PKCS12', 'JKS']) {
+        try {
+            def ks = java.security.KeyStore.getInstance(type)
+            f.withInputStream { ks.load(it, pass) }
+            def a = alias?.toString()
+            def cert = a ? ks.getCertificate(a) : ks.getCertificate(ks.aliases().nextElement())
+            if (cert == null) return null
+            return java.security.MessageDigest.getInstance('SHA-256').digest(cert.encoded).encodeHex().toString()
+        } catch (Exception ignored) {
+            // 换下一种类型再试；都不行则返回 null（构建侧按「指纹未知」处理）
+        }
+    }
+    return null
+}
+
+def releaseStoreRel = keystoreProperties['storeFileRelease'] ?: '../keystore/release.keystore'
+def debugStoreRel = keystoreProperties['storeFileDebug'] ?: '../keystore/debug.keystore'
+def releaseCertSha = (keystorePropertiesExists && missingReleaseKeys.isEmpty())
+        ? certSha256Of(releaseStoreRel, keystoreProperties['storePasswordRelease'], keystoreProperties['keyAliasRelease'])
+        : null
+def debugCertSha = (keystorePropertiesExists && keystoreProperties['storePasswordDebug'])
+        ? certSha256Of(debugStoreRel, keystoreProperties['storePasswordDebug'], keystoreProperties['keyAliasDebug'])
+        : null
+// 只有「指纹与已发布证书一致」才允许真正启用该签名配置
+def releaseSigningApproved = releaseCertSha == EXPECTED_CERT_SHA256
+def debugSigningApproved = debugCertSha == EXPECTED_CERT_SHA256
+
 // 这条 gradle 命令是否会产出 release 产物（assembleRelease / bundleRelease / installRelease / build / assemble …）。
 // 认不出就按「会」处理：宁可误拦一次 debug 命令，也不产出签名身份不明的 release 包。
 def releaseTaskRequested = gradle.startParameter.taskNames.any { t ->
@@ -58,9 +102,9 @@ def releaseTaskRequested = gradle.startParameter.taskNames.any { t ->
     leaf.contains('release') || (leaf in ['build', 'assemble', 'bundle', 'install', 'package'])
 }
 def keystoreFixHint = '''
-       修复：在构建机上运行 ./build-apk.sh（首次运行会自动生成 android/keystore/ 下的
-             release.keystore / debug.keystore / keystore.properties），或从备份恢复
-             android/keystore/ 目录。该目录已在 .gitignore 中，切勿提交进仓库。
+       修复：release 包现在只能由「与已发布证书一致」的签名材料签出。
+             已发布证书 = e7c5baee…aa8a1（/root/.android/debug.keystore，标准 debug key）。
+             要换证书请另开签名迁移方案，禁止顺手切换（否则已装用户无法覆盖升级）。
 '''.stripIndent()
 if (releaseTaskRequested) {
     if (!keystorePropertiesExists) {
@@ -76,13 +120,33 @@ ${keystoreFixHint}""".stripIndent())
        文件：${keystorePropertiesFile}
 ${keystoreFixHint}""".stripIndent())
     }
-    def releaseStoreFile = file(keystoreProperties['storeFileRelease'] ?: '../keystore/release.keystore')
+    def releaseStoreFile = file(releaseStoreRel)
     if (!releaseStoreFile.exists()) {
         throw new GradleException("""
 [签名] keystore.properties 指向的 release keystore 不存在，已中止。
        storeFileRelease = ${releaseStoreFile}
 ${keystoreFixHint}""".stripIndent())
     }
+    if (releaseCertSha == null) {
+        throw new GradleException("""
+[签名] 读不到 ${releaseStoreFile} 里 release 证书的指纹（口令 / 别名不对？），已中止。
+${keystoreFixHint}""".stripIndent())
+    }
+    if (!releaseSigningApproved) {
+        throw new GradleException("""
+[签名] 签名证书与已发布版本不一致，已中止。
+       已发布（全历史版本含 1.4.0-beta.8）: ${EXPECTED_CERT_SHA256}
+       本次 release keystore      : ${releaseCertSha}
+       换证书会让所有已装用户无法覆盖升级（必须卸载重装）。
+       这是签名迁移，必须单独规划；禁止在本仓库顺手切换证书。
+       当前可用做法：按 docs/RELEASE-MANUAL.md 用 internal 变体（assembleDebug）出包，
+       它沿用 AGP 默认的 /root/.android/debug.keystore（即已发布证书）。
+${keystoreFixHint}""".stripIndent())
+    }
+}
+if (keystorePropertiesExists && debugCertSha != null && !debugSigningApproved) {
+    logger.warn("""[签名] android/keystore/debug.keystore 指纹 ${debugCertSha} ≠ 已发布证书 ${EXPECTED_CERT_SHA256}，
+[签名] 已忽略该签名配置；本次沿用 AGP 默认的 /root/.android/debug.keystore（与已发布版本同证书）。""")
 }
 
 def updateVariant = providers.gradleProperty('artifactVariant').orElse(System.getenv('INTERNAL_BUILD') == '1' ? 'internal' : 'standard').get()
@@ -110,37 +174,41 @@ android {
         }
     }
     signingConfigs {
-        if (keystorePropertiesExists) {
+        // 注意：Gradle 里名叫 "debug" 的 signingConfig 就是 AGP 的默认 debug 签名配置，
+        // 一旦在这里定义就会覆盖 ~/.android/debug.keystore。所以只有指纹与已发布证书一致时
+        // 才定义它 —— 否则等于偷偷换掉所有 debug 包（= 现网 internal 包）的证书。
+        if (keystorePropertiesExists && debugSigningApproved) {
             debug {
-                storeFile file(keystoreProperties['storeFileDebug'] ?: '../keystore/debug.keystore')
+                storeFile file(debugStoreRel)
                 storePassword keystoreProperties['storePasswordDebug']
                 keyAlias keystoreProperties['keyAliasDebug']
                 keyPassword keystoreProperties['keyPasswordDebug']
             }
-            // 只有 release 凭据齐全时才定义（不齐全时 release 构建已在顶部 throw）
-            if (missingReleaseKeys.isEmpty()) {
-                release {
-                    storeFile file(keystoreProperties['storeFileRelease'] ?: '../keystore/release.keystore')
-                    storePassword keystoreProperties['storePasswordRelease']
-                    keyAlias keystoreProperties['keyAliasRelease']
-                    keyPassword keystoreProperties['keyPasswordRelease']
-                }
+        }
+        // release 只在「证书指纹 == 已发布证书」时定义（否则 release 构建已在顶部 throw）
+        if (releaseSigningApproved) {
+            release {
+                storeFile file(releaseStoreRel)
+                storePassword keystoreProperties['storePasswordRelease']
+                keyAlias keystoreProperties['keyAliasRelease']
+                keyPassword keystoreProperties['keyPasswordRelease']
             }
         }
     }
     buildTypes {
         debug {
-            // 显式使用 android/keystore/debug.keystore（而非 ~/.android/debug.keystore），保证可复现
-            if (keystorePropertiesExists) {
+            // 默认不配置 → 用 AGP 默认的 ~/.android/debug.keystore（= 已发布证书，历史行为）。
+            // 只有 android/keystore/debug.keystore 的证书指纹与已发布证书一致时才显式指定。
+            if (keystorePropertiesExists && debugSigningApproved) {
                 signingConfig signingConfigs.debug
             }
         }
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
-            // 凭据缺失时这里不配置签名，但该情况只会出现在非 release 命令里
-            // （release 命令已在文件顶部 GradleException 中止），不会产出未签名 release 包。
-            if (keystorePropertiesExists && missingReleaseKeys.isEmpty()) {
+            // 凭据缺失 / 指纹不符时这里不配置签名，但该情况只会出现在非 release 命令里
+            // （release 命令已在文件顶部 GradleException 中止），不会产出签名身份不明的 release 包。
+            if (releaseSigningApproved) {
                 signingConfig signingConfigs.release
             }
         }

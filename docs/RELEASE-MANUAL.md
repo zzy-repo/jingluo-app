@@ -26,15 +26,40 @@
 
 | 项目 | 做法 | 校验 |
 | --- | --- | --- |
-| 签名材料 | `android/keystore/` 下有 `release.keystore` / `debug.keystore` / `keystore.properties` | `ls -l android/keystore/`；**该目录已 gitignore，绝不提交** |
+| 签名材料 | 发布用 `assembleDebug`（见 §3）：AGP 默认读 `/root/.android/debug.keystore`，口令 `android`、别名 `androiddebugkey` | `keytool -list -v -keystore /root/.android/debug.keystore -storepass android -alias androiddebugkey \| grep SHA256`，必须是 `e7c5baee…aa8a1` |
 | 发布令牌 | 在 ECS 上取：`ssh aliyun 'cat /etc/dl-release/token' > ~/.config/dl-release/token && chmod 600 ~/.config/dl-release/token` | `ls -l ~/.config/dl-release/token` 应为 `-rw-------`；**不 echo、不贴日志、不进仓库** |
 | Android SDK / JDK | 默认 `/root/android-sdk`、JDK 21 | `ls $HOME/android-sdk/build-tools/`、`java -version` |
 | gh（只用于观察） | 可选 | `gh auth status`；Release 由 workflow 的内置 `GITHUB_TOKEN` 创建 |
 | 工作分支 | 从 `origin/main` 开 `release/<ver>` 分支发版，不直接改 `main` | `git status -sb`、`git log --oneline -1` |
 
-签名缺失时 gradle 会**直接报错中止**（fail-fast）：release 构建缺 `keystore.properties` / 缺 release 字段 /
-keystore 文件不存在，都不会再「不签名」或偷偷回退 debug 证书。首次在干净机器上构建可跑 `./build-apk.sh`
-让它自动生成签名材料，再从备份核对证书指纹（见 §4.3）。
+### ⚠️ 签名：先读这一段
+
+**已发布的全历史版本（含 1.4.0-beta.8）签名证书都是同一个：**
+
+```
+e7c5baee517ca2b2258950e934521f2fad448d00f72f2ff7297bdf4fa00aa8a1
+= /root/.android/debug.keystore（标准 debug key，AGP 默认签名配置用的那个）
+```
+
+事实核对（2026-11-18 实测，`keytool -list -v` 读指纹）：
+
+| keystore | 证书 SHA-256 | 是否已发布证书 |
+| --- | --- | --- |
+| `/root/.android/debug.keystore` | `e7c5baee…aa8a1` | ✅ 就是它（所有已发布包） |
+| `android/keystore/release.keystore`（`build-apk.sh` 自动生成的） | `63669393…3255e4` | ❌ 不是 |
+| `android/keystore/debug.keystore`（同上） | `6c1ed521…a80420` | ❌ 不是 |
+
+所以：
+
+1. **发布包用 `assembleDebug`（AGP 默认 debug 签名）出的才是现网同一证书**。本条是历史事实，不是推荐做法。
+2. `android/app/build.gradle` 里有指纹闸门 `EXPECTED_CERT_SHA256`：`assembleRelease` 只有在
+   `android/keystore/keystore.properties` 指向的证书指纹**等于**上面那一串时才允许，
+   否则直接 `GradleException` 中止（缺 keystore.properties / 缺字段 / keystore 不存在同样中止）。
+   `signingConfigs.debug` 也只在指纹一致时才定义，避免顺手把 debug 包（= 现网 internal 包）换签名。
+3. **签名迁移必须单独规划，禁止顺手切换证书。** 换证书 = 所有已装用户无法覆盖升级（必须卸载重装）。
+   真要换正式 release key，得先定方案（新 applicationId / 应用商店渠道 / 站内公告引导重装），
+   并同步改 `EXPECTED_CERT_SHA256`、`docs/RELEASE-MANUAL.md`、dl 的 `releases.json` 记录 —— 不属于发版清单里的一步。
+4. **绝不要为了「让 release 构建通过」去改指纹常量或用 `build-apk.sh` 生成的 keystore 发版。**
 
 ---
 
@@ -88,6 +113,9 @@ cd android && ./gradlew assembleDebug    # 不传 -PartifactVariant，默认 sta
   两者不一致时 App 侧变体标记是错的，自动更新会推错包。
 - `INTERNAL_BUILD` 环境变量与 `-PartifactVariant` 冲突时 gradle 直接报错（这是有意的）。
 - 产物路径：`android/app/build/outputs/apk/debug/app-debug.apk`。
+- `assembleRelease` 现在会被签名闸门拒绝（`[签名] 签名证书与已发布版本不一致，已中止`）——
+  因为现网证书是 debug key，仓库里 `android/keystore/` 那两个自生成 keystore 都不是它。
+  **这不是 bug，别为了绕过它去改 `EXPECTED_CERT_SHA256`。**
 - 构建完先确认产物存在再往下做，别急着上传。
 
 ---
@@ -126,7 +154,9 @@ BT=$HOME/android-sdk/build-tools/35.0.0        # 与实际 build-tools 版本对
   ```
 
   必须是 `e7c5baee517ca2b2258950e934521f2fad448d00f72f2ff7297bdf4fa00aa8a1`
-  （现有已发布版本用的证书；换证书会让已装用户无法覆盖升级）。**不符 → 停止，不得发布**，先查用什么证书签的。
+  （= `/root/.android/debug.keystore`；换证书会让已装用户无法覆盖升级）。
+  **不符 → 停止，不得发布**：先查这次是谁签的（`ls -l /root/.android/debug.keystore` 有没有被重建、
+  有没有人改了 `signingConfigs`），修回同一证书再重构建；不要「反正能装上就发」。
 
 - [ ] **4.4 sha256 / size**
 

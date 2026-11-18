@@ -32,9 +32,18 @@
 
 **同时收紧的两处**：
 
-1. **签名 fail-fast**（`android/app/build.gradle`）：release 构建缺 `android/keystore/keystore.properties`、
-   缺 release 字段、或 keystore 文件不存在时，**直接 `GradleException` 中止**，不再「不签名」或回退 debug 证书。
-   历史上缺凭据导致用错证书发布，已装用户无法覆盖升级。debug 构建行为不变。
+1. **签名 fail-fast + 证书指纹闸门**（`android/app/build.gradle`）：release 构建缺
+   `android/keystore/keystore.properties`、缺 release 字段、keystore 文件不存在，**或证书指纹与已发布证书不一致**时，
+   直接 `GradleException` 中止；`signingConfigs.debug` 也只在指纹一致时才定义。debug 构建默认行为不变
+   （仍用 AGP 默认的 `/root/.android/debug.keystore`）。
+
+   **重要事实（2026-11-18 实测）**：本工程原来的凭据路径 `rootProject.file("../keystore/…")` 指向从未存在的
+   仓库根 `keystore/`，所以 signingConfig 从来没有生效过 —— 所有已发布包（含 1.4.0-beta.8）都是 AGP 默认的
+   `/root/.android/debug.keystore` 签的，即 `e7c5baee517ca2b2258950e934521f2fad448d00f72f2ff7297bdf4fa00aa8a1`；
+   而 `build-apk.sh` 生成的 `android/keystore/release.keystore`（`63669393…`）、`android/keystore/debug.keystore`
+   （`6c1ed521…`）都不是这个证书。因此「把路径修对」本身就会换签名 → 所以加了 `EXPECTED_CERT_SHA256` 闸门：
+   路径生效但证书不符时构建失败，而不是悄悄换签。
+   **签名迁移必须单独规划，禁止顺手切换证书**（换证书 = 已装用户无法覆盖升级）。
 2. **版本号单一来源**：`package.json` 的 `version`（versionName）与 `androidVersionCode`（versionCode）
    成为唯一来源，`android/app/build.gradle` 从中读取（`rspack.config.ts` 也读同一处注入 `__APP_VERSION__`）。
    发版只改 `package.json` 一处；字段缺失或格式非法时 gradle 配置阶段直接报错。
