@@ -1,16 +1,35 @@
 // [layer: integration | 依赖: playwright + chromium + 本地静态服务/mock 上游 | 耗时: 1~3 分钟] 说明见 tests/README.md
 // 正式包（非内测）回归：deepseek spec 下「深度思考 / 智能搜索 / 附件 / 语音」入口一个不少，
-// 并逐项对比改动前的 baseline 包，证明空态加的模式切换没有动到输入区。
+// 并对比「改动前」的输入区按钮清单，证明空态加的模式切换没有动到输入区。
 //
-//   cd /root/deepseek-app && node tests/integration/mode-switch-plain.test.mjs
+//   node tests/integration/mode-switch-plain.test.mjs
 //
-// 需要先把两套静态产物起在本地（见 docs/ui 说明）：
-//   python3 -m http.server 5191 --directory dist-plain      # 当前源码的正式包
-//   python3 -m http.server 5192 --directory dist-baseline   # 改动前的 baseline 包
-const PLAIN_URL = process.env.PLAIN_URL || 'http://127.0.0.1:5191'
-const BASELINE_URL = process.env.BASELINE_URL || 'http://127.0.0.1:5192'
-
+// 前置全部自动处理（Issue #19）：
+//   1) 当前正式包：需要时自动构建到 dist-plain/（DIST_OUT=dist-plain），然后自己起静态服务（PORT 可注入，默认 5191）；
+//   2) baseline 基准：默认读 tests/fixtures/input-row-baseline.json（历史构建已不可复现）；
+//      想用真实旧产物对比就传 BASELINE_URL=http://127.0.0.1:<port>。
+// 以前要求手工准备两份 dist + 手动起 5191/5192，端口被占或产物缺失就假红。
+import { readFileSync } from 'node:fs'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
+import { serveDir, verifyAppUrl } from '../helpers/env.mjs'
+
+const HERE = path.dirname(fileURLToPath(import.meta.url))
+const ROOT = path.resolve(HERE, '../..')
+// 当前正式包：直接用标准产物 dist-standard（按 main 约定不隐式构建，缺就 SKIP(env)）
+const PLAIN_DIST = process.env.STANDARD_DIST_DIR || path.join(ROOT, 'dist-standard')
+const PORT = process.env.PORT
+const BASELINE_URL = process.env.BASELINE_URL || ''
+const BASELINE_FIXTURE = path.join(ROOT, 'tests', 'fixtures', 'input-row-baseline.json')
+
+// 端口自动发现（PORT 可注入）：不再固定 5191；产物目录也不用手工准备
+const plainServed = process.env.PLAIN_URL
+  ? null
+  : await serveDir(PLAIN_DIST, { port: PORT, label: '标准产物 dist-standard' })
+const plainUrl = process.env.PLAIN_URL || plainServed.url
+await verifyAppUrl(plainUrl, PLAIN_DIST, { variant: 'standard' })
+const baselineFixture = JSON.parse(readFileSync(BASELINE_FIXTURE, 'utf8'))
 
 const failures = []
 const ok = (message) => console.log(`  ok  ${message}`)
@@ -73,7 +92,7 @@ const open = async (url) => {
 }
 
 console.log('\n[1] 当前正式包：输入区入口齐全')
-const page = await open(PLAIN_URL)
+const page = await open(plainUrl)
 const labels = await readFunctionRow(page)
 for (const name of [/深度思考/, /智能搜索/, /上传文件|附件/, /语音|Voice/]) {
   expect(labels.some((label) => name.test(label)), `入口仍在：${name}`, labels.join(' / '))
@@ -110,10 +129,20 @@ expect(
   `${styles.fast.bg} / ${styles.fast.color}`
 )
 
-console.log('\n[2] 与 baseline 包对比输入区按钮清单')
-const baseline = await open(BASELINE_URL)
-const baselineLabels = await readFunctionRow(baseline)
+console.log('\n[2] 与 baseline 对比输入区按钮清单')
 const normalize = (list) => [...new Set(list)].sort()
+let baselineLabels
+let baselineHasMode
+if (BASELINE_URL) {
+  console.log(`  ·   对比真实旧产物：${BASELINE_URL}`)
+  const baseline = await open(BASELINE_URL)
+  baselineLabels = await readFunctionRow(baseline)
+  baselineHasMode = await baseline.getByRole('group', { name: /对话模式|Chat mode/ }).count()
+} else {
+  console.log(`  ·   对比基线快照：tests/fixtures/input-row-baseline.json（${baselineFixture.recordedFrom}）`)
+  baselineLabels = baselineFixture.functionRowButtons
+  baselineHasMode = baselineFixture.modeSwitchRendered ? 1 : 0
+}
 const same =
   JSON.stringify(normalize(labels.filter((label) => !/模式/.test(label)))) ===
   JSON.stringify(normalize(baselineLabels))
@@ -122,14 +151,12 @@ expect(
   '输入区功能性按钮与 baseline 完全一致',
   `current=[${normalize(labels).join(' | ')}] baseline=[${normalize(baselineLabels).join(' | ')}]`
 )
-const baselineHasMode = await baseline
-  .getByRole('group', { name: /对话模式|Chat mode/ })
-  .count()
-expect(baselineHasMode === 0, 'baseline 包确实没有模式切换（对比基准有效）')
+expect(baselineHasMode === 0, 'baseline 确实没有模式切换（对比基准有效）')
 
 expect(consoleErrors.length === 0, 'console error = 0', consoleErrors.join(' | '))
 
 await browser.close()
+plainServed?.kill()
 if (failures.length === 0) {
   console.log('\n正式包回归通过 ✅')
   process.exit(0)

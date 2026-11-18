@@ -17,9 +17,11 @@
     "format": "oxfmt --write .",
     "test": "node tests/run-layer.mjs unit",
     "test:integration": "node tests/run-layer.mjs integration",
+    "test:integration:baseline": "node tests/run-layer.mjs integration --baseline",
     "test:e2e": "node tests/run-layer.mjs e2e",
     "test:device": "node tests/run-layer.mjs device",
-    "test:all": "npm run test && npm run test:integration"
+    "test:all": "npm run test && npm run test:integration",
+    "test:which": "node tests/which.mjs"
   },
   "dependencies": {
     "@types/katex": "^0.16.5",

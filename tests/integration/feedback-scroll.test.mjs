@@ -1,11 +1,15 @@
 // Focused real Chromium touch regression; CSS/keyboard capability simulations are not an old WebView.
 import assert from 'node:assert/strict'
-import { spawn } from 'node:child_process'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { chromium } from 'playwright'
 const out = new URL('../../docs/ui/feedback-scroll/', import.meta.url).pathname
 await mkdir(out, { recursive: true })
-const server = spawn('python3', ['-m','http.server','5418','--bind','127.0.0.1','--directory','dist-scroll'], { stdio:'ignore' })
+import { serveDir, verifyAppUrl } from '../helpers/env.mjs'
+// 产物目录可注入（默认用标准产物 dist-standard；原写法写死 dist-scroll，而没有任何流程产出它），
+// 端口交给 serveDir 自动分配（原写死 5418）
+const scrollDist = process.env.DIST_DIR_STANDARD || process.env.DIST_DIR || 'dist-standard'
+const served = await serveDir(scrollDist, { port: process.env.PORT, label: 'dist-scroll 产物' })
+await verifyAppUrl(served.url, scrollDist, { variant: 'standard' })
 const browser = await chromium.launch({ headless:true })
 const results = []
 const baseline = process.env.BASELINE === '1'
@@ -14,7 +18,7 @@ try {
   const context = await browser.newContext({ viewport:{width,height}, isMobile:true, hasTouch:true, locale:'zh-CN', reducedMotion:'reduce' })
   await context.addInitScript(() => localStorage.setItem('chat-demo:api-key','sk-scroll-local-fixture'))
   const page = await context.newPage()
-  await page.goto('http://127.0.0.1:5418/?diag-debug')
+  await page.goto(`${served.url}/?diag-debug`)
   await page.waitForFunction(() => !!window.__diagnostics)
   await page.evaluate(() => { for(let i=0;i<30;i++) window.__diagnostics.recordError('scroll regression log '+i); window.__diagnostics.setFeedbackTransport({name:'offline',send:async()=>({ok:false,error:'network'})}) })
   const baseOverflow=await page.evaluate(()=>getComputedStyle(document.body).overflow)
@@ -97,4 +101,4 @@ try {
   }
   await context.close()
  }
-} finally {await writeFile(out+(baseline?'before':'after')+'.json',JSON.stringify(results,null,2)); console.log(JSON.stringify(results.map(({name,before,after})=>({name,before,after})),null,2)); await browser.close();server.kill()}
+} finally {await writeFile(out+(baseline?'before':'after')+'.json',JSON.stringify(results,null,2)); console.log(JSON.stringify(results.map(({name,before,after})=>({name,before,after})),null,2)); await browser.close();served.kill()}

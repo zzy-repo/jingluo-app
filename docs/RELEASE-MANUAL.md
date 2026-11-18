@@ -347,13 +347,18 @@ adb logcat -d | tail -50
 pnpm type                # tsc
 pnpm lint                # oxlint
 npm run test             # 单元
-npm run test:integration # 集成
+npm run test:integration:baseline   # 集成：与基线比对，只判「不新增失败」
 npm run test:e2e         # e2e（含真实上游用例，需要 E2E_API_KEY）
 ```
 
 约定：
 
-- 发布分支合并前，上面至少跑到 **unit + integration + 非上游 e2e** 全绿。
+- 跑集成层前先准备两份产物：`DIST_OUT=dist-standard rspack build`（标准包，外部 `APP_URL` 与标准类用例用）
+  与 `INTERNAL_BUILD=1 rspack build`（内测包，`dist/`）；再 `APP_URL=http://127.0.0.1:5301 npm run test:integration:baseline`。
+  明细见 [`docs/testing.md`](testing.md)。
+- **集成层的判定口径是「相对基线没有新增失败」**（`tests/integration-baseline.json`），不是「全绿」；
+  `known-red` 条目要保留原因，新增失败必须修或补进基线并写明理由。跑完整层建议加 `--timeout-ms 300000`。
+- 发布分支合并前，上面至少跑到 **unit + integration（无新增失败）+ 非上游 e2e** 全绿。
 - 真实模型上游 e2e 没跑就**在 Issue / CHANGELOG 里写明「上游 e2e 待补测」**，事后补测并记录结果。
 - 任何一项失败都如实记录，不许用「先发后修」把测试失败洗成通过。
 

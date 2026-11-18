@@ -4,7 +4,7 @@
 //   cd /root/deepseek-app && node tests/integration/motion.test.mjs
 //
 // 被测页面是**内测构建**的 dist（`INTERNAL_BUILD=1 pnpm build:internal`），
-// 由脚本自己拉起静态服务；上游 http://123.207.199.196:60010 用 page.route 打桩，
+// 由脚本自己拉起静态服务；上游（ours 渠道，见 tests/fixtures/ours-upstream.mjs）用 page.route 打桩，
 // 不需要真的把 IP 绑到回环，也不连任何外网。
 //
 // 断言（对应任务书「验收」）：
@@ -24,17 +24,26 @@ import { createHash } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import { chromium } from 'playwright'
+import { serveDir, verifyAppUrl, verifyDist } from '../helpers/env.mjs'
+import { OURS_MODEL, routeOurs } from '../fixtures/ours-upstream.mjs'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const ROOT = path.resolve(HERE, '../..')
 const DIST = process.env.DIST_DIR || path.join(ROOT, 'dist')
-const PORT = process.env.PORT || '5292'
-const APP_URL = process.env.APP_URL || `http://127.0.0.1:${PORT}`
+const PORT = process.env.PORT
+let APP_URL = process.env.APP_URL || ''
 const SHOT_DIR = path.join(ROOT, 'docs', 'ui')
 const KEY = 'sk-motion-acceptance-key'
 const REPLY = '动效验收用的 mock 回复。'
-/** 改动前的基线提交（1.4.0-beta.1）：用于「有没有新增动画属性 / 消息流是否被改动」的对照 */
-const BASE_COMMIT = process.env.MOTION_BASE || '68f9342'
+/**
+ * 对照基线提交：用于「有没有新增动画属性 / 消息流是否被改动」的静态检查。
+ *
+ * 注意（Issue #19 follow-up）：这个 SHA 是硬编码的，只验证「相对某个历史点没改动」。
+ * 68f9342 之后 CopyButton.tsx 因「超长复制改保存 TXT」（#16 / #2）被合法改动过，
+ * 所以基线前移到 #21/#26 之后的 main 顶点；以后再改这些文件时请同步更新本常量。
+ * 长期方案是改成快照 fixture（同 mode-switch-plain 的做法），不在测试里钉 git SHA。
+ */
+const BASE_COMMIT = process.env.MOTION_BASE || '637adfb'
 
 /**
  * 【白名单】允许 transform / opacity 之外动画属性存在的文件（每条例外都必须写明理由）。
@@ -68,6 +77,12 @@ const start = (command, args, env = {}) =>
     spawn(command, args, { cwd: ROOT, env: { ...process.env, ...env }, stdio: 'ignore' })
   )
 const cleanup = () => {
+  // 静态服务是进程内 http 服务（serveDir → runtime.serveDist），必须显式关，否则进程不退出
+  try {
+    served.kill()
+  } catch {
+    // 已关闭
+  }
   for (const child of children) {
     try {
       child.kill('SIGTERM')
@@ -91,27 +106,6 @@ const parseTransform = (value) => {
   return { tx: numbers[4] ?? 0, ty: numbers[5] ?? 0, none: false }
 }
 
-const SSE_OK = [
-  'event: message_start',
-  'data: {"type":"message_start","message":{"id":"msg_motion","type":"message","role":"assistant","content":[],"model":"deepseek-v4.1-flash","stop_reason":null,"stop_sequence":null,"usage":{"input_tokens":1,"output_tokens":0}}}',
-  '',
-  'event: content_block_start',
-  'data: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}',
-  '',
-  'event: content_block_delta',
-  `data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"${REPLY}"}}`,
-  '',
-  'event: content_block_stop',
-  'data: {"type":"content_block_stop","index":0}',
-  '',
-  'event: message_delta',
-  'data: {"type":"message_delta","delta":{"stop_reason":"end_turn","stop_sequence":null},"usage":{"output_tokens":3}}',
-  '',
-  'event: message_stop',
-  'data: {"type":"message_stop"}',
-  '',
-  '',
-].join('\n')
 
 // ---------- 静态检查：[4][8] ----------
 const staticChecks = () => {
@@ -277,8 +271,12 @@ const staticChecks = () => {
 // ---------- 主流程 ----------
 staticChecks()
 
-start('python3', ['-m', 'http.server', PORT, '--bind', '127.0.0.1', '--directory', DIST])
-await new Promise((resolve) => setTimeout(resolve, 900))
+verifyDist(DIST, { variant: 'internal' })
+// 端口自动发现（PORT 可注入），避免固定端口撞车
+const served = await serveDir(DIST, { port: PORT, label: '内测产物 dist' })
+APP_URL = APP_URL || served.url
+// 连外部 APP_URL 时也要校验「端口上那份产物」是不是内测包（防止撞到别人的标准包 → 假红）
+await verifyAppUrl(APP_URL, DIST, { variant: 'internal' })
 
 /** 移动端尺寸（<768px 走移动端布局与底部弹层） */
 const mobileViewport = { width: 390, height: 844 }
@@ -304,23 +302,9 @@ const launch = async (reducedMotion, viewport = mobileViewport) => {
     }
   })
   page.on('pageerror', (error) => errors.push(`pageerror: ${error.message}`))
-  // 上游打桩：内测构建固定请求 http://123.207.199.196:60010/v1/messages
-  await page.route('http://123.207.199.196:60010/**', async (route) => {
-    const url = route.request().url()
-    if (url.includes('/v1/messages')) {
-      await route.fulfill({
-        status: 200,
-        headers: { 'content-type': 'text/event-stream' },
-        body: SSE_OK,
-      })
-      return
-    }
-    await route.fulfill({
-      status: 200,
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ data: [{ id: 'deepseek-v4.1-flash', type: 'model' }] }),
-    })
-  })
+  // 上游打桩：内测构建默认渠道 ours，契约集中在 tests/fixtures/ours-upstream.mjs
+  // （OpenAI 协议：POST /v1/chat/completions + Bearer，SSE 是 chat.completion.chunk）
+  await routeOurs(page, { reply: REPLY })
   await page.goto(APP_URL, { waitUntil: 'domcontentloaded' })
   await page.evaluate(() => window.localStorage.clear())
   await page.reload({ waitUntil: 'domcontentloaded' })

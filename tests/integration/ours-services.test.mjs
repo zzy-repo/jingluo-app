@@ -24,13 +24,13 @@ import { mkdirSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import { chromium } from 'playwright'
+import { serveDir, verifyAppUrl } from '../helpers/env.mjs'
 import { selectProviderKind } from '../helpers/helpers.mjs'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const ROOT = path.resolve(HERE, '../..')
 const DIST = process.env.DIST_DIR_STANDARD || path.join(ROOT, 'dist-standard')
-const PORT = process.env.PORT || '5295'
-const APP_URL = process.env.APP_URL || `http://127.0.0.1:${PORT}`
+let APP_URL = process.env.APP_URL || ''
 const CARD_API = 'http://123.207.199.196:60012'
 const SHOT_DIR = path.join(ROOT, 'docs', 'ui')
 
@@ -69,6 +69,12 @@ const start = (command, args) => {
   return child
 }
 const cleanup = () => {
+  // 静态服务是进程内 http 服务（serveDir → runtime.serveDist），必须显式关，否则进程不退出
+  try {
+    served.kill()
+  } catch {
+    // 已关闭
+  }
   for (const child of children) {
     try {
       child.kill('SIGTERM')
@@ -77,8 +83,10 @@ const cleanup = () => {
     }
   }
 }
-start('python3', ['-m', 'http.server', PORT, '--bind', '127.0.0.1', '--directory', DIST])
-await new Promise((resolve) => setTimeout(resolve, 800))
+// 端口自动分配（不再固定 5295）；产物种类/新旧不对就 SKIP(env)
+const served = await serveDir(DIST, { port: process.env.PORT, label: '标准产物 dist-standard' })
+APP_URL = APP_URL || served.url
+await verifyAppUrl(APP_URL, DIST, { variant: 'standard' })
 
 const browser = await chromium.launch()
 

@@ -21,13 +21,14 @@ import { mkdirSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import { chromium } from 'playwright'
+import { serveDir, verifyAppUrl } from '../helpers/env.mjs'
 import { capturePaths, selectProviderKind } from '../helpers/helpers.mjs'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const ROOT = path.resolve(HERE, '../..')
 const DIST = process.env.DIST_DIR_STANDARD || path.join(ROOT, 'dist-standard')
-const PORT = process.env.PORT || '5293'
-const APP_URL = process.env.APP_URL || `http://127.0.0.1:${PORT}`
+const PORT = process.env.PORT
+let APP_URL = process.env.APP_URL || ''
 const SHOT_DIR = path.join(ROOT, 'docs', 'ui')
 
 const KEY = 'sk-channels-acceptance-key'
@@ -91,20 +92,12 @@ const OPENAI_SSE = [
 ].join('\n')
 
 const children = []
-const startStatic = () => {
-  const child = spawn('python3', [
-    '-m',
-    'http.server',
-    PORT,
-    '--bind',
-    '127.0.0.1',
-    '--directory',
-    DIST,
-  ])
-  children.push(child)
-  return child
-}
 const cleanup = () => {
+  try {
+    served.kill()
+  } catch {
+    // 已关闭
+  }
   for (const child of children) {
     try {
       child.kill('SIGTERM')
@@ -253,8 +246,10 @@ const sendAndCapture = async (requests, text) => {
 }
 
 try {
-  startStatic()
-  await new Promise((resolve) => setTimeout(resolve, 800))
+  // 端口自动发现（PORT 可注入）：固定 5293 会撞到 diagnostics 或遗留服务 → 假红
+  const served = await serveDir(DIST, { port: PORT, label: '标准产物 dist-standard' })
+  APP_URL = APP_URL || served.url
+  await verifyAppUrl(APP_URL, DIST, { variant: 'standard' })
 
   // ---------- 上游全部打桩，不连外网 ----------
   await page.route('https://api.deepseek.com/**', async (route) => {
@@ -555,3 +550,4 @@ if (failures.length > 0) {
   }
   process.exit(1)
 }
+process.exit(0)

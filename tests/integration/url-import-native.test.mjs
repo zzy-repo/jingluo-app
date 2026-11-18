@@ -9,9 +9,12 @@
 //
 // 因此断言走的是真实代码：CapacitorHttp.get → urlImport 解析 → importHistory → staging → IndexedDB。
 import { chromium } from 'playwright'
+import { defaultDist, verifyAppUrl } from '../helpers/env.mjs'
 import { buildArchiveZip, textPayload } from '../fixtures/archive-fixture.mjs'
 
-const APP_URL = process.env.APP_URL || 'http://127.0.0.1:5181'
+const APP_URL = process.env.APP_URL || `http://127.0.0.1:${process.env.PORT || '5181'}`
+// 环境守卫：端口撞车 / 产物陈旧 → SKIP(env)，不产生假红（Issue #19）
+await verifyAppUrl(APP_URL, defaultDist(), { variant: 'standard' })
 const SHOT_DIR = new URL('../../docs/ui/', import.meta.url).pathname
 const ZIP_URL = 'https://obs.example.test/deepseek_data-2026-11-01.zip'
 const SESSION_TITLE = '链接导入测试会话'

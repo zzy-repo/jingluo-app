@@ -4,11 +4,16 @@ import { mkdtemp, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { chromium } from 'playwright'
-import { buildArchiveZip } from '../fixtures/archive-fixture.mjs'
+import { defaultDist, verifyAppUrl } from '../helpers/env.mjs'
+import { buildArchive } from '../fixtures/archive-fixture.mjs'
 
-const APP_URL = process.env.APP_URL || 'http://127.0.0.1:5181'
+const APP_URL = process.env.APP_URL || `http://127.0.0.1:${process.env.PORT || '5181'}`
+// 环境守卫：端口撞车 / 产物陈旧 → SKIP(env)，不产生假红（Issue #19）
+await verifyAppUrl(APP_URL, defaultDist(), { variant: 'standard' })
 const SHOT_DIR = new URL('../../docs/ui/', import.meta.url).pathname
-const SESSION_TITLE = '网页上传测试会话'
+const TITLE_PREFIX = '网页上传测试会话'
+/** 夹具会给标题加序号（单会话是「<prefix> 1」），侧栏显示的就是这个名字 */
+const SESSION_TITLE = `${TITLE_PREFIX} 1`
 
 const failures = []
 const check = (name, ok, detail = '') => {
@@ -87,7 +92,9 @@ const run = async () => {
   console.log('\n[web 2] 回归：本地文件上传仍可用')
   const dir = await mkdtemp(path.join(tmpdir(), 'deepseek-archive-'))
   const zipPath = path.join(dir, 'deepseek_data.zip')
-  await writeFile(zipPath, buildArchiveZip({ title: SESSION_TITLE }))
+  // 夹具参数是 titlePrefix（历史名字叫 title，改名后这里曾静默失效 → Issue #19）
+  const { zip } = buildArchive({ titlePrefix: TITLE_PREFIX })
+  await writeFile(zipPath, zip)
   check('上传前会话数 = 0', (await sessionCount(page)) === 0)
   await page.locator('input[type="file"][accept*="zip"]').setInputFiles(zipPath)
   const confirmDialog = page.getByRole('dialog', { name: /确认导入历史对话/ })
@@ -96,7 +103,11 @@ const run = async () => {
   await confirmDialog.getByRole('button', { name: '确认导入', exact: true }).click()
   await page.getByText('已导入 1 个对话').waitFor({ timeout: 30000 })
   check('上传导入后会话数 = 1', (await sessionCount(page)) === 1)
-  check('侧栏出现导入的会话', (await page.getByText(SESSION_TITLE).count()) > 0)
+  check(
+    '侧栏出现导入的会话',
+    (await page.getByText(SESSION_TITLE).count()) > 0,
+    `找不到标题「${SESSION_TITLE}」`
+  )
 
   console.log('\n[web 3] console error = 0')
   check('console error = 0', consoleErrors.length === 0, consoleErrors.join(' | '))

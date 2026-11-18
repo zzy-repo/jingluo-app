@@ -20,6 +20,7 @@
 //   [10] 附加：OpenAI 兼容模式的标题请求走 {base}/v1/chat/completions（任务书要求的接口分流）
 //   [11] 附加：部署验证——对 http://127.0.0.1:5181（可用 DEPLOY_URL 覆盖）再跑一遍成功路径，不可达则跳过
 import { serveDist, requireDist } from '../helpers/runtime.mjs'
+import { verifyAppUrl } from '../helpers/env.mjs'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import { chromium } from 'playwright'
@@ -49,6 +50,8 @@ const note = (message) => {
 // ---------- 0) Reuse a private prebuilt artifact; bind port atomically ----------
 const staticServer = await serveDist(STANDARD_DIST, { port: process.env.PORT || 0 })
 APP_URL = staticServer.url
+// 产物守卫：种类不对（内测/标准）或产物比源码旧 → SKIP(env)，不产生假红
+await verifyAppUrl(APP_URL, STANDARD_DIST, { variant: 'standard' })
 const cleanup = () => staticServer.close()
 let browser
 try { browser = await chromium.launch() }

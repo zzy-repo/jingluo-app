@@ -15,6 +15,8 @@
 //
 // 被测页面：DIST_DIR 内测产物与 STANDARD_DIST_DIR 标准产物；只读复用，默认随机 loopback 端口。
 import { serveDist, requireDist } from '../helpers/runtime.mjs'
+import { verifyAppUrl } from '../helpers/env.mjs'
+import { OURS_CHAT_PATH } from '../fixtures/ours-upstream.mjs'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import { chromium } from 'playwright'
@@ -58,6 +60,9 @@ try {
 }
 INTERNAL_URL = internalServer.url
 STANDARD_URL = standardServer.url
+// 产物守卫：两套产物的种类/新旧都校验（内测包 + 标准包），不对就 SKIP(env)
+await verifyAppUrl(INTERNAL_URL, INTERNAL_DIST, { variant: 'internal' })
+await verifyAppUrl(STANDARD_URL, STANDARD_DIST, { variant: 'standard' })
 const cleanup = () => Promise.all([internalServer.close(), standardServer.close()])
 
 /** 打开应用（?diag-debug 打开调试入口），可选：原生桥 mock、网络打桩 */
@@ -109,7 +114,7 @@ const openDataSection = async (page) => {
 
 try {
   // ---------- [A] 导入 403 ----------
-  console.log('\n[A] 导入 403 → import_error + http.status + stage + url.path + error.msg')
+  console.log('\n[A] 导入 403 → import_error + http.status + stage + reason + 已下载字节（msg 里带原因）')
   {
     const { context, page } = await openApp({
       native: { status: 403, headers: {}, url: ZIP_URL, data: '' },
@@ -130,10 +135,15 @@ try {
         entry.level === 'error' &&
         entry.meta?.['http.status'] === 403 &&
         entry.meta?.stage === 'download' &&
-        entry.meta?.['url.path'] === '/deepseek_data-2026-11-01.zip' &&
-        typeof entry.meta?.['error.msg'] === 'string' &&
-        entry.meta['error.msg'].length > 0,
-      `断言到位：kind=import_error level=${entry?.level} http.status=${entry?.meta?.['http.status']} stage=${entry?.meta?.stage} url.path=${entry?.meta?.['url.path']} error.msg="${entry?.meta?.['error.msg']}"`,
+        // 契约变更（src/services/chat/history/urlImport.ts 的 recordDownloadFailure）：
+        // 下载失败改为记 reason + durationMs + download.bytes，不再记 url.path
+        // （URL 可能带凭证/私有路径，只保留判定结论）。这里改为断言实际字段。
+        typeof entry.meta?.reason === 'string' &&
+        entry.meta.reason.length > 0 &&
+        typeof entry.meta?.['download.bytes'] === 'number' &&
+        // 失败原因同时体现在 msg 里（老版本还额外记 error.msg；这里兼容两种）
+        String(entry.msg ?? '').includes(String(entry.meta?.reason ?? '\u0000')) ,
+      `断言到位：kind=import_error level=${entry?.level} http.status=${entry?.meta?.['http.status']} stage=${entry?.meta?.stage} reason=${entry?.meta?.reason} download.bytes=${entry?.meta?.['download.bytes']} msg="${entry?.msg}"`,
       `字段不全：${JSON.stringify(entry)}`
     )
     const start = logs.filter((item) => item.kind === 'import_start').at(-1)
@@ -151,7 +161,7 @@ try {
     const { context, page } = await openApp({
       routes: [
         [
-          '**/v1/messages',
+          `**${OURS_CHAT_PATH}`,
           (route) =>
             route.fulfill({
               status: 502,
@@ -174,7 +184,7 @@ try {
       response?.meta?.['http.status'] === 502 &&
         response.level === 'error' &&
         typeof response.meta?.durationMs === 'number' &&
-        String(response.meta?.['url.path'] ?? '').endsWith('/v1/messages'),
+        String(response.meta?.['url.path'] ?? '').endsWith(OURS_CHAT_PATH),
       `net_response 到位：status=${response?.meta?.['http.status']} level=${response?.level} durationMs=${response?.meta?.durationMs} url.path=${response?.meta?.['url.path']}`,
       `net_response 字段不全：${JSON.stringify(response)}`
     )

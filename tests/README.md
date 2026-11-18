@@ -110,11 +110,12 @@ E2E_API_KEY=sk-xxx node tests/e2e/real-upstream.test.mjs
 
 | 文件 | 需要什么 |
 | --- | --- |
-| `integration/paths` `provider-anthropic` `caps` `request-body` `upstream-html` `probe-auth` `probe-nokey` `legacy-config` `url-import-web` `url-import-native` `mode-switch` `full-acceptance` | 一份**标准构建**挂在 `APP_URL`（默认 5181）；语音相关用例要求 `127.0.0.1` 这类安全上下文 |
-| `integration/internal-build` `motion` `diagnostics` | 一份**内测构建**（`pnpm build:internal`）在 `dist/`；`internal-build` 还要 `ip addr add 123.207.199.196/32 dev lo` |
+| `integration/paths` `provider-anthropic` `caps` `request-body` `upstream-html` `probe-auth` `probe-nokey` `legacy-config` `url-import-web` `url-import-native` `url-import-stages` `full-acceptance` | 一份**标准构建**挂在 `APP_URL`（显式传；别指望某个默认端口是干净的）；语音相关用例要求 `127.0.0.1` 这类安全上下文 |
+| `integration/internal-build` `motion` `mode-switch` `diagnostics` | 一份**内测构建**（`pnpm build:internal`）在 `dist/`；用例自己起服务、端口自动分配（`PORT` 可注入） |
 | `integration/auto-title` `diagnostics-contract` | 预构建标准包 `STANDARD_DIST_DIR`（默认 dist-standard）；contract 另需内测包 `DIST_DIR`。只读复用、不隐式构建；自建服务默认随机 loopback 端口 |
-| `integration/feedback-scroll` | 一份**独立构建**在 `dist-scroll/`（`DIST_OUT=dist-scroll NODE_ENV=production npx rspack build -c rspack.config.ts`）；脚本自己 `--directory dist-scroll` 起 5418 静态服务。先构建再跑，产物要和 `dist/` 的 `main.<hash>.js` 一致；**运行必须 `--timeout-ms 600000`**（实跑约 200s） |
-| `integration/mode-switch-plain` | 两份产物：`PLAIN_URL`（当前标准构建）/ `BASELINE_URL`（改动前 baseline），默认 5191 / 5192 |
+| `integration/feedback-scroll` | 产物默认复用标准包 `dist-standard/`（`DIST_DIR_STANDARD` / `DIST_DIR` 可注入，原写死 `dist-scroll` 但没有任何流程产出它）；端口自动分配（原写死 5418）；单次约 200s，跑全量请带 `--timeout-ms 300000` |
+| `integration/provider-channels` `ours-services` `feedback-export` `copy-limit` | 预构建标准包（默认 dist-standard / 各自 `DIST_*` 变量），只读复用、不隐式构建；端口自动分配 |
+| `integration/mode-switch-plain` | 只需要当前标准包（默认 dist-standard）；baseline 基准读 `tests/fixtures/input-row-baseline.json`，想比真实旧产物再传 `BASELINE_URL` |
 | `e2e/real-upstream` | `E2E_API_KEY` + 真上游；**跑之前确认上游 IP 没被绑在 lo 上**（`ip addr del 123.207.199.196/32 dev lo`） |
 | `e2e/diagnostics-upload` | 真实反馈后端可达（会真的提交一条反馈） |
 | `device/url-import-device` | AVD + `adb`；脚本自己起 5227 提供 20MB 导入包 |
@@ -126,6 +127,9 @@ E2E_API_KEY=sk-xxx node tests/e2e/real-upstream.test.mjs
 - **`integration/` 里的 `mode-switch-plain`、`auto-title`、`diagnostics-contract`**：要临时构建/占端口，改到相关代码时才跑。
 - **`tools/`**：不是测试，是人工排障脚本（例如 `diagnostics-blind-export.mjs` 导出真实反馈 body）。
 - CI 只需要：`pnpm install && npx playwright install chromium && npm run test`（再可选 `npm run test:integration`，前提是 CI 里有构建产物）。
+
+> 集成层的完整跑法、产物要求、端口策略与**基线比对**见 [`docs/testing.md`](../docs/testing.md)；
+> 分级门禁（L0/L1/L2）与「这次改该跑哪些用例」见 [`docs/TESTING-POLICY.md`](../docs/TESTING-POLICY.md)。
 
 ## 5. 写新测试的约定
 
@@ -152,10 +156,12 @@ E2E_API_KEY=sk-xxx node tests/e2e/real-upstream.test.mjs
 3. **模拟器要 `-memory 1280`**：`-memory 2048` 会把这台 4G slice 打满后卡死。
 4. **断网测试用 `ip link set eth0 down`**：`svc wifi disable` 在 AVD 上无效（模拟器没有 wifi service 状态）。
 5. **内测包和标准包别混**：内测包 `pnpm build:internal`（上游/模型/服务类型钉死，设置页只剩 API Key），标准包 `pnpm build`（可自填地址）。内测类用例必须配内测包，标准类用例必须配标准包，否则断言会从「UI 没入口」开始一路失败。
-6. **上游 IP 绑回环是个开关**：跑 `internal-build` 前要 `ip addr add 123.207.199.196/32 dev lo`，跑 `e2e/real-upstream` 前要 `ip addr del 123.207.199.196/32 dev lo`（脚本会自检并给提示）。
-7. **`dist-standard/` 是测试副产物**：`auto-title` / `diagnostics-contract` 会自己 `DIST_OUT=dist-standard` 构建，已 gitignore；别把它当部署产物。
-8. **`feedback-scroll` 的 180s 默认超时会伪装成用例失败**：这条用例单次约 191~200s，`node tests/run-layer.mjs integration --case tests/integration/feedback-scroll.test.mjs --timeout-ms 600000`；直接 `node tests/integration/feedback-scroll.test.mjs` 不受 runner deadline 限制但同样要 ~200s。另外它读的是 `dist-scroll/`（不是 `dist/`），忘了建就会连不上 5418 或跑到旧产物。
-9. **端口冲突会伪装成断言失败**：静态服务端口被占时脚本可能连到旧服务。跑之前 `ss -ltnp | grep 5181` 看一眼。
+6. **上游 IP 绑回环只影响 e2e**：集成层用 `page.route` 打桩，不需要绑 IP；跑 `e2e/real-upstream` 前要 `ip addr del 123.207.199.196/32 dev lo`（脚本会自检并给提示）。
+7. **`dist-standard/` 是测试用的标准产物**：由你自己 `DIST_OUT=dist-standard` 构建（用例不再隐式构建，缺就 `SKIP(env)` 并打印构建命令），已 gitignore；别把它当部署产物。
+8. **默认 180s 单文件超时会伪装成用例失败**：`feedback-scroll` 单次约 190~200s，跑全量带 `--timeout-ms 300000`（或单跑它时带 `--timeout-ms 600000`）。
+9. **端口冲突会伪装成断言失败**：静态服务端口被占时脚本会连到别人那份产物，看起来像产品坏了。自建服务的用例统一走
+   `tests/helpers/env.mjs` 的 `serveDir()`（内部复用 `runtime.serveDist` 的 0 号端口原子分配），开跑前还会校验端口上那份产物的
+   `build-info.json`；不匹配就打印 `SKIP(env)` 而不是失败。跑之前也可以 `ss -ltnp | grep 5181` 看一眼。
 
 ## 7. 发版前必须跑哪几条
 

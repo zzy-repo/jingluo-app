@@ -3,15 +3,23 @@
 //
 //   cd /root/deepseek-app && node tests/integration/mode-switch.test.mjs
 //
-// 内测构建把上游钉死在 http://123.207.199.196:60010（/v1/models、/v1/messages），
-// 这里用 Playwright 路由拦截本地 mock，不依赖任何真实网络。
-import { chromium } from 'playwright'
+// 需要**内测构建**（默认渠道是我们的渠道 ours，契约见 tests/fixtures/ours-upstream.mjs）：
+// 脚本自己起静态服务（默认端口 5293，PORT 可注入），上游用 page.route 打桩，不连外网。
+//   DIST_DIR=$PWD/dist PORT=5293 node tests/integration/mode-switch.test.mjs
 import { mkdirSync } from 'node:fs'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { chromium } from 'playwright'
+import { serveDir, verifyAppUrl, verifyDist } from '../helpers/env.mjs'
+import { OURS_CHAT_PATH, OURS_CORS, OURS_HOST, modelsJson, openAiSse } from '../fixtures/ours-upstream.mjs'
 
-const APP_URL = process.env.APP_URL || 'http://127.0.0.1:5181'
-const UPSTREAM_HOST = '123.207.199.196'
+const HERE = path.dirname(fileURLToPath(import.meta.url))
+const ROOT = path.resolve(HERE, '../..')
+const DIST = process.env.DIST_DIR || path.join(ROOT, 'dist')
+let APP_URL = process.env.APP_URL || ''
+const UPSTREAM_HOSTNAME = new URL(OURS_HOST).hostname
 const REPLY_TEXT = '模式切换验收回复，逐字流出。'
-const OUT_DIR = 'docs/ui'
+const OUT_DIR = path.join(ROOT, 'docs', 'ui')
 
 const failures = []
 const ok = (message) => console.log(`  ok  ${message}`)
@@ -27,69 +35,6 @@ const expect = (cond, message, detail) => {
   }
 }
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
-
-const sseBody = (text) => {
-  const pieces = [text.slice(0, 6), text.slice(6, 14), text.slice(14)]
-  const lines = [
-    'event: message_start',
-    `data: ${JSON.stringify({
-      type: 'message_start',
-      message: {
-        id: 'msg_mode_accept',
-        type: 'message',
-        role: 'assistant',
-        content: [],
-        model: 'deepseek-v4.1-flash',
-        stop_reason: null,
-        stop_sequence: null,
-        usage: { input_tokens: 10, output_tokens: 0 },
-      },
-    })}`,
-    '',
-    'event: content_block_start',
-    `data: ${JSON.stringify({
-      type: 'content_block_start',
-      index: 0,
-      content_block: { type: 'text', text: '' },
-    })}`,
-    '',
-  ]
-  for (const piece of pieces.filter(Boolean)) {
-    lines.push(
-      'event: content_block_delta',
-      `data: ${JSON.stringify({
-        type: 'content_block_delta',
-        index: 0,
-        delta: { type: 'text_delta', text: piece },
-      })}`,
-      ''
-    )
-  }
-  lines.push(
-    'event: content_block_stop',
-    `data: ${JSON.stringify({ type: 'content_block_stop', index: 0 })}`,
-    '',
-    'event: message_delta',
-    `data: ${JSON.stringify({
-      type: 'message_delta',
-      delta: { stop_reason: 'end_turn', stop_sequence: null },
-      usage: { output_tokens: 20 },
-    })}`,
-    '',
-    'event: message_stop',
-    'data: {"type":"message_stop"}',
-    '',
-    ''
-  )
-  return lines.join('\n')
-}
-
-const CORS = {
-  'access-control-allow-origin': '*',
-  'access-control-allow-methods': 'GET,POST,OPTIONS',
-  'access-control-allow-headers': 'x-api-key,content-type,anthropic-version,authorization',
-  'access-control-max-age': '600',
-}
 
 /** 读取某个分段按钮的实际计算样式 */
 const readSegment = (page, mode) =>
@@ -147,6 +92,13 @@ const assertState = async (page, label, selected) => {
   return { fast, expert }
 }
 
+// 环境守卫：dist 缺失 / 陈旧（源码比产物新）/ 种类不对 → SKIP(env) 并打印当前 main.<hash>.js
+verifyDist(DIST, { variant: 'internal' })
+// 端口自动发现（PORT 可注入）：以前固定 5294，撞到别的任务遗留的服务就会连到那份产物（假红）
+const served = await serveDir(DIST, { port: process.env.PORT, label: '内测产物 dist' })
+APP_URL = APP_URL || served.url
+// 连外部 APP_URL 时也要校验「端口上那份产物」是不是内测包（防止撞到别人的标准包 → 假红）
+await verifyAppUrl(APP_URL, DIST, { variant: 'internal' })
 mkdirSync(OUT_DIR, { recursive: true })
 
 const browser = await chromium.launch()
@@ -171,32 +123,33 @@ const upstreamLog = []
 await context.route('**/*', async (route) => {
   const request = route.request()
   const url = new URL(request.url())
-  if (url.hostname !== UPSTREAM_HOST) {
+  if (url.hostname !== UPSTREAM_HOSTNAME) {
     await route.fallback()
     return
   }
   upstreamLog.push(`${request.method()} ${url.pathname}`)
   if (request.method() === 'OPTIONS') {
-    await route.fulfill({ status: 204, headers: CORS, body: '' })
+    await route.fulfill({ status: 204, headers: OURS_CORS, body: '' })
     return
   }
   if (url.pathname.endsWith('/models')) {
     await route.fulfill({
       status: 200,
-      headers: { ...CORS, 'content-type': 'application/json' },
-      body: JSON.stringify({ data: [{ id: 'deepseek-v4.1-flash', object: 'model' }] }),
+      headers: { ...OURS_CORS, 'content-type': 'application/json' },
+      body: modelsJson(),
     })
     return
   }
-  if (url.pathname.endsWith('/messages')) {
+  if (url.pathname.endsWith(OURS_CHAT_PATH)) {
+    // ours 渠道走 OpenAI 协议：SSE 是 chat.completion.chunk，不再是 Anthropic message_*
     await route.fulfill({
       status: 200,
-      headers: { ...CORS, 'content-type': 'text/event-stream', 'cache-control': 'no-cache' },
-      body: sseBody(REPLY_TEXT),
+      headers: { ...OURS_CORS, 'content-type': 'text/event-stream', 'cache-control': 'no-cache' },
+      body: openAiSse(REPLY_TEXT),
     })
     return
   }
-  await route.fulfill({ status: 200, headers: { ...CORS, 'content-type': 'application/json' }, body: '{}' })
+  await route.fulfill({ status: 200, headers: { ...OURS_CORS, 'content-type': 'application/json' }, body: '{}' })
 })
 
 const page = await context.newPage()
@@ -304,26 +257,23 @@ expect((await textarea.inputValue()) === '模式切换回归：发一条消息',
 const modeAfterTyping = await readSegment(page, 'fast')
 expect(modeAfterTyping.ariaPressed === 'true', '输入文字不影响模式选中态（仍为快速模式）')
 
-const thinkButton = page.getByRole('button', { name: /深度思考|DeepThink|Thinking/ }).first()
-expect(await thinkButton.isVisible(), '深度思考按钮仍在')
-// 内测包钉死 anthropic spec（caps.search=false），智能搜索入口本来就不渲染；
-// 「智能搜索仍在」由正式包的对比回归（tests/integration/mode-switch-plain.test.mjs）证明。
+// 内测包默认渠道是我们自己的渠道（ours）：OpenAI 协议，只有基础对话，
+// 深度思考 / 智能搜索入口都不渲染（1.4.0-beta.6 起的 ours 契约，见 providers.ts）。
+// 「正式包里这些入口仍在」由 tests/integration/mode-switch-plain.test.mjs 守着。
+const thinkCount = await page.getByRole('button', { name: /深度思考|DeepThink|Thinking/ }).count()
+expect(thinkCount === 0, 'ours 渠道不渲染深度思考入口（该协议不提供）', `count=${thinkCount}`)
 const searchCount = await page.getByRole('button', { name: /智能搜索|Search/ }).count()
-console.log(
-  `  ·   智能搜索入口 count=${searchCount}（内测包 anthropic spec caps.search=false，与改动前一致；正式包已验证存在）`
-)
-await thinkButton.click()
-await wait(120)
-const thinkPressed = await thinkButton.getAttribute('aria-pressed')
-await thinkButton.click()
-await wait(120)
-expect(thinkPressed === 'true', '深度思考按钮仍可切换（点击后 aria-pressed=true）', thinkPressed)
+expect(searchCount === 0, 'ours 渠道不渲染智能搜索入口（该协议不提供）', `count=${searchCount}`)
 
 await page.getByRole('button', { name: /^发送$|^Send$/ }).first().click()
 const reply = page.getByText(REPLY_TEXT, { exact: false }).first()
 await reply.waitFor({ timeout: 20000 })
 expect(await reply.isVisible(), '发消息流程正常：mock 上游回复已渲染')
-expect(upstreamLog.some((entry) => entry.endsWith('/v1/messages')), '请求按原协议打到 /v1/messages', upstreamLog.join(' | '))
+expect(
+  upstreamLog.some((entry) => entry.endsWith(OURS_CHAT_PATH)),
+  `请求按 ours 契约打到 ${OURS_CHAT_PATH}（OpenAI 协议）`,
+  upstreamLog.join(' | ')
+)
 
 expect(consoleErrors.length === 0, 'console error = 0', consoleErrors.join(' | '))
 
@@ -336,6 +286,7 @@ console.log(
 console.log(
   `点击后 fast: bg=${afterClick.fast.backgroundColor} color=${afterClick.fast.color} / expert: bg=${afterClick.expert.backgroundColor} color=${afterClick.expert.color}`
 )
+served.kill()
 if (failures.length === 0) {
   console.log('全部断言通过 ✅')
   process.exit(0)
