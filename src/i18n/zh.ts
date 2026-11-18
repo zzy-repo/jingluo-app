@@ -632,4 +632,9 @@ export const zh = {
   historyImportSkipMissingParent: '缺失的父消息 {parent}',
   historyImportSkipReasonBranches: '消息分支损坏（父消息缺失或角色接不上）',
   historyImportSkipReasonFiles: '附件数据损坏（图片路径越界或重复）',
+  // 抖音号展示项（用户直接指定的改动）：值可点、可复制
+  settingDouyinLabel: '抖音号',
+  settingDouyinDescription: '点一下号码即可复制，去抖音搜索就能找到。',
+  settingDouyinCopyAria: '复制抖音号',
+  settingDouyinCopied: '抖音号已复制',
 } as const

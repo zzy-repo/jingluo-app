@@ -1084,3 +1084,50 @@
   gap: 6px;
   min-width: 0;
 }
+
+/* ---------- 抖音号（用户直接指定的展示项）----------
+   整个胶囊就是复制按钮：等宽字体 + 强调色描边，点一下复制并由 toast 反馈。
+   圆角/高度沿用 .cellButton 那一档，不引入第二套视觉语言，也不做广告条。 */
+.douyinPill {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 0 14px;
+  border: 1px solid var(--dsw-alias-brand-primary);
+  border-radius: 100px;
+  background-color: transparent;
+  color: var(--dsw-alias-brand-text);
+  font: inherit;
+  cursor: pointer;
+
+  &:hover {
+    background-color: var(--dsw-alias-interactive-bg-hover);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--dsw-alias-brand-primary);
+    outline-offset: 2px;
+  }
+
+  svg {
+    flex-shrink: 0;
+  }
+}
+
+/* 号码本身：等宽 + 半粗，8 位一眼能核对 */
+.douyinPillValue {
+  font-family: var(--ds-font-family-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+/* 手机端：点击区拉到 44px（与 .cellButton 同档），桌面端保持 36px */
+@media not all and (min-width: 768px) {
+  .douyinPill {
+    min-height: 44px;
+  }
+}

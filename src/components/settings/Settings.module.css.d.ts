@@ -84,5 +84,7 @@ declare const styles: {
   readonly "feedbackTicketLine": string;
   readonly "navItemActive": string;
   readonly "themeOptionSelected": string;
+  readonly "douyinPill": string;
+  readonly "douyinPillValue": string;
 };
 export = styles;

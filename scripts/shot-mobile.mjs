@@ -494,6 +494,66 @@ const measureSkippedBox = () => {
   }
 }
 
+/**
+ * 量「抖音号」这一行：胶囊的位置/字号/颜色（醒目不醒目看这些数）、值本身、
+ * 以及左侧文字列有没有被挤成窄条（#57 的坑：.text 的 flex-basis:0 会把 label 压成竖排）。
+ */
+const measureDouyinRow = () => {
+  const pill = document.querySelector('[data-testid="douyin-id-copy"]')
+  if (pill === null) {
+    return null
+  }
+  const actions = pill.parentElement
+  const row = actions === null ? null : actions.parentElement
+  const value = pill.querySelector('span')
+  const labelNode =
+    row === null
+      ? null
+      : Array.from(row.querySelectorAll('div')).find((element) => (element.textContent ?? '').trim() === '抖音号')
+  const pillRect = pill.getBoundingClientRect()
+  const valueRect = value?.getBoundingClientRect() ?? null
+  const labelRect = labelNode?.getBoundingClientRect() ?? null
+  const rowRect = row?.getBoundingClientRect() ?? null
+  const pillStyle = getComputedStyle(pill)
+  const valueStyle = value === null ? null : getComputedStyle(value)
+  const labelStyle = labelNode === null ? null : getComputedStyle(labelNode)
+  const viewportWidth = document.documentElement.clientWidth
+  const viewportHeight = document.documentElement.clientHeight
+  const round = (value) => Math.round(value)
+  const box = (rect) =>
+    rect === null
+      ? null
+      : { x: round(rect.x), y: round(rect.y), width: round(rect.width), height: round(rect.height) }
+  return {
+    pillText: (pill.innerText ?? '').replace(/\s+/gu, ' ').trim(),
+    pill: box(pillRect),
+    row: box(rowRect),
+    pillStyle: {
+      color: pillStyle.color,
+      borderColor: pillStyle.borderColor,
+      borderRadius: pillStyle.borderRadius,
+      fontFamily: pillStyle.fontFamily,
+    },
+    valueStyle:
+      valueStyle === null
+        ? null
+        : { fontFamily: valueStyle.fontFamily, fontSize: valueStyle.fontSize, fontWeight: valueStyle.fontWeight },
+    value: box(valueRect),
+    label: box(labelRect),
+    labelStyle:
+      labelStyle === null ? null : { fontSize: labelStyle.fontSize, lineHeight: labelStyle.lineHeight },
+    viewportWidth,
+    viewportHeight,
+    // 整行（含胶囊）必须落在视口内：否则这张图证明不了「一眼能看到」
+    inViewport:
+      rowRect !== null &&
+      rowRect.top >= 0 &&
+      rowRect.bottom <= viewportHeight &&
+      pillRect.right <= viewportWidth + 1,
+    horizontalOverflow: row === null ? null : row.scrollWidth > row.clientWidth + 1,
+  }
+}
+
 // ---------------------------------------------------------------- 页面内取数（在浏览器里跑，必须自成一体）
 
 /** 顶栏四件事：点击区尺寸、提示是否真的渲染、标题是否被提示挤掉、滚动层是否溢出 */
@@ -627,6 +687,7 @@ const S = {
   optionBold: '粗体',
   optionRelaxed: '宽松',
   paymentRecordsOpen: '[data-testid="payment-records-open"]',
+  douyinCopy: '[data-testid="douyin-id-copy"]',
   titleButton: 'button[aria-label*="回到首条消息"]',
 }
 
@@ -953,6 +1014,67 @@ export const PAGES = {
       })
     },
   },
+  'settings-douyin': {
+    dir: 'docs/ui/settings-douyin',
+    title: '设置 → 数据管理 → 抖音号：shiro_0824 的胶囊展示（等宽 + 强调色）与点击复制',
+    sessions: () => [makeReadingSession()],
+    mockOrders: false,
+    run: async (ctx) => {
+      const { page, shot, record, warn } = ctx
+      await openSettings(page, S.tabData)
+      const pill = page.locator(S.douyinCopy)
+      await pill.waitFor({ state: 'visible', timeout: 10000 })
+      await pill.scrollIntoViewIfNeeded()
+      await page.waitForTimeout(320)
+
+      const row = await page.evaluate(measureDouyinRow)
+      if (row === null) {
+        throw new Error('找不到抖音号那一行（[data-testid="douyin-id-copy"]）')
+      }
+      record('douyinRow', row)
+      if (!row.pillText.includes('shiro_0824')) {
+        warn(`胶囊上的值不是 shiro_0824：${JSON.stringify(row.pillText)}`)
+      }
+      if (!row.inViewport) {
+        warn('抖音号一行没有完整落在视口内：这张图证明不了「一眼看到」')
+      }
+      if (row.horizontalOverflow === true) {
+        warn('抖音号一行横向溢出：row.scrollWidth > clientWidth')
+      }
+      if (row.label !== null && row.label.width < 60) {
+        warn(`左侧文字列被压扁：label 宽 ${row.label.width}px（#57 的坑）`)
+      }
+      await shot('01-settings-data-douyin')
+      const rowBox = row.row ?? { x: 0, y: 0, width: ctx.size.width, height: 0 }
+      await shot('02-douyin-row-closeup', {
+        clip: {
+          x: Math.max(0, rowBox.x - 4),
+          y: Math.max(0, rowBox.y - 4),
+          width: Math.min(rowBox.width + 8, ctx.size.width),
+          height: rowBox.height + 8,
+        },
+      })
+
+      // 点一下复制：证据是 toast 文案 + 剪贴板真实内容（context 已授予 clipboard 权限）
+      await pill.click()
+      await page.waitForTimeout(260)
+      const toastText = await page
+        .getByRole('status')
+        .innerText()
+        .catch(() => '')
+      const clipboard = await page.evaluate(() =>
+        navigator.clipboard.readText().catch((error) => `读不到：${String(error)}`)
+      )
+      record('copy', { toastText: toastText.replace(/\s+/gu, ' ').trim(), clipboard })
+      if (clipboard !== 'shiro_0824') {
+        warn(`剪贴板内容不是 shiro_0824：${JSON.stringify(clipboard)}`)
+      }
+      if (!toastText.includes('已复制')) {
+        warn(`没看到复制成功的提示：${JSON.stringify(toastText)}`)
+      }
+      await shot('03-douyin-copied-toast')
+    },
+  },
 }
 
 // ---------------------------------------------------------------- 主流程
@@ -1046,6 +1168,8 @@ export const main = async (argv = process.argv.slice(2), env = process.env) => {
           timezoneId: 'Asia/Shanghai',
           reducedMotion: 'reduce',
           colorScheme: 'light',
+          // 「点一下复制」类改动要能复核剪贴板真实内容，否则只能看 toast 猜
+          permissions: ['clipboard-read', 'clipboard-write'],
         })
         await context.addInitScript(
           ({ apiKey }) => {

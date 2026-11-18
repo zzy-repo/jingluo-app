@@ -1,6 +1,7 @@
 import clsx from 'clsx'
 import { useRef, useState, type ReactNode } from 'react'
 import {
+  IconCopyOutline16,
   IconDarkOutline16,
   IconDataOutline16,
   IconDownloadOutline16,
@@ -52,6 +53,7 @@ import { showToast } from '../base/toastState.js'
 import { ApiConfigFields, ApiKeyConfirm, useApiKeyEditor } from './ApiConfigFields.js'
 import { AppUpdateField } from './AppUpdateField.js'
 import { ChatBackgroundField } from './ChatBackgroundField.js'
+import { DOUYIN_ACCOUNT_ID, douyinCopyToast } from './douyinAccount.js'
 import { OursServicesRow } from './OursServicesDialog.js'
 import { FeedbackDialog } from './FeedbackDialog.js'
 import {
@@ -199,6 +201,7 @@ const SettingsContent = ({ visible }: { visible: boolean }) => {
                   </>
                 }
               />
+              <DouyinSetting />
               <SettingCell
                 label={t('deleteAllSessions')}
                 status={null}
@@ -780,6 +783,39 @@ const SettingCell = ({
     <div className={styles.cellActions}>{action}</div>
   </div>
 )
+
+/**
+ * 抖音号：值做成可点的胶囊（等宽 + 强调色），点一下复制。
+ * 整行用 .wrapActionsCell——窄屏下文本列独占一行、胶囊整行下移，
+ * 不让右侧动作区把「抖音号」这个 label 挤成窄条（#57 的坑：.text 的 flex-basis:0 会塌陷）。
+ */
+const DouyinSetting = () => {
+  const t = useTranslate()
+  const copy = async () => {
+    const copied = await copyText(DOUYIN_ACCOUNT_ID)
+    showToast(douyinCopyToast(copied))
+  }
+  return (
+    <SettingCell
+      label={t('settingDouyinLabel')}
+      description={t('settingDouyinDescription')}
+      status={null}
+      className={styles.wrapActionsCell}
+      action={
+        <button
+          type="button"
+          className={styles.douyinPill}
+          data-testid="douyin-id-copy"
+          aria-label={t('settingDouyinCopyAria')}
+          onClick={() => void copy()}
+        >
+          <span className={styles.douyinPillValue}>{DOUYIN_ACCOUNT_ID}</span>
+          <IconCopyOutline16 />
+        </button>
+      }
+    />
+  )
+}
 
 /** 导入源：本地文件，或原生端的直链（先下载再走同一条导入链路）。 */
 type ImportSource = { kind: 'file'; file: File } | { kind: 'url'; url: string }

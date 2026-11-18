@@ -654,4 +654,8 @@ export const en = {
     'message branches are damaged (parent message missing, or roles do not connect)',
   historyImportSkipReasonFiles:
     'attachment data is damaged (image path escapes the folder, or the image is duplicated)',
+  settingDouyinLabel: 'Douyin ID',
+  settingDouyinDescription: 'Tap the ID to copy it, then search for it in Douyin.',
+  settingDouyinCopyAria: 'Copy Douyin ID',
+  settingDouyinCopied: 'Douyin ID copied',
 } satisfies Record<keyof typeof zh, string>
