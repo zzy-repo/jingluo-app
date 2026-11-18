@@ -111,6 +111,25 @@ export const saveSession = async (session: Session, files: StoredFile[] = []): P
 }
 
 /** 未打开的会话也可重命名，只读取该会话，原子更新详情和列表。 */
+export const pinSession = async (id: string, pinnedAt: number | undefined): Promise<void> => {
+  const tx = (await getDB()).transaction(['sessions', 'sessionSummaries'], 'readwrite')
+  await Promise.all([
+    (async () => {
+      try {
+        const sessions = tx.objectStore('sessions')
+        const session = await sessions.get(id)
+        if (session) {
+          if (pinnedAt === undefined) delete session.pinnedAt
+          else session.pinnedAt = pinnedAt
+          await sessions.put(session)
+          await tx.objectStore('sessionSummaries').put(storedSummary(session))
+        }
+      } catch (error) { abortTransaction(tx); throw error }
+    })(),
+    tx.done,
+  ])
+}
+
 export const renameSession = async (id: string, title: string): Promise<void> => {
   const tx = (await getDB()).transaction(['sessions', 'sessionSummaries'], 'readwrite')
   await Promise.all([

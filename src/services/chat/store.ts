@@ -119,7 +119,7 @@ export const useChatStore = create<ChatState>(() => ({
 const { getState: get, setState: set } = useChatStore
 
 const sortSessions = (sessions: SessionSummary[]) =>
-  [...sessions].sort((a, b) => b.updatedAt - a.updatedAt)
+  [...sessions].sort((a, b) => (b.pinnedAt ?? 0) - (a.pinnedAt ?? 0) || b.updatedAt - a.updatedAt)
 
 const getSession = (id: string) => {
   const cache = get().sessionCache
@@ -486,6 +486,15 @@ export const selectSession = (id: string) => {
     void ensureSessionLoaded(id)
     trimSessionCache()
   }
+}
+
+export const pinSession = (id: string) => {
+  if (get().importingHistory || deletingSessions.has(id)) return
+  const session = get().sessions.find((item) => item.id === id)
+  if (!session) return
+  const pinnedAt = session.pinnedAt === undefined ? Date.now() : undefined
+  set((state) => ({ sessions: sortSessions(state.sessions.map((item) => item.id === id ? { ...item, pinnedAt } : item)) }))
+  void db.pinSession(id, pinnedAt).catch(db.reportStorageError('pin session'))
 }
 
 export const renameSession = (id: string, title: string) => {

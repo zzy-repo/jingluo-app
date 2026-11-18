@@ -47,6 +47,13 @@
   line-height: 18px;
 }
 
+.pin {
+  display: inline-flex;
+  flex-shrink: 0;
+  margin-left: 4px;
+  color: var(--dsw-alias-label-secondary);
+}
+
 .action {
   display: none;
   flex-shrink: 0;
