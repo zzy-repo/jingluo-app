@@ -29,9 +29,33 @@ export interface UpdateRelease {
   artifactVariant?: ArtifactVariant
   sha256?: string
 }
+/**
+ * 「没有可装版本」的可解释原因（Issue #377）。
+ *
+ * 背景：清单里 `1.4.1` 只发了 `standard` 变体、`1.4.0` 只发了 `internal` 变体，而
+ * `selectUpdate` 要求 `artifactVariant` 完全相等 —— 于是装了 internal 的用户**没有任何候选**，
+ * 界面只能说「已是最新」。那不是「已是最新」，是**这条渠道的包没发**（变体维度断链）。
+ * 这里把「为什么没有」一起返回，让界面给一句能行动的话（手动下载正式版 / 切渠道），
+ * 而不是笼统的「已是最新」。
+ *
+ * 注意：跨变体**安装**是产品决策（原生 `verify()` 的 `VARIANT_MISMATCH` 仍然拦截），
+ * 本单只做解释，不放开候选筛选。
+ */
+export type UpdateReason =
+  /** 本机是 internal 包，清单里更高的版本只有 `standard` 包（#377 的现场） */
+  | 'no-internal-variant'
+  /** 对称情形：本机是 standard 包，清单里更高的版本只有 `internal` 包 */
+  | 'no-standard-variant'
+  /** 有更高的同变体包，但都是预发布，当前渠道只接受稳定版 */
+  | 'prerelease-filtered'
+  /** 渠道内确实没有比当前更高的记录 */
+  | 'up-to-date'
+
 export interface UpdateSelection {
   release?: UpdateRelease
   incomplete: number
+  /** `release` 为空时「为什么没有可装版本」；有 release 时不带这个字段 */
+  reason?: UpdateReason
 }
 const object = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -106,6 +130,40 @@ export const parseManifest = (input: unknown): UpdateRelease[] => {
   })
 }
 
+/** 「字段齐全、能装」：变体已知 + 有 SHA256 + buildType 已知（与 eligible 判定同一口径） */
+const installable = (row: UpdateRelease): boolean =>
+  Boolean(row.artifactVariant && row.sha256 && row.buildType)
+
+/**
+ * 没有候选时的原因（Issue #377）。**只在这一格真的说不清时才给 reason**：
+ * 若只是「有更高记录但缺渠道 / SHA256」，`incomplete > 0` 已经在说这件事（界面已有对应文案），
+ * 不在这里重复一遍。
+ */
+const reasonOf = (
+  aboveCurrent: UpdateRelease[],
+  variant: ArtifactVariant,
+  channel: UpdateChannel
+): UpdateReason => {
+  // 1) 同变体、字段齐全，却一个都没进候选 → 只可能是被「仅稳定版」挡掉的预发布
+  if (
+    channel === 'stable' &&
+    aboveCurrent.some((row) => row.artifactVariant === variant && installable(row))
+  ) {
+    return 'prerelease-filtered'
+  }
+  // 2) 变体维度断链：更高的版本里有能装的包，但不是本机这个变体（#377 的 1.4.0 internal / 1.4.1 standard）
+  const otherVariant = aboveCurrent.filter(
+    (row) => installable(row) && row.artifactVariant !== variant
+  )
+  if (otherVariant.length > 0) {
+    return otherVariant.some((row) => row.artifactVariant === 'internal')
+      ? 'no-standard-variant'
+      : 'no-internal-variant'
+  }
+  // 3) 渠道内确实没有更高的版本
+  return 'up-to-date'
+}
+
 export const selectUpdate = (
   releases: UpdateRelease[],
   currentCode: number,
@@ -115,10 +173,11 @@ export const selectUpdate = (
   if (!Number.isSafeInteger(currentCode) || currentCode <= 0) {
     throw new Error('INVALID_CURRENT_VERSION')
   }
-  const candidates = releases.filter(
+  // 高于当前版本的全部记录（先不过渠道）：区分「没有更高版本」和「有但被渠道过滤」
+  const aboveCurrent = releases.filter((row) => row.versionCode > currentCode)
+  const candidates = aboveCurrent.filter(
     (row) =>
-      row.versionCode > currentCode &&
-      (row.buildType === undefined || channel === 'prerelease' || row.buildType === 'stable')
+      row.buildType === undefined || channel === 'prerelease' || row.buildType === 'stable'
   )
   const eligible = candidates.filter(
     (row) => row.artifactVariant === variant && row.sha256 && row.buildType
@@ -130,14 +189,18 @@ export const selectUpdate = (
   if (sorted.length > 1 && sorted[0].versionCode === sorted[1].versionCode) {
     throw new Error('AMBIGUOUS_RELEASE')
   }
-  return {
-    release: sorted[0],
-    incomplete: candidates.filter(
-      (row) =>
-        row.artifactVariant === undefined ||
-        (row.artifactVariant === variant && (!row.sha256 || !row.buildType))
-    ).length,
+  const incomplete = candidates.filter(
+    (row) =>
+      row.artifactVariant === undefined ||
+      (row.artifactVariant === variant && (!row.sha256 || !row.buildType))
+  ).length
+  if (sorted.length > 0) {
+    return { release: sorted[0], incomplete }
   }
+  // 「有记录但缺渠道 / SHA256」由 incomplete 说清；其余情况给可解释的 reason（#377）
+  return incomplete > 0
+    ? { release: undefined, incomplete }
+    : { release: undefined, incomplete, reason: reasonOf(aboveCurrent, variant, channel) }
 }
 
 export interface ManifestFetch {

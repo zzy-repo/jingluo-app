@@ -193,18 +193,23 @@ export const AppUpdateField = () => {
         }),
         source: activeChannel,
         result: result.release ? 'update-available' : 'up-to-date',
+        // #377：没有候选时把「为什么没有」也记进日志——排查时不用再靠用户复述文案
+        reason: result.reason ?? 'none',
       })
       setRelease(result.release)
       setBase(effectiveBase)
       if (result.release) {
         setMessage('发现新版本，确认后再下载。')
       } else {
-        // 无新版也要说清「哪个渠道、当前版本、为什么没有可装的记录」（#310 验收第 5 条）
+        // 无新版也要说清「哪个渠道、当前版本、为什么没有可装的记录」（#310 验收第 5 条）。
+        // #377：`reason` 把「本机变体在清单里断链」与「确实已是最新」分开——前者要给的是
+        // 「手动下载正式版」这种能行动的结论，不是「已是最新」。
         const view = describeUpToDate({
           channel: CHANNEL_LABEL[activeChannel],
           version,
           locale: lang,
           incomplete: result.incomplete,
+          reason: result.reason,
         })
         setOutcome(view)
         setMessage(view.text)

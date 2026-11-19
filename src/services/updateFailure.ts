@@ -17,7 +17,14 @@
  * 5. **zh/en 成对**：文案以 `{ zh, en }` 成对给出（与设置页 `PROVIDER_SPECS.label` 同一套形状），
  *    调用方按界面语言取一侧。这里不 import `src/i18n`：那是 React 侧的地基（settings store / 采集层），
  *    拉进来这条纯函数就没法在 unit 层裸跑了。
+ *
+ * #377 起「无可用版本」不再只有一句话：清单的变体×渠道矩阵有洞时（internal 用户看不到只有
+ * standard 包的 1.4.1），真正的结论不是「已是最新」而是「这条渠道的包没发」。原因由
+ * `selectUpdate` 以 `reason` 给出，本文件只负责把它翻成一句能行动的话。
  */
+
+/** 原因类型由筛选层定义（type-only import：编译期擦除，运行时仍是零依赖纯函数） */
+import type { UpdateReason } from './updateManifest.js'
 
 /** 失败分类：用户能据此决定「再点一次」还是「找我们」 */
 export type UpdateFailureKind =
@@ -182,6 +189,8 @@ export interface UpdateFailureContext {
   version: string
   /** 清单里缺渠道 / 缺 SHA256 的记录数：用来区分「确实没新版」与「有记录但不敢装」 */
   incomplete?: number
+  /** `selectUpdate` 给的「为什么没有可装版本」（#377）：用来把笼统的「已是最新」换成能行动的一句话 */
+  reason?: UpdateReason
   /** 界面语言，默认 zh（诊断文本与日志一律用默认值，保证反馈里只有一种语言） */
   locale?: FailureLocale
 }
@@ -319,7 +328,13 @@ const detailOf = (
   }
 }
 
-/** 「无可用版本」的两条真实原因：确实没有新记录；或者有记录但缺渠道 / SHA256 不敢装 */
+/**
+ * 「无可用版本」的真实原因，一行一句话（#310 → #377）：
+ *   · 有记录但缺渠道 / SHA256 → `incomplete`（不敢装，与「没有」是两件事）
+ *   · 本机变体在清单里断链（#377）→ 说清是「内测包没发 / 只有内测包」，并给出下一步
+ *   · 同变体包只有预发布、渠道只接受稳定版 → 说清「切渠道就能看到」
+ *   · 其余 → 渠道内确实没有更高的版本
+ */
 const noVersionDetail = (ctx: UpdateFailureContext, lang: FailureLocale): FailureText => {
   const channel = ctx.channel[lang]
   const incomplete = ctx.incomplete ?? 0
@@ -329,9 +344,27 @@ const noVersionDetail = (ctx: UpdateFailureContext, lang: FailureLocale): Failur
       en: `Current version ${ctx.version}, channel "${channel}": there is no directly installable newer build; ${incomplete} more release record(s) lack a channel or SHA256 and were not used.`,
     }
   }
-  return {
-    zh: `当前版本 ${ctx.version}，渠道「${channel}」已是最新，该渠道没有更高的版本。`,
-    en: `Current version ${ctx.version}, channel "${channel}": already up to date, the channel has no higher version.`,
+  switch (ctx.reason) {
+    case 'no-internal-variant':
+      return {
+        zh: `当前版本 ${ctx.version}，渠道「${channel}」下没有可直接安装的新版本：本机装的是内测（internal）包，而清单里更高的版本只有正式（standard）包，内测包还没发布。请手动下载正式版安装包覆盖安装；不愿换渠道就等内测包发布后再检查（更新服务地址见下方诊断信息）。`,
+        en: `Current version ${ctx.version}, channel "${channel}": there is no directly installable newer build — this device runs the internal build, but the newer release records are standard builds only and no internal build has been published. Download the stable APK and install it manually, or wait for an internal build (update hosts are listed under Diagnostics below).`,
+      }
+    case 'no-standard-variant':
+      return {
+        zh: `当前版本 ${ctx.version}，渠道「${channel}」下没有可直接安装的新版本：清单里更高的版本只有内测（internal）包，没有正式（standard）包；内测包不能覆盖正式包。请等正式版发布后再检查更新。`,
+        en: `Current version ${ctx.version}, channel "${channel}": there is no directly installable newer build — the newer release records are internal builds only and there is no standard build; an internal package cannot update a standard install. Check again once a stable build is published.`,
+      }
+    case 'prerelease-filtered':
+      return {
+        zh: `当前版本 ${ctx.version}，渠道「${channel}」已是最新：清单里有更高的预发布版本，但当前渠道只接受稳定版。需要的话把「更新渠道」切到「稳定版与预发布版」再检查。`,
+        en: `Current version ${ctx.version}, channel "${channel}": already up to date — higher pre-release builds exist, but the current channel only accepts stable builds. Switch "Update channel" to "Stable + pre-release" and check again.`,
+      }
+    default:
+      return {
+        zh: `当前版本 ${ctx.version}，渠道「${channel}」已是最新，该渠道没有更高的版本。`,
+        en: `Current version ${ctx.version}, channel "${channel}": already up to date, the channel has no higher version.`,
+      }
   }
 }
 
