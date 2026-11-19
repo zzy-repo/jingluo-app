@@ -1,0 +1,44 @@
+[
+ {
+  "width": "360",
+  "innerWidth": 360,
+  "settingsScrollHost": "content-_85c1b",
+  "settingsScrollable": true,
+  "swipeDelta": 328.7,
+  "reachableAtEnd": true,
+  "vhRest": 728,
+  "vvRest": 728,
+  "vhKeyboard": 479.3,
+  "vvKeyboard": 479.3,
+  "imeShown": true,
+  "confirmRows": 1
+ },
+ {
+  "width": "390",
+  "innerWidth": 390,
+  "settingsScrollHost": "content-_85c1b",
+  "settingsScrollable": true,
+  "swipeDelta": 377.3,
+  "reachableAtEnd": true,
+  "vhRest": 795.3,
+  "vvRest": 795.3,
+  "vhKeyboard": 546,
+  "vvKeyboard": 546,
+  "imeShown": true,
+  "confirmRows": 1
+ },
+ {
+  "width": "412",
+  "innerWidth": 412,
+  "settingsScrollHost": "content-_85c1b",
+  "settingsScrollable": true,
+  "swipeDelta": 180.2,
+  "reachableAtEnd": true,
+  "vhRest": 660.2,
+  "vvRest": 660.2,
+  "vhKeyboard": 378.3,
+  "vvKeyboard": 378.3,
+  "imeShown": true,
+  "confirmRows": 1
+ }
+]

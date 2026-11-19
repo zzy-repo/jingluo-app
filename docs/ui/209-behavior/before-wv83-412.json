@@ -1,0 +1,1589 @@
+{
+ "tag": "before",
+ "width": "412",
+ "webviewMajor": "83",
+ "ua": "Mozilla/5.0 (Linux; Android 11; sdk_gphone_x86_64 Build/RSR1.240422.006; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/83.0.4103.106 Mobile Safari/537.36",
+ "wmSize": "Physical size: 1080x1920",
+ "wmDensity": "Physical density: 420",
+ "keyboard": {
+  "rested": {
+   "innerWidth": 412,
+   "innerHeight": 660,
+   "measured100vh": 660.2,
+   "visualViewport": {
+    "width": 412.2,
+    "height": 660.2,
+    "offsetTop": 0,
+    "scale": 1
+   },
+   "dvhSupported": false
+  },
+  "focused": true,
+  "imeShown": true,
+  "withKeyboard": {
+   "innerWidth": 412,
+   "innerHeight": 378,
+   "measured100vh": 378.3,
+   "visualViewport": {
+    "width": 412.2,
+    "height": 378.3,
+    "offsetTop": 0
+   },
+   "dvhSupported": false
+  },
+  "afterClose": {
+   "innerWidth": 412,
+   "innerHeight": 660,
+   "measured100vh": 660.2,
+   "visualViewport": {
+    "width": 412.2,
+    "height": 660.2,
+    "offsetTop": 0,
+    "scale": 1
+   },
+   "dvhSupported": false
+  }
+ },
+ "settingsDialog": {
+  "probe": {
+   "ua": "Mozilla/5.0 (Linux; Android 11; sdk_gphone_x86_64 Build/RSR1.240422.006; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/83.0.4103.106 Mobile Safari/537.36",
+   "viewport": {
+    "innerWidth": 412,
+    "innerHeight": 660,
+    "measured100vh": 660.2,
+    "visualViewport": {
+     "width": 412.2,
+     "height": 660.2,
+     "offsetTop": 0,
+     "scale": 1
+    },
+    "dvhSupported": false,
+    "imeOpen": false
+   },
+   "dialogCount": 1,
+   "dialog": {
+    "cls": "content-_83af2 dialog-_85c1b",
+    "rect": {
+     "top": 64,
+     "bottom": 660.2,
+     "height": 596.2,
+     "width": 412.2
+    },
+    "style": {
+     "max-height": "800px",
+     "height": "596.19px",
+     "overflow-y": "visible",
+     "overflow-x": "visible",
+     "display": "flex",
+     "flex-direction": "column",
+     "padding-top": "19px",
+     "padding-bottom": "22px"
+    },
+    "clientHeight": 596,
+    "scrollHeight": 596,
+    "withinViewport": true,
+    "bottomGap": -0.2
+   },
+   "dialogInner": null,
+   "scrollHosts": [
+    {
+     "cls": "header-_83af2",
+     "tag": "div",
+     "clientHeight": 28,
+     "scrollHeight": 28,
+     "clientWidth": 364,
+     "scrollWidth": 374,
+     "scrollTop": 0,
+     "overflowingY": false,
+     "overflowingX": true,
+     "css": {
+      "overflow-y": "visible",
+      "overflow-x": "visible",
+      "min-height": "auto",
+      "flex": "0 0 auto",
+      "display": "flex",
+      "flex-direction": "row",
+      "touch-action": "auto",
+      "overscroll-behavior-y": "auto",
+      "-webkit-overflow-scrolling": "",
+      "max-height": "none",
+      "height": "28px"
+     },
+     "rect": {
+      "top": 83,
+      "bottom": 111,
+      "height": 28,
+      "width": 364.2
+     }
+    },
+    {
+     "cls": "main-_83af2 dialogMain-_85c1b",
+     "tag": "div",
+     "clientHeight": 520,
+     "scrollHeight": 520,
+     "clientWidth": 364,
+     "scrollWidth": 388,
+     "scrollTop": 0,
+     "overflowingY": false,
+     "overflowingX": true,
+     "css": {
+      "overflow-y": "visible",
+      "overflow-x": "visible",
+      "min-height": "0px",
+      "flex": "1 1 0%",
+      "display": "flex",
+      "flex-direction": "column",
+      "touch-action": "auto",
+      "overscroll-behavior-y": "auto",
+      "-webkit-overflow-scrolling": "",
+      "max-height": "none",
+      "height": "520.19px"
+     },
+     "rect": {
+      "top": 118,
+      "bottom": 638.2,
+      "height": 520.2,
+      "width": 364.2
+     }
+    },
+    {
+     "cls": "content-_85c1b",
+     "tag": "div",
+     "clientHeight": 460,
+     "scrollHeight": 1098,
+     "clientWidth": 388,
+     "scrollWidth": 388,
+     "scrollTop": 0,
+     "overflowingY": true,
+     "overflowingX": false,
+     "css": {
+      "overflow-y": "auto",
+      "overflow-x": "auto",
+      "min-height": "0px",
+      "flex": "1 0 0px",
+      "display": "flex",
+      "flex-direction": "column",
+      "touch-action": "auto",
+      "overscroll-behavior-y": "auto",
+      "-webkit-overflow-scrolling": "",
+      "max-height": "none",
+      "height": "436.19px"
+     },
+     "rect": {
+      "top": 178,
+      "bottom": 638.2,
+      "height": 460.2,
+      "width": 388.2
+     }
+    }
+   ],
+   "scrollHostIndex": 2,
+   "primaryScrollHost": {
+    "cls": "content-_85c1b",
+    "tag": "div",
+    "clientHeight": 460,
+    "scrollHeight": 1098,
+    "clientWidth": 388,
+    "scrollWidth": 388,
+    "scrollTop": 0,
+    "overflowingY": true,
+    "overflowingX": false,
+    "css": {
+     "overflow-y": "auto",
+     "overflow-x": "auto",
+     "min-height": "0px",
+     "flex": "1 0 0px",
+     "display": "flex",
+     "flex-direction": "column",
+     "touch-action": "auto",
+     "overscroll-behavior-y": "auto",
+     "-webkit-overflow-scrolling": "",
+     "max-height": "none",
+     "height": "436.19px"
+    },
+    "rect": {
+     "top": 178,
+     "bottom": 638.2,
+     "height": 460.2,
+     "width": 388.2
+    }
+   },
+   "hasScrollableOverflow": true,
+   "reachability": null,
+   "emptyStateHints": "SettingsGeneralDataChannelDeepSeek OfficialAPI KeyConnection testTestChat backgr",
+   "buttonRows": [
+    {
+     "top": 83,
+     "parentClass": "header-_83af2",
+     "parentStyle": {
+      "display": "flex",
+      "flex-wrap": "nowrap",
+      "justify-content": "space-between",
+      "gap": "8px",
+      "column-gap": "8px",
+      "row-gap": "8px",
+      "overflow-x": "visible",
+      "padding-left": "0px",
+      "padding-right": "0px"
+     },
+     "available": 364.2,
+     "childCount": 1,
+     "children": [
+      {
+       "text": "Close",
+       "width": 28,
+       "height": 28,
+       "left": 370.2,
+       "right": 398.2,
+       "textClipped": false,
+       "css": {
+        "min-width": "auto",
+        "flex": "0 0 auto",
+        "white-space": "normal",
+        "overflow": "visible",
+        "text-overflow": "clip",
+        "padding-left": "0px",
+        "padding-right": "0px"
+       }
+      }
+     ],
+     "span": 28,
+     "overflowPx": 0,
+     "wrapped": false,
+     "narrowest": 28,
+     "shortest": 28,
+     "anyTextClipped": false
+    },
+    {
+     "top": 128,
+     "parentClass": "navigation-_85c1b",
+     "parentStyle": {
+      "display": "flex",
+      "flex-wrap": "nowrap",
+      "justify-content": "normal",
+      "gap": "4px",
+      "column-gap": "4px",
+      "row-gap": "4px",
+      "overflow-x": "auto",
+      "padding-left": "0px",
+      "padding-right": "0px"
+     },
+     "available": 372.2,
+     "childCount": 2,
+     "children": [
+      {
+       "text": "General",
+       "width": 180.1,
+       "height": 40,
+       "left": 24,
+       "right": 204.1,
+       "textClipped": false,
+       "css": {
+        "min-width": "108px",
+        "flex": "1 0 auto",
+        "white-space": "nowrap",
+        "overflow": "visible",
+        "text-overflow": "clip",
+        "padding-left": "8px",
+        "padding-right": "10px"
+       }
+      },
+      {
+       "text": "Data",
+       "width": 180.1,
+       "height": 40,
+       "left": 208.1,
+       "right": 388.2,
+       "textClipped": false,
+       "css": {
+        "min-width": "108px",
+        "flex": "1 0 auto",
+        "white-space": "nowrap",
+        "overflow": "visible",
+        "text-overflow": "clip",
+        "padding-left": "8px",
+        "padding-right": "10px"
+       }
+      }
+     ],
+     "span": 364.2,
+     "overflowPx": 0,
+     "wrapped": false,
+     "narrowest": 180.1,
+     "shortest": 40,
+     "anyTextClipped": false
+    },
+    {
+     "top": 214,
+     "parentClass": "row-_85c1b",
+     "parentStyle": {
+      "display": "flex",
+      "flex-wrap": "nowrap",
+      "justify-content": "normal",
+      "gap": "8px",
+      "column-gap": "8px",
+      "row-gap": "8px",
+      "overflow-x": "visible",
+      "padding-left": "0px",
+      "padding-right": "0px"
+     },
+     "available": 364.2,
+     "childCount": 1,
+     "children": [
+      {
+       "text": "DeepSeek Official",
+       "width": 165,
+       "height": 36,
+       "left": 223.2,
+       "right": 388.2,
+       "textClipped": false,
+       "css": {
+        "min-width": "90px",
+        "flex": "0 0 auto",
+        "white-space": "nowrap",
+        "overflow": "visible",
+        "text-overflow": "clip",
+        "padding-left": "14px",
+        "padding-right": "42px"
+       }
+      }
+     ],
+     "span": 165,
+     "overflowPx": 0,
+     "wrapped": false,
+     "narrowest": 165,
+     "shortest": 36,
+     "anyTextClipped": false
+    },
+    {
+     "top": 425,
+     "parentClass": "apiKeyInput-_85c1b",
+     "parentStyle": {
+      "display": "flex",
+      "flex-wrap": "nowrap",
+      "justify-content": "normal",
+      "gap": "12px",
+      "column-gap": "12px",
+      "row-gap": "12px",
+      "overflow-x": "visible",
+      "padding-left": "16px",
+      "padding-right": "12px"
+     },
+     "available": 336.2,
+     "childCount": 1,
+     "children": [
+      {
+       "text": "Test",
+       "width": 30.8,
+       "height": 21.7,
+       "left": 40,
+       "right": 70.8,
+       "textClipped": false,
+       "css": {
+        "min-width": "auto",
+        "flex": "0 0 auto",
+        "white-space": "normal",
+        "overflow": "visible",
+        "text-overflow": "clip",
+        "padding-left": "0px",
+        "padding-right": "0px"
+       }
+      }
+     ],
+     "span": 30.8,
+     "overflowPx": 0,
+     "wrapped": false,
+     "narrowest": 30.8,
+     "shortest": 21.7,
+     "anyTextClipped": false
+    },
+    {
+     "top": 563,
+     "parentClass": "backgroundAction-_85c1b",
+     "parentStyle": {
+      "display": "flex",
+      "flex-wrap": "nowrap",
+      "justify-content": "flex-end",
+      "gap": "8px",
+      "column-gap": "8px",
+      "row-gap": "8px",
+      "overflow-x": "visible",
+      "padding-left": "0px",
+      "padding-right": "0px"
+     },
+     "available": 364.2,
+     "childCount": 2,
+     "children": [
+      {
+       "text": "Upload",
+       "width": 72,
+       "height": 36,
+       "left": 228.2,
+       "right": 300.2,
+       "textClipped": false,
+       "css": {
+        "min-width": "72px",
+        "flex": "0 1 auto",
+        "white-space": "nowrap",
+        "overflow": "visible",
+        "text-overflow": "clip",
+        "padding-left": "13px",
+        "padding-right": "13px"
+       }
+      },
+      {
+       "text": "Clear",
+       "width": 72,
+       "height": 36,
+       "left": 308.2,
+       "right": 380.2,
+       "textClipped": false,
+       "css": {
+        "min-width": "72px",
+        "flex": "0 1 auto",
+        "white-space": "nowrap",
+        "overflow": "visible",
+        "text-overflow": "clip",
+        "padding-left": "14px",
+        "padding-right": "14px"
+       }
+      }
+     ],
+     "span": 152,
+     "overflowPx": 0,
+     "wrapped": false,
+     "narrowest": 72,
+     "shortest": 36,
+     "anyTextClipped": false
+    },
+    {
+     "top": 641,
+     "parentClass": "cellActions-_85c1b",
+     "parentStyle": {
+      "display": "flex",
+      "flex-wrap": "wrap",
+      "justify-content": "flex-end",
+      "gap": "8px",
+      "column-gap": "8px",
+      "row-gap": "8px",
+      "overflow-x": "visible",
+      "padding-left": "0px",
+      "padding-right": "0px"
+     },
+     "available": 80,
+     "childCount": 1,
+     "children": [
+      {
+       "text": "Upload",
+       "width": 72,
+       "height": 44,
+       "left": 308.2,
+       "right": 380.2,
+       "textClipped": false,
+       "css": {
+        "min-width": "72px",
+        "flex": "0 0 auto",
+        "white-space": "nowrap",
+        "overflow": "visible",
+        "text-overflow": "clip",
+        "padding-left": "13px",
+        "padding-right": "13px"
+       }
+      }
+     ],
+     "span": 72,
+     "overflowPx": 0,
+     "wrapped": false,
+     "narrowest": 72,
+     "shortest": 44,
+     "anyTextClipped": false
+    },
+    {
+     "top": 796,
+     "parentClass": "linkActions-_85c1b",
+     "parentStyle": {
+      "display": "flex",
+      "flex-wrap": "nowrap",
+      "justify-content": "normal",
+      "gap": "8px",
+      "column-gap": "8px",
+      "row-gap": "8px",
+      "overflow-x": "visible",
+      "padding-left": "0px",
+      "padding-right": "0px"
+     },
+     "available": 364.2,
+     "childCount": 1,
+     "children": [
+      {
+       "text": "Import link",
+       "width": 94.7,
+       "height": 44,
+       "left": 293.5,
+       "right": 388.2,
+       "textClipped": false,
+       "css": {
+        "min-width": "72px",
+        "flex": "0 0 auto",
+        "white-space": "nowrap",
+        "overflow": "visible",
+        "text-overflow": "clip",
+        "padding-left": "13px",
+        "padding-right": "13px"
+       }
+      }
+     ],
+     "span": 94.7,
+     "overflowPx": 0,
+     "wrapped": false,
+     "narrowest": 94.7,
+     "shortest": 44,
+     "anyTextClipped": false
+    },
+    {
+     "top": 886,
+     "parentClass": "cellActions-_85c1b",
+     "parentStyle": {
+      "display": "flex",
+      "flex-wrap": "wrap",
+      "justify-content": "flex-end",
+      "gap": "8px",
+      "column-gap": "8px",
+      "row-gap": "8px",
+      "overflow-x": "visible",
+      "padding-left": "0px",
+      "padding-right": "0px"
+     },
+     "available": 92.3,
+     "childCount": 1,
+     "children": [
+      {
+       "text": "Download",
+       "width": 92.3,
+       "height": 44,
+       "left": 295.9,
+       "right": 388.2,
+       "textClipped": false,
+       "css": {
+        "min-width": "72px",
+        "flex": "0 0 auto",
+        "white-space": "nowrap",
+        "overflow": "visible",
+        "text-overflow": "clip",
+        "padding-left": "14px",
+        "padding-right": "14px"
+       }
+      }
+     ],
+     "span": 92.3,
+     "overflowPx": 0,
+     "wrapped": false,
+     "narrowest": 92.3,
+     "shortest": 44,
+     "anyTextClipped": false
+    },
+    {
+     "top": 1033,
+     "parentClass": "cellActions-_85c1b",
+     "parentStyle": {
+      "display": "flex",
+      "flex-wrap": "wrap",
+      "justify-content": "flex-end",
+      "gap": "8px",
+      "column-gap": "8px",
+      "row-gap": "8px",
+      "overflow-x": "visible",
+      "padding-left": "0px",
+      "padding-right": "0px"
+     },
+     "available": 364.2,
+     "childCount": 2,
+     "children": [
+      {
+       "text": "Send feedback",
+       "width": 122.2,
+       "height": 44,
+       "left": 106.4,
+       "right": 228.6,
+       "textClipped": false,
+       "css": {
+        "min-width": "72px",
+        "flex": "0 0 auto",
+        "white-space": "nowrap",
+        "overflow": "visible",
+        "text-overflow": "clip",
+        "padding-left": "14px",
+        "padding-right": "14px"
+       }
+      },
+      {
+       "text": "Check log coverage",
+       "width": 151.6,
+       "height": 44,
+       "left": 236.6,
+       "right": 388.2,
+       "textClipped": false,
+       "css": {
+        "min-width": "72px",
+        "flex": "0 0 auto",
+        "white-space": "nowrap",
+        "overflow": "visible",
+        "text-overflow": "clip",
+        "padding-left": "14px",
+        "padding-right": "14px"
+       }
+      }
+     ],
+     "span": 281.8,
+     "overflowPx": 0,
+     "wrapped": false,
+     "narrowest": 122.2,
+     "shortest": 44,
+     "anyTextClipped": false
+    },
+    {
+     "top": 1152,
+     "parentClass": "cellActions-_85c1b",
+     "parentStyle": {
+      "display": "flex",
+      "flex-wrap": "wrap",
+      "justify-content": "flex-end",
+      "gap": "8px",
+      "column-gap": "8px",
+      "row-gap": "8px",
+      "overflow-x": "visible",
+      "padding-left": "0px",
+      "padding-right": "0px"
+     },
+     "available": 364.2,
+     "childCount": 1,
+     "children": [
+      {
+       "text": "shiro_0824",
+       "width": 145,
+       "height": 44,
+       "left": 243.2,
+       "right": 388.2,
+       "textClipped": false,
+       "css": {
+        "min-width": "auto",
+        "flex": "0 0 auto",
+        "white-space": "normal",
+        "overflow": "visible",
+        "text-overflow": "clip",
+        "padding-left": "14px",
+        "padding-right": "14px"
+       }
+      }
+     ],
+     "span": 145,
+     "overflowPx": 0,
+     "wrapped": false,
+     "narrowest": 145,
+     "shortest": 44,
+     "anyTextClipped": false
+    },
+    {
+     "top": 1220,
+     "parentClass": "cellActions-_85c1b",
+     "parentStyle": {
+      "display": "flex",
+      "flex-wrap": "wrap",
+      "justify-content": "flex-end",
+      "gap": "8px",
+      "column-gap": "8px",
+      "row-gap": "8px",
+      "overflow-x": "visible",
+      "padding-left": "0px",
+      "padding-right": "0px"
+     },
+     "available": 72,
+     "childCount": 1,
+     "children": [
+      {
+       "text": "Delete",
+       "width": 72,
+       "height": 44,
+       "left": 316.2,
+       "right": 388.2,
+       "textClipped": false,
+       "css": {
+        "min-width": "72px",
+        "flex": "0 0 auto",
+        "white-space": "nowrap",
+        "overflow": "visible",
+        "text-overflow": "clip",
+        "padding-left": "14px",
+        "padding-right": "14px"
+       }
+      }
+     ],
+     "span": 72,
+     "overflowPx": 0,
+     "wrapped": false,
+     "narrowest": 72,
+     "shortest": 44,
+     "anyTextClipped": false
+    }
+   ],
+   "pageButtonRows": []
+  },
+  "swipe": {
+   "host": {
+    "cls": "content-_85c1b",
+    "scrollTop": 0,
+    "clientHeight": 460,
+    "scrollHeight": 1098
+   },
+   "swipeGesture": {
+    "x": 573,
+    "fromY": 1373,
+    "toY": 830,
+    "durationMs": 320,
+    "dpr": 2.625,
+    "cssRect": {
+     "left": 24,
+     "top": 178,
+     "height": 460,
+     "width": 388
+    }
+   },
+   "before": {
+    "leafCount": 26,
+    "lastText": "Delete",
+    "lastTop": 1220.5,
+    "lastBottom": 1264.5,
+    "hostTop": 178,
+    "hostBottom": 638.2,
+    "lastVisible": false,
+    "atEnd": false,
+    "remainingScroll": 638
+   },
+   "afterFirstSwipe": {
+    "scrollTop": 180.1904754638672,
+    "clientHeight": 460,
+    "scrollHeight": 1098,
+    "reach": {
+     "leafCount": 26,
+     "lastText": "Delete",
+     "lastTop": 1040.3,
+     "lastBottom": 1084.3,
+     "hostTop": 178,
+     "hostBottom": 638.2,
+     "lastVisible": false,
+     "atEnd": false,
+     "remainingScroll": 457.8095245361328
+    }
+   },
+   "atEnd": {
+    "leafCount": 26,
+    "lastText": "Delete",
+    "lastTop": 582.4,
+    "lastBottom": 626.4,
+    "hostTop": 178,
+    "hostBottom": 638.2,
+    "lastVisible": true,
+    "atEnd": true,
+    "remainingScroll": -0.09521484375
+   },
+   "scrollTopBefore": 0,
+   "scrollTopAfterFirstSwipe": 180.1904754638672,
+   "scrollTopDelta": 180.1904754638672,
+   "firstSwipeMoved": true,
+   "scrolledBy": 180.2,
+   "reachableAtEnd": true
+  },
+  "afterSwipe": {
+   "ua": "Mozilla/5.0 (Linux; Android 11; sdk_gphone_x86_64 Build/RSR1.240422.006; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/83.0.4103.106 Mobile Safari/537.36",
+   "viewport": {
+    "innerWidth": 412,
+    "innerHeight": 660,
+    "measured100vh": 660.2,
+    "visualViewport": {
+     "width": 412.2,
+     "height": 660.2,
+     "offsetTop": 0,
+     "scale": 1
+    },
+    "dvhSupported": false,
+    "imeOpen": false
+   },
+   "dialogCount": 1,
+   "dialog": {
+    "cls": "content-_83af2 dialog-_85c1b",
+    "rect": {
+     "top": 64,
+     "bottom": 660.2,
+     "height": 596.2,
+     "width": 412.2
+    },
+    "style": {
+     "max-height": "800px",
+     "height": "596.19px",
+     "overflow-y": "visible",
+     "overflow-x": "visible",
+     "display": "flex",
+     "flex-direction": "column",
+     "padding-top": "19px",
+     "padding-bottom": "22px"
+    },
+    "clientHeight": 596,
+    "scrollHeight": 596,
+    "withinViewport": true,
+    "bottomGap": -0.2
+   },
+   "dialogInner": null,
+   "scrollHosts": [
+    {
+     "cls": "header-_83af2",
+     "tag": "div",
+     "clientHeight": 28,
+     "scrollHeight": 28,
+     "clientWidth": 364,
+     "scrollWidth": 374,
+     "scrollTop": 0,
+     "overflowingY": false,
+     "overflowingX": true,
+     "css": {
+      "overflow-y": "visible",
+      "overflow-x": "visible",
+      "min-height": "auto",
+      "flex": "0 0 auto",
+      "display": "flex",
+      "flex-direction": "row",
+      "touch-action": "auto",
+      "overscroll-behavior-y": "auto",
+      "-webkit-overflow-scrolling": "",
+      "max-height": "none",
+      "height": "28px"
+     },
+     "rect": {
+      "top": 83,
+      "bottom": 111,
+      "height": 28,
+      "width": 364.2
+     }
+    },
+    {
+     "cls": "main-_83af2 dialogMain-_85c1b",
+     "tag": "div",
+     "clientHeight": 520,
+     "scrollHeight": 520,
+     "clientWidth": 364,
+     "scrollWidth": 388,
+     "scrollTop": 0,
+     "overflowingY": false,
+     "overflowingX": true,
+     "css": {
+      "overflow-y": "visible",
+      "overflow-x": "visible",
+      "min-height": "0px",
+      "flex": "1 1 0%",
+      "display": "flex",
+      "flex-direction": "column",
+      "touch-action": "auto",
+      "overscroll-behavior-y": "auto",
+      "-webkit-overflow-scrolling": "",
+      "max-height": "none",
+      "height": "520.19px"
+     },
+     "rect": {
+      "top": 118,
+      "bottom": 638.2,
+      "height": 520.2,
+      "width": 364.2
+     }
+    },
+    {
+     "cls": "content-_85c1b",
+     "tag": "div",
+     "clientHeight": 460,
+     "scrollHeight": 1098,
+     "clientWidth": 388,
+     "scrollWidth": 388,
+     "scrollTop": 638.09521484375,
+     "overflowingY": true,
+     "overflowingX": false,
+     "css": {
+      "overflow-y": "auto",
+      "overflow-x": "auto",
+      "min-height": "0px",
+      "flex": "1 0 0px",
+      "display": "flex",
+      "flex-direction": "column",
+      "touch-action": "auto",
+      "overscroll-behavior-y": "auto",
+      "-webkit-overflow-scrolling": "",
+      "max-height": "none",
+      "height": "436.19px"
+     },
+     "rect": {
+      "top": 178,
+      "bottom": 638.2,
+      "height": 460.2,
+      "width": 388.2
+     }
+    }
+   ],
+   "scrollHostIndex": 2,
+   "primaryScrollHost": {
+    "cls": "content-_85c1b",
+    "tag": "div",
+    "clientHeight": 460,
+    "scrollHeight": 1098,
+    "clientWidth": 388,
+    "scrollWidth": 388,
+    "scrollTop": 638.09521484375,
+    "overflowingY": true,
+    "overflowingX": false,
+    "css": {
+     "overflow-y": "auto",
+     "overflow-x": "auto",
+     "min-height": "0px",
+     "flex": "1 0 0px",
+     "display": "flex",
+     "flex-direction": "column",
+     "touch-action": "auto",
+     "overscroll-behavior-y": "auto",
+     "-webkit-overflow-scrolling": "",
+     "max-height": "none",
+     "height": "436.19px"
+    },
+    "rect": {
+     "top": 178,
+     "bottom": 638.2,
+     "height": 460.2,
+     "width": 388.2
+    }
+   },
+   "hasScrollableOverflow": true,
+   "reachability": null,
+   "emptyStateHints": "SettingsGeneralDataChannelDeepSeek OfficialAPI KeyConnection testTestChat backgr",
+   "buttonRows": [
+    {
+     "top": -424,
+     "parentClass": "row-_85c1b",
+     "parentStyle": {
+      "display": "flex",
+      "flex-wrap": "nowrap",
+      "justify-content": "normal",
+      "gap": "8px",
+      "column-gap": "8px",
+      "row-gap": "8px",
+      "overflow-x": "visible",
+      "padding-left": "0px",
+      "padding-right": "0px"
+     },
+     "available": 364.2,
+     "childCount": 1,
+     "children": [
+      {
+       "text": "DeepSeek Official",
+       "width": 165,
+       "height": 36,
+       "left": 223.2,
+       "right": 388.2,
+       "textClipped": false,
+       "css": {
+        "min-width": "90px",
+        "flex": "0 0 auto",
+        "white-space": "nowrap",
+        "overflow": "visible",
+        "text-overflow": "clip",
+        "padding-left": "14px",
+        "padding-right": "42px"
+       }
+      }
+     ],
+     "span": 165,
+     "overflowPx": 0,
+     "wrapped": false,
+     "narrowest": 165,
+     "shortest": 36,
+     "anyTextClipped": false
+    },
+    {
+     "top": -214,
+     "parentClass": "apiKeyInput-_85c1b",
+     "parentStyle": {
+      "display": "flex",
+      "flex-wrap": "nowrap",
+      "justify-content": "normal",
+      "gap": "12px",
+      "column-gap": "12px",
+      "row-gap": "12px",
+      "overflow-x": "visible",
+      "padding-left": "16px",
+      "padding-right": "12px"
+     },
+     "available": 336.2,
+     "childCount": 1,
+     "children": [
+      {
+       "text": "Test",
+       "width": 30.8,
+       "height": 21.7,
+       "left": 40,
+       "right": 70.8,
+       "textClipped": false,
+       "css": {
+        "min-width": "auto",
+        "flex": "0 0 auto",
+        "white-space": "normal",
+        "overflow": "visible",
+        "text-overflow": "clip",
+        "padding-left": "0px",
+        "padding-right": "0px"
+       }
+      }
+     ],
+     "span": 30.8,
+     "overflowPx": 0,
+     "wrapped": false,
+     "narrowest": 30.8,
+     "shortest": 21.7,
+     "anyTextClipped": false
+    },
+    {
+     "top": -75,
+     "parentClass": "backgroundAction-_85c1b",
+     "parentStyle": {
+      "display": "flex",
+      "flex-wrap": "nowrap",
+      "justify-content": "flex-end",
+      "gap": "8px",
+      "column-gap": "8px",
+      "row-gap": "8px",
+      "overflow-x": "visible",
+      "padding-left": "0px",
+      "padding-right": "0px"
+     },
+     "available": 364.2,
+     "childCount": 2,
+     "children": [
+      {
+       "text": "Upload",
+       "width": 72,
+       "height": 36,
+       "left": 228.2,
+       "right": 300.2,
+       "textClipped": false,
+       "css": {
+        "min-width": "72px",
+        "flex": "0 1 auto",
+        "white-space": "nowrap",
+        "overflow": "visible",
+        "text-overflow": "clip",
+        "padding-left": "13px",
+        "padding-right": "13px"
+       }
+      },
+      {
+       "text": "Clear",
+       "width": 72,
+       "height": 36,
+       "left": 308.2,
+       "right": 380.2,
+       "textClipped": false,
+       "css": {
+        "min-width": "72px",
+        "flex": "0 1 auto",
+        "white-space": "nowrap",
+        "overflow": "visible",
+        "text-overflow": "clip",
+        "padding-left": "14px",
+        "padding-right": "14px"
+       }
+      }
+     ],
+     "span": 152,
+     "overflowPx": 0,
+     "wrapped": false,
+     "narrowest": 72,
+     "shortest": 36,
+     "anyTextClipped": false
+    },
+    {
+     "top": 3,
+     "parentClass": "cellActions-_85c1b",
+     "parentStyle": {
+      "display": "flex",
+      "flex-wrap": "wrap",
+      "justify-content": "flex-end",
+      "gap": "8px",
+      "column-gap": "8px",
+      "row-gap": "8px",
+      "overflow-x": "visible",
+      "padding-left": "0px",
+      "padding-right": "0px"
+     },
+     "available": 80,
+     "childCount": 1,
+     "children": [
+      {
+       "text": "Upload",
+       "width": 72,
+       "height": 44,
+       "left": 308.2,
+       "right": 380.2,
+       "textClipped": false,
+       "css": {
+        "min-width": "72px",
+        "flex": "0 0 auto",
+        "white-space": "nowrap",
+        "overflow": "visible",
+        "text-overflow": "clip",
+        "padding-left": "13px",
+        "padding-right": "13px"
+       }
+      }
+     ],
+     "span": 72,
+     "overflowPx": 0,
+     "wrapped": false,
+     "narrowest": 72,
+     "shortest": 44,
+     "anyTextClipped": false
+    },
+    {
+     "top": 83,
+     "parentClass": "header-_83af2",
+     "parentStyle": {
+      "display": "flex",
+      "flex-wrap": "nowrap",
+      "justify-content": "space-between",
+      "gap": "8px",
+      "column-gap": "8px",
+      "row-gap": "8px",
+      "overflow-x": "visible",
+      "padding-left": "0px",
+      "padding-right": "0px"
+     },
+     "available": 364.2,
+     "childCount": 1,
+     "children": [
+      {
+       "text": "Close",
+       "width": 28,
+       "height": 28,
+       "left": 370.2,
+       "right": 398.2,
+       "textClipped": false,
+       "css": {
+        "min-width": "auto",
+        "flex": "0 0 auto",
+        "white-space": "normal",
+        "overflow": "visible",
+        "text-overflow": "clip",
+        "padding-left": "0px",
+        "padding-right": "0px"
+       }
+      }
+     ],
+     "span": 28,
+     "overflowPx": 0,
+     "wrapped": false,
+     "narrowest": 28,
+     "shortest": 28,
+     "anyTextClipped": false
+    },
+    {
+     "top": 128,
+     "parentClass": "navigation-_85c1b",
+     "parentStyle": {
+      "display": "flex",
+      "flex-wrap": "nowrap",
+      "justify-content": "normal",
+      "gap": "4px",
+      "column-gap": "4px",
+      "row-gap": "4px",
+      "overflow-x": "auto",
+      "padding-left": "0px",
+      "padding-right": "0px"
+     },
+     "available": 372.2,
+     "childCount": 2,
+     "children": [
+      {
+       "text": "General",
+       "width": 180.1,
+       "height": 40,
+       "left": 24,
+       "right": 204.1,
+       "textClipped": false,
+       "css": {
+        "min-width": "108px",
+        "flex": "1 0 auto",
+        "white-space": "nowrap",
+        "overflow": "visible",
+        "text-overflow": "clip",
+        "padding-left": "8px",
+        "padding-right": "10px"
+       }
+      },
+      {
+       "text": "Data",
+       "width": 180.1,
+       "height": 40,
+       "left": 208.1,
+       "right": 388.2,
+       "textClipped": false,
+       "css": {
+        "min-width": "108px",
+        "flex": "1 0 auto",
+        "white-space": "nowrap",
+        "overflow": "visible",
+        "text-overflow": "clip",
+        "padding-left": "8px",
+        "padding-right": "10px"
+       }
+      }
+     ],
+     "span": 364.2,
+     "overflowPx": 0,
+     "wrapped": false,
+     "narrowest": 180.1,
+     "shortest": 40,
+     "anyTextClipped": false
+    },
+    {
+     "top": 158,
+     "parentClass": "linkActions-_85c1b",
+     "parentStyle": {
+      "display": "flex",
+      "flex-wrap": "nowrap",
+      "justify-content": "normal",
+      "gap": "8px",
+      "column-gap": "8px",
+      "row-gap": "8px",
+      "overflow-x": "visible",
+      "padding-left": "0px",
+      "padding-right": "0px"
+     },
+     "available": 364.2,
+     "childCount": 1,
+     "children": [
+      {
+       "text": "Import link",
+       "width": 94.7,
+       "height": 44,
+       "left": 293.5,
+       "right": 388.2,
+       "textClipped": false,
+       "css": {
+        "min-width": "72px",
+        "flex": "0 0 auto",
+        "white-space": "nowrap",
+        "overflow": "visible",
+        "text-overflow": "clip",
+        "padding-left": "13px",
+        "padding-right": "13px"
+       }
+      }
+     ],
+     "span": 94.7,
+     "overflowPx": 0,
+     "wrapped": false,
+     "narrowest": 94.7,
+     "shortest": 44,
+     "anyTextClipped": false
+    },
+    {
+     "top": 248,
+     "parentClass": "cellActions-_85c1b",
+     "parentStyle": {
+      "display": "flex",
+      "flex-wrap": "wrap",
+      "justify-content": "flex-end",
+      "gap": "8px",
+      "column-gap": "8px",
+      "row-gap": "8px",
+      "overflow-x": "visible",
+      "padding-left": "0px",
+      "padding-right": "0px"
+     },
+     "available": 92.3,
+     "childCount": 1,
+     "children": [
+      {
+       "text": "Download",
+       "width": 92.3,
+       "height": 44,
+       "left": 295.9,
+       "right": 388.2,
+       "textClipped": false,
+       "css": {
+        "min-width": "72px",
+        "flex": "0 0 auto",
+        "white-space": "nowrap",
+        "overflow": "visible",
+        "text-overflow": "clip",
+        "padding-left": "14px",
+        "padding-right": "14px"
+       }
+      }
+     ],
+     "span": 92.3,
+     "overflowPx": 0,
+     "wrapped": false,
+     "narrowest": 92.3,
+     "shortest": 44,
+     "anyTextClipped": false
+    },
+    {
+     "top": 395,
+     "parentClass": "cellActions-_85c1b",
+     "parentStyle": {
+      "display": "flex",
+      "flex-wrap": "wrap",
+      "justify-content": "flex-end",
+      "gap": "8px",
+      "column-gap": "8px",
+      "row-gap": "8px",
+      "overflow-x": "visible",
+      "padding-left": "0px",
+      "padding-right": "0px"
+     },
+     "available": 364.2,
+     "childCount": 2,
+     "children": [
+      {
+       "text": "Send feedback",
+       "width": 122.2,
+       "height": 44,
+       "left": 106.4,
+       "right": 228.6,
+       "textClipped": false,
+       "css": {
+        "min-width": "72px",
+        "flex": "0 0 auto",
+        "white-space": "nowrap",
+        "overflow": "visible",
+        "text-overflow": "clip",
+        "padding-left": "14px",
+        "padding-right": "14px"
+       }
+      },
+      {
+       "text": "Check log coverage",
+       "width": 151.6,
+       "height": 44,
+       "left": 236.6,
+       "right": 388.2,
+       "textClipped": false,
+       "css": {
+        "min-width": "72px",
+        "flex": "0 0 auto",
+        "white-space": "nowrap",
+        "overflow": "visible",
+        "text-overflow": "clip",
+        "padding-left": "14px",
+        "padding-right": "14px"
+       }
+      }
+     ],
+     "span": 281.8,
+     "overflowPx": 0,
+     "wrapped": false,
+     "narrowest": 122.2,
+     "shortest": 44,
+     "anyTextClipped": false
+    },
+    {
+     "top": 514,
+     "parentClass": "cellActions-_85c1b",
+     "parentStyle": {
+      "display": "flex",
+      "flex-wrap": "wrap",
+      "justify-content": "flex-end",
+      "gap": "8px",
+      "column-gap": "8px",
+      "row-gap": "8px",
+      "overflow-x": "visible",
+      "padding-left": "0px",
+      "padding-right": "0px"
+     },
+     "available": 364.2,
+     "childCount": 1,
+     "children": [
+      {
+       "text": "shiro_0824",
+       "width": 145,
+       "height": 44,
+       "left": 243.2,
+       "right": 388.2,
+       "textClipped": false,
+       "css": {
+        "min-width": "auto",
+        "flex": "0 0 auto",
+        "white-space": "normal",
+        "overflow": "visible",
+        "text-overflow": "clip",
+        "padding-left": "14px",
+        "padding-right": "14px"
+       }
+      }
+     ],
+     "span": 145,
+     "overflowPx": 0,
+     "wrapped": false,
+     "narrowest": 145,
+     "shortest": 44,
+     "anyTextClipped": false
+    },
+    {
+     "top": 582,
+     "parentClass": "cellActions-_85c1b",
+     "parentStyle": {
+      "display": "flex",
+      "flex-wrap": "wrap",
+      "justify-content": "flex-end",
+      "gap": "8px",
+      "column-gap": "8px",
+      "row-gap": "8px",
+      "overflow-x": "visible",
+      "padding-left": "0px",
+      "padding-right": "0px"
+     },
+     "available": 72,
+     "childCount": 1,
+     "children": [
+      {
+       "text": "Delete",
+       "width": 72,
+       "height": 44,
+       "left": 316.2,
+       "right": 388.2,
+       "textClipped": false,
+       "css": {
+        "min-width": "72px",
+        "flex": "0 0 auto",
+        "white-space": "nowrap",
+        "overflow": "visible",
+        "text-overflow": "clip",
+        "padding-left": "14px",
+        "padding-right": "14px"
+       }
+      }
+     ],
+     "span": 72,
+     "overflowPx": 0,
+     "wrapped": false,
+     "narrowest": 72,
+     "shortest": 44,
+     "anyTextClipped": false
+    }
+   ],
+   "pageButtonRows": []
+  }
+ },
+ "confirmDialog": {
+  "ua": "Mozilla/5.0 (Linux; Android 11; sdk_gphone_x86_64 Build/RSR1.240422.006; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/83.0.4103.106 Mobile Safari/537.36",
+  "viewport": {
+   "innerWidth": 412,
+   "innerHeight": 660,
+   "measured100vh": 660.2,
+   "visualViewport": {
+    "width": 412.2,
+    "height": 660.2,
+    "offsetTop": 0,
+    "scale": 1
+   },
+   "dvhSupported": false,
+   "imeOpen": false
+  },
+  "dialogCount": 2,
+  "dialog": {
+   "cls": "content-_83af2 deleteConfirm-_85c1b",
+   "rect": {
+    "top": 220.4,
+    "bottom": 439.8,
+    "height": 219.4,
+    "width": 380
+   },
+   "style": {
+    "max-height": "628.19px",
+    "height": "219.429px",
+    "overflow-y": "auto",
+    "overflow-x": "auto",
+    "display": "flex",
+    "flex-direction": "column",
+    "padding-top": "22px",
+    "padding-bottom": "22px"
+   },
+   "clientHeight": 219,
+   "scrollHeight": 219,
+   "withinViewport": true,
+   "bottomGap": 220.2
+  },
+  "dialogInner": null,
+  "scrollHosts": [],
+  "scrollHostIndex": -1,
+  "primaryScrollHost": null,
+  "hasScrollableOverflow": false,
+  "reachability": null,
+  "emptyStateHints": "Once deleted, all chats will be cleared and cannot be recovered.Locally saved at",
+  "buttonRows": [
+   {
+    "top": 366,
+    "parentClass": "deleteActions-_85c1b",
+    "parentStyle": {
+     "display": "flex",
+     "flex-wrap": "wrap",
+     "justify-content": "flex-end",
+     "gap": "8px",
+     "column-gap": "8px",
+     "row-gap": "8px",
+     "overflow-x": "visible",
+     "padding-left": "0px",
+     "padding-right": "0px"
+    },
+    "available": 332,
+    "childCount": 2,
+    "children": [
+     {
+      "text": "Cancel",
+      "width": 72.6,
+      "height": 44,
+      "left": 165.2,
+      "right": 237.9,
+      "textClipped": false,
+      "css": {
+       "min-width": "72px",
+       "flex": "0 1 auto",
+       "white-space": "normal",
+       "overflow": "visible",
+       "text-overflow": "clip",
+       "padding-left": "14px",
+       "padding-right": "14px"
+      }
+     },
+     {
+      "text": "Delete all chats",
+      "width": 126.2,
+      "height": 52,
+      "left": 245.9,
+      "right": 372.1,
+      "textClipped": false,
+      "css": {
+       "min-width": "72px",
+       "flex": "0 1 auto",
+       "white-space": "normal",
+       "overflow": "visible",
+       "text-overflow": "clip",
+       "padding-left": "14px",
+       "padding-right": "14px"
+      }
+     }
+    ],
+    "span": 206.9,
+    "overflowPx": 0,
+    "wrapped": false,
+    "narrowest": 72.6,
+    "shortest": 44,
+    "anyTextClipped": false
+   }
+  ],
+  "pageButtonRows": []
+ }
+}
