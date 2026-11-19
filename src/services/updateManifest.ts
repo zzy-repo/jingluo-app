@@ -1,12 +1,12 @@
 /** Public download metadata only. Never import diagnostics transport or publisher credentials. */
 
 /**
- * 分发端点（Issue #268）。首选新静态分发机 `62.106.70.167:8888`（裸 HTTP，无域名无 TLS），
+ * 分发端点（Issue #268）。首选新静态分发机（见 PRIMARY_RELEASE_BASE，裸 HTTP，无域名无 TLS），
  * 不可达才回退旧机 `https://dl.rose7.cn`。顺序写死在 RELEASE_BASES 里，不做随机或轮询。
  * 裸 HTTP 之所以可接受：APK 签名由 Android 安装器强制校验，下载前后还会比对 SHA-256、
  * 包名与 versionCode，明文只能让更新失败或被抑制；域名 + TLS 在 #269 补。
  */
-export const PRIMARY_RELEASE_BASE = 'http://62.106.70.167:8888'
+export const PRIMARY_RELEASE_BASE = 'http://62.106.70.167:8888' // check-ip-allow: 新分发机（#268），原生白名单同源
 export const FALLBACK_RELEASE_BASE = 'https://dl.rose7.cn'
 /** 尝试顺序：先新机后旧机。 */
 export const RELEASE_BASES = [PRIMARY_RELEASE_BASE, FALLBACK_RELEASE_BASE] as const
