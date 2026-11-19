@@ -49,6 +49,9 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(AppUpdatePlugin.class);
         registerPlugin(ExportTextPlugin.class);
         registerPlugin(DiagnosticsDevicePlugin.class);
+        // 设备指纹单独一个插件（Issue #243）：诊断插件按契约不读任何标识，
+        // 身份的事留在 DeviceFingerprintPlugin 里，免得哪天顺手把标识写进诊断日志。
+        registerPlugin(DeviceFingerprintPlugin.class);
         registerPlugin(CheckoutBrowserPlugin.class);
         super.onCreate(savedInstanceState);
         installRenderProcessGoneGuard();

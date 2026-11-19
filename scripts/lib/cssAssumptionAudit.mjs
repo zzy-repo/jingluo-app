@@ -37,6 +37,8 @@
 import { readdirSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 
+import { auditCssText } from './focusVisibleAudit.mjs'
+
 /**
  * 运行时下限：Android 11 出厂镜像停在 WebView 83.0.4103.106（Chromium 83）。
  * 唯一来源是 package.json 的 browserslist，rspack.config.ts 会为它兜底抛错；
@@ -84,6 +86,8 @@ export const LAYOUT_CONTEXTUAL = Object.freeze(
  *   'unit'      单元等价：同一规则里先写一个旧单位（vh）的声明，再把新单位放进 @supports
  *   'attribute' 运行时实测后挂 html[data-flex-gap-fallback]，兜底样式只写在该属性之下
  *   'build'     构建期降级：lightningcss 按 browserslist(chrome >= 83) 展开/加前缀，产物里不再有新语法
+ *   'focus'     焦点选择器兜底：同一条选择器另有 `:focus` 规则给出同样的焦点环（#215），
+ *               并用 `:focus:not(:focus-visible)` 在现代内核收回鼠标点击态
  *   null        没有兜底
  *
  * cosmetic=true 表示缺了只是外观降级，不影响可用性；这类走 degraded 而不是 defect。
@@ -138,7 +142,9 @@ export const CSS_FEATURES = Object.freeze([
     label: ':focus-visible 焦点选择器',
     firstSupported: 86,
     pattern: /:focus-visible\b/gu,
-    fallback: null,
+    // #215：13 处全部补上「`:focus` 兜底 + `:focus:not(:focus-visible)` 收回 + `:focus-visible` 键盘态」，
+    // 兜底是否存在由 focusVisibleAudit 逐条判定（不是「文件里出现过 :focus」就算）
+    fallback: 'focus',
     destructive: true,
     cosmetic: false,
     a11y: true,
@@ -447,6 +453,20 @@ const probeOfCall = (first, second) => {
 /** flex 容器上非零 gap 的判定：兜底是否存在只看 html[data-flex-gap-fallback] */
 const hasFlexGapAttribute = (text) => text.includes('data-flex-gap-fallback')
 
+/**
+ * #215：哪些行上的 `:focus-visible` 已经有等价兜底。
+ * 判据交给 focusVisibleAudit 逐条算（同选择器的 `:focus` 规则必须真的给出了可见焦点环，
+ * 且配了 `:focus:not(:focus-visible)` 收回），不按「文件里出现过 `:focus`」放水。
+ */
+const focusFallbackLines = (text) => {
+  if (!text.includes(':focus-visible')) return new Set()
+  return new Set(
+    auditCssText(text)
+      .occurrences.filter((item) => item.fallback !== null && item.reset !== null)
+      .map((item) => item.line),
+  )
+}
+
 // 只认 flex：grid 与多列的 gap 从 Chrome 66 起就生效，把它们算进来会凭空造出缺陷
 const FLEX_CONTAINER = /display\s*:\s*(?:inline-)?flex\b/u
 const GAP_DECLARATION = /(?:^|[;{\s])(?:row-|column-)?gap\s*:/gu
@@ -552,6 +572,8 @@ export const auditCssAssumptions = (files = []) => {
           (block) => index >= block.index && index <= block.bodyEnd
         )
         if (feature.id === 'dvh' && insideSupports) continue
+        // `:focus:not(:focus-visible)` 是 #215 的收回规则，它自己也带 `:focus-visible` 字样，不算一处假设
+        if (feature.id === ':focus-visible' && text.startsWith(':not(', index - 5)) continue
 
         let hasFallback = false
         if (feature.fallback === 'unit') {
@@ -562,6 +584,8 @@ export const auditCssAssumptions = (files = []) => {
           hasFallback = true
         } else if (feature.fallback === 'attribute') {
           hasFallback = hasFlexGapAttribute(text)
+        } else if (feature.fallback === 'focus') {
+          hasFallback = focusFallbackLines(text).has(lineOfIndex(starts, index))
         }
 
         const verdict =
@@ -584,7 +608,11 @@ export const auditCssAssumptions = (files = []) => {
                 ? hasFallback
                   ? '运行时实测后挂 html[data-flex-gap-fallback]（issue #173 的正确姿态）'
                   : 'flex 容器上的 gap 没有兜底属性块'
-                : verdictOf(feature, hasFallback) === VERDICTS.NO_RISK
+                : feature.fallback === 'focus'
+                  ? hasFallback
+                    ? '同选择器另有 `:focus` 规则给出同样的焦点环（Chromium 83 只认这段），并用 `:focus:not(:focus-visible)` 收回现代内核的鼠标点击态（#215）'
+                    : '没有同选择器的 `:focus` 兜底 —— Chromium 83 上整条规则被丢弃，键盘用户看不到焦点'
+                  : verdictOf(feature, hasFallback) === VERDICTS.NO_RISK
                   ? `首支持 Chromium ${feature.firstSupported}，低于基线 ${BASELINE_CHROMIUM}`
                   : hasFallback
                     ? '有等价兜底'

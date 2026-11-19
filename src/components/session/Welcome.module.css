@@ -79,6 +79,20 @@
     transform: scale(0.98);
   }
 
+  /* #215：WebView 下限是 Chromium 83，不认 `:focus-visible` → 整条规则被丢弃，键盘走到这里什么都看不到。
+  ① `:focus` 兜底：83 上只有这段生效（鼠标点击也会出环，这是可接受的降级）；
+  ② `:focus:not(:focus-visible)`：现代内核把鼠标点击的环收回，键盘态不受影响；83 上该选择器同样整条失效，正好保住①；
+  ③ `:focus-visible`：现代内核键盘态接管（与①同形）。 */
+
+  &:focus {
+    outline: 2px solid var(--dsw-alias-brand-primary);
+    outline-offset: 1px;
+  }
+
+  &:focus:not(:focus-visible) {
+    outline: none;
+  }
+
   &:focus-visible {
     outline: 2px solid var(--dsw-alias-brand-primary);
     outline-offset: 1px;

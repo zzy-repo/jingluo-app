@@ -44,6 +44,36 @@
   }
 }
 
+/* #236：窄屏下滚动这件事换手给了 `.scroll`，而它自己一条 `scrollbar-gutter` 都不写，
+   #216 在 `.container` 上的那套兜底就照不到它 —— classic 滚动条（Windows / Linux 桌面窗口）
+   出现的那一刻，`.scroll` 的内容框少一个滚动条宽度，已经渲染的行整批重新折行。
+   处置与 #216 同形（常驻槽位 + `@supports` 收回），但只在「会出现占位式滚动条」的环境里做。
+   注意这里是**嵌套**两层媒体查询，不能写成一个 `not all and … and (pointer: fine)`：
+   `not` 否定的是整条查询，写成一条反而在触屏上也成立，就白限定了。 */
+@media not all and (min-width: 768px) {
+  /* `hover: hover` + `pointer: fine`：窄桌面窗口为真；Android WebView / 触屏为假 ——
+     后者是 overlay 滚动条（宽度 0），槽位常驻与否都不吃宽度，不必替桌面窗口的抖动付这份代价。
+     两个特性 Chromium 41 起就有，83 上判得出来。 */
+  @media (hover: hover) and (pointer: fine) {
+    .scroll {
+      /* 滚动条常驻 → 槽位恒宽 → 出现/消失都不再改内容框宽度（低内核没有 scrollbar-gutter，只能这样兜） */
+      overflow-y: scroll;
+    }
+  }
+}
+
+/* #236 现代内核：槽位由 `scrollbar-gutter` 预留，滚动条本身按需出现（不常显一条空槽） */
+@media not all and (min-width: 768px) {
+  @media (hover: hover) and (pointer: fine) {
+    @supports (scrollbar-gutter: stable) {
+      .scroll {
+        overflow-y: auto;
+        scrollbar-gutter: stable;
+      }
+    }
+  }
+}
+
 .column {
   width: calc(var(--message-list-max-width) - 2 * var(--message-list-padding-horizontal));
   max-width: calc(100% - 40px);

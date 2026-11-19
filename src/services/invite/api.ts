@@ -13,10 +13,17 @@
  *   GET  /me?device_id=…
  *        → 同上但**不含 key**
  *   POST /redeem  {device_id, invite_code}
- *        → 200 { …, reward_points, synced }
+ *        → 200 { …, reward_points, reward_points_inviter, cashback_points, synced }
  *        → 错误码：device_not_found(404) invalid_code(404) own_code(400)
- *                  already_redeemed(409) code_exhausted(409) rate_limited(429)
+ *                  already_redeemed(409) code_exhausted(409) circular_invite(409)
+ *                  rate_limited(429)
  *   错误格式统一为 { "error": { "code": "...", "message": "..." } }
+ *
+ * Issue #234（2026-11-19 起线上生效）的奖励规则：
+ *   填码时**被邀请人不再得积分**（reward_points: 0），只有邀请人得 100；
+ *   好友首次付款 ≥ ¥4.9 时邀请人再得 100 返现；互填邀请码返回 409 circular_invite。
+ *   规则数值一律读服务端（/me 与 /redeem 的 `invite_rules`，以及 `cashback_points`），
+ *   前端不写死金额/积分数；字段缺失（老服务端）解析成 null，界面整行隐藏。
  *
  * 额度口径：**remaining_points 就是可消费积分**，1 元 = 100 积分。
  * 不要用卡密服务的 /api/balance 当余额（它只回答 Key 是否有效）。
@@ -25,9 +32,24 @@
 import type { OursHttpResult, OursMessageKey, OursTransport } from '../ours/api.js'
 import { redeemCard as redeemCardLegacy } from '../ours/api.js'
 import { createDeviceId } from './device.js'
+import { DEVICE_FP_HEADER, normalizeDeviceFp } from './fingerprint.js'
 
 /** 邀请 / 额度服务地址：明文 HTTP，见文件头的安全说明 */
 export const INVITE_API_BASE = 'http://140.210.13.146:60013'
+
+/**
+ * 需要上报设备指纹的请求头上挂 `X-Device-Fp`（Issue #243）。
+ *
+ * 三条约束：
+ *   - 指纹必须过 {@link normalizeDeviceFp}：不是 64 位小写十六进制就当没有（明文 ANDROID_ID
+ *     万一被上游误传，会在这里被丢掉，不可能出现在请求里）；
+ *   - 没有指纹就**原样返回入参对象**，请求与此前完全一致 —— 降级不留痕、不阻塞；
+ *   - 只加一个头，不改 body、不改 URL：服务端认不认都影响不到本次语义。
+ */
+const withDeviceFp = (headers: Record<string, string>, deviceFp: string): Record<string, string> => {
+  const fp = normalizeDeviceFp(deviceFp)
+  return fp === '' ? headers : { ...headers, [DEVICE_FP_HEADER]: fp }
+}
 
 export const INVITE_TIMEOUTS = {
   apply: 15000,
@@ -43,6 +65,7 @@ export type InviteMessageKey =
   | 'oursInviteErrAlreadyRedeemed'
   | 'oursInviteErrCodeExhausted'
   | 'oursInviteErrRateLimited'
+  | 'oursInviteErrCircularInvite'
   | 'oursInviteErrCodeMissing'
   | 'oursInviteErrDeviceMissing'
   | 'oursInviteErrNetwork'
@@ -61,6 +84,9 @@ export const INVITE_ERROR_KEYS: Record<string, InviteMessageKey> = {
   own_code: 'oursInviteErrOwnCode',
   already_redeemed: 'oursInviteErrAlreadyRedeemed',
   code_exhausted: 'oursInviteErrCodeExhausted',
+  // #234：互填邀请码（A 邀请了 B，B 又填 A 的码）服务端返回 409 circular_invite；
+  // 不映射就会落到状态码兜底的「已经绑定过邀请码」，对用户是纯误导。
+  circular_invite: 'oursInviteErrCircularInvite',
   rate_limited: 'oursInviteErrRateLimited',
   device_id_invalid: 'oursInviteErrDeviceMissing',
   invalid_device: 'oursInviteErrDeviceMissing',
@@ -72,6 +98,22 @@ export const INVITE_STATUS_KEYS: Record<number, InviteMessageKey> = {
   404: 'oursInviteErrDeviceNotFound',
   409: 'oursInviteErrAlreadyRedeemed',
   429: 'oursInviteErrRateLimited',
+}
+
+/**
+ * 邀请规则（Issue #234）：金额与积分数只在服务端配置，前端一个字都不许写死。
+ * 老服务端 / 降级部署没有 `invite_rules` → 解析成 null，界面把规则行整行隐藏，
+ * **不能**回落到「双方各得 1 元」这类历史文案（线上规则早就变了）。
+ */
+export type InviteRules = {
+  /** 邀请人得多少积分（填码即到账） */
+  rewardInviterPoints: number
+  /** 被邀请人得多少积分（线上现为 0：只剩关系绑定） */
+  rewardInviteePoints: number
+  /** 好友首次付款后邀请人再得多少返现积分 */
+  cashbackPoints: number
+  /** 返现门槛（分）；照原样带出来，界面不做金额换算 */
+  cashbackMinFen: number
 }
 
 /** 账户档案（/apply 与 /me 的公共部分；/me 没有 key） */
@@ -86,6 +128,10 @@ export type InviteProfile = {
   /** 可消费积分（额度展示只认它） */
   remainingPoints: number
   keyStatus: string
+  /** 邀请规则；服务端没发 → null（界面隐藏规则行，不编造数值） */
+  inviteRules: InviteRules | null
+  /** 本人已获得的返现积分；服务端没发 → null */
+  cashbackPoints: number | null
 }
 
 export const parseJson = (text: string): { ok: true; value: unknown } | { ok: false } => {
@@ -118,6 +164,38 @@ export const readNumber = (record: Record<string, unknown> | null, field: string
 export const readBoolean = (record: Record<string, unknown> | null, field: string): boolean =>
   record?.[field] === true
 
+/**
+ * 可选数字：字段不存在 / 不是有限数字 → null。
+ * 新字段（invite_rules、cashback_points）必须用它：0 与「根本没有这个字段」是两件事，
+ * 前者是服务端说「这次 0 积分」，后者是老服务端的降级态。
+ */
+export const readOptionalNumber = (
+  record: Record<string, unknown> | null,
+  field: string
+): number | null => {
+  const value = record?.[field]
+  return typeof value === 'number' && Number.isFinite(value) ? value : null
+}
+
+/** 解析服务端下发的邀请规则；两条主线奖励都读不出来就当作没有规则（→ null） */
+export const parseInviteRules = (value: unknown): InviteRules | null => {
+  const record = asRecord(value)
+  if (record === null) {
+    return null
+  }
+  const inviter = readOptionalNumber(record, 'reward_inviter_points')
+  const invitee = readOptionalNumber(record, 'reward_invitee_points')
+  if (inviter === null && invitee === null) {
+    return null
+  }
+  return {
+    rewardInviterPoints: inviter ?? 0,
+    rewardInviteePoints: invitee ?? 0,
+    cashbackPoints: readOptionalNumber(record, 'cashback_points') ?? 0,
+    cashbackMinFen: readOptionalNumber(record, 'cashback_min_fen') ?? 0,
+  }
+}
+
 export const isSuccessStatus = (status: number): boolean => status >= 200 && status < 300
 
 /** 解析档案；字段缺失不编造默认值，只剩完全无法解释的响应才返回 null */
@@ -143,6 +221,9 @@ export const parseInviteProfile = (value: unknown): InviteProfile | null => {
     usedPoints: readNumber(record, 'used_points'),
     remainingPoints: remaining,
     keyStatus: readString(record, 'key_status'),
+    // #234：规则与返现都只认服务端；缺失即 null（降级态），绝不补默认金额
+    inviteRules: parseInviteRules(record.invite_rules),
+    cashbackPoints: readOptionalNumber(record, 'cashback_points'),
   }
 }
 
@@ -181,10 +262,14 @@ export type InviteApplyResult =
 /**
  * 领取 Key：POST /apply。
  * 同一 device_id 幂等（201 首次 / 200 已申请），所以失败后可以直接重试同一请求。
+ *
+ * `deviceFp`（Issue #243）是可选的设备指纹哈希：有就多带一个 `X-Device-Fp` 头，没有就照旧发。
+ * **客户端只上报，不判定** —— 参数为空绝不影响请求，也绝不在这里做任何「领过了」的判断。
  */
 export const applyForKey = async (
   deviceId: string,
-  transport: OursTransport
+  transport: OursTransport,
+  deviceFp = ''
 ): Promise<InviteApplyResult> => {
   const id = deviceId.trim()
   if (id === '') {
@@ -193,7 +278,7 @@ export const applyForKey = async (
   const result = await transport({
     method: 'POST',
     url: `${INVITE_API_BASE}/apply`,
-    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    headers: withDeviceFp({ 'Content-Type': 'application/json', Accept: 'application/json' }, deviceFp),
     body: JSON.stringify({ device_id: id }),
     timeoutMs: INVITE_TIMEOUTS.apply,
     followRedirects: false,
@@ -219,10 +304,11 @@ export const applyForKey = async (
 
 export type InviteProfileResult = ({ kind: 'ok'; profile: InviteProfile } | { kind: 'error' } & Failure)
 
-/** 查档案与额度：GET /me?device_id=…（不含 key） */
+/** 查档案与额度：GET /me?device_id=…（不含 key）。`deviceFp` 同上：有就带，没有就照旧。 */
 export const fetchInviteProfile = async (
   deviceId: string,
-  transport: OursTransport
+  transport: OursTransport,
+  deviceFp = ''
 ): Promise<InviteProfileResult> => {
   const id = deviceId.trim()
   if (id === '') {
@@ -231,7 +317,7 @@ export const fetchInviteProfile = async (
   const result = await transport({
     method: 'GET',
     url: `${INVITE_API_BASE}/me?device_id=${encodeURIComponent(id)}`,
-    headers: { Accept: 'application/json' },
+    headers: withDeviceFp({ Accept: 'application/json' }, deviceFp),
     timeoutMs: INVITE_TIMEOUTS.profile,
     followRedirects: false,
   })
@@ -253,6 +339,15 @@ export type InviteRedeemResult =
   | {
       kind: 'ok'
       rewardPoints: number
+      /**
+       * #234 新增字段：服务端没发就是 null（老服务端），界面按降级态处理。
+       * 注意 rewardPoints === 0 在线上是**成功**（被邀请人不再得积分），不是失败。
+       */
+      rewardPointsInviter: number | null
+      invitedCount: number | null
+      maxInvites: number | null
+      cashbackPoints: number | null
+      inviteRules: InviteRules | null
       synced: boolean
       /** 响应里若直接带回档案就用它，否则由界面再查一次 /me */
       profile: InviteProfile | null
@@ -295,6 +390,11 @@ export const redeemInviteCode = async (
   return {
     kind: 'ok',
     rewardPoints: readNumber(record, 'reward_points'),
+    rewardPointsInviter: readOptionalNumber(record, 'reward_points_inviter'),
+    invitedCount: readOptionalNumber(record, 'invited_count'),
+    maxInvites: readOptionalNumber(record, 'max_invites'),
+    cashbackPoints: readOptionalNumber(record, 'cashback_points'),
+    inviteRules: parseInviteRules(record?.invite_rules),
     synced: readBoolean(record, 'synced'),
     profile: parseInviteProfile(body),
   }
@@ -516,6 +616,8 @@ const DEVICE_HEAL_NO_RETRY: Record<string, InviteMessageKey> = {
 export type DeviceHealDeps = {
   deviceId: string
   transport: OursTransport
+  /** 设备指纹哈希（Issue #243）：只上报，拿不到就空着，流程一字不改 */
+  deviceFp?: string
   /** 自愈拿到的新 Key 存到哪里（界面注入：写进当前渠道配置） */
   saveKey?: (apiKey: string) => void
   /** 重新生成 + 持久化 device_id（界面注入；缺省用 createDeviceId 生成但不落盘） */
@@ -564,7 +666,7 @@ export const runWithDeviceSelfHeal = async <T extends { kind: string; code?: str
 
   let deviceId = deps.deviceId
   if (code === 'device_not_found') {
-    const applied = await applyForKey(deviceId, deps.transport)
+    const applied = await applyForKey(deviceId, deps.transport, deps.deviceFp ?? '')
     if (applied.kind === 'error') {
       return {
         kind: 'error',

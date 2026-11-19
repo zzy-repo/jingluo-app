@@ -1,0 +1,45 @@
+{
+  "page": "focus-215",
+  "title": ":focus-visible（#215）：键盘走到控件时出焦点环，鼠标点击同一控件不出环",
+  "viewport": 360,
+  "size": "360×740",
+  "shots": [
+    "docs/ui/215-focus-visible/360/focus-215-01-键盘-侧边栏设置按钮-360.png",
+    "docs/ui/215-focus-visible/360/focus-215-02-键盘-侧边栏设置按钮-特写-360.png",
+    "docs/ui/215-focus-visible/360/focus-215-03-鼠标点击-数据管理标签-无焦点环-360.png",
+    "docs/ui/215-focus-visible/360/focus-215-04-键盘-数据管理标签-焦点环-360.png",
+    "docs/ui/215-focus-visible/360/focus-215-05-键盘-数据管理标签-特写-360.png"
+  ],
+  "notes": [],
+  "sidebarSettings.keyboard": {
+    "tag": "button",
+    "text": "设置",
+    "outline": "none 3px rgb(0, 0, 0)",
+    "outlineOffset": "0px",
+    "boxShadow": "rgb(57, 100, 254) 0px 0px 0px 2px inset",
+    "ringVisible": true,
+    "focusVisible": true,
+    "isActive": true
+  },
+  "settingsDataTab.mouse": {
+    "tag": "button",
+    "text": "数据管理",
+    "outline": "none 3px rgb(15, 17, 21)",
+    "outlineOffset": "0px",
+    "boxShadow": "none",
+    "ringVisible": false,
+    "focusVisible": false,
+    "isActive": true
+  },
+  "settingsDataTab.keyboard": {
+    "tag": "button",
+    "text": "数据管理",
+    "outline": "none 3px rgb(15, 17, 21)",
+    "outlineOffset": "0px",
+    "boxShadow": "rgb(57, 100, 254) 0px 0px 0px 2px",
+    "ringVisible": true,
+    "focusVisible": true,
+    "isActive": true
+  },
+  "consoleErrors": []
+}
