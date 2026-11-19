@@ -6,8 +6,9 @@
  * 全程在 WebView 里跑，内存/白屏问题最集中；而本地文件导入还要点系统文件选择器，
  * 老 WebView 上连选择器都可能起不来（那本身是另一个变量，先不混进来）。
  *
- * 归档不是另写一套：validate/serve 的是 lib/archives.mjs，它用的就是
- * tests/adversarial/lib/zip.mjs 那份手工 ZIP 构造器（声明尺寸 / 压缩比可控）。
+ * 归档不是另写一套：validate/serve 的是 lib/archives.mjs，它直接用
+ * tests/adversarial/lib/zip.mjs 那份手工 ZIP 构造器（声明尺寸 / 压缩比可控；
+ * 唯一一份，Issue #289 删掉了 lib/zip.mjs 那份同字节副本）。
  *
  * 用法：
  *   node scripts/compat/p2-import.mjs --api 26 --archive ctrl-1mb

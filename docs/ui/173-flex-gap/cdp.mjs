@@ -1,79 +1,34 @@
-// Issue #173 取证用的最小 CDP + adb 工具（脚本自身不碰 src/）。
+// Issue #173 取证用的最小 CDP + adb 工具（脚本自身不碰 src/）—— 协议核在
+// scripts/compat/lib/cdp-core.mjs（Issue #289 收敛掉三份副本）。
 //
-// 为什么不用 Playwright：WebView 只有页面级 CDP，connectOverCDP 走不通
-// （tests/device/url-import-device.test.mjs 文件头已记录同一结论）。
-import { execFileSync } from 'node:child_process'
+// 本文件只保留 #173 这条线自己的差异点（量 flex gap 是「问一句就走」的短命令流，与
+// #133 / compat 的「长时间订阅 + 截大图」不是同一套生命周期，所以适配层各自保留）：
+//   - 超时默认 60s（量布局秒回；等待由调用方自己 sleep，不靠长超时兜）；
+//   - 不订阅 CDP 事件（events: false），只认请求响应；
+//   - attach() 直接返回 cdp 当句柄，不返回 {cdp,pid,page}；
+//   - 截图挂在 cdp.shot() 上、只回 base64，写哪个文件由调用方决定；
+//   - adb 路径走 process.env.ADB（写死的默认值属 #278）。
+import { attachWebview, connectCdp as connectCdpCore, createSh, sleep } from '../../../scripts/compat/lib/cdp-core.mjs'
 
 const ADB = process.env.ADB || 'D:/android-sdk/platform-tools/adb.exe'
 export const PACKAGE = 'com.example.deepseekchat'
 
-export const sh = (...args) => execFileSync(ADB, args, { encoding: 'utf8' }).trim()
-export const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+export const sh = createSh(ADB)
+export { sleep }
 
-/** 极简 CDP 客户端（Node 22 自带 WebSocket） */
-export const connectCdp = async (url) => {
-  const socket = new WebSocket(url)
-  await new Promise((resolve, reject) => {
-    socket.onopen = resolve
-    socket.onerror = (event) => reject(new Error(`ws error: ${event?.message ?? 'unknown'}`))
-  })
-  let nextId = 0
-  const pending = new Map()
-  socket.onmessage = (event) => {
-    const message = JSON.parse(event.data)
-    if (message.id === undefined || !pending.has(message.id)) return
-    const { resolve, reject } = pending.get(message.id)
-    pending.delete(message.id)
-    if (message.error) reject(new Error(JSON.stringify(message.error)))
-    else resolve(message.result)
-  }
-  const send = (method, params = {}, timeoutMs = 60_000) =>
-    new Promise((resolve, reject) => {
-      nextId += 1
-      const id = nextId
-      pending.set(id, { resolve, reject })
-      socket.send(JSON.stringify({ id, method, params }))
-      setTimeout(() => {
-        if (!pending.has(id)) return
-        pending.delete(id)
-        reject(new Error(`CDP ${method} 超时（${timeoutMs}ms）`))
-      }, timeoutMs)
-    })
-  const evaluate = async (expression) => {
-    const result = await send('Runtime.evaluate', {
-      expression,
-      awaitPromise: true,
-      returnByValue: true,
-      userGesture: true,
-    })
-    if (result.exceptionDetails) {
-      throw new Error(result.exceptionDetails.exception?.description ?? 'evaluate failed')
-    }
-    return result.result.value
-  }
-  const shot = async (file) => {
-    const { data } = await send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false })
+/** 极简 CDP 客户端：60s 默认超时、不收事件（与本目录命令流一致） */
+export const connectCdp = (url) => connectCdpCore(url, { defaultTimeoutMs: 60_000, events: false })
+
+/** 连当前前台 WebView 的页面级调试目标（App 必须已在前台） */
+export const attach = async () => {
+  const { page } = await attachWebview({ sh, pkg: PACKAGE })
+  const cdp = await connectCdp(page.webSocketDebuggerUrl)
+  // 截图随句柄返回 base64：本目录的 scan.mjs 要自己决定文件名（<tag>-wv<内核>-<宽度>-<页>.png）
+  cdp.shot = async () => {
+    const { data } = await cdp.send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false })
     return data
   }
-  return { socket, send, evaluate, shot, close: () => socket.close() }
-}
-
-/** 找当前 WebView 的页面级调试目标（App 必须已在前台） */
-export const attach = async () => {
-  const pid = sh('shell', 'pidof', PACKAGE)
-  // 必须清掉旧转发：App 重启后 pid 变了，残留的 9222 转发会指向已死的 webview，
-  // 表现为 attach 成功但每条 evaluate 都石沉大海。
-  sh('forward', '--remove-all')
-  sh('forward', 'tcp:9222', `localabstract:webview_devtools_remote_${pid}`)
-  const raw = execFileSync(
-    'node',
-    ['-e', `fetch('http://127.0.0.1:9222/json/list').then(r=>r.text()).then(t=>process.stdout.write(t))`],
-    { encoding: 'utf8' }
-  )
-  const list = JSON.parse(raw)
-  const page = list.find((item) => item.type === 'page')
-  if (!page) throw new Error(`没有 page 目标: ${raw}`)
-  return connectCdp(page.webSocketDebuggerUrl)
+  return cdp
 }
 
 /** 当前 WebView 版本（判定「这台机器上是哪个内核」的唯一依据） */

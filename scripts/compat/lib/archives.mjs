@@ -1,9 +1,11 @@
 // 测试归档构造：给「导入白屏 / OOM」这条线喂的 ZIP。
 //
-// 复用 tests/adversarial/lib/zip.mjs（同仓库红队用例手工拼 ZIP 的那份，原样复制到 lib/zip.mjs），
-// 不另写一套 —— 导入端要看的正是「声明尺寸 / 压缩比 / 条目顺序」这些手工可控的字节。
+// 直接用 tests/adversarial/lib/zip.mjs（同仓库红队用例手工拼 ZIP 的唯一一份）——
+// 导入端要看的正是「声明尺寸 / 压缩比 / 条目顺序」这些手工可控的字节。
+// 这里原先放过一份字节完全相同的副本（scripts/compat/lib/zip.mjs），Issue #289 已删掉：
+// 补畸形包时夹具版本不一致，会让同一条结论在红队用例与 P2 取证两边得出相反结果。
 import { deflateRawSync } from 'node:zlib'
-import { buildZip } from './zip.mjs'
+import { buildZip } from '../../../tests/adversarial/lib/zip.mjs'
 
 const MB = 1024 * 1024
 const TIME = '2026-11-01T00:00:00.000Z'
