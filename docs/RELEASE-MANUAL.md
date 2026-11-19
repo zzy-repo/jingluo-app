@@ -39,6 +39,22 @@
 | gh（只用于观察） | 可选 | `gh auth status`；Release 由 workflow 的内置 `GITHUB_TOKEN` 创建 |
 | 工作分支 | 从 `origin/main` 开 `release/<ver>` 分支发版，不直接改 `main` | `git status -sb`、`git log --oneline -1` |
 
+### 新机器出 release 包：三步
+
+凭据只在这台签名机上，**没有它就出不了包**（这是本单 #272 补的交接契约）。一台空机器按这三步走：
+
+1. **放签名材料。** 把已发布证书（`/root/.android/debug.keystore`，SHA-256 `e7c5baee…aa8a1`）拷到本机，
+   然后 `cp android/keystore/keystore.properties.example android/keystore/keystore.properties`，
+   按注释填四个 `*Release` 键（键名必须带 `Release` 后缀；`storeFileRelease` 用绝对路径最稳，相对路径按 `android/app/` 解析），
+   并 `chmod 600 android/keystore/keystore.properties`。
+2. **过形状门禁。** `pnpm run check:keystore` —— 它会指名「缺哪个键 / 哪个路径不对 / 口令或别名是不是错了」，
+   退出码非要先修完再往下（这一步比等 gradle 报「签名不行」快得多）。
+3. **出包。** `cd android && ./gradlew :app:assembleRelease -PartifactVariant=internal`（**不要** `assembleDebug`，那会出 debuggable 包，见 Issue #60）；
+   然后按 §4 那五项人工核对，包括 `apksigner verify --print-certs` 指回 `e7c5baee…`。
+
+> **丢失后果：** 这把 key 只存在于签名机上、且不入库。丢了就再也签不出与已发布版本同证书的包，
+> 所有已装用户**无法覆盖升级**，只能引导卸载重装。备份/交接方式见 [`docs/RELEASE-CHECKLIST.md`](RELEASE-CHECKLIST.md)。
+
 ### ⚠️ 签名：先读这一段
 
 **已发布的全历史版本（含 1.4.0-beta.8）签名证书都是同一个：**

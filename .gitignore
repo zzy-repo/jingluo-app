@@ -12,7 +12,9 @@ android/app/src/main/assets/public/
 *.tsbuildinfo
 
 # 密钥与签名（严禁提交）
-android/keystore/
+android/keystore/*
+# 例外：只有键名/形状的样例（全部占位值），见 Issue #272
+!android/keystore/keystore.properties.example
 *.keystore
 *.jks
 keystore.properties

@@ -105,6 +105,10 @@ def keystoreFixHint = '''
        修复：release 包现在只能由「与已发布证书一致」的签名材料签出。
              已发布证书 = e7c5baee…aa8a1（/root/.android/debug.keystore，标准 debug key）。
              要换证书请另开签名迁移方案，禁止顺手切换（否则已装用户无法覆盖升级）。
+       键名必须是 storeFileRelease / storePasswordRelease / keyAliasRelease / keyPasswordRelease，
+       带 Release 后缀；写成 storeFile / storePassword / keyAlias / keyPassword 一律算缺字段。
+       键名清单与每行含义以 android/keystore/keystore.properties.example 为准（该文件入库，照它填）。
+       先跑 pnpm run check:keystore 做形状自检（缺哪个键 / 哪个路径不对 / 能不能读证书），再构建。
 '''.stripIndent()
 if (releaseTaskRequested) {
     if (!keystorePropertiesExists) {
