@@ -264,6 +264,23 @@ export type MetaInput = {
   upstreamCode?: string
   /** 这一段本身花了多久 */
   durationMs?: number
+  /**
+   * 排队等待耗时：从「提交任务」到「任务真正开始发请求」之间的等待（#313）。
+   *
+   * 为什么必须单独一个键：附件上传有并发上限（`MAX_CONCURRENT`），用户一次选 5 张图时
+   * 后 2 张要排队。`durationMs` 是「调用到结束」的总时长，把排队和上传混成一个数，
+   * 「点了半天没反应」到底是排队卡住还是网络慢就分不出来（母单 #301 维度 2）。
+   * 上传耗时 = durationMs − queueMs。
+   */
+  queueMs?: number
+  /**
+   * 这次失败再试一次有没有用（#313）：false = 重试也是同一个结果
+   * （渠道没有 Files API、4xx 终态、链接过期、包本身不是 ZIP）。
+   *
+   * 为什么不是从 `status` / `error.msg` 猜：失败分级本来就散在文案里，用户照着「再试一次」
+   * 点下去才被告知别试了。写成一个布尔就能直接切片「哪些失败是人可以挽回的」。
+   */
+  retryable?: boolean
   /** 已传输 / 已处理的字节数 */
   bytes?: number
   /** 总量（下载总字节、请求体总长）：与 bytes 一起才能算进度百分比 */
@@ -305,6 +322,8 @@ export const META_KEYS: readonly MetaKey[] = [
   'upstreamCode',
   'prepMs',
   'durationMs',
+  'queueMs',
+  'retryable',
   'bytes',
   'totalBytes',
   'speedBps',
@@ -412,6 +431,7 @@ const normalizeField = (key: MetaKey, value: unknown): string | number | boolean
     }
     case 'prepMs':
     case 'durationMs':
+    case 'queueMs':
     case 'ttfbMs':
     case 'firstTokenMs':
     case 'streamMs':
@@ -429,6 +449,7 @@ const normalizeField = (key: MetaKey, value: unknown): string | number | boolean
         : undefined
     case 'cacheHit':
     case 'fromCache':
+    case 'retryable':
       return typeof value === 'boolean' ? value : undefined
     default:
       return undefined
@@ -503,6 +524,9 @@ const EXTRA_KEYS: readonly string[] = [
   'configured',
   'storageBytes',
   'action',
+  // 续传标记：urlImport 早就在写 `resume: 'yes' | 'no'`，但一直不在白名单里 —— 生产日志里
+  // 这个键被整条丢掉，「这次是不是从断点接着下」查不出来（#313 的「续传」要求）
+  'resume',
   'target',
   'role',
   'trigger',

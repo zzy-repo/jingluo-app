@@ -248,7 +248,7 @@
 
 盘点过程中被 grep 出来、经核对**不属于** CSS 特性假设的，一并记下来，避免下一轮重复怀疑：
 
-- `src/services/chat/history/urlImport.ts:1055` 的 `clamp(...)` 是 TypeScript 里的数值函数，不是 CSS `clamp()`。
+- `src/services/chat/history/urlImport.ts:813` 的 `clamp(...)` 是 TypeScript 里的数值函数，不是 CSS `clamp()`。
 - `src/services/uploadExts.ts:747` 的 `'svh'` 是文件扩展名白名单里的一项，不是 `svh` 长度单位。
 - `src/index.html` **没有任何 CSS**：它只有 ES5 时代的启动守卫（`Promise` / `fetch` / `ResizeObserver` / `CSS.escape` / `Intl.DisplayNames` 等 API 探测 + 12 秒启动超时），属于类别 1 的范围。
 - 仓库根的 `index.html`（APK 下载落地页，不进打包）`:12` 有一处 `env(safe-area-inset-bottom)`，**没有 `0px` 缺省值**。该页在外部浏览器里打开，不跑在 WebView 83 上，且 `env()` 首支持 Chromium 69，**无风险**。

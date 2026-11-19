@@ -305,9 +305,9 @@ test('真正停滞（拿到 1MB 后再无数据）：N 秒后判 stalled，文�
 
   const failures = records('import_error')
   assert.equal(failures.length, 1)
-  assert.equal(failures[0].fields.stage, 'download')
+  assert.equal(failures[0].fields.stage, 'import.download')
   assert.equal(failures[0].fields.reason, 'stalled')
-  assert.equal(failures[0].fields.retryable, 'yes')
+  assert.equal(failures[0].fields.retryable, true, '链路类失败可重试')
   assert.equal(failures[0].fields.resume, 'yes', '已到手一部分时必须允许续传')
   assert.equal(failures[0].fields['stall.ms'], STALL_MS)
   assert.ok(failures[0].fields['idle.ms'] >= STALL_MS)
@@ -475,7 +475,7 @@ test('永久 pending 的原生 Promise（首块就没数据）：窗口到点必
   assert.ok(beats.length >= 2, `心跳至少 2 条，实际 ${beats.length}`)
   for (const beat of beats) {
     assert.equal(beat.kind, 'import_stage')
-    assert.equal(beat.fields.stage, 'download')
+    assert.equal(beat.fields.stage, 'import.download')
     assert.equal(typeof beat.fields['download.bytes'], 'number')
     assert.equal(typeof beat.fields.attempt, 'number')
     assert.equal(typeof beat.fields['progress.bytes'], 'number')
