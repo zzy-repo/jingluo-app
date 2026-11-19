@@ -23,6 +23,12 @@
  *   - ALLOWED_HOSTS 里列的「当前唯一合法的线上地址」（迁移期豁免，见下）
  *   - 同一行（或上一行）带 `check-ip-allow` 标记的字面量：给「已下线主机名单」「规范条款号」
  *     这类必须写出 IP 形状的地方用，必须注明理由
+ *   - 版本语境里的四段点分十进制（模拟器 / WebView / Chrome 的版本号）：四段点分十进制的版本号
+ *     和 IPv4 语法上无法区分，段范围校验也救不了，只能看上下文。判定条件必须同时成立：
+ *     出现版本语义词（emulator / webview / sdk / version / 模拟器 / 版本 …），**且**同处不出现
+ *     主机/地址语义词（host / server / url / http / 服务器 / 生产 / 地址 / 迁移 …）。后一条是否决
+ *     规则，所以 `// 生产环境 <四段点分>`、`// 服务器版本 <四段点分>`、`// <四段点分> → <四段点分> 迁移`
+ *     照样要报。细则与已知边界见 scripts/lib/hardcodedIpAudit.mjs 的文件头。
  *
  * 用法：
  *   node scripts/check-hardcoded-ip.mjs
@@ -37,6 +43,8 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+
+import { ALLOWED_HOSTS, scanText } from './lib/hardcodedIpAudit.mjs'
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 
@@ -73,36 +81,6 @@ const TEXT_EXT = new Set([
   '.sh',
 ])
 
-/**
- * 当前**合法**的写死地址：服务端就在这个 IP 上（明文 HTTP，没有域名）。
- * 换域名（或服务端再搬一次）时改这里，并同步 providers.ts / invite/api.ts / diagnostics/config.ts。
- * 除了它，出现任何公网 IP 都算违规 —— 免得下一个人又靠 grep 自觉。
- */
-const ALLOWED_HOSTS = new Set(['140.210.13.146'])
-
-/** 回环、通配、私有、保留测试段：本地测试桩可以写 */
-const isExemptIpv4 = (a, b) => {
-  if (a === 0) return true // 0.0.0.0/8：通配
-  if (a === 127) return true // 127.0.0.0/8：回环
-  if (a === 10) return true // 10/8：私有
-  if (a === 172 && b >= 16 && b <= 31) return true // 172.16/12：私有
-  if (a === 192 && b === 168) return true // 192.168/16：私有
-  if (a === 169 && b === 254) return true // 169.254/16：链路本地
-  if (a === 100 && b >= 64 && b <= 127) return true // 100.64/10：CGNAT
-  if (a === 192 && b === 0) return true // 192.0.0/24、192.0.2/24：文档 / 保留
-  if (a === 198 && (b === 18 || b === 19 || b === 51)) return true // 198.18/15 基准、198.51.100/24 文档
-  if (a === 203 && b === 0) return true // 203.0.113/24：文档
-  if (a >= 224) return true // 组播 / 保留 / 广播
-  return false
-}
-
-/** 用 new URL 认得出来的写法抓 IPv4：前面不能紧贴数字或点（避免把 1.2.3.4.5 这类版本号切一段） */
-/** 行内豁免标记：同一行或上一行出现它，本行的 IP 一律放过 */
-const ALLOW_MARK = 'check-ip-allow'
-
-const RE_IPV4 = /(?<![\d.])(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})(?![\d.])/g
-const RE_IPV6 = /(?<![\w:])(?:::1|fe80:[0-9a-f:]+|f[cd][0-9a-f]{2}:[0-9a-f:]+)(?![\w:])/gi
-
 const log = (...args) => console.log(...args)
 
 const collectFiles = (dir, out) => {
@@ -127,45 +105,15 @@ const collectFiles = (dir, out) => {
 
 const rel = (file) => path.relative(ROOT, file).split(path.sep).join('/')
 
-/** 扫一个文件，返回 [{ line, ip }] */
+/** 扫一个文件：读文本，判定交给 lib（二进制兜底在 scanText 里） */
 const scanFile = (file) => {
-  const hits = []
   let text
   try {
     text = fs.readFileSync(file, 'utf8')
   } catch {
-    return hits
+    return []
   }
-  // 二进制兜底：NUL 字节
-  if (text.includes('\u0000')) return hits
-
-  const lines = text.split(/\r?\n/)
-  for (let i = 0; i < lines.length; i += 1) {
-    const line = lines[i]
-    if (!line.includes('.')) continue
-    // 行内豁免：确需保留地址字面量的地方（已下线主机名单、规范条款号）写 check-ip-allow 并注明理由
-    if (line.includes(ALLOW_MARK) || (i > 0 && lines[i - 1].includes(ALLOW_MARK))) continue
-
-    RE_IPV4.lastIndex = 0
-    let match
-    while ((match = RE_IPV4.exec(line)) !== null) {
-      const parts = match.slice(1, 5).map(Number)
-      if (parts.some((n) => n > 255)) continue
-      const ip = parts.join('.')
-      if (ALLOWED_HOSTS.has(ip)) continue
-      if (isExemptIpv4(parts[0], parts[1])) continue
-      hits.push({ line: i + 1, ip })
-    }
-
-    RE_IPV6.lastIndex = 0
-    while ((match = RE_IPV6.exec(line)) !== null) {
-      const ip = match[0]
-      if (ip === '::1') continue
-      if (/^fe80:/i.test(ip) || /^f[cd]/i.test(ip)) continue
-      hits.push({ line: i + 1, ip })
-    }
-  }
-  return hits
+  return scanText(text)
 }
 
 const main = () => {
@@ -203,8 +151,9 @@ const main = () => {
     console.error(`  ${v.file}:${v.line}: ${v.ip}`)
   }
   console.error(
-    '\n允许的例外：回环/私有/保留测试段，以及 ALLOWED_HOSTS 里的当前线上地址' +
-      `（${[...ALLOWED_HOSTS].join(', ')}）。真要新增，先想清楚换机器那天谁来 grep。`,
+    '\n允许的例外：回环/私有/保留测试段、版本语境里的四段点分十进制版本号，以及 ALLOWED_HOSTS 里的当前线上地址' +
+      `（${[...ALLOWED_HOSTS].join(', ')}）。真要新增，先想清楚换机器那天谁来 grep；` +
+      '确实必须写出地址字面量，就在该行（或上一行）加 check-ip-allow 并注明理由。',
   )
   process.exit(1)
 }

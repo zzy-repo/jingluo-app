@@ -414,6 +414,10 @@ npm run test:e2e         # e2e（含真实上游用例，需要 E2E_API_KEY）
 
 约定：
 
+- `check:ip` 对四段点分十进制的**版本号**（模拟器 / WebView / Chrome）按语境豁免：该行得出现版本语义词，
+  且整行没有任何主机/地址语义词（host / server / url / 服务器 / 生产 / 地址 / 迁移 …）——后一条是否决，
+  所以「服务器版本 + 四段点分」这种写法照样报。确实必须写出地址字面量，就在该行（或上一行）加
+  `check-ip-allow` 并注明理由，别去改词表。
 - 跑集成层前先准备两份产物：`DIST_OUT=dist-standard rspack build`（标准包，外部 `APP_URL` 与标准类用例用）
   与 `INTERNAL_BUILD=1 rspack build`（内测包，`dist/`）；再 `APP_URL=http://127.0.0.1:5301 npm run test:integration:baseline`。
   明细见 [`docs/testing.md`](testing.md)。
