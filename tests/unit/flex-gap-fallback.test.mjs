@@ -16,6 +16,7 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { auditFlexGap } from '../../scripts/lib/flexGapAudit.mjs'
+import { isVendored } from '../../scripts/lib/vendoredPaths.mjs'
 import { parseRules, readGap, renderFallback } from '../../scripts/lib/flexGapRules.mjs'
 
 const SRC = fileURLToPath(new URL('../../src', import.meta.url))
@@ -44,6 +45,8 @@ const countCss = async (dir) => {
   let total = 0
   for (const entry of await readdir(dir, { withFileTypes: true })) {
     const full = join(dir, entry.name)
+    // 与 auditFlexGap 同一口径：vendored 第三方目录不计（#417）
+    if (isVendored(full)) continue
     if (entry.isDirectory()) total += await countCss(full)
     else if (entry.name.endsWith('.css')) total += 1
   }

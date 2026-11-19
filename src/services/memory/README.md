@@ -30,6 +30,10 @@ cross-session or global profile, and nothing is shared between windows.
   `src/services/memory/**`（背景见 #417：目录内 324 条报错全部是上游写法与本仓库规则的冲突，
   而这份代码要整体同步上游，就地重写会让下次同步上游冲突）。因此这里没有 `oxfmt` 风格保证，
   也不要为了过 lint 改这些文件。
+- **本目录同时不参与 flex-gap 兜底守卫 / `gen:gap` 生成 / 能力盘点快照（`docs/capabilities/*.md`）
+  等风格与统计口径**：名单在 `scripts/lib/vendoredPaths.mjs`（只列目录，不用宽泛模式）。
+  上游 CSS 的 21 处 flex `gap` 不该由我们补 `@supports` 兜底、上游 JS 的 `Object.hasOwn`
+  之类也不该被算进我们的能力盘点——否则每次同步上游都要连带改一堆与产品无关的门禁数字。
 - **改动请同步上游**：要修 bug 先看上游是否已修，优先整块重新同步上游版本，而不是在此就地重写。
   真正把它变成自研代码时（#398 开关 + #399 接线），应当重写，并把本目录从这个排除里拿出来。
 

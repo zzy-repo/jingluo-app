@@ -37,6 +37,8 @@
 import { readdirSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 
+import { isVendored } from './vendoredPaths.mjs'
+
 import { auditCssText } from './focusVisibleAudit.mjs'
 import { BASELINE_CHROMIUM } from './compatBaseline.mjs'
 
@@ -767,6 +769,8 @@ export const collectSources = (root, { includeHtml = true } = {}) => {
   const walk = (dir) => {
     for (const entry of readdirSync(dir, { withFileTypes: true })) {
       const full = path.join(dir, entry.name)
+      // vendored 第三方目录不参与我们的能力盘点（#417），名单见 vendoredPaths.mjs
+      if (isVendored(full)) continue
       if (entry.isDirectory()) {
         if (entry.name === 'node_modules' || entry.name.startsWith('.')) continue
         walk(full)
