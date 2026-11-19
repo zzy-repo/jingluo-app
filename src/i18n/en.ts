@@ -429,6 +429,8 @@ export const en = {
   oursOpenChoiceBind: 'I already have a key',
   oursClaimOk: 'Claimed. {points} left',
   oursClaimOkExisting: 'Already claimed earlier, same Key stays in use',
+  // #261: same device fingerprint claimed again, server granted nothing new. Never render this as success.
+  oursClaimAlreadyGranted: 'This device has already claimed the new-user credit; none was granted this time',
   oursClaimKeyTail: 'Current Key {tail}',
   oursClaimUseKey: 'Use the Key issued by the server {tail}',
   oursClaimNeedsDevice: 'Device code unavailable, reopen settings to retry',

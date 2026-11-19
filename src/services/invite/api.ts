@@ -31,7 +31,7 @@
 
 import type { OursHttpResult, OursMessageKey, OursTransport } from '../ours/api.js'
 import { redeemCard as redeemCardLegacy } from '../ours/api.js'
-import { createDeviceId } from './device.js'
+import { createDeviceId, isDeviceId } from './device.js'
 import { DEVICE_FP_HEADER, normalizeDeviceFp } from './fingerprint.js'
 
 /** 邀请 / 额度服务地址：明文 HTTP，见文件头的安全说明 */
@@ -177,6 +177,20 @@ export const readOptionalNumber = (
   return typeof value === 'number' && Number.isFinite(value) ? value : null
 }
 
+/**
+ * 可选布尔：字段不存在 / 不是 true/false → null。
+ *
+ * 与 {@link readOptionalNumber} 同一个理由（#261）：`false`（服务端明确说「这次没发」）
+ * 和「根本没有这个字段」（老服务端）必须分得开，否则客户端会把「已领过」渲染成「领取成功」。
+ */
+export const readOptionalBoolean = (
+  record: Record<string, unknown> | null,
+  field: string
+): boolean | null => {
+  const value = record?.[field]
+  return typeof value === 'boolean' ? value : null
+}
+
 /** 解析服务端下发的邀请规则；两条主线奖励都读不出来就当作没有规则（→ null） */
 export const parseInviteRules = (value: unknown): InviteRules | null => {
   const record = asRecord(value)
@@ -256,8 +270,71 @@ export type InviteApplyResult =
       apiKey: string
       /** true = 本次首次绑定（201）；false = 已申请过（200，幂等返回同一把 Key） */
       firstTime: boolean
+      /**
+       * 服务端在响应里回填的 device_id（Issue #261）。`''` = 老服务端 / 本次没回。
+       *
+       * 与本地手里的不同时必须写回（见 `adoptServerDeviceId`）：服务端认的是它，
+       * 继续用本地那个会让后续 `/me`、兑换、下单全部查错设备。
+       */
+      serverDeviceId: string
+      /**
+       * 服务端明确说「这次有没有发新人额度」。`null` = 没有这个字段（老服务端，不可判定）。
+       * `false` 是**行为信号**：这台设备/指纹此前领过，本次没给新额度 —— 界面不许显示「领取成功」。
+       */
+      newUserGranted: boolean | null
+      /** 服务端明确说「该设备指纹已绑定过账号」。`null` = 没这个字段 */
+      deviceFpBound: boolean | null
+      /** 本次的界面语义（{#classifyClaim} 的结论）：只有 `granted` 才允许显示「领取成功」 */
+      outcome: ClaimOutcome
     }
   | ({ kind: 'error' } & Failure)
+
+/**
+ * 领取结果的三种界面语义（Issue #261）。纯函数判定，界面只负责把它翻成文案。
+ *
+ * - `granted`：服务端说这次真的发了新人额度（或老服务端 201）→ 显示「已领取，剩余 N」
+ * - `already-same-account`：已领过，且服务端没给回「另一个」device_id
+ *   → 显示「此前已领取，继续使用同一把 Key」（Key 没换）
+ * - `already-other-account`：已领过，但服务端给回的是**另一个** device_id
+ *   （典型：静默建了一个 0 额度新号）→ 显示「这台设备已领过新人额度」
+ *
+ * 第三种绝不能渲染成「领取成功」：额度是 0，说成功等于骗用户。
+ */
+export type ClaimOutcome = 'granted' | 'already-same-account' | 'already-other-account'
+
+export const classifyClaim = (input: {
+  firstTime: boolean
+  newUserGranted: boolean | null
+  deviceFpBound?: boolean | null
+  serverDeviceId: string
+  localDeviceId: string
+}): ClaimOutcome => {
+  const server = input.serverDeviceId.trim()
+  const local = input.localDeviceId.trim()
+  const otherAccount = server !== '' && server !== local
+  // `new_user_granted` 是唯一权威答案（「这一次到底发了没发」）：
+  // `device_fp_bound` 只说明「该指纹已绑过账号」，首次发放后它同样是 true，不能拿来判「已领过」。
+  const claimed =
+    input.newUserGranted === false ||
+    // 只有服务端没给 new_user_granted 时，才退到指纹绑定状态
+    (input.newUserGranted === null && input.deviceFpBound === true) ||
+    // 老服务端两个字段都没有：退化成 #261 之前的判定（200 = 同一 device_id 已申请过）
+    (input.newUserGranted === null && input.firstTime === false)
+  if (!claimed) {
+    return 'granted'
+  }
+  return otherAccount ? 'already-other-account' : 'already-same-account'
+}
+
+/** 界面文案 key：三种语义各一句，绝不含 device_id / Key */
+export type ClaimMessageKey = 'oursClaimOk' | 'oursClaimOkExisting' | 'oursClaimAlreadyGranted'
+
+export const claimMessageKeyFor = (outcome: ClaimOutcome): ClaimMessageKey =>
+  outcome === 'granted'
+    ? 'oursClaimOk'
+    : outcome === 'already-other-account'
+      ? 'oursClaimAlreadyGranted'
+      : 'oursClaimOkExisting'
 
 /**
  * 领取 Key：POST /apply。
@@ -265,6 +342,7 @@ export type InviteApplyResult =
  *
  * `deviceFp`（Issue #243）是可选的设备指纹哈希：有就多带一个 `X-Device-Fp` 头，没有就照旧发。
  * **客户端只上报，不判定** —— 参数为空绝不影响请求，也绝不在这里做任何「领过了」的判断。
+ * 判「这台设备领没领过」的结论**只从响应字段来**（#261：`new_user_granted` / `device_fp_bound`）。
  */
 export const applyForKey = async (
   deviceId: string,
@@ -299,7 +377,27 @@ export const applyForKey = async (
   if (apiKey === '') {
     return { kind: 'error', code: 'KEY_MISSING', messageKey: 'oursInviteErrKeyMissing', retryable: true }
   }
-  return { kind: 'ok', profile, apiKey, firstTime: result.status === 201 }
+  const record = asRecord(body)
+  const serverDeviceId = readString(record, 'device_id').trim()
+  const newUserGranted = readOptionalBoolean(record, 'new_user_granted')
+  const deviceFpBound = readOptionalBoolean(record, 'device_fp_bound')
+  const firstTime = result.status === 201
+  return {
+    kind: 'ok',
+    profile,
+    apiKey,
+    firstTime,
+    serverDeviceId,
+    newUserGranted,
+    deviceFpBound,
+    outcome: classifyClaim({
+      firstTime,
+      newUserGranted,
+      deviceFpBound,
+      serverDeviceId,
+      localDeviceId: id,
+    }),
+  }
 }
 
 export type InviteProfileResult = ({ kind: 'ok'; profile: InviteProfile } | { kind: 'error' } & Failure)
@@ -622,6 +720,8 @@ export type DeviceHealDeps = {
   saveKey?: (apiKey: string) => void
   /** 重新生成 + 持久化 device_id（界面注入；缺省用 createDeviceId 生成但不落盘） */
   regenerate?: (current: string) => string
+  /** 服务端回填的 device_id 写回本地（界面注入：写 localStorage；缺省不落盘。Issue #261） */
+  persistDeviceId?: (deviceId: string) => void
 }
 
 /** 成功那一支（把 {kind:'error'} 从联合里剔掉，界面直接拿 value.kind 收窄） */
@@ -678,6 +778,12 @@ export const runWithDeviceSelfHeal = async <T extends { kind: string; code?: str
     }
     // 自愈拿到的 Key 就是这个 device_id 的凭据，直接落盘（界面决定写哪儿）
     deps.saveKey?.(applied.apiKey)
+    // #261：服务端可能给回另一个 device_id（原账号的），接着用它重试并写回本地
+    const healed = applied.serverDeviceId.trim()
+    if (healed !== '' && isDeviceId(healed) && healed !== deviceId) {
+      deviceId = healed
+      deps.persistDeviceId?.(healed)
+    }
   } else {
     deviceId = (deps.regenerate?.(deviceId) ?? createDeviceId()).trim()
   }

@@ -105,6 +105,34 @@ export const localStorageDeviceIdStorage = (): DeviceIdStorage => ({
 export const ensureDeviceId = (): string =>
   loadOrCreateDeviceId(localStorageDeviceIdStorage()).deviceId
 
+// ---------------------------------------------------------- 服务端回填（Issue #261）
+
+/**
+ * 把服务端在 `/apply` 响应里下发的 `device_id` 写回本地（Issue #261）。
+ *
+ * 为什么必须有这一步：服务端按**设备指纹**认「有没有领过」，命中的那一侧可能给回
+ * **另一个** device_id（原账号的，或本次被分配的新账号的）。客户端如果继续用自己手里
+ * 那个被服务端忽略的 device_id，后续 `/me`、兑换、下单全都会查到一个不存在的设备，
+ * 用户看到的就是「账号变了、额度清零」。
+ *
+ * 三条约束：
+ *  - 只认形状合法的值（{@link isDeviceId}）：服务端回一个坏值当没回，绝不把本地写坏；
+ *  - 与本地相同就原样返回（不写存储），避免无意义的写；
+ *  - 返回**最终应当使用的** device_id：调用方拿它去 `setState`，持久化在本函数里做。
+ */
+export const adoptServerDeviceId = (
+  storage: DeviceIdStorage,
+  current: string,
+  serverDeviceId: string
+): string => {
+  const next = serverDeviceId.trim()
+  if (!isDeviceId(next) || next === current.trim()) {
+    return current.trim()
+  }
+  storage.write(next)
+  return next
+}
+
 // ------------------------------------------------------------------ 备份提示（Issue #72）
 
 /**

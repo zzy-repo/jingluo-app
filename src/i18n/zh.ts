@@ -407,6 +407,9 @@ export const zh = {
   oursOpenChoiceBind: '我已有 Key',
   oursClaimOk: '已领取，剩余 {points}',
   oursClaimOkExisting: '此前已领取，继续使用同一把 Key',
+  // #261：同一设备指纹再次领取时服务端没发新额度。**绝不能**显示「领取成功」——
+  // 额度可能是 0，说成功就是骗用户。这里只陈述事实，不承诺找回。
+  oursClaimAlreadyGranted: '这台设备已领过新人额度，本次未发放新额度',
   oursClaimKeyTail: '当前 Key {tail}',
   oursClaimUseKey: '改用服务端下发的 Key {tail}',
   oursClaimNeedsDevice: '设备码异常，无法领取，请重新打开设置页',

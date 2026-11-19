@@ -22,11 +22,13 @@ import {
 import { startInAppPay } from '../../services/ours/inAppPay.js'
 import {
   applyForKey,
+  claimMessageKeyFor,
   isInviteCodeShape,
   normalizeInviteCode,
   redeemCardMigrated,
   redeemInviteCode,
   runWithDeviceSelfHeal,
+  type ClaimOutcome,
   type InviteMessageKey,
   type RedeemCardResult,
   type InviteProfile,
@@ -37,6 +39,7 @@ import { rotateKey, rotateSuccessKey, type RotateOutcome } from '../../services/
 import { prepareDialogOpen, refreshProfile } from '../../services/invite/openFlow.js'
 import { resolveDeviceFp } from '../../services/invite/fingerprint.js'
 import {
+  adoptServerDeviceId,
   createDeviceId,
   ensureDeviceId,
   localStorageDeviceIdStorage,
@@ -86,7 +89,8 @@ type BalanceView =
 type ClaimView =
   | { status: 'idle' }
   | { status: 'busy' }
-  | { status: 'ok'; firstTime: boolean; points: number }
+  /** outcome 决定文案（#261）：granted = 领取成功；另两种都是「已领过」，绝不能显示成功 */
+  | { status: 'ok'; outcome: ClaimOutcome; points: number }
   | { status: 'error'; messageKey: InviteMessageKey }
 
 type OrderView = {
@@ -269,6 +273,11 @@ const OursServicesDialog = ({ onClose }: { onClose: () => void }) => {
     localStorageDeviceIdStorage().write(next)
     return next === current ? `${next}0` : next
   }
+  /** 服务端回填的 device_id 的自愈链路落盘口（#261）；claimKey 那条走 adoptServerDeviceId */
+  const persistDevice = (next: string): void => {
+    localStorageDeviceIdStorage().write(next)
+    setDeviceId(next)
+  }
   const acknowledgeBackupHint = () => {
     markDeviceBackupHintSeen(localStorageFlagStorage())
     setShowBackupHint(false)
@@ -315,10 +324,21 @@ const OursServicesDialog = ({ onClose }: { onClose: () => void }) => {
       setClaim({ status: 'error', messageKey: result.messageKey })
       return
     }
+    // #261：服务端回填了 device_id 就**立刻**写回本地。服务端只认它：继续用本地那个被
+    // 忽略的 ID，后续 /me、兑换、下单全会查到一个不存在的设备，用户看到的就是「号丢了」。
+    const finalDeviceId = adoptServerDeviceId(
+      localStorageDeviceIdStorage(),
+      deviceId,
+      result.serverDeviceId
+    )
+    if (finalDeviceId !== deviceId) {
+      setDeviceId(finalDeviceId)
+    }
     setProfileFrom('apply')
     setOpenChoice(false)
     setBalance({ status: 'ok', profile: result.profile })
-    setClaim({ status: 'ok', firstTime: result.firstTime, points: result.profile.remainingPoints })
+    // 只有 outcome === 'granted' 才显示「领取成功」；已领过一律显示「已领取」（#261）
+    setClaim({ status: 'ok', outcome: result.outcome, points: result.profile.remainingPoints })
     const current = useApiConfig.getState().apiKey.trim()
     if (current === '') {
       setApiKey(result.apiKey)
@@ -659,7 +679,7 @@ const OursServicesDialog = ({ onClose }: { onClose: () => void }) => {
     // 打本机池（62.106:60013/redeem-card），池整条链路不通才兜底旧 /api/redeem；
     // device_not_found / invalid_device 由 runWithDeviceSelfHeal 自愈一次，绝不循环。
     const outcome = await runWithDeviceSelfHeal(
-      { deviceId, deviceFp: deviceFpRef.current, transport: httpTransport, saveKey: saveHealedKey, regenerate: regenerateDevice },
+      { deviceId, deviceFp: deviceFpRef.current, transport: httpTransport, saveKey: saveHealedKey, regenerate: regenerateDevice, persistDeviceId: persistDevice },
       () => redeemCardMigrated({ cardNo: trimmed, apiKey }, httpTransport)
     )
     if (!alive.current) {
@@ -868,9 +888,9 @@ const OursServicesDialog = ({ onClose }: { onClose: () => void }) => {
 
           {claim.status === 'ok' ? (
             <div className={clsx(styles.value, styles.valueSuccess)} data-testid="ours-claim-status">
-              {claim.firstTime
+              {claim.outcome === 'granted'
                 ? t('oursClaimOk', { points: formatPoints(claim.points, t('oursPointsUnit')) })
-                : t('oursClaimOkExisting')}
+                : t(claimMessageKeyFor(claim.outcome))}
             </div>
           ) : null}
           {claim.status === 'error' ? (
