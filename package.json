@@ -48,6 +48,7 @@
     "test:device": "node tests/run-layer.mjs device",
     "test:all": "npm run test && npm run test:integration",
     "test:which": "node tests/which.mjs",
+    "test:dl-release": "node --test deploy/dl-release/test/*.test.mjs",
     "gen:gap": "node scripts/gen-flex-gap-fallback.mjs",
     "check:gap": "node scripts/check-css-gap-fallback.mjs",
     "check:focus": "node scripts/check-focus-visible-fallback.mjs",

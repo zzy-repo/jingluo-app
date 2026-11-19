@@ -58,6 +58,17 @@ const RULES = [
   { match: /^src\/services\/chat\/history\/urlImport\.ts$/, tests: ['tests/unit/url-import-stall', 'tests/integration/url-import-stages', 'tests/integration/url-import-native'] },
   // 构建脚本 / 注入常量本身：产物形状变了，跑构建类用例
   { match: /^(rspack\.config\.ts|src\/index\.html)$/, tests: ['tests/integration/internal-build', 'tests/integration/auto-title'] },
+  // 发布渠道枚举的单一真相源（#330 / 域10 F10-15）：shared/ 既不是 src/ 也不是 tests/，
+  // 自动反查（只认 `from '../../src/…'`）永远查不到它 —— 以前改这里映射 0 个用例（#362 域10 §4）。
+  {
+    match: /^shared\/build-types\.(mjs|d\.mts)$/,
+    tests: [
+      'tests/unit/domain10-release-gate-matrix',
+      'tests/unit/domain10-gate-wiring',
+      'tests/unit/releases-manifest-buildtype',
+    ],
+    note: '渠道枚举改动：客户端解析 / 校验器 / 发布脚本三处共用，跑域10 门禁矩阵与枚举契约用例',
+  },
   // Android 原生侧：node 层只能跑单测，其余归 device 层（本门禁不跑）
   { match: /^android\//, tests: ['tests/unit'], note: '原生改动：node 层只跑 unit，真机用例属 device 层（门禁不跑）' },
 ]
