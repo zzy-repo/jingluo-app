@@ -18,21 +18,24 @@
  *   3. 命名（error）—— 同一域的多份文件必须 `domain-NN-*`（两位数，小写短横线）：
  *      · 文件名以 `domain` 开头的（不分大小写）必须匹配 `^domain\d{2}-`
  *      · 头部注释（前 15 行）声明了 `#362` + `域 N` 的批次文件，文件名必须带 `domainNN-` 前缀
- *      发现不合规**只报告、不改文件名**（改名要同步改 docs/测试引用，属后续批次）。#366 第一批不动它。
- *   4. fixture 散放（warning，只有 `--strict` 才阻塞）—— `tests/fixtures/<域>/` 是唯一合法位置，
- *      根目录直接放 `.mjs`/`.json` 属散放。存量里有 5 个跨域共享桩（mock-anthropic / ours-upstream …），
- *      它们不是"域"夹具，先只暴露不阻塞；`--strict` 下红。
+ *      发现不合规**只报告、不改文件名**（改名要同步改 docs/测试引用）。#408 已把域 3/4 的 6 个批次
+ *      文件改成 `domain03-*` / `domain04-*`，这条现在真的为 0 —— 谁再加一个不带域前缀的批次文件就红。
+ *   4. fixture 散放（warning；`--strict` 下阻塞，CI 就是 `--strict`）—— `tests/fixtures/<域>/` 是唯一
+ *      合法位置，根目录直接放 `.mjs`/`.json` 属散放。#408 已把最后 5 个散放桩归位
+ *      （archive-fixture / ours-upstream / mock-anthropic / ours-trail / input-row-baseline），
+ *      根目录现在只剩目录；以后往根目录扔夹具，`--strict` 直接红。
  *
  * 基线（`tests/test-layout-baseline.json`，规则**只减不增**）：
- *   存量必然违规（regression 层 12 个文件当前就是孤儿），所以第 1、2、3 类允许登记豁免。
+ *   #408 之后基线已清空（孤儿 0 / 命名 0 / 落位 0，regression 层已由 #391 进 LAYERS），
+ *   所以现在的口径是「违规一律红」；机制保留，是为了下次真有大面积存量时还能登记而不是关掉门禁。
  *   运行时：**基线条目之外的新违规一律 exit 1**；条目失效（已经不违规了）会提示删除，
  *   `--strict` 下也算红。`--update-baseline` 只允许写"当前违规 ⊆ 现有基线"，要新增条目必须显式 `--force`
  *   —— 这就是"只减不增"的机械实现，避免下次谁跑一遍就把新违规生成进基线。
  *
  * 用法：
  *   node scripts/check-test-layout.mjs                 # 门禁模式：基线之外的新违规 exit 1
- *   node scripts/check-test-layout.mjs --warn           # 只报告，永远 exit 0（CI 前三轮用这个）
- *   node scripts/check-test-layout.mjs --strict         # fixture 散放也阻塞
+ *   node scripts/check-test-layout.mjs --warn           # 只报告，永远 exit 0（应急用；CI 不用它）
+ *   node scripts/check-test-layout.mjs --strict         # + fixture 散放 / 基线失真也阻塞（**CI 用这个**）
  *   node scripts/check-test-layout.mjs --json r.json    # 机器可读结果
  *   node scripts/check-test-layout.mjs --update-baseline [--force]
  *

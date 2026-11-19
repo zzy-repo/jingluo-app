@@ -173,8 +173,8 @@ npm run test:integration -- --baseline          # 集成全量与基线比对，
 | `check:ip` | ✅ 自带 | 版本号不报 vs 真写死地址照报 | `tests/unit/check-ip-version.test.mjs` |
 | `check:legacy` | ✅ CI 注入 | CI 往产物副本追加 `?.` / `??=` | `.github/workflows/ci.yml` |
 | `check:redact` | ✅ CI 自检 | CI 跑 `check-redact.mjs --selftest` | `.github/workflows/ci.yml` |
-| `check:test-layout` | ✅ 注入（#369） | 造一个跑不到的用例（孤立子目录） | `tests/unit/gate-negative-controls.test.mjs` |
-| `check:test-duplication` | ✅ 注入（#369） | 整份复制一份用例文件 | 同上 |
+| `check:test-layout` | ✅ 注入（#369） | 造一个跑不到的用例（孤立子目录）；**#408 起 CI 带 `--strict`**（fixture 散放 / 基线失真也阻塞） | `tests/unit/gate-negative-controls.test.mjs` |
+| `check:test-duplication` | ✅ 注入（#369） | 整份复制一份用例文件；**#408 起阻塞**（R1 逐字 ≥20 行，存量 22 组登记在 `tests/test-duplication-baseline.json`，只减不增） | 同上 |
 | `type` | ✅ 注入（#369） | fixture 里的 TS2322 拷进 `src/` | 同上 |
 | `lint` | ✅ 注入（#369） | fixture 里的 `debugger` 拷进 `src/` | 同上 |
 | `build:internal` | ✅ 注入（#369） | 临时副本里注入语法错模块并让 entry 真的 import | 同上 |

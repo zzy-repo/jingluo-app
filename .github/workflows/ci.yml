@@ -58,18 +58,20 @@ jobs:
       - name: 重复实现（check:dup-impl）
         run: pnpm run check:dup-impl
 
-      # 测试布局与重复检测（#362 阶段二 / #366）：同样是纯文本扫描（各 < 2s、不依赖构建产物）。
-      # 先按 **warn 模式**（--warn）观测 3 个 PR —— 存量有违规，直接 block 只会教人加豁免：
-      #   布局：域 3/4 批次 6 个文件没按 domain-NN-* 命名（已登记 tests/test-layout-baseline.json，
-      #         只减不增；孤儿 0 —— regression 层已由 #391 补进 run-layer 的 LAYERS）
-      #         + fixtures 根目录 5 个散放桩（warning，--strict 才阻塞）
-      #   重复：逐字 ≥20 行 33 组（多为待抽 helper 的装配样板）+ 关键词跨层 4 组
-      # 转 block 条件写在 PR 里：#362 侧把基线条目清零 / 重复组降到 0 之后再摘掉 --warn。
-      - name: 测试布局门禁（check:test-layout，warn）
-        run: pnpm run check:test-layout -- --warn
+      # 测试布局与重复检测（#362 阶段二 / #366 → #408 转 block）：同样是纯文本扫描
+      # （各 < 2s、不依赖构建产物）。#408 起了 block，条件都已在仓库里落地：
+      #   布局（--strict）：命名违规 0（域 3/4 六个批次文件已按 domainNN- 改名）+ fixture 散放 0
+      #         （5 个散放桩已归位到 tests/fixtures/<域>/）+ 孤儿 0 + 基线条目 0
+      #         （tests/test-layout-baseline.json 已清空，--strict 让「基线失真」也算红）。
+      #   重复：逐字 ≥20 行 32 → 22 组，剩下的全部逐条登记在
+      #         tests/test-duplication-baseline.json（**只减不增**，带 --update-baseline 也不许新增）；
+      #         新复制一段 ≥20 行当场红。R2/R3（关键词 / 标题跨层）仍是 warning。
+      # 两条都带负向对照（tests/unit/gate-negative-controls.test.mjs N4/N5）：注入必红、还原必绿。
+      - name: 测试布局门禁（check:test-layout）
+        run: pnpm run check:test-layout -- --strict
 
-      - name: 测试重复检测（check:test-duplication，warn）
-        run: pnpm run check:test-duplication -- --warn
+      - name: 测试重复检测（check:test-duplication）
+        run: pnpm run check:test-duplication
 
       - name: Type check
         run: pnpm run type

@@ -59,9 +59,10 @@ const PROBE_LAYOUT_DIR = 'tests/unit/__gate-neg-layout-probe'
 const PROBE_DUP_COPY = 'tests/unit/__gate-neg-dup-copy.test.mjs'
 /** 「复制整份用例」的源文件：110 行、无 #362 域声明、改它的人会顺手看到这里 */
 const DUP_SOURCE = 'tests/unit/check-ip-version.test.mjs'
-/** `check:test-duplication` 的默认窗口是 20 行；存量有 33 组 ≥20 行的重复（见 ci.yml 注释），
- *  所以「窗口 80」是这个仓库里唯一能把「注入引起的那一组」和存量分开的口径：
- *  实测窗口 80 下存量 0 组、注入后正好 1 组。 */
+/** `check:test-duplication` 的默认窗口是 20 行；存量有 22 组 ≥20 行的重复（#408 已进基线，
+ *  见 tests/test-duplication-baseline.json），所以「窗口 80」仍然是这个仓库里最干净的
+ *  「把注入引起的那一组单独拎出来」的口径：实测窗口 80 下存量 0 组、注入后正好 1 组。
+ *  （基线自带 window=20，换窗口时门禁不套基线，所以窗口 80 的正例仍然 exit 0。） */
 const DUP_WINDOW = 80
 
 /** 一行 = 一道门禁 = 一组正反例。加门禁 = 加一行（+ 在 REGISTRY 登记）。 */

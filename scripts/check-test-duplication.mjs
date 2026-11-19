@@ -16,7 +16,7 @@
  *   R3 用例标题跨层同名 —— `test('复制上限按字节判定')` 在 unit 与 integration 各写一遍。
  *
  * 严重级别：
- *   R1 = error（默认 exit 1；`--warn` 不阻塞）
+ *   R1 = error（默认 exit 1；`--warn` 不阻塞；**已进基线的组不阻塞**）
  *   R2 / R3 = warning（`--strict` 才阻塞）—— 关键词/标题重合也可能合理，先暴露再收。
  *
  * 白名单（`tests/test-duplication-whitelist.json`，**必须写理由**）：
@@ -26,12 +26,22 @@
  *   · R2/R3：按 `topic` / `title` 匹配
  *   没写 `reason` 的条目视为无效（直接报错），避免白名单变成垃圾桶。
  *
+ * 基线（`tests/test-duplication-baseline.json`，规则**只减不增**，Issue #408）：
+ *   R1 的存量组（#408 转 block 时实测 22 组：多数是还没抽到 helpers 的层内工具函数与自查断言
+ *   骨架）逐组登记，键 = **组内文件组合**（排序后拼起来）。运行时：
+ *     · 基线条目之外的 R1 组一律 exit 1 —— 这就是「新复制一段 ≥20 行」当场红；
+ *     · 条目失效（那组已经不重复了，例如抽了 helper）会提示删掉，`--strict` 下也算红；
+ *     · `--update-baseline` 只允许写「当前组 ⊆ 现有基线」，要新增条目必须显式 `--force`。
+ *   基线自带 `window`：如果这次换了 `--window`（口径变了，条目不可比），本次**不套基线**，
+ *   只报告不豁免 —— 负向对照就是靠这个用 `--window 80` 拿一个干净的 exit 0。
+ *
  * 用法：
- *   node scripts/check-test-duplication.mjs              # R1 阻塞，R2/R3 只警告
- *   node scripts/check-test-duplication.mjs --warn        # 只报告，永远 exit 0（CI 前三轮用这个）
- *   node scripts/check-test-duplication.mjs --strict      # 警告也阻塞
- *   node scripts/check-test-duplication.mjs --window 30   # 改逐字重复的行窗口
+ *   node scripts/check-test-duplication.mjs              # R1 阻塞（基线条目除外），R2/R3 只警告
+ *   node scripts/check-test-duplication.mjs --warn        # 只报告，永远 exit 0
+ *   node scripts/check-test-duplication.mjs --strict      # 警告也阻塞 + 基线失真也阻塞
+ *   node scripts/check-test-duplication.mjs --window 30   # 改逐字重复的行窗口（此时不套基线）
  *   node scripts/check-test-duplication.mjs --json r.json
+ *   node scripts/check-test-duplication.mjs --update-baseline [--force]
  *
  * 退出码：0 通过（或 --warn）/ 1 发现违规 / 2 用法或环境错误
  */
@@ -44,6 +54,7 @@ import { fileURLToPath } from 'node:url'
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const TESTS_DIR = path.join(ROOT, 'tests')
 const WHITELIST_FILE = path.join(TESTS_DIR, 'test-duplication-whitelist.json')
+const BASELINE_FILE = path.join(TESTS_DIR, 'test-duplication-baseline.json')
 
 /** 逐字重复的行窗口：20 行 ≈ 一段完整的 setup 或一组完整断言，低于这个量级噪声太大。 */
 const DEFAULT_WINDOW = 20
@@ -68,17 +79,19 @@ const rel = (file) => path.relative(ROOT, file).split(path.sep).join('/')
 
 function usage(message) {
   if (message) console.error(`${message}\n`)
-  console.error('用法：node scripts/check-test-duplication.mjs [--warn] [--strict] [--window N] [--json <file>]')
+  console.error('用法：node scripts/check-test-duplication.mjs [--warn] [--strict] [--window N] [--json <file>] [--update-baseline [--force]]')
   process.exit(2)
 }
 
 function parseArgs(argv) {
-  const opts = { warn: false, strict: false, window: DEFAULT_WINDOW, json: '' }
+  const opts = { warn: false, strict: false, window: DEFAULT_WINDOW, json: '', updateBaseline: false, force: false }
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i]
     if (arg === '--') continue // npm/pnpm 会把 `--` 原样透传
     if (arg === '--warn') opts.warn = true
     else if (arg === '--strict') opts.strict = true
+    else if (arg === '--force') opts.force = true
+    else if (arg === '--update-baseline') opts.updateBaseline = true
     else if (arg === '--window') {
       opts.window = Number(argv[++i])
       if (!Number.isSafeInteger(opts.window) || opts.window < 8) usage('--window 必须是 ≥8 的整数')
@@ -247,6 +260,33 @@ async function readWhitelist() {
   return { groups, keywords, titles, entries: data }
 }
 
+/** 基线键 = 组内文件组合（排序后拼起来）。同一个「谁跟谁逐字相同」才算是同一组。 */
+const groupKey = (files) => [...files].map(String).sort().join('\u0000')
+
+/**
+ * 读 R1 基线（`tests/test-duplication-baseline.json`）。
+ * 形状：{ version, note, updatedAt, window, groups: [{ files: [...], lines, reason, issue? }] }
+ * 文件不存在 = 空基线（还没转 block 时就是这个状态），不算错。
+ */
+async function readBaseline() {
+  try {
+    const data = JSON.parse(await readFile(BASELINE_FILE, 'utf8'))
+    if (!Array.isArray(data.groups)) throw new Error('缺少 groups 数组')
+    for (const entry of data.groups) {
+      if (!Array.isArray(entry.files) || entry.files.length < 2) {
+        throw new Error(`基线条目的 files 至少要两个文件：${JSON.stringify(entry)}`)
+      }
+      if (!entry.reason || String(entry.reason).trim().length < 4) {
+        throw new Error(`基线条目缺少理由：${JSON.stringify(entry)}（登记存量重复必须写清是什么、什么时候删）`)
+      }
+    }
+    return data
+  } catch (error) {
+    if (error.code === 'ENOENT') return { version: 1, window: DEFAULT_WINDOW, groups: [] }
+    throw new Error(`基线文件 ${rel(BASELINE_FILE)} 解析失败：${error.message}`)
+  }
+}
+
 /** R1 组是否被白名单覆盖：条目的 files ⊆ 组内文件 */
 function verbatimWhitelisted(group, entries) {
   return entries.find((entry) => {
@@ -262,6 +302,7 @@ async function main() {
   const sources = []
   for (const file of files) sources.push([rel(file), await readFile(file, 'utf8')])
   const whitelist = await readWhitelist()
+  const baseline = await readBaseline()
 
   const verbatim = findVerbatimGroups(sources, opts.window)
   const keywords = findKeywordGroups(sources)
@@ -274,6 +315,20 @@ async function main() {
     if (entry) skippedVerbatim.push({ group, reason: entry.reason, issue: entry.issue ?? '' })
     else activeVerbatim.push(group)
   }
+  // 基线只对「同一个窗口」有意义：条目是按 20 行记的，换了 --window 就不可比，本次不套基线。
+  const baselineApplies = baseline.groups.length > 0 && baseline.window === opts.window
+  const baselineKeys = new Set(baseline.groups.map((entry) => groupKey(entry.files)))
+  const skippedBaseline = []
+  const blockingVerbatim = []
+  for (const group of activeVerbatim) {
+    if (baselineApplies && baselineKeys.has(groupKey(group.files))) skippedBaseline.push(group)
+    else blockingVerbatim.push(group)
+  }
+  const liveKeys = new Set(verbatim.map((group) => groupKey(group.files)))
+  const staleBaseline = baselineApplies
+    ? baseline.groups.filter((entry) => !liveKeys.has(groupKey(entry.files)))
+    : []
+
   const skippedKeywords = keywords.filter((group) => whitelist.keywords.some((entry) => entry.topic === group.topic))
   const activeKeywords = keywords.filter((group) => !whitelist.keywords.some((entry) => entry.topic === group.topic))
   const skippedTitles = titles.filter((group) => whitelist.titles.some((entry) => entry.title === group.title))
@@ -294,10 +349,10 @@ async function main() {
     }
   }
 
-  if (activeVerbatim.length) {
-    console.log(`❌ R1 逐字相同 ≥${opts.window} 行：${activeVerbatim.length} 组`)
-    for (const group of activeVerbatim.slice(0, 20)) printGroup(group, ' •')
-    if (activeVerbatim.length > 20) console.log(`  …另有 ${activeVerbatim.length - 20} 组，见 --json`)
+  if (blockingVerbatim.length) {
+    console.log(`❌ R1 逐字相同 ≥${opts.window} 行（基线外）：${blockingVerbatim.length} 组`)
+    for (const group of blockingVerbatim.slice(0, 20)) printGroup(group, ' •')
+    if (blockingVerbatim.length > 20) console.log(`  …另有 ${blockingVerbatim.length - 20} 组，见 --json`)
     console.log('')
   }
   if (activeKeywords.length) {
@@ -311,6 +366,26 @@ async function main() {
     if (activeTitles.length > 15) console.log(`  …另有 ${activeTitles.length - 15} 组，见 --json`)
     console.log('')
   }
+  if (skippedBaseline.length) {
+    console.log(
+      `ℹ 基线豁免 ${skippedBaseline.length} 组（${rel(BASELINE_FILE)}，规则**只减不增**）：`,
+    )
+    for (const group of skippedBaseline) {
+      const entry = baseline.groups.find((item) => groupKey(item.files) === groupKey(group.files))
+      console.log(`  [R1] ${group.files.join(' ↔ ')}（${group.lines} 行）\n      ↳ ${entry?.reason ?? ''}`)
+    }
+    console.log('')
+  }
+  if (baseline.groups.length && !baselineApplies) {
+    console.log(
+      `ℹ 基线按 ${baseline.window} 行记录，本次 --window ${opts.window} → **本次不套基线**（口径变了，条目不可比，只报告不豁免）\n`,
+    )
+  }
+  if (staleBaseline.length) {
+    console.log(`⚠ 基线里有 ${staleBaseline.length} 条已失效（那组现在不重复了，请删掉，别让基线腐烂）：`)
+    for (const entry of staleBaseline) console.log(`  [R1] ${entry.files.join(' ↔ ')}`)
+    console.log('')
+  }
   const whitelistedCount = skippedVerbatim.length + skippedKeywords.length + skippedTitles.length
   if (whitelistedCount) {
     console.log(`ℹ 白名单放行 ${whitelistedCount} 组（${rel(WHITELIST_FILE)}）：`)
@@ -321,30 +396,70 @@ async function main() {
     for (const group of skippedTitles) console.log(`  [R3] ${group.title}\n      ↳ ${whitelist.titles.find((e) => e.title === group.title).reason}`)
     console.log('')
   }
-  if (!activeVerbatim.length && !activeKeywords.length && !activeTitles.length) {
-    console.log(`没有发现未登记的重复 ✅（白名单放行 ${whitelistedCount} 组）`)
+  if (!blockingVerbatim.length && !activeKeywords.length && !activeTitles.length) {
+    console.log(`没有发现未登记的重复 ✅（基线豁免 ${skippedBaseline.length} 组 / 白名单放行 ${whitelistedCount} 组）`)
   }
 
   const stats = {
     files: sources.length,
     window: opts.window,
-    verbatimGroups: activeVerbatim.length,
-    verbatimCrossLayer: activeVerbatim.filter((group) => group.layers.length > 1).length,
+    verbatimGroups: blockingVerbatim.length,
+    verbatimCrossLayer: blockingVerbatim.filter((group) => group.layers.length > 1).length,
     keywordGroups: activeKeywords.length,
     titleGroups: activeTitles.length,
     whitelisted: whitelistedCount,
-    topVerbatim: activeVerbatim.slice(0, 10).map((group) => ({ files: group.files, lines: group.lines, layers: group.layers })),
+    baselined: skippedBaseline.length,
+    staleBaseline: staleBaseline.length,
+    baselineApplies,
+    topVerbatim: blockingVerbatim.slice(0, 10).map((group) => ({ files: group.files, lines: group.lines, layers: group.layers })),
   }
   if (opts.json) {
-    await writeFile(path.resolve(opts.json), `${JSON.stringify({ ...stats, groups: { verbatim: activeVerbatim, keywords: activeKeywords, titles: activeTitles } }, null, 2)}\n`)
+    await writeFile(
+      path.resolve(opts.json),
+      `${JSON.stringify({ ...stats, groups: { verbatim: blockingVerbatim, keywords: activeKeywords, titles: activeTitles } }, null, 2)}\n`,
+    )
     console.log(`\nJSON 报告：${opts.json}`)
   }
   console.log(
     `\n合计：逐字重复 ${stats.verbatimGroups} 组（其中跨层 ${stats.verbatimCrossLayer}）`
-      + ` / 关键词跨层 ${stats.keywordGroups} / 标题跨层 ${stats.titleGroups} / 白名单放行 ${stats.whitelisted}`,
+      + ` / 关键词跨层 ${stats.keywordGroups} / 标题跨层 ${stats.titleGroups}`
+      + ` / 白名单放行 ${stats.whitelisted} / 基线豁免 ${stats.baselined}`,
   )
 
-  const blocking = activeVerbatim.length > 0 || (opts.strict && (activeKeywords.length > 0 || activeTitles.length > 0))
+  if (opts.updateBaseline) {
+    const existing = new Map(baseline.groups.map((entry) => [groupKey(entry.files), entry]))
+    const live = verbatim.filter((group) => !verbatimWhitelisted(group, whitelist.groups))
+    const added = live.filter((group) => !existing.has(groupKey(group.files)))
+    // 只减不增：除非显式 --force，否则拒绝把「这次新冒出来的重复」写进基线
+    if (added.length && !opts.force) {
+      console.error(`拒绝写基线：会新增 ${added.length} 组（规则只减不增）。先抽掉它，或逐条给理由后加 --force：`)
+      for (const group of added) console.error(`  [R1] ${group.files.join(' ↔ ')}（${group.lines} 行）`)
+      process.exitCode = 1
+      return
+    }
+    const groups = live.map((group) => {
+      const previous = existing.get(groupKey(group.files))
+      return {
+        files: group.files,
+        lines: group.lines,
+        layers: group.layers,
+        reason: previous?.reason ?? '（待补：写清这是什么重复、什么时候删，未补理由前别让基线腐烂）',
+        ...(previous?.issue ? { issue: previous.issue } : {}),
+      }
+    })
+    const payload = {
+      version: 1,
+      note: 'R1 逐字重复的存量豁免清单（scripts/check-test-duplication.mjs）。规则**只减不增**：新组不许进基线，抽掉一组就删一条。键 = 组内文件组合。',
+      updatedAt: new Date().toISOString().slice(0, 10),
+      window: opts.window,
+      groups,
+    }
+    await writeFile(BASELINE_FILE, `${JSON.stringify(payload, null, 2)}\n`)
+    console.log(`基线已更新：${rel(BASELINE_FILE)}（${groups.length} 组，窗口 ${opts.window} 行）`)
+  }
+
+  const blocking = blockingVerbatim.length > 0
+    || (opts.strict && (activeKeywords.length > 0 || activeTitles.length > 0 || staleBaseline.length > 0))
   if (!blocking) {
     console.log('check:test-duplication OK ✅')
     return
@@ -356,7 +471,8 @@ async function main() {
   console.error(
     '\n修法：同一断言只保留一层（纯逻辑留 L0，L1 只留浏览器/时序独有的一条）；'
       + '整段复制的装配样板抽到 tests/helpers/；确需长期共存的写进 tests/test-duplication-whitelist.json 并给理由。'
-      + '规则见 scripts/check-test-duplication.mjs 文件头（#362/#366）。',
+      + `基线（${rel(BASELINE_FILE)}）只减不增：新增重复不许登记，先把它抽掉。`
+      + '规则见 scripts/check-test-duplication.mjs 文件头（#362/#366/#408）。',
   )
   process.exitCode = 1
 }
