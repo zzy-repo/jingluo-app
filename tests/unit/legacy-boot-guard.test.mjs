@@ -157,8 +157,15 @@ test('守卫本体是 ES5：老内核解析不了新语法时它还得能跑', (
   assert.match(guardSource, /\bvar\b/, '要老老实实写 var')
 })
 
-test('守卫在 <head>/<body> 里先于业务包，且提示容器就在 #root 下', () => {
+test('守卫在 <body> 里先于业务包，提示容器就在 #root 下（卡片本体是空容器）', () => {
   assert.ok(html.indexOf('<div id="root">') < html.indexOf('<script>'), '提示容器要在脚本之前')
-  assert.match(html, /<div id="root"><div id="compatibility-error" hidden><\/div><\/div>/)
+  // 卡片必须保持空容器：正文由 textContent 写入，塞了子节点就会被整段覆盖掉（#104）
+  assert.match(html, /<div id="compatibility-error" hidden><\/div>/)
+  assert.match(html, /<div id="compatibility-error" hidden><\/div>\s*<div id="compatibility-actions" hidden>/)
+  // 异常原文的折叠区必须是卡片的兄弟节点，不能在卡片里面
+  assert.ok(
+    html.indexOf('id="compatibility-detail"') > html.indexOf('<div id="compatibility-error" hidden></div>'),
+    '技术细节折叠区要排在卡片之后（兄弟节点）'
+  )
   assert.ok(html.indexOf('<script>') < html.indexOf('<noscript>'))
 })

@@ -744,18 +744,36 @@ export const en = {
   oursPurchasesErrRejected: 'The order lookup was rejected. Please retry later.',
   oursPurchasesErrBadResponse: 'The response could not be parsed. Please retry later.',
   oursPurchasesErrUnknown: 'Could not load your purchases. Please retry later.',
-  // Boot-guard copy (#180). Identical to the inline COPY table in src/index.html;
+  // Boot-guard copy (#180 / #104). Identical to the inline COPY table in src/index.html;
   // tests/unit/compat-guard-diagnostics.test.mjs compares both sides.
   compatBootTitle: 'This page could not start',
   compatBootLead: 'This page needs a newer Android System WebView (or browser) to open properly.',
+  // Shown instead of compatBootLead when the engine is below config/compat.json baselineChromium (#104)
+  compatBootLeadOld: "This device's system WebView engine is outdated ({version}). Please update Android System WebView.",
+  compatBootUpgradePath:
+    'To update: Settings → Apps → Android System WebView → Update (or search "Android System WebView" in your app store), then reopen this app.',
   compatBootMissing: 'Missing runtime features: {apis}',
   compatBootRuntimeError: 'A script error stopped this page from starting.',
   compatBootTimeout: 'The page script did not start within 12 seconds (outdated engine or failed to load).',
-  compatBootVersion: 'Component version: {version}',
-  compatBootVersionUnknown: 'Component version: could not be read from the browser identifier',
+  // Self-service environment info (#104 item 3): five fixed fields, copied as one block
+  compatBootEnvApp: 'App version: {version}',
+  compatBootEnvEngine: 'Engine version: {version}',
+  compatBootEnvEngineUnknown: 'Engine version: could not be read from the browser identifier',
+  compatBootEnvAndroid: 'Android version: {version}',
+  compatBootEnvStage: 'Failed stage: {stage}',
+  compatBootEnvTime: 'Time: {time}',
+  compatBootEnvDevice: 'Device code: {code} (masked)',
+  compatBootStageMissing: 'Startup check failed (missing required features)',
+  compatBootStageRuntime: 'App script failed at startup',
+  compatBootStageTimeout: 'App script did not start within 12 seconds',
+  compatBootCopy: 'Copy environment info',
+  compatBootCopied: 'Copied — paste it into your report',
+  compatBootCopyManual: 'Copy failed — long-press the text below to copy it',
+  compatBootDetails: 'Technical details',
+  compatBootTruncated: '…(truncated)',
   compatBootHowTo:
     'To update: open your app store, search for "Android System WebView" and update it, then reopen this app.',
-  compatBootFooter: 'If it still fails after updating, report the component version above with a screenshot of this page.',
+  compatBootFooter: 'If it still fails after updating, report the engine version above with a screenshot of this page.',
   // The "unreachable" tier for URL imports (issue #18): the device has a network but cannot reach
   // the import service (DNS failure / no route / link dropped mid-switch). It must not reuse the
   // offline wording — telling users to check a connection that is actually fine sends them nowhere.

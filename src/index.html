@@ -5,9 +5,112 @@
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <meta name="theme-color" content="#ffffff" />
     <title>鲸落</title>
+    <style>
+      /*
+        兜底页样式（issue #104 / #180）。刻意只用 WebView 69 也能解析的老 CSS：
+        没有自定义属性、没有 :has() / @container / :where()、没有 flex —— 因为「能进到这里」
+        的用户内核本来就可能低于本项目声明的下限（Chrome 83）。样式放这里而不是内联 cssText，
+        是因为卡片现在多了按钮、手动复制框与折叠区，逐个写内联串既难读也容易漏。
+      */
+      #compatibility-error {
+        margin: 24px 16px;
+        padding: 16px;
+        border: 1px solid #f0b8b8;
+        border-radius: 12px;
+        background: #fff7f7;
+        color: #7b2020;
+        font: 15px/1.6 sans-serif;
+        white-space: pre-line;
+        word-break: break-word;
+      }
+      #compatibility-error[hidden] {
+        display: none;
+      }
+      #compatibility-actions {
+        margin: 0 16px;
+      }
+      #compatibility-actions[hidden] {
+        display: none;
+      }
+      #compatibility-copy {
+        display: block;
+        width: 100%;
+        padding: 12px;
+        border: 0;
+        border-radius: 10px;
+        background: #b93a3a;
+        color: #ffffff;
+        font-size: 15px;
+        font-weight: 600;
+        -webkit-appearance: none;
+      }
+      #compatibility-copy-hint {
+        margin: 8px 0 0;
+        color: #2f6b2f;
+        font-size: 13px;
+        line-height: 1.6;
+        white-space: pre-line;
+      }
+      #compatibility-copy-hint[hidden] {
+        display: none;
+      }
+      #compatibility-copy-hint.compatibility-failed {
+        color: #b93a3a;
+      }
+      #compatibility-copy-fallback {
+        display: block;
+        width: 100%;
+        box-sizing: border-box;
+        margin-top: 10px;
+        padding: 10px;
+        border: 1px solid #f0b8b8;
+        border-radius: 8px;
+        color: #7b2020;
+        font: 12px/1.5 monospace;
+        white-space: pre-wrap;
+        word-break: break-all;
+      }
+      #compatibility-copy-fallback[hidden] {
+        display: none;
+      }
+      #compatibility-detail {
+        margin: 0 16px 24px;
+        color: #6b4a4a;
+        font-size: 12px;
+      }
+      #compatibility-detail[hidden] {
+        display: none;
+      }
+      #compatibility-detail-summary {
+        padding: 8px 0;
+        color: #b93a3a;
+        cursor: pointer;
+      }
+      #compatibility-detail-body {
+        margin: 0;
+        padding: 10px;
+        border: 1px solid #f3d6d6;
+        border-radius: 8px;
+        background: #ffffff;
+        font: 11px/1.5 monospace;
+        white-space: pre-wrap;
+        word-break: break-all;
+      }
+    </style>
   </head>
   <body>
-    <div id="root"><div id="compatibility-error" hidden></div></div>
+    <div id="root">
+      <div id="compatibility-error" hidden></div>
+      <div id="compatibility-actions" hidden>
+        <button type="button" id="compatibility-copy"></button>
+        <p id="compatibility-copy-hint" hidden></p>
+        <textarea id="compatibility-copy-fallback" readonly rows="8" hidden></textarea>
+      </div>
+      <details id="compatibility-detail" hidden>
+        <summary id="compatibility-detail-summary"></summary>
+        <pre id="compatibility-detail-body"></pre>
+      </details>
+    </div>
     <!--
       低内核启动守卫（issue #13）。**这段必须是 ES5**：老 WebView 解析不了新语法时，
       defer 的业务包整包不执行，只有这段还能跑。它的职责是兜底 —— 把「静默白屏」变成一句能读的提示，
@@ -23,9 +126,31 @@
       三条出口（① 探针缺失 / ② 启动期脚本报错 / ③ 12 秒看门狗）的规矩（issue #180）：
       用户可见文案只用本地化模板，**绝不拼接原始 JS 异常**；原始 message / 文件名 / 行列号
       只写进 window.__DEEPSEEK_COMPATIBILITY_ERROR__（结构化：branch / code / message /
-      missing / url / line / col / ua / webviewVersion）与 console.error，供排查与反馈附件。
+      missing / url / line / col / ua / webviewVersion / engineMajor / androidVersion /
+      appVersion / deviceTail / stage / at / text / technical / copyText）与 console.error，
+      以及卡片下方那个默认收起的「技术细节」折叠区。三条硬规矩：
+        1. 卡片正文（#compatibility-error 的 textContent）里**永远**没有异常原文 / 文件名 / 异常类型；
+        2. 原文只许进 #compatibility-detail（卡片的兄弟节点，用户主动展开才看得到）；
+        3. 只有内核主版本 < BASELINE_CHROMIUM 时才换主文案，且必须给出「设置 → 应用 →
+           Android System WebView → 更新」这条可行动路径；解析不出内核版本就退回通用文案，不误报。
       这个变量的消费者：src/main.tsx（有值就不挂半装的 React 树、直接抛错）、
       scripts/compat/lib/cdp.mjs 的 BOOT_STATE（模拟器取证回读）、反馈时用户贴的组件版本。
+
+      `#root` 下的结构（顺序即文档顺序，缺一不可）：
+        #compatibility-error         卡片正文。**纯文本**：只写 textContent，不许有子节点
+                                     （写 textContent 会清掉子节点，按钮放进去就被抹了）；
+        #compatibility-actions       复制按钮 + 结果提示 + 静态 readonly textarea（第 ③ 层回退），
+                                     必须是卡片的**兄弟**节点，理由同上；
+        #compatibility-detail        技术细节折叠区，同样是卡片的兄弟节点 —— 它一旦住进卡片，
+                                     卡片 textContent 就会把异常原文算进去（#180 的两条红线断言）。
+
+      自助能力（issue #104 项 3）：卡片上直接给 App 版本 / 内核版本 / Android 版本 / 失败阶段 /
+      时间（设备码可选，只取尾 4 位），并给一个「复制环境信息」按钮 —— 用户报障时不必再来回问版本。
+      复制三层回退：剪贴板 writeText → document.execCommand('copy')（静态 readonly
+      textarea + 全选）→ 都不行就把 textarea 留在屏幕上并提示「长按复制」。
+      复制内容**绝不包含** API Key / 完整 device_id / token：设备码只留尾 4 位、页面 URL 去掉
+      query 与 hash、整段再过一遍脱敏规则（sk- / Bearer / Signature= / AccessKeyId= / token=），
+      超过 MAX_COPY_CHARS 截断并标注。守卫**不读** chat-demo:api-key 这个键。
     -->
     <script>
       (function () {
@@ -37,25 +162,58 @@
           'zh-CN': {
             title: '页面启动失败',
             lead: '这个页面需要更新版本的 Android System WebView（或浏览器）才能正常打开。',
+            leadOld: '本机系统浏览器内核过旧（{version}），请更新 Android System WebView。',
+            upgradePath:
+              '升级路径：设置 → 应用 → Android System WebView → 更新（或在应用商店搜索「Android System WebView」），完成后重新打开本应用。',
             missing: '缺少的运行环境能力：{apis}',
             runtimeError: '页面脚本在启动时出错，没能启动。',
             timeout: '页面脚本 12 秒内没有启动（内核过旧或资源加载失败）。',
-            version: '组件版本：{version}',
-            versionUnknown: '组件版本：无法从浏览器标识里解析出来',
+            envApp: 'App 版本：{version}',
+            envEngine: '内核版本：{version}',
+            envEngineUnknown: '内核版本：无法从浏览器标识里解析出来',
+            envAndroid: 'Android 版本：{version}',
+            envStage: '失败阶段：{stage}',
+            envTime: '时间：{time}',
+            envDevice: '设备码：{code}（已脱敏）',
+            stageMissing: '启动检查未通过（缺少必要能力）',
+            stageRuntime: '业务脚本启动时报错',
+            stageTimeout: '业务脚本 12 秒内未启动',
+            copy: '复制环境信息',
+            copied: '已复制，可直接粘贴到反馈里',
+            copyManual: '复制未成功：请长按下面的信息手动复制',
+            details: '技术细节',
+            truncated: '…（已截断）',
             howTo: '更新方法：在应用商店里搜索「Android System WebView」并更新，然后重新打开本应用。',
-            footer: '若更新后仍然失败，请反馈上面的组件版本与本页截图。',
+            footer: '若更新后仍然失败，请反馈上面的内核版本与本页截图。',
           },
           'en-US': {
             title: 'This page could not start',
             lead: 'This page needs a newer Android System WebView (or browser) to open properly.',
+            leadOld:
+              "This device's system WebView engine is outdated ({version}). Please update Android System WebView.",
+            upgradePath:
+              'To update: Settings → Apps → Android System WebView → Update (or search "Android System WebView" in your app store), then reopen this app.',
             missing: 'Missing runtime features: {apis}',
             runtimeError: 'A script error stopped this page from starting.',
             timeout: 'The page script did not start within 12 seconds (outdated engine or failed to load).',
-            version: 'Component version: {version}',
-            versionUnknown: 'Component version: could not be read from the browser identifier',
+            envApp: 'App version: {version}',
+            envEngine: 'Engine version: {version}',
+            envEngineUnknown: 'Engine version: could not be read from the browser identifier',
+            envAndroid: 'Android version: {version}',
+            envStage: 'Failed stage: {stage}',
+            envTime: 'Time: {time}',
+            envDevice: 'Device code: {code} (masked)',
+            stageMissing: 'Startup check failed (missing required features)',
+            stageRuntime: 'App script failed at startup',
+            stageTimeout: 'App script did not start within 12 seconds',
+            copy: 'Copy environment info',
+            copied: 'Copied — paste it into your report',
+            copyManual: 'Copy failed — long-press the text below to copy it',
+            details: 'Technical details',
+            truncated: '…(truncated)',
             howTo:
               'To update: open your app store, search for "Android System WebView" and update it, then reopen this app.',
-            footer: 'If it still fails after updating, report the component version above with a screenshot of this page.',
+            footer: 'If it still fails after updating, report the engine version above with a screenshot of this page.',
           },
         }
 
@@ -77,6 +235,25 @@
         // 这段内联脚本在 bundle 之前执行、import 不到模块，所以留着字面量，
         // 由 tests/unit/limits-config.test.mjs 断言两处相等（#275）。
         var BOOT_DEADLINE_MS = 12000
+        // 兼容下限：唯一来源是 config/compat.json:2 的 baselineChromium；内联脚本读不到 JSON，
+        // 所以同样留字面量，由 tests/unit/compat-baseline.test.mjs 断言两处相等（照 BOOT_DEADLINE_MS 的老办法）。
+        var BASELINE_CHROMIUM = 83
+        // 复制文本上限：与 src/app/errorReport.ts 的 MAX_REPORT_CHARS 同口径，单测断言相等。
+        var MAX_COPY_CHARS = 4000
+        // 设备码存储键（src/services/invite/device.ts 的 DEVICE_ID_STORAGE_KEY）与合法形态。
+        // 守卫**只读这一个键**：chat-demo:api-key 这类凭据绝不进兜底页。
+        var DEVICE_ID_KEY = 'chat-demo:ours-device-id'
+        var DEVICE_ID_PATTERN = /^[A-Za-z0-9._:-]{8,128}$/
+        var UNKNOWN = 'unknown'
+        // 脱敏规则与 src/services/diagnostics/redact.ts:9-19 逐条一致（守卫 import 不到模块，只能内联）。
+        // 单测用同一组输入断言两边产出相同。
+        var REDACTIONS = [
+          [/sk-[A-Za-z0-9_-]{20,}/g, 'sk-***'],
+          [/Bearer\s+\S+/g, 'Bearer ***'],
+          [/Signature=[^&]*/g, 'Signature=***'],
+          [/AccessKeyId=[^&]*/g, 'AccessKeyId=***'],
+          [/\btoken=[^&\s]*/g, 'token=***']
+        ]
         var startedAt = Date.now()
         var LOCALE_KEY = 'chat-demo:locale'
 
@@ -120,10 +297,228 @@
           }
         }
 
-        /** UA 里能解析出 WebView/Chromium 版本就一并写进诊断（#104 缺的就是这个信息）。 */
-        function webviewVersion() {
-          var matched = userAgent().match(/(?:Chrome|Chromium)\/([0-9]+(?:\.[0-9]+)*)/)
-          return matched ? matched[1] : null
+        /**
+         * UA 解析（#104）：内核版本 / 主版本号 / 主次版本 / Android 版本 / 是否 WebView。
+         * 与 src/services/diagnostics/collector.ts 的 parseAndroidFromUA 同口径 —— 那份是 TS、
+         * 守卫 import 不到，所以两份并存，由单测钉住（和 COPY 表同一套做法）。
+         */
+        function parseUa(ua) {
+          var engine = /(?:Chrome|Chromium)\/([0-9]+(?:\.[0-9]+)*)/.exec(ua)
+          var version = engine ? engine[1] : null
+          var major = null
+          var short = null
+          if (version) {
+            var parts = version.split('.')
+            major = parseInt(parts[0], 10)
+            if (isNaN(major)) {
+              major = null
+              short = null
+            } else {
+              short = parts.length > 1 ? major + '.' + parts[1] : major + '.0'
+            }
+          }
+          var android = /Android\s+([0-9]+(?:\.[0-9]+)*)/i.exec(ua)
+          return {
+            version: version,
+            major: major,
+            short: short,
+            android: android ? android[1] : null,
+            // WebView 的 UA 带 "; wv)" 标记（collector 里用 /\bwv\b/ 判，这里要求它出现在括号结尾）
+            isWebView: /;\s*wv\)/.test(ua)
+          }
+        }
+
+        /**
+         * 只认真正的 DOM 节点（nodeType 为数字）：元素缺失、宿主被替换成桩、或老内核缺 API 时
+         * 返回 null —— 宁可少展示一块，也不往错误的节点上写（写错节点会覆盖卡片正文）。
+         */
+        function element(id) {
+          var node = null
+          try {
+            node = document.getElementById(id)
+          } catch (error) {
+            return null
+          }
+          return node && typeof node.nodeType === 'number' ? node : null
+        }
+
+        /** App 版本：构建期由 rspack 的 HtmlRspackPlugin 注入 <meta name="application-version"> */
+        function applicationVersion() {
+          try {
+            if (typeof document.querySelector !== 'function') return null
+            var meta = document.querySelector('meta[name="application-version"]')
+            if (!meta || typeof meta.getAttribute !== 'function') return null
+            var value = meta.getAttribute('content')
+            return value ? String(value) : null
+          } catch (error) {
+            return null
+          }
+        }
+
+        /** 设备码只取尾 4 位（src/services/ours/mask.ts 的 maskDeviceId 同口径）；不合法就整行不出现 */
+        function deviceCode() {
+          var value = null
+          try {
+            value = window.localStorage && window.localStorage.getItem(DEVICE_ID_KEY)
+          } catch (error) {
+            return null
+          }
+          if (!value || typeof value !== 'string') return null
+          var code = value.trim()
+          if (!DEVICE_ID_PATTERN.test(code)) return null
+          return '••••' + code.slice(-4)
+        }
+
+        function pad2(value) {
+          return value < 10 ? '0' + value : String(value)
+        }
+
+        /** 手写 YYYY-MM-DD HH:mm:ss：不用 toLocaleString 的 options，老内核的 Intl 实现差异不值当 */
+        function formatTime(at) {
+          var date = new Date(at)
+          return (
+            date.getFullYear() +
+            '-' +
+            pad2(date.getMonth() + 1) +
+            '-' +
+            pad2(date.getDate()) +
+            ' ' +
+            pad2(date.getHours()) +
+            ':' +
+            pad2(date.getMinutes()) +
+            ':' +
+            pad2(date.getSeconds())
+          )
+        }
+
+        /** URL 去掉 query 与 hash：签名参数、token 都在 query 里，只留「协议//host/path」 */
+        function stripUrlQuery(input) {
+          return String(input).replace(/https?:\/\/[^\s]+/g, function (match) {
+            return match.split('#')[0].split('?')[0]
+          })
+        }
+
+        function redactText(input) {
+          var out = String(input)
+          var index
+          for (index = 0; index < REDACTIONS.length; index += 1) {
+            out = out.replace(REDACTIONS[index][0], REDACTIONS[index][1])
+          }
+          return stripUrlQuery(out)
+        }
+
+        function limitText(value, marker) {
+          if (value.length <= MAX_COPY_CHARS) return value
+          return value.slice(0, MAX_COPY_CHARS - marker.length) + marker
+        }
+
+        function stageOf(text, code) {
+          if (code === 'missing-api') return text.stageMissing
+          if (code === 'runtime-error') return text.stageRuntime
+          return text.stageTimeout
+        }
+
+        /** 技术细节正文：只写进 #compatibility-detail（卡片外面那个折叠区） */
+        function buildTechnical(detail) {
+          var lines = ['code: ' + detail.code, 'branch: ' + detail.branch]
+          if (detail.message) lines.push('message: ' + detail.message)
+          if (detail.url) {
+            lines.push('url: ' + detail.url + ' (line ' + detail.line + ', col ' + detail.col + ')')
+          }
+          if (detail.missing.length) lines.push('missing: ' + detail.missing.join(', '))
+          lines.push('ua: ' + detail.ua)
+          return redactText(lines.join('\n'))
+        }
+
+        function showCopyResult(text, ok) {
+          var hint = element('compatibility-copy-hint')
+          if (!hint) return
+          hint.textContent = ok ? text.copied : text.copyManual
+          hint.className = ok ? '' : 'compatibility-failed'
+          hint.hidden = false
+        }
+
+        /**
+         * 第 ② / ③ 层回退：静态 readonly textarea（不临时建节点，少一条失败路径）+ execCommand。
+         * 失败时 textarea 留在屏幕上并已全选，提示改成「长按复制」——用户至少能手动带走信息。
+         */
+        function legacyCopy(payload, text) {
+          var area = element('compatibility-copy-fallback')
+          var ok = false
+          if (area) {
+            try {
+              area.value = payload
+              area.hidden = false
+              if (typeof area.focus === 'function') area.focus()
+              if (typeof area.select === 'function') area.select()
+              if (typeof area.setSelectionRange === 'function') area.setSelectionRange(0, payload.length)
+              if (typeof document.execCommand === 'function') {
+                ok = document.execCommand('copy') === true
+              }
+            } catch (error) {
+              ok = false
+            }
+          }
+          if (ok && area) {
+            area.hidden = true
+          }
+          showCopyResult(text, ok)
+        }
+
+        /** 复制三层回退：clipboard.writeText → execCommand → 保留可见 textarea 让用户长按 */
+        function startCopy(payload, text) {
+          var clipboard = null
+          try {
+            clipboard = window.navigator && window.navigator.clipboard
+          } catch (error) {
+            clipboard = null
+          }
+          if (clipboard && typeof clipboard.writeText === 'function') {
+            try {
+              var pending = clipboard.writeText(payload)
+              if (pending && typeof pending.then === 'function') {
+                pending.then(
+                  function () {
+                    showCopyResult(text, true)
+                  },
+                  function () {
+                    legacyCopy(payload, text)
+                  }
+                )
+                return
+              }
+            } catch (error) {
+              // 掉到第 ② 层
+            }
+          }
+          legacyCopy(payload, text)
+        }
+
+        function showDetails(technical, text) {
+          var details = element('compatibility-detail')
+          var body = element('compatibility-detail-body')
+          if (!details || !body) return
+          // 老内核没有原生折叠控件：原文宁可不展示，也绝不许跑到卡片正文里
+          if (!('open' in details)) return
+          var summary = element('compatibility-detail-summary')
+          if (summary) summary.textContent = text.details
+          body.textContent = technical
+          details.hidden = false
+        }
+
+        function wireCopy(payload, text) {
+          var actions = element('compatibility-actions')
+          var button = element('compatibility-copy')
+          if (actions) actions.hidden = false
+          if (!button) return
+          button.textContent = text.copy
+          button.addEventListener(
+            'click',
+            function () {
+              startCopy(payload, text)
+            },
+            false
+          )
         }
 
         function canBoot() {
@@ -132,41 +527,73 @@
 
         /**
          * 兜底页唯一的出口。三条分支（① 探针缺失 / ② 启动期脚本报错 / ③ 12 秒没启动）
-         * 都走这里，做三件事：
+         * 都走这里，做四件事：
          *   1. 把结构化诊断写进 window.__DEEPSEEK_COMPATIBILITY_ERROR__（原始 message / 文件名 /
-         *      行列号**只**进这个变量和 console.error，供反馈与排查）；
+         *      行列号**只**进这个变量、console.error 与折叠区，供反馈与排查）；
          *   2. 用户可见文案只用本地化模板，绝不拼接原始 JS 异常；
-         *   3. 画卡片。先到的原因优先，后到的不覆盖。
+         *   3. 卡片写五项环境信息（App 版本 / 内核版本 / Android 版本 / 失败阶段 / 时间，设备码可选），
+         *      内核主版本 < BASELINE_CHROMIUM 时换主文案并给升级路径；
+         *   4. 挂上复制入口（clipboard → execCommand → 长按），复制内容整段过脱敏。
+         * 先到的原因优先，后到的不覆盖。
          */
         function fail(branch, code, extra) {
           var box = document.getElementById('compatibility-error')
           // 已经有提示了就不覆盖（先报的具体原因比后到的“启动任务异常”有用）
           if (!box || box.hidden === false) return
           var text = copyOf(pickLocale())
-          var version = webviewVersion()
+          var ua = userAgent()
+          var engine = parseUa(ua)
+          var appVersion = applicationVersion()
+          var device = deviceCode()
+          var at = Date.now()
+          var stage = stageOf(text, code)
+          var outdated = engine.major !== null && engine.major < BASELINE_CHROMIUM
+          var missingList = extra && extra.missing ? extra.missing : []
           var detail = {
             branch: branch,
             code: code,
             message: extra && typeof extra.message === 'string' ? extra.message : '',
-            missing: extra && extra.missing ? extra.missing : [],
+            missing: missingList,
             url: extra && typeof extra.url === 'string' ? extra.url : null,
             line: extra && typeof extra.line === 'number' ? extra.line : null,
             col: extra && typeof extra.col === 'number' ? extra.col : null,
-            ua: userAgent(),
-            webviewVersion: version,
-            at: Date.now(),
+            ua: ua,
+            webviewVersion: engine.version,
+            engineVersion: engine.version,
+            engineMajor: engine.major,
+            engineShort: engine.short,
+            androidVersion: engine.android,
+            isWebView: engine.isWebView,
+            appVersion: appVersion,
+            deviceTail: device,
+            stage: stage,
+            at: at,
           }
-          var lines = [text.title, text.lead]
+          var lines = [
+            text.title,
+            outdated ? fill(text.leadOld, { version: engine.short }) : text.lead,
+            fill(text.envApp, { version: appVersion ? appVersion : UNKNOWN }),
+            engine.version ? fill(text.envEngine, { version: engine.version }) : text.envEngineUnknown,
+            fill(text.envAndroid, { version: engine.android ? engine.android : UNKNOWN }),
+            fill(text.envStage, { stage: stage })
+          ]
+          if (device) lines.push(fill(text.envDevice, { code: device }))
+          lines.push(fill(text.envTime, { time: formatTime(at) }))
           if (code === 'missing-api') {
-            lines.push(fill(text.missing, { apis: detail.missing.join(', ') }))
+            lines.push(fill(text.missing, { apis: missingList.join(', ') }))
           } else if (code === 'runtime-error') {
             lines.push(text.runtimeError)
           } else {
             lines.push(text.timeout)
           }
-          lines.push(version ? fill(text.version, { version: version }) : text.versionUnknown)
-          lines.push(text.howTo, text.footer)
-          detail.text = lines.join('\n')
+          lines.push(outdated ? text.upgradePath : text.howTo)
+          lines.push(text.footer)
+          var cardText = lines.join('\n')
+          var technical = buildTechnical(detail)
+          var payload = limitText(redactText(cardText + '\n\n' + technical), text.truncated)
+          detail.text = cardText
+          detail.technical = technical
+          detail.copyText = payload
           try {
             window.__DEEPSEEK_COMPATIBILITY_ERROR__ = detail
           } catch (error) {
@@ -180,10 +607,9 @@
             // console 不可用不影响画卡片
           }
           box.hidden = false
-          box.style.cssText =
-            'margin:24px 16px;padding:16px;border:1px solid #f0b8b8;border-radius:12px;' +
-            'background:#fff7f7;color:#7b2020;font:15px/1.6 sans-serif;white-space:pre-line'
-          box.textContent = detail.text
+          box.textContent = cardText
+          showDetails(technical, text)
+          wireCopy(payload, text)
         }
 
         var missing = []

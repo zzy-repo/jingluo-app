@@ -78,6 +78,11 @@ const WATCHED = [
       // 内联脚本在 bundle 之前执行，import 不到 LIMITS；数值由 tests/unit/limits-config.test.mjs 断言相等。
       { value: 12000, count: 1, reason: 'BOOT_DEADLINE_MS：与 LIMITS.bootDeadlineMs 相等，由单测守' },
       { value: 1000, count: 1, reason: '启动重试的定时器间隔（setTimeout 1000）' },
+      {
+        value: 4000,
+        count: 1,
+        reason: 'MAX_COPY_CHARS：兜底页复制文本上限，与 errorReport.ts 的 MAX_REPORT_CHARS 相等，由单测守',
+      },
     ],
   },
 ]

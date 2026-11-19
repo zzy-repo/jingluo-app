@@ -136,6 +136,47 @@ const harness = ({ remove = [], boot = false, locale = 'zh-CN', userAgent = UA_6
   }
 }
 
+/**
+ * #104 之后的卡片结构（顺序固定）：标题 / 主文案 / 五项环境信息（App、内核、Android、阶段、时间；
+ * 设备码可选）/ 这次为什么没起来 / 升级路径或更新方法 / 页脚。
+ * 这里按同一顺序拼出期望值 —— 断言的是**渲染结果**，不是守卫里的拼装逻辑。
+ */
+const START_AT = 1_700_000_000_000
+const stampOf = (at) => {
+  const pad2 = (value) => (value < 10 ? `0${value}` : String(value))
+  const date = new Date(at)
+  return [
+    `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`,
+    `${pad2(date.getHours())}:${pad2(date.getMinutes())}:${pad2(date.getSeconds())}`,
+  ].join(' ')
+}
+
+const cardLines = (table, { code, extra, at = START_AT }) => {
+  const lead =
+    code === 'boot-timeout' || code === 'runtime-error' || code === 'missing-api'
+      ? fill(table.compatBootLeadOld, { version: '69.0' })
+      : table.compatBootLead
+  return [
+    table.compatBootTitle,
+    lead,
+    fill(table.compatBootEnvApp, { version: 'unknown' }),
+    fill(table.compatBootEnvEngine, { version: '69.0.3497.100' }),
+    fill(table.compatBootEnvAndroid, { version: '8.0.0' }),
+    fill(table.compatBootEnvStage, {
+      stage:
+        code === 'missing-api'
+          ? table.compatBootStageMissing
+          : code === 'runtime-error'
+            ? table.compatBootStageRuntime
+            : table.compatBootStageTimeout,
+    }),
+    fill(table.compatBootEnvTime, { time: stampOf(at) }),
+    ...extra,
+    table.compatBootUpgradePath,
+    table.compatBootFooter,
+  ].join(LF)
+}
+
 /** 三个出口的诊断都必须是这一套字段（缺字段 = 反馈里又要来回问） */
 const DIAGNOSTIC_FIELDS = ['branch', 'code', 'message', 'missing', 'url', 'line', 'col', 'ua', 'webviewVersion']
 
@@ -214,7 +255,7 @@ test('#180 UA 里没有 Chrome/Chromium 时给 null，不编造版本号', () =>
   const h = harness({ userAgent: 'SomeEmbeddedBrowser/1.0' })
   h.listeners.get('error')({ message: 'boom' })
   assert.equal(h.detail.webviewVersion, null)
-  assert.match(h.box.textContent, /组件版本：无法从浏览器标识里解析出来/)
+  assert.match(h.box.textContent, /内核版本：无法从浏览器标识里解析出来/)
 })
 
 test('#180 红线：入口已经跑起来（__DEEPSEEK_BOOTED__）之后再报错，不弹卡片、不写诊断', () => {
@@ -230,28 +271,23 @@ test('#180 红线：入口已经跑起来（__DEEPSEEK_BOOTED__）之后再报�
 
 test('#180 文案与 i18n 表逐字一致（中文）', () => {
   const h = harness({ remove: ['fetch = undefined'] })
-  const expected = [
-    zh.compatBootTitle,
-    zh.compatBootLead,
-    fill(zh.compatBootMissing, { apis: 'fetch' }),
-    fill(zh.compatBootVersion, { version: '69.0.3497.100' }),
-    zh.compatBootHowTo,
-    zh.compatBootFooter,
-  ].join(LF)
+  const expected = cardLines(zh, {
+    code: 'missing-api',
+    extra: [fill(zh.compatBootMissing, { apis: 'fetch' })],
+  })
   assert.equal(h.box.textContent, expected)
   assert.equal(h.detail.text, expected)
+  // #104：UA_69 < 83，主文案必须是带升级路径那一版，而不是通用那句
+  assert.match(h.box.textContent, /内核过旧（69\.0）/)
+  assert.match(h.box.textContent, /设置 → 应用 → Android System WebView → 更新/)
 })
 
 test('#180 文案与 i18n 表逐字一致（英文界面，卡片不出中文）', () => {
   const h = harness({ remove: ['fetch = undefined'], locale: 'en-US' })
-  const expected = [
-    en.compatBootTitle,
-    en.compatBootLead,
-    fill(en.compatBootMissing, { apis: 'fetch' }),
-    fill(en.compatBootVersion, { version: '69.0.3497.100' }),
-    en.compatBootHowTo,
-    en.compatBootFooter,
-  ].join(LF)
+  const expected = cardLines(en, {
+    code: 'missing-api',
+    extra: [fill(en.compatBootMissing, { apis: 'fetch' })],
+  })
   assert.equal(h.box.textContent, expected)
   assert.doesNotMatch(h.box.textContent, /[\u4e00-\u9fff]/, '英文界面不许出中文')
 })
@@ -265,14 +301,11 @@ test('#180 应用内选过的语言优先于系统语言（存储里存了 en-US
 test('#180 超时文案同样与 i18n 表逐字一致', () => {
   const h = harness({ locale: 'en-US' })
   h.tick(BOOT_DEADLINE_MS + 1000)
-  const expected = [
-    en.compatBootTitle,
-    en.compatBootLead,
-    en.compatBootTimeout,
-    fill(en.compatBootVersion, { version: '69.0.3497.100' }),
-    en.compatBootHowTo,
-    en.compatBootFooter,
-  ].join(LF)
+  const expected = cardLines(en, {
+    code: 'boot-timeout',
+    extra: [en.compatBootTimeout],
+    at: START_AT + BOOT_DEADLINE_MS + 1000,
+  })
   assert.equal(h.box.textContent, expected)
 })
 
