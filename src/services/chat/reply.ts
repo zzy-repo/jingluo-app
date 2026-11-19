@@ -23,6 +23,7 @@ import {
   type ContextBudget,
   type ContextTrimReport,
 } from './contextBudget.js'
+import { normalizeReminder } from './latestReminder.js'
 
 /**
  * 文件按 Files API 的 file_id（附件的 serverId）引用：图片用 image 块，其余用 document 块。
@@ -359,7 +360,8 @@ export const toRequestMessages = (
   const units = rounds.map(([user, reply]) => {
     const params: MessageParam[] = []
     if (reply.latestReminder) {
-      params.push({ role: 'latest_reminder', content: reply.latestReminder })
+      // 修复前写下的快照可能是四段（#324）：原样重发会让官方端点继续 400
+      params.push({ role: 'latest_reminder', content: normalizeReminder(reply.latestReminder) })
     }
     params.push(toUserParam(user), toAssistantParam(reply))
     return params
@@ -396,7 +398,7 @@ export const toRequestMessages = (
   const appendReminder = (reminder: string | undefined) => {
     // 仅在当前分支首次出现或内容变化时插入快照；缺少快照的消息保持原有内容。
     if (reminder && reminder !== previousReminder) {
-      messages.push({ role: 'latest_reminder', content: reminder })
+      messages.push({ role: 'latest_reminder', content: normalizeReminder(reminder) })
       previousReminder = reminder
     }
   }
