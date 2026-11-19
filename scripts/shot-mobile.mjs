@@ -808,6 +808,56 @@ const openSettings = async (page, sectionLabel = S.tabGeneral) => {
   }
 }
 
+/**
+ * #215 用：按 Tab 走 focus，直到当前焦点落在文本恰好等于 label 的按钮 / 标签上。
+ * 走键盘是本页的关键 —— 只有键盘语义下 Chromium 才会匹配 :focus-visible。
+ */
+const tabTo = async (page, label, limit = 40) => {
+  for (let i = 0; i < limit; i += 1) {
+    await page.keyboard.press('Tab')
+    await page.waitForTimeout(40)
+    const hit = await page.evaluate((text) => {
+      const el = document.activeElement
+      if (!(el instanceof HTMLElement)) return false
+      const focusable = /^(?:BUTTON|A|INPUT|SELECT|TEXTAREA)$/u.test(el.tagName) || el.getAttribute('role') === 'tab'
+      if (!focusable) return false
+      return (el.textContent ?? '').replace(/\s+/gu, ' ').trim() === text
+    }, label)
+    if (hit) return true
+  }
+  return false
+}
+
+/** 读某个元素此刻的焦点环（outline 与 box-shadow 都算），并回报 :focus-visible 是否匹配 */
+const ringOf = async (locator) =>
+  locator.evaluate((el) => {
+    const style = getComputedStyle(el)
+    const outline = style.outlineStyle !== 'none' && Number.parseFloat(style.outlineWidth) > 0
+    const shadow = style.boxShadow !== 'none' && style.boxShadow.trim() !== ''
+    return {
+      tag: el.tagName.toLowerCase(),
+      text: (el.textContent ?? '').replace(/\s+/gu, ' ').trim().slice(0, 40),
+      outline: `${style.outlineStyle} ${style.outlineWidth} ${style.outlineColor}`,
+      outlineOffset: style.outlineOffset,
+      boxShadow: style.boxShadow,
+      ringVisible: Boolean(outline || shadow),
+      focusVisible: el.matches(':focus-visible'),
+      isActive: el === document.activeElement,
+    }
+  })
+
+/** 元素外扩 8px 的裁剪框：焦点环特写用 */
+const clipAround = async (locator, size) => {
+  const box = await locator.boundingBox()
+  if (box === null) return undefined
+  return {
+    x: Math.max(0, box.x - 8),
+    y: Math.max(0, box.y - 8),
+    width: Math.min(box.width + 16, size.width - Math.max(0, box.x - 8)),
+    height: box.height + 16,
+  }
+}
+
 /** 打开某个下拉、截图，再选中目标项；返回选完之后触发器上的文字 */
 const pickOption = async ({ page, shot, triggerLabel, optionLabel, state, clip }) => {
   const trigger = page.getByRole('button', { name: triggerLabel, exact: true })
@@ -1521,6 +1571,72 @@ export const PAGES = {
         warn(`没看到复制成功的提示：${JSON.stringify(toastText)}`)
       }
       await shot('03-douyin-copied-toast')
+    },
+  },
+
+  'focus-215': {
+    dir: 'docs/ui/215-focus-visible',
+    title: ':focus-visible（#215）：键盘走到控件时出焦点环，鼠标点击同一控件不出环',
+    sessions: () => [makeReadingSession()],
+    mockOrders: false,
+    run: async (ctx) => {
+      const { page, shot, record, warn } = ctx
+
+      // ---- A. 侧边栏「设置」按钮（.settings，box-shadow 环）----
+      await openSiderIfNeeded(page)
+      const settingsButton = page.getByRole('button', { name: S.settings, exact: true })
+      await settingsButton.waitFor({ state: 'visible', timeout: 10000 })
+      await page.waitForTimeout(320)
+      await page.evaluate(() => {
+        if (document.activeElement instanceof HTMLElement) document.activeElement.blur()
+      })
+
+      let byKeyboard = await tabTo(page, S.settings)
+      if (!byKeyboard) {
+        // 兜底：脚本 focus（Chromium 在「上一次输入是键盘」时仍按键盘态判）
+        await settingsButton.focus()
+        warn('Tab 40 次没走到侧边栏「设置」按钮，改用脚本 focus')
+      }
+      await page.waitForTimeout(240)
+      const keyboardRing = await ringOf(settingsButton)
+      record('sidebarSettings.keyboard', keyboardRing)
+      if (!keyboardRing.ringVisible) warn('键盘聚焦侧边栏「设置」按钮时看不到焦点环')
+      if (!keyboardRing.focusVisible) warn('键盘聚焦时 :focus-visible 没匹配上，这张图证明不了键盘态')
+      await shot('01-键盘-侧边栏设置按钮')
+      const settingsClip = await clipAround(settingsButton, ctx.size)
+      if (settingsClip !== undefined) await shot('02-键盘-侧边栏设置按钮-特写', { clip: settingsClip })
+
+      // ---- B. 鼠标点击进设置，再鼠标点「数据管理」标签 → 现代内核不该出环 ----
+      await settingsButton.click()
+      await page.getByRole('tab', { name: S.tabGeneral }).waitFor({ state: 'visible', timeout: 10000 })
+      await page.waitForTimeout(360)
+      const dataTab = page.getByRole('tab', { name: S.tabData })
+      await dataTab.click()
+      await page.waitForTimeout(280)
+      const mouseRing = await ringOf(dataTab)
+      record('settingsDataTab.mouse', mouseRing)
+      if (mouseRing.ringVisible) warn('鼠标点击「数据管理」标签后出现了焦点环（高内核回归，issue #215 的验收项）')
+      if (mouseRing.focusVisible) warn('鼠标点击后 :focus-visible 竟然匹配上了，判定口径可疑')
+      await shot('03-鼠标点击-数据管理标签-无焦点环')
+
+      // ---- C. 键盘回到同一个标签 → 出环 ----
+      // 先 Tab 走开再 Shift+Tab 回来，等价于「纯键盘把焦点移到这个标签上」
+      await page.keyboard.press('Tab')
+      await page.waitForTimeout(140)
+      await page.keyboard.press('Shift+Tab')
+      await page.waitForTimeout(240)
+      const backOnTab = await dataTab.evaluate((el) => el === document.activeElement)
+      if (!backOnTab) {
+        await dataTab.focus()
+        warn('Tab/Shift+Tab 没把焦点送回「数据管理」标签，改用脚本 focus')
+        await page.waitForTimeout(180)
+      }
+      const tabKeyboardRing = await ringOf(dataTab)
+      record('settingsDataTab.keyboard', tabKeyboardRing)
+      if (!tabKeyboardRing.ringVisible) warn('键盘聚焦「数据管理」标签时看不到焦点环')
+      await shot('04-键盘-数据管理标签-焦点环')
+      const tabClip = await clipAround(dataTab, ctx.size)
+      if (tabClip !== undefined) await shot('05-键盘-数据管理标签-特写', { clip: tabClip })
     },
   },
 }

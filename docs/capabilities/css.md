@@ -36,7 +36,7 @@
 | flex `gap` | 84 | 109 | 107 | 0 | 0 | 0（2 处已由 #217 补齐） | 0 | 兜底已全覆盖；`check:gap` 口径见 §2.6 |
 | `min()` / `max()` | 79 | 21 | 0 | 21 | 0 | 0 | 0 | 79 ≤ 83，无风险 |
 | `:has()` | 105 | **0** | 0 | 0 | 0 | 0 | 0 | 16 处已由 #213 清零：改成渲染期显式状态类 `ds-markdown-before-ul` / `ds-markdown-before-ol`，低内核上零特性依赖 |
-| `:focus-visible` | 86 | 13 | 0 | 0 | 0 | **13** | 0 | 无 `:focus` 回退，可访问性丢失 → #215 |
+| `:focus-visible` | 86 | 13 | 13 | 0 | 0 | 0（13 处已由 #215 补齐） | 0 | 每处都有同选择器的 `:focus` 兜底 + `:focus:not(:focus-visible)` 收回；`pnpm run check:focus` 守住 |
 | `@supports` 块（全部为 `(height/max-height: 100dvh)`） | 108 | 9 | 9 | 0 | 0 | 0 | 0 | **9/9 前置等价 `vh` 基座，写法正确** |
 | `overscroll-behavior` | 63 | 6 | 0 | 6 | 0 | 0 | 0 | 63 ≤ 83，无风险 |
 | `env(safe-area-inset-*)` | 69 | 5 | 0 | 5 | 0 | 0 | 0 | 69 ≤ 83，无风险（见 §5 的一致性备注） |
@@ -90,20 +90,32 @@
 | `components/messages/thinking.markdown.css:57,58,59,60,61,62,63,64` | `h3..h6:has(+ ul\|ol)`，同构 8 条 | 2 | 中 | 同上（`h3..h6`），83 上等价 |
 | `components/messages/thinking.markdown.css:71,72` | `p:has(+ ol)`，两条完全重复（复制粘贴） | 2 | 中 | 合并为一条 `.ds-markdown-paragraph.ds-markdown-before-ol`，83 上等价 |
 
-### 2.3 `:focus-visible`（13 处，真实缺陷 → #215）
+### 2.3 `:focus-visible`（13 处，已由 #215 全部补齐）
 
-| 文件:行 | 假设内容 | 类别 | 风险 | 处置 |
+修复前的形态是「焦点环只有 `:focus-visible` 一个来源」：Chromium 83 不认识这个伪类，整条选择器列表失效 → 规则被丢 → 键盘用户完全看不到焦点环。下表行号是**修复前**的位置。
+
+现在的写法是三条规则一组（同选择器）：
+
+```css
+&:focus { /* 兜底：Chromium 83 只认这段 */ }
+&:focus:not(:focus-visible) { /* 收回现代内核的鼠标点击态 */ }
+&:focus-visible { /* 键盘态：现代内核正常渲染 */ }
+```
+
+`:focus:not(:focus-visible)` 本身在 83 上也是无效选择器 → 整条被丢 → 兜底环留下；现代内核里它把鼠标点击后的环收回，避免「点一下就出环」的回归。`pnpm run check:focus`（`scripts/lib/focusVisibleAudit.mjs`）逐条校验三件事：同选择器的 `:focus` 真的给出了可见焦点环（只写 `outline: none` 不算）、配了收回规则、没有更窄的 at-rule 上下文。
+
+| 文件:行（修复前） | 假设内容 | 类别 | 风险 | 处置 |
 | --- | --- | --- | --- | --- |
-| `components/base/Button.module.css:28,100` | 焦点环唯一来源，同规则无 `:focus` | 2 | 中 | 拆单 #215 |
-| `components/base/IconButton.module.css:29` | 同上 | 2 | 中 | 拆单 #215 |
-| `components/base/Select.module.css:29` | 同上 | 2 | 中 | 拆单 #215 |
-| `components/chatInput/VoiceButton.module.css:45` | 同上 | 2 | 中 | 拆单 #215 |
-| `components/markdown/markdown.css:95` | `.ds-markdown a:not(.ds-a):focus-visible` 链接焦点 | 2 | 中 | 拆单 #215 |
-| `components/session/MobileHeader.module.css:32` | 同上 | 2 | 中 | 拆单 #215 |
-| `components/session/Welcome.module.css:82` | 同上 | 2 | 中 | 拆单 #215 |
-| `components/settings/OursServices.module.css:172` | 同上（`:221` 另有 `&:focus` 不同选择器，不构成回退） | 2 | 中 | 拆单 #215 |
-| `components/settings/Settings.module.css:64,247,1121` | 同上 | 2 | 中 | 拆单 #215 |
-| `components/sider/Sider.module.css:158` | 同上 | 2 | 中 | 拆单 #215 |
+| `components/base/Button.module.css:28,100` | 焦点环唯一来源，同规则无 `:focus` | 2 | 中 | #215 已修（`.button` / `.dangerOutlined`） |
+| `components/base/IconButton.module.css:29` | 同上 | 2 | 中 | #215 已修 |
+| `components/base/Select.module.css:29` | 同上 | 2 | 中 | #215 已修（`inset` 环） |
+| `components/chatInput/VoiceButton.module.css:45` | 同上 | 2 | 中 | #215 已修 |
+| `components/markdown/markdown.css:95` | `.ds-markdown a:not(.ds-a):focus-visible` 链接焦点 | 2 | 中 | #215 已修（`:95` 那条 `&:hover, :focus` 是后代选择器，本来就不是这个链接的兜底） |
+| `components/session/MobileHeader.module.css:32` | 同上 | 2 | 中 | #215 已修 |
+| `components/session/Welcome.module.css:82` | 同上 | 2 | 中 | #215 已修（`outline` 环） |
+| `components/settings/OursServices.module.css:172` | 同上（`:221` 另有 `&:focus` 不同选择器，不构成回退） | 2 | 中 | #215 已修 |
+| `components/settings/Settings.module.css:64,247,1121` | 同上 | 2 | 中 | #215 已修（`navItem` / `themeOption` / `douyinPill`） |
+| `components/sider/Sider.module.css:158` | 同上 | 2 | 中 | #215 已修（`inset` 环） |
 
 ### 2.4 容器查询（2 处，真实缺陷 → #214，已修）
 
@@ -200,7 +212,7 @@
 | --- | --- | --- | --- | --- |
 | [#213](https://github.com/zzy-repo/deepseek-app/issues/213) | `:has()` | 16 | 中 | 低内核上整条选择器列表被丢，标题与列表间距退回默认值 |
 | [#214](https://github.com/zzy-repo/deepseek-app/issues/214) | `@container` + `container-type` | 2 | 中 | 已修：容器查询整块被丢，窄缩略图上仍渲染两行失败原因；判据换成自定义属性 `--message-file-reason-display`，`src` 里容器查询归零 |
-| [#215](https://github.com/zzy-repo/deepseek-app/issues/215) | `:focus-visible` | 13 | 中 | 无 `:focus` 回退，键盘用户完全看不到焦点环（可访问性） |
+| [#215](https://github.com/zzy-repo/deepseek-app/issues/215) | `:focus-visible` | 13 | 中 | 已修：每处补 `:focus` 兜底 + `:focus:not(:focus-visible)` 收回，`check:focus` 守住不回流 |
 | [#216](https://github.com/zzy-repo/deepseek-app/issues/216) | `scrollbar-gutter` | 2 | 中 | 声明被丢，滚动条出现/消失瞬间消息列表横向跳动 |
 | [#217](https://github.com/zzy-repo/deepseek-app/issues/217) | flex `gap` 兜底覆盖面 | 2 | 中 | 已修：`check:gap` 扫全部 `.css`，`flex-wrap` 排除规则改为「不换行才排除」 |
 | [#218](https://github.com/zzy-repo/deepseek-app/issues/218) | `getComputedStyle` 声明回读 | 1 | **高** | 判定通过但滚不动，静默失效（§3 的第 1 条） |

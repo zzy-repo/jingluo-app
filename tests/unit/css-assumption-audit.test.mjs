@@ -243,11 +243,83 @@ const canScroll = /auto|scroll/.test(style.overflowY)
 
   // 真实缺陷必须落在已知的几类特性上，防止判定逻辑退化成「全报缺陷」
   const defectFeatures = new Set(summary.defects.map((hit) => hit.feature))
-  for (const feature of [':focus-visible', 'scrollbar-gutter']) {
-    assert.ok(defectFeatures.has(feature), `真实缺陷应包含 ${feature}`)
-  }
+  assert.ok(defectFeatures.has('scrollbar-gutter'), '真实缺陷应包含 scrollbar-gutter')
+
+  // #215 之后 :focus-visible 的 13 处全部补上了 `:focus` 兜底：检测能力必须还在（命中数不许减少），
+  // 但结论从「已知缺陷」换成更强的「不许回流」不变量（与上面 :has() 同一手法）。
+  const focusHits = summary.byFeature[':focus-visible']
+  assert.ok(focusHits, ':focus-visible 的命中必须仍被盘点器看到（不能静默跳过）')
+  assert.equal(focusHits.count, 13, ':focus-visible 命中数变了就要同步 docs/capabilities/css.md')
+  assert.equal(focusHits.defect, 0, 'src 里不应再有「无 `:focus` 兜底」的 :focus-visible（#215）')
+  assert.equal(focusHits.covered, 13, ':focus-visible 的每一处都该判成「已有兜底」')
   // #213 之后 :has() 在 src 里已清零（改由渲染期显式状态类承载），
   // 从「已知缺陷清单」换成更强的「不许回流」不变量。
   assert.equal(summary.byFeature[':has()']?.count ?? 0, 0, 'src 里不应再有 :has()')
   assert.ok(summary.byVerdict.defect < summary.hits / 5, '缺陷占比过高，判定可能过硬')
+})
+
+// -------------------------------------------------- #215 :focus-visible 兜底判据
+
+// 修复前的形态仍必须判成真实缺陷，否则等于顺手把检测能力一起删了。
+test('#215：只有 :focus-visible、没有同选择器 :focus 兜底 → 真实缺陷', () => {
+  const hit = judge(
+    'components/base/Button.module.css',
+    `.button {
+  outline: none;
+
+  &:focus-visible {
+    box-shadow: 0 0 0 2px var(--dsw-alias-button-primary-fill);
+  }
+}
+`,
+    ':focus-visible',
+  )
+  assert.equal(hit.hasFallback, false)
+  assert.equal(hit.verdict, 'defect')
+  assert.equal(hit.risk, '中')
+})
+
+test('#215：`:focus` 兜底 + `:focus:not(:focus-visible)` 收回 → 已有兜底', () => {
+  const hit = judge(
+    'components/base/Button.module.css',
+    `.button {
+  outline: none;
+
+  &:focus {
+    box-shadow: 0 0 0 2px var(--dsw-alias-button-primary-fill);
+  }
+
+  &:focus:not(:focus-visible) {
+    box-shadow: none;
+  }
+
+  &:focus-visible {
+    box-shadow: 0 0 0 2px var(--dsw-alias-button-primary-fill);
+  }
+}
+`,
+    ':focus-visible',
+  )
+  assert.equal(hit.hasFallback, true)
+  assert.equal(hit.verdict, 'covered')
+})
+
+// 只写 `outline: none` 的 `:focus` 不算兜底 —— 那正是 13 处修复前本来就有（或极易被误加）的坑。
+test('#215：`:focus` 只写 outline: none 不算兜底', () => {
+  const hit = judge(
+    'components/base/Button.module.css',
+    `.button {
+  &:focus {
+    outline: none;
+  }
+
+  &:focus-visible {
+    box-shadow: 0 0 0 2px var(--dsw-alias-button-primary-fill);
+  }
+}
+`,
+    ':focus-visible',
+  )
+  assert.equal(hit.hasFallback, false)
+  assert.equal(hit.verdict, 'defect')
 })
