@@ -27,16 +27,20 @@ import { recordError, recordEvent } from '../../services/diagnostics/collector.j
 import { buildMeta, type Stage } from '../../services/diagnostics/fields.js'
 import { bytesPerSecond, createStageTimer } from '../../services/diagnostics/timing.js'
 import { copyText } from '../../utils/clipboard.js'
+import { useSettings } from '../../services/settings.js'
 import { buildUpdateReport, hostOf, releaseHosts } from '../../services/updateReport.js'
 import dialogStyles from './AppUpdateField.module.css'
 import styles from './Settings.module.css'
 
 const sizeText = (bytes: number) => `${(bytes / 1024 / 1024).toFixed(1)} MB`
 
-/** 渠道的中文名：#310 之后失败文案里会写清「哪个渠道」，所以只写一次 */
-const CHANNEL_LABEL: Record<UpdateChannel, string> = {
-  stable: '稳定版',
-  prerelease: '稳定版与预发布版',
+/**
+ * 渠道名（双语对）：#310 之后失败文案里会写清「哪个渠道」，所以只写一次；
+ * #373 起文案分 zh/en，渠道名不能只有中文，否则英文句子里会嵌一段中文。
+ */
+const CHANNEL_LABEL: Record<UpdateChannel, { zh: string; en: string }> = {
+  stable: { zh: '稳定版', en: 'Stable' },
+  prerelease: { zh: '稳定版与预发布版', en: 'Stable + pre-release' },
 }
 
 /** 最近检查时间：只到秒（用户在截图里对得上就够了） */
@@ -54,6 +58,9 @@ const clockText = (at: number | undefined): string => {
 
 /** Update operations are isolated from history, API settings and feedback transport. */
 export const AppUpdateField = () => {
+  /** 失败文案是按界面语言取一侧的双语对（见 services/updateFailure.ts） */
+  const locale = useSettings((state) => state.locale)
+  const lang = locale === 'zh-CN' ? 'zh' : 'en'
   const [opened, setOpened] = useState(false)
   const [channel, setChannel] = useState<UpdateChannel>(
     /-/.test(bundledApp().version) ? 'prerelease' : 'stable'
@@ -64,6 +71,15 @@ export const AppUpdateField = () => {
   const [message, setMessage] = useState('')
   const [busy, setBusy] = useState(false)
   const [ready, setReady] = useState(false)
+  /**
+   * 下载进度只描述「正在下载的字节」，**不参与**「能不能装」的判断（#373）：
+   * `received === total` 永不推导「可安装」，可安装的唯一来源是下面的 `ready`（显式状态）。
+   * 以前失败 / 取消分支不清它，终态就渲染成「5.2 MB / 5.2 MB 满格 + 确认下载」，
+   * 用户按「进度满格 = 下好了」理解，实际一次都没下成。
+   * TODO(原生侧，另开单)：`AppUpdatePlugin.java:205-208` 在 `received == size` 时就发 100%，
+   * `:213` 才 `verify()` —— 真机上任何校验失败都必然「先看到满格、再收到失败」。
+   * 那一帧应挪到 `verify()` 通过之后（本 PR 只改 JS，不动 Java）。
+   */
   const [progress, setProgress] = useState<{ received: number; total: number }>()
   /** 最近一次检查 / 下载 / 安装的结论（#310）：界面文案与「复制诊断信息」共用同一份 */
   const [outcome, setOutcome] = useState<UpdateFailureView>()
@@ -72,6 +88,11 @@ export const AppUpdateField = () => {
   /** 下载进度也要给失败文案用：state 在一次下载里是旧值，这里留一份最新的 */
   const progressRef = useRef<{ received: number; total: number }>()
   const operation = useRef<AbortController>()
+  /**
+   * `busy` 是 state：同一 tick 连点两次会都读到旧值，两次都放行（#373 场景 E 实测向原生下发了 2 次下载，
+   * 第 2 次被原生 BUSY 拒）。真正的「正在下载」判定要靠这个 ref。
+   */
+  const downloading = useRef(false)
   const mounted = useRef(true)
   const native = isAndroidUpdate()
   useEffect(() => {
@@ -93,6 +114,7 @@ export const AppUpdateField = () => {
     const view = describeUpdateFailure(classifyUpdateError(error), {
       channel: CHANNEL_LABEL[activeChannel],
       version,
+      locale: lang,
     })
     setOutcome(view)
     setMessage(view.text)
@@ -181,6 +203,7 @@ export const AppUpdateField = () => {
         const view = describeUpToDate({
           channel: CHANNEL_LABEL[activeChannel],
           version,
+          locale: lang,
           incomplete: result.incomplete,
         })
         setOutcome(view)
@@ -216,9 +239,10 @@ export const AppUpdateField = () => {
     }
   }
   const download = async () => {
-    if (!release || busy) {
+    if (!release || busy || downloading.current) {
       return
     }
+    downloading.current = true
     const controller = new AbortController()
     operation.current = controller
     setBusy(true)
@@ -261,6 +285,9 @@ export const AppUpdateField = () => {
       }
     } catch (error) {
       if (mounted.current) {
+        // 进度条只描述「正在下载的字节」：失败 / 取消后必须清空，
+        // 否则终态是「满格进度 + 确认下载」，等于把失败画成下好了（#373 根因）
+        setProgress(undefined)
         if (controller.signal.aborted) {
           setOutcome(undefined)
           setMessage('已取消下载，可重新下载。')
@@ -276,6 +303,7 @@ export const AppUpdateField = () => {
         }
       }
     } finally {
+      downloading.current = false
       if (mounted.current && operation.current === controller) {
         setBusy(false)
       }
@@ -302,6 +330,8 @@ export const AppUpdateField = () => {
     } catch (error) {
       if (mounted.current) {
         setReady(false)
+        // 安装阶段的校验失败 = 缓存的包不可信：按钮会回到「确认下载」，同样不能留满格进度（#373 场景 B2）
+        setProgress(undefined)
         showFailure(error, channel, release.version)
       }
     } finally {
@@ -315,7 +345,7 @@ export const AppUpdateField = () => {
       buildUpdateReport({
         version: bundledApp().version,
         versionCode: bundledApp().versionCode,
-        channel: CHANNEL_LABEL[channel],
+        channel: CHANNEL_LABEL[channel].zh,
         native,
         checkedAt,
         outcome: outcome?.text,
@@ -439,7 +469,7 @@ export const AppUpdateField = () => {
               </div>
               <div>
                 <dt>更新渠道</dt>
-                <dd>{CHANNEL_LABEL[channel]}</dd>
+                <dd>{CHANNEL_LABEL[channel][lang]}</dd>
               </div>
               <div>
                 <dt>更新服务</dt>

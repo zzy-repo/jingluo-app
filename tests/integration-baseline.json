@@ -23,6 +23,11 @@
     "noImplicitBuild": "沿用 tests/helpers/runtime.mjs 的约定：用例不做隐式构建，缺产物就 SKIP(env) 并打印构建命令。"
   },
   "files": {
+    "update-stuck-button-373.test.mjs": {
+      "expected": "pass",
+      "artifact": "harness(自建，dist-update-373)",
+      "reason": "#373 回归：自建 harness（@capacitor/core alias 成 mock 桥）+ 自起静态服务，端口自动分配；缺产物时自己构建（~170ms，无网络）"
+    },
     "auto-title.test.mjs": {
       "expected": "pass",
       "artifact": "standard",
