@@ -11,7 +11,8 @@
 // CORS 也用假响应头兜住（Web 端 CORS 失败一律按网络错误处理，不会被当成业务失败）。
 //
 // 断言（对应任务书验收 1~8）：
-//   [A] 入口只在 ours 渠道出现：切到 DeepSeek 官方后一条 DOM 都没有
+//   [A] 入口只在 ours 渠道出现：切到 DeepSeek 官方 / 第三方 baseUrl 后一条 DOM 都没有，
+//       切回来又跟着回来（#166：付款记录 / 卡密这两格同样受渠道守卫）
 //   [B] 设备码：首次生成、可见、符合 8–128 / [A-Za-z0-9._:-]、重开不变（持久化）
 //   [C] 打开弹层只读、**不自动 /apply**（#100）；用户显式点「领取新 Key」才 /apply；
 //       已有 Key 时重开也不再自动 /apply（不覆盖用户已填的 Key）
@@ -27,7 +28,7 @@ import { mkdirSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import { chromium } from 'playwright'
-import { selectProviderKind } from '../helpers/helpers.mjs'
+import { selectProviderKind, fillBaseUrl } from '../helpers/helpers.mjs'
 import { serveDist } from '../helpers/runtime.mjs'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
@@ -384,15 +385,33 @@ const runViewport = async ({ width, height, label }) => {
   // ---------- [A] 入口只在 ours 渠道出现 ----------
   await openSettingsData(page)
   eq(await page.getByTestId('ours-services-row').count(), 1, `${width}px：ours 渠道下入口行存在`)
+  eq(await page.getByTestId('payment-records-open').count(), 1, `${width}px：ours 渠道下有「支付记录」入口（#166）`)
+  eq(await page.getByTestId('purchases-open').count(), 1, `${width}px：ours 渠道下有「卡密」入口（#166）`)
   await selectProviderKind(page, /DeepSeek 官方|DeepSeek Official/)
   await page.waitForTimeout(300)
   eq(await page.getByTestId('ours-services-row').count(), 0, `${width}px：DeepSeek 官方下没有入口行`)
   eq(await page.getByTestId('ours-services-dialog').count(), 0, `${width}px：DeepSeek 官方下没有弹层`)
+  eq(await page.getByTestId('payment-records-open').count(), 0, `${width}px：DeepSeek 官方下没有「支付记录」入口（#166）`)
+  eq(await page.getByTestId('purchases-open').count(), 0, `${width}px：DeepSeek 官方下没有「卡密」入口（#166）`)
   const deepseekText = await page.getByRole('dialog').first().innerText()
   truthy(!/设备码|邀请码|卡密/.test(deepseekText), `${width}px：DeepSeek 官方设置页没有我们的渠道文案`)
   await selectProviderKind(page, /我们的渠道|Our Channel/)
   await page.waitForTimeout(300)
   eq(await page.getByTestId('ours-services-row').count(), 1, `${width}px：切回我们的渠道后入口恢复`)
+
+  // ---------- [A2] 第三方 / 自定义 baseUrl：两格也不该出现（#166） ----------
+  await selectProviderKind(page, /Anthropic 协议|Anthropic-compatible/)
+  await fillBaseUrl(page, 'https://relay.example.com')
+  await page.waitForTimeout(300)
+  eq(await page.getByTestId('ours-services-row').count(), 0, `${width}px：第三方 baseUrl 下没有入口行`)
+  eq(await page.getByTestId('payment-records-open').count(), 0, `${width}px：第三方 baseUrl 下没有「支付记录」入口（#166）`)
+  eq(await page.getByTestId('purchases-open').count(), 0, `${width}px：第三方 baseUrl 下没有「卡密」入口（#166）`)
+  // 会话中切回自有渠道：UI 必须跟着回来（store 订阅，不用刷新）
+  await selectProviderKind(page, /我们的渠道|Our Channel/)
+  await page.waitForTimeout(300)
+  eq(await page.getByTestId('ours-services-row').count(), 1, `${width}px：会话内切回我们的渠道后入口行恢复`)
+  eq(await page.getByTestId('payment-records-open').count(), 1, `${width}px：会话内切回我们的渠道后「支付记录」入口恢复（#166）`)
+  eq(await page.getByTestId('purchases-open').count(), 1, `${width}px：会话内切回我们的渠道后「卡密」入口恢复（#166）`)
 
   // ---------- [B][C] 首次使用：打开弹层**不发** /apply（#100），点「领取新 Key」才发 ----------
   const panel = await openPanel(page)
