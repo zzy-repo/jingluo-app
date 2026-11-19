@@ -113,3 +113,156 @@ jobs:
             exit 1
           fi
           echo "负向对照通过：含 ?. / ??= 的产物被拦下"
+
+  # ───────────────────────────────── Issue #365：L1 集成层接入 CI ─────────────────────────────────
+  # 接线前：tests/integration/ 49 个文件 / 1.68 万行、全量一次 20 分钟，**零触发点**——
+  # 只有人记得手跑 `pnpm test:integration`，于是「写好的集成用例」和「真的会被执行的用例」是两件事。
+  #
+  # 三条设计约束：
+  # 1) 与 checks 并行（不 needs: checks）：L1 慢，串在门禁后面等于反馈时间相加。
+  # 2) 分片 3 个 job 各自跑 `--shard i/3`：分片是**对全集的可复用划分**（见 tests/run-layer.mjs 的
+  #    planShard），新加用例不会漏跑；权重表只用于均衡，不用于覆盖。
+  # 3) 已知红走 tests/integration-baseline.json 的豁免（`--baseline` 只判「相对基线没有新增失败」），
+  #    不用 continue-on-error —— 那会把真红也变绿，等于没接线。
+  integration:
+    name: L1 集成层 ${{ matrix.shard }}/${{ matrix.total }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
+        total: [3]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+          run_install: false
+
+      - name: Setup Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      # #365 的核心风险：分片写死在 ci.yml 里、新加的用例没人跑 —— 那正是这条 Issue 要治的病。
+      # 这里把「3 个分片合起来 = 全集」变成显式断言（不依赖人肉核对，新文件自动进分片）。
+      - name: 分片覆盖自检（每个集成文件恰好落进一个分片）
+        if: matrix.shard == 1
+        run: |
+          set -euo pipefail
+          total=$(node tests/run-layer.mjs integration --list | grep -c '^\[integration\]')
+          sum=0
+          for i in 1 2 3; do
+            n=$(node tests/run-layer.mjs integration --list --shard "$i/3" | grep -c '^\[integration\]')
+            echo "分片 $i/3：$n 个文件"
+            sum=$((sum + n))
+          done
+          echo "全集 $total 个文件 / 分片合计 $sum 个"
+          if [ "$sum" -ne "$total" ]; then
+            echo "::error::分片没有覆盖全集（$sum != $total）：有集成用例不会被执行"
+            exit 1
+          fi
+      - name: 安装 Chromium（集成层用 playwright 直连本地产物，没有浏览器就是整批假红）
+        run: pnpm exec playwright install --with-deps chromium
+
+      # 集成层只读预构建产物，不隐式构建；缺产物时用例会 SKIP(env)（不算失败）而不是真跑。
+      # 这里把三份变体都备齐：dist=internal / dist-standard / dist-scroll。
+      # copy-limit 与 update-stuck-button-373 各带自建产物（dist-copy-limit / dist-update-373），不在此列。
+      - name: 构建被测产物（internal / standard / scroll）
+        run: |
+          set -euo pipefail
+          pnpm run build:internal                 # → dist/          内测变体（diagnostics / motion / mode-switch 等）
+          DIST_OUT=dist-standard pnpm run build    # → dist-standard/ 标准变体（大多数用例）
+          DIST_OUT=dist-scroll   pnpm run build    # → dist-scroll/   滚动截图专用（feedback-scroll）
+          ls -d dist dist-standard dist-scroll
+
+      - name: L1 集成 · 分片 ${{ matrix.shard }}/${{ matrix.total }}
+        id: l1
+        env:
+          # 用例里有中文文案断言，和 unit 层一样钉住 locale（#179 同类问题）
+          LANG: zh_CN.UTF-8
+          LC_ALL: zh_CN.UTF-8
+          # 单文件超时 7 分钟：实测最慢的 feedback-scroll ≈ 194s（自带的 360×640 键盘态重试），
+          # 留 2× 余量；比 180s 默认值宽，比 10 分钟保守 —— 真挂住别把 25 分钟 job 超时吃满。
+          L1_TIMEOUT_MS: '420000'
+        run: |
+          set -euo pipefail
+          node tests/run-layer.mjs integration \
+            --shard "${{ matrix.shard }}/${{ matrix.total }}" \
+            --baseline \
+            --timeout-ms "$L1_TIMEOUT_MS" \
+            --json "l1-report-${{ matrix.shard }}.json"
+          # --baseline 的语义见 run-layer.compareWithBaseline：
+          #   新增失败 / 基线登记红却跑绿（FIXED?，提醒删条目）→ 退出码 1；其余 0。
+          # 因此这里不需要 continue-on-error：真红会红，登记过的已知红不会红。
+
+      # 失败可见性：绿的时候只在日志里，红的时候必须能在 PR 页面直接看到「哪个文件、哪条断言」。
+      - name: 失败摘要写入 job summary
+        if: always()
+        env:
+          REPORT: l1-report-${{ matrix.shard }}.json
+          SHARD: ${{ matrix.shard }}/${{ matrix.total }}
+        run: |
+          set -euo pipefail
+          cat > /tmp/l1-summary.mjs <<'EOF'
+          import { appendFileSync, existsSync, readFileSync } from 'node:fs'
+
+          const shard = process.env.SHARD ?? '?'
+          const file = process.env.REPORT ?? 'l1-report.json'
+          const lines = [`## L1 集成层 分片 ${shard}`, '']
+
+          if (!existsSync(file)) {
+            lines.push('报告缺失：分片在写出 `--json` 报告之前就终止了（超时 / 崩溃），请看该 job 的日志。')
+          } else {
+            const report = JSON.parse(readFileSync(file, 'utf8'))
+            const failed = report.results.filter((r) => !r.ok && !r.skipped)
+            const skipped = report.results.filter((r) => r.skipped)
+            lines.push(
+              `| 结果 | 数量 |`,
+              `| --- | --- |`,
+              `| PASS | ${report.passed} |`,
+              `| FAIL | ${report.failed} |`,
+              `| SKIP(env) | ${report.skipped} |`,
+              '',
+              `本分片 ${report.executed}/${report.selected} 个文件，用时 ${Math.round(report.totalMs / 1000)}s。`,
+            )
+            if (failed.length) {
+              lines.push('', '### 失败文件与断言摘要')
+              for (const item of failed) {
+                const seconds = Math.round(item.ms / 1000)
+                lines.push('', `#### \`${item.file}\`（${seconds}s${item.timedOut ? '，TIMEOUT' : ''}）`)
+                const tail = item.tail ?? []
+                const interesting = tail
+                  .filter((line) => /not ok|Error|error:|FAIL|✗|AssertionError|expected|实际/.test(line))
+                  .slice(-8)
+                lines.push('```', ...(interesting.length ? interesting : tail.slice(-8)), '```')
+              }
+            }
+            if (skipped.length) {
+              lines.push('', '### SKIP(env)（缺产物 / 环境不满足，不算失败）')
+              for (const item of skipped) lines.push(`- \`${item.file}\` — ${item.skipReason}`)
+            }
+          }
+          const body = lines.join('\n')
+          console.log(body)
+          appendFileSync(process.env.GITHUB_STEP_SUMMARY, `${body}\n`)
+          EOF
+          node /tmp/l1-summary.mjs
+
+      # 存 7 天：红的时候能直接下下来复跑（node tests/run-layer.mjs integration --failed-from l1-report-N.json）
+      - name: 上传分片报告
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: l1-report-${{ matrix.shard }}-of-${{ matrix.total }}
+          path: l1-report-${{ matrix.shard }}.json
+          if-no-files-found: warn
+          retention-days: 7
