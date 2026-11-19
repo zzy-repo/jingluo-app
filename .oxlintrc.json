@@ -1,5 +1,13 @@
 {
   "$schema": "./node_modules/oxlint/configuration_schema.json",
+  // #417：src/services/memory/** 是 vendored 第三方参考实现——SillyTavern 扩展 Summaryception
+  // 的原型代码（AGPL-3.0，见 src/services/memory/README.md「来源、许可证与门禁」），
+  // 由 #396/#397 搬进仓库，尚未接进 app 运行时（rspack 入口 src/main.tsx 下无任何模块 import 它）。
+  // 它的 324 条报错全部是「上游写法 vs 本仓库规则」的冲突（curly 283 / no-console 28 /
+  // no-unused-vars 8 / no-alert 3 / no-empty 1 / no-dynamic-delete 1），且这份代码以后要整体
+  // 同步上游、不在这里就地改。所以按目录整体排除 lint——注意：排除范围只限这个 vendored
+  // 目录，没有任何规则被关闭、CI 的 lint 步骤也没有动。
+  "ignorePatterns": ["src/services/memory/**"],
   "plugins": ["typescript", "import", "react"],
   "categories": {
     "correctness": "off"
