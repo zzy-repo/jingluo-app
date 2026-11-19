@@ -1557,7 +1557,7 @@
   "requestCount": 54,
   "requestBytes": 209715200,
   "logcat": {
-    "file": "docs\\compat\\compat-old/api31/logcat-p2-edge-200mb.txt",
+    "file": "docs/compat/compat-old/api31/logcat-p2-edge-200mb.txt",
     "kills": [
       "11-18 17:49:16.196   540  1750 I ActivityManager: Killing 2442:com.android.dynsystem/1000 (adj 985): empty #17",
       "11-18 17:49:16.331   540  2990 I ActivityManager: Killing 1435:com.android.imsserviceentitlement/u0a93 (adj 975): empty #17",

@@ -26,7 +26,7 @@
       "screens": [
         {
           "label": "main",
-          "shot": "docs\\compat\\compat-old/api30/shots/p4-390css-main.png",
+          "shot": "docs/compat/compat-old/api30/shots/p4-390css-main.png",
           "report": {
             "innerWidth": 391,
             "innerHeight": 622,
@@ -79,7 +79,7 @@
         },
         {
           "label": "settings-general",
-          "shot": "docs\\compat\\compat-old/api30/shots/p4-390css-settings-general.png",
+          "shot": "docs/compat/compat-old/api30/shots/p4-390css-settings-general.png",
           "report": {
             "innerWidth": 391,
             "innerHeight": 622,
@@ -126,7 +126,7 @@
         },
         {
           "label": "settings-data",
-          "shot": "docs\\compat\\compat-old/api30/shots/p4-390css-settings-data.png",
+          "shot": "docs/compat/compat-old/api30/shots/p4-390css-settings-data.png",
           "report": {
             "innerWidth": 391,
             "innerHeight": 622,
@@ -180,7 +180,7 @@
         },
         {
           "label": "import-form",
-          "shot": "docs\\compat\\compat-old/api30/shots/p4-390css-import-form.png",
+          "shot": "docs/compat/compat-old/api30/shots/p4-390css-import-form.png",
           "report": {
             "innerWidth": 391,
             "innerHeight": 622,
@@ -304,7 +304,7 @@
       "screens": [
         {
           "label": "main",
-          "shot": "docs\\compat\\compat-old/api30/shots/p4-360css-main.png",
+          "shot": "docs/compat/compat-old/api30/shots/p4-360css-main.png",
           "report": {
             "innerWidth": 360,
             "innerHeight": 568,
@@ -357,7 +357,7 @@
         },
         {
           "label": "settings-general",
-          "shot": "docs\\compat\\compat-old/api30/shots/p4-360css-settings-general.png",
+          "shot": "docs/compat/compat-old/api30/shots/p4-360css-settings-general.png",
           "report": {
             "innerWidth": 360,
             "innerHeight": 568,
@@ -402,7 +402,7 @@
         },
         {
           "label": "settings-data",
-          "shot": "docs\\compat\\compat-old/api30/shots/p4-360css-settings-data.png",
+          "shot": "docs/compat/compat-old/api30/shots/p4-360css-settings-data.png",
           "report": {
             "innerWidth": 360,
             "innerHeight": 568,
@@ -456,7 +456,7 @@
         },
         {
           "label": "import-form",
-          "shot": "docs\\compat\\compat-old/api30/shots/p4-360css-import-form.png",
+          "shot": "docs/compat/compat-old/api30/shots/p4-360css-import-form.png",
           "report": {
             "innerWidth": 360,
             "innerHeight": 568,

@@ -2227,7 +2227,7 @@
   "requestCount": 63,
   "requestBytes": 52428764,
   "logcat": {
-    "file": "docs\\compat\\compat-old/api30/logcat-p2-ctrl-50mb.txt",
+    "file": "docs/compat/compat-old/api30/logcat-p2-ctrl-50mb.txt",
     "kills": [
       "11-18 17:32:59.014   505  4101 I ActivityManager: Killing 4033:com.android.externalstorage/u0a86 (adj 985): empty #17",
       "11-18 17:32:59.819   505  4101 I ActivityManager: Killing 6251:com.example.deepseekchat/u0a167 (adj 0): stop com.example.deepseekchat due to from pid 6471",

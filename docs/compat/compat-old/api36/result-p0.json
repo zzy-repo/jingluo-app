@@ -32,7 +32,7 @@
   "samples": [
     {
       "at": 2,
-      "shot": "docs\\compat\\compat-old/api36/shots/t02s.png",
+      "shot": "docs/compat/compat-old/api36/shots/t02s.png",
       "page": {
         "url": "https://localhost/",
         "title": "鲸落",
@@ -54,7 +54,7 @@
     },
     {
       "at": 9.5,
-      "shot": "docs\\compat\\compat-old/api36/shots/t06s.png",
+      "shot": "docs/compat/compat-old/api36/shots/t06s.png",
       "page": {
         "url": "https://localhost/",
         "title": "鲸落",
@@ -97,7 +97,7 @@
     },
     {
       "at": 13.1,
-      "shot": "docs\\compat\\compat-old/api36/shots/t13s.png",
+      "shot": "docs/compat/compat-old/api36/shots/t13s.png",
       "page": {
         "url": "https://localhost/",
         "title": "鲸落",
@@ -140,7 +140,7 @@
     },
     {
       "at": 20,
-      "shot": "docs\\compat\\compat-old/api36/shots/t20s.png",
+      "shot": "docs/compat/compat-old/api36/shots/t20s.png",
       "page": {
         "url": "https://localhost/",
         "title": "鲸落",
@@ -183,7 +183,7 @@
     }
   ],
   "logcat": {
-    "file": "docs\\compat\\compat-old/api36/logcat-api36.txt",
+    "file": "docs/compat/compat-old/api36/logcat-api36.txt",
     "consoleLines": [
       "11-18 19:39:52.596  2442  2442 D nativeloader: Load /system/lib64/libwebviewchromium_plat_support.so using class loader ns clns-11 (caller=/data/app/~~F4-oeW38WXAYpSE3k3-ejA==/com.google.android.webview-xKPan6UaCMRq_uQtfDVjlQ==/WebViewGoogle.apk): ok",
       "11-18 19:39:52.656  2442  2562 I chromium: [1118/193952.648408:INFO:variations_seed_loader.cc(67)] Failed to open file for reading.: No such file or directory (2)",
@@ -214,7 +214,7 @@
   },
   "notes": [],
   "final": {
-    "shot": "docs\\compat\\compat-old/api36/shots/t-final.png",
+    "shot": "docs/compat/compat-old/api36/shots/t-final.png",
     "page": {
       "url": "https://localhost/",
       "title": "鲸落",

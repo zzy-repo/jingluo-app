@@ -32,7 +32,7 @@
   "samples": [
     {
       "at": 2,
-      "shot": "docs\\compat\\compat-old/api34/shots/t02s.png",
+      "shot": "docs/compat/compat-old/api34/shots/t02s.png",
       "page": {
         "url": "https://localhost/",
         "title": "鲸落",
@@ -58,7 +58,7 @@
     },
     {
       "at": 8.1,
-      "shot": "docs\\compat\\compat-old/api34/shots/t06s.png",
+      "shot": "docs/compat/compat-old/api34/shots/t06s.png",
       "page": {
         "url": "https://localhost/",
         "title": "鲸落",
@@ -84,7 +84,7 @@
     },
     {
       "at": 13,
-      "shot": "docs\\compat\\compat-old/api34/shots/t13s.png",
+      "shot": "docs/compat/compat-old/api34/shots/t13s.png",
       "page": {
         "url": "https://localhost/",
         "title": "鲸落",
@@ -110,7 +110,7 @@
     },
     {
       "at": 20,
-      "shot": "docs\\compat\\compat-old/api34/shots/t20s.png",
+      "shot": "docs/compat/compat-old/api34/shots/t20s.png",
       "page": {
         "url": "https://localhost/",
         "title": "鲸落",
@@ -136,7 +136,7 @@
     }
   ],
   "logcat": {
-    "file": "docs\\compat\\compat-old/api34/logcat-api34.txt",
+    "file": "docs/compat/compat-old/api34/logcat-api34.txt",
     "consoleLines": [
       "11-18 19:32:23.446   553  1599 I ActivityManager: Start proc 3220:com.google.android.webview:sandboxed_process0:org.chromium.content.app.SandboxedProcessService0:0/u0ai9000 for  {com.example.deepseekchat/org.chromium.content.app.SandboxedProcessService0:0}",
       "11-18 19:32:23.540  3220  3220 I cr_WebViewApkApp: Launched version=113.0.5672.136 minSdkVersion=29 isBundle=false processName=com.google.android.webview:sandboxed_process0:org.chromium.content.app.SandboxedProcessService0:0",
@@ -170,7 +170,7 @@
   },
   "notes": [],
   "final": {
-    "shot": "docs\\compat\\compat-old/api34/shots/t-final.png",
+    "shot": "docs/compat/compat-old/api34/shots/t-final.png",
     "page": {
       "url": "https://localhost/",
       "title": "鲸落",
