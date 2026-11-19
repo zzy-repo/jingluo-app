@@ -1,5 +1,6 @@
 import { isTranslationKey, translate } from '../../i18n/index.js'
 import { classifyErrorSignature, isContextLimitMessage } from '../api/errors.js'
+import { sanitizeUpstreamError } from '../api/paramErrorNotice.js'
 import { buildReplyErrorReport } from './replyErrorReport.js'
 import type { AssistantMessage } from './types.js'
 
@@ -8,7 +9,7 @@ export type Notice = {
   /** 模板答复使用正文样式；其余统一为红色错误提示。 */
   presentation?: 'response'
   /** 需要用户处理的问题附带的操作 */
-  action?: 'apiKey' | 'topUp'
+  action?: 'apiKey' | 'topUp' | 'settings'
   /**
    * 兜底提示附带的**可复制诊断文本**（#324）：HTTP 状态码 + 上游 code + 失败环节。
    *
@@ -16,6 +17,19 @@ export type Notice = {
    * 也没有可读文案）不给它：那种情况复制出去也只是一句「未知错误」，没有诊断价值。
    */
   diagnostics?: string
+}
+
+/**
+ * 提示里要摆给用户看的环境信息（#353）。
+ *
+ * 由界面层（`AssistantMessage`）注入，而不是在描述层直接读配置：
+ * 描述层会被归档导出（`toArchive`）复用，不该反过来依赖 localStorage。
+ */
+export type NoticeContext = {
+  /** 「渠道 · 模型 · 接口」一行，参数错误时直接摆出来让用户照着自己核对 */
+  configLine?: string
+  /** 需要从上游原文里抹掉的密钥（API Key） */
+  secrets?: readonly string[]
 }
 
 const getTemplateText = (reply: AssistantMessage) =>
@@ -38,7 +52,10 @@ const isRetryableSignature = (status: number | undefined): boolean =>
   typeof status !== 'number' || status === 429 || status >= 500
 
 /** 回复出错或未正常结束时展示的提示 */
-export const describeReply = (reply: AssistantMessage): Notice | null => {
+export const describeReply = (
+  reply: AssistantMessage,
+  context: NoticeContext = {}
+): Notice | null => {
   if (reply.status === 'error' && reply.error) {
     const { kind, status, localMessage } = reply.error
     // 导入的历史可能来自不同版本；不识别的文案沿用保存时的原文。
@@ -94,12 +111,36 @@ export const describeReply = (reply: AssistantMessage): Notice | null => {
       case 'contentFilter':
         // 内容被审核拦截（#324）：重发同样被拦，文案要让人改内容，而不是点重新生成
         return readable ?? { text: translate('replyContentFiltered') }
-      case 'modelInvalid':
-        // 模型不存在 / 已下线（#324）：官方端点 400 + invalid_request_error，出路是换模型
-        return readable ?? { text: translate('replyModelInvalid') }
-      case 'badRequest':
-        // 其它被拒绝的请求（400 / 422 参数错误，#324）：重试不会有变化
-        return readable ?? { text: translate('replyBadRequest') }
+      case 'modelInvalid': {
+        // 模型不存在 / 已下线（#324 / #353）：官方端点 400 + invalid_request_error，出路是换模型。
+        // 上游原文与「渠道 · 模型 · 接口」一起摆出来，并给「打开设置」入口——只说「换模型」，用户仍然不知道换哪个。
+        const upstream = sanitizeUpstreamError(message, context.secrets)
+        const config = context.configLine
+        if (upstream && config) {
+          return {
+            text: translate('replyModelInvalidUpstream', { upstream, config }),
+            action: 'settings',
+          }
+        }
+        return readable
+          ? { text: readable.text, action: 'settings' }
+          : { text: translate('replyModelInvalid'), action: 'settings' }
+      }
+      case 'badRequest': {
+        // 其它被拒绝的请求（400 / 422 参数错误，#324 / #353）：重试不会有变化，
+        // 所以必须把「上游原文 + 当前配置」讲清楚，否则这条报错没有任何可操作性。
+        const upstream = sanitizeUpstreamError(message, context.secrets)
+        const config = context.configLine
+        if (!config) {
+          return readable ?? { text: translate('replyBadRequest') }
+        }
+        return {
+          text: upstream
+            ? translate('replyBadRequestUpstream', { upstream, config })
+            : translate('replyBadRequestNoUpstream', { config }),
+          action: 'settings',
+        }
+      }
       case 'emptyStream':
         // 200 却没有任何内容（#324）：说「空响应、可重试」，不要含糊成「未知错误」
         return { text: translate('replyEmptyStream') }

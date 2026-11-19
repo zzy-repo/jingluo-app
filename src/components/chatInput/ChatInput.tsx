@@ -7,7 +7,16 @@ import {
   IconStopFill16,
   IconThinkOutline14,
 } from '../base/icons.js'
-import { getApiKey, supportsFileUpload, useApiConfig } from '../../services/api/apiConfig.js'
+import {
+  getApiKey,
+  getBaseUrl,
+  getModel,
+  getProviderKind,
+  supportsFileUpload,
+  useApiConfig,
+} from '../../services/api/apiConfig.js'
+import { checkSendConfig, type SendConfigIssue } from '../../services/api/paramErrorNotice.js'
+import { translate, type TranslationKey } from '../../i18n/index.js'
 import { getSpec } from '../../services/api/providers.js'
 import { setSearch, setThinking, useSettings } from '../../services/settings.js'
 import { useIsMobile } from '../../app/viewport.js'
@@ -25,7 +34,7 @@ import {
 import { stopReadAloud } from '../../services/speech/readAloud.js'
 import { IconButton } from '../base/IconButton.js'
 import { Tooltip } from '../base/Tooltip.js'
-import { ensureApiKey } from '../settings/settingsDialogState.js'
+import { ensureApiKey, openSettings } from '../settings/settingsDialogState.js'
 import { enterKeyHintFor, resolveEnterKeyAction } from './enterKey.js'
 import { DragMask, useFileDrop } from './DragMask.js'
 import { showToast } from '../base/toastState.js'
@@ -155,6 +164,31 @@ const Input = ({ sessionId }: { sessionId: string | null }) => {
   // 排队、上传中或上传失败的附件都留在输入框，全部上传成功后才能发送
   const canSend = !importingHistory && !streaming && voice.status === 'idle' && draftReady
 
+  /**
+   * 发送前的最小自检（#353）：模型名空着、地址漏了协议头、把具体接口填进服务地址，
+   * 这些一定发不出去，直接在本地拦下并跳到设置，不等上游 400 再回来一句「参数错误」。
+   */
+  const blockSendIssue = (): boolean => {
+    const issue = checkSendConfig({
+      kind: getProviderKind(),
+      baseUrl: getBaseUrl(),
+      model: getModel(),
+    })
+    if (!issue) {
+      return false
+    }
+    const keys: Record<SendConfigIssue, TranslationKey> = {
+      modelEmpty: 'sendBlockedModelEmpty',
+      modelHasSpaces: 'sendBlockedModelHasSpaces',
+      baseUrlEmpty: 'sendBlockedBaseUrlEmpty',
+      baseUrlNotHttp: 'sendBlockedBaseUrlNotHttp',
+      baseUrlLooksLikeEndpoint: 'sendBlockedBaseUrlLooksLikeEndpoint',
+    }
+    showToast(translate(keys[issue], { model: getModel().trim(), endpoint: getBaseUrl().trim() }))
+    openSettings('data')
+    return true
+  }
+
   const send = () => {
     if (
       useChatStore.getState().importingHistory ||
@@ -164,7 +198,13 @@ const Input = ({ sessionId }: { sessionId: string | null }) => {
       return
     }
     // 文本与上传完成态由提交动作读取最新快照，不使用上一次渲染的草稿。
-    if (!ensureApiKey() || !sendMessage(sessionId)) {
+    if (!ensureApiKey()) {
+      return
+    }
+    if (blockSendIssue()) {
+      return
+    }
+    if (!sendMessage(sessionId)) {
       return
     }
     stopReadAloud()

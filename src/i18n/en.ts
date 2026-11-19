@@ -111,6 +111,25 @@ export const en = {
   /** Other rejected requests (#324): 400 / 422 style parameter errors */
   replyBadRequest:
     'The upstream rejected the request as invalid. Retrying will not help — check the model and endpoint settings (do not retry).',
+  /** Parameter error with the current config at hand (#353) */
+  replyBadRequestNoUpstream:
+    'The upstream rejected the request as invalid. Retrying will not help (do not retry). It gave no field detail — check your current config: {config}',
+  /** Parameter error with the raw upstream message (#353) */
+  replyBadRequestUpstream:
+    'The upstream rejected the request as invalid. Retrying will not help (do not retry). Upstream says: {upstream}. Check your current config: {config}',
+  /** Model unavailable + raw upstream message + current config (#353) */
+  replyModelInvalidUpstream:
+    'The current model is unavailable upstream (its name may have been retired). Retrying the same request will not help (do not retry). Upstream says: {upstream}. Current config: {config}',
+  /** One line of "channel · model · endpoint" (#353) */
+  paramErrorConfigLine: '{channel} · model {model} · endpoint {endpoint}',
+  openSettingsEntry: 'Open settings',
+  sendBlockedModelEmpty: 'No model selected yet — pick one in settings before sending',
+  sendBlockedModelHasSpaces:
+    'The model name contains spaces or line breaks: "{model}". Use the exact model id from your provider',
+  sendBlockedBaseUrlEmpty: 'No endpoint yet — fill in the service URL in settings before sending',
+  sendBlockedBaseUrlNotHttp: 'The service URL must start with http:// or https://, but it is "{endpoint}"',
+  sendBlockedBaseUrlLooksLikeEndpoint:
+    'The service URL points at a concrete endpoint "{endpoint}". Put the service root here (e.g. https://api.example.com) — the app appends the path itself',
   /** Unclassified but self-evident (status / upstream code present) (#324) */
   replyUnclassifiedRetryable:
     'The reply did not finish: {detail}. A temporary failure — you can retry (tap regenerate).',

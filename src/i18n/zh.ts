@@ -103,6 +103,24 @@ export const zh = {
   /** 其它被上游拒绝的请求（#324）：400 / 422 一类参数错误 */
   replyBadRequest:
     '请求被上游判定为参数错误：重试不会有变化，请检查设置里的模型与接口配置（不要重试）',
+  /** 参数错误 + 拿得到当前配置（#353）：把「渠道 · 模型 · 接口」摆出来，用户才有可对照的东西 */
+  replyBadRequestNoUpstream:
+    '请求被上游判定为参数错误（参数不合法），重试不会有变化（不要重试）。上游没有给出具体字段，请按当前配置核对：{config}',
+  /** 参数错误 + 上游原文（#353）：原文比任何二次概括都具体 */
+  replyBadRequestUpstream:
+    '请求被上游判定为参数错误（参数不合法），重试不会有变化（不要重试）。上游原文：{upstream}。请按当前配置核对：{config}',
+  /** 模型不可用 + 上游原文 + 当前配置（#353） */
+  replyModelInvalidUpstream:
+    '当前模型在上游不可用（模型名可能已下线），重试同一个请求不会有变化（不要重试）。上游原文：{upstream}。当前配置：{config}',
+  /** 「渠道 · 模型 · 接口」一行（#353） */
+  paramErrorConfigLine: '{channel} · 模型 {model} · 接口 {endpoint}',
+  openSettingsEntry: '打开设置',
+  sendBlockedModelEmpty: '还没填模型名：先在设置里选好模型再发送',
+  sendBlockedModelHasSpaces: '模型名里带了空格或换行：「{model}」，请改成上游的完整模型名再发送',
+  sendBlockedBaseUrlEmpty: '还没填接口地址：先在设置里填好服务地址再发送',
+  sendBlockedBaseUrlNotHttp: '接口地址要以 http:// 或 https:// 开头，当前是「{endpoint}」',
+  sendBlockedBaseUrlLooksLikeEndpoint:
+    '服务地址填成了具体接口「{endpoint}」：这里只填服务根地址（如 https://api.example.com），路径由 App 自动拼接',
   /** 未识别但**有**状态码 / 上游 code（#324）：把可自证的信息摆出来，并按是否可重试分两档文案 */
   replyUnclassifiedRetryable: '回答没有完成：{detail}，属于临时故障，可以重试（点重新生成）',
   replyUnclassifiedFatal:

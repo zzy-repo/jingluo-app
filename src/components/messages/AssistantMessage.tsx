@@ -14,7 +14,13 @@ import {
 import { stopReadAloud } from '../../services/speech/readAloud.js'
 import type { AssistantMessage as AssistantMessageType } from '../../services/chat/types.js'
 import { openSettings, openOursServices } from '../settings/settingsDialogState.js'
-import { useIsOursChannel } from '../../services/api/apiConfig.js'
+import {
+  getApiKey,
+  getCurrentSpec,
+  getMessagesUrl,
+  getModel,
+  useIsOursChannel,
+} from '../../services/api/apiConfig.js'
 import { IconButton } from '../base/IconButton.js'
 import { Button } from '../base/Button.js'
 import { Markdown } from '../markdown/Markdown.js'
@@ -56,7 +62,22 @@ export const AssistantMessage = memo(function AssistantMessage({
   const t = useTranslate()
   const view = useReplyView(message, streaming)
   const panelEntry = useSearchPanel((state) => state.entry)
-  const notice = streaming ? null : describeReply(message)
+  /**
+   * 参数错误的提示要摆出「渠道 · 模型 · 接口」（#353）：上游只说「参数错误」，
+   * 用户没有可对照的东西就等于没有信息。配置在界面层读，描述层保持无副作用。
+   */
+  const locale = useSettings((state) => state.locale)
+  const spec = getCurrentSpec()
+  const notice = streaming
+    ? null
+    : describeReply(message, {
+        configLine: t('paramErrorConfigLine', {
+          channel: locale === 'en-US' ? spec.label.en : spec.label.zh,
+          model: getModel() || '—',
+          endpoint: getMessagesUrl() || '—',
+        }),
+        secrets: [getApiKey()],
+      })
   // 额度和充值都发生在「我们的渠道」上：它自带「额度与卡密」弹层（套餐 / 卡密兑换 / 剩余额度），
   // 提示里的出路就该开这个弹层，而不是把用户甩去 DeepSeek 官网（#299）
   const oursChannel = useIsOursChannel()
@@ -139,6 +160,18 @@ export const AssistantMessage = memo(function AssistantMessage({
                   onClick={() => openSettings('data')}
                 >
                   {t('changeApiKey')}
+                </button>
+              </>
+            ) : null}
+            {notice.action === 'settings' ? (
+              <>
+                {' '}
+                <button
+                  type="button"
+                  className={styles.noticeAction}
+                  onClick={() => openSettings('data')}
+                >
+                  {t('openSettingsEntry')}
                 </button>
               </>
             ) : null}
