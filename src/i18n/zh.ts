@@ -432,6 +432,13 @@ export const zh = {
   oursInviteOk: '绑定成功，+{points}',
   oursInviteShapeHint: '邀请码是 4–16 位字母或数字',
   oursInviteNeedsClaim: '先领取凭据，再显示你的邀请码',
+  // #234：线上规则改成「只给邀请人发积分」，被邀请人填码只建立关系（reward_points: 0），
+  // 所以成功文案不再报「获得 X 积分」；规则数值一律取服务端 invite_rules，前端不写死金额
+  oursInviteBound: '邀请关系已绑定',
+  oursInviteRuleInviter: '邀请人得 {points}',
+  oursInviteRuleInvitee: '被邀请人得 {points}',
+  oursInviteRuleCashback: '好友首次付款后，邀请人再得 {points}',
+  oursInviteCashbackEarned: '已获返现 {points}',
   // 套餐
   oursPlansTitle: '套餐',
   oursPlansLoading: '正在加载套餐…',
@@ -482,6 +489,8 @@ export const zh = {
   oursInviteErrOwnCode: '不能填自己的邀请码',
   oursInviteErrAlreadyRedeemed: '已经绑定过邀请码，不能重复绑定',
   oursInviteErrCodeExhausted: '这个邀请码的奖励名额已用完',
+  // #234：A 邀请了 B，B 又填 A 的码 → 服务端 409 circular_invite
+  oursInviteErrCircularInvite: '不能用你邀请过的人的邀请码（会形成互相邀请），请让对方填你的码',
   oursInviteErrRateLimited: '操作太频繁，请稍后再试',
   oursInviteErrCodeMissing: '请先填写邀请码',
   oursInviteErrDeviceMissing: '设备码缺失，无法完成操作',

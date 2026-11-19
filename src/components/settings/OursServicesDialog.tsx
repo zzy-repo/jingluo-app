@@ -30,6 +30,7 @@ import {
   type InviteProfile,
 } from '../../services/invite/api.js'
 import { bindExistingKey, bindSuccessKey, resolveBindDeviceId, type BindMessageKey } from '../../services/invite/bind.js'
+import { inviteCashbackLine, inviteOkCopy, inviteRuleLines } from '../../services/invite/copy.js'
 import { rotateKey, rotateSuccessKey, type RotateOutcome } from '../../services/invite/rotate.js'
 import { prepareDialogOpen, refreshProfile } from '../../services/invite/openFlow.js'
 import {
@@ -133,6 +134,17 @@ export const OursServicesRow = () => {
   )
 }
 
+/**
+ * 填码成功文案（Issue #234）：线上规则改成「只给邀请人发积分」，被邀请人填码 `reward_points` 就是 0。
+ * 0 / 字段缺失 → 只说「邀请关系已绑定」，不再渲染「+0 积分」；拿到积分（邀请人侧）文案保持原样。
+ */
+const inviteOkText = (rewardPoints: number, t: ReturnType<typeof useTranslate>): string => {
+  const copy = inviteOkCopy(rewardPoints)
+  return copy.key === 'oursInviteOk'
+    ? t('oursInviteOk', { points: formatPoints(copy.points, t('oursPointsUnit')) })
+    : t('oursInviteBound')
+}
+
 const OursServicesDialog = ({ onClose }: { onClose: () => void }) => {
   const t = useTranslate()
   const apiKey = useApiConfig((state) => state.apiKey)
@@ -153,7 +165,7 @@ const OursServicesDialog = ({ onClose }: { onClose: () => void }) => {
   const [inviteInput, setInviteInput] = useState('')
   const [inviteBusy, setInviteBusy] = useState(false)
   const [inviteResult, setInviteResult] = useState<
-    { kind: 'ok'; points: number } | { kind: 'error'; messageKey: InviteMessageKey } | null
+    { kind: 'ok'; rewardPoints: number } | { kind: 'error'; messageKey: InviteMessageKey } | null
   >(null)
   const [cardNo, setCardNo] = useState('')
   const [redeemBusy, setRedeemBusy] = useState(false)
@@ -653,7 +665,8 @@ const OursServicesDialog = ({ onClose }: { onClose: () => void }) => {
       setInviteResult({ kind: 'error', messageKey: result.messageKey })
       return
     }
-    setInviteResult({ kind: 'ok', points: result.rewardPoints })
+    // #234：reward_points 为 0 是**成功**（被邀请人只建立关系），文案由 inviteOkText 决定说法
+    setInviteResult({ kind: 'ok', rewardPoints: result.rewardPoints })
     setInviteInput('')
     if (result.profile !== null) {
       setBalance({ status: 'ok', profile: result.profile })
@@ -717,6 +730,12 @@ const OursServicesDialog = ({ onClose }: { onClose: () => void }) => {
   // ---------------------------------------------------------------- 渲染
 
   const profile = balance.status === 'ok' ? balance.profile : null
+  /**
+   * 邀请规则说明（Issue #234）：数值全部来自服务端 `invite_rules`，前端不写死金额。
+   * 老服务端没发这个字段 → 两个数组/行都是空，界面整行隐藏（绝不回落「双方各得 1 元」）。
+   */
+  const inviteRules = inviteRuleLines(profile?.inviteRules ?? null)
+  const inviteCashback = inviteCashbackLine(profile?.cashbackPoints ?? null)
   /** 「我已经有 Key」只在**还没读到已有绑定**时出现（一台设备一把 Key，#86 条件 5） */
   const canBindKey = profileFrom !== 'me'
   const hasKey = apiKey.trim() !== ''
@@ -1041,6 +1060,22 @@ const OursServicesDialog = ({ onClose }: { onClose: () => void }) => {
               {t('oursInviteCount', { invited: profile.invitedCount, upper: profile.maxInvites })}
             </div>
           ) : null}
+          {inviteRules.length > 0 ? (
+            <div className={styles.hint} data-testid="ours-invite-rules">
+              {inviteRules.map((line) => (
+                <div key={line.key}>
+                  {t(line.key, { points: formatPoints(line.points, t('oursPointsUnit')) })}
+                </div>
+              ))}
+            </div>
+          ) : null}
+          {inviteCashback !== null ? (
+            <div className={styles.hint} data-testid="ours-invite-cashback">
+              {t(inviteCashback.key, {
+                points: formatPoints(inviteCashback.points, t('oursPointsUnit')),
+              })}
+            </div>
+          ) : null}
           <div className={styles.redeemForm}>
             <input
               className={styles.input}
@@ -1078,7 +1113,7 @@ const OursServicesDialog = ({ onClose }: { onClose: () => void }) => {
             >
               {inviteResult.kind === 'error'
                 ? t(inviteResult.messageKey)
-                : t('oursInviteOk', { points: formatPoints(inviteResult.points, t('oursPointsUnit')) })}
+                : inviteOkText(inviteResult.rewardPoints, t)}
             </div>
           ) : null}
         </section>

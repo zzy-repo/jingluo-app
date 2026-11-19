@@ -13,10 +13,17 @@
  *   GET  /me?device_id=…
  *        → 同上但**不含 key**
  *   POST /redeem  {device_id, invite_code}
- *        → 200 { …, reward_points, synced }
+ *        → 200 { …, reward_points, reward_points_inviter, cashback_points, synced }
  *        → 错误码：device_not_found(404) invalid_code(404) own_code(400)
- *                  already_redeemed(409) code_exhausted(409) rate_limited(429)
+ *                  already_redeemed(409) code_exhausted(409) circular_invite(409)
+ *                  rate_limited(429)
  *   错误格式统一为 { "error": { "code": "...", "message": "..." } }
+ *
+ * Issue #234（2026-11-19 起线上生效）的奖励规则：
+ *   填码时**被邀请人不再得积分**（reward_points: 0），只有邀请人得 100；
+ *   好友首次付款 ≥ ¥4.9 时邀请人再得 100 返现；互填邀请码返回 409 circular_invite。
+ *   规则数值一律读服务端（/me 与 /redeem 的 `invite_rules`，以及 `cashback_points`），
+ *   前端不写死金额/积分数；字段缺失（老服务端）解析成 null，界面整行隐藏。
  *
  * 额度口径：**remaining_points 就是可消费积分**，1 元 = 100 积分。
  * 不要用卡密服务的 /api/balance 当余额（它只回答 Key 是否有效）。
@@ -43,6 +50,7 @@ export type InviteMessageKey =
   | 'oursInviteErrAlreadyRedeemed'
   | 'oursInviteErrCodeExhausted'
   | 'oursInviteErrRateLimited'
+  | 'oursInviteErrCircularInvite'
   | 'oursInviteErrCodeMissing'
   | 'oursInviteErrDeviceMissing'
   | 'oursInviteErrNetwork'
@@ -61,6 +69,9 @@ export const INVITE_ERROR_KEYS: Record<string, InviteMessageKey> = {
   own_code: 'oursInviteErrOwnCode',
   already_redeemed: 'oursInviteErrAlreadyRedeemed',
   code_exhausted: 'oursInviteErrCodeExhausted',
+  // #234：互填邀请码（A 邀请了 B，B 又填 A 的码）服务端返回 409 circular_invite；
+  // 不映射就会落到状态码兜底的「已经绑定过邀请码」，对用户是纯误导。
+  circular_invite: 'oursInviteErrCircularInvite',
   rate_limited: 'oursInviteErrRateLimited',
   device_id_invalid: 'oursInviteErrDeviceMissing',
   invalid_device: 'oursInviteErrDeviceMissing',
@@ -72,6 +83,22 @@ export const INVITE_STATUS_KEYS: Record<number, InviteMessageKey> = {
   404: 'oursInviteErrDeviceNotFound',
   409: 'oursInviteErrAlreadyRedeemed',
   429: 'oursInviteErrRateLimited',
+}
+
+/**
+ * 邀请规则（Issue #234）：金额与积分数只在服务端配置，前端一个字都不许写死。
+ * 老服务端 / 降级部署没有 `invite_rules` → 解析成 null，界面把规则行整行隐藏，
+ * **不能**回落到「双方各得 1 元」这类历史文案（线上规则早就变了）。
+ */
+export type InviteRules = {
+  /** 邀请人得多少积分（填码即到账） */
+  rewardInviterPoints: number
+  /** 被邀请人得多少积分（线上现为 0：只剩关系绑定） */
+  rewardInviteePoints: number
+  /** 好友首次付款后邀请人再得多少返现积分 */
+  cashbackPoints: number
+  /** 返现门槛（分）；照原样带出来，界面不做金额换算 */
+  cashbackMinFen: number
 }
 
 /** 账户档案（/apply 与 /me 的公共部分；/me 没有 key） */
@@ -86,6 +113,10 @@ export type InviteProfile = {
   /** 可消费积分（额度展示只认它） */
   remainingPoints: number
   keyStatus: string
+  /** 邀请规则；服务端没发 → null（界面隐藏规则行，不编造数值） */
+  inviteRules: InviteRules | null
+  /** 本人已获得的返现积分；服务端没发 → null */
+  cashbackPoints: number | null
 }
 
 export const parseJson = (text: string): { ok: true; value: unknown } | { ok: false } => {
@@ -118,6 +149,38 @@ export const readNumber = (record: Record<string, unknown> | null, field: string
 export const readBoolean = (record: Record<string, unknown> | null, field: string): boolean =>
   record?.[field] === true
 
+/**
+ * 可选数字：字段不存在 / 不是有限数字 → null。
+ * 新字段（invite_rules、cashback_points）必须用它：0 与「根本没有这个字段」是两件事，
+ * 前者是服务端说「这次 0 积分」，后者是老服务端的降级态。
+ */
+export const readOptionalNumber = (
+  record: Record<string, unknown> | null,
+  field: string
+): number | null => {
+  const value = record?.[field]
+  return typeof value === 'number' && Number.isFinite(value) ? value : null
+}
+
+/** 解析服务端下发的邀请规则；两条主线奖励都读不出来就当作没有规则（→ null） */
+export const parseInviteRules = (value: unknown): InviteRules | null => {
+  const record = asRecord(value)
+  if (record === null) {
+    return null
+  }
+  const inviter = readOptionalNumber(record, 'reward_inviter_points')
+  const invitee = readOptionalNumber(record, 'reward_invitee_points')
+  if (inviter === null && invitee === null) {
+    return null
+  }
+  return {
+    rewardInviterPoints: inviter ?? 0,
+    rewardInviteePoints: invitee ?? 0,
+    cashbackPoints: readOptionalNumber(record, 'cashback_points') ?? 0,
+    cashbackMinFen: readOptionalNumber(record, 'cashback_min_fen') ?? 0,
+  }
+}
+
 export const isSuccessStatus = (status: number): boolean => status >= 200 && status < 300
 
 /** 解析档案；字段缺失不编造默认值，只剩完全无法解释的响应才返回 null */
@@ -143,6 +206,9 @@ export const parseInviteProfile = (value: unknown): InviteProfile | null => {
     usedPoints: readNumber(record, 'used_points'),
     remainingPoints: remaining,
     keyStatus: readString(record, 'key_status'),
+    // #234：规则与返现都只认服务端；缺失即 null（降级态），绝不补默认金额
+    inviteRules: parseInviteRules(record.invite_rules),
+    cashbackPoints: readOptionalNumber(record, 'cashback_points'),
   }
 }
 
@@ -253,6 +319,15 @@ export type InviteRedeemResult =
   | {
       kind: 'ok'
       rewardPoints: number
+      /**
+       * #234 新增字段：服务端没发就是 null（老服务端），界面按降级态处理。
+       * 注意 rewardPoints === 0 在线上是**成功**（被邀请人不再得积分），不是失败。
+       */
+      rewardPointsInviter: number | null
+      invitedCount: number | null
+      maxInvites: number | null
+      cashbackPoints: number | null
+      inviteRules: InviteRules | null
       synced: boolean
       /** 响应里若直接带回档案就用它，否则由界面再查一次 /me */
       profile: InviteProfile | null
@@ -295,6 +370,11 @@ export const redeemInviteCode = async (
   return {
     kind: 'ok',
     rewardPoints: readNumber(record, 'reward_points'),
+    rewardPointsInviter: readOptionalNumber(record, 'reward_points_inviter'),
+    invitedCount: readOptionalNumber(record, 'invited_count'),
+    maxInvites: readOptionalNumber(record, 'max_invites'),
+    cashbackPoints: readOptionalNumber(record, 'cashback_points'),
+    inviteRules: parseInviteRules(record?.invite_rules),
     synced: readBoolean(record, 'synced'),
     profile: parseInviteProfile(body),
   }

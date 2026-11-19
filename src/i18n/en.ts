@@ -452,6 +452,13 @@ export const en = {
   oursInviteOk: 'Bound. +{points}',
   oursInviteShapeHint: 'Invite codes are 4–16 letters or digits',
   oursInviteNeedsClaim: 'Claim the credential first to see your invite code',
+  // #234: server now rewards the inviter only; the invitee just binds the relationship (reward_points: 0),
+  // so the success copy no longer reports earned points; rule numbers always come from invite_rules
+  oursInviteBound: 'Invite relationship linked',
+  oursInviteRuleInviter: 'Inviter gets {points}',
+  oursInviteRuleInvitee: 'Invitee gets {points}',
+  oursInviteRuleCashback: 'After your friend pays for the first time, the inviter gets {points} more',
+  oursInviteCashbackEarned: 'Cashback earned: {points}',
   oursPlansTitle: 'Plans',
   oursPlansLoading: 'Loading plans…',
   oursPlansFailed: 'Plans failed to load, try again',
@@ -496,6 +503,9 @@ export const en = {
   oursInviteErrOwnCode: 'You cannot use your own invite code',
   oursInviteErrAlreadyRedeemed: 'An invite code is already bound and cannot be changed',
   oursInviteErrCodeExhausted: 'This invite code has no rewards left',
+  // #234: A invited B and B types A's code → server returns 409 circular_invite
+  oursInviteErrCircularInvite:
+    'You cannot use the code of someone you invited (that would be a circular invite); ask them to use yours',
   oursInviteErrRateLimited: 'Too many attempts, try again later',
   oursInviteErrCodeMissing: 'Enter an invite code first',
   oursInviteErrDeviceMissing: 'Device code missing, cannot complete this action',
