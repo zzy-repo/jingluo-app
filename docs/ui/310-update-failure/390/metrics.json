@@ -1,0 +1,88 @@
+{
+  "page": "update-check",
+  "title": "#310 检查更新失败的分类文案：渠道不可达 / 清单 404 / 清单非法 JSON / 无可用版本",
+  "viewport": 390,
+  "size": "390×844",
+  "shots": [
+    "docs/ui/310-update-failure/390/update-check-00-settings-entry-390.png",
+    "docs/ui/310-update-failure/390/update-check-01-渠道不可达-390.png",
+    "docs/ui/310-update-failure/390/update-check-01-渠道不可达-复制后-390.png",
+    "docs/ui/310-update-failure/390/update-check-02-清单404-390.png",
+    "docs/ui/310-update-failure/390/update-check-03-清单非法JSON-390.png",
+    "docs/ui/310-update-failure/390/update-check-04-无可用版本-390.png",
+    "docs/ui/310-update-failure/390/update-check-05-有可用更新-390.png"
+  ],
+  "notes": [],
+  "unreachable": {
+    "present": true,
+    "status": "更新服务不可达：连不上更新服务（渠道「稳定版与预发布版」）——可能是设备网络不通，也可能是更新服务器暂时不可用。这类问题多半是临时的，点「重新检查」可以再试一次。",
+    "diagnostics": "当前版本1.4.0-beta.10（17）更新渠道稳定版与预发布版更新服务62.106.70.167:8888 → dl.rose7.cn最近检查19:05:16复制诊断信息",
+    "copyButton": "复制诊断信息",
+    "layout": {
+      "dialogWidth": 358,
+      "dialogHeight": 421,
+      "factsWidth": 308,
+      "factsOverflow": false,
+      "pageOverflowX": false
+    }
+  },
+  "clipboard": "DeepSeek 应用内更新诊断\r\n版本: 1.4.0-beta.10 (17)\r\n渠道: 稳定版与预发布版\r\n通道: 网页预览（仅下载链接）\r\n时间: 2026-11-19T11:05:16.667Z\r\n结论: 更新服务不可达：连不上更新服务（渠道「稳定版与预发布版」）——可能是设备网络不通，也可能是更新服务器暂时不可用。这类问题多半是临时的，点「重新检查」可以再试一次。\r\n上游短码: NETWORK_UNREACHABLE\r\n更新服务: 62.106.70.167:8888 → dl.rose7.cn\r\n本次生效: 62.106.70.167:8888",
+  "http-404": {
+    "present": true,
+    "status": "更新服务返回错误：更新服务返回了 HTTP 404（渠道「稳定版与预发布版」）——渠道地址可能配错，或这个渠道还没在这台分发机上发布。客户端再试一次通常还是同样的结果，请点「复制诊断信息」把这段反馈给我们。",
+    "diagnostics": "当前版本1.4.0-beta.10（17）更新渠道稳定版与预发布版更新服务62.106.70.167:8888 → dl.rose7.cn最近检查19:05:18复制诊断信息",
+    "copyButton": "复制诊断信息",
+    "layout": {
+      "dialogWidth": 358,
+      "dialogHeight": 443,
+      "factsWidth": 308,
+      "factsOverflow": false,
+      "pageOverflowX": false
+    }
+  },
+  "bad-json": {
+    "present": true,
+    "status": "版本信息无法解析：更新服务返回的版本信息读不出来（渠道「稳定版与预发布版」），格式不符合约定。这是更新服务一侧的数据问题，不是你设备的问题。客户端再试一次通常还是同样的结果，请点「复制诊断信息」把这段反馈给我们。",
+    "diagnostics": "当前版本1.4.0-beta.10（17）更新渠道稳定版与预发布版更新服务62.106.70.167:8888 → dl.rose7.cn最近检查19:05:19复制诊断信息",
+    "copyButton": "复制诊断信息",
+    "layout": {
+      "dialogWidth": 358,
+      "dialogHeight": 443,
+      "factsWidth": 308,
+      "factsOverflow": false,
+      "pageOverflowX": false
+    }
+  },
+  "no-version": {
+    "present": true,
+    "status": "暂无可用版本：当前版本 1.4.0-beta.10，渠道「稳定版与预发布版」已是最新，该渠道没有更高的版本。",
+    "diagnostics": "当前版本1.4.0-beta.10（17）更新渠道稳定版与预发布版更新服务62.106.70.167:8888 → dl.rose7.cn最近检查19:05:20复制诊断信息",
+    "copyButton": "复制诊断信息",
+    "layout": {
+      "dialogWidth": 358,
+      "dialogHeight": 399,
+      "factsWidth": 308,
+      "factsOverflow": false,
+      "pageOverflowX": false
+    }
+  },
+  "update-available": {
+    "present": true,
+    "status": "发现新版本，确认后再下载。",
+    "diagnostics": "当前版本1.4.0-beta.10（17）更新渠道稳定版与预发布版更新服务62.106.70.167:8888 → dl.rose7.cn最近检查19:05:21复制诊断信息",
+    "copyButton": "复制诊断信息",
+    "layout": {
+      "dialogWidth": 358,
+      "dialogHeight": 536,
+      "factsWidth": 308,
+      "factsOverflow": false,
+      "pageOverflowX": false
+    }
+  },
+  "consoleErrors": [
+    "Failed to load resource: net::ERR_CONNECTION_REFUSED",
+    "Failed to load resource: net::ERR_CONNECTION_REFUSED",
+    "Failed to load resource: the server responded with a status of 404 (Not Found)",
+    "Failed to load resource: the server responded with a status of 404 (Not Found)"
+  ]
+}

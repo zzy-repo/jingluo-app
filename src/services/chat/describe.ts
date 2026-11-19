@@ -1,5 +1,6 @@
 import { isTranslationKey, translate } from '../../i18n/index.js'
 import { classifyErrorSignature, isContextLimitMessage } from '../api/errors.js'
+import { buildReplyErrorReport } from './replyErrorReport.js'
 import type { AssistantMessage } from './types.js'
 
 export type Notice = {
@@ -8,6 +9,13 @@ export type Notice = {
   presentation?: 'response'
   /** 需要用户处理的问题附带的操作 */
   action?: 'apiKey' | 'topUp'
+  /**
+   * 兜底提示附带的**可复制诊断文本**（#324）：HTTP 状态码 + 上游 code + 失败环节。
+   *
+   * 只有「上游确实给了可自证的信息」时才存在 —— 真未知（无状态码、无上游 code、
+   * 也没有可读文案）不给它：那种情况复制出去也只是一句「未知错误」，没有诊断价值。
+   */
+  diagnostics?: string
 }
 
 const getTemplateText = (reply: AssistantMessage) =>
@@ -21,6 +29,14 @@ const getTemplateText = (reply: AssistantMessage) =>
  */
 const isReadableForUser = (text: string) => /[\u3400-\u9fff\u3040-\u30ff\uac00-\ud7af]/.test(text)
 
+/**
+ * 兜底分支里「重试还有没有意义」（#324）：没状态码（请求没到达服务端）、429 限流、
+ * 5xx 都还是临时故障；4xx 的其它状态是「同样的请求再发一次也一样」。
+ * 与请求层的 `isRetryableStatus` 同口径，这里只多认一个「没有状态码」。
+ */
+const isRetryableSignature = (status: number | undefined): boolean =>
+  typeof status !== 'number' || status === 429 || status >= 500
+
 /** 回复出错或未正常结束时展示的提示 */
 export const describeReply = (reply: AssistantMessage): Notice | null => {
   if (reply.status === 'error' && reply.error) {
@@ -31,6 +47,15 @@ export const describeReply = (reply: AssistantMessage): Notice | null => {
         ? translate(localMessage.key, localMessage.params)
         : ''
     const message = localized || reply.error.message
+    /**
+     * 上游自己写了中文（日/韩同理）：**原话比任何固定文案都具体**，直接展示。
+     *
+     * 像「当前模型不支持图片输入」这种句子，哪一档固定文案（参数错误 / 模型不可用）
+     * 都不如原话准确。分类照旧进日志（`ui.condition`），只是界面上不让固定文案盖掉
+     * 上游能自证的原话——这是 #324 之前就有、也必须保留的行为。
+     * 只给「没有附带操作」的档用：鉴权 / 额度这两档要保住操作按钮，仍用固定文案。
+     */
+    const readable = isReadableForUser(message) ? { text: message } : null
     // 历史补传错误刷新后仍需说明原因，恢复沿用附件卡片或重新生成。
     if (kind === 'upload') {
       return { text: message || translate('uploadFileStatusFailed') }
@@ -51,7 +76,7 @@ export const describeReply = (reply: AssistantMessage): Notice | null => {
       return { text: localized || translate('replyContextLimit') }
     }
     switch (
-      // 判定口径与请求层共用一份（#299）：状态码 + 上游 code + 文案，
+      // 判定口径与请求层共用一份（#299 / #324）：状态码 + 上游 code + 文案，
       // 这样「429 + insufficient_quota」也能落到额度档，而不是被当成限流说「请求过于频繁」
       classifyErrorSignature({ status, code: reply.error.upstreamCode, message })
     ) {
@@ -64,13 +89,52 @@ export const describeReply = (reply: AssistantMessage): Notice | null => {
       case 'rateLimited':
         return { text: translate('replyRateLimited') }
       case 'serverBusy':
-        return { text: translate('completionServerBusyToast') }
-      default:
-        // 未识别的错误：可读的中文原文照常展示，其余一律走 i18n 兜底，不把英文原文丢给用户。
-        if (localized) {
-          return { text: localized }
+        // 5xx 是临时故障且会自动重试：文案显式写「可以重试」，与终态错误的「不要重试」区分（#324）
+        return { text: translate('replyServerBusy') }
+      case 'contentFilter':
+        // 内容被审核拦截（#324）：重发同样被拦，文案要让人改内容，而不是点重新生成
+        return readable ?? { text: translate('replyContentFiltered') }
+      case 'modelInvalid':
+        // 模型不存在 / 已下线（#324）：官方端点 400 + invalid_request_error，出路是换模型
+        return readable ?? { text: translate('replyModelInvalid') }
+      case 'badRequest':
+        // 其它被拒绝的请求（400 / 422 参数错误，#324）：重试不会有变化
+        return readable ?? { text: translate('replyBadRequest') }
+      case 'emptyStream':
+        // 200 却没有任何内容（#324）：说「空响应、可重试」，不要含糊成「未知错误」
+        return { text: translate('replyEmptyStream') }
+      default: {
+        // 未识别的错误（#324）：可读的中文原文照常展示，其余升级为「能自证」的提示。
+        if (readable) {
+          return readable
         }
-        return { text: isReadableForUser(message) ? message : translate('replyUnknownError') }
+        const upstreamCode = reply.error.upstreamCode?.trim() ?? ''
+        const hasStatus = typeof status === 'number'
+        // **真未知**：没有 HTTP 状态码、没有上游 code、也没有可读文案 ——
+        // 这才是 `replyUnknownError` 唯一该出现的地方（#324 验收口径）。
+        if (!hasStatus && !upstreamCode) {
+          return { text: translate('replyUnknownError') }
+        }
+        // 否则把可自证的信息摆到台面上（短码，不贴长 message），并给一份可复制的诊断
+        const detail = [
+          hasStatus ? `HTTP ${status}` : '',
+          upstreamCode ? `code=${upstreamCode}` : '',
+        ]
+          .filter(Boolean)
+          .join('，')
+        return {
+          text: translate(
+            isRetryableSignature(status) ? 'replyUnclassifiedRetryable' : 'replyUnclassifiedFatal',
+            { detail }
+          ),
+          diagnostics: buildReplyErrorReport({
+            status,
+            upstreamCode: upstreamCode || undefined,
+            kind,
+            message: reply.error.message,
+          }),
+        }
+      }
     }
   }
   const template = getTemplateText(reply)

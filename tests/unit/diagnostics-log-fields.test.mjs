@@ -51,7 +51,11 @@ test('A 合法值：结构化字段按契约原样落库', () => {
     status: 200,
     endpointKey: 'chatBaseUrl',
     traceId: 'r-20261119-abcdef',
+    // #324：上游短码（error.code / error.type），用来按 code 切片「这个月多少次 invalid_request_error」
+    upstreamCode: 'invalid_request_error',
     durationMs: 1832,
+    queueMs: 640,
+    retryable: true,
     bytes: 4096,
     totalBytes: 8192,
     speedBps: 2234,
@@ -73,7 +77,10 @@ test('A 合法值：结构化字段按契约原样落库', () => {
     status: 200,
     endpointKey: 'chatBaseUrl',
     traceId: 'r-20261119-abcdef',
+    upstreamCode: 'invalid_request_error',
     durationMs: 1832,
+    queueMs: 640,
+    retryable: true,
     bytes: 4096,
     totalBytes: 8192,
     speedBps: 2234,
@@ -93,7 +100,9 @@ test('A 合法值：结构化字段按契约原样落库', () => {
     assert.ok(['string', 'number', 'boolean'].includes(typeof value), `非原始值: ${String(value)}`)
   }
   // 契约里的键都真的能写进去（防止「定义了但忘了加进 META_KEYS」）
-  assert.equal(META_KEYS.length, 20)
+  // 21 = #324 的 upstreamCode；#313 再加两个：`queueMs`（排队等待，上传链路必须能分开
+  // 「排队」与「传输」）与 `retryable`（这次失败再试有没有用）
+  assert.equal(META_KEYS.length, 23, '键集合只应由 #324 的 upstreamCode 与 #313 的 queueMs / retryable 变动')
   assert.equal(Object.keys(meta).length, META_KEYS.length)
 })
 

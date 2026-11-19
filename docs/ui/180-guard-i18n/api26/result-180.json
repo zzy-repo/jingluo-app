@@ -24,7 +24,7 @@
   "install": {
     "elapsedMs": 1192,
     "output": "Performing Streamed Install\r\nSuccess",
-    "apk": "D:\\all_project\\runs\\fix180\\android\\app\\build\\outputs\\apk\\debug\\app-debug.apk"
+    "apk": "<worktree>/android/app/build/outputs/apk/debug/app-debug.apk"
   },
   "coldStart": {
     "elapsedMs": 754,
@@ -34,7 +34,7 @@
   "samples": [
     {
       "at": 2,
-      "shot": "/d/all_project/runs/fix180/docs/ui/180-guard-i18n/api26/shots/t02s.png",
+      "shot": "docs/ui/180-guard-i18n/api26/shots/t02s.png",
       "page": {
         "url": "https://localhost/",
         "title": "鲸落",
@@ -72,7 +72,7 @@
     },
     {
       "at": 6,
-      "shot": "/d/all_project/runs/fix180/docs/ui/180-guard-i18n/api26/shots/t06s.png",
+      "shot": "docs/ui/180-guard-i18n/api26/shots/t06s.png",
       "page": {
         "url": "https://localhost/",
         "title": "鲸落",
@@ -110,7 +110,7 @@
     },
     {
       "at": 13,
-      "shot": "/d/all_project/runs/fix180/docs/ui/180-guard-i18n/api26/shots/t13s.png",
+      "shot": "docs/ui/180-guard-i18n/api26/shots/t13s.png",
       "page": {
         "url": "https://localhost/",
         "title": "鲸落",
@@ -148,7 +148,7 @@
     },
     {
       "at": 20,
-      "shot": "/d/all_project/runs/fix180/docs/ui/180-guard-i18n/api26/shots/t20s.png",
+      "shot": "docs/ui/180-guard-i18n/api26/shots/t20s.png",
       "page": {
         "url": "https://localhost/",
         "title": "鲸落",
@@ -186,7 +186,7 @@
     }
   ],
   "final": {
-    "shot": "/d/all_project/runs/fix180/docs/ui/180-guard-i18n/api26/shots/t-final.png",
+    "shot": "docs/ui/180-guard-i18n/api26/shots/t-final.png",
     "page": {
       "url": "https://localhost/",
       "title": "鲸落",
@@ -223,9 +223,9 @@
     ]
   },
   "logcat": {
-    "file": "/d/all_project/runs/fix180/docs/ui/180-guard-i18n/api26/logcat-api26.txt",
+    "file": "docs/ui/180-guard-i18n/api26/logcat-api26.txt",
     "bootGuardLines": [
-      "11-19 01:22:17.120  3792  3792 E Capacitor/Console: File: https://localhost/ - Line 1295 - Msg: [boot-guard] missing-api {\"branch\":\"①\",\"code\":\"missing-api\",\"message\":\"\",\"missing\":[\"Intl.DisplayNames\"],\"url\":null,\"line\":null,\"col\":null,\"ua\":\"Mozilla/5.0 (Linux; Android 8.0.0; Android SDK built for x86_64 Build/OSR1.180418.026; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/69.0.3497.100 Mobile Safari/537.36\",\"webviewVersion\":\"69.0.3497.100\",\"at\":1795051337093,\"text\":\"This page could not start\\nThis page needs a newer Android System WebView (or browser) to open properly.\\nMissing runtime features: Intl.DisplayNames\\nComponent version: 69.0.3497.100\\nTo update: open your app store, search for \\\"Android System WebView\\\" and update it, then reopen this app.\\nIf it still fails after updating, report the component version above with a screenshot of this page.\"}"
+      "11-19 01:22:17.120  3792  3792 E Capacitor/Console: File: https://localhost/ - Line 1295 - Msg: [boot-guard] missing-api {\"branch\":\"①\",\"code\":\"missing-api\",\"message\":\"\",\"missing\":[\"Intl.DisplayNames\"],\"url\":null,\"line\":null,\"col\":null,\"ua\":\"Mozilla/5.0 (Linux; Android 8.0.0; Android SDK built for x86_64 Build/OSR1.180418.026; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/69.0.3497.100 Mobile Safari/537.36\",\"webviewVersion\":\"69.0.3497.100\",\"at\":1795051337093,\"text\":\"This page could not start/nThis page needs a newer Android System WebView (or browser) to open properly./nMissing runtime features: Intl.DisplayNames/nComponent version: 69.0.3497.100/nTo update: open your app store, search for /\"Android System WebView/\" and update it, then reopen this app./nIf it still fails after updating, report the component version above with a screenshot of this page.\"}"
     ],
     "syntaxErrorLines": [
       "11-19 01:22:17.371  3792  3891 E Capacitor: JavaScript Error: {\"type\":\"js.error\",\"error\":{\"message\":\"Uncaught SyntaxError: Unexpected token ?\",\"url\":\"https://localhost/static/js/main.7a2e9ece.js\",\"line\":1,\"col\":253966,\"errorObject\":\"{}\"}}",

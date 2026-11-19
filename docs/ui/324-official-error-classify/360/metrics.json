@@ -1,0 +1,45 @@
+{
+  "page": "chat-error-324",
+  "title": "#324 官方渠道失败分类：模型不可用 / 未识别带状态码与诊断，390 与 360 两档",
+  "viewport": 360,
+  "size": "360×740",
+  "shots": [
+    "docs/ui/324-official-error-classify/360/chat-error-324-01-模型不可用-不要重试-360.png",
+    "docs/ui/324-official-error-classify/360/chat-error-324-02-未识别-带状态码与诊断按钮-360.png",
+    "docs/ui/324-official-error-classify/360/chat-error-324-03-复制诊断信息-360.png"
+  ],
+  "notes": [],
+  "modelInvalid": {
+    "text": "当前模型在上游不可用（模型名可能已下线）：请在设置里换一个模型再发，重试同一个请求不会有变化（不要重试）",
+    "box": {
+      "x": 40,
+      "y": 202,
+      "width": 300,
+      "height": 66
+    },
+    "inViewport": true,
+    "horizontalOverflow": false
+  },
+  "unclassified": {
+    "text": "回答没有完成：HTTP 451，code=unsupported_region，重试不会有变化（不要重试），请先检查设置，或用「复制诊断信息」反馈给我们 复制诊断信息",
+    "box": {
+      "x": 40,
+      "y": 444,
+      "width": 300,
+      "height": 88
+    },
+    "inViewport": true,
+    "horizontalOverflow": false
+  },
+  "copyButton": {
+    "visible": true
+  },
+  "copy": {
+    "toastText": "诊断信息已复制",
+    "clipboard": "DeepSeek 回答失败诊断\r\n时间: 2026-11-19T10:56:45.014Z\r\n环节: http（流开始前）\r\nHTTP 状态: 451\r\n上游 code: unsupported_region\r\n上游原文: totally new upstream failure shape"
+  },
+  "modelInvalidHasCopyButton": {
+    "value": false
+  },
+  "consoleErrors": []
+}

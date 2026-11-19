@@ -264,7 +264,7 @@ test('F：下载失败的 import_error 事件带 url.path 与 error.msg（#19）
   const failures = records('import_error')
   assert.equal(failures.length, 1, `失败必须落一条 import_error，实际 ${failures.length} 条`)
   const fields = failures[0].fields
-  assert.equal(fields.stage, 'download')
+  assert.equal(fields.stage, 'import.download')
   // 只留 path，不带 host / query（签名参数都在 query 里）
   assert.equal(fields['url.path'], '/deepseek_data-2026-11-01.zip')
   assert.equal(typeof fields['error.msg'], 'string')

@@ -1,5 +1,7 @@
 import { Capacitor, CapacitorHttp, type HttpResponse } from '@capacitor/core'
 import { errorMeta, record, recordAction, recordEvent, redactUrl } from '../../diagnostics/collector.js'
+import { buildMeta } from '../../diagnostics/fields.js'
+import { bytesPerSecond } from '../../diagnostics/timing.js'
 import { importHistory } from '../backup.js'
 import { LIMITS } from '../../limits.js'
 import { BackupError, fail } from './errors.js'
@@ -245,12 +247,22 @@ const contentRangeTotal = (headers: Record<string, string> | undefined): number 
  * 只给「文件过大（200MB）」时用户不知道是哪个包、也看不出差多少；两个数一起给，
  * 才不会把「应用算错」和「我这个包确实太大」混在一起。
  */
-const tooLarge = (limitBytes: number, measuredBytes: number): never => {
+const tooLarge = (limitBytes: number, measuredBytes: number, correlationId: string): never => {
   // 拒绝也要留痕：只给用户一句提示、日志里却什么都没有，事后就查不出「到底是哪个包、差多少」。
   record('import_error', 'error', 'import rejected: archive too large', {
-    stage: 'size',
+    correlationId,
+    reason: 'archive-too-large',
     'limit.bytes': limitBytes,
     'download.bytes': measuredBytes,
+    ...buildMeta({
+      flow: 'import',
+      stage: 'import.size',
+      status: 'rejected',
+      // 同一个链接不会因为「再试一次」变小：重试没用，只能换一个包
+      retryable: false,
+      bytes: measuredBytes,
+      totalBytes: measuredBytes,
+    }),
   })
   return fail('historyImportUrlTooLarge', {
     size: maxImportMegabytes(limitBytes),
@@ -313,12 +325,12 @@ const fromBase64 = (value: string): Uint8Array<ArrayBuffer> => {
 }
 
 /** 统一 data → 字节，并在解码前先按 base64 长度估算一次大小。 */
-const toBytes = (data: unknown, maxBytes: number): Uint8Array<ArrayBuffer> => {
+const toBytes = (data: unknown, maxBytes: number, correlationId: string): Uint8Array<ArrayBuffer> => {
   if (typeof data === 'string') {
     // 每个 base64 字符约 3/4 字节：超限的包不必解码，避免几十 MB 的字符串再膨胀一倍。
     const estimated = Math.floor((data.length * 3) / 4)
     if (estimated > maxBytes) {
-      tooLarge(maxBytes, estimated)
+      tooLarge(maxBytes, estimated, correlationId)
     }
     return fromBase64(data)
   }
@@ -448,21 +460,45 @@ const monotonicNow = (): number => {
  */
 const elapsedSince = (startedAt: number): number => Math.max(0, Math.round(monotonicNow() - startedAt))
 
+/**
+ * 再试一次有没有用（#313）：链路类（超时 / 断流 / 停滞 / 预算 / 网络 / 空包）可重试；
+ * 包本身坏了、地址永久无效、403 过期/签名错误都不可 —— 重试只会再等一遍。
+ */
+const RETRYABLE_FAILURES = new Set([
+  'timeout',
+  'interrupted',
+  'network',
+  'offline',
+  'unreachable',
+  'refused',
+  'stalled',
+  'deadline',
+  'empty',
+  'incomplete',
+])
+
 /** 下载失败必录：阶段 + 已下载字节 + 耗时 + 错误原文（回查「导入没反应」靠这条）。 */
 const recordDownloadFailure = (
   reason: string,
   url: string,
+  correlationId: string,
   startedAt: number,
   extra: Record<string, string | number> = {},
   error?: unknown
 ) =>
   record('import_error', 'error', `import download failed: ${reason}`, {
-    stage: 'download',
-    durationMs: elapsedSince(startedAt),
+    correlationId,
     reason,
     // 只留 path（签名与 token 都在 query 里），否则事后无法把一条失败对上具体文件（#19）
     'url.path': redactUrl(url),
     ...extra,
+    ...buildMeta({
+      flow: 'import',
+      stage: 'import.download',
+      status: 'error',
+      retryable: RETRYABLE_FAILURES.has(reason),
+      durationMs: elapsedSince(startedAt),
+    }),
     // error.msg 一律给：没有异常对象时用失败原因兜底，日志里不留空字段（#19）
     ...(error === undefined ? { 'error.msg': reason } : errorMeta(error)),
   })
@@ -474,6 +510,11 @@ const recordDownloadFailure = (
  */
 type DownloadState = {
   startedAt: number
+  /**
+   * 本次导入的关联 id（#313）：下载阶段的每条 `import_stage` / `import_error` 都带上它，
+   * 两次导入（含失败重试）在日志里才能分组；写在 state 里是因为心跳/停滞看门狗/块请求都读这份状态。
+   */
+  correlationId: string
   downloaded: number
   total: number | undefined
   from: number
@@ -531,13 +572,21 @@ const stallVerdict = (state: DownloadState): Error | null => {
   const now = monotonicNow()
   if (now >= state.deadline) {
     recordEvent('import_stage', 'import: download deadline exceeded', {
-      stage: 'download',
+      correlationId: state.correlationId,
       'download.bytes': state.downloaded,
       ...(state.total === undefined ? {} : { 'download.total': state.total }),
       'request.from': state.from,
       'request.span': state.span,
       attempt: state.attempt,
       'max.total.ms': state.deadline - state.startedAt,
+      ...buildMeta({
+        flow: 'import',
+        stage: 'import.download',
+        // 预算耗尽 = 一直在推进但太慢：字节没坏，续传/重试都还有意义
+        status: 'timeout',
+        retryable: true,
+        durationMs: elapsedSince(state.startedAt),
+      }),
     })
     return new DownloadDeadlineExceeded()
   }
@@ -546,7 +595,7 @@ const stallVerdict = (state: DownloadState): Error | null => {
     return null
   }
   recordEvent('import_stage', 'import: download stalled', {
-    stage: 'download',
+    correlationId: state.correlationId,
     'download.bytes': state.downloaded,
     ...(state.total === undefined ? {} : { 'download.total': state.total }),
     'request.from': state.from,
@@ -554,6 +603,13 @@ const stallVerdict = (state: DownloadState): Error | null => {
     attempt: state.attempt,
     'idle.ms': idleMs,
     'stall.ms': state.stallMs,
+    ...buildMeta({
+      flow: 'import',
+      stage: 'import.download',
+      status: 'timeout',
+      retryable: true,
+      durationMs: elapsedSince(state.startedAt),
+    }),
   })
   return new DownloadStalled()
 }
@@ -658,7 +714,8 @@ const startDownloadHeartbeat = (
     const delta = state.downloaded - lastBytes
     const idleMs = elapsedSince(state.lastProgressAt)
     recordEvent('import_stage', 'import: download heartbeat', {
-      stage: 'download',
+      correlationId: state.correlationId,
+      stage: 'import.download',
       'download.bytes': state.downloaded,
       ...(state.total === undefined ? {} : { 'download.total': state.total }),
       // 最近这一段的新增字节：>0 = 在推进；=0 且 idle.ms 一直涨 = 停滞
@@ -702,6 +759,7 @@ const requestRange = async (url: string, from: number, to: number): Promise<Http
 const failForStatus = async (
   response: HttpResponse,
   url: string,
+  correlationId: string,
   startedAt: number,
   downloaded: number,
   total: number | undefined,
@@ -721,20 +779,20 @@ const failForStatus = async (
     // 链接过期与签名被改在服务端是两个完全不同的错误码（RequestTimeTooSkewed / SignatureDoesNotMatch），
     // 文案必须区分——用户看到「过期」才知道要回 DeepSeek 重新导出，看到「签名错误」才知道是链接被截断。
     if (/SignatureDoesNotMatch/i.test(detail)) {
-      recordDownloadFailure('signature', url, startedAt, meta)
+      recordDownloadFailure('signature', url, correlationId, startedAt, meta)
       trace?.({ at: elapsedSince(startedAt), kind: 'error', status, bytes: downloaded, totalBytes: total, message: 'signature' })
       return fail('historyImportUrlBadSignature')
     }
     if (/RequestTimeTooSkewed|Expired/i.test(detail)) {
-      recordDownloadFailure('expired', url, startedAt, meta)
+      recordDownloadFailure('expired', url, correlationId, startedAt, meta)
       trace?.({ at: elapsedSince(startedAt), kind: 'error', status, bytes: downloaded, totalBytes: total, message: 'expired' })
       return fail('historyImportUrlExpired')
     }
-    recordDownloadFailure('forbidden', url, startedAt, meta)
+    recordDownloadFailure('forbidden', url, correlationId, startedAt, meta)
     trace?.({ at: elapsedSince(startedAt), kind: 'error', status, bytes: downloaded, totalBytes: total, message: 'forbidden' })
     return fail('historyImportUrlForbidden', { detail: detail === '' ? `HTTP ${status}` : detail })
   }
-  recordDownloadFailure(`http-${status}`, url, startedAt, meta)
+  recordDownloadFailure(`http-${status}`, url, correlationId, startedAt, meta)
   trace?.({ at: elapsedSince(startedAt), kind: 'error', status, bytes: downloaded, totalBytes: total, message: `http-${status}` })
   return fail('historyImportUrlHttp', { status })
 }
@@ -778,7 +836,8 @@ const fetchChunk = async (
     state.attempt = attempt
     // 阶段埋点（只记录，不改行为）：把「原生请求是否返回」与「主线程是否停摆」分开。
     recordEvent('import_stage', 'import: native request begin', {
-      stage: 'download',
+      correlationId: state.correlationId,
+      stage: 'import.download',
       'request.from': from,
       'request.span': span,
       attempt,
@@ -788,7 +847,8 @@ const fetchChunk = async (
       // 「整段下载剩余预算」和「用户取消」约束，到期立刻结束而不是等原生超时。
       const response = await guardRequest(requestRange(url, from, from + span - 1), state, signal)
       recordEvent('import_stage', 'import: native response', {
-        stage: 'download',
+        correlationId: state.correlationId,
+        stage: 'import.download',
         'request.from': from,
         'request.span': span,
         attempt,
@@ -798,7 +858,8 @@ const fetchChunk = async (
       return { response, requested: span }
     } catch (error) {
       recordEvent('import_stage', 'import: native request error', {
-        stage: 'download',
+        correlationId: state.correlationId,
+        stage: 'import.download',
         'request.from': from,
         'request.span': span,
         attempt,
@@ -819,7 +880,7 @@ const fetchChunk = async (
       // 错误串却常常与「端口被禁」长得一样，判离线更接近真相（见下面分类块的 offline 优先）。
       if (isBrowserOnline() && isPermanentFailure(error)) {
         const { startedAt, downloaded, total } = state
-        recordDownloadFailure('permanent', url, startedAt, { 'download.bytes': downloaded }, error)
+        recordDownloadFailure('permanent', url, state.correlationId, startedAt, { 'download.bytes': downloaded }, error)
         trace?.({
           at: elapsedSince(startedAt),
           kind: 'error',
@@ -845,13 +906,13 @@ const fetchChunk = async (
     // 真离线时 WebView 抛的是 `TypeError: Failed to fetch`，与被墙端口/中间设备拦截一模一样，
     // 靠错误串永远分不出来 —— 过去就因此把「手机没网」报成了「网络异常，请检查网络连接」。
     if (!isBrowserOnline()) {
-      recordDownloadFailure('offline', url, startedAt, { 'download.bytes': downloaded }, error)
+      recordDownloadFailure('offline', url, state.correlationId, startedAt, { 'download.bytes': downloaded }, error)
       trace?.({ at: elapsedSince(startedAt), kind: 'error', bytes: downloaded, totalBytes: total, message: 'offline' })
       return fail('historyImportUrlOffline')
     }
     if (isTimeout(error)) {
       // 超时且已经下到一半：说明链路慢，不是链接坏了。
-      recordDownloadFailure('timeout', url, startedAt, { 'download.bytes': downloaded, percent }, error)
+      recordDownloadFailure('timeout', url, state.correlationId, startedAt, { 'download.bytes': downloaded, percent }, error)
       trace?.({ at: elapsedSince(startedAt), kind: 'error', bytes: downloaded, totalBytes: total, message: 'timeout' })
       return downloaded > 0
         ? fail('historyImportUrlTimeoutPartial', { percent })
@@ -865,16 +926,16 @@ const fetchChunk = async (
       const classified = classifyImportFailure({ error, online: isBrowserOnline() })
       const tier: ImportFailureReason =
         classified === 'refused' ? 'refused' : classified === 'offline' ? 'offline' : 'unreachable'
-      recordDownloadFailure(tier, url, startedAt, { 'download.bytes': downloaded }, error)
+      recordDownloadFailure(tier, url, state.correlationId, startedAt, { 'download.bytes': downloaded }, error)
       trace?.({ at: elapsedSince(startedAt), kind: 'error', bytes: downloaded, totalBytes: total, message: tier })
       return fail(IMPORT_FAILURE_KEYS[tier])
     }
     if (isStreamBroken(error)) {
-      recordDownloadFailure('interrupted', url, startedAt, { 'download.bytes': downloaded, percent }, error)
+      recordDownloadFailure('interrupted', url, state.correlationId, startedAt, { 'download.bytes': downloaded, percent }, error)
       trace?.({ at: elapsedSince(startedAt), kind: 'error', bytes: downloaded, totalBytes: total, message: 'interrupted', status: 0 })
       return fail('historyImportUrlInterrupted', { percent })
     }
-    recordDownloadFailure('network', url, startedAt, { 'download.bytes': downloaded }, error)
+    recordDownloadFailure('network', url, state.correlationId, startedAt, { 'download.bytes': downloaded }, error)
     trace?.({ at: elapsedSince(startedAt), kind: 'error', bytes: downloaded, totalBytes: total, message: 'network' })
     return fail('historyImportUrlNetwork')
   }
@@ -897,6 +958,7 @@ const fetchChunk = async (
 const downloadArchive = async (
   url: string,
   options: UrlImportOptions,
+  correlationId: string,
   trace?: (entry: ImportTraceEntry) => void
 ): Promise<File> => {
   const startedAt = monotonicNow()
@@ -910,6 +972,7 @@ const downloadArchive = async (
   }
   const state: DownloadState = {
     startedAt,
+    correlationId,
     downloaded: resumed?.downloaded ?? 0,
     total: resumed?.total,
     from: resumed?.downloaded ?? 0,
@@ -920,12 +983,22 @@ const downloadArchive = async (
     deadline: startedAt + maxTotalMs,
   }
   recordEvent('import_stage', 'import: download archive', {
-    stage: 'download',
+    correlationId,
+    stage: 'import.download',
     'stall.ms': stallMs,
     'max.total.ms': maxTotalMs,
     'download.bytes': state.downloaded,
     ...(state.total === undefined ? {} : { 'download.total': state.total }),
+    // 续传可见：已下到 >0 字节的起点就是从断点继续（`status:'partial'` 是同一件事的结构化标注）
     resume: resumed === null ? 'no' : 'yes',
+    ...buildMeta({
+      flow: 'import',
+      stage: 'import.download',
+      status: resumed === null ? 'ok' : 'partial',
+      retryable: true,
+      bytes: state.downloaded,
+      ...(state.total === undefined ? {} : { totalBytes: state.total }),
+    }),
   })
   if (resumed !== null) {
     // 续传：明确告知「从已下载的哪里继续」，重试不再从 0 开始（#38）
@@ -964,13 +1037,13 @@ const downloadArchive = async (
         break
       }
       if (status !== 200 && status !== 206) {
-        await failForStatus(response, url, startedAt, state.downloaded, state.total, trace)
+        await failForStatus(response, url, state.correlationId, startedAt, state.downloaded, state.total, trace)
       }
       if (status === 200 && from > 0) {
         // 服务端忽略了 Range，直接回整包：不能把整包接在已下载的字节后面（会拼错、包体翻倍），
         // 只能丢掉本地已下载的部分从头算，并把「已重新开始」写进详情（#38 要求明确告知）。
         recordEvent('import_stage', 'import: range ignored, restart from zero', {
-          stage: 'download',
+          stage: 'import.download',
           'download.bytes': state.downloaded,
           'request.from': from,
           'request.span': requested,
@@ -1007,11 +1080,11 @@ const downloadArchive = async (
         if (declared !== undefined) {
           state.total = declared
           if (declared > maxBytes) {
-            tooLarge(maxBytes, declared)
+            tooLarge(maxBytes, declared, correlationId)
           }
         }
       }
-      const bytes = toBytes(data, maxBytes)
+      const bytes = toBytes(data, maxBytes, state.correlationId)
       data = null
       if (bytes.byteLength > 0) {
         chunks.push(bytes)
@@ -1019,7 +1092,7 @@ const downloadArchive = async (
         // 停滞判定的唯一依据：真的收到新字节才重新计时（#38）
         state.lastProgressAt = monotonicNow()
         if (state.downloaded > maxBytes) {
-          tooLarge(maxBytes, state.downloaded)
+          tooLarge(maxBytes, state.downloaded, correlationId)
         }
         options.onProgress?.({
           phase: 'downloading',
@@ -1057,12 +1130,12 @@ const downloadArchive = async (
     }
     throwIfCancelled(options.signal)
     if (state.downloaded === 0) {
-      recordDownloadFailure('empty', url, startedAt, { 'download.bytes': 0 })
+      recordDownloadFailure('empty', url, state.correlationId, startedAt, { 'download.bytes': 0 })
       fail('historyImportUrlBadResponse')
     }
     if (state.total !== undefined && state.downloaded < state.total) {
       // 链路中途断掉：块级别已经拿到结果但字节不足，绝不能当成功导入。
-      recordDownloadFailure('incomplete', url, startedAt, {
+      recordDownloadFailure('incomplete', url, state.correlationId, startedAt, {
         'download.bytes': state.downloaded,
         'download.total': state.total,
       })
@@ -1074,8 +1147,29 @@ const downloadArchive = async (
     // 峰值内存约 3×包大小；现在直接把分块交给 Blob（它只需要一份），
     // 再丢掉分块数组的引用，让 JS 侧那份尽快被回收。没有引入流式改写（#34 明确不做）。
     if (!isZipHead(chunks)) {
+      // 下完了但不是 ZIP：包坏了，续传/重试都救不回来（此前这条失败**一条日志都没有**）
+      recordDownloadFailure('not-zip', url, correlationId, startedAt, { 'download.bytes': state.downloaded })
       fail('historyImportUrlNotZip')
     }
+    // 下载阶段的结论（#313）：此前只有「开始」，没有「结束」——
+    // 「包到底下完了没有、下了多久、平均多快」在日志里查不到。
+    const downloadMs = elapsedSince(startedAt)
+    recordEvent('import_stage', 'import: download complete', {
+      correlationId,
+      'download.bytes': state.downloaded,
+      ...(state.total === undefined ? {} : { 'download.total': state.total }),
+      ...(resumed === null ? {} : { 'request.from': resumed.downloaded }),
+      ...buildMeta({
+        flow: 'import',
+        stage: 'import.download',
+        status: 'ok',
+        retryable: false,
+        durationMs: downloadMs,
+        bytes: state.downloaded,
+        ...(state.total === undefined ? {} : { totalBytes: state.total }),
+        speedBps: bytesPerSecond(state.downloaded, downloadMs),
+      }),
+    })
     delivered = true
     const file = new File(chunks, ARCHIVE_NAME, { type: 'application/zip' })
     chunks.length = 0
@@ -1098,14 +1192,13 @@ const downloadArchive = async (
       'request.from': state.from,
       'request.span': state.span,
       attempt: state.attempt,
-      retryable: 'yes',
       // 已到手一部分就能续传：重试不会再从 0 开始（#38）
       resume: downloaded > 0 ? 'yes' : 'no',
     }
     if (error instanceof DownloadStalled) {
       const idleMs = elapsedSince(state.lastProgressAt)
       const seconds = Math.max(1, Math.round(state.stallMs / 1000))
-      recordDownloadFailure('stalled', url, startedAt, {
+      recordDownloadFailure('stalled', url, state.correlationId, startedAt, {
         ...meta,
         'idle.ms': idleMs,
         'stall.ms': state.stallMs,
@@ -1138,7 +1231,7 @@ const downloadArchive = async (
         // 与 stalled 那条对齐：不看这个数，日志里分不清「一直在推进但太慢」和「根本没动静」
         'idle.ms': elapsedSince(state.lastProgressAt),
       }
-      recordDownloadFailure('deadline', url, startedAt, budgetFields)
+      recordDownloadFailure('deadline', url, state.correlationId, startedAt, budgetFields)
       trace?.({
         at: elapsedSince(startedAt),
         kind: 'error',
@@ -1185,23 +1278,39 @@ export const importHistoryFromUrl = async (
   options: UrlImportOptions = {}
 ): Promise<number> => {
   if (!Capacitor.isNativePlatform()) {
-    record('import_error', 'error', 'import rejected: not native', {
-      stage: 'validate',
-      'error.msg': 'native platform required',
+    // 能力缺失（网页版没有原生 HTTP）：warn 级 + retryable:false —— 点「重试」不会变好
+    record('warning', 'warn', 'import rejected: not native', {
+      reason: 'platform-unsupported',
+      ...buildMeta({
+        flow: 'import',
+        stage: 'import.check',
+        status: 'rejected',
+        retryable: false,
+      }),
     })
     fail('historyImportUrlNativeOnly')
   }
   const link = url.trim()
   if (!/^https?:\/\/\S+$/i.test(link)) {
+    // 非法 URL（负向用例）：与「下载失败」分开成一条一眼能认的记录
     record('import_error', 'error', 'import rejected: invalid url', {
-      stage: 'validate',
-      'error.msg': 'invalid http(s) url',
+      reason: 'invalid-url',
+      ...buildMeta({
+        flow: 'import',
+        stage: 'import.check',
+        status: 'rejected',
+        retryable: false,
+      }),
     })
     fail('historyImportUrlInvalid')
   }
   // 关联 id：导入链路的埋点靠它串起来（来自 coverage 分支的 correlation 埋点）
   const correlationId = newCorrelationId()
-  recordAction('import_start', 'import-history-url', { correlationId, source: 'url' })
+  recordAction('import_start', 'import-history-url', {
+    correlationId,
+    source: 'url',
+    ...buildMeta({ flow: 'import', stage: 'import.download', attempt: 1 }),
+  })
   const startedAt = monotonicNow()
   const trace = options.onTrace
   const emit = (entry: Omit<ImportTraceEntry, 'at'>) => trace?.({ at: elapsedSince(startedAt), ...entry })
@@ -1210,11 +1319,14 @@ export const importHistoryFromUrl = async (
   let lastImageTraceAt = 0
   let lastImages = 0
   let checkReported = false
+  /** 当前处在哪一步：取消日志要能说出「在下的时候取消」还是「入库的时候取消」 */
+  let phase: 'download' | 'commit' = 'download'
   try {
-    const file = await downloadArchive(link, options, trace)
+    const file = await downloadArchive(link, options, correlationId, trace)
     // 下载期间点了取消：结果直接丢弃，不进入暂存与替换事务。
     throwIfCancelled(options.signal)
     options.onProgress?.({ phase: 'decoding' })
+    phase = 'commit'
     emit({ kind: 'check', bytes: file.size })
     return await importHistory(file, {
       signal: options.signal,
@@ -1248,13 +1360,40 @@ export const importHistoryFromUrl = async (
       },
     }).then((count) => {
       emit({ kind: 'done', sessions: count })
+      // 成功结论（#313）：文件导入在 backup.ts 里有 `import_done`，链接导入此前只有内存 trace，
+      // 上传的日志里查不到「这次到底导进去了没有、导进了多少」——对不上「导入后会话变少」的反馈。
+      const totalMs = elapsedSince(startedAt)
+      recordAction('import_done', 'import-history-url', {
+        correlationId,
+        sessions: count,
+        source: 'url',
+        ...buildMeta({
+          flow: 'import',
+          stage: 'import.commit',
+          attempt: 1,
+          status: 'ok',
+          retryable: false,
+          durationMs: totalMs,
+          totalBytes: file.size,
+          speedBps: bytesPerSecond(file.size, totalMs),
+        }),
+      })
       return count
     })
   } catch (error) {
     if (options.signal?.aborted || error instanceof UrlImportCancelled) {
       // 取消不是失败：单独记一条，便于区分「用户取消」与「链路失败」。
+      // 带 stage / status / retryable / durationMs：一眼看出卡在哪一步、还来不来得及重试。
       record('warning', 'warn', 'import cancelled by user', {
-        stage: 'url-import',
+        correlationId,
+        reason: 'cancelled',
+        ...buildMeta({
+          flow: 'import',
+          stage: phase === 'download' ? 'import.download' : 'import.commit',
+          status: 'aborted',
+          retryable: true,
+          durationMs: elapsedSince(startedAt),
+        }),
       })
       emit({ kind: 'cancel' })
       throw error instanceof UrlImportCancelled ? error : new UrlImportCancelled()
@@ -1265,8 +1404,18 @@ export const importHistoryFromUrl = async (
     //   problems…」——用户既不知道包其实下完了，也不知道该做什么。
     // 原始 name / message 只留在诊断与 console，界面换成能照着做的本地化文案。
     if (isArchiveReadFailure(error)) {
+      // 卡在「校验/读取」这一步（包已下完，读不出来）：与读取之后的**结构校验失败**分开成两档，
+      // 后者由 backup.ts 的 `import failed at import.check` 记录（同一 stage、不同 msg）。
       record('import_error', 'error', 'import failed: archive unreadable after download', {
-        stage: 'import',
+        correlationId,
+        reason: 'archive-unreadable',
+        ...buildMeta({
+          flow: 'import',
+          stage: 'import.check',
+          status: 'error',
+          retryable: true,
+          durationMs: elapsedSince(startedAt),
+        }),
         ...errorMeta(error),
       })
       // 用户文案已经本地化了，原始英文只在这里和诊断里留一份，方便支持人员定位

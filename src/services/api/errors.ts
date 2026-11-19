@@ -15,6 +15,27 @@ export type ApiErrorCondition =
   | 'contextLimit'
   | 'rateLimited'
   | 'serverBusy'
+  /**
+   * 内容 / 安全审核拦截（#324）：上游判定这段内容不合规。
+   * 原文重发一定还是被拦，所以**不可重试**，文案要让人改内容而不是点重新生成。
+   * 与 unauthorized / insufficientBalance 一样是终态，不能并进 serverBusy（那是临时故障）。
+   */
+  | 'contentFilter'
+  /**
+   * 模型不存在 / 已下线（#324）：官方端点 400 + `The supported API model names are …`。
+   * 用户唯一出路是换模型，重试同一个请求毫无意义 → **不可重试**。
+   */
+  | 'modelInvalid'
+  /**
+   * 其它被上游拒绝的请求（#324）：400 / 422 一类参数错误。
+   * 以前这类会落到「未知错误」，用户既不知道是参数问题也不知道该不该重试。
+   */
+  | 'badRequest'
+  /**
+   * 空响应 / 流里一个数据帧都没有（#324）：200 却给了非 SSE 的正文，或 SSE 头到了但零帧。
+   * 上游这次什么也没说，换一条连接通常就好 → **可重试**。
+   */
+  | 'emptyStream'
   | 'network'
   /** 流已开始但没收到 message_stop：连接中断，和「请求没发出去」要分开 */
   | 'interrupted'
@@ -77,6 +98,65 @@ export const isQuotaExhaustedText = (text: string | undefined): boolean =>
     : false
 
 /**
+ * 上游用机器可读的 code / 文案表示「内容被安全审核拦截」（#324）。
+ *
+ * 实测（2026-11-19，官方端点）：正常内容不会触发；一旦触发，各家网关的写法是
+ * `content_filter` / `content_policy_violation` / `safety_system` 或中文「内容不合规」。
+ * 收得很窄：只认「明确在说内容/审核」的写法，`moderation` 这类泛词也要求与 policy / flag 同现，
+ * 避免把一份正常报错里的普通英文词认成内容拦截（正是 #299 那类错判的反面）。
+ */
+export const CONTENT_FILTER_PATTERNS: RegExp[] = [
+  /content[_\s-]?filter/i,
+  /content[_\s-]?policy/i,
+  /content[_\s-]?management[_\s-]?policy/i,
+  /safety[_\s-]?(?:policy|violation|filter|system|triggered)/i,
+  /(?:moderation|flagged)[\s_-]{0,3}(?:policy|violation|unfiltered|flagged)/i,
+  /flagged as (?:harmful|unsafe|inappropriate)/i,
+  /responsible[\s_-]?ai[\s_-]?policy/i,
+  /违规内容|内容违规|内容不合规|内容安全|安全审核|审核未通过|敏感内容/,
+]
+
+/** 这段文字是不是「内容被审核拦截」 */
+export const isContentFilterText = (text: string | undefined): boolean =>
+  typeof text === 'string' && text.length > 0
+    ? CONTENT_FILTER_PATTERNS.some((pattern) => pattern.test(text))
+    : false
+
+/**
+ * 上游用机器可读的 code / 文案表示「模型不存在 / 已下线」（#324）。
+ *
+ * 实测官方端点（2026-11-19）：400 + `error.type = invalid_request_error` +
+ * `The supported API model names are deepseek-flash, deepseek-v4-pro, but you passed no-such-model.`
+ * ——注意它和「空 messages」「max_tokens 非法」用的是**同一个** `error.type`，
+ * 所以只能靠 message 区分，不能靠 code。
+ */
+export const MODEL_INVALID_PATTERNS: RegExp[] = [
+  /model[_\s-]?not[_\s-]?found/i,
+  /model[_\s-]?not[_\s-]?exist/i,
+  /the supported api model names are/i,
+  /no such model/i,
+  /unknown model/i,
+  /invalid model/i,
+  /model[\s\S]{0,40}?(?:is )?not (?:supported|available|found|valid)/i,
+  // 「不支持」不放进来：它常常是「这个模型不支持图片/工具」这类能力差异，属于参数级拒绝，
+  // 而且上游写了中文时我们本来就照原话展示（describeReply），不该被抢成「模型已下线」
+  /模型[\s\S]{0,10}?(?:不存在|不可用|已下线|已被下线)/,
+]
+
+/** 这段文字是不是「模型不存在 / 已下线」 */
+export const isModelInvalidText = (text: string | undefined): boolean =>
+  typeof text === 'string' && text.length > 0
+    ? MODEL_INVALID_PATTERNS.some((pattern) => pattern.test(text))
+    : false
+
+/**
+ * 「请求被上游拒绝」的 4xx 状态码（#324）：参数 / 路由 / 编码层面的错误。
+ * 它们重发只会原样再失败一次，所以单独归到 badRequest（不可重试），
+ * 不再落到「未知错误」。401 / 402 / 413 有自己的档，不在此列。
+ */
+const BAD_REQUEST_STATUSES: readonly number[] = [400, 404, 405, 409, 415, 422]
+
+/**
  * 判定用的最小输入：请求层按 ApiError 判、界面按保存下来的 error 判，
  * 两边走**同一份**口径，避免「日志说额度不足、界面说网络异常」这种自相矛盾（#299）。
  */
@@ -108,7 +188,7 @@ export const classifyStatus = (status: number | undefined): ApiErrorCondition =>
 }
 
 /**
- * 统一判定（#299）：状态码 + 上游 code + 文案，三者任一能确定就算数。
+ * 统一判定（#299 / #324）：状态码 + 上游 code + 文案，三者任一能确定就算数。
  *
  * 判定顺序是有讲究的：
  * 1. 上下文超长先判：它也可能是 400/413，但用户能做的动作（开新会话 / 删早期消息）
@@ -116,7 +196,11 @@ export const classifyStatus = (status: number | undefined): ApiErrorCondition =>
  * 2. 额度用完再判：402 是标准写法，`insufficient_quota` 一类 code 是网关的常见写法，
  *    都必须在 429（限流）与 400（泛化业务错误）之前认出来——否则额度问题会被说成
  *    「请求过于频繁」并进入退避重试，或者干脆变成「未知错误」（#299）；
- * 3. 其余按状态码走原有的网络 / 业务分类，行为不变。
+ * 3. 内容拦截 / 模型不存在只按**文案**判，且只在「没有状态码或 4xx」时看（#324）：
+ *    官方端点这两类的 `error.type` 都是 `invalid_request_error`，code 分不开，只能看 message；
+ *    限定状态范围是为了让 502 / 503 这类网关故障**永远不会**被认成内容拦截；
+ * 4. 2xx 却走到错误分类 = 上游给了「成功」的壳子却没有内容 → emptyStream（#324）；
+ * 5. 其余 4xx 请求级错误归 badRequest（#324），最后才按状态码走原有的网络 / 业务分类。
  */
 export const classifyErrorSignature = ({
   status,
@@ -129,8 +213,26 @@ export const classifyErrorSignature = ({
   if (status === 402 || isQuotaExhaustedText(code) || isQuotaExhaustedText(message)) {
     return 'insufficientBalance'
   }
+  // 文案类判定只在「可能来自上游拒绝」的状态范围内做：5xx / 2xx 不参与，
+  // 免得上游随便一句英文把故障认成内容问题（#324 的负向口径）
+  const textScoped = status === undefined || (status >= 400 && status < 500)
+  if (textScoped) {
+    if (isContentFilterText(code) || isContentFilterText(message)) {
+      return 'contentFilter'
+    }
+    if (isModelInvalidText(code) || isModelInvalidText(message)) {
+      return 'modelInvalid'
+    }
+  }
   if (status === undefined) {
     return 'other'
+  }
+  // 2xx + 错误对象 = 没有内容的「空响应」（#324）：不是业务错误，重试通常就好
+  if (status >= 200 && status < 300) {
+    return 'emptyStream'
+  }
+  if (BAD_REQUEST_STATUSES.includes(status)) {
+    return 'badRequest'
   }
   return classifyStatus(status)
 }
@@ -138,6 +240,11 @@ export const classifyErrorSignature = ({
 export const classifyApiError = (error: unknown): ApiErrorCondition => {
   if (!(error instanceof ApiError)) {
     return 'other'
+  }
+  // 空流（#324）先判：它借 interrupted 这个 kind 表达「流没收到东西」，
+  // 但语义是「上游什么都没给」，要说得比「连接中断」更具体，也必须可重试
+  if (error.code === 'stream_empty') {
+    return 'emptyStream'
   }
   // 断流优先：它可能带着底层报错（network error / aborted），不能并进网络问题
   if (error.kind === 'interrupted') {
@@ -187,6 +294,19 @@ export const isRetryableApiError = (error: unknown): boolean => {
   // 一句「请求过于频繁」。这一条必须排在「有状态码就按状态码判」之前。
   if (condition === 'insufficientBalance') {
     return false
+  }
+  // 内容拦截 / 模型不存在 / 参数错误（#324）：这三类都是「同一条请求再发一次也是同样结果」，
+  // 自动重试只会让用户多等几轮再看到同一句话。文案里也明说「不要重试」。
+  if (
+    condition === 'contentFilter' ||
+    condition === 'modelInvalid' ||
+    condition === 'badRequest'
+  ) {
+    return false
+  }
+  // 空响应（#324）：上游这次什么都没有给，换条连接通常就好 —— 可重试
+  if (condition === 'emptyStream') {
+    return true
   }
   // 有状态码就只按状态码判：4xx（429 除外）不重试，这条是硬规则，不再经过分类兜底
   if (typeof error.status === 'number') {

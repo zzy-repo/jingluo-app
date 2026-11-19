@@ -69,3 +69,74 @@
   color: var(--dsw-alias-label-caption);
   text-align: center;
 }
+
+/*
+ * 诊断区（#310）：当前版本 / 渠道 / 更新服务 / 最近检查时间 + 一键复制。
+ * 放在弹窗正文末尾（而不是另开一层），失败时用户不用先找到入口才能看见这些事实；
+ * 只有事实，没有动作按钮，所以视觉上刻意压一档：淡色、细分隔线、可选中复制。
+ *
+ * 间距一律用 margin（不用 flex `gap`）：本仓库的 #173 门禁要求每个 flex gap 都有兜底，
+ * 这里既没有需要 gap 的等高排列，也就不必再带一份兜底规则。
+ */
+.diagnostics {
+  margin: 16px 0 0;
+  padding-top: 12px;
+  border-top: 1px solid var(--dsw-alias-interactive-bg-hover);
+  display: flex;
+  flex-direction: column;
+}
+
+/* 只有复制按钮跟着事实列表走：用相邻兄弟间距，不引 gap */
+.facts + .copyButton {
+  margin-top: 10px;
+}
+
+.facts {
+  margin: 0;
+  display: block;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.facts > div + div {
+  margin-top: 4px;
+}
+
+.facts > div {
+  display: flex;
+  min-width: 0;
+}
+
+.facts dt {
+  flex: 0 0 auto;
+  /* 标签列固定宽度对齐，同时替代 `gap`（#173） */
+  margin-right: 8px;
+  color: var(--dsw-alias-label-caption);
+}
+
+.facts dd {
+  margin: 0;
+  min-width: 0;
+  /* 地址 / 版本号这类长串要能断行，否则 360 档会把弹窗撑出横向滚动 */
+  overflow-wrap: anywhere;
+  color: var(--dsw-alias-label-primary);
+}
+
+.copyButton {
+  align-self: flex-start;
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-brand-text);
+  cursor: pointer;
+  /* 44px 点击区靠内边距补齐，但 360 档不再额外抬高行高 */
+  padding: 6px 2px;
+}
+
+.copyButton:hover {
+  text-decoration: underline;
+}

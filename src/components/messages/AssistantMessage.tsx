@@ -22,6 +22,8 @@ import { SiteThumbnails } from '../search/SiteLogo.js'
 import { toggleSearchPanel, useSearchPanel } from '../search/searchPanelState.js'
 import { ReadAloudButton } from './ReadAloudButton.js'
 import { CopyButton } from './CopyButton.js'
+import { copyText as copyToClipboard } from '../../utils/clipboard.js'
+import { showToast } from '../base/toastState.js'
 import { useSettings } from '../../services/settings.js'
 import { ReplyArea } from './ReplyArea.js'
 import { useReplyView } from './useReplyView.js'
@@ -161,6 +163,26 @@ export const AssistantMessage = memo(function AssistantMessage({
                     {t('topUp')}
                   </a>
                 )}
+              </>
+            ) : null}
+            {/*
+              未识别的失败不再只给一句「未知错误」（#324）：文案里已经带了状态码与上游短码，
+              这里给一个「复制诊断信息」的出口，走 #104 同一套剪贴板与反馈文案。
+            */}
+            {notice.diagnostics ? (
+              <>
+                {' '}
+                <button
+                  type="button"
+                  className={styles.noticeAction}
+                  onClick={() => {
+                    void copyToClipboard(notice.diagnostics as string).then((ok: boolean) => {
+                      showToast({ key: ok ? 'errorScreenCopied' : 'errorScreenCopyFailed' })
+                    })
+                  }}
+                >
+                  {t('errorScreenCopyDiagnostics')}
+                </button>
               </>
             ) : null}
           </span>

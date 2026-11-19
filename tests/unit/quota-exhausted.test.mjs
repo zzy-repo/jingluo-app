@@ -282,7 +282,8 @@ test('负向：502 / 网络断开 / 超时 / 普通 400 的分类与可重试性
   assert.equal(isRetryableApiError(timeout), true, '超时仍可重试')
 
   const plain = httpError(400, 'invalid request: max_tokens must be a positive integer', 'invalid_request_error')
-  assert.equal(classifyApiError(plain), 'other', '普通 400 不许被额度档吃掉')
+  // #324：普通 400 从「未分类（other）」明确归到参数错误档，依旧不许被额度档吃掉
+  assert.equal(classifyApiError(plain), 'badRequest', '普通 400 不许被额度档吃掉')
   assert.equal(isRetryableApiError(plain), false, '参数错误重试无用（改前就是这样）')
 
   const rate = httpError(429, 'rate limit exceeded', 'rate_limit_exceeded')
@@ -296,7 +297,8 @@ test('负向：502 / 网络断开 / 超时 / 普通 400 的分类与可重试性
   ]) {
     assert.equal(
       classifyErrorSignature({ status: 400, message }),
-      'other',
+      // 400 现在统一归「参数错误」档（#324）；关键断言是**不许**是 insufficientBalance
+      'badRequest',
       `文件配额文案不该进额度档：${message}`
     )
   }
@@ -353,12 +355,13 @@ test('负向：502 仍按上限重试，界面仍是「服务器繁忙」', asyn
   const { calls, notice, failureRecord } = await runRound({
     respond: () => errorResponse(502, { message: 'bad gateway' }),
   })
-  assert.equal(calls, 1 + retryLimit(), '5xx 仍要自动重试到上限')
-  assert.equal(notice?.text, zh.completionServerBusyToast)
+  assert.equal(calls, 1 + retryLimit(), '5xx 仍要自动重试')
+  // #324：回答里的 5xx 改用专门文案（显式写「可以重试」），与弹层用的 completionServerBusyToast 区分
+  assert.equal(notice?.text, zh.replyServerBusy)
   assert.equal(failureRecord.fields['billing.quota'], undefined, '5xx 不该被打上额度标记')
 })
 
-test('负向：普通 400 不重试，仍是「未知错误」，不打额度标记', async () => {
+test('负向：普通 400 不重试，落到参数错误档（#324 之前这里是「未知错误」），不打额度标记', async () => {
   const { calls, notice, failureRecord } = await runRound({
     respond: () =>
       errorResponse(400, {
@@ -367,9 +370,14 @@ test('负向：普通 400 不重试，仍是「未知错误」，不打额度标
       }),
   })
   assert.equal(calls, 1, '参数错误重试无用')
-  assert.equal(notice?.text, zh.replyUnknownError)
+  // #324：400 参数错误有了独立档位（不可重试），不再落到「未知错误」兜底
+  assert.equal(notice?.text, zh.replyBadRequest)
+  assert.match(notice?.text ?? '', /不要重试/)
   assert.equal(failureRecord.fields['billing.quota'], undefined)
-  assert.equal(failureRecord.fields['ui.condition'], 'other')
+  assert.equal(failureRecord.fields['ui.condition'], 'badRequest')
+  // 上游短码进诊断，便于按 code 切片（#324 第 4 条）
+  assert.equal(failureRecord.fields.upstreamCode, 'invalid_request_error')
+  assert.equal(failureRecord.fields.status, 400, '失败日志落真实 HTTP 状态码')
 })
 
 test('负向：网络断开仍重试并给出网络异常文案', async () => {
