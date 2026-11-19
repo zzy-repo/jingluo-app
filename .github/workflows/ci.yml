@@ -14,6 +14,14 @@ on:
 permissions:
   contents: read
 
+# #405：容器化 job（golden / integration）里 `run` 的默认 shell 会退化成 `sh`（dash），
+# 那些 `set -euo pipefail` 的步骤会直接 `Illegal option -o pipefail` 挂掉（实测 exit 2）。
+# 显式钉成 bash：Runner 会以 `bash --noprofile --norc -eo pipefail` 执行，
+# 非容器 job 本来就是这个 shell，行为不变。
+defaults:
+  run:
+    shell: bash
+
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
@@ -75,6 +83,14 @@ jobs:
           LANG: zh_CN.UTF-8
           LC_ALL: zh_CN.UTF-8
         run: pnpm test
+
+      # #368 把 tests/regression 接进了 LAYERS，但「接进 LAYERS」不等于「有人跑」—— 整层 11 个
+      # 纯 Node 回归文件（无浏览器、无网络）4s 跑完，此前零触发点（issue-135 import 已删的
+      # startCheckout 就是这么烂掉的）。
+      # #405 把它从「L1 分片 1」挪到这里：checks 只有 ~2 分钟、离 4 分钟预算很远，
+      # 而 L1 分片 1 是要压进 4 分钟的 job —— 纯 Node 的 4s 不该占 L1 的预算。
+      - name: 回归层（tests/regression，纯 Node，~4s）
+        run: node tests/run-layer.mjs regression
 
       - name: Build (internal)
         run: pnpm run build:internal
@@ -141,6 +157,17 @@ jobs:
     name: 黄金回归（每域主路径，≤5 分钟）
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    # #405：整条流水线里两个「真要浏览器」的 job 都跑在 playwright 官方镜像里。
+    # 镜像自带 Chromium（/ms-playwright）+ 全部 apt 运行库，于是 `playwright install --with-deps`
+    # 那一步（首跑时 apt 抖一下就是 9m07s 的主因）整步消失，只剩一条「镜像里真的有浏览器吗」的自检。
+    # tag 必须与 package.json 的 playwright 版本对齐（v1.64.1 → chromium-1248）；对不上时自检会红，
+    # 而不是等到 45 条用例在假绿/崩溃里漂。
+    container:
+      image: mcr.microsoft.com/playwright:v1.64.1-jammy
+      # Playwright 官方 Docker 文档的推荐参数：容器默认 /dev/shm 只有 64MB，Chromium 在渲染
+      # 大页面（本仓的 feedback-scroll / 长会话截图）时会直接崩成 "Target page, context or browser
+      # has been closed" —— 那是环境假红，不是用例真失败。
+      options: --ipc=host
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -160,8 +187,26 @@ jobs:
       - name: Install
         run: pnpm install --frozen-lockfile
 
-      - name: 安装 Chromium（黄金套件用真浏览器跑真产物）
-        run: pnpm exec playwright install --with-deps chromium
+      # #405：浏览器来自镜像，不再下载。但这不等于「一定有」：镜像 tag 与 package.json 的
+      # playwright 版本一旦错位（1.64.1 要 chromium-1248），用例只会变成整批崩溃或假红。
+      # 这里把「镜像里真有这个 revision 的浏览器」变成显式断言（不联网、< 1s）。
+      - name: 浏览器自检（镜像内置 Chromium 与本仓 playwright 版本对齐）
+        run: |
+          set -euo pipefail
+          echo "playwright: $(pnpm exec playwright --version)"
+          plan="$(pnpm exec playwright install --dry-run chromium)"
+          echo "$plan"
+          missing=0
+          while read -r dir; do
+            [ -n "$dir" ] || continue
+            if [ -d "$dir" ]; then
+              echo "✓ $dir"
+            else
+              echo "::error::镜像里缺少 $dir —— ci.yml 的 playwright 镜像 tag 与 package.json 的 playwright 版本不一致，请同步改 tag"
+              missing=1
+            fi
+          done < <(printf '%s\n' "$plan" | awk '/Install location:/ {print $3}')
+          [ "$missing" -eq 0 ]
 
       - name: 构建标准产物（dist，variant=standard）
         run: pnpm run build
@@ -224,21 +269,34 @@ jobs:
   # 接线前：tests/integration/ 49 个文件 / 1.68 万行、全量一次 20 分钟，**零触发点**——
   # 只有人记得手跑 `pnpm test:integration`，于是「写好的集成用例」和「真的会被执行的用例」是两件事。
   #
-  # 三条设计约束：
+  # 四条设计约束：
   # 1) 与 checks 并行（不 needs: checks）：L1 慢，串在门禁后面等于反馈时间相加。
-  # 2) 分片 3 个 job 各自跑 `--shard i/3`：分片是**对全集的可复用划分**（见 tests/run-layer.mjs 的
+  # 2) 分片 6 个 job 各自跑 `--shard i/6`：分片是**对全集的可复用划分**（见 tests/run-layer.mjs 的
   #    planShard），新加用例不会漏跑；权重表只用于均衡，不用于覆盖。
   # 3) 已知红走 tests/integration-baseline.json 的豁免（`--baseline` 只判「相对基线没有新增失败」），
   #    不用 continue-on-error —— 那会把真红也变绿，等于没接线。
+  # 4) （#405）跑在 playwright 官方镜像里：浏览器与 apt 运行库都在镜像里，`playwright install
+  #    --with-deps` 整步消失（首跑 9m07s 的 apt 抖动就是这么来的）。
+  #
+  # #405 为什么是 6 而不是 5：45 个文件的实测耗时（见 tests/integration-shard-weights.json）用 LPT
+  # 分桶后，单分片负载是
+  #     3 片 371s / 4 片 278s / 5 片 222s / **6 片 188s** / 7 片 188s / 8 片 188s
+  # 188s 是硬下限 —— 最慢的单个文件 feedback-scroll 自己就 ~188s，再切也不会低于它。
+  # 所以 6 片是唯一能同时满足「≤4 分钟」和「不为 0 收益多开 job」的档位（7/8 片只是多烧机器）。
+  # 分片数写在矩阵里；下方的覆盖自检按 matrix.total 反推，改这里不用再改别处。
   integration:
     name: L1 集成层 ${{ matrix.shard }}/${{ matrix.total }}
     runs-on: ubuntu-latest
     timeout-minutes: 25
+    container:
+      image: mcr.microsoft.com/playwright:v1.64.1-jammy
+      # 同 golden job：容器默认 64MB /dev/shm 会让 Chromium 渲染长页面时崩成环境假红。
+      options: --ipc=host
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3]
-        total: [3]
+        shard: [1, 2, 3, 4, 5, 6]
+        total: [6]
     steps:
       # fetch-depth: 0 不是为了构建 —— motion.test.mjs 用 `git merge-base HEAD origin/main`
       # 取「与本分支的分叉点」当静态对照基线（以前钉死 SHA，历史一挪就假红）；默认的 depth=1
@@ -264,32 +322,53 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       # #365 的核心风险：分片写死在 ci.yml 里、新加的用例没人跑 —— 那正是这条 Issue 要治的病。
-      # 这里把「3 个分片合起来 = 全集」变成显式断言（不依赖人肉核对，新文件自动进分片）。
+      # 这里把「N 个分片合起来 = 全集」变成显式断言（不依赖人肉核对，新文件自动进分片）。
+      # #405 起分片数从矩阵的 matrix.total 反推（3 → 6 只改一处），并且顺带打印每个分片的
+      # 文件数与预计负载 —— 均衡性直接写在 CI 日志里，不用下 artifact 才算。
       - name: 分片覆盖自检（每个集成文件恰好落进一个分片）
         if: matrix.shard == 1
         run: |
           set -euo pipefail
-          total=$(node tests/run-layer.mjs integration --list | grep -c '^\[integration\]')
+          total_files=$(node tests/run-layer.mjs integration --list | grep -c '^\[integration\]')
           sum=0
-          for i in 1 2 3; do
-            n=$(node tests/run-layer.mjs integration --list --shard "$i/3" | grep -c '^\[integration\]')
-            echo "分片 $i/3：$n 个文件"
+          for i in $(seq 1 "${{ matrix.total }}"); do
+            n=$(node tests/run-layer.mjs integration --list --shard "$i/${{ matrix.total }}" | grep -c '^\[integration\]')
+            echo "分片 $i/${{ matrix.total }}：$n 个文件"
             sum=$((sum + n))
           done
-          echo "全集 $total 个文件 / 分片合计 $sum 个"
-          if [ "$sum" -ne "$total" ]; then
-            echo "::error::分片没有覆盖全集（$sum != $total）：有集成用例不会被执行"
+          echo "全集 $total_files 个文件 / 分片合计 $sum 个"
+          if [ "$sum" -ne "$total_files" ]; then
+            echo "::error::分片没有覆盖全集（$sum != $total_files）：有集成用例不会被执行"
             exit 1
           fi
-      # #368 把 tests/regression 接进了 LAYERS，但「接进 LAYERS」不等于「有人跑」—— 整层 11 个纯 Node
-      # 回归文件（无浏览器、无网络）4s 跑完，此前零触发点（issue-135 import 已删的 startCheckout 就是这么烂掉的）。
-      # 挂在分片 1 上跑一次即可，不必为 4s 单开一个 job。
-      - name: 回归层（tests/regression，纯 Node，~4s）
-        if: matrix.shard == 1
-        run: node tests/run-layer.mjs regression
+      # #405：容器里 workspace 的属主是 runner 的 uid，而步骤以 root 执行 —— git 会把仓库判成
+      # 「dubious ownership」并拒绝一切命令。checkout action 只是在它自己那个**临时** HOME 里加了
+      # safe.directory，我们的步骤继承不到。motion.test.mjs 要用 `git merge-base HEAD origin/main`
+      # 取静态对照基线（#365），否则整条用例 0.5s 假红（实测 NEW FAIL）。这里把 workspace 写进真
+      # global config，后续步骤都可继承。
+      - name: git 安全目录（容器内 workspace 属主 ≠ 执行用户）
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
 
-      - name: 安装 Chromium（集成层用 playwright 直连本地产物，没有浏览器就是整批假红）
-        run: pnpm exec playwright install --with-deps chromium
+      # #405：浏览器与 apt 运行库都来自镜像，`playwright install --with-deps chromium` 整步删除。
+      # 但「镜像里有」不能靠信念：镜像 tag 与 package.json 的 playwright 版本错位时（1.64.1 要
+      # chromium-1248），45 条用例会变成整批崩溃/假红。这里把 revision 对齐变成显式断言（不联网、< 1s）。
+      - name: 浏览器自检（镜像内置 Chromium 与本仓 playwright 版本对齐）
+        run: |
+          set -euo pipefail
+          echo "playwright: $(pnpm exec playwright --version)"
+          plan="$(pnpm exec playwright install --dry-run chromium)"
+          echo "$plan"
+          missing=0
+          while read -r dir; do
+            [ -n "$dir" ] || continue
+            if [ -d "$dir" ]; then
+              echo "✓ $dir"
+            else
+              echo "::error::镜像里缺少 $dir —— ci.yml 的 playwright 镜像 tag 与 package.json 的 playwright 版本不一致，请同步改 tag"
+              missing=1
+            fi
+          done < <(printf '%s\n' "$plan" | awk '/Install location:/ {print $3}')
+          [ "$missing" -eq 0 ]
 
       # 集成层只读预构建产物，不隐式构建；缺产物时用例会 SKIP(env)（不算失败）而不是真跑。
       # 这里把三份变体都备齐：dist=internal / dist-standard / dist-scroll。
@@ -328,6 +407,10 @@ jobs:
         env:
           REPORT: l1-report-${{ matrix.shard }}.json
           SHARD: ${{ matrix.shard }}/${{ matrix.total }}
+          # #405 的单 job 预算是 4 分钟（240s），其中约 30s 是 checkout / install / 构建三份产物
+          # 这些固定开销，所以「跑用例那一段」的预算定在 210s；超了只在 summary 里标出来提醒
+          # （不让它变红 —— 时间抖动不是代码问题，靠人看趋势）。
+          SHARD_BUDGET_MS: '210000'
         run: |
           set -euo pipefail
           cat > /tmp/l1-summary.mjs <<'EOF'
@@ -335,14 +418,19 @@ jobs:
 
           const shard = process.env.SHARD ?? '?'
           const file = process.env.REPORT ?? 'l1-report.json'
+          const budgetMs = Number(process.env.SHARD_BUDGET_MS ?? 240000)
+          const secs = (ms) => Math.round(ms / 1000)
+          const clip = (line, max = 240) => (line.length > max ? `${line.slice(0, max)}…` : line)
+          const FAIL_LINE = /not ok|✗|AssertionError|Error:|error:|FAIL|expected|实际|TIMEOUT/
           const lines = [`## L1 集成层 分片 ${shard}`, '']
 
           if (!existsSync(file)) {
             lines.push('报告缺失：分片在写出 `--json` 报告之前就终止了（超时 / 崩溃），请看该 job 的日志。')
           } else {
             const report = JSON.parse(readFileSync(file, 'utf8'))
-            const failed = report.results.filter((r) => !r.ok && !r.skipped)
-            const skipped = report.results.filter((r) => r.skipped)
+            const results = report.results ?? []
+            const failed = results.filter((r) => !r.ok && !r.skipped)
+            const skipped = results.filter((r) => r.skipped)
             lines.push(
               `| 结果 | 数量 |`,
               `| --- | --- |`,
@@ -350,18 +438,30 @@ jobs:
               `| FAIL | ${report.failed} |`,
               `| SKIP(env) | ${report.skipped} |`,
               '',
-              `本分片 ${report.executed}/${report.selected} 个文件，用时 ${Math.round(report.totalMs / 1000)}s。`,
+              `本分片 ${report.executed}/${report.selected} 个文件，用时 ${secs(report.totalMs)}s / 预算 ${secs(budgetMs)}s` +
+                (report.totalMs <= budgetMs ? '（在 #405 的单 job ≤4 分钟目标内）' : '（**超出 #405 的单 job ≤4 分钟目标**）') +
+                '。',
+              '',
+              '| 文件 | 结果 | 耗时 |',
+              '| --- | --- | --- |',
             )
+            for (const r of [...results].sort((a, b) => b.ms - a.ms)) {
+              const state = r.skipped ? 'SKIP(env)' : r.ok ? 'PASS' : r.timedOut ? 'FAIL(TIMEOUT)' : 'FAIL'
+              lines.push(`| \`${r.file.split('/').pop()}\` | ${state} | ${secs(r.ms)}s |`)
+            }
             if (failed.length) {
-              lines.push('', '### 失败文件与断言摘要')
+              lines.push('', '### 失败文件与首个失败断言')
               for (const item of failed) {
-                const seconds = Math.round(item.ms / 1000)
-                lines.push('', `#### \`${item.file}\`（${seconds}s${item.timedOut ? '，TIMEOUT' : ''}）`)
-                const tail = item.tail ?? []
-                const interesting = tail
-                  .filter((line) => /not ok|Error|error:|FAIL|✗|AssertionError|expected|实际/.test(line))
-                  .slice(-8)
-                lines.push('```', ...(interesting.length ? interesting : tail.slice(-8)), '```')
+                lines.push('', `#### \`${item.file}\`（${secs(item.ms)}s${item.timedOut ? '，TIMEOUT' : ''}）`)
+                const tail = (item.tail ?? []).join('\n').split('\n').map((line) => line.trimEnd()).filter(Boolean)
+                // 「第一个失败断言」单独拎出来放在最前面：失败时人在 PR 页面上要的就是这一行。
+                const firstFail = tail.find((line) => FAIL_LINE.test(line))
+                if (firstFail) {
+                  lines.push('首个失败断言：', '', '```', clip(firstFail), '```')
+                }
+                const context = tail.filter((line) => FAIL_LINE.test(line)).slice(-8)
+                const shown = (context.length ? context : tail.slice(-8)).map((line) => clip(line))
+                lines.push('相关输出：', '', '```', ...shown, '```')
               }
             }
             if (skipped.length) {
