@@ -22,7 +22,7 @@ import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import { chromium } from 'playwright'
 import { serveDir, verifyAppUrl } from '../helpers/env.mjs'
-import { capturePaths, selectProviderKind } from '../helpers/helpers.mjs'
+import { capturePaths, providerKindTrigger, selectProviderKind } from '../helpers/helpers.mjs'
 import { chatBaseUrl } from '../../scripts/lib/endpoints.mjs'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
@@ -156,8 +156,9 @@ const closeSettings = async (dialog) => {
   await page.waitForTimeout(400)
 }
 
-const channelLabel = async (dialog) =>
-  (await dialog.getByRole('button', { name: /渠道|Channel/ }).first().innerText()).trim()
+// 触发器按整串匹配（#368）：`/渠道/` 子串会命中「当前渠道不支持文件上传…」那个禁用按钮，
+// 详见 tests/helpers/helpers.mjs 的 providerKindTrigger 注释。
+const channelLabel = async (dialog) => (await providerKindTrigger(dialog).innerText()).trim()
 
 /** 设置页里可见的输入框类型（排除导入历史/聊天背景用的隐藏 file 选择器） */
 const visibleInputTypes = async (dialog) => {

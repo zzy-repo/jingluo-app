@@ -8,7 +8,12 @@ import { serveDir } from './helpers/env.mjs'
 
 const TESTS_DIR = path.dirname(fileURLToPath(import.meta.url))
 const ROOT = path.resolve(TESTS_DIR, '..')
-const LAYERS = ['unit', 'integration', 'e2e', 'device']
+/**
+ * 已接线的层。#368：`regression` 补进来 —— tests/regression/ 那 11 个文件（纯 Node，无浏览器/网络）
+ * 一直写好放在仓库里，却既不在 LAYERS 也不在 CI 引用里，等于整层从未执行；`issue-135` 因此
+ * 死了很久（import 了 #331 已删除的 `startCheckout`）也没人发现。CI 接线见 #365。
+ */
+const LAYERS = ['unit', 'integration', 'regression', 'e2e', 'device']
 const SELF_SERVED = new Set([
   'internal-build', 'motion', 'mode-switch', 'diagnostics', 'diagnostics-contract', 'auto-title',
   'provider-channels', 'feedback-export', 'mode-switch-plain',
@@ -49,8 +54,8 @@ async function main() {
     else throw new Error(`Unknown argument: ${arg}`)
   }
   if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1) throw new Error('timeout-ms must be a positive integer')
-  const plan = layer === 'all' ? ['unit', 'integration'] : [layer]
-  if (plan.some((name) => !LAYERS.includes(name))) throw new Error('Usage: node tests/run-layer.mjs <unit|integration|e2e|device|all> [--only substring] [--case exact-path] [--timeout-ms 180000] [--json result.json] [--failed-from result.json] [--bail] [--list]')
+  const plan = layer === 'all' ? ['unit', 'regression', 'integration'] : [layer]
+  if (plan.some((name) => !LAYERS.includes(name))) throw new Error('Usage: node tests/run-layer.mjs <unit|integration|regression|e2e|device|all> [--only substring] [--case exact-path] [--timeout-ms 180000] [--json result.json] [--failed-from result.json] [--bail] [--list]')
   let failed
   if (failedFrom) {
     const report = JSON.parse(await readFile(failedFrom, 'utf8'))

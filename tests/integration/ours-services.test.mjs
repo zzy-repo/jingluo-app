@@ -7,7 +7,7 @@
 //
 // 被测页面：标准构建，手动切到「我们的渠道」。两套后端全部打桩：
 //   - 邀请 / 额度服务 http://140.210.13.146:60013（明文 HTTP）
-//   - 卡密 / 支付服务 https://apia.ecsafe.cn（HTTPS），含 /buy 的 302 与收银台页
+//   - 卡密 / 支付服务 https://apia.ecsafe.cn（HTTPS）：/api/plans、/api/balance、/redeem-card
 // CORS 也用假响应头兜住（Web 端 CORS 失败一律按网络错误处理，不会被当成业务失败）。
 //
 // 断言（对应任务书验收 1~8）：
@@ -18,11 +18,16 @@
 //       已有 Key 时重开也不再自动 /apply（不覆盖用户已填的 Key）
 //   [D] 额度只认邀请服务 /me 的 remaining_points，且只显示「N 积分」（#75：不做 ¥ 折算）
 //   [E] 邀请码：展示自己的 + 已邀请人数；填别人的走 /redeem，六类错误码各有文案
-//   [F] 套餐价格/积分来自 /api/plans；/buy 只点一次；order_token 必须落盘
-//   [G] 订单轮询：待支付 → 已发卡；发卡后显示卡密尾 4 位并提供「一键兑换」
+//   [F] 购买区：#331 之后客户端不再拉 /api/plans，只给空态 + 「前往购买」（现链路归 C6）
 //   [H] 兑换：成功 → 刷新额度；202 CREDIT_PENDING 显示「处理中」而不是失败；409 提示不要重复提交
-//   [I] 隐私：DOM / console 里没有完整 Key、完整卡密；request_id = 卡密
-//   [J] 390 / 360 两个手机视口 × 9 个状态截图
+//   [I] 隐私：DOM / console 里没有完整 Key、完整卡密
+//   [J] 390 / 360 两个手机视口 × 7 个状态截图
+//
+// #368（2026-11-19）：本文件原来还有 [F2] 网页版顶层导航到 /buy 与 [G] 订单轮询两段，
+// 断言的是 #331 已删除的建单/查单链路（`startCheckout` / `pollOrder` / `orderStore` 全没了），
+// 实测卡在 15s×N 的超时上。现链路是 plans → `GET /api/pay-link` → `Browser.open` → 关页刷新，
+// 由 tests/integration/domain06-*（#362 域 6+7 的 C6）覆盖；这里只删死段，保留仍然有效的
+// 设备码 / 领取 / 额度 / 邀请 / 兑换 / 渠道守卫（#166）断言，避免净损失。
 import { spawn } from 'node:child_process'
 import { mkdirSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
@@ -40,26 +45,16 @@ let PORT = process.env.PORT || ''
 let APP_URL = process.env.APP_URL || ''
 const INVITE_API = inviteBaseUrl
 const CARD_API = 'https://apia.ecsafe.cn'
-const PAY_HOST = 'https://pay.xiaodouap.cn'
 const SHOT_DIR = path.join(ROOT, 'docs', 'ui')
 
 const KEY = 'sk-live-e2e-ours-8844220011aabbccddeeff'
-// Issue #115 / #135：网页版「去支付」必须带上 cid（订单归属客户），没有 cid 就**不跳**
-// （src/services/ours/transport.ts navigateTopLevel）。cid 由 /me 的 customer_id 提供，
-// 所以打桩的 profile 里要给一个，否则浏览器永远不导航，用例只会等到超时。
+// cid 由 /me 的 customer_id 提供（订单归属客户）。列表/历史按它取，打桩 profile 里给一个真实形状的值。
 const CUSTOMER_ID = 4210
 const KEY_TAIL = KEY.slice(-6)
-const OUT_TRADE_NO = 'CP2026111816102637F0F8AA'
-const ORDER_TOKEN = 'Lsx2M8cBadOaJrXElnZBLISmtImUtfp9'
-const ORDER_CARD = 'CARD-FULFILLED-9f8e7d'
-const ORDER_CARD_TAIL = ORDER_CARD.slice(-4)
+const CARD_OK = 'CARD-OK-7788'
 const CARD_PENDING = 'CARD-CREDIT-PENDING-4471'
 const CARD_USED = 'CARD-USED-2222'
 const DEVICE_KEY = 'chat-demo:ours-device-id'
-const ORDER_KEY = 'chat-demo:ours-order'
-
-/** 真实的 /buy 302 Location 结构（out_trade_no 在外层，order_token 在 return_url 里） */
-const CHECKOUT_URL = `${PAY_HOST}/submit.php?pid=10268375&type=alipay&out_trade_no=${OUT_TRADE_NO}&notify_url=${encodeURIComponent('https://apia.ecsafe.cn/notify')}&return_url=${encodeURIComponent(`https://apia.ecsafe.cn/return?no=${OUT_TRADE_NO}&order_token=${ORDER_TOKEN}`)}&money=3.00&sitename=muse2api&sign=deadbeef&sign_type=MD5`
 
 const failures = []
 const ok = (message) => console.log(`  ok  ${message}`)
@@ -113,11 +108,8 @@ const mock = {
   apply: 'ok',
   /** 剩余积分（/apply 与 /me 都用它） */
   remaining: 100,
-  /** 订单走法：先 pending 再 fulfilled，好把「待支付」也截下来 */
-  order: 'pending-then-fulfilled',
-  orderCalls: 0,
 }
-const calls = { apply: 0, me: 0, balance: 0, plans: 0, buy: 0, order: 0, redeem: 0, redeemPool: 0 }
+const calls = { apply: 0, me: 0, balance: 0, plans: 0, redeem: 0, redeemPool: 0 }
 const requestLog = []
 const CORS = {
   'access-control-allow-origin': '*',
@@ -246,37 +238,6 @@ const wireMock = async (page) => {
       await route.fulfill(json(200, { api_key: `…${KEY_TAIL}`, valid: true }))
       return
     }
-    if (url.pathname === '/buy') {
-      calls.buy += 1
-      // Issue #36：网页版「去支付」= 浏览器顶层导航到 /buy?plan=（不是 fetch 读 302）。
-      // 顶层导航会真的跟随 302，而 Playwright 拦不到「被 route 满足的 302 之后自动跟随的那一跳」，
-      // 所以这里直接回一页收银台桩页：导航机制不变，且不会打到真实收银台。
-      await route.fulfill({
-        status: 200,
-        headers: { ...CORS, 'content-type': 'text/html; charset=utf-8' },
-        body: `<!doctype html><meta charset="utf-8"><title>收银台（桩）</title><h1>支付宝收银台（桩页）</h1><p>${OUT_TRADE_NO}</p>`,
-      })
-      return
-    }
-    if (url.pathname === '/api/order') {
-      calls.order += 1
-      if (url.searchParams.get('order_token') !== ORDER_TOKEN) {
-        await route.fulfill(json(403, { code: 'UNAUTHORIZED', message: '订单凭证不匹配', request_id: 'rid' }))
-        return
-      }
-      const fulfilled = mock.order === 'fulfilled' || (mock.order === 'pending-then-fulfilled' && calls.order > 1)
-      await route.fulfill(
-        json(200, {
-          out_trade_no: OUT_TRADE_NO,
-          status: fulfilled ? 'fulfilled' : 'pending',
-          amount_fen: 300,
-          card_no: fulfilled ? ORDER_CARD : null,
-          expire_at: 1794990326,
-          message: fulfilled ? '已发卡' : '等待支付',
-        })
-      )
-      return
-    }
     if (url.pathname === '/api/redeem') {
       calls.redeem += 1
       const body = JSON.parse(request.postData() ?? '{}')
@@ -294,15 +255,6 @@ const wireMock = async (page) => {
       return
     }
     await route.fulfill(json(404, { code: 'ORDER_NOT_FOUND', message: '路径不存在', request_id: 'rid-404' }))
-  })
-
-  // ---------- 收银台页（网页版兜底会跟随到这个地址） ----------
-  await page.route(`${PAY_HOST}/**`, async (route) => {
-    await route.fulfill({
-      status: 200,
-      headers: { ...CORS, 'content-type': 'text/html; charset=utf-8' },
-      body: '<html><body>支付宝收银台（测试桩，不产生真实支付）</body></html>',
-    })
   })
 }
 
@@ -358,8 +310,6 @@ const runViewport = async ({ width, height, label }) => {
   // 重置打桩状态
   mock.apply = 'fail'
   mock.remaining = 100
-  mock.order = 'pending-then-fulfilled'
-  mock.orderCalls = 0
   for (const key of Object.keys(calls)) calls[key] = 0
   requestLog.length = 0
 
@@ -508,106 +458,30 @@ const runViewport = async ({ width, height, label }) => {
   truthy(/绑定成功/.test(inviteOk), `${width}px：邀请码绑定成功（${inviteOk}）`)
   eq(await page.getByTestId('ours-invite-input').inputValue(), '', `${width}px：成功后清空输入`)
 
-  // ---------- [F] 套餐来自 /api/plans ----------
+  // ---------- [F] 购买区：#331 之后客户端不再拉 /api/plans，只给空态 + 「前往购买」 ----------
+  // 现链路是「点前往购买 → 现取 /api/pay-link → Browser.open」——那条顺序断言归 #362 域 6+7 的 C6，
+  // 这里只钉住本文件负责的那一半：本页不再渲染套餐卡片、也不再发 /api/plans。
   const plansText = await page.getByTestId('ours-plans').innerText()
-  truthy(/入门包 100万 token/.test(plansText), `${width}px：套餐名来自 /api/plans`)
-  truthy(/¥3\.00 · 300 积分/.test(plansText), `${width}px：价格与积分来自 /api/plans（¥3.00 · 300 积分）`)
-  truthy(/¥39\.00 · 3,900 积分/.test(plansText), `${width}px：第二个套餐同样来自服务端`)
+  truthy(/套餐列表已下架/.test(plansText), `${width}px：购买区给空态文案（${plansText.split('\n')[1] ?? ''}）`)
+  eq(await page.getByTestId('ours-plans-empty').count(), 1, `${width}px：空态块存在（不是「加载失败」）`)
+  truthy(!/加载失败/.test(plansText), `${width}px：空态不误报成加载失败`)
+  eq(await page.getByTestId('ours-buy').count(), 1, `${width}px：「前往购买」在套餐下架后照常可用`)
+  eq(calls.plans, 0, `${width}px：不再请求 /api/plans（#331 之后客户端不拉套餐）`)
   await scrollTo(page, 'ours-plans')
   await shot('05-plans')
 
-  // ---------- [F] 去支付：网页版 = 浏览器顶层导航到 /buy?plan=（不再 fetch 读 302） ----------
-  // 顶层导航会把页面带走，所以另开一张临时页面做这一步，主页面继续跑后面的用例。
-  // Issue #36 的完整验收（含回跳参数、390/360 截图）见 tests/integration/ours-webpay.test.mjs。
-  {
-    const probe = await context.newPage()
-    await wireMock(probe)
-    await probe.goto(APP_URL, { waitUntil: 'domcontentloaded' })
-    await probe.waitForTimeout(900)
-    await openSettingsData(probe)
-    await openPanel(probe)
-    await probe.waitForTimeout(600)
-    const seen = []
-    probe.on('request', (request) => seen.push({ url: request.url(), type: request.resourceType() }))
-    await probe.evaluate(() => {
-      window.__fetches = []
-      const original = window.fetch
-      window.fetch = function patched(input, init) {
-        window.__fetches.push(String(input))
-        return original.call(this, input, init)
-      }
-    })
-    // #115：目标地址带 cid（cid 来自 /me 的 customer_id），所以按整条 href 精确比对
-    const expectedBuy = `${CARD_API}/buy?plan=p1&cid=${CUSTOMER_ID}`
-    const navigated = probe.waitForURL((url) => url.href === expectedBuy, { timeout: 15000 })
-    await probe.getByTestId('ours-buy').click()
-    await navigated
-    await probe.waitForLoadState('domcontentloaded')
-    const buyHits = seen.filter((item) => item.url === expectedBuy)
-    eq(buyHits.map((item) => item.type), ['document'], `${width}px：/buy 由 document 顶层导航请求一次（不再 fetch）`)
-    eq(
-      await probe.evaluate(() => (window.__fetches ?? []).filter((url) => String(url).includes('/buy'))),
-      [],
-      `${width}px：点「去支付」没有用 fetch 打 /buy`
-    )
-    truthy(
-      (await probe.getByText('支付宝收银台', { exact: false }).count()) > 0,
-      `${width}px：浏览器顶层导航后落在收银台页（跨域顶层跳转不受 CORS 约束）`
-    )
-    eq(calls.order, 0, `${width}px：网页版跳转前不建单查单（单号由收银台回跳带回）`)
-    truthy(
-      (await probe.evaluate((keyName) => window.localStorage.getItem(keyName), ORDER_KEY)) === null,
-      `${width}px：网页版跳转前不写订单存档`
-    )
-    await probe.close()
-  }
+  // #368：原来这里还有 [F2]「网页版顶层导航到 /buy?plan=&cid=」与 [G]「订单令牌存档 → 轮询
+  // 待支付 → 已发卡 → 一键兑换」两段。两者断言的都是 #331 已删除的建单/查单链路，
+  // 现链路（plans → GET /api/pay-link → Browser.open → 关页刷新）由 #362 域 6+7 的 C6 覆盖，
+  // 本文件不再重复；下面只留兑换链路里与订单无关的部分。
 
-  // ---------- [G] 回跳续查：订单令牌存档 → 轮询 待支付 → 已发卡 ----------
-  // 「付款 → 回来 → 续查」这条链路的存档路径：读存档、按 no + order_token 每 2s 查单（原生就是这样）。
-  // 网页版走的是另一条入口（地址栏 ?no=&order_token= → returnParams 解析 → 落同样的存档），
-  // 见 tests/integration/ours-webpay.test.mjs。
-  await page.keyboard.press('Escape')
-  await page.waitForTimeout(400)
-  await page.evaluate(
-    ([keyName, payload]) => window.localStorage.setItem(keyName, payload),
-    [ORDER_KEY, JSON.stringify({ outTradeNo: OUT_TRADE_NO, orderToken: ORDER_TOKEN, planId: 'p1', startedAt: Date.now() })]
-  )
-  calls.order = 0
-  mock.order = 'pending-then-fulfilled'
-  await openPanel(page)
-  await page.getByTestId('ours-order-status').waitFor({ state: 'visible', timeout: 15000 })
-  await page.waitForTimeout(300)
-  const pendingStatus = await page.getByTestId('ours-order-status').innerText()
-  eq(pendingStatus, '待支付', `${width}px：订单待支付`)
-  const orderRequest = requestLog.filter((item) => item.path === '/api/order').at(-1)
-  truthy(orderRequest.search.includes(`out_trade_no=${OUT_TRADE_NO}`), `${width}px：查单带 out_trade_no`)
-  truthy(orderRequest.search.includes(`order_token=${ORDER_TOKEN}`), `${width}px：查单带 order_token（否则 403）`)
-  await scrollTo(page, 'ours-order')
-  await shot('06-order-pending')
-
-  await page.getByTestId('ours-order-card').waitFor({ state: 'visible', timeout: 15000 })
-  const fulfilledStatus = await page.getByTestId('ours-order-status').innerText()
-  eq(fulfilledStatus, '已发卡', `${width}px：轮询到已发卡`)
-  const cardText = await page.getByTestId('ours-order-card').innerText()
-  truthy(cardText.includes(ORDER_CARD_TAIL), `${width}px：显示卡密尾号（${cardText}）`)
-  truthy(!cardText.includes(ORDER_CARD), `${width}px：界面不展示完整卡密`)
-  await scrollTo(page, 'ours-order')
-  await shot('07-order-fulfilled')
-
-  // 轮询间隔 ≈2s：两次查单之间至少 2s
-  truthy(calls.order >= 2, `${width}px：轮询至少两次（${calls.order}）`)
-  eq(
-    await page.evaluate((keyName) => window.localStorage.getItem(keyName), ORDER_KEY),
-    null,
-    `${width}px：终态后清掉订单存档`
-  )
-
-  // ---------- [H] 一键兑换成功 ----------
+  // ---------- [H] 兑换成功 ----------
   const meBeforeRedeem = calls.me
-  await page.getByTestId('ours-order-redeem').click()
+  await page.getByTestId('ours-redeem-input').fill(CARD_OK)
+  await page.getByTestId('ours-redeem-submit').click()
   await page.waitForTimeout(900)
   const redeemOk = await page.getByTestId('ours-redeem-result').innerText()
-  truthy(/兑换成功/.test(redeemOk), `${width}px：一键兑换成功（${redeemOk}）`)
+  truthy(/兑换成功/.test(redeemOk), `${width}px：兑换成功（${redeemOk}）`)
   // #75：只显示积分，不做 ¥ 折算（旧契约里的「¥3.00」已随 #75 移除，这里反过来钉住）
   truthy(/\+300 积分/.test(redeemOk), `${width}px：兑换结果显示积分数（${redeemOk}）`)
   truthy(!/¥/.test(redeemOk), `${width}px：兑换结果不做 ¥ 折算（#75）`)
@@ -616,8 +490,8 @@ const runViewport = async ({ width, height, label }) => {
   eq(calls.redeemPool, 1, `${width}px：一键兑换打本机池 /redeem-card 一次`)
   eq(calls.redeem, 0, `${width}px：池链路正常时不兜底旧 /api/redeem`)
   const redeemBody = JSON.parse(requestLog.filter((item) => item.path === '/redeem-card').at(-1).postData)
-  eq(redeemBody.card_no, ORDER_CARD, `${width}px：一键兑换提交的是完整卡密`)
-  eq(redeemBody.api_key, KEY, `${width}px：一键兑换带上当前 Key`)
+  eq(redeemBody.card_no, CARD_OK, `${width}px：兑换提交的是完整卡密`)
+  eq(redeemBody.api_key, KEY, `${width}px：兑换带上当前 Key`)
   await scrollTo(page, 'ours-redeem')
   await shot('08-redeem-ok')
 
@@ -641,11 +515,11 @@ const runViewport = async ({ width, height, label }) => {
   // ---------- [I] 秘密不外泄 ----------
   const panelText = await panel.innerText()
   truthy(!panelText.includes(KEY), `${width}px：DOM 不含完整 Key`)
-  truthy(!panelText.includes(ORDER_CARD), `${width}px：DOM 不含完整卡密`)
+  truthy(!panelText.includes(CARD_OK), `${width}px：DOM 不含完整卡密`)
   truthy(!panelText.includes(CARD_PENDING), `${width}px：DOM 不含输入框里的完整卡密`)
   const consoleText = consoleMessages.join('\n')
   truthy(!consoleText.includes(KEY), `${width}px：console 不含完整 Key`)
-  truthy(!consoleText.includes(ORDER_CARD), `${width}px：console 不含完整卡密`)
+  truthy(!consoleText.includes(CARD_OK), `${width}px：console 不含完整卡密`)
   truthy(!consoleText.includes(deviceCode), `${width}px：console 不含完整设备码`)
   eq(consoleErrors.length, 0, `${width}px：console error = 0${consoleErrors.length > 0 ? `（${consoleErrors.join(' | ')}）` : ''}`)
 

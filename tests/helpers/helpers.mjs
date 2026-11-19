@@ -179,9 +179,22 @@ export const closeSettings = async (page) => {
 /** 打开设置 → 通用设置（服务类型在最上面的「数据管理」分组里） */
 export const openSettingsDataTab = openSettingsDataSection
 
-/** 选「渠道」下拉里的某一项（1.4.0-beta.3 起叫「渠道」，旧文案「服务类型」保留兼容） */
+/**
+ * 「渠道」下拉的触发器（1.4.0-beta.3 起叫「渠道」，旧文案「服务类型」保留兼容）。
+ *
+ * #368：这里**必须是整串匹配**。用 `name: /渠道/` 子串匹配时，聊天页里那个
+ * `aria-disabled="true"`、`aria-label="当前渠道不支持文件上传，附件入口已不可用"` 的附件按钮
+ * （`src/i18n/zh.ts:269`）也含「渠道」二字且 DOM 顺序在前，`.first()` 会点到它 →
+ * `locator.click` 卡在「element is not enabled」重试到 30s 超时才抛错。
+ * 触发器自己的 aria-label 就是选项组标题（整串等于「渠道」/「Channel」），所以锚定首尾即可，
+ * 既不用改生产文案，也不依赖 DOM 顺序。
+ */
+export const providerKindTrigger = (page) =>
+  page.getByRole('button', { name: /^(渠道|Channel|服务类型|Service type)$/ })
+
+/** 选「渠道」下拉里的某一项 */
 export const selectProviderKind = async (page, nameRe) => {
-  await page.getByRole('button', { name: /渠道|Channel|服务类型|Service type/ }).first().click()
+  await providerKindTrigger(page).click()
   await page.getByRole('option', { name: nameRe }).first().click()
   await page.waitForTimeout(300)
 }

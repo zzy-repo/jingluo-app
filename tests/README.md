@@ -8,6 +8,7 @@
 tests/
 ├── unit/          1 个：纯逻辑，零浏览器，毫秒级
 ├── integration/  18 个：浏览器 + mock 上游（或自建静态服务），分钟级
+├── regression/   11 个：按 Issue 编号的回归（纯 Node，无浏览器/无网络），合计 ~3.5s
 ├── e2e/           2 个：真上游 + 真 UI（要 API Key）/ 真实反馈后端
 ├── device/        1 个：Android 模拟器或真机（adb）
 ├── fixtures/      mock 服务与样本数据（不是测试，被上面引用）
@@ -67,16 +68,22 @@ npx playwright install chromium   # 下载浏览器（~150MB，只需一次）
 
 ```bash
 npm test                # = node tests/run-layer.mjs unit
+npm run test:regression # = node tests/run-layer.mjs regression（#368 接入；CI 接线留 #365）
 npm run test:integration
 npm run test:e2e
 npm run test:device
-npm run test:all        # unit → integration（日常/CI 就这一条）
+npm run test:all        # unit → regression → integration
 ```
+
+> `regression/` 这一层在 #368 之前是**死的**：既不在 `run-layer` 的 `LAYERS` 里，CI 也不引用，
+> 于是 `issue-135` 长期 import 已删除的 `startCheckout`、`issue-38`/`issue-79` 各自静默失效都没人发现。
+> 现在它进了 `LAYERS`（`node tests/run-layer.mjs regression` 可跑，11 个文件 ~3.5s），
+> CI 的自动触发点仍然留给 #365。
 
 `run-layer.mjs` 的用法：
 
 ```bash
-node tests/run-layer.mjs <unit|integration|e2e|device|all>
+node tests/run-layer.mjs <unit|integration|regression|e2e|device|all>
 node tests/run-layer.mjs integration --only motion   # 只跑文件名含 motion 的
 node tests/run-layer.mjs integration --list          # 只列出要跑哪些
 node tests/run-layer.mjs integration --bail          # 第一个失败就停

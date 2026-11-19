@@ -113,11 +113,6 @@
       "artifact": "standard",
       "reason": "DIST_DIR_STANDARD 标准产物 + mock 我们的服务端；390 / 360 两轮全绿。#166 修好后「付款记录 / 我的购买」两格只在 ours 渠道渲染（官方渠道与第三方 baseUrl 下 count=0，会话内切回 ours 又回来），原 knownRed 已清空"
     },
-    "ours-webpay.test.mjs": {
-      "expected": "pass",
-      "artifact": "standard",
-      "reason": "DIST_DIR_STANDARD 标准产物；下单/兑换按当前 ours 契约（兑换走 /redeem-card 池接口）打桩"
-    },
     "paths.test.mjs": {
       "expected": "pass",
       "artifact": "standard",

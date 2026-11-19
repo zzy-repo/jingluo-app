@@ -93,9 +93,13 @@ test('#38 慢但在推进的下载不许判死（每块都有新字节 = 不是�
 })
 
 test('#38 总时间预算从下载开始算，不会因为"一直有进展"被无限续命', async () => {
+  // #368：这条以前用 8MiB + 每块 50ms + 300ms 预算，但自适应块（4KiB→4MiB）把整包压缩到
+  // 5 次请求 ≈250ms，**跑完都没到 300ms**，于是断言「必须有错」永远失败（该层没接线，一直没人看见）。
+  // 现在把预算压到 120ms：链路本身至少要 5×50ms=250ms，所以「已经拿到若干块新字节」之后
+  // 必然命中总时限 —— 正是这条用例要钉的语义（有进展 ≠ 可以无限续命）。
   const source = zipBytes(8 * 1024 * 1024)
   const { error } = await run('https://obs.example.test/reg38-budget.zip', slowButSteady(source, 50), {
-    downloadMaxTotalMs: 300,
+    downloadMaxTotalMs: 120,
   })
   assert.ok(error !== null, '预算用完必须结束，而不是无限等下去')
   assert.match(String(error?.key), /Deadline/, `应报总时限而非网络错误，实际：${error?.key}`)
