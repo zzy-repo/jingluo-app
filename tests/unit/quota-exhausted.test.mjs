@@ -12,50 +12,12 @@
 //   node tests/unit/quota-exhausted.test.mjs
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { installTsResolve } from '../helpers/dom-env.mjs'
+import { chatFakeDb, installChatEnv } from '../helpers/dom-env.mjs'
 
-const stub = (name) => new URL(`../fixtures/chat-stubs/${name}`, import.meta.url).href
-
-// 假 db / 假诊断写入口，与 tests/unit/chat-retry-retryable.test.mjs 同一套（只换 I/O 边界）
-const fakeDB = `data:text/javascript,${encodeURIComponent(`
-export const loadSessionSummaries = async () => []
-export const loadSession = async () => undefined
-export const saveSession = async () => {}
-export const saveFiles = async () => {}
-export const loadFile = async () => undefined
-export const deleteSession = async () => {}
-export const pinSession = async () => {}
-export const renameSession = async () => {}
-export const clearStaging = async () => {}
-export const addStagingSession = async () => {}
-export const saveStagingFiles = async () => {}
-export const updateStagingFileTypes = async () => {}
-export const commitStaging = async () => []
-export const reportStorageError = async () => () => {}
-export const loadAppAsset = async () => undefined
-export const saveAppAsset = async () => {}
-export const deleteAppAsset = async () => {}
-`)}`
-
-const collectorStub = `data:text/javascript,${encodeURIComponent(`
-export * from '${stub('collector.mjs')}'
-export const recordError = (message, fields = {}) => {
-  globalThis.__log.records.push({ kind: 'error', level: 'error', message, fields })
-}
-`)}`
-
-// 装配（`.js→.ts` + 原生桥/诊断/存储替身）走 tests/helpers/dom-env.mjs 的公共入口（#366 第二批）：
-// 这段以前是本文件里手抄的 ~30 行 registerHooks 样板，chat-stubs 一族的文件各有一份。
-// 存储层替身按**父模块**区分（只有 chat/store.ts 的 `./db.js` 换成内置假库），所以走 onResolve。
-installTsResolve({
-  stubs: [
-    [/^@capacitor\/core$/, stub('capacitor.mjs')],
-    [/diagnostics\/collector\.js$/, collectorStub],
-  ],
-  onResolve: (specifier, context) => (
-    specifier === './db.js' && String(context.parentURL ?? '').endsWith('/chat/store.ts') ? fakeDB : undefined
-  ),
-})
+// 装配走公共入口（#366 第二批 / #408）：原生桥 + 诊断写入口 + 「只有 chat/store.ts 的 ./db.js 才是假库」这条按父模块的规则；
+// 本文件要断言「落盘/上报失败要等一等」，所以 reportStorageError 换成 async 形状，
+// 都收在 installChatEnv 里。以前这段是本文件手抄的 41 行样板，chat 一族 5 个文件各一份。
+const { stub } = installChatEnv({ db: chatFakeDb({ reportStorageError: 'async () => () => {}' }) })
 
 globalThis.__API_ORIGIN__ = 'https://api.test.invalid'
 globalThis.INTERNAL_BUILD = false

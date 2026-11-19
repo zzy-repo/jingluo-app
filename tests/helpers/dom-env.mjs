@@ -147,3 +147,74 @@ export const setupDom = ({ visibilityState = 'visible' } = {}) => {
     },
   }
 }
+
+// ---------------------------------------------------------------------------
+// chat 一族（chat-stubs + 真 store）的公共装配 —— Issue #408
+//
+// 为什么补这一段：`installTsResolve` 收掉了 `.js→.ts` 那一层，但「chat 一族的替身表」还是
+// 5 个文件各抄一份 —— 每个文件 41 行里，17 行的假 db、5 行的诊断写入口替身、6 行的 install
+// 调用逐字相同（check:test-duplication 一次就能抓到 6 组）。换一个导出就要改 5 处。
+//
+//   import { installChatEnv } from '../helpers/dom-env.mjs'
+//   const { stub } = installChatEnv()                       // 原生桥 / 诊断 / 存储替身一次装好
+//   const { stub } = installChatEnv({ stubs: [[/^x$/, y]] }) // 需要额外替身时按 installTsResolve 的口径追加
+//
+// 需要换一套存储语义（例如读持久化失败）就传 `db`：
+//   installChatEnv({ db: chatFakeDb({ reportStorageError: 'async () => () => {}' }) })
+// ---------------------------------------------------------------------------
+
+/** chat-stubs 下的替身 → file:// URL（`chatStub('capacitor.mjs')`） */
+export const chatStub = (name) => fixtureUrl(`chat-stubs/${name}`)
+
+/**
+ * `chat/db.ts` 的存储层替身：只要「被 import 时不炸」，断言都打在 `chat/store.ts` 的状态上。
+ * `reportStorageError` 给两种形状：默认返回一个空的上报函数；`async` 形状用于「落盘失败要等」的用例。
+ */
+export const chatFakeDb = ({ reportStorageError = '() => () => {}' } = {}) => inlineModule(`
+export const loadSessionSummaries = async () => []
+export const loadSession = async () => undefined
+export const saveSession = async () => {}
+export const saveFiles = async () => {}
+export const loadFile = async () => undefined
+export const deleteSession = async () => {}
+export const pinSession = async () => {}
+export const renameSession = async () => {}
+export const clearStaging = async () => {}
+export const addStagingSession = async () => {}
+export const saveStagingFiles = async () => {}
+export const updateStagingFileTypes = async () => {}
+export const commitStaging = async () => []
+export const reportStorageError = ${reportStorageError}
+export const loadAppAsset = async () => undefined
+export const saveAppAsset = async () => {}
+export const deleteAppAsset = async () => {}
+`)
+
+/** 诊断写入口替身：包住真实 collector，`recordError` 落到 `globalThis.__log.records`（用例自己初始化） */
+export const chatCollectorStub = () => inlineModule(`
+export * from '${chatStub('collector.mjs')}'
+export const recordError = (message, fields = {}) => {
+  globalThis.__log.records.push({ kind: 'error', level: 'error', message, fields })
+}
+`)
+
+/**
+ * chat 一族的装配：原生桥 `@capacitor/core` + 诊断写入口 + **按父模块**把 `chat/store.ts` 的
+ * `./db.js` 换成假库（其余 `./db.js` 照旧解析回真文件）。
+ *
+ * `@capacitor/*` 里只有 core 是整族共用；其他能力（filesystem / clipboard…）由调用方用 `stubs` 追加，
+ * 避免这里替所有用例决定它们的行为。
+ */
+export const installChatEnv = ({ db = chatFakeDb(), collector = chatCollectorStub(), stubs = [] } = {}) => {
+  installTsResolve({
+    stubs: [
+      [/^@capacitor\/core$/, chatStub('capacitor.mjs')],
+      [/diagnostics\/collector\.js$/, collector],
+      ...(Array.isArray(stubs) ? stubs : Object.entries(stubs)),
+    ],
+    onResolve: (specifier, context) => (
+      specifier === './db.js' && String(context.parentURL ?? '').endsWith('/chat/store.ts') ? db : undefined
+    ),
+  })
+  return { stub: chatStub, db, collector }
+}
