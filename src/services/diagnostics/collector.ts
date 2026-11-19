@@ -824,14 +824,13 @@ export const captureUiNotice = (trigger: string): LogEntry => {
 
 let hooksInstalled = false
 /**
- * 重入标记：**只覆盖「业务直接调 JS 侧 CapacitorHttp 代理」这一条路径**。
+ * 重入标记：`installCapacitorHttpHook` 记一条 `native: true` 之前先进 `inNativeHttp += 1`，
+ * 万一这条原生调用内部还落回页面 `fetch`，`installFetchHook` 那层看到计数 > 0 就闭嘴，
+ * 同一条请求不会记两遍。
  *
- * `installCapacitorHttpHook` 先记一条 `native: true`，再进 `inNativeHttp += 1`；代理内部若还落回
- * 页面 `fetch`，`installFetchHook` 那层看到计数 > 0 就闭嘴，同一条请求不会记两遍。
- *
- * 它挡不住的是**宿主桥接换掉 `window.fetch`** 的那条（issue #210）：native-bridge 的 doPatchHttp
- * 走的是 `cap.nativePromise`，压根不经过 JS 侧代理，这个计数器永远是 0。
- * 那种形态由 `detectFetchChannel` 在安装时判定 —— 不是原生就整层不接管，见 installFetchHook。
+ * 挂点已搬到 `Capacitor.nativePromise`（issue #248：插件代理本身挂不上），所以它现在**直接覆盖原生
+ * 通道本身**；宿主桥接换掉 `window.fetch` 的那条形态（issue #210）仍由 `detectFetchChannel` 在安装时
+ * 判定 —— 不是原生就整层不接管、只留一条降级信号，见 installFetchHook。
  */
 let inNativeHttp = 0
 let requestSeq = 0
@@ -1111,73 +1110,177 @@ const installFetchHook = (): void => {
 
 type NativeHttpResponse = { status?: number; data?: unknown }
 
-/** 包装 CapacitorHttp：原生端不走 fetch，同样成功与失败都记 */
-const installCapacitorHttpHook = (): void => {
-  const target = CapacitorHttp as unknown as Record<string, unknown>
-  for (const name of ['get', 'post', 'put', 'patch', 'delete', 'request'] as const) {
-    const original = target[name]
-    if (typeof original !== 'function') {
-      continue
+/**
+ * CapacitorHttp 的**真实**可拦截入口（issue #248）。
+ *
+ * `@capacitor/core@8.6.2` 的 `registerPlugin()` 返回 `new Proxy({}, { get })`：
+ * - `get` 每次都调一遍 `createPluginMethodWrapper(prop)` 现造一个**新**函数 ——
+ *   `CapacitorHttp.get === CapacitorHttp.get` 是 `false`；
+ * - 没有 `set` 陷阱，赋值落到那个空 target 上，而 `get` 从不读 target ——
+ *   写了等于没写，**而且不报错**。
+ *
+ * 所以老写法 `target[name] = wrapper`（往插件代理上挂）在 Capacitor 8 上全程静默失败：
+ * 一条 `net_*` 都不写，也不留任何信号 —— 排障时会被读成「这段时间没有网络请求」，
+ * 比「记错」更坏：它连「我坏了」都不说。
+ *
+ * 真正能挂的是 `Capacitor.nativePromise`：插件代理在**调用时**才读 `cap.nativePromise`
+ * （dist/index.js 里 `(options) => cap.nativePromise(pluginName, prop.toString(), options)`），
+ * 而 native-bridge 自己的 HTTP 通道（含被 doPatchHttp 换掉的 `window.fetch`）也收敛到这一处。
+ * 它是普通对象上的普通函数，赋值真会落地 —— 但落地与否当场探测，不靠假设。
+ */
+
+/** 原生通道上 CapacitorHttp 的调用形态：`nativePromise('CapacitorHttp', method, options)` */
+const NATIVE_HTTP_PLUGIN = 'CapacitorHttp'
+/** 降级信号的 stage，与 #210 的 `stage: 'fetch-hook'` 同一套风格 */
+const HTTP_HOOK_STAGE = 'http-hook'
+
+/** 插件代理是不是「每次取值都现造一个新函数」那种挂不上的形态（issue #248 的成因） */
+const proxyRebuildsOnGet = (): boolean => {
+  try {
+    const plugin = CapacitorHttp as unknown as Record<string, unknown>
+    return plugin['get'] !== plugin['get']
+  } catch {
+    return false
+  }
+}
+
+/** 挂不上时统一走这里：信号里必须能看出「哪个通道不可用 + 为什么 + 后果」 */
+const recordNativeHttpDegraded = (reason: string, detail: LogMeta): void => {
+  record(
+    'warning',
+    'warn',
+    `原生通道采集不可用：${reason}，原生 HTTP 请求不会有 net_* 记录（分不清「没发请求」还是「没采到」）`,
+    {
+      stage: HTTP_HOOK_STAGE,
+      'http.channel': 'native',
+      'http.entry': 'nativePromise',
+      'http.proxy': proxyRebuildsOnGet() ? 'rebuilt-on-get' : 'stable',
+      native: true,
+      ...detail,
     }
-    const call = original as (options: Record<string, unknown>) => Promise<NativeHttpResponse>
-    target[name] = async (options: Record<string, unknown>): Promise<NativeHttpResponse> => {
-      const startedAt = Date.now()
-      const method = String(options?.method ?? name).toUpperCase()
-      const rawUrl = String(options?.url ?? '')
-      const path = redactUrl(rawUrl)
-      const host = redactHost(rawUrl)
-      const requestId = newRequestId()
-      inNativeHttp += 1
-      record('net_request', 'info', `request: ${method} ${host}${path}`, {
+  )
+}
+
+/**
+ * 包装原生 HTTP 通道：原生端不走页面 fetch，同样成功与失败都记。
+ *
+ * 挂点从插件代理搬到 `Capacitor.nativePromise`（原因见上），并且**拦不到就出声**：
+ * 拿不到这个函数、或赋值不落地，都写一条 `stage: 'http-hook'` 的降级信号。
+ */
+const installCapacitorHttpHook = (): void => {
+  const cap = Capacitor as unknown as Record<string, unknown>
+  const platform = typeof cap['getPlatform'] === 'function' ? String((cap['getPlatform'] as () => unknown)()) : 'unknown'
+  // 网页环境没有原生通道：CapacitorHttp 那时走 web 实现（最终落到 fetch），由 installFetchHook 负责。
+  // 这种「零 native 记录」是应该的，不许乱报降级。
+  if (typeof cap['isNativePlatform'] !== 'function' || cap['isNativePlatform']() !== true) {
+    return
+  }
+  const original = cap['nativePromise']
+  if (typeof original !== 'function') {
+    recordNativeHttpDegraded(`Capacitor.nativePromise 不存在（平台 ${platform}）`, {
+      'http.hook': 'missing',
+      'http.platform': platform,
+    })
+    return
+  }
+  // 挂之前当场探一次：赋进去再读回来，读回的还是我那个才算挂上。
+  // 「typeof 是 function 就说明挂得上」这个假设正是本单的成因 —— CapacitorHttp 看着有 get/post，
+  // 赋值却一步都不落地。所以这里必须真写一次、真读一次。
+  const probe = function probeNativePromise(): void {}
+  let landed = false
+  let probeError: unknown
+  try {
+    cap['nativePromise'] = probe
+    landed = cap['nativePromise'] === probe
+  } catch (error) {
+    probeError = error
+  } finally {
+    try {
+      cap['nativePromise'] = original
+    } catch {
+      // 还原不回去也不能把业务拖坏：下面按「挂不上」写信号，不再改造
+      landed = false
+    }
+  }
+  if (!landed) {
+    recordNativeHttpDegraded(`Capacitor.nativePromise 挂不上（赋值不落地，平台 ${platform}）`, {
+      'http.hook': 'unassignable',
+      'http.platform': platform,
+      ...(probeError === undefined ? {} : { 'error.msg': safeString(probeError) }),
+    })
+    return
+  }
+
+  const call = original as (
+    pluginName: string,
+    methodName: string,
+    options?: Record<string, unknown>
+  ) => Promise<NativeHttpResponse>
+
+  cap['nativePromise'] = async function patchedNativePromise(
+    pluginName: string,
+    methodName: string,
+    options?: Record<string, unknown>
+  ): Promise<unknown> {
+    // 只认 CapacitorHttp：别的插件（App / Filesystem …）原样直通，不许多记也不许多包一层
+    if (pluginName !== NATIVE_HTTP_PLUGIN) {
+      return call.call(Capacitor, pluginName, methodName, options)
+    }
+    const startedAt = Date.now()
+    // 插件直调时 options 里没有 method（methodName 本身就是 'get' / 'post' …）；
+    // 桥接换掉的 fetch 一律 methodName='request' + options.method —— 两种形态都要取到真实方法名
+    const method = String(options?.method ?? methodName ?? 'GET').toUpperCase()
+    const rawUrl = String(options?.url ?? '')
+    const path = redactUrl(rawUrl)
+    const host = redactHost(rawUrl)
+    const requestId = newRequestId()
+    // 原生通道不会落回页面 fetch，这个计数留着当 #210 约定的兜底：
+    // 万一哪条实现真绕回 fetch 那层，installFetchHook 的 `quiet` 能挡住重复记录
+    inNativeHttp += 1
+    record('net_request', 'info', `request: ${method} ${host}${path}`, {
+      method,
+      'url.host': host,
+      'url.path': path,
+      requestId,
+      native: true,
+    })
+    try {
+      const response = await call.call(Capacitor, pluginName, methodName, options)
+      const status = typeof response?.status === 'number' ? response.status : 0
+      const ok = status >= 200 && status < 300
+      record('net_response', ok ? 'info' : 'error', `response: ${method} ${host}${path} → ${status}`, {
         method,
         'url.host': host,
         'url.path': path,
         requestId,
+        'http.status': status,
+        durationMs: Date.now() - startedAt,
+        bytes: readBytesOfValue(response?.data),
         native: true,
+        ...(ok ? {} : { 'error.msg': `HTTP ${status}` }),
       })
-      try {
-        const response = await call.call(CapacitorHttp, options)
-        const status = typeof response?.status === 'number' ? response.status : 0
-        const ok = status >= 200 && status < 300
-        record(
-          'net_response',
-          ok ? 'info' : 'error',
-          `response: ${method} ${host}${path} → ${status}`,
-          {
-            method,
-            'url.host': host,
-            'url.path': path,
-            requestId,
-            'http.status': status,
-            durationMs: Date.now() - startedAt,
-            bytes: readBytesOfValue(response?.data),
-            native: true,
-            ...(ok ? {} : { 'error.msg': `HTTP ${status}` }),
-          }
-        )
-        return response
-      } catch (error) {
-        const timeout = isTimeoutError(error)
-        record(
-          'net_error',
-          'error',
-          `request error: ${method} ${host}${path} ${timeout ? '(timeout)' : safeString(error)}`,
-          {
-            ...readNetworkStatus(),
-            method,
-            'url.host': host,
-            'url.path': path,
-            requestId,
-            durationMs: Date.now() - startedAt,
-            reason: timeout ? 'timeout' : 'network',
-            native: true,
-            ...errorMeta(error),
-          }
-        )
-        throw error
-      } finally {
-        inNativeHttp -= 1
-      }
+      return response
+    } catch (error) {
+      const timeout = isTimeoutError(error)
+      record(
+        'net_error',
+        'error',
+        `request error: ${method} ${host}${path} ${timeout ? '(timeout)' : safeString(error)}`,
+        {
+          ...readNetworkStatus(),
+          method,
+          'url.host': host,
+          'url.path': path,
+          requestId,
+          durationMs: Date.now() - startedAt,
+          reason: timeout ? 'timeout' : 'network',
+          native: true,
+          ...errorMeta(error),
+        }
+      )
+      throw error
+    } finally {
+      inNativeHttp -= 1
     }
   }
 }
