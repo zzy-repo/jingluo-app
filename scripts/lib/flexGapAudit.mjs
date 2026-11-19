@@ -3,13 +3,15 @@
  * 被两处使用：
  *  - `scripts/check-css-gap-fallback.mjs`（`pnpm run check:gap`，给人和 CI 看）
  *  - `tests/unit/flex-gap-fallback.test.mjs`（进 pnpm test 基线，改归零就红）
+ *
+ * 扫描范围（#217 起）：`src/**` 下**全部** `.css`，含非 CSS Module 的普通 CSS。
  */
 
 import { readFileSync } from 'node:fs'
 import { readdir } from 'node:fs/promises'
 import { join, relative, sep } from 'node:path'
 
-import { SKIP, parseRules, readGap } from './flexGapRules.mjs'
+import { SKIP, gapFallbackRequirement, parseRules, readGap } from './flexGapRules.mjs'
 
 const START = '#173-fallback:start'
 const END = '#173-fallback:end'
@@ -35,7 +37,14 @@ const stripComments = (text) =>
   text.replace(/\/\*[\s\S]*?\*\//gu, ' ').replace(/(^|[^:])\/\/[^\n]*/gu, '$1')
 
 export const auditFlexGap = async (srcDir) => {
-  const cssFiles = await walk(srcDir, (name) => name.endsWith('.module.css'))
+  // #217：扫描范围是**全部** `.css`，不再只扫 `*.module.css`。
+  // 当初只扫 module 是因为兜底块用 `:global(html[data-flex-gap-fallback])` 包裹（CSS Module 语法），
+  // 但「守卫只看 module」等于「非 module 的普通 CSS 完全没有守卫」：`markdown.css:350` 的
+  // `.md-code-block-switch` 就躲在这里，实测命中 0 次兜底而 `check:gap` 照样报 OK。
+  // 普通 CSS 的兜底块不写 `:global()`（那个伪类在非 module 文件里非法、整条规则会被丢掉），
+  // 直接写 `html[data-flex-gap-fallback] 选择器 > *:not(:last-child)` 即可，本文件只认
+  // 「块里出现 `<选择器> > *:not(:last-child>`」，两种写法都能认。
+  const cssFiles = await walk(srcDir, (name) => name.endsWith('.css'))
   const codeFiles = await walk(srcDir, (name) => /\.(?:css|tsx?|jsx?)$/u.test(name))
   const missing = []
   const covered = []
@@ -64,8 +73,11 @@ export const auditFlexGap = async (srcDir) => {
     for (const rule of rules) {
       const gap = readGap(rule)
       if (gap === null || gap.grid) continue
-      const main = gap.column ? gap.rowGap : gap.colGap
-      if (main === null || /^0(?:px|rem|em)?$/u.test(main)) continue
+      // #217：不再「主轴 gap 为空就整条跳过」。走 gapFallbackRequirement，
+      // 只有「主轴没有 gap，且交叉轴 gap 落在不换行的容器上」才算真的不需要兜底。
+      const requirement = gapFallbackRequirement(gap)
+      if (!requirement.required) continue
+      const main = requirement.main ?? requirement.cross
       if (SKIP[`${name}:${rule.selector}`]) {
         skipped.push(`${name} ${rule.selector}`)
         continue
@@ -78,11 +90,14 @@ export const auditFlexGap = async (srcDir) => {
         .split(',')
         .map((part) => part.trim())
         .find((part) => section.includes(`${part} > *:not(:last-child)`) || section.includes(`${part}> *:not(:last-child)`))
-      if (anchor === undefined) missing.push(`${short(path)} ${rule.selector}（gap: ${main}）`)
-      else covered.push(`${name} ${rule.selector}`)
+      if (anchor === undefined) {
+        const axis = requirement.main === null ? '交叉轴（flex-wrap）' : '主轴'
+        missing.push(`${short(path)} ${rule.selector}（${axis} gap: ${main}）`)
+      } else covered.push(`${name} ${rule.selector}`)
     }
   }
-  return { cssFiles: cssFiles.length, covered, missing, skipped, forbidden }
+  const cssModules = cssFiles.filter((path) => path.endsWith('.module.css')).length
+  return { cssFiles: cssFiles.length, cssModules, covered, missing, skipped, forbidden }
 }
 
 const short = (path) => relative(process.cwd(), path).split(sep).join('/')

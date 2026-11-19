@@ -1,7 +1,11 @@
-/** 解析 CSS Modules 里「声明了 gap 的 flex 规则」，供 #173 兜底生成器与检查脚本共用。
+/** 解析 CSS 里「声明了 gap 的 flex 规则」，供 #173 兜底生成器与检查脚本共用。
  *
- * 只做机械匹配，不追求通用 CSS 解析器：仓库里的 *.module.css 是手写文件，
+ * 只做机械匹配，不追求通用 CSS 解析器：仓库里的 CSS 是手写文件，
  * 规则体里没有嵌套（有嵌套的会被跳过并在生成器里报出来）。
+ *
+ * #217：扫描口径从 `*.module.css` 扩到全部 `.css`（`markdown.css` 这类普通 CSS
+ * 没有 CSS Module 的局部作用域，漏扫等于没有守卫）；`flex-wrap` 上的交叉轴 gap
+ * 不再一律排除，见 `gapFallbackRequirement`。
  */
 
 /** 有意不加兜底的规则：key = `文件名:选择器`，value = 原因 */
@@ -95,19 +99,41 @@ export const readGap = (rule) => {
   }
 }
 
+/**
+ * 这条 gap 在「不认 flex gap 的内核」上是不是真的会丢间距 —— 需要兜底吗？丢哪些轴？
+ *
+ * 判断依据（issue #217 重新审视 `flex-wrap` 排除规则时定下）：
+ *  - **主轴**上的 gap（row 方向的 `column-gap` / column 方向的 `row-gap`）在**任何** flex
+ *    容器上都有视觉作用，丢了一律要兜底。
+ *  - **交叉轴**上的 gap（row 方向的 `row-gap` / column 方向的 `column-gap`）只在容器**会换行**
+ *    （`flex-wrap: wrap`）时才撑出行与行之间的间距。单行 flex 容器上它本就不生效，低内核丢了
+ *    也没有任何差别 —— 这才是「按设计排除」成立的那一半。
+ *
+ * 所以原来的排除规则错在把交叉轴 gap 一律排除：`.toolBody` 是 `display:flex; flex-wrap:wrap;
+ * row-gap:6px`，换行后的行间距**完全靠**这个 `row-gap`，排除即等于无兜底。
+ */
+export const gapFallbackRequirement = (gap) => {
+  const mainAxis = gap.column ? gap.rowGap : gap.colGap
+  const crossAxis = gap.column ? gap.colGap : gap.rowGap
+  const live = (value) => value !== null && !isZero(value)
+  const main = live(mainAxis) ? mainAxis : null
+  const cross = gap.wrap && live(crossAxis) ? crossAxis : null
+  return { main, cross, required: main !== null || cross !== null }
+}
+
 /** 兜底块内容：只写 margin，绝不写 gap */
 export const renderFallback = (selector, gap) => {
-  const main = gap.column ? gap.rowGap : gap.colGap
-  const cross = gap.column ? gap.colGap : gap.rowGap
-  if (main === null || isZero(main)) return null
+  const { main, cross } = gapFallbackRequirement(gap)
   // 只给「除最后一个子元素之外」加边距：不碰 margin-left，才能让 margin-left:auto 的
   // 右对齐子元素（如 ChatInput .right）继续工作。
-  const side = gap.column ? 'margin-bottom' : 'margin-right'
-  const lines = [`  ${side}: ${main};`]
-  if (gap.wrap && cross !== null && !isZero(cross)) {
-    const crossSide = gap.column ? 'margin-right' : 'margin-bottom'
-    lines.push(`  ${crossSide}: ${cross};`)
-  }
+  const mainSide = gap.column ? 'margin-bottom' : 'margin-right'
+  const crossSide = gap.column ? 'margin-right' : 'margin-bottom'
+  const lines = []
+  if (main !== null) lines.push(`  ${mainSide}: ${main};`)
+  // 会换行的容器才有交叉轴间距：`.toolBody` 就是只有 row-gap、没有 column-gap 的那一类，
+  // 主轴什么都不写，只补换行后的行间距。
+  if (cross !== null) lines.push(`  ${crossSide}: ${cross};`)
+  if (lines.length === 0) return null
   const scope = selector
     .split(',')
     .map((part) => part.trim())
