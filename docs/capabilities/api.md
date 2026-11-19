@@ -1,6 +1,6 @@
 # 类别 1：JS 内置 API 与语言特性假设盘点
 
-> 快照基准：`4870b33`（`origin/main` tip，2026-11-19 11:23:55 +0800）· 采集时间：2026-11-19 11:35 (+0800)。
+> 快照基准：`55c4d1e`（`origin/main` tip，2026-11-19 12:07:47 +0800）· 采集时间：2026-11-19 12:19 (+0800)。
 > 下面的数字全部由 `scripts/lib/apiAssumptionAudit.mjs` 在基准 commit 上跑出来，不是数的；`tests/unit/capabilities-docs-sync.test.mjs` 会重新跑一遍并逐项比对，文档一旦落后于代码就红。
 
 追踪单：[#209 能力探测替代一切假设](https://github.com/zzy-repo/deepseek-app/issues/209)。本单只做盘点、定规范、建工具；下面「真漏洞」里的三条已各自拆成独立 issue，**不在本单修**。
@@ -8,7 +8,7 @@
 | 项目 | 值 |
 | --- | --- |
 | 兼容基线 | Android WebView **83**（Chromium 83.0.4103.106，Android 11 出厂镜像） |
-| 扫描范围 | `src/**` 共 **238** 个文件（**138** `.ts` / 54 `.tsx` / 44 `.css` / 1 `.html` / 1 `.md`） |
+| 扫描范围 | `src/**` 共 **240** 个文件（**140** `.ts` / 54 `.tsx` / 44 `.css` / 1 `.html` / 1 `.md`） |
 | 判定方式 | **静态推断**：词法层遮蔽注释、字符串、模板后按调用形状匹配；**非运行时验证** |
 | 工具 | [`scripts/lib/apiAssumptionAudit.mjs`](../../scripts/lib/apiAssumptionAudit.mjs)（纯判定模块，无遍历、无打印） |
 | 单测 | [`tests/unit/api-assumption-audit.test.mjs`](../../tests/unit/api-assumption-audit.test.mjs)（10 个用例，三个判定桶各钉真例子） |
@@ -23,7 +23,7 @@
 | **真漏洞**（`uncovered`） | 首次支持 > 83 且没有任何兜底 | **0** |
 | 合计 | | **51** |
 
-类别 1 命中总数 **51 处 / 238 个文件**：31 处依赖入口 polyfill、20 处落在基线内、**0 处裸调用无兜底**。
+类别 1 命中总数 **51 处 / 240 个文件**：31 处依赖入口 polyfill、20 处落在基线内、**0 处裸调用无兜底**。
 
 入口兜底的覆盖面（`src/polyfills/legacy.ts` 实际安装的 13 项）：`Object.hasOwn`、`Array.prototype.at`、`String.prototype.at`、`Array.prototype.findLast`、`Array.prototype.findLastIndex`、`Array.prototype.toSorted`、`Array.prototype.toReversed`、`Array.prototype.toSpliced`、`Array.prototype.with`、`structuredClone`、`crypto.randomUUID`、`String.prototype.replaceAll`、`Intl.Segmenter`。
 
@@ -79,8 +79,8 @@
 | `src/services/chat/view.ts:268` | `Array.prototype.at` 存在（Chromium 92；13 处接收者全是数组，零字符串接收者） | 1 | 中 | 已有兜底 |
 | `src/services/chat/view.ts:274` | `Array.prototype.flatMap` 存在（Chromium 69，低于基线） | 1 | 低 | —（基线内，无需处置） |
 | `src/services/chat/view.ts:386` | `Array.prototype.at` 存在（Chromium 92；13 处接收者全是数组，零字符串接收者） | 1 | 中 | 已有兜底 |
-| `src/services/diagnostics/collector.ts:298` | `Array.prototype.at` 存在（Chromium 92；13 处接收者全是数组，零字符串接收者） | 1 | 中 | 已有兜底 |
-| `src/services/diagnostics/collector.ts:524` | `crypto.randomUUID` 存在（Chromium 92） | 1 | 中 | 已有兜底 |
+| `src/services/diagnostics/collector.ts:299` | `Array.prototype.at` 存在（Chromium 92；13 处接收者全是数组，零字符串接收者） | 1 | 中 | 已有兜底 |
+| `src/services/diagnostics/collector.ts:525` | `crypto.randomUUID` 存在（Chromium 92） | 1 | 中 | 已有兜底 |
 | `src/services/diagnostics/shared.ts:25` | `Object.hasOwn` 存在（Chromium 93） | 1 | 中 | 已有兜底 |
 | `src/services/location.ts:44` | `Intl.DisplayNames` 存在（Chromium 81，低于基线） | 1 | 低 | —（基线内，无需处置） |
 | `src/services/location.ts:44` | `Intl.DisplayNames` 存在（Chromium 81，低于基线） | 1 | 低 | —（基线内，无需处置） |
@@ -127,7 +127,9 @@
 
 其余 51 处（31 处入口兜底 + 20 处基线内）经逐行核对，不构成需要拆单的漏洞。
 
-复核（2026-11-19，基准 `4870b33`）：V1 已经消失——#219 修复（#226，`57602b8`）把 `Intl.DisplayNames` 从 `REQUIRED` 移出，`src/index.html` 里现在只剩一段解释性注释，不再有可执行代码声称它是硬性必需，因此那一行命中不复存在（本表 52 → 51、基线内 21 → 20 的全部原因）。
+复核（2026-11-19 12:19，基准 `55c4d1e`）：本轮再复算一次，只动了扫描范围与两处行号——`#239`–`#256` 这十条合并把 `src/**` 从 238 个文件带到 **240** 个（新增文件里没有上述任何一条 API，命中总数因此仍是 51）；`src/services/diagnostics/collector.ts` 因 #237 的取数通道重构整体移位，`Array.prototype.at` 从 `:298` → **`:299`**、`crypto.randomUUID` 从 `:524` → **`:525`**。分类分布（31 / 20 / 0）与按 API 汇总（3 / 14 / 14 / 13 / 4 / 2 / 1）全部未变。
+
+复核（2026-11-19 11:35，基准 `4870b33`）：V1 已经消失——#219 修复（#226，`57602b8`）把 `Intl.DisplayNames` 从 `REQUIRED` 移出，`src/index.html` 里现在只剩一段解释性注释，不再有可执行代码声称它是硬性必需，因此那一行命中不复存在（本表 52 → 51、基线内 21 → 20 的全部原因）。
 
 ### V2 的修法与口径（#220）
 

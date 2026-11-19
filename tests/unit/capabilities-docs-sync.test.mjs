@@ -111,21 +111,29 @@ const section = (lines, heading) => {
   return lines.slice(start, end)
 }
 
-/** 从一段里取出所有表格行第一列引用的 `文件:行`（支持 `a.css:28,100` 这种行列表）。 */
+/**
+ * 从一段里取出所有表格行第一列引用的 `文件:行`（支持 `a.css:28,100` 这种行列表）。
+ *
+ * 一个小节里可能有多张表：现行表照查，表头里写明「修前 / 修复前 / 修后」的**历史快照表按设计跳过** ——
+ * 它们保留旧行号是为了让人看见「当年长什么样」，拿它去对实时复算只会逼着下一个人把历史抹掉。
+ */
 const refsInFirstColumn = (lines) => {
-  const rows = table(
-    lines,
-    (l) => l.startsWith('|') && (l.includes('文件:行') || l.includes('位置')),
-    '明细表',
-  )
   const refs = []
-  for (const row of rows) {
-    const cell = plain(row[0])
-    for (const m of cell.matchAll(/([A-Za-z0-9_@./-]+\.(?:css|ts|tsx|html)):([\d,\s]+)/g)) {
-      for (const line of m[2].split(',').map((s) => s.trim()).filter(Boolean)) {
-        refs.push(`${m[1]}:${line}`)
+  for (let i = 0; i + 1 < lines.length; i += 1) {
+    if (!lines[i].startsWith('|') || !lines[i + 1].startsWith('|')) continue
+    if (!lines[i].includes('文件:行') && !lines[i].includes('位置')) continue
+    const historical = /修前|修复前|修后/.test(plain(cells(lines[i])[0]))
+    let j = i + 2
+    for (; j < lines.length && lines[j].startsWith('|'); j += 1) {
+      if (historical) continue
+      const cell = plain(cells(lines[j])[0])
+      for (const m of cell.matchAll(/([A-Za-z0-9_@./-]+.(?:css|ts|tsx|html)):([d,s]+)/g)) {
+        for (const line of m[2].split(',').map((s) => s.trim()).filter(Boolean)) {
+          refs.push(`${m[1]}:${line}`)
+        }
       }
     }
+    i = j - 1
   }
   return refs
 }
@@ -239,7 +247,9 @@ const CSS_LABEL_TO_FEATURE = new Map([
   ['touch-action', 'touch-action'],
   ['backdrop-filter', 'backdrop-filter'],
   ['scrollbar-gutter', 'scrollbar-gutter'],
+  ['inset', 'inset'],
   [':where() / :is()', ':where()/:is()'],
+  ['CSS min() / max()', 'min()/max()'],
   ['@container', '@container'],
   ['container-type', 'container-type'],
 ])
