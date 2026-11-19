@@ -590,6 +590,7 @@ export const en = {
   oursInviteErrEmailDailyCap: 'Today’s verification-code quota is used up, try again tomorrow',
   oursInviteErrEmailSendFailed: 'Failed to send the code, retry later',
   oursInviteErrCustomerHasEmail: 'This account already has an email bound and cannot bind another',
+  oursInviteErrEmailDeviceHasAccount: 'This device already has an account — choose which one to continue with',
   oursInviteErrAccountFrozen: 'This account is frozen, contact support',
   // #421 email accounts: entry and form
   oursEmailTitle: 'Email account',
@@ -608,6 +609,16 @@ export const en = {
   oursEmailAttemptsLeft: '{attempts} attempts left',
   oursEmailBoundMaskedHint: 'Bound to: {masked}',
   oursEmailLoginOk: 'Signed in with email — this device code and Key now point at the original account',
+  // #421 point 4 / acceptance D3: per-second countdown on the send button
+  oursEmailSendCountdown: 'Resend in {seconds}s',
+  // #421 point 3: sign-in conflict dialog (device_has_account)
+  oursEmailConflictTitle: 'This device already has an account',
+  oursEmailConflictEmail: 'Email account to sign in with: {masked}',
+  oursEmailConflictPoints: 'Points left on this device: {points}',
+  oursEmailConflictWarning:
+    'If you choose to use the email account, the points left in this device’s account cannot be used for now (the server does not merge them automatically; the data is kept and support has to handle it).',
+  oursEmailConflictUseEmail: 'Use the email account',
+  oursEmailConflictKeepDevice: 'Keep this device’s account',
   // 卡密 / 支付服务错误码
   oursErrBadJson: 'Malformed request, retry',
   oursErrUnauthorized: 'Authentication failed: claim or enter a Key again',

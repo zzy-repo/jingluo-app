@@ -585,6 +585,7 @@ export const zh = {
   oursInviteErrEmailDailyCap: '今天验证码发送量已达上限，请明天再试',
   oursInviteErrEmailSendFailed: '验证码发送失败，请稍后重试',
   oursInviteErrCustomerHasEmail: '本账号已经绑定过邮箱，不能重复绑定',
+  oursInviteErrEmailDeviceHasAccount: '本机已有账号，需要先选择用哪个账号继续',
   oursInviteErrAccountFrozen: '账号已被冻结，请联系客服',
   // #421 邮箱账号：入口与表单
   oursEmailTitle: '邮箱账号',
@@ -603,6 +604,16 @@ export const zh = {
   oursEmailAttemptsLeft: '还剩 {attempts} 次机会',
   oursEmailBoundMaskedHint: '本账号已绑定：{masked}',
   oursEmailLoginOk: '已用邮箱登录，本机设备码与 Key 已切换到原账号',
+  // #421 第 4 点 / 验收 D3：发送按钮逐秒倒计时（剩余秒数是服务端 resend_after / retry_after）
+  oursEmailSendCountdown: '{seconds} 秒后可重发',
+  // #421 第 3 点：登录冲突弹窗（device_has_account）。额度数字与「切换后暂时用不了」必须都在
+  oursEmailConflictTitle: '这台设备上已有一个账号',
+  oursEmailConflictEmail: '要登录的邮箱账号：{masked}',
+  oursEmailConflictPoints: '本机原账号剩余额度：{points}',
+  oursEmailConflictWarning:
+    '选择「用邮箱账号」后，本机原账号的剩余额度暂时无法使用（服务端不自动合并，数据保留，需客服处理）。',
+  oursEmailConflictUseEmail: '用邮箱账号',
+  oursEmailConflictKeepDevice: '保留本机账号',
   // 卡密 / 支付服务错误码
   oursErrBadJson: '请求格式有误，请重试',
   oursErrUnauthorized: '鉴权失败，请重新领取或填写 Key 后再试',

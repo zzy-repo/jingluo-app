@@ -11,14 +11,20 @@
  *  - 本文件把「登录成功」的 device_id 与 Key 采用到本地（写回设备码、落 Key）；
  *  - 界面只调 {@link verifyEmailAndAdopt}，拿到结果渲染。
  *
- * 范围外（#421 明确不做）：登录冲突弹窗（`device_has_account` + `options`，取舍需产品确认）、
- * 自动合并账号、支付链路。**邮箱不会让其他设备失效**：同一邮箱在多台设备登录共用同一把 Key
+ * 登录冲突（`device_has_account`）也走这里：`verifyEmailAndAdopt` 把服务端给的
+ * {@link EmailConflict}（`email_masked` / `device_remaining_points` / `options`）原样交给界面，
+ * 用户选完再带同一个验证码 + `choice` 重发一次 —— 验证码在冲突那次没有被消耗。
+ *
+ * 范围外（#421 明确不做）：**自动合并账号**（服务端不合并，本机原账号额度保留但要客服处理）、
+ * 支付链路。**邮箱不会让其他设备失效**：同一邮箱在多台设备登录共用同一把 Key
  * 与同一份额度，文案里不许写成「账号更安全」。
  */
 
 import type { OursTransport } from '../ours/api.js'
 import {
   verifyEmailCode,
+  type EmailChoice,
+  type EmailConflict,
   type EmailError,
   type EmailVerifyAction,
   type EmailVerifyResult,
@@ -27,8 +33,8 @@ import {
 import { bindSuccessKey } from './bind.js'
 import { adoptServerDeviceId, type DeviceIdStorage } from './device.js'
 
-/** 成功那一支（把 {kind:'error'} 从联合里剔掉） */
-type OkOf<T> = Exclude<T, { kind: 'error' }>
+/** 成功那一支（把 {kind:'error'} / {kind:'conflict'} 从联合里剔掉） */
+type OkOf<T> = Exclude<T, { kind: 'error' } | { kind: 'conflict' }>
 
 /** 采用动作需要的最小依赖：设备码存储 + 当前设备码 + Key 落盘口（全由界面注入） */
 export type EmailAdoptDeps = {
@@ -101,7 +107,11 @@ export const adoptEmailVerify = (
   }
 }
 
-export type EmailVerifyAndAdoptResult = { kind: 'ok'; value: EmailLoginOutcome } | EmailError
+export type EmailVerifyAndAdoptResult =
+  | { kind: 'ok'; value: EmailLoginOutcome }
+  /** 登录冲突：没采用任何东西，界面弹窗等用户选（验证码仍在） */
+  | EmailConflict
+  | EmailError
 
 /**
  * 界面唯一入口：提交验证码 + 采用。
@@ -110,11 +120,16 @@ export type EmailVerifyAndAdoptResult = { kind: 'ok'; value: EmailLoginOutcome }
  * 否则界面会显示「已登录」而本地留着一把空 Key（与 /bind 里 `KEY_MISSING` 的判定同一个理由）。
  */
 export const verifyEmailAndAdopt = async (
-  input: { deviceId: string; email: string; code: string },
+  /** `choice`：冲突弹窗上用户点过按钮才有；第一次提交不给（不替用户先做决定） */
+  input: { deviceId: string; email: string; code: string; choice?: EmailChoice },
   transport: OursTransport,
   deps: EmailAdoptDeps
 ): Promise<EmailVerifyAndAdoptResult> => {
   const result = await verifyEmailCode(input, transport, deps.deviceFp ?? '')
+  if (result.kind === 'conflict') {
+    // 验证码没被消耗、本地一个字都不动：交给界面弹窗
+    return result
+  }
   if (result.kind === 'error') {
     return result
   }
@@ -127,6 +142,8 @@ export const verifyEmailAndAdopt = async (
       attemptsLeft: null,
       retryAfter: null,
       boundEmailMasked: null,
+      deviceRemainingPoints: null,
+      conflictEmailMasked: null,
     }
   }
   return { kind: 'ok', value: adoptEmailVerify(result, deps) }

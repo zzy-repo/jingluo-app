@@ -887,8 +887,11 @@ export const runWithDeviceSelfHeal = async <T extends { kind: string; code?: str
  *     `services/invite/email.ts` 里走 `adoptServerDeviceId` / `bindSuccessKey` 那条既有路径，
  *     这里绝不自己写一套覆盖逻辑。
  *
- * 明确不做（#421 范围外）：登录冲突弹窗（device_has_account + options，取舍需产品确认）、
- * 自动合并账号、支付链路改动。
+ * 登录冲突（`device_has_account`）在这里被翻成 {@link EmailConflict} 而不是普通错误：
+ * 弹窗与「带 choice 重发」的交互在界面层，本层只负责把 `email_masked` /
+ * `device_remaining_points` / `options` 如实交出去（验证码此时尚未消耗）。
+ *
+ * 明确不做（#421 范围外）：**自动合并账号**（服务端不合并，数据保留、需客服处理）、支付链路改动。
  */
 
 /** 邮箱接口的文案 key：错误码表 + 复用既有的网络 / 超时 / 响应异常文案 */
@@ -907,6 +910,9 @@ export type EmailMessageKey =
   | 'oursInviteErrEmailSendFailed'
   | 'oursInviteErrCustomerHasEmail'
   | 'oursInviteErrAccountFrozen'
+  // #421 第 3 点：本机已有账号、又要用邮箱登录已有账号 —— 交给冲突弹窗处理（见 EmailConflict），
+  // 这条 key 只在它意外出现在别的路径时兜底，别让用户看到中性的「操作失败」。
+  | 'oursInviteErrEmailDeviceHasAccount'
 
 /**
  * 服务端错误码 → 文案 key（#421 表格逐条对应）。
@@ -931,6 +937,9 @@ export const EMAIL_ERROR_KEYS: Record<string, EmailMessageKey> = {
   send_failed: 'oursInviteErrEmailSendFailed',
   customer_has_email: 'oursInviteErrCustomerHasEmail',
   account_frozen: 'oursInviteErrAccountFrozen',
+  // #421 第 3 点：正常路径由 verifyEmailCode 翻成 EmailConflict（弹窗让用户选），
+  // 这里留着只为「别的路径意外回了它」时别落到中性的「操作失败」。
+  device_has_account: 'oursInviteErrEmailDeviceHasAccount',
   // 同一台服务上的既有码：/email/* 也会回它们（尤其 /email/status 的 404 device_not_found）。
   // 不映射就会落到中性的「操作失败」，对用户没有任何下一步指引 —— 复用既有文案，不新造。
   device_not_found: 'oursInviteErrDeviceNotFound',
@@ -962,6 +971,13 @@ export type EmailErrorExtras = {
   retryAfter: number | null
   /** customer_has_email：本账号已绑的那个脱敏邮箱 */
   boundEmailMasked: string | null
+  /**
+   * device_has_account：本机原账号还剩多少积分（#421 第 3 点要求**必须展示**）。
+   * 冲突弹窗用它告诉用户「切换后这部分额度暂时用不了」；非冲突路径一律 null。
+   */
+  deviceRemainingPoints: number | null
+  /** device_has_account：这次要换上的那个脱敏邮箱（与 bound_email_masked 是两个字段，别混） */
+  conflictEmailMasked: string | null
 }
 
 export type EmailError = {
@@ -975,6 +991,8 @@ const NO_EMAIL_EXTRAS: EmailErrorExtras = {
   attemptsLeft: null,
   retryAfter: null,
   boundEmailMasked: null,
+  deviceRemainingPoints: null,
+  conflictEmailMasked: null,
 }
 
 /**
@@ -1005,6 +1023,8 @@ const emailExtras = (body: unknown): EmailErrorExtras => {
     attemptsLeft: pick((record) => readOptionalNumber(record, 'attempts_left')),
     retryAfter: pick((record) => readOptionalNumber(record, 'retry_after')),
     boundEmailMasked: pick((record) => readOptionalString(record, 'bound_email_masked')),
+    deviceRemainingPoints: pick((record) => readOptionalNumber(record, 'device_remaining_points')),
+    conflictEmailMasked: pick((record) => readOptionalString(record, 'email_masked')),
   }
 }
 
@@ -1094,6 +1114,55 @@ export const sendEmailCode = async (
 /** 服务端告诉客户端这次是「绑定」还是「登录」（/email/verify 的 action） */
 export type EmailVerifyAction = 'bound' | 'login'
 
+/** #421 第 3 点：冲突时用户可以选的两个方向（就是服务端 `options` 里的字面量） */
+export type EmailChoice = 'use_email' | 'keep_device'
+
+/** 契约里只定义了这两个选项；顺序即界面按钮顺序（`use_email` 在前） */
+export const EMAIL_CHOICES: readonly EmailChoice[] = ['use_email', 'keep_device']
+
+/**
+ * 登录冲突（`device_has_account`，HTTP 409）。
+ *
+ * 关键事实：此时**验证码尚未被消耗** —— 服务端等客户端带同一个验证码 + `choice` 再请求一次。
+ * 所以这里既不是「绑定成功」也不是「失败」，必须让用户显式选一个方向：
+ *  - `use_email`   用邮箱账号（本机原账号的额度暂时用不了，服务端不自动合并）；
+ *  - `keep_device` 保留本机账号（放弃这次邮箱登录）。
+ */
+export type EmailConflict = {
+  kind: 'conflict'
+  /** 这次要换上的那个脱敏邮箱（服务端 `email_masked`）；没回就是 null */
+  emailMasked: string | null
+  /** 本机原账号剩余额度（服务端 `device_remaining_points`）：**必须展示** */
+  deviceRemainingPoints: number | null
+  /** 服务端允许的选项；没给 / 给坏时按契约的两个都给 */
+  options: EmailChoice[]
+}
+
+/** 冲突响应里的 `options`：只认契约里的两个字面量，其余一律忽略 */
+const parseEmailChoices = (body: unknown): EmailChoice[] => {
+  for (const source of emailFieldSources(body)) {
+    const raw = source.options
+    if (!Array.isArray(raw)) {
+      continue
+    }
+    const picked = EMAIL_CHOICES.filter((choice) => raw.includes(choice))
+    if (picked.length > 0) {
+      return picked
+    }
+  }
+  return [...EMAIL_CHOICES]
+}
+
+const emailConflict = (body: unknown): EmailConflict => {
+  const extras = emailExtras(body)
+  return {
+    kind: 'conflict',
+    emailMasked: extras.conflictEmailMasked,
+    deviceRemainingPoints: extras.deviceRemainingPoints,
+    options: parseEmailChoices(body),
+  }
+}
+
 export type EmailVerifyResult =
   | {
       kind: 'ok'
@@ -1113,17 +1182,22 @@ export type EmailVerifyResult =
       /** 响应里若顺带回了档案就用它，否则 null（界面再查一次 /me） */
       profile: InviteProfile | null
     }
+  /** #421 第 3 点：本机已有账号 → 弹窗让用户选，验证码留着没消耗 */
+  | EmailConflict
   | EmailError
 
 /**
- * 提交验证码：POST /email/verify，入参 device_id、email、code。
+ * 提交验证码：POST /email/verify，入参 device_id、email、code（冲突确认时再加 `choice`）。
  * 绑定还是登录**由服务端判定**，客户端只看 action（#421：不要自己猜）。
+ *
+ * `choice` 只在「用户已经在那张冲突弹窗上点过按钮」时才带：同一个验证码重发一次，
+ * 服务端据此决定到底换不换账号。第一次提交（`choice` 不给）绝不能带 —— 那是替用户先选了。
  *
  * action 缺失 / 不是 bound|login 一律按响应异常处理：那是契约变了，
  * 猜一个的后果是「该换设备码却没换」或反之，两种都比报错难查。
  */
 export const verifyEmailCode = async (
-  input: { deviceId: string; email: string; code: string },
+  input: { deviceId: string; email: string; code: string; choice?: EmailChoice },
   transport: OursTransport,
   deviceFp = ''
 ): Promise<EmailVerifyResult> => {
@@ -1164,7 +1238,12 @@ export const verifyEmailCode = async (
       { 'Content-Type': 'application/json', Accept: 'application/json' },
       deviceFp
     ),
-    body: JSON.stringify({ device_id: id, email, code }),
+    // `choice` 只在冲突弹窗上点过按钮后才有；第一次提交不带（不替用户先做决定）
+    body: JSON.stringify(
+      input.choice === undefined
+        ? { device_id: id, email, code }
+        : { device_id: id, email, code, choice: input.choice }
+    ),
     timeoutMs: INVITE_TIMEOUTS.emailVerify,
     followRedirects: false,
   })
@@ -1175,7 +1254,13 @@ export const verifyEmailCode = async (
   const body = parsed.ok ? parsed.value : null
   const bodyRecord = asRecord(body)
   if (!isSuccessStatus(result.status)) {
-    return emailFailure(readErrorCode(body), result.status, body)
+    const code = readErrorCode(body)
+    // #421 第 3 点：本机已有账号 + 邮箱是已有账号 = 冲突，**不是失败**
+    // （验证码此时没被消耗，界面弹窗让用户选，然后带同一个验证码 + choice 再来一次）
+    if (code === 'device_has_account') {
+      return emailConflict(body)
+    }
+    return emailFailure(code, result.status, body)
   }
   const action = readString(bodyRecord, 'action').trim()
   if (action !== 'bound' && action !== 'login') {

@@ -23,6 +23,8 @@ import {
   sendEmailCode,
   shouldShowEmailEntry,
   type ClaimOutcome,
+  type EmailChoice,
+  type EmailConflict,
   type EmailMessageKey,
   type EmailStatusResult,
   type InviteMessageKey,
@@ -31,6 +33,12 @@ import {
 } from '../../services/invite/api.js'
 import { bindExistingKey, bindSuccessKey, resolveBindDeviceId, type BindMessageKey } from '../../services/invite/bind.js'
 import { verifyEmailAndAdopt } from '../../services/invite/email.js'
+import {
+  EMAIL_COOLDOWN_TICK_MS,
+  emailCooldownRemaining,
+  startEmailCooldown,
+  type EmailCooldown,
+} from '../../services/invite/emailCooldown.js'
 import { inviteCashbackLine, inviteOkCopy, inviteRuleLines } from '../../services/invite/copy.js'
 import { rotateKey, rotateSuccessKey, type RotateOutcome } from '../../services/invite/rotate.js'
 import { prepareDialogOpen, refreshProfile } from '../../services/invite/openFlow.js'
@@ -201,6 +209,18 @@ const OursServicesDialog = ({ onClose }: { onClose: () => void }) => {
   const [emailSent, setEmailSent] = useState(false)
   const [emailResult, setEmailResult] = useState<EmailResultView | null>(null)
   /**
+   * 发码冷却（#421 第 4 点 / 验收 D3）：`resend_after`（发码成功后）与 `retry_after`（429 频控）
+   * 都是**服务端**给的秒数，这里存截止时刻，`emailCooldownLeft` 由每秒的 tick 算出来。
+   */
+  const [emailCooldown, setEmailCooldown] = useState<EmailCooldown | null>(null)
+  /** 还剩几秒可重发（0 = 现在就能点）。逐秒递减由下面那个 effect 推动，不做「减一」累加 */
+  const [emailCooldownLeft, setEmailCooldownLeft] = useState(0)
+  /**
+   * 登录冲突（#421 第 3 点）：`device_has_account` 时非 null，弹窗让用户选「用邮箱账号 / 保留本机账号」。
+   * **验证码此时没被消耗** —— 选择之后带同一个验证码 + `choice` 重发一次。
+   */
+  const [emailConflict, setEmailConflict] = useState<EmailConflict | null>(null)
+  /**
    * 当前档案是从哪儿来的：
    *  - 'apply' = 刚才自动领了一把**新的**设备 Key（#72 首次使用），用户自己的 Key 还没绑
    *  - 'me'    = /me 读到了已有绑定 —— 这就是「本机已绑过」（#86 条件 5），入口该收起来
@@ -222,6 +242,29 @@ const OursServicesDialog = ({ onClose }: { onClose: () => void }) => {
       alive.current = false
     }
   }, [])
+
+  /**
+   * 冷却倒计时（D3）：每秒按**截止时刻**重算一次剩余秒数（不是「减一」）。
+   *
+   * 用截止时刻而不是累减：后台标签页被节流 / 系统休眠回来时，累减会少走好几秒，
+   * 用户等够了按钮却还灰着 —— 按 `Date.now()` 算就不会。
+   */
+  useEffect(() => {
+    if (emailCooldown === null) {
+      setEmailCooldownLeft(0)
+      return
+    }
+    const update = () => {
+      const left = emailCooldownRemaining(emailCooldown, Date.now())
+      setEmailCooldownLeft(left)
+      if (left <= 0) {
+        setEmailCooldown(null)
+      }
+    }
+    update()
+    const timer = setInterval(update, EMAIL_COOLDOWN_TICK_MS)
+    return () => clearInterval(timer)
+  }, [emailCooldown])
 
   // ---------------------------------------------------------------- 额度 / 领取
 
@@ -270,13 +313,39 @@ const OursServicesDialog = ({ onClose }: { onClose: () => void }) => {
     }
   }
 
-  /** 发验证码：频控由服务端说了算（`retry_after` 秒数原样显示，客户端不自己算窗口） */
+  /**
+   * 把一次错误落到界面：文案 + 剩余次数，并且**按服务端给的 retry_after 起倒计时**。
+   *
+   * `retry_after` 不是装饰（#421 验收 D3）：它是「还要等多少秒」的唯一来源，
+   * 光显示一句静态文案、按钮却还能连点，等于让用户反复撞频控。
+   */
+  const applyEmailError = (error: {
+    messageKey: EmailMessageKey
+    attemptsLeft: number | null
+    retryAfter: number | null
+    boundEmailMasked: string | null
+  }) => {
+    setEmailResult({
+      kind: 'error',
+      messageKey: error.messageKey,
+      attemptsLeft: error.attemptsLeft,
+      retryAfter: error.retryAfter,
+      boundEmailMasked: error.boundEmailMasked,
+    })
+    const cooldown = startEmailCooldown(error.retryAfter, Date.now())
+    if (cooldown !== null) {
+      setEmailCooldown(cooldown)
+    }
+  }
+
+  /** 发验证码：频控由服务端说了算（`retry_after` 秒数原样用于倒计时，客户端不自己算窗口） */
   const submitEmailSend = async () => {
-    if (emailBusy !== null) {
+    if (emailBusy !== null || emailCooldownLeft > 0) {
       return
     }
     setEmailBusy('send')
     setEmailResult(null)
+    setEmailConflict(null)
     const result = await sendEmailCode(
       { deviceId, email: emailInput },
       httpTransport,
@@ -287,31 +356,33 @@ const OursServicesDialog = ({ onClose }: { onClose: () => void }) => {
     }
     setEmailBusy(null)
     if (result.kind === 'error') {
-      setEmailResult({
-        kind: 'error',
-        messageKey: result.messageKey,
-        attemptsLeft: result.attemptsLeft,
-        retryAfter: result.retryAfter,
-        boundEmailMasked: result.boundEmailMasked,
-      })
+      applyEmailError(result)
       return
     }
     setEmailSent(true)
+    // 发码成功后服务端说多久能再发（`resend_after`）→ 按钮开始逐秒倒计时
+    const cooldown = startEmailCooldown(result.resendAfter, Date.now())
+    setEmailCooldown(cooldown)
   }
 
   /**
    * 提交验证码：绑定还是登录由服务端 `action` 决定；登录分支的 `device_id` / `key`
    * 由 `verifyEmailAndAdopt` 走 `adoptServerDeviceId` + `bindSuccessKey` 那条既有路径采用，
    * 这里只负责把结果落到界面上（不自己写覆盖逻辑，也不回显 Key）。
+   *
+   * `choice` 只有冲突弹窗上点过按钮才有：此时**带同一个验证码**再提交一次，
+   * 服务端据此决定换不换账号（#421 第 3 点：冲突那次验证码没被消耗）。
    */
-  const submitEmailVerify = async () => {
+  const submitEmailVerify = async (choice?: EmailChoice) => {
     if (emailBusy !== null) {
       return
     }
     setEmailBusy('verify')
     setEmailResult(null)
     const result = await verifyEmailAndAdopt(
-      { deviceId, email: emailInput, code: emailCode },
+      choice === undefined
+        ? { deviceId, email: emailInput, code: emailCode }
+        : { deviceId, email: emailInput, code: emailCode, choice },
       httpTransport,
       {
         storage: localStorageDeviceIdStorage(),
@@ -327,17 +398,17 @@ const OursServicesDialog = ({ onClose }: { onClose: () => void }) => {
       return
     }
     setEmailBusy(null)
+    if (result.kind === 'conflict') {
+      // 本机已有账号：不采用任何东西、不动设备码，弹窗让用户选（验证码留着）
+      setEmailConflict(result)
+      return
+    }
     if (result.kind === 'error') {
-      setEmailResult({
-        kind: 'error',
-        messageKey: result.messageKey,
-        attemptsLeft: result.attemptsLeft,
-        retryAfter: result.retryAfter,
-        boundEmailMasked: result.boundEmailMasked,
-      })
+      applyEmailError(result)
       return
     }
     const adopted = result.value
+    setEmailConflict(null)
     if (adopted.deviceId !== '' && adopted.deviceId !== deviceId) {
       setDeviceId(adopted.deviceId)
     }
@@ -695,6 +766,15 @@ const OursServicesDialog = ({ onClose }: { onClose: () => void }) => {
   /** 已绑判定同样是三态：只有服务端明确说 `true` 才算；`null`（老服务端）按未开启处理 */
   const emailBound = (emailStatus.kind === 'ok' && emailStatus.hasEmail === true) || profile?.hasEmail === true
   const emailMasked = emailStatus.kind === 'ok' ? emailStatus.emailMasked : profile?.emailMasked ?? null
+  /**
+   * 冲突弹窗里的「本机原账号剩余额度」（#421 第 3 点要求必须展示数字）。
+   * 服务端没回这个字段时给「—」：既不编造成 0（0 = 用完了，是另一个意思），
+   * 也不把整行藏掉 —— 用户看不到数字就不知道切过去会失去多少。
+   */
+  const emailConflictPointsText =
+    emailConflict === null || emailConflict.deviceRemainingPoints === null
+      ? '—'
+      : formatPoints(emailConflict.deviceRemainingPoints, t('oursPointsUnit'))
 
   return (
     <Modal
@@ -869,10 +949,14 @@ const OursServicesDialog = ({ onClose }: { onClose: () => void }) => {
                   <Button
                     size="m"
                     data-testid="ours-email-send"
-                    disabled={emailBusy !== null || !isEmailShape(emailInput)}
+                    disabled={emailBusy !== null || emailCooldownLeft > 0 || !isEmailShape(emailInput)}
                     onClick={() => void submitEmailSend()}
                   >
-                    {emailBusy === 'send' ? t('oursEmailSendBusy') : t('oursEmailSendAction')}
+                    {emailBusy === 'send'
+                      ? t('oursEmailSendBusy')
+                      : emailCooldownLeft > 0
+                        ? t('oursEmailSendCountdown', { seconds: emailCooldownLeft })
+                        : t('oursEmailSendAction')}
                   </Button>
                 </div>
                 {emailSent ? (
@@ -908,6 +992,51 @@ const OursServicesDialog = ({ onClose }: { onClose: () => void }) => {
                 ) : null}
               </>
             ) : null}
+            {/* #421 第 3 点：登录冲突弹窗（device_has_account）。验证码此时没被消耗，
+                选完带同一个验证码 + choice 重发（见 submitEmailVerify）。 */}
+            {emailConflict !== null ? (
+              <div data-testid="ours-email-conflict">
+                <div className={styles.value} data-testid="ours-email-conflict-title">
+                  {t('oursEmailConflictTitle')}
+                </div>
+                {emailConflict.emailMasked === null ? null : (
+                  <div className={styles.hint} data-testid="ours-email-conflict-masked">
+                    {t('oursEmailConflictEmail', { masked: emailConflict.emailMasked })}
+                  </div>
+                )}
+                <div className={styles.value} data-testid="ours-email-conflict-points">
+                  {t('oursEmailConflictPoints', { points: emailConflictPointsText })}
+                </div>
+                <div className={styles.hint} data-testid="ours-email-conflict-warning">
+                  {t('oursEmailConflictWarning')}
+                </div>
+                <div className={styles.actions}>
+                  {emailConflict.options.includes('use_email') ? (
+                    <Button
+                      size="m"
+                      data-testid="ours-email-conflict-use-email"
+                      disabled={emailBusy !== null}
+                      onClick={() => void submitEmailVerify('use_email')}
+                    >
+                      {emailBusy === 'verify'
+                        ? t('oursEmailVerifyBusy')
+                        : t('oursEmailConflictUseEmail')}
+                    </Button>
+                  ) : null}
+                  {emailConflict.options.includes('keep_device') ? (
+                    <Button
+                      variant="outlined"
+                      size="m"
+                      data-testid="ours-email-conflict-keep-device"
+                      disabled={emailBusy !== null}
+                      onClick={() => void submitEmailVerify('keep_device')}
+                    >
+                      {t('oursEmailConflictKeepDevice')}
+                    </Button>
+                  ) : null}
+                </div>
+              </div>
+            ) : null}
             {emailResult !== null ? (
               <div
                 role="status"
@@ -922,7 +1051,10 @@ const OursServicesDialog = ({ onClose }: { onClose: () => void }) => {
                       t(emailResult.messageKey),
                       emailResult.retryAfter === null
                         ? ''
-                        : t('oursEmailRetryAfter', { seconds: emailResult.retryAfter }),
+                        : // 有倒计时时用**实时剩余**秒数，静态数字过了几秒就不对了
+                          t('oursEmailRetryAfter', {
+                            seconds: emailCooldownLeft > 0 ? emailCooldownLeft : emailResult.retryAfter,
+                          }),
                       emailResult.attemptsLeft === null
                         ? ''
                         : t('oursEmailAttemptsLeft', { attempts: emailResult.attemptsLeft }),
