@@ -91,6 +91,16 @@ jobs:
       - name: 埋点覆盖面（check:log-coverage）
         run: pnpm run check:log-coverage
 
+      # check:redact：#387 的脱敏规则集门禁（P0 账号 / 资损字段）。
+      # 这类漏洞的症状是「删掉一条规则没有任何别的用例变红」—— 门禁把 5 类必填规则
+      # （device_id / 卡密 / 卡号 / order_token / 手机号）与「误伤负例」一起钉住，
+      # 规则被删或被改宽都 exit 1。紧跟一条负向对照，证明门禁本身不是空跑。
+      - name: 脱敏规则集（check:redact）
+        run: pnpm run check:redact
+
+      - name: 负向对照：把脱敏器换成恒等函数必须被 check:redact 拦下
+        run: node scripts/check-redact.mjs --selftest
+
       - name: 负向对照：含 ?. 的产物必须被拦下（证明门禁不是空跑）
         run: |
           set -euo pipefail

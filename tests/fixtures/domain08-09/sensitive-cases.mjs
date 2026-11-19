@@ -191,22 +191,11 @@ export const KEY_CASES = [
  *   - 表内单元格**意外变绿** → 用例**失败**，提示「已修复，请从 KNOWN_GAPS 删除这一行」；
  *   - 表外单元格变红 → 用例**失败**（真实泄漏）。
  *
- * 追踪单：Issue #367（域 8+9 最小充分集）；缺口本身另开子单，见 PR 说明。
+ * 追踪单：Issue #367（域 8+9 最小充分集）。
+ *
+ * **#387 已修（2026-11）**：V6–V10 的 15 格全部转绿 —— `redact.ts` 补了设备码 / 卡密 / 卡号 /
+ * 订单号 / 手机号的值维度规则，`export.ts` 补了同一批值的类别标记，`fields.ts` 的
+ * `SECRET_SEGMENTS` 补齐了键名兜底。清单已清空，本表从此**全严格**：
+ * 任何一格变红都是真实回归（`scripts/check-redact.mjs` 是防止规则被删的第二道门禁）。
  */
-export const KNOWN_GAPS = [
-  { row: 'V6', boundary: 'log', reason: 'redact() 无设备码规则（SECRET_SEGMENTS 不含 deviceid，值也不打码）' },
-  { row: 'V6', boundary: 'export', reason: 'redactExportText 无设备码规则' },
-  { row: 'V6', boundary: 'error', reason: 'scrubReportText = redact + URL 收敛，同样无设备码规则' },
-  { row: 'V7', boundary: 'log', reason: 'redact() 无卡密规则（导出只按键名 card 过滤，值本身不打码）' },
-  { row: 'V7', boundary: 'export', reason: 'PRIVATE_KEY 只匹配键名；自由文本里的卡密原样留在导出里' },
-  { row: 'V7', boundary: 'error', reason: '错误页无卡密规则' },
-  { row: 'V8', boundary: 'log', reason: '纯数字卡号同样无规则' },
-  { row: 'V8', boundary: 'export', reason: '同上' },
-  { row: 'V8', boundary: 'error', reason: '同上' },
-  { row: 'V9', boundary: 'log', reason: 'redact() 只认 token=，不认 order_token= / out_trade_no=' },
-  { row: 'V9', boundary: 'export', reason: '导出正则只认 token，不认 out_trade_no' },
-  { row: 'V9', boundary: 'error', reason: '同 redact()' },
-  { row: 'V10', boundary: 'log', reason: 'redact() 无手机号规则' },
-  { row: 'V10', boundary: 'export', reason: '导出无手机号规则（只对 email 有）' },
-  { row: 'V10', boundary: 'error', reason: '同 redact()' },
-]
+export const KNOWN_GAPS = []

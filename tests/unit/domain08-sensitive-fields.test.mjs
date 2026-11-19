@@ -12,12 +12,13 @@
 //   ② 导出：`redactExportText()` 与**整份导出文件** `buildFeedbackExport()` 的文本
 //   ③ 错误页：`scrubReportText()` 与**整份报告** `buildErrorReport()` 的文本
 //
-// 现状：V6–V10 五行（设备码 / 卡密 / 卡号 / 订单号 / 手机号）在三个边界上全部泄漏 ——
-// 这是**预期红**：断言不放宽，登记在 `tests/fixtures/domain08-09/sensitive-cases.mjs`
-// 的 `KNOWN_GAPS` 里（与 `scripts/check-log-coverage.mjs` 的 knownGaps 同口径）：
-//   - 已登记缺口仍然失败 → 输出「已知缺口（已登记）」并放行；
-//   - 已登记缺口意外变绿 → **本用例失败**，提示把它从 KNOWN_GAPS 删掉（修复后自动转严格）；
-//   - 表外单元格变红 → **本用例失败**（真实泄漏）。
+// 历史：#383 落地时 V6–V10 五行（设备码 / 卡密 / 卡号 / 订单号 / 手机号）在三个边界上全部泄漏，
+// 15 格登记在 `tests/fixtures/domain08-09/sensitive-cases.mjs` 的 `KNOWN_GAPS` 里（与
+// `scripts/check-log-coverage.mjs` 的 knownGaps 同口径）。
+//
+// **#387 已修**：规则补齐后 15 格全绿，`KNOWN_GAPS` 已清空 —— 本表从此**全严格**：
+//   - 任何一格变红 → **本用例失败**（真实泄漏，不许再登记回 KNOWN_GAPS 绕过）；
+//   - 登记簿留残条目 → 失败（表示修复没跟上登记）。
 //
 //   node --test tests/unit/domain08-sensitive-fields.test.mjs
 import assert from 'node:assert/strict'
@@ -164,11 +165,12 @@ test('N1-a 值维度：一张表 × 三个边界（日志 / 导出 / 错误页�
     '已登记的缺口意外变绿 = 已经修好了：请把对应行从 KNOWN_GAPS 删掉（自动转严格）'
   )
   assert.deepEqual(staleGaps.map((gap) => `${gap.row}/${gap.boundary}`), [], 'KNOWN_GAPS 里有表外条目')
-  // 现状口径的硬断言：五类账号/资损相关字段现在全红，少一行就说明「表被悄悄放宽了」
+  // 口径硬断言（#387 已翻面）：五类账号/资损相关字段必须**全绿**。
+  // 修之前这条钉的是「现状红 5 行」，现在是「一行都不许红」——少一行绿就说明规则被删了。
   assert.deepEqual(
     redRows.sort(),
-    ['V10', 'V6', 'V7', 'V8', 'V9'],
-    '现状红行数应为 5（设备码 / 卡密 / 卡号 / 订单号 / 手机号），改动表就要同步改这条口径'
+    [],
+    '设备码 / 卡密 / 卡号 / 订单号 / 手机号五类必须全绿（#387）；变红即真实泄漏'
   )
 })
 

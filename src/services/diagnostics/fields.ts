@@ -557,7 +557,13 @@ const EXTRA_KEYS: readonly string[] = [
   'param',
 ]
 
-/** 键名里出现这些「最后一段」就当作密钥字段：值里可能是 Key 原文，整条丢掉比脱敏更安全 */
+/**
+ * 键名里出现这些「最后一段」就当作密钥字段：值里可能是 Key 原文，整条丢掉比脱敏更安全。
+ *
+ * #387 补齐账号 / 资损字段：`deviceId` / `cardNo` / `card` / `phone` 这些键名本身就已经说明值的
+ * 身份，键名维度整条丢弃比「打码后保留」更干净（打码形状仍有可能被拼回去）。这一层只是**兜底** ——
+ * 自由文本里的同类值由 `redact.ts` 的值维度规则处理，两边都要有。
+ */
 const SECRET_SEGMENTS = new Set([
   'key',
   'apikey',
@@ -574,6 +580,11 @@ const SECRET_SEGMENTS = new Set([
   'signature',
   'credential',
   'credentials',
+  // 账号 / 资损字段（#387）：设备码、卡密 / 卡号、手机号
+  'deviceid',
+  'card',
+  'cardno',
+  'phone',
 ])
 
 const KEY_SHAPE = /^[A-Za-z][A-Za-z0-9._-]{0,39}$/

@@ -1,4 +1,5 @@
 import { getSnapshot } from './collector.js'
+import { markSensitiveValues } from './redact.js'
 import type { FeedbackCategory, FeedbackErrorCode, LogSnapshot } from './types.js'
 
 export type SaveFeedbackText = (file: {
@@ -44,26 +45,39 @@ const PRIVATE_KEY =
 const SAFE_META =
   /^(?:error\.(?:msg|name|stack)|http\.status|url\.(?:host|path)|req\.bodyBytes|stage|reason|durationMs|requestId|method|bytes|native|onLine|effectiveType|downlink|rtt|saveData|netType|version|versionCode|buildType|platform|device|sessions|files|provider|model|view|configured|storageBytes|action|target|role|trigger|visible|match|delayMs|stale|threshold|transport|logs|logSize|line|flow|attempt|status|endpointKey|traceId|totalBytes|speedBps|prepMs|ttfbMs|firstTokenMs|streamMs|chunks|gapMaxMs|chars|charsPerSec|cacheHit|fromCache)$/
 
-/** Export is a second privacy boundary, including older persisted records. */
+/**
+ * Export is a second privacy boundary, including older persisted records.
+ *
+ * #387：最后一道是 `markSensitiveValues()` —— 设备码 / 卡密 / 卡号 / 手机号在**自由文本值**里的规则。
+ * 本文件上面的正则只认「键名」（`PRIVATE_KEY` / 这里的 `token|secret|...`），管不到
+ * 「值本身写在正文里」；旧记录（已落库的 msg）更是只经过这一条路径，所以值维度必须在这里补齐。
+ */
 export const redactExportText = (text: string): string =>
-  text
-    .replace(/https?:\/\/[^\s<>"']+/gi, (value) => {
-      try {
-        const url = new URL(value)
-        return `${url.protocol}//${url.hostname}${url.pathname}`
-      } catch {
-        return '[URL]'
-      }
-    })
-    .replace(/([?&])[^\s<>"']+/g, '$1[QUERY_REDACTED]')
-    .replace(/\bBearer\s+\S+/gi, 'Bearer [REDACTED]')
-    .replace(/\bsk-[A-Za-z0-9_-]+/gi, '[API_KEY]')
-    .replace(/\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/g, '[TOKEN]')
-    .replace(
-      /(["']?(?:api[_-]?key|access[_-]?token|refresh[_-]?token|token|secret|password|signature|accesskeyid|authorization|cookie)["']?\s*[:=]\s*)(?:"[^"]*"|'[^']*'|[^\s,;&}]+)/gi,
-      '$1[REDACTED]'
-    )
-    .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, '[EMAIL]')
+  markSensitiveValues(
+    text
+      .replace(/https?:\/\/[^\s<>"']+/gi, (value) => {
+        try {
+          const url = new URL(value)
+          return `${url.protocol}//${url.hostname}${url.pathname}`
+        } catch {
+          return '[URL]'
+        }
+      })
+      .replace(/([?&])[^\s<>"']+/g, '$1[QUERY_REDACTED]')
+      .replace(/\bBearer\s+\S+/gi, 'Bearer [REDACTED]')
+      .replace(/\bsk-[A-Za-z0-9_-]+/gi, '[API_KEY]')
+      .replace(/\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/g, '[TOKEN]')
+      // 订单 token / 商户单号（#387）：`token` 那条只认「最后一段是 token」的键名，`out_trade_no` 完全认不到
+      .replace(
+        /(["']?(?:order[_-]?token|out[_-]?trade[_-]?no)["']?\s*[:=]\s*)(?:"[^"]*"|'[^']*'|[^\s,;&}]+)/gi,
+        '$1[REDACTED]'
+      )
+      .replace(
+        /(["']?(?:api[_-]?key|access[_-]?token|refresh[_-]?token|token|secret|password|signature|accesskeyid|authorization|cookie)["']?\s*[:=]\s*)(?:"[^"]*"|'[^']*'|[^\s,;&}]+)/gi,
+        '$1[REDACTED]'
+      )
+      .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, '[EMAIL]')
+  )
 
 const diagnosticText = (text: string): string => {
   // Arbitrary serialized payloads can contain conversation/payment bodies.
