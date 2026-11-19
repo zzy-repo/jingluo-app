@@ -2,6 +2,8 @@
 import { chromium } from 'playwright'
 import fs from 'node:fs'
 
+import { matrixConfig, viewportFor } from './compat/lib/matrix-config.mjs'
+
 const OUT = 'docs/ui/redeem-migrate'
 fs.mkdirSync(OUT, { recursive: true })
 
@@ -94,9 +96,15 @@ const run = async (width, height, tag) => {
   return text
 }
 
-const a = await run(390, 844, '390')
-const b = await run(360, 800, '360')
-console.log('390 has backup hint:', a.includes('设备码就是你的账号凭据'))
-console.log('390 has processing:', a.includes('兑换处理中，稍后自动到账'))
-console.log('360 has backup hint:', b.includes('设备码就是你的账号凭据'))
-console.log('360 has processing:', b.includes('兑换处理中，稍后自动到账'))
+// 档位 / 视口来自 scripts/compat/matrix.config.json（captureWidths / captureHeights）：视口数值与
+// 改动前一致（390×844、360×800），只是不再写死在这条脚本里（issue #278）。
+const CONFIG = matrixConfig()
+const shots = []
+for (const width of CONFIG.captureWidths) {
+  const viewport = viewportFor(CONFIG, width)
+  shots.push({ tag: String(width), text: await run(viewport.width, viewport.height, String(width)) })
+}
+for (const { tag, text } of shots) {
+  console.log(`${tag} has backup hint:`, text.includes('设备码就是你的账号凭据'))
+  console.log(`${tag} has processing:`, text.includes('兑换处理中，稍后自动到账'))
+}

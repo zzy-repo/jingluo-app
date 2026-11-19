@@ -6,11 +6,13 @@
  * 与逐个元素的 getBoundingClientRect().right，列出真的越过视口右边界的元素（文案 + class + 越界像素）。
  * 「有没有溢出」是实测值；「好不好看」才由人看截图。
  *
- * 密度与 CSS 宽度的对应（1080 物理宽）：443 → 390css、480 → 360css，reset → 411css。
+ * 密度与 CSS 宽度的对应（1080 物理宽）：density = round(1080 / css 宽 × 160)，档位表在
+ * scripts/compat/matrix.config.json:captureWidths（443 → 390css、480 → 360css，reset → 411css）。
  *
  * 用法：node scripts/compat/p4-layout.mjs --api 26 [--session]
  */
 import { ensureDir, environment, evidenceDir, now, screencap, shell, sleep } from './lib/device.mjs'
+import { cssProfiles, resolveMatrixConfig } from './lib/matrix-config.mjs'
 import { attach } from './lib/cdp.mjs'
 import { click, visibleTexts } from './lib/ui.mjs'
 
@@ -25,10 +27,9 @@ if (!API) {
   process.exit(2)
 }
 
-const PROFILES = [
-  { name: '390css', density: '443' },
-  { name: '360css', density: '480' },
-]
+// 档位与 density 都从 matrix.config.json 的 captureWidths / capturePhysicalWidth 换算
+// （density = round(物理宽 / css 宽 × 160)），不再在这个文件里抄一份 390/360（issue #278）。
+const PROFILES = cssProfiles(resolveMatrixConfig())
 
 /** 版式体检：视口宽、可滚动宽、越界元素清单、可见文案。 */
 const layoutReport = (cdp) =>

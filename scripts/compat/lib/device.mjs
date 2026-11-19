@@ -10,14 +10,30 @@ import { execFileSync, spawn } from 'node:child_process'
 import { appendFileSync, existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
-import { loadAppIdentity } from '../../lib/appIdentity.mjs'
+import { MatrixConfigError, matrixConfig } from './matrix-config.mjs'
 
-export const SDK = 'D:/android-sdk'
-export const ADB = `${SDK}/platform-tools/adb.exe`
-export const EMULATOR = `${SDK}/emulator/emulator.exe`
-export const AVD_HOME = 'D:/android-avd'
-/** 包名不写死：与 android/app/build.gradle / capacitor.config.ts 同源（config/appIdentity.json，Issue #271）。 */
-export const PACKAGE = loadAppIdentity().applicationId
+// 路径 / 包名 / 端口全部来自 scripts/compat/matrix.config.json（+ ANDROID_HOME、ANDROID_AVD_HOME 等
+// 环境变量覆盖）。本文件不再写死 D 盘路径，也不再自己拼 adb.exe —— 换机器只需设环境变量（issue #278）。
+const CONFIG = matrixConfig()
+
+/** 解析出来的整份矩阵配置（sdkRoot / avdHome / daemonPort / avdProfiles / captureWidths…）。 */
+export const MATRIX = CONFIG
+export const SDK = CONFIG.sdkRoot
+export const ADB = CONFIG.adb
+export const EMULATOR = CONFIG.emulator
+export const AVD_HOME = CONFIG.avdHome
+/** 包名不写死：唯一来源是 config/appIdentity.json（Issue #271），矩阵配置只做转发（Issue #278）。 */
+export const PACKAGE = CONFIG.packageName
+export const DAEMON_PORT = CONFIG.daemonPort
+
+/** 缺路径时报人话（不是 spawnSync 的 ENOENT）。 */
+const requirePath = (value, label) => {
+  if (value) return value
+  throw new MatrixConfigError(
+    MATRIX.problems[0] ?? `找不到 ${label}：请检查 matrix.config.json 与 ANDROID_HOME / ANDROID_AVD_HOME`,
+    { problems: MATRIX.problems }
+  )
+}
 
 /** 证据根：compat-old 的 README 与 api30/api31 都在这儿，新增档位按 api<NN> 并排。 */
 export const EVIDENCE_ROOT = resolve(
@@ -35,8 +51,9 @@ export const now = () => new Date().toTimeString().slice(0, 8)
 
 /** adb 调用：返回 stdout（trim 过）；失败时抛出带 stderr 的错误。 */
 export const adb = (args, options = {}) => {
+  const adbPath = requirePath(ADB, 'adb')
   try {
-    return execFileSync(ADB, args, {
+    return execFileSync(adbPath, args, {
       encoding: 'utf8',
       maxBuffer: 64 * 1024 * 1024,
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -53,8 +70,10 @@ export const adb = (args, options = {}) => {
 export const shell = (...args) => adb(['shell', ...args])
 
 /** 二进制输出（screencap）。 */
-export const adbBuffer = (args) =>
-  execFileSync(ADB, args, { maxBuffer: 128 * 1024 * 1024, stdio: ['ignore', 'pipe', 'pipe'] })
+export const adbBuffer = (args) => {
+  const adbPath = requirePath(ADB, 'adb')
+  return execFileSync(adbPath, args, { maxBuffer: 128 * 1024 * 1024, stdio: ['ignore', 'pipe', 'pipe'] })
+}
 
 /** 当前连着的设备序列号列表。 */
 export const devices = () =>
@@ -76,11 +95,23 @@ export const requireIdleHost = () => {
 }
 
 export const startEmulator = (avd) => {
+  const emulatorPath = requirePath(EMULATOR, 'emulator')
+  const avdHome = requirePath(AVD_HOME, 'AVD 目录')
   const child = spawn(
-    EMULATOR,
-    ['-avd', avd, '-no-snapshot', '-no-boot-anim', '-no-audio', '-gpu', 'swiftshader_indirect', '-port', '5554'],
+    emulatorPath,
+    [
+      '-avd',
+      avd,
+      '-no-snapshot',
+      '-no-boot-anim',
+      '-no-audio',
+      '-gpu',
+      'swiftshader_indirect',
+      '-port',
+      String(DAEMON_PORT),
+    ],
     {
-      env: { ...process.env, ANDROID_AVD_HOME: AVD_HOME },
+      env: { ...process.env, ANDROID_AVD_HOME: avdHome },
       detached: true,
       stdio: 'ignore',
     }

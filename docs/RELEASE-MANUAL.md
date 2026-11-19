@@ -328,7 +328,9 @@ adb logcat -d | tail -50
 - [ ] 能覆盖安装（versionCode 递增、签名一致，不出现 `INSTALL_FAILED_UPDATE_INCOMPATIBLE`）
 - [ ] 冷启动进设置页，服务地址/模型/API Key 保留，能发出一条消息
 - [ ] 内测包的服务地址/模型是钉死的那套（设置页不暴露编辑入口）
-- [ ] 截图留档（390 / 360 两档）；真机没测就写「未测真机」，不许写成已通过
+- [ ] 截图留档：档位取 `scripts/compat/matrix.config.json` 的 `captureWidths`
+      （契约档位是同文件的 `requiredCaptureWidths`，当前 390 / 360 两档；少一档 `pnpm check:matrix` 直接 FAIL）；
+      真机没测就写「未测真机」，不许写成已通过
 
 ---
 

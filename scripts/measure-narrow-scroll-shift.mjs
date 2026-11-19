@@ -38,9 +38,13 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 
 import { chromium } from 'playwright'
 
+import { matrixConfig } from './compat/lib/matrix-config.mjs'
+
 const ROOT = fileURLToPath(new URL('..', import.meta.url))
 
-const DEFAULT_WIDTHS = [390, 360]
+// 档位来自 scripts/compat/matrix.config.json:captureWidths（与 p4-layout.mjs / shot-72.mjs 同一处），
+// 免得加一档时漏改其中一处、报告里写着「两档已覆盖」但其实只跑了一档（issue #278）。
+const DEFAULT_WIDTHS = matrixConfig().captureWidths
 
 const parseArgs = (argv) => {
   const options = {

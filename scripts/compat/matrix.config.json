@@ -1,0 +1,48 @@
+{
+  "_doc": "兼容 / 截图矩阵的唯一配置入口（issue #278）。脚本里不再写死 D 盘路径、AVD 名、390/360 宽度；本文件的每个字段都能被环境变量覆盖，见 scripts/compat/lib/matrix-config.mjs 顶部注释。",
+  "_doc_sdkRoot": "null = 依次尝试 COMPAT_SDK_ROOT → ANDROID_HOME → ANDROID_SDK_ROOT → $HOME/android-sdk → 历史默认（D:/android-sdk）；都找不到就报错并给出提示，不会 ENOENT 硬崩。与 build-apk.sh 的 ANDROID_HOME → ANDROID_SDK_ROOT → $HOME/android-sdk 同一套顺序。",
+  "_doc_avdHome": "null = 依次尝试 ANDROID_AVD_HOME → $HOME/.android/avd → 历史默认（D:/android-avd）。",
+  "_doc_avdProfiles": "AVD 名与它「声称装的」API 级别 / WebView 档位的绑定关系。boot.mjs 起机后拿 ro.build.version.sdk 与 dumpsys 里的 WebView 版本回验，不符就报错退出。",
+  "_doc_captureWidths": "截图 / 排版档位（CSS 宽）。p4-layout、measure-narrow-scroll-shift、shot-72 都从这里读，不再各写一份。",
+  "_doc_requiredCaptureWidths": "契约要求必须覆盖的档位（来源 docs/RELEASE-MANUAL.md 第 8 节）。少了就 pnpm check:matrix FAIL。",
+  "_doc_capturePhysicalWidth": "物理宽，用来把 CSS 宽换算成 wm density：density = round(物理宽 / CSS 宽 × 160)。",
+  "sdkRoot": null,
+  "avdHome": null,
+  "daemonPort": 5554,
+  "avdProfiles": [
+    {
+      "name": "compat-api26",
+      "api": 26,
+      "webviewTier": "83"
+    },
+    {
+      "name": "compat-api30",
+      "api": 30,
+      "webviewTier": "83"
+    },
+    {
+      "name": "compat-api31",
+      "api": 31,
+      "webviewTier": "91"
+    },
+    {
+      "name": "deepseek-api33",
+      "api": 33,
+      "webviewTier": "109"
+    }
+  ],
+  "webviewTierSlack": 0,
+  "captureWidths": [
+    390,
+    360
+  ],
+  "requiredCaptureWidths": [
+    390,
+    360
+  ],
+  "capturePhysicalWidth": 1080,
+  "captureHeights": {
+    "360": 800,
+    "390": 844
+  }
+}
