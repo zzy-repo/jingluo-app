@@ -56,12 +56,21 @@ const scripted = (table) => {
   }
 }
 
+/**
+ * #421：本机有 Key 时打开弹层会多一条**只读**的邮箱入口探测（`GET /email/status`）。
+ * 服务端未开邮箱功能时它回 404 `not_found`，界面一个字都不变 —— 所以统一在 prepare 里兜住，
+ * 各用例的请求序列断言用 withoutEmailProbe 先把它摘掉，避免噪音盖住真正要钉的链路。
+ */
+const EMAIL_PROBE = 'GET /email/status'
+const withoutEmailProbe = (paths) => paths.filter((path) => path !== EMAIL_PROBE)
+const EMAIL_DISABLED = TRANSPORT.json(404, { error: { code: 'not_found' } })
+
 const prepare = (table) => {
   harness.ctx.reset()
   harness.ctx.apiKey = KEY
   globalThis.localStorage.setItem('chat-demo:ours-device-id', DEVICE)
   harness.ctx.oursOpen = true
-  harness.ctx.reply(scripted(table))
+  harness.ctx.reply(scripted({ [EMAIL_PROBE]: [EMAIL_DISABLED], ...table }))
 }
 
 test('C6/1 F7-02 购买区不发 /api/plans：直接给「套餐已下架」空态，入口照常可点', async () => {
@@ -71,7 +80,11 @@ test('C6/1 F7-02 购买区不发 /api/plans：直接给「套餐已下架」空�
   })
   const view = await harness.mount(OursServicesRow, {})
 
-  assert.deepEqual(harness.ctx.paths, ['GET /me'], '空态是默认展示，不该为它多发一条套餐请求')
+  assert.deepEqual(
+    withoutEmailProbe(harness.ctx.paths),
+    ['GET /me'],
+    '空态是默认展示，不该为它多发一条套餐请求'
+  )
   assert.equal(view.text('ours-plans-empty'), zh.oursPayEmpty)
   assert.equal(view.has('ours-buy'), true, '套餐下架不等于入口消失')
   assert.notEqual(view.node('ours-buy').props.disabled, true, '购买按钮必须可点')
@@ -128,7 +141,11 @@ test('C6/3 F7-03 收款页地址每次现取：连点两次就是两条 GET /api
   await view.click('ours-buy')
   await view.click('ours-buy')
 
-  assert.deepEqual(harness.ctx.paths, ['GET /me', 'GET /api/pay-link', 'GET /api/pay-link'])
+  assert.deepEqual(withoutEmailProbe(harness.ctx.paths), [
+    'GET /me',
+    'GET /api/pay-link',
+    'GET /api/pay-link',
+  ])
   assert.deepEqual(harness.ctx.browser.opens, [PAY_URL, PAY_URL], '每次都得真的打开一次')
   view.unmount()
 })
@@ -150,7 +167,7 @@ test('C6/4 F7-04/F7-05 关页回调只算一次：连点关闭也只刷新一条
   // 「最多回调一次」是 transport 的契约（真实现见 pay-link.test.mjs[C]）；这里断言的是
   // 「一次关闭 = 恰好一次额度刷新」，也就是 N1 那个从未被断言过的组合行为。
   assert.deepEqual(
-    harness.ctx.paths,
+    withoutEmailProbe(harness.ctx.paths),
     ['GET /me', 'GET /api/pay-link', 'GET /me'],
     '一次关闭只该刷新一条 /me'
   )
@@ -241,7 +258,7 @@ test('C6/7 订单状态哨兵表：正常下单 / 覆盖单号(#157) / latest_fu
     await view.click('ours-buy')
 
     assert.deepEqual(
-      harness.ctx.paths,
+      withoutEmailProbe(harness.ctx.paths),
       ['GET /me', 'GET /api/pay-link'],
       `${state.name}：整条链路只允许「查额度 + 取收款页地址」两条请求`
     )

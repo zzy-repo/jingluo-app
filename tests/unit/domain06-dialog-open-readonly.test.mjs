@@ -14,6 +14,9 @@
 //   5 点「前往购买」→ /api/pay-link → App 内打开 → 关页后**恰好一条** /me（且绝不说「支付成功」）
 //   6 pay-link 503 → 不打开浏览器、弹层内给「收款通道暂不可用」、不多发 /me
 //
+// #421 起多一条**只读**探测：有 Key 时打开弹层会再发一条 `GET /email/status`
+// （服务端未开邮箱功能时回 404 `not_found`，界面一个字都不多）。无凭据时仍是一条都不发。
+//
 // 跑法：node --test tests/unit/domain06-dialog-open-readonly.test.mjs
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
@@ -72,6 +75,15 @@ const prepare = ({ apiKey = '', table, deviceId = DEVICE }) => {
 
 const mountDialog = () => harness.mount(OursServicesRow, {})
 
+/**
+ * #421：邮箱入口探测（只读）。所有「打开弹层发了几条请求」的断言都先把它摘掉，
+ * 再单独断言它最多一条 —— 否则这条新增的只读请求会把每条旧断言都变成噪音。
+ */
+const EMAIL_PROBE = 'GET /email/status'
+const withoutEmailProbe = (paths) => paths.filter((path) => path !== EMAIL_PROBE)
+/** 服务端未开邮箱功能时的真实返回：404 + not_found（入口不出现，旧流程不变） */
+const EMAIL_DISABLED = TRANSPORT.json(404, { error: { code: 'not_found' } })
+
 /** 已下线链路的哨兵：任何一条都说明「不建单、不查单、不轮询」被破坏了 */
 const ORDER_ENDPOINTS = ['/buy', '/api/buy', '/api/order', '/api/orders', '/invite/rotate']
 
@@ -88,10 +100,15 @@ const assertNoOrderTraffic = (paths) => {
 }
 
 test('C3/1 F6-01 本机已有 Key：打开只发一条 GET /me，不自动领取、不覆盖已有 Key', async () => {
-  prepare({ apiKey: KEY, table: { 'GET /me': [TRANSPORT.json(200, profile(300))] } })
+  prepare({
+    apiKey: KEY,
+    table: { 'GET /me': [TRANSPORT.json(200, profile(300))], [EMAIL_PROBE]: [EMAIL_DISABLED] },
+  })
   const view = await mountDialog()
 
-  assert.deepEqual(harness.ctx.paths, ['GET /me'], '#100：打开弹层只读，一条写请求都不该有')
+  assert.deepEqual(withoutEmailProbe(harness.ctx.paths), ['GET /me'], '#100：打开弹层只读，一条写请求都不该有')
+  assert.equal(harness.ctx.paths.filter((path) => path === EMAIL_PROBE).length, 1, '#421：只探一次')
+  assert.equal(view.has('ours-email'), false, '服务端未开邮箱功能 -> 入口不出现')
   assert.equal(harness.ctx.keyWrites.length, 0, '打开弹层不该改写本地 Key')
   assert.equal(view.text('ours-quota-value'), `300 ${zh.oursPointsUnit}`)
   assert.equal(view.has('ours-open-choice'), false, '有档案时不该停在选择态')
@@ -113,11 +130,14 @@ test('C3/2 F6-02 本机没有 Key：一条请求都不发，停在「领取新 K
 test('C3/3 F6-01 /me 返回 device_not_found：只发那一条 GET /me，不补 /apply，提示「本机还没有绑定」', async () => {
   prepare({
     apiKey: KEY,
-    table: { 'GET /me': [TRANSPORT.json(404, { error: { code: 'device_not_found' } })] },
+    table: {
+      'GET /me': [TRANSPORT.json(404, { error: { code: 'device_not_found' } })],
+      [EMAIL_PROBE]: [EMAIL_DISABLED],
+    },
   })
   const view = await mountDialog()
 
-  assert.deepEqual(harness.ctx.paths, ['GET /me'], 'device_not_found 绝不能在客户端静默补 /apply')
+  assert.deepEqual(withoutEmailProbe(harness.ctx.paths), ['GET /me'], 'device_not_found 绝不能在客户端静默补 /apply')
   assert.equal(view.text('ours-quota-value'), zh.oursQuotaNeedsBind)
   view.unmount()
 })
@@ -127,13 +147,14 @@ test('C3/4 F6-06 点「刷新额度」：再发一条 GET /me，额度按服务�
     apiKey: KEY,
     table: {
       'GET /me': [TRANSPORT.json(200, profile(300)), TRANSPORT.json(200, profile(120))],
+      [EMAIL_PROBE]: [EMAIL_DISABLED],
     },
   })
   const view = await mountDialog()
   assert.equal(view.text('ours-quota-value'), `300 ${zh.oursPointsUnit}`)
 
   await view.click('ours-quota-refresh')
-  assert.deepEqual(harness.ctx.paths, ['GET /me', 'GET /me'])
+  assert.deepEqual(withoutEmailProbe(harness.ctx.paths), ['GET /me', 'GET /me'])
   assert.equal(view.text('ours-quota-value'), `120 ${zh.oursPointsUnit}`)
   view.unmount()
 })
@@ -144,13 +165,14 @@ test('C3/5 F7-05 点「前往购买」→ 现取收款页地址 → App 内打�
     table: {
       'GET /me': [TRANSPORT.json(200, profile(300)), TRANSPORT.json(200, profile(500))],
       'GET /api/pay-link': [TRANSPORT.json(200, { ok: true, url: PAY_URL, note: '联动小铺' })],
+      [EMAIL_PROBE]: [EMAIL_DISABLED],
     },
   })
   const view = await mountDialog()
   await view.click('ours-buy')
 
   // 1) 地址每次现取（不写死），2) 交给 App 内浏览器打开
-  assert.deepEqual(harness.ctx.paths, ['GET /me', 'GET /api/pay-link'])
+  assert.deepEqual(withoutEmailProbe(harness.ctx.paths), ['GET /me', 'GET /api/pay-link'])
   assert.deepEqual(harness.ctx.browser.opens, [PAY_URL])
   assert.equal(view.text('ours-pay-notice'), zh.oursPayHint)
 
@@ -164,7 +186,7 @@ test('C3/5 F7-05 点「前往购买」→ 现取收款页地址 → App 内打�
   await view.settle()
 
   assert.deepEqual(
-    harness.ctx.paths,
+    withoutEmailProbe(harness.ctx.paths),
     ['GET /me', 'GET /api/pay-link', 'GET /me'],
     '关页应恰好再发一条 /me'
   )
@@ -184,12 +206,13 @@ test('C3/6 F7-05 收款通道 503：不打开浏览器、留在弹层里给可�
     table: {
       'GET /me': [TRANSPORT.json(200, profile(300))],
       'GET /api/pay-link': [TRANSPORT.json(503, { code: 'PAY_LINK_NOT_CONFIGURED' })],
+      [EMAIL_PROBE]: [EMAIL_DISABLED],
     },
   })
   const view = await mountDialog()
   await view.click('ours-buy')
 
-  assert.deepEqual(harness.ctx.paths, ['GET /me', 'GET /api/pay-link'])
+  assert.deepEqual(withoutEmailProbe(harness.ctx.paths), ['GET /me', 'GET /api/pay-link'])
   assert.deepEqual(harness.ctx.browser.opens, [], '地址不可用时绝不能打开任何页面')
   assert.equal(view.text('ours-pay-notice'), zh.oursPayUnavailable)
   assert.equal(harness.ctx.browser.onClosed ?? null, null)

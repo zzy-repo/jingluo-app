@@ -15,7 +15,7 @@
 import { registerHooks, stripTypeScriptTypes } from 'node:module'
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 
 import {
   allowedHosts,
@@ -240,7 +240,9 @@ export const createHarness = () => {
       if (relative.endsWith('.css')) {
         return import(CSS_STUB)
       }
-      return import(path.join(ROOT, relative))
+      // Windows：`import('D:\...')` 不是合法 ESM 说明符（ERR_UNSUPPORTED_ESM_URL_SCHEME），
+      // 必须转成 file:// URL。Linux/macOS 上 pathToFileURL 同样是幂等的正解。
+      return import(pathToFileURL(path.join(ROOT, relative)).href)
     },
     /**
      * 挂载真组件并等状态稳定。

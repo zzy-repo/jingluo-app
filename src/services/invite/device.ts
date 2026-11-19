@@ -149,9 +149,20 @@ export type DeviceFlagStorage = {
   writeFlag: (value: string) => void
 }
 
-/** true = 还没提示过（首次进入设置页要提示一次） */
-export const shouldShowDeviceBackupHint = (storage: DeviceFlagStorage): boolean =>
-  (storage.readFlag() ?? '').trim() !== '1'
+/**
+ * true = 还没提示过（首次进入设置页要提示一次）。
+ *
+ * `hasEmail`（Issue #421 第 5 点）：已绑邮箱的用户**不再提示**「复制设备码备份」——
+ * 那条提示的前提是「设备码 = 账号，丢了就找不回」，绑过邮箱之后账号可以靠邮箱找回，
+ * 再催他备份设备码就是错的前提。三态照旧：
+ *  - `true`  → 不提示（前提已变）；
+ *  - `false` → 照旧按「提示过没有」判定（邮箱已开启但没绑，设备码仍是唯一凭据）；
+ *  - `null`  → 邮箱功能未开启 / 老服务端，行为与 #421 之前完全一致。
+ */
+export const shouldShowDeviceBackupHint = (
+  storage: DeviceFlagStorage,
+  options: { hasEmail?: boolean | null } = {}
+): boolean => (options.hasEmail === true ? false : (storage.readFlag() ?? '').trim() !== '1')
 
 /** 用户已确认（或已经复制过设备码）：以后不再提示 */
 export const markDeviceBackupHintSeen = (storage: DeviceFlagStorage): void => {

@@ -11,6 +11,10 @@
 //   3. 绑定成功要走「保存 Key → 刷新额度 → 关掉设置弹层」这条完整链路；
 //   4. 换 Key 必须点两下（二次确认）才发请求，失败时本地旧 Key 一个字节都不动（#90）。
 //
+// #421 起：有账号（本机有 Key）或领取/绑定成功后，会多一条**只读**的 `GET /email/status`
+// 探测邮箱入口。所有「发了几条请求」的断言都先用 withoutEmailProbe 把它摘掉再比，
+// 避免这条与本次改动无关的只读请求把每条旧断言都变成噪音。
+//
 // 跑法：node --test tests/unit/domain06-claim-ui-orchestration.test.mjs
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
@@ -56,6 +60,14 @@ const scripted = (table) => {
   }
 }
 
+/**
+ * #421：邮箱入口探测（只读）。断言请求序列前先摘掉它，再单独断言它不影响别的东西。
+ */
+const EMAIL_PROBE = 'GET /email/status'
+const withoutEmailProbe = (paths) => paths.filter((path) => path !== EMAIL_PROBE)
+/** 服务端未开邮箱功能时的真实返回：404 + not_found（入口不出现，旧流程不变） */
+const EMAIL_DISABLED = TRANSPORT.json(404, { error: { code: 'not_found' } })
+
 const prepare = ({ apiKey = '', table, deviceId = DEVICE }) => {
   harness.ctx.reset()
   harness.ctx.apiKey = apiKey
@@ -72,13 +84,14 @@ test('C4/1 F6-03 点「领取新 Key」→ POST /apply → Key 立刻落盘 + �
         TRANSPORT.json(201, { ...profile(300), key: NEW_KEY, new_user_granted: true }),
       ],
       'GET /api/balance': [TRANSPORT.json(200, { valid: true })],
+      [EMAIL_PROBE]: [EMAIL_DISABLED],
     },
   })
   const view = await harness.mount(OursServicesRow, {})
   await view.click('ours-open-choice-claim')
 
   assert.deepEqual(
-    harness.ctx.paths,
+    withoutEmailProbe(harness.ctx.paths),
     ['POST /apply', 'GET /api/balance'],
     '领取后不该再查 /me（档案就在响应里）'
   )
@@ -106,12 +119,13 @@ test('C4/2 F6-04 服务端说「已领过」→ 文案绝不是「领取成功�
         }),
       ],
       'GET /api/balance': [TRANSPORT.json(200, { valid: true })],
+      [EMAIL_PROBE]: [EMAIL_DISABLED],
     },
   })
   const view = await harness.mount(OursServicesRow, {})
   await view.click('ours-claim')
 
-  assert.deepEqual(harness.ctx.paths, ['GET /me', 'POST /apply', 'GET /api/balance'])
+  assert.deepEqual(withoutEmailProbe(harness.ctx.paths), ['GET /me', 'POST /apply', 'GET /api/balance'])
   assert.deepEqual(harness.ctx.keyWrites, [], '本机已有 Key 时不许自动覆盖')
   assert.equal(view.text('ours-claim-status'), zh.oursClaimOkExisting)
   assert.equal(view.text('ours-claim-status').includes('已领取，剩余'), false)
@@ -128,6 +142,7 @@ test('C4/3 F6-15 绑定已有 Key → POST /bind → 保存 → 刷新额度 →
         TRANSPORT.json(200, { key: NEW_KEY, already_bound: false, remaining_points: 800 }),
       ],
       'GET /me': [TRANSPORT.json(200, profile(800))],
+      [EMAIL_PROBE]: [EMAIL_DISABLED],
     },
   })
   const view = await harness.mount(OursServicesRow, {})
@@ -135,7 +150,11 @@ test('C4/3 F6-15 绑定已有 Key → POST /bind → 保存 → 刷新额度 →
   await view.type('ours-bind-input', NEW_KEY)
   await view.click('ours-bind-submit')
 
-  assert.deepEqual(harness.ctx.paths, ['POST /bind', 'GET /me'], '绑定成功后必须刷新一次额度')
+  assert.deepEqual(
+    withoutEmailProbe(harness.ctx.paths),
+    ['POST /bind', 'GET /me'],
+    '绑定成功后必须刷新一次额度'
+  )
   assert.deepEqual(harness.ctx.keyWrites, [NEW_KEY])
   // 成功文案只有一条（binding 与首次绑定完全一样），由 bindSuccessKey 判定 → C2/B1 逐字断言；
   // 这里断言的是编排末端的「关掉设置弹层」，因为弹层一关，文案节点就不在树上了。
@@ -153,6 +172,7 @@ test('C4/4 F6-14 换 Key 必须点两下：确认前 0 条请求；确认后 /ro
     apiKey: OLD_KEY,
     table: {
       'GET /me': [TRANSPORT.json(200, profile(300))],
+      [EMAIL_PROBE]: [EMAIL_DISABLED],
       'POST /rotate': [
         TRANSPORT.json(200, {
           key: NEW_KEY,
@@ -170,13 +190,13 @@ test('C4/4 F6-14 换 Key 必须点两下：确认前 0 条请求；确认后 /ro
   await view.click('ours-rotate-open')
 
   // 二次确认还没点：一条 /rotate 都不许发（破坏性操作）
-  assert.deepEqual(harness.ctx.paths, ['GET /me'])
+  assert.deepEqual(withoutEmailProbe(harness.ctx.paths), ['GET /me'])
   assert.equal(view.has('ours-rotate-confirm'), true)
   assert.match(view.text('ours-rotate-confirm-body'), /立即失效/u)
 
   await view.click('ours-rotate-submit')
   assert.deepEqual(
-    harness.ctx.paths,
+    withoutEmailProbe(harness.ctx.paths),
     ['GET /me', 'POST /rotate'],
     '成功后不该再查 /me（档案在响应里）'
   )
@@ -191,6 +211,7 @@ test('C4/5 F6-14 换 Key 失败：本地旧 Key 一个字节都不动，文案�
     apiKey: OLD_KEY,
     table: {
       'GET /me': [TRANSPORT.json(200, profile(300))],
+      [EMAIL_PROBE]: [EMAIL_DISABLED],
       'POST /rotate': [TRANSPORT.json(404, { error: { code: 'device_not_found' } })],
     },
   })
@@ -211,6 +232,7 @@ test('C4/6 F6-10 兑换成功 → 清空输入 + 刷新一次额度；卡密只�
     apiKey: OLD_KEY,
     table: {
       'GET /me': [TRANSPORT.json(200, profile(300)), TRANSPORT.json(200, profile(400))],
+      [EMAIL_PROBE]: [EMAIL_DISABLED],
       'POST /redeem-card': [
         TRANSPORT.json(200, { ok: true, points: 100, quota_points: 400, remaining_points: 400 }),
       ],
@@ -220,8 +242,9 @@ test('C4/6 F6-10 兑换成功 → 清空输入 + 刷新一次额度；卡密只�
   await view.type('ours-redeem-input', CARD)
   await view.click('ours-redeem-submit')
 
-  assert.deepEqual(harness.ctx.paths, ['GET /me', 'POST /redeem-card', 'GET /me'])
-  assert.deepEqual(JSON.parse(harness.ctx.requests[1].body), { card_no: CARD, api_key: OLD_KEY })
+  assert.deepEqual(withoutEmailProbe(harness.ctx.paths), ['GET /me', 'POST /redeem-card', 'GET /me'])
+  const redeemCall = harness.ctx.requests.find((request) => request.path === '/redeem-card')
+  assert.deepEqual(JSON.parse(redeemCall.body), { card_no: CARD, api_key: OLD_KEY })
   const result = view.text('ours-redeem-result')
   assert.ok(
     result.includes(zh.oursRedeemSuccess.replace('{points}', `100 ${zh.oursPointsUnit}`)),
