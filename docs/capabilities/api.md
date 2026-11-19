@@ -8,7 +8,7 @@
 | 项目 | 值 |
 | --- | --- |
 | 兼容基线 | Android WebView **83**（Chromium 83.0.4103.106，Android 11 出厂镜像） |
-| 扫描范围 | `src/**` 共 **248** 个文件（**148** `.ts` / 54 `.tsx` / 44 `.css` / 1 `.html` / 1 `.md`） |
+| 扫描范围 | `src/**` 共 **249** 个文件（**149** `.ts` / 54 `.tsx` / 44 `.css` / 1 `.html` / 1 `.md`） |
 | 判定方式 | **静态推断**：词法层遮蔽注释、字符串、模板后按调用形状匹配；**非运行时验证** |
 | 工具 | [`scripts/lib/apiAssumptionAudit.mjs`](../../scripts/lib/apiAssumptionAudit.mjs)（纯判定模块，无遍历、无打印） |
 | 单测 | [`tests/unit/api-assumption-audit.test.mjs`](../../tests/unit/api-assumption-audit.test.mjs)（10 个用例，三个判定桶各钉真例子） |
@@ -191,3 +191,4 @@ node --test tests/unit/capabilities-docs-sync.test.mjs   # 文档与复算是否
 
 - 复核（2026-11-19 18:32，基准 `452debb`，本单 #303 分支 HEAD `204bd6e`）：新增 1 个 `.ts` 源文件（`src/services/api/keyRejection.ts`，401 判死后的 Key 指纹与停止自动探测的状态）与 `tests/` 侧新增用例，扫描范围 247 → **248** 个文件、`.ts` 147 → **148** 个。新文件只用 `charCodeAt` / `toString(16)` / `URL` 解析与 `zustand` 的 `create`，**没有任何一条本表里的 API**，**命中总数仍是 51 处**，分类分布（31 / 20 / 0）、按 API 分项（3 / 14 / 14 / 13 / 4 / 2 / 1）与 §二 的 `文件:行` 均未变（`src/services/api/client.ts`、`src/services/chat/store.ts` 的改动都在既有命中行之后）。
 - 复核（2026-11-19 18:35，基准 `68c4d9d`，本单 #305）：新增 1 个 `.ts` 源文件（`src/components/settings/logView.ts`，日志预览的过滤 / 分组 / 复制纯函数），扫描范围 244 → **245** 个文件、`.ts` 144 → **145** 个。新文件里没有上述任何一条 API（只用 `String#slice` / `padStart` / `Object.entries` / `JSON.stringify` / `Number.isFinite`，全部 ≤ Chromium 83），**命中总数仍是 51 处**，分类分布、按 API 分项、逐条命中表的 `文件:行` 均未变。
+- 复核（2026-11-19 18:50，基准 `7a65f55`，本单 #324 分支 HEAD）：新增 1 个 `.ts` 源文件（`src/services/chat/replyErrorReport.ts`，回答失败时「复制诊断信息」的纯文本生成），扫描范围 248 → **249** 个文件、`.ts` 148 → **149** 个。新文件只用 `new Date().toISOString()` / `Number.isFinite` / `String#trim`，**没有任何一条本表里的 API**（`scrubReportText` / `truncate` 是既有模块的导出），**命中总数仍是 51 处**，分类分布（31 / 20 / 0）、按 API 分项（3 / 14 / 14 / 13 / 4 / 2 / 1）与 §二 的 `文件:行` 均未变（`src/services/api/errors.ts`、`client.ts`、`src/services/chat/describe.ts`、`store.ts` 的改动都在既有命中行之后或同处替换）。

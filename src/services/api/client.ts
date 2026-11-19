@@ -39,6 +39,8 @@ const FILES_BETA = 'files-api-2025-04-14'
 export type ApiErrorCode =
   | 'upstream_returned_html'
   | 'stream_interrupted'
+  /** 响应头说是 SSE，但一个数据帧都没收到（#324） */
+  | 'stream_empty'
   | 'request_timed_out'
   | 'stream_idle'
 
@@ -109,6 +111,17 @@ const streamInterrupted = (detail?: string): ApiError =>
     'stream_interrupted',
     detail
   )
+
+/**
+ * 空流（#324）：响应头说这是 `text/event-stream`，却一个数据帧都没来。
+ *
+ * 实测形态（官方端点 2026-11-19）：`200 + text/event-stream` 的响应，body 里连
+ * `message_start` 都没有（或 200 + JSON 而不是 SSE）。改前它与「说到一半断了」共用
+ * 「连接中断」，用户会以为是自己网络；两者该重试的理由不同，所以单独给一个 code：
+ * `kind` 仍是 interrupted（都属于「流没有正常收尾」），但文案说「上游这次什么都没返回，可以重试」。
+ */
+const streamEmpty = (detail?: string): ApiError =>
+  new ApiError('interrupted', { key: 'replyEmptyStream' }, undefined, 'stream_empty', detail)
 
 const isErrorBody = (value: unknown): value is ApiErrorBody =>
   typeof value === 'object' &&
@@ -548,12 +561,18 @@ export async function* streamMessage(
   if (!response.body || !contentType.includes('text/event-stream')) {
     throw await readErrorResponse(response, 'protocol', '')
   }
+  /**
+   * 收到的 SSE 数据帧数（#324）：只用来在流结束时区分「一个帧都没来（空流）」
+   * 与「说到一半断了」。ping / 无法解析的帧也算数——它们证明上游确实在说话。
+   */
+  let frames = 0
   try {
     for await (const { event: eventName, data } of readServerSentEvents(
       response.body,
       signal,
       getStreamIdleTimeout()
     )) {
+      frames += 1
       let payload: unknown
       try {
         payload = JSON.parse(data)
@@ -603,6 +622,11 @@ export async function* streamMessage(
   // 流在 message_stop 之前结束了。用户主动停止不算断流，先看 signal。
   if (signal.aborted) {
     throw signal.reason ?? new DOMException('The operation was aborted.', 'AbortError')
+  }
+  // 一帧都没收到 = 空流（#324）：上游给了 200 + SSE 头却什么都没说。
+  // 与「说到一半断了」分开说：那种是连接问题，这种是上游这次没给内容，两者都该重试，但文案不能一样。
+  if (frames === 0) {
+    throw streamEmpty()
   }
   // 不推测原因，只明确告诉用户是断流。
   throw streamInterrupted()

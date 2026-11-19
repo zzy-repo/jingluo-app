@@ -263,12 +263,14 @@ try {
           message: 'invalid request: max_tokens must be a positive integer',
           code: 'invalid_request_error',
         }),
-      expectText: '未知错误',
+      // #324：普通 400 有明确档位（参数错误），不再落到「未知错误」，
+      // 且文案显式写「不要重试」——它仍然是 4xx 终态，不进额度 / 限流 / 服务端故障档
+      expectText: '参数错误',
     })
-    if (/余额|额度不足|服务器繁忙|请求过于频繁/.test(text)) {
+    if (/余额|额度不足|服务器繁忙|请求过于频繁|未知错误/.test(text)) {
       bad(`[3b] 普通 400 被归错档：${JSON.stringify(text.slice(0, 200))}`)
     } else {
-      ok('[3b] 普通 400 仍走「未知错误」兜底，没有被额度档吃掉')
+      ok('[3b] 普通 400 走「参数错误」档，没有被额度 / 限流 / 未知错误吃掉')
     }
   }
 

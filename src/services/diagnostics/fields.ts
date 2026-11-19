@@ -250,6 +250,18 @@ export type MetaInput = {
   endpointKey?: EndpointKey
   /** 链路 id：另一条线（维度 5）未落地时写 TRACE_ID_PENDING 占位 */
   traceId?: string
+  /**
+   * 上游响应体里的机器可读错误码（`error.code` / `error.type`，如 `invalid_request_error`、
+   * `insufficient_balance`；#324）。
+   *
+   * 为什么要新增这一个键、而不复用现有键：现有键里没有一个能装「上游自己给的短码」——
+   * `status` 是 HTTP 码、`stage` 是本地环节、`error.detail` / `detail` 是**错误原文**
+   * （多行、可能英文长句），塞进去就没法按 code 聚合。而「这个月有多少次
+   * invalid_request_error」恰恰是 #324 要回答的问题：官方端点所有 400 的 `error.type`
+   * 都是同一个 `invalid_request_error`，只有短码能切片。取值恒为短字符串（≤300 字符，
+   * 走 cleanString 脱敏后落库），不引入新的取值域。
+   */
+  upstreamCode?: string
   /** 这一段本身花了多久 */
   durationMs?: number
   /** 已传输 / 已处理的字节数 */
@@ -290,6 +302,7 @@ export const META_KEYS: readonly MetaKey[] = [
   'status',
   'endpointKey',
   'traceId',
+  'upstreamCode',
   'prepMs',
   'durationMs',
   'bytes',
@@ -386,6 +399,9 @@ const normalizeField = (key: MetaKey, value: unknown): string | number | boolean
       return normalizeStatus(value)
     case 'traceId':
       return normalizeTraceId(value)
+    case 'upstreamCode':
+      // 短码：只收非空字符串（长度与脱敏由采集层的 cleanString 收口），其余一律不写
+      return typeof value === 'string' && value.trim() !== '' ? value.trim() : undefined
     case 'attempt': {
       if (!isFiniteNumber(value)) {
         return undefined

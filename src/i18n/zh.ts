@@ -78,17 +78,35 @@ export const zh = {
   readingLink: '正在阅读',
   commonNetworkErrorToast: '网络异常，请检查你的网络状况',
   replyInvalidApiKey: 'API Key 无效或已被删除，请更换后重试',
-  replyInsufficientBalance: '余额或额度不足，无法继续生成',
+  replyInsufficientBalance: '余额或额度不足，无法继续生成（不要重试，充值后再发）',
   /** 额度不足提示里的出路入口（#299）：复用「额度与卡密」弹层，充值套餐与卡密兑换都在里面 */
   quotaTopUpEntry: '去充值 / 兑换卡密',
-  replyRateLimited: '请求过于频繁，请稍后再试',
+  replyRateLimited: '请求过于频繁（临时限流，可以重试）：等一会儿再发，或点重新生成',
   completionServerBusyToast: '服务器繁忙，请稍后再试',
+  /** 回答失败时的「服务器繁忙」（#324）：显式写明可重试，与终态错误的「不要重试」区分开 */
+  replyServerBusy: '服务器繁忙，属于临时故障，回答没有完成，可以重试（点重新生成）',
   unknownError: '未知错误',
   replyUnknownError: '回答没有完成，出现了未知错误，可以重新生成',
   /** 上下文超出模型上限（#122）：重试没用，给两条能走的路 */
   replyContextLimit:
     '这段对话已经超出模型的上下文上限，这次请求没能发出去。可以开一个新会话继续，或者删掉几条较早的消息后再试',
-  replyStreamInterrupted: '连接中断，回答没有接收完整；已收到的内容已保留，可以重新生成',
+  replyStreamInterrupted:
+    '连接中断，回答没有接收完整；已收到的内容已保留，属于临时故障，可以重试（点重新生成）',
+  /** 空响应（#324）：上游 200 却什么内容都没给，换条连接通常就好 */
+  replyEmptyStream: '上游这次没有返回任何内容（空响应）；属于临时故障，可以重试（点重新生成）',
+  /** 内容安全拦截（#324）：原文重发一定还是被拦，所以明说不要重试 */
+  replyContentFiltered:
+    '这条内容被上游安全审核拦截了：改一下措辞或删掉敏感内容再发。原来的内容不要重试，重发同样会被拦',
+  /** 模型不存在 / 已下线（#324） */
+  replyModelInvalid:
+    '当前模型在上游不可用（模型名可能已下线）：请在设置里换一个模型再发，重试同一个请求不会有变化（不要重试）',
+  /** 其它被上游拒绝的请求（#324）：400 / 422 一类参数错误 */
+  replyBadRequest:
+    '请求被上游判定为参数错误：重试不会有变化，请检查设置里的模型与接口配置（不要重试）',
+  /** 未识别但**有**状态码 / 上游 code（#324）：把可自证的信息摆出来，并按是否可重试分两档文案 */
+  replyUnclassifiedRetryable: '回答没有完成：{detail}，属于临时故障，可以重试（点重新生成）',
+  replyUnclassifiedFatal:
+    '回答没有完成：{detail}，重试不会有变化（不要重试），请先检查设置，或用「复制诊断信息」反馈给我们',
   replyWaitingFirstToken: '正在等待响应',
   replyWaitingSlow: '服务响应较慢，仍在等待',
   replyWaitingStalled: '等待时间过长，可以停止后重新生成',

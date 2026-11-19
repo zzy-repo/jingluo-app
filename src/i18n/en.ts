@@ -83,18 +83,39 @@ export const en = {
   commonNetworkErrorToast: 'Network Error. Please check your network status.',
   replyInvalidApiKey:
     'The API Key is invalid or has been deleted. Please replace it and try again.',
-  replyInsufficientBalance: 'Insufficient balance or quota. Cannot continue generating.',
+  replyInsufficientBalance:
+    'Insufficient balance or quota. Cannot continue generating (do not retry; top up first).',
   /** Top-up entry inside the quota notice (#299): reuses the quota & card dialog */
   quotaTopUpEntry: 'Top up / Redeem a card',
-  replyRateLimited: 'Too many requests. Please try again later.',
+  replyRateLimited: 'Too many requests (temporary rate limit, retryable). Please try again later.',
   completionServerBusyToast: 'Server busy, please try again later.',
+  /** Server-busy error in a reply (#324): states explicitly that retrying may work */
+  replyServerBusy:
+    'Server busy — a temporary failure, the reply did not finish. You can retry (tap regenerate).',
   unknownError: 'Unknown error',
   replyUnknownError: 'The reply did not finish due to an unknown error. Please regenerate.',
   /** Context over the model limit (#122): retrying will not help, offer two ways out */
   replyContextLimit:
     'This conversation is over the model’s context limit, so the request was not sent. Start a new session to continue, or delete a few older messages and try again.',
   replyStreamInterrupted:
-    'The connection was interrupted and the reply is incomplete. What was received is kept — you can regenerate.',
+    'The connection was interrupted and the reply is incomplete. What was received is kept — a temporary failure, you can retry (tap regenerate).',
+  /** Empty stream (#324): the upstream returned 200 but no content at all */
+  replyEmptyStream:
+    'The upstream returned no content this time (empty response). A temporary failure — you can retry (tap regenerate).',
+  /** Content safety block (#324): resending the same text will be blocked again */
+  replyContentFiltered:
+    'This content was blocked by the upstream safety review. Rephrase it or remove the sensitive part; do not retry the same text — it will be blocked again.',
+  /** Model missing / retired (#324) */
+  replyModelInvalid:
+    'The current model is unavailable upstream (its name may have been retired). Pick another model in settings; retrying the same request will not help (do not retry).',
+  /** Other rejected requests (#324): 400 / 422 style parameter errors */
+  replyBadRequest:
+    'The upstream rejected the request as invalid. Retrying will not help — check the model and endpoint settings (do not retry).',
+  /** Unclassified but self-evident (status / upstream code present) (#324) */
+  replyUnclassifiedRetryable:
+    'The reply did not finish: {detail}. A temporary failure — you can retry (tap regenerate).',
+  replyUnclassifiedFatal:
+    'The reply did not finish: {detail}. Retrying will not help (do not retry) — check settings first, or send us “Copy diagnostics”.',
   replyWaitingFirstToken: 'Waiting for the response',
   replyWaitingSlow: 'The service is responding slowly. Still waiting…',
   replyWaitingStalled: 'This is taking unusually long. You can stop and regenerate.',

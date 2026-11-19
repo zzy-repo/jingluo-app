@@ -365,6 +365,49 @@ const makeReadingSession = () => {
   }
 }
 
+// ---------------------------------------------------------------- #324 官方渠道失败样本
+
+/** 会话标题：截图里靠它进会话 */
+const ERROR_SESSION_TITLE = '截图-失败分类-324'
+/**
+ * #324 用的失败样本会话：消息体里的 status / message / upstreamCode 都是
+ * 2026-11-19 对官方端点（https://api.deepseek.com/anthropic/v1/messages）的真实抓取，
+ * 只截掉 request_id。第三条是「上游给了状态码与短码但我们还不认识」的形态
+ * （官方端点目前没抓到这种，用 451 构造成一个不会撞上既有档位的样本），
+ * 用来验证兜底提示确实带状态码 + 短码，且「复制诊断信息」能真的复制出内容。
+ */
+const makeErrorSession = () => {
+  const now = Date.now()
+  const failed = (id, createdAt, error) => ({
+    ...assistantMessage(id, [], createdAt),
+    status: 'error',
+    error,
+  })
+  return {
+    id: 'shot-error-session',
+    title: ERROR_SESSION_TITLE,
+    createdAt: now,
+    updatedAt: now + 4000,
+    messages: [
+      userMessage('shot-error-u1', '用一个不存在的模型名发一句试试。', now),
+      failed('shot-error-a1', now + 1, {
+        kind: 'http',
+        status: 400,
+        upstreamCode: 'invalid_request_error',
+        message:
+          'The supported API model names are deepseek-flash, deepseek-v4-pro, but you passed no-such-model.',
+      }),
+      userMessage('shot-error-u2', '再来一个上游没见过的错误形态。', now + 2),
+      failed('shot-error-a2', now + 3, {
+        kind: 'http',
+        status: 451,
+        upstreamCode: 'unsupported_region',
+        message: 'totally new upstream failure shape',
+      }),
+    ],
+  }
+}
+
 // ---------------------------------------------------------------- #49 导入跳过条目的样本包
 
 /** 与真实导出同序（manifest → 会话 JSON → 索引 → 图片），其中 s3 截断、s4 整会话无法构造 */
@@ -1736,6 +1779,87 @@ export const PAGES = {
       await shot('04-键盘-数据管理标签-焦点环')
       const tabClip = await clipAround(dataTab, ctx.size)
       if (tabClip !== undefined) await shot('05-键盘-数据管理标签-特写', { clip: tabClip })
+    },
+  },
+
+  'chat-error-324': {
+    dir: 'docs/ui/324-official-error-classify',
+    title: '#324 官方渠道失败分类：模型不可用 / 未识别带状态码与诊断，390 与 360 两档',
+    sessions: () => [makeErrorSession()],
+    mockOrders: false,
+    run: async (ctx) => {
+      const { page, shot, record, warn } = ctx
+      await openSession(page, ERROR_SESSION_TITLE)
+
+      const readNotice = async (locator, label) => {
+        await locator.scrollIntoViewIfNeeded()
+        const box = await locator.boundingBox()
+        const data = {
+          text: (await locator.innerText()).replace(/\s+/gu, ' ').trim(),
+          box,
+          inViewport:
+            box !== null &&
+            box.y >= 0 &&
+            box.y + box.height <= ctx.size.height + 1 &&
+            box.x >= 0 &&
+            box.x + box.width <= ctx.size.width + 1,
+          horizontalOverflow: await locator.evaluate((el) => el.scrollWidth > el.clientWidth + 1),
+        }
+        record(label, data)
+        if (!data.inViewport) warn(`${label} 没完整落在视口内：这张图证明不了「不用滚就能看全」`)
+        if (data.horizontalOverflow) warn(`${label} 横向溢出：x 方向被裁了`)
+        return data
+      }
+
+      // A. 官方端点真实的 400：模型名不被支持 —— 改前这里是「未知错误」
+      const modelInvalid = page.getByText('当前模型在上游不可用', { exact: false }).first()
+      await modelInvalid.waitFor({ state: 'visible', timeout: 10000 })
+      await page.waitForTimeout(280)
+      const a = await readNotice(modelInvalid, 'modelInvalid')
+      if (!a.text.includes('不要重试')) warn('模型不可用的文案里没写「不要重试」')
+      if (a.text.includes('未知错误')) warn('模型不可用仍被说成「未知错误」')
+      await shot('01-模型不可用-不要重试')
+
+      // B. 未识别但有状态码 + 短码：兜底提示要能自证，并带「复制诊断信息」
+      const unclassified = page.getByText('HTTP 451', { exact: false }).first()
+      await unclassified.waitFor({ state: 'visible', timeout: 10000 })
+      await page.waitForTimeout(280)
+      const b = await readNotice(unclassified, 'unclassified')
+      if (!b.text.includes('HTTP 451') || !b.text.includes('unsupported_region')) {
+        warn('兜底提示里没有状态码或上游短码')
+      }
+      const copyButton = page.getByRole('button', { name: '复制诊断信息' })
+      const buttonVisible = await copyButton.first().isVisible().catch(() => false)
+      record('copyButton', { visible: buttonVisible })
+      if (!buttonVisible) warn('未识别的失败没有「复制诊断信息」按钮')
+      await shot('02-未识别-带状态码与诊断按钮')
+
+      // C. 真的点一下：证据是 toast 文案 + 剪贴板真实内容（context 已授予 clipboard 权限）
+      await copyButton.first().click()
+      await page.waitForTimeout(280)
+      const toastText = await page
+        .getByRole('status')
+        .innerText()
+        .catch(() => '')
+      const clipboard = await page.evaluate(() =>
+        navigator.clipboard.readText().catch((error) => `读不到：${String(error)}`)
+      )
+      record('copy', { toastText: toastText.replace(/\s+/gu, ' ').trim(), clipboard })
+      if (!toastText.includes('已复制')) warn(`没看到复制成功的提示：${JSON.stringify(toastText)}`)
+      if (!String(clipboard).includes('HTTP 状态: 451')) {
+        warn(`剪贴板里没有诊断内容：${JSON.stringify(clipboard)}`)
+      }
+      if (!String(clipboard).includes('上游 code: unsupported_region')) {
+        warn('剪贴板里的诊断缺上游短码')
+      }
+      await shot('03-复制诊断信息')
+
+      // 已识别的档位不该出现诊断按钮（它不需要）：顺手量一下
+      const modelCopyButton = await modelInvalid.evaluate(
+        (el) => el.textContent?.includes('复制诊断信息') ?? false
+      )
+      record('modelInvalidHasCopyButton', { value: modelCopyButton })
+      if (modelCopyButton) warn('模型不可用这条也带了「复制诊断信息」：已识别的档位不需要')
     },
   },
 }

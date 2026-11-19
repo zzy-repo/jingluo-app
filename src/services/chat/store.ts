@@ -1467,12 +1467,25 @@ const streamReply = async (sessionId: string, initial: AssistantMessage, request
                   : undefined
         // 失败必录：请求阶段、HTTP 状态、耗时、错误原文一次记全
         const failedTiming = meter.snapshot()
+        const apiFailure = error instanceof ApiError ? error : null
+        // 上游状态码：有就写真实码（400 / 422 / 502 …），没有（请求没到达）才写 'error'。
+        // 这样失败日志里 `status` 一眼能看出「到底是上游回了个码，还是根本没连上」（#324）
+        const failedStatus =
+          apiFailure && typeof apiFailure.status === 'number' ? apiFailure.status : 'error'
+        // 是否发生在 SSE 流里（error 帧 / 断流 / 空闲超时）：排查「上游有没有开始流」的第一分界
+        const failedInStream =
+          apiFailure !== null &&
+          (apiFailure.kind === 'stream' ||
+            apiFailure.kind === 'interrupted' ||
+            apiFailure.kind === 'idle')
+        // idle 触发标记（#150）：超时阈值原样落盘，便于和 streamIdleTimeoutMs 对账
+        const idleMs = /no data (?:received )?for (\d+)ms/.exec(apiFailure?.detail ?? '')?.[1]
         record('error', 'error', 'chat stream failed', {
           ...buildMeta({
             flow: 'chat',
             stage: preparing ? 'chat.upload' : 'chat.stream',
             attempt: attemptNo,
-            status: 'error',
+            status: failedStatus,
             endpointKey: endpointKey(),
             durationMs: Date.now() - startedAt,
             ...(failedTiming.prepMs === null ? {} : { prepMs: failedTiming.prepMs }),
@@ -1481,7 +1494,13 @@ const streamReply = async (sessionId: string, initial: AssistantMessage, request
               ? {}
               : { firstTokenMs: failedTiming.firstTokenMs }),
             chunks: failedTiming.chunks,
+            // 上游短码（error.code / error.type）：官方端点所有 400 都是 invalid_request_error，
+            // 只有它和 message 能区分「模型不存在 / 参数错 / 内容拦截」（#324）
+            ...(apiFailure?.upstreamCode ? { upstreamCode: apiFailure.upstreamCode } : {}),
           }),
+          // 上游是不是已经开始了流（SSE）：true = 断在流里，false = 流开始前就失败
+          streaming: failedInStream,
+          ...(idleMs ? { 'idle.ms': Number(idleMs) } : {}),
           // 用户在界面上会看到什么：条件分类 + i18n 文案 key（用来核实「到底有没有提示」）
           'ui.condition': condition,
           ...(notice

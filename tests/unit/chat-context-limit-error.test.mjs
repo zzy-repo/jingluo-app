@@ -153,7 +153,8 @@ test('分类：413 本体就是请求体超限，也归 contextLimit', () => {
 test('分类：无关的 400 不许被误判成 contextLimit', () => {
   for (const text of NOT_CONTEXT_TEXTS) {
     const error = httpError(400, text)
-    assert.equal(classifyApiError(error), 'other', `误判成上下文超限：${text}`)
+    // #324 之后这些 400 归到「参数错误」档（依旧不许是 contextLimit，也不许是额度/内容拦截）
+    assert.equal(classifyApiError(error), 'badRequest', `误判成上下文超限：${text}`)
     assert.equal(isContextLimitMessage(text), false, `isContextLimitMessage 误判：${text}`)
   }
   // 既有分类不能被带偏
@@ -194,15 +195,17 @@ test('文案：上下文超限的提示必须和「未知错误」兜底不同�
     createdAt: 1,
   })
   const limitNotice = describeReply(reply(400, UPSTREAM_TEXTS[0]))
-  const unknownNotice = describeReply(reply(400, NOT_CONTEXT_TEXTS[0]))
-  assert.ok(limitNotice && unknownNotice)
+  const otherNotice = describeReply(reply(400, NOT_CONTEXT_TEXTS[0]))
+  assert.ok(limitNotice && otherNotice)
   assert.equal(limitNotice.text, limitText, `界面上应给上下文超限文案，实际：${limitNotice.text}`)
-  assert.equal(unknownNotice.text, unknownText, `无关 400 仍走兜底文案，实际：${unknownNotice.text}`)
-  assert.notEqual(limitNotice.text, unknownNotice.text, '两种失败的措辞必须能区分')
+  // #324：无关的 400 现在有明确档位（参数错误），不再落到「未知错误」兜底
+  assert.equal(otherNotice.text, zh.replyBadRequest, `无关 400 应走参数错误文案，实际：${otherNotice.text}`)
+  assert.notEqual(otherNotice.text, unknownText, '普通 400 不该再被说成「未知错误」')
+  assert.notEqual(limitNotice.text, otherNotice.text, '两种失败的措辞必须能区分')
   // 英文原文不许直接丢给用户
   assert.ok(!/maximum context length/i.test(limitNotice.text), '上游英文原文不该出现在界面文案里')
   log(`  超限文案：${limitText}`)
-  log(`  兜底文案：${unknownText}`)
+  log(`  普通 400 文案：${zh.replyBadRequest}（「未知错误」只留给真未知：${unknownText}）`)
 })
 
 test('文案：413 也走同一句可操作提示，不是「超大文件」那套', () => {
