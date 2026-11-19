@@ -1,0 +1,43 @@
+{
+  "version": 1,
+  "note": "测试布局门禁的存量豁免清单（scripts/check-test-layout.mjs）。规则**只减不增**：新违规不许进基线，修好后请删条目。",
+  "updatedAt": "2026-11-19",
+  "entries": [
+    {
+      "rule": "naming-declared-domain",
+      "file": "tests/integration/session-list-flow.test.mjs",
+      "reason": "域 3/4 批次（#385）落地时用了 provider-*-matrix / session-*-matrix / settings-probe-model / session-list-flow，未带 domainNN- 前缀。改名要同步 docs/testing/coverage/domain-03-04.md 的用例归属与 #367 覆盖表，属后续批次，本轮只报告不改文件名。转正条件 = 改名完成（或把「声明式域命名」改判为 warning）后删除本条。",
+      "owner": "#362 域3/4 后续批次（改名批次）"
+    },
+    {
+      "rule": "naming-declared-domain",
+      "file": "tests/integration/settings-probe-model.test.mjs",
+      "reason": "域 3/4 批次（#385）落地时用了 provider-*-matrix / session-*-matrix / settings-probe-model / session-list-flow，未带 domainNN- 前缀。改名要同步 docs/testing/coverage/domain-03-04.md 的用例归属与 #367 覆盖表，属后续批次，本轮只报告不改文件名。转正条件 = 改名完成（或把「声明式域命名」改判为 warning）后删除本条。",
+      "owner": "#362 域3/4 后续批次（改名批次）"
+    },
+    {
+      "rule": "naming-declared-domain",
+      "file": "tests/unit/provider-config-matrix.test.mjs",
+      "reason": "域 3/4 批次（#385）落地时用了 provider-*-matrix / session-*-matrix / settings-probe-model / session-list-flow，未带 domainNN- 前缀。改名要同步 docs/testing/coverage/domain-03-04.md 的用例归属与 #367 覆盖表，属后续批次，本轮只报告不改文件名。转正条件 = 改名完成（或把「声明式域命名」改判为 warning）后删除本条。",
+      "owner": "#362 域3/4 后续批次（改名批次）"
+    },
+    {
+      "rule": "naming-declared-domain",
+      "file": "tests/unit/provider-probe-matrix.test.mjs",
+      "reason": "域 3/4 批次（#385）落地时用了 provider-*-matrix / session-*-matrix / settings-probe-model / session-list-flow，未带 domainNN- 前缀。改名要同步 docs/testing/coverage/domain-03-04.md 的用例归属与 #367 覆盖表，属后续批次，本轮只报告不改文件名。转正条件 = 改名完成（或把「声明式域命名」改判为 warning）后删除本条。",
+      "owner": "#362 域3/4 后续批次（改名批次）"
+    },
+    {
+      "rule": "naming-declared-domain",
+      "file": "tests/unit/session-crud-matrix.test.mjs",
+      "reason": "域 3/4 批次（#385）落地时用了 provider-*-matrix / session-*-matrix / settings-probe-model / session-list-flow，未带 domainNN- 前缀。改名要同步 docs/testing/coverage/domain-03-04.md 的用例归属与 #367 覆盖表，属后续批次，本轮只报告不改文件名。转正条件 = 改名完成（或把「声明式域命名」改判为 warning）后删除本条。",
+      "owner": "#362 域3/4 后续批次（改名批次）"
+    },
+    {
+      "rule": "naming-declared-domain",
+      "file": "tests/unit/session-load-matrix.test.mjs",
+      "reason": "域 3/4 批次（#385）落地时用了 provider-*-matrix / session-*-matrix / settings-probe-model / session-list-flow，未带 domainNN- 前缀。改名要同步 docs/testing/coverage/domain-03-04.md 的用例归属与 #367 覆盖表，属后续批次，本轮只报告不改文件名。转正条件 = 改名完成（或把「声明式域命名」改判为 warning）后删除本条。",
+      "owner": "#362 域3/4 后续批次（改名批次）"
+    }
+  ]
+}

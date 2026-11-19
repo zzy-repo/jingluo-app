@@ -27,6 +27,8 @@
     "check:ip": "node scripts/check-hardcoded-ip.mjs",
     "check:guard": "node scripts/check-guard-es5.mjs",
     "check:dup-impl": "node scripts/check-duplicate-impl.mjs",
+    "check:test-layout": "node scripts/check-test-layout.mjs",
+    "check:test-duplication": "node scripts/check-test-duplication.mjs",
     "check:hygiene": "node scripts/check-repo-hygiene.mjs",
     "check:identity": "node scripts/check-identity.mjs",
     "check:endpoints": "node scripts/check-endpoints.mjs",

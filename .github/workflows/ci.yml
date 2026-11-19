@@ -50,6 +50,19 @@ jobs:
       - name: 重复实现（check:dup-impl）
         run: pnpm run check:dup-impl
 
+      # 测试布局与重复检测（#362 阶段二 / #366）：同样是纯文本扫描（各 < 2s、不依赖构建产物）。
+      # 先按 **warn 模式**（--warn）观测 3 个 PR —— 存量有违规，直接 block 只会教人加豁免：
+      #   布局：域 3/4 批次 6 个文件没按 domain-NN-* 命名（已登记 tests/test-layout-baseline.json，
+      #         只减不增；孤儿 0 —— regression 层已由 #391 补进 run-layer 的 LAYERS）
+      #         + fixtures 根目录 5 个散放桩（warning，--strict 才阻塞）
+      #   重复：逐字 ≥20 行 33 组（多为待抽 helper 的装配样板）+ 关键词跨层 4 组
+      # 转 block 条件写在 PR 里：#362 侧把基线条目清零 / 重复组降到 0 之后再摘掉 --warn。
+      - name: 测试布局门禁（check:test-layout，warn）
+        run: pnpm run check:test-layout -- --warn
+
+      - name: 测试重复检测（check:test-duplication，warn）
+        run: pnpm run check:test-duplication -- --warn
+
       - name: Type check
         run: pnpm run type
 
