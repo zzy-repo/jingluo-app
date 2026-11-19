@@ -31,6 +31,11 @@ import {
   POLYFILL_FLAG,
   stripLiterals,
 } from '../../scripts/check-bundle-syntax.mjs'
+import {
+  BASELINE_CHROMIUM,
+  assertBrowserslist,
+  browserslistChromeTarget,
+} from '../../scripts/lib/compatBaseline.mjs'
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 const read = (relative) => readFileSync(path.join(ROOT, relative), 'utf8')
@@ -98,16 +103,51 @@ test('A browserslist 以 chrome 83 为下限（产物语法唯一来源）', () 
     .filter(Boolean)
     .map((match) => Number(match[1]))
   assert.equal(chromeFloor.length, 1, `browserslist 里应有且只有一条 chrome 下限，实际：${pkg.browserslist.join(', ')}`)
+  // issue #276：唯一来源是 config/compat.json 的 baselineChromium，package.json 只是它的载体
+  // （rspack / lightningcss 只吃 browserslist）。两份可以共存，但必须有东西保证它们相等 ——
+  // 这里就是那个「东西」之一（另一个是构建期的 assertBrowserslist）。
+  assert.equal(
+    chromeFloor[0],
+    BASELINE_CHROMIUM,
+    `browserslist 的 chrome 下限必须等于 config/compat.json:baselineChromium=${BASELINE_CHROMIUM}，实际 chrome >= ${chromeFloor[0]}`
+  )
   assert.ok(chromeFloor[0] <= 83, `chrome 下限必须覆盖 WebView 83（Android 11 出厂镜像），实际 chrome >= ${chromeFloor[0]}`)
 })
 
-test('B rspack 目标来自 package.json，且没有把下限写死回 105', () => {
+test('B rspack 目标来自唯一来源，且断言是行为级的（不是「源码里有这句话」）', () => {
   // package.json 只解析一次：版本号（#21 的单一来源）与 browserslist 共用同一个对象
   assert.match(rspackCode, /const pkg = JSON\.parse\(/, 'package.json 必须只解析一次')
   assert.match(rspackCode, /const targets = pkg\.browserslist/, 'targets 必须从 package.json 的 browserslist 读，别再写第二份')
   assert.doesNotMatch(rspackCode, /chrome\s*>=\s*105/, '不允许再出现 chrome >= 105 这种写死的高下限')
   assert.match(rspackCode, /target:\s*'browserslist'/, 'rspack 运行时（chunk 加载等）也要按 browserslist 生成')
-  assert.match(rspackCode, /throw new Error\(`browserslist 缺少 Chrome 83 下限/, '被改回高下限时构建要直接失败')
+  assert.match(rspackCode, /assertBrowserslist\(/, '下限断言必须走 assertBrowserslist（唯一来源在 scripts/lib/compatBaseline.mjs）')
+  assert.doesNotMatch(rspackCode, /chrome\s*>=\s*\d+/, 'rspack.config.ts 不许再自带 chrome 下限数字（那就是恒真断言的来源）')
+
+  // ── issue #276：这里以前是 `assert.match(rspackCode, /throw new Error\(`browserslist 缺少 Chrome 83 下限/)`。
+  // 断言「源码里存在这句话」永远不会因为条件失效而失败 —— 把条件改成 `if (false)` 它照样绿，
+  // 也就是说它恒真、证明不了「下限被改回去时构建会叫停」。现在改成**行为级**：伪造一份错的下限，
+  // 断言必须抛。下面每一条都是「把它改坏就会红」的负向用例。
+  assert.throws(
+    () => assertBrowserslist(['chrome >= 105']),
+    /config\/compat\.json:baselineChromium/,
+    '写死一个更高的下限时必须抛（老写法只比字符串，改成 91 也照样通过）'
+  )
+  assert.throws(
+    () => assertBrowserslist([]),
+    /应有且只有一条/,
+    'browserslist 为空时必须抛 —— 老写法会先塞 fallback 再断言，等于断言被自己满足（恒真）'
+  )
+  assert.throws(
+    () => assertBrowserslist(['chrome >= 83', 'chrome >= 91']),
+    /应有且只有一条/,
+    '两条 chrome 下限时必须抛（否则抬下限时留一条旧的就能混过去）'
+  )
+  assert.equal(
+    assertBrowserslist([browserslistChromeTarget(), 'edge >= 83']),
+    BASELINE_CHROMIUM,
+    '唯一来源那一份必须放行'
+  )
+
   // 第三方依赖里唯一需要跟着降级的是 mermaid（它的 dist 带类静态块）
   assert.match(rspackCode, /include: \/\[\\\\\/\]node_modules\[\\\\\/\]\(@mermaid-js/, 'mermaid 的语法降级规则不能丢')
 })

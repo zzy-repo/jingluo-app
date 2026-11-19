@@ -34,6 +34,12 @@ export const DEVICE_FP_PATTERN = /^[0-9a-f]{64}$/
 
 /**
  * 「没有指纹」的原因。**只描述环境，不含任何标识内容**，因此可以安全地进诊断日志。
+ *
+ * 单一来源（issue #276）：运行时白名单 {@link NO_FINGERPRINT_REASONS} 由下面的
+ * {@link REASON_TABLE} 的键派生，而 REASON_TABLE 用 `satisfies Record<NoFingerprintReason, true>`
+ * 焊在这个联合类型上 —— 两边任何一边加/减一个值，`pnpm type` 立刻红。
+ * 以前类型写一份、`new Set<string>([...])` 手抄一份，漏改的表现是：诊断里那个 reason 被
+ * `:118` 静默改写成 `plugin-unavailable`，排查方向直接跑偏，而且没有任何东西会报错。
  */
 export type NoFingerprintReason =
   /** Web / 未打包进原生壳：浏览器里没有用户改不动的稳定标识 */
@@ -56,14 +62,26 @@ export type DeviceFingerprint =
   | { available: true; fp: string; strength: FingerprintStrength }
   | { available: false; reason: NoFingerprintReason }
 
-const REASONS: ReadonlySet<string> = new Set<NoFingerprintReason>([
-  'not-native',
-  'plugin-unavailable',
-  'android_id_missing',
-  'android_id_placeholder',
-  'hash_failed',
-  'invalid-shape',
-])
+/**
+ * 运行时白名单的**唯一一份**。键集由 `satisfies` 焊在 {@link NoFingerprintReason} 上：
+ * 类型里加一个值而这里漏加 → 少一个必需键，类型检查红；这里多写一个 → 对象字面量的
+ * 多余属性检查红。所以「两份列表」不存在，也就不可能漂移。
+ */
+const REASON_TABLE = {
+  'not-native': true,
+  'plugin-unavailable': true,
+  'android_id_missing': true,
+  'android_id_placeholder': true,
+  'hash_failed': true,
+  'invalid-shape': true,
+} satisfies Record<NoFingerprintReason, true>
+
+/** 全部「无指纹」原因（顺序即上表顺序，可直接用于诊断页/DTO 枚举）。 */
+export const NO_FINGERPRINT_REASONS: readonly NoFingerprintReason[] = Object.keys(
+  REASON_TABLE
+) as readonly NoFingerprintReason[]
+
+const REASONS: ReadonlySet<string> = new Set<string>(NO_FINGERPRINT_REASONS)
 
 /**
  * 规范化一枚指纹：去空白、转小写，形状不对就当没有（返回 `''`）。

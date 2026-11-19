@@ -19,6 +19,7 @@
     "type": "tsc -p tsconfig.json",
     "check:legacy": "node scripts/check-bundle-syntax.mjs",
     "check:matrix": "node scripts/compat/matrix-scan.mjs",
+    "check:compat-baseline": "node scripts/check-compat-baseline.mjs",
     "check:ip": "node scripts/check-hardcoded-ip.mjs",
     "check:icon": "node scripts/check-icon-edges.mjs",
     "check:apk": "node scripts/check-apk-debuggable.mjs",

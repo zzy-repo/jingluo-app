@@ -38,14 +38,19 @@ import {
   POLYFILL_FLAG,
   readEntryScripts,
 } from '../check-bundle-syntax.mjs'
+import { PROBE_TIERS } from '../lib/compatBaseline.mjs'
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 
 /** acorn 的 ecmaVersion 阶梯（数字年份；5 是 ES5）。每个文件从低到高试，第一个通过的即语法下限 */
 export const ES_LADDER = [5, 2015, 2016, 2017, 2018, 2019, 2020, 2021, 2022]
 
-/** 要回答的 WebView 档位（Android System WebView 跟系统镜像走，这四档覆盖 5.0~最新典型分布） */
-export const WEBVIEW_TARGETS = [79, 83, 91, 109]
+/**
+ * 要回答的 WebView 档位（Android System WebView 跟系统镜像走，这四档覆盖 5.0~最新典型分布）。
+ * 由唯一来源 `config/compat.json` 的 `probeTiers` 派生（issue #276），不再手抄一份数组 ——
+ * 档位与探针（probe.mjs）必须是同一批，否则「矩阵说 83 过、探针说 83 挂」这种自相矛盾没人发现。
+ */
+export const WEBVIEW_TARGETS = [...PROBE_TIERS]
 
 // ── 语法特性 → 最低 Chromium ────────────────────────────────────────────────
 //

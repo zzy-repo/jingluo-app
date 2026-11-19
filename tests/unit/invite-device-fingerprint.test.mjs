@@ -38,6 +38,7 @@ const {
   getFingerprintSignal,
   interpretFingerprint,
   isDeviceFp,
+  NO_FINGERPRINT_REASONS,
   normalizeDeviceFp,
   readDeviceFingerprint,
   resetFingerprintSignalForTest,
@@ -171,6 +172,24 @@ console.log('\n[2] 原生返回解释：拿到 / 拿不到 / 形状不对，都�
     { available: false, reason: 'plugin-unavailable' },
     'null（插件抛错 / 旧壳子没这个方法）→ plugin-unavailable'
   )
+}
+
+// ------------------------------------------------ [2b] 无指纹原因：类型与白名单是同一份
+console.log('\n[2b] 无指纹原因：运行时白名单与类型是同一份（issue #276）')
+{
+  // 以前类型写一份、`new Set<string>([...])` 手抄一份：加值漏改另一份的表现不是红，而是
+  // 诊断里那个 reason 被静默改写成 plugin-unavailable，排查方向直接跑偏。
+  // 现在 REASON_TABLE 用 `satisfies Record<NoFingerprintReason, true>` 焊在类型上，
+  // 加/减任何一边 `pnpm type` 就红；这里再钉住「白名单里的每个值都原样落进结论」。
+  eq(NO_FINGERPRINT_REASONS.length, 6, '六个原因一个不多一个不少')
+  eq(new Set(NO_FINGERPRINT_REASONS).size, 6, '白名单里不能有重复值')
+  for (const reason of NO_FINGERPRINT_REASONS) {
+    eq(
+      interpretFingerprint({ available: false, reason }),
+      { available: false, reason },
+      `原因 ${reason} 必须原样保留，不许被改写成 plugin-unavailable`
+    )
+  }
 }
 
 // ---------------------------------------------------------------- [3] 有指纹：两个请求都带

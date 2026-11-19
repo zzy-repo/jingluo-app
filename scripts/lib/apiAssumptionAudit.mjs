@@ -36,8 +36,10 @@
  *    表外条目一律回 MDN browser-compat-data 现查并写进 `source` 字段，**不靠记忆填**。
  */
 
-/** Android WebView 83（Chromium 83.0.4103.106）——本仓库的兼容下限 */
-export const BASELINE_CHROME = 83
+import { BASELINE_CHROMIUM } from './compatBaseline.mjs'
+
+/** Android WebView 83（Chromium 83.0.4103.106）——本仓库的兼容下限。数字唯一来源是 config/compat.json（issue #276），这里只转出。 */
+export const BASELINE_CHROME = BASELINE_CHROMIUM
 
 /** 入口 polyfill 里真正会装上的 API 键（与 src/polyfills/legacy.ts 的 install* 一一对应） */
 export const ENTRY_POLYFILLED = [

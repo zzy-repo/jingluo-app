@@ -23,16 +23,23 @@
 
 import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { join, relative, resolve } from 'node:path'
+import { BASELINE_CHROMIUM, PROBE_TIERS } from '../lib/compatBaseline.mjs'
 
-/** 本项目 browserslist 下限（package.json: chrome >= 83 / edge >= 83）。 */
-export const BASELINE_CHROMIUM = 83
+/**
+ * 本项目兼容下限（Chromium 主版本号）。
+ * **唯一来源是 `config/compat.json` 的 `baselineChromium`**（issue #276），这里直接转出，
+ * 不再自己写一份数字 —— 以前这里写 `= 83`，与 package.json 的 browserslist 无任何关联，
+ * 两者只在没人动过的时候碰巧一致。
+ */
+export { BASELINE_CHROMIUM }
 
-export const PRESET_TARGETS = {
-  chromium79: 79,
-  chromium83: 83,
-  chromium91: 91,
-  chromium109: 109,
-}
+/**
+ * 预设档位（`chromium79` / `chromium83` / …）由唯一来源的 `probeTiers` 派生。
+ * 以前这里手抄一份 `{ chromium83: 83, chromium91: 91, … }`，加/减档位要改两处。
+ */
+export const PRESET_TARGETS = Object.fromEntries(
+  PROBE_TIERS.map((tier) => [`chromium${tier}`, tier])
+)
 
 /**
  * 特性清单。minChrome 是**最低可用**的 Chromium 主版本（<= 该版本可用）。

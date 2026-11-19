@@ -2,7 +2,8 @@
  * 低内核 WebView 运行时补齐（GitHub issue #13「低内核白屏」）。
  *
  * 背景：Android 的 WebView 版本跟系统镜像走，不受 App 控制。Android 11 出厂镜像停在
- * Chromium 83（WebView 83.0.4103.106），它之后的 API 全部缺失：
+ * Chromium 83（WebView 83.0.4103.106），它之后的 API 全部缺失。这个下限数字的**唯一来源**是
+ * `config/compat.json` 的 `baselineChromium`（issue #276），改下限只改那一处（本文件是实现，不参与判定）：
  *
  *   Object.hasOwn                Chrome 93
  *   Array/String.prototype.at    Chrome 92

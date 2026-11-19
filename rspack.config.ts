@@ -3,6 +3,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { defineConfig } from '@rspack/cli'
 import { rspack, type Configuration } from '@rspack/core'
+import { assertBrowserslist } from './scripts/lib/compatBaseline.mjs'
 
 const dev = process.env.NODE_ENV !== 'production'
 const root = path.dirname(fileURLToPath(import.meta.url))
@@ -10,7 +11,7 @@ const root = path.dirname(fileURLToPath(import.meta.url))
 //   version            → App versionName（也注入 __APP_VERSION__，诊断上报用）
 //   androidVersionCode → App versionCode
 // android/app/build.gradle 的 versionName / versionCode 就是从这里读的，发版只改这一处。
-//   browserslist       → 构建语法下限（唯一来源，swc 与 lightningcss 都吃这一份，见下面 targets）
+//   browserslist       → 构建语法下限（数字来源是 config/compat.json，swc 与 lightningcss 都吃这一份）
 const pkg = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8')) as {
   version?: string
   androidVersionCode?: number
@@ -18,7 +19,10 @@ const pkg = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 
 }
 
 /**
- * 构建语法下限，**唯一来源是 package.json 的 browserslist**，swc 与 lightningcss 都吃这一份。
+ * 构建语法下限。**数字的唯一来源是 `config/compat.json` 的 `baselineChromium`**；落到构建期的载体是
+ * package.json 的 `browserslist`（rspack / swc / lightningcss 只吃这一份），两者由 `assertBrowserslist()`
+ * 在每次构建时对齐。issue #276：以前这个数字在 6 处各写一份，抬下限时漏改任何一处都不会红，
+ * 只会**假绿** —— 门禁还在跑，但它量的不是线上那份产物。
  *
  * 为什么是 chrome 83（issue #13「低内核白屏」）：Android WebView 版本跟系统镜像走，App 管不了；
  * Android 11 出厂镜像停在 WebView 83.0.4103.106（Chromium 83）。之前是 chrome >= 105，swc 于是把
@@ -27,12 +31,13 @@ const pkg = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 
  * 降到 83 后产物只含 ES2020 语法（可选链/nullish 是 Chrome 80，能过）。
  * 运行时 API（Object.hasOwn / at / structuredClone …）不是语法问题，靠 src/polyfills/legacy.ts 补。
  */
-const targets = pkg.browserslist?.length ? pkg.browserslist : ['chrome >= 83']
+const targets = pkg.browserslist ?? []
 // tsc 只是类型检查（noEmit），不参与产物语法；产物语法只由这里的 targets + 下面的 output 环境决定。
-if (!targets.some((target) => /^chrome\s*>=\s*83$/.test(target))) {
-  // 有人把下限改回去了却没跑低内核验证 —— 构建时直接叫停，别等用户白屏才发现。
-  throw new Error(`browserslist 缺少 Chrome 83 下限（当前：${targets.join(', ')}），见 issue #13`)
-}
+// 断言里**不再自带数字**（issue #276）：老写法 `targets.some(t => /^chrome\s*>=\s*83$/.test(t))` 自带 83，
+// 于是它只可能回答「package.json 里那条字符串是不是还写着 83」，永远回答不了「它是否还等于唯一来源」；
+// 而且 targets 为空时代码会先塞 fallback `['chrome >= 83']` 再去断言 —— 断言被自己塞进去的值满足，
+// 等于恒真，「browserslist 被人删了」这种最该拦的情形反而通过。
+assertBrowserslist(targets)
 
 /** Android versionCode（诊断上报用，读不到记 0） */
 const readVersionCode = (): number => Number(pkg.androidVersionCode ?? 0) || 0

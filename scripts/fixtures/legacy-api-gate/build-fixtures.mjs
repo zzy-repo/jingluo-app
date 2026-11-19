@@ -9,9 +9,19 @@ import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { rspack } from '@rspack/core'
+import { productBrowserslist } from '../../lib/compatBaseline.mjs'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 export const ROOT = path.resolve(HERE, '..', '..', '..')
+
+/**
+ * 语法下限：**直接吃真实构建用的那一份** package.json browserslist（`productBrowserslist()`
+ * 顺带断言它没和唯一来源 config/compat.json 漂开）。
+ *
+ * 以前这里写死 `['chrome >= 83']`（issue #276）：夹具绕开唯一来源自己写一份数字，于是抬下限时
+ * 产品按 91 构建、夹具还按 83 构建 —— `check:legacy` 照样绿，但它量的不是线上那个东西。
+ */
+const TARGETS = productBrowserslist()
 
 /** 四个对照产物：干净 / 有 polyfill 的裸调用 / 漏打 polyfill / 没有补丁覆盖的 API */
 export const FIXTURES = [
@@ -27,7 +37,7 @@ const createCompiler = (fixture, outDir) =>
     context: ROOT,
     devtool: false,
     entry: { [fixture.name]: path.join(HERE, fixture.entry) },
-    // 与 rspack.config.ts 一致：语法下限只由 package.json 的 browserslist 决定（chrome >= 83）
+    // 与 rspack.config.ts 一致：语法下限只由 package.json 的 browserslist 决定（见上面的 TARGETS）
     target: 'browserslist',
     output: {
       path: path.join(outDir, fixture.name),
@@ -48,7 +58,7 @@ const createCompiler = (fixture, outDir) =>
           loader: 'builtin:swc-loader',
           options: {
             jsc: { parser: { syntax: 'typescript', tsx: false } },
-            env: { targets: ['chrome >= 83'] },
+            env: { targets: TARGETS },
           },
           type: 'javascript/auto',
         },

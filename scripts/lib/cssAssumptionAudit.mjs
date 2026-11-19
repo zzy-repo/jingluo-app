@@ -38,13 +38,14 @@ import { readdirSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 
 import { auditCssText } from './focusVisibleAudit.mjs'
+import { BASELINE_CHROMIUM } from './compatBaseline.mjs'
 
 /**
  * 运行时下限：Android 11 出厂镜像停在 WebView 83.0.4103.106（Chromium 83）。
- * 唯一来源是 package.json 的 browserslist，rspack.config.ts 会为它兜底抛错；
- * 这里只是判定用的常量，改动需同步 docs/capabilities/css.md。
+ * **数字唯一来源是 config/compat.json 的 baselineChromium**（issue #276），这里只转出；
+ * 改动不需要再同步这份文件，但 docs/capabilities/css.md 的快照要重跑。
  */
-export const BASELINE_CHROMIUM = 83
+export { BASELINE_CHROMIUM }
 
 export const VERDICTS = Object.freeze({
   NO_RISK: 'no-risk',
@@ -603,7 +604,7 @@ export const auditCssAssumptions = (files = []) => {
             feature.id === 'dvh' && !insideSupports ? '高' : riskOf(feature, verdict),
           reason:
             feature.fallback === 'build'
-              ? 'lightningcss 按 browserslist(chrome >= 83) 在构建期展开/加前缀，产物里不再有新语法'
+              ? `lightningcss 按 browserslist(chrome >= ${BASELINE_CHROMIUM}) 在构建期展开/加前缀，产物里不再有新语法`
               : feature.fallback === 'attribute'
                 ? hasFallback
                   ? '运行时实测后挂 html[data-flex-gap-fallback]（issue #173 的正确姿态）'
