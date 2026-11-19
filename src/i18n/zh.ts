@@ -240,7 +240,12 @@ export const zh = {
   historyExportSaved: '已保存到你选择的位置：{name}',
   historyExportFailedStart: '导出失败：无法打开保存位置，请重试',
   historyExportFailedWrite: '导出失败：写入文件失败，请检查剩余存储空间后重试',
-  historyExportFailedTooLarge: '导出失败：归档超过 220MB 保存上限，请先删减历史对话后重试',
+  historyExportFailedTooLarge: '导出失败：归档超过 200MB 导出上限（与导入上限一致），请先删减历史对话后重试',
+  // #336：导出侧在打开保存面板之前就按这条文案拒掉，不再出现「导出成功、导入报文件过大」
+  historyExportTooLarge:
+    '当前历史约 {actual}，超过 {size}MB 导出上限（与导入上限一致），这样的包本 App 导不回来；请先删减历史对话或移除过大的图片后重试',
+  // #336：空历史时按钮置灰，必须说明为什么（否则与「点了没产出」分不清）
+  historyExportEmptyNoSessions: '当前没有可导出的对话',
   exportAllLabel: '导出所有历史对话',
   historyExportDescription:
     '包含所有历史对话及本地图片原件；其他附件仅保留文件信息，不包含 API Key。',

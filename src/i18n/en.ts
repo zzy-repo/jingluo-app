@@ -260,7 +260,13 @@ export const en = {
   historyExportSaved: 'Saved to the location you chose: {name}',
   historyExportFailedStart: 'Export failed: could not open the save location. Please try again.',
   historyExportFailedWrite: 'Export failed: could not write the file. Check free storage and try again.',
-  historyExportFailedTooLarge: 'Export failed: the archive exceeds the 220MB save limit. Delete some chats and try again.',
+  historyExportFailedTooLarge:
+    'Export failed: the archive exceeds the 200MB export limit (same as the import limit). Delete some chats and try again.',
+  // #336: the export side rejects with this line before the save picker opens, so an exported file can always be imported back
+  historyExportTooLarge:
+    'your history is about {actual}, over the {size}MB export limit (same as the import limit), so this app could not import the file back. Delete some chats or remove large images and try again.',
+  // #336: the button is disabled on an empty history, so say why (otherwise it looks like "tapped, nothing happened")
+  historyExportEmptyNoSessions: 'There are no conversations to export yet',
   exportAllLabel: 'Export all chats',
   historyExportDescription:
     'Includes all chat history and locally stored images. Other attachments retain file details only. Your API Key is not included.',

@@ -1,4 +1,5 @@
 import { Zip, ZipPassThrough } from 'fflate'
+import { isWithinExportLimit } from './importLimit.js'
 
 // ZIP32 字段中的哨兵值表示需要 ZIP64；当前格式不支持 ZIP64。
 const ZIP64_SIZE = 0xffffffff
@@ -8,6 +9,24 @@ export class ArchiveLimitError extends Error {
   constructor() {
     super('History archive requires unsupported ZIP64 fields')
     this.name = 'ArchiveLimitError'
+  }
+}
+
+/**
+ * 成品超出导出上限（issue #336）。与 {@link ArchiveLimitError} 不是一回事：
+ * 那个是「格式装不下」（ZIP64），这个是「本 App 自己导不回来」（导出上限 = 导入上限 200MB）。
+ * `bytes` 是算出来的成品字节数，服务层拿它拼「实际多大 / 上限多少」的人话。
+ */
+export class ExportTooLargeError extends Error {
+  /** 算准的成品字节数（= zipWriter 里的 expectedSize） */
+  readonly bytes: number
+
+  // 显式赋值而不是构造函数参数属性：单测用 node 的 strip-only 模式直接 import 本文件，
+  // 参数属性那种写法在那里是语法错误（errors.ts 也有同样的坑，测试里用替身绕开）。
+  constructor(bytes: number) {
+    super(`History archive of ${bytes} bytes exceeds the export limit`)
+    this.name = 'ExportTooLargeError'
+    this.bytes = bytes
   }
 }
 
@@ -64,6 +83,13 @@ export const writeArchive = async (entries: { name: string; blob: Blob }[]): Pro
   })
 
   const expectedSize = dataSize + directorySize + 22
+  // 导出上限闸（issue #336）：这里是唯一一个「字节数已经算准、但一个字节都还没写」的时刻 ——
+  // expectedSize 就是成品 ZIP 的精确大小（下面还有 size !== expectedSize 的自校验兜着），
+  // 而原生保存面板（SAF）是在本函数返回之后才打开的。所以在这里拒掉，用户不会先选一次位置、
+  // 再看一句「文件过大」。上限只有一处：importLimit.MAX_EXPORT_BYTES = 导入上限本身。
+  if (!isWithinExportLimit(expectedSize)) {
+    throw new ExportTooLargeError(expectedSize)
+  }
   const chunks: Blob[] = []
   let size = 0
   let completed = false

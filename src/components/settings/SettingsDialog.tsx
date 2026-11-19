@@ -1242,6 +1242,10 @@ const ExportHistory = ({ disabled }: { disabled: boolean }) => {
   const empty = useChatStore((state) => state.sessions.length === 0)
   const [busy, setBusy] = useState(false)
   const [status, setStatus] = useState<Status>(null)
+  // 空历史时按钮是灰的，但不给原因（#336）：用户看到的是「点不动」，与 #307 的「点了没产出」分不清。
+  // 原因复用说明位（CellText 有 status 就不显示 description，两者不会叠），导出状态优先，
+  // 别把「已保存 / 失败原因」压成一句「没有可导出的对话」。
+  const emptyReason: Status = empty ? { key: 'historyExportEmptyNoSessions' } : null
 
   const onExport = async () => {
     setBusy(true)
@@ -1266,7 +1270,7 @@ const ExportHistory = ({ disabled }: { disabled: boolean }) => {
     <SettingCell
       label={t('exportAllLabel')}
       description={t('historyExportDescription')}
-      status={status}
+      status={status ?? emptyReason}
       action={
         <Button
           variant="outlined"
