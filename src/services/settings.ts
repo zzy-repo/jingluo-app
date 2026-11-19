@@ -201,12 +201,6 @@ export const setLocale = (locale: Locale) => {
   useSettings.setState({ locale })
 }
 
-export const setLocation = (value: UserLocation | null) => {
-  const location = normalizeLocation(value)
-  write(KEYS.location, location ? JSON.stringify(location) : null)
-  useSettings.setState({ location })
-}
-
 export const setThemePreference = (themePreference: ThemePreference) => {
   write(KEYS.themePreference, themePreference)
   useSettings.setState({ themePreference })

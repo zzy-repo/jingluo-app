@@ -173,19 +173,7 @@ let last: ContextTrimReport = emptyContextTrimReport
 
 export const getLastContextTrim = (): ContextTrimReport => ({ ...last })
 
-/** 全局裁剪监听（诊断层启动时接一次即可；单次调用也可以自己传 onTrim） */
-let listener: ((report: ContextTrimReport) => void) | null = null
-
-export const setContextTrimListener = (next: ((report: ContextTrimReport) => void) | null) => {
-  listener = next
-}
-
-/** 记录一次裁剪：更新最近统计并通知监听者，回调异常不影响请求 */
+/** 记录一次裁剪：更新最近统计（观测不能影响请求本身） */
 export const reportContextTrim = (report: ContextTrimReport): void => {
   last = report
-  try {
-    listener?.(report)
-  } catch {
-    // 观测失败不能影响请求本身
-  }
 }

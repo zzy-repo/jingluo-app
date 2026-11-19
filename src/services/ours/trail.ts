@@ -209,10 +209,6 @@ export class TrailError extends Error {
   }
 }
 
-/** 别处拿到的未知错误要不要重试（不是 TrailError 一律按「不重试」） */
-export const isRetryableTrailError = (error: unknown): boolean =>
-  error instanceof TrailError && error.retryable
-
 // ------------------------------------------------------------------ 小工具（防御式读取，与 purchases.ts 同口径）
 const asRecord = (value: unknown): Record<string, unknown> | null =>
   typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -700,14 +696,7 @@ export async function fetchTrailVia(
   return page
 }
 
-/** 按单号查一笔（`GET {base}/api/order/trail?out_trade_no=`） */
-export function fetchOrderTrail(params: {
-  apiKey: string
-  outTradeNo: string
-}): Promise<TrailOrder> {
-  return fetchOrderTrailVia(params, httpTransport, OURS_API_BASE)
-}
-
+/** 按单号查一笔（`GET {base}/api/order/trail?out_trade_no=`）；传输层与 base 可注入。 */
 export async function fetchOrderTrailVia(
   params: { apiKey: string; outTradeNo: string },
   transport: OursTransport,
@@ -727,11 +716,7 @@ export async function fetchOrderTrailVia(
   return order
 }
 
-/** 按卡号溯源（`GET {base}/api/card/trail?card_no=`）：这张卡怎么来的、被谁兑换了 */
-export function fetchCardTrail(params: { apiKey: string; cardNo: string }): Promise<CardTrail> {
-  return fetchCardTrailVia(params, httpTransport, OURS_API_BASE)
-}
-
+/** 按卡号溯源（`GET {base}/api/card/trail?card_no=`）：这张卡怎么来的、被谁兑换了；传输层与 base 可注入。 */
 export async function fetchCardTrailVia(
   params: { apiKey: string; cardNo: string },
   transport: OursTransport,

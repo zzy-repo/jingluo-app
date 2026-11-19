@@ -426,7 +426,3 @@ export const toRequestMessages = (
   }
   return messages
 }
-
-/** 思考用时（秒），至少 1 秒 */
-export const getThinkingSeconds = (startedAt: number, endedAt: number) =>
-  Math.max(1, Math.round((endedAt - startedAt) / 1000))

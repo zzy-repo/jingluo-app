@@ -11,7 +11,6 @@ export const FALLBACK_RELEASE_BASE = 'https://dl.rose7.cn'
 /** 尝试顺序：先新机后旧机。 */
 export const RELEASE_BASES = [PRIMARY_RELEASE_BASE, FALLBACK_RELEASE_BASE] as const
 export const DEFAULT_RELEASE_BASE = PRIMARY_RELEASE_BASE
-export const MANIFEST_URL = `${PRIMARY_RELEASE_BASE}/releases.json`
 export const MAX_APK_BYTES = 50 * 1024 * 1024
 export type ArtifactVariant = 'internal' | 'standard'
 export type UpdateChannel = 'stable' | 'prerelease'

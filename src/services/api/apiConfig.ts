@@ -6,7 +6,6 @@ import {
   getSpec,
   isUserField,
   isProviderKind,
-  type ProviderCaps,
   type ProviderKind,
   type ProviderSpec,
 } from './providers.js'
@@ -199,9 +198,6 @@ export const useIsOursChannel = (): boolean => useApiConfig((state) => state.kin
 
 /** 当前生效的 spec：路径、鉴权头、能力开关都从它取 */
 export const getCurrentSpec = (): ProviderSpec => getSpec(getProviderKind())
-
-/** 某项能力在当前服务类型下是否可用 */
-export const getCaps = (): ProviderCaps => getCurrentSpec().caps
 
 /**
  * 服务地址：已存的值优先（升级前配过中转的用户保持原样），
