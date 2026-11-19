@@ -171,7 +171,8 @@ const RAW_SPECS: Record<ProviderKind, ProviderSpec> = {
     // 地址与模型内置（locked）：设置页只有 API Key 一行，用户看不到也不该看到后端地址
     fields: ['apiKey'],
     // 2026-11-18 起该上游走 OpenAI 协议：/v1/chat/completions + Authorization: Bearer
-    defaults: { baseUrl: 'http://140.210.13.146:60010', model: 'deepseek-v4.1-flash' },
+    // 地址唯一来源是 config/endpoints.json 的 chatBaseUrl（#274），构建期注入 __ENDPOINTS__
+    defaults: { baseUrl: __ENDPOINTS__.chatBaseUrl, model: 'deepseek-v4.1-flash' },
     paths: { models: '/v1/models', messages: '/v1/chat/completions', tools: '' },
     auth: 'bearer',
     // 不带 anthropic-version：OpenAI 协议路径不需要；带上去反而会让中转 CORS 预检失败

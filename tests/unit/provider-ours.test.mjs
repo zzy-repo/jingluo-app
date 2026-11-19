@@ -10,6 +10,9 @@ import assert from 'node:assert/strict'
 import { registerHooks } from 'node:module'
 import { test } from 'node:test'
 
+// 端点地址唯一来源：config/endpoints.json（#274）
+import { chatBaseUrl } from '../../scripts/lib/endpoints.mjs'
+
 // 与打包器一致：源码内部用 .js 说明符指向 .ts 文件
 registerHooks({
   resolve(specifier, context, nextResolve) {
@@ -45,7 +48,7 @@ test('ours 渠道契约：OpenAI 协议 + Bearer + 内置新地址/模型', () =
   const ours = specOf('ours')
   assert.equal(ours.protocol, 'openai', 'ours 必须走 openai 协议（经 openaiAdapter 翻译）')
   assert.equal(ours.auth, 'bearer', 'ours 鉴权必须是 Bearer')
-  assert.equal(ours.defaults.baseUrl, 'http://140.210.13.146:60010')
+  assert.equal(ours.defaults.baseUrl, chatBaseUrl)
   assert.equal(ours.defaults.model, 'deepseek-v4.1-flash')
   assert.equal(ours.paths.messages, '/v1/chat/completions', '请求路径必须是 chat/completions，不能仍是 /v1/messages')
   assert.equal(ours.paths.tools, '')
@@ -65,10 +68,10 @@ test('ours 迁移：旧 base/model 被 locked defaults 覆盖，用户 Key 保�
   store.set('chat-demo:api-key', 'sk-user-provided-only-in-test-memory')
 
   assert.equal(cfg.getProviderKind(), 'ours')
-  assert.equal(cfg.getBaseUrl(), 'http://140.210.13.146:60010', '旧地址必须被默认值覆盖')
+  assert.equal(cfg.getBaseUrl(), chatBaseUrl, '旧地址必须被默认值覆盖')
   assert.equal(cfg.getModel(), 'deepseek-v4.1-flash', '旧模型必须被默认值覆盖')
   assert.equal(cfg.getApiKey(), 'sk-user-provided-only-in-test-memory', '用户自己填的 Key 必须保留')
-  assert.equal(cfg.getMessagesUrl(), 'http://140.210.13.146:60010/v1/chat/completions')
+  assert.equal(cfg.getMessagesUrl(), chatBaseUrl + '/v1/chat/completions')
 })
 
 // #181 服务端迁移：本地存过旧 IP 的用户升级后必须落到新地址。
@@ -85,10 +88,10 @@ test('ours 迁移：两个旧 IP 都会被默认值覆盖（#181）', () => {
 
     assert.equal(
       cfg.getBaseUrl(),
-      'http://140.210.13.146:60010',
+      chatBaseUrl,
       `存了 ${ip} 的用户升级后必须被迁到新地址`,
     )
-    assert.equal(cfg.getMessagesUrl(), 'http://140.210.13.146:60010/v1/chat/completions')
+    assert.equal(cfg.getMessagesUrl(), chatBaseUrl + '/v1/chat/completions')
     assert.equal(cfg.getApiKey(), 'sk-user-provided-only-in-test-memory', '用户 Key 不能丢')
   }
 })

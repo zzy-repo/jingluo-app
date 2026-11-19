@@ -121,10 +121,12 @@ const readHost = (baseUrl: string): string => {
  * - 第二代：beta.8 及之前的对话上游（现行地址见 providers.ts 的 ours.defaults）
  *
  * 用户本地存过这些地址的话，升级后它们已经不通了；读到即视为「没配过」，
- * 回落到当前 spec 的内置默认（对话上游 = `http://140.210.13.146:60010`）。
+ * 回落到当前 spec 的内置默认（对话上游 = config/endpoints.json 的 chatBaseUrl）。
+ *
+ * 名单本身来自 config/endpoints.json 的 `legacyHosts`（#274）：它是**旧域名重写表**，
+ * 迁移一次加一行，删了会让老配置失联，所以只搬来源、不删不缩。
  */
-/* check-ip-allow：这份名单就是「要丢掉哪些死地址」，出现字面量 IP 是它的用途 */
-export const LEGACY_HOSTS = ['123.207.199.196', '62.106.70.167'] as const
+export const LEGACY_HOSTS: readonly string[] = __ENDPOINTS__.legacyHosts
 
 /** 已存地址是否指向已下线的主机 */
 const isLegacyHost = (baseUrl: string): boolean => {

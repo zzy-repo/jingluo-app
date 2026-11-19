@@ -20,6 +20,9 @@ import assert from 'node:assert/strict'
 import { registerHooks } from 'node:module'
 import { readFileSync } from 'node:fs'
 
+// 端点地址唯一来源：config/endpoints.json（#274）
+import { inviteBaseUrl } from '../../scripts/lib/endpoints.mjs'
+
 // 与打包器一致：源码内部用 .js 说明符指向 .ts 文件
 registerHooks({
   resolve(specifier, context, nextResolve) {
@@ -102,8 +105,8 @@ test('[1] 发起：POST /rotate，body 只有 device_id，不带旧 Key', async 
 
   assert.equal(calls.length, 1, '换一次 Key 只发一条请求')
   assert.equal(calls[0].method, 'POST')
-  assert.equal(calls[0].url, 'http://140.210.13.146:60013/rotate')
-  assert.equal(rotate.ROTATE_URL, 'http://140.210.13.146:60013/rotate')
+  assert.equal(calls[0].url, inviteBaseUrl + '/rotate')
+  assert.equal(rotate.ROTATE_URL, inviteBaseUrl + '/rotate')
   assert.equal(calls[0].followRedirects, false, '破坏性操作不许跟随 3xx 重放')
   assert.equal(calls[0].headers['Content-Type'], 'application/json')
   assert.deepEqual(JSON.parse(calls[0].body), { device_id: DEVICE_ID }, 'body 只有 device_id')

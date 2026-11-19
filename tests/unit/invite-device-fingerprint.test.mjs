@@ -16,6 +16,9 @@
 import { registerHooks } from 'node:module'
 import { createHash } from 'node:crypto'
 
+// 端点地址唯一来源：config/endpoints.json（#274）
+import { inviteBaseUrl } from '../../scripts/lib/endpoints.mjs'
+
 // 与打包器一致：源码内部用 .js 说明符指向 .ts 文件
 registerHooks({
   resolve(specifier, context, nextResolve) {
@@ -201,7 +204,7 @@ console.log('\n[3] 有指纹：/apply 与 /me（含自愈重发）都带 X-Devic
   eq(DEVICE_FP_HEADER, 'X-Device-Fp', '头名固定')
   eq(headerOf(calls[0], DEVICE_FP_HEADER), FP, '/apply 带上指纹')
   eq(calls[0].method, 'POST', '/apply 仍是 POST')
-  eq(calls[0].url, 'http://140.210.13.146:60013/apply', '/apply 地址不变')
+  eq(calls[0].url, inviteBaseUrl + '/apply', '/apply 地址不变')
   eq(JSON.parse(calls[0].body), { device_id: DEVICE_ID }, 'body 仍是只有 device_id（一个字节没加）')
   eq(calls[0].headers['Content-Type'], 'application/json', '原有 Content-Type 保留')
   eq(calls[0].timeoutMs, 15000, '超时口径不变')
@@ -213,7 +216,7 @@ console.log('\n[3] 有指纹：/apply 与 /me（含自愈重发）都带 X-Devic
   eq(headerOf(upper.calls[0], DEVICE_FP_HEADER), FP, '/me 收到大写指纹时按小写发')
   eq(
     upper.calls[0].url,
-    `http://140.210.13.146:60013/me?device_id=${DEVICE_ID}`,
+    `${inviteBaseUrl}/me?device_id=${DEVICE_ID}`,
     '/me 的 device_id 仍走 query（指纹不进 URL）'
   )
   eq(headerOf(upper.calls[0], 'Accept'), 'application/json', '/me 原有 Accept 保留')
@@ -231,7 +234,7 @@ console.log('\n[3] 有指纹：/apply 与 /me（含自愈重发）都带 X-Devic
   )
   eq(outcome.kind, 'ok', '自愈后拿到结果')
   eq(outcome.healed, true, 'healed=true')
-  eq(heal.calls[1].url, 'http://140.210.13.146:60013/apply', '自愈走 /apply')
+  eq(heal.calls[1].url, inviteBaseUrl + '/apply', '自愈走 /apply')
   eq(headerOf(heal.calls[1], DEVICE_FP_HEADER), FP, '自愈补发的 /apply 也带指纹')
   eq(headerOf(heal.calls[2], DEVICE_FP_HEADER), FP, '重试的那条 /me 也带指纹')
 }

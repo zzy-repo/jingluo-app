@@ -15,6 +15,9 @@
 //   [6] 隐私：整条链路一条 console 都没有；返回值里没有完整 device_id / Key
 import { registerHooks } from 'node:module'
 
+// 端点地址唯一来源：config/endpoints.json（#274）
+import { inviteBaseUrl } from '../../scripts/lib/endpoints.mjs'
+
 // 与打包器一致：源码内部用 .js 说明符指向 .ts 文件
 registerHooks({
   resolve(specifier, context, nextResolve) {
@@ -143,7 +146,7 @@ console.log('\n[2] /apply：201 首次 / 200 已申请，同一 device_id 幂等
   eq(calls.length, 2, '两次调用只发两次请求（重试安全）')
   eq(calls[0].method, 'POST', 'method')
   eq(calls[0].url, `${INVITE_API_BASE}/apply`, '/apply')
-  eq(INVITE_API_BASE, 'http://140.210.13.146:60013', '邀请服务地址（明文 HTTP）')
+  eq(INVITE_API_BASE, inviteBaseUrl, '邀请服务地址（明文 HTTP）')
   eq(JSON.parse(calls[0].body), { device_id: DEVICE_ID }, '请求体只有 device_id')
   eq(calls[0].followRedirects, false, '不跟随重定向')
   eq(first.kind, 'ok', '201 → ok')

@@ -46,6 +46,21 @@ const readVersionCode = (): number => Number(pkg.androidVersionCode ?? 0) || 0
 const readVersionName = (): string => pkg.version?.trim() ?? ''
 
 /**
+ * 服务端端点表：**唯一事实来源是仓库根的 `config/endpoints.json`**（Issue #274）。
+ *
+ * 为什么在构建期注入而不是让源码 import：这份 JSON 同时被门禁（`scripts/lib/endpoints.mjs`）、
+ * 脚本与测试读取，前端只需要其中一个子集（三份地址 + 旧域名重写表），注入成 `__ENDPOINTS__`
+ * 之后源码里就不存在任何地址字面量 —— 换机器只改那一份 JSON，`pnpm check:endpoints` 负责校验
+ * 它与主机/端口白名单自洽。这里只读、只注入，不做任何改写。
+ */
+const endpoints = JSON.parse(readFileSync(new URL('./config/endpoints.json', import.meta.url), 'utf8')) as {
+  chatBaseUrl: string
+  inviteBaseUrl: string
+  feedbackUrl: string
+  legacyHosts: string[]
+}
+
+/**
  * 构建期注入的版本号优先级：环境变量 APP_VERSION > package.json 的 version。
  * 环境变量留给出包脚本（CI 传 tag 名）覆盖，本地构建直接吃 package.json —— 这是唯一权威来源。
  */
@@ -194,6 +209,13 @@ export const createConfig = ({
       __INTERNAL_BUILD__: JSON.stringify(internalBuild),
       __APP_VERSION__: JSON.stringify(appVersion),
       __APP_VERSION_CODE__: JSON.stringify(readVersionCode()),
+      // 服务端端点（config/endpoints.json）：源码里只用 __ENDPOINTS__.chatBaseUrl 这类写法
+      __ENDPOINTS__: JSON.stringify({
+        chatBaseUrl: endpoints.chatBaseUrl,
+        inviteBaseUrl: endpoints.inviteBaseUrl,
+        feedbackUrl: endpoints.feedbackUrl,
+        legacyHosts: endpoints.legacyHosts,
+      }),
     }),
     buildInfoPlugin(internalBuild ? 'internal' : 'standard', appVersion, outputPath),
     new rspack.CopyRspackPlugin({

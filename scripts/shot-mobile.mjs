@@ -30,6 +30,8 @@ import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { zipSync, strToU8 } from 'fflate'
 import { chromium } from 'playwright'
+
+import { inviteBaseUrl } from './lib/endpoints.mjs'
 // 支付记录时间线的夹具与单测共用一份（tests/fixtures/ours-trail.mjs）：
 // 截图里看到的五状态 + 长链路就是单测断言的那几条，不另造一份假数据。
 import { cardTrailRedeemed, orderTrailResponse, trailPage } from '../tests/fixtures/ours-trail.mjs'
@@ -50,8 +52,11 @@ export const DEFAULT_DIST = 'dist'
 export const DB_VERSION = 12
 /** 假 Key：只喂给界面让「服务配置」不是空态；订单接口被 route 拦掉，不会真的发出去 */
 const FIXTURE_API_KEY = 'sk-shot-mobile-fixture-0000'
-/** #235：套餐 / 档案都是只读接口，打桩地址与集成测试同一份（明文邀请服 + 卡密主站） */
-const SHOT_INVITE_API = 'http://140.210.13.146:60013'
+/**
+ * #235：套餐 / 档案都是只读接口，打桩地址与集成测试同一份（明文邀请服 + 卡密主站）。
+ * 邀请服地址来自 config/endpoints.json（#274），这里不再写字面量。
+ */
+const SHOT_INVITE_API = inviteBaseUrl
 const SHOT_CARD_API = 'https://apia.ecsafe.cn'
 
 // ---------------------------------------------------------------- 参数与命名（纯函数，单测直接 import）

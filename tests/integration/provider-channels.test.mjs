@@ -23,6 +23,7 @@ import path from 'node:path'
 import { chromium } from 'playwright'
 import { serveDir, verifyAppUrl } from '../helpers/env.mjs'
 import { capturePaths, selectProviderKind } from '../helpers/helpers.mjs'
+import { chatBaseUrl } from '../../scripts/lib/endpoints.mjs'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const ROOT = path.resolve(HERE, '../..')
@@ -36,7 +37,7 @@ const BASE_A = 'https://relay.example.com'
 const MODEL_A = 'claude-relay-model'
 const BASE_O = 'https://oai.example.com'
 const MODEL_O = 'gpt-relay-model'
-const OURS_HOST = 'http://140.210.13.146:60010'
+const OURS_HOST = chatBaseUrl
 const OURS_URL = `${OURS_HOST}/v1/chat/completions`
 const OURS_MODEL = 'deepseek-v4.1-flash'
 /** 界面上禁止出现的能力描述（能不能用只体现在入口显隐上，不写文案） */
@@ -470,7 +471,8 @@ try {
   }
   await expectOnlyApiKey(dialog, '我们的渠道')
   const oursText = await dialog.innerText()
-  for (const secret of ['140.210.13.146', '60010', OURS_MODEL]) {
+  // 内置地址的主机与端口取自 config/endpoints.json（#274），不在这里另抄一份
+  for (const secret of [new URL(OURS_HOST).hostname, new URL(OURS_HOST).port, OURS_MODEL]) {
     if (oursText.includes(secret)) {
       bad(`我们的渠道把内置值露在界面上了：${secret}`)
     } else {

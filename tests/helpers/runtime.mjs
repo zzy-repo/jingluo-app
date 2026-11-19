@@ -1,9 +1,21 @@
 import { spawn } from 'node:child_process'
+import { existsSync } from 'node:fs'
 import { mkdtemp, rm, access, readFile, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import http from 'node:http'
 import { listenFetchablePort, listenFreePort } from './ports.mjs'
+
+/**
+ * 每个用例进程的预加载：把 rspack DefinePlugin 在打包期注入的 `__ENDPOINTS__` 挂到 globalThis
+ * （src 里几个模块顶层就在读它）。只设这一个标识符，`__API_ORIGIN__` / `__INTERNAL_BUILD__`
+ * 仍然由各用例自己按需 `??=`，见 ./injected.mjs 的文件头。
+ * 用 file URL 传参：Windows 盘符路径带 `D:` 会被当成「未知选项的值」。
+ */
+const PRELOAD = new URL('./injected.mjs', import.meta.url)
+// 沙箱用例会把 runtime.mjs 拷到临时目录单独跑（tests/unit/test-runtime.test.mjs），
+// 那里没有这份预加载文件 —— 缺了就不带这个参数，不因为它而改掉用例的既有行为。
+const preloadArgs = existsSync(PRELOAD) ? ['--import', PRELOAD.href] : []
 
 // One invocation owns one directory and (on POSIX) one process group. Never pkill by name.
 export async function runCase(file, { cwd, timeoutMs = 180000, env = process.env, output = true } = {}) {
@@ -26,7 +38,7 @@ export async function runCase(file, { cwd, timeoutMs = 180000, env = process.env
   try {
     const source = await readFile(file, 'utf8')
     const nodeTest = /(?:from\s*|import\s*|require\(\s*)['"]node:test['"]/.test(source)
-    child = spawn(process.execPath, nodeTest ? ['--test', file] : [file], {
+    child = spawn(process.execPath, [...(nodeTest ? ['--test'] : []), ...preloadArgs, file], {
       cwd, env: { ...env, TMPDIR: tempDir, TMP: tempDir, TEMP: tempDir, TEST_TMP_DIR: tempDir },
       detached: process.platform !== 'win32', stdio: ['ignore', 'pipe', 'pipe'],
     })

@@ -1,22 +1,25 @@
 /**
  * 反馈上传的常量配置。
  *
- * ⚠️ 下面两个常量是**占位值，待后端确认后替换**（客户端 token 与正式域名都由后端/运维给出）。
- * 换地址或换 token 只改这一处，采集层与 UI 都不用动。
+ * 地址来自 `config/endpoints.json` 的 `feedbackUrl`（构建期注入 `__ENDPOINTS__`，Issue #274）：
+ * 换地址只改那一份 JSON，采集层与 UI 都不用动。
+ *
+ * 这里**曾经**有一个 `FEEDBACK_BASE_URL` 的占位常量（值是一个早已废弃的反馈域名）：
+ * 文件头写着「待后端确认后替换」，一直没替换 —— 任何新接一条链路的代码只要 import 它
+ * 就会打到死主机。#274 已把它删掉；需要 v1 契约（`{base}/api/v1/feedback`）时，
+ * 由 `HttpTransport` 的调用方显式传 base url。
  */
-
-/** 反馈服务的 base url（不含 /api/v1/feedback）。占位值，待后端确认后替换。 */
-export const FEEDBACK_BASE_URL = 'https://feedback.rose7.cn'
 
 /** 请求头 X-Client-Token 的值。占位值，待后端确认后替换。 */
 export const CLIENT_TOKEN = 'REPLACE_ME'
 
 /**
- * 后端实际接口：无鉴权头，接收 content/type/contact/version/log 与可选 images 数组；
+ * 后端实际接口（#274 起来自 config/endpoints.json 的 feedbackUrl）：无鉴权头，
+ * 接收 content/type/contact/version/log 与可选 images 数组。
  * images 支持 raw base64 或 data URL。服务端请求上限 200KB，客户端整包预算 180 KiB。
  * 对应实现见 transport.legacy.ts。
  */
-export const LEGACY_FEEDBACK_URL = 'http://140.210.13.146:60012/feedback'
+export const LEGACY_FEEDBACK_URL = __ENDPOINTS__.feedbackUrl
 
 /**
  * 体积策略（后端确认上限 200KB）：

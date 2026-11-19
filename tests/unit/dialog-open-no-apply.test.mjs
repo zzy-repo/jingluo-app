@@ -12,6 +12,9 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { registerHooks } from 'node:module'
 
+// 端点地址唯一来源：config/endpoints.json（#274）
+import { inviteBaseUrl } from '../../scripts/lib/endpoints.mjs'
+
 // 与打包器一致：源码内部用 .js 说明符指向 .ts 文件
 registerHooks({
   resolve(specifier, context, nextResolve) {
@@ -101,5 +104,5 @@ test('[4] 显式选「领取新 Key」→ /apply 照旧', async () => {
   const result = await applyForKey(DEVICE_ID, transport)
   assert.equal(result.kind, 'ok')
   assert.deepEqual(sent, ['POST /apply'], `领取只该发 /apply，实际：${JSON.stringify(sent)}`)
-  assert.equal(INVITE_API_BASE, 'http://140.210.13.146:60013')
+  assert.equal(INVITE_API_BASE, inviteBaseUrl)
 })

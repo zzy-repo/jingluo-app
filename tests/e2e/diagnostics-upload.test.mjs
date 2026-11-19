@@ -4,7 +4,7 @@
 //   cd /root/deepseek-app && node tests/e2e/diagnostics-upload.test.mjs
 //
 // 被测页面默认是部署在 5181 的 dist（APP_URL 可覆盖），会**真实提交**到后端：
-//   POST http://140.210.13.146:60012/feedback  Body: { content, type, contact, version, log }
+//   POST <config/endpoints.json 的 feedbackUrl>  Body: { content, type, contact, version, log }
 //
 // 断言：
 //   [1] 真实提交成功，响应里的 logSize > 0，且等于我们发出的 log 字节数
@@ -15,8 +15,10 @@
 //   [6] 413 → UI 给出可读的「体积过大」提示（不是未知错误）
 import { chromium } from 'playwright'
 
+import { feedbackUrl } from '../../scripts/lib/endpoints.mjs'
+
 const APP_URL = process.env.APP_URL || 'http://127.0.0.1:5181'
-const FEEDBACK_URL = 'http://140.210.13.146:60012/feedback'
+const FEEDBACK_URL = feedbackUrl
 const LOG_MAX_BYTES = 150 * 1024
 const LOG_RETRY_BYTES = 50 * 1024
 const BODY_MAX_BYTES = 180 * 1024
@@ -82,7 +84,7 @@ const openFeedbackDialog = async (page) => {
 
 try {
   // ---------- [1][2] 真实提交到后端 + 请求体结构 ----------
-  console.log('\n[1][2] 真实提交到 140.210.13.146:60012/feedback')
+  console.log('[1][2] 真实提交到 ' + new URL(FEEDBACK_URL).host + new URL(FEEDBACK_URL).pathname)
   {
     const { context, page, requests, responses } = await openFeedbackForm()
     // 先制造一点真实日志（含一次网络请求），保证 log 不是空的

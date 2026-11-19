@@ -34,8 +34,12 @@ import { redeemCard as redeemCardLegacy } from '../ours/api.js'
 import { createDeviceId, isDeviceId } from './device.js'
 import { DEVICE_FP_HEADER, normalizeDeviceFp } from './fingerprint.js'
 
-/** 邀请 / 额度服务地址：明文 HTTP，见文件头的安全说明 */
-export const INVITE_API_BASE = 'http://140.210.13.146:60013'
+/**
+ * 邀请 / 额度服务地址：明文 HTTP，见文件头的安全说明。
+ * 唯一来源是 config/endpoints.json 的 inviteBaseUrl（#274），构建期注入 __ENDPOINTS__ ——
+ * 「同一台机器上的对话上游也是 http」这件事现在由配置文件表达，不再靠注释同步。
+ */
+export const INVITE_API_BASE = __ENDPOINTS__.inviteBaseUrl
 
 /**
  * 需要上报设备指纹的请求头上挂 `X-Device-Fp`（Issue #243）。

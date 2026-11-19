@@ -56,7 +56,8 @@ import {
 /**
  * 默认通道：**legacy**（后端实际接口只认 content/type/contact/version，没有 logs 的位置）。
  * 等后端按 v1 契约（/api/v1/feedback + logs/screenshot）扩展后，把下面这一行换成
- * `new HttpTransport()`（来自 ./transport.http.js）即可切回，采集层与 UI 都不用动。
+ * `new HttpTransport('<v1 base url>')`（来自 ./transport.http.js）即可切回，采集层与 UI 都不用动。
+ * 注意 base url 是**显式入参**：那个指向废弃域名的占位常量已在 #274 删除，不再有默认值。
  */
 let transport: FeedbackTransport = new LegacyTransport()
 

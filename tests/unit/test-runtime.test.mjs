@@ -92,6 +92,13 @@ test('two suite entrypoints reuse injected dist without build, and fail missing 
   await cp(path.join(root, 'tests/helpers/env.mjs'), path.join(dir, 'tests/helpers/env.mjs'))
   await mkdir(path.join(dir, 'tests/fixtures'), { recursive: true })
   await cp(path.join(root, 'tests/fixtures/ours-upstream.mjs'), path.join(dir, 'tests/fixtures/ours-upstream.mjs'))
+  // #274 起 ours 契约 fixture 的地址来自 config/endpoints.json（经 scripts/lib/endpoints.mjs），
+  // 所以沙箱里也要有这三份：端点读取器、它的纯校验模块、以及那份配置本身。
+  await mkdir(path.join(dir, 'scripts/lib'), { recursive: true })
+  await mkdir(path.join(dir, 'config'), { recursive: true })
+  await cp(path.join(root, 'scripts/lib/endpoints.mjs'), path.join(dir, 'scripts/lib/endpoints.mjs'))
+  await cp(path.join(root, 'scripts/lib/endpointsSchema.mjs'), path.join(dir, 'scripts/lib/endpointsSchema.mjs'))
+  await cp(path.join(root, 'config/endpoints.json'), path.join(dir, 'config/endpoints.json'))
   const dist = path.join(dir, 'prebuilt'); await mkdir(dist); await writeFile(path.join(dist, 'index.html'), 'immutable')
   for (const name of ['auto-title', 'diagnostics-contract']) {
     const file = path.join(dir, `tests/integration/${name}.test.mjs`)

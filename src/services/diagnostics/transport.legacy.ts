@@ -1,6 +1,5 @@
 import { Capacitor, CapacitorHttp } from '@capacitor/core'
 import {
-  FEEDBACK_BASE_URL,
   LEGACY_BODY_MAX_BYTES,
   LEGACY_FEEDBACK_URL,
   LEGACY_LOG_LINE_MAX,
@@ -508,8 +507,10 @@ export class LegacyTransport implements FeedbackTransport {
   }
 }
 
-/** v1 契约的默认域名（保留导出，便于后端扩展后切回 HttpTransport 时对照） */
-export const LEGACY_V1_BASE_HINT = FEEDBACK_BASE_URL
+/**
+ * v1 契约的 base url 提示：**没有默认值**（#274 删掉了那个指向废弃域名的占位常量）。
+ * 切回 `HttpTransport` 时由调用方显式传 base url，见 transport.http.ts 的构造函数。
+ */
 
 /** 便于 UI 与日志展示：错误码 → 中文提示（与 v1 通道同一套文案） */
 export { toFeedbackErrorCode }

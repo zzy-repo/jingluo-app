@@ -2,6 +2,7 @@
 import { chromium } from 'playwright'
 import fs from 'node:fs'
 
+import { inviteBaseUrl } from './lib/endpoints.mjs'
 import { matrixConfig, viewportFor } from './compat/lib/matrix-config.mjs'
 
 const OUT = 'docs/ui/redeem-migrate'
@@ -53,7 +54,7 @@ const run = async (width, height, tag) => {
   )
   const page = await context.newPage()
   // 只拦两套后端（截图用固定报文，不代表真实服务返回）
-  await context.route('http://140.210.13.146:60013/**', async (route) => {
+  await context.route(`${inviteBaseUrl}/**`, async (route) => {
     const url = route.request().url()
     if (url.includes('/me')) return route.fulfill(json(200, PROFILE))
     if (url.includes('/apply')) return route.fulfill(json(201, PROFILE))

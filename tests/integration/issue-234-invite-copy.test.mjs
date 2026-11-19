@@ -22,11 +22,12 @@ import path from 'node:path'
 import { chromium } from 'playwright'
 import { selectProviderKind } from '../helpers/helpers.mjs'
 import { serveDist } from '../helpers/runtime.mjs'
+import { inviteBaseUrl } from '../../scripts/lib/endpoints.mjs'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const ROOT = path.resolve(HERE, '../..')
 const DIST = process.env.DIST_DIR_STANDARD || path.join(ROOT, 'dist-standard')
-const INVITE_API = 'http://140.210.13.146:60013'
+const INVITE_API = inviteBaseUrl
 const CARD_API = 'https://apia.ecsafe.cn'
 const SHOT_DIR = path.join(ROOT, 'docs', 'ui', '234-invite-copy')
 const KEY = 'sk-live-e2e-issue234-0011aabbccddeeff'

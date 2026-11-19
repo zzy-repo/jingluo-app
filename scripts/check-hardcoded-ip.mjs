@@ -20,7 +20,7 @@
  *   - 回环 / 通配：127.0.0.0/8、0.0.0.0、::1、localhost
  *   - 私有 / 链路本地 / CGNAT / 保留测试段：10/8、172.16/12、192.168/16、169.254/16、
  *     100.64/10、192.0.2/24、198.51.100/24、203.0.113/24 —— 这些是本地测试桩用的
- *   - ALLOWED_HOSTS 里列的「当前唯一合法的线上地址」（迁移期豁免，见下）
+ *   - **注释行**里出现的线上地址（主机在 `config/endpoints.json` 的 `allowedHosts` 里）：说明文字不参与运行
  *   - 同一行（或上一行）带 `check-ip-allow` 标记的字面量：给「已下线主机名单」「规范条款号」
  *     这类必须写出 IP 形状的地方用，必须注明理由
  *   - 版本语境里的四段点分十进制（模拟器 / WebView / Chrome 的版本号）：四段点分十进制的版本号
@@ -29,6 +29,10 @@
  *     主机/地址语义词（host / server / url / http / 服务器 / 生产 / 地址 / 迁移 …）。后一条是否决
  *     规则，所以 `// 生产环境 <四段点分>`、`// 服务器版本 <四段点分>`、`// <四段点分> → <四段点分> 迁移`
  *     照样要报。细则与已知边界见 scripts/lib/hardcodedIpAudit.mjs 的文件头。
+ *
+ * 主机白名单从哪来（Issue #274）：`config/endpoints.json` 的 `allowedHosts` —— 与本文件扫的源码
+ * 同一事实来源，换机器只改那份 JSON，不需要再来这里同步一份名单。**代码行**里出现白名单主机也算
+ * 违规（地址只能来自 `__ENDPOINTS__` / `scripts/lib/endpoints.mjs`）；只有注释行里的说明文字例外。
  *
  * 用法：
  *   node scripts/check-hardcoded-ip.mjs
@@ -44,7 +48,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import { ALLOWED_HOSTS, scanText } from './lib/hardcodedIpAudit.mjs'
+import { ALLOWED_HOSTS, REASON, scanText } from './lib/hardcodedIpAudit.mjs'
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 
@@ -146,14 +150,19 @@ const main = () => {
     process.exit(0)
   }
 
-  console.error(`发现 ${violations.length} 处写死的 IP（服务端地址请走 spec.defaults / 常量，别散落在代码里）：`)
+  console.error(`发现 ${violations.length} 处写死的 IP（服务端地址请走 config/endpoints.json，别散落在代码里）：`)
   for (const v of violations) {
-    console.error(`  ${v.file}:${v.line}: ${v.ip}`)
+    const hint =
+      v.reason === REASON.allowedHostInCode
+        ? '（白名单主机，但代码行里不许写死：走 __ENDPOINTS__ / scripts/lib/endpoints.mjs）'
+        : ''
+    console.error(`  ${v.file}:${v.line}: ${v.ip}${hint}`)
   }
   console.error(
-    '\n允许的例外：回环/私有/保留测试段、版本语境里的四段点分十进制版本号，以及 ALLOWED_HOSTS 里的当前线上地址' +
-      `（${[...ALLOWED_HOSTS].join(', ')}）。真要新增，先想清楚换机器那天谁来 grep；` +
-      '确实必须写出地址字面量，就在该行（或上一行）加 check-ip-allow 并注明理由。',
+    '\n允许的例外：回环/私有/保留测试段、版本语境里的四段点分十进制版本号、**注释行**里的线上地址，' +
+      `以及同一行（或上一行）带 check-ip-allow 并写明理由的字面量。线上主机白名单来自 ` +
+      `config/endpoints.json 的 allowedHosts（${[...ALLOWED_HOSTS].join(', ')}）：换机器只改那一份 JSON，` +
+      '门禁自动跟上；代码行里再写一次地址照样会红。',
   )
   process.exit(1)
 }

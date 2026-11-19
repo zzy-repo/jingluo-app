@@ -12,6 +12,9 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { registerHooks } from 'node:module'
 
+// 端点地址唯一来源：config/endpoints.json（#274）
+import { inviteBaseUrl } from '../../scripts/lib/endpoints.mjs'
+
 // 与打包器一致：源码内部用 .js 说明符指向 .ts 文件
 registerHooks({
   resolve(specifier, context, nextResolve) {
@@ -230,7 +233,7 @@ test('#234 [6] /redeem 成功响应解析新增字段（reward_points: 0 也算�
       cashbackMinFen: 490,
     })
     assert.equal(result.profile?.invitedCount, 1, '档案仍旧从响应里取')
-    assert.equal(INVITE_API_BASE, 'http://140.210.13.146:60013', '接口地址不变')
+    assert.equal(INVITE_API_BASE, inviteBaseUrl, '接口地址不变')
     assert.equal(inviteOkCopy(result.rewardPoints).key, 'oursInviteBound', '这次要显示「邀请关系已绑定」')
   })
 })

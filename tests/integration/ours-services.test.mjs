@@ -30,6 +30,7 @@ import path from 'node:path'
 import { chromium } from 'playwright'
 import { selectProviderKind, fillBaseUrl } from '../helpers/helpers.mjs'
 import { serveDist } from '../helpers/runtime.mjs'
+import { inviteBaseUrl } from '../../scripts/lib/endpoints.mjs'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const ROOT = path.resolve(HERE, '../..')
@@ -37,7 +38,7 @@ const DIST = process.env.DIST_DIR_STANDARD || path.join(ROOT, 'dist-standard')
 // 端口不再写死 5296：撞到遗留服务就整批假红。serveDist 用 0 号端口原子分配后回填。
 let PORT = process.env.PORT || ''
 let APP_URL = process.env.APP_URL || ''
-const INVITE_API = 'http://140.210.13.146:60013'
+const INVITE_API = inviteBaseUrl
 const CARD_API = 'https://apia.ecsafe.cn'
 const PAY_HOST = 'https://pay.xiaodouap.cn'
 const SHOT_DIR = path.join(ROOT, 'docs', 'ui')

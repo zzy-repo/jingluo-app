@@ -6,6 +6,9 @@
 // 段范围校验也救不了，所以门禁加了一条「版本语境豁免」。这条豁免最容易走宽成漏报，所以这里两头都钉：
 //   1. 版本号不该报（注释 / 字符串 / 文档风格三种位置）；
 //   2. 真写死的公网地址必须照报 —— 包括写在注释里的，以及「版本号 + 真地址」混写在一行的。
+//
+// #274 收窄了「线上地址白名单」的豁免范围：白名单主机（config/endpoints.json 的 allowedHosts）
+// 只在**注释行**里放过；代码行里再写一次地址照样报（地址只能来自配置），见最后一个用例。
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 
@@ -37,6 +40,7 @@ test('check:ip 版本语境有主机/地址语义词时作废：注释里的真 
   assert.deepEqual(ips('// 服务器版本 1.2.3.4'), ['1:1.2.3.4'])
   assert.deepEqual(ips('// host: 62.106.70.167'), ['1:62.106.70.167'])
   assert.deepEqual(ips('// 62.106.70.167 -> 140.210.13.146 迁移'), ['1:62.106.70.167'])
+  // check-endpoints-allow：规则自测必须喂地址字面量，才能证明「写进去会红」
   assert.deepEqual(ips('// 旧机 8.8.8.8 已下线，webview 版本另说'), ['1:8.8.8.8'])
   // 代价（明知并接受）：「迁移 + 版本号」混写的行，版本号也会被一并报出来，用 check-ip-allow 拆开
   assert.deepEqual(ips('// 迁移：模拟器版本 35.1.2.0'), ['1:35.1.2.0'])
@@ -54,8 +58,25 @@ test('check:ip 一行里列两个版本号不误报（版本区间 / 差分）',
   assert.deepEqual(ips('// 模拟器版本 35.1.2.0 / 37.2.13.0 两档'), [])
 })
 
-test('check:ip ALLOWED_HOSTS 与保留段的豁免没被削弱', () => {
-  assert.deepEqual(ips("const host = '140.210.13.146'"), [])
+test('check:ip 白名单主机：注释行放过、代码行照报（#274 收窄），保留段豁免不变', () => {
+  // 注释行里的线上地址是说明文字（不参与运行）—— 放过
+  assert.deepEqual(ips('// 对话上游在 140.210.13.146:60010'), []) // check-endpoints-allow：规则自测输入
+  assert.deepEqual(ips(' * 邀请服务 http://140.210.13.146:60013'), []) // check-endpoints-allow：规则自测输入
+
+  // 代码行里再写一次 = 违规：地址只能来自 config/endpoints.json（#274 之前这里是整行放过，
+  // 于是「再写死一次」永远绿，门禁的保护方向是反的）。
+  // 下面几条字面量是「规则自测的输入」，不是可执行的地址副本，用 check-endpoints-allow 标出来。
+  const hostLiteral = "const host = '140.210.13.146'" // check-endpoints-allow：规则自测输入
+  const baseLiteral = "export const INVITE_API_BASE = 'http://140.210.13.146:60013'" // check-endpoints-allow：规则自测输入
+  assert.deepEqual(ips(hostLiteral), ['1:140.210.13.146'])
+  assert.deepEqual(ips(baseLiteral), ['1:140.210.13.146'])
+  assert.equal(
+    scanText(hostLiteral)[0].reason,
+    'allowed-host-in-code',
+    '命中原因标成「白名单主机写进了代码」，CLI 据此给出「走 __ENDPOINTS__」的建议',
+  )
+
+  // 保留段 / 回环与之前一致
   assert.deepEqual(ips("const HOST = '127.0.0.1'"), [])
   assert.deepEqual(ips("const HOST = '192.168.1.10'"), [])
   assert.deepEqual(ips("const HOST = '169.254.1.1'"), [])

@@ -29,13 +29,14 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
 import { serveDist } from '../helpers/runtime.mjs'
+import { inviteBaseUrl } from '../../scripts/lib/endpoints.mjs'
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 const DIST = process.env.DIST_DIR_STANDARD || path.join(ROOT, 'dist-standard')
 const SHOT_DIR = path.join(ROOT, 'docs/ui/issue157')
 
 const CARD_API = 'https://apia.ecsafe.cn'
-const INVITE_API = 'http://140.210.13.146:60013'
+const INVITE_API = inviteBaseUrl
 const PAY_HOST = 'https://pay.xiaodouap.cn'
 const CID = 1024
 const CUSTOMER_KEY = 'chat-demo:ours-customer-id'

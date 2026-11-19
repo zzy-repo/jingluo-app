@@ -30,13 +30,14 @@ import path from 'node:path'
 import { chromium } from 'playwright'
 import { serveDir, verifyAppUrl, verifyDist } from '../helpers/env.mjs'
 import { capturePaths, selectProviderKind } from '../helpers/helpers.mjs'
+import { chatBaseUrl } from '../../scripts/lib/endpoints.mjs'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const ROOT = path.resolve(HERE, '../..')
 const DIST = process.env.DIST_DIR || path.join(ROOT, 'dist')
 const PORT = process.env.PORT
 let APP_URL = process.env.APP_URL || ''
-const API_URL = 'http://140.210.13.146:60010'
+const API_URL = chatBaseUrl
 const MESSAGES_URL = `${API_URL}/v1/chat/completions`
 const MODEL = 'deepseek-v4.1-flash'
 const KEY = 'sk-internal-acceptance-key'
@@ -251,7 +252,8 @@ try {
 
   // 后端地址与内置模型名不出现在界面上（用户不该看到后端地址）
   const dialogText = await dialog.innerText()
-  for (const secret of ['140.210.13.146', '60010', MODEL]) {
+  // 内置地址的主机与端口取自 config/endpoints.json（#274），不在这里另抄一份
+  for (const secret of [new URL(API_URL).hostname, new URL(API_URL).port, MODEL]) {
     if (dialogText.includes(secret)) {
       bad(`ours 渠道把内置值露在界面上了：${secret}`)
     } else {

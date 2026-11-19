@@ -1,7 +1,6 @@
 import { Capacitor, CapacitorHttp } from '@capacitor/core'
 import {
   CLIENT_TOKEN,
-  FEEDBACK_BASE_URL,
   FEEDBACK_PATH,
   MAX_PAYLOAD_BYTES,
   REQUEST_TIMEOUT_MS,
@@ -126,8 +125,6 @@ export const fitPayload = async (payload: FeedbackPayload): Promise<FeedbackPayl
   return withoutScreenshot(fitted)
 }
 
-const feedbackUrl = (): string => `${FEEDBACK_BASE_URL.replace(/\/+$/, '')}${FEEDBACK_PATH}`
-
 const baseHeaders = (): Record<string, string> => ({
   'Content-Type': 'application/json',
   'X-Client-Token': CLIENT_TOKEN,
@@ -174,6 +171,23 @@ const parseJson = (text: string): unknown => {
 export class HttpTransport implements FeedbackTransport {
   readonly name = 'http'
 
+  /**
+   * v1 契约的 base url（`POST {base}/api/v1/feedback`）**由调用方显式给出**。
+   *
+   * 旧版本这里吃一个 `FEEDBACK_BASE_URL` 常量，值是未替换的占位域名（已下线）。#274 删掉了那个
+   * 常量：不留一个「能 import、一用就打空主机」的东西。要切回这条通道，就传真实 base。
+   */
+  private readonly baseUrl: string
+
+  constructor(baseUrl: string) {
+    this.baseUrl = baseUrl
+  }
+
+  /** v1 契约的完整地址：base url 去尾斜杠 + FEEDBACK_PATH */
+  private url(): string {
+    return `${this.baseUrl.replace(/\/+$/, '')}${FEEDBACK_PATH}`
+  }
+
   async send(payload: FeedbackPayload): Promise<FeedbackTransportResult> {
     let body: FeedbackPayload
     try {
@@ -192,7 +206,7 @@ export class HttpTransport implements FeedbackTransport {
     const controller = new AbortController()
     const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
     try {
-      const response = await fetch(feedbackUrl(), {
+      const response = await fetch(this.url(), {
         method: 'POST',
         headers: baseHeaders(),
         body: json,
@@ -225,7 +239,7 @@ export class HttpTransport implements FeedbackTransport {
     try {
       // CapacitorHttp 不支持 abort：用 connect/read 超时限制总时长（不重试）
       const response = await CapacitorHttp.post({
-        url: feedbackUrl(),
+        url: this.url(),
         headers: baseHeaders(),
         data: JSON.parse(json) as unknown,
         connectTimeout: REQUEST_TIMEOUT_MS,

@@ -17,6 +17,9 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { registerHooks } from 'node:module'
 
+// 端点地址唯一来源：config/endpoints.json（#274）
+import { inviteBaseUrl } from '../../scripts/lib/endpoints.mjs'
+
 // 与打包器一致：源码内部用 .js 说明符指向 .ts 文件
 registerHooks({
   resolve(specifier, context, nextResolve) {
@@ -80,7 +83,7 @@ test('[1] 200 成功：POST /bind，报文只有 device_id + api_key，返回 ke
   assert.equal(result.kind, 'ok')
   assert.equal(calls.length, 1, '只发一次请求')
   assert.equal(calls[0].method, 'POST')
-  assert.equal(calls[0].url, 'http://140.210.13.146:60013/bind', '主链路地址')
+  assert.equal(calls[0].url, inviteBaseUrl + '/bind', '主链路地址')
   assert.equal(calls[0].headers['Content-Type'], 'application/json')
   assert.deepEqual(JSON.parse(calls[0].body), { device_id: DEVICE_ID, api_key: API_KEY }, '请求体字段')
   assert.equal(calls[0].followRedirects, false)
@@ -179,7 +182,7 @@ test('[5] 主链路 NETWORK / TIMEOUT / ROUTE_MISSING → 兜底备用域名，�
 
     assert.equal(result.kind, 'ok', `${label} 兜底后成功`)
     assert.equal(calls.length, 2, `${label} 兜底恰好打两次`)
-    assert.equal(calls[0].url, 'http://140.210.13.146:60013/bind', `${label} 先打主链路`)
+    assert.equal(calls[0].url, inviteBaseUrl + '/bind', `${label} 先打主链路`)
     assert.equal(calls[1].url, 'https://apia.ecsafe.cn/invite/bind', `${label} 再打备用域名`)
     assert.deepEqual(JSON.parse(calls[1].body), { device_id: DEVICE_ID, api_key: API_KEY }, `${label} 兜底报文一致`)
     assert.equal(result.via, 'fallback')

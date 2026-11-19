@@ -6,7 +6,9 @@
  *
  * 一条地址算不算违规，按这个顺序判：
  *   1. 回环 / 通配 / 私有 / 链路本地 / CGNAT / 保留测试段 —— 不算（本地测试桩要用）；
- *   2. ALLOWED_HOSTS 里的当前线上地址 —— 不算（迁移期豁免）；
+ *   2. **注释行**（`//` `*` `/*` `#` 开头）里的 ALLOWED_HOSTS 线上地址 —— 不算（说明文字，不参与运行）；
+ *      代码行里出现线上地址 = **违规**：地址只能来自 `config/endpoints.json`（Issue #274 收窄了这条豁免，
+ *      此前是整行放过，于是「再写死一次」永远绿）；
  *   3. 行内（或上一行）有 `check-ip-allow` —— 整行放过（必须写明理由）；
  *   4. 版本语境豁免（见下）—— 整行放过。
  *
@@ -28,14 +30,35 @@
  * 用 `check-ip-allow` 一行解决，不需要改词表。
  */
 
+import { ALLOWED_HOST_SET } from './endpoints.mjs'
+import { isCommentOnlyLine } from './textLines.mjs'
+
 /** 行内豁免标记：同一行或上一行出现它，本行不判 */
 const ALLOW_MARK = 'check-ip-allow'
 
 /**
- * 当前**合法**的写死地址：服务端就在这个 IP 上（明文 HTTP，没有域名）。
- * 换域名（或服务端再搬一次）时改这里，并同步 providers.ts / invite/api.ts / diagnostics/config.ts。
+ * 当前**合法**的线上地址（主机白名单）：唯一来源是 `config/endpoints.json` 的 `allowedHosts`。
+ *
+ * Issue #274 之前这里是手写的一份 `new Set(['140.210.13.146'])`，注释还要求「换域名时改这里，
+ * 并同步 providers.ts / invite/api.ts / diagnostics/config.ts」—— 一个门禁的豁免名单要人去手工
+ * 同步四个文件，保护方向就反了。现在门禁与源码读同一份 JSON，天然同步。
  */
-const ALLOWED_HOSTS = new Set(['140.210.13.146'])
+const ALLOWED_HOSTS = ALLOWED_HOST_SET
+
+/** 命中原因：直接标在 scanText 的结果上，CLI 据此给出对应的整改建议 */
+export const REASON = {
+  /** 主机在 ALLOWED_HOSTS 里，但出现在代码行（不是注释）—— 地址必须走 config/endpoints.json */
+  allowedHostInCode: 'allowed-host-in-code',
+  /** 不在任何白名单里的写死地址 */
+  hardcoded: 'hardcoded',
+}
+
+/**
+ * 整行只有注释（`//` `*` `/*` `#` 开头）—— 注释里的地址是说明文字，不参与运行。
+ * 只在「白名单主机」这条豁免上用：非白名单的地址写在注释里照样要报（注释里的旧机器会把人带沟里）。
+ * 实现在 textLines.mjs（门禁脚本要在配置不合法时也能 import，见那个文件的文件头）。
+ */
+export { isCommentOnlyLine } from './textLines.mjs'
 
 /** 回环、通配、私有、保留测试段：本地测试桩可以写 */
 const isExemptIpv4 = (a, b) => {
@@ -84,9 +107,10 @@ export const isVersionContext = (line, prevLine = '') => {
 }
 
 /**
- * 一行里「本来就要报」的地址候选（已排除允许段与 ALLOWED_HOSTS，保留出现顺序）。
+ * 一行里「本来就要报」的地址候选（已排除允许段，保留出现顺序）。
+ * `allowedHostsExempt`：注释行才把白名单主机的地址放过；代码行进来，白名单主机也照样报。
  */
-const collectOffending = (line) => {
+const collectOffending = (line, allowedHostsExempt) => {
   const found = []
 
   RE_IPV4.lastIndex = 0
@@ -95,9 +119,13 @@ const collectOffending = (line) => {
     const parts = match.slice(1, 5).map(Number)
     if (parts.some((n) => n > 255)) continue
     const ip = parts.join('.')
-    if (ALLOWED_HOSTS.has(ip)) continue
     if (isExemptIpv4(parts[0], parts[1])) continue
-    found.push({ ip })
+    if (ALLOWED_HOSTS.has(ip)) {
+      if (allowedHostsExempt) continue
+      found.push({ ip, reason: REASON.allowedHostInCode })
+      continue
+    }
+    found.push({ ip, reason: REASON.hardcoded })
   }
 
   RE_IPV6.lastIndex = 0
@@ -105,14 +133,14 @@ const collectOffending = (line) => {
     const ip = match[0]
     if (ip === '::1') continue
     if (/^fe80:/i.test(ip) || /^f[cd]/i.test(ip)) continue
-    found.push({ ip })
+    found.push({ ip, reason: REASON.hardcoded })
   }
 
   return found
 }
 
 /**
- * 扫一段文本，返回 [{ line, ip }]（行号从 1 起）。
+ * 扫一段文本，返回 [{ line, ip, reason }]（行号从 1 起）。
  * 二进制（含 NUL）直接当无命中处理。
  */
 export const scanText = (text) => {
@@ -128,11 +156,11 @@ export const scanText = (text) => {
     // 行内豁免：确需保留地址字面量的地方（已下线主机名单、规范条款号）写 check-ip-allow 并注明理由
     if (line.includes(ALLOW_MARK) || prevLine.includes(ALLOW_MARK)) continue
 
-    const offending = collectOffending(line)
+    const offending = collectOffending(line, isCommentOnlyLine(line))
     if (offending.length === 0) continue
     if (isVersionContext(line, prevLine)) continue
 
-    for (const item of offending) hits.push({ line: i + 1, ip: item.ip })
+    for (const item of offending) hits.push({ line: i + 1, ip: item.ip, reason: item.reason })
   }
   return hits
 }
