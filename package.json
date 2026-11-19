@@ -6,6 +6,9 @@
   "license": "MIT",
   "private": true,
   "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
   "browserslist": [
     "chrome >= 83",
     "edge >= 83",
@@ -14,8 +17,8 @@
   ],
   "scripts": {
     "dev": "rspack serve -c rspack.config.ts",
-    "build": "rm -rf dist && NODE_ENV=production rspack build -c rspack.config.ts",
-    "build:internal": "rm -rf dist && INTERNAL_BUILD=1 NODE_ENV=production rspack build -c rspack.config.ts",
+    "build": "node scripts/build.mjs",
+    "build:internal": "node scripts/build.mjs --internal",
     "type": "tsc -p tsconfig.json",
     "check:legacy": "node scripts/check-bundle-syntax.mjs",
     "check:matrix": "node scripts/compat/matrix-scan.mjs",

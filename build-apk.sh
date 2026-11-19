@@ -7,12 +7,19 @@
 #   ./build-apk.sh release    # release APK（使用自签 release keystore）
 #   ./build-apk.sh release --clean   # 额外执行 gradlew clean
 #
+# 构建环境（Issue #273）：一律走 build.env 声明，别在脚本里写死盘符。
+#   cp build.env.example build.env   # 每台机器一份，已被 .gitignore 排除
+#   ANDROID_HOME / JAVA_HOME / BUILD_TOOLS_VERSION / REQUIRED_JAVA_MAJOR / REQUIRED_NODE_MAJOR
+#   生效顺序：同名环境变量 > build.env > 脚本内兜底默认值
+#
 # 可选环境变量:
 #   SKIP_WEB_BUILD=1   跳过 pnpm build（复用现有 dist/）
-#   ANDROID_HOME=...   覆盖 SDK 路径（默认 $HOME/android-sdk，其次 $ANDROID_SDK_ROOT）
+#   ANDROID_HOME=...   覆盖 SDK 路径（其次 $ANDROID_SDK_ROOT，兜底 $HOME/android-sdk）
 #
 # 说明: 本脚本不依赖交互式 shell 环境，自行 export ANDROID_HOME / PATH；
 #       首次运行会自动生成 keystore（若 android/keystore/keystore.properties 缺失）。
+#       硬闸门：java 主版本 < REQUIRED_JAVA_MAJOR → 失败；BUILD_TOOLS_VERSION 未设置
+#       或目录不存在 → 失败（并列出已安装档位）。
 # =============================================================================
 set -euo pipefail
 
@@ -20,7 +27,7 @@ MODE="${1:-debug}"                 # debug | release
 EXTRA_ARG="${2:-}"
 case "$MODE" in
   debug|release) ;;
-  -h|--help|help) sed -n '2,20p' "$0"; exit 0 ;;
+  -h|--help|help) sed -n '2,23p' "$0"; exit 0 ;;
   *) echo "[build-apk] 未知模式: $MODE （只支持 debug / release）" >&2; exit 2 ;;
 esac
 
@@ -31,25 +38,96 @@ ANDROID_DIR="$PROJECT_ROOT/android"
 log() { printf '\n\033[1;36m[build-apk] %s\033[0m\n' "$*"; }
 die() { printf '\n\033[1;31m[build-apk][ERROR] %s\033[0m\n' "$*" >&2; exit 1; }
 
+# ------------------------------------------------- 0. 读构建环境声明（build.env）
+# 生效顺序：同名环境变量 > build.env > 脚本内兜底默认值。
+# 也就是说 build.env 不会覆盖你已经 export 的值（临时换机器/换 JDK 直接 export 就行）。
+BUILD_ENV_FILE="$PROJECT_ROOT/build.env"
+if [ -f "$BUILD_ENV_FILE" ]; then
+  PRESET_KEYS=(ANDROID_HOME ANDROID_SDK_ROOT JAVA_HOME BUILD_TOOLS_VERSION REQUIRED_JAVA_MAJOR REQUIRED_NODE_MAJOR)
+  declare -A PRESET=()
+  for _k in "${PRESET_KEYS[@]}"; do
+    if [ -n "${!_k:-}" ]; then PRESET[$_k]="${!_k}"; fi
+  done
+  set -a
+  # shellcheck disable=SC1090
+  . "$BUILD_ENV_FILE"
+  set +a
+  for _k in "${!PRESET[@]}"; do export "$_k=${PRESET[$_k]}"; done
+  unset _k
+  log "已读取构建环境声明: $BUILD_ENV_FILE"
+fi
+
+REQUIRED_JAVA_MAJOR="${REQUIRED_JAVA_MAJOR:-21}"
+REQUIRED_NODE_MAJOR="${REQUIRED_NODE_MAJOR:-22}"
+
 # ---------------------------------------------------------------- 1. 环境准备
 export ANDROID_HOME="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-$HOME/android-sdk}}"
 export ANDROID_SDK_ROOT="$ANDROID_HOME"
-[ -d "$ANDROID_HOME" ] || die "找不到 Android SDK: $ANDROID_HOME （请先按 README.android.md 安装，或 export ANDROID_HOME）"
+[ -d "$ANDROID_HOME" ] || die "找不到 Android SDK: $ANDROID_HOME （把路径写进 build.env 的 ANDROID_HOME，或 export ANDROID_HOME；见 build.env.example）"
 export PATH="$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools:$ANDROID_HOME/emulator:$PATH"
 
 # JDK：gradle 需要 JAVA_HOME（没有就按 PATH 里的 java 反推）
 if [ -z "${JAVA_HOME:-}" ]; then
   JAVA_BIN="$(command -v java || true)"
-  [ -n "$JAVA_BIN" ] || die "找不到 java，需要 JDK 21"
+  [ -n "$JAVA_BIN" ] || die "找不到 java，需要 JDK ${REQUIRED_JAVA_MAJOR}（把 JDK 根目录写进 build.env 的 JAVA_HOME，或 export JAVA_HOME）"
   JAVA_HOME="$(dirname "$(dirname "$(readlink -f "$JAVA_BIN")")")"
-  export JAVA_HOME
 fi
+export JAVA_HOME
 export PATH="$JAVA_HOME/bin:$PATH"
+[ -x "$JAVA_HOME/bin/java" ] || die "JAVA_HOME=$JAVA_HOME 下没有 bin/java（路径写错了？）"
 
-log "模式=$MODE  ANDROID_HOME=$ANDROID_HOME  JAVA_HOME=$JAVA_HOME"
+# JDK 版本闸门（Issue #273）：以前只有「需要 JDK 21」这句文案，代码不校验，
+# 版本不对时得到的是看不懂的 gradle 报错。
+JAVA_VER_RAW="$("$JAVA_HOME/bin/java" -version 2>&1 | head -n 1 || true)"
+JAVA_MAJOR="$(printf '%s' "$JAVA_VER_RAW" | sed -n 's/.*version "\([0-9][0-9._]*\)".*/\1/p' | cut -d. -f1)"
+if [ "$JAVA_MAJOR" = "1" ]; then   # 1.8.0_392 这种老式版本号
+  JAVA_MAJOR="$(printf '%s' "$JAVA_VER_RAW" | sed -n 's/.*version "1\.\([0-9][0-9._]*\)".*/\1/p' | cut -d. -f1)"
+fi
+case "$JAVA_MAJOR" in
+  '' | *[!0-9]*) die "读不出 java 主版本：${JAVA_VER_RAW:-<空>}（需要 ${REQUIRED_JAVA_MAJOR}）" ;;
+esac
+[ "$JAVA_MAJOR" -ge "$REQUIRED_JAVA_MAJOR" ] || die "JDK 版本不对：需要 ${REQUIRED_JAVA_MAJOR}，当前 ${JAVA_MAJOR}
+  JAVA_HOME=$JAVA_HOME
+  修复：把 JAVA_HOME 指到 JDK ${REQUIRED_JAVA_MAJOR} 根目录（build.env 或 export JAVA_HOME=...）"
 
-# local.properties：把 SDK 路径钉进 Gradle（该文件已 gitignore）
-printf 'sdk.dir=%s\n' "$ANDROID_HOME" > "$ANDROID_DIR/local.properties"
+# node 版本低于声明时只警告：engines 在 pnpm install 也只警告，这里不越权硬失败
+NODE_VER_RAW="$(node --version 2>/dev/null || true)"
+NODE_MAJOR="$(printf '%s' "$NODE_VER_RAW" | sed -n 's/^v\([0-9][0-9]*\).*/\1/p')"
+case "$NODE_MAJOR" in
+  '' | *[!0-9]*) die "找不到 node（pnpm build 需要 node >= ${REQUIRED_NODE_MAJOR}）" ;;
+esac
+if [ "$NODE_MAJOR" -lt "$REQUIRED_NODE_MAJOR" ]; then
+  printf '\033[1;33m[build-apk][警告] node 版本低于声明：需要 >=%s，当前 %s（产物 polyfill 目标可能与声明不同）\033[0m\n' \
+    "$REQUIRED_NODE_MAJOR" "$NODE_VER_RAW"
+fi
+
+# build-tools 档位闸门（Issue #273）：不再用 build-tools/* 通配取最大版本，
+# 否则装了新 build-tools 就静默换 aapt2。
+BUILD_TOOLS_ROOT="$ANDROID_HOME/build-tools"
+INSTALLED_BUILD_TOOLS="$(ls -1 "$BUILD_TOOLS_ROOT" 2>/dev/null | sort -V | tr '\n' ' ' || true)"
+if [ -z "${BUILD_TOOLS_VERSION:-}" ]; then
+  die "BUILD_TOOLS_VERSION 未设置（不允许通配取最大版本）
+  已安装档位: ${INSTALLED_BUILD_TOOLS:-<无>}
+  修复：cp build.env.example build.env，把 BUILD_TOOLS_VERSION 写成上面某一档"
+fi
+[ -d "$BUILD_TOOLS_ROOT/$BUILD_TOOLS_VERSION" ] || die "build-tools 版本不存在: $BUILD_TOOLS_ROOT/$BUILD_TOOLS_VERSION
+  已安装档位: ${INSTALLED_BUILD_TOOLS:-<无>}
+  修复：改 build.env 的 BUILD_TOOLS_VERSION（或安装该档位）"
+AAPT2_BIN="$BUILD_TOOLS_ROOT/$BUILD_TOOLS_VERSION/aapt2"
+if [ ! -x "$AAPT2_BIN" ] && [ -x "$AAPT2_BIN.exe" ]; then AAPT2_BIN="$AAPT2_BIN.exe"; fi
+
+log "模式=$MODE  ANDROID_HOME=$ANDROID_HOME  JAVA_HOME=$JAVA_HOME (java $JAVA_MAJOR)  BUILD_TOOLS_VERSION=$BUILD_TOOLS_VERSION  node=$NODE_VER_RAW"
+
+# local.properties：把 SDK 路径钉进 Gradle（该文件已 gitignore）。
+# 内容不变就不重写，避免和 IDE 里那份来回打架（Issue #273 现状第 3 条）。
+SDK_DIR_LINE="sdk.dir=$(printf '%s' "$ANDROID_HOME" | sed 's|\\|/|g')"
+LOCAL_PROPS="$ANDROID_DIR/local.properties"
+if [ ! -f "$LOCAL_PROPS" ] || [ "$(cat "$LOCAL_PROPS")" != "$SDK_DIR_LINE" ]; then
+  printf '%s\n' "$SDK_DIR_LINE" > "$LOCAL_PROPS"
+  log "已写入 $LOCAL_PROPS（$SDK_DIR_LINE）"
+else
+  log "local.properties 已指向同一 SDK，不覆盖"
+fi
 
 # --------------------------------------------------- 2. 首次运行自动生成签名材料
 KS_DIR="$ANDROID_DIR/keystore"
@@ -95,8 +173,10 @@ fi
 [ -f "$PROJECT_ROOT/dist/index.html" ] || die "dist/index.html 不存在，前端构建失败"
 
 # ------------------------------------------------------ 4. 同步 web 产物到原生工程
-log "步骤 2/3：npx cap sync android（dist -> android/app/src/main/assets/public）"
-npx cap sync android
+log "步骤 2/3：pnpm exec cap sync android（dist -> android/app/src/main/assets/public）"
+# 用 pnpm exec：走本地 @capacitor/cli，版本锚在 pnpm-lock.yaml 里；
+# 原来的 npx 会按需向网络拉包，版本不锚定（Issue #273 现状表）
+pnpm exec cap sync android
 
 # ------------------------------------------------------------ 5. Gradle 出包
 if [ "$MODE" = "release" ]; then
@@ -122,8 +202,9 @@ APK_BYTES="$(stat -c %s "$APK_PATH")"
 printf '\n\033[1;32m================ BUILD OK (%s) ================\033[0m\n' "$MODE"
 printf 'APK 绝对路径 : %s\n' "$APK_PATH"
 printf 'APK 大小     : %s (%s bytes)\n' "$APK_SIZE" "$APK_BYTES"
-if command -v aapt2 >/dev/null 2>&1 || ls "$ANDROID_HOME"/build-tools/*/aapt2 >/dev/null 2>&1; then
-  AAPT2_BIN="$(command -v aapt2 || ls "$ANDROID_HOME"/build-tools/*/aapt2 | sort -V | tail -1)"
+printf 'build-tools  : %s（钉住档位，不走通配）\n' "$BUILD_TOOLS_VERSION"
+# aapt2 只从钉住档位取：人工核对的工具与出包工具必须是同一个（Issue #273 现状第 4 条）
+if [ -x "$AAPT2_BIN" ]; then
   printf '包名/版本    : %s\n' "$("$AAPT2_BIN" dump badging "$APK_PATH" 2>/dev/null | grep -E "^package:" || echo 'n/a')"
 fi
 printf '安装命令     : adb install -r "%s"\n' "$APK_PATH"

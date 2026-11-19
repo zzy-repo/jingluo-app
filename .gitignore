@@ -17,6 +17,8 @@ android/keystore/
 *.jks
 keystore.properties
 android/local.properties
+# 本机构建环境声明（Issue #273）：模板 build.env.example 入库，实物不入库
+build.env
 .env
 .env.*
 *.apk

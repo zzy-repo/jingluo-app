@@ -35,7 +35,7 @@
 | --- | --- | --- |
 | 签名材料 | 发布用 **release 构建类型**（`assembleRelease`，见 §3），签名指向已发布证书：`android/keystore/keystore.properties` 里 `storeFileRelease=/root/.android/debug.keystore`、`storePasswordRelease=android`、`keyAliasRelease=androiddebugkey` | `keytool -list -v -keystore /root/.android/debug.keystore -storepass android -alias androiddebugkey \| grep SHA256`，必须是 `e7c5baee…aa8a1` |
 | 发布令牌 | **按人发放，不是自己去 ECS 上取**：找 dl-release 维护者要一枚（私密渠道给），然后三选一注入 —— `export DL_RELEASE_TOKEN=<release-token>` / 写 `~/.config/dl-release/token` 后 `chmod 600` / 用 `--token-file`。完整流程（含轮换与泄露止损）见 [`docs/RELEASE-CHECKLIST.md`](RELEASE-CHECKLIST.md) §4 | `ls -l ~/.config/dl-release/token` 应为 `-rw-------`；`node scripts/release-upload.mjs --apk <apk> --dry-run` 只回显令牌**来源与长度**；**不 echo、不贴日志、不进仓库** |
-| Android SDK / JDK | 默认 `/root/android-sdk`、JDK 21 | `ls $HOME/android-sdk/build-tools/`、`java -version` |
+| Android SDK / JDK / build-tools | **声明式，正文里不再写路径**：`cp build.env.example build.env`，填 `ANDROID_HOME` / `JAVA_HOME` / `BUILD_TOOLS_VERSION` / `REQUIRED_JAVA_MAJOR`。`build.env` 已 gitignore（每台机器一份）；同名环境变量优先，未填时代码兜底 `$HOME/android-sdk` + PATH 里的 `java` | `./build-apk.sh` 启动即打印 `ANDROID_HOME` / `JAVA_HOME` / `BUILD_TOOLS_VERSION` / `node`；JDK 主版本不足会直接失败并打印「需要 21，当前 17」；`BUILD_TOOLS_VERSION` 未设置或档位不存在会失败并列出本机已安装档位 |
 | gh（只用于观察） | 可选 | `gh auth status`；Release 由 workflow 的内置 `GITHUB_TOKEN` 创建 |
 | 工作分支 | 从 `origin/main` 开 `release/<ver>` 分支发版，不直接改 `main` | `git status -sb`、`git log --oneline -1` |
 
@@ -124,6 +124,10 @@ cd android && ./gradlew assembleRelease   # 不传 -PartifactVariant，默认 st
 
 要点：
 
+- **`pnpm build` / `pnpm build:internal` 现在走 `node scripts/build.mjs`**（Issue #273）：清输出目录用 `fs.rm`，
+  `NODE_ENV=production`（内部包另有 `INTERNAL_BUILD=1`）由 node 侧传给 rspack，**与 shell 无关**——
+  在 Windows 的 cmd.exe / PowerShell 里同样能跑。不要再手写 `rm -rf dist && NODE_ENV=production rspack build`，
+  那行在 cmd 下会报 `'NODE_ENV' 不是内部或外部命令`。
 - **一律 `assembleRelease`，不要 `assembleDebug`。** debug 变体编译进 `android:debuggable="true"`，
   发出去就是发布完整性缺陷（Issue #60：1.0.0～1.4.0-beta.8 全部中招）。
 - **web 构建与 `-PartifactVariant` 必须同源**：`build:internal` ↔ `internal`，`build` ↔ `standard`。
@@ -142,7 +146,8 @@ cd android && ./gradlew assembleRelease   # 不传 -PartifactVariant，默认 st
 
 ```bash
 APK=android/app/build/outputs/apk/release/app-release.apk
-BT=$HOME/android-sdk/build-tools/35.0.0        # 与实际 build-tools 版本对齐
+BT=${ANDROID_HOME:-$HOME/android-sdk}/build-tools/${BUILD_TOOLS_VERSION:?先 cp build.env.example build.env 填 BUILD_TOOLS_VERSION}
+# 与 build.env 钉住的档位一致；不再按 build-tools/* 通配取最大版本
 ```
 
 - [ ] **4.1 versionCode / versionName**
