@@ -104,9 +104,9 @@
       "reason": "verifyDist(internal) + MOTION_BASE/PORT 可注入；自起服务"
     },
     "ours-services.test.mjs": {
-      "expected": "known-red",
+      "expected": "pass",
       "artifact": "standard",
-      "reason": "DIST_DIR_STANDARD 标准产物 + mock 我们的服务端；27 项里 25 项绿，2 项（390/360 各一次）撞真实产品缺陷，见 knownRed"
+      "reason": "DIST_DIR_STANDARD 标准产物 + mock 我们的服务端；390 / 360 两轮全绿。#166 修好后「付款记录 / 我的购买」两格只在 ours 渠道渲染（官方渠道与第三方 baseUrl 下 count=0，会话内切回 ours 又回来），原 knownRed 已清空"
     },
     "ours-webpay.test.mjs": {
       "expected": "pass",
@@ -169,12 +169,5 @@
       "reason": "runner 注入共享标准产物服务的 APP_URL；只看标题前缀"
     }
   },
-  "knownRed": {
-    "ours-services.test.mjs": {
-      "reason": "390px / 360px 各一次「DeepSeek 官方设置页没有我们的渠道文案」不过：把渠道切到 DeepSeek 官方后，「设置 → 数据」里仍渲染「付款记录」这一格，描述文案是「已支付订单、金额、卡密后 4 位与兑换状态」，命中了断言里的「卡密」。src/components/settings/SettingsDialog.tsx 第 154 行注释写着「额度查询 / 套餐 / 卡密兑换 / 订单状态：只在「我们的渠道」下出现」，但整块只有 <OursServicesRow /> 自己按渠道自藏，紧跟着的 payment-records-open（SettingCell，data-testid=payment-records-open）没有渠道判断，所以在官方渠道下也露出来。属产品缺陷，本轮不许动 src/**，断言保持不动、登记为基线红。其余 25 项（入口只在 ours 出现、设备码字符集、打开弹层不发 POST /apply、兑换走 /redeem-card 且不落 /api/redeem、不显示 ¥、日志与 DOM 不含完整 Key/卡密）全绿。",
-      "since": "2026-11-18 复现于 origin/main（18b44f3）标准产物 dist-standard，390×844 / 360×800 Chromium 视口",
-      "evidence": "截图 docs/ui/1.4.0-beta.8-ours-pay-*.png；探针打印 getByRole('dialog').first().innerText() 命中文本仅为「已支付订单、金额、卡密后 4 位与兑换状态」",
-      "followUp": "待开 Issue：DeepSeek 官方渠道设置页仍渲染「付款记录」入口（SettingsDialog.tsx payment-records-open 缺渠道守卫）"
-    }
-  }
+  "knownRed": {}
 }

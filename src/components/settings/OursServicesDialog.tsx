@@ -1,6 +1,6 @@
 import clsx from 'clsx'
 import { useEffect, useRef, useState } from 'react'
-import { setApiKey, useApiConfig } from '../../services/api/apiConfig.js'
+import { setApiKey, useApiConfig, useIsOursChannel } from '../../services/api/apiConfig.js'
 import { useTranslate } from '../../i18n/index.js'
 import {
   buyUrl,
@@ -104,10 +104,11 @@ const firstPlanId = (state: OursPlansState | { status: 'loading' }): string | nu
 /** 设置页里的入口行：只有我们的渠道才出现 */
 export const OursServicesRow = () => {
   const t = useTranslate()
-  const kind = useApiConfig((state) => state.kind)
+  // 渠道判定与设置页里「支付记录 / 卡密」两格同一份：apiConfig.useIsOursChannel
+  const ours = useIsOursChannel()
   // 开合状态放在 settingsDialogState：付款回跳要能直接把它打开（见 openOursServices）
   const open = useSettingsDialog((state) => state.oursOpen)
-  if (kind !== 'ours') {
+  if (!ours) {
     return null
   }
   return (

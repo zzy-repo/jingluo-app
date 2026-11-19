@@ -51,6 +51,7 @@ import { Modal } from '../base/Modal.js'
 import { Select } from '../base/Select.js'
 import { showToast } from '../base/toastState.js'
 import { ApiConfigFields, ApiKeyConfirm, useApiKeyEditor } from './ApiConfigFields.js'
+import { useIsOursChannel } from '../../services/api/apiConfig.js'
 import { AppUpdateField } from './AppUpdateField.js'
 import { ChatBackgroundField } from './ChatBackgroundField.js'
 import { DOUYIN_ACCOUNT_ID, douyinCopyToast } from './douyinAccount.js'
@@ -101,6 +102,8 @@ const SettingsContent = ({ visible }: { visible: boolean }) => {
   // 「我的购买」弹层开合（Issue #158）：只在本组件内用，不需要跨模块共享状态
   const [purchasesOpen, setPurchasesOpen] = useState(false)
   const replacingHistory = useChatStore((state) => state.importingHistory)
+  // 自有渠道判定：付款记录 / 我的购买两格（以及它们在下面的弹层）只在这条渠道下存在（#166）
+  const oursChannel = useIsOursChannel()
   // 付款记录弹层开合：引用「我们的渠道」那套同层叠放（zIndex 由弹层自己抬高）
   const paymentRecordsOpen = useSettingsDialog((state) => state.paymentRecordsOpen)
   const historyBusy = historyImport.busy || historyDelete.busy || replacingHistory
@@ -159,40 +162,45 @@ const SettingsContent = ({ visible }: { visible: boolean }) => {
               <ChatBackgroundField />
               <ImportHistory historyImport={historyImport} disabled={historyBusy} />
               <ExportHistory disabled={historyBusy} />
-              {/* 付款记录（Issue #115）：下单带 cid、覆盖单号之后，用户终于能看到
-                  「钱付了、记在哪一单、卡密是什么」——只读历史，刷新不产生新订单 */}
-              <SettingCell
-                label={t('oursPayRecordsTitle')}
-                description={t('oursPayRecordsEntryDescription')}
-                status={null}
-                action={
-                  <Button
-                    variant="outlined"
-                    size="m"
-                    className={styles.cellButton}
-                    data-testid="payment-records-open"
-                    onClick={() => setPaymentRecordsOpen(true)}
-                  >
-                    {t('oursPayRecordsEntryAction')}
-                  </Button>
-                }
-              />
-              <SettingCell
-                label={t('oursPurchasesTitle')}
-                description={t('oursPurchasesEntryDescription')}
-                status={null}
-                action={
-                  <Button
-                    variant="outlined"
-                    size="m"
-                    className={styles.cellButton}
-                    data-testid="purchases-open"
-                    onClick={() => setPurchasesOpen(true)}
-                  >
-                    {t('oursPurchasesEntryAction')}
-                  </Button>
-                }
-              />
+              {/* 付款记录（Issue #115）/ 我的购买（Issue #158）：只读历史，刷新不产生新订单。
+                  这两格也只在自有渠道下有意义（#166）：判定与上面 <OursServicesRow /> 是同一份
+                  （apiConfig.useIsOursChannel），第三方 / 自定义地址下整块不渲染，别在这里再写一份。 */}
+              {oursChannel ? (
+                <>
+                  <SettingCell
+                    label={t('oursPayRecordsTitle')}
+                    description={t('oursPayRecordsEntryDescription')}
+                    status={null}
+                    action={
+                      <Button
+                        variant="outlined"
+                        size="m"
+                        className={styles.cellButton}
+                        data-testid="payment-records-open"
+                        onClick={() => setPaymentRecordsOpen(true)}
+                      >
+                        {t('oursPayRecordsEntryAction')}
+                      </Button>
+                    }
+                  />
+                  <SettingCell
+                    label={t('oursPurchasesTitle')}
+                    description={t('oursPurchasesEntryDescription')}
+                    status={null}
+                    action={
+                      <Button
+                        variant="outlined"
+                        size="m"
+                        className={styles.cellButton}
+                        data-testid="purchases-open"
+                        onClick={() => setPurchasesOpen(true)}
+                      >
+                        {t('oursPurchasesEntryAction')}
+                      </Button>
+                    }
+                  />
+                </>
+              ) : null}
               <SettingCell
                 label={t('feedbackCellLabel')}
                 description={t('feedbackCellDescription')}
@@ -243,9 +251,13 @@ const SettingsContent = ({ visible }: { visible: boolean }) => {
       </Modal>
       {historyImport.source ? <ImportConfirm historyImport={historyImport} /> : null}
       {historyDelete.opened ? <DeleteAllConfirm historyDelete={historyDelete} /> : null}
-      {paymentRecordsOpen ? <PaymentRecordsDialog onClose={() => setPaymentRecordsOpen(false)} /> : null}
+      {oursChannel && paymentRecordsOpen ? (
+        <PaymentRecordsDialog onClose={() => setPaymentRecordsOpen(false)} />
+      ) : null}
       {/* 「我的购买」（#158）：分页 / 筛选 / 卡片动作，叠放层级与付款记录一致 */}
-      {purchasesOpen ? <PurchaseRecordsDialog onClose={() => setPurchasesOpen(false)} /> : null}
+      {oursChannel && purchasesOpen ? (
+        <PurchaseRecordsDialog onClose={() => setPurchasesOpen(false)} />
+      ) : null}
       <FeedbackDialog
         open={feedback.open}
         integrity={feedback.integrity}

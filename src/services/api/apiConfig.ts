@@ -184,6 +184,17 @@ export const useApiConfig = create<ApiConfig>(() => ({
   model: storedModel(initialKind),
 }))
 
+/**
+ * 当前渠道是不是「我们的渠道」（自有渠道）。
+ *
+ * 判定源只有渠道本身（`chat-demo:provider-kind === 'ours'`，见 providers.ts 的 spec），
+ * 不看地址、不看域名——第三方 / 自定义 baseUrl 一律不算，所以这里也不硬编码任何主机。
+ * 额度 / 套餐 / 卡密 / 支付记录 / 我的购买这些入口都只在这条渠道下有意义，
+ * 组件里一律走这个 hook，别各自再写一份 `kind === 'ours'`。
+ * 它是 useApiConfig 的选择器：会话中切渠道时订阅者会跟着重渲染。
+ */
+export const useIsOursChannel = (): boolean => useApiConfig((state) => state.kind === 'ours')
+
 /** 当前生效的 spec：路径、鉴权头、能力开关都从它取 */
 export const getCurrentSpec = (): ProviderSpec => getSpec(getProviderKind())
 
