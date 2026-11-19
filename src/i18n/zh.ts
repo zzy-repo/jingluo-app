@@ -237,6 +237,10 @@ export const zh = {
   historyImportFailed:
     '文件导入失败，可能是文件格式错误或使用了旧版的对话导出 ZIP 文件，请前往 DeepSeek 重新导出历史对话文件后再次导入。',
   historyExportFailed: '导出失败：{message}',
+  historyExportSaved: '已保存到你选择的位置：{name}',
+  historyExportFailedStart: '导出失败：无法打开保存位置，请重试',
+  historyExportFailedWrite: '导出失败：写入文件失败，请检查剩余存储空间后重试',
+  historyExportFailedTooLarge: '导出失败：归档超过 220MB 保存上限，请先删减历史对话后重试',
   exportAllLabel: '导出所有历史对话',
   historyExportDescription:
     '包含所有历史对话及本地图片原件；其他附件仅保留文件信息，不包含 API Key。',

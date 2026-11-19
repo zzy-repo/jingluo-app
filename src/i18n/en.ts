@@ -257,6 +257,10 @@ export const en = {
   historyImportFailed:
     'File import failed. The file format may be invalid, or the ZIP file may use an older chat export format. Please export your chat history from DeepSeek again and retry the import.',
   historyExportFailed: 'Export failed: {message}',
+  historyExportSaved: 'Saved to the location you chose: {name}',
+  historyExportFailedStart: 'Export failed: could not open the save location. Please try again.',
+  historyExportFailedWrite: 'Export failed: could not write the file. Check free storage and try again.',
+  historyExportFailedTooLarge: 'Export failed: the archive exceeds the 220MB save limit. Delete some chats and try again.',
   exportAllLabel: 'Export all chats',
   historyExportDescription:
     'Includes all chat history and locally stored images. Other attachments retain file details only. Your API Key is not included.',

@@ -25,6 +25,7 @@ import {
   type UrlImportProgress,
 } from '../../services/chat/history/urlImport.js'
 import { copyText } from '../../utils/clipboard.js'
+import { saveBlobFile } from '../../services/exportText.js'
 import { ImportSkippedDetails, importedMessage } from './importSkipped.js'
 import { useIsMobile } from '../../app/viewport.js'
 import { useChatStore } from '../../services/chat/store.js'
@@ -1216,7 +1217,26 @@ const ImportHistoryUrl = ({
   )
 }
 
-/** 将全部会话及图片导出为 ZIP 文件并下载 */
+/**
+ * 原生保存出口的失败码 → 人话文案：Java 侧 reject 的 message 是中文，
+ * 英文界面直接透传就成了「English UI + 中文原因」。认得的码走对应文案，认不得的仍透传错误原文。
+ */
+const exportErrorKey = (error: unknown): TranslationKey => {
+  const code = (error as { code?: string })?.code
+  if (code === 'START_FAILED') {
+    return 'historyExportFailedStart'
+  }
+  if (code === 'TOO_LARGE') {
+    return 'historyExportFailedTooLarge'
+  }
+  return code === 'WRITE_FAILED' ? 'historyExportFailedWrite' : 'historyExportFailed'
+}
+
+/**
+ * 将全部会话及图片导出为 ZIP 文件。
+ * 落盘出口与「反馈日志导出」共用 `services/exportText.ts`：Android 走 ExportText 原生桥
+ * （SAF 面板选位置，可取消），Web 走 Blob 下载 —— WebView 里 `<a download>` 不会产生文件。
+ */
 const ExportHistory = ({ disabled }: { disabled: boolean }) => {
   const t = useTranslate()
   const empty = useChatStore((state) => state.sessions.length === 0)
@@ -1228,14 +1248,15 @@ const ExportHistory = ({ disabled }: { disabled: boolean }) => {
     setStatus(null)
     try {
       const { name, blob } = await exportHistory()
-      const url = URL.createObjectURL(blob)
-      const link = document.createElement('a')
-      link.href = url
-      link.download = name
-      link.click()
-      setTimeout(() => URL.revokeObjectURL(url), 10_000)
+      const result = await saveBlobFile({ filename: name, mimeType: 'application/zip', blob })
+      // 用户在选择位置的面板上点了取消：既不是成功也不是失败，界面回到「可以再点一次」的状态。
+      setStatus(
+        result.status === 'saved'
+          ? { key: 'historyExportSaved', params: { name: result.name ?? name } }
+          : null
+      )
     } catch (error) {
-      setStatus(errorStatus('historyExportFailed', error))
+      setStatus(errorStatus(exportErrorKey(error), error))
     } finally {
       setBusy(false)
     }
