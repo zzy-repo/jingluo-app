@@ -231,6 +231,8 @@ export const zh = {
   uploadUnsupportedFormat:
     '上传的文件包含暂未支持的文件格式，请转换文件格式后重试。支持 PDF、DOC、XLSX、PPT、图片、文本、代码等。',
   uploadFileStatusFailed: '上传失败',
+  /** 该渠道没有 Files API（#303）：入口禁用时的提示，以及上传路径走到这里时的失败原因 */
+  uploadChannelUnsupported: '当前渠道不支持文件上传，附件入口已不可用',
   uploadRetry: '{message}，点击重试',
   chatInputPlaceholderChat: '请输入消息',
   deactivatedThinkTooltip: '先思考后回答，解决推理问题',

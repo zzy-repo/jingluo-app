@@ -90,21 +90,34 @@ export const classifyApiError = (error: unknown): ApiErrorCondition => {
   return classifyStatus(error.status)
 }
 
+/**
+ * 只对「重发有可能成功」的状态码退避重试（#303）：
+ * - 429 限流：等一会儿确实可能有额度；
+ * - 5xx：上游临时故障；
+ * - 其余 4xx（400 / 401 / 403 / 404 / 413 …）一律不重试——参数、鉴权、路径类错误重发只会
+ *   原样再失败一次，而它们在线上的形态就是日志被同一条请求刷屏（#303：`/v1/chat/completions/files`
+ *   在两小时里打了 2059 次 404，占网关日志 86%）。
+ */
+export const isRetryableStatus = (status: number | undefined): boolean =>
+  status === 429 || (status ?? 0) >= 500
+
 /** 重试可能成功的情况：网络、超时、断流、限流、服务端繁忙；参数或鉴权类错误重试无用 */
 export const isRetryableApiError = (error: unknown): boolean => {
-  // 超时等价于「这一轮没等到响应」：重试是有效的，不能因为没状态码就归到 other
-  // 空闲超时（#150）同理：换一条连接通常就好了，用户不必自己点重试
-  if (error instanceof ApiError && (error.kind === 'timeout' || error.kind === 'idle')) {
+  // 还没成型的错误（非 ApiError）按「未知故障」处理，与改造前一致
+  if (!(error instanceof ApiError)) {
     return true
   }
+  // 超时等价于「这一轮没等到响应」：重试是有效的，不能因为没状态码就归到 other
+  // 空闲超时（#150）同理：换一条连接通常就好了，用户不必自己点重试
+  if (error.kind === 'timeout' || error.kind === 'idle') {
+    return true
+  }
+  // 有状态码就只按状态码判：4xx（429 除外）不重试，这条是硬规则，不再经过分类兜底
+  if (typeof error.status === 'number') {
+    return isRetryableStatus(error.status)
+  }
   const condition = classifyApiError(error)
-  return (
-    !(error instanceof ApiError) ||
-    condition === 'network' ||
-    condition === 'interrupted' ||
-    condition === 'rateLimited' ||
-    condition === 'serverBusy'
-  )
+  return condition === 'network' || condition === 'interrupted'
 }
 
 /** 服务端判定附件失效的情况：本地有原件时重新上传即可自愈 */

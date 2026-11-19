@@ -7,7 +7,7 @@ import {
   IconStopFill16,
   IconThinkOutline14,
 } from '../base/icons.js'
-import { getApiKey, useApiConfig } from '../../services/api/apiConfig.js'
+import { getApiKey, supportsFileUpload, useApiConfig } from '../../services/api/apiConfig.js'
 import { getSpec } from '../../services/api/providers.js'
 import { setSearch, setThinking, useSettings } from '../../services/settings.js'
 import { useIsMobile } from '../../app/viewport.js'
@@ -60,6 +60,13 @@ const Input = ({ sessionId }: { sessionId: string | null }) => {
   const enterKeyMode = useSettings((state) => state.enterKeyMode)
   // 能力开关来自当前服务类型的 spec：不支持的入口直接不渲染
   const caps = getSpec(useApiConfig((state) => state.kind)).caps
+  /**
+   * 附件入口是否真的可用：既要渠道声明了 vision 能力，也要它**显式声明了 Files API 端点**
+   * （`spec.paths.files`）。只有 caps.vision 是不够的——以前就是拿 messages 前缀拼出
+   * `/v1/chat/completions/files` 去试，网关没有这条路由，线上 86% 的日志是它的 404（#303）。
+   * 不满足时入口仍然渲染，但点下去给可读提示，不静默失败（#37 / #43 的诉求）。
+   */
+  const canAttach = caps.vision && supportsFileUpload()
   const fileInputRef = useRef<HTMLInputElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const togglesRef = useRef<HTMLDivElement>(null)
@@ -82,12 +89,15 @@ const Input = ({ sessionId }: { sessionId: string | null }) => {
   }, [t])
 
   const acceptFiles = (files: File[]) => {
-    if (
-      files.length === 0 ||
-      !caps.vision ||
-      useChatStore.getState().importingHistory ||
-      !ensureApiKey()
-    ) {
+    if (files.length === 0) {
+      return
+    }
+    if (!canAttach) {
+      // 拖拽 / 粘贴进来的文件同样要说清为什么不收：静默忽略会让用户以为界面卡住
+      showToast({ key: 'uploadChannelUnsupported' })
+      return
+    }
+    if (useChatStore.getState().importingHistory || !ensureApiKey()) {
       return
     }
     const error = addDraftFiles(sessionId, files, getApiKey())
@@ -274,28 +284,36 @@ const Input = ({ sessionId }: { sessionId: string | null }) => {
               }}
             />
           ) : null}
-          {caps.vision ? (
-            <>
-              <IconButton
-                size="m"
-                tone="primary"
-                icon={<IconPaperclipOutline16 />}
-                tooltip={t('uploadFile')}
-                disabled={importingHistory}
-                onClick={() => ensureApiKey() && fileInputRef.current?.click()}
-              />
-              <input
-                ref={fileInputRef}
-                type="file"
-                multiple
-                hidden
-                accept={ACCEPT}
-                onChange={(event) => {
-                  acceptFiles(Array.from(event.target.files ?? []))
-                  event.target.value = ''
-                }}
-              />
-            </>
+          <IconButton
+            size="m"
+            tone="primary"
+            className={clsx(!canAttach && styles.unavailableEntry)}
+            icon={<IconPaperclipOutline16 />}
+            tooltip={canAttach ? t('uploadFile') : t('uploadChannelUnsupported')}
+            aria-disabled={canAttach ? undefined : 'true'}
+            disabled={importingHistory}
+            onClick={() => {
+              if (!canAttach) {
+                showToast({ key: 'uploadChannelUnsupported' })
+                return
+              }
+              if (ensureApiKey()) {
+                fileInputRef.current?.click()
+              }
+            }}
+          />
+          {canAttach ? (
+            <input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              hidden
+              accept={ACCEPT}
+              onChange={(event) => {
+                acceptFiles(Array.from(event.target.files ?? []))
+                event.target.value = ''
+              }}
+            />
           ) : null}
           {streaming && sessionId ? (
             <button

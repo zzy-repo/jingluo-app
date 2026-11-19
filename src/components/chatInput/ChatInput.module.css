@@ -302,6 +302,12 @@
   }
 }
 
+/* 渠道没有文件上传能力（spec.paths.files 缺失）：入口可见但不可用，点击给可读提示 */
+.unavailableEntry {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
 .right {
   display: flex;
   flex-shrink: 0;

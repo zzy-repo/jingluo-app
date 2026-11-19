@@ -55,10 +55,20 @@ export type ProviderCaps = {
 export type ProviderPaths = {
   /** 模型列表 */
   models: string
-  /** 发消息（files 上传也挂在这个前缀下：`{messages}/files`） */
+  /** 发消息 */
   messages: string
   /** 语音等工具接口前缀 */
   tools: string
+  /**
+   * 附件上传（Files API）端点。**没有这一项 = 该渠道没有文件上传能力**（#303 / #37）。
+   *
+   * 为什么必须显式声明、而不是从 messages 前缀推：附件接口与对话接口是两条独立路由，
+   * 以前用 `{messages}/files` 推出来，实际发出的是 `/v1/chat/completions/files`——
+   * 网关没有这条路由，线上 2 小时吃了 2059 条 404（占日志 86%）。
+   * 声明式的好处是「不能上传」这件事在类型上就说得清，前端据此禁用入口并给出可读提示，
+   * 永远不靠猜路径。
+   */
+  files?: string
 }
 
 export type ProviderSpec = {
@@ -106,7 +116,7 @@ const RAW_SPECS: Record<ProviderKind, ProviderSpec> = {
     // 官方地址与模型内置，用户只需要填 Key（老用户存过的地址/模型仍优先，见 apiConfig.ts）
     fields: ['apiKey'],
     defaults: { baseUrl: 'https://api.deepseek.com', model: 'deepseek-flash' },
-    paths: { models: '/models', messages: '/anthropic/v1/messages', tools: '/v1/tools' },
+    paths: { models: '/models', messages: '/anthropic/v1/messages', tools: '/v1/tools', files: '/anthropic/v1/files' },
     auth: 'x-api-key',
     // 官方 CORS 白名单包含 anthropic-version（实测 OPTIONS 允许 x-api-key,anthropic-version）
     anthropicVersion: ANTHROPIC_VERSION,

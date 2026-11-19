@@ -398,12 +398,12 @@ try {
     mimeType: 'text/plain',
     buffer: Buffer.from('hello acceptance'),
   })
-    const uploadEntry = await waitFor(async () => posts(mockOk.log, '/anthropic/v1/messages/files').length > 0)
+    const uploadEntry = await waitFor(async () => posts(mockOk.log, '/anthropic/v1/files').length > 0)
   if (!uploadEntry) {
-    bad('7a) 附件没有上传到 /anthropic/v1/messages/files（拿不到 file_id）')
+    bad('7a) 附件没有上传到 /anthropic/v1/files（拿不到 file_id）')
   } else {
-    ok(`附件上传到 /anthropic/v1/messages/files，mock 返回 file_id=${FILE_ID}`)
-    note(`deepseek 附件上传 path = /anthropic/v1/messages/files`)
+    ok(`附件上传到 /anthropic/v1/files，mock 返回 file_id=${FILE_ID}`)
+    note(`deepseek 附件上传 path = /anthropic/v1/files（#303：不再拼 {messages}/files）`)
   }
   await page.waitForTimeout(800)
 

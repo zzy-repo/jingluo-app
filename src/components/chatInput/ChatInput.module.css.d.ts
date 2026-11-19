@@ -18,6 +18,7 @@ declare const styles: {
   readonly "toggle": string;
   readonly "selected": string;
   readonly "right": string;
+  readonly "unavailableEntry": string;
   readonly "sendButton": string;
   readonly "disabled": string;
 };

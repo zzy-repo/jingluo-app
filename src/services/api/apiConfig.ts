@@ -235,14 +235,52 @@ export const getApiKey = (): string => read(CONFIG_KEYS.apiKey) ?? ''
 export const getBaseUrl = (): string => resolveBaseUrl()
 export const getModel = (): string => resolveModel()
 
+/**
+ * 拼接 baseUrl 与 spec 里的路径（#303）。
+ *
+ * 自填渠道的用户经常把版本段也写进地址（`https://host/v1`），而 spec 的路径同样以 `/v1/...`
+ * 开头，天真相加会得到 `/v1/v1/chat/completions`——网关对这条路径只回裸 404
+ * （线上取证：`POST /v1/v1/chat/completions → 404 page not found`，而 `/v1/chat/completions`
+ * 本身是通的）。所以「路径首段与地址尾段相同」时只保留一份。
+ *
+ * 只消一次、只消首段：地址里别的路径段（`/openai/v1`）与多段重复不在本函数职责内，
+ * 那种地址本身就是用户填错，界面上会表现为可读的 4xx，而不是靠这里猜。
+ */
+export const joinUrl = (baseUrl: string, path: string): string => {
+  if (!path) {
+    return baseUrl
+  }
+  const base = baseUrl.replace(/\/+$/, '')
+  if (!path.startsWith('/')) {
+    return `${base}/${path}`
+  }
+  const [first] = path.slice(1).split('/')
+  if (first && base.endsWith(`/${first}`)) {
+    return `${base}${path.slice(first.length + 1)}`
+  }
+  return `${base}${path}`
+}
+
 /** GET 模型列表：baseUrl + paths.models（官方 /models，Anthropic 兼容 /v1/models） */
-export const getModelsUrl = (): string => `${getBaseUrl()}${getCurrentSpec().paths.models}`
+export const getModelsUrl = (): string => joinUrl(getBaseUrl(), getCurrentSpec().paths.models)
 /** 发消息：baseUrl + paths.messages */
-export const getMessagesUrl = (): string => `${getBaseUrl()}${getCurrentSpec().paths.messages}`
-/** Messages 前缀，附件接口挂在其下（`{messages}/files`） */
-export const getMessagesBaseUrl = (): string => `${getBaseUrl()}${getCurrentSpec().paths.messages}`
+export const getMessagesUrl = (): string => joinUrl(getBaseUrl(), getCurrentSpec().paths.messages)
 /** ASR / TTS 等工具接口前缀 */
-export const getToolsBaseUrl = (): string => `${getBaseUrl()}${getCurrentSpec().paths.tools}`
+export const getToolsBaseUrl = (): string => joinUrl(getBaseUrl(), getCurrentSpec().paths.tools)
+
+/**
+ * 附件上传地址：当前渠道**真的**有 Files API 时才返回，否则 null。
+ *
+ * 这一条是 #303 的核心：`null` 表示「这个渠道传不了文件」，调用方必须据此禁用入口/降级，
+ * 不允许再拿 messages 前缀拼出 `/v1/chat/completions/files` 这种凭猜测的路径。
+ */
+export const getFilesUrl = (): string | null => {
+  const path = getCurrentSpec().paths.files
+  return path ? joinUrl(getBaseUrl(), path) : null
+}
+
+/** 当前渠道是否支持附件上传（入口显隐与提示都看它，不再只看 caps.vision） */
+export const supportsFileUpload = (): boolean => Boolean(getCurrentSpec().paths.files)
 
 /** 保存渠道并立即生效（路径、鉴权头、输入行、能力入口随之切换）；API Key 保持不动（共用一把） */
 export const setProviderKind = (kind: ProviderKind) => {

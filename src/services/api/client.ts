@@ -3,8 +3,9 @@ import { translate, type TranslationMessage } from '../../i18n/index.js'
 import {
   getBaseUrl,
   getCurrentSpec,
-  getMessagesBaseUrl,
+  getFilesUrl,
   getMessagesUrl,
+  joinUrl,
   normalizeBaseUrl,
 } from './apiConfig.js'
 import { OpenAIStreamError, toOpenAIRequest, translateOpenAIStream } from './openaiAdapter.js'
@@ -325,7 +326,7 @@ export const verifyApiKey = async (apiKey: string, signal?: AbortSignal): Promis
   ensureBaseUrl()
   const spec = getCurrentSpec()
   const baseUrl = getBaseUrl()
-  await request(`${baseUrl}${spec.paths.models}`, {
+  await request(joinUrl(baseUrl, spec.paths.models), {
     method: 'GET',
     headers: authHeaders(apiKey, { baseUrl, spec }),
     signal,
@@ -333,8 +334,23 @@ export const verifyApiKey = async (apiKey: string, signal?: AbortSignal): Promis
 }
 
 /**
- * POST /anthropic/v1/files 上传附件（不设过期时间，会话里的历史附件一直可用）。
+ * 当前渠道没有 Files API 时的本地失败（**不发任何请求**）：入口应当已经禁用，
+ * 走到这里说明有别的调用路径绕过了入口——照样按不可上传处理，绝不猜一个端点去试。
+ */
+const uploadUnsupported = (): ApiError => new ApiError('protocol', { key: 'uploadChannelUnsupported' })
+
+/** 当前渠道是否支持附件上传（`paths.files` 声明了才算） */
+export const supportsFileUpload = (): boolean => Boolean(getCurrentSpec().paths.files)
+
+/** 附件上传地址；没有能力时为 null（调用方必须先判，本模块不再猜路径） */
+export const getUploadUrl = (): string | null => getFilesUrl()
+
+/**
+ * POST {paths.files} 上传附件（不设过期时间，会话里的历史附件一直可用）。
  * purpose 为 null 时不传该字段（图片）；purpose 必须排在 file 之前。
+ *
+ * 端点来自 spec 的显式声明（官方渠道 = `/anthropic/v1/files`），**不再是 `{messages}/files`**：
+ * 那个拼接在 OpenAI 协议渠道下会变成 `/v1/chat/completions/files`（网关无此路由，404，#303）。
  */
 export const uploadFile = async (
   apiKey: string,
@@ -342,13 +358,17 @@ export const uploadFile = async (
   purpose: FilePurpose | null,
   signal?: AbortSignal
 ): Promise<FileObject> => {
+  ensureBaseUrl()
+  const url = getFilesUrl()
+  if (!url) {
+    throw uploadUnsupported()
+  }
   const form = new FormData()
   if (purpose) {
     form.append('purpose', purpose)
   }
   form.append('file', file)
-  ensureBaseUrl()
-  const response = await request(`${getMessagesBaseUrl()}/files`, {
+  const response = await request(url, {
     method: 'POST',
     headers: authHeaders(apiKey, { beta: true }),
     body: form,
@@ -357,10 +377,14 @@ export const uploadFile = async (
   return (await response.json()) as FileObject
 }
 
-/** DELETE /anthropic/v1/files/{file_id} */
+/** DELETE {paths.files}/{file_id}（无上传能力的渠道直接按不可上传失败，不发请求） */
 export const deleteFile = async (apiKey: string, fileId: string): Promise<void> => {
   ensureBaseUrl()
-  await request(`${getMessagesBaseUrl()}/files/${encodeURIComponent(fileId)}`, {
+  const url = getFilesUrl()
+  if (!url) {
+    throw uploadUnsupported()
+  }
+  await request(`${url}/${encodeURIComponent(fileId)}`, {
     method: 'DELETE',
     headers: authHeaders(apiKey, { beta: true }),
   })
