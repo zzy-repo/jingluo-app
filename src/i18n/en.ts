@@ -426,6 +426,8 @@ export const en = {
   feedbackScreenshotPick: 'Choose from photos',
   feedbackScreenshotRemove: 'Remove',
   feedbackScreenshotFailed: 'Could not process this image; try another one',
+  feedbackScreenshotNotImage: 'Only images can be attached as a screenshot (png, jpg, webp…)',
+  feedbackScreenshotUndecodable: 'This image cannot be opened (corrupt or not really an image); try another one',
   feedbackScreenshotReady: 'Compressed and attached',
   feedbackSubmit: 'Submit',
   feedbackSubmitting: 'Submitting…',

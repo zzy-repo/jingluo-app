@@ -403,6 +403,10 @@ export const zh = {
   feedbackScreenshotPick: '从相册选择',
   feedbackScreenshotRemove: '移除',
   feedbackScreenshotFailed: '图片处理失败，请换一张再试',
+  /** 选错文件（.txt / .pdf / .zip）：明确拒绝，不当截图收下（#388） */
+  feedbackScreenshotNotImage: '只能附图片截图：请选择 png / jpg / webp 这类图片文件',
+  /** 声明是图片但解不开：改过后缀的假图 / 损坏文件（#388） */
+  feedbackScreenshotUndecodable: '这张图片打不开（可能已损坏或不是真的图片），请换一张再试',
   feedbackScreenshotReady: '已压缩后附上',
   feedbackSubmit: '提交',
   feedbackSubmitting: '提交中…',

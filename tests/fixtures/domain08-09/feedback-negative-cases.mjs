@@ -16,6 +16,10 @@
 
 export const TOAST = {
   screenshotFailed: '图片处理失败，请换一张再试',
+  /** #388：非图片文件被明确拒绝 */
+  notImage: '只能附图片截图：请选择 png / jpg / webp 这类图片文件',
+  /** #388：声明是图片但解不开 */
+  undecodable: '这张图片打不开（可能已损坏或不是真的图片），请换一张再试',
   copyFailed: '复制失败，请长按或选中文本后复制',
   descriptionRequired: '请先填写问题描述',
 }
@@ -24,11 +28,11 @@ export const NEGATIVE_CASES = [
   {
     id: 'U1',
     fn: 'F8-04',
-    label: '选了一张非图片文件（.txt）',
+    label: '选了一张非图片文件（.txt）→ 明确拒绝，说明只收图片',
     patch: 'none',
     action: 'pick',
     file: { kind: 'text', name: 'note.txt', mimeType: 'text/plain' },
-    expect: { toast: TOAST.screenshotFailed, preview: false },
+    expect: { toast: TOAST.notImage, preview: false },
   },
   {
     id: 'U2',
@@ -73,12 +77,20 @@ export const NEGATIVE_CASES = [
     action: 'submit-empty',
     expect: { toast: null, submitDisabled: true },
   },
+  {
+    id: 'U7',
+    fn: 'F8-04',
+    label: '后缀/类型都写着 image/png，内容却不是图片（改过后缀的假图）',
+    patch: 'none',
+    action: 'pick',
+    file: { kind: 'text', name: 'fake.png', mimeType: 'image/png' },
+    expect: { toast: TOAST.undecodable, preview: false },
+  },
 ]
 
 /**
- * 已登记的真实缺口（现状红）：非图片文件会被**静默当成截图**收下 ——
- * `prepareScreenshot` 只做「读文件 → 试着压缩」，压缩失败退回原图，
- * 所以选一个 `.txt` 进去时既不报错，预览里还会出现一个坏图，用户点提交就把垃圾带上去了。
- * 追踪：#367（域 8+9 最小充分集）→ 子单登记修复（`prepareScreenshot` 加 `file.type` / 解码校验）。
+ * 已登记的真实缺口（现状红）。**当前为空**：原 U1「非图片文件被静默当作截图收下」已由 #388 修掉
+ * （`prepareScreenshot` 先校验 `file.type`、再真解一次确认能解码），该行转严格断言并通过，
+ * 因此条目按口径删掉 —— 留着它会让「已修」变回「已知缺口」。
  */
-export const KNOWN_GAPS = [{ row: 'U1', issue: '#367', reason: '非图片文件被静默当作截图收下，没有任何提示' }]
+export const KNOWN_GAPS = []

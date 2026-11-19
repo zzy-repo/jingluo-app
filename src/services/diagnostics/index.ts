@@ -265,8 +265,10 @@ export const submitFeedback = async (
   }
 }
 
-/** UI 用：相册选图 → 压缩后的 data URL */
+/** UI 用：相册选图 → 压缩后的 data URL（非图片 / 解不开会抛 `ScreenshotError`，见 #388） */
 export { prepareScreenshot }
+export { ScreenshotError } from './transport.http.js'
+export type { ScreenshotErrorCode } from './transport.http.js'
 
 /** UI 用：错误码 → i18n 之外的兜底中文提示 */
 export { describeFeedbackError }

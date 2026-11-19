@@ -21,6 +21,7 @@ import {
   getFeedbackTransportName,
   inspectLogCoverage,
   prepareScreenshot,
+  ScreenshotError,
   submitFeedback,
   type LogCoverage,
 } from '../../services/diagnostics/index.js'
@@ -299,13 +300,27 @@ const FeedbackForm = ({
     }
   }
 
+  /**
+   * 选图（#388）：非图片 / 解不开的图**明确拒绝并说清原因**，不进入预览。
+   * 之前这里 catch 一网打尽，`prepareScreenshot` 又把压缩失败退回原图 —— 选一个 `.txt`
+   * 进来既不报错、预览里还出现一个坏图，用户点提交就把垃圾带上去了。
+   */
   const onPickScreenshot = async (file: File) => {
     setShotBusy(true)
     try {
       setScreenshot(await prepareScreenshot(file))
       setDraftHadScreenshot(false)
-    } catch {
-      showToast({ key: 'feedbackScreenshotFailed', type: 'error' })
+    } catch (error) {
+      const code = error instanceof ScreenshotError ? error.code : 'unknown'
+      showToast({
+        key:
+          code === 'not-image'
+            ? 'feedbackScreenshotNotImage'
+            : code === 'undecodable'
+              ? 'feedbackScreenshotUndecodable'
+              : 'feedbackScreenshotFailed',
+        type: 'error',
+      })
     } finally {
       setShotBusy(false)
     }

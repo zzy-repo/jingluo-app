@@ -9,7 +9,9 @@
 // 表在 `tests/fixtures/domain08-09/feedback-negative-cases.mjs`；一行一个场景，
 // 每行都在**全新的浏览器上下文**里跑（存储清空 + 单独注入故障），场景之间互不污染。
 //
-// 现状：U1（非图片）是**预期红** —— 见 `KNOWN_GAPS`：`.txt` 会被静默当成截图收下。
+// 现状：**全绿，`KNOWN_GAPS` 为空**。#388 修掉了原 U1（`.txt` 被静默当成截图收下）：
+// `prepareScreenshot` 现在先校验 `file.type`、再真解一次确认能解码，非图片与解不开的假图
+// 都被明确拒绝（U1 / U7 分别断言「只收图片」与「这张图打不开」两句提示，且不留预览）。
 // 口径与 N1 相同：已登记缺口继续红 → 报告放行；已登记缺口变绿 → 失败（提示转严格）；
 // 表外变红 → 失败（真实回归）。
 //
@@ -69,7 +71,15 @@ const PATCHES = {
   },
 }
 
-const ERROR_TOASTS = [TOAST.screenshotFailed, TOAST.copyFailed, TOAST.descriptionRequired]
+// 负向表里所有「本该报错」的文案：#388 之后选图失败分成了三种（非图片 / 解不开 / 其它），
+// 三句都算错误提示 —— 不然「不该有提示」的行会漏掉新加的那两句。
+const ERROR_TOASTS = [
+  TOAST.screenshotFailed,
+  TOAST.notImage,
+  TOAST.undecodable,
+  TOAST.copyFailed,
+  TOAST.descriptionRequired,
+]
 
 const settle = (page) => page.waitForTimeout(900)
 
@@ -161,7 +171,7 @@ const runCase = async (browser, appUrl, row) => {
   }
 }
 
-test('N5 反馈弹窗负向表：六种失败分支各自的提示与后果', async () => {
+test('N5 反馈弹窗负向表：七种失败分支各自的提示与后果', async () => {
   verifyDist(DIST, { variant: 'standard' })
   const served = await serveDir(DIST, { port: process.env.PORT, label: '标准产物 dist' })
   const browser = await chromium.launch()
