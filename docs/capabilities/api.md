@@ -1,6 +1,6 @@
 # 类别 1：JS 内置 API 与语言特性假设盘点
 
-> 快照基准：`55c4d1e`（`origin/main` tip，2026-11-19 12:07:47 +0800）· 采集时间：2026-11-19 12:19 (+0800)。
+> 快照基准：`9e9f231`（`origin/main` tip，2026-11-19 12:28:21 +0800）· 采集时间：2026-11-19 12:37 (+0800)。
 > 下面的数字全部由 `scripts/lib/apiAssumptionAudit.mjs` 在基准 commit 上跑出来，不是数的；`tests/unit/capabilities-docs-sync.test.mjs` 会重新跑一遍并逐项比对，文档一旦落后于代码就红。
 
 追踪单：[#209 能力探测替代一切假设](https://github.com/zzy-repo/deepseek-app/issues/209)。本单只做盘点、定规范、建工具；下面「真漏洞」里的三条已各自拆成独立 issue，**不在本单修**。
@@ -8,7 +8,7 @@
 | 项目 | 值 |
 | --- | --- |
 | 兼容基线 | Android WebView **83**（Chromium 83.0.4103.106，Android 11 出厂镜像） |
-| 扫描范围 | `src/**` 共 **240** 个文件（**140** `.ts` / 54 `.tsx` / 44 `.css` / 1 `.html` / 1 `.md`） |
+| 扫描范围 | `src/**` 共 **241** 个文件（**141** `.ts` / 54 `.tsx` / 44 `.css` / 1 `.html` / 1 `.md`） |
 | 判定方式 | **静态推断**：词法层遮蔽注释、字符串、模板后按调用形状匹配；**非运行时验证** |
 | 工具 | [`scripts/lib/apiAssumptionAudit.mjs`](../../scripts/lib/apiAssumptionAudit.mjs)（纯判定模块，无遍历、无打印） |
 | 单测 | [`tests/unit/api-assumption-audit.test.mjs`](../../tests/unit/api-assumption-audit.test.mjs)（10 个用例，三个判定桶各钉真例子） |
@@ -23,7 +23,7 @@
 | **真漏洞**（`uncovered`） | 首次支持 > 83 且没有任何兜底 | **0** |
 | 合计 | | **51** |
 
-类别 1 命中总数 **51 处 / 240 个文件**：31 处依赖入口 polyfill、20 处落在基线内、**0 处裸调用无兜底**。
+类别 1 命中总数 **51 处 / 241 个文件**：31 处依赖入口 polyfill、20 处落在基线内、**0 处裸调用无兜底**。
 
 入口兜底的覆盖面（`src/polyfills/legacy.ts` 实际安装的 13 项）：`Object.hasOwn`、`Array.prototype.at`、`String.prototype.at`、`Array.prototype.findLast`、`Array.prototype.findLastIndex`、`Array.prototype.toSorted`、`Array.prototype.toReversed`、`Array.prototype.toSpliced`、`Array.prototype.with`、`structuredClone`、`crypto.randomUUID`、`String.prototype.replaceAll`、`Intl.Segmenter`。
 
