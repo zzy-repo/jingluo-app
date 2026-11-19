@@ -4,6 +4,7 @@ import { setApiKey, useApiConfig, useIsOursChannel } from '../../services/api/ap
 import { useTranslate } from '../../i18n/index.js'
 import {
   buyUrl,
+  createBuyOrder,
   fetchPlans,
   formatPlanMeta,
   formatPoints,
@@ -11,13 +12,14 @@ import {
   OURS_PAYMENT_OPEN,
   pollOrder,
   probeApiKey,
-  startCheckout,
+  type OursBuyTicket,
   type OursKeyProbe,
   type OursLatestFulfilled,
   type OursMessageKey,
   type OursOrderStatus,
   type OursPlansState,
 } from '../../services/ours/api.js'
+import { startInAppPay } from '../../services/ours/inAppPay.js'
 import {
   applyForKey,
   isInviteCodeShape,
@@ -48,7 +50,7 @@ import {
   writeStoredOrder,
   ORDER_RESUME_MAX_AGE_MS,
 } from '../../services/ours/orderStore.js'
-import { httpTransport, isNativePlatform, navigateTopLevel, openCheckout } from '../../services/ours/transport.js'
+import { httpTransport, isNativePlatform, navigateTopLevel, openCheckout, openCheckoutInApp } from '../../services/ours/transport.js'
 import { copyText } from '../../utils/clipboard.js'
 import { Button } from '../base/Button.js'
 import { Modal } from '../base/Modal.js'
@@ -162,6 +164,12 @@ const OursServicesDialog = ({ onClose }: { onClose: () => void }) => {
   const [planId, setPlanId] = useState('')
   const [buyBusy, setBuyBusy] = useState(false)
   const [buyError, setBuyError] = useState<OursMessageKey | null>(null)
+  /**
+   * 这一次支付的票根（Issue #235）：单号 + 令牌 + pay_url。
+   * 留着它，用户重复点「去支付」就不再建新单；订单到终态时立刻清掉 ——
+   * pay_url 里带着金额与单号签名，**付过的地址绝不能再拿来付下一单**。
+   */
+  const [buyTicket, setBuyTicket] = useState<OursBuyTicket | null>(null)
   const [order, setOrder] = useState<OrderView | null>(null)
   const [inviteInput, setInviteInput] = useState('')
   const [inviteBusy, setInviteBusy] = useState(false)
@@ -335,8 +343,11 @@ const OursServicesDialog = ({ onClose }: { onClose: () => void }) => {
    *  2. 轮询每 tick 都回读本地存档（latest），存档被覆盖就换到新单；展示用的单号
    *     一律取**服务端返回的那一单**（next.outTradeNo），不再用发起时的闭包值。
    */
-  const runPoll = async (initial: { outTradeNo: string; orderToken: string }) => {
-    if (runningFor.current === initial.outTradeNo) {
+  const runPoll = async (
+    initial: { outTradeNo: string; orderToken: string },
+    options: { force?: boolean } = {}
+  ) => {
+    if (!options.force && runningFor.current === initial.outTradeNo) {
       // 这一单已经在查了（下单时写存档会触发订阅，别再叠一条轮询上去）
       return
     }
@@ -431,6 +442,9 @@ const OursServicesDialog = ({ onClose }: { onClose: () => void }) => {
             }
       )
       writeStoredOrder(null)
+      // Issue #235：这一单已经结束了，票根（含 pay_url）立刻作废 ——
+      // 复用一张付过的收银台地址，等于让用户再付一次上一单的钱。
+      setBuyTicket(null)
       // 发卡成功说明这笔钱已到账，额度可能变了：顺手刷一次
       if (result.order.status === 'fulfilled') {
         void refreshBalance()
@@ -575,16 +589,20 @@ const OursServicesDialog = ({ onClose }: { onClose: () => void }) => {
   // ---------------------------------------------------------------- 购买
 
   /**
-   * 去支付。两种环境两种走法（Issue #36 的技术订正）：
+   * 去支付。两种环境两种走法（Issue #235 起，原生端换了实现）：
    *
    *  - **网页版**：直接 `window.location.assign(buyUrl(planId))` —— 顶层导航。
    *    /buy 的 302 目标里签名、单号、金额后端已经拼好，浏览器照着跳就行；
    *    跨域顶层跳转不受 CORS 约束，也不需要读 Location。**一条业务请求都不发**（不发 fetch）。
-   *  - **原生**：GET /buy 读 302 的 Location（CapacitorHttp disableRedirects，读不到头时
-   *    走原生插件 resolveLocation 兜底）→ 系统浏览器打开 → 存 order_token → 轮询。
+   *  - **原生**：`GET /api/buy` 拿「单号 + 令牌 + pay_url」→ 用 **App 内嵌浏览器**打开收银台
+   *    → 用户付完款关掉收银台（`browserFinished`）就**立刻重查一单**，卡密当场显示。
    *
-   * 旧的网页版实现用 `fetch('/buy', { redirect: 'manual' })` 读 302：按规范只能拿到
-   * opaqueredirect（读不到 Location），所以永远走到「请在 App 内购买」—— 那条分支已删除。
+   * 为什么不再把人踢去系统浏览器（Issue #235 的症结）：支付宝收银台在系统浏览器里付完款，
+   * 除非用户自己点「返回商家」，否则**不会**走 return_url；用户就停在浏览器里，App 在后台
+   * 空等 60s 超时，切回来还是「等待支付」，得手动点「再查一次」才看到卡密。
+   *
+   * 细节都在 services/ours/inAppPay.ts（纯逻辑、有单测）：同一套餐复用票根不重复建单，
+   * 换套餐必须换新的 pay_url，关闭只回跳一次，内嵌浏览器不可用时降级到系统浏览器。
    */
   const buy = async () => {
     if (!OURS_PAYMENT_OPEN || planId === '' || buyBusy) {
@@ -597,29 +615,32 @@ const OursServicesDialog = ({ onClose }: { onClose: () => void }) => {
       return
     }
     setBuyBusy(true)
-    const result = await startCheckout(planId, httpTransport)
-    if (!alive.current) {
-      return
-    }
-    if (result.kind !== 'ok') {
-      setBuyBusy(false)
-      setBuyError(result.kind === 'no-location' ? 'oursErrCheckoutUnsupported' : result.messageKey)
-      return
-    }
-    const opened = await openCheckout(result.checkout.payUrl)
+    const outcome = await startInAppPay(planId, {
+      ticket: buyTicket,
+      remember: (next) => {
+        setBuyTicket(next)
+      },
+      createOrder: (id) => createBuyOrder(id, httpTransport),
+      openInApp: (url, onClosed) => openCheckoutInApp(url, onClosed),
+      openSystem: (url) => openCheckout(url),
+      // 关闭收银台 = 「我回来了」：强制重起一轮查单（把后台那轮可能已超时的轮询顶掉）
+      poll: (target, pollOptions) => {
+        void runPollRef.current(target, pollOptions)
+      },
+    })
     if (!alive.current) {
       return
     }
     setBuyBusy(false)
-    if (!opened) {
-      setBuyError('oursErrCheckoutUnsupported')
+    if (outcome.kind !== 'ok') {
+      setBuyError(outcome.messageKey)
       return
     }
-    // 存档由 startCheckout 在「拿到 Location 并解析出新单号」那一刻**覆盖**写法（api.ts），
+    // 存档由 createBuyOrder 在「拿到单号与令牌」那一刻**覆盖**写法（api.ts），
     // 这里不再重复写一份：两处写同一份存档只会给「谁最后写」留坑（Issue #157）。
     // 覆盖掉一笔还没完成的旧单时明说一句，别让用户以为旧单还能付。
-    setReplacedUnpaid(result.replacedUnpaidOrder)
-    await runPoll({ outTradeNo: result.checkout.outTradeNo, orderToken: result.checkout.orderToken })
+    setReplacedUnpaid(outcome.replacedUnpaidOrder)
+    // 轮询已由 startInAppPay 起好了（打开后先查一轮），这里不再叠一次
   }
 
   // ---------------------------------------------------------------- 兑换 / 邀请

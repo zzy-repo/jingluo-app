@@ -54,7 +54,10 @@ const isBuyRequest = (request: OursHttpRequest): boolean => {
     return false
   }
   try {
-    return /\/buy$/u.test(new URL(request.url).pathname)
+    const path = new URL(request.url).pathname
+    // Issue #235：`/api/buy` 也以 `/buy` 结尾，但它是**返回 JSON 的建单接口**。
+    // 交给 resolveLocation 只能拿到「状态码 + Location」，正文里的 pay_url 就丢了。
+    return /\/buy$/u.test(path) && !/^\/api\//u.test(path)
   } catch {
     return false
   }
@@ -178,6 +181,78 @@ export const openCheckout = async (url: string): Promise<boolean> => {
     // 跨域窗口设不了 opener 也没关系
   }
   return true
+}
+
+/**
+ * 用 **App 内嵌浏览器** 打开收银台，并在用户关掉它（回到 App）的那一刻回调一次（Issue #235）。
+ *
+ * 为什么不再把人踢去系统浏览器：支付宝收银台在系统浏览器里付完款后，除非用户自己点
+ * 「返回商家」，否则**不会**走 return_url —— 用户就停在浏览器里，App 在后台干等 60s 超时，
+ * 切回来还是「等待支付」，得手动点「再查一次」才看到卡密。
+ *
+ * 内嵌浏览器（`@capacitor/browser`）把「关掉收银台」变成一个 App 内事件
+ * （`browserFinished`），于是「用户回来了」可以被当成一次明确信号：立刻重查一单。
+ *
+ * 约定：
+ *  - 只放行 https；非原生（Web / 没有插件）一律返回 false，由调用方降级到 `openCheckout`
+ *  - `onClosed` **最多回调一次**（重复触发、关闭与打开失败并存都只算一次）
+ *  - 监听在 `open` **之前**注册：收银台打开得极快时也不会漏掉第一次关闭
+ *  - 返回 false 时监听已经摘掉，不会给下一次支付留下一个假回跳
+ */
+export const openCheckoutInApp = async (
+  url: string,
+  onClosed: () => void
+): Promise<boolean> => {
+  if (!isNativePlatform() || !isOpenableCheckout(url)) {
+    return false
+  }
+  // `@capacitor/browser` 用**动态**引入：网页构建和单测里根本没有这个插件，
+  // 静态 import 会让它们连模块都加载不起来（真实症状：tests/unit 里 ENOENT data:…）。
+  // 只有原生端真要点「去支付」时才需要它。
+  let browser: typeof import('@capacitor/browser').Browser
+  try {
+    const mod = await import('@capacitor/browser')
+    browser = mod.Browser
+  } catch {
+    return false
+  }
+  let handle: { remove: () => Promise<void> } | null = null
+  let fired = false
+  const detach = async (): Promise<void> => {
+    const target = handle
+    handle = null
+    if (target === null) {
+      return
+    }
+    try {
+      await target.remove()
+    } catch {
+      // 摘不掉也不影响：fired 已经保证回调只跑一次
+    }
+  }
+  const finish = (): void => {
+    if (fired) {
+      return
+    }
+    fired = true
+    void detach()
+    onClosed()
+  }
+  try {
+    handle = await browser.addListener('browserFinished', () => finish())
+  } catch {
+    // 插件没装（老 APK / Web）→ 当作「没有内嵌浏览器」
+    return false
+  }
+  try {
+    await browser.open({ url })
+    return true
+  } catch {
+    // 打不开就摘掉监听再返回 false：否则下一次支付的 browserFinished
+    // 会在这里凭空触发一次「用户回来了」，查一张没付过的单。
+    await detach()
+    return false
+  }
 }
 
 /**
