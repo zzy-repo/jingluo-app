@@ -1,6 +1,6 @@
 // [layer: unit | 依赖: 无（纯 Node，零浏览器；IndexedDB 边界用假 db 替身） | 耗时: <2s] Issue #32
 //
-// 夹具（tests/fixtures/archive-fixture.mjs）必须按真实导出顺序写条目，否则拿它做的
+// 夹具（tests/fixtures/domain05/archive-fixture.mjs）必须按真实导出顺序写条目，否则拿它做的
 // 回归/设备用例会误报成「导入端 bug」。这里用**真实** checkArchiveFormat + importArchive
 // 跑一遍 buildArchive 产物，把夹具顺序钉死：
 //   [1] 8 会话 / 每会话 1 张 512KB 图片 → sessions === 8、files === 8、MIME 全是 image/png
@@ -66,7 +66,7 @@ registerHooks({
 })
 
 const { checkArchiveFormat, importArchive } = await import('../../src/services/chat/history/importArchive.ts')
-const { buildArchive } = await import('../fixtures/archive-fixture.mjs')
+const { buildArchive } = await import('../fixtures/domain05/archive-fixture.mjs')
 const db = globalThis.__archiveFixtureDB
 
 /** 跑一遍「真实 check + 真实 import」，返回写进暂存的结果 */

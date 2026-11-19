@@ -62,7 +62,7 @@ const {
 const { zh } = await import('../../src/i18n/zh.ts')
 const { en } = await import('../../src/i18n/en.ts')
 
-const fixtures = await import('../fixtures/ours-trail.mjs')
+const fixtures = await import('../fixtures/domain06-07/ours-trail.mjs')
 
 /** 与 i18n/index.ts 的 createTranslate 同一套占位符规则（测试里不 import 那份带 zustand 的实现） */
 const makeTranslate = (table) => (key, params) => {

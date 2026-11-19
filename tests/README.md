@@ -12,7 +12,9 @@ tests/
 ├── e2e/           2 个：真上游 + 真 UI（要 API Key）/ 真实反馈后端
 ├── device/        1 个：Android 模拟器或真机（adb）
 ├── golden/         4 个：黄金回归——每域 1 条主路径，真 dist + stub 后端，合计 ~6s（#404）
-├── fixtures/      mock 服务与样本数据（不是测试，被上面引用）
+├── fixtures/      mock 服务与样本数据（不是测试，被上面引用）；**根目录只放目录不放假夹**：
+│                  按域分 `fixtures/<域>/`（domain01-02 / domain03-04 / … / domain10），
+│                  外加三类跨域替身目录 chat-stubs / url-import-stubs / import-archive-stubs（#408）
 ├── helpers/       共享装配：单元层 dom-env.mjs（.js→.ts + 替身），集成层 runtime/env/ports，黄金层 golden.mjs
 ├── tools/         手工用的一次性脚本（不是测试，不参与分层执行）
 ├── run-layer.mjs  分层 runner（串行；本文件是唯一入口）
@@ -216,7 +218,7 @@ E2E_API_KEY=sk-xxx npm run test:e2e               # 真上游握手（发版前�
 | `tests/test.diagnostics-e2e.spec.mjs` | `tests/e2e/diagnostics-upload.test.mjs` |
 | `tests/e2e-real-upstream.spec.mjs` | `tests/e2e/real-upstream.test.mjs` |
 | `tests/run-acceptance.mjs`（36KB 巨型套件） | `tests/integration/full-acceptance.test.mjs` |
-| `tests/helpers.mjs` / `archive-fixture.mjs` / `mock-anthropic.mjs` | `tests/helpers/helpers.mjs` / `tests/fixtures/archive-fixture.mjs` / `tests/fixtures/mock-anthropic.mjs` |
+| `tests/helpers.mjs` / `archive-fixture.mjs` / `mock-anthropic.mjs` | `tests/helpers/helpers.mjs` / `tests/fixtures/domain05/archive-fixture.mjs` / `tests/fixtures/domain03-04/mock-anthropic.mjs` |
 | `tests/package.json`（自带 playwright 依赖） | 删除，依赖统一由根 `package.json` 提供 |
 
 ---

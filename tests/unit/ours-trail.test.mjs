@@ -68,7 +68,7 @@ const {
   trailToneOf,
 } = await import('../../src/services/ours/trail.ts')
 
-const fixtures = await import('../fixtures/ours-trail.mjs')
+const fixtures = await import('../fixtures/domain06-07/ours-trail.mjs')
 
 const BASE = 'https://example.test'
 const KEY = 'sk-trail-fixture-0000'

@@ -13,7 +13,7 @@
 import http from 'node:http'
 import { appendFileSync, writeFileSync } from 'node:fs'
 
-import { endpointHosts } from '../../scripts/lib/endpoints.mjs'
+import { endpointHosts } from '../../../scripts/lib/endpoints.mjs'
 
 const args = process.argv.slice(2)
 const hostArg = args.indexOf('--host')

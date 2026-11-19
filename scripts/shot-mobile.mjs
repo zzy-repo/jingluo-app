@@ -32,9 +32,9 @@ import { zipSync, strToU8 } from 'fflate'
 import { chromium } from 'playwright'
 
 import { inviteBaseUrl } from './lib/endpoints.mjs'
-// 支付记录时间线的夹具与单测共用一份（tests/fixtures/ours-trail.mjs）：
+// 支付记录时间线的夹具与单测共用一份（tests/fixtures/domain06-07/ours-trail.mjs）：
 // 截图里看到的五状态 + 长链路就是单测断言的那几条，不另造一份假数据。
-import { cardTrailRedeemed, orderTrailResponse, trailPage } from '../tests/fixtures/ours-trail.mjs'
+import { cardTrailRedeemed, orderTrailResponse, trailPage } from '../tests/fixtures/domain06-07/ours-trail.mjs'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const ROOT = path.resolve(HERE, '..')
@@ -2130,7 +2130,7 @@ export const main = async (argv = process.argv.slice(2), env = process.env) => {
         }
 
         if (def.trail) {
-          // #189：三个只读接口都拦，回的是 tests/fixtures/ours-trail.mjs 里那份真契约数据
+          // #189：三个只读接口都拦，回的是 tests/fixtures/domain06-07/ours-trail.mjs 里那份真契约数据
           await routeTrail(context, def.trail)
         }
 

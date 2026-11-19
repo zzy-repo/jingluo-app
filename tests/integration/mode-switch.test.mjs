@@ -3,7 +3,7 @@
 //
 //   cd /root/deepseek-app && node tests/integration/mode-switch.test.mjs
 //
-// 需要**内测构建**（默认渠道是我们的渠道 ours，契约见 tests/fixtures/ours-upstream.mjs）：
+// 需要**内测构建**（默认渠道是我们的渠道 ours，契约见 tests/fixtures/domain03-04/ours-upstream.mjs）：
 // 脚本自己起静态服务（默认端口 5293，PORT 可注入），上游用 page.route 打桩，不连外网。
 //   DIST_DIR=$PWD/dist PORT=5293 node tests/integration/mode-switch.test.mjs
 import { mkdirSync } from 'node:fs'
@@ -11,7 +11,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
 import { serveDir, verifyAppUrl, verifyDist } from '../helpers/env.mjs'
-import { OURS_CHAT_PATH, OURS_CORS, OURS_HOST, modelsJson, openAiSse } from '../fixtures/ours-upstream.mjs'
+import { OURS_CHAT_PATH, OURS_CORS, OURS_HOST, modelsJson, openAiSse } from '../fixtures/domain03-04/ours-upstream.mjs'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const ROOT = path.resolve(HERE, '../..')

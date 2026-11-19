@@ -22,7 +22,7 @@ import { mkdtemp, readFile, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { chromium } from 'playwright'
-import { buildArchiveZip } from '../fixtures/archive-fixture.mjs'
+import { buildArchiveZip } from '../fixtures/domain05/archive-fixture.mjs'
 
 const APP_URL = process.env.APP_URL || 'http://127.0.0.1:5181'
 const TITLE_PREFIX = '域5往返会话'

@@ -4,7 +4,7 @@
 //   cd /root/deepseek-app && node tests/integration/motion.test.mjs
 //
 // 被测页面是**内测构建**的 dist（`INTERNAL_BUILD=1 pnpm build:internal`），
-// 由脚本自己拉起静态服务；上游（ours 渠道，见 tests/fixtures/ours-upstream.mjs）用 page.route 打桩，
+// 由脚本自己拉起静态服务；上游（ours 渠道，见 tests/fixtures/domain03-04/ours-upstream.mjs）用 page.route 打桩，
 // 不需要真的把 IP 绑到回环，也不连任何外网。
 //
 // 断言（对应任务书「验收」）：
@@ -25,7 +25,7 @@ import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import { chromium } from 'playwright'
 import { serveDir, verifyAppUrl, verifyDist } from '../helpers/env.mjs'
-import { OURS_MODEL, routeOurs } from '../fixtures/ours-upstream.mjs'
+import { OURS_MODEL, routeOurs } from '../fixtures/domain03-04/ours-upstream.mjs'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const ROOT = path.resolve(HERE, '../..')
@@ -381,7 +381,7 @@ const launch = async (reducedMotion, viewport = mobileViewport) => {
     }
   })
   page.on('pageerror', (error) => errors.push(`pageerror: ${error.message}`))
-  // 上游打桩：内测构建默认渠道 ours，契约集中在 tests/fixtures/ours-upstream.mjs
+  // 上游打桩：内测构建默认渠道 ours，契约集中在 tests/fixtures/domain03-04/ours-upstream.mjs
   // （OpenAI 协议：POST /v1/chat/completions + Bearer，SSE 是 chat.completion.chunk）
   await routeOurs(page, { reply: REPLY })
   await page.goto(APP_URL, { waitUntil: 'domcontentloaded' })

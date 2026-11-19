@@ -10,7 +10,7 @@
  * 判据：一条断言如果删掉它，L1 里还有别的用例会因为同一处坏掉而变红 → 它不该出现在这里。
  *
  * 复用而非另造：静态服务用 `helpers/runtime.mjs` 的 `serveDist`，进程/超时用 `runCase`，
- * 浏览器与夹具沿用 L1 已有的（`fixtures/domain01-02/*`、`fixtures/archive-fixture.mjs`）。
+ * 浏览器与夹具沿用 L1 已有的（`fixtures/domain01-02/*`、`fixtures/domain05/archive-fixture.mjs`）。
  *
  * 约定（每个 test 文件）：
  *

@@ -10,7 +10,7 @@
 // 历史坑（Issue #19）：地址曾是 http://123.207.199.196:60010 且走 Anthropic Messages 协议
 // （/v1/messages + x-api-key），契约换了以后 motion / mode-switch / provider-channels /
 // internal-build 里各自写死的旧打桩全变假红。这里集中成 fixture，用例只 import 常量。
-import { chatBaseUrl } from '../../scripts/lib/endpoints.mjs'
+import { chatBaseUrl } from '../../../scripts/lib/endpoints.mjs'
 
 export const OURS_HOST = chatBaseUrl
 export const OURS_MODEL = 'deepseek-v4.1-flash'

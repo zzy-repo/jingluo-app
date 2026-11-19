@@ -7,7 +7,7 @@
 | `tests/run-layer.mjs` | 分层 runner（unit / integration / e2e / device），本文件的主角 |
 | `tests/integration-baseline.json` | 集成层**基线清单**：每个文件期望什么状态、为什么 |
 | `tests/helpers/env.mjs` | 环境守卫：端口自动发现、产物自述校验、`SKIP(env)` 退出码 |
-| `tests/fixtures/ours-upstream.mjs` | 「我们的渠道」上游契约的唯一定义（地址/模型/路径/鉴权/SSE） |
+| `tests/fixtures/domain03-04/ours-upstream.mjs` | 「我们的渠道」上游契约的唯一定义（地址/模型/路径/鉴权/SSE） |
 | `docs/TESTING-POLICY.md` | L0 / L1 / L2 分级门禁与该跑什么 |
 
 分层总览见 `tests/README.md`；本文件只讲集成层。

@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
-import { buildArchiveZip } from '../fixtures/archive-fixture.mjs'
+import { buildArchiveZip } from '../fixtures/domain05/archive-fixture.mjs'
 
 const APP_URL = process.env.APP_URL || 'http://127.0.0.1:5181'
 // fileURLToPath：Windows 下 pathname 是 /D:/...，当路径用会变成 D:\D:\...

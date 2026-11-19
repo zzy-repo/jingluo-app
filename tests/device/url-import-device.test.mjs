@@ -9,7 +9,7 @@
 //       协议（Browser.setDownloadBehavior 报错），所以这里直接走 WebView 页面级 CDP。
 import { execFileSync, spawn } from 'node:child_process'
 import { mkdirSync, writeFileSync } from 'node:fs'
-import { buildArchive } from '../fixtures/archive-fixture.mjs'
+import { buildArchive } from '../fixtures/domain05/archive-fixture.mjs'
 
 const ADB = process.env.ADB || '/root/android-sdk/platform-tools/adb'
 const PACKAGE = 'com.example.deepseekchat'

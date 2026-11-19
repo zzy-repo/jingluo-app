@@ -8,7 +8,7 @@ import { readFile } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
-import { buildArchive, textPayload } from '../fixtures/archive-fixture.mjs'
+import { buildArchive, textPayload } from '../fixtures/domain05/archive-fixture.mjs'
 
 const APP_URL = (process.env.APP_URL || 'http://127.0.0.1:5181').replace(/\/+$/, '')
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')

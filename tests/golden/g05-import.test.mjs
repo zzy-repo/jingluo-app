@@ -11,7 +11,7 @@
 // importHistory → staging → IndexedDB。链接导入只在原生壳里存在，所以必须给 `window.androidBridge`。
 //
 // 跑法（仓库根目录）：pnpm run build && node tests/golden/g05-import.test.mjs
-import { buildArchiveZip } from '../fixtures/archive-fixture.mjs'
+import { buildArchiveZip } from '../fixtures/domain05/archive-fixture.mjs'
 import { bodyText, brief, openGoldenPage, runGolden, serveGoldenApp, sessionCount, waitFor, waitForBoot } from '../helpers/golden.mjs'
 
 const ZIP_URL = 'https://obs.example.test/deepseek_data-golden.zip'

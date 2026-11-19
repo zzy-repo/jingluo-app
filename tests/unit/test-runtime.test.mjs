@@ -95,8 +95,8 @@ test('two suite entrypoints reuse injected dist without build, and fail missing 
   for (const helper of ['merged-entry.mjs', 'merged-tracker.mjs', 'merged-node-test.mjs']) {
     await cp(path.join(root, 'tests/helpers', helper), path.join(dir, 'tests/helpers', helper))
   }
-  await mkdir(path.join(dir, 'tests/fixtures'), { recursive: true })
-  await cp(path.join(root, 'tests/fixtures/ours-upstream.mjs'), path.join(dir, 'tests/fixtures/ours-upstream.mjs'))
+  await mkdir(path.join(dir, 'tests/fixtures/domain03-04'), { recursive: true })
+  await cp(path.join(root, 'tests/fixtures/domain03-04/ours-upstream.mjs'), path.join(dir, 'tests/fixtures/domain03-04/ours-upstream.mjs'))
   // #274 起 ours 契约 fixture 的地址来自 config/endpoints.json（经 scripts/lib/endpoints.mjs），
   // 所以沙箱里也要有这三份：端点读取器、它的纯校验模块、以及那份配置本身。
   await mkdir(path.join(dir, 'scripts/lib'), { recursive: true })

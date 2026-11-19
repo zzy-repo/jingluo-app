@@ -382,7 +382,7 @@
 | P0-2 | **F9-11** | 9 | 迁移只覆盖 #339 单场景，**没有**「schema 升级只删白名单内键」的结构性不变量 | `config-migration` 6 例全是 schema 1→2；升到 3 时无断言兜底，配置破坏不可回滚 | L0 | **N3(8)** |
 | P0-3 | **F9-12** | 9 | 「删除所有对话」及清数据后的保留口径**零断言** | `deleteAllSessions` 在 `tests/**` 0 命中；设备码被清 = 丢账号（域 8 原标 P1，本表因「丢账号」上调至资损档） | L1 | **N7(8)**（必须单列） |
 | P0-4 | **F4-05** | 4 | 删除会话整链零覆盖（确认弹窗/删当前会话回空态/中止流/清理原件与草稿/失败提示） | `grep -rln "removeSession" tests/` 无命中；两个文案 0 断言 | L1 + L2 | **N4-A / N4-C** |
-| P0-5 | **F-05-23** | 5 | 导出 ZIP 全链路**零测试**（导出是唯一「用户把数据带走」的入口） | `grep -rln "exportHistory\|exportArchive\|zipWriter\|writeArchive" tests/` 只命中 `tests/fixtures/archive-fixture.mjs`（独立用 `fflate` 造包，**不经过生产导出代码**） | L0 + L1 | **N6(5) / N7(5) / N9(5)** |
+| P0-5 | **F-05-23** | 5 | 导出 ZIP 全链路**零测试**（导出是唯一「用户把数据带走」的入口） | `grep -rln "exportHistory\|exportArchive\|zipWriter\|writeArchive" tests/` 只命中 `tests/fixtures/domain05/archive-fixture.mjs`（独立用 `fflate` 造包，**不经过生产导出代码**） | L0 + L1 | **N6(5) / N7(5) / N9(5)** |
 | P0-6 | **F-05-28** | 5 | 导出 → 导入往返一致性零覆盖 | `archive-fixture-roundtrip` 是「夹具→导入」单向，不经过导出 | L0 | **N6(5)** |
 | P0-7 | **F-05-30** | 5 | 配额耗尽只有 `console.error`，无文案无降级无测试 | `grep -rn "QuotaExceeded\|ENOSPC" src` 无命中；导入失败会冒成通用「导入失败」 | L0 + L1 | **N8(5)** |
 | P0-8 | **F-05-31** | 5 | 进程被杀后的孤儿暂存清理零断言 | `clearStaging()` 只在其它测试的 stub 里出现，未被断言；半导入的用户感知是「会话变少了」 | L0 | **N8(5)** |

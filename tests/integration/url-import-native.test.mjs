@@ -10,7 +10,7 @@
 // 因此断言走的是真实代码：CapacitorHttp.get → urlImport 解析 → importHistory → staging → IndexedDB。
 import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
-import { buildArchiveZip, textPayload } from '../fixtures/archive-fixture.mjs'
+import { buildArchiveZip, textPayload } from '../fixtures/domain05/archive-fixture.mjs'
 
 const APP_URL = process.env.APP_URL || 'http://127.0.0.1:5181'
 // fileURLToPath：Windows 下 pathname 是 /D:/...，当路径用会变成 D:\D:\...

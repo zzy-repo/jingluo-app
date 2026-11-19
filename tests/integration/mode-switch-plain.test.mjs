@@ -6,7 +6,7 @@
 //
 // 前置全部自动处理（Issue #19）：
 //   1) 当前正式包：需要时自动构建到 dist-plain/（DIST_OUT=dist-plain），然后自己起静态服务（PORT 可注入，默认 5191）；
-//   2) baseline 基准：默认读 tests/fixtures/input-row-baseline.json（历史构建已不可复现）；
+//   2) baseline 基准：默认读 tests/fixtures/domain01-02/input-row-baseline.json（历史构建已不可复现）；
 //      想用真实旧产物对比就传 BASELINE_URL=http://127.0.0.1:<port>。
 // 以前要求手工准备两份 dist + 手动起 5191/5192，端口被占或产物缺失就假红。
 import { readFileSync } from 'node:fs'
@@ -157,7 +157,7 @@ if (BASELINE_URL) {
   baselineLabels = await readFunctionRow(baseline)
   baselineHasMode = await baseline.getByRole('group', { name: /对话模式|Chat mode/ }).count()
 } else {
-  console.log(`  ·   对比基线快照：tests/fixtures/input-row-baseline.json（${baselineFixture.recordedFrom}）`)
+  console.log(`  ·   对比基线快照：tests/fixtures/domain01-02/input-row-baseline.json（${baselineFixture.recordedFrom}）`)
   baselineLabels = baselineFixture.functionRowButtons
   baselineHasMode = baselineFixture.modeSwitchRendered ? 1 : 0
 }

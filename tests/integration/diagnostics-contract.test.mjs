@@ -16,7 +16,7 @@
 // 被测页面：DIST_DIR 内测产物与 STANDARD_DIST_DIR 标准产物；只读复用，默认随机 loopback 端口。
 import { serveDist, requireDist } from '../helpers/runtime.mjs'
 import { verifyAppUrl } from '../helpers/env.mjs'
-import { OURS_CHAT_PATH } from '../fixtures/ours-upstream.mjs'
+import { OURS_CHAT_PATH } from '../fixtures/domain03-04/ours-upstream.mjs'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import { chromium } from 'playwright'
