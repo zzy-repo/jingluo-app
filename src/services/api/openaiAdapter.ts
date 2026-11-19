@@ -8,11 +8,15 @@
  * - system → messages 头部的 {role:'system'}
  * - messages 里 user / assistant 原样映射；content 是 block 数组时只取 type:'text' 拼接，
  *   图片（image）与文档（document）直接丢弃（openai spec 的 caps.vision=false，界面上也传不出附件）
- * - thinking 字段丢弃：OpenAI 协议没有这个字段，DeepSeek 的 reasoning_effort 不是通用的
- *   chat/completions 参数，转发给第三方中转只会换来 400；openai spec 的 caps.thinking=false，
- *   界面上也没有开关，所以「丢弃」是本模块的选择（见 CHANGELOG 1.3.0）。
- *   safety_check / title / tools 不在这里剥：REQUEST_GATES 已经在 store.ts 决定发不发，
- *   这里只做协议翻译，两处职责不重叠。
+ * - thinking 字段的落地方式由 spec.reasoningParam 决定（#297，三档）：
+ *   · `none`（默认）→ 丢弃。OpenAI 协议没有这个字段，DeepSeek 的 reasoning_effort 不是通用的
+ *     chat/completions 参数，转发给第三方中转只会换来 400；openai spec 默认就是这一档，
+ *     界面上也没有开关，「丢弃」是本模块的选择（见 CHANGELOG 1.3.0）。
+ *   · `reasoning_effort` → 开启思考时加 `reasoning_effort: 'low'|'medium'|'high'`（档位来自 spec）
+ *   · `thinking_enabled` → 开启思考时加 `thinking: { type: 'enabled' }`
+ *   「开启没开启」只认 body.thinking.type（上游 store 已按 REQUEST_GATES 决定），
+ *   这里不判断渠道能力，只做协议翻译 —— 两处职责不重叠。
+ *   safety_check / title / tools 不在这里剥：REQUEST_GATES 已经在 store.ts 决定发不发。
  * - stream: true 必带；另带 stream_options.include_usage 以便上游回传真实用量
  *
  * 响应方向（OpenAI SSE → Anthropic 事件流）
@@ -26,6 +30,12 @@
  * 多 choices（只取 index 0）、没有 [DONE] 的断流（照常收尾）、只带 usage 的收尾 chunk。
  */
 import type { ServerSentEvent } from './sse.js'
+import {
+  reasoningEffortOf,
+  reasoningParamOf,
+  type ProviderSpec,
+  type ReasoningEffort,
+} from './providers.js'
 import type {
   CreateMessageRequest,
   MessageParam,
@@ -42,12 +52,39 @@ export type OpenAIChatMessage = {
   content: string
 }
 
-/** 本应用实际会发出的 OpenAI 请求体（只用到基础对话需要的字段） */
+/** 本应用实际会发出的 OpenAI 请求体（基础对话 + 可选的显式思考参数） */
 export type OpenAIChatRequest = {
   model: string
   messages: OpenAIChatMessage[]
   stream: true
   stream_options: { include_usage: boolean }
+  /** `reasoningParam: 'reasoning_effort'` 且开启思考时才有 */
+  reasoning_effort?: ReasoningEffort
+  /** `reasoningParam: 'thinking_enabled'` 且开启思考时才有 */
+  thinking?: { type: 'enabled' }
+}
+
+/**
+ * 思考参数按 spec 的档位翻译（#297）。
+ * `enabled` 为 false（用户没开开关 / 渠道不支持）时**不发任何思考字段**：
+ * 关闭态不该给上游留一个 `reasoning_effort` 之类的尾巴，那是「关了还在思考」。
+ */
+export const reasoningFields = (
+  spec: Pick<ProviderSpec, 'reasoningParam' | 'reasoningEffort'>,
+  enabled: boolean
+): Pick<OpenAIChatRequest, 'reasoning_effort' | 'thinking'> => {
+  if (!enabled) {
+    return {}
+  }
+  switch (reasoningParamOf(spec)) {
+    case 'reasoning_effort':
+      return { reasoning_effort: reasoningEffortOf(spec) }
+    case 'thinking_enabled':
+      return { thinking: { type: 'enabled' } }
+    default:
+      // none / 非法值：保持丢弃（fail-closed，与 1.3.0 行为一致）
+      return {}
+  }
 }
 
 /**
@@ -67,8 +104,14 @@ export const contentToString = (content: MessageParam['content']): string => {
 const isEmptyContent = (message: MessageParam): boolean =>
   message.role === 'latest_reminder' || contentToString(message.content).trim() === ''
 
-/** Anthropic 请求体 → OpenAI 请求体（thinking 丢弃，见文件头） */
-export const toOpenAIRequest = (body: CreateMessageRequest): OpenAIChatRequest => {
+/**
+ * Anthropic 请求体 → OpenAI 请求体（thinking 按 spec.reasoningParam 决定丢弃还是翻译）。
+ * `spec` 省略时按 `none` 处理：老调用方（单测 / 探测）行为不变，仍是「丢弃」。
+ */
+export const toOpenAIRequest = (
+  body: CreateMessageRequest,
+  spec?: Pick<ProviderSpec, 'reasoningParam' | 'reasoningEffort'>
+): OpenAIChatRequest => {
   const messages: OpenAIChatMessage[] = []
   // system 不进 messages 数组之外的任何地方：OpenAI 用 messages 头部的 system 行表达
   if (body.system.trim()) {
@@ -90,6 +133,8 @@ export const toOpenAIRequest = (body: CreateMessageRequest): OpenAIChatRequest =
     stream: true,
     // 不带它 OpenAI 不会在流里返回用量；兼容实现普遍接受该字段，不认的会直接忽略
     stream_options: { include_usage: true },
+    // 开启态 = 本轮真的要思考（store.ts 已按 REQUEST_GATES 判定过渠道能力）
+    ...(spec ? reasoningFields(spec, body.thinking?.type === 'enabled') : {}),
   }
 }
 

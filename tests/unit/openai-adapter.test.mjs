@@ -8,13 +8,31 @@
 //     → message_delta(stop_reason=end_turn, usage) → message_stop
 // [4] 脏数据：空 choices、delta 空对象、`: ping` 注释行、非 JSON 的 data 行、多 choices、无 [DONE] 断流
 //     → 不抛错、不卡死、都能正常收尾
-import {
+import { existsSync } from 'node:fs'
+import { registerHooks } from 'node:module'
+import { fileURLToPath } from 'node:url'
+
+// #297：适配器要按 spec.reasoningParam 翻译思考参数，于是开始 import './providers.js'
+// （运行期值，不是 type-only）。裸 node 不认识 `.js → .ts` 的对应关系，
+// 这里补上仓库里十来个单测通用的 resolve hook。
+registerHooks({
+  resolve(specifier, context, next) {
+    if (specifier.endsWith('.js') && context.parentURL?.includes('/src/')) {
+      const url = new URL(specifier.slice(0, -3) + '.ts', context.parentURL)
+      if (existsSync(fileURLToPath(url))) return next(url.href, context)
+    }
+    return next(specifier, context)
+  },
+})
+
+// hook 装好之后再动态加载被测模块（静态 import 会被提升到 hook 之前）
+const {
   contentToString,
   mapFinishReason,
   toOpenAIRequest,
   translateOpenAIStream,
-} from '../../src/services/api/openaiAdapter.ts'
-import { ServerSentEventDecoder } from '../../src/services/api/sse.ts'
+} = await import('../../src/services/api/openaiAdapter.ts')
+const { ServerSentEventDecoder } = await import('../../src/services/api/sse.ts')
 
 const failures = []
 let checks = 0

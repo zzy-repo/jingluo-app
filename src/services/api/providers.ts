@@ -11,7 +11,7 @@
  * 四个渠道（1.4.0-beta.6：ours 改走 OpenAI 协议）：
  *   1. deepseek  DeepSeek 官方：地址与模型内置（https://api.deepseek.com / deepseek-flash），只需 Key，能力全开
  *   2. anthropic Anthropic 协议：地址 / 模型 / Key 都要自己填，只有对话 + 深度思考
- *   3. openai    OpenAI 兼容：地址 / 模型 / Key 都要自己填，只有基础对话
+ *   3. openai    OpenAI 兼容：地址 / 模型 / Key 都要自己填，只有基础对话；深度思考按 reasoningParam 三档（#297）
  *   4. ours      我们的渠道：地址与模型内置（见下），只需 Key，走 OpenAI 协议（/v1/chat/completions + Bearer），只有基础对话
  *
  * 内置地址/模型的渠道（deepseek / ours）在 fields 里没有 baseUrl / model，
@@ -34,11 +34,41 @@ export type ProviderField = 'baseUrl' | 'apiKey' | 'model'
 /** 鉴权头：'x-api-key' 走 Anthropic 风格（另带 anthropic-version），'bearer' 走 OpenAI 风格 */
 export type ProviderAuth = 'x-api-key' | 'bearer'
 
+/**
+ * OpenAI 协议下的**显式思考参数**三档（#297）。OpenAI 的 chat/completions 没有通用的思考参数，
+ * 各家中转的形状不一样，所以不能写死一个字段：
+ * - `none`（默认）：请求侧丢弃，`caps.thinking = false`，开关不渲染 —— 第三方中转完全不受影响
+ * - `reasoning_effort`：开启思考时请求体加 `reasoning_effort: low|medium|high`（OpenAI / vLLM 系）
+ * - `thinking_enabled`：开启思考时请求体加 `thinking: { type: 'enabled' }`（DeepSeek V3.1 系）
+ *
+ * Anthropic 协议（deepseek / anthropic）天生支持 `thinking` 块，不看这一档。
+ */
+export type ReasoningParam = 'none' | 'reasoning_effort' | 'thinking_enabled'
+
+/** 允许的取值：非法值一律 fail-closed 归到 `none`（宁可不发，也不把不认识的字段发给中转） */
+export const REASONING_PARAMS: readonly ReasoningParam[] = [
+  'none',
+  'reasoning_effort',
+  'thinking_enabled',
+]
+
+/** `reasoning_effort` 的档位 */
+export type ReasoningEffort = 'low' | 'medium' | 'high'
+
+export const REASONING_EFFORTS: readonly ReasoningEffort[] = ['low', 'medium', 'high']
+
+/** 缺省档位：issue #297 验收口径里的 `reasoning_effort: 'medium'` */
+export const DEFAULT_REASONING_EFFORT: ReasoningEffort = 'medium'
+
 /** 能力开关：决定界面上哪些入口可用，以及请求体里能带哪些扩展字段 */
 export type ProviderCaps = {
   /** 基础文本对话（流式正文、停止、重新生成 / 编辑 / 分支） */
   text: boolean
-  /** 深度思考开关（thinking / reasoning） */
+  /**
+   * 深度思考开关（thinking / reasoning）。
+   * **派生值**：由 `thinkingAvailable(spec)` 算出来（协议 + reasoningParam），spec 里不再手写，
+   * 避免「能力声明」与「请求侧真的发不发」两处各写一遍（#297）。
+   */
   thinking: boolean
   /** 智能搜索（deepseek_web_search） */
   search: boolean
@@ -88,6 +118,13 @@ export type ProviderSpec = {
   /** 开启 thinking 时需要附带的最小思考预算；不填表示该协议不需要这个字段 */
   thinkingBudget?: number
   /**
+   * OpenAI 协议下思考参数的形状（#297）；缺省 = `none` = 请求侧丢弃。
+   * 只有 `protocol: 'openai'` 的渠道看它，Anthropic 协议渠道忽略。
+   */
+  reasoningParam?: ReasoningParam
+  /** `reasoningParam: 'reasoning_effort'` 时的档位；缺省 medium */
+  reasoningEffort?: ReasoningEffort
+  /**
    * 地址与模型由 defaults 钉死：已存值不参与（`chat-demo:base-url` 这类老数据一律忽略）。
    * 用于「用户不该知道后端地址」的渠道（ours）。只影响「配置从哪来」，
    * 不影响 paths / auth / caps / extended 这些协议行为。
@@ -98,7 +135,41 @@ export type ProviderSpec = {
 /** Anthropic 风格接口要求的协议版本头 */
 export const ANTHROPIC_VERSION = '2023-06-01'
 
-const RAW_SPECS: Record<ProviderKind, ProviderSpec> = {
+/**
+ * 归一化思考参数档位：缺省 / 非法值一律按 `none`（fail-closed）。
+ * 类型层已经把 `reasoningParam` 限成三档闭集，这里是运行期的第二道门禁：
+ * 老配置、手工改过的 localStorage、后续新增档位没处理到的分支，都不会把不认识的字段发出去。
+ */
+export const reasoningParamOf = (
+  spec: Pick<ProviderSpec, 'reasoningParam'>
+): ReasoningParam =>
+  (REASONING_PARAMS as readonly unknown[]).includes(spec.reasoningParam)
+    ? (spec.reasoningParam as ReasoningParam)
+    : 'none'
+
+/** 归一化档位：非法 / 缺省 = medium（与 issue #297 验收口径一致） */
+export const reasoningEffortOf = (
+  spec: Pick<ProviderSpec, 'reasoningEffort'>
+): ReasoningEffort =>
+  (REASONING_EFFORTS as readonly unknown[]).includes(spec.reasoningEffort)
+    ? (spec.reasoningEffort as ReasoningEffort)
+    : DEFAULT_REASONING_EFFORT
+
+/**
+ * 渠道是否支持深度思考 —— **唯一判定处**。
+ * `caps.thinking`（UI 开关渲不渲染）与 `REQUEST_GATES.reasoning_param`（请求侧发不发）
+ * 都从它派生，所以不可能出现「开关在但请求不带参数」或反过来（#297 的核心口径）。
+ * - Anthropic 协议：协议天生有 `thinking` 块，恒为 true
+ * - OpenAI 协议：`reasoningParam !== 'none'` 才为 true（默认 none = 保持现状）
+ */
+export const thinkingAvailable = (
+  spec: Pick<ProviderSpec, 'protocol' | 'reasoningParam'>
+): boolean => (spec.protocol === 'anthropic' ? true : reasoningParamOf(spec) !== 'none')
+
+/** caps.thinking 是派生值：原始 spec 里不写它，避免两处各写一遍 */
+type RawProviderSpec = Omit<ProviderSpec, 'caps'> & { caps: Omit<ProviderCaps, 'thinking'> }
+
+const RAW_SPECS: Record<ProviderKind, RawProviderSpec> = {
   deepseek: {
     kind: 'deepseek',
     label: { zh: 'DeepSeek 官方', en: 'DeepSeek Official' },
@@ -112,7 +183,6 @@ const RAW_SPECS: Record<ProviderKind, ProviderSpec> = {
     anthropicVersion: ANTHROPIC_VERSION,
     caps: {
       text: true,
-      thinking: true,
       search: true,
       title: true,
       vision: true,
@@ -133,14 +203,13 @@ const RAW_SPECS: Record<ProviderKind, ProviderSpec> = {
     // 带上后预检失败会让每个请求都变成网络错误（60010 实测）。
     caps: {
       text: true,
-      thinking: true,
       search: false,
       title: false,
       vision: false,
       tts: false,
       asr: false,
     },
-    // 深度思考仍然可用，但真 Anthropic 要求带 budget_tokens
+    // 深度思考仍然可用（Anthropic 协议天生支持 thinking 块），但真 Anthropic 要求带 budget_tokens
     thinkingBudget: 4096,
   },
   openai: {
@@ -152,17 +221,20 @@ const RAW_SPECS: Record<ProviderKind, ProviderSpec> = {
     paths: { models: '/v1/models', messages: '/v1/chat/completions', tools: '' },
     // Authorization: Bearer <key>
     auth: 'bearer',
-    // 只做基础对话：搜索/标题/附件/语音/朗读全关，深度思考也没给开关
-    // （请求侧的 thinking 字段直接丢弃，理由见 openaiAdapter.ts 文件头）
+    /**
+     * 只做基础对话：搜索/标题/附件/语音/朗读全关。
+     * 深度思考走 reasoningParam 三档（#297）：默认 `none` = 请求侧丢弃 thinking，
+     * 与 1.3.0 行为逐字一致（第三方中转不受影响）；配成另外两档才会露开关、才会发显式参数。
+     */
     caps: {
       text: true,
-      thinking: false,
       search: false,
       title: false,
       vision: false,
       tts: false,
       asr: false,
     },
+    reasoningParam: 'none',
   },
   ours: {
     kind: 'ours',
@@ -178,19 +250,34 @@ const RAW_SPECS: Record<ProviderKind, ProviderSpec> = {
     // 不带 anthropic-version：OpenAI 协议路径不需要；带上去反而会让中转 CORS 预检失败
     locked: true,
     // 能力对齐现有 openai 渠道（基础对话）：该路径没有 thinking，开关不要露出来
+    // （reasoningParam 缺省即 none，写着是为了让「这一档是有意选的」在代码里看得见）
     caps: {
       text: true,
-      thinking: false,
       search: false,
       title: false,
       vision: false,
       tts: false,
       asr: false,
     },
+    reasoningParam: 'none',
   },
 }
 
-const SPECS: Record<ProviderKind, ProviderSpec> = RAW_SPECS
+/**
+ * 补上派生的 `caps.thinking`：原始 spec 里没有这个字段，
+ * 所以「UI 开关出现」与「请求侧真的发思考参数」永远是同一个判定的两个出口（#297）。
+ */
+const withDerivedCaps = (raw: RawProviderSpec): ProviderSpec => ({
+  ...raw,
+  caps: { ...raw.caps, thinking: thinkingAvailable(raw) },
+})
+
+const SPECS: Record<ProviderKind, ProviderSpec> = {
+  deepseek: withDerivedCaps(RAW_SPECS.deepseek),
+  anthropic: withDerivedCaps(RAW_SPECS.anthropic),
+  openai: withDerivedCaps(RAW_SPECS.openai),
+  ours: withDerivedCaps(RAW_SPECS.ours),
+}
 
 /**
  * 默认渠道：内测构建默认「我们的渠道」，标准构建默认「DeepSeek 官方」。
@@ -220,8 +307,16 @@ export const isUserField = (spec: ProviderSpec, field: ProviderField): boolean =
  * - safety_check / latest_reminder 是 DeepSeek 扩展（裸 Anthropic 会 400）
  * - tools / title 对应 caps.search / caps.title
  * - thinking_budget 表示开启 thinking 时要附 budget_tokens
+ * - reasoning_param 表示该渠道允许下发**显式思考参数**（#297）：与 `caps.thinking` 同源
+ *   （都由 `thinkingAvailable(spec)` 派生），所以开关出现必然意味着请求带参数、反之亦然
  */
-export type RequestGate = 'safety_check' | 'latest_reminder' | 'tools' | 'title' | 'thinking_budget'
+export type RequestGate =
+  | 'safety_check'
+  | 'latest_reminder'
+  | 'tools'
+  | 'title'
+  | 'thinking_budget'
+  | 'reasoning_param'
 
 export const REQUEST_GATES: RequestGate[] = [
   'safety_check',
@@ -229,6 +324,7 @@ export const REQUEST_GATES: RequestGate[] = [
   'tools',
   'title',
   'thinking_budget',
+  'reasoning_param',
 ]
 
 /** 某个 spec 下各字段是否发送 */
@@ -238,4 +334,5 @@ export const requestGates = (spec: ProviderSpec): Record<RequestGate, boolean> =
   tools: spec.caps.search,
   title: spec.caps.title,
   thinking_budget: Boolean(spec.thinkingBudget),
+  reasoning_param: thinkingAvailable(spec),
 })

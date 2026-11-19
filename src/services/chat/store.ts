@@ -1,7 +1,6 @@
 import { create } from 'zustand'
 import { createId } from '../../utils/id.js'
 import { ApiError, streamMessage } from '../api/client.js'
-import type { CreateMessageRequest } from '../api/types.js'
 import {
   classifyApiError,
   extractFileIds,
@@ -46,6 +45,7 @@ import {
   settleReply,
   toRequestMessages,
 } from './reply.js'
+import { buildMessageBody } from './requestBody.js'
 import { STREAM_NOTICE_TIERS } from './streamNotice.js'
 import type { ImportSkip } from './history/toLocal.js'
 import type { TranslationMessage } from '../../i18n/index.js'
@@ -63,23 +63,10 @@ import {
 const SYSTEM_PROMPT = '该助手为DeepSeek，由深度求索公司创造。'
 /** 保留最近打开的详情；当前会话、生成中及尚未成功保存的会话不淘汰。 */
 const SESSION_CACHE_LIMIT = 5
-/** 安全审核固定开启，所有请求都走扩展模式 */
-const SAFETY_CHECK = { level: 'high' } as const
 /** 自动重试的最多次数（不含首次请求）：附件补传、断网、5xx、超时共用这一个上限 */
 export const STREAM_RETRY_LIMIT = LIMITS.streamRetryLimit
 /** 退避基数，第 n 次重试等待 2^n 倍；连续失败达到上限就放弃，把原始报错展示出来 */
 const RETRY_BASE_DELAY = LIMITS.retryBaseDelayMs
-
-/** 阅读链接始终开启，智能搜索开关控制是否另行声明搜索工具（含边想边搜）。 */
-const serverTools = (search: boolean): CreateMessageRequest['tools'] => {
-  const tools: CreateMessageRequest['tools'] = [
-    { type: 'deepseek_read_url', name: 'deepseek_read_url' },
-  ]
-  if (search) {
-    tools.push({ type: 'deepseek_web_search', name: 'deepseek_web_search' })
-  }
-  return tools
-}
 
 /**
  * 按当前服务类型的 spec 组装 system 与 messages：
@@ -1315,10 +1302,10 @@ const streamReply = async (sessionId: string, initial: AssistantMessage, request
         updateReply(sessionId, reply)
         persist(sessionId)
         const spec = getCurrentSpec()
-        const gates = requestGates(spec)
-        // 协议不支持思考（caps.thinking=false）时请求侧也不开，避免历史里带思考块回传
+        // 协议不支持思考（caps.thinking=false，由 reasoningParam 派生）时请求侧也不开，
+        // 避免历史里带思考块回传
         const thinking = (initial.thinking ?? false) && spec.caps.thinking
-        const body = toRequestBody(
+        const { system, messages } = toRequestBody(
           toRequestMessages(
             prepared.history,
             prepared.question,
@@ -1327,26 +1314,16 @@ const streamReply = async (sessionId: string, initial: AssistantMessage, request
             latestReminder
           )
         )
-        const events = streamMessage(
-          getApiKey(),
-          {
-            model: initial.model ?? getModel(),
-            system: body.system,
-            messages: body.messages,
-            thinking: {
-              type: thinking ? 'enabled' : 'disabled',
-              // 真 Anthropic 协议开启 thinking 时必须给预算
-              ...(thinking && gates.thinking_budget && spec.thinkingBudget
-                ? { budget_tokens: spec.thinkingBudget }
-                : {}),
-            },
-            // 以下字段发不发只看 REQUEST_GATES：裸 Anthropic 上游多一个就是 400
-            ...(gates.safety_check ? { safety_check: SAFETY_CHECK } : {}),
-            ...(gates.tools ? { tools: serverTools(initial.search ?? false) } : {}),
-            ...(titleRequests.has(controller) && gates.title ? { title: { enabled: true } } : {}),
-          },
-          controller.signal
-        )
+        // 字段发不发由 requestBody.ts 里的 REQUEST_GATES 决定，这里只把本轮信息传进去
+        const body = buildMessageBody(spec, {
+          model: initial.model ?? getModel(),
+          system,
+          messages,
+          thinking,
+          search: initial.search ?? false,
+          title: titleRequests.has(controller),
+        })
+        const events = streamMessage(getApiKey(), body, controller.signal)
         const blockIndexes = new Map<number, number>()
         // 请求已发出：开始算首字等待，5s / 30s / 60s 三档逐级提示
         armWaitHints(sessionId)

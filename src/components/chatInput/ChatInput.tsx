@@ -35,6 +35,7 @@ import { useVoiceInput } from './useVoiceInput.js'
 import { VoiceButton } from './VoiceButton.js'
 import { Spectrum } from './Spectrum.js'
 import { useTranslate } from '../../i18n/index.js'
+import { ThinkingToggle } from './ThinkingToggle.js'
 import styles from './ChatInput.module.css'
 
 /** 输入框：自适应高度的文本框 + 文件 + 深度思考与智能搜索开关 + 语音输入 + 发送 / 停止 */
@@ -228,21 +229,19 @@ const Input = ({ sessionId }: { sessionId: string | null }) => {
       <div className={styles.functionRow}>
         {/* 深度思考 / 智能搜索开关，tooltip 在按钮上方 */}
         <div ref={togglesRef} className={styles.toggles}>
-          {/* 协议不支持思考（caps.thinking=false，如 OpenAI 兼容）时整个开关不渲染 */}
-          {caps.thinking ? (
-            <Tooltip content={t('deactivatedThinkTooltip')}>
-              <button
-                type="button"
-                className={clsx(styles.toggle, thinking && styles.selected)}
-                aria-label={t('thinkingSwitch')}
-                aria-pressed={thinking}
-                onClick={() => setThinking(!thinking)}
-              >
-                <IconThinkOutline14 />
-                <span className={styles.toggleLabel}>{t('thinkingSwitch')}</span>
-              </button>
-            </Tooltip>
-          ) : null}
+          {/* 协议不支持思考（caps.thinking=false，由 reasoningParam 派生）时整个开关不渲染 */}
+          <ThinkingToggle
+            caps={caps}
+            thinking={thinking}
+            onToggle={() => setThinking(!thinking)}
+            label={t('thinkingSwitch')}
+            tooltip={t('deactivatedThinkTooltip')}
+            icon={<IconThinkOutline14 />}
+            className={styles.toggle}
+            selectedClassName={styles.selected}
+            labelClassName={styles.toggleLabel}
+            wrap={(content, children) => <Tooltip content={content}>{children}</Tooltip>}
+          />
           {caps.search ? (
             <Tooltip content={t('deactivatedSearchTooltip')}>
               <button

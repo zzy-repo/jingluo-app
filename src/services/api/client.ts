@@ -384,14 +384,16 @@ async function* streamOpenAIMessage(
   signal: AbortSignal
 ): AsyncGenerator<MessageStreamEvent> {
   ensureBaseUrl()
+  // spec 与地址/鉴权头来自同一份当前 spec：思考参数按它翻译（#297）
+  const spec = getCurrentSpec()
   const response = await request(getMessagesUrl(), {
     method: 'POST',
     headers: {
-      ...authHeaders(apiKey),
+      ...authHeaders(apiKey, { spec }),
       'Content-Type': 'application/json',
       Accept: 'text/event-stream',
     },
-    body: JSON.stringify(toOpenAIRequest(body)),
+    body: JSON.stringify(toOpenAIRequest(body, spec)),
     signal,
   })
   const contentType = response.headers.get('Content-Type') ?? ''
