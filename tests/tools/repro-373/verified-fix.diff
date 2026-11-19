@@ -1,0 +1,48 @@
+diff --git a/src/components/settings/AppUpdateField.tsx b/src/components/settings/AppUpdateField.tsx
+index 849e48c..4380c89 100644
+--- a/src/components/settings/AppUpdateField.tsx
++++ b/src/components/settings/AppUpdateField.tsx
+@@ -72,6 +72,7 @@ export const AppUpdateField = () => {
+   /** 下载进度也要给失败文案用：state 在一次下载里是旧值，这里留一份最新的 */
+   const progressRef = useRef<{ received: number; total: number }>()
+   const operation = useRef<AbortController>()
++  const downloading = useRef(false)
+   const mounted = useRef(true)
+   const native = isAndroidUpdate()
+   useEffect(() => {
+@@ -216,9 +217,10 @@ export const AppUpdateField = () => {
+     }
+   }
+   const download = async () => {
+-    if (!release || busy) {
++    if (!release || busy || downloading.current) {
+       return
+     }
++    downloading.current = true
+     const controller = new AbortController()
+     operation.current = controller
+     setBusy(true)
+@@ -261,6 +263,7 @@ export const AppUpdateField = () => {
+       }
+     } catch (error) {
+       if (mounted.current) {
++        setProgress(undefined)
+         if (controller.signal.aborted) {
+           setOutcome(undefined)
+           setMessage('已取消下载，可重新下载。')
+@@ -276,6 +279,7 @@ export const AppUpdateField = () => {
+         }
+       }
+     } finally {
++      downloading.current = false
+       if (mounted.current && operation.current === controller) {
+         setBusy(false)
+       }
+@@ -302,6 +306,7 @@ export const AppUpdateField = () => {
+     } catch (error) {
+       if (mounted.current) {
+         setReady(false)
++        setProgress(undefined)
+         showFailure(error, channel, release.version)
+       }
+     } finally {
