@@ -719,4 +719,8 @@ export const en = {
   compatBootHowTo:
     'To update: open your app store, search for "Android System WebView" and update it, then reopen this app.',
   compatBootFooter: 'If it still fails after updating, report the component version above with a screenshot of this page.',
+  // The "unreachable" tier for URL imports (issue #18): the device has a network but cannot reach
+  // the import service (DNS failure / no route / link dropped mid-switch). It must not reuse the
+  // offline wording — telling users to check a connection that is actually fine sends them nowhere.
+  historyImportUrlUnreachable: 'Cannot reach the import service right now. Please try again later.',
 } satisfies Record<keyof typeof zh, string>

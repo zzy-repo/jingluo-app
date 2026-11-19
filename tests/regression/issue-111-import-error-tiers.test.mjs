@@ -40,11 +40,20 @@ const { classifyImportFailure, IMPORT_FAILURE_KEYS } = await import(
 const { importHistoryFromUrl } = await import('../../src/services/chat/history/urlImport.ts')
 const { zh } = await import('../../src/i18n/zh.ts')
 
-test('#111 真的没网才归 offline（DNS 失败 / 浏览器离线）', () => {
+test('#111 真的没网才归 offline（系统明说断网 / 浏览器离线）', () => {
   assert.equal(classifyImportFailure({ error: new Error('net::ERR_INTERNET_DISCONNECTED') }), 'offline')
-  assert.equal(classifyImportFailure({ error: new Error('net::ERR_NAME_NOT_RESOLVED') }), 'offline')
-  assert.equal(classifyImportFailure({ error: new Error('Unable to resolve host "obs.example.test"') }), 'offline')
   assert.equal(classifyImportFailure({ online: false }), 'offline', 'navigator.onLine === false 是最高优先级信号')
+})
+
+test('#18 有网但够不到服务 → unreachable（#111 之后残留的一档，不再与 offline 共用文案）', () => {
+  assert.equal(classifyImportFailure({ error: new Error('net::ERR_NAME_NOT_RESOLVED') }), 'unreachable')
+  assert.equal(classifyImportFailure({ error: new Error('Unable to resolve host "obs.example.test"') }), 'unreachable')
+  assert.equal(classifyImportFailure({ error: new Error('java.net.NoRouteToHostException: ENETUNREACH') }), 'unreachable')
+  assert.equal(
+    classifyImportFailure({ error: new Error('net::ERR_NAME_NOT_RESOLVED'), online: false }),
+    'offline',
+    '系统说没网时仍以 offline 为准（unreachable 只用于「网络在、但到不了服务」）'
+  )
 })
 
 test('#111 连接被拒必须单独一档，不能混成"你的网络断了"', () => {
@@ -64,13 +73,15 @@ test('#111 服务可达但回错自成一档；认不出来的失败不许硬塞
   assert.equal(classifyImportFailure({ error: new Error('某个没人见过的新错误') }), null)
 })
 
-test('#111 三档对应三个不同文案 key（这就是"用户看不到真实原因"的回归点）', () => {
+test('#111 四档对应四个不同文案 key（这就是"用户看不到真实原因"的回归点；unreachable 由 #18 补齐）', () => {
   assert.equal(IMPORT_FAILURE_KEYS.offline, 'historyImportUrlOffline')
+  assert.equal(IMPORT_FAILURE_KEYS.unreachable, 'historyImportUrlUnreachable')
   assert.equal(IMPORT_FAILURE_KEYS.refused, 'historyImportUrlRefused')
   assert.equal(IMPORT_FAILURE_KEYS.server, 'historyImportUrlHttp')
   const shown = new Set(Object.values(IMPORT_FAILURE_KEYS))
-  assert.equal(shown.size, 3, '三档共用一句文案等于没分档')
+  assert.equal(shown.size, Object.keys(IMPORT_FAILURE_KEYS).length, '每档共用一句文案等于没分档')
   assert.notEqual(zh.historyImportUrlOffline, zh.historyImportUrlRefused)
+  assert.notEqual(zh.historyImportUrlOffline, zh.historyImportUrlUnreachable)
 })
 
 /** 组装一次 CapacitorHttp.get：固定状态码 + 错误体，用来走 403 的三个子类。 */

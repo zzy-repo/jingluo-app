@@ -698,4 +698,7 @@ export const zh = {
   compatBootVersionUnknown: '组件版本：无法从浏览器标识里解析出来',
   compatBootHowTo: '更新方法：在应用商店里搜索「Android System WebView」并更新，然后重新打开本应用。',
   compatBootFooter: '若更新后仍然失败，请反馈上面的组件版本与本页截图。',
+  // 导入失败的「不可达」档（issue #18）：有网、但连不上导入服务（DNS 解析不到 / 路由不可达 / 切网瞬间断链）。
+  // 不能复用 historyImportUrlOffline 的「网络已断开」—— 用户网络明明是通的，那句只会把人往错方向带。
+  historyImportUrlUnreachable: '暂时无法连接导入服务，请稍后重试',
 } as const

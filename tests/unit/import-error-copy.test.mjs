@@ -1,7 +1,7 @@
 // [layer: unit | dependencies: none | no build, browser, network or Android]
 //
-// 导入失败文案按「原因」分档（#111）：真的断网 / 连接被拒绝 / 服务可达但返回错误
-// 必须是三句互不相同的文案，不能都折叠成「网络已断开，请检查网络后重试」。
+// 导入失败文案按「原因」分档（#111 + #18）：真的断网 / 有网但连不上服务 / 连接被拒绝 /
+// 服务可达但返回错误，必须是四句互不相同的文案，不能都折叠成「网络已断开，请检查网络后重试」。
 //
 // 为什么单独一层：三档原因只在原生桥 reject 的那一瞬间可区分，真机复现要改 DNS、关端口、
 // 或者让服务端吐 5xx。这里只替换 Capacitor 原生桥 / diagnostics / backup，
@@ -49,6 +49,7 @@ const URL_OK = 'https://obs.example.test/deepseek_data-2026-11-01.zip'
 
 /** 三档原因各自对应的文案 key（#111 的分档契约）。 */
 const KEY_OFFLINE = 'historyImportUrlOffline'
+const KEY_UNREACHABLE = 'historyImportUrlUnreachable'
 const KEY_REFUSED = 'historyImportUrlRefused'
 const KEY_SERVER = 'historyImportUrlHttp'
 
@@ -63,6 +64,8 @@ const ERR_DNS = Object.assign(
   new Error('java.net.UnknownHostException: Unable to resolve host "obs.example.test": No address associated with hostname'),
   { name: 'Error' }
 )
+/** 系统明确说自己没网（WebView 的原话）；这才算 offline 档。 */
+const ERR_DISCONNECTED = new TypeError('net::ERR_INTERNET_DISCONNECTED')
 const ERR_REFUSED = Object.assign(
   new Error(
     'java.net.ConnectException: failed to connect to obs.example.test/203.0.113.7:443 after 10000ms: isConnected failed: ECONNREFUSED (Connection refused)'
@@ -118,10 +121,13 @@ const keyFor = async (setup) => {
   return error.key
 }
 
-test('① 真的没有网络（DNS 失败）→ 沿用现有那句「网络已断开」', async () => {
-  const key = await keyFor(() => failFast(ERR_DNS))
-  assert.equal(key, KEY_OFFLINE, 'DNS 解析失败属于「真的没网」，应保留 historyImportUrlOffline')
+test('① 系统明说没网 → 沿用「网络已断开」；DNS 解析失败改属「连不上服务」那一档', async () => {
+  const offline = await keyFor(() => failFast(ERR_DISCONNECTED))
+  assert.equal(offline, KEY_OFFLINE, '系统明确报断网时必须保留 historyImportUrlOffline')
   assert.equal(zh[KEY_OFFLINE], '网络已断开，请检查网络后重试', 'zh 这句要保持用户已习惯的措辞')
+  // #18：DNS 解析失败说明设备有网、只是到不了服务，归 unreachable；让用户去「检查网络」是错的方向
+  const unreachable = await keyFor(() => failFast(ERR_DNS))
+  assert.equal(unreachable, KEY_UNREACHABLE, `DNS 解析失败应报「暂时无法连接导入服务」（实际 ${unreachable}）`)
 })
 
 test('② 连接被拒绝 / 服务未监听（ECONNREFUSED）→ 不能说成「网络已断开」', async () => {
@@ -142,25 +148,27 @@ test('③ 服务可达但返回错误（503）→ 单独一档，且带上状态
   assert.equal(error.params?.status, 503)
 })
 
-test('④ 三档文案互不相同（这就是 #111 的核心断言）', async () => {
-  const offline = await keyFor(() => failFast(ERR_DNS))
+test('④ 四档文案互不相同（#111 三档 + #18 的 unreachable）', async () => {
+  const offline = await keyFor(() => failFast(ERR_DISCONNECTED))
+  const unreachable = await keyFor(() => failFast(ERR_DNS))
   const refused = await keyFor(() => failFast(ERR_REFUSED))
   resetEnv()
   statusNative(404)
   const server = (await runImport()).key
-  console.log(`    -> offline=${offline} refused=${refused} server=${server}`)
-  assert.equal(new Set([offline, refused, server]).size, 3, '三档原因必须是三个不同的 key')
-  for (const key of [offline, refused, server]) {
+  console.log(`    -> offline=${offline} unreachable=${unreachable} refused=${refused} server=${server}`)
+  const keys = [offline, unreachable, refused, server]
+  assert.equal(new Set(keys).size, 4, '四档原因必须是四个不同的 key')
+  for (const key of keys) {
     assert.equal(typeof zh[key], 'string', `zh 字典缺少 ${key}`)
     assert.equal(typeof en[key], 'string', `en 字典缺少 ${key}`)
   }
-  const copies = [zh[offline], zh[refused], zh[server]]
+  const copies = keys.map((key) => zh[key])
   console.log(`    -> ${copies.join('  |  ')}`)
-  assert.equal(new Set(copies).size, 3, '三档的中文文案必须互不相同')
+  assert.equal(new Set(copies).size, 4, '四档的中文文案必须互不相同')
 })
 
-test('⑤ en 字典下这三档都不含中文（否则用户会看到中英混排）', () => {
-  for (const key of [KEY_OFFLINE, KEY_REFUSED, KEY_SERVER]) {
+test('⑤ en 字典下这四档都不含中文（否则用户会看到中英混排）', () => {
+  for (const key of [KEY_OFFLINE, KEY_UNREACHABLE, KEY_REFUSED, KEY_SERVER]) {
     const text = en[key]
     assert.equal(typeof text, 'string', `en 字典缺少 ${key}`)
     assert.equal(HAN.test(text), false, `en.${key} 含中文：${text}`)
@@ -168,10 +176,11 @@ test('⑤ en 字典下这三档都不含中文（否则用户会看到中英混�
   }
 })
 
-test('⑥ 纯函数分类：offline / refused / server 三档，且 navigator.onLine === false 一律算断网', async () => {
+test('⑥ 纯函数分类：offline / unreachable / refused / server 四档，且 navigator.onLine === false 一律算断网', async () => {
   // 纯 Node 可测：不碰 Capacitor、不碰网络、不碰 i18n 运行时
   const { classifyImportFailure } = await import('../../src/services/chat/history/importFailure.ts')
-  assert.equal(classifyImportFailure({ error: ERR_DNS }), 'offline')
+  assert.equal(classifyImportFailure({ error: ERR_DNS }), 'unreachable')
+  assert.equal(classifyImportFailure({ error: ERR_DISCONNECTED }), 'offline')
   assert.equal(classifyImportFailure({ error: ERR_REFUSED }), 'refused')
   assert.equal(classifyImportFailure({ status: 500 }), 'server')
   assert.equal(classifyImportFailure({ status: 404 }), 'server')

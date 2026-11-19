@@ -8,7 +8,7 @@ import type { TranslationKey } from '../../../i18n/index.js'
  * 于是只能怀疑是自己手机的问题。这里把「判断原因」抽成一个不碰浏览器 / 网络 / i18n 运行时的纯函数，
  * 让三档原因可以被普通 Node 单测钉住。
  */
-export type ImportFailureReason = 'offline' | 'refused' | 'server'
+export type ImportFailureReason = 'offline' | 'unreachable' | 'refused' | 'server'
 
 /** 分档需要的全部信号：原始异常、HTTP 状态码、浏览器的在线读数。 */
 export type ImportFailureSignals = {
@@ -21,11 +21,19 @@ export type ImportFailureSignals = {
 }
 
 /**
- * 真的够不到网络：DNS 解析失败、网络不可达、浏览器自己说离线。
- * 注意这里**不含** `connection refused` —— 那是网络通、对面没监听，属于 refused 档。
+ * 浏览器/系统**明确说自己没网**：只有这一句算「真的断网」。
+ * 其余「够不到」的写法（DNS 解析失败、路由不可达）都可能是网络通的、只是到不了服务，
+ * 那些归 unreachable 档（#18：过去它们全被说成「网络已断开」，用户照着改网络怎么都修不好）。
  */
-const OFFLINE_PATTERN =
-  /unable to resolve host|unknownhost|no address associated with hostname|network is unreachable|ehostunreach|enetunreach|net::err_internet_disconnected|net::err_name_not_resolved|net::err_network_changed|net::err_network_access_denied/i
+const OFFLINE_PATTERN = /net::err_internet_disconnected/i
+
+/**
+ * 有网但够不到服务：DNS 解析不到、路由不可达、切网瞬间链路失效。
+ * 与 offline 的区别是**用户的网络多半是好的**，所以文案要指向「导入服务」而不是「检查你的网络」；
+ * 与 refused 的区别是链路本身没通（refused 是链路通了、对面没在监听）。
+ */
+const UNREACHABLE_PATTERN =
+  /unable to resolve host|unknownhost|no address associated with hostname|network is unreachable|ehostunreach|enetunreach|enetdown|no route to host|net::err_name_not_resolved|net::err_network_changed|net::err_network_access_denied|net::err_address_unreachable|net::err_timed_out/i
 
 /**
  * 连接被拒绝 / 服务未监听：链路是通的，是服务器那端没接。
@@ -65,8 +73,12 @@ export const classifyImportFailure = (signals: ImportFailureSignals = {}): Impor
   if (TIMEOUT_PATTERN.test(text)) {
     return 'server'
   }
+  // 顺序：offline（系统明说没网）→ unreachable（有网够不到服务），两者文案不同，不能合并。
   if (OFFLINE_PATTERN.test(text)) {
     return 'offline'
+  }
+  if (UNREACHABLE_PATTERN.test(text)) {
+    return 'unreachable'
   }
   if (SERVER_PATTERN.test(text)) {
     return 'server'
@@ -76,11 +88,14 @@ export const classifyImportFailure = (signals: ImportFailureSignals = {}): Impor
 
 /**
  * 每档原因对应的人话文案 key。
- * offline 沿用用户已经习惯的那句；server 直接复用既有的「链接返回了异常状态（HTTP {status}）」，
+ * offline 沿用用户已经习惯的那句；unreachable 是 #18 新增的一档（过去它和 offline 共用一句，
+ * 于是「网络是通的、只是连不上导入服务」被说成「网络已断开」）；
+ * server 直接复用既有的「链接返回了异常状态（HTTP {status})」，
  * 超时另有更精确的 historyImportUrlTimeout / historyImportUrlTimeoutPartial，两者都不说「断网」。
  */
 export const IMPORT_FAILURE_KEYS: Record<ImportFailureReason, TranslationKey> = {
   offline: 'historyImportUrlOffline',
+  unreachable: 'historyImportUrlUnreachable',
   refused: 'historyImportUrlRefused',
   server: 'historyImportUrlHttp',
 }

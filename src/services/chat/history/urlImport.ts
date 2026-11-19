@@ -2,7 +2,7 @@ import { Capacitor, CapacitorHttp, type HttpResponse } from '@capacitor/core'
 import { errorMeta, record, recordAction, recordEvent, redactUrl } from '../../diagnostics/collector.js'
 import { importHistory } from '../backup.js'
 import { BackupError, fail } from './errors.js'
-import { classifyImportFailure, isBrowserOnline } from './importFailure.js'
+import { classifyImportFailure, IMPORT_FAILURE_KEYS, isBrowserOnline, type ImportFailureReason } from './importFailure.js'
 import { maxImportMegabytes, resolveMaxImportBytes, DEFAULT_MAX_IMPORT_BYTES } from './importLimit.js'
 
 /**
@@ -840,13 +840,16 @@ const fetchChunk = async (
         : fail('historyImportUrlTimeout')
     }
     if (isUnreachable(error)) {
-      // 「够不到网络」不再一律说成断网（#111）：ECONNREFUSED 说明链路通、对面没在监听，
-      // 与真的没网（DNS 失败 / navigator.onLine === false）是两回事，文案必须分开。
-      const refused = classifyImportFailure({ error, online: isBrowserOnline() }) === 'refused'
-      const reason = refused ? 'refused' : 'unreachable'
-      recordDownloadFailure(reason, url, startedAt, { 'download.bytes': downloaded }, error)
-      trace?.({ at: elapsedSince(startedAt), kind: 'error', bytes: downloaded, totalBytes: total, message: reason })
-      return fail(refused ? 'historyImportUrlRefused' : 'historyImportUrlOffline')
+      // 「够不到网络」再分成两档（#111 / #18）：ECONNREFUSED 说明链路通、对面没在监听 → refused；
+      // 其余（DNS 解析不到 / 路由不可达 / 切网瞬间断链）是「有网但连不上服务」→ unreachable，
+      // 文案指向导入服务本身，不再劝用户去检查自己的网络（用户网络往往好好的）。
+      // 真离线在上面已经被 `!isBrowserOnline()` 收口，不会走到这里。
+      const classified = classifyImportFailure({ error, online: isBrowserOnline() })
+      const tier: ImportFailureReason =
+        classified === 'refused' ? 'refused' : classified === 'offline' ? 'offline' : 'unreachable'
+      recordDownloadFailure(tier, url, startedAt, { 'download.bytes': downloaded }, error)
+      trace?.({ at: elapsedSince(startedAt), kind: 'error', bytes: downloaded, totalBytes: total, message: tier })
+      return fail(IMPORT_FAILURE_KEYS[tier])
     }
     if (isStreamBroken(error)) {
       recordDownloadFailure('interrupted', url, startedAt, { 'download.bytes': downloaded, percent }, error)
