@@ -1,0 +1,59 @@
+{
+  "page": "chat-error-324",
+  "title": "#324 官方渠道失败分类：模型不可用 / 未识别带状态码与诊断，390 与 360 两档",
+  "viewport": 390,
+  "size": "390×844",
+  "shots": [
+    "docs/ui/346-copy-diagnostic-touch/before/390/chat-error-324-02-未识别-带状态码与诊断按钮-390.png"
+  ],
+  "notes": [
+    "MEASURE copyButtonHit {\"x\":57.3,\"y\":570,\"width\":84,\"height\":22,\"minHeight\":\"0px\",\"minWidth\":\"0px\",\"padding\":\"0px\",\"touchAction\":\"auto\",\"display\":\"inline-block\",\"docOverflow\":false,\"noticeOverflow\":false}"
+  ],
+  "modelInvalid": {
+    "text": "当前模型「未记录」在上游不可用（模型名可能已下线）；上游可用模型：deepseek-flash, deepseek-v4-pro。DeepSeek 官方渠道用的是内置模型，设置里没有这一行，升级到已修复版本即可；其它渠道请在设置里换一个模型再发，重试同一个请求不会有变化（不要重试）",
+    "box": {
+      "x": 40,
+      "y": 220,
+      "width": 330,
+      "height": 132
+    },
+    "inViewport": true,
+    "horizontalOverflow": false
+  },
+  "unclassified": {
+    "text": "回答没有完成：HTTP 451，code=unsupported_region，重试不会有变化（不要重试），请先检查设置，或用「复制诊断信息」反馈给我们 复制诊断信息",
+    "box": {
+      "x": 40,
+      "y": 504,
+      "width": 330,
+      "height": 88
+    },
+    "inViewport": true,
+    "horizontalOverflow": false
+  },
+  "copyButton": {
+    "visible": true
+  },
+  "copyButtonHit": {
+    "x": 57.3,
+    "y": 570,
+    "width": 84,
+    "height": 22,
+    "minHeight": "0px",
+    "minWidth": "0px",
+    "padding": "0px",
+    "touchAction": "auto",
+    "display": "inline-block",
+    "docOverflow": false,
+    "noticeOverflow": false
+  },
+  "copy": {
+    "toastText": "诊断信息已复制",
+    "clipboard": "DeepSeek 回答失败诊断\n时间: 2026-11-19T16:07:54.035Z\n环节: http（流开始前）\nHTTP 状态: 451\n上游 code: unsupported_region\n上游原文: totally new upstream failure shape"
+  },
+  "modelInvalidHasCopyButton": {
+    "value": false
+  },
+  "consoleErrors": [],
+  "note": "只留「未识别档（带状态码 + 复制诊断信息按钮）」这一帧：命中区尺寸就量在这一帧上；01/03 与本单无关，按 docs/ui/README 的过程帧口径删掉。"
+}
