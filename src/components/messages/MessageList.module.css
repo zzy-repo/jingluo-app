@@ -3,9 +3,22 @@
   min-height: 0;
   display: flex;
   flex-direction: column;
-  overflow-y: auto;
+  /* #216：`scrollbar-gutter` 首支持 Chromium 94，运行时下限是 Chromium 83（WebView 83）——
+     低内核上这条声明被整条丢弃，槽位退回动态，滚动条出现/消失时整列消息横向跳一个滚动条宽度。
+     兜底写在外面：滚动条常驻（`overflow-y: scroll`），槽位宽度因此恒定，
+     不用去量滚动条实际宽度；现代内核由下面的 `@supports` 块把滚动条收回按需出现，
+     槽位改由 `scrollbar-gutter: stable both-edges` 预留（保留 both-edges 的对称留白）。
+     `padding-right` 不是等价物：classic 滚动条仍然从内容框里吃宽度，滚动条一出现照样跳。 */
+  overflow-y: scroll;
   scrollbar-gutter: stable both-edges;
   scrollbar-color: var(--scroll-color) transparent;
+}
+
+/* #216 现代内核：槽位由 `scrollbar-gutter` 预留，滚动条本身按需出现（不常显） */
+@supports (scrollbar-gutter: stable both-edges) {
+  .container {
+    overflow-y: auto;
+  }
 }
 
 .scroll {
@@ -14,6 +27,8 @@
 
 @media not all and (min-width: 768px) {
   .container {
+    /* #216：窄屏下容器不是滚动容器，`scrollbar-gutter: auto` 是初始值复位（低内核丢弃它等于没写），
+       但必须同时显式写死 `overflow`，否则上面那条常驻滚动条兜底会漏进这个布局分支。 */
     overflow: hidden;
     scrollbar-gutter: auto;
   }

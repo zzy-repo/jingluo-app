@@ -367,6 +367,11 @@ const versionOfProbe = (probe) => {
   if (!probe) return BASELINE_CHROMIUM
   if (LAYOUT_CONTEXTUAL.has(probe.property)) return FEATURE_BY_ID['flex-gap'].firstSupported
   if (VIEWPORT_UNIT.test(probe.value)) return FEATURE_BY_ID.dvh.firstSupported
+  // 探测的属性名与特性表 id 同名时（如 #216 的 `@supports (scrollbar-gutter: stable)`），用表里的门槛。
+  // 否则会掉回 83 基线被判「无风险」——那正是 #216 里最危险的一种误判：低内核上这条 @supports 判假，
+  // 块内声明确实不生效，必须按「已有兜底 / 真实缺陷」二选一，不能记成无风险。
+  const known = FEATURE_BY_ID[probe.property]
+  if (known) return known.firstSupported
   return BASELINE_CHROMIUM
 }
 
