@@ -45,8 +45,8 @@
 | `backdrop-filter` | 76 | 2 | 0 | 2 | 0 | 0 | 0 | 76 ≤ 83，无风险（`-webkit-` 前缀另计 1 处） |
 | `scrollbar-gutter` | 94 | 2 | 0 | 0 | 0 | **2** | 0 | 声明被丢，滚动条出现时横向跳动 → #216 |
 | `:where()` / `:is()` | 88 | 1 | 0 | 0 | 1 | 0 | 0 | 只影响收起动画，降级可接受 |
-| `@container` | 105 | 1 | 0 | 0 | 0 | **1** | 0 | 整块被丢 → #214 |
-| `container-type` | 105 | 1 | 0 | 0 | 0 | **1** | 0 | 同上 → #214 |
+| `@container` | 105 | **0** | 0 | 0 | 0 | 0 | 0 | 1 处已由 #214 清零：判据换成 `.filesWithDocuments` 里的自定义属性 `--message-file-reason-display`，低内核上零特性依赖 |
+| `container-type` | 105 | **0** | 0 | 0 | 0 | 0 | 0 | 同上 → #214（容器本来就不需要浏览器去量） |
 | `CSS.supports(...)` 直接调用 | — （运行时） | 0 | — | — | — | — | 0 | #212 统一能力探测后，产品代码不再直接写 `CSS.supports(`，改走 `src/utils/capabilities.ts` 的 `cssSupports()` 包装（见 §5） |
 | `dvh` / `svh` / `lvh` 裸用 | 108 | 0 | — | — | — | 0 | 0 | **全部被 `@supports` 包住，零裸用** |
 | `clamp()` | 79 | 0 | — | — | — | 0 | 0 | 未使用 |
@@ -105,12 +105,30 @@
 | `components/settings/Settings.module.css:64,247,1121` | 同上 | 2 | 中 | 拆单 #215 |
 | `components/sider/Sider.module.css:158` | 同上 | 2 | 中 | 拆单 #215 |
 
-### 2.4 容器查询（2 处，真实缺陷 → #214）
+### 2.4 容器查询（2 处，真实缺陷 → #214，已修）
 
-| 文件:行 | 假设内容 | 类别 | 风险 | 处置 |
+> #214 已修：这 2 处是同一件事的两半——`.imageThumb` 上 `container-type: inline-size` 当容器，
+> 再用 `@container (max-width: 63px)` 在窄缩略图上 `display: none` 掉失败原因。二者**整条 / 整块**被 83 丢弃，
+> 于是 `64px` 那一档（`64 - 2×1px = 62px ≤ 63px`）又冒两行白字糊住缩略图。
+> 缩略图宽度本来就由 `UserMessage.module.css` 的 `.filesWithDocuments { --message-file-image-size: 64px }`
+> 决定，与视口无关（`flex-shrink: 0` + `flex-wrap: wrap`），**没有等价的 `@media`**；
+> 等价写法是把判据翻成同一个类里的 `--message-file-reason-display: none`，`.reason` 写
+> `display: var(--message-file-reason-display, flex)`（默认 flex = 基线，自定义属性 49 起就有）。
+> `src/**` 现在 0 处容器查询；新增守卫 `pnpm run check:container`
+> （`scripts/lib/containerQueryAudit.mjs` + `tests/unit/container-query-fallback.test.mjs`）持续盯
+> 「0 处容器查询」+「就算写也必须块外有等价基线」。下表是**修前**的盘点快照，本节数字不再逐行重算。
+
+| 文件:行（修前） | 假设内容 | 类别 | 风险 | 处置 |
 | --- | --- | --- | --- | --- |
-| `components/messages/MessageFile.module.css:28` | `container-type: inline-size` | 2 | 中 | 拆单 #214 |
-| `components/messages/MessageFile.module.css:95` | `@container (max-width: 63px) { .reason { display: none } }` | 2 | 中 | 拆单 #214 |
+| `components/messages/MessageFile.module.css:28` | `container-type: inline-size` | 2 | 中 | #214 已删（容器不再需要） |
+| `components/messages/MessageFile.module.css:95` | `@container (max-width: 63px) { .reason { display: none } }` | 2 | 中 | #214 已删，改成 `--message-file-reason-display` |
+
+修后对应的两处（供下一轮核对）：
+
+| 文件:行（修后） | 内容 |
+| --- | --- |
+| `components/messages/UserMessage.module.css:26-31` `.filesWithDocuments` | `--message-file-image-size: 64px` + `--message-file-reason-display: none` |
+| `components/messages/MessageFile.module.css:84` `.reason` | `display: var(--message-file-reason-display, flex)` |
 
 ### 2.5 `scrollbar-gutter`（2 处，真实缺陷 → #216，已修）
 
@@ -181,7 +199,7 @@
 | 单号 | 特性 / 形态 | 命中 | 风险 | 一句话 |
 | --- | --- | --- | --- | --- |
 | [#213](https://github.com/zzy-repo/deepseek-app/issues/213) | `:has()` | 16 | 中 | 低内核上整条选择器列表被丢，标题与列表间距退回默认值 |
-| [#214](https://github.com/zzy-repo/deepseek-app/issues/214) | `@container` + `container-type` | 2 | 中 | 容器查询整块被丢，窄缩略图上仍渲染两行失败原因 |
+| [#214](https://github.com/zzy-repo/deepseek-app/issues/214) | `@container` + `container-type` | 2 | 中 | 已修：容器查询整块被丢，窄缩略图上仍渲染两行失败原因；判据换成自定义属性 `--message-file-reason-display`，`src` 里容器查询归零 |
 | [#215](https://github.com/zzy-repo/deepseek-app/issues/215) | `:focus-visible` | 13 | 中 | 无 `:focus` 回退，键盘用户完全看不到焦点环（可访问性） |
 | [#216](https://github.com/zzy-repo/deepseek-app/issues/216) | `scrollbar-gutter` | 2 | 中 | 声明被丢，滚动条出现/消失瞬间消息列表横向跳动 |
 | [#217](https://github.com/zzy-repo/deepseek-app/issues/217) | flex `gap` 兜底覆盖面 | 2 | 中 | 已修：`check:gap` 扫全部 `.css`，`flex-wrap` 排除规则改为「不换行才排除」 |

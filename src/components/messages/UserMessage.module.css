@@ -25,6 +25,10 @@
 
 .filesWithDocuments {
   --message-file-image-size: 64px;
+  /* #214：64px 缩略图放不下两行失败原因（旧写法是一条 `@container (max-width: 63px)`，
+     Chromium 105+ 才有；WebView 83 上整块丢弃 → 原因又冒出来盖住缩略图）。
+     这里与 64px 同处声明，缩略图上的 `.reason` 读的就是这个值，默认 `flex` 照常显示。 */
+  --message-file-reason-display: none;
 }
 
 .bubble {

@@ -38,6 +38,7 @@
     "gen:gap": "node scripts/gen-flex-gap-fallback.mjs",
     "check:gap": "node scripts/check-css-gap-fallback.mjs",
     "check:gutter": "node scripts/check-scrollbar-gutter-fallback.mjs",
+    "check:container": "node scripts/check-container-query-fallback.mjs",
     "check:capabilities": "node scripts/check-capabilities.mjs"
   },
   "dependencies": {

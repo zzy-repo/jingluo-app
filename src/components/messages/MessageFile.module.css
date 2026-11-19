@@ -23,9 +23,13 @@
   }
 }
 
+/* #214：这里原来有 `container-type: inline-size`，给下面「窄缩略图不显示失败原因」的容器查询当测量容器。
+   容器查询首支持 Chromium 105，运行时下限是 WebView 83（Chromium 83）——那里 `@container` 整块丢弃、
+   `container-type` 整条丢弃，于是窄缩略图上两行失败原因又冒出来。缩略图宽度本来就不是浏览器量出来的，
+   而是我们自己给的 `--message-file-image-size`（见 UserMessage.module.css 的 `.filesWithDocuments`），
+   所以判据直接翻成那个自定义属性（Chromium 49+ 就有），不再需要任何容器查询。 */
 .imageThumb {
   position: relative;
-  container-type: inline-size;
 }
 
 button.image {
@@ -75,7 +79,9 @@ button.image {
   right: 0;
   bottom: 0;
   left: 0;
-  display: flex;
+  /* #214：默认 `flex` = 正常显示原因（这就是低内核上的基线，任何内核都拿得到）；
+     与文件混排、缩略图缩到 64px 时由 `.filesWithDocuments` 把它覆盖成 `none`。 */
+  display: var(--message-file-reason-display, flex);
   align-items: flex-end;
   justify-content: center;
   box-sizing: border-box;
@@ -91,12 +97,9 @@ button.image {
   pointer-events: none;
 }
 
-/* 比缩略图最小尺寸还窄时放不下文案，只保留状态 */
-@container (max-width: 63px) {
-  .reason {
-    display: none;
-  }
-}
+/* 原来这里是一条 `@container (max-width: 63px)`：63px 是 64px 盒减去两侧 1px 边框后的内容盒宽度，
+   也就是「与文件混排」那一档（64px）专属。低内核整块丢弃 → 换成 `.filesWithDocuments` 里的
+   `--message-file-reason-display: none`（同一个 64px 档的声明处），语义不变、零特性依赖。 */
 
 .spinner {
   width: 20px;

@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"/>
+<title>#214 修复前 · Chromium 83 模拟</title>
+<style>
+  html, body { margin: 0; padding: 0; background: #f5f6f8; }
+  body { font-family: system-ui, "Noto Sans SC", "Microsoft YaHei", sans-serif; }
+  .shot { padding: 16px 12px 20px; }
+  .caption { font-size: 13px; line-height: 18px; color: #4a5262; margin: 0 0 12px; }
+  .caption b { color: #101828; }
+  .rowLabel { font-size: 11px; color: #6b7280; margin: 14px 0 6px; }
+  .rowLabel:first-of-type { margin-top: 0; }
+  /* 设计 token：取 src/app/theme.css 亮色档里这几条规则用到的值（缺了会让 border 整条失效） */
+  :root {
+    --ds-ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+    --ds-transition-duration: 0.2s;
+    --dsw-static-neutral-bluish-00: rgb(255, 255, 255);
+    --dsw-alias-border-l2: rgba(0, 0, 0, 0.1);
+  }
+  /* ↓↓↓ 以下规则原样取自 src/components/messages/*.module.css ↓↓↓ */
+.image {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  box-sizing: border-box;
+  width: var(--message-file-image-size, 120px);
+  height: var(--message-file-image-size, 120px);
+  padding: 0;
+  overflow: hidden;
+  border-radius: 16px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  background-color: var(--dsw-alias-markdown-placeholder);
+  font: inherit;
+  text-decoration: none;
+
+  img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    flex-shrink: 0;
+  }
+}
+.imageThumb {
+  position: relative;
+}
+.reason {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  box-sizing: border-box;
+  min-height: min(60px, 100%);
+  padding: 0 4px 8px;
+  font-size: 11px;
+  line-height: 14px;
+  font-weight: 500;
+  text-align: center;
+  word-break: break-word;
+  color: var(--dsw-static-neutral-bluish-00);
+  background: linear-gradient(to bottom, rgba(0, 0, 0, 0), rgba(0, 0, 0, 0.65));
+  pointer-events: none;
+}
+.files {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: flex-end;
+  gap: 10px;
+  max-width: 100%;
+  margin-bottom: 8px;
+}
+.filesWithDocuments {
+  --message-file-image-size: 64px;
+}
+
+  /* ↑↑↑ 以上规则原样取自 src/components/messages/*.module.css ↑↑↑ */
+</style>
+</head>
+<body>
+  <div class="shot">
+    <p class="caption"><b>修复前 · Chromium 83 模拟</b><br/>容器查询整块被丢弃 → 64px 缩略图上的两行失败原因又冒出来</p>
+    <p class="rowLabel">同一条消息里还有文件 → 缩略图 64px（窄档）</p>
+    <div class="files filesWithDocuments">
+      <div class="image imageThumb">
+        <img src="data:image/svg+xml;utf8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22120%22%20height%3D%22120%22%3E%0A%20%20%20%20%20%20%20%3Crect%20width%3D%22120%22%20height%3D%22120%22%20fill%3D%22%23c8d4e6%22%2F%3E%0A%20%20%20%20%20%20%20%3Ccircle%20cx%3D%2260%22%20cy%3D%2246%22%20r%3D%2218%22%20fill%3D%22%238fa6c4%22%2F%3E%0A%20%20%20%20%20%20%20%3Cpath%20d%3D%22M0%20120%20L42%2068%20L74%20104%20L96%2084%20L120%20112%20L120%20120%20Z%22%20fill%3D%22%236f89ab%22%2F%3E%0A%20%20%20%20%20%3C%2Fsvg%3E" alt=""/>
+        <span class="reason">网络中断，图片没有上传成功，请连上 Wi-Fi 后重试</span>
+      </div>
+      <div class="image imageThumb">
+        <img src="data:image/svg+xml;utf8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22120%22%20height%3D%22120%22%3E%0A%20%20%20%20%20%20%20%3Crect%20width%3D%22120%22%20height%3D%22120%22%20fill%3D%22%23c8d4e6%22%2F%3E%0A%20%20%20%20%20%20%20%3Ccircle%20cx%3D%2260%22%20cy%3D%2246%22%20r%3D%2218%22%20fill%3D%22%238fa6c4%22%2F%3E%0A%20%20%20%20%20%20%20%3Cpath%20d%3D%22M0%20120%20L42%2068%20L74%20104%20L96%2084%20L120%20112%20L120%20120%20Z%22%20fill%3D%22%236f89ab%22%2F%3E%0A%20%20%20%20%20%3C%2Fsvg%3E" alt=""/>
+        <span class="reason">网络中断，图片没有上传成功，请连上 Wi-Fi 后重试</span>
+      </div></div>
+    <p class="rowLabel">纯图片消息 → 缩略图 120px（对照：原因该正常显示）</p>
+    <div class="files">
+      <div class="image imageThumb">
+        <img src="data:image/svg+xml;utf8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22120%22%20height%3D%22120%22%3E%0A%20%20%20%20%20%20%20%3Crect%20width%3D%22120%22%20height%3D%22120%22%20fill%3D%22%23c8d4e6%22%2F%3E%0A%20%20%20%20%20%20%20%3Ccircle%20cx%3D%2260%22%20cy%3D%2246%22%20r%3D%2218%22%20fill%3D%22%238fa6c4%22%2F%3E%0A%20%20%20%20%20%20%20%3Cpath%20d%3D%22M0%20120%20L42%2068%20L74%20104%20L96%2084%20L120%20112%20L120%20120%20Z%22%20fill%3D%22%236f89ab%22%2F%3E%0A%20%20%20%20%20%3C%2Fsvg%3E" alt=""/>
+        <span class="reason">网络中断，图片没有上传成功，请连上 Wi-Fi 后重试</span>
+      </div></div>
+  </div>
+</body>
+</html>
