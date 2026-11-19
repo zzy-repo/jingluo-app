@@ -12,9 +12,9 @@
 
 | 项 | 值 |
 | --- | --- |
-| 扫描范围 | `src/**` 全部源文件 **243** 个（`.css` **44** 个，其中 `*.module.css` **37** 个；其余 `.ts / .tsx / .html` 共 **199** 个） |
-| 口径拆分 | 44 `.css` + 142 `.ts` + 54 `.tsx` + 1 `.html` = 241 |
-| 命中总数 | **331** 处，分布在 **39** 个文件 |
+| 扫描范围 | `src/**` 全部源文件 **244** 个（`.css` **44** 个，其中 `*.module.css` **37** 个；其余 `.ts / .tsx / .html` 共 **200** 个） |
+| 口径拆分 | 44 `.css` + 145 `.ts` + 54 `.tsx` + 1 `.html` = 244 |
+| 命中总数 | **343** 处，分布在 **39** 个文件 |
 | 运行时下限 | WebView **83**（Chromium 83）。**首支持 ≤ 83 的特性一律记「无风险」，与有没有兜底无关** |
 | 构建期因素 | `rspack.config.ts` 用 `builtin:lightningcss-loader`，`targets` 取自 `package.json` 的 `browserslist`（强制含 `chrome >= 83`）。**已被构建期翻译掉的写法不算运行时假设** |
 
@@ -34,8 +34,8 @@
 
 | 特性 | 首支持 Chromium | 命中 | 已有兜底 | 无风险 | 可接受降级 | 真实缺陷 | 假阳性 | 结论 |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| 嵌套 `&` | — （构建期） | 136 | 136 | 0 | 0 | 0 | 0 | lightningcss 按 `chrome >= 83` 展开，非运行时假设 |
-| flex `gap` | 84 | 109 | 109 | 0 | 0 | 0 | 0 | 兜底已全覆盖（#217 补齐最后 2 处）；`check:gap` 口径见 §2.6 |
+| 嵌套 `&` | — （构建期） | 140 | 140 | 0 | 0 | 0 | 0 | lightningcss 按 `chrome >= 83` 展开，非运行时假设 |
+| flex `gap` | 84 | 117 | 117 | 0 | 0 | 0 | 0 | 兜底已全覆盖（#217 补齐最后 2 处）；`check:gap` 口径见 §2.6 |
 | `min()` / `max()` | 79 | 21 | 0 | 21 | 0 | 0 | 0 | 79 ≤ 83，无风险 |
 | `:has()` | 105 | **0** | 0 | 0 | 0 | 0 | 0 | 16 处已由 #213 清零：改成渲染期显式状态类 `ds-markdown-before-ul` / `ds-markdown-before-ol`，低内核上零特性依赖 |
 | `:focus-visible` | 86 | 13 | 13 | 0 | 0 | 0 | 0 | 13 处已由 #215 补齐：每处都有同选择器的 `:focus` 兜底 + `:focus:not(:focus-visible)` 收回；`pnpm run check:focus` 守住 |
@@ -58,7 +58,7 @@
 | `color-mix()` | 111 | 0 | — | — | — | 0 | 0 | 未使用（且 lightningcss 会降级） |
 | `@layer` | 99 | 0 | — | — | — | 0 | 0 | 未使用 |
 | `accent-color` | 93 | 0 | — | — | — | 0 | 0 | 未使用 |
-| **合计** | | **331** | **288** | **37** | **1** | **5** | **0** | |
+| **合计** | | **343** | **300** | **37** | **1** | **5** | **0** | |
 
 > `100dvh` 的每一处声明，**没有一处**落在 `@supports` 之外（`dvh` 裸用命中数为 0）。这是本仓 #13 之后形成的最好的一条既有纪律，也是本次盘点最重要的**正面结论**：`dvh` 这一类零缺陷。
 
@@ -174,15 +174,15 @@
 > 3 处声明都已覆盖，2 处 `@supports` 就是收回块本身。**判定规则不改**：放宽到认 `overflow-y: scroll` 会顺手放过真正没兜底的写法，
 > 要不要放宽留给后续单。本文档的职责是把「规则怎么算」和「人怎么核」分开写清楚。
 
-### 2.6 flex `gap`（109 处：全部已有兜底；#217 补齐了最后 2 处）
+### 2.6 flex `gap`（117 处：全部已有兜底；#217 补齐了最后 2 处）
 
 | 文件:行 | 假设内容 | 类别 | 风险 | 处置 |
 | --- | --- | --- | --- | --- |
-| 37 个 `*.module.css` + `markdown.css` 共 109 处 | flex 容器上的 `gap` / `row-gap` | 2 | 低 | 已有兜底（`html[data-flex-gap-fallback]` + `margin` 块，由 `pnpm run check:gap` 逐条产出清单） |
+| 37 个 `*.module.css` + `markdown.css` 共 117 处 | flex 容器上的 `gap` / `row-gap` | 2 | 低 | 已有兜底（`html[data-flex-gap-fallback]` + `margin` 块，由 `pnpm run check:gap` 逐条产出清单） |
 | `components/markdown/markdown.css:370` | `.md-code-block-switch { display:flex; gap:4px }`，文件不是 CSS Module、原先不在 `check:gap` 扫描范围 | 2 | 低 | **#217 已补**：裸写 `html[data-flex-gap-fallback]` 兜底块（` :global()` 在非 module 文件里非法），扫描范围同时扩到全部 `.css` |
 | `components/messages/ReplyArea.module.css:224` | `.toolBody { display:flex; flex-wrap:wrap; row-gap:6px }`，原先被 `flex-wrap` 排除规则放过 | 2 | 低 | **#217 已补**：`margin-bottom: 6px`；排除规则改为「交叉轴 gap 只在**不换行**时才不需要兜底」 |
 
-> 口径（#217 之后统一）：`pnpm run check:gap` 报「扫描 **44** 个 CSS 文件（其中 **37** 个 CSS Module）：已兜底 **111** 条，跳过 **3** 条」。44 = `find src -name '*.css' | wc -l`；3 条跳过 = #159 的 `Settings.module.css:.backgroundRow` 1 条 + 非 flex 容器 2 条。原先的两种口径（37 module / 109 处 vs 含非 module 的 109 处）已合并成同一个口径。
+> 口径（#217 之后统一）：`pnpm run check:gap` 报「扫描 **44** 个 CSS 文件（其中 **37** 个 CSS Module）：已兜底 **119** 条，跳过 **3** 条」。44 = `find src -name '*.css' | wc -l`；3 条跳过 = #159 的 `Settings.module.css:.backgroundRow` 1 条 + 非 flex 容器 2 条。原先的两种口径（37 module / 109 处 vs 含非 module 的 109 处）已合并成同一个口径。
 
 ### 2.7 `inset`（16 处，构建期降级 → 已有兜底）
 
@@ -212,7 +212,7 @@
 | `components/session/MobileHeader.module.css:29`<br>`components/settings/AppUpdateField.module.css:57`<br>`components/settings/Settings.module.css:865` | `touch-action`（3 处） | 2 | 低 | 无需探测（36 ≤ 83） |
 | `components/base/Modal.module.css:25`<br>`components/chatInput/DragMask.module.css:12` | `backdrop-filter`（2 处；`DragMask.module.css:11` 另有 `-webkit-backdrop-filter` 前缀版） | 2 | 低 | 无需探测（76 ≤ 83） |
 | `components/base/Modal.module.css:95` | `:where(.content)[data-motion-state='closed']` | 2 | 低 | 可接受降级（88 > 83，只丢收起动画） |
-| 22 个文件 / 136 行 | 嵌套 `&`（`:hover` / `&.x` / `&[aria-…]`），逐文件行号见附录 A | 2 | 低 | 已有兜底（构建期 lightningcss 展开） |
+| 22 个文件 / 140 行 | 嵌套 `&`（`:hover` / `&.x` / `&[aria-…]`），逐文件行号见附录 A | 2 | 低 | 已有兜底（构建期 lightningcss 展开） |
 
 > `services/diagnostics/collector.ts:465` 不在上表里：它是 `#212` 的包装函数 `cssSupports()` 间接调用，字面量不是 `CSS.supports(`，
 > 静态扫描抓不到（§5 末条已记过这个盲区）。上一版把它单列一行「无需探测」，属于把复算结果和人工补记混在一张表里，本版挪到正文。
@@ -265,7 +265,7 @@
 4. `:focus-visible` 的实际可见性风险有一档不确定性：若系统/浏览器默认 focus ring 未被项目 CSS 的 `outline` 规则覆盖，低内核上焦点仍可能可见。需要实测才能定档（已写进 #215 的未测边界）。
 5. 没有统计「同一特性被 lightningcss 部分降级」的情形（例如 `color-mix()` 在低目标下会被翻成静态色）。本次 `color-mix()` 命中为 0，暂无影响。
 
-## 附录 A：嵌套 `&` 命中位置（136 行 / 22 文件，全部构建期展开）
+## 附录 A：嵌套 `&` 命中位置（140 行 / 22 文件，全部构建期展开）
 
 ```
 components/base/Button.module.css: 22, 27, 36, 40, 44, 77, 88, 97, 108, 112, 118, 122
@@ -306,3 +306,7 @@ pnpm run check:gap
 # 本盘点的单元测试
 node --test tests/unit/css-assumption-audit.test.mjs
 ```
+
+## 复核记录
+
+- 复核（2026-11-19 18:35，基准 `68c4d9d`，本单 #305）：`src/components/settings/logView.ts` 新增 1 个 `.ts` 源文件（扫描范围 243 → **244** 个），`Settings.module.css` 的日志预览区新增 8 处 flex `gap`（`.feedbackLogViewer` / `.feedbackLogToolbar` / `.feedbackLogToolbarRow` / `.feedbackLogChipRow` / `.feedbackLogGroupToggle` / `.feedbackLogGroupHeader` / `.feedbackLogGroup` / `.feedbackLogGroupItems`）与 4 处嵌套 `&`（`:hover` / `::placeholder` / `:focus`），因此命中总数 331 → **343**（flex `gap` 109 → **117**、嵌套 136 → **140**，其余特性未变），分布文件数仍是 39。这 8 处 gap 全部由 `pnpm run check:gap` 自动补齐 `html[data-flex-gap-fallback]` 兜底块（已兜底 111 → **119** 条），没有新增裸 gap；新增的 `@media (max-width: 420px)` 只是窄屏排版，不构成新特性假设。

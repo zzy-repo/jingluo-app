@@ -8,7 +8,7 @@
 | 项目 | 值 |
 | --- | --- |
 | 兼容基线 | Android WebView **83**（Chromium 83.0.4103.106，Android 11 出厂镜像） |
-| 扫描范围 | `src/**` 共 **244** 个文件（**144** `.ts` / 54 `.tsx` / 44 `.css` / 1 `.html` / 1 `.md`） |
+| 扫描范围 | `src/**` 共 **245** 个文件（**145** `.ts` / 54 `.tsx` / 44 `.css` / 1 `.html` / 1 `.md`） |
 | 判定方式 | **静态推断**：词法层遮蔽注释、字符串、模板后按调用形状匹配；**非运行时验证** |
 | 工具 | [`scripts/lib/apiAssumptionAudit.mjs`](../../scripts/lib/apiAssumptionAudit.mjs)（纯判定模块，无遍历、无打印） |
 | 单测 | [`tests/unit/api-assumption-audit.test.mjs`](../../tests/unit/api-assumption-audit.test.mjs)（10 个用例，三个判定桶各钉真例子） |
@@ -23,7 +23,7 @@
 | **真漏洞**（`uncovered`） | 首次支持 > 83 且没有任何兜底 | **0** |
 | 合计 | | **51** |
 
-类别 1 命中总数 **51 处 / 242 个文件**：31 处依赖入口 polyfill、20 处落在基线内、**0 处裸调用无兜底**。
+类别 1 命中总数 **51 处 / 245 个文件**：31 处依赖入口 polyfill、20 处落在基线内、**0 处裸调用无兜底**。
 
 入口兜底的覆盖面（`src/polyfills/legacy.ts` 实际安装的 13 项）：`Object.hasOwn`、`Array.prototype.at`、`String.prototype.at`、`Array.prototype.findLast`、`Array.prototype.findLastIndex`、`Array.prototype.toSorted`、`Array.prototype.toReversed`、`Array.prototype.toSpliced`、`Array.prototype.with`、`structuredClone`、`crypto.randomUUID`、`String.prototype.replaceAll`、`Intl.Segmenter`。
 
@@ -184,3 +184,7 @@ node --test tests/unit/capabilities-docs-sync.test.mjs   # 文档与复算是否
 - `src/index.html` 内联守卫只在 Node `vm` 里复现过（沿用 `tests/unit/intl-displaynames-fallback.test.mjs` 的手法），没有真机启动页截图。
 - 第三方依赖 chunk 的裸调用未在本单盘点（见上节）。
 - CSS 单位 / 交互行为 / 平台桥接三类假设分属类别 2 / 4 / 3，不在本文档范围。
+
+## 复核记录
+
+- 复核（2026-11-19 18:35，基准 `68c4d9d`，本单 #305）：新增 1 个 `.ts` 源文件（`src/components/settings/logView.ts`，日志预览的过滤 / 分组 / 复制纯函数），扫描范围 244 → **245** 个文件、`.ts` 144 → **145** 个。新文件里没有上述任何一条 API（只用 `String#slice` / `padStart` / `Object.entries` / `JSON.stringify` / `Number.isFinite`，全部 ≤ Chromium 83），**命中总数仍是 51 处**，分类分布、按 API 分项、逐条命中表的 `文件:行` 均未变。

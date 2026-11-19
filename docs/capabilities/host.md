@@ -4,7 +4,7 @@
 >
 > **快照基准：`9e9f231`**（`origin/main` tip，2026-11-19 12:28:21 +0800）· 采集时间：2026-11-19 12:37 (+0800)
 >
-> **扫描范围**：`src/**` 的 **199** 个源文件。
+> **扫描范围**：`src/**` 的 **200** 个源文件。
 >
 > 拆分：`.ts` 142 / `.tsx` 54 / `.html` 1 = 197。上一版写 190，是缺了 `#237`（`fetch` 通道计数、`readBytesOf`）与 `#243`（设备指纹）新增的 5 个文件。
 >
@@ -57,7 +57,7 @@
 | `src/components/messages/ReadingBars.tsx:106` | matchMedia 引入于 Chrome 9，83 必有 | 3 | 低 | 已有兜底 |
 | `src/components/settings/AppUpdateField.tsx:57` | AbortController 引入于 Chrome 66，83 必有（启动守卫也把它列进 REQUIRED） | 3 | 低 | 已有兜底 |
 | `src/components/settings/AppUpdateField.tsx` 的检查更新循环（`AbortController`） | AbortController 引入于 Chrome 66，83 必有（启动守卫也把它列进 REQUIRED） | 3 | 低 | 已有兜底 |
-| `src/components/settings/FeedbackDialog.tsx:202` | @capacitor/core 随包发布，函数一定在；它回答的是「跑在壳里吗」不是「插件在吗」 | 3 | 低 | 已有兜底 |
+| `src/components/settings/FeedbackDialog.tsx:241` | @capacitor/core 随包发布，函数一定在；它回答的是「跑在壳里吗」不是「插件在吗」 | 3 | 低 | 已有兜底 |
 | `src/components/settings/SettingsDialog.tsx:979` | AbortController 引入于 Chrome 66，83 必有（启动守卫也把它列进 REQUIRED） | 3 | 低 | 已有兜底 |
 | `src/components/settings/SettingsDialog.tsx:1231` | URL.createObjectURL 引入于 Chrome 8，83 必有 | 3 | 低 | 已有兜底 |
 | `src/components/settings/SettingsDialog.tsx:1236` | URL.revokeObjectURL 引入于 Chrome 8，83 必有 | 3 | 低 | 已有兜底 |
@@ -269,3 +269,7 @@
 5. **存储配额没实测**：见上一节 `QuotaExceededError`。
 7. **注释行也算命中**：`src/index.html:17` 是注释里的 `Intl.DisplayNames` 字样，扫描器按字面量匹配，注释行照记（见「需动态验证」）。
 6. **没有跑任何设备 / 模拟器**：所有「必然存在」结论都是按 Chromium 版本号推的（`chrome ≤ 83`），不是实测。
+
+## 复核记录
+
+- 复核（2026-11-19 18:35，基准 `68c4d9d`，本单 #305）：新增 1 个 `.ts` 源文件（`src/components/settings/logView.ts`），扫描范围 199 → **200** 个源文件。新文件没有任何宿主能力调用（不碰 storage / clipboard / fetch / Capacitor，复制走既有的 `copyText` 工具），**命中总数仍是 119 条**，各能力计数与风险分布未变；`FeedbackDialog.tsx` 因新增日志预览区整体下移，`Capacitor.isNativePlatform` 的行号从 `:202` 修正为 `:241`。
