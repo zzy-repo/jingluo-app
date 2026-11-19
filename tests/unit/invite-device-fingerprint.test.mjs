@@ -184,8 +184,11 @@ console.log('\n[2b] 无指纹原因：运行时白名单与类型是同一份（
   // 诊断里那个 reason 被静默改写成 plugin-unavailable，排查方向直接跑偏。
   // 现在 REASON_TABLE 用 `satisfies Record<NoFingerprintReason, true>` 焊在类型上，
   // 加/减任何一边 `pnpm type` 就红；这里再钉住「白名单里的每个值都原样落进结论」。
-  eq(NO_FINGERPRINT_REASONS.length, 6, '六个原因一个不多一个不少')
-  eq(new Set(NO_FINGERPRINT_REASONS).size, 6, '白名单里不能有重复值')
+  // #395 追加第七个原因 constant_fp（形状对但是常量）：这里钉的是「类型与白名单同一份」，
+  // 所以数目跟着涨是**预期**，真正的判据是下面逐值原样保留 + 类型层的 satisfies 约束。
+  eq(NO_FINGERPRINT_REASONS.length, 7, '七个原因一个不多一个不少')
+  eq(new Set(NO_FINGERPRINT_REASONS).size, 7, '白名单里不能有重复值')
+  truthy(NO_FINGERPRINT_REASONS.includes('constant_fp'), '常量指纹有自己的原因枚举（#395）')
   for (const reason of NO_FINGERPRINT_REASONS) {
     eq(
       interpretFingerprint({ available: false, reason }),

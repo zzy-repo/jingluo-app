@@ -45,9 +45,11 @@ export const INVITE_API_BASE = __ENDPOINTS__.inviteBaseUrl
  * 需要上报设备指纹的请求头上挂 `X-Device-Fp`（Issue #243）。
  *
  * 三条约束：
- *   - 指纹必须过 {@link normalizeDeviceFp}：不是 64 位小写十六进制就当没有（明文 ANDROID_ID
- *     万一被上游误传，会在这里被丢掉，不可能出现在请求里）；
- *   - 没有指纹就**原样返回入参对象**，请求与此前完全一致 —— 降级不留痕、不阻塞；
+ *   - 指纹必须过 {@link normalizeDeviceFp}：不是 64 位十六进制、或形状对但是常量（全零 / 全 F /
+ *     空 ANDROID_ID 的固定哈希，见 #395）就当没有 —— 明文 ANDROID_ID 万一被上游误传，
+ *     也会在这里被丢掉，不可能出现在请求里；
+ *   - 没有指纹就**原样返回入参对象**，请求与此前完全一致 —— 降级不留痕、不阻塞。
+ *     「没有可信指纹」这个状态只靠**头缺席**表达，绝不上报一个全零/常量占位值（#395 第 2 条）；
  *   - 只加一个头，不改 body、不改 URL：服务端认不认都影响不到本次语义。
  */
 const withDeviceFp = (headers: Record<string, string>, deviceFp: string): Record<string, string> => {
