@@ -26,7 +26,9 @@
 
         </activity>
 
-        <meta-data android:name="com.example.deepseekchat.ARTIFACT_VARIANT" android:value="${artifactVariant}" />
+        <!-- 变体标记名跟着 applicationId 走（Issue #271）：${applicationId} 由 AGP 按
+             config/appIdentity.json 生成，不再写死包名。 -->
+        <meta-data android:name="${applicationId}.ARTIFACT_VARIANT" android:value="${artifactVariant}" />
 
         <provider
             android:name="androidx.core.content.FileProvider"

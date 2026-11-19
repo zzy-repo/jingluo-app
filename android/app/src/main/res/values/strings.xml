@@ -1,7 +1,10 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
-    <string name="app_name">鲸落</string>
-    <string name="title_activity_main">鲸落</string>
-    <string name="package_name">com.example.deepseekchat</string>
-    <string name="custom_url_scheme">com.example.deepseekchat</string>
+    <!--
+      应用名 / 包名相关的四项（app_name / title_activity_main / package_name / custom_url_scheme）
+      不在这里声明：它们由 android/app/build.gradle 的 resValue 从仓库根 config/appIdentity.json
+      生成（Issue #271，唯一来源）。这份文件里再写一遍会 duplicate resource 编译失败。
+      `npx cap sync android` 有可能把这几项写回来（Capacitor 的 appName/appId），
+      发现后删掉即可；`pnpm check:identity` 会拦下这种残留。
+    -->
 </resources>

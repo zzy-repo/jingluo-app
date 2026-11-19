@@ -7,7 +7,13 @@ ARCHIVES=("$@")
 if [ ${#ARCHIVES[@]} -eq 0 ]; then
   ARCHIVES=(ctrl-1mb ctrl-10mb ctrl-50mb edge-200mb bomb-1000x corrupt-branch truncated)
 fi
-PKG=com.example.deepseekchat
+# 包名不写死：与 android/app/build.gradle 同源（config/appIdentity.json，Issue #271）。
+# 必须从仓库根执行（下面的 node 用相对路径读配置，本脚本本来也按仓库根相对路径跑 p2-import.mjs）。
+PKG="$(node -p "require('./config/appIdentity.json').applicationId")"
+if [ -z "${PKG}" ]; then
+  echo "[run-p2] 读不到 config/appIdentity.json 的 applicationId，中止" >&2
+  exit 2
+fi
 for a in "${ARCHIVES[@]}"; do
   echo "======== $a ========"
   adb shell am force-stop $PKG

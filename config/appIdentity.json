@@ -1,0 +1,10 @@
+{
+  "applicationId": "com.example.deepseekchat",
+  "namespace": "com.example.deepseekchat",
+  "label": {
+    "zh": "鲸落",
+    "en": "Whale Fall"
+  },
+  "expectedCertSha256": "e7c5baee517ca2b2258950e934521f2fad448d00f72f2ff7297bdf4fa00aa8a1",
+  "allowInsecureUpdateTransport": true
+}

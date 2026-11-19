@@ -19,9 +19,15 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 
 import { inspectApkDebugState, parseBinaryXml, readZipEntry } from '../deploy/dl-release/apk-manifest.mjs';
+import { loadAppIdentity } from './lib/appIdentity.mjs';
 
-/** 应用包名（服务端白名单，写错直接 400 INVALID_APK） */
-export const PACKAGE_NAME = 'com.example.deepseekchat';
+/**
+ * 应用包名（服务端白名单，写错直接 400 INVALID_APK）
+ * 唯一来源：仓库根 config/appIdentity.json（Issue #271）。以前这里是第 3 份副本，
+ * 和 android/app/build.gradle 的 applicationId 之间没有任何门禁 —— 改了包名就发一个
+ * 服务端不认的包，或者校验一个打包时根本没用上的名字。
+ */
+export const PACKAGE_NAME = loadAppIdentity().applicationId;
 /** 服务端硬上限（docs/dl-release-api.md §2） */
 export const MAX_APK_BYTES = 50 * 1024 * 1024;
 /** versionName 格式（与 android/app/build.gradle、docs/releases-manifest.md 同口径） */

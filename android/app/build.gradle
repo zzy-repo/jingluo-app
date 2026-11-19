@@ -32,6 +32,40 @@ if (appVersionCode == null || appVersionCode <= 0) {
 }
 
 // ---------------------------------------------------------------------------
+// 应用身份唯一来源：仓库根 config/appIdentity.json（Issue #271）
+//   applicationId / namespace     → Android 包名（= 设备指纹输入的一部分，改它 = 换用户账号）
+//   label.zh                      → app_name / title_activity_main（桌面名与任务切换器名同源）
+//   expectedCertSha256            → 已发布证书指纹闸门（换它 = 签名迁移，另开单）
+//   allowInsecureUpdateTransport  → 更新链路是否允许明文 http（#268 的决策落点，门禁见
+//                                   scripts/check-identity.mjs）
+// 和上面的版本号一样：这是唯一来源，缺字段或格式非法直接报错中止（不猜、不静默回退）。
+// 为什么包名要当身份而不是标签：DeviceFingerprintPlugin 用 sha256Hex(androidId + 包名) 做设备
+// 指纹，包名一换，全网老设备同时变成「新用户」，额度 / 邀请关系 / 卡密绑定全部对不上（#243/#252/#264）。
+// ---------------------------------------------------------------------------
+def identityJsonFile = rootProject.file('../config/appIdentity.json')
+if (!identityJsonFile.exists()) {
+    throw new GradleException("[identity] 找不到 ${identityJsonFile}：App 包名/应用名/证书指纹的唯一来源，无法确定应用身份")
+}
+def appIdentity
+try {
+    appIdentity = new groovy.json.JsonSlurper().parse(identityJsonFile)
+} catch (Exception e) {
+    throw new GradleException("[identity] 解析 ${identityJsonFile} 失败：${e.message}")
+}
+def identityApplicationId = appIdentity.applicationId?.toString()?.trim()
+def identityNamespace = appIdentity.namespace?.toString()?.trim()
+def identityLabel = appIdentity.label?.zh?.toString()
+if (!(identityApplicationId ==~ /[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+/)) {
+    throw new GradleException("[identity] config/appIdentity.json 的 applicationId 缺失或格式非法（期望 Android 包名，如 com.example.app）：'${identityApplicationId}'")
+}
+if (!(identityNamespace ==~ /[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+/)) {
+    throw new GradleException("[identity] config/appIdentity.json 的 namespace 缺失或格式非法（期望 Android 包名）：'${identityNamespace}'")
+}
+if (!identityLabel?.trim()) {
+    throw new GradleException("[identity] config/appIdentity.json 的 label.zh 缺失或为空：应用名的唯一来源（桌面图标名 / 任务切换器名）")
+}
+
+// ---------------------------------------------------------------------------
 // 签名配置：凭据从 android/keystore/keystore.properties 读取（该文件已 gitignore）
 // 若文件缺失（例如全新 clone），构建脚本 build-apk.sh 会自动生成 keystore + properties。
 //
@@ -60,8 +94,15 @@ def missingReleaseKeys = RELEASE_KEY_FIELDS.findAll { !keystoreProperties[it]?.t
 //
 // 禁止顺手切换证书：想换成正式 release key，必须单独规划迁移（新包名 / 应用商店渠道 /
 // 引导用户重装），不能在这个仓库里悄悄改一行就算。
+//
+// 期望值来自 config/appIdentity.json 的 expectedCertSha256（Issue #271：已发布证书这一事实的
+// 唯一记录点）。这里只做读取与格式校验，不改值。
 // ---------------------------------------------------------------------------
-def EXPECTED_CERT_SHA256 = 'e7c5baee517ca2b2258950e934521f2fad448d00f72f2ff7297bdf4fa00aa8a1'
+def expectedCertSha256Raw = appIdentity.expectedCertSha256?.toString()?.trim()?.toLowerCase()
+if (!(expectedCertSha256Raw ==~ /[0-9a-f]{64}/)) {
+    throw new GradleException("[identity] config/appIdentity.json 的 expectedCertSha256 缺失或格式非法（期望 64 位小写十六进制）：'${appIdentity.expectedCertSha256}'")
+}
+def EXPECTED_CERT_SHA256 = expectedCertSha256Raw
 
 /** 读 keystore 里某别名证书的 SHA-256；读不到返回 null（口令错误 / 文件缺失 / 别名不存在）。 */
 def certSha256Of = { String storeFileRel, Object storePass, Object alias ->
@@ -103,7 +144,7 @@ def releaseTaskRequested = gradle.startParameter.taskNames.any { t ->
 }
 def keystoreFixHint = '''
        修复：release 包现在只能由「与已发布证书一致」的签名材料签出。
-             已发布证书 = e7c5baee…aa8a1（/root/.android/debug.keystore，标准 debug key）。
+             已发布证书 = ${EXPECTED_CERT_SHA256}（/root/.android/debug.keystore，标准 debug key）。
              要换证书请另开签名迁移方案，禁止顺手切换（否则已装用户无法覆盖升级）。
 '''.stripIndent()
 if (releaseTaskRequested) {
@@ -181,16 +222,25 @@ if (debugVariantTaskRequested && updateVariant == 'internal') {
 }
 
 android {
-    namespace = "com.example.deepseekchat"
+    // 包名 / 应用名都来自 config/appIdentity.json（见文件顶部）：这里不再写死任何字面量。
+    namespace = identityNamespace
     compileSdk = rootProject.ext.compileSdkVersion
     defaultConfig {
-        applicationId "com.example.deepseekchat"
+        applicationId identityApplicationId
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         manifestPlaceholders = [artifactVariant: updateVariant]
         // 唯一来源：仓库根 package.json（见文件顶部）
         versionCode appVersionCode.toInteger()
         versionName appVersionName
+        // 应用名 / 包名相关的 res 字符串同样从 config/appIdentity.json 生成（Issue #271）：
+        // app_name / title_activity_main 以前在 res/values/strings.xml 里各写一份「鲸落」，
+        // 换渠道名只改一处就会出现「桌面图标名」与「任务切换器名」不一致。
+        // res/values/strings.xml 里已经删掉这四项 —— 两边并存会 duplicate resource。
+        resValue "string", "app_name", identityLabel
+        resValue "string", "title_activity_main", identityLabel
+        resValue "string", "package_name", identityApplicationId
+        resValue "string", "custom_url_scheme", identityApplicationId
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.

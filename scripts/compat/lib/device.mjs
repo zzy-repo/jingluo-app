@@ -10,11 +10,14 @@ import { execFileSync, spawn } from 'node:child_process'
 import { appendFileSync, existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
+import { loadAppIdentity } from '../../lib/appIdentity.mjs'
+
 export const SDK = 'D:/android-sdk'
 export const ADB = `${SDK}/platform-tools/adb.exe`
 export const EMULATOR = `${SDK}/emulator/emulator.exe`
 export const AVD_HOME = 'D:/android-avd'
-export const PACKAGE = 'com.example.deepseekchat'
+/** 包名不写死：与 android/app/build.gradle / capacitor.config.ts 同源（config/appIdentity.json，Issue #271）。 */
+export const PACKAGE = loadAppIdentity().applicationId
 
 /** 证据根：compat-old 的 README 与 api30/api31 都在这儿，新增档位按 api<NN> 并排。 */
 export const EVIDENCE_ROOT = resolve(
