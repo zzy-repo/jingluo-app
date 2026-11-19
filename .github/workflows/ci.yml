@@ -43,6 +43,13 @@ jobs:
       - name: Install
         run: pnpm install --frozen-lockfile
 
+      # 两条纯文本扫描门禁：不依赖构建产物、合计 < 1s，放在最前面先把最便宜的红暴露出来。
+      - name: 仓库卫生（check:hygiene）
+        run: pnpm run check:hygiene
+
+      - name: 重复实现（check:dup-impl）
+        run: pnpm run check:dup-impl
+
       - name: Type check
         run: pnpm run type
 
@@ -58,6 +65,10 @@ jobs:
 
       - name: Build (internal)
         run: pnpm run build:internal
+
+      # 依赖 dist：没有产物时脚本直接 exit 1（不是跳过），因此必须排在 Build (internal) 之后。
+      - name: 产物目标门禁（check:bundle-target）
+        run: pnpm run check:bundle-target
 
       - name: 产物语法/API 下限（check:legacy）
         run: pnpm run check:legacy
