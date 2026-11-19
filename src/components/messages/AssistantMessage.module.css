@@ -115,13 +115,30 @@
   }
 }
 
+/**
+ * 提示条里的动作（换 Key / 去充值 / 复制诊断信息）：
+ * 视觉上就是这串紧凑的下划线文字，但**命中区 ≥44×44**（移动端触控下限，#346）。
+ *
+ * 高度靠 `min-height` 撑满：行盒随之长高，而不是用负 margin 把盒子压到相邻行上
+ * —— 相邻行的文字被按钮抢走点击是最难查的那类 bug（同 #305 的口径）。
+ */
 .noticeAction {
-  padding: 0;
+  display: inline-flex;
+  align-items: baseline;
+  justify-content: center;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0 4px;
+  /* 文字仍贴在这一行的基线上（视觉位置与改前一致），多出来的命中区只往行下方长，
+     不会压到上面那行文字 */
+  vertical-align: baseline;
   border: none;
   background: none;
   font: inherit;
   color: var(--dsw-alias-brand-text);
   text-decoration: none;
+  /* 触控设备上不要等 300ms 双击缩放判定，点了就复制 */
+  touch-action: manipulation;
   cursor: pointer;
 
   &:hover {
