@@ -116,8 +116,10 @@ const installAt = (): void => {
       return this[key]
     })
   }
-  // String.prototype.at 在 Chromium 83 同样缺失；代理对（emoji）这里按 UTF-16 码元取值，
-  // 与原生按 code point 取值不同 —— 应用里只用来取首字符，够用（见已知边界）。
+  // String.prototype.at 在 Chromium 83 同样缺失。下标单位是 UTF-16 码元而非码点：下面这个
+  // `this[key]` 与原生逐码元等价，代理对（emoji / 𠮷）在原生下也只取出半个字符
+  // （原生 '👍'.at(-1) === '\udc4d'），兜底同样如此 —— 这是规范语义，不是降级。
+  // 不要把这里"修正"成按码点切分：那才会与原生不等价，并静默改变既有行为（issue #221）。
   if (typeof String.prototype.at !== 'function') {
     define(String.prototype, 'at', function at(this: string, index: number) {
       const length = toLength(this.length)

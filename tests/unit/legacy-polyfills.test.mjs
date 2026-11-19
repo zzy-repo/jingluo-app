@@ -142,6 +142,59 @@ test('模拟 WebView 83：入口 polyfill 装上后 Object.hasOwn / at / structu
   }
 })
 
+// issue #221：String.prototype.at 的下标单位是 **UTF-16 码元**，原生与兜底完全一致
+// （代理对会被切成孤立代理项，如 '👍'.at(-1) === '\udc4d'）。这条用例的作用是把
+// 「与原生一致」钉死：若有人把兜底改成按码点切分（'👍'.at(-1) 返回整个字符），这里立刻红。
+test('String.prototype.at 兜底与原生同为 UTF-16 码元：56 组对照 + 代理对取值', async (t) => {
+  const nativeAt = String.prototype.at
+  assert.equal(typeof nativeAt, 'function', '前置：宿主要有原生 String.prototype.at 当对照基准')
+
+  const restore = withoutModernApis()
+  t.after(restore)
+  try {
+    const { installLegacyPolyfills } = await import(MODULE)
+    installLegacyPolyfills()
+
+    const fallbackAt = String.prototype.at
+    assert.notEqual(fallbackAt, nativeAt, '前置：原生已被删掉，现在跑的是兜底实现')
+
+    // 7 个字符串（含代理对 / ZWJ 组合序列）× 8 个下标（含负数与越界）= 56 组对照
+    const samples = ['', 'abc', '汉字abc', '👍', 'a👍b', '𠮷野家', '👨‍👩‍👧']
+    const indices = [-4, -3, -2, -1, 0, 1, 2, 5]
+    let compared = 0
+    for (const sample of samples) {
+      for (const index of indices) {
+        const expected = nativeAt.call(sample, index)
+        const actual = fallbackAt.call(sample, index)
+        assert.equal(
+          actual,
+          expected,
+          `${JSON.stringify(sample)}.at(${index})：兜底应为 ${JSON.stringify(expected)}，实际 ${JSON.stringify(actual)}`,
+        )
+        compared += 1
+      }
+    }
+    assert.equal(compared, 56, '7 个字符串 × 8 个下标 = 56 组对照')
+
+    // 不依赖原生在场的硬断言：emoji 上取到的是**码元**（孤立代理项），不是整个字符
+    assert.equal('👍'.length, 2, '👍 是两个 UTF-16 码元')
+    assert.equal('👍'.at(0), '\ud83d')
+    assert.equal('👍'.at(-1), '\udc4d', '兜底与原生一样返回孤立低位代理项，而不是整个 emoji')
+    assert.equal('a👍b'.at(1), '\ud83d', 'a👍b 的下标 1 是高位代理项，不是整个 emoji')
+    assert.equal('a👍b'.at(2), '\udc4d', 'a👍b 的下标 2 是低位代理项')
+    assert.equal('a👍b'.at(3), 'b', '下标 3 越过代理对之后才是 b')
+    assert.equal('a👍b'.at(-1), 'b')
+    assert.equal('𠮷'.at(0), '\ud842', '𠮷（U+20BB7）同样拆成代理项')
+    assert.equal('𠮷'.at(1), '\udfb7')
+    assert.equal('👨‍👩‍👧'.length, 8, '家庭 emoji = 3 个代理对 + 2 个 ZWJ 码元')
+    assert.equal('👨‍👩‍👧'.at(2), '\u200d', '家庭 emoji 的下标 2 是 ZWJ 连接符')
+    assert.equal('👨‍👩‍👧'.at(3), '\ud83d', '下标 3 落进第二个代理对的高位')
+    assert.equal('👨‍👩‍👧'.at(-1), '\udc67', '末尾同样是孤立低位代理项')
+  } finally {
+    restore()
+  }
+})
+
 test('structuredClone 降级：不可深拷贝的值按引用透传而不是整条链路抛错', async (t) => {
   const restore = withoutModernApis()
   t.after(restore)
