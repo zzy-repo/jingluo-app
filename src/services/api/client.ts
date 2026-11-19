@@ -8,6 +8,7 @@ import {
   joinUrl,
   normalizeBaseUrl,
 } from './apiConfig.js'
+import { markKeyRejected } from './keyRejection.js'
 import { OpenAIStreamError, toOpenAIRequest, translateOpenAIStream } from './openaiAdapter.js'
 import type { ProviderSpec } from './providers.js'
 import { parseModelPayload } from './modelPayload.js'
@@ -296,6 +297,11 @@ export const request = async (
     )
   }
   if (!response.ok) {
+    // 401 = 上游明确说这把 Key 不行（#303 问题 3）：所有请求都走这里，所以在这里统一记一次，
+    // 模型列表的自动探测随即停止，界面换成可读文案。其它状态码不改变「Key 是否有效」的判断。
+    if (response.status === 401) {
+      markKeyRejected('request')
+    }
     throw await readErrorResponse(response)
   }
   return response
@@ -673,6 +679,11 @@ export const probeProvider = async (
       return { ok: false, status, models: [], reason: 'html' }
     }
     if (status < 200 || status >= 300) {
+      // 探测走的是这条独立的小路（原生用 CapacitorHttp），401 同样要记一次「Key 判死」：
+      // 否则「打开设置页 → 自动探测」会永远打下去（#303 问题 3）
+      if (status === 401) {
+        markKeyRejected('probe')
+      }
       let message = text || statusText
       try {
         const body: unknown = JSON.parse(text)

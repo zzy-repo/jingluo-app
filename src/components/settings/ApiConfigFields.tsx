@@ -17,6 +17,7 @@ import {
   type ProviderSpec,
 } from '../../services/api/providers.js'
 import { probeProvider, type ProviderProbeResult } from '../../services/api/client.js'
+import { isKeyRejected, shouldAutoProbe, useKeyRejection } from '../../services/api/keyRejection.js'
 import { useIsMobile } from '../../app/viewport.js'
 import { IconButton } from '../base/IconButton.js'
 import { Select } from '../base/Select.js'
@@ -125,6 +126,9 @@ const ApiKeyField = ({ editor }: { editor: ApiKeyEditor }) => {
   const t = useTranslate()
   const isMobile = useIsMobile()
   const { apiKey, editing, setEditing, form, showInput } = editor
+  // 上游已经用 401 判过这把 Key（#303）：直接在 Key 这一行说清怎么修，而不是等用户去点测试
+  const rejection = useKeyRejection((state) => state.rejection)
+  const rejected = isKeyRejected()
 
   return (
     <div className={styles.cell}>
@@ -181,6 +185,11 @@ const ApiKeyField = ({ editor }: { editor: ApiKeyEditor }) => {
           </div>
         )}
         {showInput && form.error ? <div className={styles.error}>{form.error}</div> : null}
+        {!showInput || !form.error
+          ? rejected && rejection
+            ? <div className={styles.error}>{t('apiKeyRejected')}</div>
+            : null
+          : null}
       </div>
     </div>
   )
@@ -290,6 +299,13 @@ const ModelField = ({ spec }: { spec: ProviderSpec }) => {
   }
 
   const loadModels = useCallback(async () => {
+    // Key 被判失效后不再自动打上游（#303 问题 3）：手动点刷新仍然可以试
+    if (!shouldAutoProbe()) {
+      setModels([])
+      setStatus('error')
+      setError('apiKeyRejected')
+      return
+    }
     const id = ++requestId.current
     setStatus('loading')
     const result = await probeProvider({ baseUrl: baseUrl || defaultBaseUrl, apiKey })
@@ -299,13 +315,23 @@ const ModelField = ({ spec }: { spec: ProviderSpec }) => {
     if (!result.ok) {
       setModels([])
       setStatus('error')
+      // 401：上游说的是「Key 不行」，界面就得说「Key 不行」，别把原始报错丢给用户
+      setError(result.status === 401 ? 'apiKeyRejected' : null)
       return
     }
+    setError(null)
     setModels(result.models)
     setStatus(result.models.length ? 'ready' : 'empty')
   }, [baseUrl, apiKey, defaultBaseUrl])
 
+  // 订阅判定状态：Key 被判失效时这里会重渲染，但下面的 effect 不会再发自动请求
+  const rejection = useKeyRejection((state) => state.rejection)
   useEffect(() => {
+    if (rejection && isKeyRejected()) {
+      setStatus('error')
+      setError('apiKeyRejected')
+      return
+    }
     if (apiKey && (baseUrl || defaultBaseUrl)) {
       void loadModels()
     }
@@ -313,7 +339,7 @@ const ModelField = ({ spec }: { spec: ProviderSpec }) => {
     return () => {
       slot.current++
     }
-  }, [spec.kind, baseUrl, apiKey, defaultBaseUrl, loadModels])
+  }, [spec.kind, baseUrl, apiKey, defaultBaseUrl, loadModels, rejection])
 
   const options = models.includes(value.trim()) || !value.trim() ? models : [value.trim(), ...models]
   const [open, setOpen] = useState(false)

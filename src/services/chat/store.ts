@@ -1459,9 +1459,12 @@ const streamReply = async (sessionId: string, initial: AssistantMessage, request
             : condition === 'insufficientBalance'
               ? // 额度不足（#299）：界面文案固定（不认上游英文原文），日志也能看出「用户看到了什么」
                 { key: 'replyInsufficientBalance' as const }
-              : error instanceof ApiError
-                ? error.localMessage
-                : undefined
+              : error instanceof ApiError && error.status === 401
+                ? // 401（#303 问题 3）：上游说 Key 无效，界面就说同一件事，并把自动探测一起停掉
+                  { key: 'apiKeyRejected' as const }
+                : error instanceof ApiError
+                  ? error.localMessage
+                  : undefined
         // 失败必录：请求阶段、HTTP 状态、耗时、错误原文一次记全
         const failedTiming = meter.snapshot()
         record('error', 'error', 'chat stream failed', {

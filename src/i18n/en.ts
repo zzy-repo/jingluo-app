@@ -283,6 +283,7 @@ export const en = {
   voiceInputLimitReached: 'Maximum recording length reached',
   voiceInputRequiresHttps: 'Voice input requires HTTPS',
   apiKeyInvalidRetry: 'Invalid API Key. Please change it and try again.',
+  apiKeyRejected: 'The API key is invalid or expired. Please log in again or re-enter it.',
   insufficientBalance: 'Insufficient balance',
   rateLimited: 'Too many requests. Please try again later.',
   ttsPlay: 'Read aloud',

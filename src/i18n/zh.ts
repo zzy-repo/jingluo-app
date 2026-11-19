@@ -265,6 +265,8 @@ export const zh = {
   voiceInputLimitReached: '已达到单次录音时长上限',
   voiceInputRequiresHttps: '非 HTTPS 页面无法使用语音输入',
   apiKeyInvalidRetry: 'API Key 无效，请更换后重试',
+  /** 上游 401 之后的统一提示（#303 问题 3）：既要说明原因，也要说明下一步怎么修 */
+  apiKeyRejected: 'Key 无效或已过期，请重新登录或重新填写',
   insufficientBalance: '账户余额不足',
   rateLimited: '操作过于频繁，请稍后再试',
   ttsPlay: '朗读',
