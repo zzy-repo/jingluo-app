@@ -1,0 +1,18 @@
+{
+  "360": {
+    "browser": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/156.0.8078.4 Safari/537.36",
+    "withClass_h4_marginBottom": "8px",
+    "withoutClass_h4_marginBottom": "16px",
+    "thinking_h3_marginBottom": "4px",
+    "thinking_paragraph_marginBottom": "4px",
+    "supportsHas": true
+  },
+  "390": {
+    "browser": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/156.0.8078.4 Safari/537.36",
+    "withClass_h4_marginBottom": "8px",
+    "withoutClass_h4_marginBottom": "16px",
+    "thinking_h3_marginBottom": "4px",
+    "thinking_paragraph_marginBottom": "4px",
+    "supportsHas": true
+  }
+}

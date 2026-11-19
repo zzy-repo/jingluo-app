@@ -35,7 +35,7 @@
 | 嵌套 `&` | — （构建期） | 112 | 112 | 0 | 0 | 0 | 0 | lightningcss 按 `chrome >= 83` 展开，非运行时假设 |
 | flex `gap` | 84 | 109 | 107 | 0 | 0 | 0（2 处已由 #217 补齐） | 0 | 兜底已全覆盖；`check:gap` 口径见 §2.6 |
 | `min()` / `max()` | 79 | 21 | 0 | 21 | 0 | 0 | 0 | 79 ≤ 83，无风险 |
-| `:has()` | 105 | 16 | 0 | 0 | 0 | **16** | 0 | 整条规则被丢 → #213 |
+| `:has()` | 105 | **0** | 0 | 0 | 0 | 0 | 0 | 16 处已由 #213 清零：改成渲染期显式状态类 `ds-markdown-before-ul` / `ds-markdown-before-ol`，低内核上零特性依赖 |
 | `:focus-visible` | 86 | 13 | 0 | 0 | 0 | **13** | 0 | 无 `:focus` 回退，可访问性丢失 → #215 |
 | `@supports` 块（全部为 `(height/max-height: 100dvh)`） | 108 | 9 | 9 | 0 | 0 | 0 | 0 | **9/9 前置等价 `vh` 基座，写法正确** |
 | `overscroll-behavior` | 63 | 6 | 0 | 6 | 0 | 0 | 0 | 63 ≤ 83，无风险 |
@@ -77,13 +77,18 @@
 | `components/settings/Settings.module.css:819` | `.feedbackDialog`，块外 `:811` | 2 | 低 | 已有兜底 |
 | `components/settings/Settings.module.css:838` | `.feedbackMain`，块外 `:837` | 2 | 低 | 已有兜底 |
 
-### 2.2 `:has()`（16 处，真实缺陷 → #213）
+### 2.2 `:has()`（原 16 处，现 0 处 —— #213 已修复）
 
-| 文件:行 | 假设内容 | 类别 | 风险 | 处置 |
+处置方式：`:has()` 的语义是「标题/段落后紧跟列表」，而**渲染期就知道**这件事（mdast 里下一个兄弟节点）。
+所以由 `components/markdown/MarkdownAstRenderer.tsx` 在已知状态时打显式类名（判定函数在
+`components/markdown/blockSpacing.ts`），CSS 只写 `h4.ds-markdown-before-ul` 这类**普通选择器**组合。
+不用 `@supports selector(:has(*))` 兜底 —— 那条在 Chromium 83 上本身就可能解析异常。
+
+| 原位置 | 假设内容 | 类别 | 风险 | 处置（#213） |
 | --- | --- | --- | --- | --- |
-| `components/markdown/markdown.css:67,68,69,70,71,72` | `h4..h6:has(+ ul\|ol)` 贴合标题与列表间距 | 2 | 中 | 拆单 #213 |
-| `components/messages/thinking.markdown.css:57,58,59,60,61,62,63,64` | `h3..h6:has(+ ul\|ol)`，同构 8 条 | 2 | 中 | 拆单 #213 |
-| `components/messages/thinking.markdown.css:71,72` | `p:has(+ ol)`，两条完全重复（复制粘贴） | 2 | 中 | 拆单 #213 |
+| `components/markdown/markdown.css:67,68,69,70,71,72` | `h4..h6:has(+ ul\|ol)` 贴合标题与列表间距 | 2 | 中 | 改 `h4..h6.ds-markdown-before-ul\|ol`，渲染期打标，83 上等价 |
+| `components/messages/thinking.markdown.css:57,58,59,60,61,62,63,64` | `h3..h6:has(+ ul\|ol)`，同构 8 条 | 2 | 中 | 同上（`h3..h6`），83 上等价 |
+| `components/messages/thinking.markdown.css:71,72` | `p:has(+ ol)`，两条完全重复（复制粘贴） | 2 | 中 | 合并为一条 `.ds-markdown-paragraph.ds-markdown-before-ol`，83 上等价 |
 
 ### 2.3 `:focus-visible`（13 处，真实缺陷 → #215）
 

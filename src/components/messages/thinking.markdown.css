@@ -54,22 +54,25 @@
   h6 + ol {
     margin-top: 4px;
   }
-  h3:has(+ ul),
-  h4:has(+ ul),
-  h5:has(+ ul),
-  h6:has(+ ul),
-  h3:has(+ ol),
-  h4:has(+ ol),
-  h5:has(+ ol),
-  h6:has(+ ol) {
+  /*
+   * 同 markdown.css：`:has()` 在 WebView 83 上会带走整条规则（#213），改用渲染期显式状态类。
+   */
+  h3.ds-markdown-before-ul,
+  h4.ds-markdown-before-ul,
+  h5.ds-markdown-before-ul,
+  h6.ds-markdown-before-ul,
+  h3.ds-markdown-before-ol,
+  h4.ds-markdown-before-ol,
+  h5.ds-markdown-before-ol,
+  h6.ds-markdown-before-ol {
     margin-bottom: 4px;
   }
   .ds-markdown-paragraph + ul,
   .ds-markdown-paragraph + ol {
     margin-top: 4px;
   }
-  .ds-markdown-paragraph:has(+ ol),
-  .ds-markdown-paragraph:has(+ ol) {
+  /* 段落与紧跟其后的有序列表（#213：原来这里复制粘贴了同一条 :has() 选择器两次，合并为一条） */
+  .ds-markdown-paragraph.ds-markdown-before-ol {
     margin-bottom: 4px;
   }
 

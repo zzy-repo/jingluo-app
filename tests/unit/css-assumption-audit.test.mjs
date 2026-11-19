@@ -231,8 +231,11 @@ test('真实 src 盘点：@supports 全部有等价兜底，假阳性落在 view
 
   // 真实缺陷必须落在已知的几类特性上，防止判定逻辑退化成「全报缺陷」
   const defectFeatures = new Set(summary.defects.map((hit) => hit.feature))
-  for (const feature of [':has()', ':focus-visible', 'scrollbar-gutter']) {
+  for (const feature of [':focus-visible', 'scrollbar-gutter']) {
     assert.ok(defectFeatures.has(feature), `真实缺陷应包含 ${feature}`)
   }
+  // #213 之后 :has() 在 src 里已清零（改由渲染期显式状态类承载），
+  // 从「已知缺陷清单」换成更强的「不许回流」不变量。
+  assert.equal(summary.byFeature[':has()']?.count ?? 0, 0, 'src 里不应再有 :has()')
   assert.ok(summary.byVerdict.defect < summary.hits / 5, '缺陷占比过高，判定可能过硬')
 })

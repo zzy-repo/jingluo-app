@@ -9,6 +9,7 @@ import type {
   Table as TableNode,
 } from 'mdast'
 import { CitationLink } from '../search/CitationLink.js'
+import { BEFORE_LIST_CLASS, beforeListClass } from './blockSpacing.js'
 import { CodeBlock } from './CodeBlock.js'
 import { ImageAsLink, Link } from './Link.js'
 import { InlineMath, MathBlock } from './MathFormula.js'
@@ -177,20 +178,32 @@ const MarkdownBlockContentOrDefinitionContent = memo(
           )
         case 'html':
           return <Html key={index} value={node.value} />
-        case 'heading':
-          return node.children.length === 0
-            ? null
-            : createElement(
-                `h${node.depth}`,
-                { key: index },
-                <MarkdownPhrasingContent nodes={node.children} />
-              )
-        case 'paragraph':
+        case 'heading': {
+          if (node.children.length === 0) {
+            return null
+          }
+          // #213：`h4:has(+ ul)` 在 WebView 83 上会把整条规则带走，改由渲染期显式打标
+          const beforeList = beforeListClass(nodes, index)
+          return createElement(
+            `h${node.depth}`,
+            {
+              key: index,
+              className: beforeList ? BEFORE_LIST_CLASS[beforeList] : undefined,
+            },
+            <MarkdownPhrasingContent nodes={node.children} />
+          )
+        }
+        case 'paragraph': {
+          const beforeList = beforeListClass(nodes, index)
           return (
-            <p key={index} className="ds-markdown-paragraph">
+            <p
+              key={index}
+              className={clsx('ds-markdown-paragraph', beforeList && BEFORE_LIST_CLASS[beforeList])}
+            >
               <MarkdownPhrasingContent nodes={node.children} />
             </p>
           )
+        }
         case 'code':
           return (
             <CodeBlock
