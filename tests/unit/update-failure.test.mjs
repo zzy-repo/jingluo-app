@@ -22,7 +22,7 @@ registerHooks({
 const { classifyUpdateError, describeUpdateFailure, describeUpToDate, updateFailureOf } =
   await import('../../src/services/updateFailure.ts')
 const { buildUpdateReport, hostOf, releaseHosts } = await import(
-  '../../src/components/settings/updateReport.ts'
+  '../../src/services/updateReport.ts'
 )
 
 const ctx = { channel: '稳定版与预发布版', version: '1.4.0-beta.10' }

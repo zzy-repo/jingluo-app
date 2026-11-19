@@ -1,6 +1,6 @@
-import { scrubReportText } from '../../app/errorReport.js'
-import { safeString } from '../../services/diagnostics/redact.js'
-import { RELEASE_BASES } from '../../services/updateManifest.js'
+import { scrubReportText } from '../app/errorReport.js'
+import { safeString } from './diagnostics/redact.js'
+import { RELEASE_BASES } from './updateManifest.js'
 
 /**
  * 「检查更新」弹窗里的**诊断文本**（Issue #310）。

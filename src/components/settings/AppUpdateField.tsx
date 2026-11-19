@@ -27,7 +27,7 @@ import { recordError, recordEvent } from '../../services/diagnostics/collector.j
 import { buildMeta, type Stage } from '../../services/diagnostics/fields.js'
 import { bytesPerSecond, createStageTimer } from '../../services/diagnostics/timing.js'
 import { copyText } from '../../utils/clipboard.js'
-import { buildUpdateReport, hostOf, releaseHosts } from './updateReport.js'
+import { buildUpdateReport, hostOf, releaseHosts } from '../../services/updateReport.js'
 import dialogStyles from './AppUpdateField.module.css'
 import styles from './Settings.module.css'
 
@@ -202,7 +202,7 @@ export const AppUpdateField = () => {
             }),
             source: activeChannel,
             native,
-            reason: classifyUpdateError(error).code,
+            upstreamCode: classifyUpdateError(error).code,
           },
           error
         )

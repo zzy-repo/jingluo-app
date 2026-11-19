@@ -4,7 +4,7 @@
 >
 > **快照基准：`acf6826`**（`origin/main` tip，2026-11-19 12:28:21 +0800）· 采集时间：2026-11-19 18:55 (+0800)
 >
-> **扫描范围**：`src/**` 的 **204** 个源文件。
+> **扫描范围**：`src/**` 的 **206** 个源文件。
 >
 > 拆分：`.ts` 149 / `.tsx` 54 / `.html` 1 = 204。上一版写 190，是缺了 `#237`（`fetch` 通道计数、`readBytesOf`）与 `#243`（设备指纹）新增的 5 个文件。
 >
@@ -275,3 +275,4 @@
 - 复核（2026-11-19 18:32，基准 `452debb`，本单 #303 分支 HEAD `204bd6e`）：新增 1 个 `.ts` 源文件（`src/services/api/keyRejection.ts`），扫描范围 202 → **203** 个源文件（`.ts` 147 → **148**）。新文件不碰 storage / clipboard / fetch / Capacitor（只做 Key 指纹与 401 状态，网络请求仍在 `src/services/api/client.ts`），**命中总数仍是 119 条**，各能力计数与风险分布（高 4 / 中 10 / 低 105）未变；`src/services/api/client.ts` 的 4 处 `文件:行` 按本次实时复算重锚（`:155` / `:260` / `:646` / `:666`）。
 - 复核（2026-11-19 18:35，基准 `68c4d9d`，本单 #305）：新增 1 个 `.ts` 源文件（`src/components/settings/logView.ts`），扫描范围 199 → **200** 个源文件。新文件没有任何宿主能力调用（不碰 storage / clipboard / fetch / Capacitor，复制走既有的 `copyText` 工具），**命中总数仍是 119 条**，各能力计数与风险分布未变；`FeedbackDialog.tsx` 因新增日志预览区整体下移，`Capacitor.isNativePlatform` 的行号从 `:202` 修正为 `:241`。
 - 复核（2026-11-19 18:50，基准 `7a65f55`，本单 #324 分支 HEAD）：新增 1 个 `.ts` 源文件（`src/services/chat/replyErrorReport.ts`），扫描范围 203 → **204** 个源文件。新文件没有任何宿主能力调用（不碰 storage / clipboard / fetch / Capacitor；复制仍走既有的 `copyText` 工具，脱敏仍走既有的 `scrubReportText`），**命中总数仍是 119 条**，各能力计数与风险分布未变。
+- 复核（2026-11-19 19:20，基准 `1577841`，本单 #310 分支）：新增 2 个 `.ts` 源文件（`src/services/updateFailure.ts` / `src/services/updateReport.ts`），扫描范围 204 → **206** 个源文件。两个文件都不碰 storage / clipboard / fetch / Capacitor（复制仍走既有的 `src/utils/clipboard.ts`，诊断文本只做字符串拼接），**命中总数仍是 119 条**，各能力计数与风险分布（高 4 / 中 10 / 低 105）未变。
