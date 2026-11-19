@@ -153,7 +153,8 @@ const fetchBody = async (
     redirect: 'error',
   })
   if (!response.ok) {
-    throw new Error('MANIFEST_NETWORK')
+    // 带上状态码的短码（#310）：404 / 502 与「连不上」对用户是两件事，界面要能分开说
+    throw new Error(`MANIFEST_HTTP_${response.status}`)
   }
   const body = await response.text()
   if (body.length > 2 * 1024 * 1024) {

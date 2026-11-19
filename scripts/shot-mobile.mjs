@@ -1862,6 +1862,159 @@ export const PAGES = {
       if (modelCopyButton) warn('模型不可用这条也带了「复制诊断信息」：已识别的档位不需要')
     },
   },
+
+  'update-check': {
+    dir: 'docs/ui/310-update-failure',
+    title: '#310 检查更新失败的分类文案：渠道不可达 / 清单 404 / 清单非法 JSON / 无可用版本',
+    sessions: () => [makeReadingSession()],
+    mockOrders: false,
+    run: async (ctx) => {
+      const { page, shot, record, warn } = ctx
+      /**
+       * 清单夹具：`/releases.json` 由 route 拦下来现造，**四种失败模式共用一份合法记录形状**，
+       * 这样「界面说得出是哪一类失败」才不是靠不同夹具凑出来的。
+       * 记录里同时给 internal / standard 两种变体：截图产物可能是 build:internal 也可能是普通 build。
+       */
+      const releaseRow = (extra = {}) => ({
+        version: '1.5.0',
+        versionCode: 9999,
+        size: 6180000,
+        file: 'apk/deepseek-chat-1.5.0.apk',
+        changes: ['优化更新链路'],
+        buildType: 'stable',
+        sha256: 'a'.repeat(64),
+        ...extra,
+      })
+      const releases = (items) => ({
+        releases: items.flatMap((item) => [
+          { ...item, artifactVariant: 'internal' },
+          { ...item, artifactVariant: 'standard' },
+        ]),
+      })
+      /** 当前模式：按顺序换，一次检查换一种失败原因 */
+      let mode = 'unreachable'
+      await page.route('**/releases.json', async (route) => {
+        if (mode === 'unreachable') {
+          // 断网 / 分发机不可达：连接直接失败（与「返回 404」必须是两种文案）
+          await route.abort('connectionrefused')
+          return
+        }
+        if (mode === 'http-404') {
+          await route.fulfill({ status: 404, contentType: 'text/plain', body: 'not found' })
+          return
+        }
+        if (mode === 'bad-json') {
+          // 负向用例：200 但返回的不是合法 JSON
+          await route.fulfill({
+            status: 200,
+            contentType: 'application/json',
+            body: '{"releases": [ {"version": "1.5.0", ',
+          })
+          return
+        }
+        if (mode === 'no-version') {
+          // 合法清单，但没有任何一条高于当前 versionCode → 无可用版本
+          await route.fulfill({
+            status: 200,
+            contentType: 'application/json',
+            body: JSON.stringify(releases([releaseRow({ versionCode: 1, version: '0.0.1' })])),
+          })
+          return
+        }
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify(releases([releaseRow()])),
+        })
+      })
+
+      /** 读弹窗里的状态文案 + 是否存在诊断区（改前没有这两个元素，改后才有） */
+      const readDialog = () =>
+        page.evaluate(() => {
+          const dialogs = Array.from(document.querySelectorAll('[role="dialog"]'))
+          const dialog = dialogs[dialogs.length - 1]
+          if (dialog === null || dialog === undefined) {
+            return { present: false }
+          }
+          const status = dialog.querySelector('[role="status"]')
+          const diagnostics = dialog.querySelector('[data-testid="update-diagnostics"]')
+          const copy = dialog.querySelector('[data-testid="update-diagnostics-copy"]')
+          const text = (node) => (node === null ? '' : (node.textContent ?? '').replace(/\s+/gu, ' ').trim())
+          const rect = dialog.getBoundingClientRect()
+          const facts = diagnostics === null ? null : diagnostics.getBoundingClientRect()
+          return {
+            present: true,
+            status: text(status),
+            diagnostics: text(diagnostics),
+            copyButton: text(copy),
+            // 诊断区能不能塞进 360 档：超宽就说明长地址把弹窗撑开了（#172 的同一类问题）
+            layout: {
+              dialogWidth: Math.round(rect.width),
+              dialogHeight: Math.round(rect.height),
+              factsWidth: facts === null ? null : Math.round(facts.width),
+              factsOverflow: facts === null ? null : facts.scrollWidth > facts.clientWidth + 1,
+              pageOverflowX: document.documentElement.scrollWidth > window.innerWidth,
+            },
+          }
+        })
+
+      await openSettings(page, S.tabGeneral)
+      const entry = page.getByRole('button', { name: '检查更新', exact: true }).first()
+      await entry.scrollIntoViewIfNeeded()
+      await page.waitForTimeout(240)
+      await shot('00-settings-entry')
+
+      const steps = [
+        { mode: 'unreachable', state: '01-渠道不可达' },
+        { mode: 'http-404', state: '02-清单404' },
+        { mode: 'bad-json', state: '03-清单非法JSON' },
+        { mode: 'no-version', state: '04-无可用版本' },
+        { mode: 'update-available', state: '05-有可用更新' },
+      ]
+      for (const [index, step] of steps.entries()) {
+        mode = step.mode
+        if (index === 0) {
+          await entry.click()
+        } else {
+          const again = page.getByRole('button', { name: '重新检查', exact: true })
+          await again.waitFor({ state: 'visible', timeout: 8000 })
+          await again.click()
+        }
+        await page.getByRole('dialog').last().waitFor({ state: 'visible', timeout: 8000 })
+        // 等状态行从「正在检查更新…」变成结论：失败/无新版都会在一帧内换掉，留 600ms 余量
+        await page.waitForTimeout(700)
+        const dialog = await readDialog()
+        record(step.mode, dialog)
+        if (dialog.present !== true) {
+          throw new Error(`检查更新弹窗没打开（模式 ${step.mode}）`)
+        }
+        if (dialog.status === '正在检查更新…') {
+          warn(`${step.mode}：状态行停在「正在检查更新…」，结论没出来`)
+        }
+        if (step.mode !== 'update-available' && dialog.status === '') {
+          warn(`${step.mode}：失败时状态行为空，用户看不到任何原因`)
+        }
+        await shot(step.state)
+        if (index === 0 && dialog.copyButton !== '') {
+          // 一键复制诊断信息：读剪贴板真实内容（context 已授予 clipboard 权限），不看 toast 猜
+          const copy = page.locator('[data-testid="update-diagnostics-copy"]').first()
+          await copy.scrollIntoViewIfNeeded()
+          await copy.click()
+          await page.waitForTimeout(240)
+          const clipboard = await page.evaluate(() =>
+            navigator.clipboard.readText().catch((error) => `读不到：${String(error)}`)
+          )
+          record('clipboard', clipboard)
+          for (const banned of ['http://', 'https://', '/apk/', 'token=', '    at ']) {
+            if (clipboard.includes(banned)) {
+              warn(`复制的诊断信息里出现了内部细节 ${banned}`)
+            }
+          }
+          await shot(`${step.state}-复制后`)
+        }
+      }
+    },
+  },
 }
 
 // ---------------------------------------------------------------- 主流程
