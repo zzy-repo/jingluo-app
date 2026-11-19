@@ -16,7 +16,9 @@ import {
   recordError,
   recordEvent,
 } from '../diagnostics/collector.js'
-import { getApiKey, getCurrentSpec, getModel } from '../api/apiConfig.js'
+import { getApiKey, getBaseUrl, getCurrentSpec, getModel } from '../api/apiConfig.js'
+import { buildMeta, endpointKeyFromUrl } from '../diagnostics/fields.js'
+import { createStreamMeter, streamTimingMeta } from '../diagnostics/timing.js'
 import { requestGates } from '../api/providers.js'
 import { LIMITS } from '../limits.js'
 import { useSettings } from '../settings.js'
@@ -771,6 +773,13 @@ export const sendMessage = (targetSessionId: string | null) => {
     chars: text.length,
     files: files.length,
     mode: useSettings.getState().chatMode,
+    ...buildMeta({
+      flow: 'chat',
+      stage: 'chat.send',
+      attempt: 1,
+      endpointKey: endpointKeyFromUrl(getBaseUrl()),
+    }),
+    model: getModel(),
   })
   void captureStateSnapshot('after-chat-send')
   const now = Date.now()
@@ -1267,8 +1276,18 @@ const scheduleAutoTitle = (sessionId: string) => {
  */
 const streamReply = async (sessionId: string, initial: AssistantMessage, request: Request) => {
   const controller = new AbortController()
-  /** 本轮开始时间：chat_first_token / chat_done / 中止都用它算耗时 */
+  /** 本轮开始时间：chat_first_token / chat_done / 中止都用它算耗时（老口径，保持不变） */
   const startedAt = Date.now()
+  /**
+   * 本轮分段计时（#306 / #101）：附件补齐 → 请求发出 → 响应头 → 首字 → 吐字，
+   * 每一段都能单独比较。老口径的 startedAt 在附件补齐**之前**，混了上传耗时，
+   * 所以「上游排队慢」和「弱网吐字慢」在旧日志里是同一个数。
+   */
+  const meter = createStreamMeter()
+  /** 本轮是第几次尝试（重试会递增）：第一次就慢 与 重试后才成 必须分得开 */
+  let attemptNo = 1
+  /** 端点键（只写 config/endpoints.json 的键，不写完整 URL） */
+  const endpointKey = () => endpointKeyFromUrl(getBaseUrl())
   /** 是否已记过第一个 token（只记一次） */
   let firstTokenLogged = false
   if (!getSession(sessionId)?.title) {
@@ -1288,6 +1307,8 @@ const streamReply = async (sessionId: string, initial: AssistantMessage, request
 
   try {
     for (let attempt = 0; ; attempt += 1) {
+      /** 1 起计：日志里的 attempt 就是「第几次尝试」 */
+      attemptNo = attempt + 1
       /** 附件补齐前出错属于上传失败，请求还没有发出 */
       let preparing = true
       let receivedContent = false
@@ -1314,6 +1335,8 @@ const streamReply = async (sessionId: string, initial: AssistantMessage, request
             latestReminder
           )
         )
+        // 附件已补齐、请求即将发出：prepMs 到此为止，后面的耗时才是「等上游」
+        meter.markRequest()
         // 字段发不发由 requestBody.ts 里的 REQUEST_GATES 决定，这里只把本轮信息传进去
         const body = buildMessageBody(spec, {
           model: initial.model ?? getModel(),
@@ -1323,7 +1346,10 @@ const streamReply = async (sessionId: string, initial: AssistantMessage, request
           search: initial.search ?? false,
           title: titleRequests.has(controller),
         })
-        const events = streamMessage(getApiKey(), body, controller.signal)
+        const events = streamMessage(getApiKey(), body, controller.signal, {
+          // 只接「响应头到手」这一个时刻：首字与分段的间隔在下面的事件循环里记（要带字符数）
+          onHeaders: () => meter.markHeaders(),
+        })
         const blockIndexes = new Map<number, number>()
         // 请求已发出：开始算首字等待，5s / 30s / 60s 三档逐级提示
         armWaitHints(sessionId)
@@ -1341,6 +1367,15 @@ const streamReply = async (sessionId: string, initial: AssistantMessage, request
             updateSession(sessionId, (session) => (session.title ? session : { ...session, title }))
             titleRequests.delete(controller)
           }
+          // 分段计时：只在**内容事件**上打点。message_start / ping 不是「首字」，
+          // 拿它们当首字会把「建连完成」记成「用户看到第一个字」。
+          if (event.type === 'content_block_start' || event.type === 'content_block_delta') {
+            meter.markEvent(
+              event.type === 'content_block_delta' && event.delta.type === 'text_delta'
+                ? event.delta.text.length
+                : 0
+            )
+          }
           if (
             !firstTokenLogged &&
             (event.type === 'content_block_start' || event.type === 'content_block_delta')
@@ -1348,9 +1383,23 @@ const streamReply = async (sessionId: string, initial: AssistantMessage, request
             firstTokenLogged = true
             // 首字到了：等待提示立刻撤下，用户看到的还是同一个占位位置
             clearWaitHints(sessionId)
+            const firstToken = meter.snapshot()
             recordEvent('chat_first_token', `first token in ${Date.now() - startedAt}ms`, {
-              stage: 'stream',
-              durationMs: Date.now() - startedAt,
+              ...buildMeta({
+                flow: 'chat',
+                stage: 'chat.stream',
+                attempt: attemptNo,
+                status: 'ok',
+                endpointKey: endpointKey(),
+                durationMs: Date.now() - startedAt,
+                ...(firstToken.prepMs === null ? {} : { prepMs: firstToken.prepMs }),
+                ...(firstToken.ttfbMs === null ? {} : { ttfbMs: firstToken.ttfbMs }),
+                ...(firstToken.firstTokenMs === null
+                  ? {}
+                  : { firstTokenMs: firstToken.firstTokenMs }),
+                chunks: firstToken.chunks,
+              }),
+              model: initial.model ?? getModel(),
             })
           }
           reply = applyEvent(reply, event, Date.now(), blockIndexes)
@@ -1361,22 +1410,44 @@ const streamReply = async (sessionId: string, initial: AssistantMessage, request
           }
         }
         reply = settleReply(reply, 'done', Date.now())
+        const timing = meter.snapshot()
         recordEvent('chat_done', `chat done in ${Date.now() - startedAt}ms`, {
-          stage: 'stream',
-          durationMs: Date.now() - startedAt,
-          chars: reply.blocks.reduce(
-            (total, block) => total + (block.type === 'text' ? block.text.length : 0),
-            0
-          ),
+          ...buildMeta({
+            flow: 'chat',
+            stage: 'chat.settle',
+            attempt: attemptNo,
+            status: 'ok',
+            endpointKey: endpointKey(),
+            ...streamTimingMeta(timing),
+            // 以最终渲染出来的正文长度为准（meter 只累加增量，丢帧时会少算）
+            chars: reply.blocks.reduce(
+              (total, block) => total + (block.type === 'text' ? block.text.length : 0),
+              0
+            ),
+          }),
+          model: initial.model ?? getModel(),
         })
         finished = true
         break
       } catch (error) {
         if (controller.signal.aborted) {
           reply = settleReply(reply, 'stopped', Date.now())
+          const abortedTiming = meter.snapshot()
           recordEvent('chat_abort', `chat aborted after ${Date.now() - startedAt}ms`, {
-            stage: 'stream',
-            durationMs: Date.now() - startedAt,
+            ...buildMeta({
+              flow: 'chat',
+              stage: 'chat.settle',
+              attempt: attemptNo,
+              status: 'aborted',
+              endpointKey: endpointKey(),
+              durationMs: Date.now() - startedAt,
+              ...(abortedTiming.ttfbMs === null ? {} : { ttfbMs: abortedTiming.ttfbMs }),
+              ...(abortedTiming.firstTokenMs === null
+                ? {}
+                : { firstTokenMs: abortedTiming.firstTokenMs }),
+              chunks: abortedTiming.chunks,
+              chars: abortedTiming.chars,
+            }),
           })
           break
         }
@@ -1389,9 +1460,22 @@ const streamReply = async (sessionId: string, initial: AssistantMessage, request
               ? error.localMessage
               : undefined
         // 失败必录：请求阶段、HTTP 状态、耗时、错误原文一次记全
+        const failedTiming = meter.snapshot()
         record('error', 'error', 'chat stream failed', {
-          stage: preparing ? 'upload' : 'stream',
-          durationMs: Date.now() - startedAt,
+          ...buildMeta({
+            flow: 'chat',
+            stage: preparing ? 'chat.upload' : 'chat.stream',
+            attempt: attemptNo,
+            status: 'error',
+            endpointKey: endpointKey(),
+            durationMs: Date.now() - startedAt,
+            ...(failedTiming.prepMs === null ? {} : { prepMs: failedTiming.prepMs }),
+            ...(failedTiming.ttfbMs === null ? {} : { ttfbMs: failedTiming.ttfbMs }),
+            ...(failedTiming.firstTokenMs === null
+              ? {}
+              : { firstTokenMs: failedTiming.firstTokenMs }),
+            chunks: failedTiming.chunks,
+          }),
           // 用户在界面上会看到什么：条件分类 + i18n 文案 key（用来核实「到底有没有提示」）
           'ui.condition': condition,
           ...(notice

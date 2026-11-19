@@ -1,5 +1,7 @@
 import { formatDate } from '../../utils/format.js'
 import { captureStateSnapshot, errorMeta, record, recordAction, recordEvent } from '../diagnostics/collector.js'
+import { buildMeta, type Stage } from '../diagnostics/fields.js'
+import { createStageTimer } from '../diagnostics/timing.js'
 import * as db from './db.js'
 import { fail } from './history/errors.js'
 import { formatImportBytes, maxImportMegabytes, resolveMaxImportBytes } from './history/importLimit.js'
@@ -76,22 +78,48 @@ const countSessions = async (file: File): Promise<number | undefined> => {
 export const importHistory = (file: File, options: ImportHistoryOptions = {}): Promise<number> =>
   enqueueBackup(async () => {
     const startedAt = Date.now()
+    // 分阶段计时（#306）：每个 import_stage 都带自己那一段的 durationMs，卡在哪个阶段不用再靠时间戳相减
+    const timer = createStageTimer()
     // 关键业务动作：只记字节数、阶段与耗时，归档内容不进日志
-    let stage = 'check'
-    recordAction('import_start', 'import-history', { bytes: file.size, source: 'file' })
+    let stage: Stage = 'import.check'
+    recordAction('import_start', 'import-history', {
+      bytes: file.size,
+      totalBytes: file.size,
+      source: 'file',
+      ...buildMeta({ flow: 'import', stage: 'import.check', attempt: 1, status: 'ok' }),
+    })
     try {
       // 上限检查放在最前：超限的包不看格式、不写暂存，直接给一句人话（issue #34）
       const maxBytes = resolveMaxImportBytes(options.maxBytes)
       if (file.size > maxBytes) {
-        stage = 'size'
+        stage = 'import.size'
         tooLarge(maxBytes, file.size)
       }
       const { checkArchiveFormat, importArchive } = await import('./history/importArchive.js')
-      recordEvent('import_stage', 'import: check archive format', { stage, bytes: file.size })
+      recordEvent('import_stage', 'import: check archive format', {
+        bytes: file.size,
+        ...buildMeta({
+          flow: 'import',
+          stage: 'import.check',
+          attempt: 1,
+          status: 'ok',
+          durationMs: timer.lap(),
+          bytes: file.size,
+        }),
+      })
       await checkArchiveFormat(file)
-      stage = 'staging'
+      stage = 'import.stage'
       const totalSessions = options.onProgress ? await countSessions(file) : undefined
-      recordEvent('import_stage', 'import: write staging stores', { stage })
+      recordEvent('import_stage', 'import: write staging stores', {
+        ...buildMeta({
+          flow: 'import',
+          stage: 'import.stage',
+          attempt: 1,
+          status: 'ok',
+          durationMs: timer.lap(),
+          bytes: file.size,
+        }),
+      })
       const count = await replaceHistory(() =>
         importArchive(file, {
           signal: options.signal,
@@ -101,15 +129,32 @@ export const importHistory = (file: File, options: ImportHistoryOptions = {}): P
       )
       recordAction('import_done', 'import-history', {
         count,
-        durationMs: Date.now() - startedAt,
+        ...buildMeta({
+          flow: 'import',
+          stage: 'import.commit',
+          attempt: 1,
+          status: 'ok',
+          durationMs: Date.now() - startedAt,
+          totalBytes: file.size,
+          // 平均写入速率：同样 200MB，3MB/s 和 20MB/s 是两种问题
+          speedBps: file.size > 0 && Date.now() > startedAt
+            ? Math.round((file.size / Math.max(1, Date.now() - startedAt)) * 1000)
+            : undefined,
+        }),
       })
       void captureStateSnapshot('after-import')
       return count
     } catch (error) {
       // 失败必录：error 级 + 阶段 + 耗时 + 错误原文（BackupError 的 message 就是中文原因）
       record('import_error', 'error', `import failed at ${stage}`, {
-        stage,
-        durationMs: Date.now() - startedAt,
+        ...buildMeta({
+          flow: 'import',
+          stage,
+          attempt: 1,
+          status: 'error',
+          durationMs: Date.now() - startedAt,
+          bytes: file.size,
+        }),
         ...errorMeta(error),
       })
       throw error

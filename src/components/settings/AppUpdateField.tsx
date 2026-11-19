@@ -17,6 +17,9 @@ import {
   type UpdateChannel,
   type UpdateRelease,
 } from '../../services/updateManifest.js'
+import { recordError, recordEvent } from '../../services/diagnostics/collector.js'
+import { buildMeta, type Stage } from '../../services/diagnostics/fields.js'
+import { bytesPerSecond, createStageTimer } from '../../services/diagnostics/timing.js'
 import dialogStyles from './AppUpdateField.module.css'
 import styles from './Settings.module.css'
 
@@ -64,12 +67,29 @@ export const AppUpdateField = () => {
     setReady(false)
     setProgress(undefined)
     setMessage('正在检查更新…')
+    const startedAt = Date.now()
+    const timer = createStageTimer()
+    /** 更新检查的每一步都留一条带耗时的日志（#306）：哪一步慢，不用再靠体感描述 */
+    const phase = (stage: Stage) =>
+      recordEvent('nav', `update: ${stage}`, {
+        ...buildMeta({
+          flow: 'update',
+          stage,
+          attempt: 1,
+          status: 'ok',
+          endpointKey: 'other',
+          durationMs: timer.lap(),
+        }),
+        source: channel,
+        native,
+      })
     try {
       const current = native ? await nativeUpdate.installed() : bundledApp()
       const variant = native ? current.artifactVariant : currentVariant()
       if (variant !== 'internal' && variant !== 'standard') {
         throw new Error('当前安装包渠道信息缺失')
       }
+      phase('update.check.installed')
       // 原生侧返回「真的回了清单」的 base；网页预览走同一条回退顺序。
       let rows: UpdateRelease[]
       let effectiveBase: string = DEFAULT_RELEASE_BASE
@@ -82,10 +102,23 @@ export const AppUpdateField = () => {
         rows = manifest.rows
         effectiveBase = manifest.base
       }
+      phase('update.check.manifest')
       const result = selectUpdate(rows, current.versionCode, variant, channel)
       if (controller.signal.aborted) {
         return
       }
+      recordEvent('nav', 'update: update.check.select', {
+        ...buildMeta({
+          flow: 'update',
+          stage: 'update.check.select',
+          attempt: 1,
+          status: 'ok',
+          endpointKey: 'other',
+          durationMs: Date.now() - startedAt,
+        }),
+        source: channel,
+        result: result.release ? 'update-available' : 'up-to-date',
+      })
       setRelease(result.release)
       setBase(effectiveBase)
       setMessage(
@@ -96,7 +129,24 @@ export const AppUpdateField = () => {
             : '当前已是所选渠道最新版本。'
       )
     } catch (error) {
+      // 取消不算失败（用户自己点的），只有真异常才进 error 级
       if (!controller.signal.aborted) {
+        recordError(
+          'update check failed',
+          {
+            ...buildMeta({
+              flow: 'update',
+              stage: 'update.check.manifest',
+              attempt: 1,
+              status: 'error',
+              endpointKey: 'other',
+              durationMs: Date.now() - startedAt,
+            }),
+            source: channel,
+            native,
+          },
+          error
+        )
         setMessage(
           error instanceof Error && error.message === '当前安装包渠道信息缺失'
             ? error.message
@@ -120,7 +170,25 @@ export const AppUpdateField = () => {
     setProgress({ received: 0, total: release.size })
     setMessage('正在下载…')
     try {
+      const startedAt = Date.now()
       const result = await downloadUpdate(release, controller.signal, setProgress, nativeUpdate, base)
+      const duration = Date.now() - startedAt
+      recordEvent('nav', 'update: update.download', {
+        ...buildMeta({
+          flow: 'update',
+          stage: 'update.download',
+          attempt: 1,
+          status: 'ok',
+          endpointKey: 'other',
+          durationMs: duration,
+          totalBytes: release.size,
+          // 命中本地缓存 = 没真下载（fromCache 才是「为什么这么快」的答案）
+          fromCache: result.cached,
+          speedBps: result.cached ? undefined : bytesPerSecond(release.size, duration),
+        }),
+        source: channel,
+        native,
+      })
       if (!controller.signal.aborted) {
         setReady(true)
         setMessage(result.cached ? '已复用并校验缓存，点击安装。' : '下载及校验完成，点击安装。')

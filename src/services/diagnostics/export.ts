@@ -42,7 +42,7 @@ const bytes = (text: string): number => {
 const PRIVATE_KEY =
   /(?:api.?key|token|secret|password|authorization|cookie|signature|contact|description|prompt|content|messages?|body(?!Bytes)|payment|receipt|transaction|order|card|invoice)/i
 const SAFE_META =
-  /^(?:error\.(?:msg|name|stack)|http\.status|url\.(?:host|path)|req\.bodyBytes|stage|reason|durationMs|requestId|method|bytes|native|onLine|effectiveType|downlink|rtt|saveData|netType|version|versionCode|buildType|platform|device|sessions|files|provider|model|view|configured|storageBytes|action|target|role|trigger|visible|match|delayMs|stale|threshold|transport|logs|logSize|line)$/
+  /^(?:error\.(?:msg|name|stack)|http\.status|url\.(?:host|path)|req\.bodyBytes|stage|reason|durationMs|requestId|method|bytes|native|onLine|effectiveType|downlink|rtt|saveData|netType|version|versionCode|buildType|platform|device|sessions|files|provider|model|view|configured|storageBytes|action|target|role|trigger|visible|match|delayMs|stale|threshold|transport|logs|logSize|line|flow|attempt|status|endpointKey|traceId|totalBytes|speedBps|prepMs|ttfbMs|firstTokenMs|streamMs|chunks|gapMaxMs|chars|charsPerSec|cacheHit|fromCache)$/
 
 /** Export is a second privacy boundary, including older persisted records. */
 export const redactExportText = (text: string): string =>

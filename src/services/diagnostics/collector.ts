@@ -13,6 +13,8 @@ import {
   type SystemInfo,
 } from './types.js'
 import { redact, redactUrl, safeString, truncate } from './redact.js'
+import { endpointKeyFromUrl, sanitizeMeta } from './fields.js'
+import { bytesPerSecond } from './timing.js'
 import { readCapabilityTruth } from './capabilityTruth.js'
 import { isFetchPatched } from '../../utils/capabilities.js'
 
@@ -99,12 +101,31 @@ export const redactHost = (value: string): string => {
   }
 }
 
-const redactMeta = (meta: LogMeta): LogMeta => {
-  const out: LogMeta = {}
-  for (const [key, value] of Object.entries(meta)) {
-    out[key] = typeof value === 'string' ? truncate(redact(value), MAX_META_LENGTH) : value
+/**
+ * meta 清洗：**规则本体在 fields.ts**（键白名单 / 非原始值丢弃 / 超长截断 / 完整 URL 压成 path）。
+ * 采集层只负责在写入缓冲之前调它 —— 三条硬规则里「脱敏在采集时完成」这条不许绕过。
+ */
+const cleanMeta = (meta: LogMeta | undefined): LogMeta | undefined => {
+  if (!meta) {
+    return undefined
   }
-  return out
+  const cleaned = sanitizeMeta(meta)
+  return Object.keys(cleaned).length > 0 ? cleaned : undefined
+}
+
+const attachHeadersOf = (headers: Headers): boolean | undefined => {
+  // 「命中缓存」只看服务端/CDN 明确声明的那几个头：没有头就是未知（不写 false 冒充「没命中」）
+  const xCache = (headers.get('x-cache') ?? '').toUpperCase()
+  const cfCache = (headers.get('cf-cache-status') ?? '').toUpperCase()
+  const age = Number(headers.get('age') ?? '')
+  if (xCache.includes('HIT') || cfCache === 'HIT') {
+    return true
+  }
+  if (xCache.includes('MISS') || cfCache === 'MISS' || cfCache === 'BYPASS') {
+    return false
+  }
+  // age > 0 说明这份响应在中间层待过（Redis / 网关缓存），算命中
+  return Number.isFinite(age) && age > 0 ? true : undefined
 }
 
 /** 错误对象拆成 error.msg / error.name / error.stack / http.status 等扁平字段（业务 catch 里也用它） */
@@ -219,12 +240,13 @@ export const record = (
   msg: string,
   meta?: LogMeta
 ): LogEntry => {
+  const cleaned = cleanMeta(meta)
   const entry: LogEntry = {
     t: Date.now(),
     kind,
     level,
     msg: truncate(redact(typeof msg === 'string' ? msg : safeString(msg)), MAX_MSG_LENGTH),
-    ...(meta && Object.keys(meta).length > 0 ? { meta: redactMeta(meta) } : {}),
+    ...(cleaned ? { meta: cleaned } : {}),
   }
   push(entry)
   maybeProbeUiNotice(kind, entry.meta)
@@ -1055,6 +1077,9 @@ const installFetchHook = (): void => {
         'url.host': host,
         'url.path': path,
         requestId,
+        // 端点键：对得上 config/endpoints.json 才能跨版本聚合（#306）
+        endpointKey: endpointKeyFromUrl(url),
+        stage: 'net.request',
         ...(init?.body === undefined
           ? {}
           : { 'req.bodyBytes': readBytesOfValue(typeof init.body === 'string' ? init.body : '') }),
@@ -1064,6 +1089,10 @@ const installFetchHook = (): void => {
       const response = await original(input, init)
       if (!quiet) {
         const ok = response.ok
+        const duration = Date.now() - startedAt
+        const responseBytes = await readBytesOf(response)
+        const fromCache = attachHeadersOf(response.headers)
+        const speed = bytesPerSecond(responseBytes, duration)
         record(
           'net_response',
           ok ? 'info' : 'error',
@@ -1073,9 +1102,15 @@ const installFetchHook = (): void => {
             'url.host': host,
             'url.path': path,
             requestId,
+            endpointKey: endpointKeyFromUrl(url),
+            stage: 'net.response',
+            // status 与 http.status 同值：新口径统一叫 status，旧的留着兼容既有查询
+            status: response.status,
             'http.status': response.status,
-            durationMs: Date.now() - startedAt,
-            bytes: await readBytesOf(response),
+            durationMs: duration,
+            bytes: responseBytes,
+            ...(speed === undefined ? {} : { speedBps: speed }),
+            ...(fromCache === undefined ? {} : { fromCache }),
             ...(ok ? {} : { 'error.msg': `HTTP ${response.status} ${response.statusText}`.trim() }),
           }
         )
@@ -1096,6 +1131,9 @@ const installFetchHook = (): void => {
             'url.host': host,
             'url.path': path,
             requestId,
+            endpointKey: endpointKeyFromUrl(url),
+            stage: 'net.error',
+            status: aborted ? 'aborted' : timeout ? 'timeout' : 'error',
             durationMs: Date.now() - startedAt,
             reason: aborted ? 'aborted' : timeout ? 'timeout' : 'network',
             ...errorMeta(error),
@@ -1242,20 +1280,29 @@ const installCapacitorHttpHook = (): void => {
       'url.host': host,
       'url.path': path,
       requestId,
+      endpointKey: endpointKeyFromUrl(rawUrl),
+      stage: 'net.request',
       native: true,
     })
     try {
       const response = await call.call(Capacitor, pluginName, methodName, options)
       const status = typeof response?.status === 'number' ? response.status : 0
       const ok = status >= 200 && status < 300
+      const duration = Date.now() - startedAt
+      const responseBytes = readBytesOfValue(response?.data)
+      const speed = bytesPerSecond(responseBytes, duration)
       record('net_response', ok ? 'info' : 'error', `response: ${method} ${host}${path} → ${status}`, {
         method,
         'url.host': host,
         'url.path': path,
         requestId,
+        endpointKey: endpointKeyFromUrl(rawUrl),
+        stage: 'net.response',
+        status,
         'http.status': status,
-        durationMs: Date.now() - startedAt,
-        bytes: readBytesOfValue(response?.data),
+        durationMs: duration,
+        bytes: responseBytes,
+        ...(speed === undefined ? {} : { speedBps: speed }),
         native: true,
         ...(ok ? {} : { 'error.msg': `HTTP ${status}` }),
       })
@@ -1272,6 +1319,9 @@ const installCapacitorHttpHook = (): void => {
           'url.host': host,
           'url.path': path,
           requestId,
+          endpointKey: endpointKeyFromUrl(rawUrl),
+          stage: 'net.error',
+          status: timeout ? 'timeout' : 'error',
           durationMs: Date.now() - startedAt,
           reason: timeout ? 'timeout' : 'network',
           native: true,

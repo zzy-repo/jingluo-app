@@ -5,15 +5,15 @@
 > - 盘点工具：`scripts/lib/cssAssumptionAudit.mjs`（`auditCssAssumptions(files)` 纯判定函数，不碰盘、不联网、不起浏览器）
 > - 单元测试：`tests/unit/css-assumption-audit.test.mjs`
 > - 盘点日期：2026-11-19 12:19 (+0800)
-> - 快照基准：`9e9f231`（`origin/main` tip，2026-11-19 12:28:21 +0800）
-> - 采集时间：2026-11-19 12:19 (+0800)
+> - 快照基准：`acf6826`（`origin/main` tip，2026-11-19 12:28:21 +0800）
+> - 采集时间：2026-11-19 18:55 (+0800)
 
 ## 0. 口径
 
 | 项 | 值 |
 | --- | --- |
-| 扫描范围 | `src/**` 全部源文件 **244** 个（`.css` **44** 个，其中 `*.module.css` **37** 个；其余 `.ts / .tsx / .html` 共 **200** 个） |
-| 口径拆分 | 44 `.css` + 145 `.ts` + 54 `.tsx` + 1 `.html` = 244 |
+| 扫描范围 | `src/**` 全部源文件 **246** 个（`.css` **44** 个，其中 `*.module.css` **37** 个；其余 `.ts / .tsx / .html` 共 **202** 个） |
+| 口径拆分 | 44 `.css` + 147 `.ts` + 54 `.tsx` + 1 `.html` = 246 |
 | 命中总数 | **343** 处，分布在 **39** 个文件 |
 | 运行时下限 | WebView **83**（Chromium 83）。**首支持 ≤ 83 的特性一律记「无风险」，与有没有兜底无关** |
 | 构建期因素 | `rspack.config.ts` 用 `builtin:lightningcss-loader`，`targets` 取自 `package.json` 的 `browserslist`（强制含 `chrome >= 83`）。**已被构建期翻译掉的写法不算运行时假设** |

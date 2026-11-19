@@ -398,6 +398,20 @@ const hasFile = (body: CreateMessageRequest) =>
   )
 
 /**
+ * 流式请求的耗时探针（Issue #306）：只报「什么时候到的」，不碰数据本身。
+ *
+ * 放在这一层而不是 store 里，是因为「响应头到手」这个时刻只有这里知道 ——
+ * 调用方拿到的第一个事件已经是首字了，把两者混成一个时间点就永远分不出
+ * 「上游排队慢」和「弱网吐字慢」（#101 的三条候选慢因）。
+ */
+export type StreamTimingHook = {
+  /** 响应头到手（拿到 body 之前）：TTFB 到此为止 */
+  onHeaders?: () => void
+  /** 每收到一个流式事件（尚未 yield 给调用方） */
+  onEvent?: () => void
+}
+
+/**
  * OpenAI 兼容上游（spec.protocol = 'openai'）：POST {paths.messages}（通常 /v1/chat/completions）。
  * 请求体与响应流都经 openaiAdapter 双向翻译，向上层产出的仍是 Anthropic 风格事件，
  * 因此 UI 与 store 不需要任何分支。断流/脏数据由翻译器收尾，这里只把错误帧转成 ApiError。
@@ -405,7 +419,8 @@ const hasFile = (body: CreateMessageRequest) =>
 async function* streamOpenAIMessage(
   apiKey: string,
   body: CreateMessageRequest,
-  signal: AbortSignal
+  signal: AbortSignal,
+  timing?: StreamTimingHook
 ): AsyncGenerator<MessageStreamEvent> {
   ensureBaseUrl()
   // spec 与地址/鉴权头来自同一份当前 spec：思考参数按它翻译（#297）
@@ -420,6 +435,7 @@ async function* streamOpenAIMessage(
     body: JSON.stringify(toOpenAIRequest(body, spec)),
     signal,
   })
+  timing?.onHeaders?.()
   const contentType = response.headers.get('Content-Type') ?? ''
   if (!response.body || !contentType.includes('text/event-stream')) {
     throw await readErrorResponse(response, 'protocol', '')
@@ -431,6 +447,7 @@ async function* streamOpenAIMessage(
         model: body.model,
       }
     )) {
+      timing?.onEvent?.()
       yield event
       if (event.type === 'message_stop') {
         return
@@ -460,11 +477,12 @@ async function* streamOpenAIMessage(
 export async function* streamMessage(
   apiKey: string,
   body: CreateMessageRequest,
-  signal: AbortSignal
+  signal: AbortSignal,
+  timing?: StreamTimingHook
 ): AsyncGenerator<MessageStreamEvent> {
   ensureBaseUrl()
   if (getCurrentSpec().protocol === 'openai') {
-    yield* streamOpenAIMessage(apiKey, body, signal)
+    yield* streamOpenAIMessage(apiKey, body, signal, timing)
     return
   }
   const response = await request(getMessagesUrl(), {
@@ -477,6 +495,8 @@ export async function* streamMessage(
     body: JSON.stringify({ ...body, stream: true }),
     signal,
   })
+  // 响应头到手：TTFB 到此为止（此后每一次读数据的间隔才是「吐字」）
+  timing?.onHeaders?.()
   const contentType = response.headers.get('Content-Type') ?? ''
   if (!response.body || !contentType.includes('text/event-stream')) {
     throw await readErrorResponse(response, 'protocol', '')
@@ -505,6 +525,7 @@ export async function* streamMessage(
       if (!event) {
         continue
       }
+      timing?.onEvent?.()
       yield event
       if (event.type === 'message_stop') {
         return

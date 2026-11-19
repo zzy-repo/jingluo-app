@@ -4,6 +4,9 @@ import { ApiError, uploadFile } from './api/client.js'
 import { classifyApiError, getUploadErrorInfo, isRetryableApiError } from './api/errors.js'
 import type { FilePurpose } from './api/types.js'
 import { errorMeta, record } from './diagnostics/collector.js'
+import { buildMeta, endpointKeyFromUrl } from './diagnostics/fields.js'
+import { bytesPerSecond } from './diagnostics/timing.js'
+import { getBaseUrl } from './api/apiConfig.js'
 import { ACCEPT_FILE_EXTS } from './uploadExts.js'
 import { LIMITS } from './limits.js'
 
@@ -208,12 +211,24 @@ export const uploadAttachment = (
           }
         }
       }
+      const duration = Date.now() - startedAt
+      const speed = bytesPerSecond(blob.size, duration)
       record('error', 'error', `file upload failed${controller.signal.aborted ? ' (aborted)' : ''}`, {
-        stage: 'upload',
         bytes: blob.size,
+        totalBytes: blob.size,
         image: isImage,
-        durationMs: Date.now() - startedAt,
         aborted: controller.signal.aborted,
+        // 上传速率：弱网下「传不上去」和「传得慢」是两种问题，只有字节数分不出来
+        ...(speed === undefined ? {} : { speedBps: speed }),
+        ...buildMeta({
+          flow: 'chat',
+          stage: 'chat.upload',
+          attempt: 1,
+          status: controller.signal.aborted ? 'aborted' : 'error',
+          endpointKey: endpointKeyFromUrl(getBaseUrl()),
+          durationMs: duration,
+          bytes: blob.size,
+        }),
         ...errorMeta(error),
       })
       throw error
