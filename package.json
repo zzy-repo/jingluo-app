@@ -54,6 +54,7 @@
     "check:docs": "node scripts/check-doc-refs.mjs",
     "check:docrefs": "node scripts/check-doc-refs.mjs",
     "check:limits": "node scripts/check-limits.mjs",
+    "check:log-coverage": "node scripts/check-log-coverage.mjs",
     "measure:scroll-shift": "node scripts/measure-narrow-scroll-shift.mjs"
   },
   "dependencies": {
