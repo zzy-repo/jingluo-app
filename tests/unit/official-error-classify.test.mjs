@@ -28,27 +28,17 @@
 //   [7] 空流（200 + SSE 零帧 / 200 + 非 SSE）走真代码，落到空响应档而不是「未知错误」
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { registerHooks } from 'node:module'
 
-const stub = (name) => new URL(`../fixtures/chat-stubs/${name}`, import.meta.url).href
+import { chatStub, installTsResolve } from '../helpers/dom-env.mjs'
 
-registerHooks({
-  resolve(specifier, context, nextResolve) {
-    if (specifier === '@capacitor/core') {
-      return { url: stub('capacitor.mjs'), shortCircuit: true }
-    }
-    if (/diagnostics\/collector\.js$/.test(specifier)) {
-      return { url: stub('collector.mjs'), shortCircuit: true }
-    }
-    try {
-      return nextResolve(specifier, context)
-    } catch (error) {
-      if (specifier.endsWith('.js')) {
-        return nextResolve(`${specifier.slice(0, -3)}.ts`, context)
-      }
-      throw error
-    }
-  },
+// 装配走公共入口（#366 / #408）：原生桥 + 诊断写入口两个替身 + `.js→.ts` 解析。
+// 以前每个 chat-stubs 文件各抄一份 registerHooks + 本地 `.js→.ts` 兜底（#408 已把同族 5 个文件迁走，
+// 这几个文件是同族剩下的手抄件，一起收掉）。
+installTsResolve({
+  stubs: [
+    [/^@capacitor\/core$/, chatStub('capacitor.mjs')],
+    [/diagnostics\/collector\.js$/, chatStub('collector.mjs')],
+  ],
 })
 
 globalThis.__API_ORIGIN__ = 'https://api.test.invalid'

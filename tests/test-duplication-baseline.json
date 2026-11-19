@@ -181,18 +181,6 @@
     },
     {
       "files": [
-        "tests/unit/model-invalid-copy.test.mjs",
-        "tests/unit/official-error-classify.test.mjs"
-      ],
-      "lines": 22,
-      "layers": [
-        "unit"
-      ],
-      "reason": "chat-stubs 的 stub + registerHooks 前缀：model-invalid-copy / official-error-classify 还没迁 installChatEnv（#408 只迁了 store 一侧的 5 个文件）。抽掉后删本条。",
-      "issue": "#408"
-    },
-    {
-      "files": [
         "tests/integration/domain05-ui-export-import.test.mjs",
         "tests/integration/url-import-web.test.mjs"
       ],
