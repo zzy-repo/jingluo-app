@@ -136,7 +136,7 @@ bb3dbf1（`fix/settings-overflow`）建立了 `.cellActions` 包裹 + `min-width
 
 ## 边界（未测）
 
-- **WebView 91 本次未复验**：`D:\android-avd` 里只剩 `deepseek-api33` / `probe33`，`compat31` 已不存在；
+- **WebView 91 本次未复验**：本机 AVD 目录（`$ANDROID_AVD_HOME`）里只剩 `deepseek-api33` / `probe33`，`compat31` 已不存在；
   本机 SDK 只装了 `system-images/android-34`，重建 API 31 镜像不在本单范围；唯一在跑的模拟器
   `emulator-5554`（Android 13 / WebView 109）被另一条线占着，按"不同时跑多台模拟器"不抢。
   因此上表真机一栏是 2026-11-18 18:57–19:26 那次记录（`{before,after}-wv91-*.json` + 截图），本会话未重跑。

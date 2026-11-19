@@ -9,14 +9,14 @@
 //   [1] 套餐：价格与积分全部取服务端（p1 = ¥3.00 / 300 积分），不硬编码；渲染模板可拼
 //   [2] 积分只显示积分（#75）：额度文案不再做 points→人民币折算，zh/en 均无「约可消费 / about ¥」
 //   [3] Key 校验：只回答有效/无效，不含任何额度；URL 不带 Key，走 Authorization 头
-//   [4] /buy：GET、只发一次、followRedirects=false；从 302 的 Location（return_url）里取 order_token
-//   [5] /buy 的失败面：http 收银台不认、缺令牌直接说清楚、网页版兜底（跟随后的最终 URL）
-//   [6] 查单：fulfilled 才有卡密；展示只留尾 4 位，完整卡密只留内存字段 cardNo
-//   [7] 轮询状态机：2s 间隔、≤60s、终态即停、paid 继续轮、超时不重复下单、可取消、无 token 不轮询
-//   [8] 兑换：request_id 固定用卡密；202 CREDIT_PENDING 是「处理中」不是失败
-//   [9] 兑换错误码：API_KEY_INVALID / CARD_ALREADY_USED / CARD_NOT_FOUND / VERIFY_UNAVAILABLE / RATE_LIMITED
-//   [10] 隐私：整条链路一条 console 都没有；文案/错误里没有完整 Key 与完整卡密
+//   [4] 旧下单 / 查单链路已停用（#331）：api.ts 不再导出 /buy · /api/buy · /api/order 那套函数，
+//       src 里没有 `/api/buy` 字面量，也没有 pollOrder / queryOrder / createBuyOrder 的调用点
+//   [5] 兑换：request_id 固定用卡密；202 CREDIT_PENDING 是「处理中」不是失败
+//   [6] 兑换错误码：API_KEY_INVALID / CARD_ALREADY_USED / CARD_NOT_FOUND / VERIFY_UNAVAILABLE / RATE_LIMITED
+//   [7] 隐私：整条链路一条 console 都没有；文案/错误里没有完整 Key 与完整卡密
 import { registerHooks } from 'node:module'
+import { readdirSync, readFileSync } from 'node:fs'
+import path from 'node:path'
 
 // 与打包器一致：源码内部用 .js 说明符指向 .ts 文件
 registerHooks({
@@ -36,6 +36,7 @@ const { zh } = await import('../../src/i18n/zh.ts')
 const { en } = await import('../../src/i18n/en.ts')
 const oursApi = await import('../../src/services/ours/api.ts')
 const {
+  fetchPayLink,
   fetchPlans,
   formatPlanMeta,
   formatPlanPrice,
@@ -43,17 +44,12 @@ const {
   isOpenableCheckout,
   maskCard,
   maskKey,
-  ORDER_STATUS_KEYS,
   OURS_API_BASE,
-  OURS_PAYMENT_OPEN,
-  parseCheckoutTarget,
-  pollOrder,
   probeApiKey,
-  queryOrder,
   redeemCard,
   requestIdForCard,
-  startCheckout,
 } = await import('../../src/services/ours/api.ts')
+const oursApiModule = await import('../../src/services/ours/api.ts')
 
 /** 与 i18n/index.ts 的 createTranslate 同一套占位符替换（只取 zh 文案，避开浏览器 store） */
 const translate = (key, params) =>
@@ -132,7 +128,14 @@ console.log('\n[1] 套餐：价格与积分取服务端，渲染模板可拼')
   eq(broken.messageKey, 'oursPlansFailed', '非法 JSON 文案 key')
   const down = await fetchPlans(fakeTransport([{ kind: 'network' }]).transport)
   eq(zh[down.messageKey], '网络不可用，请稍后重试', '断网文案')
-  eq(OURS_PAYMENT_OPEN, true, '购买入口已放开（服务端价格与套餐一致）')
+  // #331：套餐全线下架，服务端就是返回 {"plans": []} —— 这是空态，不是「加载失败」
+  const empty = await fetchPlans(fakeTransport([json(200, { plans: [] })]).transport)
+  eq(empty.status, 'empty', '{"plans": []} → status=empty（不是 error，别报「加载失败」）')
+  eq(Object.hasOwn(empty, 'messageKey'), false, '空态不带错误文案 key（不会上屏「套餐加载失败」）')
+  const allDisabled = await fetchPlans(
+    fakeTransport([json(200, { plans: [{ id: 'p1', price: 3, points: 300, enabled: false }] })]).transport
+  )
+  eq(allDisabled.status, 'empty', '全部 enabled=false 也按空态处理（界面同样不能露出空卡片列表）')
 }
 
 // ---------------------------------------------------------------- [2] 额度只显示积分
@@ -196,206 +199,42 @@ console.log('\n[3] Key 校验：只回答有效/无效，不碰额度')
 }
 
 // ---------------------------------------------------------------- [4][5] /buy
-console.log('\n[4] /buy：GET 一次、不跟随、从 Location 的 return_url 取 order_token')
+console.log('\n[4] 旧下单 / 查单链路已停用（#331）：没有 /api/buy 字面量，也没有轮询入口')
 {
-  const { transport, calls } = fakeTransport([
-    { kind: 'response', status: 302, text: '', location: REAL_LOCATION },
-  ])
-  const result = await startCheckout('p1', transport, { customerId: 10 })
-  eq(calls.length, 1, '只发一次（每发一次就会新建订单）')
-  eq(calls[0].method, 'GET', 'method 是 GET')
-  eq(calls[0].url, `${OURS_API_BASE}/buy?plan=p1&cid=10`, '/buy?plan=p1&cid=10（Issue #115：下单带 cid）')
-  eq(calls[0].followRedirects, false, 'followRedirects=false（禁跟随）')
-  eq(result.kind, 'ok', '拿到收银台信息')
-  eq(result.checkout.payUrl, REAL_LOCATION, 'payUrl 就是 302 的 Location')
-  eq(result.checkout.outTradeNo, OUT_TRADE_NO, 'out_trade_no 从 Location 解析')
-  eq(result.checkout.orderToken, ORDER_TOKEN, 'order_token 从 return_url 解析（查单必需）')
-  eq(isOpenableCheckout(result.checkout.payUrl), true, '收银台是 https，可用系统浏览器打开')
-}
-
-// Issue #115：拿不到 cid 时**一次请求都不发** —— 宁可不卖，也不建「不知道属于谁」的单
-{
-  const { transport, calls } = fakeTransport([{ kind: 'response', status: 302, text: '', location: REAL_LOCATION }])
-  const refused = await startCheckout('p1', transport, { customerId: null })
-  eq(refused.kind, 'error', '没有 cid → 直接报错')
-  eq(refused.kind === 'error' ? refused.code : '', 'CUSTOMER_ID_MISSING', '错误码 CUSTOMER_ID_MISSING')
-  // Issue #135：拿不到 cid 时的文案改成「请先在 App 内领取 Key」（新人多半还没有 Key）
-  eq(zh[refused.kind === 'error' ? refused.messageKey : 'oursErrPlanMissing'], zh.oursErrCustomerNeedsKey, '提示「请先在 App 内领取 Key」')
-  eq(calls.length, 0, '一次 /buy 都没发（没有 cid 的下单会把单建到别人名下）')
-}
-
-console.log('\n[5] /buy 的失败面：明文收银台 / 缺令牌 / 网页版拿不到 Location')
-{
-  const plain = await startCheckout(
-    'p1',
-    fakeTransport([{ kind: 'response', status: 302, text: '', location: 'http://pay.example.com/x' }]).transport,
-    { customerId: 10 }
-  )
-  eq(plain.kind, 'error', 'http 收银台不认')
-  eq(zh[plain.messageKey], '当前环境拿不到收银台地址，请在 App 内购买或改用卡密兑换', '明文收银台文案')
-
-  const noToken = await startCheckout(
-    'p1',
-    fakeTransport([
-      { kind: 'response', status: 302, text: '', location: 'https://pay.example.com/checkout/abc' },
-    ]).transport,
-    { customerId: 10 }
-  )
-  eq(noToken.kind, 'error', '只有 https 地址没有单号/令牌 → 直接报错')
-  eq(zh[noToken.messageKey], '缺少订单令牌，无法查询', '缺令牌文案')
-
-  const opaque = await startCheckout(
-    'p1',
-    fakeTransport([{ kind: 'response', status: 0, text: '' }]).transport,
-    { customerId: 10 }
-  )
-  eq(opaque.kind, 'no-location', '网页版 opaqueredirect（status 0）→ no-location')
-
-  // 网页版跟随重定向只会落到收银台 HTML 上（且真实环境被 CORS 拦）：
-  // 拿不到 Location 就说 no-location，绝不拿 body/URL 去猜单号
-  const followed = await startCheckout(
-    'p1',
-    fakeTransport([{ kind: 'response', status: 200, text: '<html>checkout</html>', location: '' }]).transport,
-    { customerId: 10 }
-  )
-  eq(followed.kind, 'no-location', '跟随后的 200 页面不被当作收银台地址')
-
-  const parseHttp = parseCheckoutTarget('http://pay.example.com/x?out_trade_no=1&order_token=2')
-  eq(parseHttp, null, 'parseCheckoutTarget 拒绝 http')
-  const parseMissing = parseCheckoutTarget(`https://pay.example.com/x?out_trade_no=${OUT_TRADE_NO}`)
-  eq(parseMissing, null, '缺 order_token 时不当作可用收银台')
-}
-
-// ---------------------------------------------------------------- [6] 查单
-console.log('\n[6] 查单：只有 fulfilled 有卡密，展示只留尾 4 位')
-{
-  const missing = await (async () => {
-    const { transport, calls } = fakeTransport([json(200, {})])
-    return { result: await queryOrder({ outTradeNo: OUT_TRADE_NO, orderToken: '' }, transport), calls }
-  })()
-  eq(missing.calls.length, 0, '缺 order_token 一次请求都不发')
-  eq(missing.result.messageKey, 'oursErrOrderTokenMissing', '缺 order_token 报错')
-
-  const { transport, calls } = fakeTransport([
-    json(200, {
-      out_trade_no: OUT_TRADE_NO,
-      status: 'fulfilled',
-      amount_fen: 300,
-      card_no: CARD,
-      expire_at: 1794990326,
-      message: 'ok',
-    }),
-  ])
-  const result = await queryOrder({ outTradeNo: OUT_TRADE_NO, orderToken: ORDER_TOKEN }, transport)
-  eq(result.kind, 'ok', '查单成功')
-  eq(result.order.status, 'fulfilled', '状态')
-  eq(result.order.amountFen, 300, 'amount_fen')
-  eq(result.order.cardTail, `••••${CARD_TAIL}`, '展示用卡密只有尾 4 位')
-  eq(result.order.cardNo, CARD, '完整卡密只在内存字段 cardNo（供一键兑换）')
-  eq(result.order.expireAtSeconds, 1794990326, 'expire_at 是 Unix 秒')
-  truthy(calls[0].url.includes(`out_trade_no=${OUT_TRADE_NO}`), '查单带 out_trade_no')
-  truthy(calls[0].url.includes(`order_token=${ORDER_TOKEN}`), '查单带 order_token')
-  truthy(!calls[0].url.includes(KEY), '查单 URL 不含服务 Key')
-  eq(calls[0].followRedirects, false, '查单不跟随重定向')
-
-  const pending = await queryOrder(
-    { outTradeNo: OUT_TRADE_NO, orderToken: ORDER_TOKEN },
-    fakeTransport([
-      json(200, { out_trade_no: OUT_TRADE_NO, status: 'pending', amount_fen: 300, card_no: null, expire_at: 1 }),
-    ]).transport
-  )
-  eq(pending.order.cardTail, '', '未发卡时没有卡密尾号')
-  eq(pending.order.cardNo, '', '未发卡时内存卡密为空')
-
-  const forbidden = await queryOrder(
-    { outTradeNo: OUT_TRADE_NO, orderToken: 'wrong' },
-    fakeTransport([
-      json(403, { code: 'UNAUTHORIZED', message: '订单凭证不匹配', request_id: 'rid' }),
-    ]).transport
-  )
-  eq(zh[forbidden.messageKey], '鉴权失败，请重新领取或填写 Key 后再试', '403 文案')
-  eq(zh[ORDER_STATUS_KEYS.pending], '待支付', 'pending 文案')
-  eq(zh[ORDER_STATUS_KEYS.fulfilled], '已发卡', 'fulfilled 文案')
-}
-
-// ---------------------------------------------------------------- [7] 轮询
-console.log('\n[7] 轮询状态机：2s、≤60s、终态即停、paid 继续轮、可取消')
-{
-  const clock = { t: 0 }
-  const intervals = []
-  const sleep = async (ms) => {
-    intervals.push(ms)
-    clock.t += ms
+  // api.ts 不再导出这套函数：界面拿不到，也就没人能再拼回来（typeof 断言比 grep 更硬）
+  const retired = ['buyUrl', 'startCheckout', 'parseCheckoutTarget', 'createBuyOrder', 'queryOrder', 'pollOrder']
+  for (const name of retired) {
+    eq(typeof oursApiModule[name], 'undefined', `api.ts 不再导出 ${name}`)
   }
-  const statuses = ['pending', 'paid', 'fulfilled']
-  const { transport, calls } = fakeTransport(
-    statuses.map((status) =>
-      json(200, {
-        out_trade_no: OUT_TRADE_NO,
-        status,
-        amount_fen: 300,
-        card_no: status === 'fulfilled' ? CARD : '',
-        expire_at: 1794990326,
-      })
-    )
+  eq(typeof oursApiModule.isOpenableCheckout, 'function', 'isOpenableCheckout 仍保留（收款页也要判 https）')
+  eq(typeof oursApiModule.fetchPayLink, 'function', '收款页地址改走 fetchPayLink（/api/pay-link）')
+
+  // 源码级：生产代码里不许再出现 /api/buy 字面量，也不许再调旧链路函数
+  const root = path.resolve(import.meta.dirname, '../..')
+  const walk = (dir) =>
+    readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+      const full = path.join(dir, entry.name)
+      if (entry.isDirectory()) return entry.name === 'node_modules' ? [] : walk(full)
+      return /\.(ts|tsx)$/u.test(entry.name) ? [full] : []
+    })
+  const files = walk(path.join(root, 'src'))
+  const strip = (text) => text.replace(/\/\*[\s\S]*?\*\//gu, '').replace(/^\s*\/\/.*$/gmu, '')
+  const offenders = (pattern) =>
+    files
+      .filter((file) => pattern.test(strip(readFileSync(file, 'utf8'))))
+      .map((file) => path.relative(root, file).split(path.sep).join('/'))
+  eq(offenders(/\/api\/buy/u), [], 'src 里没有 /api/buy 字面量')
+  eq(offenders(/\bpollOrder\b/u), [], 'src 里没有 pollOrder 调用点')
+  eq(offenders(/\b(queryOrder|createBuyOrder|startCheckout|buyUrl)\b/u), [], 'src 里没有旧下单 / 查单函数')
+  eq(offenders(/navigateTopLevel|openCheckoutInApp|withBuyCustomerId/u), [], 'src 里没有旧收银台跳转工具')
+  eq(
+    files.filter((file) => /(orderStore|returnParams|inAppPay)\.ts$/u.test(file)).length,
+    0,
+    '订单存档 / 回跳解析 / 内嵌收银台编排三个模块已删除'
   )
-  const updates = []
-  const result = await pollOrder({
-    outTradeNo: OUT_TRADE_NO,
-    orderToken: ORDER_TOKEN,
-    transport,
-    sleep,
-    now: () => clock.t,
-    onUpdate: (order) => updates.push(order.status),
-  })
-  eq(result.kind, 'ok', '轮询到终态')
-  eq(result.attempts, 3, '轮询次数')
-  eq(intervals, [2000, 2000], '每次间隔 2000ms')
-  eq(updates, ['pending', 'paid', 'fulfilled'], 'onUpdate 每次都回调')
-  eq(result.order.cardTail, `••••${CARD_TAIL}`, '终态卡密只留尾 4 位')
-  truthy(clock.t <= 60000, '总耗时 ≤60s')
-
-  const stuckClock = { t: 0 }
-  const stuckIntervals = []
-  const stuck = await pollOrder({
-    outTradeNo: OUT_TRADE_NO,
-    orderToken: ORDER_TOKEN,
-    transport: fakeTransport([
-      json(200, { out_trade_no: OUT_TRADE_NO, status: 'pending', amount_fen: 300, card_no: '' }),
-    ]).transport,
-    sleep: async (ms) => {
-      stuckIntervals.push(ms)
-      stuckClock.t += ms
-    },
-    now: () => stuckClock.t,
-  })
-  eq(stuck.kind, 'timeout', '一直 pending → 60s 后停（超时不重复下单）')
-  truthy(stuckClock.t <= 60000, '超时上限 ≤60s')
-  eq(stuck.attempts, 31, '60s / 2s → 31 次（首查 + 30 次间隔）')
-  truthy(stuckIntervals.every((ms) => ms === 2000), '间隔恒为 2000ms')
-
-  const cancelled = await pollOrder({
-    outTradeNo: OUT_TRADE_NO,
-    orderToken: ORDER_TOKEN,
-    transport: fakeTransport([
-      json(200, { out_trade_no: OUT_TRADE_NO, status: 'pending', amount_fen: 300, card_no: '' }),
-    ]).transport,
-    sleep: async () => {},
-    now: () => 0,
-    shouldStop: () => true,
-  })
-  eq(cancelled.kind, 'cancelled', 'shouldStop → 立刻取消（关弹层不再轮询）')
-
-  const noToken = await (async () => {
-    const { transport: t2, calls: c2 } = fakeTransport([json(200, {})])
-    return { out: await pollOrder({ outTradeNo: OUT_TRADE_NO, orderToken: '', transport: t2 }), calls: c2 }
-  })()
-  eq(noToken.out.kind, 'error', '无 token 直接失败')
-  eq(noToken.calls.length, 0, '无 token 一次都不轮询')
 }
 
-// ---------------------------------------------------------------- [8][9] 兑换
-console.log('\n[8] 兑换：request_id 固定用卡密；202 是「处理中」不是失败')
+console.log('\n[5] 兑换：request_id 固定用卡密；202 是「处理中」不是失败')
 {
   eq(requestIdForCard(`  ${CARD}  `), CARD, 'request_id = 卡密（去空格）')
   const { transport, calls } = fakeTransport([
@@ -443,7 +282,7 @@ console.log('\n[8] 兑换：request_id 固定用卡密；202 是「处理中」�
   eq(pendingByCode.kind, 'pending', 'code=CREDIT_PENDING 也说 pending')
 }
 
-console.log('\n[9] 兑换错误码：五类各有一句能看的文案')
+console.log('\n[6] 兑换错误码：五类各有一句能看的文案')
 {
   const cases = [
     ['API_KEY_INVALID', 400, 'Key 无效，请重新领取或填写', false],
@@ -479,7 +318,7 @@ console.log('\n[9] 兑换错误码：五类各有一句能看的文案')
 }
 
 // ---------------------------------------------------------------- [10] 隐私
-console.log('\n[10] 脱敏与「不写 console」')
+console.log('\n[7] 脱敏与「不写 console」')
 {
   eq(maskKey(KEY), `••••${KEY_TAIL}`, 'maskKey 尾 6 位')
   eq(maskKey('short'), '••••', '太短的 Key 全部遮掉')
@@ -489,7 +328,6 @@ console.log('\n[10] 脱敏与「不写 console」')
   const text = JSON.stringify(zh)
   truthy(!/sk-[A-Za-z0-9]{8,}/.test(text), 'i18n 文案里没有 Key 形态的串')
   truthy(!/CARD-[A-Za-z0-9]{6,}/.test(text), 'i18n 文案里没有卡密形态的串')
-  truthy(Object.hasOwn(zh, 'oursOrderStatusPending'), '订单状态文案 key 存在')
 
   const originals = { log: console.log, warn: console.warn, error: console.error, info: console.info }
   const leaked = []
@@ -501,20 +339,13 @@ console.log('\n[10] 脱敏与「不写 console」')
   try {
     await probeApiKey(KEY, fakeTransport([json(200, { api_key: KEY, valid: true })]).transport)
     await fetchPlans(fakeTransport([json(200, { plans: [{ id: 'p1', price: 3, points: 300 }] })]).transport)
-    await startCheckout('p1', fakeTransport([{ kind: 'response', status: 302, text: '', location: REAL_LOCATION }]).transport, { customerId: 10 })
+    await fetchPayLink(
+      fakeTransport([json(200, { ok: true, url: 'https://wzyp.cn/shop/abc', note: '外部收款页' })]).transport
+    )
     await redeemCard(
       { cardNo: CARD, apiKey: KEY, requestId: requestIdForCard(CARD) },
       fakeTransport([{ kind: 'response', status: 202, text: '{"code":"CREDIT_PENDING"}' }]).transport
     )
-    await pollOrder({
-      outTradeNo: OUT_TRADE_NO,
-      orderToken: ORDER_TOKEN,
-      transport: fakeTransport([
-        json(200, { out_trade_no: OUT_TRADE_NO, status: 'fulfilled', amount_fen: 300, card_no: CARD }),
-      ]).transport,
-      sleep: async () => {},
-      now: () => 0,
-    })
   } finally {
     console.log = originals.log
     console.warn = originals.warn

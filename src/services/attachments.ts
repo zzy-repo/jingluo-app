@@ -3,7 +3,7 @@ import type { LinkedMessage, TranslationMessage } from '../i18n/index.js'
 import { ApiError, uploadFile } from './api/client.js'
 import { classifyApiError, getUploadErrorInfo, isRetryableApiError } from './api/errors.js'
 import type { FilePurpose } from './api/types.js'
-import { errorMeta, record } from './diagnostics/collector.js'
+import { errorMeta, record, recordAction } from './diagnostics/collector.js'
 import { buildMeta, endpointKeyFromUrl } from './diagnostics/fields.js'
 import { bytesPerSecond } from './diagnostics/timing.js'
 import { getBaseUrl } from './api/apiConfig.js'
@@ -126,16 +126,23 @@ const next = () => {
   }
 }
 
-/** 排队上传，最多同时上传 MAX_CONCURRENT 个；排队期间中止的任务不会发出请求 */
+/**
+ * 排队上传，最多同时上传 MAX_CONCURRENT 个；排队期间中止的任务不会发出请求。
+ * `onStart` 在任务**真正开始**时回调一次（此时才知道排队等了多久），#313 的 `queueMs` 从这里来。
+ */
 const enqueueUpload = (
   apiKey: string,
   file: Blob,
   name: string,
   isImage: boolean,
-  signal: AbortSignal
-) =>
-  new Promise<string>((resolve, reject) => {
+  signal: AbortSignal,
+  onStart: (queueMs: number) => void
+) => {
+  const enqueuedAt = Date.now()
+  return new Promise<string>((resolve, reject) => {
     queue.push(async () => {
+      // 队列等待结束：并发上限（MAX_CONCURRENT）造成的等待只能在这里量出来
+      onStart(Math.max(0, Date.now() - enqueuedAt))
       if (signal.aborted) {
         reject(signal.reason)
         return
@@ -149,6 +156,7 @@ const enqueueUpload = (
     })
     next()
   })
+}
 
 /**
  * 上传任务按附件的本地 id 登记：输入框选中即开始上传，全部成功后携带 serverId 发送，
@@ -173,7 +181,40 @@ const setTask = (id: string, task: UploadTask | null) =>
 
 const pending = new Map<string, { promise: Promise<string>; controller: AbortController }>()
 
-/** 开始（或复用进行中的）上传，返回服务端 file_id；失败时任务记为 error 并抛出原错误 */
+/**
+ * 每个附件本地 id 已经试过几次（#313）：用户点「重试」是一次**新的调用**，
+ * 没有这个计数，日志里两条记录毫无关联，看不出「第一次就失败」和「重试完还是失败」。
+ * 成功即清（下一条日志从 1 开始），失败保留（重试接着 +1）。
+ */
+const attempts = new Map<string, number>()
+
+/** 渠道没有 Files API 时，#303 在本地就判失败（0 请求）：这是能力缺失，不是上传出错 */
+const isChannelUnsupported = (error: unknown): boolean =>
+  error instanceof ApiError && error.localMessage?.key === 'uploadChannelUnsupported'
+
+/** 额度类失败的机器可读原因（与 `describeUploadQuota` 的两档一致，不写文案原文） */
+const quotaReason = (error: unknown): string | undefined => {
+  const code = getUploadErrorInfo(error)?.code
+  if (code === 'fileCountLimit') {
+    return 'quota-files'
+  }
+  if (code === 'storageLimit') {
+    return 'quota-storage'
+  }
+  return undefined
+}
+
+/**
+ * 开始（或复用进行中的）上传，返回服务端 file_id；失败时任务记为 error 并抛出原错误。
+ *
+ * 埋点（#313）：每条文件三态齐全，文件名与内容都不进日志，只留体积 / 类型 / 耗时 / 端点：
+ * - 开始：`upload-attachment`（带 `attempt`、`queueMs`）—— 排了多久的队在这里能看到；
+ * - 成功：`file upload done`（`status:'ok'` + `durationMs` + `speedBps`）；
+ * - 失败：`file upload failed`（`status:'error'` + `retryable` + `reason`）；
+ * - 取消：`file upload aborted`（`status:'aborted'`，warn 级 —— 用户取消不是失败）；
+ * - 渠道不支持：`file upload unavailable`（`status:'rejected'` + `reason:'channel-unsupported'`，
+ *   warn 级 + `retryable:false`：重试没用，要让用户去换渠道，而不是对着卡片反复点）。
+ */
 export const uploadAttachment = (
   apiKey: string,
   id: string,
@@ -187,16 +228,45 @@ export const uploadAttachment = (
   }
   const controller = new AbortController()
   setTask(id, { status: 'uploading' })
-  // 关键业务动作：上传请求本身由 net_request / net_response 覆盖；
-  // 这里只在失败时补一条 error 级记录（大小 / 类型 / 耗时，文件名与内容都不记）
+  const attempt = (attempts.get(id) ?? 0) + 1
+  attempts.set(id, attempt)
   const startedAt = Date.now()
-  const promise = enqueueUpload(apiKey, blob, name, isImage, controller.signal)
+  const endpointKey = endpointKeyFromUrl(getBaseUrl())
+  /** 排队等待时长（任务真正开始时才有值）：上传耗时 = durationMs − queueMs */
+  let queueMs = 0
+  /** 本条文件三态共用的结构化字段（体积 / 类型不进文案，只进 meta） */
+  const chatUploadMeta = (extra: Parameters<typeof buildMeta>[0]) =>
+    buildMeta({
+      flow: 'chat',
+      stage: 'chat.upload',
+      attempt,
+      endpointKey,
+      queueMs,
+      bytes: blob.size,
+      totalBytes: blob.size,
+      ...extra,
+    })
+  const promise = enqueueUpload(apiKey, blob, name, isImage, controller.signal, (waited) => {
+    queueMs = waited
+    recordAction('nav', 'upload-attachment', {
+      image: isImage,
+      ...chatUploadMeta({}),
+    })
+  })
     .then((serverId) => {
       setTask(id, { status: 'done', serverId })
+      attempts.delete(id)
+      const duration = Date.now() - startedAt
+      const speed = bytesPerSecond(blob.size, Math.max(0, duration - queueMs))
+      record('nav', 'info', 'file upload done', {
+        image: isImage,
+        ...chatUploadMeta({ durationMs: duration, speedBps: speed, status: 'ok', retryable: false }),
+      })
       return serverId
     })
     .catch((error: unknown) => {
-      if (controller.signal.aborted) {
+      const aborted = controller.signal.aborted
+      if (aborted) {
         setTask(id, null)
       } else {
         setTask(id, {
@@ -212,25 +282,32 @@ export const uploadAttachment = (
         }
       }
       const duration = Date.now() - startedAt
-      const speed = bytesPerSecond(blob.size, duration)
-      record('error', 'error', `file upload failed${controller.signal.aborted ? ' (aborted)' : ''}`, {
-        bytes: blob.size,
-        totalBytes: blob.size,
+      const speed = bytesPerSecond(blob.size, Math.max(0, duration - queueMs))
+      // 三类「非网络故障」的失败要能一眼分开（#313 负向用例）：取消 / 渠道不支持 / 额度不足
+      const unsupported = isChannelUnsupported(error)
+      const quota = quotaReason(error)
+      const reason = aborted ? 'aborted' : unsupported ? 'channel-unsupported' : quota
+      const meta = {
         image: isImage,
-        aborted: controller.signal.aborted,
-        // 上传速率：弱网下「传不上去」和「传得慢」是两种问题，只有字节数分不出来
-        ...(speed === undefined ? {} : { speedBps: speed }),
-        ...buildMeta({
-          flow: 'chat',
-          stage: 'chat.upload',
-          attempt: 1,
-          status: controller.signal.aborted ? 'aborted' : 'error',
-          endpointKey: endpointKeyFromUrl(getBaseUrl()),
+        ...(aborted ? { aborted: true } : {}),
+        ...(reason === undefined ? {} : { reason }),
+        ...chatUploadMeta({
           durationMs: duration,
-          bytes: blob.size,
+          speedBps: speed,
+          status: aborted ? 'aborted' : unsupported ? 'rejected' : 'error',
+          retryable: aborted ? true : unsupported ? false : !quota && isRetryableApiError(error),
         }),
         ...errorMeta(error),
-      })
+      }
+      if (aborted) {
+        record('warning', 'warn', 'file upload aborted', meta)
+      } else if (unsupported) {
+        record('warning', 'warn', 'file upload unavailable: channel has no files endpoint', meta)
+      } else if (reason !== undefined) {
+        record('error', 'error', `file upload failed: ${reason}`, meta)
+      } else {
+        record('error', 'error', 'file upload failed', meta)
+      }
       throw error
     })
     .finally(() => pending.delete(id))

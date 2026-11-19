@@ -9,7 +9,7 @@ import { mkdirSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { attachWebview, connectCdp, createSh, sleep, waitFor } from '../../../scripts/compat/lib/cdp-core.mjs'
 
-const ADB = process.env.ADB || 'D:/android-sdk/platform-tools/adb.exe'
+const ADB = process.env.ADB || 'adb' // 默认走 PATH；换机器请设 ADB=<绝对路径>（#302 去掉写死盘符）
 export const PACKAGE = 'com.example.deepseekchat'
 export const OUT = new URL('.', import.meta.url).pathname.replace(/^\//, '')
 

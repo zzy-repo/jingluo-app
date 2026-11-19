@@ -1,9 +1,9 @@
 /**
- * 付款记录（Issue #115）：`GET /api/orders` 的解析与拉取，外加「下单归属客户」（cid）的来源与缓存。
+ * 付款记录（Issue #115）：`GET /api/orders` 的解析与拉取，外加「订单归属客户」（cid）的来源与缓存。
  *
- * 为什么需要 cid：`/buy?plan=<id>` 建单时后端要靠 `cid` 把订单挂到具体客户身上（实测
- * `/api/orders` 返回里就带 `customer_id`）。缺了它，付款成功后订单归属不明，App 这边一直
- * 看到「等待支付」——这就是 #115 那次 21:13 付款却显示未支付的直接原因。
+ * 为什么需要 cid：`/api/orders` 只按 Key 返回「这个客户的订单」，服务端要靠 `cid` 把订单
+ * 挂到具体客户身上（返回里也带 `customer_id`）。缺了它，翻记录时就认不出这是谁的订单。
+ * （Issue #331 之后我们不再建单，cid 只剩「查询历史订单」这一个用途。）
  *
  * cid 从哪来（实测 2026-11-18，用真 Key 打过只读接口）：
  *  - `GET /api/orders`（Bearer Key）→ `{"customer_id": 10, ...}`：**唯一实测过的来源**；
@@ -15,7 +15,7 @@
 import type { OursMessageKey, OursTransport } from './api.js'
 import { OURS_API_BASE } from './api.js'
 import { maskCard } from './mask.js'
-import { type OrderStorage } from './orderStore.js'
+import { type OrderStorage } from './storage.js'
 import { cacheCustomerId, parseCustomerId } from './customerId.js'
 
 // 兼容既有调用方（api.ts / transport.ts / 单测）：cid 相关实现搬去 customerId.ts，

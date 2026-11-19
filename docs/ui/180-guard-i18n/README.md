@@ -10,8 +10,14 @@
 | Android Emulator API30（x86_64，非真实手机） | `compat-api30` | `versionName=83.0.4103.106` | Android 11 | 正常启动，不弹兜底卡（回归红线） | `__DEEPSEEK_BOOTED__ === true`，页面里没有 `#compatibility-error` |
 
 原始数据：`api26/result-180.json`、`api29/result-180.json`、`api30/result-180.json`、
-`api26/result-zh-26.json`（四个采样点的页内状态都在里面）；冷启动全程日志 `api<NN>/logcat-api<NN>.txt`；
+`api26/result-zh-26.json`（四个采样点的页内状态都在里面）；冷启动日志**摘录** `api<NN>/logcat-api<NN>.txt`；
 截图 `api<NN>/shots/t02s.png`（卡片刚出现时）、`t-final.png`（26 秒后，确认文案不再变化）。
+
+> **logcat 摘录口径（Issue #291 口径，#302 沿用）**：`api<NN>/logcat-api<NN>.txt` 是**摘录** —— 保留原文头 20 KiB
+> 加上所有 `SyntaxError` / `JavaScript Error` / `FATAL EXCEPTION` / `AndroidRuntime` / `E Capacitor` / `boot-guard`
+> 行，中间省略的行数与原文总字节写在文件里的横幅上（原文 117083 / 316342 / 539949 B）。**数字一律以同目录
+> `result-180.json` 为准**（其中 `logcat.bootGuardLines` / `syntaxErrorLines` 就是本单引用的那几行原文）；
+> json 里的本机绝对路径已改成仓库相对路径与 `<worktree>` 占位。全文请按 `result-180.json` 的字段重新采集。
 
 ## 1. 修复前（佐证，不是本次实测）
 
@@ -63,7 +69,7 @@ compatibilityError  : { branch: "①", code: "missing-api", message: "", missing
 
 ## 3. logcat：诊断链路仍然完整
 
-`api26/logcat-api26.txt:505`（守卫自己打的一行，含全字段）：
+`api26/logcat-api26.txt:144`（摘录文件里守卫自己打的那一行，含全字段；原文第 505 行）：
 
 ```
 11-19 01:22:17.120  3792  3792 E Capacitor/Console: File: https://localhost/ - Line 1295 - Msg:

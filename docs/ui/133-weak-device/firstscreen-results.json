@@ -30,8 +30,8 @@
       "approxBytes": 133172
     },
     "shots": [
-      "D:/all_project/runs/fact133/docs/ui/133-weak-device/screens/133-long-200-bottom-360dp.png",
-      "D:/all_project/runs/fact133/docs/ui/133-weak-device/screens/133-long-200-top-360dp.png"
+      "docs/ui/133-weak-device/screens/133-long-200-bottom-360dp.png",
+      "docs/ui/133-weak-device/screens/133-long-200-top-360dp.png"
     ]
   },
   {
@@ -65,8 +65,8 @@
       "approxBytes": 487173
     },
     "shots": [
-      "D:/all_project/runs/fact133/docs/ui/133-weak-device/screens/133-long-1000-bottom-360dp.png",
-      "D:/all_project/runs/fact133/docs/ui/133-weak-device/screens/133-long-1000-top-360dp.png"
+      "docs/ui/133-weak-device/screens/133-long-1000-bottom-360dp.png",
+      "docs/ui/133-weak-device/screens/133-long-1000-top-360dp.png"
     ]
   },
   {
@@ -100,8 +100,8 @@
       "approxBytes": 930675
     },
     "shots": [
-      "D:/all_project/runs/fact133/docs/ui/133-weak-device/screens/133-long-2000-bottom-360dp.png",
-      "D:/all_project/runs/fact133/docs/ui/133-weak-device/screens/133-long-2000-top-360dp.png"
+      "docs/ui/133-weak-device/screens/133-long-2000-bottom-360dp.png",
+      "docs/ui/133-weak-device/screens/133-long-2000-top-360dp.png"
     ]
   },
   {
@@ -135,8 +135,8 @@
       "approxBytes": 1819675
     },
     "shots": [
-      "D:/all_project/runs/fact133/docs/ui/133-weak-device/screens/133-long-4000-bottom-360dp.png",
-      "D:/all_project/runs/fact133/docs/ui/133-weak-device/screens/133-long-4000-top-360dp.png"
+      "docs/ui/133-weak-device/screens/133-long-4000-bottom-360dp.png",
+      "docs/ui/133-weak-device/screens/133-long-4000-top-360dp.png"
     ]
   }
 ]

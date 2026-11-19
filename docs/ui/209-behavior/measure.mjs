@@ -27,7 +27,7 @@ import { execFileSync } from 'node:child_process'
 import { attach, sh, sleep } from '../173-flex-gap/cdp.mjs'
 
 const OUT = path.resolve(import.meta.dirname)
-const ADB = process.env.ADB || 'D:/android-sdk/platform-tools/adb.exe'
+const ADB = process.env.ADB || 'adb' // 默认走 PATH；换机器请设 ADB=<绝对路径>（#302 去掉写死盘符）
 const PKG = 'com.example.deepseekchat'
 
 // 三档 CSS 宽度：innerWidth 360 / 390 / 412（物理 1080x1920 @ density 420 ≈ 411.4）
