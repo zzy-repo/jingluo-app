@@ -1,0 +1,77 @@
+{
+  "page": "payment-trail",
+  "title": "#189 设置 → 数据管理 → 支付记录：订单与卡密全程时间线（五状态 / 已关闭≠失败 / 长链路滚动）",
+  "viewport": 360,
+  "size": "360×740",
+  "shots": [
+    "docs/ui/189-payment-trail/360/payment-trail-01-settings-data-entry-360.png",
+    "docs/ui/189-payment-trail/360/payment-trail-02-trail-list-360.png",
+    "docs/ui/189-payment-trail/360/payment-trail-03-trail-long-order-360.png"
+  ],
+  "notes": [],
+  "list": {
+    "viewportWidth": 360,
+    "documentScrollWidth": 360,
+    "orderCount": 6,
+    "eventCount": 24,
+    "cardCount": 2,
+    "backfilledCount": 3,
+    "nextStepCount": 4,
+    "statuses": [
+      "created",
+      "paid",
+      "fulfilled",
+      "expired",
+      "failed",
+      "fulfilled"
+    ],
+    "tones": [
+      "pending",
+      "pending",
+      "success",
+      "muted",
+      "danger",
+      "success"
+    ],
+    "scrollable": {
+      "scrollHeight": 2080,
+      "clientHeight": 564,
+      "scrollTop": 0
+    },
+    "overflowCount": 0,
+    "overflowSamples": []
+  },
+  "longOrder": {
+    "viewportWidth": 360,
+    "documentScrollWidth": 360,
+    "orderCount": 6,
+    "eventCount": 24,
+    "cardCount": 2,
+    "backfilledCount": 3,
+    "nextStepCount": 4,
+    "statuses": [
+      "created",
+      "paid",
+      "fulfilled",
+      "expired",
+      "failed",
+      "fulfilled"
+    ],
+    "tones": [
+      "pending",
+      "pending",
+      "success",
+      "muted",
+      "danger",
+      "success"
+    ],
+    "scrollable": {
+      "scrollHeight": 2080,
+      "clientHeight": 564,
+      "scrollTop": 1497
+    },
+    "overflowCount": 0,
+    "overflowSamples": []
+  },
+  "consoleErrors": []
+}

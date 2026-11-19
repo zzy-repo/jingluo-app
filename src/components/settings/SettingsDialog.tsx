@@ -65,6 +65,7 @@ import {
 } from './settingsDialogState.js'
 import { PaymentRecordsDialog } from './PaymentRecordsDialog.js'
 import { PurchaseRecordsDialog } from './PurchaseRecordsDialog.js'
+import { PaymentTrailDialog } from './PaymentTrailDialog.js'
 import { MOTION_EXIT, usePresence } from '../../utils/usePresence.js'
 import styles from './Settings.module.css'
 
@@ -101,6 +102,10 @@ const SettingsContent = ({ visible }: { visible: boolean }) => {
   const [feedback, setFeedback] = useState({ open: false, integrity: false })
   // 「我的购买」弹层开合（Issue #158）：只在本组件内用，不需要跨模块共享状态
   const [purchasesOpen, setPurchasesOpen] = useState(false)
+  // 「支付记录」时间线弹层（Issue #189）：只有自有渠道（kind === 'ours'）才挂这条入口，
+  // 别的渠道没有自己的订单与卡密，露出来只会点进一个空页（同 #166 的门禁思路）。
+  // 支付记录时间线弹层开合（#189）：与上面两格同一份渠道判定
+  const [trailOpen, setTrailOpen] = useState(false)
   const replacingHistory = useChatStore((state) => state.importingHistory)
   // 自有渠道判定：付款记录 / 我的购买两格（以及它们在下面的弹层）只在这条渠道下存在（#166）
   const oursChannel = useIsOursChannel()
@@ -162,8 +167,8 @@ const SettingsContent = ({ visible }: { visible: boolean }) => {
               <ChatBackgroundField />
               <ImportHistory historyImport={historyImport} disabled={historyBusy} />
               <ExportHistory disabled={historyBusy} />
-              {/* 付款记录（Issue #115）/ 我的购买（Issue #158）：只读历史，刷新不产生新订单。
-                  这两格也只在自有渠道下有意义（#166）：判定与上面 <OursServicesRow /> 是同一份
+              {/* 付款记录（#115）/ 我的购买（#158）/ 支付记录时间线（#189）：只读历史，刷新不产生新订单。
+                  三格都只在自有渠道下有意义（#166）：判定与上面 <OursServicesRow /> 是同一份
                   （apiConfig.useIsOursChannel），第三方 / 自定义地址下整块不渲染，别在这里再写一份。 */}
               {oursChannel ? (
                 <>
@@ -196,6 +201,22 @@ const SettingsContent = ({ visible }: { visible: boolean }) => {
                         onClick={() => setPurchasesOpen(true)}
                       >
                         {t('oursPurchasesEntryAction')}
+                      </Button>
+                    }
+                  />
+                  <SettingCell
+                    label={t('oursTrailTitle')}
+                    description={t('oursTrailEntryDescription')}
+                    status={null}
+                    action={
+                      <Button
+                        variant="outlined"
+                        size="m"
+                        className={styles.cellButton}
+                        data-testid="payment-trail-open"
+                        onClick={() => setTrailOpen(true)}
+                      >
+                        {t('oursTrailEntry')}
                       </Button>
                     }
                   />
@@ -258,6 +279,8 @@ const SettingsContent = ({ visible }: { visible: boolean }) => {
       {oursChannel && purchasesOpen ? (
         <PurchaseRecordsDialog onClose={() => setPurchasesOpen(false)} />
       ) : null}
+      {/* 「支付记录」时间线（#189）：订单 + 卡密全程；入口已按渠道门禁，弹层内部再兜一次 */}
+      {oursChannel && trailOpen ? <PaymentTrailDialog onClose={() => setTrailOpen(false)} /> : null}
       <FeedbackDialog
         open={feedback.open}
         integrity={feedback.integrity}

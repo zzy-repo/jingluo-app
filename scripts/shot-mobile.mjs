@@ -30,6 +30,9 @@ import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { zipSync, strToU8 } from 'fflate'
 import { chromium } from 'playwright'
+// 支付记录时间线的夹具与单测共用一份（tests/fixtures/ours-trail.mjs）：
+// 截图里看到的五状态 + 长链路就是单测断言的那几条，不另造一份假数据。
+import { cardTrailRedeemed, orderTrailResponse, trailPage } from '../tests/fixtures/ours-trail.mjs'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const ROOT = path.resolve(HERE, '..')
@@ -704,6 +707,58 @@ const routeOrders = async (context, makeBody) => {
   })
 }
 
+/**
+ * 拦 `GET /api/trail` / `/api/order/trail` / `/api/card/trail`（#189 截图用）。
+ *
+ * 与 `routeOrders` 同一套坑：查询串要用正则匹配路径、OPTIONS 预检要 204 + 齐 CORS 头，
+ * 否则请求会真的打到线上域名（截出来是「正在读取支付记录…」的假象）。
+ * `/api/trail` 真的按 limit / offset / status 过滤，截到的是「发了一次请求再渲染」的结果。
+ */
+const routeTrail = async (context, def) => {
+  await context.route(/\/api\/(?:trail|order\/trail|card\/trail)(?:\?|$)/u, async (route) => {
+    const request = route.request()
+    const headers = {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Headers': 'authorization,accept,content-type',
+      'Access-Control-Allow-Methods': 'GET,OPTIONS',
+      'Access-Control-Max-Age': '600',
+    }
+    if (request.method() === 'OPTIONS') {
+      await route.fulfill({ status: 204, headers })
+      return
+    }
+    const url = new URL(request.url())
+    let body
+    if (url.pathname === '/api/order/trail') {
+      body = def.order ?? orderTrailResponse
+    } else if (url.pathname === '/api/card/trail') {
+      body = def.card ?? cardTrailRedeemed
+    } else {
+      const page = def.page ?? trailPage
+      const limit = Number(url.searchParams.get('limit') ?? page.limit)
+      const offset = Number(url.searchParams.get('offset') ?? 0)
+      const status = (url.searchParams.get('status') ?? '').trim().toUpperCase()
+      const matched =
+        status === ''
+          ? page.orders
+          : page.orders.filter((item) => String(item.status).toUpperCase() === status)
+      body = {
+        ...page,
+        total: matched.length,
+        limit,
+        offset,
+        orders: matched.slice(offset, offset + limit),
+      }
+    }
+    await route.fulfill({
+      status: def.status ?? 200,
+      contentType: 'application/json',
+      headers,
+      body: JSON.stringify(body),
+    })
+  })
+}
+
 // ---------------------------------------------------------------- UI 动作
 
 const S = {
@@ -719,6 +774,7 @@ const S = {
   optionBold: '粗体',
   optionRelaxed: '宽松',
   paymentRecordsOpen: '[data-testid="payment-records-open"]',
+  paymentTrailOpen: '[data-testid="payment-trail-open"]',
   douyinCopy: '[data-testid="douyin-id-copy"]',
   titleButton: 'button[aria-label*="回到首条消息"]',
 }
@@ -810,6 +866,8 @@ const dialogClip = async (page, minHeight = 200) =>
  *  - `mockOrders` 是否把 `GET /api/orders` 换成空订单响应（只在付款记录场景打开）
  *  - `mockPurchases` 用给定订单回真实的 `GET /api/orders`（带 limit/offset/status 过滤），
  *    这样分页与筛选 tab 截到的是「真的走了一遍请求」的结果，见 #158
+ *  - `trail`      用给定夹具回 `GET /api/trail` / `/api/order/trail` / `/api/card/trail`（#189）
+ *  - `providerKind` 覆盖 localStorage 里的渠道类型（默认 deepseek）；#189 的入口只在 ours 下出现
  *  - `run`        该场景的截图与量数步骤
  */
 export const PAGES = {
@@ -982,6 +1040,108 @@ export const PAGES = {
       await shot('03-payment-records-closeup', {
         clip: { x: dialog.box.x, y: dialog.box.y, width: dialog.box.width, height: dialog.box.height },
       })
+    },
+  },
+
+  'payment-trail': {
+    dir: 'docs/ui/189-payment-trail',
+    title: '#189 设置 → 数据管理 → 支付记录：订单与卡密全程时间线（五状态 / 已关闭≠失败 / 长链路滚动）',
+    sessions: () => [makeReadingSession()],
+    mockOrders: false,
+    // 这条入口只在自有渠道出现（#166 的门禁思路），所以把渠道类型切到 ours；
+    // 默认的 deepseek 下它不该出现，这一点由单测 shouldShowPaymentTrail 断言，截图不重复证明。
+    providerKind: 'ours',
+    trail: { page: trailPage },
+    run: async (ctx) => {
+      const { page, shot, record, warn } = ctx
+      // 量数：弹层里真的渲染了多少单、多少事件、滚动容器够不够滚、有没有横向溢出
+      const measure = () =>
+        page.evaluate(() => {
+          const root = document.querySelector('[data-testid="payment-trail"]')
+          const viewportWidth = document.documentElement.clientWidth
+          const overflowing = []
+          if (root !== null) {
+            for (const node of root.querySelectorAll('*')) {
+              const rect = node.getBoundingClientRect()
+              if (rect.width > 0 && rect.right > viewportWidth + 1) {
+                overflowing.push({
+                  tag: node.tagName,
+                  right: Math.round(rect.right),
+                  text: (node.textContent ?? '').slice(0, 20),
+                })
+              }
+            }
+          }
+          // 滚动发生在哪一层由布局决定，不写死选择器：从 trail-root 往上找第一个真溢出的
+          let host = null
+          for (let node = root; node !== null; node = node.parentElement) {
+            if (node.scrollHeight - node.clientHeight > 2) {
+              host = node
+              break
+            }
+          }
+          const statuses = Array.from(root?.querySelectorAll('[data-testid="trail-order"]') ?? []).map(
+            (node) => node.getAttribute('data-status')
+          )
+          const tones = Array.from(root?.querySelectorAll('[data-testid="trail-order"]') ?? []).map(
+            (node) => node.getAttribute('data-tone')
+          )
+          return {
+            viewportWidth,
+            documentScrollWidth: Math.round(document.documentElement.scrollWidth),
+            orderCount: root?.querySelectorAll('[data-testid="trail-order"]').length ?? 0,
+            eventCount: root?.querySelectorAll('[data-testid="trail-event"]').length ?? 0,
+            cardCount: root?.querySelectorAll('[data-testid="trail-card"]').length ?? 0,
+            backfilledCount: root?.querySelectorAll('[data-testid="trail-backfilled"]').length ?? 0,
+            nextStepCount: root?.querySelectorAll('[data-testid="trail-next-step"]').length ?? 0,
+            statuses,
+            tones,
+            scrollable:
+              host === null
+                ? null
+                : {
+                    scrollHeight: Math.round(host.scrollHeight),
+                    clientHeight: Math.round(host.clientHeight),
+                    scrollTop: Math.round(host.scrollTop),
+                  },
+            overflowCount: overflowing.length,
+            overflowSamples: overflowing.slice(0, 5),
+          }
+        })
+
+      await openSettings(page, S.tabData)
+      const entry = page.locator(S.paymentTrailOpen)
+      await entry.waitFor({ state: 'visible', timeout: 10000 })
+      await entry.scrollIntoViewIfNeeded()
+      await page.waitForTimeout(240)
+      await shot('01-settings-data-entry')
+
+      await entry.click()
+      const root = page.locator('[data-testid="payment-trail"]')
+      await root.waitFor({ state: 'visible', timeout: 10000 })
+      await page.waitForTimeout(700)
+      const top = await measure()
+      record('list', top)
+      if (top.orderCount === 0) {
+        throw new Error('支付记录弹层里一单都没有：路由没拦住或渲染报错')
+      }
+      if (!top.statuses.includes('expired') || !top.tones.includes('muted')) {
+        warn(`已关闭的订单没有走弱化色调：statuses=${top.statuses} tones=${top.tones}`)
+      }
+      await shot('02-trail-list')
+
+      // 长链路：最后一单有 9 个事件（含补录），滚到底再截一张，证明长列表在弹层内部滚动
+      const lastOrder = page.locator('[data-testid="trail-order"]').last()
+      await lastOrder.scrollIntoViewIfNeeded()
+      await page.waitForTimeout(420)
+      const bottom = await measure()
+      record('longOrder', bottom)
+      if (bottom.scrollable === null) {
+        warn('弹层里没有可滚动的容器：长列表会撑破视口')
+      } else if (bottom.scrollable.scrollHeight <= bottom.scrollable.clientHeight) {
+        warn(`长列表没溢出：scrollHeight=${bottom.scrollable.scrollHeight} clientHeight=${bottom.scrollable.clientHeight}`)
+      }
+      await shot('03-trail-long-order')
     },
   },
 
@@ -1461,20 +1621,25 @@ export const main = async (argv = process.argv.slice(2), env = process.env) => {
           permissions: ['clipboard-read', 'clipboard-write'],
         })
         await context.addInitScript(
-          ({ apiKey }) => {
+          ({ apiKey, providerKind }) => {
             try {
               localStorage.setItem('chat-demo:api-key', apiKey)
-              localStorage.setItem('chat-demo:provider-kind', 'deepseek')
+              localStorage.setItem('chat-demo:provider-kind', providerKind)
             } catch {
               // 首屏之前 localStorage 不可用就跳过：界面显示空配置，不影响截图
             }
           },
-          { apiKey: FIXTURE_API_KEY }
+          { apiKey: FIXTURE_API_KEY, providerKind: def.providerKind ?? 'deepseek' }
         )
         if (def.mockOrders) {
           // 只拦只读的订单查询，回代码注释里记录的真实响应形状（orders 为空）：
           // 截到的是「真的没有订单」的空状态，不是伪造的订单列表
           await routeOrders(context, () => ({ customer_id: 10, total_paid_yuan: 0.0, orders: [] }))
+        }
+
+        if (def.trail) {
+          // #189：三个只读接口都拦，回的是 tests/fixtures/ours-trail.mjs 里那份真契约数据
+          await routeTrail(context, def.trail)
         }
 
         if (def.mockPurchases) {
