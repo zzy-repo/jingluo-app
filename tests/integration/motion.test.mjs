@@ -71,8 +71,9 @@ const EXTRA_ANIMATED_PROPS = new Map([
  * （当年 #41 的 `CopyButton.tsx` / `ChatInput.module.css` 就是这么红的，建议的修法就是「纳入白名单」）；
  * 早期 L1 没接进 CI（#394 才接），所以 #328 那种改消息流的 PR 当时反而不会被挡住。
  *
- * 现在的口径：**消息流目录里只允许「白名单里点名的纯样式文件」改动，且改动里不许出现动效属性**
- * （transition / animation / transform / @keyframes）。逻辑、结构、动效一律仍然零容忍。
+ * 现在的口径：**消息流目录里只允许「白名单里点名的文件」改动，且改动里不许出现动效属性**
+ * （transition / animation / transform / @keyframes）。逻辑与动效一律仍然零容忍；
+ * 结构改动只有「纯 CSS 做不到」时才登记（目前只有 #347 / #353 的折叠区那一处）。
  *
  * src/components/messages/AssistantMessage.module.css
  *   #346：错误提示条里「改 Key / 去充值 / 复制诊断信息」的命中区从 22px 补到 44×44
@@ -83,7 +84,11 @@ const EXTRA_ANIMATED_PROPS = new Map([
 const MESSAGE_FLOW_ALLOWLIST = new Map([
   [
     'src/components/messages/AssistantMessage.module.css',
-    '#346 错误提示条动作按钮命中区 22px → 44×44，纯样式（min-height/min-width/inline-flex/touch-action），无动效改动',
+    '#346 错误提示条动作按钮命中区 22px → 44×44，纯样式（min-height/min-width/inline-flex/touch-action），无动效改动；#347 / #353 折叠区「查看上游原文」的排版同样只有 margin / border / max-height，无动效',
+  ],
+  [
+    'src/components/messages/AssistantMessage.tsx',
+    '#347 / #353 错误提示条需要多一个折叠区（<details>）与「打开设置」入口：这是**结构**改动，纯 CSS 做不到，改动里没有任何 transition / animation / transform（下面逐条扫 diff 确认），也不参与消息流的动效',
   ],
 ])
 
