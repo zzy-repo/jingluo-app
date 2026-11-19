@@ -20,35 +20,12 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
-import { fixtureUrl, installTsResolve, setupDom } from '../helpers/dom-env.mjs'
+import { installSessionMatrixEnv, setupDom } from '../helpers/dom-env.mjs'
 
-import { chatBaseUrl, legacyHosts } from '../../scripts/lib/endpoints.mjs'
-
-// 装配（`.js→.ts` + 原生桥/诊断/存储替身）走 tests/helpers/dom-env.mjs 的公共入口（#366 第二批）：
-// 这段以前是本文件里手抄的 ~28 行 registerHooks 样板，30 多个 L0 文件各有一份。
-// 存储层替身按**父模块**区分（只有 chat/store.ts 的 `./db.js` 换成内存库），所以走 onResolve。
-installTsResolve({
-  stubs: [
-    [/^@capacitor\/core$/, fixtureUrl('domain03-04/capacitor.mjs')],
-    [/diagnostics\/collector\.js$/, fixtureUrl('domain03-04/collector.mjs')],
-  ],
-  onResolve: (specifier, context) => (
-    specifier === './db.js' && String(context.parentURL ?? '').endsWith('/chat/store.ts')
-      ? fixtureUrl('domain03-04/session-db.mjs')
-      : undefined
-  ),
-})
-
-globalThis.__ENDPOINTS__ ??= Object.freeze({
-  chatBaseUrl,
-  inviteBaseUrl: 'https://invite.test.invalid',
-  feedbackUrl: 'https://feedback.test.invalid',
-  legacyHosts: Object.freeze([...legacyHosts]),
-  allowedHosts: Object.freeze([]),
-})
-globalThis.__API_ORIGIN__ ??= 'https://api.deepseek.com'
-globalThis.__INTERNAL_BUILD__ ??= false
-globalThis.__log = { records: [], events: [], actions: [] }
+// 装配（`.js→.ts` + 原生桥/诊断/存储替身 + 构建期注入值）走公共入口（#408 收尾批）：
+// 这段原先在 N4-A / N4-B 两个文件里逐字相同（28 行），db 替身按**父模块**区分
+// （只有 chat/store.ts 的 `./db.js` 换成内存库），已经收进 installSessionMatrixEnv。
+installSessionMatrixEnv()
 
 // store.ts 在模块级用到 document / window（持久化钩子）与 requestAnimationFrame（流式增量）：
 // 浏览器全局替身也走公共入口（#366 第二批），一个文件一份手抄最容易和别处跑偏。

@@ -17,40 +17,20 @@
 //
 //   node --test tests/unit/domain09-config-migration-invariants.test.mjs
 import assert from 'node:assert/strict'
-import { existsSync } from 'node:fs'
-import { registerHooks } from 'node:module'
-import { fileURLToPath } from 'node:url'
+import { fixtureUrl, installEndpointsGlobals, installTsResolve } from '../helpers/dom-env.mjs'
 import { test } from 'node:test'
 
-import { chatBaseUrl, legacyHosts } from '../../scripts/lib/endpoints.mjs'
-
-const collectorStub = new URL('../fixtures/domain08-09/collector-stub.mjs', import.meta.url).href
-registerHooks({
-  resolve(specifier, context, next) {
-    // 采集层依赖 DOM / IndexedDB：这里只关心「写了哪条诊断动作」
-    if (
-      /(?:^|\/)collector\.js$/.test(specifier) &&
-      context.parentURL?.includes('/src/services/')
-    ) {
-      return { url: collectorStub, shortCircuit: true }
-    }
-    if (specifier.endsWith('.js') && context.parentURL?.includes('/src/')) {
-      const url = new URL(specifier.slice(0, -3) + '.ts', context.parentURL)
-      if (existsSync(fileURLToPath(url))) return next(url.href, context)
-    }
-    return next(specifier, context)
-  },
+// 装配走公共入口（#408 收尾批）：collector 替身 + `.js→.ts` + 构建期注入值。
+// 「只换 src/services/ 下的采集层」这条按父模块的判定原样保留（走 onResolve）。
+installTsResolve({
+  onResolve: (specifier, context) => (
+    /(?:^|\/)collector\.js$/.test(specifier) && context.parentURL?.includes('/src/services/')
+      ? fixtureUrl('domain08-09/collector-stub.mjs')
+      : undefined
+  ),
 })
+installEndpointsGlobals()
 
-globalThis.__ENDPOINTS__ ??= Object.freeze({
-  chatBaseUrl,
-  inviteBaseUrl: 'https://invite.test.invalid',
-  feedbackUrl: 'https://feedback.test.invalid',
-  legacyHosts: Object.freeze([...legacyHosts]),
-  allowedHosts: Object.freeze([]),
-})
-globalThis.__API_ORIGIN__ ??= 'https://api.deepseek.com'
-globalThis.__INTERNAL_BUILD__ ??= false
 Object.defineProperty(globalThis, 'navigator', { value: { language: 'zh-CN' }, configurable: true })
 
 const storage = new Map()

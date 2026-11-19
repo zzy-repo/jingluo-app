@@ -15,57 +15,12 @@
 //
 //   node tests/unit/import-skipped-ui.test.mjs
 import assert from 'node:assert/strict'
-import { registerHooks } from 'node:module'
 import { test } from 'node:test'
+import { importStagingDb, installImportEnv } from '../helpers/import-env.mjs'
 
-// 假 db：IndexedDB 在裸 Node 里不存在，只替换存储边界，importArchive 本身全是真实代码。
-const fakeDB = `data:text/javascript,${encodeURIComponent(`
-export const stagingSessions = []
-export const stagingFiles = new Map()
-export const stagingFileTypes = new Map()
-export const clearStaging = async () => {
-  stagingSessions.length = 0
-  stagingFiles.clear()
-  stagingFileTypes.clear()
-}
-export const addStagingSession = async (session) => {
-  stagingSessions.push(session)
-}
-export const saveStagingFiles = async (files) => {
-  for (const file of files) {
-    stagingFiles.set(file.id, file.blob)
-  }
-}
-export const updateStagingFileTypes = async (types) => {
-  for (const [id, type] of types) {
-    stagingFileTypes.set(id, type)
-  }
-}
-globalThis.__skippedUiDB = { stagingSessions, stagingFiles, stagingFileTypes, clearStaging }
-`)}`
-
-// 真实 errors.ts 用了 TS 参数属性（node 的 strip-only 模式不支持），用仓库既有的等价替身：
-// key / params 原样带出，message 用真实 zh 文案渲染。
-const errorsStub = new URL('../fixtures/import-archive-stubs/errors.mjs', import.meta.url).href
-
-registerHooks({
-  resolve(specifier, context, nextResolve) {
-    if (specifier === './errors.js') {
-      return { url: errorsStub, shortCircuit: true }
-    }
-    if (specifier === '../db.js' && String(context.parentURL ?? '').endsWith('/history/importArchive.ts')) {
-      return { url: fakeDB, shortCircuit: true }
-    }
-    try {
-      return nextResolve(specifier, context)
-    } catch (error) {
-      if (specifier.startsWith('.') && specifier.endsWith('.js')) {
-        return nextResolve(specifier.slice(0, -3) + '.ts', context)
-      }
-      throw error
-    }
-  },
-})
+// 装配走公共入口（#408 收尾批）：`./errors.js` 等价替身 + 只对 importArchive.ts 换掉 `../db.js`
+// + `.js→.ts` 解析，全在 installImportEnv 里；假存储仍由本文件给（各文件的暂存语义不同）。
+installImportEnv({ db: importStagingDb({ expose: '__skippedUiDB' }) })
 
 const { createElement } = await import('react')
 const { renderToStaticMarkup } = await import('react-dom/server')

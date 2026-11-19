@@ -13,20 +13,13 @@
 //   E enterKeyHint 随档位变 + ChatInput 真的接线（不再写死）
 //   F i18n：新键 zh/en 成对；设置面板末尾追加（不重排 #102 的阅读设置）
 import assert from 'node:assert/strict'
-import { existsSync, readFileSync } from 'node:fs'
-import { registerHooks } from 'node:module'
+import { readFileSync } from 'node:fs'
+import { installTsResolve } from '../helpers/dom-env.mjs'
 import { fileURLToPath } from 'node:url'
 import { test } from 'node:test'
 
-registerHooks({
-  resolve(specifier, context, next) {
-    if (specifier.endsWith('.js') && context.parentURL?.includes('/src/')) {
-      const url = new URL(specifier.slice(0, -3) + '.ts', context.parentURL)
-      if (existsSync(fileURLToPath(url))) return next(url.href, context)
-    }
-    return next(specifier, context)
-  },
-})
+// 装配走公共入口（#408 收尾批）：`.js→.ts` 解析由 installTsResolve 统一装，不再手抄 registerHooks。
+installTsResolve()
 
 /** 最小 localStorage：settings.ts 只在读不到时回落默认值 */
 const storage = new Map()

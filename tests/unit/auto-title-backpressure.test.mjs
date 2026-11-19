@@ -15,29 +15,11 @@
 //   [4] 排队中被调用方取消：不打上游、不占坑，标题仍回退到本地截取（UI 不空）
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { registerHooks } from 'node:module'
+import { installChatBridge } from '../helpers/dom-env.mjs'
 
-const stub = (name) => new URL(`../fixtures/chat-stubs/${name}`, import.meta.url).href
-
-registerHooks({
-  resolve(specifier, context, nextResolve) {
-    if (specifier === '@capacitor/core') {
-      return { url: stub('capacitor.mjs'), shortCircuit: true }
-    }
-    if (/diagnostics\/collector\.js$/.test(specifier)) {
-      return { url: stub('collector.mjs'), shortCircuit: true }
-    }
-    try {
-      return nextResolve(specifier, context)
-    } catch (error) {
-      // 源码里的相对引用写的是构建产物名 .js，单测直接跑 .ts 源码：换后缀再试一次
-      if (specifier.endsWith('.js')) {
-        return nextResolve(`${specifier.slice(0, -3)}.ts`, context)
-      }
-      throw error
-    }
-  },
-})
+// 装配走公共入口（#408 收尾批）：原生桥 + 诊断入口的替身由 installChatBridge 一次装好
+// （原先 3 个文件各抄一份 23 行 registerHooks + 本地 stub()）。
+installChatBridge()
 
 // 构建期注入的常量：单测没有 rspack 的 DefinePlugin，先挂到全局再 import。
 // 非空 base url 是 requestTitle 发请求的前置条件（localStorage 在 Node 里不可用，纯 try/catch 兜底）

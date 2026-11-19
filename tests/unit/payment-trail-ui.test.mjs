@@ -11,36 +11,13 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { registerHooks } from 'node:module'
+import { fixtureUrl, installTsResolve } from '../helpers/dom-env.mjs'
 
-// Capacitor 替身 + `.js` → `.ts` 解析（视图模块的类型来自数据层，数据层会 import transport.ts）
-const capacitorStub = `data:text/javascript,${encodeURIComponent(`
-export const Capacitor = { isNativePlatform: () => false }
-export const CapacitorHttp = {
-  request: () => {
-    throw new Error('单测不应该走原生桥')
-  },
-}
-export const registerPlugin = () => ({
-  open: async () => ({}),
-  resolveLocation: async () => ({}),
-})
-`)}`
 
-registerHooks({
-  resolve(specifier, context, nextResolve) {
-    if (specifier === '@capacitor/core') {
-      return { url: capacitorStub, shortCircuit: true }
-    }
-    try {
-      return nextResolve(specifier, context)
-    } catch (error) {
-      if (specifier.startsWith('.') && specifier.endsWith('.js')) {
-        return nextResolve(specifier.slice(0, -3) + '.ts', context)
-      }
-      throw error
-    }
-  },
+// 装配走公共入口（#408 收尾批）：原生桥替身收成 fixtures/domain03-04/ours-web-capacitor.mjs，
+// `.js→.ts` 解析由 installTsResolve 统一处理，不再是本文件手抄的 ~25 行 registerHooks。
+installTsResolve({
+  stubs: { '@capacitor/core': fixtureUrl('domain03-04/ours-web-capacitor.mjs') },
 })
 
 const { parseTrailOrder } = await import('../../src/services/ours/trail.ts')

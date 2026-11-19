@@ -17,8 +17,8 @@
 // **拒绝时不写入任何暂存**（除了索引完整性那几行，它们的清理由 replaceHistory 负责，见 N8）。
 //
 //   node --test tests/unit/domain05-archive-reject-matrix.test.mjs
-import { registerHooks } from 'node:module'
 import { test } from 'node:test'
+import { installImportEnv } from '../helpers/import-env.mjs'
 import { strToU8 } from 'fflate'
 import {
   indexBytes,
@@ -43,30 +43,9 @@ export const clearStaging = async () => { stagingSessions.length = 0 }
 export const reportStorageError = () => () => {}
 globalThis.__archiveDB = { stagingSessions, storedTypes, clearStaging }
 `)}`
-// 真实 errors.ts 用了 TS 参数属性（node 的 strip-only 模式不支持），替身等价实现 + 真实 zh 文案渲染。
-const errorsStub = new URL('../fixtures/import-archive-stubs/errors.mjs', import.meta.url).href
-
-registerHooks({
-  resolve(specifier, context, nextResolve) {
-    if (specifier === './errors.js') {
-      return { url: errorsStub, shortCircuit: true }
-    }
-    if (
-      specifier === '../db.js' &&
-      String(context.parentURL ?? '').endsWith('/history/importArchive.ts')
-    ) {
-      return { url: fakeDB, shortCircuit: true }
-    }
-    try {
-      return nextResolve(specifier, context)
-    } catch (error) {
-      if (specifier.startsWith('.') && specifier.endsWith('.js')) {
-        return nextResolve(`${specifier.slice(0, -3)}.ts`, context)
-      }
-      throw error
-    }
-  },
-})
+// 装配走公共入口（#408 收尾批）：`./errors.js` 等价替身 + 只对 importArchive.ts 换掉 `../db.js`
+// + `.js→.ts` 解析，全在 installImportEnv 里；假存储仍由本文件给（各文件的暂存语义不同）。
+installImportEnv({ db: fakeDB })
 
 const { checkArchiveFormat, importArchive } = await import(
   '../../src/services/chat/history/importArchive.ts'

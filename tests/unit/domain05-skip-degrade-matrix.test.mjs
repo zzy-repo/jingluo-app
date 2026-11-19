@@ -11,8 +11,8 @@
 // 一个期望抛错、一个期望成功。把两者合并的后果是把「导出写坏了」伪装成「导入变严了」。
 //
 //   node --test tests/unit/domain05-skip-degrade-matrix.test.mjs
-import { registerHooks } from 'node:module'
 import { test } from 'node:test'
+import { installImportEnv } from '../helpers/import-env.mjs'
 import {
   imageMessage,
   indexBytes,
@@ -38,29 +38,9 @@ export const updateStagingFileTypes = async (types) => { typeUpdates.push([...ty
 export const clearStaging = async () => { stagingSessions.length = 0; storedFiles.length = 0 }
 globalThis.__skipDB = { stagingSessions, storedFiles, typeUpdates, clearStaging }
 `)}`
-const errorsStub = new URL('../fixtures/import-archive-stubs/errors.mjs', import.meta.url).href
-
-registerHooks({
-  resolve(specifier, context, nextResolve) {
-    if (specifier === './errors.js') {
-      return { url: errorsStub, shortCircuit: true }
-    }
-    if (
-      specifier === '../db.js' &&
-      String(context.parentURL ?? '').endsWith('/history/importArchive.ts')
-    ) {
-      return { url: fakeDB, shortCircuit: true }
-    }
-    try {
-      return nextResolve(specifier, context)
-    } catch (error) {
-      if (specifier.startsWith('.') && specifier.endsWith('.js')) {
-        return nextResolve(`${specifier.slice(0, -3)}.ts`, context)
-      }
-      throw error
-    }
-  },
-})
+// 装配走公共入口（#408 收尾批）：`./errors.js` 等价替身 + 只对 importArchive.ts 换掉 `../db.js`
+// + `.js→.ts` 解析，全在 installImportEnv 里；假存储仍由本文件给（各文件的暂存语义不同）。
+installImportEnv({ db: fakeDB })
 
 const { importArchive } = await import('../../src/services/chat/history/importArchive.ts')
 const { zh } = await import('../../src/i18n/zh.ts')

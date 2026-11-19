@@ -14,23 +14,14 @@
 //   [5] 兑换：request_id 固定用卡密；202 CREDIT_PENDING 是「处理中」不是失败
 //   [6] 兑换错误码：API_KEY_INVALID / CARD_ALREADY_USED / CARD_NOT_FOUND / VERIFY_UNAVAILABLE / RATE_LIMITED
 //   [7] 隐私：整条链路一条 console 都没有；文案/错误里没有完整 Key 与完整卡密
-import { registerHooks } from 'node:module'
+import { installTsResolve } from '../helpers/dom-env.mjs'
+import { createSelfCheck, fakeTransport, jsonResponse as json } from '../helpers/ours-check.mjs'
 import { readdirSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 
-// 与打包器一致：源码内部用 .js 说明符指向 .ts 文件
-registerHooks({
-  resolve(specifier, context, nextResolve) {
-    try {
-      return nextResolve(specifier, context)
-    } catch (error) {
-      if (specifier.startsWith('.') && specifier.endsWith('.js')) {
-        return nextResolve(specifier.slice(0, -3) + '.ts', context)
-      }
-      throw error
-    }
-  },
-})
+// 装配走公共入口（#408 收尾批）：`.js→.ts` 解析 + 自查断言骨架都不再逐文件手抄。
+// 本文件没有模块替身（只 import 真源码，网络走假 transport 注入），所以 installTsResolve 不带 stubs。
+installTsResolve()
 
 const { zh } = await import('../../src/i18n/zh.ts')
 const { en } = await import('../../src/i18n/en.ts')
@@ -66,38 +57,7 @@ const ORDER_TOKEN = 'Lsx2M8cBadOaJrXElnZBLISmtImUtfp9'
 /** 实测的 /buy 302 Location（2026-11-18，真实收银台地址结构） */
 const REAL_LOCATION = `https://pay.xiaodouap.cn/submit.php?pid=10268375&type=alipay&out_trade_no=${OUT_TRADE_NO}&notify_url=https%3A%2F%2Fapia.ecsafe.cn%2Fnotify&return_url=https%3A%2F%2Fapia.ecsafe.cn%2Freturn%3Fno%3D${OUT_TRADE_NO}%26order_token%3D${ORDER_TOKEN}&name=%E5%85%A5%E9%97%A8%E5%8C%85&money=3.00&sitename=muse2api&sign=da74773b105616c2eeed1821d788ab5b&sign_type=MD5`
 
-const failures = []
-const checks = { n: 0 }
-const ok = (message) => {
-  checks.n += 1
-  console.log(`  ok  ${message}`)
-}
-const bad = (message) => {
-  failures.push(message)
-  console.error(`  ✗   ${message}`)
-}
-const eq = (actual, expected, label) => {
-  const a = JSON.stringify(actual)
-  const b = JSON.stringify(expected)
-  if (a === b) {
-    ok(`${label} = ${a}`)
-  } else {
-    bad(`${label}：期望 ${b}，实际 ${a}`)
-  }
-}
-const truthy = (condition, label) => (condition ? ok(label) : bad(label))
-
-/** 顺序回放的假 transport：每次调用记下来，响应可以是对象，也可以是函数 */
-const fakeTransport = (responses) => {
-  const calls = []
-  const transport = async (request) => {
-    calls.push(request)
-    const next = responses.length > 1 ? responses.shift() : responses[0]
-    return typeof next === 'function' ? next(request) : next
-  }
-  return { transport, calls }
-}
-const json = (status, body) => ({ kind: 'response', status, text: JSON.stringify(body) })
+const { failures, checks, ok, bad, eq, truthy } = createSelfCheck()
 
 // ---------------------------------------------------------------- [1] 套餐
 console.log('\n[1] 套餐：价格与积分取服务端，渲染模板可拼')

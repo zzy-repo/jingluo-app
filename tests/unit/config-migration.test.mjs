@@ -16,40 +16,15 @@
 //
 //   node tests/run-layer.mjs unit --only config-migration
 import assert from 'node:assert/strict'
-import { registerHooks } from 'node:module'
+import { fixtureUrl, installEndpointsGlobals, installTsResolve } from '../helpers/dom-env.mjs'
 import { test } from 'node:test'
 
-import { chatBaseUrl, legacyHosts } from '../../scripts/lib/endpoints.mjs'
-
-const collectorStub = new URL('../fixtures/chat-stubs/collector.mjs', import.meta.url).href
-
-registerHooks({
-  resolve(specifier, context, nextResolve) {
-    // 采集层依赖 DOM / IndexedDB：单测只关心「写了哪条动作」，换成内存替身
-    if (/diagnostics\/collector\.js$/.test(specifier)) {
-      return { url: collectorStub, shortCircuit: true }
-    }
-    try {
-      return nextResolve(specifier, context)
-    } catch (error) {
-      if (specifier.startsWith('.') && specifier.endsWith('.js')) {
-        return nextResolve(specifier.slice(0, -3) + '.ts', context)
-      }
-      throw error
-    }
-  },
+// 装配走公共入口（#408 收尾批）：采集层依赖 DOM / IndexedDB，单测只关心「写了哪条动作」，
+// 所以只把 diagnostics collector 换成内存替身；`.js→.ts` 与构建期注入值都由 helpers 统一处理。
+installTsResolve({
+  stubs: [[/diagnostics\/collector\.js$/, fixtureUrl('chat-stubs/collector.mjs')]],
 })
-
-globalThis.__ENDPOINTS__ ??= Object.freeze({
-  chatBaseUrl,
-  inviteBaseUrl: 'https://invite.test.invalid',
-  feedbackUrl: 'https://feedback.test.invalid',
-  legacyHosts: Object.freeze([...legacyHosts]),
-  allowedHosts: Object.freeze([]),
-})
-globalThis.__API_ORIGIN__ ??= 'https://api.deepseek.com'
-globalThis.__INTERNAL_BUILD__ ??= false
-globalThis.__log = { records: [], events: [], actions: [] }
+installEndpointsGlobals()
 
 const store = new Map()
 globalThis.localStorage = {

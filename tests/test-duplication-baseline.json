@@ -1,88 +1,9 @@
 {
   "version": 1,
   "note": "R1 逐字重复的存量豁免清单（scripts/check-test-duplication.mjs）。规则**只减不增**：新组不许进基线，抽掉一组就删一条。键 = 组内文件组合。",
-  "updatedAt": "2026-11-19",
+  "updatedAt": "2026-11-20",
   "window": 20,
   "groups": [
-    {
-      "files": [
-        "tests/unit/invite-261-fp-already-claimed.test.mjs",
-        "tests/unit/invite-device-fingerprint.test.mjs",
-        "tests/unit/ours-invite.test.mjs"
-      ],
-      "lines": 30,
-      "layers": [
-        "unit"
-      ],
-      "reason": "ours 邀请/API 链路的自查断言骨架（failures / checks / ok / bad / eq / truthy + fakeTransport / json / errorBody）。这几个文件不用 node:test，靠自己 console 计数 + 末尾 process.exit 收摊，抽成 helper 会连收摊方式一起改；属 #362 自查骨架收编批次。抽掉后删本条。",
-      "issue": "#408"
-    },
-    {
-      "files": [
-        "tests/unit/archive-fixture-roundtrip.test.mjs",
-        "tests/unit/import-archive-unclassified.test.mjs",
-        "tests/unit/import-hardening.test.mjs",
-        "tests/unit/import-skipped-ui.test.mjs"
-      ],
-      "lines": 22,
-      "layers": [
-        "unit"
-      ],
-      "reason": "导入域夹具的 errors.ts 等价替身块（真实 errors.ts 用了 TS 参数属性，node strip-only 跑不了，所以给等价替身）。同一段在 archive-fixture-roundtrip / import-archive-unclassified / import-hardening / import-skipped-ui 四个文件里逐字相同；下一步抽 tests/helpers/import-env.mjs，抽掉后删本条。",
-      "issue": "#408"
-    },
-    {
-      "files": [
-        "tests/unit/invite-261-fp-already-claimed.test.mjs",
-        "tests/unit/invite-device-fingerprint.test.mjs",
-        "tests/unit/ours-api.test.mjs",
-        "tests/unit/ours-invite.test.mjs"
-      ],
-      "lines": 20,
-      "layers": [
-        "unit"
-      ],
-      "reason": "ours 邀请 / API / invite-261 四个文件共用同一份自查断言骨架（failures + checks + ok/bad/eq/truthy）；它们不用 node:test，抽 helper 要连收摊方式一起改。抽掉后删本条。",
-      "issue": "#408"
-    },
-    {
-      "files": [
-        "tests/unit/ours-inapp-buy.test.mjs",
-        "tests/unit/pay-link.test.mjs"
-      ],
-      "lines": 37,
-      "layers": [
-        "unit"
-      ],
-      "reason": "isNativePlatform=false 的 capacitor 替身 + 内嵌浏览器降级分支（__cap.browser.rejectOpen）：pay-link 与 ours-inapp-buy 各断言一种降级终态，抽 helper 要连 __cap 注入点一起搬。抽掉后删本条。",
-      "issue": "#408"
-    },
-    {
-      "files": [
-        "tests/unit/auto-title-backpressure.test.mjs",
-        "tests/unit/auto-title-stream.test.mjs",
-        "tests/unit/chat-stream-interrupt.test.mjs"
-      ],
-      "lines": 23,
-      "layers": [
-        "unit"
-      ],
-      "reason": "auto-title / chat-stream 家族的公共前置（registerHooks + 假时钟 + 事件流桩），三条用例各自保留自己的断言。抽掉后删本条。",
-      "issue": "#408"
-    },
-    {
-      "files": [
-        "tests/unit/ours-purchases.test.mjs",
-        "tests/unit/ours-trail.test.mjs",
-        "tests/unit/payment-trail-ui.test.mjs"
-      ],
-      "lines": 20,
-      "layers": [
-        "unit"
-      ],
-      "reason": "支付/时间线用例的 capacitor 替身（CapacitorHttp），ours-purchases / ours-trail / payment-trail-ui 三份逐字相同。抽掉后删本条。",
-      "issue": "#408"
-    },
     {
       "files": [
         "tests/unit/intl-displaynames-fallback.test.mjs",
@@ -92,31 +13,7 @@
       "layers": [
         "unit"
       ],
-      "reason": "启动守卫（legacy-boot-guard / intl-displaynames-fallback）共用的 DOM 宿主替身（box / listeners / remove 列表）。两条用例断言不同，宿主相同。抽掉后删本条。",
-      "issue": "#408"
-    },
-    {
-      "files": [
-        "tests/unit/domain04-session-crud-matrix.test.mjs",
-        "tests/unit/domain04-session-load-matrix.test.mjs"
-      ],
-      "lines": 28,
-      "layers": [
-        "unit"
-      ],
-      "reason": "会话矩阵 N4-A / N4-B 的 store 装配（假 db + 假时钟 + setupDom）逐字相同：#408 已把 chat 一族收进 installChatEnv，这两条还留着自建装配，留给下一批。抽掉后删本条。",
-      "issue": "#408"
-    },
-    {
-      "files": [
-        "tests/unit/ours-purchases.test.mjs",
-        "tests/unit/ours-trail.test.mjs"
-      ],
-      "lines": 27,
-      "layers": [
-        "unit"
-      ],
-      "reason": "ours-purchases 与 ours-trail 的 capacitor 替身主体（CapacitorHttp.request 分支）逐字相同。抽掉后删本条。",
+      "reason": "启动守卫的 vm 宿主工厂（box / listeners / clock / intervals + FakeDate + vm.createContext）在两个文件里逐字相同，但宿主本体并不完全一致：legacy-boot-guard 那份多一个 `pendingTimers` getter 与两段注释，两文件传给宿主的**能力集**也不同（remove 列表 / locale / userAgent / storedLocale）。抽成工厂要连「造宿主」与「按用例注入哪些能力」一起拆开，属启动守卫批次。抽掉后删本条。",
       "issue": "#408"
     },
     {
@@ -128,55 +25,7 @@
       "layers": [
         "integration"
       ],
-      "reason": "集成层 url-import（native / stages）的 page + consoleError 收集前置。抽掉后删本条。",
-      "issue": "#408"
-    },
-    {
-      "files": [
-        "tests/unit/compat-env-fields.test.mjs",
-        "tests/unit/compat-guard-diagnostics.test.mjs"
-      ],
-      "lines": 23,
-      "layers": [
-        "unit"
-      ],
-      "reason": "compat 守卫（env-fields / guard-diagnostics）的属性枚举骨架。抽掉后删本条。",
-      "issue": "#408"
-    },
-    {
-      "files": [
-        "tests/unit/config-migration.test.mjs",
-        "tests/unit/domain03-provider-probe-matrix.test.mjs"
-      ],
-      "lines": 23,
-      "layers": [
-        "unit"
-      ],
-      "reason": "localStorage + __ENDPOINTS__ 全局兜底（config-migration 与 N3-B 探活矩阵共用）。抽掉后删本条。",
-      "issue": "#408"
-    },
-    {
-      "files": [
-        "tests/unit/archive-fixture-roundtrip.test.mjs",
-        "tests/unit/import-skipped-ui.test.mjs"
-      ],
-      "lines": 22,
-      "layers": [
-        "unit"
-      ],
-      "reason": "导入域的假存储（stagingSessions / stagingFiles）在 archive-fixture-roundtrip 与 import-skipped-ui 里逐字相同，与上一条同属待抽的 tests/helpers/import-env.mjs。抽掉后删本条。",
-      "issue": "#408"
-    },
-    {
-      "files": [
-        "tests/unit/domain05-archive-reject-matrix.test.mjs",
-        "tests/unit/domain05-skip-degrade-matrix.test.mjs"
-      ],
-      "lines": 22,
-      "layers": [
-        "unit"
-      ],
-      "reason": "domain05 两个矩阵（archive-reject / skip-degrade）共用 import-archive-stubs 的装配前缀。抽掉后删本条。",
+      "reason": "集成层 `openApp` 的公共尾段（context.newPage → console/pageerror 收集 → goto/清 localStorage/reload → 开设置 → 数据管理）。但两个文件的 openApp 前置（initScript 里的 Capacitor mock 计划：data/status/range/chunkDelay/rejectAfter）按用例完全不同，只抽尾段只有 8 行、不到 20 行窗口；抽整个工厂则要先把 mock 计划参数化。另一条硬约束：验证要真 dist + chromium（assertFreshBuild），本轮验收口径只跑 L0。留给集成层批次。抽掉后删本条。",
       "issue": "#408"
     },
     {
@@ -188,79 +37,7 @@
       "layers": [
         "integration"
       ],
-      "reason": "集成层导入导出（domain05-ui-export-import / url-import-web）的页面前置（sessionCount / page.evaluate）。抽掉后删本条。",
-      "issue": "#408"
-    },
-    {
-      "files": [
-        "tests/unit/enter-key-mode.test.mjs",
-        "tests/unit/thinking-display.test.mjs"
-      ],
-      "lines": 21,
-      "layers": [
-        "unit"
-      ],
-      "reason": "输入区与思考显示的 DOM 宿主 + 源码读取桩（enter-key-mode / thinking-display）。抽掉后删本条。",
-      "issue": "#408"
-    },
-    {
-      "files": [
-        "tests/unit/invite-device-fingerprint.test.mjs",
-        "tests/unit/ours-invite.test.mjs"
-      ],
-      "lines": 21,
-      "layers": [
-        "unit"
-      ],
-      "reason": "invite-device-fingerprint 与 ours-invite 共用的自查断言骨架尾段（fixture 数据 + failures 初始化），理由同上：非 node:test 的收摊方式还没统一。抽掉后删本条。",
-      "issue": "#408"
-    },
-    {
-      "files": [
-        "tests/unit/auto-title-backpressure.test.mjs",
-        "tests/unit/chat-stream-interrupt.test.mjs"
-      ],
-      "lines": 20,
-      "layers": [
-        "unit"
-      ],
-      "reason": "auto-title-backpressure 与 chat-stream-interrupt 的 registerHooks 前缀逐字相同（假时钟 + 事件流桩的公共部分）。抽掉后删本条。",
-      "issue": "#408"
-    },
-    {
-      "files": [
-        "tests/unit/domain09-config-migration-invariants.test.mjs",
-        "tests/unit/domain09-settings-persistence.test.mjs"
-      ],
-      "lines": 20,
-      "layers": [
-        "unit"
-      ],
-      "reason": "domain09 两个矩阵（config-migration-invariants / settings-persistence）的 collector 桩，含「按父模块匹配」的判定。抽掉后删本条。",
-      "issue": "#408"
-    },
-    {
-      "files": [
-        "tests/unit/import-budget-vs-stall.test.mjs",
-        "tests/unit/url-import-content-range.test.mjs"
-      ],
-      "lines": 20,
-      "layers": [
-        "unit"
-      ],
-      "reason": "urlImport 家族的本地工具函数（zipBytes / rangeOf / resetEnv / records）：两条用例同源，抽 helper 要连用例里的引用一起改。抽掉后删本条。",
-      "issue": "#408"
-    },
-    {
-      "files": [
-        "tests/unit/import-refuse-before-download.test.mjs",
-        "tests/unit/import-size-limit.test.mjs"
-      ],
-      "lines": 20,
-      "layers": [
-        "unit"
-      ],
-      "reason": "手抄的 asTypescript：import-refuse-before-download / import-size-limit 还没迁 installTsResolve（#408 迁了同族 4 个文件）。抽掉后删本条。",
+      "reason": "集成层导入导出的页面前置：`sessionCount`（读 IndexedDB 会话条数）+ `run()` 开头（chromium.launch → newContext → newPage → goto/清库/reload）。`sessionCount` 与 helpers/golden.mjs 里那份逐字相同，但 golden.mjs 是黄金回归的 Playwright 助手（依赖 runtime/env），直接 import 进集成层不合适；正确做法是先抽中立 helper 再让 golden.mjs re-export —— 这属于「集成层前置统一」批次，且验证同样要真 dist + chromium。本轮不硬迁。抽掉后删本条。",
       "issue": "#408"
     }
   ]

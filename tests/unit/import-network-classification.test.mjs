@@ -13,6 +13,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { fixtureUrl, installTsResolve, loadTsModule, moduleUrl } from '../helpers/dom-env.mjs'
+import { zipBytes } from '../helpers/url-import-fixtures.mjs'
 
 // 装配（`.js→.ts` + 原生桥替身）走 tests/helpers/dom-env.mjs 的公共入口（#366）：
 // 这段以前是本文件里手抄的 45 行样板，90 个 L0 文件各有一份。
@@ -38,15 +39,6 @@ const URL_TRANSIENT = 'https://obs.example.test/net-transient.zip'
 const URL_TIMEOUT = 'https://obs.example.test/net-timeout.zip'
 
 /** 合法 ZIP 头（urlImport 会校验 PK\\x03\\x04），其余字节填充，保证长度真实。 */
-const zipBytes = (size) => {
-  const bytes = new Uint8Array(size)
-  bytes.set([0x50, 0x4b, 3, 4], 0)
-  for (let index = 4; index < size; index += 1) {
-    bytes[index] = index % 251
-  }
-  return bytes
-}
-
 const resetEnv = () => {
   globalThis.__log = { records: [], events: [], actions: [] }
   globalThis.__imported = []

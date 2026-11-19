@@ -27,6 +27,8 @@ import { existsSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
+import { chatBaseUrl, legacyHosts } from '../../scripts/lib/endpoints.mjs'
+
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 /** 仓库根（tests/helpers/ → ../..） */
 export const ROOT = path.resolve(HERE, '../..')
@@ -149,6 +151,68 @@ export const setupDom = ({ visibilityState = 'visible' } = {}) => {
 }
 
 // ---------------------------------------------------------------------------
+// 构建期注入值 + 端点全局 —— Issue #408 收尾批
+//
+// 为什么补这一段：`globalThis.__ENDPOINTS__ ??= Object.freeze({...})` + `__API_ORIGIN__` +
+// `__INTERNAL_BUILD__` + `__log` 这 8 行，在 6 个 L0 文件里逐字相同（`check:test-duplication`
+// 抓到 3 组），而且**数值必须和 config/endpoints.json 一致** —— 抄错一位就是连错环境。
+//
+// 端点值全部经 scripts/lib/endpoints.mjs（唯一事实来源）取，与 `tests/helpers/injected.mjs`
+// 的 `--import` 预加载同一份；这里再做一次 `??=` 只是为了让文件单独跑（不经 run-layer）也不炸。
+//
+//   installEndpointsGlobals()                    // 默认 api.deepseek.com / 非内部构建
+//   installEndpointsGlobals({ resetLogRecords: false }) // 保留同进程里别的文件留下的 __log
+// ---------------------------------------------------------------------------
+
+/** `__log` 的初始形状：诊断替身往 records 里 push，用例读它做断言 */
+export const resetLog = () => {
+  globalThis.__log = { records: [], events: [], actions: [] }
+}
+
+/**
+ * 挂构建期注入值。`??=` 语义保持原样：同进程（合并批次）里别的文件已经设过就不覆盖 ——
+ * **只有 `__log` 默认清空**，因为那是每个文件自己的记账本。
+ */
+export const installEndpointsGlobals = ({
+  apiOrigin = 'https://api.deepseek.com',
+  internalBuild = false,
+  resetLogRecords = true,
+} = {}) => {
+  globalThis.__ENDPOINTS__ ??= Object.freeze({
+    chatBaseUrl,
+    inviteBaseUrl: 'https://invite.test.invalid',
+    feedbackUrl: 'https://feedback.test.invalid',
+    legacyHosts: Object.freeze([...legacyHosts]),
+    allowedHosts: Object.freeze([]),
+  })
+  globalThis.__API_ORIGIN__ ??= apiOrigin
+  globalThis.__INTERNAL_BUILD__ ??= internalBuild
+  if (resetLogRecords) resetLog()
+}
+
+/**
+ * 会话矩阵（N4-A 增删改 / N4-B 加载三态）的整段装配：原生桥 + 诊断 + **按父模块**换掉
+ * `chat/store.ts` 的 `./db.js` + 构建期注入值。
+ *
+ * 这两条用例的被测对象是真 `chat/store.ts`，装配逐字相同（28 行），差别只在 db 替身的行为，
+ * 所以装配收成一处；`setupDom()` 仍由各文件自己调（加载矩阵还要额外桩 fetch）。
+ */
+export const installSessionMatrixEnv = () => {
+  installTsResolve({
+    stubs: [
+      [/^@capacitor\/core$/, fixtureUrl('domain03-04/capacitor.mjs')],
+      [/diagnostics\/collector\.js$/, fixtureUrl('domain03-04/collector.mjs')],
+    ],
+    onResolve: (specifier, context) => (
+      specifier === './db.js' && String(context.parentURL ?? '').endsWith('/chat/store.ts')
+        ? fixtureUrl('domain03-04/session-db.mjs')
+        : undefined
+    ),
+  })
+  installEndpointsGlobals()
+}
+
+// ---------------------------------------------------------------------------
 // chat 一族（chat-stubs + 真 store）的公共装配 —— Issue #408
 //
 // 为什么补这一段：`installTsResolve` 收掉了 `.js→.ts` 那一层，但「chat 一族的替身表」还是
@@ -197,6 +261,23 @@ export const recordError = (message, fields = {}) => {
   globalThis.__log.records.push({ kind: 'error', level: 'error', message, fields })
 }
 `)
+
+/**
+ * 只要「原生桥 + 诊断入口」，**不换存储**的那一档装配（auto-title / chat-stream 一族）。
+ *
+ * 为什么不直接复用 `installChatEnv`：那些用例根本不 import `chat/store.ts`，换上假 db 属于
+ * 无谓地改变装配面。这一段原先也是 3 个文件各抄一份 23 行 `registerHooks`（#408 收尾批收掉）。
+ *
+ *   import { installChatBridge } from '../helpers/dom-env.mjs'
+ *   installChatBridge()
+ */
+export const installChatBridge = () =>
+  installTsResolve({
+    stubs: [
+      [/^@capacitor\/core$/, chatStub('capacitor.mjs')],
+      [/diagnostics\/collector\.js$/, chatStub('collector.mjs')],
+    ],
+  })
 
 /**
  * chat 一族的装配：原生桥 `@capacitor/core` + 诊断写入口 + **按父模块**把 `chat/store.ts` 的

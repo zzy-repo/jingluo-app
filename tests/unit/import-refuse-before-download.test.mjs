@@ -17,42 +17,19 @@
 // importFailure.ts 分类函数原样运行；不分配任何 200MB 缓冲区，「声称很大」即可复现。
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { existsSync } from 'node:fs'
-import { registerHooks } from 'node:module'
-import { fileURLToPath, pathToFileURL } from 'node:url'
-
-const stub = (name) => new URL(`../fixtures/url-import-stubs/${name}`, import.meta.url).href
+import { fixtureUrl, installTsResolve } from '../helpers/dom-env.mjs'
 
 const STUBS = {
-  '@capacitor/core': 'capacitor.mjs',
-  '../../diagnostics/collector.js': 'collector.mjs',
+  '@capacitor/core': fixtureUrl('url-import-stubs/capacitor.mjs'),
+  '../../diagnostics/collector.js': fixtureUrl('url-import-stubs/collector.mjs'),
   // 唯一与其它层不同的替身：可以在「解析归档」这一步抛出读取异常（模拟 FileReader 的 DOMException）
-  '../backup.js': 'backup-throwable.mjs',
-  './errors.js': 'errors.mjs',
+  '../backup.js': fixtureUrl('url-import-stubs/backup-throwable.mjs'),
+  './errors.js': fixtureUrl('url-import-stubs/errors.mjs'),
 }
 
-/** 源码里的相对导入写的是 `.js`（NodeNext 约定），实际文件是 `.ts`。 */
-const asTypescript = (specifier, parentURL) => {
-  if (!parentURL || !specifier.startsWith('.') || !specifier.endsWith('.js')) {
-    return null
-  }
-  const target = fileURLToPath(new URL(specifier, parentURL)).replace(/\.js$/, '.ts')
-  return existsSync(target) ? pathToFileURL(target).href : null
-}
-
-registerHooks({
-  resolve(specifier, context, nextResolve) {
-    const target = STUBS[specifier]
-    if (target !== undefined) {
-      return { url: stub(target), shortCircuit: true }
-    }
-    const typescript = asTypescript(specifier, context.parentURL)
-    if (typescript !== null) {
-      return { url: typescript, shortCircuit: true }
-    }
-    return nextResolve(specifier, context)
-  },
-})
+// 装配走公共入口（#408 收尾批）：替身表 + `.js→.ts` 解析都交给 installTsResolve
+// （原先手抄 registerHooks + 本地 asTypescript，与同族另外 4 个文件逐字相同）。
+installTsResolve({ stubs: STUBS })
 
 const { importHistoryFromUrl, MAX_ARCHIVE_BYTES } = await import(
   '../../src/services/chat/history/urlImport.ts'

@@ -14,6 +14,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { fixtureUrl, installTsResolve, moduleUrl } from '../helpers/dom-env.mjs'
+import { zipBytes } from '../helpers/url-import-fixtures.mjs'
 
 // 装配走公共入口（#366 第二批 / #408）：`.js→.ts` 解析 + 替身表收成一张表，
 // 不再是本文件手抄的 ~30 行 `registerHooks` + 本地 `asTypescript`（urlImport 一族 4 个文件各有一份）。
@@ -39,15 +40,6 @@ const URL_SKEW_BACKWARD = 'https://obs.example.test/clock-backward.zip'
 const HOUR_MS = 60 * 60 * 1000
 
 /** 合法 ZIP 头（urlImport 会校验 PK\x03\x04），其余字节填充，保证长度真实。 */
-const zipBytes = (size) => {
-  const bytes = new Uint8Array(size)
-  bytes.set([0x50, 0x4b, 3, 4], 0)
-  for (let index = 4; index < size; index += 1) {
-    bytes[index] = index % 251
-  }
-  return bytes
-}
-
 /** 组装一次 CapacitorHttp.get 的 206 响应（按 Range 切块，与真实原生桥一致）。 */
 const rangeResponse = (url, source, from, to) => {
   const end = Math.min(to, source.length - 1)
