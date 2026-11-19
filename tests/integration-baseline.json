@@ -277,13 +277,13 @@
       "reason": "requireDist(DIST_DIR) + verifyAppUrl(standard)；#365 起 runner 注入 dist-standard（此前恒 SKIP(env) 产物种类不对）",
       "evidence": "2026-11-19 实测 PASS 23.3s"
     },
-    "session-list-flow.test.mjs": {
+    "domain04-session-list-flow.test.mjs": {
       "expected": "pass",
       "artifact": "standard",
       "reason": "DIST_DIR_STANDARD / dist-standard + 自起服务",
       "evidence": "2026-11-19 实测 PASS 27.4s"
     },
-    "settings-probe-model.test.mjs": {
+    "domain03-settings-probe-model.test.mjs": {
       "expected": "pass",
       "artifact": "standard",
       "reason": "DIST_DIR_STANDARD / dist-standard + 自起服务",

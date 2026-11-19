@@ -15,8 +15,8 @@
 //   F4-05 删除会话：删当前会话回空态、流式中先中止再删、清理草稿、失败保留会话并上报
 //
 // 跑法：
-//   node tests/run-layer.mjs unit --only session-crud-matrix
-//   node --test tests/unit/session-crud-matrix.test.mjs
+//   node tests/run-layer.mjs unit --only domain04-session-crud-matrix
+//   node --test tests/unit/domain04-session-crud-matrix.test.mjs
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 

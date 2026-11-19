@@ -79,7 +79,7 @@ const UNIT_SOLO = new Set([
   'pay-link.test.mjs',
   // 真计时窗口 / 长会话 / 网络探测：并行+批次里计时最不稳定的几个
   'stream-idle-timeout.test.mjs', 'chat-context-budget-long-session.test.mjs',
-  'provider-probe-matrix.test.mjs', 'check-capabilities.test.mjs', 'capabilities-docs-sync.test.mjs',
+  'domain03-provider-probe-matrix.test.mjs', 'check-capabilities.test.mjs', 'capabilities-docs-sync.test.mjs',
   // 要 runner 注入 APP_URL / DIST_DIR / SELF_SERVED
   'quota-exhausted.test.mjs', 'feedback-export.test.mjs', 'legacy-bundle-target.test.mjs',
   // 读仓库/产物文件、起真实静态服务
@@ -88,7 +88,7 @@ const UNIT_SOLO = new Set([
 
 /**
  * #366：unit 层的「工作单元耗时权重」。只用来**排序**（长任务先起跑），不影响覆盖率：
- * 车道少时把 16s 的 provider-probe-matrix 排到最后一棒，等于让三条车道空等它。
+ * 车道少时把 16s 的 domain03-provider-probe-matrix 排到最后一棒，等于让三条车道空等它。
  * 权重来自实测（`recordedAt`），缺失也有默认值兜底 —— 文件新加没登记时照样能跑，只是均衡度差一点。
  */
 const UNIT_WEIGHTS_FILE = path.join(TESTS_DIR, 'unit-merge-weights.json')

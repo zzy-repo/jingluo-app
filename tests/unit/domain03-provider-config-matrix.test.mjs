@@ -13,8 +13,8 @@
 //   F3-13 渠道间凭证隔离：地址与模型按渠道分开存、API Key 共用一把、切换不串台
 //
 // 跑法：
-//   node tests/run-layer.mjs unit --only provider-config-matrix
-//   node --test tests/unit/provider-config-matrix.test.mjs
+//   node tests/run-layer.mjs unit --only domain03-provider-config-matrix
+//   node --test tests/unit/domain03-provider-config-matrix.test.mjs
 import assert from 'node:assert/strict'
 import { registerHooks } from 'node:module'
 import { test } from 'node:test'

@@ -121,10 +121,10 @@
     "request-body.test.mjs": {
       "ms": 5815
     },
-    "session-list-flow.test.mjs": {
+    "domain04-session-list-flow.test.mjs": {
       "ms": 25427
     },
-    "settings-probe-model.test.mjs": {
+    "domain03-settings-probe-model.test.mjs": {
       "ms": 83110
     },
     "update-stuck-button-373.test.mjs": {

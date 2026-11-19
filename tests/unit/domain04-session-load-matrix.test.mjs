@@ -15,8 +15,8 @@
 //   F4-09 损坏会话隔离：单条会话损坏只标该会话（sessionLoadErrors），列表与其他会话照常
 //
 // 跑法：
-//   node tests/run-layer.mjs unit --only session-load-matrix
-//   node --test tests/unit/session-load-matrix.test.mjs
+//   node tests/run-layer.mjs unit --only domain04-session-load-matrix
+//   node --test tests/unit/domain04-session-load-matrix.test.mjs
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 

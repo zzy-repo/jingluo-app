@@ -13,8 +13,8 @@
 //   F3-07 模型列表拉取 —— data / models / model_list / result / 顶层数组五种形状 + 空列表
 //
 // 跑法：
-//   node tests/run-layer.mjs unit --only provider-probe-matrix
-//   node --test tests/unit/provider-probe-matrix.test.mjs
+//   node tests/run-layer.mjs unit --only domain03-provider-probe-matrix
+//   node --test tests/unit/domain03-provider-probe-matrix.test.mjs
 import assert from 'node:assert/strict'
 import { registerHooks } from 'node:module'
 import { test } from 'node:test'

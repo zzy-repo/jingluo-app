@@ -143,18 +143,18 @@
           "tests/integration/upstream-html.test.mjs"
         ],
         "src/components/settings/ApiConfigFields.tsx": [
-          "tests/unit/provider-config-matrix.test.mjs",
-          "tests/integration/settings-probe-model.test.mjs",
+          "tests/unit/domain03-provider-config-matrix.test.mjs",
+          "tests/integration/domain03-settings-probe-model.test.mjs",
           "tests/integration/provider-channels.test.mjs"
         ],
         "src/components/settings/useApiKeyForm.ts": [
-          "tests/unit/provider-config-matrix.test.mjs",
+          "tests/unit/domain03-provider-config-matrix.test.mjs",
           "tests/integration/provider-channels.test.mjs",
           "tests/integration/probe-nokey.test.mjs"
         ]
       },
       "tests": {
-        "unit": ["tests/unit/thinking-adapters.test.mjs", "tests/unit/attachment-endpoint-303.test.mjs", "tests/unit/provider-probe-matrix.test.mjs"],
+        "unit": ["tests/unit/thinking-adapters.test.mjs", "tests/unit/attachment-endpoint-303.test.mjs", "tests/unit/domain03-provider-probe-matrix.test.mjs"],
         "integration": ["tests/integration/paths.test.mjs", "tests/integration/caps.test.mjs"],
         "regression": ["tests/regression/issue-39-legacy-runtime-api-gate.test.mjs"]
       }
@@ -168,13 +168,13 @@
           "tests/unit/session-*.test.mjs",
           "tests/unit/import-partial-skip.test.mjs",
           "tests/unit/quota-exhausted.test.mjs",
-          "tests/integration/session-list-flow.test.mjs",
+          "tests/integration/domain04-session-list-flow.test.mjs",
           "tests/integration/domain01-session-load.test.mjs",
           "tests/golden/g01-*.test.mjs"
         ],
-        "src/services/chat/db.ts": ["tests/unit/session-*.test.mjs", "tests/integration/session-list-flow.test.mjs"],
-        "src/services/chat/view.ts": ["tests/unit/session-load-matrix.test.mjs", "tests/integration/session-list-flow.test.mjs"],
-        "src/services/chat/sessionGroups.ts": ["tests/unit/session-*.test.mjs", "tests/integration/session-list-flow.test.mjs"],
+        "src/services/chat/db.ts": ["tests/unit/session-*.test.mjs", "tests/integration/domain04-session-list-flow.test.mjs"],
+        "src/services/chat/view.ts": ["tests/unit/domain04-session-load-matrix.test.mjs", "tests/integration/domain04-session-list-flow.test.mjs"],
+        "src/services/chat/sessionGroups.ts": ["tests/unit/session-*.test.mjs", "tests/integration/domain04-session-list-flow.test.mjs"],
         "src/components/session/**": [
           "tests/unit/mobile-header-scroll-top.test.mjs",
           "tests/unit/message-list-virtual.test.mjs",
@@ -182,11 +182,11 @@
           "tests/integration/motion.test.mjs",
           "tests/golden/g01-*.test.mjs"
         ],
-        "src/components/sider/**": ["tests/integration/motion.test.mjs", "tests/integration/session-list-flow.test.mjs", "tests/integration/mode-switch.test.mjs"],
-        "src/components/search/**": ["tests/integration/session-list-flow.test.mjs", "tests/integration/motion.test.mjs"]
+        "src/components/sider/**": ["tests/integration/motion.test.mjs", "tests/integration/domain04-session-list-flow.test.mjs", "tests/integration/mode-switch.test.mjs"],
+        "src/components/search/**": ["tests/integration/domain04-session-list-flow.test.mjs", "tests/integration/motion.test.mjs"]
       },
       "tests": {
-        "unit": ["tests/unit/session-crud-matrix.test.mjs", "tests/unit/import-clock-monotonic.test.mjs"],
+        "unit": ["tests/unit/domain04-session-crud-matrix.test.mjs", "tests/unit/import-clock-monotonic.test.mjs"],
         "integration": ["tests/integration/mode-switch-request.test.mjs", "tests/integration/mode-switch-plain.test.mjs"]
       }
     },
@@ -320,7 +320,7 @@
       "doc": "docs/testing/coverage/domain-08-09.md",
       "paths": {
         "src/services/settings.ts": ["tests/unit/domain09-*.test.mjs", "tests/unit/reading-settings.test.mjs", "tests/integration/domain09-settings-reload.test.mjs"],
-        "src/services/api/apiConfig.ts": ["tests/unit/domain09-*.test.mjs", "tests/unit/config-migration.test.mjs", "tests/unit/provider-config-matrix.test.mjs", "tests/integration/domain09-settings-reload.test.mjs"],
+        "src/services/api/apiConfig.ts": ["tests/unit/domain09-*.test.mjs", "tests/unit/config-migration.test.mjs", "tests/unit/domain03-provider-config-matrix.test.mjs", "tests/integration/domain09-settings-reload.test.mjs"],
         "src/services/api/configMigration.ts": ["tests/unit/domain09-config-migration-invariants.test.mjs", "tests/unit/config-migration.test.mjs", "tests/integration/domain09-settings-reload.test.mjs"],
         "src/i18n/**": ["tests/unit/i18n-missing-key.test.mjs", "tests/unit/format-points-i18n.test.mjs", "tests/regression/issue-94-i18n-parity.test.mjs"],
         "src/components/settings/ChatBackgroundField.tsx": ["tests/integration/domain09-settings-reload.test.mjs", "tests/unit/domain09-settings-persistence.test.mjs"],

@@ -372,7 +372,7 @@
   "provider-caps-lock.test.mjs": {
    "ms": 6
   },
-  "provider-config-matrix.test.mjs": {
+  "domain03-provider-config-matrix.test.mjs": {
    "ms": 15
   },
   "provider-deepseek-model.test.mjs": {
@@ -381,7 +381,7 @@
   "provider-ours.test.mjs": {
    "ms": 5
   },
-  "provider-probe-matrix.test.mjs": {
+  "domain03-provider-probe-matrix.test.mjs": {
    "ms": 15662
   },
   "purchases-ui.test.mjs": {
@@ -408,10 +408,10 @@
   "scrollbar-gutter-fallback.test.mjs": {
    "ms": 100
   },
-  "session-crud-matrix.test.mjs": {
+  "domain04-session-crud-matrix.test.mjs": {
    "ms": 288
   },
-  "session-load-matrix.test.mjs": {
+  "domain04-session-load-matrix.test.mjs": {
    "ms": 327
   },
   "session-repair.test.mjs": {

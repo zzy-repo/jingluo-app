@@ -158,12 +158,12 @@ Issue: #362（[TRACK] 功能点收集与分层测试覆盖盘点）
 
 | 拟定用例 | 层级 | 表驱动? | 覆盖功能点ID | 覆盖分支数 | 不可合并原因 |
 | --- | --- | --- | --- | --- | --- |
-| **N3-A** 渠道配置解析与迁移矩阵<br>`tests/unit/provider-config-matrix.test.mjs` | L0 | ✓ 一张表 12 行 | F3-01、F3-08、F3-09、F3-13 | 12 | 无（本身就是 8 个纯函数分支的合并体） |
-| **N3-B** 探测协议矩阵<br>`tests/unit/provider-probe-matrix.test.mjs` | L1 | ✓ 一张表 14 行 | F3-03、F3-05、F3-06、F3-07 | 14 | **下沉不了 L0**：`probeProvider` 有 `Capacitor.isNativePlatform()` 两条传输分支 + `AbortController` 超时，纯 Node 只能覆盖 web 一支；**上浮不了 L2**：DOM 只呈现一句话，读不出六档 `reason` 精确值 |
-| **N3-C** 设置页探测面板 + 模型行闭环<br>`tests/integration/settings-probe-model.test.mjs` | L2 | ✓ 一张表 10 行（4 场景） | F3-05、F3-06、F3-07、F3-08、F3-13 | 10 | **下沉不了 L0**：`describeProbe` 是 `ApiConfigFields.tsx` 内部 `const`（未导出），文案只能从 DOM 读；导出它属于改源码，超出本单边界 |
-| **N4-A** 会话增删改 + 持久化<br>`tests/unit/session-crud-matrix.test.mjs` | L1 | ✓ 一张表 14 行 | F4-01、F4-03、F4-04、F4-05 | 14 | **上浮不了 L2**：L2 无法注入「落盘失败」「流式中删除」这两种状态，而它们正是资损与白屏来源 |
-| **N4-B** 会话加载三态 + 缓存<br>`tests/unit/session-load-matrix.test.mjs` | L1 | ✓ 一张表 9 行 | F4-02、F4-06、F4-09 | 9 | **合不进 N4-A**：需要 never-resolve / 按 id 抛错的假 db 语义，与 CRUD 的同步状态断言不同构，合成一个 test 即等于两条；**上浮不了 L2**：超时与并发合并要在 promise 边界控制时序 |
-| **N4-C** 会话列表闭环 + 降级<br>`tests/integration/session-list-flow.test.mjs` | L2 | ✓ 一张表 11 行（2 场景） | F4-01、F4-02、F4-03、F4-04、F4-05、F4-07、F4-09 | 11 | **合不进 N4-A/B**：菜单、弹窗、刷新后持久化只能在真 DOM + 真 IndexedDB 验证；**不再拆细**：一次启动跑完闭环比 7 条小用例省 6 次浏览器启动 |
+| **N3-A** 渠道配置解析与迁移矩阵<br>`tests/unit/domain03-provider-config-matrix.test.mjs` | L0 | ✓ 一张表 12 行 | F3-01、F3-08、F3-09、F3-13 | 12 | 无（本身就是 8 个纯函数分支的合并体） |
+| **N3-B** 探测协议矩阵<br>`tests/unit/domain03-provider-probe-matrix.test.mjs` | L1 | ✓ 一张表 14 行 | F3-03、F3-05、F3-06、F3-07 | 14 | **下沉不了 L0**：`probeProvider` 有 `Capacitor.isNativePlatform()` 两条传输分支 + `AbortController` 超时，纯 Node 只能覆盖 web 一支；**上浮不了 L2**：DOM 只呈现一句话，读不出六档 `reason` 精确值 |
+| **N3-C** 设置页探测面板 + 模型行闭环<br>`tests/integration/domain03-settings-probe-model.test.mjs` | L2 | ✓ 一张表 10 行（4 场景） | F3-05、F3-06、F3-07、F3-08、F3-13 | 10 | **下沉不了 L0**：`describeProbe` 是 `ApiConfigFields.tsx` 内部 `const`（未导出），文案只能从 DOM 读；导出它属于改源码，超出本单边界 |
+| **N4-A** 会话增删改 + 持久化<br>`tests/unit/domain04-session-crud-matrix.test.mjs` | L1 | ✓ 一张表 14 行 | F4-01、F4-03、F4-04、F4-05 | 14 | **上浮不了 L2**：L2 无法注入「落盘失败」「流式中删除」这两种状态，而它们正是资损与白屏来源 |
+| **N4-B** 会话加载三态 + 缓存<br>`tests/unit/domain04-session-load-matrix.test.mjs` | L1 | ✓ 一张表 9 行 | F4-02、F4-06、F4-09 | 9 | **合不进 N4-A**：需要 never-resolve / 按 id 抛错的假 db 语义，与 CRUD 的同步状态断言不同构，合成一个 test 即等于两条；**上浮不了 L2**：超时与并发合并要在 promise 边界控制时序 |
+| **N4-C** 会话列表闭环 + 降级<br>`tests/integration/domain04-session-list-flow.test.mjs` | L2 | ✓ 一张表 11 行（2 场景） | F4-01、F4-02、F4-03、F4-04、F4-05、F4-07、F4-09 | 11 | **合不进 N4-A/B**：菜单、弹窗、刷新后持久化只能在真 DOM + 真 IndexedDB 验证；**不再拆细**：一次启动跑完闭环比 7 条小用例省 6 次浏览器启动 |
 
 **合计：6 条用例 / 70 个覆盖分支 / 22 个功能点全覆盖。** 分支密度 ≈ 12 条/用例，远高于现有仓内「1 文件 1 场景」的惯例（`caps` 3 条断言、`probe-nokey` 2 条断言）。
 

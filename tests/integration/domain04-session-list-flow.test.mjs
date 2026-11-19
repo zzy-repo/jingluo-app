@@ -6,7 +6,7 @@
 // 也验证不了菜单 / 确认弹窗 / 移动端双击这些只在真 DOM 里存在的行为。
 //
 //   cd <repo> && DIST_OUT=dist-standard NODE_ENV=production npx rspack build -c rspack.config.ts
-//   node tests/integration/session-list-flow.test.mjs
+//   node tests/integration/domain04-session-list-flow.test.mjs
 //
 // 覆盖功能点：
 //   F4-01 新建会话：点「开启新对话」回空态、旧会话仍在列表
@@ -470,8 +470,8 @@ try {
 }
 
 if (failures.length > 0) {
-  console.error('\nFAIL tests/integration/session-list-flow.test.mjs')
+  console.error('\nFAIL tests/integration/domain04-session-list-flow.test.mjs')
   for (const failure of failures) console.error(`  ✗ ${failure}`)
   process.exit(1)
 }
-console.log('\nPASS tests/integration/session-list-flow.test.mjs')
+console.log('\nPASS tests/integration/domain04-session-list-flow.test.mjs')

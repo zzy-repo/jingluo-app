@@ -315,12 +315,12 @@
 | `stop-and-regenerate.test.mjs`：流到一半点停止 → 点重新生成；表驱动断言请求次数/内容保留/版本可切回 | L1 | 是（2 组 × 3 行） | F2-03 F2-04 F2-02 | 6 | — | 2 |
 | `reply-error-ui.test.mjs`：`page.route` 一张表回放 401/429/502/上下文超长/断流/空闲超时/额度不足，逐行断言「文案 + 请求次数 + 是否可重试 + 出口动作」 | L1 | 是（7 行） | F2-05 F2-06 F2-07 F2-08 F2-09 | 7 | — | 2 |
 | `wait-and-thinking-ui.test.mjs`：慢响应 + 假时钟，一张表跑「5/30/60s 提示」与「折叠/展开/隐藏」两组状态 | L1 | 是（2 组 × 3 行） | F2-10 F2-11 | 6 | — | 2 |
-| **N3-A** `tests/unit/provider-config-matrix.test.mjs` | L0 | 是（12 行） | F3-01 F3-08 F3-09 F3-13 | 12 | 无（本身就是 8 个纯函数分支的合并体） | 3 |
-| **N3-B** `tests/unit/provider-probe-matrix.test.mjs` | L1 | 是（14 行） | F3-03 F3-05 F3-06 F3-07 | 14 | 下沉不了 L0：`probeProvider` 有 `Capacitor.isNativePlatform()` 双传输分支；上浮不了 L2：DOM 只呈现一句话，读不出六档 `reason` | 3 |
-| **N3-C** `tests/integration/settings-probe-model.test.mjs` | L1（原文标 L2） | 是（10 行 / 4 场景） | F3-05 F3-06 F3-07 F3-08 F3-13 | 10 | `describeProbe` 是组件内 `const`，下沉 L0 需先 `export`（= 改源码）；本单边界内唯一合法落点是真 DOM 表驱动 | 3 |
-| **N4-A** `tests/unit/session-crud-matrix.test.mjs` | L1 | 是（14 行） | F4-01 F4-03 F4-04 F4-05 | 14 | 上浮不了 L2：L2 注入不了「落盘失败」「流式中删除」这两种状态，而它们正是资损与白屏来源 | 4 |
-| **N4-B** `tests/unit/session-load-matrix.test.mjs` | L1 | 是（9 行） | F4-02 F4-06 F4-09 | 9 | 合不进 N4-A：需 never-resolve / 按 id 抛错的假 db 语义，与 CRUD 的同步状态断言不同构 | 4 |
-| **N4-C** `tests/integration/session-list-flow.test.mjs` | L1（原文标 L2） | 是（11 行 / 2 场景） | F4-01 F4-02 F4-03 F4-04 F4-05 F4-07 F4-09 | 11 | 合不进 N4-A/B：菜单、弹窗、刷新后持久化只能在真 DOM + 真 IndexedDB 验证；不再拆细（一次启动跑完闭环比 7 条小用例省 6 次浏览器启动） | 4 |
+| **N3-A** `tests/unit/domain03-provider-config-matrix.test.mjs` | L0 | 是（12 行） | F3-01 F3-08 F3-09 F3-13 | 12 | 无（本身就是 8 个纯函数分支的合并体） | 3 |
+| **N3-B** `tests/unit/domain03-provider-probe-matrix.test.mjs` | L1 | 是（14 行） | F3-03 F3-05 F3-06 F3-07 | 14 | 下沉不了 L0：`probeProvider` 有 `Capacitor.isNativePlatform()` 双传输分支；上浮不了 L2：DOM 只呈现一句话，读不出六档 `reason` | 3 |
+| **N3-C** `tests/integration/domain03-settings-probe-model.test.mjs` | L1（原文标 L2） | 是（10 行 / 4 场景） | F3-05 F3-06 F3-07 F3-08 F3-13 | 10 | `describeProbe` 是组件内 `const`，下沉 L0 需先 `export`（= 改源码）；本单边界内唯一合法落点是真 DOM 表驱动 | 3 |
+| **N4-A** `tests/unit/domain04-session-crud-matrix.test.mjs` | L1 | 是（14 行） | F4-01 F4-03 F4-04 F4-05 | 14 | 上浮不了 L2：L2 注入不了「落盘失败」「流式中删除」这两种状态，而它们正是资损与白屏来源 | 4 |
+| **N4-B** `tests/unit/domain04-session-load-matrix.test.mjs` | L1 | 是（9 行） | F4-02 F4-06 F4-09 | 9 | 合不进 N4-A：需 never-resolve / 按 id 抛错的假 db 语义，与 CRUD 的同步状态断言不同构 | 4 |
+| **N4-C** `tests/integration/domain04-session-list-flow.test.mjs` | L1（原文标 L2） | 是（11 行 / 2 场景） | F4-01 F4-02 F4-03 F4-04 F4-05 F4-07 F4-09 | 11 | 合不进 N4-A/B：菜单、弹窗、刷新后持久化只能在真 DOM + 真 IndexedDB 验证；不再拆细（一次启动跑完闭环比 7 条小用例省 6 次浏览器启动） | 4 |
 | **N1(5)** 下载状态机表（复用现有 `url-harness` stub） | L0 | 是（11 行） | F-05-02 03 04 05 06 07 22 | 11 | 与 N2 不可合并：N1 观察「下载层状态与请求序列」，N2 观察「分类器输出与文案」，桩不同层 | 5 |
 | **N2(5)** 失败档位矩阵表 | L0 | 是（14 行） | F-05-08（8 类 + 403 三档 + 非原生平台） | 14 | 同上；且纯函数 + 文案断言，不需要网络桩 | 5 |
 | **N3(5)** 归档失败矩阵表 | L0 | 是（16 行） | F-05-13 14 15 16 17 19 18 | 16 | 与 N5 不可合并：N3 断言「整包被拒」，N5 断言「跳过 N 条、其余照常入库」，期望相反 | 5 |

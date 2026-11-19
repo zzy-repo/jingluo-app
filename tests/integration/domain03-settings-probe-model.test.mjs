@@ -8,7 +8,7 @@
 //
 //   自起标准产物服务（DIST_OUT=dist-standard），上游全部用 page.route 打桩：
 //   cd <repo> && DIST_OUT=dist-standard NODE_ENV=production npx rspack build -c rspack.config.ts
-//   node tests/integration/settings-probe-model.test.mjs
+//   node tests/integration/domain03-settings-probe-model.test.mjs
 //
 // 覆盖功能点：
 //   F3-05 API Key 校验与探测：用输入框当前值探测、未填 Key 本地拦下不发请求
@@ -353,7 +353,7 @@ try {
 }
 
 if (failures.length > 0) {
-  console.error(`\nFAIL tests/integration/settings-probe-model.test.mjs`)
+  console.error(`\nFAIL tests/integration/domain03-settings-probe-model.test.mjs`)
   for (const failure of failures) console.error(`  ✗ ${failure}`)
   process.exit(1)
 }
@@ -361,4 +361,4 @@ if (!browser) {
   console.error('SKIP(env) 无法启动浏览器')
   process.exit(SKIP_CODE)
 }
-console.log('\nPASS tests/integration/settings-probe-model.test.mjs')
+console.log('\nPASS tests/integration/domain03-settings-probe-model.test.mjs')

@@ -8,7 +8,7 @@
 // 这些都不报错，只在用户那里表现为「数据不对」。这里一路点到 **IndexedDB 真的空了**，
 // 不只断言界面文案。
 //
-// 与 L1 的分工（tests/integration/session-list-flow.test.mjs 已覆盖 11 行细节表：Escape 取消、
+// 与 L1 的分工（tests/integration/domain04-session-list-flow.test.mjs 已覆盖 11 行细节表：Escape 取消、
 // 纯空格不提交、取消置顶、删非当前会话后刷新不回来、移动端双击回顶…）：这里不重复这些分支，
 // 只回答一个问题：**新用户从空库开始，把一条会话走完「建 → 改 → 钉 → 删」还通不通。**
 //

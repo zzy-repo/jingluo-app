@@ -13,7 +13,7 @@
   "rule": "排除的全是「实测最慢」的单元文件，不是「不重要」的：它们 100% 在 `pnpm test`（CI 每次跑）、`pnpm test:full`、`pnpm test:affected` 里照跑。快速子集只负责「提交前 40 秒内知道自己有没有把主流程弄坏」。",
   "exclude": [
     { "file": "gate-negative-controls.test.mjs", "ms": 16739, "why": "四道门禁各一轮「注入必错输入 → 红且红对地方 → 还原」，内部要真跑 tsc/oxlint/rspack；而且它会临时往仓库里写坏文件，和别的东西并跑会互踩" },
-    { "file": "provider-probe-matrix.test.mjs", "ms": 15381, "why": "渠道 × 探活矩阵，逐组合起桩服务 + 真实请求，覆盖密集但耗时最长" },
+    { "file": "domain03-provider-probe-matrix.test.mjs", "ms": 15381, "why": "渠道 × 探活矩阵，逐组合起桩服务 + 真实请求，覆盖密集但耗时最长" },
     { "file": "test-runtime.test.mjs", "ms": 3236, "why": "测 runner 自己（反复 spawn 子进程验证超时/信号/清理），是本工具链的元测试" },
     { "file": "chat-context-budget-long-session.test.mjs", "ms": 2726, "why": "长会话预算：造大上下文 + 逐轮判定，纯计算量大" },
     { "file": "check-capabilities.test.mjs", "ms": 2181, "why": "扫 android/ + src/ 全仓位盘点" },
