@@ -20,6 +20,7 @@
     "check:legacy": "node scripts/check-bundle-syntax.mjs",
     "check:matrix": "node scripts/compat/matrix-scan.mjs",
     "check:ip": "node scripts/check-hardcoded-ip.mjs",
+    "check:icon": "node scripts/check-icon-edges.mjs",
     "check:apk": "node scripts/check-apk-debuggable.mjs",
     "gen:grapheme": "node scripts/gen-grapheme-tables.mjs",
     "shot:mobile": "node scripts/shot-mobile.mjs",
