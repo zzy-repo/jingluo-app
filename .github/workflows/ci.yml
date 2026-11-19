@@ -79,6 +79,18 @@ jobs:
       - name: 硬编码 IP 检查（check:ip）
         run: pnpm run check:ip
 
+      # 以下两条与 check:ip 同属静态扫描（不依赖 dist、合计 < 2s），放在产物检查之后收尾。
+      # check:manifest：#330 的 releases.json 事故（11 条 buildType:"release" 发到线上）
+      #   证明「校验器判 FAIL」和「真的有人跑」是两件事 —— 这里让校验器本身每次都被跑一遍。
+      - name: 清单 fixture 校验（check:manifest）
+        run: pnpm run check:manifest
+
+      # check:log-coverage：埋点覆盖面门禁（母单 #301 维度 9）。
+      # 不加 --strict：#312 / #314 两条关键链路埋点缺口仍登记在 scripts/log-coverage-baseline.json，
+      # strict 会把它们变 FAIL。子单做完、从 knownGaps 删掉后，这条自然会收紧。
+      - name: 埋点覆盖面（check:log-coverage）
+        run: pnpm run check:log-coverage
+
       - name: 负向对照：含 ?. 的产物必须被拦下（证明门禁不是空跑）
         run: |
           set -euo pipefail
