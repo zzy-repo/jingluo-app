@@ -54,21 +54,26 @@ const IconGemOutline24 = () => (
  * 请求侧由 chat/store.ts 的 createReply 读成 AssistantMessage.thinking，
  * 最终变成请求体的 thinking.type（快速 = disabled，专家 = enabled），见 issue #25。
  * 与输入行「深度思考」开关共用同一个状态（setThinking 等价于切模式），两边永远同步。
+ *
+ * #341 起入口**恒常驻**：四渠道都渲染、都可点，不置灰、不带 `disabled` / `aria-disabled`。
+ * `caps.thinking` 只表示档位是否真生效，落在不可见的 `data-thinking-effective` 上；
+ * 不可用渠道的请求侧由 `REQUEST_GATES.reasoning_param` 拦截，一个思考字段都不发。
  */
 const ModeSwitch = () => {
   const t = useTranslate()
   const mode = useSettings((state) => state.chatMode)
-  // 协议不支持思考（caps.thinking=false，如 OpenAI 兼容）时整个开关不渲染，不留假入口
   const caps = getSpec(useApiConfig((state) => state.kind)).caps
-  if (!caps.thinking) {
-    return null
-  }
   const options: { mode: ChatMode; label: string; icon: ReactNode }[] = [
     { mode: 'fast', label: t('modeFast'), icon: <IconBoltOutline24 /> },
     { mode: 'expert', label: t('modeExpert'), icon: <IconGemOutline24 /> },
   ]
   return (
-    <div className={styles.modeSwitch} role="group" aria-label={t('modeSwitchLabel')}>
+    <div
+      className={styles.modeSwitch}
+      role="group"
+      aria-label={t('modeSwitchLabel')}
+      data-thinking-effective={caps.thinking ? 'true' : 'false'}
+    >
       {options.map((option) => (
         <button
           key={option.mode}

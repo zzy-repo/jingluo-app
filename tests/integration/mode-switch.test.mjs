@@ -156,9 +156,8 @@ const page = await context.newPage()
 await page.goto(APP_URL, { waitUntil: 'domcontentloaded' })
 await page.evaluate(() => window.localStorage.clear())
 await page.evaluate(() => window.localStorage.setItem('chat-demo:api-key', 'sk-mode-accept-0001'))
-// 2026-11-18 起上游走 OpenAI 协议（providers.ts 的 ours.caps.thinking=false），内测包默认渠道「我们的渠道」
-// 按设计**不渲染**模式开关——「不留假入口」。所以布局/切换这组断言固定在**能渲染开关**的渠道上跑
-// （内测包允许切到 DeepSeek 官方渠道）；ours 上「开关必须不渲染」在 [5] 单独断言。
+// #341 起模式开关在四个渠道**恒常驻**（不置灰、不带 disabled），布局断言在 DeepSeek 官方渠道跑；
+// 内测包默认渠道 ours 的入口存在性与「可点、请求不带字段」在 [5] 单独断言。
 await page.evaluate(() => window.localStorage.setItem('chat-demo:provider-kind', 'deepseek'))
 await page.reload({ waitUntil: 'domcontentloaded' })
 await page.getByRole('button', { name: /快速模式|Fast mode/ }).waitFor({ timeout: 15000 })
@@ -266,17 +265,23 @@ expect((await textarea.inputValue()) === '模式切换回归：发一条消息',
 const modeAfterTyping = await readSegment(page, 'fast')
 expect(modeAfterTyping.ariaPressed === 'true', '输入文字不影响模式选中态（仍为快速模式）')
 
-console.log('\n[5] 切回内测默认渠道（ours）：开关必须不渲染（不留假入口）+ 发消息')
+console.log('\n[5] 切回内测默认渠道（ours）：入口恒常驻、可点、请求不带思考字段 + 发消息')
 await page.evaluate(() => window.localStorage.setItem('chat-demo:provider-kind', 'ours'))
 await page.reload({ waitUntil: 'domcontentloaded' })
 await page.getByText(/今天有什么可以帮到你|How can I help you/).first().waitFor({ timeout: 15000 })
 const oursToggle = await page.locator('button[data-mode]').count()
-expect(oursToggle === 0, 'ours 渠道不渲染模式开关（caps.thinking=false，不留假入口）', `count=${oursToggle}`)
-// 内测包默认渠道是我们自己的渠道（ours）：OpenAI 协议，只有基础对话，
-// 深度思考 / 智能搜索入口都不渲染（1.4.0-beta.6 起的 ours 契约，见 providers.ts）。
-// 「正式包里这些入口仍在」由 tests/integration/mode-switch-plain.test.mjs 守着。
-const thinkCount = await page.getByRole('button', { name: /深度思考|DeepThink|Thinking/ }).count()
-expect(thinkCount === 0, 'ours 渠道不渲染深度思考入口（该协议不提供）', `count=${thinkCount}`)
+expect(oursToggle === 2, 'ours 渠道仍渲染快速/专家两个按钮（#341 恒常驻）', `count=${oursToggle}`)
+// 内测包默认渠道是我们自己的渠道（ours）：OpenAI 协议、reasoningParam='none'。
+// #341 起深度思考入口常驻、可点，但请求侧由 REQUEST_GATES 拦下，一个思考字段都不发；
+// 智能搜索仍按 caps.search 不渲染。
+const thinkButton = page.getByRole('button', { name: /深度思考|DeepThink|Thinking/ }).first()
+const thinkCount = await thinkButton.count()
+expect(thinkCount === 1, 'ours 渠道深度思考入口仍渲染（#341 恒常驻）', `count=${thinkCount}`)
+expect(
+  (await thinkButton.getAttribute('data-thinking-effective')) === 'false',
+  'ours 渠道标记为「不真生效」（不可见）',
+  await thinkButton.getAttribute('data-thinking-effective')
+)
 const searchCount = await page.getByRole('button', { name: /智能搜索|Search/ }).count()
 expect(searchCount === 0, 'ours 渠道不渲染智能搜索入口（该协议不提供）', `count=${searchCount}`)
 

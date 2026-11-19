@@ -37,7 +37,7 @@ export type ProviderAuth = 'x-api-key' | 'bearer'
 /**
  * OpenAI 协议下的**显式思考参数**三档（#297）。OpenAI 的 chat/completions 没有通用的思考参数，
  * 各家中转的形状不一样，所以不能写死一个字段：
- * - `none`（默认）：请求侧丢弃，`caps.thinking = false`，开关不渲染 —— 第三方中转完全不受影响
+ * - `none`（默认）：请求侧丢弃，`caps.thinking = false`（入口仍常驻，只改本地档位，#341） —— 第三方中转完全不受影响
  * - `reasoning_effort`：开启思考时请求体加 `reasoning_effort: low|medium|high`（OpenAI / vLLM 系）
  * - `thinking_enabled`：开启思考时请求体加 `thinking: { type: 'enabled' }`（DeepSeek V3.1 系）
  *
@@ -60,7 +60,7 @@ export const REASONING_EFFORTS: readonly ReasoningEffort[] = ['low', 'medium', '
 /** 缺省档位：issue #297 验收口径里的 `reasoning_effort: 'medium'` */
 export const DEFAULT_REASONING_EFFORT: ReasoningEffort = 'medium'
 
-/** 能力开关：决定界面上哪些入口可用，以及请求体里能带哪些扩展字段 */
+/** 能力开关：决定请求体里能带哪些扩展字段；UI 入口恒常驻（#341），不再由能力位决定显隐 */
 export type ProviderCaps = {
   /** 基础文本对话（流式正文、停止、重新生成 / 编辑 / 分支） */
   text: boolean
@@ -167,8 +167,10 @@ export const reasoningEffortOf = (
 
 /**
  * 渠道是否支持深度思考 —— **唯一判定处**。
- * `caps.thinking`（UI 开关渲不渲染）与 `REQUEST_GATES.reasoning_param`（请求侧发不发）
+ * `caps.thinking`（这一档是否真生效）与 `REQUEST_GATES.reasoning_param`（请求侧发不发）
  * 都从它派生，所以不可能出现「开关在但请求不带参数」或反过来（#297 的核心口径）。
+ * #341 起 UI 入口恒常驻：能力位只作为不可见的 `data-thinking-effective` 标记，
+ * 不再参与「渲不渲染」的判断。
  * - Anthropic 协议：协议天生有 `thinking` 块，恒为 true
  * - OpenAI 协议：`reasoningParam !== 'none'` 才为 true（默认 none = 保持现状）
  */
@@ -274,8 +276,9 @@ const RAW_SPECS: Record<ProviderKind, RawProviderSpec> = {
 }
 
 /**
- * 补上派生的 `caps.thinking`：原始 spec 里没有这个字段，
- * 所以「UI 开关出现」与「请求侧真的发思考参数」永远是同一个判定的两个出口（#297）。
+ * 补上派生的 `caps.thinking`：原始 spec 里没有这个字段。
+ * 它表示「请求侧是否真的发思考参数」（#297），同时以不可见的 `data-thinking-effective`
+ * 暴露给 UI（#341）；UI 入口恒常驻，不再由它决定显隐。
  */
 const withDerivedCaps = (raw: RawProviderSpec): ProviderSpec => ({
   ...raw,

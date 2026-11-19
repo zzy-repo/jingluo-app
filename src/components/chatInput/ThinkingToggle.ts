@@ -2,13 +2,16 @@ import { createElement, type ReactNode } from 'react'
 import type { ProviderCaps } from '../../services/api/providers.js'
 
 /**
- * 输入行「深度思考」开关（issue #297 抽出来的一层）。
+ * 输入行「深度思考」开关（issue #297 抽出来的一层，#341 起入口恒常驻）。
  *
- * 渲染条件只看渠道能力 `caps.thinking`——它由 `providers.ts` 的 `thinkingAvailable()`
- * 从协议 + `reasoningParam` 派生，**不是常量**：
- * - `oai` + `reasoningParam: 'none'`：不渲染（保持 1.3.0 现状，第三方中转不受影响）
- * - `oai` + `reasoning_effort` / `thinking_enabled`：渲染
- * - `anthropic` 协议（deepseek / anthropic）：渲染
+ * **入口始终渲染**：四个渠道外观逐像素一致，不置灰、不带 `disabled` / `aria-disabled`。
+ * `caps.thinking` 不再决定「渲不渲染」，只表示这一档是否**真生效**：
+ * - 有效（anthropic 协议，或 oai 的 `reasoning_effort` / `thinking_enabled` 档）：
+ *   点击改本地档位，请求真的带思考字段；
+ * - 无效（openai / ours 默认 `reasoningParam: 'none'`）：点击同样改本地档位、高亮照常翻转，
+ *   请求侧由 `REQUEST_GATES.reasoning_param` 拦下，一个思考字段都不发。
+ *
+ * 渠道差异只落在不可见的 `data-thinking-effective` 上（供验收与单测断言），不参与视觉分支。
  *
  * 为什么是 `.ts` + `createElement` 而不是 `.tsx`：纯 Node 的 `node --test` 认不出 JSX
  * （沿用 `PurchaseRecordsView.ts` / `PaymentTrailView.ts` 的做法）。这样
@@ -19,7 +22,7 @@ import type { ProviderCaps } from '../../services/api/providers.js'
  * 单测才能在不打包的环境里渲染它。
  */
 export type ThinkingToggleProps = {
-  /** 当前渠道的能力表（只用到 thinking） */
+  /** 当前渠道的能力表（只用到 thinking；不参与显隐，只标记是否真生效） */
   caps: ProviderCaps
   /** 当前是否开启：settings.thinking 的镜像，恒等于 chatMode === 'expert' */
   thinking: boolean
@@ -57,15 +60,15 @@ export const ThinkingToggle = ({
   labelClassName,
   wrap,
 }: ThinkingToggleProps): ReactNode => {
-  if (!caps.thinking) {
-    // 不留假入口：能力上不支持就连节点都不渲染，而不是渲染出来再置灰
-    return null
-  }
+  // 入口恒常驻（#341）：能力位只用来标记「这一档是否真生效」，不做早退、不改样式。
+  const effective = caps.thinking
   const button = createElement(
     'button',
     {
       type: 'button',
       [THINKING_TOGGLE_ATTR]: '',
+      // 不可见标记：四渠道唯一差异，供验收/单测断言；视觉与交互完全一致
+      'data-thinking-effective': effective ? 'true' : 'false',
       className: [className, thinking ? selectedClassName : undefined]
         .filter(Boolean)
         .join(' '),

@@ -22,8 +22,8 @@
 //   [8] ours                → 不发任何思考参数（回归：内测渠道不受影响）
 //   [9] 响应侧 oai          → reasoning_content → thinking 块 + thinking_delta，正文进 text 块
 //  [10] 响应侧 ath          → thinking_delta 事件同理
-//  [11] UI：oai + none 开关不存在；oai 两档与 ath 开关存在
-//  [12] UI：点击后 aria-pressed 翻转 + 写入 settings（oai 两档 + ath，三种渠道各一遍）
+//  [11] UI：四渠道开关恒常驻 + data-thinking-effective 标记（#341）
+//  [12] UI：点击后 aria-pressed 翻转 + 写入 settings（四渠道各一遍）
 //  [13] thinkingDisplay=hidden：思考内容不渲染，但请求仍带思考参数
 //  [14] 负向：mock 回 400 unknown_parameter → 可读报错、不卡死、不重试
 //  [15] 负向：只回 content 不回 reasoning_content → 不产生空 thinking 块
@@ -290,7 +290,7 @@ test('[1] oai + reasoningParam=none：请求体不含 reasoning_effort / thinkin
   assert.equal(Object.hasOwn(received, 'reasoning_effort'), false, `不该带 reasoning_effort：${snippet(received)}`)
   assert.equal(Object.hasOwn(received, 'thinking'), false, `不该带 thinking：${snippet(received)}`)
   assert.deepEqual(Object.keys(received).sort(), ['messages', 'model', 'stream', 'stream_options'], `顶层字段不对：${snippet(received)}`)
-  // 能力侧：默认 none 的 oai 渠道 caps.thinking 必须是 false（否则开关会露出来但请求不带参数）
+  // 能力侧：默认 none 的 oai 渠道 caps.thinking 必须是 false（入口常驻，但标记为不生效、请求不带参数）
   assert.equal(providers.getSpec('openai').caps.thinking, false, 'oai 默认档不该声明思考能力')
   assert.equal(providers.requestGates(providers.getSpec('openai')).reasoning_param, false)
 })
@@ -302,7 +302,7 @@ test('[2] oai + reasoning_effort：请求体含 reasoning_effort: "medium"', asy
   assert.equal(received?.reasoning_effort, 'medium', `没带 reasoning_effort: "medium"：${snippet(received)}`)
   assert.equal(Object.hasOwn(received ?? {}, 'thinking'), false, `reasoning_effort 档不该带 thinking：${snippet(received)}`)
   assert.equal(body.thinking.type, 'enabled', '请求侧（适配前）必须是开启态')
-  assert.equal(providers.getSpec('openai').caps.thinking, true, '这一档必须声明思考能力，否则开关不出现')
+  assert.equal(providers.getSpec('openai').caps.thinking, true, '这一档必须声明思考能力，否则 data-thinking-effective 会误报')
 })
 
 test('[3] oai + thinking_enabled：请求体含 thinking: { type: "enabled" }', async () => {
@@ -412,36 +412,31 @@ const renderToggle = (caps, thinking) =>
     createElement(ThinkingToggle, { ...TOGGLE_PROPS, caps, thinking, onToggle: () => {} })
   )
 
-test('[11] UI：oai + none 开关不存在；oai 两档与 ath 开关存在', async () => {
-  // oai + none：节点根本不渲染（不是渲染出来再置灰）
-  const openaiNoneSpec = useChannel('openai')
-  const html = renderToggle(openaiNoneSpec.caps, false)
-  assert.equal(html, '', `oai + none 不该渲染开关，实际：${html}`)
-  assert.equal(openaiNoneSpec.caps.thinking, false)
-
-  // oai + reasoning_effort / thinking_enabled / ath：开关存在且默认未按下
-  for (const [label, kind, patch] of [
-    ['oai + reasoning_effort', 'openai', { reasoningParam: 'reasoning_effort' }],
-    ['oai + thinking_enabled', 'openai', { reasoningParam: 'thinking_enabled' }],
-    ['ath', 'anthropic', undefined],
-  ]) {
-    const spec = useChannel(kind, patch)
+test('[11] UI：四渠道开关恒常驻，data-thinking-effective 只标记是否真生效（#341）', async () => {
+  for (const kind of providers.PROVIDER_KINDS) {
+    const spec = useChannel(kind)
     const markup = renderToggle(spec.caps, false)
-    assert.ok(markup.includes(THINKING_TOGGLE_ATTR), `${label} 必须渲染开关：${markup}`)
-    assert.ok(markup.includes('aria-pressed="false"'), `${label} 开关初始必须是未按下：${markup}`)
-    assert.ok(markup.includes('aria-label="深度思考"'), `${label} 开关缺少无障碍名：${markup}`)
+    // #341：入口必须存在且可见，不置灰、不带 disabled/aria-disabled
+    assert.ok(markup.includes(THINKING_TOGGLE_ATTR), `${kind} 必须渲染深度思考开关：${markup}`)
+    assert.ok(markup.includes('aria-label="深度思考"'), `${kind} 开关缺少无障碍名：${markup}`)
+    assert.ok(!markup.includes('disabled'), `${kind} 开关不许置灰/禁用：${markup}`)
+    assert.ok(!markup.includes('aria-disabled'), `${kind} 开关不许带 aria-disabled：${markup}`)
+    // 唯一渠道差异：不可见标记
+    const expected = spec.caps.thinking ? 'true' : 'false'
+    assert.ok(
+      markup.includes(`data-thinking-effective="${expected}"`),
+      `${kind} 的 data-thinking-effective 应为 ${expected}：${markup}`
+    )
+    assert.ok(markup.includes('aria-pressed="false"'), `${kind} 开关初始必须是未按下：${markup}`)
   }
 })
 
-test('[12] UI：点击后 aria-pressed 翻转，并写入 settings（oai 两档 + ath）', async () => {
-  for (const [label, kind, patch] of [
-    ['oai + reasoning_effort', 'openai', { reasoningParam: 'reasoning_effort' }],
-    ['oai + thinking_enabled', 'openai', { reasoningParam: 'thinking_enabled' }],
-    ['ath', 'anthropic', undefined],
-  ]) {
+test('[12] UI：四渠道点击后 aria-pressed 翻转，并写入 settings（#341）', async () => {
+  for (const kind of providers.PROVIDER_KINDS) {
+    const label = kind
     // 复位成关闭态
     settings.setThinking(false)
-    const spec = useChannel(kind, patch)
+    const spec = useChannel(kind)
     // 与 ChatInput 完全一致的接线：onToggle = () => setThinking(!thinking)
     const props = {
       ...TOGGLE_PROPS,
@@ -563,7 +558,7 @@ test('[16] 负向：非法 reasoningParam → 门禁 fail-closed，一个思考�
   const { received } = await send('openai', { thinking: true, patch: { reasoningParam: 'bogus_tier' } })
   assert.equal(received?.reasoning_effort, undefined, `非法档位不该发 reasoning_effort：${snippet(received)}`)
   assert.equal(received?.thinking, undefined, `非法档位不该发 thinking：${snippet(received)}`)
-  // 能力侧同步关闭：非法值等于 none，开关不出现（不会出现「能点但没效果」的开关）
+  // 能力侧同步关闭：非法值等于 none，请求侧不发字段（#341 起入口仍常驻、只改本地档位）
   const spec = useChannel('openai', { reasoningParam: 'bogus_tier' })
   assert.equal(spec.caps.thinking, false, '非法档位不该声明思考能力')
   assert.equal(providers.requestGates(spec).reasoning_param, false, '非法档位不该放行 reasoning_param 门禁')

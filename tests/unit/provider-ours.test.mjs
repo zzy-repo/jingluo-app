@@ -55,7 +55,7 @@ test('ours 渠道契约：OpenAI 协议 + Bearer + 内置新地址/模型', () =
   assert.equal(ours.locked, true, '地址/模型必须锁定，设置页不渲染输入行')
   assert.deepEqual(ours.fields, ['apiKey'], '设置页只暴露 API Key 一行')
   assert.equal(ours.caps.text, true)
-  assert.equal(ours.caps.thinking, false, 'OpenAI 路径没有 thinking，开关不能露出来')
+  assert.equal(ours.caps.thinking, false, 'OpenAI 路径没有 thinking 能力（#341 入口仍常驻，只改本地档位、请求不发字段）')
   assert.equal(ours.anthropicVersion, undefined, 'OpenAI 协议不需要 anthropic-version 头')
 })
 

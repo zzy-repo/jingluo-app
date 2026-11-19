@@ -239,7 +239,7 @@ const Input = ({ sessionId }: { sessionId: string | null }) => {
       <div className={styles.functionRow}>
         {/* 深度思考 / 智能搜索开关，tooltip 在按钮上方 */}
         <div ref={togglesRef} className={styles.toggles}>
-          {/* 协议不支持思考（caps.thinking=false，由 reasoningParam 派生）时整个开关不渲染 */}
+          {/* 深度思考开关：入口恒常驻（#341），是否真生效见 data-thinking-effective；请求侧由 REQUEST_GATES 拦截 */}
           <ThinkingToggle
             caps={caps}
             thinking={thinking}

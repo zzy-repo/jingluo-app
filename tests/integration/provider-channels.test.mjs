@@ -9,10 +9,10 @@
 //   [1] 标准构建默认渠道 = DeepSeek 官方；只渲染 API Key 一行（无 baseUrl / model 输入元素）
 //   [2] DeepSeek 官方：发消息 /anthropic/v1/messages + model deepseek-flash；搜索/附件/语音/思考入口都在
 //   [3] Anthropic 协议：三件套（服务地址 / 模型 / API Key）；切过去后 Key 不丢；请求按填的值发出 /v1/messages
-//   [4] OpenAI 兼容：三件套；请求打到 /v1/chat/completions；搜索/附件/语音/思考入口全部不渲染（DOM 里没有）
+//   [4] OpenAI 兼容：三件套；请求打到 /v1/chat/completions；搜索/附件/语音不渲染，思考入口恒常驻（#341，请求不带字段）
 //   [5] 我们的渠道：只渲染 API Key（1 个 password 输入框），界面不出现后端地址与内置模型名；
 //       请求打到 http://140.210.13.146:60010/v1/chat/completions（OpenAI 协议）+ model deepseek-v4.1-flash，
-//       鉴权 Authorization: Bearer <key>（不带 x-api-key），且没有深度思考入口（该协议不提供）
+//       鉴权 Authorization: Bearer <key>（不带 x-api-key）；深度思考入口恒常驻（#341，请求不带字段）
 //   [6] 切换渠道后能力入口随之显隐（搜不到 DOM 节点，不是置灰）；刷新后渠道选择持久化
 //   [7] 四个渠道的设置页都不出现能力描述文案（基础对话 / 不支持 / 已关闭 / 仅支持 / capability / 能力）
 //   [8] console error = 0
@@ -221,7 +221,7 @@ const expectCaps = async (where, expected) => {
     } else if (!want && got !== 0) {
       bad(`${where} 仍然渲染了「${label}」入口（期望 DOM 里没有，实际 ${got} 个）`)
     } else {
-      ok(`${where} ${label}入口${want ? '可用' : '不存在（DOM 里没有节点）'}`)
+      ok(`${where} ${label}入口${want ? '存在' : '不存在（DOM 里没有节点）'}`)
     }
   }
 }
@@ -435,7 +435,7 @@ try {
   await page.waitForTimeout(400)
   await shot('channel-openai')
   await closeSettings(dialog)
-  await expectCaps('OpenAI 兼容', { search: false, vision: false, asr: false, thinking: false })
+  await expectCaps('OpenAI 兼容', { search: false, vision: false, asr: false, thinking: true })
   const hitOpenai = await sendAndCapture(requests, '你好，OpenAI 兼容')
   if (!hitOpenai) {
     bad('OpenAI 兼容渠道没有发出消息请求')
@@ -485,7 +485,7 @@ try {
   await page.getByRole('button', { name: /^确定$|^Confirm$/ }).first().click()
   await page.waitForTimeout(1200)
   await closeSettings(dialog)
-  await expectCaps('我们的渠道', { search: false, vision: false, asr: false, thinking: false })
+  await expectCaps('我们的渠道', { search: false, vision: false, asr: false, thinking: true })
   const hitOurs = await sendAndCapture(requests, '你好，我们的渠道')
   if (!hitOurs) {
     bad('我们的渠道没有发出消息请求')
