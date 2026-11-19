@@ -21,6 +21,19 @@
  *     写死 `overflow` / `overflow-y`，否则 A / B 留下的常驻滚动条会漏进这个布局分支（例如窄屏下
  *     容器本来不该滚动）。
  *
+ * #236 补的第四个维度（A/B/C 都只看「写着 `scrollbar-gutter` 的那条规则」，看不见换手的容器）：
+ *  D. **媒体查询里靠 `overflow-y: auto` 才长滚动条的容器**。窄屏下滚动这件事从 `.container`
+ *     换手给了 `.scroll`，`.scroll` 自己不写 `scrollbar-gutter`，于是 A/B/C 一眼扫过去「本文件
+ *     每处 gutter 都有兜底」，缺陷却还在：classic 滚动条环境（Windows/Linux 桌面窗口）里滚动条
+ *     出现的那一刻，`.scroll` 的内容框少一个滚动条宽度，已经渲染的行整批重新折行。
+ *     要求：同一选择器在**指针作用域**（`(hover: hover) and (pointer: fine)`，判据见下）内补一条
+ *     `overflow-y: scroll` 常驻槽位，并在同一指针作用域里用 `@supports (scrollbar-gutter: …)` 收回 `auto`。
+ *     为什么必须限定指针作用域：overlay 滚动条（Android WebView / macOS / Win11 自动隐藏）宽度是 0，
+ *     常驻与否都不吃宽度，电话上没必要替桌面窗口的问题付代价；`hover` / `pointer` 媒体特性
+ *     Chromium 41 起就有，83 上判得出来。
+ *     只在「文件里确实有 `scrollbar-gutter`」时启用 —— 没参与槽位决策的文件（别处的 `overflow-y: auto`
+ *     面板）不该被这条规则拖进来。
+ *
  * 被两处使用：
  *  - `scripts/check-scrollbar-gutter-fallback.mjs`（`pnpm run check:gutter`，给人和 CI 看）
  *  - `tests/unit/scrollbar-gutter-fallback.test.mjs`（进 pnpm test 基线，改归零就红）
@@ -31,6 +44,8 @@ import { readdir } from 'node:fs/promises'
 import { join, relative, sep } from 'node:path'
 
 const GUTTER_RE = /\bscrollbar-gutter\s*:\s*([^;}]+)/gu
+/** 本文件是否在为滚动条槽位做决定（维度 D 的启用开关；不带 `g`，避免 lastIndex 副作用） */
+const GUTTER_PRESENT_RE = /\bscrollbar-gutter\s*:/u
 
 /** `overflow-y: scroll` / `overflow: hidden auto` / `overflow: scroll` 之类「槽位恒宽」的声明 */
 const SCROLL_RESERVE_RE = /(?:^|[;\s])overflow(?:-y)?\s*:\s*([^;}]+)/gu
@@ -195,7 +210,90 @@ export const auditCssText = (text) => {
   return {
     occurrences: occurrences.sort((a, b) => a.line - b.line),
     missing: missing.sort((a, b) => a.line - b.line),
+    // 维度 D：媒体查询里换手的滚动容器（可能一条 gutter 声明都没有，所以单独列）
+    ...auditNarrowScrollContainers(clean, blocks),
   }
+}
+
+/** `@media` 前奏里出现指针/悬停媒体特性 → 这一档是「按输入设备分流」，不是「按宽度分流」 */
+const POINTER_SCOPE_RE = /(?:^|[\s(])(?:any-)?(?:hover|pointer)\s*:/iu
+const MEDIA_PRELUDE_RE = /^@media[\s(]/u
+const isSupportsAtRule = (prelude) => /^@supports[\s(]/u.test(prelude)
+
+/**
+ * 维度 D（#236）：媒体查询里「靠 `auto` 才长滚动条」的容器，有没有为 classic 滚动条环境做过处置。
+ *
+ * 只回答一件事：这批容器里，哪些还缺「指针作用域内的 `overflow-y: scroll` 常驻槽位 + 同作用域
+ * `@supports` 收回」这一对。文件里没有 `scrollbar-gutter` 就整段跳过（不归它管）。
+ */
+export const auditNarrowScrollContainers = (text, blocks = parseCssBlocks(stripComments(text))) => {
+  const clean = stripComments(text)
+  if (!GUTTER_PRESENT_RE.test(clean)) return { containers: [], uncovered: [] }
+
+  const rules = blocks.filter((block) => !isAtRule(block.prelude))
+  const containers = []
+  const uncovered = []
+
+  for (const rule of rules) {
+    // `@supports` 块内的规则是 A/B 的收回侧，交给上面判
+    if (rule.ancestors.some(isSupportsAtRule)) continue
+    const mediaAncestors = rule.ancestors.filter((prelude) => MEDIA_PRELUDE_RE.test(prelude))
+    // 只管媒体查询里换手的容器：没有媒体查询约束的容器滚动条从一开始就在，不会「出现」
+    if (mediaAncestors.length === 0) continue
+    // 只管靠 `auto` 才长滚动条的容器；已经 `overflow-y: scroll` 的容器槽位本来就恒宽
+    if (!SCROLL_AUTO_RE.test(rule.ownText)) continue
+    if (reservesScrollTrack(rule.ownText)) continue
+
+    const selector = normalizeSelector(rule.prelude)
+    const media = mediaAncestors[mediaAncestors.length - 1]
+    const line = lineOf(clean, rule.open)
+    // 作用域必须同时满足两件事：落在被审计的这一档宽度上，且按输入设备分流（指针/悬停媒体特性）。
+    // 不能只在别的断点上做了处置就算过。按「祖先链」判而不是按单条前奏判，因为两层嵌套
+    // （`@media 窄屏 { @media (hover: hover) and (pointer: fine) { … } }`）才是可靠写法：
+    // `not all and (min-width: 768px) and (pointer: fine)` 里的 `not` 否定整条查询，
+    // 放宽到触屏上也会成立，限定等于没写。
+    const inScopeChain = (ancestors) => {
+      const medias = ancestors.filter((prelude) => MEDIA_PRELUDE_RE.test(prelude))
+      return medias.some((prelude) => prelude.includes(media))
+        && medias.some((prelude) => POINTER_SCOPE_RE.test(prelude))
+    }
+
+    const scopedReserve = rules.some(
+      (item) =>
+        normalizeSelector(item.prelude) === selector
+        && inScopeChain(item.ancestors)
+        && reservesScrollTrack(item.ownText),
+    )
+    const scopedWithdraw = blocks.some(
+      (block) =>
+        isSupportsGutter(block.prelude)
+        && !isNotSupports(block.prelude)
+        && inScopeChain(block.ancestors)
+        && block.children.some(
+          (child) => normalizeSelector(child.prelude) === selector && SCROLL_AUTO_RE.test(child.ownText),
+        ),
+    )
+
+    const container = { line, selector, media, scopedReserve, scopedWithdraw }
+    containers.push(container)
+    if (!scopedReserve) {
+      uncovered.push({
+        ...container,
+        why: '媒体查询里的滚动容器靠 `overflow-y: auto` 才长滚动条：classic 滚动条环境下滚动条出现的一刻'
+          + '内容框少一个滚动条宽度，已经渲染的行会整批重新折行（Chromium 83 上 `scrollbar-gutter` 被丢弃，'
+          + '这条容器也没写它）。需要在「会出现占位式滚动条」的环境里补一条 `overflow-y: scroll`：'
+          + '用 `(hover: hover) and (pointer: fine)` 之类的指针媒体特性限定，别让 overlay 滚动条的手机也常驻槽位',
+      })
+    } else if (!scopedWithdraw) {
+      uncovered.push({
+        ...container,
+        why: '指针作用域里有了 `overflow-y: scroll` 常驻槽位，但缺同一作用域内的 `@supports (scrollbar-gutter: …)`'
+          + '把 `overflow-y` 收回 `auto`，支持槽位的现代内核会被迫常显一条空滚动条',
+      })
+    }
+  }
+
+  return { containers, uncovered }
 }
 
 const walk = async (dir, match) => {
@@ -213,14 +311,18 @@ export const auditScrollbarGutter = async (srcDir) => {
   const files = await walk(srcDir, (name) => /\.(?:css|html|tsx?|jsx?|mjs)$/u.test(name))
   const occurrences = []
   const missing = []
+  const containers = []
+  const uncoveredContainers = []
   let scannedWithHit = 0
   for (const path of files) {
     const text = readFileSync(path, 'utf8')
-    if (!/\bscrollbar-gutter\s*:/u.test(stripComments(text))) continue
+    if (!GUTTER_PRESENT_RE.test(stripComments(text))) continue
     scannedWithHit += 1
     const result = auditCssText(text)
     for (const item of result.occurrences) occurrences.push({ ...item, file: short(srcDir, path) })
     for (const item of result.missing) missing.push({ ...item, file: short(srcDir, path) })
+    for (const item of result.containers) containers.push({ ...item, file: short(srcDir, path) })
+    for (const item of result.uncovered) uncoveredContainers.push({ ...item, file: short(srcDir, path) })
   }
-  return { files: files.length, scannedWithHit, occurrences, missing }
+  return { files: files.length, scannedWithHit, occurrences, missing, containers, uncoveredContainers }
 }
