@@ -166,5 +166,6 @@ Total 24: PASS 23, FAIL 1, SKIP(env) 0; elapsed 666232ms
 ## 8. 相关
 
 - 分层与门禁分级：`docs/TESTING-POLICY.md`
+- 门禁自身的负向对照（新增门禁前必读）：`docs/TESTING-POLICY.md` 第 9 节 + `tests/gates/README.md`
 - 用例全景与历史命名对照：`tests/README.md`
 - Issue 规范（证据、边界、关闭条件）：`docs/ISSUE-STANDARD.md`

@@ -6,6 +6,7 @@
 - `tests/integration-baseline.json` —— 集成层基线失败清单（L2 只判「不新增失败」）
 - `tests/run-layer.mjs --baseline` —— 按基线清单比对并输出差异
 - `docs/testing.md` —— 集成层怎么跑、产物/端口/夹具要求
+- `tests/unit/gate-negative-controls.test.mjs` + `tests/gates/` —— 门禁自身的负向对照（见第 9 节）
 
 一句话原则：**门禁要快，慢检查只在发版前跑一次；失败要可比，只和基线比，不追「全绿」幻想。**
 
@@ -102,6 +103,103 @@ npm run test:integration -- --baseline          # 集成全量与基线比对，
 | 改一个 `.ts` 逻辑 | `tests/which.mjs --git --layer unit` | < 20s |
 | 改 UI / 设置页 / 渠道 | `tests/which.mjs --git`（域内 1~2 个集成） | 1~2min |
 | 改构建脚本 / 产物注入 | `internal-build` + `auto-title` | 2~3min |
+| **新增 / 修改一道 CI 门禁** | `node tests/run-layer.mjs unit --only gate-negative-controls`（先看第 9 节） | < 30s |
 | 合并候选 | L0 + L1 | < 5min |
 | 发版前一次 | `npm test` + `npm run test:integration -- --baseline` | 10~15min |
 | 真机 / 链接导入原生 | `npm run test:device`（人工，需 AVD） | 3~8min |
+
+---
+
+## 9. 门禁自身的负向对照（Issue #369）
+
+**一条硬规矩：新增或修改一道门禁时，必须同时提交一条负向对照。没有负向对照的门禁不许进 CI。**
+
+### 9.1 为什么这条规矩必须写死
+
+门禁的两种坏法症状完全一样 —— **都表现为 CI 绿**：
+
+| | 坏法 | 例子 |
+| --- | --- | --- |
+| A | 门禁**脚本**坏了：规则被删、被改宽、只对眼熟写法生效 | 删掉一条脱敏规则、把 `>=20` 行重复判据改成 `>=200` |
+| B | 门禁**命令行**被改软：换成 `true`、悄悄加 `--warn`、少传一个扫描目录 | `"lint": "echo ok"`、`"check:test-layout": "… -- --warn"` |
+
+只测「注入缺陷 → exit≠0」只能钉住 A。B 更隐蔽：脚本一个字没改，但已经什么都不检查了。
+所以负向对照必须同时钉住 script **字符串**（见下文的 `scriptExpect`）。
+
+这条规矩不是洁癖：#369 立项的起因就是 `check:legacy` —— beta.8 漏了 polyfill，WebView ≤92 整包解析失败
+（静默白屏），而所有门禁都是绿的；而 #362 盘点 12 道 CI 门禁时，有 6 道连一条负向对照都没有。
+
+### 9.2 统一模板（四拍，缺一不可）
+
+```
+① 正例：干净仓库 → exit=0          （没有这一拍，「注入→红」可能只是门禁恒红）
+② 注入：把 fixture 拷成真文件       （门禁只认真实路径，落在它真会扫的位置）
+③ 红：exit≠0 **且报错点出注入物**   （红在别的原因上不算数）
+④ 还原 → exit=0                     （证明「红」是注入引起的，不是恒红）
+```
+
+实现只有一份：`tests/gates/lib/gate-negative-harness.mjs` 的 `assertNegativeControl()`。
+用例表 `tests/unit/gate-negative-controls.test.mjs` 里**一行 = 一道门禁**，加门禁 = 加一行。
+
+两个细节容易漏，写在这里省得再踩：
+
+- **命令行从 `package.json` 解析，不在测试里抄一份**：`scriptExpect` 断言 script 字符串没被改软，
+  改了就先红。测试里抄一份命令，等于两处各写一遍真相，改一处另一处永远绿。
+- **还原必须写在 `finally` 里**：用例失败也不能把仓库留在「有违规文件」的状态。否则下一个人跑
+  `check:hygiene` / `check:test-layout` 会看到一条和他毫无关系的红 —— 那是最容易被"顺手注释掉"的红。
+  收尾还有一条自检用例，专门查注入物有没有残留。
+
+### 9.3 用例为什么在 `tests/unit/`，fixture 为什么在 `tests/gates/`
+
+- `scripts/check-test-layout.mjs` 只允许 `tests/{unit,integration,regression,device,e2e}/` 放
+  `*.test.mjs`，且层级目录内不许建子目录 —— `tests/gates/*.test.mjs` 会被它判成
+  `layer-placement` + `orphan`（硬规则、不可基线化）。给门禁开一个它自己拦不住的口子，以后人人都能照着开。
+- CI 的单元层只跑 `pnpm test`（`node tests/run-layer.mjs unit`）。不在 `LAYERS` 里的目录写多少用例都是
+  #368 那个坑：**写了、没人跑、不会红**。这条 issue 治的就是这个病。
+
+所以：**用例进 `tests/unit/`（`run-layer` 枚举得到、CI 每次跑），必错输入与骨架进 `tests/gates/`。**
+
+### 9.4 现状清单（2026-11-20，ci.yml 里的 13 道门禁）
+
+| 门禁 | 负向对照 | 注入 / 反例 | 落在哪 |
+| --- | --- | --- | --- |
+| `check:hygiene` | ✅ 注入 | Windows 盘符绝对路径（文件里写死本机路径） | `tests/unit/domain10-release-gate-matrix.test.mjs` |
+| `check:dup-impl` | ✅ 注入 | 整份复制已有实现 | 同上 |
+| `check:bundle-target` | ✅ 注入 | 产物里追加 `?.` / `??=` | 同上 |
+| `check:manifest` | ✅ 自带 | `invalid-*.json` 反例 + 事故清单逐条报出 | 同上 |
+| `check:matrix` | ✅ 自带 | 截断档位 / AVD 版本不符 / 路径缺失 | `tests/unit/matrix-config.test.mjs` |
+| `check:ip` | ✅ 自带 | 版本号不报 vs 真写死地址照报 | `tests/unit/check-ip-version.test.mjs` |
+| `check:legacy` | ✅ CI 注入 | CI 往产物副本追加 `?.` / `??=` | `.github/workflows/ci.yml` |
+| `check:redact` | ✅ CI 自检 | CI 跑 `check-redact.mjs --selftest` | `.github/workflows/ci.yml` |
+| `check:test-layout` | ✅ 注入（#369） | 造一个跑不到的用例（孤立子目录） | `tests/unit/gate-negative-controls.test.mjs` |
+| `check:test-duplication` | ✅ 注入（#369） | 整份复制一份用例文件 | 同上 |
+| `type` | ✅ 注入（#369） | fixture 里的 TS2322 拷进 `src/` | 同上 |
+| `lint` | ✅ 注入（#369） | fixture 里的 `debugger` 拷进 `src/` | 同上 |
+| `build:internal` | ✅ 注入（#369） | 临时副本里注入语法错模块并让 entry 真的 import | 同上 |
+| `check:log-coverage` | ⚠️ **缺口** | 脚本自带 `--selftest`（3 个反例），但 CI 调用没带 flag | `scripts/check-log-coverage.mjs` |
+
+「登记」不是给人看的注释：`tests/unit/gate-negative-controls.test.mjs` 的 `N6` 用例会读
+`.github/workflows/ci.yml`，**每出现一条 `run: pnpm run <gate>`，登记表里就必须有一条**，否则这个用例红，
+并直接告诉你「该在哪里补一条负向对照」。缺口写进同一个文件的 `KNOWN_GAPS`（要带原因、关联 Issue、修法），
+缺口一旦补上，`N6` 会再红一次提醒你删条目 —— 缺口可以存在，但不许静默。
+
+### 9.5 `build` 为什么**能**做负向对照（成本实测，别再当"不适用"）
+
+`build`（`node scripts/build.mjs --internal`）曾被登记为"慢，可能不适用"。实测**没必要放弃**：
+
+| 口径 | 实测耗时 |
+| --- | --- |
+| 单次内测构建（`build:internal`） | ~2.5s |
+| 负向对照全套（临时副本 + 正例构建 + 注入构建 + 还原构建） | ~6s |
+
+代价这么低是因为两条口径：
+
+1. **注入在仓库的临时副本里做**，不碰工作树：只拷 `src/`、`shared/`、`config/`、`scripts/`、
+   `package.json`、`rspack.config.ts`、`tsconfig.json`、`LICENSE`（约 8 MB），`node_modules` 用软链
+   （305 MB 不复制）。
+2. **注入必须让 entry 真的 import 那个坏模块**：rspack 只编译**进图**的模块，孤立丢一个语法错文件到
+   `src/` 底下不会红（实测：编译成功、`[build] OK`）。所以用例往副本的 `src/main.tsx` 末尾加一行
+   `import './…-probe'` —— 这一步才是"注入"。
+
+因此 `build` 有真负向对照，不再登记为"不适用"。
+

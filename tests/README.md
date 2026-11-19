@@ -156,6 +156,10 @@ E2E_API_KEY=sk-xxx node tests/e2e/real-upstream.test.mjs
 5. **单文件不超过 500 行**。超了就拆文件（按场景拆），不要学 `integration/full-acceptance.test.mjs`。
 6. **自己起服务就自己收拾**：`spawn` 出来的静态服务/mock 务必在 `finally` 里 kill，端口用 `process.env.PORT || 默认值` 便于并发。
 7. **不要引入 jest/vitest/mocha**：`unit` 层用自建 `ok()` 或 `node:test` 都行，runner 两种都支持。
+8. **门禁的负向对照放 `unit/`，不要新开目录**：`tests/gates/` 只放必错输入（fixture）与四拍骨架
+   （`tests/gates/lib/gate-negative-harness.mjs`），用例本体是 `unit/gate-negative-controls.test.mjs`。
+   新开 `tests/gates/*.test.mjs` 会被 `check:test-layout` 判红（只允许五个层级目录），
+   而且 `run-layer` 枚举不到 = 写了没人跑。规矩正文见 `docs/TESTING-POLICY.md` 第 9 节。
 
 ## 6. 常见坑
 

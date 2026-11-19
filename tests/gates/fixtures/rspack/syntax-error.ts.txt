@@ -1,0 +1,20 @@
+// 负向对照 fixture（Issue #369）——`build` 门禁（`node scripts/build.mjs --internal`）的必错输入。
+//
+// 为什么扩展名是 `.ts.txt` 而不是 `.ts`：这份文件**故意**是坏语法，任何格式化/解析工具
+// （`oxfmt --check .`、编辑器保存时格式化）碰到它都会直接报解析错误，把仓库的日常工具链搞红。
+// 用例把它拷成 `<临时副本>/src/__gate-neg-build-probe.ts` —— 扩展名在注入那一刻才变成 `.ts`，
+// 内容一个字不改。
+//
+// 为什么目录叫 `rspack/` 而不是 `build/`：仓库根的 .gitignore 里有 `build/`（Android Gradle 构建产出），
+// 那种模式会按目录名匹配到任意层级的 `build/`，于是 `fixtures/build/` 会被静默忽略、文件进不了库。
+//
+// 这是一个**语法**错误（对象字面量少一个右括号），不是类型错误：rspack 里的 swc 只剥类型、
+// 不做类型检查，所以只有语法错才拦得住它。构建期报错形如
+//   ERROR in ./src/__gate-neg-build-probe.ts
+//     × Module build failed (from builtin:swc-loader): … Expected ',', got '<eof>'
+//
+// 注意：rspack 只编译**进图**的模块。把本文件单独丢进 src/ 是不够的 —— 用例还会往
+// `src/main.tsx` 末尾加一行 `import './__gate-neg-build-probe'`，让它真的被打包。
+// 这些注入都发生在**仓库的临时副本**里（src/shared/config/scripts + 软链 node_modules），
+// 不碰工作树，所以「构建失败」不会把仓库留在坏状态。
+export const broken = ({ value: 1
