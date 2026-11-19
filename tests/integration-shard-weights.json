@@ -1,145 +1,146 @@
 {
   "schemaVersion": 1,
-  "recordedAt": "2026-11-19",
-  "recordedBy": "Issue #365（L1 接入 CI 的分片权重）",
-  "totalMs": 1188365,
+  "recordedAt": "2026-11-20",
+  "recordedBy": "Issue #405（L1 效率优化：分片 3 → 6，按本次 CI 实测重标）",
+  "totalMs": 1084892,
   "note": "单个文件实测耗时（ms），用于把集成层切成并行分片。**只影响均衡度，不影响覆盖率**：没登记的文件按默认 30000ms 估重，照样会被分进某个分片，不存在「新文件没人跑」。重测：node tests/run-layer.mjs integration --json l1.json 后按 results[].ms 覆盖本表。",
-  "ref": "origin/main@6e7baab（1.4.0-beta.10 线）",
+  "ref": "PR #430 的 CI run 44583362015（分支 = origin/main@f6ec443 + 本 PR 的 ci.yml；6 个分片各跑一遍，45 个文件全部实测）",
+  "method": "把 6 个分片的 l1-report-*.json 合起来取 results[].ms；这是**CI 机器**上的耗时，不再是本机耗时 —— 两者差 5~10%（如 copy-limit 112s → 58s），拿本机数字分桶会把重活堆错分片。",
   "files": {
     "auto-title.test.mjs": {
-      "ms": 56844
+      "ms": 52632
     },
     "caps.test.mjs": {
-      "ms": 3017
+      "ms": 2959
     },
     "copy-limit.test.mjs": {
-      "ms": 112557
+      "ms": 58459
     },
     "diagnostics-contract.test.mjs": {
-      "ms": 15780
+      "ms": 13876
     },
     "diagnostics.test.mjs": {
-      "ms": 14133
+      "ms": 10704
     },
     "domain01-first-run.test.mjs": {
-      "ms": 3518
+      "ms": 2860
     },
     "domain01-session-load.test.mjs": {
-      "ms": 10465
+      "ms": 9217
     },
     "domain02-reply-error-ui.test.mjs": {
-      "ms": 61207
+      "ms": 58952
     },
     "domain02-stop-regenerate.test.mjs": {
-      "ms": 13765
+      "ms": 12754
     },
     "domain02-wait-thinking-ui.test.mjs": {
-      "ms": 71064
+      "ms": 70382
     },
     "domain05-ui-export-import.test.mjs": {
-      "ms": 3375
+      "ms": 2994
     },
     "domain08-feedback-negative.test.mjs": {
-      "ms": 27294
+      "ms": 29568
     },
     "domain09-delete-all-retention.test.mjs": {
-      "ms": 11241
+      "ms": 10834
     },
     "domain09-settings-reload.test.mjs": {
-      "ms": 27021
+      "ms": 25456
     },
     "domain10-update-check-flow.test.mjs": {
-      "ms": 14965
+      "ms": 14791
     },
     "domain10-update-install-flow.test.mjs": {
-      "ms": 4778
+      "ms": 4119
     },
     "error-boundary.test.mjs": {
-      "ms": 18611
+      "ms": 17980
     },
     "feedback-draft.test.mjs": {
-      "ms": 4485
+      "ms": 3630
     },
     "feedback-export.test.mjs": {
-      "ms": 2195
+      "ms": 1943
     },
     "feedback-scroll.test.mjs": {
-      "ms": 194631
+      "ms": 187409
     },
     "full-acceptance.test.mjs": {
-      "ms": 49724
+      "ms": 49102
     },
     "internal-build.test.mjs": {
-      "ms": 9835
+      "ms": 9279
     },
     "issue-234-invite-copy.test.mjs": {
-      "ms": 17808
+      "ms": 16928
     },
     "legacy-config.test.mjs": {
-      "ms": 7854
+      "ms": 7091
     },
     "log-viewer.test.mjs": {
-      "ms": 4408
+      "ms": 3577
     },
     "mode-switch-plain.test.mjs": {
-      "ms": 1741
+      "ms": 1528
     },
     "mode-switch-request.test.mjs": {
-      "ms": 2823
+      "ms": 1927
     },
     "mode-switch.test.mjs": {
-      "ms": 2915
+      "ms": 2429
     },
     "motion.test.mjs": {
-      "ms": 25868
+      "ms": 24312
     },
     "ours-services.test.mjs": {
-      "ms": 41390
+      "ms": 40416
     },
     "paths.test.mjs": {
-      "ms": 4778
+      "ms": 4396
     },
     "probe-auth-protocols.test.mjs": {
-      "ms": 23984
+      "ms": 23536
     },
     "probe-auth.test.mjs": {
-      "ms": 2196
+      "ms": 1675
     },
     "probe-nokey.test.mjs": {
-      "ms": 5223
+      "ms": 4991
     },
     "provider-anthropic.test.mjs": {
-      "ms": 4914
+      "ms": 4188
     },
     "provider-channels.test.mjs": {
-      "ms": 17154
+      "ms": 16532
     },
     "quota-exhausted.test.mjs": {
-      "ms": 23343
+      "ms": 21119
     },
     "request-body.test.mjs": {
-      "ms": 6469
+      "ms": 5815
     },
     "session-list-flow.test.mjs": {
-      "ms": 27387
+      "ms": 25427
     },
     "settings-probe-model.test.mjs": {
-      "ms": 84200
+      "ms": 83110
     },
     "update-stuck-button-373.test.mjs": {
-      "ms": 6772
+      "ms": 5182
     },
     "upstream-html.test.mjs": {
-      "ms": 5860
+      "ms": 5053
     },
     "url-import-native.test.mjs": {
-      "ms": 19160
+      "ms": 14954
     },
     "url-import-stages.test.mjs": {
-      "ms": 118900
+      "ms": 118211
     },
     "url-import-web.test.mjs": {
-      "ms": 2713
+      "ms": 2595
     }
   }
 }
