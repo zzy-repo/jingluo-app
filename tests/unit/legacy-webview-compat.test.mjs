@@ -28,17 +28,10 @@ registerHooks({
 globalThis.__API_ORIGIN__ ??= 'https://api.deepseek.com'
 globalThis.__INTERNAL_BUILD__ ??= true
 
-let toLocalModule = null
-let toLocalSkipReason = ''
-try {
-  toLocalModule = await import('../../src/services/chat/history/toLocal.ts')
-} catch (error) {
-  if (String(error?.code) === 'ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX') {
-    toLocalSkipReason = `toLocal.ts 在 strip-only 模式下不可加载（${error.code}）；用 NODE_OPTIONS=--experimental-transform-types 跑真实路径`
-  } else {
-    throw error
-  }
-}
+// #287：这里以前是 `catch (ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX) → t.skip(...)`，于是标准 runner（`pnpm test`）
+// 下这条真实调用路径永远是 SKIP —— toSorted 回退坏了也没人拦。runner（tests/helpers/runtime.mjs）现在统一
+// 给每个用例子进程带上 --experimental-transform-types，所以加载失败就是真实缺陷：直接失败，不许再退回 skip。
+const toLocalModule = await import('../../src/services/chat/history/toLocal.ts')
 
 /** 造一个最小但合法的导出差会话文件：id 故意乱序，父链 1 ← 2 ← 3 */
 const makeFile = () => ({
@@ -95,11 +88,7 @@ const without = (proto, names) => {
   }
 }
 
-test('没有 toSorted 时 toLocalSession 能正常导入会话（真实调用路径）', (t) => {
-  if (!toLocalModule) {
-    t.skip(toLocalSkipReason)
-    return
-  }
+test('没有 toSorted 时 toLocalSession 能正常导入会话（真实调用路径）', () => {
   const { toLocalSession } = toLocalModule
   const restore = without(Array.prototype, ['toSorted', 'toReversed'])
   try {
@@ -117,18 +106,10 @@ test('没有 toSorted 时 toLocalSession 能正常导入会话（真实调用路
   }
 })
 
-test('没有 toReversed 时 store 的发送/重试路径不因该 API 抛错（真实调用路径）', async (t) => {
-  let store
-  try {
-    store = await import('../../src/services/chat/store.ts')
-  } catch (error) {
-    // 裸 node 的 strip-only 模式不认 TS「参数属性」；用 NODE_OPTIONS=--experimental-transform-types 跑才走真实路径
-    if (String(error?.code) === 'ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX') {
-      t.skip(`store.ts 在 strip-only 模式下不可加载（${error.code}），改用静态核查覆盖；加 --experimental-transform-types 可跑真实路径`)
-      return
-    }
-    throw error
-  }
+test('没有 toReversed 时 store 的发送/重试路径不因该 API 抛错（真实调用路径）', async () => {
+  // #287：以前这里 catch 到 strip-only 报错就 t.skip()，标准 runner 下等于没测。
+  // 现在加载失败就是失败（runner 已统一带 --experimental-transform-types）。
+  const store = await import('../../src/services/chat/store.ts')
   const restore = without(Array.prototype, ['toSorted', 'toReversed'])
   try {
     assert.equal(typeof [].toReversed, 'undefined', '前置：已模拟旧 WebView（无 toReversed）')

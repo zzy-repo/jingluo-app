@@ -20,17 +20,10 @@ registerHooks({
 globalThis.__API_ORIGIN__ ??= 'https://api.deepseek.com'
 globalThis.__INTERNAL_BUILD__ ??= false
 
-test('model response parser handles object, JSON string, invalid JSON, and empty/status fixtures', async (t) => {
-  let source
-  try {
-    source = await import('../../src/services/api/client.ts')
-  } catch (error) {
-    if (String(error?.code) === 'ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX') {
-      t.skip(`client.ts 依赖链含 TS 参数属性，strip-only 模式不可加载（${error.code}）；用 NODE_OPTIONS=--experimental-transform-types 跑真实路径`)
-      return
-    }
-    throw error
-  }
+// #287：以前这里 catch 到 strip-only 报错就 `t.skip()`，标准 runner（`pnpm test`）下这条用例一次断言都没跑过。
+// runner（tests/helpers/runtime.mjs）现在统一给用例子进程带 --experimental-transform-types：加载失败就是失败。
+test('model response parser handles object, JSON string, invalid JSON, and empty/status fixtures', async () => {
+  const source = await import('../../src/services/api/client.ts')
   assert.deepEqual(source.pickModelIds({ data: [{ id: 'a' }, { name: 'b' }, { model: 'c' }] }), ['a', 'b', 'c'])
   assert.deepEqual(source.parseModelPayload('{"data":[{"id":"string-model"}]}'), ['string-model'])
   assert.deepEqual(source.parseModelPayload({ data: ['x', 'y'] }), ['x', 'y'])

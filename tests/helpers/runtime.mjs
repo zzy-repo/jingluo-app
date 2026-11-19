@@ -17,6 +17,15 @@ const PRELOAD = new URL('./injected.mjs', import.meta.url)
 // 那里没有这份预加载文件 —— 缺了就不带这个参数，不因为它而改掉用例的既有行为。
 const preloadArgs = existsSync(PRELOAD) ? ['--import', PRELOAD.href] : []
 
+/**
+ * #287：`toLocal.ts` / `store.ts` / `client.ts` 的依赖链含 TS 非可擦语法（enum / 参数属性等），
+ * 裸 node 的 strip-only 模式 import 会抛 ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX。
+ * 以前两条用例在 catch 里 `t.skip()` 兜底，于是 CI 唯一跑法（`pnpm test`）下它们**永远是 SKIP**，
+ * `toSorted`/`toReversed` 的旧内核回退坏了也照样全绿。现在开关收敛在 runner 里：每个用例子进程都带上它，
+ * 用例加载即真实执行，加载失败就是失败 —— 不再存在「带开关」和「不带开关」两套跑法。
+ */
+const TRANSFORM_TYPES_ARGS = ['--experimental-transform-types']
+
 // One invocation owns one directory and (on POSIX) one process group. Never pkill by name.
 export async function runCase(file, { cwd, timeoutMs = 180000, env = process.env, output = true } = {}) {
   const tempDir = await mkdtemp(path.join(tmpdir(), 'deepseek-case-'))
@@ -38,15 +47,27 @@ export async function runCase(file, { cwd, timeoutMs = 180000, env = process.env
   try {
     const source = await readFile(file, 'utf8')
     const nodeTest = /(?:from\s*|import\s*|require\(\s*)['"]node:test['"]/.test(source)
-    child = spawn(process.execPath, [...(nodeTest ? ['--test'] : []), ...preloadArgs, file], {
+    child = spawn(process.execPath, [...TRANSFORM_TYPES_ARGS, ...(nodeTest ? ['--test'] : []), ...preloadArgs, file], {
       cwd, env: { ...env, TMPDIR: tempDir, TMP: tempDir, TEMP: tempDir, TEST_TMP_DIR: tempDir },
       detached: process.platform !== 'win32', stdio: ['ignore', 'pipe', 'pipe'],
     })
     process.on('SIGINT', onSignal)
     process.on('SIGTERM', onSignal)
+    // node:test 的 TAP 输出里被跳过的子测试是 `ok 2 - 名字 # SKIP 原因`（末尾还有 `# skipped N` 汇总）。
+    // #287：以前跳过在 runner 这一层完全不可见（进程退出码是 0），「看起来全绿、实际一行断言没跑」就藏在这里。
+    // 这里按行扫出来交给 run-layer 汇总打印（见 run-layer 的 NODE-SKIP），至少让跳过在报告里露头。
+    let lineCarry = ''
+    let subtestSkips = 0
+    const scanSkips = (text) => {
+      const lines = (lineCarry + text).split('\n')
+      lineCarry = lines.pop() ?? ''
+      for (const line of lines) if (line.includes('# SKIP')) subtestSkips += 1
+    }
     const keep = (stream, chunk) => {
+      const text = chunk.toString()
       if (output) stream.write(chunk)
-      tail.push(chunk.toString())
+      scanSkips(text)
+      tail.push(text)
       if (tail.length > 100) tail.shift()
     }
     child.stdout.on('data', (chunk) => keep(process.stdout, chunk))
@@ -58,7 +79,7 @@ export async function runCase(file, { cwd, timeoutMs = 180000, env = process.env
     const { code, signal } = await new Promise((resolve) => child.once('close', (code, signal) => resolve({ code, signal })))
     signalGroup('SIGKILL')
     return { ok: code === 0 && !signal && !timedOut && !interrupted && !spawnError,
-      code, signal, timedOut, interrupted, error: spawnError, ms: Math.round(performance.now() - started), tail, tempDir }
+      code, signal, timedOut, interrupted, error: spawnError, skips: subtestSkips, ms: Math.round(performance.now() - started), tail, tempDir }
   } finally {
     clearTimeout(timer)
     clearTimeout(escalation)

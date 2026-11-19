@@ -105,6 +105,10 @@ async function main() {
   sharedStd?.kill()
   const failures = results.filter((r) => !r.ok && !r.skipped)
   const skips = results.filter((r) => r.skipped)
+  // #287：用例内部 `t.skip()` / `{ skip: ... }` 不会改进程退出码，跑完全绿也看不出「一行断言都没跑」。
+  // 这里把用例自己报的 # SKIP 汇总打印（如 legacy-bundle-target 缺产物时的声明期跳过），
+  // 让跳过在报告里永远露头；判红门禁仍只看真实失败，避免把「产物没构建」误报成回归。
+  const nodeSkips = results.filter((r) => (r.skips ?? 0) > 0)
   const failedCount = failures.length
   const totalMs = Math.round(performance.now() - started)
   const report = {
@@ -115,15 +119,17 @@ async function main() {
     passed: results.filter((r) => r.ok).length,
     failed: failedCount,
     skipped: skips.length,
+    skippedSubtests: nodeSkips.reduce((sum, r) => sum + (r.skips ?? 0), 0),
     results,
   }
   if (json) await writeFile(path.resolve(json), JSON.stringify(report, null, 2) + '\n')
   if (!selected.length) console.error('No matching cases')
   console.log(
-    `\nTotal ${results.length}: PASS ${report.passed}, FAIL ${failedCount}, SKIP(env) ${skips.length}; elapsed ${totalMs}ms`,
+    `\nTotal ${results.length}: PASS ${report.passed}, FAIL ${failedCount}, SKIP(env) ${skips.length}, NODE-SKIP ${report.skippedSubtests}; elapsed ${totalMs}ms`,
   )
   for (const r of failures) console.log(`Rerun: node tests/run-layer.mjs ${r.layer} --case ${r.file}`)
   for (const r of skips) console.log(`Skipped (environment): ${r.file} — ${r.skipReason}`)
+  for (const r of nodeSkips) console.log(`Skipped (in-case # SKIP ×${r.skips}): ${r.file}`)
   const verdict = await compareWithBaseline(results)
   if (verdict !== null) return interrupted ? 130 : verdict
   return interrupted ? 130 : selected.length && !failedCount ? 0 : 1
