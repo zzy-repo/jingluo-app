@@ -11,6 +11,7 @@ import {
   readEntry,
   skipEntry,
   type ArchiveEntry,
+  type ArchiveSource,
 } from './zipReader.js'
 
 /** 从原件字节补充图片 MIME；无法识别时为空字符串，图片身份仍由归档的 is_image 决定。 */
@@ -72,15 +73,15 @@ const archiveFailure = (index: number, path: string | undefined, error: ArchiveE
  * 检查 ZIP 格式、首个 manifest 条目及格式版本。
  * 校验失败时保留正在生成的回答和现有暂存数据。
  */
-export const checkArchiveFormat = async (file: File): Promise<void> => {
-  if (!(await isZipFile(file))) {
+export const checkArchiveFormat = async (source: ArchiveSource): Promise<void> => {
+  if (!(await isZipFile(source))) {
     fail('backupUnrecognized')
   }
   /** 已交给调用方的条目序号（1 起）与条目名，仅在报错时用于说明「哪一段校验失败」。 */
   let index = 0
   let path: string | undefined
   try {
-    for await (const entry of readArchive(file)) {
+    for await (const entry of readArchive(source)) {
       index += 1
       path = entry.path
       if (entry.path !== MANIFEST_PATH) {
@@ -116,10 +117,10 @@ export type ImportArchiveOptions = {
  * 只有「一条会话都没写成」才算整包失败。
  */
 export const importArchive = async (
-  file: File,
+  source: ArchiveSource,
   options: ImportArchiveOptions = {}
 ): Promise<{ skipped: ImportSkip[] }> => {
-  if (!(await isZipFile(file))) {
+  if (!(await isZipFile(source))) {
     fail('backupUnrecognized')
   }
   const imported = new Set<string>()
@@ -150,7 +151,7 @@ export const importArchive = async (
   }
 
   try {
-    for await (const entry of readArchive(file)) {
+    for await (const entry of readArchive(source)) {
       // 取消只在条目边界生效：已写入暂存的条目会被调用方清空，正式数据一个字节都不动。
       if (options.signal?.aborted) {
         fail('historyImportCancelled')

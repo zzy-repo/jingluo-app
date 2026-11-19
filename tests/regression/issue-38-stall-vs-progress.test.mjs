@@ -9,6 +9,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { registerHooks } from 'node:module'
+import { simulate } from '../fixtures/url-import-stubs/download-simulator.mjs'
 
 const stub = (name) => new URL(`../fixtures/url-import-stubs/${name}`, import.meta.url).href
 const limitModule = new URL('../../src/services/chat/history/importLimit.ts', import.meta.url).href
@@ -41,29 +42,11 @@ const zipBytes = (size) => {
   return bytes
 }
 
-const rangeOf = (options) => {
-  const match = /^bytes=(\d+)-(\d+)$/.exec(String(options.headers?.Range ?? ''))
-  if (match === null) throw new Error(`意料之外的 Range：${options.headers?.Range}`)
-  return { from: Number(match[1]), to: Number(match[2]) }
-}
-
-const rangeResponse = (url, source, from, to) => {
-  const end = Math.min(to, source.length - 1)
-  const slice = source.slice(from, end + 1)
-  return {
-    status: 206,
-    url,
-    headers: { 'Content-Range': `bytes ${from}-${end}/${source.length}`, 'Content-Length': String(slice.length) },
-    data: slice.buffer,
-  }
-}
-
-/** 每块都成功、但每块之前先等一会儿的链路（模拟慢但在推进）。 */
-const slowButSteady = (source, delayMs) => async (options) => {
-  const { from, to } = rangeOf(options)
-  await new Promise((resolve) => setTimeout(resolve, delayMs))
-  return rangeResponse(options.url, source, from, to)
-}
+/**
+ * 慢但在推进的链路（#34 之后网络读与写盘都在原生侧）：每次被问进度就稳定多写 1KB，
+ * 干净得像教科书 —— 字节一直在涨，但速度远低于包体，正对 #38 的判死口径。
+ */
+const slowButSteady = (source) => ({ source, total: source.length, bytesPerPoll: 1024 })
 
 const resetEnv = () => {
   globalThis.__log = { records: [], events: [], actions: [] }
@@ -71,9 +54,10 @@ const resetEnv = () => {
   globalThis.__importCount = 1
 }
 
-const run = async (url, get, options = {}) => {
+const run = async (url, spec, options = {}) => {
   resetEnv()
-  globalThis.__native = { native: true, calls: [], get }
+  globalThis.__native = { native: true }
+  globalThis.__download = simulate(spec)
   try {
     const count = await importHistoryFromUrl(url, options)
     return { count, error: null }
@@ -84,7 +68,7 @@ const run = async (url, get, options = {}) => {
 
 test('#38 慢但在推进的下载不许判死（每块都有新字节 = 不是停滞）', async () => {
   const source = zipBytes(64 * 1024)
-  const { count, error } = await run('https://obs.example.test/reg38-slow.zip', slowButSteady(source, 40), {
+  const { count, error } = await run('https://obs.example.test/reg38-slow.zip', slowButSteady(source), {
     downloadStallMs: 500,
   })
   assert.equal(error, null, `慢链路被误判成停滞：${error?.key ?? ''}`)
@@ -94,7 +78,7 @@ test('#38 慢但在推进的下载不许判死（每块都有新字节 = 不是�
 
 test('#38 总时间预算从下载开始算，不会因为"一直有进展"被无限续命', async () => {
   const source = zipBytes(8 * 1024 * 1024)
-  const { error } = await run('https://obs.example.test/reg38-budget.zip', slowButSteady(source, 50), {
+  const { error } = await run('https://obs.example.test/reg38-budget.zip', slowButSteady(source), {
     downloadMaxTotalMs: 300,
   })
   assert.ok(error !== null, '预算用完必须结束，而不是无限等下去')

@@ -179,9 +179,6 @@ export const en = {
     'Download timed out: over the {minutes}min cap ({done} / {total} downloaded). Retry to continue.',
   historyImportUrlDeadlineUnknownTotal:
     'Download timed out: over the {minutes}min cap ({done} downloaded). Retry to continue.',
-  historyImportUrlRestarted:
-    'This link does not support resuming, so the download restarted from the beginning.',
-  historyImportUrlResumed: 'Resumed from where the last attempt stopped ({done} downloaded).',
   historyImportCancelled: 'Import cancelled',
   importTraceTitle: 'Import details ({count})',
   importTraceCopy: 'Copy details',
@@ -211,8 +208,6 @@ export const en = {
   importTraceReasonDeadline: 'download timed out (over the {minutes}min cap)',
   importTraceHeartbeat: 'still downloading… ({done} / {total}, no new data for {idle}s)',
   importTraceHeartbeatUnknown: 'still downloading… ({done}, no new data for {idle}s)',
-  importTraceResume: 'resumed from {done} (not from zero)',
-  importTraceRestart: 'link does not support resuming; restarted from the beginning',
   importTraceReasonFormat: 'invalid archive format',
   detailsExpand: 'Show more',
   detailsCollapse: 'Show less',

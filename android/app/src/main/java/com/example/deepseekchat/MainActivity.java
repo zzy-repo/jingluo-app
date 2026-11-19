@@ -11,7 +11,7 @@ import com.getcapacitor.WebViewListener;
 /**
  * Capacitor 宿主 Activity。
  *
- * <p>本类只做一件事之外的原样保留（四个 registerPlugin），外加一件事：
+ * <p>本类只做一件事之外的原样保留（registerPlugin 列表），外加一件事：
  * **接管渲染进程死亡**（Issue #44）。
  *
  * <p>背景：Capacitor 8.6.2 的 {@link com.getcapacitor.WebViewListener#onRenderProcessGone}
@@ -53,6 +53,9 @@ public class MainActivity extends BridgeActivity {
         // 身份的事留在 DeviceFingerprintPlugin 里，免得哪天顺手把标识写进诊断日志。
         registerPlugin(DeviceFingerprintPlugin.class);
         registerPlugin(CheckoutBrowserPlugin.class);
+        // 大包导入的原生半边（Issue #34）：下载流式落盘 + 按区间回读。理由见 issue #34 评论
+        // 与 HistoryArchivePlugin 的类注释（为什么不能靠 CapacitorHttp / @capacitor/filesystem）。
+        registerPlugin(HistoryArchivePlugin.class);
         super.onCreate(savedInstanceState);
         installRenderProcessGoneGuard();
     }

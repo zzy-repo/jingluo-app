@@ -1,7 +1,7 @@
-import { Capacitor, CapacitorHttp, type HttpResponse } from '@capacitor/core'
+import { Capacitor } from '@capacitor/core'
 import { errorMeta, record, recordAction, recordEvent, redactUrl } from '../../diagnostics/collector.js'
-import { importHistory } from '../backup.js'
 import { LIMITS } from '../../limits.js'
+import { importHistory } from '../backup.js'
 import { BackupError, fail } from './errors.js'
 import {
   ARCHIVE_READ_FAILURE_KEY,
@@ -17,17 +17,19 @@ import {
   resolveMaxImportBytes,
   DEFAULT_MAX_IMPORT_BYTES,
 } from './importLimit.js'
+import { nativeArchive, type NativeArchiveHandle } from './nativeArchive.js'
 
 /**
- * 直链导入：用原生 HTTP 下载 ZIP 后交给既有的文件导入链路（importHistory）。
+ * 直链导入：原生侧流式下载 ZIP 到 App 私有目录，再交给既有的文件导入链路（importHistory）按区间读。
  *
  * 为什么只能在原生（APK）里做：DeepSeek 导出的 ZIP 放在官方 OBS 桶上，桶没有开 CORS
  * （预检 OPTIONS 返回 403、响应无 Access-Control-Allow-Origin），浏览器 fetch 必被拦。
- * CapacitorHttp 走的是原生网络栈（Android 的 HttpURLConnection），不受 CORS 限制。
  *
- * 为什么分段下载：CapacitorHttp 是一次性调用，**没有进度事件**——整包 20MB 在网络差时
- * 界面只能转圈（实测弱网 35s、断流 183s 后才知道失败）。这里改成带 Range 的分块 GET：
- * 每块到手就知道「已下载多少字节」，块超时只有 20s（断网最多等一块），块与块之间检查取消。
+ * 为什么下载改成原生流式落盘（#34）：旧实现用 `CapacitorHttp.get` 分块取回，再在 JS 里攒成
+ * `chunks: Uint8Array[]` → `new File(chunks)`。那条路的内存**随包体线性增长**（同一份数据在
+ * WebView 堆里至少两份：分块数组 + File 的副本），200MB 的合法导出包必然撞天花板，
+ * 把 4.5MB / 20MB / 48MB / 200MB 四档跑一遍就能看到净 PSS 一路涨到几十 MB。现在网络读与写盘
+ * 都在原生（{@link HistoryArchivePlugin}），JS 只轮询「已下载多少字节」，内存由块大小决定。
  */
 
 /**
@@ -36,37 +38,22 @@ import {
  */
 export const MAX_ARCHIVE_BYTES = DEFAULT_MAX_IMPORT_BYTES
 
-/** 交给 importHistory 的文件名，只用于提示与暂存，不写盘。 */
-const ARCHIVE_NAME = 'deepseek_data.zip'
-
 /** ZIP 本地文件头 PK\x03\x04，与 zipReader.isZipFile 保持一致。 */
 const ZIP_MAGIC = [0x50, 0x4b, 3, 4]
 
-/**
- * 首块大小：慢网（模拟器 gsm 14.4kbps）下也要几秒内就出第一条「已下载 xx KB」，
- * 之后按实测速率自适应放大，快网 20MB 只发 6~10 个请求，几乎不增加开销。
- */
-const FIRST_CHUNK_BYTES = 4 * 1024
-const MIN_CHUNK_BYTES = 4 * 1024
-const MAX_CHUNK_BYTES = 4 * 1024 * 1024
-
-/** 每块的目标耗时：按速率换算块大小，让进度大约每秒刷新一次。 */
-const CHUNK_TARGET_MS = 1200
-
-/** 单块失败重试次数：弱网（实测模拟器 gsm 14.4kbps）会在块中途丢流，重试同一起点即可续上。 */
-const CHUNK_RETRIES = 1
-
-/** 连接超时；读超时按块，断网/丢包最多等一块就报错，而不是等到 183 秒。 */
+/** 建连超时：原生侧用，和旧的 CapacitorHttp 同一档（10s）。 */
 const CONNECT_TIMEOUT_MS = LIMITS.importConnectMs
-const CHUNK_READ_TIMEOUT_MS = LIMITS.importChunkReadMs
 
 /**
  * 停滞判定窗口：**唯一**的失败判定依据——连续这么久「没有任何新字节」才判 stalled。
  *
  * 为什么按「无进度」而不是「总墙钟」判：上一版用的是 120s 绝对总预算，结果 164.5MB 的
  * **合法**导出包在约 0.5MB/s 的真实网络下必然超时（#38：三次分别在 47.4/54.3/65.4MB 处被误杀），
- * 而字节其实一直在增长。慢但在推进的链路只能续期，不能判死；真正挂死（CapacitorHttp
- * 原生 Promise 永久 pending、对端不再吐数据）的共同特征是「字节停住」，那才是要判的东西。
+ * 而字节其实一直在增长。慢但在推进的链路只能续期，不能判死；真正挂死（对端不再吐数据、
+ * 原生读永久阻塞）的共同特征是「字节停住」，那才是要判的东西。
+ *
+ * 这一条在流式落盘之后仍然成立：判定看的是**文件增长**（原生侧 `bytes` 计数），
+ * 与「怎么下载的」无关。删掉的只有「120s 总墙钟」这种形式（#38 的结论）。
  */
 const DOWNLOAD_STALL_MS = LIMITS.importStallMs
 
@@ -105,14 +92,17 @@ const MIN_REQUIRED_BYTES_PER_SEC = importBudget().minBytesPerSec
 
 /**
  * 周期性心跳间隔：每 5s 一条「这一段新增了多少字节 + 已经多久没有新字节」，
- * 日志里能直接区分「在推进」和「停滞」，也是原生请求挂住时唯一的在线证据。
+ * 日志里能直接区分「在推进」和「停滞」，也是原生读挂住时唯一的在线证据。
  */
 const HEARTBEAT_INTERVAL_MS = LIMITS.importHeartbeatMs
 
-/** 403 响应体里带 OBS 错误码；只解前面一小段足够判定。 */
-const ERROR_BODY_CHARS = 4096
+/**
+ * 进度轮询间隔：原生侧只维护计数器，JS 按这个节拍问一次「到哪儿了」。
+ * 500ms 是为了让「已下载 xx MB」看起来是连续跳的，同时也是取消与停滞判定的响应粒度。
+ */
+const POLL_MS = 500
 
-/** 取消后丢弃结果：CapacitorHttp 不支持 abort，取消保证「不再发新块、不再写入任何数据」。 */
+/** 取消：不再轮询、不再接受任何字节，临时文件由原生侧同步删除。 */
 export class UrlImportCancelled extends Error {
   constructor() {
     super('URL import cancelled')
@@ -120,7 +110,7 @@ export class UrlImportCancelled extends Error {
   }
 }
 
-/** 停滞终态：连续 stallMs 没有收到任何新字节（可续传重试）。 */
+/** 停滞终态：连续 stallMs 没有收到任何新字节。 */
 class DownloadStalled extends Error {
   constructor() {
     super('download stalled')
@@ -152,10 +142,6 @@ export type ImportTraceKind =
   | 'download'
   /** 周期心跳：这一段没有任何新字节时的「还活着」标记（下载停滞的唯一在线证据） */
   | 'heartbeat'
-  /** 续传：上一轮失败后从已下载字节继续（不清零） */
-  | 'resume'
-  /** 服务端忽略 Range（回 200 整包）：已丢弃本地字节、从头重新下载 */
-  | 'restart'
   | 'check'
   | 'session'
   | 'image'
@@ -198,46 +184,13 @@ export type UrlImportOptions = {
   maxBytes?: number
 }
 
-/** 原生（APK）才具备绕过 CORS 的原生 HTTP；网页版不提供该能力。 */
+/** 原生（APK）才具备绕过 CORS 的原生下载；网页版不提供该能力。 */
 export const canImportFromUrl = (): boolean => Capacitor.isNativePlatform()
 
 const throwIfCancelled = (signal?: AbortSignal) => {
   if (signal?.aborted) {
     throw new UrlImportCancelled()
   }
-}
-
-/** 响应头大小写不固定（Android 侧原样返回服务端头），按小写名字取。 */
-const headerValue = (
-  headers: Record<string, string> | undefined,
-  name: string
-): string | undefined => {
-  if (!headers) {
-    return undefined
-  }
-  const key = Object.keys(headers).find((item) => item.toLowerCase() === name)
-  return key === undefined ? undefined : String(headers[key])
-}
-
-/** 响应头里的 Content-Length；拿不到（chunked / 被网关去掉）时返回 undefined。 */
-const contentLength = (headers: Record<string, string> | undefined): number | undefined => {
-  const raw = headerValue(headers, 'content-length')
-  if (raw === undefined) {
-    return undefined
-  }
-  const value = Number(raw)
-  return Number.isSafeInteger(value) && value >= 0 ? value : undefined
-}
-
-/** `Content-Range: bytes 0-16383/21195845` 里的总大小；分段响应的权威来源。 */
-const contentRangeTotal = (headers: Record<string, string> | undefined): number | undefined => {
-  const raw = headerValue(headers, 'content-range')
-  const match = raw === undefined ? null : /\/(\d+)\s*$/.exec(raw)
-  if (!match) {
-    return undefined
-  }
-  const value = Number(match[1])
-  return Number.isSafeInteger(value) && value > 0 ? value : undefined
 }
 
 /**
@@ -256,105 +209,6 @@ const tooLarge = (limitBytes: number, measuredBytes: number): never => {
     size: maxImportMegabytes(limitBytes),
     actual: formatSize(measuredBytes),
   })
-}
-
-/**
- * 403 的错误页文本。
- * 实测（Android CapacitorHttp，arraybuffer 模式）非 2xx 时 data 可能为空，
- * 拿不到 OBS 的 <Code> 就分不出「链接过期」和「签名错误」——这时补发一个小 Range 的 text 请求读错误页。
- */
-const fetchErrorBodyText = async (url: string): Promise<string> => {
-  try {
-    const response = await CapacitorHttp.get({
-      url,
-      responseType: 'text',
-      connectTimeout: CONNECT_TIMEOUT_MS,
-      readTimeout: CHUNK_READ_TIMEOUT_MS,
-      headers: { Accept: 'application/xml,text/xml,*/*', Range: 'bytes=0-2047' },
-    })
-    const data = response.data
-    return typeof data === 'string' ? data.slice(0, ERROR_BODY_CHARS) : ''
-  } catch {
-    return ''
-  }
-}
-
-/** 每批解码的 base64 字符数：约 3MB 输出，避免一次性生成几十 MB 的二进制字符串。 */
-const DECODE_CHUNK_CHARS = 4 * 1024 * 1024
-
-/**
- * base64 → 字节。实测（Android CapacitorHttp，见 tests/test.url-import-device.spec.mjs）
- * arraybuffer 的 data 是 base64 字符串，Web 实现的 CapacitorHttp 也一样。
- *
- * 分块解码：20MB 的包 base64 后约 28MB，一次性 atob 会再生成一个 ~21MB 的二进制字符串，
- * 低内存手机上容易把 WebView 渲染进程挤爆（模拟器上实测会崩），所以按块解码并只保留结果字节。
- */
-const fromBase64 = (value: string): Uint8Array<ArrayBuffer> => {
-  // 输出长度上限按 3/4 估（比实际略大，最后按写入量截断）；Android 的 Base64.DEFAULT 每 76 字符插 \n。
-  const bytes = new Uint8Array(Math.floor((value.length * 3) / 4) + 3)
-  let written = 0
-  let carry = ''
-  for (let start = 0; start < value.length; start += DECODE_CHUNK_CHARS) {
-    const chunk = (carry + value.slice(start, start + DECODE_CHUNK_CHARS)).replace(/\s/g, '')
-    // 只解码完整的 4 字符组，剩下的留给下一批，避免 atob 报错。
-    const usable = chunk.length - (chunk.length % 4)
-    carry = chunk.slice(usable)
-    if (usable === 0) {
-      continue
-    }
-    const binary = atob(chunk.slice(0, usable))
-    for (let index = 0; index < binary.length; index += 1) {
-      bytes[written + index] = binary.charCodeAt(index)
-    }
-    written += binary.length
-  }
-  // 用 subarray 而不是 slice：多出的几十 KB 空闲字节不值得再复制一份 20MB 数据。
-  return written === bytes.length ? bytes : bytes.subarray(0, written)
-}
-
-/** 统一 data → 字节，并在解码前先按 base64 长度估算一次大小。 */
-const toBytes = (data: unknown, maxBytes: number): Uint8Array<ArrayBuffer> => {
-  if (typeof data === 'string') {
-    // 每个 base64 字符约 3/4 字节：超限的包不必解码，避免几十 MB 的字符串再膨胀一倍。
-    const estimated = Math.floor((data.length * 3) / 4)
-    if (estimated > maxBytes) {
-      tooLarge(maxBytes, estimated)
-    }
-    return fromBase64(data)
-  }
-  if (data instanceof ArrayBuffer) {
-    return new Uint8Array(data)
-  }
-  if (ArrayBuffer.isView(data)) {
-    const view = data as ArrayBufferView
-    return new Uint8Array(view.buffer as ArrayBuffer, view.byteOffset, view.byteLength)
-  }
-  return fail('historyImportUrlBadResponse')
-}
-
-/** 错误响应体（OBS 的 XML 错误页）→ 文本；只解前 4KB，失败返回空串。 */
-const errorBodyText = (data: unknown): string => {
-  try {
-    let bytes: Uint8Array<ArrayBuffer>
-    if (typeof data === 'string') {
-      const head = data.slice(0, ERROR_BODY_CHARS)
-      const usable = head.slice(0, head.length - (head.length % 4))
-      bytes = fromBase64(usable)
-    } else if (data instanceof ArrayBuffer) {
-      bytes = new Uint8Array(data).subarray(0, ERROR_BODY_CHARS)
-    } else if (ArrayBuffer.isView(data)) {
-      const view = data as ArrayBufferView
-      bytes = new Uint8Array(view.buffer as ArrayBuffer, view.byteOffset, view.byteLength).subarray(
-        0,
-        ERROR_BODY_CHARS
-      )
-    } else {
-      return ''
-    }
-    return new TextDecoder('utf-8', { fatal: false }).decode(bytes)
-  } catch {
-    return ''
-  }
 }
 
 /** 服务端原文压成一行人话，最多 100 字（放进提示里不会撑爆弹窗）。 */
@@ -376,6 +230,8 @@ const errorText = (error: unknown): string =>
 /**
  * 明确的「够不到网络」：DNS 解析失败 / 网络不可达 / 连接被拒 / 浏览器离线。
  * 只有这些才敢说「网络已断开」——用户主动断网、飞行模式、DNS 挂了都属于这类。
+ * 原生侧抛的是 Java 异常原文（`UnknownHostException: Unable to resolve host …`、
+ * `ConnectException: Connection refused`），所以这里同时认 Java 与 WebView 两种写法。
  */
 const isUnreachable = (error: unknown): boolean =>
   /unable to resolve host|unknownhost|network is unreachable|no address associated|connection refused|failed to connect|econnrefused|enotfound|ehostunreach|enetunreach|net::err_internet_disconnected|net::err_name_not_resolved|net::err_network_changed|net_error/i.test(
@@ -383,12 +239,12 @@ const isUnreachable = (error: unknown): boolean =>
   )
 
 /**
- * 传输被中断：流被对端/中间设备丢掉（unexpected end of stream、连接重置、读超时后的半截连接…）。
+ * 传输被中断：流被对端/中间设备丢掉（unexpected end of stream、连接重置、socket 关闭…）。
  * 这只证明「这条连接断了」，**不能**断言是物理断网（实测 14.4kbps 限速下 OBS 也会主动断流），
  * 所以文案单独一档，并带上已下载比例，避免把责任错判给用户网络。
  */
 const isStreamBroken = (error: unknown): boolean =>
-  /unexpected end of stream|connection reset|connection aborted|connection closed|connection shutdown|eof reached|broken pipe|socket closed|ioexception|stream|handshake|ssl/i.test(
+  /unexpected end of stream|connection reset|connection aborted|connection closed|connection shutdown|eof reached|broken pipe|socket closed|socketexception|ioexception|stream|handshake|ssl/i.test(
     errorText(error)
   )
 
@@ -423,10 +279,9 @@ const isPermanentFailure = (error: unknown): boolean =>
  * - delta <= 0：回拨 → 当作「时间没走」，绝不让耗时倒退
  * - delta > CLOCK_JUMP_MS：前跳 → 同样不计入，绝不让一次跳变凭空耗完总上限
  *
- * 阈值取 2 分钟：一次下载里真正的等待都被 requestRange 的 connect/read 超时（10s/12s）、
- * 重试间隔（≤600ms）与停滞窗口（40s）压在 ~40s 以内，正常读数到不了 2 分钟；
- * 而校时/改时间的跳变通常是分钟级往上。已知代价（未测边界）：应用在后台被挂起超过
- * 2 分钟的空档不计入总耗时——宁可少报，也不误杀。
+ * 阈值取 2 分钟：一次下载里真正的等待都被原生的连接/读超时（10s）、轮询间隔（500ms）与
+ * 停滞窗口（40s）压在 ~40s 以内，正常读数到不了 2 分钟；而校时/改时间的跳变通常是分钟级往上。
+ * 已知代价（未测边界）：应用在后台被挂起超过 2 分钟的空档不计入总耗时——宁可少报，也不误杀。
  */
 const CLOCK_JUMP_MS = LIMITS.clockJumpMs
 let clockWallAt = Date.now()
@@ -469,53 +324,20 @@ const recordDownloadFailure = (
 
 /**
  * 整段下载的共享状态：停滞看门狗与心跳都读它（只读来记录/判定，不直接改业务结果）。
- * downloaded 是「已确认到手并计入 chunks」的字节，from/span/attempt 说明当前卡在哪一块；
- * lastProgressAt 是**停滞判定的唯一依据**——它只在真的收到新字节时前移。
+ *
+ * `downloaded` 是原生侧确认已写入文件的字节数——它只会增长；`lastProgressAt` 是**停滞判定的
+ * 唯一依据**，只在真的看到新字节时前移。
  */
 type DownloadState = {
   startedAt: number
   downloaded: number
   total: number | undefined
-  from: number
-  span: number
-  attempt: number
   /** 最近一次「字节增长」的时刻：连续 stallMs 没有前移才判 stalled */
   lastProgressAt: number
   /** 停滞窗口（毫秒） */
   stallMs: number
   /** 防御性总上限的绝对截止时刻（= startedAt + 总上限） */
   deadline: number
-}
-
-/**
- * 跨调用的续传点：上一次下载失败时已经到手的字节。
- * 同一个链接再点「重试」时从这里续传（`Range: bytes=<downloaded>-…`），不再从 0 开始。
- * 只有一份、只在「失败且已下到一部分」时保留；成功/取消/换链接都会清掉。
- */
-type DownloadResumePoint = {
-  url: string
-  chunks: Uint8Array<ArrayBuffer>[]
-  downloaded: number
-  total: number | undefined
-}
-
-let resumePoint: DownloadResumePoint | null = null
-
-/**
- * 值得续传的失败族：链路断/停，但已到手的字节仍然有效
- * （超时、连接中断、网络错误/不可达）。包本身有问题的不在名单里（续也白续）。
- */
-const RESUMABLE_ERROR_KEYS = new Set([
-  'historyImportUrlTimeout',
-  'historyImportUrlTimeoutPartial',
-  'historyImportUrlInterrupted',
-  'historyImportUrlNetwork',
-  'historyImportUrlOffline',
-])
-
-/** 主动丢弃续传点（成功、取消、换链接时调用），避免几十上百 MB 的块白占内存。 */
-const dropResumePoint = (): void => {
-  resumePoint = null
 }
 
 /**
@@ -534,9 +356,7 @@ const stallVerdict = (state: DownloadState): Error | null => {
       stage: 'download',
       'download.bytes': state.downloaded,
       ...(state.total === undefined ? {} : { 'download.total': state.total }),
-      'request.from': state.from,
-      'request.span': state.span,
-      attempt: state.attempt,
+      'idle.ms': elapsedSince(state.lastProgressAt),
       'max.total.ms': state.deadline - state.startedAt,
     })
     return new DownloadDeadlineExceeded()
@@ -549,9 +369,6 @@ const stallVerdict = (state: DownloadState): Error | null => {
     stage: 'download',
     'download.bytes': state.downloaded,
     ...(state.total === undefined ? {} : { 'download.total': state.total }),
-    'request.from': state.from,
-    'request.span': state.span,
-    attempt: state.attempt,
     'idle.ms': idleMs,
     'stall.ms': state.stallMs,
   })
@@ -559,91 +376,8 @@ const stallVerdict = (state: DownloadState): Error | null => {
 }
 
 /**
- * 给一次原生请求套上「停滞看门狗」与取消：
- * - 连续 stallMs 没有新字节 → DownloadStalled（由 downloadArchive 统一记失败终态）
- * - 总时长超过防御性上限 → DownloadDeadlineExceeded
- * - 用户取消 → UrlImportCancelled（取消优先于失败，不误报「下载失败」）
- *
- * 与上一版的差别（#38）：计时起点是 `state.lastProgressAt`，只要期间拿到新字节就重新计时，
- * 慢但在推进的链路永远不会被这里判死；只有「字节真的停住」才会到点收口。
- * 原生 Promise 可能永不 settle，所以每次请求都必须由这里给出终态，而不是等原生超时。
- *
- * 提前结束时把底层 Promise 的 rejection 吞掉：CapacitorHttp 不能 abort，
- * 迟到的原生响应必须彻底丢弃——不写入任何数据、不上报进度、也不变成未处理拒绝。
- */
-const guardRequest = <T>(work: Promise<T>, state: DownloadState, signal?: AbortSignal): Promise<T> =>
-  new Promise<T>((resolve, reject) => {
-    let timer: ReturnType<typeof setTimeout> | undefined
-    let settled = false
-    /** 上一次看到（并确认过）的字节数：用来判断这一轮窗口内是否真的有推进 */
-    let seen = state.downloaded
-    const onAbort = () => finish(() => reject(new UrlImportCancelled()))
-    const finish = (apply: () => void) => {
-      if (settled) {
-        return
-      }
-      settled = true
-      if (timer !== undefined) {
-        clearTimeout(timer)
-        timer = undefined
-      }
-      signal?.removeEventListener('abort', onAbort)
-      apply()
-    }
-    const discard = () => {
-      work.catch(() => {})
-    }
-    /** 到下一次「该看一眼」的时刻：停滞窗口与总上限取较早的那个 */
-    const arm = () => {
-      const now = monotonicNow()
-      const stallAt = state.lastProgressAt + state.stallMs
-      timer = setTimeout(onWake, Math.max(0, Math.min(stallAt, state.deadline) - now))
-    }
-    const onWake = () => {
-      timer = undefined
-      // 防御性总上限优先：它是「不管有没有进度都要收口」的硬线，不会被续期推翻
-      if (monotonicNow() >= state.deadline) {
-        discard()
-        finish(() => reject(stallVerdict(state) ?? new DownloadDeadlineExceeded()))
-        return
-      }
-      // 这一轮窗口内字节有增长 → 续期，绝不因为「总时长变长」判死（#38 的核心）
-      if (state.downloaded > seen) {
-        seen = state.downloaded
-        arm()
-        return
-      }
-      const verdict = stallVerdict(state)
-      if (verdict === null) {
-        arm()
-        return
-      }
-      discard()
-      finish(() => reject(verdict))
-    }
-    if (signal?.aborted) {
-      discard()
-      finish(() => reject(new UrlImportCancelled()))
-      return
-    }
-    // 进来就已经该判死（上一块已经把窗口耗光）：不用再等一轮定时器
-    const verdict = stallVerdict(state)
-    if (verdict !== null) {
-      discard()
-      finish(() => reject(verdict))
-      return
-    }
-    arm()
-    signal?.addEventListener('abort', onAbort, { once: true })
-    work.then(
-      (value) => finish(() => resolve(value)),
-      (error) => finish(() => reject(error))
-    )
-  })
-
-/**
  * 周期心跳：带「最近这一段新增了多少字节」，日志能直接区分「在推进」还是「停滞」。
- * 原生请求被永久挂起时，这是唯一的在线证据（卡在哪一块 + 已下载多少 + 已经多久没新字节）。
+ * 原生读被永久挂住时，这是唯一的在线证据（已下载多少 + 已经多久没新字节）。
  * 只记录，不中止业务；调用方必须在 finally 里停（成功/失败/取消/卸载都不能留 interval）。
  */
 const startDownloadHeartbeat = (
@@ -666,12 +400,9 @@ const startDownloadHeartbeat = (
       'progress.state': delta > 0 ? 'advancing' : 'stalled',
       'idle.ms': idleMs,
       'stall.leftMs': Math.max(0, state.lastProgressAt + state.stallMs - now),
-      'request.from': state.from,
-      'request.span': state.span,
-      attempt: state.attempt,
       elapsedMs: elapsed,
     })
-    // 详情只在「这一段时间没有新字节」时补一条：有进展时块级采样已经记过，
+    // 详情只在「这一段时间没有新字节」时补一条：有进展时采样已经记过，
     // 心跳的作用是证明还活着、以及停滞了多久，不是刷进度。
     if (delta <= 0) {
       trace?.({ at: elapsed, kind: 'heartbeat', bytes: state.downloaded, totalBytes: state.total, idleMs })
@@ -681,36 +412,18 @@ const startDownloadHeartbeat = (
   return () => clearInterval(timer)
 }
 
-/**
- * 一次带 Range 的 GET；超时/断网在这里抛出，由调用方分类。
- * readTimeout 是「两次读到字节之间的空转上限」，慢而稳的链路不受影响，
- * 断网 / 服务端不再吐数据时最多等一块（12s）就报错。
- */
-const requestRange = async (url: string, from: number, to: number): Promise<HttpResponse> =>
-  CapacitorHttp.get({
-    url,
-    responseType: 'arraybuffer',
-    connectTimeout: CONNECT_TIMEOUT_MS,
-    readTimeout: CHUNK_READ_TIMEOUT_MS,
-    headers: {
-      Accept: 'application/zip,application/octet-stream,*/*',
-      Range: `bytes=${from}-${to}`,
-    },
-  })
-
 /** 非 2xx：403 按 OBS 错误码细分（链接过期 / 签名错误 / 其他），其余按状态码。 */
-const failForStatus = async (
-  response: HttpResponse,
+const failForStatus = (
+  status: number,
+  body: string,
   url: string,
   startedAt: number,
   downloaded: number,
   total: number | undefined,
   trace?: (entry: ImportTraceEntry) => void
-): Promise<never> => {
-  const status = response.status
-  // 403：优先用响应体里的 OBS 错误码；body 为空时补发一次 text 请求再判定。
-  const rawDetail = serverDetail(errorBodyText(response.data))
-  const detail = status === 403 && rawDetail === '' ? serverDetail(await fetchErrorBodyText(url)) : rawDetail
+): never => {
+  // 错误体由原生侧读回（前 4KB）：403 的 OBS 错误码在里面，靠它区分「链接过期」与「签名被改」。
+  const detail = serverDetail(body)
   const meta = {
     'http.status': status,
     'download.bytes': downloaded,
@@ -740,181 +453,223 @@ const failForStatus = async (
 }
 
 /**
- * 只按首块的前 4 字节判 ZIP 头：整包拼一遍只为看 4 个字节，
- * 等于把已经到手的几十 MB 再复制一份（#34 的内存三份拷贝之一），没必要。
+ * 原生侧的失败原文 → 用户文案。
+ *
+ * 分档与旧的分块实现完全一致（离线 → 永久性错误 → 超时 → 够不到 → 传输中断 → 其他），
+ * 因为依据一直是**错误原文 + `navigator.onLine`**，与「怎么下载的」无关。
  */
-const isZipHead = (chunks: Uint8Array<ArrayBuffer>[]): boolean => {
-  const first = chunks[0]
-  return (
-    first !== undefined &&
-    first.byteLength >= ZIP_MAGIC.length &&
-    ZIP_MAGIC.every((byte, index) => first[index] === byte)
-  )
+const failDownloadError = (
+  error: unknown,
+  url: string,
+  state: DownloadState,
+  trace?: (entry: ImportTraceEntry) => void
+): never => {
+  const { startedAt, downloaded, total } = state
+  const percent = total === undefined || total === 0 ? 0 : Math.round((downloaded / total) * 100)
+  // 离线优先（#154）：`navigator.onLine === false` 是最权威的信号，不必等错误串匹配。
+  if (!isBrowserOnline()) {
+    recordDownloadFailure('offline', url, startedAt, { 'download.bytes': downloaded }, error)
+    trace?.({ at: elapsedSince(startedAt), kind: 'error', bytes: downloaded, totalBytes: total, message: 'offline' })
+    return fail('historyImportUrlOffline')
+  }
+  // 永久性错误（#154）：地址本身不可用（禁用端口 / 非法协议），再试多少次都一样。
+  // 离线时**不**套用这条：手机只是暂时没网，错误串却常常与「端口被禁」长得一样。
+  if (isPermanentFailure(error)) {
+    recordDownloadFailure('permanent', url, startedAt, { 'download.bytes': downloaded }, error)
+    trace?.({ at: elapsedSince(startedAt), kind: 'error', bytes: downloaded, totalBytes: total, message: 'permanent' })
+    // 专属文案（historyImportUrlBlocked）留作 follow-up：复用「请输入以 http(s):// 开头的链接」——
+    // 它指向**地址本身**有问题，不会诱导用户反复重试。
+    return fail('historyImportUrlInvalid')
+  }
+  if (isTimeout(error)) {
+    // 超时且已经下到一半：说明链路慢，不是链接坏了。
+    recordDownloadFailure('timeout', url, startedAt, { 'download.bytes': downloaded, percent }, error)
+    trace?.({ at: elapsedSince(startedAt), kind: 'error', bytes: downloaded, totalBytes: total, message: 'timeout' })
+    return downloaded > 0
+      ? fail('historyImportUrlTimeoutPartial', { percent })
+      : fail('historyImportUrlTimeout')
+  }
+  if (isUnreachable(error)) {
+    // 「够不到网络」再分成两档（#111 / #18）：ECONNREFUSED / Connection refused 说明链路通、
+    // 对面没在监听 → refused；其余（DNS 解析不到 / 路由不可达 / 切网瞬间断链）是
+    // 「有网但连不上服务」→ unreachable，文案指向导入服务本身。
+    const classified = classifyImportFailure({ error, online: isBrowserOnline() })
+    const tier: ImportFailureReason =
+      classified === 'refused' ? 'refused' : classified === 'offline' ? 'offline' : 'unreachable'
+    recordDownloadFailure(tier, url, startedAt, { 'download.bytes': downloaded }, error)
+    trace?.({ at: elapsedSince(startedAt), kind: 'error', bytes: downloaded, totalBytes: total, message: tier })
+    return fail(IMPORT_FAILURE_KEYS[tier])
+  }
+  if (isStreamBroken(error)) {
+    recordDownloadFailure('interrupted', url, startedAt, { 'download.bytes': downloaded, percent }, error)
+    trace?.({ at: elapsedSince(startedAt), kind: 'error', bytes: downloaded, totalBytes: total, message: 'interrupted', status: 0 })
+    return fail('historyImportUrlInterrupted', { percent })
+  }
+  recordDownloadFailure('network', url, startedAt, { 'download.bytes': downloaded }, error)
+  trace?.({ at: elapsedSince(startedAt), kind: 'error', bytes: downloaded, totalBytes: total, message: 'network' })
+  return fail('historyImportUrlNetwork')
 }
 
-const clamp = (value: number, min: number, max: number): number =>
-  Math.min(max, Math.max(min, Math.round(value)))
+const isZipHead = (bytes: Uint8Array): boolean =>
+  bytes.length >= ZIP_MAGIC.length && ZIP_MAGIC.every((byte, index) => bytes[index] === byte)
 
 /**
- * 发一块请求；失败在这一层分类成 断网 / 超时（区分「已下载 >0」）/ 其他网络错误。
- * 断网必须立刻报「网络已断开」：实测电容桥的单发整包会一路等到 183 秒才说「超时」。
+ * 原生侧把下载判了「失败」时抛这个：**不在这里决定用户看到什么**，因为还不确定这是
+ * 「抖了一下」还是「真连不上」——先按现行分类看能不能再试一次（#105 / #154 的承诺：
+ * 瞬时可重试、永久性错误不重试），试完仍是失败才翻译成人话。
  */
-const fetchChunk = async (
+class NativeFailure extends Error {
+  /** 原生给的原文（异常类名 / `INCOMPLETE: got X of Y`），分类全靠它 */
+  readonly reason: Error
+  /** 这一轮的落点：重试要接着这个文件续传，收口时它会被 discard 删掉 */
+  readonly path?: string
+
+  constructor(reason: Error, path?: string) {
+    super(reason.message)
+    this.name = 'NativeFailure'
+    this.reason = reason
+    this.path = path
+  }
+}
+
+/**
+ * 一次下载尝试：起原生下载 → 轮询到 done → 按区间校验 ZIP 头，成功返回临时文件句柄。
+ *
+ * 只做「这一轮」的事：失败就抛 {@link NativeFailure}，由 {@link downloadArchive} 决定
+ * 是否再来一轮。这样重试逻辑只有一处，停滞/总上限这类**不可重试**的判定也不会被误当成网络抖动。
+ */
+const attemptDownload = async (
   url: string,
-  from: number,
-  to: number,
+  options: UrlImportOptions,
   state: DownloadState,
   trace: ((entry: ImportTraceEntry) => void) | undefined,
-  signal?: AbortSignal
-): Promise<{ response: HttpResponse; requested: number }> => {
-  let lastError: unknown
-  for (let attempt = 0; attempt <= CHUNK_RETRIES; attempt += 1) {
-    // 重试时指数缩小块（4KB → 2KB → 1KB）：极差链路上也能一点点往前推，而不是整包重来
-    const span = Math.max(MIN_CHUNK_BYTES / 4, Math.floor((to - from + 1) / 2 ** attempt))
-    const attemptStartedAt = monotonicNow()
-    // 心跳据此说明「卡在哪一块、第几次尝试」（只读这份状态，不参与业务判断）
-    state.from = from
-    state.span = span
-    state.attempt = attempt
-    // 阶段埋点（只记录，不改行为）：把「原生请求是否返回」与「主线程是否停摆」分开。
-    recordEvent('import_stage', 'import: native request begin', {
-      stage: 'download',
-      'request.from': from,
-      'request.span': span,
-      attempt,
+  maxBytes: number,
+  resume: { path: string; from: number } | undefined,
+  report: (bytes: number) => void
+): Promise<NativeArchiveHandle> => {
+  throwIfCancelled(options.signal)
+  const start = await nativeArchive.start({
+    url,
+    maxBytes,
+    connectTimeoutMs: CONNECT_TIMEOUT_MS,
+    readTimeoutMs: Math.max(state.stallMs * 2, LIMITS.importChunkReadMs),
+    // 只有「同一次导入里的重试」才会带续传点：跨导入的续传已按 #34 目标 3 移除
+    ...(resume === undefined ? {} : { path: resume.path, resumeFrom: resume.from }),
+  })
+  // 关闭条件 3：声明总量超限 —— 原生侧在写第一个字节前就断开了，这里只是把结论翻成人话
+  if (start.state === 'tooLarge') {
+    return tooLarge(maxBytes, start.declared)
+  }
+  if (start.state === 'http') {
+    return failForStatus(start.status, start.body, url, state.startedAt, 0, undefined, trace)
+  }
+  if (start.state === 'failed') {
+    throw new NativeFailure(new Error(start.error))
+  }
+  // 服务端不认 Range 时原生侧已经把文件截断重来：计数必须跟着归零，否则进度会凭空跳涨
+  if (start.restarted) {
+    state.downloaded = 0
+  }
+  state.total = start.total
+  if (state.total !== undefined && state.total > maxBytes) {
+    tooLarge(maxBytes, state.total)
+  }
+  if (start.bytes > 0) {
+    report(start.bytes)
+  }
+  for (;;) {
+    const progress = await nativeArchive.progress()
+    if (progress.total !== undefined && state.total === undefined) {
+      state.total = progress.total
+      if (state.total > maxBytes) {
+        tooLarge(maxBytes, state.total)
+      }
+    }
+    // 只认「字节真的增长」：这是停滞判定的唯一依据（#38）。
+    if (progress.bytes > state.downloaded) {
+      report(progress.bytes)
+    }
+    if (progress.state === 'done') {
+      break
+    }
+    if (progress.state === 'failed') {
+      throw new NativeFailure(new Error(progress.error ?? 'native download failed'), start.path)
+    }
+    if (progress.state === 'idle') {
+      // 原生侧丢了状态（理论上不该发生）：当成链路中断，绝不静默当成成功。
+      throw new NativeFailure(new Error('native download state lost: EOF'), start.path)
+    }
+    throwIfCancelled(options.signal)
+    const verdict = stallVerdict(state)
+    if (verdict !== null) {
+      throw verdict
+    }
+    await new Promise((resolve) => setTimeout(resolve, POLL_MS))
+  }
+  throwIfCancelled(options.signal)
+  if (state.downloaded === 0) {
+    recordDownloadFailure('empty', url, state.startedAt, { 'download.bytes': 0 })
+    return fail('historyImportUrlBadResponse')
+  }
+  if (state.total !== undefined && state.downloaded < state.total) {
+    // 声明了总量却没到：绝不能当成功导入（原生侧也会回 failed，这里是第二道闸）。
+    recordDownloadFailure('incomplete', url, state.startedAt, {
+      'download.bytes': state.downloaded,
+      'download.total': state.total,
     })
-    try {
-      // 兜底只看这一层：原生 Promise 可能永不 settle，所以每次请求都同时受
-      // 「整段下载剩余预算」和「用户取消」约束，到期立刻结束而不是等原生超时。
-      const response = await guardRequest(requestRange(url, from, from + span - 1), state, signal)
-      recordEvent('import_stage', 'import: native response', {
-        stage: 'download',
-        'request.from': from,
-        'request.span': span,
-        attempt,
-        'http.status': response.status,
-        elapsedMs: elapsedSince(attemptStartedAt),
-      })
-      return { response, requested: span }
-    } catch (error) {
-      recordEvent('import_stage', 'import: native request error', {
-        stage: 'download',
-        'request.from': from,
-        'request.span': span,
-        attempt,
-        elapsedMs: elapsedSince(attemptStartedAt),
-        ...errorMeta(error),
-      })
-      // 停滞 / 总上限 / 取消都是终态：不再重试，也不当成网络错误去分类。
-      if (
-        error instanceof DownloadStalled ||
-        error instanceof DownloadDeadlineExceeded ||
-        error instanceof UrlImportCancelled
-      ) {
-        throw error
-      }
-      lastError = error
-      // 永久性错误（#154）：地址本身不可用（禁用端口 / 非法协议），重试多少次都一样，
-      // 立刻收工，不再白等 300ms 再试一次。离线时**不**套用这条：手机只是暂时没网，
-      // 错误串却常常与「端口被禁」长得一样，判离线更接近真相（见下面分类块的 offline 优先）。
-      if (isBrowserOnline() && isPermanentFailure(error)) {
-        const { startedAt, downloaded, total } = state
-        recordDownloadFailure('permanent', url, startedAt, { 'download.bytes': downloaded }, error)
-        trace?.({
-          at: elapsedSince(startedAt),
-          kind: 'error',
-          bytes: downloaded,
-          totalBytes: total,
-          message: 'permanent',
-        })
-        // 专属文案（historyImportUrlBlocked）留作 follow-up：本 lane 不动 src/i18n/**（#153 在改），
-        // 故复用「请输入以 http(s):// 开头的链接」——它指向**地址本身**有问题，不会诱导用户反复重试。
-        fail('historyImportUrlInvalid')
-      }
-      // 弱网会在块中途丢流：同一起点更小的块重试即可续上
-      if (attempt < CHUNK_RETRIES) {
-        await new Promise((resolve) => setTimeout(resolve, 300 * (attempt + 1)))
-      }
-    }
+    return fail('historyImportUrlInterrupted', {
+      percent: Math.round((state.downloaded / state.total) * 100),
+    })
   }
-  {
-    const error = lastError
-    const { startedAt, downloaded, total } = state
-    const percent = total === undefined || total === 0 ? 0 : Math.round((downloaded / total) * 100)
-    // 离线优先（#154）：`navigator.onLine === false` 是最权威的信号，不必等错误串匹配。
-    // 真离线时 WebView 抛的是 `TypeError: Failed to fetch`，与被墙端口/中间设备拦截一模一样，
-    // 靠错误串永远分不出来 —— 过去就因此把「手机没网」报成了「网络异常，请检查网络连接」。
-    if (!isBrowserOnline()) {
-      recordDownloadFailure('offline', url, startedAt, { 'download.bytes': downloaded }, error)
-      trace?.({ at: elapsedSince(startedAt), kind: 'error', bytes: downloaded, totalBytes: total, message: 'offline' })
-      return fail('historyImportUrlOffline')
-    }
-    if (isTimeout(error)) {
-      // 超时且已经下到一半：说明链路慢，不是链接坏了。
-      recordDownloadFailure('timeout', url, startedAt, { 'download.bytes': downloaded, percent }, error)
-      trace?.({ at: elapsedSince(startedAt), kind: 'error', bytes: downloaded, totalBytes: total, message: 'timeout' })
-      return downloaded > 0
-        ? fail('historyImportUrlTimeoutPartial', { percent })
-        : fail('historyImportUrlTimeout')
-    }
-    if (isUnreachable(error)) {
-      // 「够不到网络」再分成两档（#111 / #18）：ECONNREFUSED 说明链路通、对面没在监听 → refused；
-      // 其余（DNS 解析不到 / 路由不可达 / 切网瞬间断链）是「有网但连不上服务」→ unreachable，
-      // 文案指向导入服务本身，不再劝用户去检查自己的网络（用户网络往往好好的）。
-      // 真离线在上面已经被 `!isBrowserOnline()` 收口，不会走到这里。
-      const classified = classifyImportFailure({ error, online: isBrowserOnline() })
-      const tier: ImportFailureReason =
-        classified === 'refused' ? 'refused' : classified === 'offline' ? 'offline' : 'unreachable'
-      recordDownloadFailure(tier, url, startedAt, { 'download.bytes': downloaded }, error)
-      trace?.({ at: elapsedSince(startedAt), kind: 'error', bytes: downloaded, totalBytes: total, message: tier })
-      return fail(IMPORT_FAILURE_KEYS[tier])
-    }
-    if (isStreamBroken(error)) {
-      recordDownloadFailure('interrupted', url, startedAt, { 'download.bytes': downloaded, percent }, error)
-      trace?.({ at: elapsedSince(startedAt), kind: 'error', bytes: downloaded, totalBytes: total, message: 'interrupted', status: 0 })
-      return fail('historyImportUrlInterrupted', { percent })
-    }
-    recordDownloadFailure('network', url, startedAt, { 'download.bytes': downloaded }, error)
-    trace?.({ at: elapsedSince(startedAt), kind: 'error', bytes: downloaded, totalBytes: total, message: 'network' })
-    return fail('historyImportUrlNetwork')
+  // ZIP 头：只读 4 个字节（按区间），不需要把整包读回来判格式。
+  let head: Uint8Array
+  try {
+    head = await nativeArchive.read(start.path, 0, Math.min(ZIP_MAGIC.length, state.downloaded))
+  } catch (error) {
+    recordDownloadFailure('read-head', url, state.startedAt, { 'download.bytes': state.downloaded }, error)
+    trace?.({ at: elapsedSince(state.startedAt), kind: 'error', message: 'read-failed' })
+    return fail('historyImportUrlBadResponse')
   }
+  if (!isZipHead(head)) {
+    recordDownloadFailure('not-zip', url, state.startedAt, { 'download.bytes': state.downloaded })
+    trace?.({ at: elapsedSince(state.startedAt), kind: 'error', message: 'not-zip' })
+    return fail('historyImportUrlNotZip')
+  }
+  return { kind: 'native', path: start.path, size: state.downloaded }
 }
 
 /**
- * 分块下载并校验 ZIP。
- * 进度按字节实时上报；取消在块边界生效；失败按 断网 / 超时 / 403（过期·签名·其他）/ 超限 / 非 ZIP 分类。
+ * 流式下载（含同一次导入内的重试）并校验 ZIP 头。产出的是**临时文件句柄**（路径 + 长度），
+ * 不是内存里的整包。
  *
- * 终态判定（#38 重写，核心是「按无进度判死」而不是「按总时长判死」）：
+ * 终态判定（#38 的纪律，流式化之后照旧）：
  * - 停滞（DownloadStalled）：连续 DOWNLOAD_STALL_MS 没有新字节才判死；
- *   慢但在推进的链路每拿到一块就会重新计时，因此不会被误杀（164.5MB 慢包不再被判死）。
+ *   慢但在推进的链路每次看到新字节就会重新计时，因此不会被误杀。
  * - 总上限（DownloadDeadlineExceeded）：防御性 30 分钟，只防「永远慢慢爬、永远下不完」。
- * - 续传：失败时把已到手的块留在 resumePoint，同链接重试从 `state.downloaded` 续；
- *   服务端忽略 Range（回 200 整包）时丢弃本地字节、从头重下并在详情里写明「已重新开始」。
- * - 全程每 HEARTBEAT_INTERVAL_MS 一条心跳（带最近一段新增字节与 idle 时长），
- *   日志/详情里能直接区分「在推进」和「停滞」。
- * - 心跳 interval 在成功/失败/取消/卸载的每条分支上都由 finally 停掉，不留残留。
+ * - 全程每 HEARTBEAT_INTERVAL_MS 一条心跳，日志/详情里能直接区分「在推进」和「停滞」。
+ *
+ * 重试（#105 / #154 的既有承诺，搬实现时不许悄悄删掉）：原生侧报错时，只要分类结果
+ * **可重试**（不是「地址本身不可用」）就带着已写入的字节再来一轮，总共
+ * `LIMITS.importAttempts` 轮。续传点只在同一次导入内有效：导入一结束（成功/失败/取消），
+ * 临时文件一律删掉，所以它不构成跨导入的续传缓存（#34 目标 3）。
+ *
+ * 临时文件的生命周期（目标 3）：**成功、失败、取消都收干净**——失败/取消走
+ * `nativeArchive.discard()`（原生侧同步删完再返回），成功则交回句柄、由调用方在
+ * 导入结束后 `remove()`。所以失败之后不会留下半截包（关闭条件 4）。
  */
 const downloadArchive = async (
   url: string,
   options: UrlImportOptions,
   trace?: (entry: ImportTraceEntry) => void
-): Promise<File> => {
+): Promise<NativeArchiveHandle> => {
   const startedAt = monotonicNow()
   const maxBytes = resolveMaxImportBytes(options.maxBytes)
   const stallMs = Math.max(1, options.downloadStallMs ?? DOWNLOAD_STALL_MS)
   const maxTotalMs = Math.max(1, options.downloadMaxTotalMs ?? DOWNLOAD_MAX_TOTAL_MS)
-  // 续传点只对同一个链接有效；换链接立刻丢掉旧字节（否则会把两份包拼在一起）。
-  const resumed = resumePoint !== null && resumePoint.url === url ? resumePoint : null
-  if (resumed === null && resumePoint !== null) {
-    dropResumePoint()
-  }
   const state: DownloadState = {
     startedAt,
-    downloaded: resumed?.downloaded ?? 0,
-    total: resumed?.total,
-    from: resumed?.downloaded ?? 0,
-    span: 0,
-    attempt: 0,
+    downloaded: 0,
+    total: undefined,
     lastProgressAt: startedAt,
     stallMs,
     deadline: startedAt + maxTotalMs,
@@ -923,171 +678,93 @@ const downloadArchive = async (
     stage: 'download',
     'stall.ms': stallMs,
     'max.total.ms': maxTotalMs,
-    'download.bytes': state.downloaded,
-    ...(state.total === undefined ? {} : { 'download.total': state.total }),
-    resume: resumed === null ? 'no' : 'yes',
+    'limit.bytes': maxBytes,
+    // 落点：原生流式写 App 私有目录，过桥的只有计数
+    sink: 'native-cache-file',
+    attempts: LIMITS.importAttempts,
   })
-  if (resumed !== null) {
-    // 续传：明确告知「从已下载的哪里继续」，重试不再从 0 开始（#38）
-    trace?.({ at: 0, kind: 'resume', bytes: resumed.downloaded, totalBytes: resumed.total })
-    options.onProgress?.({
-      phase: 'downloading',
-      downloadedBytes: resumed.downloaded,
-      totalBytes: resumed.total,
-    })
-  }
   const stopHeartbeat = startDownloadHeartbeat(
     state,
     trace,
     Math.max(1, options.heartbeatIntervalMs ?? HEARTBEAT_INTERVAL_MS)
   )
-  const chunks: Uint8Array<ArrayBuffer>[] = resumed === null ? [] : [...resumed.chunks]
-  /** 是否真的产出了可导入的文件：决定 finally 里要不要保留续传点 */
+  /** 是否真的产出了可导入的文件：决定 finally 里保留还是丢弃临时文件 */
   let delivered = false
-  /** 失败是否属于「字节没问题、只是链路断了」：只有这类才值得留着续传 */
-  let resumableFailure = false
-  let chunkSize = FIRST_CHUNK_BYTES
   let lastTraceBytes = 0
   let lastTracePercent = -1
   let lastTraceAt = 0
+  /** 每次「字节增长」都报进度，并把「首个 / 每 10% / ≥1s」采样写进详情。 */
+  const reportBytes = (bytes: number) => {
+    state.downloaded = bytes
+    state.lastProgressAt = monotonicNow()
+    if (state.downloaded > maxBytes) {
+      tooLarge(maxBytes, state.downloaded)
+    }
+    options.onProgress?.({
+      phase: 'downloading',
+      downloadedBytes: state.downloaded,
+      totalBytes: state.total,
+    })
+    const percent = state.total ? Math.floor((state.downloaded / state.total) * 10) : undefined
+    const checkpoint =
+      lastTraceBytes === 0 ||
+      (percent !== undefined && percent !== lastTracePercent) ||
+      monotonicNow() - lastTraceAt >= 1000
+    if (checkpoint) {
+      lastTraceBytes = state.downloaded
+      lastTracePercent = percent ?? 0
+      lastTraceAt = monotonicNow()
+      trace?.({
+        at: elapsedSince(startedAt),
+        kind: 'download',
+        bytes: state.downloaded,
+        totalBytes: state.total,
+      })
+    }
+  }
+  /** 上一轮尝试的落点：续传时接着写，收口时交给 discard 删 */
+  let retryPath: string | undefined
   try {
-    for (;;) {
-      throwIfCancelled(options.signal)
-      const from = state.downloaded
-      const to = from + chunkSize - 1
-      const chunkStartedAt = monotonicNow()
-      const { response, requested } = await fetchChunk(url, from, to, state, trace, options.signal)
-      const status = response.status
-      // 416：请求范围越界 = 上一块正好是最后一块（服务端更严格时走这里）。
-      if (status === 416 && from > 0) {
-        response.data = null
-        break
-      }
-      if (status !== 200 && status !== 206) {
-        await failForStatus(response, url, startedAt, state.downloaded, state.total, trace)
-      }
-      if (status === 200 && from > 0) {
-        // 服务端忽略了 Range，直接回整包：不能把整包接在已下载的字节后面（会拼错、包体翻倍），
-        // 只能丢掉本地已下载的部分从头算，并把「已重新开始」写进详情（#38 要求明确告知）。
-        recordEvent('import_stage', 'import: range ignored, restart from zero', {
+    for (let attempt = 1; ; attempt += 1) {
+      try {
+        const handle = await attemptDownload(
+          url,
+          options,
+          state,
+          trace,
+          maxBytes,
+          retryPath === undefined ? undefined : { path: retryPath, from: state.downloaded },
+          reportBytes
+        )
+        delivered = true
+        return handle
+      } catch (error) {
+        if (!(error instanceof NativeFailure)) {
+          throw error
+        }
+        // 取消优先：用户点了取消时，原生侧报的「失败」只是被 disconnect 打断的结果。
+        throwIfCancelled(options.signal)
+        // 可重试 = 还没到轮数上限，且分类结果不是「地址本身不可用」（#154）。
+        const canRetry = attempt < Math.max(1, LIMITS.importAttempts) && !isPermanentFailure(error.reason)
+        if (!canRetry) {
+          return failDownloadError(error.reason, url, state, trace)
+        }
+        retryPath = error.path
+        // 重试不改总上限（它约束的是整次导入），但停滞窗口要从这一轮重新计时：
+        // 「停住 40s」指的是这轮读不动，不是把上一轮的空转累加进来。
+        state.lastProgressAt = monotonicNow()
+        record('warning', 'warn', 'import: download retry', {
           stage: 'download',
+          attempt,
           'download.bytes': state.downloaded,
-          'request.from': from,
-          'request.span': requested,
+          // 续不续得上取决于服务端是否认 Range；这里只记下打算从哪儿继续
+          'resume.from': retryPath === undefined ? 0 : state.downloaded,
+          ...errorMeta(error.reason),
         })
-        trace?.({
-          at: elapsedSince(startedAt),
-          kind: 'restart',
-          bytes: 0,
-          totalBytes: state.total,
-          message: 'range-ignored',
-        })
-        chunks.length = 0
-        state.downloaded = 0
-        // 200 的 Content-Length 就是整包大小，下面按新响应重新取（旧的 Range 总数可能过期）
-        state.total = undefined
-        state.lastProgressAt = monotonicNow()
-        lastTraceBytes = 0
-        lastTracePercent = -1
       }
-      let data: unknown = response.data
-      response.data = null
-      // 先认响应头，再看包体（#195）：整包体积一写进头里就能判超限，
-      // 没必要等这一块解成字节——服务端忽略 Range 直接回 200 整包时，
-      // 旧顺序会先把 200MB 包体解一遍、再判「文件过大」，用户等的就是这个白下载。
-      if (state.total === undefined) {
-        // 总长度只认可信来源：
-        // - 206 的 `Content-Range: bytes a-b/total`（total 为 `*` 时代码按未知处理）；
-        // - 首次整包 200（服务端忽略 Range）的 `Content-Length`。
-        // 206 缺 Content-Range 时响应里的 Content-Length 只是**这一块**的长度，
-        // 拿它当总长会让 4KB 被判成「已下完」，并让 200MB 上限拿 4KB 去比（#24）。
-        const declared =
-          contentRangeTotal(response.headers) ??
-          (status === 200 ? contentLength(response.headers) : undefined)
-        if (declared !== undefined) {
-          state.total = declared
-          if (declared > maxBytes) {
-            tooLarge(maxBytes, declared)
-          }
-        }
-      }
-      const bytes = toBytes(data, maxBytes)
-      data = null
-      if (bytes.byteLength > 0) {
-        chunks.push(bytes)
-        state.downloaded += bytes.byteLength
-        // 停滞判定的唯一依据：真的收到新字节才重新计时（#38）
-        state.lastProgressAt = monotonicNow()
-        if (state.downloaded > maxBytes) {
-          tooLarge(maxBytes, state.downloaded)
-        }
-        options.onProgress?.({
-          phase: 'downloading',
-          downloadedBytes: state.downloaded,
-          totalBytes: state.total,
-        })
-        {
-          // 详情里只留少量「人话」采样：首个、每跨 10%、以及至少 1s 间隔
-          const percent = state.total ? Math.floor((state.downloaded / state.total) * 10) : undefined
-          const checkpoint =
-            lastTraceBytes === 0 ||
-            (percent !== undefined && percent !== lastTracePercent) ||
-            monotonicNow() - lastTraceAt >= 1000
-          if (checkpoint) {
-            lastTraceBytes = state.downloaded
-            lastTracePercent = percent ?? 0
-            lastTraceAt = monotonicNow()
-            trace?.({
-              at: elapsedSince(startedAt),
-              kind: 'download',
-              bytes: state.downloaded,
-              totalBytes: state.total,
-            })
-          }
-        }
-      }
-      // 200 = 服务端忽略了 Range，整包已经到手；不足请求的那一块（含空块）= 服务端已收敛。
-      // total 未知时这是唯一的完成信号，所以不能只看「已下到的字节数够不够 total」。
-      if (status === 200 || bytes.byteLength === 0 || bytes.byteLength < requested) {
-        break
-      }
-      // 自适应块大小：慢网小块、快网大块，进度大致每秒一次。
-      const elapsed = Math.max(1, elapsedSince(chunkStartedAt))
-      chunkSize = clamp((bytes.byteLength / elapsed) * CHUNK_TARGET_MS, MIN_CHUNK_BYTES, MAX_CHUNK_BYTES)
     }
-    throwIfCancelled(options.signal)
-    if (state.downloaded === 0) {
-      recordDownloadFailure('empty', url, startedAt, { 'download.bytes': 0 })
-      fail('historyImportUrlBadResponse')
-    }
-    if (state.total !== undefined && state.downloaded < state.total) {
-      // 链路中途断掉：块级别已经拿到结果但字节不足，绝不能当成功导入。
-      recordDownloadFailure('incomplete', url, startedAt, {
-        'download.bytes': state.downloaded,
-        'download.total': state.total,
-      })
-      fail('historyImportUrlInterrupted', {
-        percent: Math.round((state.downloaded / state.total) * 100),
-      })
-    }
-    // 三份拷贝 → 两份：过去是「分块数组 + concat 出的整包 + Blob 自己的副本」，
-    // 峰值内存约 3×包大小；现在直接把分块交给 Blob（它只需要一份），
-    // 再丢掉分块数组的引用，让 JS 侧那份尽快被回收。没有引入流式改写（#34 明确不做）。
-    if (!isZipHead(chunks)) {
-      fail('historyImportUrlNotZip')
-    }
-    delivered = true
-    const file = new File(chunks, ARCHIVE_NAME, { type: 'application/zip' })
-    chunks.length = 0
-    return file
   } catch (error) {
-    // 只有「字节本身没问题、只是链路断了/停了」才留续传点；
-    // 包坏了（非 ZIP）、超限、403（过期/签名）继续从字节中间续也永远好不了，直接丢。
-    resumableFailure =
-      error instanceof DownloadStalled ||
-      error instanceof DownloadDeadlineExceeded ||
-      (error instanceof BackupError && RESUMABLE_ERROR_KEYS.has(error.key))
-    // 取消优先：用户点了取消时，看门狗只是把挂起的原生请求解开，不能算成「下载失败」。
+    // 取消优先：用户点了取消时，看门狗只是把挂起的下载解开，不能算成「下载失败」。
     if (error instanceof DownloadStalled || error instanceof DownloadDeadlineExceeded) {
       throwIfCancelled(options.signal)
     }
@@ -1095,12 +772,7 @@ const downloadArchive = async (
     const meta = {
       'download.bytes': downloaded,
       ...(total === undefined ? {} : { 'download.total': total }),
-      'request.from': state.from,
-      'request.span': state.span,
-      attempt: state.attempt,
       retryable: 'yes',
-      // 已到手一部分就能续传：重试不会再从 0 开始（#38）
-      resume: downloaded > 0 ? 'yes' : 'no',
     }
     if (error instanceof DownloadStalled) {
       const idleMs = elapsedSince(state.lastProgressAt)
@@ -1131,14 +803,13 @@ const downloadArchive = async (
       const minutes = Math.max(1, Math.round(maxTotalMs / 60_000))
       // 预算耗尽 ≠ 无响应：字节其实一直在涨，只是没在下限内跑完（#152）。
       // 把「按当前常量至少要多快」一起记进诊断，常量之间一旦不自洽，这里当场就看得出来。
-      const budgetFields = {
+      recordDownloadFailure('deadline', url, startedAt, {
         ...meta,
         'max.total.ms': maxTotalMs,
         'min.bytes.per.sec': MIN_REQUIRED_BYTES_PER_SEC,
         // 与 stalled 那条对齐：不看这个数，日志里分不清「一直在推进但太慢」和「根本没动静」
         'idle.ms': elapsedSince(state.lastProgressAt),
-      }
-      recordDownloadFailure('deadline', url, startedAt, budgetFields)
+      })
       trace?.({
         at: elapsedSince(startedAt),
         kind: 'error',
@@ -1158,18 +829,25 @@ const downloadArchive = async (
     throw error
   } finally {
     stopHeartbeat()
-    // 续传点只在「可续的失败且已到手一部分」时保留；成功、取消、零字节、坏包都立刻丢掉。
-    if (delivered || !resumableFailure || options.signal?.aborted || state.downloaded === 0) {
-      dropResumePoint()
-    } else {
-      resumePoint = { url, chunks, downloaded: state.downloaded, total: state.total }
+    // 目标 3：成功时把文件**留给**解析阶段（导入结束后删），失败/取消时立刻删干净。
+    // 原生侧 `discard()` 是在返回前同步删完的，所以这里 await 之后磁盘上已经没有这个文件了。
+    try {
+      await (delivered ? nativeArchive.release() : nativeArchive.discard())
+    } catch (error) {
+      // 清理失败不能盖住真实失败原因：只记一条，让调用方的错误照原样冒出去。
+      record('warning', 'warn', 'import: native download cleanup failed', {
+        stage: 'download',
+        delivered,
+        ...errorMeta(error),
+      })
     }
   }
 }
 
 /**
- * 直链导入：校验 URL → 分块下载（实时进度，可取消）→ 校验 ZIP → 解析 → 逐会话导入（进度 n/总数）。
- * 取消：下载期间不发新块并丢弃已下载内容；导入期间在条目边界中断，暂存被清空、正式数据不变。
+ * 直链导入：校验 URL → 原生流式下载落盘（实时进度，可取消）→ 按区间校验 ZIP → 解析 →
+ * 逐会话导入（进度 n/总数）→ 删临时文件。
+ * 取消：下载期间不再接受字节、临时文件当场删除；导入期间在条目边界中断，暂存被清空、正式数据不变。
  */
 /** 埋点关联 id：短随机串，不含任何用户内容 */
 const newCorrelationId = (): string => {
@@ -1210,13 +888,17 @@ export const importHistoryFromUrl = async (
   let lastImageTraceAt = 0
   let lastImages = 0
   let checkReported = false
+  /** 下载落盘的临时文件：无论成功、失败还是取消，都在 finally 里删掉（目标 3）。 */
+  let archivePath: string | undefined
   try {
-    const file = await downloadArchive(link, options, trace)
+    const archive = await downloadArchive(link, options, trace)
+    archivePath = archive.path
     // 下载期间点了取消：结果直接丢弃，不进入暂存与替换事务。
     throwIfCancelled(options.signal)
     options.onProgress?.({ phase: 'decoding' })
-    emit({ kind: 'check', bytes: file.size })
-    return await importHistory(file, {
+    emit({ kind: 'check', bytes: archive.size })
+    // 解析链路拿到的不是 `File`，而是「按区间读这个临时文件」的读口（内存与包体解耦）。
+    return await importHistory(nativeArchive.reader(archive), {
       signal: options.signal,
       onProgress: (progress) => {
         options.onProgress?.({
@@ -1259,10 +941,8 @@ export const importHistoryFromUrl = async (
       emit({ kind: 'cancel' })
       throw error instanceof UrlImportCancelled ? error : new UrlImportCancelled()
     }
-    // 归档已经下完，卡在**读取**（File / Blob / FileReader）这一层（#195）：
-    // WebView 只会抛英文 DOMException 原文，直接冒到界面上就是
-    // 「Import from link failed: The requested file could not be read, typically due to permission
-    //   problems…」——用户既不知道包其实下完了，也不知道该做什么。
+    // 归档已经下完，卡在**读取**（文件 / 原生区间读）这一层（#195）：
+    // WebView 只会抛英文原文，直接冒到界面上用户既不知道包其实下完了，也不知道该做什么。
     // 原始 name / message 只留在诊断与 console，界面换成能照着做的本地化文案。
     if (isArchiveReadFailure(error)) {
       record('import_error', 'error', 'import failed: archive unreadable after download', {
@@ -1281,5 +961,17 @@ export const importHistoryFromUrl = async (
       emit({ kind: 'error', message: error instanceof BackupError ? error.key : 'unknown' })
     }
     throw error
+  } finally {
+    // 目标 3 的最后一道：成功导入完、或任何一条失败/取消路径，临时文件都不留在设备上。
+    if (archivePath !== undefined) {
+      try {
+        await nativeArchive.remove(archivePath)
+      } catch (error) {
+        record('warning', 'warn', 'import: temp archive cleanup failed', {
+          stage: 'import',
+          ...errorMeta(error),
+        })
+      }
+    }
   }
 }

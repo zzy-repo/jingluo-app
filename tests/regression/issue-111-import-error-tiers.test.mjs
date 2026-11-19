@@ -11,6 +11,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { registerHooks } from 'node:module'
+import { simulate } from '../fixtures/url-import-stubs/download-simulator.mjs'
 
 const stub = (name) => new URL(`../fixtures/url-import-stubs/${name}`, import.meta.url).href
 const limitModule = new URL('../../src/services/chat/history/importLimit.ts', import.meta.url).href
@@ -84,12 +85,16 @@ test('#111 四档对应四个不同文案 key（这就是"用户看不到真实�
   assert.notEqual(zh.historyImportUrlOffline, zh.historyImportUrlUnreachable)
 })
 
-/** 组装一次 CapacitorHttp.get：固定状态码 + 错误体，用来走 403 的三个子类。 */
-const staticNative = (response) => async () => response
+/**
+ * 原生侧直接回一个固定状态码 + 错误体（#34 之后建连在原生插件里，错误体只回前 4KB）。
+ * 403 的三个子类正是靠这段 body 里的 OBS 错误码区分的。
+ */
+const staticNative = (status, body) => ({ startState: 'http', status, body })
 
-const runImport = async (url, get) => {
+const runImport = async (url, spec) => {
   globalThis.__log = { records: [], events: [], actions: [] }
-  globalThis.__native = { native: true, calls: [], get }
+  globalThis.__native = { native: true }
+  globalThis.__download = simulate(spec)
   try {
     await importHistoryFromUrl(url, {})
     return null
@@ -102,39 +107,32 @@ const URL_403 = 'https://obs.example.test/deepseek_data-403.zip'
 const body403 = (code) => `<Error><Code>${code}</Code><Message>denied</Message></Error>`
 
 test('#111 403 签名错 → 链接无效（签名错误），不是"网络断开"', async () => {
-  const error = await runImport(URL_403, staticNative({ status: 403, url: URL_403, headers: {}, data: body403('SignatureDoesNotMatch') }))
+  const error = await runImport(URL_403, staticNative(403, body403('SignatureDoesNotMatch')))
   assert.equal(error?.key, 'historyImportUrlBadSignature')
 })
 
 test('#111 403 过期 / 时间偏移 → 链接已过期', async () => {
   for (const code of ['Expired', 'RequestTimeTooSkewed']) {
-    const error = await runImport(URL_403, staticNative({ status: 403, url: URL_403, headers: {}, data: body403(code) }))
+    const error = await runImport(URL_403, staticNative(403, body403(code)))
     assert.equal(error?.key, 'historyImportUrlExpired', `${code} 要归到"过期"而不是"没权限"`)
   }
 })
 
 test('#111 403 其他原因 → 无权限，并把服务端原文带给用户', async () => {
-  const error = await runImport(
-    URL_403,
-    staticNative({ status: 403, url: URL_403, headers: {}, data: body403('AccessDenied') })
-  )
+  const error = await runImport(URL_403, staticNative(403, body403('AccessDenied')))
   assert.equal(error?.key, 'historyImportUrlForbidden')
   assert.match(String(error?.params?.detail), /AccessDenied/)
 })
 
 test('#111 服务端 5xx → 带状态码的 HTTP 失败文案', async () => {
-  const error = await runImport(URL_403, staticNative({ status: 500, url: URL_403, headers: {}, data: 'oops' }))
+  const error = await runImport(URL_403, staticNative(500, 'oops'))
   assert.equal(error?.key, 'historyImportUrlHttp')
   assert.equal(error?.params?.status, 500)
 })
 
 test('#111 原生桥报"网络不可达"与"连接被拒"落到不同文案', async () => {
-  const offline = await runImport(URL_403, async () => {
-    throw new Error('net::ERR_INTERNET_DISCONNECTED')
-  })
+  const offline = await runImport(URL_403, { startState: 'failed', startError: 'net::ERR_INTERNET_DISCONNECTED' })
   assert.equal(offline?.key, 'historyImportUrlOffline')
-  const refused = await runImport(URL_403, async () => {
-    throw new Error('Connection refused (ECONNREFUSED)')
-  })
+  const refused = await runImport(URL_403, { startState: 'failed', startError: 'Connection refused (ECONNREFUSED)' })
   assert.equal(refused?.key, 'historyImportUrlRefused')
 })

@@ -19,6 +19,7 @@ import assert from 'node:assert/strict'
 import { existsSync } from 'node:fs'
 import { registerHooks } from 'node:module'
 import { fileURLToPath, pathToFileURL } from 'node:url'
+import { simulate } from '../fixtures/url-import-stubs/download-simulator.mjs'
 
 const stub = (name) => new URL(`../fixtures/url-import-stubs/${name}`, import.meta.url).href
 // 上限常量用**真模块**：本文件要断言的就是这两个常量之间的关系，不能替换成桩
@@ -86,55 +87,29 @@ const zipBytes = (size) => {
   return bytes
 }
 
-const rangeOf = (options) => {
-  const match = /^bytes=(\d+)-(\d+)$/.exec(options.headers?.Range ?? '')
-  return match === null ? { from: 0, to: -1 } : { from: Number(match[1]), to: Number(match[2]) }
-}
-
 const resetEnv = () => {
   globalThis.__log = { records: [], events: [], actions: [] }
   globalThis.__imported = []
   globalThis.__importCount = 1
   globalThis.__native = undefined
+  globalThis.__download = undefined
 }
 
 const records = (kind) => globalThis.__log.records.filter((entry) => entry.kind === kind)
 
-/**
- * 慢但在推进的服务端：每次请求按 Range 真回字节，只是每块要等 `delayMs`。
- * 请求条数由测试替身 capacitor.mjs 统一 push 到 native.calls，用例里不要重复记。
- */
-const serveSlowChunks = (source, delayMs) => {
-  globalThis.__native = {
-    native: true,
-    calls: [],
-    get: (options) =>
-      new Promise((resolve) => {
-        setTimeout(() => {
-          const { from, to } = rangeOf(options)
-          const end = Math.min(to, source.length - 1)
-          const slice = from > end ? new Uint8Array(0) : source.slice(from, end + 1)
-          resolve({
-            status: 206,
-            url: options.url,
-            headers: {
-              'Content-Length': String(slice.byteLength),
-              'Content-Range': `bytes ${from}-${Math.max(from, end)}/${source.length}`,
-              'Accept-Ranges': 'bytes',
-            },
-            data: slice.buffer,
-          })
-        }, delayMs)
-      }),
-  }
-  return globalThis.__native
+/** 装一个下载模拟器（#34：网络读 + 写盘在原生侧，JS 只看字节计数与状态）。 */
+const useNative = (spec) => {
+  const download = simulate(spec)
+  globalThis.__download = download
+  globalThis.__native = { native: true }
+  return download
 }
 
-/** 真停滞：原生 Promise 永久 pending（对端不再吐数据），一个字节都不涨。 */
-const serveNothing = () => {
-  globalThis.__native = { native: true, calls: [], get: () => new Promise(() => {}) }
-  return globalThis.__native
-}
+/** 慢但在推进：原生侧按 100KB/s 稳定写盘，字节一直在涨（1MB 的包要 10s 才下完）。 */
+const serveSlowChunks = (source) => useNative({ source, total: source.length, bytesPerSecond: 100 * 1024 })
+
+/** 真停滞：原生侧一个字节都写不出来（对端不再吐数据）。 */
+const serveNothing = () => useNative({ bytesPerSecond: 0, total: null })
 
 const startImport = async (url, options) => {
   const trace = []
@@ -152,7 +127,7 @@ test('① 一直在收字节但总预算先耗尽 → 判「超出下载时限�
   resetEnv()
   // 1MB 包 + 每块 150ms：预算压到 600ms 时包还远没下完，但每个块都在稳定到货
   const source = zipBytes(1024 * 1024)
-  const native = serveSlowChunks(source, 150)
+  const native = serveSlowChunks(source)
 
   const { error } = await startImport(URL_SLOW, {
     downloadMaxTotalMs: 600,
@@ -170,7 +145,7 @@ test('① 一直在收字节但总预算先耗尽 → 判「超出下载时限�
   assert.equal(failures[0].fields.reason, 'deadline', `诊断原因应是 deadline，实际 ${failures[0].fields.reason}`)
   assert.equal(failures[0].fields.reason !== 'stalled', true, '预算耗尽不得记成 stalled')
   // 「一直在收字节」是这条用例的前提：字节确实在涨，所以不是无响应
-  assert.equal(native.calls.length > 1, true, `应当发出多次请求，实际 ${native.calls.length} 次`)
+  assert.equal(native.polls > 1, true, `应当持续轮询到多个采样点，实际 ${native.polls} 次`)
   assert.equal(failures[0].fields['download.bytes'] > 0, true, '失败时已经收到过字节（这才是「预算耗尽」而不是「无响应」）')
 
   // #152 第 2 项：两个常量的关系必须是**推导出来**并写进诊断的，
@@ -200,7 +175,7 @@ test('② 零字节增长（真停滞）→ 仍判「长时间无响应」', asy
   const failures = records('import_error')
   assert.equal(failures[0].fields.reason, 'stalled', `诊断原因应是 stalled，实际 ${failures[0].fields.reason}`)
   assert.equal(failures[0].fields.reason !== 'deadline', true, '真停滞不得记成 deadline')
-  assert.equal(native.calls.length, 1, `停滞时只该发出一次请求，实际 ${native.calls.length} 次`)
+  assert.equal(native.requests.length, 1, `停滞时只该发起一轮下载（不重试），实际 ${native.requests.length} 轮`)
 })
 
 test('③ 两档的用户文案互不相同且各自说人话（中文/英文都覆盖）', () => {

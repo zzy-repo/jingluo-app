@@ -6,7 +6,7 @@ import * as db from './db.js'
 import { fail } from './history/errors.js'
 import { formatImportBytes, maxImportMegabytes, resolveMaxImportBytes } from './history/importLimit.js'
 import { parseSessionPath } from './history/paths.js'
-import { listArchivePaths } from './history/zipReader.js'
+import { listArchivePaths, type ArchiveSource } from './history/zipReader.js'
 import { replaceHistory, useChatStore } from './store.js'
 import type { Session } from './types.js'
 
@@ -66,8 +66,8 @@ const tooLarge = (limitBytes: number, measuredBytes: number): never =>
   })
 
 /** 会话总数：只读中央目录的条目名，不读条目内容；目录异常时返回 undefined（退化为只显示已处理数）。 */
-const countSessions = async (file: File): Promise<number | undefined> => {
-  const total = (await listArchivePaths(file)).filter((path) => parseSessionPath(path) !== null).length
+const countSessions = async (source: ArchiveSource): Promise<number | undefined> => {
+  const total = (await listArchivePaths(source)).filter((path) => parseSessionPath(path) !== null).length
   return total > 0 ? total : undefined
 }
 
@@ -75,7 +75,7 @@ const countSessions = async (file: File): Promise<number | undefined> => {
  * 确认覆盖后调用：先查大小上限，再检查 ZIP 格式与版本，校验失败时保留正在生成的回答；
  * 通过后从 ZIP 流式写入暂存，成功才替换原有会话与图片原件。返回导入的会话数。
  */
-export const importHistory = (file: File, options: ImportHistoryOptions = {}): Promise<number> =>
+export const importHistory = (source: ArchiveSource, options: ImportHistoryOptions = {}): Promise<number> =>
   enqueueBackup(async () => {
     const startedAt = Date.now()
     // 分阶段计时（#306）：每个 import_stage 都带自己那一段的 durationMs，卡在哪个阶段不用再靠时间戳相减
@@ -83,33 +83,33 @@ export const importHistory = (file: File, options: ImportHistoryOptions = {}): P
     // 关键业务动作：只记字节数、阶段与耗时，归档内容不进日志
     let stage: Stage = 'import.check'
     recordAction('import_start', 'import-history', {
-      bytes: file.size,
-      totalBytes: file.size,
+      bytes: source.size,
+      totalBytes: source.size,
       source: 'file',
       ...buildMeta({ flow: 'import', stage: 'import.check', attempt: 1, status: 'ok' }),
     })
     try {
       // 上限检查放在最前：超限的包不看格式、不写暂存，直接给一句人话（issue #34）
       const maxBytes = resolveMaxImportBytes(options.maxBytes)
-      if (file.size > maxBytes) {
+      if (source.size > maxBytes) {
         stage = 'import.size'
-        tooLarge(maxBytes, file.size)
+        tooLarge(maxBytes, source.size)
       }
       const { checkArchiveFormat, importArchive } = await import('./history/importArchive.js')
       recordEvent('import_stage', 'import: check archive format', {
-        bytes: file.size,
+        bytes: source.size,
         ...buildMeta({
           flow: 'import',
           stage: 'import.check',
           attempt: 1,
           status: 'ok',
           durationMs: timer.lap(),
-          bytes: file.size,
+          bytes: source.size,
         }),
       })
-      await checkArchiveFormat(file)
+      await checkArchiveFormat(source)
       stage = 'import.stage'
-      const totalSessions = options.onProgress ? await countSessions(file) : undefined
+      const totalSessions = options.onProgress ? await countSessions(source) : undefined
       recordEvent('import_stage', 'import: write staging stores', {
         ...buildMeta({
           flow: 'import',
@@ -117,11 +117,11 @@ export const importHistory = (file: File, options: ImportHistoryOptions = {}): P
           attempt: 1,
           status: 'ok',
           durationMs: timer.lap(),
-          bytes: file.size,
+          bytes: source.size,
         }),
       })
       const count = await replaceHistory(() =>
-        importArchive(file, {
+        importArchive(source, {
           signal: options.signal,
           totalSessions,
           onProgress: options.onProgress,
@@ -135,10 +135,10 @@ export const importHistory = (file: File, options: ImportHistoryOptions = {}): P
           attempt: 1,
           status: 'ok',
           durationMs: Date.now() - startedAt,
-          totalBytes: file.size,
+          totalBytes: source.size,
           // 平均写入速率：同样 200MB，3MB/s 和 20MB/s 是两种问题
-          speedBps: file.size > 0 && Date.now() > startedAt
-            ? Math.round((file.size / Math.max(1, Date.now() - startedAt)) * 1000)
+          speedBps: source.size > 0 && Date.now() > startedAt
+            ? Math.round((source.size / Math.max(1, Date.now() - startedAt)) * 1000)
             : undefined,
         }),
       })
@@ -153,7 +153,7 @@ export const importHistory = (file: File, options: ImportHistoryOptions = {}): P
           attempt: 1,
           status: 'error',
           durationMs: Date.now() - startedAt,
-          bytes: file.size,
+          bytes: source.size,
         }),
         ...errorMeta(error),
       })

@@ -18,6 +18,7 @@ import assert from 'node:assert/strict'
 import { existsSync } from 'node:fs'
 import { registerHooks } from 'node:module'
 import { fileURLToPath, pathToFileURL } from 'node:url'
+import { simulate } from '../fixtures/url-import-stubs/download-simulator.mjs'
 
 const stub = (name) => new URL(`../fixtures/url-import-stubs/${name}`, import.meta.url).href
 const limitModule = new URL('../../src/services/chat/history/importLimit.ts', import.meta.url).href
@@ -81,12 +82,15 @@ const resetEnv = () => {
   globalThis.__imported = []
   globalThis.__importCount = 1
   globalThis.__native = undefined
+  globalThis.__download = undefined
 }
 
+/** 原生侧每次都报同一个错误：分类只看错误原文，`requests` 就是真实发起的下载轮数。 */
 const useFailingNative = (makeError) => {
-  const native = { native: true, calls: [], get: () => Promise.reject(makeError()) }
-  globalThis.__native = native
-  return native
+  const download = simulate({ startState: 'failed', startError: makeError().message })
+  globalThis.__download = download
+  globalThis.__native = { native: true }
+  return download
 }
 
 /** 装一个假的 navigator.onLine，用完恢复原样（同进程其它用例不受影响）。 */
@@ -157,13 +161,13 @@ test('#18 端到端：Safari/WebView 的网络变化错误 → unreachable 文�
   const native = useFailingNative(() => new TypeError('net::ERR_NETWORK_CHANGED'))
   await withOnLine(true, async () => {
     const error = await startImport(URL_UNREACHABLE)
-    console.log(`    -> 在线不可达：key=${error.key}、请求 ${native.calls.length} 次`)
+    console.log(`    -> 在线不可达：key=${error.key}、下载轮数 ${native.requests.length} 次`)
     assert.equal(
       error.key,
       KEY_UNREACHABLE,
       `有网却连不上导入服务时不能报「网络已断开」（实际 ${error.key}）`
     )
-    assert.equal(native.calls.length, 2, '判不可达不等于砍掉重试：瞬时断链恢复后仍要能续上')
+    assert.equal(native.requests.length, 2, '判不可达不等于砍掉重试：瞬时断链恢复后仍要能续上')
   })
 })
 
@@ -172,9 +176,9 @@ test('#18 端到端：navigator.onLine === false → 仍是 offline 文案（旧
   const native = useFailingNative(() => new TypeError('net::ERR_NETWORK_CHANGED'))
   await withOnLine(false, async () => {
     const error = await startImport(URL_OFFLINE)
-    console.log(`    -> 真离线：key=${error.key}、请求 ${native.calls.length} 次`)
+    console.log(`    -> 真离线：key=${error.key}、下载轮数 ${native.requests.length} 次`)
     assert.equal(error.key, KEY_OFFLINE, `真没网必须还是那句「网络已断开」（实际 ${error.key}）`)
-    assert.equal(native.calls.length, 2, '离线也保留重试')
+    assert.equal(native.requests.length, 2, '离线也保留重试')
   })
 })
 
@@ -183,7 +187,7 @@ test('#18 端到端：连接被拒仍是 refused 档（三档不互相覆盖）'
   const native = useFailingNative(() => ERR_REFUSED)
   await withOnLine(true, async () => {
     const error = await startImport(URL_REFUSED)
-    console.log(`    -> 连接被拒：key=${error.key}、请求 ${native.calls.length} 次`)
+    console.log(`    -> 连接被拒：key=${error.key}、下载轮数 ${native.requests.length} 次`)
     assert.equal(error.key, KEY_REFUSED)
   })
 })

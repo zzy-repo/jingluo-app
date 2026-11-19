@@ -8,7 +8,7 @@
 | 项目 | 值 |
 | --- | --- |
 | 兼容基线 | Android WebView **83**（Chromium 83.0.4103.106，Android 11 出厂镜像） |
-| 扫描范围 | `src/**` 共 **247** 个文件（**147** `.ts` / 54 `.tsx` / 44 `.css` / 1 `.html` / 1 `.md`） |
+| 扫描范围 | `src/**` 共 **248** 个文件（**148** `.ts` / 54 `.tsx` / 44 `.css` / 1 `.html` / 1 `.md`） |
 | 判定方式 | **静态推断**：词法层遮蔽注释、字符串、模板后按调用形状匹配；**非运行时验证** |
 | 工具 | [`scripts/lib/apiAssumptionAudit.mjs`](../../scripts/lib/apiAssumptionAudit.mjs)（纯判定模块，无遍历、无打印） |
 | 单测 | [`tests/unit/api-assumption-audit.test.mjs`](../../tests/unit/api-assumption-audit.test.mjs)（10 个用例，三个判定桶各钉真例子） |
@@ -62,7 +62,7 @@
 | `src/services/chat/history/toLocal.ts:141` | `Array.prototype.flatMap` 存在（Chromium 69，低于基线） | 1 | 低 | —（基线内，无需处置） |
 | `src/services/chat/history/toLocal.ts:214` | `Array.prototype.flatMap` 存在（Chromium 69，低于基线） | 1 | 低 | —（基线内，无需处置） |
 | `src/services/chat/history/toLocal.ts:291` | `Array.prototype.flatMap` 存在（Chromium 69，低于基线） | 1 | 低 | —（基线内，无需处置） |
-| `src/services/chat/history/urlImport.ts:1177` | `crypto.randomUUID` 存在（Chromium 92） | 1 | 中 | 已有兜底 |
+| `src/services/chat/history/urlImport.ts:855` | `crypto.randomUUID` 存在（Chromium 92） | 1 | 中 | 已有兜底 |
 | `src/services/chat/reply.ts:32` | `Array.prototype.flatMap` 存在（Chromium 69，低于基线） | 1 | 低 | —（基线内，无需处置） |
 | `src/services/chat/reply.ts:161` | `Array.prototype.flatMap` 存在（Chromium 69，低于基线） | 1 | 低 | —（基线内，无需处置） |
 | `src/services/chat/reply.ts:240` | `Array.prototype.flatMap` 存在（Chromium 69，低于基线） | 1 | 低 | —（基线内，无需处置） |

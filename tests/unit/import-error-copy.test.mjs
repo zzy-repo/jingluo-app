@@ -11,6 +11,7 @@ import assert from 'node:assert/strict'
 import { existsSync } from 'node:fs'
 import { registerHooks } from 'node:module'
 import { fileURLToPath, pathToFileURL } from 'node:url'
+import { simulate } from '../fixtures/url-import-stubs/download-simulator.mjs'
 
 const stub = (name) => new URL(`../fixtures/url-import-stubs/${name}`, import.meta.url).href
 const limitModule = new URL('../../src/services/chat/history/importLimit.ts', import.meta.url).href
@@ -92,15 +93,12 @@ const ERR_REFUSED = Object.assign(
   { name: 'Error' }
 )
 
-const rangeOf = (options) => {
-  const match = /^bytes=(\d+)-(\d+)$/.exec(options.headers?.Range ?? '')
-  return match === null ? { from: 0, to: -1 } : { from: Number(match[1]), to: Number(match[2]) }
-}
-
-const useNative = (get) => {
-  const native = { native: true, calls: [], get }
-  globalThis.__native = native
-  return native
+/** 装一个下载模拟器（#34：网络读与写盘都在原生侧，JS 只看到字节计数与状态）。 */
+const useNative = (spec) => {
+  const download = simulate(spec)
+  globalThis.__download = download
+  globalThis.__native = { native: true }
+  return download
 }
 
 const resetEnv = () => {
@@ -108,17 +106,17 @@ const resetEnv = () => {
   globalThis.__imported = []
   globalThis.__importCount = 1
   globalThis.__native = undefined
+  globalThis.__download = undefined
 }
 
-/** 首块就 reject 指定错误：分类点在 fetchChunk 的 catch 分支。 */
-const failFast = (error) =>
-  useNative(() => {
-    throw error
-  })
+/**
+ * 原生侧「起连接就报错」：分类只看错误原文，所以把 name + message 原样交给模拟器
+ * （真机上这里就是 Java 异常的 toString()）。
+ */
+const failFast = (error) => useNative({ startState: 'failed', startError: `${error.name}: ${error.message}` })
 
-/** 首块返回指定 HTTP 状态：分类点在 failForStatus。 */
-const statusNative = (status) =>
-  useNative(() => ({ status, url: URL_OK, headers: {}, data: null }))
+/** 原生侧起连接就拿到非 2xx：分类点在 failForStatus。 */
+const statusNative = (status) => useNative({ startState: 'http', status, body: '' })
 
 /** 跑一次导入，返回 result（error）而不是抛出去。 */
 const runImport = async (options = {}) => {

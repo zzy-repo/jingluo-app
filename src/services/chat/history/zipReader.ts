@@ -1,5 +1,34 @@
 import { Inflate } from 'fflate'
 
+/**
+ * 归档的**按字节区间读**抽象（#34）。
+ *
+ * 以前只有一种来源：`File`（本地文件导入、以及「从链接导入」把整包拼成的 Blob）。
+ * 大包改流式落盘之后多了一种来源：App 私有目录里的临时文件，按区间从原生读，
+ * 永远不把整包读进 JS 堆。两种来源的语义完全一样（`size` + `read(start,length)`），
+ * 所以解析 / 校验逻辑一行都不用分叉 —— 中央目录、条目头、压缩块都只问它要区间。
+ */
+export type ArchiveRangeReader = {
+  readonly size: number
+  /** 读 [start, start+length)；越界由实现方拒绝（返回的字节数不足即视为结构损坏）。 */
+  read(start: number, length: number): Promise<Uint8Array>
+}
+
+/** 归档来源：本地 `File`，或任意区间读实现（#34 的临时文件）。 */
+export type ArchiveSource = File | ArchiveRangeReader
+
+/** `File` → 区间读。`slice().arrayBuffer()` 只物化请求的那一段，不碰整包。 */
+export const fileRangeReader = (file: File): ArchiveRangeReader => ({
+  size: file.size,
+  read: async (start, length) => new Uint8Array(await file.slice(start, start + length).arrayBuffer()),
+})
+
+/** 归一化来源：已经是区间读实现就直接用（鸭子类型），否则按 `File` 处理。 */
+export const asRangeReader = (source: ArchiveSource): ArchiveRangeReader =>
+  typeof (source as ArchiveRangeReader).read === 'function'
+    ? (source as ArchiveRangeReader)
+    : fileRangeReader(source as File)
+
 const READ_CHUNK_BYTES = 256 * 1024
 // 控制每轮同步解压的工作量；输出交给调用方保存后才继续读取。
 const INFLATE_CHUNK_BYTES = 8 * 1024
@@ -48,8 +77,12 @@ const duplicated = (path: string): never => {
 }
 
 /** 本地文件头签名 PK\x03\x04，用于在解析前区分 ZIP 与其他文件。 */
-export const isZipFile = async (file: File) => {
-  const bytes = new Uint8Array(await file.slice(0, 4).arrayBuffer())
+export const isZipFile = async (source: ArchiveSource) => {
+  const reader = asRangeReader(source)
+  if (reader.size < 4) {
+    return false
+  }
+  const bytes = await reader.read(0, 4)
   return bytes.length === 4 && bytes.every((byte, index) => byte === [0x50, 0x4b, 3, 4][index])
 }
 
@@ -63,11 +96,11 @@ const crcTable = Uint32Array.from({ length: 256 }, (_, value) => {
   return crc >>> 0
 })
 
-const readBytes = async (file: File, start: number, length: number) => {
-  if (start < 0 || length < 0 || start + length > file.size) {
+const readBytes = async (reader: ArchiveRangeReader, start: number, length: number) => {
+  if (start < 0 || length < 0 || start + length > reader.size) {
     invalid()
   }
-  const bytes = new Uint8Array(await file.slice(start, start + length).arrayBuffer())
+  const bytes = await reader.read(start, length)
   if (bytes.length !== length) {
     invalid()
   }
@@ -120,12 +153,12 @@ type Entry = {
   offset: number
 }
 
-const readDirectory = async (file: File): Promise<{ entries: Entry[]; offset: number }> => {
-  if (file.size < 22) {
+const readDirectory = async (reader: ArchiveRangeReader): Promise<{ entries: Entry[]; offset: number }> => {
+  if (reader.size < 22) {
     invalid()
   }
-  const tailStart = Math.max(0, file.size - 22 - 0xffff)
-  const tail = await readBytes(file, tailStart, file.size - tailStart)
+  const tailStart = Math.max(0, reader.size - 22 - 0xffff)
+  const tail = await readBytes(reader, tailStart, reader.size - tailStart)
   const tailView = viewOf(tail)
   let end = tail.length - 22
   while (
@@ -161,7 +194,7 @@ const readDirectory = async (file: File): Promise<{ entries: Entry[]; offset: nu
     if (cursor + 46 > size) {
       invalid()
     }
-    const view = viewOf(await readBytes(file, offset + cursor, 46))
+    const view = viewOf(await readBytes(reader, offset + cursor, 46))
     if (view.getUint32(0, true) !== 0x02014b50) {
       invalid()
     }
@@ -195,7 +228,7 @@ const readDirectory = async (file: File): Promise<{ entries: Entry[]; offset: nu
     if (entrySize >= RATIO_MIN_OUTPUT_BYTES && entrySize > compressedSize * MAX_INFLATE_RATIO) {
       invalid()
     }
-    const name = await readBytes(file, offset + cursor + 46, nameLength)
+    const name = await readBytes(reader, offset + cursor + 46, nameLength)
     const path = decodePath(name, flags)
     // 目录和同名文件也不能互相覆盖。
     const identity = path.endsWith('/') ? path.slice(0, -1) : path
@@ -206,7 +239,7 @@ const readDirectory = async (file: File): Promise<{ entries: Entry[]; offset: nu
       invalid()
     }
     paths.add(identity)
-    checkExtra(await readBytes(file, offset + cursor + 46 + nameLength, extraLength))
+    checkExtra(await readBytes(reader, offset + cursor + 46 + nameLength, extraLength))
     entries.push({
       path,
       name,
@@ -225,11 +258,11 @@ const readDirectory = async (file: File): Promise<{ entries: Entry[]; offset: nu
   return { entries: entries.sort((a, b) => a.offset - b.offset), offset }
 }
 
-const readEntryOffset = async (file: File, entry: Entry, boundary: number) => {
+const readEntryOffset = async (reader: ArchiveRangeReader, entry: Entry, boundary: number) => {
   if (entry.offset + 30 > boundary) {
     invalid()
   }
-  const view = viewOf(await readBytes(file, entry.offset, 30))
+  const view = viewOf(await readBytes(reader, entry.offset, 30))
   const nameLength = view.getUint16(26, true)
   const extraLength = view.getUint16(28, true)
   const start = entry.offset + 30 + nameLength + extraLength
@@ -253,7 +286,7 @@ const readEntryOffset = async (file: File, entry: Entry, boundary: number) => {
       invalid()
     }
   }
-  const metadata = await readBytes(file, entry.offset + 30, nameLength + extraLength)
+  const metadata = await readBytes(reader, entry.offset + 30, nameLength + extraLength)
   if (entry.name.some((byte, index) => byte !== metadata[index])) {
     invalid()
   }
@@ -262,7 +295,7 @@ const readEntryOffset = async (file: File, entry: Entry, boundary: number) => {
     if (end + 12 > boundary) {
       invalid()
     }
-    const descriptor = viewOf(await readBytes(file, end, Math.min(16, boundary - end)))
+    const descriptor = viewOf(await readBytes(reader, end, Math.min(16, boundary - end)))
     const shift = descriptor.getUint32(0, true) === 0x08074b50 ? 4 : 0
     if (
       shift + 12 > descriptor.byteLength ||
@@ -280,9 +313,9 @@ const readEntryOffset = async (file: File, entry: Entry, boundary: number) => {
  * 只解析中央目录、列出条目名（不读任何数据）：用于导入前拿到会话总数，让进度能显示 n/总数。
  * 目录损坏时返回空数组，调用方退化为不显示总数（真正的校验仍由 readArchive 负责）。
  */
-export const listArchivePaths = async (file: File): Promise<string[]> => {
+export const listArchivePaths = async (source: ArchiveSource): Promise<string[]> => {
   try {
-    return (await readDirectory(file)).entries.map((entry) => entry.path)
+    return (await readDirectory(asRangeReader(source))).entries.map((entry) => entry.path)
   } catch {
     return []
   }
@@ -298,11 +331,12 @@ export type ArchiveEntry = {
  * 按条目在文件中的物理顺序逐条、逐块解压，跳过目录条目。
  * 调用方必须消费完当前条目的数据，再请求下一个条目。
  */
-export async function* readArchive(file: File): AsyncGenerator<ArchiveEntry> {
-  const directory = await readDirectory(file)
+export async function* readArchive(source: ArchiveSource): AsyncGenerator<ArchiveEntry> {
+  const reader = asRangeReader(source)
+  const directory = await readDirectory(reader)
   for (const [index, entry] of directory.entries.entries()) {
     const boundary = directory.entries[index + 1]?.offset ?? directory.offset
-    const start = await readEntryOffset(file, entry, boundary)
+    const start = await readEntryOffset(reader, entry, boundary)
     if (entry.path.endsWith('/')) {
       continue
     }
@@ -326,7 +360,7 @@ export async function* readArchive(file: File): AsyncGenerator<ArchiveEntry> {
       const inflate = entry.method === 8 ? new Inflate(append) : null
       for (let offset = 0; offset < entry.compressedSize; offset += READ_CHUNK_BYTES) {
         const chunk = await readBytes(
-          file,
+          reader,
           start + offset,
           Math.min(READ_CHUNK_BYTES, entry.compressedSize - offset)
         )

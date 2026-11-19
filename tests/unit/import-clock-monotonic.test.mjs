@@ -16,6 +16,7 @@ import assert from 'node:assert/strict'
 import { existsSync } from 'node:fs'
 import { registerHooks } from 'node:module'
 import { fileURLToPath, pathToFileURL } from 'node:url'
+import { simulate } from '../fixtures/url-import-stubs/download-simulator.mjs'
 
 const stub = (name) => new URL(`../fixtures/url-import-stubs/${name}`, import.meta.url).href
 const limitModule = new URL('../../src/services/chat/history/importLimit.ts', import.meta.url).href
@@ -81,31 +82,12 @@ const zipBytes = (size) => {
   return bytes
 }
 
-/** 组装一次 CapacitorHttp.get 的 206 响应（按 Range 切块，与真实原生桥一致）。 */
-const rangeResponse = (url, source, from, to) => {
-  const end = Math.min(to, source.length - 1)
-  const slice = source.slice(from, end + 1)
-  return {
-    status: 206,
-    url,
-    headers: {
-      'Content-Range': `bytes ${from}-${end}/${source.length}`,
-      'Content-Length': String(slice.length),
-    },
-    data: slice.buffer,
-  }
-}
-
-const rangeOf = (options) => {
-  const match = /^bytes=(\d+)-(\d+)$/.exec(options.headers?.Range ?? '')
-  return match === null ? { from: 0, to: -1 } : { from: Number(match[1]), to: Number(match[2]) }
-}
-
-/** 每个用例自己装配原生桥；calls 记录真实发出了几次请求。 */
-const useNative = (get) => {
-  const native = { native: true, calls: [], get }
-  globalThis.__native = native
-  return native
+/** 装一个下载模拟器（#34：网络读 + 写盘在原生侧）。`requests` 是真实发起的下载轮数。 */
+const useNative = (spec) => {
+  const download = simulate(spec)
+  globalThis.__download = download
+  globalThis.__native = { native: true }
+  return download
 }
 
 const resetEnv = () => {
@@ -113,13 +95,14 @@ const resetEnv = () => {
   globalThis.__imported = []
   globalThis.__importCount = 1
   globalThis.__native = undefined
+  globalThis.__download = undefined
 }
 
 const records = (kind) => globalThis.__log.records.filter((entry) => entry.kind === kind)
 const events = (message) => globalThis.__log.events.filter((entry) => entry.message === message)
 
 /**
- * 给 Date.now 注入偏移：`skewAt` 是第几次原生请求时生效（1 = 第一次请求就偏）。
+ * 给 Date.now 注入偏移：`skewAt` 是第几次轮询/请求时生效（1 = 第一次就偏）。
  * 恢复靠返回值里的 restore()，用例必须在 finally 里调用——否则会污染同进程的其它用例。
  */
 const skewDateNow = (deltaMs, skewAt) => {
@@ -157,17 +140,19 @@ test('① 系统时间前跳 1 小时：健康链路不得被判超时/停滞（
   resetEnv()
   const source = zipBytes(32 * 1024)
   const clock = skewDateNow(HOUR_MS, 2)
-  // 第 2 次原生请求时把墙钟往前拨 1 小时：包体一直在稳定推进，链路本身完全健康
-  useNative((options) => {
-    const { from, to } = rangeOf(options)
-    clock.applyIfDue(globalThis.__native.calls.length)
-    return Promise.resolve(rangeResponse(options.url, source, from, to))
+  // 第 2 次问进度时把墙钟往前拨 1 小时：字节照旧按「每次轮询 +4KB」稳定推进，链路本身完全健康。
+  // 进度故意不按墙钟算 —— 要验证的正是「墙钟跳变不参与耗时/停滞/总上限判定」。
+  const native = useNative({
+    source,
+    total: source.length,
+    bytesPerPoll: 4 * 1024,
+    onPoll: (index) => clock.applyIfDue(index),
   })
 
   const { error, trace } = await startImport(URL_SKEW_FORWARD, { heartbeatIntervalMs: 200 })
 
   try {
-    console.log(`  前跳 1h：终态 ${error?.key ?? 'null'}、请求 ${globalThis.__native.calls.length} 次、trace ${trace.length} 条`)
+    console.log(`  前跳 1h：终态 ${error?.key ?? 'null'}、轮询 ${native.polls} 次、trace ${trace.length} 条`)
     assert.notEqual(
       error?.key,
       'historyImportUrlStalled',
@@ -194,9 +179,10 @@ test('② 系统时间回拨 1 小时：trace.at 与 durationMs 一律 >= 0（�
   resetEnv()
   const clock = skewDateNow(-HOUR_MS, 1)
   // 链路每次都立刻失败：走「重试 → 分类 → 记失败」这条会写出耗时的路径
-  useNative(() => {
-    clock.applyIfDue(globalThis.__native.calls.length)
-    return Promise.reject(new TypeError('Failed to fetch'))
+  const native = useNative({
+    startState: 'failed',
+    startError: 'TypeError: Failed to fetch',
+    onRequest: (index) => clock.applyIfDue(index),
   })
 
   const { error, trace } = await startImport(URL_SKEW_BACKWARD, { heartbeatIntervalMs: 200 })
@@ -204,7 +190,7 @@ test('② 系统时间回拨 1 小时：trace.at 与 durationMs 一律 >= 0（�
   try {
     // 回拨不得改变分类与重试纪律：瞬时错误仍然按「网络异常」重试 2 次后才失败
     assert.equal(error?.key, 'historyImportUrlNetwork', `回拨不应改变错误分类（实际 ${error?.key ?? 'null'}）`)
-    assert.equal(globalThis.__native.calls.length, 2, '瞬时错误仍要重试（这里是 1 次上限 = 共 2 次请求）')
+    assert.equal(native.requests.length, 2, '瞬时错误仍要重试（这里是 1 次上限 = 共 2 轮）')
 
     const failures = records('import_error')
     assert.ok(failures.length >= 1, '失败必须留下 import_error 记录')

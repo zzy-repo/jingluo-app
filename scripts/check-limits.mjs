@@ -60,11 +60,7 @@ const WATCHED = [
   {
     file: 'src/services/chat/history/urlImport.ts',
     allow: [
-      { value: 1024, count: 4, reason: 'FIRST/MIN/MAX_CHUNK_BYTES 的 KiB 写法（4 * 1024 …）' },
-      { value: 1024, count: 2, reason: 'DECODE_CHUNK_CHARS 的 KiB 写法（4 * 1024 * 1024）' },
-      { value: 1200, count: 1, reason: 'CHUNK_TARGET_MS：分块目标耗时，自适应块大小的目标值' },
-      { value: 4096, count: 1, reason: 'ERROR_BODY_CHARS：403 响应体只解前 4096 字符' },
-      { value: 1000, count: 5, reason: '耗时 / 秒换算与诊断节流（maxTotalMs / 1000、stallMs / 1000、三处 >= 1000 的 trace 间隔）' },
+      { value: 1000, count: 5, reason: '耗时 / 秒换算与详情节流（maxTotalMs / 1000、stallMs / 1000、三处 >= 1000 的 trace 采样间隔）' },
       { value: 60000, count: 1, reason: '毫秒 → 分钟换算（Math.round(maxTotalMs / 60_000)）' },
     ],
   },

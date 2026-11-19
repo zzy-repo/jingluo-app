@@ -1,33 +1,33 @@
 // [layer: unit | dependencies: none | no build, browser, network or Android]
 //
-// 「总长度从哪儿来」的回归层（issue #24 的反向缺陷）。
+// 「总长度从哪儿来」的回归层（issue #24 的反向缺陷），#34 之后口径变了但承诺没变。
 //
-// 缺陷形态（实测）：服务端按 206 分块、**不下发 Content-Range**，代码把这次响应里的
-// Content-Length（= 这一块的长度，例如 4096）当成了整包总长，于是
+// 缺陷原形态（实测）：服务端按 206 分块、**不下发 Content-Range**，JS 把这次响应里的
+// Content-Length（= 这一块的长度，例如 4096）当成整包总长，于是
 //   1) 4KB 就被当成「已经下完」；
 //   2) 200MB 上限拿这个假总长去比 —— 几百 MB 的包被放过，正常包也可能被误判。
-// 期望：total 只从可信来源取（Content-Range 的 total，或首次整包 200 的 Content-Length）；
-// 206 缺 Content-Range 时 total 保持未知，超限改按「已累计字节」判断。
 //
-// 这一层只替换 Capacitor 原生桥 / diagnostics / backup，urlImport 的真实分块逻辑
-// （自适应块长、收敛判定、超限、错误分类）原样运行；state.total 用 onProgress 上报的
-// totalBytes 观察（它就是 UI 与详情里显示的那个字段）。
+// #34 把「网络读 + 写盘」搬进原生插件（HistoryArchivePlugin）之后，总长度的**来源**变成了
+// 响应头解析（Java 侧：206 的 `Content-Range` 尾部、200 的 `Content-Length`），JS 不再自己
+// 解析任何响应头。所以这一层守的不再是「解析对不对」，而是 JS 侧的等价承诺：
+//   A. 原生报不上 total 时，进度里**不编数字**、也不拿已下字节当总量；
+//   B. 原生报了 total 时，进度与详情显示的就是那个数；
+//   C. total 未知时超限按**累计字节**判（不是拿某个瞬时长度去比）；
+//   D. 建连阶段就失败时立刻分类收口，且诊断里有 url.path / error.msg（#19）。
+//
+// 只替换原生下载插件 / diagnostics / backup 三个边界，urlImport 的真实代码原样运行。
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { existsSync } from 'node:fs'
 import { registerHooks } from 'node:module'
 import { fileURLToPath, pathToFileURL } from 'node:url'
+import { simulate, TEMP_PATH } from '../fixtures/url-import-stubs/download-simulator.mjs'
 
 const stub = (name) => new URL(`../fixtures/url-import-stubs/${name}`, import.meta.url).href
 const limitModule = new URL('../../src/services/chat/history/importLimit.ts', import.meta.url).href
-// 失败原因分档（issue #111）同样用真模块：它不碰浏览器/网络，没有替换的必要
 const failureModule = new URL('../../src/services/chat/history/importFailure.ts', import.meta.url).href
 
-/**
- * 源码里的相对导入写的是 `.js`（NodeNext 约定），实际文件是 `.ts`；node 不会自己改后缀。
- * 与 import-size-limit.test.mjs 同一套做法：本层要跑真实的 urlImport 链路，
- * 而 #275 之后它多了一个依赖 src/services/limits.ts（阈值表）。
- */
+/** 源码里的相对导入写的是 `.js`（NodeNext 约定），实际文件是 `.ts`；node 不会自己改后缀。 */
 const asTypescript = (specifier, parentURL) => {
   if (!parentURL || !specifier.startsWith('.') || !specifier.endsWith('.js')) {
     return null
@@ -50,12 +50,14 @@ registerHooks({
     if (specifier === './errors.js') {
       return { url: stub('errors.mjs'), shortCircuit: true }
     }
-    // 上限常量（issue #34）用**真模块**，本层断言的就是那个默认值，不能替换成桩
     if (specifier === './importLimit.js') {
       return { url: limitModule, shortCircuit: true }
     }
     if (specifier === './importFailure.js') {
       return { url: failureModule, shortCircuit: true }
+    }
+    if (specifier === './nativeArchive.js') {
+      return { url: stub('nativeArchive.mjs'), shortCircuit: true }
     }
     const typescript = asTypescript(specifier, context.parentURL)
     if (typescript !== null) {
@@ -66,11 +68,14 @@ registerHooks({
 })
 
 const { importHistoryFromUrl } = await import('../../src/services/chat/history/urlImport.ts')
+const { zh } = await import('../../src/i18n/zh.ts')
 
-const URL_OK = 'https://obs.example.test/deepseek_data-2026-11-01.zip'
-const MAX_ARCHIVE_BYTES = 200 * 1024 * 1024
+const URL_UNKNOWN_TOTAL = 'https://obs.example.test/unknown-total.zip'
+const URL_KNOWN_TOTAL = 'https://obs.example.test/known-total.zip'
+const URL_OVER_LIMIT = 'https://obs.example.test/over-limit.zip'
+const URL_REFUSED = 'https://obs.example.test/refused.zip'
+const URL_DECLARED_TOO_LARGE = 'https://obs.example.test/declared-too-large.zip'
 
-/** 合法 ZIP 头（urlImport 会校验 PK\x03\x04），其余字节填充，保证长度真实。 */
 const zipBytes = (size) => {
   const bytes = new Uint8Array(size)
   bytes.set([0x50, 0x4b, 3, 4], 0)
@@ -80,193 +85,190 @@ const zipBytes = (size) => {
   return bytes
 }
 
-const rangeOf = (options) => {
-  const match = /^bytes=(\d+)-(\d+)$/.exec(options.headers?.Range ?? '')
-  return match === null ? { from: 0, to: -1 } : { from: Number(match[1]), to: Number(match[2]) }
+const fakeTime = (t, start = 1_700_000_000_000) => {
+  t.mock.timers.enable({ apis: ['setTimeout', 'setInterval', 'Date'], now: start })
+  return { tick: (ms) => t.mock.timers.tick(ms) }
 }
+
+const flush = () => new Promise((resolve) => setImmediate(resolve))
 
 const resetEnv = () => {
   globalThis.__log = { records: [], events: [], actions: [] }
   globalThis.__imported = []
   globalThis.__importCount = 1
-  globalThis.__native = undefined
+  globalThis.__download = undefined
+}
+
+const useNative = (spec) => {
+  const download = simulate(spec)
+  globalThis.__download = download
+  globalThis.__native = { native: true }
+  return download
 }
 
 const records = (kind) => globalThis.__log.records.filter((entry) => entry.kind === kind)
 
-/**
- * 装一个按 Range 回字节的原生桥：真按 bytes=a-b 切块返回，
- * 响应头由用例决定 —— 这正是本组用例唯一变化的变量。
- * 请求记录由 stub 的 CapacitorHttp.get 统一 push 到 native.calls，用例不要重复记。
- */
-const serveChunks = (source, headersFor) => {
-  globalThis.__native = {
-    native: true,
-    calls: [],
-    get: (options) => {
-      const { from, to } = rangeOf(options)
-      const end = Math.min(to, source.length - 1)
-      const slice = from > end ? new Uint8Array(0) : source.slice(from, end + 1)
-      return Promise.resolve({
-        status: 206,
-        url: URL_OK,
-        headers: headersFor({ from, end, length: slice.byteLength }),
-        data: slice.buffer,
-      })
-    },
-  }
-  return globalThis.__native
-}
-
-/** 跑一次导入：绝不 await 到超时，失败也把原因带回来。 */
-const runImport = async (options = {}) => {
+const startImport = (url, options = {}) => {
+  const trace = []
   const progress = []
-  const error = await importHistoryFromUrl(URL_OK, {
+  const done = importHistoryFromUrl(url, {
+    onTrace: (entry) => trace.push(entry),
     onProgress: (entry) => progress.push(entry),
-    downloadStallMs: 30_000,
-    heartbeatIntervalMs: 1_000,
     ...options,
   }).then(
     () => null,
-    (reason) => reason
+    (error) => error
   )
-  return { error, progress }
+  return { trace, progress, done }
 }
 
-const downloads = (progress) => progress.filter((entry) => entry.phase === 'downloading')
-const reportedTotals = (progress) => [...new Set(downloads(progress).map((entry) => entry.totalBytes))]
+const drive = async (clock, run, { maxMs = 120_000, step = 500 } = {}) => {
+  let outcome
+  run.done.then((error) => {
+    outcome = { error }
+  })
+  let spent = 0
+  while (outcome === undefined && spent < maxMs) {
+    clock.tick(step)
+    await flush()
+    spent += step
+  }
+  assert.notEqual(outcome, undefined, `导入在 ${maxMs}ms 假时间内没有终态`)
+  return { error: outcome.error, spent }
+}
 
-test('A：206 缺 Content-Range 时 total 必须未知，且不能只拿到 4KB 就判完成', async () => {
+test('A：原生报不上 total 时进度里不编数字，也不拿「已下字节」当总量', async (t) => {
   resetEnv()
-  const source = zipBytes(16 * 1024)
-  // 每一块只有自己的 Content-Length，没有 Content-Range —— 实测缺陷形态
-  const native = serveChunks(source, ({ length }) => ({ 'Content-Length': String(length) }))
+  const clock = fakeTime(t)
+  const source = zipBytes(64 * 1024)
+  // total 未知、但链路正常结束：模拟器用 completeAtBytes 表达「原生侧 state=done」
+  const native = useNative({
+    source,
+    total: null,
+    completeAtBytes: source.length,
+    // 慢一点，好让「未知总量」这件事在多条进度采样上都被看到（64KB / 32KB/s ≈ 2s）
+    bytesPerSecond: 32 * 1024,
+  })
+  const run = startImport(URL_UNKNOWN_TOTAL, { downloadStallMs: 10_000, heartbeatIntervalMs: 1_000 })
 
-  const { error, progress } = await runImport()
+  const { error } = await drive(clock, run)
 
-  assert.ok(downloads(progress).length >= 1, '至少要上报一条下载进度')
-  assert.deepEqual(
-    reportedTotals(progress),
-    [undefined],
-    `206 缺 Content-Range 时总长必须未知（不能把块长当总长），实际上报 ${JSON.stringify(reportedTotals(progress))}`
-  )
-  // 「未被判完成」：第一个块（4096B）之后必须继续请求，最终拿到整包
-  assert.ok(native.calls.length >= 2, `第一块之后不能收工，实际请求 ${native.calls.length} 次`)
-  assert.equal(error, null, `能下完就必须成功（实际 ${error?.key ?? ''} ${error?.message ?? ''}）`)
-  assert.equal(globalThis.__imported.length, 1)
-  assert.equal(
-    globalThis.__imported[0].size,
-    source.length,
-    '不能只拿到第一块（4KB）就当下载完成'
-  )
-  assert.equal(records('import_error').length, 0, '成功路径不应记录失败')
-})
-
-test('B：206 带 Content-Range bytes a-b/21195845 → total 取 total 段', async () => {
-  resetEnv()
-  const total = 21195845
-  const source = zipBytes(total)
-  serveChunks(source, ({ from, end }) => ({
-    'Content-Range': `bytes ${from}-${end}/${total}`,
-    'Content-Length': String(end - from + 1),
-  }))
-
-  const { error, progress } = await runImport()
-
-  assert.equal(error, null, `正常分块必须成功（实际 ${error?.key ?? ''}）`)
-  assert.deepEqual(reportedTotals(progress), [total], `总长应取 Content-Range 里的 ${total}`)
-  assert.equal(globalThis.__imported[0].size, total)
-})
-
-test('C：206 带 Content-Range bytes a-b/* → total 视为未知（不回落块长）', async () => {
-  resetEnv()
-  const source = zipBytes(16 * 1024)
-  serveChunks(source, ({ from, end }) => ({
-    'Content-Range': `bytes ${from}-${end}/*`,
-    'Content-Length': String(end - from + 1),
-  }))
-
-  const { error, progress } = await runImport()
-
-  assert.deepEqual(
-    reportedTotals(progress),
-    [undefined],
-    `total 为 * 时必须保持未知，实际上报 ${JSON.stringify(reportedTotals(progress))}`
-  )
-  assert.equal(error, null, `分块收敛后必须成功（实际 ${error?.key ?? ''}）`)
+  assert.equal(error, null, `总量未知的合法包必须能导完（实际 ${error?.key ?? ''}）`)
+  assert.ok(run.progress.length >= 2, '未知总量时也要有进度')
+  for (const entry of run.progress) {
+    if (entry.phase !== 'downloading') {
+      continue
+    }
+    assert.equal(entry.totalBytes, undefined, '原生没报总量时不允许编一个数出来')
+    assert.equal(typeof entry.downloadedBytes, 'number')
+  }
+  // 详情里的下载条目也不带 totalBytes
+  const downloads = run.trace.filter((entry) => entry.kind === 'download')
+  assert.ok(downloads.length >= 1)
+  assert.ok(downloads.every((entry) => entry.totalBytes === undefined))
+  // 收口靠的是原生 state=done，而不是「字节数到了某个数」
   assert.equal(globalThis.__imported[0].size, source.length)
+  assert.ok(native.polls >= 2)
 })
 
-test('D：total 未知时按累计字节判超限（累计 > 200MB 仍然报超限）', async () => {
+test('B：原生上报 total 时，进度与详情显示的就是那个数', async (t) => {
   resetEnv()
-  // 不真造 200MB 文件：复用一块 4MB 缓冲区模拟「永远下不完的大包」，
-  // 每块长度真实计入累计，只有长度参与判定。
-  const block = new Uint8Array(4 * 1024 * 1024)
-  block.set([0x50, 0x4b, 3, 4], 0)
-  globalThis.__native = {
-    native: true,
-    calls: [],
-    get: (options) => {
-      const { from } = rangeOf(options)
-      const first = from === 0
-      return Promise.resolve({
-        status: 206,
-        url: URL_OK,
-        headers: first ? { 'Content-Length': '4096' } : { 'Content-Length': String(block.byteLength) },
-        data: first ? block.buffer.slice(0, 4096) : block.buffer,
-      })
-    },
-  }
+  const clock = fakeTime(t)
+  const source = zipBytes(256 * 1024)
+  useNative({ source, total: source.length, bytesPerSecond: 512 * 1024 })
+  const run = startImport(URL_KNOWN_TOTAL, { downloadStallMs: 10_000, heartbeatIntervalMs: 1_000 })
 
-  const { error } = await runImport()
+  const { error } = await drive(clock, run)
 
-  assert.equal(error?.name, 'BackupError', `累计超限必须失败（实际 ${error?.message ?? 'success'}）`)
-  assert.equal(error.key, 'historyImportUrlTooLarge')
-  assert.equal(error.params.size, MAX_ARCHIVE_BYTES / 1024 / 1024)
-  assert.ok(globalThis.__native.calls.length > 1, '必须真按块累计，而不是第一块就判超限')
+  assert.equal(error, null)
+  const downloading = run.progress.filter((entry) => entry.phase === 'downloading')
+  assert.ok(downloading.length >= 1)
+  assert.ok(
+    downloading.every((entry) => entry.totalBytes === source.length),
+    '上报了总量就必须原样透出（UI 的百分比靠它）'
+  )
+  const downloads = run.trace.filter((entry) => entry.kind === 'download')
+  assert.ok(downloads.every((entry) => entry.totalBytes === source.length))
 })
 
-test('E：整包 200 带 Content-Length → total 取 Content-Length', async () => {
+test('C：total 未知时超限按累计字节判，不是拿瞬时长度去比', async (t) => {
   resetEnv()
-  const source = zipBytes(16 * 1024)
-  globalThis.__native = {
-    native: true,
-    calls: [],
-    get: () =>
-      Promise.resolve({
-        status: 200,
-        url: URL_OK,
-        headers: { 'Content-Length': String(source.byteLength) },
-        data: source.buffer,
-      }),
-  }
+  const clock = fakeTime(t)
+  const source = zipBytes(64 * 1024)
+  const MAX = 8 * 1024
+  const native = useNative({ source, total: null, bytesPerSecond: 256 * 1024 })
+  const run = startImport(URL_OVER_LIMIT, {
+    downloadStallMs: 10_000,
+    heartbeatIntervalMs: 1_000,
+    maxBytes: MAX,
+  })
 
-  const { error, progress } = await runImport()
+  const { error } = await drive(clock, run)
 
-  assert.equal(error, null, `整包 200 必须成功（实际 ${error?.key ?? ''}）`)
-  assert.deepEqual(reportedTotals(progress), [source.length], '整包 200 的 Content-Length 就是总长')
-  assert.equal(globalThis.__native.calls.length, 1, '200 说明服务端忽略了 Range，一次就够')
-  assert.equal(globalThis.__imported[0].size, source.length)
+  assert.equal(error?.key, 'historyImportUrlTooLarge', '累计字节超上限必须报「文件过大」')
+  await run.done
+  assert.ok(run.done)
+  const failure = records('import_error').find((entry) => entry.fields.stage === 'size')
+  assert.ok(failure, '超限必须留一条 stage=size 的诊断')
+  assert.equal(failure.fields['limit.bytes'], MAX)
+  assert.ok(failure.fields['download.bytes'] > MAX, '记录里要写清实测超出多少')
+  assert.match(String(zh.historyImportUrlTooLarge), /文件过大/)
+  // 临时文件不留：超限也是失败终态
+  assert.equal(native.discarded, 1)
+  assert.equal(globalThis.__imported.length, 0)
 })
 
-test('F：下载失败的 import_error 事件带 url.path 与 error.msg（#19）', async () => {
+test('D：建连阶段就失败（Connection refused）→ 立刻分类收口，诊断带 url.path 与 error.msg', async () => {
   resetEnv()
-  const calls = []
-  globalThis.__native = {
-    native: true,
-    calls,
-    get: () => Promise.resolve({ status: 500, url: URL_OK, headers: {}, data: null }),
-  }
+  const native = useNative({
+    startState: 'failed',
+    startError: 'java.net.ConnectException: Connection refused (Connection refused)',
+  })
+  // 真实时钟：这条路径不该有任何等待
+  const run = startImport(URL_REFUSED, { downloadStallMs: 30_000, heartbeatIntervalMs: 100 })
+  const error = await run.done
 
-  const { error } = await runImport()
+  assert.equal(error?.key, 'historyImportUrlRefused', '连接被拒要单独一档，不能混成「网络错误」')
+  assert.equal(native.polls, 0, '建连就失败时不该再去轮询进度')
+  const failure = records('import_error')[0]
+  assert.equal(failure.fields.stage, 'download')
+  assert.equal(failure.fields.reason, 'refused')
+  // #19：事后必须能把一条失败对上具体文件与原始错误
+  assert.equal(typeof failure.fields['url.path'], 'string')
+  assert.match(String(failure.fields['url.path']), /refused\.zip/)
+  assert.equal(typeof failure.fields['error.msg'], 'string')
+  // 临时文件根本没建出来，但清理路径照走一遍（幂等）
+  assert.equal(native.served, 0)
+  assert.equal(native.discarded, 1)
+  assert.deepEqual(native.removed, [])
+})
 
-  assert.equal(error?.key, 'historyImportUrlHttp')
-  const failures = records('import_error')
-  assert.equal(failures.length, 1, `失败必须落一条 import_error，实际 ${failures.length} 条`)
-  const fields = failures[0].fields
-  assert.equal(fields.stage, 'download')
-  // 只留 path，不带 host / query（签名参数都在 query 里）
-  assert.equal(fields['url.path'], '/deepseek_data-2026-11-01.zip')
-  assert.equal(typeof fields['error.msg'], 'string')
-  assert.ok(fields['error.msg'].length > 0, 'error.msg 不能为空')
+test('E：响应头声明的总量超上限 → 一个字节都不写就拒（关闭条件 3 的 JS 侧）', async () => {
+  resetEnv()
+  const declared = 250 * 1024 * 1024
+  const native = useNative({ startState: 'tooLarge', declared })
+  const run = startImport(URL_DECLARED_TOO_LARGE, { downloadStallMs: 30_000 })
+  const error = await run.done
+
+  assert.equal(error?.key, 'historyImportUrlTooLarge')
+  assert.equal(error.params.actual !== undefined, true, '文案里必须同时给「上限」和「实测/声明体积」')
+  assert.equal(native.served, 0, '超限拒绝发生在写盘之前：模拟器一个字节都不该写')
+  assert.equal(native.polls, 0, '也不该开始轮询')
+  const failure = records('import_error')[0]
+  assert.equal(failure.fields.stage, 'size')
+  assert.equal(failure.fields['download.bytes'], declared, '记录里要写清声明体积')
+  assert.equal(failure.fields['limit.bytes'], 200 * 1024 * 1024, '上限就是 importLimit 里那一个 200MB')
+})
+
+test('F：成功导入后临时文件被删掉，且删的就是那个下载落点', async (t) => {
+  resetEnv()
+  const clock = fakeTime(t)
+  useNative({ source: zipBytes(16 * 1024), bytesPerSecond: 512 * 1024 })
+  const run = startImport('https://obs.example.test/cleanup.zip', {
+    downloadStallMs: 10_000,
+    heartbeatIntervalMs: 1_000,
+  })
+  const { error } = await drive(clock, run)
+  assert.equal(error, null)
+  assert.deepEqual(globalThis.__download.removed, [TEMP_PATH])
 })

@@ -677,12 +677,6 @@ const traceLine = (t: ReturnType<typeof useTranslate>, entry: ImportTraceEntry):
             total: formatBytes(entry.totalBytes),
             idle: Math.round((entry.idleMs ?? 0) / 1000),
           })
-    case 'resume':
-      // 续传：重试不再从 0 开始（#38）
-      return t('importTraceResume', { done: formatBytes(entry.bytes ?? 0) })
-    case 'restart':
-      // 服务端忽略 Range：已丢弃本地字节、从头重下，必须让用户看到
-      return t('importTraceRestart')
     case 'check':
       return entry.totalSessions === undefined
         ? t('importTraceCheckUnknown')

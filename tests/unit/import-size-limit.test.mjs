@@ -16,6 +16,7 @@ import assert from 'node:assert/strict'
 import { existsSync } from 'node:fs'
 import { registerHooks } from 'node:module'
 import { fileURLToPath, pathToFileURL } from 'node:url'
+import { simulate } from '../fixtures/url-import-stubs/download-simulator.mjs'
 
 const stub = (name) => new URL(`../fixtures/url-import-stubs/${name}`, import.meta.url).href
 
@@ -73,6 +74,7 @@ const reset = () => {
   globalThis.__staged = []
   globalThis.__imported = []
   globalThis.__native = undefined
+  globalThis.__download = undefined
 }
 
 const records = (kind) => globalThis.__log.records.filter((entry) => entry.kind === kind)
@@ -90,22 +92,18 @@ const runImportFile = async (file, options = {}) =>
     (reason) => reason
   )
 
-/** 206 + Content-Range 声明整包 total（只回 4KB 真字节，不会真造大包）。 */
+/**
+ * 原生侧只声明总量（4KB 真字节 + 一个很大的 total），不真造大包。
+ * #34 之后总量由原生插件读响应头得出（206 的 `Content-Range` 尾部 / 200 的 `Content-Length`），
+ * JS 拿到的就是 `start.total` —— 所以这里直接给 total，等价于旧的 206 + Content-Range。
+ */
 const serveDeclared = (declared) => {
   const block = new Uint8Array(4096)
   block.set([0x50, 0x4b, 3, 4], 0)
-  globalThis.__native = {
-    native: true,
-    calls: [],
-    get: () =>
-      Promise.resolve({
-        status: 206,
-        url: URL_OK,
-        headers: { 'Content-Range': `bytes 0-4095/${declared}`, 'Content-Length': '4096' },
-        data: block.buffer,
-      }),
-  }
-  return globalThis.__native
+  const download = simulate({ source: block, total: declared, bytesPerSecond: 1024 * 1024 })
+  globalThis.__download = download
+  globalThis.__native = { native: true }
+  return download
 }
 
 const runImportUrl = async (options = {}) =>

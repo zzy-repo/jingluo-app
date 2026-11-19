@@ -72,6 +72,12 @@ const ORIGINAL_VALUES = {
   importStallMs: 40_000,
   importMaxTotalMs: 30 * 60_000,
   importHeartbeatMs: 5_000,
+  // #34 新增项（不是搬家）：下载阶段总尝试轮数（首轮 + 1 次重试），与搬进原生前的
+  // 分块重试口径一致 —— 瞬时可重试、永久性错误不重试（#105 / #154）。
+  importAttempts: 2,
+  // #34 新增项（不是搬家）：区间读单次上限 1MiB。搬进 LIMITS 的理由和其他阈值一样 ——
+  // 「一次问原生要多少字节」是内存上限的分界线，不许散落在 nativeArchive.ts 里当裸字面量。
+  importRangeReadBytes: 1024 * 1024,
   clockJumpMs: 2 * 60_000,
   autoTitle: { timeoutMs: 8000, maxOutputTokens: 32, maxInputBytes: 2048, concurrency: 2, maxQueue: 6 },
   attachments: { maxSizeMb: 64, maxUserDataSizeMb: 32, maxCount: 50, maxConcurrent: 3 },

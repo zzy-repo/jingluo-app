@@ -20,6 +20,7 @@ import assert from 'node:assert/strict'
 import { existsSync } from 'node:fs'
 import { registerHooks } from 'node:module'
 import { fileURLToPath, pathToFileURL } from 'node:url'
+import { simulate } from '../fixtures/url-import-stubs/download-simulator.mjs'
 
 const stub = (name) => new URL(`../fixtures/url-import-stubs/${name}`, import.meta.url).href
 
@@ -73,38 +74,21 @@ const reset = () => {
   globalThis.__importError = undefined
   globalThis.__importCount = 1
   globalThis.__native = undefined
+  globalThis.__download = undefined
 }
 
 const records = (kind) => globalThis.__log.records.filter((entry) => entry.kind === kind)
 
-/** 原生桥：记下每次请求的 Range 和真实交给 JS 的字节数（用来断言「到底下了多少」）。 */
-const useNative = (get) => {
-  const native = { native: true, calls: [], bytes: 0 }
-  native.get = (options) => {
-    const response = get(options)
-    if (response instanceof Promise) {
-      return response.then((value) => {
-        native.bytes += toByteLength(value?.data)
-        return value
-      })
-    }
-    native.bytes += toByteLength(response?.data)
-    return response
-  }
-  globalThis.__native = native
-  return native
-}
-
-const toByteLength = (data) => {
-  if (data == null) return 0
-  if (typeof data === 'string') return data.length
-  if (typeof data.byteLength === 'number') return data.byteLength
-  return 0
-}
-
-const rangeOf = (options) => {
-  const match = /^bytes=(\d+)-(\d+)$/.exec(options.headers?.Range ?? '')
-  return match === null ? { from: 0, to: -1 } : { from: Number(match[1]), to: Number(match[2]) }
+/**
+ * 装一个下载模拟器（#34：网络读 + 写盘都在原生侧）。
+ * `served` 就是「原生真正写进文件的字节数」——用它断言「到底下盘了多少」，
+ * `requests` 是真实发起的下载轮数。
+ */
+const useNative = (spec) => {
+  const download = simulate(spec)
+  globalThis.__download = download
+  globalThis.__native = { native: true }
+  return download
 }
 
 const zipBlock = (size) => {
@@ -113,30 +97,18 @@ const zipBlock = (size) => {
   return block
 }
 
-/** 206 + Content-Range 声明整包 total，只回 bodyBytes 个真字节（绝不真造大包）。 */
-const serveDeclared = (declared, bodyBytes = 4096) => {
-  const block = zipBlock(bodyBytes)
-  return useNative(() => ({
-    status: 206,
-    url: URL_OK,
-    headers: {
-      'Content-Range': `bytes 0-${bodyBytes - 1}/${declared}`,
-      'Content-Length': String(bodyBytes),
-    },
-    data: block.buffer,
-  }))
-}
+/** 原生侧从响应头读到整包 total（等价于旧的 206 + Content-Range），正文只给 4KB 真字节。 */
+const serveDeclared = (declared, bodyBytes = 4096) =>
+  useNative({ source: zipBlock(bodyBytes), total: declared, bytesPerSecond: 1024 * 1024 })
 
-/** 服务端完全不给长度：首块给 size 字节，之后收敛成空块（既有行为）。 */
-const serveUnknownLength = (size = 4096) => {
-  const block = zipBlock(size)
-  return useNative((options) => {
-    const { from } = rangeOf(options)
-    return from === 0
-      ? { status: 206, url: URL_OK, headers: {}, data: block.buffer }
-      : { status: 206, url: URL_OK, headers: {}, data: new ArrayBuffer(0) }
+/** 服务端完全不给长度：总量未知，但链路正常结束（等价于旧的「首块之后收敛成空块」）。 */
+const serveUnknownLength = (size = 4096) =>
+  useNative({
+    source: zipBlock(size),
+    total: null,
+    completeAtBytes: size,
+    bytesPerSecond: size * 4,
   })
-}
 
 const runImport = async (options = {}) =>
   importHistoryFromUrl(URL_OK, {
@@ -154,7 +126,7 @@ test('① 响应头声明超限（206 Content-Range）→ 首块即终态，不�
   const native = serveDeclared(declared)
   const error = await runImport()
   console.log(
-    `    -> key=${error?.key} params=${JSON.stringify(error?.params ?? null)} requests=${native.calls.length} bytes=${native.bytes}`
+    `    -> key=${error?.key} params=${JSON.stringify(error?.params ?? null)} rounds=${native.requests.length} written=${native.served}`
   )
 
   assert.equal(error?.name, 'BackupError', `超限必须给出可读的终态，实际 ${error?.name ?? 'success'}`)
@@ -165,24 +137,20 @@ test('① 响应头声明超限（206 Content-Range）→ 首块即终态，不�
     '200.0MB',
     '提示里还必须有实测体积（用户得知道自己那个包到底多大）'
   )
-  assert.equal(native.calls.length, 1, '超限必须首块就拒绝，不许继续发包')
-  assert.ok(native.bytes <= 4096, `超限时最多只应拿到首块，实际 ${native.bytes} 字节`)
+  assert.equal(native.requests.length, 1, '超限必须在起连接那一步就拒绝，不许进入下载循环')
+  assert.equal(native.served, 0, '超限时一个字节都不该写盘（写之前就该知道超了）')
   assert.deepEqual(globalThis.__imported, [], '超限不能进入解析/导入阶段')
   assert.equal(records('import_error').length, 1, '超限拒绝必须落一条失败日志')
 })
 
-test('①b 服务端忽略 Range 回 200 整包：先看 Content-Length，绝不解包体', async () => {
+test('①b 服务端忽略 Range 回 200 整包：先看 Content-Length，不碰包体', async () => {
   reset()
-  // 包体故意不是 base64：只要代码「先解包体再看头」，这里就会抛出 InvalidCharacterError，
-  // 从而把缺陷暴露成一条与体积无关的怪错（这正是真机上的顺序问题）。
-  const native = useNative(() => ({
-    status: 200,
-    url: URL_OK,
-    headers: { 'Content-Length': String(DEFAULT_LIMIT + 1) },
-    data: '@@@ not base64 @@@',
-  }))
+  // 原生侧只读了响应头就判定超限（`Content-Length` = 200MB+1），正文一个字节都没读、没写盘。
+  const native = useNative({ startState: 'tooLarge', declared: DEFAULT_LIMIT + 1 })
   const error = await runImport()
-  console.log(`    -> key=${error?.key} params=${JSON.stringify(error?.params ?? null)} requests=${native.calls.length}`)
+  console.log(
+    `    -> key=${error?.key} params=${JSON.stringify(error?.params ?? null)} rounds=${native.requests.length} written=${native.served}`
+  )
 
   assert.equal(
     error?.key,
@@ -190,7 +158,8 @@ test('①b 服务端忽略 Range 回 200 整包：先看 Content-Length，绝不
     `必须按响应头先判体积，实际 ${error?.key ?? `${error?.name}: ${error?.message}`}`
   )
   assert.equal(error.params?.actual, '200.0MB')
-  assert.equal(native.calls.length, 1, '不许为「确认体积」再发请求，也不许继续下')
+  assert.equal(native.requests.length, 1, '不许为「确认体积」再发请求，也不许继续下')
+  assert.equal(native.served, 0, '判定超限时包体一个字节都不该落盘')
   assert.deepEqual(globalThis.__imported, [], '不许进到解析阶段')
 })
 
@@ -205,7 +174,7 @@ test('② 服务端不给 Content-Length / Content-Range → 行为不变，小�
     (reason) => reason
   )
   console.log(
-    `    -> count=${count} requests=${native.calls.length} imported=${JSON.stringify(globalThis.__imported)}`
+    `    -> count=${count} polls=${native.polls} written=${native.served} imported=${JSON.stringify(globalThis.__imported)}`
   )
 
   assert.equal(count, 1, `没有长度信息的小包必须照常导入，实际 ${count?.key ?? count?.name ?? 'success'}`)

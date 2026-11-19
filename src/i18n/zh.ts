@@ -167,8 +167,6 @@ export const zh = {
     '下载超时：已超过 {minutes} 分钟上限（已下载 {done} / 共 {total}），可重试',
   historyImportUrlDeadlineUnknownTotal:
     '下载超时：已超过 {minutes} 分钟上限（已下载 {done}），可重试',
-  historyImportUrlRestarted: '该链接不支持断点续传，已从头重新下载',
-  historyImportUrlResumed: '已从上次中断的地方继续下载（已下载 {done}）',
   historyImportCancelled: '导入已取消',
   importTraceTitle: '导入详情（{count} 条）',
   importTraceCopy: '复制详情',
@@ -198,8 +196,6 @@ export const zh = {
   importTraceReasonDeadline: '下载超时（超过 {minutes} 分钟上限）',
   importTraceHeartbeat: '仍在下载…（已下载 {done} / {total}，已 {idle} 秒没有新数据）',
   importTraceHeartbeatUnknown: '仍在下载…（已下载 {done}，已 {idle} 秒没有新数据）',
-  importTraceResume: '从已下载的 {done} 处继续（不清零）',
-  importTraceRestart: '该链接不支持断点续传，已从头重新下载',
   importTraceReasonFormat: '文件格式不正确',
   detailsExpand: '展开',
   detailsCollapse: '收起',

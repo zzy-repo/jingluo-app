@@ -15,6 +15,7 @@ import assert from 'node:assert/strict'
 import { existsSync } from 'node:fs'
 import { registerHooks } from 'node:module'
 import { fileURLToPath, pathToFileURL } from 'node:url'
+import { simulate } from '../fixtures/url-import-stubs/download-simulator.mjs'
 
 const stub = (name) => new URL(`../fixtures/url-import-stubs/${name}`, import.meta.url).href
 const limitModule = new URL('../../src/services/chat/history/importLimit.ts', import.meta.url).href
@@ -84,19 +85,20 @@ const resetEnv = () => {
   globalThis.__imported = []
   globalThis.__importCount = 1
   globalThis.__native = undefined
+  globalThis.__download = undefined
 }
 
 const records = (kind) => globalThis.__log.records.filter((entry) => entry.kind === kind)
 
 /**
- * 原生桥：每次请求都直接抛指定的错误。
- * `calls` 由测试替身 capacitor.mjs 自己 push（一次请求一条），
- * 所以这里的 get 只管失败，**不要**再往里 push —— 否则条数会翻倍。
+ * 原生侧每次都报同一个错误（起连接就失败）：分类只看错误原文。
+ * `requests` 是模拟器收到的 start 次数（= 真实发起的下载轮数），用它断言重试纪律。
  */
 const useFailingNative = (makeError) => {
-  const native = { native: true, calls: [], get: () => Promise.reject(makeError()) }
-  globalThis.__native = native
-  return native
+  const download = simulate({ startState: 'failed', startError: makeError().message })
+  globalThis.__download = download
+  globalThis.__native = { native: true }
+  return download
 }
 
 /** 装一个假的 navigator.onLine，用完（finally）恢复原样，避免污染同进程其它用例。 */
@@ -139,7 +141,7 @@ test('① TypeError: Failed to fetch + navigator.onLine=false → 判「网络�
   await withOnLine(false, async () => {
     const { error } = await startImport(URL_OFFLINE)
     console.log(
-      `  离线：终态 ${error?.key ?? 'null'}、请求 ${native.calls.length} 次、包体 ${source.length}B`
+      `  离线：终态 ${error?.key ?? 'null'}、下载轮数 ${native.requests.length} 次、包体 ${source.length}B`
     )
     assert.equal(
       error?.key,
@@ -147,7 +149,7 @@ test('① TypeError: Failed to fetch + navigator.onLine=false → 判「网络�
       `navigator.onLine === false 时不必等错误串匹配，必须直接判「网络已断开」（实际 ${error?.key ?? 'null'}）`
     )
     // 判离线不等于砍掉重试：断网恢复后同一次导入仍应能续上
-    assert.equal(native.calls.length, 2, '瞬时失败仍要重试（这里是 1 次上限 = 共 2 次请求）')
+    assert.equal(native.requests.length, 2, '瞬时失败仍要重试（这里是 1 次上限 = 共 2 轮）')
     const failures = records('import_error')
     assert.ok(failures.length >= 1, '失败必须留下 import_error 记录')
     assert.equal(failures[0].fields.reason, 'offline', '诊断里的 reason 必须写 offline，便于回查')
@@ -160,11 +162,11 @@ test('② net::ERR_UNSAFE_PORT（永久不可用）→ 不重试（修复前会�
 
   await withOnLine(true, async () => {
     const { error } = await startImport(URL_UNSAFE_PORT)
-    console.log(`  禁用端口：终态 ${error?.key ?? 'null'}、请求 ${native.calls.length} 次`)
+    console.log(`  禁用端口：终态 ${error?.key ?? 'null'}、下载轮数 ${native.requests.length} 次`)
     assert.equal(
-      native.calls.length,
+      native.requests.length,
       1,
-      `永久不可用的地址不该按可重试网络故障反复重试（实际请求 ${native.calls.length} 次）`
+      `永久不可用的地址不该按可重试网络故障反复重试（实际 ${native.requests.length} 轮）`
     )
     assert.equal(
       error?.key,
@@ -180,9 +182,9 @@ test('③ 瞬时失败（在线）→ 仍按「网络异常」重试 2 次（放
 
   await withOnLine(true, async () => {
     const { error } = await startImport(URL_TRANSIENT)
-    console.log(`  瞬时：终态 ${error?.key ?? 'null'}、请求 ${native.calls.length} 次`)
+    console.log(`  瞬时：终态 ${error?.key ?? 'null'}、下载轮数 ${native.requests.length} 次`)
     assert.equal(error?.key, 'historyImportUrlNetwork', `在线时的通用失败仍报网络异常（实际 ${error?.key ?? 'null'}）`)
-    assert.equal(native.calls.length, 2, '在线瞬时错误必须重试')
+    assert.equal(native.requests.length, 2, '在线瞬时错误必须重试')
   })
 })
 
@@ -192,8 +194,8 @@ test('④ 读超时 → 仍重试并报「下载超时」（不是离线、也�
 
   await withOnLine(true, async () => {
     const { error } = await startImport(URL_TIMEOUT)
-    console.log(`  超时：终态 ${error?.key ?? 'null'}、请求 ${native.calls.length} 次`)
+    console.log(`  超时：终态 ${error?.key ?? 'null'}、下载轮数 ${native.requests.length} 次`)
     assert.equal(error?.key, 'historyImportUrlTimeout', `超时必须保持既有分类（实际 ${error?.key ?? 'null'}）`)
-    assert.equal(native.calls.length, 2, '超时属于瞬时错误，必须重试')
+    assert.equal(native.requests.length, 2, '超时属于瞬时错误，必须重试')
   })
 })
