@@ -43,6 +43,8 @@ export const zh = {
   regenerate: '重新生成',
   continueGenerating: '继续生成',
   changeApiKey: '更换 API Key',
+  /** 错误提示条里的「打开设置」入口（#347 / #353）：模型与接口配置都在「数据管理」 */
+  openSettingsEntry: '打开设置',
   topUp: '前往充值',
   messageSearchSummary: '1 个网页',
   messageSearchSummaries: '{count} 个网页',
@@ -107,9 +109,26 @@ export const zh = {
   replyModelInvalidNoModels: '上游未提供列表',
   /** 回复里没记录模型名（导入的历史回复）时（#339） */
   replyModelUnknownName: '未记录',
-  /** 其它被上游拒绝的请求（#324）：400 / 422 一类参数错误 */
+  /** 其它被上游拒绝的请求（#347）：400 / 422 参数错误里上游**没说清字段**时用 */
   replyBadRequest:
-    '请求被上游判定为参数错误：重试不会有变化，请检查设置里的模型与接口配置（不要重试）',
+    '请求参数有误（{status}）：重试不会有变化，请检查设置里的模型与接口配置（不要重试）',
+  /**
+   * 参数 / 字段不合法且上游**点出了字段名**（#347 / #353）：把字段直接写进文案，
+   * 用户才知道该改哪一项，而不是被笼统地叫去「检查设置」。
+   */
+  replyParamInvalid:
+    '请求参数有误（{status}）：上游指出字段「{field}」不合法，重试不会有变化（不要重试）',
+  /**
+   * 其余被上游拒绝的 4xx（#347）：403 / 404 / 405 / 409 / 415。
+   * 文案不再猜原因（这类状态里既有权限、也有路径与方法），只说「上游拒绝了请求」，
+   * 具体原因放在折叠区的上游原文里。
+   */
+  replyUpstreamRejected:
+    '上游拒绝了这条请求（{status}）：重试不会有变化（不要重试）；展开下面的上游原文可以看到具体原因，或点「复制诊断信息」反馈给我们',
+  /** 流内错误帧没有 HTTP 状态码时，文案里的状态占位（#347） */
+  replyUpstreamStatusUnknown: '上游未给出状态码',
+  /** 折叠区开关：默认收起，用户主动展开才看到上游原文（#347 / #353） */
+  upstreamDetailToggle: '查看上游原文',
   /** 未识别但**有**状态码 / 上游 code（#324）：把可自证的信息摆出来，并按是否可重试分两档文案 */
   replyUnclassifiedRetryable: '回答没有完成：{detail}，属于临时故障，可以重试（点重新生成）',
   replyUnclassifiedFatal:

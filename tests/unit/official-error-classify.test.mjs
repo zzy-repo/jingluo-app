@@ -166,14 +166,20 @@ test('[1] 上游可用模型列表可解析（#339）：原文 → 列表，脏�
 })
 
 test('[1] 真实样本：400 空 messages / 422 max_tokens 非法 → 参数错误档（不可重试）', () => {
-  for (const [label, sample] of [
-    ['空 messages', EMPTY_MESSAGES],
-    ['max_tokens 非法', BAD_MAX_TOKENS],
+  // #347：参数档的文案改成带状态码 + **具体字段**（上游原文里点得出来就带上），
+  // 并附带「打开设置」入口与可复制的诊断 —— 期望值走真实 translate()，不手写字符串
+  const paramCopy = (status, field) =>
+    translate('replyParamInvalid', { status: `HTTP ${status}`, field })
+  for (const [label, sample, field] of [
+    ['空 messages', EMPTY_MESSAGES, 'messages'],
+    ['max_tokens 非法', BAD_MAX_TOKENS, 'max_tokens'],
   ]) {
     assert.equal(classifyErrorSignature(sample), 'badRequest', `${label} 是请求被拒绝`)
     const notice = noticeOf(apiErrorOf(sample))
-    assert.equal(notice.text, zh.replyBadRequest, `${label} 用参数错误文案`)
+    assert.equal(notice.text, paramCopy(sample.status, field), `${label} 用参数错误文案（带字段）`)
     assert.match(notice.text, /不要重试/, `${label} 是 4xx：文案要说清不要重试`)
+    assert.equal(notice.action, 'settings', `${label} 要给出「打开设置」入口（#347 / #353）`)
+    assert.match(notice.upstream ?? '', /HTTP \d{3}/, `${label} 的折叠区里有上游原文（#347）`)
   }
 })
 

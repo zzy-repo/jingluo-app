@@ -32,6 +32,12 @@ export type ApiErrorCondition =
    */
   | 'badRequest'
   /**
+   * 其余「上游明确拒绝」的 4xx（#347）：403 权限 / 404 路径 / 405 方法 / 409 冲突 / 415 媒体类型。
+   * 它们既不是参数问题（说「检查模型与接口配置」是误导），也不是临时故障（重发一样被拒），
+   * 文案只说「上游拒绝了请求」并把上游原文放进折叠区。
+   */
+  | 'upstreamRejected'
+  /**
    * 空响应 / 流里一个数据帧都没有（#324）：200 却给了非 SSE 的正文，或 SSE 头到了但零帧。
    * 上游这次什么也没说，换一条连接通常就好 → **可重试**。
    */
@@ -179,11 +185,154 @@ export const parseSupportedModels = (text?: string): string[] => {
 }
 
 /**
- * 「请求被上游拒绝」的 4xx 状态码（#324）：参数 / 路由 / 编码层面的错误。
- * 它们重发只会原样再失败一次，所以单独归到 badRequest（不可重试），
- * 不再落到「未知错误」。401 / 402 / 413 有自己的档，不在此列。
+ * 参数 / 字段不合法（#324 / #347）：400 / 422。
+ * 它们重发只会原样再失败一次，所以单独归到 badRequest（不可重试），不再落到「未知错误」。
+ * 401 / 402 / 403 / 413 有自己的档，不在此列。
  */
-const BAD_REQUEST_STATUSES: readonly number[] = [400, 404, 405, 409, 415, 422]
+const PARAM_STATUSES: readonly number[] = [400, 422]
+
+/**
+ * 其余「上游明确拒绝」的 4xx（#347）：403 权限 / 404 路径 / 405 方法 / 409 冲突 / 415 媒体类型。
+ *
+ * 它们以前和 400 一起归到 badRequest，界面说「请检查模型与接口配置」——对一条
+ * `POST /files` 打到不存在的路径（#303 里 404 刷屏的那类）来说完全是误导。现在单独一档，
+ * 文案只说「上游拒绝了请求（HTTP 404）」，上游原文放进折叠区。
+ * 429 / 413 / 401 / 402 各有自己的档；更冷门的 4xx（418 / 451 …）仍走未识别兜底
+ * ——那一档同样会摆出状态码与上游短码，不会退回「未知错误」。
+ */
+const REJECTED_STATUSES: readonly number[] = [403, 404, 405, 409, 415]
+
+/**
+ * 上游用机器可读的 code 表示「请求参数 / 字段不合法」（#347）。
+ *
+ * 官方端点（2026-11-19 实测）：所有 400 / 422 的 `error.type` 都是 `invalid_request_error`；
+ * 中转网关常见的写法是 `invalid_parameter` / `param_invalid` / `missing_required_parameter`。
+ * **只看 code，不看 message**：英文正文里出现 “parameter” 太常见，按文案判会把别的失败
+ * 认成参数错误（#299 那类错判的反面）。
+ */
+export const PARAM_INVALID_PATTERNS: RegExp[] = [
+  /^invalid_request_error$/i,
+  /invalid[_\s-]?param(?:eter)?/i,
+  /param(?:eter)?s?[_\s-]?(?:invalid|missing|required|error)/i,
+  /missing[_\s-]?(?:required[_\s-]?)?param(?:eter)?/i,
+  /参数(?:错误|不合法|缺失|无效)/,
+]
+
+/** 这段文字是不是「参数 / 字段不合法」的机器可读写法 */
+export const isParamInvalidText = (text: string | undefined): boolean =>
+  typeof text === 'string' && text.length > 0 ? PARAM_INVALID_PATTERNS.some((p) => p.test(text)) : false
+
+/**
+ * 上游用机器可读的 code 表示「API Key 无效 / 过期」（#347）。
+ *
+ * 以前只认 401 状态码。但中转与自建网关常用的写法是 403 + `invalid_api_key` /
+ * `authentication_error`（甚至 400），这类请求界面以前落到「未知错误」，
+ * 用户看不出问题出在自己填的 Key 上 —— 本该点一下就换 Key，却只能去翻日志。
+ * 同样只认 code，不收泛词（避免把「invalid_request_error」误认成 Key 问题）。
+ */
+export const API_KEY_INVALID_PATTERNS: RegExp[] = [
+  /^authentication[_\s-]?error$/i,
+  /invalid[_\s-]?api[_\s-]?key/i,
+  /api[_\s-]?key[_\s-]?(?:is[_\s-]?)?(?:invalid|incorrect|expired|not[_\s-]?valid|missing)/i,
+  /(?:invalid|incorrect|expired)[_\s-]?(?:api[_\s-]?)?key$/i,
+  /key[_\s-]?(?:无效|不正确|已过期|已失效)/,
+]
+
+/** 这段文字是不是「Key 无效」的机器可读写法 */
+export const isApiKeyInvalidText = (text: string | undefined): boolean =>
+  typeof text === 'string' && text.length > 0
+    ? API_KEY_INVALID_PATTERNS.some((pattern) => pattern.test(text))
+    : false
+
+/**
+ * 上游消息里「是哪个字段不合法」的解析（#347 / #353）——**只用于展示**，不参与任何拦截判定。
+ *
+ * 真实样本（官方端点，2026-11-19）：
+ *   `Invalid 'messages.0.content': latest_reminder must have at least 5 comma-separated fields, got 4.`
+ *   `messages: at least one message is required`
+ *   `Failed to deserialize the JSON body into the target type: max_tokens: invalid value: integer -1 …`
+ *
+ * 三种写法分别对应三条规则：引号里的字段 → 行首的 `字段:` → 已知请求字段里最早出现的一个。
+ * 取不到（脏文本 / 上游只给了一句人话 / 中文原文）时返回空串，界面退回不带字段的文案。
+ */
+const QUOTED_FIELD_PATTERN = /['"`]([A-Za-z_][A-Za-z0-9_.]*(?:\[\d+\])*)['"`]/
+const LEADING_FIELD_PATTERN = /^\s*([A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z0-9_]+)*)\s*[:：]/
+/** 报文里「带冒号的 token」太多（`Failed to deserialize …`），只按已知请求字段兜底匹配 */
+const KNOWN_PARAM_FIELDS: readonly string[] = [
+  'messages',
+  'max_tokens',
+  'max_completion_tokens',
+  'temperature',
+  'top_p',
+  'top_k',
+  'stop',
+  'stream',
+  'stream_options',
+  'tools',
+  'tool_choice',
+  'response_format',
+  'presence_penalty',
+  'frequency_penalty',
+  'logprobs',
+  'thinking',
+  'metadata',
+  'system',
+  'content',
+  'role',
+  'input',
+  'input_schema',
+  'anthropic_version',
+  'file_ids',
+]
+
+/** 字段名长得像字段名才展示（防上游把一整句人话塞进引号里） */
+const looksLikeField = (token: string): boolean =>
+  token.length > 0 && token.length <= 64 && !/\s/.test(token)
+
+/** 在原文里按给定句式找**最早出现**的已知请求字段（同上：只用于展示） */
+const earliestField = (source: string, patternOf: (field: string) => RegExp): string => {
+  let best = ''
+  let bestAt = Number.POSITIVE_INFINITY
+  for (const field of KNOWN_PARAM_FIELDS) {
+    const at = source.search(patternOf(field))
+    if (at >= 0 && at < bestAt) {
+      best = field
+      bestAt = at
+    }
+  }
+  return best
+}
+
+/** 从上游原文里取出不合法的字段名；取不到返回空串 */
+export const parseErrorField = (text?: string): string => {
+  const source = typeof text === 'string' ? text : ''
+  if (!source) {
+    return ''
+  }
+  const quoted = QUOTED_FIELD_PATTERN.exec(source)?.[1] ?? ''
+  if (looksLikeField(quoted)) {
+    return quoted
+  }
+  const leading = LEADING_FIELD_PATTERN.exec(source)?.[1] ?? ''
+  // 行首那段可能是 `Failed:` 这类人话前缀，只有含点（`messages.0`）时才当字段
+  if (looksLikeField(leading) && leading.includes('.')) {
+    return leading
+  }
+  // 字段后面直接跟冒号：`marks … max_tokens: invalid value`
+  const colon = earliestField(source, (field) => new RegExp(`\\b${field}\\b\\s*[:=：]`))
+  if (colon) {
+    return colon
+  }
+  // 没有冒号的说法：`max_tokens must be a positive integer` / `temperature must be <= 2`。
+  // 只认「字段 + 必须/非法」这种句式，不认单纯出现的词（`system error` 里的 system 不是字段）
+  return earliestField(
+    source,
+    (field) =>
+      new RegExp(
+        `\\b${field}\\b\\s+(?:must|should|is|are|was|cannot|can[' ]?t|has|needs?|required|invalid)\\b`
+      )
+  )
+}
 
 /**
  * 判定用的最小输入：请求层按 ApiError 判、界面按保存下来的 error 判，
@@ -217,7 +366,7 @@ export const classifyStatus = (status: number | undefined): ApiErrorCondition =>
 }
 
 /**
- * 统一判定（#299 / #324）：状态码 + 上游 code + 文案，三者任一能确定就算数。
+ * 统一判定（#299 / #324 / #347）：状态码 + 上游 code + 文案，三者任一能确定就算数。
  *
  * 判定顺序是有讲究的：
  * 1. 上下文超长先判：它也可能是 400/413，但用户能做的动作（开新会话 / 删早期消息）
@@ -228,8 +377,12 @@ export const classifyStatus = (status: number | undefined): ApiErrorCondition =>
  * 3. 内容拦截 / 模型不存在只按**文案**判，且只在「没有状态码或 4xx」时看（#324）：
  *    官方端点这两类的 `error.type` 都是 `invalid_request_error`，code 分不开，只能看 message；
  *    限定状态范围是为了让 502 / 503 这类网关故障**永远不会**被认成内容拦截；
- * 4. 2xx 却走到错误分类 = 上游给了「成功」的壳子却没有内容 → emptyStream（#324）；
- * 5. 其余 4xx 请求级错误归 badRequest（#324），最后才按状态码走原有的网络 / 业务分类。
+ * 4. Key 无效 / 参数不合法按**状态码或 code** 判（#347）：401 之外，网关还会用 403 / 400
+ *    配 `invalid_api_key` / `authentication_error` / `invalid_parameter`，这两种都能让用户
+ *    点一下入口就处理掉（换 Key / 打开设置），不该掉进泛化档；
+ * 5. 2xx 却走到错误分类 = 上游给了「成功」的壳子却没有内容 → emptyStream（#324）；
+ * 6. 400 / 422 归 badRequest（参数档），其余被拒绝的 4xx 归 upstreamRejected（#347），
+ *    最后才按状态码走原有的网络 / 业务分类。
  */
 export const classifyErrorSignature = ({
   status,
@@ -252,6 +405,16 @@ export const classifyErrorSignature = ({
     if (isModelInvalidText(code) || isModelInvalidText(message)) {
       return 'modelInvalid'
     }
+    // Key 无效（#347）：401 是标准写法，网关也常用 403 / 400 + 这类 code
+    if (status === 401 || isApiKeyInvalidText(code)) {
+      return 'unauthorized'
+    }
+    // 参数 / 字段不合法（#347）：官方端点 400 / 422 的 code 恒为 invalid_request_error。
+    // 状态码优先：404 + invalid_request_error（网关对不存在的路径也这么写）是路径问题，
+    // 不该被说成「参数错误」，所以只在**没有状态码**的流内错误帧上按 code 认参数档。
+    if (PARAM_STATUSES.includes(status ?? -1) || (status === undefined && isParamInvalidText(code))) {
+      return 'badRequest'
+    }
   }
   if (status === undefined) {
     return 'other'
@@ -260,8 +423,8 @@ export const classifyErrorSignature = ({
   if (status >= 200 && status < 300) {
     return 'emptyStream'
   }
-  if (BAD_REQUEST_STATUSES.includes(status)) {
-    return 'badRequest'
+  if (REJECTED_STATUSES.includes(status)) {
+    return 'upstreamRejected'
   }
   return classifyStatus(status)
 }
@@ -324,12 +487,13 @@ export const isRetryableApiError = (error: unknown): boolean => {
   if (condition === 'insufficientBalance') {
     return false
   }
-  // 内容拦截 / 模型不存在 / 参数错误（#324）：这三类都是「同一条请求再发一次也是同样结果」，
-  // 自动重试只会让用户多等几轮再看到同一句话。文案里也明说「不要重试」。
+  // 内容拦截 / 模型不存在 / 参数错误（#324）/ 其余被拒 4xx（#347）：都是「同一条请求再发一次
+  // 也是同样结果」，自动重试只会让用户多等几轮再看到同一句话。文案里也明说「不要重试」。
   if (
     condition === 'contentFilter' ||
     condition === 'modelInvalid' ||
-    condition === 'badRequest'
+    condition === 'badRequest' ||
+    condition === 'upstreamRejected'
   ) {
     return false
   }

@@ -107,6 +107,17 @@
     flex-shrink: 0;
     margin-top: 4px;
   }
+}
+
+/**
+ * 提示条主体：文案 + 操作 + 折叠区（#347 / #353）。
+ * 单独一层列容器，折叠区才能独占一行 —— 直接塞进文案那个行盒里，
+ * 一段英文原文就会把「打开设置 / 复制诊断信息」挤出行外。
+ */
+.noticeBody {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
 
   > span {
     min-width: 0;
@@ -144,6 +155,52 @@
   &:hover {
     text-decoration: underline;
   }
+}
+
+/**
+ * 折叠区：上游原文（#347 / #353）。默认收起 —— 界面上永远只有一行「查看上游原文」，
+ * 展开后是等宽、可换行的原文块（已在服务层截断到 200 字并脱敏，见 buildUpstreamSnippet）。
+ *
+ * 用 margin-top 而不是 `gap`：`gap` 在 WebView 83 上需要 #173 的 margin 兜底，
+ * 这里只有「主体 → 折叠区」一处间距，用 margin 就不必再生成一份兜底规则。
+ */
+.noticeUpstream {
+  margin-top: 2px;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-secondary);
+
+  /* 折叠开关的触控命中区同样 ≥44×44（#346 的口径） */
+  > summary {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+    padding: 0 4px;
+    color: var(--dsw-alias-brand-text);
+    touch-action: manipulation;
+    cursor: pointer;
+    text-decoration: none;
+  }
+}
+
+.noticeUpstreamToggle {
+  &:hover {
+    text-decoration: underline;
+  }
+}
+
+.noticeUpstreamText {
+  margin: 0 0 4px;
+  padding: 6px 8px;
+  max-height: 180px;
+  overflow: auto;
+  border-left: 2px solid var(--dsw-alias-border-l2);
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 18px;
+  /* 原文里常有长 URL / 长 token：强制换行，别把消息流撑出横向滚动 */
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .bottom {

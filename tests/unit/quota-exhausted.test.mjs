@@ -361,7 +361,12 @@ test('负向：普通 400 不重试，落到参数错误档（#324 之前这里�
   })
   assert.equal(calls, 1, '参数错误重试无用')
   // #324：400 参数错误有了独立档位（不可重试），不再落到「未知错误」兜底
-  assert.equal(notice?.text, zh.replyBadRequest)
+  // #347：文案带状态码 + 上游点名的字段（这句原文里的 `max_tokens`）
+  assert.equal(
+    notice?.text,
+    zh.replyParamInvalid.replace('{status}', 'HTTP 400').replace('{field}', 'max_tokens')
+  )
+  assert.equal(notice?.action, 'settings', '参数错误要给出「打开设置」入口（#347 / #353）')
   assert.match(notice?.text ?? '', /不要重试/)
   assert.equal(failureRecord.fields['billing.quota'], undefined)
   assert.equal(failureRecord.fields['ui.condition'], 'badRequest')

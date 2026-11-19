@@ -14,7 +14,7 @@
 | --- | --- |
 | 扫描范围 | `src/**` 全部源文件 **252** 个（`.css` **44** 个，其中 `*.module.css` **37** 个；其余 `.ts / .tsx / .html` 共 **208** 个） |
 | 口径拆分 | 44 `.css` + 151 `.ts` + 55 `.tsx` + 1 `.html` = 251 |
-| 命中总数 | **345** 处，分布在 **39** 个文件 |
+| 命中总数 | **347** 处，分布在 **39** 个文件 |
 | 运行时下限 | WebView **83**（Chromium 83）。**首支持 ≤ 83 的特性一律记「无风险」，与有没有兜底无关** |
 | 构建期因素 | `rspack.config.ts` 用 `builtin:lightningcss-loader`，`targets` 取自 `package.json` 的 `browserslist`（强制含 `chrome >= 83`）。**已被构建期翻译掉的写法不算运行时假设** |
 
@@ -34,7 +34,7 @@
 
 | 特性 | 首支持 Chromium | 命中 | 已有兜底 | 无风险 | 可接受降级 | 真实缺陷 | 假阳性 | 结论 |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| 嵌套 `&` | — （构建期） | 140 | 140 | 0 | 0 | 0 | 0 | lightningcss 按 `chrome >= 83` 展开，非运行时假设 |
+| 嵌套 `&` | — （构建期） | 141 | 141 | 0 | 0 | 0 | 0 | lightningcss 按 `chrome >= 83` 展开，非运行时假设 |
 | flex `gap` | 84 | 118 | 118 | 0 | 0 | 0 | 0 | 兜底已全覆盖（#217 补齐最后 2 处）；`check:gap` 口径见 §2.6 |
 | `min()` / `max()` | 79 | 21 | 0 | 21 | 0 | 0 | 0 | 79 ≤ 83，无风险 |
 | `:has()` | 105 | **0** | 0 | 0 | 0 | 0 | 0 | 16 处已由 #213 清零：改成渲染期显式状态类 `ds-markdown-before-ul` / `ds-markdown-before-ol`，低内核上零特性依赖 |
@@ -43,7 +43,7 @@
 | `overscroll-behavior` | 63 | 6 | 0 | 6 | 0 | 0 | 0 | 63 ≤ 83，无风险 |
 | `env(safe-area-inset-*)` | 69 | 5 | 0 | 5 | 0 | 0 | 0 | 69 ≤ 83，无风险（见 §5 的一致性备注） |
 | `getComputedStyle` 声明回读 | — （运行时） | 3 | 3 | 0 | 0 | 0 | **0** | #218 已修：`viewport.ts:55`、`scrollToFirstMessage.ts:30`、`collector.ts:701` 三处都有实测回读，假阳性归零（历史条目见 §3） |
-| `touch-action` | 36 | 4 | 0 | 4 | 0 | 0 | 0 | 36 ≤ 83，无风险 |
+| `touch-action` | 36 | 5 | 0 | 5 | 0 | 0 | 0 | 36 ≤ 83，无风险 |
 | `backdrop-filter` | 76 | 2 | 0 | 2 | 0 | 0 | 0 | 76 ≤ 83，无风险（`-webkit-` 前缀另计 1 处） |
 | `inset` | 87 | 16 | 16 | 0 | 0 | 0 | 0 | 构建期由 lightningcss 翻成物理属性，非运行时假设（§2.7） |
 | `scrollbar-gutter` | 94 | 5 | 0 | 0 | 0 | **5** | 0 | 声明被丢，滚动条出现时横向跳动 → #216 / #236。**5 处里有 2 处是 `@supports` 收回块本身**，且判定器不认「常驻 `overflow-y: scroll`」这种跨属性等价兜底，所以 5 处全记 `真实缺陷`；人工核对结论见 §2.5 / §4 |
@@ -58,7 +58,7 @@
 | `color-mix()` | 111 | 0 | — | — | — | 0 | 0 | 未使用（且 lightningcss 会降级） |
 | `@layer` | 99 | 0 | — | — | — | 0 | 0 | 未使用 |
 | `accent-color` | 93 | 0 | — | — | — | 0 | 0 | 未使用 |
-| **合计** | | **345** | **301** | **38** | **1** | **5** | **0** | |
+| **合计** | | **347** | **302** | **39** | **1** | **5** | **0** | |
 
 > `100dvh` 的每一处声明，**没有一处**落在 `@supports` 之外（`dvh` 裸用命中数为 0）。这是本仓 #13 之后形成的最好的一条既有纪律，也是本次盘点最重要的**正面结论**：`dvh` 这一类零缺陷。
 
@@ -210,10 +210,10 @@
 | `components/base/Toast.module.css:9`<br>`components/markdown/markdown.css:184,195`<br>`components/messages/MessageFile.module.css:88`<br>`components/session/Welcome.module.css:43`<br>`components/settings/AppUpdateField.module.css:21,26,33,40`<br>`components/settings/PaymentRecords.module.css:4,5`<br>`components/settings/PaymentTrailDialog.module.css:4,5`<br>`components/settings/PurchaseRecordsDialog.module.css:6,7`<br>`components/settings/Settings.module.css:204,209,344,846,860,862` | CSS `min()` / `max()`（21 处） | 2 | 低 | 无需探测（79 ≤ 83） |
 | `app/global.css:52`<br>`components/base/Select.module.css:82`<br>`components/chatInput/ChatInput.module.css:193`<br>`components/messages/MessageList.module.css:42`<br>`components/settings/AppUpdateField.module.css:59`<br>`components/settings/Settings.module.css:866` | `overscroll-behavior[-y]`（6 处） | 2 | 低 | 无需探测（63 ≤ 83） |
 | `components/base/Toast.module.css:3`<br>`components/session/SessionView.module.css:68`<br>`components/session/Welcome.module.css:152`<br>`components/settings/Settings.module.css:689,846` | `env(safe-area-inset-*)`（5 处） | 2 | 低 | 无需探测（69 ≤ 83）；缺省值一致性见 §5 |
-| `components/messages/AssistantMessage.module.css:141`<br>`components/session/MobileHeader.module.css:29`<br>`components/settings/AppUpdateField.module.css:57`<br>`components/settings/Settings.module.css:865` | `touch-action`（4 处） | 2 | 低 | 无需探测（36 ≤ 83） |
+| `components/messages/AssistantMessage.module.css:152,180`<br>`components/session/MobileHeader.module.css:29`<br>`components/settings/AppUpdateField.module.css:57`<br>`components/settings/Settings.module.css:875` | `touch-action`（5 处） | 2 | 低 | 无需探测（36 ≤ 83）；#347 / #353 给折叠区开关补了第 5 处 |
 | `components/base/Modal.module.css:25`<br>`components/chatInput/DragMask.module.css:12` | `backdrop-filter`（2 处；`DragMask.module.css:11` 另有 `-webkit-backdrop-filter` 前缀版） | 2 | 低 | 无需探测（76 ≤ 83） |
 | `components/base/Modal.module.css:95` | `:where(.content)[data-motion-state='closed']` | 2 | 低 | 可接受降级（88 > 83，只丢收起动画） |
-| 22 个文件 / 140 行 | 嵌套 `&`（`:hover` / `&.x` / `&[aria-…]`），逐文件行号见附录 A | 2 | 低 | 已有兜底（构建期 lightningcss 展开） |
+| 22 个文件 / 141 行 | 嵌套 `&`（`:hover` / `&.x` / `&[aria-…]`），逐文件行号见附录 A | 2 | 低 | 已有兜底（构建期 lightningcss 展开） |
 
 > `services/diagnostics/collector.ts:465` 不在上表里：它是 `#212` 的包装函数 `cssSupports()` 间接调用，字面量不是 `CSS.supports(`，
 > 静态扫描抓不到（§5 末条已记过这个盲区）。上一版把它单列一行「无需探测」，属于把复算结果和人工补记混在一张表里，本版挪到正文。
@@ -266,7 +266,7 @@
 4. `:focus-visible` 的实际可见性风险有一档不确定性：若系统/浏览器默认 focus ring 未被项目 CSS 的 `outline` 规则覆盖，低内核上焦点仍可能可见。需要实测才能定档（已写进 #215 的未测边界）。
 5. 没有统计「同一特性被 lightningcss 部分降级」的情形（例如 `color-mix()` 在低目标下会被翻成静态色）。本次 `color-mix()` 命中为 0，暂无影响。
 
-## 附录 A：嵌套 `&` 命中位置（140 行 / 22 文件，全部构建期展开）
+## 附录 A：嵌套 `&` 命中位置（141 行 / 22 文件，全部构建期展开）
 
 ```
 components/base/Button.module.css: 22, 27, 36, 40, 44, 77, 88, 97, 108, 112, 118, 122
@@ -275,18 +275,22 @@ components/base/Menu.module.css: 30, 43
 components/base/Modal.module.css: 34
 components/base/Select.module.css: 24, 28, 37, 41, 45, 109
 components/base/Toast.module.css: 50
-components/chatInput/ChatInput.module.css: 60, 70, 197, 284, 288, 293, 298, 328, 332
+components/chatInput/ChatInput.module.css: 60, 70, 197, 284, 288, 293, 298, 334, 338
 components/chatInput/VoiceButton.module.css: 34, 40, 44, 53, 57
 components/files/FileCard.module.css: 15, 23
 components/markdown/CodeBlock.module.css: 32, 38
 components/markdown/markdown.css: 94
-components/messages/AssistantMessage.module.css: 3, 5, 43, 55, 59, 106, 161, 163
+components/messages/AssistantMessage.module.css: 3, 5, 63, 75, 79, 154, 187, 255, 257
 components/messages/ReplyArea.module.css: 14, 61, 75, 78, 102, 147, 152, 154, 167, 171, 175, 180, 182, 265
 components/messages/UserMessage.module.css: 6, 10, 69
 components/search/SearchPanel.module.css: 51
 components/search/SiteLogo.module.css: 47
 components/session/MobileHeader.module.css: 31, 40, 44, 50
-components/sessio
+components/session/Welcome.module.css: 76, 81, 91, 95
+components/settings/OursServices.module.css: 76, 167, 171, 180, 184, 229, 233, 237, 263
+components/settings/Settings.module.css: 49, 58, 60, 63, 72, 76, 101, 249, 254, 256, 259, 265, 269, 432, 581, 597, 620, 660, 686, 690, 791, 795, 921, 925, 929, 949, 1008, 1012, 1041, 1117, 1286, 1290, 1321, 1325, 1332, 1336
+components/sider/SessionItem.module.css: 15, 19, 28, 31, 33
+components/sider/Sider.module.css: 63, 68, 108, 149, 153, 157, 166, 170
 ```
 
 ## 附录 B：复现方式
@@ -317,3 +321,4 @@ node --test tests/unit/css-assumption-audit.test.mjs
 - 复核（2026-11-19 20:05，基准 `42a3a68`，本单 #339 分支 `fix/deepseek-model-residue-339`）：新增 1 个 `.ts` 源文件（`src/services/api/configMigration.ts`），扫描范围 248 → **249** 个源文件（其余 `.ts / .tsx / .html` 204 → **205**），`.css` 仍是 44 个（`*.module.css` 37）。`Settings.module.css` 只为内置模型的只读值加了 1 个 `.modelValue` 规则（`flex: 0 1 auto` / `min-width: 0` / `color` / 断行三件套），**没有新增 flex `gap`、没有新增嵌套 `&`、没有新特性**，命中总数仍是 **343 处 / 39 个文件**，逐特性表与 §2 明细的 `文件:行` 未变。
 - 复核（2026-11-19 21:20，基准 `a757bec`，本单 #328 分支 `feat/wait-notice-328`）：新增 1 个 `.ts`（`src/services/chat/waitStage.ts`）与 1 个 `.tsx`（`src/components/messages/WaitNotice.tsx`），扫描范围 249 → **251** 个源文件（`.ts / .tsx / .html` 205 → **207**），`.css` 仍是 44 个（`*.module.css` 37）。`AssistantMessage.module.css` 里 `.waiting` 从固定高度改成 `min-height` + `flex-wrap`，并把 `gap: 6px` 拆成 `column-gap: 6px` / `row-gap: 2px`，因此 flex `gap` 命中 117 → **118**、命中总数 343 → **344**（其余特性未变，分布仍是 39 个文件）。这一处新增的交叉轴 `row-gap` 由 `pnpm run check:gap` 给既有兜底规则追加了 `margin-bottom: 2px`（兜底条数仍是 **119** 条，现跑现报「已兜底 119 条，跳过 3 条」），§2.6 明细已补一行。两个新文件不含任何 CSS 特性假设。
 - 复核（2026-11-20 00:20，基准 `5f850a5`，本单 #346 分支 `fix/copy-diagnostic-touch-346`）：`AssistantMessage.module.css` 的 `.noticeAction`（提示条里的「改 Key / 去充值 / 复制诊断信息」）为了把命中区撑到 44px，新增 1 处 `touch-action: manipulation`（`:141`），因此 `touch-action` 命中 3 → **4**、命中总数 344 → **345**（分布仍是 39 个文件）。`display: inline-flex` / `min-height` / `min-width` / `justify-content` / `vertical-align` 都不在盘点口径里，**没有新增 flex `gap`、没有新增嵌套 `&`**，所以 `check:gap` 的兜底条数不变（仍是 119 条）。§1 逐特性表、§2.8 明细与合计行已同步。
+- 复核（2026-11-20 02:05，基准 `f6ec443`，本单 #347 / #353 分支 `fix/upstream-error-copy-347`）：`AssistantMessage.module.css` 的错误提示条为了加**折叠区「查看上游原文」**（`.noticeUpstream` / `.noticeUpstreamToggle` / `.noticeUpstreamText`）新增 2 处命中：`.noticeUpstream` 里的 `> summary` 子选择器（嵌套 `&` 140 → **141**）与折叠开关的 `touch-action: manipulation`（`touch-action` 4 → **5**，`:180`）。命中总数 345 → **347**（已有兜底 301 → **302**、无风险 38 → **39**，分布仍是 39 个文件）；`display: flex` / `flex-direction` / `min-height` / `max-height` / `overflow` / `white-space` / `overflow-wrap` 都不在盘点口径里，折叠区与主体之间的间距刻意用 `margin-top` 而不是 `gap`，所以 **`check:gap` 的兜底条数不变（仍是 119 条）**，也没有新增裸 gap。§1 逐特性表、§2.8 明细、合计行与附录 A（重新按复算结果生成）已同步。

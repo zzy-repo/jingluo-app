@@ -47,6 +47,8 @@ export const en = {
   regenerate: 'Regenerate',
   continueGenerating: 'Continue',
   changeApiKey: 'Change API Key',
+  /** "Open settings" entry inside the error notice (#347 / #353) */
+  openSettingsEntry: 'Open settings',
   topUp: 'Top up',
   messageSearchSummary: '1 web page',
   messageSearchSummaries: '{count} web pages',
@@ -115,9 +117,19 @@ export const en = {
   replyModelInvalidNoModels: 'not listed by the upstream',
   /** The reply did not record a model name (imported history, #339) */
   replyModelUnknownName: 'not recorded',
-  /** Other rejected requests (#324): 400 / 422 style parameter errors */
+  /** Other rejected requests (#347): 400 / 422 where the upstream named no field */
   replyBadRequest:
-    'The upstream rejected the request as invalid. Retrying will not help — check the model and endpoint settings (do not retry).',
+    'Invalid request parameters ({status}): retrying will not help — check the model and endpoint settings (do not retry).',
+  /** Invalid field, and the upstream named which one (#347 / #353) */
+  replyParamInvalid:
+    'Invalid request parameters ({status}): the upstream rejected the field “{field}”. Retrying will not help (do not retry).',
+  /** Other rejected 4xx (#347): 403 / 404 / 405 / 409 / 415 — no guessing at the cause */
+  replyUpstreamRejected:
+    'The upstream rejected this request ({status}): retrying will not help (do not retry). Expand the upstream message below to see why, or tap “Copy diagnostics” and send it to us.',
+  /** Placeholder used when a stream error frame carries no HTTP status (#347) */
+  replyUpstreamStatusUnknown: 'no status from the upstream',
+  /** Collapsible toggle: collapsed by default, the upstream text is opt-in (#347 / #353) */
+  upstreamDetailToggle: 'Show upstream details',
   /** Unclassified but self-evident (status / upstream code present) (#324) */
   replyUnclassifiedRetryable:
     'The reply did not finish: {detail}. A temporary failure — you can retry (tap regenerate).',

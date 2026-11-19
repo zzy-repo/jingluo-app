@@ -130,64 +130,99 @@ export const AssistantMessage = memo(function AssistantMessage({
       ) : notice ? (
         <div className={styles.notice}>
           <IconWarningOutline16 />
-          <span>
-            {notice.text}
-            {notice.action === 'apiKey' ? (
-              <>
-                {' '}
-                <button
-                  type="button"
-                  className={styles.noticeAction}
-                  onClick={() => openSettings('data')}
-                >
-                  {t('changeApiKey')}
-                </button>
-              </>
-            ) : null}
-            {notice.action === 'topUp' ? (
-              <>
-                {' '}
-                {oursChannel ? (
+          {/*
+            文案 + 操作 + 折叠区共用一个列容器（#347 / #353）：折叠区要独占一行，
+            不能和文案挤在同一个行盒里（英文原文一长就会把「打开设置」挤到屏幕外）。
+          */}
+          <div className={styles.noticeBody}>
+            <span>
+              {notice.text}
+              {/*
+                可操作入口（#347 / #353）：参数错误 / 模型不可用这两档以前只会「叫用户去设置里看」，
+                却没有任何能点的东西。这里复用 #303 的按钮样式，落到「数据管理」（服务配置就在那一组）。
+              */}
+              {notice.action === 'settings' ? (
+                <>
+                  {' '}
                   <button
                     type="button"
                     className={styles.noticeAction}
-                    onClick={() => openOursServices()}
+                    onClick={() => openSettings('data')}
                   >
-                    {t('quotaTopUpEntry')}
+                    {t('openSettingsEntry')}
                   </button>
-                ) : (
-                  <a
+                </>
+              ) : null}
+              {notice.action === 'apiKey' ? (
+                <>
+                  {' '}
+                  <button
+                    type="button"
                     className={styles.noticeAction}
-                    href={TOP_UP_URL}
-                    target="_blank"
-                    rel="noreferrer"
+                    onClick={() => openSettings('data')}
                   >
-                    {t('topUp')}
-                  </a>
-                )}
-              </>
-            ) : null}
+                    {t('changeApiKey')}
+                  </button>
+                </>
+              ) : null}
+              {notice.action === 'topUp' ? (
+                <>
+                  {' '}
+                  {oursChannel ? (
+                    <button
+                      type="button"
+                      className={styles.noticeAction}
+                      onClick={() => openOursServices()}
+                    >
+                      {t('quotaTopUpEntry')}
+                    </button>
+                  ) : (
+                    <a
+                      className={styles.noticeAction}
+                      href={TOP_UP_URL}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      {t('topUp')}
+                    </a>
+                  )}
+                </>
+              ) : null}
+              {/*
+                未识别的失败不再只给一句「未知错误」（#324）：文案里已经带了状态码与上游短码，
+                这里给一个「复制诊断信息」的出口，走 #104 同一套剪贴板与反馈文案。
+              */}
+              {notice.diagnostics ? (
+                <>
+                  {' '}
+                  <button
+                    type="button"
+                    className={styles.noticeAction}
+                    onClick={() => {
+                      void copyToClipboard(notice.diagnostics as string).then((ok: boolean) => {
+                        showToast({ key: ok ? 'errorScreenCopied' : 'errorScreenCopyFailed' })
+                      })
+                    }}
+                  >
+                    {t('errorScreenCopyDiagnostics')}
+                  </button>
+                </>
+              ) : null}
+            </span>
             {/*
-              未识别的失败不再只给一句「未知错误」（#324）：文案里已经带了状态码与上游短码，
-              这里给一个「复制诊断信息」的出口，走 #104 同一套剪贴板与反馈文案。
+              折叠区「上游原文」（#347 / #353）：默认收起 —— 英文原文直接铺在界面上既不可读
+              也不可控（#324），但完全看不到又会让用户和反馈群无从判断。折起来是两全的那一档：
+              内容已在服务层截断（200 字）并脱敏（scrubReportText），展开也不会带出 Key / 卡密。
             */}
-            {notice.diagnostics ? (
-              <>
-                {' '}
-                <button
-                  type="button"
-                  className={styles.noticeAction}
-                  onClick={() => {
-                    void copyToClipboard(notice.diagnostics as string).then((ok: boolean) => {
-                      showToast({ key: ok ? 'errorScreenCopied' : 'errorScreenCopyFailed' })
-                    })
-                  }}
-                >
-                  {t('errorScreenCopyDiagnostics')}
-                </button>
-              </>
+            {notice.upstream ? (
+              <details className={styles.noticeUpstream} data-testid="notice-upstream">
+                <summary className={styles.noticeUpstreamToggle}>
+                  {t('upstreamDetailToggle')}
+                </summary>
+                <pre className={styles.noticeUpstreamText}>{notice.upstream}</pre>
+              </details>
             ) : null}
-          </span>
+          </div>
         </div>
       ) : null}
       {!streaming && !refused && view.searchResults.length > 0 ? (
