@@ -1,0 +1,12 @@
+{
+    "display_name": "Summaryception + Cloud Recall",
+    "loading_order": 50,
+    "requires": [],
+    "optional": [],
+    "js": "index.js",
+    "css": "style.css",
+    "author": "Lodactio (recall layer: local fork)",
+    "version": "6.0.0-rc.1",
+    "homePage": "https://github.com/Lodactio/Extension-Summaryception",
+    "auto_update": false
+}

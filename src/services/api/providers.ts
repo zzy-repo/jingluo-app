@@ -99,6 +99,15 @@ export type ProviderPaths = {
    * 永远不靠猜路径。
    */
   files?: string
+  /**
+   * 向量化（embedding）端点。**没有这一项 = 该渠道没有 embedding 能力**（#397），
+   * 与 `files` 同一套纪律：能力显式声明，绝不从别的路径猜。
+   *
+   * 为什么只有 OpenAI 兼容渠道声明：DeepSeek 官方与 Anthropic 协议都没有 `/embeddings`，
+   * 猜一个过去只会变成日志里刷屏的 404（#303 的教训）。记忆检索在没有这一项的渠道上
+   * 直接退化为纯 BM25，一次请求都不发。
+   */
+  embedding?: string
 }
 
 export type ProviderSpec = {
@@ -231,7 +240,13 @@ const RAW_SPECS: Record<ProviderKind, RawProviderSpec> = {
     protocol: 'openai',
     // 任意 OpenAI 兼容上游（官方 / 中转 / 本地 vLLM、Ollama…）：地址与模型都要自己填
     fields: ['baseUrl', 'apiKey', 'model'],
-    paths: { models: '/v1/models', messages: '/v1/chat/completions', tools: '' },
+    // OpenAI 兼容协议自带 /v1/embeddings（记忆检索的向量来源，#397）；deepseek / anthropic / ours 没有这条路由
+    paths: {
+      models: '/v1/models',
+      messages: '/v1/chat/completions',
+      tools: '',
+      embedding: '/v1/embeddings',
+    },
     // Authorization: Bearer <key>
     auth: 'bearer',
     /**
