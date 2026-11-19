@@ -4,9 +4,16 @@ import { buildMeta, type Stage } from '../diagnostics/fields.js'
 import { createStageTimer } from '../diagnostics/timing.js'
 import * as db from './db.js'
 import { fail } from './history/errors.js'
-import { formatImportBytes, maxImportMegabytes, resolveMaxImportBytes } from './history/importLimit.js'
+import {
+  MAX_EXPORT_BYTES,
+  formatImportBytes,
+  isWithinExportLimit,
+  maxImportMegabytes,
+  resolveMaxImportBytes,
+} from './history/importLimit.js'
 import { parseSessionPath } from './history/paths.js'
 import { listArchivePaths } from './history/zipReader.js'
+import { ExportTooLargeError } from './history/zipWriter.js'
 import { replaceHistory, useChatStore } from './store.js'
 import type { Session } from './types.js'
 
@@ -22,6 +29,26 @@ const enqueueBackup = <T>(run: () => Promise<T>): Promise<T> => {
 }
 
 const backupFileName = (date: Date) => `deepseek_data-${formatDate(date)}.zip`
+
+/**
+ * 导出上限闸（issue #336）：导出物必须能被本 App 的「导入历史对话」读回。
+ *
+ * 死区教训：导出侧原来单独写 220MB、导入侧只认 200MB，(200MB, 220MB] 这一段导出提示成功、
+ * 导入报「文件过大」。现在两边是同一个常量（`MAX_EXPORT_BYTES = DEFAULT_MAX_IMPORT_BYTES`），
+ * 且判定发生在**打开 SAF 之前**：`zipWriter.writeArchive` 算完成品字节数就拒（格式层），
+ * 这里再用 blob.size 复核一次（服务层）——两者的值本来相等（写出时有 `size !== expectedSize` 自校验），
+ * 复核是为了让「交给落盘出口的那个 blob 一定导得回来」这件事不依赖另一层的实现细节。
+ */
+const assertExportWithinLimit = (bytes: number): void => {
+  if (isWithinExportLimit(bytes)) {
+    return
+  }
+  // 与导入侧同一条文案口径：说清上限、说清实际多大、说清怎么办（#195 / #336）
+  fail('historyExportTooLarge', {
+    size: maxImportMegabytes(MAX_EXPORT_BYTES),
+    actual: formatImportBytes(bytes),
+  })
+}
 
 /** 导出为历史会话导出格式的 ZIP，可再次导入。 */
 export const exportHistory = (): Promise<{ name: string; blob: Blob }> =>
@@ -42,7 +69,17 @@ export const exportHistory = (): Promise<{ name: string; blob: Blob }> =>
     }
     const { exportArchive } = await import('./history/exportArchive.js')
     const now = new Date()
-    const blob = await exportArchive(readSessions())
+    let blob: Blob
+    try {
+      blob = await exportArchive(readSessions())
+    } catch (error) {
+      // 格式层在上限处抛的是类型化错误（它不认识 i18n），在这里翻成可读文案再往上抛。
+      if (error instanceof ExportTooLargeError) {
+        assertExportWithinLimit(error.bytes)
+      }
+      throw error
+    }
+    assertExportWithinLimit(blob.size)
     return { name: backupFileName(now), blob }
   })
 

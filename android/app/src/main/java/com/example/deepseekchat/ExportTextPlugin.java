@@ -21,9 +21,12 @@ import java.util.UUID;
  * <ul>
  *   <li><b>文本</b>（{@code text/plain}、{@code application/json}）：沿用原有 8MB 上限，反馈日志导出用；</li>
  *   <li><b>二进制</b>（{@code application/zip}，{@code binary=true} + {@code writeBinaryChunk}）：
- *       历史会话归档用。上限 {@link #MAX_BINARY_BYTES}（220MB）：导出产物必须能被本 App 的
- *       「导入历史对话」读回，而导入侧上限是 200MB（{@code importLimit.DEFAULT_MAX_IMPORT_BYTES}），
- *       保存出口再小就会产出「导得出、导不回」的包；留 20MB 余量。</li>
+ *       历史会话归档用。上限 {@link #MAX_BINARY_BYTES}（200MB，与导入侧
+ *       {@code importLimit.DEFAULT_MAX_IMPORT_BYTES} 同一个数）：导出产物必须能被本 App 的
+ *       「导入历史对话」读回，所以**导出上限不能大于导入上限** —— 大一点就会产出
+ *       「导得出、导不回」的包（(200MB, 220MB] 死区，issue #336）。
+ *       <b>权威判断在 TS 侧</b>（{@code importLimit.MAX_EXPORT_BYTES} + {@code zipWriter.writeArchive}
+ *       在打开 SAF 之前就拦），这里只是纯兜底：万一上游漏判，也别让超过 200MB 的字节落到用户选的文件里。</li>
  * </ul>
  *
  * <p>失败语义：目标位置在 {@code finish} 之前一个字节都不写，中途失败只删临时文件，磁盘上不会留半截产物；
@@ -33,8 +36,12 @@ import java.util.UUID;
 public class ExportTextPlugin extends Plugin {
     /** 文本出口上限（原有行为，反馈日志等小文件）。 */
     private static final long MAX_BYTES = 8L * 1024 * 1024;
-    /** 二进制出口上限：≥ 导入侧 200MB，理由见类注释。 */
-    private static final long MAX_BINARY_BYTES = 220L * 1024 * 1024;
+    /**
+     * 二进制出口上限（兜底）：与导入侧 200MB 相等，理由见类注释。
+     * 权威判断在 TS 侧（{@code importLimit.MAX_EXPORT_BYTES}）：那边在打开 SAF 之前就拒，
+     * 用户不会先选好位置再看到「文件过大」；这里只保证任何情况下都不会写超。
+     */
+    private static final long MAX_BINARY_BYTES = 200L * 1024 * 1024;
     private static final String MIME_TEXT = "text/plain";
     private static final String MIME_JSON = "application/json";
     private static final String MIME_ZIP = "application/zip";
@@ -90,7 +97,7 @@ public class ExportTextPlugin extends Plugin {
         try {
             bytes = android.util.Base64.decode(call.getString("data", ""), android.util.Base64.DEFAULT);
         } catch (IllegalArgumentException error) { call.reject("二进制分块解码失败", "BAD_CHUNK"); return; }
-        if (activeBytes + bytes.length > MAX_BINARY_BYTES) { call.reject("归档超过 220MB 导出上限", "TOO_LARGE"); return; }
+        if (activeBytes + bytes.length > MAX_BINARY_BYTES) { call.reject("归档超过 200MB 导出上限（与导入上限一致）", "TOO_LARGE"); return; }
         try { activeOutput.write(bytes); activeBytes += bytes.length; call.resolve(); }
         catch (Exception error) { call.reject("写入归档失败", "WRITE_FAILED"); }
     }
