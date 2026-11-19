@@ -255,3 +255,81 @@ test('F Settings.module.css 的滚动容器有不依赖视口变量的兜底上�
   )
   assert.doesNotMatch(body, /max-height:\s*var\(--modal-viewport-height/, '.feedbackMain 的上界不能再只靠视口变量')
 })
+
+// ------------------------------------------------ #218：可滚判定必须带几何回读
+//
+// #218 和 #173 是同一副面孔：**判定通过、效果为 0、判定过程没有实测回读**。
+// 这里把两个方向都钉住 —— 只钉「回读为 0 不算可滚」的话，一律返回 false 也能蒙过关；
+// 只钉「真的溢出算可滚」的话，退回旧行为也照样通过。
+//
+// 同时守住方向：回读为 0 只能说明**没证明**它能滚（内容可能还没填满 / 高度链没生成有界盒子），
+// 不能反推「不能滚」再去 preventDefault —— 那条路的代价是 #30 的整页锁死。
+
+test('G 声明 overflowY:auto 但 scrollHeight === clientHeight → 不再判为可滚', () => {
+  assert.equal(
+    typeof viewportModule.findScrollableAncestor,
+    'function',
+    `viewport.ts 必须导出带几何回读的可滚判定；当前导出：${Object.keys(viewportModule).join(', ') || '(无)'}`
+  )
+
+  // 高度链断开：盒子没有被撑成有界高度，内容把盒子整个撑满 → 声明仍是 auto，可滚距离却是 0。
+  const overlay = attach(body, new FakeElement({ className: 'overlay' }))
+  const dialog = attach(overlay, new FakeElement({ scrollHeight: 964, clientHeight: 964 }))
+  const unbounded = attach(
+    dialog,
+    new FakeElement({ overflowY: 'auto', scrollHeight: 964, clientHeight: 964 })
+  )
+  const child = attach(unbounded, new FakeElement())
+
+  const owner = viewportModule.findScrollableAncestor(child)
+  assert.equal(owner?.element, unbounded, '祖先链上第一处声明了可滚的容器必须被找到，不能跳过')
+  assert.equal(owner?.proven, false, '声明命中但 scrollHeight === clientHeight：不许判为「能滚」')
+
+  // 方向：未证明 ≠ 不可滚 —— 不许因此把整页锁死。
+  assert.equal(dispatchTouchMoves(child, 5), 0, '回读为 0 时仍须 fail-open：不许锁整页（#30 的方向）')
+})
+
+test('G2 内容确实溢出时判定必须为可滚（否则等于一律返回 false 蒙过关）', () => {
+  const overlay = attach(body, new FakeElement({ className: 'overlay' }))
+  const dialog = attach(overlay, new FakeElement({ scrollHeight: 608, clientHeight: 608 }))
+  const overflowing = attach(
+    dialog,
+    new FakeElement({ overflowY: 'auto', scrollHeight: 820, clientHeight: 464 })
+  )
+  const child = attach(overflowing, new FakeElement())
+
+  const owner = viewportModule.findScrollableAncestor?.(child)
+  assert.equal(owner?.element, overflowing, '真的溢出的容器必须被判为可滚')
+  assert.equal(owner?.proven, true, 'scrollHeight - clientHeight > 0 → proven 必须是 true')
+  assert.equal(dispatchTouchMoves(child, 3), 0, '可滚容器内部的触摸由容器接管，不拦')
+})
+
+test('G3 横向同理：overflowX:auto 且 scrollWidth - clientWidth > 0 才算可滚', () => {
+  const overlay = attach(body, new FakeElement({ className: 'overlay' }))
+  const scroller = attach(
+    overlay,
+    new FakeElement({ overflowX: 'auto', scrollWidth: 900, clientWidth: 360, scrollHeight: 200, clientHeight: 200 })
+  )
+  const child = attach(scroller, new FakeElement())
+  assert.equal(
+    viewportModule.findScrollableAncestor?.(child)?.proven,
+    true,
+    '纵向不溢出但横向溢出：声明的是 overflowX，回读就该用 scrollWidth - clientWidth'
+  )
+
+  // 横向也不溢出 → 又回到「未证明」
+  const flat = attach(overlay, new FakeElement({ overflowX: 'auto', scrollWidth: 360, clientWidth: 360 }))
+  const flatChild = attach(flat, new FakeElement())
+  assert.equal(
+    viewportModule.findScrollableAncestor?.(flatChild)?.proven,
+    false,
+    '横向回读为 0 同样只能算「未证明」'
+  )
+})
+
+test('G4 链上一处都没声明可滚 → 判空（锁生效的前提不能被这条改动带走）', () => {
+  const overlay = attach(body, new FakeElement({ className: 'overlay' }))
+  const label = attach(overlay, new FakeElement({ className: 'plainLabel' }))
+  assert.equal(viewportModule.findScrollableAncestor?.(label), null, '没有任何声明可滚的祖先时应判空')
+  assert.equal(dispatchTouchMoves(label, 2), 2, '判空时才轮到锁整页')
+})
