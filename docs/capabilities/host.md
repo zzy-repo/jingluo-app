@@ -36,7 +36,7 @@
 
 ## 盘点表
 
-**总计 119 条命中**（`已有兜底` 68 / `无风险` 37 / `真实漏洞` 5 / `需动态验证` 9）；风险分布：高 4、中 10、低 105。
+**总计 119 条命中**（`已有兜底` 67 / `无风险` 38 / `真实漏洞` 5 / `需动态验证` 9）；风险分布：高 4、中 10、低 105。
 
 | 文件:行 | 假设内容 | 类别 | 风险(高/中/低) | 处置(已有兜底/需探测/需动态验证/拆单) |
 | --- | --- | --- | --- | --- |
@@ -234,10 +234,10 @@
 | --- | --- | --- | --- | --- | --- |
 | `localStorage` | 15 | 14 | 1 | 0 | 0 |
 | `AbortController` | 14 | 14 | 0 | 0 | 0 |
-| `Body.text/arrayBuffer` | 14 | 8 | 6 | 0 | 0 |
-| `Capacitor.isNativePlatform` | 10 | 2 | 8 | 0 | 0 |
-| `URL.createObjectURL` | 7 | 3 | 4 | 0 | 0 |
-| `URL.revokeObjectURL` | 7 | 3 | 4 | 0 | 0 |
+| `Body.text/arrayBuffer` | 15 | 8 | 7 | 0 | 0 |
+| `Capacitor.isNativePlatform` | 11 | 2 | 9 | 0 | 0 |
+| `URL.createObjectURL` | 6 | 3 | 3 | 0 | 0 |
+| `URL.revokeObjectURL` | 6 | 2 | 4 | 0 | 0 |
 | `Capacitor.registerPlugin` | 6 | 1 | 0 | 0 | 5 |
 | `ResizeObserver` | 5 | 5 | 0 | 0 | 0 |
 | `matchMedia` | 5 | 1 | 4 | 0 | 0 |
@@ -258,7 +258,7 @@
 | `canvas.toDataURL` | 1 | 0 | 1 | 0 | 0 |
 | `fetch 响应体 clone` | 1 | 0 | 0 | 1 | 0 |
 
-**总计 119 条命中**（`已有兜底` 68 / `无风险` 37 / `真实漏洞` 5 / `需动态验证` 9）；风险分布：高 4、中 10、低 105。
+**总计 119 条命中**（`已有兜底` 67 / `无风险` 38 / `真实漏洞` 5 / `需动态验证` 9）；风险分布：高 4、中 10、低 105。
 
 ## 未覆盖的边界
 
@@ -272,5 +272,6 @@
 
 ## 复核记录
 
+- 复核（2026-11-19 19:35，基准 `e4d5c2c`，本单 #307 / PR #335）：没有新增源文件，扫描范围仍是 **203** 个源文件；`src/services/exportText.ts` 重构成「共用运行器 + `saveBlobFile()`」后，两处下载/保存的 `URL.createObjectURL` / `URL.revokeObjectURL` 合并为各 1 处（7/7 → **6/6**，对应的明细行号随之重锚），新增的 `blob.arrayBuffer()` 计入 `Body.text/arrayBuffer`（14 → **15**）；`saveText` / `saveTextFile` 保留各自的原生判定，`Capacitor.isNativePlatform` 由 10 处变为 **11** 处（`saveBlobFile` 新增 1 处）。**命中总数仍是 119 条**，风险分布（高 4 / 中 10 / 低 105）未变，verdict 分布为 `已有兜底` 67 / `无风险` 38 / `真实漏洞` 5 / `需动态验证` 9。
 - 复核（2026-11-19 18:32，基准 `452debb`，本单 #303 分支 HEAD `204bd6e`）：新增 1 个 `.ts` 源文件（`src/services/api/keyRejection.ts`），扫描范围 202 → **203** 个源文件（`.ts` 147 → **148**）。新文件不碰 storage / clipboard / fetch / Capacitor（只做 Key 指纹与 401 状态，网络请求仍在 `src/services/api/client.ts`），**命中总数仍是 119 条**，各能力计数与风险分布（高 4 / 中 10 / 低 105）未变；`src/services/api/client.ts` 的 4 处 `文件:行` 按本次实时复算重锚（`:155` / `:260` / `:646` / `:666`）。
 - 复核（2026-11-19 18:35，基准 `68c4d9d`，本单 #305）：新增 1 个 `.ts` 源文件（`src/components/settings/logView.ts`），扫描范围 199 → **200** 个源文件。新文件没有任何宿主能力调用（不碰 storage / clipboard / fetch / Capacitor，复制走既有的 `copyText` 工具），**命中总数仍是 119 条**，各能力计数与风险分布未变；`FeedbackDialog.tsx` 因新增日志预览区整体下移，`Capacitor.isNativePlatform` 的行号从 `:202` 修正为 `:241`。
