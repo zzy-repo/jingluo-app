@@ -1,11 +1,24 @@
 #!/usr/bin/env node
 // Sequential adapter for legacy self-executing scripts and node:test files.
-import { readdir, readFile, writeFile } from 'node:fs/promises'
+import { appendFile, readdir, readFile, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { availableParallelism } from 'node:os'
 import { runCase, runMergedBatch } from './helpers/runtime.mjs'
 import { serveDir } from './helpers/env.mjs'
+import {
+  DEFAULT_POLICY,
+  dayOf,
+  describeEntry,
+  dueReminders,
+  emptyRegistry,
+  isQuarantined,
+  isRecurringRed,
+  normalizeRegistry,
+  recordFlaky,
+  recordPass,
+  recordRecurringRed,
+} from '../scripts/flaky-registry.mjs'
 
 const TESTS_DIR = path.dirname(fileURLToPath(import.meta.url))
 const ROOT = path.resolve(TESTS_DIR, '..')
@@ -108,6 +121,17 @@ const BASELINE_FILE = path.join(TESTS_DIR, 'integration-baseline.json')
 const SHARD_WEIGHTS_FILE = path.join(TESTS_DIR, 'integration-shard-weights.json')
 /** 未登记文件的默认权重（ms）：按集成层中位数取，宁可高估也不让新文件把某个分片拖长 */
 const DEFAULT_SHARD_WEIGHT_MS = 30000
+/**
+ * #406：flaky 登记簿 + 失败自动重跑一次。
+ *
+ * 为什么要重跑：红过一次的用例如果是**时序/端口/首帧**一类的偶发，直接红会把「真红」淹没在噪音里；
+ * 重跑一次能把偶发和稳定红分开。为什么必须登记：重跑通过**不等于**没问题 —— 名单必须留痕
+ * （终端 + job summary + 本文件），连续 3 次进 quarantine（跳过但每周提醒），
+ * 21 天内复发 ≥2 次就当红处理（禁止用重跑洗白真红，规则见 docs/TESTING-POLICY.md 第 10 节）。
+ */
+const FLAKY_FILE = path.join(TESTS_DIR, 'flaky-registry.json')
+/** 写进 GitHub Actions 的 job summary（有就写，没有就不写；不依赖 ci.yml 改动） */
+const STEP_SUMMARY = process.env.GITHUB_STEP_SUMMARY ?? ''
 const rel = (file) => path.relative(ROOT, file).split(path.sep).join('/')
 
 /** `--shard 1/3` → { index: 1, count: 3 }；非法值直接抛，不做「猜你想要什么」 */
@@ -282,14 +306,18 @@ async function main() {
       if (arg === '--timeout-ms') timeoutMs = Number(value)
       if (arg === '--shard') shard = parseShard(value)
       if (arg === '--jobs') jobs = Number(value)
-    } else if (['--bail', '--list', '--baseline', '--write-weights'].includes(arg)) flags.add(arg)
+    } else if (
+      ['--bail', '--list', '--baseline', '--write-weights', '--no-retry', '--include-quarantined'].includes(arg)
+    ) {
+      flags.add(arg)
+    }
     else if (!arg.startsWith('-') && !layer) layer = arg
     else throw new Error(`Unknown argument: ${arg}`)
   }
   if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1) throw new Error('timeout-ms must be a positive integer')
   if (jobs !== undefined && (!Number.isSafeInteger(jobs) || jobs < 1)) throw new Error('jobs must be a positive integer')
   const plan = layer === 'all' ? ['unit', 'regression', 'integration'] : [layer]
-  if (plan.some((name) => !LAYERS.includes(name))) throw new Error('Usage: node tests/run-layer.mjs <unit|integration|regression|e2e|device|all> [--only substring] [--case exact-path] [--shard 1/3] [--jobs N] [--timeout-ms 180000] [--json result.json] [--failed-from result.json] [--bail] [--list]')
+  if (plan.some((name) => !LAYERS.includes(name))) throw new Error('Usage: node tests/run-layer.mjs <unit|integration|regression|e2e|device|all> [--only substring] [--case exact-path] [--shard 1/3] [--jobs N] [--timeout-ms 180000] [--json result.json] [--failed-from result.json] [--bail] [--list] [--no-retry] [--include-quarantined]')
   let failed
   if (failedFrom) {
     const report = JSON.parse(await readFile(failedFrom, 'utf8'))
@@ -308,11 +336,45 @@ async function main() {
       selected.push({ layer: name, file })
     }
   }
+  /**
+   * #406：flaky 登记簿。
+   *
+   * · 隔离区（连续 3 次 flaky）默认**跳过**：它已经在「时好时坏」，每轮都跑只会继续污染判断；
+   *   但跳过必须留痕并每周提醒一次修复（`dueReminders`），否则隔离区会变成遗忘区。
+   * · `--case` 显式点名时照跑（人已经指定要跑它，就别替他拦），`--include-quarantined` 同理。
+   * · 登记簿缺失/损坏不是错误：退化成本次的空簿，绝不因为登记簿坏了让整层跑不起来。
+   */
+  let flakyRegistry = emptyRegistry()
+  try {
+    flakyRegistry = normalizeRegistry(JSON.parse(await readFile(FLAKY_FILE, 'utf8')))
+  } catch { /* 没有文件 / JSON 坏了：用空簿继续 */ }
+  const flakyPolicy = { ...DEFAULT_POLICY, ...(flakyRegistry.policy ?? {}) }
+  const today = dayOf()
+  const quarantinedFiles = []
+  const runnable = []
+  for (const item of selected) {
+    const name = rel(item.file)
+    if (!flags.has('--include-quarantined') && !caseName && isQuarantined(flakyRegistry, name)) {
+      quarantinedFiles.push(name)
+      continue
+    }
+    runnable.push(item)
+  }
+  if (quarantinedFiles.length) {
+    console.log(`\nflaky 隔离区：跳过 ${quarantinedFiles.length} 个用例（连续 ${flakyPolicy.quarantineAfter} 次 flaky）`)
+    for (const name of quarantinedFiles) console.log(`  QUARANTINED  ${name}`)
+  }
+  for (const entry of dueReminders(flakyRegistry, { today })) {
+    console.log(`  ⏰ flaky 每周提醒：${describeEntry(entry)} —— 隔离不是修复，请派单或就地修`)
+  }
   // #365：分片在「--only / --case / --failed-from 筛完之后」才切，保证分片是对当前选择集的完整划分。
-  const shardPlan = shard ? await planShard(selected, shard) : null
+  // #406：切的是**可跑的**选择集（隔离区已经先摘掉），分片覆盖自检（CI 里那条）才对得上。
+  const shardPlan = shard ? await planShard(runnable, shard) : null
   const planned = shardPlan ? shardPlan.picked : selected
   const started = performance.now()
   const results = []
+  /** #406：本轮「重跑才通过」的用例名单（要写进终端、--json、job summary 与登记簿） */
+  const flakyRuns = []
   if (flags.has('--list')) {
     if (shardPlan) {
       for (const bin of shardPlan.bins) {
@@ -324,7 +386,7 @@ async function main() {
     return planned.length ? 0 : 1
   }
   if (shardPlan) {
-    console.log(`分片 ${shard.index}/${shard.count}：本分片 ${planned.length} 个文件（全集 ${selected.length}），预计 ${Math.round(shardPlan.pickedLoadMs / 1000)}s；权重来源 ${shardPlan.weightSource}`)
+    console.log(`分片 ${shard.index}/${shard.count}：本分片 ${planned.length} 个文件（全集 ${runnable.length}${quarantinedFiles.length ? ` + 隔离 ${quarantinedFiles.length}` : ''}），预计 ${Math.round(shardPlan.pickedLoadMs / 1000)}s；权重来源 ${shardPlan.weightSource}`)
   }
   let interrupted = false
   // 标准产物目录：APP_URL 注入与 DIST_DIR 重定向都以它为准（用户可用 STANDARD_DIST_DIR / DIST_DIR_STANDARD 覆盖）
@@ -364,22 +426,78 @@ async function main() {
     const startedUnit = performance.now()
     if (!unit.merged) {
       const item = unit.items[0]
-      say(`\n>> ${rel(item.file)} (timeout ${timeoutMs}ms)`)
+      const name = rel(item.file)
+      say(`\n>> ${name} (timeout ${timeoutMs}ms)`)
       const env = { ...process.env }
       const base = path.basename(item.file)
       if (SELF_SERVED.has(base)) env.APP_URL = ''
       else if (APP_URL_FILES.has(base) && !process.env.APP_URL) env.APP_URL = (await ensureSharedStd()).url
       // 要 standard 变体却读 DIST_DIR 的用例：指到标准产物，别让它们对着内测包 SKIP(env)（#365）
       if (STANDARD_DIST_DIR_FILES.has(base) && !process.env.DIST_DIR) env.DIST_DIR = standardDistDir()
-      const result = await runCase(item.file, { cwd: ROOT, env, timeoutMs, output: lanes === 1 })
+      const run = () => runCase(item.file, { cwd: ROOT, env, timeoutMs, output: lanes === 1 })
+      let result = await run()
       if (lanes !== 1 && result.output) log.push(result.output)
-      const skipped = result.code === SKIP_CODE
+      let skipped = result.code === SKIP_CODE
+      /**
+       * #406：失败自动重跑 **1 次**。
+       *
+       * 重跑通过 → 记 flaky（名单进终端 / --json / job summary / flaky-registry.json），当绿放行；
+       * 重跑仍红 → 真红（这条路径一次都不省）。
+       * SKIP(env) 不重跑：产物缺失 / 端口被占是环境问题，重跑只会再 SKIP 一遍。
+       * 21 天内复发 ≥2 次的「重跑才通过」**不当 flaky**，直接按真红上报 —— 见 isRecurringRed。
+       */
+      let flaky = false
+      if (!result.ok && !skipped && !flags.has('--no-retry')) {
+        say(`   ↻ 红了（${result.ms}ms），按 flaky 判据重跑一次…`)
+        const retry = await run()
+        if (lanes !== 1 && retry.output) log.push(retry.output)
+        if (retry.ok) {
+          const previous = flakyRegistry.tests[name]
+          const recurring = isRecurringRed(previous, flakyPolicy, today)
+          const firstFailure = (result.tail ?? []).filter((line) => /✗|Error|FAIL/.test(line)).slice(-3).join(' ⏎ ')
+          const entry = recurring
+            ? recordRecurringRed(flakyRegistry, name, { today, reason: firstFailure.slice(0, 300) })
+            : recordFlaky(flakyRegistry, name, { today, reason: firstFailure.slice(0, 300) })
+          if (recurring) {
+            say(
+              `   ⚠ 重跑通过，但它在 ${flakyPolicy.recurrenceWindowDays} 天内已复发 ≥2 次 —— 按真红处理（不许用重跑洗白）`,
+            )
+            result = {
+              ...retry,
+              ok: false,
+              recurringFlaky: true,
+              error: `重跑通过但 ${flakyPolicy.recurrenceWindowDays} 天内复发 ≥2 次 → 当红处理（#406 策略）`,
+            }
+          } else {
+            flaky = true
+            flakyRuns.push(name)
+            result = { ...retry, flaky: true, firstFailureMs: result.ms }
+            say(`   ↻ 重跑通过 → 记为 flaky（累计 ${entry.count} 次 / 连续 ${entry.streak} 次）`)
+            if (entry.quarantinedAt) {
+              say(`   ⏸ 连续 ${flakyPolicy.quarantineAfter} 次 flaky → 进隔离区（下次起跳过，每周提醒修复）`)
+            }
+          }
+        } else {
+          result = retry
+        }
+        skipped = result.code === SKIP_CODE
+      }
       const skipReason = skipped ? (/SKIP\(env\) (.+)/.exec(result.tail.join(''))?.[1] ?? '环境不满足').trim() : ''
-      const status = result.ok ? 'PASS' : skipped ? 'SKIP(env)' : result.timedOut ? 'TIMEOUT' : 'FAIL'
-      say(`<< ${status} ${rel(item.file)} (${result.ms}ms)`)
+      const status = result.ok
+        ? flaky
+          ? 'PASS(flaky)'
+          : 'PASS'
+        : skipped
+          ? 'SKIP(env)'
+          : result.timedOut
+            ? 'TIMEOUT'
+            : 'FAIL'
+      say(`<< ${status} ${name} (${result.ms}ms)`)
       if (skipped) say(`   ↳ ${skipReason}`)
+      // 真的绿了（不是重跑才绿）：连续 flaky 计数清零，quarantine 自动解除（修好就移除，不用手改 JSON）
+      if (result.ok && !flaky) recordPass(flakyRegistry, name, { today })
       return {
-        results: [{ layer: item.layer, file: rel(item.file), ...result, skipped, skipReason }],
+        results: [{ layer: item.layer, file: name, ...result, skipped, skipReason }],
         log: log.join(''),
         interrupted: result.interrupted,
         failed: !result.ok && !skipped,
@@ -482,6 +600,37 @@ async function main() {
   results.push(...outcomes.sort((a, b) => (order.get(a.file) ?? 0) - (order.get(b.file) ?? 0)))
   const failures = results.filter((r) => !r.ok && !r.skipped)
   const skips = results.filter((r) => r.skipped)
+  /**
+   * #406：登记簿落盘 + 名单留痕。
+   *
+   * 三条出口缺一不可，否则「重跑通过」就等于把红抹掉了：
+   *   · 终端：本轮 flaky 名单与隔离情况；
+   *   · `--json` 报告：`flaky` / `quarantined` 字段（CI 的 artifact 里能查历史）；
+   *   · `GITHUB_STEP_SUMMARY`：PR 页面直接能看到名字（有该环境变量就写，不需要改 ci.yml）。
+   */
+  // 登记簿落盘失败（只读文件系统 / 沙箱里没有这个目录）不许把整轮结果弄丢：它只是留痕的副本，
+  // 终端与 --json 里已经有一份完整名单。
+  await writeFile(FLAKY_FILE, JSON.stringify(flakyRegistry, null, 2) + '\n').catch((error) => {
+    console.log(`\n⚠ flaky 登记簿写入失败（${error.message}）：本轮名单只在终端与 --json 报告里`)
+  })
+  if (flakyRuns.length) {
+    console.log(`\nFLAKY（重跑才通过，${flakyRuns.length} 个；已登记 tests/flaky-registry.json）`)
+    for (const name of flakyRuns) console.log(`  FLAKY  ${name} —— ${describeEntry(flakyRegistry.tests[name])}`)
+  }
+  if (STEP_SUMMARY) {
+    const lines = [`## flaky 登记（${plan.join('+')}）`, '']
+    if (flakyRuns.length) {
+      lines.push(`重跑才通过 ${flakyRuns.length} 个（不阻塞合并，但必须留痕）：`, '')
+      for (const name of flakyRuns) lines.push(`- \`${name}\` —— ${describeEntry(flakyRegistry.tests[name])}`)
+    } else {
+      lines.push('本轮没有「重跑才通过」的用例。')
+    }
+    if (quarantinedFiles.length) {
+      lines.push('', `隔离区跳过 ${quarantinedFiles.length} 个（连续 ${flakyPolicy.quarantineAfter} 次 flaky，每周提醒修复）：`, '')
+      for (const name of quarantinedFiles) lines.push(`- \`${name}\``)
+    }
+    await appendFile(STEP_SUMMARY, `${lines.join('\n')}\n`).catch(() => {})
+  }
   // #287：用例内部 `t.skip()` / `{ skip: ... }` 不会改进程退出码，跑完全绿也看不出「一行断言都没跑」。
   // 这里把用例自己报的 # SKIP 汇总打印（如 legacy-bundle-target 缺产物时的声明期跳过），
   // 让跳过在报告里永远露头；判红门禁仍只看真实失败，避免把「产物没构建」误报成回归。
@@ -497,6 +646,10 @@ async function main() {
     failed: failedCount,
     skipped: skips.length,
     skippedSubtests: nodeSkips.reduce((sum, r) => sum + (r.skips ?? 0), 0),
+    /** #406：重跑才通过的名单（不是「通过」的同义词，必须能被单独筛出来） */
+    flaky: flakyRuns,
+    /** #406：被隔离区跳过、本轮没有执行的用例 */
+    quarantined: quarantinedFiles,
     results,
   }
   if (json) await writeFile(path.resolve(json), JSON.stringify(report, null, 2) + '\n')

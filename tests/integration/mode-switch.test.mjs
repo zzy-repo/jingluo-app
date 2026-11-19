@@ -246,13 +246,19 @@ expect(toggleOk, '3 次切换后选中态与计算样式始终一致')
 
 const storage = await page.evaluate(() => Object.keys(window.localStorage).sort())
 // issue #25：控件不再是纯样式，点它会写自己的两个键（新键 + 同步的旧「深度思考」键）
+// #339 起启动时还会写一次性迁移版本号 `chat-demo:config-schema`（configMigration.ts，
+// 只写一次、与模式开关无关）；#406 复核：老白名单没收这个键 → 恒红。
 expect(
   storage.every((key) =>
-    ['chat-demo:api-key', 'chat-demo:provider-kind', 'chat-demo:chat-mode', 'chat-demo:thinking'].includes(
-      key
-    )
+    [
+      'chat-demo:api-key',
+      'chat-demo:provider-kind',
+      'chat-demo:chat-mode',
+      'chat-demo:thinking',
+      'chat-demo:config-schema',
+    ].includes(key)
   ) && storage.includes('chat-demo:chat-mode'),
-  '控件只写 chat-demo:chat-mode 与同步的 chat-demo:thinking',
+  '除启动期一次性迁移版本号外，不应出现其它键（模式开关只写 chat-mode + thinking）',
   storage.join(',')
 )
 

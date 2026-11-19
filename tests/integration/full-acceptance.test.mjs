@@ -220,7 +220,6 @@ const jsonBody = (entry) => {
 }
 
 const mockOk = await startMock()
-const mockHtml = await startMock({ html: true })
 
 const browser = await chromium.launch({
   args: ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream'],
@@ -282,7 +281,15 @@ const closeSettings = async () => {
   }
 }
 const selectKind = async (nameRe) => {
-  await page.getByRole('button', { name: /渠道|Channel|服务类型|Service type/ }).first().click()
+  // 选择器必须落在设置弹窗里、且是**渠道行**本身：`/渠道|Channel/` 这类宽松名字会命中附件入口
+  // 按钮的 aria-label（「当前渠道不支持文件上传，附件入口已不可用」），点它必超时（#406 复核）。
+  // 渠道是基座 Select（`aria-label` = 渠道）；用**锚定整串**的名字，避免命中带「渠道」字样的其它按钮。
+  await page
+    .getByRole('dialog')
+    .first()
+    .getByRole('button', { name: /^(渠道|Channel|服务类型|Service type)$/ })
+    .first()
+    .click()
   await page.getByRole('option', { name: nameRe }).first().click()
   await page.waitForTimeout(250)
 }
@@ -323,11 +330,15 @@ try {
   console.log('\n[3] 翻译器单测（OpenAI SSE → Anthropic 事件流）')
   const repoRoot = fileURLToPath(new URL('../..', import.meta.url))
   let translatorOut = ''
+  // 子进程必须带 run-layer 那份 --import 预加载（tests/helpers/injected.mjs）：`__ENDPOINTS__` 是
+  // rspack DefinePlugin 的打包期标识符，裸 node 直接 import 源码时没有它 → 一进来就
+  // `ReferenceError: __ENDPOINTS__ is not defined`（#406 复核：老写法恒红，与产品无关）。
   try {
-    translatorOut = execFileSync(process.execPath, ['tests/unit/openai-adapter.test.mjs'], {
-      cwd: repoRoot,
-      encoding: 'utf8',
-    })
+    translatorOut = execFileSync(
+      process.execPath,
+      ['--import', new URL('../helpers/injected.mjs', import.meta.url).href, 'tests/unit/openai-adapter.test.mjs'],
+      { cwd: repoRoot, encoding: 'utf8' }
+    )
   } catch (error) {
     translatorOut = `${error.stdout ?? ''}${error.stderr ?? ''}`
   }
@@ -606,24 +617,12 @@ try {
   note('anthropic 入口 DOM 证据已写入 docs/ui/1.2.3-anthropic-dom.txt')
 
   // ============ 4. 上游返回 HTML ============
-  console.log('\n[7c] 回归：上游返回 text/html')
-  await openSettings()
-  await setField(/服务地址|Service URL/, mockHtml.base)
-  await closeSettings()
-  await send('你好')
-  await waitFor(async () => posts(mockHtml.log, '/v1/messages').length > 0)
-  await page.waitForTimeout(3000)
-  const htmlText = await page.locator('body').innerText()
-  if (!htmlText.includes('上游返回网页而非接口数据')) {
-    bad('7c) 没有出现「上游返回网页而非接口数据…」错误提示')
-  } else {
-    ok('7c) 出现明确错误：上游返回网页而非接口数据，通常是路径不匹配或服务异常')
-  }
-  if (/MOCK_GATEWAY_HTML|<!doctype|<html/i.test(htmlText)) {
-    bad('7c) HTML 被渲染进页面')
-  } else {
-    ok('7c) 气泡里没有 HTML 内容')
-  }
+  // #406：这一段已下线 —— 「上游 200 + text/html 必须给明确错误、且不得把 HTML 渲染进气泡」
+  // 现在由**专用文件** `tests/integration/upstream-html.test.mjs` 承担（同一契约、独立夹具、
+  // 独立耗时统计）。本文件头本来就写着「需要哪组就抄出去做独立文件，然后从这里删掉对应段落」。
+  // 注意：那条契约当前是**真的不满足**（200 被 classifyErrorSignature 归到 emptyStream，
+  // upstreamReturnedHtml 文案不可达），缺陷在 upstream-html.test.mjs 里继续红着追踪，
+  // 对应 follow-up issue 见该基线条目，不是被这段删除掩盖掉。
 
   // ============ 1/2. openai 模式：路径、鉴权头、请求体 ============
   console.log('\n[1] openai 模式：路径与鉴权头')
@@ -752,7 +751,7 @@ try {
   }
   await page.waitForTimeout(1200)
   const errorNoticeOpenAI = await page.getByText(/上游返回网页|网络异常|服务器繁忙|API Key 无效/).count()
-  // 同会话里 7c 组留下过一条错误气泡，按「增量」判断：openai 这轮不允许新增错误提示
+  // 同一会话里前面各组可能留下过错误气泡，按「增量」判断：openai 这轮不允许新增错误提示
   if (errorNoticeOpenAI > errorNoticeBefore) {
     bad(`5) openai 正常回答被标成了错误状态（错误提示 ${errorNoticeBefore} → ${errorNoticeOpenAI}）`)
   } else {
@@ -775,13 +774,24 @@ try {
     ['上传文件', /^上传文件$|^Upload files$/],
     ['语音输入', /^语音输入$|^Voice input$/],
     ['朗读', /^朗读$|^Read aloud$/],
-    ['深度思考', /^深度思考$|^DeepThink$/],
   ]) {
     const count = await page.getByRole('button', { name: re }).count()
     if (count === 0) {
       ok(`「${label}」入口 count=0（隐藏）`)
     } else {
       bad(`6) openai 模式下「${label}」入口 count=${count}，应完全隐藏`)
+    }
+  }
+  // #341 起「深度思考」在四个渠道**恒常驻**（不隐藏、不置灰），能不能真生效由请求侧 REQUEST_GATES 决定；
+  // openai 通道不发思考字段，所以入口在、但必须标记「不真生效」。老断言要求 count=0，已过时（#406 复核）。
+  {
+    const think = page.getByRole('button', { name: /^深度思考$|^DeepThink$/ }).first()
+    const count = await think.count()
+    const effective = count ? await think.getAttribute('data-thinking-effective') : null
+    if (count === 1 && effective === 'false') {
+      ok('「深度思考」入口常驻但标记为不真生效（#341，请求侧不发思考字段）')
+    } else {
+      bad(`6) openai 模式下「深度思考」应为「常驻 + 不真生效」，实际 count=${count} data-thinking-effective=${effective}`)
     }
   }
   const openaiCapsDom = await page.evaluate(() => {
@@ -805,7 +815,7 @@ try {
   // ============ 6b. 切回 deepseek：能力恢复 ============
   console.log('\n[6] 切回 deepseek 模式')
   await openSettings()
-  // 第 7c 步把地址指到了 html 上游，这里先指回正常 mock，再切回 deepseek
+  // 上一组换过服务地址，这里先指回正常运行的上游，再切回 deepseek
   await setField(/服务地址|Service URL/, mockOk.base)
   await selectKind(/DeepSeek 官方|DeepSeek Official/)
   await closeSettings()
@@ -874,7 +884,6 @@ try {
   }
   await browser.close()
   mockOk.server.close()
-  mockHtml.server.close()
 
   console.log('\n=== 证据汇总 ===')
   for (const line of evidence) {

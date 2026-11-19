@@ -9,7 +9,8 @@
       "ref": "origin/main@6e7baab",
       "recordedAt": "2026-11-19",
       "recordedBy": "Issue #365（L1 接入 CI 前逐条复测）",
-      "note": "#365 接线前把 45 个集成文件全量重测了一遍（1188s）：7 条既有红登记为 known-red（各带 evidence/followUp），其余 38 条 pass。known-red 只允许减：条目跑绿会报 FIXED? 并要求删条目。"
+      "note": "#365 接线前把 45 个集成文件全量重测了一遍（1188s）：7 条既有红登记为 known-red（各带 evidence/followUp），其余 38 条 pass。known-red 只允许减：条目跑绿会报 FIXED? 并要求删条目。",
+      "note2026_11_20": "#406 第二轮逐条复核：7 条 known-red 里 6 条判定为「断言过时 / 测试自身 bug」，改测试后转绿并删条目（diagnostics-contract / log-viewer / mode-switch / url-import-stages / full-acceptance / feedback-scroll）；剩 1 条 upstream-html 判定为真实产品缺陷（C 类），保留条目并开 follow-up issue #432。"
     }
   },
   "howToRun": {
@@ -49,14 +50,6 @@
       "artifact": "standard(自建)",
       "reason": "自己构建 dist-copy-limit（DIST_DIR_STANDARD 可注入）+ 自起静态服务；端口自动分配"
     },
-    "diagnostics-contract.test.mjs": {
-      "expected": "known-red",
-      "artifact": "internal + standard",
-      "reason": "import_error 事件的 meta 字段不全：403 下载失败那条（import download failed: forbidden）缺断言要求的字段，被「字段不全」判红",
-      "evidence": "2026-11-19 origin/main@6e7baab 实测 FAIL 15.8s：✗ 字段不全 {kind:\"import_error\",meta:{correlationId,reason,url.path,http.status,download.bytes,flow,stage,status,retryable,durationMs,error.msg}}（另 net_error / error 两条通过）",
-      "followUp": "缺的字段在 src/services/diagnostics 侧补齐（与 #387 脱敏单分开做），补完删本条",
-      "#was": "接线前登记为 pass"
-    },
     "diagnostics.test.mjs": {
       "expected": "pass",
       "artifact": "internal",
@@ -77,22 +70,6 @@
       "artifact": "standard",
       "reason": "DIST_STANDARD_DIR 指向标准产物，verifyDist(standard) 守卫后自起服务"
     },
-    "feedback-scroll.test.mjs": {
-      "expected": "known-red",
-      "artifact": "standard(滚动专用)",
-      "reason": "360×640 键盘态下 expanded bottom 断言失败（软键盘遮挡与展开高度契约不符）",
-      "evidence": "2026-11-19 实测 FAIL 194.6s（#368 记 194.1s）；单文件需要 --timeout-ms >= 300000，CI 里给 420000",
-      "followUp": "窄屏键盘态布局单独派单；本文件是集成层最慢的一个，分片权重按 195s 记",
-      "#was": "接线前登记为 pass"
-    },
-    "full-acceptance.test.mjs": {
-      "expected": "known-red",
-      "artifact": "standard",
-      "reason": "翻译器单测无输出 / __ENDPOINTS__ is not defined / 脏数据三类断言失败（老的大而全验收脚本，契约已与现状漂移）",
-      "evidence": "2026-11-19 实测 FAIL 49.7s（#368 记 49.4s）",
-      "followUp": "该文件是 #362 判定的「L1 重测 L0」重点，建议按域拆分后删减，而不是逐条修",
-      "#was": "接线前登记为 pass"
-    },
     "internal-build.test.mjs": {
       "expected": "pass",
       "artifact": "internal",
@@ -112,14 +89,6 @@
       "expected": "pass",
       "artifact": "standard",
       "reason": "自起服务（PORT 可注入）；以前固定连 127.0.0.1:8090 的 pnpm dev，没起服务就假红"
-    },
-    "mode-switch.test.mjs": {
-      "expected": "known-red",
-      "artifact": "internal",
-      "reason": "切模式时仍写入 chat-demo:provider-kind 等额外 localStorage 键，与「只改模式键」的断言冲突",
-      "evidence": "2026-11-19 实测 FAIL 2.9s（#368 记 2.6s）",
-      "followUp": "模式切换的持久化键收敛到单一 key，单独派单",
-      "#was": "接线前登记为 pass"
     },
     "motion.test.mjs": {
       "expected": "pass",
@@ -169,35 +138,19 @@
     "upstream-html.test.mjs": {
       "expected": "known-red",
       "artifact": "standard",
-      "reason": "上游返回网页（HTML）而非接口数据时，「上游返回网页而非接口数据」的用户文案没出现",
-      "evidence": "2026-11-19 实测 FAIL 5.9s（#368 记 5.5s）",
-      "followUp": "错误分类到文案的映射缺失，单独派单",
-      "#was": "接线前登记为 pass"
+      "reason": "上游返回 200 + text/html 时，产品应给「上游返回网页而非接口数据」的明确错误；实际落到「空响应」文案 —— error kind/status 判据把 200 归成 emptyStream，upstreamReturnedHtml 这条文案不可达",
+      "evidence": "2026-11-20 实测 FAIL 5.9s：✗ 界面上没有出现「上游返回网页而非接口数据…」的错误提示；页面文本 = 「上游这次没有返回任何内容（空响应）；属于临时故障，可以重试（点重新生成）」。根因链：src/services/api/client.ts:304 isHtmlResponse → ApiError(kind=protocol, code=upstream_returned_html, status=200) → src/services/chat/describe.ts 走 classifyErrorSignature({status:200}) → src/services/api/errors.ts:260 `if (status >= 200 && status < 300) return emptyStream` 盖掉了明确分类",
+      "followUp": "Issue #434：[bug] 上游 200+text/html 被判成「空响应」，upstreamReturnedHtml 文案不可达"
     },
     "url-import-native.test.mjs": {
       "expected": "pass",
       "artifact": "standard",
       "reason": "runner 注入共享标准产物服务的 APP_URL；抓取阶段全 mock"
     },
-    "url-import-stages.test.mjs": {
-      "expected": "known-red",
-      "artifact": "standard",
-      "reason": "断网阶段的两条断言：断网文案不出现，且失败要 40s 才报（阈值 15s）—— 阶段竞态/超时策略与用例契约不一致",
-      "evidence": "2026-11-19 实测 FAIL 118.9s（#368 记 117.4s）",
-      "followUp": "url-import 阶段超时与断网文案单独派单；本文件是集成层最慢的两个之一",
-      "#was": "接线前登记为 pass"
-    },
     "url-import-web.test.mjs": {
       "expected": "pass",
       "artifact": "standard",
       "reason": "runner 注入共享标准产物服务的 APP_URL；只看标题前缀"
-    },
-    "log-viewer.test.mjs": {
-      "expected": "known-red",
-      "artifact": "standard",
-      "reason": "采集层 token 打码结果丢失：日志行里的已脱敏 URL 被再次处理成空，断言「打码结果应保留」失败",
-      "evidence": "2026-11-19 实测 FAIL 4.4s：AssertionError 采集层的 token 打码结果应保留：23:22:47.422 [error] error  LVFIX secret url",
-      "followUp": "log-viewer 的 redact 幂等性（对已脱敏串重复脱敏）单独派单，修完删本条"
     },
     "domain01-first-run.test.mjs": {
       "expected": "pass",

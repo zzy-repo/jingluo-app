@@ -68,6 +68,7 @@
     "check:limits": "node scripts/check-limits.mjs",
     "check:log-coverage": "node scripts/check-log-coverage.mjs",
     "check:redact": "node scripts/check-redact.mjs",
+    "check:hardcoded-ports": "node scripts/check-hardcoded-ports.mjs",
     "measure:scroll-shift": "node scripts/measure-narrow-scroll-shift.mjs"
   },
   "dependencies": {

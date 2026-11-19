@@ -85,6 +85,17 @@ try {
    for(let i=1;i<=12;i++) {await cdp.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x,y:up?y+(end-y)*i/12:end+(y-end)*i/12}]}); await page.waitForTimeout(17)}
    await cdp.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]}); await page.waitForTimeout(100)
   }
+  // 滑到底为止（最多 limit 次）：键盘态下「日志预览」自己也是一个滚动容器，一次手势可能先被它吃掉，
+  // 固定次数预算会随内容高度变化而不够用（#406 实测键盘态 24 次只到 1746/2079，差 333px；
+  // 再滑 24 次就到底）。这里只改「滑多少次」，断言仍然是「必须能滚到底」。
+  async function swipeToBottom(limit=24) {
+   for(let i=0;i<limit;i++) {
+    await swipe()
+    const m=await metrics()
+    if(m.scrollHeight-m.clientHeight-m.top<3) return i+1
+   }
+   return -1
+  }
   // 关弹窗：先走触摸路径 tap，没关掉再补一次 click。
   // 用 CDP Input.dispatchTouchEvent 连发几十次滑动之后，渲染进程会有一段不再为 tap 合成 click
   // 的窗口（事件序列里只有 pointerdown / touchstart / touchend，没有 click，用别的按钮复现同样如此），
@@ -98,7 +109,7 @@ try {
   const before=await metrics()
   const name=`${width}x${height}-${scale}${legacy?'-no-dvh':''}${keyboard?'-keyboard':''}`
   await page.screenshot({path:out+`${baseline?'before':'after'}-${name}-top.png`})
-  for(let i=0;i<16;i++) await swipe()
+  await swipeToBottom(16)
   const after=await metrics()
   if(!baseline) {
    assert(after.top>0, name+' touch must scroll')
@@ -112,7 +123,7 @@ try {
    for(let i=0;i<24;i++) await swipe(false)
    assert((await metrics()).top<3,name+' touch returns to export')
    await form.getByRole('button',{name:'保存日志文件',exact:true}).tap()
-   for(let i=0;i<24;i++) await swipe()
+   await swipeToBottom(60)
    assert((await metrics()).scrollHeight-(await metrics()).clientHeight-(await metrics()).top<3,name+' expanded bottom')
   }
   await page.screenshot({path:out+`${baseline?'before':'after'}-${name}-bottom.png`})

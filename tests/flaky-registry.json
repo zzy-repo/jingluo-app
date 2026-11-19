@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "note": "Flaky 登记簿（Issue #406）。由 tests/run-layer.mjs 在「失败 → 重跑一次 → 重跑通过」时自动登记；quarantine 的用例跑绿即自动解除隔离。形状与判据见 scripts/flaky-registry.mjs 文件头与 docs/TESTING-POLICY.md 第 10 节。",
+  "policy": {
+    "quarantineAfter": 3,
+    "recurrenceWindowDays": 21,
+    "remindEveryDays": 7
+  },
+  "tests": {}
+}

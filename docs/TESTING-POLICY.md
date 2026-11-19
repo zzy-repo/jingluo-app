@@ -211,6 +211,7 @@ npm run test:integration -- --baseline          # 集成全量与基线比对，
 
 ---
 
+
 ## 10. 单命令入口：`test:fast` / `test:full` / `test:affected` / `test:report`（Issue #409）
 
 第 2~4 节讲的是「分几档、判红口径」；这一节讲**手该敲哪一条**。四个脚本都在 `scripts/` 下，
@@ -263,3 +264,61 @@ npm run test:integration -- --baseline          # 集成全量与基线比对，
 - 重测：`pnpm test:report -- --measure`（重跑 unit / regression / golden / gates 并写回台账；
   集成层 ≈20 分钟，不在本地重测，保留 #365 的全量实测值并注明来源）。
 - 每域功能点覆盖**只汇总** `docs/testing/coverage/feature-coverage.md` 的行级状态，不重新判定覆盖。
+
+---
+
+## 11. flaky 与重跑（Issue #406）
+
+一句话：**重跑只允许用来「区分偶发与稳定红」，不允许用来「把红洗白」。**
+
+### 11.1 机制（已落在 `tests/run-layer.mjs`，不需要改 ci.yml）
+
+| 环节 | 行为 | 证据出口 |
+| --- | --- | --- |
+| 失败用例 | 自动**重跑 1 次**（`--no-retry` 可关） | 终端 `↻ 红了…按 flaky 判据重跑一次` |
+| 重跑通过 | 标 `PASS(flaky)`，当绿放行，但**必须登记** | 终端 `FLAKY <文件>` / `--json` 的 `flaky` 字段 / job summary |
+| 重跑仍红 | 真红，照旧失败 | `--json` 的 `results[].ok=false` |
+| 连续 3 次 flaky | 进 **quarantine**：默认跳过该用例（`--include-quarantined` / `--case` 可强制跑） | 终端 `QUARANTINED`、job summary |
+| quarantine 期间 | **每 7 天**提醒一次修复（同一天只提醒一次） | 终端 `⏰ flaky 每周提醒` |
+| 修好（一次就绿） | 连续计数清零、quarantine **自动解除** | `recordPass` 写 `lastGreen` |
+| 重跑通过但 21 天内**复发 ≥2 次** | **当红处理**（不再当 flaky 放行，也不进隔离区） | 终端 `⚠ … 按真红处理` |
+
+登记簿：`tests/flaky-registry.json`，字段 `{ test, firstSeen, count, lastSeen }` + `streak` / `history` /
+`quarantinedAt` / `lastGreen` / `lastRedAt`（形状与判据见 `scripts/flaky-registry.mjs` 文件头）。
+**别手改字段**：只能通过跑测试更新；唯一需要人介入的是把 quarantine 里的用例修掉。
+
+判据的单测：`tests/unit/flaky-registry.test.mjs`（8 条，含「复发当红」与「隔离不藏红」的负向对照）。
+
+### 11.2 什么算 flaky，什么不算
+
+- **算**：同一份产物、同一台机器上「第一次红、重跑绿」，且第一次失败里没有稳定的断言结论
+  （时序、首帧、端口竞态、动画帧数）。
+- **不算**：`SKIP(env)`（产物缺失/端口撞车是环境，重跑只会再 SKIP 一次，所以**不重跑**）；
+  合并批次的单文件兜底（那是「批内串扰」，已有独立重跑，见 `UNIT_SOLO`）。
+- **禁止**：为了让 CI 变绿而放宽断言、加 `--retry 3`、把红登记成 known-red。写死端口 → 直接改
+  `serveDist(dir, { port: 0 })` 或读 `process.env`（静态检查见 §11.3）。
+
+### 11.3 假绿治理的两个静态门禁
+
+| 门禁 | 命令 | 口径 |
+| --- | --- | --- |
+| 硬编码端口 | `node scripts/check-hardcoded-ports.mjs`（`pnpm run check:hardcoded-ports`） | 测试里出现 5181 / 5291~5296 / 5399 / 5418 / 8090 且**没有 env 出口** → 警告；`--strict` 时退 1 |
+| 产物一致性 | 各用例的 `verifyAppUrl()` / `verifyDist()`（见 docs/testing.md §4） | 端口上 serve 的不是这份产物 → `SKIP(env)`，不是通过 |
+
+硬编码端口门禁自带负向对照（`tests/unit/check-hardcoded-ports.test.mjs`：裸端口/ env / 注释 / 栈帧夹具四类
+各一条 + 「仓库现状零警告」回归锁），并且**只警告不阻断**——接线到 CI 的 `checks` job 要改 `ci.yml`，
+留在 #406 的 PR 描述里给 diff。
+
+### 11.4 known-red 的处置纪律（本单把 7 条清零时的口径）
+
+每一条 known-red 必须先归因，再动手，四类互斥：
+
+| 类 | 判据 | 处置 |
+| --- | --- | --- |
+| **A 断言过时** | 产品契约已经改了（有提交/注释为证），测试没跟上 | 改断言、删基线条目 |
+| **B 测试自身 bug** | 夹具与产品契约冲突、选择器命中错元素、子进程缺预加载、手势预算不足 | 修测试、删基线条目 |
+| **C 真实产品缺陷** | 契约明确要求、产品确实没做到 | **不在测试 PR 里改产品**：保留基线 + 开 `[bug]` issue，基线 `followUp` 指向它 |
+| **D 功能下线/重复** | 功能已删，或该契约已有专用文件覆盖 | 删测试（段）、删基线条目，并在注释里写明覆盖去哪了 |
+
+**删条目的硬要求**：跑绿 ⇒ `--baseline` 会报 `FIXED?` 并要求删条目；反过来说，条目没删就等于没修好。
+ (test: known-red 清零（7→1）+ flaky 自动登记 + 硬编码端口检查（#406）)

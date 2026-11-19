@@ -363,7 +363,7 @@ const run = async () => {
     await browser.close()
   }
 
-  // ── 用例 3：传输中断网 → 立刻「网络已断开」（不等 183 秒） ──────────────────
+  // ── 用例 3：链路不可达 → 立刻报 unreachable 档文案（不等 183 秒，也不谎称用户断网） ──
   {
     console.log('\n[case 3] 传输中断网：第 2 块起 IOException')
     const { browser, page, consoleErrors } = await openApp({
@@ -373,8 +373,22 @@ const run = async () => {
       rejectMessage: 'java.io.IOException: network is unreachable',
     })
     await startUrlImport(page)
-    const { text, elapsed } = await sampleUntil(page, (value) => /网络已断开/.test(value))
-    check('提示「网络已断开，请检查网络后重试」', /网络已断开，请检查网络后重试/.test(text), text.slice(0, 200))
+    // 文案口径（#18 / #111 起，见 src/services/chat/history/importFailure.ts）：
+    // 「路由不可达 / DNS 解析不到 / 链路瞬断」只敢说「连不上导入服务」，**不再**说「网络已断开」——
+    // 真离线（navigator.onLine === false 或 net::ERR_INTERNET_DISCONNECTED）才用那一句。
+    // 本用例注入的是 IOException: network is unreachable（链路层不可达），归 unreachable 档，
+    // 老断言仍按「网络已断开」期待 → 恒红（#406 复核）。
+    const { text, elapsed } = await sampleUntil(page, (value) => /无法连接导入服务|网络已断开/.test(value))
+    check(
+      '提示「暂时无法连接导入服务，请稍后重试」（unreachable 档，不谎称用户断网）',
+      /暂时无法连接导入服务，请稍后重试/.test(text),
+      text.slice(0, 200)
+    )
+    check(
+      '不把「链路不可达」说成用户断网（#18）',
+      !/网络已断开/.test(text),
+      text.slice(0, 200)
+    )
     check(`报错耗时 < 15s（实测 ${elapsed}ms）`, elapsed < 15_000, `${elapsed}ms`)
     check('出现「重试」按钮', (await page.getByRole('button', { name: '重试', exact: true }).count()) === 1)
     check('会话数仍为 0', (await dbCounts(page)).sessions === 0)

@@ -79,6 +79,17 @@ STANDARD_DIST_DIR=$PWD/dist-standard DIST_DIR=$PWD/dist-internal pnpm test:integ
 - 靠 `APP_URL` 的 13 个历史用例由 `run-layer` 注入一份共享标准产物服务（端口 0），
   所以「忘了手起 5181」不再等于整批假红；想指着别的服务跑，显式给 `APP_URL` 即可。
 
+**静态检查（#406）**：写死的端口是假绿的源头，所以有门禁盯着：
+
+```bash
+node scripts/check-hardcoded-ports.mjs            # 警告模式（CI 友好，退出码 0）
+node scripts/check-hardcoded-ports.mjs --strict   # 有警告即退出 1（接线后用）
+```
+
+它只认「真的会被连的端口」：跑法注释、`process.env.X || 5181` 这类有 env 出口的兜底、
+栈帧/产物路径夹具里的端口都不算违规；裸端口（`http://127.0.0.1:5181`、`server.listen(5294)`、
+`const PORT = 5418`）才会被点名。规则与方法见 `docs/TESTING-POLICY.md` §10.3。
+
 ## 4. 产物守卫与 `SKIP(env)`
 
 每个用例开跑前都会自检环境，不满足就打印原因并 `exit 77`（runner 汇总成 `SKIP(env)`，**不算失败**）。
@@ -135,26 +146,53 @@ STANDARD_DIST_DIR=$PWD/dist-standard DIST_DIR=$PWD/dist-internal pnpm test:integ
 判定原则：**只用「相对基线没有新增失败」做门禁**，不要求基线本身全绿；
 但 `known-red` 必须带原因与 Issue，修好后从清单里删掉（否则 `FIXED?` 会一直提醒）。
 
-## 6. 当前基线（2026-11-18，origin/main@b7b5750 / 1.4.0-beta.8 线）
+## 6. flaky：失败自动重跑一次 + 登记 + 隔离（#406）
 
-- 24 个集成文件：**23 条期望通过 + 1 条 known-red**。
-- 实测：
+跑集成层时**每个失败用例会自动重跑 1 次**（`--no-retry` 关闭）。三种结局：
+
+| 结局 | 输出 | 含义 |
+| --- | --- | --- |
+| 重跑通过 | `<< PASS(flaky) <文件>` + 末尾 `FLAKY <文件>` | 当绿放行，但**已登记**（`tests/flaky-registry.json`、`--json` 的 `flaky` 字段、CI job summary） |
+| 重跑仍红 | `<< FAIL <文件>` | 真红，照旧失败 |
+| 连续 3 次 flaky | 下次起 `QUARANTINED <文件>`（跳过） | 隔离区；每 7 天提醒一次修复，跑绿自动解除 |
+
+**不许用重跑掩盖真红**：重跑通过、但 21 天内已经「修好又坏」累计 ≥2 次 → 直接 `FAIL`
+（终端会写 `⚠ … 按真红处理`）。规则与判据见 `docs/TESTING-POLICY.md` §10。
+
+```bash
+node tests/run-layer.mjs integration --baseline            # 默认就带重跑
+node tests/run-layer.mjs integration --no-retry            # 关掉重跑（排查 flaky 时用）
+node tests/run-layer.mjs integration --case quota-exhausted.test.mjs   # --case 不受隔离区拦截
+```
+
+> CI 侧不需要改 `.github/workflows/ci.yml`：重跑是 runner 的默认行为，`FLAKY` 名单由 runner 自己写进
+> `GITHUB_STEP_SUMMARY`。登记簿在 CI 里是 ephemeral 的（跑完即弃），PR 上能查的是 job summary 与
+> `l1-report-*.json` 这两个留痕出口。
+
+## 7. 当前基线（2026-11-20，origin/main@1114607 / 1.4.0-beta.10 线）
+
+- 45 个集成文件：**44 条期望通过 + 1 条 known-red**（`tests/integration-baseline.json` 登记 39 条，
+  其余文件没有条目 = 按 `pass` 判）。
+- 实测（本机，dist / dist-standard / dist-scroll 均本地构建，#406 复核轮）：
 
 ```
-APP_URL=http://127.0.0.1:5301 node tests/run-layer.mjs integration --baseline --timeout-ms 300000
+node tests/run-layer.mjs integration --baseline --timeout-ms 420000
 
-Total 24: PASS 23, FAIL 1, SKIP(env) 0; elapsed 666232ms
-本次失败 1 / 基线登记红 1 / 新增失败 0 / 已转绿 0 / 跳过(环境) 0（共 24 个文件）
+Total 45: PASS 44, FAIL 1, SKIP(env) 0, NODE-SKIP 0; elapsed 1063887ms
+本次失败 1 / 基线登记红 1 / 新增失败 0 / 已转绿 0 / 跳过(环境) 0（共 45 个文件）
+  KNOWN-RED  tests/integration/upstream-html.test.mjs（基线已登记，不算新增）
 相对基线没有新增失败 ✅
 ```
 
-- 那条 known-red 是 `full-acceptance`：openai 兼容渠道点「测试」后探测请求未带 `Authorization`
-  （期望 `Bearer <key>`，实测 undefined）。在**未改动的 origin/main** 上同样复现，与本轮改动无关，
-  按「真实缺陷不进本单」的规则登记在 `integration-baseline.json` 的 `known-red` 段，待单开 Issue。
-- 历史遗留的 6 条红已按「契约过期 / 环境依赖」修掉（改断言对齐现状、打桩集中到 fixture、
-  端口自动发现、产物自述校验），修复明细见 Issue #19 的评论。
+- 唯一那条 known-red 是 `upstream-html`：上游返回 `200 + text/html` 时界面给的是「空响应」而不是
+  「上游返回网页而非接口数据」。根因在 `describe.ts` → `classifyErrorSignature({status:200})` 把
+  `client.ts` 已经分好的 `upstream_returned_html` 盖成 `emptyStream`，是**真实产品缺陷**，
+  已开 issue #434 跟踪（基线 `followUp` 指向它）。**不在测试 PR 里改产品。**
+- #406 之前那批 known-red（`diagnostics-contract` / `log-viewer` / `mode-switch` /
+  `url-import-stages` / `full-acceptance` / `feedback-scroll`）逐条归因为「断言过时」或
+  「测试自身 bug」，改测试后转绿并删除条目；归因与证据见 Issue #406 的评论。
 
-## 7. 排查顺序（红了一个文件时）
+## 8. 排查顺序（红了一个文件时）
 
 1. 看 runner 打印的 `↳` 原因：`SKIP(env)` 说明是环境，先按提示准备产物/端口，别改代码。
 2. 真 `FAIL`：先确认 `dist`/`dist-standard` 是**这次**构建的（`cat dist-standard/build-info.json` 看 `builtAt`）。
@@ -163,7 +201,7 @@ Total 24: PASS 23, FAIL 1, SKIP(env) 0; elapsed 666232ms
 4. 怀疑产品缺陷 → 保留失败、开 Issue，并在 `integration-baseline.json` 里登记 `known-red` + 原因。
 5. 单文件复现：`APP_URL=… node tests/integration/<名字>.test.mjs`；跑完清掉自己起的服务。
 
-## 8. 相关
+## 9. 相关
 
 - 分层与门禁分级：`docs/TESTING-POLICY.md`
 - 门禁自身的负向对照（新增门禁前必读）：`docs/TESTING-POLICY.md` 第 9 节 + `tests/gates/README.md`
