@@ -9,6 +9,15 @@
  * 1. 只裁历史：系统前缀（system）由请求侧单独拼，不经过这里；本轮提问与续写前缀永远保留；
  * 2. 成对裁剪：按「提问 + 回答」整轮丢弃，不会留下没有提问的回答；
  * 3. 默认值保守：宁可少裁 —— 正常长度的会话不该被裁，只有真的长到离谱才会动手。
+ *
+ * #345 追加的三条（上游前缀缓存的硬要求，见 `CONTEXT_LOW_WATERMARK_RATIO`）：
+ * 4. **一次性**：越线后一次裁到低水位，而不是「刚好塞满」——否则裁剪边界每轮前移一格，
+ *    第一条历史消息每轮都不一样，前缀缓存从第一个 token 起全部作废（0.19 分 → 4.70 分）；
+ * 5. **冻结**：裁剪边界一旦形成就记住（`readRoundAnchor` / `rememberRoundAnchor`），
+ *    只要预算不变、边界那一轮还在历史里，后续轮次原样沿用 —— 不重算、不回填、不重新序列化，
+ *    同一轮重发（重试 / 重新生成）拿到的请求体逐字节相同；
+ * 6. **保格式**：只做整轮丢弃，绝不做空白 / 换行 / 缩进层面的改写 —— 历史正文原样透传，
+ *    角色扮演等场景的排版不会被压平（一次真实事故：服务端空白归一让输出风格跟着漂）。
  */
 
 import { LIMITS } from '../limits.js'
@@ -91,13 +100,25 @@ export const estimateChars = (value: unknown): number => estimateValue(value)
 export const estimateTokens = (chars: number): number => Math.ceil(chars / CHARS_PER_TOKEN)
 
 /**
- * 双闸裁剪：从最新一轮往回累积，任一闸超限就停；永远至少保留最近一轮（哪怕它自己就超预算），
- * 这样「只剩最后一轮」的情况仍然发得出去，不会因为预算过小把整段历史裁空。
+ * 低水位比例（#345）：**越过上限后一次裁到上限的这个比例**，而不是只丢一轮。
+ *
+ * 为什么必须这样：上游上下文缓存按「请求前缀逐字节匹配」计费。旧实现「刚好塞满上限」
+ * 的窗口会让**裁剪边界随历史增长每轮前移一格** —— 每加一轮就多丢最旧的一轮，
+ * 于是第一条历史消息每轮都不一样，前缀缓存从第一个 token 起全部作废，
+ * 命中价 0.19 分 vs 未命中价 4.70 分（实测差 25 倍，见 #345）。
+ *
+ * 越线时留出一半余量（迟滞 / hysteresis），边界就只在**越线的那些轮**动一次，
+ * 之后几十轮都不动 —— 前缀缓存在绝大多数轮次里命中。
+ * 代价是越线那一轮多丢掉一些历史：这是「一次性裁够」换「不再每轮重算」的交易。
  */
-export const selectRoundWindow = (
+export const CONTEXT_LOW_WATERMARK_RATIO = 0.5
+
+/** 双闸裁剪：从最新一轮往回累积，任一闸超限就停；永远至少保留最近一轮（哪怕它自己就超预算），
+ * 这样「只剩最后一轮」的情况仍然发得出去，不会因为预算过小把整段历史裁空。 */
+const windowFor = (
   roundChars: number[],
   budget: ContextBudget,
-  fixedChars = 0
+  fixedChars: number
 ): { kept: number; chars: number; reason: ContextTrimReport['reason'] } => {
   const limitChars = budget.maxTokens * CHARS_PER_TOKEN
   let kept = 0
@@ -121,6 +142,108 @@ export const selectRoundWindow = (
   }
   const reason = tokensHit && roundsHit ? 'both' : tokensHit ? 'tokens' : roundsHit ? 'rounds' : 'none'
   return { kept, chars, reason }
+}
+
+/** 低水位预算：越线后一次性裁到的目标（两道闸同时按比例收紧） */
+export const lowWatermarkBudget = (budget: ContextBudget): ContextBudget => ({
+  maxTokens: Math.max(1, Math.floor(budget.maxTokens * CONTEXT_LOW_WATERMARK_RATIO)),
+  maxRounds: Math.max(1, Math.floor(budget.maxRounds * CONTEXT_LOW_WATERMARK_RATIO)),
+})
+
+/**
+ * 裁剪锚点（#345「冻结」）：记住**上一轮实际用的裁剪边界**，下一轮原样沿用。
+ *
+ * 为什么非要记住：只做低水位（下面 `selectRoundWindow` 的第 2 步）还不够 ——
+ * 「保留能装下的最近若干轮」这个规则本身每轮都会往前挪一格（历史又长了一轮，
+ * 于是最旧的一轮被挤出去），边界照样每轮变，缓存照样全废。
+ * 把边界钉死之后，历史只会**在尾部增长**，同一个请求前缀就一直在，命中缓存。
+ *
+ * 锚点跟着会话走（`anchorKey` = 会话 id），并且只在两件事都不变时有效：
+ * 预算没改、边界那一轮还在历史里（用户删/改历史后自然失效，重新算一次）。
+ */
+type RoundAnchor = { fromId: string; budget: string }
+
+const anchors = new Map<string, RoundAnchor>()
+
+/** 锚点表上限：只是缓存，条目多了按最久未用淘汰（不影响正确性，只影响退化到「重算一次」） */
+const ANCHOR_LIMIT = 64
+
+const budgetKey = (budget: ContextBudget): string => `${budget.maxTokens}/${budget.maxRounds}`
+
+/** 读锚点：上一轮边界那一轮的提问 id（预算变了就作废） */
+export const readRoundAnchor = (key: string, budget: ContextBudget): string | undefined => {
+  const anchor = anchors.get(key)
+  return anchor && anchor.budget === budgetKey(budget) ? anchor.fromId : undefined
+}
+
+/** 记锚点：fromId 是「本轮第一个被保留的轮次」的提问 id */
+export const rememberRoundAnchor = (
+  key: string,
+  fromId: string,
+  budget: ContextBudget
+): void => {
+  // 重新插入以维持「最近使用」顺序
+  anchors.delete(key)
+  anchors.set(key, { fromId, budget: budgetKey(budget) })
+  while (anchors.size > ANCHOR_LIMIT) {
+    const oldest = anchors.keys().next().value
+    if (oldest === undefined) {
+      break
+    }
+    anchors.delete(oldest)
+  }
+}
+
+/** 清空锚点（预算变更 / 用例隔离用） */
+export const resetRoundAnchors = (): void => {
+  anchors.clear()
+}
+
+/**
+ * 选出本轮要保留的历史轮次。
+ *
+ * 三步，按优先级：
+ * 1. **未越线**：原样保留全部轮次（正常会话永远走这一支，与 #122 完全一致）——
+ *    这一支不看锚点：装得下就全发，别为了「保持窗口」白丢历史；
+ * 2. **上一轮的边界还在上限内**：原样沿用（#345 的「冻结」）——
+ *    这条是前缀稳定的真正来源：历史只在尾部增长，请求前缀逐字节不变；
+ * 3. **必须新裁一次**：一次裁到低水位（`CONTEXT_LOW_WATERMARK_RATIO`），
+ *    让下一次移动边界发生在「又长了一整截」之后，而不是下一轮。
+ *
+ * `reason` 记录的是**越线时**撞到的那道闸（tokens / rounds / both）：
+ * 与「这一枪实际丢了比一轮更多」并不矛盾——低水位是越线的后果，不是另一个闸。
+ */
+export const selectRoundWindow = (
+  roundChars: number[],
+  budget: ContextBudget,
+  fixedChars = 0,
+  anchoredKept?: number
+): { kept: number; chars: number; reason: ContextTrimReport['reason'] } => {
+  const natural = windowFor(roundChars, budget, fixedChars)
+  const limitChars = budget.maxTokens * CHARS_PER_TOKEN
+  // 1. 装得下就全发（与 #122 一致；锚点不参与这一支）
+  if (natural.reason === 'none') {
+    return natural
+  }
+  // 2. 沿用上一轮的边界：只要它仍然落在两道闸之内
+  if (
+    typeof anchoredKept === 'number' &&
+    anchoredKept >= 1 &&
+    anchoredKept <= roundChars.length &&
+    anchoredKept <= budget.maxRounds
+  ) {
+    let chars = fixedChars
+    for (let index = roundChars.length - anchoredKept; index < roundChars.length; index += 1) {
+      chars += roundChars[index]
+    }
+    if (chars <= limitChars) {
+      return { kept: anchoredKept, chars, reason: natural.reason }
+    }
+  }
+  // 3. 一次裁到低水位
+  const low = windowFor(roundChars, lowWatermarkBudget(budget), fixedChars)
+  // 低水位只可能保留更少；预算小到取整后反而更宽松时（maxTokens: 1 之类）退回自然窗口
+  return low.kept <= natural.kept ? { ...low, reason: natural.reason } : natural
 }
 
 /** 空的裁剪统计，用于「没裁剪」时的统一口径 */
@@ -159,12 +282,19 @@ export const getContextBudget = (): ContextBudget => ({ ...active })
 
 /** 改默认预算（缺省字段保持原值）；返回生效后的完整预算 */
 export const setContextBudget = (patch: Partial<ContextBudget>): ContextBudget => {
-  active = resolveContextBudget(patch)
+  const next = resolveContextBudget(patch)
+  // 预算改了：旧锚点是按旧预算裁出来的，边界要重新算一次（#345）
+  if (budgetKey(next) !== budgetKey(active)) {
+    resetRoundAnchors()
+  }
+  active = next
   return getContextBudget()
 }
 
 export const resetContextBudget = (): ContextBudget => {
   active = { ...DEFAULT_CONTEXT_BUDGET }
+  // 预算回到出厂值：旧锚点算出来的边界不再有参考价值（#345）
+  resetRoundAnchors()
   return getContextBudget()
 }
 

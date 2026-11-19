@@ -1403,7 +1403,10 @@ const streamReply = async (sessionId: string, initial: AssistantMessage, request
             prepared.question,
             prepared.prefix,
             thinking,
-            latestReminder
+            latestReminder,
+            // 裁剪边界跟着会话走（#345）：同一会话的后续轮次沿用同一个边界，
+            // 请求前缀逐字节稳定，上游上下文缓存才会命中
+            { anchorKey: sessionId }
           )
         )
         // 附件已补齐、请求即将发出：prepMs 到此为止，后面的耗时才是「等上游」
