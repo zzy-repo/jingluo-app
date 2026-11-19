@@ -1448,6 +1448,8 @@ const streamReply = async (sessionId: string, initial: AssistantMessage, request
               chunks: abortedTiming.chunks,
               chars: abortedTiming.chars,
             }),
+            // 与兄弟事件 chat_first_token / chat_done 同口径（#315）：中断也要能按模型切片
+            model: initial.model ?? getModel(),
           })
           break
         }

@@ -1,11 +1,8 @@
 {
   "//": "诊断埋点门禁的存量登记簿（#301 / 维度 9）。两段都只能减不能增：代码里修好之后，对应的登记必须删掉，否则 check-log-coverage 会报「基线失效」并 FAIL。",
   "knownGaps": [
-    "update-check",
     "payment-chain",
-    "attachment-upload",
-    "i18n-missing-key",
-    "url-import-done"
+    "i18n-missing-key"
   ],
   "//metaDebt": "按 `文件::kind::msg 或 action 字面量#组内序号` 定位（不用行号，避免代码漂移；序号避免同组新增一条被无差别豁免）。每一条在 #301 盘点表 3 里都有对应行，整改归维度 2。",
   "metaDebt": [
@@ -13,7 +10,6 @@
     "src/components/settings/settingsDialogState.ts::nav::open-settings#1",
     "src/services/chat/store.ts::nav::select-session#1",
     "src/services/chat/backup.ts::import_stage::import: write staging stores#1",
-    "src/services/chat/history/urlImport.ts::warning::import cancelled by user#1",
     "src/services/diagnostics/collector.ts::warning::#1",
     "src/services/diagnostics/collector.ts::error::#4"
   ]
