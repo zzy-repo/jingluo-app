@@ -152,6 +152,16 @@ public class AppUpdatePlugin extends Plugin {
         return ((Number) raw).longValue();
     }
 
+    /**
+     * 唯一的进度帧出口（#376）。满格（received == total）只有两个调用点，且都在 verify() 之后：
+     * 真下载收尾与缓存复用命中。校验失败 / 取消一律不发满格，JS 侧按 reject 显示失败。
+     */
+    private void reportProgress(String id, long received, long total) {
+        JSObject progress = new JSObject();
+        progress.put("id", id); progress.put("received", received); progress.put("total", total);
+        notifyListeners("downloadProgress", progress);
+    }
+
     @PluginMethod
     public void download(PluginCall call) {
         String id = call.getString("id");
@@ -170,6 +180,8 @@ public class AppUpdatePlugin extends Plugin {
                     try {
                         verify(target, hash, size, versionCode, transfer);
                         if (transfer.cancelled) throw new Exception("CANCELLED");
+                        // 缓存命中同样是「已校验、可安装」的终态：补一帧满格，别让进度停在 0（#376）
+                        reportProgress(id, size, size);
                         JSObject result = new JSObject(); result.put("cached", true); call.resolve(result); return;
                     } catch (Exception invalid) {
                         if (transfer.cancelled) throw invalid;
@@ -202,17 +214,19 @@ public class AppUpdatePlugin extends Plugin {
                         if (received > size) throw new Exception("SIZE_MISMATCH");
                         output.write(buffer, 0, count);
                         long now = android.os.SystemClock.elapsedRealtime();
-                        if (now - lastEvent >= 100 || received == size) {
-                            JSObject progress = new JSObject(); progress.put("id", id);
-                            progress.put("received", received); progress.put("total", size);
-                            notifyListeners("downloadProgress", progress); lastEvent = now;
+                        // 循环里只发 received < size 的帧（#376）：满格 = 「校验通过、可安装」，
+                        // 不能由「字节凑齐了」推导——校验在循环之后，失败是常态之一（错 SHA / 异签 / 异变体）。
+                        if (received < size && now - lastEvent >= 100) {
+                            reportProgress(id, received, size); lastEvent = now;
                         }
                     }
                     output.getFD().sync();
                 }
+                // 校验之前不对外宣称「下完了」：这一帧 100% 只在 verify() 通过 + 落成最终文件名之后补发。
                 verify(temporary, hash, size, versionCode, transfer);
                 if (transfer.cancelled) throw new Exception("CANCELLED");
                 if (!temporary.renameTo(target)) throw new Exception("CACHE_RENAME");
+                reportProgress(id, size, size);
                 JSObject result = new JSObject(); result.put("cached", false); call.resolve(result);
             } catch (Exception error) {
                 call.reject(transfer.cancelled ? "已取消下载" : "下载或校验失败，请重试", transfer.cancelled ? "CANCELLED" : error.getMessage());
