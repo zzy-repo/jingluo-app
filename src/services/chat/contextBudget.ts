@@ -11,6 +11,8 @@
  * 3. 默认值保守：宁可少裁 —— 正常长度的会话不该被裁，只有真的长到离谱才会动手。
  */
 
+import { LIMITS } from '../limits.js'
+
 /** 请求侧上下文预算：token 估算上限 + 轮次上限双闸 */
 export type ContextBudget = {
   /** 历史 + 系统快照 + 本轮提问的估算 token 上限 */
@@ -53,7 +55,10 @@ export const MESSAGE_OVERHEAD_CHARS = 64
  * 明显高于日常会话（几十轮、几千字符一轮），因此正常使用不会被裁；只有几百轮的老会话才会触发。
  * 可调入口：`setContextBudget()` 全局配置，或 `toRequestMessages(..., { budget })` 单次覆盖。
  */
-export const DEFAULT_CONTEXT_BUDGET: ContextBudget = { maxTokens: 120_000, maxRounds: 200 }
+export const DEFAULT_CONTEXT_BUDGET: ContextBudget = {
+  maxTokens: LIMITS.contextBudget.maxTokens,
+  maxRounds: LIMITS.contextBudget.maxRounds,
+}
 
 const positive = (value: number | undefined, fallback: number) =>
   typeof value === 'number' && Number.isFinite(value) && value > 0 ? Math.floor(value) : fallback

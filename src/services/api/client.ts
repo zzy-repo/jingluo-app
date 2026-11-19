@@ -13,6 +13,7 @@ import { parseModelPayload } from './modelPayload.js'
 export { parseModelPayload, pickModelIds } from './modelPayload.js'
 import { readMessageEvent } from './parseEvent.js'
 import { StreamIdleTimeoutError, readServerSentEvents } from './sse.js'
+import { LIMITS } from '../limits.js'
 import type {
   ApiErrorBody,
   CreateMessageRequest,
@@ -136,9 +137,9 @@ const isHtmlResponse = (response: Response): boolean =>
  * 只约束「拿到响应头」这一段——流式回答可能合法地持续很久，不在这里掐；
  * 正文读到一半断掉仍由 stream_interrupted 那条路负责（#41）。
  */
-export const DEFAULT_REQUEST_TIMEOUT_MS = 15000
+export const DEFAULT_REQUEST_TIMEOUT_MS = LIMITS.requestTimeoutMs
 
-let requestTimeoutMs = DEFAULT_REQUEST_TIMEOUT_MS
+let requestTimeoutMs: number = DEFAULT_REQUEST_TIMEOUT_MS
 
 /** 全局超时（毫秒）：合法正数生效，0 / NaN / 非数字一律回到默认，不做成「永不超时」 */
 export const setRequestTimeout = (ms: number): void => {
@@ -159,9 +160,9 @@ export const getRequestTimeout = (): number => requestTimeoutMs
  *   超时要在那之前落地，否则用户只看到一句「要不要停」却永远等不到结论；
  * - 这是「空闲」口径不是总时长：每读到一段新数据就重新计时，长回答持续出字永远不会被杀。
  */
-export const STREAM_IDLE_TIMEOUT_MS = 45000
+export const STREAM_IDLE_TIMEOUT_MS = LIMITS.streamIdleTimeoutMs
 
-let streamIdleTimeoutMs = STREAM_IDLE_TIMEOUT_MS
+let streamIdleTimeoutMs: number = STREAM_IDLE_TIMEOUT_MS
 
 /** 空闲超时（毫秒）：合法正数生效，0 / NaN / 非数字一律回到默认，不做成「永不超时」 */
 export const setStreamIdleTimeout = (ms: number): void => {

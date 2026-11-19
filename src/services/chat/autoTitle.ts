@@ -32,6 +32,7 @@ import { authHeaders, request } from '../api/client.js'
 import { readServerSentEvents } from '../api/sse.js'
 import { translate } from '../../i18n/index.js'
 import { autoTitleLimiter, isAutoTitleThrottled } from './autoTitleQueue.js'
+import { LIMITS } from '../limits.js'
 import { createTitleStreamReader, type TitleStreamProtocol } from './autoTitleStream.js'
 
 /**
@@ -49,11 +50,11 @@ export const autoTitleSystemPrompt = (): string =>
   ].join('\n')
 
 /** 超时上限：到点就放弃，用本地截取兜底 */
-export const AUTO_TITLE_TIMEOUT_MS = 8000
+export const AUTO_TITLE_TIMEOUT_MS = LIMITS.autoTitle.timeoutMs
 /** 输出上限：标题用不到更多 token */
-export const AUTO_TITLE_MAX_OUTPUT_TOKENS = 32
+export const AUTO_TITLE_MAX_OUTPUT_TOKENS = LIMITS.autoTitle.maxOutputTokens
 /** 输入上限：只喂第一条消息，超出按字节截断（硬上限，防止恶意长文烧钱） */
-export const AUTO_TITLE_MAX_INPUT_BYTES = 2048
+export const AUTO_TITLE_MAX_INPUT_BYTES = LIMITS.autoTitle.maxInputBytes
 /** 清洗后的标题最长保留多少字符（超出说明模型没按要求输出，直接截断） */
 export const AUTO_TITLE_MAX_CHARS = 48
 /** 本地截取：取首条消息的前多少个字符 */

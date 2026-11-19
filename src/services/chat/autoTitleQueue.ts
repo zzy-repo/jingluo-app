@@ -15,12 +15,13 @@
  * 单测用 `autoTitleStats()` / `resetAutoTitleStats()` 读口径。
  */
 import { classifyApiError } from '../api/errors.js'
+import { LIMITS } from '../limits.js'
 
 /** 并发上限默认值：保守取 2（同时 2 个非流式请求，低端机内存抖动可控） */
-export const AUTO_TITLE_MAX_CONCURRENCY = 2
+export const AUTO_TITLE_MAX_CONCURRENCY = LIMITS.autoTitle.concurrency
 
 /** 队列长度默认值：并发 2 + 队列 6 → 同时在系统内的请求最多 8 个 */
-export const AUTO_TITLE_MAX_QUEUE = 6
+export const AUTO_TITLE_MAX_QUEUE = LIMITS.autoTitle.maxQueue
 
 /** 一次请求的结局（用于记账）。`ok` / `empty` 都算请求成功，只是清洗后有没有标题的区别 */
 export type AutoTitleOutcome = 'ok' | 'empty' | 'throttled' | 'failed'

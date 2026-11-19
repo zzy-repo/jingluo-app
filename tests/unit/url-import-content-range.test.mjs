@@ -14,12 +14,27 @@
 // totalBytes 观察（它就是 UI 与详情里显示的那个字段）。
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
+import { existsSync } from 'node:fs'
 import { registerHooks } from 'node:module'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 
 const stub = (name) => new URL(`../fixtures/url-import-stubs/${name}`, import.meta.url).href
 const limitModule = new URL('../../src/services/chat/history/importLimit.ts', import.meta.url).href
 // 失败原因分档（issue #111）同样用真模块：它不碰浏览器/网络，没有替换的必要
 const failureModule = new URL('../../src/services/chat/history/importFailure.ts', import.meta.url).href
+
+/**
+ * 源码里的相对导入写的是 `.js`（NodeNext 约定），实际文件是 `.ts`；node 不会自己改后缀。
+ * 与 import-size-limit.test.mjs 同一套做法：本层要跑真实的 urlImport 链路，
+ * 而 #275 之后它多了一个依赖 src/services/limits.ts（阈值表）。
+ */
+const asTypescript = (specifier, parentURL) => {
+  if (!parentURL || !specifier.startsWith('.') || !specifier.endsWith('.js')) {
+    return null
+  }
+  const target = fileURLToPath(new URL(specifier, parentURL)).replace(/\.js$/, '.ts')
+  return existsSync(target) ? pathToFileURL(target).href : null
+}
 
 registerHooks({
   resolve(specifier, context, nextResolve) {
@@ -41,6 +56,10 @@ registerHooks({
     }
     if (specifier === './importFailure.js') {
       return { url: failureModule, shortCircuit: true }
+    }
+    const typescript = asTypescript(specifier, context.parentURL)
+    if (typescript !== null) {
+      return { url: typescript, shortCircuit: true }
     }
     return nextResolve(specifier, context)
   },

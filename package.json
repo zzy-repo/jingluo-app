@@ -42,6 +42,7 @@
     "check:gutter": "node scripts/check-scrollbar-gutter-fallback.mjs",
     "check:container": "node scripts/check-container-query-fallback.mjs",
     "check:capabilities": "node scripts/check-capabilities.mjs",
+    "check:limits": "node scripts/check-limits.mjs",
     "measure:scroll-shift": "node scripts/measure-narrow-scroll-shift.mjs"
   },
   "dependencies": {

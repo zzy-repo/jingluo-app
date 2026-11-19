@@ -10,6 +10,7 @@ import type {
   TrailPage,
   TrailTone,
 } from '../../services/ours/trail.js'
+import { LIMITS } from '../../services/limits.js'
 
 /**
  * 支付记录时间线的**展示层 + 全部判定逻辑**（Issue #189）。
@@ -56,13 +57,13 @@ export const PAYMENT_TRAIL_PAGE_SIZE = 20
  * 已支付但卡密还没发出来的订单会自己刷新几次（最典型的「等几秒」场景：
  * 支付平台回调 → 发卡，通常 1~3 秒）。4 秒一次，够快也不会把弱网打满。
  */
-export const TRAIL_POLL_INTERVAL_MS = 4000
+export const TRAIL_POLL_INTERVAL_MS = LIMITS.paymentTrail.pollIntervalMs
 
 /**
  * 自动刷新封顶 2 分钟。再久就是真出问题了（缺货 / 上游卡住），
  * 一直轮询既费流量又让用户以为「再等等就好」，不如停下来让人点刷新或找客服。
  */
-export const TRAIL_POLL_MAX_MS = 120000
+export const TRAIL_POLL_MAX_MS = LIMITS.paymentTrail.pollMaxMs
 
 /**
  * 渠道门禁：**只有自有渠道（ours）才显示支付记录入口**。

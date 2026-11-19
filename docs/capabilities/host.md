@@ -4,9 +4,9 @@
 >
 > **快照基准：`9e9f231`**（`origin/main` tip，2026-11-19 12:28:21 +0800）· 采集时间：2026-11-19 12:37 (+0800)
 >
-> **扫描范围**：`src/**` 的 **196** 个源文件。
+> **扫描范围**：`src/**` 的 **197** 个源文件。
 >
-> 拆分：`.ts` 141 / `.tsx` 54 / `.html` 1 = 196。上一版写 190，是缺了 `#237`（`fetch` 通道计数、`readBytesOf`）与 `#243`（设备指纹）新增的 5 个文件。
+> 拆分：`.ts` 142 / `.tsx` 54 / `.html` 1 = 197。上一版写 190，是缺了 `#237`（`fetch` 通道计数、`readBytesOf`）与 `#243`（设备指纹）新增的 5 个文件。
 >
 > **本盘点只审计、只出单、只做工具，不修任何代码。** 每条真实漏洞都另开独立 Issue（见「真实漏洞与拆单」），修复在各自单里做，不在 #209 的 PR 里改产品代码。
 >
@@ -171,7 +171,7 @@
 - `:1037-1038` `if (typeof window.fetch !== 'function') return` / `const original = window.fetch.bind(window)` —— 把当时那个函数当作「原生 fetch」；
 - `:1078` `bytes: await readBytesOf(response)` —— 在把 `response` 交还调用方**之前** await（正因为这一行，`readBytesOf` 里任何会等到流关闭的读法都会卡住 SSE，见 #211）；
 - `:1108` `window.fetch = patched` —— 页面级替换；
-- `:1170-1240` `installCapacitorHttpHook()` —— 另外再包一层 `CapacitorHttp.get/post/…`；
+- `:1171-1241` `installCapacitorHttpHook()` —— 另外再包一层 `CapacitorHttp.get/post/…`；
 - `:1385-1399` `installHooks()` 由 `src/main.tsx:66` 的 `initDiagnostics()` 在启动时调用，只有显式传 `installHooks: false` 才不装 → 生产包里这层包装**一直是活的**。
 
 **Capacitor 侧会在什么条件下再换一次：** `native-bridge.js:431` 先存 `win.CapacitorWebFetch = window.fetch`，`:458` 再 `window.fetch = async (…) => …`，整段由 `doPatchHttp` 控制；Android 上 `doPatchHttp` 要求 `CapacitorHttp.isEnabled()`，而它读的是 `plugins.CapacitorHttp.enabled`（默认 `false`）。**本仓 `capacitor.config.ts` 没有这个条目，所以今天 fetch 还是原生的。** 风险不在「现在就挂」，而在于：

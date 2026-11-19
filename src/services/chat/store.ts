@@ -19,6 +19,7 @@ import {
 } from '../diagnostics/collector.js'
 import { getApiKey, getCurrentSpec, getModel } from '../api/apiConfig.js'
 import { requestGates } from '../api/providers.js'
+import { LIMITS } from '../limits.js'
 import { useSettings } from '../settings.js'
 import { generateSessionTitle } from './autoTitle.js'
 import {
@@ -65,9 +66,9 @@ const SESSION_CACHE_LIMIT = 5
 /** 安全审核固定开启，所有请求都走扩展模式 */
 const SAFETY_CHECK = { level: 'high' } as const
 /** 自动重试的最多次数（不含首次请求）：附件补传、断网、5xx、超时共用这一个上限 */
-export const STREAM_RETRY_LIMIT = 2
+export const STREAM_RETRY_LIMIT = LIMITS.streamRetryLimit
 /** 退避基数，第 n 次重试等待 2^n 倍；连续失败达到上限就放弃，把原始报错展示出来 */
-const RETRY_BASE_DELAY = 1000
+const RETRY_BASE_DELAY = LIMITS.retryBaseDelayMs
 
 /** 阅读链接始终开启，智能搜索开关控制是否另行声明搜索工具（含边想边搜）。 */
 const serverTools = (search: boolean): CreateMessageRequest['tools'] => {

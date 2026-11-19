@@ -1,6 +1,7 @@
 import { Capacitor, CapacitorHttp, type HttpResponse } from '@capacitor/core'
 import { errorMeta, record, recordAction, recordEvent, redactUrl } from '../../diagnostics/collector.js'
 import { importHistory } from '../backup.js'
+import { LIMITS } from '../../limits.js'
 import { BackupError, fail } from './errors.js'
 import {
   ARCHIVE_READ_FAILURE_KEY,
@@ -56,8 +57,8 @@ const CHUNK_TARGET_MS = 1200
 const CHUNK_RETRIES = 1
 
 /** 连接超时；读超时按块，断网/丢包最多等一块就报错，而不是等到 183 秒。 */
-const CONNECT_TIMEOUT_MS = 10_000
-const CHUNK_READ_TIMEOUT_MS = 12_000
+const CONNECT_TIMEOUT_MS = LIMITS.importConnectMs
+const CHUNK_READ_TIMEOUT_MS = LIMITS.importChunkReadMs
 
 /**
  * 停滞判定窗口：**唯一**的失败判定依据——连续这么久「没有任何新字节」才判 stalled。
@@ -67,13 +68,13 @@ const CHUNK_READ_TIMEOUT_MS = 12_000
  * 而字节其实一直在增长。慢但在推进的链路只能续期，不能判死；真正挂死（CapacitorHttp
  * 原生 Promise 永久 pending、对端不再吐数据）的共同特征是「字节停住」，那才是要判的东西。
  */
-const DOWNLOAD_STALL_MS = 40_000
+const DOWNLOAD_STALL_MS = LIMITS.importStallMs
 
 /**
  * 防御性总上限：只防「一直在爬但永远下不完」的病态链路，不参与日常判定。
  * 30 分钟对 200MB 上限的包意味着 ≥110KB/s 就能下完；164.5MB 实测约 5 分钟，余量充足。
  */
-const DOWNLOAD_MAX_TOTAL_MS = 30 * 60_000
+const DOWNLOAD_MAX_TOTAL_MS = LIMITS.importMaxTotalMs
 
 /**
  * 上面两个常量之间的**可校验关系**（#152）：按现行上限与总时限，链路至少要稳定跑这么快才可能下完。
@@ -106,7 +107,7 @@ const MIN_REQUIRED_BYTES_PER_SEC = importBudget().minBytesPerSec
  * 周期性心跳间隔：每 5s 一条「这一段新增了多少字节 + 已经多久没有新字节」，
  * 日志里能直接区分「在推进」和「停滞」，也是原生请求挂住时唯一的在线证据。
  */
-const HEARTBEAT_INTERVAL_MS = 5_000
+const HEARTBEAT_INTERVAL_MS = LIMITS.importHeartbeatMs
 
 /** 403 响应体里带 OBS 错误码；只解前面一小段足够判定。 */
 const ERROR_BODY_CHARS = 4096
@@ -427,7 +428,7 @@ const isPermanentFailure = (error: unknown): boolean =>
  * 而校时/改时间的跳变通常是分钟级往上。已知代价（未测边界）：应用在后台被挂起超过
  * 2 分钟的空档不计入总耗时——宁可少报，也不误杀。
  */
-const CLOCK_JUMP_MS = 2 * 60_000
+const CLOCK_JUMP_MS = LIMITS.clockJumpMs
 let clockWallAt = Date.now()
 let clockElapsed = 0
 

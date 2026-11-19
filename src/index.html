@@ -73,6 +73,9 @@
           ['Set', function () { return window.Set }],
           ['WeakMap', function () { return window.WeakMap }]
         ]
+        // 阈值唯一来源是 src/services/limits.ts 的 LIMITS.bootDeadlineMs；
+        // 这段内联脚本在 bundle 之前执行、import 不到模块，所以留着字面量，
+        // 由 tests/unit/limits-config.test.mjs 断言两处相等（#275）。
         var BOOT_DEADLINE_MS = 12000
         var startedAt = Date.now()
         var LOCALE_KEY = 'chat-demo:locale'
