@@ -127,6 +127,99 @@ jobs:
           fi
           echo "负向对照通过：含 ?. / ??= 的产物被拦下"
 
+  # ───────────────────────── Issue #404：黄金回归套件（每域 1 条主路径，≤5 分钟）─────────────────────────
+  # 为什么单开一个 job：它是「功能开发有没有打断用户路径」的第一道闸，必须在**别的 job 失败时也照跑**
+  # （不 needs: checks、不 needs: integration），这样 lint/类型红的时候也能看出「主路径是不是好的」。
+  #
+  # 三条设计约束：
+  # 1) 独立、并行：与 checks 同时起步，PR 页面上两条结果分开展示，谁红谁负责。
+  # 2) 预算机械化：单条 ≤60s、整层墙钟 ≤5 分钟由 tests/run-golden.mjs 自己判定（超预算直接 exit 1），
+  #    不靠人盯日志；这一步只负责把它的退出码透传出去。
+  # 3) 产物只构建标准包：黄金套件测的是用户装的那个标准版本，内测包（build:internal）的差异不属于主路径；
+  #    缺产物在 run-golden 里是**直接红**，不是 SKIP(env)——阻塞门禁不许「什么都没跑还全绿」。
+  golden:
+    name: 黄金回归（每域主路径，≤5 分钟）
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+          run_install: false
+
+      - name: Setup Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: 安装 Chromium（黄金套件用真浏览器跑真产物）
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: 构建标准产物（dist，variant=standard）
+        run: pnpm run build
+
+      - name: 黄金回归（每域 1 条主路径）
+        env:
+          # 断言里有中文文案，与 unit / L1 一致钉住 locale（#179 同类问题）
+          LANG: zh_CN.UTF-8
+          LC_ALL: zh_CN.UTF-8
+        run: pnpm run test:golden -- --json golden-report.json
+
+      # 失败可见性：每条路径的耗时与「哪条路径 + 哪一步 + 期望 vs 实际」必须直接出现在 PR 页面，
+      # 而不是让人点进 300 行日志里翻。
+      - name: 失败摘要写入 job summary
+        if: always()
+        run: |
+          set -euo pipefail
+          cat > /tmp/golden-summary.mjs <<'EOF'
+          import { appendFileSync, existsSync, readFileSync } from 'node:fs'
+
+          const lines = ['## 黄金回归（每域 1 条主路径）', '']
+          const file = 'golden-report.json'
+          if (!existsSync(file)) {
+            lines.push('报告缺失：套件在写出 `--json` 之前就终止了（构建/浏览器缺失或崩溃），请看该 job 的日志。')
+          } else {
+            const report = JSON.parse(readFileSync(file, 'utf8'))
+            lines.push('| 路径 | 域 | 结果 | 耗时 | 主路径 |', '| --- | --- | --- | --- | --- |')
+            for (const item of report.results) {
+              lines.push(`| ${item.id} | ${item.domain} | ${item.status} | ${item.ms}ms | ${item.title} |`)
+            }
+            lines.push(
+              '',
+              `墙钟 ${report.totalMs}ms / 预算 ${report.budgetMs}ms${report.overBudget ? '（**已超 5 分钟预算**）' : ''}。`,
+            )
+            const failed = report.results.filter((item) => item.status !== 'PASS')
+            if (failed.length) {
+              lines.push('', '### 失败定位')
+              for (const item of failed) {
+                lines.push('', `#### \`${item.id} ${item.domain}\` — ${item.title}`)
+                lines.push('```', ...item.failures.slice(0, 4), '```')
+              }
+            }
+          }
+          const body = lines.join('\n')
+          console.log(body)
+          appendFileSync(process.env.GITHUB_STEP_SUMMARY, `${body}\n`)
+          EOF
+          node /tmp/golden-summary.mjs
+
+      - name: 上传报告
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: golden-report
+          path: golden-report.json
+          if-no-files-found: warn
+          retention-days: 7
+
   # ───────────────────────────────── Issue #365：L1 集成层接入 CI ─────────────────────────────────
   # 接线前：tests/integration/ 49 个文件 / 1.68 万行、全量一次 20 分钟，**零触发点**——
   # 只有人记得手跑 `pnpm test:integration`，于是「写好的集成用例」和「真的会被执行的用例」是两件事。

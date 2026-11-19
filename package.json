@@ -49,6 +49,7 @@
     "test:regression": "node tests/run-layer.mjs regression",
     "test:e2e": "node tests/run-layer.mjs e2e",
     "test:device": "node tests/run-layer.mjs device",
+    "test:golden": "node tests/run-golden.mjs",
     "test:all": "npm run test && npm run test:regression && npm run test:integration",
     "test:which": "node tests/which.mjs",
     "test:dl-release": "node --test deploy/dl-release/test/*.test.mjs",

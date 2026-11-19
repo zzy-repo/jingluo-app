@@ -11,10 +11,12 @@ tests/
 ├── regression/   11 个：按 Issue 编号的回归（纯 Node，无浏览器/无网络），合计 ~3.5s
 ├── e2e/           2 个：真上游 + 真 UI（要 API Key）/ 真实反馈后端
 ├── device/        1 个：Android 模拟器或真机（adb）
+├── golden/         4 个：黄金回归——每域 1 条主路径，真 dist + stub 后端，合计 ~6s（#404）
 ├── fixtures/      mock 服务与样本数据（不是测试，被上面引用）
-├── helpers/       共享装配：单元层 dom-env.mjs（.js→.ts + 替身），集成层 runtime/env/ports
+├── helpers/       共享装配：单元层 dom-env.mjs（.js→.ts + 替身），集成层 runtime/env/ports，黄金层 golden.mjs
 ├── tools/         手工用的一次性脚本（不是测试，不参与分层执行）
-└── run-layer.mjs  分层 runner（本文件是唯一入口）
+├── run-layer.mjs  分层 runner（串行；本文件是唯一入口）
+└── run-golden.mjs 黄金层 runner（并行；`pnpm test:golden`，与 run-layer 并列的第二个入口）
 ```
 
 ---
@@ -73,6 +75,7 @@ npm run test:regression # = node tests/run-layer.mjs regression（#368 接入；
 npm run test:integration
 npm run test:e2e
 npm run test:device
+npm run test:golden     # = node tests/run-golden.mjs（黄金回归：每域 1 条主路径，≤5 分钟，#404）
 npm run test:all        # unit → regression → integration
 ```
 
@@ -99,6 +102,7 @@ diagnostics-contract / auto-title）**不吃外部 `APP_URL`**，runner 会把 `
 | 层 | 命令 | 预计耗时 | 前置条件 |
 | --- | --- | --- | --- |
 | unit | `npm test` | < 5s | 无（不启浏览器，不需要产物） |
+| golden | `npm run test:golden` | ~6s（4 条并行，预算 5 分钟） | 标准产物 `pnpm build` + chromium；**缺产物直接红**（不像 L1 会 SKIP(env)），说明见 `tests/golden/README.md` |
 | integration | `npm run test:integration` | 8~15 分钟（18 个文件） | `npx playwright install chromium`；**标准构建**（`pnpm build` 后把 `dist/` 挂在 `APP_URL`，默认 `http://127.0.0.1:5181`）；内测类用例还要一份**内测构建**在 `dist/`（或 `DIST_DIR` 指定） |
 | e2e | `npm run test:e2e` | 1~2 分钟 | `E2E_API_KEY`、真上游可达、`dist/` 已部署在 `E2E_APP_URL`；`diagnostics-upload` 还要能访问反馈后端 |
 | device | `npm run test:device` | 3~8 分钟 | 已启动的 AVD（`-memory 1280`）+ `adb` + 一份装好的 APK |

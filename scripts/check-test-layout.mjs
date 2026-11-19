@@ -50,8 +50,11 @@ const RUN_LAYER = path.join(TESTS_DIR, 'run-layer.mjs')
 const FIXTURES_DIR = path.join(TESTS_DIR, 'fixtures')
 const BASELINE_FILE = path.join(TESTS_DIR, 'test-layout-baseline.json')
 
-/** 允许的层级目录。`e2e` 只在其目录真实存在时才算合法（历史上有过、也可能被并走）。 */
-const ALLOWED_LAYERS = ['unit', 'integration', 'regression', 'device']
+/**
+ * 允许的层级目录。`e2e` 只在其目录真实存在时才算合法（历史上有过、也可能被并走）。
+ * `golden`（Issue #404 的黄金回归套件）由自己的并行 runner 跑，见下面的 EXTRA_RUNNERS。
+ */
+const ALLOWED_LAYERS = ['unit', 'integration', 'regression', 'device', 'golden']
 const OPTIONAL_LAYERS = ['e2e']
 
 /** 域批次文件名的唯一合法形状：domain05-export-contract.test.mjs */
@@ -120,9 +123,9 @@ async function readLayers() {
   return layers
 }
 
-/** 真跑 `run-layer.mjs <layer> --list`（不执行用例），拿到该层枚举到的文件清单。 */
-function listLayer(layer) {
-  const result = spawnSync(process.execPath, [RUN_LAYER, layer, '--list'], {
+/** 真跑 `<runner> <args> --list`（不执行用例），拿到该入口枚举到的文件清单。 */
+function listFromScript(script, args) {
+  const result = spawnSync(process.execPath, [script, ...args], {
     cwd: ROOT,
     encoding: 'utf8',
     timeout: 60_000,
@@ -140,6 +143,18 @@ function listLayer(layer) {
   }
   return { ok: true, files, error: '' }
 }
+
+/** 真跑 `run-layer.mjs <layer> --list`：LAYERS 里每一层的枚举口径 */
+const listLayer = (layer) => listFromScript(RUN_LAYER, [layer, '--list'])
+
+/**
+ * 第二个合法入口：黄金回归套件（Issue #404）。
+ *
+ * 它不能挂在 run-layer 上 —— run-layer 是**串行**适配器（历史用例在同进程里 `process.exit`），
+ * 而黄金套件要「4~8 条并行、整层 ≤5 分钟」，于是有自己的 runner（`tests/run-golden.mjs`）。
+ * 有第二个 runner 就多一个「写了没人跑」的口子，所以孤儿判定必须同样实跑它的 `--list`。
+ */
+const EXTRA_RUNNERS = [{ layer: 'golden', script: path.join(TESTS_DIR, 'run-golden.mjs') }]
 
 async function exists(target) {
   try {
@@ -186,6 +201,20 @@ async function collectViolations(testFiles) {
       detail: `run-layer.mjs --list 失败：${error.error}`,
     })
   }
+  // 独立 runner 同样要「能被枚举到」：枚举不到就是孤儿，不能因为换了入口就免检。
+  for (const runner of EXTRA_RUNNERS) {
+    const listed = listFromScript(runner.script, ['--list'])
+    if (!listed.ok) {
+      violations.push({
+        rule: 'runner-layer-broken',
+        file: `tests/${runner.layer}`,
+        detail: `${path.basename(runner.script)} --list 失败：${listed.error}`,
+      })
+      continue
+    }
+    layerCounts[runner.layer] = listed.files.length
+    for (const file of listed.files) enumerated.add(file)
+  }
 
   for (const file of testFiles) {
     const relPath = rel(file)
@@ -207,8 +236,9 @@ async function collectViolations(testFiles) {
     }
     // ---- 规则 1：孤儿 ----
     if (!enumerated.has(relPath)) {
-      const reason = layers.includes(layer)
-        ? `所在层 ${layer} 已在 LAYERS 里但 runner 没枚举到它`
+      const known = layers.includes(layer) || EXTRA_RUNNERS.some((runner) => runner.layer === layer)
+      const reason = known
+        ? `所在层 ${layer} 有入口但 runner 没枚举到它`
         : `所在层 ${layer} 不在 run-layer.mjs 的 LAYERS（${layers.join(' / ')}）里，没有任何入口会跑它`
       violations.push({ rule: 'orphan', file: relPath, detail: reason })
     }
@@ -282,7 +312,9 @@ async function main() {
   // ---- 报告 ----
   console.log('check:test-layout —— 测试布局门禁（#362 阶段二 / #366）\n')
   console.log(`runner 枚举：tests/run-layer.mjs LAYERS = [${layers.join(', ')}]`)
-  const perLayer = layers.map((l) => `${l} ${layerCounts[l] ?? '?'}`).join(' / ')
+  const perLayer = [...layers, ...EXTRA_RUNNERS.map((runner) => runner.layer)]
+    .map((l) => `${l} ${layerCounts[l] ?? '?'}`)
+    .join(' / ')
   console.log(`  ${perLayer}（合计 ${[...new Set(Object.values(layerCounts))].reduce((a, b) => a + b, 0)} 个文件）`)
   console.log(`允许的层级目录：${allowed.map((l) => `tests/${l}`).join(' / ')}`)
   console.log(`文件系统：tests/**/*.test.mjs 共 ${testFiles.length} 个\n`)
