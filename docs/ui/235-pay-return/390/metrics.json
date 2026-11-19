@@ -1,0 +1,23 @@
+{
+  "page": "ours-buy-inapp",
+  "title": "#235 设置 → 数据管理 → 我们的渠道：套餐列表 / 去支付 / 收银台提示（390 与 360 两档）",
+  "viewport": 390,
+  "size": "390×844",
+  "shots": [
+    "docs/ui/235-pay-return/390/ours-buy-inapp-01-plans-and-pay-390.png",
+    "docs/ui/235-pay-return/390/ours-buy-inapp-02-purchase-closeup-390.png"
+  ],
+  "notes": [
+    "「去支付」点击区不足 44px：36"
+  ],
+  "purchase": {
+    "plans": 2,
+    "buyBox": {
+      "w": 342,
+      "h": 36
+    },
+    "notice": "网页版会跳到支付宝收银台（同一标签页）；付完回来会自动查单，请先留在本页。",
+    "nativeCopy": false
+  },
+  "consoleErrors": []
+}

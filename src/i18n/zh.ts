@@ -446,7 +446,7 @@ export const zh = {
   oursPlansRetry: '重新加载',
   oursBuyAction: '去支付',
   oursBuyBusy: '正在创建订单…',
-  oursBuyHint: '支付在系统浏览器里完成（支付宝），回到 App 自动查单。价格与积分由服务端下发。',
+  oursBuyHint: '支付在 App 内打开支付宝收银台，付完关掉收银台就自动查单发卡。价格与积分由服务端下发。',
   oursBuyWebHint: '网页版会跳到支付宝收银台（同一标签页）；付完回来会自动查单，请先留在本页。',
   // 订单
   oursOrderTitle: '订单',
@@ -511,6 +511,8 @@ export const zh = {
   oursErrKeyInvalid: 'Key 无效，请重新领取或填写',
   oursErrVerifyUnavailable: '积分服务暂时不可用，请稍后重试',
   oursErrRateLimited: '请求过于频繁，请稍后重试',
+  oursErrCidRequired: '还没有取到你的客户编号，先领取或绑定 Key 再购买',
+  oursErrNewbieUsed: '新人特惠每人只能用一次，换其他套餐即可',
   oursErrPlanNotFound: '套餐不存在',
   oursErrPlanMissing: '请先选择套餐',
   oursErrOrderNotFound: '订单不存在',

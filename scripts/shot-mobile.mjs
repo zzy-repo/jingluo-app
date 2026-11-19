@@ -50,6 +50,9 @@ export const DEFAULT_DIST = 'dist'
 export const DB_VERSION = 12
 /** 假 Key：只喂给界面让「服务配置」不是空态；订单接口被 route 拦掉，不会真的发出去 */
 const FIXTURE_API_KEY = 'sk-shot-mobile-fixture-0000'
+/** #235：套餐 / 档案都是只读接口，打桩地址与集成测试同一份（明文邀请服 + 卡密主站） */
+const SHOT_INVITE_API = 'http://140.210.13.146:60013'
+const SHOT_CARD_API = 'https://apia.ecsafe.cn'
 
 // ---------------------------------------------------------------- 参数与命名（纯函数，单测直接 import）
 
@@ -775,6 +778,7 @@ const S = {
   optionRelaxed: '宽松',
   paymentRecordsOpen: '[data-testid="payment-records-open"]',
   paymentTrailOpen: '[data-testid="payment-trail-open"]',
+  oursServicesOpen: '[data-testid="ours-services-open"]',
   douyinCopy: '[data-testid="douyin-id-copy"]',
   titleButton: 'button[aria-label*="回到首条消息"]',
 }
@@ -1192,6 +1196,96 @@ export const PAGES = {
         warn(`长列表没溢出：scrollHeight=${bottom.scrollable.scrollHeight} clientHeight=${bottom.scrollable.clientHeight}`)
       }
       await shot('03-trail-long-order')
+    },
+  },
+
+  'ours-buy-inapp': {
+    dir: 'docs/ui/235-pay-return',
+    title: '#235 设置 → 数据管理 → 我们的渠道：套餐列表 / 去支付 / 收银台提示（390 与 360 两档）',
+    sessions: () => [makeReadingSession()],
+    mockOrders: false,
+    // 入口只在自有渠道出现（#166 的门禁思路），与支付记录/我的购买同一份判定
+    providerKind: 'ours',
+    run: async (ctx) => {
+      const { page, shot, record, warn } = ctx
+      // /me 与 /api/plans 都是只读接口：回集成测试里那份真契约数据，
+      // 截到的是「真的发了一次请求再渲染」的结果，不是摆拍。
+      const json = (body) => ({
+        status: 200,
+        headers: { 'content-type': 'application/json', 'access-control-allow-origin': '*' },
+        body: JSON.stringify(body),
+      })
+      await page.route(`${SHOT_INVITE_API}/**`, async (route) => {
+        const url = new URL(route.request().url())
+        if (url.pathname === '/me') {
+          await route.fulfill(
+            json({
+              customer_id: 4210,
+              invite_code: 'G7TA7UR3',
+              invited_count: 1,
+              max_invites: 20,
+              bonus_points: 10,
+              redeemed: true,
+              quota_points: 100,
+              used_points: 0,
+              remaining_points: 100,
+              key_status: 'active',
+            })
+          )
+          return
+        }
+        await route.fulfill(json({}))
+      })
+      await page.route(`${SHOT_CARD_API}/api/plans`, async (route) => {
+        await route.fulfill(
+          json({
+            plans: [
+              { id: 'p1', name: '入门包 100万 token', price: 3.0, points: 300, currency: 'CNY', enabled: true },
+              { id: 'p2', name: '标准包 500万 token', price: 39.0, points: 3900, currency: 'CNY', enabled: true },
+            ],
+          })
+        )
+      })
+      await page.route(`${SHOT_CARD_API}/api/balance`, async (route) => {
+        await route.fulfill(json({ valid: true }))
+      })
+
+      await openSettings(page, S.tabData)
+      const entry = page.locator(S.oursServicesOpen)
+      await entry.waitFor({ state: 'visible', timeout: 10000 })
+      await entry.scrollIntoViewIfNeeded()
+      await page.waitForTimeout(240)
+      await entry.click()
+
+      const dialog = page.locator('[data-testid="ours-services-dialog"]')
+      await dialog.waitFor({ state: 'visible', timeout: 10000 })
+      await page.waitForTimeout(700)
+
+      const plans = page.locator('[data-testid="ours-plans"]')
+      await plans.scrollIntoViewIfNeeded()
+      await page.waitForTimeout(360)
+      const buy = page.locator('[data-testid="ours-buy"]')
+      const notice = page.locator('[data-testid="ours-pay-notice"]')
+      const buyBox = await buy.boundingBox()
+      const noticeText = (await notice.textContent()) ?? ''
+      // 计划里换了「App 内打开收银台」的说明文案：这段是原生端文案，
+      // Chromium 视口里 isNativePlatform() 为 false，会渲染网页版那条 —— 记下来，别当成漏改。
+      record('purchase', {
+        plans: await page.locator('[data-testid="ours-plans"] [data-testid^="ours-plan-"]').count(),
+        buyBox: buyBox === null ? null : { w: Math.round(buyBox.width), h: Math.round(buyBox.height) },
+        notice: noticeText.trim(),
+        nativeCopy: noticeText.includes('App 内'),
+      })
+      if (buyBox === null || buyBox.height < 44) {
+        warn(`「去支付」点击区不足 44px：${buyBox === null ? 'null' : Math.round(buyBox.height)}`)
+      }
+      // 套餐列表、去支付按钮和提示在同一屏里（两档宽度都如此），一张就够：
+      // 提示文案紧跟按钮，不另起一张一模一样的图。
+      await shot('01-plans-and-pay')
+      const clip = await dialogClip(page)
+      if (clip !== null) {
+        await shot('02-purchase-closeup', { clip })
+      }
     },
   },
 

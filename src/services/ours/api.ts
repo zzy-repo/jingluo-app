@@ -114,6 +114,9 @@ export type OursMessageKey =
   | 'oursErrRateLimited'
   | 'oursErrPlanNotFound'
   | 'oursErrPlanMissing'
+  /** Issue #235：/api/buy 的两个专属错误（不许落到通用文案） */
+  | 'oursErrCidRequired'
+  | 'oursErrNewbieUsed'
   | 'oursErrOrderNotFound'
   | 'oursErrOrderTokenMissing'
   | 'oursErrCheckoutUnsupported'
@@ -148,6 +151,21 @@ export const OURS_ERROR_KEYS: Record<string, OursMessageKey> = {
   VERIFY_UNAVAILABLE: 'oursErrVerifyUnavailable',
   RATE_LIMITED: 'oursErrRateLimited',
   ORDER_NOT_FOUND: 'oursErrOrderNotFound',
+  /**
+   * Issue #235（/api/buy 的 JSON 契约）：
+   * - `CID_REQUIRED`：没带 cid —— 说「客户编号没准备好」，别让用户猜
+   * - `NEWBIE_USED`：新人特惠每人一次（HTTP 409）—— 必须优先于 `OURS_STATUS_KEYS[409]`
+   *   的「卡密已被使用」，否则用户会以为自己的卡被别人用了
+   */
+  CID_REQUIRED: 'oursErrCidRequired',
+  NEWBIE_USED: 'oursErrNewbieUsed',
+  /**
+   * 真服务端实测（2026-11-19，GET /api/buy?cid=1&plan=nope）返回的是
+   * `{"code":"CID_UNKNOWN","message":"客户不存在，请回 App 重新领取 Key"}`：
+   * 客户编号不存在与「没带编号」是两件事，但都只能靠重新领取 Key 解决 ——
+   * 复用现有文案，别让它落到 400 兜底的「请求格式有误」上。
+   */
+  CID_UNKNOWN: 'oursErrCustomerNeedsKey',
 }
 
 /** 没有 code 时按状态码给个能看的文案（404 到底是卡密还是订单，只有 code 能区分） */
@@ -626,6 +644,126 @@ export const startCheckout = async (
     kind: 'error',
     code: code || `HTTP_${result.status}`,
     messageKey: messageKeyFor(code, result.status),
+  }
+}
+
+// ------------------------------------------------------------------ 建单（/api/buy 的 JSON，Issue #235）
+
+/**
+ * 一次支付的「票根」：`/api/buy` 已经把单号、令牌、收银台地址都算好了。
+ *
+ * 界面把它留在内存里，用户重复点「去支付」时直接复用同一张单，
+ * 不再多建一张（多建的单会变成服务端的废弃订单）。
+ * **不写 localStorage**：`payUrl` 里带着金额与单号签名，跨订单复用等于给用户开了个错价的收银台。
+ */
+export type OursBuyTicket = {
+  outTradeNo: string
+  orderToken: string
+  payUrl: string
+  /** 服务端算好的实付金额（分）：界面照它显示，不自己按套餐价乘法 */
+  amountFen: number
+  planId: string
+  planName: string
+  /** 收银台有效期（Unix 秒）；解析不出来就是 null */
+  expireAtSeconds: number | null
+}
+
+export type OursBuyResult =
+  | { kind: 'ok'; ticket: OursBuyTicket; replacedUnpaidOrder: boolean }
+  | { kind: 'error'; code: string; messageKey: OursMessageKey }
+
+/** `GET /api/buy?cid=<cid>&plan=<id>`：JSON 契约（老的 `/buy` 302 仍然保留） */
+export const buyTicketUrl = (planId: string, customerId: number): string =>
+  `${OURS_API_BASE}/api/buy?cid=${customerId}&plan=${encodeURIComponent(planId.trim())}`
+
+/**
+ * 建单（Issue #235）：**原生端专用**。
+ *
+ * 为什么不再用 `/buy` 的 302：原生插件 `CheckoutBrowser.resolveLocation` 只回
+ * `{status, location}`，`order_token` 得从 `return_url` 里抠；而 App 内嵌浏览器方案
+ * 需要的是「单号 + 令牌 + pay_url」三件套，`/api/buy` 直接给全，少一层解析与猜错的可能。
+ *
+ * 规矩：
+ *  - 只发一次（每次 GET 都会新建订单）；界面复用票根，别重复建单
+ *  - `pay_url` 必须是 https，否则一律报错（明文收银台会把支付页暴露给中间人）
+ *  - 建单成功立即写存档（切后台 / 重开 App 还能续查）
+ */
+export const createBuyOrder = async (
+  planId: string,
+  transport: OursTransport,
+  options: OursCheckoutOptions = {}
+): Promise<OursBuyResult> => {
+  const id = planId.trim()
+  if (id === '') {
+    return { kind: 'error', code: 'PLAN_MISSING', messageKey: 'oursErrPlanMissing' }
+  }
+  // 拿不到 cid 就不建单：不建一张不知道属于谁的单（付了钱也查不到）
+  const resolvedCustomerId =
+    options.customerId === undefined
+      ? (readCachedCustomerId(options.storage) ?? (await ensureCustomerId(options.storage)))
+      : options.customerId
+  const customerId = parseCustomerId(resolvedCustomerId)
+  if (customerId === null) {
+    return { kind: 'error', code: 'CUSTOMER_ID_MISSING', messageKey: 'oursErrCustomerNeedsKey' }
+  }
+  const result = await transport({
+    method: 'GET',
+    url: buyTicketUrl(id, customerId),
+    headers: { Accept: 'application/json' },
+    timeoutMs: OURS_TIMEOUTS.buy,
+    followRedirects: false,
+  })
+  if (result.kind !== 'response') {
+    return {
+      kind: 'error',
+      code: result.kind === 'timeout' ? 'TIMEOUT' : 'NETWORK',
+      messageKey: transportFailure(result),
+    }
+  }
+  const parsed = parseJson(result.text)
+  const record = parsed.ok ? asRecord(parsed.value) : null
+  if (!isSuccessStatus(result.status)) {
+    const code = readString(record, 'code')
+    return {
+      kind: 'error',
+      code: code || `HTTP_${result.status}`,
+      messageKey: messageKeyFor(code, result.status),
+    }
+  }
+  if (record === null) {
+    return { kind: 'error', code: 'BAD_JSON', messageKey: 'oursErrInvalidResponse' }
+  }
+  const outTradeNo = readString(record, 'out_trade_no').trim()
+  const orderToken = readString(record, 'order_token').trim()
+  const payUrl = readString(record, 'pay_url').trim()
+  if (outTradeNo === '' || orderToken === '') {
+    // 给了 200 却没有单号 / 令牌：付完款也查不到单，不如现在就说清楚
+    return { kind: 'error', code: 'ORDER_TOKEN_MISSING', messageKey: 'oursErrOrderTokenMissing' }
+  }
+  if (!isOpenableCheckout(payUrl)) {
+    return { kind: 'error', code: 'CHECKOUT_NOT_HTTPS', messageKey: 'oursErrCheckoutUnsupported' }
+  }
+  const previous = readStoredOrder(options.storage)
+  const replacedUnpaidOrder =
+    previous !== null &&
+    previous.outTradeNo !== outTradeNo &&
+    Date.now() - previous.startedAt <= ORDER_RESUME_MAX_AGE_MS
+  writeStoredOrder(
+    { outTradeNo, orderToken, planId: id, startedAt: Date.now() },
+    options.storage
+  )
+  return {
+    kind: 'ok',
+    replacedUnpaidOrder,
+    ticket: {
+      outTradeNo,
+      orderToken,
+      payUrl,
+      amountFen: readNumber(record, 'amount_fen') ?? 0,
+      planId: id,
+      planName: readString(record, 'plan_name'),
+      expireAtSeconds: readNumber(record, 'expire_at'),
+    },
   }
 }
 
