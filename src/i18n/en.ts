@@ -707,4 +707,16 @@ export const en = {
   oursPurchasesErrRejected: 'The order lookup was rejected. Please retry later.',
   oursPurchasesErrBadResponse: 'The response could not be parsed. Please retry later.',
   oursPurchasesErrUnknown: 'Could not load your purchases. Please retry later.',
+  // Boot-guard copy (#180). Identical to the inline COPY table in src/index.html;
+  // tests/unit/compat-guard-diagnostics.test.mjs compares both sides.
+  compatBootTitle: 'This page could not start',
+  compatBootLead: 'This page needs a newer Android System WebView (or browser) to open properly.',
+  compatBootMissing: 'Missing runtime features: {apis}',
+  compatBootRuntimeError: 'A script error stopped this page from starting.',
+  compatBootTimeout: 'The page script did not start within 12 seconds (outdated engine or failed to load).',
+  compatBootVersion: 'Component version: {version}',
+  compatBootVersionUnknown: 'Component version: could not be read from the browser identifier',
+  compatBootHowTo:
+    'To update: open your app store, search for "Android System WebView" and update it, then reopen this app.',
+  compatBootFooter: 'If it still fails after updating, report the component version above with a screenshot of this page.',
 } satisfies Record<keyof typeof zh, string>

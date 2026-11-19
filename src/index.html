@@ -16,9 +16,46 @@
       polyfill 补齐，列进来会让 WebView 83（本体已能用）误报。
       反过来，Intl.DisplayNames（Chromium 81，issue #155）**必须**列进来：它没有 polyfill，
       缺了只能靠这里点名 —— 否则用户在 WebView 79/80 上只会看到白屏或「12 秒内没有启动」。
+
+      三条出口（① 探针缺失 / ② 启动期脚本报错 / ③ 12 秒看门狗）的规矩（issue #180）：
+      用户可见文案只用本地化模板，**绝不拼接原始 JS 异常**；原始 message / 文件名 / 行列号
+      只写进 window.__DEEPSEEK_COMPATIBILITY_ERROR__（结构化：branch / code / message /
+      missing / url / line / col / ua / webviewVersion）与 console.error，供排查与反馈附件。
+      这个变量的消费者：src/main.tsx（有值就不挂半装的 React 树、直接抛错）、
+      scripts/compat/lib/cdp.mjs 的 BOOT_STATE（模拟器取证回读）、反馈时用户贴的组件版本。
     -->
     <script>
       (function () {
+        // 兜底页的文案与 src/i18n/zh.ts / en.ts 里的 compatBoot* 键**逐字一致**
+        // （tests/unit/compat-guard-diagnostics.test.mjs 会两边比对，改一边不改另一边就红）。
+        // 为什么还要在 HTML 里内联一份：走到这里时业务包（连同 i18n 模块）已经挂了，
+        // 文案只能自带，不能在运行时去加载。
+        var COPY = {
+          'zh-CN': {
+            title: '页面启动失败',
+            lead: '这个页面需要更新版本的 Android System WebView（或浏览器）才能正常打开。',
+            missing: '缺少的运行环境能力：{apis}',
+            runtimeError: '页面脚本在启动时出错，没能启动。',
+            timeout: '页面脚本 12 秒内没有启动（内核过旧或资源加载失败）。',
+            version: '组件版本：{version}',
+            versionUnknown: '组件版本：无法从浏览器标识里解析出来',
+            howTo: '更新方法：在应用商店里搜索「Android System WebView」并更新，然后重新打开本应用。',
+            footer: '若更新后仍然失败，请反馈上面的组件版本与本页截图。',
+          },
+          'en-US': {
+            title: 'This page could not start',
+            lead: 'This page needs a newer Android System WebView (or browser) to open properly.',
+            missing: 'Missing runtime features: {apis}',
+            runtimeError: 'A script error stopped this page from starting.',
+            timeout: 'The page script did not start within 12 seconds (outdated engine or failed to load).',
+            version: 'Component version: {version}',
+            versionUnknown: 'Component version: could not be read from the browser identifier',
+            howTo:
+              'To update: open your app store, search for "Android System WebView" and update it, then reopen this app.',
+            footer: 'If it still fails after updating, report the component version above with a screenshot of this page.',
+          },
+        }
+
         var REQUIRED = [
           ['Promise', function () { return window.Promise }],
           ['fetch', function () { return window.fetch }],
@@ -36,22 +73,112 @@
         ]
         var BOOT_DEADLINE_MS = 12000
         var startedAt = Date.now()
+        var LOCALE_KEY = 'chat-demo:locale'
 
-        function showFailure(details) {
-          var box = document.getElementById('compatibility-error')
-          // 已经有提示了就不覆盖（先报的具体原因比后到的“启动任务异常”有用）
-          if (!box || box.hidden === false) return
-          box.hidden = false
-          box.style.cssText =
-            'margin:24px 16px;padding:16px;border:1px solid #f0b8b8;border-radius:12px;' +
-            'background:#fff7f7;color:#7b2020;font:15px/1.6 sans-serif'
-          box.textContent =
-            '页面启动失败。请更新 Android System WebView 或浏览器后重试；' +
-            '仍失败请反馈组件版本与以下信息：' + details
+        function pickLocale() {
+          try {
+            var saved = window.localStorage && window.localStorage.getItem(LOCALE_KEY)
+            if (saved === 'zh-CN' || saved === 'en-US') return saved
+          } catch (error) {
+            // 存储不可用（隐私模式等）就按系统语言走
+          }
+          var language = ''
+          try {
+            var nav = window.navigator
+            language = (nav && (nav.language || (nav.languages && nav.languages[0]))) || ''
+          } catch (error) {
+            // 拿不到 navigator 就当没有语言线索
+          }
+          // 拿不到语言线索时按中文兜底：本应用默认中文（<html lang="zh-CN">），
+          // 英文用户必然带着 navigator.language，上面那条分支会先命中。
+          if (!language) return 'zh-CN'
+          return String(language).toLowerCase().indexOf('zh') === 0 ? 'zh-CN' : 'en-US'
+        }
+
+        function copyOf(locale) {
+          return COPY[locale] || COPY['zh-CN']
+        }
+
+        function fill(template, values) {
+          return String(template).replace(/\{(\w+)\}/g, function (placeholder, name) {
+            var value = values[name]
+            return typeof value === 'string' ? value : placeholder
+          })
+        }
+
+        function userAgent() {
+          try {
+            var nav = window.navigator
+            return (nav && nav.userAgent) || ''
+          } catch (error) {
+            return ''
+          }
+        }
+
+        /** UA 里能解析出 WebView/Chromium 版本就一并写进诊断（#104 缺的就是这个信息）。 */
+        function webviewVersion() {
+          var matched = userAgent().match(/(?:Chrome|Chromium)\/([0-9]+(?:\.[0-9]+)*)/)
+          return matched ? matched[1] : null
         }
 
         function canBoot() {
           return window.__DEEPSEEK_BOOTED__ === true
+        }
+
+        /**
+         * 兜底页唯一的出口。三条分支（① 探针缺失 / ② 启动期脚本报错 / ③ 12 秒没启动）
+         * 都走这里，做三件事：
+         *   1. 把结构化诊断写进 window.__DEEPSEEK_COMPATIBILITY_ERROR__（原始 message / 文件名 /
+         *      行列号**只**进这个变量和 console.error，供反馈与排查）；
+         *   2. 用户可见文案只用本地化模板，绝不拼接原始 JS 异常；
+         *   3. 画卡片。先到的原因优先，后到的不覆盖。
+         */
+        function fail(branch, code, extra) {
+          var box = document.getElementById('compatibility-error')
+          // 已经有提示了就不覆盖（先报的具体原因比后到的“启动任务异常”有用）
+          if (!box || box.hidden === false) return
+          var text = copyOf(pickLocale())
+          var version = webviewVersion()
+          var detail = {
+            branch: branch,
+            code: code,
+            message: extra && typeof extra.message === 'string' ? extra.message : '',
+            missing: extra && extra.missing ? extra.missing : [],
+            url: extra && typeof extra.url === 'string' ? extra.url : null,
+            line: extra && typeof extra.line === 'number' ? extra.line : null,
+            col: extra && typeof extra.col === 'number' ? extra.col : null,
+            ua: userAgent(),
+            webviewVersion: version,
+            at: Date.now(),
+          }
+          var lines = [text.title, text.lead]
+          if (code === 'missing-api') {
+            lines.push(fill(text.missing, { apis: detail.missing.join(', ') }))
+          } else if (code === 'runtime-error') {
+            lines.push(text.runtimeError)
+          } else {
+            lines.push(text.timeout)
+          }
+          lines.push(version ? fill(text.version, { version: version }) : text.versionUnknown)
+          lines.push(text.howTo, text.footer)
+          detail.text = lines.join('\n')
+          try {
+            window.__DEEPSEEK_COMPATIBILITY_ERROR__ = detail
+          } catch (error) {
+            // 窗口被锁住也不影响画卡片
+          }
+          try {
+            if (window.console && window.console.error) {
+              window.console.error('[boot-guard] ' + code + ' ' + JSON.stringify(detail))
+            }
+          } catch (error) {
+            // console 不可用不影响画卡片
+          }
+          box.hidden = false
+          box.style.cssText =
+            'margin:24px 16px;padding:16px;border:1px solid #f0b8b8;border-radius:12px;' +
+            'background:#fff7f7;color:#7b2020;font:15px/1.6 sans-serif;white-space:pre-line'
+          box.textContent = detail.text
         }
 
         var missing = []
@@ -64,19 +191,26 @@
           }
         }
         if (missing.length) {
-          window.__DEEPSEEK_COMPATIBILITY_ERROR__ = missing
-          showFailure('缺少：' + missing.join(', '))
+          fail('①', 'missing-api', { missing: missing })
         }
 
         window.addEventListener(
           'error',
           function (event) {
-            showFailure((event && event.message) || '脚本资源加载失败')
+            // 已经启动成功之后再报错不是「启动失败」，不该弹这张卡片（红线：只在真启动失败时出现）
+            if (canBoot()) return
+            fail('②', 'runtime-error', {
+              message: event && typeof event.message === 'string' ? event.message : '资源加载失败',
+              url: event && typeof event.filename === 'string' ? event.filename : null,
+              line: event && typeof event.lineno === 'number' ? event.lineno : null,
+              col: event && typeof event.colno === 'number' ? event.colno : null,
+            })
           },
           true
         )
         window.addEventListener('unhandledrejection', function () {
-          showFailure('启动任务异常')
+          if (canBoot()) return
+          fail('②', 'runtime-error', { message: 'unhandledrejection' })
         })
 
         // 静默白屏兜底：脚本解析失败时部分内核不触发 error 事件，只能靠「一直没启动」判断。
@@ -92,7 +226,7 @@
           }
           if (Date.now() - startedAt > BOOT_DEADLINE_MS) {
             clearInterval(timer)
-            showFailure('脚本 12 秒内没有启动（内核过旧或资源加载失败）')
+            fail('③', 'boot-timeout', {})
           }
         }, 1000)
       })()

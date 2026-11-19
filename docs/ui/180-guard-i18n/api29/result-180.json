@@ -1,0 +1,269 @@
+{
+  "phase": "180-guard-i18n",
+  "api": 29,
+  "avd": "compat-api29",
+  "startedAt": "2026-11-19T01:24:09.483Z",
+  "device": {
+    "model": "Android SDK built for x86_64",
+    "device": "generic_x86_64",
+    "release": "10",
+    "sdk": "29",
+    "abi": "x86_64",
+    "buildId": "QSR1.211112.011",
+    "webViewVersionLine": "versionName=74.0.3729.185",
+    "webViewUpdate": [
+      "  Fallback logic enabled: false",
+      "  Current WebView package (name, version): (com.google.android.webview, 74.0.3729.185)",
+      "    Valid package com.google.android.webview (versionName: 74.0.3729.185, versionCode: 373018568, targetSdkVersion: 29) is  installed/enabled for all users"
+    ],
+    "wmSize": "Physical size: 1080x1920",
+    "wmDensity": "Physical density: 420",
+    "memTotal": "MemTotal:        2040256 kB"
+  },
+  "install": {
+    "elapsedMs": 402,
+    "output": "Performing Streamed Install\r\nSuccess",
+    "apk": "D:\\all_project\\runs\\fix180\\android\\app\\build\\outputs\\apk\\debug\\app-debug.apk"
+  },
+  "coldStart": {
+    "elapsedMs": 1535,
+    "output": "Starting: Intent { cmp=com.example.deepseekchat/.MainActivity }\r\nStatus: ok\r\nLaunchState: COLD\r\nActivity: com.example.deepseekchat/.MainActivity\r\nTotalTime: 1436\r\nWaitTime: 1442\r\nComplete",
+    "clearError": null
+  },
+  "samples": [
+    {
+      "at": 2,
+      "shot": "D:\\all_project\\runs\\fix180\\docs\\ui\\180-guard-i18n\\api29/shots/t02s.png",
+      "page": {
+        "url": "https://localhost/",
+        "title": "鲸落",
+        "booted": false,
+        "compatibilityError": {
+          "branch": "①",
+          "code": "missing-api",
+          "message": "",
+          "missing": [
+            "Intl.DisplayNames"
+          ],
+          "url": null,
+          "line": null,
+          "col": null,
+          "ua": "Mozilla/5.0 (Linux; Android 10; Android SDK built for x86_64 Build/QSR1.211112.011; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/74.0.3729.185 Mobile Safari/537.36",
+          "webviewVersion": "74.0.3729.185",
+          "at": 1795051476076,
+          "text": "This page could not start\nThis page needs a newer Android System WebView (or browser) to open properly.\nMissing runtime features: Intl.DisplayNames\nComponent version: 74.0.3729.185\nTo update: open your app store, search for \"Android System WebView\" and update it, then reopen this app.\nIf it still fails after updating, report the component version above with a screenshot of this page."
+        },
+        "boxPresent": true,
+        "boxHidden": false,
+        "boxText": "This page could not start\nThis page needs a newer Android System WebView (or browser) to open properly.\nMissing runtime features: Intl.DisplayNames\nComponent version: 74.0.3729.185\nTo update: open your app store, search for \"Android System WebView\" and update it, then reopen this app.\nIf it still fails after updating, report the component version above with a screenshot of this page.",
+        "bodyTextLength": 386,
+        "bodyTextHead": "This page could not start\nThis page needs a newer Android System WebView (or browser) to open properly.\nMissing runtime features: Intl.DisplayNames\nComponent version: 74.0.3729.185\nTo update: open your app store, search for \"Android System WebView\" and update it, then reopen this app.\nIf it still fa",
+        "rootChildren": 1,
+        "rootHtmlLength": 630,
+        "readyState": "complete",
+        "userAgent": "Mozilla/5.0 (Linux; Android 10; Android SDK built for x86_64 Build/QSR1.211112.011; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/74.0.3729.185 Mobile Safari/537.36",
+        "hasTextarea": false
+      },
+      "cdpError": null,
+      "uiTexts": []
+    },
+    {
+      "at": 6,
+      "shot": "D:\\all_project\\runs\\fix180\\docs\\ui\\180-guard-i18n\\api29/shots/t06s.png",
+      "page": {
+        "url": "https://localhost/",
+        "title": "鲸落",
+        "booted": false,
+        "compatibilityError": {
+          "branch": "①",
+          "code": "missing-api",
+          "message": "",
+          "missing": [
+            "Intl.DisplayNames"
+          ],
+          "url": null,
+          "line": null,
+          "col": null,
+          "ua": "Mozilla/5.0 (Linux; Android 10; Android SDK built for x86_64 Build/QSR1.211112.011; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/74.0.3729.185 Mobile Safari/537.36",
+          "webviewVersion": "74.0.3729.185",
+          "at": 1795051476076,
+          "text": "This page could not start\nThis page needs a newer Android System WebView (or browser) to open properly.\nMissing runtime features: Intl.DisplayNames\nComponent version: 74.0.3729.185\nTo update: open your app store, search for \"Android System WebView\" and update it, then reopen this app.\nIf it still fails after updating, report the component version above with a screenshot of this page."
+        },
+        "boxPresent": true,
+        "boxHidden": false,
+        "boxText": "This page could not start\nThis page needs a newer Android System WebView (or browser) to open properly.\nMissing runtime features: Intl.DisplayNames\nComponent version: 74.0.3729.185\nTo update: open your app store, search for \"Android System WebView\" and update it, then reopen this app.\nIf it still fails after updating, report the component version above with a screenshot of this page.",
+        "bodyTextLength": 386,
+        "bodyTextHead": "This page could not start\nThis page needs a newer Android System WebView (or browser) to open properly.\nMissing runtime features: Intl.DisplayNames\nComponent version: 74.0.3729.185\nTo update: open your app store, search for \"Android System WebView\" and update it, then reopen this app.\nIf it still fa",
+        "rootChildren": 1,
+        "rootHtmlLength": 630,
+        "readyState": "complete",
+        "userAgent": "Mozilla/5.0 (Linux; Android 10; Android SDK built for x86_64 Build/QSR1.211112.011; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/74.0.3729.185 Mobile Safari/537.36",
+        "hasTextarea": false
+      },
+      "cdpError": null,
+      "uiTexts": [
+        "鲸落"
+      ]
+    },
+    {
+      "at": 13,
+      "shot": "D:\\all_project\\runs\\fix180\\docs\\ui\\180-guard-i18n\\api29/shots/t13s.png",
+      "page": {
+        "url": "https://localhost/",
+        "title": "鲸落",
+        "booted": false,
+        "compatibilityError": {
+          "branch": "①",
+          "code": "missing-api",
+          "message": "",
+          "missing": [
+            "Intl.DisplayNames"
+          ],
+          "url": null,
+          "line": null,
+          "col": null,
+          "ua": "Mozilla/5.0 (Linux; Android 10; Android SDK built for x86_64 Build/QSR1.211112.011; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/74.0.3729.185 Mobile Safari/537.36",
+          "webviewVersion": "74.0.3729.185",
+          "at": 1795051476076,
+          "text": "This page could not start\nThis page needs a newer Android System WebView (or browser) to open properly.\nMissing runtime features: Intl.DisplayNames\nComponent version: 74.0.3729.185\nTo update: open your app store, search for \"Android System WebView\" and update it, then reopen this app.\nIf it still fails after updating, report the component version above with a screenshot of this page."
+        },
+        "boxPresent": true,
+        "boxHidden": false,
+        "boxText": "This page could not start\nThis page needs a newer Android System WebView (or browser) to open properly.\nMissing runtime features: Intl.DisplayNames\nComponent version: 74.0.3729.185\nTo update: open your app store, search for \"Android System WebView\" and update it, then reopen this app.\nIf it still fails after updating, report the component version above with a screenshot of this page.",
+        "bodyTextLength": 386,
+        "bodyTextHead": "This page could not start\nThis page needs a newer Android System WebView (or browser) to open properly.\nMissing runtime features: Intl.DisplayNames\nComponent version: 74.0.3729.185\nTo update: open your app store, search for \"Android System WebView\" and update it, then reopen this app.\nIf it still fa",
+        "rootChildren": 1,
+        "rootHtmlLength": 630,
+        "readyState": "complete",
+        "userAgent": "Mozilla/5.0 (Linux; Android 10; Android SDK built for x86_64 Build/QSR1.211112.011; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/74.0.3729.185 Mobile Safari/537.36",
+        "hasTextarea": false
+      },
+      "cdpError": null,
+      "uiTexts": [
+        "鲸落"
+      ]
+    },
+    {
+      "at": 20,
+      "shot": "D:\\all_project\\runs\\fix180\\docs\\ui\\180-guard-i18n\\api29/shots/t20s.png",
+      "page": {
+        "url": "https://localhost/",
+        "title": "鲸落",
+        "booted": false,
+        "compatibilityError": {
+          "branch": "①",
+          "code": "missing-api",
+          "message": "",
+          "missing": [
+            "Intl.DisplayNames"
+          ],
+          "url": null,
+          "line": null,
+          "col": null,
+          "ua": "Mozilla/5.0 (Linux; Android 10; Android SDK built for x86_64 Build/QSR1.211112.011; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/74.0.3729.185 Mobile Safari/537.36",
+          "webviewVersion": "74.0.3729.185",
+          "at": 1795051476076,
+          "text": "This page could not start\nThis page needs a newer Android System WebView (or browser) to open properly.\nMissing runtime features: Intl.DisplayNames\nComponent version: 74.0.3729.185\nTo update: open your app store, search for \"Android System WebView\" and update it, then reopen this app.\nIf it still fails after updating, report the component version above with a screenshot of this page."
+        },
+        "boxPresent": true,
+        "boxHidden": false,
+        "boxText": "This page could not start\nThis page needs a newer Android System WebView (or browser) to open properly.\nMissing runtime features: Intl.DisplayNames\nComponent version: 74.0.3729.185\nTo update: open your app store, search for \"Android System WebView\" and update it, then reopen this app.\nIf it still fails after updating, report the component version above with a screenshot of this page.",
+        "bodyTextLength": 386,
+        "bodyTextHead": "This page could not start\nThis page needs a newer Android System WebView (or browser) to open properly.\nMissing runtime features: Intl.DisplayNames\nComponent version: 74.0.3729.185\nTo update: open your app store, search for \"Android System WebView\" and update it, then reopen this app.\nIf it still fa",
+        "rootChildren": 1,
+        "rootHtmlLength": 630,
+        "readyState": "complete",
+        "userAgent": "Mozilla/5.0 (Linux; Android 10; Android SDK built for x86_64 Build/QSR1.211112.011; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/74.0.3729.185 Mobile Safari/537.36",
+        "hasTextarea": false
+      },
+      "cdpError": null,
+      "uiTexts": [
+        "鲸落"
+      ]
+    }
+  ],
+  "final": {
+    "shot": "D:\\all_project\\runs\\fix180\\docs\\ui\\180-guard-i18n\\api29/shots/t-final.png",
+    "page": {
+      "url": "https://localhost/",
+      "title": "鲸落",
+      "booted": false,
+      "compatibilityError": {
+        "branch": "①",
+        "code": "missing-api",
+        "message": "",
+        "missing": [
+          "Intl.DisplayNames"
+        ],
+        "url": null,
+        "line": null,
+        "col": null,
+        "ua": "Mozilla/5.0 (Linux; Android 10; Android SDK built for x86_64 Build/QSR1.211112.011; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/74.0.3729.185 Mobile Safari/537.36",
+        "webviewVersion": "74.0.3729.185",
+        "at": 1795051476076,
+        "text": "This page could not start\nThis page needs a newer Android System WebView (or browser) to open properly.\nMissing runtime features: Intl.DisplayNames\nComponent version: 74.0.3729.185\nTo update: open your app store, search for \"Android System WebView\" and update it, then reopen this app.\nIf it still fails after updating, report the component version above with a screenshot of this page."
+      },
+      "boxPresent": true,
+      "boxHidden": false,
+      "boxText": "This page could not start\nThis page needs a newer Android System WebView (or browser) to open properly.\nMissing runtime features: Intl.DisplayNames\nComponent version: 74.0.3729.185\nTo update: open your app store, search for \"Android System WebView\" and update it, then reopen this app.\nIf it still fails after updating, report the component version above with a screenshot of this page.",
+      "bodyTextLength": 386,
+      "bodyTextHead": "This page could not start\nThis page needs a newer Android System WebView (or browser) to open properly.\nMissing runtime features: Intl.DisplayNames\nComponent version: 74.0.3729.185\nTo update: open your app store, search for \"Android System WebView\" and update it, then reopen this app.\nIf it still fa",
+      "rootChildren": 1,
+      "rootHtmlLength": 630,
+      "readyState": "complete",
+      "userAgent": "Mozilla/5.0 (Linux; Android 10; Android SDK built for x86_64 Build/QSR1.211112.011; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/74.0.3729.185 Mobile Safari/537.36",
+      "hasTextarea": false
+    },
+    "pid": "4328",
+    "uiTexts": [
+      "鲸落"
+    ]
+  },
+  "logcat": {
+    "file": "D:\\all_project\\runs\\fix180\\docs\\ui\\180-guard-i18n\\api29/logcat-api29.txt",
+    "bootGuardLines": [
+      "11-19 01:24:36.078  4328  4328 E Capacitor/Console: File: https://localhost/ - Line 1295 - Msg: [boot-guard] missing-api {\"branch\":\"①\",\"code\":\"missing-api\",\"message\":\"\",\"missing\":[\"Intl.DisplayNames\"],\"url\":null,\"line\":null,\"col\":null,\"ua\":\"Mozilla/5.0 (Linux; Android 10; Android SDK built for x86_64 Build/QSR1.211112.011; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/74.0.3729.185 Mobile Safari/537.36\",\"webviewVersion\":\"74.0.3729.185\",\"at\":1795051476076,\"text\":\"This page could not start\\nThis page needs a newer Android System WebView (or browser) to open properly.\\nMissing runtime features: Intl.DisplayNames\\nComponent version: 74.0.3729.185\\nTo update: open your app store, search for \\\"Android System WebView\\\" and update it, then reopen this app.\\nIf it still fails after updating, report the component version above with a screenshot of this page.\"}"
+    ],
+    "syntaxErrorLines": [
+      "11-19 01:24:36.476  4328  4328 E Capacitor/Console: File: https://localhost/ - Line 811 - Msg: SyntaxError: Unexpected token ?",
+      "11-19 01:24:36.483  4328  4695 E Capacitor: JavaScript Error: {\"type\":\"js.error\",\"error\":{\"message\":\"Uncaught SyntaxError: Unexpected token ?\",\"url\":\"https://localhost/static/js/main.7a2e9ece.js\",\"line\":1,\"col\":253966,\"errorObject\":\"{}\"}}",
+      "11-19 01:24:36.487  4328  4328 E Capacitor/Console: File: https://localhost/static/js/main.7a2e9ece.js - Line 1 - Msg: Uncaught SyntaxError: Unexpected token ?"
+    ],
+    "consoleLines": [
+      "11-19 01:24:32.968  1956  1987 I ActivityManager: Start proc 4070:com.android.chrome/u0a135 for service {com.android.chrome/org.chromium.chrome.browser.customtabs.CustomTabsConnectionService}",
+      "11-19 01:24:34.778  1956  1987 I ActivityManager: Start proc 4456:com.google.android.webview:webview_service/u0a130 for service {com.google.android.webview/org.chromium.android_webview.services.VariationsSeedServer}",
+      "11-19 01:24:34.796  4328  4328 I chromium: [INFO:library_loader_hooks.cc(50)] Chromium logging enabled: level = 0, default verbosity = 0",
+      "11-19 01:24:34.822  4328  4328 I cr_BrowserStartup: Initializing chromium process, singleProcess=false",
+      "11-19 01:24:34.839  1956  1987 I ActivityManager: Start proc 4486:com.google.android.webview:sandboxed_process0:org.chromium.content.app.SandboxedProcessService0/u0ai9000 for  {com.example.deepseekchat/org.chromium.content.app.SandboxedProcessService0}",
+      "11-19 01:24:35.215  4328  4562 E chromium: [ERROR:gl_surface_egl.cc(342)] eglChooseConfig failed with error EGL_SUCCESS",
+      "11-19 01:24:35.237  4328  4562 E chromium: [ERROR:gl_surface_egl.cc(342)] eglChooseConfig failed with error EGL_SUCCESS",
+      "11-19 01:24:35.319  4486  4512 I chromium: [INFO:library_loader_hooks.cc(50)] Chromium logging enabled: level = 0, default verbosity = 0"
+    ]
+  },
+  "verdict": {
+    "webViewVersionLine": "versionName=74.0.3729.185",
+    "userAgent": "Mozilla/5.0 (Linux; Android 10; Android SDK built for x86_64 Build/QSR1.211112.011; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/74.0.3729.185 Mobile Safari/537.36",
+    "booted": false,
+    "boxHidden": false,
+    "boxText": "This page could not start\nThis page needs a newer Android System WebView (or browser) to open properly.\nMissing runtime features: Intl.DisplayNames\nComponent version: 74.0.3729.185\nTo update: open your app store, search for \"Android System WebView\" and update it, then reopen this app.\nIf it still fails after updating, report the component version above with a screenshot of this page.",
+    "compatibilityError": {
+      "branch": "①",
+      "code": "missing-api",
+      "message": "",
+      "missing": [
+        "Intl.DisplayNames"
+      ],
+      "url": null,
+      "line": null,
+      "col": null,
+      "ua": "Mozilla/5.0 (Linux; Android 10; Android SDK built for x86_64 Build/QSR1.211112.011; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/74.0.3729.185 Mobile Safari/537.36",
+      "webviewVersion": "74.0.3729.185",
+      "at": 1795051476076,
+      "text": "This page could not start\nThis page needs a newer Android System WebView (or browser) to open properly.\nMissing runtime features: Intl.DisplayNames\nComponent version: 74.0.3729.185\nTo update: open your app store, search for \"Android System WebView\" and update it, then reopen this app.\nIf it still fails after updating, report the component version above with a screenshot of this page."
+    },
+    "rawExceptionOnScreen": false,
+    "syntaxErrorInLogcat": true,
+    "appAliveAtEnd": true
+  },
+  "finishedAt": "2026-11-19T01:25:05.443Z"
+}

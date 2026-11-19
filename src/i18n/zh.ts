@@ -687,4 +687,15 @@ export const zh = {
   oursPurchasesErrRejected: '订单查询被拒绝，请稍后重试',
   oursPurchasesErrBadResponse: '返回的数据无法解析，请稍后重试',
   oursPurchasesErrUnknown: '购买记录查询失败，请稍后重试',
+  // 兜底页出口文案（issue #180）。与 src/index.html 内联的 COPY 表逐字一致，
+  // tests/unit/compat-guard-diagnostics.test.mjs 会比对两侧 —— 改文案必须两边同时改。
+  compatBootTitle: '页面启动失败',
+  compatBootLead: '这个页面需要更新版本的 Android System WebView（或浏览器）才能正常打开。',
+  compatBootMissing: '缺少的运行环境能力：{apis}',
+  compatBootRuntimeError: '页面脚本在启动时出错，没能启动。',
+  compatBootTimeout: '页面脚本 12 秒内没有启动（内核过旧或资源加载失败）。',
+  compatBootVersion: '组件版本：{version}',
+  compatBootVersionUnknown: '组件版本：无法从浏览器标识里解析出来',
+  compatBootHowTo: '更新方法：在应用商店里搜索「Android System WebView」并更新，然后重新打开本应用。',
+  compatBootFooter: '若更新后仍然失败，请反馈上面的组件版本与本页截图。',
 } as const

@@ -27,9 +27,30 @@ import './styles/reading.css'
 import './app/global.css'
 import './app/motion.css'
 
-// index.html 里的 ES5 守卫在脚本加载/解析阶段就判定过能力（那时本包可能连解析都没过）。
+/**
+ * index.html 里的 ES5 守卫（issue #180 之后）写下的结构化诊断。三条出口都写它：
+ * ① missing-api（探针缺失）/ ② runtime-error（启动期脚本报错）/ ③ boot-timeout（12 秒没启动）。
+ * 原始异常文本只在这个对象里，用户可见文案走 src/index.html 的本地化模板。
+ */
+type BootGuardDiagnostics = {
+  branch: string
+  code: string
+  message: string
+  missing: string[]
+  url: string | null
+  line: number | null
+  col: number | null
+  ua: string
+  webviewVersion: string | null
+}
+
+// 守卫在脚本加载/解析阶段就判定过能力（那时本包可能连解析都没过）。
 // 它已经把可读提示画进 #root 了，就别再用半装的 React 树把它覆盖成白屏。
-if ((window as Window & { __DEEPSEEK_COMPATIBILITY_ERROR__?: string[] }).__DEEPSEEK_COMPATIBILITY_ERROR__) {
+const bootGuardError = (window as Window & { __DEEPSEEK_COMPATIBILITY_ERROR__?: BootGuardDiagnostics })
+  .__DEEPSEEK_COMPATIBILITY_ERROR__
+if (bootGuardError) {
+  // 原始细节（出口分支 / 内核版本 / 异常文本 / 行列号）守卫已经打进 console.error 与
+  // window.__DEEPSEEK_COMPATIBILITY_ERROR__，这里只负责别让半装的 React 树覆盖掉提示。
   throw new Error('WEBVIEW_CAPABILITY_MISSING')
 }
 

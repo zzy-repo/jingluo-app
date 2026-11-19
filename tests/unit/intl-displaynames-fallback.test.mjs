@@ -202,8 +202,10 @@ test('B1 缺 Intl.DisplayNames 时守卫命中「缺少：」分支并点名该 
   assert.equal(vm.runInContext('typeof (window.Intl && window.Intl.DisplayNames)', context), 'undefined')
   assert.equal(box.hidden, false, '缺这条 API 必须给出提示，而不是静默白屏')
   assert.match(box.textContent, /Android System WebView/, '要指向可行动的那句：更新 WebView')
-  assert.match(box.textContent, /缺少：.*Intl\.DisplayNames/, '要走「缺少：…」那条具体文案')
-  assert.deepEqual([...context.__DEEPSEEK_COMPATIBILITY_ERROR__], ['Intl.DisplayNames'])
+  assert.match(box.textContent, /缺少的运行环境能力：.*Intl\.DisplayNames/, '要走「缺少…」那条具体文案')
+  // #180：诊断变量改为结构化对象（branch 区分出口，missing 里点名缺的 API）
+  assert.equal(context.__DEEPSEEK_COMPATIBILITY_ERROR__.branch, '①')
+  assert.deepEqual([...context.__DEEPSEEK_COMPATIBILITY_ERROR__.missing], ['Intl.DisplayNames'])
 })
 
 test('B2 能力齐全时不误报（WebView 81+ 与新版浏览器不受影响）', () => {

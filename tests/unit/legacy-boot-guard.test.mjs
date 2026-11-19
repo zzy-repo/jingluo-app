@@ -98,7 +98,9 @@ test('极端内核（没有 fetch）给出可读提示，且写明 WebView 与�
   assert.equal(box.hidden, false)
   assert.match(box.textContent, /Android System WebView/)
   assert.match(box.textContent, /fetch/)
-  assert.deepEqual([...context.__DEEPSEEK_COMPATIBILITY_ERROR__], ['fetch'])
+  // #180：诊断变量是结构化对象，不再是裸数组（要能区分是哪条出口 + 带上内核版本）
+  assert.equal(context.__DEEPSEEK_COMPATIBILITY_ERROR__.branch, '①')
+  assert.deepEqual([...context.__DEEPSEEK_COMPATIBILITY_ERROR__.missing], ['fetch'])
 })
 
 test('补过的 API 不算致命缺失：Object.hasOwn / at / structuredClone 全没有也不报错', () => {
@@ -109,11 +111,25 @@ test('补过的 API 不算致命缺失：Object.hasOwn / at / structuredClone �
   assert.equal(context.__DEEPSEEK_COMPATIBILITY_ERROR__, undefined)
 })
 
-test('启动期脚本报错：把原始错误消息显示出来，且不被后续错误覆盖', () => {
-  const { listeners, box } = harness()
-  listeners.get('error')({ message: "Uncaught SyntaxError: Unexpected token '='" })
+test('启动期脚本报错：只给可读文案，原始异常进诊断变量，且不被后续错误覆盖', () => {
+  const { listeners, box, context } = harness()
+  listeners.get('error')({
+    message: "Uncaught SyntaxError: Unexpected token '='",
+    filename: 'https://localhost/static/js/main.030dd2a6.js',
+    lineno: 1,
+    colno: 249411,
+  })
   assert.equal(box.hidden, false)
-  assert.match(box.textContent, /Unexpected token '='/)
+  // #180 的根因：这里以前把 event.message 原样拼进用户可见文案
+  assert.doesNotMatch(box.textContent, /Unexpected token|SyntaxError|main\.[0-9a-f]+\.js/, '界面不许出现原始 JS 异常')
+  assert.match(box.textContent, /Android System WebView/)
+  const detail = context.__DEEPSEEK_COMPATIBILITY_ERROR__
+  assert.equal(detail.branch, '②')
+  assert.equal(detail.code, 'runtime-error')
+  assert.match(detail.message, /Unexpected token '='/)
+  assert.match(detail.url, /main\.030dd2a6\.js$/)
+  assert.equal(detail.line, 1)
+  assert.equal(detail.col, 249411)
   const first = box.textContent
   listeners.get('unhandledrejection')({})
   assert.equal(box.textContent, first, '先到的具体原因优先，不能被“启动任务异常”盖掉')
