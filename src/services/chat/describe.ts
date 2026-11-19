@@ -1,5 +1,5 @@
 import { isTranslationKey, translate } from '../../i18n/index.js'
-import { classifyStatus, isContextLimitMessage } from '../api/errors.js'
+import { classifyErrorSignature, isContextLimitMessage } from '../api/errors.js'
 import type { AssistantMessage } from './types.js'
 
 export type Notice = {
@@ -50,10 +50,16 @@ export const describeReply = (reply: AssistantMessage): Notice | null => {
     if (status === 413 || isContextLimitMessage(message)) {
       return { text: localized || translate('replyContextLimit') }
     }
-    switch (classifyStatus(status)) {
+    switch (
+      // 判定口径与请求层共用一份（#299）：状态码 + 上游 code + 文案，
+      // 这样「429 + insufficient_quota」也能落到额度档，而不是被当成限流说「请求过于频繁」
+      classifyErrorSignature({ status, code: reply.error.upstreamCode, message })
+    ) {
       case 'unauthorized':
         return { text: translate('replyInvalidApiKey'), action: 'apiKey' }
       case 'insufficientBalance':
+        // 额度不足是终态（不参与自动重试）：说清「无法继续生成」，并直接给充值 / 卡密入口。
+        // 文案复用已有 key（只改成明确措辞），不新增第二个名字，避免出现两个同义 key。
         return { text: translate('replyInsufficientBalance'), action: 'topUp' }
       case 'rateLimited':
         return { text: translate('replyRateLimited') }

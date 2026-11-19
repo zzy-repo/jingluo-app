@@ -48,6 +48,45 @@ export const isContextLimitMessage = (text: string | undefined): boolean =>
     ? CONTEXT_LIMIT_PATTERNS.some((pattern) => pattern.test(text))
     : false
 
+/**
+ * 上游用**机器可读的 code / type** 表示「额度用完」的写法（#299）。
+ *
+ * 只有 402 一个状态码是不够的：真实网关更常见的是 400 / 429 / 403 配一个 code，
+ * 例如 OpenAI 官方的 `insufficient_quota`、中转常见的 `insufficient_balance` /
+ * `quota_exhausted`、`billing_hard_limit_reached`，中文服务直接写「余额不足」。
+ * 这些响应不带 402，改前分别落到「请求过于频繁」（429 还会被退避重试）和
+ * 「回答没有完成，出现了未知错误」，用户只会以为 App 坏了。
+ *
+ * 只收「明确就是额度」的写法：限流（rate_limit_exceeded）、鉴权、参数错误、
+ * 文件/存储配额（User storage quota exceeded、file count limit）都不在此列。
+ */
+export const QUOTA_EXHAUSTED_PATTERNS: RegExp[] = [
+  /insufficient[_\s-]?(?:quota|balance|credit|funds)/i,
+  /quota[_\s-]?(?:exhausted|depleted)/i,
+  /exceeded[_\s-]?your[_\s-]?current[_\s-]?quota/i,
+  /billing[_\s-]?hard[_\s-]?limit[_\s-]?reached/i,
+  /credit[\s_-]?balance[\s_]*(?:is[\s_]*)?too[\s_-]?low/i,
+  /out[_\s-]?of[_\s-]?(?:credits|quota)/i,
+  /余额不足|额度不足|积分不足|余额已用完|额度已用完/,
+]
+
+/** 这段文字是不是「额度用完」（上游 code / type / message 都能喂进来，#299） */
+export const isQuotaExhaustedText = (text: string | undefined): boolean =>
+  typeof text === 'string' && text.length > 0
+    ? QUOTA_EXHAUSTED_PATTERNS.some((pattern) => pattern.test(text))
+    : false
+
+/**
+ * 判定用的最小输入：请求层按 ApiError 判、界面按保存下来的 error 判，
+ * 两边走**同一份**口径，避免「日志说额度不足、界面说网络异常」这种自相矛盾（#299）。
+ */
+export type ErrorSignature = {
+  status?: number
+  /** 上游响应体里的机器可读错误码（error.code / error.type / 顶层 code） */
+  code?: string
+  message?: string
+}
+
 /** 按 HTTP 状态码归类；没有状态码（请求没到达服务端）时按网络问题处理 */
 export const classifyStatus = (status: number | undefined): ApiErrorCondition => {
   if (status === 401) {
@@ -68,6 +107,34 @@ export const classifyStatus = (status: number | undefined): ApiErrorCondition =>
   return 'other'
 }
 
+/**
+ * 统一判定（#299）：状态码 + 上游 code + 文案，三者任一能确定就算数。
+ *
+ * 判定顺序是有讲究的：
+ * 1. 上下文超长先判：它也可能是 400/413，但用户能做的动作（开新会话 / 删早期消息）
+ *    和额度不足（去充值）完全不同，错判会把人引到没用的路上（#122）；
+ * 2. 额度用完再判：402 是标准写法，`insufficient_quota` 一类 code 是网关的常见写法，
+ *    都必须在 429（限流）与 400（泛化业务错误）之前认出来——否则额度问题会被说成
+ *    「请求过于频繁」并进入退避重试，或者干脆变成「未知错误」（#299）；
+ * 3. 其余按状态码走原有的网络 / 业务分类，行为不变。
+ */
+export const classifyErrorSignature = ({
+  status,
+  code,
+  message,
+}: ErrorSignature): ApiErrorCondition => {
+  if (status === 413 || isContextLimitMessage(message)) {
+    return 'contextLimit'
+  }
+  if (status === 402 || isQuotaExhaustedText(code) || isQuotaExhaustedText(message)) {
+    return 'insufficientBalance'
+  }
+  if (status === undefined) {
+    return 'other'
+  }
+  return classifyStatus(status)
+}
+
 export const classifyApiError = (error: unknown): ApiErrorCondition => {
   if (!(error instanceof ApiError)) {
     return 'other'
@@ -80,14 +147,16 @@ export const classifyApiError = (error: unknown): ApiErrorCondition => {
   if (error.kind === 'idle') {
     return 'idle'
   }
-  // 413 本身就是请求体超限；上游用文字说「上下文太长」时状态码常是 400，也要认出来
-  if (error.status === 413 || isContextLimitMessage([error.message, error.detail ?? ''].join('\n'))) {
-    return 'contextLimit'
-  }
-  if (error.status === undefined) {
+  const condition = classifyErrorSignature({
+    status: error.status,
+    code: error.upstreamCode,
+    message: [error.message, error.detail ?? ''].join('\n'),
+  })
+  // 没有状态码（请求没到达服务端）：签名判不出东西时仍按 kind 分开网络与其他
+  if (condition === 'other' && error.status === undefined) {
     return error.kind === 'network' ? 'network' : 'other'
   }
-  return classifyStatus(error.status)
+  return condition
 }
 
 /**
@@ -101,7 +170,7 @@ export const classifyApiError = (error: unknown): ApiErrorCondition => {
 export const isRetryableStatus = (status: number | undefined): boolean =>
   status === 429 || (status ?? 0) >= 500
 
-/** 重试可能成功的情况：网络、超时、断流、限流、服务端繁忙；参数或鉴权类错误重试无用 */
+/** 重试可能成功的情况：网络、超时、断流、限流、服务端繁忙；参数、鉴权、额度不足重试无用 */
 export const isRetryableApiError = (error: unknown): boolean => {
   // 还没成型的错误（非 ApiError）按「未知故障」处理，与改造前一致
   if (!(error instanceof ApiError)) {
@@ -112,11 +181,17 @@ export const isRetryableApiError = (error: unknown): boolean => {
   if (error.kind === 'timeout' || error.kind === 'idle') {
     return true
   }
+  const condition = classifyApiError(error)
+  // 额度/余额用完是终态（#299）：网关常用 429 / 400 表达额度不足，充值之前重发多少次
+  // 都是同一个结果，必须一次就收尾——否则会撞上退避重试（#105），用户白等几轮才收到
+  // 一句「请求过于频繁」。这一条必须排在「有状态码就按状态码判」之前。
+  if (condition === 'insufficientBalance') {
+    return false
+  }
   // 有状态码就只按状态码判：4xx（429 除外）不重试，这条是硬规则，不再经过分类兜底
   if (typeof error.status === 'number') {
     return isRetryableStatus(error.status)
   }
-  const condition = classifyApiError(error)
   return condition === 'network' || condition === 'interrupted'
 }
 

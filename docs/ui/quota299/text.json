@@ -1,0 +1,18 @@
+{
+  "device": "Android Emulator API33（x86_64，非真实手机）",
+  "note": "额度不足提示：上游打桩为 429 + insufficient_quota（OpenAI 协议链路）",
+  "shots": [
+    {
+      "shot": "docs\\ui\\quota299\\quota-390x844.png",
+      "width": 390,
+      "height": 844,
+      "text": "新对话 双击回顶 帮我写一段自我介绍 余额或额度不足，无法继续生成 去充值 / 兑换卡密 内容由 AI 生成，请仔细甄别"
+    },
+    {
+      "shot": "docs\\ui\\quota299\\quota-360x780.png",
+      "width": 360,
+      "height": 780,
+      "text": "新对话 双击回顶 帮我写一段自我介绍 余额或额度不足，无法继续生成 去充值 / 兑换卡密 内容由 AI 生成，请仔细甄别"
+    }
+  ]
+}

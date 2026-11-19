@@ -83,7 +83,9 @@ export const en = {
   commonNetworkErrorToast: 'Network Error. Please check your network status.',
   replyInvalidApiKey:
     'The API Key is invalid or has been deleted. Please replace it and try again.',
-  replyInsufficientBalance: 'Insufficient account balance. Please top up and try again.',
+  replyInsufficientBalance: 'Insufficient balance or quota. Cannot continue generating.',
+  /** Top-up entry inside the quota notice (#299): reuses the quota & card dialog */
+  quotaTopUpEntry: 'Top up / Redeem a card',
   replyRateLimited: 'Too many requests. Please try again later.',
   completionServerBusyToast: 'Server busy, please try again later.',
   unknownError: 'Unknown error',

@@ -13,7 +13,8 @@ import {
 } from '../../services/chat/store.js'
 import { stopReadAloud } from '../../services/speech/readAloud.js'
 import type { AssistantMessage as AssistantMessageType } from '../../services/chat/types.js'
-import { openSettings } from '../settings/settingsDialogState.js'
+import { openSettings, openOursServices } from '../settings/settingsDialogState.js'
+import { useIsOursChannel } from '../../services/api/apiConfig.js'
 import { IconButton } from '../base/IconButton.js'
 import { Button } from '../base/Button.js'
 import { Markdown } from '../markdown/Markdown.js'
@@ -54,6 +55,9 @@ export const AssistantMessage = memo(function AssistantMessage({
   const view = useReplyView(message, streaming)
   const panelEntry = useSearchPanel((state) => state.entry)
   const notice = streaming ? null : describeReply(message)
+  // 额度和充值都发生在「我们的渠道」上：它自带「额度与卡密」弹层（套餐 / 卡密兑换 / 剩余额度），
+  // 提示里的出路就该开这个弹层，而不是把用户甩去 DeepSeek 官网（#299）
+  const oursChannel = useIsOursChannel()
   // 安全拒绝：已下发的思考与正文按协议丢弃，只显示模板答复。
   const refused = message.stopReason === 'refusal'
   const answer = refused ? null : view.answer
@@ -139,14 +143,24 @@ export const AssistantMessage = memo(function AssistantMessage({
             {notice.action === 'topUp' ? (
               <>
                 {' '}
-                <a
-                  className={styles.noticeAction}
-                  href={TOP_UP_URL}
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  {t('topUp')}
-                </a>
+                {oursChannel ? (
+                  <button
+                    type="button"
+                    className={styles.noticeAction}
+                    onClick={() => openOursServices()}
+                  >
+                    {t('quotaTopUpEntry')}
+                  </button>
+                ) : (
+                  <a
+                    className={styles.noticeAction}
+                    href={TOP_UP_URL}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    {t('topUp')}
+                  </a>
+                )}
               </>
             ) : null}
           </span>

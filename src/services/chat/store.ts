@@ -1385,9 +1385,12 @@ const streamReply = async (sessionId: string, initial: AssistantMessage, request
         const notice =
           condition === 'contextLimit'
             ? { key: 'replyContextLimit' as const }
-            : error instanceof ApiError
-              ? error.localMessage
-              : undefined
+            : condition === 'insufficientBalance'
+              ? // 额度不足（#299）：界面文案固定（不认上游英文原文），日志也能看出「用户看到了什么」
+                { key: 'replyInsufficientBalance' as const }
+              : error instanceof ApiError
+                ? error.localMessage
+                : undefined
         // 失败必录：请求阶段、HTTP 状态、耗时、错误原文一次记全
         record('error', 'error', 'chat stream failed', {
           stage: preparing ? 'upload' : 'stream',
@@ -1397,6 +1400,16 @@ const streamReply = async (sessionId: string, initial: AssistantMessage, request
           ...(notice
             ? { 'ui.notice': notice.key }
             : { 'ui.notice': error instanceof ApiError ? error.kind : 'unknown' }),
+          // 额度不足单独打标（#299）：诊断层不新增枚举，用结构化字段统计，
+          // 这样「余额不足次数」能被单独筛出来，不会混进网络/限流错误里。
+          ...(condition === 'insufficientBalance'
+            ? {
+                'billing.quota': 'exhausted',
+                ...(error instanceof ApiError && error.upstreamCode
+                  ? { 'billing.quota.code': error.upstreamCode }
+                  : {}),
+              }
+            : {}),
           // 断流等情况的原始报错原文：只进日志，界面上给固定文案
           ...(error instanceof ApiError && error.detail ? { 'error.detail': error.detail } : {}),
           ...errorMeta(error),
@@ -1446,6 +1459,8 @@ const streamReply = async (sessionId: string, initial: AssistantMessage, request
             kind: error.kind,
             message: error.message,
             status: error.status,
+            // 上游 code 一并存下来：刷新 / 换设备后仍能认出「额度不足」（#299）
+            ...(error.upstreamCode ? { upstreamCode: error.upstreamCode } : {}),
             localMessage: notice,
           })
         } else {

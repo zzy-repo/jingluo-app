@@ -68,13 +68,20 @@ export class ApiError extends Error {
   readonly localMessage?: TranslationMessage
   /** 原始报错原文：只进日志与元信息，不上界面 */
   readonly detail?: string
+  /**
+   * 上游响应体里自带的机器可读错误码（`error.code` / `error.type` / 顶层 `code`）。
+   * 与 `code` 分工不同：`code` 是本客户端自己定义的错误码，这里是**上游原话**，
+   * 用来认「额度用完」这一类各家写法不统一的情况（#299）。
+   */
+  readonly upstreamCode?: string
 
   constructor(
     kind: ApiErrorKind,
     message: string | TranslationMessage,
     status?: number,
     code?: ApiErrorCode,
-    detail?: string
+    detail?: string,
+    upstreamCode?: string
   ) {
     // 字段逐个赋值（不用 TS 参数属性）：单测直接在 Node 里 import 这个模块跑真代码。
     super(typeof message === 'string' ? message : translate(message.key, message.params))
@@ -83,6 +90,7 @@ export class ApiError extends Error {
     this.status = status
     this.code = code
     this.detail = detail
+    this.upstreamCode = upstreamCode
     this.localMessage = typeof message === 'string' ? undefined : message
   }
 }
@@ -107,6 +115,37 @@ const isErrorBody = (value: unknown): value is ApiErrorBody =>
   'error' in value &&
   typeof (value as ApiErrorBody).error?.message === 'string'
 
+/** 从 `{ code, type }` 这类对象里取第一个非空字符串（上游 code 的两种放法） */
+const readCodeField = (value: unknown): string | undefined => {
+  if (typeof value !== 'object' || value === null) {
+    return undefined
+  }
+  const entry = value as { code?: unknown; type?: unknown }
+  for (const candidate of [entry.code, entry.type]) {
+    if (typeof candidate === 'string' && candidate.trim() !== '') {
+      return candidate.trim()
+    }
+  }
+  return undefined
+}
+
+/**
+ * 上游错误体里的机器可读错误码：优先 `error.code` / `error.type`（OpenAI 与多数网关），
+ * 再看顶层 `code`（部分网关的写法）。不看顶层 `type`——Anthropic 的 `type` 恒为 "error"，
+ * 取它只会得到一个没信息量的字符串。
+ */
+const readUpstreamCode = (body: unknown): string | undefined => {
+  if (typeof body !== 'object' || body === null) {
+    return undefined
+  }
+  const fromError = readCodeField((body as { error?: unknown }).error)
+  if (fromError) {
+    return fromError
+  }
+  const top = (body as { code?: unknown }).code
+  return typeof top === 'string' && top.trim() !== '' ? top.trim() : undefined
+}
+
 const readErrorResponse = async (
   response: Response,
   kind: 'http' | 'protocol' = 'http',
@@ -114,15 +153,17 @@ const readErrorResponse = async (
 ): Promise<ApiError> => {
   const text = await response.text().catch(() => '')
   let message = text || fallback
+  let upstreamCode: string | undefined
   try {
     const body: unknown = JSON.parse(text)
     if (isErrorBody(body)) {
       message = body.error.message
     }
+    upstreamCode = readUpstreamCode(body)
   } catch {
     // 非 JSON 响应体直接展示原文
   }
-  return new ApiError(kind, message, response.status)
+  return new ApiError(kind, message, response.status, undefined, undefined, upstreamCode)
 }
 
 /**
@@ -496,7 +537,15 @@ export async function* streamMessage(
         }
       }
       if (isErrorBody(payload)) {
-        throw new ApiError('stream', payload.error.message)
+        // 有的网关把额度不足写在流内的 error 帧里：上游 code 一并带上，界面才能给出充值出路（#299）
+        throw new ApiError(
+          'stream',
+          payload.error.message,
+          undefined,
+          undefined,
+          undefined,
+          readUpstreamCode(payload)
+        )
       }
       if (eventName === 'error') {
         throw new ApiError('stream', data)

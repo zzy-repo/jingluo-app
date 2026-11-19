@@ -97,6 +97,12 @@ export type AssistantMessage = MessageBranch & {
     kind: ApiErrorKind | 'upload'
     message: string
     status?: number
+    /**
+     * 上游响应体里的机器可读错误码（如 `insufficient_quota`）。
+     * 存下来是为了刷新 / 换设备后仍能把「额度不足」认出来：状态码常是 429 / 400，
+     * 单看状态码会被说成「请求过于频繁」或「未知错误」（#299）。
+     */
+    upstreamCode?: string
     localMessage?: TranslationMessage
     /** 仅 upload：重新上传是否可能成功（网络、限流、服务端繁忙）；过大、格式不支持为 false */
     retryable?: boolean

@@ -78,7 +78,9 @@ export const zh = {
   readingLink: '正在阅读',
   commonNetworkErrorToast: '网络异常，请检查你的网络状况',
   replyInvalidApiKey: 'API Key 无效或已被删除，请更换后重试',
-  replyInsufficientBalance: '账户余额不足，请充值后重试',
+  replyInsufficientBalance: '余额或额度不足，无法继续生成',
+  /** 额度不足提示里的出路入口（#299）：复用「额度与卡密」弹层，充值套餐与卡密兑换都在里面 */
+  quotaTopUpEntry: '去充值 / 兑换卡密',
   replyRateLimited: '请求过于频繁，请稍后再试',
   completionServerBusyToast: '服务器繁忙，请稍后再试',
   unknownError: '未知错误',
