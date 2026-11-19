@@ -1,0 +1,632 @@
+[
+  {
+    "viewport": "390x844",
+    "mode": "after",
+    "swipes": 2,
+    "initial": {
+      "found": true,
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "dialog": {
+        "top": 126.6,
+        "bottom": 717.4,
+        "height": 590.8,
+        "width": 358
+      },
+      "dialogStyle": {
+        "maxHeight": "590.8px",
+        "padding": "22px 24px"
+      },
+      "header": {
+        "top": 148.6,
+        "bottom": 176.6,
+        "height": 28,
+        "width": 310
+      },
+      "main": {
+        "rect": {
+          "top": 188.6,
+          "bottom": 635.4,
+          "height": 446.8,
+          "width": 310
+        },
+        "overflowY": "auto",
+        "minHeight": "0px",
+        "flex": "1 1 auto",
+        "touchAction": "pan-y",
+        "overscrollBehaviorY": "contain",
+        "webkitOverflowScrolling": null,
+        "scrollHeight": 1273,
+        "clientHeight": 447,
+        "scrollTop": 0,
+        "overflows": true
+      },
+      "scrollHost": {
+        "className": "main-_83af2 main-dffa63",
+        "overflowY": "auto"
+      },
+      "items": 23,
+      "firstItem": "新增「额度与卡密」：首次进入自动领取额度并绑定本",
+      "lastItem": {
+        "text": "内测版本，建议保留重要聊天记录；遇到问题请通过反",
+        "rect": {
+          "top": 1349.3,
+          "bottom": 1393.3,
+          "height": 44,
+          "width": 268
+        },
+        "inViewport": false,
+        "inMain": false
+      },
+      "footer": {
+        "top": 655.4,
+        "bottom": 695.4,
+        "height": 40,
+        "width": 310
+      },
+      "actions": [
+        {
+          "text": "关闭",
+          "rect": {
+            "top": 148.6,
+            "bottom": 176.6,
+            "height": 28,
+            "width": 28
+          },
+          "inViewport": true
+        },
+        {
+          "text": "重新检查",
+          "rect": {
+            "top": 655.4,
+            "bottom": 695.4,
+            "height": 40,
+            "width": 86
+          },
+          "inViewport": true
+        },
+        {
+          "text": "下载 APK",
+          "rect": {
+            "top": 655.4,
+            "bottom": 695.4,
+            "height": 40,
+            "width": 59.5
+          },
+          "inViewport": true
+        }
+      ],
+      "page": {
+        "bodyOverflow": "hidden",
+        "htmlOverflow": "hidden",
+        "documentScrollHeight": 844,
+        "documentClientHeight": 844
+      },
+      "reproduced": false
+    },
+    "scrolled": {
+      "found": true,
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "dialog": {
+        "top": 126.6,
+        "bottom": 717.4,
+        "height": 590.8,
+        "width": 358
+      },
+      "dialogStyle": {
+        "maxHeight": "590.8px",
+        "padding": "22px 24px"
+      },
+      "header": {
+        "top": 148.6,
+        "bottom": 176.6,
+        "height": 28,
+        "width": 310
+      },
+      "main": {
+        "rect": {
+          "top": 188.6,
+          "bottom": 635.4,
+          "height": 446.8,
+          "width": 310
+        },
+        "overflowY": "auto",
+        "minHeight": "0px",
+        "flex": "1 1 auto",
+        "touchAction": "pan-y",
+        "overscrollBehaviorY": "contain",
+        "webkitOverflowScrolling": null,
+        "scrollHeight": 1273,
+        "clientHeight": 447,
+        "scrollTop": 826,
+        "overflows": true
+      },
+      "scrollHost": {
+        "className": "main-_83af2 main-dffa63",
+        "overflowY": "auto"
+      },
+      "items": 23,
+      "firstItem": "新增「额度与卡密」：首次进入自动领取额度并绑定本",
+      "lastItem": {
+        "text": "内测版本，建议保留重要聊天记录；遇到问题请通过反",
+        "rect": {
+          "top": 523.3,
+          "bottom": 567.3,
+          "height": 44,
+          "width": 268
+        },
+        "inViewport": true,
+        "inMain": true
+      },
+      "footer": {
+        "top": 655.4,
+        "bottom": 695.4,
+        "height": 40,
+        "width": 310
+      },
+      "actions": [
+        {
+          "text": "关闭",
+          "rect": {
+            "top": 148.6,
+            "bottom": 176.6,
+            "height": 28,
+            "width": 28
+          },
+          "inViewport": true
+        },
+        {
+          "text": "重新检查",
+          "rect": {
+            "top": 655.4,
+            "bottom": 695.4,
+            "height": 40,
+            "width": 86
+          },
+          "inViewport": true
+        },
+        {
+          "text": "下载 APK",
+          "rect": {
+            "top": 655.4,
+            "bottom": 695.4,
+            "height": 40,
+            "width": 59.5
+          },
+          "inViewport": true
+        }
+      ],
+      "page": {
+        "bodyOverflow": "hidden",
+        "htmlOverflow": "hidden",
+        "documentScrollHeight": 844,
+        "documentClientHeight": 844
+      },
+      "reproduced": false
+    },
+    "consoleErrors": [],
+    "short": {
+      "found": true,
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "dialog": {
+        "top": 208.6,
+        "bottom": 635.4,
+        "height": 426.8,
+        "width": 358
+      },
+      "dialogStyle": {
+        "maxHeight": "590.8px",
+        "padding": "22px 24px"
+      },
+      "header": {
+        "top": 230.6,
+        "bottom": 258.6,
+        "height": 28,
+        "width": 310
+      },
+      "main": {
+        "rect": {
+          "top": 270.6,
+          "bottom": 553.4,
+          "height": 282.8,
+          "width": 310
+        },
+        "overflowY": "auto",
+        "minHeight": "0px",
+        "flex": "1 1 auto",
+        "touchAction": "pan-y",
+        "overscrollBehaviorY": "contain",
+        "webkitOverflowScrolling": null,
+        "scrollHeight": 283,
+        "clientHeight": 283,
+        "scrollTop": 0,
+        "overflows": false
+      },
+      "scrollHost": {
+        "className": "main-_83af2 main-dffa63",
+        "overflowY": "auto"
+      },
+      "items": 3,
+      "firstItem": "修复窄屏下设置页部分文字被挤压错行",
+      "lastItem": {
+        "text": "内测版本，建议保留重要聊天记录",
+        "rect": {
+          "top": 463.4,
+          "bottom": 485.4,
+          "height": 22,
+          "width": 268
+        },
+        "inViewport": true,
+        "inMain": true
+      },
+      "footer": {
+        "top": 573.4,
+        "bottom": 613.4,
+        "height": 40,
+        "width": 310
+      },
+      "actions": [
+        {
+          "text": "关闭",
+          "rect": {
+            "top": 230.6,
+            "bottom": 258.6,
+            "height": 28,
+            "width": 28
+          },
+          "inViewport": true
+        },
+        {
+          "text": "重新检查",
+          "rect": {
+            "top": 573.4,
+            "bottom": 613.4,
+            "height": 40,
+            "width": 86
+          },
+          "inViewport": true
+        },
+        {
+          "text": "下载 APK",
+          "rect": {
+            "top": 573.4,
+            "bottom": 613.4,
+            "height": 40,
+            "width": 59.5
+          },
+          "inViewport": true
+        }
+      ],
+      "page": {
+        "bodyOverflow": "hidden",
+        "htmlOverflow": "hidden",
+        "documentScrollHeight": 844,
+        "documentClientHeight": 844
+      },
+      "reproduced": false
+    }
+  },
+  {
+    "viewport": "360x740",
+    "mode": "after",
+    "swipes": 4,
+    "initial": {
+      "found": true,
+      "viewport": {
+        "width": 360,
+        "height": 740
+      },
+      "dialog": {
+        "top": 140.6,
+        "bottom": 599.4,
+        "height": 458.8,
+        "width": 328
+      },
+      "dialogStyle": {
+        "maxHeight": "458.8px",
+        "padding": "22px 24px"
+      },
+      "header": {
+        "top": 162.6,
+        "bottom": 190.6,
+        "height": 28,
+        "width": 280
+      },
+      "main": {
+        "rect": {
+          "top": 202.6,
+          "bottom": 517.4,
+          "height": 314.8,
+          "width": 280
+        },
+        "overflowY": "auto",
+        "minHeight": "0px",
+        "flex": "1 1 auto",
+        "touchAction": "pan-y",
+        "overscrollBehaviorY": "contain",
+        "webkitOverflowScrolling": null,
+        "scrollHeight": 1361,
+        "clientHeight": 315,
+        "scrollTop": 0,
+        "overflows": true
+      },
+      "scrollHost": {
+        "className": "main-_83af2 main-dffa63",
+        "overflowY": "auto"
+      },
+      "items": 23,
+      "firstItem": "新增「额度与卡密」：首次进入自动领取额度并绑定本",
+      "lastItem": {
+        "text": "内测版本，建议保留重要聊天记录；遇到问题请通过反",
+        "rect": {
+          "top": 1429.3,
+          "bottom": 1473.3,
+          "height": 44,
+          "width": 238
+        },
+        "inViewport": false,
+        "inMain": false
+      },
+      "footer": {
+        "top": 537.4,
+        "bottom": 577.4,
+        "height": 40,
+        "width": 280
+      },
+      "actions": [
+        {
+          "text": "关闭",
+          "rect": {
+            "top": 162.6,
+            "bottom": 190.6,
+            "height": 28,
+            "width": 28
+          },
+          "inViewport": true
+        },
+        {
+          "text": "重新检查",
+          "rect": {
+            "top": 537.4,
+            "bottom": 577.4,
+            "height": 40,
+            "width": 86
+          },
+          "inViewport": true
+        },
+        {
+          "text": "下载 APK",
+          "rect": {
+            "top": 537.4,
+            "bottom": 577.4,
+            "height": 40,
+            "width": 59.5
+          },
+          "inViewport": true
+        }
+      ],
+      "page": {
+        "bodyOverflow": "hidden",
+        "htmlOverflow": "hidden",
+        "documentScrollHeight": 740,
+        "documentClientHeight": 740
+      },
+      "reproduced": false
+    },
+    "scrolled": {
+      "found": true,
+      "viewport": {
+        "width": 360,
+        "height": 740
+      },
+      "dialog": {
+        "top": 140.6,
+        "bottom": 599.4,
+        "height": 458.8,
+        "width": 328
+      },
+      "dialogStyle": {
+        "maxHeight": "458.8px",
+        "padding": "22px 24px"
+      },
+      "header": {
+        "top": 162.6,
+        "bottom": 190.6,
+        "height": 28,
+        "width": 280
+      },
+      "main": {
+        "rect": {
+          "top": 202.6,
+          "bottom": 517.4,
+          "height": 314.8,
+          "width": 280
+        },
+        "overflowY": "auto",
+        "minHeight": "0px",
+        "flex": "1 1 auto",
+        "touchAction": "pan-y",
+        "overscrollBehaviorY": "contain",
+        "webkitOverflowScrolling": null,
+        "scrollHeight": 1361,
+        "clientHeight": 315,
+        "scrollTop": 1046,
+        "overflows": true
+      },
+      "scrollHost": {
+        "className": "main-_83af2 main-dffa63",
+        "overflowY": "auto"
+      },
+      "items": 23,
+      "firstItem": "新增「额度与卡密」：首次进入自动领取额度并绑定本",
+      "lastItem": {
+        "text": "内测版本，建议保留重要聊天记录；遇到问题请通过反",
+        "rect": {
+          "top": 383.3,
+          "bottom": 427.3,
+          "height": 44,
+          "width": 238
+        },
+        "inViewport": true,
+        "inMain": true
+      },
+      "footer": {
+        "top": 537.4,
+        "bottom": 577.4,
+        "height": 40,
+        "width": 280
+      },
+      "actions": [
+        {
+          "text": "关闭",
+          "rect": {
+            "top": 162.6,
+            "bottom": 190.6,
+            "height": 28,
+            "width": 28
+          },
+          "inViewport": true
+        },
+        {
+          "text": "重新检查",
+          "rect": {
+            "top": 537.4,
+            "bottom": 577.4,
+            "height": 40,
+            "width": 86
+          },
+          "inViewport": true
+        },
+        {
+          "text": "下载 APK",
+          "rect": {
+            "top": 537.4,
+            "bottom": 577.4,
+            "height": 40,
+            "width": 59.5
+          },
+          "inViewport": true
+        }
+      ],
+      "page": {
+        "bodyOverflow": "hidden",
+        "htmlOverflow": "hidden",
+        "documentScrollHeight": 740,
+        "documentClientHeight": 740
+      },
+      "reproduced": false
+    },
+    "consoleErrors": [],
+    "short": {
+      "found": true,
+      "viewport": {
+        "width": 360,
+        "height": 740
+      },
+      "dialog": {
+        "top": 145.6,
+        "bottom": 594.4,
+        "height": 448.8,
+        "width": 328
+      },
+      "dialogStyle": {
+        "maxHeight": "458.8px",
+        "padding": "22px 24px"
+      },
+      "header": {
+        "top": 167.6,
+        "bottom": 195.6,
+        "height": 28,
+        "width": 280
+      },
+      "main": {
+        "rect": {
+          "top": 207.6,
+          "bottom": 512.4,
+          "height": 304.8,
+          "width": 280
+        },
+        "overflowY": "auto",
+        "minHeight": "0px",
+        "flex": "1 1 auto",
+        "touchAction": "pan-y",
+        "overscrollBehaviorY": "contain",
+        "webkitOverflowScrolling": null,
+        "scrollHeight": 305,
+        "clientHeight": 305,
+        "scrollTop": 0,
+        "overflows": false
+      },
+      "scrollHost": {
+        "className": "main-_83af2 main-dffa63",
+        "overflowY": "auto"
+      },
+      "items": 3,
+      "firstItem": "修复窄屏下设置页部分文字被挤压错行",
+      "lastItem": {
+        "text": "内测版本，建议保留重要聊天记录",
+        "rect": {
+          "top": 400.4,
+          "bottom": 422.4,
+          "height": 22,
+          "width": 238
+        },
+        "inViewport": true,
+        "inMain": true
+      },
+      "footer": {
+        "top": 532.4,
+        "bottom": 572.4,
+        "height": 40,
+        "width": 280
+      },
+      "actions": [
+        {
+          "text": "关闭",
+          "rect": {
+            "top": 167.6,
+            "bottom": 195.6,
+            "height": 28,
+            "width": 28
+          },
+          "inViewport": true
+        },
+        {
+          "text": "重新检查",
+          "rect": {
+            "top": 532.4,
+            "bottom": 572.4,
+            "height": 40,
+            "width": 86
+          },
+          "inViewport": true
+        },
+        {
+          "text": "下载 APK",
+          "rect": {
+            "top": 532.4,
+            "bottom": 572.4,
+            "height": 40,
+            "width": 59.5
+          },
+          "inViewport": true
+        }
+      ],
+      "page": {
+        "bodyOverflow": "hidden",
+        "htmlOverflow": "hidden",
+        "documentScrollHeight": 740,
+        "documentClientHeight": 740
+      },
+      "reproduced": false
+    }
+  }
+]
