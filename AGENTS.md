@@ -37,6 +37,11 @@
 4. **普通 issue 可以由 PR 自动关闭**，但**合并后必须核对被引用 issue 的状态**：
    `gh issue view <n> --json state,title,closedAt` 逐条确认；关错了立刻 reopen，
    并在该单评论里写清"被 PR 误关、剩余工作是什么"。
+5. **合并前核对 CI 全绿，并且分清"是谁红的"。** `gh pr view <n> --json statusCheckRollup`；
+   若红的是 main 上的既有问题、与你的改动无关，**先修 main，不要在红的基础上叠加 PR** ——
+   PR 的 CI 跑的是 merge-ref（main + 你的分支），main 一红，所有在飞的 PR 都跟着红，
+   最后谁也说不清是谁弄坏的。（实测：为 #362 落地本节的 #411 就被 #402 拖红 —— main 上
+   `src/services/memory` 带 324 条 lint 错误，而 #402 是在自身 CI 已 FAILURE 时被合并的，见 #417。）
 
 官方口径（GitHub docs: Linking a pull request to an issue）：关键词只有 9 个 ——
 `close / closes / closed / fix / fixes / fixed / resolve / resolves / resolved`；可带冒号、
