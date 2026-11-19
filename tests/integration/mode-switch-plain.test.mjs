@@ -21,7 +21,7 @@ const ROOT = path.resolve(HERE, '../..')
 const PLAIN_DIST = process.env.STANDARD_DIST_DIR || path.join(ROOT, 'dist-standard')
 const PORT = process.env.PORT
 const BASELINE_URL = process.env.BASELINE_URL || ''
-const BASELINE_FIXTURE = path.join(ROOT, 'tests', 'fixtures', 'input-row-baseline.json')
+const BASELINE_FIXTURE = path.join(ROOT, 'tests', 'fixtures', 'domain01-02', 'input-row-baseline.json')
 
 // 端口自动发现（PORT 可注入）：不再固定 5191；产物目录也不用手工准备
 const plainServed = process.env.PLAIN_URL
