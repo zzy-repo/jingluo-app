@@ -14,6 +14,7 @@ import {
 } from './types.js'
 import { redact, redactUrl, safeString, truncate } from './redact.js'
 import { readCapabilityTruth } from './capabilityTruth.js'
+import { isFetchPatched } from '../../utils/capabilities.js'
 
 /**
  * 采集层：只负责「记什么」。
@@ -822,7 +823,16 @@ export const captureUiNotice = (trigger: string): LogEntry => {
 // ---------------------------------------------------------------- hooks
 
 let hooksInstalled = false
-/** CapacitorHttp 内部会走 fetch：用它做重入标记，避免同一次请求被记两遍 */
+/**
+ * 重入标记：**只覆盖「业务直接调 JS 侧 CapacitorHttp 代理」这一条路径**。
+ *
+ * `installCapacitorHttpHook` 先记一条 `native: true`，再进 `inNativeHttp += 1`；代理内部若还落回
+ * 页面 `fetch`，`installFetchHook` 那层看到计数 > 0 就闭嘴，同一条请求不会记两遍。
+ *
+ * 它挡不住的是**宿主桥接换掉 `window.fetch`** 的那条（issue #210）：native-bridge 的 doPatchHttp
+ * 走的是 `cap.nativePromise`，压根不经过 JS 侧代理，这个计数器永远是 0。
+ * 那种形态由 `detectFetchChannel` 在安装时判定 —— 不是原生就整层不接管，见 installFetchHook。
+ */
 let inNativeHttp = 0
 let requestSeq = 0
 
@@ -901,12 +911,73 @@ const installConsoleHook = (): void => {
   }
 }
 
+/** `window.fetch` 现在挂在谁手上：原生 / 宿主桥接 / 不认识的包装 */
+type FetchChannel = 'native' | 'host-bridge' | 'wrapped'
+
+/** V8 里原生函数（含 bind 出来的）源码就是这个形状 */
+const ENGINE_NATIVE_HINT = '[native code]'
+/** native-bridge 换 fetch 之前会把原函数存在这个字段上：宿主接管的确定性信号 */
+const BRIDGE_SAVED_FETCH_KEY = 'CapacitorWebFetch'
+/** 桥接实现里的运行时痕迹，压缩也改不到（与 utils/capabilities.ts 同一套判据） */
+const BRIDGE_SOURCE_HINT = /CapacitorHttp|CapacitorWebFetch|nativePromise/u
+
+const readFunctionSource = (fn: unknown): string => {
+  if (typeof fn !== 'function') {
+    return ''
+  }
+  try {
+    return Function.prototype.toString.call(fn)
+  } catch {
+    return ''
+  }
+}
+
+/**
+ * 认 `window.fetch` 的身份（issue #210）。
+ *
+ * 采集层以前默认「进到这里时 window.fetch 就是引擎原生实现」，那是错的：宿主桥接层
+ * （Capacitor native-bridge 的 doPatchHttp）会在页面脚本之前把 `window.fetch` 换成走原生网络栈的
+ * 包装。把别人的包装当原生会同时错三件事：
+ * 1. 双份 —— 那条路走 `cap.nativePromise`，不经过 JS 侧 CapacitorHttp 代理，`inNativeHttp` 为 0，
+ *    我们照旧记一条，原生通道那边再记一条，同一次请求在两处各留一份；
+ * 2. 通道标错 —— 我们那条不带 `native: true`，原生通道的请求被当成页面 fetch，排障时方向直接反；
+ * 3. 流式退化 —— 桥接实现是拼出来的 Response，`response.body` 不是真流，SSE 会静默变哑。
+ *
+ * 所以先认身份：`native` 才接管；其余（宿主桥接 / 不认识的包装）整层不接管，只留一条降级信号。
+ */
+const detectFetchChannel = (impl: unknown): FetchChannel => {
+  const host = window as unknown as Record<string, unknown>
+  if (typeof host[BRIDGE_SAVED_FETCH_KEY] === 'function') {
+    return 'host-bridge'
+  }
+  // isFetchPatched() 的结果按 key 缓存（#212）：本次调用之前若已被别的探测写死，这里可能拿到旧值，
+  // 所以只用它当「加分项」，真正的判据是下面这次新鲜探测。
+  if (isFetchPatched() || BRIDGE_SOURCE_HINT.test(readFunctionSource(impl))) {
+    return 'host-bridge'
+  }
+  return readFunctionSource(impl).includes(ENGINE_NATIVE_HINT) ? 'native' : 'wrapped'
+}
+
 /**
  * 包装 fetch：**成功与失败都记**（net_request / net_response / net_error）。
  * 「一直加载」往往是「请求发出但没有响应」，只看失败记录永远查不出来，所以成功也要留痕。
+ *
+ * 只在 `window.fetch` 确认是引擎原生实现时才接管（见 detectFetchChannel）。被宿主接管时不接管
+ * 也不入库，改留一条降级信号：宁可少一份网络日志，也不要两份互相矛盾、通道还是错的日志。
  */
 const installFetchHook = (): void => {
   if (typeof window === 'undefined' || typeof window.fetch !== 'function') {
+    return
+  }
+  const channel = detectFetchChannel(window.fetch)
+  if (channel !== 'native') {
+    const who = channel === 'host-bridge' ? '宿主桥接' : '未知包装'
+    record('warning', 'warn', `fetch 已被${who}接管，采集降级：无 net_* 记录，且拿不到真流（SSE 不可用）`, {
+      stage: 'fetch-hook',
+      'fetch.channel': channel,
+      native: true,
+      streaming: 'unsupported',
+    })
     return
   }
   const original = window.fetch.bind(window)
@@ -919,7 +990,8 @@ const installFetchHook = (): void => {
     const path = redactUrl(url)
     // 只记 host（不带端口 / query），用来区分直连官方还是自建中转
     const host = redactHost(url)
-    // CapacitorHttp 自己会记一条，避免重复
+    // JS 侧 CapacitorHttp 代理自己会记一条（native: true），避免同一条请求记两遍。
+    // 注意：这个计数器只覆盖那条路径；宿主桥接换掉的 fetch 不进代理，靠上面的通道探测拦住。
     const quiet = inNativeHttp > 0
     const requestId = newRequestId()
     if (!quiet) {
