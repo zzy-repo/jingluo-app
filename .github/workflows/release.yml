@@ -140,6 +140,16 @@ jobs:
           echo "asset=$ren" >> "$GITHUB_ENV"
           echo "MD5 校验通过"
 
+      - name: 校验产物不是 debuggable 构建（Issue #84）
+        run: |
+          set -euo pipefail
+          if [ ! -f scripts/check-apk-debuggable.mjs ]; then
+            echo "::error::缺少 scripts/check-apk-debuggable.mjs（fail-closed：无法校验就不镜像）"
+            exit 1
+          fi
+          node scripts/check-apk-debuggable.mjs "$asset"
+          echo "debuggable 关卡通过：该 APK 为 release 构建，无 android:debuggable"
+
       - name: 创建或更新 Release
         run: |
           set -euo pipefail
