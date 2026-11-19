@@ -91,7 +91,13 @@ const ROWS = [
       copyFixture('lint/lint-violation.ts', PROBE_LINT)
       return () => rmSync(path.join(ROOT, PROBE_LINT), { force: true })
     },
-    red: /no-debugger[\s\S]*__gate-neg-lint-probe\.ts/,
+    // 两条判据（都必须命中）：
+    //   · 规则族：`debugger` 的提示文案（本地形态是 `x eslint(no-debugger): ...`）
+    //   · 增量：正例是 `0 errors`，注入后必须正好 `1 error` —— 这比文件名更稳：
+    //     oxlint 在 GitHub Actions 上会输出注解格式，CI 日志里诊断头的文件名会被 runner 吞掉
+    //     （实测 #419 第一轮 CI：本地红在 `/no-debugger.*__gate-neg-lint-probe\.ts/`，CI 只有
+    //     `##[error]\`debugger\` statement is not allowed` + `Found 0 warnings and 1 error.`）。
+    red: [/debugger/, /Found 0 warnings and 1 error/],
     // 同一份注入只该被 lint 拦下：tsc 对 debugger 语句不报错。这条断言把「归因」钉死，
     // 免得哪天 fixture 变成「语法错 / 类型错」，lint 的红被 tsc 顶掉还看不出来。
     alsoWhileInjected: () => {

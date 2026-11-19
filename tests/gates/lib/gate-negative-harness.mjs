@@ -146,10 +146,16 @@ export function assertNegativeControl(row, hooks = {}) {
         `${row.gate}：${row.what} → 必须 exit≠0（负向对照失效 = 门禁空跑，注入物：${row.artifact}）\n--- 输出 ---\n${red.out}`
       )
     }
-    if (!row.red.test(red.out)) {
-      throw new Error(
-        `${row.gate}：exit≠0 了，但报错没点出注入的那一处（期望 ${row.red}）—— 很可能红在别的原因上\n--- 输出 ---\n${red.out}`
-      )
+    // 允许一行给多条「都必须命中」的判据（`red` 可以是单个 RegExp 或数组）。
+    // 为什么要数组：有些门禁在 GitHub Actions 上会换成**注解格式**输出（oxlint 认 GITHUB_ACTIONS），
+    // 诊断头里的文件名会被 runner 吞掉 —— 只认「文件路径」的断言在本地绿、在 CI 红。
+    // 那种情况改成「规则族 + 错误条数」两条稳定判据，断言的仍是「红在注入的那一处」。
+    for (const pattern of Array.isArray(row.red) ? row.red : [row.red]) {
+      if (!pattern.test(red.out)) {
+        throw new Error(
+          `${row.gate}：exit≠0 了，但报错没点出注入的那一处（期望 ${pattern}）—— 很可能红在别的原因上\n--- 输出 ---\n${red.out}`
+        )
+      }
     }
     if (BROKEN_GATE_OUT.test(red.out)) {
       throw new Error(`${row.gate}：红的原因是「门禁命令本身坏了」，不是「检测到缺陷」\n--- 输出 ---\n${red.out}`)
