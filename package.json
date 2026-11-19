@@ -37,7 +37,8 @@
     "test:which": "node tests/which.mjs",
     "gen:gap": "node scripts/gen-flex-gap-fallback.mjs",
     "check:gap": "node scripts/check-css-gap-fallback.mjs",
-    "check:gutter": "node scripts/check-scrollbar-gutter-fallback.mjs"
+    "check:gutter": "node scripts/check-scrollbar-gutter-fallback.mjs",
+    "check:capabilities": "node scripts/check-capabilities.mjs"
   },
   "dependencies": {
     "@types/katex": "^0.16.5",
