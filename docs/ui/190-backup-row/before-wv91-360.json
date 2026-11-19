@@ -1,0 +1,1136 @@
+{
+ "innerWidth": 360,
+ "innerHeight": 674,
+ "scrollWidth": 360,
+ "bodyScrollWidth": 360,
+ "overflowOffenders": 0,
+ "ua": "Mozilla/5.0 (Linux; Android 12; sdk_gphone64_x86_64 Build/SE1A.220826.008; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/91.0.4472.114 Mobile Safari/537.36",
+ "rows": [
+  {
+   "index": 0,
+   "cls": "cell-_85c1b",
+   "rectWidth": 312,
+   "rectHeight": 60,
+   "text": "ChannelDeepSeek Official",
+   "children": [
+    {
+     "cls": "row-_85c1b",
+     "tag": "div",
+     "clientWidth": 312,
+     "scrollWidth": 312,
+     "clientHeight": 36,
+     "rectWidth": 312,
+     "rectHeight": 36,
+     "css": {
+      "display": "flex",
+      "flex": "0 1 auto",
+      "flex-basis": "auto",
+      "flex-grow": "0",
+      "flex-shrink": "1",
+      "flex-wrap": "nowrap",
+      "min-width": "0px",
+      "width": "312px",
+      "max-width": "none",
+      "word-break": "break-word",
+      "overflow-wrap": "normal",
+      "white-space": "normal",
+      "gap": "8px",
+      "row-gap": "8px",
+      "column-gap": "8px",
+      "padding-right": "0px",
+      "writing-mode": "horizontal-tb"
+     },
+     "text": "ChannelDeepSeek Official",
+     "charWidth": 14
+    }
+   ],
+   "chain": [
+    {
+     "cls": "cell-_85c1b",
+     "display": "block",
+     "clientWidth": 312,
+     "rectWidth": 312
+    },
+    {
+     "cls": "content-_85c1b",
+     "display": "flex",
+     "clientWidth": 336,
+     "rectWidth": 336
+    },
+    {
+     "cls": "main-_83af2 dialogMain-_85c1b",
+     "display": "flex",
+     "clientWidth": 312,
+     "rectWidth": 312
+    },
+    {
+     "cls": "content-_83af2 dialog-_85c1b",
+     "display": "flex",
+     "clientWidth": 360,
+     "rectWidth": 360
+    },
+    {
+     "cls": "overlay-_83af2",
+     "display": "flex",
+     "clientWidth": 360,
+     "rectWidth": 360
+    }
+   ]
+  },
+  {
+   "index": 1,
+   "cls": "cell-_85c1b",
+   "rectWidth": 312,
+   "rectHeight": 106,
+   "text": "API Key",
+   "children": [
+    {
+     "cls": "apiKey-_85c1b",
+     "tag": "div",
+     "clientWidth": 312,
+     "scrollWidth": 312,
+     "clientHeight": 82,
+     "rectWidth": 312,
+     "rectHeight": 82,
+     "css": {
+      "display": "flex",
+      "flex": "0 1 auto",
+      "flex-basis": "auto",
+      "flex-grow": "0",
+      "flex-shrink": "1",
+      "flex-wrap": "nowrap",
+      "min-width": "0px",
+      "width": "312px",
+      "max-width": "none",
+      "word-break": "break-word",
+      "overflow-wrap": "normal",
+      "white-space": "normal",
+      "gap": "8px",
+      "row-gap": "8px",
+      "column-gap": "8px",
+      "padding-right": "0px",
+      "writing-mode": "horizontal-tb"
+     },
+     "text": "API Key",
+     "charWidth": 14
+    }
+   ],
+   "chain": [
+    {
+     "cls": "cell-_85c1b",
+     "display": "block",
+     "clientWidth": 312,
+     "rectWidth": 312
+    },
+    {
+     "cls": "content-_85c1b",
+     "display": "flex",
+     "clientWidth": 336,
+     "rectWidth": 336
+    },
+    {
+     "cls": "main-_83af2 dialogMain-_85c1b",
+     "display": "flex",
+     "clientWidth": 312,
+     "rectWidth": 312
+    },
+    {
+     "cls": "content-_83af2 dialog-_85c1b",
+     "display": "flex",
+     "clientWidth": 360,
+     "rectWidth": 360
+    },
+    {
+     "cls": "overlay-_83af2",
+     "display": "flex",
+     "clientWidth": 360,
+     "rectWidth": 360
+    }
+   ]
+  },
+  {
+   "index": 2,
+   "cls": "cell-_85c1b",
+   "rectWidth": 312,
+   "rectHeight": 106,
+   "text": "Connection testTest",
+   "children": [
+    {
+     "cls": "apiKey-_85c1b",
+     "tag": "div",
+     "clientWidth": 312,
+     "scrollWidth": 312,
+     "clientHeight": 82,
+     "rectWidth": 312,
+     "rectHeight": 82,
+     "css": {
+      "display": "flex",
+      "flex": "0 1 auto",
+      "flex-basis": "auto",
+      "flex-grow": "0",
+      "flex-shrink": "1",
+      "flex-wrap": "nowrap",
+      "min-width": "0px",
+      "width": "312px",
+      "max-width": "none",
+      "word-break": "break-word",
+      "overflow-wrap": "normal",
+      "white-space": "normal",
+      "gap": "8px",
+      "row-gap": "8px",
+      "column-gap": "8px",
+      "padding-right": "0px",
+      "writing-mode": "horizontal-tb"
+     },
+     "text": "Connection testTest",
+     "charWidth": 14
+    }
+   ],
+   "chain": [
+    {
+     "cls": "cell-_85c1b",
+     "display": "block",
+     "clientWidth": 312,
+     "rectWidth": 312
+    },
+    {
+     "cls": "content-_85c1b",
+     "display": "flex",
+     "clientWidth": 336,
+     "rectWidth": 336
+    },
+    {
+     "cls": "main-_83af2 dialogMain-_85c1b",
+     "display": "flex",
+     "clientWidth": 312,
+     "rectWidth": 312
+    },
+    {
+     "cls": "content-_83af2 dialog-_85c1b",
+     "display": "flex",
+     "clientWidth": 360,
+     "rectWidth": 360
+    },
+    {
+     "cls": "overlay-_83af2",
+     "display": "flex",
+     "clientWidth": 360,
+     "rectWidth": 360
+    }
+   ]
+  },
+  {
+   "index": 3,
+   "cls": "cell-_85c1b backgroundRow-_85c1b",
+   "rectWidth": 312,
+   "rectHeight": 142,
+   "text": "Chat backgroundStored on this device only (IndexedDB), never",
+   "children": [
+    {
+     "cls": "backgroundText-_85c1b",
+     "tag": "div",
+     "clientWidth": 312,
+     "scrollWidth": 312,
+     "clientHeight": 62,
+     "rectWidth": 312,
+     "rectHeight": 62,
+     "css": {
+      "display": "flex",
+      "flex": "1 1 100%",
+      "flex-basis": "100%",
+      "flex-grow": "1",
+      "flex-shrink": "1",
+      "flex-wrap": "nowrap",
+      "min-width": "0px",
+      "width": "312px",
+      "max-width": "none",
+      "word-break": "break-word",
+      "overflow-wrap": "normal",
+      "white-space": "normal",
+      "gap": "4px",
+      "row-gap": "4px",
+      "column-gap": "4px",
+      "padding-right": "0px",
+      "writing-mode": "horizontal-tb"
+     },
+     "text": "Chat backgroundStored on this device onl",
+     "charWidth": 14
+    },
+    {
+     "cls": "backgroundAction-_85c1b",
+     "tag": "div",
+     "clientWidth": 312,
+     "scrollWidth": 312,
+     "clientHeight": 44,
+     "rectWidth": 312,
+     "rectHeight": 44,
+     "css": {
+      "display": "flex",
+      "flex": "1 0 100%",
+      "flex-basis": "100%",
+      "flex-grow": "1",
+      "flex-shrink": "0",
+      "flex-wrap": "nowrap",
+      "min-width": "auto",
+      "width": "312px",
+      "max-width": "none",
+      "word-break": "break-word",
+      "overflow-wrap": "normal",
+      "white-space": "normal",
+      "gap": "8px",
+      "row-gap": "8px",
+      "column-gap": "8px",
+      "padding-right": "0px",
+      "writing-mode": "horizontal-tb"
+     },
+     "text": "—UploadClear",
+     "charWidth": 14
+    }
+   ],
+   "chain": [
+    {
+     "cls": "cell-_85c1b backgroundRow-_85c1b",
+     "display": "flex",
+     "clientWidth": 312,
+     "rectWidth": 312
+    },
+    {
+     "cls": "content-_85c1b",
+     "display": "flex",
+     "clientWidth": 336,
+     "rectWidth": 336
+    },
+    {
+     "cls": "main-_83af2 dialogMain-_85c1b",
+     "display": "flex",
+     "clientWidth": 312,
+     "rectWidth": 312
+    },
+    {
+     "cls": "content-_83af2 dialog-_85c1b",
+     "display": "flex",
+     "clientWidth": 360,
+     "rectWidth": 360
+    },
+    {
+     "cls": "overlay-_83af2",
+     "display": "flex",
+     "clientWidth": 360,
+     "rectWidth": 360
+    }
+   ]
+  },
+  {
+   "index": 4,
+   "cls": "cell-_85c1b row-_85c1b",
+   "rectWidth": 312,
+   "rectHeight": 104,
+   "text": "Import chat historyImporting chat history replaces all local",
+   "children": [
+    {
+     "cls": "text-_85c1b",
+     "tag": "div",
+     "clientWidth": 232,
+     "scrollWidth": 232,
+     "clientHeight": 80,
+     "rectWidth": 232,
+     "rectHeight": 80,
+     "css": {
+      "display": "flex",
+      "flex": "1 1 0px",
+      "flex-basis": "0px",
+      "flex-grow": "1",
+      "flex-shrink": "1",
+      "flex-wrap": "nowrap",
+      "min-width": "0px",
+      "width": "224px",
+      "max-width": "none",
+      "word-break": "break-word",
+      "overflow-wrap": "anywhere",
+      "white-space": "normal",
+      "gap": "4px",
+      "row-gap": "4px",
+      "column-gap": "4px",
+      "padding-right": "8px",
+      "writing-mode": "horizontal-tb"
+     },
+     "text": "Import chat historyImporting chat histor",
+     "charWidth": 14
+    },
+    {
+     "cls": "cellActions-_85c1b",
+     "tag": "div",
+     "clientWidth": 72,
+     "scrollWidth": 72,
+     "clientHeight": 44,
+     "rectWidth": 72,
+     "rectHeight": 44,
+     "css": {
+      "display": "flex",
+      "flex": "0 1 auto",
+      "flex-basis": "auto",
+      "flex-grow": "0",
+      "flex-shrink": "1",
+      "flex-wrap": "wrap",
+      "min-width": "0px",
+      "width": "72px",
+      "max-width": "none",
+      "word-break": "break-word",
+      "overflow-wrap": "normal",
+      "white-space": "normal",
+      "gap": "8px",
+      "row-gap": "8px",
+      "column-gap": "8px",
+      "padding-right": "0px",
+      "writing-mode": "horizontal-tb"
+     },
+     "text": "Upload",
+     "charWidth": 14
+    }
+   ],
+   "chain": [
+    {
+     "cls": "cell-_85c1b row-_85c1b",
+     "display": "flex",
+     "clientWidth": 312,
+     "rectWidth": 312
+    },
+    {
+     "cls": "content-_85c1b",
+     "display": "flex",
+     "clientWidth": 336,
+     "rectWidth": 336
+    },
+    {
+     "cls": "main-_83af2 dialogMain-_85c1b",
+     "display": "flex",
+     "clientWidth": 312,
+     "rectWidth": 312
+    },
+    {
+     "cls": "content-_83af2 dialog-_85c1b",
+     "display": "flex",
+     "clientWidth": 360,
+     "rectWidth": 360
+    },
+    {
+     "cls": "overlay-_83af2",
+     "display": "flex",
+     "clientWidth": 360,
+     "rectWidth": 360
+    }
+   ]
+  },
+  {
+   "index": 5,
+   "cls": "cell-_85c1b row-_85c1b linkCell-_85c1b",
+   "rectWidth": 312,
+   "rectHeight": 146,
+   "text": "Import from linkPaste the DeepSeek export ZIP link; the app ",
+   "children": [
+    {
+     "cls": "text-_85c1b",
+     "tag": "div",
+     "clientWidth": 312,
+     "scrollWidth": 312,
+     "clientHeight": 62,
+     "rectWidth": 312,
+     "rectHeight": 62,
+     "css": {
+      "display": "flex",
+      "flex": "1 1 auto",
+      "flex-basis": "auto",
+      "flex-grow": "1",
+      "flex-shrink": "1",
+      "flex-wrap": "nowrap",
+      "min-width": "0px",
+      "width": "304px",
+      "max-width": "none",
+      "word-break": "break-word",
+      "overflow-wrap": "anywhere",
+      "white-space": "normal",
+      "gap": "4px",
+      "row-gap": "4px",
+      "column-gap": "4px",
+      "padding-right": "8px",
+      "writing-mode": "horizontal-tb"
+     },
+     "text": "Import from linkPaste the DeepSeek expor",
+     "charWidth": 14
+    },
+    {
+     "cls": "linkActions-_85c1b",
+     "tag": "div",
+     "clientWidth": 312,
+     "scrollWidth": 312,
+     "clientHeight": 52,
+     "rectWidth": 312,
+     "rectHeight": 52,
+     "css": {
+      "display": "flex",
+      "flex": "1 1 100%",
+      "flex-basis": "100%",
+      "flex-grow": "1",
+      "flex-shrink": "1",
+      "flex-wrap": "nowrap",
+      "min-width": "0px",
+      "width": "312px",
+      "max-width": "none",
+      "word-break": "break-word",
+      "overflow-wrap": "normal",
+      "white-space": "normal",
+      "gap": "8px",
+      "row-gap": "8px",
+      "column-gap": "8px",
+      "padding-right": "0px",
+      "writing-mode": "horizontal-tb"
+     },
+     "text": "Import link",
+     "charWidth": 14
+    }
+   ],
+   "chain": [
+    {
+     "cls": "cell-_85c1b row-_85c1b linkCell-_85c1b",
+     "display": "flex",
+     "clientWidth": 312,
+     "rectWidth": 312
+    },
+    {
+     "cls": "content-_85c1b",
+     "display": "flex",
+     "clientWidth": 336,
+     "rectWidth": 336
+    },
+    {
+     "cls": "main-_83af2 dialogMain-_85c1b",
+     "display": "flex",
+     "clientWidth": 312,
+     "rectWidth": 312
+    },
+    {
+     "cls": "content-_83af2 dialog-_85c1b",
+     "display": "flex",
+     "clientWidth": 360,
+     "rectWidth": 360
+    },
+    {
+     "cls": "overlay-_83af2",
+     "display": "flex",
+     "clientWidth": 360,
+     "rectWidth": 360
+    }
+   ]
+  },
+  {
+   "index": 6,
+   "cls": "cell-_85c1b row-_85c1b",
+   "rectWidth": 312,
+   "rectHeight": 122,
+   "text": "Export all chatsIncludes all chat history and locally stored",
+   "children": [
+    {
+     "cls": "text-_85c1b",
+     "tag": "div",
+     "clientWidth": 212,
+     "scrollWidth": 212,
+     "clientHeight": 98,
+     "rectWidth": 211.7,
+     "rectHeight": 98,
+     "css": {
+      "display": "flex",
+      "flex": "1 1 0px",
+      "flex-basis": "0px",
+      "flex-grow": "1",
+      "flex-shrink": "1",
+      "flex-wrap": "nowrap",
+      "min-width": "0px",
+      "width": "203.667px",
+      "max-width": "none",
+      "word-break": "break-word",
+      "overflow-wrap": "anywhere",
+      "white-space": "normal",
+      "gap": "4px",
+      "row-gap": "4px",
+      "column-gap": "4px",
+      "padding-right": "8px",
+      "writing-mode": "horizontal-tb"
+     },
+     "text": "Export all chatsIncludes all chat histor",
+     "charWidth": 14
+    },
+    {
+     "cls": "cellActions-_85c1b",
+     "tag": "div",
+     "clientWidth": 92,
+     "scrollWidth": 92,
+     "clientHeight": 44,
+     "rectWidth": 92.3,
+     "rectHeight": 44,
+     "css": {
+      "display": "flex",
+      "flex": "0 1 auto",
+      "flex-basis": "auto",
+      "flex-grow": "0",
+      "flex-shrink": "1",
+      "flex-wrap": "wrap",
+      "min-width": "0px",
+      "width": "92.3333px",
+      "max-width": "none",
+      "word-break": "break-word",
+      "overflow-wrap": "normal",
+      "white-space": "normal",
+      "gap": "8px",
+      "row-gap": "8px",
+      "column-gap": "8px",
+      "padding-right": "0px",
+      "writing-mode": "horizontal-tb"
+     },
+     "text": "Download",
+     "charWidth": 14
+    }
+   ],
+   "chain": [
+    {
+     "cls": "cell-_85c1b row-_85c1b",
+     "display": "flex",
+     "clientWidth": 312,
+     "rectWidth": 312
+    },
+    {
+     "cls": "content-_85c1b",
+     "display": "flex",
+     "clientWidth": 336,
+     "rectWidth": 336
+    },
+    {
+     "cls": "main-_83af2 dialogMain-_85c1b",
+     "display": "flex",
+     "clientWidth": 312,
+     "rectWidth": 312
+    },
+    {
+     "cls": "content-_83af2 dialog-_85c1b",
+     "display": "flex",
+     "clientWidth": 360,
+     "rectWidth": 360
+    },
+    {
+     "cls": "overlay-_83af2",
+     "display": "flex",
+     "clientWidth": 360,
+     "rectWidth": 360
+    }
+   ]
+  },
+  {
+   "index": 7,
+   "cls": "cell-_85c1b row-_85c1b",
+   "rectWidth": 312,
+   "rectHeight": 86,
+   "text": "Payment recordsPaid orders, amounts, card last 4 digits and ",
+   "children": [
+    {
+     "cls": "text-_85c1b",
+     "tag": "div",
+     "clientWidth": 232,
+     "scrollWidth": 232,
+     "clientHeight": 62,
+     "rectWidth": 232,
+     "rectHeight": 62,
+     "css": {
+      "display": "flex",
+      "flex": "1 1 0px",
+      "flex-basis": "0px",
+      "flex-grow": "1",
+      "flex-shrink": "1",
+      "flex-wrap": "nowrap",
+      "min-width": "0px",
+      "width": "224px",
+      "max-width": "none",
+      "word-break": "break-word",
+      "overflow-wrap": "anywhere",
+      "white-space": "normal",
+      "gap": "4px",
+      "row-gap": "4px",
+      "column-gap": "4px",
+      "padding-right": "8px",
+      "writing-mode": "horizontal-tb"
+     },
+     "text": "Payment recordsPaid orders, amounts, car",
+     "charWidth": 14
+    },
+    {
+     "cls": "cellActions-_85c1b",
+     "tag": "div",
+     "clientWidth": 72,
+     "scrollWidth": 72,
+     "clientHeight": 44,
+     "rectWidth": 72,
+     "rectHeight": 44,
+     "css": {
+      "display": "flex",
+      "flex": "0 1 auto",
+      "flex-basis": "auto",
+      "flex-grow": "0",
+      "flex-shrink": "1",
+      "flex-wrap": "wrap",
+      "min-width": "0px",
+      "width": "72px",
+      "max-width": "none",
+      "word-break": "break-word",
+      "overflow-wrap": "normal",
+      "white-space": "normal",
+      "gap": "8px",
+      "row-gap": "8px",
+      "column-gap": "8px",
+      "padding-right": "0px",
+      "writing-mode": "horizontal-tb"
+     },
+     "text": "View",
+     "charWidth": 14
+    }
+   ],
+   "chain": [
+    {
+     "cls": "cell-_85c1b row-_85c1b",
+     "display": "flex",
+     "clientWidth": 312,
+     "rectWidth": 312
+    },
+    {
+     "cls": "content-_85c1b",
+     "display": "flex",
+     "clientWidth": 336,
+     "rectWidth": 336
+    },
+    {
+     "cls": "main-_83af2 dialogMain-_85c1b",
+     "display": "flex",
+     "clientWidth": 312,
+     "rectWidth": 312
+    },
+    {
+     "cls": "content-_83af2 dialog-_85c1b",
+     "display": "flex",
+     "clientWidth": 360,
+     "rectWidth": 360
+    },
+    {
+     "cls": "overlay-_83af2",
+     "display": "flex",
+     "clientWidth": 360,
+     "rectWidth": 360
+    }
+   ]
+  },
+  {
+   "index": 8,
+   "cls": "cell-_85c1b row-_85c1b",
+   "rectWidth": 312,
+   "rectHeight": 86,
+   "text": "My purchasesPlans you bought, how much you paid, and card re",
+   "children": [
+    {
+     "cls": "text-_85c1b",
+     "tag": "div",
+     "clientWidth": 232,
+     "scrollWidth": 232,
+     "clientHeight": 62,
+     "rectWidth": 232,
+     "rectHeight": 62,
+     "css": {
+      "display": "flex",
+      "flex": "1 1 0px",
+      "flex-basis": "0px",
+      "flex-grow": "1",
+      "flex-shrink": "1",
+      "flex-wrap": "nowrap",
+      "min-width": "0px",
+      "width": "224px",
+      "max-width": "none",
+      "word-break": "break-word",
+      "overflow-wrap": "anywhere",
+      "white-space": "normal",
+      "gap": "4px",
+      "row-gap": "4px",
+      "column-gap": "4px",
+      "padding-right": "8px",
+      "writing-mode": "horizontal-tb"
+     },
+     "text": "My purchasesPlans you bought, how much y",
+     "charWidth": 14
+    },
+    {
+     "cls": "cellActions-_85c1b",
+     "tag": "div",
+     "clientWidth": 72,
+     "scrollWidth": 72,
+     "clientHeight": 44,
+     "rectWidth": 72,
+     "rectHeight": 44,
+     "css": {
+      "display": "flex",
+      "flex": "0 1 auto",
+      "flex-basis": "auto",
+      "flex-grow": "0",
+      "flex-shrink": "1",
+      "flex-wrap": "wrap",
+      "min-width": "0px",
+      "width": "72px",
+      "max-width": "none",
+      "word-break": "break-word",
+      "overflow-wrap": "normal",
+      "white-space": "normal",
+      "gap": "8px",
+      "row-gap": "8px",
+      "column-gap": "8px",
+      "padding-right": "0px",
+      "writing-mode": "horizontal-tb"
+     },
+     "text": "View",
+     "charWidth": 14
+    }
+   ],
+   "chain": [
+    {
+     "cls": "cell-_85c1b row-_85c1b",
+     "display": "flex",
+     "clientWidth": 312,
+     "rectWidth": 312
+    },
+    {
+     "cls": "content-_85c1b",
+     "display": "flex",
+     "clientWidth": 336,
+     "rectWidth": 336
+    },
+    {
+     "cls": "main-_83af2 dialogMain-_85c1b",
+     "display": "flex",
+     "clientWidth": 312,
+     "rectWidth": 312
+    },
+    {
+     "cls": "content-_83af2 dialog-_85c1b",
+     "display": "flex",
+     "clientWidth": 360,
+     "rectWidth": 360
+    },
+    {
+     "cls": "overlay-_83af2",
+     "display": "flex",
+     "clientWidth": 360,
+     "rectWidth": 360
+    }
+   ]
+  },
+  {
+   "index": 9,
+   "cls": "cell-_85c1b row-_85c1b wrapActionsCell-_85c1b",
+   "rectWidth": 312,
+   "rectHeight": 138,
+   "text": "Feedback & logsUploads the recent activity logs with your re",
+   "children": [
+    {
+     "cls": "text-_85c1b",
+     "tag": "div",
+     "clientWidth": 312,
+     "scrollWidth": 312,
+     "clientHeight": 62,
+     "rectWidth": 312,
+     "rectHeight": 62,
+     "css": {
+      "display": "flex",
+      "flex": "1 1 100%",
+      "flex-basis": "100%",
+      "flex-grow": "1",
+      "flex-shrink": "1",
+      "flex-wrap": "nowrap",
+      "min-width": "0px",
+      "width": "312px",
+      "max-width": "none",
+      "word-break": "break-word",
+      "overflow-wrap": "anywhere",
+      "white-space": "normal",
+      "gap": "4px",
+      "row-gap": "4px",
+      "column-gap": "4px",
+      "padding-right": "0px",
+      "writing-mode": "horizontal-tb"
+     },
+     "text": "Feedback & logsUploads the recent activi",
+     "charWidth": 14
+    },
+    {
+     "cls": "cellActions-_85c1b",
+     "tag": "div",
+     "clientWidth": 312,
+     "scrollWidth": 312,
+     "clientHeight": 44,
+     "rectWidth": 312,
+     "rectHeight": 44,
+     "css": {
+      "display": "flex",
+      "flex": "1 0 100%",
+      "flex-basis": "100%",
+      "flex-grow": "1",
+      "flex-shrink": "0",
+      "flex-wrap": "wrap",
+      "min-width": "0px",
+      "width": "312px",
+      "max-width": "none",
+      "word-break": "break-word",
+      "overflow-wrap": "normal",
+      "white-space": "normal",
+      "gap": "8px",
+      "row-gap": "8px",
+      "column-gap": "8px",
+      "padding-right": "0px",
+      "writing-mode": "horizontal-tb"
+     },
+     "text": "Send feedbackCheck log coverage",
+     "charWidth": 14
+    }
+   ],
+   "chain": [
+    {
+     "cls": "cell-_85c1b row-_85c1b wrapActionsCell-_85c1b",
+     "display": "flex",
+     "clientWidth": 312,
+     "rectWidth": 312
+    },
+    {
+     "cls": "content-_85c1b",
+     "display": "flex",
+     "clientWidth": 336,
+     "rectWidth": 336
+    },
+    {
+     "cls": "main-_83af2 dialogMain-_85c1b",
+     "display": "flex",
+     "clientWidth": 312,
+     "rectWidth": 312
+    },
+    {
+     "cls": "content-_83af2 dialog-_85c1b",
+     "display": "flex",
+     "clientWidth": 360,
+     "rectWidth": 360
+    },
+    {
+     "cls": "overlay-_83af2",
+     "display": "flex",
+     "clientWidth": 360,
+     "rectWidth": 360
+    }
+   ]
+  },
+  {
+   "index": 10,
+   "cls": "cell-_85c1b row-_85c1b wrapActionsCell-_85c1b",
+   "rectWidth": 312,
+   "rectHeight": 120,
+   "text": "Douyin IDTap the ID to copy it, then search for it in Douyin",
+   "children": [
+    {
+     "cls": "text-_85c1b",
+     "tag": "div",
+     "clientWidth": 312,
+     "scrollWidth": 312,
+     "clientHeight": 44,
+     "rectWidth": 312,
+     "rectHeight": 44,
+     "css": {
+      "display": "flex",
+      "flex": "1 1 100%",
+      "flex-basis": "100%",
+      "flex-grow": "1",
+      "flex-shrink": "1",
+      "flex-wrap": "nowrap",
+      "min-width": "0px",
+      "width": "312px",
+      "max-width": "none",
+      "word-break": "break-word",
+      "overflow-wrap": "anywhere",
+      "white-space": "normal",
+      "gap": "4px",
+      "row-gap": "4px",
+      "column-gap": "4px",
+      "padding-right": "0px",
+      "writing-mode": "horizontal-tb"
+     },
+     "text": "Douyin IDTap the ID to copy it, then sea",
+     "charWidth": 14
+    },
+    {
+     "cls": "cellActions-_85c1b",
+     "tag": "div",
+     "clientWidth": 312,
+     "scrollWidth": 312,
+     "clientHeight": 44,
+     "rectWidth": 312,
+     "rectHeight": 44,
+     "css": {
+      "display": "flex",
+      "flex": "1 0 100%",
+      "flex-basis": "100%",
+      "flex-grow": "1",
+      "flex-shrink": "0",
+      "flex-wrap": "wrap",
+      "min-width": "0px",
+      "width": "312px",
+      "max-width": "none",
+      "word-break": "break-word",
+      "overflow-wrap": "normal",
+      "white-space": "normal",
+      "gap": "8px",
+      "row-gap": "8px",
+      "column-gap": "8px",
+      "padding-right": "0px",
+      "writing-mode": "horizontal-tb"
+     },
+     "text": "shiro_0824",
+     "charWidth": 14
+    }
+   ],
+   "chain": [
+    {
+     "cls": "cell-_85c1b row-_85c1b wrapActionsCell-_85c1b",
+     "display": "flex",
+     "clientWidth": 312,
+     "rectWidth": 312
+    },
+    {
+     "cls": "content-_85c1b",
+     "display": "flex",
+     "clientWidth": 336,
+     "rectWidth": 336
+    },
+    {
+     "cls": "main-_83af2 dialogMain-_85c1b",
+     "display": "flex",
+     "clientWidth": 312,
+     "rectWidth": 312
+    },
+    {
+     "cls": "content-_83af2 dialog-_85c1b",
+     "display": "flex",
+     "clientWidth": 360,
+     "rectWidth": 360
+    },
+    {
+     "cls": "overlay-_83af2",
+     "display": "flex",
+     "clientWidth": 360,
+     "rectWidth": 360
+    }
+   ]
+  },
+  {
+   "index": 11,
+   "cls": "cell-_85c1b row-_85c1b",
+   "rectWidth": 312,
+   "rectHeight": 68,
+   "text": "Delete all chatsDelete",
+   "children": [
+    {
+     "cls": "text-_85c1b",
+     "tag": "div",
+     "clientWidth": 232,
+     "scrollWidth": 232,
+     "clientHeight": 22,
+     "rectWidth": 232,
+     "rectHeight": 22,
+     "css": {
+      "display": "flex",
+      "flex": "1 1 0px",
+      "flex-basis": "0px",
+      "flex-grow": "1",
+      "flex-shrink": "1",
+      "flex-wrap": "nowrap",
+      "min-width": "0px",
+      "width": "224px",
+      "max-width": "none",
+      "word-break": "break-word",
+      "overflow-wrap": "anywhere",
+      "white-space": "normal",
+      "gap": "4px",
+      "row-gap": "4px",
+      "column-gap": "4px",
+      "padding-right": "8px",
+      "writing-mode": "horizontal-tb"
+     },
+     "text": "Delete all chats",
+     "charWidth": 14
+    },
+    {
+     "cls": "cellActions-_85c1b",
+     "tag": "div",
+     "clientWidth": 72,
+     "scrollWidth": 72,
+     "clientHeight": 44,
+     "rectWidth": 72,
+     "rectHeight": 44,
+     "css": {
+      "display": "flex",
+      "flex": "0 1 auto",
+      "flex-basis": "auto",
+      "flex-grow": "0",
+      "flex-shrink": "1",
+      "flex-wrap": "wrap",
+      "min-width": "0px",
+      "width": "72px",
+      "max-width": "none",
+      "word-break": "break-word",
+      "overflow-wrap": "normal",
+      "white-space": "normal",
+      "gap": "8px",
+      "row-gap": "8px",
+      "column-gap": "8px",
+      "padding-right": "0px",
+      "writing-mode": "horizontal-tb"
+     },
+     "text": "Delete",
+     "charWidth": 14
+    }
+   ],
+   "chain": [
+    {
+     "cls": "cell-_85c1b row-_85c1b",
+     "display": "flex",
+     "clientWidth": 312,
+     "rectWidth": 312
+    },
+    {
+     "cls": "content-_85c1b",
+     "display": "flex",
+     "clientWidth": 336,
+     "rectWidth": 336
+    },
+    {
+     "cls": "main-_83af2 dialogMain-_85c1b",
+     "display": "flex",
+     "clientWidth": 312,
+     "rectWidth": 312
+    },
+    {
+     "cls": "content-_83af2 dialog-_85c1b",
+     "display": "flex",
+     "clientWidth": 360,
+     "rectWidth": 360
+    },
+    {
+     "cls": "overlay-_83af2",
+     "display": "flex",
+     "clientWidth": 360,
+     "rectWidth": 360
+    }
+   ]
+  }
+ ],
+ "tag": "before",
+ "width": "360",
+ "wmSize": "Physical size: 1080x1920\r\nOverride size: 540x1200",
+ "wmDensity": "Physical density: 420\r\nOverride density: 240"
+}
