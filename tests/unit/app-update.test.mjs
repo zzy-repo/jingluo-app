@@ -143,7 +143,11 @@ test('manifest fetch is anonymous, nonredirecting, cancellable and injectable', 
       return new Response('{bad')
     })
   )
-  assert.deepEqual(invalid, [`${PRIMARY_RELEASE_BASE}/releases.json`], '200 但清单不合法时不回退旧机')
+  assert.deepEqual(
+    invalid,
+    [`${PRIMARY_RELEASE_BASE}/releases.json`, `${FALLBACK_RELEASE_BASE}/releases.json`],
+    '200 但清单不合法时也要试下一台（Issue #330：新机脏、旧机好时不能把可用清单丢掉）'
+  )
 })
 test('首选新机不可达时按固定顺序回退旧机，并回传生效 base', async () => {
   assert.deepEqual(RELEASE_BASES, [PRIMARY_RELEASE_BASE, FALLBACK_RELEASE_BASE], '顺序写死：先新后旧')

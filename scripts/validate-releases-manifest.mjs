@@ -20,6 +20,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
+// buildType 的唯一定义在 shared/build-types.mjs（Issue #330）——校验器不再自带一份数组。
+import { BUILD_TYPES, isBuildType } from '../shared/build-types.mjs';
+
 const args = process.argv.slice(2);
 const strict = args.includes('--strict');
 const files = args.filter((a) => !a.startsWith('--'));
@@ -34,7 +37,6 @@ const RE_SHA256 = /^[0-9a-f]{64}$/;
 const RE_MD5 = /^[0-9a-f]{32}$/;
 const RE_FILE = /^apk\/[A-Za-z0-9._-]+\.apk$/;
 const RE_RELEASED_AT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\+08:00$/;
-const BUILD_TYPES = ['stable', 'prerelease'];
 const VARIANTS = ['internal', 'standard'];
 const VARIANT_SOURCES = ['apk-manifest', 'sha256-allowlist'];
 
@@ -103,9 +105,14 @@ function validate(data) {
     if (!Array.isArray(r.changes)) E(`${at}: changes 必须是数组`);
     else if (r.changes.some((c) => typeof c !== 'string' || !c.trim())) E(`${at}: changes 必须是非空字符串数组`);
 
-    // buildType（旧记录可能缺，算 warning）
+    // buildType：旧记录可能缺（warning，历史兼容）；只要写了就必须是枚举值 → 一律 FAIL。
+    // 禁止把 Gradle 的 release/debug 写进来 —— 那是「构建类型」，buildType 是「发布渠道」
+    // （Issue #330：2026-11-19 的 11 条 "release" 让客户端整份清单拒收）。
     if (r.buildType === undefined) W(`${at}: 缺 buildType（旧记录兼容，新发布必须写）`);
-    else if (!BUILD_TYPES.includes(r.buildType)) E(`${at}: buildType 只能是 ${BUILD_TYPES.join('|')}: ${JSON.stringify(r.buildType)}`);
+    else if (!isBuildType(r.buildType)) {
+      E(`${at}: buildType 只能是 ${BUILD_TYPES.join('|')}（发布渠道），收到 ${JSON.stringify(r.buildType)}`
+        + '；release/debug 是 Gradle 构建类型，不是 buildType（正式发布写 stable）');
+    }
 
     // breaking
     if (r.breaking !== undefined && typeof r.breaking !== 'boolean') E(`${at}: breaking 必须是布尔`);

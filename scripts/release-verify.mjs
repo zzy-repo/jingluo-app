@@ -26,6 +26,7 @@ import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 
 import {
+  BUILD_TYPES,
   DEFAULT_BASE_URL,
   DEFAULT_MANIFEST,
   RE_MD5,
@@ -33,6 +34,7 @@ import {
   ReleaseEnvError,
   buildTypeFor,
   hashFile,
+  isBuildType,
   log,
   parseArgs,
   readPackageVersion,
@@ -171,7 +173,16 @@ async function main(argv) {
   }
   const expectBuildType = buildTypeFor(version);
   if (record.buildType === expectBuildType) log.ok(`buildType = ${record.buildType}`);
-  else warn(`记录的 buildType 是 ${record.buildType}，按版本号判定应为 ${expectBuildType}`);
+  else if (!isBuildType(record.buildType)) {
+    // Issue #330：非法枚举值是事故级问题（客户端 parseManifest 会整份清单拒收），必须阻断。
+    // 线上确实出现过 11 条 "release" —— 那时这里只 warn，复核照样 exit 0，等于没把关。
+    throw new ReleaseEnvError(
+      `记录的 buildType 是 ${JSON.stringify(record.buildType)}，只能是 ${BUILD_TYPES.join('|')}；\n` +
+        '  这会让客户端整份清单拒收（INVALID_RELEASE），线上必须立刻清洗。\n' +
+        '  release/debug 是 Gradle 构建类型，不是 buildType；正式发布写 stable。\n' +
+        '  回归样例：deploy/dl-release/fixtures/invalid-buildtype-release.json',
+    );
+  } else warn(`记录的 buildType 是 ${record.buildType}，按版本号判定应为 ${expectBuildType}`);
   if (record.artifactVariant !== undefined || record.artifactVariantSource !== undefined) {
     if (record.artifactVariant && record.artifactVariantSource) {
       log.ok(`artifactVariant = ${record.artifactVariant}（source ${record.artifactVariantSource}）`);

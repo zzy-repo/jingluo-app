@@ -32,6 +32,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import {
+  BUILD_TYPES,
   DEFAULT_ENDPOINT,
   MAX_APK_BYTES,
   ReleaseEnvError,
@@ -39,6 +40,7 @@ import {
   changesFromChangelog,
   hashFile,
   inspectApk,
+  isBuildType,
   log,
   parseArgs,
   readPackageVersion,
@@ -52,7 +54,7 @@ const EXIT_USAGE = 2;
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 const HINTS = {
-  400: 'BAD_REQUEST —— multipart 字段名或 meta JSON 不对（字段必须是 apk + meta）',
+  400: 'BAD_REQUEST —— multipart 字段名或 meta JSON 不对（字段必须是 apk + meta）；BODY 里 code=BAD_BUILD_TYPE 时是 buildType 只能是 stable|prerelease（Issue #330）',
   401: 'UNAUTHORIZED —— 令牌不对/被轮换撤销；按 §4 重新注入，不要重试同一枚',
   404: 'NOT_FOUND —— 接口路径不对（应为 /api/v1/release）',
   409: 'VERSION_CONFLICT / VARIANT_CONFLICT —— versionCode 没超过线上 latest，或变体冲突；先跑 release-check --manifest',
@@ -127,9 +129,19 @@ async function main(argv) {
       pkg.versionCode
     }），用 --version-code 显式给`);
   }
-  const buildType = args['build-type'] ? String(args['build-type']) : buildTypeFor(version);
-  if (buildType !== 'stable' && buildType !== 'prerelease') {
-    throw new ReleaseEnvError(`--build-type 只能是 stable 或 prerelease，给的是 ${buildType}`);
+  // ---- 1b. buildType 白名单（Issue #330）----
+  // Gradle 的 release/debug 是**构建类型**，不是 buildType；正式发布写 stable。
+  // 2026-11-19 的 P0 就是这里放行了 "release"：客户端 parseManifest 整份清单拒收，
+  // 全网更新失败却只显示「检查更新失败」。所以非法值在发任何请求之前就退出（exit 2）。
+  const buildType = args['build-type'] ? String(args['build-type']).trim() : buildTypeFor(version);
+  if (!isBuildType(buildType)) {
+    throw new ReleaseEnvError(
+      `--build-type 只能是 ${BUILD_TYPES.join('|')}，给的是 ${JSON.stringify(buildType)}。\n` +
+        '  release/debug 是 Gradle 构建类型，不是 buildType（两者是不同维度）：\n' +
+        '    assembleRelease + 正式发布 → stable\n' +
+        '    预发布（版本号含 -alpha/-beta/-rc，或内部试用） → prerelease\n' +
+        '    构建变体（内测包/标准包） → 那是 artifactVariant: internal|standard，不是 buildType',
+    );
   }
 
   // ---- 2. 产物（本地真值）----

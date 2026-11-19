@@ -269,6 +269,30 @@ curl -sS -X POST https://dl.rose7.cn/api/v1/release \
 失败码：`401` 令牌错/过期；`409 VERSION_CONFLICT` versionCode 没超过线上 latest；`413` APK 超 50 MB；
 `429` 每 IP 每分钟 2 次（等 `Retry-After` 再试）。**上传这一步本身可以单独重试**，服务端允许同版本覆盖。
 
+### ⚠️ `buildType` 只能写 `stable` / `prerelease`（Issue #330）
+
+`buildType` 描述的是**发布渠道**，不是 Gradle 构建类型，也不是构建变体：
+
+| Gradle 构建类型 | → | manifest `buildType` |
+| --- | --- | --- |
+| `release`（`assembleRelease`） | → | `stable`（正式发布） |
+| —（预发布 / 内测渠道） | → | `prerelease` |
+| `debug`（`assembleDebug`） | → | **禁止发布**（debuggable，见 Issue #60） |
+
+构建变体走 `artifactVariant: internal|standard`，与 `buildType` 是两个维度 —— 内测包也可以是 `stable`。
+
+写错成 `"release"` 的后果：客户端 `parseManifest()` 抛 `INVALID_RELEASE`，**整份清单被拒**，
+所有版本都只显示「检查更新失败」，而服务端日志全是 200（2026-11-19 的 P0 事故）。现在四处一起拦：
+发布脚本（`--build-type` 非法 → exit 2，一个字节都不发）/ 校验器（非法值 → FAIL）/
+复核脚本（记录非法 → 阻断，不再只 warn）/ 客户端（`isBuildType` 判定，fail-closed）。
+枚举的唯一定义在 [`shared/build-types.mjs`](../shared/build-types.mjs)，别处只 import。
+
+发版前 / 改发布脚本的 PR 跑一次 fixture 门禁（合法 fixture 必过、非法 fixture 必拦、事故清单 11 条逐条报出）：
+
+```bash
+pnpm run check:manifest
+```
+
 ---
 
 ## 6. 步骤 5 — commit / push / tag

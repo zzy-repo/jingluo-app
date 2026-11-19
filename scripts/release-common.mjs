@@ -299,10 +299,13 @@ export function resolveReleaseToken(opts = {}) {
   );
 }
 
-/** 从版本号判定 buildType（含 -alpha/-beta/-rc → prerelease），与 docs/dl-release-api.md 同口径 */
-export function buildTypeFor(version) {
-  return /-(?:alpha|beta|rc)/i.test(version) ? 'prerelease' : 'stable';
-}
+/**
+ * buildType 的唯一来源是 `shared/build-types.mjs`（Issue #330）。
+ * 对外继续导出 buildTypeFor / BUILD_TYPES / isBuildType，4 处调用点（release-upload /
+ * release-verify / release-check / 本文件内部）一行都不用改 —— 唯一改动是「谁定义」。
+ * 以前这里内联 `-(alpha|beta|rc)` 判定 + 两个字面量，那就是 8 份副本里的一份。
+ */
+export { BUILD_TYPES, BUILD_TYPE_SUFFIX_RE, buildTypeFor, isBuildType } from '../shared/build-types.mjs';
 
 /** 读 android/app/build.gradle 的 EXPECTED_CERT_SHA256（避免指纹在文档里再抄一份） */
 export function expectedCertSha256(root) {
