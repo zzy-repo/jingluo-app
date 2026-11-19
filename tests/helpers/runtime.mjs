@@ -56,12 +56,20 @@ export async function runCase(file, { cwd, timeoutMs = 180000, env = process.env
     // node:test 的 TAP 输出里被跳过的子测试是 `ok 2 - 名字 # SKIP 原因`（末尾还有 `# skipped N` 汇总）。
     // #287：以前跳过在 runner 这一层完全不可见（进程退出码是 0），「看起来全绿、实际一行断言没跑」就藏在这里。
     // 这里按行扫出来交给 run-layer 汇总打印（见 run-layer 的 NODE-SKIP），至少让跳过在报告里露头。
+    // #298：只数「有几条跳过」不够 —— `NODE-SKIP 2` 看不出是哪两条门禁没跑。这里连 TAP 行里的
+    // 用例名与跳过原因一起带出来，交给 run-layer 具名打印。
     let lineCarry = ''
-    let subtestSkips = 0
+    const subtestSkipped = []
     const scanSkips = (text) => {
       const lines = (lineCarry + text).split('\n')
       lineCarry = lines.pop() ?? ''
-      for (const line of lines) if (line.includes('# SKIP')) subtestSkips += 1
+      for (const line of lines) {
+        if (!line.includes('# SKIP')) continue
+        const match = /^\s*(?:not ok|ok)\s+\d+\s+-\s+(.*?)\s+# SKIP\s*([\s\S]*)$/.exec(line)
+        subtestSkipped.push(
+          match ? { name: match[1].trim(), reason: match[2].trim() } : { name: line.trim(), reason: '' }
+        )
+      }
     }
     const keep = (stream, chunk) => {
       const text = chunk.toString()
@@ -79,7 +87,10 @@ export async function runCase(file, { cwd, timeoutMs = 180000, env = process.env
     const { code, signal } = await new Promise((resolve) => child.once('close', (code, signal) => resolve({ code, signal })))
     signalGroup('SIGKILL')
     return { ok: code === 0 && !signal && !timedOut && !interrupted && !spawnError,
-      code, signal, timedOut, interrupted, error: spawnError, skips: subtestSkips, ms: Math.round(performance.now() - started), tail, tempDir }
+      code, signal, timedOut, interrupted, error: spawnError,
+      // skips = 跳过条数（判红门禁不看它）；skipDetails = 逐条的名字与原因（#298 具名上报）
+      skips: subtestSkipped.length, skipDetails: subtestSkipped,
+      ms: Math.round(performance.now() - started), tail, tempDir }
   } finally {
     clearTimeout(timer)
     clearTimeout(escalation)

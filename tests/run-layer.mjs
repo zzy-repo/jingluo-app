@@ -129,7 +129,14 @@ async function main() {
   )
   for (const r of failures) console.log(`Rerun: node tests/run-layer.mjs ${r.layer} --case ${r.file}`)
   for (const r of skips) console.log(`Skipped (environment): ${r.file} — ${r.skipReason}`)
-  for (const r of nodeSkips) console.log(`Skipped (in-case # SKIP ×${r.skips}): ${r.file}`)
+  // #298：跳过必须**指名道姓**。以前只有 `Skipped (in-case # SKIP ×2): <文件>` 一行，报告里
+  // 根本看不出是「E-1/E-2 产物门禁没跑」，更看不出原因（缺 dist）—— 而这两条正是产物层的硬门禁。
+  for (const r of nodeSkips) {
+    console.log(`Skipped (in-case # SKIP ×${r.skips}): ${r.file}`)
+    for (const detail of r.skipDetails ?? []) {
+      console.log(`   ↳ 未被检查：${detail.name}${detail.reason ? ` — ${detail.reason}` : ''}`)
+    }
+  }
   const verdict = await compareWithBaseline(results)
   if (verdict !== null) return interrupted ? 130 : verdict
   return interrupted ? 130 : selected.length && !failedCount ? 0 : 1

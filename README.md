@@ -21,6 +21,7 @@
 本项目的 Web 产物按 **Chrome 83 / WebView 83** 的语法与内置 API 下限构建（Android 11 出厂镜像即 WebView 83），并在入口脚本里补齐低内核缺失的内置 API（`Object.hasOwn`、`Array.prototype.at`、`toSorted`、`replaceAll`、`structuredClone` 等）。
 
 - 产物层门禁：`pnpm run check:legacy`（语法 + 内置 API + CSS `dvh` 回退，不合格即失败）
+- 产物门禁（硬，issue #298）：`pnpm run check:bundle-target` —— E-1/E-2 的独立入口，**没有 `dist/` 就是 exit 1（打印「产物未构建，请先 pnpm build」），不存在「跳过」这个结果**
 - 兼容矩阵扫描：`pnpm run check:matrix`（WebView 79 / 83 / 91 / 109 各自会在哪一层挂）
 - 两者都在 CI（`.github/workflows/ci.yml`）与发版流程中强制运行，且带**负向对照**证明关卡有效。
 

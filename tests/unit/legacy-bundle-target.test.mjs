@@ -16,26 +16,35 @@
 // 于是「产物自检通过」和「产物自检根本没跑」在报告里、在只看 `# fail`/退出码的 CI 里完全一样。
 // 现在改为**声明期跳过**：缺产物时 E-1/E-2 自己那条就是 `# SKIP`，`# skipped` 计数直接对着它们；
 // 需要在缺产物时硬红的 CI（release 前置）可以置 `LEGACY_REQUIRE_DIST=1`，本文件加载即失败。
+//
+// issue #298：跳过仍是跳过 —— CI 报告里长期挂着 `NODE-SKIP 2`，那 2 条就是 E-1/E-2（单测层跑在
+// build 之前，dist 还不存在）。两处收口：
+//   1) 断言本体搬到 `scripts/lib/bundleTargetAudit.mjs`，硬入口 `pnpm run check:bundle-target`
+//      调的**就是**这两个函数（无 dist 直接 exit 1，不跳过）；CI 里必须放在 build 之后，见 PR 的 diff。
+//   2) 单测层的跳过不再埋在汇总数字里：run-layer 的 NODE-SKIP 汇总会逐条打印「未被检查：<用例名>
+//      — <缺产物原因>」（#298 改的是 tests/helpers/runtime.mjs 与 tests/run-layer.mjs）。
 import assert from 'node:assert/strict'
-import { createHash } from 'node:crypto'
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { test } from 'node:test'
-import {
-  checkCssUnits,
-  checkJavaScript,
-  checkRuntimeApis,
-  findForbiddenSyntax,
-  POLYFILL_FLAG,
-  stripLiterals,
-} from '../../scripts/check-bundle-syntax.mjs'
+import { POLYFILL_FLAG } from '../../scripts/check-bundle-syntax.mjs'
 import {
   BASELINE_CHROMIUM,
   assertBrowserslist,
   browserslistChromeTarget,
 } from '../../scripts/lib/compatBaseline.mjs'
+// #298：E-1/E-2 的断言本体搬到了 scripts/lib/bundleTargetAudit.mjs —— 它现在有两个入口
+// （本文件 + `pnpm check:bundle-target`），共用同一份实现；这里只是薄包装，不写第二套判定。
+import {
+  assertBundleTargetCss,
+  assertBundleTargetJs,
+  auditDist,
+  hasBundle,
+  NO_DIST_REASON,
+  walk,
+} from '../../scripts/lib/bundleTargetAudit.mjs'
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 const read = (relative) => readFileSync(path.join(ROOT, relative), 'utf8')
@@ -44,51 +53,14 @@ const rspackConfig = read('rspack.config.ts')
 // 只看代码，不看注释：注释里会提到旧的 chrome >= 105（说明为什么改成 83）
 const rspackCode = rspackConfig.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
 
-const walk = (dir, suffix) => {
-  if (!existsSync(dir)) {
-    return []
-  }
-  const out = []
-  for (const entry of readdirSync(dir, { withFileTypes: true })) {
-    const full = path.join(dir, entry.name)
-    if (entry.isDirectory()) {
-      out.push(...walk(full, suffix))
-    } else if (entry.name.endsWith(suffix)) {
-      out.push(full)
-    }
-  }
-  return out
-}
-
-/**
- * 产物自检的判定内核（E-1/E-2/F-1 共用同一份逻辑，闸门被测的就是它）。
- * 返回三层结果；`problems` 为空数组 = 合格。
- */
-const auditDist = (distDir) => {
-  const jsFiles = walk(path.join(distDir, 'static/js'), '.js')
-  const cssFiles = walk(path.join(distDir, 'static/css'), '.css')
-  const js = checkJavaScript(jsFiles)
-  const css = checkCssUnits(cssFiles)
-  const runtime = checkRuntimeApis(distDir, jsFiles)
-  return {
-    jsFiles,
-    cssFiles,
-    js,
-    css,
-    runtime,
-    problems: [...js.lexical, ...js.ast, ...css.problems, ...runtime.violations],
-  }
-}
-
 const DIST = path.join(ROOT, 'dist')
-const hasBundle = (distDir) =>
-  walk(path.join(distDir, 'static/js'), '.js').length > 0 &&
-  walk(path.join(distDir, 'static/css'), '.css').length > 0
+// walk / auditDist / hasBundle / NO_DIST_REASON 全部来自 scripts/lib/bundleTargetAudit.mjs（#298）：
+// 与 `pnpm check:bundle-target` 是同一份实现，本文件不再自带一套（F-1 的 fixture 自证也走它）。
 
 // 缺产物：默认**显式跳过**（报告里 E-1/E-2 自己那条是 `# SKIP`，`# skipped` 直接对着它们），
-// 而不是以前那种「用例体 return、外层仍记 ok」的假绿。
-const NO_DIST_REASON =
-  'dist/ 没有产物（dist/static/js 或 dist/static/css 为空）：先跑 `pnpm run build:internal`（或 `pnpm run build`）再来核对产物'
+// 而不是以前那种「用例体 return、外层仍记 ok」的假绿。#298 之后 run-layer 会把这两条的名字与
+// 跳过原因逐条打印在 NODE-SKIP 汇总里，不再只是「NODE-SKIP 2」这么一个数字；真正「缺产物即红」
+// 的场景交给独立入口 `pnpm check:bundle-target`（CI 里必须放在 build 之后）。
 const DIST_READY = hasBundle(DIST)
 // 需要「缺产物即红」的 CI（release 前置）置 LEGACY_REQUIRE_DIST=1：跳过不再是一种可能。
 if (!DIST_READY && process.env.LEGACY_REQUIRE_DIST === '1') {
@@ -278,61 +250,13 @@ test('D 每处 dvh 都有同值 vh 回退（统一写法：变量/字面量 + dv
 })
 
 test('E-1 产物自检：全部 JS 能用 Chrome 83 的语法解析（无 ||= / &&= / ??= / 类静态块）', { skip: DIST_SKIP }, () => {
-  const audit = auditDist(DIST)
-  const all = [...audit.js.lexical, ...audit.js.ast]
-  assert.deepEqual(all, [], `产物里有低内核解析不了的语法：\n${JSON.stringify(all.slice(0, 5), null, 2)}`)
-  assert.ok(audit.js.files >= 40, `产物 JS 文件数异常：${audit.js.files}`)
-  // 运行时 API 层（issue #39）：语法过了不代表低内核能跑 —— replaceAll 这类内置 API 缺失是 TypeError。
-  // 产物里出现 Chrome 83 没有的 API 时，必须能在入口脚本里找到 polyfill 标记，否则低内核必白屏。
-  assert.deepEqual(
-    audit.runtime.violations,
-    [],
-    `产物里有 Chrome 83 没有、又没在入口脚本里补上的内置 API：\n${JSON.stringify(audit.runtime.violations.slice(0, 5), null, 2)}`
-  )
-  assert.ok(
-    audit.runtime.polyfillInEntries.length > 0,
-    '产物入口脚本里找不到 legacy polyfill 标记（懒加载 chunk 里补等于没补）'
-  )
-
-  // 主包单独再确认一遍：三个逻辑赋值运算符在**剥掉字面量之后**一次都不出现
-  // 路径匹配不能写死分隔符：walk() 走 path.join，Windows 上产出的是
-  // `D:\...\dist\static\js\main.<hash>.js`，写死 /\/main\./ 会恒定匹配不到（假红）。
-  // 用 basename 比较，等价于把 [\\/] 写进正则，但也不受 walk() 的拼接方式影响；
-  // 反过来只认反斜杠会在 POSIX 上把这条测回假红，所以两边都不写死。
-  const mainFile = audit.jsFiles.find((file) => /^main\.[0-9a-f]+\.js$/.test(path.basename(file)))
-  assert.ok(mainFile, '找不到 main 包')
-  const main = readFileSync(mainFile, 'utf8')
-  const stripped = stripLiterals(main)
-  for (const token of ['||=', '&&=', '??=']) {
-    assert.equal(stripped.includes(token), false, `main 包里还有 ${token}`)
-  }
-  // 裸 grep 仍会命中 prismjs 语法高亮定义里的正则（/--|\+\+|\*\*=?|=>|&&=?|\|\|=?/），正常：
-  assert.ok(findForbiddenSyntax(main).length === 0, 'main 包词法层应为空')
-  const hash = createHash('sha256').update(main).digest('hex')
-  console.log(`    main=${path.basename(mainFile)} sha256=${hash}`)
+  // 断言本体在 scripts/lib/bundleTargetAudit.mjs（#298）：`pnpm check:bundle-target` 调的是同一个函数。
+  assertBundleTargetJs(auditDist(DIST))
 })
 
 test('E-2 产物自检：CSS 里没有裸 dvh，且守卫在业务包之前', { skip: DIST_SKIP }, () => {
-  const audit = auditDist(DIST)
-  assert.ok(audit.jsFiles.length > 0, 'dist/static/js 里没有产物 JS')
-  assert.ok(audit.cssFiles.length > 0, 'dist/static/css 里没有产物 CSS')
-  assert.deepEqual(audit.css.problems, [])
-  assert.ok(audit.css.dvhTotal >= 6, `产物里 dvh 声明应有 6 处，实际 ${audit.css.dvhTotal}`)
-  assert.equal(audit.css.fallbackTotal, audit.css.dvhTotal, '每处 dvh 都要有配对 vh 回退')
-
-  const html = read('dist/index.html')
-  assert.ok(html.indexOf('compatibility-error') >= 0, '产物 HTML 里应有守卫的提示容器')
-
-  // 执行顺序的保证不是「源码顺序」而是「defer」：inline 守卫在解析 body 时就跑了，
-  // defer 的业务包要等解析完才执行 —— 所以包解析失败时守卫已经装好 error 监听。
-  const bundleTag = html.match(/<script[^>]*src="[^"]*static\/js\/main\.[0-9a-f]+\.js"[^>]*>/)
-  assert.ok(bundleTag, '产物 HTML 里应引用 main 包')
-  assert.match(bundleTag[0], /\bdefer\b/, 'main 包必须是 defer，否则会和 inline 守卫抢执行顺序')
-  const inlineTags = [...html.matchAll(/<script(?![^>]*\bsrc=)[^>]*>/g)].map((match) => match[0])
-  assert.ok(inlineTags.length >= 1, '产物 HTML 里应有 inline 守卫脚本')
-  for (const tag of inlineTags) {
-    assert.doesNotMatch(tag, /\b(?:async|defer)\b/, 'inline 守卫必须是同步执行的（不能带 async/defer）')
-  }
+  // 同上：断言本体在 scripts/lib/bundleTargetAudit.mjs，与 `pnpm check:bundle-target` 共用。
+  assertBundleTargetCss(auditDist(DIST), DIST)
 })
 
 // ── F 闸门自证（issue #95）──────────────────────────────────────────────────
