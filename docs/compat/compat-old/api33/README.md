@@ -82,8 +82,8 @@ $ adb shell dumpsys package com.google.android.webview | grep versionName
 ## 复跑方式
 
 ```bash
-export PATH="/d/android-sdk/platform-tools:$PATH"
-export ANDROID_AVD_HOME=D:/android-avd ANDROID_HOME=/d/android-sdk ANDROID_SDK_ROOT=/d/android-sdk
+export PATH="<android-sdk>/platform-tools:$PATH"
+export ANDROID_AVD_HOME=<android-avd> ANDROID_HOME=<android-sdk> ANDROID_SDK_ROOT=<android-sdk>
 node scripts/compat/boot.mjs --avd deepseek-api33
 bash scripts/compat/run-p2.sh 33        # 三档；已改用系统输入通道（adb shell input tap/text）
 node scripts/compat/p4-layout.mjs --api 33

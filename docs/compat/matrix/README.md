@@ -23,8 +23,8 @@ pnpm run check:matrix
 
 | 项 | 值 |
 | --- | --- |
-| dist | `D:\all_project\deepseekapp\dist`（预构建，mtime 2025-11-18 20:36） |
-| 来源 | 主仓库 HEAD `7d2facb` 打成，**不是** `origin/main`(`081ff71`) |
+| dist | `<repo>/dist`（预构建，mtime 2025-11-18 20:36；本机路径不入库，见 #291） |
+| 来源 | 构建时 HEAD `<构建时 HEAD>`（`git rev-parse HEAD` 复核）打成，**不是**抓取当时的 `origin/main` |
 | JS | 88 个（入口 `static/js/main.73ca8f5e.js` 691 889 B + `static/js/async/` 87 个异步 chunk） |
 | CSS | 2 个（`main.fcf260ed.css` 103 563 B + 1 个异步） |
 | acorn | 8.19.0 |

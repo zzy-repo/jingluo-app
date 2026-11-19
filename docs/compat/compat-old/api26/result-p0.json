@@ -24,7 +24,7 @@
   "install": {
     "elapsedMs": 1213,
     "output": "Performing Streamed Install\r\nSuccess",
-    "apk": "D:\\all_project\\runs\\compatold\\android\\app\\build\\outputs\\apk\\debug\\app-debug.apk"
+    "apk": "<worktree>/android/app/build/outputs/apk/debug/app-debug.apk"
   },
   "coldStart": {
     "elapsedMs": 780,
@@ -34,7 +34,7 @@
   "samples": [
     {
       "at": 2,
-      "shot": "D:\\all_project\\runs\\compatold\\docs\\compat\\compat-old/api26/shots/t02s.png",
+      "shot": "docs\\compat\\compat-old/api26/shots/t02s.png",
       "page": {
         "url": "https://localhost/",
         "title": "鲸落",
@@ -59,7 +59,7 @@
     },
     {
       "at": 6,
-      "shot": "D:\\all_project\\runs\\compatold\\docs\\compat\\compat-old/api26/shots/t06s.png",
+      "shot": "docs\\compat\\compat-old/api26/shots/t06s.png",
       "page": {
         "url": "https://localhost/",
         "title": "鲸落",
@@ -84,7 +84,7 @@
     },
     {
       "at": 13,
-      "shot": "D:\\all_project\\runs\\compatold\\docs\\compat\\compat-old/api26/shots/t13s.png",
+      "shot": "docs\\compat\\compat-old/api26/shots/t13s.png",
       "page": {
         "url": "https://localhost/",
         "title": "鲸落",
@@ -109,7 +109,7 @@
     },
     {
       "at": 20,
-      "shot": "D:\\all_project\\runs\\compatold\\docs\\compat\\compat-old/api26/shots/t20s.png",
+      "shot": "docs\\compat\\compat-old/api26/shots/t20s.png",
       "page": {
         "url": "https://localhost/",
         "title": "鲸落",
@@ -134,7 +134,7 @@
     }
   ],
   "logcat": {
-    "file": "D:\\all_project\\runs\\compatold\\docs\\compat\\compat-old/api26/logcat-api26.txt",
+    "file": "docs\\compat\\compat-old/api26/logcat-api26.txt",
     "consoleLines": [
       "11-18 16:30:41.473  4852  4852 I chromium: [INFO:library_loader_hooks.cc(36)] Chromium logging enabled: level = 0, default verbosity = 0",
       "11-18 16:30:41.478  1876  2742 I ActivityManager: Start proc 4874:com.android.chrome:webview_service/u0a48 for service com.android.chrome/org.chromium.android_webview.services.VariationsSeedServer",
@@ -155,7 +155,7 @@
   },
   "notes": [],
   "final": {
-    "shot": "D:\\all_project\\runs\\compatold\\docs\\compat\\compat-old/api26/shots/t-final.png",
+    "shot": "docs\\compat\\compat-old/api26/shots/t-final.png",
     "page": {
       "url": "https://localhost/",
       "title": "鲸落",

@@ -22,7 +22,7 @@
   "install": {
     "elapsedMs": 6120,
     "output": "Performing Streamed Install\r\nSuccess",
-    "apk": "D:\\all_project\\runs\\compat34\\android\\app\\build\\outputs\\apk\\debug\\app-debug.apk"
+    "apk": "<worktree>/android/app/build/outputs/apk/debug/app-debug.apk"
   },
   "coldStart": {
     "elapsedMs": 4560,
@@ -32,7 +32,7 @@
   "samples": [
     {
       "at": 2,
-      "shot": "D:\\all_project\\runs\\compat34\\docs\\compat\\compat-old/api35/shots/t02s.png",
+      "shot": "docs\\compat\\compat-old/api35/shots/t02s.png",
       "page": {
         "url": "https://localhost/",
         "title": "鲸落",
@@ -54,7 +54,7 @@
     },
     {
       "at": 7.6,
-      "shot": "D:\\all_project\\runs\\compat34\\docs\\compat\\compat-old/api35/shots/t06s.png",
+      "shot": "docs\\compat\\compat-old/api35/shots/t06s.png",
       "page": {
         "url": "https://localhost/",
         "title": "鲸落",
@@ -97,7 +97,7 @@
     },
     {
       "at": 13,
-      "shot": "D:\\all_project\\runs\\compat34\\docs\\compat\\compat-old/api35/shots/t13s.png",
+      "shot": "docs\\compat\\compat-old/api35/shots/t13s.png",
       "page": {
         "url": "https://localhost/",
         "title": "鲸落",
@@ -140,7 +140,7 @@
     },
     {
       "at": 20,
-      "shot": "D:\\all_project\\runs\\compat34\\docs\\compat\\compat-old/api35/shots/t20s.png",
+      "shot": "docs\\compat\\compat-old/api35/shots/t20s.png",
       "page": {
         "url": "https://localhost/",
         "title": "鲸落",
@@ -183,7 +183,7 @@
     }
   ],
   "logcat": {
-    "file": "D:\\all_project\\runs\\compat34\\docs\\compat\\compat-old/api35/logcat-api35.txt",
+    "file": "docs\\compat\\compat-old/api35/logcat-api35.txt",
     "consoleLines": [
       "11-18 19:41:40.188   591  1742 E JavaBinder: *** Uncaught remote exception! Exceptions are not yet supported across processes. Client PID 1187 UID 1001.",
       "11-18 19:41:40.739  2628  2628 D nativeloader: Load /system/lib64/libwebviewchromium_plat_support.so using ns clns-9 from class loader (caller=/data/app/~~jctD8R2wFN6NWFA5R0b8dQ==/com.google.android.webview-IgZHOhX5GThS1KZZipATCg==/WebViewGoogle.apk): ok",
@@ -208,7 +208,7 @@
   },
   "notes": [],
   "final": {
-    "shot": "D:\\all_project\\runs\\compat34\\docs\\compat\\compat-old/api35/shots/t-final.png",
+    "shot": "docs\\compat\\compat-old/api35/shots/t-final.png",
     "page": {
       "url": "https://localhost/",
       "title": "鲸落",

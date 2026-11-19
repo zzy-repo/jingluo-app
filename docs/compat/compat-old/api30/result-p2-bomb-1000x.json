@@ -496,7 +496,7 @@
   "requestCount": 6,
   "requestBytes": 66112,
   "logcat": {
-    "file": "D:\\all_project\\runs\\compatold\\docs\\compat\\compat-old/api30/logcat-p2-bomb-1000x.txt",
+    "file": "docs\\compat\\compat-old/api30/logcat-p2-bomb-1000x.txt",
     "kills": [
       "11-18 17:37:43.407   505  3020 I ActivityManager: Killing 6924:com.example.deepseekchat/u0a167 (adj 0): stop com.example.deepseekchat due to from pid 7509",
       "11-18 17:37:43.457   505  3020 I ActivityManager: Killing 6957:com.google.android.webview:sandboxed_process0:org.chromium.content.app.SandboxedProcessService0:0/u0a167i8 (adj 0): isolated not needed"

@@ -62,7 +62,7 @@ $ adb shell dumpsys webviewupdate
 ## 复跑方式
 
 ```bash
-export ANDROID_AVD_HOME='D:\android-avd'; export PATH="/d/android-sdk/platform-tools:$PATH"
+export ANDROID_AVD_HOME='<android-avd>'; export PATH="<android-sdk>/platform-tools:$PATH"
 node scripts/compat/p0-fallback.mjs --avd compat-api36 --api 36 --no-kill
 node scripts/compat/p1-chat.mjs --api 36 --budget 60 \
   --base-url http://140.210.13.146:60010 --key "$E2E_API_KEY"

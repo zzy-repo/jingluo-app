@@ -259,7 +259,7 @@
   "requestCount": 4,
   "requestBytes": 66112,
   "logcat": {
-    "file": "D:\\all_project\\runs\\compat34\\docs\\compat\\compat-old/api33/logcat-p2-bomb-1000x.txt",
+    "file": "docs\\compat\\compat-old/api33/logcat-p2-bomb-1000x.txt",
     "kills": [],
     "console": [
       "11-18 19:43:41.027   510   539 I ActivityManager: Start proc 4035:com.google.android.webview:sandboxed_process0:org.chromium.content.app.SandboxedProcessService0:0/u0i1 for  {com.example.deepseekchat/org.chromium.content.app.SandboxedProcessService0:0}",

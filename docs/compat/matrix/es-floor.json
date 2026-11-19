@@ -1,6 +1,6 @@
 {
   "generatedAt": "2026-11-18T15:31:23.815Z",
-  "distDir": "D:\\all_project\\deepseekapp\\dist",
+  "distDir": "<repo>/dist",
   "acornVersion": "8.19.0",
   "caveat": "全部结论为静态推断（语法解析 + API 调用点探针），未在任何 WebView 上运行验证",
   "ladder": [

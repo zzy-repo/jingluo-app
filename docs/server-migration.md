@@ -67,7 +67,7 @@
   支付域名 `https://apia.ecsafe.cn` 与两个 `/invite/*` 兜底地址**按 issue 要求不动**。
 - **老用户迁移**：`apiConfig.ts` 的 `LEGACY_HOSTS` 收了 `123.207.199.196` 与 `62.106.70.167`，`storedBaseUrl()`
   读到即当「没配过」回落内置默认（补的是 1.2.2 内测用户那份共享 `chat-demo:base-url` 的坑），自填地址不受影响。
-- **防复发**：`scripts/check-hardcoded-ip.mjs`（`pnpm check:ip`）扫 `src/` `scripts/` `repro/`，
+- **防复发**：`scripts/check-hardcoded-ip.mjs`（`pnpm check:ip`）扫 `src/` `scripts/`（`repro/` 已在 #291 删除），
   公网裸 IP 直接 exit 1；`140.210.13.146` 在 `ALLOWED_HOSTS` 里显式豁免，确需保留字面量的行用 `check-ip-allow` 标注。
 - **契约实测**（宿主侧，非 E2E）：`:60010` 未知路径回 `{"error":{"type":"not_found_error",...,"code":"unknown_api_path"}}`（404）；
   `:60012/feedback` 最小合法体回 `{"ok":true,"id":"<uuid>",...}`（200）；`:60013/rotate` 带不存在设备码回

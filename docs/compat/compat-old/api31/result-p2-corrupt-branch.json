@@ -198,7 +198,7 @@
   "requestCount": 1,
   "requestBytes": 2164,
   "logcat": {
-    "file": "D:\\all_project\\runs\\compatold\\docs\\compat\\compat-old/api31/logcat-p2-corrupt-branch.txt",
+    "file": "docs\\compat\\compat-old/api31/logcat-p2-corrupt-branch.txt",
     "kills": [
       "11-18 17:50:48.984   540  3624 I ActivityManager: Killing 3607:com.google.android.youtube/u0a124 (adj 975): empty #17",
       "11-18 17:50:49.032   540  1994 I ActivityManager: Killing 1176:com.google.android.cellbroadcastreceiver/u0a139 (adj 985): empty #17"

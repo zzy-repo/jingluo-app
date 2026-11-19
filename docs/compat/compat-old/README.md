@@ -4,6 +4,12 @@
 > 真机、厂商 ROM（尤其线上反馈来源的老 WebView）**未测**，不得由本表外推。
 > 「未测」= **没跑过，不是通过**。WebView 版本一律取 `adb shell dumpsys package com.google.android.webview | grep versionName`
 > 的原始输出，**不按 Android 版本推断**。
+>
+> **logcat 摘录口径（Issue #291）**：各目录下的 `logcat-*.txt` 现在是**摘录** —— 保留原文头 20 KiB
+> 加上所有 `SyntaxError` / `JavaScript Error` / `FATAL EXCEPTION` / `AndroidRuntime` / `E Capacitor:`
+> 行，中间省略的行数与原文总字节写在文件里的横幅上。**数字一律以同目录 `result-*.json` 为准**
+> （本轮已把 json 里的本机绝对路径改成仓库相对路径与 `<worktree>` / `<repo>` / `<android-sdk>` 占位）。
+> 需要全文就按文末「复跑方式」重跑对应脚本，logcat 会重新落盘。
 
 - 被测产物：debug APK `com.example.deepseekchat` 1.4.0-beta.10（versionCode 17，`minSdk 24`、`targetSdk 36`，`application-debuggable`）。
   早期档（26 / 28 / 29 / 30 / 31 / 33）用 **6,305,279 B** 那一份；本轮新增的 34 / 35 / 36 与 API33 P2 重跑用 **6,319,781 B** 那一份（同版本号，主包 hash 不同，各目录 README 已注明）
@@ -259,7 +265,7 @@ WebView 83 / 91 / 109 / 113 / 124 / 133 跨了 Android 11 → 16 六个平台版
 ## 环境更正（仍然有效）
 
 工单曾记录「API 30 / 31 / 33 三个镜像均已在本地」。**该记录对 API 31 是错的**：
-`/d/android-sdk/system-images/android-31/google_apis/x86_64/` 当时只有空壳（`.installer/.installData`，无 `package.xml` / `system.img`），
+`<android-sdk>/system-images/android-31/google_apis/x86_64/` 当时只有空壳（`.installer/.installData`，无 `package.xml` / `system.img`），
 `avdmanager` 报 `Error: Package path is not valid. Valid system image paths are: …android-33…, …android-30…`。
 后经 `sdkmanager "system-images;android-31;google_apis;x86_64"`（约 1.1 GB）补齐才建出 AVD。
 
@@ -270,9 +276,9 @@ WebView 83 / 91 / 109 / 113 / 124 / 133 跨了 Android 11 → 16 六个平台版
 ## 复跑方式
 
 ```bash
-export MSYS_NO_PATHCONV=1; export ANDROID_AVD_HOME=D:/android-avd
-export ANDROID_HOME=/d/android-sdk; export ANDROID_SDK_ROOT=/d/android-sdk
-export PATH="/d/android-sdk/platform-tools:$PATH"
+export MSYS_NO_PATHCONV=1; export ANDROID_AVD_HOME=<android-avd>
+export ANDROID_HOME=<android-sdk>; export ANDROID_SDK_ROOT=<android-sdk>
+export PATH="<android-sdk>/platform-tools:$PATH"
 
 # 一次只开一台（AGENTS.md 硬规则：不并发跑模拟器）
 node scripts/compat/boot.mjs --avd compat-api30          # 装 APK + 打印 WebView 原始版本行

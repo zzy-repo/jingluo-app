@@ -15,7 +15,7 @@
  * 谁读它：
  *   - 构建期：`rspack.config.ts` 读同一份 JSON 注入 `__ENDPOINTS__`，前端源码只用注入值；
  *   - 门禁：`scripts/check-hardcoded-ip.mjs`（主机白名单）、`scripts/check-endpoints.mjs`（配置自洽）；
- *   - 脚本与测试：`scripts/shot-*.mjs`、`repro/**`、`tests/**` 都 import 这里，不再自己写地址字面量。
+ *   - 脚本与测试：`scripts/shot-*.mjs`、`tests/**` 都 import 这里，不再自己写地址字面量。
  *
  * 为什么 `allowedPorts` 和 `allowedHosts` 分两份：同一台机器上有 60010 / 60012 / 60013 三个端口，
  * 端口写错一位（60010 ↔ 60001）在运行时只表现为「连不上」，没有任何报错线索。`allowedHosts`

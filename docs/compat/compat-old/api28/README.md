@@ -13,7 +13,7 @@ WebView 原始版本行（`adb shell dumpsys package com.google.android.webview 
     versionName=69.0.3497.100
 ```
 
-- AVD：`compat-api28`（`ANDROID_AVD_HOME=D:/android-avd`，镜像 `system-images;android-28;google_apis;x86_64`）
+- AVD：`compat-api28`（`ANDROID_AVD_HOME=<android-avd>`，镜像 `system-images;android-28;google_apis;x86_64`）
 - 被测包：`com.example.deepseekchat` 1.4.0-beta.10（versionCode 17，targetSdk 36，debug APK 6,305,279 B）
 
 ## P0 · 兜底页正向验证（2026-11-19 00:39 实测）
@@ -48,8 +48,8 @@ logcat 原始行：
 ## 复现
 
 ```bash
-export PATH="/d/android-sdk/platform-tools:$PATH"
-cd /d/all_project/runs/compatold
+export PATH="<android-sdk>/platform-tools:$PATH"
+cd <compat-run-worktree>
 node scripts/compat/p0-fallback.mjs --avd compat-api28 --api 28 --no-kill
 ```
 

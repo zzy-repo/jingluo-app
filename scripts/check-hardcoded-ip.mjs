@@ -11,7 +11,8 @@
  * 扫描范围（只扫会进产物 / 会打真实请求的代码）：
  *   src/      客户端源码
  *   scripts/  构建与截图脚本（会拼 URL）
- *   repro/    复现装置（同样打真实后端）
+ *   （`repro/` 复现装置已在 #291 整目录删除，扫它的那一条随之去掉；目录若重建会自动出现在
+ *    `scripts/check-repo-hygiene.mjs` 的扫描范围里）
  *
  * 不扫：`docs/`（历史实测记录要保原文）、`CHANGELOG.md`（历史）、`tests/`（断言里必须写地址
  * 才能验证地址对不对）、`node_modules` / `dist*`（产物与依赖）。
@@ -53,7 +54,7 @@ import { ALLOWED_HOSTS, REASON, scanText } from './lib/hardcodedIpAudit.mjs'
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 
 /** 扫这些目录（相对仓库根） */
-const SCAN_DIRS = ['src', 'scripts', 'repro']
+const SCAN_DIRS = ['src', 'scripts']
 
 /** 进来也不看的目录名（任意层级） */
 const SKIP_DIRS = new Set([

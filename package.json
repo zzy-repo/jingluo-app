@@ -25,6 +25,7 @@
     "check:compat-baseline": "node scripts/check-compat-baseline.mjs",
     "check:ip": "node scripts/check-hardcoded-ip.mjs",
     "check:dup-impl": "node scripts/check-duplicate-impl.mjs",
+    "check:hygiene": "node scripts/check-repo-hygiene.mjs",
     "check:identity": "node scripts/check-identity.mjs",
     "check:endpoints": "node scripts/check-endpoints.mjs",
     "check:icon": "node scripts/check-icon-edges.mjs",

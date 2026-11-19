@@ -113,8 +113,8 @@ trickle 一项与 #150 描述不同，但**不能据此说 #150 不成立**：#1
 ## 复跑方式
 
 ```bash
-export PATH="/d/android-sdk/platform-tools:$PATH"
-export ANDROID_AVD_HOME=D:/android-avd ANDROID_HOME=/d/android-sdk ANDROID_SDK_ROOT=/d/android-sdk
+export PATH="<android-sdk>/platform-tools:$PATH"
+export ANDROID_AVD_HOME=<android-avd> ANDROID_HOME=<android-sdk> ANDROID_SDK_ROOT=<android-sdk>
 node scripts/compat/boot.mjs --avd compat-api31
 bash scripts/compat/run-p2.sh 31        # 三档（bomb / corrupt-branch / edge-200mb）
 node scripts/compat/p3-net.mjs --api 31

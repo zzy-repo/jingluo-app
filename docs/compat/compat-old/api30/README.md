@@ -57,7 +57,7 @@ versionName=83.0.4103.106
 ## 复跑方式
 
 ```bash
-export PATH="/d/android-sdk/platform-tools:$PATH"
+export PATH="<android-sdk>/platform-tools:$PATH"
 node scripts/compat/boot.mjs --avd compat-api30          # 装 APK + 打印 WebView 原始行
 bash scripts/compat/run-p2.sh 30                          # 7 档串行，每档落 result-p2-<档>.json + logcat
 node scripts/compat/p4-layout.mjs --api 30                # 390 / 360 排版

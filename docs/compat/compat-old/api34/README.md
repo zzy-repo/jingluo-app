@@ -78,7 +78,7 @@ $ adb shell dumpsys webviewupdate
 ## 复跑方式
 
 ```bash
-export ANDROID_AVD_HOME='D:\android-avd'; export PATH="/d/android-sdk/platform-tools:$PATH"
+export ANDROID_AVD_HOME='<android-avd>'; export PATH="<android-sdk>/platform-tools:$PATH"
 # P0（自己拉起 AVD，跑完保留设备）
 node scripts/compat/p0-fallback.mjs --avd compat-api34 --api 34 --no-kill
 # P1（复用同一台设备；Key 走环境变量或 --key，勿写入仓库）
