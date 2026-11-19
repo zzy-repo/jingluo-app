@@ -1,0 +1,147 @@
+{
+  "schemaVersion": 1,
+  "baseline": {
+    "ref": "origin/main@6e7baab（1.4.0-beta.10 线）",
+    "recordedAt": "2026-11-19",
+    "recordedBy": "Issue #365（L1 接入 CI 的分片权重）",
+    "note": "单个文件实测耗时（ms），用于把集成层切成并行分片。**只影响均衡度，不影响覆盖率**：没登记的文件按默认 30000ms 估重，照样会被分进某个分片，不存在「新文件没人跑」。重测：node tests/run-layer.mjs integration --json l1.json 后按 results[].ms 覆盖本表。"
+  },
+  "totalMs": 1188365,
+  "files": {
+    "auto-title.test.mjs": {
+      "ms": 56844
+    },
+    "caps.test.mjs": {
+      "ms": 3017
+    },
+    "copy-limit.test.mjs": {
+      "ms": 112557
+    },
+    "diagnostics-contract.test.mjs": {
+      "ms": 15780
+    },
+    "diagnostics.test.mjs": {
+      "ms": 14133
+    },
+    "domain01-first-run.test.mjs": {
+      "ms": 3518
+    },
+    "domain01-session-load.test.mjs": {
+      "ms": 10465
+    },
+    "domain02-reply-error-ui.test.mjs": {
+      "ms": 61207
+    },
+    "domain02-stop-regenerate.test.mjs": {
+      "ms": 13765
+    },
+    "domain02-wait-thinking-ui.test.mjs": {
+      "ms": 71064
+    },
+    "domain05-ui-export-import.test.mjs": {
+      "ms": 3375
+    },
+    "domain08-feedback-negative.test.mjs": {
+      "ms": 27294
+    },
+    "domain09-delete-all-retention.test.mjs": {
+      "ms": 11241
+    },
+    "domain09-settings-reload.test.mjs": {
+      "ms": 27021
+    },
+    "domain10-update-check-flow.test.mjs": {
+      "ms": 14965
+    },
+    "domain10-update-install-flow.test.mjs": {
+      "ms": 4778
+    },
+    "error-boundary.test.mjs": {
+      "ms": 18611
+    },
+    "feedback-draft.test.mjs": {
+      "ms": 4485
+    },
+    "feedback-export.test.mjs": {
+      "ms": 2195
+    },
+    "feedback-scroll.test.mjs": {
+      "ms": 194631
+    },
+    "full-acceptance.test.mjs": {
+      "ms": 49724
+    },
+    "internal-build.test.mjs": {
+      "ms": 9835
+    },
+    "issue-234-invite-copy.test.mjs": {
+      "ms": 17808
+    },
+    "legacy-config.test.mjs": {
+      "ms": 7854
+    },
+    "log-viewer.test.mjs": {
+      "ms": 4408
+    },
+    "mode-switch-plain.test.mjs": {
+      "ms": 1741
+    },
+    "mode-switch-request.test.mjs": {
+      "ms": 2823
+    },
+    "mode-switch.test.mjs": {
+      "ms": 2915
+    },
+    "motion.test.mjs": {
+      "ms": 25868
+    },
+    "ours-services.test.mjs": {
+      "ms": 41390
+    },
+    "paths.test.mjs": {
+      "ms": 4778
+    },
+    "probe-auth-protocols.test.mjs": {
+      "ms": 23984
+    },
+    "probe-auth.test.mjs": {
+      "ms": 2196
+    },
+    "probe-nokey.test.mjs": {
+      "ms": 5223
+    },
+    "provider-anthropic.test.mjs": {
+      "ms": 4914
+    },
+    "provider-channels.test.mjs": {
+      "ms": 17154
+    },
+    "quota-exhausted.test.mjs": {
+      "ms": 23343
+    },
+    "request-body.test.mjs": {
+      "ms": 6469
+    },
+    "session-list-flow.test.mjs": {
+      "ms": 27387
+    },
+    "settings-probe-model.test.mjs": {
+      "ms": 84200
+    },
+    "update-stuck-button-373.test.mjs": {
+      "ms": 6772
+    },
+    "upstream-html.test.mjs": {
+      "ms": 5860
+    },
+    "url-import-native.test.mjs": {
+      "ms": 19160
+    },
+    "url-import-stages.test.mjs": {
+      "ms": 118900
+    },
+    "url-import-web.test.mjs": {
+      "ms": 2713
+    }
+  }
+}

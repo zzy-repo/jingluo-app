@@ -4,7 +4,13 @@
     "ref": "origin/main@18b44f3（1.4.0-beta.9 线）",
     "recordedAt": "2026-11-18",
     "recordedBy": "Issue #19（集成测试基线红）",
-    "note": "逐个集成文件登记「应该是什么状态」，按当前 main 从零重登记（29 个文件）。判定只判「相对基线没有新增失败」：expected=pass 的跑红算新增失败；expected=known-red 的跑绿会报 FIXED? 提醒删条目，防基线腐烂。known-red 必须写清 reason + 证据 + followUp，禁止把环境问题塞进 known-red。"
+    "note": "逐个集成文件登记「应该是什么状态」，按当前 main 从零重登记（29 个文件）。判定只判「相对基线没有新增失败」：expected=pass 的跑红算新增失败；expected=known-red 的跑绿会报 FIXED? 提醒删条目，防基线腐烂。known-red 必须写清 reason + 证据 + followUp，禁止把环境问题塞进 known-red。（#365 补：上面 7 条 expected=known-red 是接线时实测到的既有红，逐条带 evidence/followUp；跑绿即要求删条目，不允许新增。）",
+    "reverified": {
+      "ref": "origin/main@6e7baab",
+      "recordedAt": "2026-11-19",
+      "recordedBy": "Issue #365（L1 接入 CI 前逐条复测）",
+      "note": "#365 接线前把 45 个集成文件全量重测了一遍（1188s）：7 条既有红登记为 known-red（各带 evidence/followUp），其余 38 条 pass。known-red 只允许减：条目跑绿会报 FIXED? 并要求删条目。"
+    }
   },
   "howToRun": {
     "standardBuild": "NODE_ENV=production DIST_OUT=dist-standard npx rspack build -c rspack.config.ts",
@@ -44,9 +50,12 @@
       "reason": "自己构建 dist-copy-limit（DIST_DIR_STANDARD 可注入）+ 自起静态服务；端口自动分配"
     },
     "diagnostics-contract.test.mjs": {
-      "expected": "pass",
+      "expected": "known-red",
       "artifact": "internal + standard",
-      "reason": "同时要内测产物（DIST_DIR）与标准产物（STANDARD_DIST_DIR），各起一个随机 loopback 服务，再按 variant 校验"
+      "reason": "import_error 事件的 meta 字段不全：403 下载失败那条（import download failed: forbidden）缺断言要求的字段，被「字段不全」判红",
+      "evidence": "2026-11-19 origin/main@6e7baab 实测 FAIL 15.8s：✗ 字段不全 {kind:\"import_error\",meta:{correlationId,reason,url.path,http.status,download.bytes,flow,stage,status,retryable,durationMs,error.msg}}（另 net_error / error 两条通过）",
+      "followUp": "缺的字段在 src/services/diagnostics 侧补齐（与 #387 脱敏单分开做），补完删本条",
+      "#was": "接线前登记为 pass"
     },
     "diagnostics.test.mjs": {
       "expected": "pass",
@@ -69,14 +78,20 @@
       "reason": "DIST_STANDARD_DIR 指向标准产物，verifyDist(standard) 守卫后自起服务"
     },
     "feedback-scroll.test.mjs": {
-      "expected": "pass",
+      "expected": "known-red",
       "artifact": "standard(滚动专用)",
-      "reason": "SCROLL_DIST_DIR（默认 dist-scroll）滚动截图专用产物；自起服务 + SCROLL_PORT 可注入"
+      "reason": "360×640 键盘态下 expanded bottom 断言失败（软键盘遮挡与展开高度契约不符）",
+      "evidence": "2026-11-19 实测 FAIL 194.6s（#368 记 194.1s）；单文件需要 --timeout-ms >= 300000，CI 里给 420000",
+      "followUp": "窄屏键盘态布局单独派单；本文件是集成层最慢的一个，分片权重按 195s 记",
+      "#was": "接线前登记为 pass"
     },
     "full-acceptance.test.mjs": {
-      "expected": "pass",
+      "expected": "known-red",
       "artifact": "standard",
-      "reason": "runner 注入共享标准产物服务的 APP_URL；产物缺失/陈旧由 verifyAppUrl 报 SKIP(env)"
+      "reason": "翻译器单测无输出 / __ENDPOINTS__ is not defined / 脏数据三类断言失败（老的大而全验收脚本，契约已与现状漂移）",
+      "evidence": "2026-11-19 实测 FAIL 49.7s（#368 记 49.4s）",
+      "followUp": "该文件是 #362 判定的「L1 重测 L0」重点，建议按域拆分后删减，而不是逐条修",
+      "#was": "接线前登记为 pass"
     },
     "internal-build.test.mjs": {
       "expected": "pass",
@@ -99,9 +114,12 @@
       "reason": "自起服务（PORT 可注入）；以前固定连 127.0.0.1:8090 的 pnpm dev，没起服务就假红"
     },
     "mode-switch.test.mjs": {
-      "expected": "pass",
+      "expected": "known-red",
       "artifact": "internal",
-      "reason": "verifyDist(internal)；布局断言在能渲染模式的 DeepSeek 官方渠道上跑，ours 渠道单独断言「开关不渲染」"
+      "reason": "切模式时仍写入 chat-demo:provider-kind 等额外 localStorage 键，与「只改模式键」的断言冲突",
+      "evidence": "2026-11-19 实测 FAIL 2.9s（#368 记 2.6s）",
+      "followUp": "模式切换的持久化键收敛到单一 key，单独派单",
+      "#was": "接线前登记为 pass"
     },
     "motion.test.mjs": {
       "expected": "pass",
@@ -149,9 +167,12 @@
       "reason": "runner 注入共享标准产物服务的 APP_URL；请求体断言不触网"
     },
     "upstream-html.test.mjs": {
-      "expected": "pass",
+      "expected": "known-red",
       "artifact": "standard",
-      "reason": "runner 注入共享标准产物服务的 APP_URL；上游返回 HTML 的场景用 mock"
+      "reason": "上游返回网页（HTML）而非接口数据时，「上游返回网页而非接口数据」的用户文案没出现",
+      "evidence": "2026-11-19 实测 FAIL 5.9s（#368 记 5.5s）",
+      "followUp": "错误分类到文案的映射缺失，单独派单",
+      "#was": "接线前登记为 pass"
     },
     "url-import-native.test.mjs": {
       "expected": "pass",
@@ -159,14 +180,114 @@
       "reason": "runner 注入共享标准产物服务的 APP_URL；抓取阶段全 mock"
     },
     "url-import-stages.test.mjs": {
-      "expected": "pass",
+      "expected": "known-red",
       "artifact": "standard",
-      "reason": "runner 注入共享标准产物服务的 APP_URL + SHOT_DIR 截图目录；阶段竞态用 mock 控制"
+      "reason": "断网阶段的两条断言：断网文案不出现，且失败要 40s 才报（阈值 15s）—— 阶段竞态/超时策略与用例契约不一致",
+      "evidence": "2026-11-19 实测 FAIL 118.9s（#368 记 117.4s）",
+      "followUp": "url-import 阶段超时与断网文案单独派单；本文件是集成层最慢的两个之一",
+      "#was": "接线前登记为 pass"
     },
     "url-import-web.test.mjs": {
       "expected": "pass",
       "artifact": "standard",
       "reason": "runner 注入共享标准产物服务的 APP_URL；只看标题前缀"
+    },
+    "log-viewer.test.mjs": {
+      "expected": "known-red",
+      "artifact": "standard",
+      "reason": "采集层 token 打码结果丢失：日志行里的已脱敏 URL 被再次处理成空，断言「打码结果应保留」失败",
+      "evidence": "2026-11-19 实测 FAIL 4.4s：AssertionError 采集层的 token 打码结果应保留：23:22:47.422 [error] error  LVFIX secret url",
+      "followUp": "log-viewer 的 redact 幂等性（对已脱敏串重复脱敏）单独派单，修完删本条"
+    },
+    "domain01-first-run.test.mjs": {
+      "expected": "pass",
+      "artifact": "standard",
+      "reason": "requireDist(DIST_DIR) + verifyAppUrl(standard)；#365 起 runner 注入 DIST_DIR=dist-standard（此前默认 dist=内测包 → 恒 SKIP(env)）",
+      "evidence": "2026-11-19 实测 PASS 3.5s"
+    },
+    "domain01-session-load.test.mjs": {
+      "expected": "pass",
+      "artifact": "standard",
+      "reason": "同上（requireDist(DIST_DIR) + verifyAppUrl(standard)），#365 起 runner 注入 dist-standard",
+      "evidence": "2026-11-19 实测 PASS 10.5s"
+    },
+    "domain02-reply-error-ui.test.mjs": {
+      "expected": "pass",
+      "artifact": "standard",
+      "reason": "requireDist(DIST_DIR) + 本机 mock 流式上游；#365 起 runner 注入 dist-standard",
+      "evidence": "2026-11-19 实测 PASS 61.2s"
+    },
+    "domain02-stop-regenerate.test.mjs": {
+      "expected": "pass",
+      "artifact": "standard",
+      "reason": "同上；#365 起 runner 注入 dist-standard",
+      "evidence": "2026-11-19 实测 PASS 13.8s"
+    },
+    "domain02-wait-thinking-ui.test.mjs": {
+      "expected": "pass",
+      "artifact": "standard",
+      "reason": "同上；#365 起 runner 注入 dist-standard",
+      "evidence": "2026-11-19 实测 PASS 71.1s"
+    },
+    "domain05-ui-export-import.test.mjs": {
+      "expected": "pass",
+      "artifact": "standard",
+      "reason": "APP_URL 由 runner 注入共享标准产物服务（#365 前默认 127.0.0.1:5181：5181 上只要有别的服务就会对着陌生产物绿）",
+      "evidence": "2026-11-19 实测 PASS 3.4s（12 条断言）"
+    },
+    "domain08-feedback-negative.test.mjs": {
+      "expected": "pass",
+      "artifact": "standard",
+      "reason": "defaultDist()=DIST_DIR + serveDir + verifyDist(standard)；#365 起 runner 注入 dist-standard",
+      "evidence": "2026-11-19 实测 PASS 27.3s"
+    },
+    "domain09-delete-all-retention.test.mjs": {
+      "expected": "pass",
+      "artifact": "standard",
+      "reason": "同上（defaultDist + verifyDist(standard)）；#365 起 runner 注入 dist-standard",
+      "evidence": "2026-11-19 实测 PASS 11.2s"
+    },
+    "domain09-settings-reload.test.mjs": {
+      "expected": "pass",
+      "artifact": "standard",
+      "reason": "同上；#365 起 runner 注入 dist-standard",
+      "evidence": "2026-11-19 实测 PASS 27.0s"
+    },
+    "domain10-update-check-flow.test.mjs": {
+      "expected": "pass",
+      "artifact": "standard",
+      "reason": "DIST_DIR（#365 起注入 dist-standard）；仅缺 index.html 时 SKIP(env)，上游分发机走路由拦截",
+      "evidence": "2026-11-19 实测 PASS 15.0s"
+    },
+    "domain10-update-install-flow.test.mjs": {
+      "expected": "pass",
+      "artifact": "harness(自建 mkdtemp)",
+      "reason": "自建临时产物 + 假原生桥，跑完即删；不依赖仓库里的 dist",
+      "evidence": "2026-11-19 实测 PASS 4.8s"
+    },
+    "issue-234-invite-copy.test.mjs": {
+      "expected": "pass",
+      "artifact": "standard",
+      "reason": "DIST_DIR_STANDARD / dist-standard + 自起服务",
+      "evidence": "2026-11-19 实测 PASS 17.8s"
+    },
+    "quota-exhausted.test.mjs": {
+      "expected": "pass",
+      "artifact": "standard",
+      "reason": "requireDist(DIST_DIR) + verifyAppUrl(standard)；#365 起 runner 注入 dist-standard（此前恒 SKIP(env) 产物种类不对）",
+      "evidence": "2026-11-19 实测 PASS 23.3s"
+    },
+    "session-list-flow.test.mjs": {
+      "expected": "pass",
+      "artifact": "standard",
+      "reason": "DIST_DIR_STANDARD / dist-standard + 自起服务",
+      "evidence": "2026-11-19 实测 PASS 27.4s"
+    },
+    "settings-probe-model.test.mjs": {
+      "expected": "pass",
+      "artifact": "standard",
+      "reason": "DIST_DIR_STANDARD / dist-standard + 自起服务",
+      "evidence": "2026-11-19 实测 PASS 84.2s"
     }
   },
   "knownRed": {}

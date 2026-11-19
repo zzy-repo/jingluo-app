@@ -170,6 +170,13 @@ jobs:
             echo "::error::分片没有覆盖全集（$sum != $total）：有集成用例不会被执行"
             exit 1
           fi
+      # #368 把 tests/regression 接进了 LAYERS，但「接进 LAYERS」不等于「有人跑」—— 整层 11 个纯 Node
+      # 回归文件（无浏览器、无网络）4s 跑完，此前零触发点（issue-135 import 已删的 startCheckout 就是这么烂掉的）。
+      # 挂在分片 1 上跑一次即可，不必为 4s 单开一个 job。
+      - name: 回归层（tests/regression，纯 Node，~4s）
+        if: matrix.shard == 1
+        run: node tests/run-layer.mjs regression
+
       - name: 安装 Chromium（集成层用 playwright 直连本地产物，没有浏览器就是整批假红）
         run: pnpm exec playwright install --with-deps chromium
 
