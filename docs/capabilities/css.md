@@ -107,7 +107,12 @@
 | `components/messages/MessageFile.module.css:28` | `container-type: inline-size` | 2 | 中 | 拆单 #214 |
 | `components/messages/MessageFile.module.css:95` | `@container (max-width: 63px) { .reason { display: none } }` | 2 | 中 | 拆单 #214 |
 
-### 2.5 `scrollbar-gutter`（2 处，真实缺陷 → #216）
+### 2.5 `scrollbar-gutter`（2 处，真实缺陷 → #216，已修）
+
+> #216 已修：`.container` 外面先写 `overflow-y: scroll`（槽位恒宽，不依赖 `scrollbar-gutter`），
+> 再由 `@supports (scrollbar-gutter: stable both-edges)` 把它收回 `auto`；窄屏分支显式写死 `overflow: hidden`
+> 防兜底泄漏。上表两行是**修前**的盘点快照，本节数字不再逐行重算；新增守卫 `pnpm run check:gutter`
+> （`scripts/lib/scrollbarGutterAudit.mjs` + `tests/unit/scrollbar-gutter-fallback.test.mjs`）持续盯「每处都有等价回退」。
 
 | 文件:行 | 假设内容 | 类别 | 风险 | 处置 |
 | --- | --- | --- | --- | --- |
