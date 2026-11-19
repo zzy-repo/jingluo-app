@@ -203,11 +203,20 @@ for (const row of ROWS) {
 // ---------------------------------------------------------------- N3 build（临时副本）
 
 test('N3 build（rspack）：往仓库临时副本注入语法错模块 → 构建必须失败；还原 → 构建通过', (t) => {
-  const cmd = commandOf('build:internal')
+  // ci.yml 里有两个构建步骤：`build:internal`（内测包）与 `build`（黄金 job 的标准包）。
+  // 两者共用同一个包装脚本 scripts/build.mjs，差别只有 variant 环境变量 —— 所以这一条对照
+  // 对**两条命令**都做，避免出现「`build:internal` 有对照、`build` 没有」的半覆盖。
+  const internal = commandOf('build:internal')
+  const standard = commandOf('build')
   assert.match(
-    cmd.raw,
+    internal.raw,
     /^node scripts\/build\.mjs --internal$/,
-    `build 门禁的命令行变了（现在是 \`${cmd.raw}\`）：负向对照要跟着重新确认`
+    `build:internal 的命令行变了（现在是 \`${internal.raw}\`）：负向对照要跟着重新确认`
+  )
+  assert.match(
+    standard.raw,
+    /^node scripts\/build\.mjs$/,
+    `build 的命令行变了（现在是 \`${standard.raw}\`）：负向对照要跟着重新确认`
   )
 
   // 只拷构建真正要用的几棵子树（docs/ 62MB、node_modules 305MB 不拷），node_modules 软链过去：
@@ -222,29 +231,36 @@ test('N3 build（rspack）：往仓库临时副本注入语法错模块 → 构�
   const entryFile = path.join(dir, 'src/main.tsx')
   const originalEntry = readFileSync(entryFile, 'utf8')
   const probeName = '__gate-neg-build-probe'
-  const buildGreen = (label) => {
+  const buildGreen = (cmd, label) => {
     const result = run(cmd, { cwd: dir, timeoutMs: 600_000 })
     assert.equal(result.status, 0, `${label}：临时副本里的构建必须 exit=0\n--- 输出 ---\n${result.out}`)
     assert.match(result.out, /\[build\] OK/, `${label}：成功时应有 [build] OK\n--- 输出 ---\n${result.out}`)
   }
 
   // ① 正例：干净副本能构建（同时也证明「临时副本 + 软链 node_modules」这套假设成立）
-  buildGreen('正例')
+  buildGreen(internal, '正例 build:internal')
+  buildGreen(standard, '正例 build（标准包）')
 
   // ② 注入：语法错模块 + 让 entry 真的 import 它。
   //    只丢文件到 src/ 是不够的 —— rspack 只编译进图的模块，孤立文件连解析都不会做。
   try {
     cpSync(path.join(FIXTURES, 'rspack/syntax-error.ts.txt'), path.join(dir, `src/${probeName}.ts`))
     writeFileSync(entryFile, `${originalEntry}\nimport './${probeName}'\n`)
-    const red = run(cmd, { cwd: dir, timeoutMs: 600_000 })
-    assert.notEqual(red.status, 0, `注入语法错模块后构建必须失败（负向对照失效 = 构建门禁空跑）\n--- 输出 ---\n${red.out}`)
-    assert.match(red.out, new RegExp(`${probeName}\\.ts`), `报错要点出注入的那个模块\n--- 输出 ---\n${red.out}`)
-    assert.match(red.out, /Syntax Error|Module build failed/, `红的原因要是解析/构建失败\n--- 输出 ---\n${red.out}`)
-    assert.doesNotMatch(
-      red.out,
-      /本地找不到 @rspack\/cli/,
-      '不能红在「缺依赖」上：那是环境问题，不是门禁在工作'
-    )
+    for (const [cmd, label] of [[internal, 'build:internal'], [standard, 'build（标准包）']]) {
+      const red = run(cmd, { cwd: dir, timeoutMs: 600_000 })
+      assert.notEqual(
+        red.status,
+        0,
+        `${label}：注入语法错模块后构建必须失败（负向对照失效 = 构建门禁空跑）\n--- 输出 ---\n${red.out}`
+      )
+      assert.match(red.out, new RegExp(`${probeName}\\.ts`), `${label}：报错要点出注入的那个模块\n--- 输出 ---\n${red.out}`)
+      assert.match(red.out, /Syntax Error|Module build failed/, `${label}：红的原因要是解析/构建失败\n--- 输出 ---\n${red.out}`)
+      assert.doesNotMatch(
+        red.out,
+        /本地找不到 @rspack\/cli/,
+        `${label}：不能红在「缺依赖」上：那是环境问题，不是门禁在工作`
+      )
+    }
   } finally {
     // ④ 还原（临时副本反正要删，但还原后再构建一次才是「红不是恒红」的证明）
     writeFileSync(entryFile, originalEntry)
@@ -252,7 +268,7 @@ test('N3 build（rspack）：往仓库临时副本注入语法错模块 → 构�
   }
 
   // ⑤ 还原 → 重新绿
-  buildGreen('还原后')
+  buildGreen(internal, '还原后')
 })
 
 // ---------------------------------------------------------------- N6 规矩：每道 CI 门禁都得有对照
@@ -287,8 +303,12 @@ const REGISTRY = {
   'check:test-duplication': { where: 'tests/unit/gate-negative-controls.test.mjs', kind: 'inject', what: '整份复制一份用例文件' },
   type: { where: 'tests/unit/gate-negative-controls.test.mjs', kind: 'inject', what: 'fixture 里的 TS2322 拷进 src/' },
   lint: { where: 'tests/unit/gate-negative-controls.test.mjs', kind: 'inject', what: 'fixture 里的 debugger 拷进 src/' },
-  'build:internal': { where: 'tests/unit/gate-negative-controls.test.mjs', kind: 'inject', what: '临时副本里注入语法错模块并真的 import' },
+  'build:internal': { where: 'tests/unit/gate-negative-controls.test.mjs', kind: 'inject', what: '临时副本里注入语法错模块并真的 import（N3）' },
+  // ci.yml 的黄金 job 另跑 `pnpm run build`（标准包）：与 build:internal 共用 scripts/build.mjs，
+  // N3 对**两条命令**都做了注入 → 必红，所以登记到同一条用例。
+  build: { where: 'tests/unit/gate-negative-controls.test.mjs', kind: 'inject', what: '同 build:internal（共用 scripts/build.mjs），N3 两条命令都断言注入后必红' },
   'check:log-coverage': { where: 'scripts/check-log-coverage.mjs', kind: 'builtin', what: '自带 --selftest 三个反例（**CI 调用没带 flag**）' },
+  'test:golden': { where: 'tests/run-golden.mjs', kind: 'builtin', what: '自带硬门：缺产物 / 产物种类不对 → 直接红（不 SKIP）；端到端负向对照见 KNOWN_GAPS', mention: /run-golden/ },
 }
 
 /**
@@ -301,6 +321,18 @@ const KNOWN_GAPS = {
     reason: '脚本自带 --selftest（3 个反例），但 ci.yml 的调用是 `pnpm run check:log-coverage`，没带 --selftest',
     issue: '#369',
     fix: 'ci.yml 补一步 `node scripts/check-log-coverage.mjs --selftest`（本单不动 ci.yml，留给接线批次）',
+    // 缺口还开着 = ci.yml 里仍然没有带 --selftest 的那一步
+    stillOpen: (ci) => !/check-log-coverage\.mjs\s+--selftest/.test(ci),
+  },
+  'test:golden': {
+    reason:
+      '黄金套件要**标准产物 + 真浏览器**才能跑一条主路径（checks job 不装 Chromium），四拍对照 ≈ 每条 30~60s，' +
+      '超出 L0 预算；它现有的自保只是「缺产物 / 产物种类不对 → 直接红，不 SKIP」（本文件实测 DIST_DIR=/tmp/不存在 → ' +
+      'exit 1，0.5s），那是「不许什么都没跑还全绿」，不是「检测能力有对照」',
+    issue: '#404',
+    fix: '在 ci.yml 的 golden job 里加一步负向对照：拿一份**故意坏掉**的产物（例如把 index.html 换成空壳）跑 1 条主路径 → 断言红',
+    // 缺口还开着 = ci.yml 的 golden job 里仍然没有负向对照步骤
+    stillOpen: (ci) => !/负向对照[^\n]*golden|golden[^\n]*负向对照/i.test(ci),
   },
 }
 
@@ -312,7 +344,8 @@ const ciGates = () => {
 
 test('N6 每道 CI 门禁都登记了负向对照（新增门禁不登记就会红）', () => {
   const gates = ciGates()
-  assert.ok(gates.length >= 13, `ci.yml 里应有 ≥13 道门禁，只解析到 ${gates.length} 条：${gates.join(', ')}`)
+  // 2026-11-20：ci.yml 里 16 条 `run: pnpm run <gate>`（#404 的 golden job 又加了 build / test:golden）
+  assert.ok(gates.length >= 16, `ci.yml 里应有 ≥16 道门禁，只解析到 ${gates.length} 条：${gates.join(', ')}`)
 
   const unregistered = gates.filter((gate) => !Object.hasOwn(REGISTRY, gate))
   assert.deepEqual(
@@ -356,14 +389,12 @@ test('N6 已确认的缺口仍然如实登记（缺口消失时要回来删条�
   for (const [gate, gap] of Object.entries(KNOWN_GAPS)) {
     assert.ok(Object.hasOwn(REGISTRY, gate), `${gate} 在 KNOWN_GAPS 里但不在 REGISTRY 里`)
     assert.ok(gap.reason && gap.issue && gap.fix, `${gate} 的缺口必须写清 reason / issue / fix`)
-    if (gate === 'check:log-coverage') {
-      // 缺口是「CI 没带 --selftest」：等哪天带了，这条断言就红，提醒把条目删掉（别让缺口腐烂）
-      assert.doesNotMatch(
-        ci,
-        /check-log-coverage\.mjs\s+--selftest/,
-        `${gate} 的 CI 已经带上 --selftest 了 —— 请从 KNOWN_GAPS 删掉这条缺口`
-      )
-    }
+    // 缺口一旦补上，这条断言就红，提醒把条目删掉（别让缺口腐烂成「永久豁免」）
+    assert.equal(
+      gap.stillOpen(ci),
+      true,
+      `${gate} 的缺口看起来已经补上了 —— 请从 KNOWN_GAPS 删掉这条，并在 REGISTRY 里改成真实对照`
+    )
   }
 })
 

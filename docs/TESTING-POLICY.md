@@ -159,7 +159,9 @@ npm run test:integration -- --baseline          # 集成全量与基线比对，
 
 所以：**用例进 `tests/unit/`（`run-layer` 枚举得到、CI 每次跑），必错输入与骨架进 `tests/gates/`。**
 
-### 9.4 现状清单（2026-11-20，ci.yml 里的 13 道门禁）
+### 9.4 现状清单（2026-11-20，ci.yml 里的 16 道门禁）
+
+> 口径：ci.yml 里每一条 `run: pnpm run <gate>` 算一道。单元层那一步是 `run: pnpm test`（整层），不在此列。
 
 | 门禁 | 负向对照 | 注入 / 反例 | 落在哪 |
 | --- | --- | --- | --- |
@@ -176,6 +178,8 @@ npm run test:integration -- --baseline          # 集成全量与基线比对，
 | `type` | ✅ 注入（#369） | fixture 里的 TS2322 拷进 `src/` | 同上 |
 | `lint` | ✅ 注入（#369） | fixture 里的 `debugger` 拷进 `src/` | 同上 |
 | `build:internal` | ✅ 注入（#369） | 临时副本里注入语法错模块并让 entry 真的 import | 同上 |
+| `build`（黄金 job 的标准包） | ✅ 注入（#369） | 同上，N3 对**两条命令**都断言「注入后必红」（共用 `scripts/build.mjs`） | 同上 |
+| `test:golden` | ⚠️ **缺口**（自带硬门，非检测对照） | 缺产物 / 产物种类不对 → 直接红、不 SKIP；端到端负向对照要真浏览器，见 `KNOWN_GAPS` | `tests/run-golden.mjs` |
 | `check:log-coverage` | ⚠️ **缺口** | 脚本自带 `--selftest`（3 个反例），但 CI 调用没带 flag | `scripts/check-log-coverage.mjs` |
 
 「登记」不是给人看的注释：`tests/unit/gate-negative-controls.test.mjs` 的 `N6` 用例会读
@@ -201,5 +205,6 @@ npm run test:integration -- --baseline          # 集成全量与基线比对，
    `src/` 底下不会红（实测：编译成功、`[build] OK`）。所以用例往副本的 `src/main.tsx` 末尾加一行
    `import './…-probe'` —— 这一步才是"注入"。
 
-因此 `build` 有真负向对照，不再登记为"不适用"。
+因此 `build` 有真负向对照，不再登记为"不适用"。ci.yml 里的**两条**构建命令（`build:internal` 与黄金 job 的
+`build`）共用同一个包装脚本，N3 对两条都做了一遍，避免出现「内测包有对照、标准包没有」的半覆盖。
 
