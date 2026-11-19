@@ -71,6 +71,7 @@ npx playwright install chromium   # 下载浏览器（~150MB，只需一次）
 
 ```bash
 npm test                # = node tests/run-layer.mjs unit
+npm run test:email      # = node tests/run-layer.mjs unit --only email（#427 邮箱适配回归基线，~6s）
 npm run test:regression # = node tests/run-layer.mjs regression（#368 接入；CI 接线留 #365）
 npm run test:integration
 npm run test:e2e
@@ -83,6 +84,11 @@ npm run test:all        # unit → regression → integration
 > 于是 `issue-135` 长期 import 已删除的 `startCheckout`、`issue-38`/`issue-79` 各自静默失效都没人发现。
 > 现在它进了 `LAYERS`（`node tests/run-layer.mjs regression` 可跑，11 个文件 ~3.5s），
 > CI 的自动触发点仍然留给 #365。
+>
+> `test:email`（#427）是**邮箱适配回归基线**：`tests/unit/email-421-*` 与 `tests/unit/email-427-*`
+> 六个文件、83 例，全 mock（假 transport + 假时钟），离线可重复。**改动哪一块必须跑哪组**见
+> `docs/testing/email-regression.md` 的回归清单表。它本来就是 `pnpm test` 的一部分（分层 runner
+> 按目录枚举），`test:email` 只是把这一块单独抽出来看红绿。
 
 `run-layer.mjs` 的用法：
 
