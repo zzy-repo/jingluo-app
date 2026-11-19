@@ -63,7 +63,7 @@ jobs:
       #   布局（--strict）：命名违规 0（域 3/4 六个批次文件已按 domainNN- 改名）+ fixture 散放 0
       #         （5 个散放桩已归位到 tests/fixtures/<域>/）+ 孤儿 0 + 基线条目 0
       #         （tests/test-layout-baseline.json 已清空，--strict 让「基线失真」也算红）。
-      #   重复：逐字 ≥20 行 32 → 22 组，剩下的全部逐条登记在
+      #   重复：逐字 ≥20 行 32 → 21 组，剩下的全部逐条登记在
       #         tests/test-duplication-baseline.json（**只减不增**，带 --update-baseline 也不许新增）；
       #         新复制一段 ≥20 行当场红。R2/R3（关键词 / 标题跨层）仍是 warning。
       # 两条都带负向对照（tests/unit/gate-negative-controls.test.mjs N4/N5）：注入必红、还原必绿。
