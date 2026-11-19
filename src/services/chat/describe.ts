@@ -1,5 +1,9 @@
 import { isTranslationKey, translate } from '../../i18n/index.js'
-import { classifyErrorSignature, isContextLimitMessage } from '../api/errors.js'
+import {
+  classifyErrorSignature,
+  isContextLimitMessage,
+  parseSupportedModels,
+} from '../api/errors.js'
 import { buildReplyErrorReport } from './replyErrorReport.js'
 import type { AssistantMessage } from './types.js'
 
@@ -94,9 +98,22 @@ export const describeReply = (reply: AssistantMessage): Notice | null => {
       case 'contentFilter':
         // 内容被审核拦截（#324）：重发同样被拦，文案要让人改内容，而不是点重新生成
         return readable ?? { text: translate('replyContentFiltered') }
-      case 'modelInvalid':
-        // 模型不存在 / 已下线（#324）：官方端点 400 + invalid_request_error，出路是换模型
-        return readable ?? { text: translate('replyModelInvalid') }
+      case 'modelInvalid': {
+        // 模型不存在 / 已下线（#324 / #339）：官方端点 400 + invalid_request_error。
+        // 只说「去设置里换模型」对内置渠道是死路（那里根本没有模型行，见 #339），
+        // 所以把**实际发出的模型名**与**上游列出的可用模型**一起摆出来：
+        // 用户/客服一眼就能看出「发的是残留值」，而不用再去翻诊断。
+        const models = parseSupportedModels(message)
+        const modelName = reply.model?.trim()
+        return (
+          readable ?? {
+            text: translate('replyModelInvalid', {
+              model: modelName || translate('replyModelUnknownName'),
+              models: models.length ? models.join(', ') : translate('replyModelInvalidNoModels'),
+            }),
+          }
+        )
+      }
       case 'badRequest':
         // 其它被拒绝的请求（400 / 422 参数错误，#324）：重试不会有变化
         return readable ?? { text: translate('replyBadRequest') }

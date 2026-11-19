@@ -21,7 +21,9 @@ import {
  *
  * 内置地址/模型的渠道（deepseek / ours）在 spec.fields 里没有 baseUrl / model：
  * 设置页不渲染这两行，setter 直接拒绝写入，值只从 spec.defaults 取。
- * 老用户共享的 chat-demo:base-url / chat-demo:model 只有 DeepSeek 官方这一路还当兜底读（升级无感）。
+ * 老用户共享的 chat-demo:base-url / chat-demo:model 只属于 DeepSeek 官方，且**只有老中转地址仍在用时**
+ * 才算数（#339）：地址已经回到官方默认，共享键里的模型就是别的渠道串过来的残留，不再参与请求，
+ * 由 configMigration.ts 在升级启动时一次性清掉。
  *
  * 请求路径与鉴权头都来自 ProviderSpec（providers.ts），这里只负责「当前用哪个 spec + 取到值」。
  */
@@ -160,19 +162,64 @@ const storedBaseUrl = (kind: ProviderKind): string => {
   return dropLegacyHost(normalizeBaseUrl(read(scopedKey('baseUrl', kind)) ?? '') ?? '')
 }
 
-/** 已保存的模型：规则同地址（老用户那份 chat-demo:model 只属于 DeepSeek 官方） */
+/**
+ * 老中转是否还在用：共享地址存在、且不是当前 spec 的官方默认地址。
+ *
+ * 老用户的中转地址（共享 `chat-demo:base-url`）与模型（共享 `chat-demo:model`）是**一套配置**，
+ * 必须一起保留或一起忽略（#339）：
+ * - 还在用中转 → 模型继续生效（1.2.3 升级无感的契约，`tests/integration/legacy-config.test.mjs` 锁着）；
+ * - 地址已回到官方默认 → 那个模型一定是从别的渠道串过来的残留，不许再参与请求。
+ */
+export const isLegacyRelayInUse = (kind: ProviderKind): boolean => {
+  if (kind !== LEGACY_KIND) {
+    return false
+  }
+  const stored = storedBaseUrl(kind)
+  return Boolean(stored) && stored !== getSpec(kind).defaults?.baseUrl
+}
+
+/**
+ * 已保存的模型：
+ * - 锁定渠道（ours）恒为空串：模型只认 spec.defaults
+ * - 字段不可编辑的内置渠道（官方 deepseek）：**不读**共享键残留，只有老中转仍在用时才保留旧值（#339）
+ * - 自填渠道（anthropic / openai）：读各自的 `chat-demo:model:<渠道>`
+ *
+ * 守卫顺序很关键：`isUserField` 必须在 legacy 分支**之前**，否则内置渠道永远走不到「不读残留」。
+ */
 const storedModel = (kind: ProviderKind): string => {
   const spec = getSpec(kind)
-  if (spec.locked) {
-    return ''
-  }
-  if (kind === LEGACY_KIND) {
-    return (read(CONFIG_KEYS.model) ?? '').trim()
-  }
-  if (!isUserField(spec, 'model')) {
-    return ''
+  if (spec.locked || !isUserField(spec, 'model')) {
+    return kind === LEGACY_KIND && isLegacyRelayInUse(kind)
+      ? (read(CONFIG_KEYS.model) ?? '').trim()
+      : ''
   }
   return (read(scopedKey('model', kind)) ?? '').trim()
+}
+
+/** 迁移专用：老版共享模型键的当前值（1.2.x 遗留；这里是它唯一的读点） */
+export const readLegacySharedModel = (): string => (read(CONFIG_KEYS.model) ?? '').trim()
+
+/** 迁移专用：清掉老版共享模型键（等价于用户手工 `removeItem('chat-demo:model')`） */
+export const clearLegacySharedModel = (): void => write(CONFIG_KEYS.model, null)
+
+/**
+ * 迁移专用：按原样读 / 写任意配置键。
+ *
+ * localStorage 的访问只发生在 apiConfig.ts（配置层的唯一宿主能力入口）：
+ * 迁移模块借这两个口子读写版本号，不要自己去碰 localStorage —— 既保持「存储异常一律吞掉」
+ * 的口径统一，也让宿主能力盘点（docs/capabilities/host.md）只多一个调用点而不是一个新文件。
+ */
+export const readConfigValue = (key: string): string | null => read(key)
+export const writeConfigValue = (key: string, value: string | null): void => write(key, value)
+
+/**
+ * 迁移专用：清键之后把界面 state 里的模型同步成当前渠道真正生效的值。
+ *
+ * store 的初值是在模块加载时读进来的，清掉 localStorage 不会自动改它；
+ * 不同步的话，「键清了但这一轮还在发旧模型」，看起来像迁移没生效。
+ */
+export const syncModelFromStorage = (): void => {
+  useApiConfig.setState({ model: storedModel(getProviderKind()) })
 }
 
 const initialKind = getProviderKind()

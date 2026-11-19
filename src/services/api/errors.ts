@@ -150,6 +150,35 @@ export const isModelInvalidText = (text: string | undefined): boolean =>
     : false
 
 /**
+ * 上游「可用模型列表」那句话（#339）。
+ *
+ * 官方端点原文：`The supported API model names are deepseek-flash, deepseek-v4-pro, but you passed X.`
+ * 列表在后半句之前结束，所以只截到行尾、再按逗号/and 切片段，遇到第一个「带空格的片段」
+ * （= `but you passed X` 这类人话）就停：模型名本身不含空格，逗号与句点都可能出现在名字里
+ * （`deepseek-v4.1-flash`），所以不能用「逗号或句点」直接把列表切掉。
+ */
+export const SUPPORTED_MODELS_PATTERN = /supported API model names are\s+([^\n]+)/i
+
+/**
+ * 从上游原文里取出可用模型名；取不到（脏文本 / 本地文案 / 上游没列）时返回空数组。
+ * 返回值只用于**展示**（`replyModelInvalid` 文案），不参与任何白名单判定：
+ * 上游的模型名单会变，客户端不做硬编码拦截。
+ */
+export const parseSupportedModels = (text?: string): string[] => {
+  const listed = SUPPORTED_MODELS_PATTERN.exec(text ?? '')?.[1] ?? ''
+  const names: string[] = []
+  for (const piece of listed.split(/\s*,\s*|\s+and\s+/i)) {
+    const name = piece.trim().replace(/^["'`]|["'`]$/g, '').replace(/\.$/, '')
+    // 空片段 / 带空格的人话（`, but you passed X`）都到列表末尾了
+    if (!name || /\s/.test(name)) {
+      break
+    }
+    names.push(name)
+  }
+  return [...new Set(names)]
+}
+
+/**
  * 「请求被上游拒绝」的 4xx 状态码（#324）：参数 / 路由 / 编码层面的错误。
  * 它们重发只会原样再失败一次，所以单独归到 badRequest（不可重试），
  * 不再落到「未知错误」。401 / 402 / 413 有自己的档，不在此列。

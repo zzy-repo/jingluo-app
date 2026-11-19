@@ -60,6 +60,7 @@ const {
   classifyApiError,
   classifyErrorSignature,
   isRetryableApiError,
+  parseSupportedModels,
 } = await import('../../src/services/api/errors.ts')
 const { applyEvent, settleReply } = await import('../../src/services/chat/reply.ts')
 const { describeReply } = await import('../../src/services/chat/describe.ts')
@@ -130,17 +131,38 @@ const noticeOf = (error) =>
 const apiErrorOf = ({ status, code, message }, kind = 'http') =>
   new ApiError(kind, message, status, undefined, undefined, code)
 
+/**
+ * #339 起 `replyModelInvalid` 带两个占位符：实际发出的模型名 + 上游可用模型列表。
+ * 这里按真实 translate() 口径拼期望值 —— noticeOf 造的回复没有 model 快照，模型名落到「未记录」。
+ */
+const MODEL_LIST = 'deepseek-flash, deepseek-v4-pro'
+const modelInvalidCopy = (model = '未记录') =>
+  translate('replyModelInvalid', { model, models: MODEL_LIST })
+
 // ---------------------------------------------------------------- [1] 真实样本
 test('[1] 真实样本：400 非法模型名 → 模型不存在档，不再落「未知错误」', () => {
   const condition = classifyErrorSignature(MODEL_NOT_FOUND)
   assert.equal(condition, 'modelInvalid', '官方端点 400 + supported API model names 要认成模型不存在')
 
   const notice = noticeOf(apiErrorOf(MODEL_NOT_FOUND))
-  assert.equal(notice.text, zh.replyModelInvalid, '用「模型不可用」的专用文案')
+  assert.equal(notice.text, modelInvalidCopy(), '用「模型不可用」的专用文案（带实际模型名与可用列表）')
   assert.notEqual(notice.text, zh.replyUnknownError, '绝不能再是「未知错误」')
   assert.match(notice.text, /不要重试/, '模型不存在是终态：文案要说清不要重试')
   assert.match(notice.text, /模型/, '文案要指出是模型的问题')
   assert.equal(notice.diagnostics, undefined, '已识别的场景不需要额外诊断文本')
+})
+
+test('[1] 上游可用模型列表可解析（#339）：原文 → 列表，脏文本 → 空数组', () => {
+  assert.deepEqual(
+    parseSupportedModels(
+      'The supported API model names are deepseek-flash, deepseek-v4-pro, but you passed x'
+    ),
+    ['deepseek-flash', 'deepseek-v4-pro'],
+    '列表要在「but you passed」之前结束'
+  )
+  for (const dirty of ['', undefined, 'model not found', '当前模型在上游不可用']) {
+    assert.deepEqual(parseSupportedModels(dirty), [], `脏文本不该解析出模型名：${String(dirty)}`)
+  }
 })
 
 test('[1] 真实样本：400 空 messages / 422 max_tokens 非法 → 参数错误档（不可重试）', () => {
@@ -194,7 +216,7 @@ test('[2] 流内 error 帧（没有 HTTP 状态码）也能分类：内容拦截
     message: MODEL_NOT_FOUND.message,
     upstreamCode: MODEL_NOT_FOUND.code,
   })
-  assert.equal(modelNotice.text, zh.replyModelInvalid, '流内帧里说模型不存在，同样要认出来')
+  assert.equal(modelNotice.text, modelInvalidCopy(), '流内帧里说模型不存在，同样要认出来')
 })
 
 // ---------------------------------------------------------------- [3] 可重试性

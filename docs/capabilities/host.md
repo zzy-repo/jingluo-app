@@ -4,9 +4,9 @@
 >
 > **快照基准：`acf6826`**（`origin/main` tip，2026-11-19 12:28:21 +0800）· 采集时间：2026-11-19 18:55 (+0800)
 >
-> **扫描范围**：`src/**` 的 **204** 个源文件。
+> **扫描范围**：`src/**` 的 **205** 个源文件。
 >
-> 拆分：`.ts` 149 / `.tsx` 54 / `.html` 1 = 204。上一版写 190，是缺了 `#237`（`fetch` 通道计数、`readBytesOf`）与 `#243`（设备指纹）新增的 5 个文件。
+> 拆分：`.ts` 150 / `.tsx` 54 / `.html` 1 = 205。上一版写 190，是缺了 `#237`（`fetch` 通道计数、`readBytesOf`）与 `#243`（设备指纹）新增的 5 个文件。
 >
 > **本盘点只审计、只出单、只做工具，不修任何代码。** 每条真实漏洞都另开独立 Issue（见「真实漏洞与拆单」），修复在各自单里做，不在 #209 的 PR 里改产品代码。
 >
@@ -66,9 +66,9 @@
 | `src/index.html` 的 `pickLocale()`（`localStorage` 读取包在 try 里） | localStorage 在无痕 / 配额满 / 分区存储受限时抛错，写入必须自带 try…catch | 3 | 低 | 已有兜底 |
 | `src/index.html:362` | `deviceCode()` 读设备码的 `localStorage` 读取同样包在 try 里（#104 自助信息） | 3 | 低 | 已有兜底 |
 | `src/index.html:472` | `navigator.clipboard` 非安全上下文下整体为 undefined，复制第 ① 层先探测再回退 execCommand（#104） | 3 | 低 | 已有兜底 |
-| `src/services/api/apiConfig.ts:57` | localStorage 在无痕 / 配额满 / 分区存储受限时抛错，写入必须自带 try…catch | 3 | 低 | 已有兜底 |
-| `src/services/api/apiConfig.ts:66` | localStorage 在无痕 / 配额满 / 分区存储受限时抛错，写入必须自带 try…catch | 3 | 低 | 已有兜底 |
-| `src/services/api/apiConfig.ts:68` | localStorage 在无痕 / 配额满 / 分区存储受限时抛错，写入必须自带 try…catch | 3 | 低 | 已有兜底 |
+| `src/services/api/apiConfig.ts:58` | localStorage 在无痕 / 配额满 / 分区存储受限时抛错，写入必须自带 try…catch | 3 | 低 | 已有兜底 |
+| `src/services/api/apiConfig.ts:67` | localStorage 在无痕 / 配额满 / 分区存储受限时抛错，写入必须自带 try…catch | 3 | 低 | 已有兜底 |
+| `src/services/api/apiConfig.ts:69` | localStorage 在无痕 / 配额满 / 分区存储受限时抛错，写入必须自带 try…catch | 3 | 低 | 已有兜底 |
 | `src/services/api/client.ts:155` | Body.text/arrayBuffer 引入于 Chrome 76，83 必有 | 3 | 低 | 已有兜底 |
 | `src/services/api/client.ts:260` | AbortController 引入于 Chrome 66，83 必有（启动守卫也把它列进 REQUIRED） | 3 | 低 | 已有兜底 |
 | `src/services/api/client.ts` 的 `probeProvider` | AbortController 引入于 Chrome 66，83 必有（启动守卫也把它列进 REQUIRED） | 3 | 低 | 已有兜底 |
@@ -173,7 +173,7 @@
 - `:1078` `bytes: await readBytesOf(response)` —— 在把 `response` 交还调用方**之前** await（正因为这一行，`readBytesOf` 里任何会等到流关闭的读法都会卡住 SSE，见 #211）；
 - `:1108` `window.fetch = patched` —— 页面级替换；
 - `:1171-1241` `installCapacitorHttpHook()` —— 另外再包一层 `CapacitorHttp.get/post/…`；
-- `:1385-1399` `installHooks()` 由 `src/main.tsx:66` 的 `initDiagnostics()` 在启动时调用，只有显式传 `installHooks: false` 才不装 → 生产包里这层包装**一直是活的**。
+- `:1385-1399` `installHooks()` 由 `src/main.tsx:68` 的 `initDiagnostics()` 在启动时调用，只有显式传 `installHooks: false` 才不装 → 生产包里这层包装**一直是活的**。
 
 **Capacitor 侧会在什么条件下再换一次：** Capacitor Android 运行时的 `native-bridge`（**不是本仓文件**，在 @capacitor/android 里）先存 `win.CapacitorWebFetch = window.fetch`，再 `window.fetch = async (…) => …`，整段由 `doPatchHttp` 控制；Android 上 `doPatchHttp` 要求 `CapacitorHttp.isEnabled()`，而它读的是 `plugins.CapacitorHttp.enabled`（默认 `false`）。**本仓 `capacitor.config.ts` 没有这个条目，所以今天 fetch 还是原生的。** 风险不在「现在就挂」，而在于：
 
@@ -278,3 +278,4 @@
 - 复核（2026-11-19 18:50，基准 `7a65f55`，本单 #324 分支 HEAD）：新增 1 个 `.ts` 源文件（`src/services/chat/replyErrorReport.ts`），扫描范围 203 → **204** 个源文件。新文件没有任何宿主能力调用（不碰 storage / clipboard / fetch / Capacitor；复制仍走既有的 `copyText` 工具，脱敏仍走既有的 `scrubReportText`），**命中总数仍是 119 条**，各能力计数与风险分布未变。
 - 复核（2026-11-19 19:20，基准 `1577841`，本单 #310 分支）：新增 2 个 `.ts` 源文件（`src/services/updateFailure.ts` / `src/services/updateReport.ts`），扫描范围 204 → **206** 个源文件。两个文件都不碰 storage / clipboard / fetch / Capacitor（复制仍走既有的 `src/utils/clipboard.ts`，诊断文本只做字符串拼接），**命中总数仍是 119 条**，各能力计数与风险分布（高 4 / 中 10 / 低 105）未变。
 - 复核（2026-11-19 19:50，基准 `0c89bf5`，本单 #331 分支 `chore/331-retire-buy`）：旧支付链路（`/buy` 收银台、`/api/buy` 建单、`/api/order` 查单、订单存档）整条删除，`transport.ts` 里的 `CheckoutBrowser` 插件（`registerPlugin`，原 `:37`，`需动态验证`）随之消失，因此命中总数 119 → **118**、`需动态验证` 9 → **8**、风险分布「中」10 → **9**；扫描范围 205 → **204** 个源文件（`.ts` 仍是 149：删 `orderStore.ts` / `returnParams.ts`、加 `storage.ts`）。`transport.ts` 其余 3 处命中按实时复算重锚：`Capacitor.isNativePlatform` `:39` → **`:20`**、`AbortController` `:57`、`Body.text/arrayBuffer` `:140` → **`:69`**。
+- 复核（2026-11-19 20:05，基准 `42a3a68`，本单 #339 分支 `fix/deepseek-model-residue-339`）：新增 1 个 `.ts` 源文件（`src/services/api/configMigration.ts`，扫描范围 204 → **205** 个源文件）。迁移模块**不直接碰 localStorage**：版本号的读写走 `apiConfig.ts` 新增的 `readConfigValue` / `writeConfigValue`（配置层仍是宿主能力的唯一入口），所以 **命中总数仍是 118 条**，各能力计数与风险分布（高 4 / 中 9 / 低 105）未变。`apiConfig.ts` 顶部注释多了一行，3 处 `localStorage` 命中按实时复算重锚：`:57` → **`:58`**、`:66` → **`:67`**、`:68` → **`:69`**；`src/main.tsx` 的 `initDiagnostics()` 因为前面插入了一行 `migrateConfigOnce()` 从 `:66` 移到 **`:68`**。

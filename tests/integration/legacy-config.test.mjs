@@ -94,6 +94,54 @@ try {
       console.log('ok: 自填地址不带 anthropic-version（CORS 安全）')
     }
   }
+  // ---------- 第二个场景（#339）：只有残留 model、没有 base-url → 必须发官方内置模型 ----------
+  // 造一份「旧版在别的渠道填过模型」的本地存储：共享 chat-demo:model 里残留 deepseek-v4.1-flash，
+  // 但没有任何中转地址（= 官方渠道），且没有 config-schema 版本号（= 本次升级后第一次启动）。
+  await page.evaluate(() => {
+    window.localStorage.removeItem('chat-demo:base-url')
+    window.localStorage.removeItem('chat-demo:config-schema')
+    window.localStorage.setItem('chat-demo:model', 'deepseek-v4.1-flash')
+  })
+  await page.reload({ waitUntil: 'domcontentloaded' })
+  await page.waitForTimeout(800)
+
+  // 迁移痕迹：版本号落盘、残留键被删（用户不必再手工 removeItem）
+  const schema = await page.evaluate(() => window.localStorage.getItem('chat-demo:config-schema'))
+  if (schema !== '2') {
+    failures.push(`#339：配置迁移版本号没写对：${JSON.stringify(schema)}`)
+  } else {
+    console.log('ok: #339 配置迁移版本号 = 2')
+  }
+  const residue = await page.evaluate(() => window.localStorage.getItem('chat-demo:model'))
+  if (residue !== null) {
+    failures.push(`#339：升级后残留模型没有被清掉：${JSON.stringify(residue)}`)
+  } else {
+    console.log('ok: #339 升级启动时清掉了残留 chat-demo:model（用户不必手工删 localStorage）')
+  }
+
+  requests.length = 0
+  await sendChat(page, '你好（残留模型）')
+  const residueHit = await (async () => {
+    await waitFor(() =>
+      requests.some((r) => r.method === 'POST' && r.path.endsWith('/messages'))
+    )
+    return requests.find((r) => r.method === 'POST' && r.path.endsWith('/messages'))
+  })()
+  if (!residueHit) {
+    failures.push('#339：残留模型场景下没有发出消息请求')
+  } else {
+    const body = JSON.parse(residueHit.postData ?? '{}')
+    if (body.model !== 'deepseek-flash') {
+      failures.push(`#339：残留模型仍在生效（实际发出 ${JSON.stringify(body.model)}）`)
+    } else {
+      console.log('ok: #339 残留模型被忽略，实际发出 deepseek-flash')
+    }
+    if (!residueHit.url.startsWith('https://api.deepseek.com/')) {
+      failures.push(`#339：官方渠道地址不对：${residueHit.url}`)
+    } else {
+      console.log(`ok: #339 发到官方地址 ${new URL(residueHit.url).origin}`)
+    }
+  }
 } catch (error) {
   failures.push(`用例异常：${error instanceof Error ? error.message : String(error)}`)
 } finally {

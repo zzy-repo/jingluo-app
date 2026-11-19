@@ -8,6 +8,7 @@ import { setupTheme } from './app/theme.js'
 import { setupReading } from './app/reading.js'
 import { readDiagnosticsFacts } from './app/diagnosticsContext.js'
 import { getApiKey } from './services/api/apiConfig.js'
+import { migrateConfigOnce } from './services/api/configMigration.js'
 import { fetchCustomerIdFromProfile, setCustomerIdProvider } from './services/ours/customerId.js'
 import { fetchPaymentRecords } from './services/ours/paymentRecords.js'
 import { httpTransport } from './services/ours/transport.js'
@@ -59,6 +60,10 @@ setupFlexGapFallback()
 // 消息区阅读设置（#102）：首屏渲染前就把字号 / 字重 / 行高档位挂到根元素上
 setupReading()
 
+// 一次性配置迁移（#339）：1.2.x 把模型名写进了所有渠道共用的 chat-demo:model，内置渠道已不再读它；
+// 这里把残留值清掉并记一条 config_change/legacy-model 诊断，用户不必再手工改 localStorage。
+// 放在 initDiagnostics 之前：collector 是模块级环形缓冲，早起写入的这条一样会随日志导出。
+migrateConfigOnce()
 // 诊断：恢复上次落盘的日志并装上 window.onerror / console / fetch 等 hook（采集层与上传层解耦，见 services/diagnostics）
 void initDiagnostics({ facts: readDiagnosticsFacts })
 // 仅当 URL 带 ?diag-debug 时把调试入口挂到 window（本地验收脚本用，正常使用不暴露）

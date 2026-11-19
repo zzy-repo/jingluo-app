@@ -337,6 +337,13 @@ try {
     ok(`默认渠道 = ${defaultLabel}（标准构建 → deepseek）`)
   }
   await expectOnlyApiKey(dialog, 'DeepSeek 官方')
+  // #339：模型不可编辑，但必须看得见 —— 只读行（不是 input，所以上面的输入框计数仍是 1）
+  const builtInModel = await dialog.getByText(/^deepseek-flash$/).count()
+  if (builtInModel < 1) {
+    bad('DeepSeek 官方渠道没有露出内置模型（#339：至少要让用户知道当前用的是哪个模型）')
+  } else {
+    ok('DeepSeek 官方渠道展示只读模型 deepseek-flash')
+  }
   await expectNoCapabilityCopy(dialog, 'DeepSeek 官方渠道')
   await shot('channel-deepseek')
 

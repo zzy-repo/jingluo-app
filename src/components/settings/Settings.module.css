@@ -379,6 +379,16 @@
   overflow-wrap: anywhere;
 }
 
+/* 内置模型的只读值（#339）：不是输入框，只是把生效值摆出来；窄屏下允许断行 */
+.modelValue {
+  flex: 0 1 auto;
+  min-width: 0;
+  color: var(--dsw-alias-label-secondary);
+  white-space: normal;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
 .error {
   font-size: 12px;
   line-height: 18px;

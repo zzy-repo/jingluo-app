@@ -105,9 +105,16 @@ export const en = {
   /** Content safety block (#324): resending the same text will be blocked again */
   replyContentFiltered:
     'This content was blocked by the upstream safety review. Rephrase it or remove the sensitive part; do not retry the same text — it will be blocked again.',
-  /** Model missing / retired (#324) */
+  /**
+   * Model missing / retired (#324 / #339): name the model that was actually sent plus the
+   * upstream's list. Built-in channels have no model row in settings, so point at upgrading.
+   */
   replyModelInvalid:
-    'The current model is unavailable upstream (its name may have been retired). Pick another model in settings; retrying the same request will not help (do not retry).',
+    'The current model “{model}” is unavailable upstream (its name may have been retired). Models available upstream: {models}. The DeepSeek Official channel uses a built-in model and has no row for it in settings — upgrading to the fixed version is enough; on other channels, pick another model in settings. Retrying the same request will not help (do not retry).',
+  /** Upstream did not list usable models (#339) */
+  replyModelInvalidNoModels: 'not listed by the upstream',
+  /** The reply did not record a model name (imported history, #339) */
+  replyModelUnknownName: 'not recorded',
   /** Other rejected requests (#324): 400 / 422 style parameter errors */
   replyBadRequest:
     'The upstream rejected the request as invalid. Retrying will not help — check the model and endpoint settings (do not retry).',
@@ -326,6 +333,8 @@ export const en = {
   settingsBaseUrlRequired: 'Enter a Service URL first',
   settingsTestLabel: 'Connection test',
   settingsModelLabel: 'Model',
+  /** Read-only model row for built-in channels (#339) */
+  settingsModelBuiltInHint: 'Read-only; nothing to fill in for this channel',
   settingsBaseUrlInvalid: 'Service URL must start with http:// or https:// and be a valid URL',
   settingsModelInvalid: 'Model cannot be empty',
   settingsModelsLoading: 'Loading…',

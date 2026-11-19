@@ -12,6 +12,7 @@ import {
 import {
   PROVIDER_SPECS,
   getSpec,
+  isUserField,
   type ProviderField,
   type ProviderKind,
   type ProviderSpec,
@@ -58,8 +59,46 @@ export const ApiConfigFields = ({ editor }: { editor: ApiKeyEditor }) => {
       {spec.fields.map((field) => (
         <ApiConfigField key={field} field={field} spec={spec} editor={editor} />
       ))}
+      {showsBuiltInModel(spec) ? <BuiltInModelField spec={spec} /> : null}
       <ConnectionTestField editor={editor} />
     </>
+  )
+}
+
+/**
+ * 要不要渲染「内置模型」只读行（#339）。
+ *
+ * 条件是「模型是内置的、但不是 locked」：官方 deepseek 属于这一类（有 defaults.model、
+ * fields 里没有 model）；ours 是 locked（后端地址与模型都不许露，见 internal-build/provider-channels
+ * 的锁定断言），所以排除。将来再加内置渠道时这条规则自动适用，不用改这里。
+ */
+const showsBuiltInModel = (spec: ProviderSpec): boolean =>
+  !spec.locked && !isUserField(spec, 'model')
+
+/**
+ * 内置模型（#339）：值来自 spec.defaults / 迁移后的 state，用户改不了 —— 但必须**看得见**。
+ *
+ * 刻意不用 `<input>`：它不是可编辑字段，只是把生效值摆出来；用输入框既会撞
+ * `provider-channels.test.mjs` 的「模型输入框」计数，也会让人以为能改（`setModel` 会拒写）。
+ * 标签复用 `settingsModelLabel`（「模型」），因为老中转场景下展示的是沿用下来的旧模型，
+ * 叫「内置模型」会变成一句假话；`role="status"` 让读屏软件把值当状态读出来。
+ */
+const BuiltInModelField = ({ spec }: { spec: ProviderSpec }) => {
+  const t = useTranslate()
+  const stored = useApiConfig((state) => state.model)
+  const model = stored || spec.defaults?.model || ''
+  return (
+    <div className={styles.cell}>
+      <div className={styles.row}>
+        <div className={styles.text}>
+          <div className={styles.label}>{t('settingsModelLabel')}</div>
+          <div className={styles.description}>{t('settingsModelBuiltInHint')}</div>
+        </div>
+        <div className={styles.modelValue} role="status">
+          {model}
+        </div>
+      </div>
+    </div>
   )
 }
 

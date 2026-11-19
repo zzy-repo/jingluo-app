@@ -186,7 +186,8 @@ const RAW_SPECS: Record<ProviderKind, RawProviderSpec> = {
     kind: 'deepseek',
     label: { zh: 'DeepSeek 官方', en: 'DeepSeek Official' },
     protocol: 'anthropic',
-    // 官方地址与模型内置，用户只需要填 Key（老用户存过的地址/模型仍优先，见 apiConfig.ts）
+    // 官方地址与模型内置，用户只需要填 Key；内置渠道优先 spec.defaults，
+    // 只有老中转（共享 chat-demo:base-url 仍在用）才保留已存模型，见 apiConfig.ts（#339）
     fields: ['apiKey'],
     defaults: { baseUrl: 'https://api.deepseek.com', model: 'deepseek-flash' },
     paths: { models: '/models', messages: '/anthropic/v1/messages', tools: '/v1/tools', files: '/anthropic/v1/files' },
