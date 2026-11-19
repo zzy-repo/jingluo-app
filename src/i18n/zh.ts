@@ -493,6 +493,14 @@ export const zh = {
   oursBuyBusy: '正在创建订单…',
   oursBuyHint: '支付在 App 内打开支付宝收银台，付完关掉收银台就自动查单发卡。价格与积分由服务端下发。',
   oursBuyWebHint: '网页版会跳到支付宝收银台（同一标签页）；付完回来会自动查单，请先留在本页。',
+  // 购买入口（Issue #331）：套餐全线下架，直接打开联动小铺收款页
+  oursPayTitle: '购买',
+  oursPayAction: '前往购买',
+  oursPayBusy: '正在获取收款页…',
+  oursPayEmpty: '套餐列表已下架，点「前往购买」到联动小铺页面选购即可。',
+  oursPayHint: '在 App 内打开联动小铺收款页；付款后由小铺直接发放卡密，关掉页面就回到这里。',
+  oursPayUnavailable: '收款通道暂不可用，请稍后再试',
+  oursPayOpenFailed: '没能在 App 内打开收款页，请稍后再试',
   // 订单
   oursOrderTitle: '订单',
   oursOrderChecking: '正在查询订单…',

@@ -293,16 +293,17 @@ console.log('\n[6] orderStore / stripOrderReturn')
 }
 
 // ---------------------------------------------------------------- [7] 源码防回归
-// 「网页版不能再 fetch 读 302」这件事在浏览器里由 tests/integration/ours-webpay.test.mjs 实测
-// （document 顶层导航 1 次、fetch/xhr 0 次）。这里补一条源码断言，防止以后又把它改回 fetch。
-console.log('\n[7] 源码防回归：网页版购买只有一个出口（window.location.assign）')
+// 「网页版不能再 fetch 读 302」这件事在浏览器里由 tests/integration/ours-webpay.test.mjs 实测。
+// Issue #331 起购买一律在 App 内打开联动小铺收款页，网页版**不再有**顶层跳转的购买出口；
+// 这里补一条源码断言：整套「网页版顶层跳 /buy」的写法不许再长回来。
+console.log('\n[7] 源码防回归：购买只走 App 内收款页，没有网页版顶层跳转')
 {
   const source = (relative) => readFileSync(new URL(relative, import.meta.url), 'utf8')
   const transport = source('../../src/services/ours/transport.ts')
   const dialog = source('../../src/components/settings/OursServicesDialog.tsx')
-  // Issue #115：顶层导航前必须补 cid —— 不带 cid 的 /buy 建出来的单不知道属于谁，
-  // 付完款 App 只能一直显示「等待支付」（就是这次事故）。所以这里断言两件事：
-  // 导航只发生在 withBuyCustomerId 放行之后的地址上，且仍然只有 window.location.assign 一个出口。
+  // Issue #115：顶层导航前必须补 cid —— 不带 cid 的 /buy 建出来的单不知道属于谁。
+  // navigateTopLevel / startCheckout 已无界面调用方（#331），但历史工具仍留着且必须保持这条约束：
+  // 万一以后有人再给它们接一个调用点，也不会退化成「原样跳转」。
   truthy(
     /export const navigateTopLevel = \(url: string\): void => \{\s*const ready = withBuyCustomerId\(url, readCachedCustomerId\(\)\)/u.test(
       transport
@@ -318,22 +319,34 @@ console.log('\n[7] 源码防回归：网页版购买只有一个出口（window.
     '不再出现 window.location.assign(url)：原样跳转（可能不带 cid）的写法被禁止'
   )
   truthy(
-    dialog.includes('navigateTopLevel(buyUrl(planId))'),
-    '「去支付」的网页版分支调用 navigateTopLevel(buyUrl(planId))'
+    !dialog.includes('navigateTopLevel(') && !dialog.includes('buyUrl('),
+    '购买弹层里没有 navigateTopLevel / buyUrl：不再整页跳去 /buy（#331）'
   )
-  // 只看「去支付」这一段：组件别处还有 fetchPlans / fetchInviteProfile 这类请求
-  const buyStart = dialog.indexOf('const buy = async () => {')
-  const buyBody = buyStart === -1 ? '' : dialog.slice(buyStart, dialog.indexOf('\n  }', buyStart) + 4)
-  truthy(buyBody !== '', '定位到「去支付」的实现（buy）')
-  truthy(!/fetch\(/u.test(buyBody), '「去支付」里没有 fetch(（网页版不再自己发请求读 302）')
-  truthy(!buyBody.includes("redirect: 'manual'"), '「去支付」里没有 redirect: manual（读不到 Location 的写法）')
   truthy(
-    !/startCheckout\(/u.test(buyBody.slice(0, buyBody.indexOf('if (!isNativePlatform()) {'))),
-    '网页版分支在 startCheckout 之前就返回（原生那条路径没被动到）'
+    !/window\.location\.(assign|href|replace)/u.test(dialog) && !/window\.open\(/u.test(dialog),
+    '购买弹层里没有 window.location / window.open：付款页只在 App 内打开'
+  )
+  truthy(
+    dialog.includes('openPayLinkInApp(') && dialog.includes('fetchPayLink('),
+    '购买入口 = 现取 /api/pay-link + Browser.open（App 内打开）'
+  )
+  // 只看「前往购买」这一段
+  const payStart = dialog.indexOf('const openPay = async () => {')
+  const payBody = payStart === -1 ? '' : dialog.slice(payStart, dialog.indexOf('\n  }', payStart) + 4)
+  truthy(payBody !== '', '定位到「前往购买」的实现（openPay）')
+  truthy(!/fetch\(/u.test(payBody), '「前往购买」里没有裸 fetch(（一律走 fetchPayLink）')
+  truthy(!payBody.includes("redirect: 'manual'"), '「前往购买」里没有 redirect: manual（读不到 Location 的写法）')
+  truthy(
+    !dialog.includes('startCheckout(') && !dialog.includes('openCheckoutInApp('),
+    '旧的建单 / 收银台出口都不在弹层里了'
   )
   truthy(
     !dialog.includes('oursBuyWebUnsupported'),
     '「网页版拿不到收银台地址 → 请在 App 内购买」的旧提示已删除'
+  )
+  truthy(
+    dialog.includes("'oursPayOpenFailed'"),
+    'Web / 旧壳子打不开 App 内浏览器时给「没能在 App 内打开收款页」的可读提示（不整页跳走）'
   )
 }
 

@@ -1,22 +1,23 @@
 // [layer: unit | 依赖: 无（纯 Node，零浏览器 / 零 React；Capacitor 与 @capacitor/browser 用替身） | 耗时: <1s]
-// Issue #235（App 里点「去支付」，付完款停在浏览器里回不来）的单测。
+// 支付切到联动小铺（Issue #331）之后，「App 内打开付款页」这条链路的单测。
 //
-// 现状（修之前）：原生点「去支付」= 系统浏览器 ACTION_VIEW 打开收银台 + 立刻轮询 60s。
-// 用户付完款停在支付宝收银台 / 浏览器里，App 在后台干等，60s 后轮询超时，
-// 手动切回来只看到「等待支付」，必须点「再查一次」才拿到卡密。
+// 背景：#235 那套「/api/buy 建单 → 内嵌收银台 → 关闭后轮询发卡」已经整条停用 ——
+// 付款在联动小铺自己的收款页完成、卡密由小铺直接发给买家，我们**不建单、不轮询**。
+// 所以本文件保留「内嵌浏览器 + browserFinished」这半条能力，并钉住「购买入口只打 /api/pay-link」。
 //
 // 目标：
-//   [A] 源码体检：真的存在「App 内嵌浏览器 + browserFinished + /api/buy」这套回路
-//   [B] httpTransport：/api/buy 走 JSON 传输（CapacitorHttp），老的 /buy 仍走 resolveLocation
-//   [C] createBuyOrder：解析 /api/buy 契约；每个错误码各有专文案（不许落到通用文案）
-//   [D] openCheckoutInApp：关掉收银台只回调一次；没插件 / 打开失败一律降级不崩
-//   [E] startInAppPay：建单 → 内嵌打开 → 关闭后**立刻重查一次、且只查一次**
-//   [F] 票根：同一张单不重复建单；换套餐必须换新的 pay_url（付费地址带金额，不能跨单复用）
-//   [G] Web（非原生、没有 Browser）：降级到系统浏览器，不抛错、不白屏
+//   [A] 源码体检：购买入口 = /api/pay-link + Browser.open；弹层里没有整页跳转、不建单、不轮询
+//   [B] httpTransport：JSON 接口走 CapacitorHttp，老的 /buy 仍走 resolveLocation
+//   [C] createBuyOrder：历史契约仍可解析（保留给旧服务端联调，界面已无调用方）
+//   [D] openCheckoutInApp / openPayLinkInApp：关掉页面只回调一次；没插件 / 打开失败一律返回 false 不崩
+//   [E] 停用建单链路：src 里没有任何路径还会打 /api/buy 或调用 pollOrder
+//   [G] Web（非原生、没有 Browser）：不抛错、不白屏
 //
 // 跑法：node --test tests/unit/ours-inapp-buy.test.mjs（或 node tests/run-layer.mjs unit）
 import { registerHooks } from 'node:module'
-import { readFileSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync } from 'node:fs'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 // ---------------------------------------------------------------- 电容桥替身
 // 必须在 import 业务代码**之前**挂上：transport.ts 在模块作用域就 registerPlugin('CheckoutBrowser')。
@@ -113,7 +114,6 @@ registerHooks({
 
 // 红阶段（功能还没写）时这个 import 会失败：不抛到顶层，改成「能力缺失」一条条报出来，
 // 输出读起来就是「缺哪一件事」，而不是一句 ERR_MODULE_NOT_FOUND。
-const inApp = await import('../../src/services/ours/inAppPay.ts').catch(() => null)
 const api = await import('../../src/services/ours/api.ts')
 const transport = await import('../../src/services/ours/transport.ts')
 const { CUSTOMER_ID_STORAGE_KEY } = await import('../../src/services/ours/customerId.ts')
@@ -197,28 +197,36 @@ const BUY_OK_BODY = {
   expire_at: 1795055405,
 }
 
-const ticketFor = (planId) => ({
-  outTradeNo: planId === 'p2' ? OUT_TRADE_NO_2 : OUT_TRADE_NO,
-  orderToken: ORDER_TOKEN,
-  payUrl: planId === 'p2' ? PAY_URL_2 : PAY_URL,
-  planId,
-})
-
 // ---------------------------------------------------------------- [A] 源码体检
-console.log('\n[A] 源码体检：内嵌浏览器 + 关闭回跳 + /api/buy')
+console.log('\n[A] 源码体检：购买入口 = /api/pay-link + Browser.open（#331）')
 {
-  truthy(/@capacitor\/browser/u.test(transportSource), '传输层引入了 @capacitor/browser（收银台在 App 内打开，不再踢去系统浏览器）')
-  truthy(/browserFinished/u.test(transportSource), '传输层监听 browserFinished（用户关掉收银台 = 回到 App 的那一刻）')
-  truthy(typeof transport.openCheckoutInApp === 'function', '传输层导出 openCheckoutInApp（能记一次「收银台关掉了」的回调）')
-  truthy(typeof api.createBuyOrder === 'function', 'api.ts 导出 createBuyOrder（GET /api/buy 的 JSON 契约）')
-  truthy(/\/api\/buy/u.test(apiSource), 'api.ts 里出现 /api/buy')
+  truthy(/@capacitor\/browser/u.test(transportSource), '传输层引入了 @capacitor/browser（收款页在 App 内打开）')
+  truthy(/browserFinished/u.test(transportSource), '传输层监听 browserFinished（用户关掉收款页 = 回到 App）')
+  truthy(typeof transport.openPayLinkInApp === 'function', '传输层导出 openPayLinkInApp（App 内打开收款页）')
+  truthy(/presentationStyle/u.test(transportSource) && /popover/u.test(transportSource), '用 presentationStyle: popover 打开（iOS 卡片式 / Android 全屏都在 App 内）')
+  truthy(/\/api\/pay-link/u.test(apiSource), 'api.ts 调 /api/pay-link 取地址（不写死收款页地址）')
+  truthy(typeof api.fetchPayLink === 'function', 'api.ts 导出 fetchPayLink（503 / ok:false / 非法 JSON 都转成可读文案）')
+  truthy(!/wzyp\.cn\/shop/u.test(apiSource) && !/wzyp\.cn\/shop/u.test(dialogSource), '源码里没有写死的收款页地址')
 
-  const buyStart = dialogSource.indexOf('const buy = async () => {')
-  const buyBody = buyStart === -1 ? '' : dialogSource.slice(buyStart, dialogSource.indexOf('\n  }', buyStart) + 4)
-  truthy(buyBody !== '', '定位到「去支付」的实现（buy）')
-  truthy(/startInAppPay\(/u.test(buyBody), '「去支付」走 App 内嵌浏览器的编排（startInAppPay）')
-  truthy(/createBuyOrder/u.test(buyBody), '「去支付」用 /api/buy 建单（拿到 pay_url 才能内嵌打开）')
-  truthy(!/await openCheckout\(/u.test(buyBody), '「去支付」不再直接把用户踢去系统浏览器（openCheckout 只能当降级）')
+  truthy(dialogSource.includes('fetchPayLink('), '「前往购买」现取地址（fetchPayLink）')
+  truthy(dialogSource.includes('openPayLinkInApp('), '「前往购买」用 Browser.open 在 App 内打开')
+  truthy(!/window\.location\.(href|assign|replace)/u.test(dialogSource), '弹层里没有 window.location 整页跳转')
+  truthy(!/window\.open\(/u.test(dialogSource), '弹层里没有 window.open')
+  truthy(!/<a\s[^>]*href=/u.test(dialogSource), '弹层里没有 <a href> 式的购买入口')
+  truthy(!/createBuyOrder|pollOrder|startInAppPay/u.test(dialogSource), '弹层不再建单、不再轮询订单（/api/buy 与 pollOrder 的调用点已移除）')
+  truthy(!dialogSource.includes('fetchPlans'), '弹层不再渲染套餐卡片（也不取 /api/plans）')
+  truthy(dialogSource.includes("t('oursPayAction')"), '按钮文案走 i18n（oursPayAction）')
+  truthy(dialogSource.includes("t('oursPayEmpty')"), '空态说明走 i18n（oursPayEmpty：列表为空也有说明，不是白屏）')
+  truthy(dialogSource.includes("t('oursPayHint')"), '入口说明走 i18n（oursPayHint）')
+  truthy(dialogSource.includes('data-testid="ours-plans-empty"'), '套餐列表区有明确空态块')
+  truthy(dialogSource.includes('data-testid="ours-buy"'), '「前往购买」按钮还在（同一个 testid）')
+  truthy(dialogSource.includes('data-testid="ours-pay-notice"'), '通道不可用的提示是可读状态行（不是 alert / 不是白屏）')
+  truthy(
+    /oursPayAction:/u.test(zhSource) && /oursPayAction:/u.test(enSource) &&
+      /oursPayUnavailable:/u.test(zhSource) && /oursPayUnavailable:/u.test(enSource) &&
+      /oursPayEmpty:/u.test(zhSource) && /oursPayEmpty:/u.test(enSource),
+    'zh/en 都有 oursPayAction / oursPayEmpty / oursPayUnavailable（成对）'
+  )
 }
 
 // ---------------------------------------------------------------- [B] 传输层
@@ -354,82 +362,69 @@ if (typeof transport.openCheckoutInApp !== 'function') {
   eq(closed, 1, '打开失败不会凭空回跳')
 }
 
-// ---------------------------------------------------------------- [E][F] startInAppPay
-console.log('\n[E] startInAppPay：关闭即回跳，且只查一次')
-if (typeof inApp?.startInAppPay !== 'function') {
-  bad('缺少 services/ours/inAppPay.ts 的 startInAppPay：关闭收银台不会触发查单')
-} else {
-  const makeFlow = (overrides = {}) => {
-    const log = { created: 0, opened: [], system: [], polls: [], remembered: [] }
-    const flow = {
-      ticket: overrides.ticket ?? null,
-      remember: (next) => {
-        log.remembered.push(next)
-      },
-      createOrder: async (id) => {
-        log.created += 1
-        return overrides.createResult ?? { kind: 'ok', ticket: ticketFor(id), replacedUnpaidOrder: false }
-      },
-      openInApp: async (url, onClosed) => {
-        log.opened.push({ url })
-        log.onClosed = onClosed
-        return overrides.openInApp === undefined ? true : overrides.openInApp
-      },
-      openSystem: async (url) => {
-        log.system.push({ url })
-        return overrides.openSystem === undefined ? true : overrides.openSystem
-      },
-      poll: (order, options) => {
-        log.polls.push({ order, force: options.force === true })
-      },
+// ---------------------------------------------------------------- [E] 停用建单链路
+console.log('\n[E] 停用建单链路：src 里没有任何路径还会打 /api/buy 或调用 pollOrder')
+{
+  const walk = (dir) => {
+    const out = []
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name)
+      if (entry.isDirectory()) out.push(...walk(full))
+      else if (/\.(ts|tsx)$/u.test(entry.name)) out.push(full)
     }
-    return { flow, log }
+    return out
   }
+  const srcRoot = fileURLToPath(new URL('../../src', import.meta.url))
+  const files = walk(srcRoot)
+  const rel = (full) => path.relative(srcRoot, full).split(path.sep).join('/')
+  const hits = (pattern) =>
+    files
+      .map((full) => ({ file: rel(full), text: readFileSync(full, 'utf8') }))
+      .filter((item) => pattern.test(item.text))
+      .map((item) => item.file)
+      .sort()
 
-  resetStubs()
-  const first = makeFlow()
-  const outcome = await inApp.startInAppPay('p1', first.flow)
-  eq(outcome.kind, 'ok', '点一次「去支付」拿到票')
-  eq(first.log.created, 1, '只建一张单（GET /api/buy 一次）')
-  eq(first.log.opened[0]?.url, PAY_URL, '用返回的 pay_url 在 App 内打开')
-  eq(first.log.polls.length, 1, '打开后就先查一轮（用户可能一直不关浏览器）')
-  eq(first.log.polls[0]?.force, false, '这一轮是「起轮询」，不是强制重来')
-  truthy(typeof first.log.onClosed === 'function', '把「关掉收银台」的回调交给内嵌浏览器')
-  first.log.onClosed()
-  eq(first.log.polls.length, 2, '关掉收银台 → 立刻再查一次')
-  eq(first.log.polls[1]?.force, true, '这一轮是强制重来（把后台那轮已经超时的轮询顶掉）')
-  eq(first.log.polls[1]?.order.outTradeNo, OUT_TRADE_NO, '重查的是这一单')
-  first.log.onClosed()
-  first.log.onClosed()
-  eq(first.log.polls.filter((item) => item.force).length, 1, '反复收到「关掉了」也只重查一次')
-  eq(outcome.kind === 'ok' ? outcome.ticket.outTradeNo : '', OUT_TRADE_NO, '结果带回票根（界面要用单号查单）')
-
-  const second = makeFlow({ ticket: { ...ticketFor('p1') } })
-  await inApp.startInAppPay('p1', second.flow)
-  eq(second.log.created, 0, '同一套餐再点一次不再建单（服务端会复用订单，但没必要多跑一次）')
-  eq(second.log.opened[0]?.url, PAY_URL, '沿用同一张单的 pay_url')
-
-  const third = makeFlow({ ticket: { ...ticketFor('p1') } })
-  await inApp.startInAppPay('p2', third.flow)
-  eq(third.log.created, 1, '换套餐必须重新建单')
-  eq(third.log.opened[0]?.url, PAY_URL_2, '换套餐拿到新的 pay_url（上一单带金额的地址绝不能复用）')
-
-  const rejected = makeFlow({ createResult: { kind: 'error', code: 'NEWBIE_USED', messageKey: 'oursErrNewbieUsed' } })
-  const rejectedOutcome = await inApp.startInAppPay('newbie', rejected.flow)
-  eq(rejectedOutcome.kind === 'error' ? rejectedOutcome.messageKey : rejectedOutcome.kind, 'oursErrNewbieUsed', '建单失败原样把文案交回界面')
-  eq(rejected.log.opened.length, 0, '建单失败不开收银台')
-  eq(rejected.log.polls.length, 0, '建单失败不轮询')
-  eq(rejected.log.remembered.length, 0, '建单失败不留票根')
-
-  const degraded = makeFlow({ openInApp: false })
-  const degradedOutcome = await inApp.startInAppPay('p1', degraded.flow)
-  eq(degraded.log.system[0]?.url, PAY_URL, '没有内嵌浏览器 → 退回系统浏览器（老行为还在）')
-  eq(degradedOutcome.kind === 'ok' ? degradedOutcome.via : degradedOutcome.kind, 'system', '结果说明走的是系统浏览器')
-  eq(degraded.log.polls.length, 1, '降级后照旧先起一轮轮询')
-
-  const dead = makeFlow({ openInApp: false, openSystem: false })
-  const deadOutcome = await inApp.startInAppPay('p1', dead.flow)
-  eq(deadOutcome.kind === 'error' ? deadOutcome.messageKey : deadOutcome.kind, 'oursErrCheckoutUnsupported', '两条路都打不开 → 明确说「打开不了收银台」')
+  // 调用点：除 api.ts 自己的定义之外，谁都不许再建单 / 轮询
+  /** 只留代码行：注释 / 文档串里提到某个地址不算「还在调」 */
+  const codeOnly = (text) =>
+    text
+      .split(String.fromCharCode(10))
+      .filter((line) => {
+        const trimmed = line.trim()
+        return !trimmed.startsWith('//') && !trimmed.startsWith('*') && !trimmed.startsWith('/*')
+      })
+      .join(String.fromCharCode(10))
+  const sources = files.map((full) => ({
+    file: rel(full),
+    code: codeOnly(readFileSync(full, 'utf8')),
+  }))
+  const callers = (name) =>
+    sources
+      .filter((item) => item.code.includes(`${name}(`))
+      .map((item) => item.file)
+      .filter((file) => file !== 'services/ours/api.ts')
+  eq(callers('createBuyOrder'), [], '没有 src 路径再调用 createBuyOrder（/api/buy 的建单入口已断开）')
+  eq(callers('pollOrder'), [], '没有 src 路径再调用 pollOrder（不再轮询订单）')
+  eq(callers('startInAppPay'), [], '没有 src 路径再调用 startInAppPay（编排模块已删除）')
+  eq(
+    sources.filter((item) => item.code.includes('/api/buy')).map((item) => item.file),
+    ['services/ours/api.ts'],
+    '只有 api.ts 里的历史契约还写着 /api/buy，界面与传输层都不再拼这个地址'
+  )
+  truthy(
+    !existsSync(path.join(srcRoot, 'services/ours/inAppPay.ts')),
+    'services/ours/inAppPay.ts 已删除（建单 → 收银台 → 轮询的编排不再存在）'
+  )
+  eq(
+    sources.filter((item) => item.code.includes('/api/pay-link')).map((item) => item.file),
+    ['services/ours/api.ts'],
+    '/api/pay-link 只在 api.ts 里拼（界面拿到的是现取的地址，不自己拼 URL）'
+  )
+  eq(
+    sources.filter((item) => item.code.includes('apia.ecsafe.cn')).map((item) => item.file).filter((file) => file.startsWith('components/')),
+    [],
+    '组件里没有写死服务端地址（一律走 services 层）'
+  )
 }
 
 // ---------------------------------------------------------------- [G] Web 降级

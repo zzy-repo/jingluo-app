@@ -202,6 +202,23 @@ export const openCheckout = async (url: string): Promise<boolean> => {
 export const openCheckoutInApp = async (
   url: string,
   onClosed: () => void
+): Promise<boolean> => openInAppBrowser(url, null, onClosed)
+
+/**
+ * Issue #331：在 App 内打开**联动小铺收款页**。
+ *
+ * 与 `openCheckoutInApp` 的区别只有两点：
+ *  1. `presentationStyle: 'popover'` —— iOS 卡片式内嵌、Android 全屏 WebView，**都在 App 内**；
+ *  2. 没有系统浏览器降级：用户明确要求「页面内打开，不要整个跳转到网页」，
+ *     所以打不开就直接回 false，由界面给可读提示（绝不 `window.location` / `window.open` 兜底）。
+ */
+export const openPayLinkInApp = async (url: string, onClosed: () => void): Promise<boolean> =>
+  openInAppBrowser(url, 'popover', onClosed)
+
+const openInAppBrowser = async (
+  url: string,
+  presentationStyle: 'popover' | null,
+  onClosed: () => void
 ): Promise<boolean> => {
   if (!isNativePlatform() || !isOpenableCheckout(url)) {
     return false
@@ -245,7 +262,11 @@ export const openCheckoutInApp = async (
     return false
   }
   try {
-    await browser.open({ url })
+    if (presentationStyle === null) {
+      await browser.open({ url })
+    } else {
+      await browser.open({ url, presentationStyle })
+    }
     return true
   } catch {
     // 打不开就摘掉监听再返回 false：否则下一次支付的 browserFinished

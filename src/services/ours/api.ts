@@ -56,6 +56,8 @@ export const OURS_TIMEOUTS = {
   redeem: 15000,
   order: 10000,
   buy: 12000,
+  /** Issue #331：收款页地址是一个只读的小接口，给 10s 足够（超时与网络错误分开给文案） */
+  payLink: 10000,
   /** 订单轮询：间隔 2s、总时长上限 60s（契约要求，不可调） */
   poll: { intervalMs: 2000, timeoutMs: 60000 },
 } as const
@@ -120,6 +122,9 @@ export type OursMessageKey =
   | 'oursErrOrderNotFound'
   | 'oursErrOrderTokenMissing'
   | 'oursErrCheckoutUnsupported'
+  /** Issue #331：收款通道（联动小铺收款页）不可用 / 没能在 App 内打开 */
+  | 'oursPayUnavailable'
+  | 'oursPayOpenFailed'
   | 'oursErrCustomerMissing'
   | 'oursErrCustomerNeedsKey'
   | 'oursOrderStatusPending'
@@ -365,6 +370,62 @@ export const fetchPlans = async (transport: OursTransport): Promise<OursPlansSta
   return plans.length === 0
     ? { status: 'error', messageKey: 'oursPlansFailed' }
     : { status: 'success', plans }
+}
+
+// ------------------------------------------------------------------ 收款页（Issue #331）
+
+/**
+ * 联动小铺固定收款页地址：`GET /api/pay-link`。
+ *
+ * 只取地址，不建单：付款与发卡都由联动小铺负责，我们这边**没有订单**、也不轮询。
+ * 地址**每次都现取**：小铺随时可能换链接，写死在客户端等于发版才能改价。
+ */
+export const payLinkUrl = (): string => `${OURS_API_BASE}/api/pay-link`
+
+export type OursPayLinkState =
+  | { status: 'ok'; url: string; note: string }
+  | { status: 'error'; messageKey: OursMessageKey }
+
+/**
+ * 取收款页地址。每种失败都给可读文案，界面上绝不停在白屏：
+ *  - 503 / `ok:false` / 其它非 2xx → 「收款通道暂不可用，请稍后再试」（oursPayUnavailable）
+ *  - 连不上 / 超时               → 复用 oursErrNetwork / oursErrTimeout（可重试）
+ *  - 非法 JSON / 缺 url / 非 https → 同样按「通道不可用」处理：地址不可信就绝不打开
+ *
+ * **必须走 `OursTransport`（原生 CapacitorHttp），不能裸 fetch**：`/api/pay-link`
+ * 与 `/api/plans` 一样**不返回 `Access-Control-Allow-Origin`**（实测响应头只有
+ * Server / Date / Content-Type / Content-Length / Connection）。在 App 的 WebView 里
+ * （origin 是 `https://localhost`）裸 `fetch()` 会被 CORS 拦成 `Failed to fetch`，
+ * 而原生网络栈不受同源策略约束 —— 这也是本渠道所有取数都只走 transport 的原因。
+ * 服务端不改（不加 CORS），所以「发请求」这件事只能留在原生侧。
+ */
+export const fetchPayLink = async (transport: OursTransport): Promise<OursPayLinkState> => {
+  const result = await transport({
+    method: 'GET',
+    url: payLinkUrl(),
+    headers: { Accept: 'application/json' },
+    timeoutMs: OURS_TIMEOUTS.payLink,
+    followRedirects: false,
+  })
+  if (result.kind !== 'response') {
+    return { status: 'error', messageKey: transportFailure(result) }
+  }
+  if (!isSuccessStatus(result.status)) {
+    return { status: 'error', messageKey: 'oursPayUnavailable' }
+  }
+  const parsed = parseJson(result.text)
+  if (!parsed.ok) {
+    return { status: 'error', messageKey: 'oursPayUnavailable' }
+  }
+  const record = asRecord(parsed.value)
+  if (record === null || record.ok !== true) {
+    return { status: 'error', messageKey: 'oursPayUnavailable' }
+  }
+  const url = readString(record, 'url').trim()
+  if (!isOpenableCheckout(url)) {
+    return { status: 'error', messageKey: 'oursPayUnavailable' }
+  }
+  return { status: 'ok', url, note: readString(record, 'note') }
 }
 
 // ------------------------------------------------------------------ 卡密兑换

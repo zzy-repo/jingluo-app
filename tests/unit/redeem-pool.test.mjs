@@ -367,7 +367,10 @@ console.log('\n[9] 价格取 /api/plans；客户端不暴露图片 / 文件输�
   truthy(!/type="file"/.test(dialogSource), '设置/兑换弹层没有 file 输入')
   truthy(!/\baccept=/.test(dialogSource), '设置/兑换弹层没有 accept= 选择器')
   truthy(!/<img\b/.test(dialogSource), '兑换弹层没有图片预览')
-  truthy(/fetchPlans/.test(dialogSource), '价格来自 fetchPlans(/api/plans)')
+  truthy(
+    !/fetchPlans/.test(dialogSource),
+    '弹层不再取 /api/plans（#331：套餐全线下架，购买入口改成 App 内打开收款页）'
+  )
   // 硬编码价格：不允许出现 ¥+数字 的写死价，或 price: <数字>
   const hardcoded = [...dialogSource.matchAll(/[¥￥]\s?\d|\bprice:\s*\d/g)].map((m) => m[0])
   eq(hardcoded, [], '弹层里没有硬编码价格')

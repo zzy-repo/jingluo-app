@@ -3,23 +3,12 @@ import { useEffect, useRef, useState } from 'react'
 import { setApiKey, useApiConfig, useIsOursChannel } from '../../services/api/apiConfig.js'
 import { useTranslate } from '../../i18n/index.js'
 import {
-  buyUrl,
-  createBuyOrder,
-  fetchPlans,
-  formatPlanMeta,
+  fetchPayLink,
   formatPoints,
-  ORDER_STATUS_KEYS,
-  OURS_PAYMENT_OPEN,
-  pollOrder,
   probeApiKey,
-  type OursBuyTicket,
   type OursKeyProbe,
-  type OursLatestFulfilled,
   type OursMessageKey,
-  type OursOrderStatus,
-  type OursPlansState,
 } from '../../services/ours/api.js'
-import { startInAppPay } from '../../services/ours/inAppPay.js'
 import {
   applyForKey,
   claimMessageKeyFor,
@@ -47,22 +36,11 @@ import {
   markDeviceBackupHintSeen,
   shouldShowDeviceBackupHint,
 } from '../../services/invite/device.js'
-import {
-  readStoredOrder,
-  subscribeStoredOrder,
-  writeStoredOrder,
-  ORDER_RESUME_MAX_AGE_MS,
-} from '../../services/ours/orderStore.js'
-import { httpTransport, isNativePlatform, navigateTopLevel, openCheckout, openCheckoutInApp } from '../../services/ours/transport.js'
+import { httpTransport, openPayLinkInApp } from '../../services/ours/transport.js'
 import { copyText } from '../../utils/clipboard.js'
 import { Button } from '../base/Button.js'
 import { Modal } from '../base/Modal.js'
-import {
-  closeSettings,
-  consumeOursReplacedUnpaid,
-  setOursServicesOpen,
-  useSettingsDialog,
-} from './settingsDialogState.js'
+import { closeSettings, setOursServicesOpen, useSettingsDialog } from './settingsDialogState.js'
 import styles from './OursServices.module.css'
 
 /**
@@ -71,7 +49,7 @@ import styles from './OursServices.module.css'
  *
  * 两套后端（都在 services/ 里，纯逻辑 + 注入传输，单测覆盖）：
  *  - 邀请 / 额度服务 http://140.210.13.146:60013（明文 HTTP）：设备码、Key、邀请码、剩余积分
- *  - 卡密 / 支付服务 https://apia.ecsafe.cn（HTTPS）：套餐、/buy 的 302 收银台、订单、卡密兑换
+ *  - 卡密 / 收款服务 https://apia.ecsafe.cn（HTTPS）：联动小铺收款页地址（`/api/pay-link`）、卡密兑换
  *
  * 额度口径：**只认邀请服务的 remaining_points**，界面上只显示「N 积分」，不做人民币折算（#75）。
  * /api/balance 只用来判断 Key 是否有效，绝不当余额。
@@ -79,7 +57,7 @@ import styles from './OursServices.module.css'
  * 失败一律给可读文案 + 可重试，且重试都是安全的：
  *  - /apply 对同一 device_id 幂等（201 首次 / 200 已申请）
  *  - /api/redeem 用卡密本身当 request_id（同一张卡重发就是同一笔）
- *  - /buy **绝不自动重试**：每次 GET 都会新建订单
+ *  - /api/pay-link 是只读接口，重试不会建单（Issue #331：这条链路我们**不建单**）
  */
 type BalanceView =
   | { status: 'idle' | 'loading' }
@@ -93,21 +71,16 @@ type ClaimView =
   | { status: 'ok'; outcome: ClaimOutcome; points: number }
   | { status: 'error'; messageKey: InviteMessageKey }
 
-type OrderView = {
-  outTradeNo: string
-  orderToken: string
-  status: OursOrderStatus | null
-  cardTail: string
-  busy: boolean
-  timedOut: boolean
-  errorKey: OursMessageKey | null
-  /** 服务端兜底（Issue #157）：查的这一单没完成时，同 customer 最近一笔已完成订单 */
-  latestFulfilled: OursLatestFulfilled | null
-}
-
-/** 套餐列表默认选中的套餐 id（没有可用套餐就是 null） */
-const firstPlanId = (state: OursPlansState | { status: 'loading' }): string | null =>
-  state.status === 'success' ? (state.plans[0]?.id ?? null) : null
+/**
+ * 「前往购买」的状态机（Issue #331）。
+ *
+ * 只有三种：idle / busy（正在取地址或正在打开）/ error（通道不可用、取地址失败、打不开）。
+ * 成功打开**不显示「支付成功」**：付款结果在联动小铺那边，我们这边没有订单可查。
+ */
+type PayLinkView =
+  | { status: 'idle' }
+  | { status: 'busy' }
+  | { status: 'error'; messageKey: OursMessageKey }
 
 /** 设置页里的入口行：只有我们的渠道才出现 */
 export const OursServicesRow = () => {
@@ -164,17 +137,8 @@ const OursServicesDialog = ({ onClose }: { onClose: () => void }) => {
   const [keyProbe, setKeyProbe] = useState<OursKeyProbe | null>(null)
   /** 服务端为该设备生成的 Key 与当前已填的不同：不自动覆盖，等用户点「使用此 Key」 */
   const [pendingKey, setPendingKey] = useState('')
-  const [plans, setPlans] = useState<OursPlansState | { status: 'loading' }>({ status: 'loading' })
-  const [planId, setPlanId] = useState('')
-  const [buyBusy, setBuyBusy] = useState(false)
-  const [buyError, setBuyError] = useState<OursMessageKey | null>(null)
-  /**
-   * 这一次支付的票根（Issue #235）：单号 + 令牌 + pay_url。
-   * 留着它，用户重复点「去支付」就不再建新单；订单到终态时立刻清掉 ——
-   * pay_url 里带着金额与单号签名，**付过的地址绝不能再拿来付下一单**。
-   */
-  const [buyTicket, setBuyTicket] = useState<OursBuyTicket | null>(null)
-  const [order, setOrder] = useState<OrderView | null>(null)
+  /** 「前往购买」（Issue #331）：地址每次现取，取不到就只给提示，绝不整页跳走 */
+  const [payLink, setPayLink] = useState<PayLinkView>({ status: 'idle' })
   const [inviteInput, setInviteInput] = useState('')
   const [inviteBusy, setInviteBusy] = useState(false)
   const [inviteResult, setInviteResult] = useState<
@@ -183,7 +147,7 @@ const OursServicesDialog = ({ onClose }: { onClose: () => void }) => {
   const [cardNo, setCardNo] = useState('')
   const [redeemBusy, setRedeemBusy] = useState(false)
   const [redeem, setRedeem] = useState<RedeemCardResult | null>(null)
-  const [copied, setCopied] = useState<'device' | 'invite' | 'card' | null>(null)
+  const [copied, setCopied] = useState<'device' | 'invite' | null>(null)
   /** 「我已经有 Key」：入口收起 → 展开粘贴框 → 绑定结果（Issue #86） */
   const [bindOpen, setBindOpen] = useState(false)
   const [bindInput, setBindInput] = useState('')
@@ -204,12 +168,6 @@ const OursServicesDialog = ({ onClose }: { onClose: () => void }) => {
    */
   const [profileFrom, setProfileFrom] = useState<'apply' | 'me' | null>(null)
 
-  /** 完整卡密只留内存（「一键兑换」要用）：不进 localStorage、不进日志、不进文案 */
-  const orderCardRef = useRef('')
-  /** 服务端兜底那张卡的完整卡密（同上，只留内存） */
-  const latestCardRef = useRef('')
-  /** 关闭弹层 / 组件卸载时取消轮询 */
-  const cancelled = useRef(false)
   const alive = useRef(true)
   /**
    * 设备指纹哈希（Issue #243）。只上报、不判定：
@@ -218,43 +176,11 @@ const OursServicesDialog = ({ onClose }: { onClose: () => void }) => {
    *  - 装进 ref 而不是 state：它不进渲染，也不该触发重渲染。
    */
   const deviceFpRef = useRef('')
-  /**
-   * 轮询「代次」（Issue #157）。每次 runPoll 递增，旧的那次轮询在下一次 tick 自己退出。
-   *
-   * 之前只有一个 cancelled 布尔量，而且 runPoll 开头把它重置成 false —— 于是连点两次
-   * 「去支付」会有**两个轮询同时在跑**，各自把状态写回自己那一单：旧单每 2s 把界面从
-   * 「已发卡」翻回「待支付」，而服务端看到的是 App 一直在查那张没人付的旧单。
-   */
-  const pollRun = useRef(0)
-  /** 当前轮询盯着的单号 / 令牌（随时可能被最新存档换掉） */
-  const activeOrder = useRef<{ outTradeNo: string; orderToken: string } | null>(null)
-  /** 正在轮询的单号：同一单不重复起两条轮询（存档写入会触发订阅，别再叠一次） */
-  const runningFor = useRef<string | null>(null)
-  /** 「上一笔未支付订单已失效」只在真的覆盖过时提示（Issue #157） */
-  const [replacedUnpaid, setReplacedUnpaid] = useState(() => consumeOursReplacedUnpaid())
 
   useEffect(() => {
     alive.current = true
-    cancelled.current = false
-    const stopWatching = subscribeStoredOrder(() => {
-      // 存档是单一真相：任何一次覆盖（原生 /buy、网页版回跳、另一个标签页）都要让轮询跟上
-      const stored = readStoredOrder()
-      if (stored === null || !alive.current) {
-        return
-      }
-      if (Date.now() - stored.startedAt >= ORDER_RESUME_MAX_AGE_MS) {
-        return
-      }
-      const active = activeOrder.current
-      if (active !== null && active.outTradeNo === stored.outTradeNo) {
-        return
-      }
-      void runPollRef.current({ outTradeNo: stored.outTradeNo, orderToken: stored.orderToken })
-    }, window)
     return () => {
       alive.current = false
-      cancelled.current = true
-      stopWatching()
     }
   }, [])
 
@@ -353,150 +279,6 @@ const OursServicesDialog = ({ onClose }: { onClose: () => void }) => {
     }
   }
 
-  // ---------------------------------------------------------------- 订单轮询
-
-  /**
-   * 轮询状态机在 services/ours/api.ts（单测覆盖），这里只负责渲染与取消。
-   *
-   * 两处 Issue #157 的关键约束：
-   *  1. 每次 runPoll 拿一个新的「代次」（pollRun）；旧代次的轮询在下一 tick 自己停，
-   *     既不写状态也不写存档 —— 连点两次「去支付」不会出现两个轮询互相盖。
-   *  2. 轮询每 tick 都回读本地存档（latest），存档被覆盖就换到新单；展示用的单号
-   *     一律取**服务端返回的那一单**（next.outTradeNo），不再用发起时的闭包值。
-   */
-  const runPoll = async (
-    initial: { outTradeNo: string; orderToken: string },
-    options: { force?: boolean } = {}
-  ) => {
-    if (!options.force && runningFor.current === initial.outTradeNo) {
-      // 这一单已经在查了（下单时写存档会触发订阅，别再叠一条轮询上去）
-      return
-    }
-    const run = pollRun.current + 1
-    pollRun.current = run
-    cancelled.current = false
-    activeOrder.current = { ...initial }
-    runningFor.current = initial.outTradeNo
-    orderCardRef.current = ''
-    latestCardRef.current = ''
-    setOrder({
-      outTradeNo: initial.outTradeNo,
-      orderToken: initial.orderToken,
-      status: null,
-      cardTail: '',
-      busy: true,
-      timedOut: false,
-      errorKey: null,
-      latestFulfilled: null,
-    })
-    const isCurrent = () => alive.current && pollRun.current === run
-    const result = await pollOrder({
-      outTradeNo: initial.outTradeNo,
-      orderToken: initial.orderToken,
-      transport: httpTransport,
-      // 存档是单一真相：重新下单后这里会读到新单号，轮询立刻切过去
-      latest: () => {
-        const stored = readStoredOrder()
-        return stored === null ? null : { outTradeNo: stored.outTradeNo, orderToken: stored.orderToken }
-      },
-      onSwitch: (next) => {
-        if (!isCurrent()) {
-          return
-        }
-        activeOrder.current = { ...next }
-        runningFor.current = next.outTradeNo
-        orderCardRef.current = ''
-        latestCardRef.current = ''
-        setOrder({
-          outTradeNo: next.outTradeNo,
-          orderToken: next.orderToken,
-          status: null,
-          cardTail: '',
-          busy: true,
-          timedOut: false,
-          errorKey: null,
-          latestFulfilled: null,
-        })
-      },
-      onUpdate: (next) => {
-        if (!isCurrent()) {
-          return
-        }
-        orderCardRef.current = next.status === 'fulfilled' ? next.cardNo : ''
-        latestCardRef.current = next.latestFulfilled?.cardNo ?? ''
-        setOrder({
-          outTradeNo: next.outTradeNo,
-          orderToken: activeOrder.current?.orderToken ?? initial.orderToken,
-          status: next.status,
-          cardTail: next.cardTail,
-          busy: true,
-          timedOut: false,
-          errorKey: null,
-          latestFulfilled: next.latestFulfilled,
-        })
-      },
-      shouldStop: () => cancelled.current || !isCurrent(),
-    })
-    if (isCurrent()) {
-      runningFor.current = null
-    }
-    if (!isCurrent() || result.kind === 'cancelled') {
-      return
-    }
-    if (result.kind === 'error') {
-      setOrder((current) => (current === null ? null : { ...current, busy: false, errorKey: result.messageKey }))
-      return
-    }
-    if (result.kind === 'ok') {
-      orderCardRef.current = result.order.status === 'fulfilled' ? result.order.cardNo : ''
-      setOrder((current) =>
-        current === null
-          ? null
-          : {
-              ...current,
-              outTradeNo: result.order.outTradeNo,
-              status: result.order.status,
-              cardTail: result.order.cardTail,
-              busy: false,
-              timedOut: false,
-              latestFulfilled: result.order.latestFulfilled,
-            }
-      )
-      writeStoredOrder(null)
-      // Issue #235：这一单已经结束了，票根（含 pay_url）立刻作废 ——
-      // 复用一张付过的收银台地址，等于让用户再付一次上一单的钱。
-      setBuyTicket(null)
-      // 发卡成功说明这笔钱已到账，额度可能变了：顺手刷一次
-      if (result.order.status === 'fulfilled') {
-        void refreshBalance()
-      }
-      return
-    }
-    // timeout：不重复下单，只留「再查一次」
-    setOrder((current) => (current === null ? null : { ...current, busy: false, timedOut: true }))
-  }
-
-  /** 事件回调里用的最新 runPoll（避免闭包抓到旧的那一份） */
-  const runPollRef = useRef(runPoll)
-  runPollRef.current = runPoll
-
-  /**
-   * 「再查一次」必须查**最新存档**那单（Issue #157）：
-   * 之前用的是界面状态里的单号，一旦状态被旧轮询写脏，再查也还是在查旧单。
-   */
-  const requeryOrder = async () => {
-    const stored = readStoredOrder()
-    const fresh =
-      stored !== null && Date.now() - stored.startedAt < ORDER_RESUME_MAX_AGE_MS
-        ? { outTradeNo: stored.outTradeNo, orderToken: stored.orderToken }
-        : null
-    const target = fresh ?? activeOrder.current ?? (order === null ? null : { outTradeNo: order.outTradeNo, orderToken: order.orderToken })
-    if (target === null) {
-      return
-    }
-    await runPoll(target)
-  }
-
   // ---------------------------------------------------------------- 绑定已有 Key（#86）
 
   /**
@@ -538,29 +320,8 @@ const OursServicesDialog = ({ onClose }: { onClose: () => void }) => {
     closeSettings()
   }
 
-  // ---------------------------------------------------------------- 套餐 / 挂载
-
-  const reloadPlans = async () => {
-    setPlans({ status: 'loading' })
-    const next = await fetchPlans(httpTransport)
-    if (!alive.current) {
-      return
-    }
-    setPlans(next)
-    const nextId = firstPlanId(next)
-    if (nextId !== null) {
-      setPlanId((current) => (current === '' ? nextId : current))
-    }
-  }
-
   useEffect(() => {
     void (async () => {
-      // 存档里的未完成订单（付款回跳最典型）先查：用户回来第一眼就该看到订单状态，
-      // 不该排队等额度与套餐。只有存过 order_token 的才查得到。
-      const stored = readStoredOrder()
-      if (stored !== null && Date.now() - stored.startedAt < ORDER_RESUME_MAX_AGE_MS) {
-        void runPoll({ outTradeNo: stored.outTradeNo, orderToken: stored.orderToken })
-      }
       // Issue #243：先把设备指纹拿到手（本地桥，毫秒级），好让**第一条** /me 就带上它。
       // resolveDeviceFp 永不抛、拿不到就回空串 —— 没有指纹也照常往下走，不阻塞注册。
       deviceFpRef.current = await resolveDeviceFp()
@@ -594,75 +355,48 @@ const OursServicesDialog = ({ onClose }: { onClose: () => void }) => {
         setOpenChoice(true)
         setBalance({ status: 'error', messageKey: opened.messageKey })
       }
-      const nextPlans = await fetchPlans(httpTransport)
-      if (!alive.current) {
-        return
-      }
-      setPlans(nextPlans)
-      const nextId = firstPlanId(nextPlans)
-      if (nextId !== null) {
-        setPlanId((current) => (current === '' ? nextId : current))
-      }
     })()
     // 只跑一次：挂载即初始化，之后都由用户操作驱动
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // ---------------------------------------------------------------- 购买
+  // ---------------------------------------------------------------- 购买（Issue #331）
 
   /**
-   * 去支付。两种环境两种走法（Issue #235 起，原生端换了实现）：
+   * 「前往购买」：现取联动小铺收款页地址，再用 **App 内嵌浏览器**（`Browser.open`）打开。
    *
-   *  - **网页版**：直接 `window.location.assign(buyUrl(planId))` —— 顶层导航。
-   *    /buy 的 302 目标里签名、单号、金额后端已经拼好，浏览器照着跳就行；
-   *    跨域顶层跳转不受 CORS 约束，也不需要读 Location。**一条业务请求都不发**（不发 fetch）。
-   *  - **原生**：`GET /api/buy` 拿「单号 + 令牌 + pay_url」→ 用 **App 内嵌浏览器**打开收银台
-   *    → 用户付完款关掉收银台（`browserFinished`）就**立刻重查一单**，卡密当场显示。
+   * 这条链路我们**不建单、不轮询**：付款与发卡都在联动小铺那边完成，App 侧只负责把页面
+   * 打开在 App 内（关掉就回到原页面），关闭后顺手刷一次额度显示 —— 但**绝不**据此显示
+   * 「支付成功」：没有订单可查，付款结果以买家拿到的卡密为准。
    *
-   * 为什么不再把人踢去系统浏览器（Issue #235 的症结）：支付宝收银台在系统浏览器里付完款，
-   * 除非用户自己点「返回商家」，否则**不会**走 return_url；用户就停在浏览器里，App 在后台
-   * 空等 60s 超时，切回来还是「等待支付」，得手动点「再查一次」才看到卡密。
-   *
-   * 细节都在 services/ours/inAppPay.ts（纯逻辑、有单测）：同一套餐复用票根不重复建单，
-   * 换套餐必须换新的 pay_url，关闭只回跳一次，内嵌浏览器不可用时降级到系统浏览器。
+   * 失败一律留在弹层里给可读提示（不整页跳走）：
+   *  - 503 / `ok:false` / 非 2xx / 非法 JSON → 「收款通道暂不可用，请稍后再试」（oursPayUnavailable）
+   *  - 连不上 / 超时                        → 网络 / 超时文案，可重试（只读接口，重试安全）
+   *  - 插件打不开（Web / 旧壳子）            → 「没能在 App 内打开收款页」（oursPayOpenFailed）
    */
-  const buy = async () => {
-    if (!OURS_PAYMENT_OPEN || planId === '' || buyBusy) {
+  const openPay = async () => {
+    if (payLink.status === 'busy') {
       return
     }
-    setBuyError(null)
-    if (!isNativePlatform()) {
-      // 网页版：让浏览器自己跳（付款回来地址栏带 ?no=&order_token=，启动时解析后进查单）
-      navigateTopLevel(buyUrl(planId))
+    setPayLink({ status: 'busy' })
+    const next = await fetchPayLink(httpTransport)
+    if (!alive.current) {
       return
     }
-    setBuyBusy(true)
-    const outcome = await startInAppPay(planId, {
-      ticket: buyTicket,
-      remember: (next) => {
-        setBuyTicket(next)
-      },
-      createOrder: (id) => createBuyOrder(id, httpTransport),
-      openInApp: (url, onClosed) => openCheckoutInApp(url, onClosed),
-      openSystem: (url) => openCheckout(url),
-      // 关闭收银台 = 「我回来了」：强制重起一轮查单（把后台那轮可能已超时的轮询顶掉）
-      poll: (target, pollOptions) => {
-        void runPollRef.current(target, pollOptions)
-      },
+    if (next.status === 'error') {
+      setPayLink({ status: 'error', messageKey: next.messageKey })
+      return
+    }
+    // 关掉收款页 = 回到 App：只刷新额度显示（卡密由小铺直接发给买家，额度可能已经变了）
+    const opened = await openPayLinkInApp(next.url, () => {
+      if (alive.current) {
+        void refreshBalance()
+      }
     })
     if (!alive.current) {
       return
     }
-    setBuyBusy(false)
-    if (outcome.kind !== 'ok') {
-      setBuyError(outcome.messageKey)
-      return
-    }
-    // 存档由 createBuyOrder 在「拿到单号与令牌」那一刻**覆盖**写法（api.ts），
-    // 这里不再重复写一份：两处写同一份存档只会给「谁最后写」留坑（Issue #157）。
-    // 覆盖掉一笔还没完成的旧单时明说一句，别让用户以为旧单还能付。
-    setReplacedUnpaid(outcome.replacedUnpaidOrder)
-    // 轮询已由 startInAppPay 起好了（打开后先查一轮），这里不再叠一次
+    setPayLink(opened ? { status: 'idle' } : { status: 'error', messageKey: 'oursPayOpenFailed' })
   }
 
   // ---------------------------------------------------------------- 兑换 / 邀请
@@ -706,7 +440,6 @@ const OursServicesDialog = ({ onClose }: { onClose: () => void }) => {
     // 所以清空输入并刷新一次额度（pending 时服务端稍后才入账，用户可点「刷新额度」再看）
     setRedeem(outcome.value)
     setCardNo('')
-    orderCardRef.current = ''
     void refreshBalance()
   }
 
@@ -731,7 +464,7 @@ const OursServicesDialog = ({ onClose }: { onClose: () => void }) => {
     }
   }
 
-  const copy = async (target: 'device' | 'invite' | 'card', value: string) => {
+  const copy = async (target: 'device' | 'invite', value: string) => {
     const done = await copyText(value)
     if (!alive.current) {
       return
@@ -795,12 +528,6 @@ const OursServicesDialog = ({ onClose }: { onClose: () => void }) => {
   /** 「我已经有 Key」只在**还没读到已有绑定**时出现（一台设备一把 Key，#86 条件 5） */
   const canBindKey = profileFrom !== 'me'
   const hasKey = apiKey.trim() !== ''
-  const orderStatusText = (current: OrderView): string => {
-    if (current.errorKey !== null) {
-      return t(current.errorKey)
-    }
-    return current.status === null ? t('oursOrderChecking') : t(ORDER_STATUS_KEYS[current.status])
-  }
 
   return (
     <Modal
@@ -1174,177 +901,32 @@ const OursServicesDialog = ({ onClose }: { onClose: () => void }) => {
           ) : null}
         </section>
 
-        {/* 4. 套餐 + 购买：价格与积分来自 /api/plans，App 不硬编码 */}
+        {/* 4. 购买（Issue #331）：套餐全线下架，入口直接打开联动小铺收款页，不再渲染套餐卡片 */}
         <section className={styles.section} data-testid="ours-plans">
           <div className={styles.sectionHead}>
-            <h3 className={styles.sectionTitle}>{t('oursPlansTitle')}</h3>
-            {plans.status === 'error' ? (
-              <Button
-                variant="outlined"
-                size="s"
-                className={styles.sectionAction}
-                data-testid="ours-plans-retry"
-                onClick={() => void reloadPlans()}
-              >
-                {t('oursPlansRetry')}
-              </Button>
-            ) : null}
+            <h3 className={styles.sectionTitle}>{t('oursPayTitle')}</h3>
           </div>
-          {plans.status === 'loading' ? (
-            <div className={styles.hint}>{t('oursPlansLoading')}</div>
-          ) : plans.status === 'error' ? (
-            <div className={clsx(styles.value, styles.valueError)}>{t(plans.messageKey)}</div>
-          ) : (
-            <ul className={styles.plans}>
-              {plans.plans.map((plan) => (
-                <li key={plan.id}>
-                  <button
-                    type="button"
-                    className={clsx(styles.plan, plan.id === planId && styles.planActive)}
-                    aria-pressed={plan.id === planId}
-                    data-testid={`ours-plan-${plan.id}`}
-                    onClick={() => setPlanId(plan.id)}
-                  >
-                    <span className={styles.planName}>{plan.name}</span>
-                    <span className={styles.planMeta}>{formatPlanMeta(plan, t('oursPointsUnit'))}</span>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
+          <div className={styles.hint} data-testid="ours-plans-empty">
+            {t('oursPayEmpty')}
+          </div>
           <div className={styles.actions}>
             <Button
               size="m"
               data-testid="ours-buy"
-              disabled={!OURS_PAYMENT_OPEN || buyBusy || planId === ''}
-              onClick={() => void buy()}
+              disabled={payLink.status === 'busy'}
+              onClick={() => void openPay()}
             >
-              {buyBusy ? t('oursBuyBusy') : t('oursBuyAction')}
+              {payLink.status === 'busy' ? t('oursPayBusy') : t('oursPayAction')}
             </Button>
           </div>
           <div
-            className={clsx(styles.hint, buyError !== null && styles.valueError)}
+            role="status"
+            className={clsx(styles.hint, payLink.status === 'error' && styles.valueError)}
             data-testid="ours-pay-notice"
           >
-            {buyError !== null
-              ? t(buyError)
-              : isNativePlatform()
-                ? t('oursBuyHint')
-                : t('oursBuyWebHint')}
+            {payLink.status === 'error' ? t(payLink.messageKey) : t('oursPayHint')}
           </div>
         </section>
-
-        {/* 5. 订单：待支付 → 已发卡；超时只说「稍后再看」，不重复下单 */}
-        {order !== null ? (
-          <section className={styles.section} data-testid="ours-order">
-            <div className={styles.sectionHead}>
-              <h3 className={styles.sectionTitle}>{t('oursOrderTitle')}</h3>
-              {order.timedOut || order.errorKey !== null ? (
-                <Button
-                  variant="outlined"
-                  size="s"
-                  className={styles.sectionAction}
-                  data-testid="ours-order-requery"
-                  disabled={order.busy}
-                  onClick={() => void requeryOrder()}
-                >
-                  {t('oursOrderRequery')}
-                </Button>
-              ) : null}
-            </div>
-            <div
-              role="status"
-              data-testid="ours-order-status"
-              className={clsx(
-                styles.value,
-                order.status === 'fulfilled' && styles.valueSuccess,
-                (order.timedOut || order.errorKey !== null) && styles.valueError
-              )}
-            >
-              {orderStatusText(order)}
-            </div>
-            <div className={styles.hint} data-testid="ours-order-no">
-              {t('oursOrderNo', { tail: order.outTradeNo.slice(-8) })}
-            </div>
-            {replacedUnpaid ? (
-              <div className={styles.hint} data-testid="ours-order-replaced">
-                {t('oursOrderReplaced')}
-              </div>
-            ) : null}
-            {order.busy ? (
-              <div className={styles.hint} data-testid="ours-order-waiting">
-                {t('oursOrderWaiting')}
-              </div>
-            ) : null}
-            {order.timedOut ? (
-              <div className={styles.hint} data-testid="ours-order-timeout">
-                {t('oursOrderTimeout')}
-              </div>
-            ) : null}
-            {order.status === 'fulfilled' && order.cardTail !== '' ? (
-              <>
-                <div className={styles.value} data-testid="ours-order-card">
-                  {t('oursOrderCard', { tail: order.cardTail })}
-                </div>
-                <div className={styles.actions}>
-                  <Button
-                    variant="outlined"
-                    size="s"
-                    data-testid="ours-order-copy"
-                    onClick={() => void copy('card', orderCardRef.current)}
-                  >
-                    {copied === 'card' ? t('oursOrderCopyCardDone') : t('oursOrderCopyCard')}
-                  </Button>
-                  <Button
-                    size="s"
-                    data-testid="ours-order-redeem"
-                    disabled={redeemBusy}
-                    onClick={() => void submitRedeem(orderCardRef.current)}
-                  >
-                    {redeemBusy ? t('oursRedeemBusy') : t('oursOrderRedeem')}
-                  </Button>
-                </div>
-              </>
-            ) : null}
-            {/* 服务端兜底（Issue #157）：正在查的这单没完成，但同 customer 名下最近有一笔已完成订单
-                → 直接把那张卡摆出来，并允许一键兑换（兑换逻辑与「发卡后一键兑换」同一套） */}
-            {order.latestFulfilled !== null ? (
-              <>
-                <div
-                  role="status"
-                  className={clsx(styles.value, styles.valueSuccess)}
-                  data-testid="ours-order-latest"
-                >
-                  {t('oursOrderLatestHint')}
-                </div>
-                <div className={styles.value} data-testid="ours-order-latest-card">
-                  {t('oursOrderLatestCard', {
-                    tail: order.latestFulfilled.cardTail,
-                    no: order.latestFulfilled.outTradeNo.slice(-8),
-                  })}
-                </div>
-                <div className={styles.actions}>
-                  <Button
-                    variant="outlined"
-                    size="s"
-                    data-testid="ours-order-latest-copy"
-                    onClick={() => void copy('card', latestCardRef.current)}
-                  >
-                    {copied === 'card' ? t('oursOrderCopyCardDone') : t('oursOrderCopyCard')}
-                  </Button>
-                  <Button
-                    size="s"
-                    data-testid="ours-order-latest-redeem"
-                    disabled={redeemBusy || !hasKey}
-                    onClick={() => void submitRedeem(latestCardRef.current)}
-                  >
-                    {redeemBusy ? t('oursRedeemBusy') : t('oursOrderRedeem')}
-                  </Button>
-                </div>
-              </>
-            ) : null}
-          </section>
-        ) : null}
 
         {/* 6. 卡密兑换（手输与发卡后一键兑换共用同一套语义） */}
         <section className={styles.section} data-testid="ours-redeem">
