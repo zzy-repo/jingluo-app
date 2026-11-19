@@ -18,36 +18,25 @@
 //   node tests/run-layer.mjs unit --only session-load-matrix
 //   node --test tests/unit/session-load-matrix.test.mjs
 import assert from 'node:assert/strict'
-import { registerHooks } from 'node:module'
 import { test } from 'node:test'
+
+import { fixtureUrl, installTsResolve, setupDom } from '../helpers/dom-env.mjs'
 
 import { chatBaseUrl, legacyHosts } from '../../scripts/lib/endpoints.mjs'
 
-const fixture = (name) => new URL(`../fixtures/domain03-04/${name}`, import.meta.url).href
-const collectorStub = fixture('collector.mjs')
-const dbFixture = fixture('session-db.mjs')
-
-registerHooks({
-  resolve(specifier, context, nextResolve) {
-    if (specifier === '@capacitor/core') {
-      return { url: fixture('capacitor.mjs'), shortCircuit: true }
-    }
-    if (/diagnostics\/collector\.js$/.test(specifier)) {
-      return { url: collectorStub, shortCircuit: true }
-    }
-    try {
-      return nextResolve(specifier, context)
-    } catch (error) {
-      const parent = String(context.parentURL ?? '')
-      if (specifier === './db.js' && parent.endsWith('/chat/store.ts')) {
-        return { url: dbFixture, shortCircuit: true }
-      }
-      if (specifier.startsWith('.') && specifier.endsWith('.js')) {
-        return nextResolve(specifier.slice(0, -3) + '.ts', context)
-      }
-      throw error
-    }
-  },
+// 装配（`.js→.ts` + 原生桥/诊断/存储替身）走 tests/helpers/dom-env.mjs 的公共入口（#366 第二批）：
+// 这段以前是本文件里手抄的 ~28 行 registerHooks 样板，30 多个 L0 文件各有一份。
+// 存储层替身按**父模块**区分（只有 chat/store.ts 的 `./db.js` 换成内存库），所以走 onResolve。
+installTsResolve({
+  stubs: [
+    [/^@capacitor\/core$/, fixtureUrl('domain03-04/capacitor.mjs')],
+    [/diagnostics\/collector\.js$/, fixtureUrl('domain03-04/collector.mjs')],
+  ],
+  onResolve: (specifier, context) => (
+    specifier === './db.js' && String(context.parentURL ?? '').endsWith('/chat/store.ts')
+      ? fixtureUrl('domain03-04/session-db.mjs')
+      : undefined
+  ),
 })
 
 globalThis.__ENDPOINTS__ ??= Object.freeze({
@@ -61,17 +50,8 @@ globalThis.__API_ORIGIN__ ??= 'https://api.deepseek.com'
 globalThis.__INTERNAL_BUILD__ ??= false
 globalThis.__log = { records: [], events: [], actions: [] }
 
-const memory = new Map()
-globalThis.localStorage = {
-  getItem: (key) => (memory.has(key) ? memory.get(key) : null),
-  setItem: (key, value) => memory.set(key, String(value)),
-  removeItem: (key) => memory.delete(key),
-  clear: () => memory.clear(),
-}
-globalThis.document = { visibilityState: 'visible', addEventListener() {}, removeEventListener() {} }
-globalThis.window = { addEventListener() {}, removeEventListener() {} }
-globalThis.requestAnimationFrame = (callback) => globalThis.setTimeout(callback, 0)
-globalThis.cancelAnimationFrame = (id) => clearTimeout(id)
+// 浏览器全局替身（localStorage / document / window / rAF）走公共入口（#366 第二批）
+setupDom()
 globalThis.fetch = async () =>
   new Response(JSON.stringify({ error: { message: 'not used in this case' } }), {
     status: 401,

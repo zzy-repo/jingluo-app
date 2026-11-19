@@ -1,0 +1,454 @@
+{
+ "version": 1,
+ "recordedAt": "2026-11-19",
+ "note": "由 `node tests/run-layer.mjs unit --write-weights` 实测生成，只用于工作单元排序（LPT），不影响是否被跑到。",
+ "files": {
+  "api-assumption-audit.test.mjs": {
+   "ms": 46
+  },
+  "api-request-timeout.test.mjs": {
+   "ms": 806
+  },
+  "app-identity.test.mjs": {
+   "ms": 181
+  },
+  "app-update.test.mjs": {
+   "ms": 497
+  },
+  "archive-fixture-roundtrip.test.mjs": {
+   "ms": 380
+  },
+  "attachment-endpoint-303.test.mjs": {
+   "ms": 368
+  },
+  "auto-title-backpressure.test.mjs": {
+   "ms": 278
+  },
+  "auto-title-prompt-i18n.test.mjs": {
+   "ms": 304
+  },
+  "auto-title-stream.test.mjs": {
+   "ms": 86
+  },
+  "behavior-assumption-audit.test.mjs": {
+   "ms": 87
+  },
+  "bind-key.test.mjs": {
+   "ms": 133
+  },
+  "capabilities-docs-sync.test.mjs": {
+   "ms": 1393
+  },
+  "capabilities.test.mjs": {
+   "ms": 12
+  },
+  "chat-context-budget-long-session.test.mjs": {
+   "ms": 4244
+  },
+  "chat-context-limit-error.test.mjs": {
+   "ms": 45
+  },
+  "chat-retry-retryable.test.mjs": {
+   "ms": 24
+  },
+  "chat-stream-interrupt.test.mjs": {
+   "ms": 585
+  },
+  "chat-wait-notice.test.mjs": {
+   "ms": 12
+  },
+  "chat-wait-stage.test.mjs": {
+   "ms": 91
+  },
+  "check-capabilities.test.mjs": {
+   "ms": 3650
+  },
+  "check-ip-version.test.mjs": {
+   "ms": 7
+  },
+  "compat-baseline.test.mjs": {
+   "ms": 13
+  },
+  "compat-env-fields.test.mjs": {
+   "ms": 38
+  },
+  "compat-guard-baseline.test.mjs": {
+   "ms": 6
+  },
+  "compat-guard-diagnostics.test.mjs": {
+   "ms": 21
+  },
+  "config-migration.test.mjs": {
+   "ms": 6
+  },
+  "container-query-fallback.test.mjs": {
+   "ms": 74
+  },
+  "context-budget.test.mjs": {
+   "ms": 61
+  },
+  "copy-limit.test.mjs": {
+   "ms": 267
+  },
+  "css-assumption-audit.test.mjs": {
+   "ms": 114
+  },
+  "diagnostics-capability-truth.test.mjs": {
+   "ms": 163
+  },
+  "diagnostics-capacitor-http-hook.test.mjs": {
+   "ms": 367
+  },
+  "diagnostics-fetch-channel.test.mjs": {
+   "ms": 15
+  },
+  "diagnostics-log-fields.test.mjs": {
+   "ms": 6
+  },
+  "diagnostics-response-bytes.test.mjs": {
+   "ms": 227
+  },
+  "diagnostics-stream-timing.test.mjs": {
+   "ms": 525
+  },
+  "diagnostics-system-info.test.mjs": {
+   "ms": 40
+  },
+  "dialog-open-no-apply.test.mjs": {
+   "ms": 35
+  },
+  "domain05-archive-reject-matrix.test.mjs": {
+   "ms": 338
+  },
+  "domain05-download-state-machine.test.mjs": {
+   "ms": 122
+  },
+  "domain05-export-contract.test.mjs": {
+   "ms": 365
+  },
+  "domain05-export-roundtrip.test.mjs": {
+   "ms": 16
+  },
+  "domain05-failure-tiers.test.mjs": {
+   "ms": 1323
+  },
+  "domain05-import-limit-table.test.mjs": {
+   "ms": 145
+  },
+  "domain05-skip-degrade-matrix.test.mjs": {
+   "ms": 86
+  },
+  "domain05-storage-lifecycle.test.mjs": {
+   "ms": 352
+  },
+  "domain06-claim-identity-matrix.test.mjs": {
+   "ms": 79
+  },
+  "domain06-claim-ui-orchestration.test.mjs": {
+   "ms": 217
+  },
+  "domain06-device-backup-hint.test.mjs": {
+   "ms": 109
+  },
+  "domain06-dialog-open-readonly.test.mjs": {
+   "ms": 97
+  },
+  "domain06-redeem-matrix.test.mjs": {
+   "ms": 31
+  },
+  "domain07-buy-chain.test.mjs": {
+   "ms": 261
+  },
+  "domain07-cid-matrix.test.mjs": {
+   "ms": 15
+  },
+  "domain07-payment-records-empty-error.test.mjs": {
+   "ms": 99
+  },
+  "domain07-payment-records-view.test.mjs": {
+   "ms": 283
+  },
+  "domain08-log-integrity.test.mjs": {
+   "ms": 61
+  },
+  "domain08-redact-negative.test.mjs": {
+   "ms": 27
+  },
+  "domain08-sensitive-fields.test.mjs": {
+   "ms": 43
+  },
+  "domain09-config-migration-invariants.test.mjs": {
+   "ms": 285
+  },
+  "domain09-settings-persistence.test.mjs": {
+   "ms": 321
+  },
+  "domain10-gate-wiring.test.mjs": {
+   "ms": 144
+  },
+  "domain10-release-gate-matrix.test.mjs": {
+   "ms": 2336
+  },
+  "douyin-account.test.mjs": {
+   "ms": 202
+  },
+  "enter-key-mode.test.mjs": {
+   "ms": 360
+  },
+  "error-report.test.mjs": {
+   "ms": 16
+  },
+  "export-text-bridge.test.mjs": {
+   "ms": 77
+  },
+  "feedback-draft.test.mjs": {
+   "ms": 21
+  },
+  "feedback-export.test.mjs": {
+   "ms": 837
+  },
+  "feedback-images.test.mjs": {
+   "ms": 705
+  },
+  "flex-gap-fallback.test.mjs": {
+   "ms": 271
+  },
+  "focus-visible-fallback.test.mjs": {
+   "ms": 91
+  },
+  "format-points-i18n.test.mjs": {
+   "ms": 402
+  },
+  "gen-gap-plain-css.test.mjs": {
+   "ms": 235
+  },
+  "guard-es5-gate.test.mjs": {
+   "ms": 313
+  },
+  "has-fallback.test.mjs": {
+   "ms": 58
+  },
+  "host-capability-audit.test.mjs": {
+   "ms": 58
+  },
+  "i18n-missing-key.test.mjs": {
+   "ms": 241
+  },
+  "import-archive-manifest.test.mjs": {
+   "ms": 100
+  },
+  "import-archive-unclassified.test.mjs": {
+   "ms": 7
+  },
+  "import-budget-vs-stall.test.mjs": {
+   "ms": 933
+  },
+  "import-clock-monotonic.test.mjs": {
+   "ms": 320
+  },
+  "import-error-copy.test.mjs": {
+   "ms": 2199
+  },
+  "import-hardening.test.mjs": {
+   "ms": 761
+  },
+  "import-network-classification.test.mjs": {
+   "ms": 917
+  },
+  "import-partial-skip.test.mjs": {
+   "ms": 271
+  },
+  "import-refuse-before-download.test.mjs": {
+   "ms": 12
+  },
+  "import-size-limit.test.mjs": {
+   "ms": 11
+  },
+  "import-skipped-ui.test.mjs": {
+   "ms": 48
+  },
+  "import-unreachable-copy.test.mjs": {
+   "ms": 918
+  },
+  "intl-displaynames-fallback.test.mjs": {
+   "ms": 41
+  },
+  "intl-segmenter-fallback.test.mjs": {
+   "ms": 31
+  },
+  "invite-261-fp-already-claimed.test.mjs": {
+   "ms": 331
+  },
+  "invite-device-fingerprint.test.mjs": {
+   "ms": 315
+  },
+  "issue-219-displaynames-boot-guard.test.mjs": {
+   "ms": 15
+  },
+  "issue-234-invite-copy.test.mjs": {
+   "ms": 27
+  },
+  "key-rejection-303.test.mjs": {
+   "ms": 443
+  },
+  "latest-reminder-fields.test.mjs": {
+   "ms": 11
+  },
+  "legacy-boot-guard.test.mjs": {
+   "ms": 16
+  },
+  "legacy-bundle-target.test.mjs": {
+   "ms": 288
+  },
+  "legacy-polyfills.test.mjs": {
+   "ms": 34
+  },
+  "legacy-replace-all.test.mjs": {
+   "ms": 6
+  },
+  "legacy-webview-compat.test.mjs": {
+   "ms": 22
+  },
+  "limits-config.test.mjs": {
+   "ms": 41
+  },
+  "log-313-attachment-import.test.mjs": {
+   "ms": 203
+  },
+  "log-viewer.test.mjs": {
+   "ms": 20
+  },
+  "matrix-config.test.mjs": {
+   "ms": 333
+  },
+  "message-list-virtual.test.mjs": {
+   "ms": 51
+  },
+  "mobile-header-scroll-top.test.mjs": {
+   "ms": 11
+  },
+  "modal-touch-scroll.test.mjs": {
+   "ms": 13
+  },
+  "model-invalid-copy.test.mjs": {
+   "ms": 294
+  },
+  "model-picker-parser.test.mjs": {
+   "ms": 11
+  },
+  "model-probe-status.test.mjs": {
+   "ms": 32
+  },
+  "official-error-classify.test.mjs": {
+   "ms": 87
+  },
+  "openai-adapter.test.mjs": {
+   "ms": 226
+  },
+  "ours-api.test.mjs": {
+   "ms": 362
+  },
+  "ours-inapp-buy.test.mjs": {
+   "ms": 324
+  },
+  "ours-invite.test.mjs": {
+   "ms": 293
+  },
+  "ours-payment-records.test.mjs": {
+   "ms": 261
+  },
+  "ours-purchases.test.mjs": {
+   "ms": 54
+  },
+  "ours-trail.test.mjs": {
+   "ms": 58
+  },
+  "pay-link.test.mjs": {
+   "ms": 227
+  },
+  "payment-trail-ui.test.mjs": {
+   "ms": 73
+  },
+  "provider-caps-lock.test.mjs": {
+   "ms": 6
+  },
+  "provider-config-matrix.test.mjs": {
+   "ms": 15
+  },
+  "provider-deepseek-model.test.mjs": {
+   "ms": 7
+  },
+  "provider-ours.test.mjs": {
+   "ms": 5
+  },
+  "provider-probe-matrix.test.mjs": {
+   "ms": 15662
+  },
+  "purchases-ui.test.mjs": {
+   "ms": 33
+  },
+  "quota-exhausted.test.mjs": {
+   "ms": 1309
+  },
+  "reading-settings.test.mjs": {
+   "ms": 261
+  },
+  "redeem-pool.test.mjs": {
+   "ms": 587
+  },
+  "releases-manifest-buildtype.test.mjs": {
+   "ms": 303
+  },
+  "render-process-gone.test.mjs": {
+   "ms": 21
+  },
+  "rotate-key.test.mjs": {
+   "ms": 79
+  },
+  "scrollbar-gutter-fallback.test.mjs": {
+   "ms": 100
+  },
+  "session-crud-matrix.test.mjs": {
+   "ms": 288
+  },
+  "session-load-matrix.test.mjs": {
+   "ms": 327
+  },
+  "session-repair.test.mjs": {
+   "ms": 9
+  },
+  "shot-mobile.test.mjs": {
+   "ms": 958
+  },
+  "stream-idle-timeout.test.mjs": {
+   "ms": 2346
+  },
+  "strip-literals-ast.test.mjs": {
+   "ms": 26
+  },
+  "test-runtime.test.mjs": {
+   "ms": 3333
+  },
+  "thinking-adapters.test.mjs": {
+   "ms": 150
+  },
+  "thinking-display.test.mjs": {
+   "ms": 7
+  },
+  "thinking-entry-consistency.test.mjs": {
+   "ms": 4
+  },
+  "update-failure.test.mjs": {
+   "ms": 153
+  },
+  "update-manifest-compat.test.mjs": {
+   "ms": 5
+  },
+  "url-import-content-range.test.mjs": {
+   "ms": 185
+  },
+  "url-import-stall.test.mjs": {
+   "ms": 1508
+  }
+ }
+}

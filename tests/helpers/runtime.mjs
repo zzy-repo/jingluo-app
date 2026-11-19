@@ -4,6 +4,7 @@ import { mkdtemp, rm, access, readFile, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import http from 'node:http'
+import { fileURLToPath } from 'node:url'
 import { listenFetchablePort, listenFreePort } from './ports.mjs'
 
 /**
@@ -13,6 +14,8 @@ import { listenFetchablePort, listenFreePort } from './ports.mjs'
  * 用 file URL 传参：Windows 盘符路径带 `D:` 会被当成「未知选项的值」。
  */
 const PRELOAD = new URL('./injected.mjs', import.meta.url)
+/** 进程合并入口（#366 第二批）：一个进程内顺序跑同一批测试文件 */
+const MERGED_ENTRY = fileURLToPath(new URL('./merged-entry.mjs', import.meta.url))
 // 沙箱用例会把 runtime.mjs 拷到临时目录单独跑（tests/unit/test-runtime.test.mjs），
 // 那里没有这份预加载文件 —— 缺了就不带这个参数，不因为它而改掉用例的既有行为。
 const preloadArgs = existsSync(PRELOAD) ? ['--import', PRELOAD.href] : []
@@ -26,12 +29,18 @@ const preloadArgs = existsSync(PRELOAD) ? ['--import', PRELOAD.href] : []
  */
 const TRANSFORM_TYPES_ARGS = ['--experimental-transform-types']
 
-// One invocation owns one directory and (on POSIX) one process group. Never pkill by name.
-export async function runCase(file, { cwd, timeoutMs = 180000, env = process.env, output = true } = {}) {
+/**
+ * 起一个用例子进程并把落点收齐（单文件与「合并批次」共用这一段，避免两套 spawn 逻辑各自漂移）。
+ *
+ * `output` 决定子进程输出是**实时转发**还是**攒起来**（并行跑时按条缓冲，免得几个文件的输出
+ * 交错成一团；串行跑时仍然实时转发，方便盯日志）。
+ */
+async function spawnCase(argv, { cwd, timeoutMs = 180000, env = process.env, output = true } = {}) {
   const tempDir = await mkdtemp(path.join(tmpdir(), 'deepseek-case-'))
   const started = performance.now()
   let child, timer, escalation, timedOut = false, interrupted = false, spawnError
   const tail = []
+  const collected = []
   const signalGroup = (signal) => {
     if (!child?.pid) return
     try {
@@ -45,9 +54,7 @@ export async function runCase(file, { cwd, timeoutMs = 180000, env = process.env
   }
   const onSignal = () => { interrupted = true; stop() }
   try {
-    const source = await readFile(file, 'utf8')
-    const nodeTest = /(?:from\s*|import\s*|require\(\s*)['"]node:test['"]/.test(source)
-    child = spawn(process.execPath, [...TRANSFORM_TYPES_ARGS, ...(nodeTest ? ['--test'] : []), ...preloadArgs, file], {
+    child = spawn(process.execPath, argv, {
       cwd, env: { ...env, TMPDIR: tempDir, TMP: tempDir, TEMP: tempDir, TEST_TMP_DIR: tempDir },
       detached: process.platform !== 'win32', stdio: ['ignore', 'pipe', 'pipe'],
     })
@@ -74,6 +81,7 @@ export async function runCase(file, { cwd, timeoutMs = 180000, env = process.env
     const keep = (stream, chunk) => {
       const text = chunk.toString()
       if (output) stream.write(chunk)
+      else collected.push(text)
       scanSkips(text)
       tail.push(text)
       if (tail.length > 100) tail.shift()
@@ -90,7 +98,7 @@ export async function runCase(file, { cwd, timeoutMs = 180000, env = process.env
       code, signal, timedOut, interrupted, error: spawnError,
       // skips = 跳过条数（判红门禁不看它）；skipDetails = 逐条的名字与原因（#298 具名上报）
       skips: subtestSkipped.length, skipDetails: subtestSkipped,
-      ms: Math.round(performance.now() - started), tail, tempDir }
+      ms: Math.round(performance.now() - started), tail, collected, tempDir }
   } finally {
     clearTimeout(timer)
     clearTimeout(escalation)
@@ -99,6 +107,62 @@ export async function runCase(file, { cwd, timeoutMs = 180000, env = process.env
     signalGroup('SIGKILL')
     await rm(tempDir, { recursive: true, force: true })
   }
+}
+
+// One invocation owns one directory and (on POSIX) one process group. Never pkill by name.
+export async function runCase(file, { cwd, timeoutMs = 180000, env = process.env, output = true } = {}) {
+  const source = await readFile(file, 'utf8')
+  const nodeTest = /(?:from\s*|import\s*|require\(\s*)['"]node:test['"]/.test(source)
+  const result = await spawnCase(
+    [...TRANSFORM_TYPES_ARGS, ...(nodeTest ? ['--test'] : []), ...preloadArgs, file],
+    { cwd, timeoutMs, env, output },
+  )
+  const { collected, ...rest } = result
+  return collected.length ? { ...rest, output: collected.join('') } : rest
+}
+
+/**
+ * #366 第二批：一个进程内顺序跑一批测试文件（装配见 ./merged-entry.mjs）。
+ *
+ * 返回的 `files` 是**逐文件**结局：`{ file, ok, outcome, tests, pass, fail, skip, ms }`。
+ * 批次进程崩了/超时了，没有收尾行的文件不会出现在 `files` 里 —— caller 负责把它们判失败，
+ * 「没跑完」不许被当成「通过」。
+ */
+export async function runMergedBatch(files, { cwd, timeoutMs = 180000, env = process.env, output = true } = {}) {
+  const result = await spawnCase(
+    [...TRANSFORM_TYPES_ARGS, ...preloadArgs, MERGED_ENTRY, ...files],
+    { cwd, timeoutMs, env, output },
+  )
+  const text = result.collected.join('')
+  const outcomes = []
+  // 逐文件的「跳过明细」按 `>> FILE` / `<< FILE` 帧归属：跳过要指名道姓（#298），
+  // 合并后不能把 A 文件的跳过算到 B 文件头上。
+  let framing = null
+  for (const line of text.split('\n')) {
+    const opened = /^>> FILE (\S+)$/.exec(line.trim())
+    if (opened) { framing = { file: opened[1], skipDetails: [] }; continue }
+    const matched = /^<< FILE (\S+) (PASS|SKIP|FAIL|EMPTY) tests=(\d+) pass=(\d+) fail=(\d+) skip=(\d+) ms=(\d+)(?: script=(-?\d+))?$/.exec(line.trim())
+    if (!matched) {
+      const skippedLine = /^(?:not ok|ok)\s+\d+\s+-\s+(.*?)\s+# SKIP\s*(.*)$/.exec(line.trim())
+      if (skippedLine && framing) framing.skipDetails.push({ name: skippedLine[1].trim(), reason: skippedLine[2].trim() })
+      continue
+    }
+    outcomes.push({
+      file: matched[1],
+      outcome: matched[2],
+      tests: Number(matched[3]),
+      pass: Number(matched[4]),
+      fail: Number(matched[5]),
+      skip: Number(matched[6]),
+      ms: Number(matched[7]),
+      script: matched[8] === undefined ? undefined : Number(matched[8]),
+      skipDetails: framing?.file === matched[1] ? framing.skipDetails : [],
+      ok: matched[2] === 'PASS' || matched[2] === 'SKIP',
+    })
+    framing = null
+  }
+  const { collected, ...rest } = result
+  return { ...rest, output: text, files: outcomes }
 }
 
 // No implicit compilation: caller supplies a privately built, immutable artifact.

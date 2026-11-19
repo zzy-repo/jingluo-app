@@ -15,7 +15,7 @@
 //   [5] i18n：中英都有一对一的 key，且没有改动既有 key
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { registerHooks } from 'node:module'
+import { installTsResolve } from '../helpers/dom-env.mjs'
 
 const stub = (name) => new URL(`../fixtures/chat-stubs/${name}`, import.meta.url).href
 
@@ -46,27 +46,17 @@ export const recordError = (message, fields = {}) => {
 }
 `)}`
 
-registerHooks({
-  resolve(specifier, context, nextResolve) {
-    if (specifier === '@capacitor/core') {
-      return { url: stub('capacitor.mjs'), shortCircuit: true }
-    }
-    if (/diagnostics\/collector\.js$/.test(specifier)) {
-      return { url: collectorStub, shortCircuit: true }
-    }
-    try {
-      return nextResolve(specifier, context)
-    } catch (error) {
-      const parent = String(context.parentURL ?? '')
-      if (specifier === './db.js' && parent.endsWith('/chat/store.ts')) {
-        return { url: fakeDB, shortCircuit: true }
-      }
-      if (specifier.startsWith('.') && specifier.endsWith('.js')) {
-        return nextResolve(`${specifier.slice(0, -3)}.ts`, context)
-      }
-      throw error
-    }
-  },
+// 装配（`.js→.ts` + 原生桥/诊断/存储替身）走 tests/helpers/dom-env.mjs 的公共入口（#366 第二批）：
+// 这段以前是本文件里手抄的 ~30 行 registerHooks 样板，chat-stubs 一族的文件各有一份。
+// 存储层替身按**父模块**区分（只有 chat/store.ts 的 `./db.js` 换成内置假库），所以走 onResolve。
+installTsResolve({
+  stubs: [
+    [/^@capacitor\/core$/, stub('capacitor.mjs')],
+    [/diagnostics\/collector\.js$/, collectorStub],
+  ],
+  onResolve: (specifier, context) => (
+    specifier === './db.js' && String(context.parentURL ?? '').endsWith('/chat/store.ts') ? fakeDB : undefined
+  ),
 })
 
 globalThis.__API_ORIGIN__ = 'https://api.test.invalid'
