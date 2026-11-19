@@ -1,6 +1,17 @@
 /** Public download metadata only. Never import diagnostics transport or publisher credentials. */
-export const RELEASE_ORIGIN = 'https://dl.rose7.cn'
-export const MANIFEST_URL = `${RELEASE_ORIGIN}/releases.json`
+
+/**
+ * 分发端点（Issue #268）。首选新静态分发机 `62.106.70.167:8888`（裸 HTTP，无域名无 TLS），
+ * 不可达才回退旧机 `https://dl.rose7.cn`。顺序写死在 RELEASE_BASES 里，不做随机或轮询。
+ * 裸 HTTP 之所以可接受：APK 签名由 Android 安装器强制校验，下载前后还会比对 SHA-256、
+ * 包名与 versionCode，明文只能让更新失败或被抑制；域名 + TLS 在 #269 补。
+ */
+export const PRIMARY_RELEASE_BASE = 'http://62.106.70.167:8888'
+export const FALLBACK_RELEASE_BASE = 'https://dl.rose7.cn'
+/** 尝试顺序：先新机后旧机。 */
+export const RELEASE_BASES = [PRIMARY_RELEASE_BASE, FALLBACK_RELEASE_BASE] as const
+export const DEFAULT_RELEASE_BASE = PRIMARY_RELEASE_BASE
+export const MANIFEST_URL = `${PRIMARY_RELEASE_BASE}/releases.json`
 export const MAX_APK_BYTES = 50 * 1024 * 1024
 export type ArtifactVariant = 'internal' | 'standard'
 export type UpdateChannel = 'stable' | 'prerelease'
@@ -20,15 +31,20 @@ export interface UpdateSelection {
 }
 const object = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value)
+const isAllowedBase = (base: string): boolean =>
+  (RELEASE_BASES as readonly string[]).includes(base)
 
-/** Only serve APKs from the public download origin; no credentials, query or arbitrary redirects. */
-export const releaseUrl = (file: string): string => {
-  if (!/^apk\/[a-zA-Z0-9._-]+\.apk$/.test(file)) {
+/**
+ * 清单里的 file 是相对路径，必须拼在「本次清单实际生效的那个 base」上——回退到旧机后
+ * 还拿新机地址拼，下载就是 404。只接受白名单 base 与 /apk/<file>.apk 这一种公开路径。
+ */
+export const releaseUrl = (file: string, base: string = DEFAULT_RELEASE_BASE): string => {
+  if (!/^apk\/[a-zA-Z0-9._-]+\.apk$/.test(file) || !isAllowedBase(base)) {
     throw new Error('INVALID_APK_URL')
   }
-  const url = new URL(file, `${RELEASE_ORIGIN}/`)
+  const url = new URL(file, `${base}/`)
   if (
-    url.origin !== RELEASE_ORIGIN ||
+    url.origin !== base ||
     url.username ||
     url.password ||
     url.search ||
@@ -120,11 +136,18 @@ export const selectUpdate = (
   }
 }
 
-export const loadManifest = async (
+export interface ManifestFetch {
+  rows: UpdateRelease[]
+  /** 真正回了清单的那个 base；相对 file 必须拼在它上面。 */
+  base: string
+}
+
+const fetchBody = async (
+  base: string,
   signal: AbortSignal,
-  request: typeof fetch = fetch
-): Promise<UpdateRelease[]> => {
-  const response = await request(MANIFEST_URL, {
+  request: typeof fetch
+): Promise<string> => {
+  const response = await request(`${base}/releases.json`, {
     signal,
     credentials: 'omit',
     cache: 'no-store',
@@ -137,5 +160,35 @@ export const loadManifest = async (
   if (body.length > 2 * 1024 * 1024) {
     throw new Error('MANIFEST_TOO_LARGE')
   }
-  return parseManifest(JSON.parse(body))
+  return body
 }
+
+/**
+ * 按 RELEASE_BASES 顺序取清单：首个成功即生效（新机 HTTP → 旧机 HTTPS）。
+ * 已拿到 200 却解析不了时不回退——旧清单不能冒充新清单，宁可报错。
+ */
+export const fetchManifest = async (
+  signal: AbortSignal,
+  request: typeof fetch = fetch
+): Promise<ManifestFetch> => {
+  let body: string | undefined
+  let failure: unknown = new Error('MANIFEST_NETWORK')
+  for (const base of RELEASE_BASES) {
+    try {
+      body = await fetchBody(base, signal, request)
+    } catch (error) {
+      if (signal.aborted) {
+        throw error
+      }
+      failure = error
+      continue
+    }
+    return { rows: parseManifest(JSON.parse(body)), base }
+  }
+  throw failure
+}
+
+export const loadManifest = async (
+  signal: AbortSignal,
+  request: typeof fetch = fetch
+): Promise<UpdateRelease[]> => (await fetchManifest(signal, request)).rows

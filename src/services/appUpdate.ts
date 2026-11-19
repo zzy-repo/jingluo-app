@@ -1,5 +1,10 @@
 import { Capacitor, registerPlugin, type PluginListenerHandle } from '@capacitor/core'
-import { releaseUrl, type ArtifactVariant, type UpdateRelease } from './updateManifest.js'
+import {
+  DEFAULT_RELEASE_BASE,
+  releaseUrl,
+  type ArtifactVariant,
+  type UpdateRelease,
+} from './updateManifest.js'
 export interface InstalledApp {
   version: string
   versionCode: number
@@ -12,7 +17,8 @@ export interface DownloadProgress {
 }
 export interface UpdateBridge {
   installed(): Promise<InstalledApp>
-  manifest(): Promise<{ body: string }>
+  /** base 是原生侧真正拿到清单的分发机（新机 HTTP 优先，失败回退旧机 HTTPS）。 */
+  manifest(): Promise<{ body: string; base?: string }>
   download(options: {
     id: string
     url: string
@@ -45,7 +51,8 @@ export const downloadUpdate = async (
   release: UpdateRelease,
   signal: AbortSignal,
   progress: (event: DownloadProgress) => void,
-  bridge: UpdateBridge = nativeUpdate
+  bridge: UpdateBridge = nativeUpdate,
+  base: string = DEFAULT_RELEASE_BASE
 ): Promise<{ cached: boolean }> => {
   if (!release.sha256 || !release.artifactVariant) {
     throw new Error('INCOMPLETE_RELEASE')
@@ -69,7 +76,8 @@ export const downloadUpdate = async (
     }
     const result = await bridge.download({
       id,
-      url: releaseUrl(release.file),
+      // 相对 file 拼在「清单实际生效」的 base 上，回退后不会拿错域名导致 404。
+      url: releaseUrl(release.file, base),
       sha256: release.sha256,
       size: release.size,
       versionCode: release.versionCode,

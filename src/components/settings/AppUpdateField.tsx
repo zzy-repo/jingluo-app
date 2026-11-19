@@ -9,10 +9,11 @@ import {
   nativeUpdate,
 } from '../../services/appUpdate.js'
 import {
-  loadManifest,
+  fetchManifest,
   parseManifest,
   releaseUrl,
   selectUpdate,
+  DEFAULT_RELEASE_BASE,
   type UpdateChannel,
   type UpdateRelease,
 } from '../../services/updateManifest.js'
@@ -27,6 +28,8 @@ export const AppUpdateField = () => {
     /-/.test(bundledApp().version) ? 'prerelease' : 'stable'
   )
   const [release, setRelease] = useState<UpdateRelease>()
+  /** 本次清单实际生效的分发机：相对 file 必须拼在它上面（回退到旧机后别拼新机域名）。 */
+  const [base, setBase] = useState<string>(DEFAULT_RELEASE_BASE)
   const [message, setMessage] = useState('')
   const [busy, setBusy] = useState(false)
   const [ready, setReady] = useState(false)
@@ -67,14 +70,24 @@ export const AppUpdateField = () => {
       if (variant !== 'internal' && variant !== 'standard') {
         throw new Error('当前安装包渠道信息缺失')
       }
-      const rows = native
-        ? parseManifest(JSON.parse((await nativeUpdate.manifest()).body))
-        : await loadManifest(controller.signal)
+      // 原生侧返回「真的回了清单」的 base；网页预览走同一条回退顺序。
+      let rows: UpdateRelease[]
+      let effectiveBase: string = DEFAULT_RELEASE_BASE
+      if (native) {
+        const manifest = await nativeUpdate.manifest()
+        rows = parseManifest(JSON.parse(manifest.body))
+        effectiveBase = manifest.base || DEFAULT_RELEASE_BASE
+      } else {
+        const manifest = await fetchManifest(controller.signal)
+        rows = manifest.rows
+        effectiveBase = manifest.base
+      }
       const result = selectUpdate(rows, current.versionCode, variant, channel)
       if (controller.signal.aborted) {
         return
       }
       setRelease(result.release)
+      setBase(effectiveBase)
       setMessage(
         result.release
           ? '发现新版本，确认后再下载。'
@@ -107,7 +120,7 @@ export const AppUpdateField = () => {
     setProgress({ received: 0, total: release.size })
     setMessage('正在下载…')
     try {
-      const result = await downloadUpdate(release, controller.signal, setProgress)
+      const result = await downloadUpdate(release, controller.signal, setProgress, nativeUpdate, base)
       if (!controller.signal.aborted) {
         setReady(true)
         setMessage(result.cached ? '已复用并校验缓存，点击安装。' : '下载及校验完成，点击安装。')
@@ -197,7 +210,7 @@ export const AppUpdateField = () => {
                     {ready ? '安装更新' : '确认下载'}
                   </Button>
                 ) : (
-                  <a href={releaseUrl(release.file)} target="_blank" rel="noreferrer">
+                  <a href={releaseUrl(release.file, base)} target="_blank" rel="noreferrer">
                     下载 APK
                   </a>
                 )

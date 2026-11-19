@@ -60,27 +60,42 @@ public class AppUpdatePlugin extends Plugin {
         } catch (Exception error) { call.reject("读取当前版本失败", "INSTALLED_VERSION"); }
     }
 
+    /** 按 {@link UpdateEndpoint#MANIFEST_BASES} 的固定顺序取清单：首个成功即生效，全失败才算失败。 */
     @PluginMethod
     public void manifest(PluginCall call) {
         worker.execute(() -> {
-            HttpURLConnection connection = null;
-            try {
-                connection = (HttpURLConnection) new URL("https://dl.rose7.cn/releases.json").openConnection();
-                connection.setInstanceFollowRedirects(false);
-                connection.setConnectTimeout(15000); connection.setReadTimeout(15000);
-                if (connection.getResponseCode() != 200) throw new Exception("MANIFEST_HTTP");
-                java.io.ByteArrayOutputStream output = new java.io.ByteArrayOutputStream();
-                try (InputStream input = connection.getInputStream()) {
-                    byte[] buffer = new byte[8192]; int count;
-                    while ((count = input.read(buffer)) != -1) {
-                        if (output.size() + count > 2 * 1024 * 1024) throw new Exception("MANIFEST_TOO_LARGE");
-                        output.write(buffer, 0, count);
-                    }
-                }
-                JSObject result = new JSObject(); result.put("body", output.toString("UTF-8")); call.resolve(result);
-            } catch (Exception error) { call.reject("检查更新失败，请稍后重试", "MANIFEST_NETWORK"); }
-            finally { if (connection != null) connection.disconnect(); }
+            for (String base : UpdateEndpoint.MANIFEST_BASES) {
+                try {
+                    JSObject result = new JSObject();
+                    result.put("body", fetchManifest(base));
+                    // 回传生效的 base：清单里的 file 是相对路径，必须拼在「真的回了清单」的那台上，
+                    // 否则回退到旧机后还拿新机域名拼，下载就是 404。
+                    result.put("base", base);
+                    call.resolve(result);
+                    return;
+                } catch (Exception error) { /* 换下一个 base */ }
+            }
+            call.reject("检查更新失败，请稍后重试", "MANIFEST_NETWORK");
         });
+    }
+
+    private String fetchManifest(String base) throws Exception {
+        HttpURLConnection connection = null;
+        try {
+            connection = (HttpURLConnection) new URL(UpdateEndpoint.manifestUrl(base)).openConnection();
+            connection.setInstanceFollowRedirects(false);
+            connection.setConnectTimeout(15000); connection.setReadTimeout(15000);
+            if (connection.getResponseCode() != 200) throw new Exception("MANIFEST_HTTP");
+            java.io.ByteArrayOutputStream output = new java.io.ByteArrayOutputStream();
+            try (InputStream input = connection.getInputStream()) {
+                byte[] buffer = new byte[8192]; int count;
+                while ((count = input.read(buffer)) != -1) {
+                    if (output.size() + count > 2 * 1024 * 1024) throw new Exception("MANIFEST_TOO_LARGE");
+                    output.write(buffer, 0, count);
+                }
+            }
+            return output.toString("UTF-8");
+        } finally { if (connection != null) connection.disconnect(); }
     }
 
     private File cache(String hash) throws Exception {
@@ -162,10 +177,11 @@ public class AppUpdatePlugin extends Plugin {
                     }
                 }
                 URL url = new URL(call.getString("url", ""));
-                if (!url.getProtocol().equals("https") || !url.getHost().equals("dl.rose7.cn") ||
-                        (url.getPort() != -1 && url.getPort() != 443) || url.getUserInfo() != null ||
-                        url.getQuery() != null || url.getRef() != null ||
-                        !url.getPath().matches("/apk/[a-zA-Z0-9._-]+\\.apk")) throw new Exception("INVALID_URL");
+                // 白名单规则集中在 UpdateEndpoint：https 放行新旧两台分发机，裸 http 只放行新机
+                // 62.106.70.167:8888。允许明文不会让伪造包装进设备：Android 安装器强制校验 APK
+                // 签名，本类的 verify() 还先比对包名/versionCode/SHA-256/同一签名，明文只能让
+                // 更新失败或被抑制。域名 + TLS 是后续项，在 #269 做。
+                if (!UpdateEndpoint.allowsDownloadUrl(url)) throw new Exception("INVALID_URL");
                 HttpURLConnection connection = (HttpURLConnection) url.openConnection();
                 transfer.connection = connection;
                 connection.setInstanceFollowRedirects(false);
