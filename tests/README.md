@@ -11,7 +11,7 @@ tests/
 ├── e2e/           2 个：真上游 + 真 UI（要 API Key）/ 真实反馈后端
 ├── device/        1 个：Android 模拟器或真机（adb）
 ├── fixtures/      mock 服务与样本数据（不是测试，被上面引用）
-├── helpers/       共享 Playwright 步骤
+├── helpers/       共享装配：单元层 dom-env.mjs（.js→.ts + 替身），集成层 runtime/env/ports
 ├── tools/         手工用的一次性脚本（不是测试，不参与分层执行）
 └── run-layer.mjs  分层 runner（本文件是唯一入口）
 ```
@@ -23,6 +23,7 @@ tests/
 - 开发各用独立 worktree/分支；先检查目录和分支不存在，再从已确认的 `origin/main` 建立。worktree 隔离文件与索引，**不隔离 CPU、内存、端口、浏览器或 pnpm store**。UI/clipboard 工作期间只跑下面的轻量 fixture，别启动全仓并发。
 - 发布使用固定 commit 的独立工作树和私有产物目录，记录 commit、构建类型、构建参数、产物哈希；不要把正在开发的工作树或共享 `dist/` 当发布源。标准/内测产物分开且只读复用，路径本身不证明版本或构建类型。
 - 本轮审计定位的重复编译热点：`diagnostics-contract` 原先每次强制 rspack build；`auto-title` 缺标准包时隐式 build，且输出硬编码。仅改这两套：注入 `STANDARD_DIST_DIR`（auto-title 也接受 `DIST_DIR`），contract 的 `DIST_DIR` 指内测包；缺 `index.html` 立即失败，**不自动 rebuild**。需要构建时先向协作者报告，再由产物拥有者单次构建、记录固定 commit；本轮没有构建。
+- 单元层（L0）的装配只有一个入口（#366）：`tests/helpers/dom-env.mjs` —— `installTsResolve({ stubs })`（`.js→.ts` 解析 + 模块替身）、`loadTsModule('src/…')`（动态加载源码）、`setupDom()`（localStorage / document / window / rAF 的最小替身）。**新用例不要再自己抄 `registerHooks` / `asTypescript`**：仓库里 90 个文件各抄过一份，合计约 3000 行样板。样板见 `openai-adapter` / `chat-context-budget-long-session` / `import-error-copy` / `import-network-classification` / `import-unreachable-copy`。
 - 两套 suite 改用共享静态服务 helper：`listen(0)` 原子分配 loopback 端口，启动成功后才进入浏览器步骤；关闭自身 server 并等待完成。显式 `PORT` / `STANDARD_PORT` 仍支持，发布服务必须记录并独占所选端口。其他 suite 的固定端口、截图路径和生命周期尚未全面迁移。
 - runner 串行，每个文件默认 180 秒 deadline；`--timeout-ms` 可显式调整，超时报 TIMEOUT 和非零退出。
   **`integration/feedback-scroll` 必带 `--timeout-ms 600000`**：它串行跑 5 个触控场景、每个场景几十次 CDP 滑动，

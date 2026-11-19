@@ -249,14 +249,20 @@ test('D 每处 dvh 都有同值 vh 回退（统一写法：变量/字面量 + dv
   assert.ok(dvhCount >= 6, `预期至少 6 处 dvh 声明（App/ChatInput/OursServices/Settings），实际 ${dvhCount}`)
 })
 
+// auditDist() 会把产物里全部 JS 逐个用 acorn 解析一遍（本仓库 90 个文件 ≈3s），
+// 而 E-1 / E-2 要的是**同一份**结论。以前两条各算一次 → 同一个产物被解析两遍（#366 前本文件
+// 6.5s 里有 3s 是这段重复）。dist 在一次运行里不会变，所以进程内只算一次。
+let distAudit
+const auditOnce = () => (distAudit ??= auditDist(DIST))
+
 test('E-1 产物自检：全部 JS 能用 Chrome 83 的语法解析（无 ||= / &&= / ??= / 类静态块）', { skip: DIST_SKIP }, () => {
   // 断言本体在 scripts/lib/bundleTargetAudit.mjs（#298）：`pnpm check:bundle-target` 调的是同一个函数。
-  assertBundleTargetJs(auditDist(DIST))
+  assertBundleTargetJs(auditOnce())
 })
 
 test('E-2 产物自检：CSS 里没有裸 dvh，且守卫在业务包之前', { skip: DIST_SKIP }, () => {
   // 同上：断言本体在 scripts/lib/bundleTargetAudit.mjs，与 `pnpm check:bundle-target` 共用。
-  assertBundleTargetCss(auditDist(DIST), DIST)
+  assertBundleTargetCss(auditOnce(), DIST)
 })
 
 // ── F 闸门自证（issue #95）──────────────────────────────────────────────────

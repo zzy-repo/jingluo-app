@@ -8,22 +8,12 @@
 //     → message_delta(stop_reason=end_turn, usage) → message_stop
 // [4] 脏数据：空 choices、delta 空对象、`: ping` 注释行、非 JSON 的 data 行、多 choices、无 [DONE] 断流
 //     → 不抛错、不卡死、都能正常收尾
-import { existsSync } from 'node:fs'
-import { registerHooks } from 'node:module'
-import { fileURLToPath } from 'node:url'
+import { installTsResolve, loadTsModule } from '../helpers/dom-env.mjs'
 
 // #297：适配器要按 spec.reasoningParam 翻译思考参数，于是开始 import './providers.js'
-// （运行期值，不是 type-only）。裸 node 不认识 `.js → .ts` 的对应关系，
-// 这里补上仓库里十来个单测通用的 resolve hook。
-registerHooks({
-  resolve(specifier, context, next) {
-    if (specifier.endsWith('.js') && context.parentURL?.includes('/src/')) {
-      const url = new URL(specifier.slice(0, -3) + '.ts', context.parentURL)
-      if (existsSync(fileURLToPath(url))) return next(url.href, context)
-    }
-    return next(specifier, context)
-  },
-})
+// （运行期值，不是 type-only）。裸 node 不认识 `.js → .ts` 的对应关系 —— 这条 resolve hook
+// 现在只有一份（tests/helpers/dom-env.mjs，#366）；本文件以前自带一份一模一样的。
+installTsResolve()
 
 // hook 装好之后再动态加载被测模块（静态 import 会被提升到 hook 之前）
 const {
@@ -31,8 +21,8 @@ const {
   mapFinishReason,
   toOpenAIRequest,
   translateOpenAIStream,
-} = await import('../../src/services/api/openaiAdapter.ts')
-const { ServerSentEventDecoder } = await import('../../src/services/api/sse.ts')
+} = await loadTsModule('src/services/api/openaiAdapter.ts')
+const { ServerSentEventDecoder } = await loadTsModule('src/services/api/sse.ts')
 
 const failures = []
 let checks = 0
@@ -72,8 +62,14 @@ const collect = async (source, fallback) => {
       events.push(event)
     }
   })()
-  const timeout = new Promise((resolve) => setTimeout(() => resolve('timeout'), 3000))
+  let timer
+  const timeout = new Promise((resolve) => {
+    timer = setTimeout(() => resolve('timeout'), 3000)
+  })
   const result = await Promise.race([run.then(() => 'done'), timeout])
+  // 必须清掉：promise race 输了不代表定时器消失，5 条用例各留一个 3s 定时器，
+  // 进程要空转 3 秒才退出（#366 前本文件 3.1s 里只有 90ms 是断言，其余是这段空转）。
+  clearTimeout(timer)
   return { events, result }
 }
 

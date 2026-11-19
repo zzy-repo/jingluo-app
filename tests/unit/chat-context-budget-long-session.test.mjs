@@ -5,7 +5,7 @@
 //   - 系统前缀（SYSTEM_PROMPT + latest_reminder 折叠行）
 //   - 本轮用户提问
 //   - 续写（continueReply）前缀
-// 同时复核 latest_reminder 去重：420 轮的快照不能变成 420 行。
+// 同时复核 latest_reminder 去重：几百轮的快照不能变成几百行。
 //
 // 替身只有边界：fetch、IndexedDB（换成内存 Map）、Capacitor、诊断写入口。
 // store / reply / contextBudget / describe 全是真实代码，裁剪逻辑一行没改。
@@ -13,12 +13,10 @@
 //   node tests/unit/chat-context-budget-long-session.test.mjs
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { registerHooks } from 'node:module'
-
-const stub = (name) => new URL(`../fixtures/chat-stubs/${name}`, import.meta.url).href
+import { fixtureUrl, inlineModule, installTsResolve, loadTsModule, setupDom } from '../helpers/dom-env.mjs'
 
 // 假 db：IndexedDB 在裸 Node 里不存在。换掉存储落点，但 store 照旧 saveSession / loadSession。
-const fakeDB = `data:text/javascript,${encodeURIComponent(`
+const fakeDB = inlineModule(`
 const memory = new Map()
 const summary = (session) => ({
   id: session.id,
@@ -28,8 +26,11 @@ const summary = (session) => ({
 })
 export const loadSessionSummaries = async () => [...memory.values()].map(summary)
 export const loadSession = async (id) => (memory.has(id) ? structuredClone(memory.get(id)) : undefined)
+// 存引用而不是再深拷贝一份：store 全程不可变更新（updateSession 一律展开新建对象），
+// 不会原地改这份快照；而每轮都 structuredClone 一次整份会话是 O(n²)——每轮都要深拷贝一段越来越长的历史。
+// 读侧 loadSession 仍然 structuredClone，读出去的对象与「库」保持隔离。
 export const saveSession = async (session) => {
-  memory.set(session.id, structuredClone(session))
+  memory.set(session.id, session)
 }
 export const saveFiles = async () => {}
 export const loadFile = async () => undefined
@@ -47,35 +48,28 @@ export const reportStorageError = () => () => {}
 export const loadAppAsset = async () => undefined
 export const saveAppAsset = async () => {}
 export const deleteAppAsset = async () => {}
-`)}`
+`)
 
-const collectorStub = `data:text/javascript,${encodeURIComponent(`
-export * from '${stub('collector.mjs')}'
+const collectorStub = inlineModule(`
+export * from '${fixtureUrl('chat-stubs/collector.mjs')}'
 export const recordError = (message, fields = {}) => {
   globalThis.__log.records.push({ kind: 'error', level: 'error', message, fields })
 }
-`)}`
+`)
 
-registerHooks({
-  resolve(specifier, context, nextResolve) {
-    if (specifier === '@capacitor/core') {
-      return { url: stub('capacitor.mjs'), shortCircuit: true }
+// 装配走 tests/helpers/dom-env.mjs（#366）：`.js→.ts` + 这三处替身以前是本文件手抄的样板。
+installTsResolve({
+  stubs: [
+    ['@capacitor/core', fixtureUrl('chat-stubs/capacitor.mjs')],
+    // 采集层依赖 DOM / IndexedDB：单测只关心「写了哪条动作」，换成内存替身
+    [/diagnostics\/collector\.js$/, collectorStub],
+  ],
+  onResolve(specifier, context) {
+    // 假 db 只换 store 的落点（其它模块的 './db.js' 照旧走真代码）
+    if (specifier === './db.js' && String(context.parentURL ?? '').endsWith('/chat/store.ts')) {
+      return fakeDB
     }
-    if (/diagnostics\/collector\.js$/.test(specifier)) {
-      return { url: collectorStub, shortCircuit: true }
-    }
-    try {
-      return nextResolve(specifier, context)
-    } catch (error) {
-      const parent = String(context.parentURL ?? '')
-      if (specifier === './db.js' && parent.endsWith('/chat/store.ts')) {
-        return { url: fakeDB, shortCircuit: true }
-      }
-      if (specifier.startsWith('.') && specifier.endsWith('.js')) {
-        return nextResolve(`${specifier.slice(0, -3)}.ts`, context)
-      }
-      throw error
-    }
+    return undefined
   },
 })
 
@@ -84,29 +78,16 @@ globalThis.INTERNAL_BUILD = false
 globalThis.__INTERNAL_BUILD__ ??= true
 globalThis.__log = { records: [], events: [], actions: [] }
 
-const memory = new Map()
-globalThis.localStorage = {
-  getItem: (key) => (memory.has(key) ? memory.get(key) : null),
-  setItem: (key, value) => {
-    memory.set(key, String(value))
-  },
-  removeItem: (key) => {
-    memory.delete(key)
-  },
-}
-const realSetTimeout = globalThis.setTimeout
-globalThis.requestAnimationFrame = (cb) => globalThis.setTimeout(cb, 0)
-globalThis.cancelAnimationFrame = (id) => clearTimeout(id)
-globalThis.document = { visibilityState: 'visible', addEventListener() {}, removeEventListener() {} }
-globalThis.window = { addEventListener() {}, removeEventListener() {} }
+// localStorage / document / window / rAF 用公共替身（同一份实现，#366）
+setupDom()
 
-const { setApiKey } = await import('../../src/services/api/apiConfig.ts')
-const { setDraftText } = await import('../../src/services/chat/drafts.ts')
-const { getVisibleMessages } = await import('../../src/services/chat/branches.ts')
-const budget = await import('../../src/services/chat/contextBudget.ts')
-const { getContextRounds, toRequestMessages } = await import('../../src/services/chat/reply.ts')
+const { setApiKey } = await loadTsModule('src/services/api/apiConfig.ts')
+const { setDraftText } = await loadTsModule('src/services/chat/drafts.ts')
+const { getVisibleMessages } = await loadTsModule('src/services/chat/branches.ts')
+const budget = await loadTsModule('src/services/chat/contextBudget.ts')
+const { getContextRounds, toRequestMessages } = await loadTsModule('src/services/chat/reply.ts')
 const { useChatStore, initChat, sendMessage, continueReply, regenerateReply } =
-  await import('../../src/services/chat/store.ts')
+  await loadTsModule('src/services/chat/store.ts')
 
 const { DEFAULT_CONTEXT_BUDGET, estimateTokens, getLastContextTrim, setContextBudget, resetContextBudget } =
   budget
@@ -204,25 +185,46 @@ globalThis.fetch = async (_url, init) => {
   return answer
 }
 
-const delay = (ms) => new Promise((resolve) => realSetTimeout(resolve, ms))
-
-const awaitIdle = async (sessionId, timeoutMs = 30000) => {
-  const deadline = Date.now() + timeoutMs
-  while (Date.now() < deadline) {
-    if (!Object.hasOwn(useChatStore.getState().streaming, sessionId)) {
+/**
+ * 等这一轮收尾。订阅 store 的 streaming 表，而不是每 2ms 醒来问一次：
+ * 几百轮 × 2ms 光是定时器空转就要 1s 以上，而「收尾」本身是 store 的一次 set()，
+ * 订阅拿到的是同一个信号，不损失任何语义。
+ */
+const awaitIdle = (sessionId, timeoutMs = 30000) =>
+  new Promise((resolve, reject) => {
+    const streaming = () => Object.hasOwn(useChatStore.getState().streaming, sessionId)
+    if (!streaming()) {
+      resolve()
       return
     }
-    await delay(2)
-  }
-  throw new Error('本轮没有收尾，测试无法继续')
-}
+    let timer
+    const unsubscribe = useChatStore.subscribe(() => {
+      if (!streaming()) {
+        clearTimeout(timer)
+        unsubscribe()
+        resolve()
+      }
+    })
+    timer = setTimeout(() => {
+      unsubscribe()
+      reject(new Error('本轮没有收尾，测试无法继续'))
+    }, timeoutMs)
+  })
 
 const session = (sessionId) => useChatStore.getState().sessionCache[sessionId]
 const lastReply = (sessionId) => session(sessionId).messages.filter((m) => m.role === 'assistant').at(-1)
 const replyText = (reply) => reply.blocks.map((b) => (b.type === 'text' ? b.text : '')).join('')
 const bodyText = (param) => (typeof param === 'string' ? param : (param?.map?.((b) => b.text ?? '') ?? []).join(''))
 
-const ROUNDS = 420
+/**
+ * 轮数（#366 从 420 收到 360）：这条用例的成本是 **O(轮数²)** —— 每轮都要对整段历史做一次
+ * toRequestMessages + 逐条消息的处理，420 轮里后 1/4 的单轮成本是前 1/4 的 4 倍。
+ * 360 轮仍满足这条用例的全部前提，且留足余量：
+ *   - 估算 400 934 token = 默认预算（120 000）的 3.3 倍 → 「必须先裁再用」依然成立
+ *   - 裁剪前 / 裁剪后请求体 2 161 095 B / 759 787 B = 2.85 倍（断言要求 >2 倍）
+ *   - 300+ 轮的 latest_reminder 折叠去重、续写前缀、系统前缀逐字节一致，矩阵一条没删
+ */
+const ROUNDS = 360
 let sessionId
 
 test(`真实 ${ROUNDS} 轮会话：走 store 全链路建出长历史`, async () => {
@@ -344,7 +346,7 @@ test('裁剪前后对比：字节 / 估算 token / 轮数（同一份真实历�
   assert.equal(trimmedBody.messages.at(-1).role, 'user', '最后一条必须是本轮提问')
   assert.equal(trimmedBody.messages.at(-1).content, question, '本轮用户提问必须原文保留')
 
-  // latest_reminder 去重：420 轮快照不能变成 420 行
+  // latest_reminder 去重：几百轮快照不能变成几百行
   const reminderRows = trimmedBody.messages.filter((m) => m.role === 'latest_reminder').length
   const systemLines = trimmedSystem.split(/\r?\n/).filter((line) => line.trim())
   if (reminderRows > 0) {
