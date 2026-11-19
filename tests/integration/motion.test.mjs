@@ -62,6 +62,31 @@ const EXTRA_ANIMATED_PROPS = new Map([
   ['src/components/session/Welcome.module.css', new Set(['background-color', 'color'])],
 ])
 
+/**
+ * 【白名单】允许改动 `src/components/messages` / `src/components/chatInput` 的文件（逐条写理由）。
+ *
+ * 为什么要这份白名单：下面 [8] 原来断言这两个目录相对 merge-base **零 diff**，
+ * 于是任何**纯样式**的合法改动（修个命中区、改个字号）都会被判红 —— 它守的是「消息流别参与动效」，
+ * 却用「一行都不许动」来实现。这条假红在 `docs/repro/g7-issue-19-41.md:44/81` 已经登记过
+ * （当年 #41 的 `CopyButton.tsx` / `ChatInput.module.css` 就是这么红的，建议的修法就是「纳入白名单」）；
+ * 早期 L1 没接进 CI（#394 才接），所以 #328 那种改消息流的 PR 当时反而不会被挡住。
+ *
+ * 现在的口径：**消息流目录里只允许「白名单里点名的纯样式文件」改动，且改动里不许出现动效属性**
+ * （transition / animation / transform / @keyframes）。逻辑、结构、动效一律仍然零容忍。
+ *
+ * src/components/messages/AssistantMessage.module.css
+ *   #346：错误提示条里「改 Key / 去充值 / 复制诊断信息」的命中区从 22px 补到 44×44
+ *   （`min-height` / `min-width` / `display: inline-flex` / `vertical-align` / `touch-action`）。
+ *   这段样式只能住在消息流目录里（`.noticeAction` 就定义在这），但与「消息流是否参与动效」无关：
+ *   改动里没有一条动效声明（下面会逐条扫 diff 确认）。
+ */
+const MESSAGE_FLOW_ALLOWLIST = new Map([
+  [
+    'src/components/messages/AssistantMessage.module.css',
+    '#346 错误提示条动作按钮命中区 22px → 44×44，纯样式（min-height/min-width/inline-flex/touch-action），无动效改动',
+  ],
+])
+
 const failures = []
 const evidence = []
 const ok = (message) => console.log(`  ok  ${message}`)
@@ -254,20 +279,66 @@ const staticChecks = () => {
   }
 
   console.log('\n[8] 消息流冻结检查')
-  let diff = ''
+  const FLOW_DIRS = ['src/components/messages', 'src/components/chatInput']
+  /** diff 用 -c core.quotepath=false：中文文件名不加引号，白名单比对才不会擦肩而过 */
+  const gitDiff = (args) =>
+    execFileSync('git', ['-c', 'core.quotepath=false', 'diff', ...args], {
+      cwd: ROOT,
+      encoding: 'utf8',
+    })
+
+  let changed = []
   try {
-    diff = execFileSync(
-      'git',
-      ['diff', '--stat', BASE_COMMIT, '--', 'src/components/messages', 'src/components/chatInput'],
-      { cwd: ROOT, encoding: 'utf8' }
-    )
+    changed = gitDiff(['--name-only', BASE_COMMIT, '--', ...FLOW_DIRS])
+      .split('\n')
+      .map((line) => line.trim())
+      .filter(Boolean)
   } catch {
     bad('git diff 执行失败，无法确认消息流未被改动')
   }
-  if (diff.trim()) {
-    bad(`消息流组件相对 ${BASE_COMMIT} 有改动：\n${diff}`)
-  } else {
-    ok(`src/components/messages 与 src/components/chatInput 相对 ${BASE_COMMIT} diff 为空（流式/气泡/思考块/输入框未参与动效）`)
+
+  const unexpected = changed.filter((file) => !MESSAGE_FLOW_ALLOWLIST.has(file))
+  if (unexpected.length > 0) {
+    bad(
+      `消息流组件相对 ${BASE_COMMIT} 有**未登记**的改动：\n${unexpected
+        .map((file) => `    ${file}`)
+        .join('\n')}\n  要么撤回，要么在 MESSAGE_FLOW_ALLOWLIST 里写清理由（纯样式才允许）`
+    )
+  }
+
+  // 白名单文件也不能偷偷带进动效：逐条扫新增行，出现 transition / animation / transform / @keyframes 就红
+  for (const file of changed) {
+    if (!MESSAGE_FLOW_ALLOWLIST.has(file)) {
+      continue
+    }
+    let added = []
+    try {
+      added = gitDiff(['--unified=0', BASE_COMMIT, '--', file])
+        .split('\n')
+        .filter((line) => line.startsWith('+') && !line.startsWith('+++'))
+    } catch {
+      bad(`git diff 执行失败，无法确认白名单文件 ${file} 没有带动效`)
+      continue
+    }
+    const motionLines = added.filter((line) => /(^|[^-\w])(transition|animation|transform|@keyframes)\b/.test(line))
+    if (motionLines.length > 0) {
+      bad(
+        `${file} 在白名单里（只允许纯样式），但改动里出现了动效属性：\n${motionLines
+          .map((line) => `    ${line.trim()}`)
+          .join('\n')}`
+      )
+    } else {
+      ok(`${file} 在白名单内，且改动不含 transition / animation / transform（纯样式）`)
+    }
+  }
+
+  if (unexpected.length === 0) {
+    const allowedChanged = changed.filter((file) => MESSAGE_FLOW_ALLOWLIST.has(file))
+    ok(
+      allowedChanged.length === 0
+        ? `src/components/messages 与 src/components/chatInput 相对 ${BASE_COMMIT} diff 为空（流式/气泡/思考块/输入框未参与动效）`
+        : `消息流目录相对 ${BASE_COMMIT} 只改了 ${allowedChanged.length} 个白名单文件（${allowedChanged.join('、')}），其余零 diff`
+    )
   }
 }
 
