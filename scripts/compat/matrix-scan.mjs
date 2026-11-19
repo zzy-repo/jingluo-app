@@ -52,45 +52,195 @@ export const WEBVIEW_TARGETS = [79, 83, 91, 109]
 // 每条都给证据链接。判断口径：**该特性首次在 Chromium 稳定版可用**的版本号。
 // 语法特性是「硬门槛」：低于它，整个脚本解析失败、一行都不执行（try/catch 抓不到）。
 export const FEATURE_EVIDENCE = {
-  'arrow-function': { chrome: 45, es: 2015, doc: 'https://developer.mozilla.org/docs/Web/JavaScript/Reference/Functions/Arrow_functions' },
-  'let-const': { chrome: 49, es: 2015, doc: 'https://developer.mozilla.org/docs/Web/JavaScript/Reference/Statements/let' },
-  'class-declaration': { chrome: 49, es: 2015, doc: 'https://developer.mozilla.org/docs/Web/JavaScript/Reference/Classes' },
-  'object-method': { chrome: 43, es: 2015, doc: 'https://developer.mozilla.org/docs/Web/JavaScript/Reference/Functions/Method_definitions' },
-  'object-shorthand': { chrome: 43, es: 2015, doc: 'https://developer.mozilla.org/docs/Web/JavaScript/Reference/Operators/Object_initializer#property_definitions' },
-  'computed-property': { chrome: 46, es: 2015, doc: 'https://developer.mozilla.org/docs/Web/JavaScript/Reference/Operators/Object_initializer#computed_property_names' },
-  'regexp-flag-y': { chrome: 49, es: 2015, doc: 'https://developer.mozilla.org/docs/Web/JavaScript/Reference/Global_Objects/RegExp/sticky' },
-  'regexp-flag-u': { chrome: 50, es: 2015, doc: 'https://developer.mozilla.org/docs/Web/JavaScript/Reference/Global_Objects/RegExp/unicode' },
-  'regexp-flag-s': { chrome: 62, es: 2018, doc: 'https://developer.mozilla.org/docs/Web/JavaScript/Reference/Global_Objects/RegExp/dotAll' },
-  'regexp-lookbehind': { chrome: 62, es: 2018, doc: 'https://developer.mozilla.org/docs/Web/JavaScript/Reference/Regular_expressions/Lookbehind_assertion' },
-  'regexp-unicode-property': { chrome: 64, es: 2018, doc: 'https://developer.mozilla.org/docs/Web/JavaScript/Reference/Regular_expressions/Unicode_character_class_escape' },
-  'template-literal': { chrome: 41, es: 2015, doc: 'https://developer.mozilla.org/docs/Web/JavaScript/Reference/Template_literals' },
-  generator: { chrome: 39, es: 2015, doc: 'https://developer.mozilla.org/docs/Web/JavaScript/Reference/Statements/function*' },
-  'for-of': { chrome: 51, es: 2015, doc: 'https://developer.mozilla.org/docs/Web/JavaScript/Reference/Statements/for...of' },
-  'spread-call': { chrome: 46, es: 2015, doc: 'https://developer.mozilla.org/docs/Web/JavaScript/Reference/Operators/Spread_syntax' },
-  'default-param': { chrome: 49, es: 2015, doc: 'https://developer.mozilla.org/docs/Web/JavaScript/Reference/Functions/Default_parameters' },
-  destructuring: { chrome: 49, es: 2015, doc: 'https://developer.mozilla.org/docs/Web/JavaScript/Reference/Operators/Destructuring_assignment' },
-  exponentiation: { chrome: 52, es: 2016, doc: 'https://developer.mozilla.org/docs/Web/JavaScript/Reference/Operators/Exponentiation' },
-  'async-function': { chrome: 55, es: 2017, doc: 'https://developer.mozilla.org/docs/Web/JavaScript/Reference/Statements/async_function' },
-  'object-rest-spread': { chrome: 60, es: 2018, doc: 'https://developer.mozilla.org/docs/Web/JavaScript/Reference/Operators/Spread_syntax#spread_in_object_literals' },
-  'for-await-of': { chrome: 63, es: 2018, doc: 'https://developer.mozilla.org/docs/Web/JavaScript/Reference/Statements/for-await...of' },
-  'regexp-named-group': { chrome: 64, es: 2018, doc: 'https://developer.mozilla.org/docs/Web/JavaScript/Reference/Regular_expressions/Named_capturing_group' },
-  'optional-catch-binding': { chrome: 66, es: 2019, doc: 'https://developer.mozilla.org/docs/Web/JavaScript/Reference/Statements/try...catch#optional_catch_binding' },
-  'optional-chaining': { chrome: 80, es: 2020, doc: 'https://developer.mozilla.org/docs/Web/JavaScript/Reference/Operators/Optional_chaining' },
-  'nullish-coalescing': { chrome: 80, es: 2020, doc: 'https://developer.mozilla.org/docs/Web/JavaScript/Reference/Operators/Nullish_coalescing' },
-  'dynamic-import': { chrome: 63, es: 2020, doc: 'https://developer.mozilla.org/docs/Web/JavaScript/Reference/Operators/import' },
-  'bigint-literal': { chrome: 67, es: 2020, doc: 'https://developer.mozilla.org/docs/Web/JavaScript/Reference/Global_Objects/BigInt' },
-  'logical-assignment': { chrome: 85, es: 2021, doc: 'https://developer.mozilla.org/docs/Web/JavaScript/Reference/Operators/Logical_OR_assignment' },
-  'numeric-separator': { chrome: 75, es: 2021, doc: 'https://developer.mozilla.org/docs/Web/JavaScript/Reference/Lexical_grammar#numeric_separators' },
-  'class-field': { chrome: 72, es: 2022, doc: 'https://developer.mozilla.org/docs/Web/JavaScript/Reference/Classes/Public_class_fields' },
-  'private-field': { chrome: 74, es: 2022, doc: 'https://developer.mozilla.org/docs/Web/JavaScript/Reference/Classes/Private_properties' },
-  'private-method': { chrome: 84, es: 2022, doc: 'https://developer.mozilla.org/docs/Web/JavaScript/Reference/Classes/Private_properties#private_methods' },
-  'private-in': { chrome: 91, es: 2022, doc: 'https://developer.mozilla.org/docs/Web/JavaScript/Reference/Operators/in#private_in' },
-  'class-static-block': { chrome: 94, es: 2022, doc: 'https://developer.mozilla.org/docs/Web/JavaScript/Reference/Classes/static_initialization_blocks' },
-  'top-level-await': { chrome: 89, es: 2022, doc: 'https://developer.mozilla.org/docs/Web/JavaScript/Reference/Operators/await#top_level_await' },
+  'arrow-function': {
+    chrome: 45,
+    es: 2015,
+    doc: 'https://developer.mozilla.org/docs/Web/JavaScript/Reference/Functions/Arrow_functions',
+  },
+  'let-const': {
+    chrome: 49,
+    es: 2015,
+    doc: 'https://developer.mozilla.org/docs/Web/JavaScript/Reference/Statements/let',
+  },
+  'class-declaration': {
+    chrome: 49,
+    es: 2015,
+    doc: 'https://developer.mozilla.org/docs/Web/JavaScript/Reference/Classes',
+  },
+  'object-method': {
+    chrome: 43,
+    es: 2015,
+    doc: 'https://developer.mozilla.org/docs/Web/JavaScript/Reference/Functions/Method_definitions',
+  },
+  'object-shorthand': {
+    chrome: 43,
+    es: 2015,
+    doc: 'https://developer.mozilla.org/docs/Web/JavaScript/Reference/Operators/Object_initializer#property_definitions',
+  },
+  'computed-property': {
+    chrome: 46,
+    es: 2015,
+    doc: 'https://developer.mozilla.org/docs/Web/JavaScript/Reference/Operators/Object_initializer#computed_property_names',
+  },
+  'regexp-flag-y': {
+    chrome: 49,
+    es: 2015,
+    doc: 'https://developer.mozilla.org/docs/Web/JavaScript/Reference/Global_Objects/RegExp/sticky',
+  },
+  'regexp-flag-u': {
+    chrome: 50,
+    es: 2015,
+    doc: 'https://developer.mozilla.org/docs/Web/JavaScript/Reference/Global_Objects/RegExp/unicode',
+  },
+  'regexp-flag-s': {
+    chrome: 62,
+    es: 2018,
+    doc: 'https://developer.mozilla.org/docs/Web/JavaScript/Reference/Global_Objects/RegExp/dotAll',
+  },
+  'regexp-lookbehind': {
+    chrome: 62,
+    es: 2018,
+    doc: 'https://developer.mozilla.org/docs/Web/JavaScript/Reference/Regular_expressions/Lookbehind_assertion',
+  },
+  'regexp-unicode-property': {
+    chrome: 64,
+    es: 2018,
+    doc: 'https://developer.mozilla.org/docs/Web/JavaScript/Reference/Regular_expressions/Unicode_character_class_escape',
+  },
+  'template-literal': {
+    chrome: 41,
+    es: 2015,
+    doc: 'https://developer.mozilla.org/docs/Web/JavaScript/Reference/Template_literals',
+  },
+  generator: {
+    chrome: 39,
+    es: 2015,
+    doc: 'https://developer.mozilla.org/docs/Web/JavaScript/Reference/Statements/function*',
+  },
+  'for-of': {
+    chrome: 51,
+    es: 2015,
+    doc: 'https://developer.mozilla.org/docs/Web/JavaScript/Reference/Statements/for...of',
+  },
+  'spread-call': {
+    chrome: 46,
+    es: 2015,
+    doc: 'https://developer.mozilla.org/docs/Web/JavaScript/Reference/Operators/Spread_syntax',
+  },
+  'default-param': {
+    chrome: 49,
+    es: 2015,
+    doc: 'https://developer.mozilla.org/docs/Web/JavaScript/Reference/Functions/Default_parameters',
+  },
+  destructuring: {
+    chrome: 49,
+    es: 2015,
+    doc: 'https://developer.mozilla.org/docs/Web/JavaScript/Reference/Operators/Destructuring_assignment',
+  },
+  exponentiation: {
+    chrome: 52,
+    es: 2016,
+    doc: 'https://developer.mozilla.org/docs/Web/JavaScript/Reference/Operators/Exponentiation',
+  },
+  'async-function': {
+    chrome: 55,
+    es: 2017,
+    doc: 'https://developer.mozilla.org/docs/Web/JavaScript/Reference/Statements/async_function',
+  },
+  'object-rest-spread': {
+    chrome: 60,
+    es: 2018,
+    doc: 'https://developer.mozilla.org/docs/Web/JavaScript/Reference/Operators/Spread_syntax#spread_in_object_literals',
+  },
+  'for-await-of': {
+    chrome: 63,
+    es: 2018,
+    doc: 'https://developer.mozilla.org/docs/Web/JavaScript/Reference/Statements/for-await...of',
+  },
+  'regexp-named-group': {
+    chrome: 64,
+    es: 2018,
+    doc: 'https://developer.mozilla.org/docs/Web/JavaScript/Reference/Regular_expressions/Named_capturing_group',
+  },
+  'optional-catch-binding': {
+    chrome: 66,
+    es: 2019,
+    doc: 'https://developer.mozilla.org/docs/Web/JavaScript/Reference/Statements/try...catch#optional_catch_binding',
+  },
+  'optional-chaining': {
+    chrome: 80,
+    es: 2020,
+    doc: 'https://developer.mozilla.org/docs/Web/JavaScript/Reference/Operators/Optional_chaining',
+  },
+  'nullish-coalescing': {
+    chrome: 80,
+    es: 2020,
+    doc: 'https://developer.mozilla.org/docs/Web/JavaScript/Reference/Operators/Nullish_coalescing',
+  },
+  'dynamic-import': {
+    chrome: 63,
+    es: 2020,
+    doc: 'https://developer.mozilla.org/docs/Web/JavaScript/Reference/Operators/import',
+  },
+  'bigint-literal': {
+    chrome: 67,
+    es: 2020,
+    doc: 'https://developer.mozilla.org/docs/Web/JavaScript/Reference/Global_Objects/BigInt',
+  },
+  'logical-assignment': {
+    chrome: 85,
+    es: 2021,
+    doc: 'https://developer.mozilla.org/docs/Web/JavaScript/Reference/Operators/Logical_OR_assignment',
+  },
+  'numeric-separator': {
+    chrome: 75,
+    es: 2021,
+    doc: 'https://developer.mozilla.org/docs/Web/JavaScript/Reference/Lexical_grammar#numeric_separators',
+  },
+  'class-field': {
+    chrome: 72,
+    es: 2022,
+    doc: 'https://developer.mozilla.org/docs/Web/JavaScript/Reference/Classes/Public_class_fields',
+  },
+  'private-field': {
+    chrome: 74,
+    es: 2022,
+    doc: 'https://developer.mozilla.org/docs/Web/JavaScript/Reference/Classes/Private_properties',
+  },
+  'private-method': {
+    chrome: 84,
+    es: 2022,
+    doc: 'https://developer.mozilla.org/docs/Web/JavaScript/Reference/Classes/Private_properties#private_methods',
+  },
+  'private-in': {
+    chrome: 91,
+    es: 2022,
+    doc: 'https://developer.mozilla.org/docs/Web/JavaScript/Reference/Operators/in#private_in',
+  },
+  'class-static-block': {
+    chrome: 94,
+    es: 2022,
+    doc: 'https://developer.mozilla.org/docs/Web/JavaScript/Reference/Classes/static_initialization_blocks',
+  },
+  'top-level-await': {
+    chrome: 89,
+    es: 2022,
+    doc: 'https://developer.mozilla.org/docs/Web/JavaScript/Reference/Operators/await#top_level_await',
+  },
 }
 
 /** 只有 ES 版本、没有解析到具体特性的兜底下限（取该版本最便宜特性的 Chromium 版本） */
-const ES_BASELINE_CHROME = { 5: 4, 2015: 41, 2016: 52, 2017: 55, 2018: 60, 2019: 66, 2020: 63, 2021: 75, 2022: 72 }
+const ES_BASELINE_CHROME = {
+  5: 4,
+  2015: 41,
+  2016: 52,
+  2017: 55,
+  2018: 60,
+  2019: 66,
+  2020: 63,
+  2021: 75,
+  2022: 72,
+}
 
 // ── 运行时 API → 最低 Chromium ──────────────────────────────────────────────
 //
@@ -99,35 +249,172 @@ const ES_BASELINE_CHROME = { 5: 4, 2015: 41, 2016: 52, 2017: 55, 2018: 60, 2019:
 export const RUNTIME_APIS = [
   // issue #143 指定的探针清单（前 18 条）
   { id: 'fetch', api: 'fetch()', chrome: 42, pattern: /(?<![.\w$])fetch\s*\(/g },
-  { id: 'abort-controller', api: 'AbortController', chrome: 66, pattern: /(?<![.\w$])AbortController\b/g },
-  { id: 'readable-stream', api: 'ReadableStream', chrome: 43, pattern: /(?<![.\w$])ReadableStream\b/g },
+  {
+    id: 'abort-controller',
+    api: 'AbortController',
+    chrome: 66,
+    pattern: /(?<![.\w$])AbortController\b/g,
+  },
+  {
+    id: 'readable-stream',
+    api: 'ReadableStream',
+    chrome: 43,
+    pattern: /(?<![.\w$])ReadableStream\b/g,
+  },
   { id: 'text-decoder', api: 'TextDecoder', chrome: 38, pattern: /(?<![.\w$])TextDecoder\b/g },
-  { id: 'promise-allsettled', api: 'Promise.allSettled', chrome: 76, pattern: /\.allSettled\s*\(/g },
-  { id: 'object-fromentries', api: 'Object.fromEntries', chrome: 73, pattern: /Object\.fromEntries\s*\(/g },
-  { id: 'string-replaceall', api: 'String.prototype.replaceAll', chrome: 85, pattern: /\.replaceAll\s*\(/g, polyfilled: true, polyfillKeys: ['String.prototype.replaceAll'] },
-  { id: 'array-at', api: 'Array/String.prototype.at', chrome: 92, pattern: /\.at\s*\(/g, polyfilled: true, polyfillKeys: ['Array.prototype.at', 'String.prototype.at'] },
-  { id: 'structured-clone', api: 'structuredClone', chrome: 98, pattern: /(?<![.\w$])structuredClone\s*\(/g, polyfilled: true, polyfillKeys: ['structuredClone'] },
+  {
+    id: 'promise-allsettled',
+    api: 'Promise.allSettled',
+    chrome: 76,
+    pattern: /\.allSettled\s*\(/g,
+  },
+  {
+    id: 'object-fromentries',
+    api: 'Object.fromEntries',
+    chrome: 73,
+    pattern: /Object\.fromEntries\s*\(/g,
+  },
+  {
+    id: 'string-replaceall',
+    api: 'String.prototype.replaceAll',
+    chrome: 85,
+    pattern: /\.replaceAll\s*\(/g,
+    polyfilled: true,
+    polyfillKeys: ['String.prototype.replaceAll'],
+  },
+  {
+    id: 'array-at',
+    api: 'Array/String.prototype.at',
+    chrome: 92,
+    pattern: /\.at\s*\(/g,
+    polyfilled: true,
+    polyfillKeys: ['Array.prototype.at', 'String.prototype.at'],
+  },
+  {
+    id: 'structured-clone',
+    api: 'structuredClone',
+    chrome: 98,
+    pattern: /(?<![.\w$])structuredClone\s*\(/g,
+    polyfilled: true,
+    polyfillKeys: ['structuredClone'],
+  },
   { id: 'weakref', api: 'WeakRef', chrome: 84, pattern: /(?<![.\w$])WeakRef\b/g },
-  { id: 'intl-segmenter', api: 'Intl.Segmenter', chrome: 87, pattern: /Intl\.Segmenter\b/g },
-  { id: 'intl-relativetimeformat', api: 'Intl.RelativeTimeFormat', chrome: 71, pattern: /Intl\.RelativeTimeFormat\b/g },
-  { id: 'navigator-clipboard', api: 'navigator.clipboard', chrome: 66, pattern: /navigator\.clipboard\b/g },
-  { id: 'resize-observer', api: 'ResizeObserver', chrome: 64, pattern: /(?<![.\w$])ResizeObserver\b/g },
-  { id: 'intersection-observer', api: 'IntersectionObserver', chrome: 51, pattern: /(?<![.\w$])IntersectionObserver\b/g },
-  { id: 'request-idle-callback', api: 'requestIdleCallback', chrome: 47, pattern: /(?<![.\w$])requestIdleCallback\s*\(/g },
-  { id: 'show-open-file-picker', api: 'showOpenFilePicker', chrome: 86, pattern: /(?<![.\w$])showOpenFilePicker\s*\(/g },
-  { id: 'file-picker-fs', api: 'FileSystemFileHandle', chrome: 86, pattern: /(?<![.\w$])FileSystemFileHandle\b/g },
+  {
+    id: 'intl-segmenter',
+    api: 'Intl.Segmenter',
+    chrome: 87,
+    pattern: /Intl\.Segmenter\b/g,
+    polyfilled: true,
+    polyfillKeys: ['Intl.Segmenter'],
+  },
+  {
+    id: 'intl-relativetimeformat',
+    api: 'Intl.RelativeTimeFormat',
+    chrome: 71,
+    pattern: /Intl\.RelativeTimeFormat\b/g,
+  },
+  {
+    id: 'navigator-clipboard',
+    api: 'navigator.clipboard',
+    chrome: 66,
+    pattern: /navigator\.clipboard\b/g,
+  },
+  {
+    id: 'resize-observer',
+    api: 'ResizeObserver',
+    chrome: 64,
+    pattern: /(?<![.\w$])ResizeObserver\b/g,
+  },
+  {
+    id: 'intersection-observer',
+    api: 'IntersectionObserver',
+    chrome: 51,
+    pattern: /(?<![.\w$])IntersectionObserver\b/g,
+  },
+  {
+    id: 'request-idle-callback',
+    api: 'requestIdleCallback',
+    chrome: 47,
+    pattern: /(?<![.\w$])requestIdleCallback\s*\(/g,
+  },
+  {
+    id: 'show-open-file-picker',
+    api: 'showOpenFilePicker',
+    chrome: 86,
+    pattern: /(?<![.\w$])showOpenFilePicker\s*\(/g,
+  },
+  {
+    id: 'file-picker-fs',
+    api: 'FileSystemFileHandle',
+    chrome: 86,
+    pattern: /(?<![.\w$])FileSystemFileHandle\b/g,
+  },
   // 额外的 83+ 常见裸调风险点（同一条流水线顺手测的）
-  { id: 'object-hasown', api: 'Object.hasOwn', chrome: 93, pattern: /Object\.hasOwn\s*\(/g, polyfilled: true, polyfillKeys: ['Object.hasOwn'] },
-  { id: 'array-findlast', api: 'Array.prototype.findLast', chrome: 97, pattern: /\.findLast(?:Index)?\s*\(/g, polyfilled: true, polyfillKeys: ['Array.prototype.findLast', 'Array.prototype.findLastIndex'] },
-  { id: 'array-tosorted', api: 'Array.prototype.toSorted/toReversed/toSpliced', chrome: 110, pattern: /\.(?:toSorted|toReversed|toSpliced)\s*\(/g, polyfilled: true, polyfillKeys: ['Array.prototype.toSorted', 'Array.prototype.toReversed', 'Array.prototype.toSpliced'] },
-  { id: 'array-with', api: 'Array.prototype.with', chrome: 110, pattern: /(?<![.\w$])(?<![\w$])\.\s*with\s*\(/g, polyfilled: true, polyfillKeys: ['Array.prototype.with'] },
-  { id: 'crypto-randomuuid', api: 'crypto.randomUUID', chrome: 92, pattern: /crypto\s*\.\s*randomUUID\s*\(/g, polyfilled: true, polyfillKeys: ['crypto.randomUUID'] },
+  {
+    id: 'object-hasown',
+    api: 'Object.hasOwn',
+    chrome: 93,
+    pattern: /Object\.hasOwn\s*\(/g,
+    polyfilled: true,
+    polyfillKeys: ['Object.hasOwn'],
+  },
+  {
+    id: 'array-findlast',
+    api: 'Array.prototype.findLast',
+    chrome: 97,
+    pattern: /\.findLast(?:Index)?\s*\(/g,
+    polyfilled: true,
+    polyfillKeys: ['Array.prototype.findLast', 'Array.prototype.findLastIndex'],
+  },
+  {
+    id: 'array-tosorted',
+    api: 'Array.prototype.toSorted/toReversed/toSpliced',
+    chrome: 110,
+    pattern: /\.(?:toSorted|toReversed|toSpliced)\s*\(/g,
+    polyfilled: true,
+    polyfillKeys: [
+      'Array.prototype.toSorted',
+      'Array.prototype.toReversed',
+      'Array.prototype.toSpliced',
+    ],
+  },
+  {
+    id: 'array-with',
+    api: 'Array.prototype.with',
+    chrome: 110,
+    pattern: /(?<![.\w$])(?<![\w$])\.\s*with\s*\(/g,
+    polyfilled: true,
+    polyfillKeys: ['Array.prototype.with'],
+  },
+  {
+    id: 'crypto-randomuuid',
+    api: 'crypto.randomUUID',
+    chrome: 92,
+    pattern: /crypto\s*\.\s*randomUUID\s*\(/g,
+    polyfilled: true,
+    polyfillKeys: ['crypto.randomUUID'],
+  },
   { id: 'promise-any', api: 'Promise.any', chrome: 85, pattern: /\.any\s*\(/g },
-  { id: 'aggregate-error', api: 'AggregateError', chrome: 85, pattern: /(?<![.\w$])AggregateError\b/g },
+  {
+    id: 'aggregate-error',
+    api: 'AggregateError',
+    chrome: 85,
+    pattern: /(?<![.\w$])AggregateError\b/g,
+  },
   { id: 'object-groupby', api: 'Object.groupBy', chrome: 117, pattern: /Object\.groupBy\s*\(/g },
-  { id: 'abort-signal-timeout', api: 'AbortSignal.timeout', chrome: 103, pattern: /AbortSignal\.timeout\b/g },
+  {
+    id: 'abort-signal-timeout',
+    api: 'AbortSignal.timeout',
+    chrome: 103,
+    pattern: /AbortSignal\.timeout\b/g,
+  },
   { id: 'abort-signal-any', api: 'AbortSignal.any', chrome: 116, pattern: /AbortSignal\.any\b/g },
-  { id: 'intl-displaynames', api: 'Intl.DisplayNames', chrome: 81, pattern: /Intl\.DisplayNames\b/g },
+  {
+    id: 'intl-displaynames',
+    api: 'Intl.DisplayNames',
+    chrome: 81,
+    pattern: /Intl\.DisplayNames\b/g,
+  },
   { id: 'intl-listformat', api: 'Intl.ListFormat', chrome: 72, pattern: /Intl\.ListFormat\b/g },
 ]
 
@@ -145,6 +432,7 @@ export const LEGACY_POLYFILLED = [
   'structuredClone',
   'crypto.randomUUID',
   'String.prototype.replaceAll',
+  'Intl.Segmenter',
 ]
 
 /**
@@ -152,28 +440,109 @@ export const LEGACY_POLYFILLED = [
  * 命中的写进 hint 字段；`strong` 为 true 时才敢标 guarded。
  */
 const GUARD_HINTS = [
-  { id: 'typeof-function', strong: true, re: /typeof\s+(?:window\.|globalThis\.|Intl\.|navigator\.)?[\w$.]+\s*(?:===?|!==?)\s*["']function["']/ },
+  {
+    id: 'typeof-function',
+    strong: true,
+    re: /typeof\s+(?:window\.|globalThis\.|Intl\.|navigator\.)?[\w$.]+\s*(?:===?|!==?)\s*["']function["']/,
+  },
   { id: 'typeof-undefined-rev', strong: true, re: /["']undefined["']\s*(?:===?|!==?)\s*typeof/ },
-  { id: 'in-operator', strong: true, re: /["'][\w$]+["']\s+in\s+(?:window|globalThis|Intl|navigator|CSS|[A-Za-z_$][\w$]*)/ },
+  {
+    id: 'in-operator',
+    strong: true,
+    re: /["'][\w$]+["']\s+in\s+(?:window|globalThis|Intl|navigator|CSS|[A-Za-z_$][\w$]*)/,
+  },
   { id: 'existence-ternary', strong: true, re: /[\w$.]+\s*\?\s*[\[(]/ },
-  { id: 'nullish-compare', strong: true, re: /(?:===?|!==?)\s*(?:null|void 0|undefined)|(?:null|void 0|undefined)\s*(?:===?|!==?)/ },
+  {
+    id: 'nullish-compare',
+    strong: true,
+    re: /(?:===?|!==?)\s*(?:null|void 0|undefined)|(?:null|void 0|undefined)\s*(?:===?|!==?)/,
+  },
   { id: 'try-catch', strong: false, re: /try\s*\{/ },
   { id: 'optional-chain', strong: false, re: /\?\./ },
 ]
 
 // ── CSS 特性 → 最低 Chromium ────────────────────────────────────────────────
 export const CSS_FEATURES = [
-  { id: 'dvh', api: 'dvh（动态视口高度）', chrome: 108, unit: 'dvh', fallbackUnit: 'vh', doc: 'https://developer.mozilla.org/docs/Web/CSS/length#dynamic_viewport_units' },
-  { id: 'svh', api: 'svh（最小视口高度）', chrome: 108, unit: 'svh', fallbackUnit: 'vh', doc: 'https://developer.mozilla.org/docs/Web/CSS/length#dynamic_viewport_units' },
-  { id: 'lvh', api: 'lvh（最大视口高度）', chrome: 108, unit: 'lvh', fallbackUnit: 'vh', doc: 'https://developer.mozilla.org/docs/Web/CSS/length#dynamic_viewport_units' },
-  { id: 'has-selector', api: ':has()', chrome: 105, pattern: /:has\(/g, doc: 'https://developer.mozilla.org/docs/Web/CSS/:has' },
-  { id: 'color-mix', api: 'color-mix()', chrome: 111, pattern: /color-mix\(/g, doc: 'https://developer.mozilla.org/docs/Web/CSS/color_value/color-mix' },
-  { id: 'container-query', api: '@container', chrome: 105, pattern: /@container\b/g, doc: 'https://developer.mozilla.org/docs/Web/CSS/CSS_containment/Container_queries' },
-  { id: 'inset', api: 'inset / inset-inline / inset-block', chrome: 87, pattern: /(?:^|[;{}\s])inset(?:-(?:inline|block)(?:-(?:start|end))?)?\s*:/g, doc: 'https://developer.mozilla.org/docs/Web/CSS/inset' },
-  { id: 'flex-gap', api: 'flex 容器里的 gap', chrome: 84, special: 'flex-gap', doc: 'https://developer.mozilla.org/docs/Web/CSS/gap#browser_compatibility' },
-  { id: 'focus-visible', api: ':focus-visible', chrome: 86, pattern: /:focus-visible/g, doc: 'https://developer.mozilla.org/docs/Web/CSS/:focus-visible' },
-  { id: 'is-where', api: ':is() / :where()', chrome: 88, pattern: /:(?:is|where)\(/g, doc: 'https://developer.mozilla.org/docs/Web/CSS/:is' },
-  { id: 'aspect-ratio', api: 'aspect-ratio', chrome: 88, pattern: /(?:^|[;{}\s])aspect-ratio\s*:/g, doc: 'https://developer.mozilla.org/docs/Web/CSS/aspect-ratio' },
+  {
+    id: 'dvh',
+    api: 'dvh（动态视口高度）',
+    chrome: 108,
+    unit: 'dvh',
+    fallbackUnit: 'vh',
+    doc: 'https://developer.mozilla.org/docs/Web/CSS/length#dynamic_viewport_units',
+  },
+  {
+    id: 'svh',
+    api: 'svh（最小视口高度）',
+    chrome: 108,
+    unit: 'svh',
+    fallbackUnit: 'vh',
+    doc: 'https://developer.mozilla.org/docs/Web/CSS/length#dynamic_viewport_units',
+  },
+  {
+    id: 'lvh',
+    api: 'lvh（最大视口高度）',
+    chrome: 108,
+    unit: 'lvh',
+    fallbackUnit: 'vh',
+    doc: 'https://developer.mozilla.org/docs/Web/CSS/length#dynamic_viewport_units',
+  },
+  {
+    id: 'has-selector',
+    api: ':has()',
+    chrome: 105,
+    pattern: /:has\(/g,
+    doc: 'https://developer.mozilla.org/docs/Web/CSS/:has',
+  },
+  {
+    id: 'color-mix',
+    api: 'color-mix()',
+    chrome: 111,
+    pattern: /color-mix\(/g,
+    doc: 'https://developer.mozilla.org/docs/Web/CSS/color_value/color-mix',
+  },
+  {
+    id: 'container-query',
+    api: '@container',
+    chrome: 105,
+    pattern: /@container\b/g,
+    doc: 'https://developer.mozilla.org/docs/Web/CSS/CSS_containment/Container_queries',
+  },
+  {
+    id: 'inset',
+    api: 'inset / inset-inline / inset-block',
+    chrome: 87,
+    pattern: /(?:^|[;{}\s])inset(?:-(?:inline|block)(?:-(?:start|end))?)?\s*:/g,
+    doc: 'https://developer.mozilla.org/docs/Web/CSS/inset',
+  },
+  {
+    id: 'flex-gap',
+    api: 'flex 容器里的 gap',
+    chrome: 84,
+    special: 'flex-gap',
+    doc: 'https://developer.mozilla.org/docs/Web/CSS/gap#browser_compatibility',
+  },
+  {
+    id: 'focus-visible',
+    api: ':focus-visible',
+    chrome: 86,
+    pattern: /:focus-visible/g,
+    doc: 'https://developer.mozilla.org/docs/Web/CSS/:focus-visible',
+  },
+  {
+    id: 'is-where',
+    api: ':is() / :where()',
+    chrome: 88,
+    pattern: /:(?:is|where)\(/g,
+    doc: 'https://developer.mozilla.org/docs/Web/CSS/:is',
+  },
+  {
+    id: 'aspect-ratio',
+    api: 'aspect-ratio',
+    chrome: 88,
+    pattern: /(?:^|[;{}\s])aspect-ratio\s*:/g,
+    doc: 'https://developer.mozilla.org/docs/Web/CSS/aspect-ratio',
+  },
 ]
 
 // ── 语法层 ──────────────────────────────────────────────────────────────────
@@ -218,7 +587,12 @@ const collectFeatures = (ast) => {
       found.get(id).count += 1
       return
     }
-    found.set(id, { id, count: 1, line: node.loc?.start.line ?? 0, column: (node.loc?.start.column ?? 0) + 1 })
+    found.set(id, {
+      id,
+      count: 1,
+      line: node.loc?.start.line ?? 0,
+      column: (node.loc?.start.column ?? 0) + 1,
+    })
   }
   let functionDepth = 0
   const visit = (node) => {
@@ -261,20 +635,23 @@ const collectFeatures = (ast) => {
         break
       case 'BinaryExpression':
         if (node.operator === '**') note('exponentiation', node)
-        if (node.operator === 'in' && node.left?.type === 'PrivateIdentifier') note('private-in', node)
+        if (node.operator === 'in' && node.left?.type === 'PrivateIdentifier')
+          note('private-in', node)
         break
       case 'LogicalExpression':
         if (node.operator === '??') note('nullish-coalescing', node)
         break
       case 'AssignmentExpression':
-        if (node.operator === '&&=' || node.operator === '||=' || node.operator === '??=') note('logical-assignment', node)
+        if (node.operator === '&&=' || node.operator === '||=' || node.operator === '??=')
+          note('logical-assignment', node)
         break
       case 'ChainExpression':
         note('optional-chaining', node)
         break
       case 'Literal':
         if (typeof node.bigint === 'string') note('bigint-literal', node)
-        else if (typeof node.raw === 'string' && /^\d[\d_]*_/.test(node.raw)) note('numeric-separator', node)
+        else if (typeof node.raw === 'string' && /^\d[\d_]*_/.test(node.raw))
+          note('numeric-separator', node)
         else if (node.regex) {
           if (/\(\?<[A-Za-z_$]/.test(node.regex.pattern)) note('regexp-named-group', node)
           if (/\(\?<[=!]/.test(node.regex.pattern)) note('regexp-lookbehind', node)
@@ -409,7 +786,15 @@ export const scanFileSyntax = (acorn, code) => {
   }
 
   if (esFloor === null) {
-    return { esFloor: null, chromeFloor: null, decisive, features: [], ladder, mask: null, unparsable: true }
+    return {
+      esFloor: null,
+      chromeFloor: null,
+      decisive,
+      features: [],
+      ladder,
+      mask: null,
+      unparsable: true,
+    }
   }
 
   // 用最高版本再解析一次拿 AST 做特性清点（esFloor 已证明能过，2022 必然也能过）
@@ -457,7 +842,8 @@ export const scanApisInFile = (relative, raw, mask, polyfillInEntry) => {
     const at = positionOf(mask, first)
     const guard = guardHints(mask, first)
     const covered =
-      Boolean(api.polyfilled) && (api.polyfillKeys ?? [api.api]).some((key) => polyfilledSet.has(key))
+      Boolean(api.polyfilled) &&
+      (api.polyfillKeys ?? [api.api]).some((key) => polyfilledSet.has(key))
     hits.push({
       file: relative,
       id: api.id,
@@ -528,7 +914,9 @@ export const scanCss = (files) => {
       if (feature.unit) {
         const found = unitFallback(css, feature.unit, feature.fallbackUnit)
         count = found.occurrences
-        fallback = found.covered ? `${feature.fallbackUnit} 回退 ${found.covered}/${found.distinct}（${found.occurrences} 处）` : null
+        fallback = found.covered
+          ? `${feature.fallbackUnit} 回退 ${found.covered}/${found.distinct}（${found.occurrences} 处）`
+          : null
         missingFallback = found.missing
       } else if (feature.special === 'flex-gap') {
         // flex 容器里的 gap 是 Chrome 84 才有的（老版本只支持 grid gap）。
@@ -601,12 +989,13 @@ export const buildMatrix = (distDir) => {
   const acorn = loadAcorn()
   if (!acorn) throw new Error('找不到 acorn（先 pnpm install；它是 @rspack 的传递依赖）')
   const jsFiles = readdirJs(path.join(distDir, 'static', 'js')).sort()
-  if (!jsFiles.length) throw new Error(`没有找到产物：${path.join(distDir, 'static', 'js')}（先 pnpm run build）`)
+  if (!jsFiles.length)
+    throw new Error(`没有找到产物：${path.join(distDir, 'static', 'js')}（先 pnpm run build）`)
   const cssFiles = readdirCss(path.join(distDir, 'static', 'css')).sort()
   const entryScripts = readEntryScripts(distDir) ?? []
   const polyfillFiles = jsFiles.filter((file) => readFileSync(file, 'utf8').includes(POLYFILL_FLAG))
   const polyfillInEntry = entryScripts.some((entry) =>
-    polyfillFiles.some((file) => rel(distDir, file) === entry),
+    polyfillFiles.some((file) => rel(distDir, file) === entry)
   )
 
   const files = []
@@ -630,12 +1019,16 @@ export const buildMatrix = (distDir) => {
 
   const verdicts = WEBVIEW_TARGETS.map((webview) => {
     const entryParseOk = entry.chromeFloor !== null && entry.chromeFloor <= webview
-    const brokenChunks = asyncChunks.filter((file) => file.chromeFloor !== null && file.chromeFloor > webview)
+    const brokenChunks = asyncChunks.filter(
+      (file) => file.chromeFloor !== null && file.chromeFloor > webview
+    )
     const bootApiRisk = apiHits
-      .filter((hit) => hit.file === entry.file && classifyApiRisk(hit, webview) === 'naked-unprotected')
+      .filter(
+        (hit) => hit.file === entry.file && classifyApiRisk(hit, webview) === 'naked-unprotected'
+      )
       .map((hit) => `${hit.api}(Chrome ${hit.chrome}+)`)
     const chunkApiRisk = apiHits.filter(
-      (hit) => hit.file !== entry.file && classifyApiRisk(hit, webview) === 'naked-unprotected',
+      (hit) => hit.file !== entry.file && classifyApiRisk(hit, webview) === 'naked-unprotected'
     )
     const cssBroken = cssHits.filter((hit) => hit.chrome > webview)
     const cssNoFallback = cssBroken.filter((hit) => hit.severity === 'no-fallback')
@@ -645,13 +1038,19 @@ export const buildMatrix = (distDir) => {
       entryParse: entryParseOk ? 'ok' : `fail(${entry.chromeFloor})`,
       whiteScreen: !entryParseOk,
       brokenChunkCount: brokenChunks.length,
-      brokenChunks: brokenChunks.map((file) => `${file.file}(ES${file.esFloor}/Chrome${file.chromeFloor})`),
+      brokenChunks: brokenChunks.map(
+        (file) => `${file.file}(ES${file.esFloor}/Chrome${file.chromeFloor})`
+      ),
       bootApiRisk,
       chunkApiRiskCount: chunkApiRisk.length,
       chunkApiRisk: [...new Set(chunkApiRisk.map((hit) => hit.api))],
       cssBroken: cssBroken.map((hit) => `${hit.api}(Chrome ${hit.chrome}+)`),
       cssNoFallback: [...new Set(cssNoFallback.map((hit) => `${hit.api}(Chrome ${hit.chrome}+)`))],
-      cssWithFallback: [...new Set(cssWithFallback.map((hit) => `${hit.api}(Chrome ${hit.chrome}+，有回退，仅降级)`))],
+      cssWithFallback: [
+        ...new Set(
+          cssWithFallback.map((hit) => `${hit.api}(Chrome ${hit.chrome}+，有回退，仅降级)`)
+        ),
+      ],
     }
   })
 
@@ -663,7 +1062,12 @@ export const buildMatrix = (distDir) => {
     ladder: ES_LADDER,
     webviewTargets: WEBVIEW_TARGETS,
     entry: entry.file,
-    polyfill: { flag: POLYFILL_FLAG, inEntry: polyfillInEntry, files: polyfillFiles.map((file) => rel(distDir, file)), coveredApis: LEGACY_POLYFILLED },
+    polyfill: {
+      flag: POLYFILL_FLAG,
+      inEntry: polyfillInEntry,
+      files: polyfillFiles.map((file) => rel(distDir, file)),
+      coveredApis: LEGACY_POLYFILLED,
+    },
     counts: { js: files.length, css: cssFiles.length, asyncChunks: asyncChunks.length },
     files,
     api: apiHits,
@@ -676,8 +1080,13 @@ export const buildMatrix = (distDir) => {
 
 const table = (rows) => {
   const widths = []
-  for (const row of rows) row.forEach((cell, index) => (widths[index] = Math.max(widths[index] ?? 0, String(cell).length)))
-  return rows.map((row) => row.map((cell, index) => String(cell).padEnd(widths[index])).join('  ')).join('\n')
+  for (const row of rows)
+    row.forEach(
+      (cell, index) => (widths[index] = Math.max(widths[index] ?? 0, String(cell).length))
+    )
+  return rows
+    .map((row) => row.map((cell, index) => String(cell).padEnd(widths[index])).join('  '))
+    .join('\n')
 }
 
 const byEs = (matrix) => {
@@ -694,14 +1103,24 @@ export const printReport = (matrix) => {
   const lines = []
   lines.push(`静态兼容矩阵（acorn ${matrix.acornVersion}）`)
   lines.push(`产物：${matrix.distDir}`)
-  lines.push(`规模：JS ${matrix.counts.js} 个（入口 ${matrix.entry} + 异步 chunk ${matrix.counts.asyncChunks} 个）；CSS ${matrix.counts.css} 个`)
+  lines.push(
+    `规模：JS ${matrix.counts.js} 个（入口 ${matrix.entry} + 异步 chunk ${matrix.counts.asyncChunks} 个）；CSS ${matrix.counts.css} 个`
+  )
   lines.push('口径：静态推断，非运行时验证')
   lines.push('')
 
   lines.push('── 语法层：最低 ES 版本分布 ──')
   const dist = byEs(matrix).map(([es, files]) => {
     const min = Math.min(...files.map((file) => file.chromeFloor ?? 999))
-    return [es, files.length, `Chrome ${min === 999 ? '?' : min}+`, files.slice(0, 3).map((file) => file.file).join(', ')]
+    return [
+      es,
+      files.length,
+      `Chrome ${min === 999 ? '?' : min}+`,
+      files
+        .slice(0, 3)
+        .map((file) => file.file)
+        .join(', '),
+    ]
   })
   lines.push(table([['ES 下限', '文件数', '最低 Chromium', '示例'], ...dist]))
   lines.push('')
@@ -713,15 +1132,20 @@ export const printReport = (matrix) => {
   const entryFile = matrix.files.find((file) => file.kind === 'entry')
   if (entryFile) {
     lines.push(
-      `入口包 ${entryFile.file}：ES${entryFile.esFloor} / Chrome ${entryFile.chromeFloor}+（顶门槛特性：${(entryFile.drivers ?? []).join('+') || '-'}）`,
+      `入口包 ${entryFile.file}：ES${entryFile.esFloor} / Chrome ${entryFile.chromeFloor}+（顶门槛特性：${(entryFile.drivers ?? []).join('+') || '-'}）`
     )
     lines.push('')
   }
 
   lines.push('── 抬门槛最狠的文件（语法） ──')
   for (const file of topDrivers) {
-    lines.push(`  ${file.file}  ES${file.esFloor} / Chrome ${file.chromeFloor}+  ${(file.drivers ?? []).join('+') || '-'}`)
-    if (file.decisive) lines.push(`      首个卡点 ${file.decisive.line}:${file.decisive.column} (ES${file.decisive.version} 解析) ${file.decisive.snippet.slice(0, 90)}`)
+    lines.push(
+      `  ${file.file}  ES${file.esFloor} / Chrome ${file.chromeFloor}+  ${(file.drivers ?? []).join('+') || '-'}`
+    )
+    if (file.decisive)
+      lines.push(
+        `      首个卡点 ${file.decisive.line}:${file.decisive.column} (ES${file.decisive.version} 解析) ${file.decisive.snippet.slice(0, 90)}`
+      )
   }
   lines.push('')
 
@@ -745,10 +1169,14 @@ export const printReport = (matrix) => {
       key,
       value.count,
       value.files.size,
-      WEBVIEW_TARGETS.map((webview) => [...value.classification[webview]].sort().join('/')).join(' | '),
+      WEBVIEW_TARGETS.map((webview) => [...value.classification[webview]].sort().join('/')).join(
+        ' | '
+      ),
     ])
   lines.push(table([['API', '调用点', '文件', `@${WEBVIEW_TARGETS.join(' @')}`], ...apiRows]))
-  lines.push(`polyfill 标记：${POLYFILL_FLAG} ${matrix.polyfill.inEntry ? '已打进入口' : '未打进入口'}（${matrix.polyfill.files.join(', ') || '无'}）`)
+  lines.push(
+    `polyfill 标记：${POLYFILL_FLAG} ${matrix.polyfill.inEntry ? '已打进入口' : '未打进入口'}（${matrix.polyfill.files.join(', ') || '无'}）`
+  )
   lines.push('')
 
   lines.push('── CSS 层 ──')
@@ -759,7 +1187,9 @@ export const printReport = (matrix) => {
     hit.count,
     hit.fallback ?? '无回退',
   ])
-  lines.push(cssRows.length ? table([['文件', '特性', '最低', '处', '回退'], ...cssRows]) : '  （无命中）')
+  lines.push(
+    cssRows.length ? table([['文件', '特性', '最低', '处', '回退'], ...cssRows]) : '  （无命中）'
+  )
   lines.push('')
 
   lines.push('── 四档结论 ──')
@@ -769,7 +1199,7 @@ export const printReport = (matrix) => {
         `异步 chunk 解析失败 ${verdict.brokenChunkCount} 个；启动期裸 API 风险 ${verdict.bootApiRisk.length ? verdict.bootApiRisk.join('、') : '无'}；` +
         `chunk 内裸 API 风险 ${verdict.chunkApiRiskCount ? verdict.chunkApiRisk.join('、') : '无'}；` +
         `CSS 无回退特性 ${verdict.cssNoFallback.length ? verdict.cssNoFallback.join('、') : '无'}；` +
-        `CSS 有回退仅降级 ${verdict.cssWithFallback.length ? verdict.cssWithFallback.join('、') : '无'}`,
+        `CSS 有回退仅降级 ${verdict.cssWithFallback.length ? verdict.cssWithFallback.join('、') : '无'}`
     )
   }
   return lines.join('\n')
@@ -794,7 +1224,10 @@ const main = () => {
   }
 }
 
-if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(fileURLToPath(import.meta.url))) {
+if (
+  process.argv[1] &&
+  path.resolve(process.argv[1]) === path.resolve(fileURLToPath(import.meta.url))
+) {
   try {
     main()
   } catch (error) {

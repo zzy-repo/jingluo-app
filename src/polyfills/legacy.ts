@@ -11,15 +11,20 @@
  *   crypto.randomUUID            Chrome 92
  *   Array.prototype.findLast      Chrome 97
  *   String.prototype.replaceAll   Chrome 85（issue #79：产物靠第三方依赖带进来 31 处裸调用）
+ *   Intl.Segmenter               Chrome 87（issue #167：缺了它按码点切，emoji / 组合字符被切碎）
  *
  * 这些是**运行时 API**，构建降级语法（rspack target=chrome83）救不了，只能在这里手写补。
  * 三条硬约束：
  *   1. 必须是应用入口的第一个 import —— 在任何 React / 业务模块求值之前装好（main.tsx）；
  *   2. 幂等：只在缺失时定义，绝不覆盖原生实现（新版 WebView 上等于什么都没做）；
- *   3. 不引第三方包（core-js 体积/语义都太重），本文件自包含、不 import 任何东西。
+ *   3. 不引第三方包（core-js 体积/语义都太重）。除下面这一个自家姊妹模块外，本文件不 import
+ *      任何东西：Intl.Segmenter 要带着 UAX #29 的属性表（约 1.2 千个码点区间）和边界算法，
+ *      塞进本文件会把这份清单淹掉，所以拆成 graphemeData.ts（生成物）+ graphemeSegmenter.ts。
  *
  * 语法兼容：本文件本身也按 chrome 83 编译（swc env.targets），所以这里不用任何 ES2021+ 语法。
  */
+
+import { createGraphemeSegmenter } from './graphemeSegmenter.js'
 
 /** 装上后挂在 globalThis 上的标记，诊断/测试用来确认补丁真的跑过 */
 export const LEGACY_POLYFILL_FLAG = '__DEEPSEEK_LEGACY_POLYFILL__'
@@ -477,7 +482,9 @@ const installStringReplaceAll = (): void => {
         }
         if (flags.indexOf('g') < 0) {
           // 规范要求：正则 search 必须带 g，否则 TypeError（原生也抛，不许悄悄只换首个）
-          throw new TypeError('String.prototype.replaceAll called with a non-global RegExp argument')
+          throw new TypeError(
+            'String.prototype.replaceAll called with a non-global RegExp argument'
+          )
         }
         return replaceWithRegExp(pattern as object, subject, replaceValue)
       }
@@ -485,6 +492,15 @@ const installStringReplaceAll = (): void => {
       return replaceLiteralAll(subject, String(searchValue), replaceValue)
     }
   )
+}
+
+/** Intl.Segmenter —— Chrome 87（issue #167：缺了它文本按码点切，emoji / 组合字符被切碎） */
+const installIntlSegmenter = (): void => {
+  if (typeof (Intl as { Segmenter?: unknown }).Segmenter === 'function') {
+    return
+  }
+  // 传入的是构造函数本身（原生接口要求 new），不是实例
+  define(Intl, 'Segmenter', createGraphemeSegmenter())
 }
 
 /**
@@ -499,6 +515,7 @@ export const installLegacyPolyfills = (): void => {
   installStructuredClone()
   installRandomUUID()
   installStringReplaceAll()
+  installIntlSegmenter()
   if ((globalThis as Record<string, unknown>)[LEGACY_POLYFILL_FLAG] === undefined) {
     define(globalThis, LEGACY_POLYFILL_FLAG, LEGACY_POLYFILL_VERSION)
   }

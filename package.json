@@ -21,6 +21,7 @@
     "check:matrix": "node scripts/compat/matrix-scan.mjs",
     "check:ip": "node scripts/check-hardcoded-ip.mjs",
     "check:apk": "node scripts/check-apk-debuggable.mjs",
+    "gen:grapheme": "node scripts/gen-grapheme-tables.mjs",
     "shot:mobile": "node scripts/shot-mobile.mjs",
     "lint": "oxlint src rspack.config.ts",
     "format": "oxfmt --write .",

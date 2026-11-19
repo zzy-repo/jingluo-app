@@ -458,6 +458,15 @@ const LEGACY_RUNTIME_APIS = [
     pattern: /crypto\s*\.\s*randomUUID\s*\(/g,
   },
   {
+    // issue #167：src 里没人直接调，但 mermaid 的标签换行带进来（chunk-62K37W7T.mjs）：
+    // 有 Intl.Segmenter 就按字素簇切，没有就退回 [...text] 按码点切。legacy.ts 补了。
+    id: 'intl-segmenter',
+    api: 'Intl.Segmenter',
+    chrome: 87,
+    covered: true,
+    pattern: /Intl\.Segmenter\b/g,
+  },
+  {
     // issue #79：src 里没人直接调，但第三方依赖（数学/mermaid 那条链）的 async chunk 带进来
     // 三十来处裸调用，WebView 83 上必白屏 —— legacy.ts 补了，这里跟着改成已覆盖。
     id: 'string-replaceAll',
@@ -614,8 +623,12 @@ const main = () => {
   // issue #156：词法层的遮蔽边界来自 acorn 的 AST，语法层也要 acorn。拿不到就明确失败退出，
   // 不给「只剩词法层然后假绿」这条路（exit 2 = 环境不具备检查能力，与「产物不合格」区分开）。
   if (!loadAcorn()) {
-    console.error('✗ 找不到 acorn：无法做 AST 级字面量剥离 + 语法解析，本次检查不成立（issue #156）')
-    console.error('  以前这里会自动退化成手写状态机，而它在压缩 chunk 上会误吞真实代码、把违规查成合格，')
+    console.error(
+      '✗ 找不到 acorn：无法做 AST 级字面量剥离 + 语法解析，本次检查不成立（issue #156）'
+    )
+    console.error(
+      '  以前这里会自动退化成手写状态机，而它在压缩 chunk 上会误吞真实代码、把违规查成合格，'
+    )
     console.error('  所以现在一律判失败，绝不静默降级。')
     console.error('  修复：pnpm install（acorn 是 @rspack 的传递依赖，不在 package.json 里）')
     process.exit(2)
@@ -632,7 +645,7 @@ const main = () => {
   const runtime = checkRuntimeApis(distDir, jsFiles)
   console.log(`产物兼容性检查（语法 + 运行时 API）：${path.relative(ROOT, distDir) || '.'}`)
   console.log(
-    `  JS 文件 ${js.files} 个；词法层违规 ${js.lexical.length} 个；AST 层违规 ${js.ast.length} 个（acorn ${js.acornVersion ?? '缺失'}, ecmaVersion 2022 + 禁用项断言；字面量遮蔽 = acorn AST 边界）`,
+    `  JS 文件 ${js.files} 个；词法层违规 ${js.lexical.length} 个；AST 层违规 ${js.ast.length} 个（acorn ${js.acornVersion ?? '缺失'}, ecmaVersion 2022 + 禁用项断言；字面量遮蔽 = acorn AST 边界）`
   )
   console.log(
     `  dvh 声明 ${css.dvhTotal} 处；带 vh 回退 ${css.fallbackTotal} 处；问题 ${css.problems.length} 个`
