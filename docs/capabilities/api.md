@@ -1,11 +1,14 @@
 # 类别 1：JS 内置 API 与语言特性假设盘点
 
+> 快照基准：`4870b33`（`origin/main` tip，2026-11-19 11:23:55 +0800）· 采集时间：2026-11-19 11:35 (+0800)。
+> 下面的数字全部由 `scripts/lib/apiAssumptionAudit.mjs` 在基准 commit 上跑出来，不是数的；`tests/unit/capabilities-docs-sync.test.mjs` 会重新跑一遍并逐项比对，文档一旦落后于代码就红。
+
 追踪单：[#209 能力探测替代一切假设](https://github.com/zzy-repo/deepseek-app/issues/209)。本单只做盘点、定规范、建工具；下面「真漏洞」里的三条已各自拆成独立 issue，**不在本单修**。
 
 | 项目 | 值 |
 | --- | --- |
 | 兼容基线 | Android WebView **83**（Chromium 83.0.4103.106，Android 11 出厂镜像） |
-| 扫描范围 | `src/**` 共 **235** 个文件（135 `.ts` / 54 `.tsx` / 44 `.css` / 1 `.html` / 1 `.md`） |
+| 扫描范围 | `src/**` 共 **238** 个文件（**138** `.ts` / 54 `.tsx` / 44 `.css` / 1 `.html` / 1 `.md`） |
 | 判定方式 | **静态推断**：词法层遮蔽注释、字符串、模板后按调用形状匹配；**非运行时验证** |
 | 工具 | [`scripts/lib/apiAssumptionAudit.mjs`](../../scripts/lib/apiAssumptionAudit.mjs)（纯判定模块，无遍历、无打印） |
 | 单测 | [`tests/unit/api-assumption-audit.test.mjs`](../../tests/unit/api-assumption-audit.test.mjs)（10 个用例，三个判定桶各钉真例子） |
@@ -16,11 +19,11 @@
 | 类别 | 含义 | 命中数 |
 | --- | --- | --- |
 | **类别 1 / 依赖入口 polyfill**（`entry-polyfill`） | 首次支持 > 83，但 `src/polyfills/legacy.ts` 会补齐（靠 `src/main.tsx` 的第一条 import 生效） | **31** |
-| **基线内**（`baseline`） | 首次支持 ≤ 83，WebView 83 原生自带 | **21** |
+| **基线内**（`baseline`） | 首次支持 ≤ 83，WebView 83 原生自带 | **20** |
 | **真漏洞**（`uncovered`） | 首次支持 > 83 且没有任何兜底 | **0** |
-| 合计 | | **52** |
+| 合计 | | **51** |
 
-类别 1 命中总数 **52 处 / 235 个文件**：31 处依赖入口 polyfill、21 处落在基线内、**0 处裸调用无兜底**。
+类别 1 命中总数 **51 处 / 238 个文件**：31 处依赖入口 polyfill、20 处落在基线内、**0 处裸调用无兜底**。
 
 入口兜底的覆盖面（`src/polyfills/legacy.ts` 实际安装的 13 项）：`Object.hasOwn`、`Array.prototype.at`、`String.prototype.at`、`Array.prototype.findLast`、`Array.prototype.findLastIndex`、`Array.prototype.toSorted`、`Array.prototype.toReversed`、`Array.prototype.toSpliced`、`Array.prototype.with`、`structuredClone`、`crypto.randomUUID`、`String.prototype.replaceAll`、`Intl.Segmenter`。
 
@@ -32,7 +35,7 @@
 2. 兜底本身规矩：幂等（重复 install 方法引用不变）、不覆盖原生实现（新版内核等于什么都没做）、无第三方依赖、只用 ≤ ES2020 语法（自己不能被降级目标反噬）；
 3. **缺口**：这条「必须第一个 import」的顺序约束目前只靠注释和单测，没有构建期门禁（产物里若 legacy chunk 被排到调用方之后就会重演 #39 的 beta.8 白屏）。构建期校验归 `scripts/check-capabilities.mjs`（另一条 lane 的工作），本条只记录缺口，不在本单实现。
 
-## 二、逐条命中（52 处）
+## 二、逐条命中（51 处）
 
 | 文件:行 | 假设内容 | 类别 | 风险(高/中/低) | 处置(已有兜底/需探测/需动态验证/拆单) |
 | --- | --- | --- | --- | --- |
@@ -45,7 +48,6 @@
 | `src/components/messages/MessageList.tsx:80` | `Array.prototype.at` 存在（Chromium 92；13 处接收者全是数组，零字符串接收者） | 1 | 中 | 已有兜底 |
 | `src/components/messages/ReplyArea.tsx:141` | `Array.prototype.at` 存在（Chromium 92；13 处接收者全是数组，零字符串接收者） | 1 | 中 | 已有兜底 |
 | `src/i18n/index.ts:15` | `Object.hasOwn` 存在（Chromium 93） | 1 | 中 | 已有兜底 |
-| `src/index.html:72` | `Intl.DisplayNames` 存在（Chromium 81，低于基线） | 1 | 低 | —（基线内，无需处置） |
 | `src/services/api/modelPayload.ts:7` | `Array.prototype.flatMap` 存在（Chromium 69，低于基线） | 1 | 低 | —（基线内，无需处置） |
 | `src/services/api/openaiAdapter.ts:61` | `Array.prototype.flatMap` 存在（Chromium 69，低于基线） | 1 | 低 | —（基线内，无需处置） |
 | `src/services/api/openaiAdapter.ts:309` | `Array.prototype.flatMap` 存在（Chromium 69，低于基线） | 1 | 低 | —（基线内，无需处置） |
@@ -77,8 +79,8 @@
 | `src/services/chat/view.ts:268` | `Array.prototype.at` 存在（Chromium 92；13 处接收者全是数组，零字符串接收者） | 1 | 中 | 已有兜底 |
 | `src/services/chat/view.ts:274` | `Array.prototype.flatMap` 存在（Chromium 69，低于基线） | 1 | 低 | —（基线内，无需处置） |
 | `src/services/chat/view.ts:386` | `Array.prototype.at` 存在（Chromium 92；13 处接收者全是数组，零字符串接收者） | 1 | 中 | 已有兜底 |
-| `src/services/diagnostics/collector.ts:297` | `Array.prototype.at` 存在（Chromium 92；13 处接收者全是数组，零字符串接收者） | 1 | 中 | 已有兜底 |
-| `src/services/diagnostics/collector.ts:523` | `crypto.randomUUID` 存在（Chromium 92） | 1 | 中 | 已有兜底 |
+| `src/services/diagnostics/collector.ts:298` | `Array.prototype.at` 存在（Chromium 92；13 处接收者全是数组，零字符串接收者） | 1 | 中 | 已有兜底 |
+| `src/services/diagnostics/collector.ts:524` | `crypto.randomUUID` 存在（Chromium 92） | 1 | 中 | 已有兜底 |
 | `src/services/diagnostics/shared.ts:25` | `Object.hasOwn` 存在（Chromium 93） | 1 | 中 | 已有兜底 |
 | `src/services/location.ts:44` | `Intl.DisplayNames` 存在（Chromium 81，低于基线） | 1 | 低 | —（基线内，无需处置） |
 | `src/services/location.ts:44` | `Intl.DisplayNames` 存在（Chromium 81，低于基线） | 1 | 低 | —（基线内，无需处置） |
@@ -87,7 +89,7 @@
 | `src/services/markdown/highlight.ts:101` | `Object.hasOwn` 存在（Chromium 93） | 1 | 中 | 已有兜底 |
 | `src/services/markdown/highlight.ts:105` | `Object.hasOwn` 存在（Chromium 93） | 1 | 中 | 已有兜底 |
 | `src/services/markdown/parse.ts:64` | `Array.prototype.flatMap` 存在（Chromium 69，低于基线） | 1 | 低 | —（基线内，无需处置） |
-| `src/utils/id.ts:3` | `crypto.randomUUID` 存在（Chromium 92） | 1 | 中 | 已有兜底 |
+| `src/utils/id.ts:5` | `crypto.randomUUID` 存在（Chromium 92） | 1 | 中 | 已有兜底 |
 
 风险口径：`uncovered` = 高（低内核直接抛异常）；`entry-polyfill` = 中（能用，但正确性依赖入口顺序这一条无门禁的约定）；`baseline` = 低（WebView 83 原生具备）。
 
@@ -99,7 +101,7 @@
 | `Object.hasOwn` | 93 | 14 | 7 | `entry-polyfill` | 是 |
 | `Array.prototype.at / String.prototype.at` | 92 | 13 | 9 | `entry-polyfill` | 是 |
 | `crypto.randomUUID` | 92 | 4 | 4 | `entry-polyfill` | 是 |
-| `Intl.DisplayNames` | 81 | 4 | 2 | `baseline` | 否 |
+| `Intl.DisplayNames` | 81 | 3 | 1 | `baseline` | 否 |
 | `String.prototype.trimEnd` | 66 | 2 | 2 | `baseline` | 否 |
 | `Promise.allSettled` | 76 | 1 | 1 | `baseline` | 否 |
 
@@ -119,11 +121,13 @@
 
 | 编号 | 文件:行 | 假设内容 | 实测结论 | 风险 | 对应 issue |
 | --- | --- | --- | --- | --- | --- |
-| V1 | `src/index.html:72` | 启动守卫把 `Intl.DisplayNames`（Chromium 81）列为**硬性必需** | 缺该 API 时守卫写 `__DEEPSEEK_COMPATIBILITY_ERROR__` 并拦死启动，而 `src/services/location.ts:24` 早就有 `regionNameFallback` 兜底（#155）——两处结论互相矛盾，WebView 79/80 用户被误拦 | 中 | [#219](https://github.com/zzy-repo/deepseek-app/issues/219) |
+| V1 | ~~`src/index.html:72`~~（已删出 `REQUIRED`） | 启动守卫把 `Intl.DisplayNames`（Chromium 81）列为**硬性必需** | 缺该 API 时守卫写 `__DEEPSEEK_COMPATIBILITY_ERROR__` 并拦死启动，而 `src/services/location.ts:24` 早就有 `regionNameFallback` 兜底（#155）——两处结论互相矛盾，WebView 79/80 用户被误拦。**已修（#219 → #226，`57602b8`）**：`Intl.DisplayNames` 已从 `REQUIRED` 移出，`src/index.html:17` 只留一段解释「为什么不检查它」的注释；本节因此少 1 处命中 | 中（已关闭） | [#219](https://github.com/zzy-repo/deepseek-app/issues/219) ✅ |
 | V2 | `src/services/diagnostics/capabilityTruth.ts`（原 `src/services/diagnostics/collector.ts:452-454`） | 诊断能力探测假设 `typeof Object.hasOwn/toSorted/at === 'function'` 能反映内核原生能力 | 探针跑在入口 polyfill **之后**，WebView 83 上三项恒为 `true`（Node 里删原生→装兜底实测：`false,false` → `true,true`）；`legacyPolyfillReport()` 已存在却无人引用。**已修（#220）**：改报 `runtime` / `native` / `polyfilled` 两个维度 + 兜底台账，原生结论取自 `legacyPolyfillReport().installed`（见下节） | 中（已关闭） | [#220](https://github.com/zzy-repo/deepseek-app/issues/220) ✅ |
 | V3 | `src/polyfills/legacy.ts:119-120` | 注释假设「原生 `String.prototype.at` 按 code point 取值，与兜底不同」 | 原生同样按 UTF-16 码元；7 字符串 × 8 索引共 56 组对照**零差异**。行为正确，错的是注释——但它会诱导后来者把正确实现「修正」成错的 | 低 | [#221](https://github.com/zzy-repo/deepseek-app/issues/221) |
 
-其余 49 处（31 处入口兜底 + 21 处基线内）经逐行核对，不构成需要拆单的漏洞。
+其余 51 处（31 处入口兜底 + 20 处基线内）经逐行核对，不构成需要拆单的漏洞。
+
+复核（2026-11-19，基准 `4870b33`）：V1 已经消失——#219 修复（#226，`57602b8`）把 `Intl.DisplayNames` 从 `REQUIRED` 移出，`src/index.html` 里现在只剩一段解释性注释，不再有可执行代码声称它是硬性必需，因此那一行命中不复存在（本表 52 → 51、基线内 21 → 20 的全部原因）。
 
 ### V2 的修法与口径（#220）
 
@@ -161,6 +165,7 @@ const res = auditApiAssumptions(files.map((p) => ({ path: p.split(path.sep).join
 console.log(JSON.stringify(summarize(res), null, 2))
 "
 node --test tests/unit/api-assumption-audit.test.mjs
+node --test tests/unit/capabilities-docs-sync.test.mjs   # 文档与复算是否还对得上
 ```
 
 ### 已知边界（静态盘点的固有局限）

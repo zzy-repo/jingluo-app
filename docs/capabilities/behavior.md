@@ -8,6 +8,10 @@
 （主战场），宽度 360 / 390 / 412 三档。复现脚本与原始读数在
 [`docs/ui/209-behavior/`](../ui/209-behavior/README.md)。
 
+> - 快照基准：`4870b33`（`origin/main` tip，2026-11-19 11:23:55 +0800）· 采集时间：2026-11-19 11:35 (+0800)
+> - 表里的**行号**与**合计数字**都在快照基准上复算过；`tests/unit/capabilities-docs-sync.test.mjs` 会拿本表的行数 / 处置分布 / 风险分布去对，文档落后于代码就红
+> - 判定规则只在 `scripts/lib/behaviorAssumptionAudit.mjs`；改口径要同时改那个模块与 `tests/unit/behavior-assumption-audit.test.mjs`
+
 ## 盘点表
 
 | 文件:行 | 假设内容 | 类别 | 风险(高/中/低) | 处置(已有兜底/需探测/需动态验证/拆单) |
@@ -24,10 +28,10 @@
 | `src/components/settings/PaymentRecords.module.css:12` `.main { overflow-y: auto }`，无 `min-height: 0`、无 `touch-action` | 弹窗内容超出会滚动 | 4 | 中 | 需探测 |
 | `src/components/settings/PaymentTrailDialog.module.css:12` `.main { overflow-y: auto }`，无 `touch-action` | 弹窗内容超出会滚动 | 4 | 中 | 需探测 |
 | `src/components/settings/PurchaseRecordsDialog.module.css:11` `.main { overflow-y:auto; overflow-x:hidden }`，无 `touch-action` | 弹窗内容超出会滚动 | 4 | 中 | 需探测 |
-| `src/app/viewport.ts:23` `findScrollableAncestor` 按**计算值** `overflow: auto\|scroll` 找可滚祖先（`:30`），`:46` `shouldPreventTouchMove` / `:70` `usePreventPageScroll` 找不到就 `preventDefault` | 触摸滑动会滚容器 | 4 | 低 | 已有兜底 |
+| `src/app/viewport.ts:49` `findScrollableAncestor` 按**计算值** `overflow: auto\|scroll` 找可滚祖先（`:55` `getComputedStyle`），`:79` `shouldPreventTouchMove` / `:104` `usePreventPageScroll` 找不到就 `preventDefault` | 触摸滑动会滚容器 | 4 | 低 | 已有兜底 |
 | `src/components/settings/AppUpdateField.module.css:57` `.main { touch-action: pan-y }` 显式放行纵向手势 | 触摸滑动会滚容器 | 4 | 低 | 已有兜底 |
 | 其余弹窗的滚动容器不写 `touch-action`（缺省 `auto`，实测不阻碍滚动；锁死滚动的是 `none`/`pan-x`，仓库里没有） | 触摸滑动会滚容器 | 4 | 低 | 已有兜底 |
-| `src/app/viewport.ts:70` 的祖先链判定假设「触摸目标一定是滚动宿主的后代」：设置弹窗里滚动宿主 `content-_85c1b` 是 `.main` 的**子**层，落在 `.main` 内边距/头部空白上的拖动找不到可滚祖先会被 `preventDefault` | 触摸滑动会滚容器 | 4 | 低 | 需动态验证 |
+| `src/app/viewport.ts:104` 的祖先链判定假设「触摸目标一定是滚动宿主的后代」：设置弹窗里滚动宿主 `content-_85c1b` 是 `.main` 的**子**层，落在 `.main` 内边距/头部空白上的拖动找不到可滚祖先会被 `preventDefault` | 触摸滑动会滚容器 | 4 | 低 | 需动态验证 |
 | `src/components/settings/Settings.module.css:5` `max-height: calc(100vh - 32px)`，裸 `100vh`、无 `@supports (100dvh)` 兜底 | 100vh 等于可视高度 | 4 | 中 | 需探测 |
 | `src/components/settings/PaymentRecords.module.css:5` `min(640px, calc(100vh - 48px))`，无 `@supports` 兜底 | 100vh 等于可视高度 | 4 | 中 | 需探测 |
 | `src/components/settings/PaymentTrailDialog.module.css:5` `min(720px, calc(100vh - 32px))`，无 `@supports` 兜底 | 100vh 等于可视高度 | 4 | 中 | 需探测 |
@@ -37,9 +41,9 @@
 | `src/app/App.module.css:104`/`:105` `height: var(--app-viewport-height, 100vh)` + `@supports` 升 `100dvh` | 100vh 等于可视高度 | 4 | 低 | 已有兜底 |
 | `src/components/chatInput/ChatInput.module.css:227`/`:228` `max-height: calc(var(--app-viewport-height, 100vh) - 120px)` + `@supports` | 100vh 等于可视高度 | 4 | 低 | 已有兜底 |
 | `src/components/settings/OursServices.module.css:49`/`:50`、`:242`/`:243` `calc(100vh - 48px)` + `@supports` 升 `100dvh` | 100vh 等于可视高度 | 4 | 低 | 已有兜底 |
-| `src/app/viewport.ts:88` `syncModalViewport` 用 `visualViewport` 写 `--modal-viewport-height`；`useMobileViewport` 只在输入聚焦时写 `--app-viewport-height` | 100vh 等于可视高度 | 4 | 低 | 已有兜底 |
+| `src/app/viewport.ts:122` `syncModalViewport` 用 `visualViewport` 写 `--modal-viewport-height`；`useMobileViewport` 只在输入聚焦时写 `--app-viewport-height` | 100vh 等于可视高度 | 4 | 低 | 已有兜底 |
 
-合计 25 行：**已有兜底 13 行 / 需动态验证 3 行 / 需探测 9 行 / 拆单 0 行**，风险 **高 0 / 中 11 / 低 14**。
+合计 26 行：**已有兜底 14 行 / 需动态验证 3 行 / 需探测 9 行 / 拆单 0 行**，风险 **高 0 / 中 11 / 低 15**。
 
 ## 四条假设的动态验证结论
 
@@ -53,7 +57,7 @@
 | ③ 触摸滑动会滚容器 | **成立** | `adb shell input swipe` 真实触摸一次：`scrollTop` 0 → **328.7**（360）、0 → **377.3**（390）、0 → **180.2**（412）；连滑到底 `remainingScroll ≈ 0`，末端 `Delete`（top 1220.5）进入可视区。坐标已按 `devicePixelRatio`（1.5 / 1.5 / 2.625）换算成显示像素 |
 | ④ `100vh` 等于可视高度 | **成立（机械性成立，非 `dvh` 之功）** | 静息态 `100vh` = `visualViewport.height` = 728 / 795.3 / 660.2，差 **0**；软键盘弹出态（`dumpsys input_method` 读到 `mInputShown=true`）两者同降为 **479.3 / 546 / 378.3**，差仍 **0**。机制是 `AndroidManifest.xml:19` 的 `windowSoftInputMode="adjustResize"`（窗口本身改小）；`CSS.supports('height','100dvh')` 实测 **false**，所有 `@supports (…100dvh)` 分支在 83 上整条不生效 |
 
-**没有一条假设被实测证伪，因此本单不开独立 Issue。** 26 行里有 8 行「需探测」，是因为它们
+**没有一条假设被实测证伪，因此本单不开独立 Issue。** 26 行里有 9 行「需探测」，是因为它们
 没有兜底、当前能成立靠的是上面那条 `adjustResize` 机制，而不是自己的 CSS —— 这类不属于「实测
 不成立」，不进 issue 队列，记在本表里等后续覆盖面扩大（真机 / 91 / 109 / 订单态数据）时再看。
 
