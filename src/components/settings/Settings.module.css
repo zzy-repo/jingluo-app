@@ -946,7 +946,7 @@
   display: flex;
   flex-direction: column;
   gap: 2px;
-  max-height: 180px;
+  max-height: 240px;
   margin: 0;
   padding: 8px 10px;
   overflow-y: auto;
@@ -959,10 +959,180 @@
   list-style: none;
 }
 
-.feedbackLogRow {
+/* 日志预览容器：口径文案 + 筛选控件 + 列表（#305） */
+.feedbackLogViewer {
   display: flex;
+  flex-direction: column;
   gap: 8px;
   min-width: 0;
+}
+
+.feedbackLogToolbar {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+/* 分组开关 + 清除筛选：一行放不下就换行，不许把按钮压到 44px 以下 */
+.feedbackLogToolbarRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.feedbackLogSearch {
+  width: 100%;
+  /* 触控目标 ≥44px：移动端要能稳稳点中搜索框 */
+  min-height: 44px;
+  padding: 10px 12px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 12px;
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  font-size: 13px;
+  outline: none;
+
+  &::placeholder {
+    color: var(--dsw-alias-label-caption);
+  }
+
+  &:focus {
+    border-color: var(--dsw-alias-brand-primary);
+  }
+}
+
+.feedbackLogChipRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+
+/* 过滤 chip / 分组开关：移动端 44px 触控目标（#305 验收项） */
+.feedbackLogChip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  min-width: 44px;
+  padding: 0 12px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font: inherit;
+  font-size: 12px;
+  line-height: 16px;
+  cursor: pointer;
+
+  &:hover {
+    color: var(--dsw-alias-brand-text);
+  }
+}
+
+.feedbackLogChipOn {
+  border-color: var(--dsw-alias-brand-primary);
+  background-color: var(--dsw-alias-bg-layer-3);
+  color: var(--dsw-alias-brand-text);
+}
+
+.feedbackLogGroupToggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding-right: 4px;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 16px;
+  cursor: pointer;
+}
+
+.feedbackLogGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.feedbackLogGroupHeader {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--dsw-alias-label-caption);
+  font-size: 11px;
+  line-height: 16px;
+  text-transform: none;
+}
+
+.feedbackLogGroupItems {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0 0 0 8px;
+  list-style: none;
+  min-width: 0;
+}
+
+.feedbackLogRow {
+  display: flex;
+  /* 行高撑到 44px：复制按钮本身就是 44×44 的触控目标，行不撑高就会出现「按钮压住下一行」，
+     点哪一行都可能落到相邻行的按钮上（#305 移动端验收项） */
+  align-items: center;
+  min-height: 44px;
+  gap: 8px;
+  min-width: 0;
+}
+
+/* 单条复制：44×44 触控目标，图标居中 */
+.feedbackLogCopy {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: none;
+  border-radius: 8px;
+  background: none;
+  color: var(--dsw-alias-label-caption);
+  cursor: pointer;
+
+  &:hover {
+    color: var(--dsw-alias-brand-text);
+  }
+}
+
+.feedbackLogLevelWarn {
+  color: var(--dsw-alias-label-secondary);
+}
+
+/**
+ * 窄屏（390 / 360）：一行放不下「时间 + kind + level + 正文 + 复制」五样东西，
+ * 挤在一起时正文只剩几个字符 —— 那等于没有预览。这里把正文挪到第二行占满整行宽度，
+ * 第一行留给元信息与复制按钮（复制按钮仍需 ≥44px，见上）。
+ */
+@media (max-width: 420px) {
+  .feedbackLogRow {
+    flex-wrap: wrap;
+  }
+
+  .feedbackLogCopy {
+    order: 4;
+    margin-left: auto;
+  }
+
+  .feedbackLogMsg {
+    order: 5;
+    flex: 1 1 100%;
+  }
 }
 
 .feedbackLogTime {
@@ -978,6 +1148,7 @@
 }
 
 .feedbackLogMsg {
+  flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
   white-space: nowrap;
@@ -1046,8 +1217,9 @@
 }
 
 .feedbackLogKind {
-  flex-shrink: 0;
-  width: 92px;
+  /* 窄屏（360）时让 kind 先收缩给 msg 让位：空间够就是 92px，不够就压到 ellipsis */
+  flex: 0 1 92px;
+  min-width: 0;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
@@ -1287,6 +1459,40 @@
 }
 
 :global(html[data-flex-gap-fallback]) .feedbackLogs > *:not(:last-child) {
+  margin-bottom: 2px;
+}
+
+:global(html[data-flex-gap-fallback]) .feedbackLogViewer > *:not(:last-child) {
+  margin-bottom: 8px;
+}
+
+:global(html[data-flex-gap-fallback]) .feedbackLogToolbar > *:not(:last-child) {
+  margin-bottom: 8px;
+}
+
+:global(html[data-flex-gap-fallback]) .feedbackLogToolbarRow > *:not(:last-child) {
+  margin-right: 8px;
+  margin-bottom: 8px;
+}
+
+:global(html[data-flex-gap-fallback]) .feedbackLogChipRow > *:not(:last-child) {
+  margin-right: 6px;
+  margin-bottom: 6px;
+}
+
+:global(html[data-flex-gap-fallback]) .feedbackLogGroupToggle > *:not(:last-child) {
+  margin-right: 8px;
+}
+
+:global(html[data-flex-gap-fallback]) .feedbackLogGroup > *:not(:last-child) {
+  margin-bottom: 2px;
+}
+
+:global(html[data-flex-gap-fallback]) .feedbackLogGroupHeader > *:not(:last-child) {
+  margin-right: 8px;
+}
+
+:global(html[data-flex-gap-fallback]) .feedbackLogGroupItems > *:not(:last-child) {
   margin-bottom: 2px;
 }
 

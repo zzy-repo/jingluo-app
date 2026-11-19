@@ -3,7 +3,17 @@ import { Capacitor } from '@capacitor/core'
 import { saveFeedbackText } from '../../services/diagnostics/save.js'
 import { saveFeedbackExport } from '../../services/diagnostics/export.js'
 import { clearFeedbackDraft, readFeedbackDraft, writeFeedbackDraft } from '../../services/feedbackDraft.js'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { MAX_LOG_ENTRIES } from '../../services/diagnostics/config.js'
+import {
+  buildLogView,
+  formatEntryForCopy,
+  isFilterActive,
+  kindsPresent,
+  toggleSelection,
+  type LogFamily,
+  type LogView,
+} from './logView.js'
 import { useTranslate, type TranslationKey } from '../../i18n/index.js'
 import {
   clearDiagnostics,
@@ -15,8 +25,11 @@ import {
   type LogCoverage,
 } from '../../services/diagnostics/index.js'
 import type {
+  EventKind,
   FeedbackCategory,
   FeedbackErrorCode,
+  LogEntry,
+  LogLevel,
   LogSnapshot,
   ValidationWarning,
 } from '../../services/diagnostics/types.js'
@@ -34,8 +47,26 @@ import styles from './Settings.module.css'
  * 日志与上传都在 services/diagnostics（采集层 / 上传层分离），这里只负责界面。
  */
 
-/** 日志预览最多显示的条数（实际提交的是最近 500 条 / 30 分钟，见 collector.ts） */
-const PREVIEW_LIMIT = 20
+/**
+ * 日志预览最多渲染的条数。
+ *
+ * 改前是 20 且不可调（#305）：一次网络失败前后的 `net_request` / `net_response` 很容易被挤出尾部，
+ * 用户拿到的「证据」就不完整。现在放宽到 50，并且**口径写死在预览区顶部**（显示最近 N 条 / 共 M 条 /
+ * 提交上限 MAX_LOG_ENTRIES），不让用户猜「看到的这 20 行是不是全部」。
+ * 真正的提交集合不受这个数字影响（采集层按 500 条 / 30 分钟双限给快照）。
+ */
+const PREVIEW_LIMIT = 50
+
+/** 级别筛选项（三档固定，不随数据变化） */
+const LOG_LEVELS: LogLevel[] = ['error', 'warn', 'info']
+
+/** 分组表头文案：族 → i18n key */
+const GROUP_LABEL_KEYS: Record<LogFamily, TranslationKey> = {
+  chat: 'feedbackLogGroupChat',
+  net: 'feedbackLogGroupNet',
+  import: 'feedbackLogGroupImport',
+  misc: 'feedbackLogGroupMisc',
+}
 
 const readInitialSnapshot = (): LogSnapshot => {
   try {
@@ -151,6 +182,14 @@ const FeedbackForm = ({
   const [coverage, setCoverage] = useState<LogCoverage>(readInitialCoverage)
   const [previewOpen, setPreviewOpen] = useState(false)
   const [integrityOpen, setIntegrityOpen] = useState(integrity)
+  /**
+   * 日志预览的筛选状态（#305）：只在本地展示层生效，**不影响提交内容**。
+   * 打开弹窗时取的那份快照既是预览也是提交来源，所以这里筛选掉的条目照样会被提交。
+   */
+  const [logQuery, setLogQuery] = useState('')
+  const [logKinds, setLogKinds] = useState<EventKind[]>([])
+  const [logLevels, setLogLevels] = useState<LogLevel[]>([])
+  const [logGrouped, setLogGrouped] = useState(false)
   const [screenshot, setScreenshot] = useState<string | null>(null)
   // 上次带过截图但图片对象没留下来：重开时提示需要重新选择（草稿只保留文本字段）
   const [draftHadScreenshot, setDraftHadScreenshot] = useState(initialDraft?.hadScreenshot === true)
@@ -222,7 +261,27 @@ const FeedbackForm = ({
   const submitting = useRef(false)
 
   const total = snapshot.logs.length
-  const preview = total > PREVIEW_LIMIT ? snapshot.logs.slice(-PREVIEW_LIMIT) : snapshot.logs
+  /**
+   * 预览视图：过滤 → 取最近 PREVIEW_LIMIT 条 → 分组。
+   * 「显示最近 N 条，共 M 条」里的 N 就是这里的 shownCount，保证文案与真实行数永远一致。
+   */
+  const logView: LogView = useMemo(
+    () =>
+      buildLogView(
+        snapshot.logs,
+        { kinds: logKinds, levels: logLevels, query: logQuery },
+        PREVIEW_LIMIT
+      ),
+    [snapshot.logs, logKinds, logLevels, logQuery]
+  )
+  /** 类型筛选只列当前缓冲区真实出现过的 kind（21 个全列出来只会是一排永远命中 0 的按钮） */
+  const kindOptions = useMemo(() => kindsPresent(snapshot.logs), [snapshot.logs])
+  const filterActive = isFilterActive({ kinds: logKinds, levels: logLevels, query: logQuery })
+  const clearLogFilter = () => {
+    setLogQuery('')
+    setLogKinds([])
+    setLogLevels([])
+  }
   const transportName = getFeedbackTransportName()
   const canSubmit = description.trim() !== '' && phase.kind !== 'submitting'
   /** 有没有可清空的草稿内容（决定「清空已填内容」按钮是否可点） */
@@ -328,6 +387,43 @@ const FeedbackForm = ({
       showToast({ key: 'copyFailed', type: 'error' })
     }
   }
+
+  /**
+   * 复制单条日志：正文 + **完整 meta**（时间到毫秒，能和服务端日志对齐）。
+   * 只有时间 + msg 的「复制」等于让用户抄一句人话，meta 里的 `requestId` / `http.status` 才是能对上号的证据。
+   */
+  const copyLogEntry = async (entry: LogEntry) => {
+    const ok = await copyText(formatEntryForCopy(entry))
+    showToast(ok ? { key: 'feedbackLogCopied' } : { key: 'copyFailed', type: 'error' })
+  }
+
+  /** 一行的渲染：时间 / kind / level / msg + 单条复制（触控目标 44px，见 Settings.module.css） */
+  const renderLogRow = (entry: LogEntry, key: string) => (
+    <li key={key} className={styles.feedbackLogRow} data-testid="log-row">
+      <span className={styles.feedbackLogTime}>{formatTime(entry.t)}</span>
+      <span className={styles.feedbackLogKind}>{entry.kind}</span>
+      <span
+        className={clsx(
+          styles.feedbackLogLevel,
+          entry.level === 'error' && styles.error,
+          entry.level === 'warn' && styles.feedbackLogLevelWarn
+        )}
+      >
+        {entry.level}
+      </span>
+      <span className={styles.feedbackLogMsg}>{entry.msg}</span>
+      <button
+        type="button"
+        className={styles.feedbackLogCopy}
+        data-testid="log-copy"
+        aria-label={t('feedbackLogCopyEntry')}
+        title={t('feedbackLogCopyEntry')}
+        onClick={() => void copyLogEntry(entry)}
+      >
+        <IconCopyOutline16 />
+      </button>
+    </li>
+  )
 
   const missingText =
     coverage.missing.length === 0 ? t('feedbackIntegrityNone') : coverage.missing.join(', ')
@@ -469,30 +565,146 @@ const FeedbackForm = ({
             <span className={styles.feedbackHint}>{t('feedbackLogCount', { count: total })}</span>
           </button>
           {previewOpen ? (
-            <>
-              {preview.length === 0 ? (
-                <div className={styles.feedbackHint}>{t('feedbackLogEmpty')}</div>
-              ) : (
-                <ol className={styles.feedbackLogs}>
-                  {preview.map((entry, index) => (
-                    <li key={`${entry.t}-${index}`} className={styles.feedbackLogRow}>
-                      <span className={styles.feedbackLogTime}>{formatTime(entry.t)}</span>
-                      <span className={styles.feedbackLogKind}>{entry.kind}</span>
-                      <span
+            <div className={styles.feedbackLogViewer} data-testid="log-viewer">
+              {/* 口径：预览条数 / 总条数 / 提交上限三者写死在一行里，别让用户猜「看到的是不是全部」 */}
+              <div className={styles.feedbackHint} data-testid="log-summary">
+                {t('feedbackLogSummary', {
+                  shown: logView.shownCount,
+                  total: logView.total,
+                  limit: MAX_LOG_ENTRIES,
+                })}
+              </div>
+              {logView.total > 0 ? (
+                <div className={styles.feedbackLogToolbar}>
+                  <input
+                    type="search"
+                    className={styles.feedbackLogSearch}
+                    data-testid="log-search"
+                    aria-label={t('feedbackLogSearchLabel')}
+                    placeholder={t('feedbackLogSearchPlaceholder')}
+                    value={logQuery}
+                    // 上限 200：够长到能贴一个 requestId，又不至于让人以为自己在编辑日志
+                    maxLength={200}
+                    onChange={(event) => setLogQuery(event.currentTarget.value)}
+                  />
+                  <div
+                    className={styles.feedbackLogChipRow}
+                    data-testid="log-level-filter"
+                    role="group"
+                    aria-label={t('feedbackLogFilterLevel')}
+                  >
+                    {LOG_LEVELS.map((level) => (
+                      <button
+                        key={level}
+                        type="button"
                         className={clsx(
-                          styles.feedbackLogLevel,
-                          entry.level === 'error' && styles.error
+                          styles.feedbackLogChip,
+                          logLevels.includes(level) && styles.feedbackLogChipOn
                         )}
+                        data-level={level}
+                        aria-pressed={logLevels.includes(level)}
+                        onClick={() => setLogLevels(toggleSelection(logLevels, level))}
                       >
-                        {entry.level}
-                      </span>
-                      <span className={styles.feedbackLogMsg}>{entry.msg}</span>
-                    </li>
-                  ))}
+                        {level}
+                      </button>
+                    ))}
+                  </div>
+                  <div
+                    className={styles.feedbackLogChipRow}
+                    data-testid="log-kind-filter"
+                    role="group"
+                    aria-label={t('feedbackLogFilterKind')}
+                  >
+                    {kindOptions.map((kind) => (
+                      <button
+                        key={kind}
+                        type="button"
+                        className={clsx(
+                          styles.feedbackLogChip,
+                          logKinds.includes(kind) && styles.feedbackLogChipOn
+                        )}
+                        data-kind={kind}
+                        aria-pressed={logKinds.includes(kind)}
+                        onClick={() => setLogKinds(toggleSelection(logKinds, kind))}
+                      >
+                        {kind}
+                      </button>
+                    ))}
+                  </div>
+                  <div className={styles.feedbackLogToolbarRow}>
+                    <label className={styles.feedbackLogGroupToggle}>
+                      <input
+                        type="checkbox"
+                        data-testid="log-group-toggle"
+                        checked={logGrouped}
+                        onChange={(event) => setLogGrouped(event.currentTarget.checked)}
+                      />
+                      <span>{t('feedbackLogGroupToggle')}</span>
+                    </label>
+                    {filterActive ? (
+                      <Button variant="outlined" size="m" onClick={clearLogFilter}>
+                        {t('feedbackLogFilterClear')}
+                      </Button>
+                    ) : null}
+                  </div>
+                </div>
+              ) : null}
+              {logGrouped ? (
+                <div className={styles.feedbackHint} data-testid="log-group-note">
+                  {t('feedbackLogGroupNote')}
+                </div>
+              ) : null}
+              {logView.total === 0 ? (
+                <div className={styles.feedbackHint} data-testid="log-empty">
+                  {t('feedbackLogEmpty')}
+                </div>
+              ) : logView.matchedCount === 0 ? (
+                <div className={styles.feedbackHint} data-testid="log-nomatch">
+                  {t('feedbackLogNoMatch')}
+                </div>
+              ) : (
+                <ol className={styles.feedbackLogs} data-testid="log-list">
+                  {logGrouped
+                    ? logView.groups.map((group) => (
+                        <li
+                          key={group.key}
+                          className={styles.feedbackLogGroup}
+                          data-testid="log-group"
+                          data-family={group.family}
+                        >
+                          <div className={styles.feedbackLogGroupHeader}>
+                            <span>{t(GROUP_LABEL_KEYS[group.family])}</span>
+                            <span>
+                              {t('feedbackLogGroupCount', { count: group.items.length })}
+                            </span>
+                          </div>
+                          <ol className={styles.feedbackLogGroupItems}>
+                            {group.items.map((entry, index) =>
+                              renderLogRow(entry, `${group.key}-${index}`)
+                            )}
+                          </ol>
+                        </li>
+                      ))
+                    : logView.entries.map((entry, index) =>
+                        renderLogRow(entry, `${entry.t}-${index}`)
+                      )}
                 </ol>
               )}
+              {logView.truncated ? (
+                <div className={styles.feedbackHint} data-testid="log-truncated">
+                  {t('feedbackLogTruncated', {
+                    matched: logView.matchedCount,
+                    shown: logView.shownCount,
+                  })}
+                </div>
+              ) : null}
+              {logView.total > 0 && logView.total < 5 ? (
+                <div className={styles.feedbackHint} data-testid="log-few">
+                  {t('feedbackLogFew', { count: logView.total })}
+                </div>
+              ) : null}
               <div className={styles.feedbackHint}>{t('feedbackLogPreviewHint')}</div>
-            </>
+            </div>
           ) : null}
         </div>
 
