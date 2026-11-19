@@ -125,10 +125,6 @@ export const LEGACY_STAGES: readonly string[] = [
 export const isStage = (value: unknown): value is Stage =>
   typeof value === 'string' && (STAGES as readonly string[]).includes(value)
 
-/** 只用于读旧日志：新值走 `isStage`，旧值走这里 */
-export const isKnownStage = (value: unknown): value is string =>
-  typeof value === 'string' && (isStage(value) || LEGACY_STAGES.includes(value))
-
 // ---------------------------------------------------------------- 端点键
 
 /**
@@ -660,9 +656,3 @@ export const sanitizeMeta = (meta: unknown): Record<string, string | number | bo
   }
   return out
 }
-
-/** 便捷：结构化字段 + 历史键合并后一次清洗（调用方不必自己拼两遍） */
-export const structuredMeta = (
-  input: MetaInput,
-  extra?: Record<string, string | number | boolean>
-): Record<string, string | number | boolean> => sanitizeMeta({ ...extra, ...buildMeta(input) })

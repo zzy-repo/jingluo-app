@@ -1,5 +1,4 @@
 import { scrubReportText } from '../app/errorReport.js'
-import { safeString } from './diagnostics/redact.js'
 import { RELEASE_BASES } from './updateManifest.js'
 
 /**
@@ -74,10 +73,4 @@ export const buildUpdateReport = (facts: UpdateReportFacts): string => {
     lines.push(`本次生效: ${hostOf(facts.base)}`)
   }
   return scrubReportText(lines.join('\n'))
-}
-
-/** 兜底：任何异常对象都要能变成一行可读文本（报告生成自身不许抛） */
-export const reportErrorLine = (error: unknown): string => {
-  const line = safeString(error)
-  return line === '' ? 'unknown' : line
 }

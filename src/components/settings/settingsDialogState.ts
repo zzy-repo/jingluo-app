@@ -55,15 +55,6 @@ export const openOursServices = (options: { replacedUnpaidOrder?: boolean } = {}
   })
 }
 
-/** 弹层读完「上一笔未支付订单已失效」这条提示后清掉，避免下次打开还挂着（Issue #157） */
-export const consumeOursReplacedUnpaid = (): boolean => {
-  const replaced = useSettingsDialog.getState().oursReplacedUnpaid
-  if (replaced) {
-    useSettingsDialog.setState({ oursReplacedUnpaid: false })
-  }
-  return replaced
-}
-
 /** 没有 API Key 时打开设置并选中 API Key 所在的「数据管理」，返回是否已有 Key */
 export const ensureApiKey = () => {
   if (getApiKey()) {
