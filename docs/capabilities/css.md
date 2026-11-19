@@ -43,7 +43,7 @@
 | `getComputedStyle` 声明回读 | — （运行时） | 3 | 2 | 0 | 0 | 0 | **1** | 只读声明值无回读 → #218（#209 验收项） |
 | `touch-action` | 36 | 3 | 0 | 3 | 0 | 0 | 0 | 36 ≤ 83，无风险 |
 | `backdrop-filter` | 76 | 2 | 0 | 2 | 0 | 0 | 0 | 76 ≤ 83，无风险（`-webkit-` 前缀另计 1 处） |
-| `scrollbar-gutter` | 94 | 2 | 0 | 0 | 0 | **2** | 0 | 声明被丢，滚动条出现时横向跳动 → #216 |
+| `scrollbar-gutter` | 94 | 2 | 0 | 0 | 0 | **2** | 0 | 声明被丢，滚动条出现时横向跳动 → #216（#236 又新增 1 处 `scrollbar-gutter: stable`，与 `overflow-y: scroll` 成对写入） |
 | `:where()` / `:is()` | 88 | 1 | 0 | 0 | 1 | 0 | 0 | 只影响收起动画，降级可接受 |
 | `@container` | 105 | **0** | 0 | 0 | 0 | 0 | 0 | 1 处已由 #214 清零：判据换成 `.filesWithDocuments` 里的自定义属性 `--message-file-reason-display`，低内核上零特性依赖 |
 | `container-type` | 105 | **0** | 0 | 0 | 0 | 0 | 0 | 同上 → #214（容器本来就不需要浏览器去量） |
@@ -142,17 +142,24 @@
 | `components/messages/UserMessage.module.css:26-31` `.filesWithDocuments` | `--message-file-image-size: 64px` + `--message-file-reason-display: none` |
 | `components/messages/MessageFile.module.css:84` `.reason` | `display: var(--message-file-reason-display, flex)` |
 
-### 2.5 `scrollbar-gutter`（2 处，真实缺陷 → #216，已修）
+### 2.5 `scrollbar-gutter`（2 处 → 3 处：真实缺陷 → #216 / #236，均已修）
 
 > #216 已修：`.container` 外面先写 `overflow-y: scroll`（槽位恒宽，不依赖 `scrollbar-gutter`），
 > 再由 `@supports (scrollbar-gutter: stable both-edges)` 把它收回 `auto`；窄屏分支显式写死 `overflow: hidden`
 > 防兜底泄漏。上表两行是**修前**的盘点快照，本节数字不再逐行重算；新增守卫 `pnpm run check:gutter`
 > （`scripts/lib/scrollbarGutterAudit.mjs` + `tests/unit/scrollbar-gutter-fallback.test.mjs`）持续盯「每处都有等价回退」。
+>
+> #236 已修：窄屏（< 768px）滚动这件事换手给了 `.scroll`，它原来一条 `scrollbar-gutter` 都没写，
+> 于是 #216 的兜底照不到它。处置与 #216 同形（常驻槽位 + `@supports` 收回），但**只在会出现
+> 占位式滚动条的环境里做**（嵌套两层媒体查询：窄屏 + `(hover: hover) and (pointer: fine)`），
+> overlay 滚动条的手机不被占宽度。实测数据见 `scripts/measure-narrow-scroll-shift.mjs`
+> （`pnpm run measure:scroll-shift`）。
 
 | 文件:行 | 假设内容 | 类别 | 风险 | 处置 |
 | --- | --- | --- | --- | --- |
-| `components/messages/MessageList.module.css:7` | `scrollbar-gutter: stable both-edges` 预留滚动条槽 | 2 | 中 | 拆单 #216 |
-| `components/messages/MessageList.module.css:18` | `scrollbar-gutter: auto` 复位 | 2 | 中 | 拆单 #216 |
+| `components/messages/MessageList.module.css:13` | `scrollbar-gutter: stable both-edges` 预留滚动条槽 | 2 | 中 | #216 已修（前置 `overflow-y: scroll` + `@supports` 收回） |
+| `components/messages/MessageList.module.css:33` | `scrollbar-gutter: auto` 复位 | 2 | 中 | #216 已修（初始值复位，低内核丢弃等于没写） |
+| `components/messages/MessageList.module.css:71` | `scrollbar-gutter: stable` 预留窄屏 `.scroll` 的滚动条槽 | 2 | 中 | #236 已修（指针作用域内 `overflow-y: scroll` + 同作用域 `@supports` 收回） |
 
 ### 2.6 flex `gap`（109 处：全部已有兜底；#217 补齐了最后 2 处）
 
@@ -214,6 +221,7 @@
 | [#214](https://github.com/zzy-repo/deepseek-app/issues/214) | `@container` + `container-type` | 2 | 中 | 已修：容器查询整块被丢，窄缩略图上仍渲染两行失败原因；判据换成自定义属性 `--message-file-reason-display`，`src` 里容器查询归零 |
 | [#215](https://github.com/zzy-repo/deepseek-app/issues/215) | `:focus-visible` | 13 | 中 | 已修：每处补 `:focus` 兜底 + `:focus:not(:focus-visible)` 收回，`check:focus` 守住不回流 |
 | [#216](https://github.com/zzy-repo/deepseek-app/issues/216) | `scrollbar-gutter` | 2 | 中 | 声明被丢，滚动条出现/消失瞬间消息列表横向跳动 |
+| [#236](https://github.com/zzy-repo/deepseek-app/issues/236) | `scrollbar-gutter`（#216 的 follow-up） | 1 | 中 | 窄屏滚动容器 `.scroll` 换手后没继承 #216 的兜底，classic 滚动条出现时仍跳 15px |
 | [#217](https://github.com/zzy-repo/deepseek-app/issues/217) | flex `gap` 兜底覆盖面 | 2 | 中 | 已修：`check:gap` 扫全部 `.css`，`flex-wrap` 排除规则改为「不换行才排除」 |
 | [#218](https://github.com/zzy-repo/deepseek-app/issues/218) | `getComputedStyle` 声明回读 | 1 | **高** | 判定通过但滚不动，静默失效（§3 的第 1 条） |
 

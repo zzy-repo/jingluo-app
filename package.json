@@ -40,7 +40,8 @@
     "check:focus": "node scripts/check-focus-visible-fallback.mjs",
     "check:gutter": "node scripts/check-scrollbar-gutter-fallback.mjs",
     "check:container": "node scripts/check-container-query-fallback.mjs",
-    "check:capabilities": "node scripts/check-capabilities.mjs"
+    "check:capabilities": "node scripts/check-capabilities.mjs",
+    "measure:scroll-shift": "node scripts/measure-narrow-scroll-shift.mjs"
   },
   "dependencies": {
     "@types/katex": "^0.16.5",
