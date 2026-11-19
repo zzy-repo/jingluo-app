@@ -199,7 +199,7 @@ export const noop = () => {}
 
 // ------------------------------------------------------- 真实仓库的不变量
 
-test('真实 src 盘点：@supports 全部有等价兜底，假阳性落在 viewport.ts 的声明回读上', () => {
+test('真实 src 盘点：@supports 全部有等价兜底，#218 之后不再有声明回读假阳性', () => {
   const src = fileURLToPath(new URL('../../src', import.meta.url))
   const { hits, summary } = auditCssAssumptions(collectSources(src))
 
@@ -215,13 +215,25 @@ test('真实 src 盘点：@supports 全部有等价兜底，假阳性落在 view
   // flex gap 的假阳性探测已由 #173 清零，守卫 check:gap 负责持续盯
   assert.equal(summary.byFeature['flex-gap'].falsePositive, 0)
 
-  // #209 验收要求的那个假阳性：只读声明值、无实测回读
-  const falsePositives = summary.falsePositives
-  assert.ok(falsePositives.length >= 1, '至少要识别出 1 个假阳性')
-  assert.ok(
-    falsePositives.some((hit) => hit.file === 'app/viewport.ts' && /overflowY/u.test(hit.probe)),
-    '假阳性应包含 app/viewport.ts 的 overflowY 声明回读',
+  // #209 验收要求的那个假阳性原本就落在 viewport.ts 的声明回读上；#218 修完之后它必须变成
+  // 「已有兜底」—— 检测能力还在、现场缺陷没了。检测能力由上面的合成用例守，这里守现场：
+  // 那一处不许被静默跳过，也不许还留在假阳性名单里。
+  const viewportHit = hits.find((hit) => hit.file === 'app/viewport.ts' && /overflowY/u.test(hit.probe))
+  assert.ok(viewportHit, 'app/viewport.ts 的 overflowY 声明回读必须仍被盘点器看到（不能静默跳过）')
+  assert.equal(viewportHit.verdict, 'covered', '#218 之后 viewport.ts 的可滚判定必须带实测回读')
+  assert.equal(summary.falsePositives.length, 0, '真实 src 不应再有「只读声明、无回读」的假阳性')
+
+  // 修复前的形态仍必须判成假阳性，否则等于顺手把检测能力一起删了
+  const preFix = judge(
+    'src/app/viewport.ts',
+    `const style = getComputedStyle(element)
+const canScroll = /auto|scroll/.test(style.overflowY)
+`,
+    'getComputedStyle',
   )
+  assert.equal(preFix.verdict, 'false-positive')
+  assert.equal(preFix.risk, '高')
+
   assert.ok(
     hits.some(
       (hit) => hit.file === 'components/session/scrollToFirstMessage.ts' && hit.verdict === 'covered',
