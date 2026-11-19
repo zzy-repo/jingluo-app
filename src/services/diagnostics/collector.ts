@@ -842,16 +842,72 @@ const isTimeoutError = (error: unknown): boolean =>
     error instanceof Error ? `${error.name} ${error.message}` : String(error)
   )
 
-const readBytesOf = async (response: Response): Promise<number> => {
-  const length = Number(response.headers.get('Content-Length') ?? '')
-  if (Number.isFinite(length) && length >= 0) {
-    return length
+/**
+ * `net_response.bytes` 报「不可测」时的取值（#211）。
+ *
+ * 语义在这里定死，不许模棱两可：
+ * - `>= 0`：真实字节数（`Content-Length` 声明的，或读完副本实测的）；
+ * - `BYTES_UNMEASURABLE`：**量不出来**（流式响应等主动放弃精确体积的响应）。
+ *
+ * **0 只表示「确实是零字节」**，不许拿 0 顶替「不可测」—— 两者混成一个 0，这份诊断就在说谎。
+ */
+export const BYTES_UNMEASURABLE = -1
+
+/** 流式响应的 media type：读副本会阻塞到流关闭，所以只看类型、绝不碰 body */
+const STREAMING_CONTENT_TYPES = ['text/event-stream']
+
+/** 取 media type：`text/event-stream; charset=utf-8` → `text/event-stream`；缺头 → 空串 */
+const mediaTypeOf = (contentType: string | null): string => {
+  const raw = (contentType ?? '').trim().toLowerCase()
+  const end = raw.indexOf(';')
+  return end < 0 ? raw : raw.slice(0, end).trim()
+}
+
+const isStreamingMediaType = (contentType: string | null): boolean =>
+  STREAMING_CONTENT_TYPES.includes(mediaTypeOf(contentType))
+
+/**
+ * 解析 `Content-Length`：缺失 / 空串 / 非数字 / 负数**一律返回 null（≠ 0）**。
+ *
+ * 老写法是 `Number(headers.get('Content-Length') ?? '')`，而 `Number('') === 0`（空串不是 NaN），
+ * 于是「没有这个头」被当成「0 字节」直接 return，下面那个读副本的兜底**从来没被执行过**（#211）。
+ */
+const parseContentLength = (raw: string | null): number | null => {
+  if (raw === null) {
+    return null
+  }
+  const trimmed = raw.trim()
+  if (trimmed === '') {
+    return null
+  }
+  const length = Number(trimmed)
+  return Number.isFinite(length) && length >= 0 ? length : null
+}
+
+/**
+ * 读响应体积，供 `net_response.bytes` 使用（#211）。
+ *
+ * 顺序：`Content-Length` 声明值 → 流式响应主动放弃精确体积 → 其余才读副本实测。
+ *
+ * 为什么流式响应不能读副本：`response.clone().text()` 要**等整条流关闭**才 resolve（分块一直在推、
+ * 流到 t=1200ms 才关，clone 也在 t=1205ms 才 resolve —— 见 tests/unit/diagnostics-response-bytes
+ * 的 ⑤ 对照断言），而这个函数在 `collector.ts:950` 是**先把 response 交还调用方之前**被 await 的，
+ * 等于把 SSE 首字节推迟到回答结束。**宁可少一个数字，不要卡住诊断。**
+ */
+export const readBytesOf = async (response: Response): Promise<number> => {
+  const declared = parseContentLength(response.headers.get('Content-Length'))
+  if (declared !== null) {
+    return declared
+  }
+  if (isStreamingMediaType(response.headers.get('Content-Type'))) {
+    return BYTES_UNMEASURABLE
   }
   try {
     const text = await response.clone().text()
     return new TextEncoder().encode(text).length
   } catch {
-    return 0
+    // 副本读不了（body 已被消费 / 已上锁 / 流已死）：同样只能报「不可测」，不许拿 0 冒充
+    return BYTES_UNMEASURABLE
   }
 }
 

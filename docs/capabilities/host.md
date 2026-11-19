@@ -152,9 +152,9 @@
 **页面上换掉 `window.fetch` 的代码在 `src/services/diagnostics/collector.ts`：**
 
 - `:824` `let inNativeHttp = 0` —— 注释写的是「CapacitorHttp 内部会走 fetch：用它做重入标记」，即采集层自己知道 fetch 可能不是原生的；
-- `:844-855` `readBytesOf()` —— `response.clone().text()` 兜底读体积（见 #211）；
+- `:854-912` `readBytesOf()` —— 体积读取三档：`Content-Length` 声明值 → 流式响应（`text/event-stream`）主动放弃、报 `BYTES_UNMEASURABLE` → 其余才 `response.clone().text()` 实测（见 #211，已修；`:846` 的 `Number('') === 0` 不再把「没有这个头」当成 0 字节）；
 - `:907-908` `if (typeof window.fetch !== 'function') return` / `const original = window.fetch.bind(window)` —— 把当时那个函数当作「原生 fetch」；
-- `:950` `bytes: await readBytesOf(response)` —— 在把 `response` 交还调用方**之前** await；
+- `:1007` `bytes: await readBytesOf(response)` —— 在把 `response` 交还调用方**之前** await（正因为这一行，`readBytesOf` 里任何会等到流关闭的读法都会卡住 SSE，见 #211）；
 - `:980` `window.fetch = patched` —— 页面级替换；
 - `:986-1030` `installCapacitorHttpHook()` —— 另外再包一层 `CapacitorHttp.get/post/…`；
 - `:1155-1169` `installHooks()` 由 `src/main.tsx:73` 的 `initDiagnostics()` 在启动时调用，`collector.ts:1279-1280` 只有显式传 `installHooks: false` 才不装 → 生产包里这层包装**一直是活的**。
@@ -171,7 +171,7 @@
 | 结论 | 位置 | 风险 | Issue |
 | --- | --- | --- | --- |
 | 页面级替换 `window.fetch`，并默认它是原生的 | `src/services/diagnostics/collector.ts:980`（配合 `:824`、`:908`、`:950`） | 高 | #210 |
-| `readBytesOf()` 的 `response.clone().text()` 兜底：`bytes` 恒为 0，且兜底分支会阻塞流式响应 | `src/services/diagnostics/collector.ts:850`（配合 `:846`、`:950`） | 中 | #211 |
+| `readBytesOf()` 的 `response.clone().text()` 兜底：`bytes` 恒为 0，且兜底分支会阻塞流式响应 | `src/services/diagnostics/collector.ts:897`（配合 `:875`、`:1007`） | 中 | #211（已修：`bytes` 语义定为 `>= 0` 真实字节数 / `BYTES_UNMEASURABLE`（`-1`）不可测，流式响应不再读副本） |
 
 两条都按类别 3 的规矩拆成独立 Issue 修复；#209 的 PR 只带扫描器、本文件与单测。
 
