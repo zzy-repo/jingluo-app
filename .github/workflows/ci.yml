@@ -134,8 +134,13 @@ jobs:
         shard: [1, 2, 3]
         total: [3]
     steps:
+      # fetch-depth: 0 不是为了构建 —— motion.test.mjs 用 `git merge-base HEAD origin/main`
+      # 取「与本分支的分叉点」当静态对照基线（以前钉死 SHA，历史一挪就假红）；默认的 depth=1
+      # PR checkout 里没有 origin/main 这个 ref，等于整条用例一进来就 git 失败（实测 431ms 假红）。
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4

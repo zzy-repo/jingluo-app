@@ -1,12 +1,10 @@
 {
   "schemaVersion": 1,
-  "baseline": {
-    "ref": "origin/main@6e7baab（1.4.0-beta.10 线）",
-    "recordedAt": "2026-11-19",
-    "recordedBy": "Issue #365（L1 接入 CI 的分片权重）",
-    "note": "单个文件实测耗时（ms），用于把集成层切成并行分片。**只影响均衡度，不影响覆盖率**：没登记的文件按默认 30000ms 估重，照样会被分进某个分片，不存在「新文件没人跑」。重测：node tests/run-layer.mjs integration --json l1.json 后按 results[].ms 覆盖本表。"
-  },
+  "recordedAt": "2026-11-19",
+  "recordedBy": "Issue #365（L1 接入 CI 的分片权重）",
   "totalMs": 1188365,
+  "note": "单个文件实测耗时（ms），用于把集成层切成并行分片。**只影响均衡度，不影响覆盖率**：没登记的文件按默认 30000ms 估重，照样会被分进某个分片，不存在「新文件没人跑」。重测：node tests/run-layer.mjs integration --json l1.json 后按 results[].ms 覆盖本表。",
+  "ref": "origin/main@6e7baab（1.4.0-beta.10 线）",
   "files": {
     "auto-title.test.mjs": {
       "ms": 56844
