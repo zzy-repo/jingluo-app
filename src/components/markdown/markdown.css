@@ -378,3 +378,11 @@
   color: var(--dsw-alias-label-secondary);
   font-size: 14px;
 }
+
+/* #173-fallback:start —— issue #217。markdown.css 是普通 CSS（不是 CSS Module），
+   :global() 在这里是非法伪类、整条规则会被丢掉，所以作用域直接裸写。
+   gen-flex-gap-fallback.mjs 只处理 *.module.css，这一块按同样的规则人工等价落笔。 */
+html[data-flex-gap-fallback] .md-code-block-switch > *:not(:last-child) {
+  margin-right: 4px;
+}
+/* #173-fallback:end */

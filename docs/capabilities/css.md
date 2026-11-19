@@ -33,7 +33,7 @@
 | 特性 | 首支持 Chromium | 命中 | 已有兜底 | 无风险 | 可接受降级 | 真实缺陷 | 假阳性 | 结论 |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | 嵌套 `&` | — （构建期） | 112 | 112 | 0 | 0 | 0 | 0 | lightningcss 按 `chrome >= 83` 展开，非运行时假设 |
-| flex `gap` | 84 | 109 | 107 | 0 | 0 | **2** | 0 | 兜底覆盖有盲区 → #217 |
+| flex `gap` | 84 | 109 | 107 | 0 | 0 | 0（2 处已由 #217 补齐） | 0 | 兜底已全覆盖；`check:gap` 口径见 §2.6 |
 | `min()` / `max()` | 79 | 21 | 0 | 21 | 0 | 0 | 0 | 79 ≤ 83，无风险 |
 | `:has()` | 105 | 16 | 0 | 0 | 0 | **16** | 0 | 整条规则被丢 → #213 |
 | `:focus-visible` | 86 | 13 | 0 | 0 | 0 | **13** | 0 | 无 `:focus` 回退，可访问性丢失 → #215 |
@@ -114,15 +114,15 @@
 | `components/messages/MessageList.module.css:7` | `scrollbar-gutter: stable both-edges` 预留滚动条槽 | 2 | 中 | 拆单 #216 |
 | `components/messages/MessageList.module.css:18` | `scrollbar-gutter: auto` 复位 | 2 | 中 | 拆单 #216 |
 
-### 2.6 flex `gap`（109 处：107 已有兜底 / 2 无兜底 → #217）
+### 2.6 flex `gap`（109 处：全部已有兜底；#217 补齐了最后 2 处）
 
 | 文件:行 | 假设内容 | 类别 | 风险 | 处置 |
 | --- | --- | --- | --- | --- |
-| 37 个 `*.module.css` 共 107 处 | flex 容器上的 `gap` / `row-gap` | 2 | 低 | 已有兜底（`html[data-flex-gap-fallback]` + `margin` 块，由 `pnpm run check:gap` 逐条产出清单） |
-| `components/markdown/markdown.css:350` | `.md-code-block-switch { display:flex; gap:4px }`，文件内无兜底块，且**该文件不是 CSS Module，不在 `check:gap` 扫描范围** | 2 | 中 | 拆单 #217 |
-| `components/messages/ReplyArea.module.css:221` | `.toolBody { display:flex; flex-wrap:wrap; row-gap:6px }`，`flex-wrap` 形态被守卫按设计排除＝无兜底 | 2 | 中 | 拆单 #217 |
+| 37 个 `*.module.css` + `markdown.css` 共 109 处 | flex 容器上的 `gap` / `row-gap` | 2 | 低 | 已有兜底（`html[data-flex-gap-fallback]` + `margin` 块，由 `pnpm run check:gap` 逐条产出清单） |
+| `components/markdown/markdown.css:350` | `.md-code-block-switch { display:flex; gap:4px }`，文件不是 CSS Module、原先不在 `check:gap` 扫描范围 | 2 | 低 | **#217 已补**：裸写 `html[data-flex-gap-fallback]` 兜底块（` :global()` 在非 module 文件里非法），扫描范围同时扩到全部 `.css` |
+| `components/messages/ReplyArea.module.css:221` | `.toolBody { display:flex; flex-wrap:wrap; row-gap:6px }`，原先被 `flex-wrap` 排除规则放过 | 2 | 低 | **#217 已补**：`margin-bottom: 6px`；排除规则改为「交叉轴 gap 只在**不换行**时才不需要兜底」 |
 
-> 口径差异说明：`pnpm run check:gap` 报「扫描 **37** 个 CSS Module：已兜底 **109** 条，跳过 **3** 条」（3 条为 #159 的 `Settings.module.css:.backgroundRow`）。本表 109 处是**含非 module 文件**的口径，两种口径都保留，差异点正是 #217 要修的东西。
+> 口径（#217 之后统一）：`pnpm run check:gap` 报「扫描 **44** 个 CSS 文件（其中 **37** 个 CSS Module）：已兜底 **111** 条，跳过 **3** 条」。44 = `find src -name '*.css' | wc -l`；3 条跳过 = #159 的 `Settings.module.css:.backgroundRow` 1 条 + 非 flex 容器 2 条。原先的两种口径（37 module / 109 处 vs 含非 module 的 109 处）已合并成同一个口径。
 
 ### 2.7 `inset`（16 处，构建期降级 → 已有兜底）
 
@@ -174,7 +174,7 @@
 | [#214](https://github.com/zzy-repo/deepseek-app/issues/214) | `@container` + `container-type` | 2 | 中 | 容器查询整块被丢，窄缩略图上仍渲染两行失败原因 |
 | [#215](https://github.com/zzy-repo/deepseek-app/issues/215) | `:focus-visible` | 13 | 中 | 无 `:focus` 回退，键盘用户完全看不到焦点环（可访问性） |
 | [#216](https://github.com/zzy-repo/deepseek-app/issues/216) | `scrollbar-gutter` | 2 | 中 | 声明被丢，滚动条出现/消失瞬间消息列表横向跳动 |
-| [#217](https://github.com/zzy-repo/deepseek-app/issues/217) | flex `gap` 兜底覆盖面 | 2 | 中 | `check:gap` 只扫 CSS Module 且排除 `flex-wrap`，报 OK 但有盲区 |
+| [#217](https://github.com/zzy-repo/deepseek-app/issues/217) | flex `gap` 兜底覆盖面 | 2 | 中 | 已修：`check:gap` 扫全部 `.css`，`flex-wrap` 排除规则改为「不换行才排除」 |
 | [#218](https://github.com/zzy-repo/deepseek-app/issues/218) | `getComputedStyle` 声明回读 | 1 | **高** | 判定通过但滚不动，静默失效（§3 的第 1 条） |
 
 ## 5. 不算命中 / 需要说明的边界项
