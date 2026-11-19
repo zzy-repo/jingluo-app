@@ -121,8 +121,14 @@ export const gapFallbackRequirement = (gap) => {
   return { main, cross, required: main !== null || cross !== null }
 }
 
-/** 兜底块内容：只写 margin，绝不写 gap */
-export const renderFallback = (selector, gap) => {
+/**
+ * 兜底块内容：只写 margin，绝不写 gap。
+ *
+ * `global` 控制作用域写法（#233）：CSS Module 里裸写作用域会被哈希掉，必须用
+ * `:global(html[…])` 逃逸；普通 `.css` 里 `:global()` 是非法伪类、整条规则会被丢掉，
+ * 只能裸写。默认 `true`（module 写法）保持既有产物逐字节不变。
+ */
+export const renderFallback = (selector, gap, { global: useGlobal = true } = {}) => {
   const { main, cross } = gapFallbackRequirement(gap)
   // 只给「除最后一个子元素之外」加边距：不碰 margin-left，才能让 margin-left:auto 的
   // 右对齐子元素（如 ChatInput .right）继续工作。
@@ -138,7 +144,11 @@ export const renderFallback = (selector, gap) => {
     .split(',')
     .map((part) => part.trim())
     .filter(Boolean)
-    .map((part) => `:global(html[data-flex-gap-fallback]) ${part} > *:not(:last-child)`)
+    .map((part) =>
+      useGlobal
+        ? `:global(html[data-flex-gap-fallback]) ${part} > *:not(:last-child)`
+        : `html[data-flex-gap-fallback] ${part} > *:not(:last-child)`,
+    )
     .join(',\n')
   return `${scope} {\n${lines.join('\n')}\n}`
 }

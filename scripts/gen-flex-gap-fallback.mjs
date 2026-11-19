@@ -5,14 +5,24 @@
  * 所以兜底样式统一挂在 `html[data-flex-gap-fallback]`（由 src/utils/flexGap.ts 实测决定）
  * 之下，用 margin 实现，支持 gap 的内核上这个属性不存在 → 不会出现双份间距。
  *
+ * 两种作用域写法（issue #233）：
+ *  - `*.module.css`：`:global(html[data-flex-gap-fallback]) .foo > *:not(:last-child)`
+ *    —— CSS Module 会把裸写的作用域哈希掉，必须用 `:global()` 逃逸。
+ *  - 其余普通 `.css`：`html[data-flex-gap-fallback] .foo > *:not(:last-child)`
+ *    —— `:global()` 在非 module 文件里是非法伪类，整条规则会被浏览器丢掉，
+ *    所以作用域只能裸写。`check:gap` 自 #217 起扫全部 `.css`，判定层
+ *    （`gapFallbackRequirement()`）本来就不区分文件类型，之前卡住的只是这里的生成层。
+ *
  * 用法：`node scripts/gen-flex-gap-fallback.mjs`（`pnpm run gen:gap`）
  * 幂等：先删旧块再按当前 CSS 重新生成。
+ * 共存：文件里已经有人工写的兜底块（标记注释与生成块不同、不会被清掉）时，
+ * 该选择器不再重复生成，只保留人工那一份。
  */
 
 import { readFileSync, writeFileSync } from 'node:fs'
 import { readdir } from 'node:fs/promises'
 import { join, relative, sep } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 
 import { SKIP, parseRules, readGap, renderFallback } from './lib/flexGapRules.mjs'
 
@@ -21,17 +31,18 @@ const SRC = join(ROOT, 'src')
 const START = '/* #173-fallback:start —— 由 node scripts/gen-flex-gap-fallback.mjs 生成，勿手改（issue #173） */'
 const END = '/* #173-fallback:end */'
 
+/** 全部 `.css`（含非 module 的普通 CSS）：#217 起 `check:gap` 就是这个口径，生成器必须一致 */
 const walk = async (dir) => {
   const out = []
   for (const entry of await readdir(dir, { withFileTypes: true })) {
     const full = join(dir, entry.name)
     if (entry.isDirectory()) out.push(...(await walk(full)))
-    else if (entry.name.endsWith('.module.css')) out.push(full)
+    else if (entry.name.endsWith('.css')) out.push(full)
   }
   return out
 }
 
-/** 删掉上一次生成的块（幂等） */
+/** 删掉上一次生成的块（幂等）。人工块用的是另一段标记注释，不会被这里删掉。 */
 const stripGenerated = (css) => {
   let out = css
   for (;;) {
@@ -43,9 +54,32 @@ const stripGenerated = (css) => {
   }
 }
 
+/** 已经存在的兜底块（人工写的，或别的文件里的）覆盖了哪些选择器 —— 这些不重复生成 */
+const PREEXISTING_RE = /(?::global\(\s*)?html\[data-flex-gap-fallback\]\s+([^{,}\n]+?)\s*>\s*\*?:not\(:last-child\)/gu
+
+const coveredSelectorsIn = (css) => {
+  const found = new Set()
+  PREEXISTING_RE.lastIndex = 0
+  for (const match of css.matchAll(PREEXISTING_RE)) found.add(match[1].trim())
+  return found
+}
+
 const indent = (text, pad) => text.split('\n').map((line) => `${pad}${line}`).join('\n')
 
-const buildSection = (file, rules) => {
+/** 兜底块的作用域：module 里要 `:global()` 逃逸，普通 CSS 裸写（`:global()` 会被整条丢掉） */
+const scopeOf = (selector, module) =>
+  selector
+    .split(',')
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .map((part) =>
+      module
+        ? `:global(html[data-flex-gap-fallback]) ${part} > *:not(:last-child)`
+        : `html[data-flex-gap-fallback] ${part} > *:not(:last-child)`,
+    )
+    .join(',\n')
+
+const buildSection = (file, rules, { module, existing }) => {
   const blocks = []
   const skipped = []
   // 同一个选择器可能在另一条规则里才声明 display:flex（gap 单独写在后面），
@@ -73,11 +107,15 @@ const buildSection = (file, rules) => {
       continue
     }
     gapInfo.set(rule.selector.trim(), { rowGap: gap.rowGap, colGap: gap.colGap, wrap: gap.wrap, column: gap.column })
+    if (existing.has(rule.selector.trim())) {
+      skipped.push({ selector: rule.selector, why: '已有人工兜底块（#173-fallback 标记写法），不重复生成' })
+      continue
+    }
     if (rule.selector.includes('>') || rule.selector.includes('&')) {
       skipped.push({ selector: rule.selector, why: '选择器里已经有子代组合符，无法机械加一层 > *' })
       continue
     }
-    const block = renderFallback(rule.selector, gap)
+    const block = renderFallback(rule.selector, gap, { global: module })
     if (block === null) continue
     blocks.push({ media: rule.media, block })
   }
@@ -90,17 +128,16 @@ const buildSection = (file, rules) => {
     if (readGap(rule) !== null) continue
     const base = gapInfo.get(rule.selector.trim())
     if (base === undefined) continue
+    if (existing.has(rule.selector.trim())) continue
     const column = /column/u.test(direction[1])
     if (column === base.column) continue
     const main = column ? (base.rowGap ?? base.colGap) : (base.colGap ?? base.rowGap)
     if (main === null || /^0(?:px|rem|em)?$/u.test(main)) continue
     const side = column ? 'margin-bottom' : 'margin-right'
     const other = column ? 'margin-right' : 'margin-bottom'
-    const parts = rule.selector.split(',').map((part) => part.trim()).filter(Boolean)
-    const scope = parts.map((part) => `:global(html[data-flex-gap-fallback]) ${part} > *:not(:last-child)`).join(',\n')
     blocks.push({
       media: rule.media,
-      block: `${scope} {\n  ${other}: 0;\n  ${side}: ${main};\n}`,
+      block: `${scopeOf(rule.selector, module)} {\n  ${other}: 0;\n  ${side}: ${main};\n}`,
     })
   }
   if (blocks.length === 0) return { text: '', skipped }
@@ -114,26 +151,39 @@ const buildSection = (file, rules) => {
   return { text: `${START}\n${body}\n${END}\n`, skipped }
 }
 
-const main = async () => {
-  const files = await walk(SRC)
+/** 生成（或刷新）某个 src 目录下的全部兜底块。测试用临时目录调它，CLI 用 `src/`。 */
+export const generateGapFallback = async (srcDir = SRC) => {
+  const files = await walk(srcDir)
   let total = 0
   let touched = 0
+  const skips = []
+  const changed = []
   for (const path of files) {
     const raw = readFileSync(path, 'utf8')
     const cleaned = stripGenerated(raw)
     const { rules } = parseRules(cleaned)
-    const name = relative(SRC, path).split(sep).join('/').split('/').pop()
-    const { text, skipped } = buildSection(name, rules)
+    const name = relative(srcDir, path).split(sep).join('/').split('/').pop()
+    const { text, skipped } = buildSection(name, rules, {
+      module: name.endsWith('.module.css'),
+      existing: coveredSelectorsIn(cleaned),
+    })
     const count = (text.match(/data-flex-gap-fallback/gu) ?? []).length
     total += count
-    for (const item of skipped) console.log(`  skip  ${name} ${item.selector} —— ${item.why}`)
+    for (const item of skipped) skips.push({ file: name, ...item })
     const next = text === '' ? cleaned.replace(/\s+$/u, '\n') : `${cleaned.replace(/\s+$/u, '\n')}\n${text}`
     if (next !== raw) {
       writeFileSync(path, next)
       touched += 1
+      changed.push(relative(srcDir, path).split(sep).join('/'))
     }
   }
-  console.log(`gap 兜底规则 ${total} 条，改动 ${touched} 个文件`)
+  return { files: files.length, total, touched, changed, skips }
 }
 
-await main()
+const invokedDirectly = process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href
+
+if (invokedDirectly) {
+  const result = await generateGapFallback(SRC)
+  for (const item of result.skips) console.log(`  skip  ${item.file} ${item.selector} —— ${item.why}`)
+  console.log(`gap 兜底规则 ${result.total} 条，改动 ${result.touched} 个文件`)
+}
