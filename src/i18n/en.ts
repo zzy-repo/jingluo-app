@@ -225,7 +225,7 @@ export const en = {
   historyImportUrlTimeout: 'Download timed out. Check your network and try again.',
   historyImportUrlHttp:
     'The link returned an error status (HTTP {status}). Check that it is still valid.',
-  historyImportUrlTooLarge: 'The file exceeds the {size}MB limit and cannot be imported.',
+  historyImportUrlTooLarge: 'The file is {actual}, over the {size}MB import limit, so it was not imported.',
   historyImportUrlNotZip:
     'Not a valid ZIP file. Check that the link points to a DeepSeek chat history export.',
   historyImportUrlBadResponse: 'The download response could not be parsed. Please try again.',
@@ -723,4 +723,6 @@ export const en = {
   // the import service (DNS failure / no route / link dropped mid-switch). It must not reuse the
   // offline wording — telling users to check a connection that is actually fine sends them nowhere.
   historyImportUrlUnreachable: 'Cannot reach the import service right now. Please try again later.',
+  historyImportReadFailed:
+    'The archive finished downloading but this device could not read it (usually low memory). Close other apps and try again, or restart the app.',
 } satisfies Record<keyof typeof zh, string>

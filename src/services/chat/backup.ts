@@ -2,7 +2,7 @@ import { formatDate } from '../../utils/format.js'
 import { captureStateSnapshot, errorMeta, record, recordAction, recordEvent } from '../diagnostics/collector.js'
 import * as db from './db.js'
 import { fail } from './history/errors.js'
-import { maxImportMegabytes, resolveMaxImportBytes } from './history/importLimit.js'
+import { formatImportBytes, maxImportMegabytes, resolveMaxImportBytes } from './history/importLimit.js'
 import { parseSessionPath } from './history/paths.js'
 import { listArchivePaths } from './history/zipReader.js'
 import { replaceHistory, useChatStore } from './store.js'
@@ -56,9 +56,12 @@ export type ImportHistoryOptions = {
   maxBytes?: number
 }
 
-/** 与「从链接导入」复用同一条提示文案：都是「这个包太大，先别导」。 */
-const tooLarge = (limitBytes: number): never =>
-  fail('historyImportUrlTooLarge', { size: maxImportMegabytes(limitBytes) })
+/** 与「从链接导入」复用同一条提示文案：都是「这个包太大，先别导」，都要说清上限与实测体积（#195）。 */
+const tooLarge = (limitBytes: number, measuredBytes: number): never =>
+  fail('historyImportUrlTooLarge', {
+    size: maxImportMegabytes(limitBytes),
+    actual: formatImportBytes(measuredBytes),
+  })
 
 /** 会话总数：只读中央目录的条目名，不读条目内容；目录异常时返回 undefined（退化为只显示已处理数）。 */
 const countSessions = async (file: File): Promise<number | undefined> => {
@@ -81,7 +84,7 @@ export const importHistory = (file: File, options: ImportHistoryOptions = {}): P
       const maxBytes = resolveMaxImportBytes(options.maxBytes)
       if (file.size > maxBytes) {
         stage = 'size'
-        tooLarge(maxBytes)
+        tooLarge(maxBytes, file.size)
       }
       const { checkArchiveFormat, importArchive } = await import('./history/importArchive.js')
       recordEvent('import_stage', 'import: check archive format', { stage, bytes: file.size })

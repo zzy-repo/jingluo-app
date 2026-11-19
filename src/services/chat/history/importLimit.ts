@@ -19,3 +19,17 @@ export const maxImportMegabytes = (bytes: number = DEFAULT_MAX_IMPORT_BYTES): nu
 /** 解析调用方传入的上限：没传或不合法（非有限数 / <=0）一律退回默认值，不接受「无上限」。 */
 export const resolveMaxImportBytes = (value?: number): number =>
   typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : DEFAULT_MAX_IMPORT_BYTES
+
+/**
+ * 字节 → 人话（与界面 formatBytes 同档：KB 之前不换算成小数）。
+ * 超限提示要把「实测体积」说出来（#195），本地文件与直链两条链路必须用同一把尺子。
+ */
+export const formatImportBytes = (bytes: number): string => {
+  if (bytes < 1024) {
+    return `${bytes}B`
+  }
+  if (bytes < 1024 * 1024) {
+    return `${(bytes / 1024).toFixed(bytes < 10 * 1024 ? 1 : 0)}KB`
+  }
+  return `${(bytes / 1024 / 1024).toFixed(1)}MB`
+}

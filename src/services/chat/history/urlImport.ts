@@ -2,8 +2,20 @@ import { Capacitor, CapacitorHttp, type HttpResponse } from '@capacitor/core'
 import { errorMeta, record, recordAction, recordEvent, redactUrl } from '../../diagnostics/collector.js'
 import { importHistory } from '../backup.js'
 import { BackupError, fail } from './errors.js'
-import { classifyImportFailure, IMPORT_FAILURE_KEYS, isBrowserOnline, type ImportFailureReason } from './importFailure.js'
-import { maxImportMegabytes, resolveMaxImportBytes, DEFAULT_MAX_IMPORT_BYTES } from './importLimit.js'
+import {
+  ARCHIVE_READ_FAILURE_KEY,
+  classifyImportFailure,
+  IMPORT_FAILURE_KEYS,
+  isArchiveReadFailure,
+  isBrowserOnline,
+  type ImportFailureReason,
+} from './importFailure.js'
+import {
+  formatImportBytes as formatSize,
+  maxImportMegabytes,
+  resolveMaxImportBytes,
+  DEFAULT_MAX_IMPORT_BYTES,
+} from './importLimit.js'
 
 /**
  * 直链导入：用原生 HTTP 下载 ZIP 后交给既有的文件导入链路（importHistory）。
@@ -227,8 +239,23 @@ const contentRangeTotal = (headers: Record<string, string> | undefined): number 
   return Number.isSafeInteger(value) && value > 0 ? value : undefined
 }
 
-const tooLarge = (limitBytes: number): never =>
-  fail('historyImportUrlTooLarge', { size: maxImportMegabytes(limitBytes) })
+/**
+ * 超限拒绝（#195）：上限与**实测体积**都要说出来。
+ * 只给「文件过大（200MB）」时用户不知道是哪个包、也看不出差多少；两个数一起给，
+ * 才不会把「应用算错」和「我这个包确实太大」混在一起。
+ */
+const tooLarge = (limitBytes: number, measuredBytes: number): never => {
+  // 拒绝也要留痕：只给用户一句提示、日志里却什么都没有，事后就查不出「到底是哪个包、差多少」。
+  record('import_error', 'error', 'import rejected: archive too large', {
+    stage: 'size',
+    'limit.bytes': limitBytes,
+    'download.bytes': measuredBytes,
+  })
+  return fail('historyImportUrlTooLarge', {
+    size: maxImportMegabytes(limitBytes),
+    actual: formatSize(measuredBytes),
+  })
+}
 
 /**
  * 403 的错误页文本。
@@ -288,8 +315,9 @@ const fromBase64 = (value: string): Uint8Array<ArrayBuffer> => {
 const toBytes = (data: unknown, maxBytes: number): Uint8Array<ArrayBuffer> => {
   if (typeof data === 'string') {
     // 每个 base64 字符约 3/4 字节：超限的包不必解码，避免几十 MB 的字符串再膨胀一倍。
-    if (Math.floor((data.length * 3) / 4) > maxBytes) {
-      tooLarge(maxBytes)
+    const estimated = Math.floor((data.length * 3) / 4)
+    if (estimated > maxBytes) {
+      tooLarge(maxBytes, estimated)
     }
     return fromBase64(data)
   }
@@ -487,17 +515,6 @@ const RESUMABLE_ERROR_KEYS = new Set([
 /** 主动丢弃续传点（成功、取消、换链接时调用），避免几十上百 MB 的块白占内存。 */
 const dropResumePoint = (): void => {
   resumePoint = null
-}
-
-/** 字节 → 人话（与界面 formatBytes 同档：KB 之前不换算成小数）。 */
-const formatSize = (bytes: number): string => {
-  if (bytes < 1024) {
-    return `${bytes}B`
-  }
-  if (bytes < 1024 * 1024) {
-    return `${(bytes / 1024).toFixed(bytes < 10 * 1024 ? 1 : 0)}KB`
-  }
-  return `${(bytes / 1024 / 1024).toFixed(1)}MB`
 }
 
 /**
@@ -974,8 +991,9 @@ const downloadArchive = async (
       }
       let data: unknown = response.data
       response.data = null
-      const bytes = toBytes(data, maxBytes)
-      data = null
+      // 先认响应头，再看包体（#195）：整包体积一写进头里就能判超限，
+      // 没必要等这一块解成字节——服务端忽略 Range 直接回 200 整包时，
+      // 旧顺序会先把 200MB 包体解一遍、再判「文件过大」，用户等的就是这个白下载。
       if (state.total === undefined) {
         // 总长度只认可信来源：
         // - 206 的 `Content-Range: bytes a-b/total`（total 为 `*` 时代码按未知处理）；
@@ -988,17 +1006,19 @@ const downloadArchive = async (
         if (declared !== undefined) {
           state.total = declared
           if (declared > maxBytes) {
-            tooLarge(maxBytes)
+            tooLarge(maxBytes, declared)
           }
         }
       }
+      const bytes = toBytes(data, maxBytes)
+      data = null
       if (bytes.byteLength > 0) {
         chunks.push(bytes)
         state.downloaded += bytes.byteLength
         // 停滞判定的唯一依据：真的收到新字节才重新计时（#38）
         state.lastProgressAt = monotonicNow()
         if (state.downloaded > maxBytes) {
-          tooLarge(maxBytes)
+          tooLarge(maxBytes, state.downloaded)
         }
         options.onProgress?.({
           phase: 'downloading',
@@ -1237,6 +1257,22 @@ export const importHistoryFromUrl = async (
       })
       emit({ kind: 'cancel' })
       throw error instanceof UrlImportCancelled ? error : new UrlImportCancelled()
+    }
+    // 归档已经下完，卡在**读取**（File / Blob / FileReader）这一层（#195）：
+    // WebView 只会抛英文 DOMException 原文，直接冒到界面上就是
+    // 「Import from link failed: The requested file could not be read, typically due to permission
+    //   problems…」——用户既不知道包其实下完了，也不知道该做什么。
+    // 原始 name / message 只留在诊断与 console，界面换成能照着做的本地化文案。
+    if (isArchiveReadFailure(error)) {
+      record('import_error', 'error', 'import failed: archive unreadable after download', {
+        stage: 'import',
+        ...errorMeta(error),
+      })
+      // 用户文案已经本地化了，原始英文只在这里和诊断里留一份，方便支持人员定位
+      // eslint-disable-next-line no-console
+      console.error('[import] archive could not be read on this device', error)
+      emit({ kind: 'error', message: 'read-failed' })
+      fail(ARCHIVE_READ_FAILURE_KEY)
     }
     // 下载阶段的失败已经在原处带过状态与原因；这里补「校验/导入阶段」的失败事实。
     const isDownloadFailure = error instanceof BackupError && error.key.startsWith('historyImportUrl')

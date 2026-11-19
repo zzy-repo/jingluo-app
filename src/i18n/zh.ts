@@ -210,7 +210,7 @@ export const zh = {
   historyImportUrlNetwork: '下载失败，请检查网络连接后重试',
   historyImportUrlTimeout: '下载超时，请检查网络后重试',
   historyImportUrlHttp: '链接返回了异常状态（HTTP {status}），请确认链接是否仍然有效',
-  historyImportUrlTooLarge: '文件过大（{size}MB），暂不支持',
+  historyImportUrlTooLarge: '文件过大（{size}MB），实测 {actual}，已停止导入',
   historyImportUrlNotZip: '该链接不是有效的 ZIP 文件',
   historyImportUrlBadResponse: '下载返回的数据无法解析，请重试',
   historyImportUrlWebHint: '网页版无法直接下载导出链接，请手动下载 ZIP 后上传。',
@@ -701,4 +701,6 @@ export const zh = {
   // 导入失败的「不可达」档（issue #18）：有网、但连不上导入服务（DNS 解析不到 / 路由不可达 / 切网瞬间断链）。
   // 不能复用 historyImportUrlOffline 的「网络已断开」—— 用户网络明明是通的，那句只会把人往错方向带。
   historyImportUrlUnreachable: '暂时无法连接导入服务，请稍后重试',
+  historyImportReadFailed:
+    '导出包已经下载完成，但本机无法读取（通常是内存不足）。请关闭其它应用后重试，或重启应用再导入。',
 } as const

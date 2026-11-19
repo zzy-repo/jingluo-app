@@ -100,6 +100,47 @@ export const IMPORT_FAILURE_KEYS: Record<ImportFailureReason, TranslationKey> = 
   server: 'historyImportUrlHttp',
 }
 
+/**
+ * 归档**读取**失败的识别（#195）。
+ *
+ * 包已经完整下到本地、准备解析时，WebView 读 `File` / `Blob` 失败只会给一个纯英文 DOMException：
+ * 「The requested file could not be read, typically due to permission problems that have occurred
+ *   after a reference to a file was acquired.」——用户既不知道该干什么，也看不到「其实已经下完了」。
+ * 这里只负责认出「这是读取失败」，文案由调用方换成本地化 key，原始 name / message 只进诊断与 console。
+ *
+ * 认名字优先（WebView 稳定给出 DOMException.name），名字丢了才退回文本匹配。
+ * `AbortError` 属于用户取消，不在此列；网络类（UnknownHost / ConnectException）也不能被当成读取失败。
+ */
+const READ_FAILURE_NAMES = new Set([
+  'NotReadableError',
+  'NotFoundError',
+  'NotAllowedError',
+  'SecurityError',
+  'InvalidStateError',
+  'EncodingError',
+  'TypeMismatchError',
+])
+
+/** 名字之外的最后一道保险：WebView 偶尔只把原文塞进 message。 */
+const READ_FAILURE_PATTERN =
+  /could not be read|could not be loaded|not been read|has been closed|the requested file|readasarraybuffer|filereader/i
+
+/** 这个异常是不是「归档在本机读不出来」（File / FileReader / Blob 的读取类 DOMException）。 */
+export const isArchiveReadFailure = (error: unknown): boolean => {
+  if (error === null || typeof error !== 'object') {
+    return false
+  }
+  const { name, message } = error as { name?: unknown; message?: unknown }
+  if (typeof name === 'string' && READ_FAILURE_NAMES.has(name)) {
+    return true
+  }
+  const text = `${typeof name === 'string' ? name : ''} ${typeof message === 'string' ? message : ''}`
+  return READ_FAILURE_PATTERN.test(text)
+}
+
+/** 读取失败只给一档人话：「归档已经下完，但本机读不出来」，具体原文只进诊断。 */
+export const ARCHIVE_READ_FAILURE_KEY: TranslationKey = 'historyImportReadFailed'
+
 /** 浏览器 / WebView 的在线读数；读不到就当在线，不替用户下结论。 */
 export const isBrowserOnline = (): boolean => {
   try {
