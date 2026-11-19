@@ -3,8 +3,11 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
-const recall = require('../recall.js');
-const vec = require('../vectorstore.js');
+// 仓库根 package.json 是 "type": "module"，这几个块级浏览器脚本不能直接 require（会拿到空导出）。
+// 统一用 tests/memory/helpers/load.cjs 在 vm 里按浏览器的加载方式跑。（#400）
+const { loadModule } = require('../../../../tests/memory/helpers/load.cjs');
+const recall = loadModule('recall').exports;
+const vec = loadModule('vectorstore').exports;
 
 const msg = (mes, is_user = false) => ({ mes, is_user });
 const settings = { recallBudgetTokens: 200, recallTopK: 3, recallWindowRadius: 3, recallQueryTurns: 1 };
