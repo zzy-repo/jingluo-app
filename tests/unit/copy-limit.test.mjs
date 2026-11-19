@@ -7,12 +7,31 @@
 // [2] 阈值判定：正好 512 KiB 可复制，多 1 字节即超限
 // [3] 中文 200000 字（600000 字节）超限；emoji 140000 个（560000 字节、仅 140000 字符）同样超限
 // [4] 提示用的 KiB 向上取整
-import {
+//
+// clipboard.ts 现在还 import 了 utils/capabilities.ts（#209 统一能力探测），源码里的相对 import
+// 是 `.js` 写法（tsc NodeNext 要求），所以这里要挂 resolve hook 把它指到 `.ts`——和
+// tests/unit/legacy-polyfills.test.mjs 同一套手法，因此改为动态 import。
+import { registerHooks } from 'node:module'
+
+registerHooks({
+  resolve(specifier, context, nextResolve) {
+    try {
+      return nextResolve(specifier, context)
+    } catch (error) {
+      if (specifier.startsWith('.') && specifier.endsWith('.js')) {
+        return nextResolve(specifier.slice(0, -3) + '.ts', context)
+      }
+      throw error
+    }
+  },
+})
+
+const {
   COPY_LIMIT_BYTES,
   exceedsCopyLimit,
   kibibytes,
   utf8ByteLength,
-} from '../../src/utils/clipboard.ts'
+} = await import('../../src/utils/clipboard.ts')
 
 const failures = []
 let checks = 0

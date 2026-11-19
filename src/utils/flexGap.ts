@@ -9,27 +9,38 @@
  * 支持 gap 的内核上这个属性根本不会出现，所以不存在「gap + margin 双份间距」。
  */
 
+import { verifyCss } from './capabilities.js'
+
 const PROBE_GAP = 8
 
-/** 真机/模拟器上量一次 flex gap 是否生效 */
-export const detectFlexGap = (doc: Document): boolean => {
-  const host = doc.createElement('div')
-  host.setAttribute('aria-hidden', 'true')
-  host.style.cssText =
-    'position:absolute;left:-9999px;top:0;width:100px;height:10px;overflow:hidden;' +
-    `display:flex;flex-direction:row;flex-wrap:nowrap;column-gap:${PROBE_GAP}px`
-  const first = doc.createElement('div')
-  const second = doc.createElement('div')
-  first.style.cssText = 'width:10px;height:10px;flex:0 0 auto'
-  second.style.cssText = 'width:10px;height:10px;flex:0 0 auto'
-  host.append(first, second)
-  doc.body.append(host)
-  const left = first.getBoundingClientRect()
-  const right = second.getBoundingClientRect()
-  host.remove()
-  // 允许亚像素误差：支持时实测间距 ≈ 8，不支持时是 0
-  return right.left - left.right >= PROBE_GAP - 0.5
-}
+/** 探针容器的固定样式：离屏、定宽，横排不换行（gap 由 verifyCss 写，这里不重复声明） */
+const PROBE_STYLE =
+  'position:absolute;left:-9999px;top:0;width:100px;height:10px;overflow:hidden;' +
+  'display:flex;flex-direction:row;flex-wrap:nowrap'
+
+/**
+ * 真机/模拟器上量一次 flex gap 是否生效。
+ *
+ * 量法交给 `utils/capabilities.ts` 的 `verifyCss`（#209）：它负责造离屏元素、写样式、摘元素、缓存结论，
+ * 这里只负责「怎么读回来」—— 几何。量出来的间距 ≈ PROBE_GAP 才算生效，0 就是没生效。
+ */
+export const detectFlexGap = (doc: Document): boolean =>
+  verifyCss(
+    'column-gap',
+    `${PROBE_GAP}px`,
+    (host) => {
+      const first = doc.createElement('div')
+      const second = doc.createElement('div')
+      first.style.cssText = 'width:10px;height:10px;flex:0 0 auto'
+      second.style.cssText = 'width:10px;height:10px;flex:0 0 auto'
+      host.append(first, second)
+      const left = first.getBoundingClientRect()
+      const right = second.getBoundingClientRect()
+      // 允许亚像素误差：支持时实测间距 ≈ 8，不支持时是 0
+      return right.left - left.right >= PROBE_GAP - 0.5
+    },
+    { doc, baseStyle: PROBE_STYLE }
+  )
 
 /** 在首屏渲染前调用：不支持 flex gap 时挂 `html[data-flex-gap-fallback]` */
 export const setupFlexGapFallback = (doc: Document = document): boolean => {

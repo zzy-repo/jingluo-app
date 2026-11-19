@@ -13,6 +13,13 @@ import {
   type SystemInfo,
 } from './types.js'
 import { redact, redactUrl, safeString, truncate } from './redact.js'
+import {
+  cssSupports,
+  hasApi,
+  isFetchPatched,
+  isNative,
+} from '../../utils/capabilities.js'
+import { detectFlexGap } from '../../utils/flexGap.js'
 
 /**
  * 采集层：只负责「记什么」。
@@ -449,11 +456,23 @@ const readBrowserSystemInfo = (): SystemInfo => {
   const nav = typeof navigator === 'undefined' ? undefined : navigator as Navigator & { connection?: { type?: string; effectiveType?: string } }
   const w = typeof window === 'undefined' ? undefined : window
   const capabilities: Record<string, boolean> = {}
-  try { capabilities.toSorted = typeof Array.prototype.toSorted === 'function' } catch { capabilities.toSorted = false }
-  try { capabilities.hasOwn = typeof Object.hasOwn === 'function' } catch { capabilities.hasOwn = false }
-  try { capabilities.at = typeof Array.prototype.at === 'function' } catch { capabilities.at = false }
+  // #209：能力探测统一收口到 utils/capabilities.ts。这里只读结论（同一 key 只真探一次，
+  // 启动期 flexGap 已经量过的那条直接命中缓存），字段名与语义保持不变，只往后加。
+  capabilities.toSorted = hasApi('Array.prototype.toSorted')
+  capabilities.hasOwn = hasApi('Object.hasOwn')
+  capabilities.at = hasApi('Array.prototype.at')
   capabilities.visualViewport = !!w?.visualViewport
-  try { capabilities.dvh = !!w && CSS.supports('height: 100dvh') } catch { capabilities.dvh = false }
+  capabilities.dvh = cssSupports('height', '100dvh')
+  capabilities.fetchPatched = isFetchPatched()
+  capabilities.isNative = isNative()
+  capabilities.clipboard = hasApi('navigator.clipboard.writeText')
+  capabilities.blobStream = hasApi('Blob.prototype.stream')
+  capabilities.intlSegmenter = hasApi('Intl.Segmenter')
+  capabilities.intlDisplayNames = hasApi('Intl.DisplayNames')
+  capabilities.structuredClone = hasApi('structuredClone')
+  capabilities.cryptoRandomUUID = hasApi('crypto.randomUUID')
+  // flex gap 只能量（CSS.supports 在 WebView 83 上假阳性，见 #173）：复用启动期那次实测的缓存
+  capabilities.flexGapVerified = typeof document === 'undefined' ? false : detectFlexGap(document)
   return {
     appVersionName: readAppVersion(),
     appVersionCode: readVersionCode(),

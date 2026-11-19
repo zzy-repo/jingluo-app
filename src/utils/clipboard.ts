@@ -1,6 +1,10 @@
+import { hasApi } from './capabilities.js'
+
 export const copyText = async (text: string): Promise<boolean> => {
   try {
-    if (navigator.clipboard?.writeText) {
+    // 能力探测统一走 capabilities（#209）：`navigator.clipboard` 在非安全上下文里可能是 null，
+    // 老 WebView 上整个 API 都没有 —— 判一次、进缓存，不让每个调用点各写一套 typeof。
+    if (hasApi('navigator.clipboard.writeText')) {
       await navigator.clipboard.writeText(text)
       return true
     }
