@@ -258,132 +258,143 @@ test('域10 门禁矩阵的表结构自洽（id 唯一 / 覆盖的功能点都�
   )
 })
 
+// 一行拆成「正例」与「反例」两条 test：缺口（缺产物）时只有正例被**声明期**跳过，
+// 反例照常跑 —— 否则「跳过」会把反例一起吞掉，又变成 #287 那种「报告里看不出没检查」。
 for (const row of ROWS) {
-  test(`${row.id} ${row.gate}：正例必过 + ${row.negative.mode === 'todo' ? `TODO(${row.negative.issue})` : '反例必拦'}`, () => {
-    // ---- 正例 ----
-    if (row.positive.expect === 0 && row.positive.when === false) {
-      // 缺产物：按仓库既有约定显式跳过（run-layer 会把这条 SKIP 具名打印出来，不吞）
-      console.log(`  # SKIP ${row.gate}：${row.positive.skipReason}`)
-      return
-    }
-    const cleanDir = scratch()
-    let clean
-    try {
-      let args = row.args
-      if (row.positive.apk) {
-        const apk = path.join(cleanDir, 'release.apk')
-        writeFileSync(apk, buildApk({ ...row.positive.apk, versionName: '1.4.0', versionCode: 18 }))
-        args = [...row.args, apk]
-      }
-      clean = run(args)
-    } finally {
-      rmSync(cleanDir, { recursive: true, force: true })
-    }
-    assert.equal(
-      clean.status,
-      0,
-      `${row.gate} 正例必须 exit=0（当前仓库自己是干净的）\n--- 输出 ---\n${combined(clean)}`
-    )
-    if (row.positive.match) {
-      assert.match(combined(clean), row.positive.match, `${row.gate} 正例输出里应能看出「它真的检查了」`)
-    }
-
-    // ---- 反例 ----
-    const negative = row.negative
-    if (negative.mode === 'builtin') {
-      // 自带正反对：断言两半都真的出现过，删掉任一半本用例就红
-      assert.match(combined(clean), /ok\s+PASS/i, `${row.gate}：自带的反例里必须有一条「合法必过」`)
-      assert.match(combined(clean), /ok\s+FAIL/i, `${row.gate}：自带的反例里必须有一条「非法必拦」`)
-      return
-    }
-    if (negative.mode === 'todo') {
-      // 不做假绿：显式登记「这道门禁目前没有负向对照」，并说明为什么留到 #369
-      console.log(`  # TODO(${negative.issue}) ${row.gate} 的负向对照：${negative.what} —— ${negative.why}`)
-      return
-    }
-    if (negative.mode === 'inject') {
-      if (row.id === 'G1') {
-        injectThenRestore(row, {
-          inject: () => writeFileSync(path.join(ROOT, HYGIENE_PROBE), '# 负向对照探针\n\n截图路径：C:\\Users\\x\\shot.png\n'),
-          undo: () => rmSync(path.join(ROOT, HYGIENE_PROBE), { force: true }),
-          negative,
-        })
-        return
-      }
-      if (row.id === 'G2') {
-        const target = path.join(ROOT, DUP_PROBE)
-        injectThenRestore(row, {
-          inject: () => {
-            mkdirSync(path.dirname(target), { recursive: true })
-            copyFileSync(path.join(ROOT, 'scripts/lib/bundleTargetAudit.mjs'), target)
-          },
-          undo: () => rmSync(target, { force: true }),
-          negative,
-        })
-        return
-      }
-      if (row.id === 'G3') {
-        // 产物副本优先（真产物上注入最接近 CI 现场）；没有产物时合成一份，
-        // 但断言的口径不变：红必须红在「低内核解析不了的语法」上，不能红在「产物未构建」上。
-        const dir = scratch()
-        const dist = path.join(dir, 'dist')
-        mkdirSync(path.join(dist, 'static/js'), { recursive: true })
-        mkdirSync(path.join(dist, 'static/css'), { recursive: true })
-        const target = path.join(dist, 'static/js/main.neg.js')
-        if (hasBundle(DIST)) {
-          copyFileSync(path.join(DIST, 'static/js', firstJs(DIST)), target)
-          for (const css of allCss(DIST)) {
-            copyFileSync(css, path.join(dist, 'static/css', path.basename(css)))
-          }
-        } else {
-          writeFileSync(target, 'const base = 1\nexport default base\n')
-          writeFileSync(path.join(dist, 'static/css/main.css'), '.a{color:red}\n')
+  const unavailable = row.positive.when === false
+  test(
+    `${row.id} 正例 ${row.gate}：干净仓库必过`,
+    unavailable ? { skip: `${row.gate} 正例不可用：${row.positive.skipReason}` } : {},
+    () => {
+      const cleanDir = scratch()
+      let clean
+      try {
+        let args = row.args
+        if (row.positive.apk) {
+          const apk = path.join(cleanDir, 'release.apk')
+          writeFileSync(apk, buildApk({ ...row.positive.apk, versionName: '1.4.0', versionCode: 18 }))
+          args = [...row.args, apk]
         }
+        clean = run(args)
+      } finally {
+        rmSync(cleanDir, { recursive: true, force: true })
+      }
+      assert.equal(
+        clean.status,
+        0,
+        `${row.gate} 正例必须 exit=0（当前仓库自己是干净的）\n--- 输出 ---\n${combined(clean)}`
+      )
+      if (row.positive.match) {
+        assert.match(combined(clean), row.positive.match, `${row.gate} 正例输出里应能看出「它真的检查了」`)
+      }
+      // 自带正反对的那道（check:manifest）：顺手断言它的反例侧真的跑了
+      if (row.negative.mode === 'builtin') {
+        assert.match(combined(clean), /ok\s+PASS/i, `${row.gate}：自带的反例里必须有一条「合法必过」`)
+        assert.match(combined(clean), /ok\s+FAIL/i, `${row.gate}：自带的反例里必须有一条「非法必拦」`)
+      }
+    }
+  )
+
+  test(
+    `${row.id} 反例 ${row.gate}：${
+      row.negative.mode === 'todo' ? `TODO(${row.negative.issue}) 未做，显式登记` : '注入/参数造违规必被拦'
+    }`,
+    () => {
+      const negative = row.negative
+      if (negative.mode === 'builtin') {
+        // 正例那条已经断言过「自带正反对都在」，这里不重复跑
+        return
+      }
+      if (negative.mode === 'todo') {
+        // 不做假绿：显式登记「这道门禁目前没有负向对照」，并说明为什么留到 #369
+        console.log(`  # TODO(${negative.issue}) ${row.gate} 的负向对照：${negative.what} —— ${negative.why}`)
+        return
+      }
+      if (negative.mode === 'inject') {
+        if (row.id === 'G1') {
+          injectThenRestore(row, {
+            inject: () =>
+              writeFileSync(path.join(ROOT, HYGIENE_PROBE), '# 负向对照探针\n\n截图路径：C:\\Users\\x\\shot.png\n'),
+            undo: () => rmSync(path.join(ROOT, HYGIENE_PROBE), { force: true }),
+            negative,
+          })
+          return
+        }
+        if (row.id === 'G2') {
+          const target = path.join(ROOT, DUP_PROBE)
+          injectThenRestore(row, {
+            inject: () => {
+              mkdirSync(path.dirname(target), { recursive: true })
+              copyFileSync(path.join(ROOT, 'scripts/lib/bundleTargetAudit.mjs'), target)
+            },
+            undo: () => rmSync(target, { force: true }),
+            negative,
+          })
+          return
+        }
+        if (row.id === 'G3') {
+          // 产物副本优先（真产物上注入最接近 CI 现场）；没有产物时合成一份，
+          // 但口径不变：红必须红在「低内核解析不了的语法」上，不能红在「产物未构建」上。
+          const dir = scratch()
+          const dist = path.join(dir, 'dist')
+          mkdirSync(path.join(dist, 'static/js'), { recursive: true })
+          mkdirSync(path.join(dist, 'static/css'), { recursive: true })
+          const target = path.join(dist, 'static/js/main.neg.js')
+          if (hasBundle(DIST)) {
+            copyFileSync(path.join(DIST, 'static/js', firstJs(DIST)), target)
+            for (const css of allCss(DIST)) {
+              copyFileSync(css, path.join(dist, 'static/css', path.basename(css)))
+            }
+          } else {
+            writeFileSync(target, 'const base = 1\nexport default base\n')
+            writeFileSync(path.join(dist, 'static/css/main.css'), '.a{color:red}\n')
+          }
+          try {
+            writeFileSync(target, `${readFileSync(target, 'utf8')}\nconst __neg = (globalThis)?.__neg ??= 1\n`)
+            const red = run(['scripts/check-bundle-target.mjs', dist])
+            assert.notEqual(red.status, 0, `注入 ??= / ?. 后必须 exit≠0\n--- 输出 ---\n${combined(red)}`)
+            assert.match(combined(red), negative.expect, `红的原因必须是「语法下限」，实际：\n${combined(red)}`)
+            assert.doesNotMatch(combined(red), /产物未构建/, '不能红在「没产物」上（那是另一回事）')
+          } finally {
+            rmSync(dir, { recursive: true, force: true })
+          }
+          // 还原：原产物目录不该被碰过
+          if (hasBundle(DIST)) {
+            const again = run(row.args)
+            assert.equal(again.status, 0, `还原后 dist/ 必须仍然合格：\n${combined(again)}`)
+          }
+          return
+        }
+        assert.fail(`未实现的注入方式：${row.id}`)
+      }
+
+      if (negative.mode === 'arg') {
+        const dir = scratch()
         try {
-          writeFileSync(target, `${readFileSync(target, 'utf8')}\nconst __neg = (globalThis)?.__neg ??= 1\n`)
-          const red = run(['scripts/check-bundle-target.mjs', dist])
-          assert.notEqual(red.status, 0, `注入 ??= / ?. 后必须 exit≠0\n--- 输出 ---\n${combined(red)}`)
-          assert.match(combined(red), negative.expect, `红的原因必须是「语法下限」，实际：\n${combined(red)}`)
-          assert.doesNotMatch(combined(red), /产物未构建/, '不能红在「没产物」上（那是另一回事）')
+          let args = negative.args
+          if (negative.apk) {
+            const apk = path.join(dir, negative.apk.debuggable ? 'debug.apk' : 'release.apk')
+            writeFileSync(apk, buildApk({ debuggable: negative.apk.debuggable, versionName: '1.4.0', versionCode: 18 }))
+            args = [...row.args, apk]
+          } else if (negative.html !== undefined) {
+            const html = path.join(dir, 'index.html')
+            writeFileSync(html, negative.html)
+            args = [row.args[0], html]
+          }
+          const red = run(args)
+          assert.notEqual(red.status, 0, `${row.gate}：${negative.what} → 必须 exit≠0\n--- 输出 ---\n${combined(red)}`)
+          assert.match(combined(red), negative.expect, `${row.gate}：报错要点出真正的原因\n--- 输出 ---\n${combined(red)}`)
+          if (negative.alsoMatch) {
+            assert.match(combined(red), negative.alsoMatch, `${row.gate}：结论行也要对\n--- 输出 ---\n${combined(red)}`)
+          }
         } finally {
           rmSync(dir, { recursive: true, force: true })
         }
-        // 还原：原产物目录不该被碰过
-        if (hasBundle(DIST)) {
-          const again = run(row.args)
-          assert.equal(again.status, 0, `还原后 dist/ 必须仍然合格：\n${combined(again)}`)
-        }
         return
       }
-      assert.fail(`未实现的注入方式：${row.id}`)
+      assert.fail(`未知的 negative.mode：${negative.mode}`)
     }
-
-    if (negative.mode === 'arg') {
-      const dir = scratch()
-      try {
-        let args = negative.args
-        if (negative.apk) {
-          const apk = path.join(dir, negative.apk.debuggable ? 'debug.apk' : 'release.apk')
-          writeFileSync(apk, buildApk({ debuggable: negative.apk.debuggable, versionName: '1.4.0', versionCode: 18 }))
-          args = [...row.args, apk]
-        } else if (negative.html !== undefined) {
-          const html = path.join(dir, 'index.html')
-          writeFileSync(html, negative.html)
-          args = row.args.slice(0, 1).concat(html)
-        }
-        const red = run(args)
-        assert.notEqual(red.status, 0, `${row.gate}：${negative.what} → 必须 exit≠0\n--- 输出 ---\n${combined(red)}`)
-        assert.match(combined(red), negative.expect, `${row.gate}：报错要点出真正的原因\n--- 输出 ---\n${combined(red)}`)
-        if (negative.alsoMatch) {
-          assert.match(combined(red), negative.alsoMatch, `${row.gate}：结论行也要对\n--- 输出 ---\n${combined(red)}`)
-        }
-      } finally {
-        rmSync(dir, { recursive: true, force: true })
-      }
-      return
-    }
-    assert.fail(`未知的 negative.mode：${negative.mode}`)
-  })
+  )
 }
 
 // ---------------------------------------------------------------- 小工具（产物副本用）
