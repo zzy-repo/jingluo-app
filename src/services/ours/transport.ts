@@ -5,36 +5,17 @@
  * 而 @capacitor/core 只在这里出现，Web 端 fetch 也可以被 Playwright 的 page.route 打桩，
  * CORS 失败只当作「网络不可用」，不影响业务逻辑本身。
  *
- * 三个导出：
- *  - `httpTransport`     业务默认传输：**不跟随重定向**（原生 disableRedirects、
- *                        Web redirect:'manual'）。原生 /buy 要读 302 的 Location。
- *  - `openCheckout`      用系统浏览器打开收银台（ACTION_VIEW，只放行 https）
- *  - `navigateTopLevel`  网页版购买：让浏览器自己跳过去（Issue #36）
+ * 两个导出：
+ *  - `httpTransport`     业务默认传输：**不跟随重定向**（原生 disableRedirects、Web redirect:'manual'）
+ *  - `openPayLinkInApp`  在 App 内浏览器打开联动小铺收款页（Issue #331）
  *
- * 网页版购买是**顶层导航**，不是 fetch：
- * 浏览器里 fetch(redirect:'manual') 按规范只能拿到 opaqueredirect（status 0、读不到 Location），
- * 而 `window.location.assign('/buy?plan=…')` 是跨域顶层跳转，不受 CORS 约束，也不需要读 Location ——
- * 302 目标里的签名、单号、金额后端已经全部拼好，浏览器照着跳就行。
- * 付款完成后收银台按 return_url 回跳，地址栏带 ?no=<out_trade_no>&order_token=<token>，
- * 由 services/ours/returnParams.ts 在启动时解析 → 进「订单查询」。
- *
- * 原生的建单（Issue #142）：/buy **只**走 `CheckoutBrowser.resolveLocation` 一次 ——
- * CapacitorHttp 的 disableRedirects 在 web 实现里根本不生效（302 会被跟随，状态码变成下一跳的，
- * 网关 429 就被当成本次下单失败），所以「取 Location」这件事只交给我们自己的 Java 实现
- * （HttpURLConnection + setInstanceFollowRedirects(false)）。其它业务请求照旧走 CapacitorHttp。
+ * Issue #331：支付切到联动小铺后我们**不再建单、也不再读收银台的 302 Location**，
+ * 所以原来的 `openCheckout`（系统浏览器）/ `navigateTopLevel`（网页版顶层跳 `/buy`）/
+ * `withBuyCustomerId`（给 `/buy` 补 cid）连同 `CheckoutBrowser.resolveLocation` 一起删除。
+ * 收款页地址由 `/api/pay-link` 下发，App 内打开即可；付款后卡密由小铺直接发给买家。
  */
-import type { LinkedMessage } from '../../i18n/index.js'
-import { ensureCustomerId, parseCustomerId, readCachedCustomerId } from './customerId.js'
-import { Capacitor, CapacitorHttp, registerPlugin } from '@capacitor/core'
+import { Capacitor, CapacitorHttp } from '@capacitor/core'
 import { isOpenableCheckout, type OursHttpRequest, type OursHttpResult } from './api.js'
-
-/** 原生「用系统浏览器打开收银台」插件（ACTION_VIEW，只放行 https） */
-type CheckoutBrowserPlugin = {
-  open: (options: { url: string }) => Promise<{ opened?: boolean }>
-  /** 只取 302 的 Location（不跟随、不下载正文） */
-  resolveLocation: (options: { url: string }) => Promise<{ status?: number; location?: string }>
-}
-const CheckoutBrowser = registerPlugin<CheckoutBrowserPlugin>('CheckoutBrowser')
 
 export const isNativePlatform = (): boolean => Capacitor.isNativePlatform()
 
@@ -48,61 +29,7 @@ const reasonOf = (error: unknown): 'timeout' | 'network' => {
     : 'network'
 }
 
-/** 原生建单请求：只有 /buy 这一个 GET 需要读 3xx 的 Location */
-const isBuyRequest = (request: OursHttpRequest): boolean => {
-  if (request.method !== 'GET') {
-    return false
-  }
-  try {
-    const path = new URL(request.url).pathname
-    // Issue #235：`/api/buy` 也以 `/buy` 结尾，但它是**返回 JSON 的建单接口**。
-    // 交给 resolveLocation 只能拿到「状态码 + Location」，正文里的 pay_url 就丢了。
-    return /\/buy$/u.test(path) && !/^\/api\//u.test(path)
-  } catch {
-    return false
-  }
-}
-
-/**
- * 原生 /buy：**只**走 CheckoutBrowser.resolveLocation 一次（Issue #142）。
- *
- * 为什么不用 CapacitorHttp：
- *  - CapacitorHttp 的 web 实现根本不读 disableRedirects（@capacitor/core 只透传
- *    method/headers/body），302 会被跟随到收银台/网关那一跳，`status` 也就变成了**那一跳**的
- *    状态码；网关一限流（429），客户端就把别人的状态码当成本次下单的结果，界面出「请求过于频繁」，
- *    而真正的收银台地址已经在跟随中被丢掉了 —— 用户点一次「去支付」，什么也打不开。
- *  - resolveLocation 是我们自己的 Java 实现：
- *    `setInstanceFollowRedirects(false)` + 10s 超时，只回 `{status, location}`，
- *    拿到的状态码一定属于 /buy 这一跳。
- *  - 顺带把「一次点击打两次 /buy」也去掉了：老实现 302 但没带回 location 头时会**再问一次**
- *    插件，而 /buy 每 GET 一次就新建一张单。
- */
-const nativeBuyRequest = async (request: OursHttpRequest): Promise<OursHttpResult> => {
-  let timer: ReturnType<typeof setTimeout> | null = null
-  try {
-    const timeout = new Promise<never>((_, reject) => {
-      timer = setTimeout(() => reject(new Error('timeout')), request.timeoutMs)
-    })
-    const resolved = await Promise.race([CheckoutBrowser.resolveLocation({ url: request.url }), timeout])
-    const status = typeof resolved.status === 'number' ? resolved.status : 0
-    const raw = (resolved.location ?? '').trim()
-    // Location 允许是相对地址：按 /buy 的源补全，后面 parseCheckoutTarget 才认得出 https
-    const location = raw.startsWith('/') ? `${new URL(request.url).origin}${raw}` : raw
-    // 正文没用（302 没有正文，429 的正文只是给日志看的），状态码由 messageKeyFor 映射
-    return { kind: 'response', status, text: '', location }
-  } catch (error) {
-    return { kind: reasonOf(error) }
-  } finally {
-    if (timer !== null) {
-      clearTimeout(timer)
-    }
-  }
-}
-
 const nativeRequest = async (request: OursHttpRequest): Promise<OursHttpResult> => {
-  if (isBuyRequest(request)) {
-    return nativeBuyRequest(request)
-  }
   try {
     const response = await CapacitorHttp.request({
       url: request.url,
@@ -113,7 +40,7 @@ const nativeRequest = async (request: OursHttpRequest): Promise<OursHttpResult> 
       responseType: 'text',
       connectTimeout: request.timeoutMs,
       readTimeout: request.timeoutMs,
-      // 关键：不跟随 302，让 /buy 能把 Location 带回来
+      // 关键：不跟随重定向（业务接口自己解释 3xx，见文件头）
       disableRedirects: true,
     })
     const rawHeaders = (response.headers ?? {}) as Record<string, string>
@@ -134,8 +61,7 @@ const webRequest = async (request: OursHttpRequest): Promise<OursHttpResult> => 
       method: request.method,
       headers: request.headers,
       body: request.body,
-      // 关键：不跟随重定向。跨域 302 在浏览器里是 opaqueredirect（status 0、没有 header），
-      // 所以网页版**不靠 fetch 取收银台地址**，而是让浏览器顶层跳转到 buyUrl()（见 navigateTopLevel）
+      // 关键：不跟随重定向，状态码与 Location 由调用方自己解释
       redirect: 'manual',
       signal: controller.signal,
     })
@@ -154,72 +80,20 @@ export const httpTransport = (request: OursHttpRequest): Promise<OursHttpResult>
   isNativePlatform() ? nativeRequest(request) : webRequest(request)
 
 /**
- * 用系统浏览器打开收银台（ACTION_VIEW）。
- * 非 https 的地址一律拒绝：支付页必须是加密连接，明文地址既不安全也可能被劫持。
- */
-export const openCheckout = async (url: string): Promise<boolean> => {
-  if (!isOpenableCheckout(url)) {
-    return false
-  }
-  if (isNativePlatform()) {
-    try {
-      await CheckoutBrowser.open({ url })
-      return true
-    } catch {
-      return false
-    }
-  }
-  // 不用 'noopener' 特性串：带它时 window.open 一律返回 null，就分不清「打开了」和「被拦截」了。
-  // 改成打开后把 opener 置空（同样断掉 opener 引用，但能判断是否真的打开了）。
-  const opened = window.open(url, '_blank')
-  if (opened === null) {
-    return false
-  }
-  try {
-    opened.opener = null
-  } catch {
-    // 跨域窗口设不了 opener 也没关系
-  }
-  return true
-}
-
-/**
- * 用 **App 内嵌浏览器** 打开收银台，并在用户关掉它（回到 App）的那一刻回调一次（Issue #235）。
- *
- * 为什么不再把人踢去系统浏览器：支付宝收银台在系统浏览器里付完款后，除非用户自己点
- * 「返回商家」，否则**不会**走 return_url —— 用户就停在浏览器里，App 在后台干等 60s 超时，
- * 切回来还是「等待支付」，得手动点「再查一次」才看到卡密。
- *
- * 内嵌浏览器（`@capacitor/browser`）把「关掉收银台」变成一个 App 内事件
- * （`browserFinished`），于是「用户回来了」可以被当成一次明确信号：立刻重查一单。
- *
- * 约定：
- *  - 只放行 https；非原生（Web / 没有插件）一律返回 false，由调用方降级到 `openCheckout`
- *  - `onClosed` **最多回调一次**（重复触发、关闭与打开失败并存都只算一次）
- *  - 监听在 `open` **之前**注册：收银台打开得极快时也不会漏掉第一次关闭
- *  - 返回 false 时监听已经摘掉，不会给下一次支付留下一个假回跳
- */
-export const openCheckoutInApp = async (
-  url: string,
-  onClosed: () => void
-): Promise<boolean> => openInAppBrowser(url, null, onClosed)
-
-/**
  * Issue #331：在 App 内打开**联动小铺收款页**。
  *
- * 与 `openCheckoutInApp` 的区别只有两点：
- *  1. `presentationStyle: 'popover'` —— iOS 卡片式内嵌、Android 全屏 WebView，**都在 App 内**；
- *  2. 没有系统浏览器降级：用户明确要求「页面内打开，不要整个跳转到网页」，
- *     所以打不开就直接回 false，由界面给可读提示（绝不 `window.location` / `window.open` 兜底）。
+ * `presentationStyle: 'popover'` —— iOS 卡片式内嵌、Android 全屏 WebView，**都在 App 内**，
+ * 不会整页跳走（用户明确要求「页面内打开」）。所以这里**没有**系统浏览器降级：
+ * 打不开就直接回 false，由界面给可读提示（绝不 `window.location` / `window.open` 兜底）。
+ *
+ * 约定：
+ *  - 只放行 https；非原生（Web / 没有插件）一律返回 false
+ *  - `onClosed` **最多回调一次**（重复触发、关闭与打开失败并存都只算一次）
+ *  - 监听在 `open` **之前**注册：页面打开得极快时也不会漏掉第一次关闭
+ *  - 返回 false 时监听已经摘掉，不会给下一次打开留下一个假回跳
+ *  - `onClosed` 只代表「用户回来了」，**不代表付款成功**（卡密由小铺直接发给买家）
  */
-export const openPayLinkInApp = async (url: string, onClosed: () => void): Promise<boolean> =>
-  openInAppBrowser(url, 'popover', onClosed)
-
-const openInAppBrowser = async (
-  url: string,
-  presentationStyle: 'popover' | null,
-  onClosed: () => void
-): Promise<boolean> => {
+export const openPayLinkInApp = async (url: string, onClosed: () => void): Promise<boolean> => {
   if (!isNativePlatform() || !isOpenableCheckout(url)) {
     return false
   }
@@ -262,11 +136,7 @@ const openInAppBrowser = async (
     return false
   }
   try {
-    if (presentationStyle === null) {
-      await browser.open({ url })
-    } else {
-      await browser.open({ url, presentationStyle })
-    }
+    await browser.open({ url, presentationStyle: 'popover' })
     return true
   } catch {
     // 打不开就摘掉监听再返回 false：否则下一次支付的 browserFinished
@@ -274,84 +144,4 @@ const openInAppBrowser = async (
     await detach()
     return false
   }
-}
-
-/**
- * 给我们的购买地址补上 cid 参数（Issue #115：下单一律带 cid）。
- *
- * 返回 null 表示「这条地址不能跳」：
- *  - 是我们的购买入口、但拿不到 cid → 不跳（建单必须知道订单属于谁）；
- *  - 地址解析不了 / 不是购买入口 → 原样返回，不干扰别的导航。
- */
-export const withBuyCustomerId = (url: string, customerId: number | null): string | null => {
-  const raw = url.trim()
-  if (raw === '') {
-    return null
-  }
-  let parsed: URL
-  try {
-    parsed = new URL(raw)
-  } catch {
-    return raw
-  }
-  if (!/\/buy$/u.test(parsed.pathname)) {
-    return raw
-  }
-  // Issue #135：`cid=` / `cid=NaN` / `cid=0` 在后端看来等于「没带 cid」，必须是正整数才算数。
-  const existing = parseCustomerId(parsed.searchParams.get('cid'))
-  if (existing !== null) {
-    return parsed.href
-  }
-  const cid = parseCustomerId(customerId)
-  if (cid === null) {
-    return null
-  }
-  parsed.searchParams.set('cid', String(cid))
-  return parsed.href
-}
-
-/**
- * 网页版购买：让浏览器做**顶层导航**到 /buy?plan=<id>（Issue #36 的技术订正）。
- *
- * 为什么不是 fetch：`fetch(url, { redirect: 'manual' })` 在跨域时按规范只能拿到
- * `opaqueredirect`（status 0、没有任何 header），永远读不到 `Location`；
- * 而顶层导航是浏览器自己跳过去 —— 跨域顶层跳转不受 CORS 约束，也不需要读 Location。
- *
- * 为什么不用 window.open：回跳要落在**同一个标签页**，才能把 ?no=&order_token= 带回我们的页面。
- */
-export const navigateTopLevel = (url: string): void => {
-  const ready = withBuyCustomerId(url, readCachedCustomerId())
-  if (ready !== null) {
-    window.location.assign(ready)
-    return
-  }
-  // 缓存里还没有 cid：先解析一次再跳。解析不出来就**不跳**——宁可什么都不发生，
-  // 也不要建一张不带 cid 的单（Issue #115 那次付款后一直「等待支付」的成因）。
-  void ensureCustomerId()
-    .then((customerId) => {
-      const target = withBuyCustomerId(url, customerId)
-      if (target !== null) {
-        window.location.assign(target)
-      } else {
-        warnMissingCustomerId()
-      }
-      return target
-    })
-    .catch(() => null)
-}
-
-/**
- * 兜底的用户提示：网页版才走这条同步路径（原生那边 startCheckout 会返回明确错误码给界面）。
- * 提示通道由 main.tsx 注入（`showToast`），服务层不 import 组件，也不弹原生 alert。
- */
-type CustomerMissingNotice = (message: LinkedMessage) => void
-
-let customerMissingNotice: CustomerMissingNotice | null = null
-
-export const setCustomerMissingNotice = (next: CustomerMissingNotice | null): void => {
-  customerMissingNotice = next
-}
-
-const warnMissingCustomerId = (): void => {
-  customerMissingNotice?.({ key: 'oursErrCustomerNeedsKey' })
 }

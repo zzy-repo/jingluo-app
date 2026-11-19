@@ -12,7 +12,7 @@
 
 | 项 | 值 |
 | --- | --- |
-| 扫描范围 | `src/**` 全部源文件 **249** 个（`.css` **44** 个，其中 `*.module.css` **37** 个；其余 `.ts / .tsx / .html` 共 **205** 个） |
+| 扫描范围 | `src/**` 全部源文件 **248** 个（`.css` **44** 个，其中 `*.module.css` **37** 个；其余 `.ts / .tsx / .html` 共 **204** 个） |
 | 口径拆分 | 44 `.css` + 148 `.ts` + 54 `.tsx` + 1 `.html` = 247 |
 | 命中总数 | **343** 处，分布在 **39** 个文件 |
 | 运行时下限 | WebView **83**（Chromium 83）。**首支持 ≤ 83 的特性一律记「无风险」，与有没有兜底无关** |
@@ -312,3 +312,4 @@ node --test tests/unit/css-assumption-audit.test.mjs
 - 复核（2026-11-19 18:32，基准 `452debb`，本单 #303 分支 HEAD `204bd6e`）：新增 1 个 `.ts` 源文件（`src/services/api/keyRejection.ts`），扫描范围 246 → **247** 个源文件（`.ts` 147 → **148**，其余 `.ts / .tsx / .html` 202 → **203**），`.css` 仍是 44 个（`*.module.css` 37）。新文件是纯状态计算，**不含任何 CSS 特性假设**，命中总数仍是 **343 处 / 39 个文件**，逐特性表与 §2 明细的 `文件:行` 未变。
 - 复核（2026-11-19 18:35，基准 `68c4d9d`，本单 #305）：`src/components/settings/logView.ts` 新增 1 个 `.ts` 源文件（扫描范围 243 → **244** 个），`Settings.module.css` 的日志预览区新增 8 处 flex `gap`（`.feedbackLogViewer` / `.feedbackLogToolbar` / `.feedbackLogToolbarRow` / `.feedbackLogChipRow` / `.feedbackLogGroupToggle` / `.feedbackLogGroupHeader` / `.feedbackLogGroup` / `.feedbackLogGroupItems`）与 4 处嵌套 `&`（`:hover` / `::placeholder` / `:focus`），因此命中总数 331 → **343**（flex `gap` 109 → **117**、嵌套 136 → **140**，其余特性未变），分布文件数仍是 39。这 8 处 gap 全部由 `pnpm run check:gap` 自动补齐 `html[data-flex-gap-fallback]` 兜底块（已兜底 111 → **119** 条），没有新增裸 gap；新增的 `@media (max-width: 420px)` 只是窄屏排版，不构成新特性假设。
 - 复核（2026-11-19 19:20，基准 `1577841`，本单 #310 分支）：新增 2 个 `.ts` 源文件（`src/services/updateFailure.ts` / `src/services/updateReport.ts`），扫描范围 248 → **250** 个源文件（其余 `.ts / .tsx / .html` 204 → **206**），`.css` 仍是 44 个（`*.module.css` 37）。`AppUpdateField.module.css` 只新增诊断区排版（淡色事实列表 + 复制链接），**间距全部用 `margin`、没有新增 flex `gap`**，所以 `check:gap` 的兜底条数不变、也不需要新的 `#173-fallback` 块。**命中总数仍是 343 处 / 39 个文件**，逐特性表与 §2 明细未变。
+- 复核（2026-11-19 19:50，基准 `0c89bf5`，本单 #331 分支 `chore/331-retire-buy`）：删 2 个 `.ts`（`ours/orderStore.ts`、`ours/returnParams.ts`）、加 1 个 `.ts`（`ours/storage.ts`），扫描范围 249 → **248** 个源文件（`.ts / .tsx / .html` 205 → **204**），`.css` 仍是 44 个（`*.module.css` 37）。旧支付链路删掉的是 TS 逻辑，**不含任何 CSS 特性假设**，命中总数仍是 **343 处 / 39 个文件**，逐特性表与 §2 明细的 `文件:行` 未变。

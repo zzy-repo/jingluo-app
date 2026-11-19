@@ -1,9 +1,10 @@
 // [layer: unit | 依赖: 无（纯 Node，零浏览器） | 耗时: <1s] 说明见 tests/README.md
-// Issue #115（付款记录：下单带 cid + 重新下单覆盖单号 + 展示历史订单）的单测：
-//   [1] 所有 /buy 请求都要带 cid（漏了必须红；拿不到 customer_id 时明确报错，不发不带 cid 的请求）
-//   [2] 连续两次下单：本地存档必须是**最新**单号，轮询跟最新单
-//   [3] /api/orders 解析：金额 / 三态状态 / 时间 / 卡号后 4 位 / total_paid_yuan，空列表也不炸
-//   [4] 两账号隔离：Key 无效（401）时明确报 UNAUTHORIZED，不糊成「没有订单」
+// Issue #115（付款记录：展示历史订单 / 两账号隔离）的单测。
+//
+// Issue #331：下单链路已停用（我们不建单、不查单），原 [1]（/buy 必须带 cid）与
+// [2]（连续两次下单存档跟最新单）跟着旧链路一起删除 —— 现在只剩「翻自己的历史订单」这一件事：
+//   [1] /api/orders 解析：金额 / 三态状态 / 时间 / 卡号后 4 位 / total_paid_yuan，空列表也不炸
+//   [2] 两账号隔离：Key 无效（401）时明确报 UNAUTHORIZED，不糊成「没有订单」
 import { registerHooks } from 'node:module'
 import { readdirSync, readFileSync } from 'node:fs'
 import path from 'node:path'
@@ -21,9 +22,6 @@ registerHooks({
     }
   },
 })
-
-const api = await import('../../src/services/ours/api.ts')
-const orderStore = await import('../../src/services/ours/orderStore.ts')
 
 // 新模块：还没实现时这里会抛，直接记成一次失败（而不是整个文件崩掉，红证据要看得见）
 let records = null
@@ -104,108 +102,7 @@ const jsonResponse = (status, body) => ({
 })
 
 // ---------------------------------------------------------------------------
-console.log('[1] /buy 必须带 cid（下单归属该客户）')
-{
-  const url = api.buyUrl('p1', 10)
-  truthy(url.includes('plan=p1'), '1.1 buyUrl 带上套餐：' + url)
-  truthy(url.includes('cid=10'), '1.2 buyUrl 带上 cid=10：' + url)
-
-  // 缓存里的 cid 也要自动带上（弹层里 navigateTopLevel(buyUrl(planId)) 的老调用点没有第二参数）
-  const storage = fakeStorage()
-  if (records === null) {
-    bad(`1.3 付款记录模块缺失，无法建立 cid 缓存：${recordsImportError}`)
-  } else {
-    records.cacheCustomerId(10, storage)
-    const cached = api.buyUrl('p1', undefined, storage)
-    truthy(cached.includes('cid=10'), '1.3 buyUrl 从缓存补 cid：' + cached)
-  }
-
-  // 原生路径：实际发出的请求 URL
-  const order = makeTransport([{ kind: 'response', status: 302, text: '', location: cashierUrl(NO_1, TOKEN_1) }])
-  const result = await api.startCheckout('p1', order.transport, {
-    customerId: 10,
-    storage: fakeStorage(),
-  })
-  eq(result.kind, 'ok', '1.4 startCheckout 成功')
-  eq(order.calls.length, 1, '1.5 只发一次 /buy')
-  truthy(
-    (order.calls[0]?.url ?? '').includes('cid=10'),
-    '1.6 startCheckout 发出的 /buy 带 cid：' + (order.calls[0]?.url ?? '')
-  )
-
-  // 拿不到 customer_id：不许静默发不带 cid 的请求
-  const blind = makeTransport([{ kind: 'response', status: 302, text: '', location: cashierUrl(NO_1, TOKEN_1) }])
-  const missing = await api.startCheckout('p1', blind.transport, { customerId: null, storage: fakeStorage() })
-  eq(missing.kind, 'error', '1.7 没有 customer_id 时返回错误')
-  eq(missing.kind === 'error' ? missing.code : '', 'CUSTOMER_ID_MISSING', '1.8 错误码 CUSTOMER_ID_MISSING')
-  eq(
-    missing.kind === 'error' ? missing.messageKey : '',
-    'oursErrCustomerNeedsKey',
-    '1.9 有可展示的提示文案 key（Issue #135：告知用户先领 Key）'
-  )
-  eq(blind.calls.length, 0, '1.10 一个请求都不发（绝不发不带 cid 的 /buy）')
-
-  // 源码级：除了 api.ts 的 buyUrl，不许有第二个 /buy?plan= 构造点（逐点核对，防漏）
-  const root = path.resolve(import.meta.dirname, '../..')
-  const walk = (dir) =>
-    readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
-      const full = path.join(dir, entry.name)
-      if (entry.isDirectory()) {
-        return entry.name === 'node_modules' ? [] : walk(full)
-      }
-      return /\.(ts|tsx)$/u.test(entry.name) ? [full] : []
-    })
-  const offenders = walk(path.join(root, 'src'))
-    .filter((file) => !file.endsWith(path.join('ours', 'api.ts')))
-    // 只看真正的代码行：注释里提到 /buy?plan=… 不算构造点
-    .filter((file) =>
-      /buy\?plan=/u.test(
-        readFileSync(file, 'utf8')
-          .replace(/\/\*[\s\S]*?\*\//gu, '')
-          .replace(/^\s*\/\/.*$/gmu, '')
-      )
-    )
-    .map((file) => path.relative(root, file).split(path.sep).join('/'))
-  eq(offenders, [], '1.11 /buy?plan= 只在 api.ts 的 buyUrl 里拼（没有漏掉的构造点）')
-}
-
-// ---------------------------------------------------------------------------
-console.log('[2] 连续两次下单：存档必须是最新单号')
-{
-  const storage = fakeStorage()
-  const first = makeTransport([{ kind: 'response', status: 302, text: '', location: cashierUrl(NO_1, TOKEN_1) }])
-  const second = makeTransport([{ kind: 'response', status: 302, text: '', location: cashierUrl(NO_2, TOKEN_2) }])
-
-  const r1 = await api.startCheckout('p1', first.transport, { customerId: 10, storage })
-  const r2 = await api.startCheckout('p2', second.transport, { customerId: 10, storage })
-
-  eq(r1.kind, 'ok', '2.1 第一单下单成功')
-  eq(r2.kind, 'ok', '2.2 第二单下单成功')
-  eq(r1.kind === 'ok' ? r1.replacedUnpaidOrder : null, false, '2.3 第一单没有可覆盖的旧单')
-  eq(r2.kind === 'ok' ? r2.replacedUnpaidOrder : null, true, '2.4 第二单覆盖了上一笔未支付订单')
-
-  const stored = orderStore.readStoredOrder(storage)
-  eq(stored?.outTradeNo, NO_2, '2.5 本地存档是最新单号（旧实现在此红）')
-  eq(stored?.orderToken, TOKEN_2, '2.6 令牌也是最新单的')
-  eq(stored?.planId, 'p2', '2.7 套餐跟着最新单')
-
-  // 轮询必须跟最新单：查单 URL 用的是存档里的单号 + 令牌
-  const poller = makeTransport([
-    jsonResponse(200, { status: 'fulfilled', out_trade_no: NO_2, amount_fen: 10, card_no: 'CARD-2222' }),
-  ])
-  const polled = await api.queryOrder(
-    // 存档里没有单号时不要在这里炸掉：2.5 已经红过一次，后面继续跑完给完整证据
-    { outTradeNo: stored?.outTradeNo ?? '', orderToken: stored?.orderToken ?? '' },
-    poller.transport
-  )
-  eq(polled.kind, 'ok', '2.8 按最新单查单成功')
-  const queryUrl = poller.calls[0]?.url ?? '(没有发出查单请求)'
-  truthy(queryUrl.includes(`out_trade_no=${NO_2}`), '2.9 查的是最新单号：' + queryUrl)
-  truthy(queryUrl.includes(`order_token=${TOKEN_2}`), '2.10 用的是最新单的令牌')
-}
-
-// ---------------------------------------------------------------------------
-console.log('[3] /api/orders 解析：金额 / 状态 / 时间 / 卡号后 4 位 / total_paid_yuan')
+console.log('[1] /api/orders 解析：金额 / 状态 / 时间 / 卡号后 4 位 / total_paid_yuan')
 if (records === null) {
   bad(`付款记录模块缺失，[3][4] 全部无法验证：${recordsImportError}`)
 } else {
@@ -284,7 +181,7 @@ if (records === null) {
   eq(records.parsePaymentRecords({ orders: 'oops' }), null, '3.18 坏数据返回 null')
 
   // -------------------------------------------------------------------------
-  console.log('[4] fetchPaymentRecords：鉴权 / 两账号隔离 / cid 落缓存')
+  console.log('[2] fetchPaymentRecords：鉴权 / 两账号隔离 / cid 落缓存')
   const storage = fakeStorage()
   const okTransport = makeTransport([
     jsonResponse(200, { customer_id: 10, total_paid_yuan: 0.0, orders: [] }),

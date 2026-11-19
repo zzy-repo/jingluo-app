@@ -6,16 +6,11 @@
  * 见 transport.ts）。因此 Node 单测可以直接 import 本文件，用假 transport 断言
  * 「发了什么请求、怎么解释响应」。
  *
- * 服务端契约（2026-11-18 实测，https://apia.ecsafe.cn，全站 HTTPS）：
+ * 服务端契约（2026-11-19 实测，https://apia.ecsafe.cn，全站 HTTPS）：
  *   GET  /api/plans                      → { plans: [{ id, name, price, points, currency, enabled }] }
  *                                          价格与积分由服务端决定，App 不得硬编码
- *   GET  /buy?plan=<id>                  → 302 到支付宝收银台（Location 里带 out_trade_no，
- *                                          return_url 里带 order_token）
- *                                          ⚠️ 每次 GET 都会新建一笔订单：只能由用户点击触发一次
- *   GET  /api/order?out_trade_no=&order_token=
- *                                        → { out_trade_no, status, amount_fen, card_no, expire_at, message }
- *                                          status ∈ pending/paid/fulfilled/expired/failed
- *                                          只有 fulfilled 才有 card_no；order_token 不对 → 403；15 分钟过期
+ *                                          （Issue #331：套餐全线下架，现返回 {"plans": []}）
+ *   GET  /api/pay-link                   → { ok, url, note } —— 联动小铺固定收款页地址
  *   POST /api/redeem {card_no, api_key, request_id}
  *                                        → { ok, card_no, points, api_key, sync }
  *                                          202 CREDIT_PENDING 是「处理中」，不是失败
@@ -25,41 +20,31 @@
  *                                          额度一律取邀请服务 /me 的 remaining_points（见 services/invite）
  *   错误统一 { code, message, request_id }
  *
+ * Issue #331：支付已切到联动小铺 —— 收款页地址由 `/api/pay-link` 下发、在 App 内浏览器打开，
+ * 付款后卡密由小铺直接发给买家。**我们不建单、不查单、不轮询**：老的 302 收银台、
+ * 建单接口、查单接口与那一套订单轮询已整条删除（连函数名都没留），别再拼回来
+ * （订单归属 cid / order_token 存档那套一并消失）；卡密兑换链路不受影响。
+ *
  * 安全约束（硬性）：
  *   - API Key 只走 Authorization 请求头 / 请求体，**不进 URL query**。
  *   - 日志 / 提示文案里不出现完整 Key、完整卡密、带凭据的完整 URL：
- *     Key 只露尾 6 位，卡密只露尾 4 位，收银台地址只当作「要打开的链接」不落日志。
+ *     Key 只露尾 6 位，卡密只露尾 4 位；收款页地址只当作「要打开的链接」，不落日志。
  */
 
 import { maskCard, maskKey } from './mask.js'
-import { ORDER_RESUME_MAX_AGE_MS, readStoredOrder, writeStoredOrder, type OrderStorage } from './orderStore.js'
-import { ensureCustomerId, parseCustomerId, readCachedCustomerId } from './customerId.js'
 
 export { maskCard, maskDeviceId, maskKey, maskTail } from './mask.js'
 
 /** 卡密 / 支付服务地址（HTTPS）：价格、积分、发卡、兑换都问它 */
 export const OURS_API_BASE = 'https://apia.ecsafe.cn'
 
-/**
- * 购买是否放开。
- *
- * 2026-11-18 实测：/api/plans 的标价与 /buy 下发的 money= 一致（p1 = ¥3.00 / 300 积分，
- * 1 元 = 100 积分），不再有「标价 9.90、实付 0.10」的资损风险，因此放开购买入口。
- * 一旦服务端价格与套餐再次不一致，这里改回 false 即可整体收回（界面只留一行说明）。
- */
-export const OURS_PAYMENT_OPEN = true
-
 /** 各接口的读超时（毫秒）；超时与网络错误在状态里分开，文案也不同 */
 export const OURS_TIMEOUTS = {
   plans: 10000,
   keyProbe: 10000,
   redeem: 15000,
-  order: 10000,
-  buy: 12000,
   /** Issue #331：收款页地址是一个只读的小接口，给 10s 足够（超时与网络错误分开给文案） */
   payLink: 10000,
-  /** 订单轮询：间隔 2s、总时长上限 60s（契约要求，不可调） */
-  poll: { intervalMs: 2000, timeoutMs: 60000 },
 } as const
 
 /**
@@ -116,22 +101,10 @@ export type OursMessageKey =
   | 'oursErrRateLimited'
   | 'oursErrPlanNotFound'
   | 'oursErrPlanMissing'
-  /** Issue #235：/api/buy 的两个专属错误（不许落到通用文案） */
-  | 'oursErrCidRequired'
-  | 'oursErrNewbieUsed'
-  | 'oursErrOrderNotFound'
-  | 'oursErrOrderTokenMissing'
-  | 'oursErrCheckoutUnsupported'
   /** Issue #331：收款通道（联动小铺收款页）不可用 / 没能在 App 内打开 */
   | 'oursPayUnavailable'
   | 'oursPayOpenFailed'
-  | 'oursErrCustomerMissing'
   | 'oursErrCustomerNeedsKey'
-  | 'oursOrderStatusPending'
-  | 'oursOrderStatusPaid'
-  | 'oursOrderStatusFulfilled'
-  | 'oursOrderStatusExpired'
-  | 'oursOrderStatusFailed'
   | 'oursErrNetwork'
   | 'oursErrTimeout'
   | 'oursErrInvalidResponse'
@@ -155,20 +128,9 @@ export const OURS_ERROR_KEYS: Record<string, OursMessageKey> = {
   API_KEY_INVALID: 'oursErrKeyInvalid',
   VERIFY_UNAVAILABLE: 'oursErrVerifyUnavailable',
   RATE_LIMITED: 'oursErrRateLimited',
-  ORDER_NOT_FOUND: 'oursErrOrderNotFound',
   /**
-   * Issue #235（/api/buy 的 JSON 契约）：
-   * - `CID_REQUIRED`：没带 cid —— 说「客户编号没准备好」，别让用户猜
-   * - `NEWBIE_USED`：新人特惠每人一次（HTTP 409）—— 必须优先于 `OURS_STATUS_KEYS[409]`
-   *   的「卡密已被使用」，否则用户会以为自己的卡被别人用了
-   */
-  CID_REQUIRED: 'oursErrCidRequired',
-  NEWBIE_USED: 'oursErrNewbieUsed',
-  /**
-   * 真服务端实测（2026-11-19，GET /api/buy?cid=1&plan=nope）返回的是
-   * `{"code":"CID_UNKNOWN","message":"客户不存在，请回 App 重新领取 Key"}`：
-   * 客户编号不存在与「没带编号」是两件事，但都只能靠重新领取 Key 解决 ——
-   * 复用现有文案，别让它落到 400 兜底的「请求格式有误」上。
+   * 客户编号不存在（实测 `{"code":"CID_UNKNOWN","message":"客户不存在，请回 App 重新领取 Key"}`）：
+   * 只能靠重新领取 Key 解决 —— 复用现有文案，别让它落到 400 兜底的「请求格式有误」上。
    */
   CID_UNKNOWN: 'oursErrCustomerNeedsKey',
 }
@@ -183,23 +145,6 @@ export const OURS_STATUS_KEYS: Record<number, OursMessageKey> = {
   429: 'oursErrRateLimited',
   503: 'oursErrVerifyUnavailable',
 }
-
-/** 订单状态 → 文案 key */
-export type OursOrderStatus = 'pending' | 'paid' | 'fulfilled' | 'expired' | 'failed'
-
-export const ORDER_STATUS_KEYS: Record<OursOrderStatus, OursMessageKey> = {
-  pending: 'oursOrderStatusPending',
-  paid: 'oursOrderStatusPaid',
-  fulfilled: 'oursOrderStatusFulfilled',
-  expired: 'oursOrderStatusExpired',
-  failed: 'oursOrderStatusFailed',
-}
-
-/** 终态：轮询到这些状态就停（paid 仍在等发卡，继续轮） */
-const TERMINAL_ORDER_STATUSES: OursOrderStatus[] = ['fulfilled', 'expired', 'failed']
-
-export const isTerminalOrderStatus = (status: OursOrderStatus): boolean =>
-  TERMINAL_ORDER_STATUSES.includes(status)
 
 const parseJson = (text: string): { ok: true; value: unknown } | { ok: false } => {
   if (text.trim() === '') {
@@ -313,6 +258,12 @@ export type OursPlan = {
 
 export type OursPlansState =
   | { status: 'success'; plans: OursPlan[] }
+  /**
+   * 套餐列表为空。**不是失败**：Issue #331 之后套餐已全线下架，服务端就是返回 `{"plans": []}`，
+   * 把它报成「加载失败」会让用户以为是自己网络坏了、反复重试。
+   * 调用方应当展示「套餐列表已下架，点『前往购买』到联动小铺选购」这类空态，购买入口照常可用。
+   */
+  | { status: 'empty' }
   | { status: 'error'; messageKey: OursMessageKey }
 
 /** 价格文案：¥3.00 */
@@ -367,9 +318,8 @@ export const fetchPlans = async (transport: OursTransport): Promise<OursPlansSta
   const plans = raw
     .map(parsePlan)
     .filter((plan): plan is OursPlan => plan !== null && plan.enabled)
-  return plans.length === 0
-    ? { status: 'error', messageKey: 'oursPlansFailed' }
-    : { status: 'success', plans }
+  // 空列表是「套餐已下架」这个正常状态，不是错误（#331）：别让界面读成「加载失败」
+  return plans.length === 0 ? { status: 'empty' } : { status: 'success', plans }
 }
 
 // ------------------------------------------------------------------ 收款页（Issue #331）
@@ -511,539 +461,5 @@ export const redeemCard = async (
   }
 }
 
-// ------------------------------------------------------------------ 收银台（/buy 的 302）
-
-export type OursCheckout = {
-  outTradeNo: string
-  /** 查单令牌：必须保存（没有它 /api/order 一律 403） */
-  orderToken: string
-  /** 收银台地址：只能用系统浏览器打开，禁止内嵌 WebView */
-  payUrl: string
-}
-
-/** 收银台地址只接受 https（原生插件也只放行 https），其余一律当作「没有支付入口」 */
+/** 收款页地址只接受 https（App 内浏览器也只放行 https），其余一律当作「没有支付入口」 */
 export const isOpenableCheckout = (url: string): boolean => /^https:\/\//i.test(url.trim())
-
-/**
- * 建单入口：`/buy?plan=<id>`（签名、单号、金额都已经拼在它的 302 目标里）。
- *
- * 两种用法，取决于运行环境（Issue #36）：
- *  - 网页版：把这个 URL 交给浏览器做**顶层导航**（`window.location.assign` / `<a href>`）。
- *    跨域顶层跳转不受 CORS 约束，也不需要读 Location —— 这正是网页版唯一正确的打开方式。
- *  - 原生：走 `startCheckout`（CapacitorHttp 不跟随重定向，读回 302 的 Location）。
- *
- * 绝不能用 `fetch(..., { redirect: 'manual' })` 去读它：规范规定跨域时只能拿到
- * `opaqueredirect`（status 0、没有 header），读不到 Location，也看不到目标 URL。
- */
-export const buyUrl = (
-  planId: string,
-  customerId?: number | null,
-  storage?: OrderStorage | null
-): string => {
-  const base = `${OURS_API_BASE}/buy?plan=${encodeURIComponent(planId.trim())}`
-  // Issue #115：下单一律带 cid（订单归属该客户）；显式传 null 表示「明知道没有 cid」，
-  // 那就不要拼 cid —— 调用方（navigateTopLevel / startCheckout）会因此拒绝下单，而不是悄悄建单。
-  // Issue #135：空串 / NaN / 0 / 负数一律按「没有 cid」处理 —— 拼出 `&cid=` 或 `&cid=NaN`
-  // 在后端看来就是「没带 cid」，又会退化成一张不属于任何人的单（新人 ¥1 能被无限次购买）。
-  const cid = parseCustomerId(
-    customerId === undefined ? readCachedCustomerId(storage) : customerId
-  )
-  return cid === null ? base : `${base}&cid=${cid}`
-}
-
-/** 付款回跳时地址栏带回来的查询参数：`?no=<out_trade_no>&order_token=<token>` */
-export type OursOrderReturn = { outTradeNo: string; orderToken: string }
-
-/**
- * 解析付款回跳参数（`?no=…&order_token=…`）。
- *
- * - `no` 是收银台 `return_url` 里的 out_trade_no；也兼容写成 `out_trade_no`
- * - `order_token` 缺一不可（没有它 /api/order 一律 403）
- * - 两个参数都在才算「这是一次回跳」，否则返回 null（正常打开页面不触发查单）
- */
-export const parseOrderReturn = (search: string): OursOrderReturn | null => {
-  const params = new URLSearchParams(search.startsWith('?') ? search.slice(1) : search)
-  const outTradeNo = (params.get('no') ?? params.get('out_trade_no') ?? '').trim()
-  const orderToken = (params.get('order_token') ?? '').trim()
-  if (outTradeNo === '' || orderToken === '') {
-    return null
-  }
-  return { outTradeNo, orderToken }
-}
-
-const parseUrl = (value: string): URL | null => {
-  try {
-    return new URL(value.trim())
-  } catch {
-    return null
-  }
-}
-
-/**
- * 从 /buy 的 Location（或网页版兜底跟随后的最终地址）里取出单号与令牌。
- *
- * 实测格式（2026-11-18）：
- *   https://pay.xiaodouap.cn/submit.php?pid=…&out_trade_no=CP2026…&money=3.00
- *     &return_url=https%3A%2F%2Fapia.ecsafe.cn%2Freturn%3Fno%3DCP2026…%26order_token%3DLsx2…
- * 即 out_trade_no 在收银台地址自己身上，order_token 在 return_url 的 query 里。
- * 两处都兼容：收银台地址直接带 order_token 时优先用它。
- */
-export const parseCheckoutTarget = (rawUrl: string): OursCheckout | null => {
-  const url = parseUrl(rawUrl)
-  if (url === null || !isOpenableCheckout(url.href)) {
-    return null
-  }
-  const outTradeNo = url.searchParams.get('out_trade_no') ?? url.searchParams.get('no') ?? ''
-  let orderToken = url.searchParams.get('order_token') ?? ''
-  const returnUrl = url.searchParams.get('return_url')
-  if (returnUrl !== null && returnUrl !== '') {
-    const ret = parseUrl(returnUrl)
-    if (ret !== null) {
-      orderToken = orderToken || (ret.searchParams.get('order_token') ?? '')
-    }
-  }
-  if (outTradeNo.trim() === '' || orderToken.trim() === '') {
-    return null
-  }
-  return { outTradeNo: outTradeNo.trim(), orderToken: orderToken.trim(), payUrl: url.href }
-}
-
-export type OursCheckoutResult =
-  | { kind: 'ok'; checkout: OursCheckout; replacedUnpaidOrder: boolean }
-  /** 拿不到 Location（原生插件也读不到 302 头）→ 界面提示换条路，不猜单号 */
-  | { kind: 'no-location' }
-  | { kind: 'error'; code: string; messageKey: OursMessageKey }
-
-/**
- * 建单：GET /buy?plan=<id>（**仅原生**用；网页版走 buyUrl + 顶层导航，见 Issue #36）。
- *
- * 关键点：
- *  - 只发一次（每次 GET 都会新建订单），界面只在用户点「去支付」时调用
- *  - 请求层 followRedirects=false：只读 3xx 的 Location，不跟随（跟随会丢单号令牌）
- *  - 网页版不该调用本函数：浏览器里 `fetch(redirect:'manual')` 只能拿到 opaqueredirect，
- *    永远拿不到 Location。网页版的正确做法是让浏览器顶层跳转到 buyUrl(planId)。
- */
-export type OursCheckoutOptions = {
-  /** 下单归属客户（cid）。不传就按「缓存 → provider」自己解析；显式 null 表示已知没有 */
-  customerId?: number | null
-  /** 注入存储（单测用）；默认浏览器 localStorage */
-  storage?: OrderStorage | null
-}
-
-export const startCheckout = async (
-  planId: string,
-  transport: OursTransport,
-  options: OursCheckoutOptions = {}
-): Promise<OursCheckoutResult> => {
-  const id = planId.trim()
-  if (id === '') {
-    return { kind: 'error', code: 'PLAN_MISSING', messageKey: 'oursErrPlanMissing' }
-  }
-  // Issue #115：拿不到 cid 就不下单。宁可让用户看到一句明确的提示，也不要建一张
-  // 不知道属于谁的单——那正是「付了钱还显示等待支付」的成因。
-  const resolvedCustomerId =
-    options.customerId === undefined
-      ? (readCachedCustomerId(options.storage) ?? (await ensureCustomerId(options.storage)))
-      : options.customerId
-  // Issue #135：0 / NaN / 空串 / 负数都不是「客户编号」，一律当没有 —— 否则会建出一张
-  // 后端认不出归属的单（付款后 /api/orders 查不到，App 一直显示「等待支付」）。
-  const customerId = parseCustomerId(resolvedCustomerId)
-  if (customerId === null) {
-    return { kind: 'error', code: 'CUSTOMER_ID_MISSING', messageKey: 'oursErrCustomerNeedsKey' }
-  }
-  const result = await transport({
-    method: 'GET',
-    url: buyUrl(id, customerId, options.storage),
-    headers: { Accept: 'text/html,application/xhtml+xml' },
-    timeoutMs: OURS_TIMEOUTS.buy,
-    followRedirects: false,
-  })
-  if (result.kind !== 'response') {
-    return {
-      kind: 'error',
-      code: result.kind === 'timeout' ? 'TIMEOUT' : 'NETWORK',
-      messageKey: transportFailure(result),
-    }
-  }
-  const location = (result.location ?? '').trim()
-  const target = location !== '' ? parseCheckoutTarget(location) : null
-  if (target !== null) {
-    // Issue #115：每次建单成功都**覆盖**本地存档，轮询只跟最新这一单。
-    // 旧实现只在弹层里写一次，连点两次「去支付」时存档可能停在上一单，回跳后就查错了单。
-    const previous = readStoredOrder(options.storage)
-    const replacedUnpaidOrder =
-      previous !== null &&
-      previous.outTradeNo !== target.outTradeNo &&
-      Date.now() - previous.startedAt <= ORDER_RESUME_MAX_AGE_MS
-    writeStoredOrder(
-      {
-        outTradeNo: target.outTradeNo,
-        orderToken: target.orderToken,
-        planId: id,
-        startedAt: Date.now(),
-      },
-      options.storage
-    )
-    return { kind: 'ok', checkout: target, replacedUnpaidOrder }
-  }
-  // Issue #142：4xx/5xx 优先按状态码给错误（/buy 自己被限流就要说限流），
-  // 只有「没有响应状态」或「3xx/2xx 却没有 Location」才算拿不到收银台地址。
-  if (result.status === 0 || (location === '' && result.status < 400)) {
-    return { kind: 'no-location' }
-  }
-  if (isOpenableCheckout(location)) {
-    // 给了 https 收银台地址但里面没有单号 / 令牌：付完款也查不到单，不如现在就说清楚
-    return { kind: 'error', code: 'ORDER_TOKEN_MISSING', messageKey: 'oursErrOrderTokenMissing' }
-  }
-  // 明文收银台地址一律不开
-  if (result.status >= 300 && result.status < 400) {
-    return { kind: 'error', code: 'CHECKOUT_NOT_HTTPS', messageKey: 'oursErrCheckoutUnsupported' }
-  }
-  const parsed = parseJson(result.text)
-  const code = readString(parsed.ok ? asRecord(parsed.value) : null, 'code')
-  return {
-    kind: 'error',
-    code: code || `HTTP_${result.status}`,
-    messageKey: messageKeyFor(code, result.status),
-  }
-}
-
-// ------------------------------------------------------------------ 建单（/api/buy 的 JSON，Issue #235）
-
-/**
- * 一次支付的「票根」：`/api/buy` 已经把单号、令牌、收银台地址都算好了。
- *
- * 界面把它留在内存里，用户重复点「去支付」时直接复用同一张单，
- * 不再多建一张（多建的单会变成服务端的废弃订单）。
- * **不写 localStorage**：`payUrl` 里带着金额与单号签名，跨订单复用等于给用户开了个错价的收银台。
- */
-export type OursBuyTicket = {
-  outTradeNo: string
-  orderToken: string
-  payUrl: string
-  /** 服务端算好的实付金额（分）：界面照它显示，不自己按套餐价乘法 */
-  amountFen: number
-  planId: string
-  planName: string
-  /** 收银台有效期（Unix 秒）；解析不出来就是 null */
-  expireAtSeconds: number | null
-}
-
-export type OursBuyResult =
-  | { kind: 'ok'; ticket: OursBuyTicket; replacedUnpaidOrder: boolean }
-  | { kind: 'error'; code: string; messageKey: OursMessageKey }
-
-/** `GET /api/buy?cid=<cid>&plan=<id>`：JSON 契约（老的 `/buy` 302 仍然保留） */
-export const buyTicketUrl = (planId: string, customerId: number): string =>
-  `${OURS_API_BASE}/api/buy?cid=${customerId}&plan=${encodeURIComponent(planId.trim())}`
-
-/**
- * 建单（Issue #235）：**原生端专用**。
- *
- * 为什么不再用 `/buy` 的 302：原生插件 `CheckoutBrowser.resolveLocation` 只回
- * `{status, location}`，`order_token` 得从 `return_url` 里抠；而 App 内嵌浏览器方案
- * 需要的是「单号 + 令牌 + pay_url」三件套，`/api/buy` 直接给全，少一层解析与猜错的可能。
- *
- * 规矩：
- *  - 只发一次（每次 GET 都会新建订单）；界面复用票根，别重复建单
- *  - `pay_url` 必须是 https，否则一律报错（明文收银台会把支付页暴露给中间人）
- *  - 建单成功立即写存档（切后台 / 重开 App 还能续查）
- */
-export const createBuyOrder = async (
-  planId: string,
-  transport: OursTransport,
-  options: OursCheckoutOptions = {}
-): Promise<OursBuyResult> => {
-  const id = planId.trim()
-  if (id === '') {
-    return { kind: 'error', code: 'PLAN_MISSING', messageKey: 'oursErrPlanMissing' }
-  }
-  // 拿不到 cid 就不建单：不建一张不知道属于谁的单（付了钱也查不到）
-  const resolvedCustomerId =
-    options.customerId === undefined
-      ? (readCachedCustomerId(options.storage) ?? (await ensureCustomerId(options.storage)))
-      : options.customerId
-  const customerId = parseCustomerId(resolvedCustomerId)
-  if (customerId === null) {
-    return { kind: 'error', code: 'CUSTOMER_ID_MISSING', messageKey: 'oursErrCustomerNeedsKey' }
-  }
-  const result = await transport({
-    method: 'GET',
-    url: buyTicketUrl(id, customerId),
-    headers: { Accept: 'application/json' },
-    timeoutMs: OURS_TIMEOUTS.buy,
-    followRedirects: false,
-  })
-  if (result.kind !== 'response') {
-    return {
-      kind: 'error',
-      code: result.kind === 'timeout' ? 'TIMEOUT' : 'NETWORK',
-      messageKey: transportFailure(result),
-    }
-  }
-  const parsed = parseJson(result.text)
-  const record = parsed.ok ? asRecord(parsed.value) : null
-  if (!isSuccessStatus(result.status)) {
-    const code = readString(record, 'code')
-    return {
-      kind: 'error',
-      code: code || `HTTP_${result.status}`,
-      messageKey: messageKeyFor(code, result.status),
-    }
-  }
-  if (record === null) {
-    return { kind: 'error', code: 'BAD_JSON', messageKey: 'oursErrInvalidResponse' }
-  }
-  const outTradeNo = readString(record, 'out_trade_no').trim()
-  const orderToken = readString(record, 'order_token').trim()
-  const payUrl = readString(record, 'pay_url').trim()
-  if (outTradeNo === '' || orderToken === '') {
-    // 给了 200 却没有单号 / 令牌：付完款也查不到单，不如现在就说清楚
-    return { kind: 'error', code: 'ORDER_TOKEN_MISSING', messageKey: 'oursErrOrderTokenMissing' }
-  }
-  if (!isOpenableCheckout(payUrl)) {
-    return { kind: 'error', code: 'CHECKOUT_NOT_HTTPS', messageKey: 'oursErrCheckoutUnsupported' }
-  }
-  const previous = readStoredOrder(options.storage)
-  const replacedUnpaidOrder =
-    previous !== null &&
-    previous.outTradeNo !== outTradeNo &&
-    Date.now() - previous.startedAt <= ORDER_RESUME_MAX_AGE_MS
-  writeStoredOrder(
-    { outTradeNo, orderToken, planId: id, startedAt: Date.now() },
-    options.storage
-  )
-  return {
-    kind: 'ok',
-    replacedUnpaidOrder,
-    ticket: {
-      outTradeNo,
-      orderToken,
-      payUrl,
-      amountFen: readNumber(record, 'amount_fen') ?? 0,
-      planId: id,
-      planName: readString(record, 'plan_name'),
-      expireAtSeconds: readNumber(record, 'expire_at'),
-    },
-  }
-}
-
-// ------------------------------------------------------------------ 订单
-
-export type OursOrder = {
-  outTradeNo: string
-  status: OursOrderStatus
-  amountFen: number
-  /** 展示用：卡密只留尾 4 位；未发卡时为空串 */
-  cardTail: string
-  /**
-   * 完整卡密：只有 fulfilled 才有值。
-   * **只留在内存里**（「一键兑换」要把它提交给 /api/redeem），
-   * 不写日志、不写文案、不进 localStorage —— 界面一律显示 cardTail。
-   */
-  cardNo: string
-  /** 服务端给的是 Unix 秒；解析不出来就是 null */
-  expireAtSeconds: number | null
-  message: string
-  /**
-   * 服务端兜底（Issue #157）：查的这一单**还没完成**时，若同一 customer 名下
-   * 最近有一笔已完成订单，/api/order 会把它一起带回来。界面上必须直接展示那张卡。
-   */
-  latestFulfilled: OursLatestFulfilled | null
-}
-
-/** 兜底字段 `latest_fulfilled` 的解析结果（同 customer 最近一笔已完成/已发卡订单） */
-export type OursLatestFulfilled = {
-  outTradeNo: string
-  planId: string
-  amountYuan: number
-  /** 完整卡密：与 OursOrder.cardNo 一样只留内存，界面只显示 cardTail */
-  cardNo: string
-  cardTail: string
-  paidAtSeconds: number | null
-}
-
-export type OursOrderResult =
-  | { kind: 'ok'; order: OursOrder }
-  | { kind: 'error'; code: string; messageKey: OursMessageKey }
-
-const parseOrderStatus = (value: string): OursOrderStatus | null =>
-  value === 'pending' || value === 'paid' || value === 'fulfilled' || value === 'expired' || value === 'failed'
-    ? value
-    : null
-
-/**
- * 解析兜底字段 `latest_fulfilled`（Issue #157）。
- *
- * 服务端只在**查询的订单还没完成**时才附上它；字段本身有三个必须项：
- * 单号、卡密、金额。缺卡密的「已完成」记录对用户没有用（摆一张空卡），直接忽略。
- */
-const parseLatestFulfilled = (record: Record<string, unknown> | null): OursLatestFulfilled | null => {
-  const nested = asRecord(record?.latest_fulfilled)
-  if (nested === null) {
-    return null
-  }
-  const outTradeNo = readString(nested, 'out_trade_no').trim()
-  const cardNo = readString(nested, 'card_no').trim()
-  if (outTradeNo === '' || cardNo === '') {
-    return null
-  }
-  const paidRaw = nested.paid_at
-  return {
-    outTradeNo,
-    planId: readString(nested, 'plan_id'),
-    amountYuan: readNumber(nested, 'amount_yuan') ?? 0,
-    cardNo,
-    cardTail: maskCard(cardNo),
-    paidAtSeconds:
-      typeof paidRaw === 'number' && Number.isFinite(paidRaw)
-        ? paidRaw
-        : typeof paidRaw === 'string' && /^\d+$/.test(paidRaw.trim())
-          ? Number(paidRaw.trim())
-          : null,
-  }
-}
-
-const parseOrder = (value: unknown): OursOrder | null => {
-  const record = asRecord(value)
-  const status = parseOrderStatus(readString(record, 'status'))
-  const outTradeNo = readString(record, 'out_trade_no')
-  if (record === null || status === null || outTradeNo === '') {
-    return null
-  }
-  const cardNo = readString(record, 'card_no')
-  const expireRaw = record.expire_at
-  const expireAtSeconds =
-    typeof expireRaw === 'number' && Number.isFinite(expireRaw)
-      ? expireRaw
-      : typeof expireRaw === 'string' && /^\d+$/.test(expireRaw.trim())
-        ? Number(expireRaw.trim())
-        : null
-  const fulfilled = status === 'fulfilled' && cardNo.trim() !== ''
-  return {
-    outTradeNo,
-    status,
-    amountFen: readNumber(record, 'amount_fen') ?? 0,
-    cardTail: fulfilled ? maskCard(cardNo) : '',
-    cardNo: fulfilled ? cardNo.trim() : '',
-    expireAtSeconds,
-    message: readString(record, 'message'),
-    latestFulfilled: fulfilled ? null : parseLatestFulfilled(record),
-  }
-}
-
-/** 查单：GET /api/order?out_trade_no=&order_token=（order_token 必须带，否则 403） */
-export const queryOrder = async (
-  input: { outTradeNo: string; orderToken: string },
-  transport: OursTransport
-): Promise<OursOrderResult> => {
-  const outTradeNo = input.outTradeNo.trim()
-  const orderToken = input.orderToken.trim()
-  if (outTradeNo === '' || orderToken === '') {
-    return { kind: 'error', code: 'ORDER_TOKEN_MISSING', messageKey: 'oursErrOrderTokenMissing' }
-  }
-  const query = `out_trade_no=${encodeURIComponent(outTradeNo)}&order_token=${encodeURIComponent(orderToken)}`
-  const result = await transport({
-    method: 'GET',
-    url: `${OURS_API_BASE}/api/order?${query}`,
-    headers: { Accept: 'application/json' },
-    timeoutMs: OURS_TIMEOUTS.order,
-    followRedirects: false,
-  })
-  if (result.kind !== 'response') {
-    return {
-      kind: 'error',
-      code: result.kind === 'timeout' ? 'TIMEOUT' : 'NETWORK',
-      messageKey: transportFailure(result),
-    }
-  }
-  const parsed = parseJson(result.text)
-  if (isSuccessStatus(result.status) && parsed.ok) {
-    const order = parseOrder(parsed.value)
-    return order === null
-      ? { kind: 'error', code: 'INVALID_RESPONSE', messageKey: 'oursErrInvalidResponse' }
-      : { kind: 'ok', order }
-  }
-  const code = readString(parsed.ok ? asRecord(parsed.value) : null, 'code')
-  return {
-    kind: 'error',
-    code: code || `HTTP_${result.status}`,
-    messageKey: messageKeyFor(code, result.status),
-  }
-}
-
-export type OursPollResult =
-  | { kind: 'ok'; order: OursOrder; attempts: number }
-  | { kind: 'timeout'; order: OursOrder | null; attempts: number }
-  | { kind: 'error'; code: string; messageKey: OursMessageKey }
-  | { kind: 'cancelled'; order: OursOrder | null; attempts: number }
-
-/**
- * 订单轮询状态机：2s 一次、总时长不超过 60s，只在有 order_token 时可用（没有令牌一次请求都不发）。
- *
- * - 终态（fulfilled / expired / failed）立即返回
- * - pending / paid 继续轮
- * - 到 60s 还没终态 → kind='timeout'（界面提示「稍后在订单查看卡密」，**不重复下单**）
- * - onUpdate 每次拿到新状态就回调一次（界面边轮边渲染）
- * - shouldStop 由界面注入（关闭弹层 / 切渠道时取消）
- * - **latest 由界面注入（Issue #157）：每一轮先读一次本地最新存档**。重新下单后存档被覆盖，
- *   还在跑的那次轮询必须在下一次 tick 就换到新单，而不是抱着旧单号查满 60s
- *   —— 旧单永远 pending，用户付的却是新单，界面就一直「等待支付」。
- *   换单时 60s 预算重新计时：新单是刚建的，理应重新给满 60s。
- * - onSwitch 换单时回调一次（界面据此更新展示的单号）
- * sleep / now 也可注入，单测里用假时钟验证间隔与上限。
- */
-export const pollOrder = async (input: {
-  outTradeNo: string
-  orderToken: string
-  transport: OursTransport
-  intervalMs?: number
-  timeoutMs?: number
-  sleep?: (ms: number) => Promise<void>
-  now?: () => number
-  onUpdate?: (order: OursOrder) => void
-  onSwitch?: (next: { outTradeNo: string; orderToken: string }) => void
-  latest?: () => { outTradeNo: string; orderToken: string } | null
-  shouldStop?: () => boolean
-}): Promise<OursPollResult> => {
-  const intervalMs = input.intervalMs ?? OURS_TIMEOUTS.poll.intervalMs
-  const timeoutMs = input.timeoutMs ?? OURS_TIMEOUTS.poll.timeoutMs
-  const sleep = input.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)))
-  const now = input.now ?? Date.now
-  let current = { outTradeNo: input.outTradeNo, orderToken: input.orderToken }
-  let started = now()
-  const maxAttempts = Math.max(1, Math.floor(timeoutMs / intervalMs) + 1)
-  let attempts = 0
-  let last: OursOrder | null = null
-  for (;;) {
-    if (input.shouldStop?.() === true) {
-      return { kind: 'cancelled', order: last, attempts }
-    }
-    // Issue #157：每轮先看一眼最新存档；换了单就换过去（并重开 60s 预算）
-    const newest = input.latest?.() ?? null
-    if (
-      newest !== null &&
-      newest.outTradeNo !== '' &&
-      (newest.outTradeNo !== current.outTradeNo || newest.orderToken !== current.orderToken)
-    ) {
-      current = { outTradeNo: newest.outTradeNo, orderToken: newest.orderToken }
-      started = now()
-      attempts = 0
-      input.onSwitch?.(current)
-    }
-    const result = await queryOrder(current, input.transport)
-    attempts += 1
-    if (result.kind === 'error') {
-      return { kind: 'error', code: result.code, messageKey: result.messageKey }
-    }
-    last = result.order
-    input.onUpdate?.(result.order)
-    if (isTerminalOrderStatus(result.order.status)) {
-      return { kind: 'ok', order: result.order, attempts }
-    }
-    if (now() - started + intervalMs > timeoutMs || attempts >= maxAttempts) {
-      return { kind: 'timeout', order: last, attempts }
-    }
-    await sleep(intervalMs)
-  }
-}

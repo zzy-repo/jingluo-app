@@ -8,7 +8,7 @@
 | 项目 | 值 |
 | --- | --- |
 | 兼容基线 | Android WebView **83**（Chromium 83.0.4103.106，Android 11 出厂镜像） |
-| 扫描范围 | `src/**` 共 **250** 个文件（**150** `.ts` / 54 `.tsx` / 44 `.css` / 1 `.html` / 1 `.md`） |
+| 扫描范围 | `src/**` 共 **249** 个文件（**149** `.ts` / 54 `.tsx` / 44 `.css` / 1 `.html` / 1 `.md`） |
 | 判定方式 | **静态推断**：词法层遮蔽注释、字符串、模板后按调用形状匹配；**非运行时验证** |
 | 工具 | [`scripts/lib/apiAssumptionAudit.mjs`](../../scripts/lib/apiAssumptionAudit.mjs)（纯判定模块，无遍历、无打印） |
 | 单测 | [`tests/unit/api-assumption-audit.test.mjs`](../../tests/unit/api-assumption-audit.test.mjs)（10 个用例，三个判定桶各钉真例子） |
@@ -23,7 +23,7 @@
 | **真漏洞**（`uncovered`） | 首次支持 > 83 且没有任何兜底 | **0** |
 | 合计 | | **51** |
 
-类别 1 命中总数 **51 处 / 248 个文件**：31 处依赖入口 polyfill、20 处落在基线内、**0 处裸调用无兜底**。
+类别 1 命中总数 **51 处 / 249 个文件**：31 处依赖入口 polyfill、20 处落在基线内、**0 处裸调用无兜底**。
 
 > 文件数 +2 是 #306 新增 `src/services/diagnostics/fields.ts` 与 `timing.ts` 两个源文件；**命中总数仍是 51**（两文件里没有类别 1 命中），§二 的 `文件:行` 已按位移后的行号重算。
 
@@ -193,3 +193,4 @@ node --test tests/unit/capabilities-docs-sync.test.mjs   # 文档与复算是否
 - 复核（2026-11-19 18:35，基准 `68c4d9d`，本单 #305）：新增 1 个 `.ts` 源文件（`src/components/settings/logView.ts`，日志预览的过滤 / 分组 / 复制纯函数），扫描范围 244 → **245** 个文件、`.ts` 144 → **145** 个。新文件里没有上述任何一条 API（只用 `String#slice` / `padStart` / `Object.entries` / `JSON.stringify` / `Number.isFinite`，全部 ≤ Chromium 83），**命中总数仍是 51 处**，分类分布、按 API 分项、逐条命中表的 `文件:行` 均未变。
 - 复核（2026-11-19 18:50，基准 `7a65f55`，本单 #324 分支 HEAD）：新增 1 个 `.ts` 源文件（`src/services/chat/replyErrorReport.ts`，回答失败时「复制诊断信息」的纯文本生成），扫描范围 248 → **249** 个文件、`.ts` 148 → **149** 个。新文件只用 `new Date().toISOString()` / `Number.isFinite` / `String#trim`，**没有任何一条本表里的 API**（`scrubReportText` / `truncate` 是既有模块的导出），**命中总数仍是 51 处**，分类分布（31 / 20 / 0）、按 API 分项（3 / 14 / 14 / 13 / 4 / 2 / 1）与 §二 的 `文件:行` 均未变（`src/services/api/errors.ts`、`client.ts`、`src/services/chat/describe.ts`、`store.ts` 的改动都在既有命中行之后或同处替换）。
 - 复核（2026-11-19 19:20，基准 `1577841`，本单 #310 分支）：新增 2 个 `.ts` 源文件（`src/services/updateFailure.ts` 失败分类、`src/services/updateReport.ts` 诊断文本），扫描范围 249 → **251** 个文件、`.ts` 149 → **151** 个。两个文件只用 `padStart` / `Number.isFinite` / `URL` / `Date` 这类基础能力，**没有任何一条本表里的 API**，**命中总数仍是 51 处**，分类分布（31 / 20 / 0）与按 API 分项未变；§二 的 `文件:行` 也未动（`AppUpdateField.tsx` 的改动不在任何命中行上）。
+- 复核（2026-11-19 19:50，基准 `0c89bf5`，本单 #331 分支 `chore/331-retire-buy`，支付入口切联动小铺后的旧链路停用）：删 2 个 `.ts`（`src/services/ours/orderStore.ts` 未完成订单存档、`returnParams.ts` 回跳参数解析）、把只剩存储形状的那一段搬进新文件 `src/services/ours/storage.ts`，扫描范围 250 → **249** 个文件、`.ts` 150 → **149** 个。`api.ts` 的 `/buy` 收银台、`/api/buy` 建单、`/api/order` 查单三节与 `transport.ts` 的 `CheckoutBrowser` 通路一并删除，但都是既有命中行**之外**的代码，**命中总数仍是 51 处**，分类分布（31 / 20 / 0）、按 API 分项（3 / 14 / 14 / 13 / 4 / 2 / 1）与 §二 的 `文件:行` 全部未变。

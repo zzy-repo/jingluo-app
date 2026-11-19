@@ -7,13 +7,10 @@ import { ErrorBoundary } from './app/ErrorBoundary.js'
 import { setupTheme } from './app/theme.js'
 import { setupReading } from './app/reading.js'
 import { readDiagnosticsFacts } from './app/diagnosticsContext.js'
-import { openOursServices } from './components/settings/settingsDialogState.js'
-import { consumeOrderReturn } from './services/ours/returnParams.js'
 import { getApiKey } from './services/api/apiConfig.js'
 import { fetchCustomerIdFromProfile, setCustomerIdProvider } from './services/ours/customerId.js'
 import { fetchPaymentRecords } from './services/ours/paymentRecords.js'
-import { httpTransport, setCustomerMissingNotice } from './services/ours/transport.js'
-import { showToast } from './components/base/toastState.js'
+import { httpTransport } from './services/ours/transport.js'
 import { INVITE_API_BASE } from './services/invite/api.js'
 import { ensureDeviceId } from './services/invite/device.js'
 import { setupFlexGapFallback } from './utils/flexGap.js'
@@ -69,23 +66,11 @@ installDiagnosticsDebugHandle()
 
 // 告诉 index.html 的 ES5 守卫「入口跑起来了」，它就不用再兜底报白屏（见 src/index.html）。
 ;(window as Window & { __DEEPSEEK_BOOTED__?: boolean }).__DEEPSEEK_BOOTED__ = true
-// 网页版付款回跳（Issue #36）：地址栏带 ?no=<out_trade_no>&order_token=<token> 时，
-// 先解析并清掉参数（order_token 等同凭据，不该留在历史里），再直接打开「我们的渠道」弹层
-// 进入订单查询（2s 一次、最多 60s；fulfilled 才显示卡密）。
-const orderReturn = consumeOrderReturn(window)
-if (orderReturn !== null) {
-  // Issue #157：回跳是网页版**唯一**能拿到新单号的时机（顶层导航读不到 Location），
-  // consumeOrderReturn 已经把存档覆盖成这一单；覆盖过未完成旧单时带一句提示进弹层。
-  openOursServices({ replacedUnpaidOrder: orderReturn.replacedUnpaidOrder })
-}
-
-// 下单归属客户（cid）的来源（Issue #115）：/buy 不带 cid 就会建出一张不知道属于谁的单，
-// 付款成功后 App 只能一直显示「等待支付」。这里把「怎么拿到 cid」注入给业务层：
+// 客户编号（cid）的来源：付款记录 / 购买记录（GET /api/orders）要靠它认出「这是谁的订单」。
+// Issue #331 之后下单链路已停用（我们不建单），cid 只剩「查历史订单」这一个用途：
 //  1. 有 API Key：直接用 GET /api/orders 返回的 customer_id（实测唯一可靠的来源）；
-//  2. 没有 Key（还没绑定的首购用户）：退回设备码通道 GET <invite>/me?device_id=…。
-// 两条都失败就返回 null —— 业务层会拒绝下单，而不是发出一次没有 cid 的 /buy。
-// 拿不到 cid 时（网页版「去支付」）用 App 自己的轻提示，不弹原生 alert
-setCustomerMissingNotice((message) => showToast(message))
+//  2. 没有 Key：退回设备码通道 GET <invite>/me?device_id=…。
+// 两条都失败就返回 null —— 查记录时按「查不到」处理，不再阻断任何购买流程。
 
 setCustomerIdProvider(async () => {
   const key = getApiKey()

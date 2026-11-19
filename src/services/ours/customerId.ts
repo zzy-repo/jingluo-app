@@ -1,18 +1,17 @@
 /**
- * 「下单属于哪个客户」（cid / customer_id）的解析与缓存（Issue #115）。
+ * 「订单属于哪个客户」（cid / customer_id）的解析与缓存（Issue #115）。
  *
- * 为什么单独一个文件：`api.ts`（下单要拼 cid）和付款记录（`GET /api/orders` 顺带把
- * customer_id 带回来）都要用它，而两边互不依赖才是干净的分层。`api.ts` 已经 import 本文件，
- * 如果本文件反过来 import `api.ts` 就成了模块环（oxlint import/no-cycle 直接报错），
- * 所以这里只用**结构兼容的最小传输形状**，不 import 那边的类型。
+ * 为什么单独一个文件：付款记录 / 购买记录（`GET /api/orders` 顺带把 customer_id 带回来）
+ * 与业务层都要用它，而两边互不依赖才是干净的分层。如果本文件反过来 import `api.ts`
+ * 就成了模块环（oxlint import/no-cycle 直接报错），所以这里只用**结构兼容的最小传输形状**。
  *
- * 取值顺序：内存 → localStorage（上次拿到的就记住，下单不必再等一次往返）→ 注入的 provider。
- * provider 由 main.tsx 在启动时注入：有 API Key 走 `GET /api/orders`，没有 Key 走设备码 `/me`。
- * 全都拿不到就返回 null —— 调用方必须**拒绝下单**，绝不能发一次不带 cid 的 /buy
- * （那会建出一张不知道属于谁的单，用户付了钱 App 还一直显示「等待支付」）。
+ * Issue #331 之后下单链路已停用（我们不建单）：cid 不再用来「归属新订单」，
+ * 只用来查历史订单/付款记录。取值顺序仍是：内存 → localStorage → 注入的 provider；
+ * provider 由 main.tsx 在启动时注入（有 Key 走 `GET /api/orders`，没有 Key 走设备码 `/me`）。
+ * 全都拿不到就返回 null —— 调用方按「查不到记录」处理，不再阻断任何购买流程。
  */
 
-import { browserStorage, type OrderStorage } from './orderStore.js'
+import { browserStorage, type OrderStorage } from './storage.js'
 
 /** cid 缓存键：拿到过就记住，下次下单直接用，不必再等一次网络往返 */
 export const CUSTOMER_ID_STORAGE_KEY = 'chat-demo:ours-customer-id'
@@ -99,8 +98,9 @@ export const resetCustomerIdCache = (): void => {
 }
 
 /**
- * 拿 cid：内存 → localStorage → 注入的 provider（一次）。拿不到返回 null，
- * 调用方必须**不要**发不带 cid 的 /buy（见 `startCheckout`）。
+ * 拿 cid：内存 → localStorage → 注入的 provider（一次）。拿不到返回 null。
+ * #331 之后 cid 只用来查自己的历史订单（`/api/orders?cid=`）——不建单、不查单，
+ * 所以拿不到 cid 不再是「不能付款」，只是「看不到历史」。
  */
 export const ensureCustomerId = async (storage?: OrderStorage | null): Promise<number | null> => {
   const cached = readCachedCustomerId(storage)
