@@ -12,9 +12,9 @@
 
 | 项 | 值 |
 | --- | --- |
-| 扫描范围 | `src/**` 全部源文件 **249** 个（`.css` **44** 个，其中 `*.module.css` **37** 个；其余 `.ts / .tsx / .html` 共 **205** 个） |
-| 口径拆分 | 44 `.css` + 150 `.ts` + 54 `.tsx` + 1 `.html` = 249 |
-| 命中总数 | **343** 处，分布在 **39** 个文件 |
+| 扫描范围 | `src/**` 全部源文件 **251** 个（`.css` **44** 个，其中 `*.module.css` **37** 个；其余 `.ts / .tsx / .html` 共 **207** 个） |
+| 口径拆分 | 44 `.css` + 151 `.ts` + 55 `.tsx` + 1 `.html` = 251 |
+| 命中总数 | **344** 处，分布在 **39** 个文件 |
 | 运行时下限 | WebView **83**（Chromium 83）。**首支持 ≤ 83 的特性一律记「无风险」，与有没有兜底无关** |
 | 构建期因素 | `rspack.config.ts` 用 `builtin:lightningcss-loader`，`targets` 取自 `package.json` 的 `browserslist`（强制含 `chrome >= 83`）。**已被构建期翻译掉的写法不算运行时假设** |
 
@@ -35,7 +35,7 @@
 | 特性 | 首支持 Chromium | 命中 | 已有兜底 | 无风险 | 可接受降级 | 真实缺陷 | 假阳性 | 结论 |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | 嵌套 `&` | — （构建期） | 140 | 140 | 0 | 0 | 0 | 0 | lightningcss 按 `chrome >= 83` 展开，非运行时假设 |
-| flex `gap` | 84 | 117 | 117 | 0 | 0 | 0 | 0 | 兜底已全覆盖（#217 补齐最后 2 处）；`check:gap` 口径见 §2.6 |
+| flex `gap` | 84 | 118 | 118 | 0 | 0 | 0 | 0 | 兜底已全覆盖（#217 补齐最后 2 处）；`check:gap` 口径见 §2.6 |
 | `min()` / `max()` | 79 | 21 | 0 | 21 | 0 | 0 | 0 | 79 ≤ 83，无风险 |
 | `:has()` | 105 | **0** | 0 | 0 | 0 | 0 | 0 | 16 处已由 #213 清零：改成渲染期显式状态类 `ds-markdown-before-ul` / `ds-markdown-before-ol`，低内核上零特性依赖 |
 | `:focus-visible` | 86 | 13 | 13 | 0 | 0 | 0 | 0 | 13 处已由 #215 补齐：每处都有同选择器的 `:focus` 兜底 + `:focus:not(:focus-visible)` 收回；`pnpm run check:focus` 守住 |
@@ -58,7 +58,7 @@
 | `color-mix()` | 111 | 0 | — | — | — | 0 | 0 | 未使用（且 lightningcss 会降级） |
 | `@layer` | 99 | 0 | — | — | — | 0 | 0 | 未使用 |
 | `accent-color` | 93 | 0 | — | — | — | 0 | 0 | 未使用 |
-| **合计** | | **343** | **300** | **37** | **1** | **5** | **0** | |
+| **合计** | | **344** | **301** | **37** | **1** | **5** | **0** | |
 
 > `100dvh` 的每一处声明，**没有一处**落在 `@supports` 之外（`dvh` 裸用命中数为 0）。这是本仓 #13 之后形成的最好的一条既有纪律，也是本次盘点最重要的**正面结论**：`dvh` 这一类零缺陷。
 
@@ -174,13 +174,14 @@
 > 3 处声明都已覆盖，2 处 `@supports` 就是收回块本身。**判定规则不改**：放宽到认 `overflow-y: scroll` 会顺手放过真正没兜底的写法，
 > 要不要放宽留给后续单。本文档的职责是把「规则怎么算」和「人怎么核」分开写清楚。
 
-### 2.6 flex `gap`（117 处：全部已有兜底；#217 补齐了最后 2 处）
+### 2.6 flex `gap`（118 处：全部已有兜底；#217 补齐了最后 2 处）
 
 | 文件:行 | 假设内容 | 类别 | 风险 | 处置 |
 | --- | --- | --- | --- | --- |
-| 37 个 `*.module.css` + `markdown.css` 共 117 处 | flex 容器上的 `gap` / `row-gap` | 2 | 低 | 已有兜底（`html[data-flex-gap-fallback]` + `margin` 块，由 `pnpm run check:gap` 逐条产出清单） |
+| 37 个 `*.module.css` + `markdown.css` 共 118 处 | flex 容器上的 `gap` / `row-gap` | 2 | 低 | 已有兜底（`html[data-flex-gap-fallback]` + `margin` 块，由 `pnpm run check:gap` 逐条产出清单） |
 | `components/markdown/markdown.css:370` | `.md-code-block-switch { display:flex; gap:4px }`，文件不是 CSS Module、原先不在 `check:gap` 扫描范围 | 2 | 低 | **#217 已补**：裸写 `html[data-flex-gap-fallback]` 兜底块（` :global()` 在非 module 文件里非法），扫描范围同时扩到全部 `.css` |
 | `components/messages/ReplyArea.module.css:224` | `.toolBody { display:flex; flex-wrap:wrap; row-gap:6px }`，原先被 `flex-wrap` 排除规则放过 | 2 | 低 | **#217 已补**：`margin-bottom: 6px`；排除规则改为「交叉轴 gap 只在**不换行**时才不需要兜底」 |
+| `components/messages/AssistantMessage.module.css:21,27` | `.waiting { display:flex; flex-wrap:wrap; column-gap:6px; row-gap:2px }`（#328 等待提示可能出现第二行） | 2 | 低 | **#328 已补**：`margin-right: 6px` + `margin-bottom: 2px`，由 `pnpm run check:gap` 生成 |
 
 > 口径（#217 之后统一）：`pnpm run check:gap` 报「扫描 **44** 个 CSS 文件（其中 **37** 个 CSS Module）：已兜底 **119** 条，跳过 **3** 条」。44 = `find src -name '*.css' | wc -l`；3 条跳过 = #159 的 `Settings.module.css:.backgroundRow` 1 条 + 非 flex 容器 2 条。原先的两种口径（37 module / 109 处 vs 含非 module 的 109 处）已合并成同一个口径。
 
@@ -314,3 +315,4 @@ node --test tests/unit/css-assumption-audit.test.mjs
 - 复核（2026-11-19 19:20，基准 `1577841`，本单 #310 分支）：新增 2 个 `.ts` 源文件（`src/services/updateFailure.ts` / `src/services/updateReport.ts`），扫描范围 248 → **250** 个源文件（其余 `.ts / .tsx / .html` 204 → **206**），`.css` 仍是 44 个（`*.module.css` 37）。`AppUpdateField.module.css` 只新增诊断区排版（淡色事实列表 + 复制链接），**间距全部用 `margin`、没有新增 flex `gap`**，所以 `check:gap` 的兜底条数不变、也不需要新的 `#173-fallback` 块。**命中总数仍是 343 处 / 39 个文件**，逐特性表与 §2 明细未变。
 - 复核（2026-11-19 19:50，基准 `0c89bf5`，本单 #331 分支 `chore/331-retire-buy`）：删 2 个 `.ts`（`ours/orderStore.ts`、`ours/returnParams.ts`）、加 1 个 `.ts`（`ours/storage.ts`），扫描范围 249 → **248** 个源文件（`.ts / .tsx / .html` 205 → **204**），`.css` 仍是 44 个（`*.module.css` 37）。旧支付链路删掉的是 TS 逻辑，**不含任何 CSS 特性假设**，命中总数仍是 **343 处 / 39 个文件**，逐特性表与 §2 明细的 `文件:行` 未变。
 - 复核（2026-11-19 20:05，基准 `42a3a68`，本单 #339 分支 `fix/deepseek-model-residue-339`）：新增 1 个 `.ts` 源文件（`src/services/api/configMigration.ts`），扫描范围 248 → **249** 个源文件（其余 `.ts / .tsx / .html` 204 → **205**），`.css` 仍是 44 个（`*.module.css` 37）。`Settings.module.css` 只为内置模型的只读值加了 1 个 `.modelValue` 规则（`flex: 0 1 auto` / `min-width: 0` / `color` / 断行三件套），**没有新增 flex `gap`、没有新增嵌套 `&`、没有新特性**，命中总数仍是 **343 处 / 39 个文件**，逐特性表与 §2 明细的 `文件:行` 未变。
+- 复核（2026-11-19 21:20，基准 `a757bec`，本单 #328 分支 `feat/wait-notice-328`）：新增 1 个 `.ts`（`src/services/chat/waitStage.ts`）与 1 个 `.tsx`（`src/components/messages/WaitNotice.tsx`），扫描范围 249 → **251** 个源文件（`.ts / .tsx / .html` 205 → **207**），`.css` 仍是 44 个（`*.module.css` 37）。`AssistantMessage.module.css` 里 `.waiting` 从固定高度改成 `min-height` + `flex-wrap`，并把 `gap: 6px` 拆成 `column-gap: 6px` / `row-gap: 2px`，因此 flex `gap` 命中 117 → **118**、命中总数 343 → **344**（其余特性未变，分布仍是 39 个文件）。这一处新增的交叉轴 `row-gap` 由 `pnpm run check:gap` 给既有兜底规则追加了 `margin-bottom: 2px`（兜底条数仍是 **119** 条，现跑现报「已兜底 119 条，跳过 3 条」），§2.6 明细已补一行。两个新文件不含任何 CSS 特性假设。

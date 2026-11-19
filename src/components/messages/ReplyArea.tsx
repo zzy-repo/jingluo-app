@@ -82,10 +82,24 @@ export const ReplyArea = memo(function ReplyArea({
     open: opened,
   })
   const steps = selectVisibleSteps(view.steps, layout)
-  if (steps.length === 0 && !layout.showTitle && !(thinking && streaming)) {
+  /**
+   * 首字还没到（一个步骤都没有）时这里不出标题（#328）：
+   * 「还没连上/还在等首字」由消息里的等待占位负责，ReplyArea 从点发送就喊「正在思考」既不准确也没有秒数。
+   */
+  const showTitle = layout.showTitle && !(streaming && view.steps.length === 0)
+  if (steps.length === 0 && !showTitle) {
     return null
   }
-  const title = layout.showTitle ? getAreaTitle(view, streaming, Date.now(), hasResponse) : null
+  // 思考期标题带秒数：startedAt 用消息创建时间（= 点发送），复用上面已有的 1Hz ticker
+  const title = showTitle
+    ? getAreaTitle(
+        view,
+        streaming,
+        Date.now(),
+        hasResponse,
+        titleActive ? message.createdAt : undefined
+      )
+    : null
   const stopped = !streaming && !hasResponse
   // 折叠档：正文不挂 DOM（不是渲染后再隐藏）；隐藏档：思考块已被剔除，工具/过程行照旧渲染。
   const renderSteps = layout.showSteps || layout.dropThinkingSteps

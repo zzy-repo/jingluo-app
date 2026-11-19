@@ -117,6 +117,13 @@ export const zh = {
   replyWaitingFirstToken: '正在等待响应',
   replyWaitingSlow: '服务响应较慢，仍在等待',
   replyWaitingStalled: '等待时间过长，可以停止后重新生成',
+  /** 首字前的阶段名（#328）：和三档提示一起显示，秒数由 waitElapsed 注入，不写死 */
+  waitStagePreparing: '正在准备请求',
+  waitStageUploading: '正在上传附件',
+  waitStageConnecting: '正在连接上游，等待响应',
+  waitStageAwaitingFirstToken: '已连接，等待模型首字',
+  waitStageThinking: '模型正在思考',
+  waitElapsed: '已等待 {seconds}s',
   /** 自动重试进度：请求失败后不会静默卡住（#105） */
   chatRetrying: '正在第 {attempt} 次重试（共 {limit} 次）',
   replyRefused: '你好，这个问题我暂时无法回答，让我们换个话题再聊聊吧。',

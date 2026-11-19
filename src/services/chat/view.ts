@@ -7,6 +7,7 @@ import type {
   WebSearchToolResultBlock,
 } from '../api/types.js'
 import type { AssistantMessage, ThinkingPart } from './types.js'
+import { waitSeconds } from './waitStage.js'
 
 /**
  * 由回复的内容块推导界面需要的结构：思考与工具步骤的时间线、带引用角标的正文、可引用的来源列表。
@@ -366,12 +367,17 @@ export const getTotalThinkingSeconds = (steps: Step[], now: number) => {
   return Math.max(1, Math.round(total / 1000))
 }
 
-/** 折叠区标题 */
+/**
+ * 折叠区标题。
+ * @param startedAt 本轮开始的时刻（点发送）；思考期标题带上「已等待 Ns」（#328），
+ *   不传就退化成原来的纯文案，历史会话/非流式调用不受影响。
+ */
 export const getAreaTitle = (
   view: ReplyView,
   streaming: boolean,
   now: number,
-  hasResponse = view.answer !== null
+  hasResponse = view.answer !== null,
+  startedAt?: number
 ) => {
   if (hasResponse) {
     const count = getTotalThinkingSeconds(view.steps, now)
@@ -395,6 +401,10 @@ export const getAreaTitle = (
   }
   if (last?.type === 'read_link' && last.links.some((link) => link.status === 'wip')) {
     return translate('readingLink')
+  }
+  // 思考期：标题带已等待秒数，用户不用猜「到底还动不动」（#328 G5）
+  if (startedAt !== undefined) {
+    return `${translate('messageThinking')} · ${translate('waitElapsed', { seconds: waitSeconds(startedAt, now) })}`
   }
   return translate('messageThinking')
 }

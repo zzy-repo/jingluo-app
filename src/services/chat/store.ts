@@ -49,8 +49,8 @@ import {
 } from './reply.js'
 import { buildMessageBody } from './requestBody.js'
 import { STREAM_NOTICE_TIERS } from './streamNotice.js'
+import { composeWaitNotice, needsUpload, type WaitHint, type WaitStage } from './waitStage.js'
 import type { ImportSkip } from './history/toLocal.js'
-import type { TranslationMessage } from '../../i18n/index.js'
 import {
   toSessionSummary,
   type AssistantMessage,
@@ -115,8 +115,11 @@ type ChatState = {
   streaming: Record<string, AbortController>
   /** 最近一次历史导入被跳过的条目（损坏的会话 / 消息），供「导入详情」展示（#49） */
   importSkipped: ImportSkip[]
-  /** 还在等首字的会话：当前该显示哪一档等待提示；收到首字或本轮结束就删掉 */
-  waitHints: Record<string, TranslationMessage>
+  /**
+   * 还在等首字的会话：当前该显示的等待提示（阶段 + 分档）；收到首字或本轮结束就删掉。
+   * **不按秒写入**：秒数只活在叶子组件里（1Hz 只重渲染那一行），避免整棵消息列表每秒重渲染。
+   */
+  waitHints: Record<string, WaitHint>
 }
 
 export const useChatStore = create<ChatState>(() => ({
@@ -148,12 +151,22 @@ const getStreamController = (id: string) => {
   return Object.hasOwn(streams, id) ? streams[id] : undefined
 }
 
-/** 同一档提示重复写入时保持引用不变，避免组件无谓重渲染 */
-const hintSignature = (hint: TranslationMessage) =>
-  `${hint.key}|${hint.params ? JSON.stringify(hint.params) : ''}`
+/**
+ * 同一档提示重复写入时保持引用不变，避免组件无谓重渲染。
+ * 阶段与分档也要进签名：只换了阶段/档位（文案 key 恰好没变，例如重试期升到 30s）时，
+ * 组件仍需要拿到新的 `tier` / `actions`。
+ */
+const hintSignature = (hint: WaitHint) =>
+  [
+    hint.key,
+    hint.params ? JSON.stringify(hint.params) : '',
+    hint.stage ?? '',
+    hint.tier?.afterMs ?? '',
+    hint.actions ? '1' : '0',
+  ].join('|')
 
 /** 换掉/清掉某个会话的等待提示；清掉时不留空壳，组件订阅的是 key 本身 */
-const setWaitHint = (sessionId: string, hint?: TranslationMessage) => {
+const setWaitHint = (sessionId: string, hint?: WaitHint) => {
   set((state) => {
     const current = state.waitHints[sessionId]
     if (hint) {
@@ -164,7 +177,7 @@ const setWaitHint = (sessionId: string, hint?: TranslationMessage) => {
     if (!current) {
       return {}
     }
-    const waitHints: Record<string, TranslationMessage> = {}
+    const waitHints: Record<string, WaitHint> = {}
     for (const [id, hint] of Object.entries(state.waitHints)) {
       if (id !== sessionId) {
         waitHints[id] = hint
@@ -174,15 +187,58 @@ const setWaitHint = (sessionId: string, hint?: TranslationMessage) => {
   })
 }
 
-/** 请求发出后开始按 5s / 30s / 60s 分级提示，第一档之前完全安静 */
-const armWaitHints = (sessionId: string) => {
+/**
+ * 本轮的等待阶段（按会话）。`startedAt` 只在这里存一份：
+ * 附件补齐 → 建连 → 等首字 → 思考，阶段变了只重算提示，**累计秒数不归零**（重试也不归零）。
+ */
+const waitStates = new Map<
+  string,
+  { startedAt: number; stage: WaitStage | null; retry?: { attempt: number; limit: number } }
+>()
+
+/** 按当前阶段与已等待时长重算提示；不足 5s（且不在重试）时什么都不显示 */
+const syncWaitHint = (sessionId: string) => {
+  const current = waitStates.get(sessionId)
+  if (!current) {
+    return
+  }
+  const hint = composeWaitNotice({
+    stage: current.stage,
+    startedAt: current.startedAt,
+    now: Date.now(),
+    retry: current.retry,
+  })
+  setWaitHint(sessionId, hint ?? undefined)
+}
+
+/**
+ * 从点发送那一刻开始等待：三档定时器按「离 startedAt 还剩多久」挂，
+ * 所以阶段切换（含附件补齐耗时）不会把 5s/30s/60s 重新计一遍（#328 G1/G6）。
+ */
+const armWaitHints = (sessionId: string, startedAt: number) => {
   clearWaitHints(sessionId)
+  waitStates.set(sessionId, { startedAt, stage: null })
   waitHintTimers.set(
     sessionId,
     STREAM_NOTICE_TIERS.map((tier) =>
-      setTimeout(() => setWaitHint(sessionId, { key: tier.key }), tier.afterMs)
+      setTimeout(() => syncWaitHint(sessionId), Math.max(0, startedAt + tier.afterMs - Date.now()))
     )
   )
+}
+
+/** 切换阶段（不重置 startedAt）；未 armed 时是 no-op，不会凭空造出提示 */
+const setWaitStage = (
+  sessionId: string,
+  stage: WaitStage | null,
+  retry?: { attempt: number; limit: number }
+) => {
+  const current = waitStates.get(sessionId)
+  if (!current) {
+    return
+  }
+  current.stage = stage
+  current.retry = retry
+  syncWaitHint(sessionId)
 }
 
 /** 收到首字或本轮结束：撤下提示并停掉没到点的定时器 */
@@ -191,7 +247,17 @@ const clearWaitHints = (sessionId: string) => {
     clearTimeout(timer)
   }
   waitHintTimers.delete(sessionId)
+  waitStates.delete(sessionId)
   setWaitHint(sessionId)
+}
+
+/** 本轮请求会用到的全部附件：有没补传的要单独显示「正在上传附件」阶段 */
+const roundFiles = (request: Request) => {
+  const files = [...request.question.files]
+  for (const [user] of getContextRounds(request.history)) {
+    files.push(...user.files)
+  }
+  return files
 }
 
 const sameSummary = (a: SessionSummary, b: SessionSummary) =>
@@ -1304,6 +1370,8 @@ const streamReply = async (sessionId: string, initial: AssistantMessage, request
     updateReply(sessionId, reply)
   }
   streamFlushes.set(sessionId, flush)
+  // 等待提示从「点发送」就开始计时（#328）：附件补齐也在这段里，不再等请求发出才挂表
+  armWaitHints(sessionId, startedAt)
 
   try {
     for (let attempt = 0; ; attempt += 1) {
@@ -1313,8 +1381,11 @@ const streamReply = async (sessionId: string, initial: AssistantMessage, request
       let preparing = true
       let receivedContent = false
       try {
+        setWaitStage(sessionId, needsUpload(roundFiles(request)) ? 'uploading' : 'preparing')
         const prepared = await prepareFiles(sessionId, request, controller.signal)
         preparing = false
+        // 附件补齐完成、请求即将发出：阶段切到「正在连接上游」（秒数继续累加，不归零）
+        setWaitStage(sessionId, 'connecting')
         // 附件就绪后获取本轮信息；续写沿用原回答快照，重新生成的快照独立保存。
         const latestReminder = prepared.prefix
           ? prepared.prefix.latestReminder
@@ -1348,11 +1419,13 @@ const streamReply = async (sessionId: string, initial: AssistantMessage, request
         })
         const events = streamMessage(getApiKey(), body, controller.signal, {
           // 只接「响应头到手」这一个时刻：首字与分段的间隔在下面的事件循环里记（要带字符数）
-          onHeaders: () => meter.markHeaders(),
+          onHeaders: () => {
+            meter.markHeaders()
+            // 已连上、还没出字：「等首字」与「还没连上」在界面上要能分开（#328 G2/G3）
+            setWaitStage(sessionId, 'awaitingFirstToken')
+          },
         })
         const blockIndexes = new Map<number, number>()
-        // 请求已发出：开始算首字等待，5s / 30s / 60s 三档逐级提示
-        armWaitHints(sessionId)
         for await (const event of events) {
           receivedContent ||= event.type === 'content_block_start'
           if (
@@ -1381,8 +1454,16 @@ const streamReply = async (sessionId: string, initial: AssistantMessage, request
             (event.type === 'content_block_start' || event.type === 'content_block_delta')
           ) {
             firstTokenLogged = true
-            // 首字到了：等待提示立刻撤下，用户看到的还是同一个占位位置
-            clearWaitHints(sessionId)
+            /**
+             * 首字到了（#328）：第一个块是**思考**时提示不撤，改成「模型正在思考」——
+             * 思考期可能几十秒没有正文（hidden 档连思考块都不显示），撤掉就成了无文案干等；
+             * 正文/工具块才是「用户看到内容」，那时才撤。
+             */
+            if (event.type === 'content_block_start' && event.content_block.type === 'thinking') {
+              setWaitStage(sessionId, 'thinking')
+            } else {
+              clearWaitHints(sessionId)
+            }
             const firstToken = meter.snapshot()
             recordEvent('chat_first_token', `first token in ${Date.now() - startedAt}ms`, {
               ...buildMeta({
@@ -1401,6 +1482,14 @@ const streamReply = async (sessionId: string, initial: AssistantMessage, request
               }),
               model: initial.model ?? getModel(),
             })
+          }
+          // 思考块之后开始吐正文/工具块：思考期的等待提示到此结束
+          if (
+            firstTokenLogged &&
+            event.type === 'content_block_start' &&
+            event.content_block.type !== 'thinking'
+          ) {
+            clearWaitHints(sessionId)
           }
           reply = applyEvent(reply, event, Date.now(), blockIndexes)
           if (document.visibilityState === 'hidden') {
@@ -1547,10 +1636,10 @@ const streamReply = async (sessionId: string, initial: AssistantMessage, request
           fileRecovered,
         })
         if (decision === 'retry') {
-          // 让用户看见「正在第 N 次重试」，而不是静默卡住
-          setWaitHint(sessionId, {
-            key: 'chatRetrying',
-            params: { attempt: attempt + 1, limit: STREAM_RETRY_LIMIT },
+          // 让用户看见「正在第 N 次重试」，而不是静默卡住；秒数从点发送累计，不因重试归零（#328 G6）
+          setWaitStage(sessionId, 'retrying', {
+            attempt: attempt + 1,
+            limit: STREAM_RETRY_LIMIT,
           })
           await waitForRetry(attempt, controller.signal)
           if (controller.signal.aborted) {

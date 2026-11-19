@@ -3,6 +3,11 @@ declare const styles: {
   readonly "actions": string;
   readonly "waiting": string;
   readonly "waitingDot": string;
+  readonly "waitingText": string;
+  readonly "waitingElapsed": string;
+  readonly "waitingTier": string;
+  readonly "waitingAction": string;
+  readonly "waitingDots": string;
   readonly "fading": string;
   readonly "notice": string;
   readonly "noticeAction": string;

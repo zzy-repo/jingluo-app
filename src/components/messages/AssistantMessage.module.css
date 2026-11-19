@@ -14,8 +14,11 @@
 .waiting {
   display: flex;
   align-items: center;
-  gap: 6px;
-  height: 34px;
+  /* 等待提示可能出现第二行（30s/60s 的追加行，见 .waitingTier）：用最小高度而不是固定高度，免得被裁掉 */
+  flex-wrap: wrap;
+  min-height: 34px;
+  column-gap: 6px;
+  row-gap: 2px;
 }
 
 .waitingDots {
@@ -29,6 +32,23 @@
   font-size: 13px;
   line-height: 20px;
   color: var(--dsw-alias-label-secondary);
+}
+
+/* 「已等待 Ns」：1Hz 自刷的秒数，字号与主动同级，颜色稍弱 */
+.waitingElapsed {
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--dsw-alias-label-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 30s / 60s 的追加行：独占一行（flex-basis: 100%），只要文字不要按钮 */
+.waitingTier {
+  flex-basis: 100%;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-secondary);
+  opacity: 0.85;
 }
 
 .waitingAction {
@@ -169,6 +189,7 @@
 /* #173-fallback:start —— 由 node scripts/gen-flex-gap-fallback.mjs 生成，勿手改（issue #173） */
 :global(html[data-flex-gap-fallback]) .waiting > *:not(:last-child) {
   margin-right: 6px;
+  margin-bottom: 2px;
 }
 
 :global(html[data-flex-gap-fallback]) .waitingDots > *:not(:last-child) {

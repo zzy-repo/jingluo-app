@@ -4,7 +4,6 @@ import { memo } from 'react'
 import { IconRefreshOutline16, IconWarningOutline16 } from '../base/icons.js'
 import { describeReply } from '../../services/chat/describe.js'
 import { canContinueReply } from '../../services/chat/reply.js'
-import { hasStreamNoticeActions } from '../../services/chat/streamNotice.js'
 import {
   continueReply,
   regenerateReply,
@@ -26,6 +25,7 @@ import { copyText as copyToClipboard } from '../../utils/clipboard.js'
 import { showToast } from '../base/toastState.js'
 import { useSettings } from '../../services/settings.js'
 import { ReplyArea } from './ReplyArea.js'
+import { WaitNotice } from './WaitNotice.js'
 import { useReplyView } from './useReplyView.js'
 import {
   BranchSwitcher,
@@ -69,14 +69,16 @@ export const AssistantMessage = memo(function AssistantMessage({
   const copyText = responseText || notice?.text
   // 思考过程设为「完全不显示」时，思考期间回复区是空的：这里补回等待圆点，避免一片空白。
   const thinkingHidden = useSettings((state) => state.thinkingDisplay) === 'hidden'
-  const waiting =
-    streaming &&
-    !view.answer &&
-    (thinkingHidden || (view.steps.length === 0 && !message.thinking))
-  // 首字等待的分级提示：等得越久说得越清楚，最高档给出停止入口（停完就能重新生成）
+  /**
+   * 首字前一律走这块等待占位（#328 修 G4）：
+   * 原来还要求 `!message.thinking`，而专家模式 `thinking = true` 从点发送就成立，
+   * 于是 `waiting` 整段为 false —— #41 的 5s/30s/60s 三档提示在专家模式是死代码。
+   * 思考块真的出现后（`view.steps.length > 0`）才交给 ReplyArea 的标题，隐藏档继续留在这里。
+   */
+  const waiting = streaming && !view.answer && (thinkingHidden || view.steps.length === 0)
+  // 首字等待的分级提示：阶段名 + 已等待秒数（秒数在 WaitNotice 里 1Hz 自刷，不进 store）
   const waitHint = useChatStore((state) => state.waitHints[sessionId])
-  const waitNotice = waitHint ? t(waitHint.key, waitHint.params) : ''
-  const waitActions = waiting && hasStreamNoticeActions(waitHint?.key)
+  const waitActions = waiting && !!waitHint?.actions
   const summaryEntry = `${message.id}-summary`
   return (
     <div className={styles.message}>
@@ -105,7 +107,7 @@ export const AssistantMessage = memo(function AssistantMessage({
               <span key={index} className={styles.waitingDot} />
             ))}
           </span>
-          {waitNotice ? <span className={styles.waitingText}>{waitNotice}</span> : null}
+          {waitHint ? <WaitNotice hint={waitHint} /> : null}
           {waitActions ? (
             <button
               type="button"

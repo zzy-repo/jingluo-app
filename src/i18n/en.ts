@@ -126,6 +126,13 @@ export const en = {
   replyWaitingFirstToken: 'Waiting for the response',
   replyWaitingSlow: 'The service is responding slowly. Still waiting…',
   replyWaitingStalled: 'This is taking unusually long. You can stop and regenerate.',
+  /** Stage names before the first token (#328); the seconds come from waitElapsed, never hardcoded */
+  waitStagePreparing: 'Preparing the request',
+  waitStageUploading: 'Uploading attachments',
+  waitStageConnecting: 'Connecting upstream, waiting for a response',
+  waitStageAwaitingFirstToken: 'Connected, waiting for the first token',
+  waitStageThinking: 'The model is thinking',
+  waitElapsed: '{seconds}s elapsed',
   /** Auto-retry progress: a failed request never hangs silently (#105) */
   chatRetrying: 'Retrying (attempt {attempt} of {limit})',
   replyRefused: "Sorry, that's beyond my current scope. Let's talk about something else.",
