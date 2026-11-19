@@ -23,3 +23,23 @@
 - `watchdog` 只记录前台期间的主线程等待/耗时，不推断网络断开、DNS、TLS 或 OOM 根因。
 - 原生网络真实请求、用户 API key、管理数据、AVD 和设备构建均未在本审计中调用。
 - 诊断集成测试通过；全量集成中的其他失败涉及缺失标准构建产物、版本 fixture 与既有页面/环境问题，不作为本次导入覆盖改动的结论。
+
+## 能力字段（capabilities / nativeCapabilities / polyfilled）—— #220
+
+诊断快照里 `device.system` 下的能力字段现在分两个维度，别再当成一个布尔看：
+
+| 字段 | 含义 | 说明 |
+| --- | --- | --- |
+| `capabilities.<key>` | 运行时可用（含入口兜底） | 与 #220 之前同义：`true` 只说明「调得到」 |
+| `nativeCapabilities.<key>` | 内核原生具备 | 字段集合与 `capabilities` 相同；排查「这颗 WebView 差在哪」只认这份 |
+| `polyfilled` | 入口兜底实际装上的 API 名 | 点名即该 API 原生缺失；末尾的 `__DEEPSEEK_LEGACY_POLYFILL__` 是兜底自己的标记位，不是 API |
+| `degradedClones` | `structuredClone` 按引用降级透传的次数 | `>0` 表示有调用方在共享引用，排「改了原对象影响到别处」时先看它 |
+
+原生结论取自 `src/polyfills/legacy.ts` 的 `legacyPolyfillReport()`（每个 installer 原生在就早退、不在才登记），
+所以它反映的是**装兜底之前**的事实，不受 `main.tsx` 里 import 顺序影响。判定逻辑在
+`src/services/diagnostics/capabilityTruth.ts`，回归用例 `tests/unit/diagnostics-capability-truth.test.mjs`
+（宿主里真的删掉 `Object.hasOwn` / `Array.prototype.at` / `Array.prototype.toSorted` 再装真实兜底）。
+
+未测边界：以上全部是 Node 里对真实模块的可执行对照（删原生 API 的测试替身），**没有**真机 / 模拟器
+WebView 83 上的诊断截图；`nativeCapabilities` 只在入口兜底覆盖的 API 上有意义（其余字段入口没补过，
+两个维度必然相等）。

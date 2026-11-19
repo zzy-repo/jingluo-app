@@ -120,10 +120,23 @@
 | 编号 | 文件:行 | 假设内容 | 实测结论 | 风险 | 对应 issue |
 | --- | --- | --- | --- | --- | --- |
 | V1 | `src/index.html:72` | 启动守卫把 `Intl.DisplayNames`（Chromium 81）列为**硬性必需** | 缺该 API 时守卫写 `__DEEPSEEK_COMPATIBILITY_ERROR__` 并拦死启动，而 `src/services/location.ts:24` 早就有 `regionNameFallback` 兜底（#155）——两处结论互相矛盾，WebView 79/80 用户被误拦 | 中 | [#219](https://github.com/zzy-repo/deepseek-app/issues/219) |
-| V2 | `src/services/diagnostics/collector.ts:452-454` | 诊断能力探测假设 `typeof Object.hasOwn/toSorted/at === 'function'` 能反映内核原生能力 | 探针跑在入口 polyfill **之后**，WebView 83 上三项恒为 `true`（Node 里删原生→装兜底实测：`false,false` → `true,true`）；`legacyPolyfillReport()` 已存在却无人引用 | 中 | [#220](https://github.com/zzy-repo/deepseek-app/issues/220) |
+| V2 | `src/services/diagnostics/capabilityTruth.ts`（原 `src/services/diagnostics/collector.ts:452-454`） | 诊断能力探测假设 `typeof Object.hasOwn/toSorted/at === 'function'` 能反映内核原生能力 | 探针跑在入口 polyfill **之后**，WebView 83 上三项恒为 `true`（Node 里删原生→装兜底实测：`false,false` → `true,true`）；`legacyPolyfillReport()` 已存在却无人引用。**已修（#220）**：改报 `runtime` / `native` / `polyfilled` 两个维度 + 兜底台账，原生结论取自 `legacyPolyfillReport().installed`（见下节） | 中（已关闭） | [#220](https://github.com/zzy-repo/deepseek-app/issues/220) ✅ |
 | V3 | `src/polyfills/legacy.ts:119-120` | 注释假设「原生 `String.prototype.at` 按 code point 取值，与兜底不同」 | 原生同样按 UTF-16 码元；7 字符串 × 8 索引共 56 组对照**零差异**。行为正确，错的是注释——但它会诱导后来者把正确实现「修正」成错的 | 低 | [#221](https://github.com/zzy-repo/deepseek-app/issues/221) |
 
 其余 49 处（31 处入口兜底 + 21 处基线内）经逐行核对，不构成需要拆单的漏洞。
+
+### V2 的修法与口径（#220）
+
+诊断里的能力字段拆成两个维度，并把兜底台账一起上报（`src/services/diagnostics/capabilityTruth.ts`）：
+
+| 字段 | 含义 | 用法 |
+| --- | --- | --- |
+| `system.capabilities` | **运行时可用**（含入口兜底）。语义与 #220 之前完全一致，字段名一个没改 | 判断「这段代码会不会炸」看这份 |
+| `system.nativeCapabilities` | **内核原生具备**（扣掉入口兜底装的，字段集合与 `capabilities` 相同） | 判断「这颗 WebView 到底是什么水平」看这份 |
+| `system.polyfilled` | 入口兜底**实际装上**的 API 名（`legacyPolyfillReport().installed`，原生缺失时才会装） | 点名 = 这颗内核没有该 API |
+| `system.degradedClones` | `structuredClone` 按引用降级透传的次数 | >0 表示有调用方在共享引用 |
+
+原生结论为什么可以「事后」取：`legacy.ts` 每个 installer 都是「原生在就早退、不在才 `define()`」，而 `define()` 只在真的装的时候登记名字，所以 `installed` 记录的是**装之前**那一刻的事实，且是在唯一能记对的时刻记的。因此不依赖 `main.tsx` 里 import 的先后顺序（那件事至今只有注释和单测守着，见 §3），也不需要「先探一份基线再缓存」——后者正是 `src/utils/capabilities.ts` 不能接 `legacy.ts` 的原因（`hasApi()` 按下标缓存，补丁前探到的 `false` 会被永久钉死，#212 的注释里写过）。
 
 ## 六、记录为「可接受策略」而非漏洞的两处降级
 

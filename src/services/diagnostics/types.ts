@@ -90,7 +90,17 @@ export type SystemInfo = {
   density?: number
   networkType?: string
   online?: boolean
+  /**
+   * 运行时可用（含入口兜底）：true 只代表「调得到」，不代表内核原生具备。
+   * 排查兼容问题请对照 nativeCapabilities（#220）。
+   */
   capabilities?: Record<string, boolean>
+  /** 内核原生是否具备（扣掉入口兜底装的）：字段集合与 capabilities 一致，只认这份 */
+  nativeCapabilities?: Record<string, boolean>
+  /** 入口兜底实际装上的 API 名（原生缺失时才会装；点名 = 该 API 这颗内核没有） */
+  polyfilled?: string[]
+  /** structuredClone 无法深拷贝、按引用降级透传的次数（>0 表示有调用方在共享引用） */
+  degradedClones?: number
   nativePath?: string
   browserPath?: string
 }

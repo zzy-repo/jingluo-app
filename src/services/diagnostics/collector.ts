@@ -13,13 +13,7 @@ import {
   type SystemInfo,
 } from './types.js'
 import { redact, redactUrl, safeString, truncate } from './redact.js'
-import {
-  cssSupports,
-  hasApi,
-  isFetchPatched,
-  isNative,
-} from '../../utils/capabilities.js'
-import { detectFlexGap } from '../../utils/flexGap.js'
+import { readCapabilityTruth } from './capabilityTruth.js'
 
 /**
  * 采集层：只负责「记什么」。
@@ -454,25 +448,10 @@ let systemInfoPromise: Promise<SystemInfo> | undefined
 
 const readBrowserSystemInfo = (): SystemInfo => {
   const nav = typeof navigator === 'undefined' ? undefined : navigator as Navigator & { connection?: { type?: string; effectiveType?: string } }
-  const w = typeof window === 'undefined' ? undefined : window
-  const capabilities: Record<string, boolean> = {}
-  // #209：能力探测统一收口到 utils/capabilities.ts。这里只读结论（同一 key 只真探一次，
-  // 启动期 flexGap 已经量过的那条直接命中缓存），字段名与语义保持不变，只往后加。
-  capabilities.toSorted = hasApi('Array.prototype.toSorted')
-  capabilities.hasOwn = hasApi('Object.hasOwn')
-  capabilities.at = hasApi('Array.prototype.at')
-  capabilities.visualViewport = !!w?.visualViewport
-  capabilities.dvh = cssSupports('height', '100dvh')
-  capabilities.fetchPatched = isFetchPatched()
-  capabilities.isNative = isNative()
-  capabilities.clipboard = hasApi('navigator.clipboard.writeText')
-  capabilities.blobStream = hasApi('Blob.prototype.stream')
-  capabilities.intlSegmenter = hasApi('Intl.Segmenter')
-  capabilities.intlDisplayNames = hasApi('Intl.DisplayNames')
-  capabilities.structuredClone = hasApi('structuredClone')
-  capabilities.cryptoRandomUUID = hasApi('crypto.randomUUID')
-  // flex gap 只能量（CSS.supports 在 WebView 83 上假阳性，见 #173）：复用启动期那次实测的缓存
-  capabilities.flexGapVerified = typeof document === 'undefined' ? false : detectFlexGap(document)
+  // #220：能力不再只报一个布尔。入口兜底（polyfills/legacy.ts，main.tsx 第一个 import）早就装完了，
+  // 在这里直接探 typeof 只会得到「装完之后」的 true —— 那等于把「内核原生具备」和「自家兜底补齐」
+  // 混成同一句话。现在拆成两个维度（runtime 能调 / native 原生）再连同兜底台账一起上报。
+  const truth = readCapabilityTruth()
   return {
     appVersionName: readAppVersion(),
     appVersionCode: readVersionCode(),
@@ -480,7 +459,10 @@ const readBrowserSystemInfo = (): SystemInfo => {
     appSource: 'build-macro-fallback',
     networkType: nav?.connection?.type ?? nav?.connection?.effectiveType ?? UNKNOWN,
     online: typeof nav?.onLine === 'boolean' ? nav.onLine : undefined,
-    capabilities,
+    capabilities: truth.runtime,
+    nativeCapabilities: truth.native,
+    polyfilled: truth.polyfilled,
+    degradedClones: truth.degradedClones,
     browserPath: 'browser',
   }
 }
