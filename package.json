@@ -36,6 +36,7 @@
     "check:apk": "node scripts/check-apk-debuggable.mjs",
     "check:keystore": "node scripts/check-keystore-config.mjs",
     "check:manifest": "node scripts/check-manifest-fixtures.mjs",
+    "check:i18n": "node scripts/check-i18n.mjs",
     "gen:grapheme": "node scripts/gen-grapheme-tables.mjs",
     "shot:mobile": "node scripts/shot-mobile.mjs",
     "lint": "oxlint src rspack.config.ts",

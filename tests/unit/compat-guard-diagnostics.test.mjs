@@ -9,7 +9,7 @@
 // 本文件的四条硬要求：
 //   A 三个出口都写结构化诊断（branch / code / message / missing / url / line / col / ua / webviewVersion）
 //   B 用户可见文案只来自本地化模板，**不含**原始异常文本
-//   C 文案与 src/i18n/zh.ts / en.ts 的 compatBoot* 键逐字一致（内联 COPY 表不许自己长歪）
+//   C 文案与 tests/fixtures/compat-boot/compat-boot-copy.mjs 的 compatBoot* 文案逐字一致（内联 COPY 表不许自己长歪）
 //   D 启动成功之后再报错不弹卡片（红线：兜底页只在真启动失败时出现）
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
@@ -21,8 +21,9 @@ import vm from 'node:vm'
 // 本文件没有模块替身（内联守卫源码是 readFileSync + vm 起跑），所以不带 stubs。
 installTsResolve()
 
-const { zh } = await import('../../src/i18n/zh.ts')
-const { en } = await import('../../src/i18n/en.ts')
+// 参照文案 = i18n 表 + 只存在于兜底页的文案（#104 的 17 个 key 运行时读不到 i18n，
+// 已按 check-i18n R4 从 src/i18n 删除，逐字参照副本在 tests/fixtures/compat-boot/）。
+const { zh, en } = await import('../fixtures/compat-boot/compat-boot-copy.mjs')
 
 const html = readFileSync(new URL('../../src/index.html', import.meta.url), 'utf8')
 const guardSource = html.match(/<script>([\s\S]*?)<\/script>/)[1]
@@ -260,7 +261,7 @@ test('#180 红线：入口已经跑起来（__DEEPSEEK_BOOTED__）之后再报�
   assert.equal(h.detail, undefined)
 })
 
-test('#180 文案与 i18n 表逐字一致（中文）', () => {
+test('#180 文案与兜底页文案参照逐字一致（中文）', () => {
   const h = harness({ remove: ['fetch = undefined'] })
   const expected = cardLines(zh, {
     code: 'missing-api',
@@ -273,7 +274,7 @@ test('#180 文案与 i18n 表逐字一致（中文）', () => {
   assert.match(h.box.textContent, /设置 → 应用 → Android System WebView → 更新/)
 })
 
-test('#180 文案与 i18n 表逐字一致（英文界面，卡片不出中文）', () => {
+test('#180 文案与兜底页文案参照逐字一致（英文界面，卡片不出中文）', () => {
   const h = harness({ remove: ['fetch = undefined'], locale: 'en-US' })
   const expected = cardLines(en, {
     code: 'missing-api',
@@ -289,7 +290,7 @@ test('#180 应用内选过的语言优先于系统语言（存储里存了 en-US
   assert.doesNotMatch(h.box.textContent, /[\u4e00-\u9fff]/)
 })
 
-test('#180 超时文案同样与 i18n 表逐字一致', () => {
+test('#180 超时文案同样与兜底页文案参照逐字一致', () => {
   const h = harness({ locale: 'en-US' })
   h.tick(BOOT_DEADLINE_MS + 1000)
   const expected = cardLines(en, {

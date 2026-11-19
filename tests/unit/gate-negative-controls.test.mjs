@@ -35,6 +35,10 @@
 //     这里的最后一条用例只验「每道 CI 门禁都登记了负向对照在哪」，不验 YAML 结构。
 //   · 不改 `.github/workflows/ci.yml`：负向对照先作为 L0 用例常驻单元层（CI 的 `pnpm test`
 //     每次都会跑到），不是往流水线里再塞 5 个 step。
+//     例外（#413 接线批次）：`check:i18n` / `check:endpoints` 的对照是「现场往仓库里塞一份坏输入
+//     再跑脚本」，塞的正是脚本自己扫的那份源码，放在 ci.yml 里成本 ≈1s 且与被测命令同环境，
+//     所以这两条登记成 `kind: 'ci'`（和 `check:legacy` / `check:redact` 同款）；
+//     `check:capabilities` 的 warn 档没有红可打，缺口写在 KNOWN_GAPS。
 //   · 不验 `check:log-coverage` 的 `--selftest`：脚本自带反例，但 CI 调用没带这个 flag
 //     （补 flag 要改 ci.yml，不在本单范围）—— 这一条登记在 N6 的「缺口」里，别当成已覆盖。
 
@@ -316,6 +320,24 @@ const REGISTRY = {
   build: { where: 'tests/unit/gate-negative-controls.test.mjs', kind: 'inject', what: '同 build:internal（共用 scripts/build.mjs），N3 两条命令都断言注入后必红' },
   'check:log-coverage': { where: 'scripts/check-log-coverage.mjs', kind: 'builtin', what: '自带 --selftest 三个反例（**CI 调用没带 flag**）' },
   'test:golden': { where: 'tests/run-golden.mjs', kind: 'builtin', what: '自带硬门：缺产物 / 产物种类不对 → 直接红（不 SKIP）；端到端负向对照见 KNOWN_GAPS', mention: /run-golden/ },
+  // #413 接线的三道：容器外的对照都放在 ci.yml 里现场注入（三步各 ~1s，已有 check:legacy / check:redact 同款）
+  'check:i18n': {
+    where: '.github/workflows/ci.yml',
+    kind: 'ci',
+    what: 'CI 删掉 zh 的一条真实文案（compatBootTitle）→ R1「只在 en 里」必 exit 1，还原后 exit 0',
+    mention: /check-i18n\.mjs/,
+  },
+  'check:endpoints': {
+    where: '.github/workflows/ci.yml',
+    kind: 'ci',
+    what: 'CI 往 src/ 塞一份端点地址字面量（从 config/endpoints.json 读，不在 YAML 里抄）→ 必 exit 1，删掉后 exit 0',
+    mention: /check-endpoints\.mjs/,
+  },
+  'check:capabilities': {
+    where: 'scripts/check-capabilities.mjs',
+    kind: 'builtin',
+    what: '自带 --strict 档（有缺陷 exit 1）；CI 目前只跑默认 warn 档 → 缺口登记在 KNOWN_GAPS',
+  },
 }
 
 /**
@@ -341,6 +363,16 @@ const KNOWN_GAPS = {
     // 缺口还开着 = ci.yml 的 golden job 里仍然没有负向对照步骤
     stillOpen: (ci) => !/负向对照[^\n]*golden|golden[^\n]*负向对照/i.test(ci),
   },
+  'check:capabilities': {
+    reason:
+      '默认档是 warn 级：无论有几处缺陷都 exit 0（当前 10 处能力假设缺陷在案、6 条修复 lane 在飞，' +
+      '硬拦截会互相卡死）。所以 CI 现在这一步只证明「扫描器每次都被跑、口径不被悄悄改宽」，没有红可打；' +
+      '真正的检测能力在 `--strict` 档（有缺陷即 exit 1）',
+    issue: '#413',
+    fix: '缺陷清零后把 ci.yml 的调用改成 `node scripts/check-capabilities.mjs --strict`（届时缺陷即 exit 1，本身就是对照）',
+    // 缺口还开着 = ci.yml 里仍然没有带 --strict 的那一步
+    stillOpen: (ci) => !/check-capabilities\.mjs\s+--strict/.test(ci),
+  },
 }
 
 /** ci.yml 里真实执行的门禁（`run: pnpm run <script>`），从文件里读，不在测试里抄一份 */
@@ -351,8 +383,9 @@ const ciGates = () => {
 
 test('N6 每道 CI 门禁都登记了负向对照（新增门禁不登记就会红）', () => {
   const gates = ciGates()
-  // 2026-11-20：ci.yml 里 16 条 `run: pnpm run <gate>`（#404 的 golden job 又加了 build / test:golden）
-  assert.ok(gates.length >= 16, `ci.yml 里应有 ≥16 道门禁，只解析到 ${gates.length} 条：${gates.join(', ')}`)
+  // 2026-11-20：ci.yml 里 19 条 `run: pnpm run <gate>`（#404 的 golden job 加了 build / test:golden，
+  // #413 又接进 check:i18n / check:endpoints / check:capabilities）
+  assert.ok(gates.length >= 19, `ci.yml 里应有 ≥19 道门禁，只解析到 ${gates.length} 条：${gates.join(', ')}`)
 
   const unregistered = gates.filter((gate) => !Object.hasOwn(REGISTRY, gate))
   assert.deepEqual(

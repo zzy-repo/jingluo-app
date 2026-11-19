@@ -768,31 +768,17 @@ export const zh = {
   oursPurchasesErrUnknown: '购买记录查询失败，请稍后重试',
   // 兜底页出口文案（issue #180 / #104）。与 src/index.html 内联的 COPY 表逐字一致，
   // tests/unit/compat-guard-diagnostics.test.mjs 会比对两侧 —— 改文案必须两边同时改。
+  //
+  // 注意（issue #413）：兜底页在业务包挂掉之后才出现，守卫只能把文案内联在 HTML 里，
+  // 运行时永远读不到这张表。所以**只登记存量 key**，#104 新增的那批（低内核主文案 / 五项
+  // 环境信息 / 复制与截断提示，共 17 个）在 i18n 里就是「定义未引用」的死 key（check-i18n R4），
+  // 已从 zh/en 删除，逐字参照副本挪到 tests/fixtures/compat-boot/compat-boot-copy.mjs。
+  // 新加兜底页文案请改 src/index.html 的 COPY 表 + 那个 fixture，**不要**往这里加。
   compatBootTitle: '页面启动失败',
   compatBootLead: '这个页面需要更新版本的 Android System WebView（或浏览器）才能正常打开。',
-  // 内核低于 config/compat.json 的 baselineChromium（83）时的主文案（#104 验收项 4）
-  compatBootLeadOld: '本机系统浏览器内核过旧（{version}），请更新 Android System WebView。',
-  compatBootUpgradePath:
-    '升级路径：设置 → 应用 → Android System WebView → 更新（或在应用商店搜索「Android System WebView」），完成后重新打开本应用。',
   compatBootMissing: '缺少的运行环境能力：{apis}',
   compatBootRuntimeError: '页面脚本在启动时出错，没能启动。',
   compatBootTimeout: '页面脚本 12 秒内没有启动（内核过旧或资源加载失败）。',
-  // 自助环境信息（#104 验收项 3）：五项固定字段，复制时整段带走
-  compatBootEnvApp: 'App 版本：{version}',
-  compatBootEnvEngine: '内核版本：{version}',
-  compatBootEnvEngineUnknown: '内核版本：无法从浏览器标识里解析出来',
-  compatBootEnvAndroid: 'Android 版本：{version}',
-  compatBootEnvStage: '失败阶段：{stage}',
-  compatBootEnvTime: '时间：{time}',
-  compatBootEnvDevice: '设备码：{code}（已脱敏）',
-  compatBootStageMissing: '启动检查未通过（缺少必要能力）',
-  compatBootStageRuntime: '业务脚本启动时报错',
-  compatBootStageTimeout: '业务脚本 12 秒内未启动',
-  compatBootCopy: '复制环境信息',
-  compatBootCopied: '已复制，可直接粘贴到反馈里',
-  compatBootCopyManual: '复制未成功：请长按下面的信息手动复制',
-  compatBootDetails: '技术细节',
-  compatBootTruncated: '…（已截断）',
   compatBootHowTo: '更新方法：在应用商店里搜索「Android System WebView」并更新，然后重新打开本应用。',
   compatBootFooter: '若更新后仍然失败，请反馈上面的内核版本与本页截图。',
   // 导入失败的「不可达」档（issue #18）：有网、但连不上导入服务（DNS 解析不到 / 路由不可达 / 切网瞬间断链）。

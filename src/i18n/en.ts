@@ -778,31 +778,19 @@ export const en = {
   oursPurchasesErrUnknown: 'Could not load your purchases. Please retry later.',
   // Boot-guard copy (#180 / #104). Identical to the inline COPY table in src/index.html;
   // tests/unit/compat-guard-diagnostics.test.mjs compares both sides.
+  //
+  // Note (issue #413): the guard only renders after the app bundle — and therefore the i18n
+  // module — is already dead, so these templates are inlined in the HTML and never read from
+  // here at runtime. Only pre-existing keys stay in this table; the 17 keys #104 added
+  // (outdated-engine lead / five env fields / copy + truncation hints) were defined-but-unused
+  // (check-i18n R4) and are gone, with a verbatim reference copy in
+  // tests/fixtures/compat-boot/compat-boot-copy.mjs. Add new fallback copy to the COPY table in
+  // src/index.html plus that fixture, **not** here.
   compatBootTitle: 'This page could not start',
   compatBootLead: 'This page needs a newer Android System WebView (or browser) to open properly.',
-  // Shown instead of compatBootLead when the engine is below config/compat.json baselineChromium (#104)
-  compatBootLeadOld: "This device's system WebView engine is outdated ({version}). Please update Android System WebView.",
-  compatBootUpgradePath:
-    'To update: Settings → Apps → Android System WebView → Update (or search "Android System WebView" in your app store), then reopen this app.',
   compatBootMissing: 'Missing runtime features: {apis}',
   compatBootRuntimeError: 'A script error stopped this page from starting.',
   compatBootTimeout: 'The page script did not start within 12 seconds (outdated engine or failed to load).',
-  // Self-service environment info (#104 item 3): five fixed fields, copied as one block
-  compatBootEnvApp: 'App version: {version}',
-  compatBootEnvEngine: 'Engine version: {version}',
-  compatBootEnvEngineUnknown: 'Engine version: could not be read from the browser identifier',
-  compatBootEnvAndroid: 'Android version: {version}',
-  compatBootEnvStage: 'Failed stage: {stage}',
-  compatBootEnvTime: 'Time: {time}',
-  compatBootEnvDevice: 'Device code: {code} (masked)',
-  compatBootStageMissing: 'Startup check failed (missing required features)',
-  compatBootStageRuntime: 'App script failed at startup',
-  compatBootStageTimeout: 'App script did not start within 12 seconds',
-  compatBootCopy: 'Copy environment info',
-  compatBootCopied: 'Copied — paste it into your report',
-  compatBootCopyManual: 'Copy failed — long-press the text below to copy it',
-  compatBootDetails: 'Technical details',
-  compatBootTruncated: '…(truncated)',
   compatBootHowTo:
     'To update: open your app store, search for "Android System WebView" and update it, then reopen this app.',
   compatBootFooter: 'If it still fails after updating, report the engine version above with a screenshot of this page.',

@@ -159,7 +159,7 @@ npm run test:integration -- --baseline          # 集成全量与基线比对，
 
 所以：**用例进 `tests/unit/`（`run-layer` 枚举得到、CI 每次跑），必错输入与骨架进 `tests/gates/`。**
 
-### 9.4 现状清单（2026-11-20，ci.yml 里的 16 道门禁）
+### 9.4 现状清单（2026-11-20，ci.yml 里的 19 道门禁）
 
 > 口径：ci.yml 里每一条 `run: pnpm run <gate>` 算一道。单元层那一步是 `run: pnpm test`（整层），不在此列。
 
@@ -181,6 +181,9 @@ npm run test:integration -- --baseline          # 集成全量与基线比对，
 | `build`（黄金 job 的标准包） | ✅ 注入（#369） | 同上，N3 对**两条命令**都断言「注入后必红」（共用 `scripts/build.mjs`） | 同上 |
 | `test:golden` | ⚠️ **缺口**（自带硬门，非检测对照） | 缺产物 / 产物种类不对 → 直接红、不 SKIP；端到端负向对照要真浏览器，见 `KNOWN_GAPS` | `tests/run-golden.mjs` |
 | `check:log-coverage` | ⚠️ **缺口** | 脚本自带 `--selftest`（3 个反例），但 CI 调用没带 flag | `scripts/check-log-coverage.mjs` |
+| `check:i18n`（#413 接线） | ✅ CI 注入 | CI 删掉 zh 的一条真实文案（`compatBootTitle`）→ R1「只在 en 里」必红，还原后绿 | `.github/workflows/ci.yml` |
+| `check:endpoints`（#413 接线） | ✅ CI 注入 | CI 往 `src/` 塞一份端点地址字面量（从 `config/endpoints.json` 读）→ 必红，删掉后绿 | `.github/workflows/ci.yml` |
+| `check:capabilities`（#413 接线） | ⚠️ **缺口** | 默认 warn 档永远 `exit 0`（10 处能力假设缺陷在案，见 `KNOWN_GAPS`）；`--strict` 档才有红可打 | `scripts/check-capabilities.mjs` |
 
 「登记」不是给人看的注释：`tests/unit/gate-negative-controls.test.mjs` 的 `N6` 用例会读
 `.github/workflows/ci.yml`，**每出现一条 `run: pnpm run <gate>`，登记表里就必须有一条**，否则这个用例红，

@@ -116,6 +116,61 @@ jobs:
       - name: 清单 fixture 校验（check:manifest）
         run: pnpm run check:manifest
 
+      # ─────────────── Issue #413：把已经存在但没人按的那几道门禁接进流水线 ───────────────
+      # 和 check:manifest 同一条教训：脚本能判红 ≠ 有人在跑。#314 的 i18n 门禁建好后，
+      # 因为没接线，main 上 17 个 compatBoot* 孤立 key 一路绿着漂到 #421 验收才被发现。
+      #
+      # check:i18n（#314）—— R1 key 集合双向相等 / R2 占位符对齐 / R3 t('key') 引用存在 /
+      #   R4 无新增孤立 key / R5 无空值。纯文本扫描（不 import .ts、不依赖 dist，< 1s）。
+      #   R4 基线 ORPHAN_BASELINE 只减不增：新增「定义未引用」的 key 当场红。
+      #   紧跟一条负向对照（删掉一个 zh key 必须 exit 1、还原后 exit 0），证明门禁不是空跑。
+      - name: i18n 门禁（check:i18n）
+        run: pnpm run check:i18n
+
+      - name: 负向对照：删掉一个 zh key 必须被 check:i18n 拦下（证明门禁不是空跑）
+        run: |
+          set -euo pipefail
+          cp src/i18n/zh.ts /tmp/zh.ts.bak
+          # 删掉一条真实存在的文案行（用 key 定位，不写死中文，避免 locale 影响）
+          sed -i '/^  compatBootTitle: /d' src/i18n/zh.ts
+          if node scripts/check-i18n.mjs; then
+            cp /tmp/zh.ts.bak src/i18n/zh.ts
+            echo "::error::负向对照失败：删掉 zh 的 compatBootTitle 后 check:i18n 仍然通过，说明门禁没有真正生效"
+            exit 1
+          fi
+          cp /tmp/zh.ts.bak src/i18n/zh.ts
+          node scripts/check-i18n.mjs
+          echo "负向对照通过：删 key → exit 1，还原 → exit 0"
+
+      # check:endpoints：端点配置单一真相（地址零副本 / 无废弃占位）。#413 时已存在且绿。
+      - name: 端点配置检查（check:endpoints）
+        run: pnpm run check:endpoints
+
+      - name: 负向对照：往 src 塞一份端点地址字面量必须被 check:endpoints 拦下
+        run: |
+          set -euo pipefail
+          # 地址从唯一事实来源读，不在 YAML 里再写一份（否则这段自己就成了一处副本）
+          node --input-type=module -e '
+            import { writeFileSync } from "node:fs"
+            import { loadEndpoints } from "./scripts/lib/endpoints.mjs"
+            writeFileSync("src/__gate_neg_endpoints.ts", `export const NEG_ENDPOINT = "${loadEndpoints().chatBaseUrl}"\n`)
+          '
+          if node scripts/check-endpoints.mjs; then
+            rm -f src/__gate_neg_endpoints.ts
+            echo "::error::负向对照失败：src 里写死端点地址后 check:endpoints 仍然通过，说明门禁没有真正生效"
+            exit 1
+          fi
+          rm -f src/__gate_neg_endpoints.ts
+          node scripts/check-endpoints.mjs
+          echo "负向对照通过：写死地址 → exit 1，删掉 → exit 0"
+
+      # check:capabilities（#209）：能力假设盘点（JS API / CSS / 宿主能力 / 行为假设）。
+      # 只接默认档（warn 级，永远 exit 0）：仍有 10 处能力假设缺陷登记在案，6 条修复 lane 在飞，
+      # 现在开 --strict 会互相卡死。这条先保证「扫描器本身每次都被跑、口径不被悄悄改宽」，
+      # 缺陷清零后再加 --strict（届时它会 exit 1，不需要改 YAML）。
+      - name: 能力假设盘点（check:capabilities，warn 档）
+        run: pnpm run check:capabilities
+
       # check:log-coverage：埋点覆盖面门禁（母单 #301 维度 9）。
       # 不加 --strict：#312 / #314 两条关键链路埋点缺口仍登记在 scripts/log-coverage-baseline.json，
       # strict 会把它们变 FAIL。子单做完、从 knownGaps 删掉后，这条自然会收紧。

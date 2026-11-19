@@ -18,8 +18,9 @@ import vm from 'node:vm'
 // 本文件没有模块替身（内联守卫源码是 readFileSync + vm 起跑），所以不带 stubs。
 installTsResolve()
 
-const { zh } = await import('../../src/i18n/zh.ts')
-const { en } = await import('../../src/i18n/en.ts')
+// 参照文案 = i18n 表 + 只存在于兜底页的文案（#104 的 17 个 key 运行时读不到 i18n，
+// 已按 check-i18n R4 从 src/i18n 删除，逐字参照副本在 tests/fixtures/compat-boot/）。
+const { zh, en } = await import('../fixtures/compat-boot/compat-boot-copy.mjs')
 
 const html = readFileSync(new URL('../../src/index.html', import.meta.url), 'utf8')
 const guardSource = html.match(/<script>([\s\S]*?)<\/script>/)[1]
