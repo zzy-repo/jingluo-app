@@ -10,7 +10,7 @@
 //   - adb 路径走 process.env.ADB（写死的默认值属 #278）。
 import { attachWebview, connectCdp as connectCdpCore, createSh, sleep } from '../../../scripts/compat/lib/cdp-core.mjs'
 
-const ADB = process.env.ADB || 'D:/android-sdk/platform-tools/adb.exe'
+const ADB = process.env.ADB || 'adb' // 默认走 PATH；换机器请设 ADB=<绝对路径>（#302 去掉写死盘符）
 export const PACKAGE = 'com.example.deepseekchat'
 
 export const sh = createSh(ADB)

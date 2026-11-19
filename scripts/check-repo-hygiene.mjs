@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * check-repo-hygiene.mjs —— 仓库卫生门禁（Issue #291）。
+ * check-repo-hygiene.mjs —— 仓库卫生门禁（Issue #291；#302 收尾）。
  *
  * 为什么要有它：#291 体检时发现 `docs/` + `repro/` 里躺着 745 个取证产物、71.3 MiB，
  * 其中 69 个文本文件写着 `D:\all_project\runs\compatold\…` 这类**本机绝对路径**。
@@ -14,17 +14,22 @@
  *      - Git-Bash / MSYS 形态：`/d/all_project`、`/home/<user>`、`/Users/<user>`
  *   2. 单文件体积超阈值（大文本进仓库 = 取证/日志全量入库）
  *
- * 体积阈值为什么定 1 MiB（1 048 576 B）而不是 #291 正文最初写的 512 KiB：
- *   存量 `docs/ui/180-guard-i18n/api30/logcat-api30.txt` 是 539 949 B（>512 KiB），而 `docs/ui/**`
- *   是 #291 明令不动的目录（那些截图/日志是已关闭 issue 的关单证据）。512 KiB 会让门禁在**存量**
- *   上直接红、只剩「要么破边界要么关掉门禁」两条路。取 1 MiB 后：本仓正常文本（文档、源码、
- *   配置、结果 json）实测都在 100 KB 内，而全量 logcat 动辄 0.7–3.8 MB —— 1 MiB 正好卡在两者之间。
+ * 体积阈值 512 KiB（524 288 B）：
+ *   #291 落地时取的是 1 MiB，理由只有一个 —— 存量 `docs/ui/180-guard-i18n/api30/logcat-api30.txt`
+ *   是 539 949 B，而 `docs/ui/**` 当时是「整目录不动」的边界，512 KiB 会让门禁在存量上直接红。
+ *   #302 把那 3 份全量 logcat（539 949 / 316 342 / 117 083 B）按 #291 的「摘录口径」压成
+ *   ~24 KB 的摘录，存量最大文本变成 `docs/compat/matrix/es-floor.json`（270 581 B）——
+ *   那条「只能取 1 MiB」的理由已经不成立，于是回到 #291 正文最初写的 512 KiB，
+ *   把「再把全量 logcat 搬回仓库」重新变成红灯（这正是本单修掉的失效模式）。
  *
  * 豁免（EXEMPT_*，逐条给理由；打印时会计数，避免以后被当成漏网）：
- *   - `docs/ui/**`：关单证据截图与同批日志，本批边界规定整目录不动 → #291 follow-up 处理去重/外置
  *   - `docs/repro/g1..g8-*.md`（8 份）：已关闭 issue（#13/#14/#18/#19/#22/#24/#25/#28/#30/#31/#32/
  *     #34/#35/#36/#37/#38/#41/#43/#44/#45/#46）的取证记录，里面那些 `/d/all_project/runs/g*` 是
  *     当时的现场路径；改成相对路径等于改历史证词，破坏一致性，故显式豁免
+ *   - `docs/ui/**` 的**目录级**豁免已在 #302 删除：那 38 处本机路径（13 个文件：一次性 measure/cdp
+ *     脚本的 adb 默认值、`result-180.json` 的 provenance 字段、`firstscreen-results.json` 的
+ *     screens 列表、`settings-cell-wrap/README.md` 的 AVD 目录）全部改成仓库相对路径 / `<worktree>`
+ *     占位 / 走 PATH 的 `adb`，现在 `docs/ui/**` 零豁免、零命中。
  *
  * 用法：
  *   node scripts/check-repo-hygiene.mjs
@@ -84,8 +89,8 @@ const TEXT_EXT = new Set([
   '.xml',
 ])
 
-/** 体积阈值：单个文本文件 > 1 MiB 即违规（理由见文件头） */
-export const TEXT_FILE_LIMIT = 1024 * 1024
+/** 体积阈值：单个文本文件 > 512 KiB 即违规（理由见文件头；#302 起从 1 MiB 收回 512 KiB） */
+export const TEXT_FILE_LIMIT = 512 * 1024
 
 /**
  * 本机绝对路径的判定规则。
@@ -116,6 +121,7 @@ export const PATTERNS = [
 /**
  * 本机绝对路径规则的豁免（不影响体积规则）。
  * 每条都要写清为什么 —— 豁免不是漏网，是「这批不动」。
+ * #302 之后只剩 `docs/repro/**` 这 8 份：`docs/ui/**` 的目录级豁免已删（存量已清零，见文件头）。
  */
 const EXEMPT_ABS_PATHS = [
   ...[
@@ -133,14 +139,6 @@ const EXEMPT_ABS_PATHS = [
       reason: '已关闭 issue 的取证记录：现场路径即证词，改成相对路径会破坏历史一致性（#291 显式豁免）',
     }),
   ),
-]
-
-/** 目录级豁免（前缀匹配） */
-const EXEMPT_ABS_DIRS = [
-  {
-    prefix: 'docs/ui/',
-    reason: '关单证据截图与同批日志，本批边界规定整目录不动；去重/外置由 #291 follow-up 处理',
-  },
 ]
 
 const log = (...a) => console.log(...a)
@@ -169,7 +167,6 @@ const rel = (file) => path.relative(ROOT, file).split(path.sep).join('/')
 
 const absExemptionFor = (relPath) => {
   for (const item of EXEMPT_ABS_PATHS) if (item.path === relPath) return item.reason
-  for (const item of EXEMPT_ABS_DIRS) if (relPath.startsWith(item.prefix)) return item.reason
   return null
 }
 
@@ -245,7 +242,6 @@ const main = () => {
     if (verbose) {
       log('\n豁免清单（本机绝对路径规则；体积规则不豁免）：')
       for (const item of EXEMPT_ABS_PATHS) log(`  - ${item.path}\n      ${item.reason}`)
-      for (const item of EXEMPT_ABS_DIRS) log(`  - ${item.prefix}**\n      ${item.reason}`)
     }
     return
   }

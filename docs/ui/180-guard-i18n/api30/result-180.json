@@ -23,7 +23,7 @@
   "install": {
     "elapsedMs": 555,
     "output": "Performing Streamed Install\r\nSuccess",
-    "apk": "D:\\all_project\\runs\\fix180\\android\\app\\build\\outputs\\apk\\debug\\app-debug.apk"
+    "apk": "<worktree>/android/app/build/outputs/apk/debug/app-debug.apk"
   },
   "coldStart": {
     "elapsedMs": 1611,
@@ -33,7 +33,7 @@
   "samples": [
     {
       "at": 2,
-      "shot": "D:\\all_project\\runs\\fix180\\docs\\ui\\180-guard-i18n\\api30/shots/t02s.png",
+      "shot": "docs/ui/180-guard-i18n/api30/shots/t02s.png",
       "page": {
         "url": "https://localhost/",
         "title": "鲸落",
@@ -55,7 +55,7 @@
     },
     {
       "at": 7,
-      "shot": "D:\\all_project\\runs\\fix180\\docs\\ui\\180-guard-i18n\\api30/shots/t06s.png",
+      "shot": "docs/ui/180-guard-i18n/api30/shots/t06s.png",
       "page": {
         "url": "https://localhost/",
         "title": "鲸落",
@@ -98,7 +98,7 @@
     },
     {
       "at": 13,
-      "shot": "D:\\all_project\\runs\\fix180\\docs\\ui\\180-guard-i18n\\api30/shots/t13s.png",
+      "shot": "docs/ui/180-guard-i18n/api30/shots/t13s.png",
       "page": {
         "url": "https://localhost/",
         "title": "鲸落",
@@ -141,7 +141,7 @@
     },
     {
       "at": 20,
-      "shot": "D:\\all_project\\runs\\fix180\\docs\\ui\\180-guard-i18n\\api30/shots/t20s.png",
+      "shot": "docs/ui/180-guard-i18n/api30/shots/t20s.png",
       "page": {
         "url": "https://localhost/",
         "title": "鲸落",
@@ -184,7 +184,7 @@
     }
   ],
   "final": {
-    "shot": "D:\\all_project\\runs\\fix180\\docs\\ui\\180-guard-i18n\\api30/shots/t-final.png",
+    "shot": "docs/ui/180-guard-i18n/api30/shots/t-final.png",
     "page": {
       "url": "https://localhost/",
       "title": "鲸落",
@@ -226,7 +226,7 @@
     ]
   },
   "logcat": {
-    "file": "D:\\all_project\\runs\\fix180\\docs\\ui\\180-guard-i18n\\api30/logcat-api30.txt",
+    "file": "docs/ui/180-guard-i18n/api30/logcat-api30.txt",
     "bootGuardLines": [],
     "syntaxErrorLines": [],
     "consoleLines": [
