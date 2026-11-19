@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "issue": 409,
+  "what": "`pnpm test:fast` 跑的 L0 快速子集：tests/unit 全量 **减去** 下面登记的慢文件。",
+  "budgetMs": 60000,
+  "measuredAt": "2026-11-20",
+  "measuredWith": "node tests/run-layer.mjs unit --json（Node v24.22.0 / LANG=zh_CN.UTF-8；机器当时同时跑着别的 agent 的任务，比空闲时慢约 1.4×，因此按偏保守的样本取）",
+  "measured": {
+    "files": 154,
+    "ms": 96866,
+    "note": "L0 全量实测 96.9s（本案 #409 采集）；其中下面 20 个文件合计 59.1s，占 61%。"
+  },
+  "rule": "排除的全是「实测最慢」的单元文件，不是「不重要」的：它们 100% 在 `pnpm test`（CI 每次跑）、`pnpm test:full`、`pnpm test:affected` 里照跑。快速子集只负责「提交前 40 秒内知道自己有没有把主流程弄坏」。",
+  "exclude": [
+    { "file": "gate-negative-controls.test.mjs", "ms": 16739, "why": "四道门禁各一轮「注入必错输入 → 红且红对地方 → 还原」，内部要真跑 tsc/oxlint/rspack；而且它会临时往仓库里写坏文件，和别的东西并跑会互踩" },
+    { "file": "provider-probe-matrix.test.mjs", "ms": 15381, "why": "渠道 × 探活矩阵，逐组合起桩服务 + 真实请求，覆盖密集但耗时最长" },
+    { "file": "test-runtime.test.mjs", "ms": 3236, "why": "测 runner 自己（反复 spawn 子进程验证超时/信号/清理），是本工具链的元测试" },
+    { "file": "chat-context-budget-long-session.test.mjs", "ms": 2726, "why": "长会话预算：造大上下文 + 逐轮判定，纯计算量大" },
+    { "file": "check-capabilities.test.mjs", "ms": 2181, "why": "扫 android/ + src/ 全仓位盘点" },
+    { "file": "import-error-copy.test.mjs", "ms": 2076, "why": "起本地桩服务跑四档网络错误" },
+    { "file": "stream-idle-timeout.test.mjs", "ms": 2070, "why": "真实定时器等空闲超时窗口，时间不可压缩" },
+    { "file": "capabilities-docs-sync.test.mjs", "ms": 1819, "why": "能力清单 × 文档同步核对，扫全仓文件" },
+    { "file": "url-import-stall.test.mjs", "ms": 1692, "why": "停滞/续传/取消，多个 300~600ms 真实时间窗串联" },
+    { "file": "domain10-release-gate-matrix.test.mjs", "ms": 1492, "why": "发布门禁矩阵（渠道 × 变体 × 校验器），表驱动但组合多" },
+    { "file": "domain05-failure-tiers.test.mjs", "ms": 1174, "why": "导入失败四档 × 文案 × 可重试，表大" },
+    { "file": "import-network-classification.test.mjs", "ms": 1162, "why": "四档网络错误的分类矩阵，与 import-error-copy 同一套桩" },
+    { "file": "import-budget-vs-stall.test.mjs", "ms": 1161, "why": "预算 vs 停滞两档的时间推演" },
+    { "file": "import-unreachable-copy.test.mjs", "ms": 1158, "why": "不可达三档 + zh/en 文案 + 端到端桩" },
+    { "file": "domain09-settings-persistence.test.mjs", "ms": 1055, "why": "设置持久化全键矩阵（含迁移与重载）" },
+    { "file": "chat-retry-retryable.test.mjs", "ms": 851, "why": "重试分类 × 状态机，真实定时器" },
+    { "file": "import-hardening.test.mjs", "ms": 824, "why": "压缩包硬化（zip 炸弹/畸形条目）矩阵" },
+    { "file": "quota-exhausted.test.mjs", "ms": 824, "why": "额度不足分类 × 402/429/400 × 流内帧，多入口重复装配" },
+    { "file": "diagnostics-stream-timing.test.mjs", "ms": 743, "why": "流式时序打点，按真实时间推进" },
+    { "file": "api-request-timeout.test.mjs", "ms": 713, "why": "请求超时与中断，真实定时器" }
+  ]
+}

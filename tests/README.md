@@ -217,3 +217,26 @@ E2E_API_KEY=sk-xxx npm run test:e2e               # 真上游握手（发版前�
 | `tests/run-acceptance.mjs`（36KB 巨型套件） | `tests/integration/full-acceptance.test.mjs` |
 | `tests/helpers.mjs` / `archive-fixture.mjs` / `mock-anthropic.mjs` | `tests/helpers/helpers.mjs` / `tests/fixtures/archive-fixture.mjs` / `tests/fixtures/mock-anthropic.mjs` |
 | `tests/package.json`（自带 playwright 依赖） | 删除，依赖统一由根 `package.json` 提供 |
+
+---
+
+## 9. 单命令入口（Issue #409）
+
+日常不用记分层细节，记四条：
+
+| 命令 | 声明预算 | 跑什么 |
+| --- | --- | --- |
+| `pnpm test:fast` | ≤60s（超出 exit 1） | `tsc` + L0 快速子集 + 黄金套件 4 条主路径 |
+| `pnpm test:affected -- <改动路径...>` | 秒级~1min | 按 `tests/domain-map.json`（10 个域）挑 unit + regression + golden 并执行；`--with-integration` 才跑集成层 |
+| `pnpm test:full` | 分钟~20 分钟 | unit 全量 + regression + golden + integration（集成层 `--baseline`） |
+| `pnpm test:report` | < 2s | 生成 `docs/testing/report.md` 看板（`--measure` 重测 unit/regression/golden/gates） |
+
+本目录里跟着它们的三份数据文件（都是被脚本读的，不是手写文档）：
+
+| 文件 | 是什么 |
+| --- | --- |
+| `tests/domain-map.json` | 改动路径 glob → 用例文件 glob，10 个域（对齐 `docs/testing/coverage/domain-*.md`） |
+| `tests/fast-subset.json` | `test:fast` 排除的 20 个最慢单元文件 + 逐条理由（它们仍在 `pnpm test` / `test:full` 里跑） |
+| `tests/timing-baseline.json` | 各层上次实测耗时/用例数（只由 `test:report --measure` 写，供看板引用） |
+
+使用场景与判红口径见 `docs/TESTING-POLICY.md` 第 10 节。

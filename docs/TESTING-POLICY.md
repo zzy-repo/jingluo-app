@@ -208,3 +208,58 @@ npm run test:integration -- --baseline          # 集成全量与基线比对，
 因此 `build` 有真负向对照，不再登记为"不适用"。ci.yml 里的**两条**构建命令（`build:internal` 与黄金 job 的
 `build`）共用同一个包装脚本，N3 对两条都做了一遍，避免出现「内测包有对照、标准包没有」的半覆盖。
 
+
+---
+
+## 10. 单命令入口：`test:fast` / `test:full` / `test:affected` / `test:report`（Issue #409）
+
+第 2~4 节讲的是「分几档、判红口径」；这一节讲**手该敲哪一条**。四个脚本都在 `scripts/` 下，
+读的是同一份域划分（`tests/domain-map.json`）与同一份实测台账（`tests/timing-baseline.json`），
+所以「命令跑的」与「看板写的」不会各说各话。
+
+### 10.1 什么时候用哪个
+
+| 场景 | 命令 | 声明预算 | 实际做了什么 |
+| --- | --- | --- | --- |
+| 提交前 / 推送前 | `pnpm test:fast` | **≤60s（超出 exit 1）** | `tsc` + L0 快速子集（`tests/unit` 减去 `tests/fast-subset.json` 登记的 20 个慢文件，默认并发 3）+ 黄金套件 4 条主路径 |
+| 改完一处、想知道「就这一处该跑什么」 | `pnpm test:affected -- <改动路径...>` | 秒级~1min | 按 `tests/domain-map.json` 的 10 个域挑 unit + regression + golden，并把选中的用例真的跑掉；集成用例只列出、要 `--with-integration` 才跑 |
+| 合并前 / 发版前 | `pnpm test:full` | 分钟~20 分钟 | unit 全量 + regression + golden + integration（集成层 `--baseline`，只判「不新增失败」） |
+| 想知道「现在整体长什么样」 | `pnpm test:report` | < 2s | 生成 `docs/testing/report.md`（各层文件数/用例数/上次实测耗时、每域功能点覆盖、known-red/flaky 清单） |
+
+三条「为什么这么定」：
+
+1. **快速子集不是「挑重要的」，是「整层减去实测最慢的」**。被去掉的 20 个文件（合计 ≈59s，占 L0 61%）
+   仍在 `pnpm test`（CI 每次跑）、`test:full`、`test:affected` 里照跑；名单与逐条理由见
+   `tests/fast-subset.json`。用「挑重要的」做子集，第一次改到没挑中的模块就没人拦；
+   用「减去最慢的」做子集，覆盖是连续的、可解释的，而且慢下来的原因写在名单里。
+2. **60s 是声明值，超了判红**。历史上「L0 目标 <60s」就是这么变成 68s、再没人看的
+   —— 所以 `test:fast` 自己比对预算并 exit 1（`--no-budget` 只在排查时用）。
+3. **`test:affected` 默认不跑集成层**。集成单文件 3~120s，且基线里有 7 条 known-red；
+   默认跑它等于让「快速反馈」变成「等两分钟看一条已知红」。需要时 `--with-integration` 显式打开。
+4. **快速子集默认并发 3，而整层 `pnpm test` 仍然串行**。单元用例本来就各有自己的 `mkdtemp`
+   与 `TEST_TMP_DIR`，端口一律 `listen(0)` 原子分配；唯一会往仓库里写「坏文件」再还原的是
+   `gate-negative-controls`（四道门禁的注入/还原），**它不在快速子集里** —— 所以并发跑法没有共享写入。
+   并发时子进程输出按条缓冲、跑完补打，不会交错。要复现串行行为：`pnpm test:fast -- --concurrency 1`。
+5. **黄金套件固定吃 `dist-standard/`**（`GOLDEN_DIST_DIR`），不去动集成层要的 `dist/`（内测变体）；
+   缺产物才构建一次。这样 `test:fast` / `test:full` / CI 黄金 job 三处用的是同一份产物口径。
+
+### 10.2 `test:affected` 的挑选用例口径
+
+- 映射表：`tests/domain-map.json`，**10 个域**（与 `docs/testing/coverage/domain-*.md` 的域划分一致），
+  每个域一节 `paths`：`src 侧 glob → 用例 glob`。
+- 一条路径可以命中多个域 → 取**并集**（宁可多跑，不漏跑）；命中几个域会逐条打印出来。
+- 挑不出来时不静默跳过：`src/` 下未命中任何域 → 回落 unit 全量并说明原因（与 `tests/which.mjs` 同口径）；
+  文档改动 → 0 个用例；改用例本身 → 只跑它自己。
+- 输出一定包含一行 `命中 N 个文件`，后面跟分层明细（unit / regression / golden / integration）。
+
+与已有的 `tests/which.mjs` 的分工：`which.mjs` 靠「单测 import 反查 + 人工规则」，
+适合**未知变更**（改了哪个文件都能找回 import 它的单测）；`test:affected` 靠**域级 glob 映射**，
+适合「我知道改的是哪个域，要把这个域的用例一次挑全」（含 regression / golden / integration）。
+
+### 10.3 看板（`docs/testing/report.md`）
+
+- 生成器：`scripts/test-report.mjs`；**不接 CI（本单）**，接线留 follow-up（`ci.yml` 同时有别的改动在进行）。
+- 文件数**实时**清点；用例数与耗时只来自 `tests/timing-baseline.json` 的上次实测（逐条带 `measuredAt` 与采集命令）。
+- 重测：`pnpm test:report -- --measure`（重跑 unit / regression / golden / gates 并写回台账；
+  集成层 ≈20 分钟，不在本地重测，保留 #365 的全量实测值并注明来源）。
+- 每域功能点覆盖**只汇总** `docs/testing/coverage/feature-coverage.md` 的行级状态，不重新判定覆盖。

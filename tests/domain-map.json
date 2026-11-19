@@ -1,0 +1,374 @@
+{
+  "schemaVersion": 1,
+  "issue": 409,
+  "what": "改动路径 → 用例文件的映射。`pnpm test:affected -- <paths>` 读它挑用例；域划分对齐 docs/testing/coverage/domain-*.md 与 src/ 实际结构。",
+  "matching": {
+    "sourceGlob": "改动路径按 glob 匹配（`**` 跨目录、`*` 不跨 `/`、`?` 单字符）；一个路径可以命中多个域，取**并集**（宁可多跑，不漏跑）。",
+    "testGlob": "命中域之后，把该域的用例 glob 展开成仓库里真实存在的 *.test.mjs 文件（不存在的 glob 不会凭空造用例）。",
+    "defaultLayers": "默认只跑 unit / regression / golden（秒级，本地可复现）；integration 单文件可到 2 分钟且含 known-red，需要显式 --with-integration。"
+  },
+  "domains": [
+    {
+      "id": "domain01",
+      "name": "启动与可用性",
+      "doc": "docs/testing/coverage/domain-01-02.md",
+      "paths": {
+        "src/main.tsx": [
+          "tests/unit/legacy-*.test.mjs",
+          "tests/unit/capabilities.test.mjs",
+          "tests/unit/check-capabilities.test.mjs",
+          "tests/integration/caps.test.mjs",
+          "tests/golden/g01-*.test.mjs"
+        ],
+        "src/index.html": [
+          "tests/unit/legacy-boot-guard.test.mjs",
+          "tests/integration/paths.test.mjs",
+          "tests/integration/caps.test.mjs",
+          "tests/golden/g01-*.test.mjs"
+        ],
+        "src/app/**": [
+          "tests/unit/error-report.test.mjs",
+          "tests/unit/compat-guard-baseline.test.mjs",
+          "tests/unit/render-process-gone.test.mjs",
+          "tests/unit/modal-touch-scroll.test.mjs",
+          "tests/integration/error-boundary.test.mjs",
+          "tests/integration/domain01-*.test.mjs",
+          "tests/golden/g01-*.test.mjs"
+        ],
+        "src/polyfills/**": [
+          "tests/unit/legacy-polyfills.test.mjs",
+          "tests/unit/legacy-replace-all.test.mjs",
+          "tests/unit/legacy-webview-compat.test.mjs",
+          "tests/unit/intl-displaynames-fallback.test.mjs",
+          "tests/unit/intl-segmenter-fallback.test.mjs",
+          "tests/unit/diagnostics-capability-truth.test.mjs",
+          "tests/regression/issue-79-replace-all-polyfill.test.mjs",
+          "tests/regression/issue-39-legacy-runtime-api-gate.test.mjs"
+        ],
+        "src/utils/capabilities.ts": [
+          "tests/unit/capabilities.test.mjs",
+          "tests/unit/capabilities-docs-sync.test.mjs",
+          "tests/unit/host-capability-audit.test.mjs",
+          "tests/integration/caps.test.mjs"
+        ],
+        "src/utils/flexGap.ts": [
+          "tests/unit/flex-gap-fallback.test.mjs",
+          "tests/unit/gen-gap-plain-css.test.mjs"
+        ],
+        "src/**/*.css": [
+          "tests/unit/flex-gap-fallback.test.mjs",
+          "tests/unit/scrollbar-gutter-fallback.test.mjs",
+          "tests/unit/focus-visible-fallback.test.mjs",
+          "tests/unit/container-query-fallback.test.mjs"
+        ]
+      },
+      "tests": {
+        "unit": [
+          "tests/unit/legacy-boot-guard.test.mjs",
+          "tests/unit/issue-219-displaynames-boot-guard.test.mjs",
+          "tests/unit/compat-baseline.test.mjs",
+          "tests/unit/compat-env-fields.test.mjs",
+          "tests/unit/compat-guard-diagnostics.test.mjs"
+        ],
+        "regression": ["tests/regression/issue-13-legacy-syntax-gate.test.mjs", "tests/regression/issue-130-fetchable-port.test.mjs"],
+        "integration": ["tests/integration/legacy-config.test.mjs"]
+      }
+    },
+    {
+      "id": "domain02",
+      "name": "对话主链路",
+      "doc": "docs/testing/coverage/domain-01-02.md",
+      "paths": {
+        "src/services/chat/reply.ts": [
+          "tests/unit/chat-*.test.mjs",
+          "tests/unit/official-error-classify.test.mjs",
+          "tests/unit/stream-idle-timeout.test.mjs",
+          "tests/unit/model-invalid-copy.test.mjs",
+          "tests/integration/domain02-*.test.mjs",
+          "tests/golden/g02-*.test.mjs"
+        ],
+        "src/services/chat/streamNotice.ts": ["tests/unit/chat-wait-*.test.mjs", "tests/integration/domain02-wait-thinking-ui.test.mjs"],
+        "src/services/chat/waitStage.ts": ["tests/unit/chat-wait-*.test.mjs", "tests/integration/domain02-wait-thinking-ui.test.mjs"],
+        "src/services/chat/latestReminder.ts": ["tests/unit/latest-reminder-fields.test.mjs", "tests/unit/chat-context-budget-long-session.test.mjs"],
+        "src/services/chat/replyErrorReport.ts": ["tests/unit/official-error-classify.test.mjs", "tests/integration/domain02-reply-error-ui.test.mjs"],
+        "src/services/chat/contextBudget.ts": ["tests/unit/context-budget.test.mjs", "tests/unit/chat-context-budget-long-session.test.mjs", "tests/unit/chat-context-limit-error.test.mjs"],
+        "src/services/chat/branches.ts": ["tests/unit/session-repair.test.mjs", "tests/unit/chat-context-budget-long-session.test.mjs", "tests/integration/domain02-stop-regenerate.test.mjs"],
+        "src/services/chat/describe.ts": ["tests/unit/model-invalid-copy.test.mjs", "tests/unit/official-error-classify.test.mjs", "tests/unit/chat-context-limit-error.test.mjs"],
+        "src/services/chat/drafts.ts": ["tests/unit/attachment-endpoint-303.test.mjs", "tests/unit/chat-context-budget-long-session.test.mjs", "tests/integration/feedback-draft.test.mjs"],
+        "src/services/chat/autoTitle*.ts": ["tests/unit/auto-title-*.test.mjs", "tests/integration/auto-title.test.mjs"],
+        "src/services/chat/requestBody.ts": ["tests/unit/thinking-*.test.mjs", "tests/integration/request-body.test.mjs", "tests/integration/provider-channels.test.mjs"],
+        "src/components/messages/**": [
+          "tests/unit/message-list-virtual.test.mjs",
+          "tests/unit/thinking-display.test.mjs",
+          "tests/unit/copy-limit.test.mjs",
+          "tests/integration/copy-limit.test.mjs",
+          "tests/integration/domain02-stop-regenerate.test.mjs"
+        ],
+        "src/components/chatInput/**": ["tests/unit/enter-key-mode.test.mjs", "tests/integration/full-acceptance.test.mjs", "tests/golden/g02-*.test.mjs"],
+        "src/components/markdown/**": ["tests/unit/has-fallback.test.mjs", "tests/integration/full-acceptance.test.mjs"],
+        "src/components/files/**": ["tests/unit/attachment-endpoint-303.test.mjs", "tests/unit/feedback-images.test.mjs"],
+        "src/services/markdown/**": ["tests/unit/has-fallback.test.mjs"],
+        "src/services/speech/**": ["tests/unit/thinking-entry-consistency.test.mjs", "tests/integration/request-body.test.mjs"],
+        "src/services/memory/**": ["tests/unit/memory-embedding-api.test.mjs"],
+        "src/services/attachments.ts": ["tests/unit/attachment-endpoint-303.test.mjs", "tests/unit/feedback-images.test.mjs", "tests/unit/log-313-attachment-import.test.mjs"],
+        "src/services/uploadExts.ts": ["tests/unit/attachment-endpoint-303.test.mjs", "tests/unit/feedback-images.test.mjs"],
+        "src/utils/clipboard.ts": ["tests/unit/copy-limit.test.mjs", "tests/integration/copy-limit.test.mjs"],
+        "src/utils/savePlainText.ts": ["tests/unit/copy-limit.test.mjs", "tests/unit/export-text-bridge.test.mjs"]
+      },
+      "tests": {
+        "unit": ["tests/unit/quota-exhausted.test.mjs", "tests/unit/api-request-timeout.test.mjs"],
+        "integration": ["tests/integration/mode-switch.test.mjs"],
+        "golden": ["tests/golden/g02-chat.test.mjs"]
+      }
+    },
+    {
+      "id": "domain03",
+      "name": "渠道与模型",
+      "doc": "docs/testing/coverage/domain-03-04.md",
+      "paths": {
+        "src/services/api/**": [
+          "tests/unit/provider-*.test.mjs",
+          "tests/unit/openai-adapter.test.mjs",
+          "tests/unit/model-picker-parser.test.mjs",
+          "tests/unit/model-probe-status.test.mjs",
+          "tests/unit/api-request-timeout.test.mjs",
+          "tests/unit/api-assumption-audit.test.mjs",
+          "tests/unit/key-rejection-303.test.mjs",
+          "tests/integration/provider-channels.test.mjs",
+          "tests/integration/provider-anthropic.test.mjs",
+          "tests/integration/probe-auth.test.mjs",
+          "tests/integration/probe-auth-protocols.test.mjs",
+          "tests/integration/probe-nokey.test.mjs",
+          "tests/integration/request-body.test.mjs",
+          "tests/integration/upstream-html.test.mjs"
+        ],
+        "src/components/settings/ApiConfigFields.tsx": [
+          "tests/unit/provider-config-matrix.test.mjs",
+          "tests/integration/settings-probe-model.test.mjs",
+          "tests/integration/provider-channels.test.mjs"
+        ],
+        "src/components/settings/useApiKeyForm.ts": [
+          "tests/unit/provider-config-matrix.test.mjs",
+          "tests/integration/provider-channels.test.mjs",
+          "tests/integration/probe-nokey.test.mjs"
+        ]
+      },
+      "tests": {
+        "unit": ["tests/unit/thinking-adapters.test.mjs", "tests/unit/attachment-endpoint-303.test.mjs", "tests/unit/provider-probe-matrix.test.mjs"],
+        "integration": ["tests/integration/paths.test.mjs", "tests/integration/caps.test.mjs"],
+        "regression": ["tests/regression/issue-39-legacy-runtime-api-gate.test.mjs"]
+      }
+    },
+    {
+      "id": "domain04",
+      "name": "会话管理",
+      "doc": "docs/testing/coverage/domain-03-04.md",
+      "paths": {
+        "src/services/chat/store.ts": [
+          "tests/unit/session-*.test.mjs",
+          "tests/unit/import-partial-skip.test.mjs",
+          "tests/unit/quota-exhausted.test.mjs",
+          "tests/integration/session-list-flow.test.mjs",
+          "tests/integration/domain01-session-load.test.mjs",
+          "tests/golden/g01-*.test.mjs"
+        ],
+        "src/services/chat/db.ts": ["tests/unit/session-*.test.mjs", "tests/integration/session-list-flow.test.mjs"],
+        "src/services/chat/view.ts": ["tests/unit/session-load-matrix.test.mjs", "tests/integration/session-list-flow.test.mjs"],
+        "src/services/chat/sessionGroups.ts": ["tests/unit/session-*.test.mjs", "tests/integration/session-list-flow.test.mjs"],
+        "src/components/session/**": [
+          "tests/unit/mobile-header-scroll-top.test.mjs",
+          "tests/unit/message-list-virtual.test.mjs",
+          "tests/integration/domain01-session-load.test.mjs",
+          "tests/integration/motion.test.mjs",
+          "tests/golden/g01-*.test.mjs"
+        ],
+        "src/components/sider/**": ["tests/integration/motion.test.mjs", "tests/integration/session-list-flow.test.mjs", "tests/integration/mode-switch.test.mjs"],
+        "src/components/search/**": ["tests/integration/session-list-flow.test.mjs", "tests/integration/motion.test.mjs"]
+      },
+      "tests": {
+        "unit": ["tests/unit/session-crud-matrix.test.mjs", "tests/unit/import-clock-monotonic.test.mjs"],
+        "integration": ["tests/integration/mode-switch-request.test.mjs", "tests/integration/mode-switch-plain.test.mjs"]
+      }
+    },
+    {
+      "id": "domain05",
+      "name": "历史导入 / 导出",
+      "doc": "docs/testing/coverage/domain-05.md",
+      "paths": {
+        "src/services/chat/history/**": [
+          "tests/unit/domain05-*.test.mjs",
+          "tests/unit/import-*.test.mjs",
+          "tests/unit/archive-fixture-roundtrip.test.mjs",
+          "tests/unit/url-import-*.test.mjs",
+          "tests/unit/export-text-bridge.test.mjs",
+          "tests/unit/log-313-attachment-import.test.mjs",
+          "tests/unit/limits-config.test.mjs",
+          "tests/regression/issue-32-archive-entry-order.test.mjs",
+          "tests/regression/issue-34-import-size-limit.test.mjs",
+          "tests/regression/issue-38-stall-vs-progress.test.mjs",
+          "tests/regression/issue-49-import-skip-tiers.test.mjs",
+          "tests/regression/issue-111-import-error-tiers.test.mjs",
+          "tests/integration/domain05-*.test.mjs",
+          "tests/integration/url-import-*.test.mjs",
+          "tests/golden/g05-*.test.mjs"
+        ],
+        "src/services/chat/backup.ts": [
+          "tests/unit/domain05-*.test.mjs",
+          "tests/unit/import-*.test.mjs",
+          "tests/integration/domain05-ui-export-import.test.mjs",
+          "tests/golden/g05-*.test.mjs"
+        ],
+        "src/services/exportText.ts": ["tests/unit/export-text-bridge.test.mjs", "tests/unit/domain05-export-contract.test.mjs", "tests/integration/domain05-ui-export-import.test.mjs"],
+        "src/services/limits.ts": ["tests/unit/limits-config.test.mjs", "tests/unit/domain05-import-limit-table.test.mjs"],
+        "src/components/settings/SettingsDialog.tsx": [
+          "tests/unit/domain05-*.test.mjs",
+          "tests/unit/import-skipped-ui.test.mjs",
+          "tests/unit/i18n-missing-key.test.mjs",
+          "tests/integration/domain05-ui-export-import.test.mjs",
+          "tests/integration/domain09-settings-reload.test.mjs"
+        ],
+        "src/components/settings/importSkipped.ts": ["tests/unit/import-skipped-ui.test.mjs", "tests/unit/i18n-missing-key.test.mjs", "tests/integration/domain05-ui-export-import.test.mjs"]
+      },
+      "tests": {
+        "unit": ["tests/unit/legacy-webview-compat.test.mjs"],
+        "integration": ["tests/integration/full-acceptance.test.mjs"],
+        "golden": ["tests/golden/g05-import.test.mjs"]
+      }
+    },
+    {
+      "id": "domain06",
+      "name": "额度与卡密（邀请 / 领取）",
+      "doc": "docs/testing/coverage/domain-06-07.md",
+      "paths": {
+        "src/services/invite/**": [
+          "tests/unit/domain06-*.test.mjs",
+          "tests/unit/invite-*.test.mjs",
+          "tests/unit/issue-234-invite-copy.test.mjs",
+          "tests/unit/redeem-pool.test.mjs",
+          "tests/unit/bind-key.test.mjs",
+          "tests/unit/rotate-key.test.mjs",
+          "tests/unit/ours-invite.test.mjs",
+          "tests/integration/ours-services.test.mjs",
+          "tests/integration/issue-234-invite-copy.test.mjs"
+        ],
+        "src/services/ours/api.ts": [
+          "tests/unit/ours-api.test.mjs",
+          "tests/unit/domain06-*.test.mjs",
+          "tests/unit/redeem-pool.test.mjs",
+          "tests/unit/format-points-i18n.test.mjs",
+          "tests/integration/ours-services.test.mjs",
+          "tests/integration/quota-exhausted.test.mjs"
+        ],
+        "src/services/ours/customerId.ts": ["tests/unit/ours-inapp-buy.test.mjs", "tests/unit/domain06-*.test.mjs", "tests/integration/ours-services.test.mjs"],
+        "src/services/ours/storage.ts": ["tests/unit/domain06-*.test.mjs", "tests/integration/ours-services.test.mjs"],
+        "src/services/ours/mask.ts": ["tests/unit/domain08-redact-negative.test.mjs", "tests/unit/domain06-*.test.mjs", "tests/unit/format-points-i18n.test.mjs"],
+        "src/components/settings/OursServicesDialog.tsx": ["tests/integration/ours-services.test.mjs", "tests/unit/dialog-open-no-apply.test.mjs", "tests/unit/domain06-claim-ui-orchestration.test.mjs"],
+        "src/components/settings/douyinAccount.ts": ["tests/unit/douyin-account.test.mjs", "tests/integration/ours-services.test.mjs"]
+      },
+      "tests": {
+        "unit": ["tests/unit/provider-ours.test.mjs", "tests/unit/invite-device-fingerprint.test.mjs", "tests/unit/invite-fp-invalid.test.mjs", "tests/unit/invite-261-fp-already-claimed.test.mjs"],
+        "integration": ["tests/integration/domain08-feedback-negative.test.mjs"]
+      }
+    },
+    {
+      "id": "domain07",
+      "name": "购买与订单",
+      "doc": "docs/testing/coverage/domain-06-07.md",
+      "paths": {
+        "src/services/ours/purchases.ts": ["tests/unit/domain07-*.test.mjs", "tests/unit/ours-purchases.test.mjs", "tests/unit/purchases-ui.test.mjs", "tests/integration/ours-services.test.mjs"],
+        "src/services/ours/paymentRecords.ts": ["tests/unit/domain07-*.test.mjs", "tests/unit/ours-payment-records.test.mjs", "tests/integration/ours-services.test.mjs"],
+        "src/services/ours/trail.ts": ["tests/unit/domain07-*.test.mjs", "tests/unit/ours-trail.test.mjs", "tests/unit/payment-trail-ui.test.mjs", "tests/integration/ours-services.test.mjs"],
+        "src/services/ours/transport.ts": ["tests/unit/ours-inapp-buy.test.mjs", "tests/unit/pay-link.test.mjs", "tests/integration/ours-services.test.mjs"],
+        "src/components/settings/PurchaseRecords*.tsx": ["tests/unit/purchases-ui.test.mjs", "tests/integration/ours-services.test.mjs"],
+        "src/components/settings/PaymentRecordsDialog.tsx": ["tests/unit/domain07-payment-records-view.test.mjs", "tests/integration/ours-services.test.mjs"],
+        "src/components/settings/PaymentTrail*.ts*": ["tests/unit/payment-trail-ui.test.mjs", "tests/unit/domain07-*.test.mjs", "tests/integration/ours-services.test.mjs"]
+      },
+      "tests": {
+        "unit": ["tests/unit/limits-config.test.mjs"],
+        "integration": ["tests/integration/quota-exhausted.test.mjs"]
+      }
+    },
+    {
+      "id": "domain08",
+      "name": "反馈与诊断",
+      "doc": "docs/testing/coverage/domain-08-09.md",
+      "paths": {
+        "src/services/diagnostics/**": [
+          "tests/unit/domain08-*.test.mjs",
+          "tests/unit/diagnostics-*.test.mjs",
+          "tests/unit/feedback-export.test.mjs",
+          "tests/unit/feedback-images.test.mjs",
+          "tests/integration/diagnostics.test.mjs",
+          "tests/integration/diagnostics-contract.test.mjs",
+          "tests/integration/feedback-export.test.mjs",
+          "tests/integration/domain08-feedback-negative.test.mjs",
+          "tests/integration/log-viewer.test.mjs"
+        ],
+        "src/services/feedbackDraft.ts": ["tests/unit/feedback-draft.test.mjs", "tests/integration/feedback-draft.test.mjs"],
+        "src/components/settings/FeedbackDialog.tsx": ["tests/unit/feedback-draft.test.mjs", "tests/integration/feedback-draft.test.mjs", "tests/integration/feedback-scroll.test.mjs", "tests/integration/domain08-feedback-negative.test.mjs"],
+        "src/components/settings/logView.ts": ["tests/unit/log-viewer.test.mjs", "tests/integration/log-viewer.test.mjs"],
+        "src/app/diagnosticsContext.ts": ["tests/unit/error-report.test.mjs", "tests/unit/domain08-log-integrity.test.mjs", "tests/integration/error-boundary.test.mjs"]
+      },
+      "tests": {
+        "unit": ["tests/unit/error-report.test.mjs"],
+        "integration": ["tests/integration/feedback-draft.test.mjs"]
+      }
+    },
+    {
+      "id": "domain09",
+      "name": "设置与持久化",
+      "doc": "docs/testing/coverage/domain-08-09.md",
+      "paths": {
+        "src/services/settings.ts": ["tests/unit/domain09-*.test.mjs", "tests/unit/reading-settings.test.mjs", "tests/integration/domain09-settings-reload.test.mjs"],
+        "src/services/api/apiConfig.ts": ["tests/unit/domain09-*.test.mjs", "tests/unit/config-migration.test.mjs", "tests/unit/provider-config-matrix.test.mjs", "tests/integration/domain09-settings-reload.test.mjs"],
+        "src/services/api/configMigration.ts": ["tests/unit/domain09-config-migration-invariants.test.mjs", "tests/unit/config-migration.test.mjs", "tests/integration/domain09-settings-reload.test.mjs"],
+        "src/i18n/**": ["tests/unit/i18n-missing-key.test.mjs", "tests/unit/format-points-i18n.test.mjs", "tests/regression/issue-94-i18n-parity.test.mjs"],
+        "src/components/settings/ChatBackgroundField.tsx": ["tests/integration/domain09-settings-reload.test.mjs", "tests/unit/domain09-settings-persistence.test.mjs"],
+        "src/components/settings/settingsDialogState.ts": ["tests/unit/domain09-settings-persistence.test.mjs", "tests/integration/domain09-delete-all-retention.test.mjs", "tests/integration/domain09-settings-reload.test.mjs"],
+        "src/utils/safeArray.ts": ["tests/unit/domain09-settings-persistence.test.mjs", "tests/unit/config-migration.test.mjs"]
+      },
+      "tests": {
+        "unit": ["tests/unit/modal-touch-scroll.test.mjs"],
+        "integration": ["tests/integration/legacy-config.test.mjs"]
+      }
+    },
+    {
+      "id": "domain10",
+      "name": "发布与更新",
+      "doc": "docs/testing/coverage/domain-10.md",
+      "paths": {
+        "src/services/appUpdate.ts": ["tests/unit/domain10-*.test.mjs", "tests/unit/app-update.test.mjs", "tests/integration/domain10-update-*.test.mjs", "tests/integration/update-stuck-button-373.test.mjs", "tests/golden/g10-*.test.mjs"],
+        "src/services/updateManifest.ts": ["tests/unit/domain10-*.test.mjs", "tests/unit/update-manifest-compat.test.mjs", "tests/unit/app-update.test.mjs", "tests/integration/domain10-update-check-flow.test.mjs", "tests/golden/g10-*.test.mjs"],
+        "src/services/updateFailure.ts": ["tests/unit/domain10-*.test.mjs", "tests/unit/update-failure.test.mjs", "tests/integration/update-stuck-button-373.test.mjs"],
+        "src/services/updateReport.ts": ["tests/unit/domain10-*.test.mjs", "tests/unit/releases-manifest-buildtype.test.mjs"],
+        "src/components/settings/AppUpdateField.tsx": ["tests/unit/domain10-*.test.mjs", "tests/integration/domain10-update-check-flow.test.mjs", "tests/integration/update-stuck-button-373.test.mjs", "tests/golden/g10-*.test.mjs"],
+        "scripts/release-*.mjs": ["tests/unit/releases-manifest-buildtype.test.mjs", "tests/unit/domain10-release-gate-matrix.test.mjs", "tests/unit/app-identity.test.mjs"],
+        "scripts/validate-releases-manifest.mjs": ["tests/unit/releases-manifest-buildtype.test.mjs", "tests/unit/domain10-release-gate-matrix.test.mjs"],
+        "scripts/check-manifest-fixtures.mjs": ["tests/unit/domain10-gate-wiring.test.mjs", "tests/unit/releases-manifest-buildtype.test.mjs"],
+        "deploy/dl-release/**": ["tests/unit/releases-manifest-buildtype.test.mjs", "tests/unit/domain10-release-gate-matrix.test.mjs"],
+        "shared/build-types.*": ["tests/unit/domain10-release-gate-matrix.test.mjs", "tests/unit/domain10-gate-wiring.test.mjs", "tests/unit/releases-manifest-buildtype.test.mjs"],
+        "scripts/build.mjs": ["tests/unit/legacy-bundle-target.test.mjs", "tests/unit/guard-es5-gate.test.mjs", "tests/unit/compat-baseline.test.mjs"],
+        "rspack.config.ts": ["tests/unit/legacy-bundle-target.test.mjs", "tests/unit/guard-es5-gate.test.mjs", "tests/integration/internal-build.test.mjs"],
+        ".github/workflows/release.yml": ["tests/unit/domain10-gate-wiring.test.mjs", "tests/unit/releases-manifest-buildtype.test.mjs"],
+        "android/app/src/main/java/com/example/deepseekchat/AppUpdatePlugin.java": ["tests/unit/domain10-native-progress-order.test.mjs", "tests/unit/domain10-variant-matrix.test.mjs"],
+        "android/app/src/main/java/com/example/deepseekchat/UpdateEndpoint.java": ["tests/unit/domain10-variant-matrix.test.mjs"]
+      },
+      "tests": {
+        "unit": ["tests/unit/domain10-gate-wiring.test.mjs", "tests/unit/domain10-variant-matrix.test.mjs"],
+        "regression": ["tests/regression/issue-95-legacy-bundle-no-dist.test.mjs"],
+        "integration": ["tests/integration/internal-build.test.mjs"],
+        "golden": ["tests/golden/g10-update.test.mjs"]
+      }
+    }
+  ],
+  "fallback": {
+    "note": "不在 10 个域里的改动怎么办（宁可多跑，不静默跳过）",
+    "rules": [
+      { "match": "^docs/|\\.md$", "run": [], "why": "文档改动 → 不跑用例（L0 只跑 tsc + lint）" },
+      { "match": "^tests/.+\\.test\\.mjs$", "run": ["$self"], "why": "改用例本身 → 只跑它自己" },
+      { "match": "^src/", "run": ["tests/unit"], "why": "src/ 下没命中任何域 → 回落 unit 全量（与 tests/which.mjs 的回落口径一致）" },
+      { "match": "^android/", "run": ["tests/unit"], "why": "原生改动：node 层只跑 unit，真机用例属 device 层（不跑）" },
+      { "match": "^(scripts|deploy|shared|config)/", "run": ["tests/unit"], "why": "构建/发布/配置脚本改动 → 回落 unit 全量" }
+    ]
+  }
+}

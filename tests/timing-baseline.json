@@ -1,0 +1,67 @@
+{
+  "schemaVersion": 1,
+  "what": "各层「上次实测」耗时与用例数，供 docs/testing/report.md 引用。数字只由 `pnpm test:report --measure` 写入，不手填。",
+  "machine": "Node v24.22.0 / pnpm 11.24.0 / LANG=zh_CN.UTF-8 / Linux；采集时机器上同时跑着别的任务，比空闲时慢约 1.4×（偏保守）",
+  "layers": {
+    "integration": {
+      "files": 45,
+      "cases": null,
+      "ms": 1188000,
+      "measuredAt": "2026-11-19T00:00:00.000Z",
+      "command": "node tests/run-layer.mjs integration（逐文件全量重测）",
+      "note": "来源：Issue #365 接线前把 45 个集成文件全量重测了一遍（1188s，其中 7 条登记为 known-red）。本机未重测：单跑约 20 分钟，交给 CI 的 L1 分片任务；`--measure` 不覆盖这一行。"
+    },
+    "unit": {
+      "files": 154,
+      "cases": 1160,
+      "ms": 105819,
+      "measuredAt": "2026-11-19T17:49:55.303Z",
+      "command": "node tests/run-layer.mjs unit",
+      "note": "由 pnpm test:report --measure 实测",
+      "failed": 0,
+      "skipped": 0
+    },
+    "regression": {
+      "files": 11,
+      "cases": 50,
+      "ms": 3185,
+      "measuredAt": "2026-11-19T17:49:55.303Z",
+      "command": "node tests/run-layer.mjs regression",
+      "note": "由 pnpm test:report --measure 实测",
+      "failed": 0,
+      "skipped": 0
+    },
+    "golden": {
+      "files": 4,
+      "cases": 4,
+      "ms": 3294,
+      "measuredAt": "2026-11-19T17:58:56.914Z",
+      "command": "node tests/run-golden.mjs",
+      "note": "用例数 = 主路径条数（每条路径是一域一条主路径，内部多步断言）",
+      "failed": 0,
+      "skipped": 0,
+      "status": "PASS"
+    },
+    "gates": {
+      "files": 1,
+      "cases": 9,
+      "ms": 15107,
+      "measuredAt": "2026-11-19T17:58:32.909Z",
+      "command": "node --test tests/unit/gate-negative-controls.test.mjs",
+      "note": "门禁负向对照：四道门禁各跑一轮「注入必错输入 → 红且红对地方 → 还原」",
+      "failed": 0,
+      "skipped": 0
+    },
+    "fast": {
+      "files": 134,
+      "cases": 986,
+      "ms": 24893,
+      "budgetMs": 60000,
+      "overBudget": false,
+      "measuredAt": "2026-11-19T18:04:55.902Z",
+      "command": "pnpm test:fast",
+      "note": "tsc 984ms + 快速子集 20682ms（134/154 个单元文件，并发 3）+ 黄金套件 3221ms"
+    }
+  },
+  "measuredBy": "node scripts/test-report.mjs --measure"
+}
