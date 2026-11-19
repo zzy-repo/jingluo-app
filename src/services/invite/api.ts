@@ -25,9 +25,24 @@
 import type { OursHttpResult, OursMessageKey, OursTransport } from '../ours/api.js'
 import { redeemCard as redeemCardLegacy } from '../ours/api.js'
 import { createDeviceId } from './device.js'
+import { DEVICE_FP_HEADER, normalizeDeviceFp } from './fingerprint.js'
 
 /** 邀请 / 额度服务地址：明文 HTTP，见文件头的安全说明 */
 export const INVITE_API_BASE = 'http://140.210.13.146:60013'
+
+/**
+ * 需要上报设备指纹的请求头上挂 `X-Device-Fp`（Issue #243）。
+ *
+ * 三条约束：
+ *   - 指纹必须过 {@link normalizeDeviceFp}：不是 64 位小写十六进制就当没有（明文 ANDROID_ID
+ *     万一被上游误传，会在这里被丢掉，不可能出现在请求里）；
+ *   - 没有指纹就**原样返回入参对象**，请求与此前完全一致 —— 降级不留痕、不阻塞；
+ *   - 只加一个头，不改 body、不改 URL：服务端认不认都影响不到本次语义。
+ */
+const withDeviceFp = (headers: Record<string, string>, deviceFp: string): Record<string, string> => {
+  const fp = normalizeDeviceFp(deviceFp)
+  return fp === '' ? headers : { ...headers, [DEVICE_FP_HEADER]: fp }
+}
 
 export const INVITE_TIMEOUTS = {
   apply: 15000,
@@ -181,10 +196,14 @@ export type InviteApplyResult =
 /**
  * 领取 Key：POST /apply。
  * 同一 device_id 幂等（201 首次 / 200 已申请），所以失败后可以直接重试同一请求。
+ *
+ * `deviceFp`（Issue #243）是可选的设备指纹哈希：有就多带一个 `X-Device-Fp` 头，没有就照旧发。
+ * **客户端只上报，不判定** —— 参数为空绝不影响请求，也绝不在这里做任何「领过了」的判断。
  */
 export const applyForKey = async (
   deviceId: string,
-  transport: OursTransport
+  transport: OursTransport,
+  deviceFp = ''
 ): Promise<InviteApplyResult> => {
   const id = deviceId.trim()
   if (id === '') {
@@ -193,7 +212,7 @@ export const applyForKey = async (
   const result = await transport({
     method: 'POST',
     url: `${INVITE_API_BASE}/apply`,
-    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    headers: withDeviceFp({ 'Content-Type': 'application/json', Accept: 'application/json' }, deviceFp),
     body: JSON.stringify({ device_id: id }),
     timeoutMs: INVITE_TIMEOUTS.apply,
     followRedirects: false,
@@ -219,10 +238,11 @@ export const applyForKey = async (
 
 export type InviteProfileResult = ({ kind: 'ok'; profile: InviteProfile } | { kind: 'error' } & Failure)
 
-/** 查档案与额度：GET /me?device_id=…（不含 key） */
+/** 查档案与额度：GET /me?device_id=…（不含 key）。`deviceFp` 同上：有就带，没有就照旧。 */
 export const fetchInviteProfile = async (
   deviceId: string,
-  transport: OursTransport
+  transport: OursTransport,
+  deviceFp = ''
 ): Promise<InviteProfileResult> => {
   const id = deviceId.trim()
   if (id === '') {
@@ -231,7 +251,7 @@ export const fetchInviteProfile = async (
   const result = await transport({
     method: 'GET',
     url: `${INVITE_API_BASE}/me?device_id=${encodeURIComponent(id)}`,
-    headers: { Accept: 'application/json' },
+    headers: withDeviceFp({ Accept: 'application/json' }, deviceFp),
     timeoutMs: INVITE_TIMEOUTS.profile,
     followRedirects: false,
   })
@@ -516,6 +536,8 @@ const DEVICE_HEAL_NO_RETRY: Record<string, InviteMessageKey> = {
 export type DeviceHealDeps = {
   deviceId: string
   transport: OursTransport
+  /** 设备指纹哈希（Issue #243）：只上报，拿不到就空着，流程一字不改 */
+  deviceFp?: string
   /** 自愈拿到的新 Key 存到哪里（界面注入：写进当前渠道配置） */
   saveKey?: (apiKey: string) => void
   /** 重新生成 + 持久化 device_id（界面注入；缺省用 createDeviceId 生成但不落盘） */
@@ -564,7 +586,7 @@ export const runWithDeviceSelfHeal = async <T extends { kind: string; code?: str
 
   let deviceId = deps.deviceId
   if (code === 'device_not_found') {
-    const applied = await applyForKey(deviceId, deps.transport)
+    const applied = await applyForKey(deviceId, deps.transport, deps.deviceFp ?? '')
     if (applied.kind === 'error') {
       return {
         kind: 'error',

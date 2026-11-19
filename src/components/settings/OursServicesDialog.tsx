@@ -32,6 +32,7 @@ import {
 import { bindExistingKey, bindSuccessKey, resolveBindDeviceId, type BindMessageKey } from '../../services/invite/bind.js'
 import { rotateKey, rotateSuccessKey, type RotateOutcome } from '../../services/invite/rotate.js'
 import { prepareDialogOpen, refreshProfile } from '../../services/invite/openFlow.js'
+import { resolveDeviceFp } from '../../services/invite/fingerprint.js'
 import {
   createDeviceId,
   ensureDeviceId,
@@ -187,6 +188,13 @@ const OursServicesDialog = ({ onClose }: { onClose: () => void }) => {
   const cancelled = useRef(false)
   const alive = useRef(true)
   /**
+   * 设备指纹哈希（Issue #243）。只上报、不判定：
+   *  - 拿到就随 /apply 与 /me 一起带 `X-Device-Fp`；
+   *  - 拿不到（Web / 旧壳子 / 模拟器）就是空串，请求照发，**绝不挡住领取**；
+   *  - 装进 ref 而不是 state：它不进渲染，也不该触发重渲染。
+   */
+  const deviceFpRef = useRef('')
+  /**
    * 轮询「代次」（Issue #157）。每次 runPoll 递增，旧的那次轮询在下一次 tick 自己退出。
    *
    * 之前只有一个 cancelled 布尔量，而且 runPoll 开头把它重置成 false —— 于是连点两次
@@ -251,6 +259,7 @@ const OursServicesDialog = ({ onClose }: { onClose: () => void }) => {
     // 只读 /me：device_not_found 不再自愈补 /apply（#100，一台设备一把 Key）
     const outcome = await refreshProfile({
       deviceId,
+      deviceFp: deviceFpRef.current,
       transport: httpTransport,
       hasLocalKey: true,
       regenerate: regenerateDevice,
@@ -278,7 +287,7 @@ const OursServicesDialog = ({ onClose }: { onClose: () => void }) => {
    */
   const claimKey = async () => {
     setClaim({ status: 'busy' })
-    const result = await applyForKey(deviceId, httpTransport)
+    const result = await applyForKey(deviceId, httpTransport, deviceFpRef.current)
     if (!alive.current) {
       return
     }
@@ -505,8 +514,12 @@ const OursServicesDialog = ({ onClose }: { onClose: () => void }) => {
       if (stored !== null && Date.now() - stored.startedAt < ORDER_RESUME_MAX_AGE_MS) {
         void runPoll({ outTradeNo: stored.outTradeNo, orderToken: stored.orderToken })
       }
+      // Issue #243：先把设备指纹拿到手（本地桥，毫秒级），好让**第一条** /me 就带上它。
+      // resolveDeviceFp 永不抛、拿不到就回空串 —— 没有指纹也照常往下走，不阻塞注册。
+      deviceFpRef.current = await resolveDeviceFp()
       const opened = await prepareDialogOpen({
         deviceId,
+        deviceFp: deviceFpRef.current,
         hasLocalKey: useApiConfig.getState().apiKey.trim() !== '',
         transport: httpTransport,
         regenerate: regenerateDevice,
@@ -613,7 +626,7 @@ const OursServicesDialog = ({ onClose }: { onClose: () => void }) => {
     // 打本机池（62.106:60013/redeem-card），池整条链路不通才兜底旧 /api/redeem；
     // device_not_found / invalid_device 由 runWithDeviceSelfHeal 自愈一次，绝不循环。
     const outcome = await runWithDeviceSelfHeal(
-      { deviceId, transport: httpTransport, saveKey: saveHealedKey, regenerate: regenerateDevice },
+      { deviceId, deviceFp: deviceFpRef.current, transport: httpTransport, saveKey: saveHealedKey, regenerate: regenerateDevice },
       () => redeemCardMigrated({ cardNo: trimmed, apiKey }, httpTransport)
     )
     if (!alive.current) {

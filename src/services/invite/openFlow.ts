@@ -16,6 +16,8 @@ import { createDeviceId } from './device.js'
 export type DialogOpenDeps = {
   deviceId: string
   transport: OursTransport
+  /** 设备指纹哈希（Issue #243）：只上报，拿不到就是空串，只读查询照发 */
+  deviceFp?: string
   /** 本地是否已有 Key：没有就只能等用户选「领取新 Key」/「我已有 Key」 */
   hasLocalKey: boolean
   /** 重新生成 + 持久化 device_id（界面注入；缺省用 createDeviceId 生成但**不**落盘） */
@@ -31,7 +33,7 @@ export type DialogOpenOutcome =
 
 /** 只读查档案（GET /me）：device_not_found 不自愈、不 /apply；设备码本身非法才重建一次再查 */
 const readOnlyProfile = async (deps: DialogOpenDeps): Promise<DialogOpenOutcome> => {
-  const first = await fetchInviteProfile(deps.deviceId, deps.transport)
+  const first = await fetchInviteProfile(deps.deviceId, deps.transport, deps.deviceFp ?? '')
   if (first.kind !== 'error') {
     return { kind: 'profile', deviceId: deps.deviceId, profile: first.profile }
   }
@@ -43,7 +45,7 @@ const readOnlyProfile = async (deps: DialogOpenDeps): Promise<DialogOpenOutcome>
   if (first.code === 'bad_device_id' || first.code === 'invalid_device') {
     const nextId = (deps.regenerate?.(deps.deviceId) ?? createDeviceId()).trim()
     if (nextId !== '' && nextId !== deps.deviceId) {
-      const retried = await fetchInviteProfile(nextId, deps.transport)
+      const retried = await fetchInviteProfile(nextId, deps.transport, deps.deviceFp ?? '')
       if (retried.kind !== 'error') {
         return { kind: 'profile', deviceId: nextId, profile: retried.profile }
       }
