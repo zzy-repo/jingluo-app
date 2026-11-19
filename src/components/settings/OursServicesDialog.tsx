@@ -292,6 +292,7 @@ const OursServicesDialog = ({ onClose }: { onClose: () => void }) => {
       transport: httpTransport,
       hasLocalKey: true,
       regenerate: regenerateDevice,
+      persistDeviceId: persistDevice,
     })
     if (!alive.current) {
       return
@@ -569,6 +570,7 @@ const OursServicesDialog = ({ onClose }: { onClose: () => void }) => {
         hasLocalKey: useApiConfig.getState().apiKey.trim() !== '',
         transport: httpTransport,
         regenerate: regenerateDevice,
+        persistDeviceId: persistDevice,
       })
       if (!alive.current) {
         return

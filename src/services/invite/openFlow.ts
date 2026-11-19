@@ -11,7 +11,7 @@
 //     改成提示「本机未绑定，请领取或绑定」。
 import { fetchInviteProfile, type InviteMessageKey, type InviteProfile } from './api.js'
 import type { OursMessageKey, OursTransport } from '../ours/api.js'
-import { createDeviceId } from './device.js'
+import { createDeviceId, isDeviceId } from './device.js'
 
 export type DialogOpenDeps = {
   deviceId: string
@@ -22,6 +22,24 @@ export type DialogOpenDeps = {
   hasLocalKey: boolean
   /** 重新生成 + 持久化 device_id（界面注入；缺省用 createDeviceId 生成但**不**落盘） */
   regenerate?: (current: string) => string
+  /**
+   * 服务端在 /me 里回填的 device_id 写回本地（界面注入；缺省不落盘）。Issue #261：
+   * 换回原账号后本地那个新生成的 device_id 服务端不认，继续用会让后续 /me / 兑换 / 下单全查错。
+   */
+  persistDeviceId?: (deviceId: string) => void
+}
+
+/**
+ * 采纳 /me 回填的 device_id（#261）：只认合法形状、与当前不同才落盘。
+ * 服务端没给（老服务端）→ 原样返回。
+ */
+const adoptFromProfile = (deps: DialogOpenDeps, serverDeviceId: string): string => {
+  const next = serverDeviceId.trim()
+  if (!isDeviceId(next) || next === deps.deviceId.trim()) {
+    return deps.deviceId
+  }
+  deps.persistDeviceId?.(next)
+  return next
 }
 
 export type DialogOpenOutcome =
@@ -35,7 +53,9 @@ export type DialogOpenOutcome =
 const readOnlyProfile = async (deps: DialogOpenDeps): Promise<DialogOpenOutcome> => {
   const first = await fetchInviteProfile(deps.deviceId, deps.transport, deps.deviceFp ?? '')
   if (first.kind !== 'error') {
-    return { kind: 'profile', deviceId: deps.deviceId, profile: first.profile }
+    // #261：/me 现在也会回 device_id —— 写回本地，后续请求才落在同一个账号上
+    const adopted = adoptFromProfile(deps, first.serverDeviceId)
+    return { kind: 'profile', deviceId: adopted, profile: first.profile }
   }
   if (first.code === 'device_not_found') {
     return { kind: 'choose', deviceId: deps.deviceId, reason: 'unbound' }
@@ -47,7 +67,8 @@ const readOnlyProfile = async (deps: DialogOpenDeps): Promise<DialogOpenOutcome>
     if (nextId !== '' && nextId !== deps.deviceId) {
       const retried = await fetchInviteProfile(nextId, deps.transport, deps.deviceFp ?? '')
       if (retried.kind !== 'error') {
-        return { kind: 'profile', deviceId: nextId, profile: retried.profile }
+        const adopted = adoptFromProfile(deps, retried.serverDeviceId)
+        return { kind: 'profile', deviceId: adopted, profile: retried.profile }
       }
       if (retried.code === 'device_not_found') {
         return { kind: 'choose', deviceId: nextId, reason: 'unbound' }
