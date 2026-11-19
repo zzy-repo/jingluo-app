@@ -6,9 +6,9 @@
 //     必须能加载，并且 getRegionName() 返回**可用**的中文/英文地区名 —— 不是空串、不是码本身、
 //     不抛错。修复前它是模块顶层 `new Intl.DisplayNames(...)`，模块求值期就 TypeError，
 //     把整个产物的运行下限从 80 抬到 81。
-//   B 守卫：`src/index.html` 的内联 ES5 守卫的 REQUIRED 清单要含 `Intl.DisplayNames` 探测，
-//     缺了就走「缺少：…」那条具体文案（指得到「更新 Android System WebView」），
-//     而不是泛泛的「启动任务异常 / 12 秒内没有启动」。
+//   B 守卫：`src/index.html` 的内联 ES5 守卫**不许**把 `Intl.DisplayNames` 当硬性必需项
+//     （GitHub issue #219）—— 它已经有 A 那套降级路径，缺了守卫必须放行，
+//     否则 WebView 79/80 上「有兜底的事」被升格成「不可启动」，与 #155 的结论自相矛盾。
 //
 // 为什么能直接 import 源码 .ts：node 22 的 type stripping + 下面的 resolve hook
 // （与 tests/unit/legacy-polyfills.test.mjs 同一套手法）。
@@ -197,15 +197,13 @@ const harness = ({ remove = [], boot = false } = {}) => {
   }
 }
 
-test('B1 缺 Intl.DisplayNames 时守卫命中「缺少：」分支并点名该 API', () => {
+test('B1 缺 Intl.DisplayNames 时守卫放行，不拦启动（#219：这条 API 有兜底）', () => {
   const { context, box } = harness({ remove: ['if (window.Intl) { delete window.Intl.DisplayNames }'] })
   assert.equal(vm.runInContext('typeof (window.Intl && window.Intl.DisplayNames)', context), 'undefined')
-  assert.equal(box.hidden, false, '缺这条 API 必须给出提示，而不是静默白屏')
-  assert.match(box.textContent, /Android System WebView/, '要指向可行动的那句：更新 WebView')
-  assert.match(box.textContent, /缺少的运行环境能力：.*Intl\.DisplayNames/, '要走「缺少…」那条具体文案')
-  // #180：诊断变量改为结构化对象（branch 区分出口，missing 里点名缺的 API）
-  assert.equal(context.__DEEPSEEK_COMPATIBILITY_ERROR__.branch, '①')
-  assert.deepEqual([...context.__DEEPSEEK_COMPATIBILITY_ERROR__.missing], ['Intl.DisplayNames'])
+  assert.equal(box.hidden, true, '有 regionNameFallback 兜底，缺这条 API 不该弹兜底卡片')
+  assert.equal(box.textContent, '', '兜底卡片文案不该被写')
+  // #180：没有拦启动就不该写结构化诊断变量（有值 src/main.tsx 会拒绝挂载）
+  assert.equal(context.__DEEPSEEK_COMPATIBILITY_ERROR__, undefined, '放行时不许写 __DEEPSEEK_COMPATIBILITY_ERROR__')
 })
 
 test('B2 能力齐全时不误报（WebView 81+ 与新版浏览器不受影响）', () => {

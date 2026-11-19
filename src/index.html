@@ -14,8 +14,11 @@
       主方案是构建降级 + src/polyfills/legacy.ts 的运行时补齐。
       也因此这里**不检查** Object.hasOwn / Array.prototype.at / structuredClone：这些由上面的
       polyfill 补齐，列进来会让 WebView 83（本体已能用）误报。
-      反过来，Intl.DisplayNames（Chromium 81，issue #155）**必须**列进来：它没有 polyfill，
-      缺了只能靠这里点名 —— 否则用户在 WebView 79/80 上只会看到白屏或「12 秒内没有启动」。
+      同理**不检查** Intl.DisplayNames（Chromium 81）：这条有降级路径 ——
+      src/services/location.ts 探不到就退回 src/services/regionNameFallback.ts 的内建地区名表
+      （issue #155 的修复），地区名照样读得出来。把它列进 REQUIRED 等于把「有兜底的事」
+      升格成「不可启动」，WebView 79/80 上会拦死一个本来能跑的版本（issue #219）。
+      所以这里只点名**没有任何兜底路径**的能力。
 
       三条出口（① 探针缺失 / ② 启动期脚本报错 / ③ 12 秒看门狗）的规矩（issue #180）：
       用户可见文案只用本地化模板，**绝不拼接原始 JS 异常**；原始 message / 文件名 / 行列号
@@ -68,8 +71,7 @@
           ['Array.prototype.forEach', function () { return Array.prototype.forEach }],
           ['Map', function () { return window.Map }],
           ['Set', function () { return window.Set }],
-          ['WeakMap', function () { return window.WeakMap }],
-          ['Intl.DisplayNames', function () { return window.Intl && window.Intl.DisplayNames }]
+          ['WeakMap', function () { return window.WeakMap }]
         ]
         var BOOT_DEADLINE_MS = 12000
         var startedAt = Date.now()
