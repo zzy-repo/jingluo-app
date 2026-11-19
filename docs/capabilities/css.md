@@ -12,7 +12,7 @@
 
 | 项 | 值 |
 | --- | --- |
-| 扫描范围 | `src/**` 全部源文件 **252** 个（`.css` **44** 个，其中 `*.module.css` **37** 个；其余 `.ts / .tsx / .html` 共 **208** 个） |
+| 扫描范围 | `src/**` 全部源文件 **253** 个（`.css` **44** 个，其中 `*.module.css` **37** 个；其余 `.ts / .tsx / .html` 共 **209** 个） |
 | 口径拆分 | 44 `.css` + 151 `.ts` + 55 `.tsx` + 1 `.html` = 251 |
 | 命中总数 | **344** 处，分布在 **39** 个文件 |
 | 运行时下限 | WebView **83**（Chromium 83）。**首支持 ≤ 83 的特性一律记「无风险」，与有没有兜底无关** |
@@ -316,3 +316,4 @@ node --test tests/unit/css-assumption-audit.test.mjs
 - 复核（2026-11-19 19:50，基准 `0c89bf5`，本单 #331 分支 `chore/331-retire-buy`）：删 2 个 `.ts`（`ours/orderStore.ts`、`ours/returnParams.ts`）、加 1 个 `.ts`（`ours/storage.ts`），扫描范围 249 → **248** 个源文件（`.ts / .tsx / .html` 205 → **204**），`.css` 仍是 44 个（`*.module.css` 37）。旧支付链路删掉的是 TS 逻辑，**不含任何 CSS 特性假设**，命中总数仍是 **343 处 / 39 个文件**，逐特性表与 §2 明细的 `文件:行` 未变。
 - 复核（2026-11-19 20:05，基准 `42a3a68`，本单 #339 分支 `fix/deepseek-model-residue-339`）：新增 1 个 `.ts` 源文件（`src/services/api/configMigration.ts`），扫描范围 248 → **249** 个源文件（其余 `.ts / .tsx / .html` 204 → **205**），`.css` 仍是 44 个（`*.module.css` 37）。`Settings.module.css` 只为内置模型的只读值加了 1 个 `.modelValue` 规则（`flex: 0 1 auto` / `min-width: 0` / `color` / 断行三件套），**没有新增 flex `gap`、没有新增嵌套 `&`、没有新特性**，命中总数仍是 **343 处 / 39 个文件**，逐特性表与 §2 明细的 `文件:行` 未变。
 - 复核（2026-11-19 21:20，基准 `a757bec`，本单 #328 分支 `feat/wait-notice-328`）：新增 1 个 `.ts`（`src/services/chat/waitStage.ts`）与 1 个 `.tsx`（`src/components/messages/WaitNotice.tsx`），扫描范围 249 → **251** 个源文件（`.ts / .tsx / .html` 205 → **207**），`.css` 仍是 44 个（`*.module.css` 37）。`AssistantMessage.module.css` 里 `.waiting` 从固定高度改成 `min-height` + `flex-wrap`，并把 `gap: 6px` 拆成 `column-gap: 6px` / `row-gap: 2px`，因此 flex `gap` 命中 117 → **118**、命中总数 343 → **344**（其余特性未变，分布仍是 39 个文件）。这一处新增的交叉轴 `row-gap` 由 `pnpm run check:gap` 给既有兜底规则追加了 `margin-bottom: 2px`（兜底条数仍是 **119** 条，现跑现报「已兜底 119 条，跳过 3 条」），§2.6 明细已补一行。两个新文件不含任何 CSS 特性假设。
+- 复核（2026-11-20 01:00，基准 `519a721`，本单 #421 分支 `feat/email-adapt`）：新增 1 个 `.ts` 源文件（`src/services/invite/email.ts`），扫描范围 252 → **253** 个源文件（其余 `.ts / .tsx / .html` 208 → **209**），`.css` 仍是 44 个（`*.module.css` 37）。新文件不含任何 CSS 特性假设；`OursServicesDialog.tsx` 新增的邮箱区只复用了既有的 `styles.redeemForm` / `styles.input` / `styles.hint`，**没有新增 flex `gap`、嵌套 `&` 或新特性**，命中总数仍是 **344 处 / 39 个文件**，逐特性表与 §2 明细未变。
