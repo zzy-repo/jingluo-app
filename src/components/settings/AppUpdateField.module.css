@@ -1,0 +1,71 @@
+/*
+ * Issue #172：更新说明弹窗内容过长时看不到后半段。
+ *
+ * 高度链断在两处：Modal 的 .content 没有任何高度上限，而 .main 只是普通块
+ * （overflow-y: visible、没有 min-height: 0）。遮罩是 position: fixed + flex 居中，
+ * 弹窗一旦比视口高，上下同时溢出：标题被顶到屏幕外，底部按钮也落到屏幕外，
+ * 页面本身又被 touchmove 锁住（#30），于是十几条更新说明的后半段谁都滚不到。
+ *
+ * 这里只给「检查更新」这一个弹窗补上限和滚动容器（className / mainClassName 传进来），
+ * 不去改 Modal 的通用规则——别的弹窗（反馈、服务配置、付款记录…）各自已经有高度策略，
+ * 一起改等于一次性动五个弹窗的布局。
+ */
+
+.dialog {
+  /*
+   * 上限取「视口高度 - 32px」与 70vh 里更小的那个。
+   * --modal-viewport-height 由 Modal.tsx 写在遮罩上（visualViewport 高度，键盘弹起时会变小），
+   * 拿不到时退回 100vh。
+   * dvh 只写在 @supports 里（#13 的坑：把 dvh 放进 var() 的缺省值，旧内核会把整条声明打回 initial）。
+   */
+  max-height: min(70vh, calc(var(--modal-viewport-height, 100vh) - 32px));
+}
+
+@supports (max-height: 100dvh) {
+  .dialog {
+    max-height: min(70vh, calc(var(--modal-viewport-height, 100dvh) - 32px));
+  }
+}
+
+/* 矮屏（含 360×740 这档）再降一档：70vh 在 740 高上只剩约 518px，压到 62vh 才给底部按钮留出余量 */
+@media (max-height: 760px) {
+  .dialog {
+    max-height: min(62vh, calc(var(--modal-viewport-height, 100vh) - 24px));
+  }
+}
+
+@supports (max-height: 100dvh) {
+  @media (max-height: 760px) {
+    .dialog {
+      max-height: min(62vh, calc(var(--modal-viewport-height, 100dvh) - 24px));
+    }
+  }
+}
+
+/*
+ * 中间内容区：能滚的是它自己，标题和底部按钮留在外面常驻。
+ * min-height: 0 是 flex 滚动容器的必备项 —— 少了它，子内容只会把盒子越撑越高，
+ * overflow-y: auto 根本不会触发（这正是原来那条 .main 的问题）。
+ */
+.main {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  /* 滚动惯性 + 只吃竖向手势，横向手势留给外层（避免和遮罩拖动/侧滑打架） */
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
+  /* 滚到底不把外层页面带着一起回弹 */
+  overscroll-behavior-y: contain;
+  /* 悬浮滚动条不压住文字 */
+  padding-right: 2px;
+}
+
+/* 结束感：滚到最后一条时能看到这句话，不用猜后面还有没有 */
+.endNote {
+  margin: 12px 0 0;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-caption);
+  text-align: center;
+}

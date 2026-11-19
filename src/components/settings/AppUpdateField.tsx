@@ -16,6 +16,7 @@ import {
   type UpdateChannel,
   type UpdateRelease,
 } from '../../services/updateManifest.js'
+import dialogStyles from './AppUpdateField.module.css'
 import styles from './Settings.module.css'
 
 const sizeText = (bytes: number) => `${(bytes / 1024 / 1024).toFixed(1)} MB`
@@ -176,6 +177,8 @@ export const AppUpdateField = () => {
         <Modal
           title="检查更新"
           closable
+          className={dialogStyles.dialog}
+          mainClassName={dialogStyles.main}
           onClose={close}
           footer={
             <>
@@ -235,6 +238,7 @@ export const AppUpdateField = () => {
               ) : (
                 <p>下载 APK 后请在 Android 设备上手动安装。</p>
               )}
+              <p className={dialogStyles.endNote}>以上为本次更新的全部内容</p>
             </>
           ) : null}
           {progress ? (
