@@ -113,7 +113,7 @@ CSS 体积零变化，是「新字段完全复用 `.cell / .apiKey / .apiKeyInpu
 
 ## 4. 验收测试（17 项全 PASS）
 
-脚本 `docs/acceptance/tools-accept.mjs`，结果 `docs/acceptance/results.json`，逐条 PASS/FAIL + 证据：
+当时的一次性验收脚本（运行时把结果写在 `docs/` 下的 acceptance 目录，**产物不入库**；脚本本身已并入 `tests/integration/full-acceptance.test.mjs`），逐条 PASS/FAIL + 证据：
 
 | ID | 结果 | 证据（实测输出） |
 | --- | --- | --- |
@@ -147,9 +147,9 @@ CSS 体积零变化，是「新字段完全复用 `.cell / .apiKey / .apiKeyInpu
    - `POST http://111.231.174.164:8080/anthropic/v1/messages` → `200 text/html`（返回 SPA 页面，不是 SSE）；该中转只提供 `/v1/messages`。
    - `OPTIONS` 预检 → `403`，所有响应都没有 `Access-Control-Allow-*` 头 → 任何浏览器页面直连必然被拦。
    - 因为前缀被固定成 `/anthropic/v1`（这是「路径与改造前完全一致」这条硬约束的直接结果），**在界面上填该中转的 origin 无法直接跑通对话**：连通性测试（`{baseUrl}/models`）正常，对话会因返回 HTML 而报协议错误。
-2. 因此用**测试夹具**做端到端验证（`docs/acceptance/test-harness-proxy.py`，本地 `127.0.0.1:5288`，把 `/anthropic/v1/*` 透传到中转 `/v1/*` 并补 CORS 头；仅测试用，不进产物）：
+2. 因此用**测试夹具**做端到端验证（一次性脚本，已随验收套件清理、不入库；本地 `127.0.0.1:5288`，把 `/anthropic/v1/*` 透传到中转 `/v1/*` 并补 CORS 头；仅测试用，不进产物）：
    - 连通性：`连接成功（HTTP 200），共 3 个模型：claude-haiku-5.5, claude-opus-5.5, claude-sonnet-5.5`
-   - 对话「你好」：`200 text/event-stream`，首 token 7167 ms / 总 7423 ms / 41 字符，无错误提示（正文见 `docs/acceptance/relay-chat-body.txt`）
+   - 对话「你好」：`200 text/event-stream`，首 token 7167 ms / 总 7423 ms / 41 字符，无错误提示（正文是当次一次性产物，未入库）
 3. curl 直连中转（不经浏览器/夹具，同请求体）：`GET /models` → 200；`POST /v1/messages` → 200 SSE，正文 14 字符。三次计时：
 
    | 次数 | TTFB | 总时长 |
@@ -218,11 +218,11 @@ localStorage.removeItem('chat-demo:model')      // 回到 deepseek-flash
 ## 9. 本次改动文件
 
 新增：
-- `src/services/apiConfig.ts` —— 三字段读写（三个 localStorage key）、默认值回落、baseUrl/model 校验、三条 URL 构造
+- `src/services/api/apiConfig.ts` —— 三字段读写（三个 localStorage key）、默认值回落、baseUrl/model 校验、三条 URL 构造
 - `src/components/settings/ApiConfigFields.tsx` —— API Key / 服务地址 / 模型三行（含连通性测试），完全复用现有样式类
 
 修改：
-- `src/components/settings/ApiKeyField.tsx` → 删除（内容并入 `ApiConfigFields.tsx`）
+- `ApiKeyField` 旧组件 → 删除（内容并入 `src/components/settings/ApiConfigFields.tsx`）
 - `src/components/settings/SettingsDialog.tsx` —— 数据管理页改用 `ApiConfigFields`（未新增分组/页面）
 - `src/components/settings/useApiKeyForm.ts`、`settingsDialogState.ts` —— Key 改由 `apiConfig` 管理
 - `src/services/api/client.ts` —— 去掉写死的 `API_ORIGIN`/`ANTHROPIC_BASE_URL`，改为每次请求取 `getMessagesBaseUrl()` / `getModelsUrl()`；新增 `probeProvider`（连通性测试）

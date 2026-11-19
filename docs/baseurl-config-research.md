@@ -13,7 +13,7 @@
 | --- | --- |
 | 现在能不能改？ | **能**。`API_ORIGIN` 是构建期 `DefinePlugin` 注入的字符串常量（`rspack.config.ts:83`），全仓库仅 3 处派生 URL（`client.ts:15/94`、`speech.ts:9`），改成「每次请求取值」是局部重构 |
 | 推荐方案 | **方案 C：保留 `__API_ORIGIN__` 作为出厂默认值 + 设置页可覆盖 + localStorage 持久化**（等价于方案 A 加一个兜底默认，代码量几乎相同，但保留 `pnpm dev` / 官方渠道开箱可用） |
-| 要改的文件 | 5 个必改 + 1 个新增 + 1 个可选：`src/services/settings.ts`、`src/services/api/client.ts`、`src/services/api/speech.ts`、`src/components/settings/SettingsDialog.tsx`、`src/i18n/zh.ts`、`src/i18n/en.ts`、新增 `src/components/settings/ServerUrlField.tsx`（可选 `Settings.module.css` 复用现有类则 0 改动） |
+| 要改的文件 | 5 个必改 + 1 个新增 + 1 个可选：`src/services/settings.ts`、`src/services/api/client.ts`、`src/services/api/speech.ts`、`src/components/settings/SettingsDialog.tsx`、`src/i18n/zh.ts`、`src/i18n/en.ts`、新增服务地址输入组件（实际落在 `src/components/settings/ApiConfigFields.tsx`；若复用 `Settings.module.css` 现有类则 0 改动） |
 | 工作量 | MVP **约 3–4 人时**；含 URL 规范化和 API Key 重校验 **约 6–7 人时**；含全能力回归测试与文档 **约 10–11 人时（≈1.5 人日）** |
 | 最大的坑 | **中转站语义兼容 + CORS 预检**，不是前端。① `messages` 里用了非标准 `role: 'latest_reminder'`（`reply.ts:315`）和 `safety_check` / `title` / `deepseek_read_url` / `deepseek_web_search` 等专有字段，普通 Anthropic 反代会被 400；② 中转站必须回显 `Origin` 并放行 `x-api-key`、`anthropic-beta`、`content-type`、`authorization` 头，否则前端只显示「网络错误」，用户完全无法自查 |
 
@@ -58,7 +58,7 @@ declare const __API_ORIGIN__: string
 
 | # | 文件:行 | 内容 | 角色 |
 | --- | --- | --- | --- |
-| 1 | `rspack.config.ts:20` | 注释 | — |
+| 1 | `rspack.config.ts` 的 `__API_ORIGIN__` 注释（`apiOrigin`） | 注释 | — |
 | 2 | `rspack.config.ts:83` | `new rspack.DefinePlugin({ __API_ORIGIN__: JSON.stringify(apiOrigin) })` | **注入点** |
 | 3 | `src/env.d.ts:9` | `declare const __API_ORIGIN__: string` | 类型声明 |
 | 4 | `src/services/api/client.ts:13` | `export const API_ORIGIN = __API_ORIGIN__` | **唯一的运行时取值点** |
@@ -67,7 +67,7 @@ declare const __API_ORIGIN__: string
 | 7 | `src/services/api/speech.ts:1` | `import { ApiError, API_ORIGIN, request } from './client.js'` | 跨模块引用 |
 | 8 | `src/services/api/speech.ts:9` | `` const TOOLS_BASE_URL = `${API_ORIGIN}/v1/tools` `` | 派生 |
 
-`grep -rn "deepseek.com" src` 只剩 4 处与 API 无关的文档/外链：`AssistantMessage.tsx:27`（充值页）、`attachments.ts:86`（删除文件文档链接）、`types.ts:3`、`client.ts:12`（注释）。**没有任何第二套 URL 常量。**
+`grep -rn "deepseek.com" src` 只剩 4 处与 API 无关的文档/外链：`AssistantMessage.tsx` 的充值页链接、`attachments.ts` 的 `DELETE_FILE_DOCS_URL`（删除文件文档链接）、`src/services/api/types.ts` 的协议文档链接注释、`client.ts:12`（注释）。**没有任何第二套 URL 常量。**
 
 ### 1.3 构建产物实证（证明当前是「编译期烧死」）
 
@@ -101,19 +101,19 @@ $ cd /root/deepseek-app/dist && grep -ro "https://api.deepseek.com" . | sort | u
 | 校验 API Key（不产生费用） | `GET https://api.deepseek.com/models` | `client.ts:92-99` | `Authorization: Bearer <key>` |
 | 聊天 / 深度思考 / 智能搜索 / 读链接 / 自动标题（SSE 流） | `POST https://api.deepseek.com/anthropic/v1/messages` | `client.ts:144-158` | `x-api-key`、`anthropic-beta`（带附件时）、`Content-Type: application/json`、`Accept: text/event-stream` |
 | 上传附件（图片 / PDF / Word / PPT / 文本） | `POST https://api.deepseek.com/anthropic/v1/files` | `client.ts:105-123` | `x-api-key`、`anthropic-beta: files-api-2025-04-14`、`multipart/form-data` |
-| 删除附件 | `DELETE https://api.deepseek.com/anthropic/v1/files/{file_id}` | `client.ts:126-131` | `x-api-key`、`anthropic-beta` |
+| 删除附件 | `DELETE https://api.deepseek.com/anthropic/v1/files/{file_id}` | `client.ts` 的 `deleteFile()` | `x-api-key`、`anthropic-beta` |
 | 语音识别 ASR | `POST https://api.deepseek.com/v1/tools/asr` | `speech.ts:17-46` | `Authorization: Bearer`、`multipart/form-data` |
 | 语音合成 TTS | `POST https://api.deepseek.com/v1/tools/tts` | `speech.ts:49-65` | `Authorization: Bearer`、`Content-Type: application/json` |
 
 补充事实：
 
-- `deleteFile`（`client.ts:126`）**全仓库无调用者**（`grep -rn "deleteFile" src` 只命中定义本身），所以 DELETE 请求当前实际不发；但改造时仍需让它跟随 baseurl，以免将来启用时踩坑。
+- `deleteFile`（`client.ts` 里的 `deleteFile()`）**全仓库无调用者**（`grep -rn "deleteFile" src` 只命中定义本身），所以 DELETE 请求当前实际不发；但改造时仍需让它跟随 baseurl，以免将来启用时踩坑。
 - 没有其他能力级 baseurl：`grep -rn "fetch("`、`EventSource`、`WebSocket`、`sendBeacon` 均无其他命中；搜索结果里的图片/站点图标是服务端返回的第三方 URL，由浏览器直连，与 baseurl 无关（`components/search/*`）。
 - 三个能力前缀不同（`/models`、`/anthropic/v1`、`/v1/tools`）——**baseurl 语义必须是"origin"**（如 `https://api.deepseek.com`），不是"API 前缀"（如 `https://x.com/v1`），否则拼出来的路径会重复或错位。这是设置项文案必须讲清楚的点。
 
 ### 2.3 请求体里的非标准字段（决定中转站能否用）
 
-`client.ts:149` 发往 `/anthropic/v1/messages` 的 body（`store.ts:1000-1010` + `types.ts:176-184`）：
+`client.ts:149` 发往 `/anthropic/v1/messages` 的 body（`store.ts` 里 `streamMessage(...)` 的请求体 + `src/services/api/types.ts` 的 `CreateMessageRequest`）：
 
 ```ts
 model: 'deepseek-flash' | 'deepseek-v4-pro'     // store.ts:36, types.ts:7
@@ -193,7 +193,7 @@ export const setApiKey = (apiKey: string | null) => {
 
 ## 4. 三种改造方案对比
 
-前置事实：`client.ts` 和 `speech.ts` 目前都是**模块级常量**，而仓库既有代码已经大量在"请求时读取设置"（`useSettings.getState().apiKey`：`store.ts:821`、`store.ts:1000`、`readAloud.ts:95`、`useVoiceInput.ts:78`）——所以把它们改成函数取值，**是顺着既有架构走，不是引入新模式**。
+前置事实：`client.ts` 和 `speech.ts` 目前都是**模块级常量**，而仓库既有代码已经大量在"请求时读取设置"（`useSettings.getState().apiKey`：`store.ts` 的 `prepareFiles()` / `streamReply()`、`readAloud.ts:95`、`useVoiceInput.ts:78`）——所以把它们改成函数取值，**是顺着既有架构走，不是引入新模式**。
 
 ### 方案 A：纯运行时（设置页填写 + localStorage，"必填"）
 
@@ -250,7 +250,7 @@ export const setApiKey = (apiKey: string | null) => {
 
 ### 5.1 附件（Files API）——最容易坏，且是"历史数据级"的坑
 
-- 上传走 `POST {base}/anthropic/v1/files`，带**专有头** `anthropic-beta: files-api-2025-04-14`（`client.ts:17/85-90`）和 `purpose: rich_layout_recognition | user_data`（`attachments.ts:32-37`）。中转站若不实现，附件功能整体不可用。
+- 上传走 `POST {base}/anthropic/v1/files`，带**专有头** `anthropic-beta: files-api-2025-04-14`（`client.ts:17/85-90`）和 `purpose: rich_layout_recognition | user_data`（`attachments.ts` 的 `getUploadPurpose()`）。中转站若不实现，附件功能整体不可用。
 - 会话里已存的 `serverId` 指向**旧服务的 file_id**，新服务不认。仓库有自愈逻辑：`store.ts:896-926` 在服务端报 `invalid file_id` 时清空 `serverId`，再用 IndexedDB 里的原件补传（`db.ts:7-11`、`store.ts:43` `FILE_RETRY_LIMIT=2`）。
 - **但有代价**：① 每次首轮遇到旧 file_id 会多一轮 400 + 重传；② 若该附件在 IndexedDB 没有原件（例如从外部导入的历史 ZIP 里的**非图片**附件，见 README 数据章节），则永远补不回来 → 旧会话里这类附件会静默变成"不进入请求"。
 - 结论：**切换 baseurl 后建议明确提示"历史附件可能需要重新上传"**，或提供"清空旧 serverId"的一次性迁移。
@@ -289,7 +289,7 @@ OPTIONS https://api.deepseek.com/v1/tools/asr
 
 - **尾斜杠**：用户填 `https://relay.example.com/` → 拼成 `…com//anthropic/v1/messages`（多数网关能容忍，少数 404）。必须 `replace(/\/+$/, '')`。
 - **误填路径前缀**：填 `…/v1` 或 `…/anthropic/v1` → 变成 `/v1/anthropic/v1/…`。设置项标签必须写"服务地址（origin）"，并做形态校验。
-- **协议**：只接受 `http:` / `https:`，用 `new URL()` 校验；非法值不得写入 localStorage（否则下一次启动直接不可用，且没有界面可进入）——这是 `initialServerUrl()` 必须兜底回默认值的原因（照 `initialTtsVoice()` 的写法，`settings.ts:88`）。
+- **协议**：只接受 `http:` / `https:`，用 `new URL()` 校验；非法值不得写入 localStorage（否则下一次启动直接不可用，且没有界面可进入）——这是 `initialServerUrl()` 必须兜底回默认值的原因（照 `settings.ts` 的 `initialTtsVoice()` 的写法）。
 - **带查询串/锚点**：`https://x.com?k=1` 拼接会错位，应拒绝。
 - **混合内容**：当前站点是 **`http://100.113.135.55:5181`**，配 http 中转站暂时可行；一旦站点上 https（或套壳用 https 容器），**http 中转站会被浏览器以 Mixed Content 直接 block**，且报错同样是 `network`。建议设置项在 `location.protocol === 'https:'` 时对 `http:` 值给出显式警告。
 
@@ -329,7 +329,7 @@ OPTIONS https://api.deepseek.com/v1/tools/asr
    ```
    `ANTHROPIC_BASE_URL` 常量的 3 个使用点（116/127/149）改为函数内 `` `${apiOrigin()}/anthropic/v1/...` ``；94 行改为 `` `${apiOrigin()}/models` ``。（`speech.ts:1` 的 `API_ORIGIN` import 若保留导出可先不动，但更好是一并改成 `apiOrigin()`。）
 3. `src/services/api/speech.ts`：`TOOLS_BASE_URL` 常量 → `const toolsBaseUrl = () => `${apiOrigin()}/v1/tools``，改 24/55 两行。
-4. `src/components/settings/ServerUrlField.tsx`（~50 行，复用 `.apiKey` / `.apiKeyInput` / `.confirm` 三个类）+ 在 `SettingsDialog.tsx` 的 `data` 分组第 106 行前挂一行 + `zh.ts`/`en.ts` 各 3 个 key（标题、占位符、非法提示）。
+4. 新增服务地址输入组件（~50 行，落在 `src/components/settings/ApiConfigFields.tsx`，复用 `.apiKey` / `.apiKeyInput` / `.confirm` 三个类）+ 在 `SettingsDialog.tsx` 的 `data` 分组第 106 行前挂一行 + `zh.ts`/`en.ts` 各 3 个 key（标题、占位符、非法提示）。
 
 **不为 MVP 做、但建议第二批做**：保存后自动 `verifyApiKey()`、`http:` 混合内容告警、历史附件 `serverId` 迁移提示、README 更新。
 
@@ -353,7 +353,7 @@ OPTIONS https://api.deepseek.com/v1/tools/asr
 | 1 | `src/services/settings.ts` | 改 | 类型 11–20；`KEYS` 22–31；新增 `initialServerUrl()`（参考 88 行）；store 90–99；setter（参考 122–125） |
 | 2 | `src/services/api/client.ts` | 改 | 13、15 → 函数；94、116、127、149 四个调用点 |
 | 3 | `src/services/api/speech.ts` | 改 | 1（import）、9 → 函数；24、55 |
-| 4 | `src/components/settings/ServerUrlField.tsx` | **新增** | 参考 `ApiKeyField.tsx:21-84` 的输入框模式 |
+| 4 | 新增服务地址输入（落在 `src/components/settings/ApiConfigFields.tsx`） | **新增** | 参考 `src/components/settings/ApiConfigFields.tsx` 的输入框模式 |
 | 5 | `src/components/settings/SettingsDialog.tsx` | 改 | 分组内容 97–103 / 104–126（建议 106 行前插入） |
 | 6 | `src/i18n/zh.ts` | 改 | 87–105 区域新增 3–6 个 key |
 | 7 | `src/i18n/en.ts` | 改 | 92–110 区域同步 |

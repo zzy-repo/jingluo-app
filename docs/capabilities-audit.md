@@ -202,7 +202,7 @@ CSS 特性同理（`CSS_FEATURES` 里加一条：`probe` 用真实字符串、`f
 | `css.md` 判定分布 | 320 / 已有兜底 246 / 无风险 37 / 可接受降级 1 / **真实缺陷 35** / 假阳性 1 | 306 / **250** / 37 / 1 / **18** / **0** | 真实缺陷从 35 降到 18；假阳性清零（#218） |
 | `host.md` 扫描范围 | 190 个 `.ts/.tsx/.html` | **193** 个 | 同 api.md 的 3 个新增 `.ts` |
 | `host.md` 命中总数 | **110**（已有兜底 69 / 无风险 33 / 真实漏洞 2 / 需动态验证 6） | **114**（**68** / **35** / **3** / **8**） | 新增命中来自判定库后来补的 `fetch` 规则（见 7.2） |
-| `host.md` 真实漏洞清单 | `index.html:72`（#219）、`capabilityTruth.ts`（#220 已修）、`polyfills/legacy.ts:119-120`（#221） | **`collector.ts:851`、`collector.ts:981`、`capabilities.ts:256`** | 原 3 处已随 #219 #220 #221 修复消失；现存的 3 处是 `fetch` 相关（#210 / #211） |
+| `host.md` 真实漏洞清单 | `src/index.html` 的 `pickLocale()`（#219）、`capabilityTruth.ts`（#220 已修）、`src/polyfills/legacy.ts` 的 `String.prototype.at` 兜底（#221） | **`collector.ts:851`、`collector.ts:981`、`capabilities.ts:256`** | 原 3 处已随 #219 #220 #221 修复消失；现存的 3 处是 `fetch` 相关（#210 / #211） |
 | `behavior.md` 表 | 25 行（已有兜底 13 / 需动态验证 3 / 需探测 9 / 拆单 0） | 类别 4 只出 **4 条假设结论，全部成立** | 口径不同：文档 25 行是「UI 元素级」清单，CLI 是「4 条假设」的结论层 —— 两者都留着，别互相覆盖 |
 
 `check:gap` 的数字**没有漂移**：`css.md` §2.6 写的「扫描 44 个 CSS 文件（其中 37 个 CSS Module）：已兜底 111 条，跳过 3 条」与实测逐字一致。

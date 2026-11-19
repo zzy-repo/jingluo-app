@@ -123,7 +123,7 @@
 | --- | --- | --- | --- | --- | --- |
 | V1 | ~~`src/index.html:72`~~（已删出 `REQUIRED`） | 启动守卫把 `Intl.DisplayNames`（Chromium 81）列为**硬性必需** | 缺该 API 时守卫写 `__DEEPSEEK_COMPATIBILITY_ERROR__` 并拦死启动，而 `src/services/location.ts:24` 早就有 `regionNameFallback` 兜底（#155）——两处结论互相矛盾，WebView 79/80 用户被误拦。**已修（#219 → #226，`57602b8`）**：`Intl.DisplayNames` 已从 `REQUIRED` 移出，`src/index.html:17` 只留一段解释「为什么不检查它」的注释；本节因此少 1 处命中 | 中（已关闭） | [#219](https://github.com/zzy-repo/deepseek-app/issues/219) ✅ |
 | V2 | `src/services/diagnostics/capabilityTruth.ts`（原 `src/services/diagnostics/collector.ts:452-454`） | 诊断能力探测假设 `typeof Object.hasOwn/toSorted/at === 'function'` 能反映内核原生能力 | 探针跑在入口 polyfill **之后**，WebView 83 上三项恒为 `true`（Node 里删原生→装兜底实测：`false,false` → `true,true`）；`legacyPolyfillReport()` 已存在却无人引用。**已修（#220）**：改报 `runtime` / `native` / `polyfilled` 两个维度 + 兜底台账，原生结论取自 `legacyPolyfillReport().installed`（见下节） | 中（已关闭） | [#220](https://github.com/zzy-repo/deepseek-app/issues/220) ✅ |
-| V3 | `src/polyfills/legacy.ts:119-120` | 注释假设「原生 `String.prototype.at` 按 code point 取值，与兜底不同」 | 原生同样按 UTF-16 码元；7 字符串 × 8 索引共 56 组对照**零差异**。行为正确，错的是注释——但它会诱导后来者把正确实现「修正」成错的 | 低 | [#221](https://github.com/zzy-repo/deepseek-app/issues/221) |
+| V3 | `src/polyfills/legacy.ts` 的 `String.prototype.at` 兜底（上面那段注释块） | 注释假设「原生 `String.prototype.at` 按 code point 取值，与兜底不同」 | 原生同样按 UTF-16 码元；7 字符串 × 8 索引共 56 组对照**零差异**。行为正确，错的是注释——但它会诱导后来者把正确实现「修正」成错的 | 低 | [#221](https://github.com/zzy-repo/deepseek-app/issues/221) |
 
 其余 51 处（31 处入口兜底 + 20 处基线内）经逐行核对，不构成需要拆单的漏洞。
 

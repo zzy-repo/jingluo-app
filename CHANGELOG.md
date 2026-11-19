@@ -112,7 +112,7 @@
   **本地截取首条消息前 20 字**（优先在句读处断开、剥掉「你好 / 请问 / 帮我」等语气前缀），回退后仍算成功，不给用户报错
 - 手动改名永不覆盖：沿用 `titleRequests` 的「只写一次」语义，同一会话只触发一次标题请求，
   用户手动改名后自动标题再也不会覆盖（见 `src/services/chat/store.ts`）
-- 新增验收 `tests/test.auto-title.spec.mjs`：11 个场景（超时 / 500 / 空 / 脏输出 / `finish` 异常 / 手动改名 / DeepSeek 回归等）；
+- 新增验收 `tests/integration/auto-title.test.mjs`（+ `tests/unit/auto-title-stream.test.mjs` 等）：11 个场景（超时 / 500 / 空 / 脏输出 / `finish` 异常 / 手动改名 / DeepSeek 回归等）；
   `rspack.config.ts` 支持 `DIST_OUT` 指定输出目录，测试另起标准构建、不影响 `dist/`
 - 版本号：versionCode 10 / versionName 1.4.0-beta.3（功能代码见 commit `551db39`）
 
@@ -132,8 +132,8 @@
 - 无障碍：`prefers-reduced-motion: reduce` 下所有动效时长降为 0.01ms，动画类名 `animation: none`，
   且抽屉 / 弹窗不排帧、不保留退出时长的 DOM（实测 `transition-duration = 1e-05s`）
 - 技术约束：`src/` 下 37 个 CSS 文件没有任何 `transition`/`animation` 动 `width/height/top/left/margin` 等布局属性，
-  相对 1.4.0-beta.1 也没有引入 `transform`/`opacity` 之外的新动画属性（由 `tests/test.motion.spec.mjs` 自动校验）
-- 新增验收 `tests/test.motion.spec.mjs`：中间帧截图 + 计算样式断言 + reduced-motion + 静态属性检查 + 功能回归（mock 上游）
+  相对 1.4.0-beta.1 也没有引入 `transform`/`opacity` 之外的新动画属性（由 `tests/integration/motion.test.mjs` 自动校验）
+- 新增验收 `tests/integration/motion.test.mjs`：中间帧截图 + 计算样式断言 + reduced-motion + 静态属性检查 + 功能回归（mock 上游）
 - 版本号：versionCode 9 / versionName 1.4.0-beta.2（本轮仅本地验证与 5181 部署，未发布 APK / 未打 tag）
 
 ## 1.4.0-beta.1 (2026-11-17) — 内测版
@@ -148,7 +148,7 @@
 - **API Key 仍由用户填写**（唯一可编辑项），保存前的 `/v1/models` 校验、连通性测试按钮行为不变
 - 移除设置页「位置信息」（location / 所在地）：UI 项整段删除，`settings.location`、`src/services/location.ts` 与 `latestReminder` 的读取逻辑保留但不再暴露入口；`createLatestReminder` 在没有位置信息时**省略该段**，不再产生空段或 `undefined`
 - 协议适配零改动：deepseek / anthropic / openai 三条链路的路径、字段门控（REQUEST_GATES）、翻译器（`openaiAdapter.ts`）逐字未变；正式构建（`pnpm build`）行为与 1.3.0 完全一致
-- 测试：9 个既有 spec 全绿（对标准构建，断言未削弱）；新增 `tests/test.internal-build.spec.mjs`（内测构建验收：DOM 只有 API Key、请求 URL/模型固定、扩展字段剥离、localStorage 不落固定项、console error=0）与本地 mock 上游 `tests/mock-anthropic.mjs`（node 标准库，监听 `123.207.199.196:60010` 并回标准 Anthropic SSE）
+- 测试：9 个既有 spec 全绿（对标准构建，断言未削弱）；新增 `tests/integration/internal-build.test.mjs`（内测构建验收：DOM 只有 API Key、请求 URL/模型固定、扩展字段剥离、localStorage 不落固定项、console error=0）与本地 mock 上游 `tests/fixtures/mock-anthropic.mjs`（node 标准库，监听 `123.207.199.196:60010` 并回标准 Anthropic SSE）
 
 ## 1.3.0 (2026-11-17)
 
@@ -159,7 +159,7 @@
   - 脏数据容错：空 `choices`、`delta` 空对象、`: ping` 注释行、非 JSON 的 data 行、同一 chunk 多条 choices（只取 index 0）、没有 `[DONE]` 的断流都能正常收尾不卡死；上游若下发 `reasoning_content` 会另开一个 thinking 块
 - OpenAI 兼容模式只保留基础对话（流式文本、停止、重新生成 / 编辑 / 分支）：智能搜索、附件/图片、语音输入、朗读、自动标题、深度思考入口全部隐藏（由 `caps` 驱动，DOM 里 `count=0`）
 - deepseek / anthropic 两种模式零影响：三条路径、四个私有字段、能力降级行为与 1.2.3 逐字一致，原有回归断言仍全绿
-- 测试：新增 `tests/test.openai-adapter.spec.mjs`（28 项断言，直接 import 适配器，不启浏览器）并纳入 `tests/run-acceptance.mjs`（覆盖 openai 路径/鉴权头/请求体/端到端逐字渲染/能力降级 + 原有 deepseek/anthropic 回归）
+- 测试：新增 `tests/unit/openai-adapter.test.mjs`（28 项断言，直接 import 适配器，不启浏览器）并纳入 `tests/integration/full-acceptance.test.mjs`（覆盖 openai 路径/鉴权头/请求体/端到端逐字渲染/能力降级 + 原有 deepseek/anthropic 回归）
 
 ## 1.2.3 (2026-11-17)
 
@@ -169,14 +169,14 @@
 - Anthropic 兼容模式**只保留基础对话**：流式文本、停止、重新生成/编辑/分支与可选「深度思考」（自动补 `budget_tokens: 4096`）可用；智能搜索、阅读链接、自动标题、附件/图片、语音输入、朗读等入口在界面上隐藏或置灰，不会出现「发了请求却静默丢弃」的半吊子适配
 - Anthropic 兼容模式请求体自动剥离 DeepSeek 私有字段：不发 `safety_check`、`title`、`tools` 与 `role:'latest_reminder'`；`latest_reminder` 的内容折进 `system` 前缀，信息不丢
 - 上游返回网页（`text/html`，通常是路径填错或网关异常）时给出明确中文错误，不再把 HTML 当回答显示
-- 新增本地 mock 端到端验收 `tests/run-acceptance.mjs` 及 8 个专项回归用例（路径/请求体/能力降级/HTML 上游/旧配置兼容等），不依赖真实上游
+- 新增本地 mock 端到端验收 `tests/integration/full-acceptance.test.mjs` 及 8 个专项回归用例（路径/请求体/能力降级/HTML 上游/旧配置兼容等），不依赖真实上游
 - 测试脚本默认使用 `http://127.0.0.1:5181`（安全上下文），语音输入用例不再因非 HTTPS 页面被置灰而失败
 
 ## 1.2.2 (2026-11-17)
 
 - 修复设置页「测试」按钮误报 `Invalid api key`：探测请求改用 API Key 输入框的当前值，而不是 store 里已保存（可能为空）的旧值，不必先点「确定」再测试（versionCode 5）
 - 未填写 API Key 时点「测试」会直接提示「请先填写 API Key」，不再发出空 `Authorization: Bearer` 请求
-- 新增 Playwright 回归测试 `tests/test.probe-auth.spec.mjs`、`tests/test.probe-nokey.spec.mjs`
+- 新增 Playwright 回归测试 `tests/integration/probe-auth.test.mjs`、`tests/integration/probe-nokey.test.mjs`
 
 ## 1.2.1 (2026-11-17)
 
