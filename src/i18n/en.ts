@@ -705,6 +705,8 @@ export const en = {
     'message branches are damaged (parent message missing, or roles do not connect)',
   historyImportSkipReasonFiles:
     'attachment data is damaged (image path escapes the folder, or the image is duplicated)',
+  historyImportSkipReasonUnknown:
+    'Unrecognized skip reason (from another version or a third-party archive)',
   settingDouyinLabel: 'Douyin ID',
   settingDouyinDescription: 'Tap the ID to copy it, then search for it in Douyin.',
   settingDouyinCopyAria: 'Copy Douyin ID',

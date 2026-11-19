@@ -1,5 +1,10 @@
 import { createElement, type ReactNode } from 'react'
-import type { TranslationKey, TranslationParams } from '../../i18n/index.js'
+import {
+  isTranslationKey,
+  reportMissingKey,
+  type TranslationKey,
+  type TranslationParams,
+} from '../../i18n/index.js'
 import type { ImportSkip } from '../../services/chat/history/toLocal.js'
 
 /**
@@ -42,8 +47,15 @@ const REASON_KEY: Partial<Record<TranslationKey, TranslationKey>> = {
 }
 
 const reasonText = (entry: ImportSkip, t: Translate): string => {
-  const key = REASON_KEY[entry.reason as TranslationKey]
-  return t(key ?? (entry.reason as TranslationKey))
+  // 归档里的 reason 来自别的版本 / 第三方构造的包：类型上写着 TranslationKey，运行时并不可信。
+  // 以前这里 `entry.reason as TranslationKey` 直接查表，缺 key 就抛 TypeError 且没有 key 名（#314）；
+  // 现在先收敛到受控类型，认不出来就走同一条 miss 上报 + 专用兜底文案。
+  const reason: unknown = entry.reason
+  if (!isTranslationKey(reason)) {
+    reportMissingKey(reason)
+    return t('historyImportSkipReasonUnknown')
+  }
+  return t(REASON_KEY[reason] ?? reason)
 }
 
 /** 定位文案：会话标题 + 消息 id（会话级跳过只有标题）。 */

@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { ApiError, verifyApiKey } from '../../services/api/client.js'
 import { classifyApiError } from '../../services/api/errors.js'
 import { setApiKey } from '../../services/api/apiConfig.js'
-import { useTranslate } from '../../i18n/index.js'
+import { useTranslate, translateUntrusted } from '../../i18n/index.js'
 
 /**
  * 输入 API Key 后**立即写入本地配置**（点「确定」/ 回车即落盘），再用当前配置的 GET /models
@@ -28,7 +28,9 @@ export const useApiKeyForm = (
           : t('apiKeyVerificationFailed', {
               message:
                 cause instanceof ApiError && cause.localMessage
-                  ? t(cause.localMessage.key, cause.localMessage.params)
+                  ? // 持久化过的错误文案可能来自别的版本：未识别的 key 走上报 + 兜底。
+                    // 这里是 render 体内求值，裸 `t(key)` 一旦缺 key 就会把整个设置页换成错误页（#314）
+                    translateUntrusted(cause.localMessage.key, cause.localMessage.params)
                   : cause instanceof Error
                     ? cause.message
                     : String(cause),

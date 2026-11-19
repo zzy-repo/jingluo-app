@@ -682,6 +682,8 @@ export const zh = {
   historyImportSkipMissingParent: '缺失的父消息 {parent}',
   historyImportSkipReasonBranches: '消息分支损坏（父消息缺失或角色接不上）',
   historyImportSkipReasonFiles: '附件数据损坏（图片路径越界或重复）',
+  // #314：归档里的 reason 来自别的版本 / 第三方构造，认不出来时给一句人话，不再把裸字符串当 key 查表
+  historyImportSkipReasonUnknown: '未识别的跳过原因（来自别的版本或第三方归档）',
   // 抖音号展示项（用户直接指定的改动）：值可点、可复制
   settingDouyinLabel: '抖音号',
   settingDouyinDescription: '点一下号码即可复制，去抖音搜索就能找到。',

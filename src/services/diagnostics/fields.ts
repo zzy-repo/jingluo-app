@@ -548,6 +548,13 @@ const EXTRA_KEYS: readonly string[] = [
   'event',
   'correlationId',
   'result',
+  // #314：i18n 缺 key 的上报字段。key 名本身是标识符（不是凭证），但 `key` 这个名字会命中
+  // 下面的 SECRET_SEGMENTS 被整条丢掉，所以用 `i18nKey`；`locale` 只是语言标识；
+  // `param` 只记占位符名字（`count` / `total`），不记参数值。
+  // 不加这几条的话，日志里就只剩 stage/reason，反查不到缺的是哪个 key —— 正是 #314 要治的病。
+  'i18nKey',
+  'locale',
+  'param',
 ]
 
 /** 键名里出现这些「最后一段」就当作密钥字段：值里可能是 Key 原文，整条丢掉比脱敏更安全 */
