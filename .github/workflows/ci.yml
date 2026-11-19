@@ -1,0 +1,81 @@
+name: CI
+
+# Issue #104：把「低内核白屏」的门禁真正放进流水线。
+# 以前 check:legacy / check:matrix 只写在文档里靠人记得跑，结果同一根因反复投递到线上
+# （#13 → #39 → #104：WebView 83/91/92 用户整包解析失败 = 静默白屏）。
+# 这里把产物层下限检查变成 PR 与 main 的强制关卡，并带一条「负向对照」证明关卡不是空跑。
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    name: type / lint / unit / 产物兼容门禁
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+
+      - name: Setup pnpm
+        run: |
+          corepack enable
+          corepack prepare pnpm@9 --activate || npm i -g pnpm@9
+          pnpm -v
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Type check
+        run: pnpm run type
+
+      - name: Lint
+        run: pnpm run lint
+
+      - name: Unit tests
+        # 单元层对 locale 敏感（#179 已修，这里仍显式钉住 zh-CN 保持一致）
+        env:
+          LANG: zh_CN.UTF-8
+          LC_ALL: zh_CN.UTF-8
+        run: pnpm test
+
+      - name: Build (internal)
+        run: pnpm run build:internal
+
+      - name: 产物语法/API 下限（check:legacy）
+        run: pnpm run check:legacy
+
+      - name: 静态兼容矩阵（check:matrix）
+        run: pnpm run check:matrix
+
+      - name: 硬编码 IP 检查（check:ip）
+        run: pnpm run check:ip
+
+      - name: 负向对照：含 ?. 的产物必须被拦下（证明门禁不是空跑）
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/dist-neg
+          cp -r dist /tmp/dist-neg
+          target=$(ls /tmp/dist-neg/static/js/main*.js | head -1)
+          printf '\nconst __ciNeg = (globalThis)?.__ciNeg ??= 1;\n' >> "$target"
+          if node scripts/check-bundle-syntax.mjs /tmp/dist-neg; then
+            echo "::error::负向对照失败：注入了 ?. / ??= 的产物仍被判定合格，说明门禁没有真正生效"
+            exit 1
+          fi
+          echo "负向对照通过：含 ?. / ??= 的产物被拦下"

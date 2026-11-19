@@ -16,6 +16,16 @@
 2. **Android 套壳**：使用 [Capacitor](https://capacitorjs.com/) 将构建产物打包为原生 Android 应用（`android/`）。
 3. **APK 构建与发布**：`build-apk.sh` 负责构建；**发布走清单**（执行看 [`docs/RELEASE-CHECKLIST.md`](docs/RELEASE-CHECKLIST.md)，原理看 [`docs/RELEASE-MANUAL.md`](docs/RELEASE-MANUAL.md)），不提供一键发版脚本 —— 见下方说明。
 
+## 支持的内核下限（重要）
+
+本项目的 Web 产物按 **Chrome 83 / WebView 83** 的语法与内置 API 下限构建（Android 11 出厂镜像即 WebView 83），并在入口脚本里补齐低内核缺失的内置 API（`Object.hasOwn`、`Array.prototype.at`、`toSorted`、`replaceAll`、`structuredClone` 等）。
+
+- 产物层门禁：`pnpm run check:legacy`（语法 + 内置 API + CSS `dvh` 回退，不合格即失败）
+- 兼容矩阵扫描：`pnpm run check:matrix`（WebView 79 / 83 / 91 / 109 各自会在哪一层挂）
+- 两者都在 CI（`.github/workflows/ci.yml`）与发版流程中强制运行，且带**负向对照**证明关卡有效。
+
+**低于 WebView 83 的内核不在支持范围**：这类设备上应用会在启动阶段显示兜底页（提示更新 Android System WebView），而不是静默白屏。详见 Issue #104、#13、#39。
+
 ## 使用
 
 ```bash
