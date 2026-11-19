@@ -15,6 +15,10 @@
  *     否则 400 APK_DEBUGGABLE 拒收 —— 发布路径不允许出现 debuggable 构建（Issue #60）
  *   - 防降级：versionCode 必须大于 releases.json 当前 latest
  *     （版本号与 latest 完全相同 = 幂等覆盖，允许）
+ *   - buildType 只接受 shared/build-types.mjs 的枚举（stable|prerelease），非法值
+ *     在写任何文件之前就 400 拒收（Issue #330）
+ *   - 落盘前对「新条目 + 现有清单」合并后的**整份**清单再校验一次：历史条目脏
+ *     （例如早先写进去的 buildType:"release"）同样 409 拒收，APK 与清单都不落盘
  */
 
 import http from 'node:http';
@@ -31,6 +35,9 @@ import {
   VARIANTS,
 } from './variant.mjs';
 import { inspectApkDebugState } from './apk-manifest.mjs';
+// buildType 的枚举只有一处定义（Issue #330）——服务端不再自带字符串数组，
+// 也不再把 Gradle 构建类型（release/debug）当发布渠道。
+import { BUILD_TYPES, buildTypeFor, isBuildType } from '../../shared/build-types.mjs';
 
 // ---------------------------------------------------------------- 配置
 const LISTEN_HOST = process.env.DL_LISTEN_HOST || '127.0.0.1';
@@ -142,6 +149,12 @@ function sendJson(res, status, obj, extraHeaders = {}) {
 
 function fail(res, status, code, message, extraHeaders = {}) {
   sendJson(res, status, { ok: false, error: { code, message } }, extraHeaders);
+}
+
+// Issue #330 的两个新错误码同时给顶层 code/message（#330 验收与发布脚本直接读这两个
+// 字段），error{code,message} 嵌套保持既有契约不变，老调用方不受影响。
+function failCode(res, status, code, message) {
+  sendJson(res, status, { ok: false, code, message, error: { code, message } });
 }
 
 // ---------------------------------------------------------------- multipart
@@ -276,6 +289,30 @@ async function readReleases() {
   return data;
 }
 
+/**
+ * 整份清单的 buildType 体检（Issue #330 第 3 条：服务端已有清单的兜底）。
+ *
+ * 只校验 buildType：这是 2026-11-19 事故的字段，也是客户端 parseManifest() 整份拒绝的
+ * 触发点。结构性的字段校验（versionCode 降序、sha256 形态等）继续由
+ * scripts/validate-releases-manifest.mjs 在离线门禁里管，这里不重复造一套规则。
+ *
+ * @returns {{index:number, version:string, buildType:string}[]} 非法条目（空数组 = 干净）
+ */
+function findIllegalBuildTypes(manifest) {
+  const list = Array.isArray(manifest && manifest.releases) ? manifest.releases : [];
+  const bad = [];
+  list.forEach((r, index) => {
+    const value = r && typeof r === 'object' ? r.buildType : undefined;
+    if (isBuildType(value)) return;
+    bad.push({
+      index,
+      version: (r && typeof r.version === 'string' && r.version) || '?',
+      buildType: value === undefined ? '(missing)' : String(value),
+    });
+  });
+  return bad;
+}
+
 function shanghaiIso(d = new Date()) {
   const t = new Date(d.getTime() + 8 * 3600 * 1000);
   const p = (n, w = 2) => String(n).padStart(w, '0');
@@ -356,6 +393,21 @@ async function handleRelease(req, res, ip) {
   if (changes === undefined) changes = [];
   if (!Array.isArray(changes) || changes.some((c) => typeof c !== 'string')) {
     return fail(res, 400, 'BAD_REQUEST', 'meta.changes 必须是字符串数组');
+  }
+
+  // (4b) buildType 白名单（Issue #330）：非法值在这里就拒收 —— **零 I/O**，
+  // 既不写 .upload-* 临时 APK，也不读/写 releases.json。
+  // 缺字段（undefined）保留历史行为：落盘时按版本号推导（buildTypeFor）。
+  // 空字符串、null、数字、Gradle 的 "release"/"debug" 一律算非法 —— 明确的错值不该被
+  // 静默改成默认值，否则「写错了」和「没写」就分不出来。
+  if (meta.buildType !== undefined && !isBuildType(meta.buildType)) {
+    log('reject_build_type', { ip, meta: JSON.stringify(meta.buildType ?? null) });
+    return failCode(
+      res, 400, 'BAD_BUILD_TYPE',
+      `buildType 必须是 ${BUILD_TYPES.join(' | ')} 之一，收到 ${JSON.stringify(meta.buildType)}。` +
+      '注意 buildType 描述的是发布渠道，不是 Gradle 构建类型（release → stable，debug → 禁止发布，见 #60）；' +
+      '省略该字段则由服务端按版本号推导',
+    );
   }
 
   // (5) 落临时文件 + 服务端自己算 md5/sha256（不接受客户端提供的摘要）
@@ -461,24 +513,14 @@ async function handleRelease(req, res, ip) {
     );
   }
 
-  // (9) 原子落盘 APK → 目标文件名由服务端解析出的 versionName 决定
+  // (9) 先算出新条目与「新条目 + 现有清单」的合并结果，并在**落盘前**整份校验（Issue #330）
+  // 顺序是有意的：校验放在 rename 之前，脏清单时 APK 也不落盘，不会留下
+  // 「目录里有新包、清单没收录」的半成品。缺 buildType 的走 buildTypeFor(versionName)。
+  const buildType = meta.buildType !== undefined ? meta.buildType : buildTypeFor(versionName);
+
   const fileName = `deepseek-chat-${versionName}.apk`;
   const finalPath = path.join(APK_DIR, fileName);
   const relFile = `apk/${fileName}`;
-  try {
-    await fsp.rename(staging, finalPath);
-    const dh = await fsp.open(APK_DIR, 'r');
-    try { await dh.sync(); } finally { await dh.close(); }
-  } catch (e) {
-    await fsp.rm(staging, { force: true });
-    log('reject_io', { ip, error: e.message });
-    return fail(res, 500, 'INTERNAL', 'APK 落盘失败');
-  }
-
-  // (10) 原子更新 releases.json
-  const buildType = typeof meta.buildType === 'string' && meta.buildType
-    ? meta.buildType
-    : (/-(alpha|beta|rc)/i.test(versionName) ? 'prerelease' : 'stable');
 
   const record = {
     version: versionName,
@@ -505,6 +547,36 @@ async function handleRelease(req, res, ip) {
   });
   const next = { ...data, latest: versionName, releases: nextReleases };
 
+  // (9b) 整份清单校验：新条目合法不代表清单干净（历史条目可能早就写着 buildType:"release"）。
+  // 有非法值 → fail-closed：本次上传整体拒收，APK 与 releases.json 都不动。
+  const dirty = findIllegalBuildTypes(next);
+  if (dirty.length) {
+    await fsp.rm(staging, { force: true });
+    const head = dirty.slice(0, 3)
+      .map((d) => `releases[${d.index}] ${d.version} buildType=${d.buildType}`).join('；');
+    log('reject_manifest_dirty', {
+      ip, count: dirty.length, first: head, stagingRemoved: true,
+    });
+    return failCode(
+      res, 409, 'MANIFEST_DIRTY',
+      `合并后的清单有 ${dirty.length} 条 buildType 非法（${head}${dirty.length > 3 ? ' …' : ''}），` +
+      `只允许 ${BUILD_TYPES.join(' | ')}。整份清单校验未通过，本次上传未落盘（APK 与 releases.json 均未改），` +
+      '请先清洗现有清单（见 #330）',
+    );
+  }
+
+  // (10) 原子落盘 APK → 目标文件名由服务端解析出的 versionName 决定
+  try {
+    await fsp.rename(staging, finalPath);
+    const dh = await fsp.open(APK_DIR, 'r');
+    try { await dh.sync(); } finally { await dh.close(); }
+  } catch (e) {
+    await fsp.rm(staging, { force: true });
+    log('reject_io', { ip, error: e.message });
+    return fail(res, 500, 'INTERNAL', 'APK 落盘失败');
+  }
+
+  // (11) 原子更新 releases.json
   try {
     await writeJsonAtomic(RELEASES_JSON, next);
   } catch (e) {

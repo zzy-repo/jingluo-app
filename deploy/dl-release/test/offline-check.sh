@@ -199,6 +199,54 @@ else
   skp "未提供 APK_DEBUGGABLE（拿 1.4.0-beta.8 这类历史 debuggable 包，用例会真实跑一遍拒收）"
 fi
 
+# ------------------------------------------- 7b/7c) buildType 门禁（Issue #330）
+hdr "7b) 非法 buildType → 400 BAD_BUILD_TYPE，且 releases.json 字节不变、APK 不落盘"
+if [ -n "$APK_NO_MARKER" ] && [ -f "$APK_NO_MARKER" ]; then
+  BEFORE_SHA=$(sha_of "$WORK/releases.json")
+  BEFORE_N=$(ls "$WORK/apk" | wc -l)
+  OUT=$(post "$APK_NO_MARKER" '{"buildType":"release","changes":["should-be-rejected"]}')
+  C=$(code_of "$OUT"); B=$(body_of "$OUT")
+  echo "  http=$C body=$B"
+  [ "$C" = "400" ] && ok "非法 buildType 400" || bad "非法 buildType 应 400，实际 $C"
+  [ "$(printf '%s' "$B" | jget '["code"]' | tr -d '"')" = "BAD_BUILD_TYPE" ] \
+    && ok "顶层 code=BAD_BUILD_TYPE" || bad "顶层 code 不是 BAD_BUILD_TYPE"
+  [ "$(sha_of "$WORK/releases.json")" = "$BEFORE_SHA" ] && ok "releases.json 字节不变（sha256 相同）" \
+    || bad "被拒的上传改动了清单"
+  [ "$(ls "$WORK/apk" | wc -l)" = "$BEFORE_N" ] && ok "APK 未落盘（含无 .upload-* 残留）" \
+    || bad "被拒的 APK 落盘了"
+  grep -q reject_build_type "$WORK/server.log" && ok "日志有 reject_build_type" || bad "日志缺 reject_build_type"
+
+  hdr "7c) 历史清单脏（旧条目 buildType=\"release\"）→ 409 MANIFEST_DIRTY，APK 与清单都不落盘"
+  cp "$WORK/releases.json" "$WORK/releases.clean.json"
+  python3 - "$WORK/releases.json" <<'PYJSON'
+import json,sys
+p=sys.argv[1]; d=json.load(open(p))
+d["releases"].append({
+    "version":"0.9.9","versionCode":0,"releasedAt":"2026-11-01T10:00:00+08:00",
+    "file":"apk/deepseek-chat-0.9.9.apk","size":1,"md5":"0"*32,
+    "changes":["历史脏条目：buildType 写成了 Gradle 构建类型"],"buildType":"release","breaking":False,
+})
+json.dump(d,open(p,"w",encoding="utf-8"),indent=2,ensure_ascii=False)
+PYJSON
+  DIRTY_SHA=$(sha_of "$WORK/releases.json")
+  DIRTY_N=$(ls "$WORK/apk" | wc -l)
+  OUT=$(post "$APK_NO_MARKER" '{"buildType":"stable","changes":["should-be-rejected-too"]}')
+  C=$(code_of "$OUT"); B=$(body_of "$OUT")
+  echo "  http=$C body=$B"
+  [ "$C" = "409" ] && ok "脏清单 409" || bad "脏清单应 409，实际 $C"
+  [ "$(printf '%s' "$B" | jget '["code"]' | tr -d '"')" = "MANIFEST_DIRTY" ] \
+    && ok "顶层 code=MANIFEST_DIRTY" || bad "顶层 code 不是 MANIFEST_DIRTY"
+  [ "$(sha_of "$WORK/releases.json")" = "$DIRTY_SHA" ] && ok "releases.json 字节不变（没把脏清单写得更脏）" \
+    || bad "409 之后清单被改动了"
+  [ "$(ls "$WORK/apk" | wc -l)" = "$DIRTY_N" ] && ok "APK 未落盘（校验在 rename 之前）" \
+    || bad "409 之后 APK 落盘了"
+  grep -q reject_manifest_dirty "$WORK/server.log" && ok "日志有 reject_manifest_dirty" || bad "日志缺 reject_manifest_dirty"
+  # 还原干净清单，后面的「清单校验器自检」才有意义
+  cp "$WORK/releases.clean.json" "$WORK/releases.json"
+else
+  skp "未提供 APK_NO_MARKER（跳过 #330 的 400/409 用例）"
+fi
+
 # ---------------------------------------------------------------- 8) 清单校验器自检
 hdr "8) 产出的 releases.json 必须通过清单校验器"
 node "$REPO/scripts/validate-releases-manifest.mjs" "$WORK/releases.json" && ok "清单校验通过" || bad "清单校验失败"
