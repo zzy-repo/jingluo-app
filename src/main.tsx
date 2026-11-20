@@ -9,16 +9,15 @@ import { setupReading } from './app/reading.js'
 import { readDiagnosticsFacts } from './app/diagnosticsContext.js'
 import { getApiKey } from './services/api/apiConfig.js'
 import { migrateConfigOnce } from './services/api/configMigration.js'
-import { fetchCustomerIdFromProfile, setCustomerIdProvider } from './services/ours/customerId.js'
+import { setCustomerIdProvider } from './services/ours/customerId.js'
 import { fetchPaymentRecords } from './services/ours/paymentRecords.js'
 import { httpTransport } from './services/ours/transport.js'
-import { INVITE_API_BASE } from './services/invite/api.js'
-import { ensureDeviceId } from './services/invite/device.js'
 import { setupFlexGapFallback } from './utils/flexGap.js'
-import { getAccessToken, restoreAuth, setAuthTransport } from './services/auth/store.js'
+import { setAuthTransport } from './services/auth/store.js'
 import { createAuthTransport, createPublicSettingsReader } from './services/auth/transport.js'
 import { setPublicSettingsReader } from './services/auth/flags.js'
-import { createConsumeClient } from './services/consume/index.js'
+import { getConsumeClient } from './services/consumeClient.js'
+import { AuthGate } from './components/auth/AuthGate.js'
 import {
   initDiagnostics,
   installDiagnosticsDebugHandle,
@@ -76,40 +75,39 @@ installDiagnosticsDebugHandle()
 // 告诉 index.html 的 ES5 守卫「入口跑起来了」，它就不用再兜底报白屏（见 src/index.html）。
 ;(window as Window & { __DEEPSEEK_BOOTED__?: boolean }).__DEEPSEEK_BOOTED__ = true
 // 客户编号（cid）的来源：付款记录 / 购买记录（GET /api/orders）要靠它认出「这是谁的订单」。
-// Issue #331 之后下单链路已停用（我们不建单），cid 只剩「查历史订单」这一个用途：
-//  1. 有 API Key：直接用 GET /api/orders 返回的 customer_id（实测唯一可靠的来源）；
-//  2. 没有 Key：退回设备码通道 GET <invite>/me?device_id=…。
-// 两条都失败就返回 null —— 查记录时按「查不到」处理，不再阻断任何购买流程。
-
+// Issue #331 之后下单链路已停用（我们不建单），cid 只剩「查历史订单」这一个用途。
+//
+// W1-B 后半（#487）**摘掉旧设备码通道**：启动时不再生成 device_id，也不再拿它去
+// `GET <旧池域>/me` 换 cid —— 身份已换成 JWT 账号（`services/auth`），设备码体系作废（#482 / #484 §二）。
+// 现在只有一条来源：本机 API Key 对应的 `GET /api/orders` 里的 customer_id（实测唯一可靠）。
+// 拿不到就返回 null —— 查记录时按「查不到」处理，不再阻断任何流程。
 setCustomerIdProvider(async () => {
   const key = getApiKey()
-  if (key !== '') {
-    const records = await fetchPaymentRecords(key, httpTransport)
-    if (records.kind === 'ok' && records.data.customerId !== null) {
-      return records.data.customerId
-    }
+  if (key === '') {
+    return null
   }
-  return fetchCustomerIdFromProfile({
-    base: INVITE_API_BASE,
-    deviceId: ensureDeviceId(),
-    transport: httpTransport,
-  })
+  const records = await fetchPaymentRecords(key, httpTransport)
+  return records.kind === 'ok' ? records.data.customerId : null
 })
 
-// 身份层接线（W1-B 前半，#487）：JWT 通道与 `settings/public` 开关都走 W1-A 的消费层客户端。
-// `accessToken` 传的是「每次请求现取」的提供者，续期之后立刻生效；`apiKey` 只服务 `/v1/**`。
-const consumeClient = createConsumeClient({ accessToken: getAccessToken, apiKey: getApiKey })
+// 身份层接线（W1-B，#487）：JWT 通道与 `settings/public` 开关都走 W1-A 的消费层客户端。
+// 客户端是**全应用共用的一个实例**（`services/consumeClient.ts`）：凭据提供者按请求现取，
+// JWT 续期 / 换 Key 之后下一条请求立刻生效；`apiKey` 只服务 `/v1/**`。
+const consumeClient = getConsumeClient()
 setAuthTransport(createAuthTransport(consumeClient))
 setPublicSettingsReader(createPublicSettingsReader(consumeClient))
 
-// [占位] 身份检查：**当前保持「跳过」**——只跑一次启动恢复（读安全存储里的 JWT，没有就什么都不做），
-// 渲染树与首启流程一行没动，现有启动行为不变。
-// TODO(W1-B 后半)：把下面这行换成 <AuthGate> 包住 <App />，并在 restore 完成前不渲染主界面。
-void restoreAuth()
-
+// 首启 = 登录墙（W1-B 后半，#487）：**没有「跳过」这条分支了**。
+//  - `AuthGate` 自己跑启动恢复（`restoreAuth`）并读 `settings/public` 开关，恢复期间只画 loading，
+//    所以这里不再单独调 `restoreAuth()`，也不会先渲染主界面再跳走；
+//  - 未登录 → 登录 / 注册页（注册入口由 `registration_enabled` 决定显隐，读不到就隐藏）；
+//  - 已登录 → 原来的 `<App />` 一行没动；
+//  - 退出登录在设置页（`components/auth/AccountRow.tsx`）：`revokeAllSessions` + 清本地态 → 回登录页。
 // 根部包一层错误边界：渲染期异常不再是整屏白屏，而是一张可读的错误页（issue #28）
 createRoot(document.getElementById('root') as HTMLElement).render(
   <ErrorBoundary>
-    <App />
+    <AuthGate>
+      <App />
+    </AuthGate>
   </ErrorBoundary>
 )

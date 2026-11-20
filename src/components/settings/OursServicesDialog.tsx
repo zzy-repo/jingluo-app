@@ -7,7 +7,7 @@ import {
   useApiConfig,
   useIsOursChannel,
 } from '../../services/api/apiConfig.js'
-import { useTranslate } from '../../i18n/index.js'
+import { useTranslate, type TranslationKey } from '../../i18n/index.js'
 import {
   fetchPayLink,
   formatPoints,
@@ -25,7 +25,6 @@ import {
   normalizeInviteCode,
   redeemCardMigrated,
   redeemInviteCode,
-  runWithDeviceSelfHeal,
   sendEmailCode,
   shouldShowEmailEntry,
   type ClaimOutcome,
@@ -58,12 +57,11 @@ import {
   createDeviceId,
   ensureDeviceId,
   localStorageDeviceIdStorage,
-  localStorageFlagStorage,
-  markDeviceBackupHintSeen,
-  shouldShowDeviceBackupHint,
 } from '../../services/invite/device.js'
 import { httpTransport, openPayLinkInApp } from '../../services/ours/transport.js'
+import { getConsumeClient } from '../../services/consumeClient.js'
 import { copyText } from '../../utils/clipboard.js'
+import { formatMoneyValue } from '../../utils/money.js'
 import { Button } from '../base/Button.js'
 import { Modal } from '../base/Modal.js'
 import { closeSettings, setOursServicesOpen, useSettingsDialog } from './settingsDialogState.js'
@@ -74,23 +72,37 @@ import styles from './OursServices.module.css'
  * 整个组件只在 kind === 'ours' 时渲染（其他渠道一条 DOM 都不留，见 OursServicesRow）。
  *
  * 两套后端（都在 services/ 里，纯逻辑 + 注入传输，单测覆盖）：
- *  - 邀请 / 额度服务（明文 HTTP，旧域）：设备码、Key、邀请码、剩余额度
+ *  - 邀请服务（**旧池域，已废弃**；地址只来自 `config/endpoints.json`）：设备码、Key、邀请码
  *  - 卡密 / 收款服务 https://apia.ecsafe.cn（HTTPS）：联动小铺收款页地址（`/api/pay-link`）、卡密兑换
  *
- * 额度口径：**只认邀请服务的 remaining_points**；它记的是旧体系的「积分」，界面上按
- * **100 积分 = 1 元**折算成元展示（#487 统一计量：1 元 = 1 额度，无 USD；早前 #75 的
- * 「只显示积分」作废）。折算只在 services/ours/api.ts 的 formatPoints 里做一次。
+ * 额度口径（W1-B 后半 #487 起）：**只读 sub2api**（`consume.usage.gateway()` → `GET /v1/usage`）。
+ * 单位是**元**（**1 元 = 1 额度，无 USD**，展示走 `src/utils/money.ts`，客户端不做汇率）。
+ * 旧邀请服务的积分字段不再作为余额来源，本地也不折算、不缓存（#484 §3.3 / §七.6）：
+ * 「查不到」就报查不到，绝不当成 0，更不拿它决定「还能不能发消息」。
  * /api/balance 只用来判断 Key 是否有效，绝不当余额。
  *
  * 失败一律给可读文案 + 可重试，且重试都是安全的：
- *  - /apply 对同一 device_id 幂等（201 首次 / 200 已申请）
- *  - /api/redeem 用卡密本身当 request_id（同一张卡重发就是同一笔）
+ *  - 卡密兑换用卡密本身当 request_id（同一张卡重发就是同一笔），**且不再自动补领 Key**
+ *    （见 `submitRedeem`：旧的自愈层会在 device_not_found 时 POST /apply）
  *  - /api/pay-link 是只读接口，重试不会建单（Issue #331：这条链路我们**不建单**）
  */
+/** 旧邀请服务里的档案（邀请码 / 邮箱 / 邀请规则都在里面；**不再是额度来源**） */
 type BalanceView =
   | { status: 'idle' | 'loading' }
   | { status: 'ok'; profile: InviteProfile }
   | { status: 'error'; messageKey: InviteMessageKey | OursMessageKey }
+
+/**
+ * 额度（W1-B 后半 #487）：只认 sub2api 的 `GET /v1/usage`。
+ *
+ * 三种状态与 `BalanceView` 分开：额度不再从档案里读，界面也就不该因为「档案没读到」
+ * 而把额度显示成错误 —— 两者是两条独立的请求。
+ */
+type UsageView =
+  | { status: 'idle' | 'loading' }
+  /** `remaining` = 剩余额度（**元**，1 元 = 1 额度）；服务端没给就是 null，界面显示「—」（**绝不折算成 0**） */
+  | { status: 'ok'; remaining: number | null }
+  | { status: 'error'; messageKey: TranslationKey }
 
 type ClaimView =
   | { status: 'idle' }
@@ -171,12 +183,12 @@ const inviteOkText = (rewardPoints: number, t: ReturnType<typeof useTranslate>):
 const OursServicesDialog = ({ onClose }: { onClose: () => void }) => {
   const t = useTranslate()
   const apiKey = useApiConfig((state) => state.apiKey)
-  /** 设备码可变：invalid_device 自愈时会重新生成一个（见 runWithDeviceSelfHeal） */
+  /** 设备码可变：invalid_device 自愈时会重新生成一个（见 refreshProfile / regenerateDevice） */
   const [deviceId, setDeviceId] = useState(() => ensureDeviceId())
-  /** 设备码备份提示只提示一次（Issue #72 条件 4） */
-  const [showBackupHint, setShowBackupHint] = useState(() => shouldShowDeviceBackupHint(localStorageFlagStorage()))
   const [claim, setClaim] = useState<ClaimView>({ status: 'idle' })
   const [balance, setBalance] = useState<BalanceView>({ status: 'idle' })
+  /** 额度（sub2api `GET /v1/usage`）：与档案分开读，见 UsageView */
+  const [usage, setUsage] = useState<UsageView>({ status: 'idle' })
   const [keyProbe, setKeyProbe] = useState<OursKeyProbe | null>(null)
   /**
    * 当前这把 Key 的身份记录（#451）：绑定时间 / 最近一次确认可用时间。
@@ -294,14 +306,6 @@ const OursServicesDialog = ({ onClose }: { onClose: () => void }) => {
 
   // ---------------------------------------------------------------- 额度 / 领取
 
-  /**
-   * 自愈依赖：device_not_found → POST /apply 重新领取并把 Key 落盘；
-   * invalid_device → 重新生成设备码并持久化。两者都只重试一次（见 runWithDeviceSelfHeal）。
-   */
-  const saveHealedKey = (key: string) => {
-    setApiKey(key)
-    setPendingKey('')
-  }
   const regenerateDevice = (current: string): string => {
     const next = createDeviceId()
     localStorageDeviceIdStorage().write(next)
@@ -311,10 +315,6 @@ const OursServicesDialog = ({ onClose }: { onClose: () => void }) => {
   const persistDevice = (next: string): void => {
     localStorageDeviceIdStorage().write(next)
     setDeviceId(next)
-  }
-  const acknowledgeBackupHint = () => {
-    markDeviceBackupHintSeen(localStorageFlagStorage())
-    setShowBackupHint(false)
   }
 
   // ---------------------------------------------------------------- 邮箱账号（#421）
@@ -326,7 +326,8 @@ const OursServicesDialog = ({ onClose }: { onClose: () => void }) => {
    *  - 其它失败（网络 / 超时 / `device_not_found`）同样不出现：老部署上宁可不显示入口；
    *  - 成功：已绑 → 显示脱敏邮箱，未绑 → 显示「绑定邮箱」。
    *
-   * 顺带处理第 5 点：已绑邮箱 → 不再提示「复制设备码备份」（账号可以靠邮箱找回）。
+   * #421 第 5 点原有的「已绑邮箱 → 不再提示备份设备码」分支已随提示本体一起删除
+   * （W1-B 后半 #487：设备码不再是账号，提示本身就不该存在）。
    */
   const probeEmail = async (device: string) => {
     const status = await fetchEmailStatus(device, httpTransport, deviceFpRef.current)
@@ -334,9 +335,6 @@ const OursServicesDialog = ({ onClose }: { onClose: () => void }) => {
       return
     }
     setEmailStatus(shouldShowEmailEntry(status) ? status : { kind: 'disabled' })
-    if (status.kind === 'ok' && status.hasEmail === true) {
-      setShowBackupHint(false)
-    }
   }
 
   /**
@@ -446,9 +444,55 @@ const OursServicesDialog = ({ onClose }: { onClose: () => void }) => {
       hasEmail: adopted.hasEmail === true,
       emailMasked: adopted.emailMasked,
     })
-    // #421 第 5 点：绑上邮箱之后「复制设备码备份」的前提没了
-    setShowBackupHint(false)
     void refreshBalance()
+    void refreshQuota()
+  }
+
+  /**
+   * 读一次额度：**只打 sub2api**（`consume.usage.gateway()` → `GET /v1/usage`，单位元：1 元 = 1 额度，无 USD）。
+   *
+   * 三条口径（#484 §3.3 / §七.6）：
+   *  - 服务端给什么就是什么：`remaining` 缺失就显示「—」，**绝不当 0**；
+   *  - 不缓存、不折算：每次点「刷新额度」都重新请求；
+   *  - 失败只落界面（可重试文案），不弹框、不影响档案那一支（两条请求互不阻塞）。
+   *
+   * 没有 sk- Key 时一条请求都不发（`/v1/usage` 只认 Key 通道）：直接落到 `oursQuotaNeedsBind`。
+   */
+  const refreshQuota = async () => {
+    if (useApiConfig.getState().apiKey.trim() === '') {
+      setUsage({ status: 'error', messageKey: 'oursQuotaNeedsBind' })
+      return
+    }
+    setUsage({ status: 'loading' })
+    let result: Awaited<ReturnType<ReturnType<typeof getConsumeClient>['usage']['gateway']>>
+    try {
+      result = await getConsumeClient().usage.gateway()
+    } catch {
+      // 传输层违约（抛异常而不是返回 `{ok:false}`）：界面上按「网络错误」处理，别让这一格炸掉弹层
+      if (alive.current) {
+        setUsage({ status: 'error', messageKey: 'consumeErrNetwork' })
+      }
+      return
+    }
+    if (!alive.current) {
+      return
+    }
+    if (!result.ok) {
+      setUsage({ status: 'error', messageKey: result.error.i18nKey })
+      return
+    }
+    const data = result.data
+    // 三种模式（quota_limited / unrestricted / 钱包）里 remaining 都有；没有就用 balance 兜底，
+    // 都没有就 null —— 界面显示「—」。**不做**任何本地换算（积分 / 人民币都不折算）。
+    const remaining =
+      typeof data.remaining === 'number'
+        ? data.remaining
+        : typeof data.balance === 'number'
+          ? data.balance
+          : typeof data.quota?.remaining === 'number'
+            ? data.quota.remaining
+            : null
+    setUsage({ status: 'ok', remaining })
   }
 
   const refreshBalance = async () => {
@@ -564,8 +608,9 @@ const OursServicesDialog = ({ onClose }: { onClose: () => void }) => {
     setPendingKey('')
     setBindInput('')
     setBindResult({ kind: 'ok', alreadyBound: result.alreadyBound })
-    // 与兑换 / 领取成功后一致：刷新额度（内部走 runWithDeviceSelfHeal）
+    // 与兑换 / 领取成功后一致：档案与额度各刷一次（额度走 sub2api，见 refreshQuota）
     await refreshBalance()
+    await refreshQuota()
     if (alive.current) {
       // #421：刚绑上账号 -> 再探一次邮箱入口
       await probeEmail(device.deviceId)
@@ -616,7 +661,11 @@ const OursServicesDialog = ({ onClose }: { onClose: () => void }) => {
       // 只在本机已有 Key（有账号可绑）时探：没凭据时按 #100 的规矩一条请求都不发，
       // 领取 / 绑定成功之后会再探一次（见 claimKey / submitBind）。
       if (useApiConfig.getState().apiKey.trim() !== '') {
+        // 额度：与档案那两条遗留请求并行读（sub2api 是唯一额度来源，失败只影响这一格）
+        void refreshQuota()
         await probeEmail(opened.deviceId)
+      } else {
+        setUsage({ status: 'error', messageKey: 'oursQuotaNeedsBind' })
       }
     })()
     // 只跑一次：挂载即初始化，之后都由用户操作驱动
@@ -654,6 +703,7 @@ const OursServicesDialog = ({ onClose }: { onClose: () => void }) => {
     const opened = await openPayLinkInApp(next.url, () => {
       if (alive.current) {
         void refreshBalance()
+        void refreshQuota()
       }
     })
     if (!alive.current) {
@@ -675,39 +725,29 @@ const OursServicesDialog = ({ onClose }: { onClose: () => void }) => {
       return
     }
     setRedeemBusy(true)
-    // 打本机池（62.106:60013/redeem-card），池整条链路不通才兜底旧 /api/redeem；
-    // device_not_found / invalid_device 由 runWithDeviceSelfHeal 自愈一次，绝不循环。
-    const outcome = await runWithDeviceSelfHeal(
-      { deviceId, deviceFp: deviceFpRef.current, transport: httpTransport, saveKey: saveHealedKey, regenerate: regenerateDevice, persistDeviceId: persistDevice },
-      () => redeemCardMigrated({ cardNo: trimmed, apiKey }, httpTransport)
-    )
+    // 打本机池（旧池域的 redeem-card），池整条链路不通才兜底旧 /api/redeem。
+    //
+    // W1-B 后半（#487）：**不再包 `runWithDeviceSelfHeal`** —— 那一层在 `device_not_found`
+    // 时会自动补一次 POST /apply 并把 Key 落盘，正是旧体系的「自动领 Key」。新体系里
+    // 兑换只认手里这把 Key（JWT 账号在 sub2api 侧记账），凭据不该在兑换路径里被悄悄建出来。
+    // 失败就如实报失败：卡密幂等（同一张卡重发是同一笔），用户可以放心重试。
+    const result = await redeemCardMigrated({ cardNo: trimmed, apiKey }, httpTransport)
     if (!alive.current) {
       return
     }
     setRedeemBusy(false)
-    if (outcome.deviceId !== deviceId) {
-      setDeviceId(outcome.deviceId)
-    }
-    if (outcome.kind === 'error') {
-      setRedeem({
-        kind: 'error',
-        code: outcome.code,
-        messageKey: outcome.messageKey as OursMessageKey,
-        cardTail: trimmed.slice(-4),
-        retryable: outcome.code === 'NETWORK' || outcome.code === 'TIMEOUT',
-        via: 'pool',
-      })
+    setRedeem(result)
+    if (result.kind === 'error') {
       return
     }
-    // 走到这里只可能是 success / pending（错误已在上面 return）：202 也按「收下了」处理，
+    // 走到这里只可能是 success / pending：202 也按「收下了」处理，
     // 所以清空输入并刷新一次额度（pending 时服务端稍后才入账，用户可点「刷新额度」再看）
-    setRedeem(outcome.value)
     // #451：卡密是拿当前 Key 提交的，服务端受理了 = 这把 Key 被认可，记一次「确认可用」
     if (recordKeySuccess()) {
       setKeyIdentity(getCurrentKeyIdentity())
     }
     setCardNo('')
-    void refreshBalance()
+    void refreshQuota()
   }
 
   const submitInvite = async () => {
@@ -880,20 +920,8 @@ const OursServicesDialog = ({ onClose }: { onClose: () => void }) => {
             {deviceId}
           </code>
           <div className={styles.hint}>{t('oursDeviceDescription')}</div>
-          {/* #421 第 5 点：已绑邮箱的用户不再提示「复制设备码备份」——账号可以靠邮箱找回 */}
-          {showBackupHint && !emailBound ? (
-            <div className={styles.hint} data-testid="ours-device-backup-hint">
-              {t('oursDeviceBackupHint')}{' '}
-              <Button
-                variant="outlined"
-                size="s"
-                data-testid="ours-device-backup-hint-ok"
-                onClick={acknowledgeBackupHint}
-              >
-                {t('oursDeviceBackupHintOk')}
-              </Button>
-            </div>
-          ) : null}
+          {/* W1-B 后半（#487）：旧的「设备码就是账号，请复制备份」提示已删除 —— 新体系里账号是
+              JWT 邮箱账号（登录墙 + `services/auth`），设备码不再代表任何东西，催用户备份它只会误导。 */}
 
           <div className={styles.actions}>
             <Button
@@ -1285,7 +1313,7 @@ const OursServicesDialog = ({ onClose }: { onClose: () => void }) => {
           ) : null}
         </section>
 
-        {/* 2. 额度：只认邀请服务的 remaining_points；100 积分 = 1 元，展示折算成元 */}
+        {/* 2. 额度：**只读 sub2api**（GET /v1/usage，单位元：1 元 = 1 额度，无 USD）；本地不折算、不缓存、不当 0（#484 §3.3） */}
         <section className={styles.section} data-testid="ours-quota">
           <div className={styles.sectionHead}>
             <h3 className={styles.sectionTitle}>{t('oursQuotaTitle')}</h3>
@@ -1294,10 +1322,13 @@ const OursServicesDialog = ({ onClose }: { onClose: () => void }) => {
               size="s"
               className={styles.sectionAction}
               data-testid="ours-quota-refresh"
-              disabled={balance.status === 'loading'}
-              onClick={() => void refreshBalance()}
+              disabled={usage.status === 'loading'}
+              onClick={() => {
+                void refreshQuota()
+                void refreshBalance()
+              }}
             >
-              {balance.status === 'loading' ? t('oursQuotaLoading') : t('oursQuotaAction')}
+              {usage.status === 'loading' ? t('oursQuotaLoading') : t('oursQuotaAction')}
             </Button>
           </div>
           <div
@@ -1305,19 +1336,21 @@ const OursServicesDialog = ({ onClose }: { onClose: () => void }) => {
             data-testid="ours-quota-value"
             className={clsx(
               styles.value,
-              balance.status === 'ok' && styles.valueSuccess,
-              balance.status === 'error' && styles.valueError
+              usage.status === 'ok' && styles.valueSuccess,
+              usage.status === 'error' && styles.valueError
             )}
           >
-            {balance.status === 'ok'
-              ? t('oursQuotaValue', { points: formatPoints(balance.profile.remainingPoints, t('oursPointsUnit')) })
-              : balance.status === 'error'
-                ? t(balance.messageKey)
-                : balance.status === 'loading'
+            {usage.status === 'ok'
+              ? usage.remaining === null
+                ? '—'
+                : t('consumeBalance', { amount: formatMoneyValue(usage.remaining) })
+              : usage.status === 'error'
+                ? t(usage.messageKey)
+                : usage.status === 'loading'
                   ? t('oursQuotaLoading')
                   : t('oursQuotaNeedsClaim')}
           </div>
-          {profile !== null && profile.remainingPoints <= 0 ? (
+          {usage.status === 'ok' && usage.remaining !== null && usage.remaining <= 0 ? (
             <div className={styles.hint} data-testid="ours-quota-hint">
               {t('oursQuotaZeroHint')}
             </div>
@@ -1488,8 +1521,11 @@ const OursServicesDialog = ({ onClose }: { onClose: () => void }) => {
                 variant="outlined"
                 size="s"
                 data-testid="ours-redeem-refresh"
-                disabled={balance.status === 'loading'}
-                onClick={() => void refreshBalance()}
+                disabled={usage.status === 'loading'}
+                onClick={() => {
+                  void refreshQuota()
+                  void refreshBalance()
+                }}
               >
                 {t('oursRedeemRefreshBalance')}
               </Button>
