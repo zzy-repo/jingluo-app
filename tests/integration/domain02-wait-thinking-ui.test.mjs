@@ -19,6 +19,9 @@
 //     B1 默认折叠（collapsed）→ 流式时自动展开，答完后正文不挂 DOM，点标题可展开
 //     B2 expanded            → 不点也在 DOM 里
 //     B3 hidden              → 标题与正文都不渲染，正文不留空白占位
+//   表 C（1 行，Issue #452 C4）：
+//     C1 首字等待期间**切后台再回来** → 提示不卡住、秒数不重复计时（不回退）、
+//        回前台后流式照常继续到收尾，且全程只发 1 次请求
 //
 // 跑法（先 pnpm build 生成标准包；本脚本自起静态服务与 mock 上游）：
 //   node tests/integration/domain02-wait-thinking-ui.test.mjs
@@ -197,6 +200,90 @@ const THINKING_ROWS = [
   },
 ]
 
+/**
+ * #452 C4 的辅助：先发响应头 + 每 500ms 一个心跳（界面停在「等首字」且不撞空闲超时），
+ * 等 `gate` 放行后再按 Anthropic 帧把正文吐完并正常收尾。
+ * 这样「切后台 / 回前台」这段可以精确地夹在「首字还没到」里面做。
+ */
+const writeGatedAnswer = async (res, gate, { chunks, gapMs = 400 }) => {
+  res.writeHead(200, {
+    'content-type': 'text/event-stream',
+    'cache-control': 'no-cache',
+    connection: 'keep-alive',
+  })
+  res.flushHeaders?.()
+  const ping = setInterval(() => {
+    if (!res.destroyed && !res.writableEnded) {
+      res.write('event: ping\ndata: {"type":"ping"}\n\n')
+    }
+  }, 500)
+  await gate
+  clearInterval(ping)
+  const write = (lines) => {
+    for (const line of lines) {
+      res.write(`${line}\n`)
+    }
+  }
+  write([
+    'event: message_start',
+    `data: ${JSON.stringify({
+      type: 'message_start',
+      message: {
+        id: 'msg_mock',
+        type: 'message',
+        role: 'assistant',
+        content: [],
+        model: 'mock-model',
+        stop_reason: null,
+        stop_sequence: null,
+        usage: { input_tokens: 8, output_tokens: 0 },
+      },
+    })}`,
+    '',
+    'event: content_block_start',
+    `data: ${JSON.stringify({ type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } })}`,
+    '',
+  ])
+  for (const text of chunks) {
+    await new Promise((resolve) => setTimeout(resolve, gapMs))
+    write([
+      'event: content_block_delta',
+      `data: ${JSON.stringify({ type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text } })}`,
+      '',
+    ])
+  }
+  write([
+    'event: content_block_stop',
+    `data: ${JSON.stringify({ type: 'content_block_stop', index: 0 })}`,
+    '',
+    'event: message_delta',
+    `data: ${JSON.stringify({
+      type: 'message_delta',
+      delta: { stop_reason: 'end_turn', stop_sequence: null },
+      usage: { output_tokens: 12 },
+    })}`,
+    '',
+    'event: message_stop',
+    `data: ${JSON.stringify({ type: 'message_stop' })}`,
+    '',
+  ])
+  res.end()
+}
+
+/** 页面自己的「已等待 Ns」读数；读不到返回 -1 */
+const elapsedSeconds = async (page) => {
+  const match = /已等待 (\d+)s/.exec(await bodyText(page))
+  return match ? Number(match[1]) : -1
+}
+
+/** 切前后台：改 visibilityState 并派发 visibilitychange（App 监听的正是这个事件） */
+const setVisibility = async (page, state) => {
+  await page.evaluate((next) => {
+    Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => next })
+    document.dispatchEvent(new Event('visibilitychange'))
+  }, state)
+}
+
 const mock = await startMockUpstream()
 try {
   // ---------- 表 A：一条挂住不动的请求，按时间点检查三档 ----------
@@ -288,6 +375,81 @@ try {
       await context?.close()
     }
   }
+  // ---------- 表 C：#452 C4 首字等待期间切后台再回来 ----------
+  {
+    counter.value = 0
+    const rowCovers = ['F2-10']
+    console.log(`\n-- 表 C 首字等待期间切后台再回来（覆盖 ${rowCovers.join(' / ')}）`)
+    let context
+    try {
+      let release
+      const contentGate = new Promise((resolve) => {
+        release = resolve
+      })
+      mock.state.respond = async (_call, res) => {
+        await writeGatedAnswer(res, contentGate, { chunks: ['切后台回来后的', '回答继续流式上屏'] })
+      }
+      const opened = await openChat(mock)
+      context = opened.context
+      const page = opened.page
+      await sendChat(page, '等首字的时候切后台')
+      // ① 前置：5s 档已经出现（没有提示就谈不上「提示卡不卡住」）
+      expect(
+        await waitFor(page, async () => /已等待 \d+s/.test(await bodyText(page)), 15_000),
+        'F2-10 首字等待 5s 档出现提示'
+      )
+      const beforeHidden = await elapsedSeconds(page)
+      expect(beforeHidden >= 5, `F2-10 切后台前已等待 ${beforeHidden}s（≥5s 才进入分级提示）`)
+      // ② 切到后台：提示不许消失，秒数也不许被重算
+      await setVisibility(page, 'hidden')
+      await page.waitForTimeout(1_500)
+      expect(/已等待 \d+s/.test(await bodyText(page)), 'F2-10 切到后台后等待提示仍在（不是白板 / 卡死）')
+      const whileHidden = await elapsedSeconds(page)
+      expect(
+        whileHidden >= beforeHidden,
+        `F2-10 后台期间秒数继续累计（切前 ${beforeHidden}s → 后台 ${whileHidden}s，没有归零）`
+      )
+      // ③ 回到前台：提示不卡住、计时不重复
+      await setVisibility(page, 'visible')
+      await page.waitForTimeout(400)
+      const afterReturn = await elapsedSeconds(page)
+      expect(
+        afterReturn >= whileHidden,
+        `F2-10 回到前台秒数不回退（后台 ${whileHidden}s → 前台 ${afterReturn}s）`
+      )
+      expect(
+        /正在连接上游，等待响应|已连接，等待模型首字|服务响应较慢/.test(await bodyText(page)),
+        'F2-10 回到前台后阶段提示仍在（不卡成空白，也不从头计时）'
+      )
+      // ④ 回前台后内容照常流式到达并收尾
+      release()
+      expect(
+        await waitForText(page, '切后台回来后的', 20_000),
+        'F2-10 回到前台后第一块正文正常上屏'
+      )
+      expect(
+        await waitForText(page, '回答继续流式上屏', 20_000),
+        'F2-10 回到前台后流式继续到收尾（后台没有把这一轮弄丢）'
+      )
+      expect(
+        await waitFor(page, async () => !/已等待 \d+s/.test(await bodyText(page)), 10_000),
+        'F2-10 收到正文后等待提示撤下（不残留）'
+      )
+      expect(
+        await waitFor(page, async () => (await page.getByRole('button', { name: SEND_BUTTON }).count()) > 0, 10_000),
+        'F2-10 收尾后回到可发送态'
+      )
+      expect(
+        mock.state.chatCalls.length === 1,
+        `F2-10 切后台 / 回前台不重发请求（回答请求 ${mock.state.chatCalls.length} 次）`
+      )
+      console.log(`   表 C：${counter.value} 条断言通过（覆盖 ${rowCovers.join(' / ')}）`)
+    } catch (error) {
+      bad(`表 C 用例异常：${error instanceof Error ? error.message : String(error)}`)
+    } finally {
+      await context?.close()
+    }
+  }
 } finally {
   await browser.close()
   await server.close()
@@ -299,5 +461,5 @@ try {
     }
     process.exit(1)
   }
-  console.log(`\nPASS ${name}（表 A 3 行 = F2-10 三档；表 B 3 行 = F2-11 折叠/展开/隐藏）`)
+  console.log(`\nPASS ${name}（表 A 3 行 = F2-10 三档；表 B 3 行 = F2-11 折叠/展开/隐藏；表 C 1 行 = #452 C4 切后台再回来）`)
 }

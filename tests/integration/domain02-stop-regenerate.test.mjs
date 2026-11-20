@@ -8,18 +8,22 @@
 // 所以这一条的**核心**就是：真的点上停止、真的点重新生成、真的切回上一版。
 //
 // 覆盖功能点：
-//   F2-03 生成中停止（2 行：流到一半停 / 首字未到就停 + 停止后会话仍可用）
+//   F2-03 生成中停止（3 行：流到一半停 / 首字未到就停 / **停止后立刻重发** + 停止后会话仍可用）
 //   F2-04 重新生成（3 行：停止后重新生成 / 完整回答后重新生成 / 连点两次三个版本）
 //   F2-02 流式逐字渲染（停止前断言「已收到的正文已经在 DOM 上」，而不是等整段）
+//
+// Issue #452 C2（取消后立即重发）加在第 7 行 A4：上一轮被 abort 的请求不能污染新回答 ——
+// 旧流迟到的块不许追加到新回答、旧的 abort 信号不许把新请求掐掉、两条消息不许串。
 //
 // 上传用的是本机 mock 上游（tests/fixtures/domain01-02/mock-upstream.mjs）：
 // `page.route` + `route.fulfill` 是一次性把整段 SSE 塞进去，造不出「正在流」的中间态，
 // 而「正在流」正是这一格的前提。
 //
-// 行（表驱动，6 行 = 2 组 × 3）：
+// 行（表驱动，7 行 = 2 组 × 3 + #452 C2）：
 //   A1 流到一半点停止        → F2-03 / F2-02
 //   A2 首字未到就点停止      → F2-03
 //   A3 停止后同一会话再发一条 → F2-03
+//   A4 停止后**立刻**重发     → F2-03 / F2-02（#452 C2：旧流不污染新回答）
 //   B1 停止后点重新生成      → F2-04 / F2-03
 //   B2 完整回答后重新生成    → F2-04
 //   B3 连续两次重新生成      → F2-04
@@ -253,6 +257,60 @@ const ROWS = [
     },
   },
   {
+    id: 'A4 停止后立刻重发（旧流不污染新回答）',
+    covers: ['F2-03', 'F2-02'],
+    async setup(mock) {
+      mock.state.respond = async (call, res) => {
+        if (call === 1) {
+          // 第一轮：吐一块之后挂住。第二块与「点停止」几乎同时到达 —— 就是「旧流迟到的块」。
+          await writePartialThenHang(res, { chunks: ['旧流的第一句', '旧流的迟到内容'] })
+          return
+        }
+        await writeStream(res, { chunks: ['新回答的', '完整内容'] })
+      }
+    },
+    async run(page, mock) {
+      await sendChat(page, '第一问')
+      expect(
+        await waitFor(page, async () => (await page.getByRole('button', { name: STOP_BUTTON }).count()) > 0, 10_000),
+        'F2-03 生成中给出「停止生成」按钮'
+      )
+      expect(
+        await waitFor(page, async () => (await answerText(page)).includes('旧流的第一句'), 10_000),
+        'F2-02 停止前第一块正文已上屏'
+      )
+      // 点停止之后**立刻**发下一条：不等待、不刷新（这正是「取消后立即重发」）
+      await page.getByRole('button', { name: STOP_BUTTON }).first().click()
+      await sendChat(page, '第二问')
+      expect(
+        await waitForText(page, '完整内容', 20_000),
+        'F2-03 取消后立刻重发，新回答完整上屏（没被上一次的 abort 掐掉）'
+      )
+      await page.waitForTimeout(600)
+      const bubbles = page.locator('.ds-assistant-message-main-content')
+      const count = await bubbles.count()
+      expect(count === 2, `F2-02 两条助手消息各就各位（实际 ${count} 条）`)
+      const firstText = count >= 1 ? (await bubbles.nth(0).innerText()).replace(/\s+/g, ' ').trim() : ''
+      const secondText = count >= 2 ? (await bubbles.nth(1).innerText()).replace(/\s+/g, ' ').trim() : ''
+      // F2-02 不串消息：旧流的迟到内容不许出现在新回答里，新回答也不许回流到上一条
+      expect(!secondText.includes('旧流'), 'F2-02 旧流的迟到内容没有串进新回答')
+      expect(secondText.includes('新回答的') && secondText.includes('完整内容'), 'F2-02 第二条是新请求的回答')
+      expect(!firstText.includes('新回答的'), 'F2-02 新回答没有串回上一条（消息不串）')
+      expect(firstText.includes('旧流的第一句'), 'F2-03 被停下的那条仍保留自己已收到的内容')
+      // 旧 abort 信号没有被新请求复用：新请求自己正常收尾，界面回到可发送态
+      expect(
+        await waitFor(page, async () => (await page.getByRole('button', { name: SEND_BUTTON }).count()) > 0, 10_000),
+        'F2-03 新回答正常收尾后回到可发送态'
+      )
+      expect(
+        mock.state.chatCalls.length === 2,
+        `F2-03 停下 1 次 + 重发 1 次 = 2 次回答请求（实际 ${mock.state.chatCalls.length} 次）`
+      )
+      const text = await bodyText(page)
+      expect(!/连接中断|未知错误/.test(text), 'F2-03 取消后重发不冒断流 / 未知错误提示')
+    },
+  },
+  {
     id: 'B1 停止后点重新生成',
     covers: ['F2-03', 'F2-04'],
     async setup(mock) {
@@ -402,5 +460,5 @@ try {
     }
     process.exit(1)
   }
-  console.log(`\nPASS ${name}（6 行 = 2 组 × 3：F2-03 停止 3 行 / F2-04 重新生成 3 行）`)
+  console.log(`\nPASS ${name}（7 行 = F2-03 停止 4 行（含 #452 C2 取消后立刻重发）/ F2-04 重新生成 3 行）`)
 }
