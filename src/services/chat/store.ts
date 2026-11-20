@@ -9,6 +9,9 @@ import {
 } from '../api/errors.js'
 import { classifyKeyFailure } from '../api/keyFailure.js'
 import { cancelUpload, describeUploadError, uploadAttachment, useUploads } from '../attachments.js'
+// #480 §7：文档正文的文本注入（渠道能力表 + 附件读文本）；DeepSeek 官方不进这条路径
+import { docInjectionFor } from '../attachments/providerCapability.js'
+import { loadRequestDocuments } from '../attachments/requestDocs.js'
 import {
   captureStateSnapshot,
   errorMeta,
@@ -1503,6 +1506,26 @@ const streamReply = async (sessionId: string, initial: AssistantMessage, request
         // 协议不支持思考（caps.thinking=false，由 reasoningParam 派生）时请求侧也不开，
         // 避免历史里带思考块回传
         const thinking = (initial.thinking ?? false) && spec.caps.thinking
+        /**
+         * 文档注入的素材（#480 §7）：只有**文本注入**渠道才读附件正文。
+         *
+         * DeepSeek 官方走原生文件能力（`textInjection: false`），这里一次都不读 ——
+         * `documents` 恒为 undefined，`buildMessageBody` 拿到的 messages 就是下面
+         * `toRequestBody()` 的产物，请求体与原路径逐字节相同。
+         *
+         * 收集范围：本轮提问 + 历史提问的附件。历史裁剪发生在 `toRequestMessages()`
+         * 内部，这里拿不到裁剪结果，所以按历史全量收集 —— 被裁掉的轮次所依赖的文档
+         * 恰恰还要靠这一轮带上（追问「第二章讲了什么」时正文不能丢）。重复的那几份
+         * 由 `injectDocuments()` 按 filename + sha256 去重，同一请求内只出现一次。
+         */
+        const documents = docInjectionFor(spec.kind).textInjection
+          ? await loadRequestDocuments([
+              ...prepared.history.flatMap((message) =>
+                message.role === 'user' ? message.files : []
+              ),
+              ...prepared.question.files,
+            ])
+          : undefined
         const { system, messages } = toRequestBody(
           toRequestMessages(
             prepared.history,
@@ -1525,6 +1548,7 @@ const streamReply = async (sessionId: string, initial: AssistantMessage, request
           thinking,
           search: initial.search ?? false,
           title: titleRequests.has(controller),
+          documents,
         })
         const events = streamMessage(getApiKey(), body, controller.signal, {
           // 只接「响应头到手」这一个时刻：首字与分段的间隔在下面的事件循环里记（要带字符数）

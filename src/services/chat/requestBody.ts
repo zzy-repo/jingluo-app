@@ -10,7 +10,13 @@
  * - 这里（service 层）只看 `REQUEST_GATES` 决定**字段发不发**；
  * - `api/openaiAdapter.ts` 只做协议翻译（`thinking` → `reasoning_effort` / `thinking:{type}`）；
  * - 两处都不自己判断渠道能力，能力只来自 `providers.ts` 的 `thinkingAvailable()`。
+ *
+ * #480 §7 追加的接线点：文档正文的文本注入（`injectDocuments`）。它同样只问
+ * `providerCapability.ts` 的能力表，不看协议 —— `textInjection: false`（DeepSeek 官方）
+ * 在 `withDocuments()` 里**第一行就早返回入参数组本身**，原路径连一次拷贝都不发生。
  */
+import { injectDocuments, type InjectDocument } from '../attachments/inject.js'
+import { docInjectionFor } from '../attachments/providerCapability.js'
 import { requestGates, type ProviderSpec } from '../api/providers.js'
 import type { CreateMessageRequest } from '../api/types.js'
 
@@ -42,6 +48,37 @@ export type MessageBodyInput = {
   search: boolean
   /** 本轮是否带自动起标题请求（gates.title 放行时才有意义） */
   title: boolean
+  /**
+   * 本轮要注入的附件正文（#480 §7）。**只有文本注入渠道会填它**：
+   * `chat/store.ts` 先问 `docInjectionFor(kind).textInjection`，为 false（DeepSeek 官方）
+   * 时根本不读附件、这里恒为 `undefined`。
+   */
+  documents?: InjectDocument[]
+}
+
+/**
+ * 文档注入的**唯一接线点**（#480 §7）。
+ *
+ * 两条路径泾渭分明：
+ * - `textInjection === false`（DeepSeek 官方：原生 `file_id` 能力）：**原样返回入参**，
+ *   不拷贝、不遍历、不改一个字符 —— 这条早返回就是「DeepSeek 路径零改动」的代码级保证；
+ * - `textInjection === true`（anthropic / openai / ours）：交给纯函数 `injectDocuments()`。
+ *
+ * 放在这里而不是 `injectDocuments()` 里：能力判断与「消息怎么拼」分开，
+ * 纯函数那边也保留了同一道闸（双保险），任何调用方都绕不过能力表。
+ */
+export const withDocuments = (
+  spec: ProviderSpec,
+  messages: CreateMessageRequest['messages'],
+  documents?: InjectDocument[]
+): CreateMessageRequest['messages'] => {
+  if (!docInjectionFor(spec.kind).textInjection) {
+    return messages
+  }
+  if (!documents || documents.length === 0) {
+    return messages
+  }
+  return injectDocuments(messages, documents, spec.kind)
 }
 
 /**
@@ -59,10 +96,12 @@ export const buildMessageBody = (
   const gates = requestGates(spec)
   // 渠道不支持思考时请求侧也不开，避免历史里带思考块回传（会 400）
   const thinking = input.thinking && gates.reasoning_param
+  // 文档注入（#480 §7）：不走注入的渠道拿到的是入参数组本身，其它字段与改动前逐字节一致
+  const messages = withDocuments(spec, input.messages, input.documents)
   return {
     model: input.model,
     system: input.system,
-    messages: input.messages,
+    messages,
     thinking: {
       type: thinking ? 'enabled' : 'disabled',
       // 真 Anthropic 协议开启 thinking 时必须给预算
