@@ -1234,5 +1234,3 @@ export const en = {
   attachMissing: 'This attachment record was cleaned up, so details are unavailable',
   attachLoading: 'Loading attachment details',
 } satisfies Record<keyof typeof zh, string>
-
-} satisfies Record<keyof typeof zh, string>
