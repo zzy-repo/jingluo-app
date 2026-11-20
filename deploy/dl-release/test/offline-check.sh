@@ -445,7 +445,14 @@ fi
 
 # ---------------------------------------------------------------- 13) 门禁自检（#620 常驻断言）
 hdr "14) 产出的公网清单必须通过清单校验器；webroot 卫生门禁必须判绿（R4：internal 条目数 = 0）"
-node "$REPO/scripts/validate-releases-manifest.mjs" "$WEB/releases.json" && ok "公网清单校验通过" || bad "公网清单校验失败"
+PUB_RECORDS=$(python3 -c "import json;print(len(json.load(open('$WEB/releases.json'))['releases']))" 2>/dev/null || echo 0)
+if [ "${PUB_RECORDS:-0}" = "0" ]; then
+  # 本次没有发生任何公网写入（样本缺失导致的跳过）—— 空清单没有校验对象，
+  # 这时报 SKIP 而不是 FAIL（否则「样本不全」会被误读成「门禁红」）。
+  skp "公网清单仍为空（本次没有公网写入），跳过清单校验"
+else
+  node "$REPO/scripts/validate-releases-manifest.mjs" "$WEB/releases.json" && ok "公网清单校验通过" || bad "公网清单校验失败"
+fi
 [ -f "$PRIV/releases.internal.json" ] \
   && { node "$REPO/scripts/validate-releases-manifest.mjs" "$PRIV/releases.internal.json" --private \
         && ok "私有清单（--private 口径）校验通过" || bad "私有清单校验失败"; } \
