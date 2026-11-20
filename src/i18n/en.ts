@@ -1000,4 +1000,81 @@ export const en = {
   updateManualDownload: 'Download the latest version manually',
   updateManualOpenFailed:
     'Could not open the download page inside the app. Try again later, or copy the diagnostics and send them to us.',
+  // ---------------------------------------------------------------------------
+  // Refactor key skeleton (prep for #487): sign-in/sign-up, account and consumption,
+  // card-key redemption, invites, email binding. Only new keys here; existing text above is untouched.
+  // These keys have no caller until the UI lands, which is expected and registered in
+  // scripts/check-i18n.mjs ORPHAN_BASELINE.
+  // ---------------------------------------------------------------------------
+
+  // Sign-in / sign-up (sub2api /api/v1/auth)
+  sub2authEmail: 'Email',
+  sub2authPassword: 'Password',
+  sub2authConfirmPassword: 'Confirm password',
+  sub2authLogin: 'Log in',
+  sub2authRegister: 'Sign up',
+  sub2authForgotPassword: 'Forgot password',
+  sub2authSendCode: 'Send verification code',
+  /** Countdown placeholder: {seconds} comes from the server cooldown, never hardcoded */
+  sub2authCodeSent: 'Code sent, resend in {seconds}s',
+  sub2authCodeInvalid: 'Incorrect verification code',
+  sub2authEmailInvalid: 'Invalid email address',
+  sub2authCredentialInvalid: 'Incorrect account or password',
+  sub2authLoginFailed: 'Login failed, try again',
+  sub2authNetworkError: 'Network error, check your network and retry',
+  sub2authLogout: 'Log out',
+  sub2authSwitchAccount: 'Switch account',
+  sub2authRegisterSuccess: 'Account created',
+  sub2authEmailVerifyRequired: 'Verify your email first',
+  sub2authTwoFactorHint: 'Two-factor authentication is on, enter the 6-digit code from your authenticator app',
+
+  // Account and consumption (dollar amounts are shown exactly as the backend returns them, never converted)
+  consumeBalance: '${amount}',
+  consumeBalanceApprox: 'About {amount}',
+  consumeQuota: 'Quota',
+  consumeUsage: 'Usage',
+  consumeUsageToday: 'Usage today',
+  consumeUsageMonth: 'Usage this month',
+  consumeCreateKey: 'Create Key',
+  consumeKeyList: 'Key list',
+  consumeKeyName: 'Key name',
+  consumeKeyExpiresAt: 'Expires at',
+  consumeKeyStatus: 'Status',
+  consumeKeyStatusActive: 'Enabled',
+  consumeKeyStatusInactive: 'Disabled',
+  consumeCopyKey: 'Copy Key',
+  consumeKeyCopied: 'Key copied',
+  consumeDeleteKey: 'Delete Key',
+  consumeDeleteConfirm: 'This cannot be undone. Delete this Key?',
+
+  // Card-key redemption (keeps the existing "card key" wording, see #482)
+  consumeRedeemTitle: 'Redeem card key',
+  consumeRedeemPlaceholder: 'Enter the card key',
+  consumeRedeemBusy: 'Redeeming…',
+  /** Used while checking the redeem history after a timeout: never invite a second submit */
+  consumeRedeemConfirming: 'Checking the redemption result, do not submit again',
+  consumeRedeemSuccess: 'Redeemed',
+  consumeRedeemFailed: 'Redemption failed, try again later',
+  consumeRedeemCodeUsed: 'This card key was already used',
+  consumeRedeemCodeInvalid: 'Invalid card key',
+
+  // Invites (sub2api aff; the invitation code can only be set once, at sign-up)
+  inviteTitle: 'My invites',
+  inviteCode: 'Invitation code',
+  inviteCopyCode: 'Copy invitation code',
+  inviteCount: 'Invited users',
+  inviteRebateBalance: 'Rebate balance',
+  inviteCodeAtRegister: 'Invitation code (optional)',
+  inviteCodeInvalid: 'Invalid invitation code',
+  inviteDisabled: 'Invites are not available',
+
+  // Email binding (sub2api account-bindings)
+  emailBindBind: 'Bind email',
+  emailBindChange: 'Change email',
+  emailBindUnbind: 'Unbind',
+  emailBindSendCode: 'Send verification code',
+  emailBindCodeSent: 'Code sent',
+  emailBindSuccess: 'Email bound',
+  emailBindUnbindSuccess: 'Email unbound',
+  emailBindFailed: 'Binding failed, try again later',
 } satisfies Record<keyof typeof zh, string>

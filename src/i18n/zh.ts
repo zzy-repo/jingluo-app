@@ -984,4 +984,80 @@ export const zh = {
     '这是 {time} 成功取到的版本列表（共 {count} 条）。当前连不上更新服务，列表可能已经过期。',
   updateManualDownload: '手动下载最新版',
   updateManualOpenFailed: '没能在 App 内打开下载页，请稍后再试，或复制诊断信息反馈给我们。',
+  // ---------------------------------------------------------------------------
+  // 重构词条骨架（#487 铺路）：登录注册 / 账户与消费 / 卡密兑换 / 邀请 / 邮箱绑定
+  // 只新增、不改上面的既有文案；语义依据 #482（支付与消费拆分）与 #484（sub2api 客户端约束）。
+  // 这批 key 在 UI 线落地前没有被引用是预期的，已登记到 scripts/check-i18n.mjs 的 ORPHAN_BASELINE。
+  // ---------------------------------------------------------------------------
+
+  // 登录注册（sub2api /api/v1/auth）
+  sub2authEmail: '邮箱',
+  sub2authPassword: '密码',
+  sub2authConfirmPassword: '确认密码',
+  sub2authLogin: '登录',
+  sub2authRegister: '注册',
+  sub2authForgotPassword: '忘记密码',
+  sub2authSendCode: '发送验证码',
+  /** 倒计时占位：{seconds} 由调用方按服务端冷却时间注入，不在代码里写死秒数 */
+  sub2authCodeSent: '验证码已发送，{seconds}s 后可重新发送',
+  sub2authCodeInvalid: '验证码错误',
+  sub2authEmailInvalid: '邮箱格式错误',
+  sub2authCredentialInvalid: '账号或密码错误',
+  sub2authLoginFailed: '登录失败，请重试',
+  sub2authNetworkError: '网络错误，请检查网络后重试',
+  sub2authLogout: '退出登录',
+  sub2authSwitchAccount: '切换账号',
+  sub2authRegisterSuccess: '注册成功',
+  sub2authEmailVerifyRequired: '需要先验证邮箱',
+  sub2authTwoFactorHint: '这个账号已开启两步验证，请输入验证器里的 6 位验证码',
+
+  // 账户与消费（金额按美元展示，后端给什么显示什么，不在客户端换算）
+  consumeBalance: '${amount}',
+  consumeBalanceApprox: '约合 {amount}',
+  consumeQuota: '额度',
+  consumeUsage: '用量',
+  consumeUsageToday: '今日用量',
+  consumeUsageMonth: '本月用量',
+  consumeCreateKey: '创建 Key',
+  consumeKeyList: 'Key 列表',
+  consumeKeyName: 'Key 名称',
+  consumeKeyExpiresAt: '过期时间',
+  consumeKeyStatus: '状态',
+  consumeKeyStatusActive: '启用',
+  consumeKeyStatusInactive: '停用',
+  consumeCopyKey: '复制 Key',
+  consumeKeyCopied: 'Key 已复制',
+  consumeDeleteKey: '删除 Key',
+  consumeDeleteConfirm: '删除后不可恢复，确认删除这个 Key 吗？',
+
+  // 卡密兑换（沿用「兑换卡密」措辞，见 #482 第三节）
+  consumeRedeemTitle: '兑换卡密',
+  consumeRedeemPlaceholder: '请输入卡密',
+  consumeRedeemBusy: '兑换中…',
+  /** 兑换超时后查历史补偿时用：不要让用户以为可以重复提交 */
+  consumeRedeemConfirming: '正在确认兑换结果，请不要重复提交',
+  consumeRedeemSuccess: '兑换成功',
+  consumeRedeemFailed: '兑换失败，请稍后重试',
+  consumeRedeemCodeUsed: '卡密已使用',
+  consumeRedeemCodeInvalid: '卡密无效',
+
+  // 邀请（sub2api aff；邀请关系只能在注册时一次填定）
+  inviteTitle: '我的邀请',
+  inviteCode: '邀请码',
+  inviteCopyCode: '复制邀请码',
+  inviteCount: '已邀请人数',
+  inviteRebateBalance: '返利余额',
+  inviteCodeAtRegister: '注册时填写邀请码（可选）',
+  inviteCodeInvalid: '邀请码无效',
+  inviteDisabled: '邀请功能未开放',
+
+  // 邮箱绑定（sub2api account-bindings）
+  emailBindBind: '绑定邮箱',
+  emailBindChange: '更换邮箱',
+  emailBindUnbind: '解绑',
+  emailBindSendCode: '发送验证码',
+  emailBindCodeSent: '验证码已发送',
+  emailBindSuccess: '绑定成功',
+  emailBindUnbindSuccess: '解绑成功',
+  emailBindFailed: '绑定失败，请稍后重试',
 } as const
