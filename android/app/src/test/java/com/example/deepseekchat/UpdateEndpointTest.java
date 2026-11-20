@@ -3,6 +3,7 @@ package com.example.deepseekchat;
 import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 import java.net.URL;
@@ -16,7 +17,10 @@ import org.junit.Test;
  * {@code download.*}），主机与端口由 base 解析。否则「换分发机只改一处」会被测试里的第二份
  * 字面量卡住 —— 那正是 #269 要消掉的失败模式。
  *
- * <p>纯 JVM 单测：不碰 android.*，不需要模拟器（{@code ./gradlew testDebugUnitTest}）。
+ * <p>Issue #639 新增两组规则，同样只从 BuildConfig / 常量取输入：私有下载端点
+ * （{@code /api/v1/releases/internal/download}）的放行与拒绝，以及下载请求头的白名单。
+ *
+ * <p>纯 JVM 单测：不碰 android.*，不需要模拟器（{@code ./gradlew testReleaseUnitTest}）。
  */
 public class UpdateEndpointTest {
 
@@ -122,5 +126,129 @@ public class UpdateEndpointTest {
         assertEquals("https", schemeOf(UpdateEndpoint.FALLBACK_BASE));
         // 白名单跟着 base 走：base 之外的主机一律拒绝（换机只改配置，规则不用改）
         assertFalse(allows("https://evil.test/apk/a.apk"));
+    }
+
+    // -----------------------------------------------------------------------
+    // Issue #639：私有下载端点（#621 的读端点）进白名单
+    // -----------------------------------------------------------------------
+
+    private static String privateUrl(String host, String query) {
+        return "https://" + host + UpdateEndpoint.PRIVATE_DOWNLOAD_PATH + query;
+    }
+
+    /** 正向对照：https + 分发机主机 + 固定路径 + 恰好一个裸文件名 → 放行。 */
+    @Test
+    public void allowsPrivateDownloadUrl() throws Exception {
+        assertTrue(allows(privateUrl(hostOf(UpdateEndpoint.FALLBACK_BASE), "?file=deepseek-chat-1.4.0-internal.apk")));
+        assertTrue(allows(privateUrl(hostOf(UpdateEndpoint.PRIMARY_BASE), "?file=a.apk")));
+        // 这条路径与公开路径是两条规则：私有 URL 带查询串仍然放行，公网 URL 带查询串仍然拒绝
+        assertFalse(allows(UpdateEndpoint.FALLBACK_BASE + "/apk/a.apk?file=a.apk"));
+    }
+
+    /** 负向对照：明文 / 第三方主机 / 别的路径 / 多余参数 / 路径成分 / 凭据 / 片段，一律拒绝。 */
+    @Test
+    public void rejectsUnsafePrivateDownloadUrls() throws Exception {
+        String fallback = hostOf(UpdateEndpoint.FALLBACK_BASE);
+        String primary = hostOf(UpdateEndpoint.PRIMARY_BASE);
+        String path = UpdateEndpoint.PRIVATE_DOWNLOAD_PATH;
+        int wrongPort = portOf(UpdateEndpoint.PRIMARY_BASE) == 8443 ? 8444 : 8443;
+        String[] rejected = {
+            // 明文 = 令牌裸奔（公开路径允许首选机的 http，私有路径不允许任何明文）
+            "http://" + fallback + path + "?file=a.apk",
+            "http://" + primary + ":" + portOf(UpdateEndpoint.PRIMARY_BASE) + path + "?file=a.apk",
+            // 第三方主机（含相似域名）
+            "https://evil.test" + path + "?file=a.apk",
+            "https://" + fallback + ".evil.test" + path + "?file=a.apk",
+            // 主机对、端口不对
+            "https://" + primary + ":" + wrongPort + path + "?file=a.apk",
+            // 别的路径（清单端点不是下载端点；下载端点多一层 /internal 也不行）
+            "https://" + fallback + "/api/v1/releases/internal?file=a.apk",
+            "https://" + fallback + path + "/extra?file=a.apk",
+            // 查询串形状
+            "https://" + fallback + path,
+            "https://" + fallback + path + "?file=",
+            "https://" + fallback + path + "?file=a.apk&x=1",
+            "https://" + fallback + path + "?name=a.apk",
+            "https://" + fallback + path + "?file=%2E%2E%2Fa.apk",
+            "https://" + fallback + path + "?file=sub%2Fa.apk",
+            "https://" + fallback + path + "?file=a.txt",
+            // 凭据与片段
+            "https://user:pass@" + fallback + path + "?file=a.apk",
+            "https://" + fallback + path + "?file=a.apk#x",
+        };
+        for (String url : rejected) assertFalse(url, allows(url));
+    }
+
+    // -----------------------------------------------------------------------
+    // Issue #639：下载请求头白名单
+    // -----------------------------------------------------------------------
+
+    /** 只认两枚头（大小写不敏感，返回白名单里的规范写法）。 */
+    @Test
+    public void allowsOnlyWhitelistedDownloadHeaders() {
+        assertEquals("X-DL-Token", UpdateEndpoint.canonicalDownloadHeader("X-DL-Token"));
+        assertEquals("X-DL-Token", UpdateEndpoint.canonicalDownloadHeader("x-dl-token"));
+        assertEquals("X-DL-Token", UpdateEndpoint.canonicalDownloadHeader("  X-DL-Token  "));
+        assertEquals("X-DL-Token", UpdateEndpoint.canonicalDownloadHeader(UpdateEndpoint.HEADER_PRIVATE_TOKEN));
+        assertEquals("Authorization", UpdateEndpoint.canonicalDownloadHeader("authorization"));
+        assertEquals("Authorization", UpdateEndpoint.canonicalDownloadHeader("AUTHORIZATION"));
+    }
+
+    /** 负向对照（#639 验收）：{@code X-Evil: 1} 只能拿到 null —— 调用方据此忽略并 warn。 */
+    @Test
+    public void ignoresNonWhitelistedDownloadHeaders() {
+        for (String name : new String[]{"X-Evil", "Accept", "Cookie", "X-DL-Token-Evil", "", "  ", "X-DL-Token "}) {
+            String canonical = UpdateEndpoint.canonicalDownloadHeader(name);
+            if (name.trim().equalsIgnoreCase("X-DL-Token")) {
+                assertEquals("X-DL-Token", canonical);
+            } else {
+                assertNull("这个头不该被放行：" + name, canonical);
+            }
+        }
+        assertNull(UpdateEndpoint.canonicalDownloadHeader(null));
+    }
+
+    /** 头值形状：非空、不超长、不含控制字符（挡 CRLF 头注入）。 */
+    @Test
+    public void rejectsUnsafeHeaderValues() {
+        assertTrue(UpdateEndpoint.isSafeDownloadHeaderValue("tok-639-not-a-real-token"));
+        assertTrue(UpdateEndpoint.isSafeDownloadHeaderValue("Bearer abc.def-ghi_jkl"));
+        assertFalse(UpdateEndpoint.isSafeDownloadHeaderValue(null));
+        assertFalse(UpdateEndpoint.isSafeDownloadHeaderValue(""));
+        assertFalse(UpdateEndpoint.isSafeDownloadHeaderValue("a\r\nX-Evil: 1"));
+        assertFalse(UpdateEndpoint.isSafeDownloadHeaderValue("a\nb"));
+        assertFalse(UpdateEndpoint.isSafeDownloadHeaderValue("a\rb"));
+        assertFalse(UpdateEndpoint.isSafeDownloadHeaderValue("a\u0000b"));
+        StringBuilder tooLong = new StringBuilder();
+        for (int index = 0; index <= UpdateEndpoint.MAX_HEADER_VALUE_LENGTH; index++) tooLong.append('a');
+        assertFalse(UpdateEndpoint.isSafeDownloadHeaderValue(tooLong.toString()));
+    }
+
+    // -----------------------------------------------------------------------
+    // Issue #639 §4：私有开关的构建期注入
+    // -----------------------------------------------------------------------
+
+    /**
+     * 开关自洽：**关着就一个字节都不发**（{@link UpdateEndpoint#privateManifestUrl()} 返回空串）；
+     * 开着则端点必须是 https、令牌非空、且端点主机属于两台分发机（否则原生下载白名单会拒）。
+     */
+    @Test
+    public void privateManifestGatingIsConsistent() throws Exception {
+        if (UpdateEndpoint.privateManifestEnabled()) {
+            assertTrue(UpdateEndpoint.privateManifestUrl().startsWith("https://"));
+            assertEquals(
+                    UpdateEndpoint.privateManifestUrl().endsWith("/api/v1/releases/internal"),
+                    true);
+            assertFalse(UpdateEndpoint.privateToken().isEmpty());
+            String host = new URL(UpdateEndpoint.privateManifestUrl()).getHost();
+            assertTrue(
+                    host,
+                    host.equals(hostOf(UpdateEndpoint.PRIMARY_BASE)) || host.equals(hostOf(UpdateEndpoint.FALLBACK_BASE)));
+        } else {
+            assertEquals("", UpdateEndpoint.privateManifestUrl());
+            assertTrue(
+                    "关着 = 端点或令牌至少缺一项（standard 变体两项都为空）",
+                    UpdateEndpoint.PRIVATE_MANIFEST_URL.isEmpty() || UpdateEndpoint.privateToken().isEmpty());
+        }
     }
 }

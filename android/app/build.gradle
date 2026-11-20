@@ -462,6 +462,74 @@ if (System.getenv('INTERNAL_BUILD') != null && updateVariant != (System.getenv('
 }
 
 // ---------------------------------------------------------------------------
+// 私有清单 / 私有包下载（Issue #639）：与 JS 侧 #622 **同源**——同一段
+// config/endpoints.json（update.privateManifest）+ 同一个环境变量（tokenEnv，默认 DL_PRIVATE_TOKEN）。
+//   update.privateManifest.enabled → BuildConfig.DL_PRIVATE_ENABLED（只有 internal 变体可能为 true）
+//   update.privateManifest.url     → BuildConfig.DL_PRIVATE_URL      （私有清单端点，完整路径）
+//   env(tokenEnv)                  → BuildConfig.DL_PRIVATE_TOKEN    （与 JS 注入的是同一枚令牌）
+//
+// standard 变体三项一律是空值：令牌随 internal 包分发是这个设计的固有代价（#622 §安全），
+// 它没有任何理由出现在 standard 产物里（那边连 buildConfigField 的字面量都为空串）。
+// enabled=false（默认）时整段按关闭注入 → 原生一个私有请求都不会发（#639 §4）。
+//
+// 为什么在 Android 侧也要 fail-fast：私有端点只在内测包里活着，配置错了的表现是「检查更新
+// 永远是已是最新」——那种假红比构建失败难查得多（同 #498 / #269 的理由）。
+// ---------------------------------------------------------------------------
+def privateSegment = (endpointsJson.update instanceof Map) ? endpointsJson.update.privateManifest : null
+def dlPrivateEnabled = false
+def dlPrivateUrl = ''
+def dlPrivateToken = ''
+if (privateSegment instanceof Map && privateSegment.enabled == true) {
+    // 形状校验与 rspack 的 privateManifestInjection 同口径：开关打开就必须能发出去
+    def privateProblems = []
+    def privateUrl = privateSegment.url?.toString()?.trim() ?: ''
+    if (!privateUrl) {
+        privateProblems << 'update.privateManifest.url 为空：enabled=true 时必须给出私有清单端点（分发机主机 + /api/v1/releases/internal，且走 TLS）'
+    } else {
+        // 只接受「协议://主机[:端口]/路径」这一种形状：拼进 Java 字符串字面量时不可能带引号 / 反斜杠
+        if (!(privateUrl ==~ ~/https?:\/\/[A-Za-z0-9.-]+(:\d{1,5})?(\/[A-Za-z0-9._~\/-]*)+/)) {
+            privateProblems << "update.privateManifest.url 必须是「协议://主机[:端口]/路径」的绝对 URL，不带凭据 / 查询串 / 片段：'${privateUrl}'"
+        } else {
+            def parsedPrivate = new URL(privateUrl)
+            def loopbackPrivate = parsedPrivate.host in ['127.0.0.1', 'localhost', '[::1]']
+            if (parsedPrivate.protocol != 'https' && !(parsedPrivate.protocol == 'http' && loopbackPrivate)) {
+                privateProblems << "update.privateManifest.url 必须是 https（令牌走请求头，明文等于把令牌交给中间人）：'${privateUrl}'"
+            }
+            def privateHosts = [new URL(dlPrimaryBase).host, new URL(dlFallbackBase).host]
+            if (!(parsedPrivate.host in privateHosts)) {
+                privateProblems << "update.privateManifest.url 的主机必须是分发机之一（${privateHosts.join(' / ')}）：'${parsedPrivate.host}'" +
+                    '——原生下载白名单只认这两台主机（UpdateEndpoint.allowsPrivateDownload），换主机就等于「读得到、下不了」'
+            }
+        }
+    }
+    def privateTokenEnv = privateSegment.tokenEnv?.toString()?.trim() ?: 'DL_PRIVATE_TOKEN'
+    if (!(privateTokenEnv ==~ /[A-Z_][A-Z0-9_]*/)) {
+        privateProblems << "update.privateManifest.tokenEnv 必须是环境变量名（大写字母 / 数字 / 下划线）：'${privateSegment.tokenEnv}'"
+    }
+    if (privateProblems) {
+        throw new GradleException("[dl] config/endpoints.json 的 update.privateManifest 段不合法：\n  - ${privateProblems.join('\n  - ')}")
+    }
+    if (updateVariant == 'internal') {
+        def token = (System.getenv(privateTokenEnv) ?: '').trim()
+        if (!token) {
+            throw new GradleException("[dl] update.privateManifest.enabled=true，但构建环境没有 ${privateTokenEnv}：" +
+                'internal 包必须带令牌才能读私有清单 / 下私有包（#639 §4）。standard 构建不受影响。')
+        }
+        if (!(token ==~ /[A-Za-z0-9._~+=\/-]{1,512}/)) {
+            throw new GradleException("[dl] ${privateTokenEnv} 的字符集不像分发令牌（只允许 A-Za-z0-9._~+=/-，长度 1~512）：拒绝写进 BuildConfig")
+        }
+        if (!privateUrl.startsWith('https://')) {
+            logger.warn("[dl] 私有端点是明文 http（回环联调）：原生侧会拒绝（令牌走请求头），只有 JS/Web 预览可用（#639）")
+        }
+        dlPrivateEnabled = true
+        dlPrivateUrl = privateUrl
+        dlPrivateToken = token
+    } else {
+        logger.warn('[dl] update.privateManifest.enabled=true，但本次构建变体是 standard：私有清单整段按关闭注入（#639 §4）')
+    }
+}
+
+// ---------------------------------------------------------------------------
 // 发布完整性防呆：debug 变体 + internal 变体标记 = 曾长期被当成发布包的那条路径。
 // debug 变体编译进 android:debuggable="true"，包可被 adb / run-as 读取私有数据
 // （1.0.0～1.4.0-beta.8 共 15 个已发布包都是这么出的，Issue #60）。
@@ -517,6 +585,11 @@ android {
         // 源码不留字面量。换分发机 = 改那份 JSON 一处 + 重打包（Issue #269）。
         buildConfigField "String", "DL_PRIMARY", "\"${dlPrimaryBase}\""
         buildConfigField "String", "DL_FALLBACK", "\"${dlFallbackBase}\""
+        // 私有清单 / 私有包下载（Issue #639）：与 JS 侧 #622 同源同一枚令牌，见文件顶部的
+        // update.privateManifest 段。standard 变体三项全是空值 —— 令牌与端点地址不进 standard 产物。
+        buildConfigField "boolean", "DL_PRIVATE_ENABLED", "${dlPrivateEnabled}"
+        buildConfigField "String", "DL_PRIVATE_URL", "\"${dlPrivateUrl}\""
+        buildConfigField "String", "DL_PRIVATE_TOKEN", "\"${dlPrivateToken}\""
         // 消费侧 / 支付侧（config/endpoints.json → BuildConfig，见文件顶部 #484 / #487 W1-A）
         buildConfigField "String", "CONSUME_BASE", "\"${consumeBase}\""
         buildConfigField "String", "PAY_BASE", "\"${payBase}\""

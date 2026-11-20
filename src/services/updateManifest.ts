@@ -439,6 +439,70 @@ export const loadManifest = async (
 ): Promise<UpdateRelease[]> => (await fetchManifest(signal, request)).rows
 
 // ---------------------------------------------------------------------------
+// 下载目标（Issue #639）：内测包只能从带令牌的私有下载端点取
+//
+// #601 把私有 APK 移出了公网 webroot，于是清单里那条相对 `apk/<名>.apk` 拼出来的公网地址
+// **一定 404**（实测，见 #639 的复现证据）。#621 为此开了带令牌的读端点
+// `GET …/api/v1/releases/internal/download?file=<名>`，形状由服务端钉死（`downloadUrl` 字段），
+// 客户端只认这一种。这里把「选中条目 → 真正的下载目标」收敛成**一个函数**：
+//   · 公网条目 → 原样拼在清单生效的 base 上（`releaseUrl`，规则一字不动）；
+//   · 私有条目（`artifactVariant === 'internal'`）→ 私有端点 + `X-DL-Token` 请求头。
+//
+// 为什么用变体判定而不是「这份清单是私有还是公网」：公网清单里**没有** internal 条目
+// （#614 的裁决，服务端 `POST /api/v1/release` 直接 400 拒收），所以「internal 条目 ⇒ 私有包」
+// 是这条链路上的恒等式。这样调用点不必知道清单来源，也就不必多加一条会漂移的旁路参数。
+//
+// 为什么下载地址写成「清单端点 + `/download`」而不是再抄一个路径字面量：#621 的两个路径同源
+// （`/api/v1/releases/internal` 与 `/api/v1/releases/internal/download`），而 `src/**` 里出现
+// `/api/**` 字面量本身就会被 `check:consume-api` 的 R3 判红（那张表是消费侧后端路径，不该为分发
+// 端点开洞）。所以这里只从构建期注入的清单端点派生，端点形状的唯一来源仍是 `config/endpoints.json`。
+//
+// 令牌纪律与 `fetchPrivateManifest` 相同：只从 `__ENDPOINTS__.update.privateManifest` 取、
+// 只进请求头，**不进 URL、不进日志、不进埋点**（本文件从不 import 诊断通道）。
+// ---------------------------------------------------------------------------
+
+/** 私有下载端点在清单端点上的后缀（相对 `update.privateManifest.url`，见 #621 的服务端契约） */
+export const PRIVATE_DOWNLOAD_SUFFIX = '/download'
+
+export interface DownloadTarget {
+  url: string
+  /** 只有私有端点才带（令牌请求头）；公网下载不带任何头 */
+  headers?: Record<string, string>
+}
+
+/**
+ * 把「选中的清单条目」翻成「交给原生 `download()` 的 URL（+ 白名单请求头）」。
+ *
+ * 私有条目的文件名严格取清单里的 `apk/<名>.apk` 里的裸 basename：服务端只收裸名
+ * （带任何路径成分都 400），这里也就**不给**它任何拼错的余地。拼不出合法名字 → 抛
+ * `INVALID_APK_URL`（与 `releaseUrl` 同一个短码，界面已有归类）。
+ */
+export const downloadTarget = (
+  release: UpdateRelease,
+  base: string = DEFAULT_RELEASE_BASE
+): DownloadTarget => {
+  const priv = release.artifactVariant === 'internal' ? privateManifestConfig() : undefined
+  if (!priv) {
+    return { url: releaseUrl(release.file, base) }
+  }
+  const name = /^apk\/([a-zA-Z0-9._-]+\.apk)$/.exec(release.file)?.[1]
+  if (!name) {
+    throw new Error('INVALID_APK_URL')
+  }
+  // 端点形状在构建期已校验（绝对 / https / 完整端点 / 不带查询串与凭据，见 rspack 的
+  // privateManifestInjection），这里只做运行期收窄：再确认一次协议，然后只加一个 file 参数。
+  const target = new URL(`${priv.url.replace(/\/+$/, '')}${PRIVATE_DOWNLOAD_SUFFIX}`)
+  if (target.protocol !== 'https:' && target.protocol !== 'http:') {
+    throw new Error('INVALID_APK_URL')
+  }
+  target.searchParams.set('file', name)
+  return {
+    url: target.href,
+    headers: { [PRIVATE_MANIFEST_TOKEN_HEADER]: priv.token },
+  }
+}
+
+// ---------------------------------------------------------------------------
 // 渠道选择的持久化（Issue #412 第 3 项）
 //
 // #309 的原始验收里有一条「切到『仅稳定版』后，选择要不要记住」，#310 只做了「切渠道自动重查」，

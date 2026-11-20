@@ -7,6 +7,7 @@ import android.content.pm.Signature;
 import android.net.Uri;
 import android.os.Build;
 import android.provider.Settings;
+import android.util.Log;
 import androidx.activity.result.ActivityResult;
 import androidx.core.content.FileProvider;
 import com.getcapacitor.JSObject;
@@ -28,9 +29,18 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
-/** Anonymous public APK transport only: never accepts headers, tokens, or arbitrary destinations. */
+/**
+ * 更新下载器。默认只做「匿名 + 白名单目标」的 APK 传输：地址由 {@link UpdateEndpoint} 校验，
+ * 请求头只有一份白名单（{@code X-DL-Token} / {@code Authorization}，Issue #639）——
+ * 下载器不是通用 HTTP 客户端，不让调用方决定发什么头、发到哪去。
+ *
+ * <p>内测包（internal 变体）走私有端点：清单从 {@code BuildConfig.DL_PRIVATE_URL} 取（令牌在
+ * {@code DL_PRIVATE_TOKEN}），包从同一台机器的 {@code /api/v1/releases/internal/download} 取。
+ * 令牌在构建期由同一份环境变量注入，**任何日志 / 异常消息 / 回传字段都不带它**（#639 验收）。
+ */
 @CapacitorPlugin(name = "AppUpdate")
 public class AppUpdatePlugin extends Plugin {
+    private static final String TAG = "AppUpdate";
     private static final long MAX_BYTES = 50L * 1024 * 1024;
     private final ExecutorService worker = Executors.newSingleThreadExecutor();
     private final AtomicReference<Transfer> active = new AtomicReference<>();
@@ -60,14 +70,29 @@ public class AppUpdatePlugin extends Plugin {
         } catch (Exception error) { call.reject("读取当前版本失败", "INSTALLED_VERSION"); }
     }
 
-    /** 按 {@link UpdateEndpoint#MANIFEST_BASES} 的固定顺序取清单：首个成功即生效，全失败才算失败。 */
+    /**
+     * 按 {@link UpdateEndpoint#MANIFEST_BASES} 的固定顺序取清单：首个成功即生效，全失败才算失败。
+     *
+     * <p>#639 起多一步：internal 包在构建期真的配了私有端点（{@code privateManifest.enabled=true}
+     * + 令牌）时，**先**读私有清单，失败**静默**回退公网 —— 与 JS 侧 #622 的纪律逐条对齐。
+     *
+     * <p>为什么这一步必须在原生侧做（而不是只靠 JS 的 {@code fetchManifest}）：公网
+     * {@code releases.json} 里按 #614 的裁决**没有** internal 条目，而 WebView 里的 fetch 又过不去
+     * 私有端点（该端点不返回 CORS 头，{@code OPTIONS} 直接 405）。于是「JS 选私有清单里的版本」
+     * 在真机上根本走不到 —— 私有一行必须由原生网络栈取回，这是 #639 复现出的第 4 处缺口。
+     */
     @PluginMethod
     public void manifest(PluginCall call) {
         worker.execute(() -> {
+            JSObject privateManifest = privateManifest();
+            if (privateManifest != null) {
+                call.resolve(privateManifest);
+                return;
+            }
             for (String base : UpdateEndpoint.MANIFEST_BASES) {
                 try {
                     JSObject result = new JSObject();
-                    result.put("body", fetchManifest(base));
+                    result.put("body", fetchManifest(UpdateEndpoint.manifestUrl(base), null));
                     // 回传生效的 base：清单里的 file 是相对路径，必须拼在「真的回了清单」的那台上，
                     // 否则回退到旧机后还拿新机域名拼，下载就是 404。
                     result.put("base", base);
@@ -79,12 +104,33 @@ public class AppUpdatePlugin extends Plugin {
         });
     }
 
-    private String fetchManifest(String base) throws Exception {
+    /**
+     * 私有清单（#639）。**任何失败都返回 null**（= 静默回退公网），不记日志、不把令牌写进任何
+     * 可见地方：私有端点的存在性与令牌有效性都不该出现在日志 / 界面里（#622 §安全）。
+     */
+    private JSObject privateManifest() {
+        if (!UpdateEndpoint.privateManifestEnabled()) return null;
+        try {
+            JSObject result = new JSObject();
+            result.put("body", fetchManifest(UpdateEndpoint.privateManifestUrl(), UpdateEndpoint.privateToken()));
+            // 私有包的相对 file 属于私有端点这台机器（与公网两台 base 同机，但不要靠巧合）
+            result.put("base", UpdateEndpoint.privateManifestBase());
+            return result;
+        } catch (Exception error) {
+            return null;
+        }
+    }
+
+    /** 取清单正文。{@code token} 非空时只作为 {@code X-DL-Token} 请求头发出去，绝不进异常消息。 */
+    private String fetchManifest(String url, String token) throws Exception {
         HttpURLConnection connection = null;
         try {
-            connection = (HttpURLConnection) new URL(UpdateEndpoint.manifestUrl(base)).openConnection();
+            connection = (HttpURLConnection) new URL(url).openConnection();
             connection.setInstanceFollowRedirects(false);
             connection.setConnectTimeout(15000); connection.setReadTimeout(15000);
+            if (token != null && !token.isEmpty()) {
+                connection.setRequestProperty(UpdateEndpoint.HEADER_PRIVATE_TOKEN, token);
+            }
             if (connection.getResponseCode() != 200) throw new Exception("MANIFEST_HTTP");
             java.io.ByteArrayOutputStream output = new java.io.ByteArrayOutputStream();
             try (InputStream input = connection.getInputStream()) {
@@ -162,6 +208,42 @@ public class AppUpdatePlugin extends Plugin {
         notifyListeners("downloadProgress", progress);
     }
 
+    /**
+     * 把调用方给的头写进连接（Issue #639）。**只有 {@link UpdateEndpoint#canonicalDownloadHeader}
+     * 认的两枚能过**（{@code X-DL-Token} / {@code Authorization}，大小写不敏感，统一按白名单里的
+     * 规范写法设置）；其它一律忽略并记一条 warn。
+     *
+     * <p>warn **只记头名**：值里可能就是令牌本身（#639 验收：令牌不得进日志）。同理，
+     * 值不合法时也只报头名，不回显内容。
+     *
+     * <p>为什么不让 JS 随便塞头：这个下载器只有一个用途。放行任意头等于给将来开一条
+     * 「带任意凭据向本机发请求」的通道，而这种东西一旦被写进某个调用点，没人会再回头审。
+     */
+    private void applyHeaders(PluginCall call, HttpURLConnection connection) {
+        JSObject headers;
+        try {
+            headers = call.getObject("headers");
+        } catch (Exception malformed) {
+            Log.w(TAG, "下载请求头不是对象，已忽略");
+            return;
+        }
+        if (headers == null) return;
+        java.util.Iterator<String> names = headers.keys();
+        while (names.hasNext()) {
+            String name = names.next();
+            String canonical = UpdateEndpoint.canonicalDownloadHeader(name);
+            if (canonical == null) {
+                Log.w(TAG, "下载请求头不在白名单内，已忽略：" + name);
+                continue;
+            }
+            if (!UpdateEndpoint.isSafeDownloadHeaderValue(headers.optString(name, ""))) {
+                Log.w(TAG, "下载请求头的值不合法，已忽略：" + canonical);
+                continue;
+            }
+            connection.setRequestProperty(canonical, headers.optString(name, ""));
+        }
+    }
+
     @PluginMethod
     public void download(PluginCall call) {
         String id = call.getString("id");
@@ -200,6 +282,7 @@ public class AppUpdatePlugin extends Plugin {
                 connection.setConnectTimeout(15000);
                 connection.setReadTimeout(15000);
                 connection.setRequestProperty("Accept-Encoding", "identity");
+                applyHeaders(call, connection);
                 if (transfer.cancelled) throw new Exception("CANCELLED");
                 if (connection.getResponseCode() != 200) throw new Exception("DOWNLOAD_HTTP");
                 long declared = connection.getContentLengthLong();

@@ -1,7 +1,7 @@
 import { Capacitor, registerPlugin, type PluginListenerHandle } from '@capacitor/core'
 import {
   DEFAULT_RELEASE_BASE,
-  releaseUrl,
+  downloadTarget,
   type ArtifactVariant,
   type UpdateRelease,
 } from './updateManifest.js'
@@ -22,6 +22,8 @@ export interface UpdateBridge {
   download(options: {
     id: string
     url: string
+    /** 白名单请求头（#639）：只有内测包带令牌头，公网下载不带任何头（头的名字只在 updateManifest.ts 里出现） */
+    headers?: Record<string, string>
     sha256: string
     size: number
     versionCode: number
@@ -74,10 +76,13 @@ export const downloadUpdate = async (
     if (signal.aborted) {
       throw new DOMException('Cancelled', 'AbortError')
     }
+    // 目标地址与请求头由 `downloadTarget` 一处决定（#639）：公网条目拼在「清单实际生效」的
+    // base 上（回退后不会拿错域名导致 404）；私有条目改走带令牌的私有下载端点。
+    const target = downloadTarget(release, base)
     const result = await bridge.download({
       id,
-      // 相对 file 拼在「清单实际生效」的 base 上，回退后不会拿错域名导致 404。
-      url: releaseUrl(release.file, base),
+      url: target.url,
+      ...(target.headers ? { headers: target.headers } : {}),
       sha256: release.sha256,
       size: release.size,
       versionCode: release.versionCode,
