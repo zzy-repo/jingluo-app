@@ -31,7 +31,7 @@
 | `src/components/settings/Settings.module.css:906`（`:908` `@supports (max-height:100dvh)` 里升 `100dvh`）、`:963`/`:965` `min(560px, …)`、`:935`/`:936` `.feedbackDialog` | 100vh 等于可视高度 | 4 | 低 | 已有兜底 |
 | `src/components/settings/AppUpdateField.module.css:21`/`:24`、`:33`/`:37` `vh` 与 `dvh` 分开写在 `@supports` 两侧（#13 的坑） | 100vh 等于可视高度 | 4 | 低 | 已有兜底 |
 | `src/app/App.module.css:104`/`:105` `height: var(--app-viewport-height, 100vh)` + `@supports` 升 `100dvh` | 100vh 等于可视高度 | 4 | 低 | 已有兜底 |
-| `src/components/chatInput/ChatInput.module.css:227`/`:228` `max-height: calc(var(--app-viewport-height, 100vh) - 120px)` + `@supports` | 100vh 等于可视高度 | 4 | 低 | 已有兜底 |
+| `src/components/chatInput/ChatInput.module.css:233`/`:234` `max-height: calc(var(--app-viewport-height, 100vh) - 120px)` + `@supports` | 100vh 等于可视高度 | 4 | 低 | 已有兜底 |
 | `src/components/settings/OursServices.module.css:49`/`:50`、`:242`/`:243` `calc(100vh - 48px)` + `@supports` 升 `100dvh` | 100vh 等于可视高度 | 4 | 低 | 已有兜底 |
 | `src/app/viewport.ts:122` `syncModalViewport` 用 `visualViewport` 写 `--modal-viewport-height`；`useMobileViewport` 只在输入聚焦时写 `--app-viewport-height` | 100vh 等于可视高度 | 4 | 低 | 已有兜底 |
 合计 17 行：**已有兜底 13 行 / 需动态验证 3 行 / 需探测 1 行 / 拆单 0 行**，风险 **高 0 / 中 3 / 低 14**。
