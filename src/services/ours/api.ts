@@ -31,7 +31,9 @@
  *     Key 只露尾 6 位，卡密只露尾 4 位；收款页地址只当作「要打开的链接」，不落日志。
  */
 
-import { maskCard, maskKey } from './mask.js'
+import { record, recordAction } from '../diagnostics/collector.js'
+import { buildMeta } from '../diagnostics/fields.js'
+import { maskCard, maskKey, maskTail } from './mask.js'
 
 export { maskCard, maskDeviceId, maskKey, maskTail } from './mask.js'
 
@@ -218,10 +220,32 @@ export type OursKeyProbe =
 
 /** 校验 Key：GET /api/balance + Authorization: Bearer <Key>，URL 里绝不带 Key */
 export const probeApiKey = async (apiKey: string, transport: OursTransport): Promise<OursKeyProbe> => {
+  const startedAt = Date.now()
   const key = apiKey.trim()
   const keyTail = key === '' ? '' : maskKey(key)
+  /** 日志里的 Key 尾号：4 位（`maskKey` 是界面用的 6 位，两处口径分开，谁也不许放宽） */
+  const logTail = key === '' ? 'none' : maskTail(key, 4)
+  /** 最近一次拿到 HTTP 状态码（拿不到就保持 undefined，绝不写 0 冒充） */
+  let httpStatus: number | undefined
+  /**
+   * 出口埋点（#312）：`valid / invalid / network / timeout / invalid-json` 五种结论必须能在
+   * 日志里分开 —— 界面上它们只差一个图标颜色，「Key 无效」和「服务不可达」靠口述是分不出来的。
+   * 503 与 401 都落到 `invalid`，所以再带上 `status`；Key 只留尾 4 位，原文不落库。
+   */
+  const settle = (probe: OursKeyProbe): OursKeyProbe => {
+    recordAction('nav', 'ours-key-probe', {
+      ...buildMeta({
+        stage: 'quota.balance',
+        durationMs: Date.now() - startedAt,
+        ...(httpStatus === undefined ? {} : { status: httpStatus }),
+      }),
+      result: probe.status,
+      'key.tail': logTail,
+    })
+    return probe
+  }
   if (key === '') {
-    return { status: 'invalid', keyTail }
+    return settle({ status: 'invalid', keyTail })
   }
   const result = await transport({
     method: 'GET',
@@ -231,16 +255,17 @@ export const probeApiKey = async (apiKey: string, transport: OursTransport): Pro
     followRedirects: false,
   })
   if (result.kind !== 'response') {
-    return { status: result.kind === 'timeout' ? 'timeout' : 'network', keyTail }
+    return settle({ status: result.kind === 'timeout' ? 'timeout' : 'network', keyTail })
   }
+  httpStatus = result.status
   const parsed = parseJson(result.text)
   if (!parsed.ok) {
-    return { status: 'invalid-json', keyTail }
+    return settle({ status: 'invalid-json', keyTail })
   }
   const body = asRecord(parsed.value)
   // 响应体里的 api_key 是打过码的（…013812）：仍然一律不读取、不返回、不落日志
   const valid = body?.valid === true
-  return { status: valid && isSuccessStatus(result.status) ? 'valid' : 'invalid', keyTail }
+  return settle({ status: valid && isSuccessStatus(result.status) ? 'valid' : 'invalid', keyTail })
 }
 
 // ------------------------------------------------------------------ 套餐
@@ -294,6 +319,33 @@ const parsePlan = (value: unknown): OursPlan | null => {
 
 /** 拉套餐：GET /api/plans（价格与积分以服务端为准，前端不写死） */
 export const fetchPlans = async (transport: OursTransport): Promise<OursPlansState> => {
+  const startedAt = Date.now()
+  /** 最近一次拿到 HTTP 状态码（连不上 / 超时没有状态码，就不写这个键） */
+  let httpStatus: number | undefined
+  /**
+   * 出口埋点（#312）：401 / 503 / 空列表 / JSON 坏在界面上全收敛成一句 `oursPlansFailed`，
+   * 只有日志能分开「套餐下架（empty）」与「真的拉失败了（error）」。失败另记一条 warning
+   * 带 `reason`（= 文案 key），这样「是哪种失败」不用再从 msg 里猜。
+   */
+  const settle = (state: OursPlansState): OursPlansState => {
+    const base = {
+      ...buildMeta({
+        stage: 'quota.plans',
+        durationMs: Date.now() - startedAt,
+        ...(httpStatus === undefined ? {} : { status: httpStatus }),
+      }),
+      result: state.status,
+    }
+    if (state.status === 'error') {
+      record('warning', 'warn', 'ours plans failed', { ...base, reason: state.messageKey })
+      return state
+    }
+    record('nav', 'info', 'ours plans fetched', {
+      ...base,
+      count: state.status === 'success' ? state.plans.length : 0,
+    })
+    return state
+  }
   const result = await transport({
     method: 'GET',
     url: `${OURS_API_BASE}/api/plans`,
@@ -302,24 +354,25 @@ export const fetchPlans = async (transport: OursTransport): Promise<OursPlansSta
     followRedirects: false,
   })
   if (result.kind !== 'response') {
-    return { status: 'error', messageKey: transportFailure(result) }
+    return settle({ status: 'error', messageKey: transportFailure(result) })
   }
+  httpStatus = result.status
   if (!isSuccessStatus(result.status)) {
-    return { status: 'error', messageKey: 'oursPlansFailed' }
+    return settle({ status: 'error', messageKey: 'oursPlansFailed' })
   }
   const parsed = parseJson(result.text)
   if (!parsed.ok) {
-    return { status: 'error', messageKey: 'oursPlansFailed' }
+    return settle({ status: 'error', messageKey: 'oursPlansFailed' })
   }
   const raw = asRecord(parsed.value)?.plans
   if (!Array.isArray(raw)) {
-    return { status: 'error', messageKey: 'oursPlansFailed' }
+    return settle({ status: 'error', messageKey: 'oursPlansFailed' })
   }
   const plans = raw
     .map(parsePlan)
     .filter((plan): plan is OursPlan => plan !== null && plan.enabled)
   // 空列表是「套餐已下架」这个正常状态，不是错误（#331）：别让界面读成「加载失败」
-  return plans.length === 0 ? { status: 'empty' } : { status: 'success', plans }
+  return settle(plans.length === 0 ? { status: 'empty' } : { status: 'success', plans })
 }
 
 // ------------------------------------------------------------------ 收款页（Issue #331）
@@ -350,6 +403,30 @@ export type OursPayLinkState =
  * 服务端不改（不加 CORS），所以「发请求」这件事只能留在原生侧。
  */
 export const fetchPayLink = async (transport: OursTransport): Promise<OursPayLinkState> => {
+  const startedAt = Date.now()
+  /** 最近一次拿到 HTTP 状态码（连不上 / 超时没有状态码，就不写这个键） */
+  let httpStatus: number | undefined
+  /**
+   * 出口埋点（#312）：这是「下单」这一步现在的唯一入口（#331 之后收款页地址现取、我们不再建单）。
+   * 打不开 / 地址不可信 / 通道 503 在界面都只变成一句提示，日志里必须能分开；
+   * 注意**不记收款页 URL**（带签名与金额，见文件头安全约束），只记结论与状态码。
+   */
+  const settle = (state: OursPayLinkState): OursPayLinkState => {
+    const base = {
+      ...buildMeta({
+        stage: 'quota.pay',
+        durationMs: Date.now() - startedAt,
+        ...(httpStatus === undefined ? {} : { status: httpStatus }),
+      }),
+      result: state.status,
+    }
+    if (state.status === 'error') {
+      record('warning', 'warn', 'ours pay link failed', { ...base, reason: state.messageKey })
+      return state
+    }
+    record('nav', 'info', 'ours pay link resolved', base)
+    return state
+  }
   const result = await transport({
     method: 'GET',
     url: payLinkUrl(),
@@ -358,24 +435,25 @@ export const fetchPayLink = async (transport: OursTransport): Promise<OursPayLin
     followRedirects: false,
   })
   if (result.kind !== 'response') {
-    return { status: 'error', messageKey: transportFailure(result) }
+    return settle({ status: 'error', messageKey: transportFailure(result) })
   }
+  httpStatus = result.status
   if (!isSuccessStatus(result.status)) {
-    return { status: 'error', messageKey: 'oursPayUnavailable' }
+    return settle({ status: 'error', messageKey: 'oursPayUnavailable' })
   }
   const parsed = parseJson(result.text)
   if (!parsed.ok) {
-    return { status: 'error', messageKey: 'oursPayUnavailable' }
+    return settle({ status: 'error', messageKey: 'oursPayUnavailable' })
   }
-  const record = asRecord(parsed.value)
-  if (record === null || record.ok !== true) {
-    return { status: 'error', messageKey: 'oursPayUnavailable' }
+  const body = asRecord(parsed.value)
+  if (body === null || body.ok !== true) {
+    return settle({ status: 'error', messageKey: 'oursPayUnavailable' })
   }
-  const url = readString(record, 'url').trim()
+  const url = readString(body, 'url').trim()
   if (!isOpenableCheckout(url)) {
-    return { status: 'error', messageKey: 'oursPayUnavailable' }
+    return settle({ status: 'error', messageKey: 'oursPayUnavailable' })
   }
-  return { status: 'ok', url, note: readString(record, 'note') }
+  return settle({ status: 'ok', url, note: readString(body, 'note') })
 }
 
 // ------------------------------------------------------------------ 卡密兑换
@@ -413,14 +491,55 @@ export const redeemCard = async (
   input: OursRedeemInput,
   transport: OursTransport
 ): Promise<OursRedeemResult> => {
+  const startedAt = Date.now()
   const cardNo = input.cardNo.trim()
   const cardTail = cardNo === '' ? '' : maskCard(cardNo)
+  /** 最近一次拿到 HTTP 状态码（连不上 / 超时没有状态码，就不写这个键） */
+  let httpStatus: number | undefined
+  /**
+   * 出口埋点（#312）：202（受理）/ 409（已用过）/ 404（卡不存在）/ 503（校验服务不可用）
+   * 在界面上是一句话，但含义完全不同 —— 用户付过钱之后的这一步必须留证据。
+   * `pending` 单独一个 result 值，不许并进 error（服务端受理不是失败）。
+   * 卡密只留尾 4 位；`request_id`（= 卡密原文）与 api_key 一个字都不落库。
+   */
+  const settle = (outcome: OursRedeemResult): OursRedeemResult => {
+    const base = {
+      ...buildMeta({
+        stage: 'quota.redeem',
+        durationMs: Date.now() - startedAt,
+        ...(httpStatus === undefined ? {} : { status: httpStatus }),
+        ...(outcome.kind === 'error'
+          ? { upstreamCode: outcome.code, retryable: outcome.retryable }
+          : {}),
+      }),
+      result: outcome.kind,
+      'card.tail': outcome.cardTail === '' ? 'none' : outcome.cardTail,
+    }
+    if (outcome.kind === 'error') {
+      record('warning', 'warn', 'ours redeem failed', base)
+    } else {
+      record('nav', 'info', outcome.kind === 'pending' ? 'ours redeem pending' : 'ours redeem done', base)
+    }
+    return outcome
+  }
   if (cardNo === '') {
-    return { kind: 'error', code: 'CARD_MISSING', messageKey: 'oursErrCardMissing', cardTail, retryable: false }
+    return settle({
+      kind: 'error',
+      code: 'CARD_MISSING',
+      messageKey: 'oursErrCardMissing',
+      cardTail,
+      retryable: false,
+    })
   }
   const key = input.apiKey.trim()
   if (key === '') {
-    return { kind: 'error', code: 'API_KEY_MISSING', messageKey: 'oursErrKeyMissing', cardTail, retryable: false }
+    return settle({
+      kind: 'error',
+      code: 'API_KEY_MISSING',
+      messageKey: 'oursErrKeyMissing',
+      cardTail,
+      retryable: false,
+    })
   }
   const result = await transport({
     method: 'POST',
@@ -431,34 +550,41 @@ export const redeemCard = async (
     followRedirects: false,
   })
   if (result.kind !== 'response') {
-    return {
+    return settle({
       kind: 'error',
       code: result.kind === 'timeout' ? 'TIMEOUT' : 'NETWORK',
       messageKey: transportFailure(result),
       cardTail,
       retryable: true,
-    }
+    })
   }
+  httpStatus = result.status
   const parsed = parseJson(result.text)
   const body = parsed.ok ? asRecord(parsed.value) : null
   // 业务码兼容两种信封：顶层 {code}（本服务）与 {error:{code}}（本机池那条链路）
   const code = readString(body, 'code') || readString(asRecord(body?.error), 'code')
   if (result.status === 202 || code === 'CREDIT_PENDING') {
-    return { kind: 'pending', cardTail }
+    return settle({ kind: 'pending', cardTail })
   }
   if (isSuccessStatus(result.status) && body !== null && body.ok === true) {
-    return { kind: 'success', points: readNumber(body, 'points') ?? 0, cardTail }
+    return settle({ kind: 'success', points: readNumber(body, 'points') ?? 0, cardTail })
   }
   if (!parsed.ok && isSuccessStatus(result.status)) {
-    return { kind: 'error', code: 'INVALID_RESPONSE', messageKey: 'oursErrInvalidResponse', cardTail, retryable: false }
+    return settle({
+      kind: 'error',
+      code: 'INVALID_RESPONSE',
+      messageKey: 'oursErrInvalidResponse',
+      cardTail,
+      retryable: false,
+    })
   }
-  return {
+  return settle({
     kind: 'error',
     code: code || `HTTP_${result.status}`,
     messageKey: messageKeyFor(code, result.status),
     cardTail,
     retryable: result.status >= 500,
-  }
+  })
 }
 
 /** 收款页地址只接受 https（App 内浏览器也只放行 https），其余一律当作「没有支付入口」 */

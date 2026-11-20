@@ -16,6 +16,9 @@
  *   - Key 只放 `Authorization` 头，URL 里只有 limit/offset/status；
  *   - 日志 / 错误原文里不出现完整 Key，卡号最多露后 4 位（`maskCardNo`）。
  */
+import { record } from '../diagnostics/collector.js'
+import { buildMeta } from '../diagnostics/fields.js'
+import type { LogMeta } from '../diagnostics/types.js'
 import { maskCard } from './mask.js'
 import { OURS_API_BASE, type OursHttpRequest, type OursTransport } from './api.js'
 import { httpTransport } from './transport.js'
@@ -405,45 +408,92 @@ export function fetchPurchases(params: FetchPurchasesParams): Promise<PurchasePa
  * 同上，但传输层与 base 可注入：单测用假 transport 断言「发了什么请求」，
  * 界面层只调 `fetchPurchases`（签名按 #158 规格，没有多余参数）。
  */
+/** 失败分类 → 日志字段：`reason` 是 PurchaseError.kind，`upstreamCode` 是服务端短码（有才写） */
+const purchaseFailureMeta = (error: unknown): LogMeta => {
+  if (error instanceof PurchaseError) {
+    return {
+      reason: error.kind,
+      ...(error.code === undefined || error.code === '' ? {} : { upstreamCode: error.code }),
+    }
+  }
+  return { reason: 'unknown' }
+}
+
 export async function fetchPurchasesVia(
   params: FetchPurchasesParams,
   transport: OursTransport,
   base: string = OURS_API_BASE
 ): Promise<PurchasePage> {
-  const apiKey = params.apiKey.trim()
-  if (apiKey === '') {
-    throw new PurchaseError('keyMissing', '还没有填写 API Key')
-  }
+  const startedAt = Date.now()
   const limit = clampPurchasesLimit(params.limit)
   const offset = clampPurchasesOffset(params.offset)
   const status = params.status === null || params.status === undefined ? null : normalizeStatus(params.status)
-  const request: OursHttpRequest = {
-    method: 'GET',
-    url: ordersUrl(base, limit, offset, status),
-    // Key 只在这里出现：请求头。URL 里只有 limit/offset/status（见 ordersUrl）。
-    headers: { Accept: 'application/json', Authorization: `Bearer ${apiKey}` },
-    timeoutMs: PURCHASES_TIMEOUT_MS,
-    followRedirects: false,
-  }
-  const result = await transport(request)
-  if (result.kind === 'timeout') {
-    throw new PurchaseError('timeout', '请求超时了，可以再试一次')
-  }
-  if (result.kind === 'network') {
-    throw new PurchaseError('network', '网络不可用，请检查网络后重试')
-  }
-  let parsed: unknown = null
+  /** 最近一次拿到 HTTP 状态码（没发出去 / 超时没有状态码，就不写这个键） */
+  let httpStatus: number | undefined
+  /**
+   * 出口埋点（#312）：记录页空白到底是「一单都没有」（count=0 且 total=0）还是「请求失败」
+   * （result=error + reason=PurchaseError.kind），只有日志能分开。
+   * `limit` / `offset` / `total` 一起给，才看得出「只拉了第一页」还是「服务端确实没有更多」。
+   * 这一层不透传缓存，`cacheHit` 恒 false（命中判定在上层弹层，那里有自己的埋点）。
+   */
+  const logMeta = (): LogMeta => ({
+    ...buildMeta({
+      stage: 'quota.orders',
+      durationMs: Date.now() - startedAt,
+      ...(httpStatus === undefined ? {} : { status: httpStatus }),
+    }),
+    source: 'purchases',
+    limit,
+    offset,
+    cacheHit: false,
+  })
   try {
-    parsed = JSON.parse(result.text) as unknown
-  } catch {
-    parsed = null
+    const apiKey = params.apiKey.trim()
+    if (apiKey === '') {
+      throw new PurchaseError('keyMissing', '还没有填写 API Key')
+    }
+    const request: OursHttpRequest = {
+      method: 'GET',
+      url: ordersUrl(base, limit, offset, status),
+      // Key 只在这里出现：请求头。URL 里只有 limit/offset/status（见 ordersUrl）。
+      headers: { Accept: 'application/json', Authorization: `Bearer ${apiKey}` },
+      timeoutMs: PURCHASES_TIMEOUT_MS,
+      followRedirects: false,
+    }
+    const result = await transport(request)
+    if (result.kind === 'timeout') {
+      throw new PurchaseError('timeout', '请求超时了，可以再试一次')
+    }
+    if (result.kind === 'network') {
+      throw new PurchaseError('network', '网络不可用，请检查网络后重试')
+    }
+    httpStatus = result.status
+    let parsed: unknown = null
+    try {
+      parsed = JSON.parse(result.text) as unknown
+    } catch {
+      parsed = null
+    }
+    if (result.status < 200 || result.status >= 300) {
+      throw errorFromResponse(result.status, readString(asRecord(parsed), ['code', 'error']).toUpperCase())
+    }
+    const page = parsePurchasePage(parsed, { limit, offset })
+    if (page === null) {
+      throw new PurchaseError('badResponse', '服务端返回的数据看不懂', { status: result.status })
+    }
+    record('nav', 'info', 'ours purchases fetched', {
+      ...logMeta(),
+      result: 'ok',
+      count: page.orders.length,
+      total: page.total,
+    })
+    return page
+  } catch (error) {
+    record('warning', 'warn', 'ours purchases failed', {
+      ...logMeta(),
+      result: 'error',
+      ...purchaseFailureMeta(error),
+    })
+    throw error
   }
-  if (result.status < 200 || result.status >= 300) {
-    throw errorFromResponse(result.status, readString(asRecord(parsed), ['code', 'error']).toUpperCase())
-  }
-  const page = parsePurchasePage(parsed, { limit, offset })
-  if (page === null) {
-    throw new PurchaseError('badResponse', '服务端返回的数据看不懂', { status: result.status })
-  }
-  return page
 }

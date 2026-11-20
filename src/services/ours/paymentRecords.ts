@@ -12,6 +12,8 @@
  *
  * 本文件是纯逻辑（不碰 DOM / Capacitor），Node 单测直接 import；localStorage 一律注入。
  */
+import { record } from '../diagnostics/collector.js'
+import { buildMeta } from '../diagnostics/fields.js'
 import type { OursMessageKey, OursTransport } from './api.js'
 import { OURS_API_BASE } from './api.js'
 import { maskCard } from './mask.js'
@@ -236,9 +238,44 @@ export const fetchPaymentRecords = async (
   storage?: OrderStorage | null,
   base: string = OURS_API_BASE
 ): Promise<PaymentRecordsResult> => {
+  const startedAt = Date.now()
+  /** 最近一次拿到 HTTP 状态码（没发出去 / 超时没有状态码，就不写这个键） */
+  let httpStatus: number | undefined
+  /**
+   * 出口埋点（#312）：`/api/orders` 这一条同时被「付款记录」与「购买记录」两个页面用，
+   * 只靠 `source` 区分。记录页空白 = 「没有单」还是「请求失败」，只有这条日志能回答；
+   * 失败时 `reason` 是错误码、`upstreamCode` 是服务端短码（UNAUTHORIZED / FORBIDDEN …）。
+   * Key 与单号一律不写；`cacheHit` 恒 false（本层不透传缓存）。
+   */
+  const settle = (outcome: PaymentRecordsResult): PaymentRecordsResult => {
+    const common = {
+      ...buildMeta({
+        stage: 'quota.orders',
+        durationMs: Date.now() - startedAt,
+        ...(httpStatus === undefined ? {} : { status: httpStatus }),
+      }),
+      source: 'payment-records',
+      cacheHit: false,
+    }
+    if (outcome.kind === 'ok') {
+      record('nav', 'info', 'ours payment records fetched', {
+        ...common,
+        result: 'ok',
+        count: outcome.data.orders.length,
+      })
+      return outcome
+    }
+    record('warning', 'warn', 'ours payment records failed', {
+      ...common,
+      result: 'error',
+      reason: outcome.messageKey,
+      upstreamCode: outcome.code,
+    })
+    return outcome
+  }
   const key = apiKey.trim()
   if (key === '') {
-    return { kind: 'error', code: 'API_KEY_MISSING', messageKey: 'oursErrKeyMissing' }
+    return settle({ kind: 'error', code: 'API_KEY_MISSING', messageKey: 'oursErrKeyMissing' })
   }
   const result = await transport({
     method: 'GET',
@@ -248,12 +285,13 @@ export const fetchPaymentRecords = async (
     followRedirects: false,
   })
   if (result.kind !== 'response') {
-    return {
+    return settle({
       kind: 'error',
       code: result.kind === 'timeout' ? 'TIMEOUT' : 'NETWORK',
       messageKey: result.kind === 'timeout' ? 'oursErrTimeout' : 'oursErrNetwork',
-    }
+    })
   }
+  httpStatus = result.status
   let parsed: unknown = null
   try {
     parsed = JSON.parse(result.text) as unknown
@@ -263,20 +301,20 @@ export const fetchPaymentRecords = async (
   if (result.status >= 200 && result.status < 300) {
     const data = parsePaymentRecords(parsed)
     if (data === null) {
-      return { kind: 'error', code: 'INVALID_RESPONSE', messageKey: 'oursErrInvalidResponse' }
+      return settle({ kind: 'error', code: 'INVALID_RESPONSE', messageKey: 'oursErrInvalidResponse' })
     }
     if (data.customerId !== null) {
       cacheCustomerId(data.customerId, storage)
     }
-    return { kind: 'ok', data }
+    return settle({ kind: 'ok', data })
   }
   const body = asRecord(parsed)
   const code = (readString(body, 'code') || `HTTP_${result.status}`).toUpperCase()
   if (code === 'UNAUTHORIZED' || result.status === 401) {
-    return { kind: 'error', code: 'UNAUTHORIZED', messageKey: 'oursErrUnauthorized' }
+    return settle({ kind: 'error', code: 'UNAUTHORIZED', messageKey: 'oursErrUnauthorized' })
   }
   if (code === 'FORBIDDEN' || result.status === 403) {
-    return { kind: 'error', code: 'FORBIDDEN', messageKey: 'oursErrForbidden' }
+    return settle({ kind: 'error', code: 'FORBIDDEN', messageKey: 'oursErrForbidden' })
   }
-  return { kind: 'error', code, messageKey: 'oursErrInvalidResponse' }
+  return settle({ kind: 'error', code, messageKey: 'oursErrInvalidResponse' })
 }

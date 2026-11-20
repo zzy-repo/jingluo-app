@@ -30,7 +30,10 @@
  *   - Key 只放 `Authorization` 头，URL 里只有 limit/offset/status/out_trade_no/card_no；
  *   - 错误信息里不出现完整 Key，卡号最多露后 4 位（掩码在界面层 `maskTrailCard`，这里不落原文到日志）。
  */
+import { record } from '../diagnostics/collector.js'
+import { buildMeta } from '../diagnostics/fields.js'
 import { OURS_API_BASE, type OursHttpRequest, type OursTransport } from './api.js'
+import { maskTail } from './mask.js'
 import { httpTransport } from './transport.js'
 
 // ------------------------------------------------------------------ 类型（界面依赖这些名字）
@@ -618,6 +621,19 @@ const errorFromResponse = (status: number, code: string): TrailError => {
 
 const isUnavailable = (status: number, code: string): boolean => status === 503 || code === 'UNAVAILABLE'
 
+/** 失败分类 → 日志字段：`reason` 是 TrailError.kind，`upstreamCode` 是服务端短码（有才写） */
+const trailFailureMeta = (error: unknown): Record<string, string | number | boolean> => {
+  if (error instanceof TrailError) {
+    return {
+      reason: error.kind,
+      retryable: error.retryable,
+      ...(error.status === undefined ? {} : { status: error.status }),
+      ...(error.code === undefined || error.code === '' ? {} : { upstreamCode: error.code }),
+    }
+  }
+  return { reason: 'unknown' }
+}
+
 /**
  * 发一次 GET 并把 body 解成 JSON；非 2xx 一律抛 `TrailError`。
  *
@@ -649,6 +665,13 @@ const requestParsed = async (
     }
     const code = readString(asRecord(payload), ['code', 'error']).toUpperCase()
     if (isUnavailable(result.status, code) && retryOnUnavailable && attempt === 0) {
+      // 轮次埋点（#312）：503 自动重试一次，日志里必须能看出「这次是第 2 轮才成/才败」，
+      // 否则「服务在维护」与「一直没数据」在时间线上分不开。
+      record('warning', 'warn', 'ours trail retrying after 503', {
+        ...buildMeta({ stage: 'quota.trail', attempt: attempt + 1, status: result.status }),
+        result: 'retry',
+        reason: code,
+      })
       continue
     }
     throw errorFromResponse(result.status, code)
@@ -684,16 +707,34 @@ export async function fetchTrailVia(
   transport: OursTransport,
   base: string = OURS_API_BASE
 ): Promise<TrailPage> {
-  const apiKey = requireKey(params.apiKey)
+  const startedAt = Date.now()
   const limit = clampTrailLimit(params.limit)
   const offset = clampTrailOffset(params.offset)
   const status = params.status === null || params.status === undefined ? null : normalizeStatus(params.status)
-  const payload = await requestParsed(trailUrl(base, limit, offset, status), apiKey, transport, true)
-  const page = parseTrailPage(payload, { limit, offset })
-  if (page === null) {
-    throw badResponse()
+  /**
+   * 出口埋点（#312）：支付时间线是「用户说的那笔单到底走到哪」的唯一入口。
+   * 空列表（count=0, total=0）与请求失败（result=error）必须能分开；503 自动重试的轮次
+   * 由 `requestParsed` 里那条 `retry` 日志回答。Key 与单号不写。
+   */
+  const logMeta = (extra: Record<string, string | number | boolean>) => ({
+    ...buildMeta({ stage: 'quota.trail', durationMs: Date.now() - startedAt }),
+    limit,
+    offset,
+    ...extra,
+  })
+  try {
+    const apiKey = requireKey(params.apiKey)
+    const payload = await requestParsed(trailUrl(base, limit, offset, status), apiKey, transport, true)
+    const page = parseTrailPage(payload, { limit, offset })
+    if (page === null) {
+      throw badResponse()
+    }
+    record('nav', 'info', 'ours trail fetched', logMeta({ result: 'ok', count: page.orders.length, total: page.total }))
+    return page
+  } catch (error) {
+    record('warning', 'warn', 'ours trail failed', logMeta({ result: 'error', ...trailFailureMeta(error) }))
+    throw error
   }
-  return page
 }
 
 /** 按单号查一笔（`GET {base}/api/order/trail?out_trade_no=`）；传输层与 base 可注入。 */
@@ -702,18 +743,31 @@ export async function fetchOrderTrailVia(
   transport: OursTransport,
   base: string = OURS_API_BASE
 ): Promise<TrailOrder> {
-  const apiKey = requireKey(params.apiKey)
-  const payload = await requestParsed(
-    orderTrailUrl(base, params.outTradeNo.trim()),
-    apiKey,
-    transport,
-    true
-  )
-  const order = parseTrailOrder(payload)
-  if (order === null) {
-    throw badResponse()
+  const startedAt = Date.now()
+  const outTradeNo = params.outTradeNo.trim()
+  /**
+   * 出口埋点（#312）：查单是支付链路里最常被问到的动作（「我买的这单到哪了」）。
+   * 单号只留尾 4 位（`maskTail`），`result` 记的是订单状态（created/paid/fulfilled/expired/failed），
+   * 失败时 `reason` 是 TrailError.kind（notFound / unauthorized / unavailable …）。
+   */
+  const logMeta = (extra: Record<string, string | number | boolean>) => ({
+    ...buildMeta({ stage: 'quota.order', durationMs: Date.now() - startedAt }),
+    'order.tail': outTradeNo === '' ? 'none' : maskTail(outTradeNo, 4),
+    ...extra,
+  })
+  try {
+    const apiKey = requireKey(params.apiKey)
+    const payload = await requestParsed(orderTrailUrl(base, outTradeNo), apiKey, transport, true)
+    const order = parseTrailOrder(payload)
+    if (order === null) {
+      throw badResponse()
+    }
+    record('nav', 'info', 'ours order trail fetched', logMeta({ result: 'ok', 'order.status': order.status }))
+    return order
+  } catch (error) {
+    record('warning', 'warn', 'ours order trail failed', logMeta({ result: 'error', ...trailFailureMeta(error) }))
+    throw error
   }
-  return order
 }
 
 /** 按卡号溯源（`GET {base}/api/card/trail?card_no=`）：这张卡怎么来的、被谁兑换了；传输层与 base 可注入。 */

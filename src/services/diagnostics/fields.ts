@@ -66,8 +66,17 @@ export type Stage =
   | 'update.check.select'
   | 'update.download'
   | 'update.install'
-  // 额度 / 卡密查询（链路尚未埋点，先定取值）
+  // 额度 / 卡密查询（旧取值，保留兼容）
   | 'quota.query'
+  // 支付 / 额度 / 卡密 / 发票链路（#312）：**一步一个 stage**，读日志时一眼看出停在哪一步
+  | 'quota.balance'
+  | 'quota.plans'
+  | 'quota.pay'
+  | 'quota.redeem'
+  | 'quota.cid'
+  | 'quota.orders'
+  | 'quota.trail'
+  | 'quota.order'
   // 反馈上传
   | 'feedback.upload'
   // 启动与渲染
@@ -94,6 +103,14 @@ export const STAGES: readonly Stage[] = [
   'update.download',
   'update.install',
   'quota.query',
+  'quota.balance',
+  'quota.plans',
+  'quota.pay',
+  'quota.redeem',
+  'quota.cid',
+  'quota.orders',
+  'quota.trail',
+  'quota.order',
   'feedback.upload',
   'app.launch',
   'ui.render',
@@ -548,6 +565,19 @@ const EXTRA_KEYS: readonly string[] = [
   'event',
   'correlationId',
   'result',
+  // #312：支付 / 额度 / 卡密链路的定位字段。
+  //   · 三个 `*.tail` 只存**打码后的尾部**（Key 4 位、卡密 4 位、单号 4 位，由 mask.ts 生成），
+  //     原文一个字符都不进日志 —— 尾号只用来和界面上的提示对号，不能反推出凭证；
+  //   · `limit` / `total` 是 `/api/orders` 的分页口径：没有它们就看不出「记录页空白」
+  //     到底是没数据（total=0）还是只拉了第一页（total>limit）。
+  // 键名最后一段故意落在 `tail` / `limit` / `total` 上：`key` / `token` / `card` 会被下面的
+  // SECRET_SEGMENTS 整条丢掉，所以名字里不能出现它们（见 hasSecretName）。
+  'key.tail',
+  'card.tail',
+  'order.tail',
+  'order.status',
+  'limit',
+  'total',
   // #314：i18n 缺 key 的上报字段。key 名本身是标识符（不是凭证），但 `key` 这个名字会命中
   // 下面的 SECRET_SEGMENTS 被整条丢掉，所以用 `i18nKey`；`locale` 只是语言标识；
   // `param` 只记占位符名字（`count` / `total`），不记参数值。
