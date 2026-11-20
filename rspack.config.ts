@@ -72,6 +72,36 @@ const endpoints = JSON.parse(readFileSync(new URL('./config/endpoints.json', imp
 }
 
 /**
+ * PDF 文本解析（Issue #480）：pdfjs 产物**不是**由打包器编译进来的（要经典 `<script src>` 才能过
+ * Chromium 79/83，见 src/services/attachments/parsers/pdfLoader.ts），所以这里做两件事：
+ *   1. 把 `pdfjs-dist` 的 `legacy/build/pdf.min.js`、`pdf.worker.min.js` 与 `cmaps/` 原样拷进
+ *      `static/pdfjs/`（`dist` 根下的静态目录；不放进 `static/js` 是因为语法门禁
+ *      `scripts/check-bundle-syntax.mjs` 扫的是 `static/js`，而这份产物的语法下限已由 #480 的
+ *      静态扫描 + 真机矩阵单独背书）；
+ *   2. 把「版本 + 静态路径」注入成 `__PDFJS_ASSET__`，运行期只从这一个常量读（换版本改 package.json）。
+ * 文件清单/目录名的唯一来源是 `config/pdfjs.json`。
+ */
+const pdfjsAsset = JSON.parse(readFileSync(new URL('./config/pdfjs.json', import.meta.url), 'utf8')) as {
+  packagePath: string
+  assetDir: string
+  script: string
+  worker: string
+  cmapsDir: string
+}
+
+/** pdfjs 版本以**实际安装的包**为准（单一来源是 package.json 的依赖版本），读不到时记 unknown */
+const readPdfjsVersion = (): string => {
+  try {
+    const manifest = JSON.parse(
+      readFileSync(new URL(`./${pdfjsAsset.packagePath}/package.json`, import.meta.url), 'utf8')
+    ) as { version?: string }
+    return manifest.version?.trim() ?? 'unknown'
+  } catch {
+    return 'unknown'
+  }
+}
+
+/**
  * 构建期注入的版本号优先级：环境变量 APP_VERSION > package.json 的 version。
  * 环境变量留给出包脚本（CI 传 tag 名）覆盖，本地构建直接吃 package.json —— 这是唯一权威来源。
  */
@@ -242,10 +272,36 @@ export const createConfig = ({
           timeoutMs: endpoints.pay.timeoutMs,
         },
       }),
+      // PDF 文本解析（#480）：版本 + 静态路径注入，运行期只读 __PDFJS_ASSET__（见 pdfLoader.ts）
+      __PDFJS_ASSET__: JSON.stringify({
+        version: readPdfjsVersion(),
+        assetDir: pdfjsAsset.assetDir,
+        script: pdfjsAsset.script,
+        worker: pdfjsAsset.worker,
+        cmapsDir: pdfjsAsset.cmapsDir,
+      }),
     }),
     buildInfoPlugin(internalBuild ? 'internal' : 'standard', appVersion, outputPath),
     new rspack.CopyRspackPlugin({
-      patterns: [{ from: path.resolve(root, 'LICENSE'), to: 'LICENSE', toType: 'file' }],
+      patterns: [
+        { from: path.resolve(root, 'LICENSE'), to: 'LICENSE', toType: 'file' },
+        // pdfjs 产物按原样进静态目录（不做语法降级：它是已降级过的 ES2018 UMD，见 pdfLoader.ts）
+        {
+          from: path.resolve(root, pdfjsAsset.packagePath, pdfjsAsset.script),
+          to: `${pdfjsAsset.assetDir}/${path.basename(pdfjsAsset.script)}`,
+          toType: 'file',
+        },
+        {
+          from: path.resolve(root, pdfjsAsset.packagePath, pdfjsAsset.worker),
+          to: `${pdfjsAsset.assetDir}/${path.basename(pdfjsAsset.worker)}`,
+          toType: 'file',
+        },
+        // 中文 PDF 的预定义 CMap（1.7 MB）：缺了取不到 CJK 文本，换不来就别省
+        {
+          from: path.resolve(root, pdfjsAsset.packagePath, pdfjsAsset.cmapsDir),
+          to: `${pdfjsAsset.assetDir}/${pdfjsAsset.cmapsDir}`,
+        },
+      ],
     }),
   ],
   performance: { hints: false },
