@@ -66,7 +66,7 @@ export type ConsumeErrorEnvelope = 'panel' | 'middleware' | 'gateway' | 'error_s
  * 文案 key（与 `src/i18n/zh.ts` / `en.ts` 的键一一对应）。
  *
  * **W1-C 负责把这些 key 补进两份 i18n**（本层只回 key，不拼文案、不碰 DOM）。
- * 语义按 #484 §4.4 的「新语义」列：USD 额度、卡密过期 ≠ 卡密已用、`LOCKED` 是「处理中」不是失败。
+ * 语义按 #484 §4.4 的「新语义」列：额度单位是元、卡密过期 ≠ 卡密已用、`LOCKED` 是「处理中」不是失败。
  */
 export type ConsumeMessageKey =
   | 'consumeErrUnknown'

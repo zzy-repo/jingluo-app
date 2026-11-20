@@ -2,7 +2,7 @@
  * API Key 管理（JWT 通道）—— Issue #484 §3.2，W1-A。
  *
  *   GET    /api/v1/keys          列表（分页：page / page_size / search / status / group_id / sort_*）
- *   POST   /api/v1/keys          创建（name* / group_id? / custom_key? / ip_* / quota(USD) / expires_in_days? …）
+ *   POST   /api/v1/keys          创建（name* / group_id? / custom_key? / ip_* / quota(元) / expires_in_days? …）
  *   GET    /api/v1/keys/:id      详情
  *   PUT    /api/v1/keys/:id      改名 / 停用 / 改额度（**没有 `key` 字段** → 换 Key 只能新建再删旧）
  *   DELETE /api/v1/keys/:id      删除
@@ -30,9 +30,9 @@ export type ConsumeApiKey = {
   /** 完整 Key（`sk-…`）：只许进 Authorization 头 / 安全存储，**永不进日志与 DOM 全文** */
   key: string
   status: 'active' | 'inactive' | string
-  /** 额度上限，单位 USD；0 = 不限 */
+  /** 额度上限，单位元（1 元 = 1 额度）；0 = 不限 */
   quota: number
-  /** 已用额度，单位 USD（注意：与 `/v1/usage` 的 `quota.used` 不是一回事） */
+  /** 已用额度，单位元（注意：与 `/v1/usage` 的 `quota.used` 不是一回事） */
   quotaUsed: number
   groupId?: number | null
   ipWhitelist?: string | null
@@ -66,7 +66,7 @@ export type ConsumeKeyQuery = {
   groupId?: number
 }
 
-/** 创建入参（`quota` 是 USD，`expires_in_days` 是天数；`custom_key` 只在确有需要时用） */
+/** 创建入参（`quota` 是元，`expires_in_days` 是天数；`custom_key` 只在确有需要时用） */
 export type ConsumeKeyCreateInput = {
   name: string
   groupId?: number

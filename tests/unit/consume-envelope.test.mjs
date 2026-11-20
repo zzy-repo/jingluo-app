@@ -371,7 +371,7 @@ test('[17] 本地实测 200：登录 / me / keys / 面板 usage 的字段名（�
   assert.ok(session.accessToken.length > 0, 'access_token 必须被解析出来（W1-B 就靠它）')
   assert.equal(session.user.email, 'qa-test@local.test')
   assert.equal(session.user.role, 'user')
-  assert.equal(typeof session.user.balance, 'number', 'balance 是 USD 数字')
+  assert.equal(typeof session.user.balance, 'number', 'balance 是数字（单位元，1 元 = 1 额度）')
   // 登录体里的 user 不带 identities（实测），绑定明细要另外读 /user/profile 或 /auth/me
   assert.equal(session.user.identities, undefined)
 
@@ -446,7 +446,7 @@ test('[19] 本地 /v1/usage 真实 200：与线上同样没有 rate_limits、quo
   const result = await getGatewayUsage(http)
   assert.equal(result.ok, true)
   assert.equal(result.data.isValid, true)
-  assert.equal(result.data.quota.limit, 1, 'quota.limit 来自创建 Key 时给的 1 USD')
+  assert.equal(result.data.quota.limit, 1, 'quota.limit 来自创建 Key 时给的 1 元额度')
   assert.equal(result.data.spent, 0, '新 Key 没消耗 → actual_cost 0')
   assert.equal(result.data.usageTotal.requests, 0)
 })

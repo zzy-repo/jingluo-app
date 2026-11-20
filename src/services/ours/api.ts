@@ -33,6 +33,7 @@
 
 import { record, recordAction } from '../diagnostics/collector.js'
 import { buildMeta } from '../diagnostics/fields.js'
+import { formatMoney, formatMoneyValue, formatYuan, pointsToYuan } from '../../utils/money.js'
 import { maskCard, maskKey, maskTail } from './mask.js'
 
 export { maskCard, maskDeviceId, maskKey, maskTail } from './mask.js'
@@ -185,28 +186,21 @@ const transportFailure = (result: Exclude<OursHttpResult, { kind: 'response' }>)
 const messageKeyFor = (code: string, status: number): OursMessageKey =>
   OURS_ERROR_KEYS[code] ?? OURS_STATUS_KEYS[status] ?? 'oursErrUnknown'
 
-// ------------------------------------------------------------------ 积分文案
-
-/** 积分数字：300 → "300"、3900 → "3,900"（千分位，不跟 locale 变），不含单位 */
-const formatPointAmount = (points: number): string =>
-  Math.trunc(Number.isFinite(points) ? points : 0)
-    .toString()
-    .replace(/\B(?=(\d{3})+(?!\d))/g, ',')
+// ------------------------------------------------------------------ 额度文案（元）
 
 /**
- * 积分文案：数字 + 单位，例：`formatPoints(300, t('oursPointsUnit'))` → zh「300 积分」/ en「300 points」。
+ * 额度文案（**元**口径）：例 `formatPoints(300, t('oursPointsUnit'))` → zh「3.00 元」/ en「3.00 CNY」。
  *
  * 单位**必须**由调用方从 i18n key `oursPointsUnit` 传入（Issue #94）：本模块是纯逻辑层，
- * 不读语言 store，也**不许**再在这里写死「积分」——写死过一次，en 语言下就上屏了中文。
- * 数值口径不变：只显示积分，**不做 points → 人民币折算**（Issue #75）：`/api/plans` 的实际口径不是
- * 「1 元 = 100 积分」（p1 = ¥0.10 / 300 积分），折算会给用户错误预期；人民币价格只在
- * 「套餐」处用后端下发的 price 展示。原来的 POINTS_PER_YUAN / pointsToYuan / formatYuan
- * 已随 #75 一并删除，别再拼回来。
+ * 不读语言 store，也**不许**再在这里写死「元」——写死过一次，en 语言下就上屏了中文。
+ *
+ * 数值口径（Issue #487 / 后端 8b12ab2）：**100 积分 = 1 元**，所以先把点数折算成元再上屏。
+ * 早前「只显示积分、不做折算」（#75）是「1 元 = 100 积分」还没被后端确认时的妥协；维护者现在
+ * 要求统一计量（1 元 = 1 额度，无 USD / 积分两套并列），旧口径作废。折算系数只有一处：
+ * `src/utils/money.ts` 的 `POINTS_PER_YUAN`。
  */
-export const formatPoints = (points: number, unit: string): string => {
-  const amount = formatPointAmount(points)
-  return unit === '' ? amount : `${amount} ${unit}`
-}
+export const formatPoints = (points: number, unit: string): string =>
+  unit === '' ? formatYuan(pointsToYuan(points)) : `${formatMoneyValue(pointsToYuan(points))} ${unit}`
 
 // ------------------------------------------------------------------ Key 校验
 
@@ -275,7 +269,7 @@ export type OursPlan = {
   name: string
   /** 价格（元）；格式化交给 formatPlanPrice */
   price: number
-  /** 套餐给的积分（1 元 = 100 积分） */
+  /** 套餐给的额度，单位是旧体系的「积分」（100 积分 = 1 元，见 utils/money.ts 的 pointsToYuan） */
   points: number
   currency: string
   enabled: boolean
@@ -291,13 +285,13 @@ export type OursPlansState =
   | { status: 'empty' }
   | { status: 'error'; messageKey: OursMessageKey }
 
-/** 价格文案：¥3.00 */
-export const formatPlanPrice = (plan: OursPlan): string =>
-  plan.currency === 'CNY' || plan.currency === ''
-    ? `¥${plan.price.toFixed(2)}`
-    : `${plan.price.toFixed(2)} ${plan.currency}`
+/**
+ * 价格文案：`¥3.00`。币种按后端下发的 `currency` **按值渲染**（`CNY`→`¥`，认不得的退化成
+ * `3.00 ABC`），符号映射只在 `src/utils/money.ts` 的 `CURRENCY_SYMBOLS` 里写一份。
+ */
+export const formatPlanPrice = (plan: OursPlan): string => formatMoney(plan.price, plan.currency)
 
-/** 套餐副标题：`¥3.00 · 300 积分` / `¥3.00 · 300 points`（单位从 i18n 传入，见 formatPoints） */
+/** 套餐副标题：`¥3.00 · 3.00 元` / `¥3.00 · 3.00 CNY`（单位从 i18n 传入，见 formatPoints） */
 export const formatPlanMeta = (plan: OursPlan, unit: string): string =>
   `${formatPlanPrice(plan)} · ${formatPoints(plan.points, unit)}`
 

@@ -563,8 +563,8 @@ export const zh = {
   oursClaimUseKey: '改用服务端下发的 Key {tail}',
   // 额度
   oursQuotaTitle: '剩余额度',
-  /** 积分单位（#94）：由 services/ours/api.ts 的 formatPoints 拼接，别在代码里写死中文 */
-  oursPointsUnit: '积分',
+  /** 金额单位（#94 / #487）：元口径（1 元 = 1 额度，无 USD），由 services/ours/api.ts 的 formatPoints 拼接，别在代码里写死中文 */
+  oursPointsUnit: '元',
   oursQuotaValue: '{points}',
   oursQuotaAction: '刷新额度',
   oursQuotaLoading: '查询中…',
@@ -583,8 +583,8 @@ export const zh = {
   oursInviteOk: '绑定成功，+{points}',
   oursInviteShapeHint: '邀请码是 4–16 位字母或数字',
   oursInviteNeedsClaim: '先领取凭据，再显示你的邀请码',
-  // #234：线上规则改成「只给邀请人发积分」，被邀请人填码只建立关系（reward_points: 0），
-  // 所以成功文案不再报「获得 X 积分」；规则数值一律取服务端 invite_rules，前端不写死金额
+  // #234：线上规则改成「只给邀请人发额度」，被邀请人填码只建立关系（reward_points: 0），
+  // 所以成功文案不再报「获得 X 额度」；规则数值一律取服务端 invite_rules，前端不写死金额
   oursInviteBound: '邀请关系已绑定',
   oursInviteRuleInviter: '邀请人得 {points}',
   oursInviteRuleInvitee: '被邀请人得 {points}',
@@ -617,7 +617,7 @@ export const zh = {
   oursKeyProbeTimeout: 'Key 校验超时',
   // 安全
   oursSecurityTitle: '安全说明',
-  oursSecurityNotice: '邀请与额度服务走明文 HTTP，只传设备码和积分；支付与卡密走 HTTPS。公共网络下请留意。',
+  oursSecurityNotice: '邀请与额度服务走明文 HTTP，只传设备码和额度；支付与卡密走 HTTPS。公共网络下请留意。',
   // 邀请服务错误码
   oursInviteErrDeviceNotFound: '服务端没有这个设备码的记录，请点「领取 / 重新领取」',
   oursInviteErrInvalidCode: '邀请码无效，请核对后重试',
@@ -686,7 +686,7 @@ export const zh = {
   oursErrCardMissing: '请输入卡密',
   oursErrKeyMissing: '请先领取或填写 Key',
   oursErrKeyInvalid: 'Key 无效，请重新领取或填写',
-  oursErrVerifyUnavailable: '积分服务暂时不可用，请稍后重试',
+  oursErrVerifyUnavailable: '额度服务暂时不可用，请稍后重试',
   oursErrRateLimited: '请求过于频繁，请稍后重试',
   oursErrPlanNotFound: '套餐不存在',
   oursErrPlanMissing: '请先选择套餐',
@@ -741,7 +741,7 @@ export const zh = {
     '把本机这把 Key 的额度按「新人赠送 + 累计奖励」重新算一遍。服务端只会原地重置额度，通常不会换发新的 Key 字符串；Key 本身继续可用，其它客户端不受影响。',
   oursRotateConfirmTitle: '确认重置额度？',
   oursRotateConfirmBody:
-    '重置会把当前 Key 的额度重算为「新人赠送 + 累计奖励」，已用掉的积分不再占用额度。Key 本身不变（还是本机这一把），不会让其它客户端掉线，也不需要重新填写 Key。',
+    '重置会把当前 Key 的额度重算为「新人赠送 + 累计奖励」，已用掉的额度不再重复占用。Key 本身不变（还是本机这一把），不会让其它客户端掉线，也不需要重新填写 Key。',
   oursRotateConfirmOk: '确认重置',
   oursRotateConfirmCancel: '取消',
   oursRotateBusy: '重置中…',
@@ -921,7 +921,7 @@ export const zh = {
   oursTrailExpiredHint: '订单已关闭，但 24 小时内付款会自动补发卡密；可复制订单号找客服核对。',
   oursTrailWaitingCard: '已付款，正在准备卡密，通常几秒内完成。',
   oursTrailCardLabel: '卡密',
-  oursTrailCardPoints: '积分',
+  oursTrailCardPoints: '元',
   oursTrailCardKeyTail: '兑换 Key 尾号',
   oursTrailCardRedeemed: '已兑换',
   oursTrailCardNotRedeemed: '还没兑换',
@@ -942,7 +942,7 @@ export const zh = {
   oursTrailEventNotifyOk: '收到支付平台通知',
   oursTrailEventPaidConfirmed: '支付已确认',
   oursTrailEventCardIssued: '已发放卡密',
-  oursTrailEventCardRedeemed: '卡密已兑换，积分已入账',
+  oursTrailEventCardRedeemed: '卡密已兑换，额度已入账',
   oursTrailEventOrderExpired: '订单超时未支付，已关闭',
   oursTrailEventLateRecovered: '关闭后收到付款，已补发卡密',
   oursTrailEventWaitingStock: '已付款，正在准备卡密',
@@ -1019,9 +1019,9 @@ export const zh = {
   accountConsumeTabQuota: '我的额度',
   accountConsumeTabAccount: '账号',
 
-  // 账户与消费（金额按美元展示，后端给什么显示什么，不在客户端换算）
-  consumeBalance: '${amount}',
-  consumeBalanceApprox: '约合 {amount}',
+  // 账户与消费（金额单位是元：1 元 = 1 额度，无 USD；展示走 utils/money.ts，客户端不做汇率）
+  consumeBalance: '¥{amount}',
+  consumeBalanceApprox: '约合 ¥{amount}',
   consumeQuota: '额度',
   consumeUsage: '用量',
   consumeUsageToday: '今日用量',
@@ -1074,8 +1074,8 @@ export const zh = {
   // 写文案的三条规矩（#484 §4.4 的语义口径）：
   //   · 说人话 + 可操作：「下一步做什么」写在句子里（重登 / 换 Key / 充值 / 找客服），不只报事实；
   //   · **不出现「未知错误」**：兜底只有 `consumeErrUnknown` 一条，其余每条都要具体到根因；
-  //   · 金额统一用 `{amount}`（USD，服务端额度就是 USD，不在文案里写死货币符号）；
-  //     限流的秒数用 `{seconds}`（来自服务端的 `Retry-After`）。
+  //   · 金额统一用 `{amount}`（单位**元**：1 元 = 1 额度，无 USD 概念；服务端额度就是元，
+  //     文案里不写货币符号，符号由 utils/money.ts 拼）；限流的秒数用 `{seconds}`（来自 `Retry-After`）。
   consumeErrUnknown: '这次请求没成功，请稍后重试；反复出现请把这条提示反馈给我们',
   consumeErrNetwork: '网络连不上，检查一下网络再试',
   consumeErrTimeout: '请求超时了，稍等一会儿再试',
@@ -1094,10 +1094,9 @@ export const zh = {
   consumeErrKeyExpired: '这个 API Key 已过期，请重新创建',
   consumeErrKeyQuotaExhausted: '这个 API Key 的额度用完了，请换一个 Key 或提高额度',
   consumeErrKeyExists: '已经有同名的 API Key，换个名字再创建',
-  // 币种在中文里写「美元」而不是 `USD`：`tests/unit/ours-api.test.mjs` 的 [2] 段（#75）守着一条
-  // 「zh 全表不出现 USD」的断言（旧额度体系只显示积分、不做外币折算）。新语义确实是 USD 额度
-  // （#484 §4.4），但对中文界面来说「美元」本来就是更自然的写法，两边不必互相让步。
-  consumeErrInsufficientBalance: '余额不足，还差 {amount} 美元，请先充值',
+  // 金额单位是元（#487 / 后端 8b12ab2）。这条**不留 `{amount}` 占位**：消费层的错误映射只回
+  // i18n key、不回差额，占位符没人填就会把 `{amount}` 原样端给用户（#504 留下的坑）。
+  consumeErrInsufficientBalance: '余额不足，请先充值后重试',
   consumeErrGroupNotAllowed: '当前分组不能用这个 Key，请换分组或联系客服',
   consumeErrCardNotFound: '没找到这张卡密，请核对后再输入',
   consumeErrCardNotFoundOrExpired: '卡密不存在或已过期，请核对后再输入',

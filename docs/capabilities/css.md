@@ -12,8 +12,8 @@
 
 | 项 | 值 |
 | --- | --- |
-| 扫描范围 | `src/**` 全部源文件 **295** 个（`.css` **48** 个，其中 `*.module.css` **41** 个；其余 `.ts / .tsx / .html` 共 **247** 个） |
-| 口径拆分 | 48 `.css` + 180 `.ts` + 66 `.tsx` + 1 `.html` = 295 |
+| 扫描范围 | `src/**` 全部源文件 **296** 个（`.css` **48** 个，其中 `*.module.css` **41** 个；其余 `.ts / .tsx / .html` 共 **248** 个） |
+| 口径拆分 | 48 `.css` + 181 `.ts` + 66 `.tsx` + 1 `.html` = 296 |
 | 命中总数 | **389** 处，分布在 **41** 个文件 |
 | 运行时下限 | WebView **83**（Chromium 83）。**首支持 ≤ 83 的特性一律记「无风险」，与有没有兜底无关** |
 | 构建期因素 | `rspack.config.ts` 用 `builtin:lightningcss-loader`，`targets` 取自 `package.json` 的 `browserslist`（强制含 `chrome >= 83`）。**已被构建期翻译掉的写法不算运行时假设** |
@@ -333,3 +333,5 @@ node --test tests/unit/css-assumption-audit.test.mjs
 - 复核（2026-11-20 16:20，基准 `d198ccc`，本单 #487 W1-A 分支 `feat/consume-layer`）：新增 9 个 `.ts` 源文件（`src/services/consume/**`），扫描范围 262 → **271** 个源文件（其余 `.ts / .tsx / .html` 217 → **226**），`.css` 仍是 45 个（`*.module.css` 38）。新文件是纯 TS 逻辑（HTTP 封装 / 错误归一 / 业务方法），**不含任何 CSS 特性假设**（无新增 `.css`、无内联样式），命中总数、逐特性表与 §2 明细的 `文件:行` 未变。
 - 复核（2026-11-20 16:35，基准 `e504986`，本单 #487 W1-B 分支 `feat/auth-layer-skeleton`）：新增 1 个 `.css`（`src/components/auth/AuthPages.module.css`，登录 / 注册页），扫描范围 271 → **280** 个源文件（`.css` 45 → **46**、`*.module.css` 38 → **39**、其余 226 → **234**），命中总数 355 → **370** 处（分布 39 → **40** 个文件）。增量：嵌套 `&` 141 → **146**；flex `gap` 126 → **134**，全部由 `node scripts/gen-flex-gap-fallback.mjs` 生成 `html[data-flex-gap-fallback]` 兜底块（`真实缺陷` 仍 0）；`:focus-visible` 13 → **14**，按 #215 的三段写法（`:focus` 兜底 + `:focus:not(:focus-visible)` 收回 + `:focus-visible`）补齐，仍记 `已有兜底`；`env(safe-area-inset-*)` 5 → **6**（69 ≤ 83，`无风险`）。`真实缺陷` 仍 5、`可接受降级` 仍 1、假阳性仍 0。
 - 复核（2026-11-20 17:00，基准 `3392efa`，本单 #487 W1-C2 分支 `feat/consume-panels`）：新增 1 个 `panels.module.css`（`src/components/consume/`，四个面板共用）、6 个 `.ts` 与 4 个 `.tsx`，扫描范围 280 → **291** 个源文件（`.css` 46 → **47**、`*.module.css` 39 → **40**、其余 234 → **244**）。新样式表**刻意不写 flex `gap`**（间距全部用 `margin`，理由见该文件头注释：WebView 83 上 flex gap 恒为 0，#173），也没有 `:focus-visible` / `inset` / `scrollbar-gutter` / `@supports` / 嵌套 `&`，颜色全走 `--dsw-alias-*` 令牌 —— **命中总数仍是 370 处 / 40 个文件**，逐特性表与 §2 明细的 `文件:行` 未变。
+- 复核（2026-11-20 17:20，基准 `3392efa`，本单 #487「统一计量单位为元」分支 `chore/unify-currency-cny`）：新增 1 个 `.ts` 源文件（`src/utils/money.ts`），扫描范围 280 → **281** 个源文件（其余 `.ts / .tsx / .html` 234 → **235**），`.css` 仍是 46 个（`*.module.css` 39）。本次只动 TS（金额口径与格式化）与文档，**没有新增任何 `.css` / 内联样式**，命中总数仍是 **370 处 / 40 个文件**，逐特性表与 §2 明细的 `文件:行` 未变。
+- 合并复核（2026-11-20 17:35，基准 `77cd6e8`，`chore/unify-currency-cny` rebase 到 #505 之后）：重新跑 `scripts/lib/cssAssumptionAudit.mjs`，源文件 **296** 个（`.css` **48**，其中 `*.module.css` **41**；其余 248），**命中总数 389 处 / 41 个文件**；上表三行已按复算结果更新，逐特性表与 §2 明细的 `文件:行` 未变。

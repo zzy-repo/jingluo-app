@@ -35,7 +35,7 @@
 | `domain07-payment-records-view.test.mjs` | 371 | 付款记录 / 我的购买 正常渲染矩阵（金额、状态、本地时间、卡密后 4 位、筛选 tab、分页、主操作） | 断的是 `PaymentRecordsDialog` / `PurchaseRecordsView` 的现状；两个入口在 W1-C 合并进「账户与消费」，DOM 会变 | 合并成一条渲染矩阵（在合并后的页面上）：订单行字段 / 卡密只露后 4 位 / 状态与时间 / 空筛选 |
 | `domain07-payment-records-empty-error.test.mjs` | 212 | 付款记录 / 我的购买 空态与错误态矩阵（无订单 vs 加载失败、401 重填 Key、503 可刷新、筛选后为空） | 同上（DOM 会变） | 与上条**合成一张表的两半**（正常 / 空错互斥），仍是 6 行；401 分支改判「JWT 过期 → 回登录页」，不是「重填 Key」 |
 | `contract-c4-order-state.test.mjs` | 207 | C4 契约：订单状态枚举闭合（认不出归 failed）/ 终态不可回退 / 不重复建单（#135 #157） | #331 之后 App 侧**没有订单**，这条契约守的是已经不存在的东西 | **降级为 3 行**：`purchaseStatusOf` 非法值归 failed、终态不轮询、`GET /api/orders` 只读不写；或者并入 `ours-purchases` 的现有表 |
-| `contract-c6-quota-key.test.mjs` | 177 | C6 契约：额度口径（1 元 = 100 积分、缺 `remaining_points` 报「查不到」不当 0）+ Key 语义（换 Key 额度带走、指纹上报口径） | 额度来源从 `/me` 改成 sub2api `/v1/usage`（USD），Key 由 `/api/v1/keys` 管理；契约语义整体变了 | 重写成「用量契约」：额度单位是 USD、缺字段报「查不到」不当 0、Key 停用后聊天 401 的可读文案、JWT 与 `sk-` 两条通道不串味（A3） |
+| `contract-c6-quota-key.test.mjs` | 177 | C6 契约：额度口径（1 元 = 100 积分、缺 `remaining_points` 报「查不到」不当 0）+ Key 语义（换 Key 额度带走、指纹上报口径） | 额度来源从 `/me` 改成 sub2api `/v1/usage`（单位元，1 元 = 1 额度），Key 由 `/api/v1/keys` 管理；契约语义整体变了 | 重写成「用量契约」：额度单位是元、缺字段报「查不到」不当 0、Key 停用后聊天 401 的可读文案、JWT 与 `sk-` 两条通道不串味（A3） |
 
 ### 1.2 黄金回归（golden）1 条
 
@@ -136,7 +136,7 @@
 | 额度 | `GET /v1/usage`（sk-）、`GET /api/v1/user/profile` | 额度**只来自后端**；缺字段报「查不到」，不当 0；无本地账本 |
 | 卡密 | `POST /api/v1/redeem`、`GET /api/v1/redeem/history` | 成功到账；超时**先查 history 再决定重试**；`REDEEM_CODE_USED` 与「自己上次成功」区分 |
 | Key | `/api/v1/keys` CRUD | 创建防重复、改名/停用、删后用旧 Key 聊天 401 的可读文案 |
-| 邀请 | `POST /api/v1/auth/validate-invitation-code`、`GET /api/v1/user/aff` | 邀请码只在注册时一次填定；返利按 USD；`circular_invite` / `already_redeemed` 旧文案不得出现 |
+| 邀请 | `POST /api/v1/auth/validate-invitation-code`、`GET /api/v1/user/aff` | 邀请码只在注册时一次填定；返利按比例（单位元）；`circular_invite` / `already_redeemed` 旧文案不得出现 |
 | 邮箱 | `/api/v1/auth/send-verify-code`、`/user/account-bindings/email` | 绑定/换绑/解绑；`email_verify_enabled` 决定注册是否强制验邮箱 |
 | 支付（保留） | apia `GET /api/plans`、`POST /api/pay-link`、`GET /api/orders`、`GET /api/card/trail` | 三个入口合并成一个「账户与消费」后的读取与空/错态；**不自动重试 pay-link** |
 

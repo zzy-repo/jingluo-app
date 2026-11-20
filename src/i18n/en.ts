@@ -576,8 +576,8 @@ export const en = {
   oursClaimKeyTail: 'Current Key {tail}',
   oursClaimUseKey: 'Use the Key issued by the server {tail}',
   oursQuotaTitle: 'Remaining quota',
-  /** Points unit (#94): appended by formatPoints in services/ours/api.ts — never hardcode a unit there */
-  oursPointsUnit: 'points',
+  /** Money unit (#94 / #487): yuan (1 yuan = 1 credit), appended by formatPoints in services/ours/api.ts — never hardcode a unit there */
+  oursPointsUnit: 'CNY',
   oursQuotaValue: '{points}',
   oursQuotaAction: 'Refresh quota',
   oursQuotaLoading: 'Checking…',
@@ -596,7 +596,7 @@ export const en = {
   oursInviteShapeHint: 'Invite codes are 4–16 letters or digits',
   oursInviteNeedsClaim: 'Claim the credential first to see your invite code',
   // #234: server now rewards the inviter only; the invitee just binds the relationship (reward_points: 0),
-  // so the success copy no longer reports earned points; rule numbers always come from invite_rules
+  // so the success copy no longer reports earned credit; rule numbers always come from invite_rules
   oursInviteBound: 'Invite relationship linked',
   oursInviteRuleInviter: 'Inviter gets {points}',
   oursInviteRuleInvitee: 'Invitee gets {points}',
@@ -625,7 +625,7 @@ export const en = {
   oursKeyProbeNetwork: 'Key check failed: network unavailable',
   oursKeyProbeTimeout: 'Key check timed out',
   oursSecurityTitle: 'Security',
-  oursSecurityNotice: 'The invite/quota service uses plain HTTP (device code and points only); payment and card codes use HTTPS. Be careful on public networks.',
+  oursSecurityNotice: 'The invite/quota service uses plain HTTP (device code and credit only); payment and card codes use HTTPS. Be careful on public networks.',
   oursInviteErrDeviceNotFound: 'The server has no record of this device code — tap “Claim / re-claim”',
   oursInviteErrInvalidCode: 'Invalid invite code, check it and retry',
   oursInviteErrOwnCode: 'You cannot use your own invite code',
@@ -679,9 +679,9 @@ export const en = {
   // #421 point 3: sign-in conflict dialog (device_has_account)
   oursEmailConflictTitle: 'This device already has an account',
   oursEmailConflictEmail: 'Email account to sign in with: {masked}',
-  oursEmailConflictPoints: 'Points left on this device: {points}',
+  oursEmailConflictPoints: 'Credit left on this device: {points}',
   oursEmailConflictWarning:
-    'If you choose to use the email account, the points left in this device’s account cannot be used for now (the server does not merge them automatically; the data is kept and support has to handle it).',
+    'If you choose to use the email account, the credit left in this device’s account cannot be used for now (the server does not merge them automatically; the data is kept and support has to handle it).',
   oursEmailConflictUseEmail: 'Use the email account',
   oursEmailConflictKeepDevice: 'Keep this device’s account',
   // 卡密 / 支付服务错误码
@@ -694,7 +694,7 @@ export const en = {
   oursErrCardMissing: 'Enter a card code',
   oursErrKeyMissing: 'Claim or enter a Key first',
   oursErrKeyInvalid: 'Key is invalid: claim or enter a new one',
-  oursErrVerifyUnavailable: 'Points service temporarily unavailable, retry later',
+  oursErrVerifyUnavailable: 'Quota service temporarily unavailable, retry later',
   oursErrRateLimited: 'Too many requests, retry later',
   oursErrPlanNotFound: 'Plan not found',
   oursErrPlanMissing: 'Select a plan first',
@@ -715,7 +715,7 @@ export const en = {
   oursErrCardLeased: 'This card code has moved to the in-app redemption channel. Redeem it in the app.',
   oursErrCardNotFoundOrExpired: 'Card code does not exist or has expired',
   oursErrApiKeyNotIssued: 'Claim a key in the app first, then redeem',
-  oursRedeemProcessing: 'Redemption is processing; points will arrive automatically',
+  oursRedeemProcessing: 'Redemption is processing; credit will arrive automatically',
   oursRedeemDuplicate: 'This card code was already redeemed; {points} arrived',
   oursRedeemRefreshBalance: 'Refresh quota',
   oursDeviceBackupHint: 'Your device code is your account credential. Copy and back it up: clearing site data or switching devices loses it for good.',
@@ -750,7 +750,7 @@ export const en = {
     'Recomputes the quota of this device key from "welcome grant + earned rewards". The server resets the quota in place and usually does not issue a new key string; the key keeps working and other clients are unaffected.',
   oursRotateConfirmTitle: 'Reset the quota?',
   oursRotateConfirmBody:
-    'The quota of the current key is recomputed from "welcome grant + earned rewards", so already consumed points stop using it up. The key itself stays the same (still this device key), no other client is logged out, and you do not need to re-enter the key.',
+    'The quota of the current key is recomputed from "welcome grant + earned rewards", so already consumed credit stops using it up. The key itself stays the same (still this device key), no other client is logged out, and you do not need to re-enter the key.',
   oursRotateConfirmOk: 'Reset it',
   oursRotateConfirmCancel: 'Cancel',
   oursRotateBusy: 'Resetting…',
@@ -938,7 +938,7 @@ export const en = {
     'This order was closed, but a payment within 24 hours is recovered automatically; copy the order number and ask support to check.',
   oursTrailWaitingCard: 'Paid. Preparing the card key, usually done within seconds.',
   oursTrailCardLabel: 'Card key',
-  oursTrailCardPoints: 'Points',
+  oursTrailCardPoints: 'CNY',
   oursTrailCardKeyTail: 'Redeem key tail',
   oursTrailCardRedeemed: 'Redeemed',
   oursTrailCardNotRedeemed: 'Not redeemed yet',
@@ -960,7 +960,7 @@ export const en = {
   oursTrailEventNotifyOk: 'Payment notification received',
   oursTrailEventPaidConfirmed: 'Payment confirmed',
   oursTrailEventCardIssued: 'Card key issued',
-  oursTrailEventCardRedeemed: 'Card key redeemed, points credited',
+  oursTrailEventCardRedeemed: 'Card key redeemed, credit added',
   oursTrailEventOrderExpired: 'Order expired unpaid and was closed',
   oursTrailEventLateRecovered: 'Paid after closing, card key reissued',
   oursTrailEventWaitingStock: 'Paid, preparing the card key',
@@ -1028,7 +1028,6 @@ export const en = {
   sub2authEmailVerifyRequired: 'Verify your email first',
   sub2authTwoFactorHint: 'Two-factor authentication is on, enter the 6-digit code from your authenticator app',
 
-  // Account and consumption (dollar amounts are shown exactly as the backend returns them, never converted)
   // "Account & billing" page (three dialogs → one page, #482 / W1-C1 #487)
   accountConsumeTitle: 'Account & billing',
   accountConsumeEntryDescription: 'Card keys, plans, quota and account — all in one page',
@@ -1036,8 +1035,9 @@ export const en = {
   accountConsumeTabQuota: 'My quota',
   accountConsumeTabAccount: 'Account',
 
-  consumeBalance: '${amount}',
-  consumeBalanceApprox: 'About {amount}',
+  // Account and consumption (amounts are in yuan: 1 yuan = 1 credit; rendering goes through utils/money.ts — no FX on the client)
+  consumeBalance: '¥{amount}',
+  consumeBalanceApprox: 'About ¥{amount}',
   consumeQuota: 'Quota',
   consumeUsage: 'Usage',
   consumeUsageToday: 'Usage today',
@@ -1090,7 +1090,8 @@ export const en = {
   // block is the single source of the sentence a user actually reads. Same three rules as zh.ts:
   //   · human + actionable — the next step (sign in / switch key / top up / contact support) is in the sentence;
   //   · never the words "unknown error" — `consumeErrUnknown` is the only fallback, every other key names a cause;
-  //   · amounts use `{amount}` (USD), rate-limit seconds use `{seconds}` (from the server's `Retry-After`).
+  //   · amounts use `{amount}` in yuan (1 yuan = 1 credit) and the symbol is added by utils/money.ts,
+  //     never hardcoded here; rate-limit seconds use `{seconds}` (from `Retry-After`).
   consumeErrUnknown:
     'That request did not go through. Try again later, and send us this message if it keeps happening.',
   consumeErrNetwork: 'No network connection. Check your connection and try again.',
@@ -1111,7 +1112,9 @@ export const en = {
   consumeErrKeyExpired: 'This API key has expired. Create a new one.',
   consumeErrKeyQuotaExhausted: 'This API key is out of quota. Use another key or raise the quota.',
   consumeErrKeyExists: 'An API key with that name already exists. Pick another name.',
-  consumeErrInsufficientBalance: 'Not enough balance: {amount} USD short. Please top up first.',
+  // No `{amount}` placeholder: the consume error mapper returns only the key, never the shortfall
+  // (a leftover placeholder from #504 would be rendered literally to the user).
+  consumeErrInsufficientBalance: 'Not enough balance. Please top up first.',
   consumeErrGroupNotAllowed: 'Your current group cannot use this key. Switch group or contact support.',
   consumeErrCardNotFound: 'No such card key. Check it and try again.',
   consumeErrCardNotFoundOrExpired: 'That card key does not exist or has expired. Check it and try again.',

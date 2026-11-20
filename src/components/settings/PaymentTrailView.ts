@@ -13,6 +13,7 @@ import type {
   TrailTone,
 } from '../../services/ours/trail.js'
 import { LIMITS } from '../../services/limits.js'
+import { formatYuan, pointsToYuan } from '../../utils/money.js'
 
 /**
  * 支付记录时间线的**展示层 + 全部判定逻辑**（Issue #189）。
@@ -197,15 +198,19 @@ export const formatTrailTime = (value: number | null | undefined): string => {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`
 }
 
-/** 金额：`¥29.90`。非法值按 0，不让 NaN 漏到界面上 */
-export const formatYuan = (yuan: number): string =>
-  `¥${(Number.isFinite(yuan) ? yuan : 0).toFixed(2)}`
+/**
+ * 金额：`¥29.90`。非法值按 0，不让 NaN 漏到界面上。
+ *
+ * 实现与符号映射只有一份，在 `src/utils/money.ts`（本仓口径 1 元 = 1 额度，无 USD）；
+ * 这里保留同名导出，是因为既有调用方（含单测）从本模块取它。
+ */
+export { formatYuan }
 
-/** 积分：`3,000`（用户对账时按千分位读，别给 3000） */
-export const formatPoints = (points: number): string => {
-  const value = Number.isFinite(points) ? Math.round(points) : 0
-  return String(value).replace(/\B(?=(\d{3})+(?!\d))/gu, ',')
-}
+/**
+ * 卡密里的额度：旧体系记的是「积分」，**100 积分 = 1 元**（后端 8b12ab2），
+ * 所以上屏前折算成元：`3000` → `¥30.00`。用户对账读的是钱，不是点数。
+ */
+export const formatCardPoints = (points: number): string => formatYuan(pointsToYuan(points))
 
 /**
  * 卡号只露后 4 位。时间线是用户会截图发群 / 发给客服的页面，
@@ -565,7 +570,7 @@ const statusTone = (status: TrailOrderStatus): TrailTone => {
 }
 
 /**
- * 卡密块：完整卡号不进 DOM，只给后 4 位 + 积分 + 兑换状态。
+ * 卡密块：完整卡号不进 DOM，只给后 4 位 + 额度（元）+ 兑换状态。
  *
  * 「查这张卡」（#325）：回调收到的是**完整卡号**（查询要它），但渲染出来的永远只有
  * `maskTrailCard` 的掩码 —— 事件参数不进 DOM、不进剪贴板。没传回调就不渲染入口
@@ -591,7 +596,7 @@ const cardNode = (
       'div',
       { className: c.cardRow },
       createElement('span', { className: c.cardLabel }, t('oursTrailCardPoints')),
-      createElement('span', { className: c.points }, formatPoints(card.points))
+      createElement('span', { className: c.points }, formatCardPoints(card.points))
     ),
     createElement(
       'div',
@@ -1035,7 +1040,7 @@ export type CardTrailPanelProps = {
 }
 
 /**
- * 卡密溯源面板：这张卡怎么来的、积分到账了没、是不是本人兑换的、从哪个渠道兑换的。
+ * 卡密溯源面板：这张卡怎么来的、额度到账了没、是不是本人兑换的、从哪个渠道兑换的。
  *
  * 面板本身**不知道卡号也不知道 Key**：数据由容器查好，这里只渲染三种状态。
  * 卡号永远是 `maskTrailCard` 的掩码（后 4 位），完整卡号既不在 DOM 里，也不在 title/aria 里。
@@ -1103,7 +1108,7 @@ export const CardTrailPanel = (props: CardTrailPanelProps): ReactNode => {
             'div',
             { className: c.cardRow },
             createElement('span', { className: c.cardState }, t('oursTrailCardRedeemed')),
-            createElement('span', { className: c.points }, formatPoints(redemption.points))
+            createElement('span', { className: c.points }, formatCardPoints(redemption.points))
           ),
           createElement(
             'div',

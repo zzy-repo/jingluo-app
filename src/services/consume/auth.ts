@@ -13,7 +13,7 @@
  *   POST /api/v1/auth/reset-password        重置密码
  *   GET  /api/v1/auth/me                    当前用户
  *   POST /api/v1/auth/revoke-all-sessions   退出所有设备
- *   GET  /api/v1/user/profile               账号资料 / 邮箱绑定 / 余额（USD）
+ *   GET  /api/v1/user/profile               账号资料 / 邮箱绑定 / 余额（元）
  *
  * 两条硬约束：
  *  1. JWT **只进 header**（`Authorization: Bearer <access_token>`，cookie 无效）；本层不落盘、不日志 ——
@@ -23,13 +23,13 @@
  *
  * 语义变化（#484 §3.1b「UI 要跟着改」）：
  *  - 邀请关系只能在**注册时一次填定**（sub2api 没有「登录后补填邀请码」）；
- *  - 返利按 USD 比例结算，旧文案 `circular_invite` / `already_redeemed` 全部不再适用。
+ *  - 返利按比例结算（比例由服务端下发），旧文案 `circular_invite` / `already_redeemed` 全部不再适用。
  */
 
 import type { ConsumeCallResult, ConsumeEmpty, ConsumeHttp } from './http.js'
 
 /**
- * sub2api 的用户对象（金额单位一律 **USD**，不是积分）。
+ * sub2api 的用户对象（金额单位一律 **元**：1 元 = 1 额度，后端 8b12ab2 明确，无 USD 概念）。
  *
  * 字段来自**本地联调实例的真实 200**（`GET /api/v1/auth/me`、`GET /api/v1/user/profile`，实例 0.2.20）：
  * `{id,email,username,role,balance,frozen_balance,concurrency,status,allowed_groups,last_active_at,
@@ -41,7 +41,7 @@ export type ConsumeUser = {
   email: string
   username?: string
   role?: string
-  /** 余额，单位 USD（float）。**禁止**在客户端缓存 / 推导额度（#484 §4.5 第 10 条） */
+  /** 余额，单位元（float，1 元 = 1 额度）。**禁止**在客户端缓存 / 推导额度（#484 §4.5 第 10 条） */
   balance?: number
   frozenBalance?: number
   concurrency?: number
@@ -357,7 +357,7 @@ export const me = (http: ConsumeHttp): Promise<ConsumeCallResult<ConsumeUser>> =
     .call<unknown>({ method: 'GET', path: '/api/v1/auth/me', timeout: 'read' })
     .then((result) => (result.ok ? { ...result, data: toConsumeUser(result.data) } : result))
 
-/** 账号资料：余额（USD）/ 邮箱绑定 / 身份。**额度只以它和 `/v1/usage` 为准**，客户端不推导 */
+/** 账号资料：余额（元）/ 邮箱绑定 / 身份。**额度只以它和 `/v1/usage` 为准**，客户端不推导 */
 export const getProfile = (http: ConsumeHttp): Promise<ConsumeCallResult<ConsumeUser>> =>
   http
     .call<unknown>({ method: 'GET', path: '/api/v1/user/profile', timeout: 'read' })

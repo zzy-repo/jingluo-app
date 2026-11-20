@@ -12,7 +12,8 @@
  *     面板那几个接口**套**信封。同一个解析器打天下必然读空（#484 §4.5 第 8 条）。
  *  2. 额度**只以服务端返回为准**：客户端不许缓存 / 推导余额，也不许拿本地账本判断「还能不能发消息」
  *     （#484 §4.5 第 10 条 / §七 第 6 条）。本文件只做「取一次、原样返回」。
- *  3. 金额单位一律 **USD**（sub2api 没有积分概念）：界面文案由 W1-C 改，本层不做积分换算。
+ *  3. 金额单位一律 **元**（1 元 = 1 额度，后端 8b12ab2；sub2api 无 USD、也无积分概念）：
+ *     本层只搬运服务端给的数值与币种码，展示格式化统一走 `src/utils/money.ts`。
  */
 
 import { emptyRawResponse, type ConsumeCallResult, type ConsumeHttp } from './http.js'
@@ -30,16 +31,16 @@ export type ConsumeGatewayUsage = {
   mode: 'quota_limited' | 'unrestricted' | string
   isValid: boolean
   status?: string
-  /** 配额限制模式：`limit` / `remaining` / `unit`（USD）。`limit === 0` 表示不限 */
+  /** 配额限制模式：`limit` / `remaining` / `unit`（币种码，正常是 `CNY`）。`limit === 0` 表示不限 */
   quota?: { limit: number; remaining: number; unit: string; used: number }
   /** 剩余额度（各模式都有；钱包模式等于账户余额） */
   remaining?: number
   unit?: string
   /** 订阅组名称 / 钱包模式固定为「钱包余额」 */
   planName?: string
-  /** 钱包余额模式：账户余额（USD） */
+  /** 钱包余额模式：账户余额（元） */
   balance?: number
-  /** 真实花费（USD）= `usage.total.actual_cost`。**这才是「已用」**（`quota.used` 不可信） */
+  /** 真实花费（元）= `usage.total.actual_cost`。**这才是「已用」**（`quota.used` 不可信） */
   spent?: number
   /** 累计用量（`usage.total`）：界面上的「请求数 / token 数」从这里取 */
   usageTotal?: {
@@ -117,7 +118,7 @@ const toGatewayUsage = (value: unknown): ConsumeGatewayUsage => {
       // `used` 只作参考：实测恒为 0（真花费在 usage.total.actual_cost）
       used: num(quota.used) ?? 0,
       remaining: num(quota.remaining) ?? 0,
-      unit: str(quota.unit) || 'USD',
+      unit: str(quota.unit) || 'CNY',
     }
   }
   const remaining = num(body.remaining)

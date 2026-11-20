@@ -130,7 +130,7 @@ apia 兑换）在新链路里已经不存在了，留着只会以「known-red」
 
 | 项 | 内容 |
 | --- | --- |
-| 覆盖什么 | 列表（分页参数透传）、创建（`name` / `quota`(USD) / `expires_in_days`）、详情、改名/停用/改额度（`PUT` **无** `key` 字段）、删除；创建超时 → 重试前先 `GET /api/v1/keys?search=<name>` 防重复创建；Key 明文只在创建响应里出现一次 |
+| 覆盖什么 | 列表（分页参数透传）、创建（`name` / `quota`(元) / `expires_in_days`）、详情、改名/停用/改额度（`PUT` **无** `key` 字段）、删除；创建超时 → 重试前先 `GET /api/v1/keys?search=<name>` 防重复创建；Key 明文只在创建响应里出现一次 |
 | 负向验证怎么做 | ① 创建超时 + search 命中同名 → 断言 POST 次数 == 1（去掉 search 保护变 2 → 红）；② `PUT` 请求体里带上 `key` 字段 → 断言被拒（用例断言序列化后的 body 不含 `key`）；③ 删除返回 404 → 断言列表刷新且提示「已不存在」而不是崩溃 |
 | 预估耗时 | ≤ 3s（5 条） |
 
@@ -162,8 +162,8 @@ apia 兑换）在新链路里已经不存在了，留着只会以「known-red」
 
 | 项 | 内容 |
 | --- | --- |
-| 覆盖什么 | 注册前 `POST /api/v1/auth/validate-invitation-code` 预校验：`valid:true` / `valid:false + error_code` / `INVITATION_CODE_DISABLED`（= 后台没开，UI 提示「当前未开放」而不是「邀请码错误」）；**邀请关系只能在注册时一次填定**，注册后再填不给入口；`GET /api/v1/user/aff` 的 `aff_code` / `aff_count` / `aff_quota`（返利按 USD）只做展示 |
-| 负向验证怎么做 | ① `INVITATION_CODE_DISABLED` 被渲染成「邀请码无效」→ 必须红（这是旧文案残留的典型）；② 注册成功后再调 validate 并期望「补填生效」→ 用例必须断言**没有**补填入口；③ 把 `aff_quota` 当积分显示（USD ↔ 积分混淆）→ 断言单位文案的用例红；④ 旧文案 `circular_invite` / `already_redeemed` 出现 → 断言 i18n key 集合不含它们（与 `check:i18n` 孤儿检查对齐） |
+| 覆盖什么 | 注册前 `POST /api/v1/auth/validate-invitation-code` 预校验：`valid:true` / `valid:false + error_code` / `INVITATION_CODE_DISABLED`（= 后台没开，UI 提示「当前未开放」而不是「邀请码错误」）；**邀请关系只能在注册时一次填定**，注册后再填不给入口；`GET /api/v1/user/aff` 的 `aff_code` / `aff_count` / `aff_quota`（返利，单位元，见 §1.1 金额口径）只做展示 |
+| 负向验证怎么做 | ① `INVITATION_CODE_DISABLED` 被渲染成「邀请码无效」→ 必须红（这是旧文案残留的典型）；② 注册成功后再调 validate 并期望「补填生效」→ 用例必须断言**没有**补填入口；③ 把 `aff_quota` 当积分显示（元 ↔ 积分混淆）→ 断言单位文案的用例红；④ 旧文案 `circular_invite` / `already_redeemed` 出现 → 断言 i18n key 集合不含它们（与 `check:i18n` 孤儿检查对齐） |
 | 预估耗时 | ≤ 2s（4 条） |
 
 ---

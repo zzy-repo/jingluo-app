@@ -239,14 +239,15 @@ test('#189 已支付未发卡：不显示卡密块，并提示「等几秒」', 
   assert.ok(markup.includes(zh.oursTrailWaitingCard))
 })
 
-test('#189 已发卡：卡密块显示掩码卡号 / 积分 / 兑换状态，完整卡号不进 DOM', async () => {
+test('#189 已发卡：卡密块显示掩码卡号 / 额度（元）/ 兑换状态，完整卡号不进 DOM', async () => {
   const orders = await parseAll()
   const markup = render(baseProps({ view: { status: 'ok', page: pageOf([orders[2]]) } }))
   const { count } = scan(markup)
   assert.equal(count('trail-card'), 1)
   assert.ok(markup.includes('••••A3SR'), '卡号要掩码到后 4 位')
   assert.ok(!markup.includes('MUSE-3CYP-5NA3-AHSE-A3SR'), '完整卡号不允许出现在页面里')
-  assert.ok(markup.includes('3,000'))
+  // #487：额度统一为元（100 积分 = 1 元），卡密上的 3000 积分上屏是 ¥30.00；断言强度不变
+  assert.ok(markup.includes('¥30.00'), '卡密额度按元显示（3000 积分 = 30 元）')
   assert.ok(markup.includes(zh.oursTrailCardRedeemed))
 })
 
@@ -350,7 +351,7 @@ test('#189 PAID 每 3~5 秒自动刷新一次，最多 2 分钟，其它状态�
 
 // ------------------------------------------------------------------ 卡密溯源面板
 
-test('#189 卡密溯源：已兑换显示积分 / 时间 / Key 尾号 / 是否本人', () => {
+test('#189 卡密溯源：已兑换显示额度（元）/ 时间 / Key 尾号 / 是否本人', () => {
   const parsed = {
     cardNo: fixtures.cardTrailRedeemed.card_no,
     purchase: null,
@@ -370,7 +371,7 @@ test('#189 卡密溯源：已兑换显示积分 / 时间 / Key 尾号 / 是否�
   assert.equal(count('trail-card-panel'), 1)
   assert.ok(markup.includes('••••A3SR'))
   assert.ok(!markup.includes('MUSE-3CYP-5NA3-AHSE-A3SR'))
-  assert.ok(markup.includes('3,000'))
+  assert.ok(markup.includes('¥30.00'), '兑换额度按元显示（3000 积分 = 30 元）')
   assert.ok(markup.includes('013812'))
   assert.ok(markup.includes(zh.oursTrailRedeemedByMe))
 })

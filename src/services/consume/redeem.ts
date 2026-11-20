@@ -29,11 +29,11 @@ import type { ConsumeCallResult, ConsumeHttp } from './http.js'
 /** 兑换成功体（`redeem_handler.go` 的 `{message, type, value, new_balance?, new_concurrency?}`） */
 export type ConsumeRedeemResult = {
   message: string
-  /** `balance`（USD）/ `concurrency`（整数）/ `subscription`（天数）/ `invitation` */
+  /** `balance`（元）/ `concurrency`（整数）/ `subscription`（天数）/ `invitation` */
   type: string
-  /** 面值：`balance` 是 USD、`concurrency` 是并发数、`subscription` 是天数 */
+  /** 面值：`balance` 是元、`concurrency` 是并发数、`subscription` 是天数 */
   value: number
-  /** 兑换后的账户余额（USD），服务端给了才有 */
+  /** 兑换后的账户余额（元），服务端给了才有 */
   newBalance?: number
   /** 兑换后的并发上限，服务端给了才有 */
   newConcurrency?: number

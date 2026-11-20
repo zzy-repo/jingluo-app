@@ -391,8 +391,9 @@ console.log('\n[9] 价格取 /api/plans；客户端不暴露图片 / 文件输�
   const state = await ours.fetchPlans(transport)
   eq(calls[0].url, `${ours.OURS_API_BASE}/api/plans`, '取套餐打 /api/plans')
   eq(state.status, 'success', '套餐解析成功')
-  eq(ours.formatPlanMeta(state.plans[0], zh.oursPointsUnit), '¥0.10 · 300 积分', 'p1 价格来自服务端')
-  eq(ours.formatPlanMeta(state.plans[1], zh.oursPointsUnit), '¥39.00 · 3,900 积分', 'p2 价格来自服务端')
+  // #487：单位统一为元（100 积分 = 1 元），断言强度不变，期望值跟着单位改
+  eq(ours.formatPlanMeta(state.plans[0], zh.oursPointsUnit), '¥0.10 · 3.00 元', 'p1 价格来自服务端')
+  eq(ours.formatPlanMeta(state.plans[1], zh.oursPointsUnit), '¥39.00 · 39.00 元', 'p2 价格来自服务端')
 }
 
 // Windows 的 TCP 动态端口范围从 1024 起（netsh int ipv4 show dynamicport tcp → start=1024 num=64511），

@@ -37,6 +37,21 @@
 2. **一个 host 承载两套前缀**：sub2api 的 `/api/v1`（JWT）与 `/v1`（sk- Key）在**同一个 host** 上，中间没有重写规则（`server/router.go` 的 `v1 := r.Group("/api/v1")` 与网关 group 是两处独立注册）。所以配置里只需要一个 `baseUrl` + 两个前缀常量。
 3. **旧池域没有过渡期**：`device_id` 体系随旧池域一起废弃（§7 第 3 条）。要读额度只能走 `/v1/usage` 或 `/api/v1/user/profile`。
 
+### 1.1 金额口径（唯一，别再发明第二套）
+
+> **1 元 = 1 额度，无 USD 概念。**
+
+- sub2api 里所有金额字段（`balance` / `frozen_balance` / `quota` / `quota_used` / `actual_cost` /
+  `aff_quota` / `redeem.value`）的 **1 个余额单位就是 1 元**，客户端**不做汇率、不做单位换算**
+  （早前按 sub2api 文档理解的「USD 余额」作废，见后端 `8b12ab2`）。
+- 旧邀请 / 卡密体系记的是**积分**，折算关系只有一条：**100 积分 = 1 元**（同一份后端提交）。
+  迁移接口返回 `{amount, currency:"CNY"}`，`amount` 已经是元，客户端**再除 100 就是错**。
+- `currency` 是**数据**，不是常量：解析层原样保留后端给的币种码，只有显示 helper
+  （`src/utils/money.ts` 的 `CURRENCY_SYMBOLS`）把它映射成符号（`CNY`→`¥`）；认不得的币种码
+  退化成「数字 + 币种码」（`1,234.50 ABC`），**不许**用 `¥` 顶替。
+- 展示统一两位小数、千分位不随 locale 变；金额文案只从 `src/utils/money.ts` 出，别在组件里
+  `toFixed` / 拼 `$`。
+
 ---
 
 ## 2. 鉴权（两条独立通道，不许混用）
@@ -80,7 +95,7 @@
 | POST | `/api/v1/auth/reset-password` | 找回密码第二步（10/min） | `routes/auth.go:72` |
 | GET | `/api/v1/auth/me` | 当前用户 | `routes/auth.go:257` |
 | POST | `/api/v1/auth/revoke-all-sessions` | 退出所有设备 | `routes/auth.go:259` |
-| GET | `/api/v1/user/profile` | 账号资料 / 邮箱绑定态 / 余额（USD） | `routes/user.go:31`；`handler/user_handler.go:533-565` |
+| GET | `/api/v1/user/profile` | 账号资料 / 邮箱绑定态 / 余额（元） | `routes/user.go:31`；`handler/user_handler.go:533-565` |
 
 ### 3.1b 邀请体系（复用 sub2api，本地仅 UI）
 
@@ -88,11 +103,11 @@
 | --- | --- | --- | --- | --- |
 | POST | `/api/v1/auth/validate-invitation-code` | 无（10/min） | 注册前预校验邀请码（返回 `valid` / `error_code`；`INVITATION_CODE_DISABLED` = 功能未开） | `routes/auth.go:64`；`handler/auth_handler.go:539-560` |
 | POST | `/api/v1/auth/register`（带 `invitation_code` / `aff_code`） | 无（5/min） | **邀请关系只能在注册时一次填定** | `routes/auth.go:35`；`service/auth_service.go:281,994`（`BindInviterByCode`） |
-| GET | `/api/v1/user/aff` | JWT | 我的邀请：`aff_code` / `aff_count` / `aff_quota`（返利按 USD） | `routes/user.go:41`；`service/affiliate_service.go:87-100` |
+| GET | `/api/v1/user/aff` | JWT | 我的邀请：`aff_code` / `aff_count` / `aff_quota`（返利，单位元） | `routes/user.go:41`；`service/affiliate_service.go:87-100` |
 
 **语义变化（UI 跟着改）**
 
-- 旧：「填别人的邀请码 → 我立刻得积分」。新：邀请码在**注册时**填，返利按 USD 比例结算，入口在「我的邀请」页展示（`effective_rebate_rate_percent`，`service/affiliate_service.go:293-328`）。
+- 旧：「填别人的邀请码 → 我立刻得积分」。新：邀请码在**注册时**填，返利按**比例**结算（金额单位元），入口在「我的邀请」页展示（`effective_rebate_rate_percent`，`service/affiliate_service.go:293-328`）。
 - `circular_invite` / `already_redeemed` 这类旧文案**不再适用，删掉**。
 - **未找到**「登录后补填邀请码」的端点 —— 不要试图用别的方式实现它（研究结论，见 §3.7）。
 
@@ -119,13 +134,13 @@
 | 方法 | 路径 | 用途 | 来源 |
 | --- | --- | --- | --- |
 | GET | `/api/v1/keys` | 列表（分页 `page` / `page_size` / `search` / `status` / `group_id` / `sort_*`） | `routes/user.go:85`；分页形状 `pkg/response/response.go:25-32` |
-| POST | `/api/v1/keys` | 创建（`name` 必填；`quota`(USD, 0=不限)、`expires_in_days`、`group_id`、可选 `custom_key`） | `routes/user.go:87`；`handler/api_key_handler.go:34-47` |
+| POST | `/api/v1/keys` | 创建（`name` 必填；`quota`(元, 0=不限)、`expires_in_days`、`group_id`、可选 `custom_key`） | `routes/user.go:87`；`handler/api_key_handler.go:34-47` |
 | GET | `/api/v1/keys/:id` | 详情 | `routes/user.go:86` |
 | PUT | `/api/v1/keys/:id` | 改名/停用/改额度（**请求体没有 `key` 字段**，无法原位换值） | `routes/user.go:88`；`handler/api_key_handler.go:50-59` |
 | DELETE | `/api/v1/keys/:id` | 删除 | `routes/user.go:89` |
 
 `APIKey` DTO 关键字段（`handler/dto/types.go:56-75`）：`{id, user_id, key, name, group_id, status,
-quota(USD，0=不限), quota_used(USD), expires_at, last_used_at, …}`。**`quota:0` = 不限，不是零额度。**
+quota(元，0=不限), quota_used(元), expires_at, last_used_at, …}`。**`quota:0` = 不限，不是零额度。**
 
 ### 3.3 额度与用量
 
@@ -139,9 +154,9 @@ quota(USD，0=不限), quota_used(USD), expires_at, last_used_at, …}`。**`quo
 
 `GET /v1/usage` 的三种形态（**解析器必须全兼容**，来源 `handler/gateway_handler.go:1706-1861`）：
 
-- `mode:"quota_limited"` → `quota:{limit,used,remaining,unit:"USD"}` + `rate_limits[]`（`gateway_handler.go:1706-1790`）
+- `mode:"quota_limited"` → `quota:{limit,used,remaining,unit}` + `rate_limits[]`（`unit` 是**币种码**，正常 `"CNY"`；按值渲染，见 §1.1）（`gateway_handler.go:1706-1790`）
 - 订阅组 Key → `mode:"unrestricted"` + `subscription:{daily_usage_usd,…}`（`gateway_handler.go:1799-1837`）
-- 钱包余额模式 → `mode:"unrestricted"` + `remaining` / `balance`（USD）（`gateway_handler.go:1839-1861`）
+- 钱包余额模式 → `mode:"unrestricted"` + `remaining` / `balance`（元）（`gateway_handler.go:1839-1861`）
 
 ### 3.4 卡密兑换
 
@@ -217,9 +232,9 @@ quota(USD，0=不限), quota_used(USD), expires_at, last_used_at, …}`。**`quo
 | `API_KEY_REQUIRED` | 401 | `consumeErrKeyMissing` | 未填 Key |
 | `API_KEY_DISABLED` | 403 | `consumeErrKeyInvalid` | 新语义：Key 被停用 |
 | `API_KEY_EXPIRED` | 403 | `consumeErrKeyExpired` | 新语义 |
-| `API_KEY_QUOTA_EXHAUSTED` | 403 | `consumeErrKeyQuotaExhausted` | 新语义：USD 额度用完 |
+| `API_KEY_QUOTA_EXHAUSTED` | 403 | `consumeErrKeyQuotaExhausted` | 新语义：本 Key 额度用完 |
 | `API_KEY_AUTH_OVERLOADED` | 429 | `consumeErrRateLimited` | Key 爆破保护 |
-| `INSUFFICIENT_BALANCE` | 402/403 | `consumeErrInsufficientBalance` | 新语义：账户余额不足（USD） |
+| `INSUFFICIENT_BALANCE` | 402/403 | `consumeErrInsufficientBalance` | 新语义：账户余额不足（元） |
 | `GROUP_NOT_ALLOWED` | 403 | `consumeErrGroupNotAllowed` | 新语义：分组不匹配 |
 | `RATE_LIMITED` / `INVALID_AUTH_RATE_LIMITED` | 429（带 `Retry-After`） | `consumeErrRateLimited` | 只认 `Retry-After` 秒数 |
 | `reason:"REDEEM_CODE_NOT_FOUND"` | 404 | `consumeErrCardNotFound` | 与「过期」不同码 |

@@ -1,5 +1,6 @@
 import { createElement, type ReactNode } from 'react'
 import type { TranslationKey, TranslationParams } from '../../i18n/index.js'
+import { formatYuan } from '../../utils/money.js'
 import {
   hasNextPage,
   maskCardNo,
@@ -106,8 +107,11 @@ export const formatPurchaseTime = (createdAt: number): string => {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`
 }
 
-export const formatYuan = (yuan: number): string =>
-  `¥${(Number.isFinite(yuan) ? yuan : 0).toFixed(2)}`
+/**
+ * 金额：`¥29.90`（1 元 = 1 额度，无 USD）。实现在 `src/utils/money.ts`，符号映射只有那一份；
+ * 这里保留同名导出，是因为既有调用方（含单测）从本模块取它。
+ */
+export { formatYuan }
 
 /** 错误视图：文案全部落在 i18n key 上，界面里不出现英文原文 */
 export type PurchaseErrorView = {

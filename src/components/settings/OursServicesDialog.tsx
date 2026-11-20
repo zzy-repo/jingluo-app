@@ -74,10 +74,12 @@ import styles from './OursServices.module.css'
  * 整个组件只在 kind === 'ours' 时渲染（其他渠道一条 DOM 都不留，见 OursServicesRow）。
  *
  * 两套后端（都在 services/ 里，纯逻辑 + 注入传输，单测覆盖）：
- *  - 邀请 / 额度服务 http://140.210.13.146:60013（明文 HTTP）：设备码、Key、邀请码、剩余积分
+ *  - 邀请 / 额度服务（明文 HTTP，旧域）：设备码、Key、邀请码、剩余额度
  *  - 卡密 / 收款服务 https://apia.ecsafe.cn（HTTPS）：联动小铺收款页地址（`/api/pay-link`）、卡密兑换
  *
- * 额度口径：**只认邀请服务的 remaining_points**，界面上只显示「N 积分」，不做人民币折算（#75）。
+ * 额度口径：**只认邀请服务的 remaining_points**；它记的是旧体系的「积分」，界面上按
+ * **100 积分 = 1 元**折算成元展示（#487 统一计量：1 元 = 1 额度，无 USD；早前 #75 的
+ * 「只显示积分」作废）。折算只在 services/ours/api.ts 的 formatPoints 里做一次。
  * /api/balance 只用来判断 Key 是否有效，绝不当余额。
  *
  * 失败一律给可读文案 + 可重试，且重试都是安全的：
@@ -156,8 +158,8 @@ type EmailResultView =
 }
 
 /**
- * 填码成功文案（Issue #234）：线上规则改成「只给邀请人发积分」，被邀请人填码 `reward_points` 就是 0。
- * 0 / 字段缺失 → 只说「邀请关系已绑定」，不再渲染「+0 积分」；拿到积分（邀请人侧）文案保持原样。
+ * 填码成功文案（Issue #234）：线上规则改成「只给邀请人发额度」，被邀请人填码 `reward_points` 就是 0。
+ * 0 / 字段缺失 → 只说「邀请关系已绑定」，不再渲染「+0」；真拿到额度（邀请人侧）才报数。
  */
 const inviteOkText = (rewardPoints: number, t: ReturnType<typeof useTranslate>): string => {
   const copy = inviteOkCopy(rewardPoints)
@@ -1283,7 +1285,7 @@ const OursServicesDialog = ({ onClose }: { onClose: () => void }) => {
           ) : null}
         </section>
 
-        {/* 2. 额度：只认邀请服务的 remaining_points；1 元 = 100 积分 */}
+        {/* 2. 额度：只认邀请服务的 remaining_points；100 积分 = 1 元，展示折算成元 */}
         <section className={styles.section} data-testid="ours-quota">
           <div className={styles.sectionHead}>
             <h3 className={styles.sectionTitle}>{t('oursQuotaTitle')}</h3>

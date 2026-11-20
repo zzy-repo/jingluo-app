@@ -2,7 +2,7 @@
  * 邀请 / 返利 —— Issue #484 §3.1b，W1-A。
  *
  *   POST /api/v1/auth/validate-invitation-code   公共（10/min）：注册前预校验邀请码
- *   GET  /api/v1/user/aff                        JWT：我的邀请（返利按 **USD 比例**，不是积分）
+ *   GET  /api/v1/user/aff                        JWT：我的邀请（返利按**比例**结算，金额单位是元）
  *
  * 语义（#484 §3.1b「UI 要跟着改」）：
  *  - 邀请关系**只能在注册时一次填定**（sub2api 没有「登录后补填邀请码」的端点）；
@@ -19,18 +19,18 @@ import type { ConsumeCallResult, ConsumeHttp } from './http.js'
  */
 export type ConsumeInvitationCheck = { valid: boolean; errorCode?: string }
 
-/** 我的邀请（`AffiliateDetail`）：`affQuota` / `affFrozenQuota` / `affHistoryQuota` 单位是 **USD** */
+/** 我的邀请（`AffiliateDetail`）：`affQuota` / `affFrozenQuota` / `affHistoryQuota` 单位是 **元** */
 export type ConsumeAffiliate = {
   userId: number
   affCode: string
   inviterId?: number
   /** 已邀请人数 */
   affCount: number
-  /** 已结算返利（USD） */
+  /** 已结算返利（元） */
   affQuota: number
-  /** 冻结中的返利（USD） */
+  /** 冻结中的返利（元） */
   affFrozenQuota: number
-  /** 历史累计返利（USD） */
+  /** 历史累计返利（元） */
   affHistoryQuota: number
   /** 生效返利比例（百分数，例如 10 表示 10%） */
   effectiveRebateRatePercent?: number

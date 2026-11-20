@@ -16,7 +16,7 @@
 //   [B] 设备码：首次生成、可见、符合 8–128 / [A-Za-z0-9._:-]、重开不变（持久化）
 //   [C] 打开弹层只读、**不自动 /apply**（#100）；用户显式点「领取新 Key」才 /apply；
 //       已有 Key 时重开也不再自动 /apply（不覆盖用户已填的 Key）
-//   [D] 额度只认邀请服务 /me 的 remaining_points，且只显示「N 积分」（#75：不做 ¥ 折算）
+//   [D] 额度只认邀请服务 /me 的 remaining_points，按元显示（#487：100 积分 = 1 元，单位统一为元）
 //   [E] 邀请码：展示自己的 + 已邀请人数；填别人的走 /redeem，六类错误码各有文案
 //   [F] 购买区：#331 之后客户端不再拉 /api/plans，只给空态 + 「前往购买」（现链路归 C6）
 //   [H] 兑换：成功 → 刷新额度；202 CREDIT_PENDING 显示「处理中」而不是失败；409 提示不要重复提交
@@ -395,7 +395,7 @@ const runViewport = async ({ width, height, label }) => {
   eq(deviceCode2, deviceCode, `${width}px：设备码不变（持久化，不因切渠道/改 Key 变化）`)
   eq(await page.evaluate((keyName) => window.localStorage.getItem(keyName), DEVICE_KEY), deviceCode, `${width}px：设备码落在固定存储键`)
   const quotaText = await page.getByTestId('ours-quota-value').innerText()
-  eq(quotaText, '100 积分', `${width}px：额度来自 /me remaining_points，只显示积分（#75）`)
+  eq(quotaText, '1.00 元', `${width}px：额度来自 /me remaining_points，按 100:1 折算成元（#487）`)
   const quotaBlockText = await page.getByTestId('ours-quota').innerText()
   truthy(!/¥|约可消费|approx/.test(quotaBlockText), `${width}px：额度区块里没有 ¥ 折算残留（#75）`)
   const inviteText = await page.getByTestId('ours-invite-code').innerText()
@@ -424,7 +424,7 @@ const runViewport = async ({ width, height, label }) => {
   mock.remaining = 0
   await page.getByTestId('ours-quota-refresh').click()
   await page.waitForTimeout(700)
-  eq(await page.getByTestId('ours-quota-value').innerText(), '0 积分', `${width}px：额度为零文案（只显示积分）`)
+  eq(await page.getByTestId('ours-quota-value').innerText(), '0.00 元', `${width}px：额度为零文案（元口径）`)
   const zeroHint = await page.getByTestId('ours-quota-hint').innerText()
   truthy(/额度已用完/.test(zeroHint), `${width}px：额度为零给下一步建议（${zeroHint}）`)
   await scrollTo(page, 'ours-quota')
@@ -482,8 +482,8 @@ const runViewport = async ({ width, height, label }) => {
   await page.waitForTimeout(900)
   const redeemOk = await page.getByTestId('ours-redeem-result').innerText()
   truthy(/兑换成功/.test(redeemOk), `${width}px：兑换成功（${redeemOk}）`)
-  // #75：只显示积分，不做 ¥ 折算（旧契约里的「¥3.00」已随 #75 移除，这里反过来钉住）
-  truthy(/\+300 积分/.test(redeemOk), `${width}px：兑换结果显示积分数（${redeemOk}）`)
+  // #487：单位统一为元（100 积分 = 1 元），兑换到的 300 积分上屏是 +3.00 元
+  truthy(/\+3\.00 元/.test(redeemOk), `${width}px：兑换结果显示折算后的金额（${redeemOk}）`)
   truthy(!/¥/.test(redeemOk), `${width}px：兑换结果不做 ¥ 折算（#75）`)
   truthy(calls.me > meBeforeRedeem, `${width}px：兑换成功后刷新额度`)
   // Issue #72：走本机池 /redeem-card；池正常返回时旧 /api/redeem 一次都不该被兜底打到

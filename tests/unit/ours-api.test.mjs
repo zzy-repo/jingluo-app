@@ -80,9 +80,10 @@ console.log('\n[1] 套餐：价格与积分取服务端，渲染模板可拼')
   eq(state.plans[0].price, 3, '价格来自服务端（p1 = 3）')
   eq(state.plans[0].points, 300, '积分来自服务端（p1 = 300）')
   eq(formatPlanPrice(state.plans[0]), '¥3.00', '价格文案')
-  eq(formatPoints(state.plans[0].points, zh.oursPointsUnit), '300 积分', '积分文案')
+  // #487：单位统一为元（100 积分 = 1 元），300 积分 = ¥3.00；断言强度不变，只是期望值跟着单位改
+  eq(formatPoints(state.plans[0].points, zh.oursPointsUnit), '3.00 元', '额度文案（元）')
   // 套餐行渲染就是这一个纯函数（界面直接用它，不再拼 i18n 模板）
-  eq(formatPlanMeta(state.plans[0], zh.oursPointsUnit), '¥3.00 · 300 积分', '套餐行渲染文案')
+  eq(formatPlanMeta(state.plans[0], zh.oursPointsUnit), '¥3.00 · 3.00 元', '套餐行渲染文案（元）')
   const broken = await fetchPlans(fakeTransport([{ kind: 'response', status: 200, text: 'nope' }]).transport)
   eq(broken.status, 'error', '非法 JSON → error')
   eq(broken.messageKey, 'oursPlansFailed', '非法 JSON 文案 key')
@@ -98,35 +99,38 @@ console.log('\n[1] 套餐：价格与积分取服务端，渲染模板可拼')
   eq(allDisabled.status, 'empty', '全部 enabled=false 也按空态处理（界面同样不能露出空卡片列表）')
 }
 
-// ---------------------------------------------------------------- [2] 额度只显示积分
-console.log('\n[2] 额度只显示积分：不做 points → 人民币折算（#75）')
+// ---------------------------------------------------------------- [2] 额度按元显示
+// #487：维护者要求统一计量（1 元 = 1 额度，无 USD 概念），旧「只显示积分、不折算」（#75）作废。
+// 折算系数（100 积分 = 1 元）只有一处：src/utils/money.ts 的 POINTS_PER_YUAN / pointsToYuan。
+console.log('\n[2] 额度按元显示：100 积分 = 1 元（#487 统一计量）')
 {
   eq(
     translate('oursQuotaValue', { points: formatPoints(300, zh.oursPointsUnit) }),
-    '300 积分',
-    '额度整行文案：只有积分'
+    '3.00 元',
+    '额度整行文案：300 积分 → 3.00 元'
   )
   eq(
     translate('oursQuotaValue', { points: formatPoints(100, zh.oursPointsUnit) }),
-    '100 积分',
-    '额度整行文案：100 积分不折算'
+    '1.00 元',
+    '额度整行文案：100 积分 → 1.00 元'
   )
-  // 折算函数必须彻底消失：留着就会有人再按 1 元 = 100 积分拼回去（/api/plans 实际是 3000 积分/元）
-  eq(typeof oursApi.pointsToYuan, 'undefined', '不再导出 pointsToYuan')
-  eq(typeof oursApi.formatYuan, 'undefined', '不再导出 formatYuan')
-  eq(typeof oursApi.POINTS_PER_YUAN, 'undefined', '不再导出 POINTS_PER_YUAN')
+  // 折算函数不在本模块里再长一份（只有 utils/money.ts 那一份），防止出现第二套系数
+  eq(typeof oursApi.pointsToYuan, 'undefined', '不在 ours/api 里再导出一份 pointsToYuan')
+  eq(typeof oursApi.formatYuan, 'undefined', '不在 ours/api 里再导出一份 formatYuan')
+  eq(typeof oursApi.POINTS_PER_YUAN, 'undefined', '不在 ours/api 里再导出一份 POINTS_PER_YUAN')
   // zh/en 都不许留死键与残留换算模板
   const residue = []
   for (const [locale, table] of [['zh', zh], ['en', en]]) {
     for (const [key, text] of Object.entries(table)) {
       if (!key.startsWith('ours')) continue
       if (typeof text !== 'string') continue
-      if (/\{yuan\}|约可消费|approx|about \{|¥/.test(text)) residue.push(`${locale}.${key}=${text}`)
+      if (/\{yuan\}|约可消费|approx|about \{/.test(text)) residue.push(`${locale}.${key}=${text}`)
     }
   }
-  eq(residue, [], 'zh/en 额度相关文案里没有 ¥ 折算残留')
+  eq(residue, [], 'zh/en 额度相关文案里没有第二套「约合 ¥」折算模板（#487：统一走元口径）')
   truthy(!/token/.test(zh.oursQuotaValue), '额度文案里没有 token')
   truthy(!/\$/.test(zh.oursQuotaValue), '额度文案里没有美元符号')
+  // #487：本单位是元，zh 全表不许再出现 USD 字面量（留着就等于还承认 USD 口径）
   truthy(!/USD/i.test(JSON.stringify(zh)), '文案里没有 USD')
 }
 
@@ -211,8 +215,8 @@ console.log('\n[5] 兑换：request_id 固定用卡密；202 是「处理中」�
   eq(body.request_id, CARD, 'request_id 就是卡密')
   eq(
     translate('oursRedeemSuccess', { points: formatPoints(result.points, zh.oursPointsUnit) }),
-    '兑换成功，+300 积分',
-    '成功文案（不再带 ¥ 折算）'
+    '兑换成功，+3.00 元',
+    '成功文案：300 积分按 100:1 折算成元'
   )
   truthy(!JSON.stringify({ ...result, card: '' }).includes(KEY), '结果不含完整 Key')
 
@@ -248,7 +252,7 @@ console.log('\n[6] 兑换错误码：五类各有一句能看的文案')
     ['API_KEY_INVALID', 400, 'Key 无效，请重新领取或填写', false],
     ['CARD_ALREADY_USED', 409, '该卡密已被使用，不要重复提交', false],
     ['CARD_NOT_FOUND', 404, '卡密不存在，请核对后重试', false],
-    ['VERIFY_UNAVAILABLE', 503, '积分服务暂时不可用，请稍后重试', true],
+    ['VERIFY_UNAVAILABLE', 503, '额度服务暂时不可用，请稍后重试', true],
     ['RATE_LIMITED', 429, '请求过于频繁，请稍后重试', false],
   ]
   for (const [code, status, text, retryable] of cases) {
