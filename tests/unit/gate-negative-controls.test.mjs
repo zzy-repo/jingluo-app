@@ -400,6 +400,18 @@ const REGISTRY = {
     kind: 'ci',
     what: 'CI 往 dist/ 塞一份写着假 token 的 js → 必 exit 1，删掉后 exit 0（golden job 另有 --expect-seam 正向对照）',
   },
+  // 大小写撞车门禁（#557 新建）：对照写在 ci.yml 里现场注入 —— 造一对仅大小写不同的模块
+  // （`src/__GateCaseProbe.ts` / `src/__gatecaseprobe.ts`）→ 必 exit 1，删掉 → exit 0。
+  // 和 check:consume-api / check:doc-refs 同款：塞的正是脚本自己扫的文件清单，放 ci.yml 里 ≈1s。
+  // 另有脚本自带的 `--selftest`（4 条反例 + 2 条正例，见 scripts/check-case-collision.mjs），
+  // 钉的是判据本身：R1 路径 / R2 目录 / R3 模块 stem（#557 命中的是 R3 —— `.tsx` 与 `.ts` 全名不同，
+  // 只有 stem 撞车，所以只用「整条路径小写后相同」去判会漏）。
+  'check:case-collision': {
+    where: '.github/workflows/ci.yml',
+    kind: 'ci',
+    what: 'CI 造一对仅大小写不同的模块（src/__GateCaseProbe.ts / src/__gatecaseprobe.ts）→ 必 exit 1，删掉后 exit 0',
+    mention: /check-case-collision\.mjs/,
+  },
 }
 
 /**

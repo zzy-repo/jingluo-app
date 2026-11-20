@@ -58,6 +58,34 @@ jobs:
       - name: 重复实现（check:dup-impl）
         run: pnpm run check:dup-impl
 
+      # 大小写撞车门禁（#557）：仓库里不允许存在「仅大小写不同」的文件名。
+      # 为什么必须机械化：main 上 `src/components/consume/` 并存 4 对只差大小写的模块
+      # （`AccountPanel.tsx` / `accountPanel.ts` …，来自 #487 的面板拆分），Linux 上完全看不出问题，
+      # 但 macOS（大小写不敏感的 APFS）上 tsc 报 TS1261、rspack 报 ESModulesLinkingError，
+      # 于是本地 `pnpm type` / `pnpm build` 全红、APK 根本打不出来。人工 review 也拦不住：
+      # diff 里那两行长得就像同一个文件的两个扩展名。判据（R1 路径 / R2 目录 / R3 模块 stem）见脚本头。
+      # 纯文本扫描（`git ls-files`，无构建产物依赖，< 1s），跟着最便宜的那批放在前面。
+      - name: 大小写撞车（check:case-collision）
+        run: pnpm run check:case-collision
+
+      # 负向对照（同 check:consume-api / check:doc-refs / check:i18n 的写法）：
+      # 现场造一对只差大小写的模块 → 门禁必须 exit 1 → 删掉 → 必须 exit 0。
+      # 只跑正例的步骤算「绿灯空跑」（#369）。这对探针文件故意不进索引：
+      # 门禁扫的是「已跟踪 + 未跟踪未被忽略」，名字撞车在 `git add` 之前就已经能杀掉一个 checkout。
+      - name: 负向对照：造一对仅大小写不同的文件必须被 check:case-collision 拦下
+        run: |
+          set -euo pipefail
+          printf 'export const A = 1\n' > src/__GateCaseProbe.ts
+          printf 'export const B = 2\n' > src/__gatecaseprobe.ts
+          if node scripts/check-case-collision.mjs; then
+            rm -f src/__GateCaseProbe.ts src/__gatecaseprobe.ts
+            echo "::error::负向对照失败：造了一对仅大小写不同的文件后 check:case-collision 仍然通过，说明门禁没有真正生效"
+            exit 1
+          fi
+          rm -f src/__GateCaseProbe.ts src/__gatecaseprobe.ts
+          node scripts/check-case-collision.mjs
+          echo "负向对照通过：仅大小写不同 → exit 1，删掉 → exit 0"
+
       # 测试布局与重复检测（#362 阶段二 / #366 → #408 转 block）：同样是纯文本扫描
       # （各 < 2s、不依赖构建产物）。#408 起了 block，条件都已在仓库里落地：
       #   布局（--strict）：命名违规 0（域 3/4 六个批次文件已按 domainNN- 改名）+ fixture 散放 0

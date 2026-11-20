@@ -22,6 +22,7 @@
     "type": "tsc -p tsconfig.json",
     "check:legacy": "node scripts/check-bundle-syntax.mjs",
     "check:bundle-target": "node scripts/check-bundle-target.mjs",
+    "check:case-collision": "node scripts/check-case-collision.mjs",
     "check:matrix": "node scripts/compat/check-matrix-config.mjs && node scripts/compat/matrix-scan.mjs",
     "check:compat-baseline": "node scripts/check-compat-baseline.mjs",
     "check:ip": "node scripts/check-hardcoded-ip.mjs",
