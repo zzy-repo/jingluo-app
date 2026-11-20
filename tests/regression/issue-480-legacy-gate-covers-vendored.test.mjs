@@ -103,3 +103,39 @@ test('[绿 4] ?. / ?? 在 vendored 里放行（门禁是 Chromium 83 能力集�
     assert.equal(exit, 0, `?. / ?? 是 Chrome 80 的能力，pdfjs legacy build 实测在用，不该判红：\n${output}`)
   })
 })
+
+// ── #543：运行时 API 层漏了 `Promise.withResolvers`（Chrome 119）────────────────
+//
+// 这一条不是语法错，是**运行期** TypeError（`Promise.withResolvers is not a function`）：
+// 词法层与 AST 层对它完全无感，只有第三层（运行时 API 表）能拦。修复前同一个产物
+// 门禁照样 exit 0 报「合格」——「现在绿」只说明还没人用它，不说明门禁拦得住。
+//
+// 四拍（#369 模板）：干净 → exit 0；注入 → exit 1 且点名 `文件:行`；还原 → 再 exit 0。
+test('[绿 5] 懒加载 chunk 里的 Promise.withResolvers 必须拦下，并点名 文件:行（#543）', () => {
+  const inject = 'var a = 1\nvar d = Promise.withResolvers()\n'
+  withDist({ lazy: inject }, (dir) => {
+    const red = run(dir)
+    assert.equal(red.code, 1, `chunk 里的 Promise.withResolvers 必须判红（exit 1），实际 ${red.code}：\n${red.output}`)
+    assert.ok(
+      red.output.includes('static/js/async/1234.chunk.js:2:9'),
+      `报告必须点名 文件:行:列（不是只说「有 API 缺失」）：\n${red.output}`
+    )
+    assert.ok(red.output.includes('promise-withResolvers'), `报告必须点出规则 id：\n${red.output}`)
+    assert.ok(red.output.includes('Chrome 119+'), `报告必须点出版本依据：\n${red.output}`)
+
+    // 还原：同一个目录写回干净内容，门禁必须重新 exit 0
+    // （没有这一拍，「红」可能只是门禁恒红 / 注入物没清干净）
+    writeFileSync(path.join(dir, 'static', 'js', 'async', '1234.chunk.js'), 'var b = 2\n')
+    const green = run(dir)
+    assert.equal(green.code, 0, `还原后必须回到 exit 0：\n${green.output}`)
+  })
+})
+
+test('[绿 6] Array.fromAsync（Chrome 121）同款：vendored 经典脚本里出现也拦（#543）', () => {
+  withDist({ pdf: 'async function f(){ return Array.fromAsync([1]) }\n' }, (dir) => {
+    const { code, output } = run(dir)
+    assert.equal(code, 1, `vendored 里的 Array.fromAsync 必须判红，实际 ${code}：\n${output}`)
+    assert.ok(output.includes('static/pdfjs/pdf.min.js:1:'), `必须点名 vendored 文件与行号：\n${output}`)
+    assert.ok(output.includes('array-fromAsync'), output)
+  })
+})

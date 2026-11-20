@@ -80,6 +80,11 @@ export const writeAttachmentTextRecord = async (params: {
   sha256: string
   parserVersion: string
   text: string
+  /**
+   * 正文字符数（#544）。缺省时退回 `text.length`（= 无结构标记的解析器 /
+   * 老调用方的行为）；PDF 必须显式传，否则页标记会被算进字数。
+   */
+  characterCount?: number
   status: Extract<DocumentAttachment['status'], 'success' | 'partial'>
   totalPages?: number
   extractedPages?: number
@@ -90,7 +95,7 @@ export const writeAttachmentTextRecord = async (params: {
     sha256: params.sha256,
     parserVersion: params.parserVersion,
     text: params.text,
-    characterCount: params.text.length,
+    characterCount: params.characterCount === undefined ? params.text.length : params.characterCount,
     status: params.status,
     createdAt: Date.now(),
   }

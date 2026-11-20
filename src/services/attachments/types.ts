@@ -41,8 +41,29 @@ export interface DocumentAttachment {
 
 /** 各 parser 的统一返回结构 */
 export interface ParsedDocument {
+  /**
+   * 注入文本（可能为展示/阅读顺序插入结构标记，见 `rawLength`）。
+   * PDF 的 `text` 里带 `[第N页]` 页标记与页间分隔换行；txt / docx 没有标记。
+   */
   text: string
+  /**
+   * **正文字符数**，三种解析器**同一口径**（#544）：
+   * 只统计文档正文本身 —— 不含 PDF 的 `[第N页]` 页标记、也不含标记之间的分隔换行。
+   *
+   * 因此「同一段文字」分别走 txt 与 pdf 两个解析器，这个数必须**相等**
+   * （`tests/unit/attachment-character-count-480.test.mjs` 就是这条断言）。
+   * 想拿「注入文本本身有多长」（截断 / 预算 / 展示）请用 `rawLength`，别用这个字段。
+   */
   characterCount: number
+  /**
+   * 注入文本的总长度（= `text.length`），**含**解析器自己插入的结构标记：
+   * PDF 的 `[第N页]` 与页间分隔换行；txt / docx 没有标记，所以与 `characterCount` 相等。
+   *
+   * 与 `characterCount` 分成两个字段是 #544 的结论：一个数不能既当「正文多长」又当
+   * 「注入文本多长」——PDF 上两者天然不等（每页多 6 个字符的标记 + 分隔换行），
+   * 混用的结果就是同一份文档走不同 parser 得到不可比的字数。
+   */
+  rawLength: number
   pages?: number
   extractedPages?: number
   warnings?: string[]
