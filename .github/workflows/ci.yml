@@ -295,6 +295,50 @@ jobs:
           node scripts/check-consume-api.mjs
           echo "负向对照通过：白名单外路径 → exit 1，删掉 → exit 0"
 
+      # #484 §九 的 A1–A7 方向验收（脚本 #487 阶段②建的，一直"设计性红"，所以此前没接线）。
+      # #590 把 A1/A4/A6 降到 0 命中之后才接：**先全绿再接线** —— 接一道恒红的门禁等于没有门禁。
+      # 它回答的问题和别的门禁不同：别的是「这一处有没有违规」，它问「重构的方向还在不在」
+      # （旧体系断没断 / 额度还是不是后端的 / base 还是不是配置化的 / 身份是不是 JWT）。
+      # A2 内部会跑一遍 check:consume-api（不复制规则）；A7 恒为 MANUAL，不计 FAIL。
+      # 纯文本扫描，不依赖 dist，实测 < 1s。
+      - name: 方向验收 A1–A7（check:refactor-direction）
+        run: pnpm run check:refactor-direction
+
+      # 紧跟一条负向对照（同 check:legacy / check:i18n / check:endpoints / check:consume-api 的写法，
+      # **无** continue-on-error）。这条对照同时钉住 #590 ① 的扫描口径，两件事都要成立：
+      #   a) 只往 `android/app/src/main/assets/**`（`cap sync` 产物、.gitignore 忽略）里放一条旧池域地址
+      #      → 必须**仍然 exit 0**。算进来就会「本地红、CI 绿」，同一份代码两种结论，收口永远说不清。
+      #   b) 再往 `src/` 里放同一条地址 → 必须 exit 1（证明跳过生成目录不是把扫描器整体弄瞎）。
+      #   c) 删掉 src/ 那份 → 必须回到 exit 0（红不是注入物没删干净造成的）。
+      - name: 负向对照：生成目录不计入、src/ 里同样的地址必须被判红（#590 ①）
+        run: |
+          set -euo pipefail
+          neg_dir='android/app/src/main/assets/public/static/js'
+          neg_gen="$neg_dir/__gate_neg_refactor_direction.js"
+          neg_src='src/__gate_neg_refactor_direction_probe.ts'
+          log=/tmp/check-refactor-direction-neg.log
+          mkdir -p "$neg_dir"
+          printf "var neg = 'http://140.210.13.146:60013/apply';\n" > "$neg_gen"
+          # a) 只有生成目录里的命中 → 必须仍然 exit 0
+          if ! node scripts/check-refactor-direction.mjs > "$log" 2>&1; then
+            rm -f "$neg_gen"
+            cat "$log"
+            echo "::error::对照失败：只有生成目录里的旧池域地址时 check:refactor-direction 仍判红 —— 扫描口径又漏了生成目录（本地红 / CI 绿）"
+            exit 1
+          fi
+          # b) src/ 里同一地址 → 必须 exit 1（跳过生成目录不等于把扫描器弄瞎）
+          printf "export const NEG_REFACTOR_ADDR = 'http://140.210.13.146:60013/apply'\n" > "$neg_src"
+          if node scripts/check-refactor-direction.mjs > "$log" 2>&1; then
+            rm -f "$neg_gen" "$neg_src"
+            echo "::error::对照失败：src/ 里塞了旧池域地址后 check:refactor-direction 仍然通过，说明 A1 已经不咬了"
+            exit 1
+          fi
+          # c) 还原 → 必须回到 exit 0（红不是注入物没删干净）
+          rm -f "$neg_src" "$neg_gen"
+          rmdir -p "$neg_dir" 2>/dev/null || true
+          node scripts/check-refactor-direction.mjs > "$log" 2>&1 || { cat "$log"; echo "::error::对照失败：还原后 check:refactor-direction 仍然红"; exit 1; }
+          echo "负向对照通过：生成目录不计入 → exit 0；src/ 里同一地址 → exit 1；删掉 → exit 0"
+
       # ─────────────── Issue #415：把 deploy/dl-release/test 的用例接进流水线（#441 起 37 条）───────────────
       # 同一类教训的第四处（前有 #368 的 regression 层、#365 的 integration 层、#413 的门禁）：
       # `deploy/dl-release/test` 的用例（variant 9 / apk-manifest 9 / server-buildtype 6 /

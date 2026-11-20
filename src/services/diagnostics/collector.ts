@@ -70,7 +70,7 @@ export const UNKNOWN_HOST = 'unknown'
 /**
  * 只取 host（**不含端口、不含 query/fragment、不含 userinfo**），用于区分「直连官方」还是「自建中转」。
  *
- * - 绝对地址：取 URL.hostname —— 它是 IP 就照实记 IP（如 140.210.13.146），排查必需；
+ * - 绝对地址：取 URL.hostname —— 它是 IP 就照实记 IP（本仓只出现过一处旧池域），排查必需；
  * - 相对地址（/v1/messages）：真实目标是当前页面的 origin，取 location.hostname；
  * - 解析失败：正则兜底，剥协议头、userinfo、端口，再走一遍脱敏规则，确保 host 不会绕过脱敏。
  */

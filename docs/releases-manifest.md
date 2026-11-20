@@ -13,14 +13,28 @@
 ```json
 {
   "latest": "1.4.0-beta.4",
-  "releases": [ /* 版本记录，versionCode 严格降序，releases[0] 恒为 latest */ ]
+  "releases": [ /* 版本记录，versionCode 严格降序，releases[0] 恒为最新发布 */ ]
 }
 ```
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `latest` | string | 最新发布版本号，**必须**等于 `releases[0].version` |
+| `latest` | string | 最新**发布**版本号，**必须**等于 `releases[0].version`（唯一例外见下面的「私有 internal 条目」） |
 | `releases` | array | 非空，按 `versionCode` **严格降序** |
+
+> ### 私有（internal）条目：可以排在首位，但不改公共 `latest`（Issue #566 问题 1 的 B 方案）
+>
+> 私有包的 `versionCode` 往往比公共最新更大（例：内测 `1.4.2`/21 vs 公共 `1.4.1`/20），按严格降序
+> 只能排在 `releases[0]`。但它**不是**公共渠道的「最新」，所以：
+>
+> - `latest` 允许指向**第一条非 internal 记录**（公共渠道仍然停在那一版）；
+> - 客户端从不靠数组位置选版本 —— `src/services/updateManifest.ts` 自己按 `versionCode` 排序 + 变体过滤，
+>   所以 standard 用户不会被 internal 包带走；
+> - `latest` 仍然**只允许**等于 `releases[0].version` 或第一条非 internal 记录的 version，别的值一律 FAIL
+>   （校验器 `invalid-internal-latest-unrelated.json` 守着这条）。
+>
+> 一个形状完整的样例见 `deploy/dl-release/fixtures/proposed-1.4.2-internal-keep-latest.json`；
+> 发布入口是 `scripts/publish-private-apk.mjs`（手册 §14）。
 
 ## 2. 单条版本记录
 
@@ -29,7 +43,7 @@
 | `version` | string | ✅ | `^\d+\.\d+\.\d+(-[0-9A-Za-z.]+)?$`（例 `1.4.0-beta.4`），全表唯一 |
 | `versionCode` | integer | ✅ | 正整数，严格降序 |
 | `releasedAt` | string | ✅ | ISO8601 带 `+08:00`，例 `2026-11-18T10:29:05+08:00` |
-| `file` | string | ✅ | **仓库相对路径** `apk/<name>.apk`，全表唯一；绝对 URL = `https://dl.rose7.cn/` + `file` |
+| `file` | string | ✅ | **仓库相对路径** `apk/<name>.apk`，全表唯一；绝对 URL = `https://dl.rose7.cn/` + `file`。历史记录与 `version` 同构，**私有包故意不同构**（不可猜测文件名，见手册 §14.4），校验器对这种情况只给 warning |
 | `size` | integer | ✅ | 字节数，正整数 |
 | `md5` | string | ✅ | 32 位小写 hex（服务端自己算） |
 | `sha256` | string | ➕ 新版本必须 | 64 位小写 hex，针对 `file` 指向的完整文件字节（服务端自己算） |

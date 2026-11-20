@@ -3,7 +3,8 @@
  *
  * 契约（lead 定，全组一致）：`parsePdfFile(file: Blob, options?: ParseOptions): Promise<ParsedDocument>`
  * - 入参是 Blob（内部 `arrayBuffer()` 交给 pdfjs），不是原始字节数组：附件存的是 Blob；
- * - 限制值全部来自 `../limits.js`（`pdfMaxBytes` / `pdfMinCharsPerPage`），本文件不写阈值；
+ * - 限制值全部来自 `../limits.js`（`pdfMaxBytes` / `pdfMaxPages` / `pdfMinCharsPerPage` / `pdfTimeoutMs`），
+ *   本文件不写阈值；
  * - 逐页输出格式与 #480 正文一致：
  *
  *   ```
@@ -15,15 +16,16 @@
  *
  * ## 失败怎么表达（重要）
  *
- * `ParsedDocument`（`../types.ts`）只有 text / characterCount / pages / extractedPages / warnings，
- * **没有 status 字段**，所以「硬失败」只能靠**抛 `PdfParseError`**（带 `code` + 中文 `message`），
- * 由 manager 落成 `status: 'failed'` + `errorMessage`：
+ * `ParsedDocument`（`../types.ts`）只有 text / characterCount / rawLength / pages / extractedPages /
+ * pageChars / warnings，**没有 status 字段**，所以「硬失败」只能靠**抛 `PdfParseError`**
+ * （带 `code` + 中文 `message`），由 manager 落成 `status: 'failed'` + `errorMessage`：
  *
  * | code | 触发条件 | message |
  * | --- | --- | --- |
  * | `fileTooLarge` | 超过 `pdfMaxBytes`（50 MiB） | PDF 文件超过 50 MiB 上限 |
  * | `notPdfFile` | 缺 `%PDF-` 文件头 / 空文件 | 文件内容不是有效的 PDF… |
  * | `encryptedPdf` | 字节里有 `/Encrypt`，或 pdfjs 抛 PasswordException | 不支持加密 PDF |
+ * | `tooManyPages` | 页数超过 `pdfMaxPages`（500） | 该 PDF 有 N 页，超过 500 页上限… |
  * | `noTextLayer` | 平均每页可提取字符数 < `pdfMinCharsPerPage`（20） | 该 PDF 未检测到可提取的文本… |
  * | `libUnavailable` | pdfjs 经典脚本加载失败 | PDF 解析组件加载失败，请重试 |
  * | `openFailed` | pdfjs 打不开 / 全部页提取失败 | PDF 打开失败，文件可能已损坏 |
@@ -35,7 +37,8 @@
  * ## 已知边界（不在本单范围）
  *
  * - 扫描版 PDF / OCR：不打分、不兜底，直接 `noTextLayer`；
- * - 页数上限（#480 建议 100 页）没有对应的 limits 项，本单不自行造阈值；
+ * - 取消 / 超时的粒度是**页**：pdfjs 的 `getTextContent()` 单页内不可中断（超时用 `Promise.race`
+ *   抢跑，随后 `document.destroy()` 终止 worker，卡住的那一页放弃）；
  * - 版面判读只到「行」这一层（见 pdfLayout.ts）：双栏 PDF 的行序可能交错；
  * - `/Encrypt` 是**字节扫描**（PDF 加密字典的名字就长这样），理论上正文流里出现同一串字节会误判；
  *   真加密的 PDF 无论如何都解不开，所以宁严不宽；
@@ -71,6 +74,7 @@ export type PdfParseErrorCode =
   | 'fileTooLarge'
   | 'notPdfFile'
   | 'encryptedPdf'
+  | 'tooManyPages'
   | 'noTextLayer'
   | 'libUnavailable'
   | 'openFailed'
@@ -171,8 +175,60 @@ const extractPageText = async (document: PdfDocumentProxy, pageNumber: number): 
 }
 
 /**
- * 体积检查：**在读字节之前**就要挡住，别为了报「太大」把一个 51 MiB 的文件读进内存。
+ * 单页超时的内部信号：只在本文件里用来「记一笔」并停止翻页，**不是**对外错误码
+ * （超时按 #571 的语义走 partial + warnings，不落 `failed`）。
  */
+class PdfPageTimeoutError extends Error {
+  constructor() {
+    super('pdf page timeout')
+    this.name = 'PdfPageTimeoutError'
+  }
+}
+
+/** 判断某个异常是不是单页超时（`instanceof` 判不到跨 realm，这里同时认 `name`） */
+const isPageTimeout = (error: unknown): boolean =>
+  error instanceof PdfPageTimeoutError ||
+  (Boolean(error) && typeof error === 'object' && (error as { name?: unknown }).name === 'PdfPageTimeoutError')
+
+/**
+ * 给一个 promise 套时间预算：超时先返回，把卡住的页放掉，由调用方决定怎么记账。
+ *
+ * 原 promise **不会**被取消 —— pdfjs 的 `getTextContent()` 没有中断接口。真正停下 worker 的
+ * 是循环之后（或 finally 里）的 `document.destroy()`；原 promise 晚到的 settle 结果被丢弃，
+ * 所以两条 `then` 分支里都要挡 `settled`，且超时后仍保留 then 的处理函数（吃掉 rejection，
+ * 不让它变成 unhandled rejection 冒到全局）。
+ */
+const raceWithTimeout = <T>(promise: Promise<T>, timeoutMs: number): Promise<T> =>
+  new Promise<T>((resolve, reject) => {
+    let settled = false
+    const timer = setTimeout(() => {
+      if (settled) {
+        return
+      }
+      settled = true
+      reject(new PdfPageTimeoutError())
+    }, timeoutMs)
+    promise.then(
+      (value) => {
+        if (settled) {
+          return
+        }
+        settled = true
+        clearTimeout(timer)
+        resolve(value)
+      },
+      (error: unknown) => {
+        if (settled) {
+          return
+        }
+        settled = true
+        clearTimeout(timer)
+        reject(error)
+      }
+    )
+  })
+
+/** 体积检查：**在读字节之前**就要挡住，别为了报「太大」把一个 51 MiB 的文件读进内存。 */
 export const assertPdfSize = (sizeBytes: number): void => {
   if (sizeBytes > ATTACHMENT_LIMITS.pdfMaxBytes) {
     // 1024 × 1024 是 MB → 字节换算，不是阈值本身（阈值来自 limits.ts）
@@ -211,6 +267,11 @@ export const assertPdfAcceptable = (bytes: Uint8Array, sizeBytes: number): void 
  *
  * 取消：`options.signal.aborted` 为真时**停止继续取页**并返回已取到的部分（`warnings` 含「已取消」）。
  * 注意 pdfjs 的 `getTextContent()` 单页内不可中断 —— 取消的粒度是「页」。
+ *
+ * 页数上限：`pages > pdfMaxPages` 时在**取任何一页之前**抛 `tooManyPages`（不截断、不静默）。
+ *
+ * 超时：`options.timeoutMs`（缺省 `pdfTimeoutMs`）是**整篇**预算，检查点是「每页开始前」；
+ * 单页用 `Promise.race` 抢跑，卡住的那一页记为失败页并停止翻页，已提取的页照常交付。
  */
 export const parsePdfFile = async (file: Blob, options: ParseOptions = {}): Promise<ParsedDocument> => {
   const sizeBytes = file.size
@@ -257,9 +318,27 @@ export const parsePdfFile = async (file: Blob, options: ParseOptions = {}): Prom
   const totalPages = document.numPages
   options.onProgress?.({ totalPages, stage: 'open' })
 
+  // 页数上限：取任何一页之前就拒绝（#571「支持页数上限」）。截断前 N 页当成功是禁止的 ——
+  // 用户会以为整份文档都进了上下文（#480 §3.7 禁止静默截断）。
+  if (totalPages > ATTACHMENT_LIMITS.pdfMaxPages) {
+    await document.destroy().catch(() => undefined)
+    throw hardFail(
+      'tooManyPages',
+      `该 PDF 有 ${totalPages} 页，超过 ${ATTACHMENT_LIMITS.pdfMaxPages} 页上限，请拆分后再上传`,
+      { sizeBytes, totalPages, failedPageCount: 0 }
+    )
+  }
+
+  const timeoutMs =
+    options.timeoutMs === undefined ? ATTACHMENT_LIMITS.pdfTimeoutMs : options.timeoutMs
+  // 整篇预算的起点在「开始翻页」这一刻（打开文档的耗时由 pdfjs 自己控制，不计入 —— 那里没有
+  // 可中断的粒度，硬掐只会让好文件在慢设备上莫名失败）。
+  const deadline = Date.now() + timeoutMs
+
   const pageTexts = new Map<number, string>()
   const failedPages: number[] = []
   let cancelled = false
+  let timedOut = false
 
   try {
     for (let pageNumber = 1; pageNumber <= totalPages; pageNumber += 1) {
@@ -267,9 +346,16 @@ export const parsePdfFile = async (file: Blob, options: ParseOptions = {}): Prom
         cancelled = true
         break
       }
+      const remaining = deadline - Date.now()
+      if (remaining <= 0) {
+        // 预算用光：停止翻页，已提取的页照常交付（partial），不抛错
+        timedOut = true
+        break
+      }
       options.onProgress?.({ page: pageNumber, totalPages, stage: 'page' })
       try {
-        pageTexts.set(pageNumber, await extractPageText(document, pageNumber))
+        const text = await raceWithTimeout(extractPageText(document, pageNumber), remaining)
+        pageTexts.set(pageNumber, text)
       } catch (error) {
         // 单页失败不中断整篇：记页码，最后以 partial + warnings 交付
         failedPages.push(pageNumber)
@@ -278,6 +364,11 @@ export const parsePdfFile = async (file: Blob, options: ParseOptions = {}): Prom
           { page: pageNumber, totalPages, failedPageCount: failedPages.length, sizeBytes },
           error
         )
+        if (isPageTimeout(error)) {
+          // 卡住的那一页不值得继续：后面的页大概率同样卡在同一个坏流/坏字体上
+          timedOut = true
+          break
+        }
       }
     }
   } finally {
@@ -302,16 +393,21 @@ export const parsePdfFile = async (file: Blob, options: ParseOptions = {}): Prom
   if (cancelled) {
     warnings.push('已取消')
   }
+  if (timedOut) {
+    // 文案带上「已提取 N/M 页」：只说「超时」的话，用户不知道还能不能看到内容
+    warnings.push(`解析超时，已提取 ${processedPages}/${totalPages} 页`)
+  }
 
   if (processedPages === 0) {
-    if (cancelled) {
-      // 一页都没读完就被取消：返回空 partial，别让「已取消」伪装成「扫描版 PDF」
+    if (cancelled || timedOut) {
+      // 一页都没读完就被取消 / 超时：返回空 partial，别让「已取消」「超时」伪装成「扫描版 PDF」
       return {
         text: '',
         characterCount: 0,
         rawLength: 0,
         pages: totalPages,
         extractedPages: 0,
+        pageChars: emptyPageChars(totalPages),
         warnings,
         parserVersion: PDF_PARSER_VERSION,
       }
@@ -348,7 +444,33 @@ export const parsePdfFile = async (file: Blob, options: ParseOptions = {}): Prom
     rawLength: text.length,
     pages: totalPages,
     extractedPages: processedPages,
+    // 每页字符数（#571）：长度 = pages、按页码对齐，未取到文本的页记 0。
+    // 与 characterCount 同一把尺子，所以 pageChars 求和 === characterCount（测试断言这一条）。
+    pageChars: pageCharsOf(pageTexts, totalPages),
     ...(warnings.length > 0 ? { warnings } : {}),
     parserVersion: PDF_PARSER_VERSION,
   }
+}
+
+/** 全 0 的页字符数组（取消 / 超时导致一页都没读到时用） */
+const emptyPageChars = (totalPages: number): number[] => {
+  const chars: number[] = []
+  for (let index = 0; index < totalPages; index += 1) {
+    chars.push(0)
+  }
+  return chars
+}
+
+/**
+ * 按页码拼 `pageChars`：长度恒等于 `pages`，索引 `i` = 第 `i+1` 页。
+ * 没取到文本的页（失败 / 取消 / 超时之后没轮到）记 0 —— 页码对齐是为了让调用方不用自己拼，
+ * 「0」不代表「空白页」，区分靠 `extractedPages < pages` 与 `warnings`（见 types.ts 的字段注释）。
+ */
+const pageCharsOf = (pageTexts: Map<number, string>, totalPages: number): number[] => {
+  const chars: number[] = []
+  for (let pageNumber = 1; pageNumber <= totalPages; pageNumber += 1) {
+    const text = pageTexts.get(pageNumber)
+    chars.push(text === undefined ? 0 : text.length)
+  }
+  return chars
 }

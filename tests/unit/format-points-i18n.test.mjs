@@ -85,18 +85,12 @@ console.log('\n[2] en：含 CNY、不含「积分」/points/$（全部调用点�
     'formatPoints(300)': points(300),
     'formatPoints(3900)': points(3900),
     'formatPlanMeta(p1)': formatPlanMeta(p1, unit()),
-    'oursClaimOk': translate('oursClaimOk', { points: points(300) }),
     'oursQuotaValue': translate('oursQuotaValue', { points: points(100) }),
-    'oursInviteOk': translate('oursInviteOk', { points: points(300) }),
     'oursRedeemSuccess': translate('oursRedeemSuccess', { points: points(300) }),
-    'oursRedeemDuplicate': translate('oursRedeemDuplicate', { points: points(300) }),
   }
   eq(rendered['formatPoints(300)'], '3.00 CNY', 'en 额度最简文案（300 积分 = 3.00 元）')
   eq(rendered['formatPoints(3900)'], '39.00 CNY', 'en 折算 + 两位小数')
   eq(rendered['formatPlanMeta(p1)'], '¥3.00 · 3.00 CNY', 'en 套餐行')
-  eq(rendered['oursClaimOk'], 'Claimed. 3.00 CNY left', 'en oursClaimOk')
-  eq(rendered['oursInviteOk'], 'Bound. +3.00 CNY', 'en oursInviteOk')
-  eq(rendered['oursRedeemDuplicate'], 'This card code was already redeemed; 3.00 CNY arrived', 'en oursRedeemDuplicate')
   // 红的时候这一行就是真实输出
   console.log(`  en 实际渲染：formatPoints(100) = ${JSON.stringify(rendered['formatPoints(100)'])}`
     + ` / formatPlanMeta = ${JSON.stringify(rendered['formatPlanMeta(p1)'])}`)
@@ -118,16 +112,9 @@ console.log('\n[3] zh：全部调用点按元口径固定（100 积分 = 1 元�
   eq(points(3900), '39.00 元', 'zh 3900 积分 = 39 元')
   eq(formatPlanPrice(p1), '¥3.00', 'zh 价格文案（币种按值渲染 → ¥）')
   eq(formatPlanMeta(p1, unit()), '¥3.00 · 3.00 元', 'zh 套餐行')
-  eq(translate('oursClaimOk', { points: points(300) }), '已领取，剩余 3.00 元', 'zh oursClaimOk')
   eq(translate('oursQuotaValue', { points: points(300) }), '3.00 元', 'zh oursQuotaValue 300')
   eq(translate('oursQuotaValue', { points: points(100) }), '1.00 元', 'zh oursQuotaValue 100')
-  eq(translate('oursInviteOk', { points: points(300) }), '绑定成功，+3.00 元', 'zh oursInviteOk')
   eq(translate('oursRedeemSuccess', { points: points(300) }), '兑换成功，+3.00 元', 'zh oursRedeemSuccess')
-  eq(
-    translate('oursRedeemDuplicate', { points: points(300) }),
-    '该卡密此前已兑换，已到账 3.00 元',
-    'zh oursRedeemDuplicate'
-  )
 }
 
 // ---------------------------------------------------------------- [4] 数值规则

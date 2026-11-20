@@ -33,6 +33,10 @@ export const ATTACHMENT_LIMITS = {
   maxZipEntries: LIMITS.attachments.doc.maxZipEntries,
   maxZipUncompressedBytes: LIMITS.attachments.doc.maxZipUncompressedBytes,
   pdfMinCharsPerPage: LIMITS.attachments.doc.pdfMinCharsPerPage,
+  /** #571 关闭条件「支持页数上限」；超限抛 `tooManyPages`，不许截断前 N 页当成功 */
+  pdfMaxPages: LIMITS.attachments.doc.pdfMaxPages,
+  /** #571 关闭条件「支持超时」；按页抢跑（pdfjs 单页不可中断），超时走 partial，见 parsers/pdf.ts */
+  pdfTimeoutMs: LIMITS.attachments.doc.pdfTimeoutMs,
 } as const
 
 export const SUPPORTED_EXTENSIONS = ['.txt', '.docx', '.pdf'] as const

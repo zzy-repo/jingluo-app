@@ -67,7 +67,7 @@
 | `tests/unit/quota-exhausted.test.mjs` | 断的是**对话链路的 402 / `insufficient_quota` 分类与不重试**，与旧额度账本无关 |
 | `tests/unit/format-points-i18n.test.mjs` | `formatPoints` 仍被保留下来的支付/轨迹视图使用 |
 | `tests/unit/key-identity-451.test.mjs` | Key 身份记录（#451）+ 发送前格式拦截，属保留能力；**其中 `/rotate` 文案那段随 W1-B 更换时一起改** |
-| `tests/unit/redeem-pool.test.mjs`、`invite-*.test.mjs`、`bind-key`、`rotate-key`、`ours-invite`、`issue-234-invite-copy` | **旧体系但仍绿**：它们断的是 `/apply` `/me` `/bind` `/rotate` `/redeem` 与池 `/redeem-card`。这些端点正是 #487 表格里「W1-D 清理」的目标，但对应生产代码还有 UI 调用方（见 §3），单删测试会让生产代码**裸奔到 W1-B/C 落地**。处置：**随 W1-B/C 一起删**，见 §4 清单第 1 组 |
+| ~~`tests/unit/redeem-pool.test.mjs`、`invite-*.test.mjs`、`bind-key`、`rotate-key`、`ours-invite`、`issue-234-invite-copy`~~ | **旧体系但仍绿**：它们断的是 `/apply` `/me` `/bind` `/rotate` `/redeem` 与池 `/redeem-card`。这些端点正是 #487 表格里「W1-D 清理」的目标，但对应生产代码还有 UI 调用方（见 §3），单删测试会让生产代码**裸奔到 W1-B/C 落地**。处置：**随 W1-B/C 一起删** —— **#590 已删**（W1-B/C 落地、`OursServicesDialog` 退役之后），见 §4.1 的状态列 |
 
 > 一句话：**代码删不掉的，测试也先留着**；代码能删的，测试已经删了。
 
@@ -99,16 +99,29 @@
 
 ### 4.1 第 1 组：随 W1-B/C 一起删（有 UI 调用方，删 UI 的同一提交里删代码 + 删测试）
 
+> **状态（2026-11-20，#590 C 线收口）：第 1–5 项与第 8 项的 `copy.ts` / `openFlow.ts` 已执行删除。**
+> 触发条件已满足：`OursServicesDialog.tsx` 随 #562 退役，「账户与消费」页改走 `services/consume/**`
+> 与 `services/ours/{purchases,paymentRecords}.ts`，于是这 6 个文件在 `src/` 里**引用数归零**（只有单测在调）：
+>
+> ```bash
+> git grep -c "services/invite/\(api\|bind\|rotate\|email\|openFlow\|copy\)\.js" -- src   # → 0 行
+> ```
+>
+> 删的是 `invite/{api,bind,rotate,email,openFlow,copy}.ts`（2403 行）与 12 个只测旧端点的单测。
+> **没删**：`device.ts` / `fingerprint.ts`（`legacy/migration/collect.ts` 仍在用）、`emailCooldown.ts`
+> （「账户与消费 → 邮箱」面板的倒计时纯函数）、`keyIdentity.ts`（`api/apiConfig.ts` 的 Key 身份记录）。
+> 与 #484 A4 的关系：A4 的 20 处命中里有 16 处在这 6 个文件内（旧设备码体系的额度字段），随文件一起消失。
+
 | # | 代码 | 现引用的 UI / 服务 | 同批应删的测试 |
 | --- | --- | --- | --- |
-| 1 | `invite/api.ts`：`applyForKey`、`fetchInviteProfile`、`classifyClaim`、`claimMessageKeyFor`、`runWithDeviceSelfHeal` | `OursServicesDialog.tsx`、`openFlow.ts`、`fingerprint.ts` | `domain06-claim-*`（已删）、`dialog-open-no-apply`、`invite-261-fp-already-claimed`、`invite-device-fingerprint` |
-| 2 | `invite/api.ts`：`redeemInviteCode`、`normalizeInviteCode`、`isInviteCodeShape`、`parseInviteRules` | `OursServicesDialog.tsx`、`copy.ts` | `ours-invite`、`issue-234-invite-copy` |
-| 3 | `invite/api.ts`：`redeemCardAtPool`、`redeemCardMigrated`、`REDEEM_POOL_URL`、`POOL_ERROR_KEYS`（本机池 60013） | `OursServicesDialog.tsx`；**目标态改为 `POST /api/v1/redeem`** | `redeem-pool` |
-| 4 | `invite/bind.ts` 整文件（`/bind`） | `OursServicesDialog.tsx` | `bind-key` |
-| 5 | `invite/rotate.ts` 整文件（`/rotate`） | `OursServicesDialog.tsx` | `rotate-key`、`rotate-copy-357`、`key-identity-451`（其中 `/rotate` 文案那段） |
+| 1 | `invite/api.ts`：`applyForKey`、`fetchInviteProfile`、`classifyClaim`、`claimMessageKeyFor`、`runWithDeviceSelfHeal` | `OursServicesDialog.tsx`、`openFlow.ts`、`fingerprint.ts` | `domain06-claim-*`（已删）、`dialog-open-no-apply`、`invite-261-fp-already-claimed`、`invite-device-fingerprint`  **（#590 已删）** |
+| 2 | `invite/api.ts`：`redeemInviteCode`、`normalizeInviteCode`、`isInviteCodeShape`、`parseInviteRules` | `OursServicesDialog.tsx`、`copy.ts` | `ours-invite`、`issue-234-invite-copy`  **（#590 已删）** |
+| 3 | `invite/api.ts`：`redeemCardAtPool`、`redeemCardMigrated`、`REDEEM_POOL_URL`、`POOL_ERROR_KEYS`（本机池 60013） | `OursServicesDialog.tsx`；**目标态改为 `POST /api/v1/redeem`** | `redeem-pool`  **（#590 已删）** |
+| 4 | `invite/bind.ts` 整文件（`/bind`） | `OursServicesDialog.tsx` | `bind-key`  **（#590 已删）** |
+| 5 | `invite/rotate.ts` 整文件（`/rotate`） | `OursServicesDialog.tsx` | `rotate-key`、`rotate-copy-357`、`key-identity-451`（其中 `/rotate` 文案那段）  **（#590 已删）** |
 | 6 | `invite/device.ts` 整文件（device_id 生成 / 持久化 / 备份提示 / 服务端回填） | `OursServicesDialog.tsx`、`main.tsx`、`bind.ts`、`email.ts`、`index.html` | 已随 §1 删除 |
 | 7 | `invite/fingerprint.ts` 整文件（`X-Device-Fp`） | `OursServicesDialog.tsx`、`api.ts` | `invite-device-fingerprint`、`invite-fp-invalid` |
-| 8 | `invite/copy.ts`、`invite/openFlow.ts`、`invite/emailCooldown.ts` | `OursServicesDialog.tsx` | 随 1–3 |
+| 8 | `invite/copy.ts`、`invite/openFlow.ts`（`invite/emailCooldown.ts` **保留**：面板倒计时的纯函数） | `OursServicesDialog.tsx` | 随 1–3  **（#590 已删 copy / openFlow）** |
 | 9 | `ours/customerId.ts` 整文件（cid，按 device_id 认客户） | `paymentRecords.ts`、`main.tsx`、`api/apiConfig.ts` | `domain07-cid-matrix`（已删）、`ours-inapp-buy`、`ours-payment-logs-312` 里的 cid 段 |
 
 ### 4.2 第 2 组：重构后按 A1/A4 复核的死代码（现在没人调，但还挂在 apia 侧）

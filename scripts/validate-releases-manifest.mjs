@@ -19,18 +19,10 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 
 // buildType 的唯一定义在 shared/build-types.mjs（Issue #330）——校验器不再自带一份数组。
 import { BUILD_TYPES, isBuildType } from '../shared/build-types.mjs';
-
-const args = process.argv.slice(2);
-const strict = args.includes('--strict');
-const files = args.filter((a) => !a.startsWith('--'));
-
-if (!files.length) {
-  console.error('用法: node scripts/validate-releases-manifest.mjs <file.json>... [--strict]');
-  process.exit(2);
-}
 
 const RE_VERSION = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.]+)?$/;
 const RE_SHA256 = /^[0-9a-f]{64}$/;
@@ -40,7 +32,16 @@ const RE_RELEASED_AT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\+08:00$/;
 const VARIANTS = ['internal', 'standard'];
 const VARIANT_SOURCES = ['apk-manifest', 'sha256-allowlist'];
 
-function validate(data) {
+/**
+ * 校验一份 releases.json 的**对象**（不读文件、不退出）。
+ *
+ * 导出给 `scripts/publish-private-apk.mjs` 用：私有包写回前必须过同一份 schema，
+ * 不许在发布脚本里再抄一份枚举（Issue #330 的教训：8 处各写一份，其中一处写成 "release"）。
+ *
+ * @param {unknown} data
+ * @returns {{errors:string[], warnings:string[], records:Array<object>}}
+ */
+export function validate(data) {
   const errors = [];
   const warnings = [];
   const E = (m) => errors.push(m);
@@ -151,8 +152,26 @@ function validate(data) {
   });
 
   // 顶部一致性
-  if (typeof data.latest === 'string' && data.releases[0] && data.releases[0].version !== data.latest) {
-    E(`latest(${data.latest}) 必须等于 releases[0].version(${data.releases[0].version})`);
+  // 顶部一致：`latest` 必须与「公共最新」对得上。
+  // 私有（internal）包的 B 方案（Issue #566 问题 1）允许 internal 条目排在头部而**不改公共 latest**
+  // —— 它的 versionCode 往往大于公共最新（如 1.4.2/21 > 1.4.1/20），按严格降序只能排在最前面，
+  // 但它不是公共渠道的「最新」。此时 latest 允许指向第一条**非 internal** 记录。
+  // 老路径（`POST /api/v1/release` 服务端会把 latest 改成新版本）仍然合法：latest = 头部那条 internal。
+  const head = data.releases[0];
+  if (typeof data.latest === 'string' && head) {
+    const publicHead = data.releases.find((r) => r && r.artifactVariant !== 'internal');
+    const headIsInternal = head.artifactVariant === 'internal';
+    const allowed = headIsInternal
+      ? [head.version, publicHead && publicHead.version].filter((v) => typeof v === 'string')
+      : [head.version];
+    if (!allowed.includes(data.latest)) {
+      E(
+        headIsInternal
+          ? `latest(${data.latest}) 必须等于 releases[0].version(${head.version})` +
+              `（头部是 internal 条目时，也可以等于第一条公共记录的 version：${publicHead ? publicHead.version : '(没有公共记录)'}）`
+          : `latest(${data.latest}) 必须等于 releases[0].version(${head.version})`,
+      );
+    }
   }
   const codes = data.releases.map((r) => (Number.isInteger(r && r.versionCode) ? r.versionCode : -1));
   const maxCode = Math.max(...codes);
@@ -163,39 +182,53 @@ function validate(data) {
   return { errors, warnings, records };
 }
 
-let failed = 0;
-let warned = 0;
+/** CLI 入口：只在直接运行时跑（被 import 时只导出 validate） */
+function main(argv) {
+  const strict = argv.includes('--strict');
+  const files = argv.filter((a) => !a.startsWith('--'));
+  if (!files.length) {
+    console.error('用法: node scripts/validate-releases-manifest.mjs <file.json>... [--strict]');
+    process.exit(2);
+  }
 
-for (const f of files) {
-  let data;
-  try {
-    data = JSON.parse(fs.readFileSync(f, 'utf8'));
-  } catch (e) {
-    console.log(`FAIL  ${path.basename(f)}  读取/解析失败: ${e.message}`);
-    failed++;
-    continue;
-  }
-  const { errors, warnings, records } = validate(data);
-  const installable = records.filter((r) => r.installable).length;
-  const recommendable = records.filter((r) => r.recommendable).length;
+  let failed = 0;
+  let warned = 0;
 
-  if (errors.length) {
-    failed++;
-    console.log(`FAIL  ${path.basename(f)}  (${errors.length} error, ${warnings.length} warning)`);
-    for (const m of errors) console.log(`        ✗ ${m}`);
-  } else if (warnings.length && strict) {
-    failed++;
-    console.log(`FAIL(strict)  ${path.basename(f)}  (${warnings.length} warning)`);
-    for (const m of warnings) console.log(`        ! ${m}`);
-  } else {
-    console.log(`PASS  ${path.basename(f)}  (${records.length} records, installable=${installable}, recommendable=${recommendable}, ${warnings.length} warning)`);
+  for (const f of files) {
+    let data;
+    try {
+      data = JSON.parse(fs.readFileSync(f, 'utf8'));
+    } catch (e) {
+      console.log(`FAIL  ${path.basename(f)}  读取/解析失败: ${e.message}`);
+      failed++;
+      continue;
+    }
+    const { errors, warnings, records } = validate(data);
+    const installable = records.filter((r) => r.installable).length;
+    const recommendable = records.filter((r) => r.recommendable).length;
+
+    if (errors.length) {
+      failed++;
+      console.log(`FAIL  ${path.basename(f)}  (${errors.length} error, ${warnings.length} warning)`);
+      for (const m of errors) console.log(`        ✗ ${m}`);
+    } else if (warnings.length && strict) {
+      failed++;
+      console.log(`FAIL(strict)  ${path.basename(f)}  (${warnings.length} warning)`);
+      for (const m of warnings) console.log(`        ! ${m}`);
+    } else {
+      console.log(`PASS  ${path.basename(f)}  (${records.length} records, installable=${installable}, recommendable=${recommendable}, ${warnings.length} warning)`);
+    }
+    if (warnings.length && !(warnings.length && strict)) {
+      warned++;
+      for (const m of warnings.slice(0, 4)) console.log(`        ! ${m}`);
+      if (warnings.length > 4) console.log(`        ! ...另有 ${warnings.length - 4} 条 warning`);
+    }
   }
-  if (warnings.length && !(warnings.length && strict)) {
-    warned++;
-    for (const m of warnings.slice(0, 4)) console.log(`        ! ${m}`);
-    if (warnings.length > 4) console.log(`        ! ...另有 ${warnings.length - 4} 条 warning`);
-  }
+
+  console.log(`\n合计: ${files.length} 个文件, FAIL=${failed}, 有 warning=${warned}${strict ? '（strict 模式）' : ''}`);
+  process.exit(failed ? 1 : 0);
 }
 
-console.log(`\n合计: ${files.length} 个文件, FAIL=${failed}, 有 warning=${warned}${strict ? '（strict 模式）' : ''}`);
-process.exit(failed ? 1 : 0);
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main(process.argv.slice(2));
+}

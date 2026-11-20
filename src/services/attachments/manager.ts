@@ -171,8 +171,13 @@ const describeError = (error: unknown): string => {
  * `status` 只反映**解析完整性**：缺页 / 解析器给出 warnings → `partial`。
  * 「正文超过注入预算」不降级 status（文档本身是完整的），而是作为一条 warning 交给注入侧，
  * 因为 §9 要求超限时**显式提示、禁止静默截断**，那件事发生在 ContextBuilder，不在这里做。
+ *
+ * 导出原因（与 `bodyCharacterCount` 同一条理由）：这是 #571 关闭条件「部分页失败要如实落
+ * `status: 'partial'`、不当作完整文档」的**唯一落点**，而它是个纯函数 —— 不导出就只能靠
+ * 「起一个真 IndexedDB 的 manager」间接测，那种测试既慢又验不到判定本身。
+ * 用例见 `tests/unit/pdf-parser-partial-480.test.mjs`。
  */
-const outcomeOf = (
+export const outcomeOf = (
   result: ParsedDocument
 ): {
   status: Extract<DocumentAttachment['status'], 'success' | 'partial'>

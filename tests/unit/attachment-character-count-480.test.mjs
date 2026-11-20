@@ -46,6 +46,9 @@ registerHooks({
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..')
 const require = createRequire(path.join(ROOT, 'noop.js'))
 
+// 夹具工厂与 #571 的解析器用例共用（见 tests/helpers/pdf480.mjs 的头注释）
+const { buildPdf } = await import('../helpers/pdf480.mjs')
+
 // pdf.ts 通过 `window.pdfjsLib` 拿库（线上是 `<script src>` 注入的经典脚本）。
 // Node 里手动把 npm 包挂上去 —— 同一个版本、同一份代码，只是加载方式不同。
 // `GlobalWorkerOptions` 给一个**空壳对象**：pdfjs 的 workerSrc 在浏览器里是 URL，
@@ -65,62 +68,9 @@ const { parsePdfFile, PDF_PARSER_VERSION } = await import('../../src/services/at
 // manager 只取一个纯函数（bodyCharacterCount）；不碰 DB / 存储，import 本身无副作用
 const { bodyCharacterCount } = await import('../../src/services/attachments/manager.ts')
 
-/** PDF 字符串转义（括号与反斜杠），正文只用 ASCII，避免字体/编码引入变量 */
-const escapePdfText = (text) => text.replace(/\\/g, '\\\\').replace(/\(/g, '\\(').replace(/\)/g, '\\)')
-
-/**
- * 手工拼一份最小 PDF：`pages` 是「每页的文本行」，一页一个内容流、每行一个 `Tj`。
- * 行距 18（字号 12 的 1.5 倍），保证 pdfLayout 的行聚类不会把两行并成一行。
- */
-const buildPdf = (pages) => {
-  const objects = []
-  const pageIds = pages.map((_, index) => 3 + index * 2)
-  const fontId = 3 + pages.length * 2
-  objects.push({ id: 1, body: '<< /Type /Catalog /Pages 2 0 R >>' })
-  objects.push({
-    id: 2,
-    body: `<< /Type /Pages /Kids [${pageIds.map((id) => `${id} 0 R`).join(' ')}] /Count ${pages.length} >>`,
-  })
-  pages.forEach((lines, index) => {
-    const pageId = 3 + index * 2
-    const contentId = 4 + index * 2
-    objects.push({
-      id: pageId,
-      body: `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 ${fontId} 0 R >> >> /Contents ${contentId} 0 R >>`,
-    })
-    const ops = ['BT', '/F1 12 Tf', '72 760 Td']
-    lines.forEach((line, lineIndex) => {
-      if (lineIndex > 0) {
-        ops.push('0 -18 Td')
-      }
-      ops.push(`(${escapePdfText(line)}) Tj`)
-    })
-    ops.push('ET')
-    const stream = ops.join('\n')
-    objects.push({ id: contentId, body: `<< /Length ${stream.length} >>\nstream\n${stream}\nendstream` })
-  })
-  objects.push({
-    id: fontId,
-    body: '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>',
-  })
-  objects.sort((a, b) => a.id - b.id)
-
-  let out = '%PDF-1.4\n'
-  const offsets = new Map()
-  for (const object of objects) {
-    offsets.set(object.id, out.length)
-    out += `${object.id} 0 obj\n${object.body}\nendobj\n`
-  }
-  const xrefStart = out.length
-  const maxId = objects[objects.length - 1].id
-  out += `xref\n0 ${maxId + 1}\n0000000000 65535 f \n`
-  for (let id = 1; id <= maxId; id += 1) {
-    out += `${String(offsets.get(id)).padStart(10, '0')} 00000 n \n`
-  }
-  out += `trailer\n<< /Size ${maxId + 1} /Root 1 0 R >>\nstartxref\n${xrefStart}\n%%EOF\n`
-  return new Uint8Array(Buffer.from(out, 'latin1'))
-}
-
+// `buildPdf` 已抽到 `tests/helpers/pdf480.mjs`（与 #571 的 `pdf-parser-480.test.mjs` 共用同一份
+// 生成器；两份各抄一遍 50 行会被 check:test-duplication 的 R1 判红）。字节级实现没变，
+// 所以本文件此前全部断言照旧成立。
 /** 同一段文字的两种投递方式：txt 字节 与 单页 PDF（正文 = 这段文字） */
 const SAME_TEXT = ['Alpha beta gamma', 'Delta epsilon.'].join('\n')
 const PAGE_TWO_LINES = ['Second page, one line']

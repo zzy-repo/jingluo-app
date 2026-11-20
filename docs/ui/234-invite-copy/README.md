@@ -6,7 +6,7 @@ Chromium 156.0.8078.4（Playwright 无头，非 WebView 实机）。
 不连真服务端），390×844 / 360×780 两个手机视口各一组：
 
 > #562 起：这条 L1 脚本随旧 `OursServicesDialog` 退役删除（它点的就是那个弹层里的邀请码区）。
-> 邀请码 / 返利语义现在由 `tests/unit/issue-234-invite-copy.test.mjs`（服务层）与
+> 邀请码 / 返利语义现在由 ~~`tests/unit/issue-234-invite-copy.test.mjs`~~（服务层；**#590 已随旧设备码体系删除**）与
 > `tests/unit/consume-panels-invite-email.test.mjs`（「账户与消费 → 账号」的 `InvitePanel`）锁住；
 > 下面是历史截图，保留作取证。
 

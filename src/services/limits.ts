@@ -110,6 +110,29 @@ export const LIMITS = {
 
       /** PDF 无文本层判定：平均每页可提取字符数低于此值视为无文本层 */
       pdfMinCharsPerPage: 20,
+
+      /**
+       * PDF 页数上限（#571 关闭条件的「支持页数上限」）。
+       *
+       * 为什么是 500：解析开销基本线性在页数上，500 页 ≈ 一份 400 页技术手册 / 一份年报带附件，
+       * 是「正常用户会真的传上来」的上界；再往上是扫描合订本 / 打印流，本来就该走 OCR 或桌面工具。
+       * 取值与 #480 spike、旧分支 `feat/doc-pdf-571` 的 `DEFAULT_MAX_PAGES` 同一档，不另造数字。
+       *
+       * 超限**必须显式报错**（`PdfParseError.code = 'tooManyPages'`），不许静默截断前 N 页 ——
+       * 那会让用户以为整份文档都进上下文了。
+       */
+      pdfMaxPages: 500,
+
+      /**
+       * PDF 解析时间预算（默认 10 分钟）：**最后一道保险**，不是性能目标。
+       *
+       * 取值依据：spike 实测单页 0.14–0.75 s，页数上限 500 页 → 最慢一档约 375 s，留 1.6 倍冗余。
+       * 正常文档几百毫秒到几秒就结束，永远碰不到它；它会触发的场景是「某一页卡死」。
+       * 因为 pdfjs 单页 `getTextContent()` 不可中断，超时按**页**生效（`Promise.race` 抢跑 +
+       * `document.destroy()` 终止 worker），与取消同一粒度；超时不抛错，已提取的页照常交付并
+       * 在 warnings 写明，`extractedPages < pages` 让调用方落 `status: 'partial'`。
+       */
+      pdfTimeoutMs: 10 * 60 * 1000,
     },
   },
   /**

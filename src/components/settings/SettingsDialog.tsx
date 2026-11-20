@@ -27,7 +27,7 @@ import {
   type UrlImportProgress,
 } from '../../services/chat/history/urlImport.js'
 import { copyText } from '../../utils/clipboard.js'
-import { saveBlobFile } from '../../services/exportText.js'
+import { saveHistoryArchive } from '../../services/chat/history/saveArchive.js'
 import { ImportSkippedDetails, importedMessage, summaryFromCount } from './importSkipped.js'
 import { useIsMobile } from '../../app/viewport.js'
 import { useChatStore, type HistoryImportSummary } from '../../services/chat/store.js'
@@ -1323,25 +1323,11 @@ const ImportHistoryUrl = ({
 const emptyExportStatus: Status = { key: 'historyExportEmptyNoSessions' }
 
 /**
- * 原生保存出口的失败码 → 人话文案：Java 侧 reject 的 message 是中文，
- * 英文界面直接透传就成了「English UI + 中文原因」。认得的码走对应文案，认不得的仍透传错误原文。
- * （导出上限走的是 `BackupError('historyExportTooLarge')`，由 errorStatus 的 reason 位带出，不在这里。）
- */
-const exportErrorKey = (error: unknown): TranslationKey => {
-  const code = (error as { code?: string })?.code
-  if (code === 'START_FAILED') {
-    return 'historyExportFailedStart'
-  }
-  if (code === 'TOO_LARGE') {
-    return 'historyExportFailedTooLarge'
-  }
-  return code === 'WRITE_FAILED' ? 'historyExportFailedWrite' : 'historyExportFailed'
-}
-
-/**
  * 将全部会话及图片导出为 ZIP 文件。
- * 落盘出口与「反馈日志导出」共用 `services/exportText.ts`：Android 走 ExportText 原生桥
- * （SAF 面板选位置，可取消），Web 走 Blob 下载 —— WebView 里 `<a download>` 不会产生文件（#307）。
+ *
+ * 落盘走 `saveHistoryArchive`（#536）：与侧栏「导出选中」**同一个出口** —— Android 走 ExportText
+ * 原生桥（SAF 面板选位置，可取消），Web 走 Blob 下载（WebView 里 `<a download>` 对 blob URL
+ * 不会产生文件，#307）。失败码 → 文案的映射也在那个出口里，这里不再自己认 code。
  */
 const ExportHistory = ({ disabled }: { disabled: boolean }) => {
   const t = useTranslate()
@@ -1370,15 +1356,23 @@ const ExportHistory = ({ disabled }: { disabled: boolean }) => {
       const { name, blob } = await exportHistory({ onProgress })
       // 打包完成（进度已到 N/N），剩下的就是一次落盘：交给原生 SAF / Web 下载出口。
       setProgress(null)
-      const result = await saveBlobFile({ filename: name, mimeType: 'application/zip', blob })
+      const outcome = await saveHistoryArchive({ filename: name, blob })
       // 用户在选择位置的面板上点了取消：既不是成功也不是失败，界面回到「可以再点一次」的状态。
       setStatus(
-        result.status === 'saved'
-          ? { key: 'historyExportSaved', params: { name: result.name ?? name } }
-          : null
+        outcome.kind === 'saved'
+          ? { key: 'historyExportSaved', params: { name: outcome.name } }
+          : outcome.kind === 'failed'
+            ? {
+                key: outcome.key,
+                ...(outcome.params === undefined ? {} : { params: outcome.params }),
+                error: true,
+              }
+            : null
       )
     } catch (error) {
-      setStatus(errorStatus(exportErrorKey(error), error))
+      // 打包阶段的失败（`exportHistory` 抛的）：落盘失败已经在出口里归一成了 `{kind:'failed'}`。
+      // 导出上限走 `BackupError('historyExportTooLarge')`，由 errorStatus 的 reason 位带出。
+      setStatus(errorStatus('historyExportFailed', error))
     } finally {
       setProgress(null)
     }

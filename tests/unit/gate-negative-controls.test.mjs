@@ -372,6 +372,17 @@ const REGISTRY = {
     what: 'CI 往 src/ 塞一份端点地址字面量（从 config/endpoints.json 读，不在 YAML 里抄）→ 必 exit 1，删掉后 exit 0',
     mention: /check-endpoints\.mjs/,
   },
+  // 方向验收门禁（#484 §九 的 #487 阶段②脚本，#590 把它降到全绿之后才接线）：
+  // 对照写在 ci.yml 里现场注入 —— 往 `android/app/src/main/assets/**`（cap sync 产物）塞一条旧池域地址
+  // 必须**仍然 exit 0**（#590 ① 的扫描口径），再往 src/ 塞同一条必须 exit 1，删掉后 exit 0。
+  // 为什么不做成 L0 注入：它要同时写「生成目录」与 src/ 两处（一个在 android/ 下、一个在 src/），
+  // 与 check:doc-refs / check:endpoints 一样属于「现场往仓库里塞坏输入」，放进 ci.yml 成本 < 1s。
+  'check:refactor-direction': {
+    where: '.github/workflows/ci.yml',
+    kind: 'ci',
+    what: 'CI 往生成目录（assets/**）塞旧池域地址 → 必须仍 exit 0；再塞进 src/ → 必 exit 1；删掉 → exit 0',
+    mention: /check-refactor-direction\.mjs/,
+  },
   'check:capabilities': {
     where: 'scripts/check-capabilities.mjs',
     kind: 'builtin',

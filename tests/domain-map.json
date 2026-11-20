@@ -243,16 +243,10 @@
       "paths": {
         "src/services/invite/**": [
           "tests/unit/invite-*.test.mjs",
-          "tests/unit/issue-234-invite-copy.test.mjs",
-          "tests/unit/redeem-pool.test.mjs",
-          "tests/unit/bind-key.test.mjs",
-          "tests/unit/rotate-key.test.mjs",
-          "tests/unit/ours-invite.test.mjs",
           "tests/integration/ours-services.test.mjs"
         ],
         "src/services/ours/api.ts": [
           "tests/unit/ours-api.test.mjs",
-          "tests/unit/redeem-pool.test.mjs",
           "tests/unit/format-points-i18n.test.mjs",
           "tests/integration/ours-services.test.mjs",
           "tests/integration/quota-exhausted.test.mjs"
@@ -261,12 +255,11 @@
         "src/services/ours/storage.ts": ["tests/integration/ours-services.test.mjs"],
         "src/services/ours/mask.ts": ["tests/unit/domain08-redact-negative.test.mjs", "tests/unit/format-points-i18n.test.mjs"],
         "src/components/consume/AccountConsumePage.tsx": ["tests/integration/ours-services.test.mjs", "tests/unit/consume-panels-487.test.mjs"],
-        "src/components/consume/MyCardsTab.tsx": ["tests/unit/redeem-pool.test.mjs", "tests/unit/consume-panels-487.test.mjs"],
         "src/components/consume/BuyTab.tsx": ["tests/unit/ours-inapp-buy.test.mjs", "tests/unit/pay-link.test.mjs"],
         "src/components/settings/douyinAccount.ts": ["tests/unit/douyin-account.test.mjs", "tests/integration/ours-services.test.mjs"]
       },
       "tests": {
-        "unit": ["tests/unit/provider-ours.test.mjs", "tests/unit/invite-device-fingerprint.test.mjs", "tests/unit/invite-fp-invalid.test.mjs", "tests/unit/invite-261-fp-already-claimed.test.mjs"],
+        "unit": ["tests/unit/provider-ours.test.mjs"],
         "integration": ["tests/integration/domain08-feedback-negative.test.mjs"]
       }
     },
@@ -361,15 +354,15 @@
       "id": "domain11",
       "name": "邮箱账号（绑定 / 换机登录）",
       "doc": "docs/testing/coverage/domain-11.md",
+      "note": "旧设备码通道的邮箱用例（domain11-email-parse / contract-c9-email）随 #590 删除；邮箱能力本身保留（sub2api 复用），当前由「账户与消费 → 邮箱」面板的用例与 services/consume/email.ts 覆盖，待阶段③按新链路重建契约用例",
       "paths": {
-        "src/services/invite/**email**": ["tests/unit/domain11-email-parse.test.mjs", "tests/unit/contract-c9-email.test.mjs", "tests/unit/consume-panels-invite-email.test.mjs"],
-        "src/services/invite/api.ts": ["tests/unit/domain11-email-parse.test.mjs", "tests/unit/contract-c9-email.test.mjs"],
-        "src/components/consume/EmailBindPanel.tsx": ["tests/unit/consume-panels-invite-email.test.mjs", "tests/unit/contract-c9-email.test.mjs"],
-        "src/components/consume/InvitePanel.tsx": ["tests/unit/consume-panels-invite-email.test.mjs", "tests/unit/contract-c9-email.test.mjs"],
-        "src/i18n/**": ["tests/unit/domain11-email-parse.test.mjs", "tests/unit/contract-c9-email.test.mjs"]
+        "src/services/consume/email.ts": ["tests/unit/consume-panels-invite-email.test.mjs", "tests/unit/consume-panels-487.test.mjs"],
+        "src/services/invite/emailCooldown.ts": ["tests/unit/consume-panels-invite-email.test.mjs", "tests/unit/consume-panels-487.test.mjs"],
+        "src/components/consume/EmailBindPanel.tsx": ["tests/unit/consume-panels-invite-email.test.mjs", "tests/unit/consume-panels-487.test.mjs"],
+        "src/components/consume/emailBindPanelModel.ts": ["tests/unit/consume-panels-invite-email.test.mjs", "tests/unit/consume-panels-487.test.mjs"]
       },
       "tests": {
-        "unit": ["tests/unit/domain11-email-parse.test.mjs", "tests/unit/consume-panels-invite-email.test.mjs", "tests/unit/contract-c9-email.test.mjs"],
+        "unit": ["tests/unit/consume-panels-invite-email.test.mjs"],
         "integration": [],
         "golden": []
       }

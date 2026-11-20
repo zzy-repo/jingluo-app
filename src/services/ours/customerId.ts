@@ -7,7 +7,7 @@
  *
  * Issue #331 之后下单链路已停用（我们不建单）：cid 不再用来「归属新订单」，
  * 只用来查历史订单/付款记录。取值顺序仍是：内存 → localStorage → 注入的 provider；
- * provider 由 main.tsx 在启动时注入（有 Key 走 `GET /api/orders`，没有 Key 走设备码 `/me`）。
+ * provider 由 main.tsx 在启动时注入，只走 `GET /api/orders`（#590 删掉了没有 Key 时的旧设备码兜底）。
  * 全都拿不到就返回 null —— 调用方按「查不到记录」处理，不再阻断任何购买流程。
  */
 
@@ -17,28 +17,6 @@ import { browserStorage, type OrderStorage } from './storage.js'
 
 /** cid 缓存键：拿到过就记住，下次下单直接用，不必再等一次网络往返 */
 export const CUSTOMER_ID_STORAGE_KEY = 'chat-demo:ours-customer-id'
-
-/**
- * 只用到「发一个 GET 拿 JSON」的最小传输形状：结构上与 api.ts 的 `OursTransport` 兼容
- * （那边只是多了 POST / followRedirects 等字段），但故意不 import 它 —— 见文件头。
- */
-export type CustomerIdTransport = (request: {
-  method: 'GET'
-  url: string
-  headers: Record<string, string>
-  timeoutMs: number
-  followRedirects: boolean
-}) => Promise<
-  | { kind: 'response'; status: number; text: string }
-  | { kind: 'timeout' }
-  | { kind: 'network' }
->
-
-// ------------------------------------------------------------------ 小工具
-const asRecord = (value: unknown): Record<string, unknown> | null =>
-  typeof value === 'object' && value !== null && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : null
 
 const storageOrBrowser = (storage?: OrderStorage | null): OrderStorage | null =>
   storage === undefined ? browserStorage() : storage
@@ -153,38 +131,4 @@ export const ensureCustomerId = async (storage?: OrderStorage | null): Promise<n
     fresh === null ? 'none' : 'provider',
     fresh === null ? (threw ? 'provider-error' : 'provider-empty') : undefined
   )
-}
-
-/**
- * 设备码通道取 cid（没有 API Key 的首购用户）：`GET <base>/me?device_id=…`。
- *
- * base 由调用方传入（main.tsx 用 `INVITE_API_BASE`），这样本文件不必 import 邀请模块
- * （邀请 api.ts 反过来 import 本通道的 api.ts，硬连会成环）。
- * 任何失败都只返回 null：拿不到 cid 时「去支付」会明确报错，而不是悄悄发一次不带 cid 的下单。
- */
-export const fetchCustomerIdFromProfile = async (input: {
-  base: string
-  deviceId: string
-  transport: CustomerIdTransport
-}): Promise<number | null> => {
-  const deviceId = input.deviceId.trim()
-  if (deviceId === '') {
-    return null
-  }
-  try {
-    const result = await input.transport({
-      method: 'GET',
-      url: `${input.base.replace(/\/+$/u, '')}/me?device_id=${encodeURIComponent(deviceId)}`,
-      headers: { Accept: 'application/json' },
-      timeoutMs: 10000,
-      followRedirects: false,
-    })
-    if (result.kind !== 'response' || result.status < 200 || result.status >= 300) {
-      return null
-    }
-    const record = asRecord(JSON.parse(result.text) as unknown)
-    return parseCustomerId(record === null ? null : (record.customer_id ?? record.customerId))
-  } catch {
-    return null
-  }
 }
