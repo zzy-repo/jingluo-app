@@ -1127,6 +1127,8 @@ export const en = {
   consumeRedeemProcessing: 'Confirming the redemption result',
   consumeErrInvitationInvalid: 'Invalid invitation code. Check it and try again.',
   consumeErrEmailCodeInvalid: 'The verification code is wrong or has expired. Request a new one.',
+  // Email not verified yet (`EMAIL_VERIFY_REQUIRED`): name the next step instead of "try again later"
+  consumeErrEmailVerifyRequired: 'Please verify your email first',
   consumeErrNotEnabled: 'This feature is not enabled yet. Contact support to enable it.',
   // ---------------------------------------------------------------------------
   // W1-C2 account/consume panels (quota / account / invites / email binding, #487).

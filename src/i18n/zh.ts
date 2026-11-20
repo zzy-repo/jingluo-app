@@ -1108,6 +1108,8 @@ export const zh = {
   consumeRedeemProcessing: '正在确认兑换结果',
   consumeErrInvitationInvalid: '邀请码无效，请核对后再填',
   consumeErrEmailCodeInvalid: '验证码不对或已过期，请重新获取',
+  // 邮箱没验证（`EMAIL_VERIFY_REQUIRED`）：说清「下一步做什么」——先去验证，不是稍后重试
+  consumeErrEmailVerifyRequired: '请先完成邮箱验证',
   consumeErrNotEnabled: '这个功能还没开放，请联系客服开通',
   // ---------------------------------------------------------------------------
   // W1-C2 四个面板（额度 / 账号 / 邀请 / 邮箱绑定，#487）：
