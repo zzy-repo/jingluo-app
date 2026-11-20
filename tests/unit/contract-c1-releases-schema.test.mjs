@@ -13,6 +13,8 @@
 //   S3 版本单调：清单里 `versionCode` 必须严格降序（客户端靠第一条才能选出「最新」）
 //   S4 变体合法：`artifactVariant ∈ {internal, standard}` 且与 `artifactVariantSource` 同存同缺
 //   S5 顶部一致：`latest` 必须等于 `releases[0].version`
+//      （例外：头部是 `artifactVariant: "internal"` 的私有条目时，`latest` 也可以是第一条**公共**记录
+//       的 version —— 私有包不改公共 latest，见 Issue #566 问题 1 的 B 方案 / scripts/publish-private-apk.mjs）
 //
 // 「改实现不改语义不该红」的口径：这里断言的是**校验器的结论**（退出码 + 报错点）与
 // **客户端的解析结论**（抛不抛、字段落不落），不针对任何一方的内部函数名 / 文件名。
@@ -63,6 +65,19 @@ const SCHEMA_ROWS = [
     file: 'invalid-latest-mismatch.json',
     mustFail: true,
     expect: /必须等于 releases\[0\]\.version/,
+  },
+  {
+    id: 'S4-b',
+    what: '私有 internal 条目排在头部、公共 latest 不动 —— 这是合法形状，必须 PASS（Issue #566 B 方案）',
+    file: 'proposed-1.4.2-internal-keep-latest.json',
+    mustFail: false,
+  },
+  {
+    id: 'S4-c',
+    what: '头部是 internal 条目时 latest 只允许等于它自己或第一条公共记录（别的值 = 两个「最新」）',
+    file: 'invalid-internal-latest-unrelated.json',
+    mustFail: true,
+    expect: /也可以等于第一条公共记录的 version/,
   },
   {
     id: 'S5',

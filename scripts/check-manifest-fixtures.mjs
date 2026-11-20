@@ -25,7 +25,13 @@ const FIXTURES = path.join(ROOT, 'deploy/dl-release/fixtures');
 const VALIDATOR = path.join(ROOT, 'scripts/validate-releases-manifest.mjs');
 
 /** 合法清单：必须 PASS（非 strict —— 历史条目缺 sha256/artifactVariant 是已知的 warning） */
-const MUST_PASS = ['live-2026-11-18.json', 'proposed-beta4-internal.json'];
+const MUST_PASS = [
+  'live-2026-11-18.json',
+  'proposed-beta4-internal.json',
+  // 私有（internal）包的真实形状（Issue #566 问题 1 的 B 方案）：internal 条目排在头部
+  // （versionCode 更大），但公共 `latest` 不动 —— 见 scripts/publish-private-apk.mjs
+  'proposed-1.4.2-internal-keep-latest.json',
+];
 /** 非法清单：必须以「结构性 dirty」被拦下（fail-closed） */
 const MUST_FAIL = fs
   .readdirSync(FIXTURES)

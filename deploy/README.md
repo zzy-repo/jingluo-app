@@ -60,6 +60,7 @@ node tests/run-layer.mjs server                   # 统一 runner（CI 的布局
 # 清单结构 / 新字段契约
 node scripts/validate-releases-manifest.mjs deploy/dl-release/fixtures/live-2026-11-18.json
 node scripts/validate-releases-manifest.mjs deploy/dl-release/fixtures/proposed-beta4-internal.json
+node scripts/validate-releases-manifest.mjs deploy/dl-release/fixtures/proposed-1.4.2-internal-keep-latest.json  # 私有包形状（latest 不动）
 node scripts/validate-releases-manifest.mjs deploy/dl-release/fixtures/invalid-*.json   # 期望全 FAIL
 
 # 端到端（需要 aapt2 + 真 APK，会在 /tmp 起临时实例，不写线上任何文件）

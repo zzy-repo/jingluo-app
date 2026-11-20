@@ -777,3 +777,156 @@ cd android && ./gradlew assembleRelease -PartifactVariant=internal
   不能验「链路通了」。别把前者写成后者。
 - CORS 是否放行 `https://localhost` 属**部署侧动作**，客户端只能通过「灰度第 3 条」间接观察。
 - 本节不涉及分发链路（§13）与签名（§1），两者互不影响。
+
+---
+
+## 14. 私有（internal）包发布：一条命令 + 演练 + 回滚（Issue #566 问题 1 → B 方案）
+
+私有包 = `-PartifactVariant=internal` 构建出来的包，**进 `releases.json` 但不改公共 `latest`**：
+装了 internal 变体的客户端能自动收到更新（解 #377），公共渠道（standard）仍然停在原来那个版本。
+两条路的分工是硬的：
+
+| 发布 | 走哪条 | 谁改 `latest` |
+| --- | --- | --- |
+| 公共（standard） | `pnpm run release:upload` → `POST /api/v1/release`（要令牌） | **服务端**改成这次发布的版本（`server.mjs` §8） |
+| 私有（internal） | `node scripts/publish-private-apk.mjs`（SSH 直写站点根，不要令牌） | **谁都不改**（脚本写回前的自检会挡住任何改动） |
+
+> 私有包**不能**走 `/api/v1/release`：那条路把 `latest` 设成新版本（服务端语义就是"这是最新公共发布"），
+> 内测包一发出去，公共渠道的「最新」就被内测包顶掉了。私有包改走 **`ssh <host>` 直写
+> `/var/www/dl`**：`scp` 先传 `.tmp` 再 `mv`（原子），清单**先备份再原子替换**。
+
+### 14.1 一条命令
+
+```bash
+# 1) 出包（与 §3 同源，变体必须是 internal）
+pnpm build:internal && npx cap sync android
+cd android && ./gradlew --no-daemon --max-workers=1 assembleRelease -PartifactVariant=internal
+APK=android/app/build/outputs/apk/release/app-release.apk
+
+# 2) 先看要做什么（不落地：不上传、不改清单）
+node scripts/publish-private-apk.mjs --apk $APK --version 1.4.2 --versionCode 21 --dry-run
+
+# 3) 真发布（**没有** --dry-run 就是真发布）
+node scripts/publish-private-apk.mjs --apk $APK --version 1.4.2 --versionCode 21
+```
+
+跑完会打印**直链、sha256、size 与五项验证结果**，并在清单里留一条 `artifactVariant: "internal"` 记录。
+把直链发给内测同学即可（一定要连 `sha256` 一起给，让他们能自己核对）。
+
+### 14.2 参数
+
+| 参数 | 默认 | 说明 |
+| --- | --- | --- |
+| `--apk <path>` | **必填** | APK 路径（环境变量 `DL_PRIVATE_APK`） |
+| `--version <x.y.z>` | **必填** | versionName，必须与 APK 内一致（`DL_PRIVATE_VERSION`） |
+| `--versionCode <n>` | **必填** | 正整数，必须与 APK 内一致（`DL_PRIVATE_VERSION_CODE`） |
+| `--variant <v>` | `internal` | `internal` \| `standard`（`DL_PRIVATE_VARIANT`）。打回 standard 变体别用这条管线，走 §5 |
+| `--changes <text>` | 一行默认说明 | 清单里的变更说明，可重复给多条 |
+| `--dry-run` | 关 | 只打印动作与清单条目，**一个字节都不发** |
+| `--exercise` | 关 | 演练：真上传 + 真加清单条目 + **立刻全量回滚**（只允许 `0.0.0` 开头的假版本号） |
+| `--skip-apk-validation` | 关 | **仅供演练**：假文件过不了 `aapt2`，跳过 APK 校验 |
+| `--ssh-host` / `--site-root` / `--public-base` | `aliyun` / `/var/www/dl` / `https://dl.rose7.cn/` | 换分发主机时才动 |
+| `--aapt2 <path>` | 自动找 | `$AAPT2` → `$ANDROID_HOME/build-tools/<ver>/aapt2` → `~/android-sdk` → PATH |
+
+退出码：**0 成功 / 1 校验或执行失败 / 2 参数或环境问题（一个字节都没发）**。
+
+### 14.3 脚本拦哪五件事（任一不符直接退出，不「先发后修」）
+
+| # | 判据 | 失败时会说 |
+| --- | --- | --- |
+| 1 | `aapt2 dump badging`：包名 = `com.example.deepseekchat`、`versionCode`/`versionName` = 你给的参数 | 具体哪个字段不一致 |
+| 2 | `application-debuggable` **一处都没有** | 「debuggable 构建，绝对不发」（Issue #60） |
+| 3 | `aapt2 dump xmltree` 的 `<meta-data …ARTIFACT_VARIANT>` = `--variant` | 标记缺失/取值不符 → 让你按 `-PartifactVariant=` 重出包 |
+| 4 | 合并后的清单 schema（`buildType ∈ stable\|prerelease`、`artifactVariant ∈ internal\|standard`、`file`/`sha256`/`md5`/`size`/`releasedAt` 形态） | 逐条报出（复用 `scripts/validate-releases-manifest.mjs`，不另写枚举） |
+| 5 | **公共 `latest` 一个字节没变** + 既有记录逐条 JSON 相同 | 「latest 被改了 / 既有条目被改了」 |
+
+### 14.4 为什么文件名要不可猜测
+
+清单是**公开**的（`https://dl.rose7.cn/releases.json` 任何人可读），所以「私有」不能靠"别人不知道清单"。
+能守住的只有一件事：**别人不能顺着版本号把包扫下来**。历史上所有公共包都叫
+`deepseek-chat-<version>.apk` —— 知道你在发 1.4.2 就能直接猜 `deepseek-chat-1.4.2.apk`。
+私有包因此用 `deepseek-chat-<version>-<variant>-<8位随机>.apk`：
+
+- 随机段来自 `crypto.randomBytes(5)` → **40 bit** → 8 个 base32 字符（`A-Z2-7`，无 `0/1` 混淆）；
+- **不许用时间戳**：时间戳可枚举，知道大概几点发的，搜索空间能从 36⁸ 压到几百万，扫一遍就出来了；
+- 传之前还会查远端有没有同名文件（撞了就重跑，换一个随机串）。
+
+⚠️ 说清边界，别夸大：这条管线**不是访问控制**。清单里写着 `file` 字段，拿到清单的人照样能下载 ——
+它挡住的是「猜 URL」，不是「读清单」。真私有（清单里也不出现）是 #566 的 A 方案，本管线没做。
+
+### 14.5 变体不同不能覆盖安装（`VARIANT_MISMATCH`）
+
+同一个包名、同一个签名，但 `artifactVariant` 不同的两个包**装不到一起**：
+
+- 已装 standard 的机器上直接装 internal 包 → 安装器报签名/变体冲突（客户端侧会以 `VARIANT_MISMATCH` 呈现）；
+- 反过来同理。**必须先卸载**（卸载会清掉本地聊天记录与 Key，事先提醒用户导出/备份）。
+
+内测同学的正确姿势：
+
+```bash
+adb uninstall com.example.deepseekchat            # 先卸掉公共渠道那个
+adb install deepseek-chat-1.4.2-internal-XXXXXXXX.apk
+```
+
+装完**如果这一版打的是本地实例**（`consume.baseUrl` = `http://127.0.0.1:18000`），
+还必须先打通回环，否则登录 / 额度 / 兑换全部失败：
+
+```bash
+adb reverse tcp:18000 tcp:18000     # 每条 USB 连接断开后都要重做；换机也要重做
+```
+
+客户端的更新选择是「同变体 + versionCode 更大 + 有 sha256」才算候选（`src/services/updateManifest.ts`），
+所以 internal 包不会把 standard 用户带走 —— 发布后可以自己核一遍：
+
+```bash
+node -e 'const d=require("/tmp/live.json");console.log(d.latest, d.releases[0].version, d.releases[0].artifactVariant)'
+```
+
+### 14.6 回滚
+
+清单先备份（`releases.json.bak-private-<epoch>`），所以回滚就是「把备份换回去 + 删包」：
+
+```bash
+# 1) 恢复清单（原子 mv）
+ssh aliyun 'mv -f /var/www/dl/releases.json.bak-private-<epoch> /var/www/dl/releases.json'
+# 2) 删掉上传的包
+ssh aliyun 'rm -f /var/www/dl/apk/deepseek-chat-<version>-internal-<8位随机>.apk'
+# 3) 复核：直链应 404，latest 应回到发布前的值
+curl -sS -I https://dl.rose7.cn/apk/deepseek-chat-<version>-internal-<8位随机>.apk | head -1   # 期望 404
+curl -sS https://dl.rose7.cn/releases.json | head -2                                           # latest 不变
+```
+
+真发布时脚本会把这两条回滚命令**原样打印在最后**（连 epoch 一起），照抄即可。
+
+### 14.7 演练（`--exercise`）—— 上线前先证明「上传 / 清单改动 / 回滚」三件事都对
+
+拿一个假文件把整条链路真跑一遍，跑完**立刻全量回滚**，线上不留任何残留：
+
+```bash
+head -c 2000000 /dev/urandom > /tmp/fake.apk       # 2 MB 假包（过不了 aapt2，所以要跳过校验分支）
+
+# ① 先看它会被 APK 门禁挡住（这一步是证明门禁活着）
+node scripts/publish-private-apk.mjs --apk /tmp/fake.apk --version 0.0.0 --versionCode 9999 --dry-run
+#    → exit 1：aapt2 dump badging 失败（不是合法 APK？）
+
+# ② 正常的 dry-run（跳过校验）：只看计划
+node scripts/publish-private-apk.mjs --apk /tmp/fake.apk --version 0.0.0 --versionCode 9999 \
+  --skip-apk-validation --dry-run
+
+# ③ 真演练：上传 → 加清单条目 → 验证 → 回滚 → 再验证
+node scripts/publish-private-apk.mjs --apk /tmp/fake.apk --version 0.0.0 --versionCode 9999 \
+  --skip-apk-validation --exercise
+```
+
+演练必须核对的五项（缺一条就不算通过）：
+
+| # | 判据 | 期望 |
+| --- | --- | --- |
+| 1 | 直链 `curl -I` | `200` + `content-type: application/vnd.android.package-archive` + `content-length` = 文件大小 |
+| 2 | 下载回来算 sha256 | = 上传前本地 sha256 |
+| 3 | 清单加条目后 | `latest` **与发布前逐字节相同** |
+| 4 | 回滚后直链 | `404`（文件真删了） |
+| 5 | 回滚后清单 | `sha256` 与演练前**完全一致**、条目数回到 19、无 `bak-private`/`tmp-` 残留 |
+
+脚本会把 1/2/3 在发布后立刻算、4/5 在回滚后立刻算，任何一条不符就 `exit 1` 并打印现场。
+**演练数据（`0.0.0` / versionCode 9999）不允许留在线上** —— 演练结束前脚本就把备份也消耗掉了（零残留）。

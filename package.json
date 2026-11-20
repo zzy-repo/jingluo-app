@@ -50,6 +50,7 @@
     "release:check": "node scripts/release-check.mjs",
     "release:upload": "node scripts/release-upload.mjs",
     "release:verify": "node scripts/release-verify.mjs",
+    "release:private": "node scripts/publish-private-apk.mjs",
     "test": "node tests/run-layer.mjs unit",
     "test:fast": "node scripts/test-fast.mjs",
     "test:full": "node scripts/test-full.mjs",

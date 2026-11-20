@@ -16,9 +16,7 @@
       ],
       "buildType": "prerelease",
       "breaking": false,
-      "sha256": "70ffd85dbda2dad35038485466fc69a57d841c0d5dbcbd1d1a6224f61bb3f2d5",
-      "artifactVariant": "internal",
-      "artifactVariantSource": "sha256-allowlist"
+      "sha256": "70ffd85dbda2dad35038485466fc69a57d841c0d5dbcbd1d1a6224f61bb3f2d5"
     },
     {
       "version": "1.4.0-beta.3",

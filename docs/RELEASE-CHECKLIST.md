@@ -358,6 +358,7 @@ node scripts/release-upload.mjs --apk $APK --dry-run
 | `pnpm run release:upload -- --apk $APK --dry-run` | 打印将要发的请求（令牌只显示来源/长度） | 可选 | ❌ |
 | `pnpm run release:upload -- --apk $APK` | 真上传 + 核对回包 sha256/md5/latest | ✅ | ❌ |
 | `pnpm run release:verify -- --version $V --apk $APK` | 复核 releases.json 已生效 + 下载件三方 hash 一致 | ❌ | ❌ |
+| `node scripts/publish-private-apk.mjs --apk $APK --version $V --versionCode $C --dry-run` | **私有（internal）包**：打印将执行的动作与清单条目（不上传、不改清单）；去掉 `--dry-run` 即真发布，见手册 §14 | ❌ | ❌（要能 `ssh` 到 DL 主机） |
 | `node scripts/validate-releases-manifest.mjs <file> --strict` | 离线校验一份 releases.json 是否满足契约（已有脚本，本单复用） | ❌ | ❌ |
 | `node scripts/check-apk-debuggable.mjs $APK` | 单独查 debuggable（已有的 Issue #60 闸门） | ❌ | ❌ |
 
