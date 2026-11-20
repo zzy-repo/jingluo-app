@@ -7,18 +7,24 @@
 //
 // 断言（对应任务书验收 1~8、10）：
 //   [1] 标准构建默认渠道 = DeepSeek 官方；只渲染 API Key 一行（无 baseUrl / model 输入元素）
-//   [2] DeepSeek 官方：发消息 /anthropic/v1/messages + model deepseek-flash；搜索/图片/语音/思考入口都在
-//   [3] Anthropic 协议：三件套（服务地址 / 模型 / API Key）；切过去后 Key 不丢；请求按填的值发出 /v1/messages
-//   [4] OpenAI 兼容：三件套；请求打到 /v1/chat/completions；搜索/语音不渲染，思考入口恒常驻（#341，请求不带字段）
+//   [2] DeepSeek 官方：发消息 /anthropic/v1/messages + model deepseek-flash；搜索/图片/语音/思考入口都在，
+//       **文档入口按能力门渲染为不可用**（acceptsDocuments('deepseek') === false，#538）
+//   [3] Anthropic 协议：三件套（服务地址 / 模型 / API Key）；切过去后 Key 不丢；请求按填的值发出 /v1/messages；
+//       图片入口在且可点（#548）、文档入口在且可点（#480）；搜索/语音不渲染
+//   [4] OpenAI 兼容：三件套；请求打到 /v1/chat/completions；搜索/语音不渲染，
+//       图片入口在且可点（#548）、文档入口在且可点（#480），思考入口恒常驻（#341，请求不带字段）
 //   [5] 我们的渠道：只渲染 API Key（1 个 password 输入框），界面不出现后端地址与内置模型名；
+//       图片入口在且可点（#548）、文档入口在且可点（#480）；
 //       请求打到 http://140.210.13.146:60010/v1/chat/completions（OpenAI 协议）+ model deepseek-v4.1-flash，
 //       鉴权 Authorization: Bearer <key>（不带 x-api-key）；深度思考入口恒常驻（#341，请求不带字段）
 //   [6] 切换渠道后能力入口随之显隐（搜不到 DOM 节点，不是置灰）；刷新后渠道选择持久化
 //
 // ⚠ 两个「附件入口」不是同一件事（#552 之后必须分清，见 `capNodes()` 的注释）：
-//   - 图片入口（纸夹「上传文件」）**随 #552 变更：三渠道支持图片** —— 四个渠道现在都有；
-//   - 文档入口（TXT / DOCX / PDF）走 #480 的 `documents.textInjection`，Anthropic / OpenAI / 我们的
-//     渠道一直是可用 picker，DeepSeek 一直是禁用态占位 —— 这一条**没变**，别跟着图片入口一起放宽。
+//   - 图片入口（`data-testid="attach-image"`）：**随 #552 变更：三渠道支持图片** —— 四个渠道都有且可点；
+//   - 文档入口（`data-testid="attach-document"`）：走 #480 的 `documents.textInjection`。
+//     Anthropic / OpenAI / 我们的渠道 = 在且可点；DeepSeek = 在、但标着 `data-attachment-entry="unavailable"`
+//     + `aria-disabled`（#538 的能力门）。这一条**没变**，别跟着图片入口一起放宽；也**不要**退回
+//     「按 aria-label 前缀数能用的那个 picker」——那样数不出占位在不在，能力门就没人守了。
 //   [7] 四个渠道的设置页都不出现能力描述文案（基础对话 / 不支持 / 已关闭 / 仅支持 / capability / 能力）
 //   [8] console error = 0
 import { spawn } from 'node:child_process'
@@ -209,37 +215,112 @@ const expectNoCapabilityCopy = async (dialog, where) => {
 }
 
 /**
- * 聊天页某入口的 DOM 节点数（找不到 = 入口压根没渲染）。
+ * 输入区那两个「附件」入口是**两件不同的事**（#586 的根因就在这一步没分清）：
  *
- * **两个「附件」入口是两件事，别混**（#552 之后尤其要分清）：
- * - `vision`：纸夹「上传文件」（`IconPaperclipOutline16`），只收**图片**，走
- *   `providerCapability.ts` 的 `image` 维度（三渠道 base64 内联 / deepseek Files API）。
- *   #552 起四个渠道都开了 —— 三家不再是「没有图片入口」。
- * - `docs`：文档入口（TXT / DOCX / PDF），走 #480 的 `documents.textInjection`。
- *   只有文本注入渠道才渲染**能用**的那个（可访问名「添加文档（TXT / DOCX / PDF）」）；
- *   DeepSeek 渲染的是禁用态占位（可访问名是一整句「当前渠道不支持文档附件…」），
- *   所以这里用「能用 = 出现 picker 那个名字」来数，禁用态不计入 —— 两家语义没有互换。
+ *  - **图片入口** `[data-testid="attach-image"]`（#548 / #551）：带视觉能力的渠道都该有。
+ *    它收的是图片 —— 三家 base64 渠道本地编码内联，deepseek 走 `files` 上传 + `file_id`；
+ *  - **文档入口** `[data-testid="attach-document"]`（#480 / #538）：收的是 txt / docx / pdf，
+ *    能不能用**只由 `acceptsDocuments(kind)` 决定**。能力门关掉时入口不是消失，而是渲染成
+ *    带 `data-attachment-entry="unavailable"` 的解释按钮（看得见、点下去给原因，这是 #538 的口径）。
+ *
+ * 这两个入口以前在 DOM 里没有各自的稳定标识，只能靠 `aria-label` 里的中文去数
+ * （图片入口 = 「上传文件」、文档入口 = 「添加文档（TXT / DOCX / PDF）」）。而「上传文件」这个
+ * 可访问名挂在**图片入口**上 —— 于是按文案数出来的数永远是图片入口，却被按「附件入口」的口径
+ * 写期望；#548 给三个渠道开了图片入口之后，那些旧期望必然红（#586）。
+ *
+ * 更弱的写法是「按文案前缀数出『能用的那个 picker』」（`aria-label^="添加文档"`）：那样数不出
+ * DeepSeek 的禁用态占位到底是渲染了还是被删了，#538 的能力门在用例里就**没有守卫**了。
+ * 所以这里改用产品侧给出的稳定标识，把两个入口分开、把「在不在」与「能不能用」分开断言。
  */
+const ATTACH_IMAGE = '[data-testid="attach-image"]'
+const ATTACH_IMAGE_READY = `${ATTACH_IMAGE}:not([aria-disabled="true"])`
+const ATTACH_DOC = '[data-testid="attach-document"]'
+const ATTACH_DOC_READY = `${ATTACH_DOC}:not([data-attachment-entry="unavailable"])`
+const ATTACH_DOC_DISABLED = `${ATTACH_DOC}[data-attachment-entry="unavailable"]`
+
+/** 聊天页某入口的 DOM 节点数（找不到 = 入口压根没渲染） */
 const capNodes = async () => ({
   search: await page.locator('button[aria-label="智能搜索"]').count(),
-  vision: await page.locator('button[aria-label="上传文件"]').count(),
-  docs: await page.locator('button[aria-label^="添加文档"]').count(),
   asr: await page.locator('button[aria-label="语音输入"]').count(),
   thinking: await page.locator('button[aria-label="深度思考"]').count(),
+  image: await page.locator(ATTACH_IMAGE).count(),
+  imageReady: await page.locator(ATTACH_IMAGE_READY).count(),
+  document: await page.locator(ATTACH_DOC).count(),
+  documentReady: await page.locator(ATTACH_DOC_READY).count(),
+  documentDisabled: await page.locator(ATTACH_DOC_DISABLED).count(),
 })
+
+/**
+ * 图片入口的三态期望：`ready`（在 + 可点）/ `absent`（DOM 里没有）。
+ * 四个渠道都应该是 `ready`：这是 #548 的功能本身。
+ */
+const expectImageEntry = (where, want, nodes) => {
+  if (want === 'ready') {
+    if (nodes.image !== 1) {
+      bad(`${where} 图片入口（attach-image）应有且仅有 1 个，实际 ${nodes.image} 个`)
+    } else if (nodes.imageReady !== 1) {
+      bad(`${where} 图片入口存在但不可点（aria-disabled=true，实际可点 ${nodes.imageReady} 个）`)
+    } else {
+      ok(`${where} 图片入口存在且可点（attach-image ×1，#548 的三渠道图片通路）`)
+    }
+    return
+  }
+  if (nodes.image !== 0) {
+    bad(`${where} 仍然渲染了图片入口（期望 DOM 里没有，实际 ${nodes.image} 个）`)
+  } else {
+    ok(`${where} 图片入口不存在（DOM 里没有节点）`)
+  }
+}
+
+/**
+ * 文档入口的三态期望：
+ *  - `ready`：`acceptsDocuments(kind)` 为真 → 入口在且可点；
+ *  - `disabled`：能力门关掉（今天只有 deepseek）→ 入口**仍在**，但明确标成不可用
+ *    （`data-attachment-entry="unavailable"` + `aria-disabled="true"`），点下去给原因而不是静默；
+ *  - `absent`：DOM 里没有。
+ */
+const expectDocumentEntry = (where, want, nodes) => {
+  if (want === 'ready') {
+    if (nodes.documentReady !== 1) {
+      bad(
+        `${where} 文档入口应存在且可点（attach-document 可点 ${nodes.documentReady} 个 / 总数 ${nodes.document} 个）`
+      )
+    } else if (nodes.documentDisabled !== 0) {
+      bad(`${where} 文档入口同时出现了「不可用」标记，能力表自相矛盾`)
+    } else {
+      ok(`${where} 文档入口存在且可点（attach-document ×1，acceptsDocuments=true）`)
+    }
+    return
+  }
+  if (want === 'disabled') {
+    if (nodes.document !== 1) {
+      bad(`${where} 文档入口应渲染 1 个「不可用」解释按钮，实际 ${nodes.document} 个`)
+    } else if (nodes.documentDisabled !== 1 || nodes.documentReady !== 0) {
+      bad(
+        `${where} 文档入口没有标成不可用（unavailable=${nodes.documentDisabled}、ready=${nodes.documentReady}）`
+      )
+    } else {
+      ok(`${where} 文档入口按能力门渲染为不可用（acceptsDocuments=false，点下去给原因）`)
+    }
+    return
+  }
+  if (nodes.document !== 0) {
+    bad(`${where} 仍然渲染了文档入口（期望 DOM 里没有，实际 ${nodes.document} 个）`)
+  } else {
+    ok(`${where} 文档入口不存在（DOM 里没有节点）`)
+  }
+}
 
 const expectCaps = async (where, expected) => {
   const nodes = await capNodes()
   note(`${where} 入口节点数：${JSON.stringify(nodes)}`)
-  for (const [name, want] of Object.entries(expected)) {
+  for (const name of ['search', 'asr', 'thinking']) {
+    if (!(name in expected)) {
+      continue
+    }
     const got = nodes[name]
-    const label = {
-      search: '智能搜索',
-      vision: '上传文件（图片）',
-      docs: '文档附件（TXT/DOCX/PDF）',
-      asr: '语音输入',
-      thinking: '深度思考',
-    }[name]
+    const want = expected[name]
+    const label = { search: '智能搜索', asr: '语音输入', thinking: '深度思考' }[name]
     if (want && got === 0) {
       bad(`${where} 缺少「${label}」入口`)
     } else if (!want && got !== 0) {
@@ -248,6 +329,8 @@ const expectCaps = async (where, expected) => {
       ok(`${where} ${label}入口${want ? '存在' : '不存在（DOM 里没有节点）'}`)
     }
   }
+  expectImageEntry(where, expected.image, nodes)
+  expectDocumentEntry(where, expected.document, nodes)
 }
 
 const lastMessageRequest = (requests) =>
@@ -394,8 +477,12 @@ try {
   // 所以文档入口仍是禁用态占位，`docs`（可用的文档 picker）在这里必须为 0。
   await expectCaps('DeepSeek 官方', {
     search: true,
-    vision: true,
-    docs: false,
+    // 图片：deepseek 一直走 `files` 上传 + `file_id`（#551 的零改动边界，入口照旧可用）
+    image: 'ready',
+    // 文档：`acceptsDocuments('deepseek') === false`（#538 的能力门，本 PR 换过写法后仍是 false）→
+    // 入口不会消失，而是渲染成带 `data-attachment-entry="unavailable"` 的解释按钮。
+    // 这条断言就是「能力门没有被削弱」的 DOM 侧守卫：占位**必须在**、必须标着不可用。
+    document: 'disabled',
     asr: true,
     thinking: true,
   })
@@ -447,8 +534,9 @@ try {
   // `documents.textInjection`，文档入口一直是那个能吃 TXT/DOCX/PDF 的 picker（这一次没动）。
   await expectCaps('Anthropic 协议', {
     search: false,
-    vision: true,
-    docs: true,
+    // #548 给三家开了图片入口（base64 内联），#480/#538 的文档入口照旧可用
+    image: 'ready',
+    document: 'ready',
     asr: false,
     thinking: true,
   })
@@ -486,8 +574,8 @@ try {
   // 随 #552 变更：三渠道支持图片（`vision: true`）；文档仍是文本注入（`docs: true`，未改）。
   await expectCaps('OpenAI 兼容', {
     search: false,
-    vision: true,
-    docs: true,
+    image: 'ready',
+    document: 'ready',
     asr: false,
     thinking: true,
   })
@@ -543,8 +631,8 @@ try {
   // 随 #552 变更：三渠道支持图片（`vision: true`）；文档仍是文本注入（`docs: true`，未改）。
   await expectCaps('我们的渠道', {
     search: false,
-    vision: true,
-    docs: true,
+    image: 'ready',
+    document: 'ready',
     asr: false,
     thinking: true,
   })

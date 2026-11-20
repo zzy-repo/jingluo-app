@@ -13,20 +13,20 @@
  * 一份内容可以被多个附件引用 —— 删除时在**同一事务里按索引实时 count 引用数**，
  * 数到 0 才真删，因此不需要维护会漂移的冗余计数字段。
  *
- * 已知副作用（#480 PR 里同样写明）：整包导入的 `commitStaging()` 会 `files.clear()`，
- * 附件原件会随之消失（解析全文在 `attachmentTexts` 里还在）。所以读正文一律经过
- * `readAttachmentText` + 缺件降级，不假设原件一定在。
+ * 关于整包导入（#531 起）：`commitStaging()` 的 `files` 替换**保留** `attachment-` 前缀的原件，
+ * 只换聊天数据 —— 所以「导入替换后附件原件没了、再解析落 `failed: source-missing`」不再是预期状态。
+ * 缺件降级仍然保留：原件确实可能因为别的原因读不到（存储被清理、库被外部改动），
+ * 读正文一律经过 `readAttachmentText` + 缺件降级，不假设原件一定在。
  */
 import { getChatDB, loadFile, saveFiles, type StoredAttachmentText } from '../chat/db.js'
+import { ATTACHMENT_BLOB_PREFIX, attachmentBlobKey, isAttachmentBlobKey } from './blobKeys.js'
 import type { DocumentAttachment } from './types.js'
 
-/** 原件 blob 键前缀：内容寻址，与聊天图片的 `files` 键（图片 id）互不干扰 */
-export const ATTACHMENT_BLOB_PREFIX = 'attachment-'
-
-export const attachmentBlobKey = (sha256: string): string => `${ATTACHMENT_BLOB_PREFIX}${sha256}`
-
-/** 是否本模块写进 `files` 的键（清理孤儿时据此圈定范围，不误删聊天图片） */
-export const isAttachmentBlobKey = (key: string): boolean => key.startsWith(ATTACHMENT_BLOB_PREFIX)
+/**
+ * 原件 blob 键的契约（前缀 / 组装 / 判定）在 `./blobKeys.ts`：`chat/db.ts` 的整包替换也要认它，
+ * 而 store ↔ db 互相 import 会成环。这里原样转发，调用方（含用例）照旧从本模块取。
+ */
+export { ATTACHMENT_BLOB_PREFIX, attachmentBlobKey, isAttachmentBlobKey }
 
 /** 解析全文的缓存键：`sha256 + parserVersion`。（去重键，改动会使已有缓存全部失效） */
 export const attachmentTextKey = (sha256: string, parserVersion: string): string =>
@@ -56,7 +56,10 @@ export const saveAttachmentBlob = async (sha256: string, blob: Blob): Promise<st
   return key
 }
 
-/** 读原始文件；键不存在时返回 undefined（整包导入会清空 `files`，缺件是预期情况之一） */
+/**
+ * 读原始文件；键不存在时返回 undefined。
+ * 整包导入**不会**再清掉附件原件（#531），所以缺件只可能来自其它原因，不是导入的必然结果。
+ */
 export const readAttachmentBlob = (key: string): Promise<Blob | undefined> => loadFile(key)
 
 export const putAttachment = async (record: DocumentAttachment): Promise<void> => {

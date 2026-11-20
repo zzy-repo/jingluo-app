@@ -5,6 +5,7 @@ import {
   type MergePolicy,
   type SessionRef,
 } from './history/mergeSessions.js'
+import { isAttachmentBlobKey } from '../attachments/blobKeys.js'
 import type { DocumentAttachment } from '../attachments/types.js'
 import { toSessionSummary, type Session, type SessionSummary } from './types.js'
 
@@ -317,6 +318,9 @@ export const updateStagingFileTypes = async (types: ReadonlyMap<string, string>)
 /**
  * 导入完成后用暂存替换正式数据：同一事务中替换会话、摘要和原件，并清空暂存。
  * 逐条游标复制，同一时间只读取一条记录；事务失败时整体回滚，正式数据不变。
+ *
+ * **附件原件不在替换范围内**（#531）：`files` 里 `attachment-<sha256>` 前缀的 blob 在替换后仍然留着，
+ * 见下面 `clearFilesKeepingAttachmentBlobs()`。
  */
 export const commitStaging = async (): Promise<SessionSummary[]> => {
   const summaries: SessionSummary[] = []
@@ -324,11 +328,39 @@ export const commitStaging = async (): Promise<SessionSummary[]> => {
     ['sessions', 'sessionSummaries', 'files', 'sessionsStaging', 'filesStaging'],
     'readwrite'
   )
+  /**
+   * 清空 `files`，但**保留**附件原件（#531）。附件原件是用户上传的原始文件，与「聊天历史包」
+   * 是两个生命周期：整包导入只该换聊天数据，不该让用户之前的附件变成「无法解析」且无法重试。
+   *
+   * 为什么逐键删除而不是「挑出来 → clear() → 写回」：写回要把每条 blob **整份读进内存**再写一遍，
+   * 几 MB 的 PDF 在替换事务里白白搬一次；逐键删除只读键（`openKeyCursor`），原件原地不动。
+   *
+   * 为什么只按前缀、不判引用：没被任何附件元数据引用的 `attachment-` 键在这里**不清理** ——
+   * 分不清「导入前刚加、还没来得及引用」与「真孤儿」，而清孤儿是 `attachments/store.ts`
+   * 的 `sweepOrphans()` 的职责（它按索引实时数引用数）。两件事不许混在一个事务里。
+   */
+  const clearFilesKeepingAttachmentBlobs = async () => {
+    const files = tx.objectStore('files')
+    const doomed: string[] = []
+    for (let cursor = await files.openKeyCursor(); cursor; cursor = await cursor.continue()) {
+      if (typeof cursor.key === 'string' && isAttachmentBlobKey(cursor.key)) {
+        continue
+      }
+      doomed.push(cursor.key)
+    }
+    // 先收齐再删：边删边 continue 的游标语义依赖实现细节，两遍扫描没有这个前提
+    for (const key of doomed) {
+      await files.delete(key)
+    }
+  }
   const move = async (from: 'sessionsStaging' | 'filesStaging', to: 'sessions' | 'files') => {
     try {
       const target = tx.objectStore(to)
-      await target.clear()
-      if (to === 'sessions') {
+      if (to === 'files') {
+        // #531：聊天图片照常被替换，附件原件留下
+        await clearFilesKeepingAttachmentBlobs()
+      } else {
+        await target.clear()
         await tx.objectStore('sessionSummaries').clear()
       }
       for (

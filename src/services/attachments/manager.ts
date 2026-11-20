@@ -258,7 +258,8 @@ const runParse = async (
 ): Promise<DocumentAttachment> => {
   const blob = await readAttachmentBlob(record.localPath)
   if (blob === undefined) {
-    // 原件不见了（典型来源：整包导入的 `commitStaging()` 清空了 files store）。
+    // 原件不见了（存储被清理 / 库被外部改动；#531 之后**不再是**整包导入的结果：
+    // `commitStaging()` 替换 `files` 时会保留 `attachment-` 前缀的原件）。
     // 不静默跳过：落 failed 让 UI 能提示「请重新上传」。
     const lost: DocumentAttachment = {
       ...record,
