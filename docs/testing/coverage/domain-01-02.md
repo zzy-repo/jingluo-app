@@ -6,6 +6,11 @@
 > **证据基线**：`origin/main` @ `a757bec`（2026-11-19）。本机主工作树 `HEAD` 落后且存在大批暂存删除，
 > 因此 `src/`、`tests/` 的行号与文件清单全部取自 `git archive origin/main` 快照后 grep 得到，不靠推测。
 > 每一条「已覆盖」都能指到具体文件；每一条「未覆盖」都写了 grep 无命中的关键词。
+>
+> ⚠️ **覆盖状态以实际用例为准，改动后必须同步更新本表**：`覆盖状态` / L0–L3 列说的是**当前仓库里
+> 真实存在、且能跑绿的用例**，不是上面那条证据基线当时的判定 —— 基线之后的每一批用例（例如 #452 的
+> C1–C4）都会让旧判定过期。用例新增 / 删除 / 失效后，**必须在同一个 PR 内**同步改本表；只改用例不改表
+> = 本表立刻过期，等于没有本表。
 
 ## 0. 口径与分层映射
 
@@ -82,30 +87,30 @@
 | ID | 功能点（用户视角） | 入口 | 期望结果 | 失败表现 | L0 | L1 | L2 | L3 | 覆盖状态 | 关联 |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | F2-01 | 发一条消息（按钮/回车，可带附件） | 输入框 → 发送 | 用户消息上屏、请求体按渠道正确、开始流式 | 发不出去 / 请求体被上游 400 | ✓ | ✓ | ✓ | 手动 | **已覆盖** | #105 #303 |
-| F2-02 | 流式接收并逐字渲染 | 发送后 | 增量上屏、正文/思考分块、结束后回到可发送态 | 卡住不动、空回答、整段一次性蹦出 | ✓ | ✓ | ✓ | 手动 | **已覆盖** | #41 #93 |
-| F2-03 | 生成中**停止** | 生成中点「停止」 | 立刻停、已收内容保留、状态=已停止、可直接重新生成 | 停不下来 / 半句被丢 / 误报「连接中断」 | ✓ | — | — | — | **部分覆盖（缺点击停止的 DOM 断言）** | #41 |
+| F2-02 | 流式接收并逐字渲染 | 发送后 | 增量上屏、正文/思考分块、结束后回到可发送态 | 卡住不动、空回答、整段一次性蹦出 | ✓ | ✓ | ✓ | 手动 | **已覆盖（含异常）**：`domain02-stop-regenerate` A4（#452 C2：上一轮被 abort 的流不得污染新回答） | #41 #93 #452 |
+| F2-03 | 生成中**停止** | 生成中点「停止」 | 立刻停、已收内容保留、状态=已停止、可直接重新生成 | 停不下来 / 半句被丢 / 误报「连接中断」 | ✓ | ✓ | — | — | **已覆盖（含异常）**：`domain02-stop-regenerate` A1/A2/A3（真点 `.click()` 停止：停得下来 / 半句保留 / 不误报「连接中断」）+ A4（#452 C2 取消后立即重发） | #41 #452 |
 | F2-04 | **重新生成** | 回答底部刷新图标 | 原回答保留为版本可切回，新回答流式生成 | 覆盖旧回答、切不回去、不发请求 | ✓ | — | — | — | **部分覆盖（仅被间接调用）** | #41 #122 |
 | F2-05 | Key 无效（401） | 发送（Key 错/过期） | 「Key 无效或已过期」+ 去设置换 Key；只发 1 次；停自动探测 | 反复打接口 / 显示上游英文 | ✓ | — | — | — | **部分覆盖（缺 L1 界面断言）** | #303 #324 |
 | F2-06 | 额度/余额不足 | 发送（耗尽） | 「余额或额度不足」+ 充值入口；不重试 | 被当成限流/网络/未知错误 | ✓ | ✓ | — | — | **已覆盖** | #299 #105 |
-| F2-07 | 限流 / 服务端繁忙 / 断网 / 超时 + **自动重试** | 发送（429/5xx/断网/超时） | 各自分类文案；有上限自动重试并提示「正在第 N 次重试」 | 无限转圈、静默重试、额度类被重试 | ✓ | ✓ | — | — | **部分覆盖（429/断网只到 L0）** | #105 #324 |
-| F2-08 | 上下文超长 | 长会话继续提问 | 「对话太长，开新会话或删几条」；不重试 | 未知错误 / 无脑重试 | ✓ | — | — | — | **部分覆盖（缺 L1）** | #122 |
-| F2-09 | 断流 / 空闲超时 | 生成中网络断、上游不动 | 两种文案分开；半句保留；可重新生成 | 永远 streaming / 冒充网络异常 | ✓ | — | — | — | **部分覆盖（缺 L1/L2）** | #41 #150 #45 |
-| F2-10 | 首字等待分级提示 | 发送后 5/30/60s 无响应 | 逐级提示；60s 档给停止/重新生成 | 干等无反馈 | ✓ | — | — | — | **部分覆盖（缺 DOM 渲染验证）** | #41 #328 |
+| F2-07 | 限流 / 服务端繁忙 / 断网 / 超时 + **自动重试** | 发送（429/5xx/断网/超时） | 各自分类文案；有上限自动重试并提示「正在第 N 次重试」 | 无限转圈、静默重试、额度类被重试 | ✓ | ✓ | — | — | **已覆盖（含异常）**：`domain02-chat-anomaly` C1 行 1/行 2（#452 C1：断流按上限重试后仍失败的终态与「可重试」判定；403 只发 1 次）+ C1 收尾（「正在第 N 次重试」必须撤下）；429/5xx 的界面文案在 `domain02-reply-error-ui` 行 2/行 3 | #105 #324 #452 |
+| F2-08 | 上下文超长 | 长会话继续提问 | 「对话太长，开新会话或删几条」；不重试 | 未知错误 / 无脑重试 | ✓ | ✓ | — | — | **已覆盖（含异常）**：`domain02-chat-anomaly` C3（#452 C3：长会话先被预算裁剪、裁剪后仍超限 → 给可操作建议且**只发 1 次**不重试）；413 界面文案另见 `domain02-reply-error-ui` 行 4 | #122 #452 |
+| F2-09 | 断流 / 空闲超时 | 生成中网络断、上游不动 | 两种文案分开；半句保留；可重新生成 | 永远 streaming / 冒充网络异常 | ✓ | ✓ | — | — | **已覆盖（含异常）**：`domain02-chat-anomaly` C1 行 1（#452 C1：断流终态文案必须说「上游这次什么都没返回、属于临时故障、可重试」，不许糊成「未知错误」）+ `domain02-reply-error-ui` 行 5/行 6（断流与空闲超时两种文案分开、半句保留） | #41 #150 #45 #452 |
+| F2-10 | 首字等待分级提示 | 发送后 5/30/60s 无响应 | 逐级提示；60s 档给停止/重新生成 | 干等无反馈 | ✓ | ✓ | — | — | **已覆盖（含异常）**：`domain02-wait-thinking-ui` 表 A 行 1–3（5/30/60s 三档真出现在 DOM，60s 档给「停止生成」出口）+ 表 C（#452 C4：首字等待期间切后台再回来 → 提示不消失、秒数不回退不重算、回前台流式照常收尾、全程只发 1 次） | #41 #328 #452 |
 | F2-11 | 思考过程折叠/隐藏 | 设置 →「思考过程显示方式」；回答里的思考区 | 默认折叠、可展开、可完全隐藏不占位；流式时自动展开 | 思考常驻、隐藏后空白 | ✓ | — | — | — | **部分覆盖（缺 L1 真实交互）** | #46 #297 #341 |
 | F2-12 | 长文本复制 | 回答底部复制 | ≤512 KiB 直接复制；超限弹「保存为 TXT」，成功/失败都有反馈 | 复制被截断 / 静默失败 | ✓ | ✓ | — | 未测 | **已覆盖**（Android 剪贴板/SAF 手动未测） | #2 |
 
 ### 2.2 覆盖证据（按 ID）
 
 - **F2-01**：`tests/unit/enter-key-mode.test.mjs`（回车三档）、`tests/unit/key-rejection-303.test.mjs`（真实 store `sendMessage`）、`tests/unit/attachment-endpoint-303.test.mjs`、`tests/integration/request-body.test.mjs`（按协议剥字段）、`tests/integration/full-acceptance.test.mjs`（点发送 → mock SSE）、`tests/e2e/real-upstream.test.mjs:330-360`（真键盘 + 真上游）、`scripts/compat/p1-chat.mjs`。
-- **F2-02**：`tests/unit/openai-adapter.test.mjs`（事件序列 + 脏数据）、`tests/unit/chat-stream-interrupt.test.mjs`、`tests/integration/full-acceptance.test.mjs` 第 5 组（逐字渲染 + 结束态）、`tests/e2e/real-upstream.test.mjs`（TTFB/首字/结束）、`tests/unit/diagnostics-stream-timing.test.mjs`。
-- **F2-03**：L0 有 `tests/unit/chat-retry-retryable.test.mjs:291-303`（`stopReply` → `calls===1`、`status==='stopped'`、无重试提示）、`chat-stream-interrupt.test.mjs:218`（中止不误报断流）。**缺口**：L1/L2 只引用了停止按钮——`full-acceptance.test.mjs:762` 与 `real-upstream.test.mjs:397` 都只是 `count()` / 等它消失，**全仓没有一处 `.click()` 点停止**。
+- **F2-02**：`tests/unit/openai-adapter.test.mjs`（事件序列 + 脏数据）、`tests/unit/chat-stream-interrupt.test.mjs`、`tests/integration/full-acceptance.test.mjs` 第 5 组（逐字渲染 + 结束态）、`tests/e2e/real-upstream.test.mjs`（TTFB/首字/结束）、`tests/unit/diagnostics-stream-timing.test.mjs`。**#452 C2**：`tests/integration/domain02-stop-regenerate.test.mjs` A4（停止后立刻重发 → 上一轮被 abort 的流不污染新回答，新回答逐字上屏）。
+- **F2-03**：L0 有 `tests/unit/chat-retry-retryable.test.mjs:291-303`（`stopReply` → `calls===1`、`status==='stopped'`、无重试提示）、`chat-stream-interrupt.test.mjs:218`（中止不误报断流）。**#452 C2 已补**：`tests/integration/domain02-stop-regenerate.test.mjs` A1/A2/A3 真的 `.click()` 点「停止生成」（停得下来、半句保留、不误报「连接中断」），A4 管取消后立即重发。（该「缺口」一段是 #362 基线时的结论，已过期。）
 - **F2-04**：`tests/unit/chat-context-budget-long-session.test.mjs:276` 调 `regenerateReply` 只是取请求体；`tests/integration/full-acceptance.test.mjs:788` 只把「重新生成」算进入口按钮计数。无版本保留/切回/新请求历史断言。
 - **F2-05**：`tests/unit/key-rejection-303.test.mjs`（4 组：记住 401、换 Key 失效判定、403/500 不算、真实 store 只 1 次 + 「Key 无效或已过期」）、`tests/unit/official-error-classify.test.mjs:186`（401 不回退）、`tests/unit/chat-retry-retryable.test.mjs:280`。
 - **F2-06**：`tests/unit/quota-exhausted.test.mjs`（14 例）、`tests/integration/quota-exhausted.test.mjs`（402 / 429+`insufficient_quota` / 502 与普通 400 负向 / 额度正常，且断言「只发 1 次」与充值入口）。
-- **F2-07**：`tests/unit/chat-retry-retryable.test.mjs`（7 例：断网、5xx、超时、4xx 不重试、用户停止、重试提示文案、纯函数判定）、`tests/unit/official-error-classify.test.mjs:223`、`tests/integration/quota-exhausted.test.mjs:240-253`（502 仍按上限重试）。**429 的界面文案只有 L0**。
-- **F2-08**：`tests/unit/chat-context-limit-error.test.mjs`（10 例：识别模式、413、不可重试、文案、真实 store 只发 1 次）、`tests/unit/official-error-classify.test.mjs:180`（真实样本不回退）。
-- **F2-09**：`tests/unit/chat-stream-interrupt.test.mjs`（5 例）、`tests/unit/stream-idle-timeout.test.mjs`（4 例：空闲收口、反例不误杀、半句保留、阈值可配）、`tests/unit/api-request-timeout.test.mjs`。
-- **F2-10**：`tests/unit/chat-wait-notice.test.mjs`（6 例：4.9s 不提示、5/30/60s 分档、60s 档给出口、中英文案、定时器清单、挂载点契约）、`tests/unit/chat-retry-retryable.test.mjs:215`（hints 收尾清空）。无真实 DOM/假时钟用例。
+- **F2-07**：`tests/unit/chat-retry-retryable.test.mjs`（7 例：断网、5xx、超时、4xx 不重试、用户停止、重试提示文案、纯函数判定）、`tests/unit/official-error-classify.test.mjs:223`、`tests/integration/quota-exhausted.test.mjs:240-253`（502 仍按上限重试）。**#452 C1**：`tests/unit/domain02-chat-anomaly.test.mjs` C1 行 1（断流每次都在首字前断掉 → 按上限重试后收敛，请求次数 = 1 + 上限；终态文案与「可重试」判定）、行 2（403 只发 1 次）、C1 收尾（收尾后「正在第 N 次重试」必须撤下）。429/5xx 的**界面**文案另见 `tests/integration/domain02-reply-error-ui.test.mjs` 行 2/行 3（L1）。
+- **F2-08**：`tests/unit/chat-context-limit-error.test.mjs`（10 例：识别模式、413、不可重试、文案、真实 store 只发 1 次）、`tests/unit/official-error-classify.test.mjs:180`（真实样本不回退）。**#452 C3**：`tests/unit/domain02-chat-anomaly.test.mjs` C3（预算调到 maxTokens 150 / maxRounds 3 攒 6 轮 → 第 7 轮请求体已裁剪仍回 400 context_length_exceeded → 给「开新会话 / 删几条较早的消息」且**只发 1 次**不重试）。**L1**：`tests/integration/domain02-reply-error-ui.test.mjs` 行 4（413 界面文案 + 只 1 次 + 明确「重发没用」）。
+- **F2-09**：`tests/unit/chat-stream-interrupt.test.mjs`（5 例）、`tests/unit/stream-idle-timeout.test.mjs`（4 例：空闲收口、反例不误杀、半句保留、阈值可配）、`tests/unit/api-request-timeout.test.mjs`。**#452 C1**：`tests/unit/domain02-chat-anomaly.test.mjs` C1 行 1（断流终态必须说「上游这次什么都没返回，属于临时故障，可以重试」，不许糊成「未知错误」也不许说成「不要重试」）。**L1**：`tests/integration/domain02-reply-error-ui.test.mjs` 行 5（断流）/ 行 6（空闲超时）两种文案分开 + 半句保留。
+- **F2-10**：`tests/unit/chat-wait-notice.test.mjs`（6 例：4.9s 不提示、5/30/60s 分档、60s 档给出口、中英文案、定时器清单、挂载点契约）、`tests/unit/chat-retry-retryable.test.mjs:215`（hints 收尾清空）。**#452 C4**：`tests/integration/domain02-wait-thinking-ui.test.mjs` 表 C（首字等待期间切到后台再回前台：5s 档提示不消失、秒数不回退不归零、回前台后正文照常流式收尾、全程只发 1 次请求）。该文件表 A 行 1–3 另有 5/30/60s 三档在**真实 DOM** 上的出现与 60s 档「停止生成」出口断言（原先「无真实 DOM 用例」一段随之过期）。
 - **F2-11**：`tests/unit/thinking-display.test.mjs`（7 例 A–G：默认折叠、正文不挂 DOM、流式自动展开、隐藏档、老数据、i18n、接线）、`tests/unit/thinking-adapters.test.mjs:472`（hidden 时请求仍带思考参数）、`tests/unit/thinking-entry-consistency.test.mjs`。`tests/integration/caps.test.mjs` 只验「深度思考入口可用」，不验折叠。
 - **F2-12**：`tests/unit/copy-limit.test.mjs`（UTF-8 字节阈值）、`tests/integration/copy-limit.test.mjs`（6 条：超限弹窗、emoji 字节、512 KiB 边界、保存成功、保存失败、console error=0）。文件头自述 Android Binder / SAF 未测。
 

@@ -10,6 +10,12 @@
 
 ## 0. 口径
 
+> ⚠️ **覆盖状态以实际用例为准，改动后必须同步更新本表**：`覆盖状态` / L0–L3 列说的是**当前仓库里
+> 真实存在、且能跑绿的用例**，不是上表那条读码基准（`372703b`, 2026-11-19）当时的判定 ——
+> 本文件已经踩过一次：F8-12 / F9-12 曾标「未覆盖 / 仅有间接证据」，实际早已有用例且破坏验证会变红
+> （#453 指出，见 `docs/testing/report.md` §6.5）。用例新增 / 删除 / 失效后，**必须在同一个 PR 内**
+> 同步改本表（含域计数）；只改用例不改表 = 本表立刻过期。
+
 ### 0.1 分层映射（仓库分层 ↔ #362 分层）
 
 仓库只有 `tests/run-layer.mjs` 定义的 `unit / integration / e2e / device` 四层，与 #362 的 L0–L3 不是一一对应，本文件按下面的映射登记，避免和 runner 口径打架：
@@ -57,12 +63,14 @@
 | F8-09 | 反馈弹窗滚动：触摸滑动到底、字号放大、软键盘弹出、旧内核无 `dvh` | 弹窗内滚动区 | 触摸能滚到底、提交键可见可达；关闭后 body 无滚动锁残留 | 滚不动 / 提交键被键盘挡住 / 主页触控被锁死 | — | ✓ | — | — | **部分覆盖（缺 L3 真机）** | #30 #57 #63 |
 | F8-10 | 诊断采集：环形缓冲 500 条、刷新后仍在、hook 捕获 console.error/未捕获异常/未处理 rejection/fetch 失败 | 全应用后台 | 超过 500 只留最新 500；刷新后从 IndexedDB 恢复；四类失败都有记录 | 日志丢失 / 崩溃现场没记录 | — | ✓ | — | — | **已覆盖** | #301 |
 | F8-11 | 脱敏：`sk-` / `Bearer` / `token=` / `Signature=` / `AccessKeyId=` → `***`；完整 URL → 只剩 path | 采集层自动 | 日志、错误页报告、导出文件三处都脱敏 | Key 原样进日志 → 泄漏 | ✓ | ✓ | ✓ | — | **已覆盖** | #301 #28 #313 |
-| F8-12 | **设备码（device_id）与卡密原文绝不进日志/导出** | 采集层 + 导出层 | 任何日志 meta、导出 JSON 里都没有 device_id / 完整卡号 | 丢账号 / 卡密被用户随手贴进工单 | — | — | — | — | **未覆盖（仅有间接证据）** | #261 #90 #189 |
+| F8-12 | **设备码（device_id）与卡密原文绝不进日志/导出** | 采集层 + 导出层 | 任何日志 meta、导出 JSON 里都没有 device_id / 完整卡号 | 丢账号 / 卡密被用户随手贴进工单 | ✓ | ✓ | — | — | **部分覆盖（值维度已直断，键名维度有洞）**：`tests/unit/domain08-sensitive-fields.test.mjs` N1（设备码 / 卡密 / 卡号 / 订单号 / 手机号等 8 类敏感值 × 采集层 / 导出层 / 错误页 3 个边界，31 断言，#387 后严格全绿）+ `tests/integration/domain08-feedback-negative.test.mjs`；破坏验证：删掉 `redact.ts` 的 `deviceId` 值规则 → 变红。**残留**：键名维度（白名单收下 `deviceId` + 删掉密钥段）组合变异全绿，见 `docs/testing/report.md` §6.2 D2，已登记缺口 | #261 #90 #189 #387 #453 |
 | F8-13 | `sanitizeMeta` 白名单：白名单外的键**静默丢弃**（#301 的坑） | 采集层 `record()` | 合法键原样落库；越界/非法值丢弃；白名单外键丢弃且不抛 | 埋点「写了但生产里没有」= 排查证据凭空消失 | ✓ | — | — | — | **部分覆盖（缺调用点对账）** | #301 #306 #313 |
 | F8-14 | i18n 缺 key 兜底：不抛错、给中文兜底、留结构化日志 | 任意界面 | 缺 key 不换页、文案不跨语言借用、30 分钟内同 key 只报一次 | 白屏（ErrorBoundary 接管）/ 中文用户看到英文原文 | ✓ | — | — | — | **已覆盖** | #314 |
 | F8-15 | 埋点覆盖面门禁 `check:log-coverage` | `pnpm run check:log-coverage` | R1 死枚举 / R2 关键链路 / R3 meta 贫瘠；`--selftest` 三个反例必须被拦 | 新埋点只有一句人话也进主干 | ✓（脚本自检） | — | — | — | **部分覆盖（未接线 CI）** | #301 #315 #316 |
 
-**域 8 计数：15 个功能点 → 已覆盖 8 / 部分覆盖 6 / 未覆盖 1（F8-12，仅有间接证据）/ 不适用 0。**
+**域 8 计数：15 个功能点 → 已覆盖 8 / 部分覆盖 7 / 未覆盖 0 / 不适用 0。**
+
+> 2026-11-20 按行级状态重算（原「未覆盖 1 = F8-12，仅有间接证据」是**过期信息**：`domain08-sensitive-fields` N1 矩阵早已在测、且破坏验证会变红，见 F8-12 行的说明与 `docs/testing/report.md` §6.5）。
 
 ### 1.1 域 8 现有用例证据（按功能点）
 
@@ -79,7 +87,7 @@
 | F8-09 | `tests/integration/feedback-scroll.test.mjs`（L1，5 组合 × 390/360） | `after.top > 0`、能滚到底、提交键在视口内、导出可回滚、展开后仍到底、关闭后 `body` 无 `data-scroll-lock` 且 `overflow` 回基线、父级设置面板与主会话触控恢复。**必带 `--timeout-ms 600000`**（实测 ~200s） |
 | F8-10 | `tests/integration/diagnostics.test.mjs`（L1，[1][3][4]） | 600 条只留最新 500；刷新后 `app_launch` 仍在（IndexedDB）；单条 msg 截断 2000；console.error / 未捕获异常 / 未处理 rejection / fetch 失败都被记录 |
 | F8-11 | 见 §6.1（L0 `diagnostics-log-fields` C、L1 `diagnostics` [2]、L2 `diagnostics-upload` [5]、导出二道 `feedback-export`、错误页 `error-report`） | 见 §6.1 断言原文 |
-| F8-12 | 仅间接：`tests/unit/ours-invite.test.mjs`（[1][6]）、`tests/unit/bind-key.test.mjs`（[7]） | 「存储 key 固定（不随渠道切换变化）」「整条链路一条 console 都没写」「设备码不进日志」——**都没有覆盖「日志 payload / 导出文件里不出现 device_id 与完整卡号」** |
+| F8-12 | ⚠️**本格已过期**（2026-11-20）：现为 `tests/unit/domain08-sensitive-fields.test.mjs`（N1 矩阵，8 类敏感值 × 3 边界，31 断言，严格全绿）+ `tests/integration/domain08-feedback-negative.test.mjs`；旧的间接证据（`ours-invite[1][6]`、`bind-key[7]`）不再作为唯一依据 | 断言的是「日志 payload / 导出文本 / 错误页报告里原文不出现 + 打码形态出现」；**键名维度仍是洞**（见 G8-01 末与 `docs/testing/report.md` §6.2 D2） |
 | F8-13 | `tests/unit/diagnostics-log-fields.test.mjs`（B/C/E）、`tests/unit/log-313-attachment-import.test.mjs`（10 场景） | 白名单外键/密钥键/非原始值必须被丢弃；键数上限；stage 枚举只读兼容。`log-313` 明确「写入的 meta 走真实的 `sanitizeMeta`」，断言的就是后端会收到的那份 |
 | F8-14 | `tests/unit/i18n-missing-key.test.mjs`（5 组）、`tests/unit/format-points-i18n.test.mjs`、`tests/unit/auto-title-prompt-i18n.test.mjs`（配套文案） | 缺 key 不抛错、不借 en 原文、一条 `warning` + `i18nKey/locale/reason`；30 分钟去重（50 次只留 1 条）；缺占位符保留 `{total}` 且只记参数名 |
 | F8-15 | `scripts/check-log-coverage.mjs`（门禁，`--selftest` 本次实跑通过） | 三个反例（死枚举 / 关键链路零埋点 / meta 贫瘠）全部被拦住；**未接进 `.github/workflows/ci.yml`** |
@@ -88,7 +96,7 @@
 
 | 编号 | 缺口（对应功能点） | 风险 | 现有测试 | 建议层级 | 归属（拟定用例） | 处置 |
 | --- | --- | --- | --- | --- | --- | --- |
-| G8-01 | **脱敏失败：device_id / 卡密原文可能进日志或导出**（F8-12） | **P0 资损/丢账号** | 只有间接证据：`ours-invite` 断言「整条链路一条 console 都没写」；`export.ts` 的 `PRIVATE_KEY` 正则按**键名**过滤 `card`/`payment`/`receipt`；`SECRET_SEGMENTS`（`fields.ts`）**不含** `deviceId` / `card`。**没有任何用例断言日志 payload 或导出文件里不出现 device_id 与完整卡号** | L0（取 N1）；L2 取 **不新增**（N1 已断言导出文本边界，真往返由现有 `e2e/diagnostics-upload` 承担） | **N1** | 拆单：把账号凭据键纳入密钥语义（`SECRET_SEGMENTS` 加 `deviceid`/`cardno`/`cardnumber`，或写「疑似账号凭据键整条丢弃」表驱动），再加一条真提交路径的 payload 快照断言 |
+| G8-01 | **脱敏失败：device_id / 卡密原文可能进日志或导出**（F8-12） | **P0 资损/丢账号** | ⚠️**「只有间接证据 / 没有任何用例断言」已过期**（2026-11-20；值维度已由 N1 直断，且破坏 `redact.ts` 的 `deviceId` 规则后会变红）。原判据：`ours-invite` 断言「整条链路一条 console 都没写」；`export.ts` 的 `PRIVATE_KEY` 正则按**键名**过滤 `card`/`payment`/`receipt`；`SECRET_SEGMENTS`（`fields.ts`）**不含** `deviceId` / `card`。当时结论是「没有任何用例断言日志 payload 或导出文件里不出现 device_id 与完整卡号」——**该结论已被 N1 推翻**。现在真正剩下的洞只有**键名维度**（白名单收下 `deviceId` + 删掉密钥段 → 组合变异全绿），见 `docs/testing/report.md` §6.2 D2 | L0（取 N1）；L2 取 **不新增**（N1 已断言导出文本边界，真往返由现有 `e2e/diagnostics-upload` 承担） | **N1** | 拆单：把账号凭据键纳入密钥语义（`SECRET_SEGMENTS` 加 `deviceid`/`cardno`/`cardnumber`，或写「疑似账号凭据键整条丢弃」表驱动），再加一条真提交路径的 payload 快照断言 |
 | G8-02 | 白名单与调用点无法对账（F8-13） | P1 证据静默丢失 | `diagnostics-log-fields` 测 `sanitizeMeta` 本身；`log-313` 用真实 `sanitizeMeta` 测 10 个场景；**但没有「所有调用点写的键 ⊆ 白名单」的静态对账**。#313 已实证 `resume` 键「早已在写、一直被清洗丢掉」 | 门禁（0 用例） | **N1 之外：扩 `check:log-coverage` R4** | 并入 `check:log-coverage` 作 R4（扫 `record*` 的 meta 字面量键 vs `META_KEYS ∪ EXTRA_KEYS`） |
 | G8-03 | 门禁未接线 CI（F8-15） | P1 重演「靠人记得跑」 | `package.json` 有 `check:log-coverage`，`--selftest` 通过；`.github/workflows/ci.yml` 只跑 `check:legacy` / `check:matrix` / `check:ip` | 配置（0 用例） | — | 加一行 CI（先非 `--strict`，随 knownGaps 收口再转严格） |
 | G8-04 | 提交前自检无 L0（F8-06） | P1 主流程 | `analyze()` 的三条阈值（<10 条 / 无网络 / 跨度<1s）与 `EXPECTED_KINDS` 只在 L1 断言 | L0 | **N4** | 把 `inspectLogCoverage` / `validatePayload` 做成表驱动纯函数用例 |
@@ -114,11 +122,13 @@
 | F9-09 | 渠道选择（官方 / Anthropic / OpenAI / 自营）持久化，能力入口随渠道显隐 | 设置 → 模型服务 | 刷新后渠道仍在；不支持的能力入口从 DOM 消失（不是置灰） | 刷新回默认渠道 / 入口点了报错 | — | ✓ | — | — | **已覆盖** | #274 #341 |
 | F9-10 | **切换渠道后凭证隔离**：Key 四渠道共用不丢；`base-url:<渠道>` / `model:<渠道>` 按渠道分开存不互串 | 设置 → 模型服务 | 切 A→B→A，A 的地址/模型还在；内置渠道（官方/自营）不渲染也不接受写地址与模型 | A 的中转地址/模型被带进 B（#339 的根因） | — | ✓ | — | — | **部分覆盖（缺 L0）** | #339 #341 |
 | F9-11 | 配置迁移：`chat-demo:config-schema` 1→2 清 `#339` 残留共享 model；幂等；老中转在用则不动；诊断留痕 | 升级后首次启动（`main.tsx` → `migrateConfigOnce`） | 残留键被删、版本号落盘、官方渠道发内置模型、留一条 `config_change/legacy-model` | **迁移误删用户仍有效的配置（不可回滚）** | ✓ | ✓ 条件 | — | — | **已覆盖** | #339 |
-| F9-12 | 「删除所有对话」及清数据后的行为：设置、设备码、日志、草稿的保留/清理口径 | 设置 → 数据管理 | 只删会话与附件；`chat-demo:*` 设置、`ours-device-id`、诊断日志不受影响 | **设备码被清 = 丢账号**；设置被清 = 用户重配 | — | — | — | — | **未覆盖** | #261 |
+| F9-12 | 「删除所有对话」及清数据后的行为：设置、设备码、日志、草稿的保留/清理口径 | 设置 → 数据管理 | 只删会话与附件；`chat-demo:*` 设置、`ours-device-id`、诊断日志不受影响 | **设备码被清 = 丢账号**；设置被清 = 用户重配 | ✓ | ✓ | — | — | **已覆盖（含异常）**：`tests/integration/domain09-delete-all-retention.test.mjs`（8 行保留口径表：会话摘要 / 正文 / 附件必须清空；设备码 / API Key / 设置 / 诊断日志 / 草稿按口径保留，逐行对账，表在 `tests/fixtures/domain08-09/delete-retention.mjs`）；破坏验证：`clearHistory()` 里补一句 `localStorage.clear()` → T4「设备码从 `d-0123…cdef` 变成 `null`」变红 | #261 #453 |
 | F9-13 | 脏 localStorage 容错：非法枚举值回落默认，不把非法值渲染/发出去 | 冷启动 | `settings.ts` 13 个 `chat-demo:*` 键各自有白名单回落（`location` 走 `JSON.parse` + `normalizeLocation`），写不进去也不崩 | 畸形值进 UI / 进请求体 | ✓ | — | — | — | **部分覆盖（6/13 键，另 `provider-kind`）** | — |
 | F9-14 | 设置项在窄屏与旧内核下的布局：#57 文本列塌成单字宽、#190「对话背景」行、#159 三列截断 | 设置页 390/360、WV83/91 | 文本列有下限、按钮区整行下移、无横向溢出 | 标题逐字竖排 / 按钮被裁 | — | — | — | ✓ 手动 | **不适用（无自动化）** | #57 #159 #190 |
 
-**域 9 计数：14 个功能点 → 已覆盖 6 / 部分覆盖 3 / 未覆盖 4 / 不适用 1。**
+**域 9 计数：14 个功能点 → 已覆盖 7 / 部分覆盖 3 / 未覆盖 3 / 不适用 1。**
+
+> 2026-11-20 按行级状态重算（原把 F9-12 记作「未覆盖」是**过期信息**：`domain09-delete-all-retention` 8 行保留口径表早已在测、且破坏验证会变红，见 F9-12 行与 `docs/testing/report.md` §6.5）。
 
 > F9-08 的补充事实：更新渠道**不是持久化设置**——`AppUpdateField.tsx` 用 `useState`，初值由 `bundledApp().version` 是否含 `-` 推断（预发布包默认「稳定+预发布」）。即重启后渠道选择回到推断值。当前没有任何文档或断言把这个行为写成契约。
 >
@@ -139,7 +149,7 @@
 | F9-09 | `tests/integration/provider-channels.test.mjs`（L1，[1]–[8]） | 标准构建默认官方渠道；四渠道各渲染哪些输入项；能力入口随渠道从 DOM 消失；刷新后渠道选择持久化；console error = 0 |
 | F9-10 | `tests/integration/provider-channels.test.mjs`（L1，[3][5][6]）、`tests/integration/probe-auth-protocols.test.mjs`（L1，按渠道 seed `base-url:<kind>`） | `stored['chat-demo:base-url:anthropic'] === BASE_A && stored['chat-demo:model:anthropic'] === MODEL_A`；切渠道后 Key 不丢（提示可重填）；自营渠道界面不出现后端地址与内置模型名 |
 | F9-11 | 见 §6.2（L0 `config-migration` 6 例 + L1 `legacy-config` + L0 `provider-deepseek-model`） | 见 §6.2 断言原文 |
-| F9-12 | **无** | `deleteAllSessions` 在 `tests/` 0 命中 |
+| F9-12 | ⚠️**本格已过期**（2026-11-20，原写「无」）：现为 `tests/integration/domain09-delete-all-retention.test.mjs`（8 行保留口径表，表在 `tests/fixtures/domain08-09/delete-retention.mjs`） | 逐行断言「删完后还剩什么」：会话摘要/正文/附件清空；设备码/API Key/设置/诊断日志/草稿按口径保留；破坏验证（`clearHistory()` 补 `localStorage.clear()`）→ T4 设备码变 `null` 时变红 |
 | F9-13 | `tests/unit/reading-settings.test.mjs`、`tests/unit/enter-key-mode.test.mjs`、`tests/unit/thinking-display.test.mjs`、`tests/unit/thinking-entry-consistency.test.mjs` | 覆盖 `chatMode`、`thinkingDisplay`、三个阅读档、`enterKeyMode`；其余 6 键 + `provider-kind` 无断言 |
 | F9-14 | `scripts/compat/p4-layout.mjs`（L3 手动）、`docs/ui/settings-cell-wrap/`（#57 关单记录）、`docs/ui/190-backup-row/`（WV83/91 三档 JSON + 截图 + `measure.mjs`） | 逐元素 `getBoundingClientRect().right` 越界清单 + 视口宽/可滚动宽实测；不在 `tests/run-layer.mjs` 内，需手动跑 |
 
@@ -149,7 +159,7 @@
 | --- | --- | --- | --- | --- | --- | --- |
 | G9-01 | **迁移契约只覆盖 #339 一个场景，缺「迁移不许动用户有效配置」的结构性不变量**（F9-11） | **P0（配置不可回滚）** | `tests/unit/config-migration.test.mjs` 6 例（残留清除 / ours 渠道同样清 / 幂等 / 老中转不清 / 无残留只落版本 / 版本到顶一个键都不碰）+ `tests/integration/legacy-config.test.mjs` 端到端（版本号=2、残留被删）。**已有测试，但只针对 schema 2 这一次**；schema 升到 3 时没有任何「允许删除的键清单之外一个都不动」的断言 | L0 | **N3** | 把每次 schema 升级写成「版本 → 允许删除的键集合」白名单表驱动，并断言表外键（设置/设备码/`provider-kind`/API Key）一个都不被删 |
 | G9-02 | 迁移的唯一端到端证据会静默失效（F9-11） | P0（同上） | `legacy-config.test.mjs` 依赖 `APP_URL`/本地 dist，缺失时 `SKIP(env)`；CI 里不会跑 integration 层 | 配置（0 用例） | **N3 的现有 L1 复用** | 发布前门禁用「SKIP 即 FAIL」模式跑一次迁移用例 |
-| G9-03 | 「删除所有对话」与清数据后行为无任何断言（F9-12） | P1（`device_id` 丢＝丢账号） | tests 下 `deleteAllSessions` 0 命中 | L1（L0 半边的读取断言并入 N2） | **N7**（必须单列） | L1：点删除 → 会话空、`chat-demo:*` 设置、`ours-device-id`、诊断日志仍在 |
+| G9-03 | ~~「删除所有对话」与清数据后行为无任何断言~~（F9-12）**已落地** | P1（`device_id` 丢＝丢账号） | ⚠️**本行已过期**（2026-11-20）：N7 已落地为 `tests/integration/domain09-delete-all-retention.test.mjs`，不再 0 命中 | L1（L0 半边的读取断言并入 N2） | **N7**（必须单列） | L1：点删除 → 会话空、`chat-demo:*` 设置、`ours-device-id`、诊断日志仍在 |
 | G9-04 | 脏值容错只覆盖 6/13 键（F9-13） | P1 | 有断言：`chatMode`、`thinkingDisplay`、`readingFontSize/Weight/LineHeight`、`enterKeyMode`（`reading-settings` / `thinking-display` / `thinking-entry-consistency` / `enter-key-mode`）。**无断言：`locale` / `location` / `themePreference` / `ttsVoice` / `search` / `siderCollapsed`，另加 `apiConfig.getProviderKind()` 的 `provider-kind` 回落** | L0 | **N2**（并入设置矩阵，不单列） | 表驱动：每个键 × {非法枚举, 空串, 大小写变体, 非字符串} |
 | G9-05 | 主题完全没有测试（F9-01） | P1（体验，且是首屏观感） | `tests/` 下 `chat-demo:theme-preference` **0 命中**；仅 `motion.test.mjs` 断言「减少动态效果下主题淡入动画关闭」 | L0 取 N2（持久化/脏值）；跨系统跟随取 N6（UI 生效） | **N2 + N6** | 主题并入设置矩阵与重载用例，不单列 |
 | G9-06 | 语言持久化无测试（F9-06） | P2 | `chat-demo:locale` 只在 `compat-*` 用例里作为无关字段出现 | L0 | **N2**（并入设置矩阵） | 冷启动读回 + 浏览器语言回退 |
@@ -296,6 +306,7 @@
 | 各功能文件的「zh/en 成对」断言（`reading-settings` F / `enter-key-mode` F / `thinking-display` F / `rotate-key` 8c / `payment-trail-ui` / `import-skipped-ui` …） | **合并为 1 条全局键集 + 占位符对账**（可放 L0 或门禁） | 同一逻辑被 5+ 个文件重复 | −5（跨域收益） |
 
 **削减合计 ≈ 19 条**（其中跨域 i18n 键集约 5 条）。与新增 7 条相抵，**域 8+9 的净变化 ≈ −12 条用例**；同时把 5 个零断言功能点（F8-12、F9-01、F9-06、F9-07、F9-12）全部纳入断言范围——即「用例更少、覆盖更全」。
+（落地进度，2026-11-20：F8-12 的 N1 与 F9-12 的 N7 已落地并有破坏变红证据；F9-01 / F9-06 / F9-07 见 `docs/testing/coverage/feature-coverage.md` 的域 9 行。）
 
 ### 8.5 不新增自动化的三条（明账）
 
