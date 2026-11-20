@@ -18,6 +18,14 @@ export const VARIANTS = Object.freeze(['internal', 'standard']);
 export const DEFAULT_MARKER = 'com.example.deepseekchat.ARTIFACT_VARIANT';
 
 /**
+ * 回环 consume 标记名（Issue #601 闸 2）：`android/app/build.gradle` 在
+ * `-PallowLoopbackConsume=true` 且地址真是回环时写 `<meta-data …="true">`。
+ * 上传接口读到 true 就 400 LOOPBACK_BUILD_REJECTED —— 打得出来，但传不上去。
+ * 与 DEFAULT_MARKER 同样以 applicationId 为前缀（AGP 的 ${applicationId} 占位符生成）。
+ */
+export const DEFAULT_LOOPBACK_MARKER = 'com.example.deepseekchat.LOOPBACK_CONSUME';
+
+/**
  * 解析 `aapt2 dump xmltree <apk> --file AndroidManifest.xml` 的输出，
  * 找出标记名的 meta-data 取值。
  * 注意：`aapt2 dump badging` **不会**输出 meta-data（已实测），只能用 xmltree。

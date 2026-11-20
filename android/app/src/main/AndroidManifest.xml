@@ -30,6 +30,13 @@
              config/appIdentity.json 生成，不再写死包名。 -->
         <meta-data android:name="${applicationId}.ARTIFACT_VARIANT" android:value="${artifactVariant}" />
 
+        <!-- 回环 consume 标记（Issue #601 闸 1 → 闸 2 的接缝）：只有显式
+             -PallowLoopbackConsume=true 且地址真的是回环，build.gradle 才写 "true"。
+             dl-release 的 POST /api/v1/release 读这一条：true → 400 LOOPBACK_BUILD_REJECTED
+             （该包仅用于本地联调，要 adb reverse tcp:18000 tcp:18000，真机必连不上后端）。
+             注意：老包没有这一条，读不到按历史行为放行 —— 所以这条要长期留着，别删。 -->
+        <meta-data android:name="${applicationId}.LOOPBACK_CONSUME" android:value="${loopbackConsume}" />
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"

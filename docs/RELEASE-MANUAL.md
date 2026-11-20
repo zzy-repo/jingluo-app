@@ -155,6 +155,34 @@ cd android && ./gradlew assembleRelease   # 不传 -PartifactVariant，默认 st
   （`[签名] 签名证书与已发布版本不一致，已中止`）——**这不是 bug，别去改 `EXPECTED_CERT_SHA256` 绕，
   也别退回 `assembleDebug`**，按 §1 把 release 三项指向已发布证书即可。
 - 构建完先确认产物存在再往下做，别急着上传。
+- **`consume.baseUrl` / `pay.baseUrl` / `migration.baseUrl` 是回环地址时，这条命令会直接中止**
+  （报错 `[consume] 回环地址只能用于本地联调，不可分发`，Issue #601）。见下面 §3.1。
+
+### 3.1 回环地址闸（Issue #601）：打得出来 ≠ 传得上去
+
+事故：`1.4.2` 的 internal 包带着 `consume.baseUrl = http://127.0.0.1:18000` 进了公网分发清单，
+那个包在任何真机上都连不上后端（`127.0.0.1` 指的是手机自己），只能配 `adb reverse` 联调。
+
+两道闸：
+
+| 闸 | 位置 | 行为 |
+| --- | --- | --- |
+| 1 构建期 | `android/app/build.gradle` | **任何变体**（debug / release / internal / standard）只要 `consume` / `pay` / `migration` 的 base 是回环（`127.0.0.1` / `localhost` / `::1`）→ 配置阶段直接 FAILED，报错带键名 + 配置行号 + 解法 |
+| 2 上传期 | `deploy/dl-release/server.mjs`（`POST /api/v1/release`） | APK 内 `<meta-data …LOOPBACK_CONSUME="true">` → `400 LOOPBACK_BUILD_REJECTED`，APK 与 `releases.json` 都不落盘；读不到标记（历史包）→ 放行 |
+
+**逃生舱 `-PallowLoopbackConsume=true`**（只给本地联调）：
+
+```bash
+cd android && ./gradlew assembleDebug -PallowLoopbackConsume=true   # 只在「就是连本机 sub2api」时用
+```
+
+- 语义是「我知道这是回环地址，这个包只给我自己联调用」：构建放行，但产物会被打上
+  `LOOPBACK_CONSUME=true`（`AndroidManifest` 的 meta-data + `BuildConfig.LOOPBACK_CONSUME`）。
+- 带这个标记的包**永远传不上去**：`scripts/release-upload.mjs` 在发请求前就停，
+  `POST /api/v1/release` 也会 `400 LOOPBACK_BUILD_REJECTED`。
+- 只认 `true` / `false` —— 写成 `-PallowLoopbackConsume=yes` 会直接报错，避免「以为开了」。
+- **发版不要用这个开关。** 要出可分发的包，只能把 `config/endpoints.json` 的 base 换成 https
+  生产地址（生产 host 见 #482；临时覆盖见 §14）。
 
 ---
 

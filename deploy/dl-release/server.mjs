@@ -18,6 +18,8 @@
  *     从 APK 二进制里解析；meta 里的同名值不采信（冲突只记日志）
  *   - `android:debuggable` 必须是 false（读 APK 内 AndroidManifest.xml 判定），
  *     否则 400 APK_DEBUGGABLE 拒收 —— 发布路径不允许出现 debuggable 构建（Issue #60）
+ *   - 「回环 consume」构建一律拒收：APK 内 `<meta-data …LOOPBACK_CONSUME="true">`
+ *     → 400 LOOPBACK_BUILD_REJECTED（Issue #601）。读不到标记（老包）按历史行为放行
  *   - 防降级：versionCode 必须大于 releases.json 当前 latest
  *     （版本号与 latest 完全相同 = 幂等覆盖，允许）
  *   - buildType 只接受 shared/build-types.mjs 的枚举（stable|prerelease），非法值
@@ -34,13 +36,14 @@ import crypto from 'node:crypto';
 import { execFile } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import {
+  DEFAULT_LOOPBACK_MARKER,
   DEFAULT_MARKER,
   normalizeAllowEntry,
   parseVariantFromXmltree,
   resolveVariant,
   VARIANTS,
 } from './variant.mjs';
-import { inspectApkDebugState } from './apk-manifest.mjs';
+import { inspectApkDebugState, inspectApkLoopback } from './apk-manifest.mjs';
 // buildType 的枚举只有一处定义（Issue #330）——服务端不再自带字符串数组，
 // 也不再把 Gradle 构建类型（release/debug）当发布渠道。
 import { BUILD_TYPES, buildTypeFor, isBuildType } from '../../shared/build-types.mjs';
@@ -68,6 +71,9 @@ const STAGING_PREFIX = '.upload-';
 //   2) 服务器侧 sha256 白名单（只用于没有标记的历史包）
 // 都没有 → unknown，绝不默认 standard（App 遇到 unknown 不得自动更新/推荐）。
 const VARIANT_MARKER = process.env.DL_VARIANT_MARKER || DEFAULT_MARKER;
+// 回环 consume 标记（Issue #601 闸 2）：读法与 debuggable 同一套零依赖 AXML 解析，
+// 不依赖 aapt2 —— 「这个包是不是只能本地联调」这种事，任何一台跑服务的机器都要判得出来。
+const LOOPBACK_MARKER = process.env.DL_LOOPBACK_MARKER || DEFAULT_LOOPBACK_MARKER;
 const VARIANTS_FILE = process.env.DL_VARIANTS_FILE || '/etc/dl-release/artifact-variants.json';
 
 // ---------------------------------------------------------------- 版本指纹（Issue #441）
@@ -494,6 +500,26 @@ async function handleRelease(req, res, ip) {
       : `无法确认 APK 的 debuggable 状态（${debugState.reason}）`;
     return fail(res, 400, 'APK_DEBUGGABLE',
       `${why}，拒绝写入。请用 ./gradlew :app:assembleRelease -PartifactVariant=internal 重新出包（Issue #60）`);
+  }
+
+  // (7a-2) 回环 consume 包一律拒收（Issue #601 闸 2：闸 1 只保证「打得出来的回环包带标记」，
+  // 这里保证「带标记的包进不了库」）。判据仍是 APK 二进制里的标记，不采信客户端 meta。
+  // 读不到标记 → 放行（历史包没有这一条，误伤一次发布流程就会被绕过）。
+  const loopbackState = inspectApkLoopback(staging, LOOPBACK_MARKER);
+  log('loopback_marker', {
+    ip, state: String(loopbackState.loopback), reason: loopbackState.reason, sha256,
+  });
+  if (loopbackState.loopback === true) {
+    await fsp.rm(staging, { force: true });
+    log('reject_loopback_build', { ip, sha256, marker: LOOPBACK_MARKER, value: loopbackState.value });
+    return failCode(
+      res, 400, 'LOOPBACK_BUILD_REJECTED',
+      '该包仅用于本地联调：APK 内埋着 ' +
+      `${LOOPBACK_MARKER}="true"，说明它是用回环地址（127.0.0.1 / localhost / [::1]）打出` +
+      '的 consume 构建，装到任何真机上都连不上后端（127.0.0.1 指的是手机自己，只能配 adb reverse）。' +
+      '已拒绝写入 releases.json。请把 config/endpoints.json 的 consume.baseUrl 换成 https 生产地址' +
+      '后重新出包（Issue #601）',
+    );
   }
 
   // (7b) 变体判定：只认 APK 内标记 或 服务器白名单；客户端 meta 一律不采信

@@ -221,8 +221,49 @@ jobs:
 
       - name: gradle 配置可解析（拦住 build.gradle 语法错）
         # 5 分钟硬上限：冷缓存首次要下 gradle-8.14.3-all（~200MB）。超时就是红，不会静默拖慢 PR。
+        #
+        # -PallowLoopbackConsume=true（Issue #601）：仓库里当前提交的 config/endpoints.json 的
+        # consume.baseUrl 还是本地联调回环地址（生产 host 待 #482 提供），而闸 1 要求
+        # 「回环地址的包必须显式声明」才能出包。这一步只求值 gradle 脚本、不产出任何可分发产物，
+        # 所以显式声明「这是本地联调构建」是准确的；闸 1 本身的正/负向对照见下一步。
         timeout-minutes: 5
-        run: cd android && ./gradlew help --no-daemon --console=plain
+        run: cd android && ./gradlew help --no-daemon --console=plain -PallowLoopbackConsume=true
+
+      - name: 闸 1 负向对照：回环 consume.baseUrl 未声明 allowLoopbackConsume 时必须 FAILED（#601）
+        # 顺序有意的：上一步已经证明「带逃生舱时 gradle 求值得通」，这一步只验闸 1 会不会咬。
+        # 只有当 endpoints 里确实是回环地址时这一条才成立；一旦 #482 填了 https 生产 host，
+        # 这里自动跳过并打印原因（不制造一条「改了配置就变红」的假门禁）。
+        timeout-minutes: 5
+        run: |
+          # 退出码约定：0 = 确认是回环（继续做负向对照）/ 3 = 不是回环（跳过）/ 其他 = 探针自己坏了
+          set +e
+          node -e "
+            const raw = require('./config/endpoints.json');
+            const lb = ['127.0.0.1','localhost','::1','[::1]'];
+            const host = (v) => { const r = String(v).replace(/^https?:\\/\\//,''); if (r.startsWith('[')) return r.slice(0, r.indexOf(']')+1); const i = r.indexOf(':'); return i >= 0 ? r.slice(0,i) : r; };
+            const hits = [];
+            for (const k of ['consume','pay']) { const v = raw?.[k]?.baseUrl; if (typeof v === 'string' && v.trim()) { if (lb.includes(host(v.trim()).toLowerCase())) hits.push(k + '.baseUrl=' + v.trim()); } }
+            const m = raw?.migration; if (m?.enabled === true && typeof m.baseUrl === 'string' && m.baseUrl.trim() && lb.includes(host(m.baseUrl.trim()).toLowerCase())) hits.push('migration.baseUrl=' + m.baseUrl.trim());
+            if (hits.length === 0) { console.log('SKIP: config/endpoints.json 里没有回环 base，闸 1 负向对照不适用'); process.exit(3); }
+            console.log('回环 base: ' + hits.join(' '));
+          "
+          probe=$?
+          set -e
+          if [ "$probe" = "3" ]; then exit 0; fi
+          if [ "$probe" != "0" ]; then echo "探针自身失败（exit=$probe），先修探针再谈闸 1"; exit 1; fi
+          cd android
+          set +e
+          out=$(./gradlew help --no-daemon --console=plain 2>&1)
+          code=$?
+          set -e
+          printf '%s\n' "$out" | tail -40
+          if [ "$code" = "0" ]; then
+            echo "闸 1 没咬住：回环 consume.baseUrl 在没传 -PallowLoopbackConsume 的情况下通过了配置阶段（#601）"
+            exit 1
+          fi
+          printf '%s\n' "$out" | grep -q "回环地址只能用于本地联调，不可分发" || {
+            echo "闸 1 咬住了，但不是那条文案（先看上面 tail 出来的真实报错）"; exit 1; }
+          echo "闸 1 负向对照通过：回环 base → 构建 FAILED，且打印了「回环地址只能用于本地联调，不可分发」"
 
       # 登录接缝守卫（#510）：`AuthGate` 的 `__TEST_AUTH_STATE__` 必须是**构建期常量**，
       # 正常构建由 DefinePlugin 内联成 undefined → 守卫被死代码消除。这个 job 构建的是**不带**

@@ -226,6 +226,73 @@ if (providers.gradleProperty('consumeBase').present || providers.gradleProperty(
     logger.warn('[consume] 本次用 -P 覆盖了 config/endpoints.json：产物里的后端地址不在仓库里，发布后在 CHANGELOG 记一笔')
 }
 
+// ---------------------------------------------------------------------------
+// 闸 1：回环地址只能用于本地联调，不可分发（Issue #601）
+//
+// 事故：1.4.2（versionCode 21）的 **internal** 包把 `consume.baseUrl = http://127.0.0.1:18000`
+// 带进了分发清单（`apk/deepseek-chat-1.4.2-internal-HJ5NWRHQ.apk`），靠人工隔离清单才收住。
+// 那个包在任何真机上都连不上后端（127.0.0.1 指的是手机自己），只能配 `adb reverse` 用。
+//
+// 现有的 base 校验只回答「这个地址合不合法」（https 或回环），**不回答「这个包能不能发出去」**，
+// 所以 internal 变体照样出得来。这里把两者接上：**任何变体**（debug / release / internal /
+// standard，不看 taskNames）只要 base 是回环，就必须显式声明「这是自用包」才放行。
+//
+// 判据覆盖三个 base —— 三个都会进产物，进了产物就有同一个风险：
+//   consume.baseUrl   → BuildConfig.CONSUME_BASE / __ENDPOINTS__.consume.baseUrl
+//   pay.baseUrl       → BuildConfig.PAY_BASE     / __ENDPOINTS__.pay.baseUrl
+//   migration.baseUrl → web 包（rspack 注入），仅在 migration.enabled=true 时才有意义
+//                       （与 rspack.config.ts 的 assertMigrationConfig 同口径：开关关着就一条都不校验）
+//
+// 逃生舱：`-PallowLoopbackConsume=true`。语义是「我知道这是回环地址，这个包只给我自己联调用」：
+//   1) 构建放行，并在 AndroidManifest 写入 `<meta-data ...LOOPBACK_CONSUME="true">`
+//      + `BuildConfig.LOOPBACK_CONSUME=true`（标记进 APK，改它必须重签名）；
+//   2) 闸 2（deploy/dl-release）读到该标记 → 400 LOOPBACK_BUILD_REJECTED，**传不上去**。
+// 只认 true / false（写成 yes / 1 直接报错）：逃生舱不能靠拼写猜，否则「以为开了」和「其实没开」
+// 会变成同一种现象。标记只在「真的是回环 + 真的传了逃生舱」时才写 true —— 传了 flag 但地址是
+// 生产 https 的包不该被闸 2 当成回环包拒收。
+// ---------------------------------------------------------------------------
+def LOOPBACK_HOSTS = ['127.0.0.1', 'localhost', '::1', '[::1]']
+/** 取 base 里的 host（`https://a.b:8443` → `a.b`；`http://[::1]:18000` → `[::1]`） */
+def hostOfBase = { String value ->
+    def rest = value.replaceFirst(/^https?:\/\//, '')
+    if (rest.startsWith('[')) {
+        int close = rest.indexOf(']')
+        return close > 0 ? rest.substring(0, close + 1) : rest
+    }
+    int colon = rest.indexOf(':')
+    return colon >= 0 ? rest.substring(0, colon) : rest
+}
+def isLoopbackBase = { String value -> LOOPBACK_HOSTS.contains(hostOfBase(value).toLowerCase()) }
+
+// migration 段：开关关着时 baseUrl 允许为空（配置默认值），与 rspack 的判据同源，不另立一套。
+// 这里**不要求** migration.baseUrl 先过「协议://主机[:端口]」的形态判据：形态由 rspack /
+// check:consume-api 管，这道闸只回答「它是不是回环」——形态不合规时按「认不出主机」处理（不命中），
+// 免得「本该拦的回环写法」因为一条更早的形态规则而被跳过（fail-closed 的方向由别的闸负责）。
+def migrationConfig = endpointsJson.migration
+def migrationBaseForGate = ''
+if (migrationConfig instanceof Map && migrationConfig.enabled == true) {
+    migrationBaseForGate = migrationConfig.baseUrl?.toString()?.trim() ?: ''
+}
+
+def ALLOW_LOOPBACK_PROP = 'allowLoopbackConsume'
+def allowLoopbackRaw = providers.gradleProperty(ALLOW_LOOPBACK_PROP).orNull?.trim()?.toLowerCase()
+if (allowLoopbackRaw != null && !(allowLoopbackRaw in ['true', 'false'])) {
+    throw new GradleException(
+        "[consume] -P${ALLOW_LOOPBACK_PROP} 只接受 true / false（收到 '${allowLoopbackRaw}'）：" +
+        '这个开关决定「回环地址的包能不能出、以及产物要不要打上不可分发标记」，不能靠拼写猜（#601）'
+    )
+}
+def allowLoopbackConsume = allowLoopbackRaw == 'true'
+
+def loopbackBases = [:]
+[['consume.baseUrl', consumeBase], ['pay.baseUrl', payBase], ['migration.baseUrl', migrationBaseForGate]].each { key, value ->
+    if (value && isLoopbackBase(value.toString())) {
+        loopbackBases[key.toString()] = value.toString()
+    }
+}
+// 产物标记：只有「确实有回环地址」且「确实显式放行」才写 true（闸 2 读的就是它）
+def loopbackConsumeMarker = (loopbackBases.isEmpty() || !allowLoopbackConsume) ? 'false' : 'true'
+
 // 超时档位：正整数 + 单调递增（read ≤ write [≤ redeem]）。gradle 这一侧只校验、不进 BuildConfig ——
 // 前端用 __ENDPOINTS__.consume.timeoutMs，原生侧不需要毫秒数（请求都由 CapacitorHttp 发）。
 def checkConsumeTimeouts = { String section, List<String> keys ->
@@ -430,7 +497,10 @@ android {
         applicationId identityApplicationId
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        manifestPlaceholders = [artifactVariant: updateVariant]
+        // loopbackConsume：闸 1 的产物标记（Issue #601），只有显式 -PallowLoopbackConsume=true
+        // 且地址真的是回环时才写 true；AndroidManifest 里的 <meta-data …LOOPBACK_CONSUME> 用它，
+        // 闸 2（deploy/dl-release）读同一处标记。
+        manifestPlaceholders = [artifactVariant: updateVariant, loopbackConsume: loopbackConsumeMarker]
         // 唯一来源：仓库根 package.json（见文件顶部）
         versionCode appVersionCode.toInteger()
         versionName appVersionName
@@ -449,6 +519,9 @@ android {
         // 消费侧 / 支付侧（config/endpoints.json → BuildConfig，见文件顶部 #484 / #487 W1-A）
         buildConfigField "String", "CONSUME_BASE", "\"${consumeBase}\""
         buildConfigField "String", "PAY_BASE", "\"${payBase}\""
+        // 回环构建标记（Issue #601）：进度 / 诊断页据此提醒「这个包只能本地联调」，
+        // 上传侧的硬门禁看的是 AndroidManifest 里同名 meta-data（BuildConfig 进 dex，服务端读不到）。
+        buildConfigField "boolean", "LOOPBACK_CONSUME", "${loopbackConsumeMarker}"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -496,6 +569,35 @@ android {
             }
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// 闸 1 的判定放在文件末尾（android{} 之后）是有意的：报错要**只有这一条**。
+// 若在文件顶部直接 throw，`android{}` 不会被求值 → AGP 会追加一条
+// 「project ':app' does not specify compileSdk」的二次错误，把读日志的人引到错的方向去。
+// 顺序：base 判据（含回环命中集合）在顶部算，这里只负责「命中且没放行就中止」。
+// ---------------------------------------------------------------------------
+if (!loopbackBases.isEmpty() && !allowLoopbackConsume) {
+    def lines = loopbackBases.collect { key, value -> "         · ${key} = ${value}  （config/endpoints.json${lineOfKey(key.toString())}）" }.join('\n')
+    throw new GradleException("""
+[consume] 回环地址只能用于本地联调，不可分发 —— 已中止本次构建（Issue #601）。
+${lines}
+         为什么拦：真机上的 127.0.0.1 / localhost / [::1] 指的是**手机自己**，这种包发给任何人都只会
+                 表现为「登录一直失败 / 额度转圈」。1.4.2 internal 包（versionCode 21）正是带着
+                 consume.baseUrl=http://127.0.0.1:18000 进了公网分发清单（#601），靠人工隔离才收住。
+         解法（二选一）：
+           1) 本地联调（自用包）：显式声明这是回环构建 ——
+                  ./gradlew <task> -P${ALLOW_LOOPBACK_PROP}=true
+              产物会写入 <meta-data ${'$'}{applicationId}.LOOPBACK_CONSUME="true"> 与
+              BuildConfig.LOOPBACK_CONSUME=true，dl-release 的上传接口据此 400 LOOPBACK_BUILD_REJECTED
+              ——**打得出来，但传不上去**。
+           2) 要出可分发的包：把上面这些键换成 https 生产地址（生产 host 见 #482；临时覆盖用
+              -PconsumeBase=https://… / -PpayBase=https://…，发布后按约定记 CHANGELOG）。
+""".stripIndent())
+}
+if (loopbackConsumeMarker == 'true') {
+    logger.warn("""[consume] -P${ALLOW_LOOPBACK_PROP}=true：本次产物含回环地址（${loopbackBases.keySet().join(', ')}），
+[consume] 已写入 LOOPBACK_CONSUME=true 标记：只许本地联调，禁止上传 dl / 禁止分发（#601）。""")
 }
 
 repositories {

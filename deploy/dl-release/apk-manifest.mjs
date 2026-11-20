@@ -1,6 +1,7 @@
 /**
  * 零依赖 APK 清单读取 —— 直接从 APK（zip）里取出 `AndroidManifest.xml`（二进制 XML / AXML）
- * 并解析出 `android:debuggable` 的真实取值。
+ * 并解析出编译进去的真实取值：`android:debuggable`（发布完整性，#60）与
+ * `<meta-data android:value>` 标记（回环 consume 闸 2 读 `LOOPBACK_CONSUME`，#601）。
  *
  * 为什么不用 aapt2：
  *   - 发布关卡要在任何机器上都能跑（CI、构建机、dl 服务端、本地 Windows），不能强依赖 Android SDK；
@@ -21,6 +22,10 @@ export const ANDROID_NS = 'http://schemas.android.com/apk/res/android';
 
 /** android:debuggable 的属性资源 id */
 export const ATTR_DEBUGGABLE_RES_ID = 0x0101000f;
+/** `<meta-data android:name="…">` 的 android:name 属性资源 id */
+export const ATTR_NAME_RES_ID = 0x01010003;
+/** `<meta-data android:value="…">` 的 android:value 属性资源 id */
+export const ATTR_VALUE_RES_ID = 0x01010024;
 
 const CHUNK_STRING_POOL = 0x0001;
 const CHUNK_RESOURCE_MAP = 0x0180;
@@ -208,6 +213,80 @@ export function debuggableFromManifest(axmlBuf) {
   return { state: value, reason: value ? 'debuggable_true' : 'debuggable_false', attr };
 }
 
+/**
+ * 解出 `<meta-data android:value>` 的取值文本（`android:name` 也走这条）。
+ *
+ * **四种编码都要认**，少认一种的后果是「真实的回环包被判成认不出 → 放行」，也就是闸 2 静默失效：
+ *   1. TYPE_STRING(0x03) + 字符串池下标（data）—— 手写/最小夹具常见；
+ *   2. 原始值（rawValue）本身就是字符串 —— aapt2 对字符串占位符的常见编法；
+ *   3. TYPE_INT_BOOLEAN(0x12) —— `android:value="true"` 在 `android:value` 这个属性上
+ *      （format 含 boolean）**完全可能被 aapt2 直接编成布尔**，此时没有 rawValue，只有 data≠0；
+ *   4. TYPE_INT_DEC(0x10) / TYPE_INT_HEX(0x11) —— `android:value="1"`。
+ * 判不出来返回 null（调用方按「认不出」处理，不猜）。
+ */
+function decodeString(attr, strings) {
+  if (!attr) return null;
+  if (typeof attr.rawValue === 'string') return attr.rawValue;
+  if (attr.dataType === 0x03) {
+    const text = Array.isArray(strings) ? strings[attr.data] : undefined;
+    return typeof text === 'string' ? text : null;
+  }
+  if (attr.dataType === 0x12) return attr.data !== 0 ? 'true' : 'false';
+  if (attr.dataType === 0x10 || attr.dataType === 0x11) return String(attr.data);
+  return null;
+}
+
+/**
+ * 读 `<application>` 下所有 `<meta-data android:name="…" android:value="…">` 的字符串取值。
+ *
+ * 与 `debuggableFromManifest` 同源：读的是 APK 二进制里真实编译进去的 AXML，
+ * 不是客户端声明；但同样**不核验证书指纹**（meta-data 在签名覆盖范围内，改它要重签名）。
+ *
+ * @returns {Map<string,string>} name → value（同一个 name 出现多次以最后一个为准，与 Android 行为一致）
+ */
+export function metaDataFromManifest(axmlBuf) {
+  const doc = parseBinaryXml(axmlBuf);
+  const out = new Map();
+  for (const el of doc.elements) {
+    if (el.name !== 'meta-data') continue;
+    const nameAttr = el.attrs.find((a) => a.name === 'name' || a.resId === ATTR_NAME_RES_ID);
+    const valueAttr = el.attrs.find((a) => a.name === 'value' || a.resId === ATTR_VALUE_RES_ID);
+    const name = decodeString(nameAttr, el.strings);
+    if (!name) continue;
+    const value = decodeString(valueAttr, el.strings);
+    out.set(name, value === null ? '' : value);
+  }
+  return out;
+}
+
+/**
+ * 判定 APK 是否为「回环 consume」构建（Issue #601 闸 2）。
+ *
+ * 判据：构建期写入的 `<meta-data android:name="<marker>" android:value="true">`
+ * （`android/app/build.gradle` 只有显式 `-PallowLoopbackConsume=true` 且地址真是回环时才写）。
+ *
+ * **只认显式 true**：标记缺失（老包）/ 值为 false / 认不出 → `loopback: false`，按历史行为放行。
+ * 这一条是有意的：闸 2 管的是「以后打的回环包」，不能因为读不到标记就把历史包、或者别人
+ * 手工改过 manifest 的包一律拒收（误伤一次，发布流程就会被绕过）。
+ *
+ * @returns {{loopback: true|false, reason: string, value: string|null}}
+ *   reason: marker_true | marker_false | marker_undecodable | marker_absent | axml_parse_failed | manifest_absent
+ */
+export function loopbackFromManifest(axmlBuf, markerName) {
+  let map;
+  try {
+    map = metaDataFromManifest(axmlBuf);
+  } catch {
+    return { loopback: false, reason: 'axml_parse_failed', value: null };
+  }
+  if (!map.has(markerName)) return { loopback: false, reason: 'marker_absent', value: null };
+  const raw = map.get(markerName);
+  const value = String(raw ?? '').trim().toLowerCase();
+  if (value === 'true' || value === '1') return { loopback: true, reason: 'marker_true', value: raw };
+  if (value === 'false' || value === '0') return { loopback: false, reason: 'marker_false', value: raw };
+  return { loopback: false, reason: 'marker_undecodable', value: raw };
+}
+
 /** manifest 元素上的基础元信息（用于报告，不参与判定） */
 function manifestInfo(doc) {
   const el = doc.elements.find((e) => e.name === 'manifest');
@@ -225,6 +304,40 @@ function manifestInfo(doc) {
     versionName: typeof get('versionName') === 'string' ? get('versionName') : undefined,
     versionCode: typeof versionCode === 'number' && Number.isFinite(versionCode) ? versionCode : undefined,
   };
+}
+
+/**
+ * 对 APK 文件（路径）或内存 Buffer 做「回环 consume」判定。
+ *
+ * 读不到（文件 / zip / manifest / 标记）一律 `loopback: false` —— 见 `loopbackFromManifest`
+ * 的说明：闸 2 不追溯历史包，读不到就按历史行为放行，但 `reason` 会原样进日志。
+ *
+ * @returns {{loopback: true|false, reason: string, value: string|null, info: object, file?: string}}
+ */
+export function inspectApkLoopback(input, markerName) {
+  const isBuffer = Buffer.isBuffer(input);
+  const file = isBuffer ? undefined : String(input);
+  let buf;
+  try {
+    buf = isBuffer ? input : fs.readFileSync(file);
+  } catch {
+    return { loopback: false, reason: 'read_failed', value: null, info: {}, file };
+  }
+  let manifest;
+  try {
+    manifest = readZipEntry(buf, 'AndroidManifest.xml');
+  } catch {
+    return { loopback: false, reason: 'zip_failed', value: null, info: {}, file };
+  }
+  if (!manifest) return { loopback: false, reason: 'manifest_absent', value: null, info: {}, file };
+  const res = loopbackFromManifest(manifest, markerName);
+  let info = {};
+  try {
+    info = manifestInfo(parseBinaryXml(manifest));
+  } catch {
+    info = {};
+  }
+  return { ...res, info, file };
 }
 
 /**

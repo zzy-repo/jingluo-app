@@ -59,6 +59,9 @@ const chunk = (type, headerSize, body) => {
 
 /** 属性 id（framework 资源）：versionCode / versionName / debuggable */
 const ATTR_RES = { 4: 0x0101021b, 5: 0x0101021c, 7: 0x0101000f }
+/** meta-data 的 android:name / android:value 属性 id（与 apk-manifest.mjs 同源） */
+export const META_NAME_ATTR_RES_ID = 0x01010003
+export const META_VALUE_ATTR_RES_ID = 0x01010024
 /** application 上 `android:debuggable` 的资源 id（与 apk-manifest.mjs 同源） */
 export const DEBUGGABLE_ATTR_RES_ID = 0x0101000f
 
@@ -66,12 +69,25 @@ export const DEBUGGABLE_ATTR_RES_ID = 0x0101000f
  * 编一份 AndroidManifest.xml 的二进制 AXML。
  * `debuggable` 为 true 时才在 application 元素上写 android:debuggable="true"（典型 debug 包形态）；
  * 为 false 时**不写这个属性**（release 包的真实形态）—— 判定逻辑走「属性缺失 = 非 debuggable」。
+ *
+ * `metaData`：写 `<meta-data android:name="…" android:value="…">`（#601 的 LOOPBACK_CONSUME、
+ * #330 的 ARTIFACT_VARIANT 都走这条）。取值按 JS 类型编成不同的 AXML typed value，
+ * 因为**真实 aapt2 会按 android:value 的 format 自己挑类型**，读侧少认一种就静默失效：
+ *   · 字符串 → TYPE_STRING + 字符串池下标（`android:value="true"` 也可能是这种）
+ *   · 布尔   → TYPE_INT_BOOLEAN（`android:value="true"` 被编成布尔时就是这样，没有 rawValue）
+ *   · 数字   → TYPE_INT_DEC
+ * 想造「布尔编码的 true」就写 `{ '…LOOPBACK_CONSUME': true }`。
+ *
+ * 布局说明：本编码器**不写 END_ELEMENT**（最小样例，和既有用法一致），所以 meta-data 与
+ * application 是平铺的 START_ELEMENT 序列，嵌套深度不落字节。README 里那句「结构合法的最小 APK」
+ * 指的是「ZIP + AXML 头 + 字符串池 + 资源映射都真」，不是「能装到手机上」。
  */
 export const buildManifestAxml = ({
   packageName = 'com.example.deepseekchat',
   versionName = '1.4.0',
   versionCode = 18,
   debuggable = false,
+  metaData = {},
 } = {}) => {
   const strings = [
     'android',
@@ -85,8 +101,35 @@ export const buildManifestAxml = ({
     packageName,
     versionName,
   ]
+  // meta-data 的 name / value 属性名要进字符串池（下标接在既有 10 个字符串之后，
+  // 这样 0~9 的下标含义不变，既有断言不受影响），资源映射里登记它们的 framework 资源 id。
+  // 注意顺序：**先把所有字符串推进池**，再按最终长度分配资源映射 —— 反过来会写下标越界。
+  const metaEntries = Object.entries(metaData).map(([name, value]) => ({
+    name: String(name),
+    value,
+    kind: typeof value === 'boolean' ? 'bool' : typeof value === 'number' ? 'int' : 'string',
+  }))
+  const resIdByStringIndex = { ...ATTR_RES }
+  let metaDataNameIndex = -1
+  let metaNameAttrIndex = -1
+  let metaValueAttrIndex = -1
+  const metaStringIndex = metaEntries.map(() => ({ name: -1, value: -1 }))
+  if (metaEntries.length > 0) {
+    metaDataNameIndex = strings.push('meta-data') - 1
+    metaNameAttrIndex = strings.push('name') - 1
+    metaValueAttrIndex = strings.push('value') - 1
+    resIdByStringIndex[metaNameAttrIndex] = META_NAME_ATTR_RES_ID
+    resIdByStringIndex[metaValueAttrIndex] = META_VALUE_ATTR_RES_ID
+    metaEntries.forEach((entry, index) => {
+      metaStringIndex[index].name = strings.push(entry.name) - 1
+      // 布尔 / 数字不落字符串池：它们是 typed value，没有 rawValue（真实 APK 也是这样）
+      if (entry.kind === 'string') metaStringIndex[index].value = strings.push(entry.value) - 1
+    })
+  }
   const resMap = Buffer.alloc(strings.length * 4)
-  for (const [index, id] of Object.entries(ATTR_RES)) resMap.writeUInt32LE(id, Number(index) * 4)
+  for (const [index, id] of Object.entries(resIdByStringIndex)) {
+    resMap.writeUInt32LE(id, Number(index) * 4)
+  }
 
   const NS = 1
   const attr = (nameIndex, { rawValue = 0xffffffff, dataType = 0x00, data = 0 }) => {
@@ -148,12 +191,28 @@ export const buildManifestAxml = ({
     })(),
   ])
 
+  // <meta-data android:name="…" android:value="…">：与 application 平铺（本编码器不写 END_ELEMENT）
+  const metaDataElements = metaEntries.map((entry, index) => {
+    const ids = metaStringIndex[index]
+    const valueAttr =
+      entry.kind === 'bool'
+        ? attr(metaValueAttrIndex, { rawValue: 0xffffffff, dataType: 0x12, data: entry.value ? 1 : 0 })
+        : entry.kind === 'int'
+          ? attr(metaValueAttrIndex, { rawValue: 0xffffffff, dataType: 0x10, data: entry.value })
+          : attr(metaValueAttrIndex, { rawValue: ids.value, dataType: 0x03, data: ids.value })
+    return element(metaDataNameIndex, [
+      attr(metaNameAttrIndex, { rawValue: ids.name, dataType: 0x03, data: ids.name }),
+      valueAttr,
+    ])
+  })
+
   const body = Buffer.concat([
     stringPool(strings),
     chunk(0x0180, 8, resMap),
     startNs,
     element(2, manifestAttrs),
     element(6, applicationAttrs),
+    ...metaDataElements,
   ])
   const head = Buffer.alloc(8)
   head.writeUInt16LE(0x0003, 0)

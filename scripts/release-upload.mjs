@@ -54,7 +54,7 @@ const EXIT_USAGE = 2;
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 const HINTS = {
-  400: 'BAD_REQUEST —— multipart 字段名或 meta JSON 不对（字段必须是 apk + meta）；BODY 里 code=BAD_BUILD_TYPE 时是 buildType 只能是 stable|prerelease（Issue #330）',
+  400: 'BAD_REQUEST —— multipart 字段名或 meta JSON 不对（字段必须是 apk + meta）；BODY 里 code=BAD_BUILD_TYPE 时是 buildType 只能是 stable|prerelease（Issue #330）；code=LOOPBACK_BUILD_REJECTED 时这个包是回环 consume 构建，只能本地联调（Issue #601）',
   401: 'UNAUTHORIZED —— 令牌不对/被轮换撤销；按 §4 重新注入，不要重试同一枚',
   404: 'NOT_FOUND —— 接口路径不对（应为 /api/v1/release）',
   409: 'VERSION_CONFLICT / VARIANT_CONFLICT —— versionCode 没超过线上 latest，或变体冲突；先跑 release-check --manifest',
@@ -160,6 +160,15 @@ async function main(argv) {
   if (info.debuggable === true) {
     throw new ReleaseEnvError(
       '这个包是 debuggable 构建（Issue #60），服务端会 400 APK_DEBUGGABLE 拒收；回构建机用 assembleRelease 重出',
+    );
+  }
+  // 回环 consume 包（Issue #601）：本地先拦，别等服务端 400 —— 这个包在任何真机上都连不上后端
+  // （127.0.0.1 指的是手机自己），只能配 adb reverse 本地联调，绝不该进任何分发通道。
+  if (info.loopbackConsume === true) {
+    throw new ReleaseEnvError(
+      '这个包是回环 consume 构建（APK 内 LOOPBACK_CONSUME=true，consume.baseUrl 指向 127.0.0.1 / localhost）：' +
+        '仅用于本地联调，服务端会 400 LOOPBACK_BUILD_REJECTED 拒收，现在不发（Issue #601）。' +
+        '请把 config/endpoints.json 的 consume.baseUrl 换成 https 生产地址后重新出包（不要传 -PallowLoopbackConsume）。',
     );
   }
   if (info.versionName && info.versionName !== version) {

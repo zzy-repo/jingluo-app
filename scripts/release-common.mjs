@@ -18,7 +18,11 @@ import os from 'node:os';
 import path from 'node:path';
 import crypto from 'node:crypto';
 
-import { inspectApkDebugState, parseBinaryXml, readZipEntry } from '../deploy/dl-release/apk-manifest.mjs';
+import {
+  inspectApkDebugState,
+  metaDataFromManifest,
+  readZipEntry,
+} from '../deploy/dl-release/apk-manifest.mjs';
 import { loadAppIdentity } from './lib/appIdentity.mjs';
 
 /**
@@ -36,6 +40,12 @@ export const RE_SHA256 = /^[0-9a-f]{64}$/;
 export const RE_MD5 = /^[0-9a-f]{32}$/;
 /** 变体标记的 meta-data 名（APK 内，受签名覆盖） */
 export const VARIANT_META_NAME = `${PACKAGE_NAME}.ARTIFACT_VARIANT`;
+/**
+ * 回环 consume 标记的 meta-data 名（Issue #601）：构建期只有显式
+ * `-PallowLoopbackConsume=true` 且地址真是回环时才写 "true"。
+ * 服务端读到它 → 400 LOOPBACK_BUILD_REJECTED；这里读它是为了让上传在**发请求之前**就停住。
+ */
+export const LOOPBACK_META_NAME = `${PACKAGE_NAME}.LOOPBACK_CONSUME`;
 
 export const DEFAULT_ENDPOINT = 'https://dl.rose7.cn/api/v1/release';
 export const DEFAULT_MANIFEST = 'https://dl.rose7.cn/releases.json';
@@ -168,7 +178,8 @@ export function hashFile(file) {
  * 判不出来的字段返回 null —— 调用方必须按「没测到」处理，不许当成通过。
  * @param {string} file
  * @returns {{packageName:string|null, versionName:string|null, versionCode:number|null,
- *            debuggable:true|false|null, debuggableReason:string, variant:string|null, note:string|null}}
+ *            debuggable:true|false|null, debuggableReason:string, variant:string|null,
+ *            loopbackConsume:boolean, note:string|null}}
  */
 export function inspectApk(file) {
   const out = {
@@ -178,6 +189,7 @@ export function inspectApk(file) {
     debuggable: null,
     debuggableReason: 'unknown',
     variant: null,
+    loopbackConsume: false,
     note: null,
   };
   const dbg = inspectApkDebugState(file);
@@ -191,27 +203,19 @@ export function inspectApk(file) {
     out.note = 'versionName 解析不出来（可能是资源引用），用 aapt2 dump badging 复核';
   }
 
-  // 变体标记：<meta-data android:name="…ARTIFACT_VARIANT" android:value="internal|standard">
+  // meta-data 标记（受签名覆盖，读法与 dl-release 服务端同源：apk-manifest.mjs 的 AXML 解析）：
+  //   <meta-data android:name="…ARTIFACT_VARIANT"  android:value="internal|standard">
+  //   <meta-data android:name="…LOOPBACK_CONSUME"  android:value="true|false">   ← #601
   try {
     const axml = readZipEntry(fs.readFileSync(file), 'AndroidManifest.xml');
-    const doc = parseBinaryXml(axml);
-    const str = (a) => {
-      if (!a) return null;
-      if (typeof a.rawValue === 'string') return a.rawValue;
-      if (a.dataType === 0x03 && Array.isArray(doc.strings)) return doc.strings[a.data] ?? null;
-      return null;
-    };
-    for (const el of doc.elements) {
-      if (el.name !== 'meta-data') continue;
-      const nameAttr = el.attrs.find((a) => a.name === 'name');
-      if (str(nameAttr) !== VARIANT_META_NAME) continue;
-      const valueAttr = el.attrs.find((a) => a.name === 'value');
-      const v = str(valueAttr);
-      if (v === 'internal' || v === 'standard') out.variant = v;
-      break;
-    }
+    const meta = metaDataFromManifest(axml);
+    const variant = meta.get(VARIANT_META_NAME);
+    if (variant === 'internal' || variant === 'standard') out.variant = variant;
+    // 只认显式 true：老包没有这一条 → false（与闸 2 的放行口径一致，不误伤历史包）
+    const loopback = (meta.get(LOOPBACK_META_NAME) ?? '').trim().toLowerCase();
+    out.loopbackConsume = loopback === 'true' || loopback === '1';
   } catch (e) {
-    out.note = `${out.note ? `${out.note}；` : ''}变体标记读不到：${e.message}`;
+    out.note = `${out.note ? `${out.note}；` : ''}meta-data 标记读不到：${e.message}`;
   }
   return out;
 }

@@ -4,7 +4,8 @@
 //
 // 为什么必须是「起真服务端」而不是打桩：`deploy/dl-release/server.mjs` 是发布链路上唯一
 // 会把字节写进线上 releases.json 的地方，它的门禁**顺序**本身就是契约
-// （鉴权 → content-type → 体积 → 字段 → 包名 → debuggable → 变体 → 防降级 → 整份清单 → 落盘）。
+// （鉴权 → content-type → 体积 → 字段 → 包名 → debuggable → 回环 consume → 变体 → 防降级 →
+//  整份清单 → 落盘；回环这一道见 `loopback-consume-601.test.mjs`，#601）。
 // 顺序错了的后果不是「报错不好看」，而是「非法包落了一半盘」「清单被写脏」这类不可逆事故。
 //
 // 所以本文件复用 #330 的思路（`deploy/dl-release/test/server-buildtype.test.mjs`）：

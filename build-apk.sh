@@ -15,6 +15,10 @@
 # 可选环境变量:
 #   SKIP_WEB_BUILD=1   跳过 pnpm build（复用现有 dist/）
 #   ANDROID_HOME=...   覆盖 SDK 路径（其次 $ANDROID_SDK_ROOT，兜底 $HOME/android-sdk）
+#   ALLOW_LOOPBACK_CONSUME=1
+#                      显式允许「回环地址」出包（只给本地联调，Issue #601）。不设时，只要
+#                      consume/pay/migration 的 base 是 127.0.0.1 / localhost / ::1 就构建失败。
+#                      设了之后产物会打上 LOOPBACK_CONSUME=true 标记 → 传不上 dl（400 拒收）。
 #
 # 说明: 本脚本不依赖交互式 shell 环境，自行 export ANDROID_HOME / PATH；
 #       首次运行会自动生成 keystore（若 android/keystore/keystore.properties 缺失）。
@@ -27,7 +31,7 @@ MODE="${1:-debug}"                 # debug | release
 EXTRA_ARG="${2:-}"
 case "$MODE" in
   debug|release) ;;
-  -h|--help|help) sed -n '2,23p' "$0"; exit 0 ;;
+  -h|--help|help) sed -n '2,27p' "$0"; exit 0 ;;
   *) echo "[build-apk] 未知模式: $MODE （只支持 debug / release）" >&2; exit 2 ;;
 esac
 
@@ -189,6 +193,12 @@ cd "$ANDROID_DIR"
 chmod +x ./gradlew
 GRADLE_ARGS=("$GRADLE_TASK" "--console=plain")
 [ "$EXTRA_ARG" = "--clean" ] && GRADLE_ARGS=("clean" "${GRADLE_ARGS[@]}")
+# 回环地址逃生舱（Issue #601）：只给本地联调。显式设为 1 才转发 -PallowLoopbackConsume=true；
+# 转发后产物带 LOOPBACK_CONSUME 标记，dl-release 会 400 LOOPBACK_BUILD_REJECTED 拒收。
+if [ "${ALLOW_LOOPBACK_CONSUME:-0}" = "1" ]; then
+  GRADLE_ARGS+=("-PallowLoopbackConsume=true")
+  printf '\033[1;33m[build-apk][警告] ALLOW_LOOPBACK_CONSUME=1：本次产物是「回环地址」本地联调包，禁止上传 dl / 禁止分发（#601）\033[0m\n' >&2
+fi
 
 log "步骤 3/3：./gradlew ${GRADLE_ARGS[*]}"
 ./gradlew "${GRADLE_ARGS[@]}"
