@@ -14,7 +14,7 @@ import {
   type QuotaSource,
   type QuotaState,
   type QuotaUsagePage,
-} from './quotaPanel.js'
+} from './quotaPanelModel.js'
 import styles from './panels.module.css'
 
 /**

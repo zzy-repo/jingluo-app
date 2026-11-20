@@ -23,7 +23,7 @@ const {
   runCreateKey,
   runDeleteKey,
   runLoadAccount,
-} = await import('../../src/components/consume/accountPanel.ts')
+} = await import('../../src/components/consume/accountPanelModel.ts')
 
 const FULL_KEY = 'sk-live-0123456789abcdef9f2c'
 

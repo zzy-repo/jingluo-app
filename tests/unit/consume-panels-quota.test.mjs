@@ -8,7 +8,7 @@
 //   ③ 401 / 会话失效 → `needLogin`（容器据此调 `onNeedLogin()`，面板自己不跳转）；
 //   ④ 5xx → 可重试（只有 `retryable` 才出现「重试」按钮）。
 //
-// `.tsx` 容器只做「注射 + dispatch」，判定全在 `quotaPanel.ts`（裸 Node 可 import），
+// `.tsx` 容器只做「注射 + dispatch」，判定全在 `quotaPanelModel.ts`（裸 Node 可 import），
 // 所以这里跑的是真代码，不是复刻。
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
@@ -18,7 +18,7 @@ import { setupAuthPanels } from '../helpers/auth-panels-env.mjs'
 const { translate, ButtonStub, classNames, markupOf, hasTestId, textOf } = await setupAuthPanels()
 
 const { initialQuotaState, loadQuota, quotaSummaryOf, QuotaPanelView } = await import(
-  '../../src/components/consume/quotaPanel.ts'
+  '../../src/components/consume/quotaPanelModel.ts'
 )
 
 /** `/v1/usage` 的实测形状（`quota.used` 恒 0，真花费在 `usage.total.actual_cost`） */

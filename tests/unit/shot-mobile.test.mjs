@@ -49,14 +49,14 @@ describe('parseArgs', () => {
 
   it('环境变量兜底，命令行优先', () => {
     const env = {
-      SHOT_PAGES: 'payment-records',
+      SHOT_PAGES: 'account-consume',
       SHOT_VIEWPORTS: '360',
       SHOT_OUT: 'docs/ui/env',
       SHOT_DIST_DIR: 'dist-env',
       SHOT_PORT: '5600',
     }
     const fromEnv = parseArgs([], env)
-    assert.deepEqual(fromEnv.pages, ['payment-records'])
+    assert.deepEqual(fromEnv.pages, ['account-consume'])
     assert.deepEqual(fromEnv.viewports, ['360'])
     assert.equal(fromEnv.out, 'docs/ui/env')
     assert.equal(fromEnv.dist, 'dist-env')
@@ -102,8 +102,8 @@ describe('resolvePages', () => {
   })
 
   it('按给定顺序返回并去重', () => {
-    assert.deepEqual(resolvePages(['payment-records', 'header-scroll-top', 'payment-records'], PAGES), [
-      'payment-records',
+    assert.deepEqual(resolvePages(['account-consume', 'header-scroll-top', 'account-consume'], PAGES), [
+      'account-consume',
       'header-scroll-top',
     ])
   })
@@ -113,7 +113,7 @@ describe('resolvePages', () => {
   })
 
   it('三个验收场景都在注册表里，且各自指向 docs/ui 目录', () => {
-    for (const name of ['header-scroll-top', 'reading-settings', 'payment-records']) {
+    for (const name of ['header-scroll-top', 'reading-settings', 'ours-buy-inapp']) {
       assert.ok(name in PAGES, `缺少场景 ${name}`)
       assert.match(PAGES[name].dir, /^docs\/ui\/\d{3}-/u)
       assert.equal(typeof PAGES[name].run, 'function')

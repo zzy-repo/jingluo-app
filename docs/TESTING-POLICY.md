@@ -165,7 +165,7 @@ npm run test:integration -- --baseline          # 集成全量与基线比对，
 
 所以：**用例进 `tests/unit/`（`run-layer` 枚举得到、CI 每次跑），必错输入与骨架进 `tests/gates/`。**
 
-### 9.4 现状清单（2026-11-20，ci.yml 里的 22 道门禁）
+### 9.4 现状清单（2026-11-20，#557 后 ci.yml 里的 24 道门禁）
 
 > 口径：ci.yml 里每一条 `run: pnpm run <gate>` 算一道。单元层那一步是 `run: pnpm test`（整层），不在此列。
 
@@ -192,6 +192,7 @@ npm run test:integration -- --baseline          # 集成全量与基线比对，
 | `check:capabilities`（#413 接线） | ⚠️ **缺口** | 默认 warn 档永远 `exit 0`（10 处能力假设缺陷在案，见 `KNOWN_GAPS`）；`--strict` 档才有红可打 | `scripts/check-capabilities.mjs` |
 | `test:dl-release`（#415 接线） | ✅ 注入（#415） | 往 `deploy/dl-release/test` 拷一条**必红**用例 → `node --test deploy/dl-release/test/*.test.mjs` 必须 exit≠0，删掉后 exit 0（N7；同时钉住「入口被加 `\|\| true` / `continue-on-error` / glob 改窄」三种软化） | `tests/unit/gate-negative-controls.test.mjs` |
 | `check:doc-refs`（本轮接线） | ✅ CI 注入 | CI 往 `docs/` 塞一份写着不存在路径的 md → 必 exit 1，删掉后 exit 0 | `.github/workflows/ci.yml` |
+| `check:case-collision`（#557 新建） | ✅ CI 注入 + 自带 `--selftest` | CI 在 `src/` 下造一对仅大小写不同的模块文件（同一个名字、只差大小写）→ 必 exit 1，删掉后 exit 0；脚本 `--selftest` 另有 4 条反例（R1 路径 / R2 目录 / R3 模块 stem / `.d.ts`）+ 2 条正例 | `.github/workflows/ci.yml` / `scripts/check-case-collision.mjs` |
 | `check:consume-api`（#487 接线） | ✅ CI 注入 | CI 往 `src/` 塞一条**白名单外**的 `/api/v1/**` 路径字面量（`/api/v1/__gate_neg_not_whitelisted`）→ R3 必 exit 1 且指到注入文件，删掉后 exit 0（不用脚本自带的 `--selftest`：那条只证明 R2，白名单 R3 才是主判据） | `.github/workflows/ci.yml` |
 
 「登记」不是给人看的注释：`tests/unit/gate-negative-controls.test.mjs` 的 `N6` 用例会读

@@ -47,6 +47,8 @@ const REQUIRED_CI_GATES = [
   'check:manifest',
   'check:log-coverage',
   'check:doc-refs',
+  // #557：大小写撞车门禁 —— 摘掉它，consume 面板那 4 对同名文件就会再次漂回 main
+  'check:case-collision',
 ]
 
 /**
