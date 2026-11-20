@@ -271,3 +271,194 @@ test('C6/7 订单状态哨兵表：正常下单 / 覆盖单号(#157) / latest_fu
     view.unmount()
   }
 })
+
+// ------------------------------------------------------------------ P3 订单过期后重新下单（Issue #452）
+
+/**
+ * #452 P3：「订单过期后重新下单 → 本地单号被覆盖、旧单不再轮询、不重复建单」。
+ *
+ * **先说清今天还剩下什么**（否则就会像 #362 §0.1 警告的那样去测已删代码）：
+ * `42a3a68`（#331）把 `/api/buy` 建单、订单存档（`orderStore`）、查单与**那套订单轮询**
+ * 整条删掉了，App 侧现在「没有本地单号可覆盖」——那三个子项里前两个的现状由本文件
+ * C6/6、C6/7 的哨兵表钉着（一个订单接口都不发）。真正**还活着**的同族风险只剩一个：
+ * **旧单会不会继续被轮询、会不会叠出第二个定时器**（唯一存活的轮询就是支付记录时间线，
+ * `PaymentTrailDialog`：PAID 未发卡每 4 秒静默重拉、上限 2 分钟）。
+ *
+ * 所以 P3 落在这里，一条表驱动钉三件事（都是 EXPIRED / 旧单在界面上留下的真实痕迹）：
+ *   1. **过期单不轮询**：`EXPIRED ≠ 等待发卡`，一个定时器都不该起，界面也不出现「正在准备卡密」；
+ *   2. **不重复建单（不重复计时）**：paid 单恰好 1 个定时器，4 秒到点只再打一条请求，
+ *      定时器数**始终是 1**（叠加 = 后台无限刷）；
+ *   3. **旧单不再轮询**：切到「已关闭」筛选后旧单定时器清零，离开弹层后也清零。
+ *
+ * 另：重新下单本身（点「前往购买」）每次现取 `/api/pay-link`，连点两次就是两条请求
+ * —— 这条**不是**「重复建单」，而是 F7-03 的口径，已由 C6/3 断言；这里不重复测。
+ */
+const trailOrder = (outTradeNo, status) => ({
+  outTradeNo,
+  planId: 'pro',
+  amountYuan: 29.9,
+  status,
+  statusText: `SERVER_${status}`,
+  createdAt: 1_760_000_000,
+  paidAt: status === 'paid' ? 1_760_000_100 : null,
+  expireAt: status === 'expired' ? 1_760_086_400 : null,
+  card: null,
+  timeline: [],
+  nextStep: '',
+})
+
+const trailPage = (orders) => ({
+  customerId: 1,
+  total: orders.length,
+  limit: 20,
+  offset: 0,
+  totalPaidYuan: 29.9,
+  orders,
+})
+
+/**
+ * 4 秒轮询时钟：只统计 `TRAIL_POLL_INTERVAL_MS` 的定时器（`settle()` 自己用的
+ * `setTimeout(0)` 不掺进来），并允许用例手动「让 4 秒到点」。
+ */
+const createPollClock = (interval) => {
+  const realSetTimeout = globalThis.setTimeout
+  const realClearTimeout = globalThis.clearTimeout
+  const pending = new Map()
+  let created = 0
+  globalThis.setTimeout = (fn, ms, ...rest) => {
+    const id = realSetTimeout(fn, ms, ...rest)
+    if (ms === interval) {
+      pending.set(id, fn)
+      created += 1
+    }
+    return id
+  }
+  globalThis.clearTimeout = (id) => {
+    pending.delete(id)
+    return realClearTimeout(id)
+  }
+  return {
+    get count() {
+      return pending.size
+    },
+    get created() {
+      return created
+    },
+    /** 让「4 秒到了」真的发生：真跑那个回调（轮询请求会真的发出去） */
+    fire() {
+      const entry = [...pending.entries()][0]
+      if (entry === undefined) {
+        return false
+      }
+      const [id, fn] = entry
+      pending.delete(id)
+      realClearTimeout(id)
+      fn()
+      return true
+    },
+    restore() {
+      globalThis.setTimeout = realSetTimeout
+      globalThis.clearTimeout = realClearTimeout
+      for (const id of pending.keys()) {
+        realClearTimeout(id)
+      }
+      pending.clear()
+    },
+  }
+}
+
+const P3_ROWS = [
+  {
+    id: '1',
+    name: 'F7-11/F7-16 过期单（EXPIRED）→ 一个轮询定时器都不起，也不显示「正在准备卡密」',
+    orders: [trailOrder('NO-EXPIRED-1', 'expired')],
+    steps: [],
+    timers: 0,
+    created: 0,
+  },
+  {
+    id: '2',
+    name: 'F7-16 paid 未发卡 → 恰好 1 个定时器；4 秒到点只再拉一条，定时器不叠加（不重复建单）',
+    orders: [trailOrder('NO-PAID-1', 'paid')],
+    steps: ['fire'],
+    timers: 1,
+    created: 2,
+  },
+  {
+    id: '3',
+    name: 'F7-16 旧单不再轮询：切到「已关闭」筛选后定时器清零，且不再起新的',
+    orders: [trailOrder('NO-PAID-2', 'paid')],
+    steps: ['tab-expired'],
+    timers: 0,
+    created: 1,
+  },
+]
+
+test('P3/F7-16 过期单重新下单后旧单不再轮询、不重复计时（表驱动 3 行）', async (t) => {
+  for (const row of P3_ROWS) {
+    t.diagnostic(`P3/${row.id} ${row.name}`)
+    const { TRAIL_POLL_INTERVAL_MS } = await harness.importSource(
+      'src/components/settings/PaymentTrailView.ts'
+    )
+    const { PaymentTrailDialog } = await harness.importSource(
+      'src/components/settings/PaymentTrailDialog.tsx'
+    )
+
+    harness.ctx.reset()
+    harness.ctx.apiKey = KEY
+    // 轨迹页的门禁只认自有渠道（shouldShowPaymentTrail）
+    harness.ctx.kind = 'ours'
+    const requests = []
+    // 服务端的筛选是**真的**：切到「已关闭」只回过期单，于是「旧单还在不在」由数据本身决定
+    const fetchTrail = async (query) => {
+      requests.push(query)
+      const status = query.status ?? null
+      return trailPage(
+        status === null ? row.orders : row.orders.filter((order) => order.status === status)
+      )
+    }
+
+    const clock = createPollClock(TRAIL_POLL_INTERVAL_MS)
+    try {
+      const view = await harness.mount(PaymentTrailDialog, { onClose: () => {}, fetchTrail })
+      assert.equal(requests.length, 1, '挂载时只拉第一页')
+
+      if (row.orders[0].status === 'expired') {
+        assert.equal(view.has('trail-waiting-card'), false, '过期单不能显示「正在准备卡密」')
+      } else {
+        assert.equal(view.has('trail-waiting-card'), true, 'paid 未发卡才该显示「正在准备卡密」')
+      }
+
+      if (row.steps.includes('fire')) {
+        const before = requests.length
+        assert.equal(clock.fire(), true, 'paid 单必须存在待触发的轮询定时器')
+        await view.settle()
+        assert.equal(requests.length, before + 1, '4 秒到点应该真的再拉一条（静默轮询）')
+        assert.equal(clock.count, 1, `轮询定时器不能叠加，实际 ${clock.count} 个`)
+      }
+
+      if (row.steps.includes('tab-expired')) {
+        await view.click('trail-tab-expired')
+        assert.equal(requests.at(-1).status, 'expired', '切到「已关闭」要带 status=expired 重新拉')
+        assert.equal(view.has('trail-waiting-card'), false, '过期筛选里没有等待发卡的单')
+      }
+
+      assert.equal(
+        clock.count,
+        row.timers,
+        `轮询定时器数量：期望 ${row.timers}，实际 ${clock.count}`
+      )
+      assert.equal(
+        clock.created,
+        row.created,
+        `一共建过 ${clock.created} 个定时器，期望 ${row.created} 个`
+      )
+
+      // 关掉弹层 = 用户离开这页：不许在后台继续轮询旧单
+      view.unmount()
+      assert.equal(clock.count, 0, '关闭弹层后必须清掉轮询定时器')
+    } finally {
+      clock.restore()
+    }
+  }
+})

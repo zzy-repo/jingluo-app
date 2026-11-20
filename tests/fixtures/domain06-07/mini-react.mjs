@@ -67,6 +67,31 @@ export const useState = (initial) => {
   return [slot.value, setState]
 }
 
+/**
+ * `useReducer` —— `PaymentTrailDialog`（#189/#326）用 `trailListReducer` 作为列表状态的唯一写入口，
+ * 没有它就挂不起这页。语义与 `useState` 一致：状态真的变了才把根标记成待渲染
+ * （reducer 返回同一个引用 = 没变化，和 React 的 bail out 一样）。
+ */
+export const useReducer = (reducer, initial, init) => {
+  const slot = readSlot(() => ({
+    value: typeof init === 'function' ? init(initial) : initial,
+  }))
+  const owner = current
+  const dispatch = (action) => {
+    const value = reducer(slot.value, action)
+    if (Object.is(value, slot.value)) {
+      return
+    }
+    slot.value = value
+    if (owner.root !== undefined) {
+      owner.root.dirty = true
+    } else {
+      markDirty()
+    }
+  }
+  return [slot.value, dispatch]
+}
+
 export const useRef = (initial) => readSlot(() => ({ current: initial }))
 
 export const useEffect = (effect, deps) => {

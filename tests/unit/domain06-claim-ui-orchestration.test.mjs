@@ -258,3 +258,196 @@ test('C4/6 F6-10 兑换成功 → 清空输入 + 刷新一次额度；卡密只�
   assert.equal(view.text('ours-quota-value'), `400 ${zh.oursPointsUnit}`)
   view.unmount()
 })
+
+// ------------------------------------------------------------------ P1 / P4（Issue #452）
+
+/**
+ * 带闸门的响应器：`/redeem-card` 先挂起，由用例决定什么时候放行。
+ *
+ * 目的只有一个 —— 在**请求还在飞**的那一瞬间读界面状态。`settle()` 在请求挂着时不会
+ * 反复渲染（组件没有状态更新），所以「点了兑换、但还没回包」这个中间态可以被稳定地断言：
+ * 提交按钮是不是禁用、输入框是不是锁住（#452 P1「禁止重复提交」只在这一点上成立）。
+ */
+const prepareGated = ({ cardReply }) => {
+  harness.ctx.reset()
+  harness.ctx.apiKey = OLD_KEY
+  globalThis.localStorage.setItem('chat-demo:ours-device-id', DEVICE)
+  harness.ctx.oursOpen = true
+  const me = [TRANSPORT.json(200, profile(300)), TRANSPORT.json(200, profile(400))]
+  let meIndex = 0
+  let release = () => {}
+  const gate = new Promise((resolve) => {
+    release = resolve
+  })
+  harness.ctx.reply(async (request) => {
+    if (request.path === '/redeem-card') {
+      await gate
+      return cardReply
+    }
+    if (request.path === '/me') {
+      return me[Math.min(meIndex++, me.length - 1)]
+    }
+    if (request.path === '/email/status') {
+      return EMAIL_DISABLED
+    }
+    throw new Error(`P1/P4 用例没有为 ${request.method} ${request.path} 准备响应`)
+  })
+  return { release, gate }
+}
+
+/**
+ * P1：兑换返回 202「处理中」——三行表（两种 202 信封 + 空 body 的 202）。
+ *
+ * 一条 202 要被界面解释成三件事，缺一条都会让用户反复点：
+ *   1. **进入「处理中」态**：文案是「兑换处理中，稍后自动到账」，绝不含「失败」字样；
+ *   2. **禁止重复提交**：请求在飞时按钮禁用；回包后输入框已清空、且没有「重试」按钮
+ *      （pending 只剩「刷新额度」，不会给用户一个一键重发的按钮）；
+ *   3. **最终怎么确认到账**：点「刷新额度」再打一条 `GET /me`，额度按服务端新值显示
+ *      —— 没有轮询、没有「支付成功」这种假结论。
+ */
+const PENDING_ROWS = [
+  {
+    id: '1',
+    name: 'F6-12 HTTP 202 + {code:CREDIT_PENDING}',
+    reply: TRANSPORT.json(202, { code: 'CREDIT_PENDING', points: 100 }),
+  },
+  {
+    id: '2',
+    name: 'F6-12 HTTP 200 + {code:CREDIT_PENDING}（池的另一种信封）',
+    reply: TRANSPORT.json(200, { ok: true, code: 'CREDIT_PENDING' }),
+  },
+  {
+    id: '3',
+    name: 'F6-12 HTTP 202 空 body（真实网关可能什么都不带）',
+    reply: TRANSPORT.text(202, ''),
+  },
+]
+
+test('P1/F6-12 兑换 202「处理中」：处理中态 + 禁止重复提交 + 靠刷新额度确认到账（表驱动 3 行）', async (t) => {
+  for (const row of PENDING_ROWS) {
+    t.diagnostic(`P1/${row.id} ${row.name} → 处理中态、请求在飞时禁止重复提交、靠刷新额度确认到账`)
+    const { release } = prepareGated({ cardReply: row.reply })
+    const view = await harness.mount(OursServicesRow, {})
+    await view.type('ours-redeem-input', CARD)
+    await view.click('ours-redeem-submit')
+
+    // ---- 1. 请求还在飞：提交按钮与输入框都必须锁住（这是「禁止重复提交」唯一有效的位置）
+    assert.equal(
+      view.node('ours-redeem-submit').props.disabled,
+      true,
+      '兑换请求在飞时按钮必须禁用，否则用户连点就是两笔'
+    )
+    assert.equal(view.node('ours-redeem-input').props.disabled, true, '请求在飞时输入框也要锁住')
+    assert.equal(harness.ctx.paths.filter((path) => path === 'POST /redeem-card').length, 1)
+
+    release()
+    await view.settle()
+
+    // ---- 2. 回包是 202：进入「处理中」态，不是失败，也不催重试
+    const result = view.text('ours-redeem-result')
+    assert.equal(result.includes(zh.oursRedeemProcessing), true, `202 必须显示处理中：${result}`)
+    assert.match(result, /71bb/u, '卡密后 4 位要带上，用户才知道是哪张卡')
+    assert.equal(result.includes('失败'), false, `处理中绝不能说失败：${result}`)
+    assert.equal(result.includes(zh.oursErrTimeout), false, '处理中不是超时/失败')
+    assert.equal(view.has('ours-redeem-retry'), false, '处理中不给「重试」按钮（会变成第二次提交）')
+    assert.equal(view.has('ours-redeem-refresh'), true, '处理中要给「刷新额度」让用户自己确认到账')
+    assert.equal(view.node('ours-redeem-input').props.value, '', '处理中也要清空输入框')
+    assert.equal(view.node('ours-redeem-submit').props.disabled, false, '回包后按钮要恢复可点')
+
+    // ---- 3. 确认到账：点「刷新额度」→ 再打一条只读 /me，额度按服务端新值显示
+    await view.click('ours-redeem-refresh')
+    assert.deepEqual(withoutEmailProbe(harness.ctx.paths), [
+      'GET /me',
+      'POST /redeem-card',
+      'GET /me',
+      'GET /me',
+    ])
+    assert.equal(view.text('ours-quota-value'), `400 ${zh.oursPointsUnit}`, '刷新后额度要显示服务端新值')
+    assert.equal(view.text('ours-redeem-result').includes(zh.oursRedeemProcessing), true, '刷新额度不改写「处理中」结论')
+
+    // ---- 4. 输入框已清空 = 同一张卡不会被二次提交（空提交本地拦下，一条请求都不发）
+    const before = harness.ctx.paths.filter((path) => path === 'POST /redeem-card').length
+    await view.click('ours-redeem-submit')
+    assert.equal(
+      harness.ctx.paths.filter((path) => path === 'POST /redeem-card').length,
+      before,
+      '空卡密提交必须本地拦下，绝不能把同一张卡再打一遍'
+    )
+      view.unmount()
+  }
+})
+
+/**
+ * P4：兑换成功但额度刷新失败（`/me` 超时 / 断网）。
+ *
+ * #452 P4 的风险不是「额度没刷出来」（那是小事），而是**界面把兑换说成失败**，
+ * 用户以为没到账 → 再兑一次 = 第二次扣卡。所以两行（超时 / 断网）都盯住三件事：
+ *   1. 兑换结果区仍然是「兑换成功，+100」（绝无「失败」字样、绝不被额度错误盖掉）；
+ *   2. 额度区如实报错并保留「刷新额度」按钮（错误可以说，但不能张冠李戴）；
+ *   3. 刷新成功之后额度更新，执行重试时**不再发第二条 /redeem-card**（重试的是 /me，不是兑换）。
+ */
+const REFRESH_FAIL_ROWS = [
+  {
+    id: '1',
+    name: 'F6-10/F6-06 兑换成功 + 随后的 /me 超时',
+    refreshReply: TRANSPORT.timeout(),
+    expectedKey: 'oursErrTimeout',
+  },
+  {
+    id: '2',
+    name: 'F6-10/F6-06 兑换成功 + 随后的 /me 断网',
+    refreshReply: TRANSPORT.network(),
+    expectedKey: 'oursErrNetwork',
+  },
+]
+
+test('P4/F6-10 兑换成功但额度刷新失败（/me 超时/断网）：界面仍显示成功，绝不显示「兑换失败」（表驱动 2 行）', async (t) => {
+  for (const row of REFRESH_FAIL_ROWS) {
+    t.diagnostic(`P4/${row.id} ${row.name} → 界面仍显示兑换成功（绝不显示「兑换失败」），额度稍后刷新`)
+    prepare({
+      apiKey: OLD_KEY,
+      table: {
+        // 打开弹层 → 300；兑换成功后的那次刷新 → 失败；用户手动再刷 → 400
+        'GET /me': [TRANSPORT.json(200, profile(300)), row.refreshReply, TRANSPORT.json(200, profile(400))],
+        [EMAIL_PROBE]: [EMAIL_DISABLED],
+        'POST /redeem-card': [
+          TRANSPORT.json(200, { ok: true, points: 100, quota_points: 400, remaining_points: 400 }),
+        ],
+      },
+    })
+    const view = await harness.mount(OursServicesRow, {})
+    await view.type('ours-redeem-input', CARD)
+    await view.click('ours-redeem-submit')
+
+    // ---- 1. 兑换结论：成功。额度刷新失败不能把这句话改掉
+    const result = view.text('ours-redeem-result')
+    assert.equal(
+      result.includes(zh.oursRedeemSuccess.replace('{points}', `100 ${zh.oursPointsUnit}`)),
+      true,
+      `兑换成功文案被盖掉了：${result}`
+    )
+    assert.equal(result.includes('失败'), false, `额度刷新失败不能写成兑换失败：${result}`)
+    assert.equal(result.includes(zh.oursErrTimeout), false, '额度错误不能串到兑换结果区')
+    assert.equal(result.includes(zh.oursErrNetwork), false, '额度错误不能串到兑换结果区')
+
+    // ---- 2. 额度区如实报错（错的是「刷新」，不是「兑换」），并留着重试入口
+    assert.equal(view.text('ours-quota-value'), zh[row.expectedKey], '额度区要如实说清刷新失败的原因')
+    assert.equal(view.has('ours-quota-refresh'), true, '刷新失败要留「刷新额度」按钮')
+
+    // ---- 3. 重试的是 /me，不是兑换：再兑一次才是真正的重复扣卡
+    const before = harness.ctx.paths.filter((path) => path === 'POST /redeem-card').length
+    await view.click('ours-quota-refresh')
+    assert.equal(view.text('ours-quota-value'), `400 ${zh.oursPointsUnit}`, '手动刷新后额度应显示 400')
+    assert.equal(
+      harness.ctx.paths.filter((path) => path === 'POST /redeem-card').length,
+      before,
+      '刷新额度绝不能重发 /redeem-card'
+    )
+    assert.equal(
+      view.text('ours-redeem-result').includes(zh.oursRedeemSuccess.replace('{points}', `100 ${zh.oursPointsUnit}`)),
+      true,
+      '刷新成功后兑换结果仍然是成功（不因中间失败而改写）'
+    )
+      view.unmount()
+  }
+})
