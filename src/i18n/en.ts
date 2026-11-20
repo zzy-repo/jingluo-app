@@ -1160,4 +1160,61 @@ export const en = {
   emailBindCodeLabel: 'Verification code',
   emailBindUnbindConfirm: 'After unbinding, this email is no longer linked to the account. Unbind?',
   emailBindCannotUnbind: 'This is the only way to sign in to the account, so it cannot be unbound',
+
+  // ---------- Document attachments (#527 / #480 §3.5, §10) ----------
+  // Entry
+  attachPickButton: 'Attach document (TXT / DOCX / PDF)',
+  attachPickUnsupported:
+    '"{name}" is not a supported document type. Only TXT, DOCX and PDF are supported',
+  attachPickTooLarge: '"{name}" is {size}, over the limit of {limit} for this type',
+  attachPickEmpty: '"{name}" is empty, so there is nothing to parse',
+  attachPickTooMany: 'A message can hold at most {limit} documents; {count} extra were rejected',
+  attachUnavailable: 'The attachment manager is not ready, so no document was added',
+  // Five states + cancel
+  attachStatusPending: 'Waiting to parse',
+  attachStatusParsing: 'Parsing {percent}%',
+  attachStatusParsingStage: 'Parsing · {stage}',
+  attachStatusParsingPlain: 'Parsing…',
+  attachStatusSuccess: 'Ready',
+  attachStatusPartial: 'Partly ready · warnings: {count}',
+  attachStatusFailed: 'Parsing failed. Tap for the reason',
+  attachStatusCancelled: 'Parsing cancelled',
+  attachCancel: 'Cancel parsing',
+  attachRetry: 'Parse again',
+  attachRemove: 'Remove attachment',
+  attachRemoveFailed: 'Could not remove the attachment. Try again',
+  // Detail panel
+  attachOpenDetail: 'View attachment details',
+  attachCloseDetail: 'Close attachment details',
+  attachDetailWarnings: 'Warnings ({count})',
+  attachDetailFailure: 'Why it failed',
+  attachDetailCharacters: '{chars} characters · about {tokens} tokens',
+  attachDetailPages: 'Page {extracted} of {total}',
+  attachDetailRaw: 'Technical details',
+  attachDetailTruncated: 'Content was too long and got cut: {rest} characters were not sent',
+  attachWarnPageGap: '{total} pages in total, only {extracted} extracted',
+  // Failure reasons (by the manager's reason code)
+  attachFailUnsupportedFormat: 'Unsupported file type (only TXT, DOCX and PDF are supported)',
+  attachFailMimeMismatch:
+    'The file content does not match its extension; it may have been renamed',
+  attachFailEmpty: 'The file is empty, so there is nothing to parse',
+  attachFailTooLarge: 'The file is over the size limit for its type',
+  attachFailNotFound: 'This attachment record no longer exists. Add the file again',
+  attachFailSourceMissing: 'The local copy is gone. Add the file again',
+  attachFailNoParser: 'The parser for this format is not ready yet, so it cannot be parsed',
+  attachFailUnknown: 'Something unexpected went wrong while parsing',
+  // Parsing stages (manager onProgress.stage)
+  attachStageValidate: 'Checking the file',
+  attachStageUnzip: 'Unpacking the document',
+  attachStageParse: 'Reading the body',
+  attachStageRender: 'Assembling the text',
+  attachStageOpen: 'Opening the document',
+  attachStagePage: 'Extracting page {page}',
+  attachStageRead: 'Reading the file',
+  attachStageDecode: 'Detecting the encoding',
+  attachStageDone: 'Finishing up',
+  // Cleanup and placeholders
+  attachSweepFailed: 'Could not clean up unused attachments. Try again later',
+  attachMissing: 'This attachment record was cleaned up, so details are unavailable',
+  attachLoading: 'Loading attachment details',
 } satisfies Record<keyof typeof zh, string>
