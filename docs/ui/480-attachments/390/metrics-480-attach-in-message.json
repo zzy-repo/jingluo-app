@@ -1,0 +1,114 @@
+{
+  "page": "480-attach-in-message",
+  "title": "#480 用户消息里的附件卡片：只有元信息（文件名 / 大小 / 状态），正文只在请求体里",
+  "viewport": 390,
+  "size": "390×844",
+  "shots": [
+    "docs/ui/480-attachments/390/480-attach-in-message-01-draft-card-ready-390.png",
+    "docs/ui/480-attachments/390/480-attach-in-message-02-message-attachment-card-390.png",
+    "docs/ui/480-attachments/390/480-attach-in-message-03-message-panel-metadata-390.png"
+  ],
+  "notes": [],
+  "draft": {
+    "cardCount": 1,
+    "cards": [
+      {
+        "variant": "draft",
+        "expanded": false,
+        "name": "480-会议纪要.txt",
+        "subCaption": "TXT 293 B",
+        "status": "已就绪",
+        "corner": null,
+        "progress": null,
+        "actions": [
+          "移除附件"
+        ],
+        "borderColor": "rgba(0, 0, 0, 0.1)",
+        "background": "rgb(255, 255, 255)",
+        "box": {
+          "left": 29,
+          "right": 269,
+          "width": 240,
+          "height": 78,
+          "insideViewport": true
+        }
+      }
+    ],
+    "panels": [],
+    "viewportWidth": 390,
+    "documentScrollWidth": 390,
+    "bodyScrollWidth": 390,
+    "overflowCount": 0,
+    "overflowSamples": []
+  },
+  "message": {
+    "cardCount": 1,
+    "cards": [
+      {
+        "variant": "message",
+        "expanded": false,
+        "name": "480-会议纪要.txt",
+        "subCaption": "TXT 293 B",
+        "status": "已就绪",
+        "corner": null,
+        "progress": null,
+        "actions": [],
+        "borderColor": "rgba(0, 0, 0, 0.1)",
+        "background": "rgba(0, 0, 0, 0)",
+        "box": {
+          "left": 130,
+          "right": 370,
+          "width": 240,
+          "height": 78,
+          "insideViewport": true
+        }
+      }
+    ],
+    "panels": [],
+    "viewportWidth": 390,
+    "documentScrollWidth": 390,
+    "bodyScrollWidth": 390,
+    "overflowCount": 0,
+    "overflowSamples": []
+  },
+  "messageCard": {
+    "cards": [
+      {
+        "variant": "message",
+        "name": "480-会议纪要.txt",
+        "subCaption": "TXT 293 B",
+        "status": "已就绪"
+      }
+    ],
+    "bodyHasDocumentText": false
+  },
+  "requestBody": {
+    "captured": true,
+    "chars": 696,
+    "hasDocumentText": true
+  },
+  "messagePanel": {
+    "label": "查看附件详情",
+    "title": "480-会议纪要.txt",
+    "meta": "TXT 293 B · 117 字符 · 约 39 tokens",
+    "failureTitle": "",
+    "raw": "",
+    "warnings": [],
+    "actions": [
+      "关闭"
+    ],
+    "box": {
+      "left": 82,
+      "right": 382,
+      "width": 300,
+      "insideViewport": true
+    },
+    "position": {
+      "inline": "top: 470px; left: 82px; max-height: 74px;",
+      "computedLeft": "82px",
+      "computedTop": "470px",
+      "maxHeight": "74px"
+    }
+  },
+  "consoleErrors": []
+}

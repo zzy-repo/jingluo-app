@@ -93,6 +93,29 @@ hook 里（`addFailureToast`）。
 
 ## 本轮未做
 
-- **截图**：390 / 360 两档尚未拍（维护者口径：最后统一拍）。卡片宽度 240px（与既有上传卡片同宽，
-  因为就是同一张卡）+ 换行列表，角标用 `-6px` 负偏移并由列表 `padding` 收进可视区，不产生横向溢出。
+- ~~截图~~：已拍（`chore/480-screenshots`），见下节。
 - **搜索框 / 拖拽区**之外的入口（如粘贴板图片）不在本单范围。
+
+## 截图（390 / 360 两档，`chore/480-screenshots`）
+
+卡片宽度 240px（与既有上传卡片同宽，因为就是同一张卡）+ 换行列表，角标用 `-6px` 负偏移并由列表
+`padding` 收进可视区 —— 两档 `metrics.json` 的 `overflowCount` 实测都是 `0`。
+
+```bash
+node scripts/build.mjs --internal
+node scripts/shot-mobile.mjs \
+  --page=480-attach-entry,480-attach-parsing,480-attach-partial,480-attach-failed,480-attach-in-message \
+  --viewport=390,360
+```
+
+| 场景 | 拍的是 | 张数 |
+| --- | --- | --- |
+| `480-attach-entry` | 输入区文档入口：anthropic / openai / ours 可用态；DeepSeek 禁用态 + 点下去的整句原因 | 5 |
+| `480-attach-parsing` | `parsing`：逐页进度 + 取消按钮；取消后「解析已取消」 | 2 |
+| `480-attach-partial` | `partial`：黄描边 + 橙色警告角标；点开详情看 warnings | 2 |
+| `480-attach-failed` | `failed`：红描边 + 失败原因 + 重新解析（点一次真的再跑一遍） | 3 |
+| `480-attach-in-message` | 消息内卡片（只元信息、无正文）+ 详情面板仍只有元信息 | 3 |
+
+产物：`docs/ui/480-attachments/{390,360}/480-attach-*.png`；量数在同目录 `metrics-480-attach-*.json`，
+汇总在 `metrics.json`（顶层 `overflowCount`，两档都是 0）。验收结论与未覆盖项见
+[`docs/testing/acceptance-480.md`](../../testing/acceptance-480.md)。

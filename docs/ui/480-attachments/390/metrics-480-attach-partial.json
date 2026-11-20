@@ -1,0 +1,73 @@
+{
+  "page": "480-attach-partial",
+  "title": "#480 附件卡片 partial 态：黄色警告角标 + 点开详情看 warnings（真 PDF 第 2 页内容流损坏）",
+  "viewport": 390,
+  "size": "390×844",
+  "shots": [
+    "docs/ui/480-attachments/390/480-attach-partial-01-card-partial-warn-corner-390.png",
+    "docs/ui/480-attachments/390/480-attach-partial-02-panel-warnings-390.png"
+  ],
+  "notes": [],
+  "partial": {
+    "cardCount": 1,
+    "cards": [
+      {
+        "variant": "draft",
+        "expanded": false,
+        "name": "480-部分页提取失败.pdf",
+        "subCaption": "PDF 1.1 KB",
+        "status": "部分内容已就绪 · 1 条警告",
+        "corner": {
+          "count": "1",
+          "title": "警告（1 条）"
+        },
+        "progress": null,
+        "actions": [
+          "移除附件"
+        ],
+        "borderColor": "rgb(245, 158, 11)",
+        "background": "rgb(255, 255, 255)",
+        "box": {
+          "left": 29,
+          "right": 269,
+          "width": 240,
+          "height": 78,
+          "insideViewport": true
+        }
+      }
+    ],
+    "panels": [],
+    "viewportWidth": 390,
+    "documentScrollWidth": 390,
+    "bodyScrollWidth": 390,
+    "overflowCount": 0,
+    "overflowSamples": []
+  },
+  "panel": {
+    "label": "查看附件详情",
+    "title": "480-部分页提取失败.pdf",
+    "meta": "PDF 1.1 KB · 99 字符 · 约 33 tokens · 第 2/3 页",
+    "failureTitle": "",
+    "raw": "",
+    "warnings": [
+      "第 2 页提取失败"
+    ],
+    "actions": [
+      "关闭",
+      "移除附件"
+    ],
+    "box": {
+      "left": 29,
+      "right": 329,
+      "width": 300,
+      "insideViewport": true
+    },
+    "position": {
+      "inline": "top: 451px; left: 29px; max-height: 176px;",
+      "computedLeft": "29px",
+      "computedTop": "451px",
+      "maxHeight": "176px"
+    }
+  },
+  "consoleErrors": []
+}

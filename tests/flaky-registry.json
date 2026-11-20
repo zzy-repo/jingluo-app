@@ -76,8 +76,7 @@
       "lastRemindedAt": null,
       "lastGreen": null,
       "lastRedAt": null,
-      "reason": "红：local:zzy-EQ.localdomain#normal / 绿：local:zzy-EQ.localdomain#busy",
-      "lastCrossRunnerCommit": "6ecc08b264b0"
+      "reason": "红：local:zzy-EQ.localdomain#normal / 绿：local:zzy-EQ.localdomain#busy"
     }
   }
 }
