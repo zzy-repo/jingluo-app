@@ -79,7 +79,7 @@ const { listenFreePort } = await import('../helpers/ports.mjs')
 const CORS = {
   'access-control-allow-origin': '*',
   'access-control-allow-methods': 'GET,POST,OPTIONS',
-  'access-control-allow-headers': 'x-api-key,content-type,anthropic-version,authorization',
+  'access-control-allow-headers': 'x-api-key,content-type,anthropic-version,authorization,x-session-id',
 }
 const SSE_HEADERS = { 'content-type': 'text/event-stream; charset=utf-8', 'cache-control': 'no-cache' }
 

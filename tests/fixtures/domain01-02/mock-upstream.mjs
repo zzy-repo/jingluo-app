@@ -12,7 +12,7 @@ import http from 'node:http'
 const CORS = {
   'access-control-allow-origin': '*',
   'access-control-allow-methods': 'GET,POST,OPTIONS',
-  'access-control-allow-headers': 'x-api-key,content-type,anthropic-version,authorization',
+  'access-control-allow-headers': 'x-api-key,content-type,anthropic-version,authorization,x-session-id',
   'access-control-max-age': '600',
 }
 

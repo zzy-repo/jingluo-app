@@ -19,7 +19,7 @@ const CORS = {
   'access-control-allow-origin': '*',
   'access-control-allow-methods': 'GET,POST,DELETE,OPTIONS',
   'access-control-allow-headers':
-    'content-type,authorization,x-api-key,anthropic-version,anthropic-beta,accept,accept-encoding',
+    'content-type,authorization,x-api-key,anthropic-version,anthropic-beta,accept,accept-encoding,x-session-id',
 }
 
 /** 极简 mock 上游：/v1/models 按 status 返回（401 时给一段明确的错误文案） */

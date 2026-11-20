@@ -132,7 +132,7 @@ const stubConsume = async (page, consumeCalls) => {
     const cors = {
       'access-control-allow-origin': '*',
       'access-control-allow-methods': 'GET,POST,PUT,DELETE,OPTIONS',
-      'access-control-allow-headers': 'authorization,accept,content-type',
+      'access-control-allow-headers': 'authorization,accept,content-type,x-session-id',
       'access-control-max-age': '600',
     }
     if (request.method() === 'OPTIONS') {
@@ -180,7 +180,7 @@ const stubConsume = async (page, consumeCalls) => {
   })
   // 支付侧（apia）：「我的卡密」tab 一打开就取 `/api/orders`，不桩会去连真站
   await page.route('https://apia.ecsafe.cn/**', async (route) => {
-    const cors = { 'access-control-allow-origin': '*', 'access-control-allow-headers': 'authorization,accept,content-type' }
+    const cors = { 'access-control-allow-origin': '*', 'access-control-allow-headers': 'authorization,accept,content-type,x-session-id' }
     if (route.request().method() === 'OPTIONS') {
       await route.fulfill({ status: 204, headers: cors })
       return

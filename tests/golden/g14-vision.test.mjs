@@ -41,7 +41,7 @@ const ANSWER = '这是一整块蓝色'
 const CORS = {
   'access-control-allow-origin': '*',
   'access-control-allow-methods': 'GET,POST,OPTIONS',
-  'access-control-allow-headers': 'authorization,content-type,x-api-key,anthropic-version',
+  'access-control-allow-headers': 'authorization,content-type,x-api-key,anthropic-version,x-session-id',
   'access-control-max-age': '600',
 }
 

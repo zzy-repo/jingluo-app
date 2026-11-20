@@ -3052,7 +3052,7 @@ export const PAGES = {
             status: 204,
             headers: {
               'access-control-allow-origin': '*',
-              'access-control-allow-headers': 'authorization,accept,content-type',
+              'access-control-allow-headers': 'authorization,accept,content-type,x-session-id',
               'access-control-allow-methods': 'GET,POST,PUT,DELETE,OPTIONS',
               'access-control-max-age': '600',
             },

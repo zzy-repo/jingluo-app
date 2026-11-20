@@ -131,7 +131,7 @@ const CORS = {
   'access-control-allow-methods': 'GET,POST,DELETE,OPTIONS',
   // authorization 是 openai 模式的鉴权头，预检不放行浏览器会直接拦下
   'access-control-allow-headers':
-    'content-type,authorization,x-api-key,anthropic-version,anthropic-beta,accept,accept-encoding',
+    'content-type,authorization,x-api-key,anthropic-version,anthropic-beta,accept,accept-encoding,x-session-id',
 }
 
 /** 极简 mock 上游：html=true 时所有 POST messages 都返回网页（模拟路径打错/网关报错页） */

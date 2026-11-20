@@ -25,7 +25,7 @@ const REPLY_TEXT = process.env.MOCK_REPLY_TEXT || '内测版验收回复：固�
 const CORS = {
   'access-control-allow-origin': '*',
   'access-control-allow-methods': 'GET,POST,OPTIONS',
-  'access-control-allow-headers': 'x-api-key,content-type,anthropic-version,authorization',
+  'access-control-allow-headers': 'x-api-key,content-type,anthropic-version,authorization,x-session-id',
   'access-control-max-age': '600',
 }
 

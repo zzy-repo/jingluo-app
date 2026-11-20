@@ -21,7 +21,7 @@ export const OURS_CHAT_URL = `${OURS_HOST}${OURS_CHAT_PATH}`
 export const OURS_CORS = {
   'access-control-allow-origin': '*',
   'access-control-allow-methods': 'GET,POST,OPTIONS',
-  'access-control-allow-headers': 'authorization,content-type',
+  'access-control-allow-headers': 'authorization,content-type,x-session-id',
   'access-control-max-age': '600',
 }
 
