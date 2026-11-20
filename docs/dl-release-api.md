@@ -23,7 +23,7 @@
 | 项目 | 值 |
 | --- | --- |
 | 方法 | `POST`（其他方法 → 405） |
-| 鉴权 | `Authorization: Bearer <发布令牌>`（两个端点同一枚令牌） |
+| 鉴权 | `Authorization: Bearer <发布令牌>`（`/etc/dl-release/token`）—— 两个**写**端点只认这一枚。读端点（§5d）另有一枚只读令牌，见 §5e |
 | 请求类型 | `multipart/form-data` |
 | 服务 | `dl-release.service`（Node 单文件零依赖，监听 `127.0.0.1:8799`，仅由 Caddy 反代，公网不可直连） |
 
@@ -153,7 +153,7 @@ curl -sS -X POST https://dl.rose7.cn/api/v1/release \
 
 | # | 校验 | 实现 |
 | --- | --- | --- |
-| 1 | 令牌 | 从 `/etc/dl-release/token`（`chmod 600`，root:root）读；比较双方各取 SHA-256 摘要后 `crypto.timingSafeEqual`，定长比较不泄漏长度 |
+| 1 | 发布令牌 | 从 `/etc/dl-release/token`（`chmod 600`，root:root）读；比较双方各取 SHA-256 摘要后 `crypto.timingSafeEqual`，定长比较不泄漏长度。**写端点只认这一枚**，只读令牌（`/etc/dl-release/read-token`）一律 401（#641，见 §5e） |
 | 2 | 体积 ≤ 50 MB | `Content-Length` 预检 + 流式累计超限即 `413`；APK 分片再单独卡 50 MB |
 | 3 | 服务端算 MD5 | `crypto.createHash('md5')` 对收到的字节流计算，不接受客户端提供的 md5 |
 | 4 | 解析真实 versionName/versionCode/packageName | `aapt2 dump badging`（二进制位于 `/opt/dl-release/bin/aapt2`，从 Google Maven `com.android.tools.build:aapt2` 的 `aapt2-<ver>-linux.jar` 解出；ECS 上原本没有 Android SDK） |
@@ -229,7 +229,7 @@ curl -sS -X POST http://127.0.0.1:8799/api/v1/release/private \
 | 配置 | `config/endpoints.json` 的 `update.privateManifest`：`enabled`（默认 `false`）/ `url`（完整端点）/ `tokenEnv`（令牌来源的环境变量名，默认 `DL_PRIVATE_TOKEN`） |
 | 注入 | 构建期由 `rspack.config.ts` 的 `privateManifestInjection` 注入成 `__ENDPOINTS__.update.privateManifest`（`enabled` + `url` + `token`） |
 | 判据 | 请求条件是 **`enabled === true` 且本机变体是 `internal`**（`__INTERNAL_BUILD__`）；standard 包即使被误配成 `enabled:true` 也不请求 |
-| 令牌 | **只进 `X-DL-Token` 请求头**：不进 URL、不进日志、不进埋点（`updateManifest.ts` 不 import 诊断通道，`tests/unit/private-manifest-622.test.mjs` 有静态扫描断言） |
+| 令牌 | **只进 `X-DL-Token` 请求头**：不进 URL、不进日志、不进埋点（`updateManifest.ts` 不 import 诊断通道，`tests/unit/private-manifest-622.test.mjs` 有静态扫描断言）。构建期取的是**只读令牌** `/etc/dl-release/read-token`（#641，见 §5e） |
 | 回退 | 401 / 429 / 超时 / 网络 / 清单被写脏 → **静默回退公网**，不让整个检查失败；取消照常上抛 |
 | 解析 | 与公网清单**同一套 schema**：`parseManifest` + `selectUpdate`，没有第二份筛选逻辑（#484 的硬规矩） |
 
@@ -237,24 +237,68 @@ curl -sS -X POST http://127.0.0.1:8799/api/v1/release/private \
 
 1. 令牌只进 **internal 产物**：`internalBuild=false` 时整段按 `enabled:false` 注入（`url` 与 `token` 都为空串），
    public / standard 包里连私有端点地址都不出现（实测见 #622 的 PR：standard 产物里令牌与端点命中数都是 0）。
-2. 泄漏后的能力上限 = **读私有清单 + 下载 internal 包**，不含任何用户数据、不含发布能力
-   （写端点用的是同一枚令牌 —— 这是目前的**已知放大点**：拿到令牌的人也能发私有包，拆只读令牌的方案见 #641）。
+2. 泄漏后的能力上限 = **读私有清单 + 下载 internal 包**，不含任何用户数据、**不含发布能力**。
+   #641 起包里带的是**只读令牌**（`/etc/dl-release/read-token`）：拿它发 `POST /api/v1/release` /
+   `/api/v1/release/private` 一律 **401**（权限矩阵见 §5e）。发布令牌 `/etc/dl-release/token`
+   **只在发布主机/发布脚本手里**，不进任何客户端产物。
 3. 令牌可以轮换，代价只是**重出 internal 包**（standard 包不受影响）。
 
-### 轮换令牌（读端点这一侧）
+### 轮换令牌（读端点这一侧 = 只读令牌，Issue #641）
+
+**读令牌与发布令牌是两枚**：读端点用 `/etc/dl-release/read-token`，发布端点用 `/etc/dl-release/token`。
+轮换**读**这一侧只动 `read-token`，发布脚本与发布令牌完全不受影响 —— 这正是拆令牌换来的好处。
 
 ```bash
-# 1) 主机上换令牌（与 §7 同一条命令）
-head -c 32 /dev/urandom | base64 | tr -d '\n=+/' | cut -c1-48 > /etc/dl-release/token
-chmod 600 /etc/dl-release/token && node --check /opt/dl-release/server.mjs && systemctl restart dl-release
+# 1) 主机上只换只读令牌（长度与发布令牌一致：42 字符；600 + 同属主）
+openssl rand -hex 21 > /etc/dl-release/read-token
+chmod 600 /etc/dl-release/read-token && chown root:root /etc/dl-release/read-token
+node --check /opt/dl-release/server.mjs && systemctl restart dl-release
+#    重启后启动日志应出现：event=token_roles read_token="dedicated"
+#    （若出现 read_token="fallback_to_write"，说明文件没读到 —— 读端点此刻仍认发布令牌，需要修）
 
-# 2) 本机出新的 internal 包（令牌只在构建环境里，不进仓库、不进 config/endpoints.json）
-DL_PRIVATE_TOKEN="$(ssh aliyun cat /etc/dl-release/token)" INTERNAL_BUILD=1 \
+# 2) 本机出新的 internal 包（**只读令牌**这一枚，不是发布令牌；令牌只进构建环境，不进仓库/配置）
+DL_PRIVATE_TOKEN="$(ssh aliyun cat /etc/dl-release/read-token)" INTERNAL_BUILD=1 \
   DIST_OUT=dist-internal node scripts/build.mjs --internal
 
-# 3) 按 docs/RELEASE-MANUAL.md §14 发这个 internal 包（写私有清单 + 私有根）
-#    —— 老 internal 包里的令牌此刻已经失效：它们会静默回退公网清单（不崩、不弹错，只是看不到内测版）
+# 3) 按 docs/RELEASE-MANUAL.md §14.2 发这个 internal 包（发布走 `ssh`/`scp`，用不到 HTTP 令牌）
+#    —— 老 internal 包里的只读令牌此刻已经失效：它们会静默回退公网清单（不崩、不弹错，只是看不到内测版）
 ```
+
+> 轮换**发布**令牌（`/etc/dl-release/token`）是另一件事，见 §7：只影响 `scripts/publish-*.mjs` 与手工 `curl`，
+> **不需要重出 internal 包**（客户端根本没见过这枚令牌）。
+
+## 5e. 两枚令牌：只读令牌 / 发布令牌（Issue #641）
+
+#621 上线时读端点与发布端点共用一枚令牌。问题不是「读」而是「写」：#622 把令牌**随 internal 包
+分发给测试者设备**，于是任何拿到内测包的人，手里那枚令牌就能 `POST /api/v1/release` ——
+**覆盖正式分发包**。读能力随包扩散可以接受（内测包本来就要读），写能力随包扩散不行。
+
+| 令牌 | 文件（env） | 谁持有 | 生成 |
+| --- | --- | --- | --- |
+| 发布令牌 | `/etc/dl-release/token`（`DL_TOKEN_FILE`） | 发布主机、`scripts/publish-*.mjs`、手工 `curl` | `openssl rand -hex 21`（42 字符） |
+| 只读令牌 | `/etc/dl-release/read-token`（`DL_READ_TOKEN_FILE`） | **internal 客户端产物**（构建期 `DL_PRIVATE_TOKEN`）、内测设备 | 同上 |
+
+权限矩阵（最小权限 —— **写端点绝不认只读令牌**）：
+
+| 端点 | 只读令牌 | 发布令牌 |
+| --- | --- | --- |
+| `GET /api/v1/releases/internal` | ✅ 200 | ✅ 200 |
+| `GET /api/v1/releases/internal/download?file=<basename>.apk` | ✅ 200 | ✅ 200 |
+| `GET /api/v1/version` | 免令牌 | 免令牌 |
+| `POST /api/v1/release` | ❌ **401** `UNAUTHORIZED` | ✅ 200 |
+| `POST /api/v1/release/private` | ❌ **401** `UNAUTHORIZED` | ✅ 200 |
+
+- 发布令牌是**读的超集**：运维只持一枚也能排查；反过来（读令牌能写）正是本单要杜绝的。
+- 令牌比较仍走 sha256 定长摘要 + `crypto.timingSafeEqual`；**令牌值绝不进日志**（只打来源文件与长度，
+  启动期 `event=token_roles` 给出 `read_token="dedicated"` / `"fallback_to_write"`）。
+- **向后兼容（回退）**：`read-token` 不存在或为空 → 回退成「读也用发布令牌」，启动日志打
+  `read_token="fallback_to_write"` 警告（`event=read_token_fallback`）。回退**只放宽读**，写端点照样只认发布令牌；
+  补上文件 + 重启即切换成 `dedicated`。
+- 门禁：`deploy/dl-release/test/read-token-641.test.mjs`（只读令牌发布 → 401 是核心断言）。
+
+> **客户端构建用哪一枚**：`DL_PRIVATE_TOKEN` 取 **`/etc/dl-release/read-token`**。
+> **发布脚本用哪一枚**：`scripts/publish-*.mjs` / 手工 `curl` 取 **`/etc/dl-release/token`**。搞反了的现象是
+> 「包能发但客户端读 401」，或「客户端能读但发布脚本 401」—— 两者都只在这一处配置上出错。
 
 忘了给令牌就出内测包时，构建会直接中止（`update.privateManifest.enabled=true，但构建环境没有 DL_PRIVATE_TOKEN`），
 不会出一个「装了却永远静默走公网」的包。
@@ -264,7 +308,8 @@ DL_PRIVATE_TOKEN="$(ssh aliyun cat /etc/dl-release/token)" INTERNAL_BUILD=1 \
 - 限流：每 IP 每分钟 2 次（滑动窗口）。IP 取 Caddy 覆盖写入的 `X-Real-IP`，缺失时取 `X-Forwarded-For` **最右一跳**（客户端自带的 XFF 无法绕过）。
 - 日志：`journalctl -u dl-release -f`。字段化输出 `event=...`，**不打印令牌、Authorization、请求体**。事件包括 `release_ok` / `release_private_ok` / `reject_auth` / `reject_not_apk` / `reject_package` /
 `reject_downgrade` / `reject_rate_limit` / `reject_variant_target` / `reject_build_type_target` /
-`reject_manifest_variant` / `fatal_private_root_in_webroot` / `meta_versioncode_mismatch` 等。
+`reject_manifest_variant` / `fatal_private_root_in_webroot` / `meta_versioncode_mismatch` /
+`token_roles`（令牌分工，只打来源与状态）/ `read_token_fallback`（回退告警）/ `read_token_same_as_write` 等。
 
 ## 7. 运维
 
@@ -276,9 +321,16 @@ journalctl -u dl-release -n 50 --no-pager
 # 重启（改完 server.mjs 后）
 node --check /opt/dl-release/server.mjs && systemctl restart dl-release
 
-# 轮换令牌（同时要更新调用方）
-head -c 32 /dev/urandom | base64 | tr -d '\n=+/' | cut -c1-48 > /etc/dl-release/token
+# 轮换发布令牌（只影响 publish 脚本 / 手工 curl；不需要重出 internal 包）
+openssl rand -hex 21 > /etc/dl-release/token
 chmod 600 /etc/dl-release/token && systemctl restart dl-release
+
+# 轮换只读令牌（客户端那一枚；换完要重出 internal 包，见 §5d）
+openssl rand -hex 21 > /etc/dl-release/read-token
+chmod 600 /etc/dl-release/read-token && systemctl restart dl-release
+
+# 令牌分工自检（只看状态，不打印令牌值）
+journalctl -u dl-release -n 50 --no-pager | grep -E 'token_roles|read_token_fallback'
 
 # 健康检查（仅本机）
 curl -s http://127.0.0.1:8799/healthz

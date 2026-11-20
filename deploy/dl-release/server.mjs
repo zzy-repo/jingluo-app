@@ -44,7 +44,7 @@
  *
  * #619/#620 只解决了「私有包能不能写进去」，没解决「内测客户端怎么取到」——
  * 清单在 webroot 之外（公网 404，这是对的），于是一个字节都取不到，只能人工 scp + 报 sha256。
- * 这里补两个读端点，与发布端点**同一枚令牌**、各自一个限流桶：
+ * 这里补两个读端点，各自一个限流桶：
  *
  *   GET /api/v1/releases/internal            → { latest, releases:[…] }（只含 internal / prerelease）
  *   GET /api/v1/releases/internal/download?file=<basename.apk>
@@ -52,6 +52,33 @@
  *
  * 令牌两种写法都收：`X-DL-Token: <token>` 或 `Authorization: Bearer <token>`。
  * 无令牌 / 错令牌 → 401（**鉴权先于一切**：401 与「包在不在」同形，差异本身就是信息）。
+ *
+ * ## 两枚令牌：读令牌 / 发布令牌（Issue #641）
+ *
+ * #621 时读端点与发布端点共用一枚令牌（`/etc/dl-release/token`）。#622 的设计又把令牌
+ * **随 internal 包分发到测试者设备**（构建期 `DL_PRIVATE_TOKEN` → `X-DL-Token`）——
+ * 于是「任何拿到内测包的人，手里那枚令牌就能发布/覆盖正式分发包」。#641 拆成两枚：
+ *
+ *   /etc/dl-release/token        （DL_TOKEN_FILE）       发布令牌 —— 只见于发布脚本/主机
+ *   /etc/dl-release/read-token   （DL_READ_TOKEN_FILE） 只读令牌 —— 内测包里的那一枚
+ *
+ * 权限矩阵（**最小权限**：写端点绝不认只读令牌）：
+ *
+ *   | 端点                                    | 只读令牌 | 发布令牌 |
+ *   | --------------------------------------- | -------- | -------- |
+ *   | GET  /api/v1/releases/internal           | 200      | 200      |
+ *   | GET  /api/v1/releases/internal/download  | 200      | 200      |
+ *   | GET  /api/v1/version                     | 免令牌   | 免令牌   |
+ *   | POST /api/v1/release                     | **401**  | 200      |
+ *   | POST /api/v1/release/private             | **401**  | 200      |
+ *
+ * 为什么发布令牌仍能读：它是**超集**（运维只持一枚也能排查），而只读令牌是子集。
+ * 反向（读令牌能写）才是这条单子要杜绝的事，`POST` 的 401 是核心断言。
+ *
+ * **向后兼容**：`read-token` 不存在（或为空）时回退成「读也用发布令牌」，启动日志打
+ * `read_token="fallback_to_write"` —— 运维一上线不会把整条内测读通道打死；等文件补上再重启即生效。
+ *
+ * 令牌本身**绝不进日志**：只打来源文件与长度，比较走 sha256 定长摘要 + timingSafeEqual。
  *
  * 两条硬规矩（都是「别把一个文件读错」变成「整条内测渠道断掉」）：
  *   1. **清单里的坏条目只跳过、不 500**：file 不是纯 basename / 不在私有目录内 / 文件不存在 /
@@ -96,7 +123,9 @@ import {
 const LISTEN_HOST = process.env.DL_LISTEN_HOST || '127.0.0.1';
 const LISTEN_PORT = Number(process.env.DL_LISTEN_PORT || 8799);
 
+// 两枚令牌（Issue #641）：写（发布）令牌 + 读（只读）令牌。见文件头的权限矩阵。
 const TOKEN_FILE = process.env.DL_TOKEN_FILE || '/etc/dl-release/token';
+const READ_TOKEN_FILE = process.env.DL_READ_TOKEN_FILE || '/etc/dl-release/read-token';
 const APK_DIR = process.env.DL_APK_DIR || '/var/www/dl/apk';
 const RELEASES_JSON = process.env.DL_RELEASES_JSON || '/var/www/dl/releases.json';
 // webroot（公网站点根）：只用来判「私有清单/私有包目录绝不许落在里面」（#609 G1 的接口层复刻）。
@@ -224,36 +253,90 @@ const VERSION_INFO = Object.freeze({
   targets: [...TARGETS],
 });
 
-// ---------------------------------------------------------------- 令牌
-let TOKEN = '';
-let TOKEN_SHA256 = null;
+// ---------------------------------------------------------------- 令牌（两枚，#641）
+// 只保存摘要（sha256，定长），原文用完即弃 —— 日志里只出现「来自哪个文件、多长」。
+// 发布令牌必填（缺了服务不起）；只读令牌可缺 —— 缺了回退成「读也用发布令牌」
+// （#641 的向后兼容：运维一上线不补 read-token 也不会把整条内测读通道打死）。
+let WRITE_TOKEN_SHA256 = null;
+let READ_TOKEN_SHA256 = null;
+// true = 没有独立的只读令牌，读端点回退认发布令牌（启动日志会打警告）
+let READ_TOKEN_FALLBACK = false;
+
+/** 摘要（定长）。 */
+function sha256OfToken(value) {
+  return crypto.createHash('sha256').update(value, 'utf8').digest();
+}
+
+/**
+ * 常数时间比较两个定长摘要。
+ * 长度不同直接 false（sha256 摘要恒为 32 字节，长度信息本身不敏感），
+ * 等长才走 timingSafeEqual —— 不泄漏「前几位对上没对上」。
+ */
+function digestEquals(got, expected) {
+  return Buffer.isBuffer(got) && Buffer.isBuffer(expected) &&
+    got.length === expected.length && crypto.timingSafeEqual(got, expected);
+}
 
 function loadToken() {
   const raw = fs.readFileSync(TOKEN_FILE, 'utf8').trim();
   if (!raw) throw new Error(`token file ${TOKEN_FILE} is empty`);
-  TOKEN = raw;
-  // 定长摘要比较，既常数时间又不泄漏长度
-  TOKEN_SHA256 = crypto.createHash('sha256').update(raw, 'utf8').digest();
-  log('token_loaded', { file: TOKEN_FILE, len: raw.length });
+  WRITE_TOKEN_SHA256 = sha256OfToken(raw);
+  log('token_loaded', { role: 'write', file: TOKEN_FILE, len: raw.length });
+
+  // 只读令牌：缺失/为空都回退（都打警告），任何情况下不因此拒绝启动
+  try {
+    const read = fs.readFileSync(READ_TOKEN_FILE, 'utf8').trim();
+    if (!read) {
+      READ_TOKEN_FALLBACK = true;
+      log('read_token_fallback', {
+        file: READ_TOKEN_FILE, read_token: 'fallback_to_write', reason: 'empty',
+      });
+      return;
+    }
+    READ_TOKEN_SHA256 = sha256OfToken(read);
+    log('read_token_loaded', { role: 'read', file: READ_TOKEN_FILE, len: read.length });
+    // 两枚写成一样 = 拆了等于没拆。不拒绝启动（那是运维正在轮换的中间态），但必须吵。
+    if (read === raw) {
+      log('read_token_same_as_write', {
+        file: READ_TOKEN_FILE, read_token: 'same_as_write',
+        hint: '拆令牌没生效：read-token 与 token 同值',
+      });
+    }
+  } catch (e) {
+    READ_TOKEN_FALLBACK = true;
+    log('read_token_fallback', {
+      file: READ_TOKEN_FILE, read_token: 'fallback_to_write', reason: e.code || e.message,
+    });
+  }
 }
 
+/** 发布（写）令牌：`Authorization: Bearer <token>`（#619 起的发布脚本就长这样）。 */
 function tokenOk(header) {
   if (typeof header !== 'string') return false;
   const m = /^Bearer\s+(.+)$/i.exec(header.trim());
   if (!m) return false;
-  const got = crypto.createHash('sha256').update(m[1].trim(), 'utf8').digest();
-  return TOKEN_SHA256 !== null && got.length === TOKEN_SHA256.length &&
-    crypto.timingSafeEqual(got, TOKEN_SHA256);
+  return writeTokenOk(m[1]);
 }
 
-/** 令牌原文比较（常数时间、定长摘要）：两种头写法最后都落到这里。 */
-function tokenValueOk(raw) {
+/** 发布令牌原文比较（只有持有写令牌才通过）。 */
+function writeTokenOk(raw) {
   if (typeof raw !== 'string') return false;
   const value = raw.trim();
   if (!value) return false;
-  const got = crypto.createHash('sha256').update(value, 'utf8').digest();
-  return TOKEN_SHA256 !== null && got.length === TOKEN_SHA256.length &&
-    crypto.timingSafeEqual(got, TOKEN_SHA256);
+  if (WRITE_TOKEN_SHA256 === null) return false;
+  return digestEquals(sha256OfToken(value), WRITE_TOKEN_SHA256);
+}
+
+/**
+ * 读端点令牌：**只读令牌或发布令牌**（发布令牌是超集，见文件头的矩阵）。
+ * 回退态（没有 read-token）下 READ_TOKEN_SHA256 为 null，等价于「读也用发布令牌」。
+ */
+function readTokenOk(raw) {
+  if (typeof raw !== 'string') return false;
+  const value = raw.trim();
+  if (!value) return false;
+  const got = sha256OfToken(value);
+  return digestEquals(got, READ_TOKEN_SHA256) || digestEquals(got, WRITE_TOKEN_SHA256);
 }
 
 /**
@@ -756,7 +839,7 @@ async function handlePrivateDownload(req, res, ip, url) {
 
 // ---------------------------------------------------------------- 主流程
 async function handleRelease(req, res, ip, target) {
-  // (1) 鉴权
+  // (1) 鉴权：**只认发布令牌**（#641）—— 只读令牌随 internal 包分发到设备，它绝不能发布。
   if (!tokenOk(req.headers.authorization)) {
     log('reject_auth', { ip });
     return fail(res, 401, 'UNAUTHORIZED', '发布令牌缺失或无效');
@@ -1122,7 +1205,8 @@ const server = http.createServer(async (req, res) => {
     }
     // 鉴权必须在任何「存在性」判断之前：无令牌 / 错令牌与「清单有没有、包在不在」
     // 必须同形回 401 —— 401 与 404 的差异本身就是一条情报。
-    if (!tokenValueOk(readRequestToken(req))) {
+    // #641：读端点认「只读令牌」与「发布令牌」两枚（发布令牌是超集）；回退态下只剩后者。
+    if (!readTokenOk(readRequestToken(req))) {
       log('reject_auth', { ip, bucket: 'private', path: url.pathname });
       return fail(res, 401, 'UNAUTHORIZED', '分发令牌缺失或无效');
     }
@@ -1189,6 +1273,14 @@ server.listen(LISTEN_PORT, LISTEN_HOST, async () => {
   // #621：读端点也进启动日志 —— 部署验收时「闸在不在」不该靠试
   log('read_endpoints', { list: PRIVATE_LIST_PATH, download: PRIVATE_DOWNLOAD_PATH,
     privateManifest: PRIVATE_RELEASES_JSON, privateApkDir: PRIVATE_APK_DIR });
+  // #641：令牌分工也进启动日志（**只有来源与状态，没有令牌值**）。
+  // 部署验收时「只读令牌生没生效」一眼可读，不必拿真令牌去试写端点。
+  log('token_roles', {
+    write_token: 'enabled', write_file: TOKEN_FILE,
+    read_token: READ_TOKEN_FALLBACK ? 'fallback_to_write' : 'dedicated',
+    read_file: READ_TOKEN_FILE,
+    matrix: 'read=read|write;write=write',
+  });
   // 启动指纹也进日志：事后翻 journalctl 就能对上「那段时间跑的是哪一版」
   log('version_fingerprint', { sha256: SELF_SHA256, builtAt: STARTED_AT, node: process.version });
   const allow = await readVariantAllowlist();
