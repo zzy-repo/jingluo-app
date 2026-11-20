@@ -53,7 +53,7 @@ const ORPHAN_BASELINE = new Set([
   'settingsLocationCity',
   'settingsLocationProvince',
   'settingsLocationRegion',
-  // W1-B 后半（#487）：额度改为读 sub2api（`consumeBalance`，USD），设置页那一格不再用积分口径的
+  // W1-B 后半（#487）：额度改为读 sub2api（`consumeBalance`，单位元：1 元 = 1 额度，无 USD），设置页那一格不再用积分口径的
   // 显示模板；但 tests/unit（format-points-i18n / ours-api）仍断言它的文案，所以先把 key 留着、
   // 在基线里登记为「已不引用」。随旧额度链一起清理（W1-C 重写额度 UI / W1-D 删旧账本）。
   'oursQuotaValue',
