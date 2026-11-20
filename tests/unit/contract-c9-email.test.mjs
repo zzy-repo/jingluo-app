@@ -195,21 +195,13 @@ const CONTRACT_ROWS = [
   },
   {
     id: 'E5',
-    what: '文案边界：13 条错误码 zh / en 都存在且占位符对齐，且不许吹「更安全 / 防盗」',
+    what: '文案边界：错误码 zh / en 都存在且占位符对齐，且不许吹「更安全 / 防盗」',
     run: async () => {
-      const keys = [
-        ...Object.values(api.EMAIL_ERROR_KEYS),
-        'oursEmailTitle',
-        'oursEmailBindAction',
-        'oursEmailSendAction',
-        'oursEmailVerifyAction',
-        'oursEmailSendCountdown',
-        'oursEmailLoginOk',
-        'oursEmailConflictTitle',
-        'oursEmailConflictWarning',
-        'oursEmailConflictUseEmail',
-        'oursEmailConflictKeepDevice',
-      ]
+      // #562：`oursEmail*` 那一组界面词条（标题 / 绑定 / 发码 / 冲突弹窗）随旧 `OursServicesDialog.tsx`
+      // 一起退役并从 zh/en 删除 —— 新体系绑邮箱走「账户与消费 → 账号」的 `EmailBindPanel`
+      // （sub2api `/user/account-bindings/email`，词条 `emailBind*`），不再有「设备码账号冲突」这套选项。
+      // 这里只留**服务层**仍然自洽的那部分：`EMAIL_ERROR_KEYS` 里的错误码文案必须成对且齐全。
+      const keys = [...Object.values(api.EMAIL_ERROR_KEYS)]
       const placeholders = (text) => [...text.matchAll(/\{(\w+)\}/g)].map((match) => match[1]).sort()
       for (const key of keys) {
         assert.equal(typeof zh[key], 'string', `zh 缺 ${key}`)
@@ -218,11 +210,19 @@ const CONTRACT_ROWS = [
         assert.notEqual(en[key].trim(), '', `en 的 ${key} 是空文案`)
         assert.deepEqual(placeholders(zh[key]), placeholders(en[key]), `${key} 的占位符不一致`)
       }
-      const copy = `${zh.oursEmailDescription} ${en.oursEmailDescription} ${zh.oursEmailConflictWarning}`
+      const copy = keys.map((key) => `${zh[key]} ${en[key]}`).join(' ')
       for (const banned of ['更安全', '防盗', 'safer', 'secure', 'protect']) {
         assert.equal(copy.includes(banned), false, `邮箱文案不许出现「${banned}」（#421 已知局限 1）`)
       }
-      assert.ok(zh.oursEmailConflictWarning.includes('不自动合并'), '冲突文案只能是否定式「不自动合并」')
+      // 旧冲突弹窗的「不自动合并」那句随弹层删除；这里改为锁住『没人替你合并 / 迁移账号』这条
+      // 语义不能被说反：错误文案里不许出现「已自动合并 / 已迁移」这类替用户做决定的说法。
+      for (const banned of ['自动合并', '已迁移', 'auto-merged', 'migrated']) {
+        assert.equal(
+          keys.some((key) => `${zh[key]} ${en[key]}`.includes(banned)),
+          false,
+          `错误文案不许声称替用户合并 / 迁移账号（${banned}）`
+        )
+      }
     },
   },
 ]

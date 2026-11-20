@@ -539,55 +539,17 @@ export const zh = {
   feedbackDraftClearHint: '清空问题描述、联系方式与截图；下次打开不再回填',
   feedbackDraftClearConfirm: '确定清空已填内容？清空后无法恢复',
   feedbackDraftCleared: '已清空填写内容',
-
-  // ---------- 我们的渠道：设备码 / 额度 / 邀请 / 套餐 / 订单 / 卡密（Issue #21） ----------
-  oursServicesLabel: '额度与卡密',
-  oursServicesDescription: '设备码、剩余额度、邀请码、套餐购买、卡密兑换',
-  oursServicesOpen: '打开',
-  oursServicesTitle: '额度与卡密',
-  // 设备码
-  oursDeviceTitle: '设备码',
-  // W1-B 后半（#487）：账号已换成 JWT 邮箱账号，设备码不再代表账号，所以这句不再提「凭据 / 备份」
-  oursDeviceDescription: '本机设备标识（旧版凭据体系遗留）：账号与额度请用邮箱登录后的账户页查看。',
-  oursDeviceCopy: '复制设备码',
-  oursDeviceCopied: '设备码已复制',
-  // 领取
-  oursClaimAction: '领取 / 重新领取',
-  oursClaimBusy: '领取中…',
-  oursOpenChoiceTitle: '先选一种方式',
-  oursOpenChoiceHint:
-    '本机还没有可用的 Key：点「领取新 Key」由服务端发一把，或者把你在别处已有的 Key 绑到本机。',
-  oursOpenChoiceClaim: '领取新 Key',
-  oursOpenChoiceBind: '我已有 Key',
   oursClaimOk: '已领取，剩余 {points}',
   oursClaimOkExisting: '此前已领取，继续使用同一把 Key',
   // #261：同一设备指纹再次领取时服务端没发新额度。**绝不能**显示「领取成功」——
   // 额度可能是 0，说成功就是骗用户。这里只陈述事实，不承诺找回。
   oursClaimAlreadyGranted: '这台设备已领过新人额度，本次未发放新额度',
-  oursClaimKeyTail: '当前 Key {tail}',
-  oursClaimUseKey: '改用服务端下发的 Key {tail}',
-  // 额度
-  oursQuotaTitle: '剩余额度',
   /** 金额单位（#94 / #487）：元口径（1 元 = 1 额度，无 USD），由 services/ours/api.ts 的 formatPoints 拼接，别在代码里写死中文 */
   oursPointsUnit: '元',
   oursQuotaValue: '{points}',
-  oursQuotaAction: '刷新额度',
-  oursQuotaLoading: '查询中…',
-  oursQuotaZeroHint: '额度已用完，可购买套餐或兑换卡密',
   oursQuotaNeedsClaim: '还没领取凭据：点上方「领取 / 重新领取」后显示额度',
   oursQuotaNeedsBind: '本机还没有绑定 Key：请点「领取新 Key」或「我已有 Key」',
-  // 邀请
-  oursInviteTitle: '邀请',
-  oursInviteOwnLabel: '我的邀请码',
-  oursInviteCopy: '复制邀请码',
-  oursInviteCopied: '邀请码已复制',
-  oursInviteCount: '已邀请 {invited} / {upper} 人',
-  oursInviteInputPlaceholder: '填写他人邀请码',
-  oursInviteAction: '绑定邀请码',
-  oursInviteBusy: '提交中…',
   oursInviteOk: '绑定成功，+{points}',
-  oursInviteShapeHint: '邀请码是 4–16 位字母或数字',
-  oursInviteNeedsClaim: '先领取凭据，再显示你的邀请码',
   // #234：线上规则改成「只给邀请人发额度」，被邀请人填码只建立关系（reward_points: 0），
   // 所以成功文案不再报「获得 X 额度」；规则数值一律取服务端 invite_rules，前端不写死金额
   oursInviteBound: '邀请关系已绑定',
@@ -607,12 +569,7 @@ export const zh = {
   oursPayHint: '在 App 内打开联动小铺收款页；付款后由小铺直接发放卡密，关掉页面就回到这里。',
   oursPayUnavailable: '收款通道暂不可用，请稍后再试',
   oursPayOpenFailed: '没能在 App 内打开收款页，请稍后再试',
-  // 兑换
-  oursRedeemTitle: '卡密兑换',
-  oursRedeemPlaceholder: '输入卡密',
   oursRedeemAction: '兑换',
-  oursRedeemBusy: '兑换中…',
-  oursRedeemRetry: '重试（沿用同一请求号）',
   oursRedeemSuccess: '兑换成功，+{points}',
   oursRedeemPending: '兑换处理中，请稍后刷新额度查看',
   // Key 校验
@@ -620,9 +577,6 @@ export const zh = {
   oursKeyProbeInvalid: 'Key 尚未生效 {tail}',
   oursKeyProbeNetwork: 'Key 校验失败：网络不可用',
   oursKeyProbeTimeout: 'Key 校验超时',
-  // 安全
-  oursSecurityTitle: '安全说明',
-  oursSecurityNotice: '邀请与额度服务走明文 HTTP，只传设备码和额度；支付与卡密走 HTTPS。公共网络下请留意。',
   // 邀请服务错误码
   oursInviteErrDeviceNotFound: '服务端没有这个设备码的记录，请点「领取 / 重新领取」',
   oursInviteErrInvalidCode: '邀请码无效，请核对后重试',
@@ -654,33 +608,7 @@ export const zh = {
   oursInviteErrCustomerHasEmail: '本账号已经绑定过邮箱，不能重复绑定',
   oursInviteErrEmailDeviceHasAccount: '本机已有账号，需要先选择用哪个账号继续',
   oursInviteErrAccountFrozen: '账号已被冻结，请联系客服',
-  // #421 邮箱账号：入口与表单
-  oursEmailTitle: '邮箱账号',
-  oursEmailDescription:
-    '绑定邮箱后，换机时可以用邮箱取回本机账号。邮箱不会让其他设备失效，也不会与本机匿名账号自动合并。',
-  oursEmailBindAction: '绑定邮箱',
-  oursEmailInputPlaceholder: '邮箱地址',
   oursEmailCodePlaceholder: '6 位验证码',
-  oursEmailSendAction: '发送验证码',
-  oursEmailSendBusy: '发送中…',
-  oursEmailVerifyAction: '提交验证码',
-  oursEmailVerifyBusy: '提交中…',
-  oursEmailSentHint: '验证码已发送（当前只写入服务端日志，暂时不会真的收到邮件）',
-  oursEmailCodeShapeHint: '验证码是 6 位数字',
-  oursEmailRetryAfter: '{seconds} 秒后再试',
-  oursEmailAttemptsLeft: '还剩 {attempts} 次机会',
-  oursEmailBoundMaskedHint: '本账号已绑定：{masked}',
-  oursEmailLoginOk: '已用邮箱登录，本机设备码与 Key 已切换到原账号',
-  // #421 第 4 点 / 验收 D3：发送按钮逐秒倒计时（剩余秒数是服务端 resend_after / retry_after）
-  oursEmailSendCountdown: '{seconds} 秒后可重发',
-  // #421 第 3 点：登录冲突弹窗（device_has_account）。额度数字与「切换后暂时用不了」必须都在
-  oursEmailConflictTitle: '这台设备上已有一个账号',
-  oursEmailConflictEmail: '要登录的邮箱账号：{masked}',
-  oursEmailConflictPoints: '本机原账号剩余额度：{points}',
-  oursEmailConflictWarning:
-    '选择「用邮箱账号」后，本机原账号的剩余额度暂时无法使用（服务端不自动合并，数据保留，需客服处理）。',
-  oursEmailConflictUseEmail: '用邮箱账号',
-  oursEmailConflictKeepDevice: '保留本机账号',
   // 卡密 / 支付服务错误码
   oursErrBadJson: '请求格式有误，请重试',
   oursErrUnauthorized: '鉴权失败，请重新领取或填写 Key 后再试',
@@ -714,16 +642,8 @@ export const zh = {
   oursErrApiKeyNotIssued: '请先在 App 内领取 Key 再兑换',
   oursRedeemProcessing: '兑换处理中，稍后自动到账',
   oursRedeemDuplicate: '该卡密此前已兑换，已到账 {points}',
-  oursRedeemRefreshBalance: '刷新额度',
   oursInviteErrApplyRateLimited: '今天领取次数过多，请明天再试',
   oursInviteErrAlreadyClaimed: '这台设备已经领取过 Key，不能重复领取',
-  // Issue #86：「我已经有 Key」——把已有 Key 绑到本机设备码（POST /bind）
-  oursBindTitle: '我已经有 Key',
-  oursBindEntryAction: '绑定已有 Key',
-  oursBindDescription: '把你在别处已有的 Key 粘进来，绑定到本机设备码即可继续使用。绑定成功后本机只保留这一把。',
-  oursBindInputPlaceholder: '粘贴已有 Key（sk- 开头）',
-  oursBindAction: '绑定到本机',
-  oursBindBusy: '绑定中…',
   oursBindOk: '绑定成功，Key 已保存到本机',
   oursBindErrInvalidDevice: '设备标识异常，请重启 App 后再试',
   oursBindErrInvalidApiKey: '这个 Key 不存在或已失效',
@@ -737,17 +657,6 @@ export const zh = {
   oursBindErrTimeout: '请求超时，请稍后重试',
   oursBindErrInvalidResponse: '服务端返回异常，请稍后重试',
   oursBindErrUnknown: '绑定失败，请稍后重试',
-  // Issue #90：重置 / 更换 Key（POST /rotate）；#357：云端改为「原地重置额度，不换 Key 字符串」
-  oursRotateTitle: '更换 / 重置 Key',
-  oursRotateEntryAction: '更换 / 重置',
-  oursRotateDescription:
-    '把本机这把 Key 的额度按「新人赠送 + 累计奖励」重新算一遍。服务端只会原地重置额度，通常不会换发新的 Key 字符串；Key 本身继续可用，其它客户端不受影响。',
-  oursRotateConfirmTitle: '确认重置额度？',
-  oursRotateConfirmBody:
-    '重置会把当前 Key 的额度重算为「新人赠送 + 累计奖励」，已用掉的额度不再重复占用。Key 本身不变（还是本机这一把），不会让其它客户端掉线，也不需要重新填写 Key。',
-  oursRotateConfirmOk: '确认重置',
-  oursRotateConfirmCancel: '取消',
-  oursRotateBusy: '重置中…',
   // #357：四种「成功」说法，逐字对应 src/services/invite/rotate.ts 的 RotateSuccessMode
   oursRotateOk: '已重置额度并换发新 Key，新 Key 已保存到本机',
   oursRotateOkNoQuota: '已换发新 Key 并保存到本机（服务端未返回额度，可点「刷新额度」确认）',
@@ -763,25 +672,6 @@ export const zh = {
   oursRotateErrTimeout: '请求超时，请稍后重试',
   oursRotateErrInvalidResponse: '服务端返回异常，请稍后重试',
   oursRotateErrUnknown: '重置失败，请稍后重试',
-  oursRotateKeptOldKey: '本地旧 Key 未被改动，仍可继续使用',
-  // #451：Key 身份（绑定时间 / 最近一次确认可用时间）。两个时间都来自**本机记录**。
-  oursKeyIdentityTitle: 'Key 身份',
-  oursKeyIdentityTail: '当前 Key 尾号 {tail}',
-  /** 太短的 Key 一个字符都不回显（与 #374 的 keyTail 同一口径） */
-  oursKeyIdentityTailUnknown: '当前 Key 太短，不回显尾号',
-  oursKeyIdentityBoundAt: '绑定时间：{time}（这把 Key 第一次写进本机的时间）',
-  oursKeyIdentityLastSuccess: '最近一次成功使用：{time}',
-  oursKeyIdentityNoSuccess: '最近一次成功使用：本机还没有记录',
-  oursKeyIdentityNoRecord: '本机没有这把 Key 的时间记录（刚换过 Key，或本地记录已被清掉）',
-  /** 数据来源如实说明：服务端额度接口只回额度，没有这两个时间 */
-  oursKeyIdentitySource:
-    '这两个时间来自本机记录：额度接口只返回额度，不返回绑定时间与最近使用时间。',
-  /**
-   * 「成功使用」的准确定义：#451 只在真的拿到成功应答时记（校验 / 探测 / 重置额度 / 兑换卡密）。
-   * 不写成「最后一次对话成功」—— 聊天那一轮的写入点不在本单改动范围（见 issue #451）。
-   */
-  oursKeyIdentitySuccessSource:
-    '「成功使用」指本机最后一次确认这把 Key 可用（设置里校验、连通性测试、Key 探测、重置额度、兑换卡密成功时记录）。换一把 Key 会重新记账。',
   // Issue #46：思考过程显示方式三档
   settingDialogThinkingDisplayLabel: '思考过程',
   settingDialogThinkingDisplayDescription: '深度思考开启后，思考内容在消息里怎么显示；切换后立即对已打开的会话生效。',

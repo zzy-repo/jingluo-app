@@ -60,7 +60,8 @@ const ORPHAN_BASELINE = new Set([
   // 重构中，UI 落地后移除（#487 铺路）：登录注册 / 账户与消费 / 卡密兑换 / 邀请 / 邮箱绑定
   // 四条链路的词条骨架。这批 key 的引用方由 #487 的 UI 线接入，接入一个就从这里删一个（基线只许减）。
   // `inviteCode` 不在此列：它已经是既有代码里的字段名（src/services/invite/**），R4 视为已引用。
-  // `consumeBalance` 已由 W1-B 后半接入设置页额度格（`OursServicesDialog` 里 `t('consumeBalance', …)`），
+  // `consumeBalance` 已由 W1-B 后半接入设置页额度格（旧 `OursServicesDialog` 里的
+  // `t('consumeBalance', …)`；该弹层已于 #562 退役，现在由「账户与消费 → 我的额度」面板使用），
   // 金额口径由 W1-A 的 `utils/money.ts` 负责（1 元 = 1 额度，无 USD），故从基线删掉。
   'consumeBalanceApprox',
   'consumeKeyExpiresAt',

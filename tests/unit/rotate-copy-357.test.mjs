@@ -248,10 +248,7 @@ test('[旧口径] 「服务端没有更换，请稍后重试」这个文案 key 
   }
 })
 
-test('[接线] UI 用 rotateSuccessKey(outcome) 取文案，不再拿 replaced 判成败', () => {
-  const source = readFileSync(new URL('../../src/components/settings/OursServicesDialog.tsx', import.meta.url), 'utf8')
-  assert.match(source, /t\(rotateSuccessKey\(rotateResult\)\)/, '成功文案走 rotateSuccessKey')
-  assert.equal(/rotateSuccessKey\(\s*\{?\s*replaced/.test(source), false, '不许再用 replaced 选文案')
-  assert.equal(/replaced\s*\?/.test(source), false, 'UI 里不许出现「按 replaced 分流」')
-  assert.match(source, /data-rotate-mode=/, '成功语义挂到 DOM 上，便于回归断言')
-})
+// #562：「UI 用 rotateSuccessKey(outcome) 取文案」这条接线断言随旧 `OursServicesDialog.tsx`
+// 一起退役 —— 那个弹层（连同 `data-rotate-mode` 的 DOM 标记）已整体删除，新体系的 Key 增删改在
+// 「账户与消费 → 账号」tab（`AccountPanel`），不走 `/rotate`。文案口径本身仍由上面的
+// 「成功文案的四种说法必须都在」锁住。

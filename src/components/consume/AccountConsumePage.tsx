@@ -27,6 +27,7 @@ import { useTranslate, type TranslationKey } from '../../i18n/index.js'
 import type { ConsumeClient, ConsumeUser } from '../../services/consume/index.js'
 import { getConsumeClient } from '../../services/consumeClient.js'
 import { useAuthStore } from '../../services/auth/store.js'
+import type { AccountConsumeTab } from '../settings/settingsDialogState.js'
 import { Modal } from '../base/Modal.js'
 import { BuyTab } from './BuyTab.js'
 import { AccountPanel, QuotaPanel } from './index.js'
@@ -41,7 +42,11 @@ const TABS: readonly { value: AccountConsumeTab; label: TranslationKey }[] = [
   { value: 'account', label: 'accountConsumeTabAccount' },
 ]
 
-export type AccountConsumeTab = 'cards' | 'buy' | 'quota' | 'account'
+/**
+ * tab 类型的**唯一出处**是 `settingsDialogState`（状态层：付款回跳与消息流 CTA 都要按 tab 打开它），
+ * 这里只是转出去，避免同一个联合类型在两处各写一遍而漂移。
+ */
+export type { AccountConsumeTab }
 
 export type AccountConsumePageProps = {
   onClose: () => void

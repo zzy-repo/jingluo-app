@@ -1192,7 +1192,8 @@ const S = {
   optionXLarge: '特大',
   optionBold: '粗体',
   optionRelaxed: '宽松',
-  oursServicesOpen: '[data-testid="ours-services-open"]',
+  // #562：钱入口并成「账户与消费」一页（旧 `ours-services-open` 已随弹层删除）
+  accountConsumeOpen: '[data-testid="account-consume-open"]',
   douyinCopy: '[data-testid="douyin-id-copy"]',
   titleButton: 'button[aria-label*="回到首条消息"]',
 }
@@ -1635,7 +1636,7 @@ export const PAGES = {
 
   'ours-buy-inapp': {
     dir: 'docs/ui/235-pay-return',
-    title: '#235 设置 → 数据管理 → 我们的渠道：套餐列表 / 去支付 / 收银台提示（390 与 360 两档）',
+    title: '#235 设置 → 数据管理 → 账户与消费 → 购买：套餐列表 / 去支付 / 收银台提示（390 与 360 两档）',
     sessions: () => [makeReadingSession()],
     // 入口只在自有渠道出现（#166 的门禁思路），与支付记录/我的购买同一份判定
     providerKind: 'ours',
@@ -1683,28 +1684,32 @@ export const PAGES = {
         await route.fulfill(json({ valid: true }))
       })
 
+      // #562：旧 `OursServicesDialog` 已退役，「套餐 / 去支付」这一段搬进「账户与消费」页的
+      // 「购买」tab（`components/consume/BuyTab.tsx`）。入口 testid 也从 `ours-services-open`
+      // 换成 `account-consume-open`，页面根节点是 `account-consume-page`。
       await openSettings(page, S.tabData)
-      const entry = page.locator(S.oursServicesOpen)
+      const entry = page.locator(S.accountConsumeOpen)
       await entry.waitFor({ state: 'visible', timeout: 10000 })
       await entry.scrollIntoViewIfNeeded()
       await page.waitForTimeout(240)
       await entry.click()
 
-      const dialog = page.locator('[data-testid="ours-services-dialog"]')
+      const dialog = page.locator('[data-testid="account-consume-page"]')
       await dialog.waitFor({ state: 'visible', timeout: 10000 })
+      await page.getByTestId('account-consume-tab-buy').click()
       await page.waitForTimeout(700)
 
-      const plans = page.locator('[data-testid="ours-plans"]')
+      const plans = page.locator('[data-testid="account-consume-buy-plan"]').first()
       await plans.scrollIntoViewIfNeeded()
       await page.waitForTimeout(360)
-      const buy = page.locator('[data-testid="ours-buy"]')
-      const notice = page.locator('[data-testid="ours-pay-notice"]')
+      const buy = page.locator('[data-testid="account-consume-buy-open"]').first()
       const buyBox = await buy.boundingBox()
-      const noticeText = (await notice.textContent()) ?? ''
-      // 计划里换了「App 内打开收银台」的说明文案：这段是原生端文案，
-      // Chromium 视口里 isNativePlatform() 为 false，会渲染网页版那条 —— 记下来，别当成漏改。
+      // 「购买」tab 的说明文案就在列表上方（`oursPayHint`）；通道不可用的状态行只在失败态出现，
+      // 这里按「有提示就记下来」处理，不把「本次没触发失败」当成漏改。
+      const notice = page.locator('[data-testid="account-consume-buy"] p').first()
+      const noticeText = (await notice.textContent().catch(() => '')) ?? ''
       record('purchase', {
-        plans: await page.locator('[data-testid="ours-plans"] [data-testid^="ours-plan-"]').count(),
+        plans: await page.locator('[data-testid="account-consume-buy-plan"]').count(),
         buyBox: buyBox === null ? null : { w: Math.round(buyBox.width), h: Math.round(buyBox.height) },
         notice: noticeText.trim(),
         nativeCopy: noticeText.includes('App 内'),
@@ -1712,8 +1717,6 @@ export const PAGES = {
       if (buyBox === null || buyBox.height < 44) {
         warn(`「去支付」点击区不足 44px：${buyBox === null ? 'null' : Math.round(buyBox.height)}`)
       }
-      // 套餐列表、去支付按钮和提示在同一屏里（两档宽度都如此），一张就够：
-      // 提示文案紧跟按钮，不另起一张一模一样的图。
       await shot('01-plans-and-pay')
       const clip = await dialogClip(page)
       if (clip !== null) {

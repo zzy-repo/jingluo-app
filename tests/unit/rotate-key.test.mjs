@@ -298,18 +298,9 @@ test('[8] 三个错误码文案与 issue 表格逐字一致', () => {
   assert.equal(zh.oursRotateErrInternal, '重置失败，请稍后重试')
 })
 
-test('[8b] 二次确认文案必须如实说明「只重算额度、Key 不变、别的客户端不受影响」', () => {
-  // #357：/rotate 不再换发新的 Key 字符串，旧 Key 也不会失效 ——
-  // 原来这里钉的是「立即失效 / 无法找回」，那句已经和实际不符，改成钉新语义。
-  assert.match(zh.oursRotateConfirmBody, /额度/)
-  assert.match(zh.oursRotateConfirmBody, /Key 本身不变|Key 不变/)
-  // 必须说清「不影响别的客户端」，避免用户以为要重新填 Key
-  assert.match(zh.oursRotateConfirmBody, /其它|其他/)
-  // 反面：不许再声称旧 Key 会失效 / 找不回来
-  assert.equal(/立即失效|无法找回/.test(zh.oursRotateConfirmBody), false, 'Key 不再失效，文案不许再这么说')
-  assert.match(en.oursRotateConfirmBody, /stays the same|cannot|unchanged/i)
-  assert.equal(/cannot be recovered|stops working immediately/i.test(en.oursRotateConfirmBody), false)
-})
+// #562：原 `[8b] 二次确认文案…` 断言的是旧 `OursServicesDialog.tsx` 里那句二次确认弹窗文案
+// （`oursRotateConfirmBody` / `oursRotateConfirmTitle` / `oursRotateConfirmOk|Cancel`）。
+// 该弹层整体退役、`/rotate` 不再有 UI 入口，这批词条随之从 zh/en 删除，用例一并移除。
 
 test('[8c] zh / en 的文案 key 一一对应（新增键只加不改）', () => {
   assert.deepEqual(Object.keys(en).sort(), Object.keys(zh).sort(), 'zh/en 的 key 必须一一对应')
@@ -339,26 +330,10 @@ test('[9] 隐私：整条链路一条 console 都没有，返回值不含完整�
   assert.deepEqual(seen, [], `不许有任何 console：${seen.join(' | ')}`)
 })
 
-// ------------------------------------------------------------------ [10] UI 接线（源码断言）
-
-const dialogSource = readFileSync(new URL('../../src/components/settings/OursServicesDialog.tsx', import.meta.url), 'utf8')
-
-test('[10] 设置页有「更换 Key」入口 + 二次确认弹窗 + 置灰防连点', () => {
-  assert.match(dialogSource, /ours-rotate-open/, '入口按钮')
-  assert.match(dialogSource, /ours-rotate-confirm/, '二次确认块')
-  assert.match(dialogSource, /ours-rotate-submit/, '确认后的提交按钮')
-  assert.match(dialogSource, /ours-rotate-cancel/, '取消按钮')
-  assert.match(dialogSource, /oursRotateConfirmBody/, '确认文案里要有风险说明')
-  // 连点保护：提交按钮在 busy 时 disabled
-  assert.match(dialogSource, /disabled=\{rotateBusy/, '更换中必须置灰')
-})
-
-test('[10b] UI 用同一个传输层 + 同一个落盘入口，成功后立刻刷新余额', () => {
-  assert.match(dialogSource, /from '\.\.\/\.\.\/services\/invite\/rotate\.js'/, '走 rotate 服务层，不另造请求')
-  assert.match(dialogSource, /rotateKey\(\{/, '调用服务层的 rotateKey')
-  assert.match(dialogSource, /saveKey:\s*\(?key/, '把 setApiKey 作为落盘入口注入')
-  assert.match(dialogSource, /setApiKey\(/, '成功时落盘到当前渠道配置')
-  assert.match(dialogSource, /setBalance\(\{ status: 'ok', profile/, '成功后余额立即刷新')
-  // 失败分支不许把 Key 清空
-  assert.equal(/setApiKey\(''\)/.test(dialogSource), false, '任何分支都不许把本地 Key 清空')
-})
+// ------------------------------------------------------------------ [10] UI 接线（已随旧弹层退役）
+//
+// #562：`[10]` / `[10b]` 断言的是旧 `OursServicesDialog.tsx` 里的「更换 Key」入口、二次确认与
+// 余额刷新接线（DOM testid `ours-rotate-*` + `disabled={rotateBusy}`）。那个弹层已整体删除，
+// 新体系里 Key 的增删改由「账户与消费 → 账号」tab 的 `AccountPanel`（JWT / `consume.keys.*`）负责，
+// 不再有 `/rotate` 这条链路 —— 断言旧 UI 的用例留着只会红，故整段删除。
+// `services/invite/rotate.ts` 的服务层断言（[1]~[9]）仍然保留：文件还在，删它归后续单子。

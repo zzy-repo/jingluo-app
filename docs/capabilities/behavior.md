@@ -32,9 +32,11 @@
 | `src/components/settings/AppUpdateField.module.css:21`/`:24`、`:33`/`:37` `vh` 与 `dvh` 分开写在 `@supports` 两侧（#13 的坑） | 100vh 等于可视高度 | 4 | 低 | 已有兜底 |
 | `src/app/App.module.css:104`/`:105` `height: var(--app-viewport-height, 100vh)` + `@supports` 升 `100dvh` | 100vh 等于可视高度 | 4 | 低 | 已有兜底 |
 | `src/components/chatInput/ChatInput.module.css:233`/`:234` `max-height: calc(var(--app-viewport-height, 100vh) - 120px)` + `@supports` | 100vh 等于可视高度 | 4 | 低 | 已有兜底 |
-| `src/components/settings/OursServices.module.css:49`/`:50`、`:242`/`:243` `calc(100vh - 48px)` + `@supports` 升 `100dvh` | 100vh 等于可视高度 | 4 | 低 | 已有兜底 |
 | `src/app/viewport.ts:122` `syncModalViewport` 用 `visualViewport` 写 `--modal-viewport-height`；`useMobileViewport` 只在输入聚焦时写 `--app-viewport-height` | 100vh 等于可视高度 | 4 | 低 | 已有兜底 |
-合计 17 行：**已有兜底 13 行 / 需动态验证 3 行 / 需探测 1 行 / 拆单 0 行**，风险 **高 0 / 中 3 / 低 14**。
+合计 16 行：**已有兜底 12 行 / 需动态验证 3 行 / 需探测 1 行 / 拆单 0 行**，风险 **高 0 / 中 3 / 低 13**。
+
+> #562：`OursServices.module.css` 那一行（`calc(100vh - 48px)` + `@supports` 升 `100dvh`）随旧
+> `OursServicesDialog` 退役删除 —— 文件已不存在，行从盘点表移除，合计 17 → 16（低风险 / 已有兜底各 −1）。
 
 ## 四条假设的动态验证结论
 
@@ -48,7 +50,7 @@
 | ③ 触摸滑动会滚容器 | **成立** | `adb shell input swipe` 真实触摸一次：`scrollTop` 0 → **328.7**（360）、0 → **377.3**（390）、0 → **180.2**（412）；连滑到底 `remainingScroll ≈ 0`，末端 `Delete`（top 1220.5）进入可视区。坐标已按 `devicePixelRatio`（1.5 / 1.5 / 2.625）换算成显示像素 |
 | ④ `100vh` 等于可视高度 | **成立（机械性成立，非 `dvh` 之功）** | 静息态 `100vh` = `visualViewport.height` = 728 / 795.3 / 660.2，差 **0**；软键盘弹出态（`dumpsys input_method` 读到 `mInputShown=true`）两者同降为 **479.3 / 546 / 378.3**，差仍 **0**。机制是 `AndroidManifest.xml:19` 的 `windowSoftInputMode="adjustResize"`（窗口本身改小）；`CSS.supports('height','100dvh')` 实测 **false**，所有 `@supports (…100dvh)` 分支在 83 上整条不生效 |
 
-**没有一条假设被实测证伪，因此本单不开独立 Issue。** 17 行里有 1 行「需探测」，是因为它
+**没有一条假设被实测证伪，因此本单不开独立 Issue。** 16 行里有 1 行「需探测」，是因为它
 没有兜底、当前能成立靠的是上面那条 `adjustResize` 机制，而不是自己的 CSS —— 这类不属于「实测
 不成立」，不进 issue 队列，记在本表里等后续覆盖面扩大（真机 / 91 / 109 / 订单态数据）时再看。
 

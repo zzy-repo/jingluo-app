@@ -13,9 +13,9 @@
 
 | 项 | 值 |
 | --- | --- |
-| 扫描范围 | `src/**` 全部源文件 **316** 个（`.css` **46** 个，其中 `*.module.css` **39** 个；其余 `.ts / .tsx / .html` 共 **270** 个） |
-| 口径拆分 | 46 `.css` + 200 `.ts` + 69 `.tsx` + 1 `.html` = 316 |
-| 命中总数 | **350** 处，分布在 **38** 个文件 |
+| 扫描范围 | `src/**` 全部源文件 **313** 个（`.css` **45** 个，其中 `*.module.css` **38** 个；其余 `.ts / .tsx / .html` 共 **268** 个） |
+| 口径拆分 | 45 `.css` + 199 `.ts` + 68 `.tsx` + 1 `.html` = 313 |
+| 命中总数 | **329** 处，分布在 **37** 个文件 |
 | 运行时下限 | WebView **83**（Chromium 83）。**首支持 ≤ 83 的特性一律记「无风险」，与有没有兜底无关** |
 | 构建期因素 | `rspack.config.ts` 用 `builtin:lightningcss-loader`，`targets` 取自 `package.json` 的 `browserslist`（强制含 `chrome >= 83`）。**已被构建期翻译掉的写法不算运行时假设** |
 
@@ -35,12 +35,12 @@
 
 | 特性 | 首支持 Chromium | 命中 | 已有兜底 | 无风险 | 可接受降级 | 真实缺陷 | 假阳性 | 结论 |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| 嵌套 `&` | — （构建期） | 149 | 149 | 0 | 0 | 0 | 0 | lightningcss 按 `chrome >= 83` 展开，非运行时假设 |
-| flex `gap` | 84 | 112 | 112 | 0 | 0 | 0 | 0 | 兜底已全覆盖（#217 补齐最后 2 处；W1-C1 / W1-C2 的新样式由 `pnpm run gen:gap` 补齐）；`check:gap` 口径见 §2.6 |
+| 嵌套 `&` | — （构建期） | 140 | 140 | 0 | 0 | 0 | 0 | lightningcss 按 `chrome >= 83` 展开，非运行时假设 |
+| flex `gap` | 84 | 103 | 103 | 0 | 0 | 0 | 0 | 兜底已全覆盖（#217 补齐最后 2 处；W1-C1 / W1-C2 的新样式由 `pnpm run gen:gap` 补齐）；`check:gap` 口径见 §2.6 |
 | `min()` / `max()` | 79 | 17 | 0 | 17 | 0 | 0 | 0 | 79 ≤ 83，无风险（W1-C1 弹层宽高上限新增 2 处） |
 | `:has()` | 105 | **0** | 0 | 0 | 0 | 0 | 0 | 16 处已由 #213 清零：改成渲染期显式状态类 `ds-markdown-before-ul` / `ds-markdown-before-ol`，低内核上零特性依赖 |
-| `:focus-visible` | 86 | 17 | 17 | 0 | 0 | 0 | 0 | 16 处全部合规：每处都有同选择器的 `:focus` 兜底 + `:focus:not(:focus-visible)` 收回（#215；W1-C1 的 `.tab` / `.input` 按同一套三件套写）；`pnpm run check:focus` 守住 |
-| `@supports` 块（9 处 `(height/max-height: 100dvh)` + 2 处 `(scrollbar-gutter: …)`） | 108 | 11 | 11 | 0 | 0 | 0 | 0 | **11/11 前置等价兜底**：9 处有 `vh` 基座；2 处（`MessageList.module.css:18,68`，#216 / #236）有常驻 `overflow-y: scroll` 槽位 |
+| `:focus-visible` | 86 | 16 | 16 | 0 | 0 | 0 | 0 | 16 处全部合规：每处都有同选择器的 `:focus` 兜底 + `:focus:not(:focus-visible)` 收回（#215；W1-C1 的 `.tab` / `.input` 按同一套三件套写）；`pnpm run check:focus` 守住 |
+| `@supports` 块（9 处 `(height/max-height: 100dvh)` + 2 处 `(scrollbar-gutter: …)`） | 108 | 9 | 9 | 0 | 0 | 0 | 0 | **11/11 前置等价兜底**：9 处有 `vh` 基座；2 处（`MessageList.module.css:18,68`，#216 / #236）有常驻 `overflow-y: scroll` 槽位 |
 | `overscroll-behavior` | 63 | 6 | 0 | 6 | 0 | 0 | 0 | 63 ≤ 83，无风险 |
 | `env(safe-area-inset-*)` | 69 | 6 | 0 | 6 | 0 | 0 | 0 | 69 ≤ 83，无风险（见 §5 的一致性备注） |
 | `getComputedStyle` 声明回读 | — （运行时） | 3 | 3 | 0 | 0 | 0 | **0** | #218 已修：`viewport.ts:55`、`scrollToFirstMessage.ts:30`、`collector.ts:723` 三处都有实测回读，假阳性归零（历史条目见 §3） |
@@ -59,7 +59,7 @@
 | `color-mix()` | 111 | 0 | — | — | — | 0 | 0 | 未使用（且 lightningcss 会降级） |
 | `@layer` | 99 | 0 | — | — | — | 0 | 0 | 未使用 |
 | `accent-color` | 93 | 0 | — | — | — | 0 | 0 | 未使用 |
-| **合计** | | **350** | **308** | **36** | **1** | **5** | **0** | |
+| **合计** | | **329** | **287** | **36** | **1** | **5** | **0** | |
 
 > `100dvh` 的每一处声明，**没有一处**落在 `@supports` 之外（`dvh` 裸用命中数为 0）。这是本仓 #13 之后形成的最好的一条既有纪律，也是本次盘点最重要的**正面结论**：`dvh` 这一类零缺陷。
 

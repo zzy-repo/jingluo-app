@@ -12,7 +12,7 @@ import {
 } from '../../services/chat/store.js'
 import { stopReadAloud } from '../../services/speech/readAloud.js'
 import type { AssistantMessage as AssistantMessageType } from '../../services/chat/types.js'
-import { openSettings, openOursServices } from '../settings/settingsDialogState.js'
+import { openAccountConsume, openSettings } from '../settings/settingsDialogState.js'
 import { useIsOursChannel } from '../../services/api/apiConfig.js'
 import { IconButton } from '../base/IconButton.js'
 import { Button } from '../base/Button.js'
@@ -172,7 +172,7 @@ export const AssistantMessage = memo(function AssistantMessage({
                     <button
                       type="button"
                       className={styles.noticeAction}
-                      onClick={() => openOursServices()}
+                      onClick={() => openAccountConsume('quota')}
                     >
                       {t('quotaTopUpEntry')}
                     </button>
@@ -200,7 +200,7 @@ export const AssistantMessage = memo(function AssistantMessage({
                     <button
                       type="button"
                       className={styles.noticeAction}
-                      onClick={() => openOursServices()}
+                      onClick={() => openAccountConsume('account')}
                     >
                       {t('openQuotaPanel')}
                     </button>
