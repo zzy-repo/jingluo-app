@@ -23,9 +23,13 @@ Environment=DL_RELEASES_JSON=/var/www/dl/releases.json
 Environment=DL_WEBROOT=/var/www/dl
 # 私有清单与私有包目录（#620：POST /api/v1/release/private 写这里）—— **webroot 之外**，
 # Caddy 的 file_server 够不着。服务启动时会核一遍：落在 webroot 内就直接拒绝启动。
-Environment=DL_PRIVATE_ROOT=/var/lib/dl-private
-Environment=DL_PRIVATE_RELEASES_JSON=/var/lib/dl-private/releases.internal.json
-Environment=DL_PRIVATE_APK_DIR=/var/lib/dl-private/apk
+# 私有（internal）分发目录（#621 按线上实际布局钉死）：包在 /opt/dl-private/apk（公网 404），
+# 清单在 /var/www/dl-private/（webroot /var/www/dl 之外，file_server 够不着）。
+Environment=DL_PRIVATE_ROOT=/opt/dl-private
+Environment=DL_PRIVATE_RELEASES_JSON=/var/www/dl-private/releases.internal.json
+Environment=DL_PRIVATE_APK_DIR=/opt/dl-private/apk
+# 私有读端点的限流（按 IP，每分钟）：内测客户端轮询清单用，与发布的 2/min 分开计
+Environment=DL_PRIVATE_READ_RATE_LIMIT_MAX=60
 Environment=DL_PUBLIC_BASE=https://dl.rose7.cn
 Environment=DL_AAPT2=/opt/dl-release/bin/aapt2
 Environment=DL_REQUIRED_PACKAGE=com.example.deepseekchat
@@ -40,12 +44,13 @@ StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=dl-release
 
-# 轻量加固：可写仅 /var/www/dl（公网清单）与 /var/lib/dl-private（私有清单）以及私有 /tmp
+# 轻量加固：可写仅 /var/www/dl（公网清单）、/var/www/dl-private（私有清单）与 /opt/dl-private
+# （私有包目录），以及私有 /tmp
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
-ReadWritePaths=/var/www/dl /var/lib/dl-private
+ReadWritePaths=/var/www/dl /var/www/dl-private /opt/dl-private
 ReadOnlyPaths=/etc/dl-release /opt/dl-release
 ProtectKernelTunables=true
 ProtectControlGroups=true

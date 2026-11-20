@@ -39,6 +39,27 @@
  * scripts/validate-releases-manifest.mjs 的 public/private 双口径同一份枚举）。
  * 为什么接口层也要判：#601 事故的形状就是「脚本有闸，换个入口发就绕过去」——
  * 「能不能发」必须由接口拒绝，而不是靠调用方自觉。
+ *
+ * ## 私有清单的**读**端点（Issue #621）
+ *
+ * #619/#620 只解决了「私有包能不能写进去」，没解决「内测客户端怎么取到」——
+ * 清单在 webroot 之外（公网 404，这是对的），于是一个字节都取不到，只能人工 scp + 报 sha256。
+ * 这里补两个读端点，与发布端点**同一枚令牌**、各自一个限流桶：
+ *
+ *   GET /api/v1/releases/internal            → { latest, releases:[…] }（只含 internal / prerelease）
+ *   GET /api/v1/releases/internal/download?file=<basename.apk>
+ *                                           → 200 流式返回私有 APK（Content-Disposition: attachment）
+ *
+ * 令牌两种写法都收：`X-DL-Token: <token>` 或 `Authorization: Bearer <token>`。
+ * 无令牌 / 错令牌 → 401（**鉴权先于一切**：401 与「包在不在」同形，差异本身就是信息）。
+ *
+ * 两条硬规矩（都是「别把一个文件读错」变成「整条内测渠道断掉」）：
+ *   1. **清单里的坏条目只跳过、不 500**：file 不是纯 basename / 不在私有目录内 / 文件不存在 /
+ *      size 与磁盘不符 —— 记一条 warn 并跳过该条，其余条目照发。
+ *   2. **下载只认 basename 白名单**：`?file=` 里出现 `/`、`..`、绝对路径一律 400，
+ *      不做「清洗后再拼」那种把 `../../etc/passwd` 洗成 `etc/passwd` 的容错；
+ *      而且必须在**已校验过的清单里**（`collectPrivateReleases` 的产物）才能下，
+ *      目录里存在但没人声明的包不算可下。
  */
 
 import http from 'node:http';
@@ -48,6 +69,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { execFile } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { pipeline } from 'node:stream/promises';
 import {
   DEFAULT_LOOPBACK_MARKER,
   DEFAULT_MARKER,
@@ -96,6 +118,21 @@ const RATE_LIMIT_MAX = Number(process.env.DL_RATE_LIMIT_MAX || 2);
 const RATE_LIMIT_WINDOW_MS = Number(process.env.DL_RATE_LIMIT_WINDOW_S || 60) * 1000;
 const AAPT2_TIMEOUT_MS = 30_000;
 const STAGING_PREFIX = '.upload-';
+
+// 私有清单**读**端点（Issue #621）
+const PRIVATE_LIST_PATH = '/api/v1/releases/internal';
+const PRIVATE_DOWNLOAD_PATH = '/api/v1/releases/internal/download';
+// 内测客户端会按小时轮询清单、逢版本才下载包，所以读路径的额度比发布宽（60/min，按 IP）。
+// **独立一个桶**：与发布共用 2/min 的话，客户端一刷新就把发布额度吃完了。
+const PRIVATE_READ_RATE_LIMIT_MAX = Number(process.env.DL_PRIVATE_READ_RATE_LIMIT_MAX || 60);
+// 私有包的 Content-Type：与 Caddy 给 *.apk 的一致（#619 的下载路径不经过 file_server，
+// 头必须服务端自己给，否则某些客户端会当二进制/文本处理）。
+const PRIVATE_APK_CONTENT_TYPE = 'application/vnd.android.package-archive';
+// 私有包文件名：**纯 basename**，不含任何目录成分。允许点与连字符（历史包名有 beta.10-dev.1 这类）。
+const RE_PRIVATE_APK_BASENAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}\.apk$/;
+// 私有清单里 `file` 的形状与公网清单同构（`apk/<name>.apk`，#620 的私有发布目标就是这么写的），
+// 但物理文件直接躺在私有包目录下。只认「可选 apk/ 前缀 + 纯 basename」，别的一概不认。
+const PRIVATE_FILE_PREFIX = 'apk/';
 
 // 构建变体（artifactVariant）的可信来源：
 //   1) APK 签名内的 AndroidManifest meta-data 标记（首选，构建时写入，客户端改不了）
@@ -206,6 +243,33 @@ function tokenOk(header) {
     crypto.timingSafeEqual(got, TOKEN_SHA256);
 }
 
+/** 令牌原文比较（常数时间、定长摘要）：两种头写法最后都落到这里。 */
+function tokenValueOk(raw) {
+  if (typeof raw !== 'string') return false;
+  const value = raw.trim();
+  if (!value) return false;
+  const got = crypto.createHash('sha256').update(value, 'utf8').digest();
+  return TOKEN_SHA256 !== null && got.length === TOKEN_SHA256.length &&
+    crypto.timingSafeEqual(got, TOKEN_SHA256);
+}
+
+/**
+ * 读请求里的令牌（Issue #621）：`X-DL-Token: <token>` 或 `Authorization: Bearer <token>`。
+ * 为什么两种都收：#619 的发布脚本用 Authorization，内测客户端/curl 手敲 X-DL-Token 更顺手；
+ * 只收一种就会逼调用方「为了让服务认，得多包一层」。接受两种不等于放宽判据 —— 值仍然走
+ * 同一份 sha256 + timingSafeEqual。
+ */
+function readRequestToken(req) {
+  const direct = req.headers['x-dl-token'];
+  if (typeof direct === 'string' && direct.trim()) return direct;
+  const auth = req.headers.authorization;
+  if (typeof auth === 'string') {
+    const m = /^Bearer\s+(.+)$/i.exec(auth.trim());
+    if (m) return m[1];
+  }
+  return '';
+}
+
 // ---------------------------------------------------------------- 日志
 // 只输出可公开的字段；绝不打印 Authorization / 令牌 / 请求体。
 function log(event, fields = {}) {
@@ -219,15 +283,19 @@ function log(event, fields = {}) {
 }
 
 // ---------------------------------------------------------------- 限流
-const rateBuckets = new Map(); // ip -> number[]（窗口内时间戳）
+const rateBuckets = new Map(); // bucketKey -> number[]（窗口内时间戳）
 
-function rateLimit(ip) {
+/**
+ * @param {string} key 桶键（发布用 ip；私有读端点用 `private:<ip>`，两者互不挤占）
+ * @param {number} [max] 该桶窗口内允许的请求数，默认按发布口径（DL_RATE_LIMIT_MAX）
+ */
+function rateLimit(key, max = RATE_LIMIT_MAX) {
   const now = Date.now();
   const cutoff = now - RATE_LIMIT_WINDOW_MS;
-  let arr = rateBuckets.get(ip);
-  if (!arr) { arr = []; rateBuckets.set(ip, arr); }
+  let arr = rateBuckets.get(key);
+  if (!arr) { arr = []; rateBuckets.set(key, arr); }
   while (arr.length && arr[0] <= cutoff) arr.shift();
-  if (arr.length >= RATE_LIMIT_MAX) {
+  if (arr.length >= max) {
     return { ok: false, retryAfter: Math.ceil((arr[0] + RATE_LIMIT_WINDOW_MS - now) / 1000) };
   }
   arr.push(now);
@@ -467,6 +535,220 @@ async function writeJsonAtomic(targetPath, obj) {
   await fsp.rename(tmp, targetPath);
   const dh = await fsp.open(dir, 'r');
   try { await dh.sync(); } finally { await dh.close(); }
+}
+
+// ---------------------------------------------------------------- 私有清单读端点（Issue #621）
+/**
+ * 私有包的物理文件名：只认纯 basename 的 `.apk`。
+ *
+ * 返回 null 就是「这个名字不许用」，调用方一律拒绝，**不做清洗后再拼** ——
+ * 把 `../../etc/passwd` 洗成 `etc/passwd` 那种容错，等于把「路径穿越」改写成「读到了别的文件」，
+ * 只是把事故从 500 变成 200。
+ *
+ * @param {unknown} file 清单里的 `file` 字段或 `?file=` 参数
+ * @returns {string|null} 合法 basename（如 `deepseek-chat-1.4.0-internal.apk`），否则 null
+ */
+function privateApkBasename(file) {
+  if (typeof file !== 'string') return null;
+  const value = file.trim();
+  if (!value) return null;
+  if (value.includes('\\') || value.includes('\0')) return null;   // Windows 分隔符 / NUL 注入
+  // 清单沿用公网清单的 `apk/<name>` 形状（#620 的私有发布目标就是这么写的），
+  // 但物理文件就在私有包目录里 —— 前缀只剥这一层，再出现 `/` 就是路径，不认。
+  const name = value.startsWith(PRIVATE_FILE_PREFIX) ? value.slice(PRIVATE_FILE_PREFIX.length) : value;
+  if (name.includes('/')) return null;
+  if (name.includes('..')) return null;                              // 连 `a..apk` 这种也一并拒，少一类思考
+  if (!RE_PRIVATE_APK_BASENAME.test(name)) return null;
+  return name;
+}
+
+/**
+ * 这条记录该不该出现在私有清单的读响应里。
+ *
+ * 私有清单是「内测渠道」的清单：只要 `artifactVariant === "internal"`（含 prerelease 渠道的内测包）。
+ * `artifactVariant === "standard"` 的条目**一律不出现**，哪怕它 buildType 是 prerelease ——
+ * standard 包走公网 `releases.json`（裁决 #614 决定 3 把两条渠道分开），出现在私有清单里
+ * 会让内测客户端把对外包当成内测包。判不出变体的老条目按 prerelease 渠道放行（历史事实如此），
+ * 但同样不认 standard。
+ */
+function isPrivateReadEntry(record) {
+  if (!record || typeof record !== 'object' || Array.isArray(record)) return false;
+  if (record.artifactVariant === 'standard') return false;
+  return record.artifactVariant === 'internal' || record.buildType === 'prerelease';
+}
+
+/** 严格读私有清单：读不到 / 解析不了就是「暂不可用」，绝不当成空清单（空清单会让客户端以为没有内测版）。 */
+async function readPrivateManifest() {
+  const txt = await fsp.readFile(PRIVATE_RELEASES_JSON, 'utf8');
+  const data = JSON.parse(txt);
+  if (!data || !Array.isArray(data.releases)) {
+    throw new Error(`${path.basename(PRIVATE_RELEASES_JSON)} malformed`);
+  }
+  return data;
+}
+
+/**
+ * 把原始清单过滤成「可交付的内测清单」：逐条校验，坏条目跳过并记 warn。
+ *
+ * **为什么不能 500**：清单是 root 手维护/脚本写入的文件，一条写错的 file（改名、目录换了、
+ * size 记错）会让整个端点 500 —— 于是「一个包没发好」升级成「所有内测用户都更新不了」。
+ * 所以坏条目只记账、不传染：其余条目照发，warn 留在 journal 里等人修。
+ *
+ * @param {{releases?: unknown[]}|null} raw 原始清单
+ * @param {string} ip 客户端 IP（只用于日志）
+ * @returns {Promise<{releases: object[], skipped: {index:number,version:string,reason:string}[]}>}
+ */
+async function collectPrivateReleases(raw, ip) {
+  const list = Array.isArray(raw && raw.releases) ? raw.releases : [];
+  const releases = [];
+  const skipped = [];
+  for (let index = 0; index < list.length; index += 1) {
+    const record = list[index];
+    const version = record && typeof record.version === 'string' ? record.version : `releases[${index}]`;
+    const skip = (reason, extra = {}) => {
+      skipped.push({ index, version, reason });
+      log('private_entry_skipped', { ip, index, version, reason, ...extra });
+    };
+
+    if (!record || typeof record !== 'object' || Array.isArray(record)) { skip('not_an_object'); continue; }
+    if (!isPrivateReadEntry(record)) {
+      skip('not_private_variant', { variant: record.artifactVariant || '-', buildType: record.buildType || '-' });
+      continue;
+    }
+    const name = privateApkBasename(record.file);
+    if (!name) { skip('unsafe_file', { file: String(record.file ?? '') }); continue; }
+
+    const abs = path.resolve(PRIVATE_APK_DIR, name);
+    if (!isInsideDir(abs, PRIVATE_APK_DIR)) { skip('outside_private_dir', { file: name }); continue; }
+
+    let stat;
+    try {
+      stat = await fsp.stat(abs);
+    } catch (e) {
+      skip('file_missing', { file: name, error: e.code || e.message });
+      continue;
+    }
+    if (!stat.isFile()) { skip('not_a_file', { file: name }); continue; }
+
+    // 清单自报的 size 与磁盘不符 = 清单和文件不是一回事（改名/覆盖/手改），这条不可交付
+    const declaredSize = Number(record.size);
+    if (Number.isFinite(declaredSize) && declaredSize !== stat.size) {
+      skip('size_mismatch', { file: name, declared: declaredSize, actual: stat.size });
+      continue;
+    }
+
+    releases.push({
+      ...record,
+      size: stat.size,
+      // 给客户端的下载入口：**形状只此一种**，不让客户端拿 file 自己拼 URL
+      // （拼法一旦分散到客户端，改路径就等于要求所有内测用户升级客户端）
+      apkName: name,
+      downloadUrl: `${PRIVATE_DOWNLOAD_PATH}?file=${encodeURIComponent(name)}`,
+    });
+  }
+  return { releases, skipped };
+}
+
+/** 私有清单的 `latest`：只在**活下来的**条目里挑，不让被跳过的条目继续当「最新」。 */
+function privateLatest(raw, releases) {
+  const versions = new Set(releases.map((r) => r.version));
+  const candidates = [raw && raw.latest, releases[0] && releases[0].version];
+  for (const c of candidates) {
+    if (typeof c === 'string' && versions.has(c)) return c;
+  }
+  return releases.length ? releases[0].version : null;
+}
+
+/** GET /api/v1/releases/internal */
+async function handlePrivateReleases(req, res, ip) {
+  let raw;
+  try {
+    raw = await readPrivateManifest();
+  } catch (e) {
+    log('private_manifest_error', { ip, error: e.code || e.message });
+    return fail(res, 503, 'MANIFEST_UNAVAILABLE', '私有清单暂不可用');
+  }
+
+  const { releases, skipped } = await collectPrivateReleases(raw, ip);
+  const latest = privateLatest(raw, releases);
+  log('private_manifest_ok', {
+    ip, count: releases.length, skipped: skipped.length, latest: latest || '-',
+  });
+
+  // Cache-Control: no-store 由 sendJson 统一给（清单是「此刻的事实」，缓存它等于发旧包）
+  return sendJson(res, 200, {
+    ok: true,
+    latest,
+    count: releases.length,
+    skipped: skipped.length,
+    releases,
+  });
+}
+
+/** GET /api/v1/releases/internal/download?file=<basename.apk> */
+async function handlePrivateDownload(req, res, ip, url) {
+  const asked = url.searchParams.get('file');
+  if (!asked || !asked.trim()) {
+    log('private_download_reject', { ip, reason: 'missing_file' });
+    return fail(res, 400, 'BAD_FILE_NAME', '缺少 file 参数（私有包文件名，如 deepseek-chat-1.4.0-internal.apk）');
+  }
+  const name = privateApkBasename(asked);
+  // 下载入口只收裸 basename（`apk/<name>` 前缀是清单里的形状，不是请求参数的形状）
+  if (!name || name !== asked.trim()) {
+    log('private_download_reject', { ip, reason: 'unsafe_file' });
+    return fail(res, 400, 'BAD_FILE_NAME', 'file 必须是私有包文件名，不允许任何路径成分');
+  }
+
+  // 白名单：必须在**已校验过的清单**里。目录里躺着但没人声明的包不算可下 ——
+  // 否则「私有包」的边界就退化成「私有目录里有什么」，而目录是历史垃圾最容易堆积的地方。
+  let raw;
+  try {
+    raw = await readPrivateManifest();
+  } catch (e) {
+    log('private_manifest_error', { ip, error: e.code || e.message });
+    return fail(res, 503, 'MANIFEST_UNAVAILABLE', '私有清单暂不可用');
+  }
+  const { releases } = await collectPrivateReleases(raw, ip);
+  if (!releases.some((r) => r.apkName === name)) {
+    log('private_download_reject', { ip, reason: 'not_in_manifest', file: name });
+    return fail(res, 404, 'NOT_FOUND', '未找到该私有包');
+  }
+
+  const abs = path.resolve(PRIVATE_APK_DIR, name);
+  if (!isInsideDir(abs, PRIVATE_APK_DIR)) {
+    log('private_download_reject', { ip, reason: 'outside_private_dir', file: name });
+    return fail(res, 400, 'BAD_FILE_NAME', 'file 必须是私有包文件名，不允许任何路径成分');
+  }
+
+  let stat;
+  try {
+    stat = await fsp.stat(abs);
+  } catch (e) {
+    log('private_download_reject', { ip, reason: 'file_missing', file: name, error: e.code || e.message });
+    return fail(res, 404, 'NOT_FOUND', '未找到该私有包');
+  }
+  if (!stat.isFile()) {
+    log('private_download_reject', { ip, reason: 'not_a_file', file: name });
+    return fail(res, 404, 'NOT_FOUND', '未找到该私有包');
+  }
+
+  res.writeHead(200, {
+    'Content-Type': PRIVATE_APK_CONTENT_TYPE,
+    'Content-Length': stat.size,
+    'Content-Disposition': `attachment; filename="${name}"`,
+    'Cache-Control': 'no-store',
+    'X-Content-Type-Options': 'nosniff',
+  });
+  log('private_download_ok', { ip, file: name, size: stat.size });
+
+  if (req.method === 'HEAD') return res.end();
+  try {
+    await pipeline(fs.createReadStream(abs), res);
+  } catch (e) {
+    // 客户端中途断开是常态（内测用户切网），只记一行，不当作服务端错误
+    log('private_download_aborted', { ip, file: name, error: e.code || e.message });
+  }
+  return undefined;
 }
 
 // ---------------------------------------------------------------- 主流程
@@ -821,6 +1103,38 @@ const server = http.createServer(async (req, res) => {
     return sendJson(res, 200, VERSION_INFO);
   }
 
+  // 私有清单**读**端点（Issue #621）：内测客户端取 releases.internal.json + 私有包下载。
+  // 与发布端点同一枚令牌、同一套限流机制，但**各自一个桶**：发布是 2/min 的写操作，
+  // 内测客户端轮询清单会把它挤干净。
+  if (url.pathname === PRIVATE_LIST_PATH || url.pathname === PRIVATE_DOWNLOAD_PATH) {
+    if (req.method !== 'GET' && req.method !== 'HEAD') {
+      return fail(res, 405, 'METHOD_NOT_ALLOWED', '仅支持 GET', { Allow: 'GET' });
+    }
+    const rlPrivate = rateLimit(`private:${ip}`, PRIVATE_READ_RATE_LIMIT_MAX);
+    if (!rlPrivate.ok) {
+      log('reject_rate_limit', { ip, bucket: 'private', retryAfter: rlPrivate.retryAfter });
+      return fail(res, 429, 'RATE_LIMITED',
+        `请求过于频繁，每 IP 每分钟最多 ${PRIVATE_READ_RATE_LIMIT_MAX} 次`,
+        { 'Retry-After': String(rlPrivate.retryAfter) });
+    }
+    // 鉴权必须在任何「存在性」判断之前：无令牌 / 错令牌与「清单有没有、包在不在」
+    // 必须同形回 401 —— 401 与 404 的差异本身就是一条情报。
+    if (!tokenValueOk(readRequestToken(req))) {
+      log('reject_auth', { ip, bucket: 'private', path: url.pathname });
+      return fail(res, 401, 'UNAUTHORIZED', '分发令牌缺失或无效');
+    }
+    try {
+      if (url.pathname === PRIVATE_DOWNLOAD_PATH) {
+        return await handlePrivateDownload(req, res, ip, url);
+      }
+      return await handlePrivateReleases(req, res, ip);
+    } catch (e) {
+      log('internal_error', { ip, path: url.pathname, error: e && e.message });
+      if (!res.headersSent) return fail(res, 500, 'INTERNAL', '服务器内部错误');
+      return res.end();
+    }
+  }
+
   // 发布端点：一条路径 = 一个目标（公网清单 / 私有清单，Issue #620）。
   // 目标不是「靠 meta 参数切换」—— 口径一旦能被参数选择，就会有人（或某个模型）选错，
   // 而错的那一次正是把 internal 包写进公网清单的那一次。
@@ -869,6 +1183,9 @@ server.listen(LISTEN_PORT, LISTEN_HOST, async () => {
     webroot: WEBROOT, privateManifest: PRIVATE_RELEASES_JSON, privateApkDir: PRIVATE_APK_DIR,
   });
   log('targets', { public: '/api/v1/release', private: '/api/v1/release/private' });
+  // #621：读端点也进启动日志 —— 部署验收时「闸在不在」不该靠试
+  log('read_endpoints', { list: PRIVATE_LIST_PATH, download: PRIVATE_DOWNLOAD_PATH,
+    privateManifest: PRIVATE_RELEASES_JSON, privateApkDir: PRIVATE_APK_DIR });
   // 启动指纹也进日志：事后翻 journalctl 就能对上「那段时间跑的是哪一版」
   log('version_fingerprint', { sha256: SELF_SHA256, builtAt: STARTED_AT, node: process.version });
   const allow = await readVariantAllowlist();
