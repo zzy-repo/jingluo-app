@@ -1084,8 +1084,12 @@ const buildShotPdf = (pages) => {
  * 每页 2 行是为了把总字符数压在 `ATTACHMENT_LIMITS.maxExtractedChars`（40 万）之内 ——
  * 超了 manager 会额外记一条「超过单份注入预算」warning，那是另一个话题（注入预算），
  * 不该混进「解析进度」这张图里。
+ *
+ * 页数**必须 ≤ `pdfMaxPages`（500）**：这个夹具原本是 1600 页（#555 时期还没有页数上限），
+ * #599 加了「超过 500 页直接抛 `tooManyPages`」之后，1600 页的样本在**取第一页之前**就被拒了，
+ * 进度条永远走不到 2%，本场景会挂。#574 重拍时按上限改成 480 页（仍是「页多」的量级）。
  */
-const SLOW_PDF_PAGES = 1600
+const SLOW_PDF_PAGES = 480
 const makeSlowPdf = () => {
   const pages = []
   for (let index = 1; index <= SLOW_PDF_PAGES; index += 1) {
@@ -1097,6 +1101,34 @@ const makeSlowPdf = () => {
         `Slow 480 fixture page ${index} line 2: ascii only, so every stream length is exact.`,
       ],
     })
+  }
+  return buildShotPdf(pages)
+}
+
+/**
+ * 扫描版 PDF 的等价物：3 页、结构完好、**每页都没有文本对象**（`BT ET` 空文本块）。
+ *
+ * 这不是伪造错误码，而是「扫描件」在解析器眼里的本质 —— pdfjs 取得到页、取得到内容流，
+ * 但 `getTextContent()` 一个字符都没有 → 平均每页 0 字符 < `pdfMinCharsPerPage` →
+ * 解析器按 `noTextLayer` 硬失败（#480 §5.3）。#574 用它证明「扫描版」在界面上说的是
+ * 那句明确提示，而不是「未知问题」。
+ */
+const makeTextlessPdf = () =>
+  buildShotPdf([
+    { lines: [] },
+    { lines: [] },
+    { lines: [] },
+  ])
+
+/**
+ * 超过页数上限的 PDF：**800 页**（上限 500，见 `src/services/limits.ts` 的 `pdfMaxPages`）。
+ * 页数检查在取任何一页之前，所以这份样本解析得很快，也不会读满内存。
+ */
+const TOO_MANY_PAGES = 800
+const makeTooManyPagesPdf = () => {
+  const pages = []
+  for (let index = 1; index <= TOO_MANY_PAGES; index += 1) {
+    pages.push({ lines: [`Over-limit fixture page ${index}`] })
   }
   return buildShotPdf(pages)
 }
@@ -1130,6 +1162,7 @@ const ATTACH_LABELS = {
   statusSuccess: '已就绪',
   statusFailed: '解析失败，点击查看原因',
   statusCancelled: '解析已取消',
+  failureUnknown: '解析过程中出现了未知问题',
 }
 
 /**
@@ -1368,6 +1401,25 @@ const waitForAttachSettled = async (page, timeout = 60000) => {
   )
   // 让状态行的过渡动画走完再截图
   await page.waitForTimeout(260)
+}
+
+/**
+ * 等输入区的附件卡片**达到 N 张**（新塞进去的文件在 React 里是下一帧才出现）。
+ *
+ * 只 `waitForAttachSettled()` 是不够的：它判的是「现有卡片都落终态」，而新卡还没挂上去时
+ * 上一张已经是终态了 —— 于是它立刻返回，量到的却是「解析中 · 校验文件」那一帧（#574 重拍时踩到）。
+ */
+const waitForAttachCardCount = async (page, count, timeout = 20000) => {
+  await page.waitForFunction(
+    (expected) => {
+      const cards = Array.from(document.querySelectorAll('[role="button"][aria-label]')).filter(
+        (node) => node.getAttribute('aria-label') === '查看附件详情'
+      )
+      return cards.length >= expected
+    },
+    count,
+    { timeout }
+  )
 }
 
 /** 点开第一张附件卡片的详情面板（`AttachmentCard` 的整卡就是激活器） */
@@ -2559,7 +2611,7 @@ export const PAGES = {
 
   '480-attach-parsing': {
     dir: 'docs/ui/480-attachments',
-    title: '#480 附件卡片 parsing 态：逐页进度条 + 取消按钮，取消后落「已取消」（1600 页真 PDF）',
+    title: '#480 附件卡片 parsing 态：逐页进度条 + 取消按钮，取消后落「已取消」（480 页真 PDF）',
     sessions: () => [makeReadingSession()],
     providerKind: 'ours',
     run: async (ctx) => {
@@ -2567,7 +2619,7 @@ export const PAGES = {
       await openSession(page, READING_SESSION_TITLE)
       const started = Date.now()
       await attachDocInput(page).setInputFiles({
-        name: '480-长文档-1600页.pdf',
+        name: '480-长文档-480页.pdf',
         mimeType: 'application/pdf',
         buffer: makeSlowPdf(),
       })
@@ -2714,6 +2766,104 @@ export const PAGES = {
         const again = await page.evaluate(measureAttachmentCards)
         record('afterRetry', { status: again.cards[0]?.status, cardCount: again.cardCount })
         await shot('03-after-retry')
+      }
+    },
+  },
+
+  '480-attach-failure-copy': {
+    dir: 'docs/ui/480-attachments',
+    // #574：失败面板**按码给文案**。这两张图就是「不再落「未知问题」」的视觉证据：
+    // 标题是那句人话（带出路），真正的原因原文进「技术信息」折叠区。
+    title: '#480/#574 失败原因按码出文案：扫描版 PDF（noTextLayer）与页数超限（tooManyPages）',
+    sessions: () => [makeReadingSession()],
+    providerKind: 'ours',
+    run: async (ctx) => {
+      const { page, shot, record, warn } = ctx
+      await openSession(page, READING_SESSION_TITLE)
+
+      /**
+       * 一档两张：先传扫描件（无文本层），再传 800 页（超上限），各点开面板截一张。
+       *
+       * 判据是**面板标题的整句**（不是「含某个词」）：本单的回归就是「标题错了但原因还看得见」，
+       * 只查 `raw` 里有没有那句话是查不出这个缺口的（缺口正是 raw 有、标题错）。
+       */
+      const cases = [
+        {
+          state: '01-panel-no-text-layer',
+          name: '480-扫描件-无文本层.pdf',
+          buffer: makeTextlessPdf(),
+          expected: '该 PDF 未检测到可提取的文本，暂不支持扫描版 PDF，请上传包含文本层的 PDF 文件',
+          rawMustInclude: '未检测到可提取的文本',
+          code: 'noTextLayer',
+          index: 0,
+        },
+        {
+          state: '02-panel-too-many-pages',
+          name: `480-超页数-${TOO_MANY_PAGES}页.pdf`,
+          buffer: makeTooManyPagesPdf(),
+          expected: `PDF 共 ${TOO_MANY_PAGES} 页，超过上限 500 页，请拆分后再上传`,
+          rawMustInclude: '页上限',
+          code: 'tooManyPages',
+          index: 1,
+        },
+      ]
+
+      for (const item of cases) {
+        await attachDocInput(page).setInputFiles({
+          name: item.name,
+          mimeType: 'application/pdf',
+          buffer: item.buffer,
+        })
+        // 先等这一张真的挂到列表上（索引 = 第几张），再等它落终态
+        await waitForAttachCardCount(page, item.index + 1)
+        await waitForAttachSettled(page)
+        const settled = await page.evaluate(measureAttachmentCards)
+        record(`${item.code}-cards`, settled.cards)
+        const card = settled.cards[item.index]
+        if (card === undefined) {
+          throw new Error(`${item.code}：没等到第 ${item.index + 1} 张附件卡片`)
+        }
+        if (card.status !== ATTACH_LABELS.statusFailed) {
+          throw new Error(`${item.code}：期望「${ATTACH_LABELS.statusFailed}」，实际「${card.status}」`)
+        }
+
+        // 点开这一张的详情面板（`openAttachPanel` 只点第一张，这里按序号点）
+        await page
+          .locator('[role="button"][aria-label="查看附件详情"]')
+          .nth(item.index)
+          .click()
+        await page
+          .getByRole('dialog', { name: '查看附件详情' })
+          .waitFor({ state: 'visible', timeout: 8000 })
+        await page.waitForTimeout(260)
+        const opened = await page.evaluate(measureAttachmentCards)
+        const panel = opened.panels[0]
+        record(`${item.code}-panel`, panel)
+        if (panel === undefined) {
+          throw new Error(`${item.code}：点卡片没有弹出详情面板`)
+        }
+        // 【本单的核心断言】标题必须是那句人话，不能是兜底
+        if (panel.failureTitle !== item.expected) {
+          throw new Error(
+            `${item.code}：失败标题不对 —— 期望「${item.expected}」，实际「${panel.failureTitle}」` +
+              '（回落成「未知问题」就是 #574 的缺口复发了）'
+          )
+        }
+        if (panel.failureTitle.includes(ATTACH_LABELS.failureUnknown)) {
+          throw new Error(`${item.code}：失败标题落到了「${ATTACH_LABELS.failureUnknown}」兜底`)
+        }
+        if (!panel.raw.includes(item.rawMustInclude)) {
+          warn(`${item.code}：「技术信息」里没有解析器原文（排障依据丢了）：${panel.raw}`)
+        }
+        if (panel.box.insideViewport !== true) {
+          warn(`${item.code}：详情面板超出视口 right=${panel.box.right}（视口宽 ${opened.viewportWidth}）`)
+        }
+        await shot(item.state)
+
+        // 收起面板，避免下一轮的点击被浮层挡住
+        await page.keyboard.press('Escape')
+        await page.getByRole('dialog', { name: '查看附件详情' }).waitFor({ state: 'hidden', timeout: 5000 })
+        await page.waitForTimeout(160)
       }
     },
   },
