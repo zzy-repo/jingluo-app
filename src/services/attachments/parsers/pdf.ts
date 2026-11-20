@@ -57,8 +57,14 @@ import {
 } from './pdfLoader.js'
 import { textItemsToLines } from './pdfLayout.js'
 
-/** 解析器版本：pdfjs 版本 + 本文件的解析逻辑版本（1），一起进缓存去重键 */
-export const PDF_PARSER_VERSION = `pdfjs-${PDFJS_VERSION}-1`
+/**
+ * 解析器版本：pdfjs 版本 + 本文件的解析逻辑版本（2），一起进缓存去重键。
+ *
+ * - `1` → `2`（#544）：`ParsedDocument.characterCount` 从「实现自定」改成**正文口径**，
+ *   缓存里 `StoredAttachmentText.characterCount` 的口径也跟着变；不升版本会让老记录继续命中
+ *   旧口径的缓存全文记录，同一份 PDF 在「首次解析」与「缓存命中」两条路径上给出不同字数。
+ */
+export const PDF_PARSER_VERSION = `pdfjs-${PDFJS_VERSION}-2`
 
 /** 硬失败的错误码，见文件头的表 */
 export type PdfParseErrorCode =
@@ -280,6 +286,10 @@ export const parsePdfFile = async (file: Blob, options: ParseOptions = {}): Prom
   }
 
   const processedPages = pageTexts.size
+  // #544：`characterCount` 是**正文**口径 —— 只累加每页提取出来的正文，
+  // 不含下面拼接时插入的 `[第N页]` 标记与页间分隔换行。这样同一段文字走 txt / pdf
+  // 两个解析器得到同一个数（txt/docx 的 text 本来就没有标记）。
+  // 需要「注入文本总长度」的调用方看 `rawLength`（= text.length，含标记），别拿这个字段换算。
   let characterCount = 0
   for (const text of pageTexts.values()) {
     characterCount += text.length
@@ -296,7 +306,15 @@ export const parsePdfFile = async (file: Blob, options: ParseOptions = {}): Prom
   if (processedPages === 0) {
     if (cancelled) {
       // 一页都没读完就被取消：返回空 partial，别让「已取消」伪装成「扫描版 PDF」
-      return { text: '', characterCount: 0, pages: totalPages, extractedPages: 0, warnings, parserVersion: PDF_PARSER_VERSION }
+      return {
+        text: '',
+        characterCount: 0,
+        rawLength: 0,
+        pages: totalPages,
+        extractedPages: 0,
+        warnings,
+        parserVersion: PDF_PARSER_VERSION,
+      }
     }
     throw hardFail(
       'openFailed',
@@ -324,7 +342,10 @@ export const parsePdfFile = async (file: Blob, options: ParseOptions = {}): Prom
 
   return {
     text,
+    // 正文口径（不含页标记）：与 txt / docx 一致
     characterCount,
+    // 注入文本总长度（含页标记与分隔换行）：PDF 上恒大于 characterCount
+    rawLength: text.length,
     pages: totalPages,
     extractedPages: processedPages,
     ...(warnings.length > 0 ? { warnings } : {}),

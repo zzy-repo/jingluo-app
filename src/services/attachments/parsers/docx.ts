@@ -1218,7 +1218,9 @@ export const parseDocxFile = async (
 
   const result: ParsedDocument = {
     text,
+    // #544：docx 的 text 是纯 Markdown 渲染结果，没有解析器插入的标记 —— 两个字段恒等。
     characterCount: text.length,
+    rawLength: text.length,
     parserVersion: DOCX_PARSER_VERSION,
   }
   if (warnings.length > 0) {
