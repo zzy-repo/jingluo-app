@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "note": "Flaky 登记簿（Issue #406 / #456）。两类条目：kind=\"same-runner\"（同 runner 上「失败→重跑通过」）由 tests/run-layer.mjs 自动登记；kind=\"cross-runner\"（同 commit + 同用例 + 结果不同 + runner 不同）由跨 runner 运行记录聚合后登记，处置红线是「改成等终态，禁止加 sleep」。形状与判据见 scripts/flaky-registry.mjs 文件头与 docs/TESTING-POLICY.md 第 11 节。",
+  "note": "Flaky 登记簿（Issue #406 / #456）。两类条目：kind=\"same-runner\"（同 runner 上「失败→重跑通过」）由 tests/run-layer.mjs 自动登记；kind=\"cross-runner\"（同 commit + 同用例 + 结果不同 + runner 不同）由跨 runner 运行记录聚合后登记，处置红线是「改成等终态，禁止加 sleep」。形状与判据见 scripts/flaky-registry.mjs 文件头与 docs/TESTING-POLICY.md 第 11 节；另有一类 infraSignatures（#611）：按**签名**登记「runner 自己崩了」（IPC 反序列化失败），不放行任何文件，命中只触发 INFRA 判定 + 单文件重跑。",
   "policy": {
     "quarantineAfter": 3,
     "recurrenceWindowDays": 21,
@@ -10,6 +10,21 @@
     "same-runner": "同一台 runner 上第一次红、重跑绿（时序/首帧/端口竞态）。处置：自动重跑 + 登记；连续 3 次进 quarantine（每周提醒）。",
     "cross-runner": "同 commit + 同用例 + 结果不同 + runner 不同（机器快慢/负载差异）。处置：必须改成等终态（until 轮询），禁止加 sleep / 提高超时；不进 quarantine。"
   },
+  "infraSignatures": [
+    {
+      "id": "runner-ipc-deserialize-611",
+      "issue": 611,
+      "match": {
+        "message": "Unable to deserialize cloned data due to invalid or unsupported version",
+        "failureType": "uncaughtException",
+        "stackIncludes": "node:internal/test_runner"
+      },
+      "tests": [],
+      "firstSeen": "2026-11-20",
+      "note": "登记的是「runner 自己崩了」的**证据串**（node --test 父进程在 FileTest.parseMessage 反序列化子进程 IPC 消息失败），不是某个文件的放行条：`tests` 恒为空。判定见 tests/helpers/merge-verdict.mjs（classifyInfraIpc / withInfraRetry）：命中 → 判 INFRA + 该文件单独重跑一次；重跑绿 → INFRA-RETRIED（不进本登记簿的 tests）；重跑仍是同一签名 → INFRA-FAIL，CI 照样红但结论写明「不是用例失败，属 runner IPC 崩」并指向 #611；重跑变成断言红 → 按 TEST_FAIL 上报。",
+      "mustNotMask": "这是 runner 问题，不许用来掩盖断言失败：断言失败的 failureType 是 testCodeFailure、stack 在 tests/…，三条判据里的第二、三条必然不命中，所以真红永远进不了这条签名。任何人想把某个用例「加进这条登记」来换绿，都是把 #501/#611 的教训反过来用 —— 不许。"
+    }
+  ],
   "tests": {
     "tests/unit/capabilities-docs-sync.test.mjs": {
       "test": "tests/unit/capabilities-docs-sync.test.mjs",

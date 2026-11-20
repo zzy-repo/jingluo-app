@@ -496,6 +496,53 @@ assert.equal(1, 2)   →  << FILE … PASS tests=1 pass=1 fail=0   退出码 0
 > 自己的 reporter；单文件 `node --test` 继承它会打印「run() is being called recursively…skipping running
 > files」然后 **exit 0**（一条用例没跑却报绿）。`helpers/runtime.mjs` 现在统一剥掉这两个 env。
 
+### 11.9 INFRA：runner 自己崩了，不算用例失败（Issue #611 / 裁决 #614）
+
+一句话：**`node --test` 的 IPC 反序列化失败是真红的一种，但它不是「用例失败」；判定要把它认出来、
+单独重跑一次，然后**仍然按红上报**（裁决 #614），只是结论必须写清是哪一种红。**
+
+CI 曾出现过这种红，同一份代码本地三种跑法（单跑 / `run-layer --case` / 整层 186 文件）全绿：
+
+```text
+>> tests/unit/domain05-download-state-machine.test.mjs
+#   ✓ 206 连续分块…                                  ← 用例已经跑出 ✓
+failureType: 'uncaughtException'
+error: 'Unable to deserialize cloned data due to invalid or unsupported version.'
+stack: … node:internal/test_runner/runner:354 → FileTest.parseMessage
+```
+
+红在 `node --test` **父进程反序列化子进程消息**这一层，不是任何一条断言。判据是**三条同时命中**
+（`tests/helpers/merge-verdict.mjs` 的 `INFRA_IPC_SIGNATURE`，也是 `tests/flaky-registry.json`
+里 `infraSignatures` 登记的那份定义）：
+
+| # | 判据 | 断言失败为什么不会命中 |
+| --- | --- | --- |
+| ① | 文案 `Unable to deserialize cloned data due to invalid or unsupported version` | 文案本身可能被抄进断言信息（本仓库的对照用例就这么干），所以单靠它不算 |
+| ② | `failureType: 'uncaughtException'` | 断言失败是 `testCodeFailure` |
+| ③ | stack 含 `node:internal/test_runner` | 断言的 stack 落在 `tests/…`（reporter 帧也可能带 `node:internal/test_runner`，所以①③之外必须②） |
+
+行为（`withInfraRetry`，在 `tests/run-layer.mjs` 的单文件判定处调用）：
+
+| 情形 | 判定 | 处置 |
+| --- | --- | --- |
+| 三条命中 + 单文件重跑**通过** | `PASS(INFRA-RETRIED)` | 绿，但**不进 flaky 登记簿**（这不是碰运气的 flake）；终端 / `--json` / job summary 各留一份名单 |
+| 三条命中 + 重跑**仍同一签名** | `FAIL(INFRA)` | **CI 红**（#614），结论写「不是用例失败，属 runner IPC 崩」+ 指向 #611 |
+| 三条命中 + 重跑变成**断言红** | `FAIL`（TEST_FAIL） | 按真红上报：INFRA 不许顺手把真红洗成基础设施问题 |
+| 未命中 | 原判定 | 一步都不省（`#406` 重跑 / `#487` 降级 / 基线比对照旧） |
+
+三条硬规矩：
+
+1. **登记的是签名，不是文件**：`tests/flaky-registry.json` 的 `infraSignatures[].tests` 恒为空数组，
+   `mustNotMask` 写明「这是 runner 问题，不许用来掩盖断言失败」。谁把某个用例加进去换绿都是违规。
+2. **负向对照是这条规矩的载体**：`tests/unit/runner-infra-classify-611.test.mjs` 八拍，其中三拍是
+   负向对照 —— 真断言失败（`assert.equal(1, 2)`）必须仍判 TEST_FAIL、把 IPC 文案抄进断言信息仍判
+   TEST_FAIL、INFRA 之后重跑出断言红必须回落成 TEST_FAIL。**改了判定先跑它**。
+3. **降复发选的是「减小日志体积」而不是「排除出合并批次」**：这条 IPC 通道只在 `node --test`
+   （单文件跑法）里存在，合并批次是同一进程内顺序 `import`、根本没有这条通道 —— 把该族排除出批次
+   只会让它**更常**走 `node --test`，复发概率是升不是降。所以改的是 `tests/fixtures/domain05/table.mjs`：
+   表驱动用例**绿时只打一行汇总**，红了才逐行打失败行（含期望/实际，诊断能力不减），
+   把常态日志从「行数 × 一行」压到 1 行。
+
 ---
 
 ## 12. `server` 层与 `deploy/dl-release/test` 白名单（Issue #415）

@@ -169,6 +169,22 @@ node tests/run-layer.mjs integration --case quota-exhausted.test.mjs   # --case 
 > `GITHUB_STEP_SUMMARY`。登记簿在 CI 里是 ephemeral 的（跑完即弃），PR 上能查的是 job summary 与
 > `l1-report-*.json` 这两个留痕出口。
 
+### 6.1 例外：INFRA（runner 自己崩了，#611）
+
+`node --test` 父进程反序列化子进程 IPC 消息失败（`Unable to deserialize cloned data…` +
+`failureType: 'uncaughtException'` + stack 在 `node:internal/test_runner`，三条同时命中）时，
+**那不是用例失败**：判定为 `INFRA`，该文件**单独重跑一次**，然后
+
+| 结局 | 输出 | 含义 |
+| --- | --- | --- |
+| 重跑通过 | `<< PASS(INFRA-RETRIED) <文件>` | 绿，但**不进** flaky 登记簿；summary 里单独列出（绿在重跑上，要留痕） |
+| 重跑仍同一签名 | `<< FAIL(INFRA) <文件>` + `INFRA-FAIL` 段 | **CI 照样红**（裁决 #614），结论写「不是用例失败，属 runner IPC 崩」+ 指向 #611 |
+| 重跑变成断言红 | `<< FAIL <文件>` | 按真红处理（INFRA 不许把真红洗成基础设施问题） |
+
+判据与处置：`tests/helpers/merge-verdict.mjs`（`classifyInfraIpc` / `withInfraRetry`）；签名登记在
+`tests/flaky-registry.json` 的 `infraSignatures`（**按签名登记，不放行任何文件**）；负向对照见
+`tests/unit/runner-infra-classify-611.test.mjs` 与 `docs/TESTING-POLICY.md` §11.9。
+
 ## 7. 当前基线（2026-11-20，origin/main@1114607 / 1.4.0-beta.10 线）
 
 - 45 个集成文件：**44 条期望通过 + 1 条 known-red**（`tests/integration-baseline.json` 登记 39 条，

@@ -6,6 +6,12 @@ import { cpus, freemem, hostname, loadavg, tmpdir, totalmem, availableParallelis
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { runCase, runMergedBatch } from './helpers/runtime.mjs'
+import {
+  INFRA_IPC_SIGNATURE,
+  classifyInfraIpc,
+  infraFailNote,
+  withInfraRetry,
+} from './helpers/merge-verdict.mjs'
 import { serveDir } from './helpers/env.mjs'
 import {
   DEFAULT_POLICY,
@@ -982,15 +988,52 @@ async function main() {
         skipped = result.code === SKIP_CODE
       }
       /**
+       * #611：**runner 自己崩了 ≠ 用例失败**。
+       *
+       * `node --test` 的父进程靠 IPC 收子进程的测试事件；消息反序列化失败时它会抛
+       * `failureType: 'uncaughtException'` + `Unable to deserialize cloned data…`，
+       * stack 落在 `node:internal/test_runner`。命中的文件**单独重跑一次**（新进程）定性：
+       *   · 重跑绿 → `PASS(INFRA-RETRIED)`，**不进 flaky 登记簿**（这不是碰运气的 flake）；
+       *   · 重跑还是同一个签名 → `FAIL(INFRA)`（CI 照样红），但结论写明「不是用例失败」+ 指向 #611；
+       *   · 重跑变成断言红 → 按 TEST_FAIL 上报（INFRA 不许把真红洗成基础设施问题）。
+       * 判据/处置都在 helpers/merge-verdict.mjs（`classifyInfraIpc` / `withInfraRetry`），可单测。
+       */
+      let infraState = 'none'
+      if (!result.ok && !skipped) {
+        if (flags.has('--no-retry')) {
+          // --no-retry 是「别再花时间重跑」的显式意志：照样分类，但不重跑 —— 措辞必须写清是 INFRA 而非用例失败
+          if (classifyInfraIpc(result).infra) {
+            infraState = 'fail'
+            result = { ...result, ok: false, infra: 'fail', infraFail: true, infraUnretried: true, error: `${infraFailNote()}（本轮 --no-retry，未重跑）` }
+            say(`   ✖ ${result.error}`)
+          }
+        } else if (classifyInfraIpc(result).infra) {
+          const outcome = await withInfraRetry({
+            result,
+            say,
+            rerun: async () => {
+              attempts += 1
+              const retry = await run()
+              if (lanes !== 1 && retry.output) log.push(retry.output)
+              skipped = retry.code === SKIP_CODE
+              return retry
+            },
+          })
+          result = outcome.result
+          infraState = outcome.infra === 'none' ? 'fail' : outcome.infra
+        }
+      }
+      /**
        * #406：失败自动重跑 **1 次**。
        *
        * 重跑通过 → 记 flaky（名单进终端 / --json / job summary / flaky-registry.json），当绿放行；
        * 重跑仍红 → 真红（这条路径一次都不省）。
        * SKIP(env) 不重跑：产物缺失 / 端口被占是环境问题，重跑只会再 SKIP 一遍。
        * 21 天内复发 ≥2 次的「重跑才通过」**不当 flaky**，直接按真红上报 —— 见 isRecurringRed。
+       * #611：已按 INFRA 处置过的（重跑用掉了 / `--no-retry`）不再走这条 —— 尤其**不许**把 INFRA 登记成 flaky。
        */
       let flaky = false
-      if (!result.ok && !skipped && !flags.has('--no-retry')) {
+      if (infraState === 'none' && !result.ok && !skipped && !flags.has('--no-retry')) {
         say(`   ↻ 红了（${result.ms}ms），按 flaky 判据重跑一次…`)
         attempts = 2
         const retry = await run()
@@ -1028,30 +1071,41 @@ async function main() {
       }
       const skipReason = skipped ? (/SKIP\(env\) (.+)/.exec(result.tail.join(''))?.[1] ?? '环境不满足').trim() : ''
       const status = result.ok
-        ? degradeReason
-          ? 'PASS(degraded)'
-          : flaky
-            ? 'PASS(flaky)'
-            : 'PASS'
+        ? infraState === 'retried'
+          ? 'PASS(INFRA-RETRIED)'
+          : degradeReason
+            ? 'PASS(degraded)'
+            : flaky
+              ? 'PASS(flaky)'
+              : 'PASS'
         : skipped
           ? 'SKIP(env)'
           : result.timedOut
             ? 'TIMEOUT'
-            : classifyDeath(result).kind === 'oom'
-              ? 'FAIL(OOM)'
-              : 'FAIL'
+            : infraState === 'fail'
+              ? 'FAIL(INFRA)'
+              : classifyDeath(result).kind === 'oom'
+                ? 'FAIL(OOM)'
+                : 'FAIL'
       say(`<< ${status} ${name} (${result.ms}ms)`)
       if (degradeReason) say(`   ↧ ${degradeReason}`)
+      if (infraState === 'retried') say(`   ↻ INFRA-RETRIED：runner IPC 崩过一次，单文件重跑通过（#611；不进 flaky 登记簿）`)
+      if (infraState === 'fail') say(`   ✖ ${result.error ?? infraFailNote()}`)
       if (skipped) say(`   ↳ ${skipReason}`)
       // 真的绿了（不是重跑才绿）：连续 flaky 计数清零，quarantine 自动解除（修好就移除，不用手改 JSON）
-      if (result.ok && !flaky) recordPass(flakyRegistry, name, { today })
+      // #611：INFRA-RETRIED 也是「用例本身绿了」，但它的绿来自 runner 的重跑，不该拿去清 flaky 计数 ——
+      // 让一个 runner 崩溃顺手销掉 flake 的账，正是「用重跑洗白」的一个变种。
+      if (result.ok && !flaky && infraState !== 'retried') recordPass(flakyRegistry, name, { today })
       return {
         results: [{
           layer: item.layer, file: name, ...result, skipped, skipReason, attempts, runner: identity.id,
           ...(degradeReason ? { degraded: true, degradeReason } : {}),
+          ...(infraState === 'retried' ? { infra: 'retried', infraRetried: true } : {}),
+          ...(infraState === 'fail' ? { infra: 'fail', infraFail: true, infraSignature: INFRA_IPC_SIGNATURE.message } : {}),
         }],
         log: log.join(''),
         interrupted: result.interrupted,
+        // #611：INFRA-FAIL 依旧是红（裁决：CI 红），只是措辞不再是「用例失败」
         failed: !result.ok && !skipped,
       }
     }
@@ -1145,25 +1199,56 @@ async function main() {
       for (const red of reds) {
         const item = unit.items.find((candidate) => rel(candidate.file) === red.file)
         const env = await caseEnv(item)
-        const single = await runCase(item.file, { cwd: ROOT, env, timeoutMs, output: lanes === 1, nodeArgs: caseNodeArgs })
-        if (lanes !== 1 && single.output) log.push(single.output)
-        const skipped = single.code === SKIP_CODE
-        const skipReason = skipped ? (/SKIP\(env\) (.+)/.exec(single.tail.join(''))?.[1] ?? '环境不满足').trim() : ''
-        const status = single.ok ? 'PASS' : skipped ? 'SKIP(env)' : single.timedOut ? 'TIMEOUT' : 'FAIL'
+        const first = await runCase(item.file, { cwd: ROOT, env, timeoutMs, output: lanes === 1, nodeArgs: caseNodeArgs })
+        if (lanes !== 1 && first.output) log.push(first.output)
+        /**
+         * #611：这次单文件复核本身就是一次 `node --test` 跑法 —— 批内判红 + 单跑撞上 runner IPC 崩，
+         * 正是 CI 里那条「重跑仍红」的来源之一。所以这里也走同一套 INFRA 处置（命中则再单跑一次定性），
+         * 否则「批内红 → 单文件复核」会把 runner 的崩溃原样端上去当用例失败。
+         */
+        const outcome = first.ok || first.code === SKIP_CODE
+          ? { result: first, infra: 'none' }
+          : await withInfraRetry({
+            result: first,
+            say,
+            rerun: async () => {
+              const retry = await runCase(item.file, { cwd: ROOT, env, timeoutMs, output: lanes === 1, nodeArgs: caseNodeArgs })
+              if (lanes !== 1 && retry.output) log.push(retry.output)
+              return retry
+            },
+          })
+        const single = outcome.result
+        const singleSkipped = single.code === SKIP_CODE
+        const skipReason = singleSkipped ? (/SKIP\(env\) (.+)/.exec(single.tail.join(''))?.[1] ?? '环境不满足').trim() : ''
+        const status = single.ok
+          ? outcome.infra === 'retried'
+            ? 'PASS(INFRA-RETRIED)'
+            : 'PASS'
+          : singleSkipped
+            ? 'SKIP(env)'
+            : single.timedOut
+              ? 'TIMEOUT'
+              : outcome.infra === 'fail'
+                ? 'FAIL(INFRA)'
+                : 'FAIL'
         say(`<< ${status} ${red.file}（单文件重跑${red.ok === single.ok ? '' : '，与批内结果不同'}）(${single.ms}ms)`)
+        if (outcome.infra === 'fail') say(`   ✖ ${single.error ?? infraFailNote()}`)
         const index = unitResults.findIndex((entry) => entry.file === red.file)
         unitResults[index] = {
           ...unitResults[index],
           ...single,
           file: red.file,
           layer: item.layer,
-          skipped,
+          skipped: singleSkipped,
           skipReason,
           merged: false,
           batchFallback: true,
           // 批内红 → 单文件重跑，所以这条确实是第 2 次 attempt（但机器没变，仍算 same-runner 的证据）
-          attempts: 2,
+          // #611：命中 INFRA 时单文件还要再跑一次定性 → 第 3 次
+          attempts: outcome.infra === 'none' ? 2 : 3,
           runner: identity.id,
+          ...(outcome.infra === 'retried' ? { infra: 'retried', infraRetried: true } : {}),
+          ...(outcome.infra === 'fail' ? { infra: 'fail', infraFail: true, infraSignature: INFRA_IPC_SIGNATURE.message } : {}),
         }
       }
     }
@@ -1280,6 +1365,12 @@ async function main() {
         const env = await caseEnv(item)
         const solo = await runCase(item.file, { cwd: ROOT, env, timeoutMs, output: true, nodeArgs: degradedNodeArgs })
         const soloDeath = solo.ok ? null : classifyDeath(solo)
+        /**
+         * #611：降级复跑本身就是「换一个进程再跑一次」，所以这里**不再**多跑一遍；只把结论改对 ——
+         * 逐文件串行仍是同一个 IPC 签名 → `INFRA-FAIL`（不是用例失败，指向 #611），而不是普通的
+         * 「逐文件串行仍没跑到收尾行」那种真失败措辞。
+         */
+        const soloInfra = solo.ok ? 'none' : classifyInfraIpc(solo).infra ? 'fail' : 'none'
         const skipped = solo.code === SKIP_CODE
         const skipReason = skipped ? (/SKIP\(env\) (.+)/.exec(solo.tail.join(''))?.[1] ?? '环境不满足').trim() : ''
         if (solo.ok) {
@@ -1297,8 +1388,10 @@ async function main() {
         // 串行仍崩/仍红：**这才是真失败**。必须把真实 stderr 打出来，不许只写「批内崩溃」。
         const why = skipped
           ? `SKIP(env) ${skipReason}`
-          : `${soloDeath.label}；逐文件串行仍没跑到收尾行`
-        console.log(`\n   ✖ FAIL ${name}（${why}）`)
+          : soloInfra === 'fail'
+            ? infraFailNote()
+            : `${soloDeath.label}；逐文件串行仍没跑到收尾行`
+        console.log(`\n   ✖ ${soloInfra === 'fail' ? 'FAIL(INFRA)' : 'FAIL'} ${name}（${why}）`)
         console.log(`      批内死因：${death.label}${death.excerpt.length ? ` —— ${death.excerpt.join(' ⏎ ')}` : ''}`)
         for (const line of soloDeath?.excerpt ?? []) console.log(`      串行 stderr：${line}`)
         console.log(`      复跑：node tests/run-layer.mjs ${item.layer} --case ${name}`)
@@ -1310,6 +1403,7 @@ async function main() {
             crash: { batch: death.kind, solo: soloDeath?.kind ?? null, batchLabel: death.label, soloLabel: soloDeath?.label ?? null },
             stderr: { batch: death.excerpt, solo: soloDeath?.excerpt ?? [] },
             tail: solo.tail,
+            ...(soloInfra === 'fail' ? { infra: 'fail', infraFail: true, infraSignature: INFRA_IPC_SIGNATURE.message } : {}),
           })
         }
       }
@@ -1331,6 +1425,14 @@ async function main() {
    * 上限的串行重跑」才绿的，掩盖起来就等于「用降低并发换绿」。
    */
   const degraded = results.filter((r) => r.ok && r.degraded)
+  /**
+   * #611：runner 基础设施崩（INFRA）的两份名单。**必须与「绿」和「真红」都分开数**：
+   *   · `infraRetried`：命中 IPC 签名、单文件重跑通过 → 绿，但绿在「重跑」上（要留痕）；
+   *   · `infraFails`：命中且重跑仍是同一签名 → 依旧红（裁决：CI 红），但**不是用例失败**，
+   *     结论必须一路写到终端 / `--json` / job summary，否则下一个人又会去改一个没坏的断言。
+   */
+  const infraRetried = results.filter((r) => r.ok && r.infraRetried)
+  const infraFails = failures.filter((r) => r.infraFail)
   const crashedFails = failures.filter((r) => r.crash)
   const skips = results.filter((r) => r.skipped)
   const totalMs = Math.round(performance.now() - started)
@@ -1421,6 +1523,8 @@ async function main() {
       `| **runner-dependent（跨 runner 结论不一致）** | ${tri.summary['runner-dependent']} | ${TRI_STATE_ACTION['runner-dependent']} |`,
       `| 真红（同 runner 重跑仍红） | ${tri.summary['true-red']} | ${TRI_STATE_ACTION['true-red']} |`,
       `| **降级通过（批次资源不足 → 串行重跑绿）** | ${degraded.length} | 不算失败，但必须留痕；调小 \`--jobs\` 或调大 \`TEST_CHILD_HEAP_MB\` |`,
+      `| **INFRA-FAIL（runner IPC 崩，不是用例失败）** | ${infraFails.length} | 红保留（裁决 #614），但按 #611 修 runner —— **不要去改断言** |`,
+      `| INFRA-RETRIED（runner 崩过一次 → 单文件重跑绿） | ${infraRetried.length} | 绿，但不是「一次就绿」：留痕，见 #611 |`,
     )
     if (degraded.length) {
       lines.push(
@@ -1432,6 +1536,19 @@ async function main() {
         '',
       )
       for (const r of degraded) lines.push(`- \`${r.file}\` —— ${r.degradeReason}`)
+    }
+    if (infraFails.length || infraRetried.length) {
+      lines.push('', '### INFRA（runner 基础设施崩，不是用例失败）—— Issue #611', '')
+      lines.push('判据（三条同时命中）：文案 `Unable to deserialize cloned data…` + `failureType: uncaughtException` + stack 落在 `node:internal/test_runner`。', '')
+      if (infraFails.length) {
+        lines.push(`**INFRA-FAIL ${infraFails.length} 个 —— 仍判红（裁决 #614），但这不是用例失败：**`, '')
+        for (const r of infraFails) lines.push(`- \`${r.file}\` —— runner IPC 反序列化失败，重跑同一签名；按 #611 处理 runner，别改断言`)
+        lines.push('')
+      }
+      if (infraRetried.length) {
+        lines.push(`**INFRA-RETRIED ${infraRetried.length} 个 —— 单文件重跑通过（绿，但不是「一次就绿」）：**`, '')
+        for (const r of infraRetried) lines.push(`- \`${r.file}\` —— 第一次跑命中 IPC 签名，换进程重跑通过（#611）`)
+      }
     }
     if (flakyRuns.length) {
       lines.push('', `### flaky（重跑才通过）${flakyRuns.length} 个 —— 不阻塞合并，但必须留痕`, '')
@@ -1445,7 +1562,11 @@ async function main() {
     }
     if (tri.files['true-red'].length) {
       lines.push('', `### 真红 ${tri.files['true-red'].length} 个 —— 修产品或修断言（不是 flake，别重跑）`, '')
-      for (const name of tri.files['true-red']) lines.push(`- \`${name}\``)
+      // #611：同为「红」，但 INFRA-FAIL 的红是 runner 崩的，不能让人拿着这份名单去改断言
+      const infraFailFiles = new Set(infraFails.map((r) => r.file))
+      for (const name of tri.files['true-red']) {
+        lines.push(infraFailFiles.has(name) ? `- \`${name}\` —— **实为 INFRA-FAIL（runner IPC 崩，#611），别看成本用例真红**` : `- \`${name}\``)
+      }
     }
     if (quarantinedFiles.length) {
       lines.push('', `隔离区跳过 ${quarantinedFiles.length} 个（连续 ${flakyPolicy.quarantineAfter} 次 flaky，每周提醒修复）：`, '')
@@ -1461,7 +1582,7 @@ async function main() {
       }
       if (timingWarnings.length > 10) lines.push(`- …其余 ${timingWarnings.length - 10} 个文件见 \`--json\` 报告的 \`timingWarnings\``)
     }
-    if (!flakyRuns.length && !crossRunner.all.length && !tri.files['true-red'].length) lines.push('', '本轮没有 flaky / runner-dependent / 真红。')
+    if (!flakyRuns.length && !crossRunner.all.length && !tri.files['true-red'].length && !infraFails.length && !infraRetried.length) lines.push('', '本轮没有 flaky / runner-dependent / 真红 / INFRA。')
     await appendFile(STEP_SUMMARY, `${lines.join('\n')}\n`).catch(() => {})
   }
   // #287：用例内部 `t.skip()` / `{ skip: ... }` 不会改进程退出码，跑完全绿也看不出「一行断言都没跑」。
@@ -1486,6 +1607,22 @@ async function main() {
     flaky: flakyRuns,
     /** #406：被隔离区跳过、本轮没有执行的用例 */
     quarantined: quarantinedFiles,
+    /**
+     * #611：runner 基础设施崩（INFRA）的两份名单 —— 与 `flaky` / 真红都分开，谁也别想混进对方的账：
+     *   · `retried`：命中 IPC 签名、单文件重跑通过（绿，但绿在重跑上）；
+     *   · `fail`：命中且重跑仍是同一签名（仍判红，措辞是「不是用例失败」，指向 #611）。
+     * `signature` 写的是**判定用的签名**（文案 / failureType / stack 位置三条件），不是文件放行名单。
+     */
+    infra: {
+      signature: {
+        message: INFRA_IPC_SIGNATURE.message,
+        failureType: INFRA_IPC_SIGNATURE.failureType,
+        stackIncludes: INFRA_IPC_SIGNATURE.stackIncludes,
+        issue: INFRA_IPC_SIGNATURE.issue,
+      },
+      retried: infraRetried.map((r) => ({ file: r.file })),
+      fail: infraFails.map((r) => ({ file: r.file, note: infraFailNote() })),
+    },
     results,
   }
   if (json) await writeFile(path.resolve(json), JSON.stringify(report, null, 2) + '\n')
@@ -1509,8 +1646,20 @@ async function main() {
   }
   if (!planned.length) console.error('No matching cases')
   console.log(
-    `\nTotal ${results.length}: PASS ${report.passed}, FAIL ${failedCount}, SKIP(env) ${skips.length}, NODE-SKIP ${report.skippedSubtests}, DEGRADED ${degraded.length}; elapsed ${totalMs}ms`,
+    `\nTotal ${results.length}: PASS ${report.passed}, FAIL ${failedCount}, SKIP(env) ${skips.length}, NODE-SKIP ${report.skippedSubtests}, DEGRADED ${degraded.length}, INFRA-RETRIED ${infraRetried.length}, INFRA-FAIL ${infraFails.length}; elapsed ${totalMs}ms`,
   )
+  // #611：INFRA 必须**自己一段**打出来。塞进 FAIL 里等于把「runner 崩了」和「断言错了」写成一句话 ——
+  // 下一个人就会去改一个没坏的断言（本单要治的就是这件事）。
+  if (infraRetried.length) {
+    console.log(`\nINFRA-RETRIED（runner IPC 崩过一次 → 单文件重跑通过，${infraRetried.length} 个；绿但不是「一次就绿」）`)
+    for (const r of infraRetried) console.log(`  INFRA-RETRIED  ${r.file} —— 首次命中 ${INFRA_IPC_SIGNATURE.stackIncludes} 反序列化失败，重跑通过（#611）`)
+    console.log('  这不是 flake，不进 flaky 登记簿；同一文件反复 INFRA-RETRIED 说明 runner 的问题没修（#611）')
+  }
+  if (infraFails.length) {
+    console.log(`\nINFRA-FAIL（runner 基础设施崩，**不是用例失败**，${infraFails.length} 个；红灯保留）`)
+    for (const r of infraFails) console.log(`  INFRA-FAIL  ${r.file} —— ${infraFailNote()}`)
+    console.log('  处置：按 #611 处理 runner（IPC 反序列化），**不要改断言**；重跑只能区分「偶发崩」与「稳定崩」，不能把这条变绿')
+  }
   // #487：降级必须留痕 —— 否则「调小并发换绿」就成了一条静默的作弊路径
   if (degraded.length) {
     console.log(

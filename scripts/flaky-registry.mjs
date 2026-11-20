@@ -11,6 +11,21 @@
  *   {
  *     "schemaVersion": 1,
  *     "policy": { "quarantineAfter": 3, "recurrenceWindowDays": 21, "remindEveryDays": 7 },
+ *     "infraSignatures": [                            // #611：按**签名**登记「runner 自己崩了」（不放行文件）
+ *       {
+ *         "id": "runner-ipc-deserialize-611",
+ *         "issue": 611,
+ *         "match": {                                  // 三条同时命中才算 INFRA
+ *           "message": "Unable to deserialize cloned data due to invalid or unsupported version",
+ *           "failureType": "uncaughtException",
+ *           "stackIncludes": "node:internal/test_runner"
+ *         },
+ *         "tests": [],                                // 恒为空：这里不是豁免名单
+ *         "firstSeen": "2026-11-20",
+ *         "note": "…",
+ *         "mustNotMask": "这是 runner 问题，不许用来掩盖断言失败。"
+ *       }
+ *     ],
  *     "tests": {
  *       "tests/integration/foo.test.mjs": {
  *         "test": "tests/integration/foo.test.mjs",   // 必填：稳定 id（仓库相对路径）
@@ -89,7 +104,7 @@ export const KIND_TEXT = Object.freeze({
 
 /** 登记簿自带的说明（落盘时保留，避免每次跑测试把文件头注释洗掉） */
 export const REGISTRY_NOTE =
-  'Flaky 登记簿（Issue #406 / #456）。两类条目：kind="same-runner"（同 runner 上「失败→重跑通过」）由 tests/run-layer.mjs 自动登记；kind="cross-runner"（同 commit + 同用例 + 结果不同 + runner 不同）由跨 runner 运行记录聚合后登记，处置红线是「改成等终态，禁止加 sleep」。形状与判据见 scripts/flaky-registry.mjs 文件头与 docs/TESTING-POLICY.md 第 11 节。'
+  'Flaky 登记簿（Issue #406 / #456）。两类条目：kind="same-runner"（同 runner 上「失败→重跑通过」）由 tests/run-layer.mjs 自动登记；kind="cross-runner"（同 commit + 同用例 + 结果不同 + runner 不同）由跨 runner 运行记录聚合后登记，处置红线是「改成等终态，禁止加 sleep」。另有一类 infraSignatures（#611）：按**签名**登记「runner 自己崩了」（node --test 的 IPC 反序列化失败），不放行任何文件 —— 命中只触发「判 INFRA + 单文件重跑一次」，重跑仍是同一签名依旧判红。形状与判据见 scripts/flaky-registry.mjs 文件头与 docs/TESTING-POLICY.md 第 11 节。'
 
 /** 空登记簿（第一次跑、文件缺失/损坏时的兜底：不因为登记簿坏了而阻断测试） */
 export const emptyRegistry = () => ({
@@ -97,8 +112,50 @@ export const emptyRegistry = () => ({
   note: REGISTRY_NOTE,
   policy: { ...DEFAULT_POLICY },
   kinds: { ...KIND_TEXT },
+  infraSignatures: [],
   tests: {},
 })
+
+/**
+ * #611：**INFRA 签名登记**（`infraSignatures`）—— 与 `tests` 是两套东西，别混。
+ *
+ * `tests` 是「按文件」的 flaky 观测（某文件红过又绿过）；`infraSignatures` 是「**按签名**」的登记：
+ * 记的是「runner 自己崩了」长什么样（文案 + failureType + stack 落在哪），**不是**给某个文件放行。
+ * 所以严格讲这里不产生任何豁免：命中只意味着 runner 判 `INFRA` 并**再跑一次**，
+ * 重跑仍是同一签名依旧红（`INFRA-FAIL`），重跑出断言红则按 `TEST_FAIL` 上报。
+ *
+ * 红线（写进每条条目的 `mustNotMask`，落盘可读）：**不许用它掩盖断言失败** ——
+ * 断言失败的 `failureType` 是 `testCodeFailure`、stack 在 `tests/…`，三条判据里第二三条必然不命中。
+ */
+export const INFRA_SIGNATURE_NOTE =
+  '按签名登记（不是文件放行）：登记的是「runner 自己崩了」的证据串（文案 + failureType + stack 位置），' +
+  '命中只触发「判 INFRA + 单文件重跑一次」，重跑仍是同一签名依旧判红（INFRA-FAIL），重跑出断言红则按 TEST_FAIL 上报。' +
+  '这是 runner 问题，不许用来掩盖断言失败（见 tests/helpers/merge-verdict.mjs 与 #611）。'
+
+/** 容错读取 INFRA 签名条目：坏条目丢掉，字段补齐（和 `tests` 一样，登记簿坏了不该让整轮起不来） */
+export const normalizeInfraSignatures = (raw) => {
+  const list = Array.isArray(raw) ? raw : []
+  return list
+    .filter((item) => item && typeof item === 'object' && typeof item.id === 'string' && item.id)
+    .map((item) => {
+      const match = item.match && typeof item.match === 'object' ? item.match : {}
+      return {
+        id: item.id,
+        issue: Number.isFinite(item.issue) ? item.issue : null,
+        /** 三条判据同时命中才算 INFRA（与 merge-verdict.mjs 的 INFRA_IPC_SIGNATURE 同一份定义） */
+        match: {
+          message: typeof match.message === 'string' ? match.message : '',
+          failureType: typeof match.failureType === 'string' ? match.failureType : '',
+          stackIncludes: typeof match.stackIncludes === 'string' ? match.stackIncludes : '',
+        },
+        /** 只登记签名，不放行任何文件：这里恒为空数组，留着是为了把「不是豁免名单」写死在形状里 */
+        tests: [],
+        firstSeen: typeof item.firstSeen === 'string' ? item.firstSeen : dayOf(),
+        note: typeof item.note === 'string' ? item.note : '',
+        mustNotMask: typeof item.mustNotMask === 'string' ? item.mustNotMask : '这是 runner 问题，不许用来掩盖断言失败。',
+      }
+    })
+}
 
 /** 日期归一成 `YYYY-MM-DD`（UTC）：登记簿是给人看的，不带时区尾巴 */
 export const dayOf = (date = new Date()) => new Date(date).toISOString().slice(0, 10)
@@ -151,6 +208,8 @@ export const normalizeRegistry = (raw) => {
     policy,
     // #456：kinds 是**说明**字段，人读登记簿时不用跳代码；丢了就补默认，不因为缺它而红。
     kinds: { ...KIND_TEXT, ...(raw?.kinds && typeof raw.kinds === 'object' ? raw.kinds : {}) },
+    // #611：INFRA 签名（按签名登记、不放行文件）。老登记簿没有这个键 → 空数组，不因为升级而红。
+    infraSignatures: normalizeInfraSignatures(raw?.infraSignatures),
     tests,
   }
 }
