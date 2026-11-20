@@ -141,33 +141,6 @@
   "domain05-storage-lifecycle.test.mjs": {
    "ms": 352
   },
-  "domain06-claim-identity-matrix.test.mjs": {
-   "ms": 79
-  },
-  "domain06-claim-ui-orchestration.test.mjs": {
-   "ms": 217
-  },
-  "domain06-device-backup-hint.test.mjs": {
-   "ms": 109
-  },
-  "domain06-dialog-open-readonly.test.mjs": {
-   "ms": 97
-  },
-  "domain06-redeem-matrix.test.mjs": {
-   "ms": 31
-  },
-  "domain07-buy-chain.test.mjs": {
-   "ms": 261
-  },
-  "domain07-cid-matrix.test.mjs": {
-   "ms": 15
-  },
-  "domain07-payment-records-empty-error.test.mjs": {
-   "ms": 99
-  },
-  "domain07-payment-records-view.test.mjs": {
-   "ms": 283
-  },
   "domain08-log-integrity.test.mjs": {
    "ms": 61
   },

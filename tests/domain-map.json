@@ -239,9 +239,9 @@
       "id": "domain06",
       "name": "额度与卡密（邀请 / 领取）",
       "doc": "docs/testing/coverage/domain-06-07.md",
+      "note": "旧体系的回归基准（领取 / 额度 / 卡密兑换 / 订单状态 / 购买链路）已随 W1-D 删除，待阶段③按新链路重建；删除清单与重建要求见 docs/testing/rebuild-after-refactor.md",
       "paths": {
         "src/services/invite/**": [
-          "tests/unit/domain06-*.test.mjs",
           "tests/unit/invite-*.test.mjs",
           "tests/unit/issue-234-invite-copy.test.mjs",
           "tests/unit/redeem-pool.test.mjs",
@@ -253,16 +253,15 @@
         ],
         "src/services/ours/api.ts": [
           "tests/unit/ours-api.test.mjs",
-          "tests/unit/domain06-*.test.mjs",
           "tests/unit/redeem-pool.test.mjs",
           "tests/unit/format-points-i18n.test.mjs",
           "tests/integration/ours-services.test.mjs",
           "tests/integration/quota-exhausted.test.mjs"
         ],
-        "src/services/ours/customerId.ts": ["tests/unit/ours-inapp-buy.test.mjs", "tests/unit/domain06-*.test.mjs", "tests/integration/ours-services.test.mjs"],
-        "src/services/ours/storage.ts": ["tests/unit/domain06-*.test.mjs", "tests/integration/ours-services.test.mjs"],
-        "src/services/ours/mask.ts": ["tests/unit/domain08-redact-negative.test.mjs", "tests/unit/domain06-*.test.mjs", "tests/unit/format-points-i18n.test.mjs"],
-        "src/components/settings/OursServicesDialog.tsx": ["tests/integration/ours-services.test.mjs", "tests/unit/dialog-open-no-apply.test.mjs", "tests/unit/domain06-claim-ui-orchestration.test.mjs"],
+        "src/services/ours/customerId.ts": ["tests/unit/ours-inapp-buy.test.mjs", "tests/integration/ours-services.test.mjs"],
+        "src/services/ours/storage.ts": ["tests/integration/ours-services.test.mjs"],
+        "src/services/ours/mask.ts": ["tests/unit/domain08-redact-negative.test.mjs", "tests/unit/format-points-i18n.test.mjs"],
+        "src/components/settings/OursServicesDialog.tsx": ["tests/integration/ours-services.test.mjs", "tests/unit/dialog-open-no-apply.test.mjs"],
         "src/components/settings/douyinAccount.ts": ["tests/unit/douyin-account.test.mjs", "tests/integration/ours-services.test.mjs"]
       },
       "tests": {
@@ -274,14 +273,15 @@
       "id": "domain07",
       "name": "购买与订单",
       "doc": "docs/testing/coverage/domain-06-07.md",
+      "note": "旧体系的回归基准（领取 / 额度 / 卡密兑换 / 订单状态 / 购买链路）已随 W1-D 删除，待阶段③按新链路重建；删除清单与重建要求见 docs/testing/rebuild-after-refactor.md",
       "paths": {
-        "src/services/ours/purchases.ts": ["tests/unit/domain07-*.test.mjs", "tests/unit/ours-purchases.test.mjs", "tests/unit/purchases-ui.test.mjs", "tests/integration/ours-services.test.mjs"],
-        "src/services/ours/paymentRecords.ts": ["tests/unit/domain07-*.test.mjs", "tests/unit/ours-payment-records.test.mjs", "tests/integration/ours-services.test.mjs"],
-        "src/services/ours/trail.ts": ["tests/unit/domain07-*.test.mjs", "tests/unit/ours-trail.test.mjs", "tests/unit/payment-trail-ui.test.mjs", "tests/integration/ours-services.test.mjs"],
+        "src/services/ours/purchases.ts": ["tests/unit/ours-purchases.test.mjs", "tests/unit/purchases-ui.test.mjs", "tests/integration/ours-services.test.mjs"],
+        "src/services/ours/paymentRecords.ts": ["tests/unit/ours-payment-records.test.mjs", "tests/integration/ours-services.test.mjs"],
+        "src/services/ours/trail.ts": ["tests/unit/ours-trail.test.mjs", "tests/unit/payment-trail-ui.test.mjs", "tests/integration/ours-services.test.mjs"],
         "src/services/ours/transport.ts": ["tests/unit/ours-inapp-buy.test.mjs", "tests/unit/pay-link.test.mjs", "tests/integration/ours-services.test.mjs"],
         "src/components/settings/PurchaseRecords*.tsx": ["tests/unit/purchases-ui.test.mjs", "tests/integration/ours-services.test.mjs"],
-        "src/components/settings/PaymentRecordsDialog.tsx": ["tests/unit/domain07-payment-records-view.test.mjs", "tests/integration/ours-services.test.mjs"],
-        "src/components/settings/PaymentTrail*.ts*": ["tests/unit/payment-trail-ui.test.mjs", "tests/unit/domain07-*.test.mjs", "tests/integration/ours-services.test.mjs"]
+        "src/components/settings/PaymentRecordsDialog.tsx": ["tests/integration/ours-services.test.mjs"],
+        "src/components/settings/PaymentTrail*.ts*": ["tests/unit/payment-trail-ui.test.mjs", "tests/integration/ours-services.test.mjs"]
       },
       "tests": {
         "unit": ["tests/unit/limits-config.test.mjs"],

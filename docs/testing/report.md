@@ -105,6 +105,9 @@
 
 ## 6. 变异击杀率（#453 · 收敛期 KPI）
 
+> **W1-D（#487）状态**：本节「支付/额度」那四行引用的 `contract-c4-order-state` / `contract-c6-quota-key`
+> 已随旧额度/邀请体系删除，标注「旧体系，待重构后重建」的格子不再有守卫；其余域（导入 / 清单更新）不受影响。
+>
 > 口径：手工把**实现改坏**（语义级，不改断言），跑对应层看是否变红。变异点选在「用户能看见的差异」上，
 > 不选「只在测试里存在的分支」。记录机器：干净 worktree `main@ae4e2a3`（shard 口吻见 §1）、
 > 4 vCPU / 15 GiB，实测时 load avg 2.7–6.5（同时有另一路全量集成在跑，只取方向）。
@@ -115,8 +118,8 @@
 | # | 域 | 变异（改坏什么） | 结果 | 抓到它的用例 | 备注 |
 | --- | --- | --- | --- | --- | --- |
 | A1 | 支付/额度 | `maskTail` 打码方向反转（`slice(-tail)` → `slice(0, tail)`：露头部、隐尾部，形态仍是 `••••xxxx`） | ✅ 抓到 | `tests/unit/ours-api.test.mjs`（`maskCard(CARD) === '••••A3SR'` 逐字）、`ours-payment-records.test.mjs` | **专门的脱敏矩阵（`contract-c5` / `domain08-sensitive-fields`）全绿**——它们只断言「原文不出现」，方向反了照样不出现原文。见 6.3-① |
-| A2 | 支付/额度 | `purchaseStatusOf`：认不出的状态归 `fulfilled`（原 `failed`） | ✅ 抓到 | `contract-c4-order-state`「状态大小写无关；非法状态归 failed 且保留后端中文」、`ours-purchases` | 白送「已完成」错觉的分支有人守 |
-| A3 | 支付/额度 | `shouldKeepPolling`：终态（`expired`/`failed`）也继续轮询 | ✅ 抓到 | `contract-c4-order-state`（T2 不可回退）、`payment-trail-ui`「#189 其它状态不轮询」 | |
+| A2 | 支付/额度 | `purchaseStatusOf`：认不出的状态归 `fulfilled`（原 `failed`） | ✅ 抓到（**守卫已随 W1-D 删除，见下**） | ~~`contract-c4-order-state`~~（旧体系，待重构后重建；该用例已删）、`ours-purchases` | 白送「已完成」错觉的分支原本有人守；契约层那条已删，重建清单见 `rebuild-after-refactor.md` |
+| A3 | 支付/额度 | `shouldKeepPolling`：终态（`expired`/`failed`）也继续轮询 | ✅ 抓到（守卫部分已删） | ~~`contract-c4-order-state`~~（旧体系，待重构后重建）、`payment-trail-ui`「#189 其它状态不轮询」 | 契约层那条已随 W1-D 删除，`payment-trail-ui` 仍在 |
 | A4 | 支付/额度 | `parsePurchaseOrders`：`total` 缺失时用 `orders.length + 1`（凭空「还有下一页」） | ✅ 抓到 | `ours-purchases`、`payment-trail-ui` | #326 的分页边界 |
 | B1 | 导入 | 本地文件导入丢掉大小上限（`if (false && file.size > maxBytes)`，#34 的原点） | ✅ 抓到 | `import-size-limit`、`domain05-import-limit-table` | |
 | B2 | 导入 | 停滞判死失效（`stallVerdict` 恒 `null`）：连续 40s 无新字节也不再判 stalled（#38 唯一的失败判据） | ⚠️ 抓到，但**形态是挂死** | `tests/unit/url-import-stall.test.mjs`「真正停滞：N 秒后判 stalled」 | `fail 0 / cancelled 2`：断言 `error.key === 'historyImportUrlStalled'` 存在，但**永远等不到 reject**，只能靠 90s `--test-timeout` 判死。见 6.3-② |

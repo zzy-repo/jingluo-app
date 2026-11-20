@@ -19,18 +19,21 @@ pnpm run test:golden    # = node tests/run-golden.mjs（并行 + 每条耗时 + 
 | 会话 | 新建 → 重命名 → 置顶 → 删除 → 回空态 | `g04-session.test.mjs` | `services/chat/store.ts`（CRUD/pin）、`components/sider/*` |
 | 导入 | 链接导入：manifest → 下载 → 解析 → 入库 | `g05-import.test.mjs` | `services/chat/history/urlImport.ts`、`importArchive.ts`、`backup.ts` |
 | 导出+导入 | 导出 → 校验包结构 → 可再次导入 | `g06-export-import.test.mjs` | `services/chat/backup.ts`、`history/exportArchive.ts`、`zipWriter.ts`、`components/settings/SettingsDialog.tsx`（导出/上传） |
-| 额度+购买 | 领取 → 刷新 → 兑换 ｜ 套餐 → 前往购买 → 关页刷新额度 | `g07-quota-purchase.test.mjs` | `services/invite/*`、`services/ours/*`（pay-link / transport）、`components/settings/OursServicesDialog.tsx` |
 | 诊断 | 触发错误 → 诊断复制内容已脱敏 | `g09-diagnostics.test.mjs` | `services/chat/describe.ts`、`replyErrorReport.ts`、`services/diagnostics/redact.ts`、`app/errorReport.ts` |
 | 更新 | 检查 → 解析清单 → 选对版本 → 下载校验 | `g10-update.test.mjs` | `services/updateManifest.ts`、`components/settings/AppUpdateField.tsx` |
 
 对应关系按「**改动落在哪就至少跑那一条**」用，不是穷举：动了 `src/services/chat/` 就跑 G1/G2/G4/G5/G6，
-动了设置面板/渠道就跑 G3/G5/G6/G7/G9/G10，动了「我们的服务」（额度/卡密/收款）就跑 G7。
+动了设置面板/渠道就跑 G3/G5/G6/G9/G10（`g11` 邮箱见 `tests/golden/g11-email.test.mjs`）。
 拿不准就 `pnpm run test:golden` 全跑 —— 9 条约 11 秒。
+
+> **额度 / 卡密 / 购买的黄金回归已删除（W1-D，#487）**：`g07-quota-purchase.test.mjs` 跟着旧额度/邀请体系
+> 一起删了 —— 它断言的「领取 → 刷新 → 兑换」走的是 `device_id` + 本机池那条即将整体替换的链路，
+> 重构期间维护它只会产生假红。新链路（JWT + sub2api 消费层）落定后按 #487 阶段③重建，
+> 清单与重建要求见 `docs/testing/rebuild-after-refactor.md`。
 
 > **两处合并**（Issue #404 允许：「某两域天然同一流程就合成一条」）：
 > · **导出 + 导入** → G6：只有把导出的字节真的喂回导入，`manifest` 首条、条目路径、索引与会话的一一对应才被同时钉住；
-> · **额度 + 购买** → G7：同一个「我们的服务」弹层、同一套桩后端、用户连着点（领完额度就看能不能买），
->   而「兑换后余额变没变、关掉收款页回没回来」本来就是跨步骤的事实。
+> · （原「额度 + 购买」合并成 G7 的那条已随 W1-D 删除，见上。）
 
 ## 与 L1 的分工（硬要求）
 
@@ -72,18 +75,15 @@ pnpm run test:golden    # = node tests/run-golden.mjs（并行 + 每条耗时 + 
 | 渠道 | 切渠道 → Key 校验 → 发一条消息成功 | `g03-channel.test.mjs` | ✅ |
 | 会话 | 新建 → 重命名 → 置顶 → 删除 → 回空态 | `g04-session.test.mjs` | ✅ |
 | 导出 | 导出 → 校验包结构 → 可再次导入（与「导入」合并成往返） | `g06-export-import.test.mjs` | ✅ |
-| 额度 | 领取 → 刷新 → 兑换成功一次（与「购买」合并） | `g07-quota-purchase.test.mjs` | ✅ |
-| 购买 | 套餐 → 前往购买（现取 pay-link）→ App 内打开 → 关页刷新额度 | `g07-quota-purchase.test.mjs` | ✅ |
 | 诊断 | 触发错误 → 诊断复制内容已脱敏 | `g09-diagnostics.test.mjs` | ✅ |
 
-**购买为什么不是「下单（cid）→ 回跳 → 轮询到卡」**：那条链路已被 #331 整条删除（`startCheckout` /
-`pollOrder` / `orderStore` 连函数名都没留）。现行主路径是 `GET /api/plans` 空态 → `GET /api/pay-link`
-现取联动小铺收款页 → `Browser.open` 在 App 内打开 → 关页回调刷新额度，**App 侧没有订单、不轮询、
-不显示「支付成功」**。G7 按现行链路跑，并额外断言「整条链路没有一条建单/查单/拉套餐请求」——
-后端全桩，不产生资金流。
+**购买/额度这条为什么现在没有黄金用例**：`g07-quota-purchase` 已随 W1-D 删除（见上）。它当时钉的是
+「领取 → 刷新额度 → 兑换 +300 → 关收款页再刷新」这条**旧链路**（`device_id` + `/apply` `/me` +
+本机池 `/redeem-card` + apia `GET /api/pay-link`）。重构后应由新链路的一条用例替代：
+`settings/public` → JWT 登录 → `GET /v1/usage` 额度 → `POST /api/v1/redeem` 兑换 → apia pay-link 购买。
 
 实测（2026-11-20，本机 4 并发，标准产物）：G1 3.3s / G2 3.5s / G3 5.2s / G4 7.5s / G5 4.2s /
-G6 3.9s / G7 5.0s / G9 3.4s / G10 3.9s，**墙钟 11.4s**（第二批加入前是 5.7s）。
+G6 3.9s / G9 3.4s / G10 3.9s，**墙钟 11.4s**（第二批加入前是 5.7s；G7 5.0s 那一行随 W1-D 删除）。
 
 负向验证（每条都人为破坏一次、确认变红后再还原）：
 
@@ -92,5 +92,4 @@ G6 3.9s / G7 5.0s / G9 3.4s / G10 3.9s，**墙钟 11.4s**（第二批加入前�
 | G3 | `providers.ts` 里 anthropic 的 `auth` 改回 `'bearer'` | 探测/发消息都带不上 `x-api-key` |
 | G4 | `store.ts` 的 `removeSessionData` 不再 `db.deleteSession` | 「删除真的落到 IndexedDB（sessions=2）」 |
 | G6 | `exportArchive.ts` 不再写 `manifest.json` | 「首条是 manifest.json（实际 chat_sessions/…）」 |
-| G7 | 兑换成功后不再 `refreshBalance()` | 「兑换成功后额度自动刷新（期望 450 实际 150）」 |
 | G9 | `redact.ts` 跳过值维度脱敏（只留 key 维度） | 「复制内容里没有任何一项敏感值原文（设备码,卡密,手机号）」 |
