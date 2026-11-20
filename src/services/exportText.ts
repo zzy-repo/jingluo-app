@@ -135,7 +135,10 @@ const downloadBlob = (file: { filename: string; mimeType: string; blob: Blob }):
   } finally {
     anchor.remove()
     // 给浏览器留出消费下载的时间，正文不落到别处。
-    setTimeout(() => URL.revokeObjectURL(url), 60_000)
+    // unref：浏览器里 setTimeout 没有 unref，Node 里（单测）有 —— 有就别让这个 60s 的
+    // 释放定时器把测试进程挂着（一个文件白等 60s，看起来像「单测变慢了」）。
+    const revoke = setTimeout(() => URL.revokeObjectURL(url), 60_000)
+    ;(revoke as unknown as { unref?: () => void }).unref?.()
   }
 }
 
