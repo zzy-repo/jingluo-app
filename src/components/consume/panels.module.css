@@ -1,0 +1,345 @@
+/* 四个「账户与消费」面板共用的样式（W1-C2 #487）。
+ *
+ * 三条约定：
+ *  · 颜色全部走 `src/app/theme.css` 的 `--dsw-alias-*` / `--dsw-static-*` 令牌，**不写死 hex**
+ *    —— 深色主题自动跟随；
+ *  · 间距一律用 margin，**不用 flex gap**：运行时下限的 WebView 83 上 flex `gap` 恒为 0
+ *    （#173 / scripts/check-css-gap-fallback.mjs），写 gap 就得同时补一套兜底，不如不写；
+ *  · 390 / 360 两档宽度都要能看：所有行都是「可换行的 flex + min-width: 0」，
+ *    金额与长 Key 允许换行（`overflow-wrap: anywhere`），不出现横向滚动。 */
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  width: 100%;
+  padding: 16px 14px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 16px;
+  background-color: var(--dsw-alias-bg-base);
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  font-size: 14px;
+  line-height: 22px;
+}
+
+.panelTitle {
+  margin: 0 0 4px;
+  font-size: 16px;
+  line-height: 24px;
+  font-weight: 600;
+}
+
+.sectionTitle {
+  margin: 14px 0 2px;
+  font-size: 13px;
+  line-height: 20px;
+  font-weight: 600;
+  color: var(--dsw-alias-label-secondary);
+}
+
+/* 三个数（余额 / 已用 / 剩余）与资料行：窄屏自动换行，不挤压 */
+.stats {
+  display: flex;
+  flex-wrap: wrap;
+  margin-top: 6px;
+}
+
+.stat {
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  min-width: 0;
+  margin: 4px 8px 4px 0;
+  padding: 8px 10px;
+  border-radius: 12px;
+  background-color: var(--dsw-alias-bg-layer-3);
+}
+
+.stat:last-child {
+  margin-right: 0;
+}
+
+/* 独占一行：邮箱这类长值在 390 上不接受从中间断字 */
+.statWide {
+  flex: 1 1 100%;
+  margin-right: 0;
+}
+
+.statLabel {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.statValue {
+  color: var(--dsw-alias-label-primary);
+  font-size: 15px;
+  line-height: 22px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.hint {
+  margin: 6px 0 0;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.notice {
+  margin: 8px 0 0;
+  color: var(--dsw-alias-brand-text);
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.guide {
+  margin-top: 8px;
+  padding: 12px;
+  border-radius: 12px;
+  background-color: var(--dsw-alias-bg-layer-3);
+}
+
+.guideTitle {
+  margin: 0;
+  font-size: 14px;
+  line-height: 22px;
+  font-weight: 600;
+}
+
+.error {
+  display: flex;
+  flex-direction: column;
+  margin-top: 8px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background-color: var(--dsw-alias-interactive-bg-hover-danger);
+}
+
+.errorText {
+  margin: 0;
+  color: var(--dsw-alias-state-error-primary);
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.error > * + * {
+  margin-top: 8px;
+}
+
+/* 列表（用量 / Key）：左侧主信息 + 右侧金额，两列都允许收缩 */
+.list {
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.listItem {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--dsw-alias-border-l1);
+}
+
+.listItem:last-child {
+  border-bottom: none;
+}
+
+.listMain {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.listTitle {
+  font-size: 13px;
+  line-height: 20px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.listMeta {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 18px;
+  overflow-wrap: anywhere;
+}
+
+.listSide {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  align-items: flex-end;
+  margin-left: 12px;
+}
+
+.listValue {
+  font-size: 13px;
+  line-height: 20px;
+  font-weight: 600;
+}
+
+/* Key 一行：名称 / 尾 4 位 / 状态 + 动作 */
+.keyRow {
+  display: flex;
+  flex-direction: column;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--dsw-alias-border-l1);
+}
+
+.keyRow:last-child {
+  border-bottom: none;
+}
+
+.keyMasked {
+  margin-top: 2px;
+  color: var(--dsw-alias-label-secondary);
+  font-family: var(--ds-font-family-code);
+  font-size: 12px;
+  line-height: 18px;
+  word-break: break-all;
+}
+
+.keyActions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-top: 4px;
+}
+
+.keyActions > * {
+  margin: 6px 8px 0 0;
+}
+
+/* 「Key 只显示这一次」的强调块 */
+.once {
+  display: flex;
+  flex-direction: column;
+  margin-top: 8px;
+  padding: 12px;
+  border: 1px solid var(--dsw-alias-brand-primary);
+  border-radius: 12px;
+  background-color: var(--dsw-alias-button-ghost-active-fill);
+}
+
+.onceTitle {
+  margin: 0;
+  font-size: 14px;
+  line-height: 22px;
+  font-weight: 600;
+}
+
+.once > * {
+  margin-top: 8px;
+}
+
+.once > *:first-child {
+  margin-top: 0;
+}
+
+/* 邀请码 / 完整 Key 的「值 + 复制」 */
+.copyRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-top: 8px;
+}
+
+.label {
+  margin-right: 8px;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.copyValue {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin-right: 8px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  background-color: var(--dsw-alias-bg-layer-3);
+  color: var(--dsw-alias-label-primary);
+  font-family: var(--ds-font-family-code);
+  font-size: 12px;
+  line-height: 18px;
+  word-break: break-all;
+}
+
+/* 表单：输入框 + 按钮 */
+.createRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-top: 8px;
+}
+
+/* 行内的输入框吃掉剩余宽度（上面那条 `flex: 0 1 auto` 是给列方向表单用的，
+   列方向里 `flex-grow` 会把输入框拉成一整块空白 —— 360 上的实际教训） */
+.createRow > .input {
+  flex: 1 1 140px;
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  margin-top: 8px;
+}
+
+.form > * + * {
+  margin-top: 8px;
+}
+
+.input {
+  box-sizing: border-box;
+  flex: 0 1 auto;
+  width: 100%;
+  min-width: 0;
+  min-height: 40px;
+  margin: 4px 8px 4px 0;
+  padding: 8px 10px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 10px;
+  background-color: var(--dsw-alias-bg-base);
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  font-size: 14px;
+  line-height: 22px;
+}
+
+/* 二次确认（删 Key / 解绑 / 退出）：红底一行，两个按钮都在同一行里换行 */
+.confirm {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-top: 8px;
+  padding: 10px;
+  border-radius: 12px;
+  background-color: var(--dsw-alias-interactive-bg-hover-danger);
+}
+
+.confirmText {
+  flex: 1 1 100%;
+  margin: 0 0 8px;
+  color: var(--dsw-alias-label-primary);
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.confirm > button {
+  margin: 0 8px 0 0;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-top: 8px;
+}
+
+.actions > * {
+  margin: 6px 8px 0 0;
+}

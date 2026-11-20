@@ -69,9 +69,90 @@ export const readFileAsDataUrl = (file: File): Promise<string> =>
     reader.readAsDataURL(file)
   })
 
-/** UI 用：选图 → data URL → 压缩（失败时退回原图，不阻塞提交流程） */
+/**
+ * 选图失败的原因（#388）：UI 按它挑提示文案，不再把任何文件都当截图收下。
+ *
+ * - `not-image`：MIME 不是 `image/*`（选错文件：`.txt` / `.pdf` / `.zip`）
+ * - `undecodable`：声明是图片但**解不开**（改过后缀名的假图、损坏文件、相册给了半截数据）
+ * - `read-failed`：FileReader 读失败（相册权限被拒 / 文件已不可读）
+ */
+export type ScreenshotErrorCode = 'not-image' | 'undecodable' | 'read-failed'
+
+/** 带原因码的选图错误：调用方只看 `error.code`，不用解析文案 */
+export class ScreenshotError extends Error {
+  readonly code: ScreenshotErrorCode
+
+  constructor(code: ScreenshotErrorCode, message: string) {
+    super(message)
+    this.name = 'ScreenshotError'
+    this.code = code
+  }
+}
+
+/**
+ * 常见图片扩展名。只在 `file.type` 为空串时才看它 —— 部分 Android 相册 / 文件选择器
+ * 不给 MIME（`type === ''`），此时只凭 MIME 会把正常照片也挡在门外。
+ */
+const IMAGE_FILE_NAME = /\.(png|jpe?g|pjpeg|webp|gif|bmp|avif|heic|heif|svg)$/i
+
+/**
+ * 是不是图片文件（#388 的第一道校验）。
+ *
+ * 主判据是 MIME：选 `.txt` 进来时 `file.type` 就是 `text/plain`。
+ * `type` 为空串时退回看扩展名，**真正的判据是下面「能不能解码」** —— 扩展名只是别把
+ * 明显不是图片的东西放进来。
+ */
+const looksLikeImage = (file: File): boolean => {
+  const type = String(file.type || '').toLowerCase()
+  if (type === '') {
+    return IMAGE_FILE_NAME.test(String(file.name || ''))
+  }
+  return type.startsWith('image/')
+}
+
+/**
+ * 能不能解码（#388 的第二道校验）：真的拿 data URL 解一次。
+ * `.txt`、改了后缀的假图、损坏的图片都会在这里失败 —— 之前它们会一路走到预览里变成一个坏图。
+ */
+const assertDecodable = async (dataUrl: string): Promise<void> => {
+  let decoded = false
+  try {
+    const image = await loadImage(dataUrl)
+    decoded = image.naturalWidth > 0 && image.naturalHeight > 0
+  } catch {
+    decoded = false
+  }
+  if (!decoded) {
+    throw new ScreenshotError('undecodable', 'image decode failed')
+  }
+}
+
+/**
+ * UI 用：选图 → 校验（是不是图片、能不能解码）→ 压缩。
+ *
+ * #388 之前这里只有「读文件 → 试着压缩」，压缩失败还退回原图，于是**任何文件**都能走完
+ * 「截图」流程：选 `.txt` 进来既不报错，预览里还出现一个坏图，用户点提交就把垃圾带上去了。
+ * 现在只有**真能解码的图片**才会返回 data URL：
+ *
+ * - 非图片 → 抛 `not-image`（明确拒绝，不进入预览）
+ * - 解不开 → 抛 `undecodable`（提示换一张，不进入预览）
+ * - 能解码、只是压不动（canvas 不可用 / 超大图）→ 退回原图，不阻塞提交流程
+ *   （原图本身是能显示的图片，退回它不丢信息；这条分支由负向表 U3 钉住）
+ */
 export const prepareScreenshot = async (file: File): Promise<string> => {
-  const dataUrl = await readFileAsDataUrl(file)
+  if (!looksLikeImage(file)) {
+    throw new ScreenshotError('not-image', `not an image: ${String(file.type || 'unknown type')}`)
+  }
+  let dataUrl: string
+  try {
+    dataUrl = await readFileAsDataUrl(file)
+  } catch (error) {
+    throw new ScreenshotError(
+      'read-failed',
+      error instanceof Error ? error.message : 'read failed'
+    )
+  }
+  await assertDecodable(dataUrl)
   try {
     return await compressScreenshot(dataUrl)
   } catch {

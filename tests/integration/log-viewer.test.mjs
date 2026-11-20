@@ -54,13 +54,23 @@ const seedLogs = () => {
   d.record('chat_send', 'info', `${mark} chat send`, { stage: 'viewer-fixture' })
   d.record('chat_first_token', 'info', `${mark} chat first token`, { stage: 'viewer-fixture' })
   d.record('chat_done', 'info', `${mark} chat done`, { stage: 'viewer-fixture' })
-  // 负向夹具 1：meta 里是**需要脱敏**的 URL（采集层按 REDACTION_RULES 打码，展示层必须原样显示打码结果）
-  d.record('error', 'error', `${mark} secret url`, {
-    'url.path': 'https://api.example.com/v1/chat?token=super-secret-token&key=sk-ABCDEFGHIJKLMNOPQRSTUVWX0123456789',
-    stage: 'viewer-fixture',
-  })
-  // 负向夹具 2：meta 值是 5000 字符（采集层按 300 截断，展示层不许被撑破）
-  d.record('nav', 'info', `${mark} long meta`, { big: 'x'.repeat(5000), stage: 'viewer-fixture' })
+  // 负向夹具 1：**需要脱敏**的 URL。两处口径不同，不能混着断言（#406 复核）：
+  //   · meta['url.path'] 走采集层的 URL 口径（redactUrl：只留 path，query/hash 全丢）—— 断言「只剩 path」；
+  //   · 自由文本（msg）走 REDACTION_RULES 的值维度打码 —— 断言「token=*** / sk-*** 原样保留」。
+  // 老夹具把整条带 query 的 URL 塞进 meta['url.path']，再要求复制里出现 token=***，与产品口径相反（假红）。
+  d.record(
+    'error',
+    'error',
+    `${mark} secret url https://api.example.com/v1/chat?token=super-secret-token&key=sk-ABCDEFGHIJKLMNOPQRSTUVWX0123456789`,
+    {
+      'url.path': 'https://api.example.com/v1/chat?token=super-secret-token&key=sk-ABCDEFGHIJKLMNOPQRSTUVWX0123456789',
+      stage: 'viewer-fixture',
+    }
+  )
+  // 负向夹具 2：meta 值是 5000 字符（采集层按 300 截断，展示层不许被撑破）。
+  // 键必须落在采集层白名单里（fields.ts 的 META_KEYS / EXTRA_KEYS / 模式）：老夹具用的裸键
+  // `big` 不在白名单，sanitizeMeta 直接丢弃 → 复制文本里连这个键都没有（#406 复核）。
+  d.record('nav', 'info', `${mark} long meta`, { 'error.detail': 'x'.repeat(5000), stage: 'viewer-fixture' })
   d.record('warning', 'warn', `${mark} warn`, { reason: 'probe', stage: 'viewer-fixture' })
 }
 
@@ -353,7 +363,11 @@ try {
     }
     assert.ok(copiedSecret.includes('token=***'), `采集层的 token 打码结果应保留：${copiedSecret}`)
     assert.ok(copiedSecret.includes('sk-***'), `采集层的 sk- 打码结果应保留：${copiedSecret}`)
-    assert.ok(copiedSecret.includes('url.path = '), `脱敏后仍要保留 host/path：${copiedSecret}`)
+    // meta['url.path'] 的口径是「只留 path」：query 整段丢掉（比打码更彻底），host 也不保留
+    assert.ok(
+      copiedSecret.includes('url.path = /v1/chat'),
+      `meta 里的 URL 只保留 path（query/hash 全丢）：${copiedSecret}`
+    )
     console.log(`  ok   展示与复制均为打码后文本：${/url\.path = (.+)/.exec(copiedSecret)?.[1] ?? '?'}`)
 
     console.log(`[${tag}] 9. 负向：5000 字符超长 meta 不撑破布局，复制文本有界`)
@@ -365,7 +379,7 @@ try {
     await longRow.first().locator('[data-testid="log-copy"]').click()
     await page.waitForTimeout(200)
     const copiedLong = await page.evaluate(() => navigator.clipboard.readText())
-    const longMetaLength = (/big = (.*)/.exec(copiedLong)?.[1] ?? '').length
+    const longMetaLength = (/error\.detail = (.*)/.exec(copiedLong)?.[1] ?? '').length
     assert.ok(
       longMetaLength > 0 && longMetaLength <= 300,
       `采集层已按 300 字符截断，复制文本里不该是 ${LONG_META_CHARS} 字符原文（实际 ${longMetaLength}）`

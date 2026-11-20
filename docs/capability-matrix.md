@@ -36,7 +36,7 @@
 
 | 能力 | DeepSeek 官方 | Anthropic 协议 | OpenAI 兼容 |
 | --- | --- | --- | --- |
-| 基础文本对话 | ✅可用 —— `POST /anthropic/v1/messages`，`system` + `messages` 直发，`x-api-key` 鉴权（`providers.ts` 的 `SPECS`、`client.ts:276-285`） | ✅可用 —— 路径换 `/v1/messages`，正文链路一字不改，只剥私有字段（`providers.ts:114`、`tests/integration/full-acceptance.test.mjs`（第 7 组：anthropic `/v1/*` + 字段剥离）） | ✅可用 —— `POST /v1/chat/completions` + `Bearer`，请求体经 `toOpenAIRequest` 翻译（`providers.ts:136`、`openaiAdapter.ts:71-94`） |
+| 基础文本对话 | ✅可用 —— `POST /anthropic/v1/messages`，`system` + `messages` 直发，`x-api-key` 鉴权（`providers.ts` 的 `SPECS`、`client.ts:276-285`） | ✅可用 —— 路径换 `/v1/messages`，正文链路一字不改，只剥私有字段（`providers.ts:225`、`tests/integration/full-acceptance.test.mjs`（第 7 组：anthropic `/v1/*` + 字段剥离）） | ✅可用 —— `POST /v1/chat/completions` + `Bearer`，请求体经 `toOpenAIRequest` 翻译（`providers.ts:136`、`openaiAdapter.ts:71-94`） |
 | 流式输出 | ✅可用 —— 原生 SSE，`readServerSentEvents` → `readMessageEvent` 逐事件消费（`client.ts` 的 `readServerSentEvents`） | ✅可用 —— 与 DeepSeek 走同一段 `streamMessage`，1.2.3 起就是纯透传（`client.ts` 的 `streamMessage`） | ✅可用 —— 翻译器把 chunk 转成严格合法的 `content_block_delta` 序列，断流也会补 `message_stop`（`openaiAdapter.ts:237-337`） |
 | 深度思考 | ✅可用 —— 请求带 `thinking:{type:'enabled'}`，字段发不发由 `requestBody.ts` 的 `buildMessageBody()` 按 `gates.reasoning_param` 判定，思考块按 `thinking_delta`/`signature_delta` 累积（`reply.ts:103-108`） | ✅可用 —— 同一个开关，另自动补 `budget_tokens:4096`（真 Anthropic 必填，`requestBody.ts` 的 `gates.thinking_budget` 分支、`providers.ts:128`） | ⚠️按档位 —— 出厂 `reasoningParam:'none'`：`caps.thinking=false`，入口仍常驻（#341：可点、只改本地档位，`data-thinking-effective=false`），请求里一个思考字段都不加（与 1.3.0 一致）。渠道改成 `'reasoning_effort'` 则发 `reasoning_effort:'low'|'medium'|'high'`，改成 `'thinking_enabled'` 则发 `thinking:{type:'enabled'}`；非法档位按 `none` fail-closed（`providers.ts` 的 `reasoningParamOf()` / `thinkingAvailable()`、`openaiAdapter.ts` 的 `reasoningFields()`、`ThinkingToggle.ts`） |
 | 联网搜索 | ✅可用 —— `tools` 里带 `deepseek_web_search`，结果块渲染成搜索面板与正文角标（`store.ts` 的 `serverTools()` + `gates.tools`、`view.ts:197-205`、`SearchPanel.tsx:9-35`） | ❌不可用 —— 上游没接口（中转基本不实现 `deepseek_web_search`）：`gates.tools=false`，不发 `tools`，开关也不渲染（`providers.ts` 的 `caps.search` + `gates.tools`、`ChatInput.tsx:229-242`） | ❌不可用 —— 既无 `tools`（`gates.tools=false`）也没有等价的服务端搜索协议（`providers.ts` 的 `caps.search` / `gates.tools`） |
@@ -46,14 +46,14 @@
 | 内容安全审核/拒答 | ✅可用 —— `safety_check:{level:'high'}` 恒定开启；`stop_reason:'refusal'` 时正文与思考按协议丢弃、只展示拒答模板（`store.ts` 的 `SAFETY_CHECK` + `gates.safety_check`、`reply.ts:143-160`、`describe.ts` 的 `describeReply()`） | ⚠️部分 —— 上游没这个参数（发了 400），只剩协议自带的 `stop_reason:'refusal'` 兜底，拒答由中转自己决定（`parseEvent.ts:211`、`describe.ts` 的 `describeReply()`） | ⚠️部分 —— 无 `safety_check`，只把 `finish_reason:'content_filter'` 映射成 `refusal`（`openaiAdapter.ts:99-105`） |
 | 上下文缓存 | ✅可用 —— 上游自动前缀缓存，命中量从 `usage.cache_read_input_tokens` 回流（`parseEvent.ts:168-172`） | ❌不可用 —— 我们主动砍掉：从不下发 `cache_control` 断点，原生 Anthropic 的显式缓存不会生效（全仓 `grep cache_control` 零命中） | ⚠️部分 —— 靠上游自动缓存（`prompt_tokens_details.cached_tokens` / `prompt_cache_hit_tokens`），客户端只做字段映射，不可控（`openaiAdapter.ts` 的 `readUsage()`） |
 | 用量统计 | ⚠️部分 —— usage 解析并落库，但**界面零展示**，只在导出归档时折算成 `context_tokens`（`parseEvent.ts:168-172`、`reply.ts:82,132`、`toArchive.ts:200-207`） | ⚠️部分 —— 同上；且中转若少给任一 `cache_*` 字段，整条 usage 会被丢弃（`parseEvent.ts:168-172` 要求四字段齐全） | ⚠️部分 —— 依赖 `stream_options.include_usage`，上游不回就恒为 `ZERO_USAGE`（`openaiAdapter.ts:92,117-122`） |
-| 停止生成 | ✅可用 —— `AbortController.abort()` 中断流，`settleReply('stopped')` 收尾（`store.ts` 的 `stopReply()`、`reply.ts:143-160`） | ✅可用 —— 纯客户端逻辑，与协议无关（同左） | ✅可用 —— 同左，翻译器不会因 abort 抛脏错（`client.ts:243-258`） |
+| 停止生成 | ✅可用 —— `AbortController.abort()` 中断流，`settleReply('stopped')` 收尾（`store.ts` 的 `stopReply()`、`reply.ts:143-160`） | ✅可用 —— 纯客户端逻辑，与协议无关（同左） | ✅可用 —— 同左，翻译器不会因 abort 抛脏错（`client.ts:534-547`） |
 | 重新生成 | ✅可用 —— 本地加同父分支后重发同一问题，旧回答与后续对话保留（`store.ts` 的 `regenerateReply()`） | ✅可用 —— 同上（`branches.ts:77-102`） | ✅可用 —— 同上 |
 | 编辑消息 | ✅可用 —— 编辑后新增同父版本，附件沿用（`store.ts` 的 `editMessage()`、`UserMessage.tsx` 的编辑态（`editMessage()`）） | ✅可用 —— 同上 | ✅可用 —— 同上 |
 | 消息分支（切换版本） | ✅可用 —— 纯本地 `branches.ts`，不依赖上游任何字段（`branches.ts:40-117`、`BranchSwitcher.tsx:28-30`） | ✅可用 —— 同上 | ✅可用 —— 同上 |
 | 继续生成 | ✅可用 —— assistant prefill，本轮思考与签名一并回传（`reply.ts:350-362,261-264`） | ✅可用 —— 原生 prefill，语义完全一致 | ⚠️部分 —— OpenAI 没有 prefill 字段，只能把 assistant 消息挂到 messages 末尾碰运气续写（`openaiAdapter.ts:77-86`） |
 | 复制 | ✅可用 —— 本地拼接全部 text 块（`AssistantMessage.tsx:145`、`reply.ts:163-164`） | ✅可用 —— 同上 | ✅可用 —— 同上 |
 | Markdown/KaTeX/Mermaid 渲染 | ✅可用 —— 全本地渲染（AST → 组件），与上游无关（`Markdown.tsx:1-20`、`MathFormula.tsx:1-10`、`MermaidDiagram.tsx` 的 `MermaidDiagram`） | ✅可用 —— 同上 | ✅可用 —— 同上 |
-| 会话管理（新建/重命名/删除） | ✅可用 —— IndexedDB 本地 CRUD（`Sider.tsx:66-75,121`、`SessionItem.tsx:29,63-70`、`store.ts:462,478,503`） | ✅可用 —— 同上 | ✅可用 —— 同上 |
+| 会话管理（新建/重命名/删除） | ✅可用 —— IndexedDB 本地 CRUD（`Sider.tsx:66-75,121`、`SessionItem.tsx:29,63-70`、`src/services/chat/store.ts:462,478,503`） | ✅可用 —— 同上 | ✅可用 —— 同上 |
 | 历史导入导出 | ✅可用 —— ZIP 导入/导出纯本地，含附件（`SettingsDialog.tsx:470,517`、`history/zipWriter.ts`） | ✅可用 —— 同上 | ✅可用 —— 同上 |
 | 附件/图片 | ✅可用 —— Files API 上传（`{messages}/files`，带 `anthropic-beta`），引用走 `image`/`document` + `file_id`（`client.ts:27,181-200`、`reply.ts:22-32`） | ❌不可用 —— 我们主动砍掉：`caps.vision=false`，回形针与拖拽入口都不渲染（`providers.ts:124`、`ChatInput.tsx:81-94,260-275`） | ❌不可用 —— 入口不渲染；即使硬塞，翻译层也只取 `text` 块、图片/文档直接丢弃（`openaiAdapter.ts:57-65`） |
 | 语音输入 ASR | ✅可用 —— `POST /v1/tools/asr`（multipart WAV/Ogg）返回全文（`speech.ts:17-46`、`providers.ts` 里 deepseek 的 `paths.tools`） | ❌不可用 —— `caps.asr=false`（上游没接口），VoiceButton 不渲染（`providers.ts:125`、`ChatInput.tsx:245-259`） | ❌不可用 —— `caps.asr=false`，且 `paths.tools` 是空串，连工具前缀都没定义（`providers.ts:136`） |
@@ -94,12 +94,12 @@
 ### 2.3 自动标题（Anthropic ❌ / OpenAI ❌）
 
 - **为什么做不到**：**主动砍掉**。`title:{enabled:true}` 是 DeepSeek 私有请求字段，标题从 `message_delta.delta.title` 回来（`store.ts` 的 `title:{enabled:true}` + `event.delta.title`、`parseEvent.ts:208-224`）。`caps.title=false` 后请求不带该字段，`session.title` 永远为空，侧边栏回落到「未命名对话」（`SessionItem.tsx:23`）。代码里**没有任何本地生成标题的兜底**（`store.ts` 全文只有 `renameSession` 会写 title）。
-- **变通办法与代价**：本地生成——首轮回答结束后用同一上游再发一条廉价请求（「给这段对话起 6 字标题」），或在客户端直接截首条提问前 N 字。代价：多一次计费请求（且要处理"标题请求失败不能污染会话"）；截断方案质量差、中英混排难看；还要加节流（现有 `titleRequests` Set 只服务于服务端标题，`store.ts:79`）。
-- **未来补的话依赖**：一次额外的轻量补全调用 + 一套「标题只写一次、手动重命名后不再覆盖」的规则（规则已有：`store.ts:1056` 的 `session.title ? session : ...`、`store.ts:484`）。
+- **变通办法与代价**：本地生成——首轮回答结束后用同一上游再发一条廉价请求（「给这段对话起 6 字标题」），或在客户端直接截首条提问前 N 字。代价：多一次计费请求（且要处理"标题请求失败不能污染会话"）；截断方案质量差、中英混排难看；还要加节流（现有 `titleRequests` Set 只服务于服务端标题，`src/services/chat/store.ts:79`）。
+- **未来补的话依赖**：一次额外的轻量补全调用 + 一套「标题只写一次、手动重命名后不再覆盖」的规则（规则已有：`src/services/chat/store.ts:1056` 的 `session.title ? session : ...`、`src/services/chat/store.ts:484`）。
 
 ### 2.4 服务端内容安全审核（Anthropic ⚠️ / OpenAI ⚠️）
 
-- **为什么做不到**：**上游没这个参数**。`safety_check:{level:'high'}` 是 DeepSeek 私有顶层字段，裸 Anthropic 收到未知顶层字段直接 400，所以 `gates.safety_check=false`（`providers.ts:185`、`store.ts:1038`）。剩下的只有协议自带的 `stop_reason:'refusal'`（`parseEvent.ts:211`）与 OpenAI 的 `finish_reason:'content_filter'`（`openaiAdapter.ts:104`）——**审核强度、审核时机、审核文案全由上游决定，客户端无法要求**。
+- **为什么做不到**：**上游没这个参数**。`safety_check:{level:'high'}` 是 DeepSeek 私有顶层字段，裸 Anthropic 收到未知顶层字段直接 400，所以 `gates.safety_check=false`（`providers.ts:185`、`src/services/chat/store.ts:1038`）。剩下的只有协议自带的 `stop_reason:'refusal'`（`parseEvent.ts:211`）与 OpenAI 的 `finish_reason:'content_filter'`（`openaiAdapter.ts:104`）——**审核强度、审核时机、审核文案全由上游决定，客户端无法要求**。
 - **变通办法与代价**：客户端自建审核（敏感词/分类模型前置拦截）。代价：多一份模型或词表依赖、多一次延迟；误杀无法申诉；且挡不住上游自己的拒答，两套策略要合并展示（`describe.ts:19-59` 的 Notice 体系要扩展）。
 - **未来补的话依赖**：一个可配置的审核服务；或上游（中转商）暴露同类开关。
 
@@ -133,7 +133,7 @@
 
 | 能力 | 依赖的请求字段 / 路径 | 依赖的响应 block / 事件 | UI 组件位置 |
 | --- | --- | --- | --- |
-| 基础文本对话 | `POST {baseUrl}{paths.messages}`（`apiConfig.ts` 的 `getMessagesUrl()`）；`model` / `system` / `messages`（`streamMessage(...)` 的 `model` / `system` / `messages`）；鉴权 `x-api-key` 或 `Bearer`（`client.ts:145-165`） | `message_start` / `content_block_*` / `message_delta` / `message_stop`（`parseEvent.ts:175-231`） | `ChatInput.tsx:180-210`（输入区）、`MessageList.tsx`、`ReplyArea.tsx:71-105` |
+| 基础文本对话 | `POST {baseUrl}{paths.messages}`（`apiConfig.ts` 的 `getMessagesUrl()`）；`model` / `system` / `messages`（`streamMessage(...)` 的 `model` / `system` / `messages`）；鉴权 `x-api-key` 或 `Bearer`（`client.ts:380-400`） | `message_start` / `content_block_*` / `message_delta` / `message_stop`（`parseEvent.ts:175-231`） | `ChatInput.tsx:180-210`（输入区）、`MessageList.tsx`、`ReplyArea.tsx:71-105` |
 | 流式输出 | `stream:true`（`client.ts:283`）；OpenAI 侧 `stream:true` + `stream_options.include_usage`（`openaiAdapter.ts` 的 `toOpenAIRequest()`：`stream` / `stream_options`） | `content_block_delta` → `text_delta`（`parseEvent.ts:155-156`、`reply.ts:99-102`）；rAF 节流刷新（`store.ts` 的 `applyEvent()` + `requestAnimationFrame(flush)`） | `useThrottleMarkdownRender.ts`、`AssistantMessage.tsx:60-100` |
 | 深度思考 | `thinking:{type:'enabled', budget_tokens?}`（`requestBody.ts` 的 `buildMessageBody()`：`gates.reasoning_param` 决定开不开、`gates.thinking_budget` + `spec.thinkingBudget` 决定带不带预算）；OpenAI 侧按 `reasoningParam` 翻译成 `reasoning_effort` / `thinking:{type:'enabled'}`，`none` 档照旧丢弃（`openaiAdapter.ts` 的 `reasoningFields()`） | `thinking` block + `thinking_delta` / `signature_delta`（`parseEvent.ts:42-49,157-160`、`reply.ts:103-108`） | `ThinkingToggle.ts`（开关，`ChatInput.tsx` 挂载）、`ReplyArea.tsx:112-190`（思考步骤） |
 | 联网搜索 | `tools:[{type:'deepseek_web_search'}]`（`store.ts` 的 `serverTools()`）；门控 `gates.tools`（`providers.ts:187`、`store.ts` 的 `gates.tools`） | `server_tool_use(kind:search/deep_search)` + `web_search_tool_result`（`parseEvent.ts:50-113`）→ `searchResults`（`view.ts:197-205,345`） | `ChatInput.tsx:229-242`（开关）、`AssistantMessage.tsx:127-140`（来源摘要）、`SearchPanel.tsx:9-35`、`SourceCard.tsx:14-30`、`CitationLink.tsx:10-26` |
@@ -147,10 +147,10 @@
 | 重新生成 | 重新构造请求（同一 `question`，`history` 截到前一轮） | 全新一轮 block | `AssistantMessage.tsx` 的 `regenerateReply` 按钮（`store.ts` 的 `regenerateReply()`） |
 | 编辑消息 | 同上（`question` 内容替换） | 同上 | `UserMessage.tsx` 的编辑态（`editMessage()`）（`store.ts` 的 `editMessage()`） |
 | 消息分支 | 无（纯本地） | 无（纯本地） | `BranchSwitcher.tsx:28-30`（`branches.ts:40-117`、`branches.ts` 的 `MessageVersions` / `selectVersion()`） |
-| 继续生成 | 尾部 assistant 消息（prefill）：`reply.ts:350-362`；OpenAI 只能原样排在末尾（`openaiAdapter.ts:77-86`） | 新事件继续追加到原有 block（`reply.ts:72-137` 的 `blockIndexes` 映射） | `AssistantMessage.tsx:160-173`（`store.ts:708-743`） |
+| 继续生成 | 尾部 assistant 消息（prefill）：`reply.ts:350-362`；OpenAI 只能原样排在末尾（`openaiAdapter.ts:77-86`） | 新事件继续追加到原有 block（`reply.ts:72-137` 的 `blockIndexes` 映射） | `AssistantMessage.tsx:160-173`（`src/services/chat/store.ts:1063-1081`） |
 | 复制 | 无 | 本地拼接 text block（`reply.ts:163-164`） | `AssistantMessage.tsx:145`、`CopyButton.tsx` |
 | Markdown/KaTeX/Mermaid | 无 | 无（纯本地渲染） | `Markdown.tsx:1-20`、`MarkdownAstRenderer.tsx`、`MathFormula.tsx:1-10`、`MermaidDiagram.tsx` 的 `MermaidDiagram`、`CodeBlock.tsx` |
-| 会话管理 | 无（IndexedDB） | 无 | `Sider.tsx:66-75,121`、`SessionItem.tsx:23-70`、`store.ts:462,478,503` |
+| 会话管理 | 无（IndexedDB） | 无 | `Sider.tsx:66-75,121`、`SessionItem.tsx:23-70`、`src/services/chat/store.ts:462,478,503` |
 | 历史导入导出 | 无（ZIP 本地） | 无 | `SettingsDialog.tsx` 的「数据管理」分组、`history/zipWriter.ts`、`history/importArchive.ts` |
 | 附件/图片 | `POST {messages}/files`（`client.ts:181-200`）+ `anthropic-beta:files-api-2025-04-14`（`client.ts:27,160-163`）；引用 `image`/`document` + `file_id`（`reply.ts:22-32`） | 无特殊事件（图片只上行） | `ChatInput.tsx:81-94,260-275`、`DraftAttachments.tsx`、`FileCard.tsx`、`MessageFile.tsx` |
 | 语音输入 ASR | `POST {baseUrl}{paths.tools}/asr`（`speech.ts:24`） | 纯 JSON `{text}`（`speech.ts:30-45`） | `ChatInput.tsx:245-259`、`VoiceButton.tsx`、`useVoiceInput.ts` |
@@ -180,7 +180,7 @@
 **若要尽量补齐「纯文字功能」，按性价比排序的待办**：
 
 1. **用量统计小标签 + 放宽 `isUsage`**（成本最低、三模式同时受益）。改 `parseEvent.ts:168-172` 让四个 token 字段逐个可选、缺失记 0，再在 `AssistantMessage` 底部加一行 `↑in ↓out`。这一步同时顺手修掉「中转少给 `cache_*` 就丢掉整条 usage」的隐性 bug。
-2. **本地自动标题兜底**（Anthropic/OpenAI 立刻有标题）。复用现有 `titleRequests` 节流与「只写一次」规则（`store.ts:79,1056`），在首轮回答结束后用同上游发一条廉价补全；失败不影响会话。代价是一次额外调用，可以加开关。
+2. **本地自动标题兜底**（Anthropic/OpenAI 立刻有标题）。复用现有 `titleRequests` 节流与「只写一次」规则（`src/services/chat/store.ts:79,1056`），在首轮回答结束后用同上游发一条廉价补全；失败不影响会话。代价是一次额外调用，可以加开关。
 3. **给 Anthropic 模式打 `cache_control` 断点**（省的是真金白银）。按「system → 历史 → 本轮」顺序给最多 4 个 ephemeral 断点，需要 `types.ts` 扩展 block 级字段 + 逐中转验证透传。
 4. **客户端工具往返框架**（补齐搜索/阅读链接的唯一正路）。先在 `applyEvent`（`reply.ts:88`）里把 `tool_use` 从"丢弃"改成"可执行"，接一个第三方搜索 API；这条路也是唯一能同时救活 Anthropic/OpenAI 两个模式的搜索方案，但工作量最大、要新写 UI 态。
 5. **OpenAI 侧 prefill 探测 + 降级策略**（小修）。检测上游是否支持 assistant 尾部续写，不支持时把「继续生成」按钮置灰并给出说明，避免用户点了没反应（`canContinueReply` 加一个 `caps` 判断）。

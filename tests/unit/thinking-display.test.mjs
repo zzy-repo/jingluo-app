@@ -13,20 +13,13 @@
 //   F i18n：新键 zh/en 成对存在且文案不同
 //   G 接线：ReplyArea 真的用这套逻辑（不是只加了个没人调的函数）
 import assert from 'node:assert/strict'
-import { existsSync, readFileSync } from 'node:fs'
-import { registerHooks } from 'node:module'
+import { readFileSync } from 'node:fs'
+import { installTsResolve } from '../helpers/dom-env.mjs'
 import { fileURLToPath } from 'node:url'
 import { test } from 'node:test'
 
-registerHooks({
-  resolve(specifier, context, next) {
-    if (specifier.endsWith('.js') && context.parentURL?.includes('/src/')) {
-      const url = new URL(specifier.slice(0, -3) + '.ts', context.parentURL)
-      if (existsSync(fileURLToPath(url))) return next(url.href, context)
-    }
-    return next(specifier, context)
-  },
-})
+// 装配走公共入口（#408 收尾批）：`.js→.ts` 解析由 installTsResolve 统一装，不再手抄 registerHooks。
+installTsResolve()
 
 /** 最小 localStorage：settings.ts 只在读不到时回落默认值 */
 const storage = new Map()

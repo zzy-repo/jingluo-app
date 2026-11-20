@@ -15,6 +15,11 @@ import path from 'node:path'
 import { test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 
+// 构建期注入值（`__ENDPOINTS__`）的兜底：直接复用 --import 预加载那一份（tests/helpers/injected.mjs）。
+// updateManifest.ts 顶层就读 `__ENDPOINTS__.dlPrimaryBase`，少了这一行，直跑 `node --test`
+// 会在断言之前 `ReferenceError` 退出（exit 1、零条 `not ok`）—— 只有走 runner 才是绿的（#487）。
+import '../helpers/injected.mjs'
+
 registerHooks({
   resolve(specifier, context, nextResolve) {
     try {

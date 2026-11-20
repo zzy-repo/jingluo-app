@@ -1,0 +1,40 @@
+{
+  "_meta": {
+    "request": "POST /api/v1/auth/login",
+    "auth": "JWT / API key（值已脱敏）",
+    "captured_at": "2026-11-20T16:00:00+08:00",
+    "http_status": 200,
+    "content_type": "application/json; charset=utf-8",
+    "envelope": "panel success: {code:0,message,data}",
+    "instance_version": "0.2.20",
+    "source": "本地联调实例（http://127.0.0.1:18000）真实响应；凭据已替换为占位符"
+  },
+  "code": 0,
+  "message": "success",
+  "data": {
+    "access_token": "<jwt-redacted>",
+    "refresh_token": "<refresh-redacted>",
+    "expires_in": 86400,
+    "token_type": "Bearer",
+    "user": {
+      "id": 2,
+      "email": "qa-test@local.test",
+      "username": "",
+      "role": "user",
+      "balance": 0,
+      "frozen_balance": 0,
+      "concurrency": 5,
+      "status": "active",
+      "allowed_groups": null,
+      "last_active_at": "2026-11-20T15:58:09.58605+08:00",
+      "created_at": "2026-11-20T15:56:18.307439+08:00",
+      "updated_at": "2026-11-20T15:58:09.586064+08:00",
+      "balance_notify_enabled": true,
+      "balance_notify_threshold_type": "fixed",
+      "balance_notify_threshold": null,
+      "balance_notify_extra_emails": null,
+      "total_recharged": 0,
+      "rpm_limit": 0
+    }
+  }
+}

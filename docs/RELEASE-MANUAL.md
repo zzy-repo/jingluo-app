@@ -366,6 +366,7 @@ adb logcat -d | tail -50
 | GitHub Release | `gh release delete v<ver> --repo zzy-repo/deepseek-app --yes`（或先改 draft 下架） |
 | tag | 先删 Release 再删 tag：`git push origin :refs/tags/v<ver>` + `git tag -d v<ver>`；**不 force 改已有 tag** |
 | 发布 commit | `git revert <commit>`；仓库有并行改动，**禁止 `git reset --hard`** |
+| 发布服务端（`server.mjs` / `variant.mjs`） | 用 §12.2 第 1 步的备份盖回去再重启，回滚后照样要过 §12.3 的三方 sha256 比对（见 §12.4） |
 
 ---
 
@@ -476,7 +477,127 @@ npm run test:e2e         # e2e（含真实上游用例，需要 E2E_API_KEY）
 
 ---
 
-## 12. 本清单不管的事（未覆盖）
+## 12. 改过发布服务端之后：部署后必须三方 sha256 一致（Issue #441）
+
+只发 APK 不需要这一节。**改的是发布服务端本体**（`deploy/dl-release/server.mjs`，连带同目录的
+`variant.mjs` / `apk-manifest.mjs`）才走这一节：它不在 CI 产物里、没有版本号、靠人手 `scp` 上去，
+所以「部署成功」必须有它自己的证据，而不是看服务是不是 active。
+
+### 12.1 为什么定成硬要求
+
+2026-11-20 的实况：线上 `/opt/dl-release/server.mjs` **566 行**、仓库 main **585 行**，差了 19 行，
+门禁失效一个多月没人发现 —— 期间所有上传都跑在一份没人审过的代码上。当时"部署成功"的判据只有
+`systemctl is-active dl-release`：服务活着，但跑的是谁审过的版本，没人能回答。
+
+现在服务端自己回答：`GET /api/v1/version`（**免令牌**，只回非敏感信息）
+
+```json
+{ "ok": true,
+  "sha256": "<server.mjs 自身内容的 sha256，启动时算一次并缓存>",
+  "builtAt": "<进程启动时间，ISO 8601>",
+  "nodeVersion": "v24.x",
+  "variants": ["internal", "standard"],
+  "buildTypes": ["stable", "prerelease"] }
+```
+
+两个容易看错的点：
+
+- `sha256` 是**启动那一刻**读到的字节，不是每请求重读文件 —— 于是「文件换了但重启没成功」不会被它掩盖
+  （进程还在报旧指纹，正对上表第 1 行）。
+- `builtAt` 是**进程启动时刻**，不是构建时刻；重启过、回滚过，它就该变。
+
+### 12.2 上线步骤（备份 → 同步 → 语法检查 → 重启 → 验收）
+
+```bash
+# 0) 本机先过语法与用例（不碰线上）
+node --check deploy/dl-release/server.mjs
+pnpm run test:dl-release
+
+# 1) 备份（带时间戳 —— 回滚就靠这个文件）
+ssh aliyun 'mkdir -p /root/dl-release-backups && cp -a /opt/dl-release/server.mjs /root/dl-release-backups/server.mjs.$(date +%Y%m%d-%H%M%S)'
+
+# 2) 同步（server.mjs import 同目录的 variant.mjs / apk-manifest.mjs，改了哪个传哪个，两个以上一起传）
+scp deploy/dl-release/server.mjs aliyun:/opt/dl-release/
+
+# 3) 语法检查 + 重启（check 不过就不重启）
+ssh aliyun 'node --check /opt/dl-release/server.mjs && systemctl restart dl-release && sleep 1 && systemctl is-active dl-release'
+
+# 4) Caddy：只有**新增**了 API 路径才需要动。片段见 deploy/dl-release/caddy-dl-api.conf，
+#    @api 必须同时匹配 /api/v1/release 与 /api/v1/version；validate 通过再 reload，禁止 restart。
+```
+
+#### ⚠️ 部署布局是写死的：`/shared/build-types.mjs` 必须存在（#441 第 3 条）
+
+`server.mjs` 里有一句 `import ... from '../../shared/build-types.mjs'`（buildType 枚举的单一真相源，见 #330）。
+从 `/opt/dl-release/server.mjs` 解析两个 `..` → **`/shared/build-types.mjs`**（Node 实算，不是
+`/opt/shared/`，也不是 `deploy/dl-release/shared/`）。**这一步漏了，服务起来就 `ERR_MODULE_NOT_FOUND` 直接崩**，
+而它不会在 `systemctl status` 里说人话，只会在 `journalctl` 里留下一行栈。
+
+所以目标机器上必须有 `/shared/`，且内容与仓库逐字节一致（`variant.mjs` / `apk-manifest.mjs` 则在
+`/opt/dl-release/`，同目录）：
+
+```bash
+# 首次布置（缺 /shared 时）
+ssh aliyun 'install -d -m 755 /shared'
+scp shared/build-types.mjs shared/build-types.d.mts aliyun:/shared/
+
+# 两边内容必须逐字节一致（部署验收的一环）
+ssh aliyun 'sha256sum /shared/build-types.mjs /opt/dl-release/server.mjs /opt/dl-release/variant.mjs /opt/dl-release/apk-manifest.mjs'
+sha256sum shared/build-types.mjs deploy/dl-release/server.mjs deploy/dl-release/variant.mjs deploy/dl-release/apk-manifest.mjs
+```
+
+### 12.3 验收：三方 sha256 必须一致（缺一不可）
+
+```bash
+# ① 线上文件到底是谁
+ssh aliyun 'sha256sum /opt/dl-release/server.mjs'
+# ② 仓库 main 上应该是什么
+git show origin/main:deploy/dl-release/server.mjs | sha256sum
+# ③ 正在跑的进程自报是什么（走公网、不带令牌，顺便验反代通了）
+curl -s https://dl.rose7.cn/api/v1/version | python3 -m json.tool
+```
+
+**三个 sha256 完全相同才算部署成功。** 不一致就按下表分诊，别"看着像好了"就收工：
+
+| 现象 | 含义 | 动作 |
+| --- | --- | --- |
+| ① == ②，③ 不同 | 文件传对了，但**进程没重启成功**或在跑旧进程 | `systemctl restart dl-release` 后重新验收 |
+| ① != ② | 传上去的本来就不是仓库那份 | 重传；先 `git status` 确认本地没夹带未合并改动 |
+| ③ 是 404 / 502 | 反代没匹配到新路径，或服务没起来 | 查 `@api path` 是否含 `/api/v1/version`；`journalctl -u dl-release -n 50 --no-pager` |
+| ③ 回的不是 JSON | 命中静态文件（`/var/www/dl` 下同名路径）或服务异常 | 同上；必要时回滚 |
+
+同一次验收里再确认两件事（都很便宜，但都能挡住事故）：
+
+```bash
+# 免令牌只针对版本端点：上传仍然必须 401
+curl -s -o /dev/null -w '%{http_code}\n' -X POST https://dl.rose7.cn/api/v1/release
+
+# 部署服务端不该碰任何数据：releases.json 的 sha256 前后必须不变
+ssh aliyun 'sha256sum /var/www/dl/releases.json'     # 部署前记一次，部署后再比一次
+```
+
+另外，`/shared/build-types.mjs` 与 `/opt/dl-release/{variant,apk-manifest}.mjs` 也要和仓库逐字节一致
+（同一台机器上四个文件的 sha256 一起比，见 §12.2 末尾那条命令）—— 服务能起来只证明文件存在，
+不证明它是仓库那份。
+
+事后翻日志也能对上「那段时间跑的是哪一版」：
+
+```bash
+ssh aliyun 'journalctl -u dl-release --no-pager | grep version_fingerprint'
+```
+
+### 12.4 起不来就立刻回滚（不要在线调试）
+
+```bash
+ssh aliyun 'cp -a /root/dl-release-backups/server.mjs.<时间戳> /opt/dl-release/server.mjs \
+  && node --check /opt/dl-release/server.mjs && systemctl restart dl-release && systemctl is-active dl-release'
+```
+
+回滚完再走一遍 12.3 的三方比对 —— 回滚本身也要有证据，`builtAt` 必须变。
+
+---
+
+## 13. 本清单不管的事（未覆盖）
 
 - 不自动算 `versionCode`（不读线上 `releases.json` 做 `max(本地,远端)+1`）——手动看一眼线上 latest 再填，§2 有命令。
 - 不自动写 `CHANGELOG.md`、不自动生成 Release notes（notes 由 workflow 从 `releases.json` 的 `changes` 生成，所以 `changes` 要写人话）。
@@ -484,3 +605,175 @@ npm run test:e2e         # e2e（含真实上游用例，需要 E2E_API_KEY）
 - 不处理 `dist/` 缓存导致的旧产物：怀疑时 `rm -rf dist && pnpm build[:internal]` 再 `npx cap sync android`。
 - 不在 CI 里构建 APK、不上传 keystore（这条永远不变）。
 - 不负责服务端地址迁移的下线动作：三代地址、过渡策略（C 强制升级）、旧机停之前的「请升级」兜底响应、以及「下次先配域名再搬」的前向建议，都记在 [`docs/server-migration.md`](server-migration.md)。**发版前扫一眼那份文档，确认自己踩在迁移窗口期里没有。**
+
+---
+
+## 13. 换分发地址：只改一处 + 重打包（Issue #269）
+
+切分发机（换机 / 换域名 / 上 TLS）**不需要改任何 `.java` / `.ts` / `.gradle`**：分发地址的唯一来源是
+`config/endpoints.json` 的 `download.*`，打包时替换一次。
+
+| 配置项 | 打进哪个常量 | 谁在用 |
+| --- | --- | --- |
+| `download.primaryBase` | `__ENDPOINTS__.dlPrimaryBase`（Web）/ `BuildConfig.DL_PRIMARY`（原生） | 清单与 `/apk/` 的首选机 |
+| `download.fallbackBase` | `__ENDPOINTS__.dlFallbackBase` / `BuildConfig.DL_FALLBACK` | 首选不可达时的回退机（必须 https） |
+
+原生下载白名单由这两个 base 派生（主机 / 端口 / 协议），所以**不需要**另外配一份主机名单 ——
+天然不会出现「改了 base 忘了改白名单」那种丢更新的事故。
+
+### ① 只改一行 + 过门禁
+
+```bash
+$EDITOR config/endpoints.json     # 换首选机：只改 download.primaryBase；换回退机才动 fallbackBase
+
+pnpm check:endpoints   # 形态 + 互不冲突：必须「协议://主机[:端口]」、回退 https、两个 base 不同；并检查客户端
+                       # 可执行代码（src / android/app/src/main/java / android/app/build.gradle）里没有地址副本
+pnpm check:ip          # 源码里不许有写死的上游 IP
+pnpm check:identity    # 明文更新传输闸门（allowInsecureUpdateTransport=false 时 http:// 会被点名到行）
+```
+
+门禁红了就改配置，别改门禁。常见红：
+
+- `download.primaryBase 只能是「协议://主机[:端口]」…` —— 带上了路径（`/apk`）或末尾的 `/`。
+- `download.fallbackBase 必须走 https…` —— 回退机是历史版本的最后兜底，不许明文。
+- `分发地址字面量 …` —— 有人又把地址写回了 `UpdateEndpoint.java` / `updateManifest.ts` / `build.gradle`。
+
+### ② 重打包（三步，与 §3 同源）
+
+```bash
+pnpm build:internal                # 或 pnpm build（standard）；rspack 注入 __ENDPOINTS__ → dist/
+npx cap sync android               # dist → android/app/src/main/assets/public
+cd android && ./gradlew assembleRelease -PartifactVariant=internal   # build.gradle 读 JSON → BuildConfig.DL_*
+```
+
+例外通道（**不推荐**，产物里的地址就不在仓库里了）：`./gradlew assembleRelease -PdlPrimaryBase=https://…`。
+用了它必须在 `CHANGELOG.md` 记一笔（gradle 会打警告）。
+
+### ③ 证明包里的地址真的换了
+
+```bash
+APK=android/app/build/outputs/apk/release/app-release.apk
+NEW=$(node -e 'import("./scripts/lib/endpoints.mjs").then(m=>console.log(m.downloadPrimaryBase))')
+grep -lF "$NEW" dist/static/js/*.js                  # 命中 = Web 侧注入生效
+unzip -p "$APK" classes.dex | strings | grep -cF "${NEW#*//}"   # ≥1 = 原生侧注入生效
+# 旧地址：新包里只应该剩 fallbackBase
+unzip -p "$APK" classes.dex | strings | grep -oE 'https?://[a-z0-9.:/-]+' | sort -u
+```
+
+再按 §4 的五项人工核对走完才准上传。**`grep -rn` 归零是可自证的**：
+`grep -rn "$NEW" src android/app/src/main/java` 必须是 0 行（地址只活在 `config/endpoints.json` 里）。
+
+### ④ 旧地址必须继续可达（这条最容易漏）
+
+已发出去的包（≤ 1.4.0-beta.10）把地址写死在 dex / JS 里，**没有任何热更新通道能改它**
+（清单与下载都不跟随重定向：`setInstanceFollowRedirects(false)` / `redirect: 'error'`）。所以换机之后：
+
+- 旧首选机在新包的 `download.fallbackBase` 之外，仍要**为老包继续返回 200 的 `releases.json`**，
+  且里面至少要有一条「能让最老版本升上来」的记录（`versionCode` / `sha256` / `buildType` / `artifactVariant` 齐全）。
+- 允许「内容降级」，**不允许** 301/302 跳转到新地址：客户端两条链路都不跟随重定向。
+
+### ⑤ 回滚
+
+```bash
+git checkout -- config/endpoints.json
+pnpm build:internal && npx cap sync android
+cd android && ./gradlew assembleRelease -PartifactVariant=internal
+```
+
+已发出去的包本身回滚不了 —— 回滚的实质是「让旧地址继续可达」，见 ④。
+
+### 未测边界（如实记录）
+
+- `-PdlPrimaryBase` / `-PdlFallbackBase` 覆盖通道**没有在真实 tag 上跑过**（只在本地 `assembleRelease` 验过配置读取与 `BuildConfig` 生成）。
+- 换地址后的「新机可下 / 旧机仍可下」要人工 `curl` 验（见 ④），离线门禁不做网络探测。
+- 上 TLS 后再把 `config/appIdentity.json` 的 `allowInsecureUpdateTransport` 置 `false`（顺序不能反，否则 `pnpm check:identity` 会红）。
+
+---
+
+## 14. 换 sub2api host：只改一处 + 重打包 + 灰度验证（Issue #484 / #487）
+
+**适用**：sub2api 的入口地址变了（换机器、换域名、上 TLS）。**不适用**：换分发包地址（那是 §13）、
+换 apia（支付侧，同法但改 `pay.baseUrl`）。
+
+> 接口约束前提：客户端**只允许**调 [`docs/sub2api-client-contract.md`](sub2api-client-contract.md) §3 白名单里的路径。
+> 换 host 不改变白名单 —— 如果新 host 上跑的不是同一个 sub2api（不同版本/不同 DB），那是**迁移**，不是换地址。
+
+### ⓿ 换之前必须确认的四件事（缺一条就别开始）
+
+| # | 要确认什么 | 谁确认 | 判据 |
+| --- | --- | --- | --- |
+| 1 | 新 host 是 **https** | 维护者 | `curl -sI https://<new-host>/health` → 200；构建期校验也会拦明文 http |
+| 2 | 新 host 与旧 host 是**同一套 sub2api 数据**（同库） | 维护者 | 老账号能在新 host 登录、老 Key 在 `/v1/usage` 仍返回额度；否则老用户的余额与 Key 全部失联 |
+| 3 | CORS 放行了客户端 origin | 部署方（**客户端侧无法解决**） | WebView origin 是 `https://localhost`；`cors.allowed_origins` 为空数组时 sub2api 会拒绝所有跨域请求 |
+| 4 | 新 host 已加进 `allowedHosts` | 改配置的人 | 否则 `pnpm check:ip` 把新域名判成硬编码地址 |
+
+### ① 只改一处 + 过门禁
+
+```bash
+$EDITOR config/endpoints.json      # 只改 consume.baseUrl 这一行，其余不动
+pnpm check:endpoints               # 配置自洽（https / consume≠pay / 字段齐全）
+pnpm check:ip                      # 主机白名单（新 host 必须在 allowedHosts 里）
+pnpm check:consume-api             # 白名单路径门禁（随 #484 交付物 2 上线后才有）
+```
+
+**提交信息里写清新的 host 与验证日期**。这一步之后不要顺手改 `src/**` —— 地址只活在配置里。
+
+### ② 重打包（三步，与 §3 同源）
+
+```bash
+pnpm build:internal                        # 构建期把 consume.baseUrl 注入 __ENDPOINTS__
+npx cap sync android                       # 同步 web 产物进 android 工程
+cd android && ./gradlew assembleRelease -PartifactVariant=internal
+```
+
+原生侧地址来自 `BuildConfig.CONSUME_BASE`（`android/app/build.gradle` 读同一份 JSON 生成
+`buildConfigField`；**AGP 8 默认关闭 `buildConfig` 特性，必须显式 `buildFeatures { buildConfig true }`**，
+否则这个常量根本不存在，表现为编译期 `cannot find symbol`）。
+
+### ③ 灰度验证：`-PconsumeBase` 临时覆盖，不动配置文件
+
+```bash
+cd android && ./gradlew assembleRelease -PartifactVariant=internal \
+  -PconsumeBase=https://<new-host>
+```
+
+覆盖只在这次打包生效，**不落盘、不进仓库**。装这台内测包，按下面五条链路验（顺序即依赖顺序）：
+
+1. `GET /api/v1/settings/public` —— 启动就有结果（注册/邀请/邮箱入口按开关显隐）。
+2. `POST /api/v1/auth/login` → `GET /api/v1/auth/me`；把 access token 手动过期，验 `POST /api/v1/auth/refresh` 能续上。
+3. `GET /api/v1/keys` —— 列表出来（空数组也算通过，空列表不是错误）。
+4. `GET /v1/usage`（用 sk- Key）—— 三种形态至少命中一种（`quota_limited` / 订阅 / 钱包余额）。
+5. `POST /api/v1/redeem` + `GET /api/v1/redeem/history` —— **用测试卡密**；
+   顺便验 §5 的补偿路径：把超时调到 1ms 制造失败，确认客户端去查 history/usage 而不是盲重试。
+
+红线的判据：出现 CORS 报错（⓿ 第 3 条没做）、出现 400 `api_key_in_query_deprecated`（key 被写进 query）、
+或兑换失败后立刻重发（违反「绝不可盲重试」）—— 任何一条都算灰度不通过，回 ①。
+
+### ④ 证明包里的地址真的换了
+
+```bash
+APK=android/app/build/outputs/apk/release/app-release.apk
+NEW=$(node -e 'process.stdout.write(require("./config/endpoints.json").consume.baseUrl)')
+grep -lF "$NEW" dist/static/js/*.js                              # 命中 = Web 侧注入生效
+unzip -p "$APK" classes.dex | strings | grep -cF "${NEW#*//}"    # ≥1 = 原生侧注入生效
+grep -rn "$NEW" src android/app/src/main/java                    # 必须 0 行（地址只活在配置里）
+```
+
+### ⑤ 回滚
+
+```bash
+git checkout -- config/endpoints.json
+pnpm build:internal && npx cap sync android
+cd android && ./gradlew assembleRelease -PartifactVariant=internal
+```
+
+已发出去的包回滚不了 —— 回滚的实质是「让**旧 host 继续可达**」：sub2api 只要还在旧地址上服务，
+老包的登录/额度/兑换就都还能用。**换 host 不要先拆旧入口**，等新版本覆盖率够了再下线。
+
+### 未测边界（如实记录）
+
+- `-PconsumeBase` 覆盖通道**没有在真实 tag 上跑过**（只在本地 `assembleRelease` 验配置读取与 `BuildConfig` 生成）。
+- sub2api 的真实 host 至今**未定**（#484 待维护者提供）：本节在新 host 落地前只能验「地址换了」，
+  不能验「链路通了」。别把前者写成后者。
+- CORS 是否放行 `https://localhost` 属**部署侧动作**，客户端只能通过「灰度第 3 条」间接观察。
+- 本节不涉及分发链路（§13）与签名（§1），两者互不影响。

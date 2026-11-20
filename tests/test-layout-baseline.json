@@ -1,0 +1,6 @@
+{
+  "version": 1,
+  "note": "测试布局门禁的存量豁免清单（scripts/check-test-layout.mjs）。规则**只减不增**：新违规不许进基线，修好后请删条目。",
+  "updatedAt": "2026-11-19",
+  "entries": []
+}

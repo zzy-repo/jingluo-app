@@ -6,7 +6,7 @@
 //
 // 前置全部自动处理（Issue #19）：
 //   1) 当前正式包：需要时自动构建到 dist-plain/（DIST_OUT=dist-plain），然后自己起静态服务（PORT 可注入，默认 5191）；
-//   2) baseline 基准：默认读 tests/fixtures/input-row-baseline.json（历史构建已不可复现）；
+//   2) baseline 基准：默认读 tests/fixtures/domain01-02/input-row-baseline.json（历史构建已不可复现）；
 //      想用真实旧产物对比就传 BASELINE_URL=http://127.0.0.1:<port>。
 // 以前要求手工准备两份 dist + 手动起 5191/5192，端口被占或产物缺失就假红。
 import { readFileSync } from 'node:fs'
@@ -21,7 +21,7 @@ const ROOT = path.resolve(HERE, '../..')
 const PLAIN_DIST = process.env.STANDARD_DIST_DIR || path.join(ROOT, 'dist-standard')
 const PORT = process.env.PORT
 const BASELINE_URL = process.env.BASELINE_URL || ''
-const BASELINE_FIXTURE = path.join(ROOT, 'tests', 'fixtures', 'input-row-baseline.json')
+const BASELINE_FIXTURE = path.join(ROOT, 'tests', 'fixtures', 'domain01-02', 'input-row-baseline.json')
 
 // 端口自动发现（PORT 可注入）：不再固定 5191；产物目录也不用手工准备
 const plainServed = process.env.PLAIN_URL
@@ -100,13 +100,22 @@ for (const name of [/深度思考/, /智能搜索/, /上传文件|附件/, /语�
 
 const think = page.getByRole('button', { name: /深度思考/ }).first()
 const search = page.getByRole('button', { name: /智能搜索/ }).first()
+// #363 起缺省档位是专家模式：深度思考进来就是「开」的，点一下是关。
+// 这里断言的是「可切换」（翻转 + 能复原），不写死某一档的初始值。
+const thinkStart = await think.getAttribute('aria-pressed')
 await think.click()
 await search.click()
 await wait(120)
-expect((await think.getAttribute('aria-pressed')) === 'true', '深度思考可切换')
+expect(
+  (await think.getAttribute('aria-pressed')) === (thinkStart === 'true' ? 'false' : 'true'),
+  '深度思考可切换',
+  `${thinkStart} → ${await think.getAttribute('aria-pressed')}`
+)
 expect((await search.getAttribute('aria-pressed')) === 'true', '智能搜索可切换')
 await think.click()
 await search.click()
+await wait(120)
+expect((await think.getAttribute('aria-pressed')) === thinkStart, '深度思考再点一次复原', await think.getAttribute('aria-pressed'))
 
 const textarea = page.locator('textarea').first()
 await textarea.type('正式包回归输入')
@@ -141,10 +150,13 @@ const styles = await page.evaluate(async () => {
   }
   return previous
 })
+// #363：缺省档位从 fast 改成 expert（默认就思考），所以选中态落在「专家模式」上
 expect(
-  styles.fast.bg === 'rgb(232, 237, 255)' && styles.fast.color === 'rgb(77, 107, 254)',
-  '正式包默认选中「快速模式」',
-  `${styles.fast.bg} / ${styles.fast.color}`
+  styles.expert.bg === 'rgb(232, 237, 255)' &&
+    styles.expert.color === 'rgb(77, 107, 254)' &&
+    styles.fast.bg === 'rgba(0, 0, 0, 0)',
+  '正式包默认选中「专家模式」（#363 缺省档 = 开思考）',
+  `expert=${styles.expert.bg} / ${styles.expert.color}，fast=${styles.fast.bg}`
 )
 
 console.log('\n[2] 与 baseline 对比输入区按钮清单')
@@ -157,7 +169,7 @@ if (BASELINE_URL) {
   baselineLabels = await readFunctionRow(baseline)
   baselineHasMode = await baseline.getByRole('group', { name: /对话模式|Chat mode/ }).count()
 } else {
-  console.log(`  ·   对比基线快照：tests/fixtures/input-row-baseline.json（${baselineFixture.recordedFrom}）`)
+  console.log(`  ·   对比基线快照：tests/fixtures/domain01-02/input-row-baseline.json（${baselineFixture.recordedFrom}）`)
   baselineLabels = baselineFixture.functionRowButtons
   baselineHasMode = baselineFixture.modeSwitchRendered ? 1 : 0
 }

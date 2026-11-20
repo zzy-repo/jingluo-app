@@ -42,3 +42,89 @@
 - 改 `expectedCertSha256`：签名迁移，另开单，`build.gradle` 里有明确禁止事项。
 - 改 `allowInsecureUpdateTransport`：置 `false` 之前先把 `updateManifest.ts` 与
   `UpdateEndpoint.java` 的清单地址换成 `https://`。
+
+---
+
+# 服务端端点与分发地址（`config/endpoints.json`）
+
+`config/endpoints.json` 是**服务端端点 + 分发地址的唯一来源**（端点见 Issue #274，分发见 #269）。
+两边都是「改一处 + 重打包」，但用途不同：
+
+| 字段 | 用途 | 谁读它 | 换机器时改哪一行 |
+| --- | --- | --- | --- |
+| `chatBaseUrl` / `inviteBaseUrl` / `feedbackUrl` | 对话上游 / 邀请额度 / 反馈上传 | `rspack.config.ts` → `__ENDPOINTS__`；`scripts/lib/endpoints.mjs` | 改这三行 + 同步 `allowedHosts` / `allowedPorts`（`pnpm check:endpoints` 会拦） |
+| `legacyHosts` | 已下线**聊天**主机的重写表 | `src/services/api/apiConfig.ts` 的 `LEGACY_HOSTS` | **别删**（删了老用户本地存的旧地址就失联）；换机时把旧主机加进来 |
+| `allowedHosts` / `allowedPorts` | `check:ip` 豁免名单 / 端口白名单 | 两个门禁脚本 | 与上面三份地址一起改 |
+| `download.primaryBase` | **分发首选机**（清单 `releases.json` + `/apk/`） | Web：`__ENDPOINTS__.dlPrimaryBase`（`updateManifest.ts`）；原生：`BuildConfig.DL_PRIMARY`（`UpdateEndpoint.java`） | **换分发机只改这一行** |
+| `download.fallbackBase` | **分发回退机**（所有历史版本的最后兜底） | `__ENDPOINTS__.dlFallbackBase` / `BuildConfig.DL_FALLBACK` | 换回退机才改 |
+
+要点：
+
+1. **分发地址不进 `URL_FIELDS`。** `validateEndpoints` 的第 6 条要求「三个服务端点在同一台机器上」，
+   而分发机是另一台机器（清单 + `/apk/`）。所以 `download.*` 由 `validateDownload` 单独校验：
+   必须是「协议://主机[:端口]」（不带路径 / 查询串 / 凭据、不带尾斜杠）、回退机必须 https、两个 base 不许相同。
+2. **下载白名单不单独配。** 原生 `UpdateEndpoint` 的主机 / 端口 / 协议全部由这两个 base 派生。
+   以前 base 与 `PRIMARY_HOST` / `FALLBACK_HOST` 是两份副本，改一处漏一处 —— 现在配置里只有两个 base。
+3. **`legacyHosts` 里的 `62.106.70.167` 与 `download.primaryBase` 是同一台机器，但语义相反**：
+   前者是「旧聊天主机，存过即视为没配过」，后者是「当前分发机」。别因为「这机器已经不在用了」顺手删掉前者。
+4. **换分发机之后**：`pnpm check:endpoints` + `pnpm check:ip` + `pnpm check:identity` → 重新打包
+   （`pnpm build[:internal]` → `npx cap sync android` → `./gradlew assembleRelease`）。详细步骤见
+   [`docs/RELEASE-MANUAL.md`](../docs/RELEASE-MANUAL.md) §13。
+
+### 消费侧 / 支付侧端点：`consume` 与 `pay`（#484 / #487）
+
+> **接口约束正文在 [`docs/sub2api-client-contract.md`](../docs/sub2api-client-contract.md)。**
+> 那一份说「客户端**允许**调哪些路径、怎么鉴权、怎么重试」；这一节只说
+> 「`config/endpoints.json` 里的这两组字段是什么、谁读、改了要做什么」。
+
+`config/endpoints.json` 新增两组（**不要动**原有的 `download`）：
+
+| 字段 | 含义 | 谁消费 | 改它要重新打包吗 |
+| --- | --- | --- | --- |
+| `consume.baseUrl` | sub2api 的 base（scheme + host + 可选端口，**不带路径**）。一个 host 同时承载 `/api/v1`（JWT）与 `/v1`（sk- Key） | Web：`__ENDPOINTS__.consume.baseUrl`（构建期注入）→ `src/services/consume/**`；原生：`BuildConfig.CONSUME_BASE` | **要**。地址在构建期被替换进 JS，原生侧进 dex 字符串表，**没有任何热更新通道能改它** |
+| `consume.apiV1Prefix` | JWT 通道前缀，默认 `/api/v1` | 消费层拼路径（`baseUrl + apiV1Prefix + …`） | 要（同一次构建） |
+| `consume.gatewayPrefix` | sk- Key 通道前缀，默认 `/v1` | 消费层拼路径、`/v1/usage` 与 `/v1/chat/completions` | 要（同一次构建） |
+| `consume.timeoutMs.read` / `.write` / `.redeem` | 只读 / 写 / 兑换三档超时（毫秒）。**调用点不许再硬编码毫秒数** | 消费层传输封装 | 要（同一次构建） |
+| `pay.baseUrl` | apia 的 base（只负责买：套餐、下单、支付、发卡密、订单查询） | Web：`__ENDPOINTS__.pay.baseUrl` → `src/services/ours/**`；原生：`BuildConfig.PAY_BASE` | **要**（同上） |
+| `pay.timeoutMs.read` / `.write` | 支付侧两档超时 | 支付传输封装 | 要（同一次构建） |
+
+**为什么这两组必须分开**（不是风格，是构建期校验项）：`consume` 与 `pay` 是两个职责不同的后端，
+`check:endpoints` 的新增校验会把「两者 base 相同」判为 FAIL。合并成一个 base 的那一刻，
+「买」和「用」的边界就没了，卡密该进谁的余额也说不清。
+
+**改这两组之前 / 之后必须做的事**
+
+1. 改之前：`consume.baseUrl` 的 host 要同时加进 `allowedHosts`（`check:ip` 的豁免名单），否则
+   门禁把新域名判成硬编码地址；`pay.baseUrl` 同理。
+2. 改之后：`pnpm check:endpoints` + `pnpm check:ip`（两者都会读这份 JSON）→ 重新打包。
+3. **构建期 fail-fast**：base 必须是 `https`；不得命中废弃域黑名单（`140.210.13.146`、`:60013`、旧池域）；
+   `consume.baseUrl ≠ pay.baseUrl`；缺字段 / 空值 / 未知键直接中止构建并点名键名与文件行号。
+4. 灰度：`-PconsumeBase=<host>` 只在打包时临时覆盖，**不落盘**（不进 `config/endpoints.json`）。
+   换 host 的完整步骤（改一行 → 重打包 → 灰度验证 → 回滚）见
+   [`docs/RELEASE-MANUAL.md`](../docs/RELEASE-MANUAL.md)「换 sub2api host」。
+
+**状态说明**：这两组字段由 #487 的配置改造落地；本文件只描述契约。
+如果 `config/endpoints.json` 里还没有 `consume` / `pay`，说明配置改造尚未合并 —— 此时
+`src/services/consume/**` 不应存在（消费层的存在以这两组字段存在为前提）。
+
+---
+
+# 落地补充（W1-A / #487）：`consume` / `pay` 的校验口径与当前取值
+
+> 上面那一节的**契约**已经由 #488 写完，这里只补三件「实现落地后才确定」的事。
+
+| 项 | 落地值 / 口径 |
+| --- | --- |
+| 当前 `consume.baseUrl` | **`http://127.0.0.1:18000`** —— 本地联调实例（维护者 2026-11-20 明确：联调与 base URL 都以本地实例为准）。**生产 host 待维护者提供**，出正式包前必须换掉 |
+| https 规则 | 两个 base 一律 https；**唯一例外是本机回环**（`127.0.0.1` / `localhost` / `[::1]`）。非回环的明文 `http://` 仍然中止构建 |
+| 校验在哪 | `scripts/lib/consumeEndpoints.mjs`（`scripts/build.mjs` 打包前跑）与 `android/app/build.gradle` 的 `[consume]` 段，**同一套判据**；门禁 `pnpm check:consume-api` 再独立跑一遍 |
+
+**一处需要更正上面的说法**：`consume.baseUrl` / `pay.baseUrl` 的 host **不需要**加进 `allowedHosts`。
+`allowedHosts` 只服务旧池域那三份地址（`chatBaseUrl` / `inviteBaseUrl` / `feedbackUrl`）与 `check:ip` 的豁免，
+它们的判据是「同一台机器 + 端口白名单」；`consume` / `pay` 是另外两台机器，走自己的判据
+（https / 废弃域黑名单 / 两者不许相同）。把新域名塞进 `allowedHosts` 反而会让 `check:endpoints`
+判「三个端点不在同一台机器上」变红。
+
+其余落地细节（接口白名单、错误信封、幂等规则、字段实测状态）见
+[`docs/consume-layer.md`](../docs/consume-layer.md) 与
+[`docs/sub2api-client-contract.md`](../docs/sub2api-client-contract.md)。

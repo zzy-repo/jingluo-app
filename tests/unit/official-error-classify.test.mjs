@@ -28,27 +28,17 @@
 //   [7] 空流（200 + SSE 零帧 / 200 + 非 SSE）走真代码，落到空响应档而不是「未知错误」
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { registerHooks } from 'node:module'
 
-const stub = (name) => new URL(`../fixtures/chat-stubs/${name}`, import.meta.url).href
+import { chatStub, installTsResolve } from '../helpers/dom-env.mjs'
 
-registerHooks({
-  resolve(specifier, context, nextResolve) {
-    if (specifier === '@capacitor/core') {
-      return { url: stub('capacitor.mjs'), shortCircuit: true }
-    }
-    if (/diagnostics\/collector\.js$/.test(specifier)) {
-      return { url: stub('collector.mjs'), shortCircuit: true }
-    }
-    try {
-      return nextResolve(specifier, context)
-    } catch (error) {
-      if (specifier.endsWith('.js')) {
-        return nextResolve(`${specifier.slice(0, -3)}.ts`, context)
-      }
-      throw error
-    }
-  },
+// 装配走公共入口（#366 / #408）：原生桥 + 诊断写入口两个替身 + `.js→.ts` 解析。
+// 以前每个 chat-stubs 文件各抄一份 registerHooks + 本地 `.js→.ts` 兜底（#408 已把同族 5 个文件迁走，
+// 这几个文件是同族剩下的手抄件，一起收掉）。
+installTsResolve({
+  stubs: [
+    [/^@capacitor\/core$/, chatStub('capacitor.mjs')],
+    [/diagnostics\/collector\.js$/, chatStub('collector.mjs')],
+  ],
 })
 
 globalThis.__API_ORIGIN__ = 'https://api.test.invalid'
@@ -60,6 +50,7 @@ const {
   classifyApiError,
   classifyErrorSignature,
   isRetryableApiError,
+  parseSupportedModels,
 } = await import('../../src/services/api/errors.ts')
 const { applyEvent, settleReply } = await import('../../src/services/chat/reply.ts')
 const { describeReply } = await import('../../src/services/chat/describe.ts')
@@ -130,28 +121,55 @@ const noticeOf = (error) =>
 const apiErrorOf = ({ status, code, message }, kind = 'http') =>
   new ApiError(kind, message, status, undefined, undefined, code)
 
+/**
+ * #339 起 `replyModelInvalid` 带两个占位符：实际发出的模型名 + 上游可用模型列表。
+ * 这里按真实 translate() 口径拼期望值 —— noticeOf 造的回复没有 model 快照，模型名落到「未记录」。
+ */
+const MODEL_LIST = 'deepseek-flash, deepseek-v4-pro'
+const modelInvalidCopy = (model = '未记录') =>
+  translate('replyModelInvalid', { model, models: MODEL_LIST })
+
 // ---------------------------------------------------------------- [1] 真实样本
 test('[1] 真实样本：400 非法模型名 → 模型不存在档，不再落「未知错误」', () => {
   const condition = classifyErrorSignature(MODEL_NOT_FOUND)
   assert.equal(condition, 'modelInvalid', '官方端点 400 + supported API model names 要认成模型不存在')
 
   const notice = noticeOf(apiErrorOf(MODEL_NOT_FOUND))
-  assert.equal(notice.text, zh.replyModelInvalid, '用「模型不可用」的专用文案')
+  assert.equal(notice.text, modelInvalidCopy(), '用「模型不可用」的专用文案（带实际模型名与可用列表）')
   assert.notEqual(notice.text, zh.replyUnknownError, '绝不能再是「未知错误」')
   assert.match(notice.text, /不要重试/, '模型不存在是终态：文案要说清不要重试')
   assert.match(notice.text, /模型/, '文案要指出是模型的问题')
   assert.equal(notice.diagnostics, undefined, '已识别的场景不需要额外诊断文本')
 })
 
+test('[1] 上游可用模型列表可解析（#339）：原文 → 列表，脏文本 → 空数组', () => {
+  assert.deepEqual(
+    parseSupportedModels(
+      'The supported API model names are deepseek-flash, deepseek-v4-pro, but you passed x'
+    ),
+    ['deepseek-flash', 'deepseek-v4-pro'],
+    '列表要在「but you passed」之前结束'
+  )
+  for (const dirty of ['', undefined, 'model not found', '当前模型在上游不可用']) {
+    assert.deepEqual(parseSupportedModels(dirty), [], `脏文本不该解析出模型名：${String(dirty)}`)
+  }
+})
+
 test('[1] 真实样本：400 空 messages / 422 max_tokens 非法 → 参数错误档（不可重试）', () => {
-  for (const [label, sample] of [
-    ['空 messages', EMPTY_MESSAGES],
-    ['max_tokens 非法', BAD_MAX_TOKENS],
+  // #347：参数档的文案改成带状态码 + **具体字段**（上游原文里点得出来就带上），
+  // 并附带「打开设置」入口与可复制的诊断 —— 期望值走真实 translate()，不手写字符串
+  const paramCopy = (status, field) =>
+    translate('replyParamInvalid', { status: `HTTP ${status}`, field })
+  for (const [label, sample, field] of [
+    ['空 messages', EMPTY_MESSAGES, 'messages'],
+    ['max_tokens 非法', BAD_MAX_TOKENS, 'max_tokens'],
   ]) {
     assert.equal(classifyErrorSignature(sample), 'badRequest', `${label} 是请求被拒绝`)
     const notice = noticeOf(apiErrorOf(sample))
-    assert.equal(notice.text, zh.replyBadRequest, `${label} 用参数错误文案`)
+    assert.equal(notice.text, paramCopy(sample.status, field), `${label} 用参数错误文案（带字段）`)
     assert.match(notice.text, /不要重试/, `${label} 是 4xx：文案要说清不要重试`)
+    assert.equal(notice.action, 'settings', `${label} 要给出「打开设置」入口（#347 / #353）`)
+    assert.match(notice.upstream ?? '', /HTTP \d{3}/, `${label} 的折叠区里有上游原文（#347）`)
   }
 })
 
@@ -169,8 +187,15 @@ test('[1] 真实样本：401 authentication_error 仍是 Key 无效（#303 不�
   }
   assert.equal(classifyErrorSignature(sample), 'unauthorized')
   const notice = noticeOf(apiErrorOf(sample))
-  assert.equal(notice.text, zh.replyInvalidApiKey)
+  // #374：不再是「一句无效或已被删除」——上游原文说 `is invalid` → 细分到「不存在 / 已删除」，
+  // 再拼上「换 Key 会影响额度归属」那条提醒（这里没有本地 Key，所以没有尾号）
+  assert.equal(
+    notice.text,
+    `${translate('replyApiKeyNotFound')}；${translate('replyApiKeyQuotaNote')}`,
+    '鉴权档要用 Key 失效的细分文案（#374），并带上额度归属提醒'
+  )
   assert.equal(notice.action, 'apiKey')
+  assert.equal(notice.quotaAction, true, '要给一个不动 Key 的「查看额度」入口（#374）')
 })
 
 // ---------------------------------------------------------------- [2] 流内 error 帧
@@ -194,7 +219,7 @@ test('[2] 流内 error 帧（没有 HTTP 状态码）也能分类：内容拦截
     message: MODEL_NOT_FOUND.message,
     upstreamCode: MODEL_NOT_FOUND.code,
   })
-  assert.equal(modelNotice.text, zh.replyModelInvalid, '流内帧里说模型不存在，同样要认出来')
+  assert.equal(modelNotice.text, modelInvalidCopy(), '流内帧里说模型不存在，同样要认出来')
 })
 
 // ---------------------------------------------------------------- [3] 可重试性

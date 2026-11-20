@@ -1,0 +1,44 @@
+{
+  "version": 1,
+  "note": "R1 逐字重复的存量豁免清单（scripts/check-test-duplication.mjs）。规则**只减不增**：新组不许进基线，抽掉一组就删一条。键 = 组内文件组合。",
+  "updatedAt": "2026-11-20",
+  "window": 20,
+  "groups": [
+    {
+      "files": [
+        "tests/unit/intl-displaynames-fallback.test.mjs",
+        "tests/unit/legacy-boot-guard.test.mjs"
+      ],
+      "lines": 29,
+      "layers": [
+        "unit"
+      ],
+      "reason": "启动守卫的 vm 宿主工厂（box / listeners / clock / intervals + FakeDate + vm.createContext）在两个文件里逐字相同，但宿主本体并不完全一致：legacy-boot-guard 那份多一个 `pendingTimers` getter 与两段注释，两文件传给宿主的**能力集**也不同（remove 列表 / locale / userAgent / storedLocale）。抽成工厂要连「造宿主」与「按用例注入哪些能力」一起拆开，属启动守卫批次。抽掉后删本条。",
+      "issue": "#408"
+    },
+    {
+      "files": [
+        "tests/integration/url-import-native.test.mjs",
+        "tests/integration/url-import-stages.test.mjs"
+      ],
+      "lines": 24,
+      "layers": [
+        "integration"
+      ],
+      "reason": "集成层 `openApp` 的公共尾段（context.newPage → console/pageerror 收集 → goto/清 localStorage/reload → 开设置 → 数据管理）。但两个文件的 openApp 前置（initScript 里的 Capacitor mock 计划：data/status/range/chunkDelay/rejectAfter）按用例完全不同，只抽尾段只有 8 行、不到 20 行窗口；抽整个工厂则要先把 mock 计划参数化。另一条硬约束：验证要真 dist + chromium（assertFreshBuild），本轮验收口径只跑 L0。留给集成层批次。抽掉后删本条。",
+      "issue": "#408"
+    },
+    {
+      "files": [
+        "tests/integration/domain05-ui-export-import.test.mjs",
+        "tests/integration/url-import-web.test.mjs"
+      ],
+      "lines": 22,
+      "layers": [
+        "integration"
+      ],
+      "reason": "集成层导入导出的页面前置：`sessionCount`（读 IndexedDB 会话条数）+ `run()` 开头（chromium.launch → newContext → newPage → goto/清库/reload）。`sessionCount` 与 helpers/golden.mjs 里那份逐字相同，但 golden.mjs 是黄金回归的 Playwright 助手（依赖 runtime/env），直接 import 进集成层不合适；正确做法是先抽中立 helper 再让 golden.mjs re-export —— 这属于「集成层前置统一」批次，且验证同样要真 dist + chromium。本轮不硬迁。抽掉后删本条。",
+      "issue": "#408"
+    }
+  ]
+}

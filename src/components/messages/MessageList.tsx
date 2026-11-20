@@ -8,8 +8,9 @@ import {
 import { selectMessageVersion } from '../../services/chat/store.js'
 import type { Session } from '../../services/chat/types.js'
 import { closeSearchPanel } from '../search/searchPanelState.js'
+import { prefersReducedMotion } from '../../utils/usePresence.js'
 import { AssistantMessage } from './AssistantMessage.js'
-import { ScrollToBottomContext } from './scrollContext.js'
+import { ScrollToBottomContext, ScrollToBottomStateContext } from './scrollContext.js'
 import { UserMessage } from './UserMessage.js'
 import { DEFAULT_ESTIMATE, VirtualRows } from './virtualRows.js'
 import type { Message } from '../../services/chat/types.js'
@@ -32,7 +33,33 @@ import styles from './MessageList.module.css'
 
 /** 距底部小于该值时视为在底部，流式内容增长时跟随 */
 const STICKY_THRESHOLD = 40
+/**
+ * #386：距底部超过该值时，输入框上方才浮现「回到底部」按钮。
+ * 比 `STICKY_THRESHOLD`（40）大得多是刻意的 —— 刚离开底部一两行还在视野里，
+ * 这时候弹按钮只会挡住正文；翻上去一两屏才是真的需要它。
+ */
+const TO_BOTTOM_THRESHOLD = 200
 const EMPTY_VERSIONS: MessageVersions = { ids: [], index: -1 }
+
+/**
+ * #386：平滑滚到最底部。
+ *
+ * 老内核不认 `scrollTo` 的 options 对象时会把对象当成坐标（NaN，静默不动），
+ * 所以先用 `scrollBehavior` 特性检测兜一层，再用 try/catch 兜一层，两条都不成立就
+ * 直接赋值 scrollTop —— 功能不丢，只是没有过渡。系统要求「减少动态效果」时同理：
+ * 平滑滚动本身也是动态效果。
+ */
+const smoothScrollToBottom = (element: HTMLElement) => {
+  if (prefersReducedMotion() || !('scrollBehavior' in element.style)) {
+    element.scrollTop = element.scrollHeight
+    return
+  }
+  try {
+    element.scrollTo({ top: element.scrollHeight, behavior: 'smooth' })
+  } catch {
+    element.scrollTop = element.scrollHeight
+  }
+}
 
 /**
  * 消息列表（虚拟化，Issue #45）。
@@ -54,6 +81,8 @@ export const MessageList = ({
   const scrollRef = useRef<HTMLDivElement>(null)
   const contentRef = useRef<HTMLDivElement>(null)
   const stickyRef = useRef(true)
+  /** #386：点「回到底部」后平滑滚动是否还在路上（在路上时不写 scrollTop，否则动画被掐断） */
+  const jumpRef = useRef(false)
   const scrollTopRef = useRef(0)
   const restoreScrollRef = useRef<{ messageId: string; top: number } | null>(null)
   /** 消息 id → 实测高度；会话切换时清空，避免带上一个会话的估值。 */
@@ -80,10 +109,66 @@ export const MessageList = ({
   const lastMessageId = messages.at(-1)?.id
   const scrollToBottom = useCallback(() => {
     const el = scrollRef.current
-    if (el && stickyRef.current) {
+    if (!el) {
+      return
+    }
+    if (jumpRef.current) {
+      // 平滑滚动还在路上：这时候写 scrollTop 会把原生动画掐掉（用户看到的就是「点了没动，然后瞬移」）。
+      // 内容若又长高了，就朝新的底部再发起一次，落点始终是最新消息。
+      smoothScrollToBottom(el)
+      return
+    }
+    if (stickyRef.current) {
       el.scrollTop = el.scrollHeight
       scrollTopRef.current = el.scrollTop
     }
+  }, [])
+
+  // #386：输入框上方「回到底部」按钮的状态。默认隐藏 —— 首次进会话就在底部，不该有按钮。
+  const [toBottom, setToBottom] = useState({ visible: false, hasNew: false })
+  const toBottomRef = useRef(toBottom)
+  // 圆点只在流式期间点亮：虚拟列表上翻时行高会重新实测、内容高度跟着抖，
+  // 只看「长高了」会把这种抖动当成新内容；流式里长高才是真的来了新 token。
+  const streamingRef = useRef(streaming)
+  streamingRef.current = streaming
+
+  /**
+   * #386：按当前位置刷新按钮状态；只在布尔值真的变了才 setState（滚动事件每帧都来）。
+   * @param grew 内容高度刚长高（流式追加 / 新消息）时为 true，记一条「有新内容」
+   */
+  const syncToBottom = useCallback((grew: boolean) => {
+    const el = scrollRef.current
+    if (!el) {
+      return
+    }
+    const away = el.scrollHeight - el.scrollTop - el.clientHeight > TO_BOTTOM_THRESHOLD
+    const previous = toBottomRef.current
+    const next = {
+      visible: away,
+      hasNew: away && ((grew && streamingRef.current) || previous.hasNew),
+    }
+    if (next.visible === previous.visible && next.hasNew === previous.hasNew) {
+      return
+    }
+    toBottomRef.current = next
+    setToBottom(next)
+  }, [])
+
+  /**
+   * #386：点「回到底部」—— 先恢复跟随（后续新内容继续自动贴底），再滚到底。
+   * 平滑滚动只在**真的支持**时用：`scrollBehavior` 特性检测 + try/catch 双保险，
+   * 老 WebView 不认 options 对象时退回直接赋值（否则对象被当成坐标，滚不动）。
+   * 系统开了「减少动态效果」时也直接跳 —— 平滑滚动同样是动态效果。
+   */
+  const jumpToBottom = useCallback(() => {
+    const el = scrollRef.current
+    if (!el) {
+      return
+    }
+    // 先恢复跟随：动画落地后新内容继续自动贴底（这是 Issue 验收里的「点击后恢复跟随」）
+    stickyRef.current = true
+    jumpRef.current = true
+    smoothScrollToBottom(el)
   }, [])
 
   // 行实测高度 → 未实测行的估值。用已实测高度的均值，比固定常量更接近真实内容。
@@ -107,18 +192,20 @@ export const MessageList = ({
     if (!content || !scroll) {
       return
     }
-    const observer = new ResizeObserver(() => {
+    const observer = new ResizeObserver((entries) => {
       setMetrics((previous) =>
         previous.viewport === scroll.clientHeight
           ? previous
           : { ...previous, viewport: scroll.clientHeight }
       )
       scrollToBottom()
+      // 内容长高而用户已经翻上去时不会触发 scroll 事件，只能在这里补一次判断（#386）
+      syncToBottom(entries.some((entry) => entry.target === content))
     })
     observer.observe(content)
     observer.observe(scroll)
     return () => observer.disconnect()
-  }, [isMobile, scrollToBottom])
+  }, [isMobile, scrollToBottom, syncToBottom])
 
   // 单例行高实测：挂载/卸载行时订阅、退订，高度变化（流式增长、版本切换）时重算占位。
   useLayoutEffect(() => {
@@ -243,15 +330,20 @@ export const MessageList = ({
       // 仅在用户向上滚动时停止跟随底部，布局或内容增高时保持跟随状态。
       if (nearBottom) {
         stickyRef.current = true
+        // 平滑滚动落地（或用户自己滑回底部）：跟随逻辑可以正常写位置了
+        jumpRef.current = false
       } else if (el.scrollTop < scrollTopRef.current) {
         stickyRef.current = false
+        jumpRef.current = false
       }
       scrollTopRef.current = el.scrollTop
       sync()
+      // 用户翻到离底部超过阈值 → 按钮浮现；回到贴底区 → 按钮与「有新内容」圆点一起收掉
+      syncToBottom(false)
     }
     el.addEventListener('scroll', onScroll, { passive: true })
     return () => el.removeEventListener('scroll', onScroll)
-  }, [isMobile, scrollToBottom])
+  }, [isMobile, scrollToBottom, syncToBottom])
 
   const lastIndex = messages.length - 1
   const uploadRetryId = getUploadRetryId(messages, streaming)
@@ -282,25 +374,33 @@ export const MessageList = ({
     [lastIndex, selectVersion, session.id, streaming, uploadRetryId, versions]
   )
 
+  // 按钮挂在输入区里（输入框上方），所以状态与动作从列表这一层传给 footer 子树
+  const toBottomState = useMemo(
+    () => ({ ...toBottom, jump: jumpToBottom }),
+    [toBottom, jumpToBottom]
+  )
+
   return (
     <ScrollToBottomContext.Provider value={scrollToBottom}>
-      <div ref={isMobile ? undefined : scrollRef} className={styles.container}>
-        <div ref={isMobile ? scrollRef : undefined} className={styles.scroll}>
-          <div ref={contentRef} className={styles.column}>
-            <VirtualRows
-              items={messages}
-              measured={measured}
-              estimate={estimate}
-              scrollTop={metrics.top}
-              viewport={metrics.viewport}
-              anchorEnd={stickyRef.current}
-              getId={(message) => message.id}
-              renderItem={renderItem}
-            />
+      <ScrollToBottomStateContext.Provider value={toBottomState}>
+        <div ref={isMobile ? undefined : scrollRef} className={styles.container}>
+          <div ref={isMobile ? scrollRef : undefined} className={styles.scroll}>
+            <div ref={contentRef} className={styles.column}>
+              <VirtualRows
+                items={messages}
+                measured={measured}
+                estimate={estimate}
+                scrollTop={metrics.top}
+                viewport={metrics.viewport}
+                anchorEnd={stickyRef.current}
+                getId={(message) => message.id}
+                renderItem={renderItem}
+              />
+            </div>
           </div>
+          {footer}
         </div>
-        {footer}
-      </div>
+      </ScrollToBottomStateContext.Provider>
     </ScrollToBottomContext.Provider>
   )
 }

@@ -12,60 +12,14 @@
 //   node tests/unit/quota-exhausted.test.mjs
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { registerHooks } from 'node:module'
+import { chatFakeDb, installChatEnv, installEndpointsGlobals } from '../helpers/dom-env.mjs'
 
-const stub = (name) => new URL(`../fixtures/chat-stubs/${name}`, import.meta.url).href
-
-// 假 db / 假诊断写入口，与 tests/unit/chat-retry-retryable.test.mjs 同一套（只换 I/O 边界）
-const fakeDB = `data:text/javascript,${encodeURIComponent(`
-export const loadSessionSummaries = async () => []
-export const loadSession = async () => undefined
-export const saveSession = async () => {}
-export const saveFiles = async () => {}
-export const loadFile = async () => undefined
-export const deleteSession = async () => {}
-export const pinSession = async () => {}
-export const renameSession = async () => {}
-export const clearStaging = async () => {}
-export const addStagingSession = async () => {}
-export const saveStagingFiles = async () => {}
-export const updateStagingFileTypes = async () => {}
-export const commitStaging = async () => []
-export const reportStorageError = async () => () => {}
-export const loadAppAsset = async () => undefined
-export const saveAppAsset = async () => {}
-export const deleteAppAsset = async () => {}
-`)}`
-
-const collectorStub = `data:text/javascript,${encodeURIComponent(`
-export * from '${stub('collector.mjs')}'
-export const recordError = (message, fields = {}) => {
-  globalThis.__log.records.push({ kind: 'error', level: 'error', message, fields })
-}
-`)}`
-
-registerHooks({
-  resolve(specifier, context, nextResolve) {
-    if (specifier === '@capacitor/core') {
-      return { url: stub('capacitor.mjs'), shortCircuit: true }
-    }
-    if (/diagnostics\/collector\.js$/.test(specifier)) {
-      return { url: collectorStub, shortCircuit: true }
-    }
-    try {
-      return nextResolve(specifier, context)
-    } catch (error) {
-      const parent = String(context.parentURL ?? '')
-      if (specifier === './db.js' && parent.endsWith('/chat/store.ts')) {
-        return { url: fakeDB, shortCircuit: true }
-      }
-      if (specifier.startsWith('.') && specifier.endsWith('.js')) {
-        return nextResolve(`${specifier.slice(0, -3)}.ts`, context)
-      }
-      throw error
-    }
-  },
-})
+// 装配走公共入口（#366 第二批 / #408）：原生桥 + 诊断写入口 + 「只有 chat/store.ts 的 ./db.js 才是假库」这条按父模块的规则；
+// 本文件要断言「落盘/上报失败要等一等」，所以 reportStorageError 换成 async 形状，
+// 都收在 installChatEnv 里。以前这段是本文件手抄的 41 行样板，chat 一族 5 个文件各一份。
+const { stub } = installChatEnv({ db: chatFakeDb({ reportStorageError: 'async () => () => {}' }) })
+// 构建期注入值（`__ENDPOINTS__`）不在 `installChatEnv` 里：单跑本文件（不经 run-layer 的 `--import` 预加载）要自己挂，否则 import `api/providers.ts` 顶层读它就 ReferenceError
+installEndpointsGlobals({ apiOrigin: 'https://api.test.invalid', internalBuild: true, resetLogRecords: false })
 
 globalThis.__API_ORIGIN__ = 'https://api.test.invalid'
 globalThis.INTERNAL_BUILD = false
@@ -371,7 +325,12 @@ test('负向：普通 400 不重试，落到参数错误档（#324 之前这里�
   })
   assert.equal(calls, 1, '参数错误重试无用')
   // #324：400 参数错误有了独立档位（不可重试），不再落到「未知错误」兜底
-  assert.equal(notice?.text, zh.replyBadRequest)
+  // #347：文案带状态码 + 上游点名的字段（这句原文里的 `max_tokens`）
+  assert.equal(
+    notice?.text,
+    zh.replyParamInvalid.replace('{status}', 'HTTP 400').replace('{field}', 'max_tokens')
+  )
+  assert.equal(notice?.action, 'settings', '参数错误要给出「打开设置」入口（#347 / #353）')
   assert.match(notice?.text ?? '', /不要重试/)
   assert.equal(failureRecord.fields['billing.quota'], undefined)
   assert.equal(failureRecord.fields['ui.condition'], 'badRequest')

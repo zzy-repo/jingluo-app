@@ -11,6 +11,8 @@
  * | `legacyHosts` | 已下线主机（存过即视为没配过，回落默认） | `src/services/api/apiConfig.ts` 的 `LEGACY_HOSTS` |
  * | `allowedHosts` | `check:ip` 门禁豁免的线上主机白名单 | `scripts/lib/hardcodedIpAudit.mjs` 的 `ALLOWED_HOSTS` |
  * | `allowedPorts` | 同一台机器上开放的端口白名单 | `scripts/check-endpoints.mjs` 交叉校验 |
+ * | `download.primaryBase` | 分发首选机（清单 + `/apk/`） | `src/services/updateManifest.ts` 的 `PRIMARY_RELEASE_BASE`（经 `__ENDPOINTS__.dlPrimaryBase`）；原生 `UpdateEndpoint.java` 的 `PRIMARY_BASE`（经 `BuildConfig.DL_PRIMARY`） |
+ * | `download.fallbackBase` | 分发回退机 | `src/services/updateManifest.ts` 的 `FALLBACK_RELEASE_BASE`（经 `__ENDPOINTS__.dlFallbackBase`）；原生 `UpdateEndpoint.java` 的 `FALLBACK_BASE`（经 `BuildConfig.DL_FALLBACK`） |
  *
  * 谁读它：
  *   - 构建期：`rspack.config.ts` 读同一份 JSON 注入 `__ENDPOINTS__`，前端源码只用注入值；
@@ -28,10 +30,14 @@
  *   - 这个模块**读盘就校验，不合法立刻抛**（fail fast）：带着错地址跑起来只会更难查。
  *     只想拿「校验」这一半（配置不合法时仍要打印问题）就用 `endpointsSchema.mjs`。
  *   - 不碰网络、不缓存、不读环境变量。
+ *   - 分发地址（`download.*`，Issue #269）也在这份配置里：换分发机只改这里一处，
+ *     Web 侧由 rspack 注入、原生侧由 `android/app/build.gradle` 读成 `BuildConfig.DL_*`。
+ *     原生下载白名单由这两个 base 派生，所以配置里不许再出现第三份主机名单。
  */
 
 import { readFileSync } from 'node:fs'
 
+import { validateConsumePay } from './consumeEndpoints.mjs'
 import { ENDPOINTS_FILE, URL_FIELDS, validateEndpoints } from './endpointsSchema.mjs'
 
 export { ENDPOINTS_FILE, URL_FIELDS, parseUrl, portOf, validateEndpoints } from './endpointsSchema.mjs'
@@ -41,8 +47,11 @@ export { ENDPOINTS_FILE, URL_FIELDS, parseUrl, portOf, validateEndpoints } from 
  * 不合法直接抛错 —— 端点表不对的时候宁可启动失败，也不要带着错地址跑。
  */
 export const loadEndpoints = (file = ENDPOINTS_FILE) => {
-  const raw = JSON.parse(readFileSync(file, 'utf8'))
-  const problems = validateEndpoints(raw)
+  const text = readFileSync(file, 'utf8')
+  const raw = JSON.parse(text)
+  // 旧池域那三份地址（#274）与消费 / 支付两段（#484 W1-A）各用各的判据：
+  // 前者要求同一台机器 + 主机/端口白名单，后者是另外两台机器（https + 废弃域 + 互不相同）。
+  const problems = [...validateEndpoints(raw), ...validateConsumePay(raw, text)]
   if (problems.length > 0) {
     throw new Error(`${file} 不合法：\n  - ${problems.join('\n  - ')}`)
   }
@@ -53,6 +62,16 @@ export const loadEndpoints = (file = ENDPOINTS_FILE) => {
     legacyHosts: Object.freeze(raw.legacyHosts.map((h) => h.trim())),
     allowedHosts: Object.freeze(raw.allowedHosts.map((h) => h.trim())),
     allowedPorts: Object.freeze([...raw.allowedPorts]),
+    downloadPrimaryBase: raw.download.primaryBase.trim(),
+    downloadFallbackBase: raw.download.fallbackBase.trim(),
+    // 消费侧（sub2api）：账号/额度/卡密兑换/Key 管理（#484 W1-A）
+    consumeBaseUrl: raw.consume.baseUrl.trim(),
+    consumeApiV1Prefix: raw.consume.apiV1Prefix,
+    consumeGatewayPrefix: raw.consume.gatewayPrefix,
+    consumeTimeouts: Object.freeze({ ...raw.consume.timeoutMs }),
+    // 支付侧（apia）：只负责买卡，不迁（#482 定调）
+    payBaseUrl: raw.pay.baseUrl.trim(),
+    payTimeouts: Object.freeze({ ...raw.pay.timeoutMs }),
   })
 }
 
@@ -70,6 +89,23 @@ export const legacyHosts = config.legacyHosts
 export const allowedHosts = config.allowedHosts
 /** 端口白名单（`check:endpoints` 交叉校验用） */
 export const allowedPorts = config.allowedPorts
+/** 分发首选机（`UpdateEndpoint.PRIMARY_BASE` / `PRIMARY_RELEASE_BASE`，Issue #269） */
+export const downloadPrimaryBase = config.downloadPrimaryBase
+/** 分发回退机（`UpdateEndpoint.FALLBACK_BASE` / `FALLBACK_RELEASE_BASE`，Issue #269） */
+export const downloadFallbackBase = config.downloadFallbackBase
+
+/** 消费侧地址（sub2api 的 `__ENDPOINTS__.consume.baseUrl` / `BuildConfig.CONSUME_BASE`） */
+export const consumeBaseUrl = config.consumeBaseUrl
+/** 消费侧 JWT 前缀（固定 `/api/v1`，见 #484 §三） */
+export const consumeApiV1Prefix = config.consumeApiV1Prefix
+/** 消费侧 API Key 前缀（固定 `/v1`） */
+export const consumeGatewayPrefix = config.consumeGatewayPrefix
+/** 消费侧超时档位（read / write / redeem，毫秒）：调用点不许再写死毫秒数 */
+export const consumeTimeouts = config.consumeTimeouts
+/** 支付侧地址（apia 的 `__ENDPOINTS__.pay.baseUrl` / `BuildConfig.PAY_BASE`） */
+export const payBaseUrl = config.payBaseUrl
+/** 支付侧超时档位（read / write，毫秒） */
+export const payTimeouts = config.payTimeouts
 
 /** 三个地址字段 → 值（提示文案 / 注入 / 文案表格用，不要再另抄一份） */
 export const endpointUrls = Object.freeze({

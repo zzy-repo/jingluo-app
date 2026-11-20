@@ -25,6 +25,7 @@ import { join, relative, sep } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
 import { SKIP, parseRules, readGap, renderFallback } from './lib/flexGapRules.mjs'
+import { isVendored } from './lib/vendoredPaths.mjs'
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url))
 const SRC = join(ROOT, 'src')
@@ -36,6 +37,9 @@ const walk = async (dir) => {
   const out = []
   for (const entry of await readdir(dir, { withFileTypes: true })) {
     const full = join(dir, entry.name)
+    // vendored 第三方目录不生成兜底（#417）：不去改写上游 CSS，也就不会让
+    // 「已有产物再跑不该改文件」在 memory/style.css 上失守。
+    if (isVendored(full)) continue
     if (entry.isDirectory()) out.push(...(await walk(full)))
     else if (entry.name.endsWith('.css')) out.push(full)
   }

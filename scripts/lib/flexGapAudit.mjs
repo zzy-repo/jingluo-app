@@ -12,6 +12,7 @@ import { readdir } from 'node:fs/promises'
 import { join, relative, sep } from 'node:path'
 
 import { SKIP, gapFallbackRequirement, parseRules, readGap } from './flexGapRules.mjs'
+import { isVendored } from './vendoredPaths.mjs'
 
 const START = '#173-fallback:start'
 const END = '#173-fallback:end'
@@ -20,6 +21,9 @@ const walk = async (dir, match) => {
   const out = []
   for (const entry of await readdir(dir, { withFileTypes: true })) {
     const full = join(dir, entry.name)
+    // vendored 第三方目录不参与本守卫（#417）：上游 CSS 的 gap 不该由我们补兜底，
+    // 名单与理由见 scripts/lib/vendoredPaths.mjs / src/services/memory/README.md。
+    if (isVendored(full)) continue
     if (entry.isDirectory()) out.push(...(await walk(full, match)))
     else if (match(entry.name)) out.push(full)
   }

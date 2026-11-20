@@ -4,7 +4,14 @@
     "ref": "origin/main@18b44f3（1.4.0-beta.9 线）",
     "recordedAt": "2026-11-18",
     "recordedBy": "Issue #19（集成测试基线红）",
-    "note": "逐个集成文件登记「应该是什么状态」，按当前 main 从零重登记（29 个文件）。判定只判「相对基线没有新增失败」：expected=pass 的跑红算新增失败；expected=known-red 的跑绿会报 FIXED? 提醒删条目，防基线腐烂。known-red 必须写清 reason + 证据 + followUp，禁止把环境问题塞进 known-red。"
+    "note": "逐个集成文件登记「应该是什么状态」，按当前 main 从零重登记（29 个文件）。判定只判「相对基线没有新增失败」：expected=pass 的跑红算新增失败；expected=known-red 的跑绿会报 FIXED? 提醒删条目，防基线腐烂。known-red 必须写清 reason + 证据 + followUp，禁止把环境问题塞进 known-red。（#365 补：上面 7 条 expected=known-red 是接线时实测到的既有红，逐条带 evidence/followUp；跑绿即要求删条目，不允许新增。）",
+    "reverified": {
+      "ref": "origin/main@6e7baab",
+      "recordedAt": "2026-11-19",
+      "recordedBy": "Issue #365（L1 接入 CI 前逐条复测）",
+      "note": "#365 接线前把 45 个集成文件全量重测了一遍（1188s）：7 条既有红登记为 known-red（各带 evidence/followUp），其余 38 条 pass。known-red 只允许减：条目跑绿会报 FIXED? 并要求删条目。",
+      "note2026_11_20": "#406 第二轮逐条复核：7 条 known-red 里 6 条判定为「断言过时 / 测试自身 bug」，改测试后转绿并删条目（diagnostics-contract / log-viewer / mode-switch / url-import-stages / full-acceptance / feedback-scroll）；剩 1 条 upstream-html 判定为真实产品缺陷（C 类），保留条目并开 follow-up issue #432。"
+    }
   },
   "howToRun": {
     "standardBuild": "NODE_ENV=production DIST_OUT=dist-standard npx rspack build -c rspack.config.ts",
@@ -23,6 +30,11 @@
     "noImplicitBuild": "沿用 tests/helpers/runtime.mjs 的约定：用例不做隐式构建，缺产物就 SKIP(env) 并打印构建命令。"
   },
   "files": {
+    "update-stuck-button-373.test.mjs": {
+      "expected": "pass",
+      "artifact": "harness(自建，dist-update-373)",
+      "reason": "#373 回归：自建 harness（@capacitor/core alias 成 mock 桥）+ 自起静态服务，端口自动分配；缺产物时自己构建（~170ms，无网络）"
+    },
     "auto-title.test.mjs": {
       "expected": "pass",
       "artifact": "standard",
@@ -37,11 +49,6 @@
       "expected": "pass",
       "artifact": "standard(自建)",
       "reason": "自己构建 dist-copy-limit（DIST_DIR_STANDARD 可注入）+ 自起静态服务；端口自动分配"
-    },
-    "diagnostics-contract.test.mjs": {
-      "expected": "pass",
-      "artifact": "internal + standard",
-      "reason": "同时要内测产物（DIST_DIR）与标准产物（STANDARD_DIST_DIR），各起一个随机 loopback 服务，再按 variant 校验"
     },
     "diagnostics.test.mjs": {
       "expected": "pass",
@@ -63,16 +70,6 @@
       "artifact": "standard",
       "reason": "DIST_STANDARD_DIR 指向标准产物，verifyDist(standard) 守卫后自起服务"
     },
-    "feedback-scroll.test.mjs": {
-      "expected": "pass",
-      "artifact": "standard(滚动专用)",
-      "reason": "SCROLL_DIST_DIR（默认 dist-scroll）滚动截图专用产物；自起服务 + SCROLL_PORT 可注入"
-    },
-    "full-acceptance.test.mjs": {
-      "expected": "pass",
-      "artifact": "standard",
-      "reason": "runner 注入共享标准产物服务的 APP_URL；产物缺失/陈旧由 verifyAppUrl 报 SKIP(env)"
-    },
     "internal-build.test.mjs": {
       "expected": "pass",
       "artifact": "internal",
@@ -93,11 +90,6 @@
       "artifact": "standard",
       "reason": "自起服务（PORT 可注入）；以前固定连 127.0.0.1:8090 的 pnpm dev，没起服务就假红"
     },
-    "mode-switch.test.mjs": {
-      "expected": "pass",
-      "artifact": "internal",
-      "reason": "verifyDist(internal)；布局断言在能渲染模式的 DeepSeek 官方渠道上跑，ours 渠道单独断言「开关不渲染」"
-    },
     "motion.test.mjs": {
       "expected": "pass",
       "artifact": "internal",
@@ -107,11 +99,6 @@
       "expected": "pass",
       "artifact": "standard",
       "reason": "DIST_DIR_STANDARD 标准产物 + mock 我们的服务端；390 / 360 两轮全绿。#166 修好后「付款记录 / 我的购买」两格只在 ours 渠道渲染（官方渠道与第三方 baseUrl 下 count=0，会话内切回 ours 又回来），原 knownRed 已清空"
-    },
-    "ours-webpay.test.mjs": {
-      "expected": "pass",
-      "artifact": "standard",
-      "reason": "DIST_DIR_STANDARD 标准产物；下单/兑换按当前 ours 契约（兑换走 /redeem-card 池接口）打桩"
     },
     "paths.test.mjs": {
       "expected": "pass",
@@ -151,22 +138,107 @@
     "upstream-html.test.mjs": {
       "expected": "pass",
       "artifact": "standard",
-      "reason": "runner 注入共享标准产物服务的 APP_URL；上游返回 HTML 的场景用 mock"
+      "reason": "runner 注入共享标准产物服务的 APP_URL；上游返回 200 + text/html 的场景用 mock 路由。#434 修好后本用例转绿（html 单独成档、不重试、折叠区带响应摘要），known-red 条目已删"
     },
     "url-import-native.test.mjs": {
       "expected": "pass",
       "artifact": "standard",
       "reason": "runner 注入共享标准产物服务的 APP_URL；抓取阶段全 mock"
     },
-    "url-import-stages.test.mjs": {
-      "expected": "pass",
-      "artifact": "standard",
-      "reason": "runner 注入共享标准产物服务的 APP_URL + SHOT_DIR 截图目录；阶段竞态用 mock 控制"
-    },
     "url-import-web.test.mjs": {
       "expected": "pass",
       "artifact": "standard",
       "reason": "runner 注入共享标准产物服务的 APP_URL；只看标题前缀"
+    },
+    "domain01-first-run.test.mjs": {
+      "expected": "pass",
+      "artifact": "standard",
+      "reason": "requireDist(DIST_DIR) + verifyAppUrl(standard)；#365 起 runner 注入 DIST_DIR=dist-standard（此前默认 dist=内测包 → 恒 SKIP(env)）",
+      "evidence": "2026-11-19 实测 PASS 3.5s"
+    },
+    "domain01-session-load.test.mjs": {
+      "expected": "pass",
+      "artifact": "standard",
+      "reason": "同上（requireDist(DIST_DIR) + verifyAppUrl(standard)），#365 起 runner 注入 dist-standard",
+      "evidence": "2026-11-19 实测 PASS 10.5s"
+    },
+    "domain02-reply-error-ui.test.mjs": {
+      "expected": "pass",
+      "artifact": "standard",
+      "reason": "requireDist(DIST_DIR) + 本机 mock 流式上游；#365 起 runner 注入 dist-standard",
+      "evidence": "2026-11-19 实测 PASS 61.2s"
+    },
+    "domain02-stop-regenerate.test.mjs": {
+      "expected": "pass",
+      "artifact": "standard",
+      "reason": "同上；#365 起 runner 注入 dist-standard",
+      "evidence": "2026-11-19 实测 PASS 13.8s"
+    },
+    "domain02-wait-thinking-ui.test.mjs": {
+      "expected": "pass",
+      "artifact": "standard",
+      "reason": "同上；#365 起 runner 注入 dist-standard",
+      "evidence": "2026-11-19 实测 PASS 71.1s"
+    },
+    "domain05-ui-export-import.test.mjs": {
+      "expected": "pass",
+      "artifact": "standard",
+      "reason": "APP_URL 由 runner 注入共享标准产物服务（#365 前默认 127.0.0.1:5181：5181 上只要有别的服务就会对着陌生产物绿）",
+      "evidence": "2026-11-19 实测 PASS 3.4s（12 条断言）"
+    },
+    "domain08-feedback-negative.test.mjs": {
+      "expected": "pass",
+      "artifact": "standard",
+      "reason": "defaultDist()=DIST_DIR + serveDir + verifyDist(standard)；#365 起 runner 注入 dist-standard",
+      "evidence": "2026-11-19 实测 PASS 27.3s"
+    },
+    "domain09-delete-all-retention.test.mjs": {
+      "expected": "pass",
+      "artifact": "standard",
+      "reason": "同上（defaultDist + verifyDist(standard)）；#365 起 runner 注入 dist-standard",
+      "evidence": "2026-11-19 实测 PASS 11.2s"
+    },
+    "domain09-settings-reload.test.mjs": {
+      "expected": "pass",
+      "artifact": "standard",
+      "reason": "同上；#365 起 runner 注入 dist-standard",
+      "evidence": "2026-11-19 实测 PASS 27.0s"
+    },
+    "domain10-update-check-flow.test.mjs": {
+      "expected": "pass",
+      "artifact": "standard",
+      "reason": "DIST_DIR（#365 起注入 dist-standard）；仅缺 index.html 时 SKIP(env)，上游分发机走路由拦截",
+      "evidence": "2026-11-19 实测 PASS 15.0s"
+    },
+    "domain10-update-install-flow.test.mjs": {
+      "expected": "pass",
+      "artifact": "harness(自建 mkdtemp)",
+      "reason": "自建临时产物 + 假原生桥，跑完即删；不依赖仓库里的 dist",
+      "evidence": "2026-11-19 实测 PASS 4.8s"
+    },
+    "issue-234-invite-copy.test.mjs": {
+      "expected": "pass",
+      "artifact": "standard",
+      "reason": "DIST_DIR_STANDARD / dist-standard + 自起服务",
+      "evidence": "2026-11-19 实测 PASS 17.8s"
+    },
+    "quota-exhausted.test.mjs": {
+      "expected": "pass",
+      "artifact": "standard",
+      "reason": "requireDist(DIST_DIR) + verifyAppUrl(standard)；#365 起 runner 注入 dist-standard（此前恒 SKIP(env) 产物种类不对）",
+      "evidence": "2026-11-19 实测 PASS 23.3s"
+    },
+    "domain04-session-list-flow.test.mjs": {
+      "expected": "pass",
+      "artifact": "standard",
+      "reason": "DIST_DIR_STANDARD / dist-standard + 自起服务",
+      "evidence": "2026-11-19 实测 PASS 27.4s"
+    },
+    "domain03-settings-probe-model.test.mjs": {
+      "expected": "pass",
+      "artifact": "standard",
+      "reason": "DIST_DIR_STANDARD / dist-standard + 自起服务",
+      "evidence": "2026-11-19 实测 PASS 84.2s"
     }
   },
   "knownRed": {}

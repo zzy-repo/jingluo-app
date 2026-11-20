@@ -140,3 +140,61 @@
 .copyButton:hover {
   text-decoration: underline;
 }
+
+/*
+ * 失败兜底（Issue #412）：缓存版本列表 + 「手动下载最新版」出口。
+ *
+ * 只有检查**失败**时才渲染（成功 / 无新版都不出现），所以视觉上要和失败文案区分开：
+ * 一块更淡的底 + 左侧竖线，让人一眼看出「这不是刚查到的结论，是上次的旧数据」。
+ *
+ * 间距一律用 margin（不用 flex `gap`）：仓库的 #173 门禁要求每个 flex gap 都有兜底。
+ */
+.cacheFallback {
+  margin: 12px 0 0;
+  padding: 10px 12px;
+  border-left: 2px solid var(--dsw-alias-interactive-bg-hover);
+  border-radius: 6px;
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+/* 第一行就是结论：「缓存数据，可能不是最新」——不给它加粗到像正常结论，只比正文重一档 */
+.cacheTitle {
+  margin: 0;
+  font-size: 13px;
+  line-height: 20px;
+  font-weight: 600;
+  color: var(--dsw-alias-label-primary);
+}
+
+.cacheNote {
+  margin: 4px 0 0;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-secondary);
+  /* 时间戳这类长串在 360 档不许把弹窗撑出横向滚动 */
+  overflow-wrap: anywhere;
+}
+
+.cacheList {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.cacheList li + li {
+  margin-top: 2px;
+}
+
+/* 手动下载入口：唯一还能走的路，颜色与「复制诊断信息」同档（可点的动作） */
+.cacheManual {
+  margin: 8px 0 0;
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.cacheManual a {
+  color: var(--dsw-alias-brand-text);
+  text-decoration: underline;
+}

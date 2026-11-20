@@ -13,10 +13,21 @@
 //   [E] 源码体检：购买弹层不建单、不轮询、不写死地址、不出现「支付成功」
 //
 // 跑法：node tests/run-layer.mjs unit --case tests/unit/pay-link.test.mjs
-import { registerHooks } from 'node:module'
+import { fixtureUrl, installTsResolve } from '../helpers/dom-env.mjs'
+import { createSelfCheck } from '../helpers/ours-check.mjs'
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+
+// 装配走公共入口（#408 收尾批）：原生桥 / 内嵌浏览器的替身收成 fixtures/domain03-04 下两份
+// 状态驱动的 fixture（checkout-plugins.mjs / checkout-browser.mjs），`.js→.ts` 解析由
+// installTsResolve 统一处理 —— 不再手抄 ~40 行内联 `data:` 模块 + registerHooks。
+installTsResolve({
+  stubs: {
+    '@capacitor/core': fixtureUrl('domain03-04/checkout-plugins.mjs'),
+    '@capacitor/browser': fixtureUrl('domain03-04/checkout-browser.mjs'),
+  },
+})
 
 // ---------------------------------------------------------------- 电容桥替身
 globalThis.__cap = {
@@ -35,63 +46,6 @@ globalThis.__cap = {
   },
 }
 
-const capacitorStub = `data:text/javascript,${encodeURIComponent(`
-export const Capacitor = { isNativePlatform: () => globalThis.__cap.native }
-export const CapacitorHttp = {
-  request: async () => ({ status: 200, data: '', headers: {} }),
-}
-export const registerPlugin = () => ({
-  open: async () => ({ opened: true }),
-  resolveLocation: async () => ({ status: 302, location: '' }),
-})
-`)}`
-
-const browserStub = `data:text/javascript,${encodeURIComponent(`
-export const Browser = {
-  open: async (options) => {
-    globalThis.__cap.browser.opens.push({
-      url: options.url,
-      presentationStyle: options.presentationStyle,
-    })
-    if (globalThis.__cap.browser.rejectOpen) {
-      throw new Error('内嵌浏览器打不开')
-    }
-  },
-  addListener: async (eventName, handler) => {
-    globalThis.__cap.browser.listeners.push({ eventName, handler })
-    return {
-      remove: async () => {
-        globalThis.__cap.browser.removeCount += 1
-        const index = globalThis.__cap.browser.listeners.findIndex((item) => item.handler === handler)
-        if (index >= 0) {
-          globalThis.__cap.browser.listeners.splice(index, 1)
-        }
-      },
-    }
-  },
-}
-`)}`
-
-registerHooks({
-  resolve(specifier, context, nextResolve) {
-    if (specifier === '@capacitor/core') {
-      return { url: capacitorStub, shortCircuit: true }
-    }
-    if (specifier === '@capacitor/browser') {
-      return { url: browserStub, shortCircuit: true }
-    }
-    try {
-      return nextResolve(specifier, context)
-    } catch (error) {
-      // 与打包器一致：源码内部用 .js 说明符指向 .ts 文件
-      if (specifier.startsWith('.') && specifier.endsWith('.js')) {
-        return nextResolve(specifier.slice(0, -3) + '.ts', context)
-      }
-      throw error
-    }
-  },
-})
-
 const api = await import('../../src/services/ours/api.ts')
 const transport = await import('../../src/services/ours/transport.ts')
 
@@ -106,23 +60,9 @@ const enSource = read('src/i18n/en.ts')
 const SHOP_URL = 'https://wzyp.cn/shop/DIWOOHLR'
 const SHOP_NOTE = '外部收款页：付款后由联动小铺直接发放卡密'
 
-const failures = []
-const checks = { n: 0 }
-const ok = (message) => {
-  checks.n += 1
-  console.log(`  ok  ${message}`)
-}
-const bad = (message) => {
-  failures.push(message)
-  checks.n += 1
-  console.error(`  ✗   ${message}`)
-}
-const truthy = (condition, label) => (condition ? ok(label) : bad(label))
-const eq = (actual, expected, label) => {
-  const a = JSON.stringify(actual)
-  const b = JSON.stringify(expected)
-  a === b ? ok(`${label} = ${a}`) : bad(`${label}：期望 ${b}，实际 ${a}`)
-}
+// 自查断言骨架走公共入口（#408 收尾批）。注意 `countBad: true`：这一族的 `bad` 也计一次检查，
+// 与 ours-api / ours-invite 那 4 个文件的口径不同，末尾「共 N 项检查」的数按原样保留。
+const { failures, checks, ok, bad, eq, truthy } = createSelfCheck({ countBad: true })
 
 const cap = () => globalThis.__cap
 const resetStubs = () => {

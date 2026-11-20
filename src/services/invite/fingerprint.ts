@@ -25,6 +25,19 @@
 //     而不是静默新建一个 0 额度账号。
 //   - 同一 device_id 重复 /apply 是 200 幂等（这一点始终没变）。
 // 客户端这一半（本文件）因此仍是「只上报、不判定」：结论只从响应字段读（见 api.ts 的 classifyClaim）。
+//
+// **Issue #395（全零 / 常量指纹被当成有效身份）：形状合法 ≠ 可信。**
+//   线上现象：多台毫无关系的设备写着同一个 device_id、共用一把 Key 与余额。根因不是碰撞，
+//   而是客户端上报了一枚**常量**指纹（模拟器 / 部分 ROM / 指纹读取失败后的兜底），服务端把它
+//   当「这台机器」的唯一身份 → 第一台注册后，其后每一台都命中「指纹还原原账号」分支，拿到同一个账号。
+//   本文件因此把「形状校验」升级成「形状 + 内容校验」：
+//     · 全相同字符（`0`×64 / `f`×64 …）  —— 见 {@link isConstantDeviceFp}
+//     · 已知常量摘要（空 ANDROID_ID / 老设备常量 ANDROID_ID 的固定哈希）—— 见 CONSTANT_DEVICE_FP_VALUES
+//     命中即**当作没有指纹**：不上报任何占位值，`X-Device-Fp` 这个头干脆不出现。
+//   状态语义（第 2 条）：{@link FingerprintReport} 用判别联合把「有可信指纹」与「没有可信指纹」
+//     分成两种状态；线缆层同样只用「头在不在」表达，**绝不用全零/常量值代表「没有」**。
+//   服务端仍需配合（本文件改不了、也不该由客户端假装解决）：收到无效/常量指纹时必须视同
+//     「无指纹」降级为纯 device_id 行为，并且**不得**把多个 device_id 绑定到同一账号。
 
 /** 上报用的头名。服务端目前忽略它（见文件头），改服务端契约时只改这里。 */
 export const DEVICE_FP_HEADER = 'X-Device-Fp'
@@ -54,6 +67,8 @@ export type NoFingerprintReason =
   | 'hash_failed'
   /** 原生回来的东西不是 64 位十六进制：宁可不报，也不乱报 */
   | 'invalid-shape'
+  /** 形状对但值是常量（全零 / 全 F / 空 ANDROID_ID 的固定哈希）：看着像身份，其实所有设备都一样（#395） */
+  | 'constant_fp'
 
 /** 指纹拿到的强度：base = 只有 ANDROID_ID；strong = 另外 MediaDrm 也拿得到设备级 ID。 */
 export type FingerprintStrength = 'base' | 'strong'
@@ -74,6 +89,7 @@ const REASON_TABLE = {
   'android_id_placeholder': true,
   'hash_failed': true,
   'invalid-shape': true,
+  'constant_fp': true,
 } satisfies Record<NoFingerprintReason, true>
 
 /** 全部「无指纹」原因（顺序即上表顺序，可直接用于诊断页/DTO 枚举）。 */
@@ -84,20 +100,74 @@ export const NO_FINGERPRINT_REASONS: readonly NoFingerprintReason[] = Object.key
 const REASONS: ReadonlySet<string> = new Set<string>(NO_FINGERPRINT_REASONS)
 
 /**
- * 规范化一枚指纹：去空白、转小写，形状不对就当没有（返回 `''`）。
+ * 全相同字符（`0`×64 / `f`×64 / `a`×64 …）。
  *
- * 这一步是「明文绝不外发」的第二道闸：万一上游把 ANDROID_ID 明文当指纹传进来，
- * 它不是 64 位十六进制，会被这里丢掉，不会出现在请求头里。
+ * sha256 的输出是 256 bit 伪随机数，落成「64 位全都一样」的概率是 16^-63 —— 这个形状只可能
+ * 来自**兜底常量**，不可能来自真实摘要。模拟器、部分 ROM、以及「读不到就先填个默认值」的实现
+ * 都会产出它（#395 的线上样本是 64 个 0）。
+ */
+const ALL_SAME_CHAR_PATTERN = /^([0-9a-f])\1{63}$/
+
+/**
+ * 已知常量指纹黑名单（#395）。
+ *
+ * 与「全相同字符」不同：这些值看起来像正常摘要，但**对所有同环境设备都相同** —— 原生侧把
+ * 空 `ANDROID_ID`（等于 `sha256('' + 包名)`）或老设备那个人人相同的 `9774d56d682e549c`
+ * 直接算进摘要时就是这个结果。它们同样是假身份，不能上报。
+ *
+ * 值由 `config/appIdentity.json` 的 `applicationId`（包名唯一来源，见 scripts/check-identity.mjs）
+ * 算出；包名一改这里就失效 —— `tests/unit/invite-fp-invalid.test.mjs` 会用当前
+ * applicationId 现算一遍再与本表比对，漏改立刻红，不靠人记。
+ * （注释里刻意不写包名本身：`pnpm run check:identity` 把包名字面量当违规副本。）
+ */
+export const CONSTANT_DEVICE_FP_VALUES: readonly string[] = [
+  // sha256(空 ANDROID_ID + 包名)：ANDROID_ID 读成空串时的固定摘要
+  '3ec4ea9c0c4f2a1e8243ba65d25bb88a329b6091d600852a506cf241af3923c2',
+  // sha256(老设备那个常量 ANDROID_ID + 包名)：人人相同
+  '5e68c9f07ffafb4141e33037339c420621b45df53d3043c2cddfc6b1c6fcf5b3',
+]
+
+const CONSTANT_DEVICE_FPS: ReadonlySet<string> = new Set<string>(CONSTANT_DEVICE_FP_VALUES)
+
+/**
+ * 形状合法、但内容是「常量」的指纹：全相同字符，或命中已知常量黑名单。
+ *
+ * 这是 #395 判据的**唯一一份**：{@link normalizeDeviceFp} 与 {@link interpretFingerprint}
+ * 都走它，杜绝「一处拦、另一处放」。形状本身就不对的返回 `false`（那是 invalid-shape 的事）。
+ */
+export const isConstantDeviceFp = (value: unknown): boolean => {
+  if (typeof value !== 'string') {
+    return false
+  }
+  const fp = value.trim().toLowerCase()
+  if (!DEVICE_FP_PATTERN.test(fp)) {
+    return false
+  }
+  return ALL_SAME_CHAR_PATTERN.test(fp) || CONSTANT_DEVICE_FPS.has(fp)
+}
+
+/**
+ * 规范化一枚指纹：去空白、转小写，**形状或内容**不对就当没有（返回 `''`）。
+ *
+ * 两道闸：
+ *   1. 形状：不是 64 位十六进制就丢掉 —— 万一上游把 ANDROID_ID 明文当指纹传进来，
+ *      它过不了这里，不会出现在请求头里；
+ *   2. 内容：形状对但是常量（全零 / 全 F / 空 ANDROID_ID 的固定哈希）也丢掉 ——
+ *      上报常量等于告诉服务端「这些设备是同一台」，会把无关设备串成一个账号（#395）。
  */
 export const normalizeDeviceFp = (value: unknown): string => {
   if (typeof value !== 'string') {
     return ''
   }
   const fp = value.trim().toLowerCase()
-  return DEVICE_FP_PATTERN.test(fp) ? fp : ''
+  if (!DEVICE_FP_PATTERN.test(fp)) {
+    return ''
+  }
+  // 形状对、值是常量 → 当作**没有**指纹：不返回占位值，调用方就不会发出这个头
+  return isConstantDeviceFp(fp) ? '' : fp
 }
 
-/** 是不是一枚合法指纹。 */
+/** 是不是一枚**可信**指纹（形状对 + 不是常量）。 */
 export const isDeviceFp = (value: unknown): boolean => normalizeDeviceFp(value) !== ''
 
 /** 对外展示最多露哈希前 8 位（诊断 / 排障用；不合法就是空串，绝不含明文）。 */
@@ -138,7 +208,11 @@ export const interpretFingerprint = (raw: unknown): DeviceFingerprint => {
   }
   const fp = normalizeDeviceFp(record.deviceFp)
   if (fp === '') {
-    return { available: false, reason: 'invalid-shape' }
+    // 「形状不对」与「形状对但是常量」必须分得开：只看 reason 才知道该去修原生读取还是修兜底逻辑
+    return {
+      available: false,
+      reason: isConstantDeviceFp(record.deviceFp) ? 'constant_fp' : 'invalid-shape',
+    }
   }
   return { available: true, fp, strength: record.strength === 'strong' ? 'strong' : 'base' }
 }
@@ -181,12 +255,37 @@ export const readDeviceFingerprint = async (
 }
 
 /**
- * 界面 / 流程直接用这个：拿到指纹就返回哈希，拿不到返回 `''`。
+ * 「有没有可信指纹」的**两种状态**（#395 第 2 条）。
+ *
+ * 以前这两种状态只靠一个字符串表达，于是「没有」只能退化成空串、而兜底实现干脆填了全零 ——
+ * 服务端看到全零就当成一枚真指纹。现在状态是判别联合：`reported: false` 带原因，
+ * `reported: true` 才有一个可信值。线缆层同样只用「`X-Device-Fp` 这个头在不在」表达，
+ * **绝不用占位值代表「没有」**（见 api.ts 的 withDeviceFp）。
+ */
+export type FingerprintReport =
+  | { reported: true; fp: string }
+  | { reported: false; reason: NoFingerprintReason }
+
+/**
+ * 读一次指纹并给出**带状态**的结论：要么「有可信指纹」，要么「没有 + 原因」。
+ * 永不抛；拿不到就不上报，而不是上报一个假值。
+ */
+export const resolveDeviceFpReport = async (
+  read: FingerprintReader = readFromNative
+): Promise<FingerprintReport> => {
+  const result = await readDeviceFingerprint(read)
+  return result.available
+    ? { reported: true, fp: result.fp }
+    : { reported: false, reason: result.reason }
+}
+
+/**
+ * 界面 / 流程直接用这个：拿到**可信**指纹就返回哈希，拿不到（含常量 / 形状不对）返回 `''`。
  * **绝不抛异常，也绝不因为拿不到而返回错误** —— 调用方照常发请求即可。
  */
 export const resolveDeviceFp = async (read: FingerprintReader = readFromNative): Promise<string> => {
-  const result = await readDeviceFingerprint(read)
-  return result.available ? result.fp : ''
+  const report = await resolveDeviceFpReport(read)
+  return report.reported ? report.fp : ''
 }
 
 /** 最近一次「有没有指纹」的结论（未读过就是 null）。不含指纹内容。 */

@@ -16,6 +16,7 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { auditFlexGap } from '../../scripts/lib/flexGapAudit.mjs'
+import { isVendored } from '../../scripts/lib/vendoredPaths.mjs'
 import { parseRules, readGap, renderFallback } from '../../scripts/lib/flexGapRules.mjs'
 
 const SRC = fileURLToPath(new URL('../../src', import.meta.url))
@@ -44,6 +45,8 @@ const countCss = async (dir) => {
   let total = 0
   for (const entry of await readdir(dir, { withFileTypes: true })) {
     const full = join(dir, entry.name)
+    // 与 auditFlexGap 同一口径：vendored 第三方目录不计（#417）
+    if (isVendored(full)) continue
     if (entry.isDirectory()) total += await countCss(full)
     else if (entry.name.endsWith('.css')) total += 1
   }
@@ -161,5 +164,9 @@ test('#217 只有 flex-wrap 交叉轴 gap 时兜底只写 margin-bottom', () => 
 test('#217 真实仓库的扫描文件数等于 src 下 .css 文件数', async () => {
   const audit = await auditFlexGap(SRC)
   assert.equal(audit.cssFiles, await countCss(SRC), '扫描口径必须和真实文件数一致，否则守卫报的 OK 不可信')
-  assert.equal(audit.cssModules, 37, 'CSS Module 数（#209 盘点口径 37 个）变了就要同步 docs/capabilities/css.md')
+  assert.equal(
+    audit.cssModules,
+    38,
+    'CSS Module 数（#209 盘点口径 38 个，#386 新增 ScrollToBottomButton.module.css）变了就要同步 docs/capabilities/css.md'
+  )
 })

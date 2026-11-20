@@ -1,11 +1,13 @@
 import clsx from 'clsx'
-import { useTranslate } from '../../i18n/index.js'
+import { useUntrustedTranslate } from '../../i18n/index.js'
 import { IconToastError16 } from './icons.js'
 import { useToast } from './toastState.js'
 import styles from './Toast.module.css'
 
 export const Toast = () => {
-  const t = useTranslate()
+  // toast 的文案对象由调用方注入（`setCustomerMissingNotice` 那条链路来自服务端回包），
+  // key 可能是别的版本留下的：用带校验的版本，缺 key 时上报 + 兜底，而不是整棵树被 ErrorBoundary 换掉（#314）
+  const t = useUntrustedTranslate()
   const { id, message } = useToast()
   if (!message) {
     return null

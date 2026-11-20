@@ -35,7 +35,7 @@ registerHooks({
 })
 
 const { importArchive } = await import('../../src/services/chat/history/importArchive.ts')
-const { buildArchive } = await import('../fixtures/archive-fixture.mjs')
+const { buildArchive } = await import('../fixtures/domain05/archive-fixture.mjs')
 
 const resetStaging = () => {
   globalThis.__stagedFiles = []

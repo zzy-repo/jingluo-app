@@ -25,7 +25,7 @@ import java.util.UUID;
  *       {@code importLimit.DEFAULT_MAX_IMPORT_BYTES} 同一个数）：导出产物必须能被本 App 的
  *       「导入历史对话」读回，所以**导出上限不能大于导入上限** —— 大一点就会产出
  *       「导得出、导不回」的包（(200MB, 220MB] 死区，issue #336）。
- *       <b>权威判断在 TS 侧</b>（{@code importLimit.MAX_EXPORT_BYTES} + {@code zipWriter.writeArchive}
+ *       <b>权威判断在 TS 侧</b>（{@code history/zipWriter.ts} 的 {@code MAX_EXPORT_BYTES} + {@code writeArchive}
  *       在打开 SAF 之前就拦），这里只是纯兜底：万一上游漏判，也别让超过 200MB 的字节落到用户选的文件里。</li>
  * </ul>
  *
@@ -38,7 +38,7 @@ public class ExportTextPlugin extends Plugin {
     private static final long MAX_BYTES = 8L * 1024 * 1024;
     /**
      * 二进制出口上限（兜底）：与导入侧 200MB 相等，理由见类注释。
-     * 权威判断在 TS 侧（{@code importLimit.MAX_EXPORT_BYTES}）：那边在打开 SAF 之前就拒，
+     * 权威判断在 TS 侧（{@code history/zipWriter.ts} 的 {@code MAX_EXPORT_BYTES}）：那边在打开 SAF 之前就拒，
      * 用户不会先选好位置再看到「文件过大」；这里只保证任何情况下都不会写超。
      */
     private static final long MAX_BINARY_BYTES = 200L * 1024 * 1024;

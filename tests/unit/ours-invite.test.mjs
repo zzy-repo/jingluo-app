@@ -13,24 +13,15 @@
 //   [5] 邀请码全部错误码：device_not_found / invalid_code / own_code / already_redeemed /
 //       code_exhausted / rate_limited（含网络与超时）
 //   [6] 隐私：整条链路一条 console 都没有；返回值里没有完整 device_id / Key
-import { registerHooks } from 'node:module'
+import { installTsResolve } from '../helpers/dom-env.mjs'
+import { createSelfCheck, errorBody, fakeTransport, jsonResponse as json } from '../helpers/ours-check.mjs'
 
 // 端点地址唯一来源：config/endpoints.json（#274）
 import { inviteBaseUrl } from '../../scripts/lib/endpoints.mjs'
 
-// 与打包器一致：源码内部用 .js 说明符指向 .ts 文件
-registerHooks({
-  resolve(specifier, context, nextResolve) {
-    try {
-      return nextResolve(specifier, context)
-    } catch (error) {
-      if (specifier.startsWith('.') && specifier.endsWith('.js')) {
-        return nextResolve(specifier.slice(0, -3) + '.ts', context)
-      }
-      throw error
-    }
-  },
-})
+// 装配走公共入口（#408 收尾批）：`.js→.ts` 解析 + 自查断言骨架都不再逐文件手抄。
+// 本文件没有模块替身（只 import 真源码，网络走假 transport 注入），所以 installTsResolve 不带 stubs。
+installTsResolve()
 
 const { zh } = await import('../../src/i18n/zh.ts')
 const {
@@ -64,38 +55,7 @@ const PROFILE = {
   key_status: 'active',
 }
 
-const failures = []
-const checks = { n: 0 }
-const ok = (message) => {
-  checks.n += 1
-  console.log(`  ok  ${message}`)
-}
-const bad = (message) => {
-  failures.push(message)
-  console.error(`  ✗   ${message}`)
-}
-const eq = (actual, expected, label) => {
-  const a = JSON.stringify(actual)
-  const b = JSON.stringify(expected)
-  if (a === b) {
-    ok(`${label} = ${a}`)
-  } else {
-    bad(`${label}：期望 ${b}，实际 ${a}`)
-  }
-}
-const truthy = (condition, label) => (condition ? ok(label) : bad(label))
-
-const fakeTransport = (responses) => {
-  const calls = []
-  const transport = async (request) => {
-    calls.push(request)
-    const next = responses.length > 1 ? responses.shift() : responses[0]
-    return typeof next === 'function' ? next(request) : next
-  }
-  return { transport, calls }
-}
-const json = (status, body) => ({ kind: 'response', status, text: JSON.stringify(body) })
-const errorBody = (code) => ({ error: { code, message: 'server says no' } })
+const { failures, checks, ok, bad, eq, truthy } = createSelfCheck()
 
 // ---------------------------------------------------------------- [1] 设备码
 console.log('\n[1] 设备码：长度/字符集/持久化/坏值重建')

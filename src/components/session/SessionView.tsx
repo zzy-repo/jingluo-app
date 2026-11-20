@@ -5,6 +5,7 @@ import type { Session } from '../../services/chat/types.js'
 import { ChatInput } from '../chatInput/ChatInput.js'
 import { MessageList } from '../messages/MessageList.js'
 import { MobileHeader } from './MobileHeader.js'
+import { ScrollToBottomButton } from './ScrollToBottomButton.js'
 import styles from './SessionView.module.css'
 
 /** 会话页：标题栏（移动端为顶栏）+ 消息列表，输入框吸底 */
@@ -36,6 +37,8 @@ export const SessionView = ({
         streaming={streaming}
         footer={
           <div className={styles.inputContainer}>
+            {/* #386：回到底部按钮贴在输入框上沿之上（离底部超过 200px 才挂载） */}
+            <ScrollToBottomButton />
             <ChatInput sessionId={session.id} />
             <div className={styles.caveat}>{t('contentCaveat')}</div>
           </div>

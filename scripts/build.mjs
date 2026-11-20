@@ -19,6 +19,9 @@
  * 环境变量（原样透传，与改前一致）：
  *   DIST_OUT=dist-xxx   输出目录（默认 dist）
  *   APP_VERSION=...     覆盖 build-info 里的版本号
+ *
+ * 构建前会先过 `config/endpoints.json` 的 consume / pay 两段校验（#484 §6.3）：
+ * https、废弃域黑名单、两个 base 不许相同、缺字段 / 未知键（报键名 + 行号）→ 一律中止。
  * 说明：输出目录由 DIST_OUT 决定，清空的也是该目录本身（改前无论 DIST_OUT 是什么都清 dist/）。
  */
 
@@ -28,6 +31,8 @@ import fsp from 'node:fs/promises';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
+
+import { ENDPOINTS_LABEL, loadConsumePay, placeholderNotice } from './lib/consumeEndpoints.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const RSPACK_CONFIG = 'rspack.config.ts';
@@ -39,6 +44,28 @@ function log(msg) {
 function die(msg) {
   process.stderr.write(`[build][ERROR] ${msg}\n`);
   process.exit(1);
+}
+
+/**
+ * 构建期 fail-fast：`config/endpoints.json` 的 `consume` / `pay` 两段（#484 §6.3 / #487 W1-A）。
+ *
+ * 为什么在打包**之前**校验，而不是等运行时第一发请求：地址写错 / 少了字段时，运行时只表现为
+ * 「转圈」「登录一直失败」，日志里没有半条线索。构建失败是唯一能被看见的时刻。
+ * 报错必须带**键名与文件行号**（`consume.baseUrl 缺失` 这种话，缺了行号还是要人去 grep）。
+ * 占位地址（`*.invalid`）不算错，但每次都打一行警告 —— 出正式包前必须换掉。
+ */
+function checkConsumeEndpoints() {
+  let config;
+  try {
+    config = loadConsumePay(path.join(ROOT, ENDPOINTS_LABEL));
+  } catch (error) {
+    die(error && error.message ? error.message : String(error));
+  }
+  const notice = placeholderNotice(JSON.parse(fs.readFileSync(path.join(ROOT, ENDPOINTS_LABEL), 'utf8')));
+  if (notice) process.stderr.write(`[build][WARN] ${notice}\n`);
+  log(`consume=${config.consume.baseUrl} (${config.consume.apiV1Prefix} | ${config.consume.gatewayPrefix})`);
+  log(`pay=${config.pay.baseUrl}`);
+  return config;
 }
 
 /** 本地解析 @rspack/cli 的 bin，不经过 npx / shell（npx 会按需向网络拉包，版本不锚定） */
@@ -66,6 +93,9 @@ async function main() {
   const outDir = (process.env.DIST_OUT ?? '').trim() || 'dist';
   const variant = internal ? 'internal' : 'standard';
   const { bin, version } = resolveRspackBin();
+
+  // 0. 端点配置 fail-fast（不合法直接 exit 1，绝不带着错地址打包）
+  checkConsumeEndpoints();
 
   // 1. 清输出目录（原脚本的 rm -rf dist）
   await fsp.rm(path.join(ROOT, outDir), { recursive: true, force: true });

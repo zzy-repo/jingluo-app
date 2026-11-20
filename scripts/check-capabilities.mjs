@@ -48,6 +48,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import { auditApiAssumptions, summarize as summarizeApi } from './lib/apiAssumptionAudit.mjs'
 import { VERDICT_TEXT as CSS_VERDICT_TEXT, auditCssAssumptions } from './lib/cssAssumptionAudit.mjs'
 import { auditHostCapabilities } from './lib/hostCapabilityAudit.mjs'
+import { isVendored } from './lib/vendoredPaths.mjs'
 import { VERDICT as BEHAVIOR_VERDICT, auditBehaviorAssumptions } from './lib/behaviorAssumptionAudit.mjs'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
@@ -93,6 +94,8 @@ export const collectSources = (srcDir, root) => {
     const entries = fs.readdirSync(dir, { withFileTypes: true }).sort((a, b) => (a.name < b.name ? -1 : 1))
     for (const entry of entries) {
       const full = path.join(dir, entry.name)
+      // vendored 第三方目录不进我们的能力盘点（#417），名单见 scripts/lib/vendoredPaths.mjs
+      if (isVendored(full)) continue
       if (entry.isDirectory()) {
         if (SKIP_DIRS.has(entry.name) || entry.name.startsWith('.')) continue
         walk(full)

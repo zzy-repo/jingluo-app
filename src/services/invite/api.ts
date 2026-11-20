@@ -45,9 +45,11 @@ export const INVITE_API_BASE = __ENDPOINTS__.inviteBaseUrl
  * 需要上报设备指纹的请求头上挂 `X-Device-Fp`（Issue #243）。
  *
  * 三条约束：
- *   - 指纹必须过 {@link normalizeDeviceFp}：不是 64 位小写十六进制就当没有（明文 ANDROID_ID
- *     万一被上游误传，会在这里被丢掉，不可能出现在请求里）；
- *   - 没有指纹就**原样返回入参对象**，请求与此前完全一致 —— 降级不留痕、不阻塞；
+ *   - 指纹必须过 {@link normalizeDeviceFp}：不是 64 位十六进制、或形状对但是常量（全零 / 全 F /
+ *     空 ANDROID_ID 的固定哈希，见 #395）就当没有 —— 明文 ANDROID_ID 万一被上游误传，
+ *     也会在这里被丢掉，不可能出现在请求里；
+ *   - 没有指纹就**原样返回入参对象**，请求与此前完全一致 —— 降级不留痕、不阻塞。
+ *     「没有可信指纹」这个状态只靠**头缺席**表达，绝不上报一个全零/常量占位值（#395 第 2 条）；
  *   - 只加一个头，不改 body、不改 URL：服务端认不认都影响不到本次语义。
  */
 const withDeviceFp = (headers: Record<string, string>, deviceFp: string): Record<string, string> => {
@@ -59,6 +61,12 @@ export const INVITE_TIMEOUTS = {
   apply: 15000,
   profile: 10000,
   redeem: 15000,
+  /** #421：发验证码（服务端要落库 + 发信，与 /apply 同档） */
+  emailSend: 15000,
+  /** #421：提交验证码（登录分支会做账号接管，与 /apply 同档） */
+  emailVerify: 15000,
+  /** #421：只读探测，与 /me 同档 */
+  emailStatus: 10000,
 } as const
 
 /** 界面文案 key（与 i18n/zh.ts 一致；服务层只回 key，不拼文案） */
@@ -136,6 +144,18 @@ export type InviteProfile = {
   inviteRules: InviteRules | null
   /** 本人已获得的返现积分；服务端没发 → null */
   cashbackPoints: number | null
+  /**
+   * #421：本账号是否已绑邮箱（服务端 `has_email`）。
+   *
+   * 三态，与 `newUserGranted` / `alreadyClaimed` 同一套写法：
+   *  - `true`  = 服务端明确说「绑了」；
+   *  - `false` = 服务端明确说「没绑」（邮箱功能已开启，这台还没绑）；
+   *  - `null`  = **没有这个字段** —— 邮箱功能未开启 / 老服务端。界面必须按「未开启」处理
+   *    （入口不出、备份提示照旧），绝不能当成 `false` 去催用户绑邮箱。
+   */
+  hasEmail: boolean | null
+  /** 脱敏邮箱（仅已绑定时服务端才发）；没绑 / 没这个字段 → null，界面不显示 */
+  emailMasked: string | null
 }
 
 export const parseJson = (text: string): { ok: true; value: unknown } | { ok: false } => {
@@ -195,6 +215,23 @@ export const readOptionalBoolean = (
   return typeof value === 'boolean' ? value : null
 }
 
+/**
+ * 可选字符串：字段不存在 / 不是字符串 / 空串 → null。
+ * 与 {@link readOptionalBoolean} 同一个理由：「服务端说这里什么都没有」和「服务端压根没这个字段」
+ * 对界面是两回事（前者该显示空，后者该整行隐藏）。
+ */
+export const readOptionalString = (
+  record: Record<string, unknown> | null,
+  field: string
+): string | null => {
+  const value = record?.[field]
+  if (typeof value !== 'string') {
+    return null
+  }
+  const trimmed = value.trim()
+  return trimmed === '' ? null : trimmed
+}
+
 /** 解析服务端下发的邀请规则；两条主线奖励都读不出来就当作没有规则（→ null） */
 export const parseInviteRules = (value: unknown): InviteRules | null => {
   const record = asRecord(value)
@@ -242,6 +279,9 @@ export const parseInviteProfile = (value: unknown): InviteProfile | null => {
     // #234：规则与返现都只认服务端；缺失即 null（降级态），绝不补默认金额
     inviteRules: parseInviteRules(record.invite_rules),
     cashbackPoints: readOptionalNumber(record, 'cashback_points'),
+    // #421：缺字段 → null（邮箱功能未开启），不是 false
+    hasEmail: readOptionalBoolean(record, 'has_email'),
+    emailMasked: readOptionalString(record, 'email_masked'),
   }
 }
 
@@ -829,3 +869,486 @@ export const runWithDeviceSelfHeal = async <T extends { kind: string; code?: str
     healed: true,
   }
 }
+// ------------------------------------------------------------------ 邮箱账号（Issue #421）
+
+/**
+ * 邮箱账号层：绑定邮箱 / 换机用邮箱登录。
+ *
+ * 服务端契约见 #421 与后端仓库 `docs/email-api.md`（分支 `feat/email-signup`）。
+ * **生产尚未启用**：功能未开启时三个路径都返回 `404 not_found`，客户端据此隐藏入口。
+ * 别把它和同是 404 的 `device_not_found` 混了 —— 后者是「这台设备服务端没记录」（该走自愈），
+ * 前者是「这台服务器没有邮箱功能」（该隐藏入口）。
+ *
+ * 这一层只做三件事：
+ *  1. 发请求：沿用手上这套（INVITE_API_BASE / withDeviceFp / INVITE_TIMEOUTS），不另起请求栈，
+ *     头、超时、错误分类与 /apply、/me 完全一致；
+ *  2. 把 error 体里的 code 与附加字段翻成文案 key；
+ *  3. 把 action / device_id / key 原样交出去 —— **采用**（写回本地设备码、落 Key）在
+ *     `services/invite/email.ts` 里走 `adoptServerDeviceId` / `bindSuccessKey` 那条既有路径，
+ *     这里绝不自己写一套覆盖逻辑。
+ *
+ * 登录冲突（`device_has_account`）在这里被翻成 {@link EmailConflict} 而不是普通错误：
+ * 弹窗与「带 choice 重发」的交互在界面层，本层只负责把 `email_masked` /
+ * `device_remaining_points` / `options` 如实交出去（验证码此时尚未消耗）。
+ *
+ * 明确不做（#421 范围外）：**自动合并账号**（服务端不合并，数据保留、需客服处理）、支付链路改动。
+ */
+
+/** 邮箱接口的文案 key：错误码表 + 复用既有的网络 / 超时 / 响应异常文案 */
+export type EmailMessageKey =
+  | InviteMessageKey
+  | 'oursInviteErrEmailInvalid'
+  | 'oursInviteErrEmailDomainBlocked'
+  | 'oursInviteErrEmailCodeInvalid'
+  | 'oursInviteErrEmailCodeExpired'
+  | 'oursInviteErrEmailCodeLocked'
+  | 'oursInviteErrEmailTooFrequent'
+  | 'oursInviteErrEmailHourLimit'
+  | 'oursInviteErrIpHourLimit'
+  | 'oursInviteErrDeviceHourLimit'
+  | 'oursInviteErrEmailDailyCap'
+  | 'oursInviteErrEmailSendFailed'
+  | 'oursInviteErrCustomerHasEmail'
+  | 'oursInviteErrAccountFrozen'
+  // #421 第 3 点：本机已有账号、又要用邮箱登录已有账号 —— 交给冲突弹窗处理（见 EmailConflict），
+  // 这条 key 只在它意外出现在别的路径时兜底，别让用户看到中性的「操作失败」。
+  | 'oursInviteErrEmailDeviceHasAccount'
+
+/**
+ * 服务端错误码 → 文案 key（#421 表格逐条对应）。
+ *
+ * **必须先用这张表匹配 error.code，匹配不到才退回 EMAIL_STATUS_KEYS。**
+ * 原因是 409 在两条链路里语义完全不同：
+ *  - /redeem 的 409 → 「已绑定过邀请码」（oursInviteErrAlreadyRedeemed，见 INVITE_STATUS_KEYS）；
+ *  - /email/* 的 409 customer_has_email → 「本账号已绑过邮箱」。
+ * 先按状态码查就会把后者显示成前者，用户看到的是「邀请码已绑定」，纯误导。
+ */
+export const EMAIL_ERROR_KEYS: Record<string, EmailMessageKey> = {
+  bad_email: 'oursInviteErrEmailInvalid',
+  email_domain_blocked: 'oursInviteErrEmailDomainBlocked',
+  code_invalid: 'oursInviteErrEmailCodeInvalid',
+  code_expired: 'oursInviteErrEmailCodeExpired',
+  code_locked: 'oursInviteErrEmailCodeLocked',
+  too_frequent: 'oursInviteErrEmailTooFrequent',
+  email_hour_limit: 'oursInviteErrEmailHourLimit',
+  ip_hour_limit: 'oursInviteErrIpHourLimit',
+  device_hour_limit: 'oursInviteErrDeviceHourLimit',
+  email_daily_cap: 'oursInviteErrEmailDailyCap',
+  send_failed: 'oursInviteErrEmailSendFailed',
+  customer_has_email: 'oursInviteErrCustomerHasEmail',
+  account_frozen: 'oursInviteErrAccountFrozen',
+  // #421 第 3 点：正常路径由 verifyEmailCode 翻成 EmailConflict（弹窗让用户选），
+  // 这里留着只为「别的路径意外回了它」时别落到中性的「操作失败」。
+  device_has_account: 'oursInviteErrEmailDeviceHasAccount',
+  // 同一台服务上的既有码：/email/* 也会回它们（尤其 /email/status 的 404 device_not_found）。
+  // 不映射就会落到中性的「操作失败」，对用户没有任何下一步指引 —— 复用既有文案，不新造。
+  device_not_found: 'oursInviteErrDeviceNotFound',
+  bad_device_id: 'oursInviteErrDeviceMissing',
+  invalid_device: 'oursInviteErrDeviceMissing',
+  rate_limited: 'oursInviteErrRateLimited',
+}
+
+/**
+ * 只有状态码、没有可识别 code 时的兜底。
+ *
+ * 刻意**不挂** INVITE_STATUS_KEYS：那张表的 409 是「已绑定过邀请码」，
+ * 邮箱这条链路用它会误报（见 EMAIL_ERROR_KEYS 的说明）。400 / 409 一律给中性文案。
+ */
+export const EMAIL_STATUS_KEYS: Record<number, EmailMessageKey> = {
+  400: 'oursInviteErrUnknown',
+  403: 'oursInviteErrAccountFrozen',
+  409: 'oursInviteErrUnknown',
+  429: 'oursInviteErrEmailTooFrequent',
+  502: 'oursInviteErrEmailSendFailed',
+  503: 'oursInviteErrEmailDailyCap',
+}
+
+/** 错误体里的附加字段（#421 表格最后一列）：有就展示，没有就是 null */
+export type EmailErrorExtras = {
+  /** code_invalid / code_locked：这个验证码还剩几次机会 */
+  attemptsLeft: number | null
+  /** too_frequent / *_hour_limit：多少秒后可以再发 */
+  retryAfter: number | null
+  /** customer_has_email：本账号已绑的那个脱敏邮箱 */
+  boundEmailMasked: string | null
+  /**
+   * device_has_account：本机原账号还剩多少积分（#421 第 3 点要求**必须展示**）。
+   * 冲突弹窗用它告诉用户「切换后这部分额度暂时用不了」；非冲突路径一律 null。
+   */
+  deviceRemainingPoints: number | null
+  /** device_has_account：这次要换上的那个脱敏邮箱（与 bound_email_masked 是两个字段，别混） */
+  conflictEmailMasked: string | null
+}
+
+export type EmailError = {
+  kind: 'error'
+  code: string
+  messageKey: EmailMessageKey
+  retryable: boolean
+} & EmailErrorExtras
+
+const NO_EMAIL_EXTRAS: EmailErrorExtras = {
+  attemptsLeft: null,
+  retryAfter: null,
+  boundEmailMasked: null,
+  deviceRemainingPoints: null,
+  conflictEmailMasked: null,
+}
+
+/**
+ * 附加字段的位置：优先 error 里面（契约写法），其次顶层（服务端换位置时不至于丢）。
+ * 只读字段，不做任何推断。
+ */
+const emailFieldSources = (body: unknown): Record<string, unknown>[] => {
+  const record = asRecord(body)
+  if (record === null) {
+    return []
+  }
+  const nested = asRecord(record.error)
+  return nested === null ? [record] : [nested, record]
+}
+
+const emailExtras = (body: unknown): EmailErrorExtras => {
+  const sources = emailFieldSources(body)
+  const pick = <T>(read: (record: Record<string, unknown>) => T | null): T | null => {
+    for (const source of sources) {
+      const value = read(source)
+      if (value !== null) {
+        return value
+      }
+    }
+    return null
+  }
+  return {
+    attemptsLeft: pick((record) => readOptionalNumber(record, 'attempts_left')),
+    retryAfter: pick((record) => readOptionalNumber(record, 'retry_after')),
+    boundEmailMasked: pick((record) => readOptionalString(record, 'bound_email_masked')),
+    deviceRemainingPoints: pick((record) => readOptionalNumber(record, 'device_remaining_points')),
+    conflictEmailMasked: pick((record) => readOptionalString(record, 'email_masked')),
+  }
+}
+
+/** 频控 / 发信失败可以原样重试；语义错误（格式、验证码、已绑过）重试没意义 */
+const EMAIL_RETRYABLE_CODES = new Set([
+  'too_frequent',
+  'email_hour_limit',
+  'ip_hour_limit',
+  'device_hour_limit',
+  'email_daily_cap',
+  'send_failed',
+  'rate_limited',
+])
+
+const emailFailure = (code: string, status: number, body: unknown): EmailError => ({
+  kind: 'error',
+  code: code === '' ? `HTTP_${status}` : code,
+  // code 优先，状态码兜底（#421 对 409 的硬要求）
+  messageKey: EMAIL_ERROR_KEYS[code] ?? EMAIL_STATUS_KEYS[status] ?? 'oursInviteErrUnknown',
+  retryable: EMAIL_RETRYABLE_CODES.has(code) || status >= 500,
+  ...emailExtras(body),
+})
+
+const emailTransportFailure = (
+  result: Exclude<OursHttpResult, { kind: 'response' }>
+): EmailError => ({ kind: 'error', ...transportFailure(result), ...NO_EMAIL_EXTRAS })
+
+/** 6 位数字验证码（纯形状判断，界面用来禁用按钮；服务端仍会再判一次） */
+export const isEmailCodeShape = (value: string): boolean => /^\d{6}$/.test(value.trim())
+
+/** 邮箱形状：只做「像不像」的判断，真实校验在服务端（bad_email / email_domain_blocked） */
+export const isEmailShape = (value: string): boolean => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim())
+
+export type EmailSendCodeResult = { kind: 'ok'; resendAfter: number | null } | EmailError
+
+/**
+ * 发验证码：POST /email/send-code，入参 device_id、email，可带 X-Device-Fp。
+ * 频控不在这里算：服务端回 too_frequent + retry_after，界面照那个数字倒计时。
+ */
+export const sendEmailCode = async (
+  input: { deviceId: string; email: string },
+  transport: OursTransport,
+  deviceFp = ''
+): Promise<EmailSendCodeResult> => {
+  const id = input.deviceId.trim()
+  const email = input.email.trim()
+  if (id === '') {
+    return {
+      kind: 'error',
+      code: 'DEVICE_MISSING',
+      messageKey: 'oursInviteErrDeviceMissing',
+      retryable: false,
+      ...NO_EMAIL_EXTRAS,
+    }
+  }
+  if (email === '') {
+    return {
+      kind: 'error',
+      code: 'EMAIL_MISSING',
+      messageKey: 'oursInviteErrEmailInvalid',
+      retryable: false,
+      ...NO_EMAIL_EXTRAS,
+    }
+  }
+  const result = await transport({
+    method: 'POST',
+    url: `${INVITE_API_BASE}/email/send-code`,
+    headers: withDeviceFp(
+      { 'Content-Type': 'application/json', Accept: 'application/json' },
+      deviceFp
+    ),
+    body: JSON.stringify({ device_id: id, email }),
+    timeoutMs: INVITE_TIMEOUTS.emailSend,
+    followRedirects: false,
+  })
+  if (result.kind !== 'response') {
+    return emailTransportFailure(result)
+  }
+  const parsed = parseJson(result.text)
+  const body = parsed.ok ? parsed.value : null
+  if (!isSuccessStatus(result.status)) {
+    return emailFailure(readErrorCode(body), result.status, body)
+  }
+  return { kind: 'ok', resendAfter: readOptionalNumber(asRecord(body), 'resend_after') }
+}
+
+/** 服务端告诉客户端这次是「绑定」还是「登录」（/email/verify 的 action） */
+export type EmailVerifyAction = 'bound' | 'login'
+
+/** #421 第 3 点：冲突时用户可以选的两个方向（就是服务端 `options` 里的字面量） */
+export type EmailChoice = 'use_email' | 'keep_device'
+
+/** 契约里只定义了这两个选项；顺序即界面按钮顺序（`use_email` 在前） */
+export const EMAIL_CHOICES: readonly EmailChoice[] = ['use_email', 'keep_device']
+
+/**
+ * 登录冲突（`device_has_account`，HTTP 409）。
+ *
+ * 关键事实：此时**验证码尚未被消耗** —— 服务端等客户端带同一个验证码 + `choice` 再请求一次。
+ * 所以这里既不是「绑定成功」也不是「失败」，必须让用户显式选一个方向：
+ *  - `use_email`   用邮箱账号（本机原账号的额度暂时用不了，服务端不自动合并）；
+ *  - `keep_device` 保留本机账号（放弃这次邮箱登录）。
+ */
+export type EmailConflict = {
+  kind: 'conflict'
+  /** 这次要换上的那个脱敏邮箱（服务端 `email_masked`）；没回就是 null */
+  emailMasked: string | null
+  /** 本机原账号剩余额度（服务端 `device_remaining_points`）：**必须展示** */
+  deviceRemainingPoints: number | null
+  /** 服务端允许的选项；没给 / 给坏时按契约的两个都给 */
+  options: EmailChoice[]
+}
+
+/** 冲突响应里的 `options`：只认契约里的两个字面量，其余一律忽略 */
+const parseEmailChoices = (body: unknown): EmailChoice[] => {
+  for (const source of emailFieldSources(body)) {
+    const raw = source.options
+    if (!Array.isArray(raw)) {
+      continue
+    }
+    const picked = EMAIL_CHOICES.filter((choice) => raw.includes(choice))
+    if (picked.length > 0) {
+      return picked
+    }
+  }
+  return [...EMAIL_CHOICES]
+}
+
+const emailConflict = (body: unknown): EmailConflict => {
+  const extras = emailExtras(body)
+  return {
+    kind: 'conflict',
+    emailMasked: extras.conflictEmailMasked,
+    deviceRemainingPoints: extras.deviceRemainingPoints,
+    options: parseEmailChoices(body),
+  }
+}
+
+export type EmailVerifyResult =
+  | {
+      kind: 'ok'
+      action: EmailVerifyAction
+      /**
+       * 服务端在响应里回填的 device_id（'' = 没回）。
+       * action: 'login' 时它就是**原账号**的设备码 —— 采用动作在 services/invite/email.ts，
+       * 走 adoptServerDeviceId（合法才写、相同不写），本函数不碰存储。
+       */
+      serverDeviceId: string
+      /** action: 'login' 时是新凭据；bound 时通常没有。绝不记录、绝不进文案 */
+      apiKey: string
+      /** 服务端 email_masked；没有就退回档案里的同名字段 */
+      emailMasked: string | null
+      /** 服务端 has_email（同三态）；没有就退回档案里的同名字段 */
+      hasEmail: boolean | null
+      /** 响应里若顺带回了档案就用它，否则 null（界面再查一次 /me） */
+      profile: InviteProfile | null
+    }
+  /** #421 第 3 点：本机已有账号 → 弹窗让用户选，验证码留着没消耗 */
+  | EmailConflict
+  | EmailError
+
+/**
+ * 提交验证码：POST /email/verify，入参 device_id、email、code（冲突确认时再加 `choice`）。
+ * 绑定还是登录**由服务端判定**，客户端只看 action（#421：不要自己猜）。
+ *
+ * `choice` 只在「用户已经在那张冲突弹窗上点过按钮」时才带：同一个验证码重发一次，
+ * 服务端据此决定到底换不换账号。第一次提交（`choice` 不给）绝不能带 —— 那是替用户先选了。
+ *
+ * action 缺失 / 不是 bound|login 一律按响应异常处理：那是契约变了，
+ * 猜一个的后果是「该换设备码却没换」或反之，两种都比报错难查。
+ */
+export const verifyEmailCode = async (
+  input: { deviceId: string; email: string; code: string; choice?: EmailChoice },
+  transport: OursTransport,
+  deviceFp = ''
+): Promise<EmailVerifyResult> => {
+  const id = input.deviceId.trim()
+  const email = input.email.trim()
+  const code = input.code.trim()
+  if (id === '') {
+    return {
+      kind: 'error',
+      code: 'DEVICE_MISSING',
+      messageKey: 'oursInviteErrDeviceMissing',
+      retryable: false,
+      ...NO_EMAIL_EXTRAS,
+    }
+  }
+  if (email === '') {
+    return {
+      kind: 'error',
+      code: 'EMAIL_MISSING',
+      messageKey: 'oursInviteErrEmailInvalid',
+      retryable: false,
+      ...NO_EMAIL_EXTRAS,
+    }
+  }
+  if (code === '') {
+    return {
+      kind: 'error',
+      code: 'CODE_MISSING',
+      messageKey: 'oursInviteErrEmailCodeInvalid',
+      retryable: false,
+      ...NO_EMAIL_EXTRAS,
+    }
+  }
+  const result = await transport({
+    method: 'POST',
+    url: `${INVITE_API_BASE}/email/verify`,
+    headers: withDeviceFp(
+      { 'Content-Type': 'application/json', Accept: 'application/json' },
+      deviceFp
+    ),
+    // `choice` 只在冲突弹窗上点过按钮后才有；第一次提交不带（不替用户先做决定）
+    body: JSON.stringify(
+      input.choice === undefined
+        ? { device_id: id, email, code }
+        : { device_id: id, email, code, choice: input.choice }
+    ),
+    timeoutMs: INVITE_TIMEOUTS.emailVerify,
+    followRedirects: false,
+  })
+  if (result.kind !== 'response') {
+    return emailTransportFailure(result)
+  }
+  const parsed = parseJson(result.text)
+  const body = parsed.ok ? parsed.value : null
+  const bodyRecord = asRecord(body)
+  if (!isSuccessStatus(result.status)) {
+    const code = readErrorCode(body)
+    // #421 第 3 点：本机已有账号 + 邮箱是已有账号 = 冲突，**不是失败**
+    // （验证码此时没被消耗，界面弹窗让用户选，然后带同一个验证码 + choice 再来一次）
+    if (code === 'device_has_account') {
+      return emailConflict(body)
+    }
+    return emailFailure(code, result.status, body)
+  }
+  const action = readString(bodyRecord, 'action').trim()
+  if (action !== 'bound' && action !== 'login') {
+    return {
+      kind: 'error',
+      code: 'INVALID_RESPONSE',
+      messageKey: 'oursInviteErrInvalidResponse',
+      retryable: false,
+      ...NO_EMAIL_EXTRAS,
+    }
+  }
+  const profile = parseInviteProfile(body)
+  return {
+    kind: 'ok',
+    action,
+    serverDeviceId: readString(bodyRecord, 'device_id').trim(),
+    apiKey: readString(bodyRecord, 'key').trim(),
+    emailMasked: readOptionalString(bodyRecord, 'email_masked') ?? profile?.emailMasked ?? null,
+    hasEmail: readOptionalBoolean(bodyRecord, 'has_email') ?? profile?.hasEmail ?? null,
+    profile,
+  }
+}
+
+export type EmailStatusResult =
+  | {
+      kind: 'ok'
+      /** 三态：true 已绑 / false 明确没绑 / null 服务端没发这个字段 */
+      hasEmail: boolean | null
+      emailMasked: string | null
+    }
+  /** 服务端没有邮箱功能（404 + not_found）→ 界面隐藏入口，旧流程一字不动 */
+  | { kind: 'disabled' }
+  | EmailError
+
+/**
+ * 查本机账号是否已绑邮箱：GET /email/status?device_id=（只读，不返回 Key）。
+ *
+ * 入口探测的唯一判据（#421 第 4 点）：
+ *  - 404 + error.code === 'not_found' → disabled（隐藏入口）；
+ *  - 404 + device_not_found → 普通错误（那是「这台设备没记录」，该走自愈 / 提示领取），
+ *    **绝不能**当成「功能没开」把入口藏掉。
+ */
+export const fetchEmailStatus = async (
+  deviceId: string,
+  transport: OursTransport,
+  deviceFp = ''
+): Promise<EmailStatusResult> => {
+  const id = deviceId.trim()
+  if (id === '') {
+    return {
+      kind: 'error',
+      code: 'DEVICE_MISSING',
+      messageKey: 'oursInviteErrDeviceMissing',
+      retryable: false,
+      ...NO_EMAIL_EXTRAS,
+    }
+  }
+  const result = await transport({
+    method: 'GET',
+    url: `${INVITE_API_BASE}/email/status?device_id=${encodeURIComponent(id)}`,
+    headers: withDeviceFp({ Accept: 'application/json' }, deviceFp),
+    timeoutMs: INVITE_TIMEOUTS.emailStatus,
+    followRedirects: false,
+  })
+  if (result.kind !== 'response') {
+    return emailTransportFailure(result)
+  }
+  const parsed = parseJson(result.text)
+  const body = parsed.ok ? parsed.value : null
+  const code = readErrorCode(body)
+  if (result.status === 404 && code === 'not_found') {
+    return { kind: 'disabled' }
+  }
+  if (!isSuccessStatus(result.status)) {
+    return emailFailure(code, result.status, body)
+  }
+  const record = asRecord(body)
+  return {
+    kind: 'ok',
+    hasEmail: readOptionalBoolean(record, 'has_email'),
+    emailMasked: readOptionalString(record, 'email_masked'),
+  }
+}
+
+/**
+ * 入口要不要出现：只有「探测成功」才显示。
+ *
+ * disabled（服务端没开）与探测失败（网络 / 超时 / 老部署 404 没业务码）一律不显示 ——
+ * 宁可不出现入口，也不能给一个点了就报错的按钮。
+ */
+export const shouldShowEmailEntry = (result: EmailStatusResult): boolean => result.kind === 'ok'

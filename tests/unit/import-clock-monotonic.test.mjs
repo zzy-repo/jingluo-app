@@ -13,53 +13,21 @@
 // （用 performance.now 还是别的单调源都行，只要不受墙钟偏移影响）。
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { existsSync } from 'node:fs'
-import { registerHooks } from 'node:module'
-import { fileURLToPath, pathToFileURL } from 'node:url'
+import { fixtureUrl, installTsResolve, moduleUrl } from '../helpers/dom-env.mjs'
+import { zipBytes } from '../helpers/url-import-fixtures.mjs'
 
-const stub = (name) => new URL(`../fixtures/url-import-stubs/${name}`, import.meta.url).href
-const limitModule = new URL('../../src/services/chat/history/importLimit.ts', import.meta.url).href
-// 失败原因分档（#111）用真模块：它不碰浏览器/网络，没有替换的必要
-const failureModule = new URL('../../src/services/chat/history/importFailure.ts', import.meta.url).href
-
-/**
- * 源码里的相对导入写的是 `.js`（NodeNext 约定），实际文件是 `.ts`；node 不会自己改后缀。
- * 与 import-size-limit.test.mjs 同一套做法：本层要跑真实的 urlImport 链路，
- * 而 #275 之后它多了一个依赖 src/services/limits.ts（阈值表）。
- */
-const asTypescript = (specifier, parentURL) => {
-  if (!parentURL || !specifier.startsWith('.') || !specifier.endsWith('.js')) {
-    return null
-  }
-  const target = fileURLToPath(new URL(specifier, parentURL)).replace(/\.js$/, '.ts')
-  return existsSync(target) ? pathToFileURL(target).href : null
-}
-
-registerHooks({
-  resolve(specifier, context, nextResolve) {
-    if (specifier === '@capacitor/core') {
-      return { url: stub('capacitor.mjs'), shortCircuit: true }
-    }
-    if (specifier === '../../diagnostics/collector.js') {
-      return { url: stub('collector.mjs'), shortCircuit: true }
-    }
-    if (specifier === '../backup.js') {
-      return { url: stub('backup.mjs'), shortCircuit: true }
-    }
-    if (specifier === './errors.js') {
-      return { url: stub('errors.mjs'), shortCircuit: true }
-    }
-    if (specifier === './importLimit.js') {
-      return { url: limitModule, shortCircuit: true }
-    }
-    if (specifier === './importFailure.js') {
-      return { url: failureModule, shortCircuit: true }
-    }
-    const typescript = asTypescript(specifier, context.parentURL)
-    if (typescript !== null) {
-      return { url: typescript, shortCircuit: true }
-    }
-    return nextResolve(specifier, context)
+// 装配走公共入口（#366 第二批 / #408）：`.js→.ts` 解析 + 替身表收成一张表，
+// 不再是本文件手抄的 ~30 行 `registerHooks` + 本地 `asTypescript`（urlImport 一族 4 个文件各有一份）。
+// 本文件关心的是「时钟单调性（回拨 / durationMs 非负）」，所以只替换 I/O 边界（原生桥 / 诊断 / 备份 / errors），
+// 上限常量与失败原因分档用**真模块**——本层断言的就是它们本身，不能替换成桩。
+installTsResolve({
+  stubs: {
+    '@capacitor/core': fixtureUrl('url-import-stubs/capacitor.mjs'),
+    '../../diagnostics/collector.js': fixtureUrl('url-import-stubs/collector.mjs'),
+    '../backup.js': fixtureUrl('url-import-stubs/backup.mjs'),
+    './errors.js': fixtureUrl('url-import-stubs/errors.mjs'),
+    './importLimit.js': moduleUrl('src/services/chat/history/importLimit.ts'),
+    './importFailure.js': moduleUrl('src/services/chat/history/importFailure.ts'),
   },
 })
 
@@ -72,15 +40,6 @@ const URL_SKEW_BACKWARD = 'https://obs.example.test/clock-backward.zip'
 const HOUR_MS = 60 * 60 * 1000
 
 /** 合法 ZIP 头（urlImport 会校验 PK\x03\x04），其余字节填充，保证长度真实。 */
-const zipBytes = (size) => {
-  const bytes = new Uint8Array(size)
-  bytes.set([0x50, 0x4b, 3, 4], 0)
-  for (let index = 4; index < size; index += 1) {
-    bytes[index] = index % 251
-  }
-  return bytes
-}
-
 /** 组装一次 CapacitorHttp.get 的 206 响应（按 Range 切块，与真实原生桥一致）。 */
 const rangeResponse = (url, source, from, to) => {
   const end = Math.min(to, source.length - 1)

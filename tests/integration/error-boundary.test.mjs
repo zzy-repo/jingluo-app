@@ -19,7 +19,7 @@ import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
 import { serveDist } from '../helpers/runtime.mjs'
-import { buildArchive } from '../fixtures/archive-fixture.mjs'
+import { buildArchive } from '../fixtures/domain05/archive-fixture.mjs'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const ROOT = path.resolve(HERE, '../..')

@@ -294,11 +294,28 @@ export const scanGeneratedResStrings = (root = REPO_ROOT) => {
   return hits
 }
 
-/** 更新链路里会被真的拿去请求的地址来源（改这里等于改更新端点，见 #268 / #269） */
+/**
+ * 更新链路里会被真的拿去请求的地址来源（改这里等于改更新端点，见 #268 / #269）。
+ *
+ * `config/endpoints.json` 是 #269 之后分发地址的**唯一来源**：地址从 .ts / .java 搬进这份 JSON
+ * 之后，只扫那两个文件等于扫空 —— 明文闸门会永远是绿的（假绿比没有闸门更危险）。所以配置
+ * 文件本身也必须在扫描列表里，取值走下面 JSON 分支（键名白名单见 `DOWNLOAD_TRANSPORT_KEYS`），
+ * 报错会直接点出该文件的第几行。
+ */
 export const UPDATE_TRANSPORT_SOURCES = Object.freeze([
+  'config/endpoints.json',
   'src/services/updateManifest.ts',
   'android/app/src/main/java/com/example/deepseekchat/UpdateEndpoint.java',
 ])
+
+/**
+ * `config/endpoints.json` 里属于**更新链路**的键（Issue #269）。
+ *
+ * 这份配置同时放着聊天 / 邀请 / 反馈地址（那是 #274 的服务端端点，走 https 是另一件事）。
+ * 闸门只关心「更新链路里有没有明文」，所以配置源只收这两个键 —— 否则把
+ * `allowInsecureUpdateTransport` 置 false 会被聊天地址的 http 卡住，报出来的还是一句看不懂的错。
+ */
+export const DOWNLOAD_TRANSPORT_KEYS = Object.freeze(['primaryBase', 'fallbackBase'])
 
 const RE_URL_LITERAL = /(['"`])(https?:\/\/[^'"`\s]+)\1/g
 
@@ -315,6 +332,15 @@ export const collectUpdateTransportUrls = (root = REPO_ROOT, sources = UPDATE_TR
       text = fs.readFileSync(path.join(root, rel), 'utf8')
     } catch {
       missing.push(rel)
+      continue
+    }
+    // 配置源（JSON）：只收 download.* 那两行，见 DOWNLOAD_TRANSPORT_KEYS 的说明
+    if (rel.endsWith('.json')) {
+      const re = new RegExp(`"(?:${DOWNLOAD_TRANSPORT_KEYS.join('|')})"\\s*:\\s*"([^"]+)"`)
+      text.split('\n').forEach((line, index) => {
+        const match = re.exec(line)
+        if (match && /^https?:\/\//.test(match[1])) urls.push({ file: rel, line: index + 1, url: match[1] })
+      })
       continue
     }
     text.split('\n').forEach((line, index) => {

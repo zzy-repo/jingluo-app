@@ -1,0 +1,39 @@
+# Window memory (prototype)
+
+Ported from the Summaryception prototype. Scope is a single chat window — no
+cross-session or global profile, and nothing is shared between windows.
+
+- Runs today as a SillyTavern extension (`manifest.json` + block-scoped JS).
+- `embedding.js` 已改为 ES module 并走 app 的 API 层（#397）：地址 / 鉴权头 / 超时 / 错误分类都来自
+  `src/services/api/`（`embedding.ts` + `client.ts` + `providers.ts` 的 `paths.embedding`）。
+  模型、本地推理仍不在 app 内。因此 `embedding.js` 不再能作为 SillyTavern 的 classic script 单独加载。
+- 设置页里的 `embUrl` / `embKey` 两个输入**已不参与请求**（渠道配置接管），随 #398 的开关一起整理。
+- To run inside this app it still needs: a user-facing "use cloud embedding" toggle (#398) and
+  wiring to per-window storage (#399).
+- `node --test tests/recall.test.cjs` covers recall, budget packing and cache reuse
+  （需在**没有 `type: module` 的 package.json** 的目录下跑，见该文件头）。
+
+## 来源、许可证与门禁（vendored —— 别当自研代码改）
+
+**本目录是 vendored 第三方参考实现，不是本仓库自研代码。**
+
+- **来源**：SillyTavern 扩展 *Summaryception*（上游 <https://github.com/Lodactio/Extension-Summaryception>，
+  作者 Lodactio）的原型代码，核心标注 `Summaryception v5.5.4`（见 `index.js` 头部）；
+  本目录 `manifest.json` 的版本号是本仓库 fork 后的 `6.0.0-rc.1`。由 #396 / #397 搬进本仓库。
+- **许可证**：**AGPL-3.0**，不是本仓库的 MIT（每个 js 文件头部的 `AGPL-3.0` 声明可查）。
+  对本项目的影响：
+  - 本目录**当前不参与构建产物**：`rspack.config.ts` 的入口是 `src/main.tsx`，`src/` 下没有任何模块
+    import 本目录；唯一的引用是 `tests/unit/memory-embedding-api.test.mjs` 直接 import `embedding.js`。
+  - 一旦有人把这里的代码接进 app 正常运行链路并对外分发，AGPL-3.0 的传染性就会覆盖到对应部分
+    ——需要先做许可评估（重写实现或调整许可证），**不要默认它跟随仓库的 MIT**。
+- **本目录代码不参与 lint 与格式化**：`.oxlintrc.json` 用 `ignorePatterns` 排除了
+  `src/services/memory/**`（背景见 #417：目录内 324 条报错全部是上游写法与本仓库规则的冲突，
+  而这份代码要整体同步上游，就地重写会让下次同步上游冲突）。因此这里没有 `oxfmt` 风格保证，
+  也不要为了过 lint 改这些文件。
+- **本目录同时不参与 flex-gap 兜底守卫 / `gen:gap` 生成 / 能力盘点快照（`docs/capabilities/*.md`）
+  等风格与统计口径**：名单在 `scripts/lib/vendoredPaths.mjs`（只列目录，不用宽泛模式）。
+  上游 CSS 的 21 处 flex `gap` 不该由我们补 `@supports` 兜底、上游 JS 的 `Object.hasOwn`
+  之类也不该被算进我们的能力盘点——否则每次同步上游都要连带改一堆与产品无关的门禁数字。
+- **改动请同步上游**：要修 bug 先看上游是否已修，优先整块重新同步上游版本，而不是在此就地重写。
+  真正把它变成自研代码时（#398 开关 + #399 接线），应当重写，并把本目录从这个排除里拿出来。
+

@@ -16,7 +16,7 @@
 // 被测页面：DIST_DIR 内测产物与 STANDARD_DIST_DIR 标准产物；只读复用，默认随机 loopback 端口。
 import { serveDist, requireDist } from '../helpers/runtime.mjs'
 import { verifyAppUrl } from '../helpers/env.mjs'
-import { OURS_CHAT_PATH } from '../fixtures/ours-upstream.mjs'
+import { OURS_CHAT_PATH } from '../fixtures/domain03-04/ours-upstream.mjs'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import { chromium } from 'playwright'
@@ -134,7 +134,9 @@ try {
       Boolean(entry) &&
         entry.level === 'error' &&
         entry.meta?.['http.status'] === 403 &&
-        entry.meta?.stage === 'download' &&
+        // stage 口径（#313 起统一成 `<flow>.<stage>`）：导入链路的下载阶段是 `import.download`，
+        // 老断言写的是裸 `download`，与当前采集层不符（#406 复核）。
+        entry.meta?.stage === 'import.download' &&
         // 契约变更（src/services/chat/history/urlImport.ts 的 recordDownloadFailure）：
         // 下载失败改为记 reason + durationMs + download.bytes，不再记 url.path
         // （URL 可能带凭证/私有路径，只保留判定结论）。这里改为断言实际字段。

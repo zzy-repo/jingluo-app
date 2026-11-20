@@ -2,9 +2,11 @@
 //
 // 这一层守的是「导出真的产出文件」这件事的两条腿（Issue #307）：
 //   [1] Android：SAF 面板 + 二进制分块，字节必须逐位还原，取消/失败都不能返回 saved；
-//   [2] Web：`<a download>` 锚点下载，能力缺失时必须抛错而不是静默什么都不做。
+//   [2] Web：`<a download>` 锚点下载，能力缺失时必须抛错而不是静默什么都不做；
+//   [3] 原生兜底上限与导入上限是同一个数（Java 只是兜底，权威判断在 TS 侧，见 #336）。
 import { registerHooks } from 'node:module'
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import { test } from 'node:test'
 
 registerHooks({
@@ -129,4 +131,24 @@ test('Web 侧：锚点下载点击一次、文件名与 ZIP 类型一致，且�
     URL.createObjectURL = originalUrl
     URL.revokeObjectURL = originalRevoke
   }
+})
+
+// [3] 原生兜底：Java 的 MAX_BINARY_BYTES 必须与 TS 的导入上限是同一个数，
+// 且不许再出现 220MB（导出上限大于导入上限 = (200MB, 220MB] 死区）。
+// 这条只钉「Java 的兜底数字没跟导入侧脱钩」，上限本身的判定口径在 #336 的用例里。
+test('Java 兜底上限 = 导入上限（200MB），不许出现第二个数字', async () => {
+  const { DEFAULT_MAX_IMPORT_BYTES } = await import('../../src/services/chat/history/importLimit.ts')
+  const java = readFileSync(
+    new URL('../../android/app/src/main/java/com/example/deepseekchat/ExportTextPlugin.java', import.meta.url),
+    'utf8'
+  )
+  const declared = java.match(/MAX_BINARY_BYTES = (\d+)L \* 1024 \* 1024/)
+  assert.ok(declared, '找不到 MAX_BINARY_BYTES 的字面量定义')
+  assert.equal(
+    Number(declared[1]) * 1024 * 1024,
+    DEFAULT_MAX_IMPORT_BYTES,
+    '原生兜底必须等于导入上限：大于它就会产出导不回来的包'
+  )
+  assert.equal(java.includes('220L * 1024 * 1024'), false, '不许再有 220MB 这个第二个数字')
+  assert.match(java, /权威判断在 TS 侧/, '注释要写清 Java 只是兜底，权威判断在 TS 侧')
 })

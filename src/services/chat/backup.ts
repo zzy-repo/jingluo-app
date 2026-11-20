@@ -4,17 +4,16 @@ import { buildMeta, type Stage } from '../diagnostics/fields.js'
 import { createStageTimer } from '../diagnostics/timing.js'
 import * as db from './db.js'
 import { fail } from './history/errors.js'
-import {
-  MAX_EXPORT_BYTES,
-  formatImportBytes,
-  isWithinExportLimit,
-  maxImportMegabytes,
-  resolveMaxImportBytes,
-} from './history/importLimit.js'
+import { formatImportBytes, maxImportMegabytes, resolveMaxImportBytes } from './history/importLimit.js'
 import { parseSessionPath } from './history/paths.js'
 import { listArchivePaths } from './history/zipReader.js'
-import { ExportTooLargeError } from './history/zipWriter.js'
-import { replaceHistory, useChatStore } from './store.js'
+import type { ImportMode } from './history/mergeSessions.js'
+import {
+  importHistoryInto,
+  replaceHistory,
+  useChatStore,
+  type HistoryImportSummary,
+} from './store.js'
 import type { Session } from './types.js'
 
 export { BackupError } from './history/errors.js'
@@ -30,33 +29,46 @@ const enqueueBackup = <T>(run: () => Promise<T>): Promise<T> => {
 
 const backupFileName = (date: Date) => `deepseek_data-${formatDate(date)}.zip`
 
-/**
- * 导出上限闸（issue #336）：导出物必须能被本 App 的「导入历史对话」读回。
- *
- * 死区教训：导出侧原来单独写 220MB、导入侧只认 200MB，(200MB, 220MB] 这一段导出提示成功、
- * 导入报「文件过大」。现在两边是同一个常量（`MAX_EXPORT_BYTES = DEFAULT_MAX_IMPORT_BYTES`），
- * 且判定发生在**打开 SAF 之前**：`zipWriter.writeArchive` 算完成品字节数就拒（格式层），
- * 这里再用 blob.size 复核一次（服务层）——两者的值本来相等（写出时有 `size !== expectedSize` 自校验），
- * 复核是为了让「交给落盘出口的那个 blob 一定导得回来」这件事不依赖另一层的实现细节。
- */
-const assertExportWithinLimit = (bytes: number): void => {
-  if (isWithinExportLimit(bytes)) {
-    return
-  }
-  // 与导入侧同一条文案口径：说清上限、说清实际多大、说清怎么办（#195 / #336）
-  fail('historyExportTooLarge', {
-    size: maxImportMegabytes(MAX_EXPORT_BYTES),
-    actual: formatImportBytes(bytes),
-  })
+/** 导出进度：已打包会话数 / 会话总数（#336 §1）。 */
+export type ExportProgress = { exported: number; total: number }
+
+/** 导出范围（#390）：不传 `sessionIds` = 导出全部会话；传了就只导出勾选的这些。 */
+export type ExportHistoryOptions = {
+  /** 会话列表里勾选的会话 id。传空数组直接报错，不产出一个「看着像备份、其实空的」包。 */
+  sessionIds?: readonly string[]
+  /** 每条会话打包完成后回调；界面用它显示「已导出 N / 共 M」（#336 §1）。不传就是纯打包。 */
+  onProgress?: (progress: ExportProgress) => void
 }
 
-/** 导出为历史会话导出格式的 ZIP，可再次导入。 */
-export const exportHistory = (): Promise<{ name: string; blob: Blob }> =>
+/**
+ * 体积超限的类型判定（#336 §3）。
+ *
+ * `zipWriter.js` 是**动态导入**的（fflate 只该进导出那一块，不进首屏 chunk），
+ * 所以这里不能用 `instanceof`（那会把 fflate 拉回静态依赖图），只按 name 认 —— 类名由本仓库固定。
+ */
+const isExportTooLarge = (error: unknown): error is { expectedBytes: number; limitBytes: number } =>
+  error instanceof Error && error.name === 'ExportTooLargeError'
+
+/**
+ * 导出为历史会话导出格式的 ZIP，可再次导入。
+ * 选择性导出只缩小 `sessionIds`，包结构（manifest / 条目顺序 / 图片路径）与全量导出完全一致。
+ */
+export const exportHistory = (
+  options: ExportHistoryOptions = {}
+): Promise<{ name: string; blob: Blob; sessions: number }> =>
   enqueueBackup(async () => {
     // 列表和已加载内容保留导出开始时的快照；未打开的会话逐条读取，不填满详情缓存。
     const { sessions, sessionCache } = useChatStore.getState()
+    const sessionIds = options.sessionIds
+    const selected = sessionIds === undefined ? undefined : new Set(sessionIds)
+    // 空选择（一条都没勾）与「勾了的会话刚好都被删了」都要明确报错，不能静默导出空包。
+    const exportable =
+      selected === undefined ? sessions : sessions.filter((summary) => selected.has(summary.id))
+    if (selected !== undefined && exportable.length === 0) {
+      fail('historyExportEmptySelection')
+    }
     async function* readSessions(): AsyncGenerator<Session> {
-      for (const summary of sessions) {
+      for (const summary of exportable) {
         const session = Object.hasOwn(sessionCache, summary.id)
           ? sessionCache[summary.id]
           : await db.loadSession(summary.id)
@@ -71,16 +83,23 @@ export const exportHistory = (): Promise<{ name: string; blob: Blob }> =>
     const now = new Date()
     let blob: Blob
     try {
-      blob = await exportArchive(readSessions())
+      blob = await exportArchive(readSessions(), {
+        ...(selected === undefined ? {} : { sessionIds }),
+        // 总数用开始时的可导出列表快照：进度里的 M 与最终包里的会话数必须是同一个数。
+        total: exportable.length,
+        onProgress: options.onProgress,
+      })
     } catch (error) {
-      // 格式层在上限处抛的是类型化错误（它不认识 i18n），在这里翻成可读文案再往上抛。
-      if (error instanceof ExportTooLargeError) {
-        assertExportWithinLimit(error.bytes)
+      // 超限发生在「字节数算准、一个字节没写」那一刻，此时还没走到保存出口（#336 §3）。
+      if (isExportTooLarge(error)) {
+        fail('historyExportTooLarge', {
+          size: maxImportMegabytes(error.limitBytes),
+          actual: formatImportBytes(error.expectedBytes),
+        })
       }
       throw error
     }
-    assertExportWithinLimit(blob.size)
-    return { name: backupFileName(now), blob }
+    return { name: backupFileName(now), blob, sessions: exportable.length }
   })
 
 /** 导入进度：已处理会话数 / 会话总数（拿不到总数时不传）。 */
@@ -93,6 +112,11 @@ export type ImportHistoryOptions = {
   onProgress?: (progress: ImportProgress) => void
   /** 大小上限（字节）；默认 DEFAULT_MAX_IMPORT_BYTES，与「从链接导入」同一个数字。UI 不传。 */
   maxBytes?: number
+  /**
+   * 导入方式（#390）：merge（默认，保留本地会话、按 id/更新时间取舍冲突）/ skip（本地已有同 id 就跳过）/
+   * overwrite（整包覆盖，现有行为）。解析与暂存路径三种模式完全相同，只在提交那一步分叉。
+   */
+  mode?: ImportMode
 }
 
 /** 与「从链接导入」复用同一条提示文案：都是「这个包太大，先别导」，都要说清上限与实测体积（#195）。 */
@@ -109,11 +133,15 @@ const countSessions = async (file: File): Promise<number | undefined> => {
 }
 
 /**
- * 确认覆盖后调用：先查大小上限，再检查 ZIP 格式与版本，校验失败时保留正在生成的回答；
- * 通过后从 ZIP 流式写入暂存，成功才替换原有会话与图片原件。返回导入的会话数。
+ * 确认导入方式后调用：先查大小上限，再检查 ZIP 格式与版本，校验失败时保留正在生成的回答；
+ * 通过后从 ZIP 流式写入暂存，成功才按模式落到正式数据（整包覆盖 / 增量合并）。返回导入结果摘要。
  */
-export const importHistory = (file: File, options: ImportHistoryOptions = {}): Promise<number> =>
+export const importHistory = (
+  file: File,
+  options: ImportHistoryOptions = {}
+): Promise<HistoryImportSummary> =>
   enqueueBackup(async () => {
+    const mode = options.mode ?? 'merge'
     const startedAt = Date.now()
     // 分阶段计时（#306）：每个 import_stage 都带自己那一段的 durationMs，卡在哪个阶段不用再靠时间戳相减
     const timer = createStageTimer()
@@ -123,6 +151,7 @@ export const importHistory = (file: File, options: ImportHistoryOptions = {}): P
       bytes: file.size,
       totalBytes: file.size,
       source: 'file',
+      mode,
       ...buildMeta({ flow: 'import', stage: 'import.check', attempt: 1, status: 'ok' }),
     })
     try {
@@ -157,15 +186,21 @@ export const importHistory = (file: File, options: ImportHistoryOptions = {}): P
           bytes: file.size,
         }),
       })
-      const count = await replaceHistory(() =>
-        importArchive(file, {
-          signal: options.signal,
-          totalSessions,
-          onProgress: options.onProgress,
-        })
+      const summary = await importHistoryInto(
+        () =>
+          importArchive(file, {
+            signal: options.signal,
+            totalSessions,
+            onProgress: options.onProgress,
+          }),
+        mode
       )
       recordAction('import_done', 'import-history', {
-        count,
+        count: summary.count,
+        mode: summary.mode,
+        added: summary.added,
+        overwritten: summary.overwritten,
+        conflictSkipped: summary.skipped,
         ...buildMeta({
           flow: 'import',
           stage: 'import.commit',
@@ -180,7 +215,7 @@ export const importHistory = (file: File, options: ImportHistoryOptions = {}): P
         }),
       })
       void captureStateSnapshot('after-import')
-      return count
+      return summary
     } catch (error) {
       // 失败必录：error 级 + 阶段 + 耗时 + 错误原文（BackupError 的 message 就是中文原因）
       record('import_error', 'error', `import failed at ${stage}`, {

@@ -1,4 +1,10 @@
 import { openDB, type DBSchema, type IDBPDatabase } from 'idb'
+import {
+  planMerge,
+  type MergePlan,
+  type MergePolicy,
+  type SessionRef,
+} from './history/mergeSessions.js'
 import { toSessionSummary, type Session, type SessionSummary } from './types.js'
 
 /** IndexedDB 存储结构版本；新增或调整存储、索引时递增。 */
@@ -38,15 +44,18 @@ interface ChatDB extends DBSchema {
 
 let dbPromise: Promise<IDBPDatabase<ChatDB>> | null = null
 
+/** 会话引用的本地原件 id（去重）：删除会话时判断原件是否还有主，增量导入时判断要搬哪些原件。 */
+const referencedFileIds = (session: Session): string[] => [
+  ...new Set(
+    session.messages.flatMap((message) =>
+      message.role === 'user' ? message.files.map((file) => file.id) : []
+    )
+  ),
+]
+
 const storedSummary = (session: Session): StoredSessionSummary => ({
   ...toSessionSummary(session),
-  fileIds: [
-    ...new Set(
-      session.messages.flatMap((message) =>
-        message.role === 'user' ? message.files.map((file) => file.id) : []
-      )
-    ),
-  ],
+  fileIds: referencedFileIds(session),
 })
 
 const abortTransaction = (tx: { abort(): void }) => {
@@ -273,6 +282,86 @@ export const commitStaging = async (): Promise<SessionSummary[]> => {
   await Promise.all([move('sessionsStaging', 'sessions'), move('filesStaging', 'files'), tx.done])
   // 直接返回本次提交的列表，调用方无需在替换成功后再发起可能失败的读取。
   return summaries
+}
+
+/** 暂存会话的判定元数据：冲突只看 id 与更新时间，附件 id 用于判断要搬哪些原件。 */
+type StagedRef = SessionRef & { files: string[] }
+
+/**
+ * 增量导入（#390）：把暂存里的会话**合并**进当前数据，一个本地会话都不清空。
+ *
+ * 与 `commitStaging` 的区别只在「写哪些」：这里逐条按 `planMerge` 的判定结果写入，
+ * 被跳过的会话既不落库，也不搬运它的图片原件（避免留下没人引用的孤儿原件）。
+ * 会话、摘要、原件仍然在同一个事务里写，中途失败整体回滚，本地数据保持导入前的样子。
+ */
+export const mergeStaging = async (policy: MergePolicy): Promise<MergePlan> => {
+  const tx = (await getDB()).transaction(
+    ['sessions', 'sessionSummaries', 'files', 'sessionsStaging', 'filesStaging'],
+    'readwrite'
+  )
+  const run = async (): Promise<MergePlan> => {
+    const sessions = tx.objectStore('sessions')
+    // 第一遍：只读元数据（一条一条过游标，不把整个包读进内存）
+    const staged: StagedRef[] = []
+    for (
+      let cursor = await tx.objectStore('sessionsStaging').openCursor();
+      cursor;
+      cursor = await cursor.continue()
+    ) {
+      const session = cursor.value
+      staged.push({
+        id: session.id,
+        title: session.title,
+        updatedAt: session.updatedAt,
+        files: referencedFileIds(session),
+      })
+    }
+    // 本地同 id 会话的更新时间先查完（全部是 IDB 请求，事务保持活跃），再纯同步地判定：
+    // 事务里不 await 非 IDB 的 Promise。
+    const localUpdatedAt = new Map<string, number>()
+    for (const item of staged) {
+      const local = await sessions.get(item.id)
+      if (local !== undefined) {
+        localUpdatedAt.set(item.id, local.updatedAt)
+      }
+    }
+    const plan = planMerge(staged, (id) => localUpdatedAt.get(id), policy)
+    const written = new Set(plan.written)
+    const filesToMove = new Set(staged.filter((item) => written.has(item.id)).flatMap((item) => item.files))
+    // 第二遍：只写判定为「新增 / 覆盖」的会话及其摘要
+    for (
+      let cursor = await tx.objectStore('sessionsStaging').openCursor();
+      cursor;
+      cursor = await cursor.continue()
+    ) {
+      const session = cursor.value
+      if (!written.has(session.id)) {
+        continue
+      }
+      await sessions.put(session)
+      await tx.objectStore('sessionSummaries').put(storedSummary(session))
+    }
+    for (
+      let cursor = await tx.objectStore('filesStaging').openCursor();
+      cursor;
+      cursor = await cursor.continue()
+    ) {
+      if (filesToMove.has(cursor.value.id)) {
+        await tx.objectStore('files').put(cursor.value)
+      }
+    }
+    await tx.objectStore('sessionsStaging').clear()
+    await tx.objectStore('filesStaging').clear()
+    return plan
+  }
+  try {
+    const [plan] = await Promise.all([run(), tx.done])
+    return plan
+  } catch (error) {
+    // 同步抛出的错误不会让事务自动回滚，需显式中止，避免只合并了一部分。
+    abortTransaction(tx)
+    throw error
+  }
 }
 
 /** 本地存储失败不打断对话，只在控制台留痕 */

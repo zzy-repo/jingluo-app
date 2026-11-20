@@ -1,0 +1,13 @@
+{
+  "_meta": {
+    "request": "GET /api/v1/model-plaza",
+    "auth": "optional JWT (none sent)",
+    "captured_at": "2026-11-20T15:44:48+08:00",
+    "http_status": 404,
+    "shape": "PANEL error envelope with INTEGER code = HTTP status",
+    "cause": "settings.public.model_plaza_enabled = false",
+    "source": "sub2api 实例只读探测（2026-11-20，实例 0.2.22）；主机名已脱敏移除"
+  },
+  "code": 404,
+  "message": "Model plaza is not enabled"
+}

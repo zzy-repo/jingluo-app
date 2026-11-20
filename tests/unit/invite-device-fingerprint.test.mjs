@@ -13,25 +13,16 @@
 //   [4] 无指纹：一个头都不加，请求照发、流程照走 —— 绝不阻塞注册
 //   [5] 哈希非明文：链路上只有 sha256(ANDROID_ID + 包名)，明文一个字节都不出现
 //   [6] 隐私：整条链路零 console；可诊断信号只有状态与原因，不含指纹 / 明文
-import { registerHooks } from 'node:module'
+import { installTsResolve } from '../helpers/dom-env.mjs'
+import { createSelfCheck, errorBody, fakeTransport, jsonResponse as json } from '../helpers/ours-check.mjs'
 import { createHash } from 'node:crypto'
 
 // 端点地址唯一来源：config/endpoints.json（#274）
 import { inviteBaseUrl } from '../../scripts/lib/endpoints.mjs'
 
-// 与打包器一致：源码内部用 .js 说明符指向 .ts 文件
-registerHooks({
-  resolve(specifier, context, nextResolve) {
-    try {
-      return nextResolve(specifier, context)
-    } catch (error) {
-      if (specifier.startsWith('.') && specifier.endsWith('.js')) {
-        return nextResolve(specifier.slice(0, -3) + '.ts', context)
-      }
-      throw error
-    }
-  },
-})
+// 装配走公共入口（#408 收尾批）：`.js→.ts` 解析 + 自查断言骨架都不再逐文件手抄。
+// 本文件没有模块替身（只 import 真源码，网络走假 transport 注入），所以 installTsResolve 不带 stubs。
+installTsResolve()
 
 const {
   DEVICE_FP_HEADER,
@@ -70,38 +61,7 @@ const PROFILE = {
   key_status: 'active',
 }
 
-const failures = []
-const checks = { n: 0 }
-const ok = (message) => {
-  checks.n += 1
-  console.log(`  ok  ${message}`)
-}
-const bad = (message) => {
-  failures.push(message)
-  console.error(`  ✗   ${message}`)
-}
-const eq = (actual, expected, label) => {
-  const a = JSON.stringify(actual)
-  const b = JSON.stringify(expected)
-  if (a === b) {
-    ok(`${label} = ${a}`)
-  } else {
-    bad(`${label}：期望 ${b}，实际 ${a}`)
-  }
-}
-const truthy = (condition, label) => (condition ? ok(label) : bad(label))
-
-const fakeTransport = (responses) => {
-  const calls = []
-  const transport = async (request) => {
-    calls.push(request)
-    const next = responses.length > 1 ? responses.shift() : responses[0]
-    return typeof next === 'function' ? next(request) : next
-  }
-  return { transport, calls }
-}
-const json = (status, body) => ({ kind: 'response', status, text: JSON.stringify(body) })
-const errorBody = (code) => ({ error: { code, message: 'server says no' } })
+const { failures, checks, ok, bad, eq, truthy } = createSelfCheck()
 /** 请求里有没有指纹头（大小写不敏感，模拟真实 HTTP 头语义） */
 const headerOf = (request, name) => {
   const key = Object.keys(request.headers).find((item) => item.toLowerCase() === name.toLowerCase())
@@ -184,8 +144,11 @@ console.log('\n[2b] 无指纹原因：运行时白名单与类型是同一份（
   // 诊断里那个 reason 被静默改写成 plugin-unavailable，排查方向直接跑偏。
   // 现在 REASON_TABLE 用 `satisfies Record<NoFingerprintReason, true>` 焊在类型上，
   // 加/减任何一边 `pnpm type` 就红；这里再钉住「白名单里的每个值都原样落进结论」。
-  eq(NO_FINGERPRINT_REASONS.length, 6, '六个原因一个不多一个不少')
-  eq(new Set(NO_FINGERPRINT_REASONS).size, 6, '白名单里不能有重复值')
+  // #395 追加第七个原因 constant_fp（形状对但是常量）：这里钉的是「类型与白名单同一份」，
+  // 所以数目跟着涨是**预期**，真正的判据是下面逐值原样保留 + 类型层的 satisfies 约束。
+  eq(NO_FINGERPRINT_REASONS.length, 7, '七个原因一个不多一个不少')
+  eq(new Set(NO_FINGERPRINT_REASONS).size, 7, '白名单里不能有重复值')
+  truthy(NO_FINGERPRINT_REASONS.includes('constant_fp'), '常量指纹有自己的原因枚举（#395）')
   for (const reason of NO_FINGERPRINT_REASONS) {
     eq(
       interpretFingerprint({ available: false, reason }),

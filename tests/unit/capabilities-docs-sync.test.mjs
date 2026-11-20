@@ -22,6 +22,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { auditApiAssumptions, summarize as summarizeApi } from '../../scripts/lib/apiAssumptionAudit.mjs'
+import { isVendored } from '../../scripts/lib/vendoredPaths.mjs'
 import { auditCssAssumptions, collectSources } from '../../scripts/lib/cssAssumptionAudit.mjs'
 import { auditHostCapabilities } from '../../scripts/lib/hostCapabilityAudit.mjs'
 import { auditBehaviorAssumptions, VERDICT as BEHAVIOR_VERDICT } from '../../scripts/lib/behaviorAssumptionAudit.mjs'
@@ -43,7 +44,9 @@ const walk = (dir) => {
   return out
 }
 
-const ALL_SRC = walk(SRC)
+// vendored 第三方目录不进本盘点（#417）：它与能力快照的「我们自己的代码」口径无关，
+// 名单与理由见 scripts/lib/vendoredPaths.mjs / src/services/memory/README.md。
+const ALL_SRC = walk(SRC).filter((p) => !isVendored(p))
 const SRC_REL = ALL_SRC.map((p) => posix(path.relative(ROOT, p)))
 
 // ---------------------------------------------------------------- 实时复算

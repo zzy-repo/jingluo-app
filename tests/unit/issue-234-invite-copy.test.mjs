@@ -106,11 +106,11 @@ test('#234 [1] 被邀请人成功态（reward_points: 0）不再显示「已获�
 
 test('#234 [2] 邀请人态（reward_points: 100）文案与改动前逐字相同', () => {
   const copy = inviteOkCopy(100)
-  assert.equal(copy.key, 'oursInviteOk', '拿到积分 → 仍走「+N 积分」')
+  assert.equal(copy.key, 'oursInviteOk', '拿到奖励 → 仍走「+N」报数')
   assert.equal(copy.points, 100)
-  // 改动前的既有断言口径（tests/integration/ours-services.test.mjs 里是 /绑定成功/）
-  assert.equal(renderOk(zh, copy), '绑定成功，+100 积分', '邀请人侧文案不许变')
-  assert.equal(renderOk(en, copy), 'Bound. +100 points', '英文侧同样不许变')
+  // #487：单位统一为元（100 积分 = 1 元），文案结构与断言强度不变，期望值跟着单位改
+  assert.equal(renderOk(zh, copy), '绑定成功，+1.00 元', '邀请人侧文案（元口径）')
+  assert.equal(renderOk(en, copy), 'Bound. +1.00 CNY', '英文侧同样按元口径')
   assert.equal(inviteOkCopy(1).key, 'oursInviteOk', '1 积分也是真到账，仍报数')
 })
 
@@ -185,9 +185,9 @@ test('#234 [5] 规则行来自 invite_rules 的数值（不写死、不做金额
     const texts = lines.map((line) =>
       render(zh, line.key, { points: formatPoints(line.points, zh.oursPointsUnit) })
     )
-    assert.match(texts[0], /邀请人得 100 积分/)
-    assert.match(texts[1], /100 积分/)
-    assert.ok(!texts.some((text) => /¥|4\.9/.test(text)), '不做金额换算，也不写死门槛金额')
+    assert.match(texts[0], /邀请人得 1\.00 元/)
+    assert.match(texts[1], /1\.00 元/)
+    assert.ok(!texts.some((text) => /4\.9/.test(text)), '不写死门槛金额（数值全部来自服务端）')
 
     // 换一组服务端数值，文案必须跟着变（证明不是写死的）
     const other = inviteRuleLines({
@@ -200,9 +200,9 @@ test('#234 [5] 规则行来自 invite_rules 的数值（不写死、不做金额
     const otherTexts = other.map((line) =>
       render(zh, line.key, { points: formatPoints(line.points, zh.oursPointsUnit) })
     )
-    assert.match(otherTexts.join(' / '), /50 积分/)
-    assert.match(otherTexts.join(' / '), /30 积分/)
-    assert.ok(!otherTexts.join(' / ').includes('100 积分'), '旧数值不许残留')
+    assert.match(otherTexts.join(' / '), /0\.50 元/)
+    assert.match(otherTexts.join(' / '), /0\.30 元/)
+    assert.ok(!otherTexts.join(' / ').includes('1.00 元'), '旧数值不许残留')
   })
 })
 

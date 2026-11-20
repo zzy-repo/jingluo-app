@@ -43,10 +43,14 @@ export const en = {
   copyTooLargeSave: 'Save as TXT',
   copySaveFailed: 'Save failed. Try again or long-press to select and copy the text.',
   send: 'Send',
+  scrollToBottom: 'Back to bottom',
+  scrollToBottomHasNew: 'Back to bottom (new content)',
   editMessage: 'Edit message',
   regenerate: 'Regenerate',
   continueGenerating: 'Continue',
   changeApiKey: 'Change API Key',
+  /** "Open settings" entry inside the error notice (#347 / #353) */
+  openSettingsEntry: 'Open settings',
   topUp: 'Top up',
   messageSearchSummary: '1 web page',
   messageSearchSummaries: '{count} web pages',
@@ -81,8 +85,39 @@ export const en = {
   toolFindFailTooltip: 'No related content found',
   readingLink: 'Reading',
   commonNetworkErrorToast: 'Network Error. Please check your network status.',
+  /**
+   * Key rejected (#374): previously the only sentence for every 401. It is now the
+   * fallback for "the upstream rejected the key without saying why"; the specific
+   * cases have their own keys below (replyApiKey*).
+   */
   replyInvalidApiKey:
-    'The API Key is invalid or has been deleted. Please replace it and try again.',
+    'The upstream rejected this API Key without saying why (it may be invalid, expired, or not belong to this endpoint).',
+  /** Key format problem (#374): detectable locally, the request never left the app */
+  replyApiKeyFormatWrong:
+    'The API Key you entered is malformed (it contains spaces or line breaks, or is not key-length), so the request was never sent.',
+  /** Key does not exist / was deleted on the server (#374) */
+  replyApiKeyNotFound:
+    'This API Key is invalid or has been deleted (the upstream cannot find it: it was never bound, or the server deleted it).',
+  /**
+   * Key rotated / revoked (#374's `rotated` case).
+   *
+   * #451 alignment with #357: "Reset quota" in settings (`/rotate`) does NOT change the key,
+   * it only recomputes the quota — so this invalidation did not come from that button; the
+   * server invalidated the old key. The old wording ("rotating a key invalidates the old key
+   * immediately") is the pre-#357 story and made users think the reset button broke their key.
+   */
+  replyApiKeyRotated:
+    'This API Key has been rotated or revoked and the old one no longer works. (Resetting the quota on this device only recomputes it and keeps the same key, so the server is what invalidated it.) You can recover the current key from the server by device code under Our channel, or simply paste a new key.',
+  /** Key identity in the notice: last 4 characters only (#374) */
+  replyApiKeyTailNote: ' (current key ends with {tail})',
+  /**
+   * Warning shown before changing a key (#374): users fear losing their quota,
+   * so the copy says the quota belongs to the account and to check it first.
+   */
+  replyApiKeyQuotaNote:
+    'Changing the API Key affects which account the quota belongs to; check the current account in the quota panel before switching.',
+  /** "Check quota" entry inside the key notice (#374): opens the quota panel without touching the key */
+  openQuotaPanel: 'Check quota',
   replyInsufficientBalance:
     'Insufficient balance or quota. Cannot continue generating (do not retry; top up first).',
   /** Top-up entry inside the quota notice (#299): reuses the quota & card dialog */
@@ -92,7 +127,6 @@ export const en = {
   /** Server-busy error in a reply (#324): states explicitly that retrying may work */
   replyServerBusy:
     'Server busy — a temporary failure, the reply did not finish. You can retry (tap regenerate).',
-  unknownError: 'Unknown error',
   replyUnknownError: 'The reply did not finish due to an unknown error. Please regenerate.',
   /** Context over the model limit (#122): retrying will not help, offer two ways out */
   replyContextLimit:
@@ -105,12 +139,29 @@ export const en = {
   /** Content safety block (#324): resending the same text will be blocked again */
   replyContentFiltered:
     'This content was blocked by the upstream safety review. Rephrase it or remove the sensitive part; do not retry the same text — it will be blocked again.',
-  /** Model missing / retired (#324) */
+  /**
+   * Model missing / retired (#324 / #339): name the model that was actually sent plus the
+   * upstream's list. Built-in channels have no model row in settings, so point at upgrading.
+   */
   replyModelInvalid:
-    'The current model is unavailable upstream (its name may have been retired). Pick another model in settings; retrying the same request will not help (do not retry).',
-  /** Other rejected requests (#324): 400 / 422 style parameter errors */
+    'The current model “{model}” is unavailable upstream (its name may have been retired). Models available upstream: {models}. The DeepSeek Official channel uses a built-in model and has no row for it in settings — upgrading to the fixed version is enough; on other channels, pick another model in settings. Retrying the same request will not help (do not retry).',
+  /** Upstream did not list usable models (#339) */
+  replyModelInvalidNoModels: 'not listed by the upstream',
+  /** The reply did not record a model name (imported history, #339) */
+  replyModelUnknownName: 'not recorded',
+  /** Other rejected requests (#347): 400 / 422 where the upstream named no field */
   replyBadRequest:
-    'The upstream rejected the request as invalid. Retrying will not help — check the model and endpoint settings (do not retry).',
+    'Invalid request parameters ({status}): retrying will not help — check the model and endpoint settings (do not retry).',
+  /** Invalid field, and the upstream named which one (#347 / #353) */
+  replyParamInvalid:
+    'Invalid request parameters ({status}): the upstream rejected the field “{field}”. Retrying will not help (do not retry).',
+  /** Other rejected 4xx (#347): 403 / 404 / 405 / 409 / 415 — no guessing at the cause */
+  replyUpstreamRejected:
+    'The upstream rejected this request ({status}): retrying will not help (do not retry). Expand the upstream message below to see why, or tap “Copy diagnostics” and send it to us.',
+  /** Placeholder used when a stream error frame carries no HTTP status (#347) */
+  replyUpstreamStatusUnknown: 'no status from the upstream',
+  /** Collapsible toggle: collapsed by default, the upstream text is opt-in (#347 / #353) */
+  upstreamDetailToggle: 'Show upstream details',
   /** Unclassified but self-evident (status / upstream code present) (#324) */
   replyUnclassifiedRetryable:
     'The reply did not finish: {detail}. A temporary failure — you can retry (tap regenerate).',
@@ -119,6 +170,13 @@ export const en = {
   replyWaitingFirstToken: 'Waiting for the response',
   replyWaitingSlow: 'The service is responding slowly. Still waiting…',
   replyWaitingStalled: 'This is taking unusually long. You can stop and regenerate.',
+  /** Stage names before the first token (#328); the seconds come from waitElapsed, never hardcoded */
+  waitStagePreparing: 'Preparing the request',
+  waitStageUploading: 'Uploading attachments',
+  waitStageConnecting: 'Connecting upstream, waiting for a response',
+  waitStageAwaitingFirstToken: 'Connected, waiting for the first token',
+  waitStageThinking: 'The model is thinking',
+  waitElapsed: '{seconds}s elapsed',
   /** Auto-retry progress: a failed request never hangs silently (#105) */
   chatRetrying: 'Retrying (attempt {attempt} of {limit})',
   replyRefused: "Sorry, that's beyond my current scope. Let's talk about something else.",
@@ -166,9 +224,33 @@ export const en = {
   historyImportConfirm: 'Import',
   historyImportConfirmTitle: 'Import chat history?',
   historyImportConfirmDescription:
-    'The uploaded chat history will replace all your current chats. Import anyway?',
+    'Choose how to import: merge keeps your local chats, replace all clears every local chat.',
   historyImportDescription:
-    'Importing chat history replaces all local chats and attachments. Supports ZIP files exported from DeepSeek.',
+    'Choose how to import (merge / skip existing / replace all). Supports ZIP files exported from DeepSeek.',
+  historyImportModeLabel: 'Import mode',
+  historyImportModeMerge: 'Merge (recommended)',
+  historyImportModeMergeHint:
+    'Keeps every local chat; for the same chat the newer version wins by update time',
+  historyImportModeSkip: 'Skip existing',
+  historyImportModeSkipHint: 'Keeps local chats that already exist and only adds new ones',
+  historyImportModeOverwrite: 'Replace all',
+  historyImportModeOverwriteHint:
+    'Clears the {count} local chats and their attachments before importing (restores a backup)',
+  historyImportOverwriteAcknowledge: 'I understand the {count} local chats will be cleared',
+  historyImportConfirmOverwrite: 'Replace and import',
+  historyImportConflictRule:
+    'A chat is identified by its session ID only: the same ID means the same chat; the same title with a different ID is a different chat.',
+  historyImportSummaryDetail: ' (added {added} / replaced {overwritten} / skipped {skipped})',
+  historyImportConflictSkippedTitle: 'Chats where the local version was kept (same ID, newer locally)',
+  historyExportEmptySelection: 'No chats selected — nothing to export',
+  historyExportSelectedCount: '{count} selected',
+  historyExportSelectedEmpty: 'Select at least one chat to export',
+  historySelectModeEnter: 'Select',
+  historySelectModeExit: 'Exit selection',
+  historySelectAll: 'Select all',
+  historySelectInvert: 'Invert',
+  historyExportSelected: 'Export selected',
+  historyExportedSelectedCount: 'Exported {count} chats',
   historyImportedOne: 'Imported 1 chat',
   historyImported: 'Imported {count} chats',
   historyImportFromUrl: 'Import from link',
@@ -219,7 +301,6 @@ export const en = {
   importTraceCancel: 'Cancelled',
   importTraceError: 'Failed ({stage}): {reason}',
   importTraceStageDownload: 'download',
-  importTraceStageImport: 'import',
   importTraceReasonUnreachable: 'network unreachable',
   importTraceReasonInterrupted: 'connection interrupted',
   importTraceReasonTimeout: 'download timed out',
@@ -234,7 +315,6 @@ export const en = {
   importTraceHeartbeatUnknown: 'still downloading… ({done}, no new data for {idle}s)',
   importTraceResume: 'resumed from {done} (not from zero)',
   importTraceRestart: 'link does not support resuming; restarted from the beginning',
-  importTraceReasonFormat: 'invalid archive format',
   detailsExpand: 'Show more',
   detailsCollapse: 'Show less',
   historyImportUrlDownloading: 'Downloading...',
@@ -262,11 +342,11 @@ export const en = {
   historyExportFailedWrite: 'Export failed: could not write the file. Check free storage and try again.',
   historyExportFailedTooLarge:
     'Export failed: the archive exceeds the 200MB export limit (same as the import limit). Delete some chats and try again.',
-  // #336: the export side rejects with this line before the save picker opens, so an exported file can always be imported back
   historyExportTooLarge:
-    'your history is about {actual}, over the {size}MB export limit (same as the import limit), so this app could not import the file back. Delete some chats or remove large images and try again.',
-  // #336: the button is disabled on an empty history, so say why (otherwise it looks like "tapped, nothing happened")
-  historyExportEmptyNoSessions: 'There are no conversations to export yet',
+    'This history is about {actual}, over the {size}MB export limit. Delete chats you no longer need, or remove large images from messages, and try again.',
+  historyExporting: 'Exporting…',
+  historyExportProgress: 'Exported {exported} of {total} chats',
+  historyExportEmptyNoSessions: 'There are no chats to export yet.',
   exportAllLabel: 'Export all chats',
   historyExportDescription:
     'Includes all chat history and locally stored images. Other attachments retain file details only. Your API Key is not included.',
@@ -308,12 +388,13 @@ export const en = {
   voiceInputPermissionDenied:
     'Microphone access is blocked. Please allow it in your browser settings.',
   voiceInputNoDevice: 'No microphone detected',
-  voiceInputTooLong: 'Recording is too long. Please shorten it and try again.',
   voiceInputFailed: 'Speech recognition failed. Please try again later.',
   voiceInputEmpty: 'No speech detected',
   voiceInputLimitReached: 'Maximum recording length reached',
   voiceInputRequiresHttps: 'Voice input requires HTTPS',
-  apiKeyInvalidRetry: 'Invalid API Key. Please change it and try again.',
+  /** #451: state the diagnosis and both ways out — paste another key, or recover this device's key */
+  apiKeyInvalidRetry:
+    'Invalid API Key. Paste it again, or recover this device key with "Reset quota" under Our channel.',
   apiKeyRejected: 'The API key is invalid or expired. Please log in again or re-enter it.',
   insufficientBalance: 'Insufficient balance',
   rateLimited: 'Too many requests. Please try again later.',
@@ -330,12 +411,23 @@ export const en = {
   settingsProviderKindLabel: 'Channel',
   settingsProviderKindKeyHint: 'Check that your API Key still applies after switching channels',
   settingsApiKeyLabel: 'API Key',
+  /**
+   * Pre-send local block (#451): the key exists but is clearly malformed, so the message was
+   * NOT sent. Saying so explicitly matters — otherwise people keep retrying and blame the network.
+   */
+  settingsApiKeyFormatBlocked:
+    'The saved API Key looks malformed (it contains spaces or line breaks, or is not key-length), so this message was not sent. Clear the field, paste the whole key again (no spaces or line breaks), then send.',
+  /** A suspicious key is stored but no send has been attempted yet: keep it calm, no red text */
+  settingsApiKeyFormatHint:
+    'This value does not look like an API Key (stray spaces or line breaks, or an incomplete paste). Sending will be blocked until it is fixed.',
   settingsBaseUrlLabel: 'Service URL',
   settingsBaseUrlPlaceholder: 'e.g. https://your-gateway.example.com',
   settingsModelPlaceholder: 'e.g. deepseek-v4.1-flash',
   settingsBaseUrlRequired: 'Enter a Service URL first',
   settingsTestLabel: 'Connection test',
   settingsModelLabel: 'Model',
+  /** Read-only model row for built-in channels (#339) */
+  settingsModelBuiltInHint: 'Read-only; nothing to fill in for this channel',
   settingsBaseUrlInvalid: 'Service URL must start with http:// or https:// and be a valid URL',
   settingsModelInvalid: 'Model cannot be empty',
   settingsModelsLoading: 'Loading…',
@@ -354,8 +446,12 @@ export const en = {
   settingsTestApiKeyRequired: 'Enter an API Key first',
   settingsTestHtml:
     'The endpoint returned a web page (HTTP {status}) instead of API data; the path is usually wrong or the service is broken',
+  /**
+   * The upstream answered with a web page instead of data (#434): a gateway home
+   * page / error page served with 200 + text/html. Plain language, and no retry.
+   */
   upstreamReturnedHtml:
-    'The upstream returned a web page instead of API data; the path is usually wrong or the service is broken',
+    'The upstream returned a web page instead of data, which usually means the gateway or proxy failed (a wrong endpoint URL looks the same). Retrying the same request will not change anything; expand the response summary below to see the content type and the first 200 characters.',
 
   // ---------- Chat background ----------
   settingsChatBackground: 'Chat background',
@@ -420,12 +516,13 @@ export const en = {
   feedbackScreenshotPick: 'Choose from photos',
   feedbackScreenshotRemove: 'Remove',
   feedbackScreenshotFailed: 'Could not process this image; try another one',
+  feedbackScreenshotNotImage: 'Only images can be attached as a screenshot (png, jpg, webp…)',
+  feedbackScreenshotUndecodable: 'This image cannot be opened (corrupt or not really an image); try another one',
   feedbackScreenshotReady: 'Compressed and attached',
   feedbackSubmit: 'Submit',
   feedbackSubmitting: 'Submitting…',
   feedbackTicketLabel: 'Submitted, ticket',
   feedbackTicketLogSize: '(log {size})',
-  feedbackSubmitOk: 'Submitted, ticket {id}',
   feedbackDone: 'Done',
   feedbackClearLogs: 'Clear local logs',
   feedbackLogsCleared: 'Local logs cleared',
@@ -440,7 +537,6 @@ export const en = {
 
   feedbackIntegrityCheck: 'Check log coverage',
   feedbackIntegrityTitle: 'Log coverage self-check',
-  feedbackIntegrityRefresh: 'Refresh',
   feedbackIntegrityCount: 'Entries: {count} (max 500, last 30 minutes)',
   feedbackIntegritySpan: 'Time span: {span}',
   feedbackIntegrityKinds: 'Event kinds covered: {count}',
@@ -471,11 +567,8 @@ export const en = {
   oursDeviceDescription: 'Your device code is your account credential. Back it up: losing it means losing the account.',
   oursDeviceCopy: 'Copy device code',
   oursDeviceCopied: 'Device code copied',
-  oursCopyFailed: 'Copy failed, long-press to select manually',
-  oursClaimTitle: 'Credential',
   oursClaimAction: 'Claim / re-claim',
   oursClaimBusy: 'Claiming…',
-  oursClaimAuto: 'First use: claiming automatically…',
   oursOpenChoiceTitle: 'Choose how to start',
   oursOpenChoiceHint:
     'This device has no key yet. Claim a new one from the server, or bind the key you already use elsewhere.',
@@ -487,10 +580,9 @@ export const en = {
   oursClaimAlreadyGranted: 'This device has already claimed the new-user credit; none was granted this time',
   oursClaimKeyTail: 'Current Key {tail}',
   oursClaimUseKey: 'Use the Key issued by the server {tail}',
-  oursClaimNeedsDevice: 'Device code unavailable, reopen settings to retry',
   oursQuotaTitle: 'Remaining quota',
-  /** Points unit (#94): appended by formatPoints in services/ours/api.ts — never hardcode a unit there */
-  oursPointsUnit: 'points',
+  /** Money unit (#94 / #487): yuan (1 yuan = 1 credit), appended by formatPoints in services/ours/api.ts — never hardcode a unit there */
+  oursPointsUnit: 'CNY',
   oursQuotaValue: '{points}',
   oursQuotaAction: 'Refresh quota',
   oursQuotaLoading: 'Checking…',
@@ -509,16 +601,14 @@ export const en = {
   oursInviteShapeHint: 'Invite codes are 4–16 letters or digits',
   oursInviteNeedsClaim: 'Claim the credential first to see your invite code',
   // #234: server now rewards the inviter only; the invitee just binds the relationship (reward_points: 0),
-  // so the success copy no longer reports earned points; rule numbers always come from invite_rules
+  // so the success copy no longer reports earned credit; rule numbers always come from invite_rules
   oursInviteBound: 'Invite relationship linked',
   oursInviteRuleInviter: 'Inviter gets {points}',
   oursInviteRuleInvitee: 'Invitee gets {points}',
   oursInviteRuleCashback: 'After your friend pays for the first time, the inviter gets {points} more',
   oursInviteCashbackEarned: 'Cashback earned: {points}',
-  oursPlansTitle: 'Plans',
   oursPlansLoading: 'Loading plans…',
   oursPlansFailed: 'Plans failed to load, try again',
-  oursPlansRetry: 'Reload',
   oursBuyAction: 'Pay',
   // Purchase entry (Issue #331): plans are all retired, open the shop checkout page instead
   oursPayTitle: 'Purchase',
@@ -540,7 +630,7 @@ export const en = {
   oursKeyProbeNetwork: 'Key check failed: network unavailable',
   oursKeyProbeTimeout: 'Key check timed out',
   oursSecurityTitle: 'Security',
-  oursSecurityNotice: 'The invite/quota service uses plain HTTP (device code and points only); payment and card codes use HTTPS. Be careful on public networks.',
+  oursSecurityNotice: 'The invite/quota service uses plain HTTP (device code and credit only); payment and card codes use HTTPS. Be careful on public networks.',
   oursInviteErrDeviceNotFound: 'The server has no record of this device code — tap “Claim / re-claim”',
   oursInviteErrInvalidCode: 'Invalid invite code, check it and retry',
   oursInviteErrOwnCode: 'You cannot use your own invite code',
@@ -557,6 +647,49 @@ export const en = {
   oursInviteErrInvalidResponse: 'Unexpected server response, retry later',
   oursInviteErrKeyMissing: 'The server returned no Key, retry',
   oursInviteErrUnknown: 'Operation failed, retry later',
+  // #421 email accounts (bind / sign in on a new device) — one key per row of the issue table
+  oursInviteErrEmailInvalid: 'Invalid email address, check it and retry',
+  oursInviteErrEmailDomainBlocked: 'Disposable email addresses are not supported — use a regular mailbox',
+  oursInviteErrEmailCodeInvalid: 'Incorrect verification code, enter it again',
+  oursInviteErrEmailCodeExpired: 'The code has expired or was already used — request a new one',
+  oursInviteErrEmailCodeLocked: 'Too many wrong attempts for this code — request a new one',
+  oursInviteErrEmailTooFrequent: 'Sent too often, try again later',
+  oursInviteErrEmailHourLimit: 'This mailbox hit its hourly limit, try again later',
+  oursInviteErrIpHourLimit: 'This network hit its hourly limit, try again later',
+  oursInviteErrDeviceHourLimit: 'This device hit its hourly limit, try again later',
+  oursInviteErrEmailDailyCap: 'Today’s verification-code quota is used up, try again tomorrow',
+  oursInviteErrEmailSendFailed: 'Failed to send the code, retry later',
+  oursInviteErrCustomerHasEmail: 'This account already has an email bound and cannot bind another',
+  oursInviteErrEmailDeviceHasAccount: 'This device already has an account — choose which one to continue with',
+  oursInviteErrAccountFrozen: 'This account is frozen, contact support',
+  // #421 email accounts: entry and form
+  oursEmailTitle: 'Email account',
+  oursEmailDescription:
+    'Once an email is bound you can use it to recover this account on a new device. An email does not disable other devices, and it is not merged into this anonymous account automatically.',
+  oursEmailBindAction: 'Bind email',
+  oursEmailInputPlaceholder: 'Email address',
+  oursEmailCodePlaceholder: '6-digit code',
+  oursEmailSendAction: 'Send code',
+  oursEmailSendBusy: 'Sending…',
+  oursEmailVerifyAction: 'Submit code',
+  oursEmailVerifyBusy: 'Submitting…',
+  oursEmailSentHint: 'Code sent (for now it is only written to the server log — no real email yet)',
+  oursEmailCodeShapeHint: 'The code is 6 digits',
+  oursEmailRetryAfter: 'retry in {seconds}s',
+  oursEmailAttemptsLeft: '{attempts} attempts left',
+  oursEmailBoundMaskedHint: 'Bound to: {masked}',
+  oursEmailLoginOk: 'Signed in with email — this device code and Key now point at the original account',
+  // #421 point 4 / acceptance D3: per-second countdown on the send button
+  oursEmailSendCountdown: 'Resend in {seconds}s',
+  // #421 point 3: sign-in conflict dialog (device_has_account)
+  oursEmailConflictTitle: 'This device already has an account',
+  oursEmailConflictEmail: 'Email account to sign in with: {masked}',
+  oursEmailConflictPoints: 'Credit left on this device: {points}',
+  oursEmailConflictWarning:
+    'If you choose to use the email account, the credit left in this device’s account cannot be used for now (the server does not merge them automatically; the data is kept and support has to handle it).',
+  oursEmailConflictUseEmail: 'Use the email account',
+  oursEmailConflictKeepDevice: 'Keep this device’s account',
+  // 卡密 / 支付服务错误码
   oursErrBadJson: 'Malformed request, retry',
   oursErrUnauthorized: 'Authentication failed: claim or enter a Key again',
   oursErrForbidden: 'Order token mismatch, this order cannot be queried',
@@ -566,7 +699,7 @@ export const en = {
   oursErrCardMissing: 'Enter a card code',
   oursErrKeyMissing: 'Claim or enter a Key first',
   oursErrKeyInvalid: 'Key is invalid: claim or enter a new one',
-  oursErrVerifyUnavailable: 'Points service temporarily unavailable, retry later',
+  oursErrVerifyUnavailable: 'Quota service temporarily unavailable, retry later',
   oursErrRateLimited: 'Too many requests, retry later',
   oursErrPlanNotFound: 'Plan not found',
   oursErrPlanMissing: 'Select a plan first',
@@ -587,7 +720,7 @@ export const en = {
   oursErrCardLeased: 'This card code has moved to the in-app redemption channel. Redeem it in the app.',
   oursErrCardNotFoundOrExpired: 'Card code does not exist or has expired',
   oursErrApiKeyNotIssued: 'Claim a key in the app first, then redeem',
-  oursRedeemProcessing: 'Redemption is processing; points will arrive automatically',
+  oursRedeemProcessing: 'Redemption is processing; credit will arrive automatically',
   oursRedeemDuplicate: 'This card code was already redeemed; {points} arrived',
   oursRedeemRefreshBalance: 'Refresh quota',
   oursDeviceBackupHint: 'Your device code is your account credential. Copy and back it up: clearing site data or switching devices loses it for good.',
@@ -614,31 +747,49 @@ export const en = {
   oursBindErrTimeout: 'The request timed out. Try again later.',
   oursBindErrInvalidResponse: 'Unexpected server response. Try again later.',
   oursBindErrUnknown: 'Binding failed. Try again later.',
-  // Issue #90: rotate the API key (POST /rotate) — quota carries over, the old key dies instantly
-  oursRotateTitle: 'Change key',
-  oursRotateEntryAction: 'Change key',
+  // Issue #90: rotate / reset the key (POST /rotate); #357: the server now resets quota in place
+  // and no longer issues a new key string.
+  oursRotateTitle: 'Change / reset key',
+  oursRotateEntryAction: 'Change / reset',
   oursRotateDescription:
-    'Get a fresh key. Your quota is not consumed: remaining points and used points carry over to the new key.',
-  oursRotateConfirmTitle: 'Change the key?',
+    'Recomputes the quota of this device key from "welcome grant + earned rewards". The server resets the quota in place and usually does not issue a new key string; the key keeps working and other clients are unaffected.',
+  oursRotateConfirmTitle: 'Reset the quota?',
   oursRotateConfirmBody:
-    'Once you switch, the old key stops working immediately and cannot be recovered. Any other client still using the old key breaks right away, and in-flight requests may fail. You only get one key, so make sure you really want to switch.',
-  oursRotateConfirmOk: 'Change it',
+    'The quota of the current key is recomputed from "welcome grant + earned rewards", so already consumed credit stops using it up. The key itself stays the same (still this device key), no other client is logged out, and you do not need to re-enter the key.',
+  oursRotateConfirmOk: 'Reset it',
   oursRotateConfirmCancel: 'Cancel',
-  oursRotateBusy: 'Changing…',
-  oursRotateOk: 'Key changed. The new key is saved on this device.',
-  oursRotateOkUnchanged: 'The server did not rotate (it returned the same key). Try again later.',
-  oursRotateRetryHint: 'Changing only needs your device code, so retrying is safe: no quota is lost.',
+  oursRotateBusy: 'Resetting…',
+  // #357: four "success" wordings, one per RotateSuccessMode in src/services/invite/rotate.ts
+  oursRotateOk: 'Quota reset and a new key issued. The new key is saved on this device.',
+  oursRotateOkNoQuota:
+    'A new key was issued and saved on this device (the server returned no quota; tap "Refresh quota" to confirm).',
+  oursRotateOkQuotaReset: 'Quota reset. The key itself is unchanged (still this device key).',
+  oursRotateOkUnverified:
+    'Done. The key is unchanged and the server returned no quota info; tap "Refresh quota" to confirm.',
   oursRotateErrDeviceNotFound: 'This device has no key yet. Claim one first.',
   oursRotateErrInvalidDevice: 'That device code looks wrong. Restart the app and try again.',
-  oursRotateErrInternal: 'Change failed. Try again later.',
+  oursRotateErrInternal: 'Reset failed. Try again later.',
   oursRotateErrDeviceMissing: 'Cannot read this device code. Restart the app and try again.',
-  oursRotateErrNoKeyInResponse: 'The server did not return a new key. Try again.',
+  oursRotateErrNoKeyInResponse: 'The server did not return a key. Try again later.',
   oursRotateErrRateLimited: 'Too many attempts. Try again later.',
   oursRotateErrNetwork: 'No network. Check your connection and try again.',
   oursRotateErrTimeout: 'The request timed out. Try again later.',
   oursRotateErrInvalidResponse: 'Unexpected server response. Try again later.',
-  oursRotateErrUnknown: 'Change failed. Try again later.',
+  oursRotateErrUnknown: 'Reset failed. Try again later.',
   oursRotateKeptOldKey: 'Your local key was left untouched and still works',
+  // #451: key identity (bound time / last confirmed-success time). Both come from local records.
+  oursKeyIdentityTitle: 'Key identity',
+  oursKeyIdentityTail: 'Current key ends with {tail}',
+  oursKeyIdentityTailUnknown: 'This key is too short to show a tail',
+  oursKeyIdentityBoundAt: 'Bound at: {time} (when this key was first saved on this device)',
+  oursKeyIdentityLastSuccess: 'Last successful use: {time}',
+  oursKeyIdentityNoSuccess: 'Last successful use: nothing recorded on this device yet',
+  oursKeyIdentityNoRecord:
+    'No time record for this key on this device (the key was just changed, or the local record was cleared)',
+  oursKeyIdentitySource:
+    'Both times come from this device: the quota endpoint returns quota only, not the bound time or the last-used time.',
+  oursKeyIdentitySuccessSource:
+    '"Successful use" means the last time this device confirmed the key works (on a successful key check, connection test, key probe, quota reset, or card redemption). Changing the key starts a new record.',
   // Issue #46: thinking display mode
   settingDialogThinkingDisplayLabel: 'Thinking process',
   settingDialogThinkingDisplayDescription: 'How thinking content appears in messages when deep thinking is on. Switching applies to already open chats immediately.',
@@ -671,7 +822,6 @@ export const en = {
   oursPayRecordsCopied: 'Card code copied',
   oursPayRecordsCardTail: 'Card',
   oursPayRecordsNeedKey: 'Fill in your API key to see the payment records of this account',
-  oursPayRecordsReplacedHint: 'The previous unpaid order was replaced by the new one, so the latest applies',
   // Issue #45: unified request timeout notice (kept apart from network failure and 4xx/5xx)
   requestTimeout: 'Request timed out ({seconds}s with no response). Check your network and try again.',
   // Issue #106: double-tap the mobile title bar to jump back to the first message
@@ -715,6 +865,8 @@ export const en = {
     'message branches are damaged (parent message missing, or roles do not connect)',
   historyImportSkipReasonFiles:
     'attachment data is damaged (image path escapes the folder, or the image is duplicated)',
+  historyImportSkipReasonUnknown:
+    'Unrecognized skip reason (from another version or a third-party archive)',
   settingDouyinLabel: 'Douyin ID',
   settingDouyinDescription: 'Tap the ID to copy it, then search for it in Douyin.',
   settingDouyinCopyAria: 'Copy Douyin ID',
@@ -756,31 +908,19 @@ export const en = {
   oursPurchasesErrUnknown: 'Could not load your purchases. Please retry later.',
   // Boot-guard copy (#180 / #104). Identical to the inline COPY table in src/index.html;
   // tests/unit/compat-guard-diagnostics.test.mjs compares both sides.
+  //
+  // Note (issue #413): the guard only renders after the app bundle — and therefore the i18n
+  // module — is already dead, so these templates are inlined in the HTML and never read from
+  // here at runtime. Only pre-existing keys stay in this table; the 17 keys #104 added
+  // (outdated-engine lead / five env fields / copy + truncation hints) were defined-but-unused
+  // (check-i18n R4) and are gone, with a verbatim reference copy in
+  // tests/fixtures/compat-boot/compat-boot-copy.mjs. Add new fallback copy to the COPY table in
+  // src/index.html plus that fixture, **not** here.
   compatBootTitle: 'This page could not start',
   compatBootLead: 'This page needs a newer Android System WebView (or browser) to open properly.',
-  // Shown instead of compatBootLead when the engine is below config/compat.json baselineChromium (#104)
-  compatBootLeadOld: "This device's system WebView engine is outdated ({version}). Please update Android System WebView.",
-  compatBootUpgradePath:
-    'To update: Settings → Apps → Android System WebView → Update (or search "Android System WebView" in your app store), then reopen this app.',
   compatBootMissing: 'Missing runtime features: {apis}',
   compatBootRuntimeError: 'A script error stopped this page from starting.',
   compatBootTimeout: 'The page script did not start within 12 seconds (outdated engine or failed to load).',
-  // Self-service environment info (#104 item 3): five fixed fields, copied as one block
-  compatBootEnvApp: 'App version: {version}',
-  compatBootEnvEngine: 'Engine version: {version}',
-  compatBootEnvEngineUnknown: 'Engine version: could not be read from the browser identifier',
-  compatBootEnvAndroid: 'Android version: {version}',
-  compatBootEnvStage: 'Failed stage: {stage}',
-  compatBootEnvTime: 'Time: {time}',
-  compatBootEnvDevice: 'Device code: {code} (masked)',
-  compatBootStageMissing: 'Startup check failed (missing required features)',
-  compatBootStageRuntime: 'App script failed at startup',
-  compatBootStageTimeout: 'App script did not start within 12 seconds',
-  compatBootCopy: 'Copy environment info',
-  compatBootCopied: 'Copied — paste it into your report',
-  compatBootCopyManual: 'Copy failed — long-press the text below to copy it',
-  compatBootDetails: 'Technical details',
-  compatBootTruncated: '…(truncated)',
   compatBootHowTo:
     'To update: open your app store, search for "Android System WebView" and update it, then reopen this app.',
   compatBootFooter: 'If it still fails after updating, report the engine version above with a screenshot of this page.',
@@ -803,20 +943,29 @@ export const en = {
     'This order was closed, but a payment within 24 hours is recovered automatically; copy the order number and ask support to check.',
   oursTrailWaitingCard: 'Paid. Preparing the card key, usually done within seconds.',
   oursTrailCardLabel: 'Card key',
-  oursTrailCardPoints: 'Points',
+  oursTrailCardPoints: 'CNY',
   oursTrailCardKeyTail: 'Redeem key tail',
   oursTrailCardRedeemed: 'Redeemed',
   oursTrailCardNotRedeemed: 'Not redeemed yet',
   oursTrailRedeemedByMe: 'Redeemed by me',
   oursTrailRedeemedByOther: 'Redeemed by another account',
   oursTrailRedeemedByUnknown: 'Redeemer unknown',
+  // Card trail lookup (#325): the entry sits on the card block; the sheet only queries your own cards
+  oursTrailCardLookup: 'Look up this card',
+  oursTrailCardLookupTitle: 'Card trail',
+  oursTrailCardLookupHint:
+    'Only records for cards in your own account are shown; for another account\'s card you will see "No such record found".',
+  oursTrailCardSourceLabel: 'Redeemed via',
+  oursTrailCardSourceInApp: 'Redeemed in this app',
+  oursTrailCardSourceWeb: 'Redeemed on the web',
+  oursTrailCardSourceUnknown: 'Redemption source unknown',
   oursTrailBackfilled: 'Backfilled time',
   oursTrailEventUnknown: 'Other action (no description from the server)',
   oursTrailEventOrderCreated: 'Order created, awaiting payment',
   oursTrailEventNotifyOk: 'Payment notification received',
   oursTrailEventPaidConfirmed: 'Payment confirmed',
   oursTrailEventCardIssued: 'Card key issued',
-  oursTrailEventCardRedeemed: 'Card key redeemed, points credited',
+  oursTrailEventCardRedeemed: 'Card key redeemed, credit added',
   oursTrailEventOrderExpired: 'Order expired unpaid and was closed',
   oursTrailEventLateRecovered: 'Paid after closing, card key reissued',
   oursTrailEventWaitingStock: 'Paid, preparing the card key',
@@ -840,7 +989,191 @@ export const en = {
   oursTrailErrBadResponse: 'Unexpected response from the service, try again later',
   oursTrailErrUnknown: 'Could not load, try again later',
   oursTrailCount: '{total} records',
+  oursTrailTabAll: 'All',
+  oursTrailFilterLabel: 'Filter by status',
+  oursTrailLoadMore: 'Load more',
+  oursTrailLoadingMore: 'Loading…',
+  oursTrailLoadMoreFailed: "Couldn't load that page; the records above are still here",
+  oursTrailEndOfList: "That's everything",
+  oursTrailEmptyFiltered: 'No records with this filter, try another one',
   oursTrailTotalPaid: 'Total paid {amount}',
   oursTrailEntryDescription:
     'Follow each order on a timeline from checkout through payment, card issuing and redemption',
+  updateCacheFallbackTitle: 'Cached data — may not be up to date',
+  updateCacheFallbackNote:
+    'This is the release list fetched successfully at {time} ({count} record(s)). The update service cannot be reached right now, so it may already be out of date.',
+  updateManualDownload: 'Download the latest version manually',
+  updateManualOpenFailed:
+    'Could not open the download page inside the app. Try again later, or copy the diagnostics and send them to us.',
+  // ---------------------------------------------------------------------------
+  // Refactor key skeleton (prep for #487): sign-in/sign-up, account and consumption,
+  // card-key redemption, invites, email binding. Only new keys here; existing text above is untouched.
+  // These keys have no caller until the UI lands, which is expected and registered in
+  // scripts/check-i18n.mjs ORPHAN_BASELINE.
+  // ---------------------------------------------------------------------------
+
+  // Sign-in / sign-up (sub2api /api/v1/auth)
+  sub2authEmail: 'Email',
+  sub2authPassword: 'Password',
+  sub2authConfirmPassword: 'Confirm password',
+  sub2authLogin: 'Log in',
+  sub2authRegister: 'Sign up',
+  sub2authForgotPassword: 'Forgot password',
+  sub2authSendCode: 'Send verification code',
+  /** Countdown placeholder: {seconds} comes from the server cooldown, never hardcoded */
+  sub2authCodeSent: 'Code sent, resend in {seconds}s',
+  sub2authCodeInvalid: 'Incorrect verification code',
+  sub2authEmailInvalid: 'Invalid email address',
+  sub2authCredentialInvalid: 'Incorrect account or password',
+  sub2authLoginFailed: 'Login failed, try again',
+  sub2authNetworkError: 'Network error, check your network and retry',
+  sub2authLogout: 'Log out',
+  sub2authSwitchAccount: 'Switch account',
+  sub2authRegisterSuccess: 'Account created',
+  sub2authEmailVerifyRequired: 'Verify your email first',
+  sub2authTwoFactorHint: 'Two-factor authentication is on, enter the 6-digit code from your authenticator app',
+
+  // "Account & billing" page (three dialogs → one page, #482 / W1-C1 #487)
+  accountConsumeTitle: 'Account & billing',
+  accountConsumeEntryDescription: 'Card keys, plans, quota and account — all in one page',
+  accountConsumeTabCards: 'My cards',
+  accountConsumeTabQuota: 'My quota',
+  accountConsumeTabAccount: 'Account',
+
+  // Account and consumption (amounts are in yuan: 1 yuan = 1 credit; rendering goes through utils/money.ts — no FX on the client)
+  consumeBalance: '¥{amount}',
+  consumeBalanceApprox: 'About ¥{amount}',
+  consumeQuota: 'Quota',
+  consumeUsage: 'Usage',
+  consumeUsageToday: 'Usage today',
+  consumeUsageMonth: 'Usage this month',
+  consumeCreateKey: 'Create Key',
+  consumeKeyList: 'Key list',
+  consumeKeyName: 'Key name',
+  consumeKeyExpiresAt: 'Expires at',
+  consumeKeyStatus: 'Status',
+  consumeKeyStatusActive: 'Enabled',
+  consumeKeyStatusInactive: 'Disabled',
+  consumeCopyKey: 'Copy Key',
+  consumeKeyCopied: 'Key copied',
+  consumeDeleteKey: 'Delete Key',
+  consumeDeleteConfirm: 'This cannot be undone. Delete this Key?',
+
+  // Card-key redemption (keeps the existing "card key" wording, see #482)
+  consumeRedeemTitle: 'Redeem card key',
+  consumeRedeemPlaceholder: 'Enter the card key',
+  consumeRedeemBusy: 'Redeeming…',
+  /** Used while checking the redeem history after a timeout: never invite a second submit */
+  consumeRedeemConfirming: 'Checking the redemption result, do not submit again',
+  consumeRedeemSuccess: 'Redeemed',
+  consumeRedeemFailed: 'Redemption failed, try again later',
+  consumeRedeemCodeUsed: 'This card key was already used',
+  consumeRedeemCodeInvalid: 'Invalid card key',
+
+  // Invites (sub2api aff; the invitation code can only be set once, at sign-up)
+  inviteTitle: 'My invites',
+  inviteCode: 'Invitation code',
+  inviteCopyCode: 'Copy invitation code',
+  inviteCount: 'Invited users',
+  inviteRebateBalance: 'Rebate balance',
+  inviteCodeAtRegister: 'Invitation code (optional)',
+  inviteCodeInvalid: 'Invalid invitation code',
+  inviteDisabled: 'Invites are not available',
+
+  // Email binding (sub2api account-bindings)
+  emailBindBind: 'Bind email',
+  emailBindChange: 'Change email',
+  emailBindUnbind: 'Unbind',
+  emailBindSendCode: 'Send verification code',
+  emailBindCodeSent: 'Code sent',
+  emailBindSuccess: 'Email bound',
+  emailBindUnbindSuccess: 'Email unbound',
+  emailBindFailed: 'Binding failed, try again later',
+
+  // On-screen copy for the normalized sub2api errors (#487): one key for every `ConsumeMessageKey`
+  // in `src/services/consume/errors.ts` (27 of them). The consume layer only returns keys, so this
+  // block is the single source of the sentence a user actually reads. Same three rules as zh.ts:
+  //   · human + actionable — the next step (sign in / switch key / top up / contact support) is in the sentence;
+  //   · never the words "unknown error" — `consumeErrUnknown` is the only fallback, every other key names a cause;
+  //   · amounts use `{amount}` in yuan (1 yuan = 1 credit) and the symbol is added by utils/money.ts,
+  //     never hardcoded here; rate-limit seconds use `{seconds}` (from `Retry-After`).
+  consumeErrUnknown:
+    'That request did not go through. Try again later, and send us this message if it keeps happening.',
+  consumeErrNetwork: 'No network connection. Check your connection and try again.',
+  consumeErrTimeout: 'The request timed out. Wait a moment and try again.',
+  consumeErrUnsupported: 'This app version does not support that feature. Update to the latest version.',
+  consumeErrBadRequest: 'Something in the form is not valid. Check it and try again.',
+  consumeErrInvalidResponse:
+    'The server sent data we could not read. Try again later, and tell us if it keeps happening.',
+  consumeErrUnauthorized: 'Your session has expired. Please sign in again.',
+  consumeErrAccountDisabled: 'This account has been disabled. Contact support.',
+  consumeErrForbidden: 'You do not have permission for that. Check the permissions of this account.',
+  consumeErrNotFound: 'That endpoint does not exist. Update to the latest version.',
+  consumeErrRateLimited: 'Too many requests. Try again in {seconds} seconds.',
+  consumeErrServerUnavailable: 'The service is temporarily unavailable. Try again later.',
+  consumeErrKeyMissing: 'No API key yet. Add one first.',
+  consumeErrKeyInvalid: 'Invalid API key. Check that you copied all of it.',
+  consumeErrKeyDisabled: 'This API key is disabled. Enable it or use another one.',
+  consumeErrKeyExpired: 'This API key has expired. Create a new one.',
+  consumeErrKeyQuotaExhausted: 'This API key is out of quota. Use another key or raise the quota.',
+  consumeErrKeyExists: 'An API key with that name already exists. Pick another name.',
+  // No `{amount}` placeholder: the consume error mapper returns only the key, never the shortfall
+  // (a leftover placeholder from #504 would be rendered literally to the user).
+  consumeErrInsufficientBalance: 'Not enough balance. Please top up first.',
+  consumeErrGroupNotAllowed: 'Your current group cannot use this key. Switch group or contact support.',
+  consumeErrCardNotFound: 'No such card key. Check it and try again.',
+  consumeErrCardNotFoundOrExpired: 'That card key does not exist or has expired. Check it and try again.',
+  consumeErrCardUsed: 'This card key has already been used. Contact support if the balance did not arrive.',
+  consumeRedeemProcessing: 'Confirming the redemption result',
+  consumeErrInvitationInvalid: 'Invalid invitation code. Check it and try again.',
+  consumeErrEmailCodeInvalid: 'The verification code is wrong or has expired. Request a new one.',
+  consumeErrNotEnabled: 'This feature is not enabled yet. Contact support to enable it.',
+  // ---------------------------------------------------------------------------
+  // W1-C2 account/consume panels (quota / account / invites / email binding, #487).
+  // The `consumeErr*` error wording already landed in #504, so it is not redefined here;
+  // these are only the plain labels the four panels need. Amounts are CNY (1 yuan = 1 quota):
+  // the symbol comes from the panels' formatCurrency helper, never from a template here.
+  // ---------------------------------------------------------------------------
+  consumeBalanceLabel: 'Balance',
+  consumeAccountTitle: 'Account',
+  consumeProfileTitle: 'Account details',
+  consumeUsed: 'Used',
+  consumeRemaining: 'Remaining',
+  consumeUnlimited: 'Unlimited',
+  consumeRegisteredAt: 'Registered',
+  consumeKeyEmpty: 'No Key yet. Name it and press “Create Key”.',
+  consumeLoadMore: 'Load more',
+  consumeLoadingMore: 'Loading…',
+  consumeUsageEmpty: 'No usage records yet',
+  consumeRequestsCount: '{count} requests',
+  consumeTokensCount: '{count} tokens',
+  consumeNoKeyTitle: 'No usable Key yet',
+  consumeNoKeyBody: 'Balance and usage can only be read with a Key. Create one in the Account tab.',
+  consumeKeyOnceTitle: 'This Key is shown only once',
+  consumeKeyOnceBody:
+    'For security the full Key is shown once, right after it is created, and cannot be viewed again. Copy and store it now.',
+  consumeKeyTailOnly: 'The list only shows the last 4 characters',
+  consumeKeyOnceSaved: 'I saved it',
+  consumeKeyNameRequired: 'Give the Key a name first',
+  consumeKeyDeleted: 'Deleted',
+  consumeNeedLogin: 'Your session expired, please log in again',
+  consumeLogoutConfirm: 'You will need to log in again to keep using the app. Log out?',
+  consumeLogoutSuccess: 'Logged out',
+  inviteRebateRate: 'Rebates pay {percent}% of what your invitees spend, credited to the rebate balance',
+  inviteRebateFrozen: '{amount} of it is frozen',
+  emailBindNotBound: 'No email bound yet',
+  emailBindCodeLabel: 'Verification code',
+  emailBindUnbindConfirm: 'After unbinding, this email is no longer linked to the account. Unbind?',
+  emailBindCannotUnbind: 'This is the only way to sign in to the account, so it cannot be unbound',
+  // Legacy credit migration (#498 temporary tail, @remove-after 1.6.0):
+  // called once after sign-in, failures stay silent; only the self-contained button
+  // in src/legacy/migration/ uses these. Delete them together with that directory.
+  legacyMigrateTitle: 'Migrate old credit',
+  legacyMigrateDone: 'Old credit migrated: {amount}',
+  legacyMigrateManual: 'To migrate your old credit, please contact support',
+  legacyMigrateExpired: 'Credit migration has ended',
+  legacyMigrateFailed: 'Migration failed',
+  legacyMigrateDeviceMismatch: 'Device info does not match, please contact support',
+  legacyMigrateAlreadyUnsettled: 'Already migrated; if it has not arrived, please contact support',
+  legacyMigrateRetryAnyway: 'Migrate anyway',
 } satisfies Record<keyof typeof zh, string>

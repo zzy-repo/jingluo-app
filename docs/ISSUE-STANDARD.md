@@ -98,3 +98,20 @@
 - 用模拟结果冒充真机通过
 - 同时启动多台模拟器；重构建串行
 - `git add -A` 提交无关改动
+
+## 七、Issue 关闭纪律（closing keyword）
+
+PR 正文里的 `Closes / Fixes / Resolves #N` 由 GitHub 自动解析，**只看字符串、不看语义**。
+一次误写就把追踪单关了（#362 事故：PR #389 正文写了一句否定句，squash 合并后 1 秒 #362
+被自动关闭，而阶段二只完成 2/5）。完整规则与事故细节见
+[`AGENTS.md`](../AGENTS.md)「Issue 关闭纪律」一节，这里只留五条要点：
+
+1. **追踪单（`[TRACK]` / `[追踪]` 标题的母单）只写 `Refs #N`**，禁止用 closing keyword。
+2. **否定句同样会被匹配**（关键词 + `#数字` 即成立），要表达"不关"就别写出那串字。
+3. **追踪单只允许人工关闭**，且必须 checklist 全部 ✅。
+4. **普通 issue 允许 PR 自动关闭**，但**合并后必须核对被引用 issue 的状态**
+   （`gh issue view <n> --json state,title,closedAt`），误关立刻 reopen 并写明剩余工作。
+5. **合并前核对 CI 全绿，并分清"是谁红的"**（`gh pr view <n> --json statusCheckRollup`）：
+   若红的是 main 上的既有问题、与你的改动无关，**先修 main，不要在红的基础上叠加 PR**。
+
+自查：`node scripts/check-issue-close-keywords.mjs --pr <n>`（未进 CI，原因见 AGENTS.md）。

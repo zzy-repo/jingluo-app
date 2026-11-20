@@ -30,6 +30,7 @@ import assert from 'node:assert/strict'
 import { existsSync } from 'node:fs'
 import { registerHooks } from 'node:module'
 import { fileURLToPath, pathToFileURL } from 'node:url'
+import { zipBytes } from '../helpers/url-import-fixtures.mjs'
 
 const srcUrl = (rel) => new URL(`../../src/${rel}`, import.meta.url).href
 const fieldsUrl = srcUrl('services/diagnostics/fields.ts')
@@ -315,14 +316,6 @@ test('[5] 额度不足：reason=quota-files，且标明重试没用', async () =
 // ---------------------------------------------------------------- URL 导入
 
 /** 合法 ZIP 头 + 真实长度的填充字节（urlImport 会校验 PK\x03\x04） */
-const zipBytes = (size) => {
-  const bytes = new Uint8Array(size)
-  bytes.set([0x50, 0x4b, 3, 4], 0)
-  for (let index = 4; index < size; index += 1) {
-    bytes[index] = index % 251
-  }
-  return bytes
-}
 const zip = zipBytes(3 * 1024 * 1024 + 512 * 1024)
 
 const rangeOf = (options) => {

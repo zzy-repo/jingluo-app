@@ -2,6 +2,16 @@ import { create } from 'zustand'
 import { captureStateSnapshot, recordAction } from '../diagnostics/collector.js'
 import { cacheCustomerId, resetCustomerIdCache } from '../ours/customerId.js'
 import {
+  identityOnKeyWrite,
+  identityOnSuccess,
+  keyIdentityView,
+  parseKeyIdentity,
+  serializeKeyIdentity,
+  type KeyIdentity,
+  type KeyIdentityView,
+} from '../invite/keyIdentity.js'
+import { isKeyFormatInvalid } from './keyFailure.js'
+import {
   DEFAULT_PROVIDER_KIND,
   getSpec,
   isUserField,
@@ -21,7 +31,9 @@ import {
  *
  * 内置地址/模型的渠道（deepseek / ours）在 spec.fields 里没有 baseUrl / model：
  * 设置页不渲染这两行，setter 直接拒绝写入，值只从 spec.defaults 取。
- * 老用户共享的 chat-demo:base-url / chat-demo:model 只有 DeepSeek 官方这一路还当兜底读（升级无感）。
+ * 老用户共享的 chat-demo:base-url / chat-demo:model 只属于 DeepSeek 官方，且**只有老中转地址仍在用时**
+ * 才算数（#339）：地址已经回到官方默认，共享键里的模型就是别的渠道串过来的残留，不再参与请求，
+ * 由 configMigration.ts 在升级启动时一次性清掉。
  *
  * 请求路径与鉴权头都来自 ProviderSpec（providers.ts），这里只负责「当前用哪个 spec + 取到值」。
  */
@@ -42,6 +54,12 @@ export const CONFIG_KEYS = {
   /** 1.2.2 之前只有这一份地址/模型（当时只有 DeepSeek 官方），保留为老用户兜底 */
   baseUrl: 'chat-demo:base-url',
   model: 'chat-demo:model',
+  /**
+   * Key 身份记录（Issue #451）：`{ f: 指纹, b: 绑定时间, s: 最近一次确认可用时间 }`。
+   * 与 `chat-demo:api-key` 分开存：Key 会被各种路径覆写 / 清空，身份记录要能跟着指纹判断
+   * 「这条记录还是不是当前这把 Key 的」（判定在 `../invite/keyIdentity.ts`，这里只管读写）。
+   */
+  keyIdentity: 'chat-demo:key-identity',
 } as const
 
 /** 用户自填字段按渠道分开存：chat-demo:base-url:anthropic 这类 */
@@ -160,19 +178,64 @@ const storedBaseUrl = (kind: ProviderKind): string => {
   return dropLegacyHost(normalizeBaseUrl(read(scopedKey('baseUrl', kind)) ?? '') ?? '')
 }
 
-/** 已保存的模型：规则同地址（老用户那份 chat-demo:model 只属于 DeepSeek 官方） */
+/**
+ * 老中转是否还在用：共享地址存在、且不是当前 spec 的官方默认地址。
+ *
+ * 老用户的中转地址（共享 `chat-demo:base-url`）与模型（共享 `chat-demo:model`）是**一套配置**，
+ * 必须一起保留或一起忽略（#339）：
+ * - 还在用中转 → 模型继续生效（1.2.3 升级无感的契约，`tests/integration/legacy-config.test.mjs` 锁着）；
+ * - 地址已回到官方默认 → 那个模型一定是从别的渠道串过来的残留，不许再参与请求。
+ */
+export const isLegacyRelayInUse = (kind: ProviderKind): boolean => {
+  if (kind !== LEGACY_KIND) {
+    return false
+  }
+  const stored = storedBaseUrl(kind)
+  return Boolean(stored) && stored !== getSpec(kind).defaults?.baseUrl
+}
+
+/**
+ * 已保存的模型：
+ * - 锁定渠道（ours）恒为空串：模型只认 spec.defaults
+ * - 字段不可编辑的内置渠道（官方 deepseek）：**不读**共享键残留，只有老中转仍在用时才保留旧值（#339）
+ * - 自填渠道（anthropic / openai）：读各自的 `chat-demo:model:<渠道>`
+ *
+ * 守卫顺序很关键：`isUserField` 必须在 legacy 分支**之前**，否则内置渠道永远走不到「不读残留」。
+ */
 const storedModel = (kind: ProviderKind): string => {
   const spec = getSpec(kind)
-  if (spec.locked) {
-    return ''
-  }
-  if (kind === LEGACY_KIND) {
-    return (read(CONFIG_KEYS.model) ?? '').trim()
-  }
-  if (!isUserField(spec, 'model')) {
-    return ''
+  if (spec.locked || !isUserField(spec, 'model')) {
+    return kind === LEGACY_KIND && isLegacyRelayInUse(kind)
+      ? (read(CONFIG_KEYS.model) ?? '').trim()
+      : ''
   }
   return (read(scopedKey('model', kind)) ?? '').trim()
+}
+
+/** 迁移专用：老版共享模型键的当前值（1.2.x 遗留；这里是它唯一的读点） */
+export const readLegacySharedModel = (): string => (read(CONFIG_KEYS.model) ?? '').trim()
+
+/** 迁移专用：清掉老版共享模型键（等价于用户手工 `removeItem('chat-demo:model')`） */
+export const clearLegacySharedModel = (): void => write(CONFIG_KEYS.model, null)
+
+/**
+ * 迁移专用：按原样读 / 写任意配置键。
+ *
+ * localStorage 的访问只发生在 apiConfig.ts（配置层的唯一宿主能力入口）：
+ * 迁移模块借这两个口子读写版本号，不要自己去碰 localStorage —— 既保持「存储异常一律吞掉」
+ * 的口径统一，也让宿主能力盘点（docs/capabilities/host.md）只多一个调用点而不是一个新文件。
+ */
+export const readConfigValue = (key: string): string | null => read(key)
+export const writeConfigValue = (key: string, value: string | null): void => write(key, value)
+
+/**
+ * 迁移专用：清键之后把界面 state 里的模型同步成当前渠道真正生效的值。
+ *
+ * store 的初值是在模块加载时读进来的，清掉 localStorage 不会自动改它；
+ * 不同步的话，「键清了但这一轮还在发旧模型」，看起来像迁移没生效。
+ */
+export const syncModelFromStorage = (): void => {
+  useApiConfig.setState({ model: storedModel(getProviderKind()) })
 }
 
 const initialKind = getProviderKind()
@@ -234,6 +297,60 @@ const resolveModel = (): string => {
 export const getApiKey = (): string => read(CONFIG_KEYS.apiKey) ?? ''
 export const getBaseUrl = (): string => resolveBaseUrl()
 export const getModel = (): string => resolveModel()
+
+// ------------------------------------------------------------------ Key 身份（Issue #451）
+
+/** 存储里的原始记录（坏数据 → null，见 `parseKeyIdentity`） */
+export const getKeyIdentity = (): KeyIdentity | null =>
+  parseKeyIdentity(read(CONFIG_KEYS.keyIdentity))
+
+/**
+ * 当前这把 Key 的身份视图：`none` = 本机没有它的记录（从没写过 / 存储被清 / 记录是上一把 Key 的）。
+ * 界面据此决定「显示两个时间」还是「说一句没有记录」，绝不把上一把 Key 的绑定时间挂到这把上。
+ */
+export const getCurrentKeyIdentity = (): KeyIdentityView =>
+  keyIdentityView(getKeyIdentity(), getApiKey())
+
+/**
+ * 记一次「这把 Key 刚刚被确认可用」（Issue #451 第 1 点）。
+ *
+ * **只在真的拿到成功应答时调**：设置里校验 Key、连通性测试、我们的渠道 Key 探测、
+ * 重置额度、兑换卡密五处。当前没有 Key → 什么都不写（返回 false）。
+ *
+ * 为什么不在这里猜测聊天是否成功：那条路径在 `services/chat/*`，不在 #451 允许改动的文件面内，
+ * 口径与原因写在 `../invite/keyIdentity.ts` 的文件头。
+ */
+export const recordKeySuccess = (apiKey?: string, at: number = Date.now()): boolean => {
+  const key = (apiKey ?? getApiKey()).trim()
+  const next = identityOnSuccess(getKeyIdentity(), key, at)
+  if (next === null) {
+    return false
+  }
+  write(CONFIG_KEYS.keyIdentity, serializeKeyIdentity(next))
+  return true
+}
+
+/**
+ * 发送前能不能放行（Issue #451 第 2 点）：`ok` 放行 / `missing` 没填 / `format` 本地就能判死的格式问题。
+ *
+ * 三态而不是布尔：调用方对前三者的处理不同 ——
+ *  - `missing` 走 #374 之前就有的那条路（打开设置、选中「数据管理」）；
+ *  - `format` 要**额外说清原因**（含空格 / 换行 / 长度不像一把 Key），因为用户手上明明「有 Key」，
+ *    不给他这句话，他只会以为 Key 被删了；
+ *  - 两者都**不发请求**，所以拿不到 401 也拿不到上游原文 —— 这条拦截的全部价值就在这里。
+ *
+ * 判据只有 `isKeyFormatInvalid`（#374 定的口径），本函数不另立一套：
+ * 两处判断一旦分叉，就会出现「发送被拦、但失败文案说没问题」这种互相打架的状态。
+ */
+export type PreSendApiKeyStatus = 'ok' | 'missing' | 'format'
+
+export const checkApiKeyBeforeSend = (): PreSendApiKeyStatus => {
+  const apiKey = getApiKey()
+  if (apiKey.trim() === '') {
+    return 'missing'
+  }
+  return isKeyFormatInvalid(apiKey) ? 'format' : 'ok'
+}
 
 /**
  * 拼接 baseUrl 与 spec 里的路径（#303）。
@@ -298,6 +415,14 @@ export const setApiKey = (apiKey: string) => {
   const previous = getApiKey()
   write(CONFIG_KEYS.apiKey, value || null)
   useApiConfig.setState({ apiKey: value })
+  /**
+   * #451：Key 身份记录跟着这次写入走 ——
+   *  - 同一把 Key 重复保存：绑定时间**不刷新**（点两次保存不等于换了两次 Key）；
+   *  - 换了一把（或清空）：旧记录作废，新记录从这一刻起算、成功时间清空。
+   * 放在 `write` 之后：读的 `getKeyIdentity()` 是上一次的原始记录，两者不会互相覆盖。
+   */
+  const identity = identityOnKeyWrite(getKeyIdentity(), value, Date.now())
+  write(CONFIG_KEYS.keyIdentity, identity === null ? null : serializeKeyIdentity(identity))
   // Issue #135：换 Key 等于换账号，cid 是跟着人走的。旧 cid 留着会把新账号的订单挂到上一个
   // 客户名下（付了钱 `/api/orders` 还是查不到，App 一直「等待支付」），所以换号就丢弃，
   // 下次下单重新解析。同一把 Key 重复保存不动缓存，免得每次保存都白丢一次往返。

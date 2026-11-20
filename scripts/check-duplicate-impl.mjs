@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
- * check-duplicate-impl.mjs —— `scripts/**` 与 `tests/**` 下不许再出现**字节完全相同**的两份实现
- * （Issue #289）。
+ * check-duplicate-impl.mjs —— `scripts/**`、`tests/**`、`src/**` 下不许再出现**字节完全相同**的
+ * 两份实现（Issue #289；#487 体检扩到 src）。
  *
  * 为什么要有它：#289 的化石是 `scripts/compat/lib/zip.mjs` 与 `tests/adversarial/lib/zip.mjs`
  * 是同一个 blob（559e1523…，6550 B），注释自己写着「原样复制到 lib/zip.mjs」。同一条结论就能在
@@ -11,9 +11,16 @@
  * 判据只有一条：**内容字节相同**（sha256 相同）。名字相同的两份不同工具不算重复，必须放行 ——
  * 否则这条门禁会逼着人为了过检查去改文件名，而不是去消除重复。
  *
- * 范围：`scripts/`、`tests/`（这两处是取证装置与夹具，复制粘贴的实际发生地）。
- * 不扫：`src/`（组件天然长得很像但是产品代码，归别的门禁）、`docs/`（历史实测记录与当时的脚本
- * 快照要保原样）、`node_modules` / `dist*` / `.git`（依赖与产物）。
+ * 范围：`scripts/`、`tests/`（取证装置与夹具，复制粘贴的实际发生地）、`src/`（产品代码）。
+ *
+ * 为什么 #487 体检把 `src/` 也纳进来（原来不扫）：这条门禁的名字与 CI 步骤叫「重复实现」，
+ * 但口径只覆盖脚本与用例 —— 于是**复制一个 src 文件改个名**（最典型的那次事故：#289 的
+ * `zip.mjs` 就是「原样复制」）在整个仓库里没有任何门禁会红。改口径时实测 `src/` 下 223 个
+ * 代码文件字节重复 **0 组**，所以扩范围当天不会凭空造红；`src/` 里确实需要长得一样的
+ * （外观相似但语义独立的组件）照旧走下面的 allow-list，写理由即可。
+ *
+ * 不扫：`docs/`（历史实测记录与当时的脚本快照要保原样）、`node_modules` / `dist*` / `.git`
+ * （依赖与产物）。
  *
  * 合法重复走 allow-list（必须写理由）：例如 `*.tsx` 组件、`ic_launcher*.xml` 这类「形状相同但
  * 语义各自独立」的文件。当前仓库 scripts/ 与 tests/ 下没有合法重复，所以清单是空的。
@@ -35,10 +42,10 @@ import { fileURLToPath } from 'node:url'
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 
 /** 扫这些目录（相对仓库根） */
-const SCAN_DIRS = ['scripts', 'tests']
+const SCAN_DIRS = ['scripts', 'tests', 'src']
 
 /** 只看会「被执行」的代码文件；.json / 图片这类数据文件字节相同不代表实现重复 */
-const EXTENSIONS = new Set(['.mjs', '.js', '.cjs'])
+const EXTENSIONS = new Set(['.mjs', '.js', '.cjs', '.ts', '.tsx'])
 
 /** 任意层级都不进的目录 */
 const SKIP_DIRS = new Set(['node_modules', 'dist', 'dist-internal', '.git', 'coverage'])
@@ -104,7 +111,7 @@ for (const [hash, group] of byHash) {
 }
 
 console.log(
-  `扫描 ${SCAN_DIRS.join(' / ')} 下 ${scanned} 个 .mjs/.js/.cjs 文件，` +
+  `扫描 ${SCAN_DIRS.join(' / ')} 下 ${scanned} 个 ${[...EXTENSIONS].join('/')} 文件，` +
     `字节重复 ${duplicates.length} 组（白名单放行 ${tolerated.length} 组）`
 )
 

@@ -12,26 +12,6 @@
  */
 export const DEFAULT_MAX_IMPORT_BYTES = 200 * 1024 * 1024
 
-/**
- * 导出包大小上限（issue #336）：**就是导入上限本身**，不再另设一个数字。
- *
- * 死区是这么出现的：导出侧原生出口曾单独写 220MB（「为导出物能被本 App 导回」），
- * 而导入侧只认 200MB —— 于是 (200MB, 220MB] 这一段「导出提示成功、导入报文件过大」。
- * 只要两边不是同一个数，这个窗口就一定存在；把导出侧定义成导入侧的转出（而不是再写一遍 200MB），
- * 以后改导入上限，导出侧自动跟着走，没有第二个数字可以忘掉。
- *
- * 判定点：`history/zipWriter.ts` 算出成品字节数（expectedSize）之后、写出任何字节之前；
- * 原生 SAF 是在那之后才打开的，所以超限时一个原生调用都不会发生。
- */
-export const MAX_EXPORT_BYTES = DEFAULT_MAX_IMPORT_BYTES
-
-/**
- * 导出物是否还能被导入：比较口径与导入侧**逐字对齐**（导入是 `file.size > maxBytes` 才拒，
- * 所以正好等于上限的包是能导的）。判等号写在这一个函数里，导出与导入各写一遍 `<=` / `<`
- * 就是下一个死区的出生地（#336）。
- */
-export const isWithinExportLimit = (bytes: number): boolean => bytes <= MAX_EXPORT_BYTES
-
 /** 上限对应的 MB 数，用于提示文案里的 {size}（向下取整：宁可提示小一点，也不要报未达的余量）。 */
 export const maxImportMegabytes = (bytes: number = DEFAULT_MAX_IMPORT_BYTES): number =>
   Math.floor(bytes / 1024 / 1024)

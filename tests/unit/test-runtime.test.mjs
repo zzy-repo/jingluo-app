@@ -90,14 +90,22 @@ test('two suite entrypoints reuse injected dist without build, and fail missing 
   await cp(path.join(root, 'tests/helpers/ports.mjs'), path.join(dir, 'tests/helpers/ports.mjs'))
   // 入口用例还会 import 产物守卫与 ours 契约 fixture，沙箱里要一并拷过去
   await cp(path.join(root, 'tests/helpers/env.mjs'), path.join(dir, 'tests/helpers/env.mjs'))
-  await mkdir(path.join(dir, 'tests/fixtures'), { recursive: true })
-  await cp(path.join(root, 'tests/fixtures/ours-upstream.mjs'), path.join(dir, 'tests/fixtures/ours-upstream.mjs'))
+  // #366：unit 层现在会把相邻文件合成「一个进程跑一批」（合并入口 + 记账壳），沙箱里也要有，
+  // 否则合并批次在沙箱内起不来 —— 那会让这条用例测到的不是「CLI 行为」而是「沙箱缺文件」。
+  for (const helper of ['merged-entry.mjs', 'merged-tracker.mjs', 'merged-node-test.mjs']) {
+    await cp(path.join(root, 'tests/helpers', helper), path.join(dir, 'tests/helpers', helper))
+  }
+  await mkdir(path.join(dir, 'tests/fixtures/domain03-04'), { recursive: true })
+  await cp(path.join(root, 'tests/fixtures/domain03-04/ours-upstream.mjs'), path.join(dir, 'tests/fixtures/domain03-04/ours-upstream.mjs'))
   // #274 起 ours 契约 fixture 的地址来自 config/endpoints.json（经 scripts/lib/endpoints.mjs），
   // 所以沙箱里也要有这三份：端点读取器、它的纯校验模块、以及那份配置本身。
   await mkdir(path.join(dir, 'scripts/lib'), { recursive: true })
   await mkdir(path.join(dir, 'config'), { recursive: true })
   await cp(path.join(root, 'scripts/lib/endpoints.mjs'), path.join(dir, 'scripts/lib/endpoints.mjs'))
   await cp(path.join(root, 'scripts/lib/endpointsSchema.mjs'), path.join(dir, 'scripts/lib/endpointsSchema.mjs'))
+  // #487 W1-A：`endpoints.mjs` 现在还会 import `consumeEndpoints.mjs`（consume / pay 两段的校验），
+  // 沙箱缺它会在加载端点读取器时 ERR_MODULE_NOT_FOUND。
+  await cp(path.join(root, 'scripts/lib/consumeEndpoints.mjs'), path.join(dir, 'scripts/lib/consumeEndpoints.mjs'))
   await cp(path.join(root, 'config/endpoints.json'), path.join(dir, 'config/endpoints.json'))
   const dist = path.join(dir, 'prebuilt'); await mkdir(dist); await writeFile(path.join(dist, 'index.html'), 'immutable')
   for (const name of ['auto-title', 'diagnostics-contract']) {
@@ -142,6 +150,15 @@ test('CLI exact failure rerun, JSON, no-match, invalid arguments and node:test d
   await cp(path.join(root, 'tests/helpers/ports.mjs'), path.join(dir, 'tests/helpers/ports.mjs'))
   // run-layer 现在 import helpers/env.mjs（给靠 APP_URL 的用例注入共享标准产物服务），沙箱里要一并拷过去
   await cp(path.join(root, 'tests/helpers/env.mjs'), path.join(dir, 'tests/helpers/env.mjs'))
+  // #406：run-layer 还 import scripts/flaky-registry.mjs（失败重跑 → flaky 登记），沙箱里也要有，
+  // 否则这条用例测到的是「沙箱缺文件」（ERR_MODULE_NOT_FOUND），不是 CLI 行为。
+  await mkdir(path.join(dir, 'scripts'), { recursive: true })
+  await cp(path.join(root, 'scripts/flaky-registry.mjs'), path.join(dir, 'scripts/flaky-registry.mjs'))
+  // #366：unit 层现在会把相邻文件合成「一个进程跑一批」（合并入口 + 记账壳），沙箱里也要有，
+  // 否则合并批次在沙箱内起不来 —— 那会让这条用例测到的不是「CLI 行为」而是「沙箱缺文件」。
+  for (const helper of ['merged-entry.mjs', 'merged-tracker.mjs', 'merged-node-test.mjs']) {
+    await cp(path.join(root, 'tests/helpers', helper), path.join(dir, 'tests/helpers', helper))
+  }
   await writeFile(path.join(dir, 'tests/unit/pass.test.mjs'), `import test from 'node:test'; test('pass',()=>{});`)
   await writeFile(path.join(dir, 'tests/unit/fail.test.mjs'), 'process.exit(9)')
   const runner = path.join(dir, 'tests/run-layer.mjs'), report = path.join(dir, 'report.json')

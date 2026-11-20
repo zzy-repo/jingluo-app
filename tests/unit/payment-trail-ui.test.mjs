@@ -11,36 +11,13 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { registerHooks } from 'node:module'
+import { fixtureUrl, installTsResolve } from '../helpers/dom-env.mjs'
 
-// Capacitor 替身 + `.js` → `.ts` 解析（视图模块的类型来自数据层，数据层会 import transport.ts）
-const capacitorStub = `data:text/javascript,${encodeURIComponent(`
-export const Capacitor = { isNativePlatform: () => false }
-export const CapacitorHttp = {
-  request: () => {
-    throw new Error('单测不应该走原生桥')
-  },
-}
-export const registerPlugin = () => ({
-  open: async () => ({}),
-  resolveLocation: async () => ({}),
-})
-`)}`
 
-registerHooks({
-  resolve(specifier, context, nextResolve) {
-    if (specifier === '@capacitor/core') {
-      return { url: capacitorStub, shortCircuit: true }
-    }
-    try {
-      return nextResolve(specifier, context)
-    } catch (error) {
-      if (specifier.startsWith('.') && specifier.endsWith('.js')) {
-        return nextResolve(specifier.slice(0, -3) + '.ts', context)
-      }
-      throw error
-    }
-  },
+// 装配走公共入口（#408 收尾批）：原生桥替身收成 fixtures/domain03-04/ours-web-capacitor.mjs，
+// `.js→.ts` 解析由 installTsResolve 统一处理，不再是本文件手抄的 ~25 行 registerHooks。
+installTsResolve({
+  stubs: { '@capacitor/core': fixtureUrl('domain03-04/ours-web-capacitor.mjs') },
 })
 
 const { parseTrailOrder } = await import('../../src/services/ours/trail.ts')
@@ -62,7 +39,7 @@ const {
 const { zh } = await import('../../src/i18n/zh.ts')
 const { en } = await import('../../src/i18n/en.ts')
 
-const fixtures = await import('../fixtures/ours-trail.mjs')
+const fixtures = await import('../fixtures/domain06-07/ours-trail.mjs')
 
 /** 与 i18n/index.ts 的 createTranslate 同一套占位符规则（测试里不 import 那份带 zustand 的实现） */
 const makeTranslate = (table) => (key, params) => {
@@ -262,14 +239,15 @@ test('#189 已支付未发卡：不显示卡密块，并提示「等几秒」', 
   assert.ok(markup.includes(zh.oursTrailWaitingCard))
 })
 
-test('#189 已发卡：卡密块显示掩码卡号 / 积分 / 兑换状态，完整卡号不进 DOM', async () => {
+test('#189 已发卡：卡密块显示掩码卡号 / 额度（元）/ 兑换状态，完整卡号不进 DOM', async () => {
   const orders = await parseAll()
   const markup = render(baseProps({ view: { status: 'ok', page: pageOf([orders[2]]) } }))
   const { count } = scan(markup)
   assert.equal(count('trail-card'), 1)
   assert.ok(markup.includes('••••A3SR'), '卡号要掩码到后 4 位')
   assert.ok(!markup.includes('MUSE-3CYP-5NA3-AHSE-A3SR'), '完整卡号不允许出现在页面里')
-  assert.ok(markup.includes('3,000'))
+  // #487：额度统一为元（100 积分 = 1 元），卡密上的 3000 积分上屏是 ¥30.00；断言强度不变
+  assert.ok(markup.includes('¥30.00'), '卡密额度按元显示（3000 积分 = 30 元）')
   assert.ok(markup.includes(zh.oursTrailCardRedeemed))
 })
 
@@ -373,7 +351,7 @@ test('#189 PAID 每 3~5 秒自动刷新一次，最多 2 分钟，其它状态�
 
 // ------------------------------------------------------------------ 卡密溯源面板
 
-test('#189 卡密溯源：已兑换显示积分 / 时间 / Key 尾号 / 是否本人', () => {
+test('#189 卡密溯源：已兑换显示额度（元）/ 时间 / Key 尾号 / 是否本人', () => {
   const parsed = {
     cardNo: fixtures.cardTrailRedeemed.card_no,
     purchase: null,
@@ -393,7 +371,7 @@ test('#189 卡密溯源：已兑换显示积分 / 时间 / Key 尾号 / 是否�
   assert.equal(count('trail-card-panel'), 1)
   assert.ok(markup.includes('••••A3SR'))
   assert.ok(!markup.includes('MUSE-3CYP-5NA3-AHSE-A3SR'))
-  assert.ok(markup.includes('3,000'))
+  assert.ok(markup.includes('¥30.00'), '兑换额度按元显示（3000 积分 = 30 元）')
   assert.ok(markup.includes('013812'))
   assert.ok(markup.includes(zh.oursTrailRedeemedByMe))
 })

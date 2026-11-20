@@ -14,6 +14,14 @@ on:
 permissions:
   contents: read
 
+# #405：容器化 job（golden / integration）里 `run` 的默认 shell 会退化成 `sh`（dash），
+# 那些 `set -euo pipefail` 的步骤会直接 `Illegal option -o pipefail` 挂掉（实测 exit 2）。
+# 显式钉成 bash：Runner 会以 `bash --noprofile --norc -eo pipefail` 执行，
+# 非容器 job 本来就是这个 shell，行为不变。
+defaults:
+  run:
+    shell: bash
+
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
@@ -50,6 +58,44 @@ jobs:
       - name: 重复实现（check:dup-impl）
         run: pnpm run check:dup-impl
 
+      # 测试布局与重复检测（#362 阶段二 / #366 → #408 转 block）：同样是纯文本扫描
+      # （各 < 2s、不依赖构建产物）。#408 起了 block，条件都已在仓库里落地：
+      #   布局（--strict）：命名违规 0（域 3/4 六个批次文件已按 domainNN- 改名）+ fixture 散放 0
+      #         （5 个散放桩已归位到 tests/fixtures/<域>/）+ 孤儿 0 + 基线条目 0
+      #         （tests/test-layout-baseline.json 已清空，--strict 让「基线失真」也算红）。
+      #   重复：逐字 ≥20 行 32 → 21 组，剩下的全部逐条登记在
+      #         tests/test-duplication-baseline.json（**只减不增**，带 --update-baseline 也不许新增）；
+      #         新复制一段 ≥20 行当场红。R2/R3（关键词 / 标题跨层）仍是 warning。
+      # 两条都带负向对照（tests/unit/gate-negative-controls.test.mjs N4/N5）：注入必红、还原必绿。
+      - name: 测试布局门禁（check:test-layout）
+        run: pnpm run check:test-layout -- --strict
+
+      - name: 测试重复检测（check:test-duplication）
+        run: pnpm run check:test-duplication
+
+      # 文档引用门禁（#290 落地脚本，这次才接线）：验「文档里那些 `文件:行号` 还指得着吗」——
+      # 文件存在、行号在文件内、起行不落在空行/孤立 `}` 上。同样是纯文本扫描（< 1s）。
+      # 接线前它只在人记得的时候才跑，于是 main 上躺了 23 条 FAIL 没人发现；其中 15 条还是
+      # 门禁自己造的假红（SKIP_DIRS 按目录名跳过 `coverage`，把 `docs/testing/coverage/*.md`
+      # 连同索引一起跳过，害得引用它们的文档全被判「文件不存在」）。这次两件事一起收拾：
+      # 脚本改成「索引照进、正文不扫」，剩下的 9 条逐条修（6 条行号漂移 → 改对；3 条死引用 → 删/改）。
+      # 负向对照证明它真会咬：塞一个不存在的路径必须 exit 1，删掉必须 exit 0。
+      - name: 文档引用门禁（check:doc-refs）
+        run: pnpm run check:doc-refs
+
+      - name: 负向对照：文档里写一个不存在的路径必须被 check:doc-refs 拦下
+        run: |
+          set -euo pipefail
+          printf '负向对照：`src/services/does-not-exist-nc.ts:12`\n' > docs/zz-negative-control.md
+          if node scripts/check-doc-refs.mjs; then
+            rm -f docs/zz-negative-control.md
+            echo "::error::负向对照失败：文档里写了不存在的路径后 check:doc-refs 仍然通过，说明门禁没有真正生效"
+            exit 1
+          fi
+          rm -f docs/zz-negative-control.md
+          node scripts/check-doc-refs.mjs
+          echo "负向对照通过：写死路径 → exit 1，删掉 → exit 0"
+
       - name: Type check
         run: pnpm run type
 
@@ -62,6 +108,14 @@ jobs:
           LANG: zh_CN.UTF-8
           LC_ALL: zh_CN.UTF-8
         run: pnpm test
+
+      # #368 把 tests/regression 接进了 LAYERS，但「接进 LAYERS」不等于「有人跑」—— 整层 11 个
+      # 纯 Node 回归文件（无浏览器、无网络）4s 跑完，此前零触发点（issue-135 import 已删的
+      # startCheckout 就是这么烂掉的）。
+      # #405 把它从「L1 分片 1」挪到这里：checks 只有 ~2 分钟、离 4 分钟预算很远，
+      # 而 L1 分片 1 是要压进 4 分钟的 job —— 纯 Node 的 4s 不该占 L1 的预算。
+      - name: 回归层（tests/regression，纯 Node，~4s）
+        run: node tests/run-layer.mjs regression
 
       - name: Build (internal)
         run: pnpm run build:internal
@@ -85,11 +139,116 @@ jobs:
       - name: 清单 fixture 校验（check:manifest）
         run: pnpm run check:manifest
 
+      # check:consume-api（#484 §6.5 / #487 W1-A 落地的脚本，本轮接线）：消费侧调用门禁 ——
+      #   路径白名单（`/api/v1/**` 等字面量必须在 #484 §三 的表里）/ 地址零副本 / 废弃域 /
+      #   明文 http / device_id 作凭据 / 凭据进 query / 原生 BuildConfig 注入。
+      # 和 check:manifest 同一条教训（脚本能判红 ≠ 有人在跑）：脚本随 #494 落地时没进流水线，
+      # 于是 R1~R8 这 8 条判据一直「绿着但没人跑」。纯文本扫描，不依赖 dist、实测 < 1s。
+      # 紧跟一条负向对照（同 check:legacy / check:i18n / check:endpoints 的写法，**无** continue-on-error）：
+      # 往 src/ 塞一条白名单外的路径 → R3 必 exit 1 → 删掉 → exit 0。
+      - name: sub2api 调用白名单（check:consume-api）
+        run: pnpm run check:consume-api
+
+      - name: 负向对照：src 里塞一条白名单外的路径必须被 check:consume-api 拦下
+        run: |
+          set -euo pipefail
+          # 白名单（#484 §三）之外的路径：写成字面量就会被 R3 认出来
+          printf "export const NEG_CONSUME_PATH = '/api/v1/__gate_neg_not_whitelisted'\n" > src/__gate_neg_consume_probe.ts
+          if node scripts/check-consume-api.mjs; then
+            rm -f src/__gate_neg_consume_probe.ts
+            echo "::error::负向对照失败：src 里塞了白名单外的路径后 check:consume-api 仍然通过，说明 R3 没有真正生效"
+            exit 1
+          fi
+          rm -f src/__gate_neg_consume_probe.ts
+          node scripts/check-consume-api.mjs
+          echo "负向对照通过：白名单外路径 → exit 1，删掉 → exit 0"
+
+      # ─────────────── Issue #415：把 deploy/dl-release/test 的用例接进流水线（#441 起 37 条）───────────────
+      # 同一类教训的第四处（前有 #368 的 regression 层、#365 的 integration 层、#413 的门禁）：
+      # `deploy/dl-release/test` 的用例（variant 9 / apk-manifest 9 / server-buildtype 6 /
+      # version-endpoint 3（#441）/
+      # domain10-server-contract 10）一直**全绿但零触发点** —— 不在 `run-layer` 的 LAYERS、CI 无步骤，
+      # 删掉它们不会有任何红。
+      # 接线方式（#415 的取舍见 docs/TESTING-POLICY.md 第 12 节）：
+      #   · 用例留在原地（与被测实现 deploy/dl-release/*.mjs 同目录，相对引用搬不动）；
+      #   · `tests/run-layer.mjs` 的 LAYERS 新增 `server` 层（LAYER_DIRS 指向该目录），
+      #     `node tests/run-layer.mjs server` 可跑；
+      #   · `scripts/check-test-layout.mjs` 有一条带理由的白名单条目，把「枚举不到」判红；
+      #   · 这一步按 `pnpm run test:dl-release`（= `node --test deploy/dl-release/test/*.test.mjs`）跑，
+      #     纯 Node、无浏览器、不依赖 dist，实测 ~3-7s。不加 continue-on-error：真红必须红。
+      - name: dl-release 用例（deploy/dl-release/test，37 条，纯 Node）
+        run: pnpm run test:dl-release
+
+      # ─────────────── Issue #413：把已经存在但没人按的那几道门禁接进流水线 ───────────────
+      # 和 check:manifest 同一条教训：脚本能判红 ≠ 有人在跑。#314 的 i18n 门禁建好后，
+      # 因为没接线，main 上 17 个 compatBoot* 孤立 key 一路绿着漂到 #421 验收才被发现。
+      #
+      # check:i18n（#314）—— R1 key 集合双向相等 / R2 占位符对齐 / R3 t('key') 引用存在 /
+      #   R4 无新增孤立 key / R5 无空值。纯文本扫描（不 import .ts、不依赖 dist，< 1s）。
+      #   R4 基线 ORPHAN_BASELINE 只减不增：新增「定义未引用」的 key 当场红。
+      #   紧跟一条负向对照（删掉一个 zh key 必须 exit 1、还原后 exit 0），证明门禁不是空跑。
+      - name: i18n 门禁（check:i18n）
+        run: pnpm run check:i18n
+
+      - name: 负向对照：删掉一个 zh key 必须被 check:i18n 拦下（证明门禁不是空跑）
+        run: |
+          set -euo pipefail
+          cp src/i18n/zh.ts /tmp/zh.ts.bak
+          # 删掉一条真实存在的文案行（用 key 定位，不写死中文，避免 locale 影响）
+          sed -i '/^  compatBootTitle: /d' src/i18n/zh.ts
+          if node scripts/check-i18n.mjs; then
+            cp /tmp/zh.ts.bak src/i18n/zh.ts
+            echo "::error::负向对照失败：删掉 zh 的 compatBootTitle 后 check:i18n 仍然通过，说明门禁没有真正生效"
+            exit 1
+          fi
+          cp /tmp/zh.ts.bak src/i18n/zh.ts
+          node scripts/check-i18n.mjs
+          echo "负向对照通过：删 key → exit 1，还原 → exit 0"
+
+      # check:endpoints：端点配置单一真相（地址零副本 / 无废弃占位）。#413 时已存在且绿。
+      - name: 端点配置检查（check:endpoints）
+        run: pnpm run check:endpoints
+
+      - name: 负向对照：往 src 塞一份端点地址字面量必须被 check:endpoints 拦下
+        run: |
+          set -euo pipefail
+          # 地址从唯一事实来源读，不在 YAML 里再写一份（否则这段自己就成了一处副本）
+          node --input-type=module -e '
+            import { writeFileSync } from "node:fs"
+            import { loadEndpoints } from "./scripts/lib/endpoints.mjs"
+            writeFileSync("src/__gate_neg_endpoints.ts", `export const NEG_ENDPOINT = "${loadEndpoints().chatBaseUrl}"\n`)
+          '
+          if node scripts/check-endpoints.mjs; then
+            rm -f src/__gate_neg_endpoints.ts
+            echo "::error::负向对照失败：src 里写死端点地址后 check:endpoints 仍然通过，说明门禁没有真正生效"
+            exit 1
+          fi
+          rm -f src/__gate_neg_endpoints.ts
+          node scripts/check-endpoints.mjs
+          echo "负向对照通过：写死地址 → exit 1，删掉 → exit 0"
+
+      # check:capabilities（#209）：能力假设盘点（JS API / CSS / 宿主能力 / 行为假设）。
+      # 只接默认档（warn 级，永远 exit 0）：仍有 10 处能力假设缺陷登记在案，6 条修复 lane 在飞，
+      # 现在开 --strict 会互相卡死。这条先保证「扫描器本身每次都被跑、口径不被悄悄改宽」，
+      # 缺陷清零后再加 --strict（届时它会 exit 1，不需要改 YAML）。
+      - name: 能力假设盘点（check:capabilities，warn 档）
+        run: pnpm run check:capabilities
+
       # check:log-coverage：埋点覆盖面门禁（母单 #301 维度 9）。
       # 不加 --strict：#312 / #314 两条关键链路埋点缺口仍登记在 scripts/log-coverage-baseline.json，
       # strict 会把它们变 FAIL。子单做完、从 knownGaps 删掉后，这条自然会收紧。
       - name: 埋点覆盖面（check:log-coverage）
         run: pnpm run check:log-coverage
+
+      # check:redact：#387 的脱敏规则集门禁（P0 账号 / 资损字段）。
+      # 这类漏洞的症状是「删掉一条规则没有任何别的用例变红」—— 门禁把 5 类必填规则
+      # （device_id / 卡密 / 卡号 / order_token / 手机号）与「误伤负例」一起钉住，
+      # 规则被删或被改宽都 exit 1。紧跟一条负向对照，证明门禁本身不是空跑。
+      - name: 脱敏规则集（check:redact）
+        run: pnpm run check:redact
+
+      - name: 负向对照：把脱敏器换成恒等函数必须被 check:redact 拦下
+        run: node scripts/check-redact.mjs --selftest
 
       - name: 负向对照：含 ?. 的产物必须被拦下（证明门禁不是空跑）
         run: |
@@ -103,3 +262,524 @@ jobs:
             exit 1
           fi
           echo "负向对照通过：含 ?. / ??= 的产物被拦下"
+
+  # ───────────────────────── Issue #404：黄金回归套件（每域 1 条主路径，≤5 分钟）─────────────────────────
+  # 为什么单开一个 job：它是「功能开发有没有打断用户路径」的第一道闸，必须在**别的 job 失败时也照跑**
+  # （不 needs: checks、不 needs: integration），这样 lint/类型红的时候也能看出「主路径是不是好的」。
+  #
+  # 三条设计约束：
+  # 1) 独立、并行：与 checks 同时起步，PR 页面上两条结果分开展示，谁红谁负责。
+  # 2) 预算机械化：单条 ≤60s、整层墙钟 ≤5 分钟由 tests/run-golden.mjs 自己判定（超预算直接 exit 1），
+  #    不靠人盯日志；这一步只负责把它的退出码透传出去。
+  # 3) 产物只构建标准包：黄金套件测的是用户装的那个标准版本，内测包（build:internal）的差异不属于主路径；
+  #    缺产物在 run-golden 里是**直接红**，不是 SKIP(env)——阻塞门禁不许「什么都没跑还全绿」。
+  golden:
+    name: 黄金回归（每域主路径，≤5 分钟）
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # #405：整条流水线里两个「真要浏览器」的 job 都跑在 playwright 官方镜像里。
+    # 镜像自带 Chromium（/ms-playwright）+ 全部 apt 运行库，于是 `playwright install --with-deps`
+    # 那一步（首跑时 apt 抖一下就是 9m07s 的主因）整步消失，只剩一条「镜像里真的有浏览器吗」的自检。
+    # tag 必须与 package.json 的 playwright 版本对齐（v1.64.1 → chromium-1248）；对不上时自检会红，
+    # 而不是等到 45 条用例在假绿/崩溃里漂。
+    container:
+      image: mcr.microsoft.com/playwright:v1.64.1-jammy
+      # Playwright 官方 Docker 文档的推荐参数：容器默认 /dev/shm 只有 64MB，Chromium 在渲染
+      # 大页面（本仓的 feedback-scroll / 长会话截图）时会直接崩成 "Target page, context or browser
+      # has been closed" —— 那是环境假红，不是用例真失败。
+      options: --ipc=host
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+          run_install: false
+
+      - name: Setup Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      # #405：浏览器来自镜像，不再下载。但这不等于「一定有」：镜像 tag 与 package.json 的
+      # playwright 版本一旦错位（1.64.1 要 chromium-1248），用例只会变成整批崩溃或假红。
+      # 这里把「镜像里真有这个 revision 的浏览器」变成显式断言（不联网、< 1s）。
+      - name: 浏览器自检（镜像内置 Chromium 与本仓 playwright 版本对齐）
+        run: |
+          set -euo pipefail
+          echo "playwright: $(pnpm exec playwright --version)"
+          plan="$(pnpm exec playwright install --dry-run chromium)"
+          echo "$plan"
+          missing=0
+          while read -r dir; do
+            [ -n "$dir" ] || continue
+            if [ -d "$dir" ]; then
+              echo "✓ $dir"
+            else
+              echo "::error::镜像里缺少 $dir —— ci.yml 的 playwright 镜像 tag 与 package.json 的 playwright 版本不一致，请同步改 tag"
+              missing=1
+            fi
+          done < <(printf '%s\n' "$plan" | awk '/Install location:/ {print $3}')
+          [ "$missing" -eq 0 ]
+
+      - name: 构建标准产物（dist，variant=standard）
+        run: pnpm run build
+
+      - name: 黄金回归（每域 1 条主路径）
+        env:
+          # 断言里有中文文案，与 unit / L1 一致钉住 locale（#179 同类问题）
+          LANG: zh_CN.UTF-8
+          LC_ALL: zh_CN.UTF-8
+        run: pnpm run test:golden -- --json golden-report.json
+
+      # 失败可见性：每条路径的耗时与「哪条路径 + 哪一步 + 期望 vs 实际」必须直接出现在 PR 页面，
+      # 而不是让人点进 300 行日志里翻。
+      - name: 失败摘要写入 job summary
+        if: always()
+        run: |
+          set -euo pipefail
+          cat > /tmp/golden-summary.mjs <<'EOF'
+          import { appendFileSync, existsSync, readFileSync } from 'node:fs'
+
+          const lines = ['## 黄金回归（每域 1 条主路径）', '']
+          const file = 'golden-report.json'
+          if (!existsSync(file)) {
+            lines.push('报告缺失：套件在写出 `--json` 之前就终止了（构建/浏览器缺失或崩溃），请看该 job 的日志。')
+          } else {
+            const report = JSON.parse(readFileSync(file, 'utf8'))
+            lines.push('| 路径 | 域 | 结果 | 耗时 | 主路径 |', '| --- | --- | --- | --- | --- |')
+            for (const item of report.results) {
+              lines.push(`| ${item.id} | ${item.domain} | ${item.status} | ${item.ms}ms | ${item.title} |`)
+            }
+            lines.push(
+              '',
+              `墙钟 ${report.totalMs}ms / 预算 ${report.budgetMs}ms${report.overBudget ? '（**已超 5 分钟预算**）' : ''}。`,
+            )
+            const failed = report.results.filter((item) => item.status !== 'PASS')
+            if (failed.length) {
+              lines.push('', '### 失败定位')
+              for (const item of failed) {
+                lines.push('', `#### \`${item.id} ${item.domain}\` — ${item.title}`)
+                lines.push('```', ...item.failures.slice(0, 4), '```')
+              }
+            }
+          }
+          const body = lines.join('\n')
+          console.log(body)
+          appendFileSync(process.env.GITHUB_STEP_SUMMARY, `${body}\n`)
+          EOF
+          node /tmp/golden-summary.mjs
+
+      - name: 上传报告
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: golden-report
+          path: golden-report.json
+          if-no-files-found: warn
+          retention-days: 7
+
+  # ───────────────────────────────── Issue #365：L1 集成层接入 CI ─────────────────────────────────
+  # 接线前：tests/integration/ 49 个文件 / 1.68 万行、全量一次 20 分钟，**零触发点**——
+  # 只有人记得手跑 `pnpm test:integration`，于是「写好的集成用例」和「真的会被执行的用例」是两件事。
+  #
+  # 四条设计约束：
+  # 1) 与 checks 并行（不 needs: checks）：L1 慢，串在门禁后面等于反馈时间相加。
+  # 2) 分片 6 个 job 各自跑 `--shard i/6`：分片是**对全集的可复用划分**（见 tests/run-layer.mjs 的
+  #    planShard），新加用例不会漏跑；权重表只用于均衡，不用于覆盖。
+  # 3) 已知红走 tests/integration-baseline.json 的豁免（`--baseline` 只判「相对基线没有新增失败」），
+  #    不用 continue-on-error —— 那会把真红也变绿，等于没接线。
+  # 4) （#405）跑在 playwright 官方镜像里：浏览器与 apt 运行库都在镜像里，`playwright install
+  #    --with-deps` 整步消失（首跑 9m07s 的 apt 抖动就是这么来的）。
+  #
+  # #405 为什么是 6 而不是 5：45 个文件的实测耗时（见 tests/integration-shard-weights.json）用 LPT
+  # 分桶后，单分片负载是
+  #     3 片 371s / 4 片 278s / 5 片 222s / **6 片 188s** / 7 片 188s / 8 片 188s
+  # 188s 是硬下限 —— 最慢的单个文件 feedback-scroll 自己就 ~188s，再切也不会低于它。
+  # 所以 6 片是唯一能同时满足「≤4 分钟」和「不为 0 收益多开 job」的档位（7/8 片只是多烧机器）。
+  # 分片数写在矩阵里；下方的覆盖自检按 matrix.total 反推，改这里不用再改别处。
+  integration:
+    name: L1 集成层 ${{ matrix.shard }}/${{ matrix.total }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    container:
+      image: mcr.microsoft.com/playwright:v1.64.1-jammy
+      # 同 golden job：容器默认 64MB /dev/shm 会让 Chromium 渲染长页面时崩成环境假红。
+      options: --ipc=host
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4, 5, 6]
+        total: [6]
+    steps:
+      # fetch-depth: 0 不是为了构建 —— motion.test.mjs 用 `git merge-base HEAD origin/main`
+      # 取「与本分支的分叉点」当静态对照基线（以前钉死 SHA，历史一挪就假红）；默认的 depth=1
+      # PR checkout 里没有 origin/main 这个 ref，等于整条用例一进来就 git 失败（实测 431ms 假红）。
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+          run_install: false
+
+      - name: Setup Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      # #365 的核心风险：分片写死在 ci.yml 里、新加的用例没人跑 —— 那正是这条 Issue 要治的病。
+      # 这里把「N 个分片合起来 = 全集」变成显式断言（不依赖人肉核对，新文件自动进分片）。
+      # #405 起分片数从矩阵的 matrix.total 反推（3 → 6 只改一处），并且顺带打印每个分片的
+      # 文件数与预计负载 —— 均衡性直接写在 CI 日志里，不用下 artifact 才算。
+      - name: 分片覆盖自检（每个集成文件恰好落进一个分片）
+        if: matrix.shard == 1
+        run: |
+          set -euo pipefail
+          total_files=$(node tests/run-layer.mjs integration --list | grep -c '^\[integration\]')
+          sum=0
+          for i in $(seq 1 "${{ matrix.total }}"); do
+            n=$(node tests/run-layer.mjs integration --list --shard "$i/${{ matrix.total }}" | grep -c '^\[integration\]')
+            echo "分片 $i/${{ matrix.total }}：$n 个文件"
+            sum=$((sum + n))
+          done
+          echo "全集 $total_files 个文件 / 分片合计 $sum 个"
+          if [ "$sum" -ne "$total_files" ]; then
+            echo "::error::分片没有覆盖全集（$sum != $total_files）：有集成用例不会被执行"
+            exit 1
+          fi
+      # #405：容器里 workspace 的属主是 runner 的 uid，而步骤以 root 执行 —— git 会把仓库判成
+      # 「dubious ownership」并拒绝一切命令。checkout action 只是在它自己那个**临时** HOME 里加了
+      # safe.directory，我们的步骤继承不到。motion.test.mjs 要用 `git merge-base HEAD origin/main`
+      # 取静态对照基线（#365），否则整条用例 0.5s 假红（实测 NEW FAIL）。这里把 workspace 写进真
+      # global config，后续步骤都可继承。
+      - name: git 安全目录（容器内 workspace 属主 ≠ 执行用户）
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      # #405：浏览器与 apt 运行库都来自镜像，`playwright install --with-deps chromium` 整步删除。
+      # 但「镜像里有」不能靠信念：镜像 tag 与 package.json 的 playwright 版本错位时（1.64.1 要
+      # chromium-1248），45 条用例会变成整批崩溃/假红。这里把 revision 对齐变成显式断言（不联网、< 1s）。
+      - name: 浏览器自检（镜像内置 Chromium 与本仓 playwright 版本对齐）
+        run: |
+          set -euo pipefail
+          echo "playwright: $(pnpm exec playwright --version)"
+          plan="$(pnpm exec playwright install --dry-run chromium)"
+          echo "$plan"
+          missing=0
+          while read -r dir; do
+            [ -n "$dir" ] || continue
+            if [ -d "$dir" ]; then
+              echo "✓ $dir"
+            else
+              echo "::error::镜像里缺少 $dir —— ci.yml 的 playwright 镜像 tag 与 package.json 的 playwright 版本不一致，请同步改 tag"
+              missing=1
+            fi
+          done < <(printf '%s\n' "$plan" | awk '/Install location:/ {print $3}')
+          [ "$missing" -eq 0 ]
+
+      # 集成层只读预构建产物，不隐式构建；缺产物时用例会 SKIP(env)（不算失败）而不是真跑。
+      # 这里把三份变体都备齐：dist=internal / dist-standard / dist-scroll。
+      # copy-limit 与 update-stuck-button-373 各带自建产物（dist-copy-limit / dist-update-373），不在此列。
+      - name: 构建被测产物（internal / standard / scroll）
+        run: |
+          set -euo pipefail
+          pnpm run build:internal                 # → dist/          内测变体（diagnostics / motion / mode-switch 等）
+          DIST_OUT=dist-standard pnpm run build    # → dist-standard/ 标准变体（大多数用例）
+          DIST_OUT=dist-scroll   pnpm run build    # → dist-scroll/   滚动截图专用（feedback-scroll）
+          ls -d dist dist-standard dist-scroll
+
+      - name: L1 集成 · 分片 ${{ matrix.shard }}/${{ matrix.total }}
+        id: l1
+        env:
+          # 用例里有中文文案断言，和 unit 层一样钉住 locale（#179 同类问题）
+          LANG: zh_CN.UTF-8
+          LC_ALL: zh_CN.UTF-8
+          # 单文件超时 7 分钟：实测最慢的 feedback-scroll ≈ 194s（自带的 360×640 键盘态重试），
+          # 留 2× 余量；比 180s 默认值宽，比 10 分钟保守 —— 真挂住别把 25 分钟 job 超时吃满。
+          L1_TIMEOUT_MS: '420000'
+          # ───────── Issue #456：跨 runner 判据要的两样输入 ─────────
+          # 1) runner 身份：`runner.name` 是 GitHub 给这个 job 分的机器名（每个 job 一台新 VM），
+          #    run-layer 据此写 `ci:<name>`；没有它，「换 runner 才红」就永远判不出来。
+          RUNNER_NAME: ${{ runner.name }}
+          JOB_NAME: L1-${{ matrix.shard }}/${{ matrix.total }}
+          # 2) 运行记录目录：本分片的逐文件结果 + runner + 负载快照，写在 workspace 里，
+          #    下一步作为 artifact 上传，由 flaky-cross-runner job 汇总比对（跨分片/跨 attempt/跨机器）。
+          FLAKY_RUNS_DIR: flaky-runs
+        run: |
+          set -euo pipefail
+          node tests/run-layer.mjs integration \
+            --shard "${{ matrix.shard }}/${{ matrix.total }}" \
+            --baseline \
+            --timeout-ms "$L1_TIMEOUT_MS" \
+            --json "l1-report-${{ matrix.shard }}.json"
+          # --baseline 的语义见 run-layer.compareWithBaseline：
+          #   新增失败 / 基线登记红却跑绿（FIXED?，提醒删条目）→ 退出码 1；其余 0。
+          # 因此这里不需要 continue-on-error：真红会红，登记过的已知红不会红。
+          # #456：同一步里 run-layer 已经把「三态（真红 / flaky / runner-dependent）」与
+          # 「时序窗口静态提示」写进 job summary（GITHUB_STEP_SUMMARY 由 Actions 自动提供）。
+
+      # #456：运行记录必须活过分片 —— 判据要的是「同一份代码在**别的机器**上是什么结论」，
+      # 而其它分片跑在别的 VM 上、re-run 又是另一台。artifact 是这两者唯一的汇合点。
+      - name: 上传运行记录（跨 runner 判据的输入）
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: flaky-run-${{ matrix.shard }}-a${{ github.run_attempt }}
+          path: flaky-runs/
+          if-no-files-found: warn
+          retention-days: 7
+
+      # 失败可见性：绿的时候只在日志里，红的时候必须能在 PR 页面直接看到「哪个文件、哪条断言」。
+      - name: 失败摘要写入 job summary
+        if: always()
+        env:
+          REPORT: l1-report-${{ matrix.shard }}.json
+          SHARD: ${{ matrix.shard }}/${{ matrix.total }}
+          # #405 的单 job 预算是 4 分钟（240s），其中约 30s 是 checkout / install / 构建三份产物
+          # 这些固定开销，所以「跑用例那一段」的预算定在 210s；超了只在 summary 里标出来提醒
+          # （不让它变红 —— 时间抖动不是代码问题，靠人看趋势）。
+          SHARD_BUDGET_MS: '210000'
+        run: |
+          set -euo pipefail
+          cat > /tmp/l1-summary.mjs <<'EOF'
+          import { appendFileSync, existsSync, readFileSync } from 'node:fs'
+
+          const shard = process.env.SHARD ?? '?'
+          const file = process.env.REPORT ?? 'l1-report.json'
+          const budgetMs = Number(process.env.SHARD_BUDGET_MS ?? 240000)
+          const secs = (ms) => Math.round(ms / 1000)
+          const clip = (line, max = 240) => (line.length > max ? `${line.slice(0, max)}…` : line)
+          const FAIL_LINE = /not ok|✗|AssertionError|Error:|error:|FAIL|expected|实际|TIMEOUT/
+          // #456：三态标签。报告里每条结果都带 `triState`（由 run-layer 判定），
+          // 这里只负责把它翻成人话 —— 判定口径不在 YAML 里重新实现一遍。
+          const TRI = {
+            green: '绿',
+            flaky: 'flaky（同 runner 重跑绿）',
+            'runner-dependent': '**runner-dependent（跨 runner 不一致）**',
+            'true-red': '真红（重跑仍红）',
+          }
+          const tri = (r) => TRI[r.triState] ?? r.triState ?? '—'
+          const lines = [`## L1 集成层 分片 ${shard}`, '']
+
+          if (!existsSync(file)) {
+            lines.push('报告缺失：分片在写出 `--json` 报告之前就终止了（超时 / 崩溃），请看该 job 的日志。')
+          } else {
+            const report = JSON.parse(readFileSync(file, 'utf8'))
+            const results = report.results ?? []
+            const failed = results.filter((r) => !r.ok && !r.skipped)
+            const skipped = results.filter((r) => r.skipped)
+            lines.push(
+              `| 结果 | 数量 |`,
+              `| --- | --- |`,
+              `| PASS | ${report.passed} |`,
+              `| FAIL | ${report.failed} |`,
+              `| SKIP(env) | ${report.skipped} |`,
+              '',
+              `本分片 ${report.executed}/${report.selected} 个文件，用时 ${secs(report.totalMs)}s / 预算 ${secs(budgetMs)}s` +
+                (report.totalMs <= budgetMs ? '（在 #405 的单 job ≤4 分钟目标内）' : '（**超出 #405 的单 job ≤4 分钟目标**）') +
+                '。',
+              '',
+              '| 文件 | 结果 | 三态 | 耗时 |',
+              '| --- | --- | --- | --- |',
+            )
+            for (const r of [...results].sort((a, b) => b.ms - a.ms)) {
+              const state = r.skipped ? 'SKIP(env)' : r.ok ? (r.flaky ? 'PASS(flaky)' : 'PASS') : r.timedOut ? 'FAIL(TIMEOUT)' : 'FAIL'
+              lines.push(`| \`${r.file.split('/').pop()}\` | ${state} | ${tri(r)} | ${secs(r.ms)}s |`)
+            }
+            // runner-dependent 单独拎出来：PR 页面上一眼就能看出「这条红不是这台机器的问题」，
+            // 处置是改成等终态（不是重跑、不是加 sleep）—— 见 docs/TESTING-POLICY.md §11.5。
+            const dependent = results.filter((r) => r.triState === 'runner-dependent')
+            if (dependent.length) {
+              lines.push('', '### runner-dependent（跨 runner 结论不一致）→ 必须改成等终态，禁止加 sleep', '')
+              for (const r of dependent) lines.push(`- \`${r.file}\`（本分片 runner 上是${r.ok ? '绿' : '红'}）`)
+            }
+            if (failed.length) {
+              lines.push('', '### 失败文件与首个失败断言')
+              for (const item of failed) {
+                lines.push('', `#### \`${item.file}\`（${secs(item.ms)}s${item.timedOut ? '，TIMEOUT' : ''}）—— ${tri(item)}`)
+                const tail = (item.tail ?? []).join('\n').split('\n').map((line) => line.trimEnd()).filter(Boolean)
+                // 「第一个失败断言」单独拎出来放在最前面：失败时人在 PR 页面上要的就是这一行。
+                const firstFail = tail.find((line) => FAIL_LINE.test(line))
+                if (firstFail) {
+                  lines.push('首个失败断言：', '', '```', clip(firstFail), '```')
+                }
+                const context = tail.filter((line) => FAIL_LINE.test(line)).slice(-8)
+                const shown = (context.length ? context : tail.slice(-8)).map((line) => clip(line))
+                lines.push('相关输出：', '', '```', ...shown, '```')
+              }
+            }
+            if (skipped.length) {
+              lines.push('', '### SKIP(env)（缺产物 / 环境不满足，不算失败）')
+              for (const item of skipped) lines.push(`- \`${item.file}\` — ${item.skipReason}`)
+            }
+          }
+          const body = lines.join('\n')
+          console.log(body)
+          appendFileSync(process.env.GITHUB_STEP_SUMMARY, `${body}\n`)
+          EOF
+          node /tmp/l1-summary.mjs
+
+      # 存 7 天：红的时候能直接下下来复跑（node tests/run-layer.mjs integration --failed-from l1-report-N.json）
+      - name: 上传分片报告
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: l1-report-${{ matrix.shard }}-of-${{ matrix.total }}
+          path: l1-report-${{ matrix.shard }}.json
+          if-no-files-found: warn
+          retention-days: 7
+
+  # ───────────────────────── Issue #456：跨 runner 判据的汇总 job ─────────────────────────
+  # 为什么必须是**另一个 job**：#406 的判据（失败→重跑一次→绿）只能看见「自己这台机器」。
+  # 而最常见的 flake 是「同机怎么跑都绿、换 runner 就红」（#406 的 url-import-stages case 10：
+  # 窗口 ≈2.4s，慢机连跑 10/10 绿、注入 3s 延迟即红）。那类红在同一台机器上**必然复现**，
+  # 所以旧判据永远登记不到它 —— 登记簿长期为空不是「没有 flake」，是判据看不见这个变量。
+  #
+  # 这里做的事只有一件：把「同一 commit 上各台机器的结论」放到一起比。
+  #   · 输入 = 各分片上传的 flaky-run-* artifact（已含 runner 身份 + 负载快照）
+  #            + 同一 head SHA 的**其它 run/attempt** 的记录（re-run 落在另一台 VM 上）；
+  #   · 判据 = 同 commit + 同用例 + 结果不同 + runner 不同 → 登记 kind: "cross-runner"；
+  #   · 输出 = job summary 的三态表 + 更新后的登记簿 artifact。
+  #
+  # 三条刻意的取舍：
+  # 1) **不阻塞合流**：本条用例真红时，跑它的那个分片已经红了（那才是门禁）。这个 job 负责
+  #    「说清是哪一种红」，用 blocking 只会让「一台机器慢」变成全队卡死。
+  # 2) `if: always()`：分片红的时候恰恰最需要它 —— 判据的价值就在「红的那份记录」。
+  # 3) 收集不到记录时**明说结论不可用**，不输出「全绿」：空 artifact 与「没有分叉」是两件事。
+  flaky-cross-runner:
+    name: flaky 三态与跨 runner 判定
+    needs: [integration]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # 读同仓其它 run 的 artifact 列表要 actions: read（下载 zip 用同一份 token）
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # 只需要 run-layer / flaky-registry 两个文件，浅取即可
+          fetch-depth: 1
+
+      # 纯 Node、零依赖（run-layer 只 import node 内置模块），所以**不需要 pnpm install**：
+      # 这个 job 的耗时基本只有 checkout 和这点 IO。
+      - name: Setup Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: 下载本 run 各分片的运行记录
+        if: always()
+        uses: actions/download-artifact@v4
+        with:
+          pattern: flaky-run-*
+          path: flaky-runs
+          merge-multiple: true
+        continue-on-error: true
+
+      # 同一 head SHA 的其它 run（re-run / 多 attempt）落在别的 VM 上，是跨 runner 判据的主要来源之一。
+      # 拿不到不是错误（分叉权限、artifact 过期、API 抖动），只打印一句，绝不让它变成红：
+      # 判据的输入少一份，后果是「少看见一条」，而不是「结论错误」。
+      - name: 收集同一 commit 其它 run 的运行记录（best-effort）
+        if: always()
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          API: ${{ github.api_url }}
+          SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -uo pipefail
+          mkdir -p flaky-runs other-runs
+          cat > /tmp/collect-runs.mjs <<'EOF'
+          import { writeFileSync } from 'node:fs'
+          const { GH_TOKEN, REPO, API, SHA } = process.env
+          const headers = { Authorization: `Bearer ${GH_TOKEN}`, Accept: 'application/vnd.github+json' }
+          // 整个收集过程都是 best-effort：网络/权限/过期任何一环出问题，结论只损失一份输入，
+          // 绝不能因此让这个 job 变红（红要来自「跑用例」，不来自「查历史」）。
+          try {
+            const list = await fetch(`${API}/repos/${REPO}/actions/runs?head_sha=${SHA}&per_page=50`, { headers })
+            if (!list.ok) {
+              console.log(`::warning::列 run 失败（HTTP ${list.status}），跳过跨 run 收集`)
+              writeFileSync('/tmp/collect-runs.json', '[]')
+              process.exit(0)
+            }
+            const runs = (await list.json()).workflow_runs ?? []
+            const found = []
+            const currentRun = String(process.env.GITHUB_RUN_ID ?? '')
+            const currentAttempt = String(process.env.GITHUB_RUN_ATTEMPT ?? '1')
+            for (const run of runs) {
+              // 本 run 的**当前这次 attempt** 上一步已经下载过了，再捞一遍只会让记录翻倍；
+              // 但同一个 run_id 的**更早 attempt** 要留下来 —— re-run 落在另一台 VM 上，
+              // 那正是「同 SHA、不同 runner」最干净的证据。
+              if (String(run.id) === currentRun && String(run.run_attempt) === currentAttempt) continue
+              const arts = await fetch(`${API}/repos/${REPO}/actions/runs/${run.id}/artifacts`, { headers })
+              if (!arts.ok) continue
+              for (const artifact of (await arts.json()).artifacts ?? []) {
+                if (!artifact.name.startsWith('flaky-run-') || artifact.expired) continue
+                found.push({ runId: run.id, attempt: run.run_attempt, name: artifact.name, url: artifact.archive_download_url })
+              }
+            }
+            writeFileSync('/tmp/collect-runs.json', JSON.stringify(found, null, 2))
+            console.log(`同一 commit（${SHA.slice(0, 12)}）共 ${runs.length} 个 run、${found.length} 份 flaky-run artifact`)
+          } catch (error) {
+            console.log(`::warning::收集其它 run 的记录失败（${error.message}），本轮只看得到本 run 的分片`)
+            writeFileSync('/tmp/collect-runs.json', '[]')
+          }
+          EOF
+          node /tmp/collect-runs.mjs || exit 0
+          node -e 'const fs=require("node:fs");for(const a of JSON.parse(fs.readFileSync("/tmp/collect-runs.json","utf8")))console.log(a.url)' > /tmp/urls.txt
+          while read -r url; do
+            [ -n "$url" ] || continue
+            curl -sSL -H "Authorization: Bearer $GH_TOKEN" -o /tmp/other.zip "$url" || continue
+            unzip -oq /tmp/other.zip -d other-runs || continue
+          done < /tmp/urls.txt
+          # 平铺进 flaky-runs：文件名加序号，避免「同名 runner 的两次 attempt」互相覆盖
+          index=0
+          while read -r file; do
+            [ -n "$file" ] || continue
+            index=$((index + 1))
+            cp -f "$file" "flaky-runs/other-$index-$(basename "$file")"
+          done < <(find other-runs -name 'run-*.json' 2>/dev/null)
+          # 剩下的交给 run-layer：它只认 `object: flaky-run-record` 的 json，读不进去的直接跳过
+          echo "合并后记录数：$(find flaky-runs -name '*.json' | wc -l)"
+          ls -1 flaky-runs | head -20
+
+      - name: 跨 runner 判定 + 登记（三态写进 job summary）
+        if: always()
+        env:
+          # 记录目录里同时有本 run 各分片与其它 attempt 的记录
+          FLAKY_RUNS_DIR: flaky-runs
+        run: |
+          set -euo pipefail
+          node tests/run-layer.mjs --cross-runner-scan \
+            --record-dir flaky-runs \
+            --json cross-runner-report.json
+
+      # 登记簿的更新要能被下来（CI 不能 push，也不该 push）：合并后由人/后续单把条目落进仓库，
+      # 或者本地跑一遍同一条命令即可得到同样的结果（判据是确定性的）。
+      - name: 上传跨 runner 报告与登记簿
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: flaky-cross-runner
+          path: |
+            cross-runner-report.json
+            tests/flaky-registry.json
+          if-no-files-found: warn
+          retention-days: 14

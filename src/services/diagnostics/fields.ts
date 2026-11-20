@@ -13,9 +13,11 @@
  * 2. **键必须来自白名单** —— 结构化字段的类型由 `MetaInput` 收紧（写错键编译期就过不去），
  *    历史点号键（`error.msg` / `url.path` …）走运行期兼容表，表外的一律丢弃。
  *
- * 本模块不认识 collector / transport：采集层 import 它，它谁也不 import（除零依赖的 redact）。
+ * 本模块不认识 collector / transport：采集层 import 它，它只 import 零依赖的 `redact` 与
+ * `reasons`（原因字典，同为纯模块）。
  */
 
+import { isLogReason, type LogReason } from './reasons.js'
 import { redact, truncate } from './redact.js'
 
 // ---------------------------------------------------------------- 流程域
@@ -66,8 +68,17 @@ export type Stage =
   | 'update.check.select'
   | 'update.download'
   | 'update.install'
-  // 额度 / 卡密查询（链路尚未埋点，先定取值）
+  // 额度 / 卡密查询（旧取值，保留兼容）
   | 'quota.query'
+  // 支付 / 额度 / 卡密 / 发票链路（#312）：**一步一个 stage**，读日志时一眼看出停在哪一步
+  | 'quota.balance'
+  | 'quota.plans'
+  | 'quota.pay'
+  | 'quota.redeem'
+  | 'quota.cid'
+  | 'quota.orders'
+  | 'quota.trail'
+  | 'quota.order'
   // 反馈上传
   | 'feedback.upload'
   // 启动与渲染
@@ -94,6 +105,14 @@ export const STAGES: readonly Stage[] = [
   'update.download',
   'update.install',
   'quota.query',
+  'quota.balance',
+  'quota.plans',
+  'quota.pay',
+  'quota.redeem',
+  'quota.cid',
+  'quota.orders',
+  'quota.trail',
+  'quota.order',
   'feedback.upload',
   'app.launch',
   'ui.render',
@@ -258,6 +277,18 @@ export type MetaInput = {
    * 走 cleanString 脱敏后落库），不引入新的取值域。
    */
   upstreamCode?: string
+  /**
+   * 失败 / 中止 / 等待的**机器可读原因**（#301 维度 3）：取值集合见 `reasons.ts` 的 `REASON`
+   * （47 个 kebab-case 值），默认可重试性见 `REASON_RETRYABLE` / `retryableFor()`。
+   *
+   * 为什么把它从「白名单里的一个裸键」提升成类型化字段：改造前 `reason` 只是 EXTRA_KEYS 里
+   * 放行的键名 —— 写什么都能落库（camelCase、裸词、`http-404`、甚至界面 i18n key），
+   * 于是「这个月多少次卡密已用」只能靠人读文案。现在写错取值**编译期就红**，
+   * 与 `http-error` 配套的 `status`、与上游短码配套的 `upstreamCode` 各归各位。
+   *
+   * 只在「有原因」时写：成功类日志不要写 `reason`（成功不是一种失败原因）。
+   */
+  reason?: LogReason
   /** 这一段本身花了多久 */
   durationMs?: number
   /**
@@ -316,6 +347,7 @@ export const META_KEYS: readonly MetaKey[] = [
   'endpointKey',
   'traceId',
   'upstreamCode',
+  'reason',
   'prepMs',
   'durationMs',
   'queueMs',
@@ -417,6 +449,10 @@ const normalizeField = (key: MetaKey, value: unknown): string | number | boolean
     case 'upstreamCode':
       // 短码：只收非空字符串（长度与脱敏由采集层的 cleanString 收口），其余一律不写
       return typeof value === 'string' && value.trim() !== '' ? value.trim() : undefined
+    case 'reason':
+      // 只认 reasons.ts 的 47 个取值：不在字典里就不写（历史取值靠 LEGACY_REASONS 读老日志，
+      // 但**新日志**写不进裸字符串 —— 这正是「机器判读」的前提）
+      return isLogReason(value) ? value : undefined
     case 'attempt': {
       if (!isFiniteNumber(value)) {
         return undefined
@@ -498,7 +534,8 @@ const EXTRA_KEYS: readonly string[] = [
   'method',
   'requestId',
   'native',
-  'reason',
+  // `reason` 不在这里：它已经提升成 `MetaInput.reason`（取值受 `reasons.ts` 的 LogReason 约束）。
+  // 一个键在两处定义必然漂，所以从这张表里删掉，只留类型层那一份。
   'elapsedMs',
   'threshold',
   'onLine',
@@ -548,9 +585,46 @@ const EXTRA_KEYS: readonly string[] = [
   'event',
   'correlationId',
   'result',
+  // #312：支付 / 额度 / 卡密链路的定位字段。
+  //   · 三个 `*.tail` 只存**打码后的尾部**（Key 4 位、卡密 4 位、单号 4 位，由 mask.ts 生成），
+  //     原文一个字符都不进日志 —— 尾号只用来和界面上的提示对号，不能反推出凭证；
+  //   · `limit` / `total` 是 `/api/orders` 的分页口径：没有它们就看不出「记录页空白」
+  //     到底是没数据（total=0）还是只拉了第一页（total>limit）。
+  // 键名最后一段故意落在 `tail` / `limit` / `total` 上：`key` / `token` / `card` 会被下面的
+  // SECRET_SEGMENTS 整条丢掉，所以名字里不能出现它们（见 hasSecretName）。
+  'key.tail',
+  'card.tail',
+  'order.tail',
+  'order.status',
+  'limit',
+  'total',
+  // #314：i18n 缺 key 的上报字段。key 名本身是标识符（不是凭证），但 `key` 这个名字会命中
+  // 下面的 SECRET_SEGMENTS 被整条丢掉，所以用 `i18nKey`；`locale` 只是语言标识；
+  // `param` 只记占位符名字（`count` / `total`），不记参数值。
+  // 不加这几条的话，日志里就只剩 stage/reason，反查不到缺的是哪个 key —— 正是 #314 要治的病。
+  'i18nKey',
+  'locale',
+  'param',
+  // #301（本批）：**生产里已经在写、却被白名单静默丢弃**的键，补进来。
+  //   · `billing.quota` / `billing.quota.code`：#299 特意加的「额度不足」标记，注释写着
+  //     「这样余额不足次数能被单独筛出来」，但键名一直不在白名单里 —— 于是「查不到余额不足」
+  //     这件事本身查不到；
+  //   · `imported` / `skipped`：部分导入提交时「导进去几条、跳过几条」。不加这两个键，
+  //     「部分导入」只剩一句 `committed partially`，数字全丢。
+  // 判定口径：只补**代码里确实在写**的键（静态扫描 record*/buildMeta 的 meta 字面量 → 对比白名单）。
+  'billing.quota',
+  'billing.quota.code',
+  'imported',
+  'skipped',
 ]
 
-/** 键名里出现这些「最后一段」就当作密钥字段：值里可能是 Key 原文，整条丢掉比脱敏更安全 */
+/**
+ * 键名里出现这些「最后一段」就当作密钥字段：值里可能是 Key 原文，整条丢掉比脱敏更安全。
+ *
+ * #387 补齐账号 / 资损字段：`deviceId` / `cardNo` / `card` / `phone` 这些键名本身就已经说明值的
+ * 身份，键名维度整条丢弃比「打码后保留」更干净（打码形状仍有可能被拼回去）。这一层只是**兜底** ——
+ * 自由文本里的同类值由 `redact.ts` 的值维度规则处理，两边都要有。
+ */
 const SECRET_SEGMENTS = new Set([
   'key',
   'apikey',
@@ -567,6 +641,11 @@ const SECRET_SEGMENTS = new Set([
   'signature',
   'credential',
   'credentials',
+  // 账号 / 资损字段（#387）：设备码、卡密 / 卡号、手机号
+  'deviceid',
+  'card',
+  'cardno',
+  'phone',
 ])
 
 const KEY_SHAPE = /^[A-Za-z][A-Za-z0-9._-]{0,39}$/

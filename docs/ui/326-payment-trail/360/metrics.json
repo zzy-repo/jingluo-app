@@ -1,0 +1,360 @@
+{
+  "page": "payment-trail-paging",
+  "title": "#326 支付记录：分页（20/页 + 加载更多）与状态筛选（全部 / 五状态）",
+  "viewport": 360,
+  "size": "360×740",
+  "shots": [
+    "docs/ui/326-payment-trail/360/payment-trail-paging-01-trail-paging-first-page-360.png",
+    "docs/ui/326-payment-trail/360/payment-trail-paging-02-trail-load-more-button-360.png",
+    "docs/ui/326-payment-trail/360/payment-trail-paging-03-trail-second-page-360.png",
+    "docs/ui/326-payment-trail/360/payment-trail-paging-04-trail-end-of-list-360.png",
+    "docs/ui/326-payment-trail/360/payment-trail-paging-05-trail-filter-expired-360.png",
+    "docs/ui/326-payment-trail/360/payment-trail-paging-06-trail-back-to-all-360.png"
+  ],
+  "notes": [],
+  "page1": {
+    "viewportWidth": 360,
+    "documentScrollWidth": 360,
+    "tabs": [
+      {
+        "text": "全部",
+        "selected": true
+      },
+      {
+        "text": "待支付",
+        "selected": false
+      },
+      {
+        "text": "已支付",
+        "selected": false
+      },
+      {
+        "text": "已完成",
+        "selected": false
+      },
+      {
+        "text": "已关闭",
+        "selected": false
+      },
+      {
+        "text": "支付异常",
+        "selected": false
+      }
+    ],
+    "orderCount": 20,
+    "uniqueOrderCount": 20,
+    "statuses": [
+      "fulfilled",
+      "fulfilled",
+      "fulfilled",
+      "fulfilled",
+      "fulfilled",
+      "fulfilled",
+      "fulfilled",
+      "fulfilled",
+      "fulfilled",
+      "fulfilled",
+      "fulfilled",
+      "fulfilled",
+      "fulfilled",
+      "fulfilled",
+      "fulfilled",
+      "fulfilled",
+      "fulfilled",
+      "fulfilled",
+      "created",
+      "created"
+    ],
+    "summary": "共 45 笔累计实付 ¥72.70",
+    "loadMore": true,
+    "loadingMore": false,
+    "moreError": false,
+    "end": false,
+    "endText": "",
+    "overflowCount": 0,
+    "overflowSamples": []
+  },
+  "page2": {
+    "viewportWidth": 360,
+    "documentScrollWidth": 360,
+    "tabs": [
+      {
+        "text": "全部",
+        "selected": true
+      },
+      {
+        "text": "待支付",
+        "selected": false
+      },
+      {
+        "text": "已支付",
+        "selected": false
+      },
+      {
+        "text": "已完成",
+        "selected": false
+      },
+      {
+        "text": "已关闭",
+        "selected": false
+      },
+      {
+        "text": "支付异常",
+        "selected": false
+      }
+    ],
+    "orderCount": 40,
+    "uniqueOrderCount": 40,
+    "statuses": [
+      "fulfilled",
+      "fulfilled",
+      "fulfilled",
+      "fulfilled",
+      "fulfilled",
+      "fulfilled",
+      "fulfilled",
+      "fulfilled",
+      "fulfilled",
+      "fulfilled",
+      "fulfilled",
+      "fulfilled",
+      "fulfilled",
+      "fulfilled",
+      "fulfilled",
+      "fulfilled",
+      "fulfilled",
+      "fulfilled",
+      "created",
+      "created",
+      "created",
+      "created",
+      "created",
+      "created",
+      "created",
+      "created",
+      "created",
+      "expired",
+      "expired",
+      "expired",
+      "expired",
+      "expired",
+      "expired",
+      "expired",
+      "expired",
+      "expired",
+      "failed",
+      "failed",
+      "failed",
+      "failed"
+    ],
+    "summary": "共 45 笔累计实付 ¥72.70",
+    "loadMore": true,
+    "loadingMore": false,
+    "moreError": false,
+    "end": false,
+    "endText": "",
+    "overflowCount": 0,
+    "overflowSamples": []
+  },
+  "page3": {
+    "viewportWidth": 360,
+    "documentScrollWidth": 360,
+    "tabs": [
+      {
+        "text": "全部",
+        "selected": true
+      },
+      {
+        "text": "待支付",
+        "selected": false
+      },
+      {
+        "text": "已支付",
+        "selected": false
+      },
+      {
+        "text": "已完成",
+        "selected": false
+      },
+      {
+        "text": "已关闭",
+        "selected": false
+      },
+      {
+        "text": "支付异常",
+        "selected": false
+      }
+    ],
+    "orderCount": 45,
+    "uniqueOrderCount": 45,
+    "statuses": [
+      "fulfilled",
+      "fulfilled",
+      "fulfilled",
+      "fulfilled",
+      "fulfilled",
+      "fulfilled",
+      "fulfilled",
+      "fulfilled",
+      "fulfilled",
+      "fulfilled",
+      "fulfilled",
+      "fulfilled",
+      "fulfilled",
+      "fulfilled",
+      "fulfilled",
+      "fulfilled",
+      "fulfilled",
+      "fulfilled",
+      "created",
+      "created",
+      "created",
+      "created",
+      "created",
+      "created",
+      "created",
+      "created",
+      "created",
+      "expired",
+      "expired",
+      "expired",
+      "expired",
+      "expired",
+      "expired",
+      "expired",
+      "expired",
+      "expired",
+      "failed",
+      "failed",
+      "failed",
+      "failed",
+      "failed",
+      "failed",
+      "failed",
+      "failed",
+      "failed"
+    ],
+    "summary": "共 45 笔累计实付 ¥72.70",
+    "loadMore": false,
+    "loadingMore": false,
+    "moreError": false,
+    "end": true,
+    "endText": "已经到底了",
+    "overflowCount": 0,
+    "overflowSamples": []
+  },
+  "filteredExpired": {
+    "viewportWidth": 360,
+    "documentScrollWidth": 360,
+    "tabs": [
+      {
+        "text": "全部",
+        "selected": false
+      },
+      {
+        "text": "待支付",
+        "selected": false
+      },
+      {
+        "text": "已支付",
+        "selected": false
+      },
+      {
+        "text": "已完成",
+        "selected": false
+      },
+      {
+        "text": "已关闭",
+        "selected": true
+      },
+      {
+        "text": "支付异常",
+        "selected": false
+      }
+    ],
+    "orderCount": 9,
+    "uniqueOrderCount": 9,
+    "statuses": [
+      "expired",
+      "expired",
+      "expired",
+      "expired",
+      "expired",
+      "expired",
+      "expired",
+      "expired",
+      "expired"
+    ],
+    "summary": "共 9 笔累计实付 ¥72.70",
+    "loadMore": false,
+    "loadingMore": false,
+    "moreError": false,
+    "end": true,
+    "endText": "已经到底了",
+    "overflowCount": 0,
+    "overflowSamples": []
+  },
+  "backToAll": {
+    "viewportWidth": 360,
+    "documentScrollWidth": 360,
+    "tabs": [
+      {
+        "text": "全部",
+        "selected": true
+      },
+      {
+        "text": "待支付",
+        "selected": false
+      },
+      {
+        "text": "已支付",
+        "selected": false
+      },
+      {
+        "text": "已完成",
+        "selected": false
+      },
+      {
+        "text": "已关闭",
+        "selected": false
+      },
+      {
+        "text": "支付异常",
+        "selected": false
+      }
+    ],
+    "orderCount": 20,
+    "uniqueOrderCount": 20,
+    "statuses": [
+      "fulfilled",
+      "fulfilled",
+      "fulfilled",
+      "fulfilled",
+      "fulfilled",
+      "fulfilled",
+      "fulfilled",
+      "fulfilled",
+      "fulfilled",
+      "fulfilled",
+      "fulfilled",
+      "fulfilled",
+      "fulfilled",
+      "fulfilled",
+      "fulfilled",
+      "fulfilled",
+      "fulfilled",
+      "fulfilled",
+      "created",
+      "created"
+    ],
+    "summary": "共 45 笔累计实付 ¥72.70",
+    "loadMore": true,
+    "loadingMore": false,
+    "moreError": false,
+    "end": false,
+    "endText": "",
+    "overflowCount": 0,
+    "overflowSamples": []
+  },
+  "consoleErrors": []
+}

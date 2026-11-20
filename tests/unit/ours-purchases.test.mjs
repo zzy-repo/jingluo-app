@@ -12,39 +12,13 @@
 // 跑法：node --test tests/unit/ours-purchases.test.mjs（或 node tests/run-layer.mjs unit）
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { registerHooks } from 'node:module'
+import { fixtureUrl, installTsResolve } from '../helpers/dom-env.mjs'
 
-// Capacitor 替身（内联 data: URL）：transport.ts 只需要 isNativePlatform / CapacitorHttp /
-// registerPlugin 三个名字。isNativePlatform() 恒 false → 单测永远走 Web 的 fetch 分支；
-// 原生桥被调到就抛错，保证「原生路径没被意外触发」这件事本身也能被看见。
-const capacitorStub = `data:text/javascript,${encodeURIComponent(`
-export const Capacitor = { isNativePlatform: () => false }
-export const CapacitorHttp = {
-  request: () => {
-    throw new Error('单测不应该走原生桥')
-  },
-}
-export const registerPlugin = () => ({
-  open: async () => ({}),
-  resolveLocation: async () => ({}),
-})
-`)}`
 
-registerHooks({
-  resolve(specifier, context, nextResolve) {
-    if (specifier === '@capacitor/core') {
-      return { url: capacitorStub, shortCircuit: true }
-    }
-    try {
-      return nextResolve(specifier, context)
-    } catch (error) {
-      // 与打包器一致：源码内部用 .js 说明符指向 .ts 文件
-      if (specifier.startsWith('.') && specifier.endsWith('.js')) {
-        return nextResolve(specifier.slice(0, -3) + '.ts', context)
-      }
-      throw error
-    }
-  },
+// 装配走公共入口（#408 收尾批）：原生桥替身收成 fixtures/domain03-04/ours-web-capacitor.mjs，
+// `.js→.ts` 解析由 installTsResolve 统一处理，不再是本文件手抄的 ~25 行 registerHooks。
+installTsResolve({
+  stubs: { '@capacitor/core': fixtureUrl('domain03-04/ours-web-capacitor.mjs') },
 })
 
 const purchases = await import('../../src/services/ours/purchases.ts')

@@ -32,9 +32,56 @@ import { zipSync, strToU8 } from 'fflate'
 import { chromium } from 'playwright'
 
 import { inviteBaseUrl } from './lib/endpoints.mjs'
-// 支付记录时间线的夹具与单测共用一份（tests/fixtures/ours-trail.mjs）：
+// 支付记录时间线的夹具与单测共用一份（tests/fixtures/domain06-07/ours-trail.mjs）：
 // 截图里看到的五状态 + 长链路就是单测断言的那几条，不另造一份假数据。
-import { cardTrailRedeemed, orderTrailResponse, trailPage } from '../tests/fixtures/ours-trail.mjs'
+import { cardTrailRedeemed, orderTrailResponse, trailPage } from '../tests/fixtures/domain06-07/ours-trail.mjs'
+// #386 的「流式中」截图要把 streaming 这个状态撑开：用同一份 ours 上游契约回 SSE（含 CORS 头），
+// 只是刻意延后 4 秒再回，好在上翻之后再截。
+import { OURS_CHAT_PATH, OURS_CORS, openAiSse } from '../tests/fixtures/domain03-04/ours-upstream.mjs'
+
+/**
+ * #326（支付记录分页 + 状态筛选）专用夹具：45 条订单 = 20 + 20 + 5 三页，按状态配额分布
+ * （fulfilled 18 / created 9 / expired 9 / failed 9），所以切到「已关闭」正好筛出 9 条。
+ *
+ * 两点刻意的取舍：
+ *  - **不放 `PAID`**：该状态会触发 4 秒静默轮询，量数与截图之间内容会被换掉；分页要的是稳定帧，
+ *    「已支付·等待发卡」那条分支由 #189 场景（`payment-trail`）覆盖。
+ *  - **单号唯一**：客户端按 `out_trade_no` 去重，夹具里留重复单号会把「翻页重复」这个缺陷掩盖掉。
+ */
+/**
+ * #325 卡密溯源场景的拦截配置。**故意做成可变对象**：场景里查完「自己的卡」后
+ * 把 `cardStatus` 改成 404 再点一次，模拟「拿自己的 Key 查别人的卡」——
+ * `routeTrail` 的闭包和 `run` 拿到的是同一份，所以改一处就换口径。
+ */
+const cardTrailDef = { page: trailPage, card: cardTrailRedeemed }
+
+const pagedTrailPage = (() => {
+  const templateOf = (status) => trailPage.orders.find((item) => item.status === status)
+  const quota = [
+    ['FULFILLED', 18],
+    ['CREATED', 9],
+    ['EXPIRED', 9],
+    ['FAILED', 9],
+  ]
+  const orders = []
+  for (const [status, count] of quota) {
+    const template = templateOf(status)
+    if (template === undefined) throw new Error(`夹具里没有 ${status} 状态的订单，分页场景无法生成`)
+    for (let index = 0; index < count; index += 1) {
+      orders.push({ ...template, out_trade_no: `CP2026111900${String(1000 + orders.length)}` })
+    }
+  }
+  return { ...trailPage, total: orders.length, orders }
+})()
+
+/** 等列表里的订单条数到达 `expected`（「加载更多」是异步追加，不等就量会量到旧帧） */
+const waitForOrderCount = async (page, expected) => {
+  await page.waitForFunction(
+    (count) => document.querySelectorAll('[data-testid="trail-order"]').length === count,
+    expected,
+    { timeout: 15000 }
+  )
+}
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const ROOT = path.resolve(HERE, '..')
@@ -608,6 +655,134 @@ const measureDouyinRow = () => {
   }
 }
 
+// ---------------------------------------------------------------- #386 回到底部
+
+/**
+ * 把 #386 的取数工具装进页面（`window.__toBottom`）。
+ *
+ * `page.evaluate` 的函数体在页面里**自成一体**，调不到 Node 侧的函数，所以这里装一次、
+ * 之后每次取值只写一行 `page.evaluate(() => window.__toBottom.measure())`。
+ */
+const installToBottomHelpers = () => {
+  /** 消息滚动层：可滚的 overflow-y 且真溢出，取溢出最多那个（与 measureHeader 同一判据） */
+  const findHost = () => {
+    const scrollable = /(auto|scroll|overlay)/
+    const queue = [document.body]
+    let host = null
+    while (queue.length > 0) {
+      const element = queue.shift()
+      if (element === null || element === undefined) break
+      if (scrollable.test(getComputedStyle(element).overflowY) && element.scrollHeight - element.clientHeight > 0) {
+        if (host === null || element.scrollHeight > host.scrollHeight) host = element
+      }
+      for (const child of element.children) queue.push(child)
+    }
+    return host
+  }
+
+  const round = (value) => Math.round(value * 10) / 10
+
+  window.__toBottom = {
+    /**
+     * 离底部多远、按钮在不在、按钮压在输入框上面还是挡住它。
+     * 「挡住」的判据是**按钮下沿 ≤ 输入框上沿**（textarea 的 top），不靠目测。
+     */
+    measure: () => {
+      const host = findHost()
+      const button = document.querySelector('[data-scroll-to-bottom]')
+      const style = button === null ? null : getComputedStyle(button)
+      const rect = button === null ? null : button.getBoundingClientRect()
+      const textarea = document.querySelector('textarea')
+      const textareaRect = textarea === null ? null : textarea.getBoundingClientRect()
+      return {
+        distance: host === null ? null : Math.round(host.scrollHeight - host.scrollTop - host.clientHeight),
+        scrollTop: host === null ? null : Math.round(host.scrollTop),
+        button:
+          rect === null
+            ? null
+            : {
+                width: round(rect.width),
+                height: round(rect.height),
+                right: round(rect.right),
+                bottom: round(rect.bottom),
+                ariaLabel: button.getAttribute('aria-label'),
+                opacity: Number(style.opacity),
+                // reduced-motion 档应该是 none，正常档是 ds-scroll-to-bottom-in
+                animationName: style.animationName,
+                backgroundColor: style.backgroundColor,
+                hasNewDot: button.querySelector('span') !== null,
+              },
+        textareaTop: textareaRect === null ? null : round(textareaRect.top),
+        clearsComposer: rect === null || textareaRect === null ? null : rect.bottom <= textareaRect.top,
+      }
+    },
+
+    /** 把消息滚动层挪 delta（负值向上），模拟用户上翻 */
+    scrollBy: (delta) => {
+      const host = findHost()
+      if (host === null) {
+        return { found: false }
+      }
+      host.scrollTop += delta
+      return {
+        found: true,
+        scrollTop: Math.round(host.scrollTop),
+        distance: Math.round(host.scrollHeight - host.scrollTop - host.clientHeight),
+      }
+    },
+
+    /**
+     * 往消息内容列尾部塞一段空白，**模拟流式期间内容长高**（不连上游，也不伪造回复文案）：
+     * 消息组件用 ResizeObserver 盯内容列高度，长高就会走「有新内容」那条分支。
+     */
+    grow: (height) => {
+      const host = findHost()
+      if (host === null) {
+        return { found: false }
+      }
+      const row = host.querySelector('[data-row-id]')
+      const column = row === null ? null : row.parentElement
+      if (column === null) {
+        return { found: false }
+      }
+      const spacer = document.createElement('div')
+      spacer.dataset.shotSpacer = '386'
+      spacer.style.height = `${height}px`
+      column.append(spacer)
+      return { found: true, height }
+    },
+
+    removeGrown: () => {
+      for (const spacer of document.querySelectorAll('[data-shot-spacer="386"]')) {
+        spacer.remove()
+      }
+      return { removed: true }
+    },
+
+    /** 点一下按钮并按帧采样 scrollTop：连续增长＝平滑，一步到位＝直接跳 */
+    clickAndSample: async () => {
+      const host = findHost()
+      const button = document.querySelector('[data-scroll-to-bottom]')
+      if (host === null || button === null) {
+        return { found: false }
+      }
+      const before = Math.round(host.scrollTop)
+      button.click()
+      const samples = []
+      for (let index = 0; index < 10; index += 1) {
+        await new Promise((resolve) => requestAnimationFrame(resolve))
+        samples.push(Math.round(host.scrollTop))
+      }
+      return {
+        found: true,
+        before,
+        samples,
+        distance: Math.round(host.scrollHeight - host.scrollTop - host.clientHeight),
+      }
+    },
+  }
+}
+
 // ---------------------------------------------------------------- 页面内取数（在浏览器里跑，必须自成一体）
 
 /** 顶栏四件事：点击区尺寸、提示是否真的渲染、标题是否被提示挤掉、滚动层是否溢出 */
@@ -779,11 +954,18 @@ const routeTrail = async (context, def) => {
       return
     }
     const url = new URL(request.url())
+    // 卡号查询单独一档状态码（#325）：要截「他人卡 404」又不能让 `/api/trail` 一起红，
+    // 所以 `cardStatus` 只作用在 `/api/card/trail` 上（`status` 仍是三个接口共用的老口径）。
+    const isCardTrail = url.pathname === '/api/card/trail'
     let body
     if (url.pathname === '/api/order/trail') {
       body = def.order ?? orderTrailResponse
-    } else if (url.pathname === '/api/card/trail') {
-      body = def.card ?? cardTrailRedeemed
+    } else if (isCardTrail) {
+      const cardStatus = def.cardStatus ?? def.status ?? 200
+      body =
+        cardStatus >= 400
+          ? (def.cardError ?? { code: 'CARD_NOT_FOUND', message: '卡密不存在', request_id: 'card-325' })
+          : (def.card ?? cardTrailRedeemed)
     } else {
       const page = def.page ?? trailPage
       const limit = Number(url.searchParams.get('limit') ?? page.limit)
@@ -802,7 +984,7 @@ const routeTrail = async (context, def) => {
       }
     }
     await route.fulfill({
-      status: def.status ?? 200,
+      status: isCardTrail ? (def.cardStatus ?? def.status ?? 200) : (def.status ?? 200),
       contentType: 'application/json',
       headers,
       body: JSON.stringify(body),
@@ -1027,6 +1209,134 @@ export const PAGES = {
     },
   },
 
+  'scroll-to-bottom': {
+    dir: 'docs/ui/386-scroll-to-bottom',
+    title: '#386 输入框上方「回到底部」小箭头：上翻浮现 / 点击回底 / 流式中的新内容圆点 / 深色主题',
+    sessions: () => [makeLongSession()],
+    mockOrders: false,
+    // 流式那条要真的走 ours 上游（被 route 打到本地桩），所以渠道也切到 ours
+    providerKind: 'ours',
+    run: async (ctx) => {
+      const { page, shot, record, warn, size } = ctx
+      await openSession(page, LONG_SESSION_TITLE)
+      await page.evaluate(installToBottomHelpers)
+
+      // ① 首次进会话就在底部：不该有按钮（否则它会白挡住正文）
+      const atBottom = await page.evaluate(() => window.__toBottom.measure())
+      record('atBottom', atBottom)
+      if (atBottom.button !== null) {
+        warn('刚进会话还没上翻就出现了回到底部按钮')
+      }
+      await shot('01-at-bottom-no-button')
+
+      // ② 上翻 1200px（> 200px 阈值）：按钮浮现，且不压住输入框
+      record('scrollUp', await page.evaluate(() => window.__toBottom.scrollBy(-1200)))
+      await page.waitForTimeout(300)
+      const shown = await page.evaluate(() => window.__toBottom.measure())
+      record('scrolledUp', shown)
+      if (shown.button === null) {
+        throw new Error('上翻 1200px 后没有出现「回到底部」按钮')
+      }
+      if (shown.button.hasNewDot) {
+        warn('还没开始流式，按钮上就带了「有新内容」圆点')
+      }
+      if (shown.clearsComposer !== true) {
+        warn(`按钮下沿 ${shown.button.bottom} 压到了输入框上沿 ${shown.textareaTop}`)
+      }
+      await shot('02-scrolled-up-button')
+
+      // ③ 真的发一条消息（上游被 route 压 4 秒），在「流式中」这段窗口里上翻取证：
+      //    位置不能被拽回底部，按钮要补一个「有新内容」圆点。
+      await page.route(`**${OURS_CHAT_PATH}`, async (route) => {
+        if (route.request().method() === 'OPTIONS') {
+          await route.fulfill({ status: 204, headers: OURS_CORS })
+          return
+        }
+        // 刻意压 4 秒：把 streaming 这个状态撑开，不是测试里的 sleep
+        await new Promise((resolve) => setTimeout(resolve, 4000))
+        await route.fulfill({
+          status: 200,
+          headers: { ...OURS_CORS, 'content-type': 'text/event-stream' },
+          body: openAiSse('流式期间上翻不该被拽回底部；这条回复只用来把流式状态撑开。'),
+        })
+      })
+      const textarea = page.locator('textarea').last()
+      await textarea.click()
+      await textarea.fill('#386 流式取证：先发一条，再上翻')
+      await page.getByRole('button', { name: /^发送$|^Send$/ }).first().click()
+      await page.getByRole('button', { name: /停止生成/ }).first().waitFor({ timeout: 10000 })
+      record('streaming', { stopButtonVisible: true })
+      record('scrollUpInStream', await page.evaluate(() => window.__toBottom.scrollBy(-900)))
+      await page.waitForTimeout(250)
+      const streamUp = await page.evaluate(() => window.__toBottom.measure())
+      record('streamScrolledUp', streamUp)
+      // 内容长高用 DOM 注入模拟「新 token 到达」：不伪造回复文案，只把内容列撑高
+      record('grow', await page.evaluate(() => window.__toBottom.grow(200)))
+      await page.waitForTimeout(400)
+      const grown = await page.evaluate(() => window.__toBottom.measure())
+      record('afterGrow', grown)
+      if (grown.button === null || grown.button.hasNewDot !== true) {
+        warn('流式期间内容长高后，按钮上没有出现「有新内容」圆点')
+      }
+      if (grown.button !== null && grown.button.ariaLabel !== '回到底部（有新内容）') {
+        warn(`圆点状态下 aria-label 不对：${grown.button.ariaLabel}`)
+      }
+      if (streamUp.scrollTop !== grown.scrollTop) {
+        warn(`流式期间内容长高把位置拽动了：${streamUp.scrollTop} → ${grown.scrollTop}`)
+      }
+      await shot('03-new-content-dot-in-stream')
+
+      // ④ 点击回到底部（本场景浏览器上下文默认 reducedMotion=reduce → 应直接跳），
+      //    并确认流式结束后按钮自己收起来
+      record('clickInStream', await page.evaluate(() => window.__toBottom.clickAndSample()))
+      await page.waitForTimeout(300)
+      const back = await page.evaluate(() => window.__toBottom.measure())
+      record('afterClick', back)
+      if (back.distance !== 0) {
+        warn(`点击后没到底：distance=${back.distance}`)
+      }
+      await shot('04-after-click-bottom')
+      // 等这条 mock 回复落地，别让「流式中」串到后面几档
+      await page
+        .getByRole('button', { name: /停止生成/ })
+        .first()
+        .waitFor({ state: 'detached', timeout: 15000 })
+        .catch(() => warn('mock 回复 15 秒还没收尾'))
+      await page.evaluate(() => window.__toBottom.removeGrown())
+
+      // ⑤ 正常动效档：按钮淡入 + scrollTo 平滑滚动（按帧采样证明是渐变而不是瞬移）
+      await page.emulateMedia({ reducedMotion: 'no-preference' })
+      await page.evaluate(() => window.__toBottom.scrollBy(-1600))
+      await page.waitForTimeout(300)
+      const animated = await page.evaluate(() => window.__toBottom.measure())
+      record('normalMotion', animated)
+      if (animated.button === null || !animated.button.animationName.startsWith('ds-scroll-to-bottom-in')) {
+        warn(`正常动效档下按钮没有淡入：animationName=${animated.button === null ? 'null' : animated.button.animationName}`)
+      }
+      await shot('05-button-fade-in')
+
+      const smooth = await page.evaluate(() => window.__toBottom.clickAndSample())
+      record('clickSmooth', smooth)
+      const peak = smooth.found ? Math.max(...smooth.samples) : 0
+      const intermediate = smooth.found
+        ? smooth.samples.filter((value) => value > smooth.before && value < peak).length
+        : 0
+      if (smooth.found && intermediate === 0) {
+        warn(`正常动效档下点击没有平滑过程，采样=${smooth.samples.join(',')}（只有老内核 / reduced-motion 才该直接跳）`)
+      }
+      await page.waitForTimeout(400)
+      await shot('06-after-smooth-bottom')
+
+      // ⑥ 深色主题：把 body 上那个属性打上（与 App 内主题开关同一属性），确认按钮还有对比度
+      await page.evaluate(() => document.body.setAttribute('data-ds-dark-theme', 'dark'))
+      await page.evaluate(() => window.__toBottom.scrollBy(-1200))
+      await page.waitForTimeout(300)
+      record('darkTheme', await page.evaluate(() => window.__toBottom.measure()))
+      record('viewport', size)
+      await shot('07-dark-theme-button')
+    },
+  },
+
   'reading-settings': {
     dir: 'docs/ui/102-reading-settings',
     title: '#102 设置 → 通用设置 → 阅读设置：三个下拉的渲染，默认档与最大档的文字渲染对比',
@@ -1247,6 +1557,293 @@ export const PAGES = {
     },
   },
 
+  /**
+   * #326 验收：支付记录的分页 + 状态筛选。
+   *
+   * 与上面 `payment-trail` 分开一条场景（目录也分开），理由：那条是 #189 的证据，夹具是 6 条订单、
+   * 本来就「一屏到底」；分页要看的是 45 条（20 + 20 + 5）三页的追加行为与末页，混在一起会互相覆盖截图。
+   *
+   * 45 条按五状态轮转生成（各 9 条），这样「已关闭」页签筛出来的正好 9 条，能同时证明
+   * ①加载更多按 20 递增 ②末页按钮换成「已经到底了」③切筛选后列表与 total 一起重置
+   * ④页签条在 390 / 360 两档都不横向溢出。
+   */
+  'payment-trail-paging': {
+    dir: 'docs/ui/326-payment-trail',
+    title: '#326 支付记录：分页（20/页 + 加载更多）与状态筛选（全部 / 五状态）',
+    sessions: () => [makeReadingSession()],
+    mockOrders: false,
+    providerKind: 'ours',
+    trail: { page: pagedTrailPage },
+    run: async (ctx) => {
+      const { page, shot, record, warn } = ctx
+      /** 量数：页签文案、列表条数、统计条、底部状态块，以及有没有横向溢出 */
+      const measure = () =>
+        page.evaluate(() => {
+          const root = document.querySelector('[data-testid="payment-trail"]')
+          const viewportWidth = document.documentElement.clientWidth
+          const overflowing = []
+          if (root !== null) {
+            for (const node of root.querySelectorAll('*')) {
+              const rect = node.getBoundingClientRect()
+              if (rect.width > 0 && rect.right > viewportWidth + 1) {
+                overflowing.push({ tag: node.tagName, right: Math.round(rect.right) })
+              }
+            }
+          }
+          const tabs = Array.from(root?.querySelectorAll('[role="tab"]') ?? []).map((node) => ({
+            text: (node.textContent ?? '').trim(),
+            selected: node.getAttribute('aria-selected') === 'true',
+          }))
+          const nos = Array.from(root?.querySelectorAll('[data-testid="trail-order"]') ?? []).map(
+            (node) => node.getAttribute('data-out-trade-no')
+          )
+          return {
+            viewportWidth,
+            documentScrollWidth: Math.round(document.documentElement.scrollWidth),
+            tabs,
+            orderCount: nos.length,
+            uniqueOrderCount: new Set(nos).size,
+            statuses: Array.from(root?.querySelectorAll('[data-testid="trail-order"]') ?? []).map(
+              (node) => node.getAttribute('data-status')
+            ),
+            summary: (root?.querySelector('[data-testid="trail-summary"]')?.textContent ?? '').trim(),
+            loadMore: root?.querySelector('[data-testid="trail-load-more"]') !== null,
+            loadingMore: root?.querySelector('[data-testid="trail-loading-more"]') !== null,
+            moreError: root?.querySelector('[data-testid="trail-more-error"]') !== null,
+            end: root?.querySelector('[data-testid="trail-end"]') !== null,
+            endText: (root?.querySelector('[data-testid="trail-end"]')?.textContent ?? '').trim(),
+            overflowCount: overflowing.length,
+            overflowSamples: overflowing.slice(0, 5),
+          }
+        })
+
+      await openSettings(page, S.tabData)
+      const entry = page.locator(S.paymentTrailOpen)
+      await entry.waitFor({ state: 'visible', timeout: 10000 })
+      await entry.click()
+      const root = page.locator('[data-testid="payment-trail"]')
+      await root.waitFor({ state: 'visible', timeout: 10000 })
+      await page.waitForTimeout(700)
+
+      const first = await measure()
+      record('page1', first)
+      if (first.orderCount !== 20) {
+        throw new Error(`第一页应该是 20 条，实际 ${first.orderCount} 条（分页参数没生效？）`)
+      }
+      if (!first.loadMore) {
+        throw new Error('第一页底部没有「加载更多」按钮')
+      }
+      if (first.tabs.length !== 6 || !first.tabs.some((tab) => tab.selected && tab.text === '全部')) {
+        throw new Error(`页签条不对：${JSON.stringify(first.tabs)}`)
+      }
+      if (!first.summary.includes('共 45 笔')) {
+        throw new Error(`统计条没有按服务端 total 显示 45 笔：${first.summary}`)
+      }
+      if (first.overflowCount > 0) {
+        warn(`页签条 / 卡片横向溢出 ${first.overflowCount} 处：${JSON.stringify(first.overflowSamples)}`)
+      }
+      await shot('01-trail-paging-first-page')
+
+      // 第 2 页：点一次「加载更多」，已渲染的 20 条必须原地保留
+      await page.locator('[data-testid="trail-load-more"]').scrollIntoViewIfNeeded()
+      await page.waitForTimeout(200)
+      await shot('02-trail-load-more-button')
+      await page.locator('[data-testid="trail-load-more"]').click()
+      await waitForOrderCount(page, 40)
+      const second = await measure()
+      record('page2', second)
+      if (second.orderCount !== 40 || second.uniqueOrderCount !== 40) {
+        throw new Error(`第 2 页应累加到 40 条且不重复，实际 ${second.orderCount}/${second.uniqueOrderCount}`)
+      }
+      if (!second.summary.includes('共 45 笔')) {
+        throw new Error(`翻页把统计条改掉了：${second.summary}`)
+      }
+      // 截「追加出来的那一段」：滚到最后一单，画面里是第 21 条起的新记录（而不是又一张首屏）
+      await page.locator('[data-testid="trail-order"]').last().scrollIntoViewIfNeeded()
+      await page.waitForTimeout(320)
+      await shot('03-trail-second-page')
+
+      // 第 3 页：末页应把按钮换成「已经到底了」
+      await page.locator('[data-testid="trail-load-more"]').scrollIntoViewIfNeeded()
+      await page.locator('[data-testid="trail-load-more"]').click()
+      await waitForOrderCount(page, 45)
+      const last = await measure()
+      record('page3', last)
+      if (last.orderCount !== 45 || last.uniqueOrderCount !== 45) {
+        throw new Error(`末页应有 45 条不重复记录，实际 ${last.orderCount}/${last.uniqueOrderCount}`)
+      }
+      if (last.loadMore || !last.end) {
+        throw new Error(`末页应换「已经到底了」：loadMore=${last.loadMore} end=${last.end}`)
+      }
+      // 「已经到底了」在最后一单下面：滚到底才截得到（否则画面里只有卡片、看不出末页状态）
+      await page.locator('[data-testid="trail-end"]').scrollIntoViewIfNeeded()
+      await page.waitForTimeout(320)
+      await shot('04-trail-end-of-list')
+
+      // 状态筛选：切到「已关闭」→ 只剩 expired，且 total 换成筛选后的数字
+      await page.locator('[data-testid="trail-tab-expired"]').scrollIntoViewIfNeeded()
+      await page.locator('[data-testid="trail-tab-expired"]').click()
+      await page.waitForTimeout(700)
+      const filtered = await measure()
+      record('filteredExpired', filtered)
+      if (filtered.orderCount !== 9 || filtered.statuses.some((status) => status !== 'expired')) {
+        throw new Error(`「已关闭」页签应只剩 9 条 expired，实际 ${filtered.orderCount} 条 ${JSON.stringify(filtered.statuses)}`)
+      }
+      if (!filtered.summary.includes('共 9 笔') || filtered.loadMore) {
+        throw new Error(`筛选后统计条 / 底部状态不对：${filtered.summary} loadMore=${filtered.loadMore}`)
+      }
+      await shot('05-trail-filter-expired')
+
+      // 切回「全部」：恢复 20 条第一页（offset 重新从 0 开始）
+      await page.locator('[data-testid="trail-tab-all"]').click()
+      await page.waitForTimeout(700)
+      const back = await measure()
+      record('backToAll', back)
+      if (back.orderCount !== 20 || !back.summary.includes('共 45 笔')) {
+        throw new Error(`切回「全部」没有重新从第一页开始：${back.orderCount} 条 / ${back.summary}`)
+      }
+      await shot('06-trail-back-to-all')
+    },
+  },
+
+  /**
+   * #325 验收：卡密溯源从死代码接上界面（`/api/card/trail` 原本零界面入口）。
+   *
+   * 这条场景要证明的是「入口 + 三态 + 权限边界」，不是又一张列表截图：
+   *  ① 支付记录里**已发卡**的卡密块上有「查这张卡」（`trail-card-lookup`）；
+   *  ② 点开是卡密溯源弹层：卡号只有后 4 位，能看到关联订单号 / 积分 / 兑换来源；
+   *  ③ 同一张卡按「他人卡」口径回 404 → 只有一句「没有找到这笔记录」，
+   *     既不是空态，也不带金额 / 订单号（服务端不区分「不存在」与「不是你的」，界面也不许猜）。
+   *
+   * 三个接口的拦截沿用 `routeTrail`；`cardStatus` 只作用在 `/api/card/trail` 上，
+   * 否则第 ③ 步会把支付记录列表一起打成错误态。
+   */
+  'card-trail-lookup': {
+    dir: 'docs/ui/325-card-trail',
+    title: '#325 支付记录 → 卡密块「查这张卡」：卡密溯源弹层（已兑换 / 他人卡 404）',
+    sessions: () => [makeReadingSession()],
+    mockOrders: false,
+    providerKind: 'ours',
+    trail: cardTrailDef,
+    run: async (ctx) => {
+      const { page, shot, record, warn } = ctx
+      // 每个视口重跑时先复位：360 档不能带着上一档的 404 开局
+      cardTrailDef.cardStatus = 200
+
+      /** 量数：入口 / 面板文案 / 掩码 / 横向溢出；`errorText` 给第 ③ 步用 */
+      const measure = () =>
+        page.evaluate(() => {
+          const viewportWidth = document.documentElement.clientWidth
+          const overflowing = []
+          for (const node of document.querySelectorAll(
+            '[data-testid="trail-card-lookup"], [data-testid="trail-card-panel"], [data-testid="trail-error"]'
+          )) {
+            const rect = node.getBoundingClientRect()
+            if (rect.width > 0 && rect.right > viewportWidth + 1) {
+              overflowing.push({ right: Math.round(rect.right) })
+            }
+          }
+          const panel = document.querySelector('[data-testid="trail-card-panel"]')
+          const errorNode = document.querySelector('[data-testid="trail-error"]')
+          const bodyText = document.body.textContent ?? ''
+          return {
+            viewportWidth,
+            documentScrollWidth: Math.round(document.documentElement.scrollWidth),
+            cardCount: document.querySelectorAll('[data-testid="trail-card"]').length,
+            lookupCount: document.querySelectorAll('[data-testid="trail-card-lookup"]').length,
+            lookupText: (document.querySelector('[data-testid="trail-card-lookup"]')?.textContent ?? '').trim(),
+            panelVisible: panel !== null,
+            panelText: (panel?.textContent ?? '').replace(/\s+/gu, ' ').trim(),
+            sourceText: (document.querySelector('[data-testid="trail-card-source"]')?.textContent ?? '').trim(),
+            hasMaskedCard: bodyText.includes('••••'),
+            fullCardInDom: bodyText.includes('MUSE-3CYP-5NA3-AHSE-A3SR'),
+            errorText: (errorNode?.textContent ?? '').replace(/\s+/gu, ' ').trim(),
+            overflowCount: overflowing.length,
+            overflowSamples: overflowing.slice(0, 5),
+          }
+        })
+
+      await openSettings(page, S.tabData)
+      const entry = page.locator(S.paymentTrailOpen)
+      await entry.waitFor({ state: 'visible', timeout: 10000 })
+      await entry.click()
+      const root = page.locator('[data-testid="payment-trail"]')
+      await root.waitFor({ state: 'visible', timeout: 10000 })
+      await page.waitForTimeout(700)
+
+      const list = await measure()
+      record('list', list)
+      if (list.cardCount < 1) {
+        throw new Error('支付记录里一个卡密块都没有：夹具或卡密渲染不对')
+      }
+      if (list.lookupCount < 1) {
+        throw new Error('已发卡的卡密块上没有「查这张卡」入口（#325 的入口没接上）')
+      }
+      if (list.fullCardInDom) {
+        throw new Error('完整卡号漏进了 DOM：截图 / 转发会把卡密带出去')
+      }
+      const firstLookup = page.locator('[data-testid="trail-card-lookup"]').first()
+      await firstLookup.scrollIntoViewIfNeeded()
+      await page.waitForTimeout(260)
+      await shot('01-trail-card-lookup-entry')
+
+      // ② 点开：卡密溯源弹层（已兑换的卡）
+      await firstLookup.click()
+      await page.locator('[data-testid="trail-card-panel"]').waitFor({ state: 'visible', timeout: 10000 })
+      await page.waitForTimeout(420)
+      const panel = await measure()
+      record('panel', panel)
+      if (!panel.panelVisible) {
+        throw new Error('点了「查这张卡」没有出现溯源面板')
+      }
+      if (panel.fullCardInDom || !panel.panelText.includes('••••A3SR')) {
+        throw new Error(`面板里的卡号不是掩码：${panel.panelText}`)
+      }
+      if (!panel.panelText.includes('CP20261119063300003')) {
+        throw new Error(`面板里没有关联订单号：${panel.panelText}`)
+      }
+      if (!panel.sourceText.includes('本 App 内兑换')) {
+        throw new Error(`兑换来源没渲染（#325 关闭条件点名要它）：${panel.sourceText}`)
+      }
+      if (panel.overflowCount > 0) {
+        warn(`溯源面板横向溢出 ${panel.overflowCount} 处：${JSON.stringify(panel.overflowSamples)}`)
+      }
+      await shot('02-card-trail-panel')
+
+      // 关掉溯源弹层：Esc 只关最上层（叠放栈），关了要确认下层支付记录还在
+      await page.keyboard.press('Escape')
+      await page.waitForTimeout(360)
+      if ((await measure()).panelVisible) {
+        await page.locator('button[aria-label="关闭"]').last().click()
+        await page.waitForTimeout(360)
+      }
+      if ((await measure()).panelVisible) {
+        throw new Error('溯源弹层关不掉：下一步点不到列表')
+      }
+
+      // ③ 他人卡：服务端 404 → 只有一句「没有找到这笔记录」，不带金额 / 订单号
+      cardTrailDef.cardStatus = 404
+      await page.locator('[data-testid="trail-card-lookup"]').first().click()
+      await page.locator('[data-testid="trail-error"]').last().waitFor({ state: 'visible', timeout: 10000 })
+      await page.waitForTimeout(320)
+      const notFound = await measure()
+      record('otherUser404', notFound)
+      if (!notFound.errorText.includes('没有找到这笔记录')) {
+        throw new Error(`404 的文案不对：#325 要求统一「没有找到这笔记录」，实际 ${notFound.errorText}`)
+      }
+      if (notFound.panelVisible) {
+        throw new Error('404 被渲染成了面板：那一刻界面在说「这张卡有记录」')
+      }
+      if (notFound.errorText.includes('CP20261119063300003') || notFound.errorText.includes('¥')) {
+        throw new Error(`404 文案里带了订单信息（等于确认了这张卡存在）：${notFound.errorText}`)
+      }
+      // 这一步的 404 是刻意造的：控制台那条 `Failed to load resource ... 404` 属于预期，
+      // 不是缺陷（metrics 的 consoleErrors 会带上它，这里显式说明一句）
+      warn('第 ③ 步的 404 是刻意造的：consoleErrors 里那条 404 资源错误属于预期')
+      await shot('03-card-trail-other-user-404')
+    },
+  },
+
   'ours-buy-inapp': {
     dir: 'docs/ui/235-pay-return',
     title: '#235 设置 → 数据管理 → 我们的渠道：套餐列表 / 去支付 / 收银台提示（390 与 360 两档）',
@@ -1334,6 +1931,167 @@ export const PAGES = {
       if (clip !== null) {
         await shot('02-purchase-closeup', { clip })
       }
+    },
+  },
+
+  'account-consume': {
+    dir: 'docs/ui/account-consume',
+    title:
+      '#487 设置 → 数据管理 → 账户与消费：我的卡密（未兑换 / 已兑换 / 复制 / 兑换结果）/ 购买（套餐 / 收款页）/ 我的额度 / 账号 四个 tab（390 与 360 两档）',
+    sessions: () => [makeReadingSession()],
+    mockOrders: false,
+    // 入口仍然只在自有渠道出现（#166 的判据没变，只是三联格并成了一格）
+    providerKind: 'ours',
+    // 「我的卡密」的数据就是 apia 的 GET /api/orders：按真契约形状回两张卡 ——
+    // 一张 issued/leased（未兑换）、一张 redeemed/used（已兑换），列表的两种状态各截一张。
+    mockPurchases: {
+      totalPaidYuan: 40,
+      orders: [
+        {
+          out_trade_no: 'CP202611200000001',
+          plan_id: 'standard',
+          plan_name: '标准包 500万 token',
+          plan_points: 3900,
+          amount_yuan: 39.0,
+          status: 'FULFILLED',
+          status_text: '已完成',
+          card_no: 'MUSE-3CYP-5NA3-AHSE-A3SR',
+          card_status: 'leased',
+          redeem_state: 'issued',
+          created_at: 1795055400,
+          paid_at: 1795055460,
+        },
+        {
+          out_trade_no: 'CP202611190000002',
+          plan_id: 'starter',
+          plan_name: '体验包 100万 token',
+          plan_points: 300,
+          amount_yuan: 1.0,
+          status: 'FULFILLED',
+          status_text: '已完成',
+          card_no: 'MUSE-9KQ2-7WHB-TT44-Q7ZM',
+          card_status: 'used',
+          redeem_state: 'redeemed',
+          created_at: 1794969000,
+          paid_at: 1794969060,
+        },
+      ],
+    },
+    run: async (ctx) => {
+      const { page, shot, record, warn } = ctx
+      const json = (body) => ({
+        status: 200,
+        headers: { 'content-type': 'application/json', 'access-control-allow-origin': '*' },
+        body: JSON.stringify(body),
+      })
+      await page.route(`${SHOT_CARD_API}/api/plans`, async (route) => {
+        await route.fulfill(
+          json({
+            plans: [
+              { id: 'p1', name: '入门包 100万 token', price: 3.0, points: 300, currency: 'CNY', enabled: true },
+              { id: 'p2', name: '标准包 500万 token', price: 39.0, points: 3900, currency: 'CNY', enabled: true },
+            ],
+          })
+        )
+      })
+      await page.route(`${SHOT_CARD_API}/api/pay-link`, async (route) => {
+        await route.fulfill(json({ ok: true, url: 'https://pay.example.com/checkout/shot', note: '' }))
+      })
+
+      await openSettings(page, S.tabData)
+      const entry = page.locator('[data-testid="account-consume-open"]')
+      await entry.waitFor({ state: 'visible', timeout: 10000 })
+      await entry.scrollIntoViewIfNeeded()
+      await page.waitForTimeout(240)
+      await entry.click()
+
+      const panel = page.locator('[data-testid="account-consume-page"]')
+      await panel.waitFor({ state: 'visible', timeout: 10000 })
+      await page.waitForTimeout(700)
+
+      // ① 四个 tab 一行放得下、弹层不横向溢出（390 与 360 都要成立）
+      const layout = await page.evaluate(() => {
+        // 注意作用域：设置层自己也有一个 role="tablist"（通用设置 / 数据管理），
+        // 直接从 document 取第一个会把两张截图量成设置页的 tab —— 必须从本页往上找它自己的弹层。
+        const body = document.querySelector('[data-testid="account-consume-page"]')
+        const dialog = body === null ? null : body.closest('[role="dialog"]')
+        const tablist = dialog === null ? null : dialog.querySelector('[role="tablist"]')
+        if (tablist === null || body === null) {
+          return null
+        }
+        const tabs = Array.from(tablist.querySelectorAll('[role="tab"]')).map((tab) => {
+          const rect = tab.getBoundingClientRect()
+          return { w: Math.round(rect.width), h: Math.round(rect.height), top: Math.round(rect.top) }
+        })
+        const box = body.getBoundingClientRect()
+        return {
+          tabs,
+          tabRows: new Set(tabs.map((tab) => tab.top)).size,
+          panelRight: Math.round(box.right),
+          viewport: document.documentElement.clientWidth,
+          scrollWidth: document.documentElement.scrollWidth,
+        }
+      })
+      record('layout', layout)
+      if (layout === null) {
+        warn('没量到 tablist / 页面主体：布局断言无从判断')
+      } else {
+        if (layout.tabRows !== 1) {
+          warn(`四个 tab 折成了 ${layout.tabRows} 行（390/360 两档要求同一行）`)
+        }
+        const tooShort = layout.tabs.filter((tab) => tab.h < 32)
+        if (tooShort.length > 0) {
+          warn(`有 ${tooShort.length} 个 tab 的点击高度不足 32px：${JSON.stringify(tooShort)}`)
+        }
+        if (layout.scrollWidth > layout.viewport) {
+          warn(`页面出现横向滚动：scrollWidth=${layout.scrollWidth} > viewport=${layout.viewport}`)
+        }
+      }
+
+      // ③ Tab 1「我的卡密」：两种状态（未兑换 / 已兑换）+ 复制 + 去兑换
+      const rows = page.locator('[data-testid="account-consume-card-row"]')
+      record('cards', {
+        count: await rows.count(),
+        rows: (await rows.allInnerTexts()).map((text) => text.replace(/\s+/g, ' ').trim()),
+      })
+      if ((await rows.count()) !== 2) {
+        warn(`卡密列表应有 2 条（未兑换 + 已兑换），实际 ${await rows.count()}`)
+      }
+      await shot('01-my-cards')
+
+      // ④ 兑换：Chromium 里 CapacitorHttp 不可用（isNativePlatform() === false），
+      //    所以这一次一定「拿不到响应」。截的是**真实发生的那一态**，不是摆拍成功页；
+      //    redeemed / processing / pending→重试 三态由 tests/unit/consume-envelope.test.mjs 覆盖。
+      await page.getByTestId('account-consume-redeem-input').fill('MUSE-3CYP-5NA3-AHSE-A3SR')
+      await page.getByTestId('account-consume-redeem-submit').click()
+      const redeemStatus = page.getByTestId('account-consume-redeem-status')
+      await redeemStatus.waitFor({ state: 'visible', timeout: 10000 })
+      record('redeemStatus', { text: (await redeemStatus.innerText()).replace(/\s+/g, ' ').trim() })
+      await shot('02-redeem-result')
+
+      // ⑤ Tab 2「购买」：套餐列表（apia /api/plans）
+      await page.getByTestId('account-consume-tab-buy').click()
+      await page.getByTestId('account-consume-buy-plan').first().waitFor({ state: 'visible', timeout: 10000 })
+      await page.waitForTimeout(320)
+      record('buyPlans', { count: await page.getByTestId('account-consume-buy-plan').count() })
+      await shot('03-buy-plans')
+
+      // ⑥ 点「去支付」：非原生环境 openPayLinkInApp() 恒为 false → 必须给可读提示，不许整页跳走
+      await page.getByTestId('account-consume-buy-open').first().click()
+      const buyStatus = page.getByTestId('account-consume-buy-status')
+      await buyStatus.waitFor({ state: 'visible', timeout: 10000 })
+      record('buyOpen', { text: (await buyStatus.innerText()).replace(/\s+/g, ' ').trim() })
+      await shot('04-buy-open-unavailable')
+
+      // ⑦ Tab 3「我的额度」/ Tab 4「账号」：面板本体来自 W1-C2（`components/consume/index.ts`），
+      //    截出来证明外壳把同一个客户端与登录出口递下去了（面板自己拉数据，这里只等它出终态）
+      await page.getByTestId('account-consume-tab-quota').click()
+      await page.waitForSelector('[data-testid="account-consume-page"]', { timeout: 10000 })
+      await page.waitForTimeout(900)
+      await shot('05-quota-panel')
+      await page.getByTestId('account-consume-tab-account').click()
+      await page.waitForTimeout(900)
+      await shot('06-account-panel')
     },
   },
 
@@ -2130,7 +2888,7 @@ export const main = async (argv = process.argv.slice(2), env = process.env) => {
         }
 
         if (def.trail) {
-          // #189：三个只读接口都拦，回的是 tests/fixtures/ours-trail.mjs 里那份真契约数据
+          // #189：三个只读接口都拦，回的是 tests/fixtures/domain06-07/ours-trail.mjs 里那份真契约数据
           await routeTrail(context, def.trail)
         }
 

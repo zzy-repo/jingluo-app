@@ -49,7 +49,7 @@ const readVersionName = (): string => pkg.version?.trim() ?? ''
  * 服务端端点表：**唯一事实来源是仓库根的 `config/endpoints.json`**（Issue #274）。
  *
  * 为什么在构建期注入而不是让源码 import：这份 JSON 同时被门禁（`scripts/lib/endpoints.mjs`）、
- * 脚本与测试读取，前端只需要其中一个子集（三份地址 + 旧域名重写表），注入成 `__ENDPOINTS__`
+ * 脚本与测试读取，前端只需要其中一个子集（三份地址 + 旧域名重写表 + 两个分发 base），注入成 `__ENDPOINTS__`
  * 之后源码里就不存在任何地址字面量 —— 换机器只改那一份 JSON，`pnpm check:endpoints` 负责校验
  * 它与主机/端口白名单自洽。这里只读、只注入，不做任何改写。
  */
@@ -58,7 +58,75 @@ const endpoints = JSON.parse(readFileSync(new URL('./config/endpoints.json', imp
   inviteBaseUrl: string
   feedbackUrl: string
   legacyHosts: string[]
+  download: { primaryBase: string; fallbackBase: string }
+  // 消费侧（sub2api，#484 W1-A）：账号/额度/卡密兑换/Key 管理。
+  // 这里只读、只注入；形状与 fail-fast 校验在 scripts/lib/consumeEndpoints.mjs（build.mjs 打包前跑）。
+  consume: {
+    baseUrl: string
+    apiV1Prefix: string
+    gatewayPrefix: string
+    timeoutMs: { read: number; write: number; redeem: number }
+  }
+  // 支付侧（apia）：只负责买卡，不迁（#482 定调）
+  pay: { baseUrl: string; timeoutMs: { read: number; write: number } }
+  // 老账号额度迁移（sub2api 之前的旧账号，#498 的**临时尾巴**，@remove-after 1.6.0）。
+  // 默认 `enabled:false`：关掉时客户端不采集、不请求、不显示按钮（三处判定见 src/legacy/migration/）。
+  // 这里只读、只注入；`enabled:true` 时形状不对会在下面 assertMigrationConfig 直接中止构建。
+  migration: { enabled: boolean; baseUrl: string; endpoint: string; timeoutMs: number }
 }
+
+/**
+ * 老账号额度迁移（#498）的**构建期 fail-fast**。
+ *
+ * 只拦一种情况：**开关打开了，但请求发不出去**。因为运行时对配置的态度是「不合法就当关闭」，
+ * 一个空的 / 拼错的 `baseUrl` 在运行时只会表现为「什么都没发生」—— 那是本项目最贵的一类假红
+ * （配置生效了没？没人答得上来）。所以把「开了就必须能发」提前到构建期，报错里带键名。
+ *
+ * 开关关着（默认）时**一条都不校验**：`baseUrl: ""` 是配档里的默认值，不该拦住正常出包。
+ * 这段与 `src/legacy/migration/claim.ts` 的 `readMigrationConfig` 判据同源（那边是运行时收窄，
+ * 这里是构建期拦截）；删这条尾巴时，这一段与 DefinePlugin 里的 `migration` 字段一起删。
+ */
+const assertMigrationConfig = (migration: { enabled: boolean; baseUrl: string; endpoint: string; timeoutMs: number }): void => {
+  if (migration.enabled !== true) {
+    return
+  }
+  const problems: string[] = []
+  const baseUrl = typeof migration.baseUrl === 'string' ? migration.baseUrl.trim() : ''
+  if (baseUrl === '') {
+    problems.push('migration.baseUrl 为空：migration.enabled=true 时必须给出迁移服务的地址')
+  } else {
+    let parsed: URL | null = null
+    try {
+      parsed = new URL(baseUrl)
+    } catch {
+      parsed = null
+    }
+    if (parsed === null) {
+      problems.push(`migration.baseUrl 不是合法的绝对 URL：${JSON.stringify(migration.baseUrl)}`)
+    } else {
+      // 生产必须 https（#498 §六 第 2 条）；唯一例外是本机回环，给本地联调自建的迁移服务用
+      const loopback =
+        parsed.hostname === '127.0.0.1' || parsed.hostname === 'localhost' || parsed.hostname === '[::1]'
+      if (parsed.protocol !== 'https:' && !(parsed.protocol === 'http:' && loopback)) {
+        problems.push(`migration.baseUrl 必须是 https（明文 http 只允许本机回环）：${baseUrl}`)
+      }
+      if ((parsed.pathname !== '/' && parsed.pathname !== '') || parsed.search !== '' || parsed.hash !== '') {
+        problems.push(`migration.baseUrl 只能是「协议://主机[:端口]」，路径由 endpoint 拼：${baseUrl}`)
+      }
+    }
+  }
+  if (typeof migration.endpoint !== 'string' || !migration.endpoint.startsWith('/')) {
+    problems.push(`migration.endpoint 必须以 / 开头：${JSON.stringify(migration.endpoint)}`)
+  }
+  if (!Number.isInteger(migration.timeoutMs) || migration.timeoutMs <= 0) {
+    problems.push(`migration.timeoutMs 必须是正整数（毫秒）：${JSON.stringify(migration.timeoutMs)}`)
+  }
+  if (problems.length > 0) {
+    throw new Error(`config/endpoints.json 的 migration 段不合法：\n  - ${problems.join('\n  - ')}`)
+  }
+}
+
+assertMigrationConfig(endpoints.migration)
 
 /**
  * 构建期注入的版本号优先级：环境变量 APP_VERSION > package.json 的 version。
@@ -215,6 +283,25 @@ export const createConfig = ({
         inviteBaseUrl: endpoints.inviteBaseUrl,
         feedbackUrl: endpoints.feedbackUrl,
         legacyHosts: endpoints.legacyHosts,
+        // 分发地址（Issue #269）：源码只写 __ENDPOINTS__.dlPrimaryBase，打包前替换一次
+        dlPrimaryBase: endpoints.download.primaryBase,
+        dlFallbackBase: endpoints.download.fallbackBase,
+        // 消费侧 / 支付侧（#484 W1-A）：src/services/consume/** 只从这两组里取地址、前缀与超时，
+        // 源码里不许再出现任何后端地址或毫秒数（pnpm check:consume-api 会拦）。
+        consume: {
+          baseUrl: endpoints.consume.baseUrl,
+          apiV1Prefix: endpoints.consume.apiV1Prefix,
+          gatewayPrefix: endpoints.consume.gatewayPrefix,
+          timeoutMs: endpoints.consume.timeoutMs,
+        },
+        pay: {
+          baseUrl: endpoints.pay.baseUrl,
+          timeoutMs: endpoints.pay.timeoutMs,
+        },
+        // 老账号额度迁移（#498 的临时尾巴）：整组原样注入（开关 + base + endpoint + 超时），
+        // 客户端只从 __ENDPOINTS__.migration 读，源码里不许出现迁移服务的地址或毫秒数。
+        // 删这条尾巴时删掉这一行（README 的「删除方法」第 3 步）。
+        migration: endpoints.migration,
       }),
     }),
     buildInfoPlugin(internalBuild ? 'internal' : 'standard', appVersion, outputPath),

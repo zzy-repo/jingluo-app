@@ -15,7 +15,9 @@ import {
   clearHistory,
   exportHistory,
   importHistory,
+  type ExportProgress,
 } from '../../services/chat/backup.js'
+import type { ImportMode } from '../../services/chat/history/mergeSessions.js'
 import type { ImportSkip } from '../../services/chat/history/toLocal.js'
 import {
   canImportFromUrl,
@@ -26,9 +28,9 @@ import {
 } from '../../services/chat/history/urlImport.js'
 import { copyText } from '../../utils/clipboard.js'
 import { saveBlobFile } from '../../services/exportText.js'
-import { ImportSkippedDetails, importedMessage } from './importSkipped.js'
+import { ImportSkippedDetails, importedMessage, summaryFromCount } from './importSkipped.js'
 import { useIsMobile } from '../../app/viewport.js'
-import { useChatStore } from '../../services/chat/store.js'
+import { useChatStore, type HistoryImportSummary } from '../../services/chat/store.js'
 import {
   setLocale,
   setEnterKeyMode,
@@ -58,15 +60,8 @@ import { ChatBackgroundField } from './ChatBackgroundField.js'
 import { DOUYIN_ACCOUNT_ID, douyinCopyToast } from './douyinAccount.js'
 import { OursServicesRow } from './OursServicesDialog.js'
 import { FeedbackDialog } from './FeedbackDialog.js'
-import {
-  closeSettings,
-  setPaymentRecordsOpen,
-  useSettingsDialog,
-  type SettingsSection,
-} from './settingsDialogState.js'
-import { PaymentRecordsDialog } from './PaymentRecordsDialog.js'
-import { PurchaseRecordsDialog } from './PurchaseRecordsDialog.js'
-import { PaymentTrailDialog } from './PaymentTrailDialog.js'
+import { closeSettings, useSettingsDialog, type SettingsSection } from './settingsDialogState.js'
+import { AccountConsumePage } from '../consume/AccountConsumePage.js'
 import { MOTION_EXIT, usePresence } from '../../utils/usePresence.js'
 import styles from './Settings.module.css'
 
@@ -101,17 +96,16 @@ const SettingsContent = ({ visible }: { visible: boolean }) => {
   const historyDelete = useHistoryDelete()
   // 反馈弹窗：integrity=true 表示从「检查日志完整性」进入，自检面板默认展开
   const [feedback, setFeedback] = useState({ open: false, integrity: false })
-  // 「我的购买」弹层开合（Issue #158）：只在本组件内用，不需要跨模块共享状态
-  const [purchasesOpen, setPurchasesOpen] = useState(false)
-  // 「支付记录」时间线弹层（Issue #189）：只有自有渠道（kind === 'ours'）才挂这条入口，
-  // 别的渠道没有自己的订单与卡密，露出来只会点进一个空页（同 #166 的门禁思路）。
-  // 支付记录时间线弹层开合（#189）：与上面两格同一份渠道判定
-  const [trailOpen, setTrailOpen] = useState(false)
+  /**
+   *「账户与消费」页开合（#482 三弹层合一 / #487 W1-C1）。
+   *
+   * 原来这里是三份独立开关（付款记录 #115 / 我的购买 #158 / 支付记录时间线 #189），
+   * 三个入口指向三个弹层，同一个「我的钱花哪儿了」要靠三个页面拼出来。合并后只剩这一个。
+   */
+  const [accountConsumeOpen, setAccountConsumeOpen] = useState(false)
   const replacingHistory = useChatStore((state) => state.importingHistory)
   // 自有渠道判定：付款记录 / 我的购买两格（以及它们在下面的弹层）只在这条渠道下存在（#166）
   const oursChannel = useIsOursChannel()
-  // 付款记录弹层开合：引用「我们的渠道」那套同层叠放（zIndex 由弹层自己抬高）
-  const paymentRecordsOpen = useSettingsDialog((state) => state.paymentRecordsOpen)
   const historyBusy = historyImport.busy || historyDelete.busy || replacingHistory
   // 覆盖确认 / 删除确认叠在设置之上时，设置层的 X 与点击遮罩一律不可用：
   // 那层遮罩是全屏的，第一次点击只会落到上层的「取消」上，用户会以为 X 坏了、
@@ -168,60 +162,26 @@ const SettingsContent = ({ visible }: { visible: boolean }) => {
               <ChatBackgroundField />
               <ImportHistory historyImport={historyImport} disabled={historyBusy} />
               <ExportHistory disabled={historyBusy} />
-              {/* 付款记录（#115）/ 我的购买（#158）/ 支付记录时间线（#189）：只读历史，刷新不产生新订单。
-                  三格都只在自有渠道下有意义（#166）：判定与上面 <OursServicesRow /> 是同一份
-                  （apiConfig.useIsOursChannel），第三方 / 自定义地址下整块不渲染，别在这里再写一份。 */}
+              {/* 账户与消费（#482 三弹层合一 / #487 W1-C1）：付款记录 + 我的购买 + 支付记录时间线
+                  三个入口合并成一格，点开是同一个四 tab 页面（我的卡密 / 购买 / 我的额度 / 账号）。
+                  仍然只在自有渠道下出现：卡密与套餐来自 apia，别的渠道没有自己的订单（#166）。 */}
               {oursChannel ? (
-                <>
-                  <SettingCell
-                    label={t('oursPayRecordsTitle')}
-                    description={t('oursPayRecordsEntryDescription')}
-                    status={null}
-                    action={
-                      <Button
-                        variant="outlined"
-                        size="m"
-                        className={styles.cellButton}
-                        data-testid="payment-records-open"
-                        onClick={() => setPaymentRecordsOpen(true)}
-                      >
-                        {t('oursPayRecordsEntryAction')}
-                      </Button>
-                    }
-                  />
-                  <SettingCell
-                    label={t('oursPurchasesTitle')}
-                    description={t('oursPurchasesEntryDescription')}
-                    status={null}
-                    action={
-                      <Button
-                        variant="outlined"
-                        size="m"
-                        className={styles.cellButton}
-                        data-testid="purchases-open"
-                        onClick={() => setPurchasesOpen(true)}
-                      >
-                        {t('oursPurchasesEntryAction')}
-                      </Button>
-                    }
-                  />
-                  <SettingCell
-                    label={t('oursTrailTitle')}
-                    description={t('oursTrailEntryDescription')}
-                    status={null}
-                    action={
-                      <Button
-                        variant="outlined"
-                        size="m"
-                        className={styles.cellButton}
-                        data-testid="payment-trail-open"
-                        onClick={() => setTrailOpen(true)}
-                      >
-                        {t('oursTrailEntry')}
-                      </Button>
-                    }
-                  />
-                </>
+                <SettingCell
+                  label={t('accountConsumeTitle')}
+                  description={t('accountConsumeEntryDescription')}
+                  status={null}
+                  action={
+                    <Button
+                      variant="outlined"
+                      size="m"
+                      className={styles.cellButton}
+                      data-testid="account-consume-open"
+                      onClick={() => setAccountConsumeOpen(true)}
+                    >
+                      {t('oursPayRecordsEntryAction')}
+                    </Button>
+                  }
+                />
               ) : null}
               <SettingCell
                 label={t('feedbackCellLabel')}
@@ -273,15 +233,10 @@ const SettingsContent = ({ visible }: { visible: boolean }) => {
       </Modal>
       {historyImport.source ? <ImportConfirm historyImport={historyImport} /> : null}
       {historyDelete.opened ? <DeleteAllConfirm historyDelete={historyDelete} /> : null}
-      {oursChannel && paymentRecordsOpen ? (
-        <PaymentRecordsDialog onClose={() => setPaymentRecordsOpen(false)} />
+      {/* 账户与消费（#487 W1-C1）：一个页面四个 tab，zIndex 由页面自己抬高到设置层之上 */}
+      {oursChannel && accountConsumeOpen ? (
+        <AccountConsumePage onClose={() => setAccountConsumeOpen(false)} />
       ) : null}
-      {/* 「我的购买」（#158）：分页 / 筛选 / 卡片动作，叠放层级与付款记录一致 */}
-      {oursChannel && purchasesOpen ? (
-        <PurchaseRecordsDialog onClose={() => setPurchasesOpen(false)} />
-      ) : null}
-      {/* 「支付记录」时间线（#189）：订单 + 卡密全程；入口已按渠道门禁，弹层内部再兜一次 */}
-      {oursChannel && trailOpen ? <PaymentTrailDialog onClose={() => setTrailOpen(false)} /> : null}
       <FeedbackDialog
         open={feedback.open}
         integrity={feedback.integrity}
@@ -442,8 +397,18 @@ const TtsVoiceSetting = () => {
   )
 }
 
+/** 导入方式三选一（#390）：默认合并，整包覆盖是破坏性的那一项。 */
+const importModeOptions: { value: ImportMode; label: TranslationKey; hint: TranslationKey }[] = [
+  { value: 'merge', label: 'historyImportModeMerge', hint: 'historyImportModeMergeHint' },
+  { value: 'skip', label: 'historyImportModeSkip', hint: 'historyImportModeSkipHint' },
+  { value: 'overwrite', label: 'historyImportModeOverwrite', hint: 'historyImportModeOverwriteHint' },
+]
+
 /**
- * 覆盖导入的二次确认，叠在设置弹窗上。
+ * 导入确认，叠在设置弹窗上：**先选导入方式**（合并 / 跳过已存在 / 整包覆盖），再确认。
+ *
+ * 整包覆盖要保持「二次确认」：选中它之后主按钮换成「确认覆盖导入」，且必须再勾一次
+ * 「本地现有 N 条会话将被清除」才可点 —— 一次点击走不到清空数据那一步。
  * 链接导入在这一步之后还要下载 → 解析 → 导入，全程不关闭弹窗：
  * 逐阶段显示「已下载 8.4MB/20.2MB（42%）」这类真实进度，任何时候都能取消。
  */
@@ -455,6 +420,11 @@ const ImportConfirm = ({
   const t = useTranslate()
   const progress = historyImport.progress
   const percent = progressPercent(progress)
+  const localSessions = useChatStore((state) => state.sessions.length)
+  const overwrite = historyImport.mode === 'overwrite'
+  // 整包覆盖：本地确实有会话时必须显式勾选，勾选前主按钮不可点（二次确认）。
+  const needsAcknowledgement = overwrite && localSessions > 0
+  const canConfirm = progress === null && (!needsAcknowledgement || historyImport.acknowledged)
   return (
     <Modal
       title={t('historyImportConfirmTitle')}
@@ -466,19 +436,83 @@ const ImportConfirm = ({
             {t('cancel')}
           </Button>
           <Button
-            variant="dangerOutlined"
+            variant={overwrite ? 'danger' : 'dangerOutlined'}
             size="m"
-            disabled={progress !== null}
+            disabled={!canConfirm}
             onClick={() => void historyImport.confirm()}
           >
-            {t(progress === null ? 'historyImportConfirm' : 'historyImportUrlDownloading')}
+            {t(
+              progress !== null
+                ? 'historyImportUrlDownloading'
+                : overwrite
+                  ? 'historyImportConfirmOverwrite'
+                  : 'historyImportConfirm'
+            )}
           </Button>
         </>
       }
     >
       <div className={styles.importConfirmText}>
         {progress === null ? (
-          t('historyImportConfirmDescription')
+          <>
+            <div className={styles.description}>{t('historyImportConfirmDescription')}</div>
+            <div
+              role="radiogroup"
+              aria-label={t('historyImportModeLabel')}
+              className={styles.importModeGroup}
+            >
+              {importModeOptions.map((option) => {
+                const selected = historyImport.mode === option.value
+                return (
+                  <button
+                    key={option.value}
+                    type="button"
+                    role="radio"
+                    aria-checked={selected}
+                    data-import-mode={option.value}
+                    className={clsx(styles.importMode, selected && styles.importModeSelected)}
+                    onClick={() => historyImport.setMode(option.value)}
+                  >
+                    <span
+                      className={clsx(
+                        styles.importModeRadio,
+                        selected && styles.importModeRadioOn
+                      )}
+                      aria-hidden="true"
+                    />
+                    <span className={styles.importModeText}>
+                      <span
+                        className={clsx(
+                          styles.importModeTitle,
+                          option.value === 'overwrite' && styles.importModeDanger
+                        )}
+                      >
+                        {t(option.label)}
+                      </span>
+                      <span className={styles.importModeHint}>
+                        {t(option.hint, { count: localSessions })}
+                      </span>
+                    </span>
+                  </button>
+                )
+              })}
+            </div>
+            {needsAcknowledgement ? (
+              <label className={styles.importModeAcknowledgement}>
+                <input
+                  type="checkbox"
+                  checked={historyImport.acknowledged}
+                  onChange={(event) => historyImport.setAcknowledged(event.currentTarget.checked)}
+                />
+                <span className={styles.importModeDanger}>
+                  {t('historyImportOverwriteAcknowledge', { count: localSessions })}
+                </span>
+              </label>
+            ) : null}
+            <div className={clsx(styles.description, styles.importModeConflictRule)}>
+              {t('historyImportConflictRule')}
+            </div>
+          </>
         ) : (
           <div className={styles.progressBlock}>
             <div className={styles.progressLabel}>{progressLabel(t, progress)}</div>
@@ -549,8 +583,13 @@ const ThemeSetting = () => {
   )
 }
 
-/** `reason` 为失败原因的文案 key，展示时按当前语言翻译后填入 `message` 参数。 */
-type Status = (TranslationMessage & { error?: boolean; reason?: TranslationKey }) | null
+/**
+ * `reason` 为失败原因的文案 key，展示时按当前语言翻译后填入 `message` 参数；
+ * `detail` 是紧跟在主文案后面的补充（#390：增量导入的「新增 / 覆盖 / 跳过」明细）。
+ */
+type Status =
+  | (TranslationMessage & { error?: boolean; reason?: TranslationKey; detail?: TranslationMessage })
+  | null
 
 /** 导入状态带来源：文件导入的提示只显示在「导入历史对话」行，链接导入只显示在「从链接导入」行。 */
 type ImportStatus = { target: 'file' | 'url'; message: Status }
@@ -568,10 +607,10 @@ const errorStatus = (key: TranslationKey, error: unknown): Status => ({
 const statusText = (t: ReturnType<typeof useTranslate>, status: Status): string =>
   status === null
     ? ''
-    : t(status.key, {
+    : `${t(status.key, {
         ...status.params,
         ...(status.reason ? { message: t(status.reason, status.params) } : {}),
-      })
+      })}${status.detail ? t(status.detail.key, status.detail.params) : ''}`
 
 /** 说明文字：有状态就显示状态（失败标红），否则显示静态说明。 */
 const CellText = ({ status, description }: { status: Status; description?: string }) => {
@@ -841,18 +880,22 @@ const SettingCell = ({
   description,
   status,
   action,
+  extra,
   className,
 }: {
   label: string
   description?: string
   status: Status
   action: ReactNode
+  /** 说明位下方的附加内容（导出进度条，见 #336 §1）。 */
+  extra?: ReactNode
   className?: string
 }) => (
   <div className={clsx(styles.cell, styles.row, className)}>
     <div className={styles.text}>
       <div className={styles.label}>{label}</div>
       <CellText status={status} description={description} />
+      {extra}
     </div>
     <div className={styles.cellActions}>{action}</div>
   </div>
@@ -908,18 +951,23 @@ const urlErrorStatus = (error: unknown): Status =>
       }
 
 /**
- * 导入状态：选中来源后先提示覆盖，确认后才真正导入。
+ * 导入状态：选中来源后先选导入方式（默认合并），确认后才真正导入。
  * 链接导入多一段「分阶段进度」：下载（字节/百分比）→ 解析 → 导入 n/总数；
  * 进度节流 100ms，取消后界面上立刻回到可重试状态（下载结果被丢弃，不写任何数据）。
  */
 const useHistoryImport = () => {
   const [source, setSource] = useState<ImportSource | null>(null)
+  /** #390：导入方式三选一，默认 merge（保留本地会话，最安全）；整包覆盖必须再勾一次确认。 */
+  const [mode, setMode] = useState<ImportMode>('merge')
+  const [acknowledged, setAcknowledged] = useState(false)
   const [busy, setBusy] = useState(false)
   const [progress, setProgress] = useState<UrlImportProgress | null>(null)
   const [trace, setTrace] = useState<ImportTraceEntry[]>([])
   const [status, setStatus] = useState<ImportStatus | null>(null)
   // #49：这一次导入里被丢掉的条目（损坏的消息 / 整会话）。成功提示要带上条数，明细列在下面。
   const [skipped, setSkipped] = useState<ImportSkip[]>([])
+  // #390：这一次导入的结果摘要（模式 + 新增/覆盖/跳过 + 被跳过的会话标题），用于结果明细。
+  const [summary, setSummary] = useState<HistoryImportSummary | null>(null)
   const [url, setUrl] = useState('')
   const importing = useRef(false)
   // 取消后仍可能有已发出的下载在跑：用自增的 run 标记作废旧结果，不影响新的一轮导入。
@@ -963,20 +1011,21 @@ const useHistoryImport = () => {
     }
   }
 
-  const importFile = async (file: File) => {
+  const importFile = async (file: File, mode: ImportMode) => {
     try {
-      const count = await importHistory(file)
+      const result = await importHistory(file, { mode })
       // 条数与明细都取自 store：importArchive 把跳过条目交回 store.importSkipped，这里只负责显示。
       const dropped = useChatStore.getState().importSkipped
       setSkipped(dropped)
-      setStatus({ target: 'file', message: importedMessage(count, dropped.length) })
+      setSummary(result)
+      setStatus({ target: 'file', message: importedMessage(result, dropped.length) })
     } catch {
       setStatus({ target: 'file', message: { key: 'historyImportFailed', error: true } })
     }
   }
 
   /** 下载 + 解析 + 导入；取消后 (signal.aborted) 不提示、不写入。 */
-  const importLink = async (link: string) => {
+  const importLink = async (link: string, mode: ImportMode) => {
     const controller = new AbortController()
     abort.current = controller
     setTrace([])
@@ -984,13 +1033,17 @@ const useHistoryImport = () => {
     try {
       const count = await importHistoryFromUrl(link, {
         signal: controller.signal,
+        mode,
         onProgress: emitProgress,
         onTrace: pushTrace,
       })
       const dropped = useChatStore.getState().importSkipped
       setSource(null)
       setSkipped(dropped)
-      setStatus({ target: 'url', message: importedMessage(count, dropped.length) })
+      // 结果摘要（含合并明细）由 store 带出来；链接导入返回的仍然只是写入条数，作为兜底。
+      const result = useChatStore.getState().importSummary ?? summaryFromCount(count)
+      setSummary(result)
+      setStatus({ target: 'url', message: importedMessage(result, dropped.length) })
     } catch (error) {
       if (controller.signal.aborted || error instanceof UrlImportCancelled) {
         // 取消：不提示失败，界面上什么错误都不留。
@@ -1012,17 +1065,25 @@ const useHistoryImport = () => {
     setBusy(true)
     setStatus(null)
     setSkipped([])
+    setSummary(null)
     try {
       if (source.kind === 'file') {
         setSource(null)
-        await importFile(source.file)
+        await importFile(source.file, mode)
       } else {
-        await importLink(source.url)
+        await importLink(source.url, mode)
       }
     } finally {
       abort.current = null
       finish(id)
     }
+  }
+
+  /** 换一个来源就回到默认方式：上一次勾的「整包覆盖」不该带到下一次导入上。 */
+  const chooseSource = (next: ImportSource) => {
+    setMode('merge')
+    setAcknowledged(false)
+    setSource(next)
   }
 
   /** 取消：关闭弹窗并丢弃结果（CapacitorHttp 不能 abort，只能不发新块、不再采用它的返回值）。 */
@@ -1034,6 +1095,7 @@ const useHistoryImport = () => {
     resetProgress()
     setBusy(false)
     setSource(null)
+    setAcknowledged(false)
   }
 
   /** 重试：从当前链接重新走一遍完整流程（下载 → 解析 → 导入）。 */
@@ -1052,10 +1114,15 @@ const useHistoryImport = () => {
     trace,
     status,
     skipped,
+    summary,
     url,
     setUrl,
-    selectFile: (file: File) => setSource({ kind: 'file', file }),
-    selectUrl: () => setSource({ kind: 'url', url }),
+    mode,
+    setMode,
+    acknowledged,
+    setAcknowledged,
+    selectFile: (file: File) => chooseSource({ kind: 'file', file }),
+    selectUrl: () => chooseSource({ kind: 'url', url }),
     cancel,
     retry,
     confirm,
@@ -1124,6 +1191,18 @@ const ImportHistory = ({
           </>
         }
       />
+      {historyImport.status?.target === 'file' &&
+      historyImport.summary !== null &&
+      historyImport.summary.skippedTitles.length > 0 ? (
+        // #390：增量导入里被「保留本地版本」的会话，逐条列出来，别让用户以为它们没进包。
+        <div className={clsx(styles.cell, styles.row)}>
+          <div className={styles.text}>
+            <div className={styles.importConflictSkipped}>
+              {t('historyImportConflictSkippedTitle')}：{historyImport.summary.skippedTitles.join('、')}
+            </div>
+          </div>
+        </div>
+      ) : null}
       {historyImport.status?.target === 'file' && historyImport.skipped.length > 0 ? (
         // #49：跳过了什么、为什么，摊开在导入这一项下面，不藏在折叠里
         <div className={clsx(styles.cell, styles.row)}>
@@ -1217,9 +1296,13 @@ const ImportHistoryUrl = ({
   )
 }
 
+/** 空历史时的说明（#336 §2）：按钮灰着不说原因，用户分不清「点不动」和「点了没产出」。 */
+const emptyExportStatus: Status = { key: 'historyExportEmptyNoSessions' }
+
 /**
  * 原生保存出口的失败码 → 人话文案：Java 侧 reject 的 message 是中文，
  * 英文界面直接透传就成了「English UI + 中文原因」。认得的码走对应文案，认不得的仍透传错误原文。
+ * （导出上限走的是 `BackupError('historyExportTooLarge')`，由 errorStatus 的 reason 位带出，不在这里。）
  */
 const exportErrorKey = (error: unknown): TranslationKey => {
   const code = (error as { code?: string })?.code
@@ -1235,23 +1318,35 @@ const exportErrorKey = (error: unknown): TranslationKey => {
 /**
  * 将全部会话及图片导出为 ZIP 文件。
  * 落盘出口与「反馈日志导出」共用 `services/exportText.ts`：Android 走 ExportText 原生桥
- * （SAF 面板选位置，可取消），Web 走 Blob 下载 —— WebView 里 `<a download>` 不会产生文件。
+ * （SAF 面板选位置，可取消），Web 走 Blob 下载 —— WebView 里 `<a download>` 不会产生文件（#307）。
  */
 const ExportHistory = ({ disabled }: { disabled: boolean }) => {
   const t = useTranslate()
-  const empty = useChatStore((state) => state.sessions.length === 0)
-  const [busy, setBusy] = useState(false)
+  const total = useChatStore((state) => state.sessions.length)
+  const empty = total === 0
+  // 导出中 = 有进度对象；用它代替原来的 busy 布尔，省掉两个状态可能打架的一格。
+  const [progress, setProgress] = useState<ExportProgress | null>(null)
   const [status, setStatus] = useState<Status>(null)
-  // 空历史时按钮是灰的，但不给原因（#336）：用户看到的是「点不动」，与 #307 的「点了没产出」分不清。
-  // 原因复用说明位（CellText 有 status 就不显示 description，两者不会叠），导出状态优先，
-  // 别把「已保存 / 失败原因」压成一句「没有可导出的对话」。
-  const emptyReason: Status = empty ? { key: 'historyExportEmptyNoSessions' } : null
+  // 进度节流：打包回调是每条会话一次，500 条会话就 500 次 setState，没必要。
+  const lastPaint = useRef(0)
+  const onProgress = (next: ExportProgress) => {
+    const now = Date.now()
+    if (next.exported < next.total && now - lastPaint.current < PROGRESS_MIN_INTERVAL_MS) {
+      return
+    }
+    lastPaint.current = now
+    setProgress(next)
+  }
 
   const onExport = async () => {
-    setBusy(true)
     setStatus(null)
+    lastPaint.current = 0
+    // 先立起 0/N：按钮立刻变成「导出中…」，而不是等第一条会话打完才有反馈。
+    setProgress({ exported: 0, total })
     try {
-      const { name, blob } = await exportHistory()
+      const { name, blob } = await exportHistory({ onProgress })
+      // 打包完成（进度已到 N/N），剩下的就是一次落盘：交给原生 SAF / Web 下载出口。
+      setProgress(null)
       const result = await saveBlobFile({ filename: name, mimeType: 'application/zip', blob })
       // 用户在选择位置的面板上点了取消：既不是成功也不是失败，界面回到「可以再点一次」的状态。
       setStatus(
@@ -1262,7 +1357,7 @@ const ExportHistory = ({ disabled }: { disabled: boolean }) => {
     } catch (error) {
       setStatus(errorStatus(exportErrorKey(error), error))
     } finally {
-      setBusy(false)
+      setProgress(null)
     }
   }
 
@@ -1270,17 +1365,39 @@ const ExportHistory = ({ disabled }: { disabled: boolean }) => {
     <SettingCell
       label={t('exportAllLabel')}
       description={t('historyExportDescription')}
-      status={status ?? emptyReason}
+      status={progress ? null : (status ?? (empty ? emptyExportStatus : null))}
+      extra={
+        progress ? (
+          <div className={styles.progressBlock}>
+            <div className={styles.progressLabel}>
+              {t('historyExportProgress', {
+                exported: progress.exported,
+                total: progress.total,
+              })}
+            </div>
+            <div className={styles.progressTrack}>
+              <div
+                className={styles.progressFill}
+                style={{
+                  transform: `scaleX(${
+                    progress.total > 0 ? Math.min(1, progress.exported / progress.total) : 0
+                  })`,
+                }}
+              />
+            </div>
+          </div>
+        ) : null
+      }
       action={
         <Button
           variant="outlined"
           size="m"
           className={styles.cellButton}
-          disabled={disabled || busy || empty}
+          disabled={disabled || progress !== null || empty}
           onClick={() => void onExport()}
         >
           <IconDownloadOutline16 />
-          {t('exportAllDownload')}
+          {t(progress ? 'historyExporting' : 'exportAllDownload')}
         </Button>
       }
     />

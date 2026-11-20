@@ -15,59 +15,13 @@
 //   [5] i18n：中英都有一对一的 key，且没有改动既有 key
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { registerHooks } from 'node:module'
+import { installChatEnv, installEndpointsGlobals } from '../helpers/dom-env.mjs'
 
-const stub = (name) => new URL(`../fixtures/chat-stubs/${name}`, import.meta.url).href
-
-const fakeDB = `data:text/javascript,${encodeURIComponent(`
-export const loadSessionSummaries = async () => []
-export const loadSession = async () => undefined
-export const saveSession = async () => {}
-export const saveFiles = async () => {}
-export const loadFile = async () => undefined
-export const deleteSession = async () => {}
-export const pinSession = async () => {}
-export const renameSession = async () => {}
-export const clearStaging = async () => {}
-export const addStagingSession = async () => {}
-export const saveStagingFiles = async () => {}
-export const updateStagingFileTypes = async () => {}
-export const commitStaging = async () => []
-export const reportStorageError = () => () => {}
-export const loadAppAsset = async () => undefined
-export const saveAppAsset = async () => {}
-export const deleteAppAsset = async () => {}
-`)}`
-
-const collectorStub = `data:text/javascript,${encodeURIComponent(`
-export * from '${stub('collector.mjs')}'
-export const recordError = (message, fields = {}) => {
-  globalThis.__log.records.push({ kind: 'error', level: 'error', message, fields })
-}
-`)}`
-
-registerHooks({
-  resolve(specifier, context, nextResolve) {
-    if (specifier === '@capacitor/core') {
-      return { url: stub('capacitor.mjs'), shortCircuit: true }
-    }
-    if (/diagnostics\/collector\.js$/.test(specifier)) {
-      return { url: collectorStub, shortCircuit: true }
-    }
-    try {
-      return nextResolve(specifier, context)
-    } catch (error) {
-      const parent = String(context.parentURL ?? '')
-      if (specifier === './db.js' && parent.endsWith('/chat/store.ts')) {
-        return { url: fakeDB, shortCircuit: true }
-      }
-      if (specifier.startsWith('.') && specifier.endsWith('.js')) {
-        return nextResolve(`${specifier.slice(0, -3)}.ts`, context)
-      }
-      throw error
-    }
-  },
-})
+// 装配走公共入口（#366 第二批 / #408）：原生桥 + 诊断写入口 + 「只有 chat/store.ts 的 ./db.js 才是假库」这条按父模块的规则，
+// 都收在 installChatEnv 里。以前这段是本文件手抄的 41 行样板，chat 一族 5 个文件各一份。
+const { stub } = installChatEnv()
+// 构建期注入值（`__ENDPOINTS__`）不在 `installChatEnv` 里：单跑本文件（不经 run-layer 的 `--import` 预加载）要自己挂，否则 import `api/providers.ts` 顶层读它就 ReferenceError
+installEndpointsGlobals({ apiOrigin: 'https://api.test.invalid', internalBuild: true, resetLogRecords: false })
 
 globalThis.__API_ORIGIN__ = 'https://api.test.invalid'
 globalThis.INTERNAL_BUILD = false
@@ -199,13 +153,21 @@ test('文案：上下文超限的提示必须和「未知错误」兜底不同�
   assert.ok(limitNotice && otherNotice)
   assert.equal(limitNotice.text, limitText, `界面上应给上下文超限文案，实际：${limitNotice.text}`)
   // #324：无关的 400 现在有明确档位（参数错误），不再落到「未知错误」兜底
-  assert.equal(otherNotice.text, zh.replyBadRequest, `无关 400 应走参数错误文案，实际：${otherNotice.text}`)
+  // #347：这一档的文案改成带 HTTP 状态码 + 上游点名的字段（这句原文里的 `temperature`）
+  const paramCopy = zh.replyParamInvalid
+    .replace('{status}', 'HTTP 400')
+    .replace('{field}', 'temperature')
+  assert.equal(otherNotice.text, paramCopy, `无关 400 应走参数错误文案，实际：${otherNotice.text}`)
+  assert.match(otherNotice.text, /HTTP 400/, '状态码要摆到界面上（#347）')
+  assert.match(otherNotice.text, /temperature/, '上游点名了字段：文案要带出来（#347 / #353）')
+  assert.equal(otherNotice.action, 'settings', '参数错误要给出「打开设置」入口（#347 / #353）')
   assert.notEqual(otherNotice.text, unknownText, '普通 400 不该再被说成「未知错误」')
   assert.notEqual(limitNotice.text, otherNotice.text, '两种失败的措辞必须能区分')
-  // 英文原文不许直接丢给用户
+  // 英文原文不许直接丢给用户（只在折叠区里，用户主动展开才看到）
   assert.ok(!/maximum context length/i.test(limitNotice.text), '上游英文原文不该出现在界面文案里')
+  assert.ok(!/temperature must be/i.test(otherNotice.text), '英文原文同样不许进主文案')
   log(`  超限文案：${limitText}`)
-  log(`  普通 400 文案：${zh.replyBadRequest}（「未知错误」只留给真未知：${unknownText}）`)
+  log(`  普通 400 文案：${paramCopy}（「未知错误」只留给真未知：${unknownText}）`)
 })
 
 test('文案：413 也走同一句可操作提示，不是「超大文件」那套', () => {

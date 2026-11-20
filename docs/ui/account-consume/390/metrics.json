@@ -1,0 +1,60 @@
+{
+  "page": "account-consume",
+  "title": "#487 设置 → 数据管理 → 账户与消费：我的卡密（未兑换 / 已兑换 / 复制 / 兑换结果）/ 购买（套餐 / 收款页）/ 我的额度 / 账号 四个 tab（390 与 360 两档）",
+  "viewport": 390,
+  "size": "390×844",
+  "shots": [
+    "docs/ui/account-consume/390/account-consume-01-my-cards-390.png",
+    "docs/ui/account-consume/390/account-consume-02-redeem-result-390.png",
+    "docs/ui/account-consume/390/account-consume-03-buy-plans-390.png",
+    "docs/ui/account-consume/390/account-consume-04-buy-open-unavailable-390.png",
+    "docs/ui/account-consume/390/account-consume-05-quota-panel-390.png",
+    "docs/ui/account-consume/390/account-consume-06-account-panel-390.png"
+  ],
+  "notes": [],
+  "layout": {
+    "tabs": [
+      {
+        "w": 73,
+        "h": 34,
+        "top": 247
+      },
+      {
+        "w": 73,
+        "h": 34,
+        "top": 247
+      },
+      {
+        "w": 73,
+        "h": 34,
+        "top": 247
+      },
+      {
+        "w": 73,
+        "h": 34,
+        "top": 247
+      }
+    ],
+    "tabRows": 1,
+    "panelRight": 350,
+    "viewport": 390,
+    "scrollWidth": 390
+  },
+  "cards": {
+    "count": 2,
+    "rows": [
+      "••••A3SR 尚未兑换 标准包 500万 token 2026-11-19 复制卡密 去兑换",
+      "••••Q7ZM 已兑换 体验包 100万 token 2026-11-18 复制卡密 去兑换"
+    ]
+  },
+  "redeemStatus": {
+    "text": "当前版本不支持这个功能，请更新到最新版本"
+  },
+  "buyPlans": {
+    "count": 2
+  },
+  "buyOpen": {
+    "text": "没能在 App 内打开收款页，请稍后再试 重试"
+  },
+  "consoleErrors": []
+}

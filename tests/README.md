@@ -8,12 +8,17 @@
 tests/
 ├── unit/          1 个：纯逻辑，零浏览器，毫秒级
 ├── integration/  18 个：浏览器 + mock 上游（或自建静态服务），分钟级
+├── regression/   11 个：按 Issue 编号的回归（纯 Node，无浏览器/无网络），合计 ~3.5s
 ├── e2e/           2 个：真上游 + 真 UI（要 API Key）/ 真实反馈后端
 ├── device/        1 个：Android 模拟器或真机（adb）
-├── fixtures/      mock 服务与样本数据（不是测试，被上面引用）
-├── helpers/       共享 Playwright 步骤
+├── golden/         4 个：黄金回归——每域 1 条主路径，真 dist + stub 后端，合计 ~6s（#404）
+├── fixtures/      mock 服务与样本数据（不是测试，被上面引用）；**根目录只放目录不放假夹**：
+│                  按域分 `fixtures/<域>/`（domain01-02 / domain03-04 / … / domain10），
+│                  外加三类跨域替身目录 chat-stubs / url-import-stubs / import-archive-stubs（#408）
+├── helpers/       共享装配：单元层 dom-env.mjs（.js→.ts + 替身），集成层 runtime/env/ports，黄金层 golden.mjs
 ├── tools/         手工用的一次性脚本（不是测试，不参与分层执行）
-└── run-layer.mjs  分层 runner（本文件是唯一入口）
+├── run-layer.mjs  分层 runner（串行；本文件是唯一入口）
+└── run-golden.mjs 黄金层 runner（并行；`pnpm test:golden`，与 run-layer 并列的第二个入口）
 ```
 
 ---
@@ -23,6 +28,8 @@ tests/
 - 开发各用独立 worktree/分支；先检查目录和分支不存在，再从已确认的 `origin/main` 建立。worktree 隔离文件与索引，**不隔离 CPU、内存、端口、浏览器或 pnpm store**。UI/clipboard 工作期间只跑下面的轻量 fixture，别启动全仓并发。
 - 发布使用固定 commit 的独立工作树和私有产物目录，记录 commit、构建类型、构建参数、产物哈希；不要把正在开发的工作树或共享 `dist/` 当发布源。标准/内测产物分开且只读复用，路径本身不证明版本或构建类型。
 - 本轮审计定位的重复编译热点：`diagnostics-contract` 原先每次强制 rspack build；`auto-title` 缺标准包时隐式 build，且输出硬编码。仅改这两套：注入 `STANDARD_DIST_DIR`（auto-title 也接受 `DIST_DIR`），contract 的 `DIST_DIR` 指内测包；缺 `index.html` 立即失败，**不自动 rebuild**。需要构建时先向协作者报告，再由产物拥有者单次构建、记录固定 commit；本轮没有构建。
+- 单元层（L0）的装配只有一个入口（#366）：`tests/helpers/dom-env.mjs` —— `installTsResolve({ stubs })`（`.js→.ts` 解析 + 模块替身）、`loadTsModule('src/…')`（动态加载源码）、`setupDom()`（localStorage / document / window / rAF 的最小替身）。**新用例不要再自己抄 `registerHooks` / `asTypescript`**：仓库里 90 个文件各抄过一份，合计约 3000 行样板。样板见 `openai-adapter` / `chat-context-budget-long-session` / `import-error-copy` / `import-network-classification` / `import-unreachable-copy`。
+- 单元层（L0）现在**一进程跑一批**（#366 第二批）：`tests/run-layer.mjs unit` 按「夹具家族」把相邻文件分成批次，一个进程内顺序跑完一批（149 个文件 → 33 个进程、L0 墙钟 82s → ~18s）。三条约束保证等价：① 一个文件 import 完、它的用例全部跑完，才 import 下一个（`tests/helpers/merged-entry.mjs`：不用 `node:test` 的 `run({isolation:'none'})` —— 它先把整批文件都 import 一遍，模块级装配会互相覆盖）；② 每个文件前后对 `globalThis` 做快照/还原，文件间的 `localStorage`/`document`/`__xxx` 开关不互相污染；③ 批次里一旦有红，就按**单文件进程**重跑这批里的红文件，结果以单文件为准（合并只允许「更快」，不允许改变判定）。新增用例放 `tests/unit/` 即可自动进批；**要独占进程**的（起子进程、真计时窗口、要 APP_URL/DIST_DIR 注入、自收摊脚本）登记进 `tests/run-layer.mjs` 的 `UNIT_SOLO`。车道数默认取 **min(本机核数（上限 4）, 内存预算)**（#487：每车道按 320 MB 估、给宿主预留 768 MB，可用内存不够就自动压车道并在终端写明理由），`--jobs N` 或 `TEST_JOBS=N` 可覆盖；怀疑并发把某条计时用例挤红时先用 `TEST_JOBS=1` 复跑。**批次进程没跑完（OOM / 被信号杀掉 / 超时）不再判红**：主队列排空后整批独占串行重跑（子进程堆上限 `TEST_CHILD_HEAP_MB`，默认按可用内存算），能过就记 `PASS(degraded)` 并在 summary 里单列 —— 降级必须留痕；串行仍崩才判真失败，并打印真实 stderr 与死因分类（`oom` / `killed` / `signal` / `exit`）。
 - 两套 suite 改用共享静态服务 helper：`listen(0)` 原子分配 loopback 端口，启动成功后才进入浏览器步骤；关闭自身 server 并等待完成。显式 `PORT` / `STANDARD_PORT` 仍支持，发布服务必须记录并独占所选端口。其他 suite 的固定端口、截图路径和生命周期尚未全面迁移。
 - runner 串行，每个文件默认 180 秒 deadline；`--timeout-ms` 可显式调整，超时报 TIMEOUT 和非零退出。
   **`integration/feedback-scroll` 必带 `--timeout-ms 600000`**：它串行跑 5 个触控场景、每个场景几十次 CDP 滑动，
@@ -67,16 +74,31 @@ npx playwright install chromium   # 下载浏览器（~150MB，只需一次）
 
 ```bash
 npm test                # = node tests/run-layer.mjs unit
+npm run test:regression # = node tests/run-layer.mjs regression（#368 接入；CI 接线留 #365）
 npm run test:integration
 npm run test:e2e
 npm run test:device
-npm run test:all        # unit → integration（日常/CI 就这一条）
+npm run test:golden     # = node tests/run-golden.mjs（黄金回归：每域 1 条主路径，≤5 分钟，#404）
+npm run test:all        # unit → regression → integration
+node tests/run-layer.mjs server   # = deploy/dl-release/test 那 37 条（#415 新增的层，见下）
+pnpm run test:dl-release          # 同上，直接 node --test（CI 用的就是这条）
 ```
+
+> `regression/` 这一层在 #368 之前是**死的**：既不在 `run-layer` 的 `LAYERS` 里，CI 也不引用，
+> 于是 `issue-135` 长期 import 已删除的 `startCheckout`、`issue-38`/`issue-79` 各自静默失效都没人发现。
+> 现在它进了 `LAYERS`（`node tests/run-layer.mjs regression` 可跑，11 个文件 ~3.5s），
+> CI 的自动触发点仍然留给 #365。
+>
+> `server/`（#415）是**唯一一层没有 `tests/server/` 目录**的层：`LAYER_DIRS.server` 指向
+> `deploy/dl-release/test/`（变体解析 / APK debuggable / 服务端 buildType / 上传契约矩阵 / 版本端点，37 条）。
+> 不搬家的原因是用例与被测实现同目录（`../apk-manifest.mjs`、同目录 `xmltree-fixtures/`、真 server 进程），
+> 布局门禁为此开了一条带理由的白名单条目（`scripts/check-test-layout.mjs` 的 `EXTRA_TEST_DIRS`），
+> 但白名单**不免检**：目录照样被扫，枚举不到的照判孤儿。完整取舍见 `docs/TESTING-POLICY.md` 第 12 节。
 
 `run-layer.mjs` 的用法：
 
 ```bash
-node tests/run-layer.mjs <unit|integration|e2e|device|all>
+node tests/run-layer.mjs <unit|integration|regression|server|e2e|device|all>
 node tests/run-layer.mjs integration --only motion   # 只跑文件名含 motion 的
 node tests/run-layer.mjs integration --list          # 只列出要跑哪些
 node tests/run-layer.mjs integration --bail          # 第一个失败就停
@@ -91,6 +113,8 @@ diagnostics-contract / auto-title）**不吃外部 `APP_URL`**，runner 会把 `
 | 层 | 命令 | 预计耗时 | 前置条件 |
 | --- | --- | --- | --- |
 | unit | `npm test` | < 5s | 无（不启浏览器，不需要产物） |
+| golden | `npm run test:golden` | ~6s（4 条并行，预算 5 分钟） | 标准产物 `pnpm build` + chromium；**缺产物直接红**（不像 L1 会 SKIP(env)），说明见 `tests/golden/README.md` |
+| server | `node tests/run-layer.mjs server`（= `pnpm run test:dl-release`） | ~7s（5 个文件 / 37 条） | 无（纯 Node，不启浏览器、不读产物、不要 aapt2 —— 假 aapt2 只回放文本） |
 | integration | `npm run test:integration` | 8~15 分钟（18 个文件） | `npx playwright install chromium`；**标准构建**（`pnpm build` 后把 `dist/` 挂在 `APP_URL`，默认 `http://127.0.0.1:5181`）；内测类用例还要一份**内测构建**在 `dist/`（或 `DIST_DIR` 指定） |
 | e2e | `npm run test:e2e` | 1~2 分钟 | `E2E_API_KEY`、真上游可达、`dist/` 已部署在 `E2E_APP_URL`；`diagnostics-upload` 还要能访问反馈后端 |
 | device | `npm run test:device` | 3~8 分钟 | 已启动的 AVD（`-memory 1280`）+ `adb` + 一份装好的 APK |
@@ -144,6 +168,10 @@ E2E_API_KEY=sk-xxx node tests/e2e/real-upstream.test.mjs
 5. **单文件不超过 500 行**。超了就拆文件（按场景拆），不要学 `integration/full-acceptance.test.mjs`。
 6. **自己起服务就自己收拾**：`spawn` 出来的静态服务/mock 务必在 `finally` 里 kill，端口用 `process.env.PORT || 默认值` 便于并发。
 7. **不要引入 jest/vitest/mocha**：`unit` 层用自建 `ok()` 或 `node:test` 都行，runner 两种都支持。
+8. **门禁的负向对照放 `unit/`，不要新开目录**：`tests/gates/` 只放必错输入（fixture）与四拍骨架
+   （`tests/gates/lib/gate-negative-harness.mjs`），用例本体是 `unit/gate-negative-controls.test.mjs`。
+   新开 `tests/gates/*.test.mjs` 会被 `check:test-layout` 判红（只允许五个层级目录 + 一条
+   `EXTRA_TEST_DIRS` 白名单），而且 `run-layer` 枚举不到 = 写了没人跑。规矩正文见 `docs/TESTING-POLICY.md` 第 9 / 12 节。
 
 ## 6. 常见坑
 
@@ -199,5 +227,31 @@ E2E_API_KEY=sk-xxx npm run test:e2e               # 真上游握手（发版前�
 | `tests/test.diagnostics-e2e.spec.mjs` | `tests/e2e/diagnostics-upload.test.mjs` |
 | `tests/e2e-real-upstream.spec.mjs` | `tests/e2e/real-upstream.test.mjs` |
 | `tests/run-acceptance.mjs`（36KB 巨型套件） | `tests/integration/full-acceptance.test.mjs` |
-| `tests/helpers.mjs` / `archive-fixture.mjs` / `mock-anthropic.mjs` | `tests/helpers/helpers.mjs` / `tests/fixtures/archive-fixture.mjs` / `tests/fixtures/mock-anthropic.mjs` |
+| `tests/helpers.mjs` / `archive-fixture.mjs` / `mock-anthropic.mjs` | `tests/helpers/helpers.mjs` / `tests/fixtures/domain05/archive-fixture.mjs` / `tests/fixtures/domain03-04/mock-anthropic.mjs` |
 | `tests/package.json`（自带 playwright 依赖） | 删除，依赖统一由根 `package.json` 提供 |
+
+---
+
+## 9. 单命令入口（Issue #409）
+
+日常不用记分层细节，记四条：
+
+| 命令 | 声明预算 | 跑什么 |
+| --- | --- | --- |
+| `pnpm test:fast` | ≤60s（超出 exit 1） | `tsc` + L0 快速子集 + 黄金套件 4 条主路径 |
+| `pnpm test:affected -- <改动路径...>` | 秒级~1min | 按 `tests/domain-map.json`（10 个域）挑 unit + regression + golden 并执行；`--with-integration` 才跑集成层 |
+| `pnpm test:full` | 分钟~20 分钟 | unit 全量 + regression + golden + integration（集成层 `--baseline`） |
+| `pnpm test:report` | < 2s | 生成 `docs/testing/report.md` 看板（`--measure` 重测 unit/regression/golden/gates） |
+
+本目录里跟着它们的三份数据文件（都是被脚本读的，不是手写文档）：
+
+| 文件 | 是什么 |
+| --- | --- |
+| `tests/domain-map.json` | 改动路径 glob → 用例文件 glob，10 个域（对齐 `docs/testing/coverage/domain-*.md`） |
+| `tests/fast-subset.json` | `test:fast` 排除的 20 个最慢单元文件 + 逐条理由（它们仍在 `pnpm test` / `test:full` 里跑） |
+| `tests/timing-baseline.json` | 各层上次实测耗时/用例数（只由 `test:report --measure` 写，供看板引用） |
+| `tests/test-layout-baseline.json` | 布局门禁的存量豁免清单（**只减不增**，#408 后已清空：命名 / 孤儿 / 落位 / fixture 散放全 0） |
+| `tests/test-duplication-baseline.json` | 逐字重复门禁的存量豁免清单（21 组，#408 起从 32 组降下来；新组不许进，抽掉一组删一条） |
+| `tests/test-duplication-whitelist.json` | 允许长期存在的跨层重复（必须写 reason），R1 组 / R2 topic / R3 title 三种键 |
+
+使用场景与判红口径见 `docs/TESTING-POLICY.md` 第 10 节。

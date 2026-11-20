@@ -25,7 +25,8 @@ const { buildUpdateReport, hostOf, releaseHosts } = await import(
   '../../src/services/updateReport.ts'
 )
 
-const ctx = { channel: '稳定版与预发布版', version: '1.4.0-beta.10' }
+// #373 起 channel 是双语对（渠道名要跟着文案语言走，否则英文句子里会嵌一段中文）
+const ctx = { channel: { zh: '稳定版与预发布版', en: 'Stable + pre-release' }, version: '1.4.0-beta.10' }
 const view = (error) => describeUpdateFailure(classifyUpdateError(error), ctx)
 
 test('断网 / 分发机不可达 → network，且文案说可重试', () => {
@@ -98,6 +99,65 @@ test('签名 / 校验不符 → integrity；下载中断 → download，两者�
     assert.equal(result.retryable, true, `${code} 属于传输问题`)
     assert.match(result.text, /下载未完成/)
   }
+})
+
+test('#373：integrity 下六个上游码各有各的原因，不再统一说成「大小或 SHA-256 不符」', () => {
+  // 每条码的关键词：文案必须点到它自己的真实原因（以前六条共用一句，把「包名/签名/渠道串了」说成「下载坏了」）
+  const expected = new Map([
+    ['HASH_MISMATCH', /SHA-256/],
+    ['SIZE_MISMATCH', /大小/],
+    ['SIGNATURE_MISMATCH', /签名/],
+    ['PACKAGE_MISMATCH', /包名/],
+    ['VERSION_MISMATCH', /版本号/],
+    ['VARIANT_MISMATCH', /渠道/],
+  ])
+  const texts = new Set()
+  for (const [code, pattern] of expected) {
+    const result = view(new Error(code))
+    assert.equal(result.kind, 'integrity', code)
+    assert.match(result.detail, pattern, `${code} 的文案必须点出真实原因，实际：${result.detail}`)
+    // 「大小或 SHA-256 不符」这句话只留给真正的大小 / 摘要不符
+    if (code !== 'HASH_MISMATCH' && code !== 'SIZE_MISMATCH') {
+      assert.doesNotMatch(result.detail, /大小或 SHA-256 不符/, `${code} 不该复用大小/摘要的文案`)
+    }
+    texts.add(result.detail)
+  }
+  assert.equal(texts.size, expected.size, '六个码必须有六句不同的话，不能又一次收敛成一句')
+  // 表外的 integrity 码才回落到通用那句（不猜）
+  const fallback = describeUpdateFailure(updateFailureOf('SOMETHING_INTEGRITY'), ctx)
+  assert.equal(fallback.kind, 'unknown', '表外码仍归 unknown，不许硬塞进 integrity')
+})
+
+test('#373：文案 zh/en 成对——同一个码两种语言都有，且各自是那个语言', () => {
+  const context = (locale) => ({ ...ctx, locale })
+  const hasChinese = /[\u4e00-\u9fff]/
+  for (const code of [
+    'HASH_MISMATCH',
+    'SIZE_MISMATCH',
+    'SIGNATURE_MISMATCH',
+    'PACKAGE_MISMATCH',
+    'VERSION_MISMATCH',
+    'VARIANT_MISMATCH',
+    'DOWNLOAD_INTERRUPTED',
+    'MANIFEST_NETWORK',
+    'MANIFEST_HTTP_404',
+    'INVALID_RELEASE',
+    'VARIANT_MISSING',
+    'DOWNLOAD_HTTP_BROKEN',
+  ]) {
+    const zh = describeUpdateFailure(updateFailureOf(code), context('zh'))
+    const en = describeUpdateFailure(updateFailureOf(code), context('en'))
+    assert.match(zh.text, hasChinese, `${code} 的 zh 文案里必须有中文：${zh.text}`)
+    assert.equal(hasChinese.test(en.text), false, `${code} 的 en 文案里不该出现中文：${en.text}`)
+    assert.equal(en.text, en.text.trim(), `${code} 的 en 文案首尾不该有多余空白`)
+    assert.match(en.text, /: /, `${code} 的 en 文案用「: 」连接标签与详情：${en.text}`)
+    assert.equal(zh.label.length > 0 && en.label.length > 0, true, `${code} 两种语言都要有标签`)
+    // 分类与可重试性不随语言变化（语言只决定取哪一侧文案）
+    assert.equal(zh.kind, en.kind, `${code} 的分类不该随语言变化`)
+    assert.equal(zh.retryable, en.retryable, `${code} 的可重试性不该随语言变化`)
+  }
+  // 诊断文本 / 日志一律用默认 zh：同一个 code 不传 locale 时与 zh 完全一致
+  assert.equal(describeUpdateFailure(updateFailureOf('HASH_MISMATCH'), ctx).text, view(new Error('HASH_MISMATCH')).text)
 })
 
 test('无可用版本 / 已取消 / 环境缺渠道 各有独立说法，且不冒充故障', () => {

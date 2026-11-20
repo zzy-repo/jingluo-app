@@ -29,13 +29,37 @@ const HERE = path.dirname(fileURLToPath(import.meta.url))
 const ROOT = path.resolve(HERE, '..', '..')
 const CLI = path.join(ROOT, 'scripts', 'check-capabilities.mjs')
 
-/** 跑一次 CLI，返回 { status, stdout, stderr } */
-const run = (args = [], options = {}) =>
-  spawnSync(process.execPath, [CLI, ...args], { encoding: 'utf8', cwd: ROOT, ...options })
+/**
+ * 跑一次 CLI，返回 { status, stdout, stderr }。
+ *
+ * 同一组参数在**一个进程里只真跑一次**（#366）：CLI 是纯只读扫描，一次 L0 运行期间仓库不会变，
+ * 而本文件有 3 条用例各自对真实仓库跑了一遍全量扫描（每次约 0.9s，3 次里有 2 次是同一组参数）。
+ * 缓存只影响「重复调用」，每组参数仍然真的起了一次子进程 —— 退出码、stdout、stderr 都是真进程给的。
+ */
+const RUN_CACHE = new Map()
+const run = (args = [], options = {}) => {
+  const key = JSON.stringify([args, options])
+  const cached = RUN_CACHE.get(key)
+  if (cached !== undefined) {
+    return cached
+  }
+  const result = spawnSync(process.execPath, [CLI, ...args], { encoding: 'utf8', cwd: ROOT, ...options })
+  RUN_CACHE.set(key, result)
+  return result
+}
+
+/** 同内容 = 同一份 fixture（同一个进程里没必要为相同内容再造一个临时目录，#366） */
+const FIXTURE_CACHE = new Map()
 
 /** 造一个临时仓库：只放 `src/**` 与（可选的）测量 JSON */
 const fixture = (files) => {
+  const key = JSON.stringify(files)
+  const cached = FIXTURE_CACHE.get(key)
+  if (cached !== undefined) {
+    return cached
+  }
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'check209-capabilities-'))
+  FIXTURE_CACHE.set(key, dir)
   for (const [name, content] of Object.entries(files)) {
     const full = path.join(dir, name)
     fs.mkdirSync(path.dirname(full), { recursive: true })

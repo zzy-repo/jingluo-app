@@ -53,3 +53,6 @@ dist-*/
 .dl-release-token
 dl-release-token*
 .config/dl-release/
+
+# #456：跨 runner 判定的运行记录（每个 runner/分片一份，CI 里作为 artifact 上传，不入库）
+.flaky-runs/

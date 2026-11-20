@@ -119,13 +119,15 @@ test('未超预算时原样保留全部轮次（默认预算不裁正常会话�
 })
 
 test('超预算按成对丢弃最旧轮，且不留孤立回答 / 孤立提问', () => {
+  // #345：条数闸越线后一次裁到**低水位**（floor(5 × 0.5) = 2 轮），
+  // 而不是「刚好塞满 5 轮」——后者会让裁剪边界每轮前移一格，前缀缓存永不命中。
   const messages = build(50, { budget: { maxRounds: 5 } })
-  // 5 轮 × (提问 + 回答) + 本轮提问
-  assert.equal(messages.length, 5 * 2 + 1)
-  assert.equal(messages.filter((message) => message.role === 'user').length, 6)
-  assert.equal(messages.filter((message) => message.role === 'assistant').length, 5)
-  // 保留的是最近 5 轮：第一条提问必须是第 45 轮
-  assert.match(messages[0].content, /第 45 轮提问/)
+  // 2 轮 × (提问 + 回答) + 本轮提问
+  assert.equal(messages.length, 2 * 2 + 1)
+  assert.equal(messages.filter((message) => message.role === 'user').length, 3)
+  assert.equal(messages.filter((message) => message.role === 'assistant').length, 2)
+  // 保留的是最近 2 轮：第一条提问必须是第 48 轮
+  assert.match(messages[0].content, /第 48 轮提问/)
   // 每条 assistant 前一条必须是 user，配对完整
   messages.forEach((message, index) => {
     if (message.role === 'assistant') {
@@ -151,8 +153,9 @@ test('裁剪不产生悬空的 latest_reminder 快照', () => {
   history.forEach((message, index) => {
     if (message.role === 'assistant') message.latestReminder = `第 ${index} 轮系统快照`
   })
+  // #345：4 轮闸越线 → 低水位保留 floor(4 × 0.5) = 2 轮（27、28 轮）
   const messages = toRequestMessages(history, question, undefined, false, '本轮系统快照', {
-    budget: { maxRounds: 3 },
+    budget: { maxRounds: 4 },
   })
   const reminderIndexes = messages.flatMap((message, index) =>
     message.role === 'latest_reminder' ? [index] : []
@@ -164,10 +167,10 @@ test('裁剪不产生悬空的 latest_reminder 快照', () => {
   }
   // 保留轮次的快照内容必须与保留的那一轮对得上
   const keptUsers = messages.filter((message) => message.role === 'user')
-  assert.match(keptUsers[0].content, /第 27 轮提问/)
+  assert.match(keptUsers[0].content, /第 28 轮提问/)
   assert.equal(messages[0].role, 'latest_reminder')
-  // 第 27 轮历史里 assistant 的下标是 2*27+1 = 55
-  assert.equal(messages[0].content, '第 55 轮系统快照')
+  // 第 28 轮历史里 assistant 的下标是 2*28+1 = 57
+  assert.equal(messages[0].content, '第 57 轮系统快照')
   assert.equal(messages.at(-2).content, '本轮系统快照')
 })
 
@@ -202,8 +205,9 @@ test('预算可配置且带保守默认值，裁剪有统计口径', () => {
   assert.ok(DEFAULT_CONTEXT_BUDGET.maxTokens >= 32000, '默认 token 预算不能激进到把正常会话裁掉')
   assert.ok(DEFAULT_CONTEXT_BUDGET.maxRounds >= 40, '默认轮次上限不能激进到把正常会话裁掉')
   try {
-    setContextBudget({ maxRounds: 3 })
-    assert.equal(getContextBudget().maxRounds, 3)
+    // #345：闸位写 6，低水位裁到 3 轮，条数与改动前一致（只验证「全局配置被采用」）
+    setContextBudget({ maxRounds: 6 })
+    assert.equal(getContextBudget().maxRounds, 6)
     assert.equal(getContextBudget().maxTokens, DEFAULT_CONTEXT_BUDGET.maxTokens, '未覆盖的字段保持默认')
     assert.equal(build(30).length, 3 * 2 + 1, '全局配置必须被 toRequestMessages 采用')
   } finally {
@@ -216,8 +220,9 @@ test('裁剪有可观测量：报告给出裁掉多少轮 / 多少字符', () =>
   const history = buildHistory(30)
   assert.equal(getContextRounds(history).length, 30)
   const reports = []
+  // #345：闸位写 8，越线后低水位裁到 4 轮（与改动前保留轮数一致，只看统计口径）
   toRequestMessages(history, question, undefined, false, undefined, {
-    budget: { maxRounds: 4 },
+    budget: { maxRounds: 8 },
     onTrim: (report) => reports.push(report),
   })
   assert.equal(reports.length, 1, '发生裁剪时必须回调一次')

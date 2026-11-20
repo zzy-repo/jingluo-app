@@ -1,0 +1,86 @@
+{
+  "_meta": {
+    "request": "GET /v1/usage",
+    "auth": "API Key: Authorization: Bearer sk-...<tail4 of the local test key>",
+    "captured_at": "2026-11-20T15:44:48+08:00",
+    "http_status": 200,
+    "envelope": "NONE - flat JSON, not wrapped in {code,message,data}",
+    "mode": "quota_limited",
+    "source": "sub2api 实例只读探测（2026-11-20，实例 0.2.22）；主机名已脱敏移除"
+  },
+  "_note": "REAL capture. redaction: no key material in body; key_tail4 recorded instead of the key.",
+  "daily_usage": [
+    {
+      "date": "2026-11-17",
+      "requests": 575,
+      "input_tokens": 117928,
+      "output_tokens": 49463,
+      "cache_read_tokens": 82549,
+      "cache_write_tokens": 0,
+      "total_tokens": 249940,
+      "cost": 0.049320915,
+      "actual_cost": 0.049320915
+    },
+    {
+      "date": "2026-11-18",
+      "requests": 41,
+      "input_tokens": 3973,
+      "output_tokens": 2373,
+      "cache_read_tokens": 6777,
+      "cache_write_tokens": 0,
+      "total_tokens": 13123,
+      "cost": 0.002114781,
+      "actual_cost": 0.002114781
+    }
+  ],
+  "isValid": true,
+  "mode": "quota_limited",
+  "model_stats": [
+    {
+      "model": "deepseek-v4.1-flash",
+      "requests": 616,
+      "input_tokens": 121901,
+      "output_tokens": 51836,
+      "cache_creation_tokens": 0,
+      "cache_read_tokens": 89326,
+      "total_tokens": 263063,
+      "cost": 0.051435696,
+      "actual_cost": 0.051435696,
+      "account_cost": 0.051435696
+    }
+  ],
+  "quota": {
+    "limit": 2,
+    "remaining": 2,
+    "unit": "USD",
+    "used": 0
+  },
+  "remaining": 2,
+  "status": "active",
+  "unit": "USD",
+  "usage": {
+    "average_duration_ms": 4671.670454545455,
+    "rpm": 0,
+    "today": {
+      "actual_cost": 0,
+      "cache_creation_tokens": 0,
+      "cache_read_tokens": 0,
+      "cost": 0,
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "requests": 0,
+      "total_tokens": 0
+    },
+    "total": {
+      "actual_cost": 0.051435696,
+      "cache_creation_tokens": 0,
+      "cache_read_tokens": 89326,
+      "cost": 0.051435696,
+      "input_tokens": 121901,
+      "output_tokens": 51836,
+      "requests": 616,
+      "total_tokens": 263063
+    },
+    "tpm": 0
+  }
+}

@@ -27,7 +27,11 @@ declare const __APP_VERSION_CODE__: number
  *   - `inviteBaseUrl` 邀请 / 额度 / 卡密服务（invite/api.ts 的 INVITE_API_BASE）
  *   - `feedbackUrl`   反馈上传（diagnostics/config.ts 的 LEGACY_FEEDBACK_URL）
  *   - `legacyHosts`   已下线主机重写表（apiConfig.ts 的 LEGACY_HOSTS）
- * 源码里不许再出现地址字面量：`pnpm check:ip` / `pnpm check:endpoints` 会拦。
+ *   - `dlPrimaryBase` / `dlFallbackBase` 分发首选机 / 回退机（updateManifest.ts 的
+ *     PRIMARY_RELEASE_BASE / FALLBACK_RELEASE_BASE，Issue #269）
+ *   - `consume`       消费侧（sub2api）：base / 两套路径前缀 / 三档超时（services/consume，Issue #484）
+ *   - `pay`           支付侧（apia）：base / 两档超时（只负责买卡，Issue #482 定调）
+ * 源码里不许再出现地址字面量：`pnpm check:ip` / `pnpm check:endpoints` / `pnpm check:consume-api` 会拦。
  * 非打包环境（`node --test` 直接 import .ts）由 tests/helpers/injected.mjs 兜底注入。
  */
 declare const __ENDPOINTS__: {
@@ -35,6 +39,39 @@ declare const __ENDPOINTS__: {
   readonly inviteBaseUrl: string
   readonly feedbackUrl: string
   readonly legacyHosts: readonly string[]
+  readonly dlPrimaryBase: string
+  readonly dlFallbackBase: string
+  /**
+   * 消费侧（sub2api，Issue #484 / #487 W1-A）：`services/consume/**` 的**唯一**地址来源。
+   * `baseUrl` 同时承载两套路由：`apiV1Prefix`（JWT 通道）与 `gatewayPrefix`（sk- Key 通道），
+   * 两者之间**没有重写规则**，不许把 `/api/v1` 当 `/v1` 用。
+   * 超时也只从这里取（调用点不许写死毫秒数）。
+   */
+  readonly consume: {
+    readonly baseUrl: string
+    readonly apiV1Prefix: string
+    readonly gatewayPrefix: string
+    readonly timeoutMs: { readonly read: number; readonly write: number; readonly redeem: number }
+  }
+  /** 支付侧（apia）：套餐 / 收款页 / 订单 / 卡密溯源，只负责买卡（Issue #482 定调） */
+  readonly pay: {
+    readonly baseUrl: string
+    readonly timeoutMs: { readonly read: number; readonly write: number }
+  }
+  /**
+   * 老账号额度迁移（Issue #498 的**临时尾巴**，`src/legacy/migration/README.md` 有 @remove-after
+   * 与删除方法）：一个开关 + 一次调用。`enabled` 默认 `false` —— 关掉时客户端不采集、不请求、
+   * 不显示按钮。`baseUrl` 只有 `enabled:true` 时才有意义，那时构建期会强制它非空且 https
+   * （`rspack.config.ts` 的 `assertMigrationConfig`）。
+   *
+   * 非打包环境（`node --test`）取不到这一段，运行时按「关闭」处理（`claim.ts` 自己判）。
+   */
+  readonly migration: {
+    readonly enabled: boolean
+    readonly baseUrl: string
+    readonly endpoint: string
+    readonly timeoutMs: number
+  }
 }
 
 /** Prism 语言包通过副作用注册到全局 Prism */

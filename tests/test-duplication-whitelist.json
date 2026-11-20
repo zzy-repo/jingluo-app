@@ -1,0 +1,34 @@
+{
+  "version": 1,
+  "note": "跨层重复白名单（scripts/check-test-duplication.mjs）。规则：允许某段跨层重复长期存在，但必须写清 reason（为什么删不掉/为什么必须在两层各留一份）与 issue 编号；没有 reason 的条目会让门禁直接报错，避免白名单变成垃圾桶。",
+  "schema": {
+    "groups": [
+      {
+        "rule": "verbatim-window",
+        "files": [
+          "tests/unit/example.test.mjs",
+          "tests/integration/example.test.mjs"
+        ],
+        "reason": "示例：条目的 files 必须全部落在同一组重复里（允许少列，不允许列不存在的文件）。",
+        "issue": "#366"
+      }
+    ],
+    "keywords": [
+      {
+        "topic": "copy-limit-512k",
+        "reason": "示例：按主题放行 R2 关键词跨层告警，topic 取值见脚本 KEYWORD_TOPICS。",
+        "issue": "#366"
+      }
+    ],
+    "titles": [
+      {
+        "title": "示例：用例标题原文",
+        "reason": "示例：按标题原文放行 R3，标题必须与报告里的原文逐字一致。",
+        "issue": "#366"
+      }
+    ]
+  },
+  "groups": [],
+  "keywords": [],
+  "titles": []
+}

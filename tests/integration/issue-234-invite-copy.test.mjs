@@ -11,7 +11,8 @@
 //
 // 断言：
 //   [1] 被邀请人成功态（reward_points: 0）→ 「邀请关系已绑定」，不含「积分」也不含「+0」
-//   [2] 邀请人态（reward_points: 100）→ 「绑定成功，+100 积分」逐字不变（不能把两边一起改坏）
+//   [2] 邀请人态（reward_points: 100）→ 「绑定成功，+1.00 元」（#487：100 积分 = 1 元；
+//       文案结构与断言强度不变，只是单位从「积分」换成「元」）
 //   [3] 规则说明来自 /me 的 invite_rules（邀请人 100 / 返现 100），不写死金额、不出现 ¥4.9
 //   [4] invite_rules 缺失（老服务端）→ 规则行整行隐藏，且不出现「各得 1 元」这类历史话术
 //   [5] 409 circular_invite → 专属文案（互填邀请码），不落到「已经绑定过邀请码」
@@ -217,12 +218,12 @@ const runViewport = async ({ width, height }) => {
   const rulesBlock = page.getByTestId('ours-invite-rules')
   eq(await rulesBlock.count(), 1, `${width}px：有 invite_rules 时显示规则行`)
   const rulesText = await rulesBlock.innerText()
-  truthy(/邀请人得 100 积分/.test(rulesText), `${width}px：邀请人奖励来自服务端（${rulesText.replace(/\n/g, ' / ')}）`)
+  truthy(/邀请人得 1\.00 元/.test(rulesText), `${width}px：邀请人奖励来自服务端（${rulesText.replace(/\n/g, ' / ')}）`)
   truthy(
-    /好友首次付款后，邀请人再得 100 积分/.test(rulesText),
+    /好友首次付款后，邀请人再得 1\.00 元/.test(rulesText),
     `${width}px：返现奖励来自服务端（不写死金额）`
   )
-  truthy(!/被邀请人得 0 积分/.test(rulesText), `${width}px：规则行不出现「被邀请人得 0 积分」`)
+  truthy(!/被邀请人得 0(\.00)? ?(元|积分)/.test(rulesText), `${width}px：规则行不出现「被邀请人得 0」`)
   truthy(!/¥|4\.9|各得/.test(rulesText), `${width}px：规则行没有 ¥ 折算，也没有「各得」历史话术`)
   await scrollTo('ours-invite')
   await shot('01-rules-from-server')
@@ -231,7 +232,7 @@ const runViewport = async ({ width, height }) => {
   await submit('FRIEND01')
   const inviteeText = await resultText()
   eq(inviteeText, '邀请关系已绑定', `${width}px：被邀请人成功文案（不再显示获得 0 积分）`)
-  truthy(!/积分/.test(inviteeText), `${width}px：被邀请人成功文案不含「积分」`)
+  truthy(!/积分/.test(inviteeText) && !/0\.00 元/.test(inviteeText), `${width}px：被邀请人成功文案既不报积分也不报 0 元`)
   truthy(!/\+?\s*0\b/.test(inviteeText), `${width}px：被邀请人成功文案不含 0`)
   eq(await page.getByTestId('ours-invite-input').inputValue(), '', `${width}px：成功后清空输入`)
   await scrollTo('ours-invite')
@@ -240,7 +241,7 @@ const runViewport = async ({ width, height }) => {
   // ---------- [2] 邀请人态：reward_points 100，文案逐字不变 ----------
   mock.redeemReward = 100
   await submit('FRIEND02')
-  eq(await resultText(), '绑定成功，+100 积分', `${width}px：邀请人态文案保持原样（不能被一起改掉）`)
+  eq(await resultText(), '绑定成功，+1.00 元', `${width}px：邀请人态文案（元口径，结构不变）`)
   await scrollTo('ours-invite')
   await shot('03-inviter-ok')
 

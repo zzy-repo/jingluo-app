@@ -10,25 +10,17 @@
 //   E 异常原文只进卡片的兄弟节点 #compatibility-detail，卡片正文永远干净。
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
-import { registerHooks } from 'node:module'
+import { installTsResolve } from '../helpers/dom-env.mjs'
 import { test } from 'node:test'
 import vm from 'node:vm'
 
-registerHooks({
-  resolve(specifier, context, nextResolve) {
-    try {
-      return nextResolve(specifier, context)
-    } catch (error) {
-      if (specifier.startsWith('.') && specifier.endsWith('.js')) {
-        return nextResolve(`${specifier.slice(0, -3)}.ts`, context)
-      }
-      throw error
-    }
-  },
-})
+// 装配走公共入口（#408 收尾批）：`.js→.ts` 解析由 installTsResolve 统一装，不再手抄 registerHooks。
+// 本文件没有模块替身（内联守卫源码是 readFileSync + vm 起跑），所以不带 stubs。
+installTsResolve()
 
-const { zh } = await import('../../src/i18n/zh.ts')
-const { en } = await import('../../src/i18n/en.ts')
+// 参照文案 = i18n 表 + 只存在于兜底页的文案（#104 的 17 个 key 运行时读不到 i18n，
+// 已按 check-i18n R4 从 src/i18n 删除，逐字参照副本在 tests/fixtures/compat-boot/）。
+const { zh, en } = await import('../fixtures/compat-boot/compat-boot-copy.mjs')
 
 const html = readFileSync(new URL('../../src/index.html', import.meta.url), 'utf8')
 const guardSource = html.match(/<script>([\s\S]*?)<\/script>/)[1]

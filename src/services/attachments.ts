@@ -5,6 +5,7 @@ import { classifyApiError, getUploadErrorInfo, isRetryableApiError } from './api
 import type { FilePurpose } from './api/types.js'
 import { errorMeta, record, recordAction } from './diagnostics/collector.js'
 import { buildMeta, endpointKeyFromUrl } from './diagnostics/fields.js'
+import { REASON, type LogReason } from './diagnostics/reasons.js'
 import { bytesPerSecond } from './diagnostics/timing.js'
 import { getBaseUrl } from './api/apiConfig.js'
 import { ACCEPT_FILE_EXTS } from './uploadExts.js'
@@ -192,14 +193,19 @@ const attempts = new Map<string, number>()
 const isChannelUnsupported = (error: unknown): boolean =>
   error instanceof ApiError && error.localMessage?.key === 'uploadChannelUnsupported'
 
-/** 额度类失败的机器可读原因（与 `describeUploadQuota` 的两档一致，不写文案原文） */
-const quotaReason = (error: unknown): string | undefined => {
+/**
+ * 额度类失败的机器可读原因（与 `describeUploadQuota` 的两档一致，不写文案原文）。
+ *
+ * 返回值用 `LogReason`（#301 维度 3）：取值来自 `reasons.ts` 的字典而不是就地写的裸字符串，
+ * 拼错 / 自造词编译期就红；下游 `REASON_RETRYABLE` 也才能给出统一的默认可重试性。
+ */
+const quotaReason = (error: unknown): LogReason | undefined => {
   const code = getUploadErrorInfo(error)?.code
   if (code === 'fileCountLimit') {
-    return 'quota-files'
+    return REASON.quotaFiles
   }
   if (code === 'storageLimit') {
-    return 'quota-storage'
+    return REASON.quotaStorage
   }
   return undefined
 }
@@ -286,7 +292,9 @@ export const uploadAttachment = (
       // 三类「非网络故障」的失败要能一眼分开（#313 负向用例）：取消 / 渠道不支持 / 额度不足
       const unsupported = isChannelUnsupported(error)
       const quota = quotaReason(error)
-      const reason = aborted ? 'aborted' : unsupported ? 'channel-unsupported' : quota
+      // `aborted` 是改造前的历史取值（用户取消），字典里对应的是 `cancelled`；换值会让老日志的
+      // 筛选口径断裂，本批只把新写的取值常量化，历史取值统一在 LEGACY_REASONS 里登记。
+      const reason = aborted ? 'aborted' : unsupported ? REASON.channelUnsupported : quota
       const meta = {
         image: isImage,
         ...(aborted ? { aborted: true } : {}),

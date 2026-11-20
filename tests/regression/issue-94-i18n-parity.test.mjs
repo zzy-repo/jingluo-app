@@ -57,9 +57,9 @@ test('#94 两条语言表都不能有空文案（空串等于界面上一片空�
   assert.deepEqual(empty, [])
 })
 
-test('#94 formatPoints 的单位由调用方给，英文下不出现「积分」', () => {
-  assert.equal(formatPoints(300, '积分'), '300 积分')
-  assert.equal(formatPoints(300, 'points'), '300 points')
-  assert.equal(formatPoints(300, ''), '300', '单位为空时只留数字（不偷偷塞中文）')
-  assert.ok(!formatPoints(300, 'points').includes('积分'))
+test('#94 formatPoints 的单位由调用方给，英文下不出现中文单位（#487：元口径）', () => {
+  assert.equal(formatPoints(300, '元'), '3.00 元', '100 积分 = 1 元')
+  assert.equal(formatPoints(300, 'CNY'), '3.00 CNY', 'en 单位由文案表给')
+  assert.equal(formatPoints(300, ''), '¥3.00', '单位为空时退回带符号的金额（不在代码里塞单位）')
+  assert.ok(!formatPoints(300, 'CNY').includes('积分'))
 })

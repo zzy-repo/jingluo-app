@@ -7,6 +7,7 @@ import {
   getFileErrorCode,
   isRetryableApiError,
 } from '../api/errors.js'
+import { classifyKeyFailure } from '../api/keyFailure.js'
 import { cancelUpload, describeUploadError, uploadAttachment, useUploads } from '../attachments.js'
 import {
   captureStateSnapshot,
@@ -18,6 +19,7 @@ import {
 } from '../diagnostics/collector.js'
 import { getApiKey, getBaseUrl, getCurrentSpec, getModel } from '../api/apiConfig.js'
 import { buildMeta, endpointKeyFromUrl } from '../diagnostics/fields.js'
+import { REASON } from '../diagnostics/reasons.js'
 import { createStreamMeter, streamTimingMeta } from '../diagnostics/timing.js'
 import { requestGates } from '../api/providers.js'
 import { LIMITS } from '../limits.js'
@@ -49,8 +51,9 @@ import {
 } from './reply.js'
 import { buildMessageBody } from './requestBody.js'
 import { STREAM_NOTICE_TIERS } from './streamNotice.js'
+import { composeWaitNotice, needsUpload, type WaitHint, type WaitStage } from './waitStage.js'
+import type { MergePlan, ImportMode } from './history/mergeSessions.js'
 import type { ImportSkip } from './history/toLocal.js'
-import type { TranslationMessage } from '../../i18n/index.js'
 import {
   toSessionSummary,
   type AssistantMessage,
@@ -115,8 +118,13 @@ type ChatState = {
   streaming: Record<string, AbortController>
   /** 最近一次历史导入被跳过的条目（损坏的会话 / 消息），供「导入详情」展示（#49） */
   importSkipped: ImportSkip[]
-  /** 还在等首字的会话：当前该显示哪一档等待提示；收到首字或本轮结束就删掉 */
-  waitHints: Record<string, TranslationMessage>
+  /** 最近一次历史导入的结果摘要（模式 + 新增/覆盖/跳过），供「导入详情」展示（#390）；没导过为 null */
+  importSummary: HistoryImportSummary | null
+  /**
+   * 还在等首字的会话：当前该显示的等待提示（阶段 + 分档）；收到首字或本轮结束就删掉。
+   * **不按秒写入**：秒数只活在叶子组件里（1Hz 只重渲染那一行），避免整棵消息列表每秒重渲染。
+   */
+  waitHints: Record<string, WaitHint>
 }
 
 export const useChatStore = create<ChatState>(() => ({
@@ -130,6 +138,7 @@ export const useChatStore = create<ChatState>(() => ({
   activeId: null,
   streaming: {},
   importSkipped: [],
+  importSummary: null,
   waitHints: {},
 }))
 
@@ -148,12 +157,22 @@ const getStreamController = (id: string) => {
   return Object.hasOwn(streams, id) ? streams[id] : undefined
 }
 
-/** 同一档提示重复写入时保持引用不变，避免组件无谓重渲染 */
-const hintSignature = (hint: TranslationMessage) =>
-  `${hint.key}|${hint.params ? JSON.stringify(hint.params) : ''}`
+/**
+ * 同一档提示重复写入时保持引用不变，避免组件无谓重渲染。
+ * 阶段与分档也要进签名：只换了阶段/档位（文案 key 恰好没变，例如重试期升到 30s）时，
+ * 组件仍需要拿到新的 `tier` / `actions`。
+ */
+const hintSignature = (hint: WaitHint) =>
+  [
+    hint.key,
+    hint.params ? JSON.stringify(hint.params) : '',
+    hint.stage ?? '',
+    hint.tier?.afterMs ?? '',
+    hint.actions ? '1' : '0',
+  ].join('|')
 
 /** 换掉/清掉某个会话的等待提示；清掉时不留空壳，组件订阅的是 key 本身 */
-const setWaitHint = (sessionId: string, hint?: TranslationMessage) => {
+const setWaitHint = (sessionId: string, hint?: WaitHint) => {
   set((state) => {
     const current = state.waitHints[sessionId]
     if (hint) {
@@ -164,7 +183,7 @@ const setWaitHint = (sessionId: string, hint?: TranslationMessage) => {
     if (!current) {
       return {}
     }
-    const waitHints: Record<string, TranslationMessage> = {}
+    const waitHints: Record<string, WaitHint> = {}
     for (const [id, hint] of Object.entries(state.waitHints)) {
       if (id !== sessionId) {
         waitHints[id] = hint
@@ -174,15 +193,58 @@ const setWaitHint = (sessionId: string, hint?: TranslationMessage) => {
   })
 }
 
-/** 请求发出后开始按 5s / 30s / 60s 分级提示，第一档之前完全安静 */
-const armWaitHints = (sessionId: string) => {
+/**
+ * 本轮的等待阶段（按会话）。`startedAt` 只在这里存一份：
+ * 附件补齐 → 建连 → 等首字 → 思考，阶段变了只重算提示，**累计秒数不归零**（重试也不归零）。
+ */
+const waitStates = new Map<
+  string,
+  { startedAt: number; stage: WaitStage | null; retry?: { attempt: number; limit: number } }
+>()
+
+/** 按当前阶段与已等待时长重算提示；不足 5s（且不在重试）时什么都不显示 */
+const syncWaitHint = (sessionId: string) => {
+  const current = waitStates.get(sessionId)
+  if (!current) {
+    return
+  }
+  const hint = composeWaitNotice({
+    stage: current.stage,
+    startedAt: current.startedAt,
+    now: Date.now(),
+    retry: current.retry,
+  })
+  setWaitHint(sessionId, hint ?? undefined)
+}
+
+/**
+ * 从点发送那一刻开始等待：三档定时器按「离 startedAt 还剩多久」挂，
+ * 所以阶段切换（含附件补齐耗时）不会把 5s/30s/60s 重新计一遍（#328 G1/G6）。
+ */
+const armWaitHints = (sessionId: string, startedAt: number) => {
   clearWaitHints(sessionId)
+  waitStates.set(sessionId, { startedAt, stage: null })
   waitHintTimers.set(
     sessionId,
     STREAM_NOTICE_TIERS.map((tier) =>
-      setTimeout(() => setWaitHint(sessionId, { key: tier.key }), tier.afterMs)
+      setTimeout(() => syncWaitHint(sessionId), Math.max(0, startedAt + tier.afterMs - Date.now()))
     )
   )
+}
+
+/** 切换阶段（不重置 startedAt）；未 armed 时是 no-op，不会凭空造出提示 */
+const setWaitStage = (
+  sessionId: string,
+  stage: WaitStage | null,
+  retry?: { attempt: number; limit: number }
+) => {
+  const current = waitStates.get(sessionId)
+  if (!current) {
+    return
+  }
+  current.stage = stage
+  current.retry = retry
+  syncWaitHint(sessionId)
 }
 
 /** 收到首字或本轮结束：撤下提示并停掉没到点的定时器 */
@@ -191,8 +253,15 @@ const clearWaitHints = (sessionId: string) => {
     clearTimeout(timer)
   }
   waitHintTimers.delete(sessionId)
+  waitStates.delete(sessionId)
   setWaitHint(sessionId)
 }
+
+/**
+ * 本轮真正会做附件补齐的文件：只有本条提问的附件（#379 起历史附件不再重传），
+ * 其中还有没上到服务端的要单独显示「正在上传附件」阶段。
+ */
+const roundFiles = (request: Request) => request.question.files
 
 const sameSummary = (a: SessionSummary, b: SessionSummary) =>
   a.title === b.title && a.createdAt === b.createdAt && a.updatedAt === b.updatedAt
@@ -201,6 +270,14 @@ const sessionAccess = new Map<string, number>()
 const unsavedSessions = new Set<string>()
 /** 保存失败时保留原件，重试成功后才释放。 */
 const pendingFiles = new Map<string, db.StoredFile[]>()
+/**
+ * 服务端刚判失效、等着本轮重传的附件（本地 id → 附件）。
+ * 只有「本来就有 file_id、被服务端判失效」的附件会登记在这里：原件在我们手上、当初上传成功过，
+ * 重传是自愈（换服务地址后旧 file_id 全失效就是这条路径），不属于「重传历史记录」。
+ * 导入会话的历史附件从来没上传成功过（`serverId` 一律是 null，见 `history/toLocal.ts`），
+ * 永远进不了这个集合 —— 这正是 #379 的隔离点。
+ */
+const recoveringFiles = new Map<string, FileAttachment>()
 const deletingSessions = new Set<string>()
 const deletionTasks = new Set<Promise<boolean>>()
 const streamFlushes = new Map<string, () => void>()
@@ -422,7 +499,8 @@ const reportSessionDamage: SessionDamageReporter = (damage) => {
   const first = damage[0]
   recordError('session data repaired', {
     stage: 'session.normalize',
-    reason: 'corrupt-storage',
+    // 取值来自 reasons.ts 的字典（#301 维度 3），不是就地写的裸字符串
+    reason: REASON.corruptStorage,
     'damage.count': damage.length,
     'damage.fields': Array.from(new Set(damage.map((item) => `${item.field}:${item.action}`)))
       .sort()
@@ -547,6 +625,22 @@ const skippedOf = (error: unknown): { skipped: ImportSkip[]; staged: number } | 
 }
 
 /**
+ * 一次历史导入的结果（#390）：模式 + 条数统计 + 明细。
+ *
+ * `count` 是本次**写入**的会话数（新增 + 覆盖）：整包覆盖模式下它就是包内会话数，
+ * 增量模式下「跳过」的不算进 count，界面据此显示「新增 N / 覆盖 M / 跳过 K」。
+ */
+export type HistoryImportSummary = {
+  mode: ImportMode
+  count: number
+  added: number
+  overwritten: number
+  skipped: number
+  /** 因冲突被跳过的会话标题（本地版本胜出），用于导入结果明细 */
+  skippedTitles: string[]
+}
+
+/**
  * 替换历史对话：先写入暂存，成功后原子替换旧记录；写入为空即删除全部会话与附件。
  * 期间停止生成并禁止修改会话。
  *
@@ -554,11 +648,23 @@ const skippedOf = (error: unknown): { skipped: ImportSkip[]; staged: number } | 
  * 逐条事务与摘要记账，不在本条 lane 的所有权内），但**不再整包回滚**——
  * write() 正常返回并带上 skipped，或抛出「已暂存部分」的部分成功错误时，已写入的会话照常提交，
  * 失败条目记进 state.importSkipped 上报；只有整包不可用（一条都没写成）才清暂存并抛错。
+ *
+ * 返回写入的会话数（= 提交后本地会话总数），供旧调用方沿用。
  */
-export const replaceHistory = async (
+export const replaceHistory = async (write: () => Promise<unknown>): Promise<number> =>
+  (await importHistoryInto(write, 'overwrite')).count
+
+/**
+ * 历史导入（#390）：与 `replaceHistory` 同一条解析 / 暂存路径，只在**提交**这一步按模式分叉——
+ *   - `overwrite`（现有行为）：清空本地会话与附件后整包替换；
+ *   - `merge` / `skip`：本地会话一条都不删，只把暂存里的会话合并进来
+ *     （同 id 冲突按更新时间取舍 / 一律跳过，口径见 `history/mergeSessions.ts`）。
+ */
+export const importHistoryInto = async (
   // 允许返回 skipped 清单；返回 void / 数字的旧调用方照旧可用（返回类型统一按 unknown 收）
-  write: () => Promise<unknown>
-): Promise<number> => {
+  write: () => Promise<unknown>,
+  mode: ImportMode = 'overwrite'
+): Promise<HistoryImportSummary> => {
   if (get().importingHistory) {
     throw new Error('History replacement is already in progress')
   }
@@ -574,11 +680,21 @@ export const replaceHistory = async (
     sessionLoads.clear()
     await waitForIdle()
     await db.clearStaging()
-    let summaries: SessionSummary[]
+    type Committed = { summaries: SessionSummary[]; plan: MergePlan | null }
+    /** 提交暂存：整包覆盖是「清空 + 整体搬入」，增量模式是「按冲突口径合并」。 */
+    const commit = async (): Promise<Committed> => {
+      if (mode === 'overwrite') {
+        return { summaries: await db.commitStaging(), plan: null }
+      }
+      const plan = await db.mergeStaging(mode)
+      // 合并后本地会话是「原有的 + 新增的」，与包内会话数无关，必须重新读一遍列表。
+      return { summaries: await db.loadSessionSummaries(), plan }
+    }
+    let committed: Committed
     let skipped: ImportSkip[] = []
     try {
       skipped = readSkipped(await write())
-      summaries = await db.commitStaging()
+      committed = await commit()
     } catch (error) {
       // 部分成功：调用方已确认有会话写进暂存（staged > 0）并带上了 skipped，
       // 此时按「能导入的先导入」提交已写入部分，不整包回滚。
@@ -593,27 +709,57 @@ export const replaceHistory = async (
         skipped: partial.skipped.length,
       })
       try {
-        summaries = await db.commitStaging()
+        committed = await commit()
       } catch (commitError) {
         await db.clearStaging().catch(db.reportStorageError('clear unfinished history replacement'))
         throw commitError
       }
     }
+    const { summaries, plan } = committed
+    const summary: HistoryImportSummary = {
+      mode,
+      count: plan === null ? summaries.length : plan.added + plan.overwritten,
+      added: plan === null ? summaries.length : plan.added,
+      overwritten: plan?.overwritten ?? 0,
+      skipped: plan?.skipped ?? 0,
+      skippedTitles: plan?.skippedTitles ?? [],
+    }
     sessionAccess.clear()
     unsavedSessions.clear()
     pendingFiles.clear()
-    clearAllDrafts()
-    set({
-      ready: true,
-      initError: false,
-      sessions: sortSessions(summaries),
-      sessionCache: {},
-      sessionLoadErrors: {},
-      sessionSaveErrors: {},
-      importSkipped: skipped,
-      activeId: null,
-    })
-    return summaries.length
+    if (mode === 'overwrite') {
+      clearAllDrafts()
+      set({
+        ready: true,
+        initError: false,
+        sessions: sortSessions(summaries),
+        sessionCache: {},
+        sessionLoadErrors: {},
+        sessionSaveErrors: {},
+        importSkipped: skipped,
+        importSummary: summary,
+        activeId: null,
+      })
+    } else {
+      // 增量模式只丢弃「本次被写入」那些会话的草稿：其余本地会话连草稿都不该被动到。
+      for (const id of plan?.written ?? []) {
+        clearDraft(id)
+      }
+      const activeId = get().activeId
+      set({
+        ready: true,
+        initError: false,
+        sessions: sortSessions(summaries),
+        sessionCache: {},
+        sessionLoadErrors: {},
+        sessionSaveErrors: {},
+        importSkipped: skipped,
+        importSummary: summary,
+        // 当前打开的会话本地还在就继续停在它上面，别把用户从正在看的那条会话上踢走。
+        activeId: activeId !== null && summaries.some((item) => item.id === activeId) ? activeId : null,
+      })
+    }
+    return summary
   } finally {
     set({ importingHistory: false })
     retrySaveSessions()
@@ -1038,8 +1184,13 @@ const refreshRequest = (sessionId: string, request: Request): Request => {
 /**
  * 发送前补齐附件的 serverId。
  * - 本轮提问的附件并行补齐，任一失败则整体失败，已成功的照常写回，重试时复用成功结果；
- * - 历史轮次（仅进入上下文的）中没有 serverId 的附件，多为导入的图片：从最新的消息往前逐张补传，
- *   失败静默跳过，该附件不进入本次请求，下次发送时再试。
+ * - **历史轮次的附件默认不补传**（#379）：它们属于既有消息记录，发新消息不该触发上传。
+ *   导入会话的历史附件 `serverId` 一律是 null（`history/toLocal.ts` 的 `toFile`），旧代码每轮都
+ *   拿本地原件重传一次；导入的文档没有原件则静默跳过，导入的图片有原件就真的打一次 Files API，
+ *   失败态写进上传任务表、被卡片读成「上传失败」——纯文字消息也跟着背锅。
+ *   现在没有 serverId 的历史附件由 `toFileBlocks` 自然排除在请求之外：只展示，不重传、不阻断发送。
+ * - 例外：服务端判失效、由 `reuploadInvalidatedFiles` 登记进 `recoveringFiles` 的附件仍会重传一次
+ *   （它们本来有 file_id，原件也在本机，重传是自愈；换服务地址后历史附件靠这条路径恢复）。
  */
 const prepareFiles = async (sessionId: string, request: Request, signal: AbortSignal) => {
   const epoch = historyEpoch
@@ -1071,26 +1222,45 @@ const prepareFiles = async (sessionId: string, request: Request, signal: AbortSi
     throw failed.reason
   }
 
-  const pending = new Map<string, FileAttachment>()
-  // toReversed 同样是 ES2023（WebView 110+），旧 WebView 会抛错；复制后 reverse 语义等价。
-  for (const [user] of [...getContextRounds(request.history)].reverse()) {
+  // 历史附件不补传（#379）：它们属于既有消息记录，发新消息不该触发上传。
+  // 唯一的例外是服务端刚判失效、由 reuploadInvalidatedFiles 登记的附件（recoveringFiles）：
+  // 那种附件本来有 file_id，重传是自愈，不是「重传历史记录」。
+  const skipped = new Set<string>()
+  for (const [user] of getContextRounds(request.history)) {
     for (const file of user.files) {
-      if (!file.serverId && !serverIds.has(file.id) && !pending.has(file.id)) {
-        pending.set(file.id, file)
+      if (file.serverId || serverIds.has(file.id)) {
+        continue
+      }
+      const recovering = recoveringFiles.get(file.id)
+      if (!recovering) {
+        skipped.add(file.id)
+        continue
+      }
+      // 一次请求只用一次：失败也不再排队重来，避免把失败态留在卡片上
+      recoveringFiles.delete(file.id)
+      signal.throwIfAborted()
+      try {
+        const serverId = await Promise.race([ensureServerId(apiKey, recovering), aborted])
+        if (serverId) {
+          serverIds.set(file.id, serverId)
+          saveServerIds(sessionId, new Map([[file.id, serverId]]))
+        }
+      } catch {
+        signal.throwIfAborted()
+        // 自愈失败也不许把「上传失败」写进历史附件的卡片（#379 的症状就是这个）
+        cancelUpload(file.id)
+        record('chat_send', 'warn', 'history attachment recovery failed', {
+          reason: 'history',
+          status: 'error',
+        })
       }
     }
   }
-  for (const file of pending.values()) {
-    signal.throwIfAborted()
-    try {
-      const serverId = await Promise.race([ensureServerId(apiKey, file), aborted])
-      if (serverId) {
-        serverIds.set(file.id, serverId)
-        saveServerIds(sessionId, new Map([[file.id, serverId]]))
-      }
-    } catch {
-      signal.throwIfAborted()
-    }
+  if (skipped.size > 0) {
+    record('chat_send', 'info', 'history attachments not re-uploaded', {
+      count: skipped.size,
+      reason: 'history',
+    })
   }
 
   // 用补齐后的会话重新取历史与提问，保证请求里都是 serverId
@@ -1151,6 +1321,8 @@ const reuploadInvalidatedFiles = (sessionId: string, request: Request, error: un
         return file
       }
       localIds.push(file.id)
+      // 登记待重传：历史轮次的附件平时不补传（#379），只有这里登记过的才允许重传一次
+      recoveringFiles.set(file.id, { ...file, serverId: null })
       changed = true
       return { ...file, serverId: null }
     })
@@ -1304,6 +1476,8 @@ const streamReply = async (sessionId: string, initial: AssistantMessage, request
     updateReply(sessionId, reply)
   }
   streamFlushes.set(sessionId, flush)
+  // 等待提示从「点发送」就开始计时（#328）：附件补齐也在这段里，不再等请求发出才挂表
+  armWaitHints(sessionId, startedAt)
 
   try {
     for (let attempt = 0; ; attempt += 1) {
@@ -1313,8 +1487,11 @@ const streamReply = async (sessionId: string, initial: AssistantMessage, request
       let preparing = true
       let receivedContent = false
       try {
+        setWaitStage(sessionId, needsUpload(roundFiles(request)) ? 'uploading' : 'preparing')
         const prepared = await prepareFiles(sessionId, request, controller.signal)
         preparing = false
+        // 附件补齐完成、请求即将发出：阶段切到「正在连接上游」（秒数继续累加，不归零）
+        setWaitStage(sessionId, 'connecting')
         // 附件就绪后获取本轮信息；续写沿用原回答快照，重新生成的快照独立保存。
         const latestReminder = prepared.prefix
           ? prepared.prefix.latestReminder
@@ -1332,7 +1509,10 @@ const streamReply = async (sessionId: string, initial: AssistantMessage, request
             prepared.question,
             prepared.prefix,
             thinking,
-            latestReminder
+            latestReminder,
+            // 裁剪边界跟着会话走（#345）：同一会话的后续轮次沿用同一个边界，
+            // 请求前缀逐字节稳定，上游上下文缓存才会命中
+            { anchorKey: sessionId }
           )
         )
         // 附件已补齐、请求即将发出：prepMs 到此为止，后面的耗时才是「等上游」
@@ -1348,11 +1528,13 @@ const streamReply = async (sessionId: string, initial: AssistantMessage, request
         })
         const events = streamMessage(getApiKey(), body, controller.signal, {
           // 只接「响应头到手」这一个时刻：首字与分段的间隔在下面的事件循环里记（要带字符数）
-          onHeaders: () => meter.markHeaders(),
+          onHeaders: () => {
+            meter.markHeaders()
+            // 已连上、还没出字：「等首字」与「还没连上」在界面上要能分开（#328 G2/G3）
+            setWaitStage(sessionId, 'awaitingFirstToken')
+          },
         })
         const blockIndexes = new Map<number, number>()
-        // 请求已发出：开始算首字等待，5s / 30s / 60s 三档逐级提示
-        armWaitHints(sessionId)
         for await (const event of events) {
           receivedContent ||= event.type === 'content_block_start'
           if (
@@ -1381,8 +1563,16 @@ const streamReply = async (sessionId: string, initial: AssistantMessage, request
             (event.type === 'content_block_start' || event.type === 'content_block_delta')
           ) {
             firstTokenLogged = true
-            // 首字到了：等待提示立刻撤下，用户看到的还是同一个占位位置
-            clearWaitHints(sessionId)
+            /**
+             * 首字到了（#328）：第一个块是**思考**时提示不撤，改成「模型正在思考」——
+             * 思考期可能几十秒没有正文（hidden 档连思考块都不显示），撤掉就成了无文案干等；
+             * 正文/工具块才是「用户看到内容」，那时才撤。
+             */
+            if (event.type === 'content_block_start' && event.content_block.type === 'thinking') {
+              setWaitStage(sessionId, 'thinking')
+            } else {
+              clearWaitHints(sessionId)
+            }
             const firstToken = meter.snapshot()
             recordEvent('chat_first_token', `first token in ${Date.now() - startedAt}ms`, {
               ...buildMeta({
@@ -1401,6 +1591,14 @@ const streamReply = async (sessionId: string, initial: AssistantMessage, request
               }),
               model: initial.model ?? getModel(),
             })
+          }
+          // 思考块之后开始吐正文/工具块：思考期的等待提示到此结束
+          if (
+            firstTokenLogged &&
+            event.type === 'content_block_start' &&
+            event.content_block.type !== 'thinking'
+          ) {
+            clearWaitHints(sessionId)
           }
           reply = applyEvent(reply, event, Date.now(), blockIndexes)
           if (document.visibilityState === 'hidden') {
@@ -1547,10 +1745,10 @@ const streamReply = async (sessionId: string, initial: AssistantMessage, request
           fileRecovered,
         })
         if (decision === 'retry') {
-          // 让用户看见「正在第 N 次重试」，而不是静默卡住
-          setWaitHint(sessionId, {
-            key: 'chatRetrying',
-            params: { attempt: attempt + 1, limit: STREAM_RETRY_LIMIT },
+          // 让用户看见「正在第 N 次重试」，而不是静默卡住；秒数从点发送累计，不因重试归零（#328 G6）
+          setWaitStage(sessionId, 'retrying', {
+            attempt: attempt + 1,
+            limit: STREAM_RETRY_LIMIT,
           })
           await waitForRetry(attempt, controller.signal)
           if (controller.signal.aborted) {
@@ -1569,6 +1767,23 @@ const streamReply = async (sessionId: string, initial: AssistantMessage, request
             status: error.status,
             // 上游 code 一并存下来：刷新 / 换设备后仍能认出「额度不足」（#299）
             ...(error.upstreamCode ? { upstreamCode: error.upstreamCode } : {}),
+            // 客户端错误码（#434）：`upstream_returned_html` 这个结论只有请求层知道，
+            // 不落盘的话重新渲染会退回「空响应」文案（改前那个 bug 的第二半）。
+            ...(error.code ? { code: error.code } : {}),
+            // 上游给的原文摘要（#434）：折叠区刷新后还要在，所以随消息落盘
+            ...(error.detail ? { detail: error.detail } : {}),
+            // Key 失效的细分（#374）：**当次**就判好，连同 Key 尾号一起存下来。
+            // 只用当前配置的 Key 判格式（请求层才知道那把 Key），历史回看没有它就跳过本地判定。
+            ...(condition === 'unauthorized'
+              ? {
+                  keyFailure: classifyKeyFailure({
+                    status: error.status,
+                    code: error.upstreamCode,
+                    message: error.message,
+                    apiKey: getApiKey() || undefined,
+                  }),
+                }
+              : {}),
             localMessage: notice,
           })
         } else {
@@ -1587,6 +1802,8 @@ const streamReply = async (sessionId: string, initial: AssistantMessage, request
   } finally {
     titleRequests.delete(controller)
     streamFlushes.delete(sessionId)
+    // 失效自愈的登记只在同一轮的重试间有效：收尾即清，别让下一轮拿旧附件重传（#379）
+    recoveringFiles.clear()
     // 本轮无论怎么结束，等待提示都要撤下（含用户停止与各类报错）
     clearWaitHints(sessionId)
     cancelAnimationFrame(frame)

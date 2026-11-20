@@ -14,8 +14,11 @@
 .waiting {
   display: flex;
   align-items: center;
-  gap: 6px;
-  height: 34px;
+  /* 等待提示可能出现第二行（30s/60s 的追加行，见 .waitingTier）：用最小高度而不是固定高度，免得被裁掉 */
+  flex-wrap: wrap;
+  min-height: 34px;
+  column-gap: 6px;
+  row-gap: 2px;
 }
 
 .waitingDots {
@@ -29,6 +32,23 @@
   font-size: 13px;
   line-height: 20px;
   color: var(--dsw-alias-label-secondary);
+}
+
+/* 「已等待 Ns」：1Hz 自刷的秒数，字号与主动同级，颜色稍弱 */
+.waitingElapsed {
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--dsw-alias-label-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 30s / 60s 的追加行：独占一行（flex-basis: 100%），只要文字不要按钮 */
+.waitingTier {
+  flex-basis: 100%;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-secondary);
+  opacity: 0.85;
 }
 
 .waitingAction {
@@ -87,6 +107,17 @@
     flex-shrink: 0;
     margin-top: 4px;
   }
+}
+
+/**
+ * 提示条主体：文案 + 操作 + 折叠区（#347 / #353）。
+ * 单独一层列容器，折叠区才能独占一行 —— 直接塞进文案那个行盒里，
+ * 一段英文原文就会把「打开设置 / 复制诊断信息」挤出行外。
+ */
+.noticeBody {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
 
   > span {
     min-width: 0;
@@ -95,18 +126,81 @@
   }
 }
 
+/**
+ * 提示条里的动作（换 Key / 去充值 / 复制诊断信息）：
+ * 视觉上就是这串紧凑的下划线文字，但**命中区 ≥44×44**（移动端触控下限，#346）。
+ *
+ * 高度靠 `min-height` 撑满：行盒随之长高，而不是用负 margin 把盒子压到相邻行上
+ * —— 相邻行的文字被按钮抢走点击是最难查的那类 bug（同 #305 的口径）。
+ */
 .noticeAction {
-  padding: 0;
+  display: inline-flex;
+  align-items: baseline;
+  justify-content: center;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0 4px;
+  /* 文字仍贴在这一行的基线上（视觉位置与改前一致），多出来的命中区只往行下方长，
+     不会压到上面那行文字 */
+  vertical-align: baseline;
   border: none;
   background: none;
   font: inherit;
   color: var(--dsw-alias-brand-text);
   text-decoration: none;
+  /* 触控设备上不要等 300ms 双击缩放判定，点了就复制 */
+  touch-action: manipulation;
   cursor: pointer;
 
   &:hover {
     text-decoration: underline;
   }
+}
+
+/**
+ * 折叠区：上游原文（#347 / #353）。默认收起 —— 界面上永远只有一行「查看上游原文」，
+ * 展开后是等宽、可换行的原文块（已在服务层截断到 200 字并脱敏，见 buildUpstreamSnippet）。
+ *
+ * 用 margin-top 而不是 `gap`：`gap` 在 WebView 83 上需要 #173 的 margin 兜底，
+ * 这里只有「主体 → 折叠区」一处间距，用 margin 就不必再生成一份兜底规则。
+ */
+.noticeUpstream {
+  margin-top: 2px;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-secondary);
+
+  /* 折叠开关的触控命中区同样 ≥44×44（#346 的口径） */
+  > summary {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+    padding: 0 4px;
+    color: var(--dsw-alias-brand-text);
+    touch-action: manipulation;
+    cursor: pointer;
+    text-decoration: none;
+  }
+}
+
+.noticeUpstreamToggle {
+  &:hover {
+    text-decoration: underline;
+  }
+}
+
+.noticeUpstreamText {
+  margin: 0 0 4px;
+  padding: 6px 8px;
+  max-height: 180px;
+  overflow: auto;
+  border-left: 2px solid var(--dsw-alias-border-l2);
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 18px;
+  /* 原文里常有长 URL / 长 token：强制换行，别把消息流撑出横向滚动 */
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .bottom {
@@ -169,6 +263,7 @@
 /* #173-fallback:start —— 由 node scripts/gen-flex-gap-fallback.mjs 生成，勿手改（issue #173） */
 :global(html[data-flex-gap-fallback]) .waiting > *:not(:last-child) {
   margin-right: 6px;
+  margin-bottom: 2px;
 }
 
 :global(html[data-flex-gap-fallback]) .waitingDots > *:not(:last-child) {

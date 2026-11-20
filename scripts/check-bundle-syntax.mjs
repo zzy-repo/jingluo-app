@@ -165,7 +165,27 @@ const collectMaskRanges = (ast, comments) => {
  * 解析不了的文件（理论上产物都该能解析）：**整份不遮蔽**。这样字符串/注释里的同名文本会多报
  * （假红），但绝不会少报（假绿）；而且这份文件本身已经会被语法层报 parse-error 扣红。
  */
+/**
+ * 遮蔽结果缓存（#366）：词法层（findForbiddenSyntax）与运行时 API 层（checkRuntimeApis）会对
+ * **同一份**产物代码各问一遍 stripLiterals，而剥离要遍历 AST 区间 + 逐字符重写，是这三层里最贵的
+ * 一步。之前每次重算 = 全量产物被剥两遍。缓存只存「剥好的字符串」（约等于源码大小，90 个文件
+ * 合计数 MB），不像 AST 那样吃内存，所以上限可以比 PARSE_CACHE 大得多。
+ */
+const STRIP_CACHE = new Map()
+const STRIP_CACHE_LIMIT = 256
+
 export const stripLiterals = (code) => {
+  const cached = STRIP_CACHE.get(code)
+  if (cached !== undefined) {
+    return cached
+  }
+  const stripped = stripUncached(code)
+  if (STRIP_CACHE.size >= STRIP_CACHE_LIMIT) STRIP_CACHE.delete(STRIP_CACHE.keys().next().value)
+  STRIP_CACHE.set(code, stripped)
+  return stripped
+}
+
+const stripUncached = (code) => {
   const parsed = parseBundle(code)
   if (!parsed.ok) return code
   const out = code.split('')

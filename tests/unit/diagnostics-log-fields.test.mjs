@@ -53,6 +53,8 @@ test('A 合法值：结构化字段按契约原样落库', () => {
     traceId: 'r-20261119-abcdef',
     // #324：上游短码（error.code / error.type），用来按 code 切片「这个月多少次 invalid_request_error」
     upstreamCode: 'invalid_request_error',
+    // #301：reason 从「白名单里的裸键」提升成类型化字段，取值只能来自 reasons.ts 的字典
+    reason: 'insufficient-balance',
     durationMs: 1832,
     queueMs: 640,
     retryable: true,
@@ -78,6 +80,7 @@ test('A 合法值：结构化字段按契约原样落库', () => {
     endpointKey: 'chatBaseUrl',
     traceId: 'r-20261119-abcdef',
     upstreamCode: 'invalid_request_error',
+    reason: 'insufficient-balance',
     durationMs: 1832,
     queueMs: 640,
     retryable: true,
@@ -101,8 +104,9 @@ test('A 合法值：结构化字段按契约原样落库', () => {
   }
   // 契约里的键都真的能写进去（防止「定义了但忘了加进 META_KEYS」）
   // 21 = #324 的 upstreamCode；#313 再加两个：`queueMs`（排队等待，上传链路必须能分开
-  // 「排队」与「传输」）与 `retryable`（这次失败再试有没有用）
-  assert.equal(META_KEYS.length, 23, '键集合只应由 #324 的 upstreamCode 与 #313 的 queueMs / retryable 变动')
+  // 「排队」与「传输」）与 `retryable`（这次失败再试有没有用）；
+  // #301 再加一个 `reason`（机器可读原因，取值受 reasons.ts 的 LogReason 约束）
+  assert.equal(META_KEYS.length, 24, '键集合的增删必须在这里留一行说明（谁、为什么）')
   assert.equal(Object.keys(meta).length, META_KEYS.length)
 })
 
@@ -224,4 +228,59 @@ test('E 阶段枚举：新值带域前缀，旧值只读兼容（新代码写不
   }
   assert.equal(buildMeta({ stage: 'stream' }).stage, undefined, '旧值写不进结构化字段')
   assert.ok(isStatusCode('timeout') && isStatusCode(429) && !isStatusCode(1000))
+})
+
+test('F #301：reason 字典封闭可控，且白名单不再静默丢弃「正在写的键」', async () => {
+  const reasons = await import('../../src/services/diagnostics/reasons.ts')
+  const { REASON, REASONS, LEGACY_REASONS, REASON_RETRYABLE, isLogReason, retryableFor } = reasons
+
+  // ---- 1. 字典自洽：47 个值、唯一、kebab-case、每个都有默认可重试性 ----------------------------------
+  assert.equal(REASONS.length, 47, 'reason 字典就是 47 条（#301 评论里的字典表），增删要同步文档')
+  assert.equal(new Set(REASONS).size, REASONS.length, '字典里有重复取值')
+  for (const reason of REASONS) {
+    assert.match(reason, /^[a-z][a-z0-9]*(-[a-z0-9]+)*$/, `reason 必须是 kebab-case: ${reason}`)
+    // `null` = 「看 HTTP 状态码」，只有 http-error 允许这样；其余每个都必须给出定论
+    const preset = REASON_RETRYABLE[reason]
+    assert.ok(
+      typeof preset === 'boolean' || preset === null,
+      `缺默认可重试性: ${reason}`
+    )
+    assert.equal(preset === null, reason === 'http-error', `只有 http-error 可以「看状态码」: ${reason}`)
+  }
+  // 字典值不许与历史取值重名（重名会让「能认得旧值」变成「分不清新旧」）
+  const legacyOverlap = LEGACY_REASONS.filter((value) => REASONS.includes(value))
+  assert.deepEqual(legacyOverlap, [], `历史取值与字典重名：${legacyOverlap.join('、')}`)
+
+  // ---- 2. 类型入口：字典值落库，裸字符串写不进结构化字段 --------------------------------------------
+  assert.equal(buildMeta({ reason: REASON.cardAlreadyUsed }).reason, 'card-already-used')
+  assert.equal(buildMeta({ reason: 'CARD_ALREADY_USED' }).reason, undefined, '上游短码不许当 reason（那是 upstreamCode）')
+  assert.ok(isLogReason('stalled') && !isLogReason('stall'))
+
+  // ---- 3. 可重试性：只有 http-error 看状态码 --------------------------------------------------------
+  assert.equal(retryableFor('http-error', 404), false, '4xx 是终态，重试同一个结果')
+  assert.equal(retryableFor('http-error', 503), true, '5xx 是服务端的事，重试有意义')
+  assert.equal(retryableFor('http-error'), false, '拿不到状态码时不许劝用户「再试一次」')
+  assert.equal(retryableFor('card-already-used', 409), false, '业务终态不受状态码影响')
+  assert.equal(REASON_RETRYABLE['http-error'], null, 'http-error 是唯一「看状态码」的取值')
+
+  // ---- 4. 白名单补漏（#301 本批）：生产里正在写、改造前被静默丢弃的 4 个键 ---------------------------
+  //      billing.quota / billing.quota.code：#299 的「额度不足」标记，注释写着「能单独筛出来」，
+  //      但键名一直不在白名单里 —— 于是「查不到余额不足」这件事本身查不到。
+  const kept = sanitizeMeta({
+    'billing.quota': 'exhausted',
+    'billing.quota.code': 'insufficient_balance',
+    imported: 12,
+    skipped: 3,
+  })
+  assert.deepEqual(kept, {
+    'billing.quota': 'exhausted',
+    'billing.quota.code': 'insufficient_balance',
+    imported: 12,
+    skipped: 3,
+  })
+
+  // ---- 5. 负向：Key 派生的标识仍必须丢弃（脱敏铁律不因「补白名单」松动） ---------------------------
+  const keyDerived = sanitizeMeta({ 'key.fingerprint': 'api.deepseek.com#1a2b3c4d', 'key.tail': '****4321' })
+  assert.equal(keyDerived['key.fingerprint'], undefined, 'Key 派生标识不落库（只留尾 4 位的 key.tail）')
+  assert.equal(keyDerived['key.tail'], '****4321')
 })

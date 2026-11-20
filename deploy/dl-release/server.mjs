@@ -3,7 +3,12 @@
  * dl-release — dl.rose7.cn APK 发布接口（HTTP 上传）
  *
  * 零依赖单文件。监听 127.0.0.1:8799，由 Caddy 反代
- * dl.rose7.cn/api/v1/release（只允许本机访问，不暴露公网端口）。
+ * dl.rose7.cn/api/v1/release 与 /api/v1/version（只允许本机访问，不暴露公网端口）。
+ *
+ * GET /api/v1/version（Issue #441）：不需要令牌，只回非敏感信息 ——
+ * 自身文件的 sha256（启动时算一次并缓存）、进程启动时刻、node 版本、
+ * 合法变体/构建类型枚举。用途是让「线上跑的是哪一版」可核对，
+ * 而不是靠人 ssh 上去数行数。
  *
  * 服务端不信任客户端任何声明：
  *   - 令牌常数时间比较（/etc/dl-release/token，chmod 600）
@@ -27,6 +32,7 @@ import fsp from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { execFile } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import {
   DEFAULT_MARKER,
   normalizeAllowEntry,
@@ -63,6 +69,38 @@ const STAGING_PREFIX = '.upload-';
 // 都没有 → unknown，绝不默认 standard（App 遇到 unknown 不得自动更新/推荐）。
 const VARIANT_MARKER = process.env.DL_VARIANT_MARKER || DEFAULT_MARKER;
 const VARIANTS_FILE = process.env.DL_VARIANTS_FILE || '/etc/dl-release/artifact-variants.json';
+
+// ---------------------------------------------------------------- 版本指纹（Issue #441）
+// 「线上跑的是哪一版」必须由服务自己证明，而不是靠人 ssh 上去数行数。
+//   sha256  —— **启动时**读一次自身文件算出来就缓存：进程跑的是那一次读到的字节，
+//              之后磁盘上的文件被换掉，也不能让 /api/v1/version 替新文件作证。
+//   builtAt —— 进程启动时刻（不是构建时刻），它回答的是「这份进程什么时候起来的」。
+// 只回非敏感信息：无令牌、无路径、无 releases.json 内容。
+const SELF_FILE = fileURLToPath(import.meta.url);
+const STARTED_AT = new Date().toISOString();
+
+function selfSha256() {
+  return crypto.createHash('sha256').update(fs.readFileSync(SELF_FILE)).digest('hex');
+}
+
+// 算不出来就没有版本端点可言 —— 宁可不启动，也不让它在线上返回一个假指纹。
+let SELF_SHA256 = null;
+try {
+  SELF_SHA256 = selfSha256();
+} catch (e) {
+  log('fatal_version', { file: SELF_FILE, error: e.message });
+  process.exit(1);
+}
+
+const VERSION_INFO = Object.freeze({
+  ok: true,
+  sha256: SELF_SHA256,
+  builtAt: STARTED_AT,
+  nodeVersion: process.version,
+  // 枚举都取自单一真相源（#330 / variant.mjs），不在这里另抄一份字符串数组
+  variants: [...VARIANTS],
+  buildTypes: [...BUILD_TYPES],
+});
 
 // ---------------------------------------------------------------- 令牌
 let TOKEN = '';
@@ -610,6 +648,15 @@ const server = http.createServer(async (req, res) => {
     return sendJson(res, 200, { ok: true, service: 'dl-release' });
   }
 
+  // Issue #441：版本自证。不校验令牌（只回非敏感信息）、也不吃限流额度
+  // —— 它在限流之前返回，验收与监控可以随时打，不会挤掉正常发布。
+  if (url.pathname === '/api/v1/version') {
+    if (req.method !== 'GET' && req.method !== 'HEAD') {
+      return fail(res, 405, 'METHOD_NOT_ALLOWED', '仅支持 GET', { Allow: 'GET' });
+    }
+    return sendJson(res, 200, VERSION_INFO);
+  }
+
   if (url.pathname !== '/api/v1/release') {
     return fail(res, 404, 'NOT_FOUND', '未知路径');
   }
@@ -646,6 +693,8 @@ try {
 
 server.listen(LISTEN_PORT, LISTEN_HOST, async () => {
   log('listening', { host: LISTEN_HOST, port: LISTEN_PORT, apkDir: APK_DIR, aapt2: AAPT2 });
+  // 启动指纹也进日志：事后翻 journalctl 就能对上「那段时间跑的是哪一版」
+  log('version_fingerprint', { sha256: SELF_SHA256, builtAt: STARTED_AT, node: process.version });
   const allow = await readVariantAllowlist();
   log('variant_config', { marker: VARIANT_MARKER, file: VARIANTS_FILE, entries: Object.keys(allow).length });
 });

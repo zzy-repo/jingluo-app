@@ -8,12 +8,17 @@ import { setupTheme } from './app/theme.js'
 import { setupReading } from './app/reading.js'
 import { readDiagnosticsFacts } from './app/diagnosticsContext.js'
 import { getApiKey } from './services/api/apiConfig.js'
+import { migrateConfigOnce } from './services/api/configMigration.js'
 import { fetchCustomerIdFromProfile, setCustomerIdProvider } from './services/ours/customerId.js'
 import { fetchPaymentRecords } from './services/ours/paymentRecords.js'
 import { httpTransport } from './services/ours/transport.js'
 import { INVITE_API_BASE } from './services/invite/api.js'
 import { ensureDeviceId } from './services/invite/device.js'
 import { setupFlexGapFallback } from './utils/flexGap.js'
+import { getAccessToken, restoreAuth, setAuthTransport } from './services/auth/store.js'
+import { createAuthTransport, createPublicSettingsReader } from './services/auth/transport.js'
+import { setPublicSettingsReader } from './services/auth/flags.js'
+import { createConsumeClient } from './services/consume/index.js'
 import {
   initDiagnostics,
   installDiagnosticsDebugHandle,
@@ -59,6 +64,10 @@ setupFlexGapFallback()
 // 消息区阅读设置（#102）：首屏渲染前就把字号 / 字重 / 行高档位挂到根元素上
 setupReading()
 
+// 一次性配置迁移（#339）：1.2.x 把模型名写进了所有渠道共用的 chat-demo:model，内置渠道已不再读它；
+// 这里把残留值清掉并记一条 config_change/legacy-model 诊断，用户不必再手工改 localStorage。
+// 放在 initDiagnostics 之前：collector 是模块级环形缓冲，早起写入的这条一样会随日志导出。
+migrateConfigOnce()
 // 诊断：恢复上次落盘的日志并装上 window.onerror / console / fetch 等 hook（采集层与上传层解耦，见 services/diagnostics）
 void initDiagnostics({ facts: readDiagnosticsFacts })
 // 仅当 URL 带 ?diag-debug 时把调试入口挂到 window（本地验收脚本用，正常使用不暴露）
@@ -86,6 +95,17 @@ setCustomerIdProvider(async () => {
     transport: httpTransport,
   })
 })
+
+// 身份层接线（W1-B 前半，#487）：JWT 通道与 `settings/public` 开关都走 W1-A 的消费层客户端。
+// `accessToken` 传的是「每次请求现取」的提供者，续期之后立刻生效；`apiKey` 只服务 `/v1/**`。
+const consumeClient = createConsumeClient({ accessToken: getAccessToken, apiKey: getApiKey })
+setAuthTransport(createAuthTransport(consumeClient))
+setPublicSettingsReader(createPublicSettingsReader(consumeClient))
+
+// [占位] 身份检查：**当前保持「跳过」**——只跑一次启动恢复（读安全存储里的 JWT，没有就什么都不做），
+// 渲染树与首启流程一行没动，现有启动行为不变。
+// TODO(W1-B 后半)：把下面这行换成 <AuthGate> 包住 <App />，并在 restore 完成前不渲染主界面。
+void restoreAuth()
 
 // 根部包一层错误边界：渲染期异常不再是整屏白屏，而是一张可读的错误页（issue #28）
 createRoot(document.getElementById('root') as HTMLElement).render(

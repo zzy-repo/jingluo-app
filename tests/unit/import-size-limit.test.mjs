@@ -13,50 +13,23 @@
 // 绝不真的分配 200MB（CI 里没有意义）。
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { existsSync } from 'node:fs'
-import { registerHooks } from 'node:module'
-import { fileURLToPath, pathToFileURL } from 'node:url'
-
-const stub = (name) => new URL(`../fixtures/url-import-stubs/${name}`, import.meta.url).href
+import { fixtureUrl, installTsResolve } from '../helpers/dom-env.mjs'
 
 const STUBS = {
-  '@capacitor/core': 'capacitor.mjs',
-  '../../diagnostics/collector.js': 'collector.mjs',
-  '../diagnostics/collector.js': 'collector.mjs',
-  './errors.js': 'errors.mjs',
-  './history/errors.js': 'errors.mjs',
-  './store.js': 'store.mjs',
-  './db.js': 'db.mjs',
-  './history/importArchive.js': 'importArchive.mjs',
-  './history/zipReader.js': 'zipReader.mjs',
+  '@capacitor/core': fixtureUrl('url-import-stubs/capacitor.mjs'),
+  '../../diagnostics/collector.js': fixtureUrl('url-import-stubs/collector.mjs'),
+  '../diagnostics/collector.js': fixtureUrl('url-import-stubs/collector.mjs'),
+  './errors.js': fixtureUrl('url-import-stubs/errors.mjs'),
+  './history/errors.js': fixtureUrl('url-import-stubs/errors.mjs'),
+  './store.js': fixtureUrl('url-import-stubs/store.mjs'),
+  './db.js': fixtureUrl('url-import-stubs/db.mjs'),
+  './history/importArchive.js': fixtureUrl('url-import-stubs/importArchive.mjs'),
+  './history/zipReader.js': fixtureUrl('url-import-stubs/zipReader.mjs'),
 }
 
-/**
- * 源码里的相对导入写的是 `.js`（NodeNext 约定），实际文件是 `.ts`；
- * node 不会自己改后缀，但 urlImport.ts 的 `../backup.js` 必须解析到**真实的** backup.ts ——
- * 「两个入口共用同一上限」这件事只有在同一条真实链路上才验证得到。
- */
-const asTypescript = (specifier, parentURL) => {
-  if (!parentURL || !specifier.startsWith('.') || !specifier.endsWith('.js')) {
-    return null
-  }
-  const target = fileURLToPath(new URL(specifier, parentURL)).replace(/\.js$/, '.ts')
-  return existsSync(target) ? pathToFileURL(target).href : null
-}
-
-registerHooks({
-  resolve(specifier, context, nextResolve) {
-    const target = STUBS[specifier]
-    if (target !== undefined) {
-      return { url: stub(target), shortCircuit: true }
-    }
-    const typescript = asTypescript(specifier, context.parentURL)
-    if (typescript !== null) {
-      return { url: typescript, shortCircuit: true }
-    }
-    return nextResolve(specifier, context)
-  },
-})
+// 装配走公共入口（#408 收尾批）：替身表 + `.js→.ts` 解析都交给 installTsResolve
+// （原先手抄 registerHooks + 本地 asTypescript，与同族另外 4 个文件逐字相同）。
+installTsResolve({ stubs: STUBS })
 
 // 真实的 backup.ts / urlImport.ts（urlImport 里的 `../backup.js` 故意不替换，
 // 两个入口共用同一个真实 importHistory，才谈得上「同一上限」）。

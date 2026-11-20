@@ -8,7 +8,7 @@ import { readFile } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
-import { buildArchive, textPayload } from '../fixtures/archive-fixture.mjs'
+import { buildArchive, textPayload } from '../fixtures/domain05/archive-fixture.mjs'
 
 const APP_URL = (process.env.APP_URL || 'http://127.0.0.1:5181').replace(/\/+$/, '')
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
@@ -106,6 +106,40 @@ const browser = await chromium.launch()
     }
     const mock = { calls: [], resolve: null, plan }
     window.__capMock = mock
+    // #406：把「导入阶段读包」这一步掐住，让「导入中取消」不再赌机器速度。
+    // importArchive 每读一个条目都要 `file.slice(...).arrayBuffer()`：armed 之后，**页面上已经出现
+    // 「正在导入… n/总数」时的第一次读**会被挂住，直到用例调 release()。判定在页面内做，
+    // 不经 Playwright 一次往返 —— 于是「点取消」必然落在导入中段（n < 总数），与 runner 快慢无关。
+    // 断言口径一个字都没改：取消后 sessions 必须为 0、暂存必须清空 —— 只是取消点变确定了。
+    const gate = { armed: false, held: false, released: false }
+    gate.arm = () => {
+      gate.armed = true
+      gate.held = false
+      gate.released = false
+    }
+    gate.release = () => {
+      gate.released = true
+    }
+    window.__importGate = gate
+    const nativeArrayBuffer = Blob.prototype.arrayBuffer
+    Blob.prototype.arrayBuffer = function arrayBuffer(...args) {
+      const read = nativeArrayBuffer.apply(this, args)
+      // 只在「导入阶段」掐：校验/解析阶段（还没出现进度文案）的读照常放行，否则导入根本起不来。
+      if (!gate.armed || gate.held || !/正在导入…/.test(document.body.innerText)) {
+        return read
+      }
+      gate.held = true
+      return new Promise((resolve, reject) => {
+        const waitReleased = () => {
+          if (gate.released) {
+            read.then(resolve, reject)
+            return
+          }
+          setTimeout(waitReleased, 10)
+        }
+        waitReleased()
+      })
+    }
     const all = plan.data === null ? new Uint8Array(0) : toBytes(plan.data)
     plan.served = 0
     const respond = (options) => {
@@ -293,6 +327,25 @@ const sampleUntil = async (page, stop, timeoutMs = 40_000, intervalMs = 120) => 
   }
 }
 
+/**
+ * 轮询到「终态」成立，而不是固定 sleep 一段再去断言中间态（#406：sleep 3s 在快机器上等于什么都没等、
+ * 在慢机器上又可能不够）。probe 返回 { ok, ... }；超时后把最后一次结果连同 timeout 标记交回调用方，
+ * 由断言自己决定红绿 —— 超时不在轮询里被吞掉。
+ */
+const until = async (probe, { timeoutMs = 20_000, intervalMs = 100 } = {}) => {
+  const startedAt = Date.now()
+  for (;;) {
+    const result = await probe()
+    if (result.ok) {
+      return { ...result, elapsed: Date.now() - startedAt }
+    }
+    if (Date.now() - startedAt > timeoutMs) {
+      return { ...result, elapsed: Date.now() - startedAt, timeout: true }
+    }
+    await new Promise((resolve) => setTimeout(resolve, intervalMs))
+  }
+}
+
 const run = async () => {
   // 说明：旧版 archive-fixture 把图片写在它所属会话之前，导入端会判成「内容不完整」
   // （#32 已定性为夹具问题并在夹具里修掉，与导入端无关）。这里的包仍然不带图片 —— 本用例
@@ -363,7 +416,7 @@ const run = async () => {
     await browser.close()
   }
 
-  // ── 用例 3：传输中断网 → 立刻「网络已断开」（不等 183 秒） ──────────────────
+  // ── 用例 3：链路不可达 → 立刻报 unreachable 档文案（不等 183 秒，也不谎称用户断网） ──
   {
     console.log('\n[case 3] 传输中断网：第 2 块起 IOException')
     const { browser, page, consoleErrors } = await openApp({
@@ -373,8 +426,22 @@ const run = async () => {
       rejectMessage: 'java.io.IOException: network is unreachable',
     })
     await startUrlImport(page)
-    const { text, elapsed } = await sampleUntil(page, (value) => /网络已断开/.test(value))
-    check('提示「网络已断开，请检查网络后重试」', /网络已断开，请检查网络后重试/.test(text), text.slice(0, 200))
+    // 文案口径（#18 / #111 起，见 src/services/chat/history/importFailure.ts）：
+    // 「路由不可达 / DNS 解析不到 / 链路瞬断」只敢说「连不上导入服务」，**不再**说「网络已断开」——
+    // 真离线（navigator.onLine === false 或 net::ERR_INTERNET_DISCONNECTED）才用那一句。
+    // 本用例注入的是 IOException: network is unreachable（链路层不可达），归 unreachable 档，
+    // 老断言仍按「网络已断开」期待 → 恒红（#406 复核）。
+    const { text, elapsed } = await sampleUntil(page, (value) => /无法连接导入服务|网络已断开/.test(value))
+    check(
+      '提示「暂时无法连接导入服务，请稍后重试」（unreachable 档，不谎称用户断网）',
+      /暂时无法连接导入服务，请稍后重试/.test(text),
+      text.slice(0, 200)
+    )
+    check(
+      '不把「链路不可达」说成用户断网（#18）',
+      !/网络已断开/.test(text),
+      text.slice(0, 200)
+    )
     check(`报错耗时 < 15s（实测 ${elapsed}ms）`, elapsed < 15_000, `${elapsed}ms`)
     check('出现「重试」按钮', (await page.getByRole('button', { name: '重试', exact: true }).count()) === 1)
     check('会话数仍为 0', (await dbCounts(page)).sessions === 0)
@@ -505,20 +572,59 @@ const run = async () => {
       range: true,
       data: base64(big.zip),
     })
+    // 先布好「导入阶段掐住读包」的闸，再点确认导入：闸在页面内判定，不依赖 Playwright 的往返时机。
+    await page.evaluate(() => window.__importGate.arm())
     const dialog = await startUrlImport(page)
-    await page
-      .getByText(/正在导入… \d+\/\d+ 个会话/)
-      .first()
-      .waitFor({ timeout: 40_000 })
-    await dialog.getByRole('button', { name: '取消', exact: true }).click()
-    await page.waitForTimeout(3000)
-    const counts = await dbCounts(page)
+    const progress = page.getByText(/正在导入… \d+\/\d+ 个会话/).first()
+    await progress.waitFor({ timeout: 40_000 })
+    // #406：这里曾经赌「进度文案出现 → Playwright 点下取消」之间导入还没写完。
+    // 机器越快（CI 上的新 runner、或分片并行时），300 条会话在「文案出现 → 点下取消」这几十~几百毫秒里
+    // 就整包写完并提交，于是 sessions=300、暂存 0/0 —— **断言口径没错，是取消点没被兜住**。
+    // 现在用 __importGate 把导入阶段的读包动作掐住：取消点固定在「导入中段（n<总数）」，与 runner 快慢无关。
+    // 断言一个字都没放松：取消后 sessions 必须为 0、暂存必须清空、且不出现「已导入」。
+    const held = await until(() => page.evaluate(() => ({ ok: window.__importGate.held === true })), {
+      timeoutMs: 20_000,
+      intervalMs: 20,
+    })
+    const at = /正在导入… (\d+)\/(\d+) 个会话/.exec(
+      (await page.evaluate(() => document.body.innerText)).replace(/\s+/g, ' ')
+    )
+    const written = Number(at?.[1] ?? -1)
+    const total = Number(at?.[2] ?? -1)
+    if (held.ok) {
+      await dialog.getByRole('button', { name: '取消', exact: true }).click()
+      // 取消已下发（signal.abort）：放行被掐住的读包，让导入走到下一个条目边界看见 abort。
+      await page.evaluate(() => window.__importGate.release())
+    }
+    // 等终态（不再「正在导入」且暂存为 0），不固定 sleep
+    const settled = await until(
+      async () => {
+        const text = (await page.evaluate(() => document.body.innerText)).replace(/\s+/g, ' ')
+        const counts = await dbCounts(page)
+        return {
+          ok: !/正在导入…/.test(text) && counts.sessionsStaging === 0 && counts.filesStaging === 0,
+          text,
+          counts,
+        }
+      },
+      { timeoutMs: 30_000 }
+    )
+    const counts = settled.counts
+    check(
+      `取消落在导入中段（${written}/${total}）`,
+      held.ok && written > 0 && written < total,
+      held.ok
+        ? `取消时进度已经 ${written}/${total}：整包在取消之前就写完了（取消竞态窗口没兜住）`
+        : '导入阶段的读包没有被掐住（__importGate 没命中）：整包在点取消之前就跑完了'
+    )
     check('会话数不变（未被替换）', counts.sessions === 0, JSON.stringify(counts))
     check(
       '暂存已清空（无脏数据）',
       counts.sessionsStaging === 0 && counts.filesStaging === 0,
       JSON.stringify(counts)
     )
+    check('取消后无「已导入」提示', !/已导入/.test(settled.text), settled.text.slice(0, 160))
+    check('取消后退出「正在导入」态', !/正在导入…/.test(settled.text), settled.text.slice(0, 160))
     check('console error = 0', consoleErrors.length === 0, consoleErrors.join(' | '))
     await browser.close()
   }

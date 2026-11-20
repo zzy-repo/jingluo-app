@@ -4,9 +4,9 @@
 >
 > **快照基准：`acf6826`**（`origin/main` tip，2026-11-19 12:28:21 +0800）· 采集时间：2026-11-19 18:55 (+0800)
 >
-> **扫描范围**：`src/**` 的 **204** 个源文件。
+> **扫描范围**：`src/**` 的 **253** 个源文件。
 >
-> 拆分：`.ts` 149 / `.tsx` 54 / `.html` 1 = 204。上一版写 190，是缺了 `#237`（`fetch` 通道计数、`readBytesOf`）与 `#243`（设备指纹）新增的 5 个文件。
+> 拆分：`.ts` **185** / `.tsx` 67 / `.html` 1 = 253（#487 W1-A 新增 `src/services/consume/**` 9 个 `.ts`，W1-B 新增 `src/services/auth/**` 5 个 `.ts` 与 `src/components/auth/**` 3 个 `.tsx`，W1-C2 新增 `src/components/consume/**` 的 7 个面板文件，W1-C1 再新增 3 个 `.tsx`，「统一计量」再新增 `src/utils/money.ts` 1 个 `.ts`，「迁移尾巴」再新增 `src/legacy/migration/**` 4 个 `.ts` 与 1 个 `.tsx`）。上一版写 190，是缺了 `#237`（`fetch` 通道计数、`readBytesOf`）与 `#243`（设备指纹）新增的 5 个文件。
 >
 > **本盘点只审计、只出单、只做工具，不修任何代码。** 每条真实漏洞都另开独立 Issue（见「真实漏洞与拆单」），修复在各自单里做，不在 #209 的 PR 里改产品代码。
 >
@@ -36,7 +36,7 @@
 
 ## 盘点表
 
-**总计 120 条命中**（`已有兜底` 69 / `无风险` 38 / `真实漏洞` 5 / `需动态验证` 8）；风险分布：高 4、中 9、低 107。
+**总计 128 条命中**（`已有兜底` 75 / `无风险` 39 / `真实漏洞` 5 / `需动态验证` 9）；风险分布：高 4、中 10、低 114。
 
 | 文件:行 | 假设内容 | 类别 | 风险(高/中/低) | 处置(已有兜底/需探测/需动态验证/拆单) |
 | --- | --- | --- | --- | --- |
@@ -50,9 +50,9 @@
 | `src/components/chatInput/useVoiceInput.ts:75` | AbortController 引入于 Chrome 66，83 必有（启动守卫也把它列进 REQUIRED） | 3 | 低 | 已有兜底 |
 | `src/components/messages/MessageFile.tsx:20` | URL.createObjectURL 引入于 Chrome 8，83 必有 | 3 | 低 | 已有兜底 |
 | `src/components/messages/MessageFile.tsx:27` | URL.revokeObjectURL 引入于 Chrome 8，83 必有 | 3 | 低 | 已有兜底 |
-| `src/components/messages/MessageList.tsx:110` | ResizeObserver 引入于 Chrome 64，83 必有（启动守卫也把它列进 REQUIRED） | 3 | 低 | 已有兜底 |
-| `src/components/messages/MessageList.tsx:125` | ResizeObserver 引入于 Chrome 64，83 必有（启动守卫也把它列进 REQUIRED） | 3 | 低 | 已有兜底 |
-| `src/components/messages/MessageList.tsx:195` | CSS.escape 引入于 Chrome 46，83 必有（启动守卫也把它列进 REQUIRED） | 3 | 低 | 已有兜底 |
+| `src/components/messages/MessageList.tsx:195` | ResizeObserver 引入于 Chrome 64，83 必有（启动守卫也把它列进 REQUIRED） | 3 | 低 | 已有兜底 |
+| `src/components/messages/MessageList.tsx:212` | ResizeObserver 引入于 Chrome 64，83 必有（启动守卫也把它列进 REQUIRED） | 3 | 低 | 已有兜底 |
+| `src/components/messages/MessageList.tsx:282` | CSS.escape 引入于 Chrome 46，83 必有（启动守卫也把它列进 REQUIRED） | 3 | 低 | 已有兜底 |
 | `src/components/messages/ReadingBars.tsx:104` | matchMedia 引入于 Chrome 9，83 必有 | 3 | 低 | 已有兜底 |
 | `src/components/messages/ReadingBars.tsx:106` | matchMedia 引入于 Chrome 9，83 必有 | 3 | 低 | 已有兜底 |
 | `src/components/settings/AppUpdateField.tsx:57` | AbortController 引入于 Chrome 66，83 必有（启动守卫也把它列进 REQUIRED） | 3 | 低 | 已有兜底 |
@@ -66,18 +66,25 @@
 | `src/index.html` 的 `pickLocale()`（`localStorage` 读取包在 try 里） | localStorage 在无痕 / 配额满 / 分区存储受限时抛错，写入必须自带 try…catch | 3 | 低 | 已有兜底 |
 | `src/index.html:362` | `deviceCode()` 读设备码的 `localStorage` 读取同样包在 try 里（#104 自助信息） | 3 | 低 | 已有兜底 |
 | `src/index.html:472` | `navigator.clipboard` 非安全上下文下整体为 undefined，复制第 ① 层先探测再回退 execCommand（#104） | 3 | 低 | 已有兜底 |
-| `src/services/api/apiConfig.ts:57` | localStorage 在无痕 / 配额满 / 分区存储受限时抛错，写入必须自带 try…catch | 3 | 低 | 已有兜底 |
-| `src/services/api/apiConfig.ts:66` | localStorage 在无痕 / 配额满 / 分区存储受限时抛错，写入必须自带 try…catch | 3 | 低 | 已有兜底 |
-| `src/services/api/apiConfig.ts:68` | localStorage 在无痕 / 配额满 / 分区存储受限时抛错，写入必须自带 try…catch | 3 | 低 | 已有兜底 |
-| `src/services/api/client.ts:155` | Body.text/arrayBuffer 引入于 Chrome 76，83 必有 | 3 | 低 | 已有兜底 |
-| `src/services/api/client.ts:260` | AbortController 引入于 Chrome 66，83 必有（启动守卫也把它列进 REQUIRED） | 3 | 低 | 已有兜底 |
+| `src/legacy/migration/collect.ts:40` | 读老账号本地额度槽位（`localStorage`）：读取包在 try 里，读不到就当「没有历史额度」直接跳过（#498） | 3 | 低 | 已有兜底 |
+| `src/services/api/apiConfig.ts:58` | localStorage 在无痕 / 配额满 / 分区存储受限时抛错，写入必须自带 try…catch | 3 | 低 | 已有兜底 |
+| `src/services/api/apiConfig.ts:67` | localStorage 在无痕 / 配额满 / 分区存储受限时抛错，写入必须自带 try…catch | 3 | 低 | 已有兜底 |
+| `src/services/api/apiConfig.ts:69` | localStorage 在无痕 / 配额满 / 分区存储受限时抛错，写入必须自带 try…catch | 3 | 低 | 已有兜底 |
+| `src/services/auth/store.ts:92` | 身份层凭据存储 `read`：包在 try 里，存储不可用（隐私模式 / 配额满）时当「没登录过」，不抛错 | 3 | 低 | 已有兜底 |
+| `src/services/auth/store.ts:101` | 同上（`write` 的 `removeItem` 分支）：清态失败只影响「下次启动要不要重登」，不影响本次会话 | 3 | 低 | 已有兜底 |
+| `src/services/auth/store.ts:103` | 同上（`write` 的 `setItem` 分支）：写不进去同样吞掉，绝不让登录流程因存储异常崩掉 | 3 | 低 | 已有兜底 |
+| `src/services/api/client.ts:168` | Body.text/arrayBuffer 引入于 Chrome 76，83 必有 | 3 | 低 | 已有兜底 |
+| `src/services/api/client.ts:201` | Body.text/arrayBuffer 引入于 Chrome 76，83 必有（#434 折叠区的响应摘要：`response.text()` 读正文前 200 字） | 3 | 低 | 已有兜底 |
+| `src/services/api/client.ts:289` | AbortController 引入于 Chrome 66，83 必有（启动守卫也把它列进 REQUIRED） | 3 | 低 | 已有兜底 |
 | `src/services/api/client.ts` 的 `probeProvider` | AbortController 引入于 Chrome 66，83 必有（启动守卫也把它列进 REQUIRED） | 3 | 低 | 已有兜底 |
-| `src/services/api/client.ts:646` | @capacitor/core 随包发布，函数一定在；它回答的是「跑在壳里吗」不是「插件在吗」 | 3 | 低 | 已有兜底 |
-| `src/services/api/client.ts:666` | Body.text/arrayBuffer 引入于 Chrome 76，83 必有 | 3 | 低 | 已有兜底 |
+| `src/services/api/client.ts:688` | @capacitor/core 随包发布，函数一定在；它回答的是「跑在壳里吗」不是「插件在吗」 | 3 | 低 | 已有兜底 |
+| `src/services/api/client.ts:708` | Body.text/arrayBuffer 引入于 Chrome 76，83 必有 | 3 | 低 | 已有兜底 |
+| `src/services/api/embedding.ts:194` | Body.text/arrayBuffer 引入于 Chrome 76，83 必有 | 3 | 低 | 已有兜底 |
 | `src/services/api/speech.ts:30` | Body.text/arrayBuffer 引入于 Chrome 76，83 必有 | 3 | 低 | 已有兜底 |
 | `src/services/api/speech.ts:65` | Body.text/arrayBuffer 引入于 Chrome 76，83 必有 | 3 | 低 | 已有兜底 |
 | `src/services/api/sse.ts:130` | ReadableStream.getReader 引入于 Chrome 43，83 必有；真正要防的是 body 为 null | 3 | 低 | 已有兜底 |
 | `src/services/appUpdate.ts:34` | registerPlugin 一定返回代理对象，但原生侧没注册时调用只会 reject；插件在不在要探测 | 3 | 中 | 需动态验证 |
+| `src/components/settings/AppUpdateField.tsx:103` | registerPlugin 一定返回代理对象，但原生侧没注册时调用只会 reject；插件在不在要探测（#412 手动下载入口用 `registerPlugin('Browser')`，失败走 `catch` 给可读提示） | 3 | 中 | 需动态验证 |
 | `src/services/appUpdate.ts:35` | @capacitor/core 随包发布，函数一定在；native-bridge 没注入时会退化成 "web" | 3 | 低 | 已有兜底 |
 | `src/services/attachments.ts` 的 `uploadAttachment` | AbortController 引入于 Chrome 66，83 必有（启动守卫也把它列进 REQUIRED） | 3 | 低 | 已有兜底 |
 | `src/services/chat/appAssets.ts:14` | createImageBitmap 引入于 Chrome 50，83 必有 | 3 | 低 | 已有兜底 |
@@ -102,13 +109,13 @@
 | `src/services/chat/history/zipWriter.ts:86` | blob.stream() 引入于 Chrome 76，83 必有 | 3 | 低 | 已有兜底 |
 | `src/services/chat/history/zipWriter.ts:86` | ReadableStream.getReader 引入于 Chrome 43，83 必有；真正要防的是 body 为 null | 3 | 低 | 已有兜底 |
 | `src/services/chat/store.ts` 的 `autoTitleTasks`（`AbortController`） | AbortController 引入于 Chrome 66，83 必有（启动守卫也把它列进 REQUIRED） | 3 | 低 | 已有兜底 |
-| `src/services/chat/store.ts:1281` | AbortController 引入于 Chrome 66，83 必有（启动守卫也把它列进 REQUIRED） | 3 | 低 | 已有兜底 |
+| `src/services/chat/store.ts:1315` | AbortController 引入于 Chrome 66，83 必有（启动守卫也把它列进 REQUIRED） | 3 | 低 | 已有兜底 |
 | `src/services/diagnostics/capabilityTruth.ts:73` | visualViewport 引入于 Chrome 61，83 必有；键盘弹出后的行为仍需真机确认 | 3 | 低 | 已有兜底 |
 | `src/services/diagnostics/capabilityTruth.ts:77` | navigator.clipboard 非安全上下文下整体为 undefined（局域网 http 打开就不是安全上下文） | 3 | 低 | 已有兜底 |
 | `src/services/diagnostics/capabilityTruth.ts:80` | Intl.DisplayNames 引入于 Chrome 81，勉强在 83 之内，但语言数据（ICU）齐不齐要实测 | 3 | 中 | 需动态验证 |
 | `src/services/diagnostics/collector.ts:352` | @capacitor/core 随包发布，函数一定在；native-bridge 没注入时会退化成 "web" | 3 | 低 | 已有兜底 |
-| `src/services/diagnostics/collector.ts:389` | navigator.onLine 是「有没有网卡」不是「能不能连上」，只能当弱信号用 | 3 | 低 | 已有兜底 |
-| `src/services/diagnostics/collector.ts:390` | navigator.onLine 是「有没有网卡」不是「能不能连上」，只能当弱信号用 | 3 | 低 | 已有兜底 |
+| `src/services/diagnostics/collector.ts:411` | navigator.onLine 是「有没有网卡」不是「能不能连上」，只能当弱信号用 | 3 | 低 | 已有兜底 |
+| `src/services/diagnostics/collector.ts:412` | navigator.onLine 是「有没有网卡」不是「能不能连上」，只能当弱信号用 | 3 | 低 | 已有兜底 |
 | `src/services/diagnostics/collector.ts:482` | registerPlugin 一定返回代理对象，但原生侧没注册时调用只会 reject；插件在不在要探测 | 3 | 低 | 已有兜底 |
 | `src/services/diagnostics/collector.ts:542` | localStorage 在无痕 / 配额满 / 分区存储受限时抛错，写入必须自带 try…catch | 3 | 低 | 已有兜底 |
 | `src/services/diagnostics/collector.ts:548` | localStorage 在无痕 / 配额满 / 分区存储受限时抛错，写入必须自带 try…catch | 3 | 低 | 已有兜底 |
@@ -173,7 +180,7 @@
 - `:1078` `bytes: await readBytesOf(response)` —— 在把 `response` 交还调用方**之前** await（正因为这一行，`readBytesOf` 里任何会等到流关闭的读法都会卡住 SSE，见 #211）；
 - `:1108` `window.fetch = patched` —— 页面级替换；
 - `:1171-1241` `installCapacitorHttpHook()` —— 另外再包一层 `CapacitorHttp.get/post/…`；
-- `:1385-1399` `installHooks()` 由 `src/main.tsx:66` 的 `initDiagnostics()` 在启动时调用，只有显式传 `installHooks: false` 才不装 → 生产包里这层包装**一直是活的**。
+- `:1385-1399` `installHooks()` 由 `src/main.tsx:68` 的 `initDiagnostics()` 在启动时调用，只有显式传 `installHooks: false` 才不装 → 生产包里这层包装**一直是活的**。
 
 **Capacitor 侧会在什么条件下再换一次：** Capacitor Android 运行时的 `native-bridge`（**不是本仓文件**，在 @capacitor/android 里）先存 `win.CapacitorWebFetch = window.fetch`，再 `window.fetch = async (…) => …`，整段由 `doPatchHttp` 控制；Android 上 `doPatchHttp` 要求 `CapacitorHttp.isEnabled()`，而它读的是 `plugins.CapacitorHttp.enabled`（默认 `false`）。**本仓 `capacitor.config.ts` 没有这个条目，所以今天 fetch 还是原生的。** 风险不在「现在就挂」，而在于：
 
@@ -201,7 +208,7 @@
 
 - `Intl.DisplayNames`（2 处：`src/index.html:120`、`src/services/diagnostics/capabilityTruth.ts:80`）：Chrome 81 才有，落在 83 之内，但语言数据（ICU）齐不齐要看具体机型；`src/index.html` 启动守卫已把它列进 `REQUIRED`，探不到会画提示页。
   **口径留痕**：`src/index.html:120` 那一行是**注释**（注释里写着「不检查 Intl.DisplayNames」），扫描器只做字面量匹配，注释行也算命中——为保住「0 命中就是真的 0 命中」，这条不一致不改规则，在这里写明。
-- `Capacitor.registerPlugin`（4 处：`src/services/appUpdate.ts:34`、`src/services/diagnostics/collector.ts:1459`、`src/services/exportText.ts:13`、`src/services/invite/fingerprint.ts` 的 `registerPlugin`）：`registerPlugin` 永远返回代理对象，插件没注册时只会在调用时 reject。**全仓 `isPluginAvailable` 命中数为 0**，也就是没有任何一处正面探测「原生侧到底注册没注册」。已人工核对：`android/app/src/main/java/com/example/deepseekchat/MainActivity.java:49-52` 注册了 4 个插件，Java 侧 `@PluginMethod` 名字与 JS 调用一一对应，**没有名字对不上的情况**；所有调用点也都有 `try…catch` 降级。但「插件注册失败 / 被裁剪 / 旧版本 APK 没有这个插件」这条路径仍无正面探测。本轮 #243 新增的 `DeviceFingerprint`（`invite/fingerprint.ts` 的 `registerPlugin`）也计入这几处；`CheckoutBrowser`（原 `ours/transport.ts:37`，`/buy` 收银台的原生桥）已随 #331 的旧支付链路停用一起删除，那条 `需动态验证` 命中不再存在。
+- `Capacitor.registerPlugin`（5 处：`src/services/appUpdate.ts:34`、`src/services/diagnostics/collector.ts:1459`、`src/services/exportText.ts:13`、`src/services/invite/fingerprint.ts` 的 `registerPlugin`、`src/components/settings/AppUpdateField.tsx:103` 的 `registerPlugin('Browser')`）：`registerPlugin` 永远返回代理对象，插件没注册时只会在调用时 reject。**全仓 `isPluginAvailable` 命中数为 0**，也就是没有任何一处正面探测「原生侧到底注册没注册」。已人工核对：`android/app/src/main/java/com/example/deepseekchat/MainActivity.java:49-52` 注册了 4 个插件，Java 侧 `@PluginMethod` 名字与 JS 调用一一对应，**没有名字对不上的情况**；所有调用点也都有 `try…catch` 降级。但「插件注册失败 / 被裁剪 / 旧版本 APK 没有这个插件」这条路径仍无正面探测。本轮 #243 新增的 `DeviceFingerprint`（`invite/fingerprint.ts` 的 `registerPlugin`）也计入这几处；`CheckoutBrowser`（原 `ours/transport.ts:37`，`/buy` 收银台的原生桥）已随 #331 的旧支付链路停用一起删除，那条 `需动态验证` 命中不再存在。
 - `canvas.toBlob`（1 处：`src/services/chat/appAssets.ts:60`）：回调可能拿到 `null`，个别 WebView 上不触发。
 - `new AudioContext({ sampleRate })`（1 处：`src/services/speech/readAloud.ts:92`）：采样率选项与自动播放策略在真机上表现不一致。
 - `visualViewport`：API 在（Chrome 61），键盘弹出后的 `resize` / `scroll` 时序与去抖仍需真机确认（这一条是人工补记，扫描器的结论本来就在 `已有兜底` 里）。
@@ -233,13 +240,13 @@
 
 | 能力 | 命中 | 已有兜底 | 无风险 | 真实漏洞 | 需动态验证 |
 | --- | --- | --- | --- | --- | --- |
-| `localStorage` | 16 | 15 | 1 | 0 | 0 |
+| `localStorage` | 20 | 19 | 1 | 0 | 0 |
 | `AbortController` | 14 | 14 | 0 | 0 | 0 |
-| `Body.text/arrayBuffer` | 15 | 8 | 7 | 0 | 0 |
+| `Body.text/arrayBuffer` | 16 | 10 | 6 | 0 | 0 |
 | `Capacitor.isNativePlatform` | 11 | 2 | 9 | 0 | 0 |
-| `URL.createObjectURL` | 6 | 3 | 3 | 0 | 0 |
-| `URL.revokeObjectURL` | 6 | 2 | 4 | 0 | 0 |
-| `Capacitor.registerPlugin` | 5 | 1 | 0 | 0 | 4 |
+| `URL.createObjectURL` | 7 | 3 | 4 | 0 | 0 |
+| `URL.revokeObjectURL` | 7 | 2 | 5 | 0 | 0 |
+| `Capacitor.registerPlugin` | 6 | 1 | 0 | 0 | 5 |
 | `ResizeObserver` | 5 | 5 | 0 | 0 | 0 |
 | `matchMedia` | 5 | 1 | 4 | 0 | 0 |
 | `Intl.DisplayNames` | 4 | 2 | 0 | 0 | 2 |
@@ -259,7 +266,7 @@
 | `canvas.toDataURL` | 1 | 0 | 1 | 0 | 0 |
 | `fetch 响应体 clone` | 1 | 0 | 0 | 1 | 0 |
 
-**总计 120 条命中**（`已有兜底` 70 / `无风险` 37 / `真实漏洞` 5 / `需动态验证` 8）；风险分布：高 4、中 9、低 107。
+**总计 121 条命中**（`已有兜底` 71 / `无风险` 37 / `真实漏洞` 5 / `需动态验证` 8）；风险分布：高 4、中 9、低 108。
 
 ## 未覆盖的边界
 
@@ -273,10 +280,21 @@
 
 ## 复核记录
 
-- 复核（2026-11-20，基准 `2c9cdaf`，分支 `fix/export-307`）：历史归档落盘（#307）给 `services/exportText.ts` 加了 `registerPlugin('ExportText')` 与二进制分块写出的调用点，`prepareFiles` 侧的 `backup.ts` 也整体下移。复算结果：扫描范围 204 个源文件、总计 120 条命中**不变**；verb 分布 `已有兜底` 70 → **69**、`无风险` 37 → **38**；`Body.text/arrayBuffer` 14/8/6 → **15/8/7**、`Capacitor.isNativePlatform` 10/2/8 → **11/2/9**、`URL.createObjectURL` 7/3/4 → **6/3/3**、`URL.revokeObjectURL` 7/3/4 → **6/2/4**。风险分布（高 4 / 中 9 / 低 107）不变。
-
+- 复核（2026-11-20 18:05，基准 `f8b8125`，本单 #498 分支 `feat/legacy-migration-tail`）：新增 `src/legacy/migration/**` 4 个 `.ts` 与 1 个 `.tsx`，扫描范围 248 → **253** 个源文件。新代码**只新增 1 处宿主能力调用**：`src/legacy/migration/collect.ts:40` 读老账号额度槽位的 `localStorage`（读取包在 `try` 里、读不到当没有 → **已有兜底**，低风险），所以命中总数 127 → **128 条**（`已有兜底` 74 → **75**，其余三类不变），风险分布 低 113 → **114**（高 4 / 中 10 不变），`localStorage` 19 → **20**；其余各能力计数未变。
+- 复核（2026-11-20 11:40，本单 #451 分支 `feat/key-identity-451`）：新增 1 个 `.ts` 源文件（`src/services/invite/keyIdentity.ts`，Key 身份时间记录），扫描范围 211 → **212** 个源文件。新文件**不碰任何宿主能力**（纯计算，localStorage 读写仍只发生在 `src/services/api/apiConfig.ts` 的既有 `read` / `write` 两个函数里，没有新增调用点），命中总数与各能力计数、风险分布均未变。
 - 复核（2026-11-19 18:32，基准 `452debb`，本单 #303 分支 HEAD `204bd6e`）：新增 1 个 `.ts` 源文件（`src/services/api/keyRejection.ts`），扫描范围 202 → **203** 个源文件（`.ts` 147 → **148**）。新文件不碰 storage / clipboard / fetch / Capacitor（只做 Key 指纹与 401 状态，网络请求仍在 `src/services/api/client.ts`），**命中总数仍是 119 条**，各能力计数与风险分布（高 4 / 中 10 / 低 105）未变；`src/services/api/client.ts` 的 4 处 `文件:行` 按本次实时复算重锚（`:155` / `:260` / `:646` / `:666`）。
 - 复核（2026-11-19 18:35，基准 `68c4d9d`，本单 #305）：新增 1 个 `.ts` 源文件（`src/components/settings/logView.ts`），扫描范围 199 → **200** 个源文件。新文件没有任何宿主能力调用（不碰 storage / clipboard / fetch / Capacitor，复制走既有的 `copyText` 工具），**命中总数仍是 119 条**，各能力计数与风险分布未变；`FeedbackDialog.tsx` 因新增日志预览区整体下移，`Capacitor.isNativePlatform` 的行号从 `:202` 修正为 `:241`。
 - 复核（2026-11-19 18:50，基准 `7a65f55`，本单 #324 分支 HEAD）：新增 1 个 `.ts` 源文件（`src/services/chat/replyErrorReport.ts`），扫描范围 203 → **204** 个源文件。新文件没有任何宿主能力调用（不碰 storage / clipboard / fetch / Capacitor；复制仍走既有的 `copyText` 工具，脱敏仍走既有的 `scrubReportText`），**命中总数仍是 119 条**，各能力计数与风险分布未变。
 - 复核（2026-11-19 19:20，基准 `1577841`，本单 #310 分支）：新增 2 个 `.ts` 源文件（`src/services/updateFailure.ts` / `src/services/updateReport.ts`），扫描范围 204 → **206** 个源文件。两个文件都不碰 storage / clipboard / fetch / Capacitor（复制仍走既有的 `src/utils/clipboard.ts`，诊断文本只做字符串拼接），**命中总数仍是 119 条**，各能力计数与风险分布（高 4 / 中 10 / 低 105）未变。
 - 复核（2026-11-19 19:50，基准 `0c89bf5`，本单 #331 分支 `chore/331-retire-buy`）：旧支付链路（`/buy` 收银台、`/api/buy` 建单、`/api/order` 查单、订单存档）整条删除，`transport.ts` 里的 `CheckoutBrowser` 插件（`registerPlugin`，原 `:37`，`需动态验证`）随之消失，因此命中总数 119 → **118**、`需动态验证` 9 → **8**、风险分布「中」10 → **9**；扫描范围 205 → **204** 个源文件（`.ts` 仍是 149：删 `orderStore.ts` / `returnParams.ts`、加 `storage.ts`）。`transport.ts` 其余 3 处命中按实时复算重锚：`Capacitor.isNativePlatform` `:39` → **`:20`**、`AbortController` `:57`、`Body.text/arrayBuffer` `:140` → **`:69`**。
+- 复核（2026-11-19 20:05，基准 `42a3a68`，本单 #339 分支 `fix/deepseek-model-residue-339`）：新增 1 个 `.ts` 源文件（`src/services/api/configMigration.ts`，扫描范围 204 → **205** 个源文件）。迁移模块**不直接碰 localStorage**：版本号的读写走 `apiConfig.ts` 新增的 `readConfigValue` / `writeConfigValue`（配置层仍是宿主能力的唯一入口），所以 **命中总数仍是 118 条**，各能力计数与风险分布（高 4 / 中 9 / 低 105）未变。`apiConfig.ts` 顶部注释多了一行，3 处 `localStorage` 命中按实时复算重锚：`:57` → **`:58`**、`:66` → **`:67`**、`:68` → **`:69`**；`src/main.tsx` 的 `initDiagnostics()` 因为前面插入了一行 `migrateConfigOnce()` 从 `:66` 移到 **`:68`**。
+- 复核（2026-11-20 01:00，基准 `519a721`，本单 #421 分支 `feat/email-adapt`）：新增 2 个 `.ts` 源文件（`src/services/invite/email.ts`、`src/services/invite/emailCooldown.ts` 发码倒计时纯函数），扫描范围 208 → **210** 个源文件。新文件不碰 storage / clipboard / fetch / Capacitor（设备码存储走注入的 `storage` 接口，网络走注入的传输层），**命中总数仍是 118 条**，各能力计数与风险分布未变；`OursServicesDialog.tsx` 新增的邮箱区复用既有 `Button` / 输入框写法，未新增宿主能力调用。
+- 复核（2026-11-20 08:30，基准 `dfe6db0`，本单 #434 / #374 分支 `fix/error-readability-434-374`）：新增 1 个 `.ts` 源文件（`src/services/api/keyFailure.ts`：Key 失效的细分与尾号，不碰 storage / clipboard / fetch / Capacitor），扫描范围 210 → **211** 个源文件（`.ts` 152 → **153**）。命中总数 121 → **122**：`src/services/api/client.ts` 的 `htmlResponseDetail()` 新增一处 `response.text()`（读上游 HTML 报错页的正文前 200 字，给 #434 的折叠区），所以 `Body.text/arrayBuffer` 15 → **16**（`已有兜底` 9 → **10**），风险分布 低 108 → **109**（高 4 / 中 9 未变）。`src/services/api/client.ts` 的 4 处 `文件:行` 与 `src/services/chat/store.ts` 的 1 处按本次实时复算重锚：`:155` → **`:168`**、`:260` → **`:289`**、`:646` → **`:688`**、`:666` → **`:708`**、store.ts `:1281` → **`:1315`**。
+- 复核（2026-11-20 12:20，基准 `e5ee313`，本单 #386 分支 `feat/scroll-to-bottom-386`）：新增 1 个 `.tsx`（`src/components/session/ScrollToBottomButton.tsx`）与 1 个 `.ts`（同名 `.module.css.d.ts` 类型声明），扫描范围 212 → **214** 个源文件。新文件不碰 storage / clipboard / fetch / Capacitor，也不直接调 `matchMedia`（reduced-motion 判定走既有的 `src/utils/usePresence.ts` 的 `prefersReducedMotion()`），**命中总数仍是 122 条**，各能力计数与风险分布（高 4 / 中 9 / 低 109）未变；`src/components/messages/MessageList.tsx` 因新增 import 与一段按钮状态逻辑整体下移，`ResizeObserver` 两处从 `:110` / `:125` → **`:195` / `:212`**、`CSS.escape` 从 `:195` → **`:282`**。
+
+- 复核（2026-11-20 17:35，基准 `54a45f8`，本单 #487 W1-C1 分支 `feat/account-consume-page`，「账户与消费」页）：新增 3 个源文件 —— `src/components/consume/**` 的 `.tsx`（`AccountConsumePage` 页面壳 / `MyCardsTab` 我的卡密 / `BuyTab` 购买），Tab3 / Tab4 直接挂 W1-C2 的 `QuotaPanel` / `AccountPanel`（同一个 `consume` 实例 + `onNeedLogin` 递下去，没有第二套状态机）。三个新文件都**不直接碰宿主能力**：复制卡密走既有的 `src/utils/clipboard.ts`（`copyText`），apia 请求走既有的 `services/ours/transport.ts`（`httpTransport` / `openPayLinkInApp`），sub2api 请求走 `services/consume`，所以 `navigator.clipboard` / `Capacitor.isNativePlatform` 的命中都没有新增。扫描范围 244 → **247** 个源文件（`.tsx` 63 → **66**），命中总数（127）、各能力计数与风险分布均未变；`src/components/settings/SettingsDialog.tsx` 因为删掉三格入口（#482 三弹层合一）少了 45 行，其中两处 `AbortController` 整体上移（明细表里那三条 `:979` / `:1231` / `:1236` 是更早一次 PR 留下的漂移，本单未动）。
+- 复核（2026-11-20 16:20，基准 `d198ccc`，本单 #487 W1-A 分支 `feat/consume-layer`）：新增 9 个 `.ts`（`src/services/consume/**`：http / errors / auth / keys / usage / redeem / aff / email / index）。`http.ts` 用 `Capacitor.isNativePlatform()` 判「是不是原生环境」（非原生直接回 `unsupported`，不做 fetch 兜底），因此 `Capacitor.isNativePlatform` 10 → **11**（`无风险` 8 → **9**，Chromium 83 无此 API 但它是 Capacitor 注入的宿主能力，非原生分支即兜底）。命中总数 123 → **124**、`无风险` 38 → **39**、风险分布 低 109 → **110**（高 / 中未变）。扫描范围 217 → **226** 个源文件（`.ts` 169 / `.tsx` 56 / `.html` 1）。其余能力计数与 §「真实漏洞」5 条一处未变；`src/services/consume/http.ts` 新增的 `AbortController` / `fetch` 是**注释里的说明文字**，不进命中。
+- 复核（2026-11-20 16:35，基准 `e504986`，本单 #487 W1-B 分支 `feat/auth-layer-skeleton`）：新增 5 个 `.ts`（`src/services/auth/{types,transport,store,flags}.ts`、`src/components/auth/authForm.ts`）与 3 个 `.tsx`（`AuthGate` / `LoginPage` / `RegisterPage`），扫描范围 226 → **234** 个源文件（`.ts` 169 → **174**、`.tsx` 56 → **59**）。命中总数 124 → **127** 条：`src/services/auth/store.ts` 的凭据存储 `read`（`:92`）与 `write`（`removeItem` `:101` / `setItem` `:103`）各 1 处 `localStorage`，三处都自带 `try…catch`（存储不可用只影响「下次要不要重登」），记 `已有兜底`；`localStorage` 16 → **19**（`已有兜底` 15 → **18**）。风险分布 低 110 → **113**（高 4 / 中 10 未变）。
+- 复核（2026-11-20 17:00，基准 `3392efa`，本单 #487 W1-C2 分支 `feat/consume-panels`，「账户与消费」四面板）：新增 10 个 `.ts / .tsx`（`src/components/consume/**`），扫描范围 234 → **244** 个源文件。新代码**不新增任何宿主能力调用**：不碰 storage（余额不落本地，#484 §七 第 6 条）、不碰 fetch / Capacitor（网络全走 W1-A 的 `services/consume/**`），复制仍走既有的 `src/utils/clipboard.ts` 的 `copyText`，`navigator.clipboard` 的命中数与判定不变。**命中总数仍是 127 条**，各能力计数与风险分布未变。
+- 复核（2026-11-20 17:20，基准 `3392efa`，本单 #487「统一计量单位为元」分支 `chore/unify-currency-cny`）：新增 1 个 `.ts` 源文件（`src/utils/money.ts`，金额格式化纯函数 + 币种符号表），扫描范围 234 → **235** 个源文件。新文件**不碰任何宿主能力**（无 storage / clipboard / fetch / Capacitor / matchMedia），命中总数仍是 **127 条**（`已有兜底` 74 / `无风险` 39 / `真实漏洞` 5 / `需动态验证` 9），风险分布（高 4 / 中 10 / 低 113）与各能力计数未变。
+- 合并复核（2026-11-20 17:35，基准 `77cd6e8`，`chore/unify-currency-cny` rebase 到 #505 之后）：重新跑 `scripts/lib/hostCapabilityAudit.mjs`，扫描范围 **248** 个源文件（`.ts` 181 / `.tsx` 66 / `.html` 1），命中总数 **127 条**（`已有兜底` 74 / `无风险` 39 / `真实漏洞` 5 / `需动态验证` 9），风险分布（高 4 / 中 10 / 低 113）未变；上方扫描范围已按复算结果更新。

@@ -1,3 +1,4 @@
+import { registerPlugin } from '@capacitor/core'
 import { useEffect, useRef, useState } from 'react'
 import { Button } from '../base/Button.js'
 import { Modal } from '../base/Modal.js'
@@ -11,12 +12,20 @@ import {
 import {
   fetchManifest,
   parseManifest,
+  manualDownloadTarget,
+  readManifestSnapshot,
+  readUpdateChannel,
   releaseUrl,
+  saveManifestSnapshot,
+  saveUpdateChannel,
   selectUpdate,
   DEFAULT_RELEASE_BASE,
+  type ArtifactVariant,
+  type ManifestSnapshot,
   type UpdateChannel,
   type UpdateRelease,
 } from '../../services/updateManifest.js'
+import { useTranslate } from '../../i18n/index.js'
 import {
   classifyUpdateError,
   describeUpdateFailure,
@@ -27,16 +36,20 @@ import { recordError, recordEvent } from '../../services/diagnostics/collector.j
 import { buildMeta, type Stage } from '../../services/diagnostics/fields.js'
 import { bytesPerSecond, createStageTimer } from '../../services/diagnostics/timing.js'
 import { copyText } from '../../utils/clipboard.js'
+import { useSettings } from '../../services/settings.js'
 import { buildUpdateReport, hostOf, releaseHosts } from '../../services/updateReport.js'
 import dialogStyles from './AppUpdateField.module.css'
 import styles from './Settings.module.css'
 
 const sizeText = (bytes: number) => `${(bytes / 1024 / 1024).toFixed(1)} MB`
 
-/** 渠道的中文名：#310 之后失败文案里会写清「哪个渠道」，所以只写一次 */
-const CHANNEL_LABEL: Record<UpdateChannel, string> = {
-  stable: '稳定版',
-  prerelease: '稳定版与预发布版',
+/**
+ * 渠道名（双语对）：#310 之后失败文案里会写清「哪个渠道」，所以只写一次；
+ * #373 起文案分 zh/en，渠道名不能只有中文，否则英文句子里会嵌一段中文。
+ */
+const CHANNEL_LABEL: Record<UpdateChannel, { zh: string; en: string }> = {
+  stable: { zh: '稳定版', en: 'Stable' },
+  prerelease: { zh: '稳定版与预发布版', en: 'Stable + pre-release' },
 }
 
 /** 最近检查时间：只到秒（用户在截图里对得上就够了） */
@@ -52,11 +65,57 @@ const clockText = (at: number | undefined): string => {
       ).padStart(2, '0')}`
 }
 
+/**
+ * 「上次成功时间」（Issue #412）：带日期，因为缓存可能来自好几天前 ——
+ * 只给 `19:05:16` 会让用户以为是今天拉到的。当天只给时分会更短，但**短不等于准**，
+ * 缓存标注的第一原则是「别让用户误以为这是刚拿到的」。
+ */
+const snapshotText = (at: number): string => {
+  const date = new Date(at)
+  if (Number.isNaN(date.getTime())) {
+    return '—'
+  }
+  const pad = (value: number) => String(value).padStart(2, '0')
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(
+    date.getHours()
+  )}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`
+}
+
+/** 失败兜底里最多列几条：够让用户认出「上次看到过哪个版本」，也不至于把弹窗撑爆 */
+const CACHE_PREVIEW_ROWS = 5
+
+/**
+ * 原生侧「App 内嵌浏览器」：与 #331 的「前往购买」同一个插件（`@capacitor/browser`）。
+ *
+ * 这里刻意**不** `import('@capacitor/browser')`：那个包的 web 实现 `extends WebPlugin`，
+ * 会把 `WebPlugin` 这个 `@capacitor/core` 导出拉进打包图 —— 而域10 / #373 的 harness 用
+ * `tests/fixtures/<域>/capacitor-mock.ts` 顶替 `@capacitor/core`（只有 Capacitor / registerPlugin /
+ * CapacitorHttp 三个导出），一旦进图就是构建期 `export 'WebPlugin' was not found`，整批集成用例红。
+ *
+ * `registerPlugin('Browser')` 与官方 wrapper 内部做的事完全一样（Android 侧
+ * `android/capacitor.settings.gradle` 已 include `:capacitor-browser`，原生插件真的在），
+ * 但不需要把 web 实现打进产物；网页预览下这个按钮根本不会渲染。
+ */
+/** 只用到 `open` 一个方法（本文件是 .tsx，泛型写法会被当成 JSX，所以用类型别名 + 断言） */
+interface NativeBrowserPlugin {
+  open(options: { url: string; presentationStyle?: string }): Promise<void>
+}
+const nativeBrowser = registerPlugin('Browser') as unknown as NativeBrowserPlugin
+
 /** Update operations are isolated from history, API settings and feedback transport. */
 export const AppUpdateField = () => {
+  /** 失败文案是按界面语言取一侧的双语对（见 services/updateFailure.ts） */
+  const locale = useSettings((state) => state.locale)
+  const lang = locale === 'zh-CN' ? 'zh' : 'en'
+  /** #412：新增文案走 i18n（zh/en 成对，check:i18n 的 R1/R2/R4 会盯着） */
+  const t = useTranslate()
   const [opened, setOpened] = useState(false)
-  const [channel, setChannel] = useState<UpdateChannel>(
-    /-/.test(bundledApp().version) ? 'prerelease' : 'stable'
+  /**
+   * 渠道默认值按「装的是不是预发布包」猜；**用户选过就以用户的为准**（#412 第 3 项）——
+   * 以前这里只有猜测，于是「我把渠道切到稳定版了」在重开设置后根本不成立。
+   */
+  const [channel, setChannel] = useState<UpdateChannel>(() =>
+    readUpdateChannel(/-/.test(bundledApp().version) ? 'prerelease' : 'stable')
   )
   const [release, setRelease] = useState<UpdateRelease>()
   /** 本次清单实际生效的分发机：相对 file 必须拼在它上面（回退到旧机后别拼新机域名）。 */
@@ -64,14 +123,43 @@ export const AppUpdateField = () => {
   const [message, setMessage] = useState('')
   const [busy, setBusy] = useState(false)
   const [ready, setReady] = useState(false)
+  /**
+   * 下载进度只描述「正在下载的字节」，**不参与**「能不能装」的判断（#373）：
+   * `received === total` 永不推导「可安装」，可安装的唯一来源是下面的 `ready`（显式状态）。
+   * 以前失败 / 取消分支不清它，终态就渲染成「5.2 MB / 5.2 MB 满格 + 确认下载」，
+   * 用户按「进度满格 = 下好了」理解，实际一次都没下成。
+   * TODO(原生侧，另开单)：`AppUpdatePlugin.java:205-208` 在 `received == size` 时就发 100%，
+   * `:213` 才 `verify()` —— 真机上任何校验失败都必然「先看到满格、再收到失败」。
+   * 那一帧应挪到 `verify()` 通过之后（本 PR 只改 JS，不动 Java）。
+   */
   const [progress, setProgress] = useState<{ received: number; total: number }>()
   /** 最近一次检查 / 下载 / 安装的结论（#310）：界面文案与「复制诊断信息」共用同一份 */
   const [outcome, setOutcome] = useState<UpdateFailureView>()
   const [checkedAt, setCheckedAt] = useState<number>()
   const [copyState, setCopyState] = useState<'idle' | 'done' | 'failed'>('idle')
+  /**
+   * 失败兜底（#412）：`failed` 只表示「本次检查以失败收场」，界面据此决定要不要给
+   * 「缓存版本列表 + 手动下载」两个出口；`snapshot` 是失败那一刻从 localStorage 读到的
+   * 上次成功清单（读不到就保持 undefined，界面退回原来的失败文案）。
+   */
+  const [failed, setFailed] = useState(false)
+  const [snapshot, setSnapshot] = useState<ManifestSnapshot>()
+  /**
+   * 本机已装包的变体与 versionCode：失败时也要用来从**缓存**里挑「最新可装的那一条」。
+   * 用 ref 而不是 state —— 它们由检查流程写、由兜底链接读，不参与任何渲染分支。
+   */
+  const installedRef = useRef<{ code: number; variant: ArtifactVariant }>({
+    code: bundledApp().versionCode,
+    variant: currentVariant(),
+  })
   /** 下载进度也要给失败文案用：state 在一次下载里是旧值，这里留一份最新的 */
   const progressRef = useRef<{ received: number; total: number }>()
   const operation = useRef<AbortController>()
+  /**
+   * `busy` 是 state：同一 tick 连点两次会都读到旧值，两次都放行（#373 场景 E 实测向原生下发了 2 次下载，
+   * 第 2 次被原生 BUSY 拒）。真正的「正在下载」判定要靠这个 ref。
+   */
+  const downloading = useRef(false)
   const mounted = useRef(true)
   const native = isAndroidUpdate()
   useEffect(() => {
@@ -93,6 +181,7 @@ export const AppUpdateField = () => {
     const view = describeUpdateFailure(classifyUpdateError(error), {
       channel: CHANNEL_LABEL[activeChannel],
       version,
+      locale: lang,
     })
     setOutcome(view)
     setMessage(view.text)
@@ -117,6 +206,8 @@ export const AppUpdateField = () => {
     setProgress(undefined)
     setOutcome(undefined)
     setCopyState('idle')
+    setFailed(false)
+    setSnapshot(undefined)
     setCheckedAt(Date.now())
     setMessage('正在检查更新…')
     const startedAt = Date.now()
@@ -156,6 +247,10 @@ export const AppUpdateField = () => {
         effectiveBase = manifest.base
       }
       phase('update.check.manifest')
+      // #412：本机变体与 versionCode 记进 ref —— 失败时要用它们从**缓存快照**里挑最新可装版本
+      installedRef.current = { code: current.versionCode, variant }
+      // 清单拿到了就存一份快照：下次失败时它就是唯一的兜底（写不进去不影响本次检查）
+      saveManifestSnapshot({ rows, base: effectiveBase })
       const result = selectUpdate(rows, current.versionCode, variant, activeChannel)
       if (controller.signal.aborted) {
         return
@@ -171,17 +266,23 @@ export const AppUpdateField = () => {
         }),
         source: activeChannel,
         result: result.release ? 'update-available' : 'up-to-date',
+        // #377：没有候选时把「为什么没有」也记进日志——排查时不用再靠用户复述文案
+        reason: result.reason ?? 'none',
       })
       setRelease(result.release)
       setBase(effectiveBase)
       if (result.release) {
         setMessage('发现新版本，确认后再下载。')
       } else {
-        // 无新版也要说清「哪个渠道、当前版本、为什么没有可装的记录」（#310 验收第 5 条）
+        // 无新版也要说清「哪个渠道、当前版本、为什么没有可装的记录」（#310 验收第 5 条）。
+        // #377：`reason` 把「本机变体在清单里断链」与「确实已是最新」分开——前者要给的是
+        // 「手动下载正式版」这种能行动的结论，不是「已是最新」。
         const view = describeUpToDate({
           channel: CHANNEL_LABEL[activeChannel],
           version,
+          locale: lang,
           incomplete: result.incomplete,
+          reason: result.reason,
         })
         setOutcome(view)
         setMessage(view.text)
@@ -207,6 +308,14 @@ export const AppUpdateField = () => {
           error
         )
         showFailure(error, activeChannel, bundledApp().version)
+        /**
+         * #412 第 1 项：失败时不再只剩一句「检查失败」。
+         * 上次成功拉到的清单还在 localStorage 里，读出来给用户看（标注缓存时间 + 「可能不是最新」），
+         * 至少让他知道「上次看到的是哪个版本」。读不到（没缓存 / 过期 / 结构变了）就保持 undefined，
+         * 界面回到原来的失败文案 —— 不拿过期数据硬凑。
+         */
+        setSnapshot(readManifestSnapshot())
+        setFailed(true)
       }
     } finally {
       checking.current = false
@@ -216,9 +325,10 @@ export const AppUpdateField = () => {
     }
   }
   const download = async () => {
-    if (!release || busy) {
+    if (!release || busy || downloading.current) {
       return
     }
+    downloading.current = true
     const controller = new AbortController()
     operation.current = controller
     setBusy(true)
@@ -261,6 +371,9 @@ export const AppUpdateField = () => {
       }
     } catch (error) {
       if (mounted.current) {
+        // 进度条只描述「正在下载的字节」：失败 / 取消后必须清空，
+        // 否则终态是「满格进度 + 确认下载」，等于把失败画成下好了（#373 根因）
+        setProgress(undefined)
         if (controller.signal.aborted) {
           setOutcome(undefined)
           setMessage('已取消下载，可重新下载。')
@@ -276,6 +389,7 @@ export const AppUpdateField = () => {
         }
       }
     } finally {
+      downloading.current = false
       if (mounted.current && operation.current === controller) {
         setBusy(false)
       }
@@ -302,6 +416,8 @@ export const AppUpdateField = () => {
     } catch (error) {
       if (mounted.current) {
         setReady(false)
+        // 安装阶段的校验失败 = 缓存的包不可信：按钮会回到「确认下载」，同样不能留满格进度（#373 场景 B2）
+        setProgress(undefined)
         showFailure(error, channel, release.version)
       }
     } finally {
@@ -315,7 +431,7 @@ export const AppUpdateField = () => {
       buildUpdateReport({
         version: bundledApp().version,
         versionCode: bundledApp().versionCode,
-        channel: CHANNEL_LABEL[channel],
+        channel: CHANNEL_LABEL[channel].zh,
         native,
         checkedAt,
         outcome: outcome?.text,
@@ -325,6 +441,47 @@ export const AppUpdateField = () => {
     )
     setCopyState(ok ? 'done' : 'failed')
   }
+  /**
+   * 「手动下载最新版」的目标地址（#412 第 2 项）。判定本体在 services/updateManifest.ts 的
+   * `manualDownloadTarget`（纯函数、单测钉住）：有缓存就给最新可装那条记录的直链，
+   * 没有就退到公开下载站首页。组件这里只负责「怎么打开」。
+   */
+  const manual = manualDownloadTarget(snapshot, installedRef.current, channel)
+  /**
+   * 原生侧用 App 内嵌浏览器打开（与 #331 的「前往购买」同一条通道）；插件缺失 / 打不开时
+   * 留在弹窗里给一句可读提示，不做 `window.open` / `location` 兜底（整页跳走就等于把设置界面弄丢）。
+   */
+  const openManualDownload = async () => {
+    try {
+      await nativeBrowser.open({ url: manual.url, presentationStyle: 'popover' })
+    } catch {
+      // 插件缺失（旧壳子）/ 打不开：留在弹窗里说清楚，不整页跳走
+      setMessage(t('updateManualOpenFailed'))
+    }
+  }
+  /** 缓存列表只列最新几条：按 versionCode 降序，读的是已校验过的快照 */
+  const cachedPreview = snapshot
+    ? [...snapshot.rows].sort((a, b) => b.versionCode - a.versionCode).slice(0, CACHE_PREVIEW_ROWS)
+    : []
+  /**
+   * 「手动下载最新版」那个入口本身：原生侧是按钮（走 App 内嵌浏览器），网页预览是链接。
+   * 抽成一个元素是因为失败态有「有缓存 / 没缓存」两种排版，出口必须**一模一样**——
+   * 复制一份 JSX 迟早会有一边改了另一边没改。
+   */
+  const manualEntry = native ? (
+    <button
+      type="button"
+      className={dialogStyles.copyButton}
+      data-testid="update-manual-download"
+      onClick={() => void openManualDownload()}
+    >
+      {t('updateManualDownload')}
+    </button>
+  ) : (
+    <a href={manual.url} target="_blank" rel="noreferrer" data-testid="update-manual-download">
+      {t('updateManualDownload')}
+    </a>
+  )
   return (
     <>
       <div className={styles.cell}>
@@ -387,6 +544,9 @@ export const AppUpdateField = () => {
                 setChannel(next)
                 setRelease(undefined)
                 setReady(false)
+                // #412 第 3 项：选择要记住（否则「切到仅稳定版」重开设置就不成立了）。
+                // 写失败（隐私模式 / 配额满）只影响下次默认值，不影响本次检查。
+                saveUpdateChannel(next)
                 // 切渠道后自动重查（#310 验收）：不再让用户再点一次「检查更新」
                 void check(next)
               }}
@@ -398,6 +558,41 @@ export const AppUpdateField = () => {
           <p role="status" aria-live="polite">
             {message}
           </p>
+          {/*
+           * 失败兜底（#412）：检查失败时不再只剩一句「更新服务不可达」。
+           * 有缓存 → 列出上次成功拉到的版本 + 明确标注「缓存数据，可能不是最新」+ 上次成功时间；
+           * 没缓存 → 只有下面那一行「手动下载最新版」，不画缓存底纹（不拿过期数据硬凑）。
+           * 失败文案（`role="status"`）照旧不变：缓存是补充，不是用来掩盖失败的。
+           * 无论有没有缓存，都留一个「手动下载最新版」出口 —— 更新服务整体挂掉时，
+           * 这是用户唯一还能拿到安装包的通道。
+           */}
+          {failed ? (
+            snapshot ? (
+              <div className={dialogStyles.cacheFallback} data-testid="update-cache-fallback">
+                <p className={dialogStyles.cacheTitle}>{t('updateCacheFallbackTitle')}</p>
+                <p className={dialogStyles.cacheNote}>
+                  {t('updateCacheFallbackNote', {
+                    time: snapshotText(snapshot.savedAt),
+                    count: snapshot.rows.length,
+                  })}
+                </p>
+                <ul className={dialogStyles.cacheList}>
+                  {cachedPreview.map((row) => (
+                    <li key={`${row.versionCode}-${row.file}`}>
+                      {row.version} · {sizeText(row.size)}
+                      {row.buildType ? ` · ${CHANNEL_LABEL[row.buildType][lang]}` : ''}
+                    </li>
+                  ))}
+                </ul>
+                <div className={dialogStyles.cacheManual}>{manualEntry}</div>
+              </div>
+            ) : (
+              // 没有缓存：不画那块「缓存」底纹（画了会让人以为里面有数据），只留唯一还能走的出口
+              <div className={dialogStyles.cacheManual} data-testid="update-cache-fallback">
+                {manualEntry}
+              </div>
+            )
+          ) : null}
           {release ? (
             <>
               <h3>{release.version}</h3>
@@ -439,7 +634,7 @@ export const AppUpdateField = () => {
               </div>
               <div>
                 <dt>更新渠道</dt>
-                <dd>{CHANNEL_LABEL[channel]}</dd>
+                <dd>{CHANNEL_LABEL[channel][lang]}</dd>
               </div>
               <div>
                 <dt>更新服务</dt>

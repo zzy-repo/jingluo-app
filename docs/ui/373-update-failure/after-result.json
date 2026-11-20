@@ -1,0 +1,210 @@
+[
+  {
+    "viewport": "390x844",
+    "progress": [
+      0.25,
+      0.5,
+      0.98,
+      1
+    ],
+    "outcome": "resolve",
+    "id": "A",
+    "probe": {
+      "buttons": [
+        "检查更新",
+        "",
+        "复制诊断信息",
+        "重新检查",
+        "安装更新"
+      ],
+      "status": "下载及校验完成，点击安装。",
+      "progress": {
+        "value": 5452595,
+        "max": 5452595
+      },
+      "native": [
+        "installed",
+        "manifest",
+        "addListener",
+        "download",
+        "removeListener"
+      ]
+    },
+    "driveError": null,
+    "pageErrors": [],
+    "shot": "docs/ui/373-update-failure/after-A-390x844.png"
+  },
+  {
+    "viewport": "390x844",
+    "progress": [
+      0.25,
+      0.5,
+      0.98,
+      1
+    ],
+    "outcome": "reject",
+    "error": "HASH_MISMATCH",
+    "id": "B",
+    "probe": {
+      "buttons": [
+        "检查更新",
+        "",
+        "复制诊断信息",
+        "重新检查",
+        "确认下载"
+      ],
+      "status": "安装包校验未通过：下载到的安装包与发布记录对不上（SHA-256 不符），已丢弃，避免装到被篡改或不完整的包。客户端再试一次通常还是同样的结果，请点「复制诊断信息」把这段反馈给我们。",
+      "progress": null,
+      "native": [
+        "installed",
+        "manifest",
+        "addListener",
+        "download",
+        "removeListener"
+      ]
+    },
+    "driveError": null,
+    "pageErrors": [],
+    "shot": "docs/ui/373-update-failure/after-B-390x844.png"
+  },
+  {
+    "viewport": "390x844",
+    "progress": [
+      0.5,
+      1
+    ],
+    "outcome": "resolve",
+    "installReject": "VERSION_MISMATCH",
+    "id": "B2",
+    "probe": {
+      "buttons": [
+        "检查更新",
+        "",
+        "复制诊断信息",
+        "重新检查",
+        "确认下载"
+      ],
+      "status": "安装包校验未通过：这个安装包的版本号不对（不高于当前已安装的版本，或与发布记录不一致），装上去也不会变成新版。客户端再试一次通常还是同样的结果，请点「复制诊断信息」把这段反馈给我们。",
+      "progress": null,
+      "native": [
+        "installed",
+        "manifest",
+        "addListener",
+        "download",
+        "removeListener",
+        "install"
+      ]
+    },
+    "driveError": null,
+    "pageErrors": [],
+    "shot": "docs/ui/373-update-failure/after-B2-390x844.png"
+  },
+  {
+    "viewport": "390x844",
+    "progress": [
+      0.3,
+      0.99
+    ],
+    "outcome": "hang",
+    "cancelEffect": "reject",
+    "id": "D",
+    "probe": {
+      "buttons": [
+        "检查更新",
+        "",
+        "复制诊断信息",
+        "重新检查",
+        "确认下载"
+      ],
+      "status": "已取消下载，可重新下载。",
+      "progress": null,
+      "native": [
+        "installed",
+        "manifest",
+        "addListener",
+        "download",
+        "cancel",
+        "removeListener"
+      ]
+    },
+    "driveError": null,
+    "pageErrors": [],
+    "shot": "docs/ui/373-update-failure/after-D-390x844.png"
+  },
+  {
+    "viewport": "390x844",
+    "outcomes": [
+      {
+        "outcome": "delay-resolve",
+        "delayMs": 900,
+        "progress": [
+          0.3,
+          0.6,
+          1
+        ]
+      },
+      {
+        "outcome": "reject",
+        "error": "BUSY"
+      }
+    ],
+    "id": "E",
+    "probe": {
+      "buttons": [
+        "检查更新",
+        "",
+        "复制诊断信息",
+        "重新检查",
+        "安装更新"
+      ],
+      "status": "下载及校验完成，点击安装。",
+      "progress": {
+        "value": 5452595,
+        "max": 5452595
+      },
+      "native": [
+        "installed",
+        "manifest",
+        "addListener",
+        "download",
+        "removeListener"
+      ]
+    },
+    "driveError": null,
+    "pageErrors": [],
+    "shot": "docs/ui/373-update-failure/after-E-390x844.png"
+  },
+  {
+    "viewport": "360x740",
+    "progress": [
+      0.25,
+      0.5,
+      0.98,
+      1
+    ],
+    "outcome": "reject",
+    "error": "HASH_MISMATCH",
+    "id": "B",
+    "probe": {
+      "buttons": [
+        "检查更新",
+        "",
+        "复制诊断信息",
+        "重新检查",
+        "确认下载"
+      ],
+      "status": "安装包校验未通过：下载到的安装包与发布记录对不上（SHA-256 不符），已丢弃，避免装到被篡改或不完整的包。客户端再试一次通常还是同样的结果，请点「复制诊断信息」把这段反馈给我们。",
+      "progress": null,
+      "native": [
+        "installed",
+        "manifest",
+        "addListener",
+        "download",
+        "removeListener"
+      ]
+    },
+    "driveError": null,
+    "pageErrors": [],
+    "shot": "docs/ui/373-update-failure/after-B-360x740.png"
+  }
+]

@@ -17,6 +17,8 @@ import type {
 import {
   estimateChars,
   estimateTokens,
+  readRoundAnchor,
+  rememberRoundAnchor,
   reportContextTrim,
   resolveContextBudget,
   selectRoundWindow,
@@ -340,6 +342,12 @@ export type RequestBudgetOptions = {
   budget?: Partial<ContextBudget>
   /** 发生裁剪时回调一次，供诊断层记录「本轮裁掉多少条」 */
   onTrim?: (report: ContextTrimReport) => void
+  /**
+   * 会话身份（#345）：同一个 key 的连续几轮会**沿用同一个裁剪边界**，
+   * 这样历史只在尾部增长、请求前缀逐字节稳定，上游上下文缓存才能命中。
+   * 不传 = 不记边界（无状态重算），只有 `store.ts` 有会话 id，别处不用管。
+   */
+  anchorKey?: string
 }
 
 export const toRequestMessages = (
@@ -369,7 +377,26 @@ export const toRequestMessages = (
   const sizes = units.map((params) => estimateChars(params))
   // 本轮提问与系统快照永远保留，但占预算
   const fixedChars = estimateChars(questionParam) + (latestReminder?.length ?? 0)
-  const window = selectRoundWindow(sizes, budget, fixedChars)
+  /**
+   * 上一轮定下的裁剪边界（#345）：按「第一个被保留的轮次」的提问 id 找回它的下标。
+   * 找不到（会话被改过 / 预算变了）就当没有锚点，重新算一次。
+   */
+  const anchorKey = options?.anchorKey
+  const anchorFromId = anchorKey ? readRoundAnchor(anchorKey, budget) : undefined
+  const anchorIndex = anchorFromId ? rounds.findIndex(([user]) => user.id === anchorFromId) : -1
+  const window = selectRoundWindow(
+    sizes,
+    budget,
+    fixedChars,
+    anchorIndex >= 0 ? rounds.length - anchorIndex : undefined
+  )
+  if (anchorKey) {
+    // 记下本轮边界：第一个被保留的轮次的提问 id（下一轮靠它找回同一个边界）
+    const firstKept = rounds[rounds.length - window.kept]?.[0]
+    if (firstKept?.id) {
+      rememberRoundAnchor(anchorKey, firstKept.id, budget)
+    }
+  }
   const kept = units.slice(units.length - window.kept)
   if (kept.length < units.length) {
     const report: ContextTrimReport = {

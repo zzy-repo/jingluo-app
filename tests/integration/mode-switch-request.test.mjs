@@ -164,7 +164,9 @@ mkdirSync(OUT_DIR, { recursive: true })
 
 console.log('# 快速模式')
 await openWelcome()
-expect((await selectedMode()) === 'fast', '首次进入默认是快速模式')
+// #363 起缺省档位是专家模式（开思考）；本用例验的是「档位真的改变请求体」，
+// 所以先断言缺省态，再用 ask('fast') 显式切到快速模式做对照。
+expect((await selectedMode()) === 'expert', '首次进入默认是专家模式（#363）')
 const fastBody = await ask('fast')
 expect(!!fastBody, '快速模式下抓到了请求体', fastBody ? `${bodies.at(-1).length} 字节` : '没抓到')
 

@@ -18,9 +18,7 @@ declare const styles: {
   readonly "deviceCode": string;
   readonly "plans": string;
   readonly "plan": string;
-  readonly "planActive": string;
   readonly "planName": string;
-  readonly "planMeta": string;
   readonly "redeemForm": string;
   readonly "input": string;
   readonly "actions": string;

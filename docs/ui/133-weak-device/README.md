@@ -18,7 +18,7 @@
 
 ### 1.1 造法（可复现）
 
-`tests/fixtures/archive-fixture.mjs` 每个会话只有 1 轮问答，撑不出长历史，所以**自建 seed**：
+`tests/fixtures/domain05/archive-fixture.mjs` 每个会话只有 1 轮问答，撑不出长历史，所以**自建 seed**：
 脚本 `firstscreen.mjs` 在页面里直接写 IndexedDB `chat-demo`（DB_VERSION 12）：
 
 - `sessions`（keyPath `id`）：`fact133-big` 一条大会话，`title = 会话 <N> 条`，`messages` 长度为 N；

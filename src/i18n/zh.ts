@@ -39,10 +39,14 @@ export const zh = {
   copyTooLargeSave: '保存为 TXT',
   copySaveFailed: '保存失败，请重试或长按选中文本后复制',
   send: '发送',
+  scrollToBottom: '回到底部',
+  scrollToBottomHasNew: '回到底部（有新内容）',
   editMessage: '编辑消息',
   regenerate: '重新生成',
   continueGenerating: '继续生成',
   changeApiKey: '更换 API Key',
+  /** 错误提示条里的「打开设置」入口（#347 / #353）：模型与接口配置都在「数据管理」 */
+  openSettingsEntry: '打开设置',
   topUp: '前往充值',
   messageSearchSummary: '1 个网页',
   messageSearchSummaries: '{count} 个网页',
@@ -77,7 +81,36 @@ export const zh = {
   toolFindFailTooltip: '未查找到相关内容',
   readingLink: '正在阅读',
   commonNetworkErrorToast: '网络异常，请检查你的网络状况',
-  replyInvalidApiKey: 'API Key 无效或已被删除，请更换后重试',
+  /**
+   * Key 失效（#374）：以前只有这一句「无效或已被删除」，把「格式错 / 不存在 / 被轮换」
+   * 三种完全不同的处境说成同一件事。现在这一句只当**上游没说清原因**时的兜底，
+   * 细分文案见下面 replyApiKey* 四个 key。
+   */
+  replyInvalidApiKey: '上游拒绝了这把 API Key，但没说明具体原因（可能无效、已过期或不属于当前服务地址）',
+  /** Key 格式不对（#374）：本地就能判，请求根本没发出去 */
+  replyApiKeyFormatWrong:
+    '当前填写的 API Key 格式不对（含空格、换行，或长度不像一把 Key），请求还没有发到上游',
+  /** Key 不存在 / 已被服务端删除（#374） */
+  replyApiKeyNotFound: '这把 API Key 无效或已被删除（上游查不到它：没绑定成功，或已被服务端删除）',
+  /**
+   * Key 被轮换 / 吊销（#374 的 `rotated` 档）。
+   *
+   * #451 校对（与 #357 对齐）：本机设置里的「重置额度」（`/rotate`）**不换 Key**、只重算额度，
+   * 所以这条失效**不是**用户在这里点出来的 —— 是服务端那边把旧 Key 作废了。旧文案那句
+   * 「换 Key 时旧 Key 会立即作废」是 #90 时代的说法，留着会让用户以为「点了重置把我的 Key 弄废了」。
+   */
+  replyApiKeyRotated:
+    '这把 API Key 已被轮换或吊销，旧的已经失效（本机「重置额度」只重算额度、不换 Key，所以是服务端那边作废的）；可以在「我们的渠道」里按设备码重新取回当前 Key，或直接换一把新 Key',
+  /** 提示里的 Key 身份：只说尾 4 位，让用户确认「是哪把 Key 出问题」（#374） */
+  replyApiKeyTailNote: '（当前 Key 尾号 {tail}）',
+  /**
+   * 换 Key 之前的提醒（#374）：用户最怕的是「换 Key 把额度弄丢」，
+   * 所以文案必须说清额度归账号 / 设备、并且先在额度面板确认当前账号。
+   */
+  replyApiKeyQuotaNote:
+    '换 Key 会影响额度归属，请先在额度面板确认当前账号，再决定是否更换',
+  /** Key 失效提示里的「先看额度」入口（#374）：落到额度面板 / 充值页，不动 Key */
+  openQuotaPanel: '查看额度',
   replyInsufficientBalance: '余额或额度不足，无法继续生成（不要重试，充值后再发）',
   /** 额度不足提示里的出路入口（#299）：复用「额度与卡密」弹层，充值套餐与卡密兑换都在里面 */
   quotaTopUpEntry: '去充值 / 兑换卡密',
@@ -85,7 +118,6 @@ export const zh = {
   completionServerBusyToast: '服务器繁忙，请稍后再试',
   /** 回答失败时的「服务器繁忙」（#324）：显式写明可重试，与终态错误的「不要重试」区分开 */
   replyServerBusy: '服务器繁忙，属于临时故障，回答没有完成，可以重试（点重新生成）',
-  unknownError: '未知错误',
   replyUnknownError: '回答没有完成，出现了未知错误，可以重新生成',
   /** 上下文超出模型上限（#122）：重试没用，给两条能走的路 */
   replyContextLimit:
@@ -97,12 +129,36 @@ export const zh = {
   /** 内容安全拦截（#324）：原文重发一定还是被拦，所以明说不要重试 */
   replyContentFiltered:
     '这条内容被上游安全审核拦截了：改一下措辞或删掉敏感内容再发。原来的内容不要重试，重发同样会被拦',
-  /** 模型不存在 / 已下线（#324） */
+  /**
+   * 模型不存在 / 已下线（#324 / #339）：带上**实际发出的模型名**与上游给出的可用列表。
+   * 内置渠道（官方）设置页没有模型行，所以文案要明说「升级到已修复版本」而不是让人去改设置。
+   */
   replyModelInvalid:
-    '当前模型在上游不可用（模型名可能已下线）：请在设置里换一个模型再发，重试同一个请求不会有变化（不要重试）',
-  /** 其它被上游拒绝的请求（#324）：400 / 422 一类参数错误 */
+    '当前模型「{model}」在上游不可用（模型名可能已下线）；上游可用模型：{models}。DeepSeek 官方渠道用的是内置模型，设置里没有这一行，升级到已修复版本即可；其它渠道请在设置里换一个模型再发，重试同一个请求不会有变化（不要重试）',
+  /** 上游那句话里没有可解析的列表时（#339） */
+  replyModelInvalidNoModels: '上游未提供列表',
+  /** 回复里没记录模型名（导入的历史回复）时（#339） */
+  replyModelUnknownName: '未记录',
+  /** 其它被上游拒绝的请求（#347）：400 / 422 参数错误里上游**没说清字段**时用 */
   replyBadRequest:
-    '请求被上游判定为参数错误：重试不会有变化，请检查设置里的模型与接口配置（不要重试）',
+    '请求参数有误（{status}）：重试不会有变化，请检查设置里的模型与接口配置（不要重试）',
+  /**
+   * 参数 / 字段不合法且上游**点出了字段名**（#347 / #353）：把字段直接写进文案，
+   * 用户才知道该改哪一项，而不是被笼统地叫去「检查设置」。
+   */
+  replyParamInvalid:
+    '请求参数有误（{status}）：上游指出字段「{field}」不合法，重试不会有变化（不要重试）',
+  /**
+   * 其余被上游拒绝的 4xx（#347）：403 / 404 / 405 / 409 / 415。
+   * 文案不再猜原因（这类状态里既有权限、也有路径与方法），只说「上游拒绝了请求」，
+   * 具体原因放在折叠区的上游原文里。
+   */
+  replyUpstreamRejected:
+    '上游拒绝了这条请求（{status}）：重试不会有变化（不要重试）；展开下面的上游原文可以看到具体原因，或点「复制诊断信息」反馈给我们',
+  /** 流内错误帧没有 HTTP 状态码时，文案里的状态占位（#347） */
+  replyUpstreamStatusUnknown: '上游未给出状态码',
+  /** 折叠区开关：默认收起，用户主动展开才看到上游原文（#347 / #353） */
+  upstreamDetailToggle: '查看上游原文',
   /** 未识别但**有**状态码 / 上游 code（#324）：把可自证的信息摆出来，并按是否可重试分两档文案 */
   replyUnclassifiedRetryable: '回答没有完成：{detail}，属于临时故障，可以重试（点重新生成）',
   replyUnclassifiedFatal:
@@ -110,6 +166,13 @@ export const zh = {
   replyWaitingFirstToken: '正在等待响应',
   replyWaitingSlow: '服务响应较慢，仍在等待',
   replyWaitingStalled: '等待时间过长，可以停止后重新生成',
+  /** 首字前的阶段名（#328）：和三档提示一起显示，秒数由 waitElapsed 注入，不写死 */
+  waitStagePreparing: '正在准备请求',
+  waitStageUploading: '正在上传附件',
+  waitStageConnecting: '正在连接上游，等待响应',
+  waitStageAwaitingFirstToken: '已连接，等待模型首字',
+  waitStageThinking: '模型正在思考',
+  waitElapsed: '已等待 {seconds}s',
   /** 自动重试进度：请求失败后不会静默卡住（#105） */
   chatRetrying: '正在第 {attempt} 次重试（共 {limit} 次）',
   replyRefused: '你好，这个问题我暂时无法回答，让我们换个话题再聊聊吧。',
@@ -156,8 +219,31 @@ export const zh = {
   historyImport: '导入历史对话',
   historyImportConfirm: '确认导入',
   historyImportConfirmTitle: '确认导入历史对话？',
-  historyImportConfirmDescription: '上传的历史对话会覆盖当前所有对话记录，是否确认导入？',
-  historyImportDescription: '导入历史对话会覆盖全部本地对话和附件，支持 DeepSeek 导出的 ZIP 文件。',
+  historyImportConfirmDescription: '导入前请先选择导入方式：合并会保留本地会话，整包覆盖会清除本地全部会话。',
+  historyImportDescription:
+    '导入历史对话时会先选择导入方式（合并 / 跳过已存在 / 整包覆盖），支持 DeepSeek 导出的 ZIP 文件。',
+  historyImportModeLabel: '导入方式',
+  historyImportModeMerge: '合并（推荐）',
+  historyImportModeMergeHint: '保留本地全部会话；同一会话按更新时间取舍，包内更新的才覆盖',
+  historyImportModeSkip: '跳过已存在',
+  historyImportModeSkipHint: '本地已有同一会话的保持不动，只导入本地没有的',
+  historyImportModeOverwrite: '整包覆盖',
+  historyImportModeOverwriteHint: '清空本地现有 {count} 条会话与附件后导入，等于还原备份',
+  historyImportOverwriteAcknowledge: '我已了解，本地现有 {count} 条会话将被清除',
+  historyImportConfirmOverwrite: '确认覆盖导入',
+  historyImportConflictRule:
+    '同一会话只按会话 ID 判定：ID 相同才算同一条；标题相同但 ID 不同视为两条不同会话。',
+  historyImportSummaryDetail: '（新增 {added} / 覆盖 {overwritten} / 跳过 {skipped}）',
+  historyImportConflictSkippedTitle: '保留了本地版本的会话（同 ID 且本地更新）',
+  historyExportEmptySelection: '没有勾选任何会话，无法导出',
+  historyExportSelectedCount: '已选 {count} 条',
+  historyExportSelectedEmpty: '请先勾选要导出的会话',
+  historySelectModeEnter: '选择',
+  historySelectModeExit: '退出选择',
+  historySelectAll: '全选',
+  historySelectInvert: '反选',
+  historyExportSelected: '导出选中',
+  historyExportedSelectedCount: '已导出 {count} 条会话',
   historyImportedOne: '已导入 1 个会话',
   historyImported: '已导入 {count} 个会话',
   historyImportFromUrl: '从链接导入',
@@ -203,7 +289,6 @@ export const zh = {
   importTraceCancel: '已取消',
   importTraceError: '失败（{stage}）：{reason}',
   importTraceStageDownload: '下载',
-  importTraceStageImport: '导入',
   importTraceReasonUnreachable: '无法连接网络',
   importTraceReasonInterrupted: '连接被中断',
   importTraceReasonTimeout: '下载超时',
@@ -218,7 +303,6 @@ export const zh = {
   importTraceHeartbeatUnknown: '仍在下载…（已下载 {done}，已 {idle} 秒没有新数据）',
   importTraceResume: '从已下载的 {done} 处继续（不清零）',
   importTraceRestart: '该链接不支持断点续传，已从头重新下载',
-  importTraceReasonFormat: '文件格式不正确',
   detailsExpand: '展开',
   detailsCollapse: '收起',
   historyImportUrlDownloading: '下载中...',
@@ -241,10 +325,10 @@ export const zh = {
   historyExportFailedStart: '导出失败：无法打开保存位置，请重试',
   historyExportFailedWrite: '导出失败：写入文件失败，请检查剩余存储空间后重试',
   historyExportFailedTooLarge: '导出失败：归档超过 200MB 导出上限（与导入上限一致），请先删减历史对话后重试',
-  // #336：导出侧在打开保存面板之前就按这条文案拒掉，不再出现「导出成功、导入报文件过大」
   historyExportTooLarge:
-    '当前历史约 {actual}，超过 {size}MB 导出上限（与导入上限一致），这样的包本 App 导不回来；请先删减历史对话或移除过大的图片后重试',
-  // #336：空历史时按钮置灰，必须说明为什么（否则与「点了没产出」分不清）
+    '当前历史约 {actual}，超过 {size}MB 导出上限。请先删除不需要的对话，或删掉消息里的大图后再试。',
+  historyExporting: '导出中…',
+  historyExportProgress: '已导出 {exported} / 共 {total} 个对话',
   historyExportEmptyNoSessions: '当前没有可导出的对话',
   exportAllLabel: '导出所有历史对话',
   historyExportDescription:
@@ -286,12 +370,12 @@ export const zh = {
   voiceInputCancel: '正在转写，点击取消',
   voiceInputPermissionDenied: '无法使用麦克风，请在浏览器设置中允许访问',
   voiceInputNoDevice: '未检测到麦克风',
-  voiceInputTooLong: '录音过长，请缩短后重试',
   voiceInputFailed: '语音识别失败，请稍后再试',
   voiceInputEmpty: '未识别到语音内容',
   voiceInputLimitReached: '已达到单次录音时长上限',
   voiceInputRequiresHttps: '非 HTTPS 页面无法使用语音输入',
-  apiKeyInvalidRetry: 'API Key 无效，请更换后重试',
+  /** #451：判据与出路一起说清 —— 「换一把」之外还有「按设备码取回本机那把」这条路（#357 之后仍然成立） */
+  apiKeyInvalidRetry: 'API Key 无效，请重新填写；或在「我们的渠道」里用「重置额度」按设备码取回本机 Key',
   /** 上游 401 之后的统一提示（#303 问题 3）：既要说明原因，也要说明下一步怎么修 */
   apiKeyRejected: 'Key 无效或已过期，请重新登录或重新填写',
   insufficientBalance: '账户余额不足',
@@ -309,12 +393,26 @@ export const zh = {
   settingsProviderKindLabel: '渠道',
   settingsProviderKindKeyHint: '切换渠道后，请确认 API Key 是否适用',
   settingsApiKeyLabel: 'API Key',
+  /**
+   * 发送前本地拦截（#451 第 2 点）：Key 有、但格式明显不对 → 消息**没有发出去**。
+   * 必须写明「没发出去」：否则用户只会以为是网络或上游问题，然后不停地重发同一条消息。
+   */
+  settingsApiKeyFormatBlocked:
+    '当前填写的 API Key 格式不对（含空格、换行，或长度不像一把 Key），这条消息没有发出去。请清空后重新粘贴一把完整的 Key（去掉空格 / 换行），再发送。',
+  /** 只是存着一条可疑的 Key（还没试过发送）：普通提示，不用红字吓人 */
+  settingsApiKeyFormatHint:
+    '这一行的内容不像一把 API Key（可能多了空格 / 换行，或没复制完整），发送前会被拦下来。',
   settingsBaseUrlLabel: '服务地址',
   settingsBaseUrlPlaceholder: '例如 https://your-gateway.example.com',
   settingsModelPlaceholder: '例如 deepseek-v4.1-flash',
   settingsBaseUrlRequired: '请先填写服务地址',
   settingsTestLabel: '连通性测试',
   settingsModelLabel: '模型',
+  /**
+   * 内置模型的只读行（#339）：官方渠道没有模型输入行，至少要让人看见当前用的是哪个。
+   * 只读 + 不可编辑（setModel 拒写），所以提示只说「无需填写」，不说「去改」。
+   */
+  settingsModelBuiltInHint: '只读；本渠道无需填写',
   settingsBaseUrlInvalid: '服务地址必须以 http:// 或 https:// 开头，并且是合法地址',
   settingsModelInvalid: '模型不能为空',
   settingsModelsLoading: '加载中…',
@@ -332,7 +430,12 @@ export const zh = {
   settingsTestBadJson: '返回的不是 JSON：{message}',
   settingsTestApiKeyRequired: '请先填写 API Key',
   settingsTestHtml: '请求返回的是网页（HTTP {status}），不是接口数据；通常是服务地址的路径不匹配或服务异常',
-  upstreamReturnedHtml: '上游返回网页而非接口数据，通常是路径不匹配或服务异常',
+  /**
+   * 上游返回的是网页而不是数据（#434）：200 + text/html 的网关首页 / 报错页。
+   * 说人话 —— 不是「协议不对」，而是「你打到的地方不是接口」，并且这条路重发没用。
+   */
+  upstreamReturnedHtml:
+    '上游返回的是网页而不是数据，通常是网关或代理出错（接口地址填错了也会这样）；重试同一个请求不会有变化（不要重试），展开下面的响应摘要可以看到返回的内容类型与前 200 字',
 
   // ---------- 聊天背景 ----------
   settingsChatBackground: '聊天背景',
@@ -393,12 +496,15 @@ export const zh = {
   feedbackScreenshotPick: '从相册选择',
   feedbackScreenshotRemove: '移除',
   feedbackScreenshotFailed: '图片处理失败，请换一张再试',
+  /** 选错文件（.txt / .pdf / .zip）：明确拒绝，不当截图收下（#388） */
+  feedbackScreenshotNotImage: '只能附图片截图：请选择 png / jpg / webp 这类图片文件',
+  /** 声明是图片但解不开：改过后缀的假图 / 损坏文件（#388） */
+  feedbackScreenshotUndecodable: '这张图片打不开（可能已损坏或不是真的图片），请换一张再试',
   feedbackScreenshotReady: '已压缩后附上',
   feedbackSubmit: '提交',
   feedbackSubmitting: '提交中…',
   feedbackTicketLabel: '已提交，工单号',
   feedbackTicketLogSize: '（日志 {size}）',
-  feedbackSubmitOk: '提交成功，工单号 {id}',
   feedbackDone: '完成',
   feedbackClearLogs: '清空本地日志',
   feedbackLogsCleared: '本地日志已清空',
@@ -413,7 +519,6 @@ export const zh = {
 
   feedbackIntegrityCheck: '检查日志完整性',
   feedbackIntegrityTitle: '日志完整性自检',
-  feedbackIntegrityRefresh: '刷新',
   feedbackIntegrityCount: '条数：{count}（上限 500，保留最近 30 分钟）',
   feedbackIntegritySpan: '时间跨度：{span}',
   feedbackIntegrityKinds: '覆盖事件类型：{count} 类',
@@ -445,12 +550,9 @@ export const zh = {
   oursDeviceDescription: '设备码就是你的账号凭据：复制备份好，丢失等于丢账号。',
   oursDeviceCopy: '复制设备码',
   oursDeviceCopied: '设备码已复制',
-  oursCopyFailed: '复制失败，请长按文字手动选择',
   // 领取
-  oursClaimTitle: '凭据',
   oursClaimAction: '领取 / 重新领取',
   oursClaimBusy: '领取中…',
-  oursClaimAuto: '首次使用，正在自动领取…',
   oursOpenChoiceTitle: '先选一种方式',
   oursOpenChoiceHint:
     '本机还没有可用的 Key：点「领取新 Key」由服务端发一把，或者把你在别处已有的 Key 绑到本机。',
@@ -463,11 +565,10 @@ export const zh = {
   oursClaimAlreadyGranted: '这台设备已领过新人额度，本次未发放新额度',
   oursClaimKeyTail: '当前 Key {tail}',
   oursClaimUseKey: '改用服务端下发的 Key {tail}',
-  oursClaimNeedsDevice: '设备码异常，无法领取，请重新打开设置页',
   // 额度
   oursQuotaTitle: '剩余额度',
-  /** 积分单位（#94）：由 services/ours/api.ts 的 formatPoints 拼接，别在代码里写死中文 */
-  oursPointsUnit: '积分',
+  /** 金额单位（#94 / #487）：元口径（1 元 = 1 额度，无 USD），由 services/ours/api.ts 的 formatPoints 拼接，别在代码里写死中文 */
+  oursPointsUnit: '元',
   oursQuotaValue: '{points}',
   oursQuotaAction: '刷新额度',
   oursQuotaLoading: '查询中…',
@@ -486,18 +587,16 @@ export const zh = {
   oursInviteOk: '绑定成功，+{points}',
   oursInviteShapeHint: '邀请码是 4–16 位字母或数字',
   oursInviteNeedsClaim: '先领取凭据，再显示你的邀请码',
-  // #234：线上规则改成「只给邀请人发积分」，被邀请人填码只建立关系（reward_points: 0），
-  // 所以成功文案不再报「获得 X 积分」；规则数值一律取服务端 invite_rules，前端不写死金额
+  // #234：线上规则改成「只给邀请人发额度」，被邀请人填码只建立关系（reward_points: 0），
+  // 所以成功文案不再报「获得 X 额度」；规则数值一律取服务端 invite_rules，前端不写死金额
   oursInviteBound: '邀请关系已绑定',
   oursInviteRuleInviter: '邀请人得 {points}',
   oursInviteRuleInvitee: '被邀请人得 {points}',
   oursInviteRuleCashback: '好友首次付款后，邀请人再得 {points}',
   oursInviteCashbackEarned: '已获返现 {points}',
   // 套餐
-  oursPlansTitle: '套餐',
   oursPlansLoading: '正在加载套餐…',
   oursPlansFailed: '套餐加载失败，请重试',
-  oursPlansRetry: '重新加载',
   oursBuyAction: '去支付',
   // 购买入口（Issue #331）：套餐全线下架，直接打开联动小铺收款页
   oursPayTitle: '购买',
@@ -522,7 +621,7 @@ export const zh = {
   oursKeyProbeTimeout: 'Key 校验超时',
   // 安全
   oursSecurityTitle: '安全说明',
-  oursSecurityNotice: '邀请与额度服务走明文 HTTP，只传设备码和积分；支付与卡密走 HTTPS。公共网络下请留意。',
+  oursSecurityNotice: '邀请与额度服务走明文 HTTP，只传设备码和额度；支付与卡密走 HTTPS。公共网络下请留意。',
   // 邀请服务错误码
   oursInviteErrDeviceNotFound: '服务端没有这个设备码的记录，请点「领取 / 重新领取」',
   oursInviteErrInvalidCode: '邀请码无效，请核对后重试',
@@ -539,6 +638,48 @@ export const zh = {
   oursInviteErrInvalidResponse: '服务端返回异常，请稍后重试',
   oursInviteErrKeyMissing: '服务端没有返回 Key，请重试',
   oursInviteErrUnknown: '操作失败，请稍后重试',
+  // #421 邮箱账号（绑定 / 换机登录）错误码，逐条对应 Issue 里的表
+  oursInviteErrEmailInvalid: '邮箱格式不正确，请核对后重试',
+  oursInviteErrEmailDomainBlocked: '不支持一次性 / 临时邮箱，请换成常用邮箱',
+  oursInviteErrEmailCodeInvalid: '验证码不正确，请重新输入',
+  oursInviteErrEmailCodeExpired: '验证码已过期或已使用，请重新获取',
+  oursInviteErrEmailCodeLocked: '这个验证码错误次数过多，请重新获取',
+  oursInviteErrEmailTooFrequent: '发送太频繁，请稍后再试',
+  oursInviteErrEmailHourLimit: '这个邮箱本小时发送次数已达上限，请稍后再试',
+  oursInviteErrIpHourLimit: '当前网络本小时发送次数已达上限，请稍后再试',
+  oursInviteErrDeviceHourLimit: '这台设备本小时发送次数已达上限，请稍后再试',
+  oursInviteErrEmailDailyCap: '今天验证码发送量已达上限，请明天再试',
+  oursInviteErrEmailSendFailed: '验证码发送失败，请稍后重试',
+  oursInviteErrCustomerHasEmail: '本账号已经绑定过邮箱，不能重复绑定',
+  oursInviteErrEmailDeviceHasAccount: '本机已有账号，需要先选择用哪个账号继续',
+  oursInviteErrAccountFrozen: '账号已被冻结，请联系客服',
+  // #421 邮箱账号：入口与表单
+  oursEmailTitle: '邮箱账号',
+  oursEmailDescription:
+    '绑定邮箱后，换机时可以用邮箱取回本机账号。邮箱不会让其他设备失效，也不会与本机匿名账号自动合并。',
+  oursEmailBindAction: '绑定邮箱',
+  oursEmailInputPlaceholder: '邮箱地址',
+  oursEmailCodePlaceholder: '6 位验证码',
+  oursEmailSendAction: '发送验证码',
+  oursEmailSendBusy: '发送中…',
+  oursEmailVerifyAction: '提交验证码',
+  oursEmailVerifyBusy: '提交中…',
+  oursEmailSentHint: '验证码已发送（当前只写入服务端日志，暂时不会真的收到邮件）',
+  oursEmailCodeShapeHint: '验证码是 6 位数字',
+  oursEmailRetryAfter: '{seconds} 秒后再试',
+  oursEmailAttemptsLeft: '还剩 {attempts} 次机会',
+  oursEmailBoundMaskedHint: '本账号已绑定：{masked}',
+  oursEmailLoginOk: '已用邮箱登录，本机设备码与 Key 已切换到原账号',
+  // #421 第 4 点 / 验收 D3：发送按钮逐秒倒计时（剩余秒数是服务端 resend_after / retry_after）
+  oursEmailSendCountdown: '{seconds} 秒后可重发',
+  // #421 第 3 点：登录冲突弹窗（device_has_account）。额度数字与「切换后暂时用不了」必须都在
+  oursEmailConflictTitle: '这台设备上已有一个账号',
+  oursEmailConflictEmail: '要登录的邮箱账号：{masked}',
+  oursEmailConflictPoints: '本机原账号剩余额度：{points}',
+  oursEmailConflictWarning:
+    '选择「用邮箱账号」后，本机原账号的剩余额度暂时无法使用（服务端不自动合并，数据保留，需客服处理）。',
+  oursEmailConflictUseEmail: '用邮箱账号',
+  oursEmailConflictKeepDevice: '保留本机账号',
   // 卡密 / 支付服务错误码
   oursErrBadJson: '请求格式有误，请重试',
   oursErrUnauthorized: '鉴权失败，请重新领取或填写 Key 后再试',
@@ -549,7 +690,7 @@ export const zh = {
   oursErrCardMissing: '请输入卡密',
   oursErrKeyMissing: '请先领取或填写 Key',
   oursErrKeyInvalid: 'Key 无效，请重新领取或填写',
-  oursErrVerifyUnavailable: '积分服务暂时不可用，请稍后重试',
+  oursErrVerifyUnavailable: '额度服务暂时不可用，请稍后重试',
   oursErrRateLimited: '请求过于频繁，请稍后重试',
   oursErrPlanNotFound: '套餐不存在',
   oursErrPlanMissing: '请先选择套餐',
@@ -597,31 +738,51 @@ export const zh = {
   oursBindErrTimeout: '请求超时，请稍后重试',
   oursBindErrInvalidResponse: '服务端返回异常，请稍后重试',
   oursBindErrUnknown: '绑定失败，请稍后重试',
-  // Issue #90：换一把 Key（POST /rotate）——额度不丢，旧 Key 立即失效且无法找回
-  oursRotateTitle: '更换 Key',
-  oursRotateEntryAction: '更换 Key',
+  // Issue #90：重置 / 更换 Key（POST /rotate）；#357：云端改为「原地重置额度，不换 Key 字符串」
+  oursRotateTitle: '更换 / 重置 Key',
+  oursRotateEntryAction: '更换 / 重置',
   oursRotateDescription:
-    '换一把新 Key。额度不会被吞掉：剩余积分和已用量都原样带到新 Key 上，换完继续用即可。',
-  oursRotateConfirmTitle: '确认更换？',
+    '把本机这把 Key 的额度按「新人赠送 + 累计奖励」重新算一遍。服务端只会原地重置额度，通常不会换发新的 Key 字符串；Key 本身继续可用，其它客户端不受影响。',
+  oursRotateConfirmTitle: '确认重置额度？',
   oursRotateConfirmBody:
-    '换出后旧 Key 会立即失效，且无法找回。其它客户端里若还留着旧 Key，那边会马上报错；正在进行的请求也可能失败。一台设备只有一把 Key，请确认确实要换。',
-  oursRotateConfirmOk: '确认更换',
+    '重置会把当前 Key 的额度重算为「新人赠送 + 累计奖励」，已用掉的额度不再重复占用。Key 本身不变（还是本机这一把），不会让其它客户端掉线，也不需要重新填写 Key。',
+  oursRotateConfirmOk: '确认重置',
   oursRotateConfirmCancel: '取消',
-  oursRotateBusy: '更换中…',
-  oursRotateOk: '已更换，新 Key 已保存到本机',
-  oursRotateOkUnchanged: '服务端没有更换（返回的还是原来那把），请稍后重试',
-  oursRotateRetryHint: '换 Key 只认设备码，重复点不会丢额度，失败可以直接重试。',
+  oursRotateBusy: '重置中…',
+  // #357：四种「成功」说法，逐字对应 src/services/invite/rotate.ts 的 RotateSuccessMode
+  oursRotateOk: '已重置额度并换发新 Key，新 Key 已保存到本机',
+  oursRotateOkNoQuota: '已换发新 Key 并保存到本机（服务端未返回额度，可点「刷新额度」确认）',
+  oursRotateOkQuotaReset: '额度已重置（Key 未变，仍是本机这一把）',
+  oursRotateOkUnverified: '请求已完成（Key 未变），服务端未返回额度信息，请点「刷新额度」确认',
   oursRotateErrDeviceNotFound: '本机还没有领取过 Key，请先领取',
   oursRotateErrInvalidDevice: '设备标识异常，请重启 App 重试',
-  oursRotateErrInternal: '更换失败，请稍后重试',
+  oursRotateErrInternal: '重置失败，请稍后重试',
   oursRotateErrDeviceMissing: '读不到本机设备码，请重启 App 后再试',
-  oursRotateErrNoKeyInResponse: '服务端没有返回新 Key，请重试',
+  oursRotateErrNoKeyInResponse: '服务端没有返回 Key，请稍后重试',
   oursRotateErrRateLimited: '操作太频繁，请稍后再试',
   oursRotateErrNetwork: '网络不可用，请检查网络后重试',
   oursRotateErrTimeout: '请求超时，请稍后重试',
   oursRotateErrInvalidResponse: '服务端返回异常，请稍后重试',
-  oursRotateErrUnknown: '更换失败，请稍后重试',
+  oursRotateErrUnknown: '重置失败，请稍后重试',
   oursRotateKeptOldKey: '本地旧 Key 未被改动，仍可继续使用',
+  // #451：Key 身份（绑定时间 / 最近一次确认可用时间）。两个时间都来自**本机记录**。
+  oursKeyIdentityTitle: 'Key 身份',
+  oursKeyIdentityTail: '当前 Key 尾号 {tail}',
+  /** 太短的 Key 一个字符都不回显（与 #374 的 keyTail 同一口径） */
+  oursKeyIdentityTailUnknown: '当前 Key 太短，不回显尾号',
+  oursKeyIdentityBoundAt: '绑定时间：{time}（这把 Key 第一次写进本机的时间）',
+  oursKeyIdentityLastSuccess: '最近一次成功使用：{time}',
+  oursKeyIdentityNoSuccess: '最近一次成功使用：本机还没有记录',
+  oursKeyIdentityNoRecord: '本机没有这把 Key 的时间记录（刚换过 Key，或本地记录已被清掉）',
+  /** 数据来源如实说明：服务端额度接口只回额度，没有这两个时间 */
+  oursKeyIdentitySource:
+    '这两个时间来自本机记录：额度接口只返回额度，不返回绑定时间与最近使用时间。',
+  /**
+   * 「成功使用」的准确定义：#451 只在真的拿到成功应答时记（校验 / 探测 / 重置额度 / 兑换卡密）。
+   * 不写成「最后一次对话成功」—— 聊天那一轮的写入点不在本单改动范围（见 issue #451）。
+   */
+  oursKeyIdentitySuccessSource:
+    '「成功使用」指本机最后一次确认这把 Key 可用（设置里校验、连通性测试、Key 探测、重置额度、兑换卡密成功时记录）。换一把 Key 会重新记账。',
   // Issue #46：思考过程显示方式三档
   settingDialogThinkingDisplayLabel: '思考过程',
   settingDialogThinkingDisplayDescription: '深度思考开启后，思考内容在消息里怎么显示；切换后立即对已打开的会话生效。',
@@ -652,7 +813,6 @@ export const zh = {
   oursPayRecordsCopied: '卡密已复制',
   oursPayRecordsCardTail: '卡号',
   oursPayRecordsNeedKey: '填写 API Key 后可以查看这个账号的付款记录',
-  oursPayRecordsReplacedHint: '上一笔未支付订单已被新的下单覆盖，以最新一单为准',
   // Issue #45：请求统一超时的提示（与网络失败、4xx/5xx 分开说）
   requestTimeout: '请求超时（{seconds} 秒没有响应），请检查网络后重试',
   // Issue #106：移动端标题栏双击回到首条消息
@@ -691,6 +851,8 @@ export const zh = {
   historyImportSkipMissingParent: '缺失的父消息 {parent}',
   historyImportSkipReasonBranches: '消息分支损坏（父消息缺失或角色接不上）',
   historyImportSkipReasonFiles: '附件数据损坏（图片路径越界或重复）',
+  // #314：归档里的 reason 来自别的版本 / 第三方构造，认不出来时给一句人话，不再把裸字符串当 key 查表
+  historyImportSkipReasonUnknown: '未识别的跳过原因（来自别的版本或第三方归档）',
   // 抖音号展示项（用户直接指定的改动）：值可点、可复制
   settingDouyinLabel: '抖音号',
   settingDouyinDescription: '点一下号码即可复制，去抖音搜索就能找到。',
@@ -733,31 +895,17 @@ export const zh = {
   oursPurchasesErrUnknown: '购买记录查询失败，请稍后重试',
   // 兜底页出口文案（issue #180 / #104）。与 src/index.html 内联的 COPY 表逐字一致，
   // tests/unit/compat-guard-diagnostics.test.mjs 会比对两侧 —— 改文案必须两边同时改。
+  //
+  // 注意（issue #413）：兜底页在业务包挂掉之后才出现，守卫只能把文案内联在 HTML 里，
+  // 运行时永远读不到这张表。所以**只登记存量 key**，#104 新增的那批（低内核主文案 / 五项
+  // 环境信息 / 复制与截断提示，共 17 个）在 i18n 里就是「定义未引用」的死 key（check-i18n R4），
+  // 已从 zh/en 删除，逐字参照副本挪到 tests/fixtures/compat-boot/compat-boot-copy.mjs。
+  // 新加兜底页文案请改 src/index.html 的 COPY 表 + 那个 fixture，**不要**往这里加。
   compatBootTitle: '页面启动失败',
   compatBootLead: '这个页面需要更新版本的 Android System WebView（或浏览器）才能正常打开。',
-  // 内核低于 config/compat.json 的 baselineChromium（83）时的主文案（#104 验收项 4）
-  compatBootLeadOld: '本机系统浏览器内核过旧（{version}），请更新 Android System WebView。',
-  compatBootUpgradePath:
-    '升级路径：设置 → 应用 → Android System WebView → 更新（或在应用商店搜索「Android System WebView」），完成后重新打开本应用。',
   compatBootMissing: '缺少的运行环境能力：{apis}',
   compatBootRuntimeError: '页面脚本在启动时出错，没能启动。',
   compatBootTimeout: '页面脚本 12 秒内没有启动（内核过旧或资源加载失败）。',
-  // 自助环境信息（#104 验收项 3）：五项固定字段，复制时整段带走
-  compatBootEnvApp: 'App 版本：{version}',
-  compatBootEnvEngine: '内核版本：{version}',
-  compatBootEnvEngineUnknown: '内核版本：无法从浏览器标识里解析出来',
-  compatBootEnvAndroid: 'Android 版本：{version}',
-  compatBootEnvStage: '失败阶段：{stage}',
-  compatBootEnvTime: '时间：{time}',
-  compatBootEnvDevice: '设备码：{code}（已脱敏）',
-  compatBootStageMissing: '启动检查未通过（缺少必要能力）',
-  compatBootStageRuntime: '业务脚本启动时报错',
-  compatBootStageTimeout: '业务脚本 12 秒内未启动',
-  compatBootCopy: '复制环境信息',
-  compatBootCopied: '已复制，可直接粘贴到反馈里',
-  compatBootCopyManual: '复制未成功：请长按下面的信息手动复制',
-  compatBootDetails: '技术细节',
-  compatBootTruncated: '…（已截断）',
   compatBootHowTo: '更新方法：在应用商店里搜索「Android System WebView」并更新，然后重新打开本应用。',
   compatBootFooter: '若更新后仍然失败，请反馈上面的内核版本与本页截图。',
   // 导入失败的「不可达」档（issue #18）：有网、但连不上导入服务（DNS 解析不到 / 路由不可达 / 切网瞬间断链）。
@@ -777,20 +925,28 @@ export const zh = {
   oursTrailExpiredHint: '订单已关闭，但 24 小时内付款会自动补发卡密；可复制订单号找客服核对。',
   oursTrailWaitingCard: '已付款，正在准备卡密，通常几秒内完成。',
   oursTrailCardLabel: '卡密',
-  oursTrailCardPoints: '积分',
+  oursTrailCardPoints: '元',
   oursTrailCardKeyTail: '兑换 Key 尾号',
   oursTrailCardRedeemed: '已兑换',
   oursTrailCardNotRedeemed: '还没兑换',
   oursTrailRedeemedByMe: '本人兑换',
   oursTrailRedeemedByOther: '其他账号兑换',
   oursTrailRedeemedByUnknown: '兑换人未知',
+  // 卡密溯源（#325）：入口在卡密块上，弹层只查「自己的卡」
+  oursTrailCardLookup: '查这张卡',
+  oursTrailCardLookupTitle: '卡密溯源',
+  oursTrailCardLookupHint: '只能查到自己账号下这张卡的记录；别人的卡会显示「没有找到这笔记录」。',
+  oursTrailCardSourceLabel: '兑换来源',
+  oursTrailCardSourceInApp: '本 App 内兑换',
+  oursTrailCardSourceWeb: '网页兑换',
+  oursTrailCardSourceUnknown: '兑换来源未知',
   oursTrailBackfilled: '补录时间',
   oursTrailEventUnknown: '其它动作（服务端未提供说明）',
   oursTrailEventOrderCreated: '已下单，等待付款',
   oursTrailEventNotifyOk: '收到支付平台通知',
   oursTrailEventPaidConfirmed: '支付已确认',
   oursTrailEventCardIssued: '已发放卡密',
-  oursTrailEventCardRedeemed: '卡密已兑换，积分已入账',
+  oursTrailEventCardRedeemed: '卡密已兑换，额度已入账',
   oursTrailEventOrderExpired: '订单超时未支付，已关闭',
   oursTrailEventLateRecovered: '关闭后收到付款，已补发卡密',
   oursTrailEventWaitingStock: '已付款，正在准备卡密',
@@ -814,6 +970,205 @@ export const zh = {
   oursTrailErrBadResponse: '服务返回的内容读不懂，稍后再试',
   oursTrailErrUnknown: '读取失败，稍后再试',
   oursTrailCount: '共 {total} 笔',
+  oursTrailTabAll: '全部',
+  oursTrailFilterLabel: '按状态筛选',
+  oursTrailLoadMore: '加载更多',
+  oursTrailLoadingMore: '正在加载…',
+  oursTrailLoadMoreFailed: '这一页没拉下来，上面的记录还在',
+  oursTrailEndOfList: '已经到底了',
+  oursTrailEmptyFiltered: '这个状态下没有记录，换个筛选看看',
   oursTrailTotalPaid: '累计实付 {amount}',
   oursTrailEntryDescription: '按时间线看每笔订单从下单、支付、发卡到兑换的全过程',
+  /**
+   * 检查更新失败兜底（Issue #412）：失败态下展示上次成功的清单快照 + 手动下载出口。
+   * 文案里只放用户已知的事实（时间、条数），不放地址、不放堆栈。
+   */
+  updateCacheFallbackTitle: '缓存数据，可能不是最新',
+  updateCacheFallbackNote:
+    '这是 {time} 成功取到的版本列表（共 {count} 条）。当前连不上更新服务，列表可能已经过期。',
+  updateManualDownload: '手动下载最新版',
+  updateManualOpenFailed: '没能在 App 内打开下载页，请稍后再试，或复制诊断信息反馈给我们。',
+  // ---------------------------------------------------------------------------
+  // 重构词条骨架（#487 铺路）：登录注册 / 账户与消费 / 卡密兑换 / 邀请 / 邮箱绑定
+  // 只新增、不改上面的既有文案；语义依据 #482（支付与消费拆分）与 #484（sub2api 客户端约束）。
+  // 这批 key 在 UI 线落地前没有被引用是预期的，已登记到 scripts/check-i18n.mjs 的 ORPHAN_BASELINE。
+  // ---------------------------------------------------------------------------
+
+  // 登录注册（sub2api /api/v1/auth）
+  sub2authEmail: '邮箱',
+  sub2authPassword: '密码',
+  sub2authConfirmPassword: '确认密码',
+  sub2authLogin: '登录',
+  sub2authRegister: '注册',
+  sub2authForgotPassword: '忘记密码',
+  sub2authSendCode: '发送验证码',
+  /** 倒计时占位：{seconds} 由调用方按服务端冷却时间注入，不在代码里写死秒数 */
+  sub2authCodeSent: '验证码已发送，{seconds}s 后可重新发送',
+  sub2authCodeInvalid: '验证码错误',
+  sub2authEmailInvalid: '邮箱格式错误',
+  sub2authCredentialInvalid: '账号或密码错误',
+  sub2authLoginFailed: '登录失败，请重试',
+  sub2authNetworkError: '网络错误，请检查网络后重试',
+  sub2authLogout: '退出登录',
+  sub2authSwitchAccount: '切换账号',
+  sub2authRegisterSuccess: '注册成功',
+  sub2authEmailVerifyRequired: '需要先验证邮箱',
+  sub2authTwoFactorHint: '这个账号已开启两步验证，请输入验证器里的 6 位验证码',
+
+  // 「账户与消费」页（#482 三弹层合一 / #487 W1-C1）：一个页面四个 tab。
+  // 标题与三个 tab 名在词条骨架里没有对应项，这里最小新增；Tab 2「购买」复用 oursPayTitle。
+  accountConsumeTitle: '账户与消费',
+  accountConsumeEntryDescription: '我的卡密、购买套餐、额度与账号，一个页面四件事',
+  accountConsumeTabCards: '我的卡密',
+  accountConsumeTabQuota: '我的额度',
+  accountConsumeTabAccount: '账号',
+
+  // 账户与消费（金额单位是元：1 元 = 1 额度，无 USD；展示走 utils/money.ts，客户端不做汇率）
+  consumeBalance: '¥{amount}',
+  consumeBalanceApprox: '约合 ¥{amount}',
+  consumeQuota: '额度',
+  consumeUsage: '用量',
+  consumeUsageToday: '今日用量',
+  consumeUsageMonth: '本月用量',
+  consumeCreateKey: '创建 Key',
+  consumeKeyList: 'Key 列表',
+  consumeKeyName: 'Key 名称',
+  consumeKeyExpiresAt: '过期时间',
+  consumeKeyStatus: '状态',
+  consumeKeyStatusActive: '启用',
+  consumeKeyStatusInactive: '停用',
+  consumeCopyKey: '复制 Key',
+  consumeKeyCopied: 'Key 已复制',
+  consumeDeleteKey: '删除 Key',
+  consumeDeleteConfirm: '删除后不可恢复，确认删除这个 Key 吗？',
+
+  // 卡密兑换（沿用「兑换卡密」措辞，见 #482 第三节）
+  consumeRedeemTitle: '兑换卡密',
+  consumeRedeemPlaceholder: '请输入卡密',
+  consumeRedeemBusy: '兑换中…',
+  /** 兑换超时后查历史补偿时用：不要让用户以为可以重复提交 */
+  consumeRedeemConfirming: '正在确认兑换结果，请不要重复提交',
+  consumeRedeemSuccess: '兑换成功',
+  consumeRedeemFailed: '兑换失败，请稍后重试',
+  consumeRedeemCodeUsed: '卡密已使用',
+  consumeRedeemCodeInvalid: '卡密无效',
+
+  // 邀请（sub2api aff；邀请关系只能在注册时一次填定）
+  inviteTitle: '我的邀请',
+  inviteCode: '邀请码',
+  inviteCopyCode: '复制邀请码',
+  inviteCount: '已邀请人数',
+  inviteRebateBalance: '返利余额',
+  inviteCodeAtRegister: '注册时填写邀请码（可选）',
+  inviteCodeInvalid: '邀请码无效',
+  inviteDisabled: '邀请功能未开放',
+
+  // 邮箱绑定（sub2api account-bindings）
+  emailBindBind: '绑定邮箱',
+  emailBindChange: '更换邮箱',
+  emailBindUnbind: '解绑',
+  emailBindSendCode: '发送验证码',
+  emailBindCodeSent: '验证码已发送',
+  emailBindSuccess: '绑定成功',
+  emailBindUnbindSuccess: '解绑成功',
+  emailBindFailed: '绑定失败，请稍后重试',
+
+  // sub2api 归一化错误的**上屏文案**（#487：`src/services/consume/errors.ts` 的 `ConsumeMessageKey`
+  // 一条不落，共 27 条）。消费层只回 key、不拼文案，所以这里就是「用户能看到的那句话」的唯一来源。
+  // 写文案的三条规矩（#484 §4.4 的语义口径）：
+  //   · 说人话 + 可操作：「下一步做什么」写在句子里（重登 / 换 Key / 充值 / 找客服），不只报事实；
+  //   · **不出现「未知错误」**：兜底只有 `consumeErrUnknown` 一条，其余每条都要具体到根因；
+  //   · 金额统一用 `{amount}`（单位**元**：1 元 = 1 额度，无 USD 概念；服务端额度就是元，
+  //     文案里不写货币符号，符号由 utils/money.ts 拼）；限流的秒数用 `{seconds}`（来自 `Retry-After`）。
+  consumeErrUnknown: '这次请求没成功，请稍后重试；反复出现请把这条提示反馈给我们',
+  consumeErrNetwork: '网络连不上，检查一下网络再试',
+  consumeErrTimeout: '请求超时了，稍等一会儿再试',
+  consumeErrUnsupported: '当前版本不支持这个功能，请更新到最新版本',
+  consumeErrBadRequest: '提交的内容有问题，请检查后重试',
+  consumeErrInvalidResponse: '服务返回的数据读不懂，请稍后重试；反复出现请反馈给我们',
+  consumeErrUnauthorized: '登录已过期，请重新登录',
+  consumeErrAccountDisabled: '账号已被停用，请联系客服',
+  consumeErrForbidden: '没有权限做这个操作，请确认当前账号的权限',
+  consumeErrNotFound: '要调用的接口不存在，请更新到最新版本',
+  consumeErrRateLimited: '操作太频繁，请 {seconds} 秒后再试',
+  consumeErrServerUnavailable: '服务暂时不可用，请稍后重试',
+  consumeErrKeyMissing: '还没填 API Key，先填上再试',
+  consumeErrKeyInvalid: 'API Key 无效，请检查是否复制完整',
+  consumeErrKeyDisabled: '这个 API Key 已停用，请启用它或换一个',
+  consumeErrKeyExpired: '这个 API Key 已过期，请重新创建',
+  consumeErrKeyQuotaExhausted: '这个 API Key 的额度用完了，请换一个 Key 或提高额度',
+  consumeErrKeyExists: '已经有同名的 API Key，换个名字再创建',
+  // 金额单位是元（#487 / 后端 8b12ab2）。这条**不留 `{amount}` 占位**：消费层的错误映射只回
+  // i18n key、不回差额，占位符没人填就会把 `{amount}` 原样端给用户（#504 留下的坑）。
+  consumeErrInsufficientBalance: '余额不足，请先充值后重试',
+  consumeErrGroupNotAllowed: '当前分组不能用这个 Key，请换分组或联系客服',
+  consumeErrCardNotFound: '没找到这张卡密，请核对后再输入',
+  consumeErrCardNotFoundOrExpired: '卡密不存在或已过期，请核对后再输入',
+  consumeErrCardUsed: '这张卡密已经被用过了，额度没到账请联系客服',
+  consumeRedeemProcessing: '正在确认兑换结果',
+  consumeErrInvitationInvalid: '邀请码无效，请核对后再填',
+  consumeErrEmailCodeInvalid: '验证码不对或已过期，请重新获取',
+  consumeErrNotEnabled: '这个功能还没开放，请联系客服开通',
+  // ---------------------------------------------------------------------------
+  // W1-C2 四个面板（额度 / 账号 / 邀请 / 邮箱绑定，#487）：
+  //   1. `consumeErr*` 的 27 条错误文案已由 #504 落地（W1-A 收尾），本单**不重复定义**；
+  //      面板只认 `error.i18nKey` 取文案，永不显示服务端英文 message（#484 §四）。
+  //   2. 这里只补四个面板必需的纯标签（已用 / 剩余 / 加载更多 / 一次性 Key 提示…）。金额一律「元」
+  //      （CNY，1 元 = 1 额度）：符号由组件层的 formatCurrency 按 currency 渲染，不经这份表；
+  //      不写任何「填邀请码立刻得积分」的旧玩法（#484 §3.1b）。
+  // ---------------------------------------------------------------------------
+  /** 卡密「已用过」= 可能正是自己上一次成功：先让用户核对余额，不要直接说失败 */
+  /** `REDEEM_CODE_LOCKED` 是「处理中」不是失败（#484 §4.4：禁止提示换卡 / 重复提交） */
+
+  // 额度面板（唯一入口是 sk- Key 的 /v1/usage；余额只在内存里跟着响应走）
+  /** 「余额」标签：`consumeBalance` 是金额模板（`${amount}`），不是标签，别混用 */
+  consumeBalanceLabel: '余额',
+  consumeUsed: '已用',
+  consumeRemaining: '剩余',
+  /** `quota.limit === 0` = 不限（不是零额度，#484 §4.5 第 10 条） */
+  consumeUnlimited: '不限',
+  consumeLoadMore: '加载更多',
+  consumeLoadingMore: '正在加载…',
+  consumeUsageEmpty: '还没有用量记录',
+  consumeRequestsCount: '{count} 次请求',
+  consumeTokensCount: '{count} 令牌',
+  consumeNoKeyTitle: '还没有可用的 Key',
+  consumeNoKeyBody: '余额和用量都要用 Key 才能查。请到「账号」标签页创建一把 Key。',
+
+  // 账号面板（Key 创建后只完整显示一次是安全设计，必须在界面上说清）
+  consumeAccountTitle: '账号',
+  consumeProfileTitle: '账号资料',
+  consumeRegisteredAt: '注册时间',
+  consumeKeyEmpty: '还没有 Key。给它起个名字，点「创建 Key」就好。',
+  consumeKeyOnceTitle: 'Key 只显示这一次',
+  consumeKeyOnceBody: '为了安全，完整 Key 只在创建成功后显示一次，关掉后就无法再次查看。请现在复制并妥善保存。',
+  consumeKeyTailOnly: '列表里只显示末尾 4 位',
+  /** 一次性 Key 那个块的关闭按钮：说「我保存好了」而不是干巴巴的「确定」 */
+  consumeKeyOnceSaved: '我保存好了',
+  consumeKeyNameRequired: '请先给 Key 起个名字',
+  consumeKeyDeleted: '已删除',
+  consumeNeedLogin: '登录状态已失效，请重新登录',
+  consumeLogoutConfirm: '退出后需要重新登录才能继续使用，确认退出吗？',
+  consumeLogoutSuccess: '已退出登录',
+
+  // 邀请面板（返利按消费额的比例以「元」结算，邀请关系只在注册时一次填定）
+  inviteRebateRate: '返利按下线消费额的 {percent}% 结算，结算后计入返利余额',
+  inviteRebateFrozen: '其中 {amount} 冻结中',
+
+  // 邮箱绑定面板（`email_verify_enabled=false` 时不再强调「必须先验证」）
+  emailBindNotBound: '尚未绑定邮箱',
+  emailBindCodeLabel: '验证码',
+  emailBindUnbindConfirm: '解绑后这个邮箱将不再与账号关联，确认解绑吗？',
+  emailBindCannotUnbind: '这是账号唯一的登录方式，不能解绑',
+  // 老账号额度迁移（#498 的临时尾巴，@remove-after 1.6.0）：
+  // 登录后一次性调用，失败静默；这几条只服务于那一个自包含按钮（src/legacy/migration/）。
+  // 删除方法见 src/legacy/migration/README.md（届时这 5 条一起删）。
+  legacyMigrateTitle: '迁移历史额度',
+  legacyMigrateDone: '历史额度已迁移：{amount}',
+  legacyMigrateManual: '如需迁移历史额度，请联系客服',
+  legacyMigrateExpired: '额度迁移已结束',
+  legacyMigrateFailed: '迁移失败',
+  legacyMigrateDeviceMismatch: '设备信息不匹配，请联系客服',
+  legacyMigrateAlreadyUnsettled: '已迁移过，如未到账请联系客服',
+  legacyMigrateRetryAnyway: '仍要迁移',
 } as const

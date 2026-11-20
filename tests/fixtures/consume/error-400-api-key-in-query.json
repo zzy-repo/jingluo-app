@@ -1,0 +1,12 @@
+{
+  "_meta": {
+    "request": "GET /v1/models?key=<sk-...>",
+    "auth": "key placed in query string (deliberately wrong)",
+    "captured_at": "2026-11-20T15:44:48+08:00",
+    "http_status": 400,
+    "shape": "MIDDLEWARE envelope, lowercase snake code, no 'error' wrapper",
+    "source": "sub2api 实例只读探测（2026-11-20，实例 0.2.22）；主机名已脱敏移除"
+  },
+  "code": "api_key_in_query_deprecated",
+  "message": "API key in query parameter is deprecated. Please use Authorization header instead."
+}

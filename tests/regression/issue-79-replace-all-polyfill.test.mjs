@@ -8,6 +8,23 @@
 //   属性不可枚举、幂等、且绝不覆盖已经存在的实现（原生或他人的）。
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
+import { registerHooks } from 'node:module'
+
+// 源码里 `legacy.ts` 用 `./graphemeSegmenter.js` 这种打包期写法引用兄弟模块（产物里就是 .js），
+// 裸 node 的 type stripping 不会把 .js 映射到 .ts。其它层级（tests/unit/legacy-polyfills.test.mjs）
+// 都带这段 resolve hook，本文件原先漏了 → 直接 ERR_MODULE_NOT_FOUND，整层接入前从未曝光（#368）。
+registerHooks({
+  resolve(specifier, context, nextResolve) {
+    try {
+      return nextResolve(specifier, context)
+    } catch (error) {
+      if (specifier.startsWith('.') && specifier.endsWith('.js')) {
+        return nextResolve(`${specifier.slice(0, -3)}.ts`, context)
+      }
+      throw error
+    }
+  },
+})
 
 const { installLegacyPolyfills, legacyPolyfillReport, LEGACY_POLYFILL_FLAG } = await import(
   '../../src/polyfills/legacy.ts'
