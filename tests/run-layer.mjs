@@ -1,13 +1,17 @@
 #!/usr/bin/env node
 // Sequential adapter for legacy self-executing scripts and node:test files.
-import { appendFile, readdir, readFile, writeFile } from 'node:fs/promises'
+import { appendFile, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { execFileSync } from 'node:child_process'
+import { cpus, freemem, hostname, loadavg, tmpdir, availableParallelism } from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { availableParallelism } from 'node:os'
 import { runCase, runMergedBatch } from './helpers/runtime.mjs'
 import { serveDir } from './helpers/env.mjs'
 import {
   DEFAULT_POLICY,
+  KINDS,
+  TRI_STATE_ACTION,
+  buildRunRecord,
   dayOf,
   describeEntry,
   dueReminders,
@@ -15,9 +19,15 @@ import {
   isQuarantined,
   isRecurringRed,
   normalizeRegistry,
+  recordCrossRunner,
   recordFlaky,
   recordPass,
   recordRecurringRed,
+  resolveRunnerIdentity,
+  scanCrossRunner,
+  scanTimingWindows,
+  summarizeTriState,
+  triStateOf,
 } from '../scripts/flaky-registry.mjs'
 
 const TESTS_DIR = path.dirname(fileURLToPath(import.meta.url))
@@ -148,9 +158,45 @@ const DEFAULT_SHARD_WEIGHT_MS = 30000
  * 21 天内复发 ≥2 次就当红处理（禁止用重跑洗白真红，规则见 docs/TESTING-POLICY.md 第 10 节）。
  */
 const FLAKY_FILE = path.join(TESTS_DIR, 'flaky-registry.json')
+/**
+ * #456：跨 runner 判定要的**运行记录**目录。每个 run 在这里留一份「同 commit 上这台 runner 跑出了
+ * 什么」的原始事实（`{ commit, runner, results[] }`），跨 runner 判据（`scanCrossRunner`）就是拿它们
+ * 互相比。为什么落到磁盘而不是只在内存里：判据要能看见**别的机器**、以及**同 SHA 的另一次 attempt**
+ * —— 那些结果根本不在本进程里。
+ *
+ * CI 里由 ci.yml 给 `FLAKY_RUNS_DIR`（各分片写进 workspace，作为 artifact 上传，再由
+ * `flaky-cross-runner` job 汇总下载）；本地默认 `.flaky-runs/`（已在 .gitignore，不入库）。
+ */
+const FLAKY_RUNS_DIR = process.env.FLAKY_RUNS_DIR ? path.resolve(process.env.FLAKY_RUNS_DIR) : path.join(ROOT, '.flaky-runs')
 /** 写进 GitHub Actions 的 job summary（有就写，没有就不写；不依赖 ci.yml 改动） */
 const STEP_SUMMARY = process.env.GITHUB_STEP_SUMMARY ?? ''
 const rel = (file) => path.relative(ROOT, file).split(path.sep).join('/')
+
+/**
+ * #456：本次 run 的 runner 身份（判据里「runner 不同」的那一维）。
+ *
+ * 机器事实在这里取一次（`os` 的 hostname / loadavg / cpus / freemem），判据本身是纯函数
+ * （`resolveRunnerIdentity`），所以 `tests/unit/flaky-registry.test.mjs` 能不用真机器就把它钉死。
+ */
+const runnerIdentity = () =>
+  resolveRunnerIdentity({
+    env: process.env,
+    hostname: hostname(),
+    loadavg: loadavg(),
+    cpus: cpus().length,
+    freeMemMb: Math.round(freemem() / 1024 / 1024),
+  })
+
+/** 本次 run 对应的 commit（跨 runner 判据的分组键）。拿不到就是 `unknown`，不会因此失败 */
+function currentCommit() {
+  const fromEnv = process.env.GITHUB_SHA || process.env.GIT_COMMIT
+  if (fromEnv) return String(fromEnv).slice(0, 12)
+  try {
+    return execFileSync('git', ['rev-parse', 'HEAD'], { cwd: ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim().slice(0, 12)
+  } catch {
+    return 'unknown'
+  }
+}
 
 /** `--shard 1/3` → { index: 1, count: 3 }；非法值直接抛，不做「猜你想要什么」 */
 function parseShard(value) {
@@ -308,13 +354,322 @@ async function loadUnitWeights() {
   }
 }
 
+// ───────────────────────────── Issue #456：跨 runner 判据的接线 ─────────────────────────────
+
+/** 运行记录文件名：同 commit + 同 runner + 同层 + 同分片是同一个格子（重跑覆盖它，目录不会无限膨胀） */
+const recordFileName = (commit, identity, shard, layer = 'all') =>
+  `run-${commit}-${layer.replace(/[^a-zA-Z0-9._+-]+/g, '_')}-${identity.id.replace(/[^a-zA-Z0-9._@#-]+/g, '_')}${shard ? `-shard${shard.index}` : ''}.json`
+
+/** 读运行记录目录（半截文件 / 陌生版本直接跳过：判据的输入坏了不该让整轮测试起不来） */
+async function readRunRecords(dir) {
+  let names = []
+  try {
+    names = await readdir(dir)
+  } catch {
+    return []
+  }
+  const records = []
+  for (const name of names.filter((n) => n.endsWith('.json')).sort()) {
+    try {
+      const parsed = JSON.parse(await readFile(path.join(dir, name), 'utf8'))
+      if (parsed && parsed.object === 'flaky-run-record') records.push(parsed)
+    } catch { /* 写了一半 / 不是我们的文件：跳过 */ }
+  }
+  return records
+}
+
+/** 目录的显示名：仓库内给相对路径，仓库外（CI 的 artifact 下载目录 / 临时目录）给绝对路径 */
+const dirLabel = (dir) => {
+  const relative = rel(dir)
+  return relative.startsWith('..') ? dir : relative
+}
+
+/** 一条观测的指纹：同一份证据重复登记只会让 count 虚高，不会让结论更可信 */
+const evidenceKey = (item) => `${item.commit}|${item.runner}|${item.at}|${item.ok ? 'ok' : 'red'}`
+
+/** 这条分叉的证据是否已经全在登记簿里（是 → 不重复登记） */
+const alreadyRecorded = (entry, group) => {
+  const seen = new Set((entry?.evidence ?? []).map(evidenceKey))
+  return group.evidence.every((item) => seen.has(evidenceKey(item)))
+}
+
+/**
+ * #456 §1：本轮记录落盘 + 跨 runner 聚合 + 登记。
+ *
+ * 返回 `{ all, registered, records }`：
+ *   · `all` 是本轮记录目录里**所有**分叉（含此前已登记过的）—— 三态判定要用全量，
+ *     否则「已经登记过」的条目下一轮就看不见了；
+ *   · `registered` 是这一轮**新**落进登记簿的（终端与 summary 只说新发现，避免刷屏）。
+ */
+async function registerCrossRunner({ registry, plan, shard, identity, commit, results, startedAt, totalMs, recordDir, writeRecord, today }) {
+  if (writeRecord) {
+    const record = buildRunRecord({
+      layer: plan.join('+'),
+      shard: shard ? `${shard.index}/${shard.count}` : null,
+      runner: identity,
+      commit,
+      results,
+      startedAt,
+      totalMs,
+    })
+    await mkdir(recordDir, { recursive: true }).catch(() => {})
+    await writeFile(path.join(recordDir, recordFileName(commit, identity, shard, plan.join('+'))), `${JSON.stringify(record, null, 2)}\n`)
+      .catch((error) => {
+        // 写不进去不是错误：判据退化成「只看得到别的 runner 已落盘的记录」，终端里点名即可。
+        console.log(`\n⚠ 运行记录写入失败（${error.message}）：跨 runner 判据看不到本轮的证据`)
+      })
+  }
+  const records = await readRunRecords(recordDir)
+  const all = scanCrossRunner(records).filter((item) => item.commit === commit)
+  const registered = []
+  for (const group of all) {
+    if (alreadyRecorded(registry.tests[group.test], group)) continue
+    recordCrossRunner(registry, group.test, {
+      today,
+      runners: group.runners,
+      evidence: group.evidence,
+      commit: group.commit,
+      reason: `红：${group.redRunners.join(', ')} / 绿：${group.greenRunners.join(', ')}`,
+    })
+    registered.push(group)
+  }
+  return { all, registered, records }
+}
+
+/**
+ * #456 §3：时序窗口静态提示（警告级、不阻塞）—— 扫本轮选中用例的源码。
+ * 只报告不判红：这类写法是要「改」的，不是要「卡」的；卡住它只会让人把断言写得更松。
+ */
+async function scanTimingWarnings(items) {
+  const found = []
+  for (const item of items) {
+    let source
+    try {
+      source = await readFile(item.file, 'utf8')
+    } catch {
+      continue
+    }
+    const findings = scanTimingWindows(source)
+    if (findings.length) found.push({ file: rel(item.file), layer: item.layer, findings })
+  }
+  return found.sort((a, b) => b.findings.length - a.findings.length || a.file.localeCompare(b.file))
+}
+
+/**
+ * #456：`--cross-runner-scan` —— 只做「聚合 + 判定 + 登记 + summary」，一条用例都不跑。
+ *
+ * 为什么单独一个入口：CI 里「哪个分片红了」和「同 SHA 的另一次 attempt / 另一台机器绿了」是两份
+ * 互不相干的 artifact，只有把它们下载到一起才判得出「runner-dependent」。这条命令就是那个聚合点。
+ */
+async function crossRunnerScan({ recordDir, registryPath, json }) {
+  let registry = emptyRegistry()
+  try {
+    registry = normalizeRegistry(JSON.parse(await readFile(registryPath, 'utf8')))
+  } catch { /* 没有登记簿：用空簿继续 */ }
+  const today = dayOf()
+  const records = await readRunRecords(recordDir)
+  const all = scanCrossRunner(records)
+  const registered = []
+  for (const group of all) {
+    if (alreadyRecorded(registry.tests[group.test], group)) continue
+    recordCrossRunner(registry, group.test, {
+      today,
+      runners: group.runners,
+      evidence: group.evidence,
+      commit: group.commit,
+      reason: `红：${group.redRunners.join(', ')} / 绿：${group.greenRunners.join(', ')}`,
+    })
+    registered.push(group)
+  }
+  const commits = [...new Set(records.map((item) => item.commit))].sort()
+  const runners = [...new Set(records.map((item) => item.runner?.id).filter(Boolean))].sort()
+  console.log(`\n跨 runner 扫描：${records.length} 份运行记录（${commits.length} 个 commit / ${runners.length} 个 runner）来自 ${dirLabel(recordDir)}`)
+  for (const item of records) console.log(`  record  ${item.commit}  ${item.runner?.id}  ${item.results?.length ?? 0} 条结果  ${item.startedAt}`)
+  if (!all.length) {
+    console.log('结论：没有「同 commit + 同用例 + 结果不同 + runner 不同」的分叉（判据没有空跑以外的输出）。')
+  } else {
+    console.log(`\nCROSS-RUNNER（runner-dependent，${all.length} 条分叉；本轮新登记 ${registered.length} 条）`)
+    for (const group of all) {
+      const isNew = registered.includes(group)
+      console.log(`  ${isNew ? 'NEW  ' : '已知 '} ${group.test}（commit ${group.commit}）`)
+      console.log(`        红：${group.redRunners.join(', ')}`)
+      console.log(`        绿：${group.greenRunners.join(', ')}`)
+      console.log(`        ⟹ 处置：${TRI_STATE_ACTION['runner-dependent']}`)
+    }
+  }
+  const payload = {
+    version: 1,
+    generatedAt: new Date().toISOString(),
+    recordDir: dirLabel(recordDir),
+    records: records.map((item) => ({ commit: item.commit, runner: item.runner?.id, results: item.results?.length ?? 0, startedAt: item.startedAt })),
+    commits,
+    runners,
+    crossRunner: all,
+    registered: registered.map((item) => ({ test: item.test, commit: item.commit })),
+  }
+  if (json) await writeFile(path.resolve(json), `${JSON.stringify(payload, null, 2)}\n`)
+  await writeFile(registryPath, `${JSON.stringify(registry, null, 2)}\n`).catch((error) => {
+    console.log(`\n⚠ flaky 登记簿写入失败（${error.message}）：本轮结论只在终端与 --json 报告里`)
+  })
+  if (STEP_SUMMARY) {
+    const lines = ['## 跨 runner 判定（flaky cross-runner scan）', '']
+    lines.push(
+      `运行记录：${records.length} 份 / ${commits.length} 个 commit / ${runners.length} 个 runner（\`${dirLabel(recordDir)}\`）。`,
+      '',
+      `| 判定 | 数量 | 处置 |`,
+      `| --- | --- | --- |`,
+      `| runner-dependent（跨 runner 结论不一致） | ${all.length} | ${TRI_STATE_ACTION['runner-dependent']} |`,
+      `| 本轮新登记 | ${registered.length} | 写进 \`tests/flaky-registry.json\`（kind: cross-runner） |`,
+    )
+    if (all.length) {
+      lines.push('', '### 结论不一致的用例', '')
+      for (const group of all) {
+        lines.push(`- \`${group.test}\`（commit ${group.commit}）：红 ${group.redRunners.join(', ')} / 绿 ${group.greenRunners.join(', ')}`)
+      }
+      lines.push('', `> 红线：这类用例**必须改成等终态**（until 轮询），不允许加 \`sleep\` / 提高超时把窗口撑开。见 docs/TESTING-POLICY.md §11.5。`)
+    } else {
+      lines.push('', '没有跨 runner 分叉：本轮各 runner 对同一 commit 的结论一致（不等于是「没有 flaky」，只是没观测到分叉）。')
+    }
+    if (!records.length) {
+      lines.push('', '⚠ 没有读到任何运行记录：分片 artifact 没上传 / 下载失败时就会这样，**结论不可用**（不是「全绿」）。')
+    }
+    await appendFile(STEP_SUMMARY, `${lines.join('\n')}\n`).catch(() => {})
+  }
+  return 0
+}
+
+/**
+ * #456 自证（`--selftest-cross-runner`）：造一个**只在慢环境红**的用例，用两个负载档各跑一次，
+ * 证明它被判成 `cross-runner` 并登记；再用两组反向对照证明判据不是「见到红就登记」。
+ *
+ * 六拍（[1]~[3] 是正向、[4]~[5] 是负向对照，缺一条都说明判据可能是空跑）：
+ *   [1] 快 runner（负载 idle）绿 + [2] 慢 runner（负载 busy）红 → 同 commit / 同用例 / 结果不同 / runner 不同
+ *   [3] → 判据命中，登记成 kind: "cross-runner"（runners 两条、evidence 两条、不进隔离区）
+ *   [4] 两个 runner **都红** → 结论一致 → **不**登记（否则「都红」会被说成 flake）
+ *   [5] 同一个 runner 红 → 绿 → 那是 same-runner flaky，**不**算 cross-runner（两条判据不能混）
+ *   [6] 静态提示：这条自证用例必须被判出「靠时间而不是靠终态」的写法（sleep）
+ *
+ * 自证用例写在临时目录（不进仓库）：它本身就是一条「坏用例」，留在仓库里会用错误示范教人写测试。
+ */
+async function selftestCrossRunner({ recordDir }) {
+  const workdir = await mkdtemp(path.join(tmpdir(), 'flaky-selftest-456-'))
+  const caseFile = path.join(workdir, 'slow-window.test.mjs')
+  const beats = []
+  const stamp = (name) => `${workdir}/${name}`
+  /**
+   * 自证用例：一个「可注入延迟把窗口调窄」的时序断言。
+   *   · `SELFTEST_CLICK_DELAY_MS` 模拟「看到中间态之后把取消点下去」的延迟（机器越快越小）；
+   *   · `SELFTEST_WINDOW_MS` 是产品中间态窗口（固定）。
+   * 快机器上 delay < window → 绿；慢机器上 delay > window → 红。**只有机器快慢这一个变量**。
+   */
+  await writeFile(caseFile, `import { test } from 'node:test'
+import assert from 'node:assert/strict'
+
+// #456 自证用例（临时文件，不入库）：只在慢环境红的时序断言
+const CLICK_DELAY_MS = Number(process.env.SELFTEST_CLICK_DELAY_MS ?? '5')
+const WINDOW_MS = Number(process.env.SELFTEST_WINDOW_MS ?? '100')
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+
+test('取消点必须落在「导入中」窗口内（只在慢环境红）', async () => {
+  const started = performance.now()
+  await sleep(CLICK_DELAY_MS)
+  const latency = performance.now() - started
+  assert.ok(latency < WINDOW_MS, \`取消点晚于中间态窗口：latency=\${Math.round(latency)}ms window=\${WINDOW_MS}ms（慢环境才会发生）\`)
+})
+`, 'utf8')
+
+  /** 在指定的「runner」（负载档 + 注入延迟）上跑一次自证用例，返回一条运行记录 */
+  const runOn = async ({ load, delay, windowMs = 100, dir, commit = 'selftest456' }) => {
+    const env = {
+      ...process.env,
+      TEST_RUNNER_LOAD: load,
+      SELFTEST_CLICK_DELAY_MS: String(delay),
+      SELFTEST_WINDOW_MS: String(windowMs),
+    }
+    const result = await runCase(caseFile, { cwd: ROOT, env, timeoutMs: 60000, output: false })
+    const identity = resolveRunnerIdentity({ env, hostname: 'selftest-box', loadavg: [0, 0, 0], cpus: 4 })
+    const record = buildRunRecord({
+      commit,
+      layer: 'selftest',
+      runner: identity,
+      results: [{ file: 'tests/selftest/slow-window.test.mjs', ok: result.ok, skipped: false, ms: result.ms, attempts: 1 }],
+      startedAt: new Date().toISOString(),
+      totalMs: result.ms,
+    })
+    await mkdir(dir, { recursive: true })
+    await writeFile(path.join(dir, `${recordFileName(commit, identity, null, 'selftest')}`), `${JSON.stringify(record, null, 2)}\n`)
+    return { ok: result.ok, ms: result.ms, tail: result.tail ?? [], identity }
+  }
+
+  const fail = (message) => {
+    beats.push(`FAIL  ${message}`)
+    return false
+  }
+  let ok = true
+  try {
+    // [1]+[2] 正向：快 runner 绿、慢 runner 红（同 commit、同用例、不同 runner）
+    const crossDir = stamp('cross')
+    const fast = await runOn({ load: 'idle', delay: 5, dir: crossDir })
+    const slow = await runOn({ load: 'busy', delay: 400, dir: crossDir })
+    ok = (fast.ok ? beats.push(`PASS  [1] 快 runner（负载 idle / 点击延迟 5ms < 窗口 100ms）→ 绿 ${Math.round(fast.ms)}ms`) : fail(`[1] 快 runner 应该绿，实际红：${fast.tail.slice(-2).join(' ')}`)) && ok
+    ok = (!slow.ok ? beats.push(`PASS  [2] 慢 runner（负载 busy / 点击延迟 400ms > 窗口 100ms）→ 红 ${Math.round(slow.ms)}ms`) : fail('[2] 慢 runner 应该红，实际绿：环境没能把窗口调窄')) && ok
+    const registry = emptyRegistry()
+    const groups = scanCrossRunner(await readRunRecords(crossDir)).filter((item) => item.commit === 'selftest456')
+    if (groups.length === 1) {
+      recordCrossRunner(registry, groups[0].test, { today: dayOf(), runners: groups[0].runners, evidence: groups[0].evidence, commit: groups[0].commit })
+      const entry = registry.tests[groups[0].test]
+      const shapeOk = entry.kind === KINDS.crossRunner
+        && entry.runners.length === 2
+        && entry.firstSeen === dayOf() && entry.count === 1 && entry.lastSeen === dayOf()
+        && Array.isArray(entry.evidence) && entry.evidence.length === 2
+        && entry.quarantinedAt === null
+      if (shapeOk) {
+        beats.push(`PASS  [3] 判据命中 → kind="${entry.kind}"，runners=${JSON.stringify(entry.runners)}，evidence=${entry.evidence.length} 条`)
+        beats.push(`      登记簿条目：${JSON.stringify({ test: entry.test, kind: entry.kind, firstSeen: entry.firstSeen, count: entry.count, lastSeen: entry.lastSeen, runners: entry.runners })}`)
+      } else {
+        ok = fail(`[3] 登记项的字段不对：${JSON.stringify(entry)}`)
+      }
+    } else {
+      ok = fail(`[3] 应该判出 1 条 cross-runner 分叉，实际 ${groups.length} 条`)
+    }
+
+    // [4] 负向对照：两个 runner 都红 → 结论一致 → 不登记
+    const bothRedDir = stamp('both-red')
+    await runOn({ load: 'idle', delay: 400, dir: bothRedDir })
+    await runOn({ load: 'busy', delay: 400, dir: bothRedDir })
+    const bothRed = scanCrossRunner(await readRunRecords(bothRedDir)).filter((item) => item.commit === 'selftest456')
+    ok = (bothRed.length === 0 ? beats.push('PASS  [4] 负向对照：两个 runner 都红 → 结论一致 → 不登记（「都红」不是 flake）') : fail(`[4] 都红被误判成 cross-runner（${bothRed.length} 条）`)) && ok
+
+    // [5] 负向对照：同一个 runner 红→绿 → 那是 same-runner flaky，不算 cross-runner
+    const sameRunnerDir = stamp('same-runner')
+    await runOn({ load: 'busy', delay: 400, dir: sameRunnerDir })
+    await runOn({ load: 'busy', delay: 5, dir: sameRunnerDir })
+    const sameRunner = scanCrossRunner(await readRunRecords(sameRunnerDir)).filter((item) => item.commit === 'selftest456')
+    ok = (sameRunner.length === 0 ? beats.push('PASS  [5] 负向对照：同一 runner 红→绿 → 不算 cross-runner（归 same-runner flaky）') : fail(`[5] 同 runner 的红→绿被误判成 cross-runner（${sameRunner.length} 条）`)) && ok
+
+    // [6] 静态提示：自证用例本身必须被判出「靠时间而不是靠终态」
+    const findings = scanTimingWindows(await readFile(caseFile, 'utf8'))
+    ok = (findings.length > 0 ? beats.push(`PASS  [6] 静态提示命中 ${findings.length} 处：${[...new Set(findings.map((item) => item.kind))].join('/')}`) : fail('[6] 静态提示没命中 waitForTimeout/sleep 类的写法')) && ok
+  } finally {
+    await rm(workdir, { recursive: true, force: true }).catch(() => {})
+  }
+  console.log(`\n#456 自证：跨 runner 判定（临时目录 ${workdir}，跑完已清理）`)
+  for (const line of beats) console.log(`  ${line}`)
+  console.log(`\n自证结论：${ok ? 'PASS —— 「只在慢环境红」的用例被判为 cross-runner 并登记；两条负向对照都没误报' : 'FAIL —— 判据不可信，见上面失败项'}`)
+  if (!ok && recordDir) console.log(`（自证用的记录目录：${rel(recordDir)} —— 自证不写仓库的登记簿）`)
+  return ok ? 0 : 1
+}
+
 async function main() {
   const argv = process.argv.slice(2)
   let layer, only = '', caseName = '', json, failedFrom, timeoutMs = 180000, shard = null, jobs
+  // #456：`--record-dir` 指的是运行记录（跨 runner 判据的输入）写哪；`--registry` 换登记簿文件（自证/沙箱用）
+  let recordDir = FLAKY_RUNS_DIR
+  let registryPath = FLAKY_FILE
   const flags = new Set()
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i]
-    if (['--only', '--case', '--json', '--failed-from', '--timeout-ms', '--shard', '--jobs'].includes(arg)) {
+    if (['--only', '--case', '--json', '--failed-from', '--timeout-ms', '--shard', '--jobs', '--record-dir', '--registry'].includes(arg)) {
       const value = argv[++i]
       if (!value || value.startsWith('--')) throw new Error(`Missing value: ${arg}`)
       if (arg === '--only') only = value
@@ -324,8 +679,10 @@ async function main() {
       if (arg === '--timeout-ms') timeoutMs = Number(value)
       if (arg === '--shard') shard = parseShard(value)
       if (arg === '--jobs') jobs = Number(value)
+      if (arg === '--record-dir') recordDir = path.resolve(value)
+      if (arg === '--registry') registryPath = path.resolve(value)
     } else if (
-      ['--bail', '--list', '--baseline', '--write-weights', '--no-retry', '--include-quarantined'].includes(arg)
+      ['--bail', '--list', '--baseline', '--write-weights', '--no-retry', '--include-quarantined', '--no-record', '--cross-runner-scan', '--selftest-cross-runner'].includes(arg)
     ) {
       flags.add(arg)
     }
@@ -334,9 +691,19 @@ async function main() {
   }
   if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1) throw new Error('timeout-ms must be a positive integer')
   if (jobs !== undefined && (!Number.isSafeInteger(jobs) || jobs < 1)) throw new Error('jobs must be a positive integer')
+  /**
+   * #456：两个「不跑用例」的入口，所以不要求给层：
+   *   · `--cross-runner-scan`：只读运行记录、判跨 runner、登记、写 summary（CI 的汇总 job 用它）；
+   *   · `--selftest-cross-runner`：自证（造一个「只在慢环境红」的用例，两个负载档各跑一次）。
+   */
+  if (flags.has('--cross-runner-scan') || flags.has('--selftest-cross-runner')) {
+    return flags.has('--selftest-cross-runner')
+      ? selftestCrossRunner({ recordDir })
+      : crossRunnerScan({ recordDir, registryPath, json })
+  }
   // #415：`all` 也要带 `server` —— 「接进 LAYERS 但不在 all 里」等于又留一个「全量跑不到」的口子
   const plan = layer === 'all' ? ['unit', 'regression', 'integration', 'server'] : [layer]
-  if (plan.some((name) => !LAYERS.includes(name))) throw new Error('Usage: node tests/run-layer.mjs <unit|integration|regression|server|e2e|device|all> [--only substring] [--case exact-path] [--shard 1/3] [--jobs N] [--timeout-ms 180000] [--json result.json] [--failed-from result.json] [--bail] [--list] [--no-retry] [--include-quarantined]')
+  if (plan.some((name) => !LAYERS.includes(name))) throw new Error('Usage: node tests/run-layer.mjs <unit|integration|regression|server|e2e|device|all> [--only substring] [--case exact-path] [--shard 1/3] [--jobs N] [--timeout-ms 180000] [--json result.json] [--failed-from result.json] [--bail] [--list] [--no-retry] [--include-quarantined] [--record-dir dir] [--registry file] [--no-record] | node tests/run-layer.mjs --cross-runner-scan [--record-dir dir] [--registry file] [--json r.json] | node tests/run-layer.mjs --selftest-cross-runner')
   let failed
   if (failedFrom) {
     const report = JSON.parse(await readFile(failedFrom, 'utf8'))
@@ -367,7 +734,7 @@ async function main() {
    */
   let flakyRegistry = emptyRegistry()
   try {
-    flakyRegistry = normalizeRegistry(JSON.parse(await readFile(FLAKY_FILE, 'utf8')))
+    flakyRegistry = normalizeRegistry(JSON.parse(await readFile(registryPath, 'utf8')))
   } catch { /* 没有文件 / JSON 坏了：用空簿继续 */ }
   const flakyPolicy = { ...DEFAULT_POLICY, ...(flakyRegistry.policy ?? {}) }
   const today = dayOf()
@@ -435,6 +802,10 @@ async function main() {
    * e2e / device 本来就是长任务 + 真实浏览器，串行才看得懂。
    * `--case` / `--failed-from` 会把批次拆开：重跑提示给的是单文件命令，单文件必须能单独跑通。
    */
+  // #456：这次 run 的身份与 commit。判据要的两维就是「哪台机器」和「哪份代码」，两者都只取一次。
+  const identity = runnerIdentity()
+  const commit = currentCommit()
+  console.log(`runner: ${identity.id}${identity.loadClass ? `（负载档 ${identity.loadClass}）` : ''} · commit: ${commit} · 运行记录目录: ${dirLabel(recordDir)}`)
   const lanes = resolveJobs(plan, jobs)
   const unitWeights = await loadUnitWeights()
   const work = await buildWorkUnits(planned, unitWeights.files)
@@ -455,6 +826,9 @@ async function main() {
       else if (APP_URL_FILES.has(base) && !process.env.APP_URL) env.APP_URL = (await ensureSharedStd()).url
       // 要 standard 变体却读 DIST_DIR 的用例：指到标准产物，别让它们对着内测包 SKIP(env)（#365）
       if (STANDARD_DIST_DIR_FILES.has(base) && !process.env.DIST_DIR) env.DIST_DIR = standardDistDir()
+      // #456：attempts 要记下来 —— 判据里「同 runner 重跑绿」与「跨 runner 结论不同」是两件事，
+      // 报告里必须能分开看（前者是 flaky，后者是 runner-dependent）。
+      let attempts = 1
       const run = () => runCase(item.file, { cwd: ROOT, env, timeoutMs, output: lanes === 1 })
       let result = await run()
       if (lanes !== 1 && result.output) log.push(result.output)
@@ -470,6 +844,7 @@ async function main() {
       let flaky = false
       if (!result.ok && !skipped && !flags.has('--no-retry')) {
         say(`   ↻ 红了（${result.ms}ms），按 flaky 判据重跑一次…`)
+        attempts = 2
         const retry = await run()
         if (lanes !== 1 && retry.output) log.push(retry.output)
         if (retry.ok) {
@@ -518,7 +893,7 @@ async function main() {
       // 真的绿了（不是重跑才绿）：连续 flaky 计数清零，quarantine 自动解除（修好就移除，不用手改 JSON）
       if (result.ok && !flaky) recordPass(flakyRegistry, name, { today })
       return {
-        results: [{ layer: item.layer, file: name, ...result, skipped, skipReason }],
+        results: [{ layer: item.layer, file: name, ...result, skipped, skipReason, attempts, runner: identity.id }],
         log: log.join(''),
         interrupted: result.interrupted,
         failed: !result.ok && !skipped,
@@ -542,6 +917,7 @@ async function main() {
           layer: item.layer, file: name, ok: false, skipped: false, skipReason: '',
           code: result.code, signal: result.signal, timedOut: result.timedOut, interrupted: result.interrupted,
           error: reason, skips: 0, skipDetails: [], ms: 0, tail: result.tail, merged: true,
+          attempts: 1, runner: identity.id,
         })
         say(`<< FAIL ${name}（${reason}）`)
         continue
@@ -553,6 +929,7 @@ async function main() {
         code: entry.ok ? 0 : 1, signal: null, timedOut: false, interrupted: result.interrupted, error: null,
         skips: entry.skip, skipDetails: entry.skipDetails ?? [], tests: entry.tests, pass: entry.pass,
         fail: entry.fail, ms: entry.ms, tail: [], merged: true,
+        attempts: 1, runner: identity.id,
       })
       const status = entry.outcome === 'PASS' ? 'PASS' : entry.outcome === 'FAIL' ? 'FAIL' : 'SKIP'
       say(`<< ${status} ${name} (${entry.ms}ms, ${entry.tests} 用例)`)
@@ -584,6 +961,9 @@ async function main() {
           skipReason,
           merged: false,
           batchFallback: true,
+          // 批内红 → 单文件重跑，所以这条确实是第 2 次 attempt（但机器没变，仍算 same-runner 的证据）
+          attempts: 2,
+          runner: identity.id,
         }
       }
     }
@@ -621,6 +1001,48 @@ async function main() {
   results.push(...outcomes.sort((a, b) => (order.get(a.file) ?? 0) - (order.get(b.file) ?? 0)))
   const failures = results.filter((r) => !r.ok && !r.skipped)
   const skips = results.filter((r) => r.skipped)
+  const totalMs = Math.round(performance.now() - started)
+
+  /**
+   * #456 §3：时序窗口的**静态提示**（警告级，不阻塞）。
+   * 扫的是本轮选中用例的源码，找「靠时间而不是靠终态」的写法（`waitForTimeout` / 固定 sleep /
+   * 依赖动画时长）。它们不是错，但正确性依赖机器快慢 —— 正是「同机绿、换 runner 红」的温床，
+   * 所以要在 job summary 里点名，让人在改断言时看得见。
+   */
+  const timingWarnings = await scanTimingWarnings(planned)
+
+  /**
+   * #456 §1：跨 runner 判据。分两步，顺序不能反：
+   *   1) 先把**本轮**的结果写成一份运行记录（带 runner 身份 + 负载快照 + commit）；
+   *   2) 再把记录目录里所有记录聚合比对 —— 里面可能有别的 runner、别的分片、同 SHA 的另一次 attempt。
+   *
+   * 没有第 1 步就没有可比对的原始事实；没有第 2 步，判据又退回「只看自己这台机器」（#406 的盲区）。
+   */
+  const crossRunner = await registerCrossRunner({
+    registry: flakyRegistry,
+    plan,
+    shard,
+    identity,
+    commit,
+    results,
+    startedAt: new Date(Date.now() - totalMs).toISOString(),
+    totalMs,
+    recordDir,
+    writeRecord: !flags.has('--no-record'),
+    today,
+  })
+  const crossRunnerFiles = new Set(crossRunner.all.map((item) => item.test))
+  for (const item of results) {
+    // 三态在这里落地（#456 §2）：runner-dependent 优先于 flaky/真红 ——
+    // 「这台机器上重跑还是红」不代表它真红，只要有别的 runner 是绿的，它就是 runner-dependent。
+    item.triState = triStateOf({
+      ok: item.ok,
+      flaky: Boolean(item.flaky),
+      skipped: item.skipped,
+      runnerDependent: crossRunnerFiles.has(item.file),
+    })
+  }
+  const tri = summarizeTriState(results, crossRunnerFiles)
   /**
    * #406：登记簿落盘 + 名单留痕。
    *
@@ -631,25 +1053,71 @@ async function main() {
    */
   // 登记簿落盘失败（只读文件系统 / 沙箱里没有这个目录）不许把整轮结果弄丢：它只是留痕的副本，
   // 终端与 --json 里已经有一份完整名单。
-  await writeFile(FLAKY_FILE, JSON.stringify(flakyRegistry, null, 2) + '\n').catch((error) => {
+  await writeFile(registryPath, JSON.stringify(flakyRegistry, null, 2) + '\n').catch((error) => {
     console.log(`\n⚠ flaky 登记簿写入失败（${error.message}）：本轮名单只在终端与 --json 报告里`)
   })
   if (flakyRuns.length) {
-    console.log(`\nFLAKY（重跑才通过，${flakyRuns.length} 个；已登记 tests/flaky-registry.json）`)
+    console.log(`\nFLAKY（重跑才通过，${flakyRuns.length} 个；已登记 ${rel(registryPath)}）`)
     for (const name of flakyRuns) console.log(`  FLAKY  ${name} —— ${describeEntry(flakyRegistry.tests[name])}`)
   }
+  if (crossRunner.all.length) {
+    console.log(`\nCROSS-RUNNER（同 commit、同用例、换 runner 结论不同，${crossRunner.all.length} 个分叉；本轮新登记 ${crossRunner.registered.length} 个 → ${rel(registryPath)}）`)
+    for (const item of crossRunner.all) {
+      const isNew = crossRunner.registered.includes(item)
+      console.log(`  ${isNew ? 'NEW' : '已知'}  ${item.test}（commit ${item.commit}）`)
+      console.log(`    红：${item.redRunners.join(', ')} / 绿：${item.greenRunners.join(', ')}`)
+      console.log(`    ⟹ 处置：${TRI_STATE_ACTION['runner-dependent']}`)
+    }
+  }
+  if (timingWarnings.length) {
+    const total = timingWarnings.reduce((sum, item) => sum + item.findings.length, 0)
+    console.log(`\n⚠ 时序窗口静态提示（警告级，不阻塞）：${timingWarnings.length} 个文件 / ${total} 处「靠时间而不是靠终态」的写法`)
+    for (const item of timingWarnings.slice(0, 8)) {
+      const kinds = [...new Set(item.findings.map((one) => one.kind))].join('/')
+      console.log(`  ${item.file}：${item.findings.length} 处（${kinds}）`)
+    }
+    if (timingWarnings.length > 8) console.log(`  …其余 ${timingWarnings.length - 8} 个文件见 --json 的 timingWarnings`)
+    console.log('  这类写法在快慢不同的 runner 上结论会漂移；改成等终态（until 轮询），不要加 sleep（docs/TESTING-POLICY.md §11.5）')
+  }
   if (STEP_SUMMARY) {
-    const lines = [`## flaky 登记（${plan.join('+')}）`, '']
+    const lines = [`## flaky 与三态判定（${plan.join('+')} · runner ${identity.id}）`, '']
+    lines.push(
+      `| 状态 | 数量 | 处置 |`,
+      `| --- | --- | --- |`,
+      `| 绿 | ${tri.summary.green} | ${TRI_STATE_ACTION.green} |`,
+      `| flaky（同 runner 重跑绿） | ${tri.summary.flaky} | ${TRI_STATE_ACTION.flaky} |`,
+      `| **runner-dependent（跨 runner 结论不一致）** | ${tri.summary['runner-dependent']} | ${TRI_STATE_ACTION['runner-dependent']} |`,
+      `| 真红（同 runner 重跑仍红） | ${tri.summary['true-red']} | ${TRI_STATE_ACTION['true-red']} |`,
+    )
     if (flakyRuns.length) {
-      lines.push(`重跑才通过 ${flakyRuns.length} 个（不阻塞合并，但必须留痕）：`, '')
+      lines.push('', `### flaky（重跑才通过）${flakyRuns.length} 个 —— 不阻塞合并，但必须留痕`, '')
       for (const name of flakyRuns) lines.push(`- \`${name}\` —— ${describeEntry(flakyRegistry.tests[name])}`)
-    } else {
-      lines.push('本轮没有「重跑才通过」的用例。')
+    }
+    if (crossRunner.all.length) {
+      lines.push('', `### runner-dependent ${crossRunner.all.length} 个（本轮新登记 ${crossRunner.registered.length} 个）—— **必须改成等终态，禁止加 sleep**`, '')
+      for (const item of crossRunner.all) {
+        lines.push(`- \`${item.test}\`：红 ${item.redRunners.join(', ')} / 绿 ${item.greenRunners.join(', ')}（commit ${item.commit}）`)
+      }
+    }
+    if (tri.files['true-red'].length) {
+      lines.push('', `### 真红 ${tri.files['true-red'].length} 个 —— 修产品或修断言（不是 flake，别重跑）`, '')
+      for (const name of tri.files['true-red']) lines.push(`- \`${name}\``)
     }
     if (quarantinedFiles.length) {
       lines.push('', `隔离区跳过 ${quarantinedFiles.length} 个（连续 ${flakyPolicy.quarantineAfter} 次 flaky，每周提醒修复）：`, '')
       for (const name of quarantinedFiles) lines.push(`- \`${name}\``)
     }
+    if (timingWarnings.length) {
+      const total = timingWarnings.reduce((sum, item) => sum + item.findings.length, 0)
+      lines.push('', `### ⚠ 时序窗口静态提示（警告级，不阻塞）：${timingWarnings.length} 个文件 / ${total} 处`, '')
+      lines.push('`waitForTimeout` / 固定 sleep / 依赖动画时长 —— 这类断言的对错依赖机器快慢，是跨 runner flake 的温床。', '')
+      for (const item of timingWarnings.slice(0, 10)) {
+        const kinds = [...new Set(item.findings.map((one) => one.kind))].join('/')
+        lines.push(`- \`${item.file}\`：${item.findings.length} 处（${kinds}）`)
+      }
+      if (timingWarnings.length > 10) lines.push(`- …其余 ${timingWarnings.length - 10} 个文件见 \`--json\` 报告的 \`timingWarnings\``)
+    }
+    if (!flakyRuns.length && !crossRunner.all.length && !tri.files['true-red'].length) lines.push('', '本轮没有 flaky / runner-dependent / 真红。')
     await appendFile(STEP_SUMMARY, `${lines.join('\n')}\n`).catch(() => {})
   }
   // #287：用例内部 `t.skip()` / `{ skip: ... }` 不会改进程退出码，跑完全绿也看不出「一行断言都没跑」。
@@ -657,7 +1125,6 @@ async function main() {
   // 让跳过在报告里永远露头；判红门禁仍只看真实失败，避免把「产物没构建」误报成回归。
   const nodeSkips = results.filter((r) => (r.skips ?? 0) > 0)
   const failedCount = failures.length
-  const totalMs = Math.round(performance.now() - started)
   const report = {
     version: 1,
     totalMs,

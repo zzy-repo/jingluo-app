@@ -105,6 +105,8 @@ npm run test:integration -- --baseline          # 集成全量与基线比对，
 | 改构建脚本 / 产物注入 | `internal-build` + `auto-title` | 2~3min |
 | 改 `deploy/dl-release/`（发布服务端 / APK 门禁 / 变体） | `pnpm run test:dl-release`（34 条）或 `node tests/run-layer.mjs server` | < 15s |
 | **新增 / 修改一道 CI 门禁** | `node tests/run-layer.mjs unit --only gate-negative-controls`（先看第 9 节） | < 30s |
+| **判断一条红是 flaky / 真红 / runner-dependent** | `node tests/run-layer.mjs --cross-runner-scan`（先看第 11.5 节） | < 10s |
+| **改跨 runner 判据本身** | `node tests/run-layer.mjs --selftest-cross-runner`（四拍自证 + 两条负向对照） | < 10s |
 | 合并候选 | L0 + L1 | < 5min |
 | 发版前一次 | `npm test` + `npm run test:integration -- --baseline` | 10~15min |
 | 真机 / 链接导入原生 | `npm run test:device`（人工，需 AVD） | 3~8min |
@@ -272,9 +274,15 @@ npm run test:integration -- --baseline          # 集成全量与基线比对，
 
 ---
 
-## 11. flaky 与重跑（Issue #406）
+## 11. flaky 与重跑（Issue #406 / #456）
 
-一句话：**重跑只允许用来「区分偶发与稳定红」，不允许用来「把红洗白」。**
+一句话：**重跑只允许用来「区分偶发与稳定红」，不允许用来「把红洗白」；重跑也看不见「换台机器才红」，所以还有第二条判据（跨 runner）。**
+
+> **#456 修的盲区**：#406 的判据只有一条 ——「同 runner 上红 → 重跑 → 绿 = flaky」。
+> 而最常见的 flake 是**同机怎么跑都绿、换 runner 就红**（机器快慢/负载把时序窗口拉开或压扁）。
+> 这类在同一台机器上必然复现，所以旧判据**永远登记不到**它：`tests/flaky-registry.json` 长期为空
+> 不是「我们没有 flaky」，是「判据看不见这个变量」。实证见 #406（`url-import-stages` case 10：
+> 窗口 ≈ 2.4s，慢机连跑 10/10 绿、注入 3s 延迟即 1/1 红）。
 
 ### 11.1 机制（已落在 `tests/run-layer.mjs`，不需要改 ci.yml）
 
@@ -287,12 +295,18 @@ npm run test:integration -- --baseline          # 集成全量与基线比对，
 | quarantine 期间 | **每 7 天**提醒一次修复（同一天只提醒一次） | 终端 `⏰ flaky 每周提醒` |
 | 修好（一次就绿） | 连续计数清零、quarantine **自动解除** | `recordPass` 写 `lastGreen` |
 | 重跑通过但 21 天内**复发 ≥2 次** | **当红处理**（不再当 flaky 放行，也不进隔离区） | 终端 `⚠ … 按真红处理` |
+| **同 commit 换 runner 结论不同**（#456） | 登记 `kind: "cross-runner"`，**当 runner-dependent 上报**（不进隔离区、跑绿不销账） | 终端 `CROSS-RUNNER <文件>` / `--json` 的 `crossRunner` / job summary |
+| 每次 run | 写一份**运行记录**（commit + runner 身份 + 负载快照 + 逐文件结果） | `.flaky-runs/*.json`（CI 作为 artifact 上传） |
+| 每次 run | **三态**判定（真红 / flaky / runner-dependent）落到终态、`--json` 与 job summary | job summary 的「三态」表 |
+| 每次 run | 时序窗口**静态提示**（`waitForTimeout` / 固定 sleep / 依赖动画时长），警告级、不阻塞 | 终端 `⚠ 时序窗口静态提示` / `--json` 的 `timingWarnings` |
 
-登记簿：`tests/flaky-registry.json`，字段 `{ test, firstSeen, count, lastSeen }` + `streak` / `history` /
-`quarantinedAt` / `lastGreen` / `lastRedAt`（形状与判据见 `scripts/flaky-registry.mjs` 文件头）。
-**别手改字段**：只能通过跑测试更新；唯一需要人介入的是把 quarantine 里的用例修掉。
+登记簿：`tests/flaky-registry.json`，每条 `{ test, kind, firstSeen, count, lastSeen, runners[], evidence[] }`
++ `streak` / `history` / `quarantinedAt` / `lastGreen` / `lastRedAt`
+（`kind` = `"same-runner"` | `"cross-runner"`；形状与判据见 `scripts/flaky-registry.mjs` 文件头）。
+**别手改字段**：只能通过跑测试更新；唯一需要人介入的是把 quarantine 里的用例修掉、把 cross-runner 的用例改成等终态。
 
-判据的单测：`tests/unit/flaky-registry.test.mjs`（8 条，含「复发当红」与「隔离不藏红」的负向对照）。
+判据的单测：`tests/unit/flaky-registry.test.mjs`（16 条：8 条 #406 的复发/隔离规则 + 8 条 #456 的跨 runner /
+三态 / 静态提示，其中 5 条是「不该命中」的负向对照）。
 
 ### 11.2 什么算 flaky，什么不算
 
@@ -327,6 +341,74 @@ npm run test:integration -- --baseline          # 集成全量与基线比对，
 
 **删条目的硬要求**：跑绿 ⇒ `--baseline` 会报 `FIXED?` 并要求删条目；反过来说，条目没删就等于没修好。
  (test: known-red 清零（7→1）+ flaky 自动登记 + 硬编码端口检查（#406）)
+
+### 11.5 三种结论的定义与处置（三态，#456）
+
+失败**必须**被归到下面三种之一。含糊成「红了」是本单要治的病：同样一条红，「真红」要改产品/断言，
+「flaky」要登记并观察，「runner-dependent」要改**等终态**——三种处置互斥，判错方向就是白干一天。
+
+| 三态 | 定义 | 判据（代码里怎么判） | 处置 |
+| --- | --- | --- | --- |
+| **真红** | 同一台 runner 上重跑**仍红** | `result.ok === false` 且重跑也 false（`attempts=2` 都红） | 修产品或修断言。**不是 flake，别重跑洗白** |
+| **flaky**（same-runner） | 同一台 runner 上第一次红、**重跑绿** | `result.flaky === true` | 自动重跑 + 登记；连续 3 次进 quarantine（每周提醒） |
+| **runner-dependent** | **跨 runner 结论不一致**：同 commit 同用例，A 机器红、B 机器绿 | `scanCrossRunner()` 命中 → `kind: "cross-runner"` | **必须改成等终态（`until` 轮询终态），不允许加 `sleep` / 提高超时** |
+
+**红线（本单的核心规矩）**：
+
+> **`cross-runner dependent` 的用例必须改成「等终态」，禁止用 `sleep` / `waitForTimeout` / 调大超时把窗口撑开。**
+
+理由不是洁癖，是**它根本不解决问题**：窗口是产品侧的速度，机器越快窗口越窄；把等待时间调大只是让
+快机器上更容易输，慢机器上继续掩盖竞态。`#406` 的 case 10 就是范例 —— 判据是「等终态轮询 + 前置断言
+`取消落在导入中段`」，删掉了固定 `waitForTimeout(3000)`，窗口万一没兜住就**当场报红说明原因**，
+而不是静默变绿。可复用的写法见 `tests/integration/url-import-stages.test.mjs` 的 `until()` / `gate`。
+
+两条配套纪律：
+
+- **cross-runner 条目不进 quarantine**：隔离＝跳过＝不再产生证据，等于把这条 flake 从视野里删掉。
+- **cross-runner 条目跑绿不销账**（不写 `lastGreen`）：红的是别的 runner，你本地跑绿只说明「这台本来就绿」。
+
+### 11.6 跨 runner 判据：记录 → 聚合 → 登记
+
+判据只有一句话：**同 commit + 同用例 + 结果不同 + runner 不同 → `kind: "cross-runner"`**。
+落地分三步，缺一步判据就不成立：
+
+| 步 | 做什么 | 在哪 |
+| --- | --- | --- |
+| 1 记录 | 每次 run 写一份 `{ commit, runner, results[] }`；runner 身份 = CI 的 `runner.name`（本地 = hostname + 负载档），附负载快照 `loadavg/cpus/freeMem` | `tests/run-layer.mjs` → `.flaky-runs/`（`FLAKY_RUNS_DIR` 可改） |
+| 2 聚合 | 把同一 commit 的记录放到一起，逐用例比结论 | `node tests/run-layer.mjs --cross-runner-scan --record-dir <dir>`（纯 Node、不跑用例、< 1s） |
+| 3 登记 | 命中的写进 `tests/flaky-registry.json`（`kind`/`runners`/`evidence`），并出 job summary | 同上；同一份证据不重复计数（幂等） |
+
+「runner 不同」的口径（为什么要给本地也编个身份）：CI 每个 job 一台新 VM，`runner.name` 不同就是不同机器；
+本地只有一台机器，但它在「空载 / 正常 / 满载」三种状态下就是三种执行环境 —— 这正是要看见的变量，
+所以本地身份是 `local:<hostname>#<负载档>`（档位按 `load1/cpus` 分：<0.5 空载 / <1.5 正常 / 否则满载；
+`TEST_RUNNER_LOAD=idle|normal|busy` 可显式注入）。`SKIP(env)` **不算绿**：拿它当绿会把「产物没构建」说成 flake。
+
+不命中的四条边界（都有单测钉住）：同 runner 的红→绿（那是 flaky）、跨 commit（那是修好了）、结论一致
+（都红/都绿）、只有 `SKIP(env)` 的差异。
+
+**自证**（这个判据本身怎么证明不是空跑）：
+
+```bash
+node tests/run-layer.mjs --selftest-cross-runner
+```
+
+它造一个**只在慢环境红**的临时用例（可注入延迟 `SELFTEST_CLICK_DELAY_MS` vs 固定的中间态窗口
+`SELFTEST_WINDOW_MS`），在同一台机器上用两个负载档各跑一次，然后过 6 拍：快 runner 绿 / 慢 runner 红 /
+判据命中并登记（`kind: "cross-runner"`、`runners` 两条、`evidence` 两条）/ **两个 runner 都红 → 不登记** /
+**同一 runner 红→绿 → 不算 cross-runner** / 静态提示必须命中。临时用例跑完即删，**不进仓库**
+（它本身就是一条「坏用例」，留着等于用错误示范教人写测试）。
+
+### 11.7 时序窗口的静态提示（警告级，不阻塞）
+
+每次跑任意层都会顺手扫一遍选中用例的源码，把「靠时间而不是靠终态」的写法列进终端与 job summary：
+`waitForTimeout(...)` / `sleep(...)` / `setTimeout(..., N)` / 依赖动画时长（`animationend`、
+`transitionDuration` 等）。注释里的写法与字符串里的文本不算（本仓大量注释在解释「为什么删掉它」，
+误报会把警告变成噪音）。
+
+- **是警告不是门禁**：这类写法要「改」，不是要「卡」。卡住它只会让人把断言写得更松。
+- 现状（2026-11-20）：`tests/{unit,integration,e2e,device}` 里 54 个文件、317 处命中 —— 存量清了才谈得上
+  把它升级成阻塞门禁（那属于后续单，不在 #456）。
+- 全量清单在 `--json` 报告的 `timingWarnings` 里（终端只打前 8 个文件，避免刷屏）。
 
 ---
 

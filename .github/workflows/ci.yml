@@ -462,6 +462,14 @@ jobs:
           # 单文件超时 7 分钟：实测最慢的 feedback-scroll ≈ 194s（自带的 360×640 键盘态重试），
           # 留 2× 余量；比 180s 默认值宽，比 10 分钟保守 —— 真挂住别把 25 分钟 job 超时吃满。
           L1_TIMEOUT_MS: '420000'
+          # ───────── Issue #456：跨 runner 判据要的两样输入 ─────────
+          # 1) runner 身份：`runner.name` 是 GitHub 给这个 job 分的机器名（每个 job 一台新 VM），
+          #    run-layer 据此写 `ci:<name>`；没有它，「换 runner 才红」就永远判不出来。
+          RUNNER_NAME: ${{ runner.name }}
+          JOB_NAME: L1-${{ matrix.shard }}/${{ matrix.total }}
+          # 2) 运行记录目录：本分片的逐文件结果 + runner + 负载快照，写在 workspace 里，
+          #    下一步作为 artifact 上传，由 flaky-cross-runner job 汇总比对（跨分片/跨 attempt/跨机器）。
+          FLAKY_RUNS_DIR: flaky-runs
         run: |
           set -euo pipefail
           node tests/run-layer.mjs integration \
@@ -472,6 +480,19 @@ jobs:
           # --baseline 的语义见 run-layer.compareWithBaseline：
           #   新增失败 / 基线登记红却跑绿（FIXED?，提醒删条目）→ 退出码 1；其余 0。
           # 因此这里不需要 continue-on-error：真红会红，登记过的已知红不会红。
+          # #456：同一步里 run-layer 已经把「三态（真红 / flaky / runner-dependent）」与
+          # 「时序窗口静态提示」写进 job summary（GITHUB_STEP_SUMMARY 由 Actions 自动提供）。
+
+      # #456：运行记录必须活过分片 —— 判据要的是「同一份代码在**别的机器**上是什么结论」，
+      # 而其它分片跑在别的 VM 上、re-run 又是另一台。artifact 是这两者唯一的汇合点。
+      - name: 上传运行记录（跨 runner 判据的输入）
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: flaky-run-${{ matrix.shard }}-a${{ github.run_attempt }}
+          path: flaky-runs/
+          if-no-files-found: warn
+          retention-days: 7
 
       # 失败可见性：绿的时候只在日志里，红的时候必须能在 PR 页面直接看到「哪个文件、哪条断言」。
       - name: 失败摘要写入 job summary
@@ -494,6 +515,15 @@ jobs:
           const secs = (ms) => Math.round(ms / 1000)
           const clip = (line, max = 240) => (line.length > max ? `${line.slice(0, max)}…` : line)
           const FAIL_LINE = /not ok|✗|AssertionError|Error:|error:|FAIL|expected|实际|TIMEOUT/
+          // #456：三态标签。报告里每条结果都带 `triState`（由 run-layer 判定），
+          // 这里只负责把它翻成人话 —— 判定口径不在 YAML 里重新实现一遍。
+          const TRI = {
+            green: '绿',
+            flaky: 'flaky（同 runner 重跑绿）',
+            'runner-dependent': '**runner-dependent（跨 runner 不一致）**',
+            'true-red': '真红（重跑仍红）',
+          }
+          const tri = (r) => TRI[r.triState] ?? r.triState ?? '—'
           const lines = [`## L1 集成层 分片 ${shard}`, '']
 
           if (!existsSync(file)) {
@@ -514,17 +544,24 @@ jobs:
                 (report.totalMs <= budgetMs ? '（在 #405 的单 job ≤4 分钟目标内）' : '（**超出 #405 的单 job ≤4 分钟目标**）') +
                 '。',
               '',
-              '| 文件 | 结果 | 耗时 |',
-              '| --- | --- | --- |',
+              '| 文件 | 结果 | 三态 | 耗时 |',
+              '| --- | --- | --- | --- |',
             )
             for (const r of [...results].sort((a, b) => b.ms - a.ms)) {
-              const state = r.skipped ? 'SKIP(env)' : r.ok ? 'PASS' : r.timedOut ? 'FAIL(TIMEOUT)' : 'FAIL'
-              lines.push(`| \`${r.file.split('/').pop()}\` | ${state} | ${secs(r.ms)}s |`)
+              const state = r.skipped ? 'SKIP(env)' : r.ok ? (r.flaky ? 'PASS(flaky)' : 'PASS') : r.timedOut ? 'FAIL(TIMEOUT)' : 'FAIL'
+              lines.push(`| \`${r.file.split('/').pop()}\` | ${state} | ${tri(r)} | ${secs(r.ms)}s |`)
+            }
+            // runner-dependent 单独拎出来：PR 页面上一眼就能看出「这条红不是这台机器的问题」，
+            // 处置是改成等终态（不是重跑、不是加 sleep）—— 见 docs/TESTING-POLICY.md §11.5。
+            const dependent = results.filter((r) => r.triState === 'runner-dependent')
+            if (dependent.length) {
+              lines.push('', '### runner-dependent（跨 runner 结论不一致）→ 必须改成等终态，禁止加 sleep', '')
+              for (const r of dependent) lines.push(`- \`${r.file}\`（本分片 runner 上是${r.ok ? '绿' : '红'}）`)
             }
             if (failed.length) {
               lines.push('', '### 失败文件与首个失败断言')
               for (const item of failed) {
-                lines.push('', `#### \`${item.file}\`（${secs(item.ms)}s${item.timedOut ? '，TIMEOUT' : ''}）`)
+                lines.push('', `#### \`${item.file}\`（${secs(item.ms)}s${item.timedOut ? '，TIMEOUT' : ''}）—— ${tri(item)}`)
                 const tail = (item.tail ?? []).join('\n').split('\n').map((line) => line.trimEnd()).filter(Boolean)
                 // 「第一个失败断言」单独拎出来放在最前面：失败时人在 PR 页面上要的就是这一行。
                 const firstFail = tail.find((line) => FAIL_LINE.test(line))
@@ -556,3 +593,145 @@ jobs:
           path: l1-report-${{ matrix.shard }}.json
           if-no-files-found: warn
           retention-days: 7
+
+  # ───────────────────────── Issue #456：跨 runner 判据的汇总 job ─────────────────────────
+  # 为什么必须是**另一个 job**：#406 的判据（失败→重跑一次→绿）只能看见「自己这台机器」。
+  # 而最常见的 flake 是「同机怎么跑都绿、换 runner 就红」（#406 的 url-import-stages case 10：
+  # 窗口 ≈2.4s，慢机连跑 10/10 绿、注入 3s 延迟即红）。那类红在同一台机器上**必然复现**，
+  # 所以旧判据永远登记不到它 —— 登记簿长期为空不是「没有 flake」，是判据看不见这个变量。
+  #
+  # 这里做的事只有一件：把「同一 commit 上各台机器的结论」放到一起比。
+  #   · 输入 = 各分片上传的 flaky-run-* artifact（已含 runner 身份 + 负载快照）
+  #            + 同一 head SHA 的**其它 run/attempt** 的记录（re-run 落在另一台 VM 上）；
+  #   · 判据 = 同 commit + 同用例 + 结果不同 + runner 不同 → 登记 kind: "cross-runner"；
+  #   · 输出 = job summary 的三态表 + 更新后的登记簿 artifact。
+  #
+  # 三条刻意的取舍：
+  # 1) **不阻塞合流**：本条用例真红时，跑它的那个分片已经红了（那才是门禁）。这个 job 负责
+  #    「说清是哪一种红」，用 blocking 只会让「一台机器慢」变成全队卡死。
+  # 2) `if: always()`：分片红的时候恰恰最需要它 —— 判据的价值就在「红的那份记录」。
+  # 3) 收集不到记录时**明说结论不可用**，不输出「全绿」：空 artifact 与「没有分叉」是两件事。
+  flaky-cross-runner:
+    name: flaky 三态与跨 runner 判定
+    needs: [integration]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # 读同仓其它 run 的 artifact 列表要 actions: read（下载 zip 用同一份 token）
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # 只需要 run-layer / flaky-registry 两个文件，浅取即可
+          fetch-depth: 1
+
+      # 纯 Node、零依赖（run-layer 只 import node 内置模块），所以**不需要 pnpm install**：
+      # 这个 job 的耗时基本只有 checkout 和这点 IO。
+      - name: Setup Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: 下载本 run 各分片的运行记录
+        if: always()
+        uses: actions/download-artifact@v4
+        with:
+          pattern: flaky-run-*
+          path: flaky-runs
+          merge-multiple: true
+        continue-on-error: true
+
+      # 同一 head SHA 的其它 run（re-run / 多 attempt）落在别的 VM 上，是跨 runner 判据的主要来源之一。
+      # 拿不到不是错误（分叉权限、artifact 过期、API 抖动），只打印一句，绝不让它变成红：
+      # 判据的输入少一份，后果是「少看见一条」，而不是「结论错误」。
+      - name: 收集同一 commit 其它 run 的运行记录（best-effort）
+        if: always()
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          API: ${{ github.api_url }}
+          SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -uo pipefail
+          mkdir -p flaky-runs other-runs
+          cat > /tmp/collect-runs.mjs <<'EOF'
+          import { writeFileSync } from 'node:fs'
+          const { GH_TOKEN, REPO, API, SHA } = process.env
+          const headers = { Authorization: `Bearer ${GH_TOKEN}`, Accept: 'application/vnd.github+json' }
+          // 整个收集过程都是 best-effort：网络/权限/过期任何一环出问题，结论只损失一份输入，
+          // 绝不能因此让这个 job 变红（红要来自「跑用例」，不来自「查历史」）。
+          try {
+            const list = await fetch(`${API}/repos/${REPO}/actions/runs?head_sha=${SHA}&per_page=50`, { headers })
+            if (!list.ok) {
+              console.log(`::warning::列 run 失败（HTTP ${list.status}），跳过跨 run 收集`)
+              writeFileSync('/tmp/collect-runs.json', '[]')
+              process.exit(0)
+            }
+            const runs = (await list.json()).workflow_runs ?? []
+            const found = []
+            const currentRun = String(process.env.GITHUB_RUN_ID ?? '')
+            const currentAttempt = String(process.env.GITHUB_RUN_ATTEMPT ?? '1')
+            for (const run of runs) {
+              // 本 run 的**当前这次 attempt** 上一步已经下载过了，再捞一遍只会让记录翻倍；
+              // 但同一个 run_id 的**更早 attempt** 要留下来 —— re-run 落在另一台 VM 上，
+              // 那正是「同 SHA、不同 runner」最干净的证据。
+              if (String(run.id) === currentRun && String(run.run_attempt) === currentAttempt) continue
+              const arts = await fetch(`${API}/repos/${REPO}/actions/runs/${run.id}/artifacts`, { headers })
+              if (!arts.ok) continue
+              for (const artifact of (await arts.json()).artifacts ?? []) {
+                if (!artifact.name.startsWith('flaky-run-') || artifact.expired) continue
+                found.push({ runId: run.id, attempt: run.run_attempt, name: artifact.name, url: artifact.archive_download_url })
+              }
+            }
+            writeFileSync('/tmp/collect-runs.json', JSON.stringify(found, null, 2))
+            console.log(`同一 commit（${SHA.slice(0, 12)}）共 ${runs.length} 个 run、${found.length} 份 flaky-run artifact`)
+          } catch (error) {
+            console.log(`::warning::收集其它 run 的记录失败（${error.message}），本轮只看得到本 run 的分片`)
+            writeFileSync('/tmp/collect-runs.json', '[]')
+          }
+          EOF
+          node /tmp/collect-runs.mjs || exit 0
+          node -e 'const fs=require("node:fs");for(const a of JSON.parse(fs.readFileSync("/tmp/collect-runs.json","utf8")))console.log(a.url)' > /tmp/urls.txt
+          while read -r url; do
+            [ -n "$url" ] || continue
+            curl -sSL -H "Authorization: Bearer $GH_TOKEN" -o /tmp/other.zip "$url" || continue
+            unzip -oq /tmp/other.zip -d other-runs || continue
+          done < /tmp/urls.txt
+          # 平铺进 flaky-runs：文件名加序号，避免「同名 runner 的两次 attempt」互相覆盖
+          index=0
+          while read -r file; do
+            [ -n "$file" ] || continue
+            index=$((index + 1))
+            cp -f "$file" "flaky-runs/other-$index-$(basename "$file")"
+          done < <(find other-runs -name 'run-*.json' 2>/dev/null)
+          # 剩下的交给 run-layer：它只认 `object: flaky-run-record` 的 json，读不进去的直接跳过
+          echo "合并后记录数：$(find flaky-runs -name '*.json' | wc -l)"
+          ls -1 flaky-runs | head -20
+
+      - name: 跨 runner 判定 + 登记（三态写进 job summary）
+        if: always()
+        env:
+          # 记录目录里同时有本 run 各分片与其它 attempt 的记录
+          FLAKY_RUNS_DIR: flaky-runs
+        run: |
+          set -euo pipefail
+          node tests/run-layer.mjs --cross-runner-scan \
+            --record-dir flaky-runs \
+            --json cross-runner-report.json
+
+      # 登记簿的更新要能被下来（CI 不能 push，也不该 push）：合并后由人/后续单把条目落进仓库，
+      # 或者本地跑一遍同一条命令即可得到同样的结果（判据是确定性的）。
+      - name: 上传跨 runner 报告与登记簿
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: flaky-cross-runner
+          path: |
+            cross-runner-report.json
+            tests/flaky-registry.json
+          if-no-files-found: warn
+          retention-days: 14
