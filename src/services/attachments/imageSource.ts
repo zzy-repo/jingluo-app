@@ -266,33 +266,189 @@ const loadImage = (blob: Blob): Promise<HTMLImageElement> =>
     image.src = url
   })
 
+// ---------- EXIF 方向：运行时探测「引擎会不会自动转」 ----------
+//
+// 实测结论（`/root/未分组/exif-orientation-findings.md`，79/81/83/109 四档真机）：
+// **Chrome 81 起 `drawImage` 自动应用 EXIF 方向**（`image-orientation` 初始值改成 `from-image`，
+// canvas 没有 CSS 逃逸路径），Chromium 83 与 Android WebView 83 **8 种方向全对**；而
+// `config/compat.json` 的 `probeTiers` 里还有 **79 档，它不转**。
+//
+// 所以两种「省事写法」都是错的：
+// - 「总是手动转」→ 83+ 上**双转 90°**（用户看到照片歪着，正是要修的 bug）；
+// - 「从不手动转」→ 79 档上照片**完全没转**。
+//
+// 唯一两边都对的写法是**探测一次 + 只在「不自动」的分支手动校正**。探测本身用
+// 「4×2、EXIF Orientation=5」的最小 JPEG 走一遍 `Image + drawImage`（与业务管线同构），
+// 自动旋转的引擎会给出 2×4 且左上角像素来自原图左下 → 两道判据一起看。
+
 /**
- * 引擎是否已经把 EXIF 方向应用到解码结果上（Chromium 81 起 `<img>` 默认
- * `image-orientation: from-image`，`drawImage` 拿到的是转正后的像素）。
+ * 探针图：64×32，上半红、下半蓝；Orientation=5（转置）会让它变成 32×64，
+ * 且 (16,8) 处的像素来自原图下半（蓝）。
  *
- * 不靠版本号猜，而是拿**头部存的尺寸**和**解码后的尺寸**对一对：
- * 方向 5–8 会交换长宽，所以「解码后仍是原方向」只可能意味着引擎没应用方向。
- * 判不出来（正方形图 / 头部没解出尺寸 / 方向 2–4 不换长宽）时按「已应用」处理，
- * 即**不手动旋转** —— 双重旋转比不旋转更难解释。
+ * 为什么不用 4×2 这种极小图：JPEG 的色度子采样会把 2×1 的色块糊成中间值，
+ * 颜色判据会假阴性（实测：转置确实发生了，但红蓝被打平，`B > R` 不成立）。
+ * 64×32 的每个色块是 64×16，压缩后颜色仍然是纯的。
  */
-const needsManualOrientation = (
-  sniffed: SniffedImage,
-  decodedWidth: number,
-  decodedHeight: number
-): boolean => {
-  if (sniffed.orientation < 5 || sniffed.orientation > 8) {
-    return false
+const PROBE_WIDTH = 64
+const PROBE_HEIGHT = 32
+const PROBE_TOP = '#ff0000'
+const PROBE_BOTTOM = '#0000ff'
+const PROBE_ORIENTATION = 5
+
+/** 往 JPEG 的 SOI 之后插一个只带 Orientation 的 APP1(Exif) 段 */
+const withExifOrientation = (jpeg: Uint8Array, orientation: number): Uint8Array => {
+  const exif = new Uint8Array(14 + 12 + 4)
+  const view = new DataView(exif.buffer)
+  exif.set([0x49, 0x49], 0) // 'II'：小端 TIFF
+  view.setUint16(2, 0x2a, true)
+  view.setUint32(4, 8, true)
+  view.setUint16(8, 1, true) // IFD0 只有 1 个条目
+  view.setUint16(10, 0x0112, true) // Orientation
+  view.setUint16(12, 3, true) // SHORT
+  view.setUint32(14, 1, true)
+  view.setUint16(18, orientation, true)
+  const payload = new Uint8Array(6 + exif.length)
+  payload.set([0x45, 0x78, 0x69, 0x66, 0x00, 0x00], 0) // 'Exif\0\0'
+  payload.set(exif, 6)
+  const app1 = new Uint8Array(4 + payload.length)
+  app1.set([0xff, 0xe1], 0)
+  app1[2] = ((payload.length + 2) >> 8) & 0xff
+  app1[3] = (payload.length + 2) & 0xff
+  app1.set(payload, 4)
+  const out = new Uint8Array(jpeg.length + app1.length)
+  out.set(jpeg.subarray(0, 2), 0)
+  out.set(app1, 2)
+  out.set(jpeg.subarray(2), 2 + app1.length)
+  return out
+}
+
+/** 造探针 JPEG：canvas 出图（无 EXIF）→ 手动塞进 Orientation=5 */
+const orientationProbe = async (): Promise<Blob> => {
+  const canvas = document.createElement('canvas')
+  canvas.width = PROBE_WIDTH
+  canvas.height = PROBE_HEIGHT
+  const context = canvas.getContext('2d')
+  if (!context) {
+    throw new ImageSourceError({ key: 'imageEncodeFailed' }, true)
   }
-  if (sniffed.width <= 0 || sniffed.height <= 0) {
-    return false
+  context.fillStyle = PROBE_TOP
+  context.fillRect(0, 0, PROBE_WIDTH, PROBE_HEIGHT / 2)
+  context.fillStyle = PROBE_BOTTOM
+  context.fillRect(0, PROBE_HEIGHT / 2, PROBE_WIDTH, PROBE_HEIGHT / 2)
+  const raw = await new Promise<Blob>((resolve, reject) => {
+    canvas.toBlob(
+      (result) => {
+        if (result) {
+          resolve(result)
+          return
+        }
+        reject(new ImageSourceError({ key: 'imageEncodeFailed' }, true))
+      },
+      'image/jpeg',
+      LIMITS.images.jpegFallbackQuality
+    )
+  })
+  const bytes = new Uint8Array(await raw.arrayBuffer())
+  const patched = withExifOrientation(bytes, PROBE_ORIENTATION)
+  return new Blob([patched.buffer as ArrayBuffer], { type: 'image/jpeg' })
+}
+
+/**
+ * 引擎是否会把 EXIF 方向应用到 `drawImage`：
+ * 探针图（4×2，Orientation=5）在自动旋转的引擎上解码成 2×4，且左上角来自原图**左下**（蓝）。
+ * 探测**只跑一次**（模块级缓存 Promise，并发调用共用同一次），失败按「不自动」处理
+ * （= 走手动校正分支，与 findings 的保守回落一致）。
+ */
+let autoOrientProbe: Promise<boolean> | null = null
+
+export const probeAutoOrient = (): Promise<boolean> => {
+  if (autoOrientProbe) {
+    return autoOrientProbe
   }
-  if (sniffed.width === sniffed.height) {
-    return false
+  autoOrientProbe = (async () => {
+    try {
+      const image = await loadImage(await orientationProbe())
+      const width = image.naturalWidth || image.width
+      const height = image.naturalHeight || image.height
+      const canvas = document.createElement('canvas')
+      canvas.width = width
+      canvas.height = height
+      const context = canvas.getContext('2d')
+      if (!context) {
+        return false
+      }
+      context.drawImage(image, 0, 0)
+      // 自动应用方向的引擎：64×32 的探针变成 32×64，且 (16,8) 来自原图下半（蓝）
+      const rotated = width === PROBE_HEIGHT && height === PROBE_WIDTH
+      let pixelMatches = true
+      try {
+        const pixel = context.getImageData(
+          Math.floor(PROBE_HEIGHT / 2),
+          Math.floor(PROBE_HEIGHT / 4),
+          1,
+          1
+        ).data
+        pixelMatches = pixel[2] > pixel[0] // 蓝 > 红
+      } catch {
+        // getImageData 受限（理论上 object URL 不会污染画布）：只信尺寸判据
+        pixelMatches = true
+      }
+      return rotated && pixelMatches
+    } catch {
+      return false
+    }
+  })()
+  return autoOrientProbe
+}
+
+/** EXIF Orientation 1–8 的 `setTransform` 参数（w,h = **原始**像素宽高；见 findings §5.3 的表） */
+const ORIENTATION_MATRIX: Record<number, [number, number, number, number]> = {
+  1: [1, 0, 0, 1],
+  2: [-1, 0, 0, 1],
+  3: [-1, 0, 0, -1],
+  4: [1, 0, 0, -1],
+  5: [0, 1, 1, 0],
+  6: [0, 1, -1, 0],
+  7: [0, -1, -1, 0],
+  8: [0, -1, 1, 0],
+}
+
+/**
+ * 按 EXIF 方向手工校正（**只在探测结果为「不自动」时调用**）。
+ * 输出尺寸：方向 5–8 会把长宽对调。
+ */
+const orientCanvas = (image: HTMLImageElement, orientation: number): HTMLCanvasElement => {
+  const sourceWidth = image.naturalWidth || image.width
+  const sourceHeight = image.naturalHeight || image.height
+  const swap = orientation >= 5
+  const width = swap ? sourceHeight : sourceWidth
+  const height = swap ? sourceWidth : sourceHeight
+  const canvas = document.createElement('canvas')
+  canvas.width = width
+  canvas.height = height
+  const context = canvas.getContext('2d')
+  if (!context) {
+    throw new ImageSourceError({ key: 'imageEncodeFailed' }, true)
   }
-  // 两边都用「是否竖图」比较：方向 5–8 会把长宽对调，解码后仍同向 ⇒ 引擎没应用方向
-  const storedPortrait = sniffed.width < sniffed.height
-  const decodedPortrait = decodedWidth < decodedHeight
-  return storedPortrait === decodedPortrait
+  context.fillStyle = '#ffffff'
+  context.fillRect(0, 0, width, height)
+  const matrix = ORIENTATION_MATRIX[orientation] ?? ORIENTATION_MATRIX[1]
+  const translateX =
+    orientation === 2 || orientation === 3
+      ? sourceWidth
+      : orientation === 6 || orientation === 7
+        ? sourceHeight
+        : 0
+  const translateY =
+    orientation === 3 || orientation === 4
+      ? sourceHeight
+      : orientation === 7 || orientation === 8
+        ? sourceWidth
+        : 0
+  context.setTransform(matrix[0], matrix[1], matrix[2], matrix[3], translateX, translateY)
+  context.drawImage(image, 0, 0)
+  context.setTransform(1, 0, 0, 1, 0, 0)
+  return canvas
 }
 
 /** 目标尺寸：长边 ≤ maxEdge，且总像素 ≤ maxCanvasArea（超面积的老 WebKit 会静默给空产物） */
@@ -307,19 +463,26 @@ const targetSize = (width: number, height: number, maxEdge: number, maxArea: num
 
 /**
  * 缩图 + 重编码。
+ *
+ * 方向：**先探测再决定**（`probeAutoOrient()`）——
+ * - 引擎自动应用 EXIF（Chrome 81+ / WebView 83 实测）→ 原样 `drawImage`，**绝不自己转**；
+ * - 引擎不应用（79 档）→ 先用 `orientCanvas()` 按 1–8 表校正一次，再缩放。
+ * 两者都不做就是上面说的两个用户可见 bug 之一。
+ *
  * 先铺白底：webp / jpeg 都没有透明通道，PNG 的透明区不铺底会变黑块。
- * 方向只在确认引擎没应用 EXIF 时才手动补（`needsManualOrientation`）。
  */
-const reencode = (
+const reencode = async (
   image: HTMLImageElement,
   width: number,
   height: number,
   orientation: number,
-  manual: boolean,
+  autoOrient: boolean,
   type: string,
   quality: number
-): Promise<Blob> =>
-  new Promise((resolve, reject) => {
+): Promise<Blob> => {
+  const source =
+    autoOrient || orientation <= 1 ? image : orientCanvas(image, orientation)
+  const result = await new Promise<Blob | null>((resolve, reject) => {
     const canvas = document.createElement('canvas')
     canvas.width = width
     canvas.height = height
@@ -330,42 +493,24 @@ const reencode = (
     }
     context.fillStyle = '#ffffff'
     context.fillRect(0, 0, width, height)
-    if (manual && orientation >= 5 && orientation <= 8) {
-      // 8 种 EXIF 方向里只有 5–8 会换长宽；这里的 draw 尺寸因此按转置后的画布来
-      const drawWidth = height
-      const drawHeight = width
-      const cx = width / 2
-      const cy = height / 2
-      switch (orientation) {
-        case 5:
-          context.transform(0, 1, 1, 0, cx, cy)
-          break
-        case 6:
-          context.transform(0, 1, -1, 0, cx, cy)
-          break
-        case 7:
-          context.transform(0, -1, -1, 0, cx, cy)
-          break
-        default:
-          context.transform(0, -1, 1, 0, cx, cy)
-          break
-      }
-      context.drawImage(image, -drawWidth / 2, -drawHeight / 2, drawWidth, drawHeight)
-    } else {
-      context.drawImage(image, 0, 0, width, height)
-    }
+    context.drawImage(source, 0, 0, width, height)
     canvas.toBlob(
-      (result) => {
-        if (!result || result.size === 0) {
+      (blob) => {
+        if (!blob || blob.size === 0) {
           reject(new ImageSourceError({ key: 'imageEncodeFailed' }, true))
           return
         }
-        resolve(result)
+        resolve(blob)
       },
       type,
       quality
     )
   })
+  if (!result) {
+    throw new ImageSourceError({ key: 'imageEncodeFailed' }, true)
+  }
+  return result
+}
 
 /**
  * 统一入口：Blob → ImagePart（含白名单 / 阈值 / 压缩 / 体积闸）。
@@ -418,16 +563,23 @@ export const toImagePart = async (blob: Blob): Promise<ImagePart> => {
       false
     )
   }
-  const manual = needsManualOrientation(sniffed, decodedWidth, decodedHeight)
-  const logicalWidth = manual ? decodedHeight : decodedWidth
-  const logicalHeight = manual ? decodedWidth : decodedHeight
+  /**
+   * 方向：引擎会不会自己转？—— 探测一次（模块级缓存）。
+   * 不回自动、且这张图真有方向时才需要手动校正；校正会把长宽对调（方向 5–8）。
+   */
+  const autoOrient = await probeAutoOrient()
+  const manual = !autoOrient && sniffed.orientation >= 2
+  const logicalWidth =
+    manual && sniffed.orientation >= 5 ? decodedHeight : decodedWidth
+  const logicalHeight =
+    manual && sniffed.orientation >= 5 ? decodedWidth : decodedHeight
   const target = targetSize(logicalWidth, logicalHeight, LIMITS.images.maxEdge, LIMITS.images.maxCanvasArea)
   let result = await reencode(
     image,
     target.width,
     target.height,
     sniffed.orientation,
-    manual,
+    autoOrient,
     'image/webp',
     LIMITS.images.webpQuality
   )
@@ -439,7 +591,7 @@ export const toImagePart = async (blob: Blob): Promise<ImagePart> => {
       target.width,
       target.height,
       sniffed.orientation,
-      manual,
+      autoOrient,
       'image/jpeg',
       LIMITS.images.jpegFallbackQuality
     )

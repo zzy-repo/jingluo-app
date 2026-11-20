@@ -6,8 +6,10 @@
 //       未知渠道两条全关（fail-closed）—— 这是「不发请求就不猜路径」（#360）的前提；
 //   [2] 格式白名单按 **magic bytes** 判定（png/jpeg/webp/gif），HEIC / AVIF 一律认不出来 →
 //       上层给「不支持的图片格式」，而不是把请求发出去等 provider 400；
-//   [3] EXIF 方向与头部尺寸解析：手机竖拍（Orientation=6/8）要能读出方向与**存储时**的宽高，
-//       这是「引擎没应用方向时才手动转」那条分支的判据；
+//   [3] EXIF 方向与头部尺寸解析：手机竖拍（Orientation=6/8）要能读出方向与**存储时**的宽高 ——
+//       这是「手动校正」分支的输入。**是否该手动转由运行时探测决定**（`probeAutoOrient()`，
+//       实测 Chrome 81+ / WebView 83 自动转、79 不转；一律手动转会双转 90°，见 PR 说明），
+//       探测需要真实 canvas，归 #554 的验收；
 //   [4] `toOpenAIRequest()` 的两种形状：无图 → content 仍是**纯字符串**（与改造前逐字节一致，
 //       #345 前缀稳定）；有 base64 图 → `image_url` 的 `data:` URI（openai 与 ours 共用这一处）；
 //   [5] 文档块（`type:'document'`）不被误翻译成图片：OpenAI 协议下没有对应字段。
@@ -169,7 +171,7 @@ test('[2] 头部尺寸解析：png/gif/webp 的尺寸字段都对得上', () => 
 
 // ---------- [3] EXIF 方向 ----------
 
-test('[3] EXIF 方向能读出来，且拿到的是**存储时**的宽高（手动旋转分支的判据）', () => {
+test('[3] EXIF 方向能读出来，且拿到的是**存储时**的宽高（手动校正分支的输入）', () => {
   const upright = sniffImage(jpegBytes(4032, 3024, 1))
   assert.equal(upright.orientation, 1, '没有有效方向时按 1 处理')
   assert.deepEqual([upright.width, upright.height], [4032, 3024])
