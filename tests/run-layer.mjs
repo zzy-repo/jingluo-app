@@ -1269,6 +1269,12 @@ async function main() {
     entry.error = entry.error ?? '批次崩溃后没有完成降级复跑（本轮被中断）'
   }
   const failures = results.filter((r) => !r.ok && !r.skipped)
+  /**
+   * #487：降级通过的名单（`PASS(degraded)`）。**必须与「绿」分开数**：它们是靠「降并发 / 提内存
+   * 上限的串行重跑」才绿的，掩盖起来就等于「用降低并发换绿」。
+   */
+  const degraded = results.filter((r) => r.ok && r.degraded)
+  const crashedFails = failures.filter((r) => r.crash)
   const skips = results.filter((r) => r.skipped)
   const totalMs = Math.round(performance.now() - started)
 
@@ -1406,12 +1412,6 @@ async function main() {
   // 让跳过在报告里永远露头；判红门禁仍只看真实失败，避免把「产物没构建」误报成回归。
   const nodeSkips = results.filter((r) => (r.skips ?? 0) > 0)
   const failedCount = failures.length
-  /**
-   * #487：降级通过的名单（`PASS(degraded)`）。**必须与「绿」分开数**：它们是靠「降并发 / 提内存
-   * 上限的串行重跑」才绿的，掩盖起来就等于「用降低并发换绿」。
-   */
-  const degraded = results.filter((r) => r.ok && r.degraded)
-  const crashedFails = failures.filter((r) => r.crash)
   const report = {
     version: 1,
     totalMs,
