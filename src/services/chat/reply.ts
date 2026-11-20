@@ -26,6 +26,9 @@ import {
   type ContextTrimReport,
 } from './contextBudget.js'
 import { normalizeReminder } from './latestReminder.js'
+// #480 §7：附件引用挂在请求消息上（`ChatAttachmentRef` 是类型，`attachmentRefsOf` 是唯一映射点）
+import type { ChatAttachmentRef, ChatMessage } from '../attachments/contextBuilder.js'
+import { attachmentRefsOf } from '../attachments/requestDocs.js'
 
 /**
  * 文件按 Files API 的 file_id（附件的 serverId）引用：图片用 image 块，其余用 document 块。
@@ -214,14 +217,21 @@ const isUsableReply = (message: Message): message is AssistantMessage =>
   getReplyText(message) !== ''
 
 /** 有文件时用内容块数组：先文件后文本，文件按 Files API 的 file_id 引用 */
-const toUserParam = ({ content, files }: UserMessage): MessageParam => {
+const toUserParam = (
+  { content, files }: UserMessage,
+  attachments?: readonly ChatAttachmentRef[]
+): ChatMessage => {
   const blocks = toFileBlocks(files)
-  return blocks.length === 0
-    ? { role: 'user', content }
-    : {
-        role: 'user',
-        content: [...blocks, ...(content ? [{ type: 'text' as const, text: content }] : [])],
-      }
+  const param: ChatMessage =
+    blocks.length === 0
+      ? { role: 'user', content }
+      : {
+          role: 'user',
+          content: [...blocks, ...(content ? [{ type: 'text' as const, text: content }] : [])],
+        }
+  // #480 §7：文档引用随消息走（**不是**协议字段，注入完成后由 ContextBuilder 剥掉）。
+  // 只有声明了文本注入的渠道才会传 attachments —— DeepSeek 原生路径拿到的对象与改动前一致。
+  return attachments && attachments.length > 0 ? { ...param, attachments } : param
 }
 
 /**
@@ -348,6 +358,19 @@ export type RequestBudgetOptions = {
    * 不传 = 不记边界（无状态重算），只有 `store.ts` 有会话 id，别处不用管。
    */
   anchorKey?: string
+  /**
+   * 是否在 user 消息上挂附件引用（#480 §7，`attachments: ChatAttachmentRef[]`）。
+   *
+   * **只有文本注入渠道（`textInjection === true`）才传 true**；DeepSeek 官方不传 ——
+   * 出参与改动前逐字节相同（引用键根本不出现），请求体也就不可能被动到。
+   *
+   * 为什么挂在这里、而不是在调用点按内容回猜「这条 user 消息是哪一轮」：
+   * `toRequestMessages()` 是唯一知道「哪条请求消息来自哪条 UserMessage」的地方；
+   * 出去之后只剩 content 字符串，再靠正则/内容匹配反查会随内容变化而错配。
+   * 引用只是消息上的**旁挂字段**：不计入裁剪预算（不传 size），注入完成后由
+   * `contextBuilder.buildWithDocuments()` 从出参里剥掉（原样上行会被上游当未知字段）。
+   */
+  attachmentRefs?: boolean
 }
 
 export const toRequestMessages = (
@@ -359,6 +382,8 @@ export const toRequestMessages = (
   options?: RequestBudgetOptions
 ): MessageParam[] => {
   const budget = resolveContextBudget(options?.budget)
+  /** #480 §7：是否挂文档引用（只有文本注入渠道） */
+  const wantRefs = options?.attachmentRefs === true
   const questionParam = toUserParam(question)
   // 历史提问没有文字、附件也都没有 serverId 时，提问为空，连同回答一起省略（原有行为）。
   const rounds = getContextRounds(history).filter(
@@ -372,9 +397,11 @@ export const toRequestMessages = (
       params.push({ role: 'latest_reminder', content: normalizeReminder(reply.latestReminder) })
     }
     params.push(toUserParam(user), toAssistantParam(reply))
-    return params
+    // 附件引用留到**裁剪之后**再挂（见下面 push 处）：不进 estimateChars，
+    // 于是裁剪边界与改动前逐字节一致，不受附件引用字段长度影响。
+    return { params, files: user.files }
   })
-  const sizes = units.map((params) => estimateChars(params))
+  const sizes = units.map(({ params }) => estimateChars(params))
   // 本轮提问与系统快照永远保留，但占预算
   const fixedChars = estimateChars(questionParam) + (latestReminder?.length ?? 0)
   /**
@@ -429,17 +456,24 @@ export const toRequestMessages = (
       previousReminder = reminder
     }
   }
-  for (const params of kept) {
+  for (const { params, files } of kept) {
+    const refs = wantRefs ? attachmentRefsOf(files) : []
     for (const param of params) {
       if (param.role === 'latest_reminder') {
         appendReminder(param.content)
+      } else if (param.role === 'user' && refs.length > 0) {
+        messages.push({ ...param, attachments: refs } as ChatMessage)
       } else {
         messages.push(param)
       }
     }
   }
   appendReminder(latestReminder)
-  messages.push(questionParam)
+  if (wantRefs) {
+    messages.push(toUserParam(question, attachmentRefsOf(question.files)))
+  } else {
+    messages.push(questionParam)
+  }
   if (prefix?.prefix) {
     const assistant = toAssistantParam(prefix, true, thinking)
     // 没有非空白正文或有效思考时直接重发原问题，避免服务端拒绝空 Prefill。

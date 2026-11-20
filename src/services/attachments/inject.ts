@@ -61,18 +61,34 @@ export const DOCUMENT_PREAMBLE =
 /** 原始提问的引导标签，逐字对齐 issue §7 的样例 */
 export const DOCUMENT_QUESTION_LABEL = '用户问题：'
 
+/** 单块开标签（属性名部分）；拼块一律走下面的 `documentHeader()`，不要在别处手拼 */
+export const DOCUMENT_OPEN = '<document name='
+
+/** 块尾：正文末尾换行 + 闭标签（与样例逐字一致） */
+export const DOCUMENT_FOOTER = '\n</document>'
+
 /** 文件名里会破坏 `<document name="…">` 结构的字符：引号、尖括号、换行、控制字符 */
 const UNSAFE_NAME_CHARS = /["<>\r\n\t]/g
 
 /** 文件名归一：去引号 / 换行（否则 `name="a" onerror="…"` 这种正文就能改标签结构），空名兜底 */
-const safeName = (name: string): string => {
+export const safeDocumentName = (name: string): string => {
   const trimmed = name.replace(UNSAFE_NAME_CHARS, ' ').trim()
   return trimmed === '' ? '未命名附件' : trimmed
 }
 
+/**
+ * 块头：`<document name="文件名">` + 换行。
+ *
+ * **导出给 `contextBuilder.ts` 用**（#480 集成轮）：那边要按预算在块中间插截断标注，
+ * 只能拿块头/块尾自己拼，但「标签长什么样、文件名怎么转义」必须只有这一份实现 ——
+ * 否则同一个附件在两条注入路径下会拼出两种字节，前缀稳定性与测试断言都会各说各话。
+ */
+export const documentHeader = (name: string): string =>
+  `${DOCUMENT_OPEN}"${safeDocumentName(name)}">\n`
+
 /** 单个 `<document>` 块：多个附件按顺序各自独立，互不嵌套 */
-const documentBlock = (doc: InjectDocument): string =>
-  `<document name="${safeName(doc.filename)}">\n${doc.text}\n</document>`
+export const documentBlock = (doc: InjectDocument): string =>
+  `${documentHeader(doc.filename)}${doc.text}${DOCUMENT_FOOTER}`
 
 /**
  * 判重键：`filename + sha256`（issue §8「同一附件在单次 API 请求中不得重复注入」）。
@@ -81,10 +97,10 @@ const documentBlock = (doc: InjectDocument): string =>
  * 所以这里把 filename 也算进键里，而不是只按内容指纹去重。
  */
 const dedupeKey = (doc: InjectDocument): string =>
-  `${safeName(doc.filename)}\u0000${doc.sha256 ?? `text:${doc.text}`}`
+  `${safeDocumentName(doc.filename)}\u0000${doc.sha256 ?? `text:${doc.text}`}`
 
 /** user 消息的 content 形状：纯字符串，或「文件块 + 文本块」数组 */
-type UserContent = Extract<MessageParam, { role: 'user' }>['content']
+export type DocumentUserContent = Extract<MessageParam, { role: 'user' }>['content']
 
 /** 一条消息的纯文本（content 为块数组时只取 text 块，与 openaiAdapter 的口径一致） */
 const textOf = (content: MessageParam['content']): string => {
@@ -101,7 +117,7 @@ const textOf = (content: MessageParam['content']): string => {
 }
 
 /**
- * 注入段 → 一条消息的新内容。
+ * 注入段 → 一条消息的新内容（**唯一的一份「怎么拼」实现**）。
  *
  * 两种形状都支持（`MessageParam` 的 user content 是 `string | block[]`）：
  * - 字符串：`声明 \n\n 文档块… \n\n 用户问题：原文`；
@@ -109,9 +125,16 @@ const textOf = (content: MessageParam['content']): string => {
  *   把文本块收敛成**一个**文本块 —— 原来的提问被包进 `用户问题：` 里，
  *   不会出现「原文发两遍」。
  * 提问为空（只上传了文件没打字）时省略 `用户问题：` 那一段，不留一个悬空的标签。
+ *
+ * 导出给 `contextBuilder.ts` 用（#480 集成轮）：那边决定「哪条消息注入哪些块 + 预算/截断」，
+ * 但最后把块拼进 content 这一步必须复用这里 —— 两条路径拼出不同字节，前缀缓存与
+ * 测试断言就会各说各话。
  */
-const injectIntoContent = (content: UserContent, sections: string[]): UserContent => {
-  const head = [DOCUMENT_PREAMBLE, ...sections].join('\n\n')
+export const injectDocumentBlocks = (
+  content: DocumentUserContent,
+  blocks: readonly string[]
+): DocumentUserContent => {
+  const head = [DOCUMENT_PREAMBLE, ...blocks].join('\n\n')
   const question = textOf(content).trim()
   const injected = question === '' ? head : `${head}\n\n${DOCUMENT_QUESTION_LABEL}${question}`
   if (typeof content === 'string') {
@@ -125,10 +148,20 @@ const injectIntoContent = (content: UserContent, sections: string[]): UserConten
 /**
  * 把文档正文注入到**本轮提问**（messages 里最后一条 user 消息）上。
  *
+ * ## 与 `contextBuilder.buildWithDocuments()` 的分工（#480 集成轮定调）
+ *
+ * 线上请求只有**一个**入口：`chat/store.ts` → `buildWithDocuments()`。它负责「哪条消息
+ * 注入哪些附件、预算怎么分、跟历史裁剪怎么协同」，拼字节这一步调用本文件的
+ * `injectDocumentBlocks()` / `documentHeader()`（同一份实现，不另起一套）。
+ *
+ * 本函数是**无预算**的简易版：把整批文档塞进最后一条 user 消息，不读文件、不裁预算、
+ * 不产生 warnings。它保留给「已经有正文、不需要预算协同」的调用方（脚本 / 单测 /
+ * 未来的非聊天入口），**不是请求主路径** —— 别再在请求链路上接第二个注入点，
+ * 那会变成两套拼法、两套去重、两套能力判定。
+ *
  * 为什么是最后一条 user 消息：注入段自带「用户问题：<这一轮的问题>」，它是**这一轮**的
  * 输入框内容；历史 user 消息保持原样，前缀不因附件变动而抖动（上游上下文缓存友好，
- * 与 `contextBudget.ts` 的 #345 一致）。多轮追问靠调用方把「本轮附件 + 上下文里仍在的
- * 历史附件」一起传进来（`attachments/requestDocs.ts` 负责收集，去重在这里做）。
+ * 与 `contextBudget.ts` 的 #345 一致）。
  *
  * 纯函数、无副作用：
  * - 不改 `messages` 原数组，返回新数组；
@@ -178,7 +211,7 @@ export function injectDocuments(
   const message = messages[target]
   next[target] =
     message.role === 'user'
-      ? { ...message, content: injectIntoContent(message.content, sections) }
+      ? { ...message, content: injectDocumentBlocks(message.content, sections) }
       : message
   return next
 }

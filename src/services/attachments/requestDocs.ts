@@ -1,112 +1,111 @@
 /**
- * #480 §7 的**附件侧接线**：按 id 取出解析后的正文，交给 `inject.ts` 组装成文本消息。
+ * #480 §7 的**请求侧附件引用收集**：回答「这一轮请求到底带着哪些附件」。
  *
- * 分工（谁负责什么，避免同一个决定写两遍）：
- * - 解析 / 缓存 / 状态机：`attachments/manager.ts`（W1 并行落地，本文件只调它的读接口）；
- * - 能不能注入、注入成什么形状：`providerCapability.ts` + `inject.ts`（纯函数，无 IO）；
- * - 「这一轮请求要带哪些附件」：调用方（`chat/store.ts`）—— 本轮提问 + 上下文里还在的历史提问；
- * - **去重**：`inject.ts` 按 `filename + sha256` 做，本文件只按 `id` 避免同一份原件读两遍。
+ * ## 职责（#480 集成轮收敛后）
  *
- * 本文件不做截断：单份正文的字符上限（`ATTACHMENT_LIMITS.maxExtractedChars`）与超限
- * warning 由 manager 负责，真正的上下文裁剪在 ContextBuilder（W1 单 #480 §9）。
- * 这里多截一刀会让「禁止静默截断」变成「两处各截一半，谁都说不清」。
+ * | 谁 | 负责什么 |
+ * | --- | --- |
+ * | `attachments/manager.ts` | 存储 / 解析状态机 / `getText(id)` 读全文 |
+ * | `contextBuilder.buildWithDocuments()` | **唯一请求入口**：按需读正文 → 去重 → 预算 → 与裁剪协同 |
+ * | `providerCapability.ts` | 哪个渠道走文本注入（`textInjection`） |
+ * | `inject.ts` | `<document>` 块的**拼法**（唯二处：块头/块尾 + 拼进 content） |
+ * | **本文件** | 从请求消息上收集附件引用（不读正文、不拼字节） |
+ *
+ * 为什么不再由本文件读正文：正文读取要「按需」（预算用尽就不再 `getText`，见
+ * contextBuilder §1），而 setter 只有一个读取口（`contextBuilder` 的 `AttachmentTextSource`）。
+ * 两处各读一遍会让「读了几次、谁读了」无法自证，也把「按需」变成「先全读再挑」。
+ *
+ * ## 引用从哪来（为什么不是从 `prepareFiles` 的 `files` 直接来）
+ *
+ * 附件引用是**挂在请求消息上**的：`chat/reply.ts` 的 `toRequestMessages()` 在拼消息时
+ * 用 `attachmentRefs` 选项把 `UserMessage.files`（非图片）转成 `ChatAttachmentRef` 挂在
+ * 对应 user 消息上。这样「哪份附件属于哪一轮」由消息自己携带，历史裁剪（#345）把某轮
+ * 丢掉时，它的附件引用自然一起消失 —— 不需要第二套「历史窗口里的附件」的算法。
+ *
+ * 本文件的 `collectAttachmentsForRequest()` 只做一件事：把这些引用摊平（按 id 去重、
+ * 保持请求顺序），供调用方判断「有没有附件要注入」与打点；真正注入在 `buildWithDocuments()`。
  */
 import type { FileAttachment } from '../chat/types.js'
-import type { InjectDocument } from './inject.js'
-import type { DocumentAttachment } from './types.js'
+import type { ChatAttachmentRef, ChatMessage } from './contextBuilder.js'
 
 /**
- * `manager.ts` 的读接口。签名与 W1（agent-4）对齐：
- * - `getText`：未解析 / 解析失败 / 原文丢失 → 返回 `undefined`（**不抛错**），
- *   调用侧统一按「这份附件不进请求」处理；要看原因用 `getMeta(id).status`；
- * - `getMeta`：完整 `DocumentAttachment`，`sha256` 由内容算出（64 位小写十六进制）。
+ * 附件引用字段的**唯一来源**：`FileAttachment.id`。
+ *
+ * TODO(#527 attachments-ui 未合并)：UI 侧还没定「消息用哪个字段存文档引用」。
+ * 当前假设与本仓库既有的文件引用同源 —— `FileAttachment.id` 就是
+ * `DocumentAttachment.id`（IndexedDB 主键，所有引用同一附件的消息共用一份）。
+ * UI 合入后如果改成 `documentIds: string[]` 之类的独立字段，改这一处即可：
+ * 上面的 `attachmentRefsOf()` 是**唯一**的映射点，注入链路与拼法都不受影响。
  */
-export type AttachmentTextApi = {
-  getText: (id: string) => Promise<string | undefined>
-  getMeta: (id: string) => Promise<DocumentAttachment | undefined>
-}
+const refOf = (file: FileAttachment): ChatAttachmentRef | null =>
+  file.id ? { attachmentId: file.id, filename: file.name } : null
 
 /**
- * TODO(W1 attachments)：`src/services/attachments/manager.ts` 落地后，
- * 把下面的惰性加载整段换成静态 import（行为完全不变，只是少一层动态解析）：
+ * 把一条消息的附件列表转成请求侧的附件引用。
  *
- * ```ts
- * import { getMeta, getText } from './manager.js'
- * ```
- *
- * 现在先用惰性解析，是因为 manager.ts 与本分支并行开发、尚未进入 `feat/480-doc-attachments`
- * —— 静态 import 一个还不存在的模块会让 `npx tsc -p tsconfig.json` 直接 TS2307，
- * 整条分支（包括 DeepSeek 路径）连类型检查都过不了。
+ * - **只要文档**（`isImage === false`）：图片走各自渠道的视觉能力（`caps.vision`），
+ *   不属于 #480 的文本注入范围；混进来会把图片二进制当文档正文注入；
+ * - **没有 id 的丢弃**：没有本地 id 就没有正文可读（历史导入的老消息可能只有 serverId）；
+ * - 同一个 id 只留第一次出现（同一附件被重复挂上时不重复注入）。
  */
-const MANAGER_MODULE = './manager.js'
-
-let pending: Promise<AttachmentTextApi | null> | null = null
-
-/** 从模块命名空间里挑出读接口；形状不对就当拿不到（fail-closed，不注入） */
-const pickApi = (mod: unknown): AttachmentTextApi | null => {
-  if (!mod || typeof mod !== 'object') {
-    return null
-  }
-  const record = mod as Record<string, unknown>
-  const candidate = record.attachmentManager ?? record
-  const getText = (candidate as Record<string, unknown>).getText
-  const getMeta = (candidate as Record<string, unknown>).getMeta
-  if (typeof getText !== 'function' || typeof getMeta !== 'function') {
-    return null
-  }
-  return candidate as AttachmentTextApi
-}
-
-const loadApi = (): Promise<AttachmentTextApi | null> => {
-  if (!pending) {
-    // 模块名走变量：见上面 TODO(W1 attachments)，落地后换成静态 import
-    pending = import(MANAGER_MODULE).then(pickApi).catch(() => null)
-  }
-  return pending
-}
-
-/**
- * 按附件 id 读正文 → 待注入文档列表。
- *
- * - 同一 `id` 只读一次（原件在 IndexedDB 里只有一份，多轮引用同一附件时共用）；
- * - `getText` 返回 `undefined` / 空正文 / 读失败 → 这份不进请求。按 #480 §10，
- *   解析未完成的附件本来就不允许发送，走到这里还是空说明原件被删或归档缺失，
- *   属于「孤儿附件」，跳过是正确行为，而不是静默截断；
- * - 任何一次读失败都不拖垮整轮请求：文档是增强项，不是请求的前置条件。
- */
-export async function loadRequestDocuments(files: FileAttachment[]): Promise<InjectDocument[]> {
-  if (files.length === 0) {
-    return []
-  }
-  const api = await loadApi()
-  if (!api) {
-    return []
-  }
-  const documents: InjectDocument[] = []
+export const attachmentRefsOf = (files: readonly FileAttachment[]): ChatAttachmentRef[] => {
+  const refs: ChatAttachmentRef[] = []
   const seen = new Set<string>()
   for (const file of files) {
-    if (!file.id || seen.has(file.id)) {
+    if (file.isImage) {
       continue
     }
-    seen.add(file.id)
-    let text: string | undefined
-    try {
-      text = await api.getText(file.id)
-    } catch {
-      // 读失败 = 这份不进请求；不吞掉整轮生成
-      text = undefined
-    }
-    if (typeof text !== 'string' || text.trim() === '') {
+    const ref = refOf(file)
+    if (!ref || seen.has(ref.attachmentId)) {
       continue
     }
-    let sha256: string | undefined
-    try {
-      sha256 = (await api.getMeta(file.id))?.sha256
-    } catch {
-      // 元数据缺失只影响「去重键退化为 filename + 正文」，不影响注入
-      sha256 = undefined
-    }
-    documents.push({ filename: file.name, text, sha256 })
+    seen.add(ref.attachmentId)
+    refs.push(ref)
   }
-  return documents
+  return refs
 }
+
+/**
+ * 收集这一轮请求消息上带着的全部附件引用（按请求顺序、按 id 去重）。
+ *
+ * 调用方（`chat/store.ts`）用它做「本轮要不要走注入」的判定：返回空数组就说明这条
+ * 请求没有任何文档要注入，连 `buildWithDocuments()` 都不必进 —— DeepSeek 原生路径与
+ * 「有注入能力但没附件」的普通提问都在这一步止步，消息数组原样上行。
+ */
+export const collectAttachmentsForRequest = (
+  messages: readonly ChatMessage[]
+): ChatAttachmentRef[] => {
+  const refs: ChatAttachmentRef[] = []
+  const seen = new Set<string>()
+  for (const message of messages) {
+    for (const ref of message.attachments ?? []) {
+      if (!ref.attachmentId || seen.has(ref.attachmentId)) {
+        continue
+      }
+      seen.add(ref.attachmentId)
+      refs.push(ref)
+    }
+  }
+  return refs
+}
+
+/**
+ * 把消息上的 `attachments` 引用键剥掉，返回**可以上行的**消息。
+ *
+ * 只在「本该注入却失败」的降级路径上用（`buildWithDocuments()` 自己抛错时）：那种情况下
+ * 消息上还挂着引用键，而 `attachments` 不是协议字段，原样上行会被上游当未知字段（400）。
+ * 正常路径不需要它 —— `buildWithDocuments()` 出参已经剥过。
+ */
+export const stripAttachmentRefs = (messages: readonly ChatMessage[]): ChatMessage[] =>
+  messages.map((message) => {
+    if (!message.attachments || message.attachments.length === 0) {
+      return message
+    }
+    if (message.role === 'user') {
+      return { role: 'user', content: message.content }
+    }
+    if (message.role === 'assistant') {
+      return { role: 'assistant', content: message.content }
+    }
+    return { role: 'latest_reminder', content: message.content }
+  })
