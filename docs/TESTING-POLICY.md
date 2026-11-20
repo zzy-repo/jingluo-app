@@ -109,6 +109,7 @@ npm run test:integration -- --baseline          # 集成全量与基线比对，
 | **新增 / 修改一道 CI 门禁** | `node tests/run-layer.mjs unit --only gate-negative-controls`（先看第 9 节） | < 30s |
 | **判断一条红是 flaky / 真红 / runner-dependent** | `node tests/run-layer.mjs --cross-runner-scan`（先看第 11.5 节） | < 10s |
 | **改跨 runner 判据本身** | `node tests/run-layer.mjs --selftest-cross-runner`（四拍自证 + 两条负向对照） | < 10s |
+| **改合并批次 / 逐文件判定本身**（`merged-*` / `tap.mjs` / `merge-verdict.mjs`） | `node --test tests/unit/runner-verdict-self-check.test.mjs`（必失败→FAIL / 体外的失败→FAIL / 改回旧逻辑→自检红，先看第 11.8 节） | < 5s |
 | 合并候选 | L0 + L1 | < 5min |
 | 发版前一次 | `npm test` + `npm run test:integration -- --baseline` | 10~15min |
 | 真机 / 链接导入原生 | `npm run test:device`（人工，需 AVD） | 3~8min |
@@ -425,6 +426,41 @@ node tests/run-layer.mjs --selftest-cross-runner
 - 现状（2026-11-20）：`tests/{unit,integration,e2e,device}` 里 54 个文件、317 处命中 —— 存量清了才谈得上
   把它升级成阻塞门禁（那属于后续单，不在 #456）。
 - 全量清单在 `--json` 报告的 `timingWarnings` 里（终端只打前 8 个文件，避免刷屏）。
+
+### 11.8 合并批次的判定：**不许**只看 `test()` 的 promise（Issue #501，P0）
+
+一句话：**合并批次里「这条用例红了没有」只能取 `node:test` 自己给出的结构化结果；`test()` 返回的
+promise 兑不兑现，与用例过没过无关。**
+
+`node:test` 的 `test()` 在**断言失败时依然 fulfilled**（红只体现在 node 自己的报告与进程退出码上）。
+`tests/helpers/merged-tracker.mjs` 原来就靠它判绿，于是合并批次里：
+
+```text
+assert.equal(1, 2)   →  << FILE … PASS tests=1 pass=1 fail=0   退出码 0
+```
+
+一个进程跑 N 个文件时又没有「单文件退出码」可比，失败就被彻底吞掉 —— unit 层「全绿」的结论
+整个建立在这个看不见断言失败的运行器上。#501 的修法是三层，缺一层都不算修好：
+
+| 层 | 位置 | 作用 |
+| --- | --- | --- |
+| ① 用例体记账 | `tests/helpers/merged-node-test.mjs` + `merged-tracker.mjs` | 包住用例体/嵌套 `t.test`/钩子，捕获**抛出来的错误** → 能指名道姓「哪条红了」 |
+| ② node 的判定（**权威**） | `tests/helpers/tap.mjs` + `merge-verdict.mjs`，runner 用 `--test-reporter=tap --test-reporter-destination=<file>` 取 | 钩子抛错、超时、`t.plan` 数量不符、未捕获异常挂到用例上……**用例体里看不见的失败只有这层能抓** |
+| ③ 整批复核 | `tests/helpers/runtime.mjs`（`runMergedBatch`） | 逐文件计数之和必须等于 TAP 总数、失败数不许少于 TAP 报的；对不上 ⇒ `unreliable` ⇒ 整批退到单文件进程复核（退出码是权威），**绝不放绿** |
+
+三条硬规矩：
+
+1. **不许用「用例数」之外的信号替代判定**：只看进程退出码 → 归因不到文件；只看 promise → 看不见断言
+   失败；两者都会被判成假绿。
+2. **对不上就红，不许降级成绿**：TAP 与逐文件记账不一致时，正确动作是「退到单文件进程复核」，
+   不是「按批内结果放绿」。
+3. **自检必须咬住**：`tests/unit/runner-verdict-self-check.test.mjs` 三拍 —— 必失败用例必须 FAIL、
+   用例体外的失败（`t.plan`/钩子）必须 FAIL、**把判定改回旧逻辑必须变红**。改 `merged-*` / `tap.mjs` /
+   `merge-verdict.mjs` 时这条必须绿；它红了说明判定被改软了，不是「用例过时」。
+
+> 顺带钉住的另一个假绿（#501 自检时发现）：`NODE_TEST_CONTEXT` 会被子进程继承。合并入口继承它就不走
+> 自己的 reporter；单文件 `node --test` 继承它会打印「run() is being called recursively…skipping running
+> files」然后 **exit 0**（一条用例没跑却报绿）。`helpers/runtime.mjs` 现在统一剥掉这两个 env。
 
 ---
 

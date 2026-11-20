@@ -111,6 +111,9 @@ const UNIT_BATCH_SIZE = 16
 const UNIT_SOLO = new Set([
   // 起子进程 / 拷 runner 自身再跑（它断言的就是 runner 自己的行为）
   'test-runtime.test.mjs',
+  // #501：运行器自检 —— 起 run-layer 与合并入口（还要造临时探针）。并进批次等于「让批次去测批次」：
+  // 外层的合并判定会掺进这条用例的结论里，红了也分不清是它抓到了 bug 还是批次串扰。
+  'runner-verdict-self-check.test.mjs',
   // 会「吃到」批内前一个文件的替身（前一个文件把 `@capacitor/core` / `apiConfig` / `react` 换成了
   // 自己那份夹具，这几个文件要的导出不在里面）。批次里会红、单跑必绿 —— 单列，省得每轮都触发
   // 一次「批内红 → 单文件重跑」的兜底（兜底仍然保留，见 runUnit 里那段）。
@@ -1099,6 +1102,27 @@ async function main() {
       for (const line of death.excerpt) say(`   ⚠ ${line}`)
       for (const item of missing) say(`<< CRASH ${rel(item.file)}（${death.kind}，待串行降级复跑）`)
     }
+    /**
+     * #501（P0）：**批次的账本自己不自洽** —— 逐文件判定与 node 的 reporter 对不上
+     * （`tap.tests` ≠ 逐文件计数之和，或 node 报了失败而逐文件全绿，见 helpers/runtime.mjs）。
+     *
+     * 这与「哪个文件红了」是两个问题：这里连「红的是谁」都不知道。所以不许挑一个文件背锅，
+     * 也不许按批内 PASS 放绿 —— 整批退到逐文件单进程复核，结局以单进程退出码为准。
+     * 更不能静默：账本不自洽本身就是 bug 的证据，必须打在终端上。
+     */
+    if (result.unreliable) {
+      say(`\n⚠ 合并批次判定不可信：${result.unreliable.reason}`)
+      for (const line of result.unreliable.detail ?? []) say(`   ⚠ ${line}`)
+      say('   ⟹ 这批文件全部按「待逐文件复核」处理：单文件进程的退出码是权威，绝不按批内 PASS 放绿')
+      for (const entry of unitResults) {
+        if (entry.pendingDegrade) continue
+        Object.assign(entry, {
+          ok: false, skipped: false, skipReason: '', pendingDegrade: true, merged: true,
+          error: `合并批次判定不可信：${(result.unreliable.detail ?? []).join('；')}`,
+        })
+      }
+    }
+
     // 批次里有红：**不能直接相信** —— 合并的前提是「文件之间零串扰」，红了要么是真红，要么
     // 是这个批次不该合在一起（模块级装配互相影响 / 用例依赖 event loop 的时序）。于是把这几个
     // 文件按**单文件进程**（合并之前的老跑法）重跑一遍，结果以单文件为准：
@@ -1133,7 +1157,19 @@ async function main() {
         }
       }
     }
-    if (missing.length) pendingCrashes.push({ unit, death, results: unitResults })
+    if (missing.length || result.unreliable) {
+      pendingCrashes.push({
+        unit,
+        death: death ?? {
+          kind: 'unreliable',
+          label: '合并批次的逐文件判定与 node 的 reporter 对不上',
+          excerpt: result.unreliable?.detail ?? [],
+        },
+        results: unitResults,
+        // 「账本不自洽」不做整批重跑：同样的账本会再错一次，直接逐文件单进程定性
+        soloOnly: Boolean(result.unreliable),
+      })
+    }
     return {
       results: unitResults,
       log: log.join(''),
@@ -1185,21 +1221,31 @@ async function main() {
       if (interrupted) break
       const files = crash.unit.items.map((item) => item.file)
       const death = crash.death
+      const stillBroken = []
+      let aloneDeath = null
+      /** 归因前缀：批次崩了 / 账本不自洽，两种死因的措辞不能混 */
+      const whyPrefix = `${death.kind === 'unreliable' ? '合并批次判定不可信' : '批次进程没跑完'}（${death.kind === 'unreliable' ? death.label : `${death.kind}：${death.label}`}）`
+      if (crash.soloOnly) {
+        // #501：账本本身不自洽（逐文件判定与 node 的 reporter 对不上）。同样的账本重跑只会再错一次，
+        // 所以不做整批重跑，直接逐文件单进程定性 —— 单进程的退出码不依赖任何记账。
+        console.log(`\n↺ #501 账本不自洽（${death.label}）：不重跑整批，直接逐文件单进程定性`)
+        for (const line of death.excerpt) console.log(`   ⚠ ${line}`)
+        stillBroken.push(...crash.unit.items)
+      } else {
       console.log(`\n↺ 整批独占串行重跑（${crash.unit.items.length} 个文件，堆上限 ${heapPlan.inject ? degradedHeapMb : heapCap} MB；上次死因：${death.label}）`)
       for (const line of death.excerpt) console.log(`   ⚠ 上次 stderr：${line}`)
       const alone = await runMergedBatch(files, {
         cwd: ROOT, env: { ...process.env }, timeoutMs, output: true, nodeArgs: degradedNodeArgs,
       })
       const aloneByFile = new Map(alone.files.map((entry) => [entry.file, entry]))
-      const aloneDeath = classifyDeath(alone)
-      const stillBroken = []
+      aloneDeath = classifyDeath(alone)
       for (const item of crash.unit.items) {
         const name = rel(item.file)
         const index = crash.results.findIndex((entry) => entry.file === name)
         if (index < 0) continue
         const entry = aloneByFile.get(name)
         if (entry && entry.ok) {
-          const reason = `批次进程没跑完（${death.kind}：${death.label}）→ 独占串行整批重跑通过${entry.skip ? `（批内 ${entry.skip} 条用例自带 SKIP，判定不变）` : ''}`
+          const reason = `${whyPrefix} → 独占串行整批重跑通过${entry.skip ? `（批内 ${entry.skip} 条用例自带 SKIP，判定不变）` : ''}`
           Object.assign(crash.results[index], {
             ok: true, skipped: entry.outcome === 'SKIP', skipReason: '', code: 0, signal: null, timedOut: false,
             error: null, tests: entry.tests, pass: entry.pass, fail: entry.fail, skips: entry.skip,
@@ -1216,7 +1262,8 @@ async function main() {
         console.log('   ⟹ 整批独占串行全过 → 判定为**批次资源不足**，不判红（已在 summary 记 DEGRADED）')
         continue
       }
-      console.log(`   ⟹ 整批串行仍有 ${stillBroken.length} 个文件没跑完（${aloneDeath.label}），退到逐文件单进程串行`)
+      console.log(`   ⟹ 整批串行仍有 ${stillBroken.length} 个文件没跑完（${aloneDeath?.label ?? '账本不自洽'}），退到逐文件单进程串行`)
+      }
       for (const item of stillBroken) {
         const name = rel(item.file)
         const index = crash.results.findIndex((entry) => entry.file === name)
@@ -1226,7 +1273,7 @@ async function main() {
         const skipped = solo.code === SKIP_CODE
         const skipReason = skipped ? (/SKIP\(env\) (.+)/.exec(solo.tail.join(''))?.[1] ?? '环境不满足').trim() : ''
         if (solo.ok) {
-          const reason = `批次进程没跑完（${death.kind}：${death.label}）→ 逐文件串行通过`
+          const reason = `${whyPrefix} → 逐文件串行通过`
           if (index >= 0) {
             Object.assign(crash.results[index], {
               ...solo, file: name, layer: item.layer, skipped: false, skipReason: '', merged: false,

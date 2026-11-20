@@ -19,6 +19,15 @@
 //      注册的 stub 只可能影响 N **之后**的文件，而 N 已经跑完了；且 N 之后加载的文件自己注册的
 //      hook 优先级更高（后注册先命中），自己的装配不会被前人的 stub 抢走。
 //
+// ## #501（P0）：逐文件结局**不许**只看我们的记账
+//
+// 曾经这里只数「`test()` 的 promise 有没有兑现」，而断言失败时它依然 fulfilled —— 于是
+// `assert.equal(1, 2)` 的批次收尾行是 `PASS tests=1 pass=1 fail=0`、退出码 0，unit 层的「全绿」
+// 建立在这上面（假绿源头）。现在结算一段：记账（用例体抛错，见 ./merged-node-test.mjs）+
+// **node 自己 reporter 的判定**（`--test-reporter=tap` 写到本进程专属的文件，见 ./tap.mjs），
+// 判定规则集中在 ./merge-verdict.mjs（以 node 的判定为准）。TAP 文件路径由 runner 通过
+// `MERGED_TAP_LOG` 传进来；没有它（例如手工单跑本文件）就只有记账这一路，仍能抓到用例体失败。
+//
 // 输出约定（run-layer 靠它把「一批进程」还原成「逐文件结果」）：
 //   >> FILE <相对路径>
 //   ok N - 用例名 [# SKIP 原因]        ← TAP 行，run-layer 的跳过扫描认这个
@@ -27,10 +36,13 @@
 // 退出码：全绿 0；有失败 1。文件崩在 `<< FILE` 之前（import 抛错 / 进程被杀）时它不会有收尾行，
 // run-layer 会把「没有收尾行」的文件判为失败 —— 不许「没跑完」被当成「通过」。
 import { registerHooks } from 'node:module'
-import { existsSync, readFileSync } from 'node:fs'
+import { closeSync, existsSync, openSync, readFileSync, readSync, statSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
+import { setTimeout as sleep } from 'node:timers/promises'
 import { drain, reset, setListener } from './merged-tracker.mjs'
+import { parseTap } from './tap.mjs'
+import { countsOf, mismatchNotes, verdictOf } from './merge-verdict.mjs'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const ROOT = path.resolve(HERE, '../..')
@@ -121,6 +133,99 @@ process.on('uncaughtException', (error) => {
 
 let tap = 0
 let exitCode = 0
+/** 批次的「批级」证据：整批 tap 计数与逐文件计数之和，用来判断有没有事件没归到文件上 */
+const batchTap = { tests: 0, pass: 0, fail: 0, skip: 0, suiteFail: 0 }
+
+/**
+ * node 的 TAP 报告走**独立文件**（runner 用 `--test-reporter-destination` 指过来），
+ * 因此这里的 stdout 不会被 node 的输出动过手脚，逐文件朗读时也不必和 stdout 抢顺序。
+ *
+ * 难点只有一个：**报告是用例落定之后的下一轮宏任务里才写出去的**（实测：死等 `setImmediate`
+ * 一次不够，报告会比框架行晚一轮）。所以这里不做「固定睡多久」的猜测，而是**自校验地等**：
+ *
+ *   ① 等到本文件该有的结果行都出现了（条数 ≥ 我们登记的用例数）；
+ *   ② 并且文件连续两拍不再增长（尾部的 YAML 块、子用例都写完了）；
+ *   ③ 超过上限（2s）还没等到 ⇒ 记 `settleTimedOut`，该文件判红（**宁可红，不许假绿**）。
+ *
+ * 时间只用来「决定什么时候读」，不用来「决定红不红」：红不红仍由 node 的判定说了算，
+ * 而整批在 helpers/runtime.mjs 里还会拿完整的 TAP 文件复核逐文件计数之和。
+ */
+const tapLog = process.env.MERGED_TAP_LOG || ''
+/** 等报告的堆叠上限（ms）：正常情况 2~10ms 就到齐，2s 只是防死等 */
+const TAP_SETTLE_MAX_MS = 2000
+let tapOffset = 0
+let settleTimedOut = false
+
+const tapSize = () => {
+  try { return statSync(tapLog).size } catch { return 0 }
+}
+
+/** 从当前偏移读出「已收口的完整行」，以及没写完的那半行（下次再读） */
+const readTapChunk = () => {
+  if (!tapLog) return { complete: '', pending: 0 }
+  const size = tapSize()
+  if (size <= tapOffset) return { complete: '', pending: 0 }
+  const fd = openSync(tapLog, 'r')
+  let chunk
+  try {
+    const buffer = Buffer.alloc(size - tapOffset)
+    const read = readSync(fd, buffer, 0, buffer.length, tapOffset)
+    chunk = buffer.subarray(0, read).toString('utf8')
+  } finally {
+    closeSync(fd)
+  }
+  const lastNewline = chunk.lastIndexOf('\n')
+  if (lastNewline === -1) return { complete: '', pending: Buffer.byteLength(chunk, 'utf8') }
+  const complete = chunk.slice(0, lastNewline + 1)
+  return { complete, pending: Buffer.byteLength(chunk, 'utf8') - Buffer.byteLength(complete, 'utf8') }
+}
+
+/** 只看不推进：用于「该来的都来了没有」 */
+const peekTap = () => parseTap(readTapChunk().complete)
+
+/** 推进偏移并返回这一段的事件 */
+const commitTap = () => {
+  const { complete } = readTapChunk()
+  tapOffset += Buffer.byteLength(complete, 'utf8')
+  return parseTap(complete)
+}
+
+/** 把事件折成计数（用例 / 套件分开：套件不是用例，`describe` 里的用例各自计过一次） */
+const countEvents = (events) => {
+  const counts = { tests: 0, pass: 0, fail: 0, skip: 0, todo: 0, suites: 0, suiteFail: 0 }
+  for (const event of events) {
+    if (event.kind === 'suite') { counts.suites++; if (!event.ok) counts.suiteFail++; continue }
+    counts.tests++
+    if (event.directive === 'SKIP') counts.skip++
+    else if (event.directive === 'TODO') counts.todo++
+    else if (event.ok) counts.pass++
+    else counts.fail++
+  }
+  return counts
+}
+
+/**
+ * 等本文件的 TAP 落定后提交。`expectedTests` = 我们在这个文件里登记到的用例数。
+ * 用 `node:timers/promises` 的 setTimeout：用例文件可能把 globalThis.setTimeout 换成假时钟，
+ * 屏障不能跟着被换掉。
+ */
+const settleTap = async (expectedTests) => {
+  settleTimedOut = false
+  if (!tapLog) return null
+  const deadline = performance.now() + TAP_SETTLE_MAX_MS
+  let lastSize = tapSize()
+  let quiet = 0
+  for (;;) {
+    const counts = countEvents(peekTap())
+    const size = tapSize()
+    if (size === lastSize) quiet += 1
+    else { quiet = 0; lastSize = size }
+    if (counts.tests >= expectedTests && quiet >= 2) break
+    if (performance.now() > deadline) { settleTimedOut = expectedTests > 0 || counts.tests > 0; break }
+    await sleep(2)
+  }
+  return countEvents(commitTap())
+}
 
 /** 依次加载并跑完每个文件；每个文件的用例事件在这一段里被收成 TAP 行与计数 */
 const runFile = async (file, source) => {
@@ -130,14 +235,16 @@ const runFile = async (file, source) => {
   const startedAt = performance.now()
   console.log(`>> FILE ${name}`)
   setListener((event) => {
-    counters.tests++
     if (event.type === 'fail') {
+      // 钩子/套件体的失败不是一条用例（`kind: 'hook'`），计进 fail 但不计进 tests
+      if (event.kind !== 'hook') counters.tests++
       counters.fail++
       console.log(`not ok ${++tap} - ${event.name}`)
       const message = event.error?.message ?? event.error
       if (message) console.log(`  # ${String(message).split('\n')[0]}`)
       return
     }
+    counters.tests++
     if (event.skip !== undefined) {
       counters.skip++
       console.log(`ok ${++tap} - ${event.name} # SKIP${event.skip ? ` ${event.skip}` : ''}`)
@@ -156,6 +263,8 @@ const runFile = async (file, source) => {
   } catch (error) {
     if (!(error instanceof ScriptExit)) crashed = error
   }
+  // #501：node 的报告比用例落定晚一轮宏任务，这里自校验地等它写全（见 settleTap）
+  const tapCounts = await settleTap(counters.tests)
   const ms = Math.round(performance.now() - startedAt)
   setListener(null)
   reset()
@@ -177,13 +286,29 @@ const runFile = async (file, source) => {
     counters.fail++
     console.log(`not ok ${++tap} - <脚本退出码 ${scriptCode}> ${name}`)
   }
-  const outcome = counters.fail
-    ? 'FAIL'
-    : counters.pass ? 'PASS'
-      : counters.skip ? 'SKIP'
-        : scriptStyle ? 'PASS'
-          : 'EMPTY'
-  console.log(`<< FILE ${name} ${outcome} tests=${counters.tests} pass=${counters.pass} fail=${counters.fail} skip=${counters.skip} ms=${ms}${scriptStyle ? ` script=${scriptCode}` : ''}`)
+  // #501：结局由 ./merge-verdict.mjs 定 —— node 的 TAP 判定优先，我们的记账只补「哪条红了」。
+  let outcome = verdictOf({
+    tracked: counters,
+    tap: tapCounts,
+    nodeTest,
+    scriptOk: !crashed && scriptCode === 0,
+  })
+  const reported = countsOf({ tracked: counters, tap: tapCounts })
+  if (settleTimedOut) {
+    console.log(`!! ${name}：等 node 的 reporter 超过 ${TAP_SETTLE_MAX_MS}ms 还没写全，判定不可信（按红处理）`)
+    if (outcome === 'PASS' || outcome === 'SKIP' || outcome === 'EMPTY') outcome = 'FAIL'
+  }
+  for (const note of mismatchNotes({ tracked: counters, tap: tapCounts })) {
+    console.log(`!! ${name}：${note}`)
+  }
+  if (tapCounts) {
+    batchTap.tests += tapCounts.tests
+    batchTap.pass += tapCounts.pass
+    batchTap.fail += tapCounts.fail
+    batchTap.skip += tapCounts.skip
+    batchTap.suiteFail += tapCounts.suiteFail
+  }
+  console.log(`<< FILE ${name} ${outcome} tests=${reported.tests} pass=${reported.pass} fail=${reported.fail} skip=${reported.skip} ms=${ms}${scriptStyle ? ` script=${scriptCode}` : ''}`)
   if (outcome === 'FAIL' || outcome === 'EMPTY') exitCode = 1
 }
 
@@ -199,6 +324,13 @@ if (strayExit !== null) {
   exitCode = 1
 }
 process.exitCode = exitCode
+// 收工时再看一眼：还有 TAP 事件没归到任何文件上（异步收尾、末条晚写），说明逐文件归因不完整 ——
+// 这**不许**当成绿。runner 那边还会用完整的 TAP 文件复核一遍（见 helpers/runtime.mjs）。
+const trailing = await settleTap(0)
+if (trailing && (trailing.tests > 0 || trailing.suiteFail > 0)) {
+  console.error(`!! 批尾还有 ${trailing.tests} 条用例 / ${trailing.fail + trailing.suiteFail} 条失败没归到文件：${trailing.tests + trailing.suites > 0 ? '（见 node 的 TAP 文件）' : ''}`)
+  exitCode = 1
+}
 await new Promise((resolve) => process.stdout.write('', resolve))
 process.exit = realExit
 process.exit(exitCode)
