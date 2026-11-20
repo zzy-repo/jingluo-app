@@ -26,6 +26,7 @@ import { existsSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
+import { bumpVersion, CURRENT_CODE, CURRENT_VERSION, PRERELEASE_CHANNEL, UPDATE_CHANNEL_KEY } from '../helpers/appVersion.mjs'
 import { serveDir, skipEnv, ROOT } from '../helpers/env.mjs'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
@@ -42,13 +43,23 @@ const FALLBACK = 'https://dl.rose7.cn'
  */
 const CACHE_SAVED_AT = Date.now() - 60 * 60 * 1000
 
+/**
+ * 假清单里的「新版本」= **当前产物版本 + 1**（`versionCode` 必须严格大于 `package.json` 的
+ * `androidVersionCode`，否则按产品逻辑就是「已是最新」）。以前这里写死 `1.4.0-beta.11 / 18`：
+ * `package.json` 一升到 1.4.2 / 21，整批用例就以「暂无可用版本」假红（#591）。
+ */
+const NEWEST_INSTALLABLE = bumpVersion(1)
+const RELEASE_FILE = `apk/deepseek-chat-${NEWEST_INSTALLABLE}.apk`
+
 /** 与线上同形状的一条发布记录 */
 const release = (over = {}) => ({
-  version: '1.4.0-beta.11',
-  versionCode: 18,
+  version: NEWEST_INSTALLABLE,
+  versionCode: CURRENT_CODE + 1,
   size: 5452595,
-  file: 'apk/deepseek-chat-1.4.0-beta.11.apk',
+  file: RELEASE_FILE,
   changes: ['修复重试与离线提示', '下载失败不再残留满格进度'],
+  // 与 initScript 里钉住的渠道配套（`chat-demo:update-channel` = 预发布，见下方 UPDATE_CHANNEL_KEY）：
+  // 只发预发布的记录在「仅稳定版」渠道下会被正常过滤掉，那不是 bug。
   buildType: 'prerelease',
   artifactVariant: 'standard',
   sha256: 'a'.repeat(64),
@@ -260,14 +271,14 @@ const SCENARIOS = [
     assert: (p) => {
       // F10-01：自动检查后给出结论（不是「已是最新」）
       assert.match(p.status, /发现新版本/, `结论行应有「发现新版本」：${p.status}`)
-      assert.equal(p.title, '1.4.0-beta.11', `弹窗应显示新版本号，实际 ${p.title}`)
+      assert.equal(p.title, NEWEST_INSTALLABLE, `弹窗应显示新版本号（当前产物版本的下一版），实际 ${p.title}`)
       assert.deepEqual(p.items.slice(0, 2), ['修复重试与离线提示', '下载失败不再残留满格进度'], '更新说明应逐条渲染')
       // F10-13：网页预览降级成链接，而不是「确认下载」按钮
       assert.equal(p.hasConfirmDownloadButton, false, 'web 通道不该出现「确认下载」按钮')
       assert.equal(p.linkText, '下载 APK', `web 通道应给「下载 APK」链接，实际 ${JSON.stringify(p.linkText)}`)
       assert.equal(
         p.linkHref,
-        `${PRIMARY}/apk/deepseek-chat-1.4.0-beta.11.apk`,
+        `${PRIMARY}/${RELEASE_FILE}`,
         `链接应拼在真的回了清单的 base（首选机）上，实际 ${p.linkHref}`
       )
       // F10-12：诊断区四个事实（版本 / 渠道 / 更新服务 / 最近检查）都在
@@ -291,7 +302,7 @@ const SCENARIOS = [
     assert: (p) => {
       assert.equal(
         p.linkHref,
-        `${FALLBACK}/apk/deepseek-chat-1.4.0-beta.11.apk`,
+        `${FALLBACK}/${RELEASE_FILE}`,
         `回退后链接必须拼在旧机上（拼首选机会 404），实际 ${p.linkHref}`
       )
       assert.ok(
@@ -309,9 +320,9 @@ const SCENARIOS = [
       primary: {
         releases: [
           // 候选（versionCode 更高）但缺 sha256 → 不可作为更新目标
-          release({ versionCode: 19, sha256: undefined }),
+          release({ versionCode: CURRENT_CODE + 2, sha256: undefined }),
           // 候选但缺渠道标记 → 同样不可用
-          release({ versionCode: 20, artifactVariant: undefined }),
+          release({ versionCode: CURRENT_CODE + 3, artifactVariant: undefined }),
         ],
       },
       fallback: { status: 500 },
@@ -319,7 +330,10 @@ const SCENARIOS = [
     waitFor: /已是最新|没有可直接安装的新版本/,
     assert: (p) => {
       assert.match(p.status, /已是最新|没有可直接安装的新版本/, `应给出「无新版」结论：${p.status}`)
-      assert.match(p.status, /当前版本 1\.4\.0-beta\.10/, `文案必须带当前版本（用户报障时唯一能对上的信息）：${p.status}`)
+      assert.ok(
+        p.status.includes(`当前版本 ${CURRENT_VERSION}`),
+        `文案必须带当前版本（用户报障时唯一能对上的信息；预期含「当前版本 ${CURRENT_VERSION}」）：${p.status}`
+      )
       assert.match(p.status, /稳定版与预发布版/, `文案必须带渠道名：${p.status}`)
       assert.match(p.status, /另有 2 条/, `两条不可用记录要被数出来：${p.status}`)
       assert.equal(p.hasConfirmDownloadButton, false, '没有可装版本时不该出现下载/安装按钮')
@@ -371,7 +385,7 @@ const SCENARIOS = [
     },
     waitFor: '发现新版本，确认后再下载。',
     drive: async (page) => {
-      // 默认渠道是预发布（内测版本号带 -beta）→ 先看到新版本
+      // 渠道已钉成「稳定版与预发布版」→ 打开即看到新版本
       const select = page.getByRole('combobox')
       await select.selectOption('stable')
       // 切渠道即自动重查（不需要再点「检查更新」）：等 stable 的结论出现
@@ -422,14 +436,17 @@ const SCENARIOS = [
     f10: ['F10-10', 'F10-12'],
     name: '断网 + 有缓存：展示上次成功的版本列表（标注「可能不是最新」+ 上次成功时间），并给缓存里的直链',
     plan: { primary: { status: 503 }, fallback: { status: 503 } },
-    // 预置一份「上次成功拉到的清单」：线上同形状，versionCode 高于当前 17，所以能被选成下载目标
+    // 预置一份「上次成功拉到的清单」：线上同形状，versionCode 高于当前产物（CURRENT_CODE），所以能被选成下载目标
     storage: {
       // 结构版本 1 = src/services/updateManifest.ts 的 MANIFEST_CACHE_VERSION（同源，改一处要改两处）
       'chat-demo:update-manifest-cache': JSON.stringify({
         version: 1,
         savedAt: CACHE_SAVED_AT,
         base: PRIMARY,
-        rows: [release({ versionCode: 20 }), release({ version: '1.4.0', versionCode: 19, buildType: 'stable' })],
+        rows: [
+          release({ versionCode: CURRENT_CODE + 2 }),
+          release({ version: CURRENT_VERSION, versionCode: CURRENT_CODE + 1, buildType: 'stable' }),
+        ],
       }),
     },
     waitFor: /更新服务返回了 HTTP 503/,
@@ -441,12 +458,12 @@ const SCENARIOS = [
       assert.ok(cache.includes('成功取到的版本列表'), `缓存区块要说清这是上次成功的列表：${cache}`)
       assert.match(cache, /共 2 条/, `缓存区块要给出条数：${cache}`)
       assert.match(cache, /\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}/, `缓存区块要给上次成功时间（带日期，不然会被当成刚拉的）：${cache}`)
-      assert.ok(cache.includes('1.4.0-beta.11'), `缓存区块要列出上次看到的版本号：${cache}`)
+      assert.ok(cache.includes(NEWEST_INSTALLABLE), `缓存区块要列出上次看到的版本号：${cache}`)
       // 手动下载：有缓存且能选出可装版本 → 直链指向那条记录，拼在缓存里的 base 上
       assert.equal(p.manual?.text, '手动下载最新版', `应给「手动下载最新版」入口：${JSON.stringify(p.manual)}`)
       assert.equal(
         p.manual?.href,
-        `${PRIMARY}/apk/deepseek-chat-1.4.0-beta.11.apk`,
+        `${PRIMARY}/${RELEASE_FILE}`,
         `有缓存时应直接给缓存里最新可装记录的直链，实际 ${p.manual?.href}`
       )
       // 缓存里的版本只是「上次看到过」，不许因此冒出一个可点的「下载 APK」按钮
@@ -466,7 +483,7 @@ const SCENARIOS = [
         savedAt: CACHE_SAVED_AT,
         base: PRIMARY,
         // #330 的事故形状：非法枚举。缓存也是外部可变数据，读的时候必须重新校验
-        rows: [{ ...release({ versionCode: 20 }), buildType: 'release' }],
+        rows: [{ ...release({ versionCode: CURRENT_CODE + 2 }), buildType: 'release' }],
       }),
     },
     waitFor: /更新服务返回了 HTTP 503/,
@@ -487,7 +504,7 @@ const SCENARIOS = [
     plan: { primary: { releases: [release()] }, fallback: { status: 500 } },
     waitFor: '发现新版本，确认后再下载。',
     drive: async (page) => {
-      // 默认渠道是预发布（内测包版本号带 -beta），先切到「仅稳定版」并等结论变化
+      // 起始渠道是预置的「稳定版与预发布版」，先切到「仅稳定版」并等结论变化
       await page.getByRole('combobox').selectOption('stable')
       await page.getByText(/已是最新|没有可直接安装的新版本/).first().waitFor({ timeout: 15000 })
       // 「重开设置」= 刷新整页后重新进设置 → 应用更新：渠道必须还是用户选的「仅稳定版」
@@ -544,13 +561,21 @@ try {
       // （#412 的失败兜底必须真的读到 localStorage 里的那份快照，不能靠组件内部 state 假装）
       await context.addInitScript((seed) => {
         try {
-          for (const [key, value] of Object.entries(seed)) localStorage.setItem(key, value)
+          // 只补「设备上还没有的」设置：C9 断言的是「用户选过的渠道要持久化」，
+          // 每条脚本都无条件覆盖就会把用户的选择按回去（刷新后永远回到默认值）。
+          for (const [key, value] of Object.entries(seed)) {
+            if (localStorage.getItem(key) === null) localStorage.setItem(key, value)
+          }
         } catch {
           // 首屏前不可用就跳过（本用例只看设置页）
         }
       }, {
         'chat-demo:api-key': 'sk-domain10-fixture',
         'chat-demo:provider-kind': 'deepseek',
+        // 渠道钉成「稳定版与预发布版」：本文件的假清单都是预发布记录，而**默认**渠道取决于
+        // 产物版本号里有没有 `-`（beta 包 → 预发布，正式包 1.4.2 → 只看稳定版）。
+        // 用例是「有预发布版本可装」的前提，就得显式写下这条前提，不能让结论随产物形态漂（#591）。
+        [UPDATE_CHANNEL_KEY]: PRERELEASE_CHANNEL,
         ...(scenario.storage ?? {}),
       })
       await routeManifest(context, scenario.plan)

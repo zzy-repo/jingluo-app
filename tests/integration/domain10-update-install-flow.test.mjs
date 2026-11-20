@@ -34,6 +34,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
+import { PRERELEASE_CHANNEL, UPDATE_CHANNEL_KEY } from '../helpers/appVersion.mjs'
 import { serveDir, ROOT } from '../helpers/env.mjs'
 
 const require = createRequire(import.meta.url)
@@ -403,6 +404,13 @@ try {
         isMobile: true,
         hasTouch: true,
       })
+      // #591：更新渠道钉成「稳定版与预发布版」。本文件的清单假数据是预发布记录（buildType: 'prerelease'），
+      // 而**默认**渠道取决于产物版本号里有没有 `-`（正式包 1.4.2 → 只看稳定版）——不钉住就会
+      // 以「查不到新版本、没有『确认下载』按钮」的形式假红。渠道是用户可选项，用例应把它写成前提。
+      await context.addInitScript(([key, value]) => localStorage.setItem(key, value), [
+        UPDATE_CHANNEL_KEY,
+        PRERELEASE_CHANNEL,
+      ])
       await context.addInitScript(bootstrap, scenario.plan)
       const page = await context.newPage()
       const pageErrors = []

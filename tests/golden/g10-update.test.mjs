@@ -10,23 +10,39 @@
 // 两台分发机都要 route 住：只拦一台时首选机一旦真的可达，用例会连真服务器（离线环境下表现为超时）。
 //
 // 跑法（仓库根目录）：pnpm run build && node tests/golden/g10-update.test.mjs
+import {
+  bumpVersion,
+  CURRENT_CODE,
+  CURRENT_VERSION,
+  defaultUpdateChannel,
+} from '../helpers/appVersion.mjs'
 import { bodyText, brief, openGoldenPage, runGolden, serveGoldenApp, waitFor, waitForBoot } from '../helpers/golden.mjs'
 
 /** 与 src/services/updateManifest.ts 的 RELEASE_BASES 同源 */
 const PRIMARY = 'http://62.106.70.167:8888'
 const FALLBACK = 'https://dl.rose7.cn'
-/** 当前产物版本是 1.4.0-beta.10（build-info.json / __APP_VERSION__），所以清单里要有更高的版本 */
-const NEWEST_INSTALLABLE = '1.4.0-beta.11'
-const RELEASE_FILE = 'apk/deepseek-chat-1.4.0-beta.11.apk'
+
+/**
+ * 当前产物版本 / 构建号取自 `../helpers/appVersion.mjs`（唯一来源 = package.json）。
+ * 以前这里写死 `1.4.0-beta.10 / 17`：版本号一升，清单里那份「更高版本」就不再更高，
+ * 用例会以「暂无可用版本 …… 已是最新」假红（#591：1.4.2 / 21）。写死版本号 = 每次发版都要改测试。
+ */
+const CURRENT_BUILD_TYPE = defaultUpdateChannel(CURRENT_VERSION)
+
+/** 比当前产物高一个版本、且可安装（会是被选中的那条）；因此清单里必须有更高的版本 */
+const NEWEST_INSTALLABLE = bumpVersion(1)
+const RELEASE_FILE = `apk/deepseek-chat-${NEWEST_INSTALLABLE}.apk`
 const APK_BYTES = 5_452_595
 
 const release = (over = {}) => ({
   version: NEWEST_INSTALLABLE,
-  versionCode: 18,
+  versionCode: CURRENT_CODE + 1,
   size: APK_BYTES,
   file: RELEASE_FILE,
   changes: ['修复重试与离线提示'],
-  buildType: 'prerelease',
+  // 渠道必须跟着**当前产物**的 buildType 走：正式版产物默认只看 stable 渠道，
+  // 假数据里写死 prerelease 会被渠道过滤掉 → 又变成「没有更高的版本」的假红。
+  buildType: CURRENT_BUILD_TYPE,
   artifactVariant: 'standard',
   sha256: 'a'.repeat(64),
   ...over,
@@ -39,8 +55,8 @@ const release = (over = {}) => ({
  *   3) 唯一可安装的新版本（= 期望被选中的那条）
  */
 const RELEASES = [
-  release({ version: '1.4.0-beta.10', versionCode: 17 }),
-  release({ version: '1.4.0-beta.12', versionCode: 19, sha256: undefined }),
+  release({ version: CURRENT_VERSION, versionCode: CURRENT_CODE }),
+  release({ version: bumpVersion(2), versionCode: CURRENT_CODE + 2, sha256: undefined }),
   release(),
 ]
 

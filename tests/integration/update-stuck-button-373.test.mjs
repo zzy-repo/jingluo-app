@@ -32,6 +32,7 @@ import { createRequire } from 'node:module'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
+import { PRERELEASE_CHANNEL, UPDATE_CHANNEL_KEY } from '../helpers/appVersion.mjs'
 import { serveDir, ROOT } from '../helpers/env.mjs'
 
 const require = createRequire(import.meta.url)
@@ -328,6 +329,11 @@ try {
         isMobile: true,
         hasTouch: true,
       })
+      // #591：更新渠道钉成「稳定版与预发布版」——假清单是预发布记录，而默认渠道取决于产物版本号里有没有 `-`。
+      await context.addInitScript(([key, value]) => localStorage.setItem(key, value), [
+        UPDATE_CHANNEL_KEY,
+        PRERELEASE_CHANNEL,
+      ])
       await context.addInitScript(bootstrap, { ...scenario.plan, manifest: MANIFEST })
       const page = await context.newPage()
       const pageErrors = []
