@@ -14,6 +14,10 @@
 //   [5] 用户停止：abort 不是可重试错误，立刻按已停止收尾，不再发请求
 //   [6] 重试期间界面有「正在第 N 次重试」（带次数与上限占位符，中英都有）
 //   [7] 重试判定是纯函数，逐个分类都能单测（abort 优先级最高）
+// #507：`__ENDPOINTS__` 全局兜底 —— 装载即挂（幂等）。单跑本文件（不经 run-layer 的 `--import` 预加载）也不会
+// `ReferenceError: __ENDPOINTS__ is not defined`；走门禁时与预加载是同一份模块，无副作用叠加。
+import '../helpers/injected.mjs'
+
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { registerHooks } from 'node:module'

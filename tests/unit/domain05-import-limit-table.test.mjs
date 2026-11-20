@@ -14,6 +14,10 @@
 // 过去是先把 200MB 包体解一遍、再报「文件过大」，用户等的就是这个白下载。
 //
 //   node --test tests/unit/domain05-import-limit-table.test.mjs
+// #507：`__ENDPOINTS__` 全局兜底 —— 装载即挂（幂等）。单跑本文件（不经 run-layer 的 `--import` 预加载）也不会
+// `ReferenceError: __ENDPOINTS__ is not defined`；走门禁时与预加载是同一份模块，无副作用叠加。
+import '../helpers/injected.mjs'
+
 import { test } from 'node:test'
 import { zipBytes } from '../fixtures/domain05/archive.mjs'
 import { installHooks, render, stubOf } from '../fixtures/domain05/hooks.mjs'

@@ -8,6 +8,10 @@
 //
 // #217 补的是「守卫的覆盖面」，不是新机制：扫描范围从 `*.module.css` 扩到全部 `.css`，
 // 并把 `flex-wrap` 的交叉轴 gap 从「一律排除」改成「不换行才排除」。
+// #507：`__ENDPOINTS__` 全局兜底 —— 装载即挂（幂等）。单跑本文件（不经 run-layer 的 `--import` 预加载）也不会
+// `ReferenceError: __ENDPOINTS__ is not defined`；走门禁时与预加载是同一份模块，无副作用叠加。
+import '../helpers/injected.mjs'
+
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { mkdir, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises'

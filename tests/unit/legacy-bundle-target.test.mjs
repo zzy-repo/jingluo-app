@@ -23,6 +23,10 @@
 //      调的**就是**这两个函数（无 dist 直接 exit 1，不跳过）；CI 里必须放在 build 之后，见 PR 的 diff。
 //   2) 单测层的跳过不再埋在汇总数字里：run-layer 的 NODE-SKIP 汇总会逐条打印「未被检查：<用例名>
 //      — <缺产物原因>」（#298 改的是 tests/helpers/runtime.mjs 与 tests/run-layer.mjs）。
+// #507：`__ENDPOINTS__` 全局兜底 —— 装载即挂（幂等）。单跑本文件（不经 run-layer 的 `--import` 预加载）也不会
+// `ReferenceError: __ENDPOINTS__ is not defined`；走门禁时与预加载是同一份模块，无副作用叠加。
+import '../helpers/injected.mjs'
+
 import assert from 'node:assert/strict'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'

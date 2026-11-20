@@ -17,6 +17,10 @@
 // 用例一律用临时目录造 fixture 当输入（`--root <tmp>`），不依赖 `src/**` 当前的缺陷数量：
 // 那 6 条 lane 会陆续把缺陷修掉，若把「今天有 37 处」写进断言，本文件会替别人红。
 
+// #507：`__ENDPOINTS__` 全局兜底 —— 装载即挂（幂等）。单跑本文件（不经 run-layer 的 `--import` 预加载）也不会
+// `ReferenceError: __ENDPOINTS__ is not defined`；走门禁时与预加载是同一份模块，无副作用叠加。
+import '../helpers/injected.mjs'
+
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'

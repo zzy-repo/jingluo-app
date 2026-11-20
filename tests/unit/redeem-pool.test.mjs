@@ -14,6 +14,10 @@
 //   [8] 设备码备份提示只提示一次（持久化标记）
 //   [9] 价格取 /api/plans，不硬编码；客户端不暴露图片 / 文件输入入口
 //  [10] 协议层：本地 stub 服务器收请求，验证真实发出的 method / path / content-type / body
+// #507：`__ENDPOINTS__` 全局兜底 —— 装载即挂（幂等）。单跑本文件（不经 run-layer 的 `--import` 预加载）也不会
+// `ReferenceError: __ENDPOINTS__ is not defined`；走门禁时与预加载是同一份模块，无副作用叠加。
+import '../helpers/injected.mjs'
+
 import { registerHooks } from 'node:module'
 import { createServer } from 'node:http'
 import { readFile } from 'node:fs/promises'

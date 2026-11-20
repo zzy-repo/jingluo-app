@@ -16,6 +16,8 @@
 // 而 `intl-displaynames-fallback.test.mjs` 里 A5/A6 会临时装回一个原生/半吊子实现并在
 // location.ts 的模块级 formatter 缓存里留下成功实例；runner 是「一个文件一个 node 进程」
 // （tests/helpers/runtime.mjs），独立文件才有干净的模块注册表和干净的地区名缓存。
+import '../helpers/injected.mjs'
+
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { registerHooks } from 'node:module'

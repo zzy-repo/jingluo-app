@@ -6,6 +6,10 @@
 //   B 负向：临时注入 `?.` 之后必须**真的** exit 1（证明它不是空跑）。
 // 另外顺手把「为什么不用三条正则」记在这里：正则只能拦住眼熟的写法，acorn 是解析器，
 // 它说不行的语法，WebView 79 一定也解析不了。
+// #507：`__ENDPOINTS__` 全局兜底 —— 装载即挂（幂等）。单跑本文件（不经 run-layer 的 `--import` 预加载）也不会
+// `ReferenceError: __ENDPOINTS__ is not defined`；走门禁时与预加载是同一份模块，无副作用叠加。
+import '../helpers/injected.mjs'
+
 import assert from 'node:assert/strict'
 import { copyFileSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'

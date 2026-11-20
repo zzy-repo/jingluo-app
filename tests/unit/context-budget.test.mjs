@@ -6,6 +6,10 @@
 // [红] 请求体体积随历史轮次线性增长、没有上限 —— 改动前必须失败。
 // [绿] 预算双闸（token 估算 + 轮次上限）、成对丢弃最旧轮、不丢系统前缀与本轮提问、
 //      不产生孤立回答 / 悬空 latest_reminder 快照、只剩最后一轮时仍能发出。
+// #507：`__ENDPOINTS__` 全局兜底 —— 装载即挂（幂等）。单跑本文件（不经 run-layer 的 `--import` 预加载）也不会
+// `ReferenceError: __ENDPOINTS__ is not defined`；走门禁时与预加载是同一份模块，无副作用叠加。
+import '../helpers/injected.mjs'
+
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { registerHooks } from 'node:module'

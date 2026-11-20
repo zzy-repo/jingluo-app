@@ -32,6 +32,10 @@
 //   [14] Key/JWT 只进 Authorization 头；query 里出现 `key` 当场拒绝
 //   [15] 非原生平台不发请求（必须走 CapacitorHttp，不许 fetch 兜底）
 //   [16] 卡密兑换超时 → 先查历史确认到账（**不盲目重试**）；历史为空 → `pending`（由用户确认再重试）
+// #507：`__ENDPOINTS__` 全局兜底 —— 装载即挂（幂等）。单跑本文件（不经 run-layer 的 `--import` 预加载）也不会
+// `ReferenceError: __ENDPOINTS__ is not defined`；走门禁时与预加载是同一份模块，无副作用叠加。
+import '../helpers/injected.mjs'
+
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { registerHooks } from 'node:module'

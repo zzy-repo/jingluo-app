@@ -7,6 +7,10 @@
 //
 // 覆盖：#305 验收里的「每条交互都有断言」在纯逻辑侧的对应部分 + 三条负向用例
 // （零条 / 超长 meta / 需脱敏 URL 由采集层负责，这里断言展示层不重复脱敏也不崩）。
+// #507：`__ENDPOINTS__` 全局兜底 —— 装载即挂（幂等）。单跑本文件（不经 run-layer 的 `--import` 预加载）也不会
+// `ReferenceError: __ENDPOINTS__ is not defined`；走门禁时与预加载是同一份模块，无副作用叠加。
+import '../helpers/injected.mjs'
+
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 

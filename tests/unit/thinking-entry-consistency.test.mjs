@@ -13,6 +13,10 @@
 //   [3] 请求体：deepseek / anthropic 照旧带 thinking；openai 零思考字段；ours 带 reasoning_effort: high（#363）
 //
 //   node tests/run-layer.mjs unit --only thinking-entry-consistency
+// #507：`__ENDPOINTS__` 全局兜底 —— 装载即挂（幂等）。单跑本文件（不经 run-layer 的 `--import` 预加载）也不会
+// `ReferenceError: __ENDPOINTS__ is not defined`；走门禁时与预加载是同一份模块，无副作用叠加。
+import '../helpers/injected.mjs'
+
 import assert from 'node:assert/strict'
 import { existsSync, readFileSync } from 'node:fs'
 import { registerHooks } from 'node:module'

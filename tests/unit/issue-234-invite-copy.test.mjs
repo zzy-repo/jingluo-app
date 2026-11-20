@@ -8,6 +8,10 @@
 //   [4] 服务端新错误码 circular_invite（409，互填邀请码）有专属文案，不落通用报错
 //   [5] 规则行由 invite_rules 的数值生成（换数值文案跟着变），不含金额换算
 //   [6] /redeem 成功响应里的新字段（reward_points_inviter / cashback_points / invite_rules…）被解析出来
+// #507：`__ENDPOINTS__` 全局兜底 —— 装载即挂（幂等）。单跑本文件（不经 run-layer 的 `--import` 预加载）也不会
+// `ReferenceError: __ENDPOINTS__ is not defined`；走门禁时与预加载是同一份模块，无副作用叠加。
+import '../helpers/injected.mjs'
+
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { registerHooks } from 'node:module'

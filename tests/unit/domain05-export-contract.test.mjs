@@ -16,6 +16,10 @@
 // 上限不是新数字而是 DEFAULT_MAX_IMPORT_BYTES 的转出；A4 继续钉 ZIP32 硬限。三条硬限被删照样红。
 //
 //   node --test tests/unit/domain05-export-contract.test.mjs
+// #507：`__ENDPOINTS__` 全局兜底 —— 装载即挂（幂等）。单跑本文件（不经 run-layer 的 `--import` 预加载）也不会
+// `ReferenceError: __ENDPOINTS__ is not defined`；走门禁时与预加载是同一份模块，无副作用叠加。
+import '../helpers/injected.mjs'
+
 import { registerHooks } from 'node:module'
 import { test } from 'node:test'
 import { png } from '../fixtures/domain05/archive.mjs'

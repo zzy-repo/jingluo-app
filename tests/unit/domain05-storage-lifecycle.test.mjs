@@ -17,6 +17,10 @@
 // 「提示里出现『存储空间不足』」即可，不新增用例条数。
 //
 //   node --test tests/unit/domain05-storage-lifecycle.test.mjs
+// #507：`__ENDPOINTS__` 全局兜底 —— 装载即挂（幂等）。单跑本文件（不经 run-layer 的 `--import` 预加载）也不会
+// `ReferenceError: __ENDPOINTS__ is not defined`；走门禁时与预加载是同一份模块，无副作用叠加。
+import '../helpers/injected.mjs'
+
 import { test } from 'node:test'
 import { installBuildDefines, installHooks, stubOf } from '../fixtures/domain05/hooks.mjs'
 import { expectDeepEqual, expectEqual, expectOk, runTable } from '../fixtures/domain05/table.mjs'

@@ -3,6 +3,10 @@
 // 上会抛「e.messages.toSorted is not a function」。本用例删掉该原型方法后调用检查更新的选择逻辑
 // （selectUpdate），断言：1) 不再抛 not a function；2) 仍能选中最高 code 的合规版本；
 // 3) 不原地修改入参数组；4) 同 code 歧义仍然报 AMBIGUOUS_RELEASE。
+// #507：`__ENDPOINTS__` 全局兜底 —— 装载即挂（幂等）。单跑本文件（不经 run-layer 的 `--import` 预加载）也不会
+// `ReferenceError: __ENDPOINTS__ is not defined`；走门禁时与预加载是同一份模块，无副作用叠加。
+import '../helpers/injected.mjs'
+
 import assert from 'node:assert/strict'
 import { registerHooks } from 'node:module'
 import { test } from 'node:test'

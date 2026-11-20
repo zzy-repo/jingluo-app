@@ -8,6 +8,8 @@
 //   [2] 本地有 Key、/me 返回 404 device_not_found → 只发 GET /me，**不补** /apply
 //   [3] 用户显式选「我已有 Key」→ 只发 POST /bind，没有 /apply
 //   [4] 用户显式选「领取新 Key」→ /apply 照旧（这条行为必须保留）
+import '../helpers/injected.mjs'
+
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { registerHooks } from 'node:module'

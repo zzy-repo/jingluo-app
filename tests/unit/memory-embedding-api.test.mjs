@@ -15,6 +15,10 @@
 //   [3] HTTP 4xx / 5xx：带上状态码与 classifyApiError 的结论，空向量，不抛错
 //   [4] 超时：走 request() 的预算，收敛成 reason='timeout'，不抛错
 //   [5] 维度不一致：同批维度不同 / 与已探测维度不同 → reason='dimension-mismatch'，空向量
+// #507：`__ENDPOINTS__` 全局兜底 —— 装载即挂（幂等）。单跑本文件（不经 run-layer 的 `--import` 预加载）也不会
+// `ReferenceError: __ENDPOINTS__ is not defined`；走门禁时与预加载是同一份模块，无副作用叠加。
+import '../helpers/injected.mjs'
+
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { registerHooks } from 'node:module'

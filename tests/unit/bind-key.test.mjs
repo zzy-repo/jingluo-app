@@ -13,6 +13,8 @@
 //       业务错误（400/409）一律不兜底（请求已到服务端并被处理）
 //   [6] device_id 用本地已持久化的那个；缺失 / 非法 → 按 #72 规则生成并落盘
 //   [7] 隐私：整条链路一条 console 都没有，Key / 设备码不进日志
+import '../helpers/injected.mjs'
+
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { registerHooks } from 'node:module'

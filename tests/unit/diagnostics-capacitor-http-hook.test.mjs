@@ -10,6 +10,10 @@
 //
 // 桩照着 Capacitor 8 的真实形态摆：`registerPlugin()` 返回 `new Proxy({}, { get })`，
 // `get` 每次都现造一个新函数、没有 `set` 陷阱，插件方法体里调 `cap.nativePromise(plugin, name, options)`。
+// #507：`__ENDPOINTS__` 全局兜底 —— 装载即挂（幂等）。单跑本文件（不经 run-layer 的 `--import` 预加载）也不会
+// `ReferenceError: __ENDPOINTS__ is not defined`；走门禁时与预加载是同一份模块，无副作用叠加。
+import '../helpers/injected.mjs'
+
 import { registerHooks } from 'node:module'
 import assert from 'node:assert/strict'
 import { test } from 'node:test'

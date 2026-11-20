@@ -5,6 +5,10 @@
  * 这一层是纯函数，所以文案可以被真正钉住：**哪一类失败说哪一句话**、**可重试 / 不可重试**、
  * **不许把内部细节（地址 / 堆栈 / 上游大段 message）漏进用户能看到的那句话**。
  */
+// #507：`__ENDPOINTS__` 全局兜底 —— 装载即挂（幂等）。单跑本文件（不经 run-layer 的 `--import` 预加载）也不会
+// `ReferenceError: __ENDPOINTS__ is not defined`；走门禁时与预加载是同一份模块，无副作用叠加。
+import '../helpers/injected.mjs'
+
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { registerHooks } from 'node:module'

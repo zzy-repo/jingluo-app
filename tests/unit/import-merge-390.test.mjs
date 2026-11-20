@@ -11,6 +11,10 @@
 //       且导入出来的会话能被合并口径正常判定
 //
 //   node tests/unit/import-merge-390.test.mjs
+// #507：`__ENDPOINTS__` 全局兜底 —— 装载即挂（幂等）。单跑本文件（不经 run-layer 的 `--import` 预加载）也不会
+// `ReferenceError: __ENDPOINTS__ is not defined`；走门禁时与预加载是同一份模块，无副作用叠加。
+import '../helpers/injected.mjs'
+
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { strToU8, zipSync } from 'fflate'

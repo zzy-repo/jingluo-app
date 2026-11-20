@@ -13,6 +13,10 @@
 //       配置没动但留了一个写死的副本 → 字面量规则 FAIL 并给出行号；副本改成派生 → 转 PASS
 //   [5] 明文传输闸门（负向）：allowInsecureUpdateTransport=false 而更新清单地址是 http:// → FAIL
 //   [6] 真实仓库当前状态：identityGate() 零违规（这条在 CI 里跑 = 门禁真的接在流水线上）
+// #507：`__ENDPOINTS__` 全局兜底 —— 装载即挂（幂等）。单跑本文件（不经 run-layer 的 `--import` 预加载）也不会
+// `ReferenceError: __ENDPOINTS__ is not defined`；走门禁时与预加载是同一份模块，无副作用叠加。
+import '../helpers/injected.mjs'
+
 import { createHash } from 'node:crypto'
 import fs from 'node:fs'
 import os from 'node:os'

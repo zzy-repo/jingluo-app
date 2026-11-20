@@ -21,6 +21,10 @@
 //   - 登记簿留残条目 → 失败（表示修复没跟上登记）。
 //
 //   node --test tests/unit/domain08-sensitive-fields.test.mjs
+// #507：`__ENDPOINTS__` 全局兜底 —— 装载即挂（幂等）。单跑本文件（不经 run-layer 的 `--import` 预加载）也不会
+// `ReferenceError: __ENDPOINTS__ is not defined`；走门禁时与预加载是同一份模块，无副作用叠加。
+import '../helpers/injected.mjs'
+
 import assert from 'node:assert/strict'
 import { existsSync, readFileSync } from 'node:fs'
 import { registerHooks } from 'node:module'

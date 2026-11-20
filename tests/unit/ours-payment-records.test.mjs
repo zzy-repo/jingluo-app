@@ -5,6 +5,10 @@
 // [2]（连续两次下单存档跟最新单）跟着旧链路一起删除 —— 现在只剩「翻自己的历史订单」这一件事：
 //   [1] /api/orders 解析：金额 / 三态状态 / 时间 / 卡号后 4 位 / total_paid_yuan，空列表也不炸
 //   [2] 两账号隔离：Key 无效（401）时明确报 UNAUTHORIZED，不糊成「没有订单」
+// #507：`__ENDPOINTS__` 全局兜底 —— 装载即挂（幂等）。单跑本文件（不经 run-layer 的 `--import` 预加载）也不会
+// `ReferenceError: __ENDPOINTS__ is not defined`；走门禁时与预加载是同一份模块，无副作用叠加。
+import '../helpers/injected.mjs'
+
 import { registerHooks } from 'node:module'
 import { readdirSync, readFileSync } from 'node:fs'
 import path from 'node:path'
