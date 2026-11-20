@@ -66,6 +66,19 @@ export interface ParsedDocument {
   rawLength: number
   pages?: number
   extractedPages?: number
+  /**
+   * **每页字符数**（#571 关闭条件「保留 pages / extractedPages / pageChars[]」）。
+   *
+   * 口径与 `characterCount` 同一把尺子：只算该页正文，不含 `[第N页]` 标记与拼接换行，
+   * 因此 `pageChars` 的和 **必须等于** `characterCount`（`tests/unit/pdf-parser-480.test.mjs`
+   * 就是这条断言）。长度恒等于 `pages`，索引 `i` 对应第 `i+1` 页：
+   *
+   * - 提取失败的页、取消/超时之后没读到的页，一律记 `0` —— 用「页码对齐的 0」而不是「跳过不占位」，
+   *   是为了让调用方不必再自己拼页码；**`0` 不等于「该页是空白页」**，区分靠
+   *   `extractedPages < pages` 与 `warnings`（与 #544 给 `characterCount` / `rawLength` 分家的同一条理由）。
+   * - 只有 PDF 返回；txt / docx 没有页的概念，不设这个字段。
+   */
+  pageChars?: number[]
   warnings?: string[]
   parserVersion: string
 }
@@ -74,4 +87,12 @@ export interface ParsedDocument {
 export interface ParseOptions {
   onProgress?: (progress: { page?: number; totalPages?: number; stage: string }) => void
   signal?: AbortSignal
+  /**
+   * 单次解析的时间预算（毫秒）；缺省取 `ATTACHMENT_LIMITS.pdfTimeoutMs`。
+   *
+   * 目前只有 PDF 用它（txt / docx 是同步核心，单文件几十毫秒内结束，给它们加时限没意义）。
+   * 出参是 `ParseOptions` 而不是各解析器自己的参数表，因为「解析要多久才叫卡住」是产品口径，
+   * 阈值必须留在 `limits.ts`，调用方只允许**显式覆盖**（测试、将来的「快速预览」）。
+   */
+  timeoutMs?: number
 }

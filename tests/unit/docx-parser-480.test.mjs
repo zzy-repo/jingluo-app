@@ -228,6 +228,59 @@ test('#480 安全闸：非 ZIP / 缺主文档 / 超过 20 MiB / 条目数超限�
   })
 })
 
+test('#480 路径穿越：包内 ../ 或绝对路径的条目一律拒包，绝不按穿越路径读', async () => {
+  // 产品代码只按**固定白名单**取 word/document.xml 等三个路径，但在那之前 zipReader 会先按条目名
+  // 校验：带 `..` 或绝对路径的条目属「非常规归档结构」，整包拒绝（corrupt_archive）。
+  // 这里逐个形状验一遍 —— 只测 `../../etc/passwd` 一种的话，`../x` 或 `/etc/passwd` 走漏没人知道。
+  const evilNames = ['../../etc/passwd', '../evil.txt', '/etc/passwd', 'word/../evil.txt']
+  for (const evilName of evilNames) {
+    const files = {
+      'word/document.xml': body(paragraph('白名单正文')),
+      [evilName]: 'ROOT:x:0:0:SECRET',
+    }
+    await assert.rejects(parseDocxFile(blobOf(docxOf(files))), (error) => {
+      assert.ok(error instanceof DocxParseError, `${evilName} 应抛 DocxParseError，实际 ${error && error.name}`)
+      assert.equal(error.code, 'corrupt_archive')
+      return true
+    })
+  }
+
+  // 对照：同名内容放进**白名单外的正常路径**（word/media/…）时不该拒包 —— 证明上面拒的是
+  // 路径形状，不是「包里多了一个文件」。它也不会进正文（只计数/跳过），正文仍只有白名单那份。
+  const parsed = await parseDocxFile(
+    blobOf(
+      docxOf({
+        'word/document.xml': body(paragraph('白名单正文')),
+        'word/media/secret.txt': 'ROOT:x:0:0:SECRET',
+      })
+    )
+  )
+  assert.equal(parsed.text, '白名单正文')
+  assert.equal(parsed.text.includes('SECRET'), false, '白名单外的条目内容不许混进正文')
+})
+
+test('#480 解压后总量闸：累计解压尺寸超过 maxZipUncompressedBytes 立刻中止（uncompressed_too_large）', async () => {
+  // 为什么不造一份「真的解压出 100 MiB」的样本：那是 100 MiB 内存 + 秒级 deflate，CI 上纯属自伤。
+  // 闸的判定是 `declaredBytes > ATTACHMENT_LIMITS.maxZipUncompressedBytes`，所以把阈值临时压到
+  // 1 KiB 就能验证同一条分支 —— 阈值必须真的从 limits 读（写死数字的实现会在这里绿不了）。
+  const original = ATTACHMENT_LIMITS.maxZipUncompressedBytes
+  ATTACHMENT_LIMITS.maxZipUncompressedBytes = 1024
+  try {
+    const files = { 'word/document.xml': body(paragraph('正文')) }
+    for (let index = 0; index < 8; index += 1) {
+      files[`word/media/blob${index}.bin`] = 'x'.repeat(512)
+    }
+    await assert.rejects(parseDocxFile(blobOf(docxOf(files))), (error) => {
+      assert.ok(error instanceof DocxParseError)
+      assert.equal(error.code, 'uncompressed_too_large')
+      assert.match(error.message, /解压后总量超过上限/)
+      return true
+    })
+  } finally {
+    ATTACHMENT_LIMITS.maxZipUncompressedBytes = original
+  }
+})
+
 test('#480 字节入口拒绝旧版 .doc，并复用同一份实现', async () => {
   const bytes = docxOf({ 'word/document.xml': body(paragraph('字节入口')) })
   await assert.rejects(parseDocx(bytes, '旧文档.doc'), (error) => {

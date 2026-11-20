@@ -98,6 +98,9 @@ const ORIGINAL_VALUES = {
       maxZipEntries: 2000,
       maxZipUncompressedBytes: 100 * 1024 * 1024,
       pdfMinCharsPerPage: 20,
+      // #571 关闭条件（页数上限 / 超时）：新增项，不是搬家项 —— 手抄在这里同样是为了「改阈值必须两边一起改」
+      pdfMaxPages: 500,
+      pdfTimeoutMs: 10 * 60 * 1000,
     },
   },
   /**
