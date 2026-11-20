@@ -7,7 +7,7 @@ import { groupSessions } from '../../services/chat/sessionGroups.js'
 import { BackupError, exportHistory } from '../../services/chat/backup.js'
 import { newChat, removeSession, useChatStore } from '../../services/chat/store.js'
 import type { SessionSummary } from '../../services/chat/types.js'
-import { downloadBlob } from '../../utils/downloadBlob.js'
+import { exportErrorKey, saveHistoryArchive } from '../../services/historyExportExit.js'
 import { MOTION_EXIT, usePresence } from '../../utils/usePresence.js'
 import { Button } from '../base/Button.js'
 import { IconButton } from '../base/IconButton.js'
@@ -62,7 +62,11 @@ export const Sider = ({ mobile = false }: { mobile?: boolean }) => {
     setExporting(true)
     try {
       const { name, blob, sessions: exported } = await exportHistory({ sessionIds: ids })
-      downloadBlob(blob, name)
+      // 与设置页「导出所有历史对话」同一条落盘出口（#536）：WebView 里锚点下载不会落盘
+      const result = await saveHistoryArchive({ name, blob })
+      if (result.status === 'cancelled') {
+        return
+      }
       showToast({ key: 'historyExportedSelectedCount', params: { count: exported } })
       exitSelection()
     } catch (error) {
@@ -70,7 +74,7 @@ export const Sider = ({ mobile = false }: { mobile?: boolean }) => {
         error instanceof BackupError
           ? { key: error.key, params: error.params, type: 'error' }
           : {
-              key: 'historyExportFailed',
+              key: exportErrorKey(error),
               params: { message: error instanceof Error ? error.message : String(error) },
               type: 'error',
             }
