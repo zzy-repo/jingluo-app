@@ -128,18 +128,18 @@ jobs:
       - name: 登录接缝不进产物（check:test-seam）
         run: |
           set -euo pipefail
-          pnpm run check:test-seam
+          node scripts/check-test-seam.mjs
           # 假 token 不在 YAML 里抄一份：从唯一来源（scripts/lib/testAuthSeam.mjs）读
           marker="$(node --input-type=module -e 'import { SEAM_ACCESS_TOKEN } from "./scripts/lib/testAuthSeam.mjs"; process.stdout.write(SEAM_ACCESS_TOKEN)')"
-          [ -n "$marker" ] || { echo "::error::没读到 SEAM_ACCESS_TOKEN"; exit 1; }
+          test -n "$marker"
           printf 'var leak="%s";\n' "$marker" > dist/__seam_neg_probe.js
-          if pnpm run check:test-seam; then
+          if node scripts/check-test-seam.mjs; then
             rm -f dist/__seam_neg_probe.js
             echo "::error::负向对照失败：产物里塞了假 token 后 check:test-seam 仍然通过，说明扫描没有真正生效"
             exit 1
           fi
           rm -f dist/__seam_neg_probe.js
-          pnpm run check:test-seam
+          node scripts/check-test-seam.mjs
           echo "负向对照通过：产物里塞假 token → exit 1，删掉 → exit 0"
 
       # 依赖 dist：没有产物时脚本直接 exit 1（不是跳过），因此必须排在 Build (internal) 之后。
