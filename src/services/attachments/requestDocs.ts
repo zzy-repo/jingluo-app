@@ -29,13 +29,19 @@ import type { FileAttachment } from '../chat/types.js'
 import type { ChatAttachmentRef, ChatMessage } from './contextBuilder.js'
 
 /**
- * 附件引用字段的**唯一来源**：`FileAttachment.id`。
+ * 附件引用字段的**唯一来源**：`FileAttachment.id`（就是 `DocumentAttachment.id`）。
  *
- * TODO(#527 attachments-ui 未合并)：UI 侧还没定「消息用哪个字段存文档引用」。
- * 当前假设与本仓库既有的文件引用同源 —— `FileAttachment.id` 就是
- * `DocumentAttachment.id`（IndexedDB 主键，所有引用同一附件的消息共用一份）。
- * UI 合入后如果改成 `documentIds: string[]` 之类的独立字段，改这一处即可：
- * 上面的 `attachmentRefsOf()` 是**唯一**的映射点，注入链路与拼法都不受影响。
+ * #527 附件 UI 已合并，落地口径与这里的假设一致（不再是假设，是三条链路对齐的同一份契约）：
+ * - 输入区：`chat/drafts.ts` 的 `DraftDocument.id`（`att-` 前缀）→ `prepareDraftMessage()`
+ *   折成 `FileAttachment`（`serverId: null`、`isImage: false`、无 blob）；
+ * - 会话：`chat/store.ts::sendMessage` 把它并进 `UserMessage.files` —— 文档引用就存在
+ *   `files[].id` 上，没有另开 `documentIds` 字段；`serverId: null` 让 `reply.ts::toFileBlocks()`
+ *   跳过它（不会拼出 `file_id` 块），`isImage: false` 让本文件把它当文档收；
+ * - 孤儿清扫：`attachments/manager.ts::collectReferencedAttachmentIds()` 同样按
+ *   `files[].id` 认引用，删除消息后据此清掉没人引用的原件。
+ *
+ * 所以哪天要换字段，改 `attachmentRefsOf()` 一处即可 —— 但另外两处（`sendMessage` 的
+ * `files` 合并、孤儿清扫的收集）也必须一起改，它们是同一个契约的三个读取点。
  */
 const refOf = (file: FileAttachment): ChatAttachmentRef | null =>
   file.id ? { attachmentId: file.id, filename: file.name } : null
