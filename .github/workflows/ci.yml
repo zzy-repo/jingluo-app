@@ -139,6 +139,30 @@ jobs:
       - name: 清单 fixture 校验（check:manifest）
         run: pnpm run check:manifest
 
+      # check:consume-api（#484 §6.5 / #487 W1-A 落地的脚本，本轮接线）：消费侧调用门禁 ——
+      #   路径白名单（`/api/v1/**` 等字面量必须在 #484 §三 的表里）/ 地址零副本 / 废弃域 /
+      #   明文 http / device_id 作凭据 / 凭据进 query / 原生 BuildConfig 注入。
+      # 和 check:manifest 同一条教训（脚本能判红 ≠ 有人在跑）：脚本随 #494 落地时没进流水线，
+      # 于是 R1~R8 这 8 条判据一直「绿着但没人跑」。纯文本扫描，不依赖 dist、实测 < 1s。
+      # 紧跟一条负向对照（同 check:legacy / check:i18n / check:endpoints 的写法，**无** continue-on-error）：
+      # 往 src/ 塞一条白名单外的路径 → R3 必 exit 1 → 删掉 → exit 0。
+      - name: sub2api 调用白名单（check:consume-api）
+        run: pnpm run check:consume-api
+
+      - name: 负向对照：src 里塞一条白名单外的路径必须被 check:consume-api 拦下
+        run: |
+          set -euo pipefail
+          # 白名单（#484 §三）之外的路径：写成字面量就会被 R3 认出来
+          printf "export const NEG_CONSUME_PATH = '/api/v1/__gate_neg_not_whitelisted'\n" > src/__gate_neg_consume_probe.ts
+          if node scripts/check-consume-api.mjs; then
+            rm -f src/__gate_neg_consume_probe.ts
+            echo "::error::负向对照失败：src 里塞了白名单外的路径后 check:consume-api 仍然通过，说明 R3 没有真正生效"
+            exit 1
+          fi
+          rm -f src/__gate_neg_consume_probe.ts
+          node scripts/check-consume-api.mjs
+          echo "负向对照通过：白名单外路径 → exit 1，删掉 → exit 0"
+
       # ─────────────── Issue #415：把 deploy/dl-release/test 的用例接进流水线（#441 起 37 条）───────────────
       # 同一类教训的第四处（前有 #368 的 regression 层、#365 的 integration 层、#413 的门禁）：
       # `deploy/dl-release/test` 的用例（variant 9 / apk-manifest 9 / server-buildtype 6 /

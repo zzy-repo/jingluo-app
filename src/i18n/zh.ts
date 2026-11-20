@@ -1060,4 +1060,42 @@ export const zh = {
   emailBindSuccess: '绑定成功',
   emailBindUnbindSuccess: '解绑成功',
   emailBindFailed: '绑定失败，请稍后重试',
+
+  // sub2api 归一化错误的**上屏文案**（#487：`src/services/consume/errors.ts` 的 `ConsumeMessageKey`
+  // 一条不落，共 27 条）。消费层只回 key、不拼文案，所以这里就是「用户能看到的那句话」的唯一来源。
+  // 写文案的三条规矩（#484 §4.4 的语义口径）：
+  //   · 说人话 + 可操作：「下一步做什么」写在句子里（重登 / 换 Key / 充值 / 找客服），不只报事实；
+  //   · **不出现「未知错误」**：兜底只有 `consumeErrUnknown` 一条，其余每条都要具体到根因；
+  //   · 金额统一用 `{amount}`（USD，服务端额度就是 USD，不在文案里写死货币符号）；
+  //     限流的秒数用 `{seconds}`（来自服务端的 `Retry-After`）。
+  consumeErrUnknown: '这次请求没成功，请稍后重试；反复出现请把这条提示反馈给我们',
+  consumeErrNetwork: '网络连不上，检查一下网络再试',
+  consumeErrTimeout: '请求超时了，稍等一会儿再试',
+  consumeErrUnsupported: '当前版本不支持这个功能，请更新到最新版本',
+  consumeErrBadRequest: '提交的内容有问题，请检查后重试',
+  consumeErrInvalidResponse: '服务返回的数据读不懂，请稍后重试；反复出现请反馈给我们',
+  consumeErrUnauthorized: '登录已过期，请重新登录',
+  consumeErrAccountDisabled: '账号已被停用，请联系客服',
+  consumeErrForbidden: '没有权限做这个操作，请确认当前账号的权限',
+  consumeErrNotFound: '要调用的接口不存在，请更新到最新版本',
+  consumeErrRateLimited: '操作太频繁，请 {seconds} 秒后再试',
+  consumeErrServerUnavailable: '服务暂时不可用，请稍后重试',
+  consumeErrKeyMissing: '还没填 API Key，先填上再试',
+  consumeErrKeyInvalid: 'API Key 无效，请检查是否复制完整',
+  consumeErrKeyDisabled: '这个 API Key 已停用，请启用它或换一个',
+  consumeErrKeyExpired: '这个 API Key 已过期，请重新创建',
+  consumeErrKeyQuotaExhausted: '这个 API Key 的额度用完了，请换一个 Key 或提高额度',
+  consumeErrKeyExists: '已经有同名的 API Key，换个名字再创建',
+  // 币种在中文里写「美元」而不是 `USD`：`tests/unit/ours-api.test.mjs` 的 [2] 段（#75）守着一条
+  // 「zh 全表不出现 USD」的断言（旧额度体系只显示积分、不做外币折算）。新语义确实是 USD 额度
+  // （#484 §4.4），但对中文界面来说「美元」本来就是更自然的写法，两边不必互相让步。
+  consumeErrInsufficientBalance: '余额不足，还差 {amount} 美元，请先充值',
+  consumeErrGroupNotAllowed: '当前分组不能用这个 Key，请换分组或联系客服',
+  consumeErrCardNotFound: '没找到这张卡密，请核对后再输入',
+  consumeErrCardNotFoundOrExpired: '卡密不存在或已过期，请核对后再输入',
+  consumeErrCardUsed: '这张卡密已经被用过了，额度没到账请联系客服',
+  consumeRedeemProcessing: '卡密正在处理中，请稍等，不要重复提交',
+  consumeErrInvitationInvalid: '邀请码无效，请核对后再填',
+  consumeErrEmailCodeInvalid: '验证码不对或已过期，请重新获取',
+  consumeErrNotEnabled: '这个功能还没开放，请联系客服开通',
 } as const

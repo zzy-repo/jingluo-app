@@ -40,6 +40,8 @@
 //     再跑脚本」，塞的正是脚本自己扫的那份源码，放在 ci.yml 里成本 ≈1s 且与被测命令同环境，
 //     所以这两条登记成 `kind: 'ci'`（和 `check:legacy` / `check:redact` 同款）；
 //     `check:capabilities` 的 warn 档没有红可打，缺口写在 KNOWN_GAPS。
+//     同一形状后来还有 `check:doc-refs`（#463）与本轮的 `check:consume-api`（#487 接线）：
+//     都是「往 src/ 或 docs/ 塞一条脚本自己会扫的坏输入 → 必红 → 还原」，一律 `kind: 'ci'`。
 //   · 不验 `check:log-coverage` 的 `--selftest`：脚本自带反例，但 CI 调用没带这个 flag
 //     （补 flag 要改 ci.yml，不在本单范围）—— 这一条登记在 N6 的「缺口」里，别当成已覆盖。
 
@@ -372,6 +374,17 @@ const REGISTRY = {
     what: 'CI 往 docs/ 塞一份写着不存在路径的 md → 必 exit 1，删掉后 exit 0',
     mention: /check-doc-refs\.mjs/,
   },
+  // 消费侧调用门禁（#484 §6.5 的脚本，随 #494 落地时没接线，本轮接的线）：对照写在 ci.yml 里现场注入 ——
+  // 往 src/ 塞一条**白名单外**的路径字面量（`/api/v1/__gate_neg_not_whitelisted`）→ R3 必 exit 1，
+  // 删掉 → exit 0。和 check:doc-refs / check:i18n / check:endpoints 同款：塞的正是脚本自己扫的源码，
+  // 放在 ci.yml 里成本 ≈1s 且与被测命令同环境。
+  // 为什么不用脚本自带的 `--selftest`：那条只证明 R2（base 零字面量），而白名单（R3）才是这道门禁的主判据。
+  'check:consume-api': {
+    where: '.github/workflows/ci.yml',
+    kind: 'ci',
+    what: 'CI 往 src/ 塞一条白名单外的 `/api/v1/**` 路径 → R3 必 exit 1（且指到注入文件），删掉后 exit 0',
+    mention: /check-consume-api\.mjs/,
+  },
 }
 
 /**
@@ -456,9 +469,9 @@ test('N7 test:dl-release：塞一条必红用例 → 34 条那个入口必须 ex
 
 test('N6 每道 CI 门禁都登记了负向对照（新增门禁不登记就会红）', () => {
   const gates = ciGates()
-  // 2026-11-20：ci.yml 里 19 条 `run: pnpm run <gate>`（#404 的 golden job 加了 build / test:golden，
-  // #413 又接进 check:i18n / check:endpoints / check:capabilities）
-  assert.ok(gates.length >= 19, `ci.yml 里应有 ≥19 道门禁，只解析到 ${gates.length} 条：${gates.join(', ')}`)
+  // 2026-11-20：ci.yml 里 22 条 `run: pnpm run <gate>`（#404 的 golden job 加了 build / test:golden，
+  // #413 又接进 check:i18n / check:endpoints / check:capabilities，本轮接进 check:consume-api）
+  assert.ok(gates.length >= 22, `ci.yml 里应有 ≥22 道门禁，只解析到 ${gates.length} 条：${gates.join(', ')}`)
 
   const unregistered = gates.filter((gate) => !Object.hasOwn(REGISTRY, gate))
   assert.deepEqual(

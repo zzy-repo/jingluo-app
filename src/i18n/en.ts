@@ -1077,4 +1077,40 @@ export const en = {
   emailBindSuccess: 'Email bound',
   emailBindUnbindSuccess: 'Email unbound',
   emailBindFailed: 'Binding failed, try again later',
+
+  // On-screen copy for the normalized sub2api errors (#487): one key for every `ConsumeMessageKey`
+  // in `src/services/consume/errors.ts` (27 of them). The consume layer only returns keys, so this
+  // block is the single source of the sentence a user actually reads. Same three rules as zh.ts:
+  //   · human + actionable — the next step (sign in / switch key / top up / contact support) is in the sentence;
+  //   · never the words "unknown error" — `consumeErrUnknown` is the only fallback, every other key names a cause;
+  //   · amounts use `{amount}` (USD), rate-limit seconds use `{seconds}` (from the server's `Retry-After`).
+  consumeErrUnknown:
+    'That request did not go through. Try again later, and send us this message if it keeps happening.',
+  consumeErrNetwork: 'No network connection. Check your connection and try again.',
+  consumeErrTimeout: 'The request timed out. Wait a moment and try again.',
+  consumeErrUnsupported: 'This app version does not support that feature. Update to the latest version.',
+  consumeErrBadRequest: 'Something in the form is not valid. Check it and try again.',
+  consumeErrInvalidResponse:
+    'The server sent data we could not read. Try again later, and tell us if it keeps happening.',
+  consumeErrUnauthorized: 'Your session has expired. Please sign in again.',
+  consumeErrAccountDisabled: 'This account has been disabled. Contact support.',
+  consumeErrForbidden: 'You do not have permission for that. Check the permissions of this account.',
+  consumeErrNotFound: 'That endpoint does not exist. Update to the latest version.',
+  consumeErrRateLimited: 'Too many requests. Try again in {seconds} seconds.',
+  consumeErrServerUnavailable: 'The service is temporarily unavailable. Try again later.',
+  consumeErrKeyMissing: 'No API key yet. Add one first.',
+  consumeErrKeyInvalid: 'Invalid API key. Check that you copied all of it.',
+  consumeErrKeyDisabled: 'This API key is disabled. Enable it or use another one.',
+  consumeErrKeyExpired: 'This API key has expired. Create a new one.',
+  consumeErrKeyQuotaExhausted: 'This API key is out of quota. Use another key or raise the quota.',
+  consumeErrKeyExists: 'An API key with that name already exists. Pick another name.',
+  consumeErrInsufficientBalance: 'Not enough balance: {amount} USD short. Please top up first.',
+  consumeErrGroupNotAllowed: 'Your current group cannot use this key. Switch group or contact support.',
+  consumeErrCardNotFound: 'No such card key. Check it and try again.',
+  consumeErrCardNotFoundOrExpired: 'That card key does not exist or has expired. Check it and try again.',
+  consumeErrCardUsed: 'This card key has already been used. Contact support if the balance did not arrive.',
+  consumeRedeemProcessing: 'This card key is still being processed. Please wait and do not submit again.',
+  consumeErrInvitationInvalid: 'Invalid invitation code. Check it and try again.',
+  consumeErrEmailCodeInvalid: 'The verification code is wrong or has expired. Request a new one.',
+  consumeErrNotEnabled: 'This feature is not enabled yet. Contact support to enable it.',
 } satisfies Record<keyof typeof zh, string>
