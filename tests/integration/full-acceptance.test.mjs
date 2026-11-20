@@ -599,9 +599,12 @@ try {
 
   // ============ 5. anthropic 能力降级 ============
   console.log('\n[7d] 回归：anthropic 模式能力降级')
+  // 随 #552 变更：三渠道支持图片 —— 「上传文件」（纸夹 / 图片入口）从本列表移出。
+  // 它走 `image.base64` 本地编码内联，不需要 `paths.files`（这条渠道没有），所以**应当可用**；
+  // 下面单独断言它「在且可用」。**文档入口**（添加文档 TXT/DOCX/PDF）走 #480 的文本注入，
+  // 一直是可用的那个 picker，这次没动 —— 也单独钉一条，别把两条能力混成一条。
   for (const [label, re] of [
     ['智能搜索', /^智能搜索$|^Search$/],
-    ['上传文件', /^上传文件$|^Upload files$/],
     ['语音输入', /^语音输入$|^Voice input$/],
     ['朗读', /^朗读$|^Read aloud$/],
   ]) {
@@ -610,6 +613,16 @@ try {
     } else {
       bad(`7d) anthropic 模式下「${label}」入口仍可用`)
     }
+  }
+  if (await usable(/^上传文件$|^Upload files$/)) {
+    ok('「上传文件」（图片入口）可用（随 #552：三渠道支持图片，走 base64 内联）')
+  } else {
+    bad('7d) anthropic 模式下「上传文件」（图片入口）不可用：#552 起三渠道支持图片')
+  }
+  if (await usable(/^添加文档|^Add document/)) {
+    ok('「添加文档」（文档入口）仍可用（#480 文本注入，未被 #552 影响）')
+  } else {
+    bad('7d) anthropic 模式下「添加文档」（文档入口）消失了：#480 的文本注入仍然成立')
   }
   if (!(await usable(/^深度思考$|^DeepThink$/))) {
     bad('7d) anthropic 模式下「深度思考」被误删')
@@ -802,9 +815,10 @@ try {
 
   // ============ 6a. openai 能力降级 ============
   console.log('\n[6] openai 模式能力降级')
+  // 随 #552 变更：三渠道支持图片 —— 「上传文件」（图片入口）不再隐藏，下面单独断言。
+  // 文档入口（添加文档 TXT/DOCX/PDF）走 #480 的文本注入，一直可用，这次没动。
   for (const [label, re] of [
     ['智能搜索', /^智能搜索$|^Search$/],
-    ['上传文件', /^上传文件$|^Upload files$/],
     ['语音输入', /^语音输入$|^Voice input$/],
     ['朗读', /^朗读$|^Read aloud$/],
   ]) {
@@ -813,6 +827,19 @@ try {
       ok(`「${label}」入口 count=0（隐藏）`)
     } else {
       bad(`6) openai 模式下「${label}」入口 count=${count}，应完全隐藏`)
+    }
+  }
+  {
+    const uploadCount = await page.getByRole('button', { name: /^上传文件$|^Upload files$/ }).count()
+    if (uploadCount === 1 && (await usable(/^上传文件$|^Upload files$/))) {
+      ok('「上传文件」（图片入口）count=1 且可用（随 #552：三渠道支持图片）')
+    } else {
+      bad(`6) openai 模式下「上传文件」（图片入口）应为「在且可用」，实际 count=${uploadCount}`)
+    }
+    if (await usable(/^添加文档|^Add document/)) {
+      ok('「添加文档」（文档入口）仍可用（#480 文本注入，未被 #552 影响）')
+    } else {
+      bad('6) openai 模式下「添加文档」（文档入口）消失了：#480 的文本注入仍然成立')
     }
   }
   // #341 起「深度思考」在四个渠道**恒常驻**（不隐藏、不置灰），能不能真生效由请求侧 REQUEST_GATES 决定；

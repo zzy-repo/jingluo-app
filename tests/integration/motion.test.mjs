@@ -73,7 +73,8 @@ const EXTRA_ANIMATED_PROPS = new Map([
  *
  * 现在的口径：**消息流目录里只允许「白名单里点名的文件」改动，且改动里不许出现动效属性**
  * （transition / animation / transform / @keyframes）。逻辑与动效一律仍然零容忍；
- * 结构改动只有「纯 CSS 做不到」时才登记（目前有 #347 / #353 的折叠区、#480 / #527 的文档附件接线两处）。
+ * 结构改动只有「纯 CSS 做不到」时才登记（目前有 #347 / #353 的折叠区、#480 / #527 的文档附件接线、
+ * #551 / #552 的图片通路接线三批）。
  *
  * src/components/messages/AssistantMessage.module.css
  *   #346：错误提示条里「改 Key / 去充值 / 复制诊断信息」的命中区从 22px 补到 44×44
@@ -120,6 +121,32 @@ const MESSAGE_FLOW_ALLOWLIST = new Map([
   [
     'src/components/chatInput/ChatInput.module.css.d.ts',
     'CSS Module 的手写类型声明（本仓 *.css.d.ts 由人跟着对应模块同步），本次只多了对应的键（docAttachments 等）；无逻辑、无动效',
+  ],
+  /**
+   * #551 / #552（三渠道图片通路）：图片缩略图与草稿卡片都在**消息流目录**里（`MessageFile` 是
+   * 消息里那张图的渲染点、`DraftAttachments` 是输入区那排草稿卡片），而「这张图发出去是什么
+   * 格式、多少字节」只有拿到编码产物的地方才知道。改动全是取值 + 一处 `<span>` 与几条静态样式，
+   * 下面五条的改动里没有 transition / animation / transform / @keyframes（[8] 会逐条扫新增行确认）。
+   */
+  [
+    'src/components/messages/MessageFile.tsx',
+    '#552 走 base64 内联的图要在正常态标出「真正发出去的格式与体积」（例 WEBP · 218 KB）：渲染点只能在这个文件里。改动只是同步查一次 `imagePartOf()` 缓存 + 多一个 `<span className={styles.meta}>`，无动效声明',
+  ],
+  [
+    'src/components/messages/MessageFile.module.css',
+    '#552 上面那个标签的样式（`.meta`：绝对定位贴在底部渐变上、复用既有 `--message-file-reason-display` 收起规则）；纯静态样式，无 transition / animation / transform',
+  ],
+  [
+    'src/components/messages/MessageFile.module.css.d.ts',
+    'CSS Module 的手写类型声明跟着 `MessageFile.module.css` 同步，本次只多了 `reason` / `meta` 两个键；无逻辑、无动效',
+  ],
+  [
+    'src/components/chatInput/DraftAttachments.tsx',
+    '#551 / #552 草稿卡片的 `inline`（base64 渠道图片已就绪）在卡片眼里等同 `done`，并按同一口径标出「发出去的格式与体积」：状态映射与标签都只能写在卡片里。无动效声明',
+  ],
+  [
+    'src/components/chatInput/DragMask.tsx',
+    '#562 把附件服务拆成 `services/attachments/` 目录后，这里只改了一行 import 路径（`MAX_COUNT` / `MAX_SIZE_MB` 的来处）；零逻辑、零样式、零动效',
   ],
 ])
 

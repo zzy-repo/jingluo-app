@@ -7,13 +7,18 @@
 //
 // 断言（对应任务书验收 1~8、10）：
 //   [1] 标准构建默认渠道 = DeepSeek 官方；只渲染 API Key 一行（无 baseUrl / model 输入元素）
-//   [2] DeepSeek 官方：发消息 /anthropic/v1/messages + model deepseek-flash；搜索/附件/语音/思考入口都在
+//   [2] DeepSeek 官方：发消息 /anthropic/v1/messages + model deepseek-flash；搜索/图片/语音/思考入口都在
 //   [3] Anthropic 协议：三件套（服务地址 / 模型 / API Key）；切过去后 Key 不丢；请求按填的值发出 /v1/messages
-//   [4] OpenAI 兼容：三件套；请求打到 /v1/chat/completions；搜索/附件/语音不渲染，思考入口恒常驻（#341，请求不带字段）
+//   [4] OpenAI 兼容：三件套；请求打到 /v1/chat/completions；搜索/语音不渲染，思考入口恒常驻（#341，请求不带字段）
 //   [5] 我们的渠道：只渲染 API Key（1 个 password 输入框），界面不出现后端地址与内置模型名；
 //       请求打到 http://140.210.13.146:60010/v1/chat/completions（OpenAI 协议）+ model deepseek-v4.1-flash，
 //       鉴权 Authorization: Bearer <key>（不带 x-api-key）；深度思考入口恒常驻（#341，请求不带字段）
 //   [6] 切换渠道后能力入口随之显隐（搜不到 DOM 节点，不是置灰）；刷新后渠道选择持久化
+//
+// ⚠ 两个「附件入口」不是同一件事（#552 之后必须分清，见 `capNodes()` 的注释）：
+//   - 图片入口（纸夹「上传文件」）**随 #552 变更：三渠道支持图片** —— 四个渠道现在都有；
+//   - 文档入口（TXT / DOCX / PDF）走 #480 的 `documents.textInjection`，Anthropic / OpenAI / 我们的
+//     渠道一直是可用 picker，DeepSeek 一直是禁用态占位 —— 这一条**没变**，别跟着图片入口一起放宽。
 //   [7] 四个渠道的设置页都不出现能力描述文案（基础对话 / 不支持 / 已关闭 / 仅支持 / capability / 能力）
 //   [8] console error = 0
 import { spawn } from 'node:child_process'
@@ -203,10 +208,22 @@ const expectNoCapabilityCopy = async (dialog, where) => {
   }
 }
 
-/** 聊天页某入口的 DOM 节点数（找不到 = 入口压根没渲染） */
+/**
+ * 聊天页某入口的 DOM 节点数（找不到 = 入口压根没渲染）。
+ *
+ * **两个「附件」入口是两件事，别混**（#552 之后尤其要分清）：
+ * - `vision`：纸夹「上传文件」（`IconPaperclipOutline16`），只收**图片**，走
+ *   `providerCapability.ts` 的 `image` 维度（三渠道 base64 内联 / deepseek Files API）。
+ *   #552 起四个渠道都开了 —— 三家不再是「没有图片入口」。
+ * - `docs`：文档入口（TXT / DOCX / PDF），走 #480 的 `documents.textInjection`。
+ *   只有文本注入渠道才渲染**能用**的那个（可访问名「添加文档（TXT / DOCX / PDF）」）；
+ *   DeepSeek 渲染的是禁用态占位（可访问名是一整句「当前渠道不支持文档附件…」），
+ *   所以这里用「能用 = 出现 picker 那个名字」来数，禁用态不计入 —— 两家语义没有互换。
+ */
 const capNodes = async () => ({
   search: await page.locator('button[aria-label="智能搜索"]').count(),
   vision: await page.locator('button[aria-label="上传文件"]').count(),
+  docs: await page.locator('button[aria-label^="添加文档"]').count(),
   asr: await page.locator('button[aria-label="语音输入"]').count(),
   thinking: await page.locator('button[aria-label="深度思考"]').count(),
 })
@@ -216,7 +233,13 @@ const expectCaps = async (where, expected) => {
   note(`${where} 入口节点数：${JSON.stringify(nodes)}`)
   for (const [name, want] of Object.entries(expected)) {
     const got = nodes[name]
-    const label = { search: '智能搜索', vision: '附件', asr: '语音输入', thinking: '深度思考' }[name]
+    const label = {
+      search: '智能搜索',
+      vision: '上传文件（图片）',
+      docs: '文档附件（TXT/DOCX/PDF）',
+      asr: '语音输入',
+      thinking: '深度思考',
+    }[name]
     if (want && got === 0) {
       bad(`${where} 缺少「${label}」入口`)
     } else if (!want && got !== 0) {
@@ -367,7 +390,15 @@ try {
 
   // ---------- [2] DeepSeek 官方：能力全开 + 请求路径 ----------
   console.log('\n[2] DeepSeek 官方渠道')
-  await expectCaps('DeepSeek 官方', { search: true, vision: true, asr: true, thinking: true })
+  // 随 #552 变更：三渠道支持图片。DeepSeek 的文档能力（#538）没变 —— 它不吃文档，
+  // 所以文档入口仍是禁用态占位，`docs`（可用的文档 picker）在这里必须为 0。
+  await expectCaps('DeepSeek 官方', {
+    search: true,
+    vision: true,
+    docs: false,
+    asr: true,
+    thinking: true,
+  })
   const hitDeepseek = await sendAndCapture(requests, '你好，官方渠道')
   if (!hitDeepseek) {
     bad('DeepSeek 官方渠道没有发出消息请求')
@@ -411,7 +442,16 @@ try {
   }
   await shot('channel-anthropic')
   await closeSettings(dialog)
-  await expectCaps('Anthropic 协议', { search: false, vision: false, asr: false, thinking: true })
+  // 随 #552 变更：三渠道支持图片 —— `vision`（纸夹「上传文件」）现在有节点且可用，
+  // 旧断言 vision:false 是 #552 之前的现实。`docs` 仍为 true：#480 起 Anthropic 走
+  // `documents.textInjection`，文档入口一直是那个能吃 TXT/DOCX/PDF 的 picker（这一次没动）。
+  await expectCaps('Anthropic 协议', {
+    search: false,
+    vision: true,
+    docs: true,
+    asr: false,
+    thinking: true,
+  })
   const hitAnthropic = await sendAndCapture(requests, '你好，Anthropic 协议')
   if (!hitAnthropic) {
     bad('Anthropic 协议渠道没有发出消息请求')
@@ -443,7 +483,14 @@ try {
   await page.waitForTimeout(400)
   await shot('channel-openai')
   await closeSettings(dialog)
-  await expectCaps('OpenAI 兼容', { search: false, vision: false, asr: false, thinking: true })
+  // 随 #552 变更：三渠道支持图片（`vision: true`）；文档仍是文本注入（`docs: true`，未改）。
+  await expectCaps('OpenAI 兼容', {
+    search: false,
+    vision: true,
+    docs: true,
+    asr: false,
+    thinking: true,
+  })
   const hitOpenai = await sendAndCapture(requests, '你好，OpenAI 兼容')
   if (!hitOpenai) {
     bad('OpenAI 兼容渠道没有发出消息请求')
@@ -493,7 +540,14 @@ try {
   await page.getByRole('button', { name: /^确定$|^Confirm$/ }).first().click()
   await page.waitForTimeout(1200)
   await closeSettings(dialog)
-  await expectCaps('我们的渠道', { search: false, vision: false, asr: false, thinking: true })
+  // 随 #552 变更：三渠道支持图片（`vision: true`）；文档仍是文本注入（`docs: true`，未改）。
+  await expectCaps('我们的渠道', {
+    search: false,
+    vision: true,
+    docs: true,
+    asr: false,
+    thinking: true,
+  })
   const hitOurs = await sendAndCapture(requests, '你好，我们的渠道')
   if (!hitOurs) {
     bad('我们的渠道没有发出消息请求')
