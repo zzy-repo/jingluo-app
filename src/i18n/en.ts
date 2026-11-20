@@ -1169,4 +1169,6 @@ export const en = {
   legacyMigrateExpired: 'Credit migration has ended',
   legacyMigrateFailed: 'Migration failed',
   legacyMigrateDeviceMismatch: 'Device info does not match, please contact support',
+  legacyMigrateAlreadyUnsettled: 'Already migrated; if it has not arrived, please contact support',
+  legacyMigrateRetryAnyway: 'Migrate anyway',
 } satisfies Record<keyof typeof zh, string>

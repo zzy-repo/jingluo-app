@@ -73,37 +73,34 @@ claimLegacyMigration(token: string): Promise<ClaimResult>
 4. 采集失败**不阻断登录**：`claimLegacyMigration` 永不抛，接线点也用 `void` 掉（见下一节）。
 5. **不自动重试**：只有用户点按钮才重发一次。
 
-## 接线点（**本单没有接线，待 W1-B 合并后接**）
+## 接线点（已接线：`src/services/auth/store.ts` 的 `applySession()`）
 
-`src/services/auth/store.ts` 在本分支（`origin/main` = `e9c298a`）里**还不存在** —— 登录态由 W1-B 在建，
-按维护者定的顺序（先代码 → 再验收 → 后测试），本单**不碰**那个文件。等 W1-B 落地后，在它「登录 / 注册成功、
-access token 已经写进 store」的那一行**后面**加这三行（一行调用 + 一个 try/catch）：
-
-```ts
-// 老账号额度迁移（#498 尾巴）：只发一次，失败静默，绝不阻断登录
-try { void maybeMigrateAfterAuth(token) } catch { /* 迁移永不影响登录 */ }
-```
-
-其中 `maybeMigrateAfterAuth` 就是下面这段薄包装（放哪都行，只要别放进 `src/legacy/migration/` 以外的新文件里
-—— 它属于接线点，不属于这条尾巴）：
+W1-B 的 `src/services/auth/store.ts` 已在 main 上（#499）。它把「登录成功」收在一个函数里：
+`applySession(session)` —— `signIn()` 与 `signUp()` 成功后**都**走它，而启动恢复 `restoreAuth()` 不走。
+所以「登录 / 注册成功后调用一次」的落点就是它，本单在这里加了 3 行（外加 1 行 import）：
 
 ```ts
-import { claimLegacyMigration } from '../legacy/migration/index.js'
+import { claimLegacyMigration } from '../../legacy/migration/index.js'   // ← 删这条尾巴时一起删
 
-const maybeMigrateAfterAuth = async (token: string): Promise<void> => {
-  await claimLegacyMigration(token)   // 自己保证不抛；结果交给 UI 决定要不要显示按钮
+const applySession = (session: AuthSession): void => {
+  …既有落盘 + setState…
+  // 老账号额度迁移（#498 的临时尾巴，@remove-after 1.6.0）：登录 / 注册成功后**只发一次**。
+  try { void claimLegacyMigration(session.token.accessToken) } catch { /* 迁移永不影响登录 */ }
 }
 ```
 
-**为什么是 `void` + try/catch**：登录成功的路径上多一个 `await` 就等于「迁移慢了，登录就慢」；
-而 `void` 掉一个会抛的 Promise 会变成 unhandled rejection（整页红屏）。两层都要有。
+三条理由写在这里，免得下一个人「顺手补个 await」：
 
-**结果怎么给 UI**：`claimLegacyMigration` 的返回值不要丢。两种接法都行，接线方任选其一：
+1. **`void` 掉**：登录成功的路径上多一个 `await` 就等于「迁移慢了，登录就慢」；
+2. **再包一层 try/catch**：`void` 一个会抛的 Promise 会变成 unhandled rejection（整页红屏）；
+   `claimLegacyMigration` 自身保证不抛，这层是双保险；
+3. **只在这里调用一次**：`applySession` 只被 `signIn` / `signUp` 调用，启动恢复不走它，
+   所以「每次启动又发一遍」不会发生；重复登录时服务端按老账号标识幂等，最多回 `already_migrated`。
 
-- 存进登录态 store（例如 `migrationResult` 字段），账户页读它渲染按钮——推荐，重挂不丢；
-- 或直接 `createPortal` 到当前页面的一个容器里。
-
-本单**不改** `src/services/auth/**`、`src/components/consume/**`、`src/services/consume/**`、`ci.yml`。
+**结果怎么给 UI**：现在这一行把返回值丢掉了（返回值丢了不影响契约：`already_migrated` 由服务端兜底，
+按钮只要「在用户点的时候再问一次」就够）。要显示「历史额度已迁移：¥X」的话，把 `void` 换成
+`void claimLegacyMigration(...).then((result) => useAuthStore.setState({ migrationResult: result }))`
+或存进任意登录态 store，然后把结果作为 `<LegacyMigrationButton initial={…} />` 传进去。
 
 ## 按钮怎么挂（本单没有挂载）
 
@@ -125,7 +122,8 @@ import { LegacyMigrationButton } from '../legacy/migration/LegacyMigrationButton
 | --- | --- |
 | 还没跑过 / `failed` + `retryable:true` | 按钮「迁移历史额度」，可再点 |
 | `migrated` | 「历史额度已迁移：¥X」（按 `currency` 选符号） |
-| `already_migrated` | 什么都不渲染（**永久**） |
+| `already_migrated` + 金额 > 0 | 什么都不渲染（**永久**） |
+| `already_migrated` + 金额 0 / 缺省 | 「已迁移过，如未到账请联系客服」+「仍要迁移」（手动，不自动调用） |
 | `no_legacy` | 什么都不渲染（静默） |
 | `need_manual` | 「如需迁移历史额度，请联系客服」（**永不出现重试**） |
 | `expired` | 「额度迁移已结束」（**永不出现重试**） |
@@ -133,27 +131,41 @@ import { LegacyMigrationButton } from '../legacy/migration/LegacyMigrationButton
 
 换账号时请给组件换 `key`（它把 `initial` 当初始值读，之后自己维护重试结果）。
 
-## 后端真实契约（已对齐 `sub2api-private@8b12ab2`）
+## 后端真实契约（已按实测对齐 `sub2api-private@8b12ab2`）
 
 后端：`felix4396/sub2api-private@8b12ab2`，实现 `tools/kunming-migration/legacy-sync/server.py`，
-端点 `POST /legacy/claim`。本 PR 已按它对齐，**改动全部落在 `claim.ts` 的两个函数里**：
+端口 `60016`，端点 `POST /legacy/claim`。改动**全部落在 `claim.ts` 的两个函数里**：
 
-| 函数 | 管什么 | 这次改了什么 |
+| 函数 | 管什么 | 对齐了什么 |
 | --- | --- | --- |
-| `toBackendPayload(identity, jwt)` | 本地线索 → 请求体。**唯一**出现 `oldApiKey` / `deviceId` / `deviceFp` / `jwt` 这些键名的地方 | 入参四项名不变（后端确认 `jwt` 放 body，body 优先） |
-| `fromBackendResult(body)` | 响应体 → `ClaimResult` 六状态。**唯一**认识后端状态名 / 金额字段的地方 | 金额从 `usdAmount`（美元）改成 `{ amount, currency }`（**元**，`100 积分 = 1 元`，币种当前是 `CNY`） |
+| `toBackendPayload(identity, jwt)` | 本地线索 → 请求体。**唯一**出现 `oldApiKey` / `deviceId` / `deviceFp` / `jwt` 这些键名的地方 | 入参四项名不变，`jwt` 放 body（后端确认 body 优先） |
+| `fromBackendResult(body)` | 响应体 → `ClaimResult`。**唯一**认识状态名 / 金额字段 / 枚举外状态的地方 | 金额 `{amount, currency, balance}`；枚举外状态归一 |
 
-对齐后的三条语义（都只在这两个函数 / `types.ts` 里体现，调用点不受影响）：
+四条实测出来的边界（每条都写进了代码注释，别「顺手简化」）：
 
-1. **金额按币种显示**：`ClaimResult` 带 `amount?` + `currency?`，界面按币种选符号（`CNY` → `¥`），
-   **不硬编码 `$`**，也不做任何换算。
-2. **状态机不变**：`migrated` / `already_migrated` / `no_legacy` / `need_manual` / `expired` / `failed`（+`retryable`）。
-3. **`deviceId` 只做一致性校验**：后端只把 `oldApiKey` 当持有证明（没有它一律 `need_manual`），
-   `deviceId` 与老账号**不匹配时直接拒绝** → 客户端收到 `failed` + `retryable:false` + `reason:"device_mismatch"`，
-   显示「设备信息不匹配，请联系客服」，**不给重试**。
+1. **金额是 `{amount, currency:"CNY", balance}`，单位是元**（100 积分 = 1 元，1:1 搬运，**不做换算**）。
+   界面按 `currency` 选符号（`CNY` → `¥`），**不硬编码 `$`**；`balance` 不用。
+2. **业务失败一律 `200`，从不回 `401`** → `claim.ts` **先看 body 的 `status`，再看 HTTP 状态码**。
+   靠状态码判成败会把 `need_manual` / `already_migrated` 误当成网络错误。只有 body 里没有 `status`
+   （反代把自己的错误页塞进 4xx/5xx）时才回落到状态码判定。
+3. **有枚举外状态**：后端会回 `unauthorized`（jwt 无效）、`upstream_error`（上游异常，**不带 `retryable`**）。
+   客户端**一律归成 `failed + retryable:false`**（不崩、不当成功、不重试），`reason` 固定为
+   `unknown_status`——不把后端内部状态名端给用户看。
+4. **`already_migrated` 的金额可能是 0**：后端 `legacy_sync_log` 上有 `UNIQUE(sub2api_user_id)`，
+   用户认领**第二个**老账号时会回 `{status:"already_migrated", amount:0.0}` 而**那个账号根本没迁**。
+   所以「金额 > 0」才算真的到账：金额 0 / 缺省 → 显示「已迁移过，如未到账请联系客服」+ 一个
+   「仍要迁移」按钮（**不自动调用**，只有用户点才发），绝不永久隐藏。
 
-`need_manual` 的文案是**通用**的（「如需迁移历史额度，请联系客服」）—— 刻意不区分「没有旧 Key」和
-「Key 无效」，避免把这里变成一个「这把 Key 存不存在」的探测接口。
+其它两条（不变）：
+
+- **`deviceId` 只做一致性校验**：后端只把 `oldApiKey` 当持有证明（没有它一律 `need_manual`），
+  `deviceId` 与老账号不匹配时**直接拒绝** → 客户端收到 `failed` + `retryable:false` +
+  `reason:"device_mismatch"`，显示「设备信息不匹配，请联系客服」，**不给重试**；
+- **`need_manual` 文案通用**（「如需迁移历史额度，请联系客服」）—— 刻意不区分「没有旧 Key」和
+  「Key 无效」，避免把这里变成一个「这把 Key 存不存在」的探测接口。
+
+传输：后端 `OPTIONS` 返回 **501 且无 CORS**，浏览器端调不通 → 必须走原生 `CapacitorHttp`
+（我们本来就是这么做的：`services/consume/http.ts` 的 `capacitorTransport`，**别改成 `fetch`**）。
 
 以后后端再改协议：**只改这两个函数**，其余文件（含界面、接线点）一行都不用动。
 
@@ -163,8 +175,8 @@ import { LegacyMigrationButton } from '../legacy/migration/LegacyMigrationButton
 
 1. **删本目录**：`git rm -r src/legacy/migration/`（连带 `LegacyMigrationButton.tsx` 的挂载点一起删）；
 2. **删两处调用**：
-   - 登录/注册成功后那三行 `try { void maybeMigrateAfterAuth(token) } catch {…}`（在 `src/services/auth/store.ts`，
-     W1-B 合并后才存在）；
+   - `src/services/auth/store.ts` 的 `applySession()` 里那 3 行 `try { void claimLegacyMigration(…) } catch {…}`
+     **和文件顶部的 `import { claimLegacyMigration } from '../../legacy/migration/index.js'`**；
    - 账户/消费页里 `<LegacyMigrationButton …/>` 的挂载及其 import；
 3. **删配置与注入**：`config/endpoints.json` 的 `"migration"` 组 +
    `rspack.config.ts` 的 `assertMigrationConfig()` 与 DefinePlugin 里的 `migration: endpoints.migration,` 一行 +
@@ -172,7 +184,8 @@ import { LegacyMigrationButton } from '../legacy/migration/LegacyMigrationButton
 4. **关配置**（下线当天的第一步）：把 `migration.enabled` 改成 `false` 并重新出包——
    这一步不需要改任何代码，也不依赖新版本先铺开；老版本客户端则由**服务端**自己的开关 + `expired` 兜底。
 
-文案：本目录用了 6 条 `legacyMigrate*`（`Title` / `Done` / `Manual` / `Expired` / `Failed` / `DeviceMismatch`），
+文案：本目录用了 8 条 `legacyMigrate*`（`Title` / `Done` / `Manual` / `Expired` / `Failed` / `DeviceMismatch` /
+`AlreadyUnsettled` / `RetryAnyway`），
 删的时候一起从 `src/i18n/zh.ts` 与 `src/i18n/en.ts` 删掉（成对删，`check:i18n` 会核对两边 key 集合相等）。
 
 ## 验收自查（本单交付时跑过）

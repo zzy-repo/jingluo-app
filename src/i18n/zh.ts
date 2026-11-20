@@ -1165,4 +1165,6 @@ export const zh = {
   legacyMigrateExpired: '额度迁移已结束',
   legacyMigrateFailed: '迁移失败',
   legacyMigrateDeviceMismatch: '设备信息不匹配，请联系客服',
+  legacyMigrateAlreadyUnsettled: '已迁移过，如未到账请联系客服',
+  legacyMigrateRetryAnyway: '仍要迁移',
 } as const

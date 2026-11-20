@@ -179,8 +179,14 @@ export const fromBackendResult = (body: unknown): ClaimResult | null => {
   }
   const record = body as Record<string, unknown>
   const status = record.status
-  if (!isClaimStatus(status)) {
+  if (typeof status !== 'string' || status.trim() === '') {
     return null
+  }
+  if (!isClaimStatus(status)) {
+    // 枚举外状态（实测后端会回 `unauthorized` / `upstream_error`，以后还可能有别的）：
+    // 一律归成 `failed + retryable:false` —— **不当成功、不崩、不重试**。
+    // `reason` 只记一个固定标记，不把后端内部状态名端给用户看（那对用户没有行动价值）。
+    return { status: 'failed', retryable: false, reason: 'unknown_status' }
   }
   const reason = readReason(record.reason)
   switch (status) {
@@ -265,6 +271,20 @@ export const claimLegacyMigration = async (token: string): Promise<ClaimResult> 
       return { status: 'failed', retryable: true }
     }
 
+    let body: unknown
+    try {
+      body = JSON.parse(outcome.text)
+    } catch {
+      body = undefined
+    }
+    // **先看 body，再看 HTTP 状态码**：实测后端「业务失败一律 200」，从不回 401，
+    // 所以靠状态码判成败会把 `need_manual` / `already_migrated` 误当成网络错误。
+    // 只要 body 里有认识的（或枚举外的）`status`，就以它为准 —— 哪怕这一趟是 4xx / 5xx
+    // （反代把自己的错误页塞进 502 时，body 里没有 `status`，那才轮到下面的兜底）。
+    const parsed = fromBackendResult(body)
+    if (parsed !== null) {
+      return parsed
+    }
     if (outcome.status < 200 || outcome.status >= 300) {
       return {
         status: 'failed',
@@ -272,14 +292,7 @@ export const claimLegacyMigration = async (token: string): Promise<ClaimResult> 
         reason: `http_${outcome.status}`,
       }
     }
-
-    let body: unknown
-    try {
-      body = JSON.parse(outcome.text)
-    } catch {
-      body = undefined
-    }
-    return fromBackendResult(body) ?? { status: 'failed', retryable: false, reason: 'bad_response' }
+    return { status: 'failed', retryable: false, reason: 'bad_response' }
   } catch {
     // 传输层理论上不抛（它自己吞了），这里是最后一道保险：任何异常都不许冒到登录流程
     return { status: 'failed', retryable: true }

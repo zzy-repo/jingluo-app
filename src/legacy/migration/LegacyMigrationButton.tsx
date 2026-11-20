@@ -13,7 +13,8 @@
  * | --- | --- |
  * | 还没跑过 / `failed:retryable=true` | 按钮「迁移历史额度」，可再点 |
  * | `migrated` | 「历史额度已迁移：$X」，没有按钮 |
- * | `already_migrated` | **什么都不渲染**（永久，幂等命中） |
+ * | `already_migrated` + `amount > 0` | **什么都不渲染**（永久，幂等命中） |
+ * | `already_migrated` + `amount` 0 / 缺省 | 「已迁移过，如未到账请联系客服」+「仍要迁移」（见下） |
  * | `no_legacy` | **什么都不渲染**（静默） |
  * | `need_manual` | 「如需迁移历史额度，请联系客服」，**永不出现重试** |
  * | `expired` | 「迁移已结束」，**永不出现重试** |
@@ -76,6 +77,8 @@ type MigrationView =
   | { kind: 'retry' }
   | { kind: 'done'; text: string }
   | { kind: 'note'; text: string; reason?: string }
+  /** 文案 + 一个**手动**入口（不自动调用）：只给「说迁过了但金额是 0」这一种情况用 */
+  | { kind: 'noteWithRetry'; text: string }
 
 /**
  * 六状态 → 视图。抽成纯函数是为了让人能一眼对完 #498 §四 的表；
@@ -88,9 +91,14 @@ const viewOf = (result: ClaimResult | undefined, t: Translate): MigrationView =>
   switch (result.status) {
     case 'migrated':
       return { kind: 'done', text: t('legacyMigrateDone', { amount: moneyText(result.amount, result.currency) }) }
-    // 幂等命中 = 之前迁过了。契约要求**永久**不显示按钮，连文案都不给（§四 第二行）
-    case 'already_migrated':
-      return { kind: 'hidden' }
+    // 幂等命中 = 之前迁过了：金额 > 0 才算真的到账，契约要求**永久**不显示按钮（§四 第二行）。
+    // ⚠ 实测坑：后端 `legacy_sync_log` 有 `UNIQUE(sub2api_user_id)`，用户认领**第二个**老账号时
+    // 会回 `{status:'already_migrated', amount:0}`，而那个账号根本没迁。这时候永久隐藏按钮
+    // 等于骗用户「已经完成了」—— 所以给「如未到账请联系客服」+ 一个手动入口，**但不自动调用**。
+    case 'already_migrated': {
+      const settled = typeof result.amount === 'number' && result.amount > 0
+      return settled ? { kind: 'hidden' } : { kind: 'noteWithRetry', text: t('legacyMigrateAlreadyUnsettled') }
+    }
     // 没有旧账号：静默。这里若弹一句「没有可迁移额度」，等于给每个新用户加一条噪音
     case 'no_legacy':
       return { kind: 'hidden' }
@@ -160,6 +168,24 @@ export const LegacyMigrationButton = ({ initial, getToken, className }: LegacyMi
 
   if (view.kind === 'done') {
     return <p className={className}>{view.text}</p>
+  }
+
+  if (view.kind === 'noteWithRetry') {
+    return (
+      <div>
+        <p className={className}>{view.text}</p>
+        <Button
+          size="m"
+          variant="outlined"
+          disabled={busy}
+          onClick={() => {
+            void retry()
+          }}
+        >
+          {t('legacyMigrateRetryAnyway')}
+        </Button>
+      </div>
+    )
   }
 
   return (

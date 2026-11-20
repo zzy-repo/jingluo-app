@@ -8,7 +8,7 @@
  * | status | 含义 | 客户端 |
  * | --- | --- | --- |
  * | `migrated` | 本次迁移成功 | 「历史额度已迁移：$X」 |
- * | `already_migrated` | 幂等命中（之前迁过） | **永久不显示按钮** |
+ * | `already_migrated` | 幂等命中（之前迁过） | 金额 > 0 → **永久不显示按钮**；金额 0 → 见下方第 ⚠ 条 |
  * | `no_legacy` | 没有旧账号 | 静默不提示 |
  * | `need_manual` | 缺持有证明，走人工 | 提示联系客服，**不再给重试** |
  * | `expired` | 迁移窗口已关 | 「迁移已结束」+ 永久隐藏 |
@@ -23,6 +23,10 @@
  *      的 `tools/kunming-migration/legacy-sync/server.py`）给的是 **`{amount, currency}`，单位是元**
  *      （100 积分 = 1 元），不是美元 —— 所以界面**按 `currency` 选符号**（`CNY` → `¥`），
  *      绝不硬编码 `$`。
+ *   ⚠ **`already_migrated` 的金额可能是 0（实测坑）**：后端 `legacy_sync_log` 上有
+ *      `UNIQUE(sub2api_user_id)`，用户认领**第二个**老账号时会回
+ *      `{status:"already_migrated", amount:0}` 而那个账号其实没迁。所以「金额 > 0」才算真的到账，
+ *      金额 0 / 缺省时界面**不能永久隐藏**，要给「如未到账请联系客服」+ 一个「仍要迁移」入口。
  *   3. **`reason` 是不可信文本**：来自服务端响应，只允许截断后进 DOM，**绝不进日志 / 埋点**
  *      （`src/legacy/migration/claim.ts` 的 `readReason` 负责收敛形状）。
  */
