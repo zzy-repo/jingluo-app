@@ -50,6 +50,7 @@
 import '../helpers/injected.mjs'
 
 import assert from 'node:assert/strict'
+import { execFileSync } from 'node:child_process'
 import { cpSync, existsSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { test } from 'node:test'
@@ -582,4 +583,26 @@ test('负向对照没有在仓库里留下注入物（跑完自己体检一遍�
       `残留注入物：${probe} —— 负向对照的 finally 没还原干净（会让后来人看到一条不相干的红）`
     )
   }
+})
+
+/**
+ * #603：上面那一条只防「跑完还留在工作区」。人手动单跑本文件 / 中途 Ctrl-C 之后，
+ * 注入物会留在工作区，下一次 `git add -A` 就把它扫进提交 —— main 上
+ * `src/__gate-neg-type-probe.ts`（@ f911ede7，与 `tests/gates/fixtures/type/type-error.ts`
+ * 字节相同）就是这么进去的，结果 `check:dup-impl` 判红、整条 main 红。
+ * 所以这里再体检一遍「**提交里**没有注入物」：工作区干净不等于仓库干净。
+ */
+test('注入物没有被提交进仓库（工作区干净 ≠ 仓库干净）', () => {
+  const tracked = execFileSync('git', ['ls-files', '--', 'src', 'tests/unit', 'deploy/dl-release/test'], {
+    cwd: ROOT,
+    encoding: 'utf8',
+  })
+    .split('\n')
+    .filter((f) => f.includes('__gate-neg'))
+  assert.deepEqual(
+    tracked,
+    [],
+    `注入物被提交进仓库了：${tracked.join(', ')} —— \`git rm --cached\` 删掉，`
+      + '别用 .gitignore 挡（oxlint 会跟着忽略它，N2 的负向对照会失效）'
+  )
 })
