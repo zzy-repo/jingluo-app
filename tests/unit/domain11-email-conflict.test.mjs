@@ -1,5 +1,7 @@
 // [layer: unit —— 组件级（真弹层组件 + 真 api/email/emailCooldown，假传输），零浏览器 | 耗时: <3s]
 // Issue #421 第 3 点（登录冲突弹窗）与第 4 点（发码倒计时 / 剩余次数）。
+// 域 11 落位（#438）：冲突弹窗与逐秒倒计时需要**假定时器**逐秒 tick，只有组件级 L0 做得到；
+// L1（真浏览器）只验「真实倒计时会把按钮锁住」那一条，不重复这里的秒级断言。
 //
 // 验收报告（`issuecomment-7025138020`）判 FAIL 的两项就在这里兜住：
 //   C  —— `device_has_account` 不再落到「操作失败，请稍后重试」，而是弹窗展示
@@ -8,7 +10,7 @@
 //   D3 —— 发送按钮按 `resend_after`（发码成功后）与 `retry_after`（429 频控）**逐秒递减**，
 //         倒计时期间 disabled，归零后可点；验证码错误时显示 `attempts_left`。
 //
-// 断言点（#438 后续扩层时照这张清单搬）：
+// 断言点（域 11 的冲突 / 倒计时就只有这一份，别在别处再写一遍）：
 //   C1 冲突响应 → 弹窗出现；`device_remaining_points` 的**数字出现在界面上**；
 //      脱敏邮箱出现；「切换后额度暂时无法使用 / 需客服处理」在文案里；
 //      第一次 `/email/verify` 的 body **没有 choice**（不替用户先选），验证码输入框仍在（没被消耗）。
@@ -24,7 +26,7 @@
 //
 // 服务端邮箱功能只在开发分支，本文件全部用假传输，**不发任何真请求**；真机端到端不在此假装验证。
 //
-//   node tests/run-layer.mjs unit --only email-421-conflict-countdown
+//   node --test tests/unit/domain11-email-conflict.test.mjs
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 

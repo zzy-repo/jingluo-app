@@ -1,5 +1,7 @@
 // [layer: unit —— 组件级（真弹层组件 + 真 device.ts，假传输），零浏览器 | 耗时: <2s]
 // Issue #421 第 4、5 点：设置页邮箱入口的出现条件与备份提示分流。
+// 域 11 落位（#438）：L0 组件级的一半 —— 入口**显隐**与备份提示分流只在这里断言；
+// 绑定之后的「备份提示消失」在 L1（tests/integration/domain11-email-flow.test.mjs）验。
 //
 // 三件事必须成立，缺一条用户就会看到不该看的东西：
 //   1. 服务端没开邮箱功能（404 + `not_found`）→ **入口整块不渲染**，旧流程一个字不变；
@@ -9,7 +11,7 @@
 // 服务端邮箱功能只在开发分支（#421 正文），本文件全部用假传输，**不发任何真请求**；
 // 真机端到端（发码 → 收信 → 登录）目前无法验证，也不在这里假装验证。
 //
-//   node tests/run-layer.mjs unit --only email-421-entry
+//   node --test tests/unit/domain11-email-entry.test.mjs
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 
