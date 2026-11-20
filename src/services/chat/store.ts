@@ -252,14 +252,11 @@ const clearWaitHints = (sessionId: string) => {
   setWaitHint(sessionId)
 }
 
-/** 本轮请求会用到的全部附件：有没补传的要单独显示「正在上传附件」阶段 */
-const roundFiles = (request: Request) => {
-  const files = [...request.question.files]
-  for (const [user] of getContextRounds(request.history)) {
-    files.push(...user.files)
-  }
-  return files
-}
+/**
+ * 本轮真正会做附件补齐的文件：只有本条提问的附件（#379 起历史附件不再重传），
+ * 其中还有没上到服务端的要单独显示「正在上传附件」阶段。
+ */
+const roundFiles = (request: Request) => request.question.files
 
 const sameSummary = (a: SessionSummary, b: SessionSummary) =>
   a.title === b.title && a.createdAt === b.createdAt && a.updatedAt === b.updatedAt
@@ -268,6 +265,14 @@ const sessionAccess = new Map<string, number>()
 const unsavedSessions = new Set<string>()
 /** 保存失败时保留原件，重试成功后才释放。 */
 const pendingFiles = new Map<string, db.StoredFile[]>()
+/**
+ * 服务端刚判失效、等着本轮重传的附件（本地 id → 附件）。
+ * 只有「本来就有 file_id、被服务端判失效」的附件会登记在这里：原件在我们手上、当初上传成功过，
+ * 重传是自愈（换服务地址后旧 file_id 全失效就是这条路径），不属于「重传历史记录」。
+ * 导入会话的历史附件从来没上传成功过（`serverId` 一律是 null，见 `history/toLocal.ts`），
+ * 永远进不了这个集合 —— 这正是 #379 的隔离点。
+ */
+const recoveringFiles = new Map<string, FileAttachment>()
 const deletingSessions = new Set<string>()
 const deletionTasks = new Set<Promise<boolean>>()
 const streamFlushes = new Map<string, () => void>()
@@ -1105,8 +1110,13 @@ const refreshRequest = (sessionId: string, request: Request): Request => {
 /**
  * 发送前补齐附件的 serverId。
  * - 本轮提问的附件并行补齐，任一失败则整体失败，已成功的照常写回，重试时复用成功结果；
- * - 历史轮次（仅进入上下文的）中没有 serverId 的附件，多为导入的图片：从最新的消息往前逐张补传，
- *   失败静默跳过，该附件不进入本次请求，下次发送时再试。
+ * - **历史轮次的附件默认不补传**（#379）：它们属于既有消息记录，发新消息不该触发上传。
+ *   导入会话的历史附件 `serverId` 一律是 null（`history/toLocal.ts` 的 `toFile`），旧代码每轮都
+ *   拿本地原件重传一次；导入的文档没有原件则静默跳过，导入的图片有原件就真的打一次 Files API，
+ *   失败态写进上传任务表、被卡片读成「上传失败」——纯文字消息也跟着背锅。
+ *   现在没有 serverId 的历史附件由 `toFileBlocks` 自然排除在请求之外：只展示，不重传、不阻断发送。
+ * - 例外：服务端判失效、由 `reuploadInvalidatedFiles` 登记进 `recoveringFiles` 的附件仍会重传一次
+ *   （它们本来有 file_id，原件也在本机，重传是自愈；换服务地址后历史附件靠这条路径恢复）。
  */
 const prepareFiles = async (sessionId: string, request: Request, signal: AbortSignal) => {
   const epoch = historyEpoch
@@ -1138,26 +1148,45 @@ const prepareFiles = async (sessionId: string, request: Request, signal: AbortSi
     throw failed.reason
   }
 
-  const pending = new Map<string, FileAttachment>()
-  // toReversed 同样是 ES2023（WebView 110+），旧 WebView 会抛错；复制后 reverse 语义等价。
-  for (const [user] of [...getContextRounds(request.history)].reverse()) {
+  // 历史附件不补传（#379）：它们属于既有消息记录，发新消息不该触发上传。
+  // 唯一的例外是服务端刚判失效、由 reuploadInvalidatedFiles 登记的附件（recoveringFiles）：
+  // 那种附件本来有 file_id，重传是自愈，不是「重传历史记录」。
+  const skipped = new Set<string>()
+  for (const [user] of getContextRounds(request.history)) {
     for (const file of user.files) {
-      if (!file.serverId && !serverIds.has(file.id) && !pending.has(file.id)) {
-        pending.set(file.id, file)
+      if (file.serverId || serverIds.has(file.id)) {
+        continue
+      }
+      const recovering = recoveringFiles.get(file.id)
+      if (!recovering) {
+        skipped.add(file.id)
+        continue
+      }
+      // 一次请求只用一次：失败也不再排队重来，避免把失败态留在卡片上
+      recoveringFiles.delete(file.id)
+      signal.throwIfAborted()
+      try {
+        const serverId = await Promise.race([ensureServerId(apiKey, recovering), aborted])
+        if (serverId) {
+          serverIds.set(file.id, serverId)
+          saveServerIds(sessionId, new Map([[file.id, serverId]]))
+        }
+      } catch {
+        signal.throwIfAborted()
+        // 自愈失败也不许把「上传失败」写进历史附件的卡片（#379 的症状就是这个）
+        cancelUpload(file.id)
+        record('chat_send', 'warn', 'history attachment recovery failed', {
+          reason: 'history',
+          status: 'error',
+        })
       }
     }
   }
-  for (const file of pending.values()) {
-    signal.throwIfAborted()
-    try {
-      const serverId = await Promise.race([ensureServerId(apiKey, file), aborted])
-      if (serverId) {
-        serverIds.set(file.id, serverId)
-        saveServerIds(sessionId, new Map([[file.id, serverId]]))
-      }
-    } catch {
-      signal.throwIfAborted()
-    }
+  if (skipped.size > 0) {
+    record('chat_send', 'info', 'history attachments not re-uploaded', {
+      count: skipped.size,
+      reason: 'history',
+    })
   }
 
   // 用补齐后的会话重新取历史与提问，保证请求里都是 serverId
@@ -1218,6 +1247,8 @@ const reuploadInvalidatedFiles = (sessionId: string, request: Request, error: un
         return file
       }
       localIds.push(file.id)
+      // 登记待重传：历史轮次的附件平时不补传（#379），只有这里登记过的才允许重传一次
+      recoveringFiles.set(file.id, { ...file, serverId: null })
       changed = true
       return { ...file, serverId: null }
     })
@@ -1697,6 +1728,8 @@ const streamReply = async (sessionId: string, initial: AssistantMessage, request
   } finally {
     titleRequests.delete(controller)
     streamFlushes.delete(sessionId)
+    // 失效自愈的登记只在同一轮的重试间有效：收尾即清，别让下一轮拿旧附件重传（#379）
+    recoveringFiles.clear()
     // 本轮无论怎么结束，等待提示都要撤下（含用户停止与各类报错）
     clearWaitHints(sessionId)
     cancelAnimationFrame(frame)

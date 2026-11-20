@@ -18,19 +18,25 @@ const stub = (name) => new URL(`../fixtures/chat-stubs/${name}`, import.meta.url
 /** 内存版 db：替换 IndexedDB 落点，store 照旧 saveSession / loadSession */
 const fakeDB = `data:text/javascript,${encodeURIComponent(`
 const memory = new Map()
+const host = () => globalThis.__stubChatHost ?? {}
 const summary = (session) => ({
   id: session.id,
   title: session.title,
   createdAt: session.createdAt,
   updatedAt: session.updatedAt,
 })
+// 预置会话由用例在 installChatHostStubs 时传入：模块首次求值即写进内存 db
+for (const session of host().sessions ?? []) {
+  memory.set(session.id, structuredClone(session))
+}
 export const loadSessionSummaries = async () => [...memory.values()].map(summary)
 export const loadSession = async (id) => (memory.has(id) ? structuredClone(memory.get(id)) : undefined)
 export const saveSession = async (session) => {
   memory.set(session.id, structuredClone(session))
 }
 export const saveFiles = async () => {}
-export const loadFile = async () => undefined
+// 附件原件：用例给什么就返回什么；默认没有任何原件（导入时只保留元信息的情况）
+export const loadFile = async (id) => (host().loadFile ? host().loadFile(id) : undefined)
 export const deleteSession = async (id) => {
   memory.delete(id)
 }
@@ -89,9 +95,18 @@ const installGlobals = () => {
 /**
  * 装好全部替身：解析钩子（Capacitor / 诊断收集器 / 内存 db / `.js` → `.ts`）+ 浏览器全局。
  * 必须在 import `src/**` 之前调用一次。
+ *
+ * @param {{
+ *   sessions?: object[]
+ *   loadFile?: (id: string) => Promise<Blob | undefined> | Blob | undefined
+ * }} [options]
+ *   `sessions`：预置进内存 db 的会话（`initChat()` 之后就在列表里，`selectSession()` 能加载）；
+ *   `loadFile`：附件原件的读取入口（默认不返回任何原件，即「导入时只保留元信息」那种情况）。
  */
-export const installChatHostStubs = () => {
+export const installChatHostStubs = (options = {}) => {
   installGlobals()
+  // db 模块首次求值时读它：预置会话与原件读取入口，不需要用例自己拼 db 替身
+  globalThis.__stubChatHost = { sessions: options.sessions ?? [], loadFile: options.loadFile }
   registerHooks({
     resolve(specifier, context, nextResolve) {
       if (specifier === '@capacitor/core') {

@@ -70,13 +70,13 @@
 | `src/services/chat/sessionGroups.ts:25` | `Array.prototype.at` 存在（Chromium 92；13 处接收者全是数组，零字符串接收者） | 1 | 中 | 已有兜底 |
 | `src/services/chat/store.ts:147` | `Object.hasOwn` 存在（Chromium 93） | 1 | 中 | 已有兜底 |
 | `src/services/chat/store.ts:152` | `Object.hasOwn` 存在（Chromium 93） | 1 | 中 | 已有兜底 |
-| `src/services/chat/store.ts:293` | `Object.hasOwn` 存在（Chromium 93） | 1 | 中 | 已有兜底 |
-| `src/services/chat/store.ts:313` | `Object.hasOwn` 存在（Chromium 93） | 1 | 中 | 已有兜底 |
-| `src/services/chat/store.ts:559` | `Object.hasOwn` 存在（Chromium 93） | 1 | 中 | 已有兜底 |
-| `src/services/chat/store.ts:898` | `Array.prototype.at` 存在（Chromium 92；13 处接收者全是数组，零字符串接收者） | 1 | 中 | 已有兜底 |
-| `src/services/chat/store.ts:993` | `Array.prototype.at` 存在（Chromium 92；13 处接收者全是数组，零字符串接收者） | 1 | 中 | 已有兜底 |
-| `src/services/chat/store.ts:994` | `Array.prototype.at` 存在（Chromium 92；13 处接收者全是数组，零字符串接收者） | 1 | 中 | 已有兜底 |
-| `src/services/chat/store.ts:1122` | `Promise.allSettled` 存在（Chromium 76，低于基线） | 1 | 低 | —（基线内，无需处置） |
+| `src/services/chat/store.ts:298` | `Object.hasOwn` 存在（Chromium 93） | 1 | 中 | 已有兜底 |
+| `src/services/chat/store.ts:318` | `Object.hasOwn` 存在（Chromium 93） | 1 | 中 | 已有兜底 |
+| `src/services/chat/store.ts:564` | `Object.hasOwn` 存在（Chromium 93） | 1 | 中 | 已有兜底 |
+| `src/services/chat/store.ts:903` | `Array.prototype.at` 存在（Chromium 92；13 处接收者全是数组，零字符串接收者） | 1 | 中 | 已有兜底 |
+| `src/services/chat/store.ts:998` | `Array.prototype.at` 存在（Chromium 92；13 处接收者全是数组，零字符串接收者） | 1 | 中 | 已有兜底 |
+| `src/services/chat/store.ts:999` | `Array.prototype.at` 存在（Chromium 92；13 处接收者全是数组，零字符串接收者） | 1 | 中 | 已有兜底 |
+| `src/services/chat/store.ts:1132` | `Promise.allSettled` 存在（Chromium 76，低于基线） | 1 | 低 | —（基线内，无需处置） |
 | `src/services/chat/view.ts:167` | `String.prototype.trimEnd` 存在（Chromium 66，低于基线） | 1 | 低 | —（基线内，无需处置） |
 | `src/services/chat/view.ts:269` | `Array.prototype.at` 存在（Chromium 92；13 处接收者全是数组，零字符串接收者） | 1 | 中 | 已有兜底 |
 | `src/services/chat/view.ts:275` | `Array.prototype.flatMap` 存在（Chromium 69，低于基线） | 1 | 低 | —（基线内，无需处置） |
@@ -199,3 +199,4 @@ node --test tests/unit/capabilities-docs-sync.test.mjs   # 文档与复算是否
 - 复核（2026-11-20 01:00，基准 `519a721`，本单 #421 分支 `feat/email-adapt`，邮箱账号适配的客户端部分）：新增 2 个 `.ts` 源文件（`src/services/invite/email.ts`：把 `/email/verify` 的 `action:"login"` 接到既有的 `adoptServerDeviceId` + `bindSuccessKey` 上；`src/services/invite/emailCooldown.ts`：#421 第 4 点发码倒计时的纯函数），扫描范围 253 → **255** 个文件、`.ts` 152 → **154** 个。新文件不引入本表任何 API（只用注入的 `OursTransport` 与字符串/正则判定），**命中总数仍是 51 处**，分类分布（31 / 20 / 0）、按 API 分项（3 / 14 / 14 / 13 / 4 / 2 / 1）与 §二 的 `文件:行` 全部未变（`OursServicesDialog.tsx`、`services/invite/api.ts` 的改动都落在既有命中行之外）。
 - 复核（2026-11-20 08:05，基准 `ec76fe4`，本单 #345 分支 `fix/prompt-cache-stability-345`，请求前缀逐字节稳定）：只改 3 个既有文件（`src/services/chat/contextBudget.ts` 加低水位常量与裁剪锚点、`chat/reply.ts` 接锚点、`chat/store.ts` 传会话 id），**没有新增源文件**，扫描范围仍是 **255** 个文件；新代码只用 `Map` / `findIndex` / 数值取整，**没有任何一条本表里的 API**，**命中总数仍是 51 处**，分类分布（31 / 20 / 0）与按 API 分项（3 / 14 / 14 / 13 / 4 / 2 / 1）未变。§二 的 `文件:行` 只有 `src/services/chat/reply.ts` 整体下移 2 行（`:33/:162/:241/:261` → **`:35/:164/:243/:263`**，`contextBudget` 的导入多占两行），`src/services/chat/store.ts` 的 9 处仍在原行（改动在 `:1396` 之后），命中内容与判定一处未变。
 - 复核（2026-11-20 08:30，基准 `dfe6db0`，本单 #434 / #374 分支 `fix/error-readability-434-374`）：新增 1 个 `.ts` 源文件（`src/services/api/keyFailure.ts`：Key 失效的细分与尾号，只用正则与字符串截取），扫描范围 255 → **256** 个文件、`.ts` 154 → **155** 个。新文件**没有任何一条本表里的 API**，`#434` / `#374` 的改动也没有引入（`errors.ts` 加的是分类分支、`client.ts` 加的是 `response.text()`、`store.ts` 多落两个字段），**命中总数仍是 51 处**，分类分布（31 / 20 / 0）与按 API 分项（3 / 14 / 14 / 13 / 4 / 2 / 1）未变；§二 的 `文件:行` 因 `store.ts` 顶部新增 1 行 import 整体下移：`:146/:151/:292/:312/:558/:897/:992/:993/:1121` → **`:147/:152/:293/:313/:559/:898/:993/:994/:1122`**。
+- 复核（2026-11-20 09:05，基准 `7b2cc80`，本单 #379 分支 `fix/imported-attachment-upload-379`，导入会话的历史附件不再重传）：只改既有文件（`chat/store.ts` 的 `prepareFiles` 不再补传历史附件、只重传「服务端刚判失效」的那几个并多出一条 `recoveringFiles` 登记表；`tests/helpers/chat-host-stubs.mjs` 加用例注入口），**没有新增源文件**，扫描范围仍是 **256** 个文件；新代码只用 `Map` / `Set` / `for…of`，**没有任何一条本表里的 API**，**命中总数仍是 51 处**，分类分布（31 / 20 / 0）与按 API 分项（3 / 14 / 14 / 13 / 4 / 2 / 1）未变。§二 的 `文件:行` 只有 `src/services/chat/store.ts` 的下半段再下移 5 行（`:293/:313/:559/:898/:993/:994/:1122` → **`:298/:318/:564/:903/:998/:999/:1132`**，`:147/:152` 未动），命中内容与判定一处未变。
