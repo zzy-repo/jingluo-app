@@ -1165,7 +1165,8 @@ export const zh = {
   attachPickEmpty: '「{name}」是空文件，没有可解析的内容',
   attachPickTooMany: '一条消息最多 {limit} 个文档，已拒绝多出的 {count} 个',
   attachUnavailable: '附件管理器尚未就绪，本次没有添加任何文档',
-  attachChannelUnsupported: '当前渠道不支持文档解析（文档需要走文本注入），请切换到支持的渠道',
+  attachChannelUnsupported:
+    '当前渠道不支持文档附件：本渠道既没有可用的原生文件上传，也不做文本注入，请切换到其他渠道',
   // 五态 + 取消
   attachStatusPending: '等待解析',
   attachStatusParsing: '解析中 {percent}%',

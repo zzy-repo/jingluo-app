@@ -12,7 +12,7 @@ import { cancelUpload, describeUploadError, uploadAttachment, useUploads } from 
 // #480 §7 / §9：文档正文的文本注入（渠道能力表 + ContextBuilder + 附件引用收集）。
 // DeepSeek 官方 `textInjection === false`，这条链路一次都不进（见 streamReply 里的能力闸）。
 import { buildWithDocuments, formatDocumentInjection, type ChatMessage } from '../attachments/contextBuilder.js'
-import { docInjectionFor } from '../attachments/providerCapability.js'
+import { acceptsDocuments, docInjectionFor } from '../attachments/providerCapability.js'
 import {
   collectAttachmentsForRequest,
   stripAttachmentRefs,
@@ -924,6 +924,31 @@ export const sendMessage = (targetSessionId: string | null) => {
   // `documents`：文档附件引用（#480 / #527）。它们没有 blob、也没有 serverId ——
   // 原件与解析全文在 AttachmentManager 里，消息只存 id。
   const { text, files, documents } = prepared
+  /**
+   * #538 第二道防线（**服务层，绕过 UI 也挡得住**）：当前渠道收不了文档时，绝不构造一条
+   * 「只有附件引用、content 为空」的用户消息往上发。
+   *
+   * 为什么会漏到这里：UI 的入口门（`ChatInput.canAttachDocs`）只在**添加附件**那一刻生效，
+   * 而草稿里的文档引用可以来自**另一个渠道** —— 用户在 OpenAI 渠道挂好文档后切到 DeepSeek，
+   * 卡片与引用都还在；或者有人从控制台直接调 `sendMessage()`。DeepSeek 既不注入正文
+   * （`textInjection: false`），也没有可用的原生上传（#360），那样发出去就是一条空消息。
+   *
+   * 判据与 UI 同源（`acceptsDocuments()`），所以两边永远不会说不一致的话。
+   * 返回 `false`（发送未发生：不清草稿、不新增消息），并留一条 error 日志便于取证。
+   */
+  if (documents.length > 0 && !acceptsDocuments(getCurrentSpec().kind)) {
+    recordError('文档附件不被当前渠道支持，本条消息未发送（#538）', {
+      ...buildMeta({
+        flow: 'chat',
+        stage: 'chat.send',
+        status: 'error',
+        attempt: 1,
+        endpointKey: endpointKeyFromUrl(getBaseUrl()),
+      }),
+      documents: documents.length,
+    })
+    return false
+  }
   // 关键业务动作：只记字符数、附件数与本轮模式，正文绝不进日志
   // （模式进日志是为了 issue #25 的取证口径：用户反馈「专家模式和快速没区别」时能直接对上）
   recordAction('chat_send', 'send-message', {
@@ -1578,11 +1603,13 @@ const streamReply = async (sessionId: string, initial: AssistantMessage, request
         /**
          * 文档注入的能力闸（#480 §7 / §9）：**只有 `textInjection === true` 才走注入**。
          *
-         * DeepSeek 官方 `textInjection === false`（它有自己的原生 `file_id` 能力），
-         * 于是下面三件事**一件都不发生**：消息上不挂附件引用（`attachmentRefs: false`）、
-         * 不进 `withRequestDocuments()`、不读一次附件正文 —— `toRequestMessages()` 的入参
+         * DeepSeek 官方 `textInjection === false`（`nativeFile` 同样为 `false`，本仓库没有
+         * 可用的原生上传实现，见 #360 / #538），于是下面三件事**一件都不发生**：消息上不挂
+         * 附件引用（`attachmentRefs: false`）、不进 `withRequestDocuments()`、不读一次附件正文
+         * —— `toRequestMessages()` 的入参
          * 与改动前完全一致（多出来的只是一个 `false` 选项，产物无差别），`messages` 原样
-         * 传给 `toRequestBody()`，请求体逐字节等于原路径。这条闸是**代码级**保证，不是约定。
+         * 传给 `toRequestBody()`，请求体逐字节等于原路径。
+         * 这条闸是**代码级**保证，不是约定。
          */
         const documentInjection = docInjectionFor(spec.kind).textInjection
         const preparedMessages = toRequestMessages(

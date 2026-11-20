@@ -24,7 +24,7 @@ import {
   useDrafts,
 } from '../../services/chat/drafts.js'
 import { ATTACHMENT_LIMITS, SUPPORTED_EXTENSIONS } from '../../services/attachments/limits.js'
-import { docInjectionFor } from '../../services/attachments/providerCapability.js'
+import { acceptsDocuments } from '../../services/attachments/providerCapability.js'
 import {
   AttachmentList,
   AttachmentPicker,
@@ -73,12 +73,17 @@ const Input = ({ sessionId }: { sessionId: string | null }) => {
   const kind = useApiConfig((state) => state.kind)
   const caps = getSpec(kind).caps
   /**
-   * 文档附件入口是否可用（#480 §7）：只有走**文本注入**的渠道（anthropic / openai / ours）
-   * 才有意义。DeepSeek 官方是原生 `file_id` 通道（`textInjection: false`），而本仓库没有
-   * 文档上传链路 —— 在那里挂一个「能选、选了也没用」的入口就是本单最忌讳的
-   * 「看得见但用不了」。不满足时入口仍然渲染，但点下去给明确提示（与图片入口同一套做法）。
+   * 文档附件入口是否可用（#480 §7 / **#538**）：`acceptsDocuments(kind)` —— 该渠道要么走
+   * **文本注入**（anthropic / openai / ours），要么**确有可用的原生上传实现**（目前没有）。
+   *
+   * DeepSeek 两条都不满足：`textInjection: false`，而 `/v1/chat/completions/files` 早在 #360
+   * 就确认不存在 —— 在那里挂一个「能选、选了也没用」的入口，用户只传文档不写字就会发出
+   * 一条 **content 为空**的消息（#538）。所以这里**不给假承诺**：入口渲染成既有禁用态
+   * （`styles.unavailableEntry` + `aria-disabled`），点下去 / 拖进来都走既有的 toast 提示
+   * （`attachChannelUnsupported`，文案里带原因）。**选择逻辑完全复用原有入口**
+   * （`AttachmentPicker` + 隐藏 `input[type=file]` + `ACCEPT` 过滤），本单没有另起一套。
    */
-  const canAttachDocs = docInjectionFor(kind).textInjection
+  const canAttachDocs = acceptsDocuments(kind)
   /**
    * 附件入口是否真的可用：既要渠道声明了 vision 能力，也要它**显式声明了 Files API 端点**
    * （`spec.paths.files`）。只有 caps.vision 是不够的——以前就是拿 messages 前缀拼出
@@ -229,6 +234,17 @@ const Input = ({ sessionId }: { sessionId: string | null }) => {
       voice.status !== 'idle' ||
       !prepareDraftMessage(getDraft(sessionId), useUploads.getState().tasks)
     ) {
+      return
+    }
+    /**
+     * #538 第二道防线（UI 侧，明说原因）：渠道能力在**附件添加时**就拦了一次（上面的
+     * `canAttachDocs`），但草稿里的文档引用可能来自**另一个渠道**——用户在 OpenAI 渠道
+     * 挂好文档后切到 DeepSeek，卡片还在、引用也还在。此时按键发送只会得到一条 content
+     * 为空的消息，所以要在这里**明确报错并停下**，而不是静默丢弃附件或发出空消息。
+     * 服务层还有一道同样的闸（`chat/store.ts` 的 `sendMessage`），绕过 UI 也挡得住。
+     */
+    if (getDraft(sessionId).documents.length > 0 && !canAttachDocs) {
+      showToast({ key: 'attachChannelUnsupported' })
       return
     }
     // 文本与上传完成态由提交动作读取最新快照，不使用上一次渲染的草稿。
