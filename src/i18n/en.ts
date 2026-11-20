@@ -1171,7 +1171,7 @@ export const en = {
   attachPickTooMany: 'A message can hold at most {limit} documents; {count} extra were rejected',
   attachUnavailable: 'The attachment manager is not ready, so no document was added',
   attachChannelUnsupported:
-    'This channel cannot parse documents (documents need text injection). Switch to a supported channel',
+    'This channel does not support document attachments: it has no working native file upload and does not use text injection. Switch to another channel',
   // Five states + cancel
   attachStatusPending: 'Waiting to parse',
   attachStatusParsing: 'Parsing {percent}%',
