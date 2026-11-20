@@ -238,7 +238,7 @@ curl -sS -X POST http://127.0.0.1:8799/api/v1/release/private \
 1. 令牌只进 **internal 产物**：`internalBuild=false` 时整段按 `enabled:false` 注入（`url` 与 `token` 都为空串），
    public / standard 包里连私有端点地址都不出现（实测见 #622 的 PR：standard 产物里令牌与端点命中数都是 0）。
 2. 泄漏后的能力上限 = **读私有清单 + 下载 internal 包**，不含任何用户数据、不含发布能力
-   （写端点用的是同一枚令牌 —— 这是目前的**已知放大点**：拿到令牌的人也能发私有包，见 follow-up）。
+   （写端点用的是同一枚令牌 —— 这是目前的**已知放大点**：拿到令牌的人也能发私有包，拆只读令牌的方案见 #641）。
 3. 令牌可以轮换，代价只是**重出 internal 包**（standard 包不受影响）。
 
 ### 轮换令牌（读端点这一侧）

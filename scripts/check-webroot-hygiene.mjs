@@ -27,8 +27,9 @@
  * | R1 | `_withdrawn*` | 撤回标记：配套文件通常已经不该公开 |
  * | R1 | `releases.json.*`（白名单外） | 只允许正本 `releases.json`；任何后缀都是「有人手工改过」的痕迹 |
  * | R1 | `*.tmp-*` | 发布协议的半成品（`<name>.apk.tmp-<stamp>` / `releases*.json.tmp-<stamp>`）：说明有一次发布没跑完 |
- * | R2 | 非 `apk/` 的顶层目录 | webroot 的合法形状只有「顶层文件 + `apk/`」；`private/` 尤其必须在 webroot **之外** |
- * | R3 | `apk/` 下文件名含 `internal` 或 `dev` | 内部包**绝不**出现在公网静态目录（#609 的核心） |
+ * | R2 | 非 `apk/` 的顶层目录（`private/` 尤其） | webroot 的合法形状只有「顶层文件 + `apk/`」；`private/` 必须在 webroot **之外**（`/opt/dl-private`） |
+ * | R2 | webroot 里任何**符号链接**（顶层 / `apk/` / 目录内） | `Dirent.isDirectory()` 对 symlink 返回 **false**：只判「目录名字」时，`private -> /opt/dl-private` 或 `apk -> /opt/dl-private/apk` 会整棵躲过检查，而 Caddy `file_server` 默认顺着 symlink 发文件 —— 等价于把私有根直接挂到公网（#623 复核出的真缺口，正是 #621「私链裸奔」的形状） |
+ * | R3 | `apk/` **或 `private/` 子树**里文件名含 `internal` 或 `dev` | 内部包**绝不**出现在公网静态目录（#609 的核心）。#623 起从「只扫 `apk/` 一层」扩到「`apk/` + 每个非 `apk/` 顶层目录向下 3 层」——`/var/www/dl/private/<16hex>/…-internal-….apk` 这种 #621 现场的形态要能**被点名**，而不是只报一句「多了个目录」 |
  * | R4 | `releases.json` 里 `artifactVariant !== "standard"` 的条目（含 internal） | 公网清单里的 `file` 字段等于把内部包直链广播出去（#601 事故形态）；`internal` 条目数**必须为 0**（#620） |
  * | R4 | `releases.json` 不存在 / 读不出 / 不是合法清单 | 证明不了「internal 条目 = 0」时不许判绿（fail-closed） |
  *
@@ -67,11 +68,22 @@ export const RELEASES_JSON_SUFFIX_ALLOWLIST = Object.freeze([]);
 /** 内部包在文件名里的标记（`apk/` 下出现即红） */
 export const INTERNAL_NAME_MARKERS = Object.freeze(['internal', 'dev']);
 
+/**
+ * 非 `apk/` 顶层目录（`private/` 是唯一现实存在过的那个）向下扫几层（#623）。
+ *
+ * 3 层够覆盖线上与历史三种形状：`private/<file>.apk`、`private/<16hex>/<file>.apk`
+ * （#601 取证归档的摆法）、`private/<ver>/<abi>/<file>.apk`。再深就不是人摆得出来的了，
+ * 而**目录本身**已经由 R2 判红 —— 这里深扫只为「点名到文件」，不是判红的唯一依据。
+ */
+export const DIR_DEEP_SCAN_DEPTH = 3;
+/** 深扫的条目上限（防止有人把 webroot 指向一个巨大目录时门禁卡死） */
+export const DIR_DEEP_SCAN_MAX_ENTRIES = 5000;
+
 /** 规则代码 → 人话（报告与 ci.yml 的 grep 都用这套标签，别随便改） */
 export const RULES = Object.freeze({
   R1: 'R1 事故/备份残留（*.bak* / *LEAKED* / _withdrawn* / releases.json.* / *.tmp-*）',
-  R2: 'R2 webroot 内出现非 apk/ 的目录（private/ 必须在 webroot 之外）',
-  R3: 'R3 apk/ 下出现 internal|dev 字样的文件',
+  R2: 'R2 webroot 内出现非 apk/ 的目录或任何符号链接（private/ 必须在 webroot 之外）',
+  R3: 'R3 apk/ 或 private/ 子树里出现 internal|dev 字样的文件',
   R4: 'R4 公网 releases.json 里出现非 standard 条目（internal 条目数必须为 0）/ 清单读不出来',
 });
 
@@ -151,21 +163,106 @@ export function scanManifest(manifestFile) {
 }
 
 /**
- * 扫一个 webroot。**只扫两层**（顶层 + `apk/`）：webroot 的形状就这两层，
- * 更深的东西本身就是「有人在 webroot 里搭了个目录」（已由 R2 判红）。
- * 另外对顶层清单做一次 R4 体检（#620）。
+ * 符号链接判定（#623）。为什么要单独一条：
+ *
+ * `fs.readdirSync(withFileTypes)` 给的 `Dirent.isDirectory()` 在 symlink 上是 **false**，
+ * 所以只按「名字是不是允许的目录」去判时，`private -> /opt/dl-private` 既不是目录、名字也不命中
+ * R1 的任何后缀 —— 它会**静默通过**。而 Caddy 的 `file_server` 默认跟随 symlink，等于把整个私有根
+ * 挂到公网（`https://dl.rose7.cn/private/apk/…internal….apk` 直接 200）。这就是 #621 的形态。
+ *
+ * @param {fs.Dirent} entry
+ * @param {string} absPath 该条目的绝对路径（读链接目标用）
+ * @param {string} rel 报告里用的相对路径
+ * @returns {string|null}
+ */
+export function symlinkViolation(entry, absPath, rel) {
+  if (!entry.isSymbolicLink()) return null;
+  let target = '?';
+  try {
+    target = fs.readlinkSync(absPath);
+  } catch {
+    // 读不出目标也不放行：链接本身就违规
+  }
+  return `${rel}：webroot 里出现符号链接（→ ${target}）—— file_server 会顺着它把 webroot 外的目录直出，`
+    + '私有根/内部包挂链接等于没移出 webroot（#623）';
+}
+
+/**
+ * 深扫一个**非 apk/** 的顶层目录（只有 `private/` 真出现过，但判据不写死名字）。
+ *
+ * 目录本身已由 R2 判红；这里往下走最多 `DIR_DEEP_SCAN_DEPTH` 层，为了把 #621 现场的
+ * `private/<16hex>/<…>-internal-….apk` **逐条点名**（R3），顺带把私有清单备份
+ * `releases.internal.json.bak-private-<epoch>` 按 R1 点出来。不是判红的替代品，是证据。
+ *
+ * @param {string} absDir 绝对目录
+ * @param {string} relDir 报告用的相对前缀（`private`、`private/<16hex>`）
+ * @param {Array<{rule:string, at:string, why:string}>} out
+ * @param {{count:number, truncated:boolean}} stats
+ */
+function scanDirDeep(absDir, relDir, out, stats) {
+  let entries;
+  try {
+    entries = fs.readdirSync(absDir, { withFileTypes: true });
+  } catch {
+    return;
+  }
+  for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
+    if (stats.count >= DIR_DEEP_SCAN_MAX_ENTRIES) {
+      stats.truncated = true;
+      return;
+    }
+    stats.count++;
+    const rel = `${relDir}/${entry.name}`;
+    const whyLink = symlinkViolation(entry, path.join(absDir, entry.name), rel);
+    if (whyLink) {
+      out.push({ rule: 'R2', at: rel, why: whyLink });
+      continue;
+    }
+    if (entry.isDirectory()) {
+      const depth = rel.split('/').length - 1; // `private` 的第二层起算 2
+      if (depth < DIR_DEEP_SCAN_DEPTH) scanDirDeep(path.join(absDir, entry.name), rel, out, stats);
+      else out.push({ rule: 'R2', at: rel, why: '目录层数超过深扫上限（嵌套成这样已经是「在 webroot 里搭了个站点」）' });
+      continue;
+    }
+    // R3 只对 `.apk` 判：`private/` 里还有私有清单本身（`releases.internal.json`），
+    // 它名字里带 "internal" 但不是包 —— 把它报成「内部包」会让报告失去可信度。
+    // 清单副本/备份由 R1 判（`*.bak*` / `releases.json.*`），判据各管各的。
+    if (/\.apk$/i.test(entry.name)) {
+      const whyInternal = internalNameViolation(entry.name);
+      if (whyInternal) out.push({ rule: 'R3', at: rel, why: whyInternal });
+    }
+    const whyDirt = fileViolation(entry.name);
+    if (whyDirt) out.push({ rule: 'R1', at: rel, why: whyDirt });
+  }
+}
+
+/**
+ * 扫一个 webroot。形状本来只有两层（顶层 + `apk/`），所以：
+ *
+ * - 顶层：任何非 `apk/` 的目录 → R2；**任何符号链接** → R2（#623，symlink 的 `isDirectory()` 是 false）；
+ *   顶层与 `apk/` 里的文件按 R1 判名字。
+ * - `apk/`：扁平文件，内部包名字 → R3；子目录/符号链接 → R2。
+ * - 非 `apk/` 的顶层目录（现实中只有 `private/`）：目录本身 R2，另**向下深扫 3 层**把里面的
+ *   internal APK（R3）与清单备份（R1）逐条点名（#623 —— #621 那种「私链裸奔」必须能拦到文件）。
+ * - 顶层清单做一次 R4 体检（#620）。
  *
  * @param {string} root
- * @returns {{violations:Array<{rule:string, at:string, why:string}>, scanned:{top:number, apk:number}}}
+ * @returns {{violations:Array<{rule:string, at:string, why:string}>, scanned:{top:number, apk:number, deep:number, manifestRecords:number|null}}}
  */
 export function scanWebroot(root) {
   const violations = [];
-  const scanned = { top: 0, apk: 0, manifestRecords: null };
+  const scanned = { top: 0, apk: 0, deep: 0, manifestRecords: null };
   const entries = fs.readdirSync(root, { withFileTypes: true });
 
   for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
     scanned.top++;
     const rel = entry.name;
+    // ① 符号链接先判：symlink 的 isDirectory() 是 false，落到下面任何分支都会被放行（#623）
+    const whyLink = symlinkViolation(entry, path.join(root, entry.name), rel);
+    if (whyLink) {
+      violations.push({ rule: 'R2', at: rel, why: whyLink });
+      continue;
+    }
     if (entry.isDirectory()) {
       if (!ALLOWED_TOP_DIRS.includes(entry.name)) {
         violations.push({
@@ -173,9 +270,20 @@ export function scanWebroot(root) {
           at: rel,
           why:
             entry.name === 'private'
-              ? 'webroot 里出现 private/ —— 私有清单与内部包必须在 webroot 之外（#609）'
+              ? 'webroot 里出现 private/ —— 私有清单与内部包必须在 webroot 之外（/opt/dl-private，#609/#623）'
               : `webroot 里出现非 apk/ 的目录（只允许 ${ALLOWED_TOP_DIRS.join('、')}）`,
         });
+        // ② #623：扩到 private/ 子树 —— 把里面的 internal 包逐条点名（R3），不是只说「多了个目录」
+        const stats = { count: 0, truncated: false };
+        scanDirDeep(path.join(root, entry.name), rel, violations, stats);
+        scanned.deep += stats.count;
+        if (stats.truncated) {
+          violations.push({
+            rule: 'R2',
+            at: rel,
+            why: `深扫条目数达到上限 ${DIR_DEEP_SCAN_MAX_ENTRIES}（已截断）—— 这个目录不该出现在 webroot 里，整棵搬走`,
+          });
+        }
       }
       continue;
     }
@@ -188,10 +296,17 @@ export function scanWebroot(root) {
   violations.push(...manifest.violations);
 
   const apkDir = path.join(root, 'apk');
-  if (fs.existsSync(apkDir) && fs.statSync(apkDir).isDirectory()) {
+  // lstat（不跟随 symlink）：`apk -> /opt/dl-private/apk` 这种链接在顶层已经报了 R2，
+  // 这里不能再顺着它把私有包当公网包扫一遍（也避免把私有根的内容混进 scanned 计数）
+  if (fs.existsSync(apkDir) && fs.lstatSync(apkDir).isDirectory()) {
     for (const entry of fs.readdirSync(apkDir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
       scanned.apk++;
       const rel = `apk/${entry.name}`;
+      const whyLink = symlinkViolation(entry, path.join(apkDir, entry.name), rel);
+      if (whyLink) {
+        violations.push({ rule: 'R2', at: rel, why: whyLink });
+        continue;
+      }
       if (entry.isDirectory()) {
         violations.push({ rule: 'R2', at: rel, why: 'apk/ 下出现目录（apk/ 只放扁平的文件）' });
         continue;
@@ -211,6 +326,7 @@ function report(root, { violations, scanned }) {
   console.log(`webroot  ${root}`);
   console.log(
     `扫了     顶层 ${scanned.top} 项 / apk/ ${scanned.apk} 项`
+      + ` / 非 apk 目录深处 ${scanned.deep} 项`
       + ` / releases.json ${scanned.manifestRecords === null ? '读不出' : `${scanned.manifestRecords} 条`}`,
   );
   if (!violations.length) {
@@ -269,6 +385,8 @@ export function selftest() {
   const failures = [];
   const rows = [];
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'webroot-hygiene-'));
+  /** 符号链接用例指向的「webroot 外目录」（每条的 undo 里一起清掉，避免留下临时垃圾） */
+  const symlinkTargets = [];
 
   /** 每条脏东西：id / 期望规则 / 怎么造 / 怎么还原 */
   const CASES = [
@@ -316,6 +434,78 @@ export function selftest() {
         fs.writeFileSync(path.join(root, 'private', 'releases.internal.json'), '{}', 'utf8');
       },
       undo: () => fs.rmSync(path.join(root, 'private'), { recursive: true, force: true }),
+    },
+    {
+      // #623：门禁扩到 private/ 子树 —— 只报「多了个目录」不够，必须**点名那个 internal 包**
+      id: 'private-internal-apk',
+      rule: 'R3',
+      what: 'private/ 下放 deepseek-chat-1.4.2-internal-HJ5NWRHQ.apk（#621 现场的直下形态）',
+      make: () => {
+        fs.mkdirSync(path.join(root, 'private'), { recursive: true });
+        fs.writeFileSync(path.join(root, 'private', 'deepseek-chat-1.4.2-internal-HJ5NWRHQ.apk'), 'x', 'utf8');
+      },
+      undo: () => fs.rmSync(path.join(root, 'private'), { recursive: true, force: true }),
+    },
+    {
+      // #621/#601 取证归档的摆法：private/<16hex>/<file>.apk —— 第二层也要扫到
+      id: 'private-hex-archive',
+      rule: 'R3',
+      what: 'private/0f3a9c1d2b4e5f60/deepseek-chat-1.4.2-internal-HJ5NWRHQ.apk（历史归档目录形状）',
+      make: () => {
+        fs.mkdirSync(path.join(root, 'private', '0f3a9c1d2b4e5f60'), { recursive: true });
+        fs.writeFileSync(
+          path.join(root, 'private', '0f3a9c1d2b4e5f60', 'deepseek-chat-1.4.2-internal-HJ5NWRHQ.apk'),
+          'x',
+          'utf8',
+        );
+      },
+      undo: () => fs.rmSync(path.join(root, 'private'), { recursive: true, force: true }),
+    },
+    {
+      // 私有清单的备份也是可直下的记录（R1），扩到 private/ 之后同样要点出来
+      id: 'private-manifest-backup',
+      rule: 'R1',
+      what: 'private/ 下放 releases.internal.json.bak-private-1795185887',
+      make: () => {
+        fs.mkdirSync(path.join(root, 'private'), { recursive: true });
+        fs.writeFileSync(path.join(root, 'private', 'releases.internal.json.bak-private-1795185887'), '{}', 'utf8');
+      },
+      undo: () => fs.rmSync(path.join(root, 'private'), { recursive: true, force: true }),
+    },
+    {
+      // #623 复核出的真缺口：symlink 的 isDirectory() 为 false，只判「目录名字」时
+      // `private -> /opt/dl-private` 会静默通过，而 file_server 会顺着它把私有根直出公网。
+      id: 'private-symlink',
+      rule: 'R2',
+      what: 'webroot 里建符号链接 private -> <webroot 外的私有根>（里面是真 internal 包）',
+      make: () => {
+        const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'fake-private-root-'));
+        fs.mkdirSync(path.join(outside, 'apk'), { recursive: true });
+        fs.writeFileSync(path.join(outside, 'apk', 'deepseek-chat-1.4.2-internal-HJ5NWRHQ.apk'), 'x', 'utf8');
+        fs.symlinkSync(outside, path.join(root, 'private'), 'dir');
+        symlinkTargets.push(outside);
+      },
+      undo: () => {
+        fs.rmSync(path.join(root, 'private'), { force: true });
+        for (const t of symlinkTargets) fs.rmSync(t, { recursive: true, force: true });
+        symlinkTargets.length = 0;
+      },
+    },
+    {
+      id: 'apk-symlink',
+      rule: 'R2',
+      what: 'apk/ 下放一个符号链接（指向 webroot 外）—— 同样是 file_server 的越界口子',
+      make: () => {
+        const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'fake-apk-root-'));
+        fs.writeFileSync(path.join(outside, 'deepseek-chat-1.4.2-internal-HJ5NWRHQ.apk'), 'x', 'utf8');
+        fs.symlinkSync(outside, path.join(root, 'apk', 'ext'), 'dir');
+        symlinkTargets.push(outside);
+      },
+      undo: () => {
+        fs.rmSync(path.join(root, 'apk', 'ext'), { force: true });
+        for (const t of symlinkTargets) fs.rmSync(t, { recursive: true, force: true });
+        symlinkTargets.length = 0;
+      },
     },
     {
       id: 'internal-apk',

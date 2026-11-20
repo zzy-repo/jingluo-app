@@ -937,8 +937,107 @@ cd android && ./gradlew assembleRelease -PartifactVariant=internal
   （内置开关，不下发到 standard 包），从私有清单取更新。
   > ⚠️ 历史文档里写的 `GET /api/v1/private/releases.json` / `/api/v1/private/apk/<file>` **从来没实现过**
   > （#621 立项的原因之一），上面的复数 `releases/internal*` 才是线上真路径；契约全文见 `docs/dl-release-api.md`。
-- **兜底**：读端点不可用时（503/网络不通），内测包仍可按「人工交接」发：`scp` 到对方机器（走 Tailscale）
-  + 把 `sha256` 一起给，让对方 `sha256sum` 核对。**任何情况下都不要**把包放回 `/var/www/dl/`。
+- **怎么发到人**：见下一节 §14.1a（正式通道 = 令牌端点；人工交接只是备用）。
+  **任何情况下都不要**把包放回 `/var/www/dl/`，也别用符号链接把它挂回去（门禁 R2 会红）。
+
+### 14.1a 内测包分发 SOP（**#623 重写：令牌通道是正式通道，人工交接只是备用**）
+
+> **这一节替换 #623 立项时的那版「内测包只能人工交接」。** 那版的两条前提现在都不成立：
+>
+> | #623 立项时的前提 | 现在的事实 |
+> | --- | --- |
+> | 私有包**没有**带令牌端点，只能 `scp` 人工交接 | **有**：`GET /api/v1/releases/internal` 与 `/internal/download`（#621 上线）。实测**无 token 401 / 有 token 200** —— 清单 8 条 internal、0 条 standard；包 5,428,086 B |
+> | `/var/www/dl/private/` 里 12 个 internal 包仍公网 200，**要维护者决定撤不撤** | **已撤**：#636 把私有根统一到 `/opt/dl-private`，那 12 个包已移出 webroot（tar 备份 `/opt/dl-evidence/dl-private-webroot-moved-20261121-035522.tar.gz`），旧直链一律 **404** |
+>
+> 所以「要不要撤」这条不用再决策了；现在要守的是「**不许再回去**」，靠 §14.8 的卫生门禁（#623 起覆盖 `private/`）。
+
+#### ① 正式通道（自动更新）：internal 变体读私有清单 → 失败回退公网
+
+链路四段，都是已上线的代码事实：
+
+| 环节 | 事实 | 出处 |
+| --- | --- | --- |
+| 私有清单 | `GET /api/v1/releases/internal` + `X-DL-Token`：无 token **401**，有 token **200**（只含 internal 条目，附 `apkName` / `downloadUrl`） | #621 |
+| 私有包 | `GET /api/v1/releases/internal/download?file=<裸名>.apk` + `X-DL-Token`：无 token **401**，有 token **200**（实测 5,428,086 B） | #621 |
+| 客户端 | internal 变体**先读私有清单**，401/429/超时/网络/清单写脏 → **静默回退**公网 `releases.json`（不崩、不弹错） | #622（`17c0733`） |
+| 原生下载 | 下载器白名单头放行 `X-DL-Token`，私有下载 URL 进白名单 | #639（`766236e`） |
+
+要让这条通道真的通，**构建期两处必须同源**（缺一处，包里的开关或令牌就是空的）：
+
+1. `config/endpoints.json` 的 `update.privateManifest`：
+
+   ```json
+   { "enabled": true,
+     "url": "https://dl.rose7.cn/api/v1/releases/internal",
+     "tokenEnv": "DL_PRIVATE_TOKEN" }
+   ```
+
+2. 构建环境里给出 `tokenEnv` 指名的那枚令牌（只进环境，**不进 JSON、不进仓库、不进 URL**）：
+
+   ```bash
+   DL_PRIVATE_TOKEN="$(ssh aliyun cat /etc/dl-release/token)" \
+     INTERNAL_BUILD=1 DIST_OUT=dist-internal node scripts/build.mjs --internal
+   ```
+
+- `enabled: true` 但构建环境没有令牌 → **构建直接中止**，不会出一个「装了却永远静默走公网」的包。
+- 开关只对 internal 变体生效：standard 产物里 `url` 与令牌都是空串（命中数 0），不会把内测端点广播给公网用户。
+- 这一步之后按 §14.2 把包发进私有清单（`publish-private-apk.mjs`），**内测用户无需任何操作**就会收到更新。
+- 契约全文（字段、限流、回退判据）见 `docs/dl-release-api.md` §5d。
+
+#### ② 手工通道（备用）：只在读端点不可用时用
+
+读端点 503 / 网络不通 / 对方在内网且装不了自动更新时，退回人工交接 —— **原三件套一条都不少**：
+
+1. **包**：`scp` 到对方机器，**走 Tailscale / 内网，不走公网、不给公网直链**：
+   `scp /opt/dl-private/apk/<裸名>.apk <user>@<tailscale-ip>:~/`
+2. **校验**：把 `sha256sum` 一起给，接收方**自己**再跑一遍 `sha256sum <文件>`，两个值逐字符相同才算收到。
+3. **安装说明**：见下面 ⑤（变体不同不能覆盖安装；若包 baseUrl 是回环需 `adb reverse`）。
+
+#### ③ 路径唯一：私有根 = `/opt/dl-private`
+
+| 路径 | 放什么 | 谁能取 |
+| --- | --- | --- |
+| `/opt/dl-private/apk/` | 私有包（`DL_PRIVATE_APK_DIR`），清单里的 `file` 就是这里的 basename | 只有带令牌的 `/api/v1/releases/internal/download` |
+| `/opt/dl-private/private/<16hex>/` | 历史归档（#601 事故包等），**不进任何清单、端点不给下载**、只作取证 | 只能在主机上 `ssh` 看 |
+| `/var/www/dl-private/releases.internal.json` | 私有清单（`DL_PRIVATE_RELEASES_JSON`） | 只有带令牌的 `/api/v1/releases/internal` |
+
+**铁律：任何 internal 包都不得出现在 `/var/www/dl/` 下 —— 包括 `apk/`、`private/`，也包括用符号链接挂进去。**
+那个目录是 Caddy `file_server` 的 root，里面的每个文件都有一个**不需要任何凭据**的公网直链；
+连「从清单里删掉」都没用（静态目录不看清单）。判据只有一句：**这个 URL 不带凭据能不能下载？能 = 不行。**
+
+#### ④ 令牌：读令牌与发布令牌**目前是同一枚**
+
+- 位置 `/etc/dl-release/token`（`chmod 600`），写法 `X-DL-Token: <token>`（或 `Authorization: Bearer <token>`）。
+- 同一枚令牌同时能：读私有清单、下载 internal 包、**发私有包**（`POST /api/v1/release/private`，仅本机/隧道可达）。
+  这是**已知的权限放大点**：内测包把令牌带到了设备上，泄漏后的能力上限里包含「能发私有包」。
+  建议拆出一枚只读令牌 —— 已开 follow-up **#641**，落地前按下面的轮换步骤止血。
+- **轮换**（换令牌 = 重出 internal 包，standard 不受影响）：步骤见 `docs/dl-release-api.md` §5d
+  「轮换令牌（读端点这一侧）」—— 主机换文件 → 重启服务 → 用新令牌重打 internal 包 → 按 §14.2 发私有清单。
+  老 internal 包里的令牌此刻已失效：它们会静默回退公网清单（不崩、不报错，只是看不到内测版）。
+
+#### ⑤ 安装注意（两条，缺一条就会「装不上」或「连不上」）
+
+- **变体不同不能覆盖安装**：已装 standard 的机器直接装 internal 包会被安装器拒（客户端呈现 `VARIANT_MISMATCH`）。
+  **必须先卸载**再装（卸载会清本地聊天记录与 Key —— 事先提醒对方导出/备份）：
+
+  ```bash
+  adb uninstall com.example.deepseekchat
+  adb install <裸名>.apk
+  ```
+
+- **包 baseUrl 是回环时要 `adb reverse`**：`127.0.0.1:18000` 指向手机自己，必须先打通隧道，
+  且**每条 USB 连接断开后都要重做**：`adb reverse tcp:18000 tcp:18000`。
+  （⚠️ 这类回环包按 §14.4 的 G2 **不许走分发**，只用于本地联调 —— 真要发人，得先改成非回环地址重打包。）
+
+#### ⑥ 留档：发出去就要能对上账
+
+在对应 issue / 交付群里按这张表记一行，**六个字段一个不少**：
+
+| 版本 | versionCode | sha256 | 接收人 | 时间 | 变体 |
+| --- | --- | --- | --- | --- | --- |
+| `1.4.3` | `22` | `a5f3…`（全 64 位） | `@xyz` | `2026-11-21 05:10 +08` | `internal` |
+
+没这张表，事后没人能回答「这台机器上装的到底是哪一次构建」——#601 复盘时就卡在这里。
 
 ### 14.1b 私有包发布要不要反代？（#621 收尾裁决：**不需要**）
 
@@ -994,7 +1093,8 @@ node scripts/publish-private-apk.mjs --apk $APK --version 1.4.3 --versionCode 22
 ```
 
 跑完会打印文件名、sha256、size、远端字节核对结果，并把条目写进**私有清单**。
-把 APK（连同 sha256）交给内测同学即可 —— 公网清单里没有这一条。
+**发到人这一步见 §14.1a**：默认走正式通道（装了 internal 变体的客户端自己从私有清单自动更新，
+不需要你发文件）；只有读端点不可用时才退回 `scp` + `sha256` 复核的人工交接。公网清单里没有这一条。
 
 ### 14.3 参数
 
@@ -1127,7 +1227,7 @@ node scripts/publish-private-apk.mjs --apk /tmp/fake.apk --version 0.0.0 --versi
 # 在分发机上（真 webroot）
 DL_WEBROOT=/var/www/dl node scripts/check-webroot-hygiene.mjs     # 或 pnpm run check:webroot-hygiene
 
-# 本机演练（不碰任何机器）：10 类脏东西逐个「注入 → 必红 → 还原」
+# 本机演练（不碰任何机器）：15 类脏东西逐个「注入 → 必红 → 还原」
 node scripts/check-webroot-hygiene.mjs --selftest
 ```
 
@@ -1135,11 +1235,17 @@ node scripts/check-webroot-hygiene.mjs --selftest
 
 | 规则 | 命中物 |
 | --- | --- |
-| R1 | `*.bak*` / `*LEAKED*` / `_withdrawn*` / `releases.json.*`（白名单外）/ `*.tmp-*` |
-| R2 | webroot 内出现非 `apk/` 的目录（`private/` 尤其不许） |
-| R3 | `apk/` 下文件名含 `internal` 或 `dev` 的文件 |
+| R1 | `*.bak*` / `*LEAKED*` / `_withdrawn*` / `releases.json.*`（白名单外）/ `*.tmp-*`（`private/` 子树里也扫） |
+| R2 | webroot 内出现非 `apk/` 的目录（`private/` 尤其不许）；**以及任何符号链接** —— symlink 的 `isDirectory()` 是 false，`private -> /opt/dl-private` 能整棵躲过「只看目录名」的检查，而 `file_server` 会顺着它直出（#623 补的口子） |
+| R3（#623 扩口径） | 文件名含 `internal` 或 `dev` 的文件出现在 **`apk/` 或 `private/` 子树（向下 3 层）** —— `private/<16hex>/<…>-internal-….apk` 这种 #621 现场的形态要**被点名**，不是只报一句「多了个目录」 |
 | R4（#620） | `releases.json` 里 `artifactVariant !== "standard"` 的条目（含 `internal`）；清单读不出来/缺失也判红（fail-closed） |
 
-处置：R1 的备份/取证文件移到 webroot 之外（例如 `/var/lib/dl-quarantine/`）；R2 的目录整棵搬走
-（私有包/私有清单的合法位置在 webroot 之外：`/opt/dl-private/` 与 `/var/www/dl-private/`）；R3 的内部包移出 webroot；R4 的 internal 条目从公网清单里
+**#623 的门禁口径（最终定法）**：`private/` **不是「另外要不要扫」的选项，而是必须扫** ——
+目录本身由 R2 判红、里面的包由 R3 逐条点名、里面的清单备份由 R1 判红、用符号链接挂回来由 R2 判红。
+负向对照（本地临时目录，不碰生产机）见 PR / #623 的收口评论：往模拟的 `/var/www/dl/private/<16hex>/`
+放一个 internal APK → 新门禁 `exit 1` 且点到那个文件；同一条符号链接在旧门禁上是 **`exit 0`（干净）**。
+
+处置：R1 的备份/取证文件移到 webroot 之外（例如 `/var/lib/dl-quarantine/`）；R2 的目录整棵搬走、
+符号链接删掉（私有包/私有清单的合法位置在 webroot 之外：`/opt/dl-private/` 与 `/var/www/dl-private/`）；
+R3 的内部包移出 webroot；R4 的 internal 条目从公网清单里
 删掉 —— **先确认它已经在私有清单里再删**，顺序反了就等于丢包。
