@@ -10,12 +10,17 @@ import {
 } from './apiConfig.js'
 import { markKeyRejected } from './keyRejection.js'
 import { OpenAIStreamError, toOpenAIRequest, translateOpenAIStream } from './openaiAdapter.js'
-import type { ProviderSpec } from './providers.js'
+import { timeoutsFor, type ProviderSpec } from './providers.js'
 import { sessionIdHeaders } from './sessionId.js'
 import { parseModelPayload } from './modelPayload.js'
 export { parseModelPayload, pickModelIds } from './modelPayload.js'
 import { readMessageEvent } from './parseEvent.js'
-import { StreamIdleTimeoutError, readServerSentEvents } from './sse.js'
+import {
+  StreamFirstTokenTimeoutError,
+  StreamIdleTimeoutError,
+  readServerSentEvents,
+  type StreamBudgets,
+} from './sse.js'
 import { LIMITS } from '../limits.js'
 import type {
   ApiErrorBody,
@@ -42,8 +47,15 @@ export type ApiErrorCode =
   | 'stream_interrupted'
   /** 响应头说是 SSE，但一个数据帧都没收到（#324） */
   | 'stream_empty'
-  | 'request_timed_out'
-  | 'stream_idle'
+  /**
+   * #568：三段超时各有自己的 code。上层据此决定「能不能自动重试」：
+   * - `connect_timeout` / `first_token_timeout`：还没向用户输出任何内容 → 重发安全；
+   * - `idle_timeout`：可能已经吐了半句 → 只有没出过字时才重发（见 chat/timeoutPolicy.ts）。
+   * 改名前分别是 `request_timed_out` / `stream_idle`。
+   */
+  | 'connect_timeout'
+  | 'first_token_timeout'
+  | 'idle_timeout'
 
 export type ApiErrorKind =
   /** 非 2xx 响应 */
@@ -206,66 +218,98 @@ const htmlResponseDetail = async (response: Response): Promise<string> => {
 }
 
 /**
- * 请求默认超时：与 probeProvider 的连通性探测同一口径（15 秒）。
- * 只约束「拿到响应头」这一段——流式回答可能合法地持续很久，不在这里掐；
- * 正文读到一半断掉仍由 stream_interrupted 那条路负责（#41）。
- */
-export const DEFAULT_REQUEST_TIMEOUT_MS = LIMITS.requestTimeoutMs
-
-let requestTimeoutMs: number = DEFAULT_REQUEST_TIMEOUT_MS
-
-/** 全局超时（毫秒）：合法正数生效，0 / NaN / 非数字一律回到默认，不做成「永不超时」 */
-export const setRequestTimeout = (ms: number): void => {
-  requestTimeoutMs = Number.isFinite(ms) && ms > 0 ? Math.round(ms) : DEFAULT_REQUEST_TIMEOUT_MS
-}
-
-export const getRequestTimeout = (): number => requestTimeoutMs
-
-/**
- * 流式正文的空闲超时（#150）：响应头到手之后，到「读到下一段数据」之间最多允许多久没动静。
+ * 三段超时的**默认值**（#568）：连接 / 首字 / 空闲，各自独立（数字只在 limits.ts 写一次）。
  *
- * 为什么是 45 秒：
- * - 15 秒（DEFAULT_REQUEST_TIMEOUT_MS）是建连预算，直接套到正文上太紧：弱网下长回答
- *   几十秒才吐下一个分片是常事（#133 的 S3 就是每 3 秒来 1 个字节），照这个数会误杀正常回答；
- * - 仓库里已有「连续 40 秒没有新字节就判死」的口径（history/urlImport.ts 的
- *   DOWNLOAD_STALL_MS），同为弱网下载场景，取同一个量级，不另立一套判据；
- * - 界面 60 秒会提示「等待时间过长，可以停止后重新生成」（streamNotice 的 stalled 档），
- *   超时要在那之前落地，否则用户只看到一句「要不要停」却永远等不到结论；
- * - 这是「空闲」口径不是总时长：每读到一段新数据就重新计时，长回答持续出字永远不会被杀。
+ * 为什么必须分成三段而不是一个总超时：一个数字管到底时，
+ * 「连不上」（重发安全）、「连上了但一直不出字」（重发安全）、「吐了半句后卡住」
+ * （重发会重复输出 / 重复计费）三种失败只能用同一句话收场，也就没法分别对待。
+ * 深度思考还会让「首字」这一段明显变长，见 `LIMITS.requestTimeouts.channels` 的渠道表。
  */
-export const STREAM_IDLE_TIMEOUT_MS = LIMITS.streamIdleTimeoutMs
-
-let streamIdleTimeoutMs: number = STREAM_IDLE_TIMEOUT_MS
-
-/** 空闲超时（毫秒）：合法正数生效，0 / NaN / 非数字一律回到默认，不做成「永不超时」 */
-export const setStreamIdleTimeout = (ms: number): void => {
-  streamIdleTimeoutMs = Number.isFinite(ms) && ms > 0 ? Math.round(ms) : STREAM_IDLE_TIMEOUT_MS
-}
-
-export const getStreamIdleTimeout = (): number => streamIdleTimeoutMs
+export const DEFAULT_REQUEST_TIMEOUT_MS = LIMITS.requestTimeouts.connectMs
+/** 首字预算默认值（响应头 → 第一个 SSE 事件）；渠道表可覆盖，深度思考档另有更长的一列 */
+export const FIRST_TOKEN_TIMEOUT_MS = LIMITS.requestTimeouts.firstTokenMs
+export const STREAM_IDLE_TIMEOUT_MS = LIMITS.requestTimeouts.idleMs
 
 /**
- * 空闲超时错误：独立的 kind + code，上层可以（也应该）与「请求超时」「断流」分开处理。
- * 文案复用 replyWaitingStalled（「等待时间过长，可以停止后重新生成」）——语义是
- * 「等了太久、还能重来」，不是 requestTimeout 的「没有响应」；新增 i18n key 会和并行
- * 分支抢同一批文件，这一单先复用，等文案统一时再换专用 key（见 PR 说明）。
+ * 三个「覆盖值」都是 `null` = 走当前渠道的默认值（`timeoutsFor(getCurrentSpec())`）。
+ *
+ * 为什么是覆盖而不是直接存值：首字预算按渠道/思考态查表（`LIMITS.requestTimeouts.channels`），
+ * 存一个全局数值就把表废掉了。覆盖入口只给测试与将来的「弱网模式」用（#568 的 follow-up），
+ * 传非法值一律清成 null，不做成「永不超时」。
+ */
+let requestTimeoutOverride: number | null = null
+let firstTokenTimeoutOverride: number | null = null
+let streamIdleTimeoutOverride: number | null = null
+
+const overrideOf = (ms: number): number | null =>
+  Number.isFinite(ms) && ms > 0 ? Math.round(ms) : null
+
+/** 连接段预算（毫秒）；不传覆盖值就用当前渠道的默认值 */
+export const setRequestTimeout = (ms: number): void => {
+  requestTimeoutOverride = overrideOf(ms)
+}
+
+export const getRequestTimeout = (): number =>
+  requestTimeoutOverride ?? timeoutsFor(getCurrentSpec()).connectMs
+
+/** 首字段预算（毫秒，响应头 → 第一个 SSE 事件） */
+export const setFirstTokenTimeout = (ms: number): void => {
+  firstTokenTimeoutOverride = overrideOf(ms)
+}
+
+/**
+ * 首字预算：覆盖值 > 渠道表 > 默认值。**深度思考时用表里的 `thinkingFirstTokenMs`**，
+ * 因为「模型先想一大段再出字」是常态，用普通档会误杀（#568 第 3 条）。
+ */
+export const getFirstTokenTimeout = (thinking = false): number =>
+  firstTokenTimeoutOverride ?? timeoutsFor(getCurrentSpec(), { thinking }).firstTokenMs
+
+/** 空闲段预算（毫秒，相邻两次数据之间；#150 的口径不变） */
+export const setStreamIdleTimeout = (ms: number): void => {
+  streamIdleTimeoutOverride = overrideOf(ms)
+}
+
+export const getStreamIdleTimeout = (): number =>
+  streamIdleTimeoutOverride ?? timeoutsFor(getCurrentSpec()).idleMs
+
+/**
+ * 空闲超时（#568 起 code = `idle_timeout`，之前叫 `stream_idle`）：上游连上了、正文也开始了，
+ * 但连续一段时间没有新数据。
+ *
+ * 文案 replyIdleTimeout（「等待时间过长：连续 {seconds} 秒没有收到新内容，可以停止后重新生成」）：
+ * 语义是「等了太久、还能重来」，与「连不上」（requestTimeout）分开说；秒数注入的是本段实际阈值。
+ * 注意它和 60s 档的等待提示（streamNotice 的 replyWaitingStalled）不是同一个 key：
+ * 那个是「还在等，要不要停」，这个是「已经判死，怎么收场」。
  */
 const streamIdleTimedOut = (idleMs: number, detail?: string): ApiError =>
   new ApiError(
     'idle',
-    { key: 'replyWaitingStalled' },
+    { key: 'replyIdleTimeout', params: { seconds: Math.max(1, Math.round(idleMs / 1000)) } },
     undefined,
-    'stream_idle',
+    'idle_timeout',
     detail ?? `no data for ${idleMs}ms`
   )
 
-/** 超时与「没到达服务端」「4xx/5xx」分开：它有自己的 kind / code / 文案 */
+/**
+ * 首字超时（#568）：响应头到手了、连接是通的，但**第一个 SSE 事件**没来。
+ * 与空闲超时分开的理由只有一个，但足够：这一段里用户还什么都没看到，重发是安全的。
+ */
+const firstTokenTimedOut = (firstTokenMs: number, detail?: string): ApiError =>
+  new ApiError(
+    'timeout',
+    { key: 'replyFirstTokenTimeout', params: { seconds: Math.max(1, Math.round(firstTokenMs / 1000)) } },
+    undefined,
+    'first_token_timeout',
+    detail ?? `no sse event within ${firstTokenMs}ms`
+  )
+
+/** 连接段超时（发起到响应头）：与「没到达服务端」「4xx/5xx」分开，它有自己的 code / 文案 */
 const requestTimedOut = (timeoutMs: number, detail?: string): ApiError =>
   new ApiError(
     'timeout',
     { key: 'requestTimeout', params: { seconds: Math.max(1, Math.round(timeoutMs / 1000)) } },
     undefined,
-    'request_timed_out',
+    'connect_timeout',
     detail
   )
 
@@ -285,7 +329,7 @@ export const request = async (
   options: RequestOptions = {}
 ): Promise<Response> => {
   const timeoutMs =
-    options.timeoutMs !== undefined && options.timeoutMs > 0 ? options.timeoutMs : requestTimeoutMs
+    options.timeoutMs !== undefined && options.timeoutMs > 0 ? options.timeoutMs : getRequestTimeout()
   const callerSignal = init.signal ?? null
   const controller = new AbortController()
   let timedOut = false
@@ -513,6 +557,17 @@ export type StreamOptions = StreamTimingHook & {
 }
 
 /**
+ * 响应体阶段的两段预算（#568）：查当前渠道的表，而不是全局一个数。
+ *
+ * 深度思考时用渠道表的 `thinkingFirstTokenMs` 一列 —— 模型先想一大段再出字是常态，
+ * 拿普通档去卡它就是把「正常在思考」判成「卡住了」。
+ */
+const streamBudgets = (body: CreateMessageRequest): StreamBudgets => ({
+  firstEventMs: getFirstTokenTimeout(body.thinking?.type === 'enabled'),
+  idleMs: getStreamIdleTimeout(),
+})
+
+/**
  * OpenAI 兼容上游（spec.protocol = 'openai'）：POST {paths.messages}（通常 /v1/chat/completions）。
  * 请求体与响应流都经 openaiAdapter 双向翻译，向上层产出的仍是 Anthropic 风格事件，
  * 因此 UI 与 store 不需要任何分支。断流/脏数据由翻译器收尾，这里只把错误帧转成 ApiError。
@@ -545,7 +600,7 @@ async function* streamOpenAIMessage(
   }
   try {
     for await (const event of translateOpenAIStream(
-      readServerSentEvents(response.body, signal, getStreamIdleTimeout()),
+      readServerSentEvents(response.body, signal, streamBudgets(body)),
       {
         model: body.model,
       }
@@ -557,7 +612,10 @@ async function* streamOpenAIMessage(
       }
     }
   } catch (error) {
-    // 正文阶段长时间没有新数据（#150）：先认它，别并进「断流」
+    // 首字 / 正文空闲两段超时先认：它们各有自己的 code 与重试口径，别并进「断流」
+    if (error instanceof StreamFirstTokenTimeoutError) {
+      throw firstTokenTimedOut(error.firstTokenMs, error.message)
+    }
     if (error instanceof StreamIdleTimeoutError) {
       throw streamIdleTimedOut(error.idleMs, error.message)
     }
@@ -616,7 +674,7 @@ export async function* streamMessage(
     for await (const { event: eventName, data } of readServerSentEvents(
       response.body,
       signal,
-      getStreamIdleTimeout()
+      streamBudgets(body)
     )) {
       frames += 1
       let payload: unknown
@@ -652,8 +710,11 @@ export async function* streamMessage(
       }
     }
   } catch (error) {
-    // 正文阶段长时间没有新数据（#150）：单独一类错误，保留已收内容并允许重试；
+    // 首字超时 / 正文空闲超时：各自一类错误，保留已收内容；
     // 不能落到下面的 streamInterrupted，那会把「不动」说成「断了」。
+    if (error instanceof StreamFirstTokenTimeoutError) {
+      throw firstTokenTimedOut(error.firstTokenMs, error.message)
+    }
     if (error instanceof StreamIdleTimeoutError) {
       throw streamIdleTimedOut(error.idleMs, error.message)
     }

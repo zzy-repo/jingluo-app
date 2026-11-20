@@ -142,7 +142,8 @@ test('[4] 重试策略：4xx（429 除外）不重试，429 / 5xx / 超时 / 断
     assert.equal(isRetryableApiError(http(status)), true)
   }
   // 负向用例：被判成终态的必须是「重发也没用」的那类，超时 / 断网 / 断流仍然重试
-  assert.equal(isRetryableApiError(new ApiError('timeout', 'timeout', undefined, 'request_timed_out')), true)
+  // #568：连接段超时的 code 改名 connect_timeout，判据不变（超时仍可重试）
+  assert.equal(isRetryableApiError(new ApiError('timeout', 'timeout', undefined, 'connect_timeout')), true)
   assert.equal(isRetryableApiError(new ApiError('network', 'fetch failed')), true)
   assert.equal(isRetryableApiError(new ApiError('interrupted', 'cut')), true)
 })

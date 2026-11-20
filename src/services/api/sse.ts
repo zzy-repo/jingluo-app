@@ -115,17 +115,52 @@ export class StreamIdleTimeoutError extends Error {
 }
 
 /**
+ * 响应头到手之后、**第一个 SSE 事件**还没来，且已经超过约定时长（#568）。
+ *
+ * 与「空闲超时」分开的核心理由：两段能不能重试不一样。
+ * - 首字超时的时候还没向用户输出任何内容，重发是安全的（同一份请求体再打一次即可）；
+ * - 空闲超时可能发生在正文中途（吐半句后不动），重发会重复输出 / 重复计费。
+ * 混成一个错误，上层就只能二选一：要么误重试、要么白丢一个本可以自愈的失败。
+ */
+export class StreamFirstTokenTimeoutError extends Error {
+  /** 首字预算（毫秒） */
+  readonly firstTokenMs: number
+
+  constructor(firstTokenMs: number) {
+    super(`no sse event within ${firstTokenMs}ms after response headers`)
+    this.name = 'StreamFirstTokenTimeoutError'
+    this.firstTokenMs = firstTokenMs
+  }
+}
+
+/**
+ * 响应体阶段的两段预算（#568）。两者都是「空闲」口径，不是总时长：
+ * - `firstEventMs`：响应头到手 → **第一个事件**。这段时间**不因为收到保活注释而重置**
+ *   （保活只证明连接活着，不证明模型开始出字；重置它等于把首字超时废掉）；
+ * - `idleMs`：此后**每读到一段数据**就重新计时（含保活注释 —— 它确实证明连接还在，
+ *   在这里杀掉是误杀正常长回答，#150 的口径不变）。
+ * 不传 / 非正数表示该段不启用。
+ */
+export type StreamBudgets = {
+  firstEventMs?: number
+  idleMs?: number
+}
+
+/** 合法正数才生效（0 / NaN / 负数一律当「不启用」） */
+const budgetOf = (value: number | undefined): number =>
+  Number.isFinite(value) && (value as number) > 0 ? Math.round(value as number) : 0
+
+/**
  * 逐个产出字节流中的 SSE 事件；流读完即结束。
  * 中止或调用方提前退出时取消读取以释放连接，不依赖底层网络把中止传到响应体。
  *
- * `idleTimeoutMs` 是「空闲」口径，不是总时长：每收到一段新数据就重新计时，
- * 所以长回答慢一点也不会被掐；只有上游不断也不动（#150 的 S3）才会到点。
- * 不传 / 非正数表示不启用（autoTitle 等短请求不需要）。
+ * 计时范围见 `StreamBudgets`：首字一段、此后空闲一段，各自独立。
+ * 两段都没配时与改造前完全一致（只读、不计时）。
  */
 export async function* readServerSentEvents(
   stream: ReadableStream<Uint8Array>,
   signal?: AbortSignal,
-  idleTimeoutMs = 0
+  budgets: StreamBudgets = {}
 ): AsyncGenerator<ServerSentEvent> {
   const reader = stream.getReader()
   const onAbort = () => {
@@ -135,42 +170,72 @@ export async function* readServerSentEvents(
   // TextDecoder 默认会去掉开头的 BOM；stream: true 保证多字节字符跨分片时不被截断
   const textDecoder = new TextDecoder()
   const decoder = new ServerSentEventDecoder()
-  const idleBudget =
-    Number.isFinite(idleTimeoutMs) && idleTimeoutMs > 0 ? Math.round(idleTimeoutMs) : 0
+  const idleBudget = budgetOf(budgets.idleMs)
+  const firstEventBudget = budgetOf(budgets.firstEventMs)
   /**
-   * 读下一段数据，同时给这次等待套一个空闲预算。
-   * 到点先取消读取（真正断开连接，不留悬挂 socket），再抛空闲超时。
+   * 首字预算从**第一次读**开始算（= 响应头到手那一刻，调用方拿到 response 就直接开始迭代），
+   * 并且跨多次 read 连续计时：分片进来但还没凑成一个完整事件时，剩下的预算继续有效。
    */
-  const readWithinIdleBudget = async (): Promise<ReadableStreamReadResult<Uint8Array>> => {
-    if (!idleBudget) {
-      return reader.read()
-    }
+  const firstEventDeadline = firstEventBudget ? Date.now() + firstEventBudget : 0
+  let firstEventPending = firstEventBudget > 0
+  /**
+   * 读下一段数据，同时给这次等待套一个预算。
+   * 到点先取消读取（真正断开连接，不留悬挂 socket），再抛对应那一段的超时。
+   */
+  const readWithinBudget = async (
+    budgetMs: number,
+    makeError: () => Error
+  ): Promise<ReadableStreamReadResult<Uint8Array>> => {
     let timer: ReturnType<typeof setTimeout> | undefined
-    const idle = new Promise<never>((_, reject) => {
+    const expired = new Promise<never>((_, reject) => {
       timer = setTimeout(() => {
         // 先判定超时，再断开连接：反过来会让 cancel 先把挂起的 read 结算成 done，
-        // 上层会把它当成「流正常结束」而不是空闲超时。
-        reject(new StreamIdleTimeoutError(idleBudget))
+        // 上层会把它当成「流正常结束」而不是超时。
+        reject(makeError())
         reader.cancel().catch(() => {})
-      }, idleBudget)
+      }, budgetMs)
     })
     try {
-      return await Promise.race([reader.read(), idle])
+      return await Promise.race([reader.read(), expired])
     } finally {
       clearTimeout(timer)
     }
   }
+  /** 本次读要等多久、超时算哪一段：首字还没来就用剩余的首字预算，否则用空闲预算 */
+  const nextBudget = (): { ms: number; makeError: () => Error } | null => {
+    if (firstEventPending) {
+      return {
+        ms: firstEventDeadline - Date.now(),
+        makeError: () => new StreamFirstTokenTimeoutError(firstEventBudget),
+      }
+    }
+    return idleBudget
+      ? { ms: idleBudget, makeError: () => new StreamIdleTimeoutError(idleBudget) }
+      : null
+  }
   let finished = false
   try {
     for (;;) {
-      const { done, value } = await readWithinIdleBudget()
+      const budget = nextBudget()
+      if (budget && budget.ms <= 0) {
+        // 首字预算在两次 read 之间就耗尽了（分片一直在来但始终不成事件）
+        throw budget.makeError()
+      }
+      const { done, value } = budget
+        ? await readWithinBudget(budget.ms, budget.makeError)
+        : await reader.read()
       if (done) {
         finished = true
         yield* decoder.push(textDecoder.decode())
         yield* decoder.end()
         return
       }
-      yield* decoder.push(textDecoder.decode(value, { stream: true }))
+      const events = decoder.push(textDecoder.decode(value, { stream: true }))
+      if (firstEventPending && events.length > 0) {
+        // 第一个事件到了：首字段结束，此后一律按空闲口径计时
+        firstEventPending = false
+      }
+      yield* events
     }
   } finally {
     signal?.removeEventListener('abort', onAbort)

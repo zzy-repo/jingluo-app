@@ -19,6 +19,7 @@
  * 设置页因此不渲染地址与模型输入行，值只从 defaults 取。
  */
 import { INTERNAL_BUILD } from './internalBuild.js'
+import { LIMITS, type RequestTimeoutOverride } from '../limits.js'
 
 export type ProviderKind = 'deepseek' | 'anthropic' | 'openai' | 'ours'
 
@@ -347,6 +348,49 @@ export const isProviderKind = (value: unknown): value is ProviderKind =>
 /** 取 spec：未知/缺省（旧用户没有这个 key）一律按 deepseek 处理 */
 export const getSpec = (kind?: string | null): ProviderSpec =>
   isProviderKind(kind) ? SPECS[kind] : SPECS[DEFAULT_PROVIDER_KIND]
+
+/**
+ * 三段超时的**渠道解析**（#568）：表在 `LIMITS.requestTimeouts.channels`，这里只做查表 + 回落。
+ *
+ * 为什么要有这一层而不是各处直接读 LIMITS：调用方（`api/client.ts`）只关心
+ * 「当前渠道 + 这一轮开不开深度思考」对应的三个数字，不该知道表怎么组织的；
+ * 而渠道表本身属于「渠道的形状」，跟 paths / caps 放在同一份配置里才好对照着看。
+ *
+ * 缺项一律回落默认值：新增渠道不登记也能跑（拿默认档），只是享受不到按渠道放宽。
+ */
+/**
+ * 渠道 → 三段超时的覆盖值（#568）。**逐行点名**，不用 `channels[spec.kind]` 动态索引：
+ * - `Record<ProviderKind, …>` 让「新增渠道必须登记」变成编译期错误（漏登记不编译）；
+ * - `tests/unit/limits-config.test.mjs` 的「每个 LIMITS 叶子都有人引用」门禁能逐条核对到，
+ *   动态索引会让那张表的数字变成谁都查不到的孤儿。
+ */
+const CHANNEL_TIMEOUTS: Record<ProviderKind, RequestTimeoutOverride> = {
+  deepseek: { thinkingFirstTokenMs: LIMITS.requestTimeouts.channels.deepseek.thinkingFirstTokenMs },
+  anthropic: {
+    thinkingFirstTokenMs: LIMITS.requestTimeouts.channels.anthropic.thinkingFirstTokenMs,
+  },
+  ours: {
+    firstTokenMs: LIMITS.requestTimeouts.channels.ours.firstTokenMs,
+    thinkingFirstTokenMs: LIMITS.requestTimeouts.channels.ours.thinkingFirstTokenMs,
+  },
+  openai: { thinkingFirstTokenMs: LIMITS.requestTimeouts.channels.openai.thinkingFirstTokenMs },
+}
+
+export const timeoutsFor = (
+  spec: Pick<ProviderSpec, 'kind'>,
+  options: { thinking?: boolean } = {}
+): { connectMs: number; firstTokenMs: number; idleMs: number } => {
+  const defaults = LIMITS.requestTimeouts
+  const channel = CHANNEL_TIMEOUTS[spec.kind]
+  const firstTokenMs = options.thinking
+    ? (channel.thinkingFirstTokenMs ?? defaults.firstTokenMs)
+    : (channel.firstTokenMs ?? defaults.firstTokenMs)
+  return {
+    connectMs: channel.connectMs ?? defaults.connectMs,
+    firstTokenMs,
+    idleMs: channel.idleMs ?? defaults.idleMs,
+  }
+}
 
 /** 该渠道是否要用户自己填这个字段（不在 fields 里就是内置值） */
 export const isUserField = (spec: ProviderSpec, field: ProviderField): boolean =>

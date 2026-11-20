@@ -167,13 +167,13 @@ const ROWS = [
   {
     id: '行 6 空闲超时（上游不再吐字）',
     covers: ['F2-09'],
-    // 只发响应头 + 一块正文，然后一直不动：45s 空闲超时（LIMITS.streamIdleTimeoutMs）后收口
+    // 只发响应头 + 一块正文，然后一直不动：60s 空闲超时（LIMITS.requestTimeouts.idleMs，#568 从 45s 放宽）后收口
     respond: (res) => writeCut(res, { chunks: ['收到一句后上游不动了'] }),
     idle: true,
     expectText: '等待时间过长',
     notText: /连接中断|网络异常|未知错误/,
     calls: 1,
-    // 空闲超时的文案是「可以停止后重新生成」（replyWaitingStalled），不是「可以重试」：
+    // 空闲超时的文案是「等待时间过长：连续 N 秒没有收到新内容，可以停止后重新生成」（replyIdleTimeout），不是「可以重试」：
     // 连接还在、上游不动了，出路是换一条连接重生成，而不是干等重试。
     retryHint: /可以停止后重新生成/,
     saysRetryable: false,
@@ -234,7 +234,7 @@ const hangAfterChunk = async (res) => {
   ]) {
     res.write(`${line}\n`)
   }
-  // 之后不发任何字节、也不 end：客户端会在 streamIdleTimeoutMs（45s）后按「空闲超时」收口
+  // 之后不发任何字节、也不 end：客户端会在 requestTimeouts.idleMs（60s，#568）后按「空闲超时」收口
   await new Promise((resolve) => res.on('close', resolve))
 }
 

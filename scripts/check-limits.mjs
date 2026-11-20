@@ -38,9 +38,10 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
  */
 const WATCHED = [
   {
-    // 唯一的一处：requestTimedOut() 里 Math.round(timeoutMs / 1000) 把毫秒折成文案里的秒数
+    // 只有毫秒 → 秒的换算：三段超时（#568）各自把阈值折成文案里的 {seconds}，
+    // 连接 / 首字 / 空闲各一处（连接段沿用 requestTimeout 的 {seconds}）。
     file: 'src/services/api/client.ts',
-    allow: [{ value: 1000, count: 1, reason: '毫秒 → 秒换算（超时文案的 {seconds}）' }],
+    allow: [{ value: 1000, count: 3, reason: '毫秒 → 秒换算（三段超时文案的 {seconds}）' }],
   },
   {
     file: 'src/services/chat/contextBudget.ts',

@@ -149,7 +149,8 @@ test('永不 resolve 的请求：超时后必须拒绝，错误可与网络失�
   assert.ok(outcome.error, '超时必须 reject，不能 resolve 出空响应')
   assert.ok(outcome.error instanceof ApiError, `超时应抛 ApiError，实际 ${outcome.error?.name}`)
   assert.equal(outcome.error.kind, 'timeout', '超时的 kind 必须是 timeout，不能并进 network')
-  assert.equal(outcome.error.code, 'request_timed_out', '超时要有机器可读的错误码')
+  // #568：这一段只覆盖「发起到拿到响应头」，错误码随之改名为 connect_timeout（三段之一）
+  assert.equal(outcome.error.code, 'connect_timeout', '超时要有机器可读的错误码')
   assert.equal(outcome.error.status, undefined, '超时没有 HTTP 状态码')
   assert.equal(outcome.error.localMessage?.key, 'requestTimeout', '超时要有自己的界面文案 key')
   assert.ok(
@@ -278,6 +279,7 @@ test('超时文案 zh / en 都有且带秒数占位符', () => {
   assert.match(zh.requestTimeout, /\{seconds\}/)
   assert.match(en.requestTimeout, /\{seconds\}/)
   assert.match(zh.requestTimeout, /超时/)
-  assert.match(en.requestTimeout, /timed out/i)
+  // #568：文案改成「连接上游超时」，英文对应 connect timeout
+  assert.match(en.requestTimeout, /connect timeout/i)
   assert.deepEqual(Object.keys(en).sort(), Object.keys(zh).sort(), 'zh/en 的 key 必须一一对应')
 })

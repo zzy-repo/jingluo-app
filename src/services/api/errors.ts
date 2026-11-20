@@ -1,3 +1,4 @@
+import { shouldRetryStreamTimeout } from '../chat/timeoutPolicy.js'
 import { ApiError } from './client.js'
 
 /**
@@ -537,7 +538,17 @@ export const isRetryableApiError = (error: unknown): boolean => {
   if (!(error instanceof ApiError)) {
     return true
   }
-  // 超时等价于「这一轮没等到响应」：重试是有效的，不能因为没状态码就归到 other
+  /**
+   * #568：三段超时先查重试矩阵（`chat/timeoutPolicy.ts`），**不在两处各写一遍口径**。
+   * 这里回答的是「原则上可重试吗」，即假设还没向用户输出任何内容；
+   * 「已经出过字就不许重发」那条判据需要 `receivedContent`，由发起重试的
+   * `store.ts decideStreamRetry` 用同一个函数带进去。
+   */
+  const stagedTimeout = shouldRetryStreamTimeout(error.code, false)
+  if (stagedTimeout !== null) {
+    return stagedTimeout
+  }
+  // 其它超时等价于「这一轮没等到响应」：重试是有效的，不能因为没状态码就归到 other。
   // 空闲超时（#150）同理：换一条连接通常就好了，用户不必自己点重试
   if (error.kind === 'timeout' || error.kind === 'idle') {
     return true

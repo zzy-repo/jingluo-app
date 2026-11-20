@@ -250,7 +250,8 @@ test('流式阶段长时间没有新数据：必须收口成空闲超时错误�
       'idle',
       '空闲超时要自己一类 kind，不能并进 interrupted / timeout / network'
     )
-    assert.equal(error.code, 'stream_idle', '空闲超时要有独立错误码，上层才能精确分支')
+    // #568：这条错误码改名为 idle_timeout（三段超时统一 naming），语义与判据不变
+    assert.equal(error.code, 'idle_timeout', '空闲超时要有独立错误码，上层才能精确分支')
     assert.equal(error.status, undefined, '空闲超时没有 HTTP 状态码')
     assert.ok(
       elapsed >= TINY_IDLE_MS - 50 && elapsed < 1400,
@@ -340,11 +341,20 @@ test('超时后已收内容保留，提示可读、可重试，且不复用「�
     assert.ok(key, '空闲超时要有界面文案 key，不能只留内部 English 原文')
     assert.ok(String(zh[key] ?? '').length > 0, `zh 缺少文案：${key}`)
     assert.ok(String(en[key] ?? '').length > 0, `en 缺少文案：${key}`)
-    assert.equal(error.message, translate(key), 'error.message 就是本地化文案')
+    // #568：文案带 {seconds}（实际阈值折算的秒数），所以带 params 才是最终展示文本
+    assert.equal(
+      error.message,
+      translate(key, error.localMessage?.params),
+      'error.message 就是本地化文案'
+    )
 
     const notice = describeReply(settled)
     assert.ok(notice, '超时后必须有提示，不能静默收尾')
-    assert.equal(notice.text, translate(key), '界面提示用这条文案')
+    assert.equal(
+      notice.text,
+      translate(key, error.localMessage?.params),
+      '界面提示用这条文案'
+    )
     assert.notEqual(
       notice.text,
       translate('requestTimeout'),

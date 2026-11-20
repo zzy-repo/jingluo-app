@@ -175,6 +175,8 @@ const UNIT_SOLO = new Set([
   //
   // ① hook 链：条件路由被前一个文件的 catch-all 抢先（同一 src 模块被两个文件按不同方式装配）
   'chat-prefix-stability-345.test.mjs', 'chat-context-limit-error.test.mjs', 'chat-retry-retryable.test.mjs',
+  // #568：装配与重试用例同源（假 db + 诊断替身 + 真计时窗口比 timer 数），合批会吃到邻居的替身
+  'chat-staged-timeout-568.test.mjs',
   'chat-wait-stage.test.mjs', 'import-hardening.test.mjs', 'import-partial-skip.test.mjs',
   'import-skipped-ui.test.mjs', 'imported-attachment-379.test.mjs', 'import-refuse-before-download.test.mjs',
   'log-313-attachment-import.test.mjs', 'export-selection-390.test.mjs', 'export-ux-336.test.mjs',

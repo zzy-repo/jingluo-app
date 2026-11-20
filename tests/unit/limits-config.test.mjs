@@ -64,8 +64,26 @@ const importLimit = await import('../../src/services/chat/history/importLimit.ts
  * 这是本单唯一允许「重新写一遍数字」的地方：它的作用就是证明搬家前后一模一样。
  */
 const ORIGINAL_VALUES = {
-  requestTimeoutMs: 15000,
-  streamIdleTimeoutMs: 45000,
+  /**
+   * #568：原来的一整段 `requestTimeoutMs` / `streamIdleTimeoutMs` 拆成三段超时表。
+   * 值的变化只有一处，且是本单的立项理由：
+   * - `connectMs` = 原 requestTimeoutMs（15000，值未变）；
+   * - `firstTokenMs` = 新增的一段（原先根本没有「等首字」这一档，只有 45s 空闲兜底）；
+   * - `idleMs` = 原 streamIdleTimeoutMs **从 45s 放宽到 60s**（弱网 / 长回答被 45s 误杀的实测见 #150/#133）。
+   * `channels` 是**新增**的渠道覆盖表（#568 第 3 条：首字要能按渠道/思考态调，不许写死一个数），
+   * 不是搬家项；手抄在这里同样是为了「改阈值必须两边一起改」。
+   */
+  requestTimeouts: {
+    connectMs: 15000,
+    firstTokenMs: 30000,
+    idleMs: 60000,
+    channels: {
+      deepseek: { thinkingFirstTokenMs: 90000 },
+      anthropic: { thinkingFirstTokenMs: 120000 },
+      ours: { firstTokenMs: 20000, thinkingFirstTokenMs: 60000 },
+      openai: { thinkingFirstTokenMs: 45000 },
+    },
+  },
   streamRetryLimit: 2,
   retryBaseDelayMs: 1000,
   contextBudget: { maxTokens: 120_000, maxRounds: 200 },
@@ -152,8 +170,9 @@ test('LIMITS 逐项等于迁移前的原值（只搬位置、数值一个不许�
 })
 
 test('调用方原导出名不变，且值就是 LIMITS 里的那一项（调用方零改动）', () => {
-  assert.equal(client.DEFAULT_REQUEST_TIMEOUT_MS, LIMITS.requestTimeoutMs)
-  assert.equal(client.STREAM_IDLE_TIMEOUT_MS, LIMITS.streamIdleTimeoutMs)
+  assert.equal(client.DEFAULT_REQUEST_TIMEOUT_MS, LIMITS.requestTimeouts.connectMs)
+  assert.equal(client.FIRST_TOKEN_TIMEOUT_MS, LIMITS.requestTimeouts.firstTokenMs)
+  assert.equal(client.STREAM_IDLE_TIMEOUT_MS, LIMITS.requestTimeouts.idleMs)
   assert.equal(store.STREAM_RETRY_LIMIT, LIMITS.streamRetryLimit)
   assert.deepEqual(contextBudget.DEFAULT_CONTEXT_BUDGET, LIMITS.contextBudget)
   assert.equal(autoTitle.AUTO_TITLE_TIMEOUT_MS, LIMITS.autoTitle.timeoutMs)
@@ -214,12 +233,18 @@ test('三个 setter 调用后真的生效（不是「看起来可配置」）', 
     client.setRequestTimeout(1234)
     assert.equal(client.getRequestTimeout(), 1234)
     client.setRequestTimeout(0)
-    assert.equal(client.getRequestTimeout(), LIMITS.requestTimeoutMs, '非法值回到默认')
+    assert.equal(client.getRequestTimeout(), LIMITS.requestTimeouts.connectMs, '非法值回到默认')
+
+    // #568：首字段也是「改了就生效、非法值回默认」
+    client.setFirstTokenTimeout(3333)
+    assert.equal(client.getFirstTokenTimeout(), 3333)
+    client.setFirstTokenTimeout(Number.NaN)
+    assert.equal(client.getFirstTokenTimeout(), LIMITS.requestTimeouts.firstTokenMs, '非法值回到默认')
 
     client.setStreamIdleTimeout(2222)
     assert.equal(client.getStreamIdleTimeout(), 2222)
     client.setStreamIdleTimeout(Number.NaN)
-    assert.equal(client.getStreamIdleTimeout(), LIMITS.streamIdleTimeoutMs, '非法值回到默认')
+    assert.equal(client.getStreamIdleTimeout(), LIMITS.requestTimeouts.idleMs, '非法值回到默认')
 
     contextBudget.setContextBudget({ maxRounds: 7 })
     assert.equal(contextBudget.getContextBudget().maxRounds, 7)
@@ -227,11 +252,13 @@ test('三个 setter 调用后真的生效（不是「看起来可配置」）', 
     contextBudget.setContextBudget({ maxTokens: 0 })
     assert.equal(contextBudget.getContextBudget().maxTokens, LIMITS.contextBudget.maxTokens, '非法值回落默认')
   } finally {
-    client.setRequestTimeout(LIMITS.requestTimeoutMs)
-    client.setStreamIdleTimeout(LIMITS.streamIdleTimeoutMs)
+    client.setRequestTimeout(LIMITS.requestTimeouts.connectMs)
+    client.setFirstTokenTimeout(LIMITS.requestTimeouts.firstTokenMs)
+    client.setStreamIdleTimeout(LIMITS.requestTimeouts.idleMs)
     contextBudget.resetContextBudget()
   }
-  assert.equal(client.getRequestTimeout(), LIMITS.requestTimeoutMs)
-  assert.equal(client.getStreamIdleTimeout(), LIMITS.streamIdleTimeoutMs)
+  assert.equal(client.getRequestTimeout(), LIMITS.requestTimeouts.connectMs)
+  assert.equal(client.getFirstTokenTimeout(), LIMITS.requestTimeouts.firstTokenMs)
+  assert.equal(client.getStreamIdleTimeout(), LIMITS.requestTimeouts.idleMs)
   assert.deepEqual(contextBudget.getContextBudget(), LIMITS.contextBudget)
 })

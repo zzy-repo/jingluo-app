@@ -166,6 +166,12 @@ export const zh = {
   replyWaitingFirstToken: '正在等待响应',
   replyWaitingSlow: '服务响应较慢，仍在等待',
   replyWaitingStalled: '等待时间过长，可以停止后重新生成',
+  /**
+   * 三段超时（#568）：**每段一句**，用户能看出到底卡在哪一段，而不是一句笼统的「超时」。
+   * 秒数由实现按实际阈值注入（connect / first_token / idle 各用各的数字），文案里不写死。
+   */
+  replyIdleTimeout: '等待时间过长：连续 {seconds} 秒没有收到新内容，可以停止后重新生成',
+  replyFirstTokenTimeout: '已连上上游，但 {seconds} 秒内没等到第一个字，可以重新发送或稍后再试',
   /** 首字前的阶段名（#328）：和三档提示一起显示，秒数由 waitElapsed 注入，不写死 */
   waitStagePreparing: '正在准备请求',
   waitStageUploading: '正在上传附件',
@@ -638,7 +644,8 @@ export const zh = {
   oursPayRecordsCopyCard: '复制卡密',
   oursPayRecordsCopied: '卡密已复制',
   // Issue #45：请求统一超时的提示（与网络失败、4xx/5xx 分开说）
-  requestTimeout: '请求超时（{seconds} 秒没有响应），请检查网络后重试',
+  /// #568：这一段只覆盖「发起到拿到响应头」，所以文案说「连接」，与首字/空闲分开
+  requestTimeout: '连接上游超时（{seconds} 秒内没有拿到响应），网络较慢时可以重新发送',
   // Issue #106：移动端标题栏双击回到首条消息
   scrollToFirstMessage: '回到首条消息（双击标题）',
   scrollToFirstMessageHint: '双击回顶',

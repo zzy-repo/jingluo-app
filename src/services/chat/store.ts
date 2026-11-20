@@ -73,6 +73,7 @@ import { STREAM_NOTICE_TIERS } from './streamNotice.js'
 import { composeWaitNotice, needsUpload, type WaitHint, type WaitStage } from './waitStage.js'
 import type { MergePlan, ImportMode } from './history/mergeSessions.js'
 import type { ImportSkip } from './history/toLocal.js'
+import { shouldRetryStreamTimeout, streamTimeoutStageOf } from './timeoutPolicy.js'
 import {
   toSessionSummary,
   type AssistantMessage,
@@ -1563,6 +1564,15 @@ export const decideStreamRetry = ({
   if (aborted) {
     return 'aborted'
   }
+  /**
+   * 三段超时（#568）：先按 `chat/timeoutPolicy.ts` 的矩阵判，**已经出过内容的空闲超时
+   * 一律不重发**——重发会重复输出、重复计费，而退避那一层完全不知道用户已经看了半句。
+   * 连接/首字两段此时用户还什么都没看到，重发是安全的。
+   */
+  const staged = error instanceof ApiError ? shouldRetryStreamTimeout(error.code, receivedContent) : null
+  if (staged !== null) {
+    return staged && attempt < STREAM_RETRY_LIMIT ? 'retry' : 'final'
+  }
   if (receivedContent || attempt >= STREAM_RETRY_LIMIT) {
     return 'final'
   }
@@ -1989,6 +1999,17 @@ const streamReply = async (sessionId: string, initial: AssistantMessage, request
           }),
           // 上游是不是已经开始了流（SSE）：true = 断在流里，false = 流开始前就失败
           streaming: failedInStream,
+          /**
+           * 三段超时的可观察字段（#568）：超时到底卡在哪一段。
+           * 「是不是我们的超时太短、还是上游真的慢」只能靠这两个字段回答，
+           * 混在 kind='timeout' 里谁也分不出连接慢还是首字慢。
+           */
+          ...(apiFailure?.code && streamTimeoutStageOf(apiFailure.code)
+            ? {
+                'timeout.code': apiFailure.code,
+                'timeout.stage': streamTimeoutStageOf(apiFailure.code) as string,
+              }
+            : {}),
           ...(idleMs ? { 'idle.ms': Number(idleMs) } : {}),
           // 用户在界面上会看到什么：条件分类 + i18n 文案 key（用来核实「到底有没有提示」）
           'ui.condition': condition,

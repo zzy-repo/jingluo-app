@@ -19,11 +19,65 @@
 
 import { DEFAULT_MAX_IMPORT_BYTES } from './chat/history/importLimit.js'
 
+/**
+ * 三段超时的**渠道覆盖**形状（#568）：只写与默认值不同的项。
+ * 声明在这里而不是 providers.ts：数字表在 limits.ts，形状跟着数字走，避免类型文件反向依赖。
+ */
+export type RequestTimeoutOverride = {
+  connectMs?: number
+  firstTokenMs?: number
+  thinkingFirstTokenMs?: number
+  idleMs?: number
+}
+
 export const LIMITS = {
-  /** 建连预算：只约束「拿到响应头」这一段，不限制流式正文（#41） */
-  requestTimeoutMs: 15000,
-  /** 流式正文的空闲超时：响应头到手后连多久没新数据算卡死（#150）。这是空闲口径，不是总时长 */
-  streamIdleTimeoutMs: 45000,
+  /**
+   * **三段超时**（#568）：请求分三段各自计时，不再用一个总超时兜到底。
+   *
+   * 为什么必须拆开：原先只有「到响应头」的 15s 与「正文空闲」的 45s 两段，
+   * 「连上了但一直不出字」和「出几个字后卡住」共用同一口径，用户看到的都是
+   * 长时间无反馈 + 一次性失败，也无法分别重试（只有前者是安全的）。
+   *
+   * - `connectMs`：发起到**拿到响应头**。这段超时说明「连不上/上游没接」，重发是安全的；
+   * - `firstTokenMs`：响应头到手 → **第一个 SSE 事件**。深度思考模型这段明显更慢，
+   *   所以渠道表（`api/providers.ts` 的 `timeouts`）可以逐渠道/逐思考态覆盖这一项；
+   * - `idleMs`：**相邻两次数据之间**（#150 的口径，是「空闲」不是总时长）。
+   *   已经出过字之后再超时不能重试 —— 重发会答两遍、重复计费。
+   *
+   * 三个数字怎么定的（改动要连同依据一起改）：
+   * - `connectMs` 沿用原来的 15s（与 probeProvider 的连通性探测同一口径，值未变）；
+   * - `firstTokenMs` 是**新增的一段**：原先没有它，「连上了但一直不出字」只能等 45s 空闲兜底，
+   *   既说不清卡在哪，也没法安全重试。30s 是「比空闲短、又要容下冷启动/排队」的折中；
+   *   深度思考等慢场景走 `channels` 表的长档（最长 120s）；
+   * - `idleMs` 从 45s **放宽到 60s**：45s 只是与仓库里 `importStallMs`（下载停滞 40s）同一量级
+   *   拍出来的（#150），而 #568 的诉求正是「弱网/长回答别被误杀」；60s 仍早于界面 60s 档的
+   *   「要不要停止」提示收口，用户不会看到一句提示却永远等不到结论。
+   */
+  requestTimeouts: {
+    connectMs: 15_000,
+    firstTokenMs: 30_000,
+    idleMs: 60_000,
+    /**
+     * **首字预算的渠道覆盖表**（#568 第 3 条）：一个渠道一行，只写与上面默认值不同的项。
+     *
+     * 为什么是表而不是 if：首字耗时取决于「上游排不排队、模型要不要先想一大段」，
+     * 与我们的网络关系不大。深度思考模型在官方端点上 30s 才吐第一个字是常态；
+     * 用一个数字管四个渠道只有两种结局 —— 要么误杀深度思考，要么全渠道一起放到很松。
+     * 深度思考档（`thinkingFirstTokenMs`）单独一列，因为它比普通档慢一个量级。
+     *
+     * 新增渠道时不必改这里（缺项自动继承默认值），但**慢的渠道要在这里登记**。
+     */
+    channels: {
+      /** DeepSeek 官方：深度思考起步慢，但上游体感稳定 */
+      deepseek: { thinkingFirstTokenMs: 90_000 },
+      /** Anthropic 协议（用户自填中转）：真 Anthropic 开 thinking 时可等更久 */
+      anthropic: { thinkingFirstTokenMs: 120_000 },
+      /** 我们的渠道（sub2api，reasoning_effort=high）：自家网关建连快，首字给中档 */
+      ours: { firstTokenMs: 20_000, thinkingFirstTokenMs: 60_000 },
+      /** OpenAI 兼容第三方中转：思考实现各家不一，给一档折中值 */
+      openai: { thinkingFirstTokenMs: 45_000 },
+    },
+  },
   /** 自动重试的最多次数（不含首次请求）：附件补传、断网、5xx、超时共用这一个上限（#105） */
   streamRetryLimit: 2,
   /** 退避基数，第 n 次重试等待 2^n 倍 */

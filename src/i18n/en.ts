@@ -170,6 +170,11 @@ export const en = {
   replyWaitingFirstToken: 'Waiting for the response',
   replyWaitingSlow: 'The service is responding slowly. Still waiting…',
   replyWaitingStalled: 'This is taking unusually long. You can stop and regenerate.',
+  /** Staged timeouts (#568): one line per stage, so the user can tell where it hung */
+  replyIdleTimeout:
+    'Taking too long: no new content for {seconds}s. You can stop and regenerate.',
+  replyFirstTokenTimeout:
+    'Connected upstream, but no first token within {seconds}s. You can send again or retry later.',
   /** Stage names before the first token (#328); the seconds come from waitElapsed, never hardcoded */
   waitStagePreparing: 'Preparing the request',
   waitStageUploading: 'Uploading attachments',
@@ -651,7 +656,9 @@ export const en = {
   oursPayRecordsCopyCard: 'Copy card code',
   oursPayRecordsCopied: 'Card code copied',
   // Issue #45: unified request timeout notice (kept apart from network failure and 4xx/5xx)
-  requestTimeout: 'Request timed out ({seconds}s with no response). Check your network and try again.',
+  /// #568: this stage only covers "request sent → response headers", hence "connect"
+  requestTimeout:
+    'Connect timeout (no response within {seconds}s). You can send again once the network is better.',
   // Issue #106: double-tap the mobile title bar to jump back to the first message
   scrollToFirstMessage: 'Back to the first message (double-tap the title)',
   scrollToFirstMessageHint: 'Double-tap to top',

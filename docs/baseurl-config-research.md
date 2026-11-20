@@ -91,7 +91,7 @@ $ cd /root/deepseek-app/dist && grep -ro "https://api.deepseek.com" . | sort | u
 | 派生常量 | 定义位置 | 值 | 使用位置 |
 | --- | --- | --- | --- |
 | `API_ORIGIN` | `client.ts:13` | `__API_ORIGIN__` | `client.ts:94`、`speech.ts:9`（经 import） |
-| `ANTHROPIC_BASE_URL` | `client.ts:15` | `${API_ORIGIN}/anthropic/v1` | `client.ts:116`、`client.ts:127`、`client.ts:149` |
+| `ANTHROPIC_BASE_URL` | `client.ts:15` | `${API_ORIGIN}/anthropic/v1` | `client.ts:116`、`client.ts` 的 `streamMessage()`、`client.ts:149` |
 | `TOOLS_BASE_URL` | `speech.ts:9` | `${API_ORIGIN}/v1/tools` | `speech.ts:24`、`speech.ts:55` |
 
 ### 2.2 每种能力的完整 URL（以 `ORIGIN=https://api.deepseek.com` 为例）
@@ -99,7 +99,7 @@ $ cd /root/deepseek-app/dist && grep -ro "https://api.deepseek.com" . | sort | u
 | 能力 | 方法 + 完整路径 | 代码位置 | 鉴权头 |
 | --- | --- | --- | --- |
 | 校验 API Key（不产生费用） | `GET https://api.deepseek.com/models` | `client.ts:92-99` | `Authorization: Bearer <key>` |
-| 聊天 / 深度思考 / 智能搜索 / 读链接 / 自动标题（SSE 流） | `POST https://api.deepseek.com/anthropic/v1/messages` | `client.ts:144-158` | `x-api-key`、`anthropic-beta`（带附件时）、`Content-Type: application/json`、`Accept: text/event-stream` |
+| 聊天 / 深度思考 / 智能搜索 / 读链接 / 自动标题（SSE 流） | `POST https://api.deepseek.com/anthropic/v1/messages` | `client.ts` 的 `streamMessage()` | `x-api-key`、`anthropic-beta`（带附件时）、`Content-Type: application/json`、`Accept: text/event-stream` |
 | 上传附件（图片 / PDF / Word / PPT / 文本） | `POST https://api.deepseek.com/anthropic/v1/files` | `client.ts:105-123` | `x-api-key`、`anthropic-beta: files-api-2025-04-14`、`multipart/form-data` |
 | 删除附件 | `DELETE https://api.deepseek.com/anthropic/v1/files/{file_id}` | `client.ts` 的 `deleteFile()` | `x-api-key`、`anthropic-beta` |
 | 语音识别 ASR | `POST https://api.deepseek.com/v1/tools/asr` | `speech.ts:17-46` | `Authorization: Bearer`、`multipart/form-data` |
