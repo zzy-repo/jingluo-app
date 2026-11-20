@@ -78,16 +78,6 @@ export const LEGACY_PATHS = {
     owner: 'W1-D',
     reason: 'apia 的 Key 探活，额度改读 sub2api 的 /v1/usage',
   },
-  '/api/trail': {
-    files: ['src/services/ours/trail.ts'],
-    owner: 'W1-E',
-    reason: '支付时间线（旧入口），三入口合一后重排',
-  },
-  '/api/order/trail': {
-    files: ['src/services/ours/trail.ts'],
-    owner: 'W1-E',
-    reason: '订单溯源（旧入口），三入口合一后重排',
-  },
   // vendored 第三方参考实现（SillyTavern 扩展，AGPL-3.0，见 src/services/memory/README.md）：
   // 没有任何入口 import 它（.oxlintrc.json 的 ignorePatterns 有说明），里面的地址也不会被请求。
   // 它以后要整体同步上游，不在本仓就地改，所以按「登记豁免」而不是「改上游代码」处理。
@@ -104,8 +94,6 @@ export const LEGACY_PATHS = {
  */
 export const BACKEND_BASE_ALLOW = {
   'src/services/ours/api.ts': { owner: 'W1-D', reason: 'OURS_API_BASE：支付服务地址，随消费层迁移改读 __ENDPOINTS__.pay.baseUrl' },
-  'src/services/invite/rotate.ts': { owner: 'W1-D', reason: '换 Key 的兜底地址，功能随 device_id 体系删除' },
-  'src/services/invite/bind.ts': { owner: 'W1-D', reason: '绑定 Key 的兜底地址，功能随 device_id 体系删除' },
 }
 
 /** 明文 http 的显式豁免（`.local` 是 URL 解析用的哨兵 base，不发请求） */

@@ -1,5 +1,5 @@
 import clsx from 'clsx'
-import { useRef, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import {
   IconCopyOutline16,
   IconDarkOutline16,
@@ -58,10 +58,15 @@ import { useIsOursChannel } from '../../services/api/apiConfig.js'
 import { AppUpdateField } from './AppUpdateField.js'
 import { ChatBackgroundField } from './ChatBackgroundField.js'
 import { DOUYIN_ACCOUNT_ID, douyinCopyToast } from './douyinAccount.js'
-import { OursServicesRow } from './OursServicesDialog.js'
 import { AccountRow } from '../auth/AccountRow.js'
 import { FeedbackDialog } from './FeedbackDialog.js'
-import { closeSettings, useSettingsDialog, type SettingsSection } from './settingsDialogState.js'
+import {
+  closeSettings,
+  openAccountConsume,
+  setAccountConsumeOpen,
+  useSettingsDialog,
+  type SettingsSection,
+} from './settingsDialogState.js'
 import { AccountConsumePage } from '../consume/AccountConsumePage.js'
 import { MOTION_EXIT, usePresence } from '../../utils/usePresence.js'
 import styles from './Settings.module.css'
@@ -102,8 +107,20 @@ const SettingsContent = ({ visible }: { visible: boolean }) => {
    *
    * 原来这里是三份独立开关（付款记录 #115 / 我的购买 #158 / 支付记录时间线 #189），
    * 三个入口指向三个弹层，同一个「我的钱花哪儿了」要靠三个页面拼出来。合并后只剩这一个。
+   *
+   * 开合状态与落哪个 tab 放在 `settingsDialogState`（不再用本地 state）：付款回跳与消息流里的
+   * 额度不足 / Key 失效 CTA 都要能直接把它打开（见 `openAccountConsume`）。
    */
-  const [accountConsumeOpen, setAccountConsumeOpen] = useState(false)
+  const accountConsumeOpen = useSettingsDialog((state) => state.accountConsumeOpen)
+  const accountConsumeTab = useSettingsDialog((state) => state.accountConsumeTab)
+  /**
+   * 设置整层被关掉时把「账户与消费」一起收掉。
+   *
+   * 开合状态搬到 store 是为了让付款回跳 / 消息流 CTA 能直接打开它，代价是它**不随设置一起销毁**：
+   * 用户开着页面按 Esc 关掉设置，下一次从侧栏打开设置会直接弹出那个页面 —— 不是他要的东西。
+   * 所以在设置内容卸载时归位（页面自己的「关闭」仍走 `setAccountConsumeOpen(false)`）。
+   */
+  useEffect(() => () => setAccountConsumeOpen(false), [])
   const replacingHistory = useChatStore((state) => state.importingHistory)
   // 自有渠道判定：付款记录 / 我的购买两格（以及它们在下面的弹层）只在这条渠道下存在（#166）
   const oursChannel = useIsOursChannel()
@@ -160,14 +177,14 @@ const SettingsContent = ({ visible }: { visible: boolean }) => {
           ) : (
             <>
               <ApiConfigFields editor={apiKeyEditor} />
-              {/* 额度查询 / 套餐 / 卡密兑换 / 订单状态：只在「我们的渠道」下出现 */}
-              <OursServicesRow />
               <ChatBackgroundField />
               <ImportHistory historyImport={historyImport} disabled={historyBusy} />
               <ExportHistory disabled={historyBusy} />
-              {/* 账户与消费（#482 三弹层合一 / #487 W1-C1）：付款记录 + 我的购买 + 支付记录时间线
+              {/* 账户与消费（#482 三弹层合一 / #487）：付款记录 + 我的购买 + 支付记录时间线
                   三个入口合并成一格，点开是同一个四 tab 页面（我的卡密 / 购买 / 我的额度 / 账号）。
-                  仍然只在自有渠道下出现：卡密与套餐来自 apia，别的渠道没有自己的订单（#166）。 */}
+                  仍然只在自有渠道下出现：卡密与套餐来自 apia，别的渠道没有自己的订单（#166）。
+                  旧 `OursServicesRow`（额度 / 邀请 / 卡密兑换弹层）已退役：额度、账号、邀请、邮箱绑定
+                  全部并进这一页的「我的额度 / 账号」两个 tab，设置里不再有第二个钱入口。 */}
               {oursChannel ? (
                 <SettingCell
                   label={t('accountConsumeTitle')}
@@ -179,7 +196,7 @@ const SettingsContent = ({ visible }: { visible: boolean }) => {
                       size="m"
                       className={styles.cellButton}
                       data-testid="account-consume-open"
-                      onClick={() => setAccountConsumeOpen(true)}
+                      onClick={() => openAccountConsume('cards')}
                     >
                       {t('oursPayRecordsEntryAction')}
                     </Button>
@@ -238,7 +255,10 @@ const SettingsContent = ({ visible }: { visible: boolean }) => {
       {historyDelete.opened ? <DeleteAllConfirm historyDelete={historyDelete} /> : null}
       {/* 账户与消费（#487 W1-C1）：一个页面四个 tab，zIndex 由页面自己抬高到设置层之上 */}
       {oursChannel && accountConsumeOpen ? (
-        <AccountConsumePage onClose={() => setAccountConsumeOpen(false)} />
+        <AccountConsumePage
+          initialTab={accountConsumeTab}
+          onClose={() => setAccountConsumeOpen(false)}
+        />
       ) : null}
       <FeedbackDialog
         open={feedback.open}

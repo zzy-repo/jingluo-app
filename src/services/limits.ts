@@ -143,8 +143,6 @@ export const LIMITS = {
     /** 编码前读的头部字节：要覆盖 JPEG 的 APP1(EXIF) + SOF（尺寸），相机原图也在这个范围内 */
     maxHeadBytes: 262_144,
   },
-  /** 支付记录自动刷新 */
-  paymentTrail: { pollIntervalMs: 4000, pollMaxMs: 120_000 },
   /**
    * 启动兜底：内联脚本（`src/index.html`）在 bundle 之前执行，没法 import 这个模块，
    * 所以那边保留字面量，由 `tests/unit/limits-config.test.mjs` 断言两处相等。

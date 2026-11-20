@@ -5,9 +5,14 @@
 L1（integration，7~20 分钟）太慢不能每次都等。
 
 ```bash
-pnpm run build          # 需要标准产物（dist，variant=standard）
-pnpm run test:golden    # = node tests/run-golden.mjs（并行 + 每条耗时 + 一句话失败定位）
+TEST_AUTH_SEAM=1 pnpm run build   # 标准产物（dist，variant=standard）+ 登录接缝（见下）
+pnpm run test:golden              # = node tests/run-golden.mjs（并行 + 每条耗时 + 一句话失败定位）
 ```
+
+> **构建必须带 `TEST_AUTH_SEAM=1`**（#510）：`src/main.tsx` 把整个 App 包在 `<AuthGate>` 里之后，
+> 未登录冷启动只画登录页，侧栏 / 设置 / 输入框全都拿不到 —— 那样 G1~G11、G15 会在第一步就红，
+> 红的是环境不是用例。CI 的 golden job 就是带这个开关构建的（见 `.github/workflows/ci.yml`），
+> 并在构建后跑 `check:test-seam --expect-seam` 做正向对照。发版产物**绝不允许**带它。
 
 ## 「改了哪个域必须跑哪条」——提交前对照这张表
 
@@ -22,35 +27,43 @@ pnpm run test:golden    # = node tests/run-golden.mjs（并行 + 每条耗时 + 
 | 诊断 | 触发错误 → 诊断复制内容已脱敏 | `g09-diagnostics.test.mjs` | `services/chat/describe.ts`、`replyErrorReport.ts`、`services/diagnostics/redact.ts`、`app/errorReport.ts` |
 | 更新 | 检查 → 解析清单 → 选对版本 → 下载校验 | `g10-update.test.mjs` | `services/updateManifest.ts`、`components/settings/AppUpdateField.tsx` |
 | 账户与消费 | JWT 登录 → 读余额 → 兑换卡密 → 余额变化（+ 冷启动续期）；mock 驱动 | `g12-consume.test.mjs` | `services/auth/{store,transport}.ts`、`services/consume/{auth,usage,redeem}.ts` |
-| 文档附件 | 附 1 个 docx / pdf / txt → 解析 → 进上下文 → 发一条消息 | `g13-documents.test.mjs`（待 A 线 #480 落地） | `services/attachments/parsers/{docx,pdf,txt}.ts`、`attachments/manager.ts`、`contextBuilder.ts` |
-| 图片 vision | 附 1 张 png → 内联编码 → 发一条消息（三渠道形状不同、图片字节相同） | `g14-vision.test.mjs` | `services/attachments/imageSource.ts`（编码）、`chat/drafts.ts`（选图编码 / 就绪态）、`chat/reply.ts`（内联块）、`api/openaiAdapter.ts`（data URL 翻译） |
-| 购买 | 已登录 → 账户与消费 → 点购买 → 打开小铺收款页 | `g15-purchase.test.mjs`（待 C 线落地） | `services/consume/*`、`services/pay/*`、`components/settings/*`（账户与消费） |
+| 文档附件 | 选 tiny.txt → 卡片 success → 发送「帮我总结」→ 收到回复（顺带 docx/pdf 只断非空正文 + 表格/页码标记） | `g13-documents.test.mjs` ✅（A 线 #480 落地，#567 的 g13） | `services/attachments/parsers/{txt,docx,pdf}.ts`、`attachments/{manager,inject,providerCapability,requestDocs}.ts`、`attachments/contextBuilder.ts`（buildWithDocuments）、`components/attachments/*`（卡片五态）、`chat/{store,reply}.ts`（请求组装） |
+| 图片 vision | 附 1 张 png → 内联编码 → vision 请求带图 → 发一条消息并收到回复（三渠道形状不同、图片字节相同） | `g14-vision.test.mjs` ✅（B 线 #548 落地，#567 的 g14） | `services/attachments/imageSource.ts`（编码）、`chat/drafts.ts`（选图编码 / 就绪态）、`chat/reply.ts`（内联块）、`api/openaiAdapter.ts`（data URL 翻译）、`api/providers.ts`（`caps.vision` 入口门） |
+| 支付/购买 | 打开「账户与消费」→ 套餐列表 → 下单（`/api/pay-link`）→ 回跳 → 卡密 → 一键复制 | `g15-purchase.test.mjs` | `components/consume/{AccountConsumePage,BuyTab,MyCardsTab}.tsx`、`services/ours/{api,purchases,transport}.ts`、`components/consume/quotaPanelModel.ts`（额度口径） |
 
-> **带「待 … 落地」的是占位**（#567 定了三主线各补一条黄金：A 文档附件 g13 / B 图片 vision g14 /
-> C 购买 g15）。**g14 已落地**（#548），g13 / g15 由各自主线补。它们要用的最小真二进制夹具
-> 已经先备好（见下面「夹具怎么用」），写用例的人不用再从零造文件。
+> **三条黄金都落地了**（#567 定了三主线各补一条：A 文档附件 g13 / B 图片 vision g14 / C 购买 g15）：
+> `g13` ✅（A 线 #480）、`g14` ✅（B 线 #548）、`g15` ✅（C 线）。三条都用的最小真二进制夹具见下面「夹具怎么用」，
+> 后来的人不用再从零造文件。
 
 对应关系按「**改动落在哪就至少跑那一条**」用，不是穷举：动了 `src/services/chat/` 就跑 G1/G2/G4/G5/G6，
-动了设置面板/渠道就跑 G3/G5/G6/G9/G10（`g11` 邮箱见 `tests/golden/g11-email.test.mjs`）。
-拿不准就 `pnpm run test:golden` 全跑 —— 2026-11-20 加入 G14 后本机 4 并发 **16.2s**（g12 自带 mock，不需要 dist）。
+动了设置面板/渠道就跑 G3/G5/G6/G9/G10（`g11` 邮箱见 `tests/golden/g11-email.test.mjs`），
+动了 `src/components/consume/**` 或 `src/services/ours/**`（套餐 / 下单 / 卡密 / 额度口径）就跑 **G15**，
+动了 `src/services/attachments/**` 或 `src/components/attachments/**`（文档解析 / 注入 / 卡片）就跑 **G13**，
+动了图片编码 / 注入（`imageSource.ts`、`chat/drafts.ts`、`reply.ts` 的图片块）就跑 **G14**。
+拿不准就 `pnpm run test:golden` 全跑 —— 12 条（11 + G14）4 并发约 16.2s（g12 自带 mock，不需要 dist；
+g13 单跑约 1.2s、4 并发整层里约 3.9s；g15 约 1.7s）。
 
-> **额度 / 卡密 / 购买的黄金回归已删除（W1-D，#487）**：`g07-quota-purchase.test.mjs` 跟着旧额度/邀请体系
-> 一起删了 —— 它断言的「领取 → 刷新 → 兑换」走的是 `device_id` + 本机池那条即将整体替换的链路，
-> 重构期间维护它只会产生假红。新链路（JWT + sub2api 消费层）落定后按 #487 阶段③重建，
-> 清单与重建要求见 `docs/testing/rebuild-after-refactor.md`。
+> **购买域的黄金回归换过人（W1-D #487 → #567）**：老的 `g07-quota-purchase.test.mjs` 跟着旧额度/邀请体系
+> 一起删了 —— 它断言的「领取 → 刷新 → 兑换」走的是 `device_id` + 本机池那条整条被替换的链路。
+> 现在的替代是**两条、各管一段**：`g12-consume.test.mjs` 管消费层链路（登录 / 余额 / 兑换，mock 驱动），
+> **`g15-purchase.test.mjs` 管购买主路径**（套餐 → `/api/pay-link` → 回跳 → 卡密 → 复制，dist + 浏览器）。
+> 改 `src/components/consume/**` 或 `src/services/ours/**` 就跑 G15，别再去找 `g07`。
 
 > **两处合并**（Issue #404 允许：「某两域天然同一流程就合成一条」）：
 > · **导出 + 导入** → G6：只有把导出的字节真的喂回导入，`manifest` 首条、条目路径、索引与会话的一一对应才被同时钉住；
-> · （原「额度 + 购买」合并成 G7 的那条已随 W1-D 删除，见上。）
+> · （原「额度 + 购买」合并成 G7 的那条已随 W1-D 删除；购买侧现由 G15 单独承接，见上。）
 
 ### g12「账户与消费」为什么是 mock 驱动、而不是 dist + 浏览器
 
-新链路（JWT 身份层 + 四个消费面板）**还没有页面外壳**：`src/main.tsx` 尚未挂 `AuthGate`，
-账户页（W1-C1）未合并，所以 dist 里点不到登录 / 兑换入口。这一条因此把**链路**端到端跑通：
+写这条用例时新链路（JWT 身份层 + 四个消费面板）**还没有页面外壳**（`src/main.tsx` 尚未挂 `AuthGate`、
+账户页 W1-C1 未合并），dist 里点不到登录 / 兑换入口，所以它选了「跑链路」而不是「点按钮」：
 真 `createConsumeClient` / `createAuthTransport` / `store`，对面是 `tools/mock-sub2api`（端口 0，
 内核分配；不连 127.0.0.1:18000 的真实例，用例结尾有「所有请求都落在本次 mock 上」的守卫）。
 两条路径：① 登录 → 读余额 → 兑换 `MOCK-OK-0001` → 余额 +10；② 冷启动过期 → 续期换新 token → 仍能读余额。
-等页面外壳合并后，把「调客户端」换成「点按钮」即可，步骤名与断言不用改。
+
+**现在页面外壳已经合并**（`AuthGate` 已挂、账户页已在 dist 里），但 g12 仍然保留 mock 驱动的写法：
+它守的是**消费层链路**（登录 / 余额 / 兑换），而「点按钮」那条用户路径由 **G15** 从 dist 里点
+（账户与消费 → 卡密 / 购买 / 额度三个 tab 都在 G15 与 g12 的覆盖范围内，两条不重复断言）。
 
 ### g14「图片 vision」为什么抓请求体、而不是看界面
 
@@ -150,13 +163,35 @@ PDF 的 xref 偏移与 `/Length`）；② **真解析器**——`parseTxtFile` /
 | 导出 | 导出 → 校验包结构 → 可再次导入（与「导入」合并成往返） | `g06-export-import.test.mjs` | ✅ |
 | 诊断 | 触发错误 → 诊断复制内容已脱敏 | `g09-diagnostics.test.mjs` | ✅ |
 
-**购买/额度这条为什么现在没有黄金用例**：`g07-quota-purchase` 已随 W1-D 删除（见上）。它当时钉的是
-「领取 → 刷新额度 → 兑换 +300 → 关收款页再刷新」这条**旧链路**（`device_id` + `/apply` `/me` +
-本机池 `/redeem-card` + apia `GET /api/pay-link`）。重构后应由新链路的一条用例替代：
-`settings/public` → JWT 登录 → `GET /v1/usage` 额度 → `POST /api/v1/redeem` 兑换 → apia pay-link 购买。
+## 第三批（#567）：购买主路径 G15
 
-实测（2026-11-20，本机 4 并发，标准产物）：G1 3.3s / G2 3.5s / G3 5.2s / G4 7.5s / G5 4.2s /
-G6 3.9s / G9 3.4s / G10 3.9s，**墙钟 11.4s**（第二批加入前是 5.7s；G7 5.0s 那一行随 W1-D 删除）。
+`g07-quota-purchase` 已随 W1-D 删除（见上），C 线（支付 / 购买）由 **G15** 承接 —— 它钉的是**现在这条**链路：
+
+```
+设置 → 数据管理 → 账户与消费 → 购买 tab（GET /api/plans）
+  → 去支付（GET /api/pay-link）→ App 内打开收款页 → 关页回跳
+  → 我的卡密 tab（GET /api/orders）→ 复制卡密 → 我的额度 tab（GET /v1/usage）
+```
+
+只断五件事（#567 清单）：① 卡密出现在「我的卡密」（后 4 位）② 复制拿到**完整**卡密
+③ `/buy` 请求数为 0（那条建单链路 #331 已整条下线）④ 额度来源是 sub2api 的
+`usage.total.actual_cost`（不是 `quota.used`、也不是邀请服务的 `remaining_points`）
+⑤ 支付侧走 apia（`/api/plans` 与 `/api/pay-link` 各 ≥1 次），**sub2api 不参与下单**。
+
+后端全桩：`window.Capacitor` 换成原生桥替身（`androidBridge` + `PluginHeaders`），
+apia（plans / pay-link / orders）与 sub2api（`/v1/usage`）都落在用例自己的 route 表上，
+表外路径一律 404。收款页的「关页回跳」由替身接住 `Browser.addListener` 的回调、由用例触发，
+**不依赖任何真浏览器插件、不连真服务**。
+
+| 域 | 黄金路径 | 用例 | 状态 |
+| --- | --- | --- | --- |
+| 支付/购买 | 套餐 → 下单（pay-link）→ 回跳 → 卡密 → 一键复制 | `g15-purchase.test.mjs` | ✅ |
+
+实测（2026-11-20，本机，标准产物 + `TEST_AUTH_SEAM=1`）：G15 约 1.7s（7 步）。
+
+整层实测（2026-11-20，本机 4 并发）：G1 2.7s / G2 3.0s / G3 4.3s / G4 7.0s / G5 4.0s /
+G6 4.2s / G9 2.7s / G10 2.3s / G11 3.1s / G12 1.5s / **G15 1.7s**，11 条全绿、**墙钟 10.1s**。
+（G7 5.0s 那一行随 W1-D 删除；购买侧现由 G15 承接。）
 
 负向验证（每条都人为破坏一次、确认变红后再还原）：
 
@@ -167,3 +202,56 @@ G6 3.9s / G9 3.4s / G10 3.9s，**墙钟 11.4s**（第二批加入前是 5.7s；G
 | G6 | `exportArchive.ts` 不再写 `manifest.json` | 「首条是 manifest.json（实际 chat_sessions/…）」 |
 | G9 | `redact.ts` 跳过值维度脱敏（只留 key 维度） | 「复制内容里没有任何一项敏感值原文（设备码,卡密,手机号）」 |
 | G14 | `reply.ts` 的 `toFileBlocks` 不再产出内联图片块（`const part = undefined && imagePartOf(id)`） | 「请求体里带上了图片 · 实际=user content="这张图是什么颜色？"」（三渠道第一站就红） |
+| G15 | 「复制卡密」改成复制空串（`copyCard` 里 `copyText('')`） | 「复制动作把完整卡密交给剪贴板（实际=空串）」 |
+| G15 | 卡密来源从 apia 换成 sub2api（`fetchPurchases(..., 'http://127.0.0.1:18000/api/v1')`） | 「关掉收款页后卡密出现在「我的卡密」（实际=订单查询被拒绝）」 |
+| G15 | 前端去调已下线的 `/buy`（购买 tab 挂载时补一次 `/buy?cid=…`） | 「没有走已下线的 /buy 建单链路（实际=1 次）」 |
+
+## 第四批（#567）：文档附件主路径 G13
+
+A 线（#480）的黄金哨兵。**钉的是「选文件 → 解析 → 注入 → 发送 → 回复」这条整链路**：
+
+```
+输入区「添加文档（TXT / DOCX / PDF）」→ 选 tiny.txt
+  → AttachmentManager.addFile（sha256 + 落 IndexedDB）→ parseTxtFile（真解析）
+  → 卡片进入 success（状态行「已就绪」）
+  → 填「帮我总结」→ 发送 → toRequestMessages 挂附件引用 → buildWithDocuments 注入
+  → buildMessageBody 组装 → POST /messages（本机 mock 上游收下 body）→ 流式回复上屏
+```
+
+只断三件事（#567 清单，一条不多）：
+
+| # | 断言 | 判据落在哪 |
+| --- | --- | --- |
+| ① | 附件卡片进入 **success** | 输入区卡片的状态行**逐字等于**「已就绪」（「部分内容已就绪 · N 条警告」含同样三个字，所以比整行、不比子串） |
+| ② | 上行 user message 里有 `<document name="tiny.txt">` 文本块 | 上游那一端被抓下来的 POST body：块头块尾都在 + 块内是夹具真正文 + 尾部跟 `用户问题：帮我总结` |
+| ③ | 请求体里**没有** base64 / `file_id` / `{type:'document'}` 块 | 同一份 body 的 JSON 全文：`file_id`、`{type:document|file|image}`、`;base64,` / `data:…;base64,`、300+ 字符的裸 base64 串，一条都不许有；另外断言 user `content` 仍是**纯字符串**（文本注入，不是块数组） |
+
+**顺带覆盖 DOCX / PDF**（同一份文件里的第二步，不是第二条路径）：只断「解析出非空正文 +
+表格标记 `| 甲 | 乙 |` / 页码标记 `[第1页]` 出现在请求体里」，**不断言解析细节**
+（标题层级 / 合并单元格 / 跨页切分 / 编码嗅探都在 L0 的 `parsers-*` 里，这里不重复）。
+
+证据链为什么可信：请求体不是读中间变量得来的 —— `AttachmentManager` 真的把原件写进 IndexedDB、
+真的调 `parseTxtFile` 解析、`buildWithDocuments()` 真的按预算注入，最后**在 mock 上游的 HTTP 服务里
+把收到的 body 抓下来**（`tests/fixtures/domain01-02/mock-upstream.mjs` 的 `state.chatCalls`）。
+所以「字节真发出去了」这件事本身也被钉住了。
+
+| 域 | 黄金路径 | 用例 | 状态 |
+| --- | --- | --- | --- |
+| 文档附件 | 选 tiny.txt → 卡片 success → 发送「帮我总结」→ 收到回复 | `g13-documents.test.mjs` | ✅ |
+
+实测（2026-11-20，本机，标准产物 + `TEST_AUTH_SEAM=1`）：G13 单跑约 1.2s（6 步；txt 主路径约 0.5s，
+DOCX/PDF 那一步约 0.8s）；4 并发整层里约 3.9s。整层对账：加 G13 前 10 条 / 墙钟 10.9s，
+加 G13 后 **11 条全绿 / 墙钟 14.2s**（预算 300s）。
+
+负向验证（每条都人为破坏一次、确认变红后再还原）：
+
+| 用例 | 破坏方式 | 红在哪一句 |
+| --- | --- | --- |
+| G13 | `inject.ts::injectDocumentBlocks` 直接 `return content`（注入函数返回原文） | 「上行 user message 里含 `<document name="tiny.txt">` 文本块（实际=`帮我总结`）」——②整组红，①③仍绿（即失败定位到「注入」这一步，不是解析也不是上传） |
+| G13 | `contextBuilder.ts` 的块正文改成 `[file_id="…"]` + `data:application/octet-stream;base64,…` | 「请求体里没有 base64 / file_id / {type:document\|file\|image} 块（实际=命中：file_id、base64 data URI、长 base64 串（400 字符））」——③红，②仍绿 |
+
+> 记一个坑：第一次把 `inject.ts::documentBlock()` 改成 base64 形态时 G13 **没有红** —— 因为请求主路径
+> 并不经过 `documentBlock()`（`contextBuilder.buildWithDocuments()` 按预算自己用 `documentHeader()` +
+> `DOCUMENT_FOOTER` 拼块，只有无预算的 `injectDocuments()` 才用 `documentBlock()`）。改成污染
+> `contextBuilder` 的块正文后立刻红。谁要动「块怎么拼」，改这两处**必须一起想**，而 G13 钉的是
+> **请求主路径**那一处。

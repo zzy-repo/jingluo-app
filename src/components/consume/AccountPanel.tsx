@@ -17,7 +17,7 @@ import {
   runToggleKey,
   type AccountEvent,
   type AccountSource,
-} from './accountPanel.js'
+} from './accountPanelModel.js'
 import styles from './panels.module.css'
 
 /**

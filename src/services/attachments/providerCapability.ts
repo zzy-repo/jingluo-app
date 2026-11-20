@@ -31,18 +31,39 @@
  * "图片能不能当文件"），合并成一个字段会立刻出现自相矛盾的行（`deepseek` 需要
  * `false` 与 `true` 同时成立）。放在各自维度里，名字就回到它本来的意思。
  *
+ * ## #538：`documents.nativeFile` 的语义收紧（A 线带来的唯一语义变更）
+ *
+ * 原来 `deepseek: {nativeFile: true}` 表达的是「理论上支持原生文件、不要用文本注入碰它」。
+ * 但实测这个「支持」在本仓库**没有实现**：`/v1/chat/completions/files` 早在 #360 就确认
+ * 不存在（线上 404），也就是说 DeepSeek 渠道既不上传原件、也不注入正文 —— 用户只传文档
+ * 不写字时，消息 content 是**空**的。
+ *
+ * 于是把 `nativeFile` 的含义收紧成「**本仓库对该渠道确有可用的原生文件上传实现**」，
+ * 而不是「上游理论上支持」：`deepseek` 因此为 `false`。这样「这个渠道能不能收文档」
+ * 就是一个诚实的判断（`acceptsDocuments()`），UI 才不会给出假承诺（#538 的核心诉求）。
+ *
+ * 为什么**收紧含义**而不是新增 `nativeFileImplemented`：能力表是**判定表**，一个轴一个字段
+ * 就够。再加一个布尔会产生 4 种组合（含 `nativeFile:true, implemented:false` 这种自相矛盾的
+ * 行），每个消费方还得再问一句「我该看哪个字段」—— 这正是本文件开头第 1 条要避免的
+ * 「两处各写一遍」。取名即语义：`nativeFile` 现在只回答「有没有真能用的实现」。
+ *
+ * 未来 DeepSeek 真接上原生上传时，只需把该行改回 `nativeFile: true`（并在 `paths.files`
+ * 登记端点），UI 入口与发送闸会一并放开 —— 一处开关。**注意这条只管文档轴**：
+ * 图片轴的 `deepseek.image.nativeFile` 是 `true`，因为 `/anthropic/v1/files` 传图这条
+ * 现网一直在用（见上一节）。
+ *
  * ### 和 `providers.ts` 的 `caps.vision` 是什么关系（别混用）
  *
  * - `caps.vision`（`providers.ts` 的 `ProviderCaps`）：**UI 上有不有附件入口**。这是 #480 的
- *   既有语义，入口门禁是 `caps.vision && supportsFileUpload()`（`ChatInput.tsx`）。
- *   **本单不动它**（#562：以 A 的结构为准）：`anthropic / openai / ours` 仍是 `false`，
- *   否则会出现「入口亮着、点下去拿不到图」的假承诺。
+ *   既有语义，入口门禁是 `caps.vision && (supportsFileUpload() || visionFor(kind).base64)`
+ *   （`ChatInput.tsx` 的 `canAttach`）。
  * - `visionFor(kind)`（本文件）：**请求体里图片怎么走**。这是 #562 要求 B 线追加的 `image` 维度。
- *   三个渠道这一维已经是 `base64: true` —— 声明的是「通路存在」，不是「入口已打开」。
+ *   三个渠道这一维是 `base64: true`，deepseek 是 `nativeFile: true`。
  *
- * 两者在接线那一步一起翻（入口门禁改成 `caps.vision && (supportsFileUpload() ||
- * visionFor(kind).base64)`，同时把三家渠道的 `caps.vision` 置真并配上注入链路），
- * 现在只落前者会让用户选到一张发不出去的图 —— 那是 #548 明令禁止的「静默丢图」。
+ * 两者是**一起翻的**（#552 已完成那一步）：三家 base64 渠道的 `caps.vision` 置真、同时配上
+ * `prepareInlineImages()` → `toFileBlocks()` 的注入链路，deepseek 继续走 `file_id`。
+ * 只落一边会出现「入口亮着、点下去拿不到图」的假承诺 —— 那是 #548 明令禁止的「静默丢图」。
+ * 所以以后**别只改一个**：入口门在 `providers.ts` 的 `caps.vision`，通路真相在这张表。
  */
 import type { ProviderKind } from '../api/providers.js'
 

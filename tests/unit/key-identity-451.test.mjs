@@ -255,19 +255,10 @@ test('[2] ensureApiKey：合法放行 / 没填走既有路径 / 格式错才拦�
 // ------------------------------------------------------------------ [3] 文案：新 key 成对 + 旧语义清掉
 
 test('[3] 新增文案中英成对、占位符对齐、真的翻译了', () => {
-  const keys = [
-    'settingsApiKeyFormatBlocked',
-    'settingsApiKeyFormatHint',
-    'oursKeyIdentityTitle',
-    'oursKeyIdentityTail',
-    'oursKeyIdentityTailUnknown',
-    'oursKeyIdentityBoundAt',
-    'oursKeyIdentityLastSuccess',
-    'oursKeyIdentityNoSuccess',
-    'oursKeyIdentityNoRecord',
-    'oursKeyIdentitySource',
-    'oursKeyIdentitySuccessSource',
-  ]
+  // #562：`oursKeyIdentity*` 这一组（「Key 身份」区块的标题 / 尾号 / 绑定时间 / 最近成功时间…）
+  // 只被旧 `OursServicesDialog.tsx` 渲染，弹层退役后从 zh/en 删除。本用例只留**还活着**的两条
+  // 发送前拦截文案；`services/invite/keyIdentity.ts` 的记录/读取逻辑仍由上面的行为断言覆盖。
+  const keys = ['settingsApiKeyFormatBlocked', 'settingsApiKeyFormatHint']
   const placeholders = (text) => (text.match(/\{[a-zA-Z]+\}/g) ?? []).sort().join(',')
   for (const key of keys) {
     const zhText = zh[key]
@@ -281,8 +272,6 @@ test('[3] 新增文案中英成对、占位符对齐、真的翻译了', () => {
   // 两个关键提示必须说清「这件事的后果」，不能只有一句「格式不对」
   assert.match(zh.settingsApiKeyFormatBlocked, /没有发出去/, '要说清消息没发出去，否则用户只会重发')
   assert.match(en.settingsApiKeyFormatBlocked, /not sent/, '同上（英文侧）')
-  assert.match(zh.oursKeyIdentityBoundAt, /\{time\}/, '绑定时间必须带时间占位符')
-  assert.match(zh.oursKeyIdentityLastSuccess, /\{time\}/, '最近成功时间必须带时间占位符')
 })
 
 test('[3] /rotate 文案联动：rotated 档不再写 #90 的「换 Key 就旧 Key 立即作废」', () => {

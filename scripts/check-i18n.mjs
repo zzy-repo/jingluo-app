@@ -60,7 +60,8 @@ const ORPHAN_BASELINE = new Set([
   // 重构中，UI 落地后移除（#487 铺路）：登录注册 / 账户与消费 / 卡密兑换 / 邀请 / 邮箱绑定
   // 四条链路的词条骨架。这批 key 的引用方由 #487 的 UI 线接入，接入一个就从这里删一个（基线只许减）。
   // `inviteCode` 不在此列：它已经是既有代码里的字段名（src/services/invite/**），R4 视为已引用。
-  // `consumeBalance` 已由 W1-B 后半接入设置页额度格（`OursServicesDialog` 里 `t('consumeBalance', …)`），
+  // `consumeBalance` 已由 W1-B 后半接入设置页额度格（旧 `OursServicesDialog` 里的
+  // `t('consumeBalance', …)`；该弹层已于 #562 退役，现在由「账户与消费 → 我的额度」面板使用），
   // 金额口径由 W1-A 的 `utils/money.ts` 负责（1 元 = 1 额度，无 USD），故从基线删掉。
   'consumeBalanceApprox',
   'consumeKeyExpiresAt',
@@ -77,14 +78,6 @@ const ORPHAN_BASELINE = new Set([
   'emailBindFailed',
   'inviteCodeInvalid',
   'inviteDisabled',
-  // #487 W1-C1（三弹层合一）：设置页三格入口（付款记录 / 我的购买 / 时间线）并成一格之后，
-  // 下面这几条入口文案失去了唯一引用点。旧弹层文件本身还没删（归 W1-D），先按「登记、只许减」躺在这里；
-  // W1-D 删旧弹层时连带把这几条从基线删掉。
-  'oursPayRecordsEntryDescription',
-  'oursPurchasesEntryAction',
-  'oursPurchasesEntryDescription',
-  'oursTrailEntry',
-  'oursTrailEntryDescription',
   'sub2authConfirmPassword',
   'sub2authCredentialInvalid',
   'sub2authForgotPassword',

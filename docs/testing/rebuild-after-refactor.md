@@ -49,10 +49,14 @@
 | --- | --- | --- |
 | `domain06-07/fakes.mjs` | 62 | 只被上面三个矩阵用例 import；删完即 0 引用 |
 
-**没有删**的 fixture（`harness.mjs` / `jsx-transform.mjs` / `mini-react.mjs` / `ours-trail.mjs` / `stubs/`）：
-删完 12 个用例后它们仍有活引用 —— `harness.mjs` 被 `domain11-email-entry` / `domain11-email-conflict` 用、
-`ours-trail.mjs` 被 `ours-trail` / `payment-trail-*` 与 `scripts/shot-mobile.mjs` 用。
+**没有删**的 fixture（`harness.mjs` / `jsx-transform.mjs` / `mini-react.mjs` / `stubs/`）：
+删完 12 个用例后它们仍有活引用 —— `harness.mjs` 被 `domain11-email-entry` / `domain11-email-conflict` 用。
 按 #487「引用不为 0 的不要硬删」，**整个目录不删**；阶段③重建完成后如果 email 那两条也换掉，再回头清。
+
+> **#487 收口（删除三弹层合一后的死代码）追加**：`domain06-07/ours-trail.mjs` 当时被
+> `ours-trail` / `payment-trail-*` 与 `scripts/shot-mobile.mjs` 三处引用；本轮把这 4 个测试文件与
+> 4 个 `payment-trail*`/`card-trail-lookup` 截图场景一起删掉后，它变成 **0 引用**，已随
+> `ours/trail.ts`（时间线数据层）一并删除（253 行）。
 
 ## 2. 保留了什么（及为什么）
 
@@ -115,7 +119,8 @@
 | 11 | `ours/api.ts` `redeemCard`（旧 `/api/redeem`） | 仅被 `invite/api.ts` 的兜底路径调用 | A5 落地（走 `api/v1/redeem`）后删 |
 | 12 | `invite/api.ts` 的 `INVITE_API_BASE`（`config/endpoints.json` 的 `inviteBaseUrl` = `140.210.13.146:60013`） | 8 处（`main.tsx` / `bind.ts` / `rotate.ts` / `email.ts`…） | **A1 的门槛**：`consume` 落地后 `inviteBaseUrl` 必须从配置里消失 |
 | 13 | `ours/mask.ts` | **4 个函数仍有 4–9 处引用**（`diagnostics/redact.ts` 也要用） | 不删；#487 的「引用数 0 才删」正是不删的理由 |
-| 14 | `ours/storage.ts` / `ours/trail.ts` / `ours/paymentRecords.ts` | 支付侧保留（W1-E） | 不删 |
+| 14 | `ours/storage.ts` / `ours/paymentRecords.ts` | 支付侧保留（W1-E） | 不删 |
+| 14b | `ours/trail.ts`（时间线数据层 800 行） | **本轮已删**：`src/` 里最后两个引用方（`PaymentTrailDialog` / `PaymentTrailView`）随三弹层合一一起下线，API 侧 `/api/trail` / `/api/order/trail` 也不再有人调（`LEGACY_PATHS` 里那两条豁免同步移除，6 → 4 条） | 已删；新页面走 sub2api 的 `/api/v1/redeem/history` 与 apia 的 `/api/orders`，不复用这条链路 |
 
 ### 4.3 第 3 组：本单已同步、但阶段③重建时要再改一次的地方
 

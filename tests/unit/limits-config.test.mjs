@@ -57,7 +57,6 @@ const store = await import('../../src/services/chat/store.ts')
 const autoTitle = await import('../../src/services/chat/autoTitle.ts')
 const autoTitleQueue = await import('../../src/services/chat/autoTitleQueue.ts')
 const attachments = await import('../../src/services/attachments/upload.ts')
-const paymentTrail = await import('../../src/components/settings/PaymentTrailView.ts')
 const importLimit = await import('../../src/services/chat/history/importLimit.ts')
 
 /**
@@ -119,7 +118,6 @@ const ORIGINAL_VALUES = {
     cacheEntries: 24,
     maxHeadBytes: 262_144,
   },
-  paymentTrail: { pollIntervalMs: 4000, pollMaxMs: 120_000 },
   bootDeadlineMs: 12000,
 }
 
@@ -167,8 +165,6 @@ test('调用方原导出名不变，且值就是 LIMITS 里的那一项（调用
   assert.equal(attachments.MAX_SIZE_MB, LIMITS.attachments.maxSizeMb)
   assert.equal(attachments.MAX_USER_DATA_SIZE_MB, LIMITS.attachments.maxUserDataSizeMb)
   assert.equal(attachments.MAX_COUNT, LIMITS.attachments.maxCount)
-  assert.equal(paymentTrail.TRAIL_POLL_INTERVAL_MS, LIMITS.paymentTrail.pollIntervalMs)
-  assert.equal(paymentTrail.TRAIL_POLL_MAX_MS, LIMITS.paymentTrail.pollMaxMs)
 })
 
 test('导入上限仍只有一个来源：importLimit.ts 的 200MB，LIMITS 只是转出', () => {

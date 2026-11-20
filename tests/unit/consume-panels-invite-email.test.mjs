@@ -15,7 +15,7 @@ import { setupAuthPanels } from '../helpers/auth-panels-env.mjs'
 
 const { translate, zh, ButtonStub, classNames, markupOf, hasTestId, textOf } = await setupAuthPanels()
 
-const { InvitePanelView, loadInvite } = await import('../../src/components/consume/invitePanel.ts')
+const { InvitePanelView, loadInvite } = await import('../../src/components/consume/invitePanelModel.ts')
 const {
   EmailBindPanelView,
   initialEmailBindState,
@@ -24,7 +24,7 @@ const {
   runLoadEmailBind,
   runSendCode,
   runUnbindEmail,
-} = await import('../../src/components/consume/emailBindPanel.ts')
+} = await import('../../src/components/consume/emailBindPanelModel.ts')
 const { emailCooldownRemaining } = await import('../../src/services/invite/emailCooldown.ts')
 
 const ok = (data) => ({ ok: true, status: 200, raw: {}, data })

@@ -66,7 +66,12 @@ const api = await import('../../src/services/ours/api.ts')
 const transport = await import('../../src/services/ours/transport.ts')
 const { CUSTOMER_ID_STORAGE_KEY } = await import('../../src/services/ours/customerId.ts')
 
-const dialogSource = readFileSync(new URL('../../src/components/settings/OursServicesDialog.tsx', import.meta.url), 'utf8')
+/**
+ * 旧的 `OursServicesDialog.tsx` 已退役（#561 之后仍被三处调用点吊着，#562 收口）。
+ * 「前往购买」这一段现在住在新页面的「购买」tab：`components/consume/BuyTab.tsx`，
+ * 断言口径不变（现取地址 / App 内打开 / 不写死地址），只换成新文件的源码体检。
+ */
+const buyTabSource = readFileSync(new URL('../../src/components/consume/BuyTab.tsx', import.meta.url), 'utf8')
 const transportSource = readFileSync(new URL('../../src/services/ours/transport.ts', import.meta.url), 'utf8')
 const apiSource = readFileSync(new URL('../../src/services/ours/api.ts', import.meta.url), 'utf8')
 const zhSource = readFileSync(new URL('../../src/i18n/zh.ts', import.meta.url), 'utf8')
@@ -139,21 +144,23 @@ console.log('\n[A] 源码体检：购买入口 = /api/pay-link + Browser.open（
   truthy(/presentationStyle/u.test(transportSource) && /popover/u.test(transportSource), '用 presentationStyle: popover 打开（iOS 卡片式 / Android 全屏都在 App 内）')
   truthy(/\/api\/pay-link/u.test(apiSource), 'api.ts 调 /api/pay-link 取地址（不写死收款页地址）')
   truthy(typeof api.fetchPayLink === 'function', 'api.ts 导出 fetchPayLink（503 / ok:false / 非法 JSON 都转成可读文案）')
-  truthy(!/wzyp\.cn\/shop/u.test(apiSource) && !/wzyp\.cn\/shop/u.test(dialogSource), '源码里没有写死的收款页地址')
+  truthy(!/wzyp\.cn\/shop/u.test(apiSource) && !/wzyp\.cn\/shop/u.test(buyTabSource), '源码里没有写死的收款页地址')
 
-  truthy(dialogSource.includes('fetchPayLink('), '「前往购买」现取地址（fetchPayLink）')
-  truthy(dialogSource.includes('openPayLinkInApp('), '「前往购买」用 Browser.open 在 App 内打开')
-  truthy(!/window\.location\.(href|assign|replace)/u.test(dialogSource), '弹层里没有 window.location 整页跳转')
-  truthy(!/window\.open\(/u.test(dialogSource), '弹层里没有 window.open')
-  truthy(!/<a\s[^>]*href=/u.test(dialogSource), '弹层里没有 <a href> 式的购买入口')
-  truthy(!/createBuyOrder|pollOrder|startInAppPay/u.test(dialogSource), '弹层不再建单、不再轮询订单（/api/buy 与 pollOrder 的调用点已移除）')
-  truthy(!dialogSource.includes('fetchPlans'), '弹层不再渲染套餐卡片（也不取 /api/plans）')
-  truthy(dialogSource.includes("t('oursPayAction')"), '按钮文案走 i18n（oursPayAction）')
-  truthy(dialogSource.includes("t('oursPayEmpty')"), '空态说明走 i18n（oursPayEmpty：列表为空也有说明，不是白屏）')
-  truthy(dialogSource.includes("t('oursPayHint')"), '入口说明走 i18n（oursPayHint）')
-  truthy(dialogSource.includes('data-testid="ours-plans-empty"'), '套餐列表区有明确空态块')
-  truthy(dialogSource.includes('data-testid="ours-buy"'), '「前往购买」按钮还在（同一个 testid）')
-  truthy(dialogSource.includes('data-testid="ours-pay-notice"'), '通道不可用的提示是可读状态行（不是 alert / 不是白屏）')
+  truthy(buyTabSource.includes('fetchPayLink('), '「前往购买」现取地址（fetchPayLink）')
+  truthy(buyTabSource.includes('openPayLinkInApp('), '「前往购买」用 Browser.open 在 App 内打开')
+  truthy(!/window\.location\.(href|assign|replace)/u.test(buyTabSource), '购买 tab 里没有 window.location 整页跳转')
+  truthy(!/window\.open\(/u.test(buyTabSource), '购买 tab 里没有 window.open')
+  truthy(!/<a\s[^>]*href=/u.test(buyTabSource), '购买 tab 里没有 <a href> 式的购买入口')
+  truthy(!/createBuyOrder|pollOrder|startInAppPay/u.test(buyTabSource), '不再建单、不再轮询订单（/api/buy 与 pollOrder 的调用点已移除）')
+  // 口径变化（#487 W1-C1）：旧弹层 #331 之后只剩「前往购买」空态；新「购买」tab 恢复了套餐列表
+  // （`GET /api/plans` → `fetchPlans`，价格由 `formatPlanPrice` 统一成元），所以这一条从「不许取」反过来断「必须取」。
+  truthy(buyTabSource.includes('fetchPlans'), '「购买」tab 用 fetchPlans 拉套餐（GET /api/plans）')
+  truthy(buyTabSource.includes("t('oursPayAction')"), '按钮文案走 i18n（oursPayAction）')
+  truthy(buyTabSource.includes("t('oursPayEmpty')"), '空态说明走 i18n（oursPayEmpty：列表为空也有说明，不是白屏）')
+  truthy(buyTabSource.includes("t('oursPayHint')"), '入口说明走 i18n（oursPayHint）')
+  truthy(buyTabSource.includes('data-testid="account-consume-buy"'), '购买 tab 有稳定根节点（account-consume-buy）')
+  truthy(buyTabSource.includes('data-testid="account-consume-buy-open"'), '「前往购买」按钮有 testid（account-consume-buy-open）')
+  truthy(buyTabSource.includes('data-testid="account-consume-buy-status"'), '通道不可用的提示是可读状态行（不是 alert / 不是白屏）')
   truthy(
     /oursPayAction:/u.test(zhSource) && /oursPayAction:/u.test(enSource) &&
       /oursPayUnavailable:/u.test(zhSource) && /oursPayUnavailable:/u.test(enSource) &&
