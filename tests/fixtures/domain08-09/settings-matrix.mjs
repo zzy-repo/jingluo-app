@@ -116,7 +116,9 @@ export const SETTING_ROWS = [
       // 老键「深度思考 = 开」的老用户升级后仍然算专家模式
       { store: { 'chat-demo:chat-mode': 'turbo', 'chat-demo:thinking': 'true' }, expect: 'expert' },
       { store: { 'chat-demo:chat-mode': 'turbo', 'chat-demo:thinking': 'false' }, expect: 'fast' },
-      { store: { 'chat-demo:chat-mode': 'turbo' }, expect: 'fast' },
+      // 随 ae4e2a3（#443，#363）变更：缺省档由 fast 改成 expert。老键 `chat-demo:thinking` 仍是迁移依据
+      // （上面那行「明确关过 → fast」不变），而从没写过这个键的机器按新缺省走 → expert。
+      { store: { 'chat-demo:chat-mode': 'turbo' }, expect: 'expert' },
     ],
   },
   {
@@ -254,11 +256,20 @@ export const SETTING_ROWS = [
   },
 ]
 
-/** 更新渠道（S13）的契约证据：源码里没有任何存储读写，初值由包版本号推断 */
+/**
+ * 更新渠道（S13）的契约证据。
+ *
+ * 随 556067a（#470，#412 第 3 项）变更：以前这里写的是「没有任何存储读写，初值只由包版本号推断」，
+ * 现在渠道选择**会记住**（否则「我把渠道切到稳定版了」重开设置就不成立）。两条随之调整：
+ * - 初值 = `readUpdateChannel(按包版本号推断的默认值)`：推断仍是**兜底**，只是外面多了一层「用户选过就用用户的」；
+ * - 组件里仍不许直接摸存储：键与脏值回落都在 `src/services/updateManifest.ts`，只此一处。
+ */
 export const UPDATE_CHANNEL_CONTRACT = {
   file: 'src/components/settings/AppUpdateField.tsx',
-  /** 初值推断 */
-  derive: /useState<UpdateChannel>\(\s*\/-[/]\.test\(bundledApp\(\)\.version\)\s*\?\s*'prerelease'\s*:\s*'stable'\s*\)/,
-  /** 不许出现的存储痕迹 */
-  forbidden: [/localStorage/, /chat-demo:/, /setChannel\(\s*[^)]*\)[\s\S]{0,80}localStorage/],
+  /** 初值：包版本号推断（有无 `-`）作为 `readUpdateChannel` 的 fallback */
+  derive: /useState<UpdateChannel>\(\(\)\s*=>\s*readUpdateChannel\(\s*\/-[/]\.test\(bundledApp\(\)\.version\)\s*\?\s*'prerelease'\s*:\s*'stable'\)\s*\)/,
+  /** 持久化的归属：键声明在更新链路，设置项矩阵不重复登记（防两处各写一遍） */
+  service: { file: 'src/services/updateManifest.ts', key: 'chat-demo:update-channel' },
+  /** 组件里不许出现的存储痕迹（读写都必须走 service 的 readUpdateChannel / saveUpdateChannel） */
+  forbidden: [/localStorage\s*\.\s*(get|set|remove)Item/, /chat-demo:/, /setChannel\(\s*[^)]*\)[\s\S]{0,80}localStorage/],
 }

@@ -3,7 +3,7 @@
 // N2 设置项持久化矩阵（域 9 · 设置与持久化）—— #362 / #367
 //
 // 覆盖功能点（9 条）：F9-01 主题 · F9-02 字号/字重/行距 · F9-03 思考显示 · F9-04 快速/专家模式（持久化半边）
-// · F9-05 回车行为 · F9-06 界面语言 · F9-07 TTS/智能搜索/侧边栏 · F9-08 更新渠道**不**持久化 · F9-13 脏值容错
+// · F9-05 回车行为 · F9-06 界面语言 · F9-07 TTS/智能搜索/侧边栏 · F9-08 更新渠道（键归更新链路）· F9-13 脏值容错
 //
 // 三列 × 14 行（表在 `tests/fixtures/domain08-09/settings-matrix.mjs`）：
 //   ① 合法值：调写入口 → 立即生效 + **正好落在那一个键上**（多写一个键也算失败）
@@ -11,7 +11,8 @@
 //   ③ 冷启动读回：进程重启（同模块换 URL 再导入）后值还在
 //
 // 另外两条契约级断言：
-//   ④ 更新渠道没有存储键：初值由包版本号推断（「不持久化」写成显式契约，而不是随它去）
+//   ④ 更新渠道的存储键归更新链路（`updateManifest.ts` 的 `chat-demo:update-channel`），
+//      初值仍是「按包版本号推断」，用户选过的优先 —— 见 N2-d 里的出处说明
 //   ⑤ 写入的键集合 ⊆ 表里声明的键集合：任何人偷偷新增 `chat-demo:*` 键都会被这条拦下
 //
 //   node --test tests/unit/domain09-settings-persistence.test.mjs
@@ -147,8 +148,11 @@ test('N2-c 冷启动读回：合法值重启后还在（13 个 chat-demo 键族�
   assert.deepEqual(failures, [])
 })
 
-test('N2-d 更新渠道不持久化：没有存储键，初值由包版本号推断', async () => {
-  // ① 源码层：`channel` 是 useState，初值 = 版本号里有没有 `-`，文件里不出现任何存储读写
+test('N2-d 更新渠道：键归更新链路（chat-demo:update-channel），初值仍按包版本号推断', async () => {
+  // 随 556067a（#470，#412 第 3 项）变更：这条原来断言「更新渠道不持久化、文件里没有任何存储痕迹」。
+  // #412 有意让「切到仅稳定版」被记住（否则重开设置就回到按包版本号猜的默认值），所以口径改成：
+  //   - 推断仍是兜底：初值 = readUpdateChannel(版本号里有没有 `-` ? prerelease : stable)；
+  //   - 读写**只许**走 updateManifest.ts（键与脏值回落都在那儿），组件里不许直接摸存储。
   const source = readFileSync(
     fileURLToPath(new URL('../../src/components/settings/AppUpdateField.tsx', import.meta.url)),
     'utf8'
@@ -156,13 +160,31 @@ test('N2-d 更新渠道不持久化：没有存储键，初值由包版本号推
   assert.match(
     source,
     UPDATE_CHANNEL_CONTRACT.derive,
-    `更新渠道的初值必须由包版本号推断（${UPDATE_CHANNEL_CONTRACT.file}）`
+    `更新渠道的初值必须仍以包版本号推断作兜底（${UPDATE_CHANNEL_CONTRACT.file}）`
   )
+  // 注释里出现 `localStorage` / `chat-demo:` 是正常的（在讲缓存来源），只剥注释后再查真正的读写
+  const code = source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/[^\n]*/g, '$1')
   for (const forbidden of UPDATE_CHANNEL_CONTRACT.forbidden) {
-    assert.doesNotMatch(source, forbidden, `更新渠道不应有存储痕迹：${forbidden}`)
+    assert.doesNotMatch(code, forbidden, `更新渠道的存储读写必须走 service，组件里不许自己摸：${forbidden}`)
   }
 
-  // ② 数据层：把 12 个设置写一遍，存储里不应冒出任何 update/channel 键
+  // ① 键声明在更新链路而不是设置矩阵：整个 src/ 里只有一处写这个字面量
+  const service = readFileSync(
+    fileURLToPath(new URL(`../../${UPDATE_CHANNEL_CONTRACT.service.file}`, import.meta.url)),
+    'utf8'
+  )
+  assert.match(
+    service,
+    new RegExp(`UPDATE_CHANNEL_KEY = '${UPDATE_CHANNEL_CONTRACT.service.key}'`),
+    `更新渠道的键必须声明在 ${UPDATE_CHANNEL_CONTRACT.service.file}`
+  )
+  assert.doesNotMatch(
+    service,
+    /readUpdateChannel\(\s*\)/,
+    'readUpdateChannel 必须要求调用方给 fallback：脏值要回落到「按包版本号推断」，不能回落到硬编码猜测'
+  )
+
+  // ② 数据层：把 12 个设置写一遍，存储里不应冒出任何 update/channel 键（这一项不归设置矩阵管）
   storage.clear()
   const mods = await boot()
   for (const row of SETTING_ROWS) {
@@ -174,7 +196,7 @@ test('N2-d 更新渠道不持久化：没有存储键，初值由包版本号推
   assert.deepEqual(
     keys.filter((key) => /update|channel/i.test(key)),
     [],
-    '更新渠道是「不持久化」契约，不许新增存储键（要真持久化属于产品改动，另开单）'
+    '设置项的写入口不许顺手写更新渠道的键（那一项由 updateManifest.ts 管，两处各写一遍必然漂移）'
   )
 })
 

@@ -6,6 +6,8 @@
 // 「这个渠道还需要那些能力吗」——历史上就有过为了绕过某类错误而关掉能力的改法。
 // 这里把官方渠道的完整能力矩阵钉死：深度思考、附件 / Files API、图片 vision、搜索、
 // 标题、TTS、ASR、extended 扩展（safety_check + latest_reminder）全部为真，
+// 快照拒绝的是「顺手降级」；产品有意改动（例如 ae4e2a3 / #363 把 ours 的深度思考改成真生效）
+// 必须在改动那笔 commit 里同步本文件，并在断言旁注明出处。
 // 并且断言错误分类的代码**没有**（也无法）反过来改这些能力。
 //
 //   node tests/unit/provider-caps-lock.test.mjs
@@ -154,7 +156,9 @@ test('能力矩阵快照：四个渠道逐字段锁定（防止改错误分类�
     ours: {
       caps: {
         text: true,
-        thinking: false,
+        // 随 ae4e2a3（#443，#363）变更：ours 的 reasoningParam 由 none 改成 reasoning_effort + high，
+        // `thinkingAvailable()` 因此派生出 `thinking: true`（旧快照是 false —— 那是「开关点了也不生效」的老缺陷）。
+        thinking: true,
         search: false,
         title: false,
         vision: false,
