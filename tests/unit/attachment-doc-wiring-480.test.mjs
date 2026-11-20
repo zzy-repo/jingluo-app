@@ -17,6 +17,7 @@
 //          且尾部多一轮后老消息逐字节不变（#345 前缀稳定性）。
 //
 //   node --test --import ./tests/helpers/injected.mjs tests/unit/attachment-doc-wiring-480.test.mjs
+import '../helpers/injected.mjs'
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { existsSync } from 'node:fs'

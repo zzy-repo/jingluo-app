@@ -10,6 +10,7 @@
 // [绿 5] 裁剪协同：base 里没有的轮次（= 被 contextBudget 裁掉的）其附件不注入；窗口内的照旧注入；
 // [绿 6] 前缀稳定：尾部多一轮之后，老消息的 JSON 逐字节不变；无附件消息保持同一对象引用；
 // [绿 7] 出参剥掉 attachments 键（原样上行会被上游当未知字段）。
+import '../helpers/injected.mjs'
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { registerHooks } from 'node:module'
