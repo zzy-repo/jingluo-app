@@ -575,3 +575,7 @@ CI 位置：`.github/workflows/ci.yml` 的 `checks` job，紧跟 `check:manifest
 - 接缝只改**启动判定**：`restoreAuth` 的续期 / `me()` 语义、登录 / 注册 / 退出登录全在别的用例里测，不受它影响。
 - 接缝**不许**在带 `TEST_AUTH_SEAM=1` 的构建上跑「未登录」语义的用例（登录页、注册入口显隐、过期提示）：
   那些用例必须用不带开关的产物（`DIST_OUT=... pnpm build`）。
+- ci.yml 里 `TEST_AUTH_SEAM` 挂在**job 级**（golden / integration），不是挂在那一步的 `build` 上：
+  `copy-limit` / `update-stuck-button-373` 这类用例会自己 spawn rspack 打 `dist-copy-limit` /
+  `dist-update-373`，它们继承 `process.env` —— 挂在 build 步骤上的话这些自建产物是「未登录」包，
+  用例会以「拿不到侧栏」的形式假红（#510 实测踩过一次）。

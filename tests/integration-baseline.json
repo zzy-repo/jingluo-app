@@ -96,9 +96,11 @@
       "reason": "verifyDist(internal) + MOTION_BASE/PORT 可注入；自起服务"
     },
     "ours-services.test.mjs": {
-      "expected": "pass",
+      "expected": "known-red",
       "artifact": "standard",
-      "reason": "DIST_DIR_STANDARD 标准产物 + mock 我们的服务端；390 / 360 两轮全绿。#166 修好后「付款记录 / 我的购买」两格只在 ours 渠道渲染（官方渠道与第三方 baseUrl 下 count=0，会话内切回 ours 又回来），原 knownRed 已清空"
+      "reason": "W1-B 后半（#510 / #487）把「额度」格从邀请服务 /me 的 remaining_points 整体挪到 sub2api GET /v1/usage（单位元、不折算、不当 0），本文件里「额度 1.00 元 / 0.00 元、刷新额度走 /me」那几条断言的前提随之作废；而 consume 传输层在非原生环境（L1 的真 Chromium 没有 Capacitor HTTP）恒返回 unsupported，真额度在 L1 里本来就取不到 —— 改测试要连带把这一格按新来源重写（或补原生桥 mock），属 W1-C1 面板收口批次，不在 #510 里做。其余断言（#100 不自动 /apply、领取写入 Key、设备码持久化、邀请码错误码、购买区空态）照旧有效。",
+      "evidence": "2026-11-20 本地实测（dist-standard 带接缝）：`ours-quota-value` 上屏 「本机还没有绑定 Key：请点「领取新 Key」或「我已有 Key」」而不是 1.00 元；同一份产物在 origin/main@05d45a4 上该文件 12 项全绿 —— 差异来自 #510 分支对 src/components/settings/OursServicesDialog.tsx 的额度来源改造（git log -S\"usage.gateway\"）。",
+      "followUp": "#487 W1-C1（面板收口）里重写本文件的额度小节；若届时确认「领取成功后额度格仍报未绑定」是产品 bug，另开单"
     },
     "paths.test.mjs": {
       "expected": "pass",

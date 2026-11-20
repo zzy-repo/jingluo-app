@@ -449,6 +449,13 @@ jobs:
     name: L1 集成层 ${{ matrix.shard }}/${{ matrix.total }}
     runs-on: ubuntu-latest
     timeout-minutes: 25
+    env:
+      # #510：L1 里大量用例要「启动即进主界面」（未登录冷启动只画登录页时拿不到侧栏）。
+      # 放在 **job 级** 是为了让用例**自建产物**的那几条也带上：
+      # copy-limit / update-stuck-button-373 自己 spawn rspack 打 dist-copy-limit / dist-update-373，
+      # 用的是 `{ ...process.env }`，job 级 env 会继承下去。不带它的生产产物由
+      # checks job 的 check:test-seam 与 scripts/build.mjs 的自扫守卫保证干净。
+      TEST_AUTH_SEAM: '1'
     container:
       image: mcr.microsoft.com/playwright:v1.64.1-jammy
       # 同 golden job：容器默认 64MB /dev/shm 会让 Chromium 渲染长页面时崩成环境假红。
@@ -535,12 +542,8 @@ jobs:
       # 这里把三份变体都备齐：dist=internal / dist-standard / dist-scroll。
       # copy-limit 与 update-stuck-button-373 各带自建产物（dist-copy-limit / dist-update-373），不在此列。
       - name: 构建被测产物（internal / standard / scroll，带登录接缝）
-        # #510：L1 里同样有大量「启动即进主界面」的用例（feedback-scroll / 各域主路径），
-        # 未登录冷启动只画登录页时它们全都拿不到侧栏。三份变体统一带 `TEST_AUTH_SEAM=1`：
-        # DefinePlugin 内联一个假会话，AuthGate 直接放行；不带它的生产产物由 checks job 的
-        # `check:test-seam` 与 `scripts/build.mjs` 的自扫守卫保证干净。
-        env:
-          TEST_AUTH_SEAM: '1'
+        # 三份变体都带上 job 级的 `TEST_AUTH_SEAM=1`（见 job env）：DefinePlugin 内联假会话，
+        # AuthGate 直接放行；用例自建的 dist-copy-limit / dist-update-373 也继承这个开关。
         run: |
           set -euo pipefail
           pnpm run build:internal                 # → dist/          内测变体（diagnostics / motion / mode-switch 等）
