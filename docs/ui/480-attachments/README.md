@@ -63,8 +63,31 @@
    若已有告警里出现过同一个数字则不重复（同一条信息说两遍会让人以为丢了两次内容）。
 3. **兜底**：状态是 `partial` 但一条告警都没有时，用页数差补「共 12 页，仅成功提取 10 页」，
    避免「状态降级了却什么都不说」。
-4. **呈现**：卡片角标只给条数，点开面板看逐条列表；`failed` 面板给「人话原因」（按
-   manager 的 `reason` 码）+「技术信息」原文（如 `no-parser: no parser registered for .pdf`）。
+4. **呈现**：卡片角标只给条数，点开面板看逐条列表；`failed` 面板给「人话原因」+「技术信息」原文
+   （如 `no-parser: no parser registered for .pdf`）。
+
+## 失败原因按码出文案（#574）
+
+`errorMessage` 的约定是 `<码>: <人话>`：manager 的 `describeAttachmentError()`（`AttachmentError.reason`）
+与解析器的 `PdfParseError.code` **都**走这条约定，所以码永远不会在到达界面前被吞掉。
+`viewModel.ts` 的 `ATTACHMENT_FAILURE_KEYS` 是「码 → 文案 key」的唯一映射表，类型是
+`Record<AttachmentErrorReason, TranslationKey>` —— 加码不补映射，`npx tsc` 先红。
+
+| 码 | 界面上那句标题（zh） | 下一步 |
+| --- | --- | --- |
+| `noTextLayer` | 该 PDF 未检测到可提取的文本，暂不支持扫描版 PDF，请上传包含文本层的 PDF 文件 | 换带文本层的 PDF |
+| `tooManyPages` | PDF 共 N 页，超过上限 500 页，请拆分后再上传 | 拆分 |
+| `encryptedPdf` | 不支持加密 PDF，请先解除密码保护后再上传 | 去密码 |
+| `notPdfFile` | 这个文件不是有效的 PDF（内容与扩展名对不上），请确认文件后重新上传 | 换文件 |
+| `fileTooLarge` | PDF 超过该类型的体积上限，请压缩或拆分后再上传 | 压缩 / 拆分 |
+| `libUnavailable` | PDF 解析组件没有加载成功，请重试；反复失败请检查网络后刷新页面 | 重试 |
+| `openFailed` | PDF 打不开，文件可能已损坏，请重新导出后再上传 | 重新导出 |
+
+`attachFailUnknown`（「解析过程中出现了未知问题」）**只留给真正不认识的码**：用例
+`tests/unit/attachment-failure-copy-574.test.mjs` 逐码断言「已知码一个都不许落兜底」，
+并有自动化负向对照（挖掉一条映射 → 探测器点名那个码）。解析器的原文照旧进「技术信息」折叠区，
+排障依据不删。**解析超时不是失败码**（#571 语义：`partial` + `解析超时，已提取 N/M 页` warning），
+它不进这张表，由 warnings 原样展示 —— 该用例也钉住了这一条。
 
 ## 非法类型 / 超限：明确拒绝，不静默过滤
 
@@ -104,7 +127,7 @@ hook 里（`addFailureToast`）。
 ```bash
 node scripts/build.mjs --internal
 node scripts/shot-mobile.mjs \
-  --page=480-attach-entry,480-attach-parsing,480-attach-partial,480-attach-failed,480-attach-in-message \
+  --page=480-attach-entry,480-attach-parsing,480-attach-partial,480-attach-failed,480-attach-failure-copy,480-attach-in-message \
   --viewport=390,360
 ```
 
@@ -114,9 +137,10 @@ node scripts/shot-mobile.mjs \
 | `480-attach-parsing` | `parsing`：逐页进度 + 取消按钮；取消后「解析已取消」 | 2 |
 | `480-attach-partial` | `partial`：黄描边 + 橙色警告角标；点开详情看 warnings | 2 |
 | `480-attach-failed` | `failed`：红描边 + 失败原因 + 重新解析（点一次真的再跑一遍） | 3 |
+| `480-attach-failure-copy` | **#574**：失败原因按码给文案 —— 扫描件（`noTextLayer`）与超页数（`tooManyPages`）各一张，标题是人话不是「未知问题」 | 2 |
 | `480-attach-in-message` | 消息内卡片（只元信息、无正文）+ 详情面板仍只有元信息 | 3 |
 
-产物：`docs/ui/480-attachments/{390,360}/480-attach-*.png`（每档 15 张，两档共 30 张）；量数在同目录
+产物：`docs/ui/480-attachments/{390,360}/480-attach-*.png`（每档 17 张，两档共 34 张）；量数在同目录
 `metrics-480-attach-*.json`（每场景一份），**每档目录各有一份汇总** `390/metrics.json` / `360/metrics.json`
 （顶层 `overflowCount`，两档实测都是 0；本目录（两档的上一层）**没有**汇总文件，别去找它）。验收结论与未覆盖项见
 [`docs/testing/acceptance-480.md`](../../testing/acceptance-480.md)。

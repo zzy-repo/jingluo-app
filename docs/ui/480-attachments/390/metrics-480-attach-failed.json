@@ -45,7 +45,7 @@
     "label": "查看附件详情",
     "title": "480-伪装成PDF的文本.pdf",
     "meta": "PDF 61 B",
-    "failureTitle": "解析过程中出现了未知问题",
+    "failureTitle": "这个文件不是有效的 PDF（内容与扩展名对不上），请确认文件后重新上传",
     "raw": "文件内容不是有效的 PDF（缺少 %PDF- 文件头）",
     "warnings": [],
     "actions": [
@@ -60,10 +60,10 @@
       "insideViewport": true
     },
     "position": {
-      "inline": "top: 403px; left: 29px; max-height: 224px;",
+      "inline": "top: 383px; left: 29px; max-height: 244px;",
       "computedLeft": "29px",
-      "computedTop": "403px",
-      "maxHeight": "224px"
+      "computedTop": "383px",
+      "maxHeight": "244px"
     }
   },
   "afterRetry": {
@@ -71,7 +71,7 @@
     "cardCount": 1
   },
   "consoleErrors": [
-    "[storage] parse attachment failed PdfParseError: 文件内容不是有效的 PDF（缺少 %PDF- 文件头）\n    at e6 (http://127.0.0.1:5420/static/js/main.9fc633db.js:3:14126)\n    at e8 (http://127.0.0.1:5420/static/js/main.9fc633db.js:3:15251)\n    at async tq (http://127.0.0.1:5420/static/js/main.9fc633db.js:4:11543)",
-    "[storage] parse attachment failed PdfParseError: 文件内容不是有效的 PDF（缺少 %PDF- 文件头）\n    at e6 (http://127.0.0.1:5420/static/js/main.9fc633db.js:3:14126)\n    at e8 (http://127.0.0.1:5420/static/js/main.9fc633db.js:3:15251)\n    at async tq (http://127.0.0.1:5420/static/js/main.9fc633db.js:4:11543)"
+    "[storage] parse attachment failed PdfParseError: 文件内容不是有效的 PDF（缺少 %PDF- 文件头）\n    at e8 (http://127.0.0.1:5420/static/js/main.6d9f707d.js:3:14858)\n    at ti (http://127.0.0.1:5420/static/js/main.6d9f707d.js:3:16350)\n    at async tX (http://127.0.0.1:5420/static/js/main.6d9f707d.js:4:11873)",
+    "[storage] parse attachment failed PdfParseError: 文件内容不是有效的 PDF（缺少 %PDF- 文件头）\n    at e8 (http://127.0.0.1:5420/static/js/main.6d9f707d.js:3:14858)\n    at ti (http://127.0.0.1:5420/static/js/main.6d9f707d.js:3:16350)\n    at async tX (http://127.0.0.1:5420/static/js/main.6d9f707d.js:4:11873)"
   ]
 }

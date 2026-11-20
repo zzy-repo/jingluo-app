@@ -1,0 +1,132 @@
+{
+  "page": "480-attach-failure-copy",
+  "title": "#480/#574 失败原因按码出文案：扫描版 PDF（noTextLayer）与页数超限（tooManyPages）",
+  "viewport": 360,
+  "size": "360×740",
+  "shots": [
+    "docs/ui/480-attachments/360/480-attach-failure-copy-01-panel-no-text-layer-360.png",
+    "docs/ui/480-attachments/360/480-attach-failure-copy-02-panel-too-many-pages-360.png"
+  ],
+  "notes": [],
+  "noTextLayer-cards": [
+    {
+      "variant": "draft",
+      "expanded": false,
+      "name": "480-扫描件-无文本层.pdf",
+      "subCaption": "上传失败",
+      "status": "解析失败，点击查看原因",
+      "corner": null,
+      "progress": null,
+      "actions": [
+        "移除附件"
+      ],
+      "borderColor": "rgb(236, 19, 19)",
+      "background": "rgb(255, 255, 255)",
+      "box": {
+        "left": 29,
+        "right": 269,
+        "width": 240,
+        "height": 78,
+        "insideViewport": true
+      }
+    }
+  ],
+  "noTextLayer-panel": {
+    "label": "查看附件详情",
+    "title": "480-扫描件-无文本层.pdf",
+    "meta": "PDF 1018 B",
+    "failureTitle": "该 PDF 未检测到可提取的文本，暂不支持扫描版 PDF，请上传包含文本层的 PDF 文件",
+    "raw": "该 PDF 未检测到可提取的文本，暂不支持扫描版 PDF，请上传包含文本层的 PDF 文件",
+    "warnings": [],
+    "actions": [
+      "关闭",
+      "重新解析",
+      "移除附件"
+    ],
+    "box": {
+      "left": 29,
+      "right": 329,
+      "width": 300,
+      "insideViewport": true
+    },
+    "position": {
+      "inline": "top: 263px; left: 29px; max-height: 260px;",
+      "computedLeft": "29px",
+      "computedTop": "263px",
+      "maxHeight": "260px"
+    }
+  },
+  "tooManyPages-cards": [
+    {
+      "variant": "draft",
+      "expanded": false,
+      "name": "480-扫描件-无文本层.pdf",
+      "subCaption": "上传失败",
+      "status": "解析失败，点击查看原因",
+      "corner": null,
+      "progress": null,
+      "actions": [
+        "移除附件"
+      ],
+      "borderColor": "rgb(236, 19, 19)",
+      "background": "rgb(255, 255, 255)",
+      "box": {
+        "left": 29,
+        "right": 269,
+        "width": 240,
+        "height": 78,
+        "insideViewport": true
+      }
+    },
+    {
+      "variant": "draft",
+      "expanded": false,
+      "name": "480-超页数-800页.pdf",
+      "subCaption": "上传失败",
+      "status": "解析失败，点击查看原因",
+      "corner": null,
+      "progress": null,
+      "actions": [
+        "移除附件"
+      ],
+      "borderColor": "rgb(236, 19, 19)",
+      "background": "rgba(38, 49, 72, 0.06)",
+      "box": {
+        "left": 29,
+        "right": 269,
+        "width": 240,
+        "height": 78,
+        "insideViewport": true
+      }
+    }
+  ],
+  "tooManyPages-panel": {
+    "label": "查看附件详情",
+    "title": "480-超页数-800页.pdf",
+    "meta": "PDF 223 KB",
+    "failureTitle": "PDF 共 800 页，超过上限 500 页，请拆分后再上传",
+    "raw": "该 PDF 有 800 页，超过 500 页上限，请拆分后再上传",
+    "warnings": [],
+    "actions": [
+      "关闭",
+      "重新解析",
+      "移除附件"
+    ],
+    "box": {
+      "left": 29,
+      "right": 329,
+      "width": 300,
+      "insideViewport": true
+    },
+    "position": {
+      "inline": "top: 279px; left: 29px; max-height: 244px;",
+      "computedLeft": "29px",
+      "computedTop": "279px",
+      "maxHeight": "244px"
+    }
+  },
+  "consoleErrors": [
+    "[storage] parse attachment failed PdfParseError: 该 PDF 未检测到可提取的文本，暂不支持扫描版 PDF，请上传包含文本层的 PDF 文件\n    at e8 (http://127.0.0.1:5420/static/js/main.6d9f707d.js:3:14858)\n    at ti (http://127.0.0.1:5420/static/js/main.6d9f707d.js:3:18822)\n    at async tX (http://127.0.0.1:5420/static/js/main.6d9f707d.js:4:11873)",
+    "[storage] parse attachment failed PdfParseError: 该 PDF 有 800 页，超过 500 页上限，请拆分后再上传\n    at e8 (http://127.0.0.1:5420/static/js/main.6d9f707d.js:3:14858)\n    at ti (http://127.0.0.1:5420/static/js/main.6d9f707d.js:3:17786)\n    at async tX (http://127.0.0.1:5420/static/js/main.6d9f707d.js:4:11873)"
+  ]
+}

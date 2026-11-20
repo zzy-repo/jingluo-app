@@ -1,5 +1,5 @@
 {
-  "page": "5 个场景汇总",
+  "page": "6 个场景汇总",
   "viewport": 360,
   "size": "360×740",
   "overflowCount": 0,
@@ -30,6 +30,13 @@
       "metrics": "metrics-480-attach-failed.json",
       "overflowCount": 0,
       "shots": 3,
+      "notes": []
+    },
+    {
+      "page": "480-attach-failure-copy",
+      "metrics": "metrics-480-attach-failure-copy.json",
+      "overflowCount": 0,
+      "shots": 2,
       "notes": []
     },
     {

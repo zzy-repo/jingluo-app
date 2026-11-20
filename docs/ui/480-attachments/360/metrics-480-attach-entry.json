@@ -27,7 +27,7 @@
       }
     },
     "docInputs": 1,
-    "allFileInputs": 1,
+    "allFileInputs": 2,
     "expectedPickLabel": "添加文档（TXT / DOCX / PDF）"
   },
   "entry-openai": {
@@ -46,7 +46,7 @@
       }
     },
     "docInputs": 1,
-    "allFileInputs": 1,
+    "allFileInputs": 2,
     "expectedPickLabel": "添加文档（TXT / DOCX / PDF）"
   },
   "entry-ours": {
@@ -65,7 +65,7 @@
       }
     },
     "docInputs": 1,
-    "allFileInputs": 1,
+    "allFileInputs": 2,
     "expectedPickLabel": "添加文档（TXT / DOCX / PDF）"
   },
   "entry-deepseek": {

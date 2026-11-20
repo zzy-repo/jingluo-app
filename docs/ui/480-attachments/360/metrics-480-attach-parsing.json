@@ -1,6 +1,6 @@
 {
   "page": "480-attach-parsing",
-  "title": "#480 附件卡片 parsing 态：逐页进度条 + 取消按钮，取消后落「已取消」（1600 页真 PDF）",
+  "title": "#480 附件卡片 parsing 态：逐页进度条 + 取消按钮，取消后落「已取消」（480 页真 PDF）",
   "viewport": 360,
   "size": "360×740",
   "shots": [
@@ -14,13 +14,13 @@
       {
         "variant": "draft",
         "expanded": false,
-        "name": "480-长文档-1600页.pdf",
-        "subCaption": "PDF 690 KB",
-        "status": "解析中 2%",
+        "name": "480-长文档-480页.pdf",
+        "subCaption": "PDF 205 KB",
+        "status": "解析中 5%",
         "corner": null,
         "progress": {
-          "text": "解析中 2%",
-          "width": 2.3,
+          "text": "解析中 5%",
+          "width": 5.7,
           "trackWidth": 114
         },
         "actions": [
@@ -45,15 +45,15 @@
     "overflowCount": 0,
     "overflowSamples": []
   },
-  "parsingAfterMs": 572,
+  "parsingAfterMs": 413,
   "cancelled": {
     "cardCount": 1,
     "cards": [
       {
         "variant": "draft",
         "expanded": false,
-        "name": "480-长文档-1600页.pdf",
-        "subCaption": "PDF 690 KB",
+        "name": "480-长文档-480页.pdf",
+        "subCaption": "PDF 205 KB",
         "status": "解析已取消",
         "corner": null,
         "progress": null,
