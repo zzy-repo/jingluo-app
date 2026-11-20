@@ -1029,6 +1029,13 @@ export const en = {
   sub2authTwoFactorHint: 'Two-factor authentication is on, enter the 6-digit code from your authenticator app',
 
   // Account and consumption (dollar amounts are shown exactly as the backend returns them, never converted)
+  // "Account & billing" page (three dialogs → one page, #482 / W1-C1 #487)
+  accountConsumeTitle: 'Account & billing',
+  accountConsumeEntryDescription: 'Card keys, plans, quota and account — all in one page',
+  accountConsumeTabCards: 'My cards',
+  accountConsumeTabQuota: 'My quota',
+  accountConsumeTabAccount: 'Account',
+
   consumeBalance: '${amount}',
   consumeBalanceApprox: 'About {amount}',
   consumeQuota: 'Quota',
@@ -1109,7 +1116,7 @@ export const en = {
   consumeErrCardNotFound: 'No such card key. Check it and try again.',
   consumeErrCardNotFoundOrExpired: 'That card key does not exist or has expired. Check it and try again.',
   consumeErrCardUsed: 'This card key has already been used. Contact support if the balance did not arrive.',
-  consumeRedeemProcessing: 'This card key is still being processed. Please wait and do not submit again.',
+  consumeRedeemProcessing: 'Confirming the redemption result',
   consumeErrInvitationInvalid: 'Invalid invitation code. Check it and try again.',
   consumeErrEmailCodeInvalid: 'The verification code is wrong or has expired. Request a new one.',
   consumeErrNotEnabled: 'This feature is not enabled yet. Contact support to enable it.',

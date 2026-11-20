@@ -1,0 +1,384 @@
+/* 「账户与消费」页（#482 三弹层合一 / #487 W1-C1）—— **新写的精简样式**，不复用旧弹层的 CSS。
+ *
+ * 三条约束（与旧弹层那 1,200 行 CSS 的区别就在这里）：
+ *  1. 只用 design token（`--dsw-alias-*` / `--ds-*`），不写死颜色，深色主题自动跟随；
+ *  2. 390 / 360 两档不横向滚动：一律 flex-wrap + `min-width: 0` + 允许断词，卡密尾号走等宽字体；
+ *  3. 点击区 ≥ 36px（`Button` 的 size="m" 就是 36px），不用 12px 的小链接当主操作。
+ */
+
+.dialog {
+  width: min(560px, calc(100vw - 16px));
+  max-height: min(720px, calc(100vh - 24px));
+}
+
+.main {
+  /* 内容再长也只在弹层内部滚，不把弹层顶出屏幕 */
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+/* ---------------------------------------------------------------- 四个 tab */
+
+.tabs {
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 10px;
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.tab {
+  flex: 1 1 0;
+  min-width: 0;
+  /* 360px 下四个 tab 各约 84px，中文四个字要能放下：字号收到 13px */
+  padding: 8px 4px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 18px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+  transition: background var(--ds-transition-duration) var(--ds-ease-in-out);
+}
+
+.tab:hover {
+  color: var(--dsw-alias-label-primary);
+}
+
+.tabActive {
+  background: var(--dsw-alias-bg-base);
+  color: var(--dsw-alias-label-primary);
+  font-weight: 600;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 8%);
+}
+
+/* #215：WebView 下限 Chromium 83 不认 `:focus-visible`（整条规则被丢弃），所以三件套写全：
+   ① `:focus` 兜底（83 上只有它生效，鼠标点击也会出环，可接受）；② 现代内核用
+   `:focus:not(:focus-visible)` 把鼠标态的环收回；③ `:focus-visible` 交给键盘态。 */
+.tab:focus {
+  outline: 2px solid var(--dsw-alias-brand-primary);
+  outline-offset: 1px;
+}
+
+.tab:focus:not(:focus-visible) {
+  outline: none;
+}
+
+.tab:focus-visible {
+  outline: 2px solid var(--dsw-alias-brand-primary);
+  outline-offset: 1px;
+}
+
+/* ---------------------------------------------------------------- 面板容器 */
+
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  padding: 12px 2px 4px;
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.sectionTitle {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--dsw-alias-label-secondary);
+}
+
+/* ---------------------------------------------------------------- 状态块（加载 / 空 / 错） */
+
+.state {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-start;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.stateText {
+  margin: 0;
+  font-size: 14px;
+  line-height: 22px;
+  color: var(--dsw-alias-label-secondary);
+  overflow-wrap: anywhere;
+}
+
+.stateActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* ---------------------------------------------------------------- 卡密列表 */
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  min-width: 0;
+}
+
+.item {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 10px;
+}
+
+.itemTop {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 8px;
+  align-items: baseline;
+  justify-content: space-between;
+  min-width: 0;
+}
+
+.tail {
+  font-family: var(--ds-font-family-code);
+  font-size: 15px;
+  letter-spacing: 0.04em;
+  color: var(--dsw-alias-label-primary);
+  overflow-wrap: anywhere;
+}
+
+.chip {
+  flex: 0 0 auto;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.chipUsed {
+  background: var(--dsw-static-green-100);
+  color: var(--dsw-static-green-900);
+}
+
+.itemMeta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.itemActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* ---------------------------------------------------------------- 兑换表单 */
+
+.form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+}
+
+.input {
+  flex: 1 1 180px;
+  min-width: 0;
+  height: var(--ds-control-height-m);
+  padding: 0 10px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-base);
+  color: var(--dsw-alias-label-primary);
+  font-family: inherit;
+  font-size: 14px;
+}
+
+.input:focus {
+  border-color: var(--dsw-alias-brand-primary);
+  box-shadow: 0 0 0 2px var(--dsw-alias-interactive-bg-hover-accent);
+}
+
+.input:focus:not(:focus-visible) {
+  box-shadow: none;
+}
+
+.input:focus-visible {
+  border-color: var(--dsw-alias-brand-primary);
+  box-shadow: 0 0 0 2px var(--dsw-alias-interactive-bg-hover-accent);
+}
+
+.feedback {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  font-size: 14px;
+  line-height: 22px;
+  overflow-wrap: anywhere;
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.feedbackOk {
+  background: var(--dsw-static-green-100);
+  color: var(--dsw-static-green-900);
+}
+
+.feedbackWarn {
+  background: var(--dsw-static-amber-100);
+  color: var(--dsw-static-amber-900);
+}
+
+.feedbackError {
+  background: var(--dsw-alias-interactive-bg-hover-danger);
+  color: var(--dsw-alias-state-error-primary);
+}
+
+.feedbackActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+/* ---------------------------------------------------------------- 套餐 */
+
+.plans {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.plan {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 10px;
+}
+
+.planText {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.planName {
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--dsw-alias-label-primary);
+  overflow-wrap: anywhere;
+}
+
+.planMeta {
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
+.hint {
+  margin: 0;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-tertiary);
+  overflow-wrap: anywhere;
+}
+
+/* #173-fallback:start —— 由 node scripts/gen-flex-gap-fallback.mjs 生成，勿手改（issue #173） */
+:global(html[data-flex-gap-fallback]) .tabs > *:not(:last-child) {
+  margin-right: 4px;
+}
+
+:global(html[data-flex-gap-fallback]) .body > *:not(:last-child) {
+  margin-bottom: 12px;
+}
+
+:global(html[data-flex-gap-fallback]) .section > *:not(:last-child) {
+  margin-bottom: 8px;
+}
+
+:global(html[data-flex-gap-fallback]) .state > *:not(:last-child) {
+  margin-bottom: 8px;
+}
+
+:global(html[data-flex-gap-fallback]) .stateActions > *:not(:last-child) {
+  margin-right: 8px;
+  margin-bottom: 8px;
+}
+
+:global(html[data-flex-gap-fallback]) .list > *:not(:last-child) {
+  margin-bottom: 8px;
+}
+
+:global(html[data-flex-gap-fallback]) .item > *:not(:last-child) {
+  margin-bottom: 6px;
+}
+
+:global(html[data-flex-gap-fallback]) .itemTop > *:not(:last-child) {
+  margin-right: 8px;
+  margin-bottom: 6px;
+}
+
+:global(html[data-flex-gap-fallback]) .itemMeta > *:not(:last-child) {
+  margin-right: 10px;
+  margin-bottom: 4px;
+}
+
+:global(html[data-flex-gap-fallback]) .itemActions > *:not(:last-child) {
+  margin-right: 8px;
+  margin-bottom: 8px;
+}
+
+:global(html[data-flex-gap-fallback]) .form > *:not(:last-child) {
+  margin-right: 8px;
+  margin-bottom: 8px;
+}
+
+:global(html[data-flex-gap-fallback]) .feedbackActions > *:not(:last-child) {
+  margin-right: 8px;
+  margin-bottom: 8px;
+}
+
+:global(html[data-flex-gap-fallback]) .plans > *:not(:last-child) {
+  margin-bottom: 8px;
+}
+
+:global(html[data-flex-gap-fallback]) .plan > *:not(:last-child) {
+  margin-right: 8px;
+  margin-bottom: 8px;
+}
+
+:global(html[data-flex-gap-fallback]) .planText > *:not(:last-child) {
+  margin-bottom: 2px;
+}
+/* #173-fallback:end */

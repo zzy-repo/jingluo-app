@@ -1011,6 +1011,14 @@ export const zh = {
   sub2authEmailVerifyRequired: '需要先验证邮箱',
   sub2authTwoFactorHint: '这个账号已开启两步验证，请输入验证器里的 6 位验证码',
 
+  // 「账户与消费」页（#482 三弹层合一 / #487 W1-C1）：一个页面四个 tab。
+  // 标题与三个 tab 名在词条骨架里没有对应项，这里最小新增；Tab 2「购买」复用 oursPayTitle。
+  accountConsumeTitle: '账户与消费',
+  accountConsumeEntryDescription: '我的卡密、购买套餐、额度与账号，一个页面四件事',
+  accountConsumeTabCards: '我的卡密',
+  accountConsumeTabQuota: '我的额度',
+  accountConsumeTabAccount: '账号',
+
   // 账户与消费（金额按美元展示，后端给什么显示什么，不在客户端换算）
   consumeBalance: '${amount}',
   consumeBalanceApprox: '约合 {amount}',
@@ -1094,7 +1102,7 @@ export const zh = {
   consumeErrCardNotFound: '没找到这张卡密，请核对后再输入',
   consumeErrCardNotFoundOrExpired: '卡密不存在或已过期，请核对后再输入',
   consumeErrCardUsed: '这张卡密已经被用过了，额度没到账请联系客服',
-  consumeRedeemProcessing: '卡密正在处理中，请稍等，不要重复提交',
+  consumeRedeemProcessing: '正在确认兑换结果',
   consumeErrInvitationInvalid: '邀请码无效，请核对后再填',
   consumeErrEmailCodeInvalid: '验证码不对或已过期，请重新获取',
   consumeErrNotEnabled: '这个功能还没开放，请联系客服开通',

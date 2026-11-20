@@ -76,6 +76,14 @@ const ORPHAN_BASELINE = new Set([
   'emailBindFailed',
   'inviteCodeInvalid',
   'inviteDisabled',
+  // #487 W1-C1（三弹层合一）：设置页三格入口（付款记录 / 我的购买 / 时间线）并成一格之后，
+  // 下面这几条入口文案失去了唯一引用点。旧弹层文件本身还没删（归 W1-D），先按「登记、只许减」躺在这里；
+  // W1-D 删旧弹层时连带把这几条从基线删掉。
+  'oursPayRecordsEntryDescription',
+  'oursPurchasesEntryAction',
+  'oursPurchasesEntryDescription',
+  'oursTrailEntry',
+  'oursTrailEntryDescription',
   'sub2authConfirmPassword',
   'sub2authCredentialInvalid',
   'sub2authForgotPassword',

@@ -60,15 +60,8 @@ import { ChatBackgroundField } from './ChatBackgroundField.js'
 import { DOUYIN_ACCOUNT_ID, douyinCopyToast } from './douyinAccount.js'
 import { OursServicesRow } from './OursServicesDialog.js'
 import { FeedbackDialog } from './FeedbackDialog.js'
-import {
-  closeSettings,
-  setPaymentRecordsOpen,
-  useSettingsDialog,
-  type SettingsSection,
-} from './settingsDialogState.js'
-import { PaymentRecordsDialog } from './PaymentRecordsDialog.js'
-import { PurchaseRecordsDialog } from './PurchaseRecordsDialog.js'
-import { PaymentTrailDialog } from './PaymentTrailDialog.js'
+import { closeSettings, useSettingsDialog, type SettingsSection } from './settingsDialogState.js'
+import { AccountConsumePage } from '../consume/AccountConsumePage.js'
 import { MOTION_EXIT, usePresence } from '../../utils/usePresence.js'
 import styles from './Settings.module.css'
 
@@ -103,17 +96,16 @@ const SettingsContent = ({ visible }: { visible: boolean }) => {
   const historyDelete = useHistoryDelete()
   // 反馈弹窗：integrity=true 表示从「检查日志完整性」进入，自检面板默认展开
   const [feedback, setFeedback] = useState({ open: false, integrity: false })
-  // 「我的购买」弹层开合（Issue #158）：只在本组件内用，不需要跨模块共享状态
-  const [purchasesOpen, setPurchasesOpen] = useState(false)
-  // 「支付记录」时间线弹层（Issue #189）：只有自有渠道（kind === 'ours'）才挂这条入口，
-  // 别的渠道没有自己的订单与卡密，露出来只会点进一个空页（同 #166 的门禁思路）。
-  // 支付记录时间线弹层开合（#189）：与上面两格同一份渠道判定
-  const [trailOpen, setTrailOpen] = useState(false)
+  /**
+   *「账户与消费」页开合（#482 三弹层合一 / #487 W1-C1）。
+   *
+   * 原来这里是三份独立开关（付款记录 #115 / 我的购买 #158 / 支付记录时间线 #189），
+   * 三个入口指向三个弹层，同一个「我的钱花哪儿了」要靠三个页面拼出来。合并后只剩这一个。
+   */
+  const [accountConsumeOpen, setAccountConsumeOpen] = useState(false)
   const replacingHistory = useChatStore((state) => state.importingHistory)
   // 自有渠道判定：付款记录 / 我的购买两格（以及它们在下面的弹层）只在这条渠道下存在（#166）
   const oursChannel = useIsOursChannel()
-  // 付款记录弹层开合：引用「我们的渠道」那套同层叠放（zIndex 由弹层自己抬高）
-  const paymentRecordsOpen = useSettingsDialog((state) => state.paymentRecordsOpen)
   const historyBusy = historyImport.busy || historyDelete.busy || replacingHistory
   // 覆盖确认 / 删除确认叠在设置之上时，设置层的 X 与点击遮罩一律不可用：
   // 那层遮罩是全屏的，第一次点击只会落到上层的「取消」上，用户会以为 X 坏了、
@@ -170,60 +162,26 @@ const SettingsContent = ({ visible }: { visible: boolean }) => {
               <ChatBackgroundField />
               <ImportHistory historyImport={historyImport} disabled={historyBusy} />
               <ExportHistory disabled={historyBusy} />
-              {/* 付款记录（#115）/ 我的购买（#158）/ 支付记录时间线（#189）：只读历史，刷新不产生新订单。
-                  三格都只在自有渠道下有意义（#166）：判定与上面 <OursServicesRow /> 是同一份
-                  （apiConfig.useIsOursChannel），第三方 / 自定义地址下整块不渲染，别在这里再写一份。 */}
+              {/* 账户与消费（#482 三弹层合一 / #487 W1-C1）：付款记录 + 我的购买 + 支付记录时间线
+                  三个入口合并成一格，点开是同一个四 tab 页面（我的卡密 / 购买 / 我的额度 / 账号）。
+                  仍然只在自有渠道下出现：卡密与套餐来自 apia，别的渠道没有自己的订单（#166）。 */}
               {oursChannel ? (
-                <>
-                  <SettingCell
-                    label={t('oursPayRecordsTitle')}
-                    description={t('oursPayRecordsEntryDescription')}
-                    status={null}
-                    action={
-                      <Button
-                        variant="outlined"
-                        size="m"
-                        className={styles.cellButton}
-                        data-testid="payment-records-open"
-                        onClick={() => setPaymentRecordsOpen(true)}
-                      >
-                        {t('oursPayRecordsEntryAction')}
-                      </Button>
-                    }
-                  />
-                  <SettingCell
-                    label={t('oursPurchasesTitle')}
-                    description={t('oursPurchasesEntryDescription')}
-                    status={null}
-                    action={
-                      <Button
-                        variant="outlined"
-                        size="m"
-                        className={styles.cellButton}
-                        data-testid="purchases-open"
-                        onClick={() => setPurchasesOpen(true)}
-                      >
-                        {t('oursPurchasesEntryAction')}
-                      </Button>
-                    }
-                  />
-                  <SettingCell
-                    label={t('oursTrailTitle')}
-                    description={t('oursTrailEntryDescription')}
-                    status={null}
-                    action={
-                      <Button
-                        variant="outlined"
-                        size="m"
-                        className={styles.cellButton}
-                        data-testid="payment-trail-open"
-                        onClick={() => setTrailOpen(true)}
-                      >
-                        {t('oursTrailEntry')}
-                      </Button>
-                    }
-                  />
-                </>
+                <SettingCell
+                  label={t('accountConsumeTitle')}
+                  description={t('accountConsumeEntryDescription')}
+                  status={null}
+                  action={
+                    <Button
+                      variant="outlined"
+                      size="m"
+                      className={styles.cellButton}
+                      data-testid="account-consume-open"
+                      onClick={() => setAccountConsumeOpen(true)}
+                    >
+                      {t('oursPayRecordsEntryAction')}
+                    </Button>
+                  }
+                />
               ) : null}
               <SettingCell
                 label={t('feedbackCellLabel')}
@@ -275,15 +233,10 @@ const SettingsContent = ({ visible }: { visible: boolean }) => {
       </Modal>
       {historyImport.source ? <ImportConfirm historyImport={historyImport} /> : null}
       {historyDelete.opened ? <DeleteAllConfirm historyDelete={historyDelete} /> : null}
-      {oursChannel && paymentRecordsOpen ? (
-        <PaymentRecordsDialog onClose={() => setPaymentRecordsOpen(false)} />
+      {/* 账户与消费（#487 W1-C1）：一个页面四个 tab，zIndex 由页面自己抬高到设置层之上 */}
+      {oursChannel && accountConsumeOpen ? (
+        <AccountConsumePage onClose={() => setAccountConsumeOpen(false)} />
       ) : null}
-      {/* 「我的购买」（#158）：分页 / 筛选 / 卡片动作，叠放层级与付款记录一致 */}
-      {oursChannel && purchasesOpen ? (
-        <PurchaseRecordsDialog onClose={() => setPurchasesOpen(false)} />
-      ) : null}
-      {/* 「支付记录」时间线（#189）：订单 + 卡密全程；入口已按渠道门禁，弹层内部再兜一次 */}
-      {oursChannel && trailOpen ? <PaymentTrailDialog onClose={() => setTrailOpen(false)} /> : null}
       <FeedbackDialog
         open={feedback.open}
         integrity={feedback.integrity}

@@ -1934,6 +1934,167 @@ export const PAGES = {
     },
   },
 
+  'account-consume': {
+    dir: 'docs/ui/account-consume',
+    title:
+      '#487 设置 → 数据管理 → 账户与消费：我的卡密（未兑换 / 已兑换 / 复制 / 兑换结果）/ 购买（套餐 / 收款页）/ 我的额度 / 账号 四个 tab（390 与 360 两档）',
+    sessions: () => [makeReadingSession()],
+    mockOrders: false,
+    // 入口仍然只在自有渠道出现（#166 的判据没变，只是三联格并成了一格）
+    providerKind: 'ours',
+    // 「我的卡密」的数据就是 apia 的 GET /api/orders：按真契约形状回两张卡 ——
+    // 一张 issued/leased（未兑换）、一张 redeemed/used（已兑换），列表的两种状态各截一张。
+    mockPurchases: {
+      totalPaidYuan: 40,
+      orders: [
+        {
+          out_trade_no: 'CP202611200000001',
+          plan_id: 'standard',
+          plan_name: '标准包 500万 token',
+          plan_points: 3900,
+          amount_yuan: 39.0,
+          status: 'FULFILLED',
+          status_text: '已完成',
+          card_no: 'MUSE-3CYP-5NA3-AHSE-A3SR',
+          card_status: 'leased',
+          redeem_state: 'issued',
+          created_at: 1795055400,
+          paid_at: 1795055460,
+        },
+        {
+          out_trade_no: 'CP202611190000002',
+          plan_id: 'starter',
+          plan_name: '体验包 100万 token',
+          plan_points: 300,
+          amount_yuan: 1.0,
+          status: 'FULFILLED',
+          status_text: '已完成',
+          card_no: 'MUSE-9KQ2-7WHB-TT44-Q7ZM',
+          card_status: 'used',
+          redeem_state: 'redeemed',
+          created_at: 1794969000,
+          paid_at: 1794969060,
+        },
+      ],
+    },
+    run: async (ctx) => {
+      const { page, shot, record, warn } = ctx
+      const json = (body) => ({
+        status: 200,
+        headers: { 'content-type': 'application/json', 'access-control-allow-origin': '*' },
+        body: JSON.stringify(body),
+      })
+      await page.route(`${SHOT_CARD_API}/api/plans`, async (route) => {
+        await route.fulfill(
+          json({
+            plans: [
+              { id: 'p1', name: '入门包 100万 token', price: 3.0, points: 300, currency: 'CNY', enabled: true },
+              { id: 'p2', name: '标准包 500万 token', price: 39.0, points: 3900, currency: 'CNY', enabled: true },
+            ],
+          })
+        )
+      })
+      await page.route(`${SHOT_CARD_API}/api/pay-link`, async (route) => {
+        await route.fulfill(json({ ok: true, url: 'https://pay.example.com/checkout/shot', note: '' }))
+      })
+
+      await openSettings(page, S.tabData)
+      const entry = page.locator('[data-testid="account-consume-open"]')
+      await entry.waitFor({ state: 'visible', timeout: 10000 })
+      await entry.scrollIntoViewIfNeeded()
+      await page.waitForTimeout(240)
+      await entry.click()
+
+      const panel = page.locator('[data-testid="account-consume-page"]')
+      await panel.waitFor({ state: 'visible', timeout: 10000 })
+      await page.waitForTimeout(700)
+
+      // ① 四个 tab 一行放得下、弹层不横向溢出（390 与 360 都要成立）
+      const layout = await page.evaluate(() => {
+        // 注意作用域：设置层自己也有一个 role="tablist"（通用设置 / 数据管理），
+        // 直接从 document 取第一个会把两张截图量成设置页的 tab —— 必须从本页往上找它自己的弹层。
+        const body = document.querySelector('[data-testid="account-consume-page"]')
+        const dialog = body === null ? null : body.closest('[role="dialog"]')
+        const tablist = dialog === null ? null : dialog.querySelector('[role="tablist"]')
+        if (tablist === null || body === null) {
+          return null
+        }
+        const tabs = Array.from(tablist.querySelectorAll('[role="tab"]')).map((tab) => {
+          const rect = tab.getBoundingClientRect()
+          return { w: Math.round(rect.width), h: Math.round(rect.height), top: Math.round(rect.top) }
+        })
+        const box = body.getBoundingClientRect()
+        return {
+          tabs,
+          tabRows: new Set(tabs.map((tab) => tab.top)).size,
+          panelRight: Math.round(box.right),
+          viewport: document.documentElement.clientWidth,
+          scrollWidth: document.documentElement.scrollWidth,
+        }
+      })
+      record('layout', layout)
+      if (layout === null) {
+        warn('没量到 tablist / 页面主体：布局断言无从判断')
+      } else {
+        if (layout.tabRows !== 1) {
+          warn(`四个 tab 折成了 ${layout.tabRows} 行（390/360 两档要求同一行）`)
+        }
+        const tooShort = layout.tabs.filter((tab) => tab.h < 32)
+        if (tooShort.length > 0) {
+          warn(`有 ${tooShort.length} 个 tab 的点击高度不足 32px：${JSON.stringify(tooShort)}`)
+        }
+        if (layout.scrollWidth > layout.viewport) {
+          warn(`页面出现横向滚动：scrollWidth=${layout.scrollWidth} > viewport=${layout.viewport}`)
+        }
+      }
+
+      // ③ Tab 1「我的卡密」：两种状态（未兑换 / 已兑换）+ 复制 + 去兑换
+      const rows = page.locator('[data-testid="account-consume-card-row"]')
+      record('cards', {
+        count: await rows.count(),
+        rows: (await rows.allInnerTexts()).map((text) => text.replace(/\s+/g, ' ').trim()),
+      })
+      if ((await rows.count()) !== 2) {
+        warn(`卡密列表应有 2 条（未兑换 + 已兑换），实际 ${await rows.count()}`)
+      }
+      await shot('01-my-cards')
+
+      // ④ 兑换：Chromium 里 CapacitorHttp 不可用（isNativePlatform() === false），
+      //    所以这一次一定「拿不到响应」。截的是**真实发生的那一态**，不是摆拍成功页；
+      //    redeemed / processing / pending→重试 三态由 tests/unit/consume-envelope.test.mjs 覆盖。
+      await page.getByTestId('account-consume-redeem-input').fill('MUSE-3CYP-5NA3-AHSE-A3SR')
+      await page.getByTestId('account-consume-redeem-submit').click()
+      const redeemStatus = page.getByTestId('account-consume-redeem-status')
+      await redeemStatus.waitFor({ state: 'visible', timeout: 10000 })
+      record('redeemStatus', { text: (await redeemStatus.innerText()).replace(/\s+/g, ' ').trim() })
+      await shot('02-redeem-result')
+
+      // ⑤ Tab 2「购买」：套餐列表（apia /api/plans）
+      await page.getByTestId('account-consume-tab-buy').click()
+      await page.getByTestId('account-consume-buy-plan').first().waitFor({ state: 'visible', timeout: 10000 })
+      await page.waitForTimeout(320)
+      record('buyPlans', { count: await page.getByTestId('account-consume-buy-plan').count() })
+      await shot('03-buy-plans')
+
+      // ⑥ 点「去支付」：非原生环境 openPayLinkInApp() 恒为 false → 必须给可读提示，不许整页跳走
+      await page.getByTestId('account-consume-buy-open').first().click()
+      const buyStatus = page.getByTestId('account-consume-buy-status')
+      await buyStatus.waitFor({ state: 'visible', timeout: 10000 })
+      record('buyOpen', { text: (await buyStatus.innerText()).replace(/\s+/g, ' ').trim() })
+      await shot('04-buy-open-unavailable')
+
+      // ⑦ Tab 3「我的额度」/ Tab 4「账号」：面板本体来自 W1-C2（`components/consume/index.ts`），
+      //    截出来证明外壳把同一个客户端与登录出口递下去了（面板自己拉数据，这里只等它出终态）
+      await page.getByTestId('account-consume-tab-quota').click()
+      await page.waitForSelector('[data-testid="account-consume-page"]', { timeout: 10000 })
+      await page.waitForTimeout(900)
+      await shot('05-quota-panel')
+      await page.getByTestId('account-consume-tab-account').click()
+      await page.waitForTimeout(900)
+      await shot('06-account-panel')
+    },
+  },
+
   purchases: {
     dir: 'docs/ui/158-purchases',
     title: '#158 设置 → 数据管理 → 我的购买：列表 / 待支付筛选 / 展开完整卡号 / 空态（390 与 360 两档）',

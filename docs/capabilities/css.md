@@ -12,9 +12,9 @@
 
 | 项 | 值 |
 | --- | --- |
-| 扫描范围 | `src/**` 全部源文件 **291** 个（`.css` **47** 个，其中 `*.module.css` **40** 个；其余 `.ts / .tsx / .html` 共 **244** 个） |
-| 口径拆分 | 47 `.css` + 180 `.ts` + 63 `.tsx` + 1 `.html` = 291 |
-| 命中总数 | **370** 处，分布在 **40** 个文件 |
+| 扫描范围 | `src/**` 全部源文件 **295** 个（`.css` **48** 个，其中 `*.module.css` **41** 个；其余 `.ts / .tsx / .html` 共 **247** 个） |
+| 口径拆分 | 48 `.css` + 180 `.ts` + 66 `.tsx` + 1 `.html` = 295 |
+| 命中总数 | **389** 处，分布在 **41** 个文件 |
 | 运行时下限 | WebView **83**（Chromium 83）。**首支持 ≤ 83 的特性一律记「无风险」，与有没有兜底无关** |
 | 构建期因素 | `rspack.config.ts` 用 `builtin:lightningcss-loader`，`targets` 取自 `package.json` 的 `browserslist`（强制含 `chrome >= 83`）。**已被构建期翻译掉的写法不算运行时假设** |
 
@@ -35,10 +35,10 @@
 | 特性 | 首支持 Chromium | 命中 | 已有兜底 | 无风险 | 可接受降级 | 真实缺陷 | 假阳性 | 结论 |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | 嵌套 `&` | — （构建期） | 146 | 146 | 0 | 0 | 0 | 0 | lightningcss 按 `chrome >= 83` 展开，非运行时假设 |
-| flex `gap` | 84 | 134 | 134 | 0 | 0 | 0 | 0 | 兜底已全覆盖（#217 补齐最后 2 处）；`check:gap` 口径见 §2.6 |
-| `min()` / `max()` | 79 | 21 | 0 | 21 | 0 | 0 | 0 | 79 ≤ 83，无风险 |
+| flex `gap` | 84 | 149 | 149 | 0 | 0 | 0 | 0 | 兜底已全覆盖（#217 补齐最后 2 处；W1-C1 / W1-C2 的新样式由 `pnpm run gen:gap` 补齐）；`check:gap` 口径见 §2.6 |
+| `min()` / `max()` | 79 | 23 | 0 | 23 | 0 | 0 | 0 | 79 ≤ 83，无风险（W1-C1 弹层宽高上限新增 2 处） |
 | `:has()` | 105 | **0** | 0 | 0 | 0 | 0 | 0 | 16 处已由 #213 清零：改成渲染期显式状态类 `ds-markdown-before-ul` / `ds-markdown-before-ol`，低内核上零特性依赖 |
-| `:focus-visible` | 86 | 14 | 14 | 0 | 0 | 0 | 0 | 14 处已由 #215 补齐：每处都有同选择器的 `:focus` 兜底 + `:focus:not(:focus-visible)` 收回；`pnpm run check:focus` 守住 |
+| `:focus-visible` | 86 | 16 | 16 | 0 | 0 | 0 | 0 | 16 处全部合规：每处都有同选择器的 `:focus` 兜底 + `:focus:not(:focus-visible)` 收回（#215；W1-C1 的 `.tab` / `.input` 按同一套三件套写）；`pnpm run check:focus` 守住 |
 | `@supports` 块（9 处 `(height/max-height: 100dvh)` + 2 处 `(scrollbar-gutter: …)`） | 108 | 11 | 11 | 0 | 0 | 0 | 0 | **11/11 前置等价兜底**：9 处有 `vh` 基座；2 处（`MessageList.module.css:18,68`，#216 / #236）有常驻 `overflow-y: scroll` 槽位 |
 | `overscroll-behavior` | 63 | 6 | 0 | 6 | 0 | 0 | 0 | 63 ≤ 83，无风险 |
 | `env(safe-area-inset-*)` | 69 | 6 | 0 | 6 | 0 | 0 | 0 | 69 ≤ 83，无风险（见 §5 的一致性备注） |
@@ -58,7 +58,7 @@
 | `color-mix()` | 111 | 0 | — | — | — | 0 | 0 | 未使用（且 lightningcss 会降级） |
 | `@layer` | 99 | 0 | — | — | — | 0 | 0 | 未使用 |
 | `accent-color` | 93 | 0 | — | — | — | 0 | 0 | 未使用 |
-| **合计** | | **370** | **324** | **40** | **1** | **5** | **0** | |
+| **合计** | | **389** | **341** | **42** | **1** | **5** | **0** | |
 
 > `100dvh` 的每一处声明，**没有一处**落在 `@supports` 之外（`dvh` 裸用命中数为 0）。这是本仓 #13 之后形成的最好的一条既有纪律，也是本次盘点最重要的**正面结论**：`dvh` 这一类零缺陷。
 
@@ -329,6 +329,7 @@ node --test tests/unit/css-assumption-audit.test.mjs
 - 复核（2026-11-20 08:35，基准 `dfe6db0`，本单 #326 分支 `feat/payment-trail-paging-326`）：`PaymentTrailDialog.module.css` 为支付记录的分页与状态筛选新增 2 处 flex `gap` —— `.tabs`（六个状态页签换行排开，`gap: 6px`，`:71`）与 `.moreError`（「加载更多」失败提示行，`gap: 8px`，`:113`）。flex `gap` 118 → **120**、命中总数 347 → **349**（已有兜底 302 → **304**，分布仍是 39 个文件）；两处都由 `pnpm run check:gap` 生成 `html[data-flex-gap-fallback]` 兜底块（已兜底 119 → **121** 条），没有新增裸 gap；新增的 `border-radius` / `min-height` / `font-weight` 等不在盘点口径里，嵌套 `&` 未变（附录 A 不受影响）。§1 逐特性表、§2.6 明细与合计行已同步。
 - 复核（2026-11-20 12:20，基准 `e5ee313`，本单 #386 分支 `feat/scroll-to-bottom-386`）：新增 1 个 `.css`（`src/components/session/ScrollToBottomButton.module.css`：输入框上方「回到底部」小圆按钮的定位、44×44 命中区、淡入 keyframes 与 reduced-motion 关断），扫描范围 256 → **259** 个源文件（`.css` 44 → **45**，其中 `*.module.css` 37 → **38**；其余 `.ts / .tsx / .html` 212 → **214**）。新文件**一处可盘点特性都没有**：没有 flex `gap`、没有 `inset`（显式写 `top/right/bottom/left`）、没有 `min()/max()`、没有 `@supports`、没有 `:focus-visible`（焦点环复用 `IconButton` 的既有三档兜底）、也没有嵌套 `&`（全部是顶层单类选择器），所以**命中总数仍是 349 处 / 39 个文件**，逐特性表与 §2 明细的 `文件:行` 一字未动。
 - 复核（2026-11-20 13:35，基准 `b34ffb4`，本单 #301 分支 `feat/log-spec-301`）：新增 1 个 `.ts` 源文件（`src/services/diagnostics/reasons.ts`），扫描范围 261 → **262** 个源文件（其余 `.ts / .tsx / .html` 216 → **217**），`.css` 仍是 45 个（`*.module.css` 38）。新文件是纯常量与类型，**不含任何 CSS 特性假设**，命中总数仍是 **355 处 / 39 个文件**，逐特性表与 §2 明细的 `文件:行` 未变（本单只改 TS 侧的字面量）。
+- 复核（2026-11-20 17:35，基准 `54a45f8`，本单 #487 W1-C1 分支 `feat/account-consume-page`，「账户与消费」页）：新增 1 个 `.css`（`src/components/consume/AccountConsume.module.css`：页面壳 / 卡密列表 / 套餐 / 兑换表单，**一行没复制旧弹层 CSS**），扫描范围 291 → **295** 个源文件（`.css` 47 → **48**，其中 `*.module.css` 40 → **41**；其余 `.ts / .tsx / .html` 244 → **247**）。新样式里有三类可盘点特性：flex `gap` 15 处（`pnpm run gen:gap` 生成兜底，134 → **149**，兜底同步 149）、`min()`/`max()` 2 处（79 ≤ 83 无风险，21 → **23**）、`:focus-visible` 2 处（按 #215 三件套写全，14 → **16**，兜底同步 16）。命中总数 370 → **389**、分布 40 → **41** 个文件；分类分布 = 兜底 341 / 无风险 42 / 可降级 1 / 真实缺陷 **仍 5**（`scrollbar-gutter` 那 5 处，与本单无关），假阳性 0。
 - 复核（2026-11-20 16:20，基准 `d198ccc`，本单 #487 W1-A 分支 `feat/consume-layer`）：新增 9 个 `.ts` 源文件（`src/services/consume/**`），扫描范围 262 → **271** 个源文件（其余 `.ts / .tsx / .html` 217 → **226**），`.css` 仍是 45 个（`*.module.css` 38）。新文件是纯 TS 逻辑（HTTP 封装 / 错误归一 / 业务方法），**不含任何 CSS 特性假设**（无新增 `.css`、无内联样式），命中总数、逐特性表与 §2 明细的 `文件:行` 未变。
 - 复核（2026-11-20 16:35，基准 `e504986`，本单 #487 W1-B 分支 `feat/auth-layer-skeleton`）：新增 1 个 `.css`（`src/components/auth/AuthPages.module.css`，登录 / 注册页），扫描范围 271 → **280** 个源文件（`.css` 45 → **46**、`*.module.css` 38 → **39**、其余 226 → **234**），命中总数 355 → **370** 处（分布 39 → **40** 个文件）。增量：嵌套 `&` 141 → **146**；flex `gap` 126 → **134**，全部由 `node scripts/gen-flex-gap-fallback.mjs` 生成 `html[data-flex-gap-fallback]` 兜底块（`真实缺陷` 仍 0）；`:focus-visible` 13 → **14**，按 #215 的三段写法（`:focus` 兜底 + `:focus:not(:focus-visible)` 收回 + `:focus-visible`）补齐，仍记 `已有兜底`；`env(safe-area-inset-*)` 5 → **6**（69 ≤ 83，`无风险`）。`真实缺陷` 仍 5、`可接受降级` 仍 1、假阳性仍 0。
 - 复核（2026-11-20 17:00，基准 `3392efa`，本单 #487 W1-C2 分支 `feat/consume-panels`）：新增 1 个 `panels.module.css`（`src/components/consume/`，四个面板共用）、6 个 `.ts` 与 4 个 `.tsx`，扫描范围 280 → **291** 个源文件（`.css` 46 → **47**、`*.module.css` 39 → **40**、其余 234 → **244**）。新样式表**刻意不写 flex `gap`**（间距全部用 `margin`，理由见该文件头注释：WebView 83 上 flex gap 恒为 0，#173），也没有 `:focus-visible` / `inset` / `scrollbar-gutter` / `@supports` / 嵌套 `&`，颜色全走 `--dsw-alias-*` 令牌 —— **命中总数仍是 370 处 / 40 个文件**，逐特性表与 §2 明细的 `文件:行` 未变。

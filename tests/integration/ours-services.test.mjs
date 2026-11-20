@@ -336,14 +336,16 @@ const runViewport = async ({ width, height, label }) => {
   // ---------- [A] 入口只在 ours 渠道出现 ----------
   await openSettingsData(page)
   eq(await page.getByTestId('ours-services-row').count(), 1, `${width}px：ours 渠道下入口行存在`)
-  eq(await page.getByTestId('payment-records-open').count(), 1, `${width}px：ours 渠道下有「支付记录」入口（#166）`)
-  eq(await page.getByTestId('purchases-open').count(), 1, `${width}px：ours 渠道下有「卡密」入口（#166）`)
+  // #487 W1-C1：付款记录 / 我的购买 / 支付记录时间线三个入口并成一个「账户与消费」（一个页面四个 tab），
+  // 所以这里断言的是**唯一那一格**：渠道门禁（#166）语义不变，只是数量从 3 → 1。
+  eq(await page.getByTestId('account-consume-open').count(), 1, `${width}px：ours 渠道下有「账户与消费」入口（#166 / W1-C1）`)
+  eq(await page.getByTestId('payment-records-open').count(), 0, `${width}px：旧「支付记录」入口已合并，不再单独出现（W1-C1）`)
+  eq(await page.getByTestId('purchases-open').count(), 0, `${width}px：旧「卡密」入口已合并，不再单独出现（W1-C1）`)
   await selectProviderKind(page, /DeepSeek 官方|DeepSeek Official/)
   await page.waitForTimeout(300)
   eq(await page.getByTestId('ours-services-row').count(), 0, `${width}px：DeepSeek 官方下没有入口行`)
   eq(await page.getByTestId('ours-services-dialog').count(), 0, `${width}px：DeepSeek 官方下没有弹层`)
-  eq(await page.getByTestId('payment-records-open').count(), 0, `${width}px：DeepSeek 官方下没有「支付记录」入口（#166）`)
-  eq(await page.getByTestId('purchases-open').count(), 0, `${width}px：DeepSeek 官方下没有「卡密」入口（#166）`)
+  eq(await page.getByTestId('account-consume-open').count(), 0, `${width}px：DeepSeek 官方下没有「账户与消费」入口（#166）`)
   const deepseekText = await page.getByRole('dialog').first().innerText()
   truthy(!/设备码|邀请码|卡密/.test(deepseekText), `${width}px：DeepSeek 官方设置页没有我们的渠道文案`)
   await selectProviderKind(page, /我们的渠道|Our Channel/)
@@ -355,14 +357,12 @@ const runViewport = async ({ width, height, label }) => {
   await fillBaseUrl(page, 'https://relay.example.com')
   await page.waitForTimeout(300)
   eq(await page.getByTestId('ours-services-row').count(), 0, `${width}px：第三方 baseUrl 下没有入口行`)
-  eq(await page.getByTestId('payment-records-open').count(), 0, `${width}px：第三方 baseUrl 下没有「支付记录」入口（#166）`)
-  eq(await page.getByTestId('purchases-open').count(), 0, `${width}px：第三方 baseUrl 下没有「卡密」入口（#166）`)
+  eq(await page.getByTestId('account-consume-open').count(), 0, `${width}px：第三方 baseUrl 下没有「账户与消费」入口（#166）`)
   // 会话中切回自有渠道：UI 必须跟着回来（store 订阅，不用刷新）
   await selectProviderKind(page, /我们的渠道|Our Channel/)
   await page.waitForTimeout(300)
   eq(await page.getByTestId('ours-services-row').count(), 1, `${width}px：会话内切回我们的渠道后入口行恢复`)
-  eq(await page.getByTestId('payment-records-open').count(), 1, `${width}px：会话内切回我们的渠道后「支付记录」入口恢复（#166）`)
-  eq(await page.getByTestId('purchases-open').count(), 1, `${width}px：会话内切回我们的渠道后「卡密」入口恢复（#166）`)
+  eq(await page.getByTestId('account-consume-open').count(), 1, `${width}px：会话内切回我们的渠道后「账户与消费」入口恢复（#166）`)
 
   // ---------- [B][C] 首次使用：打开弹层**不发** /apply（#100），点「领取新 Key」才发 ----------
   const panel = await openPanel(page)
