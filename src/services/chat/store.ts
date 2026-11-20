@@ -8,7 +8,15 @@ import {
   isRetryableApiError,
 } from '../api/errors.js'
 import { classifyKeyFailure } from '../api/keyFailure.js'
-import { cancelUpload, describeUploadError, uploadAttachment, useUploads } from '../attachments.js'
+import { cancelUpload, describeUploadError, uploadAttachment, useUploads } from '../attachments/upload.js'
+// #480 §7 / §9：文档正文的文本注入（渠道能力表 + ContextBuilder + 附件引用收集）。
+// DeepSeek 官方 `textInjection === false`，这条链路一次都不进（见 streamReply 里的能力闸）。
+import { buildWithDocuments, formatDocumentInjection, type ChatMessage } from '../attachments/contextBuilder.js'
+import { acceptsDocuments, docInjectionFor } from '../attachments/providerCapability.js'
+import {
+  collectAttachmentsForRequest,
+  stripAttachmentRefs,
+} from '../attachments/requestDocs.js'
 import {
   captureStateSnapshot,
   errorMeta,
@@ -21,10 +29,11 @@ import { getApiKey, getBaseUrl, getCurrentSpec, getModel } from '../api/apiConfi
 import { buildMeta, endpointKeyFromUrl } from '../diagnostics/fields.js'
 import { REASON } from '../diagnostics/reasons.js'
 import { createStreamMeter, streamTimingMeta } from '../diagnostics/timing.js'
-import { requestGates } from '../api/providers.js'
+import { requestGates, type ProviderKind } from '../api/providers.js'
 import { LIMITS } from '../limits.js'
 import { useSettings } from '../settings.js'
 import { generateSessionTitle } from './autoTitle.js'
+import { estimateChars, estimateTokens } from './contextBudget.js'
 import {
   appendBranch,
   getVisibleMessages,
@@ -912,7 +921,34 @@ export const sendMessage = (targetSessionId: string | null) => {
   if (!prepared) {
     return false
   }
-  const { text, files } = prepared
+  // `documents`：文档附件引用（#480 / #527）。它们没有 blob、也没有 serverId ——
+  // 原件与解析全文在 AttachmentManager 里，消息只存 id。
+  const { text, files, documents } = prepared
+  /**
+   * #538 第二道防线（**服务层，绕过 UI 也挡得住**）：当前渠道收不了文档时，绝不构造一条
+   * 「只有附件引用、content 为空」的用户消息往上发。
+   *
+   * 为什么会漏到这里：UI 的入口门（`ChatInput.canAttachDocs`）只在**添加附件**那一刻生效，
+   * 而草稿里的文档引用可以来自**另一个渠道** —— 用户在 OpenAI 渠道挂好文档后切到 DeepSeek，
+   * 卡片与引用都还在；或者有人从控制台直接调 `sendMessage()`。DeepSeek 既不注入正文
+   * （`textInjection: false`），也没有可用的原生上传（#360），那样发出去就是一条空消息。
+   *
+   * 判据与 UI 同源（`acceptsDocuments()`），所以两边永远不会说不一致的话。
+   * 返回 `false`（发送未发生：不清草稿、不新增消息），并留一条 error 日志便于取证。
+   */
+  if (documents.length > 0 && !acceptsDocuments(getCurrentSpec().kind)) {
+    recordError('文档附件不被当前渠道支持，本条消息未发送（#538）', {
+      ...buildMeta({
+        flow: 'chat',
+        stage: 'chat.send',
+        status: 'error',
+        attempt: 1,
+        endpointKey: endpointKeyFromUrl(getBaseUrl()),
+      }),
+      documents: documents.length,
+    })
+    return false
+  }
   // 关键业务动作：只记字符数、附件数与本轮模式，正文绝不进日志
   // （模式进日志是为了 issue #25 的取证口径：用户反馈「专家模式和快速没区别」时能直接对上）
   recordAction('chat_send', 'send-message', {
@@ -962,14 +998,20 @@ export const sendMessage = (targetSessionId: string | null) => {
     id: createId(),
     role: 'user',
     content: text,
-    files: files.map(({ id, serverId, name, size, isImage, mimeType }) => ({
-      id,
-      serverId,
-      name,
-      size,
-      isImage,
-      mimeType,
-    })),
+    files: [
+      ...files.map(({ id, serverId, name, size, isImage, mimeType }) => ({
+        id,
+        serverId,
+        name,
+        size,
+        isImage,
+        mimeType,
+      })),
+      // 文档附件带 `att-` 前缀的 id，`isImage: false`、`serverId: null`：
+      // 请求侧按「非图片 files[].id」收引用（attachments/requestDocs.ts），
+      // 孤儿清扫也按它认引用（attachments/manager.ts 的 collectReferencedAttachmentIds）。
+      ...documents,
+    ],
     createdAt: now,
   }
   const reply = createReply()
@@ -977,6 +1019,7 @@ export const sendMessage = (targetSessionId: string | null) => {
     ...appendBranch(session, history.at(-1)?.id ?? null, [question, reply]),
     updatedAt: now,
   }))
+  // 只登记真正有原件的上传件；文档附件的原件归 manager，不进 files 表
   if (files.length > 0) {
     pendingFiles.set(sessionId, [
       ...(pendingFiles.get(sessionId) ?? []),
@@ -1442,6 +1485,60 @@ const scheduleAutoTitle = (sessionId: string) => {
 }
 
 /**
+ * 文档注入（#480 §9）：把消息上的附件引用换成正文注入，返回可以上行的 messages。
+ *
+ * **只有 `textInjection === true` 的渠道会调用本函数**（调用点在 `streamReply` 里，闸门在
+ * `docInjectionFor(kind)`）。DeepSeek 官方走原生 `file_id`，一条都不进这里。
+ *
+ * 三件事都在 `buildWithDocuments()` 里，不在本函数重新实现一遍：
+ * 1. 按需读正文（预算用尽就**不再** `getText`）；
+ * 2. 预算分配 + 单附件/总预算两条上限，超了在正文里标「已截断，剩余 N 字符未发送」；
+ * 3. 与 #345 的历史裁剪协同：`messages` 已经是裁剪后的结果，被裁掉的轮次连同它的
+ *    附件引用一起消失（引用是挂在消息上的），所以「窗口外的文档」天然不会被注入。
+ *
+ * 降级策略（§10：文档是增强项，不是发送前置条件）：
+ * - `buildWithDocuments()` 内部把「解析失败 / 未就绪 / 预算耗尽 / 读失败 / 空正文」
+ *   记进 `warnings` 并跳过那一份 —— 提问照发，notice 里给 UI 的说明；
+ * - 它自己抛错（不该发生）时这里兜一次：剥掉 `attachments` 引用键（协议里没这个字段，
+ *   原样上行会被上游当未知字段），按「没有文档」的请求继续发送。
+ */
+const withRequestDocuments = async (
+  messages: ChatMessage[],
+  kind: ProviderKind
+): Promise<{ messages: ChatMessage[]; notice: string }> => {
+  // 本函数只被文本注入渠道调用；能力表这里再问一次，是给「将来有人从别处调」兜底
+  if (!docInjectionFor(kind).textInjection) {
+    return { messages: stripAttachmentRefs(messages), notice: '' }
+  }
+  const refs = collectAttachmentsForRequest(messages)
+  if (refs.length === 0) {
+    // 这条请求没有文档：连 buildWithDocuments() 都不进，消息数组原样上行
+    return { messages, notice: '' }
+  }
+  try {
+    const result = await buildWithDocuments(messages, [], {
+      /**
+       * 上下文窗口：本仓库没有按模型登记窗口的表，唯一的「窗口级」数字是请求侧预算
+       * （`LIMITS.contextBudget.maxTokens`，与 `toRequestMessages()` 用的是同一个上限）。
+       * `reservedTokens` 把「系统提示 + 已裁好的历史 + 本轮提问」扣掉，剩下的才是文档的，
+       * 这与 issue §9 的公式同形；两边取小（`docBudgetTokens` 也会再取一次小）。
+       */
+      contextWindowTokens: LIMITS.contextBudget.maxTokens,
+      reservedTokens:
+        estimateTokens(estimateChars(messages) + SYSTEM_PROMPT.length),
+    })
+    const notice = [...result.warnings, formatDocumentInjection(result)].join('；')
+    return { messages: result.messages, notice }
+  } catch (error) {
+    recordError('文档注入失败，本次请求不带附件正文', { stage: 'chat.request' }, error)
+    return {
+      messages: stripAttachmentRefs(messages),
+      notice: '附件正文注入失败，本次只发送提问内容',
+    }
+  }
+}
+
+/**
  * 请求并消费流：先补齐附件的 serverId，再发请求；流式增量按动画帧刷新内存，完成、失败或停止后落盘。
  * 补传失败时回复记为 upload 错误，可重试。
  * 服务端判定 file_id 失效时重新补传后重发，退避重试且次数有上限，超过则按原始报错收尾。
@@ -1503,18 +1600,45 @@ const streamReply = async (sessionId: string, initial: AssistantMessage, request
         // 协议不支持思考（caps.thinking=false，由 reasoningParam 派生）时请求侧也不开，
         // 避免历史里带思考块回传
         const thinking = (initial.thinking ?? false) && spec.caps.thinking
-        const { system, messages } = toRequestBody(
-          toRequestMessages(
-            prepared.history,
-            prepared.question,
-            prepared.prefix,
-            thinking,
-            latestReminder,
-            // 裁剪边界跟着会话走（#345）：同一会话的后续轮次沿用同一个边界，
-            // 请求前缀逐字节稳定，上游上下文缓存才会命中
-            { anchorKey: sessionId }
-          )
+        /**
+         * 文档注入的能力闸（#480 §7 / §9）：**只有 `textInjection === true` 才走注入**。
+         *
+         * DeepSeek 官方 `textInjection === false`（`nativeFile` 同样为 `false`，本仓库没有
+         * 可用的原生上传实现，见 #360 / #538），于是下面三件事**一件都不发生**：消息上不挂
+         * 附件引用（`attachmentRefs: false`）、不进 `withRequestDocuments()`、不读一次附件正文
+         * —— `toRequestMessages()` 的入参
+         * 与改动前完全一致（多出来的只是一个 `false` 选项，产物无差别），`messages` 原样
+         * 传给 `toRequestBody()`，请求体逐字节等于原路径。
+         * 这条闸是**代码级**保证，不是约定。
+         */
+        const documentInjection = docInjectionFor(spec.kind).textInjection
+        const preparedMessages = toRequestMessages(
+          prepared.history,
+          prepared.question,
+          prepared.prefix,
+          thinking,
+          latestReminder,
+          // 裁剪边界跟着会话走（#345）：同一会话的后续轮次沿用同一个边界，
+          // 请求前缀逐字节稳定，上游上下文缓存才会命中
+          { anchorKey: sessionId, attachmentRefs: documentInjection }
         )
+        /**
+         * 注入正文（#480 §9）：`buildWithDocuments()` 是**唯一入口** —— 它按预算挑正文、
+         * 与历史裁剪协同（被裁掉的轮次其上引用也一起消失了，见 `toRequestMessages` 的出参）。
+         *
+         * 失败只降级：解析 failed / 预算耗尽 / 读失败都由它自己记进 `warnings` 并跳过那一份，
+         * 提问照发；真抛错时这里兜一次，剥掉引用键继续发（文档是增强项，不是发送前置条件）。
+         */
+        const injected = documentInjection
+          ? await withRequestDocuments(preparedMessages, spec.kind)
+          : { messages: preparedMessages, notice: '' }
+        if (injected.notice) {
+          recordEvent('chat_send', injected.notice, {
+            ...buildMeta({ flow: 'chat', stage: 'chat.request', status: 'ok' }),
+            model: initial.model ?? getModel(),
+          })
+        }
+        const { system, messages } = toRequestBody(injected.messages)
         // 附件已补齐、请求即将发出：prepMs 到此为止，后面的耗时才是「等上游」
         meter.markRequest()
         // 字段发不发由 requestBody.ts 里的 REQUEST_GATES 决定，这里只把本轮信息传进去

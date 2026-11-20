@@ -73,7 +73,7 @@ const EXTRA_ANIMATED_PROPS = new Map([
  *
  * 现在的口径：**消息流目录里只允许「白名单里点名的文件」改动，且改动里不许出现动效属性**
  * （transition / animation / transform / @keyframes）。逻辑与动效一律仍然零容忍；
- * 结构改动只有「纯 CSS 做不到」时才登记（目前只有 #347 / #353 的折叠区那一处）。
+ * 结构改动只有「纯 CSS 做不到」时才登记（目前有 #347 / #353 的折叠区、#480 / #527 的文档附件接线两处）。
  *
  * src/components/messages/AssistantMessage.module.css
  *   #346：错误提示条里「改 Key / 去充值 / 复制诊断信息」的命中区从 22px 补到 44×44
@@ -97,6 +97,29 @@ const MESSAGE_FLOW_ALLOWLIST = new Map([
   [
     'src/components/messages/scrollContext.ts',
     '#386 需要把「是否离开底部 / 离开后有没有新内容 / 点击滚到底」送到输入区里的按钮（按钮在 footer 子树，也就是输入区），新增一个 context，只有类型与 createContext，无动效',
+  ],
+  /**
+   * #480 / #527（文档附件）：附件卡片必须跟着**消息**走 —— 用户消息里要渲染
+   * 「卡片 + 解析状态 + 警告」，这是纯 CSS 做不到的结构改动；卡片本体与样式在
+   * `src/components/files/`、`src/components/attachments/`（消息流目录之外），
+   * 消息流这边只多一处渲染与接线。下面四条的改动里都没有 transition / animation / transform
+   * （[8] 会逐条扫新增行确认）。
+   */
+  [
+    'src/components/messages/UserMessage.tsx',
+    '#480 / #527 用户消息要带上文档附件卡片（元信息 + 五态 + 警告/失败原因 + 详情抽屉）：`files` 与图片附件共用同一字段、靠 `att-` 前缀分流，渲染点只能在这个文件里；改动只是把 `att-` 的 id 交给 `<AttachmentCard variant="message">`（样式与动效全在 src/components/files/FileCard.module.css 与 src/components/attachments/Attachments.module.css，消息流目录之外），本身没有任何动效声明',
+  ],
+  [
+    'src/components/chatInput/ChatInput.tsx',
+    '#480 / #527 文档附件的入口与「解析中」卡片都住在输入区：工具栏挂 AttachmentPicker、DraftAttachments 旁边渲染文档卡片、拖拽/粘贴按扩展名分流（文档走 manager，其余仍走原来的上传链路）、ready 的附件在发送前同步进 drafts.documents、切渠道后按键发送前的那道闸。只有输入区知道 textarea / file picker / 草稿的关系，搬不出去；全是接线逻辑，没有一条动效声明',
+  ],
+  [
+    'src/components/chatInput/ChatInput.module.css',
+    '#527 文档附件卡片与图片缩略图共用同一条横向列表，需要一层 `.docAttachments` 的间距（padding / cursor）与 `.unavailableEntry` 的禁用态外观；纯样式，无 transition / animation / transform',
+  ],
+  [
+    'src/components/chatInput/ChatInput.module.css.d.ts',
+    'CSS Module 的手写类型声明（本仓 *.css.d.ts 由人跟着对应模块同步），本次只多了对应的键（docAttachments 等）；无逻辑、无动效',
   ],
 ])
 

@@ -33,6 +33,7 @@ import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 
 import { ENDPOINTS_LABEL, loadConsumePay, placeholderNotice } from './lib/consumeEndpoints.mjs';
+import { SEAM_FLAG, scanForSeam, seamEnabled } from './lib/testAuthSeam.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const RSPACK_CONFIG = 'rspack.config.ts';
@@ -124,6 +125,25 @@ async function main() {
   if (!fs.existsSync(path.join(ROOT, outDir, 'index.html'))) {
     die(`构建报告成功但 ${outDir}/index.html 不存在（dist 输出异常）`);
   }
+
+  // 2.5 登录接缝守卫（#510）：构建完**立刻**自扫一遍产物，别指望下一个人记得跑门禁。
+  //     带 `TEST_AUTH_SEAM=1` 的是测试专用产物（黄金回归 / L1 需要「启动即已登录」），
+  //     它必然带标记 → 只告警；不带开关的构建（含发版）里出现标记就一定是接缝漏进了产物 → 直接失败。
+  //     标记清单与假会话的唯一出处是 scripts/lib/testAuthSeam.mjs（CI 门禁读同一份）。
+  const seamHits = scanForSeam(path.join(ROOT, outDir));
+  if (seamEnabled()) {
+    if (seamHits.length === 0) {
+      log(`[WARN] ${SEAM_FLAG}=1 但产物里扫不到接缝标记 —— 接缝可能没生效（先跑 pnpm run check:test-seam -- --expect-seam ${outDir}）`);
+    } else {
+      log(`[WARN] 测试接缝构建（${seamHits.length} 个文件带着假会话）：${outDir}/ 只许给测试用，绝不能发版`);
+    }
+  } else if (seamHits.length > 0) {
+    die(
+      `${outDir}/ 里出现了登录接缝标记（${seamHits.map((hit) => path.relative(ROOT, hit.file)).slice(0, 3).join(', ')}…）：` +
+        '正常构建必须把 __TEST_AUTH_STATE__ 内联为 undefined（见 rspack.config.ts 的 DefinePlugin / scripts/lib/testAuthSeam.mjs）'
+    );
+  }
+
   log(`OK ${outDir}/ 已生成`);
 }
 

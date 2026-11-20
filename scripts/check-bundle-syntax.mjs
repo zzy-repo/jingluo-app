@@ -24,6 +24,34 @@
 //      legacy polyfill 标记；没补上就阻断。
 //
 // CSS 一并检查：dvh（Chrome 108+）必须带 vh 回退，否则低内核上弹层高度直接失效。
+//
+// ## 覆盖范围（issue #480 集成轮补齐的真实缺口）
+//
+// 扫的是**产物目录下全部 `*.js`**，不只是入口 chunk：
+//
+// | 位置 | 是什么 | 怎么加载 |
+// | --- | --- | --- |
+// | `dist/static/js/**` | 打包器产物（入口 main + `async/*` 懒加载 chunk） | index.html / 动态 import |
+// | `dist/static/pdfjs/**` | 第三方经典脚本（`pdfjs-dist` 的 `pdf.min.js` / `pdf.worker.min.js`） | 运行期插入 `<script src>` |
+//
+// 旧实现只扫 `static/js`，于是 `static/pdfjs/` 这两份**从来没被这道门量过** —— rpm 的
+// `rspack.config.ts` 把 pdfjs 拷到 `static/pdfjs/` 时写的理由就是「避开语法门禁」，等于
+// 自己给自己开了一张免检单（#480 的 pdfjs 是 1.3 MB 运行期脚本，低内核白屏一样致命）。
+// 现在两份一起扫，并按来源分开报数：`bundled` 与 `vendored`。
+//
+// ## 门禁语义：**Chromium 83 的能力集**，不是「ES2017 规范」
+//
+// 判据是「这份产物在 WebView 83 上能不能被解析 / 能不能跑」，不是「写法是否超越某个 ES 版本」：
+// - **语法**：只禁 Chrome 83 解析不了的那几样（ES2021 逻辑赋值 / ES2022 类静态块 /
+//   私有类方法）——**能力集里的白名单式放行**，不是按年份卡规范；
+//   因此 `?.` / `??`（Chrome 80）**不需要单独放行**，它们本来就在 83 的能力集里，
+//   实测 pdfjs 也确实在用（`legacy/build` 打的就是「Chrome 79+」这一档）；
+// - **运行时 API**：Chrome 83 没有的内置 API 要么被 `src/polyfills/legacy.ts` 补上
+//   （产物里能查到 polyfill 标记），要么整份产物判红。
+//
+// `VENDORED_SYNTAX_ALLOWANCES` 是给「第三方经典脚本确实用到了 83 能力集里、但如果哪天
+// 打包器/依赖升级把更激进的东西带进来」留的口子：显式登记「哪个文件允许哪种语法 + 为什么
+// 83 能跑」。**现在是空的** —— 空 = 一份也不放行，这比写一堆 `if (file.includes('pdfjs'))` 安全。
 import { readdirSync, readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import path from 'node:path'
@@ -319,6 +347,50 @@ export const loadAcorn = () => {
     }
   }
   return acornCache
+}
+
+/** 打包器产物目录（相对产物根）：入口 main 与 `async/*` 懒加载 chunk 都在这里 */
+const BUNDLED_DIR = path.join('static', 'js')
+
+/**
+ * vendored（第三方经典脚本）语法放行表：**当前为空**。
+ *
+ * 形状：`{ file: 'static/pdfjs/pdf.min.js', kind: 'optional-chaining', why: '…' }`。
+ * 立表的原则：只有当某个第三方产物用到了「Chromium 83 支持、但本门禁的禁用清单误伤」的语法时
+ * 才登记，并在 `why` 里写清「83 为什么能跑」（引 caniuse / Chrome 版本）。**按文件登记**，
+ * 不许写「整个 static/pdfjs 免检」这种整目录豁免 —— 那又变成免检单。
+ *
+ * 现在空着是因为实测不需要：`pdf.min.js` / `pdf.worker.min.js`（pdfjs-dist legacy build）
+ * 在词法层与 AST 层都是 0 违规（`?.` / `??` 属于 ES2020，Chrome 80 就有，本门禁本来就不禁）。
+ */
+const VENDORED_SYNTAX_ALLOWANCES = []
+
+/** 按来源把产物 JS 分开：打包器产物 vs vendored 经典脚本 */
+const partitionJsFiles = (distDir, files) => {
+  const bundled = []
+  const vendored = []
+  for (const file of files) {
+    const relative = path.relative(distDir, file)
+    if (relative.startsWith(BUNDLED_DIR + path.sep)) bundled.push(file)
+    else vendored.push(file)
+  }
+  return { bundled, vendored }
+}
+
+/**
+ * 套用 vendored 放行表：只滤掉登记过的 (文件, 违规类型)。
+ * 未登记的一律保留 —— 放行是白名单，不是「vendored 就放行」。
+ */
+const applyVendoredAllowances = (distDir, findings) => {
+  if (VENDORED_SYNTAX_ALLOWANCES.length === 0) {
+    return findings
+  }
+  const allow = new Set(
+    VENDORED_SYNTAX_ALLOWANCES.map(
+      (entry) => `${path.join(distDir, entry.file)}::${entry.kind}`
+    )
+  )
+  return findings.filter((finding) => !allow.has(`${path.resolve(ROOT, finding.file)}::${finding.kind}`))
 }
 
 const walkFiles = (dir, suffix, accumulator = []) => {
@@ -650,18 +722,36 @@ const main = () => {
     process.exit(2)
   }
   const distDir = path.resolve(ROOT, process.argv[2] ?? 'dist')
-  const jsFiles = walkFiles(path.join(distDir, 'static', 'js'), '.js')
+  const bundledFiles = walkFiles(path.join(distDir, 'static', 'js'), '.js')
   const cssFiles = walkFiles(path.join(distDir, 'static', 'css'), '.css')
-  if (jsFiles.length === 0) {
+  if (bundledFiles.length === 0) {
     console.error(`没有找到产物：${path.relative(ROOT, distDir)}/static/js（先 npm run build）`)
     process.exit(2)
   }
-  const js = checkJavaScript(jsFiles)
+  /**
+   * 覆盖范围（#480）：**产物目录下全部 `*.js`**。
+   * 旧实现只扫 `static/js`，把 `static/pdfjs/`（pdfjs 的经典脚本，运行期 `<script src>` 加载）
+   * 整块漏在外面 —— 门禁对 pdfjs 等于不存在。懒加载 chunk（`static/js/async/*`）本来就在
+   * `static/js` 里、一直是覆盖的；真正漏的只有 vendored 目录，这里一并扫进来并分开报数。
+   */
+  const jsFiles = partitionJsFiles(distDir, walkFiles(distDir, '.js'))
+  const allJsFiles = [...jsFiles.bundled, ...jsFiles.vendored]
+  const js = checkJavaScript(allJsFiles)
   const css = checkCssUnits(cssFiles)
-  const runtime = checkRuntimeApis(distDir, jsFiles)
+  const runtime = checkRuntimeApis(distDir, allJsFiles)
+  // vendored 放行表（当前为空）：只滤掉登记过的项，其余照旧判红
+  js.lexical = applyVendoredAllowances(distDir, js.lexical)
+  js.ast = applyVendoredAllowances(distDir, js.ast)
+  const vendoredNames = jsFiles.vendored.map(
+    (file) => path.relative(distDir, file).split(path.sep).join('/')
+  )
   console.log(`产物兼容性检查（语法 + 运行时 API）：${path.relative(ROOT, distDir) || '.'}`)
   console.log(
-    `  JS 文件 ${js.files} 个；词法层违规 ${js.lexical.length} 个；AST 层违规 ${js.ast.length} 个（acorn ${js.acornVersion ?? '缺失'}, ecmaVersion 2022 + 禁用项断言；字面量遮蔽 = acorn AST 边界）`,
+    `  扫描范围：全部 *.js 共 ${js.files} 个（打包产物 ${jsFiles.bundled.length} 个含懒加载 chunk` +
+      `${vendoredNames.length ? ` + vendored 经典脚本 ${vendoredNames.length} 个：${vendoredNames.join(', ')}` : ''}）`
+  )
+  console.log(
+    `  语法：词法层违规 ${js.lexical.length} 个；AST 层违规 ${js.ast.length} 个（acorn ${js.acornVersion ?? '缺失'}, ecmaVersion 2022 + 禁用项断言；字面量遮蔽 = acorn AST 边界）`,
   )
   console.log(
     `  dvh 声明 ${css.dvhTotal} 处；带 vh 回退 ${css.fallbackTotal} 处；问题 ${css.problems.length} 个`
@@ -693,7 +783,8 @@ const main = () => {
     process.exit(1)
   }
   console.log(
-    '\n结论：合格 —— 全部产物可用 Chrome 83 解析（ES2020 语法 / 无 dvh 裸用 / 内置 API 有 polyfill 兜底）'
+    '\n结论：合格 —— 全部产物（含懒加载 chunk 与 vendored 经典脚本）落在 Chromium 83 能力集内' +
+      '（无 83 解析不了的语法 / 无 dvh 裸用 / 内置 API 有 polyfill 兜底）'
   )
 }
 

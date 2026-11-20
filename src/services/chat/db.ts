@@ -5,10 +5,23 @@ import {
   type MergePolicy,
   type SessionRef,
 } from './history/mergeSessions.js'
+import type { DocumentAttachment } from '../attachments/types.js'
 import { toSessionSummary, type Session, type SessionSummary } from './types.js'
 
-/** IndexedDB 存储结构版本；新增或调整存储、索引时递增。 */
-const DB_VERSION = 12
+/**
+ * IndexedDB 存储结构版本；新增或调整存储、索引时递增。
+ *
+ * v12 → v13（#480）：只**新增**两个文档附件存储（`attachments` / `attachmentTexts`）与它们的索引，
+ * 不迁移、不改写、不清空任何已有的会话 / 摘要 / 原件数据 —— 升级回调里全部是 `contains()` 守卫，
+ * 老用户升级后打开旧会话得到的内容与升级前逐字节相同。
+ *
+ * **导出给测试用**（#547）：`tests/helpers/chat-db.mjs` 从这里取 `DB_VERSION` / `DB_NAME`，
+ * L1 集成用例的 fixture 不再各写一份「12」「13」—— 版本号只有这一处来源，加 store 时改这里就够了。
+ */
+export const DB_VERSION = 13
+
+/** IndexedDB 库名；只在这里出现一次，测试夹具同样从这里取（#547）。 */
+export const DB_NAME = 'chat-demo'
 
 /** 文件原件按附件的本地 id 存储，所有引用同一 id 的消息共用一份；用于缩略图、打开查看，以及没有 serverId 时补传。 */
 export type StoredFile = {
@@ -21,6 +34,32 @@ type StoredSessionSummary = SessionSummary & { fileIds: string[] }
 
 /** 应用级素材（如聊天背景图）：按固定 key 存取，与会话/附件数据互不影响。 */
 export type StoredAsset = { key: string; blob: Blob; updatedAt: number }
+
+/**
+ * #480 文档附件元数据：字段与 `attachments/types.ts` 的 `DocumentAttachment` 完全一致。
+ * `localPath` 是**内容寻址**的 blob key（`attachment-<sha256>`，存在上面的 `files` 存储里），
+ * 同一份文件被多次添加时共用一份原件；`parsedTextPath` 指向 `attachmentTexts` 的主键。
+ */
+export type StoredAttachment = DocumentAttachment
+
+/**
+ * #480 附件解析全文：按 `sha256 + parserVersion` 内容寻址（主键 `key`），
+ * 同一文件同一解析器版本只解析一次、只存一份。除正文外还带解析结论（页数 / 警告 / 状态），
+ * 这样缓存命中时能还原出与首次解析完全一致的结果对象，而不是「有正文、没结论」的半份数据。
+ */
+export type StoredAttachmentText = {
+  /** `${sha256}:${parserVersion}` */
+  key: string
+  sha256: string
+  parserVersion: string
+  text: string
+  characterCount: number
+  status: Extract<DocumentAttachment['status'], 'success' | 'partial'>
+  totalPages?: number
+  extractedPages?: number
+  warnings?: string[]
+  createdAt: number
+}
 
 interface ChatDB extends DBSchema {
   /** 当前使用的会话，界面读写都在这里 */
@@ -40,6 +79,15 @@ interface ChatDB extends DBSchema {
   filesStaging: { key: string; value: StoredFile }
   /** 应用素材：聊天背景等全局资源，主键是固定 key，不随会话删除 */
   appAssets: { key: string; value: StoredAsset }
+  /** #480 文档附件元数据：与会话/消息分表，消息里只留附件 id */
+  attachments: {
+    key: string
+    value: StoredAttachment
+    /** sha256：同一内容被多次添加时据此判断原件是否还有人引用 */
+    indexes: { sha256: string; parsedTextPath: string }
+  }
+  /** #480 附件解析全文：主键 `sha256:parserVersion` */
+  attachmentTexts: { key: string; value: StoredAttachmentText; indexes: { sha256: string } }
 }
 
 let dbPromise: Promise<IDBPDatabase<ChatDB>> | null = null
@@ -68,7 +116,7 @@ const abortTransaction = (tx: { abort(): void }) => {
 
 // 每个操作拿到连接后立即创建事务；IndexedDB 按创建顺序执行范围重叠的事务，读取总能看到之前发起的写入。
 const getDB = () =>
-  (dbPromise ??= openDB<ChatDB>('chat-demo', DB_VERSION, {
+  (dbPromise ??= openDB<ChatDB>(DB_NAME, DB_VERSION, {
     upgrade(db, _oldVersion, _newVersion, tx) {
       // 初始化当前格式需要的存储与索引，不迁移旧消息。
       for (const name of ['sessions', 'files', 'sessionsStaging', 'filesStaging'] as const) {
@@ -86,12 +134,31 @@ const getDB = () =>
       if (!db.objectStoreNames.contains('appAssets')) {
         db.createObjectStore('appAssets', { keyPath: 'key' })
       }
+      // #480 文档附件（v12 → v13）：同样只新增。
+      // `sha256` 索引用于「同内容的原件/全文还有没有人引用」的计数，`parsedTextPath` 索引用于
+      // 「这段全文还有没有附件指向它」的计数 —— 都走索引计数，不扫全表。
+      if (!db.objectStoreNames.contains('attachments')) {
+        const attachments = db.createObjectStore('attachments', { keyPath: 'id' })
+        attachments.createIndex('sha256', 'sha256')
+        // 未解析的附件没有 parsedTextPath，IndexedDB 会自然跳过这类记录，正是想要的行为
+        attachments.createIndex('parsedTextPath', 'parsedTextPath')
+      }
+      if (!db.objectStoreNames.contains('attachmentTexts')) {
+        const texts = db.createObjectStore('attachmentTexts', { keyPath: 'key' })
+        texts.createIndex('sha256', 'sha256')
+      }
     },
   }).catch((error: unknown) => {
     // 打开失败后允许界面重试，避免一直复用已拒绝的 Promise。
     dbPromise = null
     throw error
   }))
+
+/**
+ * 同一份 `chat-demo` 连接给库内其它存储层复用（#480 的 `attachments/store.ts`）：
+ * 附件数据与会话数据在同一个数据库里，升级只能有一个 `upgrade` 回调，不能各自 openDB。
+ */
+export const getChatDB = getDB
 
 export const loadSessionSummaries = async (): Promise<SessionSummary[]> =>
   (await (await getDB()).getAll('sessionSummaries')).map(toSessionSummary)

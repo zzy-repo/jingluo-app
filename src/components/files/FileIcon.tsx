@@ -3,6 +3,9 @@ import type { ReactNode } from 'react'
 const IMAGE_EXTS = ['JPG', 'JPEG', 'PNG', 'GIF', 'WEBP', 'BMP', 'SVG', 'HEIC', 'TIF', 'TIFF']
 const TABLE_EXTS = ['XLS', 'XLSX', 'CSV']
 const PPT_EXTS = ['PPT', 'PPTX']
+/** #480 文档附件只收 DOC/DOCX，表格与图片另有图标 */
+const WORD_EXTS = ['DOC', 'DOCX']
+const TEXT_EXTS = ['TXT', 'MD', 'MARKDOWN']
 
 /** ext 为大写扩展名 */
 export function FileIcon({ ext }: { ext: string }) {
@@ -17,6 +20,12 @@ export function FileIcon({ ext }: { ext: string }) {
   }
   if (PPT_EXTS.includes(ext)) {
     return <PptFileIcon />
+  }
+  if (WORD_EXTS.includes(ext)) {
+    return <WordFileIcon />
+  }
+  if (TEXT_EXTS.includes(ext)) {
+    return <TextFileIcon />
   }
   return <OtherFileIcon />
 }
@@ -91,6 +100,33 @@ function PptFileIcon() {
       <g transform="translate(-160)" fill="white">
         <path d="M172.922 21.2661C175.337 21.2661 177.294 19.3088 177.294 16.8943H172.922V12.5225C170.508 12.5225 168.55 14.4798 168.55 16.8943C168.55 19.3088 170.508 21.2661 172.922 21.2661Z" />
         <path d="M174.089 10.3672C177.049 10.3672 179.45 12.7674 179.45 15.7283H174.089V10.3672Z" />
+      </g>
+    </FileIconFrame>
+  )
+}
+
+/** Word：正文行 + 一个小表格，表示「段落 + 表格」都被抽取（#480） */
+function WordFileIcon() {
+  return (
+    <FileIconFrame color="#2B579A">
+      <g fill="white">
+        <rect x="7.6" y="12.2" width="12.8" height="1.6" rx=".8" />
+        <rect x="7.6" y="15.8" width="12.8" height="1.6" rx=".8" />
+        <rect x="7.6" y="19.4" width="7.4" height="1.6" rx=".8" />
+        <rect x="16.6" y="19.4" width="3.8" height="1.6" rx=".8" fillOpacity=".7" />
+      </g>
+    </FileIconFrame>
+  )
+}
+
+/** 纯文本：三条等宽行，长短递减（#480） */
+function TextFileIcon() {
+  return (
+    <FileIconFrame color="#6B7785">
+      <g fill="white">
+        <rect x="7.6" y="12.2" width="12.8" height="1.6" rx=".8" />
+        <rect x="7.6" y="15.8" width="12.8" height="1.6" rx=".8" fillOpacity=".85" />
+        <rect x="7.6" y="19.4" width="8.6" height="1.6" rx=".8" fillOpacity=".7" />
       </g>
     </FileIconFrame>
   )

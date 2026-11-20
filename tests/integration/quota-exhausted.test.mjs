@@ -17,7 +17,7 @@ import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
 import { requireDist, serveDist } from '../helpers/runtime.mjs'
 import { verifyAppUrl } from '../helpers/env.mjs'
-import { MESSAGES_SSE_OK } from '../helpers/helpers.mjs'
+import { MESSAGES_SSE_OK, providerKindTrigger } from '../helpers/helpers.mjs'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const ROOT = path.resolve(HERE, '../..')
@@ -75,7 +75,13 @@ const closeSettings = async (page) => {
 
 /** 切到「我们的渠道」（只有它才有额度与卡密弹层） */
 const selectOursChannel = async (page) => {
-  await page.getByRole('button', { name: /渠道|Channel|服务类型|Service type/ }).first().click()
+  // #555：这里原来写的是 `getByRole('button', { name: /渠道|Channel|服务类型|Service type/ }).first()`。
+  // #480/#538 之后聊天页多了一个**禁用态**的文档入口图标按钮，aria-label 是
+  // 「当前渠道不支持文档附件：…请切换到其他渠道」—— 含「渠道」二字、DOM 顺序在设置弹窗之前、
+  // 且 `aria-disabled="true"`。宽松选择器 `.first()` 正好命中它，Playwright 的 enabled 检查
+  // 一路不让点，最终抛 `locator.click: Timeout 30000ms exceeded`（不是产品坏了，是选择器撞了）。
+  // 改用共享的 `providerKindTrigger`（`aria-label` 整串锚定），并且限定在设置弹窗内。
+  await providerKindTrigger(page.getByRole('dialog').first()).first().click()
   await page.getByRole('option', { name: /我们的渠道|Our Channel/ }).first().click()
   await page.waitForTimeout(400)
 }

@@ -55,6 +55,17 @@
   margin-top: 2px;
 }
 
+.notice {
+  display: block;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background-color: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 13px;
+  line-height: 20px;
+  word-break: break-word;
+}
+
 .form {
   display: flex;
   flex-direction: column;

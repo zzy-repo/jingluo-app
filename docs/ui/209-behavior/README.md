@@ -114,7 +114,7 @@ node docs/ui/209-behavior/measure.mjs before 360 390 412
 
 （键盘态 `imeShown` 由 `dumpsys input_method` 的 `mInputShown=true` 确认，不是看 CSS 猜的。）
 
-**结论：成立，且是「机制性成立」。** `AndroidManifest.xml:19` 是
+**结论：成立，且是「机制性成立」。** `android/app/src/main/AndroidManifest.xml:19` 是
 `android:windowSoftInputMode="adjustResize"` —— 软键盘弹出时 Activity 把 **WebView 窗口本身**
 改小（728 → 479.3），`100vh` 跟着窗口走，所以两者恒等。这不是 `100dvh` 的功劳：
 `CSS.supports('height','100dvh')` 实测 false，代码里所有 `@supports (…100dvh)` 分支在

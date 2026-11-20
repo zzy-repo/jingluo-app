@@ -378,3 +378,8 @@ export const requestGates = (spec: ProviderSpec): Record<RequestGate, boolean> =
   thinking_budget: Boolean(spec.thinkingBudget),
   reasoning_param: thinkingAvailable(spec),
 })
+
+// 图片（vision）通路**不在这里**：`src/services/attachments/providerCapability.ts` 是唯一的
+// 渠道能力表（#562）。它把「怎么收文档」（#480）与「怎么收图片」（#551）放在同一个
+// `ChannelCapability` 对象里，一个渠道一行 —— 本文件只描述渠道的静态形状
+// （`paths` 有没有端点、`caps` 有没有入口），不回答「附件该怎么发」。

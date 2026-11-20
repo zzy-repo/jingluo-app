@@ -1,0 +1,43 @@
+{
+  "page": "5 个场景汇总",
+  "viewport": 390,
+  "size": "390×844",
+  "overflowCount": 0,
+  "pages": [
+    {
+      "page": "480-attach-entry",
+      "metrics": "metrics-480-attach-entry.json",
+      "overflowCount": 0,
+      "shots": 5,
+      "notes": []
+    },
+    {
+      "page": "480-attach-parsing",
+      "metrics": "metrics-480-attach-parsing.json",
+      "overflowCount": 0,
+      "shots": 2,
+      "notes": []
+    },
+    {
+      "page": "480-attach-partial",
+      "metrics": "metrics-480-attach-partial.json",
+      "overflowCount": 0,
+      "shots": 2,
+      "notes": []
+    },
+    {
+      "page": "480-attach-failed",
+      "metrics": "metrics-480-attach-failed.json",
+      "overflowCount": 0,
+      "shots": 3,
+      "notes": []
+    },
+    {
+      "page": "480-attach-in-message",
+      "metrics": "metrics-480-attach-in-message.json",
+      "overflowCount": 0,
+      "shots": 3,
+      "notes": []
+    }
+  ]
+}

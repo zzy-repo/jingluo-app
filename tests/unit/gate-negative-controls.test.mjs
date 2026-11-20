@@ -389,6 +389,17 @@ const REGISTRY = {
     what: 'CI 往 src/ 塞一条白名单外的 `/api/v1/**` 路径 → R3 必 exit 1（且指到注入文件），删掉后 exit 0',
     mention: /check-consume-api\.mjs/,
   },
+  // 登录接缝门禁（#510 的产物扫描守卫）：对照写在 ci.yml 里现场注入 —— 往 dist/ 丢一份写着假 token
+  // 的 .js → 必 exit 1，删掉 → exit 0。和 check:consume-api / check:doc-refs 同款：塞的正是脚本自己
+  // 扫的产物，放在 ci.yml 里成本 ≈1s 且与被测命令同环境。
+  // 另有一条**正向对照**跑在 golden job（`check:test-seam --expect-seam dist`）：接缝构建的产物里
+  // 必须扫得到标记 —— 扫不到说明扫描器恒绿（那样 G1~G11 会以「被登录页挡住」的形式假红）。
+  // L0 侧另有 `tests/unit/auth-seam.test.mjs` 钉「扫描器对脏目录必红、对干净目录必绿」。
+  'check:test-seam': {
+    where: '.github/workflows/ci.yml',
+    kind: 'ci',
+    what: 'CI 往 dist/ 塞一份写着假 token 的 js → 必 exit 1，删掉后 exit 0（golden job 另有 --expect-seam 正向对照）',
+  },
 }
 
 /**

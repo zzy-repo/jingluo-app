@@ -1,7 +1,7 @@
 import clsx from 'clsx'
 import { useEffect, useState } from 'react'
 import { useTranslate } from '../../i18n/index.js'
-import { useUploads } from '../../services/attachments.js'
+import { useUploads } from '../../services/attachments/upload.js'
 import { loadFile } from '../../services/chat/db.js'
 import type { FileAttachment } from '../../services/chat/types.js'
 import { IconPhotoErrorFill20, IconRefreshOutline16 } from '../base/icons.js'

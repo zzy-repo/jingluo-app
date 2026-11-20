@@ -6,8 +6,12 @@
  *
  * 请求方向（Anthropic 请求体 → OpenAI 请求体）
  * - system → messages 头部的 {role:'system'}
- * - messages 里 user / assistant 原样映射；content 是 block 数组时只取 type:'text' 拼接，
- *   图片（image）与文档（document）直接丢弃（openai spec 的 caps.vision=false，界面上也传不出附件）
+ * - messages 里 user / assistant 原样映射；content 是 block 数组时文本按空行拼接，
+ *   **内联图片（`source.type === 'base64'`）翻成 `{type:'image_url', image_url:{url:'data:…'}}`**
+ *   （#551：openai / ours 两条渠道共用这一处翻译）。`source.type === 'file'`（Files API 的
+ *   file_id）与 document 块在这条协议里没有对应字段，只能丢 —— 但按 `providerCapability.ts` 的 `visionFor()` 能力表，
+ *   走 openai 协议的渠道产不出这两种来源，所以不会误伤真实内容。
+ *   没有图片时 content 保持纯字符串，请求体与改造前逐字节一致。
  * - thinking 字段的落地方式由 spec.reasoningParam 决定（#297，三档）：
  *   · `none`（默认）→ 丢弃。OpenAI 协议没有这个字段，DeepSeek 的 reasoning_effort 不是通用的
  *     chat/completions 参数，转发给第三方中转只会换来 400；openai spec 默认就是这一档，
@@ -46,10 +50,23 @@ import type {
 
 // ---------- 请求方向 ----------
 
-/** OpenAI chat/completions 的 message；content 一律是纯字符串 */
+/**
+ * OpenAI chat/completions 的 content part（#551）：只有文本与图片两种，够用且各家兼容面最广。
+ * 图片用 data URI 内联（`data:image/png;base64,…`）—— 这条协议没有 file_id 概念，
+ * 我们的 openai / ours 渠道也没有 Files API，所以内联是唯一形状。
+ */
+export type OpenAIContentPart =
+  | { type: 'text'; text: string }
+  | { type: 'image_url'; image_url: { url: string } }
+
+/**
+ * OpenAI chat/completions 的 message。
+ * content 是**纯字符串**当且仅当消息里没有图片：不带图时请求体与改造前逐字节一致
+ * （#345 的前缀稳定性依赖这一点），带图时才升级成 content 数组。
+ */
 export type OpenAIChatMessage = {
   role: 'system' | 'user' | 'assistant'
-  content: string
+  content: string | OpenAIContentPart[]
 }
 
 /** 本应用实际会发出的 OpenAI 请求体（基础对话 + 可选的显式思考参数） */
@@ -101,8 +118,42 @@ export const contentToString = (content: MessageParam['content']): string => {
     .join('\n\n')
 }
 
+/**
+ * 内容块里的图片 → OpenAI 的 `image_url` part（#551）。
+ *
+ * 只认 `source.type === 'base64'`：那是 anthropic / openai / ours 三家在内部统一后的形状
+ * （`InlineImageBlockParam`）。`source.type === 'file'`（deepseek 的 Files API file_id）
+ * 在 OpenAI 协议下无处安放 —— 这条协议没有引用服务端文件的字段，只能丢；
+ * 而按 `providerCapability.ts` 的 `visionFor()` 能力表，openai 渠道根本产不出 file 型的图片来源，所以这里不会误伤。
+ */
+const imagePartsOf = (content: MessageParam['content']): OpenAIContentPart[] => {
+  if (typeof content === 'string') {
+    return []
+  }
+  const parts: OpenAIContentPart[] = []
+  for (const block of content) {
+    if (block.type !== 'image') {
+      continue
+    }
+    const source = block.source
+    if (source.type !== 'base64') {
+      continue
+    }
+    parts.push({
+      type: 'image_url',
+      image_url: { url: `data:${source.media_type};base64,${source.data}` },
+    })
+  }
+  return parts
+}
+
+/**
+ * 空消息判定：没有文本**也没有可发送的图片**才算空。
+ * 只把图片当空气会丢掉「只发图不说话」的那种消息（#551）。
+ */
 const isEmptyContent = (message: MessageParam): boolean =>
-  message.role === 'latest_reminder' || contentToString(message.content).trim() === ''
+  message.role === 'latest_reminder' ||
+  (contentToString(message.content).trim() === '' && imagePartsOf(message.content).length === 0)
 
 /**
  * Anthropic 请求体 → OpenAI 请求体（thinking 按 spec.reasoningParam 决定丢弃还是翻译）。
@@ -125,7 +176,19 @@ export const toOpenAIRequest = (
     if (message.role !== 'user' && message.role !== 'assistant') {
       continue
     }
-    messages.push({ role: message.role, content: contentToString(message.content) })
+    // 图片只有 user 侧才会有（assistant 的回传内容里没有图片块）
+    const images = message.role === 'user' ? imagePartsOf(message.content) : []
+    if (images.length === 0) {
+      // 没有图片：维持纯字符串 content（改造前的形状，一字不差）
+      messages.push({ role: message.role, content: contentToString(message.content) })
+      continue
+    }
+    const text = contentToString(message.content)
+    // 有图片：content 升级成 part 数组，文本在前、图片在后（与 Anthropic 侧 image block 的相对顺序一致）
+    messages.push({
+      role: message.role,
+      content: text ? [{ type: 'text', text }, ...images] : images,
+    })
   }
   return {
     model: body.model,

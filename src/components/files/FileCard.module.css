@@ -5,6 +5,7 @@
   flex-shrink: 0;
   box-sizing: border-box;
   width: 240px;
+  max-width: 100%;
   min-height: 64px;
   padding: 0 12px 0 14px;
   border-radius: 16px;
@@ -26,6 +27,24 @@
   }
 }
 
+/* #480：可点开详情面板的卡片是键盘可达的（role="button" + Enter/Space）。
+   Chromium 83 不认 :focus-visible，`&:focus` 是低内核兜底，后两条在现代内核把鼠标态收回。 */
+.activatable {
+  &:focus {
+    box-shadow: 0 0 0 2px var(--dsw-alias-button-primary-fill);
+    outline: none;
+  }
+
+  &:focus:not(:focus-visible) {
+    box-shadow: none;
+  }
+
+  &:focus-visible {
+    box-shadow: 0 0 0 2px var(--dsw-alias-button-primary-fill);
+    outline: none;
+  }
+}
+
 .editable {
   padding-right: 24px;
 }
@@ -34,6 +53,10 @@
   border-color: var(--dsw-alias-state-error-primary);
 
   .subCaption {
+    color: var(--dsw-alias-state-error-primary);
+  }
+
+  .statusText {
     color: var(--dsw-alias-state-error-primary);
   }
 }
@@ -95,6 +118,114 @@
   white-space: nowrap;
   text-overflow: ellipsis;
   color: var(--dsw-alias-label-tertiary);
+}
+
+/* ---- #480 文档解析态：布局与上传卡片同一份，只加「语义不同」的那点视觉 ---- */
+
+/* 第三行状态文案；哪一态是什么颜色由下面的状态类给 */
+.statusText {
+  overflow: hidden;
+  font-size: 12px;
+  line-height: 16px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--dsw-alias-label-secondary);
+}
+
+/* 等待 / 已取消：虚线 + 中性色，一眼看出「还没开始」或「不再进行」，不制造第二个「错误」 */
+.pending,
+.cancelled {
+  border-style: dashed;
+
+  .statusText {
+    color: var(--dsw-alias-label-tertiary);
+  }
+}
+
+/* 解析中：品牌色状态文案（进度条本体在 .progress） */
+.parsing .statusText {
+  color: var(--dsw-alias-brand-text);
+}
+
+/* 就绪：绿色状态文案 */
+.done .statusText {
+  color: var(--dsw-static-green-500);
+}
+
+/* 部分成功：琥珀色描边（右上角角标由调用方给） */
+.partial {
+  border-color: var(--dsw-static-amber-500);
+
+  .statusText {
+    color: var(--dsw-static-amber-600);
+  }
+}
+
+/* 解析进度条：2px 细条，有页数就按百分比，没有就是来回滑的不确定态 */
+.progress {
+  display: block;
+  height: 2px;
+  margin-top: 5px;
+  border-radius: 1px;
+  background-color: var(--dsw-alias-border-l2);
+  overflow: hidden;
+}
+
+/* 进度可视化只动 transform（#480 / #527）：
+   以前把进度写进 `width` 并在 `transition: width` 上过渡 —— 这是**布局属性**，每帧都要重排，
+   解析文档时（卡片还挂在滚动列表里）必然掉帧，也被 tests/integration/motion.test.mjs 的 [4] 判红。
+   现在条子固定占满轨道，进度靠 `transform: scaleX(百分比)` 表达：合成层内缩放，不触发布局。 */
+.progressBar {
+  display: block;
+  width: 100%;
+  height: 2px;
+  max-width: 100%;
+  border-radius: 1px;
+  background-color: var(--dsw-alias-brand-primary);
+  transform: scaleX(0);
+  transform-origin: left center;
+  transition: transform 120ms linear;
+}
+
+.progressIndeterminate {
+  width: 40%;
+  /* 不确定态不表达百分比：把 .progressBar 的基础 scaleX 让给下面关键帧的 translateX */
+  transform: none;
+  animation: fileCardProgressSlide 1.2s ease-in-out infinite;
+}
+
+@keyframes fileCardProgressSlide {
+  0% {
+    transform: translateX(-100%);
+  }
+
+  100% {
+    transform: translateX(250%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .progressBar {
+    transition: none;
+  }
+
+  .progressIndeterminate {
+    width: 100%;
+    transform: none;
+    animation: none;
+  }
+}
+
+/* 末尾动作位（取消 / 移除）：不用 gap —— WebView 83 不支持 flex gap */
+.actions {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  margin-left: 4px;
+}
+
+.actions > *:not(:first-child) {
+  margin-left: 2px;
 }
 
 .remove {

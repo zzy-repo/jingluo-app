@@ -16,6 +16,7 @@
 // 被测页面：DIST_DIR 内测产物与 STANDARD_DIST_DIR 标准产物；只读复用，默认随机 loopback 端口。
 import { serveDist, requireDist } from '../helpers/runtime.mjs'
 import { verifyAppUrl } from '../helpers/env.mjs'
+import { providerKindTrigger } from '../helpers/helpers.mjs'
 import { OURS_CHAT_PATH } from '../fixtures/domain03-04/ours-upstream.mjs'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
@@ -261,7 +262,10 @@ try {
     const { context, page } = await openApp({ appUrl: STANDARD_URL, apiKey: false })
     await openDataSection(page)
     // 标准构建默认是 DeepSeek 官方（只需 Key）：切到「Anthropic 协议」才有可编辑的服务地址
-    await page.getByRole('button', { name: /渠道|Channel|服务类型|Service type/ }).first().click()
+    // #555：走共享的 `providerKindTrigger`（整串锚定）并限定在设置弹窗内。宽松的
+    // `/渠道|Channel|服务类型|Service type/` 会命中聊天页那个禁用态文档入口
+    // （aria-label「当前渠道不支持文档附件…」），点它一路不 enabled → 30s 超时。
+    await providerKindTrigger(page.getByRole('dialog').first()).first().click()
     await page.getByRole('option', { name: /Anthropic/ }).first().click()
     await page.waitForTimeout(300)
     const baseUrl = page.getByLabel(/服务地址|Service URL/).first()

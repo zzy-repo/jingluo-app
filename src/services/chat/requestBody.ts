@@ -10,6 +10,13 @@
  * - 这里（service 层）只看 `REQUEST_GATES` 决定**字段发不发**；
  * - `api/openaiAdapter.ts` 只做协议翻译（`thinking` → `reasoning_effort` / `thinking:{type}`）；
  * - 两处都不自己判断渠道能力，能力只来自 `providers.ts` 的 `thinkingAvailable()`。
+ *
+ * #480 §7 的文档注入**刻意不在这里**。理由：注入要按预算拆正文、要跟历史裁剪协同
+ * （`attachments/contextBuilder.ts` 的 `buildWithDocuments()`），是异步的、有状态的读口；
+ * 而本文件是**同步纯函数**、只决定「字段发不发」。把它塞进来会变成第二套注入实现
+ * （能力判定 + 拼法各有一份），所以本文件对 #480 **一行未改**：
+ * 注入只在 `chat/store.ts` 请求组装处发生，结果作为普通 user 文本进入 `messages`，
+ * 请求体形状与 DeepSeek 原生路径完全相同。
  */
 import { requestGates, type ProviderSpec } from '../api/providers.js'
 import type { CreateMessageRequest } from '../api/types.js'

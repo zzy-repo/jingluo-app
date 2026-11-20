@@ -186,6 +186,12 @@ export const openSettingsDataTab = openSettingsDataSection
  * `aria-disabled="true"`、`aria-label="当前渠道不支持文件上传，附件入口已不可用"` 的附件按钮
  * （`src/i18n/zh.ts:269`）也含「渠道」二字且 DOM 顺序在前，`.first()` 会点到它 →
  * `locator.click` 卡在「element is not enabled」重试到 30s 超时才抛错。
+ *
+ * #555：同一个坑换了一句文案又回来了一次 —— #480/#538 之后 DeepSeek 渠道的**文档**入口是禁用态
+ * 图标按钮，`aria-label` = 「当前渠道不支持文档附件：…请切换到其他渠道」（`src/i18n/zh.ts:1183`）。
+ * 它同样含「渠道」、同样在设置弹窗之前，而且图标按钮没有可见文本：宽松选择器 + `.first()`
+ * 取 `innerText()` 会拿到**空串**（看起来像「默认渠道丢了」的产品回归），点它会 click 到超时。
+ * 所有取/改渠道的用例都走这个 helper，别再各写一份宽名字选择器。
  * 触发器自己的 aria-label 就是选项组标题（整串等于「渠道」/「Channel」），所以锚定首尾即可，
  * 既不用改生产文案，也不依赖 DOM 顺序。
  */

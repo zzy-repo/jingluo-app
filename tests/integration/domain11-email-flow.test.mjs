@@ -49,7 +49,9 @@ const CODE = '123456'
 
 const DEVICE_KEY = 'chat-demo:ours-device-id'
 const API_KEY = 'chat-demo:api-key'
-const BACKUP_HINT_KEY = 'chat-demo:ours-device-backup-hint-seen'
+// W1-B 后半（#487）：设备码不再是账号凭据，「复制设备码备份」提示整体下线 ——
+// 那个「已读标记」现在没有任何代码再读它（`chat-demo:ours-device-backup-hint-seen`），
+// 留在这里只作为「它曾经存在」的记录，不要再往用例里塞这条键。
 
 /** 产物对不上就 SKIP(env)（不是假红）；对得上才起服务与浏览器 */
 verifyDist(DIST, { variant: 'standard' })
@@ -128,7 +130,7 @@ const stubBackend = async (page, { emailStatus, send, verify }) => {
   return calls
 }
 
-/** 开一个干净上下文：预置渠道 / Key / 设备码，**不**预置备份提示已读标记（要断言它消失） */
+/** 开一个干净上下文：预置渠道 / Key / 设备码（备份提示已下线，不存在「已读标记」这回事了） */
 const openPanel = async (t, options) => {
   const context = await browser.newContext({ locale: 'zh-CN', viewport: { width: 390, height: 844 } })
   const page = await context.newPage()
@@ -173,16 +175,18 @@ const textOf = (page, testId) => page.getByTestId(testId).innerText()
 
 // ---------------------------------------------------------------- F1 绑定主路径
 
-test('F1 绑定：未绑定 → 发码（真实倒计时）→ 提交 → 显示 masked、绑定入口与备份提示同时消失', async (t) => {
+test('F1 绑定：未绑定 → 发码（真实倒计时）→ 提交 → 显示 masked、绑定入口消失（备份提示已下线）', async (t) => {
   const { page, calls } = await openPanel(t, {
     emailStatus: { has_email: false },
     send: { resend_after: 3 },
     verify: () => [200, { action: 'bound', has_email: true, email_masked: MASKED }],
   })
 
-  // 未绑定：只给「绑定邮箱」，没有脱敏邮箱；备份提示在（#72：没绑的人设备码仍是唯一凭据）
+  // 未绑定：只给「绑定邮箱」，没有脱敏邮箱
   assert.equal(await page.getByTestId('ours-email-masked').count(), 0, '未绑定时不许出现脱敏邮箱')
-  assert.equal(await page.getByTestId('ours-device-backup-hint').count(), 1, '未绑定时备份提示照旧')
+  // W1-B 后半（#487）：设备码不再是账号凭据，「复制设备码备份」提示整体下线 ——
+  // #421 的「未绑定时提示照旧」判据随之作废（旧判据的前提是「设备码=唯一凭据」）。
+  assert.equal(await page.getByTestId('ours-device-backup-hint').count(), 0, '备份提示已下线：未绑定也不该出现')
 
   await fillEmailForm(page)
   await page.getByTestId('ours-email-send').click()
@@ -213,8 +217,8 @@ test('F1 绑定：未绑定 → 发码（真实倒计时）→ 提交 → 显示
   assert.equal(await textOf(page, 'ours-email-masked'), MASKED, '绑定成功要显示服务端给的脱敏邮箱')
   assert.equal(await page.getByTestId('ours-email-bind').count(), 0, '已绑之后不再给绑定入口')
   assert.equal(await textOf(page, 'ours-email-result'), '绑定成功，Key 已保存到本机')
-  // #421 第 5 点：绑上邮箱之后「复制设备码备份」的前提没了 —— 仍提示就是错的前提 + 多余的一次催办
-  assert.equal(await page.getByTestId('ours-device-backup-hint').count(), 0, '绑定成功后必须收起备份提示')
+  // 备份提示整体下线（W1-B），绑定成功后当然也不该冒出来
+  assert.equal(await page.getByTestId('ours-device-backup-hint').count(), 0, '绑定成功后同样不该出现备份提示')
   // 绑定分支不动凭据
   const stored = await page.evaluate(
     ({ deviceKey, apiKey }) => ({

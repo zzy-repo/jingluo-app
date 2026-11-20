@@ -526,3 +526,56 @@ CI 位置：`.github/workflows/ci.yml` 的 `checks` job，紧跟 `check:manifest
 2. `tests/domain-map.json` + `test:affected` 的层推断基于 `tests/<层>/` 前缀，覆盖不到 `deploy/`；
    `deploy/dl-release/**` 的改动目前只能靠 `test:dl-release` 手动/CI 跑。
 3. `offline-check.sh`（8 组手工断言，要真 APK + 真 aapt2）仍是手工，不在任何自动入口里。
+
+## 13. 登录接缝：`__TEST_AUTH_STATE__`（Issue #487 W1-B 后半 / #510）
+
+**一句话：登录墙接进入口（`src/main.tsx` 把 `<App/>` 包进 `<AuthGate>`）之后，「启动即进主界面」的浏览器用例需要一条**构建期**的接缝；它是构建期常量，不是运行期开关，且产物扫描盯着它。**
+
+### 13.1 为什么需要它
+
+`AuthGate` 未登录冷启动只画登录页，于是所有「打开 App 就点侧栏 / 输入框」的用例
+（黄金回归 G1~G11、L1 的 `feedback-scroll` 等）都拿不到被测界面。它们的被测对象是聊天 / 导入 /
+导出 / 诊断 / 更新这些主路径，**不是**登录流程 —— 登录流程自己有一层用例（登录 / 注册 / 恢复 / 过期）。
+
+### 13.2 为什么不用运行期办法
+
+| 方案 | 为什么不行 |
+| --- | --- |
+| URL 参数（`?test-auth=1`） | 分支会原样留在线上 bundle：任何人拿到包都能绕过登录墙 |
+| localStorage / IndexedDB 标记 | 同上，而且「读到标记就放行」比 URL 还容易被利用；也会和真实凭据落盘混在一起 |
+| 把 `diag-debug` 那套调试入口复用过来 | 调试入口是**诊断**用的只读钩子；让它能改登录态等于把 `?diag-debug` 升级成后门 |
+| 测试里真去点登录表单 | 每条浏览器用例都要搭一个能登录的假后端（含 `settings/public`、`login`、`me`、`refresh`），把 45 条主路径用例全绑在一个和被测对象无关的链路上，且登录页一改全红 |
+
+### 13.3 现在的做法（构建期内联）
+
+- **取值**：`scripts/lib/testAuthSeam.mjs` 是唯一来源（假 token `test-token-not-real`、假会话、开关名、拦截标记）；
+- **注入**：`rspack.config.ts` 的 DefinePlugin 里 `__TEST_AUTH_STATE__` 默认是 `'undefined'`（→ 内联成
+  `undefined` → `AuthGate` 的守卫整段被死代码消除），只有 `TEST_AUTH_SEAM=1` 的**测试构建**注入假会话；
+- **用**：`src/components/auth/AuthGate.tsx` 里 `typeof __TEST_AUTH_STATE__ !== 'undefined' ? … : undefined`
+  —— 有值就把会话灌进 store 并**短路放行**（不读盘、不续期、不调 `me()`）；
+- **谁能开**：CI 的**黄金 job**（G1~G11 要已登录产物）与 **L1 job**（三份变体都要）在构建那一步带
+  `TEST_AUTH_SEAM=1`；`pnpm build` / `pnpm build:internal` / 发版链路一律不带。
+
+`typeof` 写法是为了**没有打包器的场合**（`node --test` 直接 import `.ts`）：未声明标识符上写 `typeof`
+不抛 ReferenceError。它**不是**运行期兜底 —— 产物里那里已经是 `typeof undefined`，没有任何代码去读全局变量
+（`tests/unit/auth-seam.test.mjs` 有一条源码断言钉「`src/**` 不许出现 `globalThis.__TEST_AUTH_STATE__`」）。
+
+### 13.4 三条守卫（缺一条就等于把开关交给运气）
+
+1. **构建时自扫**：`scripts/build.mjs` 每次构建结束立刻扫产物；不带 `TEST_AUTH_SEAM` 的构建里出现标记 → **构建直接失败**。
+2. **CI 门禁**：`pnpm run check:test-seam` 扫 `dist/`（`__TEST_AUTH_STATE__` 或假 token 命中即 exit 1），
+   ci.yml 里紧跟一条负向对照（往产物塞假 token → 必红）；黄金 job 另跑 `--expect-seam` **正向对照**
+   （接缝构建的产物里必须扫得到 —— 否则扫描器恒绿，G1~G11 会以「被登录页挡住」的形式假红）。
+3. **L0 覆盖**：`tests/unit/auth-seam.test.mjs` 钉默认关闭、短路顺序、扫描器对脏目录必红 / 干净目录必绿。
+
+### 13.5 已知边界
+
+- 带接缝的产物（`dist/` 在 golden / L1 job 里）**不是**发版输入的等价物：它多一个假会话分支，
+  但那条分支以外的代码逐字相同（同一份 `rspack.config.ts`，只差一个 DefinePlugin 常量）。
+- 接缝只改**启动判定**：`restoreAuth` 的续期 / `me()` 语义、登录 / 注册 / 退出登录全在别的用例里测，不受它影响。
+- 接缝**不许**在带 `TEST_AUTH_SEAM=1` 的构建上跑「未登录」语义的用例（登录页、注册入口显隐、过期提示）：
+  那些用例必须用不带开关的产物（`DIST_OUT=... pnpm build`）。
+- ci.yml 里 `TEST_AUTH_SEAM` 挂在**job 级**（golden / integration），不是挂在那一步的 `build` 上：
+  `copy-limit` / `update-stuck-button-373` 这类用例会自己 spawn rspack 打 `dist-copy-limit` /
+  `dist-update-373`，它们继承 `process.env` —— 挂在 build 步骤上的话这些自建产物是「未登录」包，
+  用例会以「拿不到侧栏」的形式假红（#510 实测踩过一次）。

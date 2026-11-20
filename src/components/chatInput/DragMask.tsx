@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useTranslate } from '../../i18n/index.js'
-import { MAX_COUNT, MAX_SIZE_MB } from '../../services/attachments.js'
+import { MAX_COUNT, MAX_SIZE_MB } from '../../services/attachments/upload.js'
 import styles from './DragMask.module.css'
 
 const hasFiles = (event: DragEvent) => event.dataTransfer?.types.includes('Files') ?? false

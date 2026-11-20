@@ -27,6 +27,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
 import { defaultDist, verifyAppUrl } from '../helpers/env.mjs'
+import { providerKindTrigger } from '../helpers/helpers.mjs'
 
 // 证据目录：原来写死 /root/deepseek-app/...（Linux 一次性机器），在任何别的机器上都 ENOENT
 // → 整条用例「用例异常」，属于环境假红。改成相对仓库根解析。
@@ -283,13 +284,9 @@ const closeSettings = async () => {
 const selectKind = async (nameRe) => {
   // 选择器必须落在设置弹窗里、且是**渠道行**本身：`/渠道|Channel/` 这类宽松名字会命中附件入口
   // 按钮的 aria-label（「当前渠道不支持文件上传，附件入口已不可用」），点它必超时（#406 复核）。
-  // 渠道是基座 Select（`aria-label` = 渠道）；用**锚定整串**的名字，避免命中带「渠道」字样的其它按钮。
-  await page
-    .getByRole('dialog')
-    .first()
-    .getByRole('button', { name: /^(渠道|Channel|服务类型|Service type)$/ })
-    .first()
-    .click()
+  // #555：文案换成「当前渠道不支持文档附件…」之后同一个坑又出现过一次，所以选择器不再本地重写，
+  // 一律走 helpers.mjs 的 `providerKindTrigger`（整串锚定，是同一个判定口）。
+  await providerKindTrigger(page.getByRole('dialog').first()).first().click()
   await page.getByRole('option', { name: nameRe }).first().click()
   await page.waitForTimeout(250)
 }
@@ -384,9 +381,7 @@ try {
   await seed({ baseUrl: mockOk.base, model: DEEPSEEK_MODEL })
 
   await openSettings()
-  const kindText = (
-    await page.getByRole('button', { name: /渠道|Channel|服务类型|Service type/ }).first().innerText()
-  ).trim()
+  const kindText = (await providerKindTrigger(page).first().innerText()).trim()
   if (!/DeepSeek/.test(kindText)) {
     bad(`7a) 默认服务类型不是 DeepSeek 官方：${kindText}`)
   } else {
@@ -401,20 +396,58 @@ try {
   await waitFor(async () => mockOk.log.some((entry) => entry.path === '/models'))
   await closeSettings()
 
-  // 搜索开关打开 + 附件上传
+  // 搜索开关打开 + 附件入口
+  //
+  // 随 #480 变更（#538 收紧语义）：这里的断言从「附件上传到 /anthropic/v1/files 拿 file_id」
+  // **反过来**了。7a 是 **DeepSeek 渠道**，而 #538 把 `providerCapability` 里 deepseek 的
+  // `nativeFile` 收紧成「本仓库确有可用的原生上传实现」= false（`/v1/chat/completions/files`
+  // 线上 404，见 #360），`textInjection` 也为 false —— 也就是说这个渠道**不收文档**：
+  // 既不上传原件、也不做文本注入。原断言证明了「一定会有 files 请求」，现在恰好相反。
+  // 所以改成三条反向断言（不是删掉）：① 没有任何 files API 请求；② 文档入口是禁用态；
+  // ③ 界面明说「当前渠道不支持文档附件」，不静默吞掉。
+  // 文本注入本身的覆盖在单元层（tests/unit/attachment-doc-wiring-480.test.mjs [绿 1~6]：
+  // 三个注入渠道的正文进 user 消息、请求体里不出现 file_id / base64）。
   await page.getByRole('button', { name: /^智能搜索$|^Search$/ }).first().click()
+  const filesBefore = mockOk.log.filter((entry) => entry.path.endsWith('/files')).length
   const chooser = page.locator('input[type="file"]').first()
   await chooser.setInputFiles({
     name: 'acceptance.txt',
     mimeType: 'text/plain',
     buffer: Buffer.from('hello acceptance'),
   })
-    const uploadEntry = await waitFor(async () => posts(mockOk.log, '/anthropic/v1/files').length > 0)
-  if (!uploadEntry) {
-    bad('7a) 附件没有上传到 /anthropic/v1/files（拿不到 file_id）')
+  // ① 反向：不许有任何 files API 请求（给了 2.5s 让「万一实现了」的上传有机会冒出来）
+  const uploaded = await waitFor(
+    async () => mockOk.log.filter((entry) => entry.path.endsWith('/files')).length > filesBefore,
+    2500
+  )
+  if (uploaded) {
+    bad(
+      `7a) DeepSeek 渠道不该上传到 files API（#538：deepseek 两条路都不通），实际打了 ${JSON.stringify(
+        mockOk.log.filter((entry) => entry.path.endsWith('/files')).map((entry) => entry.path)
+      )}`
+    )
   } else {
-    ok(`附件上传到 /anthropic/v1/files，mock 返回 file_id=${FILE_ID}`)
-    note(`deepseek 附件上传 path = /anthropic/v1/files（#303：不再拼 {messages}/files）`)
+    ok('附件没有上传到 /anthropic/v1/files（#480/#538：DeepSeek 渠道不走 files API）')
+    note('deepseek 附件：files API 请求数 = 0（改前断言上传拿 file_id，#538 后语义反转）')
+  }
+  // ② 反向：文档入口必须是禁用态（不给「能点但没用」的假承诺）
+  const docEntry = page.getByRole('button', { name: /文档附件/ })
+  const docEntryDisabled =
+    (await docEntry.count()) > 0 &&
+    (await docEntry.first().evaluate((node) => node.getAttribute('aria-disabled') === 'true'))
+  if (!docEntryDisabled) {
+    bad('7a) DeepSeek 渠道的文档入口应当是禁用态（aria-disabled=true），不给假承诺')
+  } else {
+    ok('DeepSeek 渠道的文档入口是禁用态（aria-disabled=true）')
+  }
+  // ③ 反向：界面必须说清「这个渠道收不了文档」，而不是静默忽略
+  const toastShown = await waitFor(async () =>
+    (await page.locator('body').innerText()).includes('当前渠道不支持文档附件')
+  )
+  if (!toastShown) {
+    bad('7a) 选了文档却没有任何提示（#538 要求明说「当前渠道不支持文档附件」）')
+  } else {
+    ok('选文档时提示「当前渠道不支持文档附件」（不静默吞掉）')
   }
   await page.waitForTimeout(800)
 

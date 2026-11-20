@@ -79,3 +79,21 @@ declare module 'prismjs/components/*' {}
 
 /** KaTeX 化学公式扩展通过副作用注册到 KaTeX */
 declare module 'katex/contrib/mhchem' {}
+
+/**
+ * PDF 解析用的 pdfjs 静态资源描述（Issue #480）。
+ *
+ * 唯一来源是仓库根 `config/pdfjs.json`（路径）与 `package.json` 里实际安装的 `pdfjs-dist`（版本），
+ * 由 rspack.config.ts 的 DefinePlugin 在构建期注入：
+ *   - `version`   进 `ParsedDocument.parserVersion`，与内容指纹一起做解析缓存键
+ *   - `assetDir`  `dist` 下的静态目录（`static/pdfjs`），运行期用 `document.baseURI` 拼绝对地址
+ *   - `script` / `worker` / `cmapsDir` 由 CopyRspackPlugin 原样拷进去
+ * 非打包环境（`node --test` 直接 import .ts）没有注入，pdfLoader.ts 用 `typeof` 判 undefined 兜底。
+ */
+declare const __PDFJS_ASSET__: {
+  readonly version: string
+  readonly assetDir: string
+  readonly script: string
+  readonly worker: string
+  readonly cmapsDir: string
+}

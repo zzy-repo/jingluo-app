@@ -146,28 +146,17 @@ test('E2 /me 里的 has_email:true 也算已绑（探测与档案两条来源一
   view.unmount()
 })
 
-test('E5 已绑邮箱 → 不再提示「复制设备码备份」', async () => {
-  prepare({ emailStatus: TRANSPORT.json(200, { has_email: true, email_masked: MASKED }) })
-  const view = await harness.mount(OursServicesRow, {})
-
-  assert.equal(view.has('ours-email-masked'), true)
-  assert.equal(view.has('ours-device-backup-hint'), false, '账号能靠邮箱找回，就不该再催备份设备码')
-  view.unmount()
-})
-
-test('E5 未绑邮箱 → 备份提示照旧（#72 的回归：没绑的人设备码仍是唯一凭据）', async () => {
-  prepare({ emailStatus: TRANSPORT.json(200, { has_email: false }) })
-  const view = await harness.mount(OursServicesRow, {})
-
-  assert.equal(view.has('ours-device-backup-hint'), true)
-  assert.ok(view.text('ours-device-backup-hint').includes(zh.oursDeviceBackupHint))
-  view.unmount()
-})
-
-test('E5 邮箱功能未开启（404 not_found）→ 备份提示也照旧（行为与 #421 之前完全一致）', async () => {
-  prepare({ emailStatus: TRANSPORT.json(404, { error: { code: 'not_found' } }) })
-  const view = await harness.mount(OursServicesRow, {})
-
-  assert.equal(view.has('ours-device-backup-hint'), true)
-  view.unmount()
+// W1-B 后半（#487）：设备码不再是账号凭据，「复制设备码备份」提示整体下线 ——
+// 不论邮箱绑没绑 / 功能开没开，弹层里都不该再出现那块引导（#421 的「三态」判据随之作废）。
+test('E5 备份提示已下线：任何邮箱状态下都不再出现「复制设备码备份」', async () => {
+  for (const emailStatus of [
+    TRANSPORT.json(200, { has_email: true, email_masked: MASKED }),
+    TRANSPORT.json(200, { has_email: false }),
+    TRANSPORT.json(404, { error: { code: 'not_found' } }),
+  ]) {
+    prepare({ emailStatus })
+    const view = await harness.mount(OursServicesRow, {})
+    assert.equal(view.has('ours-device-backup-hint'), false, '新体系没有「设备码=账号」，不该再催备份')
+    view.unmount()
+  }
 })

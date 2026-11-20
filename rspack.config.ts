@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url'
 import { defineConfig } from '@rspack/cli'
 import { rspack, type Configuration } from '@rspack/core'
 import { assertBrowserslist } from './scripts/lib/compatBaseline.mjs'
+import { SEAM_FLAG, SEAM_SESSION, seamEnabled } from './scripts/lib/testAuthSeam.mjs'
 
 const dev = process.env.NODE_ENV !== 'production'
 const root = path.dirname(fileURLToPath(import.meta.url))
@@ -39,6 +40,23 @@ const targets = pkg.browserslist ?? []
 // 等于恒真，「browserslist 被人删了」这种最该拦的情形反而通过。
 assertBrowserslist(targets)
 
+/**
+ * 登录接缝（Issue #487 W1-B 后半，#510）：**构建期常量**，与运行期开关无关。
+ *
+ * 只有测试构建（`TEST_AUTH_SEAM=1`，CI 的黄金回归 / L1 那两步）注入真值；其余构建（含
+ * `pnpm build` 与发版构建）一律注入字符串 `'undefined'`，于是 AuthGate 里
+ * `typeof __TEST_AUTH_STATE__ !== 'undefined' ? __TEST_AUTH_STATE__ : undefined` 会折叠成
+ * `undefined`、守卫整段被死代码消除 —— 线上产物里**没有这条路**。
+ *
+ * 为什么不用「运行期读 globalThis / URL 参数 / localStorage 标记」：那种写法会把「读到某个值就
+ * 放行」的分支原样留在线上 bundle 里，等于给出一条可被利用的旁路。取值、标记与安全论证的唯一
+ * 出处是 `scripts/lib/testAuthSeam.mjs`（构建后扫描与 CI 门禁读同一份标记）。
+ */
+const testAuthSeam = seamEnabled()
+if (testAuthSeam) {
+  process.stderr.write(`[rspack][WARN] ${SEAM_FLAG}=1：正在构建**测试接缝**产物（内联假会话），绝不能用于发版\n`)
+}
+
 /** Android versionCode（诊断上报用，读不到记 0） */
 const readVersionCode = (): number => Number(pkg.androidVersionCode ?? 0) || 0
 
@@ -73,6 +91,36 @@ const endpoints = JSON.parse(readFileSync(new URL('./config/endpoints.json', imp
   // 默认 `enabled:false`：关掉时客户端不采集、不请求、不显示按钮（三处判定见 src/legacy/migration/）。
   // 这里只读、只注入；`enabled:true` 时形状不对会在下面 assertMigrationConfig 直接中止构建。
   migration: { enabled: boolean; baseUrl: string; endpoint: string; timeoutMs: number }
+}
+
+/**
+ * PDF 文本解析（Issue #480）：pdfjs 产物**不是**由打包器编译进来的（要经典 `<script src>` 才能过
+ * Chromium 79/83，见 src/services/attachments/parsers/pdfLoader.ts），所以这里做两件事：
+ *   1. 把 `pdfjs-dist` 的 `legacy/build/pdf.min.js`、`pdf.worker.min.js` 与 `cmaps/` 原样拷进
+ *      `static/pdfjs/`（`dist` 根下的静态目录；不放进 `static/js` 是因为语法门禁
+ *      `scripts/check-bundle-syntax.mjs` 扫的是 `static/js`，而这份产物的语法下限已由 #480 的
+ *      静态扫描 + 真机矩阵单独背书）；
+ *   2. 把「版本 + 静态路径」注入成 `__PDFJS_ASSET__`，运行期只从这一个常量读（换版本改 package.json）。
+ * 文件清单/目录名的唯一来源是 `config/pdfjs.json`。
+ */
+const pdfjsAsset = JSON.parse(readFileSync(new URL('./config/pdfjs.json', import.meta.url), 'utf8')) as {
+  packagePath: string
+  assetDir: string
+  script: string
+  worker: string
+  cmapsDir: string
+}
+
+/** pdfjs 版本以**实际安装的包**为准（单一来源是 package.json 的依赖版本），读不到时记 unknown */
+const readPdfjsVersion = (): string => {
+  try {
+    const manifest = JSON.parse(
+      readFileSync(new URL(`./${pdfjsAsset.packagePath}/package.json`, import.meta.url), 'utf8')
+    ) as { version?: string }
+    return manifest.version?.trim() ?? 'unknown'
+  } catch {
+    return 'unknown'
+  }
 }
 
 /**
@@ -273,6 +321,9 @@ export const createConfig = ({
       meta: { 'application-version': appVersion },
     }),
     new rspack.DefinePlugin({
+      // 登录接缝（#510）：默认注入 `undefined` —— 见上方 `testAuthSeam` 的说明；
+      // 真值只在 `TEST_AUTH_SEAM=1` 的测试构建里出现（假 token 是产物扫描的拦截标记）。
+      __TEST_AUTH_STATE__: testAuthSeam ? JSON.stringify(SEAM_SESSION) : 'undefined',
       __API_ORIGIN__: JSON.stringify(apiOrigin),
       __INTERNAL_BUILD__: JSON.stringify(internalBuild),
       __APP_VERSION__: JSON.stringify(appVersion),
@@ -303,10 +354,44 @@ export const createConfig = ({
         // 删这条尾巴时删掉这一行（README 的「删除方法」第 3 步）。
         migration: endpoints.migration,
       }),
+      // PDF 文本解析（#480）：版本 + 静态路径注入，运行期只读 __PDFJS_ASSET__（见 pdfLoader.ts）
+      //
+      // `script` / `worker` 注入的是**产物里的文件名**（`path.basename`），不是包装内的相对路径。
+      // 运行期按 `assetDir/script` 拼地址（`pdfAssetUrl`），而下面 CopyRspackPlugin 拷的正是
+      // `path.basename(...)` —— 两边口径必须一致，否则浏览器会去取
+      // `static/pdfjs/legacy/build/pdf.min.js`（404），PDF 解析在真产物里整篇失败：
+      // 脚本 404 → `libUnavailable`；worker 404 → pdfjs 退回 fake worker → `openFailed`。
+      // 这条链路只在**真产物**里才走得通（L0 用例换的是 node 侧加载口），所以由
+      // `docs/ui/480-attachments` 的浏览器截图首次发现，见 acceptance-480.md「未覆盖项 / 已修」。
+      __PDFJS_ASSET__: JSON.stringify({
+        version: readPdfjsVersion(),
+        assetDir: pdfjsAsset.assetDir,
+        script: path.basename(pdfjsAsset.script),
+        worker: path.basename(pdfjsAsset.worker),
+        cmapsDir: pdfjsAsset.cmapsDir,
+      }),
     }),
     buildInfoPlugin(internalBuild ? 'internal' : 'standard', appVersion, outputPath),
     new rspack.CopyRspackPlugin({
-      patterns: [{ from: path.resolve(root, 'LICENSE'), to: 'LICENSE', toType: 'file' }],
+      patterns: [
+        { from: path.resolve(root, 'LICENSE'), to: 'LICENSE', toType: 'file' },
+        // pdfjs 产物按原样进静态目录（不做语法降级：它是已降级过的 ES2018 UMD，见 pdfLoader.ts）
+        {
+          from: path.resolve(root, pdfjsAsset.packagePath, pdfjsAsset.script),
+          to: `${pdfjsAsset.assetDir}/${path.basename(pdfjsAsset.script)}`,
+          toType: 'file',
+        },
+        {
+          from: path.resolve(root, pdfjsAsset.packagePath, pdfjsAsset.worker),
+          to: `${pdfjsAsset.assetDir}/${path.basename(pdfjsAsset.worker)}`,
+          toType: 'file',
+        },
+        // 中文 PDF 的预定义 CMap（1.7 MB）：缺了取不到 CJK 文本，换不来就别省
+        {
+          from: path.resolve(root, pdfjsAsset.packagePath, pdfjsAsset.cmapsDir),
+          to: `${pdfjsAsset.assetDir}/${pdfjsAsset.cmapsDir}`,
+        },
+      ],
     }),
   ],
   performance: { hints: false },

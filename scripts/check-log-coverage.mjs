@@ -106,8 +106,8 @@ const CRITICAL_PATHS = [
   },
   {
     id: 'attachment-upload',
-    label: '附件上传：开始与失败各一个点（attachments.ts）',
-    files: ['src/services/attachments.ts'],
+    label: '附件上传：开始与失败各一个点（attachments/upload.ts）',
+    files: ['src/services/attachments/upload.ts'],
     minKindCalls: 2,
     issue: '#313',
   },

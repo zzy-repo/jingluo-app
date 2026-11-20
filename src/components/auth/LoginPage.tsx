@@ -9,7 +9,7 @@
  */
 
 import { useState, type FormEvent } from 'react'
-import { useTranslate } from '../../i18n/index.js'
+import { useTranslate, type TranslationKey } from '../../i18n/index.js'
 import type { AuthError } from '../../services/auth/types.js'
 import { Button } from '../base/Button.js'
 import { IconToastError16 } from '../base/icons.js'
@@ -23,6 +23,11 @@ export type LoginPageProps = {
   busy: boolean
   /** 上一次提交的失败（归一结果，`messageKey` 就是上屏文案） */
   error: AuthError | null
+  /**
+   * 进门就先说明的一句提示（还没有 `error` 时用）：`expired` = 登录已过期，需要重新登录。
+   * 与 `error` 分开：提示不是「你填错了」，样式也不该是错误条那样抢眼。
+   */
+  noticeKey?: TranslationKey | null
   onSubmit: (values: LoginValues) => void
   onSwitchToRegister: () => void
 }
@@ -31,6 +36,7 @@ export const LoginPage = ({
   showRegisterEntry,
   busy,
   error,
+  noticeKey = null,
   onSubmit,
   onSwitchToRegister,
 }: LoginPageProps) => {
@@ -64,6 +70,12 @@ export const LoginPage = ({
     <div className={styles.page}>
       <div className={styles.card}>
         <h1 className={styles.title}>{t('sub2authLogin')}</h1>
+
+        {noticeKey !== null && error === null ? (
+          <div className={styles.notice} role="status" data-testid="auth-notice">
+            {t(noticeKey)}
+          </div>
+        ) : null}
 
         {error ? (
           <div className={styles.banner} role="alert">

@@ -66,6 +66,11 @@ export type AuthStore = AuthSnapshot & {
   sendCode: (input: AuthSendCodeInput) => Promise<AuthResult<AuthDone>>
   refreshSession: () => Promise<boolean>
   restore: () => Promise<void>
+  /**
+   * 启动恢复迟迟不回（离线 / 服务端不应答）时**放弃等待**：把界面放回登录页，
+   * 并挂一句可重试的提示。由 `AuthGate` 的超时兜底调用（见 `GATE_RESTORE_TIMEOUT_MS`）。
+   */
+  abandonRestore: () => void
   /** 用户手动关掉错误条 / 重新输入时清掉上一次的失败 */
   dismissError: () => void
 }
@@ -429,6 +434,33 @@ export const restoreAuth = async (): Promise<void> => {
   return restoring
 }
 
+/**
+ * 启动恢复超时（离线 / 服务端一直不应答）时**放弃等待**：回登录页。
+ *
+ * 为什么需要它：`restoreAuth` 等的是「续期 + me()」两条网络请求，传输层虽然带超时，
+ * 但在弱网 / 代理卡住的场景里用户可能盯着转圈十几秒什么都做不了。登录墙（`AuthGate`）
+ * 到点就调这里，把界面交给登录表单 —— **登录本身就是那条「重试」**，不再额外弹错误框。
+ *
+ * 两处刻意的取舍：
+ *  - **不动落盘凭据**（不调 `tokenStorage.write(null)`）：网络恢复后下次启动仍然能自动恢复，
+ *    不能因为一次离线就把人登出；
+ *  - 只改内存态（`restored: true`）—— 之后 `restoreAuth` 的迟到结果最多把「已经确认自己是谁的
+ *    用户」再确认一次，不会把未登录的人放进去。
+ */
+const abandonRestore = (): void => {
+  if (useAuthStore.getState().restored) {
+    return
+  }
+  useAuthStore.setState({
+    state: 'unauthenticated',
+    token: null,
+    user: null,
+    error: errorFor('AUTH_RESTORE_TIMEOUT', 'sub2authNetworkError'),
+    submitting: false,
+    restored: true,
+  })
+}
+
 // --------------------------------------------------------------------------- store
 
 /** 登录态 store：快照 + 动作（动作在上面，初值里直接引用，避免 TDZ） */
@@ -446,6 +478,7 @@ export const useAuthStore = create<AuthStore>(() => ({
   sendCode,
   refreshSession,
   restore: restoreAuth,
+  abandonRestore,
   dismissError: () => useAuthStore.setState({ error: null }),
 }))
 

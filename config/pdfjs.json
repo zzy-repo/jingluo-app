@@ -1,0 +1,8 @@
+{
+  "_comment": "PDF 文本解析（Issue #480）：pdfjs 产物的唯一配置来源。rspack 构建期把它拷进静态目录并注入 __PDFJS_ASSET__，运行期由 src/services/attachments/parsers/pdfLoader.ts 读取。版本号不写在这里：以 package.json 里实际安装的 pdfjs-dist 版本为准（构建期从 node_modules/pdfjs-dist/package.json 读，注入 __PDFJS_ASSET__.version），换版本只改 package.json 一处。",
+  "packagePath": "node_modules/pdfjs-dist",
+  "assetDir": "static/pdfjs",
+  "script": "legacy/build/pdf.min.js",
+  "worker": "legacy/build/pdf.worker.min.js",
+  "cmapsDir": "cmaps"
+}

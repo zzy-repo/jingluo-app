@@ -228,6 +228,29 @@ export const IconPaperclipOutline16 = () => (
   </svg>
 )
 
+/**
+ * 「文档」入口图标（16px 描边风），与 `IconPaperclipOutline16`（图片 / Files API 那套）并排使用。
+ *
+ * 为什么不做成同一个回形针：输入区并排有两个入口，两个回形针并排会让人分不清哪个是哪个。
+ */
+export const IconDocumentOutline16 = () => (
+  <svg width={16} height={16} viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <path
+      d="M9.25 1.75H6.5c-.98 0-1.47 0-1.79.17-.32.17-.62.47-.79.79-.17.32-.17.81-.17 1.79v7c0 .98 0 1.47.17 1.79.17.32.47.62.79.79.32.17.81.17 1.79.17h4c.98 0 1.47 0 1.79-.17.32-.17.62-.47.79-.79.17-.32.17-.81.17-1.79V6L9.25 1.75Z"
+      stroke="currentColor"
+      strokeWidth="1.3"
+      strokeLinejoin="round"
+    />
+    <path
+      d="M9.25 1.75V5c0 .47 0 .7.09.88.08.15.21.28.36.36.18.09.41.09.88.09h3.25"
+      stroke="currentColor"
+      strokeWidth="1.3"
+      strokeLinejoin="round"
+    />
+    <path d="M6.1 8.4h4.2M6.1 10.7h2.9" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+  </svg>
+)
+
 export const IconRefreshOutline16 = () => (
   <svg width={16} height={16} viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
     <path

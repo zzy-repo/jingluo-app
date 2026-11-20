@@ -26,6 +26,9 @@ import {
   type ContextTrimReport,
 } from './contextBudget.js'
 import { normalizeReminder } from './latestReminder.js'
+// #480 §7：附件引用挂在请求消息上（`ChatAttachmentRef` 是类型，`attachmentRefsOf` 是唯一映射点）
+import type { ChatAttachmentRef, ChatMessage } from '../attachments/contextBuilder.js'
+import { attachmentRefsOf } from '../attachments/requestDocs.js'
 
 /**
  * 文件按 Files API 的 file_id（附件的 serverId）引用：图片用 image 块，其余用 document 块。
@@ -213,15 +216,39 @@ const isUsableReply = (message: Message): message is AssistantMessage =>
   !message.blocks.some((block) => block.type === 'text' && block.isTemplate) &&
   getReplyText(message) !== ''
 
+/**
+ * 「只传了文档、没打字」时的占位说明（#480 §8 多轮：历史轮不能整轮消失）。
+ *
+ * 为什么需要：文档附件在本仓库里 `serverId` 恒为 null（原件在 AttachmentManager，不走上传），
+ * 于是 `toFileBlocks()` 不会为它产出任何块 —— 一条「只上传了 PDF、没说别的」的历史提问
+ * 在请求消息里就是**空 content**。加上占位说明有两个作用：
+ * 1. 该轮不会因为「空 content」被当成坏数据整轮丢掉，它的附件引用因此能进入注入路径；
+ * 2. 注入失败（解析 failed / 预算耗尽）时消息也不是空的，不会让上游因为空 user 消息 400。
+ *
+ * 计数用引用数量（不是文件数）：只有会被注入的文档才参与，图片不算。
+ * 文案必须是**纯函数**（同一轮永远同一串字节），否则 #345 的前缀稳定性会被打破。
+ */
+const documentsPlaceholder = (count: number): string => `[用户上传了 ${count} 个附件]`
+
 /** 有文件时用内容块数组：先文件后文本，文件按 Files API 的 file_id 引用 */
-const toUserParam = ({ content, files }: UserMessage): MessageParam => {
+const toUserParam = (
+  { content, files }: UserMessage,
+  attachments?: readonly ChatAttachmentRef[]
+): ChatMessage => {
+  const refs = attachments ?? []
   const blocks = toFileBlocks(files)
-  return blocks.length === 0
-    ? { role: 'user', content }
-    : {
-        role: 'user',
-        content: [...blocks, ...(content ? [{ type: 'text' as const, text: content }] : [])],
-      }
+  // 空正文 + 有文档引用 → 占位说明（仅在挂了引用时生效；不传引用时与原实现逐字节相同）
+  const text = content === '' && refs.length > 0 ? documentsPlaceholder(refs.length) : content
+  const param: ChatMessage =
+    blocks.length === 0
+      ? { role: 'user', content: text }
+      : {
+          role: 'user',
+          content: [...blocks, ...(text ? [{ type: 'text' as const, text }] : [])],
+        }
+  // #480 §7：文档引用随消息走（**不是**协议字段，注入完成后由 ContextBuilder 剥掉）。
+  // 只有声明了文本注入的渠道才会传 attachments —— DeepSeek 原生路径拿到的对象与改动前一致。
+  return refs.length > 0 ? { ...param, attachments: refs } : param
 }
 
 /**
@@ -348,6 +375,19 @@ export type RequestBudgetOptions = {
    * 不传 = 不记边界（无状态重算），只有 `store.ts` 有会话 id，别处不用管。
    */
   anchorKey?: string
+  /**
+   * 是否在 user 消息上挂附件引用（#480 §7，`attachments: ChatAttachmentRef[]`）。
+   *
+   * **只有文本注入渠道（`textInjection === true`）才传 true**；DeepSeek 官方不传 ——
+   * 出参与改动前逐字节相同（引用键根本不出现），请求体也就不可能被动到。
+   *
+   * 为什么挂在这里、而不是在调用点按内容回猜「这条 user 消息是哪一轮」：
+   * `toRequestMessages()` 是唯一知道「哪条请求消息来自哪条 UserMessage」的地方；
+   * 出去之后只剩 content 字符串，再靠正则/内容匹配反查会随内容变化而错配。
+   * 引用只是消息上的**旁挂字段**：不计入裁剪预算（不传 size），注入完成后由
+   * `contextBuilder.buildWithDocuments()` 从出参里剥掉（原样上行会被上游当未知字段）。
+   */
+  attachmentRefs?: boolean
 }
 
 export const toRequestMessages = (
@@ -359,11 +399,27 @@ export const toRequestMessages = (
   options?: RequestBudgetOptions
 ): MessageParam[] => {
   const budget = resolveContextBudget(options?.budget)
-  const questionParam = toUserParam(question)
-  // 历史提问没有文字、附件也都没有 serverId 时，提问为空，连同回答一起省略（原有行为）。
-  const rounds = getContextRounds(history).filter(
-    ([user]) => user.content !== '' || toFileBlocks(user.files).length > 0
-  )
+  /** #480 §7：是否挂文档引用（只有文本注入渠道） */
+  const wantRefs = options?.attachmentRefs === true
+  /** 本轮提问的文档引用（只在文本注入渠道取；否则为空数组，出参与改动前一致） */
+  const questionRefs = wantRefs ? attachmentRefsOf(question.files) : []
+  const questionParam = toUserParam(question, questionRefs)
+  /**
+   * 历史提问没有文字、附件也都没有 serverId 时，提问为空，连同回答一起省略（原有行为）。
+   *
+   * #480 §8 的例外：**只有文档、没有文字**的轮次（`serverId` 恒为 null → `toFileBlocks()`
+   * 恒空）在文本注入渠道上必须保留 —— 它的正文要靠「消息上的附件引用」带回来，
+   * 整轮丢掉就等于多轮追问时丢失上一轮上传的文档（§8「多轮对话」）。
+   *
+   * 这条豁免**跟着 `wantRefs` 走**，不是无条件放开：DeepSeek 原生路径拿不到这些文档的
+   * `file_id`，保留下来只会多一条空 user 消息（上游 400 风险），所以那边的行为一个字都不变。
+   */
+  const rounds = getContextRounds(history).filter(([user]) => {
+    if (user.content !== '' || toFileBlocks(user.files).length > 0) {
+      return true
+    }
+    return wantRefs && attachmentRefsOf(user.files).length > 0
+  })
   // 每轮先转成请求里的那几条消息：裁剪以「轮」为单位，成对进出，不会只留一半。
   const units = rounds.map(([user, reply]) => {
     const params: MessageParam[] = []
@@ -372,9 +428,11 @@ export const toRequestMessages = (
       params.push({ role: 'latest_reminder', content: normalizeReminder(reply.latestReminder) })
     }
     params.push(toUserParam(user), toAssistantParam(reply))
-    return params
+    // 附件引用留到**裁剪之后**再挂（见下面 push 处）：不进 estimateChars，
+    // 于是裁剪边界与改动前逐字节一致，不受附件引用字段长度影响。
+    return { params, user }
   })
-  const sizes = units.map((params) => estimateChars(params))
+  const sizes = units.map(({ params }) => estimateChars(params))
   // 本轮提问与系统快照永远保留，但占预算
   const fixedChars = estimateChars(questionParam) + (latestReminder?.length ?? 0)
   /**
@@ -429,10 +487,15 @@ export const toRequestMessages = (
       previousReminder = reminder
     }
   }
-  for (const params of kept) {
+  for (const { params, user } of kept) {
+    // 引用在这里才挂：重新过一遍 toUserParam，让「空正文 + 有引用」的占位说明也一并生效
+    // （直接给 params 里的对象加 attachments 不会有占位说明，空提问就还是空 user 消息）
+    const refs = wantRefs ? attachmentRefsOf(user.files) : []
     for (const param of params) {
       if (param.role === 'latest_reminder') {
         appendReminder(param.content)
+      } else if (param.role === 'user' && refs.length > 0) {
+        messages.push(toUserParam(user, refs))
       } else {
         messages.push(param)
       }

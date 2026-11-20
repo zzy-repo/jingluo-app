@@ -9,6 +9,7 @@ import {
   finish,
   openApp,
   openSettingsDataSection,
+  providerKindTrigger,
   sendChat,
   stubMessagesStream,
   stubModels,
@@ -48,14 +49,24 @@ try {
   const requests = capturePaths(page)
 
   await openSettingsDataSection(page)
-  const kindLabel = await page
-    .getByRole('button', { name: /渠道|Channel|服务类型|Service type/ })
-    .first()
-    .innerText()
+  // 渠道行怎么读（#555）：用共享的 `providerKindTrigger`（整串锚定）而不是
+  // `/渠道|Channel|服务类型|Service type/` 子串 + `.first()`。
+  // 后者在 #480/#538 之后会命中聊天页那个**禁用态文档入口**图标按钮（aria-label
+  // 「当前渠道不支持文档附件…」含「渠道」、DOM 顺序在设置弹窗之前、且没有可见文本），
+  // 于是读出来是空串 —— 看起来像「老用户默认渠道丢了」的产品回归，实际是取数方式过时。
+  const kindLabel = (await providerKindTrigger(page).first().innerText()).trim()
   if (!/DeepSeek/.test(kindLabel)) {
-    failures.push(`老用户默认服务类型不是 DeepSeek 官方：${JSON.stringify(kindLabel.trim())}`)
+    failures.push(`老用户默认服务类型不是 DeepSeek 官方：${JSON.stringify(kindLabel)}`)
   } else {
-    console.log(`ok: 默认服务类型 = ${kindLabel.trim()}`)
+    console.log(`ok: 默认服务类型 = ${kindLabel}`)
+  }
+  // 再钉一层：默认渠道必须真的落在配置层（localStorage 没写过 kind 也要按构建默认渠道生效，
+  // 见 apiConfig.ts 的 getProviderKind）。避免「界面文案对了但状态是空的」这种半对。
+  const effectiveKind = await page.evaluate(() => window.localStorage.getItem('chat-demo:provider-kind'))
+  if (effectiveKind !== null && effectiveKind !== 'deepseek') {
+    failures.push(`老用户生效渠道不是 deepseek：${JSON.stringify(effectiveKind)}`)
+  } else {
+    console.log(`ok: 生效渠道 = ${effectiveKind ?? 'deepseek（未落盘，按构建默认）'}`)
   }
   await closeSettings(page)
 
