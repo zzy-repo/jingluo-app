@@ -5,9 +5,14 @@
 L1（integration，7~20 分钟）太慢不能每次都等。
 
 ```bash
-pnpm run build          # 需要标准产物（dist，variant=standard）
-pnpm run test:golden    # = node tests/run-golden.mjs（并行 + 每条耗时 + 一句话失败定位）
+TEST_AUTH_SEAM=1 pnpm run build   # 标准产物（dist，variant=standard）+ 登录接缝（见下）
+pnpm run test:golden              # = node tests/run-golden.mjs（并行 + 每条耗时 + 一句话失败定位）
 ```
+
+> **构建必须带 `TEST_AUTH_SEAM=1`**（#510）：`src/main.tsx` 把整个 App 包在 `<AuthGate>` 里之后，
+> 未登录冷启动只画登录页，侧栏 / 设置 / 输入框全都拿不到 —— 那样 G1~G11、G15 会在第一步就红，
+> 红的是环境不是用例。CI 的 golden job 就是带这个开关构建的（见 `.github/workflows/ci.yml`），
+> 并在构建后跑 `check:test-seam --expect-seam` 做正向对照。发版产物**绝不允许**带它。
 
 ## 「改了哪个域必须跑哪条」——提交前对照这张表
 
@@ -22,28 +27,34 @@ pnpm run test:golden    # = node tests/run-golden.mjs（并行 + 每条耗时 + 
 | 诊断 | 触发错误 → 诊断复制内容已脱敏 | `g09-diagnostics.test.mjs` | `services/chat/describe.ts`、`replyErrorReport.ts`、`services/diagnostics/redact.ts`、`app/errorReport.ts` |
 | 更新 | 检查 → 解析清单 → 选对版本 → 下载校验 | `g10-update.test.mjs` | `services/updateManifest.ts`、`components/settings/AppUpdateField.tsx` |
 | 账户与消费 | JWT 登录 → 读余额 → 兑换卡密 → 余额变化（+ 冷启动续期）；mock 驱动 | `g12-consume.test.mjs` | `services/auth/{store,transport}.ts`、`services/consume/{auth,usage,redeem}.ts` |
+| 支付/购买 | 打开「账户与消费」→ 套餐列表 → 下单（`/api/pay-link`）→ 回跳 → 卡密 → 一键复制 | `g15-purchase.test.mjs` | `components/consume/{AccountConsumePage,BuyTab,MyCardsTab}.tsx`、`services/ours/{api,purchases,transport}.ts`、`components/consume/quotaPanelModel.ts`（额度口径） |
 
 对应关系按「**改动落在哪就至少跑那一条**」用，不是穷举：动了 `src/services/chat/` 就跑 G1/G2/G4/G5/G6，
-动了设置面板/渠道就跑 G3/G5/G6/G9/G10（`g11` 邮箱见 `tests/golden/g11-email.test.mjs`）。
-拿不准就 `pnpm run test:golden` 全跑 —— 10 条约 12 秒（g12 单独约 0.9s，自带 mock，不需要 dist）。
+动了设置面板/渠道就跑 G3/G5/G6/G9/G10（`g11` 邮箱见 `tests/golden/g11-email.test.mjs`），
+动了 `src/components/consume/**` 或 `src/services/ours/**`（套餐 / 下单 / 卡密 / 额度口径）就跑 **G15**。
+拿不准就 `pnpm run test:golden` 全跑 —— 11 条约 12 秒（g12 单独约 0.9s，自带 mock，不需要 dist；g15 约 1.7s）。
 
-> **额度 / 卡密 / 购买的黄金回归已删除（W1-D，#487）**：`g07-quota-purchase.test.mjs` 跟着旧额度/邀请体系
-> 一起删了 —— 它断言的「领取 → 刷新 → 兑换」走的是 `device_id` + 本机池那条即将整体替换的链路，
-> 重构期间维护它只会产生假红。新链路（JWT + sub2api 消费层）落定后按 #487 阶段③重建，
-> 清单与重建要求见 `docs/testing/rebuild-after-refactor.md`。
+> **购买域的黄金回归换过人（W1-D #487 → #567）**：老的 `g07-quota-purchase.test.mjs` 跟着旧额度/邀请体系
+> 一起删了 —— 它断言的「领取 → 刷新 → 兑换」走的是 `device_id` + 本机池那条整条被替换的链路。
+> 现在的替代是**两条、各管一段**：`g12-consume.test.mjs` 管消费层链路（登录 / 余额 / 兑换，mock 驱动），
+> **`g15-purchase.test.mjs` 管购买主路径**（套餐 → `/api/pay-link` → 回跳 → 卡密 → 复制，dist + 浏览器）。
+> 改 `src/components/consume/**` 或 `src/services/ours/**` 就跑 G15，别再去找 `g07`。
 
 > **两处合并**（Issue #404 允许：「某两域天然同一流程就合成一条」）：
 > · **导出 + 导入** → G6：只有把导出的字节真的喂回导入，`manifest` 首条、条目路径、索引与会话的一一对应才被同时钉住；
-> · （原「额度 + 购买」合并成 G7 的那条已随 W1-D 删除，见上。）
+> · （原「额度 + 购买」合并成 G7 的那条已随 W1-D 删除；购买侧现由 G15 单独承接，见上。）
 
 ### g12「账户与消费」为什么是 mock 驱动、而不是 dist + 浏览器
 
-新链路（JWT 身份层 + 四个消费面板）**还没有页面外壳**：`src/main.tsx` 尚未挂 `AuthGate`，
-账户页（W1-C1）未合并，所以 dist 里点不到登录 / 兑换入口。这一条因此把**链路**端到端跑通：
+写这条用例时新链路（JWT 身份层 + 四个消费面板）**还没有页面外壳**（`src/main.tsx` 尚未挂 `AuthGate`、
+账户页 W1-C1 未合并），dist 里点不到登录 / 兑换入口，所以它选了「跑链路」而不是「点按钮」：
 真 `createConsumeClient` / `createAuthTransport` / `store`，对面是 `tools/mock-sub2api`（端口 0，
 内核分配；不连 127.0.0.1:18000 的真实例，用例结尾有「所有请求都落在本次 mock 上」的守卫）。
 两条路径：① 登录 → 读余额 → 兑换 `MOCK-OK-0001` → 余额 +10；② 冷启动过期 → 续期换新 token → 仍能读余额。
-等页面外壳合并后，把「调客户端」换成「点按钮」即可，步骤名与断言不用改。
+
+**现在页面外壳已经合并**（`AuthGate` 已挂、账户页已在 dist 里），但 g12 仍然保留 mock 驱动的写法：
+它守的是**消费层链路**（登录 / 余额 / 兑换），而「点按钮」那条用户路径由 **G15** 从 dist 里点
+（账户与消费 → 卡密 / 购买 / 额度三个 tab 都在 G15 与 g12 的覆盖范围内，两条不重复断言）。
 
 ## 与 L1 的分工（硬要求）
 
@@ -87,13 +98,35 @@ pnpm run test:golden    # = node tests/run-golden.mjs（并行 + 每条耗时 + 
 | 导出 | 导出 → 校验包结构 → 可再次导入（与「导入」合并成往返） | `g06-export-import.test.mjs` | ✅ |
 | 诊断 | 触发错误 → 诊断复制内容已脱敏 | `g09-diagnostics.test.mjs` | ✅ |
 
-**购买/额度这条为什么现在没有黄金用例**：`g07-quota-purchase` 已随 W1-D 删除（见上）。它当时钉的是
-「领取 → 刷新额度 → 兑换 +300 → 关收款页再刷新」这条**旧链路**（`device_id` + `/apply` `/me` +
-本机池 `/redeem-card` + apia `GET /api/pay-link`）。重构后应由新链路的一条用例替代：
-`settings/public` → JWT 登录 → `GET /v1/usage` 额度 → `POST /api/v1/redeem` 兑换 → apia pay-link 购买。
+## 第三批（#567）：购买主路径 G15
 
-实测（2026-11-20，本机 4 并发，标准产物）：G1 3.3s / G2 3.5s / G3 5.2s / G4 7.5s / G5 4.2s /
-G6 3.9s / G9 3.4s / G10 3.9s，**墙钟 11.4s**（第二批加入前是 5.7s；G7 5.0s 那一行随 W1-D 删除）。
+`g07-quota-purchase` 已随 W1-D 删除（见上），C 线（支付 / 购买）由 **G15** 承接 —— 它钉的是**现在这条**链路：
+
+```
+设置 → 数据管理 → 账户与消费 → 购买 tab（GET /api/plans）
+  → 去支付（GET /api/pay-link）→ App 内打开收款页 → 关页回跳
+  → 我的卡密 tab（GET /api/orders）→ 复制卡密 → 我的额度 tab（GET /v1/usage）
+```
+
+只断五件事（#567 清单）：① 卡密出现在「我的卡密」（后 4 位）② 复制拿到**完整**卡密
+③ `/buy` 请求数为 0（那条建单链路 #331 已整条下线）④ 额度来源是 sub2api 的
+`usage.total.actual_cost`（不是 `quota.used`、也不是邀请服务的 `remaining_points`）
+⑤ 支付侧走 apia（`/api/plans` 与 `/api/pay-link` 各 ≥1 次），**sub2api 不参与下单**。
+
+后端全桩：`window.Capacitor` 换成原生桥替身（`androidBridge` + `PluginHeaders`），
+apia（plans / pay-link / orders）与 sub2api（`/v1/usage`）都落在用例自己的 route 表上，
+表外路径一律 404。收款页的「关页回跳」由替身接住 `Browser.addListener` 的回调、由用例触发，
+**不依赖任何真浏览器插件、不连真服务**。
+
+| 域 | 黄金路径 | 用例 | 状态 |
+| --- | --- | --- | --- |
+| 支付/购买 | 套餐 → 下单（pay-link）→ 回跳 → 卡密 → 一键复制 | `g15-purchase.test.mjs` | ✅ |
+
+实测（2026-11-20，本机，标准产物 + `TEST_AUTH_SEAM=1`）：G15 约 1.7s（7 步）。
+
+整层实测（2026-11-20，本机 4 并发）：G1 2.7s / G2 3.0s / G3 4.3s / G4 7.0s / G5 4.0s /
+G6 4.2s / G9 2.7s / G10 2.3s / G11 3.1s / G12 1.5s / **G15 1.7s**，11 条全绿、**墙钟 10.1s**。
+（G7 5.0s 那一行随 W1-D 删除；购买侧现由 G15 承接。）
 
 负向验证（每条都人为破坏一次、确认变红后再还原）：
 
@@ -103,3 +136,6 @@ G6 3.9s / G9 3.4s / G10 3.9s，**墙钟 11.4s**（第二批加入前是 5.7s；G
 | G4 | `store.ts` 的 `removeSessionData` 不再 `db.deleteSession` | 「删除真的落到 IndexedDB（sessions=2）」 |
 | G6 | `exportArchive.ts` 不再写 `manifest.json` | 「首条是 manifest.json（实际 chat_sessions/…）」 |
 | G9 | `redact.ts` 跳过值维度脱敏（只留 key 维度） | 「复制内容里没有任何一项敏感值原文（设备码,卡密,手机号）」 |
+| G15 | 「复制卡密」改成复制空串（`copyCard` 里 `copyText('')`） | 「复制动作把完整卡密交给剪贴板（实际=空串）」 |
+| G15 | 卡密来源从 apia 换成 sub2api（`fetchPurchases(..., 'http://127.0.0.1:18000/api/v1')`） | 「关掉收款页后卡密出现在「我的卡密」（实际=订单查询被拒绝）」 |
+| G15 | 前端去调已下线的 `/buy`（购买 tab 挂载时补一次 `/buy?cid=…`） | 「没有走已下线的 /buy 建单链路（实际=1 次）」 |

@@ -15,8 +15,8 @@
  * props（`consume` / `user` / `onNeedLogin`），**没有第二套状态机**。
  *
  * 四条不许在这里破的约定：
- *  1. **不做第二份客户端**：整页一个 `ConsumeClient`，JWT 直接取 W1-B 的 `getAccessToken()`
- *     （每次请求现取；本页不存 token、不刷新 token）；
+ *  1. **不做第二份客户端**：整页一个 `ConsumeClient`，用全应用共享的 `getConsumeClient()`
+ *     （JWT 与 sk- Key 都在每次请求时现取；本页不存 token、不刷新 token）；
  *  2. **不复制旧 CSS**：样式全在 `AccountConsume.module.css`，只吃 design token；
  *  3. **不搬旧逻辑**：Tab3/Tab4 的额度 / 邀请 / 邮箱一律不在这里实现；
  *  4. **写操作都靠用户点**：兑换不自动重试、收款页不自动重开（#484 §5）。
@@ -24,8 +24,9 @@
 import clsx from 'clsx'
 import { useCallback, useMemo, useState } from 'react'
 import { useTranslate, type TranslationKey } from '../../i18n/index.js'
-import { createConsumeClient, type ConsumeClient, type ConsumeUser } from '../../services/consume/index.js'
-import { getAccessToken, useAuthStore } from '../../services/auth/store.js'
+import type { ConsumeClient, ConsumeUser } from '../../services/consume/index.js'
+import { getConsumeClient } from '../../services/consumeClient.js'
+import { useAuthStore } from '../../services/auth/store.js'
 import { Modal } from '../base/Modal.js'
 import { BuyTab } from './BuyTab.js'
 import { AccountPanel, QuotaPanel } from './index.js'
@@ -47,8 +48,9 @@ export type AccountConsumePageProps = {
   /** 打开时落在哪个 tab（默认「我的卡密」，付款回跳可以指到 `buy`） */
   initialTab?: AccountConsumeTab
   /**
-   * 页面用的消费侧客户端。**不传就自建**（`createConsumeClient({ accessToken: getAccessToken })`）：
-   * 上层（测试 / 特殊流程）注入时把自己的实例传进来，整页共用一份，不出现第二个 token 来源。
+   * 页面用的消费侧客户端。**不传就用全应用共享的那一个**（`services/consumeClient.ts` 的单例，
+   * 凭据提供者是 `getAccessToken` + `getApiKey`）：上层（测试 / 特殊流程）注入时把自己的实例
+   * 传进来，整页共用一份，不出现第二个 token 来源。
    */
   consume?: ConsumeClient
   /** 当前用户；不传则取 W1-B 的 `useAuthStore().user`（仍未登录时 Tab4 自己引导登录） */
@@ -67,10 +69,13 @@ export const AccountConsumePage = ({
   const t = useTranslate()
   const [tab, setTab] = useState<AccountConsumeTab>(initialTab)
   /**
-   * 整页一个客户端：JWT 直接取 W1-B 的 `getAccessToken()`（**每次请求现取**，刷新 token 后立刻生效），
-   * 不另存一份、不自己刷新（#484 §2）。上层要注入自己的实例（测试 / 特殊流程）就传 `consume`。
+   * 整页一个客户端：取**全应用共享**的那一个（`getConsumeClient()`，JWT 与 sk- Key 两个凭据提供者
+   * 都在里面按请求现取）。不在这里另 `createConsumeClient(...)`：那样「我的额度」拿不到 Key
+   * （`consume.http.hasApiKey()` 恒 false），面板只会显示「还没有可用的 Key」，而共享实例正是
+   * `services/consumeClient.ts` 存在的理由（同一份传输实例，排查时说得清是哪一份发的）。
+   * 上层要注入自己的实例（测试 / 特殊流程）就传 `consume`。
    */
-  const consume = useMemo(() => injected ?? createConsumeClient({ accessToken: getAccessToken }), [injected])
+  const consume = useMemo(() => injected ?? getConsumeClient(), [injected])
   // Tab4 的「当前用户」默认取 W1-B 的登录态；上层传了以传入的为准
   const authUser = useAuthStore((state) => state.user)
   /**
