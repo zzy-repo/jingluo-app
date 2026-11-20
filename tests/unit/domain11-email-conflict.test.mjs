@@ -163,8 +163,11 @@ test('C1 device_has_account → 弹窗展示 remaining_points + 脱敏邮箱 + �
 
   // 断言点：额度数字必须上屏（这是 #421 第 3 点的硬要求）
   const pointsLine = view.text('ours-email-conflict-points')
-  assert.ok(pointsLine.includes('100'), `额度数字必须出现在弹窗里，实际：${pointsLine}`)
-  assert.equal(pointsLine, zh.oursEmailConflictPoints.replace('{points}', '100 积分'))
+  // #487 计量单位统一为元（1 元 = 1 额度，无 USD）：`device_remaining_points: 100` 按
+  // **100 积分 = 1 元** 折算后展示为 `1.00 元`（折算只在 `utils/money.ts` 做一次）。
+  // 断言强度不变，只是期望值跟着单位从「100 积分」改成「1.00 元」。
+  assert.ok(pointsLine.includes('1.00'), `额度数字必须出现在弹窗里，实际：${pointsLine}`)
+  assert.equal(pointsLine, zh.oursEmailConflictPoints.replace('{points}', '1.00 元'))
 
   // 断言点：脱敏邮箱原样展示（不改写、不还原）
   assert.equal(view.text('ours-email-conflict-masked'), zh.oursEmailConflictEmail.replace('{masked}', MASKED))
