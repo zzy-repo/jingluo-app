@@ -29,7 +29,7 @@ const read = (relative) => readFileSync(path.join(ROOT, relative), 'utf8')
 const pkg = JSON.parse(read('package.json'))
 const ci = read('.github/workflows/ci.yml')
 
-/** ci.yml 里必须出现的 11 条门禁（`run: pnpm run <script>`）+ 单元层那一条（`run: pnpm test`） */
+/** ci.yml 里必须出现的 12 条门禁（`run: pnpm run <script>`）+ 单元层那一条（`run: pnpm test`） */
 const REQUIRED_CI_GATES = [
   'check:hygiene',
   'check:dup-impl',
@@ -42,6 +42,7 @@ const REQUIRED_CI_GATES = [
   'check:ip',
   'check:manifest',
   'check:log-coverage',
+  'check:doc-refs',
 ]
 
 /** 这三道目前**没接线**，但必须在 issue 里有交代 —— 断言它们至少没被"假装"接线 */
@@ -51,7 +52,7 @@ const ROWS = [
   {
     id: 'W1',
     f10: ['F10-16'],
-    name: 'ci.yml 一条不落地跑 12 道门禁，且含 check:legacy 的负向对照',
+    name: 'ci.yml 一条不落地跑 13 道门禁，且含 check:legacy 的负向对照',
     verify: () => {
       const missing = REQUIRED_CI_GATES.filter((gate) => !new RegExp(`run: pnpm run ${gate}\\b`).test(ci))
       assert.deepEqual(missing, [], `ci.yml 里缺这些门禁步骤（摘掉一道 = 那条路再也没人守）：${missing.join(', ')}`)

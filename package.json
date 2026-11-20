@@ -66,6 +66,7 @@
     "check:capabilities": "node scripts/check-capabilities.mjs",
     "check:docs": "node scripts/check-doc-refs.mjs",
     "check:docrefs": "node scripts/check-doc-refs.mjs",
+    "check:doc-refs": "node scripts/check-doc-refs.mjs",
     "check:limits": "node scripts/check-limits.mjs",
     "check:log-coverage": "node scripts/check-log-coverage.mjs",
     "check:redact": "node scripts/check-redact.mjs",

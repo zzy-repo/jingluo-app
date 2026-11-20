@@ -60,8 +60,8 @@ export const SCAN_TARGETS = ['docs', 'CHANGELOG.md']
 /** 历史取证归档：只读，不做判定 */
 export const EXEMPT_PREFIXES = ['docs/repro/', 'docs/redteam/', 'docs/compat/compat-old/']
 
-/** 索引 / 解析时跳过的目录（依赖、产物、缓存 —— 都不算「仓库里的文件」） */
-const SKIP_DIRS = new Set([
+/** 索引 / 解析时跳过的目录**名**（依赖、产物、缓存 —— 都不算「仓库里的文件」） */
+const SKIP_DIR_NAMES = new Set([
   '.git',
   'node_modules',
   'dist',
@@ -71,6 +71,31 @@ const SKIP_DIRS = new Set([
   'coverage',
   '__pycache__',
 ])
+
+/**
+ * 只是**名字撞上**产物目录的文档目录（假红修复；根因见 #461 的实测与 PR 说明）
+ *
+ * `docs/testing/coverage/` 存的是测试覆盖状态的**文档**，不是 jest / vitest 吐出来的
+ * `coverage/` 产物。旧实现只看目录**名**就跳过，于是这批 md 连索引都进不去 —— 后果是
+ * `docs/testing/report.md` / `docs/TESTING-POLICY.md` 里 15 处指向它们的引用全被判
+ * 「文件不存在」，门禁自己制造了 15 条噪音红（#461 实测：main 上 23 FAIL，其中 15 条是这个）。
+ *
+ * 现在把两件事分开：
+ *   - **索引**（别的文档引用它时能不能判定「文件存在」）：照常走进去 → 15 条噪音消失；
+ *   - **扫正文**（校验这些 md 自己写的引用）：仍然不扫。实测把它们放进扫描范围会多出 28 条红
+ *     —— 21 条 `missing-file`（指向 `update-matrix` / `release-gate-matrix` / `email-421-*` /
+ *     `server-contract` / `release-mirror.mjs` 这些已改名或已删除的东西，另有 1 条是
+ *     `android/…/MainActivity.java` 这种省略写法）+ 6 条 `out-of-range` + 1 条 `blank-line`。
+ *     这些是**真的**文档腐烂，但那是另一件事 —— 混进这一单只会把「15 条噪音」换成「28 条真红」，
+ *     谁也说不清哪条是哪个病。拆开做：先让门禁对它们的**引用方**不作假，再单开一单修它们自己的正文。
+ */
+const INDEX_ALWAYS_DIRS = new Set(['docs/testing/coverage'])
+
+/** 建索引时是否跳过该目录：名字是产物名、且不是上面那个「撞名文档目录」 */
+const skipForIndex = (rel, name) => SKIP_DIR_NAMES.has(name) && !INDEX_ALWAYS_DIRS.has(rel)
+
+/** 扫正文时是否跳过该目录：只看名字（撞名文档目录的正文这一单不扫，见 INDEX_ALWAYS_DIRS） */
+const skipForScan = (_rel, name) => SKIP_DIR_NAMES.has(name)
 
 /** 认作「文件引用」的扩展名（长的排前面，别让 `ts` 吃掉 `tsx`） */
 const REF_EXT =
@@ -106,7 +131,7 @@ const collectDocs = (dir, out) => {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     const full = path.join(dir, entry.name)
     if (entry.isDirectory()) {
-      if (SKIP_DIRS.has(entry.name)) continue
+      if (skipForScan(toPosix(path.relative(ROOT, full)), entry.name)) continue
       collectDocs(full, out)
     } else if (entry.isFile() && entry.name.endsWith('.md')) {
       out.push(full)
@@ -124,7 +149,7 @@ const buildIndex = () => {
       const full = path.join(dir, entry.name)
       const rel = toPosix(path.relative(ROOT, full))
       if (entry.isDirectory()) {
-        if (SKIP_DIRS.has(entry.name)) continue
+        if (skipForIndex(rel, entry.name)) continue
         paths.add(`${rel}/`)
         walk(full)
       } else if (entry.isFile()) {
@@ -257,7 +282,7 @@ const extractRefs = (text) => {
       const segs = file.split('/')
       if (segs.length > 1) {
         // 首段必须是仓库根下真实存在的目录/文件；依赖与产物目录直接跳过
-        if (SKIP_DIRS.has(segs[0])) continue
+        if (SKIP_DIR_NAMES.has(segs[0])) continue
         if (!existsSync(path.join(ROOT, segs[0]))) continue
       }
       refs.push({

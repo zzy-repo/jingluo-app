@@ -83,7 +83,8 @@
 | G13 | `check:guard` | 兜底页 ES5 守卫 | **未接线**（只在 `pnpm run check:guard`） | **有（`guard-es5-gate.test.mjs` 正+反）** | ✅但未接线 | — |
 | — | `check:identity` | 身份字面量 / 证书 / 明文更新传输 | **未接线** | **无** | ❌ | 与 F10-02 裸 HTTP 决策耦合，改坏了不红 |
 | — | `check:apk` | debuggable | 仅 `release.yml` + 人工 | 部分（`apk-manifest.test.mjs` 有真 debuggable 反例，未接线） | △⁺ | 本地门禁无人跑 |
-| — | `check:keystore` / `check:icon` / `check:endpoints` / `check:limits` / `check:docs` / `check:compat-baseline` | 各自领域 | **未接线** | 无 | ❌ | 只写在文档里 |
+| — | `check:keystore` / `check:icon` / `check:limits` / `check:compat-baseline` | 各自领域 | **未接线** | 无 | ❌ | 只写在文档里 |
+| — | `check:endpoints` / `check:docs`（文档引用门禁） | 端点单一真相 / 文档里的 `文件:行` 还指得着吗 | **均已接线**：`check:endpoints` 由 #413 接进 CI；`check:docs` 本轮接进 CI（`checks` job 的 `check:doc-refs` + 一条负向对照） | 两条都有负向对照（CI 现场注入） | ✅ | 接线前 `check:docs` 在 main 上躺着 23 条 FAIL，其中 15 条是脚本按目录名跳过 `docs/testing/coverage/` 造成的假红 |
 | — | `deploy/dl-release/test/*.test.mjs`（34 条，全绿） | 变体 / debuggable 解析 / 服务端 buildType + MANIFEST_DIRTY + 上传契约矩阵 | **#415 已接线**：`run-layer` 的 `server` 层（`node tests/run-layer.mjs server`）+ CI `checks` job 的 `pnpm run test:dl-release`（紧跟 `check:manifest`） | 有（自带正反） | ✅ | 本域曾经最大的"写了但没人跑"，已成历史 |
 | — | `release:check` / `release:verify` | 版本号单一来源 / tag 一致 / 防降级前置 | 手工 | **无（零单测）** | ❌ | F10-21 / F10-22 的唯一实现，全裸奔 |
 

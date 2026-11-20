@@ -73,6 +73,29 @@ jobs:
       - name: 测试重复检测（check:test-duplication）
         run: pnpm run check:test-duplication
 
+      # 文档引用门禁（#290 落地脚本，这次才接线）：验「文档里那些 `文件:行号` 还指得着吗」——
+      # 文件存在、行号在文件内、起行不落在空行/孤立 `}` 上。同样是纯文本扫描（< 1s）。
+      # 接线前它只在人记得的时候才跑，于是 main 上躺了 23 条 FAIL 没人发现；其中 15 条还是
+      # 门禁自己造的假红（SKIP_DIRS 按目录名跳过 `coverage`，把 `docs/testing/coverage/*.md`
+      # 连同索引一起跳过，害得引用它们的文档全被判「文件不存在」）。这次两件事一起收拾：
+      # 脚本改成「索引照进、正文不扫」，剩下的 9 条逐条修（6 条行号漂移 → 改对；3 条死引用 → 删/改）。
+      # 负向对照证明它真会咬：塞一个不存在的路径必须 exit 1，删掉必须 exit 0。
+      - name: 文档引用门禁（check:doc-refs）
+        run: pnpm run check:doc-refs
+
+      - name: 负向对照：文档里写一个不存在的路径必须被 check:doc-refs 拦下
+        run: |
+          set -euo pipefail
+          printf '负向对照：`src/services/does-not-exist-nc.ts:12`\n' > docs/zz-negative-control.md
+          if node scripts/check-doc-refs.mjs; then
+            rm -f docs/zz-negative-control.md
+            echo "::error::负向对照失败：文档里写了不存在的路径后 check:doc-refs 仍然通过，说明门禁没有真正生效"
+            exit 1
+          fi
+          rm -f docs/zz-negative-control.md
+          node scripts/check-doc-refs.mjs
+          echo "负向对照通过：写死路径 → exit 1，删掉 → exit 0"
+
       - name: Type check
         run: pnpm run type
 

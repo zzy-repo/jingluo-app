@@ -362,6 +362,16 @@ const REGISTRY = {
     kind: 'builtin',
     what: '自带 --strict 档（有缺陷 exit 1）；CI 目前只跑默认 warn 档 → 缺口登记在 KNOWN_GAPS',
   },
+  // 文档引用门禁（#290 的脚本，本轮才接线）：对照写在 ci.yml 里现场注入 ——
+  // 往 docs/ 丢一份写着不存在路径的 md → 必须 exit 1，删掉 → exit 0。
+  // 为什么不做成 L0 注入：它要在**真仓库**的 docs/ 下建文件（正文扫描对象），
+  // 和 check:i18n / check:endpoints 一样是「现场塞坏输入再跑脚本」，放进 ci.yml 成本 < 1s。
+  'check:doc-refs': {
+    where: '.github/workflows/ci.yml',
+    kind: 'ci',
+    what: 'CI 往 docs/ 塞一份写着不存在路径的 md → 必 exit 1，删掉后 exit 0',
+    mention: /check-doc-refs\.mjs/,
+  },
 }
 
 /**

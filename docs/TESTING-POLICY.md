@@ -160,7 +160,7 @@ npm run test:integration -- --baseline          # 集成全量与基线比对，
 
 所以：**用例进 `tests/unit/`（`run-layer` 枚举得到、CI 每次跑），必错输入与骨架进 `tests/gates/`。**
 
-### 9.4 现状清单（2026-11-20，ci.yml 里的 20 道门禁）
+### 9.4 现状清单（2026-11-20，ci.yml 里的 21 道门禁）
 
 > 口径：ci.yml 里每一条 `run: pnpm run <gate>` 算一道。单元层那一步是 `run: pnpm test`（整层），不在此列。
 
@@ -186,6 +186,7 @@ npm run test:integration -- --baseline          # 集成全量与基线比对，
 | `check:endpoints`（#413 接线） | ✅ CI 注入 | CI 往 `src/` 塞一份端点地址字面量（从 `config/endpoints.json` 读）→ 必红，删掉后绿 | `.github/workflows/ci.yml` |
 | `check:capabilities`（#413 接线） | ⚠️ **缺口** | 默认 warn 档永远 `exit 0`（10 处能力假设缺陷在案，见 `KNOWN_GAPS`）；`--strict` 档才有红可打 | `scripts/check-capabilities.mjs` |
 | `test:dl-release`（#415 接线） | ✅ 注入（#415） | 往 `deploy/dl-release/test` 拷一条**必红**用例 → `node --test deploy/dl-release/test/*.test.mjs` 必须 exit≠0，删掉后 exit 0（N7；同时钉住「入口被加 `\|\| true` / `continue-on-error` / glob 改窄」三种软化） | `tests/unit/gate-negative-controls.test.mjs` |
+| `check:doc-refs`（本轮接线） | ✅ CI 注入 | CI 往 `docs/` 塞一份写着不存在路径的 md → 必 exit 1，删掉后 exit 0 | `.github/workflows/ci.yml` |
 
 「登记」不是给人看的注释：`tests/unit/gate-negative-controls.test.mjs` 的 `N6` 用例会读
 `.github/workflows/ci.yml`，**每出现一条 `run: pnpm run <gate>`，登记表里就必须有一条**，否则这个用例红，

@@ -37,8 +37,10 @@ node tests/run-layer.mjs unit                          # 68 文件全绿
 
 #178 被 squash 合并进 main 时只带走了第一笔 commit，于是 main 上留下两件事：
 
-1. `tests/unit/ours-webpay.test.mjs` **是红的**（2 条断言还按旧返回结构写：`consumeOrderReturn`
-   现在多返回 `replacedUnpaidOrder`）。已同步断言 → 50 项全过。
+1. `tests/integration/` 下的 `ours-webpay.test.mjs` **是红的**（2 条断言还按旧返回结构写：
+   `consumeOrderReturn` 现在多返回 `replacedUnpaidOrder`）。已同步断言 → 50 项全过。
+   （该文件后来随 #368 清理「断言已删接口的死测试层」整层删除（#391，2026-11-19）——
+   这里记的是当次取证时的路径，**它已经不在仓库里**，别再照着它找文件。）
 2. 修复前后的原始输出、`docs/ui/issue157/README.md`、以及集成用例里的截图兜底（修复前
    `scrollIntoViewIfNeeded` 会直接抛异常，把「失败」变成「崩」）没进 main。补在这里。
 
