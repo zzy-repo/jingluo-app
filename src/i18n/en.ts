@@ -43,6 +43,8 @@ export const en = {
   copyTooLargeSave: 'Save as TXT',
   copySaveFailed: 'Save failed. Try again or long-press to select and copy the text.',
   send: 'Send',
+  scrollToBottom: 'Back to bottom',
+  scrollToBottomHasNew: 'Back to bottom (new content)',
   editMessage: 'Edit message',
   regenerate: 'Regenerate',
   continueGenerating: 'Continue',

@@ -1,0 +1,171 @@
+{
+  "page": "scroll-to-bottom",
+  "title": "#386 输入框上方「回到底部」小箭头：上翻浮现 / 点击回底 / 流式中的新内容圆点 / 深色主题",
+  "viewport": {
+    "width": 360,
+    "height": 740,
+    "label": "360×740"
+  },
+  "size": "360×740",
+  "shots": [
+    "docs/ui/386-scroll-to-bottom/360/scroll-to-bottom-01-at-bottom-no-button-360.png",
+    "docs/ui/386-scroll-to-bottom/360/scroll-to-bottom-02-scrolled-up-button-360.png",
+    "docs/ui/386-scroll-to-bottom/360/scroll-to-bottom-03-new-content-dot-in-stream-360.png",
+    "docs/ui/386-scroll-to-bottom/360/scroll-to-bottom-04-after-click-bottom-360.png",
+    "docs/ui/386-scroll-to-bottom/360/scroll-to-bottom-05-button-fade-in-360.png",
+    "docs/ui/386-scroll-to-bottom/360/scroll-to-bottom-06-after-smooth-bottom-360.png",
+    "docs/ui/386-scroll-to-bottom/360/scroll-to-bottom-07-dark-theme-button-360.png"
+  ],
+  "notes": [],
+  "atBottom": {
+    "distance": 0,
+    "scrollTop": 6914,
+    "button": null,
+    "textareaTop": 607,
+    "clearsComposer": null
+  },
+  "scrollUp": {
+    "found": true,
+    "scrollTop": 5714,
+    "distance": 1200
+  },
+  "scrolledUp": {
+    "distance": 1200,
+    "scrollTop": 5714,
+    "button": {
+      "width": 34,
+      "height": 34,
+      "right": 334,
+      "bottom": 596,
+      "ariaLabel": "回到底部",
+      "opacity": 1,
+      "animationName": "none",
+      "backgroundColor": "rgb(255, 255, 255)",
+      "hasNewDot": false
+    },
+    "textareaTop": 607,
+    "clearsComposer": true
+  },
+  "streaming": {
+    "stopButtonVisible": true
+  },
+  "scrollUpInStream": {
+    "found": true,
+    "scrollTop": 5928,
+    "distance": 900
+  },
+  "streamScrolledUp": {
+    "distance": 900,
+    "scrollTop": 5928,
+    "button": {
+      "width": 34,
+      "height": 34,
+      "right": 334,
+      "bottom": 596,
+      "ariaLabel": "回到底部",
+      "opacity": 1,
+      "animationName": "none",
+      "backgroundColor": "rgb(255, 255, 255)",
+      "hasNewDot": false
+    },
+    "textareaTop": 607,
+    "clearsComposer": true
+  },
+  "grow": {
+    "found": true,
+    "height": 200
+  },
+  "afterGrow": {
+    "distance": 1100,
+    "scrollTop": 5928,
+    "button": {
+      "width": 34,
+      "height": 34,
+      "right": 334,
+      "bottom": 596,
+      "ariaLabel": "回到底部（有新内容）",
+      "opacity": 1,
+      "animationName": "none",
+      "backgroundColor": "rgb(255, 255, 255)",
+      "hasNewDot": true
+    },
+    "textareaTop": 607,
+    "clearsComposer": true
+  },
+  "clickInStream": {
+    "found": true,
+    "before": 5928,
+    "samples": [
+      7028,
+      7028,
+      7028,
+      7028,
+      7028,
+      7028,
+      7028,
+      7028,
+      7028,
+      7028
+    ],
+    "distance": 0
+  },
+  "afterClick": {
+    "distance": 0,
+    "scrollTop": 7028,
+    "button": null,
+    "textareaTop": 607,
+    "clearsComposer": null
+  },
+  "normalMotion": {
+    "distance": 1692,
+    "scrollTop": 5554,
+    "button": {
+      "width": 34,
+      "height": 34,
+      "right": 334,
+      "bottom": 596,
+      "ariaLabel": "回到底部",
+      "opacity": 1,
+      "animationName": "ds-scroll-to-bottom-in-f92f10",
+      "backgroundColor": "rgb(255, 255, 255)",
+      "hasNewDot": false
+    },
+    "textareaTop": 607,
+    "clearsComposer": true
+  },
+  "clickSmooth": {
+    "found": true,
+    "before": 5554,
+    "samples": [
+      5554,
+      5556,
+      5564,
+      5578,
+      5600,
+      5635,
+      5685,
+      5760,
+      5869,
+      6020
+    ],
+    "distance": 1226
+  },
+  "darkTheme": {
+    "distance": 1202,
+    "scrollTop": 6044,
+    "button": {
+      "width": 34,
+      "height": 34,
+      "right": 334,
+      "bottom": 596,
+      "ariaLabel": "回到底部",
+      "opacity": 1,
+      "animationName": "ds-scroll-to-bottom-in-f92f10",
+      "backgroundColor": "rgb(67, 69, 74)",
+      "hasNewDot": false
+    },
+    "textareaTop": 607,
+    "clearsComposer": true
+  },
+  "consoleErrors": []
+}

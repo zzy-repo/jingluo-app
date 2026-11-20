@@ -35,6 +35,9 @@ import { inviteBaseUrl } from './lib/endpoints.mjs'
 // 支付记录时间线的夹具与单测共用一份（tests/fixtures/domain06-07/ours-trail.mjs）：
 // 截图里看到的五状态 + 长链路就是单测断言的那几条，不另造一份假数据。
 import { cardTrailRedeemed, orderTrailResponse, trailPage } from '../tests/fixtures/domain06-07/ours-trail.mjs'
+// #386 的「流式中」截图要把 streaming 这个状态撑开：用同一份 ours 上游契约回 SSE（含 CORS 头），
+// 只是刻意延后 4 秒再回，好在上翻之后再截。
+import { OURS_CHAT_PATH, OURS_CORS, openAiSse } from '../tests/fixtures/domain03-04/ours-upstream.mjs'
 
 /**
  * #326（支付记录分页 + 状态筛选）专用夹具：45 条订单 = 20 + 20 + 5 三页，按状态配额分布
@@ -652,6 +655,134 @@ const measureDouyinRow = () => {
   }
 }
 
+// ---------------------------------------------------------------- #386 回到底部
+
+/**
+ * 把 #386 的取数工具装进页面（`window.__toBottom`）。
+ *
+ * `page.evaluate` 的函数体在页面里**自成一体**，调不到 Node 侧的函数，所以这里装一次、
+ * 之后每次取值只写一行 `page.evaluate(() => window.__toBottom.measure())`。
+ */
+const installToBottomHelpers = () => {
+  /** 消息滚动层：可滚的 overflow-y 且真溢出，取溢出最多那个（与 measureHeader 同一判据） */
+  const findHost = () => {
+    const scrollable = /(auto|scroll|overlay)/
+    const queue = [document.body]
+    let host = null
+    while (queue.length > 0) {
+      const element = queue.shift()
+      if (element === null || element === undefined) break
+      if (scrollable.test(getComputedStyle(element).overflowY) && element.scrollHeight - element.clientHeight > 0) {
+        if (host === null || element.scrollHeight > host.scrollHeight) host = element
+      }
+      for (const child of element.children) queue.push(child)
+    }
+    return host
+  }
+
+  const round = (value) => Math.round(value * 10) / 10
+
+  window.__toBottom = {
+    /**
+     * 离底部多远、按钮在不在、按钮压在输入框上面还是挡住它。
+     * 「挡住」的判据是**按钮下沿 ≤ 输入框上沿**（textarea 的 top），不靠目测。
+     */
+    measure: () => {
+      const host = findHost()
+      const button = document.querySelector('[data-scroll-to-bottom]')
+      const style = button === null ? null : getComputedStyle(button)
+      const rect = button === null ? null : button.getBoundingClientRect()
+      const textarea = document.querySelector('textarea')
+      const textareaRect = textarea === null ? null : textarea.getBoundingClientRect()
+      return {
+        distance: host === null ? null : Math.round(host.scrollHeight - host.scrollTop - host.clientHeight),
+        scrollTop: host === null ? null : Math.round(host.scrollTop),
+        button:
+          rect === null
+            ? null
+            : {
+                width: round(rect.width),
+                height: round(rect.height),
+                right: round(rect.right),
+                bottom: round(rect.bottom),
+                ariaLabel: button.getAttribute('aria-label'),
+                opacity: Number(style.opacity),
+                // reduced-motion 档应该是 none，正常档是 ds-scroll-to-bottom-in
+                animationName: style.animationName,
+                backgroundColor: style.backgroundColor,
+                hasNewDot: button.querySelector('span') !== null,
+              },
+        textareaTop: textareaRect === null ? null : round(textareaRect.top),
+        clearsComposer: rect === null || textareaRect === null ? null : rect.bottom <= textareaRect.top,
+      }
+    },
+
+    /** 把消息滚动层挪 delta（负值向上），模拟用户上翻 */
+    scrollBy: (delta) => {
+      const host = findHost()
+      if (host === null) {
+        return { found: false }
+      }
+      host.scrollTop += delta
+      return {
+        found: true,
+        scrollTop: Math.round(host.scrollTop),
+        distance: Math.round(host.scrollHeight - host.scrollTop - host.clientHeight),
+      }
+    },
+
+    /**
+     * 往消息内容列尾部塞一段空白，**模拟流式期间内容长高**（不连上游，也不伪造回复文案）：
+     * 消息组件用 ResizeObserver 盯内容列高度，长高就会走「有新内容」那条分支。
+     */
+    grow: (height) => {
+      const host = findHost()
+      if (host === null) {
+        return { found: false }
+      }
+      const row = host.querySelector('[data-row-id]')
+      const column = row === null ? null : row.parentElement
+      if (column === null) {
+        return { found: false }
+      }
+      const spacer = document.createElement('div')
+      spacer.dataset.shotSpacer = '386'
+      spacer.style.height = `${height}px`
+      column.append(spacer)
+      return { found: true, height }
+    },
+
+    removeGrown: () => {
+      for (const spacer of document.querySelectorAll('[data-shot-spacer="386"]')) {
+        spacer.remove()
+      }
+      return { removed: true }
+    },
+
+    /** 点一下按钮并按帧采样 scrollTop：连续增长＝平滑，一步到位＝直接跳 */
+    clickAndSample: async () => {
+      const host = findHost()
+      const button = document.querySelector('[data-scroll-to-bottom]')
+      if (host === null || button === null) {
+        return { found: false }
+      }
+      const before = Math.round(host.scrollTop)
+      button.click()
+      const samples = []
+      for (let index = 0; index < 10; index += 1) {
+        await new Promise((resolve) => requestAnimationFrame(resolve))
+        samples.push(Math.round(host.scrollTop))
+      }
+      return {
+        found: true,
+        before,
+        samples,
+        distance: Math.round(host.scrollHeight - host.scrollTop - host.clientHeight),
+      }
+    },
+  }
+}
+
 // ---------------------------------------------------------------- 页面内取数（在浏览器里跑，必须自成一体）
 
 /** 顶栏四件事：点击区尺寸、提示是否真的渲染、标题是否被提示挤掉、滚动层是否溢出 */
@@ -1075,6 +1206,134 @@ export const PAGES = {
       if (after.scrollTop !== 0) {
         warn(`双击后没有回到首条：scrollTop=${after.scrollTop}（动画被打断或被跟随逻辑抢回）`)
       }
+    },
+  },
+
+  'scroll-to-bottom': {
+    dir: 'docs/ui/386-scroll-to-bottom',
+    title: '#386 输入框上方「回到底部」小箭头：上翻浮现 / 点击回底 / 流式中的新内容圆点 / 深色主题',
+    sessions: () => [makeLongSession()],
+    mockOrders: false,
+    // 流式那条要真的走 ours 上游（被 route 打到本地桩），所以渠道也切到 ours
+    providerKind: 'ours',
+    run: async (ctx) => {
+      const { page, shot, record, warn, size } = ctx
+      await openSession(page, LONG_SESSION_TITLE)
+      await page.evaluate(installToBottomHelpers)
+
+      // ① 首次进会话就在底部：不该有按钮（否则它会白挡住正文）
+      const atBottom = await page.evaluate(() => window.__toBottom.measure())
+      record('atBottom', atBottom)
+      if (atBottom.button !== null) {
+        warn('刚进会话还没上翻就出现了回到底部按钮')
+      }
+      await shot('01-at-bottom-no-button')
+
+      // ② 上翻 1200px（> 200px 阈值）：按钮浮现，且不压住输入框
+      record('scrollUp', await page.evaluate(() => window.__toBottom.scrollBy(-1200)))
+      await page.waitForTimeout(300)
+      const shown = await page.evaluate(() => window.__toBottom.measure())
+      record('scrolledUp', shown)
+      if (shown.button === null) {
+        throw new Error('上翻 1200px 后没有出现「回到底部」按钮')
+      }
+      if (shown.button.hasNewDot) {
+        warn('还没开始流式，按钮上就带了「有新内容」圆点')
+      }
+      if (shown.clearsComposer !== true) {
+        warn(`按钮下沿 ${shown.button.bottom} 压到了输入框上沿 ${shown.textareaTop}`)
+      }
+      await shot('02-scrolled-up-button')
+
+      // ③ 真的发一条消息（上游被 route 压 4 秒），在「流式中」这段窗口里上翻取证：
+      //    位置不能被拽回底部，按钮要补一个「有新内容」圆点。
+      await page.route(`**${OURS_CHAT_PATH}`, async (route) => {
+        if (route.request().method() === 'OPTIONS') {
+          await route.fulfill({ status: 204, headers: OURS_CORS })
+          return
+        }
+        // 刻意压 4 秒：把 streaming 这个状态撑开，不是测试里的 sleep
+        await new Promise((resolve) => setTimeout(resolve, 4000))
+        await route.fulfill({
+          status: 200,
+          headers: { ...OURS_CORS, 'content-type': 'text/event-stream' },
+          body: openAiSse('流式期间上翻不该被拽回底部；这条回复只用来把流式状态撑开。'),
+        })
+      })
+      const textarea = page.locator('textarea').last()
+      await textarea.click()
+      await textarea.fill('#386 流式取证：先发一条，再上翻')
+      await page.getByRole('button', { name: /^发送$|^Send$/ }).first().click()
+      await page.getByRole('button', { name: /停止生成/ }).first().waitFor({ timeout: 10000 })
+      record('streaming', { stopButtonVisible: true })
+      record('scrollUpInStream', await page.evaluate(() => window.__toBottom.scrollBy(-900)))
+      await page.waitForTimeout(250)
+      const streamUp = await page.evaluate(() => window.__toBottom.measure())
+      record('streamScrolledUp', streamUp)
+      // 内容长高用 DOM 注入模拟「新 token 到达」：不伪造回复文案，只把内容列撑高
+      record('grow', await page.evaluate(() => window.__toBottom.grow(200)))
+      await page.waitForTimeout(400)
+      const grown = await page.evaluate(() => window.__toBottom.measure())
+      record('afterGrow', grown)
+      if (grown.button === null || grown.button.hasNewDot !== true) {
+        warn('流式期间内容长高后，按钮上没有出现「有新内容」圆点')
+      }
+      if (grown.button !== null && grown.button.ariaLabel !== '回到底部（有新内容）') {
+        warn(`圆点状态下 aria-label 不对：${grown.button.ariaLabel}`)
+      }
+      if (streamUp.scrollTop !== grown.scrollTop) {
+        warn(`流式期间内容长高把位置拽动了：${streamUp.scrollTop} → ${grown.scrollTop}`)
+      }
+      await shot('03-new-content-dot-in-stream')
+
+      // ④ 点击回到底部（本场景浏览器上下文默认 reducedMotion=reduce → 应直接跳），
+      //    并确认流式结束后按钮自己收起来
+      record('clickInStream', await page.evaluate(() => window.__toBottom.clickAndSample()))
+      await page.waitForTimeout(300)
+      const back = await page.evaluate(() => window.__toBottom.measure())
+      record('afterClick', back)
+      if (back.distance !== 0) {
+        warn(`点击后没到底：distance=${back.distance}`)
+      }
+      await shot('04-after-click-bottom')
+      // 等这条 mock 回复落地，别让「流式中」串到后面几档
+      await page
+        .getByRole('button', { name: /停止生成/ })
+        .first()
+        .waitFor({ state: 'detached', timeout: 15000 })
+        .catch(() => warn('mock 回复 15 秒还没收尾'))
+      await page.evaluate(() => window.__toBottom.removeGrown())
+
+      // ⑤ 正常动效档：按钮淡入 + scrollTo 平滑滚动（按帧采样证明是渐变而不是瞬移）
+      await page.emulateMedia({ reducedMotion: 'no-preference' })
+      await page.evaluate(() => window.__toBottom.scrollBy(-1600))
+      await page.waitForTimeout(300)
+      const animated = await page.evaluate(() => window.__toBottom.measure())
+      record('normalMotion', animated)
+      if (animated.button === null || !animated.button.animationName.startsWith('ds-scroll-to-bottom-in')) {
+        warn(`正常动效档下按钮没有淡入：animationName=${animated.button === null ? 'null' : animated.button.animationName}`)
+      }
+      await shot('05-button-fade-in')
+
+      const smooth = await page.evaluate(() => window.__toBottom.clickAndSample())
+      record('clickSmooth', smooth)
+      const peak = smooth.found ? Math.max(...smooth.samples) : 0
+      const intermediate = smooth.found
+        ? smooth.samples.filter((value) => value > smooth.before && value < peak).length
+        : 0
+      if (smooth.found && intermediate === 0) {
+        warn(`正常动效档下点击没有平滑过程，采样=${smooth.samples.join(',')}（只有老内核 / reduced-motion 才该直接跳）`)
+      }
+      await page.waitForTimeout(400)
+      await shot('06-after-smooth-bottom')
+
+      // ⑥ 深色主题：把 body 上那个属性打上（与 App 内主题开关同一属性），确认按钮还有对比度
+      await page.evaluate(() => document.body.setAttribute('data-ds-dark-theme', 'dark'))
+      await page.evaluate(() => window.__toBottom.scrollBy(-1200))
+      await page.waitForTimeout(300)
+      record('darkTheme', await page.evaluate(() => window.__toBottom.measure()))
+      record('viewport', size)
+      await shot('07-dark-theme-button')
     },
   },
 

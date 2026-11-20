@@ -90,6 +90,14 @@ const MESSAGE_FLOW_ALLOWLIST = new Map([
     'src/components/messages/AssistantMessage.tsx',
     '#347 / #353 错误提示条需要多一个折叠区（<details>）与「打开设置」入口：这是**结构**改动，纯 CSS 做不到，改动里没有任何 transition / animation / transform（下面逐条扫 diff 确认），也不参与消息流的动效',
   ],
+  [
+    'src/components/messages/MessageList.tsx',
+    '#386 输入框上方「回到底部」按钮：只有滚动层的**主人**才知道「离底部多远」与「离开期间内容有没有长高」（scroll 监听 + 内容 ResizeObserver 都在这个文件里），不在这里量就得在外面另建一套 DOM 探测，反而更容易错。改动是纯逻辑（多一个 state + scrollTo 调用），没有一条动效声明 —— 按钮的淡入在 `src/components/session/ScrollToBottomButton.module.css`（消息流目录之外）',
+  ],
+  [
+    'src/components/messages/scrollContext.ts',
+    '#386 需要把「是否离开底部 / 离开后有没有新内容 / 点击滚到底」送到输入区里的按钮（按钮在 footer 子树，也就是输入区），新增一个 context，只有类型与 createContext，无动效',
+  ],
 ])
 
 const failures = []

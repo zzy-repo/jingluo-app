@@ -12,8 +12,8 @@
 
 | 项 | 值 |
 | --- | --- |
-| 扫描范围 | `src/**` 全部源文件 **256** 个（`.css` **44** 个，其中 `*.module.css` **37** 个；其余 `.ts / .tsx / .html` 共 **212** 个） |
-| 口径拆分 | 44 `.css` + 151 `.ts` + 55 `.tsx` + 1 `.html` = 251 |
+| 扫描范围 | `src/**` 全部源文件 **259** 个（`.css` **45** 个，其中 `*.module.css` **38** 个；其余 `.ts / .tsx / .html` 共 **214** 个） |
+| 口径拆分 | 45 `.css` + 157 `.ts` + 56 `.tsx` + 1 `.html` = 259 |
 | 命中总数 | **349** 处，分布在 **39** 个文件 |
 | 运行时下限 | WebView **83**（Chromium 83）。**首支持 ≤ 83 的特性一律记「无风险」，与有没有兜底无关** |
 | 构建期因素 | `rspack.config.ts` 用 `builtin:lightningcss-loader`，`targets` 取自 `package.json` 的 `browserslist`（强制含 `chrome >= 83`）。**已被构建期翻译掉的写法不算运行时假设** |
@@ -178,13 +178,13 @@
 
 | 文件:行 | 假设内容 | 类别 | 风险 | 处置 |
 | --- | --- | --- | --- | --- |
-| 37 个 `*.module.css` + `markdown.css` 共 120 处 | flex 容器上的 `gap` / `row-gap` | 2 | 低 | 已有兜底（`html[data-flex-gap-fallback]` + `margin` 块，由 `pnpm run check:gap` 逐条产出清单） |
+| 38 个 `*.module.css` + `markdown.css` 共 120 处 | flex 容器上的 `gap` / `row-gap` | 2 | 低 | 已有兜底（`html[data-flex-gap-fallback]` + `margin` 块，由 `pnpm run check:gap` 逐条产出清单） |
 | `components/markdown/markdown.css:370` | `.md-code-block-switch { display:flex; gap:4px }`，文件不是 CSS Module、原先不在 `check:gap` 扫描范围 | 2 | 低 | **#217 已补**：裸写 `html[data-flex-gap-fallback]` 兜底块（` :global()` 在非 module 文件里非法），扫描范围同时扩到全部 `.css` |
 | `components/messages/ReplyArea.module.css:224` | `.toolBody { display:flex; flex-wrap:wrap; row-gap:6px }`，原先被 `flex-wrap` 排除规则放过 | 2 | 低 | **#217 已补**：`margin-bottom: 6px`；排除规则改为「交叉轴 gap 只在**不换行**时才不需要兜底」 |
 | `components/messages/AssistantMessage.module.css:21,27` | `.waiting { display:flex; flex-wrap:wrap; column-gap:6px; row-gap:2px }`（#328 等待提示可能出现第二行） | 2 | 低 | **#328 已补**：`margin-right: 6px` + `margin-bottom: 2px`，由 `pnpm run check:gap` 生成 |
 | `components/settings/PaymentTrailDialog.module.css:71,113` | `.tabs { display:flex; flex-wrap:wrap; gap:6px }`（#326 状态筛选页签）与 `.moreError { display:flex; flex-wrap:wrap; gap:8px }`（#326 加载更多失败行） | 2 | 低 | **#326 已补**：两处都生成 `html[data-flex-gap-fallback]` 兜底块（`.tabs` 用 `margin-right/bottom: 6px`，`.moreError` 用 `margin-right/bottom: 8px`），`pnpm run check:gap` 报「已兜底 121 条」 |
 
-> 口径（#217 之后统一）：`pnpm run check:gap` 报「扫描 **44** 个 CSS 文件（其中 **37** 个 CSS Module）：已兜底 **121** 条，跳过 **3** 条」。44 = `find src -name '*.css' | wc -l`；3 条跳过 = #159 的 `Settings.module.css:.backgroundRow` 1 条 + 非 flex 容器 2 条。原先的两种口径（37 module / 109 处 vs 含非 module 的 109 处）已合并成同一个口径。
+> 口径（#217 之后统一）：`pnpm run check:gap` 报「扫描 **45** 个 CSS 文件（其中 **38** 个 CSS Module）：已兜底 **121** 条，跳过 **3** 条」。45 = `find src -name '*.css' | wc -l`；3 条跳过 = #159 的 `Settings.module.css:.backgroundRow` 1 条 + 非 flex 容器 2 条。原先的两种口径（38 module / 109 处 vs 含非 module 的 109 处）已合并成同一个口径。
 
 ### 2.7 `inset`（16 处，构建期降级 → 已有兜底）
 
@@ -327,3 +327,4 @@ node --test tests/unit/css-assumption-audit.test.mjs
 - 复核（2026-11-20 02:05，基准 `f6ec443`，本单 #347 / #353 分支 `fix/upstream-error-copy-347`）：`AssistantMessage.module.css` 的错误提示条为了加**折叠区「查看上游原文」**（`.noticeUpstream` / `.noticeUpstreamToggle` / `.noticeUpstreamText`）新增 2 处命中：`.noticeUpstream` 里的 `> summary` 子选择器（嵌套 `&` 140 → **141**）与折叠开关的 `touch-action: manipulation`（`touch-action` 4 → **5**，`:180`）。命中总数 345 → **347**（已有兜底 301 → **302**、无风险 38 → **39**，分布仍是 39 个文件）；`display: flex` / `flex-direction` / `min-height` / `max-height` / `overflow` / `white-space` / `overflow-wrap` 都不在盘点口径里，折叠区与主体之间的间距刻意用 `margin-top` 而不是 `gap`，所以 **`check:gap` 的兜底条数不变（仍是 119 条）**，也没有新增裸 gap。§1 逐特性表、§2.8 明细、合计行与附录 A（重新按复算结果生成）已同步。
 - 复核（2026-11-20 08:30，基准 `dfe6db0`，本单 #434 / #374 分支 `fix/error-readability-434-374`）：新增 1 个 `.ts` 源文件（`src/services/api/keyFailure.ts`：Key 失效的细分与尾号），扫描范围 254 → **255** 个源文件（其余 `.ts / .tsx / .html` 210 → **211**），`.css` 仍是 44 个（`*.module.css` 37）。本单改的都是 TS / TSX（分类、提示文案、折叠区与一个 i18n key），**不含任何 CSS 特性假设**，命中总数仍是 **347 处 / 39 个文件**，逐特性表与 §2 明细的 `文件:行` 未变。
 - 复核（2026-11-20 08:35，基准 `dfe6db0`，本单 #326 分支 `feat/payment-trail-paging-326`）：`PaymentTrailDialog.module.css` 为支付记录的分页与状态筛选新增 2 处 flex `gap` —— `.tabs`（六个状态页签换行排开，`gap: 6px`，`:71`）与 `.moreError`（「加载更多」失败提示行，`gap: 8px`，`:113`）。flex `gap` 118 → **120**、命中总数 347 → **349**（已有兜底 302 → **304**，分布仍是 39 个文件）；两处都由 `pnpm run check:gap` 生成 `html[data-flex-gap-fallback]` 兜底块（已兜底 119 → **121** 条），没有新增裸 gap；新增的 `border-radius` / `min-height` / `font-weight` 等不在盘点口径里，嵌套 `&` 未变（附录 A 不受影响）。§1 逐特性表、§2.6 明细与合计行已同步。
+- 复核（2026-11-20 12:20，基准 `e5ee313`，本单 #386 分支 `feat/scroll-to-bottom-386`）：新增 1 个 `.css`（`src/components/session/ScrollToBottomButton.module.css`：输入框上方「回到底部」小圆按钮的定位、44×44 命中区、淡入 keyframes 与 reduced-motion 关断），扫描范围 256 → **259** 个源文件（`.css` 44 → **45**，其中 `*.module.css` 37 → **38**；其余 `.ts / .tsx / .html` 212 → **214**）。新文件**一处可盘点特性都没有**：没有 flex `gap`、没有 `inset`（显式写 `top/right/bottom/left`）、没有 `min()/max()`、没有 `@supports`、没有 `:focus-visible`（焦点环复用 `IconButton` 的既有三档兜底）、也没有嵌套 `&`（全部是顶层单类选择器），所以**命中总数仍是 349 处 / 39 个文件**，逐特性表与 §2 明细的 `文件:行` 一字未动。

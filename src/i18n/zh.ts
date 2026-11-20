@@ -39,6 +39,8 @@ export const zh = {
   copyTooLargeSave: '保存为 TXT',
   copySaveFailed: '保存失败，请重试或长按选中文本后复制',
   send: '发送',
+  scrollToBottom: '回到底部',
+  scrollToBottomHasNew: '回到底部（有新内容）',
   editMessage: '编辑消息',
   regenerate: '重新生成',
   continueGenerating: '继续生成',
