@@ -382,6 +382,7 @@ node scripts/release-upload.mjs --apk $APK --dry-run
 | `DL_WEBROOT=/var/www/dl node scripts/check-webroot-hygiene.mjs` | 真 webroot 巡检：R1–R3 文件残留 + **R4 公网清单 internal 条目数必须为 0**（#620） | ❌ | ✅（分发机） |
 | `curl -X POST https://dl.rose7.cn/api/v1/release ...`（公网端点） | 正式包上传：服务端自己再判一次 `standard`+`stable`，否则 `400 VARIANT_NOT_PUBLIC` / `400 BUILD_TYPE_NOT_PUBLIC`（#620：脚本闸挡不住 HTTP 上传，所以接口也拒） | ✅ | ❌ |
 | `node scripts/check-apk-debuggable.mjs $APK` | 单独查 debuggable（已有的 Issue #60 闸门） | ❌ | ❌ |
+| `pnpm run verify:apk -- $APK` | **发布四件套一条命令**（#607）：debuggable / 变体标记 / 回环标记 / 证书指纹，附 versionName·versionCode·sha256·md5·size；`--variant internal` 验内测包、`--json` 给 workflow | ❌ | ✅（要 `aapt2`/`apksigner`，即 Android SDK build-tools） |
 
 三个 `release:*` 脚本的退出码统一为：**0 通过 / 1 不通过 / 2 用法或环境错误（什么都没发生）**。
 

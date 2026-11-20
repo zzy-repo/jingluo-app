@@ -38,6 +38,7 @@
     "check:test-seam": "node scripts/check-test-seam.mjs",
     "check:icon": "node scripts/check-icon-edges.mjs",
     "check:apk": "node scripts/check-apk-debuggable.mjs",
+    "verify:apk": "node scripts/verify-release-apk.mjs",
     "check:keystore": "node scripts/check-keystore-config.mjs",
     "check:manifest": "node scripts/check-manifest-fixtures.mjs",
     "check:i18n": "node scripts/check-i18n.mjs",

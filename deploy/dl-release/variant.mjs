@@ -26,35 +26,40 @@ export const DEFAULT_MARKER = 'com.example.deepseekchat.ARTIFACT_VARIANT';
 export const DEFAULT_LOOPBACK_MARKER = 'com.example.deepseekchat.LOOPBACK_CONSUME';
 
 /**
- * 解析 `aapt2 dump xmltree <apk> --file AndroidManifest.xml` 的输出，
- * 找出标记名的 meta-data 取值。
- * 注意：`aapt2 dump badging` **不会**输出 meta-data（已实测），只能用 xmltree。
+ * 解析 `aapt2 dump xmltree <apk> --file AndroidManifest.xml` 的输出，抽出**全部**
+ * `<meta-data android:name=… android:value=…>`。
  *
- * @returns {{variant: 'internal'|'standard'|null, reason: string, raw?: string}}
- *   reason: marker | marker_out_of_enum | marker_not_string | marker_absent | xmltree_failed
+ * 为什么要有它（Issue #607）：变体（ARTIFACT_VARIANT）与回环标记（LOOPBACK_CONSUME）读的是
+ * 同一份 xmltree、同一批节点、同一条「值可能是 quoted string 也可能是 typed value」的坑。
+ * 各写一遍的话，第二处迟早漏认一种编码（`android:value="false"` 被 aapt2 编成
+ * `TYPE_INT_BOOLEAN` 时就没有 Raw，只剩 `=false`）—— 于是「回环包」被静默判成干净。
+ *
+ * 取值形状：`Map<name, {value: string|undefined, typed: boolean}>`
+ *   · quoted string（`="standard"`，带 Raw）→ `{value:'standard', typed:false}`
+ *   · typed value（`=false` / `=0` / `=@0x7f100001`，无 Raw）→ `{value:'false'|'0'|'@0x…', typed:true}`
+ *   · 没有 android:value（只有 android:resource）→ `{value:undefined, typed:false}`
+ * 同名多条按 aapt2 输出顺序**后者覆盖前者**（与变体判定原有的「最后一条算数」一致）。
+ *
+ * @param {string} text `aapt2 dump xmltree` 的 stdout
+ * @param {string} [nodeName] 只收这种节点名（默认 `meta-data`）
+ * @returns {Map<string, {value: string|undefined, typed: boolean}>}
  */
-export function parseVariantFromXmltree(text, markerName = DEFAULT_MARKER) {
-  if (typeof text !== 'string') return { variant: null, reason: 'xmltree_failed' };
-  const lines = text.split('\n');
+export function parseMetaDataFromXmltree(text, nodeName = 'meta-data') {
+  const out = new Map();
+  if (typeof text !== 'string') return out;
   let inNode = null;
+  /** 当前节点已收集的属性：`name → {value, typed}` */
   let attrs = {};
-  let found = null;
-
   const flush = () => {
-    if (inNode !== 'meta-data') return;
-    if (attrs.name !== markerName) return;
-    if (typeof attrs.value === 'string') {
-      const v = attrs.value.trim();
-      found = VARIANTS.includes(v)
-        ? { variant: v, reason: 'marker', raw: v }
-        : { variant: null, reason: 'marker_out_of_enum', raw: v };
-    } else {
-      // android:resource / int 等非字符串取值，一律判 unknown
-      found = { variant: null, reason: 'marker_not_string' };
-    }
+    if (inNode !== nodeName) return;
+    const nameAttr = attrs.name;
+    if (!nameAttr || typeof nameAttr.value !== 'string') return;
+    const valueAttr = attrs.value;
+    out.set(nameAttr.value, valueAttr
+      ? { value: valueAttr.value, typed: valueAttr.typed }
+      : { value: undefined, typed: false });
   };
-
-  for (const line of lines) {
+  for (const line of text.split('\n')) {
     const t = line.trim();
     const node = /^E: ([A-Za-z0-9_.-]+)/.exec(t);
     if (node) {
@@ -64,10 +69,38 @@ export function parseVariantFromXmltree(text, markerName = DEFAULT_MARKER) {
       continue;
     }
     const a = /^A: .*?:([A-Za-z0-9_]+)\(0x[0-9a-f]+\)=(?:"([^"]*)"|([^ ]+))/.exec(t);
-    if (a && inNode) attrs[a[1]] = a[2] !== undefined ? a[2] : a[3];
+    // 属性归属：aapt2 用缩进表达嵌套，这里只按「最近一个 E: 节点」归集 —— 对 meta-data
+    // 这种叶子节点足够（它不会再有子节点），也让解析不必依赖缩进宽度。
+    if (a && inNode) {
+      attrs[a[1]] = a[2] !== undefined
+        ? { value: a[2], typed: false }
+        : { value: a[3], typed: true };
+    }
   }
   flush();
-  return found || { variant: null, reason: 'marker_absent' };
+  return out;
+}
+
+/**
+ * 解析 `aapt2 dump xmltree <apk> --file AndroidManifest.xml` 的输出，
+ * 找出标记名的 meta-data 取值。
+ * 注意：`aapt2 dump badging` **不会**输出 meta-data（已实测），只能用 xmltree。
+ *
+ * @returns {{variant: 'internal'|'standard'|null, reason: string, raw?: string}}
+ *   reason: marker | marker_out_of_enum | marker_not_string | marker_absent | xmltree_failed
+ */
+export function parseVariantFromXmltree(text, markerName = DEFAULT_MARKER) {
+  if (typeof text !== 'string') return { variant: null, reason: 'xmltree_failed' };
+  const entry = parseMetaDataFromXmltree(text).get(markerName);
+  if (!entry) return { variant: null, reason: 'marker_absent' };
+  if (entry.typed || typeof entry.value !== 'string') {
+    // android:resource / 布尔 / 整数等非字符串取值，一律判 unknown
+    return { variant: null, reason: 'marker_not_string' };
+  }
+  const v = entry.value.trim();
+  return VARIANTS.includes(v)
+    ? { variant: v, reason: 'marker', raw: v }
+    : { variant: null, reason: 'marker_out_of_enum', raw: v };
 }
 
 /** 归一化服务器白名单条目：{variant, note, version} 或字符串变体名 */

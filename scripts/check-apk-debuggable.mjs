@@ -18,14 +18,40 @@
  *   0  全部通过（无 debuggable 标记）→ 允许发布
  *   1  发现 debuggable 包        → 禁止发布
  *   2  判不出来（不是 APK / 损坏 / 用法错误）→ 同样禁止发布（fail-closed）
+ *
+ * 复用（Issue #607）：判定本身是 `evaluateApkDebuggable(file)` —— 纯函数、可 import，
+ * `scripts/verify-release-apk.mjs`（四件套一条命令）调的就是它。**不要另抄一份判定**：
+ * 「哪份 aapt2/代码算 debuggable」只允许有一个答案，否则两处判定迟早给出相反结论
+ * （#289 的 zip.mjs 就是这么分叉的）。CLI 只在被直接执行时跑（`import` 不会触发 `process.exitCode`）。
  */
 
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { inspectApkDebugState } from '../deploy/dl-release/apk-manifest.mjs';
 
 const EXIT_OK = 0;
 const EXIT_DEBUGGABLE = 1;
 const EXIT_UNKNOWN = 2;
+
+/** 判定口径（供 --json 与复用方判断）：`clean` 可发 / `debuggable` 禁发 / `unknown` 同样禁发 */
+export const VERDICT = Object.freeze({ CLEAN: 'clean', DEBUGGABLE: 'debuggable', UNKNOWN: 'unknown' });
+
+/**
+ * 对单个 APK 做 debuggable 判定（**唯一判定入口**，CLI 与 verify-release-apk.mjs 共用）。
+ *
+ * @param {string} file APK 路径
+ * @returns {{file: string, verdict: 'clean'|'debuggable'|'unknown', debuggable: true|false|null,
+ *            reason: string, info: {packageName?: string, versionName?: string, versionCode?: number}}}
+ */
+export function evaluateApkDebuggable(file) {
+  const r = inspectApkDebugState(file);
+  const verdict = r.debuggable === true
+    ? VERDICT.DEBUGGABLE
+    : r.debuggable === false
+      ? VERDICT.CLEAN
+      : VERDICT.UNKNOWN;
+  return { file, verdict, debuggable: r.debuggable, reason: r.reason, info: r.info ?? {} };
+}
 
 function usage() {
   return [
@@ -55,11 +81,7 @@ function main(argv) {
     return EXIT_UNKNOWN;
   }
 
-  const results = files.map((file) => {
-    const r = inspectApkDebugState(file);
-    const verdict = r.debuggable === true ? 'debuggable' : r.debuggable === false ? 'clean' : 'unknown';
-    return { file, verdict, ...r };
-  });
+  const results = files.map((file) => evaluateApkDebuggable(file));
 
   if (json) {
     console.log(JSON.stringify(results.map((r) => ({
@@ -106,4 +128,18 @@ function main(argv) {
   return dbg.length ? EXIT_DEBUGGABLE : EXIT_UNKNOWN;
 }
 
-process.exitCode = main(process.argv.slice(2));
+/**
+ * 只有「被直接执行」时才跑 CLI：`import { evaluateApkDebuggable } from './check-apk-debuggable.mjs'`
+ * 的复用方（verify-release-apk.mjs、单测）不许顺带触发一次 `process.exitCode = 2`（无参数）。
+ */
+function invokedDirectly() {
+  const entry = process.argv[1];
+  if (!entry) return false;
+  try {
+    return path.resolve(entry) === path.resolve(fileURLToPath(import.meta.url));
+  } catch {
+    return false;
+  }
+}
+
+if (invokedDirectly()) process.exitCode = main(process.argv.slice(2));

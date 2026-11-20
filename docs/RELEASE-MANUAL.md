@@ -194,6 +194,10 @@ cd android && ./gradlew assembleDebug -PallowLoopbackConsume=true   # 只在「�
 
 ## 4. 步骤 3 — 五项人工核对（**全部通过才准上传**）
 
+> **先跑 §4.6 那一条命令**（`pnpm verify:apk <apk>`）：四项判据一次算完、退出码即结论。
+> 下面 4.1～4.5 是同一批判据的**手打版与交叉验证**，留着是因为「换个工具复核一遍」有独立价值
+> （aapt2 的文本输出 vs 脚本从二进制 APK 里读出来的值），但**不要再用它当唯一入口**（Issue #607）。
+
 ```bash
 APK=android/app/build/outputs/apk/release/app-release.apk
 BT=${ANDROID_HOME:-$HOME/android-sdk}/build-tools/${BUILD_TOOLS_VERSION:?先 cp build.env.example build.env 填 BUILD_TOOLS_VERSION}
@@ -261,6 +265,85 @@ BT=${ANDROID_HOME:-$HOME/android-sdk}/build-tools/${BUILD_TOOLS_VERSION:?先 cp 
   | `.github/workflows/release.yml`（手动触发） | 取到 APK 字节之后、创建 Release 之前拦一道（判不出来也拒） |
   | `POST /api/v1/release`（dl 服务端） | 拒收 debuggable 包，返回 `400 APK_DEBUGGABLE` |
 
+
+- [ ] **4.6 四件套一条命令：`pnpm verify:apk`（Issue #607；发版前与发版后都要跑）**
+
+  ```bash
+  pnpm verify:apk android/app/build/outputs/apk/release/app-release.apk
+  # 等价写法（脚本本体，任何 lane 都能直接调）：
+  node scripts/verify-release-apk.mjs "$APK"
+  # 内测包：            pnpm verify:apk "$APK" --variant internal
+  # 只给机器读：        pnpm verify:apk "$APK" --json
+  # 核另一把证书：      pnpm verify:apk "$APK" --expect-cert <sha256>
+  # 钉住 build-tools：  pnpm verify:apk "$APK" --build-tools 35.0.0
+  ```
+
+  它做的事就是 4.1～4.5 里那四项判据（外加把 Release 正文要用的 hash/体积一起打出来），
+  **一项不过就 exit 1，判不出来 exit 2**（与 `check-apk-debuggable` 同一口径，都不许「先发后修」）：
+
+  | # | 检查 | 判据 / 实现 |
+  | --- | --- | --- |
+  | 1 | `debuggable` 不存在或 false | 复用 `scripts/check-apk-debuggable.mjs` 的 `evaluateApkDebuggable()`（判定只有一份，不复制） |
+  | 2 | `ARTIFACT_VARIANT == --variant`（默认 `standard`） | `aapt2 dump xmltree --file AndroidManifest.xml` 读 meta-data |
+  | 3 | `LOOPBACK_CONSUME` 不存在或 false | 同上；**标记缺失视为通过**（与 #601 闸 2 同口径：老包没有这个标记，不误伤历史包） |
+  | 4 | 签名证书 SHA-256 == `--expect-cert` | `apksigner verify --print-certs`；默认值 = §4.3 那个已发布证书 |
+  | 5 | 附加输出（不算失败项） | `versionName` / `versionCode` / `sha256` / `md5` / `size`，直接抄进 Release 正文 |
+
+  `aapt2` / `apksigner` 从 `$ANDROID_HOME/build-tools/<版本>/` 取：**钉住的 `BUILD_TOOLS_VERSION`
+  优先，没钉才取已装最高档**（输出里会标 `auto-max`，提醒你核对工具可能不是出包那一个）。
+  找不到 SDK / 工具 → **exit 2**，并打印 `sdkmanager` 安装提示。全程不联网、不改 APK。
+
+  **预期输出（1.4.3 实包的真实输出，四项全绿；APK 路径行按你手上的产物位置显示）**：
+
+  ```
+  APK   : android/app/build/outputs/apk/release/app-release.apk
+  工具  : build-tools 36.0.0 · auto-max（$ANDROID_HOME；未钉住 BUILD_TOOLS_VERSION，取已装最高档 36.0.0）
+  期望  : variant=standard  cert=e7c5baee517ca2b2258950e934521f2fad448d00f72f2ff7297bdf4fa00aa8a1
+
+  #  检查                             结果     实际
+  -  -------------------------------  --------  ------------------------
+  1  debuggable 不存在或 false        PASS     attr_absent
+  2  ARTIFACT_VARIANT 与期望一致      PASS     standard
+  3  LOOPBACK_CONSUME 不存在或 false  PASS     false
+  4  签名证书 SHA-256 与期望一致      PASS     e7c5baee517ca2b2258950e934521f2fad448d00f72f2ff7297bdf4fa00aa8a1
+
+  附加输出（Release 正文可直接用，不算失败项）
+    packageName : com.example.deepseekchat
+    versionName : 1.4.3
+    versionCode : 22
+    sha256      : 98cecce05f6549fe8023f4c0b2f6c62c7662050fa7f0cdf44395147ada9a51e2
+    md5         : d6660c0168465e1196c03abe8bafaf06
+    size        : 6.56 MiB（6875727 字节）
+
+  结论：PASS（4/4 项通过）—— 可以发布。
+  ```
+
+  红的时候长这样（历史 debug 包 `deepseek-chat-1.2.0.apk`，退出码 `1`）：
+
+  ```
+  1  debuggable 不存在或 false        FAIL     android:debuggable="true"
+  2  ARTIFACT_VARIANT 与期望一致      FAIL     标记缺失
+  3  LOOPBACK_CONSUME 不存在或 false  PASS     标记缺失（视为 false）
+  4  签名证书 SHA-256 与期望一致      PASS     e7c5baee…aa8a1
+  结论：FAIL（debuggable / variant 不通过）—— 禁止发布。
+  ```
+
+  「结论」那行会**点名**是哪几项挂了（`FAIL（debuggable 不通过）`），不看表格也能 grep。
+
+  | 红了 | 含义 | 怎么办 |
+  | --- | --- | --- |
+  | `FAIL（debuggable 不通过）` | 这是 `assembleDebug` 的产物（Issue #60） | 回 §3 用 `assembleRelease` 重新出包，别上传 |
+  | `FAIL（variant 不通过）` | 变体标记与 web 构建不同源，或标记缺失（历史包） | `build:internal` ↔ `-PartifactVariant=internal`、`build` ↔ 默认 standard，同源重打 |
+  | `FAIL（loopback 不通过）` | 带 `-PallowLoopbackConsume=true` 的回环包（#601）：真机连不上后端 | 把 `config/endpoints.json` 的 base 换成生产 https 地址后重打 |
+  | `FAIL（cert 不通过）` | 换了签名证书 → 已装用户无法覆盖升级 | 按 §1 把 release 三项指回 `/root/.android/debug.keystore`；**不许**改指纹常量 |
+  | `UNKNOWN`（exit 2） | 判不出来：缺 SDK 工具 / 不是 APK / 清单读不出 | 按提示装 build-tools 或拿对文件——**判不出来等于不通过** |
+
+  **这条判据自己会红吗？** 会，有负向对照：`node --test tests/unit/verify-release-apk.test.mjs`
+  现场造四种坏包（debuggable / 变体不对 / 回环标记 / 换签证书），逐个断言 `exit 1` 且点名对应检查项；
+  另外两条断言「缺 aapt2 → exit 2」「不是 APK → exit 2」。
+
+  同一套判据在 `.github/workflows/release.yml` 里是内联的另一份（#630 的写法，尚未合并）——
+  接线到 workflow 的裁决不在这条命令的范围里；**只要 workflow 没接，人就必须自己跑这一条**。
 
 五项全过才继续。任何一项不过都没有「先发后修」这种选项。
 
