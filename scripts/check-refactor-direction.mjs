@@ -237,6 +237,7 @@ const commentOnly = (hits) => hits.length > 0 && hits.every((hit) => hit.comment
 
 /** 旧池域地址：命中即 FAIL（注释也算，口径 #484 §九 A1「grep → 0 命中」） */
 const LEGACY_ADDRESS_RULES = [
+  // check-ip-allow：旧池域黑名单，A1 的判定对象（不是可调地址；地址一律来自 config/endpoints.json）
   { what: '旧池域 IP 140.210.13.146', test: (line) => /140\.210\.13\.146/u.test(line) },
   { what: '旧池域端口 :60013', test: (line) => /:60013\b/u.test(line) },
 ]
@@ -672,6 +673,8 @@ const isIpv4 = (host) => /^\d{1,3}(?:\.\d{1,3}){3}$/u.test(host)
 
 /** 后端域名白名单：全部来自 `config/endpoints.json`，外加 #484 §一 写死的支付域名 */
 const backendHostsOf = (config) => {
+  // apia = #484 §一 写死的支付域名；旧池域 IP = 黑名单条目（A6 要能拦住它被写进 src/）
+  // check-ip-allow：同上，黑名单条目不是可调地址
   const hosts = new Set(['apia.ecsafe.cn', '140.210.13.146'])
   const push = (value) => {
     const host = hostOf(value)
