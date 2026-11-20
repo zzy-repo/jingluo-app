@@ -1,293 +1,535 @@
 name: Release
 
-# 正式发布渠道 = **GitHub Release**（裁决 #614 决定 2：dl 不再是正式渠道）。
+# ─────────────────────────────────────────────────────────────────────────────
+# 正式发布渠道 = **GitHub Release**（裁决 #614 决定 2：dl 分发机不再是发布渠道）。
 #
-# 本工作流只做一件事：把一个**已在签名机上构建好、已签名**的 APK 挂成 GitHub Release 资产。
-#   · 这里【不构建 APK】：keystore 永不离开构建机；
-#   · 这里【不查】https://dl.rose7.cn/releases.json：dl 清单只是历史分发记录，不再是发版前置条件。
-# 用的是内置 GITHUB_TOKEN（permissions.contents: write），不需要任何 PAT。
+# tag 触发（v*）：
+#   pnpm install --frozen-lockfile
+#   → pnpm build（standard 产物）
+#   → npx cap sync android
+#   → ./gradlew assembleRelease -PartifactVariant=standard --max-workers=1
+#   → 四件套校验（任一不过就 fail：无 debuggable / 变体 standard / 非回环 / 证书指纹）
+#   → 算 sha256 + md5 + size
+#   → 建 **draft** Release，只挂那一个 APK，正文写 versionName/versionCode/sha256/校验方法
+#   → 上传后**重新下载一次**核对 sha256 与本地一致，再 publish
 #
-# 为什么改成只在手动 `workflow_dispatch` 触发（不再由 tag push 自动跑）：
-#   旧版本在 tag push 后先要求「dl 的 releases.json 里已经有这个版本且 md5 合法」，再建 Release。
-#   于是「发 GitHub Release」被绑死在「dl 清单已收录」上：1.4.3 按 #614 裁决根本不进 dl，
-#   tag 一推就必然 `::error::releases.json 里没有版本 1.4.3` → exit 1 → main 的发布 check 常红。
-#   发版本来就是人做的一次性动作（见 docs/RELEASE-MANUAL.md §6.1），所以触发面收敛到手动：
-#   **不自动跑 ⇒ 不会因为「清单里没这个版本」而红；手动跑 ⇒ 跑就绿（前置不满足时给可执行的下一步）。**
+# 为什么换掉旧逻辑：旧版 tag 一推就去读 https://dl.rose7.cn/releases.json 查该版本、再从分发机下
+# 载 APK 镜像成 Release。1.4.3 按 #614 决定 2 根本不进 dl，于是「清单里没有这个版本」必然
+# `::error::` → exit 1 → main 上的发布 job 常红。现在：
+#   · **不读任何清单**（`curl .../releases.json` 整段删除），也**不从任何分发机下载 APK**；
+#   · 产物在 runner 上现打，四件套校验 + 指纹都在本工作流内完成（不再依赖「dl 上那个包是对的」）；
+#   · 「Release 已存在」不再是失败条件（v1.4.3 已发布过）：存在就转 draft → 覆盖资产 → 核对 → 再 publish。
 #
-# 用法（Actions → Release → Run workflow）：
-#   tag     = 已存在的版本 tag（例 v1.4.3），必须与 tag 内 package.json 的 version 一致
-#   apk_url = ① 要上传的 APK 的 https 直链，可留空。留空时按顺序取：
-#             ② Release $TAG 里已上传的 *.apk 资产（手工 gh release upload 之后的校验/补 notes 模式）
-#             ③ https://dl.rose7.cn/apk/deepseek-chat-<version>.apk（历史版本在 dl 上的存量地址）
-#             三者都没有 → 报错并列出三条出路，不会去读任何清单。
+# 签名材料（本工作流唯一的仓库外部依赖，**fail-closed**）：
+#   android/app/build.gradle 有 EXPECTED_CERT_SHA256 闸门 —— assembleRelease 必须用「与已发布证书一致」
+#   的签名材料，否则直接中止（防止悄悄换证书让已装用户无法覆盖升级）。runner 上没有 keystore，
+#   所以从仓库 secret 注入；缺 secret 就在最早的步骤报错并给出可执行的一条命令，绝不退化成
+#   「不签名 / 换证书 / 退回 assembleDebug」。一次性配置（在签名机上执行，值不进仓库、不进 PR）：
+#       base64 -w0 /root/.android/debug.keystore | gh secret set ANDROID_KEYSTORE_BASE64
+#   可选（默认值即「已发布那把 debug 格式 key」的标准约定 androiddebugkey/android/android；
+#   配置了 secret 就以 secret 为准，指纹仍由第 ④ 项校验兜底）：
+#       ANDROID_KEYSTORE_STORE_PASSWORD / ANDROID_KEYSTORE_KEY_ALIAS / ANDROID_KEYSTORE_KEY_PASSWORD
+#   用的是内置 GITHUB_TOKEN（permissions.contents: write），不需要任何 PAT。
+# ─────────────────────────────────────────────────────────────────────────────
 
 on:
-  workflow_dispatch:
-    inputs:
-      tag:
-        description: '已存在的版本 tag（例 v1.4.3；必须与 package.json 的 version 一致）'
-        required: true
-        type: string
-      apk_url:
-        description: '要上传的 APK 的 https 直链（留空 = https://dl.rose7.cn/apk/deepseek-chat-<version>.apk）'
-        required: false
-        type: string
-        default: ''
+  push:
+    tags:
+      - 'v*'
 
 permissions:
   contents: write
 
+# 与 ci.yml 一致：容器化 job 里 `run` 的默认 shell 会退化成 sh（dash），
+# `set -euo pipefail` 会直接挂；显式钉成 bash，行为与本地一致。
+defaults:
+  run:
+    shell: bash
+
 concurrency:
-  group: release-${{ github.event.inputs.tag }}
+  group: release-${{ github.ref_name }}
   cancel-in-progress: false
 
 jobs:
   release:
     name: 创建 Release
     runs-on: ubuntu-latest
+    # 冷缓存时 gradle wrapper（~200MB）+ AGP 依赖 + assembleRelease 实测 2m36s（agent-26 取证），
+    # 留足余量但不无限拖：超时就是红，不会静默挂着。
+    timeout-minutes: 45
     permissions:
       contents: write
     env:
       GH_TOKEN: ${{ github.token }}
-      TAG: ${{ inputs.tag }}
-      APK_URL_INPUT: ${{ inputs.apk_url }}
+      TAG: ${{ github.ref_name }}
+      SHA: ${{ github.sha }}
+      # 本工作流只出 standard 产物。internal 变体绝不进公网（#614 决定 3），
+      # 所以这个值不是「可调参数」而是常量：第 ② 项校验会拿它和 APK 内的标记逐字比对。
+      ARTIFACT_VARIANT: standard
+      # 已发布签名证书指纹（SHA-256）。唯一来源是 config/appIdentity.json 的 expectedCertSha256，
+      # 这里再钉一份字面量：两边不一致就红 —— 「换证书」是签名迁移，必须单独规划，
+      # 不许顺手改配置文件里那一行（改了会让所有已装用户无法覆盖升级）。
+      PUBLISHED_CERT_SHA256: e7c5baee517ca2b2258950e934521f2fad448d00f72f2ff7297bdf4fa00aa8a1
     steps:
-      - name: Checkout（取默认分支 + 全部 tag；release 目标由下面的 tag 校验决定）
+      - name: Checkout（取 tag 指向的 commit）
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
           fetch-tags: true
 
-      # v1.4.0-beta.4 → 1.4.0-beta.4；含 -beta/-rc 时标记为 prerelease。
-      # 同时确认 tag **真的存在**：不存在就明确说「先 push tag」，不再去下载任何清单。
-      - name: 解析并校验 tag
+      # v1.4.3 → 1.4.3。版本号的唯一来源是 package.json（gradle 也从它读 versionName/versionCode），
+      # tag 与它不一致说明 tag 打错了 —— 直接红，否则会发出「tag 叫 A、包内是 B」的 Release。
+      # prerelease 同样由 package.json 决定：版本里含 `-`（如 1.4.0-beta.4）→ prerelease=true。
+      - name: 解析 tag 得到版本号
         id: ver
         run: |
           set -euo pipefail
           tag="$TAG"
-          if [ -z "$tag" ]; then
-            echo "::error::inputs.tag 为空；应当填一个已存在的版本 tag，例如 v1.4.3"
-            exit 1
-          fi
           if [[ ! "$tag" =~ ^v[0-9][0-9A-Za-z.+-]*$ ]]; then
             echo "::error::tag '$tag' 不符合 v<version> 约定（例：v1.4.3）"
             exit 1
           fi
-          if ! sha="$(git rev-list -n1 "refs/tags/${tag}" 2>/dev/null)"; then
-            echo "::error::仓库里没有 tag '$tag'。请先在要发布的 commit 上打 tag 并 push（git tag -a $tag -m \"$tag\" && git push origin $tag），再回来触发本工作流"
-            exit 1
-          fi
           version="${tag#v}"
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-          echo "sha=$sha" >> "$GITHUB_OUTPUT"
-          if [[ "$version" == *-beta* || "$version" == *-rc* ]]; then
-            echo "prerelease=--prerelease" >> "$GITHUB_OUTPUT"
-            echo "is_prerelease=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "prerelease=" >> "$GITHUB_OUTPUT"
-            echo "is_prerelease=false" >> "$GITHUB_OUTPUT"
-          fi
-          echo "版本号: $version（commit ${sha:0:7}）"
-
-      # 前置校验 ①：tag 指向的那个 commit 里，package.json 的 version / androidVersionCode 必须自洽。
-      # 这是把「发错版本号」拦在 Release 之前的地方 —— 以前这一步靠「dl 清单里有这个版本」间接兜住。
-      - name: 校验 package.json 版本与 tag 一致
-        id: pkg
-        run: |
-          set -euo pipefail
-          version="${{ steps.ver.outputs.version }}"
-          git show "${TAG}:package.json" > pkg-at-tag.json
-          # 注意：错误注解一律写 stderr。stdout 是 $GITHUB_OUTPUT（文件命令），
-          # 往里打 `::error::…` 会让 GitHub 报 "Invalid format"/"Unable to process file command 'output'"
-          # —— 旧版 workflow 在 1.4.3 那次就是这么把真正的错误信息吞掉的。
-          python3 - "$version" >> "$GITHUB_OUTPUT" <<'PY'
-          import json, sys
-          version = sys.argv[1]
-          pkg = json.load(open("pkg-at-tag.json", encoding="utf-8"))
-          got = str(pkg.get("version") or "")
-          if got != version:
-              print(f"::error::tag v{version} 指向的 package.json version 是 {got!r}，与 tag 不一致；"
-                    f"先把版本号改对再打 tag（本工作流不再下载 dl 清单做兜底）", file=sys.stderr)
-              sys.exit(1)
-          code = pkg.get("androidVersionCode")
-          if not isinstance(code, int) or isinstance(code, bool) or code <= 0:
-              print(f"::error::package.json 的 androidVersionCode 必须是正整数，实际 {code!r}", file=sys.stderr)
-              sys.exit(1)
-          print(f"version_code={code}")
-          print(f"package_name={pkg.get('name') or ''}")
-          PY
-          code="$(sed -n 's/^version_code=//p' "$GITHUB_OUTPUT" | tail -1)"
-          echo "  version=$version androidVersionCode=$code"
-
-      # 取产物字节。**这里只是取字节，不查任何清单**。三个来源，按顺序：
-      #   ① inputs.apk_url（任何 https 直链，例如历史 dl 上的包、或自己搭的临时分发地址）
-      #   ② 已存在的 Release 里已经手工上传好的 *.apk（「先 gh release upload，再跑本工作流」的常规流程）
-      #   ③ https://dl.rose7.cn/apk/deepseek-chat-<version>.apk（历史版本在 dl 上的存量地址）
-      # 三个都没有 → 明确报错并列出三条出路；不再出现「releases.json 里没有这个版本」这种假原因。
-      - name: 取得 APK 字节（不查清单）
-        run: |
-          set -euo pipefail
-          version="${{ steps.ver.outputs.version }}"
-          url="${APK_URL_INPUT:-}"
-          src=""
-          if [ -n "$url" ]; then
-            case "$url" in
-              https://*) : ;;
-              *)
-                echo "::error::apk_url 必须是 https 直链，实际: $url"
-                exit 1
-                ;;
-            esac
-            echo "来源 ①  apk_url: $url"
-            if ! curl -fsSL --retry 3 --retry-delay 3 --max-time 600 -o artifact.apk "$url"; then
-              echo "::error::下载 $url 失败。该地址只是取字节的地方，不是发版前置：换一个可达的 https 直链填进 apk_url 再重跑"
-              exit 1
-            fi
-            src="apk_url"
-          elif gh release view "$TAG" >/dev/null 2>&1; then
-            echo "来源 ②  已存在的 Release $TAG 里已上传的 .apk 资产（手工上传后校验/补 notes）"
-            rm -rf dl-assets && mkdir -p dl-assets
-            if ! gh release download "$TAG" --pattern '*.apk' --dir dl-assets --clobber; then
-              echo "::error::Release $TAG 里没有 .apk 资产，也没给 apk_url。先手工 gh release upload $TAG deepseek-chat-${version}.apk，或填一个 https 直链到 apk_url"
-              exit 1
-            fi
-            found="$(find dl-assets -maxdepth 1 -name '*.apk' | head -n 1)"
-            if [ -z "$found" ]; then
-              echo "::error::Release $TAG 里没有 .apk 资产，也没给 apk_url"
-              exit 1
-            fi
-            cp "$found" artifact.apk
-            src="release-asset:$(basename "$found")"
-          else
-            url="https://dl.rose7.cn/apk/deepseek-chat-${version}.apk"
-            echo "来源 ③  历史 dl 直链: $url"
-            if ! curl -fsSL --retry 3 --retry-delay 3 --max-time 600 -o artifact.apk "$url"; then
-              echo "::error::取不到 APK。三条出路：① 填 apk_url=<可达 https 直链>；② 先手工 gh release upload $TAG deepseek-chat-${version}.apk 再重跑；③ 直接按 docs/RELEASE-MANUAL.md 的 GitHub Release 章节手工发（不含本工作流）。本工作流不依赖 dl 清单里有没有这个版本"
-              exit 1
-            fi
-            src="dl"
-          fi
-          size=$(stat -c%s artifact.apk)
-          if [ "$size" -le 0 ]; then
-            echo "::error::取到的文件是空的（来源: $src）"
+          pkg_version="$(node -p 'require("./package.json").version')"
+          pkg_code="$(node -p 'require("./package.json").androidVersionCode')"
+          if [ "$version" != "$pkg_version" ]; then
+            echo "::error::tag 版本（$version）与 package.json 的 version（$pkg_version）不一致：tag 指到了错的 commit，或版本号还没改就打了 tag"
             exit 1
           fi
-          sha256=$(sha256sum artifact.apk | awk '{print $1}')
-          md5=$(md5sum artifact.apk | awk '{print $1}')
-          echo "  size: $size bytes"
-          echo "  sha256: $sha256"
-          echo "  md5: $md5"
-          ren="deepseek-chat-${version}.apk"
-          mv artifact.apk "$ren"
+          if ! [[ "$pkg_code" =~ ^[1-9][0-9]*$ ]]; then
+            echo "::error::package.json 的 androidVersionCode 缺失或非法（必须是正整数）：'$pkg_code'"
+            exit 1
+          fi
+          if [[ "$pkg_version" == *-* ]]; then
+            is_prerelease=true
+            prerelease_flag=--prerelease
+          else
+            is_prerelease=false
+            prerelease_flag=--prerelease=false
+          fi
           {
-            echo "ASSET=$ren"
-            echo "APK_SOURCE=$src"
-            echo "SHA256=$sha256"
-            echo "MD5=$md5"
-            echo "SIZE=$size"
-          } >> "$GITHUB_ENV"
+            echo "version=$version"
+            echo "version_code=$pkg_code"
+            echo "is_prerelease=$is_prerelease"
+            echo "prerelease_flag=$prerelease_flag"
+          } >> "$GITHUB_OUTPUT"
+          echo "版本号: $version（versionCode=$pkg_code，prerelease=$is_prerelease）"
 
-      # 前置校验 ②：产物不得是 debuggable 构建（Issue #60）。判不出来同样拒（fail-closed）。
-      - name: 校验产物不是 debuggable 构建（Issue #60/#84）
+      # 放在最前面：缺签名材料时 20 秒内就红，而不是等 pnpm install + gradle 下完 200MB 再在
+      # 「签名」那一步失败（那时日志里只剩一句 gradle 的 keystore 异常）。
+      - name: 预检签名材料（缺 secret 就 fail-closed，不猜、不退化）
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
         run: |
           set -euo pipefail
-          if [ ! -f scripts/check-apk-debuggable.mjs ]; then
-            echo "::error::缺少 scripts/check-apk-debuggable.mjs（fail-closed：无法校验就不上传）"
+          if [ -z "${ANDROID_KEYSTORE_BASE64:-}" ]; then
+            echo "::error::缺少 secret ANDROID_KEYSTORE_BASE64：runner 上没有签名材料，assembleRelease 会被 build.gradle 的签名闸门直接中止（这是刻意的，不会退化成不签名或换证书）。"
+            echo "::error::一次性配置（在签名机上执行，值不要贴进 PR / issue）：base64 -w0 /root/.android/debug.keystore | gh secret set ANDROID_KEYSTORE_BASE64 -R ${GITHUB_REPOSITORY}"
             exit 1
           fi
-          node scripts/check-apk-debuggable.mjs "$ASSET"
-          echo "debuggable 关卡通过：该 APK 为 release 构建，无 android:debuggable"
+          echo "签名材料 secret 已配置（内容不打印）"
 
-      # notes：版本段优先取 CHANGELOG.md 里同名的小节，再把实测元数据（含 sha256）拼在正文里。
-      - name: 生成 Release Notes
-        run: |
-          set -euo pipefail
-          python3 - <<'PY'
-          import os, re
-          version = os.environ["VERSION"]
-          head = [f"## deepseek-chat {version}", ""]
-          head.append("| 项 | 值 |")
-          head.append("| --- | --- |")
-          head.append(f"| version | `{version}` |")
-          head.append(f"| versionCode | `{os.environ['VERSION_CODE']}` |")
-          head.append(f"| 构建 commit | `{os.environ['RELEASE_SHA']}` |")
-          head.append(f"| APK | `{os.environ['ASSET']}` |")
-          head.append(f"| size | {os.environ['SIZE']} bytes |")
-          head.append(f"| sha256 | `{os.environ['SHA256']}` |")
-          head.append(f"| md5 | `{os.environ['MD5']}` |")
+      - name: Setup pnpm
+        # 必须在 setup-node 之前：setup-node 的 cache: pnpm 依赖 pnpm 已可执行
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+          run_install: false
 
-          title, body = "", ""
-          if os.path.exists("CHANGELOG.md"):
-              text = open("CHANGELOG.md", encoding="utf-8").read()
-              m = re.compile(r"^##[ \t]+" + re.escape(version) + r"(?![0-9A-Za-z.+-]+)[ \t]*(.*)$", re.M).search(text)
-              if m:
-                  # 标题形如 "1.4.3 (2026-11-21) — 首个正式版：…"：去掉日期前缀，只留一句话主题
-                  title = re.sub(r"^\([^)]*\)[ \t]*[—–-]*[ \t]*", "", m.group(1).strip()).strip()
-                  rest = text[m.end():]
-                  nxt = re.search(r"^##[ \t]+", rest, re.M)
-                  body = (rest[: nxt.start()] if nxt else rest).strip()
+      - name: Setup Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'pnpm'
 
-          out = head + ["", "### 变更", ""]
-          if title:
-              out += [f"**{title}**", ""]
-          if body:
-              out += [body]
-          else:
-              out += [f"- CHANGELOG.md 里没有 {version} 的小节；变更见 `{os.environ['RELEASE_SHA'][:7]}` 及其之前的提交"]
-          out += [
-              "",
-              "---",
-              "",
-              "## 安装与校验",
-              "",
-              "```bash",
-              f"curl -fL -o {os.environ['ASSET']} {os.environ['ASSET_URL']}",
-              f"sha256sum {os.environ['ASSET']}   # 应为 {os.environ['SHA256']}",
-              "```",
-              "",
-              "正式发布渠道为本页 GitHub Release；dl.rose7.cn 只保留历史分发记录，不再是发版前置。",
-          ]
-          open("notes.md", "w", encoding="utf-8").write("\n".join(out) + "\n")
-          print(open("notes.md", encoding="utf-8").read())
-          PY
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      # standard 产物（= 用户装的那个版本）。build.mjs 自带「登录接缝不进产物」的自扫（#510），
+      # 这里只需要确认产物真的出来了，后续 cap sync 才有东西可拷。
+      - name: 构建 standard 产物（pnpm build）
         env:
-          # ASSET / SHA256 / MD5 / SIZE 由上一步写进 $GITHUB_ENV，后续步骤的进程环境里直接可读
-          VERSION: ${{ steps.ver.outputs.version }}
-          VERSION_CODE: ${{ steps.pkg.outputs.version_code }}
-          RELEASE_SHA: ${{ steps.ver.outputs.sha }}
-          ASSET_URL: https://github.com/${{ github.repository }}/releases/download/${{ inputs.tag }}/deepseek-chat-${{ steps.ver.outputs.version }}.apk
-
-      - name: 创建或更新 Release
+          LANG: zh_CN.UTF-8
+          LC_ALL: zh_CN.UTF-8
         run: |
           set -euo pipefail
-          sha="${{ steps.ver.outputs.sha }}"
-          pre="${{ steps.ver.outputs.prerelease }}"
-          if gh release view "$TAG" >/dev/null 2>&1; then
-            echo "Release $TAG 已存在 → 覆盖资产并更新说明"
-            gh release upload "$TAG" "$ASSET" --clobber
-            gh release edit "$TAG" --title "$TAG" --notes-file notes.md $pre
+          pnpm run build
+          test -d dist/static/js || { echo "::error::pnpm build 之后没有 dist/static/js，构建没有真正产出可打包的资源"; exit 1; }
+          echo "dist 产物: $(find dist -type f | wc -l) 个文件"
+
+      - name: Setup JDK 21（与 ci.yml / build-apk.sh 的 REQUIRED_JAVA_MAJOR 对齐）
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      # compileSdk / targetSdk = 36（android/variables.gradle），所以显式装 platforms;android-36
+      # 与 build-tools;36.0.0（aapt2 / apksigner / zipalign 都在 build-tools 里）。
+      # 不赌 runner 镜像里恰好有 android-36：装了才断，缺了就在这一步红并说清缺哪个包。
+      - name: Setup Android SDK（platforms;android-36 + build-tools;36.0.0）
+        uses: android-actions/setup-android@v3
+        with:
+          # 这个 input 会**替换** action 的默认值（platform-tools），所以显式把它写进来
+          packages: 'platform-tools platforms;android-36 build-tools;36.0.0'
+          log-accepted-android-sdk-licenses: false
+
+      - name: 导出 SDK 工具路径（ANDROID_HOME / aapt2 / apksigner）
+        run: |
+          set -euo pipefail
+          sdk="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}"
+          if [ -z "$sdk" ] || [ ! -d "$sdk" ]; then
+            echo "::error::Android SDK 目录未设置（ANDROID_SDK_ROOT / ANDROID_HOME 都是空的）"
+            exit 1
+          fi
+          bt="$sdk/build-tools/36.0.0"
+          for tool in aapt2 apksigner; do
+            if [ ! -x "$bt/$tool" ]; then
+              echo "::error::缺少 $bt/$tool —— build-tools;36.0.0 没有装上（后面四件套校验要用它）"
+              exit 1
+            fi
+          done
+          {
+            echo "ANDROID_HOME=$sdk"
+            echo "ANDROID_SDK_ROOT=$sdk"
+            echo "AAPT2=$bt/aapt2"
+            echo "APKSIGNER=$bt/apksigner"
+          } >> "$GITHUB_ENV"
+          echo "SDK: $sdk"
+          "$bt/aapt2" version 2>&1 | head -1
+          java -version 2>&1 | head -1
+
+      # 与 ci.yml 同一套写法（key 里带上 wrapper / gradle 脚本的 hash：升 gradle 或改 build.gradle
+      # 时自然换一份缓存）。冷缓存首次要下 gradle-8.14.3-all（~200MB）。
+      - name: Gradle 缓存（wrapper 发行版 + 依赖）
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('android/gradle/wrapper/gradle-wrapper.properties', 'android/build.gradle', 'android/app/build.gradle', 'android/variables.gradle', 'android/settings.gradle') }}
+          restore-keys: gradle-${{ runner.os }}-
+
+      # assembleRelease 要求「与已发布证书一致」的签名材料（见文件头）。这里把 secret 落成
+      # android/keystore/keystore.properties + 一个只在本 job 存在的 keystore 文件（$RUNNER_TEMP）。
+      # 两者都被 .gitignore 排除；口令不进日志（只走 env → 属性文件），job 结束时清掉。
+      - name: 注入签名材料（secret → keystore.properties）
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_STORE_PASSWORD || 'android' }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEYSTORE_KEY_ALIAS || 'androiddebugkey' }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_KEY_PASSWORD || 'android' }}
+        run: |
+          set -euo pipefail
+          umask 077
+          ks="$RUNNER_TEMP/published.keystore"
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 -d > "$ks"
+          if [ ! -s "$ks" ]; then
+            echo "::error::ANDROID_KEYSTORE_BASE64 解不出内容（base64 -w0 <keystore> 的结果才是一行合法输入）"
+            exit 1
+          fi
+          cat > android/keystore/keystore.properties <<EOF
+          storeFileRelease=$ks
+          storePasswordRelease=$STORE_PASSWORD
+          keyAliasRelease=$KEY_ALIAS
+          keyPasswordRelease=$KEY_PASSWORD
+          EOF
+          chmod 600 "$ks" android/keystore/keystore.properties
+          # 形状门禁（#272）：键齐全 / 路径存在 / keytool 能打开 / 别名指向一张证书。
+          # 它只读、不打印口令；别名或口令错了在这里就红，而不是在 gradle 深处炸成一句看不清的异常。
+          pnpm run check:keystore
+          echo "签名材料就位（keystore 路径与口令均未输出）"
+
+      # cap 生成物（android/app/src/main/assets/*、capacitor-cordova-android-plugins/）不入库，
+      # 干净 checkout 上直接 gradlew 会红在「读不到 cordova.variables.gradle」。顺序有要求：
+      # 必须排在 pnpm build 之后 —— cap sync 要把 dist/ 拷进 assets。
+      - name: 生成 capacitor 原生配置（cap sync）
+        run: pnpm exec cap sync android
+
+      - name: 构建 release APK（standard 变体，--max-workers=1）
+        timeout-minutes: 35
+        run: |
+          set -euo pipefail
+          cd android
+          ./gradlew --no-daemon --console=plain --max-workers=1 \
+            "assembleRelease" "-PartifactVariant=${ARTIFACT_VARIANT}"
+
+      # ─────────────────────────── 四件套校验（任一不过就 fail）───────────────────────────
+      # ①②③ 读的是 APK 内的二进制 AndroidManifest（aapt2），④ 读的是签名块（apksigner）。
+      # 四条都是「产物自身的事实」，不采信构建参数 —— 传了 -PartifactVariant=standard 不等于
+      # 包里写的就是 standard（1.4.2 的 internal 包正是这么漏出去的，见 #601）。
+      - name: 四件套校验（debuggable / 变体 / 回环 / 证书指纹）
+        id: apk
+        run: |
+          set -euo pipefail
+          version="${{ steps.ver.outputs.version }}"
+          expected_cert="${PUBLISHED_CERT_SHA256}"
+
+          apk_src="$(ls android/app/build/outputs/apk/release/*.apk 2>/dev/null || true)"
+          if [ -z "$apk_src" ]; then
+            echo "::error::assembleRelease 之后没有找到 APK（android/app/build/outputs/apk/release/*.apk）"
+            exit 1
+          fi
+          if [ "$(printf '%s\n' "$apk_src" | wc -l)" != "1" ]; then
+            echo "::error::release 输出目录里有多个 APK，无法确定要发哪个："
+            printf '%s\n' "$apk_src"
+            exit 1
+          fi
+          apk="deepseek-chat-${version}.apk"
+          cp "$apk_src" "$apk"
+          echo "待发布产物: $apk（$(stat -c%s "$apk") bytes）"
+
+          badging="$("$AAPT2" dump badging "$apk")"
+          badging_first="$(head -1 <<< "$badging")"
+          echo "badging: $badging_first"
+
+          # ① 无 application-debuggable 行（1.0.0～1.4.0-beta.8 共 15 个包都是 debug 变体，Issue #60）
+          debuggable_hits="$(grep -ci 'application-debuggable' <<< "$badging" || true)"
+          echo "① application-debuggable 命中: $debuggable_hits（必须为 0）"
+          if [ "$debuggable_hits" != "0" ]; then
+            echo "::error::产物含 android:debuggable（debug 变体），禁止发布"
+            grep -i 'application-debuggable' <<< "$badging"
+            exit 1
+          fi
+
+          version_name="$(sed -n "s/.*versionName='\([^']*\)'.*/\1/p" <<< "$badging_first")"
+          version_code="$(sed -n "s/.*versionCode='\([^']*\)'.*/\1/p" <<< "$badging_first")"
+          package_name="$(sed -n "s/^package: name='\([^']*\)'.*/\1/p" <<< "$badging_first")"
+          echo "包内 versionName=$version_name versionCode=$version_code package=$package_name"
+          # 版本号必须与 tag / package.json 一致（否则「tag 叫 1.4.3、包里是别的版本」）
+          if [ "$version_name" != "$version" ] || [ "$version_code" != "${{ steps.ver.outputs.version_code }}" ]; then
+            echo "::error::包内版本与预期不一致：期望 $version / ${{ steps.ver.outputs.version_code }}，实际 $version_name / $version_code"
+            exit 1
+          fi
+
+          xml="$("$AAPT2" dump xmltree --file AndroidManifest.xml "$apk")"
+          # APK 内 <meta-data> 的取值：aapt2 对字符串打引号（="standard"），对布尔裸写（=false），
+          # 所以先取 `:value(...)=` 之后的残余再统一剥掉引号 / `(Raw: ...)` 尾巴。
+          meta_value() {
+            local name="$1"
+            printf '%s\n' "$xml" \
+              | grep -A1 "${name}\"" \
+              | grep -m1 ':value(' \
+              | sed -n 's/.*:value([^)]*)=\(.*\)$/\1/p' \
+              | tr -d '"' \
+              | sed 's/ *(Raw:.*$//' \
+              || true
+          }
+
+          # ② ARTIFACT_VARIANT == standard
+          variant="$(meta_value ARTIFACT_VARIANT)"
+          echo "② ARTIFACT_VARIANT=${variant:-<缺失>}（必须为 ${ARTIFACT_VARIANT}）"
+          if [ "$variant" != "$ARTIFACT_VARIANT" ]; then
+            echo "::error::产物的 ARTIFACT_VARIANT 不是 ${ARTIFACT_VARIANT}（实际 '${variant:-缺失}'）：internal 变体绝不进公网 Release（#614 决定 3）"
+            exit 1
+          fi
+
+          # ③ LOOPBACK_CONSUME 不存在或 false（1.4.2 的 internal 包就是带 127.0.0.1 出去的，#601）
+          loopback="$(meta_value LOOPBACK_CONSUME)"
+          echo "③ LOOPBACK_CONSUME='${loopback}'（缺失或 false 才放行）"
+          if [ -n "$loopback" ] && [ "$loopback" != "false" ]; then
+            echo "::error::产物带 LOOPBACK_CONSUME='$loopback'：这是回环地址的自用包，不可分发（#601）"
+            exit 1
+          fi
+
+          # ④ 签名证书 SHA-256 == 已发布证书（换证书 = 已装用户无法覆盖升级）
+          config_cert="$(node -p 'require("./config/appIdentity.json").expectedCertSha256' | tr 'A-Z' 'a-z')"
+          if [ "$config_cert" != "$expected_cert" ]; then
+            echo "::error::config/appIdentity.json 的 expectedCertSha256（$config_cert）与本工作流钉住的已发布证书（$expected_cert）不一致 —— 换证书是签名迁移，必须单独规划"
+            exit 1
+          fi
+          cert_out="$("$APKSIGNER" verify --print-certs "$apk")"
+          printf '%s\n' "$cert_out" | sed -n '1,4p'
+          cert="$(printf '%s\n' "$cert_out" | sed -n 's/^Signer #1 certificate SHA-256 digest: *//p' | head -1 | tr 'A-Z' 'a-z')"
+          echo "④ 证书 SHA-256: ${cert:-<读不到>}"
+          if [ "$cert" != "$expected_cert" ]; then
+            echo "::error::签名证书不是已发布证书（期望 $expected_cert，实际 ${cert:-读不到}）：装过旧版的用户将无法覆盖升级"
+            exit 1
+          fi
+          # 包自身的验签（不只是读指纹）：v2 方案签名必须成立
+          "$APKSIGNER" verify "$apk" > /dev/null
+          echo "apksigner verify: OK"
+
+          sha256="$(sha256sum "$apk" | awk '{print $1}')"
+          md5="$(md5sum "$apk" | awk '{print $1}')"
+          size="$(stat -c%s "$apk")"
+          echo "sha256: $sha256"
+          echo "md5:    $md5"
+          echo "size:   $size bytes"
+          {
+            echo "path=$apk"
+            echo "name=$apk"
+            echo "version_name=$version_name"
+            echo "version_code=$version_code"
+            echo "package_name=$package_name"
+            echo "sha256=$sha256"
+            echo "md5=$md5"
+            echo "size=$size"
+          } >> "$GITHUB_OUTPUT"
+
+          # 第二判据（零依赖、不依赖 SDK）：部署侧同款脚本再判一次 debuggable，交叉验证
+          node scripts/check-apk-debuggable.mjs "$apk"
+
+      # 正文：版本 / versionCode / sha256 / 校验方法 + 「渠道地址已内置」。
+      # **不写**任何内网地址、baseUrl、私有路径（public 仓库的 Release 资产与正文对全世界可见）。
+      # 下面紧跟一条机械化门禁：正文里出现 URL / IP / baseUrl / 主机名 / 私有路径 → 直接 fail，
+      # 不靠「写的人记得」。
+      - name: 生成 Release Notes（正文零内网信息，机械化兜底校验）
+        run: |
+          set -euo pipefail
+          version="${{ steps.ver.outputs.version }}"
+          sha256="${{ steps.apk.outputs.sha256 }}"
+          md5="${{ steps.apk.outputs.md5 }}"
+          size="${{ steps.apk.outputs.size }}"
+          version_code="${{ steps.apk.outputs.version_code }}"
+          asset="${{ steps.apk.outputs.name }}"
+          is_prerelease="${{ steps.ver.outputs.is_prerelease }}"
+
+          # 预发布标记按「有没有这个行」生成，而不是塞进 heredoc 里做命令替换
+          # （`$( [ ... ] && ... )` 在 set -e 下会因最后一拍返回 1 而让整段静默变空）。
+          extra=""
+          if [ "$is_prerelease" = "true" ]; then
+            extra='- 预发布版本：尚未通过全部正式验收，请优先使用最新的正式版本。'
+          fi
+
+          cat > notes.md <<EOF
+          ## deepseek-chat ${version}
+
+          - versionName: \`${version}\`
+          - versionCode: \`${version_code}\`
+          - 资产: \`${asset}\`
+          - 大小: ${size} bytes
+          - SHA-256: \`${sha256}\`
+          - MD5: \`${md5}\`
+          - 包内 ARTIFACT_VARIANT: \`standard\`（正式包；\`application-debuggable\` 为 0）
+          - 签名证书 SHA-256: \`${PUBLISHED_CERT_SHA256}\`
+          - 渠道地址已内置：安装后无需填写任何分发地址或服务地址。
+          ${extra}
+
+          ### 校验方法
+
+          下载后先核对指纹，再安装：
+
+          \`\`\`bash
+          sha256sum ${asset}     # 应等于上面的 SHA-256
+          md5sum ${asset}        # 应等于上面的 MD5
+          apksigner verify --print-certs ${asset}   # SHA-256 digest 应等于上面的证书指纹
+          \`\`\`
+
+          本资产由 GitHub Actions 在本仓库的 tag \`v${version}\` 上构建（\`./gradlew assembleRelease -PartifactVariant=standard\`），
+          构建后经四项校验（无 debuggable / 变体 standard / 非回环地址 / 证书指纹一致），上传后又重新下载核对过 SHA-256。
+          EOF
+
+          # ── 正文零内网信息：机械化门禁（fail-closed）──
+          forbid='https?://|ftp://|baseUrl|baseURL|BASE_URL|127\.0\.0\.1|localhost|[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}|rose7|ecsafe|sub2api|/root/|/var/|/opt/|/home/|/etc/|内网|内测地址'
+          if hits="$(grep -nEi "$forbid" notes.md)"; then
+            echo "::error::Release 正文里出现了不该公开的内容（公网仓库的 Release 对全世界可见）："
+            printf '%s\n' "$hits"
+            exit 1
+          fi
+          echo "正文门禁通过：无 URL / IP / baseUrl / 主机名 / 私有路径"
+          echo "----- notes.md -----"
+          cat notes.md
+
+      # ───────────────────── 建/更新 draft → 挂唯一资产 → 复核 → publish ─────────────────────
+      # 「已存在」不再是失败条件：v1.4.3 已经发过，tag 重跑时必须能更新它。
+      #   · 已存在 → 先转 draft（冻结：核对没通过就不会有「看起来还能下」的包）→ --clobber 覆盖资产
+      #   · 不存在 → 直接建 draft
+      # 两条路都走同一段「重新下载 → 比 sha256 → 再 publish」。
+      - name: 创建/更新 draft Release，上传后用重新下载核对 sha256，再 publish
+        id: publish
+        run: |
+          set -euo pipefail
+          asset_path="${{ steps.apk.outputs.path }}"
+          asset_name="${{ steps.apk.outputs.name }}"
+          local_sha256="${{ steps.apk.outputs.sha256 }}"
+          is_prerelease="${{ steps.ver.outputs.is_prerelease }}"
+          prerelease_flag="${{ steps.ver.outputs.prerelease_flag }}"
+
+          # ① 确保是 draft（新建 或 已存在则先降级为 draft）
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            echo "Release $TAG 已存在 → 先转 draft（覆盖资产期间不对外可见），再覆盖资产并复核"
+            gh release edit "$TAG" --draft
             action=updated
           else
-            echo "创建 Release $TAG（target=$sha, prerelease=${{ steps.ver.outputs.is_prerelease }}）"
-            gh release create "$TAG" "$ASSET" \
-              --target "$sha" \
+            echo "创建 draft Release $TAG（target=$SHA，prerelease=$is_prerelease）"
+            gh release create "$TAG" \
+              --draft \
+              --target "$SHA" \
               --title "$TAG" \
-              --notes-file notes.md \
-              $pre
+              --notes-file notes.md
             action=created
           fi
-          echo "action=$action" >> "$GITHUB_ENV"
+
+          # ② 只挂那一个 APK（--clobber：tag 重跑时覆盖同名资产，而不是「资产已存在」报错）
+          gh release upload "$TAG" "$asset_path" --clobber
+
+          # ③ 资产必须恰好 1 个且就是这个 APK（不附清单 / mapping / 日志 / 符号表）
+          assets="$(gh release view "$TAG" --json assets --jq '.assets | length')"
+          echo "Release 资产数: $assets"
+          if [ "$assets" != "1" ]; then
+            gh release view "$TAG" --json assets --jq '.assets[].name' || true
+            echo "::error::Release $TAG 上不是恰好 1 个资产（实际 $assets 个）：本渠道只许挂那一个 standard APK"
+            exit 1
+          fi
+          remote_name="$(gh release view "$TAG" --json assets --jq '.assets[0].name')"
+          if [ "$remote_name" != "$asset_name" ]; then
+            echo "::error::Release 上的资产名（$remote_name）与本次产物（$asset_name）不一致"
+            exit 1
+          fi
+
+          # ④ 重新下载一次，核对「上传后拿到的东西」和本地逐字节一致（防上传损坏 / 传错文件）
+          rm -rf verify-download
+          mkdir -p verify-download
+          gh release download "$TAG" --pattern "$asset_name" --dir verify-download
+          downloaded="verify-download/$asset_name"
+          if [ ! -f "$downloaded" ]; then
+            echo "::error::gh release download 之后没有拿到 $downloaded"
+            exit 1
+          fi
+          remote_sha256="$(sha256sum "$downloaded" | awk '{print $1}')"
+          remote_size="$(stat -c%s "$downloaded")"
+          echo "  本地 sha256: $local_sha256（${{ steps.apk.outputs.size }} bytes）"
+          echo "  远端 sha256: $remote_sha256（$remote_size bytes）"
+          if [ "$remote_sha256" != "$local_sha256" ]; then
+            echo "::error::重新下载的资产 sha256 与本地不一致（上传损坏或被替换），Release 保持 draft 不发布"
+            exit 1
+          fi
+
+          # ⑤ 校验通过才 publish（正文 / 标题 / prerelease 一次性写定）
+          echo "核对通过 → publish（prerelease=$is_prerelease）"
+          gh release edit "$TAG" \
+            --draft=false \
+            "$prerelease_flag" \
+            --title "$TAG" \
+            --notes-file notes.md
+
+          state="$(gh release view "$TAG" --json isDraft,isPrerelease --jq 'if .isDraft then "draft" else "published" end + " (prerelease=" + (.isPrerelease|tostring) + ")"')"
+          echo "最终状态: $state"
+          {
+            echo "action=$action"
+            echo "state=$state"
+          } >> "$GITHUB_OUTPUT"
+
+      # 签名材料用完即清（$RUNNER_TEMP 本来就是临时的，这里只是不留一份口令到后续步骤）
+      - name: 清理签名材料
+        if: always()
+        run: |
+          set -euo pipefail
+          rm -f android/keystore/keystore.properties "${RUNNER_TEMP:-/tmp}/published.keystore"
+          echo "已清理 keystore.properties 与临时 keystore"
 
       - name: 结果摘要
         if: always()
         run: |
           {
-            echo "### Release ${TAG:-（未提供）}"
+            echo "### Release ${TAG}"
             echo ""
-            echo "- 版本: \`${{ steps.ver.outputs.version }}\`"
-            echo "- commit: \`${{ steps.ver.outputs.sha }}\`"
-            echo "- 资产: \`${ASSET:-（未取到）}\`（来源: ${APK_SOURCE:-未知}）"
-            echo "- sha256: \`${SHA256:-（未算出）}\`"
+            echo "- 版本: \`${{ steps.ver.outputs.version }}\`（versionCode \`${{ steps.ver.outputs.version_code }}\`）"
             echo "- prerelease: ${{ steps.ver.outputs.is_prerelease }}"
-            echo "- 结果: ${action:-见上方步骤日志}"
+            echo "- 资产: \`${{ steps.apk.outputs.name }}\`（${{ steps.apk.outputs.size }} bytes，恰好 1 个）"
+            echo "- SHA-256: \`${{ steps.apk.outputs.sha256 }}\`"
+            echo "- MD5: \`${{ steps.apk.outputs.md5 }}\`"
+            echo "- 四件套: debuggable=0 / variant=standard / loopback 未设 / 证书 \`${{ env.PUBLISHED_CERT_SHA256 }}\`"
+            echo "- 动作: ${{ steps.publish.outputs.action || '见上方步骤日志' }}；最终状态: ${{ steps.publish.outputs.state || '未发布（失败时 Release 保持 draft）' }}"
+            echo "- 构建方式: CI 内 \`./gradlew assembleRelease -PartifactVariant=standard\`（不再从任何分发机下载，也不读任何清单）"
           } >> "$GITHUB_STEP_SUMMARY"
