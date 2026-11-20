@@ -1,11 +1,13 @@
 import type {
   AssistantBlockParam,
-  FileBlockParam,
   MessageParam,
   MessageStreamEvent,
   OutputBlockStart,
   TextBlockParam,
+  UserContentBlockParam,
 } from '../api/types.js'
+import type { VisionTransport } from '../api/providers.js'
+import { imagePartOf } from '../attachments/imageSource.js'
 import type {
   AssistantMessage,
   FileAttachment,
@@ -28,20 +30,44 @@ import {
 import { normalizeReminder } from './latestReminder.js'
 
 /**
- * 文件按 Files API 的 file_id（附件的 serverId）引用：图片用 image 块，其余用 document 块。
- * 发送前 streamReply 会先补齐 serverId；仍为 null 的是本地没有原件的附件，不进入请求。
+ * 附件 → 内容块。两条通路（#551，`visionFor()` 唯一判定）：
+ *
+ * - **`vision.base64`（anthropic / openai / ours）**：图片用本地编码好的内联块
+ *   `{type:'image', source:{type:'base64', media_type, data}}`。编码结果由发送前
+ *   `store.prepareFiles()` 放进 `imageSource` 的缓存，这里只同步查一次；
+ *   没命中（原件缺失 / 编码失败）就当这张图没有内联形态，不进入请求。
+ * - **其它（deepseek 的 `nativeFile`）**：与改造前逐字节一致 —— 按 Files API 的 file_id
+ *   （附件的 `serverId`）引用，图片用 image 块、其余用 document 块；`serverId` 仍为 null 的
+ *   是本地没有原件的附件，不进入请求。
+ *
+ * 注意顺序：先查内联缓存、再退回 file_id。deepseek 分支下缓存**永远是空的**（发送前准备只
+ * 在 base64 渠道跑），所以它的输出与改造前完全相同。
  */
-const toFileBlocks = (files: FileAttachment[]): FileBlockParam[] =>
-  files.flatMap(({ serverId, isImage }) =>
-    serverId
+const toFileBlocks = (
+  files: FileAttachment[],
+  vision: VisionTransport
+): UserContentBlockParam[] =>
+  files.flatMap(({ id, serverId, isImage }): UserContentBlockParam[] => {
+    if (isImage && vision.base64) {
+      const part = imagePartOf(id)
+      return part
+        ? [
+            {
+              type: 'image' as const,
+              source: { type: 'base64' as const, media_type: part.mediaType, data: part.base64 },
+            },
+          ]
+        : []
+    }
+    return serverId
       ? [
           {
-            type: isImage ? 'image' : 'document',
-            source: { type: 'file', file_id: serverId },
+            type: isImage ? ('image' as const) : ('document' as const),
+            source: { type: 'file' as const, file_id: serverId },
           },
         ]
       : []
-  )
+  })
 
 const toReplyBlock = (block: OutputBlockStart, now: number): ReplyBlock | null => {
   switch (block.type) {
@@ -213,9 +239,13 @@ const isUsableReply = (message: Message): message is AssistantMessage =>
   !message.blocks.some((block) => block.type === 'text' && block.isTemplate) &&
   getReplyText(message) !== ''
 
-/** 有文件时用内容块数组：先文件后文本，文件按 Files API 的 file_id 引用 */
-const toUserParam = ({ content, files }: UserMessage): MessageParam => {
-  const blocks = toFileBlocks(files)
+/**
+ * 有文件时用内容块数组：先文件后文本。
+ * 文件块的形状由 `vision` 决定（file_id 或 base64 内联），见 `toFileBlocks`。
+ */
+const toUserParam = (user: UserMessage, vision: VisionTransport): MessageParam => {
+  const { content, files } = user
+  const blocks = toFileBlocks(files, vision)
   return blocks.length === 0
     ? { role: 'user', content }
     : {
@@ -348,7 +378,16 @@ export type RequestBudgetOptions = {
    * 不传 = 不记边界（无状态重算），只有 `store.ts` 有会话 id，别处不用管。
    */
   anchorKey?: string
+  /**
+   * 本轮渠道的图片通路（#551，`visionFor()` 的返回值）。缺省 = 只认 `file_id`
+   * （deepseek 的老行为，也是单测直调 `toRequestMessages` 时的口径）：
+   * 老调用方一个参数都不用改，输出逐字节不变。
+   */
+  vision?: VisionTransport
 }
+
+/** 缺省图片通路：只用 Files API 的 file_id（与改造前一致） */
+const NATIVE_FILE_ONLY: VisionTransport = { base64: false, nativeFile: true }
 
 export const toRequestMessages = (
   history: Message[],
@@ -359,10 +398,11 @@ export const toRequestMessages = (
   options?: RequestBudgetOptions
 ): MessageParam[] => {
   const budget = resolveContextBudget(options?.budget)
-  const questionParam = toUserParam(question)
-  // 历史提问没有文字、附件也都没有 serverId 时，提问为空，连同回答一起省略（原有行为）。
+  const vision = options?.vision ?? NATIVE_FILE_ONLY
+  const questionParam = toUserParam(question, vision)
+  // 历史提问没有文字、附件也都没有可发送形态时，提问为空，连同回答一起省略（原有行为）。
   const rounds = getContextRounds(history).filter(
-    ([user]) => user.content !== '' || toFileBlocks(user.files).length > 0
+    ([user]) => user.content !== '' || toFileBlocks(user.files, vision).length > 0
   )
   // 每轮先转成请求里的那几条消息：裁剪以「轮」为单位，成对进出，不会只留一半。
   const units = rounds.map(([user, reply]) => {
@@ -371,7 +411,7 @@ export const toRequestMessages = (
       // 修复前写下的快照可能是四段（#324）：原样重发会让官方端点继续 400
       params.push({ role: 'latest_reminder', content: normalizeReminder(reply.latestReminder) })
     }
-    params.push(toUserParam(user), toAssistantParam(reply))
+    params.push(toUserParam(user, vision), toAssistantParam(reply))
     return params
   })
   const sizes = units.map((params) => estimateChars(params))

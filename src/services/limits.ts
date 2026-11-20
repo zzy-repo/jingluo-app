@@ -62,6 +62,39 @@ export const LIMITS = {
     maxCount: 50,
     maxConcurrent: 3,
   },
+  /**
+   * 图片内联（base64）通路的限制（#551 / 母单 #548 的 vision-2；取值依据 `ref-vision.md` 5.3）。
+   *
+   * 与上面 `attachments` 那组**不是同一口径**：那一组是「上传到 Files API」的约束（原图直传 64MB），
+   * 而走 base64 的渠道（anthropic / openai / ours）图片正文直接进请求体，原图会把请求撑爆。
+   * 这里全部是**编码前 / 编码后**的口径：
+   * - `passThroughBytes` + `maxEdge` + `maxPixels`：**直发阈值**。三者都不超就原图一个字节不改
+   *   （Anthropic 官方推荐 1568px / 1.15MP；3.5MB 让 base64 后 ≈4.7MB，留在常见请求体限制内）；
+   * - `webpQuality` / `jpegFallbackQuality`：超阈值才降级，统一出 webp 0.85；webp 编码不可用时
+   *   回落 jpeg 0.9。**绝不输出 PNG**（PNG q1.0 会把截图撑到 2–4MB，base64 再 ×4/3）；
+   * - `maxSourceBytes`：原图硬上限，超过**直接拒绝、不解码**（100MP 的图在 Chromium 83 上会先 OOM）；
+   * - `maxEncodedBytes`：编码产物上限，压缩后仍超就明确拒绝，不截断不静默丢；
+   * - `maxCanvasArea`：canvas 面积闸门（iOS 老 WebKit 超面积会静默返回 `data:,`），超了先等比缩小再画；
+   * - `maxCount` / `maxTotalBytes`：单条消息的图片张数与总字节（base64 前）上限；
+   * - `cacheEntries`：本地编码结果的内存缓存条数（key = 附件 id + 编码参数）。
+   */
+  images: {
+    maxEdge: 1568,
+    maxPixels: 1_150_000,
+    passThroughBytes: Math.round(3.5 * 1024 * 1024),
+    webpQuality: 0.85,
+    jpegFallbackQuality: 0.9,
+    maxSourceBytes: 16 * 1024 * 1024,
+    maxEncodedBytes: 5 * 1024 * 1024,
+    maxCanvasArea: 4096 * 4096,
+    maxCount: 20,
+    maxTotalBytes: 20 * 1024 * 1024,
+    cacheEntries: 24,
+    /** 选图时读的头部字节（magic bytes 判定只需要几十字节，4KB 留足余量） */
+    sniffHeadBytes: 4096,
+    /** 编码前读的头部字节：要覆盖 JPEG 的 APP1(EXIF) + SOF（尺寸），相机原图也在这个范围内 */
+    maxHeadBytes: 262_144,
+  },
   /** 支付记录自动刷新 */
   paymentTrail: { pollIntervalMs: 4000, pollMaxMs: 120_000 },
   /**
@@ -70,6 +103,9 @@ export const LIMITS = {
    */
   bootDeadlineMs: 12000,
 } as const
+
+/** 字节 → MB（四舍五入的整数），只用于文案提示；换算集中在这里，别处不再写 1024 */
+export const mbOf = (bytes: number): number => Math.round(bytes / (1024 * 1024))
 
 /**
  * 导入链路的**可校验关系**（#152 / #275）：按现行上限与总时限，链路至少要稳定跑到这个速率

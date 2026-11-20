@@ -8,7 +8,7 @@ import {
   IconThinkOutline14,
 } from '../base/icons.js'
 import { getApiKey, supportsFileUpload, useApiConfig } from '../../services/api/apiConfig.js'
-import { getSpec } from '../../services/api/providers.js'
+import { getSpec, visionFor } from '../../services/api/providers.js'
 import { setSearch, setThinking, useSettings } from '../../services/settings.js'
 import { useIsMobile } from '../../app/viewport.js'
 import { sendMessage, stopReply, useChatStore } from '../../services/chat/store.js'
@@ -30,6 +30,7 @@ import { enterKeyHintFor, resolveEnterKeyAction } from './enterKey.js'
 import { DragMask, useFileDrop } from './DragMask.js'
 import { showToast } from '../base/toastState.js'
 import { ACCEPT, useUploads } from '../../services/attachments.js'
+import { IMAGE_ACCEPT } from '../../services/attachments/imageSource.js'
 import { DraftAttachments } from './DraftAttachments.js'
 import { useVoiceInput } from './useVoiceInput.js'
 import { VoiceButton } from './VoiceButton.js'
@@ -60,14 +61,21 @@ const Input = ({ sessionId }: { sessionId: string | null }) => {
   // 回车键行为（issue #108）：默认 enter-send 等于改造前的写死行为
   const enterKeyMode = useSettings((state) => state.enterKeyMode)
   // 能力开关来自当前服务类型的 spec：不支持的入口直接不渲染
-  const caps = getSpec(useApiConfig((state) => state.kind)).caps
+  const kind = useApiConfig((state) => state.kind)
+  const caps = getSpec(kind).caps
   /**
-   * 附件入口是否真的可用：既要渠道声明了 vision 能力，也要它**显式声明了 Files API 端点**
-   * （`spec.paths.files`）。只有 caps.vision 是不够的——以前就是拿 messages 前缀拼出
-   * `/v1/chat/completions/files` 去试，网关没有这条路由，线上 86% 的日志是它的 404（#303）。
+   * 附件入口是否真的可用：渠道要声明 `caps.vision`，并且**至少有一条真的能发图的通路**
+   * （`visionFor()` 的能力表：#551）——
+   * - deepseek：`nativeFile`，要它显式声明了 Files API 端点（`spec.paths.files`）。
+   *   只有 caps.vision 是不够的——以前就是拿 messages 前缀拼出 `/v1/chat/completions/files`
+   *   去试，网关没有这条路由，线上 86% 的日志是它的 404（#303 / #360）；
+   * - anthropic / openai / ours：`base64`，本地编码内联，**不需要**上传端点。
    * 不满足时入口仍然渲染，但点下去给可读提示，不静默失败（#37 / #43 的诉求）。
    */
-  const canAttach = caps.vision && supportsFileUpload()
+  const vision = visionFor(kind)
+  const canAttach = caps.vision && (supportsFileUpload() || vision.base64)
+  /** base64 渠道只收图片（文档要 #480 的文本注入链路），选择框也照此过滤 */
+  const accept = vision.base64 ? IMAGE_ACCEPT : ACCEPT
   const fileInputRef = useRef<HTMLInputElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const togglesRef = useRef<HTMLDivElement>(null)
@@ -307,7 +315,7 @@ const Input = ({ sessionId }: { sessionId: string | null }) => {
               type="file"
               multiple
               hidden
-              accept={ACCEPT}
+              accept={accept}
               onChange={(event) => {
                 acceptFiles(Array.from(event.target.files ?? []))
                 event.target.value = ''

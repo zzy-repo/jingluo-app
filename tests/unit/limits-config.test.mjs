@@ -79,6 +79,25 @@ const ORIGINAL_VALUES = {
   clockJumpMs: 2 * 60_000,
   autoTitle: { timeoutMs: 8000, maxOutputTokens: 32, maxInputBytes: 2048, concurrency: 2, maxQueue: 6 },
   attachments: { maxSizeMb: 64, maxUserDataSizeMb: 32, maxCount: 50, maxConcurrent: 3 },
+  /**
+   * #551 新增的一组（不是「搬家」的那批数字）：图片内联通路的阈值，取值依据 `ref-vision.md` 5.3。
+   * 手写一遍是为了让「改了阈值必须同时改这里」，别让这组数字悄悄漂。
+   */
+  images: {
+    maxEdge: 1568,
+    maxPixels: 1_150_000,
+    passThroughBytes: Math.round(3.5 * 1024 * 1024),
+    webpQuality: 0.85,
+    jpegFallbackQuality: 0.9,
+    maxSourceBytes: 16 * 1024 * 1024,
+    maxEncodedBytes: 5 * 1024 * 1024,
+    maxCanvasArea: 4096 * 4096,
+    maxCount: 20,
+    maxTotalBytes: 20 * 1024 * 1024,
+    cacheEntries: 24,
+    sniffHeadBytes: 4096,
+    maxHeadBytes: 262_144,
+  },
   paymentTrail: { pollIntervalMs: 4000, pollMaxMs: 120_000 },
   bootDeadlineMs: 12000,
 }

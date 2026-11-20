@@ -468,11 +468,21 @@ export const deleteFile = async (apiKey: string, fileId: string): Promise<void> 
   })
 }
 
+/**
+ * 请求里是否有**引用服务端文件**的块（`source.type === 'file'`）—— 只有这种请求才需要
+ * `anthropic-beta: files-api-…` 这个头。
+ *
+ * #551 起图片多了一种内联形态（`source.type === 'base64'`）：它不碰 Files API，
+ * 带上 files-api beta 头纯属多余（部分中转的 CORS / 参数白名单会因此 400）。
+ */
 const hasFile = (body: CreateMessageRequest) =>
   body.messages.some(
     (message) =>
       typeof message.content !== 'string' &&
-      message.content.some((block) => block.type === 'image' || block.type === 'document')
+      message.content.some(
+        (block) =>
+          (block.type === 'image' || block.type === 'document') && block.source.type === 'file'
+      )
   )
 
 /**

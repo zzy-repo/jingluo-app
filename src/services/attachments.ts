@@ -167,6 +167,13 @@ const enqueueUpload = (
 export type UploadTask =
   | { status: 'uploading' }
   | { status: 'done'; serverId: string }
+  /**
+   * 内联就绪（#551）：base64 渠道的图片**不进 Files API**（这些渠道没有 `paths.files`，
+   * 发了就是 #360 那类 404），选中即落成这个终态，真正编码发生在发送前
+   * （`store.prepareFiles` → `attachments/imageSource.ts`）。
+   * 它和 `done` 一样代表「可以发送」，差别只是没有 `serverId`。
+   */
+  | { status: 'inline' }
   | { status: 'error'; error: TranslationMessage; retryable: boolean }
 
 type UploadState = { tasks: Record<string, UploadTask> }
@@ -321,6 +328,22 @@ export const uploadAttachment = (
     .finally(() => pending.delete(id))
   pending.set(id, { promise, controller })
   return promise
+}
+
+/**
+ * 标记某个附件「内联就绪」：base64 渠道的图片用（#551）。
+ * 不在这里编码 —— 编码是 async + 吃 canvas 的活，放在发送前一次性做，选中时不阻塞输入框。
+ */
+export const markInlineUpload = (id: string) => {
+  setTask(id, { status: 'inline' })
+}
+
+/**
+ * base64 渠道的图片在选图阶段就被判死（magic bytes 不是图片 / 原始体积超硬上限）：
+ * 卡片上直接给原因、不可重试 —— 重试同一份字节不会有不同结果（#551 的「明确拒绝」）。
+ */
+export const markInlineRejected = (id: string, error: TranslationMessage) => {
+  setTask(id, { status: 'error', error, retryable: false })
 }
 
 export const cancelUpload = (id: string) => {

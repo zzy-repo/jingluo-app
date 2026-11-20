@@ -230,7 +230,9 @@ const RAW_SPECS: Record<ProviderKind, RawProviderSpec> = {
       text: true,
       search: false,
       title: false,
-      vision: false,
+      // #551：图片走**本地 base64 内联**（visionFor().base64），不走 Files API ——
+      // 这条渠道没有 `paths.files`，也永远不会有（#360）
+      vision: true,
       tts: false,
       asr: false,
     },
@@ -261,7 +263,8 @@ const RAW_SPECS: Record<ProviderKind, RawProviderSpec> = {
       text: true,
       search: false,
       title: false,
-      vision: false,
+      // #551：图片走 base64 内联（openaiAdapter 翻成 image_url 的 data URI），不走 Files API
+      vision: true,
       tts: false,
       asr: false,
     },
@@ -284,7 +287,8 @@ const RAW_SPECS: Record<ProviderKind, RawProviderSpec> = {
       text: true,
       search: false,
       title: false,
-      vision: false,
+      // #551：与 openai 共用同一套翻译层（client.ts 只判 protocol），图片同样走 base64 内联
+      vision: true,
       tts: false,
       asr: false,
     },
@@ -378,3 +382,46 @@ export const requestGates = (spec: ProviderSpec): Record<RequestGate, boolean> =
   thinking_budget: Boolean(spec.thinkingBudget),
   reasoning_param: thinkingAvailable(spec),
 })
+
+// ---------- 图片（vision）能力表（#551 / 母单 #548） ----------
+
+/**
+ * 图片在**请求体里怎么走**：两种通路互斥，一张图只能走其中一条。
+ * - `nativeFile`：上传 Files API 拿 `file_id`，请求里放 `{type:'image', source:{type:'file', file_id}}`
+ *   （今天只有 deepseek 声明了 `paths.files`，所以只有它走这条）；
+ * - `base64`：本地编码后内联，anthropic 用 `{type:'image', source:{type:'base64', …}}`，
+ *   openai / ours 用 `{type:'image_url', image_url:{url:'data:…'}}`（由 openaiAdapter 翻译）。
+ *
+ * 两者都为 false = **一张图都发不出去**（未知渠道 / 未来新增但没有视觉能力的渠道），
+ * 调用方必须给明确提示，不许静默丢图。
+ */
+export type VisionTransport = {
+  /** 本地编码成 base64 内联进请求体 */
+  base64: boolean
+  /** 走 Files API 的 file_id 引用 */
+  nativeFile: boolean
+}
+
+/**
+ * 渠道 → 图片通路。**唯一判定处**（与 #480 的 `docInjectionFor()` 同构）：
+ * 请求侧拼装、发送前准备、UI 入口判定都查这一张表，不许各写一遍 if。
+ *
+ * 为什么三渠道只能是 base64：#360 起「附件上传必须渠道显式声明 `paths.files`」，
+ * 而 anthropic / openai / ours 没有、也不会有这条路由（`/v1/chat/completions/files` 在网关
+ * 根本不存在，曾占 84% 的 404 流量）→ 这三家的图片**不可能走上传**，只能本地编码。
+ *
+ * deepseek 保持 `nativeFile` 通路，行为与改造前**逐字节一致**（#551 的零改动边界）。
+ */
+const VISION_TRANSPORT: Record<ProviderKind, VisionTransport> = {
+  deepseek: { base64: false, nativeFile: true },
+  anthropic: { base64: true, nativeFile: false },
+  openai: { base64: true, nativeFile: false },
+  ours: { base64: true, nativeFile: false },
+}
+
+/** 未知渠道的缺省：两条通路全关（fail-closed —— 猜一条通路的代价是 404 刷屏或上游 400） */
+const NO_VISION: VisionTransport = { base64: false, nativeFile: false }
+
+/** 某个渠道的图片通路；未知 / 非法值一律 fail-closed，返回两条全关 */
+export const visionFor = (kind: ProviderKind): VisionTransport =>
+  isProviderKind(kind) ? VISION_TRANSPORT[kind] : NO_VISION

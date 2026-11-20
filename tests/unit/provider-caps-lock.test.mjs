@@ -137,7 +137,9 @@ test('能力矩阵快照：四个渠道逐字段锁定（防止改错误分类�
         thinking: true,
         search: false,
         title: false,
-        vision: false,
+        // #551：图片走本地 base64 内联（`visionFor('anthropic').base64`）—— 这条渠道没有
+        // `paths.files`（#360），所以「能发图」不再等价于「能上传」。快照从 false 改 true 是**预期变更**。
+        vision: true,
         tts: false,
         asr: false,
       },
@@ -150,7 +152,8 @@ test('能力矩阵快照：四个渠道逐字段锁定（防止改错误分类�
         thinking: false,
         search: false,
         title: false,
-        vision: false,
+        // #551：base64 内联，由 openaiAdapter 翻成 image_url（预期变更，同 anthropic）
+        vision: true,
         tts: false,
         asr: false,
       },
@@ -165,7 +168,8 @@ test('能力矩阵快照：四个渠道逐字段锁定（防止改错误分类�
         thinking: true,
         search: false,
         title: false,
-        vision: false,
+        // #551：与 openai 共用翻译层，图片同样走 base64 内联（预期变更）
+        vision: true,
         tts: false,
         asr: false,
       },

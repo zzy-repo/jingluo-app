@@ -21,8 +21,16 @@ import { getApiKey, getBaseUrl, getCurrentSpec, getModel } from '../api/apiConfi
 import { buildMeta, endpointKeyFromUrl } from '../diagnostics/fields.js'
 import { REASON } from '../diagnostics/reasons.js'
 import { createStreamMeter, streamTimingMeta } from '../diagnostics/timing.js'
-import { requestGates } from '../api/providers.js'
-import { LIMITS } from '../limits.js'
+import { requestGates, visionFor } from '../api/providers.js'
+import {
+  ImageSourceError,
+  imagePartBytes,
+  imagePartOf,
+  putImagePart,
+  toImagePart,
+  type ImagePart,
+} from '../attachments/imageSource.js'
+import { LIMITS, mbOf } from '../limits.js'
 import { useSettings } from '../settings.js'
 import { generateSessionTitle } from './autoTitle.js'
 import {
@@ -1182,6 +1190,104 @@ const refreshRequest = (sessionId: string, request: Request): Request => {
 }
 
 /**
+ * 图片编码失败 / 原件缺失这类「本地就能判死」的错误，转成带可读文案的 ApiError，
+ * 这样 streamReply 的失败分支会把它当 `localMessage` 显示给用户（而不是泛化的「生成失败」）。
+ * 文案取自 `imageSource` 抛出的 `localMessage`，与选图阶段的提示是同一份 key。
+ */
+const imageFailure = (error: unknown): unknown =>
+  error instanceof ImageSourceError
+    ? new ApiError('protocol', error.localMessage)
+    : error
+
+/**
+ * base64 渠道的图片准备（#551）：把本轮 + 历史里的图片在本地编码成内联块。
+ *
+ * 三条口径：
+ * 1. **不发任何上传请求**（这些渠道没有 `paths.files`，#360 的 404 就是这么来的）；
+ * 2. 本轮提问的图片**要么成功、要么明确报错**：原件缺失 / 格式不支持 / 编码失败 / 超限
+ *    都会中止发送并给出可读原因 —— 绝不静默丢图（母单 #548 的硬约束）；
+ * 3. 历史图片有原件就编（导入会话的图片因此也能发，顺带修好 `serverId` 恒 null 的老问题），
+ *    编不出来只记日志、不阻断发送（与 #379「历史附件不阻断发送」同一口径）。
+ *
+ * 编码结果按「附件 id + 参数」缓存（`imageSource`），所以多轮 / 重试不会重复压同一张图，
+ * 同一张图每次得到的字节也相同（#345 前缀稳定的前提）。
+ */
+const prepareInlineImages = async (
+  sessionId: string,
+  request: Request,
+  signal: AbortSignal
+): Promise<void> => {
+  /**
+   * 取原件：刚发出的消息可能还没落盘（`persist` 是异步的），先看内存里的 pendingFiles，
+   * 再回落到 IndexedDB —— 只查 db 会有「图片还没写完就读」的空窗。
+   */
+  const blobOf = async (id: string): Promise<Blob | undefined> => {
+    const pending = pendingFiles.get(sessionId)?.find((item) => item.id === id)?.blob
+    return pending ?? (await db.loadFile(id))
+  }
+  const encode = async (file: FileAttachment): Promise<ImagePart> => {
+    const cached = imagePartOf(file.id)
+    if (cached) {
+      return cached
+    }
+    const blob = await blobOf(file.id)
+    if (!blob) {
+      throw new ImageSourceError({ key: 'imageSourceMissing' }, false)
+    }
+    return toImagePart(blob)
+  }
+
+  const questionImages = request.question.files.filter((file) => file.isImage)
+  if (questionImages.length > LIMITS.images.maxCount) {
+    throw new ApiError('protocol', {
+      key: 'imageTooMany',
+      params: { count: LIMITS.images.maxCount },
+    })
+  }
+  let total = 0
+  for (const file of questionImages) {
+    signal.throwIfAborted()
+    let part: ImagePart
+    try {
+      part = await encode(file)
+    } catch (error) {
+      throw imageFailure(error)
+    }
+    putImagePart(file.id, part)
+    total += imagePartBytes(part)
+  }
+  if (total > LIMITS.images.maxTotalBytes) {
+    throw new ApiError('protocol', {
+      key: 'imageTotalTooLarge',
+      params: { size: mbOf(LIMITS.images.maxTotalBytes) },
+    })
+  }
+
+  let skipped = 0
+  for (const [user] of getContextRounds(request.history)) {
+    for (const file of user.files) {
+      if (!file.isImage || imagePartOf(file.id)) {
+        continue
+      }
+      signal.throwIfAborted()
+      try {
+        putImagePart(file.id, await encode(file))
+      } catch {
+        // 历史图片编不出来（导入的图片没有原件 / 超限）：跳过它这一张，不阻断本次发送
+        skipped++
+      }
+    }
+  }
+  if (skipped > 0) {
+    record('chat_send', 'warn', 'history images not inlined', {
+      count: skipped,
+      reason: 'history',
+      status: 'error',
+    })
+  }
+}
+
+/**
  * 发送前补齐附件的 serverId。
  * - 本轮提问的附件并行补齐，任一失败则整体失败，已成功的照常写回，重试时复用成功结果；
  * - **历史轮次的附件默认不补传**（#379）：它们属于既有消息记录，发新消息不该触发上传。
@@ -1198,6 +1304,16 @@ const prepareFiles = async (sessionId: string, request: Request, signal: AbortSi
   // 否则快照里仍是旧 id，补传会直接复用它。
   request = refreshRequest(sessionId, request)
   const apiKey = getApiKey()
+  /**
+   * 本渠道的图片通路（#551，`visionFor()` 唯一判定）。
+   * `base64 = false` 时下面每一条都以**原样**执行 —— 这就是 deepseek 路径零改动的意思。
+   */
+  const vision = visionFor(getCurrentSpec().kind)
+  const hasImage = request.question.files.some((file) => file.isImage)
+  if (hasImage && !vision.base64 && !vision.nativeFile) {
+    // 既不能内联、也没有 Files API：明确报错并提示换渠道，绝不静默丢图（母单 #548）
+    throw new ApiError('protocol', { key: 'visionUnsupported' })
+  }
   const serverIds = new Map<string, string>()
   // 停止生成立即生效；上传本身不取消（输入框与其他消息可能共用同一任务），完成后照常写回 serverId
   const aborted = new Promise<never>((_, reject) => {
@@ -1205,6 +1321,10 @@ const prepareFiles = async (sessionId: string, request: Request, signal: AbortSi
   })
   const uploads = Promise.allSettled(
     request.question.files.map(async (file) => {
+      // base64 渠道的图片不进 Files API（#360：这条渠道没有上传端点，也不许回落）
+      if (file.isImage && vision.base64) {
+        return
+      }
       const serverId = await ensureServerId(apiKey, file)
       if (serverId) {
         serverIds.set(file.id, serverId)
@@ -1229,6 +1349,10 @@ const prepareFiles = async (sessionId: string, request: Request, signal: AbortSi
   for (const [user] of getContextRounds(request.history)) {
     for (const file of user.files) {
       if (file.serverId || serverIds.has(file.id)) {
+        continue
+      }
+      // base64 渠道的图片不参与补传：它们的正文在本地，压根不需要 file_id
+      if (file.isImage && vision.base64) {
         continue
       }
       const recovering = recoveringFiles.get(file.id)
@@ -1261,6 +1385,11 @@ const prepareFiles = async (sessionId: string, request: Request, signal: AbortSi
       count: skipped.size,
       reason: 'history',
     })
+  }
+
+  // base64 渠道：把图片在本地编码成内联块（本轮必成功，历史尽力而为；见 prepareInlineImages）
+  if (vision.base64) {
+    await prepareInlineImages(sessionId, request, signal)
   }
 
   // 用补齐后的会话重新取历史与提问，保证请求里都是 serverId
@@ -1512,7 +1641,8 @@ const streamReply = async (sessionId: string, initial: AssistantMessage, request
             latestReminder,
             // 裁剪边界跟着会话走（#345）：同一会话的后续轮次沿用同一个边界，
             // 请求前缀逐字节稳定，上游上下文缓存才会命中
-            { anchorKey: sessionId }
+            // vision：图片块按渠道通路拼（file_id / base64 内联），deepseek 仍是 file_id
+            { anchorKey: sessionId, vision: visionFor(spec.kind) }
           )
         )
         // 附件已补齐、请求即将发出：prepMs 到此为止，后面的耗时才是「等上游」

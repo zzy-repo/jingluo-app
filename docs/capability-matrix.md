@@ -34,9 +34,11 @@
 
 ## 一、总表
 
+> 列说明：`ours`（我们的渠道）走 OpenAI 协议、与「OpenAI 兼容」列**共用同一套翻译层与能力位**（`client.ts` 只判 `protocol`），因此下表不单列第四列；差异只在默认档位（见「深度思考」行）。
+
 | 能力 | DeepSeek 官方 | Anthropic 协议 | OpenAI 兼容 |
 | --- | --- | --- | --- |
-| 基础文本对话 | ✅可用 —— `POST /anthropic/v1/messages`，`system` + `messages` 直发，`x-api-key` 鉴权（`providers.ts` 的 `SPECS`、`client.ts:276-285`） | ✅可用 —— 路径换 `/v1/messages`，正文链路一字不改，只剥私有字段（`providers.ts:225`、`tests/integration/full-acceptance.test.mjs`（第 7 组：anthropic `/v1/*` + 字段剥离）） | ✅可用 —— `POST /v1/chat/completions` + `Bearer`，请求体经 `toOpenAIRequest` 翻译（`providers.ts:136`、`openaiAdapter.ts:71-94`） |
+| 基础文本对话 | ✅可用 —— `POST /anthropic/v1/messages`，`system` + `messages` 直发，`x-api-key` 鉴权（`providers.ts` 的 `SPECS`、`client.ts:276-285`） | ✅可用 —— 路径换 `/v1/messages`，正文链路一字不改，只剥私有字段（`providers.ts:225`、`tests/integration/full-acceptance.test.mjs`（第 7 组：anthropic `/v1/*` + 字段剥离）） | ✅可用 —— `POST /v1/chat/completions` + `Bearer`，请求体经 `toOpenAIRequest` 翻译（`providers.ts:136`、`openaiAdapter.ts:162-200`） |
 | 流式输出 | ✅可用 —— 原生 SSE，`readServerSentEvents` → `readMessageEvent` 逐事件消费（`client.ts` 的 `readServerSentEvents`） | ✅可用 —— 与 DeepSeek 走同一段 `streamMessage`，1.2.3 起就是纯透传（`client.ts` 的 `streamMessage`） | ✅可用 —— 翻译器把 chunk 转成严格合法的 `content_block_delta` 序列，断流也会补 `message_stop`（`openaiAdapter.ts:237-337`） |
 | 深度思考 | ✅可用 —— 请求带 `thinking:{type:'enabled'}`，字段发不发由 `requestBody.ts` 的 `buildMessageBody()` 按 `gates.reasoning_param` 判定，思考块按 `thinking_delta`/`signature_delta` 累积（`reply.ts:103-108`） | ✅可用 —— 同一个开关，另自动补 `budget_tokens:4096`（真 Anthropic 必填，`requestBody.ts` 的 `gates.thinking_budget` 分支、`providers.ts:128`） | ⚠️按档位 —— 出厂 `reasoningParam:'none'`：`caps.thinking=false`，入口仍常驻（#341：可点、只改本地档位，`data-thinking-effective=false`），请求里一个思考字段都不加（与 1.3.0 一致）。渠道改成 `'reasoning_effort'` 则发 `reasoning_effort:'low'|'medium'|'high'`，改成 `'thinking_enabled'` 则发 `thinking:{type:'enabled'}`；非法档位按 `none` fail-closed（`providers.ts` 的 `reasoningParamOf()` / `thinkingAvailable()`、`openaiAdapter.ts` 的 `reasoningFields()`、`ThinkingToggle.ts`） |
 | 联网搜索 | ✅可用 —— `tools` 里带 `deepseek_web_search`，结果块渲染成搜索面板与正文角标（`store.ts` 的 `serverTools()` + `gates.tools`、`view.ts:197-205`、`SearchPanel.tsx:9-35`） | ❌不可用 —— 上游没接口（中转基本不实现 `deepseek_web_search`）：`gates.tools=false`，不发 `tools`，开关也不渲染（`providers.ts` 的 `caps.search` + `gates.tools`、`ChatInput.tsx:229-242`） | ❌不可用 —— 既无 `tools`（`gates.tools=false`）也没有等价的服务端搜索协议（`providers.ts` 的 `caps.search` / `gates.tools`） |
@@ -55,7 +57,7 @@
 | Markdown/KaTeX/Mermaid 渲染 | ✅可用 —— 全本地渲染（AST → 组件），与上游无关（`Markdown.tsx:1-20`、`MathFormula.tsx:1-10`、`MermaidDiagram.tsx` 的 `MermaidDiagram`） | ✅可用 —— 同上 | ✅可用 —— 同上 |
 | 会话管理（新建/重命名/删除） | ✅可用 —— IndexedDB 本地 CRUD（`Sider.tsx:66-75,121`、`SessionItem.tsx:29,63-70`、`src/services/chat/store.ts:462,478,503`） | ✅可用 —— 同上 | ✅可用 —— 同上 |
 | 历史导入导出 | ✅可用 —— ZIP 导入/导出纯本地，含附件（`SettingsDialog.tsx:470,517`、`history/zipWriter.ts`） | ✅可用 —— 同上 | ✅可用 —— 同上 |
-| 附件/图片 | ✅可用 —— Files API 上传（`{messages}/files`，带 `anthropic-beta`），引用走 `image`/`document` + `file_id`（`client.ts:27,181-200`、`reply.ts:22-32`） | ❌不可用 —— 我们主动砍掉：`caps.vision=false`，回形针与拖拽入口都不渲染（`providers.ts:124`、`ChatInput.tsx:81-94,260-275`） | ❌不可用 —— 入口不渲染；即使硬塞，翻译层也只取 `text` 块、图片/文档直接丢弃（`openaiAdapter.ts:57-65`） |
+| 附件/图片 | ✅可用 —— Files API 上传（`{messages}/files`，带 `anthropic-beta`），引用走 `image`/`document` + `file_id`（`client.ts` 的 `uploadFile()`、`reply.ts` 的 `toFileBlocks()`） | ✅可用（#551）—— 本地 base64 内联：`{type:'image', source:{type:'base64', media_type, data}}`；这条渠道没有 `paths.files`，所以只能编码直发（`providers.ts` 的 `visionFor()`、`reply.ts` 的 `toFileBlocks()`、`attachments/imageSource.ts`） | ✅可用（#551，`ours` 同列）—— `{type:'image_url', image_url:{url:'data:<mime>;base64,…'}}`，由 `openaiAdapter.ts` 的 `imagePartsOf()` 翻译；文档附件仍不可用（要 #480 的文本注入） |
 | 语音输入 ASR | ✅可用 —— `POST /v1/tools/asr`（multipart WAV/Ogg）返回全文（`speech.ts:17-46`、`providers.ts` 里 deepseek 的 `paths.tools`） | ❌不可用 —— `caps.asr=false`（上游没接口），VoiceButton 不渲染（`providers.ts:125`、`ChatInput.tsx:245-259`） | ❌不可用 —— `caps.asr=false`，且 `paths.tools` 是空串，连工具前缀都没定义（`providers.ts:136`） |
 | 朗读 TTS | ✅可用 —— `POST /v1/tools/tts` 返回裸 PCM（24k 单声道），服务端过滤 markdown（`speech.ts:49-68`） | ❌不可用 —— `caps.tts=false`，`ReadAloudButton` 直接 `return null`（`providers.ts:126`、`ReadAloudButton.tsx:18-22`） | ❌不可用 —— 同上，无工具前缀 |
 
@@ -152,7 +154,7 @@
 | Markdown/KaTeX/Mermaid | 无 | 无（纯本地渲染） | `Markdown.tsx:1-20`、`MarkdownAstRenderer.tsx`、`MathFormula.tsx:1-10`、`MermaidDiagram.tsx` 的 `MermaidDiagram`、`CodeBlock.tsx` |
 | 会话管理 | 无（IndexedDB） | 无 | `Sider.tsx:66-75,121`、`SessionItem.tsx:23-70`、`src/services/chat/store.ts:462,478,503` |
 | 历史导入导出 | 无（ZIP 本地） | 无 | `SettingsDialog.tsx` 的「数据管理」分组、`history/zipWriter.ts`、`history/importArchive.ts` |
-| 附件/图片 | `POST {messages}/files`（`client.ts:181-200`）+ `anthropic-beta:files-api-2025-04-14`（`client.ts:27,160-163`）；引用 `image`/`document` + `file_id`（`reply.ts:22-32`） | 无特殊事件（图片只上行） | `ChatInput.tsx:81-94,260-275`、`DraftAttachments.tsx`、`FileCard.tsx`、`MessageFile.tsx` |
+| 附件/图片 | 两条通路（`visionFor()` 唯一判定）：① `file_id` —— `POST {messages}/files` + `anthropic-beta:files-api-2025-04-14`（`client.ts` 的 `uploadFile()`）；② base64 —— 本地编码内联，**不发任何上传请求**（`attachments/imageSource.ts` 的 `toImagePart()`） | 无特殊事件（图片只上行） | `ChatInput.tsx` 的 `canAttach`、`DraftAttachments.tsx`、`FileCard.tsx`、`MessageFile.tsx` |
 | 语音输入 ASR | `POST {baseUrl}{paths.tools}/asr`（`speech.ts:24`） | 纯 JSON `{text}`（`speech.ts:30-45`） | `ChatInput.tsx:245-259`、`VoiceButton.tsx`、`useVoiceInput.ts` |
 | 朗读 TTS | `POST {baseUrl}{paths.tools}/tts`（`speech.ts:55`） | 裸 PCM 流（`speech.ts:64-67`） | `ReadAloudButton.tsx:15-33`、`ReadingBars.tsx`、`services/speech/readAloud.ts` |
 

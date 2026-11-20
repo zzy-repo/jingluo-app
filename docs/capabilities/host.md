@@ -4,9 +4,9 @@
 >
 > **快照基准：`acf6826`**（`origin/main` tip，2026-11-19 12:28:21 +0800）· 采集时间：2026-11-19 18:55 (+0800)
 >
-> **扫描范围**：`src/**` 的 **253** 个源文件。
+> **扫描范围**：`src/**` 的 **254** 个源文件。
 >
-> 拆分：`.ts` **185** / `.tsx` 67 / `.html` 1 = 253（#487 W1-A 新增 `src/services/consume/**` 9 个 `.ts`，W1-B 新增 `src/services/auth/**` 5 个 `.ts` 与 `src/components/auth/**` 3 个 `.tsx`，W1-C2 新增 `src/components/consume/**` 的 7 个面板文件，W1-C1 再新增 3 个 `.tsx`，「统一计量」再新增 `src/utils/money.ts` 1 个 `.ts`，「迁移尾巴」再新增 `src/legacy/migration/**` 4 个 `.ts` 与 1 个 `.tsx`）。上一版写 190，是缺了 `#237`（`fetch` 通道计数、`readBytesOf`）与 `#243`（设备指纹）新增的 5 个文件。
+> 拆分：`.ts` **186** / `.tsx` 67 / `.html` 1 = 254（#487 W1-A 新增 `src/services/consume/**` 9 个 `.ts`，W1-B 新增 `src/services/auth/**` 5 个 `.ts` 与 `src/components/auth/**` 3 个 `.tsx`，W1-C2 新增 `src/components/consume/**` 的 7 个面板文件，W1-C1 再新增 3 个 `.tsx`，「统一计量」再新增 `src/utils/money.ts` 1 个 `.ts`，「迁移尾巴」再新增 `src/legacy/migration/**` 4 个 `.ts` 与 1 个 `.tsx`）。上一版写 190，是缺了 `#237`（`fetch` 通道计数、`readBytesOf`）与 `#243`（设备指纹）新增的 5 个文件。
 >
 > **本盘点只审计、只出单、只做工具，不修任何代码。** 每条真实漏洞都另开独立 Issue（见「真实漏洞与拆单」），修复在各自单里做，不在 #209 的 PR 里改产品代码。
 >
@@ -36,7 +36,7 @@
 
 ## 盘点表
 
-**总计 130 条命中**（`已有兜底` 75 / `无风险` 41 / `真实漏洞` 5 / `需动态验证` 9）；风险分布：高 4、中 10、低 116。
+**总计 137 条命中**（`已有兜底` 75 / `无风险` 47 / `真实漏洞` 5 / `需动态验证` 10）；风险分布：高 4、中 11、低 122。
 
 | 文件:行 | 假设内容 | 类别 | 风险(高/中/低) | 处置(已有兜底/需探测/需动态验证/拆单) |
 | --- | --- | --- | --- | --- |
@@ -45,7 +45,7 @@
 | `src/app/viewport.ts:144` | visualViewport 引入于 Chrome 61，83 必有；键盘弹出后的行为仍需真机确认 | 3 | 低 | 已有兜底 |
 | `src/components/base/Modal.tsx:63` | visualViewport 引入于 Chrome 61，83 必有；键盘弹出后的行为仍需真机确认 | 3 | 低 | 已有兜底 |
 | `src/components/base/anchored.ts:179` | ResizeObserver 引入于 Chrome 64，83 必有（启动守卫也把它列进 REQUIRED） | 3 | 低 | 已有兜底 |
-| `src/components/chatInput/ChatInput.tsx:87` | ResizeObserver 引入于 Chrome 64，83 必有（启动守卫也把它列进 REQUIRED） | 3 | 低 | 已有兜底 |
+| `src/components/chatInput/ChatInput.tsx:95` | ResizeObserver 引入于 Chrome 64，83 必有（启动守卫也把它列进 REQUIRED） | 3 | 低 | 已有兜底 |
 | `src/components/chatInput/Spectrum.tsx:34` | ResizeObserver 引入于 Chrome 64，83 必有（启动守卫也把它列进 REQUIRED） | 3 | 低 | 已有兜底 |
 | `src/components/chatInput/useVoiceInput.ts:75` | AbortController 引入于 Chrome 66，83 必有（启动守卫也把它列进 REQUIRED） | 3 | 低 | 已有兜底 |
 | `src/components/messages/MessageFile.tsx:20` | URL.createObjectURL 引入于 Chrome 8，83 必有 | 3 | 低 | 已有兜底 |
@@ -72,16 +72,22 @@
 | `src/services/api/client.ts:168` | Body.text/arrayBuffer 引入于 Chrome 76，83 必有 | 3 | 低 | 已有兜底 |
 | `src/services/api/client.ts:201` | Body.text/arrayBuffer 引入于 Chrome 76，83 必有（#434 折叠区的响应摘要：`response.text()` 读正文前 200 字） | 3 | 低 | 已有兜底 |
 | `src/services/api/client.ts:289` | AbortController 引入于 Chrome 66，83 必有（启动守卫也把它列进 REQUIRED） | 3 | 低 | 已有兜底 |
-| `src/services/api/client.ts:677` | AbortController 引入于 Chrome 66，83 必有（启动守卫也把它列进 REQUIRED） | 3 | 低 | 已有兜底 |
-| `src/services/api/client.ts:688` | @capacitor/core 随包发布，函数一定在；它回答的是「跑在壳里吗」不是「插件在吗」 | 3 | 低 | 已有兜底 |
-| `src/services/api/client.ts:708` | Body.text/arrayBuffer 引入于 Chrome 76，83 必有 | 3 | 低 | 已有兜底 |
+| `src/services/api/client.ts:687` | AbortController 引入于 Chrome 66，83 必有（启动守卫也把它列进 REQUIRED） | 3 | 低 | 已有兜底 |
+| `src/services/api/client.ts:698` | @capacitor/core 随包发布，函数一定在；它回答的是「跑在壳里吗」不是「插件在吗」 | 3 | 低 | 已有兜底 |
+| `src/services/api/client.ts:718` | Body.text/arrayBuffer 引入于 Chrome 76，83 必有 | 3 | 低 | 已有兜底 |
 | `src/services/api/embedding.ts:194` | Body.text/arrayBuffer 引入于 Chrome 76，83 必有 | 3 | 低 | 已有兜底 |
 | `src/services/api/speech.ts:30` | Body.text/arrayBuffer 引入于 Chrome 76，83 必有 | 3 | 低 | 已有兜底 |
 | `src/services/api/speech.ts:65` | Body.text/arrayBuffer 引入于 Chrome 76，83 必有 | 3 | 低 | 已有兜底 |
 | `src/services/api/sse.ts:130` | ReadableStream.getReader 引入于 Chrome 43，83 必有；真正要防的是 body 为 null | 3 | 低 | 已有兜底 |
 | `src/services/appUpdate.ts:40` | registerPlugin 一定返回代理对象，但原生侧没注册时调用只会 reject；插件在不在要探测 | 3 | 中 | 需动态验证 |
 | `src/services/appUpdate.ts:41` | @capacitor/core 随包发布，函数一定在；native-bridge 没注入时会退化成 "web" | 3 | 低 | 已有兜底 |
-| `src/services/attachments.ts:235` | AbortController 引入于 Chrome 66，83 必有（启动守卫也把它列进 REQUIRED） | 3 | 低 | 已有兜底 |
+| `src/services/attachments.ts:242` | AbortController 引入于 Chrome 66，83 必有（启动守卫也把它列进 REQUIRED） | 3 | 低 | 已有兜底 |
+| `src/services/attachments/imageSource.ts:231` | Body.text/arrayBuffer 引入于 Chrome 76，83 必有 | 3 | 低 | 已有兜底 |
+| `src/services/attachments/imageSource.ts:238` | FileReader 引入于 Chrome 6，83 必有 | 3 | 低 | 已有兜底 |
+| `src/services/attachments/imageSource.ts:256` | URL.createObjectURL 引入于 Chrome 8，83 必有 | 3 | 低 | 已有兜底 |
+| `src/services/attachments/imageSource.ts:259` | URL.revokeObjectURL 引入于 Chrome 8，83 必有 | 3 | 低 | 已有兜底 |
+| `src/services/attachments/imageSource.ts:263` | URL.revokeObjectURL 引入于 Chrome 8，83 必有 | 3 | 低 | 已有兜底 |
+| `src/services/attachments/imageSource.ts:354` | toBlob 的回调在部分 WebView 上会拿到 null 甚至不触发，静态判不出 | 3 | 中 | 需动态验证 |
 | `src/services/auth/store.ts:93` | localStorage 在无痕 / 配额满 / 分区存储受限时抛错，写入必须自带 try…catch | 3 | 低 | 已有兜底 |
 | `src/services/auth/store.ts:102` | localStorage 在无痕 / 配额满 / 分区存储受限时抛错，写入必须自带 try…catch | 3 | 低 | 已有兜底 |
 | `src/services/auth/store.ts:104` | localStorage 在无痕 / 配额满 / 分区存储受限时抛错，写入必须自带 try…catch | 3 | 低 | 已有兜底 |
@@ -95,8 +101,9 @@
 | `src/services/chat/autoTitle.ts:302` | AbortController 引入于 Chrome 66，83 必有（启动守卫也把它列进 REQUIRED） | 3 | 低 | 已有兜底 |
 | `src/services/chat/background.ts:19` | URL.revokeObjectURL 引入于 Chrome 8，83 必有 | 3 | 低 | 已有兜底 |
 | `src/services/chat/background.ts:23` | URL.createObjectURL 引入于 Chrome 8，83 必有 | 3 | 低 | 已有兜底 |
-| `src/services/chat/drafts.ts:79` | URL.createObjectURL 引入于 Chrome 8，83 必有 | 3 | 低 | 已有兜底 |
-| `src/services/chat/drafts.ts:128` | URL.revokeObjectURL 引入于 Chrome 8，83 必有 | 3 | 低 | 已有兜底 |
+| `src/services/chat/drafts.ts:66` | Body.text/arrayBuffer 引入于 Chrome 76，83 必有 | 3 | 低 | 已有兜底 |
+| `src/services/chat/drafts.ts:146` | URL.createObjectURL 引入于 Chrome 8，83 必有 | 3 | 低 | 已有兜底 |
+| `src/services/chat/drafts.ts:200` | URL.revokeObjectURL 引入于 Chrome 8，83 必有 | 3 | 低 | 已有兜底 |
 | `src/services/chat/history/importArchive.ts:45` | Body.text/arrayBuffer 引入于 Chrome 76，83 必有 | 3 | 低 | 已有兜底 |
 | `src/services/chat/history/importArchive.ts:146` | Body.text/arrayBuffer 引入于 Chrome 76，83 必有 | 3 | 低 | 已有兜底 |
 | `src/services/chat/history/importFailure.ts:147` | navigator.onLine 是「有没有网卡」不是「能不能连上」，只能当弱信号用 | 3 | 低 | 已有兜底 |
@@ -106,8 +113,8 @@
 | `src/services/chat/history/zipReader.ts:70` | Body.text/arrayBuffer 引入于 Chrome 76，83 必有 | 3 | 低 | 已有兜底 |
 | `src/services/chat/history/zipWriter.ts:142` | blob.stream() 引入于 Chrome 76，83 必有 | 3 | 低 | 已有兜底 |
 | `src/services/chat/history/zipWriter.ts:142` | ReadableStream.getReader 引入于 Chrome 43，83 必有；真正要防的是 body 为 null | 3 | 低 | 已有兜底 |
-| `src/services/chat/store.ts:1420` | AbortController 引入于 Chrome 66，83 必有（启动守卫也把它列进 REQUIRED） | 3 | 低 | 已有兜底 |
-| `src/services/chat/store.ts:1450` | AbortController 引入于 Chrome 66，83 必有（启动守卫也把它列进 REQUIRED） | 3 | 低 | 已有兜底 |
+| `src/services/chat/store.ts:1549` | AbortController 引入于 Chrome 66，83 必有（启动守卫也把它列进 REQUIRED） | 3 | 低 | 已有兜底 |
+| `src/services/chat/store.ts:1579` | AbortController 引入于 Chrome 66，83 必有（启动守卫也把它列进 REQUIRED） | 3 | 低 | 已有兜底 |
 | `src/services/consume/http.ts:113` | @capacitor/core 随包发布，函数一定在；它回答的是「跑在壳里吗」不是「插件在吗」 | 3 | 低 | 已有兜底 |
 | `src/services/diagnostics/capabilityTruth.ts:73` | visualViewport 引入于 Chrome 61，83 必有；键盘弹出后的行为仍需真机确认 | 3 | 低 | 已有兜底 |
 | `src/services/diagnostics/capabilityTruth.ts:77` | navigator.clipboard 非安全上下文下整体为 undefined（局域网 http 打开就不是安全上下文） | 3 | 低 | 已有兜底 |
@@ -244,11 +251,11 @@
 | 能力 | 命中 | 已有兜底 | 无风险 | 真实漏洞 | 需动态验证 |
 | --- | --- | --- | --- | --- | --- |
 | `localStorage` | 20 | 19 | 1 | 0 | 0 |
-| `Body.text/arrayBuffer` | 17 | 10 | 7 | 0 | 0 |
+| `Body.text/arrayBuffer` | 19 | 10 | 9 | 0 | 0 |
 | `AbortController` | 14 | 14 | 0 | 0 | 0 |
 | `Capacitor.isNativePlatform` | 12 | 2 | 10 | 0 | 0 |
-| `URL.createObjectURL` | 7 | 3 | 4 | 0 | 0 |
-| `URL.revokeObjectURL` | 7 | 2 | 5 | 0 | 0 |
+| `URL.revokeObjectURL` | 9 | 2 | 7 | 0 | 0 |
+| `URL.createObjectURL` | 8 | 3 | 5 | 0 | 0 |
 | `Capacitor.registerPlugin` | 6 | 1 | 0 | 0 | 5 |
 | `ResizeObserver` | 5 | 5 | 0 | 0 | 0 |
 | `matchMedia` | 5 | 1 | 4 | 0 | 0 |
@@ -262,14 +269,14 @@
 | `AudioContext` | 2 | 1 | 0 | 0 | 1 |
 | `CSS.escape` | 2 | 2 | 0 | 0 | 0 |
 | `Capacitor.isPluginAvailable` | 2 | 1 | 1 | 0 | 0 |
+| `FileReader` | 2 | 0 | 2 | 0 | 0 |
+| `canvas.toBlob` | 2 | 0 | 0 | 0 | 2 |
 | `createImageBitmap` | 2 | 2 | 0 | 0 | 0 |
 | `Blob.prototype.stream` | 1 | 0 | 1 | 0 | 0 |
-| `FileReader` | 1 | 0 | 1 | 0 | 0 |
-| `canvas.toBlob` | 1 | 0 | 0 | 0 | 1 |
 | `canvas.toDataURL` | 1 | 0 | 1 | 0 | 0 |
 | `fetch 响应体 clone` | 1 | 0 | 0 | 1 | 0 |
 
-**总计 130 条命中**（`已有兜底` 75 / `无风险` 41 / `真实漏洞` 5 / `需动态验证` 9）；风险分布：高 4、中 10、低 116。
+**总计 137 条命中**（`已有兜底` 75 / `无风险` 47 / `真实漏洞` 5 / `需动态验证` 10）；风险分布：高 4、中 11、低 122。
 
 ## 未覆盖的边界
 
