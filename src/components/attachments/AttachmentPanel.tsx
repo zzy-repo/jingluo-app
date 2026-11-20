@@ -12,7 +12,7 @@
 import clsx from 'clsx'
 import { useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
-import { formatSize, getExtension } from '../../services/attachments.js'
+import { formatSize, getExtension } from '../../services/attachments/upload.js'
 import { useTranslate } from '../../i18n/index.js'
 import { useAnchoredPosition, useDismiss } from '../base/anchored.js'
 import { Button } from '../base/Button.js'

@@ -48,7 +48,7 @@ globalThis.window = { addEventListener() {}, removeEventListener() {} }
 const apiConfig = await import('../../src/services/api/apiConfig.ts')
 const client = await import('../../src/services/api/client.ts')
 const errors = await import('../../src/services/api/errors.ts')
-const attachments = await import('../../src/services/attachments.ts')
+const attachments = await import('../../src/services/attachments/upload.ts')
 const { zh } = await import('../../src/i18n/zh.ts')
 
 const { setApiKey, setProviderKind } = apiConfig

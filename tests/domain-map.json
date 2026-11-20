@@ -110,7 +110,7 @@
         "src/services/markdown/**": ["tests/unit/has-fallback.test.mjs"],
         "src/services/speech/**": ["tests/unit/thinking-entry-consistency.test.mjs", "tests/integration/request-body.test.mjs"],
         "src/services/memory/**": ["tests/unit/memory-embedding-api.test.mjs"],
-        "src/services/attachments.ts": ["tests/unit/attachment-endpoint-303.test.mjs", "tests/unit/feedback-images.test.mjs", "tests/unit/log-313-attachment-import.test.mjs"],
+        "src/services/attachments/upload.ts": ["tests/unit/attachment-endpoint-303.test.mjs", "tests/unit/feedback-images.test.mjs", "tests/unit/log-313-attachment-import.test.mjs"],
         "src/services/uploadExts.ts": ["tests/unit/attachment-endpoint-303.test.mjs", "tests/unit/feedback-images.test.mjs"],
         "src/utils/clipboard.ts": ["tests/unit/copy-limit.test.mjs", "tests/integration/copy-limit.test.mjs"],
         "src/utils/savePlainText.ts": ["tests/unit/copy-limit.test.mjs", "tests/unit/export-text-bridge.test.mjs"]

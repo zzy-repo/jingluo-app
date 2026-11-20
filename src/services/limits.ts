@@ -55,12 +55,95 @@ export const LIMITS = {
     concurrency: 2,
     maxQueue: 6,
   },
-  /** 附件上传限制 */
+  /** 附件上传限制（走 Files API 上传这条通路的约束） */
   attachments: {
     maxSizeMb: 64,
     maxUserDataSizeMb: 32,
     maxCount: 50,
     maxConcurrent: 3,
+    /**
+     * #480 文档附件（TXT / DOCX / PDF）的**本地解析与注入**限制。
+     *
+     * 这些数字原先写在 `attachments/limits.ts` 的 `ATTACHMENT_LIMITS` 里（#480 建立），
+     * 与上面 `attachments.*` 的「上传」口径不是一回事：那一组管的是「能不能传上去」，
+     * 这一组管的是「解析出来多少、注入多少」。**#562 定了「附件/内容限制全仓只有一份」**，
+     * 所以整体搬到这里，`attachments/limits.ts` 改为逐字段转出（数值一个没动）。
+     *
+     * `tests/unit/limits-config.test.mjs` 的 `ORIGINAL_VALUES` 手抄了一份同样的值：
+     * 搬位置不改值的证据在那里，改阈值要两边一起改。
+     */
+    doc: {
+      /** 单文件大小上限（字节） */
+      txtMaxBytes: 5 * 1024 * 1024,
+      docxMaxBytes: 20 * 1024 * 1024,
+      pdfMaxBytes: 50 * 1024 * 1024,
+
+      /** 注入上下文前的字符硬上限（超出必须显式标注截断，禁止静默） */
+      maxExtractedChars: 400_000,
+
+      /**
+       * 单次请求的文档注入预算（token，#480 §9 表里的默认值）。
+       * 与单附件上限的关系：一个 40 万字符的文件进不了 3.2 万 token 的预算，
+       * 所以「单附件上限」不是实际生效值 —— 实际生效的是 min(单附件上限, 本轮剩余预算)，
+       * 见 `attachments/contextBuilder.ts`，超出的部分必须显式标注截断。
+       */
+      docBudgetTokens: 32_000,
+
+      /**
+       * 注入时「还值得注入」的最小余量（字符）：剩余预算低于它就不再注入那一个附件，
+       * 改为在 skipped / warnings 里明确告知「未注入」，避免往消息里塞一个几十字的碎片。
+       */
+      minInjectableChars: 200,
+
+      /**
+       * 单条消息最多带几个文档附件（#527 接线时追加，只追加不改既有值）。
+       *
+       * 为什么要有这个数：UI 的 `maxFiles` 原先缺省是 `undefined`（= 不限），用户一次选 50 个
+       * 文件就会同时起 50 路解析；超出时必须**明确拒绝并提示**（`attachPickTooMany`），不许静默丢弃。
+       * 10 是「输入区一屏放得下、单轮注入预算还够分摊」的量级，不是协议上限。
+       */
+      maxFilesPerMessage: 10,
+
+      /** DOCX 解压防护 */
+      maxZipEntries: 2000,
+      maxZipUncompressedBytes: 100 * 1024 * 1024,
+
+      /** PDF 无文本层判定：平均每页可提取字符数低于此值视为无文本层 */
+      pdfMinCharsPerPage: 20,
+    },
+  },
+  /**
+   * 图片内联（base64）通路的限制（#551 / 母单 #548 的 vision-2；取值依据 `ref-vision.md` 5.3）。
+   *
+   * 与上面 `attachments` 那组**不是同一口径**：那一组是「上传到 Files API」的约束（原图直传 64MB），
+   * 而走 base64 的渠道（anthropic / openai / ours）图片正文直接进请求体，原图会把请求撑爆。
+   * 这里全部是**编码前 / 编码后**的口径：
+   * - `passThroughBytes` + `maxEdge` + `maxPixels`：**直发阈值**。三者都不超就原图一个字节不改
+   *   （Anthropic 官方推荐 1568px / 1.15MP；3.5MB 让 base64 后 ≈4.7MB，留在常见请求体限制内）；
+   * - `webpQuality` / `jpegFallbackQuality`：超阈值才降级，统一出 webp 0.85；webp 编码不可用时
+   *   回落 jpeg 0.9。**绝不输出 PNG**（PNG q1.0 会把截图撑到 2–4MB，base64 再 ×4/3）；
+   * - `maxSourceBytes`：原图硬上限，超过**直接拒绝、不解码**（100MP 的图在 Chromium 83 上会先 OOM）；
+   * - `maxEncodedBytes`：编码产物上限，压缩后仍超就明确拒绝，不截断不静默丢；
+   * - `maxCanvasArea`：canvas 面积闸门（iOS 老 WebKit 超面积会静默返回 `data:,`），超了先等比缩小再画；
+   * - `maxCount` / `maxTotalBytes`：单条消息的图片张数与总字节（base64 前）上限；
+   * - `cacheEntries`：本地编码结果的内存缓存条数（key = 附件 id + 编码参数）。
+   */
+  images: {
+    maxEdge: 1568,
+    maxPixels: 1_150_000,
+    passThroughBytes: Math.round(3.5 * 1024 * 1024),
+    webpQuality: 0.85,
+    jpegFallbackQuality: 0.9,
+    maxSourceBytes: 16 * 1024 * 1024,
+    maxEncodedBytes: 5 * 1024 * 1024,
+    maxCanvasArea: 4096 * 4096,
+    maxCount: 20,
+    maxTotalBytes: 20 * 1024 * 1024,
+    cacheEntries: 24,
+    /** 选图时读的头部字节（magic bytes 判定只需要几十字节，4KB 留足余量） */
+    sniffHeadBytes: 4096,
+    /** 编码前读的头部字节：要覆盖 JPEG 的 APP1(EXIF) + SOF（尺寸），相机原图也在这个范围内 */
+    maxHeadBytes: 262_144,
   },
   /** 支付记录自动刷新 */
   paymentTrail: { pollIntervalMs: 4000, pollMaxMs: 120_000 },
@@ -70,6 +153,9 @@ export const LIMITS = {
    */
   bootDeadlineMs: 12000,
 } as const
+
+/** 字节 → MB（四舍五入的整数），只用于文案提示；换算集中在这里，别处不再写 1024 */
+export const mbOf = (bytes: number): number => Math.round(bytes / (1024 * 1024))
 
 /**
  * 导入链路的**可校验关系**（#152 / #275）：按现行上限与总时限，链路至少要稳定跑到这个速率

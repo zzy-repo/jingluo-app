@@ -138,6 +138,26 @@ export type FileBlockParam = {
   source: { type: 'file'; file_id: string }
 }
 
+/**
+ * 内联图片块（#551）：图片正文直接是 base64，不引用任何服务端文件。
+ *
+ * 只有「没有 Files API」的渠道（anthropic / openai / ours）才用它 —— 这些渠道不可能上传，
+ * 图片只能本地编码内联（#360 的纪律：能力显式声明，绝不猜路径）。deepseek 仍走上面的
+ * `FileBlockParam`（`file_id`），两条通路由 `attachments/providerCapability.ts` 的
+ * `visionFor()` 唯一判定（渠道能力表只有那一张，#562）。
+ *
+ * 形状即 Anthropic Messages API 的 image source base64 变体；OpenAI 协议的
+ * `{type:'image_url', image_url:{url:'data:…'}}` 由 `openaiAdapter.ts` 在这一层之上翻译，
+ * 所以内部（store / reply / 预算）只认这一种形状。
+ */
+export type InlineImageBlockParam = {
+  type: 'image'
+  source: { type: 'base64'; media_type: string; data: string }
+}
+
+/** 用户消息里允许出现的内容块：文件引用（file_id）/ 内联图片（base64）/ 文本 */
+export type UserContentBlockParam = FileBlockParam | InlineImageBlockParam | TextBlockParam
+
 /** 接口接受的调用块；历史只回传 kind 为 read_link 的调用 */
 export type ServerToolUseBlockParam = Pick<
   ServerToolUseBlock,
@@ -161,7 +181,7 @@ export type AssistantBlockParam =
 export type MessageParam =
   /** Chat Engine 扩展角色，位于对应 user 前；需服务端支持 latest_reminder。 */
   | { role: 'latest_reminder'; content: string }
-  | { role: 'user'; content: string | (FileBlockParam | TextBlockParam)[] }
+  | { role: 'user'; content: string | UserContentBlockParam[] }
   | { role: 'assistant'; content: AssistantBlockParam[] }
 
 /** 开启联网搜索与边想边搜 */

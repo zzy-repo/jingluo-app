@@ -376,6 +376,13 @@ export const en = {
   uploadFileStatusUploading: 'Uploading...',
   uploadServerBusy: 'Server busy',
   uploadParseFailed: 'Parsing failed',
+  imageUnsupportedFormat:
+    'Unsupported image format: only PNG / JPEG / WebP are accepted (convert HEIC to JPEG first).',
+  imageDecodeFailed: 'This image cannot be opened. Try another file, or convert it to PNG / JPEG.',
+  imageTooLarge: 'The image is still over {size} MB after compression. Compress or crop it first.',
+  imageAnimatedTooLarge:
+    'This animated image is over {size} MB or too large; compressing it would flatten the animation. Please compress it first.',
+  imageEncodeFailed: 'Failed to encode the image. Please retry or use another file.',
   uploadFileCountLimit: 'Uploaded file limit reached ({limit} files). ',
   uploadStorageLimit: 'Uploaded file storage limit reached ({limit} GB). ',
   uploadDeleteFiles: 'Delete files',

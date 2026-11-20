@@ -8,7 +8,7 @@ import {
   uploadAttachment,
   validateFiles,
   type UploadTask,
-} from '../attachments.js'
+} from '../attachments/upload.js'
 import type { FileAttachment } from './types.js'
 
 export type DraftAttachment = {

@@ -8,7 +8,7 @@ import {
   isRetryableApiError,
 } from '../api/errors.js'
 import { classifyKeyFailure } from '../api/keyFailure.js'
-import { cancelUpload, describeUploadError, uploadAttachment, useUploads } from '../attachments.js'
+import { cancelUpload, describeUploadError, uploadAttachment, useUploads } from '../attachments/upload.js'
 // #480 §7 / §9：文档正文的文本注入（渠道能力表 + ContextBuilder + 附件引用收集）。
 // DeepSeek 官方 `textInjection === false`，这条链路一次都不进（见 streamReply 里的能力闸）。
 import { buildWithDocuments, formatDocumentInjection, type ChatMessage } from '../attachments/contextBuilder.js'

@@ -1,45 +1,38 @@
 /**
- * #480 文档附件：集中配置（基线文件，由 lead 维护）
- * 所有限制值只在这里定义，parser / manager / UI 一律引用，不许就地硬编码。
+ * #480 文档附件的**域视图**（parsers / manager / UI 的入口名）。
+ *
+ * ## 这里不是第二份真相源（#562 的硬约束）
+ *
+ * 数字只有一处：`src/services/limits.ts` 的 `LIMITS`（#275 定的唯一阈值表，`pnpm check:limits`
+ * 会扫；本文件已登记进 `scripts/check-limits.mjs` 的 WATCHED 清单，**里面出现任何 4 位以上
+ * 数字就算红**）。本文件只做三件事：把 `LIMITS.attachments.doc` 逐字段转出成附件域惯用的
+ * 名字、声明受支持的扩展名、给出扩展名的联合类型。
+ *
+ * 为什么保留这一层而不是让 40 个调用点都写 `LIMITS.attachments.doc.xxx`：
+ * 1. 附件域内部的称呼是 `ATTACHMENT_LIMITS.pdfMaxBytes`，比四段点号短，且与「上传」那组
+ *    （`LIMITS.attachments.maxSizeMb`，Files API 口径）在阅读上分得开 —— 两者口径不同，
+ *    混成一层名字反而更容易拿错（拿 64MB 的上传上限去卡 20MB 的 DOCX 解析）；
+ * 2. 逐字段写死（而不是 `= LIMITS.attachments.doc`）是有意的：`limits-config.test.mjs`
+ *    有一条「每个 LIMITS 叶子都必须被生产代码以 `LIMITS.xxx` 形式引用」的断言，
+ *    整体转出会让这 10 个叶子在源码里"看不见"，那条断言就失效了。
+ *
+ * 取值一个都没改（#562：只搬位置）。改阈值只手改 `LIMITS.attachments.doc` 与
+ * `tests/unit/limits-config.test.mjs` 的 `ORIGINAL_VALUES`，本文件不动。
  */
+import { LIMITS } from '../limits.js'
+
+/** #480 文档附件的解析 / 注入限制（唯一来源：`LIMITS.attachments.doc`） */
 export const ATTACHMENT_LIMITS = {
-  /** 单文件大小上限（字节） */
-  txtMaxBytes: 5 * 1024 * 1024,
-  docxMaxBytes: 20 * 1024 * 1024,
-  pdfMaxBytes: 50 * 1024 * 1024,
-
-  /** 注入上下文前的字符硬上限（超出必须显式标注截断，禁止静默） */
-  maxExtractedChars: 400_000,
-
-  /**
-   * 单次请求的文档注入预算（token，issue §9 表里的默认值）。
-   * 与单附件上限的关系：一个 40 万字符的文件进不了 3.2 万 token 的预算，
-   * 所以「单附件上限」不是实际生效值 —— 实际生效的是 min(单附件上限, 本轮剩余预算)，
-   * 见 contextBuilder.ts，超出的部分必须显式标注截断（§3.7 禁止静默截断）。
-   */
-  docBudgetTokens: 32_000,
-
-  /**
-   * 注入时「还值得注入」的最小余量（字符）：剩余预算低于它就不再注入那一个附件，
-   * 改为在 skipped / warnings 里明确告知「未注入」，避免往消息里塞一个几十字的碎片。
-   */
-  minInjectableChars: 200,
-
-  /**
-   * 单条消息最多带几个文档附件（#527 接线时追加，只追加不改既有值）。
-   *
-   * 为什么要有这个数：UI 的 `maxFiles` 原先缺省是 `undefined`（= 不限），用户一次选 50 个
-   * 文件就会同时起 50 路解析；超出时必须**明确拒绝并提示**（`attachPickTooMany`），不许静默丢弃。
-   * 10 是「输入区一屏放得下、单轮注入预算还够分摊」的量级，不是协议上限。
-   */
-  maxFilesPerMessage: 10,
-
-  /** DOCX 解压防护 */
-  maxZipEntries: 2000,
-  maxZipUncompressedBytes: 100 * 1024 * 1024,
-
-  /** PDF 无文本层判定：平均每页可提取字符数低于此值视为无文本层 */
-  pdfMinCharsPerPage: 20,
+  txtMaxBytes: LIMITS.attachments.doc.txtMaxBytes,
+  docxMaxBytes: LIMITS.attachments.doc.docxMaxBytes,
+  pdfMaxBytes: LIMITS.attachments.doc.pdfMaxBytes,
+  maxExtractedChars: LIMITS.attachments.doc.maxExtractedChars,
+  docBudgetTokens: LIMITS.attachments.doc.docBudgetTokens,
+  minInjectableChars: LIMITS.attachments.doc.minInjectableChars,
+  maxFilesPerMessage: LIMITS.attachments.doc.maxFilesPerMessage,
+  maxZipEntries: LIMITS.attachments.doc.maxZipEntries,
+  maxZipUncompressedBytes: LIMITS.attachments.doc.maxZipUncompressedBytes,
+  pdfMinCharsPerPage: LIMITS.attachments.doc.pdfMinCharsPerPage,
 } as const
 
 export const SUPPORTED_EXTENSIONS = ['.txt', '.docx', '.pdf'] as const

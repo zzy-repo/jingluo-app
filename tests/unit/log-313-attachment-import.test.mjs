@@ -171,7 +171,7 @@ const jsonResponse = (body, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
 
 const apiConfig = await import('../../src/services/api/apiConfig.ts')
-const attachments = await import('../../src/services/attachments.ts')
+const attachments = await import('../../src/services/attachments/upload.ts')
 const { importHistoryFromUrl } = await import('../../src/services/chat/history/urlImport.ts')
 const { setApiKey, setProviderKind } = apiConfig
 
