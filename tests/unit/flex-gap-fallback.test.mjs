@@ -8,6 +8,10 @@
 //
 // #217 补的是「守卫的覆盖面」，不是新机制：扫描范围从 `*.module.css` 扩到全部 `.css`，
 // 并把 `flex-wrap` 的交叉轴 gap 从「一律排除」改成「不换行才排除」。
+// #507：`__ENDPOINTS__` 全局兜底 —— 装载即挂（幂等）。单跑本文件（不经 run-layer 的 `--import` 预加载）也不会
+// `ReferenceError: __ENDPOINTS__ is not defined`；走门禁时与预加载是同一份模块，无副作用叠加。
+import '../helpers/injected.mjs'
+
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { mkdir, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises'
@@ -166,7 +170,7 @@ test('#217 真实仓库的扫描文件数等于 src 下 .css 文件数', async (
   assert.equal(audit.cssFiles, await countCss(SRC), '扫描口径必须和真实文件数一致，否则守卫报的 OK 不可信')
   assert.equal(
     audit.cssModules,
-    38,
-    'CSS Module 数（#209 盘点口径 38 个，#386 新增 ScrollToBottomButton.module.css）变了就要同步 docs/capabilities/css.md'
+    41,
+    'CSS Module 数（#209 口径 38 + #386 ScrollToBottomButton + #499 AuthPages + #502 四面板 + #505 账户消费页）变了就要同步 docs/capabilities/css.md'
   )
 })

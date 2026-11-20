@@ -27,6 +27,10 @@
 // 服务端邮箱功能只在开发分支，本文件全部用假传输，**不发任何真请求**；真机端到端不在此假装验证。
 //
 //   node --test tests/unit/domain11-email-conflict.test.mjs
+// #507：`__ENDPOINTS__` 全局兜底 —— 装载即挂（幂等）。单跑本文件（不经 run-layer 的 `--import` 预加载）也不会
+// `ReferenceError: __ENDPOINTS__ is not defined`；走门禁时与预加载是同一份模块，无副作用叠加。
+import '../helpers/injected.mjs'
+
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 
@@ -163,8 +167,10 @@ test('C1 device_has_account → 弹窗展示 remaining_points + 脱敏邮箱 + �
 
   // 断言点：额度数字必须上屏（这是 #421 第 3 点的硬要求）
   const pointsLine = view.text('ours-email-conflict-points')
-  assert.ok(pointsLine.includes('100'), `额度数字必须出现在弹窗里，实际：${pointsLine}`)
-  assert.equal(pointsLine, zh.oursEmailConflictPoints.replace('{points}', '100 积分'))
+  // 随 #509 统一计量（元口径）：`device_remaining_points: 100` 上屏是「1.00 元」
+  // （100 积分 = 1 元，2026-11-20 前这里断的是「100 积分」）
+  assert.ok(pointsLine.includes('1.00 元'), `额度数字必须出现在弹窗里，实际：${pointsLine}`)
+  assert.equal(pointsLine, zh.oursEmailConflictPoints.replace('{points}', '1.00 元'))
 
   // 断言点：脱敏邮箱原样展示（不改写、不还原）
   assert.equal(view.text('ours-email-conflict-masked'), zh.oursEmailConflictEmail.replace('{masked}', MASKED))

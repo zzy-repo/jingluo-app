@@ -24,6 +24,10 @@
 // 必须报出来；三处注入点各有一条 test。源码结构变了（找不到循环 / verify）时**直接报违规**，
 // 不许静默通过。
 
+// #507：`__ENDPOINTS__` 全局兜底 —— 装载即挂（幂等）。单跑本文件（不经 run-layer 的 `--import` 预加载）也不会
+// `ReferenceError: __ENDPOINTS__ is not defined`；走门禁时与预加载是同一份模块，无副作用叠加。
+import '../helpers/injected.mjs'
+
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { test } from 'node:test'

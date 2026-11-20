@@ -337,6 +337,11 @@ export const en = {
   historyImportFailed:
     'File import failed. The file format may be invalid, or the ZIP file may use an older chat export format. Please export your chat history from DeepSeek again and retry the import.',
   historyExportFailed: 'Export failed: {message}',
+  historyExportSaved: 'Saved to the location you chose: {name}',
+  historyExportFailedStart: 'Export failed: could not open the save location. Please try again.',
+  historyExportFailedWrite: 'Export failed: could not write the file. Check free storage and try again.',
+  historyExportFailedTooLarge:
+    'Export failed: the archive exceeds the 200MB export limit (same as the import limit). Delete some chats and try again.',
   historyExportTooLarge:
     'This history is about {actual}, over the {size}MB export limit. Delete chats you no longer need, or remove large images from messages, and try again.',
   historyExporting: 'Exporting…',
@@ -1122,6 +1127,8 @@ export const en = {
   consumeRedeemProcessing: 'Confirming the redemption result',
   consumeErrInvitationInvalid: 'Invalid invitation code. Check it and try again.',
   consumeErrEmailCodeInvalid: 'The verification code is wrong or has expired. Request a new one.',
+  // Email not verified yet (`EMAIL_VERIFY_REQUIRED`): name the next step instead of "try again later"
+  consumeErrEmailVerifyRequired: 'Please verify your email first',
   consumeErrNotEnabled: 'This feature is not enabled yet. Contact support to enable it.',
   // ---------------------------------------------------------------------------
   // W1-C2 account/consume panels (quota / account / invites / email binding, #487).
@@ -1160,9 +1167,17 @@ export const en = {
   emailBindCodeLabel: 'Verification code',
   emailBindUnbindConfirm: 'After unbinding, this email is no longer linked to the account. Unbind?',
   emailBindCannotUnbind: 'This is the only way to sign in to the account, so it cannot be unbound',
-
-  // ---------- Document attachments (#527 / #480 §3.5, §10) ----------
-  // Entry
+  // Legacy credit migration (#498 temporary tail, @remove-after 1.6.0):
+  // called once after sign-in, failures stay silent; only the self-contained button
+  // in src/legacy/migration/ uses these. Delete them together with that directory.
+  legacyMigrateTitle: 'Migrate old credit',
+  legacyMigrateDone: 'Old credit migrated: {amount}',
+  legacyMigrateManual: 'To migrate your old credit, please contact support',
+  legacyMigrateExpired: 'Credit migration has ended',
+  legacyMigrateFailed: 'Migration failed',
+  legacyMigrateDeviceMismatch: 'Device info does not match, please contact support',
+  legacyMigrateAlreadyUnsettled: 'Already migrated; if it has not arrived, please contact support',
+  legacyMigrateRetryAnyway: 'Migrate anyway',
   attachPickButton: 'Attach document (TXT / DOCX / PDF)',
   attachPickUnsupported:
     '"{name}" is not a supported document type. Only TXT, DOCX and PDF are supported',
@@ -1218,4 +1233,6 @@ export const en = {
   attachSweepFailed: 'Could not clean up unused attachments. Try again later',
   attachMissing: 'This attachment record was cleaned up, so details are unavailable',
   attachLoading: 'Loading attachment details',
+} satisfies Record<keyof typeof zh, string>
+
 } satisfies Record<keyof typeof zh, string>

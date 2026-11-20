@@ -16,6 +16,10 @@
 //   ② #215 点名的 13 处一处不少（防止有人「顺手删掉不合规矩的那条规则」把缺陷藏起来）；
 //   ③ 判定器本身不许退化成「全报」或「全放」—— 修复前的写法必须判红、修复后的写法必须判绿。
 
+// #507：`__ENDPOINTS__` 全局兜底 —— 装载即挂（幂等）。单跑本文件（不经 run-layer 的 `--import` 预加载）也不会
+// `ReferenceError: __ENDPOINTS__ is not defined`；走门禁时与预加载是同一份模块，无副作用叠加。
+import '../helpers/injected.mjs'
+
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import path from 'node:path'

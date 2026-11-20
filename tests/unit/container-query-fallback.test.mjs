@@ -16,6 +16,10 @@
 //  4. 触发条件仍然只有「缩略图宽度 = 64px」这一档（`--message-file-image-size` 的唯一窄档），
 //     与原来的 `@container (max-width: 63px)` 等价：64px 盒 + `box-sizing: border-box` +
 //     两侧 1px 边框 → 内容盒 62px ≤ 63px。
+// #507：`__ENDPOINTS__` 全局兜底 —— 装载即挂（幂等）。单跑本文件（不经 run-layer 的 `--import` 预加载）也不会
+// `ReferenceError: __ENDPOINTS__ is not defined`；走门禁时与预加载是同一份模块，无副作用叠加。
+import '../helpers/injected.mjs'
+
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readdirSync, readFileSync } from 'node:fs'

@@ -21,11 +21,12 @@
 //   E5 未知路径 404 → text 信封，**不 JSON.parse、不抛**     E6 面板 → panel 信封，reason 优先
 //   M0 映射表全量：每个码都映射到**存在的** i18n key（zh + en）
 //   M1–M7 会话 / 余额 / 限流 / 卡密三态 / 邀请未开 六条高价值码（§4.1 点名要在表里）
-//   M8 表外码（`EMAIL_VERIFY_REQUIRED` 实测存在、表里没有）→ 记缺口 + 状态码兜底，**不静默吞**
+//   M8 `EMAIL_VERIFY_REQUIRED` 已在表里 → 具体文案 + **不记缺口**；真正的表外码仍记缺口走兜底
 //   M9 面板整数 code 无 reason → `HTTP_<status>` 占位，不把 404 当业务码
 //
-// 已知缺口（本单不改 `src/`，只记录）：`EMAIL_VERIFY_REQUIRED` 尚未进 `CONSUME_ERROR_KEYS`
-// （M8 把它锁成「走兜底 + 记缺口」，等 W 侧补表时这条会自动变红，是**有意**的提醒）。
+// 缺口 2 已修（PR #512 记录的）：`EMAIL_VERIFY_REQUIRED` 补进 `CONSUME_ERROR_KEYS`
+// → `consumeErrEmailVerifyRequired`（zh「请先完成邮箱验证」/ en「Please verify your email first」）。
+// M8 因此从「锁表里没有」翻成「锁表里有」，并把「表外码记缺口」这条覆盖挪到真正的表外码上。
 //
 //   node --test tests/unit/consume-errors-envelope.test.mjs
 import assert from 'node:assert/strict'
@@ -251,18 +252,28 @@ const MAPPING_ROWS = [
   },
   {
     id: 'M8',
-    what: '表外码（EMAIL_VERIFY_REQUIRED，实测存在、表里没有）→ 记缺口 + 状态码兜底，不静默吞',
+    what: 'EMAIL_VERIFY_REQUIRED 进表（缺口 2 已补）→ kind auth + 具体文案 + **不记缺口**；真正的表外码仍记缺口',
     run: () => {
       resetConsumeGaps()
-      assert.equal(CONSUME_ERROR_KEYS.EMAIL_VERIFY_REQUIRED, undefined, '本行锁的是「表里还没有」这条事实')
+      assert.deepEqual(
+        CONSUME_ERROR_KEYS.EMAIL_VERIFY_REQUIRED,
+        { kind: 'auth', i18nKey: 'consumeErrEmailVerifyRequired' },
+        '实测存在、契约 §4.1 漏列的码必须进表，否则掉到 consumeErrUnknown'
+      )
       const error = parseSub2ApiError(jsonRaw(403, { code: 'EMAIL_VERIFY_REQUIRED', message: 'email not verified' }))
       assert.equal(error.code, 'EMAIL_VERIFY_REQUIRED', '原码保留（排查要能看见服务端到底说了什么）')
-      assert.equal(error.kind, 'auth', '兜底按状态码，不是 random')
-      assert.notEqual(error.i18nKey, 'consumeErrUnknown', '兜底也要给一条具体文案，不是「未知错误」')
-      assert.ok(
-        unmappedConsumeCodes().some((item) => item.includes('EMAIL_VERIFY_REQUIRED')),
-        '缺口要进清单（覆盖不到时上报，不静默吞 —— #484 §四 第 3 条）'
-      )
+      assert.equal(error.kind, 'auth', '会话本身没问题，缺的是「验证」这一步')
+      assert.equal(error.retryable, false, '邮箱没验证重试没用：先去验证')
+      assert.equal(error.i18nKey, 'consumeErrEmailVerifyRequired', '要具体到根因，不是「未知错误」')
+      assert.equal(zh.consumeErrEmailVerifyRequired, '请先完成邮箱验证')
+      assert.equal(en.consumeErrEmailVerifyRequired, 'Please verify your email first')
+      assert.deepEqual(unmappedConsumeCodes(), [], '进表之后就不该再记缺口')
+
+      // 「表外码 → 记缺口 + 状态码兜底」这条覆盖不能因为补了上面那条就丢掉，换个真表外的码继续锁
+      const unlisted = parseSub2ApiError(jsonRaw(400, { code: 'SOME_UNLISTED_CODE', message: 'x' }))
+      assert.equal(unlisted.code, 'SOME_UNLISTED_CODE', '原码保留')
+      assert.equal(unlisted.i18nKey, 'consumeErrBadRequest', '兜底也要给一条具体文案，不是「未知错误」')
+      assert.deepEqual(unmappedConsumeCodes(), ['middleware:SOME_UNLISTED_CODE'], '缺口要进清单，不静默吞')
     },
   },
   {

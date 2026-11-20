@@ -10,6 +10,10 @@
 //   B 取值收紧：越界/非法一律不写（NaN、负数、0 次尝试、700 的状态码…），不许写「猜的值」
 //   C 采集层清洗（负向用例）：超长字符串 / 带密钥的 URL / 对象数组 / 键名像密钥 → 截断或丢弃且不抛
 //   D 端点键：只认 config/endpoints.json 的键，认不出来给 other（绝不写完整 URL）
+// #507：`__ENDPOINTS__` 全局兜底 —— 装载即挂（幂等）。单跑本文件（不经 run-layer 的 `--import` 预加载）也不会
+// `ReferenceError: __ENDPOINTS__ is not defined`；走门禁时与预加载是同一份模块，无副作用叠加。
+import '../helpers/injected.mjs'
+
 import assert from 'node:assert/strict'
 import { registerHooks } from 'node:module'
 import { test } from 'node:test'

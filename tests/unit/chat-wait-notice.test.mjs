@@ -11,6 +11,10 @@
 //   [4] 三档文案在 zh / en 都存在且真的翻译了，中文措辞按任务书
 //   [5] 定时器清单与分档一一对应（store 挂载用）
 //   [6] 挂载点契约：store 按档写入提示、AssistantMessage 渲染提示并给出停止/重试按钮
+// #507：`__ENDPOINTS__` 全局兜底 —— 装载即挂（幂等）。单跑本文件（不经 run-layer 的 `--import` 预加载）也不会
+// `ReferenceError: __ENDPOINTS__ is not defined`；走门禁时与预加载是同一份模块，无副作用叠加。
+import '../helpers/injected.mjs'
+
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'

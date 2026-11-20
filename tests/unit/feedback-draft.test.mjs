@@ -1,4 +1,8 @@
 // [layer: unit | 纯逻辑：反馈草稿（Issue #31）内存存储；不启动浏览器、不构建、不连网]
+// #507：`__ENDPOINTS__` 全局兜底 —— 装载即挂（幂等）。单跑本文件（不经 run-layer 的 `--import` 预加载）也不会
+// `ReferenceError: __ENDPOINTS__ is not defined`；走门禁时与预加载是同一份模块，无副作用叠加。
+import '../helpers/injected.mjs'
+
 import { registerHooks } from 'node:module'
 import { readFile } from 'node:fs/promises'
 import path from 'node:path'

@@ -16,6 +16,10 @@
 // 一张表（`ROWS`）覆盖 2 变体 × 2 渠道，外加三条真实断链/过滤场景；`test()` 只负责把行注册出去，
 // 断言集中在 `verify(row)`：加一行 = 加一行数据，不新写一套判定逻辑（#369 的模板）。
 
+// #507：`__ENDPOINTS__` 全局兜底 —— 装载即挂（幂等）。单跑本文件（不经 run-layer 的 `--import` 预加载）也不会
+// `ReferenceError: __ENDPOINTS__ is not defined`；走门禁时与预加载是同一份模块，无副作用叠加。
+import '../helpers/injected.mjs'
+
 import assert from 'node:assert/strict'
 import { existsSync } from 'node:fs'
 import { registerHooks } from 'node:module'

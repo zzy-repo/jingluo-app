@@ -289,7 +289,8 @@ test('F3 冲突：device_has_account → 弹窗给额度与后果 → 选「用�
 
   const conflict = page.getByTestId('ours-email-conflict')
   await conflict.waitFor({ state: 'visible', timeout: 8000 })
-  assert.match(await textOf(page, 'ours-email-conflict-points'), /100/, '本机原账号剩余额度必须显示出来')
+  // 随 #509 统一计量（元口径）：服务端 device_remaining_points: 100 上屏是「1.00 元」（100 积分 = 1 元）
+  assert.match(await textOf(page, 'ours-email-conflict-points'), /1\.00 元/, '本机原账号剩余额度必须按元口径显示出来')
   assert.match(await textOf(page, 'ours-email-conflict-masked'), /e\*\*\*@example\.com/)
   const warning = await textOf(page, 'ours-email-conflict-warning')
   assert.match(warning, /暂时无法使用/)

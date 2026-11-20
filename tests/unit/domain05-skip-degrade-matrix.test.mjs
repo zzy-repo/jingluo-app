@@ -11,6 +11,10 @@
 // 一个期望抛错、一个期望成功。把两者合并的后果是把「导出写坏了」伪装成「导入变严了」。
 //
 //   node --test tests/unit/domain05-skip-degrade-matrix.test.mjs
+// #507：`__ENDPOINTS__` 全局兜底 —— 装载即挂（幂等）。单跑本文件（不经 run-layer 的 `--import` 预加载）也不会
+// `ReferenceError: __ENDPOINTS__ is not defined`；走门禁时与预加载是同一份模块，无副作用叠加。
+import '../helpers/injected.mjs'
+
 import { test } from 'node:test'
 import { installImportEnv } from '../helpers/import-env.mjs'
 import {

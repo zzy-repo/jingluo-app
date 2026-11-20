@@ -25,6 +25,10 @@
 //   [8] 续传：第二次导入的第一条日志带 status=partial + 已下载字节
 //   [9] 非法 URL：reason=invalid-url，与下载失败分得开
 //  [10] 全量体检：本次两条链路产出的每一条日志 meta 都不为空、且至少 2 个键
+// #507：`__ENDPOINTS__` 全局兜底 —— 装载即挂（幂等）。单跑本文件（不经 run-layer 的 `--import` 预加载）也不会
+// `ReferenceError: __ENDPOINTS__ is not defined`；走门禁时与预加载是同一份模块，无副作用叠加。
+import '../helpers/injected.mjs'
+
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { existsSync } from 'node:fs'

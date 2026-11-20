@@ -16,7 +16,10 @@
  *     ③ 已到账 → 按成功返回（`credited: 'history'`），文案提示「已到账，无需重复兑换」；
  *     ④ 未到账 / 查不到 → 返回 `pending`（`canRetry: true`），**由用户手动确认后**再调一次
  *        （`retryAfterConfirm: true`）—— 客户端不许自己重开那一枪；
- *     ⑤ `409 REDEEM_CODE_LOCKED` 是「正在处理」，**不是失败**，禁止提示换卡（#484 §4.4）。
+ *     ⑤ `409 REDEEM_CODE_LOCKED` 是「正在处理」，**不是失败**，禁止提示换卡（#484 §4.4）；
+ *     ⑥ **`202` / `status:"accepted|processing|pending"` 是「已受理，结果待定」，不等于到账**
+ *        （契约 §4 的异步形状）：同样先查一次 history，**只有核对确认到账才回 `redeemed`**，
+ *        否则回 `processing`（不给 `canRetry` —— 服务端已经接了单，再打一枪就是重复兑换）。
  *
  * 另外两条：
  *   - 卡密原文只在请求体里出现，**不进日志、不进 query、不落任何上报字段**（只露尾 4 位由 UI 自己 mask）；
@@ -58,7 +61,7 @@ export type ConsumeCreditedCheck = 'credited' | 'not_credited' | 'unknown'
 export type ConsumeRedeemOutcome =
   | {
       kind: 'redeemed'
-      /** 判定依据：`response` = 服务端直接回了成功；`history` = 超时后查历史确认已到账 */
+      /** 判定依据：`response` = 服务端直接回了到账；`history` = 查历史确认已到账（超时 / 409 / 202 受理态都走这条） */
       credited: 'response' | 'history'
       result: ConsumeRedeemResult
       /** 重新拉一次余额用的提示（界面据此决定要不要刷新 `/v1/usage`） */
@@ -74,7 +77,15 @@ export type ConsumeRedeemOutcome =
       /** 永远为 true：重试要用户手动点，不许自动 */
       canRetry: boolean
     }
-  | { kind: 'processing'; error: Sub2ApiError }
+  | {
+      kind: 'processing'
+      error: Sub2ApiError
+      /**
+       * 到账核对结果：受理态（`202`）会核对一次 history 才给结论，所以这里带得出来；
+       * `REDEEM_CODE_LOCKED`（409）不核对，故可选。`not_credited` / `unknown` 都**不代表失败**。
+       */
+      verified?: ConsumeCreditedCheck
+    }
   | { kind: 'failed'; error: Sub2ApiError; verified: ConsumeCreditedCheck }
 
 const asRecord = (value: unknown): Record<string, unknown> =>
@@ -190,6 +201,65 @@ export const verifyCredited = async (http: ConsumeHttp, code: string): Promise<C
   return 'unknown'
 }
 
+/** 服务端表达「已受理、结果待定」的三个状态字（与 `202` 同义，见契约 §4 的异步形状） */
+const ACCEPTED_STATUS = new Set(['accepted', 'processing', 'pending'])
+
+/** 体里的受理状态字：面板信封的 `status` 与 `data.status` 两种放法都认，取不到就是空串 */
+const statusWordOf = (json: unknown): string => {
+  const body = asRecord(json)
+  return (str(body.status) || str(asRecord(body.data).status)).toLowerCase()
+}
+
+/** 成功返回的 `call()` 结果（`ok: true` 的那一支） */
+type RedeemOkResult = Extract<ConsumeCallResult<ConsumeRedeemResult>, { ok: true }>
+
+/**
+ * 这一发是不是「**已受理**」而不是「**已到账**」。
+ *
+ * 两种表达等价（契约 §4）：HTTP `202`，或体里 `status: accepted|processing|pending`。
+ * 之所以要单独判：`202 {code:0,message:"accepted"}` 过 `http.call()` 时与
+ * `200 {code:0,message:"success",data:{…}}` **长得一模一样**（都是 2xx + `code:0`），
+ * 语义却差一个「结果还没定」（#512 记录的缺口 1）。
+ */
+const isAccepted = (result: RedeemOkResult): boolean =>
+  result.status === 202 || ACCEPTED_STATUS.has(statusWordOf(result.raw.json))
+
+/**
+ * 受理态的定性：**只有 history 确认到账才算成功**（C11：结果不确定不许判成功，也不许盲目重试）。
+ *
+ * 三条出口：
+ *   · 核对命中 → `redeemed`（`credited: 'history'`：结论来自历史，不是服务端那句 `accepted`）；
+ *   · 核对未命中 → `processing`（`verified: 'not_credited'`）；
+ *   · 核对本身失败 → `processing`（`verified: 'unknown'`，不可知不许当没到账）。
+ *
+ * 两条出口都**不给 `canRetry`**：服务端已经接单，用户点「再试一次」就会变成重复兑换 ——
+ * 界面按 `consumeRedeemProcessing`（「正在确认兑换结果」）提示，需要时再轮询一次 `redeem.history()`。
+ */
+const settleAccepted = async (
+  http: ConsumeHttp,
+  code: string,
+  result: RedeemOkResult
+): Promise<ConsumeRedeemOutcome> => {
+  const verified = await verifyCredited(http, code)
+  if (verified === 'credited') {
+    return { kind: 'redeemed', credited: 'history', result: result.data, refreshUsage: true }
+  }
+  return {
+    kind: 'processing',
+    verified,
+    error: {
+      kind: 'redeem',
+      // 自造码（服务端只给了「已受理」）：排查时能一眼看出「这是 202，不是业务失败」
+      code: 'REDEEM_ACCEPTED',
+      message: result.data.message,
+      status: result.status,
+      retryable: false,
+      envelope: 'panel',
+      i18nKey: 'consumeRedeemProcessing',
+    },
+  }
+}
+
 /**
  * 兑换卡密（**幂等补偿版**，语义见文件头）。
  *
@@ -235,6 +305,8 @@ const interpret = async (
   retried: boolean
 ): Promise<ConsumeRedeemOutcome> => {
   if (result.ok) {
+    // 2xx 不等于到账：`202 accepted` / `status:"processing"` 是「受理，结果待定」→ 先核对 history 再定性
+    if (isAccepted(result)) {return settleAccepted(http, code, result)}
     return { kind: 'redeemed', credited: 'response', result: result.data, refreshUsage: true }
   }
   const error = result.error

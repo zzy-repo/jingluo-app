@@ -14,6 +14,9 @@
 //   [3] zh：全部调用点按元口径逐字固定（100 积分 = 1 元）
 //   [4] 数值规则：两位小数 + 千分位，非有限数按 0
 //   [5] 币种**按值渲染**能力仍在（CNY→¥，其他码不猜符号）—— 解析层不许写死 ¥
+// #507：`__ENDPOINTS__` 全局兜底 —— 装载即挂（幂等）。单跑本文件（不经 run-layer 的 `--import` 预加载）也不会
+// `ReferenceError: __ENDPOINTS__ is not defined`；走门禁时与预加载是同一份模块，无副作用叠加。
+import '../helpers/injected.mjs'
 import { registerHooks } from 'node:module'
 
 // 与打包器一致：源码内部用 .js 说明符指向 .ts 文件

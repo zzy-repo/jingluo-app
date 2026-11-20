@@ -58,6 +58,20 @@ declare const __ENDPOINTS__: {
     readonly baseUrl: string
     readonly timeoutMs: { readonly read: number; readonly write: number }
   }
+  /**
+   * 老账号额度迁移（Issue #498 的**临时尾巴**，`src/legacy/migration/README.md` 有 @remove-after
+   * 与删除方法）：一个开关 + 一次调用。`enabled` 默认 `false` —— 关掉时客户端不采集、不请求、
+   * 不显示按钮。`baseUrl` 只有 `enabled:true` 时才有意义，那时构建期会强制它非空且 https
+   * （`rspack.config.ts` 的 `assertMigrationConfig`）。
+   *
+   * 非打包环境（`node --test`）取不到这一段，运行时按「关闭」处理（`claim.ts` 自己判）。
+   */
+  readonly migration: {
+    readonly enabled: boolean
+    readonly baseUrl: string
+    readonly endpoint: string
+    readonly timeoutMs: number
+  }
 }
 
 /** Prism 语言包通过副作用注册到全局 Prism */

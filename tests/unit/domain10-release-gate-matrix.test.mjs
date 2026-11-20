@@ -28,6 +28,10 @@
 //   · 不改 `.github/workflows/ci.yml`：负向对照先在 L0 里跑，CI 接线留给 #365 / #369；
 //   · 不验「真 APK 的 aapt2 解析」——那要真机/真 aapt2，N3 用假 aapt2 + 真 ZIP/AXML 覆盖服务端顺序。
 
+// #507：`__ENDPOINTS__` 全局兜底 —— 装载即挂（幂等）。单跑本文件（不经 run-layer 的 `--import` 预加载）也不会
+// `ReferenceError: __ENDPOINTS__ is not defined`；走门禁时与预加载是同一份模块，无副作用叠加。
+import '../helpers/injected.mjs'
+
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'

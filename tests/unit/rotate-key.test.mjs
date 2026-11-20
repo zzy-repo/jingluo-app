@@ -15,6 +15,10 @@
 //   [8] 文案：错误码与 issue 表格逐字一致；二次确认文案必须写明「立即失效」+「无法找回」
 //   [9] 隐私：整条链路一条 console 都没有；返回值里没有完整 device_id / 旧 Key
 //   [10] UI 接线（源码断言）：设置页有入口 + 二次确认 + 置灰防连点 + 成功时 setApiKey 落盘
+// #507：`__ENDPOINTS__` 全局兜底 —— 装载即挂（幂等）。单跑本文件（不经 run-layer 的 `--import` 预加载）也不会
+// `ReferenceError: __ENDPOINTS__ is not defined`；走门禁时与预加载是同一份模块，无副作用叠加。
+import '../helpers/injected.mjs'
+
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { registerHooks } from 'node:module'

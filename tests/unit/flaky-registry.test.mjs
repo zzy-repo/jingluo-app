@@ -7,6 +7,10 @@
 //   [4] #456 跨 runner：同 commit + 同用例 + 结果不同 + runner 不同 → kind: cross-runner（+ 4 条负向对照）
 //   [5] #456 三态：真红 / flaky / runner-dependent 各有唯一判定，runner-dependent 优先级最高
 //   [6] #456 静态提示：waitForTimeout / sleep / 依赖动画时长 → 警告（注释与字符串里的不算）
+// #507：`__ENDPOINTS__` 全局兜底 —— 装载即挂（幂等）。单跑本文件（不经 run-layer 的 `--import` 预加载）也不会
+// `ReferenceError: __ENDPOINTS__ is not defined`；走门禁时与预加载是同一份模块，无副作用叠加。
+import '../helpers/injected.mjs'
+
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import {

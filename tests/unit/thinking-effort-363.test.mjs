@@ -22,6 +22,10 @@
 //   [3] 显式关闭档：四渠道都零思考字段（关掉就该真的不思考）
 //   [4] 渠道门禁 false（reasoningParam='none'）：档位开着也零字段（fail-closed，不猜上游能力）
 //   [5] 真链路：client.streamMessage 实际发出的 JSON（stub fetch 记录，零网络）
+// #507：`__ENDPOINTS__` 全局兜底 —— 装载即挂（幂等）。单跑本文件（不经 run-layer 的 `--import` 预加载）也不会
+// `ReferenceError: __ENDPOINTS__ is not defined`；走门禁时与预加载是同一份模块，无副作用叠加。
+import '../helpers/injected.mjs'
+
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 

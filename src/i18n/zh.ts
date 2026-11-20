@@ -321,6 +321,10 @@ export const zh = {
   historyImportFailed:
     '文件导入失败，可能是文件格式错误或使用了旧版的对话导出 ZIP 文件，请前往 DeepSeek 重新导出历史对话文件后再次导入。',
   historyExportFailed: '导出失败：{message}',
+  historyExportSaved: '已保存到你选择的位置：{name}',
+  historyExportFailedStart: '导出失败：无法打开保存位置，请重试',
+  historyExportFailedWrite: '导出失败：写入文件失败，请检查剩余存储空间后重试',
+  historyExportFailedTooLarge: '导出失败：归档超过 200MB 导出上限（与导入上限一致），请先删减历史对话后重试',
   historyExportTooLarge:
     '当前历史约 {actual}，超过 {size}MB 导出上限。请先删除不需要的对话，或删掉消息里的大图后再试。',
   historyExporting: '导出中…',
@@ -1104,6 +1108,8 @@ export const zh = {
   consumeRedeemProcessing: '正在确认兑换结果',
   consumeErrInvitationInvalid: '邀请码无效，请核对后再填',
   consumeErrEmailCodeInvalid: '验证码不对或已过期，请重新获取',
+  // 邮箱没验证（`EMAIL_VERIFY_REQUIRED`）：说清「下一步做什么」——先去验证，不是稍后重试
+  consumeErrEmailVerifyRequired: '请先完成邮箱验证',
   consumeErrNotEnabled: '这个功能还没开放，请联系客服开通',
   // ---------------------------------------------------------------------------
   // W1-C2 四个面板（额度 / 账号 / 邀请 / 邮箱绑定，#487）：
@@ -1147,7 +1153,7 @@ export const zh = {
   consumeLogoutConfirm: '退出后需要重新登录才能继续使用，确认退出吗？',
   consumeLogoutSuccess: '已退出登录',
 
-  // 邀请面板（返利按 USD 比例结算，邀请关系只在注册时一次填定）
+  // 邀请面板（返利按消费额的比例以「元」结算，邀请关系只在注册时一次填定）
   inviteRebateRate: '返利按下线消费额的 {percent}% 结算，结算后计入返利余额',
   inviteRebateFrozen: '其中 {amount} 冻结中',
 
@@ -1156,9 +1162,17 @@ export const zh = {
   emailBindCodeLabel: '验证码',
   emailBindUnbindConfirm: '解绑后这个邮箱将不再与账号关联，确认解绑吗？',
   emailBindCannotUnbind: '这是账号唯一的登录方式，不能解绑',
-
-  // ---------- 文档附件（#527 / #480 §3.5、§10）----------
-  // 选择入口
+  // 老账号额度迁移（#498 的临时尾巴，@remove-after 1.6.0）：
+  // 登录后一次性调用，失败静默；这几条只服务于那一个自包含按钮（src/legacy/migration/）。
+  // 删除方法见 src/legacy/migration/README.md（届时这 5 条一起删）。
+  legacyMigrateTitle: '迁移历史额度',
+  legacyMigrateDone: '历史额度已迁移：{amount}',
+  legacyMigrateManual: '如需迁移历史额度，请联系客服',
+  legacyMigrateExpired: '额度迁移已结束',
+  legacyMigrateFailed: '迁移失败',
+  legacyMigrateDeviceMismatch: '设备信息不匹配，请联系客服',
+  legacyMigrateAlreadyUnsettled: '已迁移过，如未到账请联系客服',
+  legacyMigrateRetryAnyway: '仍要迁移',
   attachPickButton: '添加文档（TXT / DOCX / PDF）',
   attachPickUnsupported: '「{name}」不是支持的文档类型，当前仅支持 TXT、DOCX、PDF',
   attachPickTooLarge: '「{name}」为 {size}，超过该类型的上限 {limit}',

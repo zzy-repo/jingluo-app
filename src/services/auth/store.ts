@@ -22,6 +22,7 @@
  */
 
 import { create } from 'zustand'
+import { claimLegacyMigration } from '../../legacy/migration/index.js'
 import type {
   AuthLoginInput,
   AuthRegisterInput,
@@ -224,6 +225,10 @@ const applySession = (session: AuthSession): void => {
     submitting: false,
     restored: true,
   })
+  // 老账号额度迁移（#498 的临时尾巴，@remove-after 1.6.0）：登录 / 注册成功后**只发一次**。
+  // 失败静默 —— `claimLegacyMigration` 自己保证不抛，`void` 掉不阻塞登录、也不产生未处理 rejection；
+  // 开关关着时它在读任何本地槽位之前就返回（见 src/legacy/migration/README.md）。
+  try { void claimLegacyMigration(session.token.accessToken) } catch { /* 迁移永不影响登录 */ }
 }
 
 /** 清态回登录页：落盘一起清（#484 §二「刷新失败就清登录态」） */

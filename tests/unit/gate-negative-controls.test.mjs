@@ -45,6 +45,10 @@
 //   · 不验 `check:log-coverage` 的 `--selftest`：脚本自带反例，但 CI 调用没带这个 flag
 //     （补 flag 要改 ci.yml，不在本单范围）—— 这一条登记在 N6 的「缺口」里，别当成已覆盖。
 
+// #507：`__ENDPOINTS__` 全局兜底 —— 装载即挂（幂等）。单跑本文件（不经 run-layer 的 `--import` 预加载）也不会
+// `ReferenceError: __ENDPOINTS__ is not defined`；走门禁时与预加载是同一份模块，无副作用叠加。
+import '../helpers/injected.mjs'
+
 import assert from 'node:assert/strict'
 import { cpSync, existsSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import path from 'node:path'

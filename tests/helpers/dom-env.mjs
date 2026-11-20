@@ -22,6 +22,13 @@
 //
 // 分工：`helpers/env.mjs` 管集成层「环境守卫」（端口 / 产物 / variant），`helpers/runtime.mjs`
 // 管「跑一个用例进程」，本文件只管单测的「模块装配」，三者互不依赖。
+// #507：**副作用导入**，必须是本文件的第一条 import ——
+// `./injected.mjs` 在装载时就把 `__ENDPOINTS__` 挂到 globalThis 上（幂等 `??=`），
+// 所以任何 `import ... from '../helpers/dom-env.mjs'` 的用例，即使不经 run-layer 的
+// `--import` 预加载、直接 `node --test tests/unit/xxx.test.mjs`，也不会再
+// `ReferenceError: __ENDPOINTS__ is not defined`。这里**不**从它取任何绑定的值 —— 只借加载副作用。
+import './injected.mjs'
+
 import { registerHooks } from 'node:module'
 import { existsSync } from 'node:fs'
 import path from 'node:path'

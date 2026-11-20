@@ -12,6 +12,10 @@
 //  5. #236：媒体查询里换手（`.container` → `.scroll`）的滚动容器自己不带 `scrollbar-gutter`，
 //     必须单独盯 —— 它没有「指针作用域内的 `overflow-y: scroll` 常驻槽位 + 同作用域 `@supports` 收回」
 //     这一对，classic 滚动条环境下滚动条出现的那一刻整列消息会重新折行。
+// #507：`__ENDPOINTS__` 全局兜底 —— 装载即挂（幂等）。单跑本文件（不经 run-layer 的 `--import` 预加载）也不会
+// `ReferenceError: __ENDPOINTS__ is not defined`；走门禁时与预加载是同一份模块，无副作用叠加。
+import '../helpers/injected.mjs'
+
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { fileURLToPath } from 'node:url'

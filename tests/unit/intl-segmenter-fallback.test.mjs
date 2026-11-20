@@ -14,6 +14,10 @@
 //
 // 为什么能直接 import 源码 .ts：node 22 的 type stripping + 下面的 resolve hook
 // （与 tests/unit/legacy-polyfills.test.mjs 同一套手法）。
+// #507：`__ENDPOINTS__` 全局兜底 —— 装载即挂（幂等）。单跑本文件（不经 run-layer 的 `--import` 预加载）也不会
+// `ReferenceError: __ENDPOINTS__ is not defined`；走门禁时与预加载是同一份模块，无副作用叠加。
+import '../helpers/injected.mjs'
+
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { registerHooks } from 'node:module'

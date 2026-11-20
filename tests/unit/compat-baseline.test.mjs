@@ -13,6 +13,10 @@
 //   B 口径自证：伪造错误下限 → 断言必须失败
 //   C 写死的副本：夹具里写回字面量 → 必须被扫出来并指到行号
 //   D 档位单源：probe 的 PRESET_TARGETS 与 matrix-scan 的 WEBVIEW_TARGETS 都等于 probeTiers
+// #507：`__ENDPOINTS__` 全局兜底 —— 装载即挂（幂等）。单跑本文件（不经 run-layer 的 `--import` 预加载）也不会
+// `ReferenceError: __ENDPOINTS__ is not defined`；走门禁时与预加载是同一份模块，无副作用叠加。
+import '../helpers/injected.mjs'
+
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import path from 'node:path'

@@ -16,6 +16,10 @@
 // 文档里的判定（「已修」「可接受降级」这类人的判断）不在本测试的断言范围：
 // 测试只钉「数字是算出来的、行号是真的」，不代替人去下结论。
 
+// #507：`__ENDPOINTS__` 全局兜底 —— 装载即挂（幂等）。单跑本文件（不经 run-layer 的 `--import` 预加载）也不会
+// `ReferenceError: __ENDPOINTS__ is not defined`；走门禁时与预加载是同一份模块，无副作用叠加。
+import '../helpers/injected.mjs'
+
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'

@@ -18,6 +18,9 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
 import { installTsResolve, loadTsModule } from '../helpers/dom-env.mjs'
+// #501 暴露：这里原来手写了一份 stable / prerelease 字面量，等于给 buildType 枚举又抄了一份 ——
+// 被 releases-manifest-buildtype.test.mjs 的「单一真相源」硬门禁抓到。枚举只从 shared/ 拿。
+import { BUILD_TYPES } from '../../shared/build-types.mjs'
 
 installTsResolve()
 
@@ -192,7 +195,7 @@ test('#412 C 渠道下拉语义：请求参数不随渠道变、候选结论必�
    */
   const requested = new Set()
   for (const row of CHANNEL_ROWS) {
-    for (const channel of ['stable', 'prerelease']) {
+    for (const channel of BUILD_TYPES) {
       const result = await runCheck(row, channel)
       for (const url of result.urls) {
         requested.add(url)

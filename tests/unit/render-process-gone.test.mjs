@@ -5,6 +5,10 @@
 //
 // 修复前这里全部 red：全工程 0 处覆写 onRenderProcessGone，Capacitor 的 WebViewListener
 // 默认返回 false，于是我在模拟器上 kill -9 渲染进程，应用进程瞬间消失。
+// #507：`__ENDPOINTS__` 全局兜底 —— 装载即挂（幂等）。单跑本文件（不经 run-layer 的 `--import` 预加载）也不会
+// `ReferenceError: __ENDPOINTS__ is not defined`；走门禁时与预加载是同一份模块，无副作用叠加。
+import '../helpers/injected.mjs'
+
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { test } from 'node:test'

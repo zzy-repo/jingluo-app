@@ -9,6 +9,10 @@
 //
 // #274 收窄了「线上地址白名单」的豁免范围：白名单主机（config/endpoints.json 的 allowedHosts）
 // 只在**注释行**里放过；代码行里再写一次地址照样报（地址只能来自配置），见最后一个用例。
+// #507：`__ENDPOINTS__` 全局兜底 —— 装载即挂（幂等）。单跑本文件（不经 run-layer 的 `--import` 预加载）也不会
+// `ReferenceError: __ENDPOINTS__ is not defined`；走门禁时与预加载是同一份模块，无副作用叠加。
+import '../helpers/injected.mjs'
+
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 

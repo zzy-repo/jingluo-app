@@ -15,6 +15,10 @@
 //   [4] 404 是终态：上传被 404 只发 1 次、retryable=false（不重试 → 不会变成死循环）
 //
 //   node tests/run-layer.mjs unit --only attachment-endpoint-360
+// #507：`__ENDPOINTS__` 全局兜底 —— 装载即挂（幂等）。单跑本文件（不经 run-layer 的 `--import` 预加载）也不会
+// `ReferenceError: __ENDPOINTS__ is not defined`；走门禁时与预加载是同一份模块，无副作用叠加。
+import '../helpers/injected.mjs'
+
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'

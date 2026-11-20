@@ -5,6 +5,10 @@
 //   [3] 跑法注释里的端口 → comment（文档，不是隐患）
 //   [4] 栈帧 / 产物路径夹具里的端口 → fixture（不是「连哪个端口」）
 //   [5] 仓库现有 tests/ 扫描必须**零警告**（回归锁：再有人写死端口就红在这条上）
+// #507：`__ENDPOINTS__` 全局兜底 —— 装载即挂（幂等）。单跑本文件（不经 run-layer 的 `--import` 预加载）也不会
+// `ReferenceError: __ENDPOINTS__ is not defined`；走门禁时与预加载是同一份模块，无副作用叠加。
+import '../helpers/injected.mjs'
+
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { readdir, readFile } from 'node:fs/promises'

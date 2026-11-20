@@ -27,7 +27,7 @@ import {
   type UrlImportProgress,
 } from '../../services/chat/history/urlImport.js'
 import { copyText } from '../../utils/clipboard.js'
-import { downloadBlob } from '../../utils/downloadBlob.js'
+import { saveBlobFile } from '../../services/exportText.js'
 import { ImportSkippedDetails, importedMessage, summaryFromCount } from './importSkipped.js'
 import { useIsMobile } from '../../app/viewport.js'
 import { useChatStore, type HistoryImportSummary } from '../../services/chat/store.js'
@@ -1299,7 +1299,27 @@ const ImportHistoryUrl = ({
 /** 空历史时的说明（#336 §2）：按钮灰着不说原因，用户分不清「点不动」和「点了没产出」。 */
 const emptyExportStatus: Status = { key: 'historyExportEmptyNoSessions' }
 
-/** 将全部会话及图片导出为 ZIP 文件并下载 */
+/**
+ * 原生保存出口的失败码 → 人话文案：Java 侧 reject 的 message 是中文，
+ * 英文界面直接透传就成了「English UI + 中文原因」。认得的码走对应文案，认不得的仍透传错误原文。
+ * （导出上限走的是 `BackupError('historyExportTooLarge')`，由 errorStatus 的 reason 位带出，不在这里。）
+ */
+const exportErrorKey = (error: unknown): TranslationKey => {
+  const code = (error as { code?: string })?.code
+  if (code === 'START_FAILED') {
+    return 'historyExportFailedStart'
+  }
+  if (code === 'TOO_LARGE') {
+    return 'historyExportFailedTooLarge'
+  }
+  return code === 'WRITE_FAILED' ? 'historyExportFailedWrite' : 'historyExportFailed'
+}
+
+/**
+ * 将全部会话及图片导出为 ZIP 文件。
+ * 落盘出口与「反馈日志导出」共用 `services/exportText.ts`：Android 走 ExportText 原生桥
+ * （SAF 面板选位置，可取消），Web 走 Blob 下载 —— WebView 里 `<a download>` 不会产生文件（#307）。
+ */
 const ExportHistory = ({ disabled }: { disabled: boolean }) => {
   const t = useTranslate()
   const total = useChatStore((state) => state.sessions.length)
@@ -1325,9 +1345,17 @@ const ExportHistory = ({ disabled }: { disabled: boolean }) => {
     setProgress({ exported: 0, total })
     try {
       const { name, blob } = await exportHistory({ onProgress })
-      downloadBlob(blob, name)
+      // 打包完成（进度已到 N/N），剩下的就是一次落盘：交给原生 SAF / Web 下载出口。
+      setProgress(null)
+      const result = await saveBlobFile({ filename: name, mimeType: 'application/zip', blob })
+      // 用户在选择位置的面板上点了取消：既不是成功也不是失败，界面回到「可以再点一次」的状态。
+      setStatus(
+        result.status === 'saved'
+          ? { key: 'historyExportSaved', params: { name: result.name ?? name } }
+          : null
+      )
     } catch (error) {
-      setStatus(errorStatus('historyExportFailed', error))
+      setStatus(errorStatus(exportErrorKey(error), error))
     } finally {
       setProgress(null)
     }

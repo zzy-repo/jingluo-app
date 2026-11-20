@@ -19,6 +19,10 @@
 //   [5] 再发一轮仍然不重传（不是只跳过第一次）。
 //
 //   node tests/unit/imported-attachment-379.test.mjs
+// #507：`__ENDPOINTS__` 全局兜底 —— 装载即挂（幂等）。单跑本文件（不经 run-layer 的 `--import` 预加载）也不会
+// `ReferenceError: __ENDPOINTS__ is not defined`；走门禁时与预加载是同一份模块，无副作用叠加。
+import '../helpers/injected.mjs'
+
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 
