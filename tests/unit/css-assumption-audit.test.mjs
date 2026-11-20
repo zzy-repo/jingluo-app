@@ -249,13 +249,15 @@ const canScroll = /auto|scroll/.test(style.overflowY)
   const defectFeatures = new Set(summary.defects.map((hit) => hit.feature))
   assert.ok(defectFeatures.has('scrollbar-gutter'), '真实缺陷应包含 scrollbar-gutter')
 
-  // #215 之后 :focus-visible 的 13 处全部补上了 `:focus` 兜底：检测能力必须还在（命中数不许减少），
+  // #215 之后 :focus-visible 各处都补上了 `:focus` 兜底：检测能力必须还在（命中数不许减少），
+  // #499（登录/注册页 AuthPages.module.css）新增 1 处 → 13 → 14；W1-C1/W1-C2 面板（#502/#505）再 +2 → 16。
+  // docs/capabilities/css.md 同步口径。
   // 但结论从「已知缺陷」换成更强的「不许回流」不变量（与上面 :has() 同一手法）。
   const focusHits = summary.byFeature[':focus-visible']
   assert.ok(focusHits, ':focus-visible 的命中必须仍被盘点器看到（不能静默跳过）')
-  assert.equal(focusHits.count, 13, ':focus-visible 命中数变了就要同步 docs/capabilities/css.md')
+  assert.equal(focusHits.count, 16, ':focus-visible 命中数变了就要同步 docs/capabilities/css.md')
   assert.equal(focusHits.defect, 0, 'src 里不应再有「无 `:focus` 兜底」的 :focus-visible（#215）')
-  assert.equal(focusHits.covered, 13, ':focus-visible 的每一处都该判成「已有兜底」')
+  assert.equal(focusHits.covered, 16, ':focus-visible 的每一处都该判成「已有兜底」')
   // #213 之后 :has() 在 src 里已清零（改由渲染期显式状态类承载），
   // 从「已知缺陷清单」换成更强的「不许回流」不变量。
   assert.equal(summary.byFeature[':has()']?.count ?? 0, 0, 'src 里不应再有 :has()')

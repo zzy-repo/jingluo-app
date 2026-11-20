@@ -184,7 +184,7 @@
 | `components/messages/AssistantMessage.module.css:21,27` | `.waiting { display:flex; flex-wrap:wrap; column-gap:6px; row-gap:2px }`（#328 等待提示可能出现第二行） | 2 | 低 | **#328 已补**：`margin-right: 6px` + `margin-bottom: 2px`，由 `pnpm run check:gap` 生成 |
 | `components/settings/PaymentTrailDialog.module.css:71,113` | `.tabs { display:flex; flex-wrap:wrap; gap:6px }`（#326 状态筛选页签）与 `.moreError { display:flex; flex-wrap:wrap; gap:8px }`（#326 加载更多失败行） | 2 | 低 | **#326 已补**：两处都生成 `html[data-flex-gap-fallback]` 兜底块（`.tabs` 用 `margin-right/bottom: 6px`，`.moreError` 用 `margin-right/bottom: 8px`），`pnpm run check:gap` 报「已兜底 121 条」 |
 
-> 口径（#217 之后统一）：`pnpm run check:gap` 报「扫描 **45** 个 CSS 文件（其中 **38** 个 CSS Module）：已兜底 **121** 条，跳过 **3** 条」。45 = `find src -name '*.css' | wc -l`；3 条跳过 = #159 的 `Settings.module.css:.backgroundRow` 1 条 + 非 flex 容器 2 条。原先的两种口径（38 module / 109 处 vs 含非 module 的 109 处）已合并成同一个口径。
+> 口径（#217 之后统一）：`pnpm run check:gap` 报「扫描 **48** 个 CSS 文件（其中 **41** 个 CSS Module）：已兜底 **150** 条，跳过 **3** 条」。41 = `find src -name '*.module.css' | wc -l`；3 条跳过 = #159 的 `Settings.module.css:.backgroundRow` 1 条 + 非 flex 容器 2 条。（#501 复核：`#499` 登录/注册页、`#502`/`#505` 面板与账户消费页进场后口径从 45/38/121 漂到这里，本条与 `tests/unit/flex-gap-fallback.test.mjs` 的模块数断言同步。）原先的两种口径（38 module / 109 处 vs 含非 module 的 109 处）已合并成同一个口径。
 
 ### 2.7 `inset`（16 处，构建期降级 → 已有兜底）
 

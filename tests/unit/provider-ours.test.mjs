@@ -61,7 +61,10 @@ test('ours 渠道契约：OpenAI 协议 + Bearer + 内置新地址/模型', () =
   assert.equal(ours.locked, true, '地址/模型必须锁定，设置页不渲染输入行')
   assert.deepEqual(ours.fields, ['apiKey'], '设置页只暴露 API Key 一行')
   assert.equal(ours.caps.text, true)
-  assert.equal(ours.caps.thinking, false, 'OpenAI 路径没有 thinking 能力（#341 入口仍常驻，只改本地档位、请求不发字段）')
+  // #363 起 ours 的 reasoningParam 是 reasoning_effort（我们自己网关认这个字段）→ 派生的
+  // caps.thinking 恒为 true。以前这里断言 false 是 #363 之前的旧口径（当时 reasoningParam=none，
+  // 深度思考开关点了也不发字段）。能力位只影响请求侧发不发参数，UI 入口自 #341 起恒常驻。
+  assert.equal(ours.caps.thinking, true, 'ours 认 reasoning_effort（#363）→ caps.thinking 应为 true')
   assert.equal(ours.anthropicVersion, undefined, 'OpenAI 协议不需要 anthropic-version 头')
 })
 

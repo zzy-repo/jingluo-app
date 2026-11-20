@@ -96,7 +96,11 @@ test('two suite entrypoints reuse injected dist without build, and fail missing 
   await cp(path.join(root, 'tests/helpers/env.mjs'), path.join(dir, 'tests/helpers/env.mjs'))
   // #366：unit 层现在会把相邻文件合成「一个进程跑一批」（合并入口 + 记账壳），沙箱里也要有，
   // 否则合并批次在沙箱内起不来 —— 那会让这条用例测到的不是「CLI 行为」而是「沙箱缺文件」。
-  for (const helper of ['merged-entry.mjs', 'merged-tracker.mjs', 'merged-node-test.mjs']) {
+  for (const helper of [
+    'merged-entry.mjs', 'merged-tracker.mjs', 'merged-node-test.mjs',
+    // #501：合并入口还 import ./tap.mjs（node 的 TAP 判定）与 ./merge-verdict.mjs（判定规则）
+    'tap.mjs', 'merge-verdict.mjs',
+  ]) {
     await cp(path.join(root, 'tests/helpers', helper), path.join(dir, 'tests/helpers', helper))
   }
   await mkdir(path.join(dir, 'tests/fixtures/domain03-04'), { recursive: true })
@@ -160,7 +164,11 @@ test('CLI exact failure rerun, JSON, no-match, invalid arguments and node:test d
   await cp(path.join(root, 'scripts/flaky-registry.mjs'), path.join(dir, 'scripts/flaky-registry.mjs'))
   // #366：unit 层现在会把相邻文件合成「一个进程跑一批」（合并入口 + 记账壳），沙箱里也要有，
   // 否则合并批次在沙箱内起不来 —— 那会让这条用例测到的不是「CLI 行为」而是「沙箱缺文件」。
-  for (const helper of ['merged-entry.mjs', 'merged-tracker.mjs', 'merged-node-test.mjs']) {
+  for (const helper of [
+    'merged-entry.mjs', 'merged-tracker.mjs', 'merged-node-test.mjs',
+    // #501：合并入口还 import ./tap.mjs（node 的 TAP 判定）与 ./merge-verdict.mjs（判定规则）
+    'tap.mjs', 'merge-verdict.mjs',
+  ]) {
     await cp(path.join(root, 'tests/helpers', helper), path.join(dir, 'tests/helpers', helper))
   }
   await writeFile(path.join(dir, 'tests/unit/pass.test.mjs'), `import test from 'node:test'; test('pass',()=>{});`)

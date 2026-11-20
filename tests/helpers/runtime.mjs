@@ -6,6 +6,7 @@ import path from 'node:path'
 import http from 'node:http'
 import { fileURLToPath } from 'node:url'
 import { listenFetchablePort, listenFreePort } from './ports.mjs'
+import { tapCounts } from './tap.mjs'
 
 /**
  * 每个用例进程的预加载：把 rspack DefinePlugin 在打包期注入的 `__ENDPOINTS__` 挂到 globalThis
@@ -35,8 +36,26 @@ const TRANSFORM_TYPES_ARGS = ['--experimental-transform-types']
  * `output` 决定子进程输出是**实时转发**还是**攒起来**（并行跑时按条缓冲，免得几个文件的输出
  * 交错成一团；串行跑时仍然实时转发，方便盯日志）。
  */
-async function spawnCase(argv, { cwd, timeoutMs = 180000, env = process.env, output = true } = {}) {
+async function spawnCase(argv, { cwd, timeoutMs = 180000, env = process.env, output = true, tap = false } = {}) {
   const tempDir = await mkdtemp(path.join(tmpdir(), 'deepseek-case-'))
+  /**
+   * #501（P0）：合并批次要不要带 node 自己的 TAP 报告。
+   *
+   * 带：TAP 写进本进程专属的文件（`--test-reporter-destination`），stdout 保持原样（框架行 +
+   * 自收摊脚本的输出），两个读者互不打架；`runMergedBatch` 用整份 TAP 复核逐文件计数。
+   * 不带：单文件路径（`runCase`）—— 它的退出码本身就是权威判定，TAP 只会多一份噪音。
+   */
+  const tapLog = tap ? path.join(tempDir, 'node-test.tap') : null
+  /**
+   * #501：`NODE_TEST_CONTEXT` / `NODE_TEST_WORKER_ID` 必须从子进程环境里剥掉。
+   *
+   * 这两个是 node 的「我是某个 runner 的子进程，报告走 v8 序列化回父进程」开关。子进程一旦继承：
+   *   · 合并批次：合并入口不再走自己的 reporter（`--test-reporter=tap` 被忽略），逐文件判定失去依据；
+   *   · 单文件 `node --test`：node 直接打印「run() is being called recursively…skipping running files」
+   *     然后 **exit 0** —— 一条用例都没跑，却报绿（假绿的另一种形态，实测于本单的自检）。
+   * 这条继承链真实存在：**从用例里起 runner**（运行器自检、test-runtime 那类沙箱）就是这种进程树。
+   */
+  const { NODE_TEST_CONTEXT, NODE_TEST_WORKER_ID, ...childEnv } = env
   const started = performance.now()
   let child, timer, escalation, timedOut = false, interrupted = false, spawnError
   const tail = []
@@ -54,8 +73,14 @@ async function spawnCase(argv, { cwd, timeoutMs = 180000, env = process.env, out
   }
   const onSignal = () => { interrupted = true; stop() }
   try {
-    child = spawn(process.execPath, argv, {
-      cwd, env: { ...env, TMPDIR: tempDir, TMP: tempDir, TEMP: tempDir, TEST_TMP_DIR: tempDir },
+    const reporterArgs = tapLog ? ['--test-reporter=tap', `--test-reporter-destination=${tapLog}`] : []
+    child = spawn(process.execPath, [...reporterArgs, ...argv], {
+      cwd,
+      env: {
+        ...childEnv, TMPDIR: tempDir, TMP: tempDir, TEMP: tempDir, TEST_TMP_DIR: tempDir,
+        // 合并入口靠它增量朗读 TAP，把「哪条用例红」归到文件上（见 helpers/merged-entry.mjs）
+        ...(tapLog ? { MERGED_TAP_LOG: tapLog } : {}),
+      },
       detached: process.platform !== 'win32', stdio: ['ignore', 'pipe', 'pipe'],
     })
     process.on('SIGINT', onSignal)
@@ -101,11 +126,16 @@ async function spawnCase(argv, { cwd, timeoutMs = 180000, env = process.env, out
     child.once('exit', () => stop())
     const { code, signal } = await new Promise((resolve) => child.once('close', (code, signal) => resolve({ code, signal })))
     signalGroup('SIGKILL')
+    // 进程已退出：TAP 文件此刻是完整的，读它不存在「还没写完」的时序问题
+    let tapLogText = null
+    if (tapLog) {
+      try { tapLogText = await readFile(tapLog, 'utf8') } catch { tapLogText = '' }
+    }
     return { ok: code === 0 && !signal && !timedOut && !interrupted && !spawnError,
       code, signal, timedOut, interrupted, error: spawnError,
       // skips = 跳过条数（判红门禁不看它）；skipDetails = 逐条的名字与原因（#298 具名上报）
       skips: subtestSkipped.length, skipDetails: subtestSkipped,
-      ms: Math.round(performance.now() - started), tail, collected, tempDir }
+      ms: Math.round(performance.now() - started), tail, collected, tempDir, tapLogText }
   } finally {
     clearTimeout(timer)
     clearTimeout(escalation)
@@ -134,11 +164,15 @@ export async function runCase(file, { cwd, timeoutMs = 180000, env = process.env
  * 返回的 `files` 是**逐文件**结局：`{ file, ok, outcome, tests, pass, fail, skip, ms }`。
  * 批次进程崩了/超时了，没有收尾行的文件不会出现在 `files` 里 —— caller 负责把它们判失败，
  * 「没跑完」不许被当成「通过」。
+ *
+ * #501（P0）：`files` 里的计数与结局取自 **node 自己的 TAP 报告**（`tap` 选项把它写到临时文件），
+ * 另外整批再复核一遍：逐文件计数之和必须等于 TAP 的总数（每条用例恰好归到一处），
+ * 失败条数不许少于 TAP 报的 —— 对不上就返回 `unreliable`，**不许当绿**，由 caller 退到单文件复核。
  */
 export async function runMergedBatch(files, { cwd, timeoutMs = 180000, env = process.env, output = true, nodeArgs = [] } = {}) {
   const result = await spawnCase(
     [...nodeArgs, ...TRANSFORM_TYPES_ARGS, ...preloadArgs, MERGED_ENTRY, ...files],
-    { cwd, timeoutMs, env, output },
+    { cwd, timeoutMs, env, output, tap: true },
   )
   const text = result.collected.join('')
   const outcomes = []
@@ -168,8 +202,40 @@ export async function runMergedBatch(files, { cwd, timeoutMs = 180000, env = pro
     })
     framing = null
   }
-  const { collected, ...rest } = result
-  return { ...rest, output: text, files: outcomes }
+  /**
+   * #501：整批复核（这是「不许假绿」的最后一道闸）。
+   *
+   * 逐文件计数是 merged-entry 边跑边朗读 TAP 得到的，**朗读时机**理论上可能落后一条
+   * （node 在用例落定后的下一轮宏任务才写报告）。所以这里等进程彻底退出、文件完整之后再核一遍：
+   *   · `tap.tests` 必须等于逐文件计数之和 —— 不相等说明有事件没归到文件上（或归重了）；
+   *   · `tap.fail + tap.suiteFail` 不许大于逐文件 fail 之和 —— 大于说明有失败被漏判。
+   * 任一不成立 ⇒ `unreliable`：caller 必须退到单文件进程复核（退出码是权威），不许直接放绿。
+   *
+   * 「没有收尾行」的文件（批次崩了/超时）不参与这条复核：它们已经由 caller 按 pendingDegrade 处理。
+   */
+  const tap = tapCounts(result.tapLogText ?? '')
+  const framingFail = outcomes.reduce((sum, entry) => sum + entry.fail, 0)
+  const framingTests = outcomes.reduce((sum, entry) => sum + entry.tests, 0)
+  const missingCount = files.length - outcomes.length
+  const problems = []
+  if (!missingCount) {
+    if (tap.tests !== framingTests) {
+      problems.push(`node reporter 报了 ${tap.tests} 条用例，逐文件只归到 ${framingTests} 条`)
+    }
+    if (tap.fail + tap.suiteFail > framingFail) {
+      problems.push(`node reporter 报了 ${tap.fail + tap.suiteFail} 条失败，逐文件只认了 ${framingFail} 条`)
+    }
+  }
+  const { collected, tapLogText, ...rest } = result
+  return {
+    ...rest,
+    output: text,
+    files: outcomes,
+    tap,
+    ...(problems.length
+      ? { unreliable: { reason: '合并批次的逐文件判定与 node 的 reporter 对不上', detail: problems, tap, framing: { tests: framingTests, fail: framingFail } } }
+      : {}),
+  }
 }
 
 // No implicit compilation: caller supplies a privately built, immutable artifact.
