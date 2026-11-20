@@ -258,7 +258,8 @@ export const API_RULES = [
     api: 'Array.fromAsync',
     kind: 'api',
     firstSupported: 121,
-    source: 'mdn',
+    // #543：产物层门禁（check-bundle-syntax.mjs）已收这条，版本号改由仓库内权威表提供
+    source: 'check-bundle-syntax',
     pattern: staticPattern('Array', 'fromAsync'),
   },
   {
@@ -274,7 +275,8 @@ export const API_RULES = [
     api: 'Promise.withResolvers',
     kind: 'api',
     firstSupported: 119,
-    source: 'mdn',
+    // #543：产物层门禁（check-bundle-syntax.mjs）已收这条，版本号改由仓库内权威表提供
+    source: 'check-bundle-syntax',
     pattern: staticPattern('Promise', 'withResolvers'),
   },
   {

@@ -52,6 +52,24 @@
 // `VENDORED_SYNTAX_ALLOWANCES` 是给「第三方经典脚本确实用到了 83 能力集里、但如果哪天
 // 打包器/依赖升级把更激进的东西带进来」留的口子：显式登记「哪个文件允许哪种语法 + 为什么
 // 83 能跑」。**现在是空的** —— 空 = 一份也不放行，这比写一堆 `if (file.includes('pdfjs'))` 安全。
+//
+// ## 「太新的内置 API」清单是**收齐的**，不是碰运气（issue #543 盘点，2026-11-20）
+//
+// 第三层（运行时 API）的表必须与 `scripts/lib/apiAssumptionAudit.mjs` 的
+// 「> 83 且没人补 = 高风险」桶对齐：**源码层扫得到、产物层却拦不住**是最坏的组合（假绿）。
+// 本轮把那一桶里产物层缺的两条补齐（`Promise.withResolvers` 119 / `Array.fromAsync` 121），
+// 并把有意**不**收的候选与理由固定在下面（复评时照这张表逐条核对，别凭印象加）：
+//
+// | 候选 | Chrome | 为什么不收 |
+// | --- | --- | --- |
+// | `WeakRef` / `FinalizationRegistry` | 84 | 实测产物里就是 pdfjs 的**能力探测**（`typeof WeakRef` 分支），收进来必假红 vendored 经典脚本；能力探测本身在 83 上安全 |
+// | 正则 `d` 标志 / `RegExp.prototype.hasIndices` | 90 | 同上：dist 实测 2 处、pdfjs 4 处全是特性检测；真实语法风险归 `(?<=` 那类语法层判定，不归这一层 |
+// | `Map.groupBy` | 117 | 与已收的 `Object.groupBy` 同一提案、同样的调用形态，但截至本轮 dist 与依赖树零命中；真要跟进时与 `Object.groupBy` 一起改（已登记在 #543 的 follow-up） |
+// | `String.prototype.isWellFormed / toWellFormed` | 111 | 名字够独特但当前依赖树零命中，收益低于维护成本；等真出现再收 |
+// | `Promise.try` | 128 | ES2025，比基线晚 45 个版本，现阶段第三方库基本都带兜底；等真的在产物里见到再加 |
+// | `Symbol.asyncDispose` | 129 | 需要 `using` 语法才生效，而 `using` 本身在 83 上是语法错（构建期就会炸），这层拦不住也不该拦 |
+//
+// 判据始终是**这条规则会不会在干净产物上假红**：误报一条，发布门禁就被迫加豁免，豁免一多等于没有门禁。
 import { readdirSync, readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import path from 'node:path'
@@ -577,6 +595,28 @@ const LEGACY_RUNTIME_APIS = [
     chrome: 117,
     covered: false,
     pattern: /Object\.groupBy\s*\(/g,
+  },
+  {
+    // issue #543：ES2024 的静态方法，Chrome 119。它在 Chromium 83 上是**运行时** TypeError
+    // （`Promise.withResolvers is not a function`），不是语法错 —— 上面词法/AST 两层对它完全无感，
+    // 而它的调用形态（`const {promise,resolve,reject} = Promise.withResolvers()`）在现代第三方库里
+    // 已经常见，正是 #13 / #39 那个白屏模式。legacy.ts 没补，登记为 covered: false。
+    id: 'promise-withResolvers',
+    api: 'Promise.withResolvers',
+    chrome: 119,
+    covered: false,
+    // 允许点号两侧空白：源码形态（`Promise . withResolvers`）在未压缩的 chunk 里也出现过
+    pattern: /Promise\s*\.\s*withResolvers\s*\(/g,
+  },
+  {
+    // issue #543 同批补齐：`Array.fromAsync`（Chrome 121）本来是 `scripts/lib/apiAssumptionAudit.mjs`
+    // 的「> 83 且没人补」高风险桶里唯一一条**产物层没人拦**的 API（源码层扫得到、门禁不拦），
+    // 两边口径补齐后不留这个缺口。名字足够独特，不存在同名自定义方法误报。
+    id: 'array-fromAsync',
+    api: 'Array.fromAsync',
+    chrome: 121,
+    covered: false,
+    pattern: /Array\s*\.\s*fromAsync\s*\(/g,
   },
   {
     id: 'promise-any',
