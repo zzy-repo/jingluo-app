@@ -10,7 +10,11 @@
 //          按 id 去重），被历史裁剪掉的轮次连同引用一起消失（裁剪协同）；
 //   [绿 3] 注入落地：`buildWithDocuments()` 出参把 `attachments` 键剥干净、正文进对应消息，
 //          拼出来的请求体里就是那段文本（普通 user 文本，不是 file_id / base64）；
-//   [绿 4] 降级不阻断：解析失败 / 预算耗尽时不静默、也不拖垮提问 —— 提问完整发出，warnings 有记录。
+//   [绿 4] 降级不阻断：解析失败 / 预算耗尽时不静默、也不拖垮提问 —— 提问完整发出，warnings 有记录；
+//   [绿 5] 只传文档、没打字的历史轮**不许整轮丢**（#480 §8 多轮）：文本注入渠道保留它并注入正文，
+//          DeepSeek 路径仍按原规则省略（零影响）；
+//   [绿 6] 占位说明是纯函数：注入全失败时该轮仍有非空内容（不给上游空 user 消息），
+//          且尾部多一轮后老消息逐字节不变（#345 前缀稳定性）。
 //
 //   node --test --import ./tests/helpers/injected.mjs tests/unit/attachment-doc-wiring-480.test.mjs
 import { test } from 'node:test'
@@ -50,6 +54,12 @@ const file = (id, name, extra = {}) => ({
   ...extra,
 })
 const imageFile = (id) => file(id, 'figure.png', { isImage: true, mimeType: 'image/png' })
+/**
+ * 真实形态的**文档附件**：`serverId: null`（原件在 AttachmentManager，不走上传）。
+ * UI 就是这么存的（drafts.ts::DraftDocument → prepareDraftMessage → files[]），
+ * 所以它不会产出 `file_id` 块 —— [绿 5] / [绿 6] 必须用这个而不是上面的 `file()`。
+ */
+const docFile = (id, name) => ({ ...file(id, name), serverId: null })
 
 const historyUser = (index, files = []) => ({
   id: `u${index}`,
@@ -286,4 +296,93 @@ test('[绿 4] 解析失败 / 预算耗尽：提问照发，warnings 有记录（
   assert.equal(questionParam.role, 'user')
   assert.ok(String(questionParam.content).includes('第 0 轮提问'))
   assert.equal(hasAttachmentsKey(result.messages), false)
+})
+
+// ============ [绿 5] 纯文档轮不许整轮丢（#480 §8） ============
+
+test('[绿 5] 只有文档没有文字的历史轮：注入渠道保留并注入，DeepSeek 仍省略', async () => {
+  // 第 0 轮：只上传了 PDF、没打字（UI 允许这种发送：prepareDraftMessage 有 documents 就放行）
+  const docOnlyRound = { ...historyUser(0, [docFile('att-doc0', '标书.pdf')]), content: '' }
+  const history = [docOnlyRound, historyReply(0)]
+  const question = historyUser(1, [docFile('att-doc1', '说明.pdf')])
+
+  // --- 文本注入渠道：这一轮必须还在，且它的附件引用进得了注入
+  const withInjection = toRequestMessages(history, question, undefined, false, undefined, {
+    anchorKey: 'session-doc-only',
+    attachmentRefs: true,
+  })
+  assert.equal(
+    withInjection.some((message) => message.role === 'user' && String(message.content) === ''),
+    false,
+    '不许出现空 content 的 user 消息'
+  )
+  const refIds = collectAttachmentsForRequest(withInjection).map((ref) => ref.attachmentId)
+  assert.deepEqual(refIds, ['att-doc0', 'att-doc1'], '纯文档轮的引用必须进请求')
+
+  // 真注入一次：第 0 轮的正文进到它自己的消息里，而不是并到本轮提问上
+  const source = {
+    getText: async (id) => (id === 'att-doc0' ? '标书正文' : '说明书正文'),
+    getMeta: async (id) => ({ filename: id === 'att-doc0' ? '标书.pdf' : '说明.pdf', status: 'success' }),
+  }
+  const injected = await buildWithDocuments(withInjection, [], { source })
+  assert.equal(injected.injected.length, 2)
+  const firstUser = injected.messages.find((message) => message.role === 'user')
+  assert.ok(String(firstUser.content).includes('<document name="标书.pdf">'), String(firstUser.content))
+  assert.ok(
+    String(firstUser.content).includes('用户上传了 1 个附件'),
+    '空提问要用占位说明兜住（否则注入失败时就是一条空 user 消息）'
+  )
+
+  // --- DeepSeek：同一份历史仍然整轮省略（与改动前逐字节相同），零影响
+  const forDeepSeek = toRequestMessages(history, question, undefined, false, undefined, {
+    anchorKey: 'session-doc-only',
+    attachmentRefs: false,
+  })
+  assert.equal(JSON.stringify(forDeepSeek).includes('att-doc0'), false, 'DeepSeek 路径不许带文档引用')
+  assert.equal(hasAttachmentsKey(forDeepSeek), false)
+  assert.equal(
+    forDeepSeek.some((message) => message.role === 'user' && String(message.content).includes('用户上传了')),
+    false,
+    'DeepSeek 路径不许出现占位说明（那是注入渠道的兜底）'
+  )
+})
+
+test('[绿 6] 注入全失败时该轮仍有非空内容，且老消息逐字节稳定（#345）', async () => {
+  const docOnly = (index) => ({
+    ...historyUser(index, [docFile(`att-${index}`, `附件${index}.pdf`)]),
+    content: '',
+  })
+  const history = [docOnly(0), historyReply(0), docOnly(1), historyReply(1)]
+  const question = historyUser(2)
+
+  const failing = {
+    getText: async () => undefined,
+    getMeta: async (id) => ({ filename: `${id}.pdf`, status: 'failed', errorMessage: '无文本层' }),
+  }
+  const turnA = toRequestMessages(history.slice(0, 2), docOnly(1), undefined, false, undefined, {
+    anchorKey: 'session-fail',
+    attachmentRefs: true,
+  })
+  const resultA = await buildWithDocuments(turnA, [], { source: failing })
+  assert.equal(resultA.injected.length, 0, '全部解析失败 ⇒ 一份都不注入')
+  assert.ok(
+    resultA.messages.every((message) => String(message.content) !== ''),
+    '解析失败也必须留下占位说明，不许出现空 user 消息'
+  )
+  assert.ok(resultA.warnings.length >= 1, '失败要进 warnings（不静默）')
+
+  // 前缀稳定：尾部多一轮之后，A 轮整段请求逐字节相同
+  const turnB = toRequestMessages(
+    [...history, historyUser(3), historyReply(3)],
+    historyUser(4),
+    undefined,
+    false,
+    undefined,
+    { anchorKey: 'session-fail', attachmentRefs: true }
+  )
+  assert.equal(
+    JSON.stringify(turnB.slice(0, turnA.length)),
+    JSON.stringify(turnA),
+    '占位说明必须是纯函数，否则 #345 的前缀稳定性会被打破'
+  )
 })
