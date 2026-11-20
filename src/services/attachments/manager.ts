@@ -193,6 +193,21 @@ const outcomeOf = (
   }
 }
 
+/**
+ * 解析结果 → 落库用的**正文字符数**（#544 的唯一口径，manager 与缓存记录都走这里）。
+ *
+ * 为什么不能直接用 `result.text.length`：PDF 的 `text` 里带 `[第N页]` 标记与页间分隔换行，
+ * 每页多 6 个字符 + 每页一个换行 —— 于是同一份内容走 txt 与 pdf 落库的字数不可比，
+ * UI「已注入 x」、`estimatedTokens`、缓存全文记录会跟着一起飘（同一份文档、不同 parser、两个数）。
+ * 正文口径只认解析器给的 `characterCount`（三个解析器同一口径，见 types.ts）。
+ *
+ * 兜底 `text.length` 只覆盖「外部注册的解析器没实现这个字段」（`registerAttachmentParser`
+ * 允许运行期注册），不是给内置解析器留的后门。
+ */
+export const bodyCharacterCount = (
+  parsed: Pick<ParsedDocument, 'text' | 'characterCount'>
+): number => (typeof parsed.characterCount === 'number' ? parsed.characterCount : parsed.text.length)
+
 /** 正文超注入预算：照实记一条 warning，全文仍然完整保存（截断留给注入侧显式做） */
 const OVERFLOW_WARNING = (characterCount: number): string =>
   `正文 ${characterCount} 字符超过单份注入预算 ${ATTACHMENT_LIMITS.maxExtractedChars} 字符：` +
@@ -270,7 +285,8 @@ const runParse = async (
       throw new Error('parser returned no text')
     }
     const outcome = outcomeOf(result)
-    const characterCount = result.text.length
+    // #544：落库字数走统一口径（正文，不含 PDF 的 `[第N页]` 标记与分隔换行）
+    const characterCount = bodyCharacterCount(result)
     if (characterCount > ATTACHMENT_LIMITS.maxExtractedChars) {
       outcome.warnings.push(OVERFLOW_WARNING(characterCount))
     }
@@ -278,6 +294,8 @@ const runParse = async (
       sha256: record.sha256,
       parserVersion,
       text: result.text,
+      // 缓存的全文记录必须与首次解析用同一个字数口径，否则 recordFromCache 与这里会打架
+      characterCount,
       status: outcome.status,
       totalPages: outcome.totalPages,
       extractedPages: outcome.extractedPages,

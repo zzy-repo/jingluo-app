@@ -53,6 +53,10 @@ export type StoredAttachmentText = {
   sha256: string
   parserVersion: string
   text: string
+  /**
+   * **正文字符数**（#544）：不含 PDF 的 `[第N页]` 标记与页间分隔换行，
+   * 与 `ParsedDocument.characterCount` 同口径；`text` 本身可能带标记，两者不要互相换算。
+   */
   characterCount: number
   status: Extract<DocumentAttachment['status'], 'success' | 'partial'>
   totalPages?: number

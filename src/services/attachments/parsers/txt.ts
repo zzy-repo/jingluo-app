@@ -569,6 +569,8 @@ export const parseTxtBytes = (bytes: Uint8Array, filename: string): ParsedTxtDoc
     )
   }
 
+  // #544：txt 不插入任何结构标记，所以「正文」与「注入文本」是同一段字符串 ——
+  // characterCount 与 rawLength 恒等（PDF 那边两者不等，见 parsers/pdf.ts）。
   const characterCount = text.length
   if (characterCount > ATTACHMENT_LIMITS.maxExtractedChars) {
     warnings.push(
@@ -580,6 +582,7 @@ export const parseTxtBytes = (bytes: Uint8Array, filename: string): ParsedTxtDoc
   return {
     text,
     characterCount,
+    rawLength: text.length,
     warnings,
     parserVersion: TXT_PARSER_VERSION,
     encoding: detected.encoding,
