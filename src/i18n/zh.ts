@@ -243,7 +243,9 @@ export const zh = {
   historySelectAll: '全选',
   historySelectInvert: '反选',
   historyExportSelected: '导出选中',
-  historyExportedSelectedCount: '已导出 {count} 条会话',
+  // #536：选中导出改为和老出口同一个落盘函数后，提示要带上**真正写下去的文件名**
+  // （Android 的 SAF 面板可能按重名规则改名；只报条数的话，用户无从确认文件到底落没落盘）。
+  historyExportSelectedSaved: '已导出 {count} 条会话，文件：{name}',
   historyImportedOne: '已导入 1 个会话',
   historyImported: '已导入 {count} 个会话',
   historyImportFromUrl: '从链接导入',

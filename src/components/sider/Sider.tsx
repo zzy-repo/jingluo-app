@@ -5,10 +5,10 @@ import { IconPanelLeftOutline16, IconSettingsOutline16, NewChatIcon } from '../b
 import { setSiderCollapsed } from '../../services/settings.js'
 import { groupSessions } from '../../services/chat/sessionGroups.js'
 import { BackupError, exportHistory } from '../../services/chat/backup.js'
+import { saveHistoryArchive } from '../../services/chat/history/saveArchive.js'
 import { newChat, removeSession, useChatStore } from '../../services/chat/store.js'
 import { sweepOrphanAttachmentsAfterDelete } from '../attachments/index.js'
 import type { SessionSummary } from '../../services/chat/types.js'
-import { downloadBlob } from '../../utils/downloadBlob.js'
 import { MOTION_EXIT, usePresence } from '../../utils/usePresence.js'
 import { Button } from '../base/Button.js'
 import { IconButton } from '../base/IconButton.js'
@@ -53,7 +53,13 @@ export const Sider = ({ mobile = false }: { mobile?: boolean }) => {
       sessions.filter((session) => !selectedSet.has(session.id)).map((session) => session.id)
     )
 
-  /** 导出勾选的会话：空选择要给明确提示，不能静默什么都不发生。 */
+  /**
+   * 导出勾选的会话：空选择要给明确提示，不能静默什么都不发生。
+   *
+   * 落盘走 `saveHistoryArchive`（#536）—— 与设置页的「导出所有历史对话」**同一个出口**：
+   * Android 走原生 SAF（能真的写出文件），Web 走锚点下载。以前这里直接调 `downloadBlob`，
+   * 在 WebView 里对 blob URL 的 `<a download>` 会静默失败（点了没反应、也没有错误提示）。
+   */
   const exportSelected = async () => {
     const ids = sessions.filter((session) => selectedSet.has(session.id)).map((session) => session.id)
     if (ids.length === 0) {
@@ -63,10 +69,24 @@ export const Sider = ({ mobile = false }: { mobile?: boolean }) => {
     setExporting(true)
     try {
       const { name, blob, sessions: exported } = await exportHistory({ sessionIds: ids })
-      downloadBlob(blob, name)
-      showToast({ key: 'historyExportedSelectedCount', params: { count: exported } })
+      const outcome = await saveHistoryArchive({ filename: name, blob })
+      // 用户在系统「保存到」面板上点了取消：不是失败，勾选保留着，方便他再点一次
+      if (outcome.kind === 'cancelled') {
+        return
+      }
+      if (outcome.kind === 'failed') {
+        showToast(
+          outcome.params === undefined
+            ? { key: outcome.key, type: 'error' }
+            : { key: outcome.key, params: outcome.params, type: 'error' }
+        )
+        return
+      }
+      // 落盘成功才说「已导出」：`name` 是真正写下去的文件名（SAF 可能改过名）
+      showToast({ key: 'historyExportSelectedSaved', params: { count: exported, name: outcome.name } })
       exitSelection()
     } catch (error) {
+      // 这里只剩「打包」阶段的失败（`exportHistory` 抛的）：落盘失败已经在出口里归一过了
       showToast(
         error instanceof BackupError
           ? { key: error.key, params: error.params, type: 'error' }
@@ -135,6 +155,7 @@ export const Sider = ({ mobile = false }: { mobile?: boolean }) => {
           <button
             type="button"
             className={styles.selectionToggle}
+            data-testid="sider-select-toggle"
             onClick={() => (selecting ? exitSelection() : setSelecting(true))}
           >
             {t(selecting ? 'historySelectModeExit' : 'historySelectModeEnter')}
@@ -164,11 +185,16 @@ export const Sider = ({ mobile = false }: { mobile?: boolean }) => {
       {selecting ? (
         // 选择模式的底栏：已选 N 条 + 全选 / 反选 / 导出选中（移动端也在同一处，不另做一套）
         <div className={styles.selectionBar}>
-          <div className={styles.selectionCount}>
+          <div className={styles.selectionCount} data-testid="sider-selection-count">
             {t('historyExportSelectedCount', { count: selectedSet.size })}
           </div>
           <div className={styles.selectionActions}>
-            <button type="button" className={styles.selectionAction} onClick={selectAll}>
+            <button
+              type="button"
+              className={styles.selectionAction}
+              data-testid="sider-select-all"
+              onClick={selectAll}
+            >
               {t('historySelectAll')}
             </button>
             <button type="button" className={styles.selectionAction} onClick={invertSelection}>
@@ -178,6 +204,7 @@ export const Sider = ({ mobile = false }: { mobile?: boolean }) => {
               variant="outlined"
               size="m"
               disabled={exporting}
+              data-testid="sider-export-selected"
               onClick={() => void exportSelected()}
             >
               {t('historyExportSelected')}

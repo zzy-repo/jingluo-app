@@ -36,7 +36,7 @@
 
 ## 盘点表
 
-**总计 145 条命中**（`已有兜底` 78 / `无风险` 51 / `真实漏洞` 5 / `需动态验证` 11）；风险分布：高 4、中 12、低 129。
+**总计 143 条命中**（`已有兜底` 78 / `无风险` 49 / `真实漏洞` 5 / `需动态验证` 11）；风险分布：高 4、中 12、低 127。
 
 | 文件:行 | 假设内容 | 类别 | 风险(高/中/低) | 处置(已有兜底/需探测/需动态验证/拆单) |
 | --- | --- | --- | --- | --- |
@@ -182,8 +182,6 @@
 | `src/utils/capabilities.ts:256` | 依赖 fetch 是本尊：页面把 window.fetch 换成包装后，任何「原生 fetch」假设（bind、clone、body 流）都不再成立 | 3 | 高 | 需探测 |
 | `src/utils/clipboard.ts:7` | navigator.clipboard 非安全上下文下整体为 undefined（局域网 http 打开就不是安全上下文） | 3 | 低 | 已有兜底 |
 | `src/utils/clipboard.ts:8` | navigator.clipboard 非安全上下文下整体为 undefined（局域网 http 打开就不是安全上下文） | 3 | 低 | 已有兜底 |
-| `src/utils/downloadBlob.ts:8` | URL.createObjectURL 引入于 Chrome 8，83 必有 | 3 | 低 | 已有兜底 |
-| `src/utils/downloadBlob.ts:13` | URL.revokeObjectURL 引入于 Chrome 8，83 必有 | 3 | 低 | 已有兜底 |
 | `src/utils/usePresence.ts:19` | matchMedia 引入于 Chrome 9，83 必有 | 3 | 低 | 已有兜底 |
 
 ## 高危结论：依赖 fetch 是本尊
@@ -262,8 +260,8 @@
 | `localStorage` | 20 | 19 | 1 | 0 | 0 |
 | `AbortController` | 15 | 15 | 0 | 0 | 0 |
 | `Capacitor.isNativePlatform` | 12 | 2 | 10 | 0 | 0 |
-| `URL.revokeObjectURL` | 9 | 2 | 7 | 0 | 0 |
-| `URL.createObjectURL` | 8 | 3 | 5 | 0 | 0 |
+| `URL.revokeObjectURL` | 8 | 2 | 6 | 0 | 0 |
+| `URL.createObjectURL` | 7 | 3 | 4 | 0 | 0 |
 | `Capacitor.registerPlugin` | 6 | 1 | 0 | 0 | 5 |
 | `ResizeObserver` | 5 | 5 | 0 | 0 | 0 |
 | `matchMedia` | 5 | 1 | 4 | 0 | 0 |
@@ -284,7 +282,7 @@
 | `canvas.toDataURL` | 1 | 0 | 1 | 0 | 0 |
 | `fetch 响应体 clone` | 1 | 0 | 0 | 1 | 0 |
 
-**总计 145 条命中**（`已有兜底` 78 / `无风险` 51 / `真实漏洞` 5 / `需动态验证` 11）；风险分布：高 4、中 12、低 129。
+**总计 143 条命中**（`已有兜底` 78 / `无风险` 49 / `真实漏洞` 5 / `需动态验证` 11）；风险分布：高 4、中 12、低 127。
 
 ## 未覆盖的边界
 

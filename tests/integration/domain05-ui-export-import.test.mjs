@@ -9,6 +9,9 @@
 //   F-05-23 导出全部历史为 ZIP（真实按钮 → 真实下载产物）
 //   F-05-26 空历史置灰（空历史点不动，有会话时可点，导出结束后必须回到可再点状态）
 //   F-05-28 导出后立即导入（**同一页面里先导出再导入**，这是任何 L0 都替代不了的一段）
+//   F-05-23b「导出选中」也真的产出文件（#536）：它在 #390 落地时走的是 Web 锚点下载，
+//   在 Android WebView 里对 blob URL 会**静默失败**；现在与全量导出共用同一个落盘出口，
+//   这里钉的是「同一条路在浏览器里仍然真的下载、且产物只含勾中的会话」。
 //
 // 不可下放 L0：需要真实 DOM（确认弹窗、进度文案、disabled 态）与真实下载通道；
 // 「同一页面里先导出再导入」是壳层与 Web 的跨层契约，只能在这里验。
@@ -19,6 +22,7 @@
 //
 //   node tests/run-layer.mjs integration --case tests/integration/domain05-ui-export-import.test.mjs
 import { mkdtemp, readFile, stat, writeFile } from 'node:fs/promises'
+import { strFromU8, unzipSync } from 'fflate'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { chromium } from 'playwright'
@@ -149,7 +153,48 @@ const run = async () => {
   )
   check('导入后标题仍然可读', (await page.getByText(new RegExp(TITLE_PREFIX)).count()) > 0)
 
-  console.log('\n[N9-6] 整条通路没有 console error / 未捕获异常')
+  console.log('\n[N9-6] 「导出选中」走同一个落盘出口，浏览器里仍然真的下载（#536）')
+  // 先退出设置弹层：选择模式在侧栏上，弹层还开着会挡住点击
+  await page.getByRole('button', { name: /关闭|Close/ }).first().click()
+  await page.waitForTimeout(300)
+  await page.getByTestId('sider-select-toggle').click()
+  const boxes = page.locator('[role="checkbox"]')
+  await boxes.first().waitFor({ timeout: 10000 })
+  check('选择模式下每条会话都有勾选框', (await boxes.count()) === SESSION_COUNT)
+  // 只勾**一条**：这样「产物里只有勾中的会话」才是有差别的断言（全勾就等于全量导出）
+  await boxes.first().click()
+  check(
+    '底栏计数跟着变化',
+    (await page.getByTestId('sider-selection-count').innerText()).includes('1')
+  )
+  const [selectedDownload] = await Promise.all([
+    page.waitForEvent('download', { timeout: 30000 }),
+    page.getByTestId('sider-export-selected').click(),
+  ])
+  const selectedPath = path.join(dir, 'selected.zip')
+  await selectedDownload.saveAs(selectedPath)
+  const selectedName = selectedDownload.suggestedFilename()
+  check(
+    `「导出选中」也产出了 deepseek_data-日期.zip（实际 ${selectedName}）`,
+    /^deepseek_data-\d{4}-\d{2}-\d{2}\.zip$/.test(selectedName)
+  )
+  const selectedBytes = await readFile(selectedPath)
+  check(
+    '「导出选中」产物同样是 ZIP',
+    selectedBytes[0] === 0x50 && selectedBytes[1] === 0x4b && selectedBytes[2] === 3 && selectedBytes[3] === 4
+  )
+  const selectedIndex = JSON.parse(strFromU8(unzipSync(new Uint8Array(selectedBytes))['chat_session_index.json']))
+  check(`产物里只有勾中的 1 条会话（实际 ${selectedIndex.length} 条）`, selectedIndex.length === 1)
+  // 落盘成功才说「已导出」：提示里带真正写下去的文件名（#536 的新文案）
+  check(
+    '提示里报出了落盘文件名',
+    (await page.getByText(new RegExp(`文件：${selectedName.replaceAll('.', '\\.')}`)).count()) > 0
+  )
+  check('导出选中没有留下失败提示', (await page.getByText(/导出失败/).count()) === 0)
+  // 导出成功后自动退出选择模式（#390 的既有行为）
+  check('导出完成后退出选择模式', (await page.getByTestId('sider-select-toggle').count()) === 1)
+
+  console.log('\n[N9-7] 整条通路没有 console error / 未捕获异常')
   check('console error = 0', consoleErrors.length === 0, consoleErrors.slice(0, 3).join(' | '))
 
   await browser.close()

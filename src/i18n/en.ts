@@ -250,7 +250,7 @@ export const en = {
   historySelectAll: 'Select all',
   historySelectInvert: 'Invert',
   historyExportSelected: 'Export selected',
-  historyExportedSelectedCount: 'Exported {count} chats',
+  historyExportSelectedSaved: 'Exported {count} chats — file: {name}',
   historyImportedOne: 'Imported 1 chat',
   historyImported: 'Imported {count} chats',
   historyImportFromUrl: 'Import from link',
