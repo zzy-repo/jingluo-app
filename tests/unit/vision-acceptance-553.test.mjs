@@ -50,7 +50,7 @@ const { setApiKey, setProviderKind, getCurrentSpec } = await import(
   '../../src/services/api/apiConfig.ts'
 )
 const drafts = await import('../../src/services/chat/drafts.ts')
-const upload = await import('../../src/services/attachments/upload.ts')
+const upload = await import('../../src/services/attachments.ts')
 const { useChatStore, initChat, sendMessage } = await import('../../src/services/chat/store.ts')
 
 const API_KEY = 'sk-test-553'

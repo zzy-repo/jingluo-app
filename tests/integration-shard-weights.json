@@ -73,9 +73,6 @@
     "internal-build.test.mjs": {
       "ms": 9279
     },
-    "issue-234-invite-copy.test.mjs": {
-      "ms": 16928
-    },
     "legacy-config.test.mjs": {
       "ms": 7091
     },
@@ -93,9 +90,6 @@
     },
     "motion.test.mjs": {
       "ms": 24312
-    },
-    "ours-services.test.mjs": {
-      "ms": 40416
     },
     "paths.test.mjs": {
       "ms": 4396

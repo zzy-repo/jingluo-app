@@ -250,7 +250,8 @@ const canScroll = /auto|scroll/.test(style.overflowY)
   assert.ok(defectFeatures.has('scrollbar-gutter'), '真实缺陷应包含 scrollbar-gutter')
 
   // #215 之后 :focus-visible 各处都补上了 `:focus` 兜底：检测能力必须还在（命中数不许减少），
-  // #499（登录/注册页 AuthPages.module.css）新增 1 处 → 13 → 14；W1-C1/W1-C2 面板（#502/#505）再 +2 → 16。
+  // #499（登录/注册页 AuthPages.module.css）新增 1 处 → 13 → 14；W1-C1/W1-C2 面板（#502/#505）再 +2 → 16；
+  // #562 旧 `settings/OursServices.module.css` 随支付弹层退役 −1 → 15。
   // docs/capabilities/css.md 同步口径。
   // 但结论从「已知缺陷」换成更强的「不许回流」不变量（与上面 :has() 同一手法）。
   const focusHits = summary.byFeature[':focus-visible']

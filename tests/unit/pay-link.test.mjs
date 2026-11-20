@@ -51,7 +51,9 @@ const transport = await import('../../src/services/ours/transport.ts')
 
 const ROOT = fileURLToPath(new URL('../../', import.meta.url))
 const read = (relative) => readFileSync(path.join(ROOT, relative), 'utf8')
-const dialogSource = read('src/components/settings/OursServicesDialog.tsx')
+// 旧 `OursServicesDialog.tsx` 已退役（#562）：「前往购买」这一段现在住在新页面的「购买」tab
+const buyTabSource = read('src/components/consume/BuyTab.tsx')
+const accountConsumePageSource = read('src/components/consume/AccountConsumePage.tsx')
 const apiSource = read('src/services/ours/api.ts')
 const transportSource = read('src/services/ours/transport.ts')
 const zhSource = read('src/i18n/zh.ts')
@@ -215,10 +217,10 @@ console.log('\n[E] 源码体检：不建单、不轮询、不写死地址、不�
   truthy(/\/api\/pay-link/u.test(apiSource), 'api.ts 里拼 /api/pay-link')
   truthy(!/wzyp\.cn|DIWOOHLR/u.test(apiSource), 'api.ts 没有写死收款页地址')
   truthy(!/wzyp\.cn|DIWOOHLR/u.test(transportSource), 'transport 没有写死收款页地址')
-  truthy(!/wzyp\.cn|DIWOOHLR/u.test(dialogSource), '弹层没有写死收款页地址')
-  truthy(!/createBuyOrder|pollOrder|startInAppPay/u.test(dialogSource), '弹层不再建单、不再轮询')
-  truthy(!/\/api\/buy/u.test(dialogSource), '弹层里连 /api/buy 的地址都不再出现')
-  truthy(!/window\.location|window\.open\(|<a\s[^>]*href=/u.test(dialogSource), '弹层里没有整页跳转 / window.open / <a href>')
+  truthy(!/wzyp\.cn|DIWOOHLR/u.test(buyTabSource), '「购买」tab 没有写死收款页地址')
+  truthy(!/createBuyOrder|pollOrder|startInAppPay/u.test(buyTabSource), '不再建单、不再轮询')
+  truthy(!/\/api\/buy/u.test(buyTabSource), '连 /api/buy 的地址都不再出现')
+  truthy(!/window\.location|window\.open\(|<a\s[^>]*href=/u.test(buyTabSource), '没有整页跳转 / window.open / <a href>')
   /** 只留代码行：注释里解释「不显示支付成功」是允许的，真渲染出来才算违规 */
   const codeOnly = (text) =>
     text
@@ -228,9 +230,14 @@ console.log('\n[E] 源码体检：不建单、不轮询、不写死地址、不�
         return !trimmed.startsWith('//') && !trimmed.startsWith('*') && !trimmed.startsWith('/*')
       })
       .join(String.fromCharCode(10))
-  truthy(!codeOnly(dialogSource).includes('支付成功'), '界面文案里没有「支付成功」（没有订单可查，不能替小铺宣布成功）')
+  truthy(!codeOnly(buyTabSource).includes('支付成功'), '界面文案里没有「支付成功」（没有订单可查，不能替小铺宣布成功）')
   truthy(!enSource.includes('Payment successful'), '英文文案里也没有「Payment successful」')
-  truthy(dialogSource.includes('refreshBalance'), '关掉收款页只刷新额度显示（refreshBalance）')
+  // 关掉收款页不判断成败：只回调 `onPurchased`，由页面切回「我的卡密」重拉订单（旧弹层是 refreshBalance）
+  truthy(buyTabSource.includes('onPurchased'), '关掉收款页只回调 onPurchased（不替小铺宣布成功）')
+  truthy(
+    accountConsumePageSource.includes('backToCards') && accountConsumePageSource.includes('onPurchased={backToCards}'),
+    '页面把 onPurchased 接到「我的卡密」tab（卡密由小铺发到订单上）'
+  )
 
   const pairs = [
     'oursPayTitle',

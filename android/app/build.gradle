@@ -145,7 +145,10 @@ def CONSUME_BASE_PATTERN = ~/https?:\/\/[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?(
 def consumeEndpointsRawText = endpointsJsonFile.getText('UTF-8')
 def consumeEndpointLines = consumeEndpointsRawText.readLines()
 def quoted = { String name -> '"'.toString() + name + '"'.toString() }
-def findLine = { String name, int from } ->
+// 注意箭头位置：Groovy 闭包的形参列表与 `->` 都必须在 `{` 与 `}` **之间**
+// （`{ String name, int from -> ... }`）。写成 `{ ... } ->` 是语法错误，
+// gradle 在**配置阶段**就 `Unexpected input: '->'` 直接 FAILURE，与 JS/Java 代码无关（#557）。
+def findLine = { String name, int from ->
     int found = 0
     consumeEndpointLines.eachWithIndex { line, i ->
         if (found == 0 && i >= from && line.contains(quoted(name))) {

@@ -1,7 +1,7 @@
 import clsx from 'clsx'
 import { useEffect, useState } from 'react'
 import { useTranslate } from '../../i18n/index.js'
-import { describeSentImage, useUploads } from '../../services/attachments/upload.js'
+import { describeSentImage, useUploads } from '../../services/attachments.js'
 import { imagePartBytes, imagePartOf } from '../../services/attachments/imageSource.js'
 import { loadFile } from '../../services/chat/db.js'
 import type { FileAttachment } from '../../services/chat/types.js'

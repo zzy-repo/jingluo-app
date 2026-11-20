@@ -73,7 +73,7 @@ const closeSettings = async (page) => {
   }
 }
 
-/** 切到「我们的渠道」（只有它才有额度与卡密弹层） */
+/** 切到「我们的渠道」（只有它才有额度 / 卡密的钱入口） */
 const selectOursChannel = async (page) => {
   // #555：这里原来写的是 `getByRole('button', { name: /渠道|Channel|服务类型|Service type/ }).first()`。
   // #480/#538 之后聊天页多了一个**禁用态**的文档入口图标按钮，aria-label 是
@@ -226,19 +226,23 @@ try {
     if (/请求过于频繁/.test(text)) {
       bad('[2] 额度不足被说成「请求过于频繁」')
     }
-    // 自有渠道复用现有「额度与卡密」弹层（充值 / 卡密在同一个入口里）
+    // 自有渠道的这个 CTA 现在打开「账户与消费」页的**「我的额度」tab**（#562：旧「额度与卡密」
+    // 弹层已退役，`openOursServices()` 换成 `openAccountConsume('quota')`）。
     const entry = page.getByRole('button', { name: /去充值|兑换卡密|前往充值|Top up/ })
     if ((await entry.count()) === 0) {
       bad('[2] 提示里没有「去充值 / 兑换卡密」按钮')
     } else {
       await entry.first().click()
-      await page.waitForTimeout(800)
-      const dialog = page.getByRole('dialog')
-      const dialogText = (await dialog.count()) > 0 ? await dialog.first().innerText() : ''
-      if (!/额度与卡密/.test(dialogText)) {
-        bad(`[2] 点了入口没打开「额度与卡密」弹层：${JSON.stringify(dialogText.slice(0, 160))}`)
+      await page.getByTestId('account-consume-page').waitFor({ state: 'visible', timeout: 10000 })
+      const quotaSelected = await page
+        .getByTestId('account-consume-tab-quota')
+        .getAttribute('aria-selected')
+      if (quotaSelected !== 'true') {
+        bad(`[2] 额度不足的 CTA 没有落在「我的额度」tab（aria-selected=${quotaSelected}）`)
+      } else if ((await page.getByTestId('ours-services-dialog').count()) > 0) {
+        bad('[2] 旧「额度与卡密」弹层还在 —— #562 之后不该再出现')
       } else {
-        ok('[2] 入口打开了现有「额度与卡密」弹层（充值 / 卡密兑换同一处）')
+        ok('[2] CTA 打开「账户与消费」页并落在「我的额度」tab（旧弹层已退役）')
       }
     }
   }

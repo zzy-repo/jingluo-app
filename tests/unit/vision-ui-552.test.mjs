@@ -2,7 +2,7 @@
 //
 // Issue #552（母单 #548 的 vision-3）：把 vision 通路接到**既有** UI 上。
 // 结构基线：#562 对齐后（能力表只有 `attachments/providerCapability.ts` 一张、
-// limits 只有 `services/limits.ts` 一份、上传任务在 `attachments/upload.ts`）。
+// limits 只有 `services/limits.ts` 一份、上传任务在 `attachments.ts`）。
 //
 // 这一层只钉「不依赖 canvas / DOM」的那半；真实的压缩率、蒙层观感、真机内核归真机验收。
 //
@@ -33,7 +33,7 @@ import { installChatHostStubs } from '../helpers/chat-host-stubs.mjs'
 // 顺带注册 `.js → .ts` 的 resolve 钩子；drafts / upload / imageSource 仍然是真代码。
 installChatHostStubs()
 
-const upload = await import('../../src/services/attachments/upload.ts')
+const upload = await import('../../src/services/attachments.ts')
 const imageSource = await import('../../src/services/attachments/imageSource.ts')
 const drafts = await import('../../src/services/chat/drafts.ts')
 

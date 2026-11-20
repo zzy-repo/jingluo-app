@@ -63,13 +63,13 @@ const VIEWPORTS = {
 const { createElement } = await import('react')
 const { renderToStaticMarkup } = await import('react-dom/server')
 const { zh } = await import(pathToFileURL(path.join(ROOT, 'src/i18n/zh.ts')).href)
-const { QuotaPanelView } = await import(pathToFileURL(path.join(ROOT, 'src/components/consume/quotaPanel.ts')).href)
+const { QuotaPanelView } = await import(pathToFileURL(path.join(ROOT, 'src/components/consume/quotaPanelModel.ts')).href)
 const { AccountPanelView, initialAccountState } = await import(
-  pathToFileURL(path.join(ROOT, 'src/components/consume/accountPanel.ts')).href
+  pathToFileURL(path.join(ROOT, 'src/components/consume/accountPanelModel.ts')).href
 )
-const { InvitePanelView } = await import(pathToFileURL(path.join(ROOT, 'src/components/consume/invitePanel.ts')).href)
+const { InvitePanelView } = await import(pathToFileURL(path.join(ROOT, 'src/components/consume/invitePanelModel.ts')).href)
 const { EmailBindPanelView, initialEmailBindState } = await import(
-  pathToFileURL(path.join(ROOT, 'src/components/consume/emailBindPanel.ts')).href
+  pathToFileURL(path.join(ROOT, 'src/components/consume/emailBindPanelModel.ts')).href
 )
 
 /** 与 i18n/index.ts 同一套占位符规则（截图里要看到真文案） */

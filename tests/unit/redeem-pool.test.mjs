@@ -366,20 +366,22 @@ console.log('\n[8] 设备码可见可备份 + 只提示一次')
 
 console.log('\n[9] 价格取 /api/plans；客户端不暴露图片 / 文件输入入口')
 {
+  // 旧 `OursServicesDialog.tsx` 已退役（#562）：卡密兑换现在住在新页面的「我的卡密」tab，
+  // 体检对象换成 `components/consume/MyCardsTab.tsx`（套餐列表搬去「购买」tab 的 BuyTab）。
   const dialogSource = await readFile(
-    path.join(ROOT, 'src/components/settings/OursServicesDialog.tsx'),
+    path.join(ROOT, 'src/components/consume/MyCardsTab.tsx'),
     'utf8'
   )
-  truthy(!/type="file"/.test(dialogSource), '设置/兑换弹层没有 file 输入')
-  truthy(!/\baccept=/.test(dialogSource), '设置/兑换弹层没有 accept= 选择器')
-  truthy(!/<img\b/.test(dialogSource), '兑换弹层没有图片预览')
+  truthy(!/type="file"/.test(dialogSource), '兑换 tab 没有 file 输入')
+  truthy(!/\baccept=/.test(dialogSource), '兑换 tab 没有 accept= 选择器')
+  truthy(!/<img\b/.test(dialogSource), '兑换 tab 没有图片预览')
   truthy(
     !/fetchPlans/.test(dialogSource),
-    '弹层不再取 /api/plans（#331：套餐全线下架，购买入口改成 App 内打开收款页）'
+    '兑换 tab 不取 /api/plans（套餐列表只属于「购买」tab 的 BuyTab）'
   )
   // 硬编码价格：不允许出现 ¥+数字 的写死价，或 price: <数字>
   const hardcoded = [...dialogSource.matchAll(/[¥￥]\s?\d|\bprice:\s*\d/g)].map((m) => m[0])
-  eq(hardcoded, [], '弹层里没有硬编码价格')
+  eq(hardcoded, [], '兑换 tab 里没有硬编码价格')
 
   const plansSource = await readFile(path.join(ROOT, 'src/services/ours/api.ts'), 'utf8')
   truthy(/\/api\/plans/.test(plansSource), '套餐请求打 /api/plans')
@@ -560,7 +562,6 @@ console.log('\n[11] i18n：新 key 中英齐全，既有 key 未被改写')
     'oursErrApiKeyNotIssued',
     'oursRedeemProcessing',
     'oursRedeemDuplicate',
-    'oursRedeemRefreshBalance',
     'oursInviteErrApplyRateLimited',
     'oursInviteErrAlreadyClaimed',
   ]

@@ -123,7 +123,7 @@ installChatHostStubs({
 
 const { setApiKey } = await import('../../src/services/api/apiConfig.ts')
 const { setDraftText } = await import('../../src/services/chat/drafts.ts')
-const { useUploads } = await import('../../src/services/attachments/upload.ts')
+const { useUploads } = await import('../../src/services/attachments.ts')
 const store = await import('../../src/services/chat/store.ts')
 const { useChatStore, initChat, selectSession, sendMessage } = store
 

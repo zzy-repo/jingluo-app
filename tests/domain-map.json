@@ -110,7 +110,7 @@
         "src/services/markdown/**": ["tests/unit/has-fallback.test.mjs"],
         "src/services/speech/**": ["tests/unit/thinking-entry-consistency.test.mjs", "tests/integration/request-body.test.mjs"],
         "src/services/memory/**": ["tests/unit/memory-embedding-api.test.mjs"],
-        "src/services/attachments/upload.ts": ["tests/unit/attachment-endpoint-303.test.mjs", "tests/unit/feedback-images.test.mjs", "tests/unit/log-313-attachment-import.test.mjs"],
+        "src/services/attachments.ts": ["tests/unit/attachment-endpoint-303.test.mjs", "tests/unit/feedback-images.test.mjs", "tests/unit/log-313-attachment-import.test.mjs"],
         "src/services/uploadExts.ts": ["tests/unit/attachment-endpoint-303.test.mjs", "tests/unit/feedback-images.test.mjs"],
         "src/utils/clipboard.ts": ["tests/unit/copy-limit.test.mjs", "tests/integration/copy-limit.test.mjs"],
         "src/utils/savePlainText.ts": ["tests/unit/copy-limit.test.mjs", "tests/unit/export-text-bridge.test.mjs"]
@@ -248,8 +248,7 @@
           "tests/unit/bind-key.test.mjs",
           "tests/unit/rotate-key.test.mjs",
           "tests/unit/ours-invite.test.mjs",
-          "tests/integration/ours-services.test.mjs",
-          "tests/integration/issue-234-invite-copy.test.mjs"
+          "tests/integration/ours-services.test.mjs"
         ],
         "src/services/ours/api.ts": [
           "tests/unit/ours-api.test.mjs",
@@ -261,7 +260,9 @@
         "src/services/ours/customerId.ts": ["tests/unit/ours-inapp-buy.test.mjs", "tests/integration/ours-services.test.mjs"],
         "src/services/ours/storage.ts": ["tests/integration/ours-services.test.mjs"],
         "src/services/ours/mask.ts": ["tests/unit/domain08-redact-negative.test.mjs", "tests/unit/format-points-i18n.test.mjs"],
-        "src/components/settings/OursServicesDialog.tsx": ["tests/integration/ours-services.test.mjs", "tests/unit/dialog-open-no-apply.test.mjs"],
+        "src/components/consume/AccountConsumePage.tsx": ["tests/integration/ours-services.test.mjs", "tests/unit/consume-panels-487.test.mjs"],
+        "src/components/consume/MyCardsTab.tsx": ["tests/unit/redeem-pool.test.mjs", "tests/unit/consume-panels-487.test.mjs"],
+        "src/components/consume/BuyTab.tsx": ["tests/unit/ours-inapp-buy.test.mjs", "tests/unit/pay-link.test.mjs"],
         "src/components/settings/douyinAccount.ts": ["tests/unit/douyin-account.test.mjs", "tests/integration/ours-services.test.mjs"]
       },
       "tests": {
@@ -275,13 +276,9 @@
       "doc": "docs/testing/coverage/domain-06-07.md",
       "note": "旧体系的回归基准（领取 / 额度 / 卡密兑换 / 订单状态 / 购买链路）已随 W1-D 删除，待阶段③按新链路重建；删除清单与重建要求见 docs/testing/rebuild-after-refactor.md",
       "paths": {
-        "src/services/ours/purchases.ts": ["tests/unit/ours-purchases.test.mjs", "tests/unit/purchases-ui.test.mjs", "tests/integration/ours-services.test.mjs"],
+        "src/services/ours/purchases.ts": ["tests/unit/ours-purchases.test.mjs", "tests/integration/ours-services.test.mjs"],
         "src/services/ours/paymentRecords.ts": ["tests/unit/ours-payment-records.test.mjs", "tests/integration/ours-services.test.mjs"],
-        "src/services/ours/trail.ts": ["tests/unit/ours-trail.test.mjs", "tests/unit/payment-trail-ui.test.mjs", "tests/integration/ours-services.test.mjs"],
-        "src/services/ours/transport.ts": ["tests/unit/ours-inapp-buy.test.mjs", "tests/unit/pay-link.test.mjs", "tests/integration/ours-services.test.mjs"],
-        "src/components/settings/PurchaseRecords*.tsx": ["tests/unit/purchases-ui.test.mjs", "tests/integration/ours-services.test.mjs"],
-        "src/components/settings/PaymentRecordsDialog.tsx": ["tests/integration/ours-services.test.mjs"],
-        "src/components/settings/PaymentTrail*.ts*": ["tests/unit/payment-trail-ui.test.mjs", "tests/integration/ours-services.test.mjs"]
+        "src/services/ours/transport.ts": ["tests/unit/ours-inapp-buy.test.mjs", "tests/unit/pay-link.test.mjs", "tests/integration/ours-services.test.mjs"]
       },
       "tests": {
         "unit": ["tests/unit/limits-config.test.mjs"],
@@ -365,15 +362,16 @@
       "name": "邮箱账号（绑定 / 换机登录）",
       "doc": "docs/testing/coverage/domain-11.md",
       "paths": {
-        "src/services/invite/**email**": ["tests/unit/domain11-*.test.mjs", "tests/unit/contract-c9-email.test.mjs", "tests/integration/domain11-email-flow.test.mjs", "tests/golden/g11-*.test.mjs"],
-        "src/services/invite/api.ts": ["tests/unit/domain11-email-parse.test.mjs", "tests/unit/domain11-email-conflict.test.mjs", "tests/unit/contract-c9-email.test.mjs", "tests/integration/domain11-email-flow.test.mjs", "tests/golden/g11-*.test.mjs"],
-        "src/components/settings/OursServicesDialog.tsx": ["tests/unit/domain11-*.test.mjs", "tests/unit/contract-c9-email.test.mjs", "tests/integration/domain11-email-flow.test.mjs", "tests/golden/g11-*.test.mjs"],
+        "src/services/invite/**email**": ["tests/unit/domain11-email-parse.test.mjs", "tests/unit/contract-c9-email.test.mjs", "tests/unit/consume-panels-invite-email.test.mjs"],
+        "src/services/invite/api.ts": ["tests/unit/domain11-email-parse.test.mjs", "tests/unit/contract-c9-email.test.mjs"],
+        "src/components/consume/EmailBindPanel.tsx": ["tests/unit/consume-panels-invite-email.test.mjs", "tests/unit/contract-c9-email.test.mjs"],
+        "src/components/consume/InvitePanel.tsx": ["tests/unit/consume-panels-invite-email.test.mjs", "tests/unit/contract-c9-email.test.mjs"],
         "src/i18n/**": ["tests/unit/domain11-email-parse.test.mjs", "tests/unit/contract-c9-email.test.mjs"]
       },
       "tests": {
-        "unit": ["tests/unit/domain11-email-parse.test.mjs", "tests/unit/domain11-email-entry.test.mjs", "tests/unit/domain11-email-conflict.test.mjs", "tests/unit/contract-c9-email.test.mjs"],
-        "integration": ["tests/integration/domain11-email-flow.test.mjs"],
-        "golden": ["tests/golden/g11-email.test.mjs"]
+        "unit": ["tests/unit/domain11-email-parse.test.mjs", "tests/unit/consume-panels-invite-email.test.mjs", "tests/unit/contract-c9-email.test.mjs"],
+        "integration": [],
+        "golden": []
       }
     }
   ],

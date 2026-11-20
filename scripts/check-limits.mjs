@@ -61,7 +61,7 @@ const WATCHED = [
   { file: 'src/services/chat/autoTitle.ts', allow: [] },
   { file: 'src/services/chat/autoTitleQueue.ts', allow: [] },
   {
-    file: 'src/services/attachments/upload.ts',
+    file: 'src/services/attachments.ts',
     allow: [
       { value: 1024, count: 2, reason: 'getMaxSizeMB() * 1024 * 1024：MB → 字节换算' },
       { value: 1024, count: 1, reason: 'formatBytes 的 KB 分档（bytes < 1024）' },
@@ -78,10 +78,6 @@ const WATCHED = [
       { value: 1000, count: 5, reason: '耗时 / 秒换算与诊断节流（maxTotalMs / 1000、stallMs / 1000、三处 >= 1000 的 trace 间隔）' },
       { value: 60000, count: 1, reason: '毫秒 → 分钟换算（Math.round(maxTotalMs / 60_000)）' },
     ],
-  },
-  {
-    file: 'src/components/settings/PaymentTrailView.ts',
-    allow: [{ value: 1000, count: 1, reason: '秒 → 毫秒换算（服务端时间戳是秒，value * 1000）' }],
   },
   {
     file: 'src/index.html',

@@ -4,7 +4,7 @@ import { useTranslate } from '../../i18n/index.js'
 import type { ConsumeClient } from '../../services/consume/index.js'
 import { copyText } from '../../utils/clipboard.js'
 import { Button } from '../base/Button.js'
-import { InvitePanelView, loadInvite, type InviteSource, type InviteState } from './invitePanel.js'
+import { InvitePanelView, loadInvite, type InviteSource, type InviteState } from './invitePanelModel.js'
 import styles from './panels.module.css'
 
 /**

@@ -43,7 +43,7 @@ const {
   loadUsagePage,
   quotaSummaryOf,
   toUsagePage,
-} = await import('../../src/components/consume/quotaPanel.ts')
+} = await import('../../src/components/consume/quotaPanelModel.ts')
 const {
   AccountPanelView,
   initialAccountState,
@@ -55,9 +55,9 @@ const {
   runLogout,
   runToggleKey,
   toAccountProfile,
-} = await import('../../src/components/consume/accountPanel.ts')
+} = await import('../../src/components/consume/accountPanelModel.ts')
 const { InvitePanelView, loadInvite, toInviteDetail } = await import(
-  '../../src/components/consume/invitePanel.ts'
+  '../../src/components/consume/invitePanelModel.ts'
 )
 const {
   EMAIL_RESEND_FALLBACK_SECONDS,
@@ -70,7 +70,7 @@ const {
   runSendCode,
   runUnbindEmail,
   toEmailBindInfo,
-} = await import('../../src/components/consume/emailBindPanel.ts')
+} = await import('../../src/components/consume/emailBindPanelModel.ts')
 const { emailCooldownRemaining } = await import('../../src/services/invite/emailCooldown.ts')
 
 // ------------------------------------------------------------------ 装配

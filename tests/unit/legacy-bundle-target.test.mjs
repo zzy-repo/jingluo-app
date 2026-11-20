@@ -250,7 +250,9 @@ test('D 每处 dvh 都有同值 vh 回退（统一写法：变量/字面量 + dv
       )
     }
   }
-  assert.ok(dvhCount >= 6, `预期至少 6 处 dvh 声明（App/ChatInput/OursServices/Settings），实际 ${dvhCount}`)
+  // 下限只是「别把整批 dvh 顺手删掉」的哨兵：旧 `settings/OursServices.module.css` 退役后
+  // 剩下的全屏容器是 App / ChatInput / AppUpdateField / Settings，实测 23 处，取 6 做下限。
+  assert.ok(dvhCount >= 6, `预期至少 6 处 dvh 声明（App/ChatInput/AppUpdateField/Settings），实际 ${dvhCount}`)
 })
 
 // auditDist() 会把产物里全部 JS 逐个用 acorn 解析一遍（本仓库 90 个文件 ≈3s），

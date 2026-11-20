@@ -50,7 +50,7 @@
 import '../helpers/injected.mjs'
 
 import assert from 'node:assert/strict'
-import { cpSync, existsSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { cpSync, existsSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { test } from 'node:test'
 
@@ -252,11 +252,19 @@ test('N3 build（rspack）：往仓库临时副本注入语法错模块 → 构�
     `build 的命令行变了（现在是 \`${standard.raw}\`）：负向对照要跟着重新确认`
   )
 
-  // 只拷构建真正要用的几棵子树（docs/ 62MB、node_modules 305MB 不拷），node_modules 软链过去：
-  // node_modules 是只读依赖，不该被复制一份 300MB 出来，也不该被写坏。
+  // 整仓复制、只排除重型/无关目录（node_modules 349MB 软链过去；docs/ 78MB 是验收文档，构建不读）。
+  //
+  // 以前是**逐个列文件**（'src','shared','config','scripts','LICENSE','package.json','rspack.config.ts',
+  // 'tsconfig.json'）—— 那份清单每加一个构建期输入就漏一次，而漏掉的后果不是「提示缺文件」，
+  // 是构建在副本里直接失败：`[rspack] CLI failed: Error: ENOENT: no such file or directory, open
+  // '<copy>/config/pdfjs.json'`（rspack.config.ts:106 readFileSync + config/pdfjs.json 是 #480 新增的
+  // 构建期输入）。红在「正例」上，看起来像门禁坏了，其实是清单没跟上。
+  // 现在改成「按目录整体复制」：新增顶层目录、新配置文件（config/*.json）自动带上，不用再改这份清单。
   const dir = scratch('build')
   t.after(() => rmSync(dir, { recursive: true, force: true }))
-  for (const entry of ['src', 'shared', 'config', 'scripts', 'LICENSE', 'package.json', 'rspack.config.ts', 'tsconfig.json']) {
+  const SKIP = new Set(['node_modules', 'docs', '.git', 'android'])
+  for (const entry of readdirSync(ROOT)) {
+    if (SKIP.has(entry) || entry === 'dist' || entry.startsWith('dist-')) continue
     cpSync(path.join(ROOT, entry), path.join(dir, entry), { recursive: true })
   }
   symlinkSync(path.join(ROOT, 'node_modules'), path.join(dir, 'node_modules'), process.platform === 'win32' ? 'junction' : 'dir')
@@ -399,6 +407,31 @@ const REGISTRY = {
     where: '.github/workflows/ci.yml',
     kind: 'ci',
     what: 'CI 往 dist/ 塞一份写着假 token 的 js → 必 exit 1，删掉后 exit 0（golden job 另有 --expect-seam 正向对照）',
+  },
+  // DB 版本硬编码门禁（#547 新建）：对照写在 ci.yml 里现场注入 —— 往一份**真实用例**末尾追加
+  // `indexedDB.open('chat-demo', 99)`（门禁扫的就是 tests/**，注入点必须是它真会扫到的位置）
+  // → 必须 exit 1，且报出「文件:行 硬编码版本 99」+ 指到注入的那个文件 → 还原 → exit 0。
+  // 为什么不做成 L0 注入（像 N1/N2 那样往 src/ 塞探针）：塞的正是脚本自己扫的源码/用例，
+  // 放在 ci.yml 里成本 ≈1s 且与被测命令同环境（与 check:consume-api / check:doc-refs 同款）。
+  // 两条「红必须点到」的断言写在 ci.yml 那一步里（`grep -q "硬编码版本 99"` / `grep -q "$probe:"`）：
+  // 只证明「exit≠0」不够 —— 扫描目录被改窄、脚本恒红，都会让 exit≠0 成立。
+  'check:db-version': {
+    where: '.github/workflows/ci.yml',
+    kind: 'ci',
+    what: 'CI 往 tests/unit/check-ip-version.test.mjs 追加一行 indexedDB.open(…, 99) → 必 exit 1 且指到注入文件与版本号，还原后 exit 0',
+    mention: /check-db-version\.mjs/,
+  },
+  // 大小写撞车门禁（#557 新建）：对照写在 ci.yml 里现场注入 —— 造一对仅大小写不同的模块
+  // （`src/__GateCaseProbe.ts` / `src/__gatecaseprobe.ts`）→ 必 exit 1，删掉 → exit 0。
+  // 和 check:consume-api / check:doc-refs 同款：塞的正是脚本自己扫的文件清单，放 ci.yml 里 ≈1s。
+  // 另有脚本自带的 `--selftest`（4 条反例 + 2 条正例，见 scripts/check-case-collision.mjs），
+  // 钉的是判据本身：R1 路径 / R2 目录 / R3 模块 stem（#557 命中的是 R3 —— `.tsx` 与 `.ts` 全名不同，
+  // 只有 stem 撞车，所以只用「整条路径小写后相同」去判会漏）。
+  'check:case-collision': {
+    where: '.github/workflows/ci.yml',
+    kind: 'ci',
+    what: 'CI 造一对仅大小写不同的模块（src/__GateCaseProbe.ts / src/__gatecaseprobe.ts）→ 必 exit 1，删掉后 exit 0',
+    mention: /check-case-collision\.mjs/,
   },
 }
 

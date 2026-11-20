@@ -22,9 +22,9 @@ const { translate, ButtonStub, classNames, markupOf, hasTestId } = await setupAu
 
 const { CONSERVATIVE_AUTH_FLAGS, loadAuthFlags, parseAuthFlags, setPublicSettingsReader, useAuthFlags } =
   await import('../../src/services/auth/flags.ts')
-const { loadInvite, InvitePanelView } = await import('../../src/components/consume/invitePanel.ts')
+const { loadInvite, InvitePanelView } = await import('../../src/components/consume/invitePanelModel.ts')
 const { EmailBindPanelView, initialEmailBindState, reduceEmailBind } = await import(
-  '../../src/components/consume/emailBindPanel.ts'
+  '../../src/components/consume/emailBindPanelModel.ts'
 )
 
 const ROOT = path.resolve(import.meta.dirname, '../..')

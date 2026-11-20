@@ -177,7 +177,7 @@ const stallAfterFirstChunk = () => {
 }
 
 const apiConfig = await import(srcFile('services/api/apiConfig.ts'))
-const attachments = await import(srcFile('services/attachments/upload.ts'))
+const attachments = await import(srcFile('services/attachments.ts'))
 const urlImport = await import(srcFile('services/chat/history/urlImport.ts'))
 const { setApiKey, setProviderKind } = apiConfig
 

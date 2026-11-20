@@ -14,7 +14,7 @@ import {
   uploadAttachment,
   validateFiles,
   type UploadTask,
-} from '../attachments/upload.js'
+} from '../attachments.js'
 import {
   HEIF_EXTS,
   IMAGE_EXTS,

@@ -13,7 +13,7 @@
 //
 // 本文件守三条：
 //   ① `src/**` 里每一处 `:focus-visible` 都有配套的 ① / ②；
-//   ② #215 点名的 13 处一处不少（防止有人「顺手删掉不合规矩的那条规则」把缺陷藏起来）；
+//   ② #215 点名的清单一处不少（防止有人「顺手删掉不合规矩的那条规则」把缺陷藏起来）；
 //   ③ 判定器本身不许退化成「全报」或「全放」—— 修复前的写法必须判红、修复后的写法必须判绿。
 
 // #507：`__ENDPOINTS__` 全局兜底 —— 装载即挂（幂等）。单跑本文件（不经 run-layer 的 `--import` 预加载）也不会
@@ -30,7 +30,10 @@ import { auditCssText, auditFocusVisible } from '../../scripts/lib/focusVisibleA
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 const SRC = path.join(ROOT, 'src')
 
-/** #215 点名的 13 处：文件 → 该文件里的 `:focus-visible` 条数（少一条就是被删了） */
+/**
+ * #215 点名的清单：文件 → 该文件里的 `:focus-visible` 条数（少一条就是被删了）。
+ * #487/#561/#562 之后旧 `settings/OursServices.module.css` 随弹层一起退役，条目一并移除（12 处）。
+ */
 const INVENTORY = {
   'components/base/Button.module.css': 2,
   'components/base/IconButton.module.css': 1,
@@ -39,7 +42,6 @@ const INVENTORY = {
   'components/markdown/markdown.css': 1,
   'components/session/MobileHeader.module.css': 1,
   'components/session/Welcome.module.css': 1,
-  'components/settings/OursServices.module.css': 1,
   'components/settings/Settings.module.css': 3,
   'components/sider/Sider.module.css': 1,
 }
@@ -61,7 +63,7 @@ test('① src/** 每处 :focus-visible 都有 :focus 兜底 + :focus:not(:focus-
   )
 })
 
-test('② #215 点名的 13 处一处不少：删规则不算修好', async () => {
+test('② #215 点名的清单一处不少：删规则不算修好', async () => {
   const result = await auditFocusVisible(SRC)
   const missing = []
   for (const [file, count] of Object.entries(INVENTORY)) {
@@ -69,7 +71,8 @@ test('② #215 点名的 13 处一处不少：删规则不算修好', async () =
     if (hits.length < count) missing.push(`${file}：应 ≥ ${count} 处，实际 ${hits.length} 处`)
   }
   assert.deepEqual(missing, [], `#215 的清单少了条目（被删还是会退化成兜底前的写法，都不是修复）：\n  ${missing.join('\n  ')}`)
-  assert.ok(result.occurrences.length >= 13, `:focus-visible 只有 ${result.occurrences.length} 处，少于 #215 的 13 处`)
+  // #215 当时是 13 处；`settings/OursServices.module.css` 随旧支付弹层退役后为 12 处（只减不增）
+  assert.ok(result.occurrences.length >= 12, `:focus-visible 只有 ${result.occurrences.length} 处，少于退役后的 12 处`)
 })
 
 test('③ 判定器不许退化：修复前的写法判红、修复后的写法判绿', () => {

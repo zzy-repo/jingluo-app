@@ -73,6 +73,10 @@ const APP_URL_FILES = new Set([
   // 本机 5181 上只要**有任何**静态服务在跑，这条用例就会对着陌生产物「跑绿」—— 假绿比红更坏。
   // 登记进来后由 runner 注入共享标准产物服务的地址，端口 0 原子分配。
   'domain05-ui-export-import',
+  // #562：旧 `OursServicesDialog` 退役后，这条用例改成「设置里「账户与消费」入口只在自有渠道出现
+  // + 点开就是新页面」。它原来自起静态服务（`serveDist`），现在跟其它 L1 一样吃 runner 注入的
+  // 共享标准产物服务，省掉一份重复的服务脚手架。
+  'ours-services',
 ].map((s) => `${s}.test.mjs`))
 
 /**
@@ -89,6 +93,8 @@ const STANDARD_DIST_DIR_FILES = new Set([
   'domain09-delete-all-retention', 'domain09-settings-reload',
   'domain10-update-check-flow',
   'quota-exhausted',
+  // #562：同上 —— 产物守卫要的是标准变体（见 tests/integration/ours-services.test.mjs 头部）
+  'ours-services',
 ].map((s) => `${s}.test.mjs`))
 
 /**

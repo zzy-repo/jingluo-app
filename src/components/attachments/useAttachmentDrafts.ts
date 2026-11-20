@@ -12,7 +12,7 @@
  * 删除消息 / 会话后的清理是另一条路径（`sweepOrphanAttachmentsAfterDelete`），不在卸载里做。
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { formatSize } from '../../services/attachments/upload.js'
+import { formatSize } from '../../services/attachments.js'
 import type { DocumentAttachment } from '../../services/attachments/types.js'
 import type { LinkedMessage } from '../../i18n/index.js'
 import { showToast } from '../base/toastState.js'
