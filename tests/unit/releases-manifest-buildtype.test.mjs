@@ -58,11 +58,18 @@ test('事故清单（12 条 / 11 条 buildType:"release"）校验器必须 FAIL 
   assert.match(r.stdout, /11 error/, r.stdout)
 })
 
-test('合法清单不被误杀（live / 两条 proposed 必须 PASS）', () => {
-  for (const file of ['live-2026-11-18.json', 'proposed-beta4-internal.json', 'proposed-1.4.2-internal-keep-latest.json']) {
-    const r = runValidator(file)
-    assert.equal(r.status, 0, `${file}\n${r.stdout}`)
-  }
+test('合法清单不被误杀（公网 live / 私有 private-valid 各自 PASS）', () => {
+  // #609 起口径分开：公网清单不再接受 internal 条目（原来那两条 proposed-*-internal 已改成
+  // invalid-internal-in-public-*.json 的反例），私有清单用 `--private` 单独校验。
+  const r = runValidator('live-2026-11-18.json')
+  assert.equal(r.status, 0, `live-2026-11-18.json\n${r.stdout}`)
+
+  const priv = spawnSync(
+    process.execPath,
+    [path.join(ROOT, 'scripts/validate-releases-manifest.mjs'), path.join(FIXTURES, 'private-valid-internal.json'), '--private'],
+    { encoding: 'utf8' },
+  )
+  assert.equal(priv.status, 0, `private-valid-internal.json（--private）\n${priv.stdout}`)
 })
 
 test('清洗动作本身有效：把 11 条 release 全改成 stable 后校验器转 PASS', () => {

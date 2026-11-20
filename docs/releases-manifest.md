@@ -19,21 +19,27 @@
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `latest` | string | 最新**发布**版本号，**必须**等于 `releases[0].version`（唯一例外见下面的「私有 internal 条目」） |
+| `latest` | string | 最新**发布**版本号，**必须**等于 `releases[0].version`（**没有例外**，见下） |
 | `releases` | array | 非空，按 `versionCode` **严格降序** |
 
-> ### 私有（internal）条目：可以排在首位，但不改公共 `latest`（Issue #566 问题 1 的 B 方案）
+> ### 公网清单里**不可能**出现 `internal` 条目（Issue #609 / 裁决 #614 决定 3）
 >
-> 私有包的 `versionCode` 往往比公共最新更大（例：内测 `1.4.2`/21 vs 公共 `1.4.1`/20），按严格降序
-> 只能排在 `releases[0]`。但它**不是**公共渠道的「最新」，所以：
+> 这里原来是「私有 internal 条目可以排在首位、`latest` 指向第一条公共记录」——**那个形状已经废止**。
+> 它成立的前提是「internal 条目会写进公网清单」，而 #601 事故正是这么来的：
+> 清单是公开的（`GET /releases.json` → 200），`file` 字段等于把内部包直链广播出去，
+> 「文件名不可猜测」一点用都没有。
 >
-> - `latest` 允许指向**第一条非 internal 记录**（公共渠道仍然停在那一版）；
-> - 客户端从不靠数组位置选版本 —— `src/services/updateManifest.ts` 自己按 `versionCode` 排序 + 变体过滤，
->   所以 standard 用户不会被 internal 包带走；
-> - `latest` 仍然**只允许**等于 `releases[0].version` 或第一条非 internal 记录的 version，别的值一律 FAIL
->   （校验器 `invalid-internal-latest-unrelated.json` 守着这条）。
+> 现在的口径（校验器 **public 口径**，默认）：
 >
-> 一个形状完整的样例见 `deploy/dl-release/fixtures/proposed-1.4.2-internal-keep-latest.json`；
+> - `artifactVariant: "internal"` 的条目 → **FAIL**（不是 warning，是 exit 1）；
+> - 公网清单只允许 `artifactVariant: "standard"` 的文字值；缺 `artifactVariant` 的历史条目仍是 warning；
+> - `latest` **必须**等于 `releases[0].version`，唯一的例外被删掉了；
+> - 私有包改走**独立私有清单** `<private-root>/releases.internal.json`（webroot 之外），
+>   用 `--private` 口径校验（只收 internal 条目，且 sha256 / buildType / 来源必须齐全）。
+>
+> 两份样例：公网 `deploy/dl-release/fixtures/live-2026-11-18.json`（PASS）、
+> 私有 `deploy/dl-release/fixtures/private-valid-internal.json`（`--private` PASS）；
+> 反例是 `invalid-internal-in-public-*.json`（#601 泄漏的那份形状，公网口径必 FAIL）。
 > 发布入口是 `scripts/publish-private-apk.mjs`（手册 §14）。
 
 ## 2. 单条版本记录
@@ -43,7 +49,7 @@
 | `version` | string | ✅ | `^\d+\.\d+\.\d+(-[0-9A-Za-z.]+)?$`（例 `1.4.0-beta.4`），全表唯一 |
 | `versionCode` | integer | ✅ | 正整数，严格降序 |
 | `releasedAt` | string | ✅ | ISO8601 带 `+08:00`，例 `2026-11-18T10:29:05+08:00` |
-| `file` | string | ✅ | **仓库相对路径** `apk/<name>.apk`，全表唯一；绝对 URL = `https://dl.rose7.cn/` + `file`。历史记录与 `version` 同构，**私有包故意不同构**（不可猜测文件名，见手册 §14.4），校验器对这种情况只给 warning |
+| `file` | string | ✅ | **仓库相对路径** `apk/<name>.apk`，全表唯一；绝对 URL = `https://dl.rose7.cn/` + `file`。历史记录与 `version` 同构；私有包的文件名多带 `<variant>-<随机段>`（见手册 §14.5 —— 随机段**不是**安全边界，只是同版本重发不撞名），校验器对这种情况只给 warning |
 | `size` | integer | ✅ | 字节数，正整数 |
 | `md5` | string | ✅ | 32 位小写 hex（服务端自己算） |
 | `sha256` | string | ➕ 新版本必须 | 64 位小写 hex，针对 `file` 指向的完整文件字节（服务端自己算） |
@@ -141,10 +147,12 @@ android {
 ## 6. 离线校验
 
 ```bash
-# 结构 + 新字段契约
+# 结构 + 新字段契约（默认公网口径）
 node scripts/validate-releases-manifest.mjs deploy/dl-release/fixtures/live-2026-11-18.json
-node scripts/validate-releases-manifest.mjs deploy/dl-release/fixtures/proposed-beta4-internal.json
 node scripts/validate-releases-manifest.mjs deploy/dl-release/fixtures/invalid-*.json   # 应全部 FAIL
+# 私有清单口径（#609：webroot 之外那份）
+node scripts/validate-releases-manifest.mjs --private deploy/dl-release/fixtures/private-valid-internal.json
+node scripts/validate-releases-manifest.mjs --private deploy/dl-release/fixtures/private-invalid-*.json  # 应全部 FAIL
 
 # 服务端行为（真 APK 打真服务端，临时目录，不碰线上）
 node --test deploy/dl-release/test/*.test.mjs

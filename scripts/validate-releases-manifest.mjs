@@ -6,15 +6,27 @@
  * 不联网、不碰线上文件，只在本地跑。
  *
  * 用法：
- *   node scripts/validate-releases-manifest.mjs <file.json> [...] [--strict]
+ *   node scripts/validate-releases-manifest.mjs <file.json> [...] [--strict] [--private]
  *
  * 退出码：0 = 全部通过（warning 不算失败）；1 = 有 FAIL
  * --strict：把 warning 也当失败（用于「新版本必须带 sha256 + artifactVariant」这种门禁）
+ * --private：按**私有清单**口径校验（`releases.internal.json`，见 §「两种清单」）
  *
  * 契约字段（详见 docs/releases-manifest.md）：
  *   version / versionCode / releasedAt / file / size / md5 / changes / buildType / breaking
  *   + sha256（可选，新版本必须有）  artifactVariant（可选：internal|standard）
  *   + artifactVariantSource（有 artifactVariant 时必须给：apk-manifest|sha256-allowlist）
+ *
+ * ## 两种清单，两条互斥的口径（Issue #609 / 裁决 #614 决定 3）
+ *
+ * | 模式 | 文件 | 允许的条目 |
+ * | --- | --- | --- |
+ * | `public`（默认） | `https://dl.rose7.cn/releases.json` | **只允许** `artifactVariant: "standard"`；出现 `internal` 一律 FAIL |
+ * | `private`（--private） | `/var/lib/dl-private/releases.internal.json`（webroot 外） | **只允许** `artifactVariant: "internal"`；且 sha256 / buildType / 来源必须齐全 |
+ *
+ * #601 事故的根因不是「清单里 internal 条目恰好 0 条」，而是**它当时可以出现**：
+ * 一旦公网清单里能写 internal 条目，`file` 字段就等于把内部包的直链广播出去了（文件名不可猜毫无意义）。
+ * 所以现在不是「恰好 0 条」，而是**不可能出现** —— 公网口径下 internal 条目是硬 FAIL。
  */
 
 import fs from 'node:fs';
@@ -32,6 +44,11 @@ const RE_RELEASED_AT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\+08:00$/;
 const VARIANTS = ['internal', 'standard'];
 const VARIANT_SOURCES = ['apk-manifest', 'sha256-allowlist'];
 
+/** 清单口径：`public` = 公网 `releases.json`；`private` = 私有 `releases.internal.json` */
+export const MANIFEST_MODES = Object.freeze(['public', 'private']);
+/** 两种口径各自**唯一允许**的变体（裁决 #614 决定 3：#601 的病根是「可以出现」，不是「恰好 0 条」） */
+export const MODE_VARIANT = Object.freeze({ public: 'standard', private: 'internal' });
+
 /**
  * 校验一份 releases.json 的**对象**（不读文件、不退出）。
  *
@@ -39,9 +56,12 @@ const VARIANT_SOURCES = ['apk-manifest', 'sha256-allowlist'];
  * 不许在发布脚本里再抄一份枚举（Issue #330 的教训：8 处各写一份，其中一处写成 "release"）。
  *
  * @param {unknown} data
- * @returns {{errors:string[], warnings:string[], records:Array<object>}}
+ * @param {{mode?: 'public'|'private'}} [options] 默认 `public`（公网清单口径）
+ * @returns {{errors:string[], warnings:string[], records:Array<object>, mode:string}}
  */
-export function validate(data) {
+export function validate(data, options = {}) {
+  const mode = options.mode ?? 'public';
+  if (!MANIFEST_MODES.includes(mode)) throw new Error(`未知的清单口径：${mode}（只认 ${MANIFEST_MODES.join('|')}）`);
   const errors = [];
   const warnings = [];
   const E = (m) => errors.push(m);
@@ -49,12 +69,12 @@ export function validate(data) {
 
   if (!data || typeof data !== 'object' || Array.isArray(data)) {
     E('顶层必须是 JSON 对象');
-    return { errors, warnings, records: [] };
+    return { errors, warnings, records: [], mode };
   }
   if (typeof data.latest !== 'string' || !data.latest) E('缺少 latest（version 字符串）');
   if (!Array.isArray(data.releases) || !data.releases.length) {
     E('releases 必须是非空数组');
-    return { errors, warnings, records: [] };
+    return { errors, warnings, records: [], mode };
   }
 
   const seenVersion = new Set();
@@ -106,11 +126,14 @@ export function validate(data) {
     if (!Array.isArray(r.changes)) E(`${at}: changes 必须是数组`);
     else if (r.changes.some((c) => typeof c !== 'string' || !c.trim())) E(`${at}: changes 必须是非空字符串数组`);
 
-    // buildType：旧记录可能缺（warning，历史兼容）；只要写了就必须是枚举值 → 一律 FAIL。
+    // buildType：公网清单里旧记录可能缺（warning，历史兼容）；私有清单是新契约，一律必填。
+    // 只要写了就必须是枚举值 → 一律 FAIL。
     // 禁止把 Gradle 的 release/debug 写进来 —— 那是「构建类型」，buildType 是「发布渠道」
     // （Issue #330：2026-11-19 的 11 条 "release" 让客户端整份清单拒收）。
-    if (r.buildType === undefined) W(`${at}: 缺 buildType（旧记录兼容，新发布必须写）`);
-    else if (!isBuildType(r.buildType)) {
+    if (r.buildType === undefined) {
+      if (mode === 'private') E(`${at}: 私有清单的条目必须写 buildType（缺 = 客户端不知道是不是预发布）`);
+      else W(`${at}: 缺 buildType（旧记录兼容，新发布必须写）`);
+    } else if (!isBuildType(r.buildType)) {
       E(`${at}: buildType 只能是 ${BUILD_TYPES.join('|')}（发布渠道），收到 ${JSON.stringify(r.buildType)}`
         + '；release/debug 是 Gradle 构建类型，不是 buildType（正式发布写 stable）');
     }
@@ -127,6 +150,16 @@ export function validate(data) {
     if (r.artifactVariant !== undefined && !VARIANTS.includes(r.artifactVariant)) {
       E(`${at}: artifactVariant 只能是 ${VARIANTS.join('|')}: ${JSON.stringify(r.artifactVariant)}`);
     }
+    // 口径互斥（Issue #609 / 裁决 #614 决定 3）：公网清单**不可能**出现 internal 条目，
+    // 私有清单**不可能**出现 standard 条目。这不是「恰好 0 条」，是「出现即 FAIL」。
+    if (mode === 'public' && r.artifactVariant === 'internal') {
+      E(`${at}: 公网清单不得出现 internal 条目（#609）：私有包走独立私有清单（webroot 外），`
+        + '公网清单里的 file 字段等于把内部包直链广播出去');
+    }
+    if (mode === 'private' && r.artifactVariant !== 'internal') {
+      E(`${at}: 私有清单只收 artifactVariant="internal" 的条目，收到 ${JSON.stringify(r.artifactVariant ?? null)}`
+        + '（standard 包走 GitHub Release，见裁决 #614 决定 2）');
+    }
     // artifactVariantSource：与 artifactVariant 同存同缺
     if (r.artifactVariant !== undefined && r.artifactVariantSource === undefined) {
       E(`${at}: 有 artifactVariant 就必须有 artifactVariantSource（来源要留痕）`);
@@ -140,8 +173,14 @@ export function validate(data) {
       }
     }
 
-    if (r.sha256 === undefined) W(`${at}: 缺 sha256 → App 侧不得自动/手动安装该版本`);
-    if (r.artifactVariant === undefined) W(`${at}: 缺 artifactVariant → App 侧不得自动更新到该版本`);
+    if (r.sha256 === undefined) {
+      if (mode === 'private') E(`${at}: 私有清单的条目必须写 sha256（没有校验和 = 客户端不得安装）`);
+      else W(`${at}: 缺 sha256 → App 侧不得自动/手动安装该版本`);
+    }
+    if (r.artifactVariant === undefined) {
+      if (mode === 'private') E(`${at}: 私有清单的条目必须写 artifactVariant（缺 = 变体未知）`);
+      else W(`${at}: 缺 artifactVariant → App 侧不得自动更新到该版本`);
+    }
 
     records.push({
       version: r.version,
@@ -151,26 +190,16 @@ export function validate(data) {
     });
   });
 
-  // 顶部一致性
-  // 顶部一致：`latest` 必须与「公共最新」对得上。
-  // 私有（internal）包的 B 方案（Issue #566 问题 1）允许 internal 条目排在头部而**不改公共 latest**
-  // —— 它的 versionCode 往往大于公共最新（如 1.4.2/21 > 1.4.1/20），按严格降序只能排在最前面，
-  // 但它不是公共渠道的「最新」。此时 latest 允许指向第一条**非 internal** 记录。
-  // 老路径（`POST /api/v1/release` 服务端会把 latest 改成新版本）仍然合法：latest = 头部那条 internal。
+  // 顶部一致性：`latest` 必须等于 `releases[0].version`，两种口径都一样。
+  //
+  // #566 的 B 方案曾经在公网清单里为 internal 条目开过一个口子（头部 internal 时 latest 可以指向
+  // 第一条公共记录）—— 那个口子的前提是「internal 条目会进公网清单」，而这正是 #601 泄漏事故的成因
+  // （裁决 #614 决定 3）。现在 internal 条目在公网口径下直接 FAIL（见上面的口径互斥规则），
+  // 口子失去意义，于是整条去掉：**少一条例外 = 少一处可以被利用的模糊地带**。
   const head = data.releases[0];
   if (typeof data.latest === 'string' && head) {
-    const publicHead = data.releases.find((r) => r && r.artifactVariant !== 'internal');
-    const headIsInternal = head.artifactVariant === 'internal';
-    const allowed = headIsInternal
-      ? [head.version, publicHead && publicHead.version].filter((v) => typeof v === 'string')
-      : [head.version];
-    if (!allowed.includes(data.latest)) {
-      E(
-        headIsInternal
-          ? `latest(${data.latest}) 必须等于 releases[0].version(${head.version})` +
-              `（头部是 internal 条目时，也可以等于第一条公共记录的 version：${publicHead ? publicHead.version : '(没有公共记录)'}）`
-          : `latest(${data.latest}) 必须等于 releases[0].version(${head.version})`,
-      );
+    if (data.latest !== head.version) {
+      E(`latest(${data.latest}) 必须等于 releases[0].version(${head.version})`);
     }
   }
   const codes = data.releases.map((r) => (Number.isInteger(r && r.versionCode) ? r.versionCode : -1));
@@ -179,15 +208,16 @@ export function validate(data) {
     E(`releases[0] 的 versionCode(${data.releases[0].versionCode}) 不是最大值(${maxCode})`);
   }
 
-  return { errors, warnings, records };
+  return { errors, warnings, records, mode };
 }
 
 /** CLI 入口：只在直接运行时跑（被 import 时只导出 validate） */
 function main(argv) {
   const strict = argv.includes('--strict');
+  const mode = argv.includes('--private') ? 'private' : 'public';
   const files = argv.filter((a) => !a.startsWith('--'));
   if (!files.length) {
-    console.error('用法: node scripts/validate-releases-manifest.mjs <file.json>... [--strict]');
+    console.error('用法: node scripts/validate-releases-manifest.mjs <file.json>... [--strict] [--private]');
     process.exit(2);
   }
 
@@ -203,7 +233,7 @@ function main(argv) {
       failed++;
       continue;
     }
-    const { errors, warnings, records } = validate(data);
+    const { errors, warnings, records } = validate(data, { mode });
     const installable = records.filter((r) => r.installable).length;
     const recommendable = records.filter((r) => r.recommendable).length;
 
@@ -225,7 +255,10 @@ function main(argv) {
     }
   }
 
-  console.log(`\n合计: ${files.length} 个文件, FAIL=${failed}, 有 warning=${warned}${strict ? '（strict 模式）' : ''}`);
+  console.log(
+    `\n合计: ${files.length} 个文件, FAIL=${failed}, 有 warning=${warned}`
+      + `${strict ? '（strict 模式）' : ''}（${mode === 'private' ? '私有清单口径' : '公网清单口径'}）`,
+  );
   process.exit(failed ? 1 : 0);
 }
 

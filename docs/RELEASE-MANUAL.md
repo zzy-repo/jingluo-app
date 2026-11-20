@@ -780,22 +780,46 @@ cd android && ./gradlew assembleRelease -PartifactVariant=internal
 
 ---
 
-## 14. 私有（internal）包发布：一条命令 + 演练 + 回滚（Issue #566 问题 1 → B 方案）
+## 14. 私有（internal）包发布：独立私有清单 + 四条硬闸（Issue #609 / 裁决 #614 决定 3）
 
-私有包 = `-PartifactVariant=internal` 构建出来的包，**进 `releases.json` 但不改公共 `latest`**：
-装了 internal 变体的客户端能自动收到更新（解 #377），公共渠道（standard）仍然停在原来那个版本。
-两条路的分工是硬的：
+> **本节在 #595 时写错过一次，这里留更正**：那时私有包被**写进公网** `releases.json`，理由是
+> 「装了 internal 变体的客户端能收到自动更新」，保护手段是「文件名不可猜测」。#601 事故当场否证：
+> **清单本身是公开的**（`GET /releases.json` → 200），文件名直接躺在里面 —— 一点都不可猜。
+> 1.4.2 那次泄漏就是「进了公网清单 + 文件在 `/apk/`」两件凑齐。
+>
+> 现在的口径（裁决 #614 决定 2/3）：
+> **清单是公开的 → 文件名等于公开 → 私有包必须靠独立私有清单，而不是靠「别人猜不到名字」。**
 
-| 发布 | 走哪条 | 谁改 `latest` |
+三条发布路径的分工是硬的：
+
+| 发布 | 走哪条 | 清单 |
 | --- | --- | --- |
-| 公共（standard） | `pnpm run release:upload` → `POST /api/v1/release`（要令牌） | **服务端**改成这次发布的版本（`server.mjs` §8） |
-| 私有（internal） | `node scripts/publish-private-apk.mjs`（SSH 直写站点根，不要令牌） | **谁都不改**（脚本写回前的自检会挡住任何改动） |
+| **正式发布（standard）** | **只走 GitHub Release**（裁决 #614 决定 2：dl 不再是正式渠道） | 公网 `releases.json` **冻结**，只保留历史 standard 条目 |
+| **私有（internal）** | `node scripts/publish-private-apk.mjs`（默认 `--target private`） | **独立私有清单** `<private-root>/releases.internal.json`（webroot 之外） |
+| 公网 `releases.json` | 冻结：只允许 `artifactVariant === 'standard'` 且 `buildType === 'stable'` | 出现 `internal` 条目 = 硬 FAIL（校验器 + 发布脚本两道） |
 
-> 私有包**不能**走 `/api/v1/release`：那条路把 `latest` 设成新版本（服务端语义就是"这是最新公共发布"），
-> 内测包一发出去，公共渠道的「最新」就被内测包顶掉了。私有包改走 **`ssh <host>` 直写
-> `/var/www/dl`**：`scp` 先传 `.tmp` 再 `mv`（原子），清单**先备份再原子替换**。
+### 14.1 私有清单放在哪、客户端怎么取（`/var/lib/dl-private/`）
 
-### 14.1 一条命令
+```
+/var/lib/dl-private/                     ← webroot 之外：Caddy 的 file_server 够不着
+├── releases.internal.json               ← 私有清单（只有 internal 条目，latest = 最新内测版）
+└── apk/deepseek-chat-<ver>-internal-<8位随机>.apk
+```
+
+- **为什么不能放 `/var/www/dl/`**：那是 `file_server` 的 root，目录里的每个文件都有一个公网直链 ——
+  连「从清单里删掉」都没用（静态目录不看清单）。#601 的处置就是「清单恢复 + 文件删掉」，两件必须一起做。
+  发布脚本的 G1 会**直接拒绝**把私有根指进 webroot。
+- **鉴权 / 取用方式**：由 `deploy/dl-release` 服务提供带令牌的两个端点
+  — `GET /api/v1/private/releases.json`、`GET /api/v1/private/apk/<file>`，
+  令牌与发布接口同一份（`/etc/dl-release/token`，chmod 600，`Authorization: Bearer <token>`），
+  Caddy 只把这两条前缀反代到 `127.0.0.1:8799`（**不**经过 `file_server`），无令牌一律 401。
+  装了 internal 变体的客户端在**构建期**带 `DL_PRIVATE_MANIFEST`（内置开关，不下发到 standard 包），
+  从私有清单取更新。
+- **现状（如实记录）**：本单（#609）只做**生产侧**（脚本把包写进 webroot 之外的私有根 + 四条硬闸 +
+  卫生门禁）。带令牌的读端点是后续单；在那之前内测包按「人工交接」发：`scp` 到对方机器（走 Tailscale）
+  + 把 `sha256` 一起给，让对方 `sha256sum` 核对。**任何情况下都不要**把包放回 `/var/www/dl/`。
+
+### 14.2 一条命令
 
 ```bash
 # 1) 出包（与 §3 同源，变体必须是 internal）
@@ -803,58 +827,60 @@ pnpm build:internal && npx cap sync android
 cd android && ./gradlew --no-daemon --max-workers=1 assembleRelease -PartifactVariant=internal
 APK=android/app/build/outputs/apk/release/app-release.apk
 
-# 2) 先看要做什么（不落地：不上传、不改清单）
-node scripts/publish-private-apk.mjs --apk $APK --version 1.4.2 --versionCode 21 --dry-run
+# 2) 先看要做什么（不落地：不上传、不改清单，但四条硬闸会真跑）
+node scripts/publish-private-apk.mjs --apk $APK --version 1.4.3 --versionCode 22 --dry-run
 
-# 3) 真发布（**没有** --dry-run 就是真发布）
-node scripts/publish-private-apk.mjs --apk $APK --version 1.4.2 --versionCode 21
+# 3) 真发布（**没有** --dry-run 就是真发布；默认 --target private）
+node scripts/publish-private-apk.mjs --apk $APK --version 1.4.3 --versionCode 22
 ```
 
-跑完会打印**直链、sha256、size 与五项验证结果**，并在清单里留一条 `artifactVariant: "internal"` 记录。
-把直链发给内测同学即可（一定要连 `sha256` 一起给，让他们能自己核对）。
+跑完会打印文件名、sha256、size、远端字节核对结果，并把条目写进**私有清单**。
+把 APK（连同 sha256）交给内测同学即可 —— 公网清单里没有这一条。
 
-### 14.2 参数
+### 14.3 参数
 
 | 参数 | 默认 | 说明 |
 | --- | --- | --- |
 | `--apk <path>` | **必填** | APK 路径（环境变量 `DL_PRIVATE_APK`） |
 | `--version <x.y.z>` | **必填** | versionName，必须与 APK 内一致（`DL_PRIVATE_VERSION`） |
 | `--versionCode <n>` | **必填** | 正整数，必须与 APK 内一致（`DL_PRIVATE_VERSION_CODE`） |
-| `--variant <v>` | `internal` | `internal` \| `standard`（`DL_PRIVATE_VARIANT`）。打回 standard 变体别用这条管线，走 §5 |
-| `--changes <text>` | 一行默认说明 | 清单里的变更说明，可重复给多条 |
-| `--dry-run` | 关 | 只打印动作与清单条目，**一个字节都不发** |
+| `--variant <v>` | `internal` | `internal` \| `standard`；与 `--target` 的匹配由 G1 强制 |
+| `--target <t>` | `private` | `private`（私有清单）\| `public`（公网清单，只收 standard+stable） |
+| `--private-root <dir>` | `/var/lib/dl-private` | 私有根，**必须在 webroot 之外**（G1 会核） |
+| `--webroot <dir>` | `/var/www/dl` | 公网站点根（`--site-root` 是旧名） |
+| `--transport <t>` | `ssh` | `ssh`（真发布）\| `local`（只读本机目录，**只允许 `--dry-run`**，演练用） |
+| `--changes <text>` | 一行默认说明 | 清单 `changes` 条目，可重复给多条 |
+| `--dry-run` | 关 | 只打印动作与清单条目，**一个字节都不发**（四条硬闸照样跑） |
 | `--exercise` | 关 | 演练：真上传 + 真加清单条目 + **立刻全量回滚**（只允许 `0.0.0` 开头的假版本号） |
-| `--skip-apk-validation` | 关 | **仅供演练**：假文件过不了 `aapt2`，跳过 APK 校验 |
-| `--ssh-host` / `--site-root` / `--public-base` | `aliyun` / `/var/www/dl` / `https://dl.rose7.cn/` | 换分发主机时才动 |
-| `--aapt2 <path>` | 自动找 | `$AAPT2` → `$ANDROID_HOME/build-tools/<ver>/aapt2` → `~/android-sdk` → PATH |
+| `--skip-apk-validation` | 关 | **只能**配 `--exercise` 或 `--transport local --dry-run`：假文件过不了 aapt2 |
+| `--ssh-host` / `--public-base` / `--aapt2` | `aliyun` / `https://dl.rose7.cn/` / 自动找 | 换分发主机 / aapt2 路径时才动 |
 
-退出码：**0 成功 / 1 校验或执行失败 / 2 参数或环境问题（一个字节都没发）**。
+退出码：**0 成功 / 1 校验或执行失败（含四条硬闸）/ 2 参数或环境问题（一个字节都没发）**。
 
-### 14.3 脚本拦哪五件事（任一不符直接退出，不「先发后修」）
+### 14.4 四条硬闸（写之前就拒，判据都来自产物/磁盘实况，不来自命令行声明）
 
-| # | 判据 | 失败时会说 |
+| 闸 | 判据 | 为什么必须机械化 |
 | --- | --- | --- |
-| 1 | `aapt2 dump badging`：包名 = `com.example.deepseekchat`、`versionCode`/`versionName` = 你给的参数 | 具体哪个字段不一致 |
-| 2 | `application-debuggable` **一处都没有** | 「debuggable 构建，绝对不发」（Issue #60） |
-| 3 | `aapt2 dump xmltree` 的 `<meta-data …ARTIFACT_VARIANT>` = `--variant` | 标记缺失/取值不符 → 让你按 `-PartifactVariant=` 重出包 |
-| 4 | 合并后的清单 schema（`buildType ∈ stable\|prerelease`、`artifactVariant ∈ internal\|standard`、`file`/`sha256`/`md5`/`size`/`releasedAt` 形态） | 逐条报出（复用 `scripts/validate-releases-manifest.mjs`，不另写枚举） |
-| 5 | **公共 `latest` 一个字节没变** + 既有记录逐条 JSON 相同 | 「latest 被改了 / 既有条目被改了」 |
+| **G1** 目标 × 变体 | 公网清单 + `artifactVariant !== 'standard'`（或 `buildType !== 'stable'`）；私有清单 + 非 `internal`；私有根落进 webroot | 这是 #601 的直接成因：internal 包一旦进公网清单，`file` 字段就是公开直链 |
+| **G2** 回环 `baseUrl` | **从 APK 字节里**读 `consume:{baseUrl:"…"}`（`deploy/dl-release/apk-consume.mjs`），命中 `127.0.0.1` / `127/8` / `localhost` / `::1` → 拒；**读不出来也拒** | 1.4.2 那个包在**任何真机上**都连不上后端（`127.0.0.1` 指向手机自己），只能配 `adb reverse` 联调。当时的构建期校验只拦「release 变体用回环」，`-PartifactVariant=internal` 正好绕过 |
+| **G3** 清单自洽 | 合入后清单登记的每个 `file` 必须在目标 `apk/` 下真的有这个文件（本次待上传那条豁免，上传后由验证补上） | 「清单指向不存在的文件」是 #601 的另一半症状：客户端拿到清单 → 下载 404 → 用户以为是网络问题 |
+| **G4** 孤儿文件 | 目标 `apk/` 下有 `deepseek-chat-*.apk` 却没登记在清单里 → 拒（**不是警告**） | 只要文件还在目录里，猜到 URL 就能下载；「有文件、没条目」= 已经泄漏了一半 |
 
-### 14.4 为什么文件名要不可猜测
+四条都可以用本地临时目录演练，不需要任何机器（`--transport local --dry-run`），
+对照用例见 `tests/unit/release-safety-gates.test.mjs`，CI 里也各有一条现场注入的对照。
 
-清单是**公开**的（`https://dl.rose7.cn/releases.json` 任何人可读），所以「私有」不能靠"别人不知道清单"。
-能守住的只有一件事：**别人不能顺着版本号把包扫下来**。历史上所有公共包都叫
-`deepseek-chat-<version>.apk` —— 知道你在发 1.4.2 就能直接猜 `deepseek-chat-1.4.2.apk`。
-私有包因此用 `deepseek-chat-<version>-<variant>-<8位随机>.apk`：
+### 14.5 清单是公开的 → 文件名等于公开（**原来那句「不可猜测就安全」是错的，已删除**）
 
-- 随机段来自 `crypto.randomBytes(5)` → **40 bit** → 8 个 base32 字符（`A-Z2-7`，无 `0/1` 混淆）；
-- **不许用时间戳**：时间戳可枚举，知道大概几点发的，搜索空间能从 36⁸ 压到几百万，扫一遍就出来了；
-- 传之前还会查远端有没有同名文件（撞了就重跑，换一个随机串）。
+历史写法是：私有包用 `deepseek-chat-<version>-<variant>-<8位随机>.apk`，随机段 40 bit，
+「别人顺着版本号猜不到」。**这条推理在公网清单存在的前提下完全不成立** ——
+清单里就写着 `file` 字段，拿到清单的人直接读文件名。
+#601 之后随机段仍然保留，但只为了两件小事：同一版本重发不撞名、历史文件名继续可用。
+**它不是访问控制，别把它当安全边界。**
 
-⚠️ 说清边界，别夸大：这条管线**不是访问控制**。清单里写着 `file` 字段，拿到清单的人照样能下载 ——
-它挡住的是「猜 URL」，不是「读清单」。真私有（清单里也不出现）是 #566 的 A 方案，本管线没做。
+真正的边界只有一条：**私有包不进任何公网可读的文件树**。
+判断标准很朴素 —— 问一句「这个 URL 不带任何凭据能不能下载？」能 = 不行。
 
-### 14.5 变体不同不能覆盖安装（`VARIANT_MISMATCH`）
+### 14.6 变体不同不能覆盖安装（`VARIANT_MISMATCH`）
 
 同一个包名、同一个签名，但 `artifactVariant` 不同的两个包**装不到一起**：
 
@@ -865,68 +891,71 @@ node scripts/publish-private-apk.mjs --apk $APK --version 1.4.2 --versionCode 21
 
 ```bash
 adb uninstall com.example.deepseekchat            # 先卸掉公共渠道那个
-adb install deepseek-chat-1.4.2-internal-XXXXXXXX.apk
+adb install deepseek-chat-1.4.3-internal-XXXXXXXX.apk
 ```
 
-装完**如果这一版打的是本地实例**（`consume.baseUrl` = `http://127.0.0.1:18000`），
-还必须先打通回环，否则登录 / 额度 / 兑换全部失败：
-
-```bash
-adb reverse tcp:18000 tcp:18000     # 每条 USB 连接断开后都要重做；换机也要重做
-```
+⚠️ **回环包不许走分发**（G2 会拒）。要真机连本地后端，请自己 `adb install` 本地构建的产物，
+并把 `adb reverse tcp:18000 tcp:18000` 打通（每条 USB 连接断开后都要重做）——
+这类包只用于联调，**不进任何清单、不发任何人**。
 
 客户端的更新选择是「同变体 + versionCode 更大 + 有 sha256」才算候选（`src/services/updateManifest.ts`），
-所以 internal 包不会把 standard 用户带走 —— 发布后可以自己核一遍：
+所以 internal 包不会把 standard 用户带走；公网清单里本来也读不到 internal 条目。
 
-```bash
-node -e 'const d=require("/tmp/live.json");console.log(d.latest, d.releases[0].version, d.releases[0].artifactVariant)'
-```
+### 14.7 回滚
 
-### 14.6 回滚
-
-清单先备份（`releases.json.bak-private-<epoch>`），所以回滚就是「把备份换回去 + 删包」：
+私有清单先备份（`releases.internal.json.bak-private-<epoch>`），所以回滚就是「把备份换回去 + 删包」：
 
 ```bash
 # 1) 恢复清单（原子 mv）
-ssh aliyun 'mv -f /var/www/dl/releases.json.bak-private-<epoch> /var/www/dl/releases.json'
+ssh aliyun 'mv -f /var/lib/dl-private/releases.internal.json.bak-private-<epoch> /var/lib/dl-private/releases.internal.json'
 # 2) 删掉上传的包
-ssh aliyun 'rm -f /var/www/dl/apk/deepseek-chat-<version>-internal-<8位随机>.apk'
-# 3) 复核：直链应 404，latest 应回到发布前的值
-curl -sS -I https://dl.rose7.cn/apk/deepseek-chat-<version>-internal-<8位随机>.apk | head -1   # 期望 404
-curl -sS https://dl.rose7.cn/releases.json | head -2                                           # latest 不变
+ssh aliyun 'rm -f /var/lib/dl-private/apk/deepseek-chat-<version>-internal-<8位随机>.apk'
+# 3) 复核：文件没了、清单与发布前逐字节一致
+ssh aliyun 'sha256sum /var/lib/dl-private/releases.internal.json'
+ssh aliyun 'test -e /var/lib/dl-private/apk/deepseek-chat-<version>-internal-<8位随机>.apk && echo FILE_LEFT || echo FILE_GONE'
 ```
 
 真发布时脚本会把这两条回滚命令**原样打印在最后**（连 epoch 一起），照抄即可。
 
-### 14.7 演练（`--exercise`）—— 上线前先证明「上传 / 清单改动 / 回滚」三件事都对
+### 14.8 演练 + 部署后卫生检查
 
-拿一个假文件把整条链路真跑一遍，跑完**立刻全量回滚**，线上不留任何残留：
+**① `--exercise`**：拿假文件把「上传 → 改清单 → 验证 → 全量回滚」真跑一遍，线上不留残留：
 
 ```bash
-head -c 2000000 /dev/urandom > /tmp/fake.apk       # 2 MB 假包（过不了 aapt2，所以要跳过校验分支）
+head -c 2000000 /dev/urandom > /tmp/fake.apk
 
-# ① 先看它会被 APK 门禁挡住（这一步是证明门禁活着）
-node scripts/publish-private-apk.mjs --apk /tmp/fake.apk --version 0.0.0 --versionCode 9999 --dry-run
-#    → exit 1：aapt2 dump badging 失败（不是合法 APK？）
-
-# ② 正常的 dry-run（跳过校验）：只看计划
-node scripts/publish-private-apk.mjs --apk /tmp/fake.apk --version 0.0.0 --versionCode 9999 \
-  --skip-apk-validation --dry-run
-
-# ③ 真演练：上传 → 加清单条目 → 验证 → 回滚 → 再验证
+# 真演练：上传 → 加清单条目 → 验证 → 回滚 → 再验证
 node scripts/publish-private-apk.mjs --apk /tmp/fake.apk --version 0.0.0 --versionCode 9999 \
   --skip-apk-validation --exercise
 ```
 
-演练必须核对的五项（缺一条就不算通过）：
+演练必核的五项：
 
 | # | 判据 | 期望 |
 | --- | --- | --- |
-| 1 | 直链 `curl -I` | `200` + `content-type: application/vnd.android.package-archive` + `content-length` = 文件大小 |
-| 2 | 下载回来算 sha256 | = 上传前本地 sha256 |
-| 3 | 清单加条目后 | `latest` **与发布前逐字节相同** |
-| 4 | 回滚后直链 | `404`（文件真删了） |
-| 5 | 回滚后清单 | `sha256` 与演练前**完全一致**、条目数回到 19、无 `bak-private`/`tmp-` 残留 |
+| 1 | 远端文件 sha256 | = 本地 sha256（私有包**没有**公网直链，所以不看 `curl`） |
+| 2 | 公网侧探针 `curl -I https://dl.rose7.cn/apk/<file>` | **非 200**（私有包不许被公网够到） |
+| 3 | 清单里的条目 | sha256 / size / file 与产物一致 |
+| 4 | 回滚后文件 | `FILE_GONE`（真删了） |
+| 5 | 回滚后清单 | `sha256` 与演练前**完全一致**、无 `bak-private` / `tmp-` 残留 |
 
-脚本会把 1/2/3 在发布后立刻算、4/5 在回滚后立刻算，任何一条不符就 `exit 1` 并打印现场。
-**演练数据（`0.0.0` / versionCode 9999）不允许留在线上** —— 演练结束前脚本就把备份也消耗掉了（零残留）。
+**② 部署后卫生检查（`check:webroot-hygiene`）**：扫的是**文件系统**，不是清单内容。
+
+```bash
+# 在分发机上（真 webroot）
+DL_WEBROOT=/var/www/dl node scripts/check-webroot-hygiene.mjs     # 或 pnpm run check:webroot-hygiene
+
+# 本机演练（不碰任何机器）：8 类脏东西逐个「注入 → 必红 → 还原」
+node scripts/check-webroot-hygiene.mjs --selftest
+```
+
+命中任一即 `exit 1`：
+
+| 规则 | 命中物 |
+| --- | --- |
+| R1 | `*.bak*` / `*LEAKED*` / `_withdrawn*` / `releases.json.*`（白名单外）/ `*.tmp-*` |
+| R2 | webroot 内出现非 `apk/` 的目录（`private/` 尤其不许） |
+| R3 | `apk/` 下文件名含 `internal` 或 `dev` 的文件 |
+
+处置：R1 的备份/取证文件移到 webroot 之外（例如 `/var/lib/dl-quarantine/`）；R2 的目录整棵搬走
+（私有清单的合法位置是 `/var/lib/dl-private/`）；R3 的内部包移出 webroot，并确认公网清单里没有登记它。

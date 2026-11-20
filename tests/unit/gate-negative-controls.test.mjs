@@ -445,6 +445,20 @@ const REGISTRY = {
     what: 'CI 造一对仅大小写不同的模块（src/__GateCaseProbe.ts / src/__gatecaseprobe.ts）→ 必 exit 1，删掉后 exit 0',
     mention: /check-case-collision\.mjs/,
   },
+  // webroot 卫生门禁（#609 新建，裁决 #614 决定 3 的 P0 项）：对照写在 ci.yml 里现场注入 ——
+  // 在 $RUNNER_TEMP 造一个干净 webroot（exit 0），再按 R1/R2/R3 各注入一类脏东西
+  // （取证残留 `releases.json.LEAKED-*` / webroot 内的 `private/` / `apk/` 下的 internal 包）→
+  // 必须 exit 1 **且报出对应规则与那个文件** → 还原 → exit 0。
+  // 为什么不做成 L0 注入：被测对象是**一个目录的形状**（webroot），最自然的造法就是临时目录；
+  // 而且 #609 明确要求「不许拿生产机当试验田」，只有 $RUNNER_TEMP 这一条路是干净的。
+  // 另外脚本自带 `--selftest`（8 类脏东西 × 注入→必红→还原），裸跑时没有 webroot 会自动走它，
+  // 所以 runner 上那一步也永远不是「什么都没检查还全绿」。
+  'check:webroot-hygiene': {
+    where: '.github/workflows/ci.yml',
+    kind: 'ci',
+    what: 'CI 在 $RUNNER_TEMP 造干净 webroot → exit 0；R1 取证残留 / R2 private 目录 / R3 internal 包各自注入 → 必 exit 1 且点到注入物；还原 → exit 0',
+    mention: /check-webroot-hygiene\.mjs/,
+  },
 }
 
 /**

@@ -1,0 +1,37 @@
+{
+  "latest": "1.4.3",
+  "releases": [
+    {
+      "version": "1.4.3",
+      "versionCode": 23,
+      "releasedAt": "2026-11-21T01:20:00+08:00",
+      "file": "apk/deepseek-chat-1.4.3-internal-7QF2ZK3M.apk",
+      "size": 6870715,
+      "md5": "0f1e2d3c4b5a69788796a5b4c3d2e1f0",
+      "sha256": "a967531eaca51fff7eb34aaf5d067863eb13f9ebd43030a2bedd841be5317f52",
+      "changes": [
+        "私有（internal）构建 1.4.3（versionCode 23）：仅内测渠道分发"
+      ],
+      "buildType": "stable",
+      "breaking": false,
+      "artifactVariant": "internal",
+      "artifactVariantSource": "apk-manifest"
+    },
+    {
+      "version": "1.4.2",
+      "versionCode": 22,
+      "releasedAt": "2026-11-20T23:10:00+08:00",
+      "file": "apk/deepseek-chat-1.4.2-internal-HJ5NWRHQ.apk",
+      "size": 6870715,
+      "md5": "0f1e2d3c4b5a69788796a5b4c3d2e1f1",
+      "sha256": "b967531eaca51fff7eb34aaf5d067863eb13f9ebd43030a2bedd841be5317f52",
+      "changes": [
+        "私有（internal）构建 1.4.2（versionCode 22）：仅内测渠道分发"
+      ],
+      "buildType": "stable",
+      "breaking": false,
+      "artifactVariant": "internal",
+      "artifactVariantSource": "apk-manifest"
+    }
+  ]
+}

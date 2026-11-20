@@ -39,39 +39,65 @@ function findEocd(buf) {
 }
 
 /**
- * 读 zip 里一个具名条目；不存在返回 null。
- * 只支持 store(0) 与 deflate(8) —— Android 打包只用这两种。
+ * 扫一遍 zip 中央目录，列出全部条目（`{ name, method, compSize, plainSize, localOff }`）。
+ *
+ * 为什么要把「枚举」和「读一个条目」分开（Issue #609）：发布硬闸除了
+ * `AndroidManifest.xml`（`readZipEntry`）还要去 `assets/` 下的 bundle（`*.js`）里找构建期注入的
+ * `consume.baseUrl`（`apk-consume.mjs`）。枚举逻辑只应该有一份 —— 两处各写一遍的话，
+ * 其中一处迟早会漏掉 zip64 / 空条目之类的边角。
  */
-export function readZipEntry(buf, entryName) {
+export function listZipEntries(buf) {
   const eocd = findEocd(buf);
   if (eocd < 0) throw new Error('不是 ZIP（找不到 EOCD，可能不是 APK）');
   const count = buf.readUInt16LE(eocd + 10);
   let off = buf.readUInt32LE(eocd + 16);
+  const entries = [];
   for (let i = 0; i < count; i++) {
     if (off + 46 > buf.length || buf.readUInt32LE(off) !== 0x02014b50) {
       throw new Error('ZIP 中央目录损坏');
     }
-    const method = buf.readUInt16LE(off + 10);
-    const compSize = buf.readUInt32LE(off + 20);
-    const plainSize = buf.readUInt32LE(off + 24);
     const nameLen = buf.readUInt16LE(off + 28);
     const extraLen = buf.readUInt16LE(off + 30);
     const commentLen = buf.readUInt16LE(off + 32);
-    const localOff = buf.readUInt32LE(off + 42);
-    const name = buf.toString('utf8', off + 46, off + 46 + nameLen);
-    if (name === entryName) {
-      if (buf.readUInt32LE(localOff) !== 0x04034b50) throw new Error('ZIP 本地头损坏');
-      const lNameLen = buf.readUInt16LE(localOff + 26);
-      const lExtraLen = buf.readUInt16LE(localOff + 28);
-      const start = localOff + 30 + lNameLen + lExtraLen;
-      const raw = buf.subarray(start, start + compSize);
-      if (method === 0) return raw;
-      if (method === 8) return zlib.inflateRawSync(raw, { maxOutputLength: Math.max(plainSize, 1) + 1024 });
-      throw new Error(`不支持的 zip 压缩方式: ${method}`);
-    }
+    entries.push({
+      name: buf.toString('utf8', off + 46, off + 46 + nameLen),
+      method: buf.readUInt16LE(off + 10),
+      compSize: buf.readUInt32LE(off + 20),
+      plainSize: buf.readUInt32LE(off + 24),
+      localOff: buf.readUInt32LE(off + 42),
+    });
     off += 46 + nameLen + extraLen + commentLen;
   }
-  return null;
+  return entries;
+}
+
+/**
+ * 读 `listZipEntries` 给出的一个条目；只支持 store(0) 与 deflate(8)。
+ * `maxBytes` 用来兜住「一个 40MB 的 dex 被整个读进内存」这种事（超上限直接报错，不猜）。
+ */
+export function readZipEntryRecord(buf, entry, maxBytes = 64 * 1024 * 1024) {
+  if (entry.plainSize > maxBytes) {
+    throw new Error(`zip 条目 ${entry.name} 太大（${entry.plainSize} 字节 > 上限 ${maxBytes}）`);
+  }
+  if (buf.readUInt32LE(entry.localOff) !== 0x04034b50) throw new Error('ZIP 本地头损坏');
+  const lNameLen = buf.readUInt16LE(entry.localOff + 26);
+  const lExtraLen = buf.readUInt16LE(entry.localOff + 28);
+  const start = entry.localOff + 30 + lNameLen + lExtraLen;
+  const raw = buf.subarray(start, start + entry.compSize);
+  if (entry.method === 0) return raw;
+  if (entry.method === 8) {
+    return zlib.inflateRawSync(raw, { maxOutputLength: Math.max(entry.plainSize, 1) + 1024 });
+  }
+  throw new Error(`不支持的 zip 压缩方式: ${entry.method}`);
+}
+
+/**
+ * 读 zip 里一个具名条目；不存在返回 null。
+ * 只支持 store(0) 与 deflate(8) —— Android 打包只用这两种。
+ */
+export function readZipEntry(buf, entryName) {
+  const entry = listZipEntries(buf).find((e) => e.name === entryName);
+  return entry ? readZipEntryRecord(buf, entry) : null;
 }
 
 // -------------------------------------------------------------- AXML 解析

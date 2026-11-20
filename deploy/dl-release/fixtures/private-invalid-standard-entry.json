@@ -1,0 +1,21 @@
+{
+  "latest": "1.4.3",
+  "releases": [
+    {
+      "version": "1.4.3",
+      "versionCode": 23,
+      "releasedAt": "2026-11-21T01:20:00+08:00",
+      "file": "apk/deepseek-chat-1.4.3.apk",
+      "size": 6870715,
+      "md5": "0f1e2d3c4b5a69788796a5b4c3d2e1f0",
+      "sha256": "a967531eaca51fff7eb34aaf5d067863eb13f9ebd43030a2bedd841be5317f52",
+      "changes": [
+        "把 standard 包塞进私有清单（#609 的负向对照）"
+      ],
+      "buildType": "stable",
+      "breaking": false,
+      "artifactVariant": "standard",
+      "artifactVariantSource": "apk-manifest"
+    }
+  ]
+}

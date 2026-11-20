@@ -58,10 +58,11 @@ node --test deploy/dl-release/test/*.test.mjs     # 或 pnpm run test:dl-release
 node tests/run-layer.mjs server                   # 统一 runner（CI 的布局门禁就是实跑它的 --list 判孤儿）
 
 # 清单结构 / 新字段契约
-node scripts/validate-releases-manifest.mjs deploy/dl-release/fixtures/live-2026-11-18.json
-node scripts/validate-releases-manifest.mjs deploy/dl-release/fixtures/proposed-beta4-internal.json
-node scripts/validate-releases-manifest.mjs deploy/dl-release/fixtures/proposed-1.4.2-internal-keep-latest.json  # 私有包形状（latest 不动）
-node scripts/validate-releases-manifest.mjs deploy/dl-release/fixtures/invalid-*.json   # 期望全 FAIL
+node scripts/validate-releases-manifest.mjs deploy/dl-release/fixtures/live-2026-11-18.json   # 公网口径
+node scripts/validate-releases-manifest.mjs deploy/dl-release/fixtures/invalid-*.json          # 期望全 FAIL
+# #609：私有清单是另一份文件、另一条口径（webroot 之外）——公网口径下 internal 条目必须 FAIL
+node scripts/validate-releases-manifest.mjs --private deploy/dl-release/fixtures/private-valid-internal.json    # 期望 PASS
+node scripts/validate-releases-manifest.mjs --private deploy/dl-release/fixtures/private-invalid-*.json         # 期望 FAIL
 
 # 端到端（需要 aapt2 + 真 APK，会在 /tmp 起临时实例，不写线上任何文件）
 AAPT2=/path/aapt2 \

@@ -1,11 +1,12 @@
 // [layer: unit | 纯 Node，无浏览器无网络（faux ssh 不打）| 耗时: <1s]
-// Issue #566 问题 1（B 方案）：私有（internal）包发布管线的**纯函数**契约。
+// 私有（internal）包发布管线的**纯函数**契约。
 //
-// 这条管线最容易「看起来对」的三处，全部钉成断言：
+// #609 / 裁决 #614 决定 3 之后这条管线换了目标：私有包**不进公网清单**，改走 webroot 之外的
+// 私有清单（`releases.internal.json`）。所以下面三处的口径都跟着变了，钉得更紧：
 //   1) 不可猜测文件名：随机段必须来自 crypto.randomBytes（8 个 base32 字符、不重复），
 //      不许出现时间戳/进程号那种可枚举的东西；
-//   2) 清单合并：**公共 latest 一个字节都不许动**、既有条目原样保留、新条目按 versionCode 降序插入、
-//      同 version+同变体是替换（重发幂等）；
+//   2) 清单合并：**两种目标的 latest 语义相反**（public 一个字节不许动 / private 必须跟着走）、
+//      既有条目原样保留、新条目按 versionCode 降序插入、同 version+同变体是替换（重发幂等）；
 //   3) 写回前的 schema 校验：复用 scripts/validate-releases-manifest.mjs（buildType 只能是
 //      stable|prerelease、artifactVariant 只能是 internal|standard），非法值一个都不许放过去。
 //
@@ -32,6 +33,8 @@ const {
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 const liveFixture = path.join(ROOT, 'deploy/dl-release/fixtures/live-2026-11-18.json')
+/** 私有清单的形状（#609：webroot 之外的那份） */
+const privateFixture = path.join(ROOT, 'deploy/dl-release/fixtures/private-valid-internal.json')
 const sha = (c) => c.repeat(64)
 
 /** 造一条能过 schema 的条目 */
@@ -88,12 +91,12 @@ test('条目：buildType 由版本号判定（内测包也可以是 stable），
   assert.match(shanghaiTimestamp(), /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\+08:00$/)
 })
 
-test('合并：latest 一个字节不动、既有条目原样、新条目按 versionCode 降序插入', () => {
+test('合并（公网目标）：latest 一个字节不动、既有条目原样、新条目按 versionCode 降序插入', () => {
   const before = JSON.parse(fs.readFileSync(liveFixture, 'utf8'))
-  const entry = entryFor({ versionCode: 12 })
+  const entry = entryFor({ versionCode: 12, variant: 'standard' })
   const after = mergeEntry(before, entry)
 
-  assert.equal(after.latest, before.latest, 'latest 被改了')
+  assert.equal(after.latest, before.latest, '公网清单的 latest 被改了（dl 不再是正式渠道，见裁决 #614 决定 2）')
   assert.equal(after.releases.length, before.releases.length + 1)
   // versionCode 严格降序（校验器的硬规则）
   const codes = after.releases.map((r) => r.versionCode)
@@ -108,40 +111,102 @@ test('合并：latest 一个字节不动、既有条目原样、新条目按 ver
 })
 
 test('合并：同 version + 同变体是替换（重发幂等），不会变成两条', () => {
-  const before = JSON.parse(fs.readFileSync(liveFixture, 'utf8'))
-  const once = mergeEntry(before, entryFor({ versionCode: 12 }))
-  const twice = mergeEntry(once, entryFor({ versionCode: 12, sha256: sha('c') }))
+  const before = JSON.parse(fs.readFileSync(privateFixture, 'utf8'))
+  const once = mergeEntry(before, entryFor({ versionCode: 30 }), { updateLatest: true })
+  const twice = mergeEntry(once, entryFor({ versionCode: 30, sha256: sha('c') }), { updateLatest: true })
   assert.equal(twice.releases.length, once.releases.length)
   assert.equal(twice.releases.filter((r) => r.version === '1.4.2').length, 1)
   assert.equal(twice.releases.find((r) => r.version === '1.4.2').sha256, sha('c'))
-  assert.equal(twice.latest, before.latest)
 })
 
-test('写回前自检：latest 变了 / 丢了既有条目 / 非法 buildType / sha256 不一致 —— 全部拦下', () => {
-  const before = JSON.parse(fs.readFileSync(liveFixture, 'utf8'))
-  const entry = entryFor({ versionCode: 12 })
-  const good = mergeEntry(before, entry)
-  assert.deepEqual(verifyMerge({ before, after: good, entry }).errors, [], '合法合并不该报错')
+test('合并（私有目标）：latest **必须**跟着走 —— 私有清单的「最新内测版」就是刚发的那条', () => {
+  const before = JSON.parse(fs.readFileSync(privateFixture, 'utf8'))
+  assert.equal(before.latest, '1.4.3', 'fixture 变了？私有清单的 latest 应该等于头部那条')
+  const entry = entryFor({ version: '1.4.4', versionCode: 30 })
+  const after = mergeEntry(before, entry, { updateLatest: true })
+  assert.equal(after.latest, '1.4.4', '私有清单的 latest 必须指向新条目（客户端靠它取更新）')
+  assert.equal(after.releases[0].version, '1.4.4')
+  // 不带 updateLatest 时保持原值（公网目标的语义），两种目标共用同一个合并函数
+  assert.equal(mergeEntry(before, entry).latest, before.latest)
+})
 
-  // 1) latest 被改
-  const badLatest = { ...good, latest: '1.4.2' }
-  assert.match(verifyMerge({ before, after: badLatest, entry }).errors.join('\n'), /latest 被改了/)
+test('写回前自检（私有目标）：latest 没跟上 / 丢了既有条目 / 非法 buildType / sha256 不一致 —— 全部拦下', () => {
+  const before = JSON.parse(fs.readFileSync(privateFixture, 'utf8'))
+  const entry = entryFor({ version: '1.4.4', versionCode: 30 })
+  const good = mergeEntry(before, entry, { updateLatest: true })
+  assert.deepEqual(verifyMerge({ before, after: good, entry, target: 'private' }).errors, [], '合法合并不该报错')
+
+  // 1) latest 没跟上（私有清单里「最新」与头部不一致 = 两个最新）
+  const badLatest = { ...good, latest: before.latest }
+  assert.match(
+    verifyMerge({ before, after: badLatest, entry, target: 'private' }).errors.join('\n'),
+    /latest\(.*\) 必须等于 releases\[0\]\.version/,
+  )
 
   // 2) 既有条目被删
-  const lost = { ...good, releases: good.releases.filter((r) => r.version !== '1.3.0') }
-  assert.match(verifyMerge({ before, after: lost, entry }).errors.join('\n'), /既有条目丢了/)
+  const lost = { ...good, releases: good.releases.filter((r) => r.version !== '1.4.2') }
+  assert.match(verifyMerge({ before, after: lost, entry, target: 'private' }).errors.join('\n'), /既有条目丢了/)
 
   // 3) buildType 写成了 Gradle 的 release（#330 事故形态）→ 复用校验器枚举，必须拦
-  const badType = { ...good, releases: good.releases.map((r) => (r.version === '1.4.2' ? { ...r, buildType: 'release' } : r)) }
-  assert.match(verifyMerge({ before, after: badType, entry }).errors.join('\n'), /buildType 只能是 stable\|prerelease/)
+  const badType = { ...good, releases: good.releases.map((r) => (r.version === '1.4.4' ? { ...r, buildType: 'release' } : r)) }
+  assert.match(
+    verifyMerge({ before, after: badType, entry, target: 'private' }).errors.join('\n'),
+    /buildType 只能是 stable\|prerelease/,
+  )
 
   // 4) artifactVariant 第三种值 → 拦
-  const badVariant = { ...good, releases: good.releases.map((r) => (r.version === '1.4.2' ? { ...r, artifactVariant: 'debug' } : r)) }
-  assert.match(verifyMerge({ before, after: badVariant, entry }).errors.join('\n'), /artifactVariant 只能是 internal\|standard/)
+  const badVariant = { ...good, releases: good.releases.map((r) => (r.version === '1.4.4' ? { ...r, artifactVariant: 'debug' } : r)) }
+  assert.match(
+    verifyMerge({ before, after: badVariant, entry, target: 'private' }).errors.join('\n'),
+    /artifactVariant 只能是 internal\|standard/,
+  )
 
   // 5) 条目 sha256 与产物不一致 → 拦
-  const badSha = { ...good, releases: good.releases.map((r) => (r.version === '1.4.2' ? { ...r, sha256: sha('d') } : r)) }
-  assert.match(verifyMerge({ before, after: badSha, entry }).errors.join('\n'), /sha256 与产物不一致/)
+  const badSha = { ...good, releases: good.releases.map((r) => (r.version === '1.4.4' ? { ...r, sha256: sha('d') } : r)) }
+  assert.match(verifyMerge({ before, after: badSha, entry, target: 'private' }).errors.join('\n'), /sha256 与产物不一致/)
+
+  // 6) #609：私有清单里混进 standard 条目 → 拦（口径互斥的另一半）
+  const withStandard = {
+    ...good,
+    releases: good.releases.map((r) => (r.version === '1.4.4' ? { ...r, artifactVariant: 'standard' } : r)),
+  }
+  assert.match(
+    verifyMerge({ before, after: withStandard, entry, target: 'private' }).errors.join('\n'),
+    /私有清单只收 artifactVariant="internal"/,
+  )
+})
+
+test('写回前自检（公网目标）：只允许「补登记历史条目」；latest 动了 / 混进 internal —— 拦（#609 的核心）', () => {
+  // 公网 `releases.json` 在裁决 #614 决定 2 之后是**冻结**的（dl 不再是正式渠道）：
+  // 唯一还合法的写入是「补登记一条历史上漏掉的标准包」—— 它必须排在头部之下，
+  // 这样 latest 才不用动。这里就用这个形状做正例。
+  const full = JSON.parse(fs.readFileSync(liveFixture, 'utf8'))
+  const before = { ...full, releases: full.releases.filter((r) => r.version !== '1.3.0') };
+  const backfill = entryFor({ version: '1.3.0', versionCode: 7, variant: 'standard' })
+  const good = mergeEntry(before, backfill)
+  assert.deepEqual(verifyMerge({ before, after: good, entry: backfill, target: 'public' }).errors, [], '补登记历史条目不该报错')
+  assert.equal(good.latest, full.latest, '补登记不许动 latest')
+
+  // 公网 latest 一个字节都不许动
+  const moved = { ...good, latest: '1.3.0' }
+  assert.match(verifyMerge({ before, after: moved, entry: backfill, target: 'public' }).errors.join('\n'), /latest 被改了/)
+
+  // 公网清单里出现 internal 条目 → schema 层就红（口径互斥），这是 #601 的事故形状
+  const internal = entryFor({ version: '1.3.0', versionCode: 7, variant: 'internal' })
+  const withInternal = mergeEntry(before, internal)
+  assert.match(
+    verifyMerge({ before, after: withInternal, entry: internal, target: 'public' }).errors.join('\n'),
+    /公网清单不得出现 internal 条目/,
+  )
+
+  // 反过来：#609 之后「往公网清单追加一条**新的**标准包」也不再合法 —— 新条目会顶到头部，
+  // latest 必须跟着动，而 latest 不许动 → 两条路都堵死 = dl 的清单被冻结（这正是决定 2 要的）。
+  const fresh = entryFor({ version: '1.4.1', versionCode: 12, variant: 'standard' })
+  const appended = mergeEntry(full, fresh)
+  assert.match(
+    verifyMerge({ before: full, after: appended, entry: fresh, target: 'public' }).errors.join('\n'),
+    /latest\s*\(.*\) 必须等于 releases\[0\]\.version/,
+  )
 })
 
 test('aapt2 dump badging 解析：package / versionCode / versionName / debuggable 计数', () => {

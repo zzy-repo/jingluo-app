@@ -271,6 +271,80 @@ jobs:
       - name: 清单 fixture 校验（check:manifest）
         run: pnpm run check:manifest
 
+      # ─────────────── Issue #609（裁决 #614 决定 3，P0 发布安全）：webroot 卫生门禁 ───────────────
+      # #601 事故的处置经验：光「把那条 internal 条目从 releases.json 里删掉」**不够** ——
+      # 文件还躺在 /var/www/dl/apk/ 下，而静态目录不看清单，猜到 URL 就能下载。
+      # 这条门禁扫的是**文件系统**（不是清单内容，那是 check:manifest 的活）：
+      #   R1 备份/取证残留 —— *.bak* / *LEAKED* / _withdrawn* / releases.json.*（白名单外）/ *.tmp-*
+      #   R2 webroot 内出现非 apk/ 的目录 —— private/ 尤其必须在 webroot 之外（/var/lib/dl-private/）
+      #   R3 apk/ 下出现 internal|dev 字样的文件 —— 内部包绝不进公网静态目录
+      # runner 上没有 /var/www/dl（不是分发机），脚本会改为**内置演练**：在本地临时目录里逐个注入
+      # 8 类脏东西 → 必红 → 还原 → 必绿。所以这一步永远不是「什么都没检查还全绿」。
+      # 真 webroot 的扫描在分发机上做（部署验收第 6 步，见 docs/RELEASE-MANUAL.md §14.7）。
+      - name: webroot 卫生门禁（check:webroot-hygiene）
+        run: pnpm run check:webroot-hygiene
+
+      # 负向对照（同 check:db-version / check:case-collision 的写法，**无** continue-on-error）：
+      # 在 $RUNNER_TEMP 里造一个干净 webroot → 必 exit 0；R1/R2/R3 各注入一类脏东西 →
+      # 必须 exit 1，且报错要**点到注入的那条规则与那个文件**（只证明 exit≠0 不够：
+      # 扫描目录被改窄、脚本恒红，都会让 exit≠0 成立）→ 还原 → 必须 exit 0。
+      # 全程只碰 $RUNNER_TEMP —— #609 的硬要求：不许拿生产机当试验田。
+      - name: 负向对照：webroot 里的脏东西必须被 check:webroot-hygiene 拦下（R1/R2/R3 各一类）
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/dl-webroot-neg"
+          rm -rf "$root"
+          mkdir -p "$root/apk"
+          printf '{"latest":"1.4.1","releases":[]}\n' > "$root/releases.json"
+          printf 'apk\n' > "$root/apk/deepseek-chat-1.4.1.apk"
+          # ① 正例：干净 webroot 必须 exit 0（否则门禁是恒红，没人敢开）
+          DL_WEBROOT="$root" node scripts/check-webroot-hygiene.mjs
+
+          # ② R1：事故取证残留（#601 现场那个文件名）
+          printf '{}\n' > "$root/releases.json.LEAKED-1795185887"
+          if out="$(DL_WEBROOT="$root" node scripts/check-webroot-hygiene.mjs 2>&1)"; then
+            echo "$out"
+            echo "::error::负向对照失败：webroot 里放 releases.json.LEAKED-1795185887 后门禁仍然通过"
+            exit 1
+          fi
+          echo "$out"
+          echo "$out" | grep -q '\[R1' || { echo "::error::门禁红了但没报 R1（判据没咬住）"; exit 1; }
+          echo "$out" | grep -q 'releases.json.LEAKED-1795185887' || { echo "::error::门禁红了但没点到注入的文件"; exit 1; }
+          rm -f "$root/releases.json.LEAKED-1795185887"
+          DL_WEBROOT="$root" node scripts/check-webroot-hygiene.mjs
+
+          # ③ R2：private/ 出现在 webroot 内
+          mkdir -p "$root/private"
+          printf '{}\n' > "$root/private/releases.internal.json"
+          if out="$(DL_WEBROOT="$root" node scripts/check-webroot-hygiene.mjs 2>&1)"; then
+            echo "$out"
+            echo "::error::负向对照失败：webroot 里建 private/ 后门禁仍然通过"
+            exit 1
+          fi
+          echo "$out"
+          echo "$out" | grep -q '\[R2' || { echo "::error::门禁红了但没报 R2（判据没咬住）"; exit 1; }
+          echo "$out" | grep -q 'private' || { echo "::error::门禁红了但没点到 private/"; exit 1; }
+          rm -rf "$root/private"
+          DL_WEBROOT="$root" node scripts/check-webroot-hygiene.mjs
+
+          # ④ R3：apk/ 下出现 internal 包（#601 泄漏的那个包名）
+          printf 'x\n' > "$root/apk/deepseek-chat-1.4.2-internal-HJ5NWRHQ.apk"
+          if out="$(DL_WEBROOT="$root" node scripts/check-webroot-hygiene.mjs 2>&1)"; then
+            echo "$out"
+            echo "::error::负向对照失败：apk/ 下放 internal 包后门禁仍然通过"
+            exit 1
+          fi
+          echo "$out"
+          echo "$out" | grep -q '\[R3' || { echo "::error::门禁红了但没报 R3（判据没咬住）"; exit 1; }
+          echo "$out" | grep -q 'deepseek-chat-1.4.2-internal-HJ5NWRHQ.apk' || { echo "::error::门禁红了但没点到注入的包"; exit 1; }
+          rm -f "$root/apk/deepseek-chat-1.4.2-internal-HJ5NWRHQ.apk"
+
+          # ⑤ 还原 → 必绿，并且临时目录里没留注入物
+          DL_WEBROOT="$root" node scripts/check-webroot-hygiene.mjs
+          test -z "$(ls -A "$root/apk" | grep -v '^deepseek-chat-1.4.1.apk$')" || { echo "::error::临时 webroot 里还有注入物"; exit 1; }
+          rm -rf "$root"
+          echo "负向对照通过：R1/R2/R3 各自 → exit 1 且点到注入物，还原 → exit 0"
+
       # check:consume-api（#484 §6.5 / #487 W1-A 落地的脚本，本轮接线）：消费侧调用门禁 ——
       #   路径白名单（`/api/v1/**` 等字面量必须在 #484 §三 的表里）/ 地址零副本 / 废弃域 /
       #   明文 http / device_id 作凭据 / 凭据进 query / 原生 BuildConfig 注入。

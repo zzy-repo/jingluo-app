@@ -55,6 +55,9 @@ const REQUIRED_CI_GATES = [
   // 接一道恒红的门禁等于没有门禁，所以等 #590 把三项降到 0 命中之后才接线。摘掉它，
   // 「旧体系又回来了 / 额度又被搬回本地 / base 又被写死」这三件事就再没人守。
   'check:refactor-direction',
+  // #609（裁决 #614 决定 3，P0）：webroot 卫生门禁 —— 摘掉它，#601 那种「清单删了、
+  // 文件还躺在 /var/www/dl/apk/ 下」的状态就再没有任何机械化检查（静态目录不看清单）。
+  'check:webroot-hygiene',
 ]
 
 /**
