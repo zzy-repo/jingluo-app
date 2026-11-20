@@ -1,0 +1,44 @@
+# ───────────────────────────────────────────────────────────────────────────
+# 行尾策略（修 #533）
+#
+# 背景：仓库长期缺 .gitattributes，反复出现「内容逐字相同、只有行尾 CRLF↔LF
+# 不同」的整文件噪音 diff（例：docs/capabilities/api.md 在 #480 合并时
+# 198+/198−），会放大冲突、让 review 看不出真实改动、让 git blame 失效。
+#
+# 规则：除下面明确豁免的路径外，仓库内文本一律 LF —— 提交进 index 时归一为
+# LF，检出到工作区也写 LF，macOS / Linux / Windows / CI 行为一致。
+# Windows 贡献者请设 `git config core.autocrlf false`（或 input），不要用 true。
+# ───────────────────────────────────────────────────────────────────────────
+* text=auto eol=lf
+
+# Windows 批处理脚本：cmd.exe 解析 .bat 里的 label / goto 在 LF-only 下有坑，
+# 这类文件在工作区与 index 里都保持 CRLF。
+# 这里用 -text（完全不转换）而不是常见的 `*.bat text eol=crlf`：后者要求先把
+# 当前 CRLF 的 blob renormalize 成 LF 才不会常脏，而本 PR 刻意不做 renormalize
+# （决策与理由见 PR 说明）。若日后要切成 `text eol=crlf`，需配套对
+# android/gradlew.bat 做一次 renormalize。
+# `!eol` 只是把从 `*` 继承的 eol=lf 复位为 unspecified，避免 check-attr 误读。
+*.bat -text !eol
+*.cmd -text !eol
+
+# 二进制 / 产物：不做行尾转换，也不当文本 diff 处理
+# （text: unset 时 eol 属性被忽略，故无需逐条 !eol）
+*.apk      binary
+*.aab      binary
+*.zip      binary
+*.jar      binary
+*.keystore binary
+*.jks      binary
+*.p12      binary
+*.png      binary
+*.jpg      binary
+*.jpeg     binary
+*.webp     binary
+*.gif      binary
+*.ico      binary
+*.heic     binary
+*.pdf      binary
+*.docx     binary
+*.xlsx     binary
+*.mp4      binary
+*.webm     binary
