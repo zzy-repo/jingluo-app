@@ -45,7 +45,7 @@
 | 用户元信息（日期/地区） | ✅可用 —— 五项快照以 `role:'latest_reminder'` 随消息发送（`latestReminder.ts:19-30`、`store.ts` 的 `toRequestBody()` + `reply.ts` 的 `toRequestMessages()`） | ⚠️部分 —— 信息不丢但语义降级：reminder 行被摘掉、内容折进 `system` 前缀当普通文本（`store.ts` 的 `toRequestBody()`、`reply.ts` 的 `foldReminders()`） | ⚠️部分 —— 同样折进 `system`，再变成 messages 头部的 `{role:'system'}`，模型不会当「客户端快照」理解（`openaiAdapter.ts:74-76`） |
 | 内容安全审核/拒答 | ✅可用 —— `safety_check:{level:'high'}` 恒定开启；`stop_reason:'refusal'` 时正文与思考按协议丢弃、只展示拒答模板（`store.ts` 的 `SAFETY_CHECK` + `gates.safety_check`、`reply.ts:143-160`、`describe.ts` 的 `describeReply()`） | ⚠️部分 —— 上游没这个参数（发了 400），只剩协议自带的 `stop_reason:'refusal'` 兜底，拒答由中转自己决定（`parseEvent.ts:211`、`describe.ts` 的 `describeReply()`） | ⚠️部分 —— 无 `safety_check`，只把 `finish_reason:'content_filter'` 映射成 `refusal`（`openaiAdapter.ts:99-105`） |
 | 上下文缓存 | ✅可用 —— 上游自动前缀缓存，命中量从 `usage.cache_read_input_tokens` 回流（`parseEvent.ts:168-172`） | ❌不可用 —— 我们主动砍掉：从不下发 `cache_control` 断点，原生 Anthropic 的显式缓存不会生效（全仓 `grep cache_control` 零命中） | ⚠️部分 —— 靠上游自动缓存（`prompt_tokens_details.cached_tokens` / `prompt_cache_hit_tokens`），客户端只做字段映射，不可控（`openaiAdapter.ts` 的 `readUsage()`） |
-| 用量统计 | ⚠️部分 —— usage 解析并落库，但**界面零展示**，只在导出归档时折算成 `context_tokens`（`parseEvent.ts:168-172`、`reply.ts:82,132`、`toArchive.ts:200-207`） | ⚠️部分 —— 同上；且中转若少给任一 `cache_*` 字段，整条 usage 会被丢弃（`parseEvent.ts:168-172` 要求四字段齐全） | ⚠️部分 —— 依赖 `stream_options.include_usage`，上游不回就恒为 `ZERO_USAGE`（`openaiAdapter.ts:92,117-122`） |
+| 用量统计 | ⚠️部分 —— usage 解析并落库，但**界面零展示**，只在导出归档时折算成 `context_tokens`（`parseEvent.ts:168-172`、`reply.ts:97,147`、`toArchive.ts:200-207`） | ⚠️部分 —— 同上；且中转若少给任一 `cache_*` 字段，整条 usage 会被丢弃（`parseEvent.ts:168-172` 要求四字段齐全） | ⚠️部分 —— 依赖 `stream_options.include_usage`，上游不回就恒为 `ZERO_USAGE`（`openaiAdapter.ts:92,117-122`） |
 | 停止生成 | ✅可用 —— `AbortController.abort()` 中断流，`settleReply('stopped')` 收尾（`store.ts` 的 `stopReply()`、`reply.ts:143-160`） | ✅可用 —— 纯客户端逻辑，与协议无关（同左） | ✅可用 —— 同左，翻译器不会因 abort 抛脏错（`client.ts:534-547`） |
 | 重新生成 | ✅可用 —— 本地加同父分支后重发同一问题，旧回答与后续对话保留（`store.ts` 的 `regenerateReply()`） | ✅可用 —— 同上（`branches.ts:77-102`） | ✅可用 —— 同上 |
 | 编辑消息 | ✅可用 —— 编辑后新增同父版本，附件沿用（`store.ts` 的 `editMessage()`、`UserMessage.tsx` 的编辑态（`editMessage()`）） | ✅可用 —— 同上 | ✅可用 —— 同上 |
@@ -105,7 +105,7 @@
 
 ### 2.5 用量统计的界面展示（三模式共同 ⚠️）
 
-- **为什么做不到**：**我们主动没做**，不是协议问题。usage 一路解析进 `message.usage`（`parseEvent.ts:168-172`、`reply.ts:82,132`），但 `src/components/` 全文没有一处渲染 token（`grep token` 只命中 Modal 的锁对象与 highlight.css 的 class）。唯一用武之地是导出归档时折算 `context_tokens`（`toArchive.ts:200-207`）。另外 Anthropic 兼容中转若少给 `cache_creation_input_tokens` 等任一字段，`isUsage` 判定失败、整条 usage 直接丢弃。
+- **为什么做不到**：**我们主动没做**，不是协议问题。usage 一路解析进 `message.usage`（`parseEvent.ts:168-172`、`reply.ts:97,147`），但 `src/components/` 全文没有一处渲染 token（`grep token` 只命中 Modal 的锁对象与 highlight.css 的 class）。唯一用武之地是导出归档时折算 `context_tokens`（`toArchive.ts:200-207`）。另外 Anthropic 兼容中转若少给 `cache_creation_input_tokens` 等任一字段，`isUsage` 判定失败、整条 usage 直接丢弃。
 - **变通办法与代价**：在消息底部加一行「↑1.2k ↓356」小字即可，成本极低；但**必须先放宽 `isUsage`**（改成逐字段可选、缺失记 0），否则中转下永远是空。
 - **未来补的话依赖**：`isUsage` 容错改造 + 一个 `<UsageBar>` 小标签（i18n 两条文案）。
 
@@ -142,7 +142,7 @@
 | 用户元信息 | `messages` 里的 `{role:'latest_reminder'}`（`reply.ts` 的 `foldReminders()` / `toRequestMessages()`）；不支持时折进 `system`（`store.ts` 的 `toRequestBody()`） | 无（只上行，响应不体现） | 无 UI；来源 `latestReminder.ts:19-30`、`services/location.ts` |
 | 内容安全审核/拒答 | `safety_check:{level:'high'}`（`store.ts` 的 `SAFETY_CHECK` + `gates.safety_check`、`providers.ts:185`）；OpenAI `content_filter` 映射（`openaiAdapter.ts:104`） | `message_delta.delta.stop_reason:'refusal'`（`parseEvent.ts:211`）→ 丢弃文本/思考（`reply.ts:143-160`）→ 模板（`describe.ts` 的 `describeReply()`） | `AssistantMessage.tsx:95-126`（notice 区） |
 | 上下文缓存 | 无请求字段（Anthropic 缺 `cache_control`，`grep` 零命中） | `usage.cache_read_input_tokens` / `cache_creation_input_tokens`（`parseEvent.ts:168-172`、`openaiAdapter.ts` 的 `readUsage()`） | 无 UI（仅 `toArchive.ts:200-207` 导出用） |
-| 用量统计 | OpenAI 侧 `stream_options.include_usage`（`openaiAdapter.ts:92`） | `message.usage` / `message_delta.usage`（`reply.ts:82,127-133`） | 无 UI；仅 `toArchive.ts:200-207` |
+| 用量统计 | OpenAI 侧 `stream_options.include_usage`（`openaiAdapter.ts:92`） | `message.usage` / `message_delta.usage`（`reply.ts:97,147`） | 无 UI；仅 `toArchive.ts:200-207` |
 | 停止生成 | `AbortSignal`（`client.ts` 的 `streamMessage`） | 中断 → `settleReply('stopped')`（`settleReply('stopped')`、`reply.ts:143-160`） | `ChatInput.tsx:290`（发送键切换为停止键，`store.ts` 的 `stopReply()`） |
 | 重新生成 | 重新构造请求（同一 `question`，`history` 截到前一轮） | 全新一轮 block | `AssistantMessage.tsx` 的 `regenerateReply` 按钮（`store.ts` 的 `regenerateReply()`） |
 | 编辑消息 | 同上（`question` 内容替换） | 同上 | `UserMessage.tsx` 的编辑态（`editMessage()`）（`store.ts` 的 `editMessage()`） |

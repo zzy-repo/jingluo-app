@@ -110,10 +110,14 @@ const Input = ({ sessionId }: { sessionId: string | null }) => {
     (view) => view.status === 'success' || view.status === 'partial'
   )
   const readyDocKey = readyDocs.map((view) => view.id).join('|')
+  // readyDocs 每次渲染都是新数组，直接进依赖会无限触发同步；
+  // 用 ref 持有最新值、依赖只落在 id 串上（lint 对 ref 访问不要求进依赖）。
+  const readyDocsRef = useRef(readyDocs)
+  readyDocsRef.current = readyDocs
   useEffect(() => {
     setDraftDocuments(
       sessionId,
-      readyDocs.map((view) => ({
+      readyDocsRef.current.map((view) => ({
         id: view.id,
         name: view.filename,
         size: view.size,
