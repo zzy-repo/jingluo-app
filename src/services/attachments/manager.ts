@@ -17,6 +17,9 @@ import { createId } from '../../utils/id.js'
 import { estimateTokens } from '../chat/contextBudget.js'
 import { getChatDB, reportStorageError } from '../chat/db.js'
 import { ATTACHMENT_LIMITS, SUPPORTED_EXTENSIONS, type SupportedExtension } from './limits.js'
+import { parseDocxFile } from './parsers/docx.js'
+import { parsePdfFile } from './parsers/pdf.js'
+import { parseTxtFile } from './parsers/txt.js'
 import { sha256Hex } from './sha256.js'
 import {
   attachmentTextKey,
@@ -97,18 +100,8 @@ export type AttachmentParser = (file: Blob, options?: ParseOptions) => Promise<P
 const parsers: Partial<Record<SupportedExtension, AttachmentParser>> = {}
 
 /**
- * 注册某个格式的解析器。`parsers/*.ts` 与本模块同批合入时在这里注册；
- * 解析器尚未就绪时 `parse()` 会明确失败（`no-parser`），不会静默产出空正文。
- *
- * 接线（三个 parser 合入 base 后把下面这段放开即可，接口已在 lead 处定稿）：
- *
- *   import { parseTxtFile } from './parsers/txt.js'
- *   import { parseDocxFile } from './parsers/docx.js'
- *   import { parsePdfFile } from './parsers/pdf.js'
- *
- *   registerAttachmentParser('.txt', parseTxtFile)
- *   registerAttachmentParser('.docx', parseDocxFile)
- *   registerAttachmentParser('.pdf', parsePdfFile)
+ * 注册某个格式的解析器。解析器尚未就绪时 `parse()` 会明确失败（`no-parser`），
+ * 不会静默产出空正文。
  */
 export const registerAttachmentParser = (
   extension: SupportedExtension,
@@ -116,6 +109,24 @@ export const registerAttachmentParser = (
 ): void => {
   parsers[extension] = parser
 }
+
+/**
+ * 接线：把三个 parser 挂到扩展名上（#480 集成）。
+ *
+ * 三个解析器都已在 `feat/480-doc-attachments` 落地：TXT（#522）、DOCX（#532）、PDF（#534）。
+ * 依赖方向是单向的（parser → limits/types），parser 不反向 import 本模块，因此静态 import 不会成环。
+ *
+ * PDF 走 `parsers/pdf.ts` 的 `parsePdfFile`：pdfjs 的版本与加载方式由 `parsers/pdfLoader.ts`
+ * 单点负责（`PDFJS_VERSION` / `loadPdfJs()`，构建期注入 `__PDFJS_ASSET__`），
+ * **这里不设 `workerSrc`、不认识 pdfjs**，只做扩展名分派。
+ */
+export const wireParsers = (): void => {
+  registerAttachmentParser('.txt', parseTxtFile)
+  registerAttachmentParser('.docx', parseDocxFile)
+  registerAttachmentParser('.pdf', parsePdfFile)
+}
+
+wireParsers()
 
 const extensionOf = (filename: string): string => {
   const dot = filename.lastIndexOf('.')

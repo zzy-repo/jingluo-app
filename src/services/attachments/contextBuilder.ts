@@ -49,6 +49,10 @@
 import type { MessageParam } from '../api/types.js'
 import { CHARS_PER_TOKEN } from '../chat/contextBudget.js'
 import { ATTACHMENT_LIMITS } from './limits.js'
+import {
+  getMeta as readAttachmentMeta,
+  getText as readAttachmentText,
+} from './manager.js'
 import type { AttachmentStatus } from './types.js'
 
 /** 附件引用：消息只存 id（+ 可选 sha256），正文永远按需读 */
@@ -85,8 +89,8 @@ export type AttachmentMeta = {
  * 附件正文的读取口。实现方是 `manager.ts`：
  * `getText(id)` 读解析全文，`getMeta(id)` 读元数据。
  *
- * 这里用接口注入而不是直接 import：manager.ts 与本模块是并行开发的两块，
- * 谁先落地都不会卡住对方；接线方式见文件末尾的 TODO。
+ * 这里保留接口注入（而不是在调用点直接 import manager）：单测 / 宿主可以换成替身，
+ * 且本模块对「怎么读」零假设；生产默认实现在文件末尾注册（`manager.ts` 的 `getText` / `getMeta`）。
  */
 export type AttachmentTextSource = {
   /** 解析全文；未解析 / 不存在返回 undefined（不抛） */
@@ -618,30 +622,39 @@ export const formatDocumentInjection = (result: BuildResult): string => {
 }
 
 /**
- * TODO(#480)：`manager.ts` 落地后在这里接线（**不要在没落地时写静态 import**，
- * 否则 `npx tsc` 直接红；这一层用接口注入就是为了让两块并行开发互不阻塞）：
+ * 默认读取口：`manager.ts`（#529 落地后接线）。
  *
- * ```ts
- * import { getAttachment, getText } from './manager.js'
- * setAttachmentTextSource({
- *   getText,
- *   getMeta: async (id) => {
- *     const attachment = await getAttachment(id)
- *     return attachment
- *       ? {
- *           filename: attachment.filename,
- *           sha256: attachment.sha256,
- *           status: attachment.status,
- *           warnings: attachment.warnings,
- *           errorMessage: attachment.errorMessage,
- *         }
- *       : undefined
- *   },
- * })
- * ```
+ * 语义与 `AttachmentTextSource` 一致：
+ * - `getText`：未解析 / 解析失败 / 原件丢失 → `undefined`（不抛）；
+ * - `getMeta`：完整 `DocumentAttachment` 在这里**降型**成 `AttachmentMeta` ——
+ *   本模块只要文件名 / 指纹 / 状态 / 告警，拿不到正文以外的字段，也不该拿到。
  *
- * 调用点（`store.ts` 的 createReply）：先 `toRequestMessages(...)`（裁剪 + #345 锚点已生效），
- * 再把 `UserMessage.files` 映射成 `ChatAttachmentRef` 挂到对应消息的 `attachments` 上，
- * 最后 `await buildWithDocuments(messages, 本轮附件 id, { contextWindowTokens, reservedTokens })`。
+ * 为什么是「注册」而不是在调用点直接 import：`setAttachmentTextSource()` 仍是唯一入口，
+ * 单测传入 `source` 即可覆盖（入参优先于注册值），两者互不干扰。
+ */
+setAttachmentTextSource({
+  getText: readAttachmentText,
+  getMeta: async (id: string): Promise<AttachmentMeta | undefined> => {
+    const attachment = await readAttachmentMeta(id)
+    return attachment === undefined
+      ? undefined
+      : {
+          filename: attachment.filename,
+          sha256: attachment.sha256,
+          status: attachment.status,
+          warnings: attachment.warnings,
+          errorMessage: attachment.errorMessage,
+        }
+  },
+})
+
+/**
+ * 调用点（**仍悬空，不在本 PR 范围**）：`chat/store.ts` 的 createReply 需要先
+ * `toRequestMessages(...)`（裁剪 + #345 锚点已生效），再把 `UserMessage.files` 映射成
+ * `ChatAttachmentRef` 挂到对应消息的 `attachments` 上，最后
+ * `await buildWithDocuments(messages, 本轮附件 id, { contextWindowTokens, reservedTokens })`。
  * **务必每轮都用未注入的 base 重建**（本函数对已注入内容不做去重，见 `already_injected` 说明）。
+ *
+ * 这一步依赖 `requestDocs.ts`（#530 三渠道注入适配）与附件 UI（#527）尚未合入，
+ * 因此本模块只完成「读正文」这段接线，请求侧拼装留给 #530 / #527 合入后的集成轮。
  */
