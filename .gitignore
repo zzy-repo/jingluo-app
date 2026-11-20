@@ -56,3 +56,7 @@ dl-release-token*
 
 # #456：跨 runner 判定的运行记录（每个 runner/分片一份，CI 里作为 artifact 上传，不入库）
 .flaky-runs/
+
+# 负向对照探针（gate-negative-controls 等测试在运行时临时拷入，绝不入库）
+src/__gate-neg-*
+tests/unit/__gate-neg-*
