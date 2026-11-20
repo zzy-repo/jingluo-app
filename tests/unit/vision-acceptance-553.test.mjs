@@ -408,11 +408,26 @@ test('[2] 白名单外（heic）：入口就明确拒绝，并给出可读原因
       return true
     }
   )
-  // ② 用户从相册选 `.heic`：扩展名白名单在草稿层就先拦（更早、更便宜）
+  // ② 用户从相册选 `.heic`：草稿层就先拦（更早、更便宜），而且给的是**能照做**的那句
+  //    （#580 缺口 2：以前它会先撞扩展名白名单，落到泛化的 uploadUnsupportedFormat ——
+  //     既没给「转成 JPEG」这个动作，还顺带说「图片支持」）
   assert.deepEqual(
     drafts.addDraftFiles(null, [fileOf(...HEIC)], API_KEY),
-    { key: 'uploadUnsupportedFormat' },
-    '扩展名不在白名单时，草稿层就给明确文案'
+    { key: 'imageUnsupportedFormat', params: { formats: imageSource.IMAGE_FORMAT_LABELS } },
+    'HEIC 也是图片：草稿层给「格式不支持 + HEIC 请先转成 JPEG」，不是「暂未支持的文件格式」'
+  )
+  assert.ok(
+    imageSource.IMAGE_FORMAT_LABELS.includes('GIF'),
+    '提示语里的格式清单必须从白名单派生（GIF 在白名单里就必须出现，见 #580 缺口 1）'
+  )
+  // 真渲染一遍：清单填进去了、模板占位符没有漏到界面上
+  const { translate } = await import('../../src/i18n/index.ts')
+  const rendered = translate('imageUnsupportedFormat', {
+    formats: imageSource.IMAGE_FORMAT_LABELS,
+  })
+  assert.ok(
+    rendered.includes('GIF') && rendered.includes('HEIC') && !rendered.includes('{formats}'),
+    `文案要既写全白名单、又给出 HEIC 的动作：${rendered}`
   )
   assert.equal(drafts.getDraft(null).attachments.length, 0, '被拒的文件不许留在草稿里')
 
@@ -427,7 +442,15 @@ test('[2] 白名单外（heic）：入口就明确拒绝，并给出可读原因
   }
   assert.deepEqual(
     upload.useUploads.getState().tasks[id],
-    { status: 'error', error: { key: 'imageUnsupportedFormat' }, retryable: false },
+    {
+      status: 'error',
+      // 文案清单从白名单派生（#580 缺口 1）：GIF 也在里面
+      error: {
+        key: 'imageUnsupportedFormat',
+        params: { formats: imageSource.IMAGE_FORMAT_LABELS },
+      },
+      retryable: false,
+    },
     '必须落到「不支持的格式」错误态（卡片上有原因），而不是悄悄当成 png 发出去'
   )
   assert.equal(

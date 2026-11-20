@@ -1,0 +1,5 @@
+黄金夹具 tiny.txt：中文一段。
+
+Second paragraph: golden fixture, mixed 中英 文字。
+
+第三段 end.

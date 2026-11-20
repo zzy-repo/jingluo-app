@@ -376,8 +376,9 @@ export const en = {
   uploadFileStatusUploading: 'Uploading...',
   uploadServerBusy: 'Server busy',
   uploadParseFailed: 'Parsing failed',
+  /** `{formats}` 由白名单派生（见 zh.ts 同 key 的注释 / #580） */
   imageUnsupportedFormat:
-    'Unsupported image format: only PNG / JPEG / WebP are accepted (convert HEIC to JPEG first).',
+    'Unsupported image format: only {formats} are accepted (convert HEIC to JPEG first).',
   imageDecodeFailed: 'This image cannot be opened. Try another file, or convert it to PNG / JPEG.',
   imageTooLarge: 'The image is still over {size} MB after compression. Compress or crop it first.',
   imageAnimatedTooLarge:

@@ -75,6 +75,40 @@ export const isSupportedImageMediaType = (value: string): boolean =>
 export const IMAGE_EXTS: readonly string[] = ['png', 'jpg', 'jpeg', 'webp', 'gif']
 
 /**
+ * 提示语里展示的格式清单：**从 `IMAGE_MEDIA_TYPES` 派生**（`image/png` → `PNG`）。
+ *
+ * 为什么不写死一句「仅支持 PNG / JPEG / WebP」（#580 缺口 1）：GIF 从 #551 起就在白名单里，
+ * 文案却漏了它 —— 用户拿一张 GIF 报错时被告知「只支持三种」，方向正好是反的（能发却说不能）。
+ * 白名单是唯一判定处，展示清单跟着它派生，以后加格式就不会再出现「能发了但没告知」。
+ */
+export const IMAGE_FORMAT_LABELS: string = IMAGE_MEDIA_TYPES.map((mediaType) =>
+  (mediaType.split('/')[1] ?? mediaType).toUpperCase()
+).join(' / ')
+
+/**
+ * 「格式不支持」的统一消息：**唯一构造处** —— 草稿层的选图闸与编码层的 magic bytes 闸共用，
+ * 于是两处的清单永远是同一份（都来自 `IMAGE_FORMAT_LABELS`）。
+ *
+ * 「HEIC 请先转成 JPEG」放在这句里：HEIC 是最高频的「不支持的图」（iPhone 相册默认格式），
+ * 而它有一步到位的处理动作，不是「这个文件坏了」。所以这条原因必须**真的能被 HEIC 用户看到**
+ * （#580 缺口 2：见 `drafts.ts` 的 `imageGateMessage`）。
+ */
+export const unsupportedImageFormatMessage = (): TranslationMessage => ({
+  key: 'imageUnsupportedFormat',
+  params: { formats: IMAGE_FORMAT_LABELS },
+})
+
+/**
+ * HEIC / HEIF（iPhone 相册默认格式）：**是图片，但任何一家协议都不收**（`image/heic` 不是
+ * 合法输入），Chromium 83 也解不了 —— 所以不在白名单里。
+ *
+ * 但草稿层必须**先认出它是图片**：否则它会先撞扩展名白名单（`ACCEPT_FILE_EXTS` 不含 heic），
+ * 拿到一句「暂未支持的文件格式……支持 PDF、DOC、图片、文本……」，既没给可做动作、
+ * 还顺带说「图片支持」（#580 缺口 2）。
+ */
+export const HEIF_EXTS: readonly string[] = ['heic', 'heif', 'hif']
+
+/**
  * 编码 / 压缩失败的统一错误：`message` 是给用户看的中文文案（含参数），
  * `retryable` 表示「换一张 / 重试」是否有意义（解码失败可重试，格式不支持不可重试）。
  */
@@ -541,7 +575,7 @@ const reencode = async (
 export const toImagePart = async (blob: Blob): Promise<ImagePart> => {
   const sniffed = sniffImage(await readHead(blob))
   if (!sniffed || !isSupportedImageMediaType(sniffed.mediaType)) {
-    throw new ImageSourceError({ key: 'imageUnsupportedFormat' }, false)
+    throw new ImageSourceError(unsupportedImageFormatMessage(), false)
   }
   if (blob.size > LIMITS.images.maxSourceBytes) {
     throw new ImageSourceError(

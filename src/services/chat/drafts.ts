@@ -16,12 +16,14 @@ import {
   type UploadTask,
 } from '../attachments/upload.js'
 import {
+  HEIF_EXTS,
   IMAGE_EXTS,
   ImageSourceError,
   imagePartBytes,
   imagePartOf,
   putImagePart,
   toImagePart,
+  unsupportedImageFormatMessage,
 } from '../attachments/imageSource.js'
 import type { FileAttachment } from './types.js'
 
@@ -153,6 +155,33 @@ const upload = (attachment: DraftAttachment, apiKey: string) => {
   ).catch(() => {})
 }
 
+/**
+ * base64 渠道的**格式门**（#551 的第二道门 / #580 缺口 2）：只回答「这张图，这条通路编得了吗」。
+ *
+ * 为什么要单独提到 `validateFiles()` **前面**：`heic/heif` 不在 `ACCEPT_FILE_EXTS`（那是
+ * 「哪些文件能上传」的白名单）里，先跑 `validateFiles()` 的话，iPhone 用户（相册默认 HEIC）
+ * 拿到的是泛化的 `uploadUnsupportedFormat`——「暂未支持的文件格式……支持 PDF、DOC、图片、文本」
+ * 既没说这条渠道只发图片，也没给出唯一有效的动作（转成 JPEG）；而真正 actionable 的
+ * `imageUnsupportedFormat` 反过来**不可达**（只有「文件名装成 png、字节是 HEIC」那条少见路径
+ * 才会落到编码层，见 #553 的用例）。
+ *
+ * 大小 / 数量 / 上传能力仍归 `validateFiles()`；这里只管格式一维（**格式 → 大小 → 数量**的顺序不变）。
+ * 判定仍以「像不像图片」为界：`IMAGE_EXTS` 里的直接放行，`HEIF_EXTS` 或 MIME 是 `image/*` 的
+ * 一律给「格式不支持 + 转成 JPEG」。权威判定随后仍在 `toImagePart()` 的 magic bytes（MIME 会撒谎）。
+ */
+const imageGateMessage = (files: File[]): TranslationMessage | null => {
+  for (const file of files) {
+    const ext = getFileExt(file.name)
+    if (IMAGE_EXTS.includes(ext)) {
+      continue
+    }
+    if (HEIF_EXTS.includes(ext) || isImage(resolveMimeType(file))) {
+      return unsupportedImageFormatMessage()
+    }
+  }
+  return null
+}
+
 /** 整批校验通过后才创建预览和开始上传。 */
 export const addDraftFiles = (
   sessionId: string | null,
@@ -162,27 +191,29 @@ export const addDraftFiles = (
   if (files.length === 0) {
     return null
   }
+  /**
+   * base64 渠道的两道门（#551 / #580）：
+   * 1. 图片格式必须在白名单里 → **先于** `validateFiles()` 的扩展名白名单（`imageGateMessage`）；
+   * 2. 这条通路**只发图片**（文档走 #480 的文本注入，不经过这里；其余文件类型这条渠道
+   *    一个字节都发不出去 —— 没有 `paths.files`），所以非图片要**明说**而不是上传后 404。
+   */
+  const base64Channel = visionFor(getCurrentSpec().kind).base64
+  if (base64Channel) {
+    const imageError = imageGateMessage(files)
+    if (imageError) {
+      return imageError
+    }
+  }
   const error = validateFiles(files, getDraft(sessionId).attachments.length)
   if (error) {
     return error
   }
-  /**
-   * base64 渠道的额外两道门（#551）：
-   * 1. 这条通路**只发图片**（文档走 #480 的文本注入，不经过这里；其余文件类型这条渠道
-   *    一个字节都发不出去 —— 没有 `paths.files`），所以非图片要**明说**而不是上传后 404；
-   * 2. 图片格式必须在白名单里：heic 之类在这里就明确拒绝，不等到发送时才失败，更不静默丢图
-   *    （权威判定随后由 `toImagePart()` 的 magic bytes 再做一次，MIME 可以撒谎）。
-   */
-  if (visionFor(getCurrentSpec().kind).base64) {
+  if (base64Channel) {
     for (const file of files) {
-      const mimeType = resolveMimeType(file)
       // 扩展名也可能缺（无扩展名的相册导出），两样都不像图片就是「这类渠道根本发不了」
-      const looksImage = isImage(mimeType) || IMAGE_EXTS.includes(getFileExt(file.name))
+      const looksImage = isImage(resolveMimeType(file)) || IMAGE_EXTS.includes(getFileExt(file.name))
       if (!looksImage) {
         return { key: 'uploadImageOnly' }
-      }
-      if (isImage(mimeType) && !IMAGE_EXTS.includes(getFileExt(file.name))) {
-        return { key: 'imageUnsupportedFormat' }
       }
     }
   }
