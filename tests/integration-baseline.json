@@ -232,7 +232,14 @@
       "expected": "pass",
       "artifact": "standard",
       "reason": "DIST_DIR_STANDARD / dist-standard + 自起服务",
-      "evidence": "2026-11-19 实测 PASS 27.4s"
+      "evidence": "2026-11-19 实测 PASS 27.4s",
+      "note2026_11_20": "#547：fixture 不再写死 v12 建库（库由产物自己建，版本号取自 src/services/chat/db.ts），VersionError 已消除"
+    },
+    "db-v12-v13-migration.test.mjs": {
+      "expected": "pass",
+      "artifact": "standard",
+      "reason": "#547 新增：v12 → v13 迁移不变量（造真 v12 旧库 + 旧数据 → 产物自己升级 → 断言新 store 建出、旧 store 与旧数据逐字节未变）；DIST_DIR_STANDARD / dist-standard + 自起服务",
+      "evidence": "2026-11-20 实测 PASS 17 项断言 / ~20s"
     },
     "domain03-settings-probe-model.test.mjs": {
       "expected": "pass",
