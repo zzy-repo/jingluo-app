@@ -12,7 +12,7 @@
 
 | 项 | 值 |
 | --- | --- |
-| 扫描范围 | `src/**` 全部源文件 **254** 个（`.css` **44** 个，其中 `*.module.css` **37** 个；其余 `.ts / .tsx / .html` 共 **210** 个） |
+| 扫描范围 | `src/**` 全部源文件 **255** 个（`.css` **44** 个，其中 `*.module.css` **37** 个；其余 `.ts / .tsx / .html` 共 **211** 个） |
 | 口径拆分 | 44 `.css` + 151 `.ts` + 55 `.tsx` + 1 `.html` = 251 |
 | 命中总数 | **347** 处，分布在 **39** 个文件 |
 | 运行时下限 | WebView **83**（Chromium 83）。**首支持 ≤ 83 的特性一律记「无风险」，与有没有兜底无关** |
@@ -323,3 +323,4 @@ node --test tests/unit/css-assumption-audit.test.mjs
 - 复核（2026-11-20 00:20，基准 `5f850a5`，本单 #346 分支 `fix/copy-diagnostic-touch-346`）：`AssistantMessage.module.css` 的 `.noticeAction`（提示条里的「改 Key / 去充值 / 复制诊断信息」）为了把命中区撑到 44px，新增 1 处 `touch-action: manipulation`（`:141`），因此 `touch-action` 命中 3 → **4**、命中总数 344 → **345**（分布仍是 39 个文件）。`display: inline-flex` / `min-height` / `min-width` / `justify-content` / `vertical-align` 都不在盘点口径里，**没有新增 flex `gap`、没有新增嵌套 `&`**，所以 `check:gap` 的兜底条数不变（仍是 119 条）。§1 逐特性表、§2.8 明细与合计行已同步。
 - 复核（2026-11-20 01:00，基准 `519a721`，本单 #421 分支 `feat/email-adapt`）：新增 2 个 `.ts` 源文件（`src/services/invite/email.ts` 采用动作、`src/services/invite/emailCooldown.ts` 发码倒计时纯函数），扫描范围 252 → **254** 个源文件（其余 `.ts / .tsx / .html` 208 → **210**），`.css` 仍是 44 个（`*.module.css` 37）。两个新文件都不含任何 CSS 特性假设；`OursServicesDialog.tsx` 新增的邮箱区只复用了既有的 `styles.redeemForm` / `styles.input` / `styles.hint`，**没有新增 flex `gap`、嵌套 `&` 或新特性**，本单自身增量为 **0 处命中 / 0 个文件**（其创建时基准 `519a721` 为 344 处 / 39 个文件；rebase 到 `f415f5d` 后主干已因 #346 / #347 增至 **347 处 / 39 个文件**，本单不改变该合计），逐特性表与 §2 明细未变。
 - 复核（2026-11-20 02:05，基准 `f6ec443`，本单 #347 / #353 分支 `fix/upstream-error-copy-347`）：`AssistantMessage.module.css` 的错误提示条为了加**折叠区「查看上游原文」**（`.noticeUpstream` / `.noticeUpstreamToggle` / `.noticeUpstreamText`）新增 2 处命中：`.noticeUpstream` 里的 `> summary` 子选择器（嵌套 `&` 140 → **141**）与折叠开关的 `touch-action: manipulation`（`touch-action` 4 → **5**，`:180`）。命中总数 345 → **347**（已有兜底 301 → **302**、无风险 38 → **39**，分布仍是 39 个文件）；`display: flex` / `flex-direction` / `min-height` / `max-height` / `overflow` / `white-space` / `overflow-wrap` 都不在盘点口径里，折叠区与主体之间的间距刻意用 `margin-top` 而不是 `gap`，所以 **`check:gap` 的兜底条数不变（仍是 119 条）**，也没有新增裸 gap。§1 逐特性表、§2.8 明细、合计行与附录 A（重新按复算结果生成）已同步。
+- 复核（2026-11-20 08:30，基准 `dfe6db0`，本单 #434 / #374 分支 `fix/error-readability-434-374`）：新增 1 个 `.ts` 源文件（`src/services/api/keyFailure.ts`：Key 失效的细分与尾号），扫描范围 254 → **255** 个源文件（其余 `.ts / .tsx / .html` 210 → **211**），`.css` 仍是 44 个（`*.module.css` 37）。本单改的都是 TS / TSX（分类、提示文案、折叠区与一个 i18n key），**不含任何 CSS 特性假设**，命中总数仍是 **347 处 / 39 个文件**，逐特性表与 §2 明细的 `文件:行` 未变。

@@ -83,8 +83,32 @@ export const en = {
   toolFindFailTooltip: 'No related content found',
   readingLink: 'Reading',
   commonNetworkErrorToast: 'Network Error. Please check your network status.',
+  /**
+   * Key rejected (#374): previously the only sentence for every 401. It is now the
+   * fallback for "the upstream rejected the key without saying why"; the specific
+   * cases have their own keys below (replyApiKey*).
+   */
   replyInvalidApiKey:
-    'The API Key is invalid or has been deleted. Please replace it and try again.',
+    'The upstream rejected this API Key without saying why (it may be invalid, expired, or not belong to this endpoint).',
+  /** Key format problem (#374): detectable locally, the request never left the app */
+  replyApiKeyFormatWrong:
+    'The API Key you entered is malformed (it contains spaces or line breaks, or is not key-length), so the request was never sent.',
+  /** Key does not exist / was deleted on the server (#374) */
+  replyApiKeyNotFound:
+    'This API Key is invalid or has been deleted (the upstream cannot find it: it was never bound, or the server deleted it).',
+  /** Old key invalidated by rotation (#374; same semantics as /rotate in #90) */
+  replyApiKeyRotated:
+    'This API Key has been rotated and the old one is no longer valid (rotating a key invalidates the old key immediately).',
+  /** Key identity in the notice: last 4 characters only (#374) */
+  replyApiKeyTailNote: ' (current key ends with {tail})',
+  /**
+   * Warning shown before changing a key (#374): users fear losing their quota,
+   * so the copy says the quota belongs to the account and to check it first.
+   */
+  replyApiKeyQuotaNote:
+    'Changing the API Key affects which account the quota belongs to; check the current account in the quota panel before switching.',
+  /** "Check quota" entry inside the key notice (#374): opens the quota panel without touching the key */
+  openQuotaPanel: 'Check quota',
   replyInsufficientBalance:
     'Insufficient balance or quota. Cannot continue generating (do not retry; top up first).',
   /** Top-up entry inside the quota notice (#299): reuses the quota & card dialog */
@@ -372,8 +396,12 @@ export const en = {
   settingsTestApiKeyRequired: 'Enter an API Key first',
   settingsTestHtml:
     'The endpoint returned a web page (HTTP {status}) instead of API data; the path is usually wrong or the service is broken',
+  /**
+   * The upstream answered with a web page instead of data (#434): a gateway home
+   * page / error page served with 200 + text/html. Plain language, and no retry.
+   */
   upstreamReturnedHtml:
-    'The upstream returned a web page instead of API data; the path is usually wrong or the service is broken',
+    'The upstream returned a web page instead of data, which usually means the gateway or proxy failed (a wrong endpoint URL looks the same). Retrying the same request will not change anything; expand the response summary below to see the content type and the first 200 characters.',
 
   // ---------- Chat background ----------
   settingsChatBackground: 'Chat background',

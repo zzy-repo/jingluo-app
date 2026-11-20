@@ -79,7 +79,29 @@ export const zh = {
   toolFindFailTooltip: '未查找到相关内容',
   readingLink: '正在阅读',
   commonNetworkErrorToast: '网络异常，请检查你的网络状况',
-  replyInvalidApiKey: 'API Key 无效或已被删除，请更换后重试',
+  /**
+   * Key 失效（#374）：以前只有这一句「无效或已被删除」，把「格式错 / 不存在 / 被轮换」
+   * 三种完全不同的处境说成同一件事。现在这一句只当**上游没说清原因**时的兜底，
+   * 细分文案见下面 replyApiKey* 四个 key。
+   */
+  replyInvalidApiKey: '上游拒绝了这把 API Key，但没说明具体原因（可能无效、已过期或不属于当前服务地址）',
+  /** Key 格式不对（#374）：本地就能判，请求根本没发出去 */
+  replyApiKeyFormatWrong:
+    '当前填写的 API Key 格式不对（含空格、换行，或长度不像一把 Key），请求还没有发到上游',
+  /** Key 不存在 / 已被服务端删除（#374） */
+  replyApiKeyNotFound: '这把 API Key 无效或已被删除（上游查不到它：没绑定成功，或已被服务端删除）',
+  /** Key 被轮换后旧 Key 失效（#374，对应 #90 的 /rotate 语义：旧 Key 立即作废、额度不丢） */
+  replyApiKeyRotated: '这把 API Key 已被轮换，旧的已经失效（换 Key 时旧 Key 会立即作废）',
+  /** 提示里的 Key 身份：只说尾 4 位，让用户确认「是哪把 Key 出问题」（#374） */
+  replyApiKeyTailNote: '（当前 Key 尾号 {tail}）',
+  /**
+   * 换 Key 之前的提醒（#374）：用户最怕的是「换 Key 把额度弄丢」，
+   * 所以文案必须说清额度归账号 / 设备、并且先在额度面板确认当前账号。
+   */
+  replyApiKeyQuotaNote:
+    '换 Key 会影响额度归属，请先在额度面板确认当前账号，再决定是否更换',
+  /** Key 失效提示里的「先看额度」入口（#374）：落到额度面板 / 充值页，不动 Key */
+  openQuotaPanel: '查看额度',
   replyInsufficientBalance: '余额或额度不足，无法继续生成（不要重试，充值后再发）',
   /** 额度不足提示里的出路入口（#299）：复用「额度与卡密」弹层，充值套餐与卡密兑换都在里面 */
   quotaTopUpEntry: '去充值 / 兑换卡密',
@@ -361,7 +383,12 @@ export const zh = {
   settingsTestBadJson: '返回的不是 JSON：{message}',
   settingsTestApiKeyRequired: '请先填写 API Key',
   settingsTestHtml: '请求返回的是网页（HTTP {status}），不是接口数据；通常是服务地址的路径不匹配或服务异常',
-  upstreamReturnedHtml: '上游返回网页而非接口数据，通常是路径不匹配或服务异常',
+  /**
+   * 上游返回的是网页而不是数据（#434）：200 + text/html 的网关首页 / 报错页。
+   * 说人话 —— 不是「协议不对」，而是「你打到的地方不是接口」，并且这条路重发没用。
+   */
+  upstreamReturnedHtml:
+    '上游返回的是网页而不是数据，通常是网关或代理出错（接口地址填错了也会这样）；重试同一个请求不会有变化（不要重试），展开下面的响应摘要可以看到返回的内容类型与前 200 字',
 
   // ---------- 聊天背景 ----------
   settingsChatBackground: '聊天背景',

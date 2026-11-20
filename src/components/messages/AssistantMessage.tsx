@@ -189,6 +189,34 @@ export const AssistantMessage = memo(function AssistantMessage({
                 </>
               ) : null}
               {/*
+                Key 失效那一档的「先看额度」入口（#374）：换 Key 会影响额度归属，
+                用户需要一条**不动 Key** 的路去核对当前账号 / 剩余额度，所以它和
+                「更换 API Key」并排给，不与后者互斥。
+              */}
+              {notice.quotaAction ? (
+                <>
+                  {' '}
+                  {oursChannel ? (
+                    <button
+                      type="button"
+                      className={styles.noticeAction}
+                      onClick={() => openOursServices()}
+                    >
+                      {t('openQuotaPanel')}
+                    </button>
+                  ) : (
+                    <a
+                      className={styles.noticeAction}
+                      href={TOP_UP_URL}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      {t('openQuotaPanel')}
+                    </a>
+                  )}
+                </>
+              ) : null}
+              {/*
                 未识别的失败不再只给一句「未知错误」（#324）：文案里已经带了状态码与上游短码，
                 这里给一个「复制诊断信息」的出口，走 #104 同一套剪贴板与反馈文案。
               */}

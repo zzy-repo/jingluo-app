@@ -187,8 +187,15 @@ test('[1] 真实样本：401 authentication_error 仍是 Key 无效（#303 不�
   }
   assert.equal(classifyErrorSignature(sample), 'unauthorized')
   const notice = noticeOf(apiErrorOf(sample))
-  assert.equal(notice.text, zh.replyInvalidApiKey)
+  // #374：不再是「一句无效或已被删除」——上游原文说 `is invalid` → 细分到「不存在 / 已删除」，
+  // 再拼上「换 Key 会影响额度归属」那条提醒（这里没有本地 Key，所以没有尾号）
+  assert.equal(
+    notice.text,
+    `${translate('replyApiKeyNotFound')}；${translate('replyApiKeyQuotaNote')}`,
+    '鉴权档要用 Key 失效的细分文案（#374），并带上额度归属提醒'
+  )
   assert.equal(notice.action, 'apiKey')
+  assert.equal(notice.quotaAction, true, '要给一个不动 Key 的「查看额度」入口（#374）')
 })
 
 // ---------------------------------------------------------------- [2] 流内 error 帧

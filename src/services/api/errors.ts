@@ -42,6 +42,15 @@ export type ApiErrorCondition =
    * 上游这次什么也没说，换一条连接通常就好 → **可重试**。
    */
   | 'emptyStream'
+  /**
+   * 上游返回的是网页而不是数据（#434）：200 + `text/html`（网关首页 / 报错页），
+   * 或请求层已经按 `upstream_returned_html` 判死的那种响应。
+   *
+   * 它和 emptyStream 是**两件事**：空响应是「上游这次什么都没说、换条连接就好」，
+   * 网页则是「请求打到了一个不是接口的地方」，重发多少次都是同一份 HTML →
+   * **不可重试**。改前它落进 emptyStream，`upstreamReturnedHtml` 这条文案永远走不到。
+   */
+  | 'upstreamReturnedHtml'
   | 'network'
   /** 流已开始但没收到 message_stop：连接中断，和「请求没发出去」要分开 */
   | 'interrupted'
@@ -234,6 +243,10 @@ export const API_KEY_INVALID_PATTERNS: RegExp[] = [
   /^authentication[_\s-]?error$/i,
   /invalid[_\s-]?api[_\s-]?key/i,
   /api[_\s-]?key[_\s-]?(?:is[_\s-]?)?(?:invalid|incorrect|expired|not[_\s-]?valid|missing)/i,
+  // 「Key 不存在 / 已被删除」（#374）：网关会写成 `api_key_not_found` / `api_key_not_exist`。
+  // 它和「无效」是同一件事的两面（那把 Key 现在确实没用了），出路也相同（换 Key），
+  // 所以归进鉴权档；具体是哪一种由 keyFailure.ts 再细分文案。
+  /api[_\s-]?key[_\s-]?(?:is[_\s-]?)?(?:not[\s_-]?(?:found|exist)|deleted|revoked|rotated)/i,
   /(?:invalid|incorrect|expired)[_\s-]?(?:api[_\s-]?)?key$/i,
   /key[_\s-]?(?:无效|不正确|已过期|已失效)/,
 ]
@@ -343,7 +356,37 @@ export type ErrorSignature = {
   /** 上游响应体里的机器可读错误码（error.code / error.type / 顶层 code） */
   code?: string
   message?: string
+  /**
+   * 响应头的 content-type（#434）。判定「上游给了个网页」只需要这一个字段：
+   * `200 + text/html` 是网关首页 / 报错页的典型形态，和「空响应」不是一回事。
+   * 流式接口正常时这里是 `text/event-stream`（= SSE），非流式接口是 `application/json`。
+   */
+  contentType?: string
 }
+
+/**
+ * 请求层判死「上游返回网页」时写进 `ApiError.code` 的客户端错误码（#434）。
+ * 分类层必须认得它，否则这条已经明确分类过的失败会被 2xx 兜底改写成「空响应」。
+ */
+export const UPSTREAM_HTML_CODE = 'upstream_returned_html'
+
+/** `text/html` 与它的 XML 变体：网关首页 / 报错页最常见的两种写法 */
+const HTML_CONTENT_TYPE_PATTERN = /(?:^|\/|;|\s)(?:text\/html|application\/xhtml\+xml)(?:;|\s|$)/i
+
+/** 这个 content-type 是不是「网页」（#434）：看类型本身，不看参数（charset 之类） */
+export const isHtmlContentType = (contentType?: string): boolean =>
+  typeof contentType === 'string' && HTML_CONTENT_TYPE_PATTERN.test(contentType.toLowerCase())
+
+/**
+ * 「上游返回网页」只对 2xx / 3xx（以及没有状态码）生效（#434）。
+ *
+ * 为什么限定状态范围：401 + 网页、502 + 网页同样常见，但那种情况下**状态码本身更可操作**
+ * ——401 该去换 Key、5xx 该重试，说成「返回的是网页」反而把出路说没了。
+ * 只有「状态码说成功、正文却是网页」这一种才是纯粹的配置 / 网关地址问题，
+ * 也正是 #434 里被误判成「空响应」的那条路。
+ */
+export const isHtmlLikeStatus = (status?: number): boolean =>
+  status === undefined || (status >= 200 && status < 400)
 
 /** 按 HTTP 状态码归类；没有状态码（请求没到达服务端）时按网络问题处理 */
 export const classifyStatus = (status: number | undefined): ApiErrorCondition => {
@@ -369,6 +412,9 @@ export const classifyStatus = (status: number | undefined): ApiErrorCondition =>
  * 统一判定（#299 / #324 / #347）：状态码 + 上游 code + 文案，三者任一能确定就算数。
  *
  * 判定顺序是有讲究的：
+ * 0. 上游返回网页（#434）先判：`200 + text/html` 与「空响应」在用户那边是两件事
+ *    （前者 = 打到了网关 / 路径不对，后者 = 上游这次没说话），而 2xx 兜底那条规则会把它
+ *    改写成 emptyStream，导致 `upstreamReturnedHtml` 永远不可达；
  * 1. 上下文超长先判：它也可能是 400/413，但用户能做的动作（开新会话 / 删早期消息）
  *    和额度不足（去充值）完全不同，错判会把人引到没用的路上（#122）；
  * 2. 额度用完再判：402 是标准写法，`insufficient_quota` 一类 code 是网关的常见写法，
@@ -388,7 +434,17 @@ export const classifyErrorSignature = ({
   status,
   code,
   message,
+  contentType,
 }: ErrorSignature): ApiErrorCondition => {
+  // 上游返回的是网页而不是数据（#434）：请求层已判死（code）或 2xx + HTML content-type。
+  // 必须排在 2xx → emptyStream 的兜底之前，否则「打到了网关 / 路径不对」会被说成「空响应」，
+  // 并按可重试处理（同一份 HTML 重发几次都一样）。
+  if (
+    isHtmlLikeStatus(status) &&
+    (code?.trim() === UPSTREAM_HTML_CODE || isHtmlContentType(contentType))
+  ) {
+    return 'upstreamReturnedHtml'
+  }
   if (status === 413 || isContextLimitMessage(message)) {
     return 'contextLimit'
   }
@@ -437,6 +493,12 @@ export const classifyApiError = (error: unknown): ApiErrorCondition => {
   // 但语义是「上游什么都没给」，要说得比「连接中断」更具体，也必须可重试
   if (error.code === 'stream_empty') {
     return 'emptyStream'
+  }
+  // 上游返回网页（#434）：请求层用这个客户端 code 判死，分类必须与之一致 ——
+  // 否则 2xx 兜底会把它改写成「空响应」（可重试），`upstreamReturnedHtml` 文案不可达。
+  // 非 2xx 的 HTML 报错页仍走状态码档（401 换 Key / 5xx 可重试），口径见 isHtmlLikeStatus。
+  if (error.code === UPSTREAM_HTML_CODE && isHtmlLikeStatus(error.status)) {
+    return 'upstreamReturnedHtml'
   }
   // 断流优先：它可能带着底层报错（network error / aborted），不能并进网络问题
   if (error.kind === 'interrupted') {
@@ -500,6 +562,11 @@ export const isRetryableApiError = (error: unknown): boolean => {
   // 空响应（#324）：上游这次什么都没有给，换条连接通常就好 —— 可重试
   if (condition === 'emptyStream') {
     return true
+  }
+  // 上游返回网页（#434）：请求打到了网关 / 路径不对，重发多少次都是同一份 HTML —— 不重试。
+  // 改前它落进 emptyStream，于是每次失败都白重试 3 次（#434 的失败日志里就是 3 个 POST）。
+  if (condition === 'upstreamReturnedHtml') {
+    return false
   }
   // 有状态码就只按状态码判：4xx（429 除外）不重试，这条是硬规则，不再经过分类兜底
   if (typeof error.status === 'number') {

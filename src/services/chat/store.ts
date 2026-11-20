@@ -7,6 +7,7 @@ import {
   getFileErrorCode,
   isRetryableApiError,
 } from '../api/errors.js'
+import { classifyKeyFailure } from '../api/keyFailure.js'
 import { cancelUpload, describeUploadError, uploadAttachment, useUploads } from '../attachments.js'
 import {
   captureStateSnapshot,
@@ -1661,6 +1662,23 @@ const streamReply = async (sessionId: string, initial: AssistantMessage, request
             status: error.status,
             // 上游 code 一并存下来：刷新 / 换设备后仍能认出「额度不足」（#299）
             ...(error.upstreamCode ? { upstreamCode: error.upstreamCode } : {}),
+            // 客户端错误码（#434）：`upstream_returned_html` 这个结论只有请求层知道，
+            // 不落盘的话重新渲染会退回「空响应」文案（改前那个 bug 的第二半）。
+            ...(error.code ? { code: error.code } : {}),
+            // 上游给的原文摘要（#434）：折叠区刷新后还要在，所以随消息落盘
+            ...(error.detail ? { detail: error.detail } : {}),
+            // Key 失效的细分（#374）：**当次**就判好，连同 Key 尾号一起存下来。
+            // 只用当前配置的 Key 判格式（请求层才知道那把 Key），历史回看没有它就跳过本地判定。
+            ...(condition === 'unauthorized'
+              ? {
+                  keyFailure: classifyKeyFailure({
+                    status: error.status,
+                    code: error.upstreamCode,
+                    message: error.message,
+                    apiKey: getApiKey() || undefined,
+                  }),
+                }
+              : {}),
             localMessage: notice,
           })
         } else {

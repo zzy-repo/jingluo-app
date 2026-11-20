@@ -1,10 +1,12 @@
-import { isTranslationKey, translate } from '../../i18n/index.js'
+import { isTranslationKey, translate, type TranslationKey } from '../../i18n/index.js'
 import {
   classifyErrorSignature,
   isContextLimitMessage,
   parseErrorField,
   parseSupportedModels,
+  UPSTREAM_HTML_CODE,
 } from '../api/errors.js'
+import { classifyKeyFailure, type KeyFailure, type KeyFailureKind } from '../api/keyFailure.js'
 import { buildReplyErrorReport, buildUpstreamSnippet } from './replyErrorReport.js'
 import type { AssistantMessage } from './types.js'
 
@@ -20,6 +22,14 @@ export type Notice = {
    *   参数错误与模型不可用这两档以前只会「叫你去看设置」，却没有任何能点的东西。
    */
   action?: 'apiKey' | 'topUp' | 'settings'
+  /**
+   * 提示里附带「先看额度」的入口（#374）：Key 失效那一档额外给一条**不动 Key** 的路。
+   *
+   * 为什么要单独一个字段：换 Key 会影响额度归属（#374 的顾虑），用户需要先确认
+   * 当前账号 / 剩余额度再决定换不换。它和 `action`（换 Key / 打开设置）并列，
+   * 不是替代关系，所以不塞进 `action` 的联合类型里。
+   */
+  quotaAction?: true
   /**
    * 兜底提示附带的**可复制诊断文本**（#324）：HTTP 状态码 + 上游 code + 失败环节。
    *
@@ -63,6 +73,31 @@ const isRetryableSignature = (status: number | undefined): boolean =>
 const statusLabel = (status: number | undefined): string =>
   typeof status === 'number' ? `HTTP ${status}` : translate('replyUpstreamStatusUnknown')
 
+/**
+ * Key 失效细分 → 文案 key（#374）。三种能确定的原因各一句，`rejected` 是
+ * 「上游只说了不行、没说为什么」的兜底 —— 兜底那句话不再断言「已被删除」。
+ */
+const KEY_FAILURE_COPY: Record<KeyFailureKind, TranslationKey> = {
+  format: 'replyApiKeyFormatWrong',
+  notFound: 'replyApiKeyNotFound',
+  rotated: 'replyApiKeyRotated',
+  rejected: 'replyInvalidApiKey',
+}
+
+/**
+ * Key 失效提示的正文（#374）：原因 + Key 尾号 + 「换 Key 前先确认额度归属」。
+ *
+ * 三段拼起来才完整：
+ * - 原因让用户知道**该做什么**（重新粘贴 / 重新绑定 / 用新 Key 覆盖）；
+ * - 尾号让用户知道**是哪一把**（多人多 Key / 刚从别处拷来的场景里，这是唯一能自证的线索）；
+ * - 额度归属提醒是因为「换 Key 会不会丢额度」正是用户不敢点更换的原因（#374 原文）。
+ */
+const keyFailureText = (failure: KeyFailure): string => {
+  const reason = translate(KEY_FAILURE_COPY[failure.kind])
+  const tail = failure.tail ? translate('replyApiKeyTailNote', { tail: failure.tail }) : ''
+  return `${reason}${tail}；${translate('replyApiKeyQuotaNote')}`
+}
+
 /** 回复出错或未正常结束时展示的提示 */
 export const describeReply = (reply: AssistantMessage): Notice | null => {
   if (reply.status === 'error' && reply.error) {
@@ -85,12 +120,15 @@ export const describeReply = (reply: AssistantMessage): Notice | null => {
     /**
      * 折叠区「上游原文」（#347 / #353）：**只在上游真给了原文时**存在。
      * 断流 / 空响应这类上游什么都没说的失败不占版面。
+     *
+     * #434 起优先用落盘的 `detail`：上游返回网页时，message 是本地文案，
+     * **响应摘要**（content-type + 正文前 200 字）只存在 detail 里。
      */
     const upstreamOf = () =>
       buildUpstreamSnippet({
         status,
         upstreamCode: reply.error?.upstreamCode,
-        message: reply.error?.message,
+        message: reply.error?.detail || reply.error?.message,
       })
     /** 「复制诊断信息」的文本（#324 的同一份口径，字段顺序固定） */
     const diagnosticsOf = () =>
@@ -98,7 +136,10 @@ export const describeReply = (reply: AssistantMessage): Notice | null => {
         status,
         upstreamCode: reply.error?.upstreamCode,
         kind,
-        message: reply.error?.message,
+        // 上游给了响应摘要（#434）就一并带上：反馈里最缺的就是「到底回了什么」
+        message: reply.error?.detail
+          ? `${reply.error?.message ?? ''}\n${reply.error.detail}`.trim()
+          : reply.error?.message,
       })
     // 历史补传错误刷新后仍需说明原因，恢复沿用附件卡片或重新生成。
     if (kind === 'upload') {
@@ -121,11 +162,41 @@ export const describeReply = (reply: AssistantMessage): Notice | null => {
     }
     switch (
       // 判定口径与请求层共用一份（#299 / #324）：状态码 + 上游 code + 文案，
-      // 这样「429 + insufficient_quota」也能落到额度档，而不是被当成限流说「请求过于频繁」
-      classifyErrorSignature({ status, code: reply.error.upstreamCode, message })
+      // 这样「429 + insufficient_quota」也能落到额度档，而不是被当成限流说「请求过于频繁」。
+      // #434：请求层判死的 `upstream_returned_html` 也要原样喂进来 —— 否则 200 + 网页
+      // 会被 2xx 兜底改写成「空响应」，那条文案就又不可达了。
+      classifyErrorSignature({
+        status,
+        code:
+          reply.error.upstreamCode ??
+          (reply.error.code === UPSTREAM_HTML_CODE ? UPSTREAM_HTML_CODE : undefined),
+        message,
+      })
     ) {
-      case 'unauthorized':
-        return { text: translate('replyInvalidApiKey'), action: 'apiKey' }
+      case 'unauthorized': {
+        /**
+         * Key 不行（#303 → #374）：不再只给一句「无效或已被删除」。
+         *
+         * `keyFailure` 是请求失败**当次**算好并落盘的（谁也不知道当时那把 Key 的尾号，
+         * 换过 Key 之后更不可能反推），历史 / 导入的旧记录没有它时按同一条口径就地补算，
+         * 只是没有尾号（那时本地 Key 已经不是当时那把了，编一个尾号比不显示更糟）。
+         */
+        const failure =
+          reply.error.keyFailure ??
+          classifyKeyFailure({
+            status,
+            code: reply.error.upstreamCode,
+            message: reply.error.message,
+          })
+        return {
+          text: keyFailureText(failure),
+          action: 'apiKey',
+          // 「换 Key 会影响额度归属」：光说不够，给一个**不动 Key** 就能核对账号的入口
+          quotaAction: true,
+          upstream: upstreamOf(),
+          diagnostics: diagnosticsOf(),
+        }
+      }
       case 'insufficientBalance':
         // 额度不足是终态（不参与自动重试）：说清「无法继续生成」，并直接给充值 / 卡密入口。
         // 文案复用已有 key（只改成明确措辞），不新增第二个名字，避免出现两个同义 key。
@@ -189,6 +260,15 @@ export const describeReply = (reply: AssistantMessage): Notice | null => {
           diagnostics: diagnosticsOf(),
         }
       }
+      case 'upstreamReturnedHtml':
+        // 上游返回的是网页而不是数据（#434）：以前这条会落到 emptyStream（「空响应，可以重试」），
+        // 于是同一份 HTML 被重试 3 次、用户还以为上游故障。现在单独成档：
+        // 主文案说人话（网关 / 代理 / 地址填错），响应摘要（content-type + 前 200 字）进折叠区。
+        return {
+          text: localized || translate('upstreamReturnedHtml'),
+          upstream: upstreamOf(),
+          diagnostics: diagnosticsOf(),
+        }
       case 'emptyStream':
         // 200 却没有任何内容（#324）：说「空响应、可重试」，不要含糊成「未知错误」
         return { text: translate('replyEmptyStream') }

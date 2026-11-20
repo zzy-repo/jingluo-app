@@ -189,6 +189,22 @@ const isHtmlResponse = (response: Response): boolean =>
   (response.headers.get('Content-Type') ?? '').toLowerCase().includes('text/html')
 
 /**
+ * 「上游返回网页」时放进折叠区的**响应摘要**（#434）：content-type + 正文前 200 字符。
+ *
+ * 为什么要留这一份：改前这条失败只说「上游返回了网页」，用户和我们都不知道那个网页是
+ * 谁的报错页（网关首页？404 页？证书提示页？）。摘要进折叠区（默认收起）而不是主文案，
+ * 既能让用户主动展开核对，又不会把一屏 HTML 糊到界面上。
+ */
+const HTML_SNIPPET_CHARS = 200
+const htmlResponseDetail = async (response: Response): Promise<string> => {
+  const contentType = (response.headers.get('Content-Type') ?? '').trim() || '（上游未给出）'
+  const body = await response.text().catch(() => '')
+  // 换行 / 连续空白折叠成单空格：HTML 源码里的缩进会把 200 字预算全吃掉
+  const head = body.replace(/\s+/g, ' ').trim().slice(0, HTML_SNIPPET_CHARS)
+  return head ? `content-type: ${contentType}\n${head}` : `content-type: ${contentType}`
+}
+
+/**
  * 请求默认超时：与 probeProvider 的连通性探测同一口径（15 秒）。
  * 只约束「拿到响应头」这一段——流式回答可能合法地持续很久，不在这里掐；
  * 正文读到一半断掉仍由 stream_interrupted 那条路负责（#41）。
@@ -306,7 +322,9 @@ export const request = async (
       'protocol',
       { key: 'upstreamReturnedHtml' },
       response.status,
-      'upstream_returned_html'
+      'upstream_returned_html',
+      // 折叠区的响应摘要（#434）：content-type + 正文前 200 字
+      await htmlResponseDetail(response)
     )
   }
   if (!response.ok) {

@@ -136,11 +136,9 @@
       "reason": "runner 注入共享标准产物服务的 APP_URL；请求体断言不触网"
     },
     "upstream-html.test.mjs": {
-      "expected": "known-red",
+      "expected": "pass",
       "artifact": "standard",
-      "reason": "上游返回 200 + text/html 时，产品应给「上游返回网页而非接口数据」的明确错误；实际落到「空响应」文案 —— error kind/status 判据把 200 归成 emptyStream，upstreamReturnedHtml 这条文案不可达",
-      "evidence": "2026-11-20 实测 FAIL 5.9s：✗ 界面上没有出现「上游返回网页而非接口数据…」的错误提示；页面文本 = 「上游这次没有返回任何内容（空响应）；属于临时故障，可以重试（点重新生成）」。根因链：src/services/api/client.ts:304 isHtmlResponse → ApiError(kind=protocol, code=upstream_returned_html, status=200) → src/services/chat/describe.ts 走 classifyErrorSignature({status:200}) → src/services/api/errors.ts:260 `if (status >= 200 && status < 300) return emptyStream` 盖掉了明确分类",
-      "followUp": "Issue #434：[bug] 上游 200+text/html 被判成「空响应」，upstreamReturnedHtml 文案不可达"
+      "reason": "runner 注入共享标准产物服务的 APP_URL；上游返回 200 + text/html 的场景用 mock 路由。#434 修好后本用例转绿（html 单独成档、不重试、折叠区带响应摘要），known-red 条目已删"
     },
     "url-import-native.test.mjs": {
       "expected": "pass",

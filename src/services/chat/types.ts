@@ -1,5 +1,6 @@
 import type { TranslationMessage } from '../../i18n/index.js'
 import type { ApiErrorKind } from '../api/client.js'
+import type { KeyFailure } from '../api/keyFailure.js'
 import type {
   ChatModel,
   MessageUsage,
@@ -103,7 +104,25 @@ export type AssistantMessage = MessageBranch & {
      * 单看状态码会被说成「请求过于频繁」或「未知错误」（#299）。
      */
     upstreamCode?: string
+    /**
+     * 客户端自己的错误码（`ApiError.code`）：`stream_empty` / `upstream_returned_html` 这类。
+     * 目前只用来让**刷新后**仍能认出「上游返回网页」（#434）—— 那个结论只有请求层知道，
+     * 不落盘的话重新渲染就退回「空响应」文案。
+     */
+    code?: string
     localMessage?: TranslationMessage
+    /**
+     * 上游给的「可自证的原文」（#434）：目前只在「上游返回网页」这条路上有值 ——
+     * 内容是 content-type + 正文前 200 字。存下来是为了刷新 / 换设备后**折叠区还在**
+     * （改前只有内存里那一份 ApiError 知道，重新渲染就丢）。
+     */
+    detail?: string
+    /**
+     * Key 失效的细分（#374）：格式错 / 不存在或被删除 / 被轮换 / 上游没说清。
+     * 在失败**当次**就算好并存下来 —— 尾号属于「当时那把 Key」，用户换过 Key 之后
+     * 再回看这条消息，也不能显示成新 Key 的尾号。
+     */
+    keyFailure?: KeyFailure
     /** 仅 upload：重新上传是否可能成功（网络、限流、服务端繁忙）；过大、格式不支持为 false */
     retryable?: boolean
   }

@@ -138,17 +138,19 @@ const ROWS = [
     copy: false,
   },
   {
+    // #374：401 不再是一句「无效或已被删除」，而是细分原因 + 额度归属提醒
     label: '401 Key 无效',
     status: 401,
     code: 'authentication_error',
     message: 'Authentication Fails, Your api key: ****2305 is invalid',
     condition: 'unauthorized',
-    key: 'replyInvalidApiKey',
+    key: 'replyApiKeyNotFound',
     params: {},
+    keyNotice: true,
     action: 'apiKey',
     showsStatus: false,
-    fold: false,
-    copy: false,
+    fold: true,
+    copy: true,
   },
   {
     label: '403 + invalid_api_key（网关常用写法，以前落到「未知错误」）',
@@ -156,12 +158,13 @@ const ROWS = [
     code: 'invalid_api_key',
     message: 'invalid api key provided',
     condition: 'unauthorized',
-    key: 'replyInvalidApiKey',
+    key: 'replyApiKeyNotFound',
     params: {},
+    keyNotice: true,
     action: 'apiKey',
     showsStatus: false,
-    fold: false,
-    copy: false,
+    fold: true,
+    copy: true,
   },
   {
     label: '403 权限不足（不是参数问题，也不该说成未知错误）',
@@ -263,7 +266,12 @@ test('表驱动：上游响应 → 分类 / 文案 key / 操作入口 / 状态�
     const notice = noticeOf(row)
     assert.ok(notice, `${tag} 必须给出一条提示`)
     // ② 文案（真实 translate()，不是手写字符串）
-    const expected = row.key ? translate(row.key, row.params) : row.message
+    // #374：Key 失效那一档的正文 = 原因 + （没有本地 Key 时省略尾号）+ 额度归属提醒
+    const expected = row.keyNotice
+      ? `${translate(row.key, row.params)}；${translate('replyApiKeyQuotaNote')}`
+      : row.key
+        ? translate(row.key, row.params)
+        : row.message
     assert.equal(notice.text, expected, `${tag} 文案不对（实际：${notice.text}）`)
     // ③ 操作入口
     assert.equal(notice.action, row.action, `${tag} 操作入口不对`)
