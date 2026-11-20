@@ -9,6 +9,7 @@ declare const styles: {
   readonly "uploading": string;
   readonly "spin": string;
   readonly "failed": string;
+  readonly "imageMeta": string;
   readonly "textareaWrapper": string;
   readonly "textarea": string;
   readonly "mirror": string;

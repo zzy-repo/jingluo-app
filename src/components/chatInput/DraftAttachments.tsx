@@ -1,7 +1,7 @@
 import clsx from 'clsx'
 import { memo } from 'react'
 import { useTranslate } from '../../i18n/index.js'
-import { useUploads, type UploadTask } from '../../services/attachments/upload.js'
+import { describeSentImage, useUploads, type UploadTask } from '../../services/attachments/upload.js'
 import type { DraftAttachment } from '../../services/chat/drafts.js'
 import { IconCloseFill14, IconRefreshOutline16 } from '../base/icons.js'
 import { Tooltip } from '../base/Tooltip.js'
@@ -49,7 +49,8 @@ const AttachmentItem = ({
 }) => {
   const t = useTranslate()
   const task = useUploads((state) => state.tasks[item.id] ?? UPLOADING)
-  const status = task.status
+  // `inline`（#551，base64 渠道的图片已就绪）对卡片而言与 `done` 同义：都表示「可以发送」
+  const status = task.status === 'inline' ? 'done' : task.status
   const error = task.status === 'error' ? t(task.error.key, task.error.params) : undefined
   // 过大、格式不支持等重试无效的失败只提示原因，需删除后再发送
   const retry = task.status === 'error' && task.retryable ? onRetry : undefined
@@ -57,12 +58,19 @@ const AttachmentItem = ({
   const retryLabel = t('uploadRetry', { message: error ?? t('uploadFileStatusFailed') })
   // 「上传失败」只显示重试图标，其余原因写在图片上：可重试时在图标下方，不可重试时贴底
   const showReason = failed && error !== undefined && error !== t('uploadFileStatusFailed')
+  /**
+   * 发出去的和原件不是同一份字节时（超阈值被压成 webp 的那类），在缩略图上标出真实格式与体积：
+   * 用户点发送前就该知道「发出去的是 WEBP · 218 KB」，而不是以为发的还是那张 4.8MB 的原图。
+   * 原图直发（字节未变）时返回 null，一个像素都不加。
+   */
+  const sentLabel = task.status === 'inline' ? describeSentImage(task, item.file.size) : null
   return item.previewUrl ? (
     <div
       className={clsx(styles.attachment, failed && styles.attachmentFailed)}
       title={error ?? item.file.name}
     >
       <img src={item.previewUrl} alt={item.file.name} />
+      {sentLabel ? <span className={styles.imageMeta}>{sentLabel}</span> : null}
       {status === 'uploading' ? <div className={styles.uploading} /> : null}
       {failed && retry ? (
         <Tooltip content={retryLabel}>

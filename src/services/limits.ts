@@ -140,8 +140,6 @@ export const LIMITS = {
     maxCount: 20,
     maxTotalBytes: 20 * 1024 * 1024,
     cacheEntries: 24,
-    /** 选图时读的头部字节（magic bytes 判定只需要几十字节，4KB 留足余量） */
-    sniffHeadBytes: 4096,
     /** 编码前读的头部字节：要覆盖 JPEG 的 APP1(EXIF) + SOF（尺寸），相机原图也在这个范围内 */
     maxHeadBytes: 262_144,
   },

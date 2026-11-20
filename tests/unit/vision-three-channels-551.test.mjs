@@ -148,15 +148,16 @@ test('[1] 能力表只有一张：文档维度与图片维度在同一个能力�
   assert.equal(capability.acceptsDocuments('anthropic'), true)
 })
 
-test('[1] 通路表与 caps.vision 是两个问题：本单只声明通路，不动 A 线的入口能力位', () => {
-  // 入口门禁是 `caps.vision && supportsFileUpload()`（#480），本单**不改**它 ——
-  // 三个 base64 渠道的 caps.vision 保持 A 线的 false，避免「入口亮着、点下去拿不到图」。
+test('[1] 通路表与 caps.vision 各回答一半：入口位在 #552 接线时与注入链路一起翻', () => {
+  // 入口门禁是「`caps.vision` 且能力表里有可用通路」：`caps.vision` 是 UI 开关（#480 的语义），
+  // `visionFor().image` 是请求侧怎么走（#562 的单一能力表）。#551 只落通路表，两个位子
+  // **必须一起翻**，否则就是「入口亮着、点下去拿不到图」—— #552 是那一步（`ChatInput.tsx`）。
   assert.equal(providers.getSpec('deepseek').caps.vision, true, 'deepseek 的 vision 保持 true 不变')
   for (const kind of ['anthropic', 'openai', 'ours']) {
     assert.equal(
       providers.getSpec(kind).caps.vision,
-      false,
-      `${kind} 的 caps.vision 仍是 #480 的值：入口与注入链路一起翻，不能只翻一半`
+      true,
+      `${kind} 的 caps.vision 已由 #552 与 base64 注入链路一起置真`
     )
   }
   assert.equal(

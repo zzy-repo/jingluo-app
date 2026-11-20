@@ -25,7 +25,11 @@ import {
   useDrafts,
 } from '../../services/chat/drafts.js'
 import { ATTACHMENT_LIMITS, SUPPORTED_EXTENSIONS } from '../../services/attachments/limits.js'
-import { acceptsDocuments } from '../../services/attachments/providerCapability.js'
+import {
+  acceptsDocuments,
+  supportsImage,
+  visionFor,
+} from '../../services/attachments/providerCapability.js'
 import {
   AttachmentList,
   AttachmentPicker,
@@ -40,6 +44,7 @@ import { enterKeyHintFor, resolveEnterKeyAction } from './enterKey.js'
 import { DragMask, useFileDrop } from './DragMask.js'
 import { showToast } from '../base/toastState.js'
 import { ACCEPT, useUploads } from '../../services/attachments/upload.js'
+import { IMAGE_ACCEPT } from '../../services/attachments/imageSource.js'
 import { DraftAttachments } from './DraftAttachments.js'
 import { useVoiceInput } from './useVoiceInput.js'
 import { VoiceButton } from './VoiceButton.js'
@@ -85,12 +90,32 @@ const Input = ({ sessionId }: { sessionId: string | null }) => {
    */
   const canAttachDocs = acceptsDocuments(kind)
   /**
-   * 附件入口是否真的可用：既要渠道声明了 vision 能力，也要它**显式声明了 Files API 端点**
-   * （`spec.paths.files`）。只有 caps.vision 是不够的——以前就是拿 messages 前缀拼出
-   * `/v1/chat/completions/files` 去试，网关没有这条路由，线上 86% 的日志是它的 404（#303）。
-   * 不满足时入口仍然渲染，但点下去给可读提示，不静默失败（#37 / #43 的诉求）。
+   * 图片附件入口是否真的可用（#552）：判定**只查那一张渠道能力表**
+   * （`providerCapability.ts` 的 `image` 维度，`supportsImage()` / `visionFor()`），
+   * 不再自己拼 `caps.vision && paths.files`：
+   *
+   * - `image.base64`（anthropic / openai / ours）：本地编码内联，**不需要任何端点**；
+   * - `image.nativeFile`（deepseek）：走 Files API，还要它**显式声明了 `paths.files`**
+   *   （`supportsFileUpload()`）—— 只有 `nativeFile` 是不够的，以前就是拿 messages 前缀拼出
+   *   `/v1/chat/completions/files` 去试，网关没有这条路由，线上 86% 的日志是它的 404（#303）。
+   *
+   * `caps.vision` 仍然是与门（UI 侧的开关语义）；不满足时入口**照常渲染**，点下去给可读提示，
+   * 不静默失败（#37 / #43 的诉求）。
    */
-  const canAttach = caps.vision && supportsFileUpload()
+  const imageTransport = visionFor(kind)
+  const canAttach =
+    caps.vision && supportsImage(kind) && (imageTransport.base64 || supportsFileUpload())
+  /**
+   * 入口不可用时说清是哪一种「不可用」（#552）：渠道压根没有图片能力时用
+   * `visionUnsupported`（«换渠道/换模型» 是唯一出路），渠道声称有 vision 但没有可用的
+   * 发图通路时用 `uploadChannelUnsupported`（#303 / #360 那一类）。
+   */
+  const attachDenied = supportsImage(kind) ? 'uploadChannelUnsupported' : 'visionUnsupported'
+  /**
+   * base64 渠道只收图片（文档走 #480 的文本注入，有独立的文档入口）：
+   * 选择框也照此过滤，免得用户选了一个只能得到「上传失败 404」的 csv/py。
+   */
+  const acceptUpload = imageTransport.base64 ? IMAGE_ACCEPT : ACCEPT
   const fileInputRef = useRef<HTMLInputElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const togglesRef = useRef<HTMLDivElement>(null)
@@ -171,7 +196,7 @@ const Input = ({ sessionId }: { sessionId: string | null }) => {
   const acceptUploadFiles = (files: File[]) => {
     if (!canAttach) {
       // 拖拽 / 粘贴进来的文件同样要说清为什么不收：静默忽略会让用户以为界面卡住
-      showToast({ key: 'uploadChannelUnsupported' })
+      showToast({ key: attachDenied })
       return
     }
     if (useChatStore.getState().importingHistory || !ensureApiKey()) {
@@ -414,12 +439,12 @@ const Input = ({ sessionId }: { sessionId: string | null }) => {
             tone="primary"
             className={clsx(!canAttach && styles.unavailableEntry)}
             icon={<IconPaperclipOutline16 />}
-            tooltip={canAttach ? t('uploadFile') : t('uploadChannelUnsupported')}
+            tooltip={canAttach ? t('uploadFile') : t(attachDenied)}
             aria-disabled={canAttach ? undefined : 'true'}
             disabled={importingHistory}
             onClick={() => {
               if (!canAttach) {
-                showToast({ key: 'uploadChannelUnsupported' })
+                showToast({ key: attachDenied })
                 return
               }
               if (ensureApiKey()) {
@@ -433,7 +458,7 @@ const Input = ({ sessionId }: { sessionId: string | null }) => {
               type="file"
               multiple
               hidden
-              accept={ACCEPT}
+              accept={acceptUpload}
               onChange={(event) => {
                 acceptFiles(Array.from(event.target.files ?? []))
                 event.target.value = ''

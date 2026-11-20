@@ -1,11 +1,13 @@
 import type {
   AssistantBlockParam,
-  FileBlockParam,
   MessageParam,
   MessageStreamEvent,
   OutputBlockStart,
   TextBlockParam,
+  UserContentBlockParam,
 } from '../api/types.js'
+import type { ImageTransportCapability } from '../attachments/providerCapability.js'
+import { imagePartOf } from '../attachments/imageSource.js'
 import type {
   AssistantMessage,
   FileAttachment,
@@ -31,20 +33,51 @@ import type { ChatAttachmentRef, ChatMessage } from '../attachments/contextBuild
 import { attachmentRefsOf } from '../attachments/requestDocs.js'
 
 /**
- * 文件按 Files API 的 file_id（附件的 serverId）引用：图片用 image 块，其余用 document 块。
- * 发送前 streamReply 会先补齐 serverId；仍为 null 的是本地没有原件的附件，不进入请求。
+ * 附件 → 内容块。两条通路（#551 / #562 的唯一能力表 `visionFor()`）：
+ *
+ * - **`vision.base64`（anthropic / openai / ours）**：图片用本地编码好的内联块
+ *   `{type:'image', source:{type:'base64', media_type, data}}`。编码产物由选图阶段
+ *   （`drafts.prepareInline`）+ 发送前 `store.prepareInlineImages()` 放进 `imageSource`
+ *   的缓存，这里只**同步查一次**；没命中（原件缺失 / 编码失败）就当这张图没有内联形态，
+ *   不进入请求 —— 本轮提问的图片在发送前一定会编好或明确报错（**绝不静默丢图**）。
+ * - **其它（deepseek 的 `nativeFile`）**：与改造前逐字节一致 —— 按 Files API 的 file_id
+ *   （附件的 `serverId`）引用，图片用 image 块、其余用 document 块；`serverId` 仍为 null 的
+ *   是本地没有原件的附件，不进入请求。
+ *
+ * 顺序：先查内联缓存、再退回 file_id。deepseek 分支下缓存**永远是空的**（`drafts` 与
+ * `store.prepareFiles` 都只在 base64 渠道写它），所以它的输出与改造前完全相同。
  */
-const toFileBlocks = (files: FileAttachment[]): FileBlockParam[] =>
-  files.flatMap(({ serverId, isImage }) =>
-    serverId
+const toFileBlocks = (
+  files: FileAttachment[],
+  vision: ImageTransportCapability
+): UserContentBlockParam[] =>
+  files.flatMap(({ id, serverId, isImage }): UserContentBlockParam[] => {
+    if (isImage && vision.base64) {
+      const part = imagePartOf(id)
+      return part
+        ? [
+            {
+              type: 'image' as const,
+              source: { type: 'base64' as const, media_type: part.mediaType, data: part.base64 },
+            },
+          ]
+        : []
+    }
+    return serverId
       ? [
           {
-            type: isImage ? 'image' : 'document',
-            source: { type: 'file', file_id: serverId },
+            type: isImage ? ('image' as const) : ('document' as const),
+            source: { type: 'file' as const, file_id: serverId },
           },
         ]
       : []
-  )
+  })
+
+/**
+ * 缺省图片通路：只用 Files API 的 file_id（与改造前一致）。
+ * `toRequestMessages()` 的调用方不传 `vision` 时走它 —— 单测与历史调用点因此不受影响。
+ */
+const FILE_ID_ONLY: ImageTransportCapability = { base64: false, nativeFile: true }
 
 const toReplyBlock = (block: OutputBlockStart, now: number): ReplyBlock | null => {
   switch (block.type) {
@@ -233,10 +266,11 @@ const documentsPlaceholder = (count: number): string => `[用户上传了 ${coun
 /** 有文件时用内容块数组：先文件后文本，文件按 Files API 的 file_id 引用 */
 const toUserParam = (
   { content, files }: UserMessage,
+  vision: ImageTransportCapability,
   attachments?: readonly ChatAttachmentRef[]
 ): ChatMessage => {
   const refs = attachments ?? []
-  const blocks = toFileBlocks(files)
+  const blocks = toFileBlocks(files, vision)
   // 空正文 + 有文档引用 → 占位说明（仅在挂了引用时生效；不传引用时与原实现逐字节相同）
   const text = content === '' && refs.length > 0 ? documentsPlaceholder(refs.length) : content
   const param: ChatMessage =
@@ -388,6 +422,14 @@ export type RequestBudgetOptions = {
    * `contextBuilder.buildWithDocuments()` 从出参里剥掉（原样上行会被上游当未知字段）。
    */
   attachmentRefs?: boolean
+  /**
+   * 本渠道的图片通路（#551：`providerCapability.visionFor()` 的返回值）。
+   *
+   * 缺省 `FILE_ID_ONLY`（只认 `file_id`）—— 与改动前逐字节一致，不给调用方留「忘传就乱走
+   * base64」的口子。`store.ts` 每次都把 `visionFor(spec.kind)` 传进来，deepseek 拿到的是
+   * `{base64:false, nativeFile:true}`，出参与改造前完全相同。
+   */
+  vision?: ImageTransportCapability
 }
 
 export const toRequestMessages = (
@@ -401,9 +443,11 @@ export const toRequestMessages = (
   const budget = resolveContextBudget(options?.budget)
   /** #480 §7：是否挂文档引用（只有文本注入渠道） */
   const wantRefs = options?.attachmentRefs === true
+  /** #551：本渠道图片走 base64 内联还是 file_id（缺省只认 file_id） */
+  const vision = options?.vision ?? FILE_ID_ONLY
   /** 本轮提问的文档引用（只在文本注入渠道取；否则为空数组，出参与改动前一致） */
   const questionRefs = wantRefs ? attachmentRefsOf(question.files) : []
-  const questionParam = toUserParam(question, questionRefs)
+  const questionParam = toUserParam(question, vision, questionRefs)
   /**
    * 历史提问没有文字、附件也都没有 serverId 时，提问为空，连同回答一起省略（原有行为）。
    *
@@ -415,7 +459,7 @@ export const toRequestMessages = (
    * `file_id`，保留下来只会多一条空 user 消息（上游 400 风险），所以那边的行为一个字都不变。
    */
   const rounds = getContextRounds(history).filter(([user]) => {
-    if (user.content !== '' || toFileBlocks(user.files).length > 0) {
+    if (user.content !== '' || toFileBlocks(user.files, vision).length > 0) {
       return true
     }
     return wantRefs && attachmentRefsOf(user.files).length > 0
@@ -427,7 +471,7 @@ export const toRequestMessages = (
       // 修复前写下的快照可能是四段（#324）：原样重发会让官方端点继续 400
       params.push({ role: 'latest_reminder', content: normalizeReminder(reply.latestReminder) })
     }
-    params.push(toUserParam(user), toAssistantParam(reply))
+    params.push(toUserParam(user, vision), toAssistantParam(reply))
     // 附件引用留到**裁剪之后**再挂（见下面 push 处）：不进 estimateChars，
     // 于是裁剪边界与改动前逐字节一致，不受附件引用字段长度影响。
     return { params, user }
@@ -495,7 +539,7 @@ export const toRequestMessages = (
       if (param.role === 'latest_reminder') {
         appendReminder(param.content)
       } else if (param.role === 'user' && refs.length > 0) {
-        messages.push(toUserParam(user, refs))
+        messages.push(toUserParam(user, vision, refs))
       } else {
         messages.push(param)
       }

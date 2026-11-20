@@ -364,6 +364,12 @@ export const zh = {
   imageTooLarge: '图片压缩后仍超过 {size}MB，请先压缩或裁剪后再发',
   imageAnimatedTooLarge: '动图超过 {size}MB 或尺寸过大，压缩会把动画拍成静帧，请先压缩后再发',
   imageEncodeFailed: '图片编码失败，请重试或换一张',
+  imageSourceMissing: '这张图片的本地原件已丢失，无法发送，请重新添加',
+  imageTooMany: '单条消息最多 {count} 张图片',
+  imageTotalTooLarge: '本轮图片总量超过 {size}MB，请减少图片数量',
+  /** base64 渠道（#551）根本没有上传端点：非图片文件在这类渠道上只能明说发不了 */
+  uploadImageOnly: '当前渠道只支持发送图片，文档附件请切换到支持的渠道',
+  visionUnsupported: '当前渠道不支持图片，请切换到支持图片的渠道或模型',
   uploadFileCountLimit: '已上传文件数达到上限（{limit} 个），可 ',
   uploadStorageLimit: '已上传文件占用空间达到上限（{limit}GB），可 ',
   uploadDeleteFiles: '删除文件',
