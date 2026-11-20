@@ -7,6 +7,7 @@
 > - 盘点日期：2026-11-19 12:19 (+0800)
 > - 快照基准：`acf6826`（`origin/main` tip，2026-11-19 12:28:21 +0800）
 > - 采集时间：2026-11-19 18:55 (+0800)
+> - 写盘：`node scripts/gen-capabilities-docs.mjs`（`pnpm gen:capabilities`，`pnpm check:capabilities-docs` 只比对不写）——本文件的机器可读数字与 §1 逐特性计数都由它重算，**别手改**
 
 ## 0. 口径
 
