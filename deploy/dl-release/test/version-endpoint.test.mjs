@@ -138,7 +138,10 @@ test('sha256 启动时算一次并缓存：文件被替换后端点仍报启动�
   for (const f of ['server.mjs', 'variant.mjs', 'apk-manifest.mjs']) {
     fs.copyFileSync(path.join(ROOT, 'deploy/dl-release', f), path.join(dlDir, f))
   }
-  fs.copyFileSync(path.join(ROOT, 'shared/build-types.mjs'), path.join(tree, 'shared/build-types.mjs'))
+  fs.copyFileSync(path.join(ROOT, 'shared/build-types.mjs'), path.join(tree, 'shared/build-types.mjs'));
+  // #601 起 server.mjs 还 import 了 shared/loopback-consume.mjs（回环判定的唯一实现），
+  // 少拷一份这里就会 ERR_MODULE_NOT_FOUND —— 红在「目录树不全」而不是被测的缓存语义上。
+  fs.copyFileSync(path.join(ROOT, 'shared/loopback-consume.mjs'), path.join(tree, 'shared/loopback-consume.mjs'))
   const copy = path.join(dlDir, 'server.mjs')
   const bootHash = sha256File(copy)
 

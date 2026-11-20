@@ -208,6 +208,10 @@ const buildInfoPlugin = (variant: 'standard' | 'internal', version: string, outP
               hash: /^main\.([a-z0-9]+)\.js$/.exec(mainFile)?.[1] ?? null,
               version,
               builtAt: new Date().toISOString(),
+              // 回环 baseUrl 的产物标记（Issue #601）：`scripts/build.mjs` 放行回环地址出包时会传
+              // LOOPBACK_CONSUME=1，把「这份产物连不上任何真机后端」写成事实，供上传侧 / 事后取证读。
+              loopbackConsume: process.env.LOOPBACK_CONSUME === '1',
+              allowLoopbackConsume: process.env.ALLOW_LOOPBACK_CONSUME === '1',
             },
             null,
             2

@@ -83,6 +83,10 @@ async function variantOf(dist) {
 function build({ dist, internal = false }) {
   const env = { ...process.env, DIST_OUT: dist }
   if (internal) env.INTERNAL_BUILD = '1'
+  // #601：`internal` + 回环 consume.baseUrl 默认会被构建期闸门拦下（那是事故防线）。这里要的是
+  // 「能跑用例的冒烟产物」，不是要分发的包，所以显式放行回环；闸门自身的负向对照见
+  // deploy/dl-release/test/consume-loopback.test.mjs。
+  if (internal && env.ALLOW_LOOPBACK_CONSUME === undefined) env.ALLOW_LOOPBACK_CONSUME = '1'
   console.log(`   构建 ${dist}/（${internal ? 'internal' : 'standard'} 变体）`)
   const result = spawnSync(process.execPath, [BUILD_SCRIPT], { cwd: ROOT, stdio: 'inherit', env })
   if (result.status !== 0) throw new Error(`构建失败：${dist}/`)

@@ -20,6 +20,9 @@
  *     否则 400 APK_DEBUGGABLE 拒收 —— 发布路径不允许出现 debuggable 构建（Issue #60）
  *   - 「回环 consume」构建一律拒收：APK 内 `<meta-data …LOOPBACK_CONSUME="true">`
  *     → 400 LOOPBACK_BUILD_REJECTED（Issue #601）。读不到标记（老包）按历史行为放行
+ *   - 但**标记读不到不等于地址不是回环**：老包（含 2026-11-20 事故那个包）压根没有这个标记。
+ *     所以再加一条与标记无关的判据：从 APK 的 JS bundle 里抽出 `consume.baseUrl`，是本机回环
+ *     → 400 BAD_CONSUME_BASE。两条判据都过不了才算干净；抽不到地址时只 warn（不误伤老包）
  *   - 防降级：versionCode 必须大于 releases.json 当前 latest
  *     （版本号与 latest 完全相同 = 幂等覆盖，允许）
  *   - buildType 只接受 shared/build-types.mjs 的枚举（stable|prerelease），非法值
@@ -43,7 +46,9 @@ import {
   resolveVariant,
   VARIANTS,
 } from './variant.mjs';
-import { inspectApkDebugState, inspectApkLoopback } from './apk-manifest.mjs';
+import { extractConsumeBaseUrl, inspectApkDebugState, inspectApkLoopback } from './apk-manifest.mjs';
+// 回环判定只有一份（shared/loopback-consume.mjs，Issue #601）：构建期与上传侧必须同一条判据
+import { isLoopbackBaseUrl } from '../../shared/loopback-consume.mjs';
 // buildType 的枚举只有一处定义（Issue #330）——服务端不再自带字符串数组，
 // 也不再把 Gradle 构建类型（release/debug）当发布渠道。
 import { BUILD_TYPES, buildTypeFor, isBuildType } from '../../shared/build-types.mjs';
@@ -522,6 +527,37 @@ async function handleRelease(req, res, ip) {
     );
   }
 
+  // (7a-3) 与标记无关的第二条判据（Issue #601）：直接看 APK 里**真实的** consume.baseUrl。
+  //
+  // 为什么 (7a-2) 不够：标记只有新版 gradle 打得出来，而事故里那个包（以及一切历史包、手工
+  // `aapt2 link` / 直接 `scp` 上来的包）都没有这个标记 —— 按「读不到就放行」它照样能进库。
+  // 这里改读前端真相：`__ENDPOINTS__.consume.baseUrl` 在构建时被内联进 `assets/**/*.js`。
+  // 抽不到（老包没内联 / 没有 JS）→ 放行 + warn，把「未核验」明确写进响应，别假装查过。
+  const consumeProbe = extractConsumeBaseUrl(apkPart.data);
+  const consumeWarnings = [];
+  if (consumeProbe.baseUrl && isLoopbackBaseUrl(consumeProbe.baseUrl)) {
+    await fsp.rm(staging, { force: true });
+    log('reject_loopback_consume', {
+      ip, baseUrl: consumeProbe.baseUrl, source: consumeProbe.source, sha256,
+    });
+    return failCode(
+      res, 400, 'BAD_CONSUME_BASE',
+      `APK 内的 consume.baseUrl 是本机回环地址（${consumeProbe.baseUrl}，来自 ${consumeProbe.source}）：` +
+      '这种包在任何真机上都连不上后端（127.0.0.1 指的是手机自己），只能用于本机 adb reverse 联调，' +
+      '禁止进入任何分发通道（Issue #601）。已拒绝写入，APK 与 releases.json 均未改动',
+    );
+  }
+  if (!consumeProbe.baseUrl) {
+    consumeWarnings.push(
+      `未能从 APK 的 JS bundle 抽出 consume.baseUrl（${consumeProbe.reason}），回环校验已跳过 —— 请人工核对`,
+    );
+    log('consume_base_unverified', {
+      ip, reason: consumeProbe.reason, scanned: consumeProbe.scanned, sha256,
+    });
+  } else {
+    log('consume_base_checked', { ip, baseUrl: consumeProbe.baseUrl, source: consumeProbe.source });
+  }
+
   // (7b) 变体判定：只认 APK 内标记 或 服务器白名单；客户端 meta 一律不采信
   if (meta.artifactVariant !== undefined) {
     log('meta_variant_ignored', { ip, meta: String(meta.artifactVariant) });
@@ -661,6 +697,9 @@ async function handleRelease(req, res, ip) {
     sha256,
     artifactVariant: artifactVariant || null,
     artifactVariantSource: artifactVariantSource || null,
+    // 回环核验的结论（Issue #601）：抽不到时是 null + warnings 里一条明确提示
+    consumeBaseUrl: consumeProbe.baseUrl || null,
+    warnings: consumeWarnings,
   });
 }
 

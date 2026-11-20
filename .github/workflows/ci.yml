@@ -180,7 +180,13 @@ jobs:
       - name: 回归层（tests/regression，纯 Node，~4s）
         run: node tests/run-layer.mjs regression
 
+      # #601：`internal` 变体 + 回环 `consume.baseUrl` 在 Web 层构建包装里默认也会失败
+      # （闸 1 的 Web 半边，见 scripts/build.mjs）。CI 这一步产的是**冒烟产物**、不是要分发的包，
+      # 所以显式开 `ALLOW_LOOPBACK_CONSUME=1`；闸门自身另有正/负向对照
+      # （deploy/dl-release/test/consume-loopback.test.mjs + gradle 那一步）。
       - name: Build (internal)
+        env:
+          ALLOW_LOOPBACK_CONSUME: '1'
         run: pnpm run build:internal
 
       # ─────────────── Issue #563：gradle 配置可解析（拦住「JS 全绿但打不出包」）───────────────
@@ -380,7 +386,7 @@ jobs:
           node scripts/check-refactor-direction.mjs > "$log" 2>&1 || { cat "$log"; echo "::error::对照失败：还原后 check:refactor-direction 仍然红"; exit 1; }
           echo "负向对照通过：生成目录不计入 → exit 0；src/ 里同一地址 → exit 1；删掉 → exit 0"
 
-      # ─────────────── Issue #415：把 deploy/dl-release/test 的用例接进流水线（#441 起 37 条）───────────────
+      # ─────────────── Issue #415：把 deploy/dl-release/test 的用例接进流水线（#441 起 37 条，现 55 条）───────────────
       # 同一类教训的第四处（前有 #368 的 regression 层、#365 的 integration 层、#413 的门禁）：
       # `deploy/dl-release/test` 的用例（variant 9 / apk-manifest 9 / server-buildtype 6 /
       # version-endpoint 3（#441）/
@@ -393,7 +399,7 @@ jobs:
       #   · `scripts/check-test-layout.mjs` 有一条带理由的白名单条目，把「枚举不到」判红；
       #   · 这一步按 `pnpm run test:dl-release`（= `node --test deploy/dl-release/test/*.test.mjs`）跑，
       #     纯 Node、无浏览器、不依赖 dist，实测 ~3-7s。不加 continue-on-error：真红必须红。
-      - name: dl-release 用例（deploy/dl-release/test，44 条，纯 Node）
+      - name: dl-release 用例（deploy/dl-release/test，55 条，纯 Node）
         run: pnpm run test:dl-release
 
       # ─────────────── Issue #413：把已经存在但没人按的那几道门禁接进流水线 ───────────────
@@ -733,6 +739,9 @@ jobs:
       - name: 构建被测产物（internal / standard / scroll，带登录接缝）
         # 三份变体都带上 job 级的 `TEST_AUTH_SEAM=1`（见 job env）：DefinePlugin 内联假会话，
         # AuthGate 直接放行；用例自建的 dist-copy-limit / dist-update-373 也继承这个开关。
+        env:
+          # #601：internal 冒烟产物同样要显式放行回环 baseUrl（同 checks job 的注释）
+          ALLOW_LOOPBACK_CONSUME: '1'
         run: |
           set -euo pipefail
           pnpm run build:internal                 # → dist/          内测变体（diagnostics / motion / mode-switch 等）

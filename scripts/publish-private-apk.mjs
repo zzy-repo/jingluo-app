@@ -19,8 +19,11 @@
  *   # 演练：只看要做什么，不落地
  *   node scripts/publish-private-apk.mjs --apk app-release.apk --version 1.4.2 --versionCode 21 --dry-run
  *
- *   # 真发布
+ *   # 真上传（#601 起的默认：只上传文件 + 打印直链，不写 releases.json）
  *   node scripts/publish-private-apk.mjs --apk app-release.apk --version 1.4.2 --versionCode 21
+ *
+ *   # 真上传 + 把条目写进公开清单（要显式说出口，并且过交互确认）
+ *   node scripts/publish-private-apk.mjs --apk app-release.apk --version 1.4.2 --versionCode 21 --add-to-manifest
  *
  *   # 用假文件把「上传 + 清单改动 + 回滚」三条全跑一遍（发完立刻全量回滚，线上不留残留）
  *   node scripts/publish-private-apk.mjs --apk /tmp/fake.apk --version 0.0.0 --versionCode 9999 \
@@ -33,6 +36,13 @@
  *   --variant internal        默认 internal，只能是 internal|standard（DL_PRIVATE_VARIANT）
  *   --changes <text>          清单里的 changes 条目，可重复给多条；不给就用一行默认说明
  *   --dry-run                 默认关闭（不传就是真发布）。只打印动作与清单条目，不落地
+ *   --add-to-manifest         把条目写进 releases.json。**默认不写**（#601 起）：默认只上传文件 +
+ *                             打印直链，清单一个字节都不动
+ *   --no-manifest             显式声明不写清单（与 --add-to-manifest 互斥，用来把意图写在命令行上）
+ *   --allow-loopback          APK 内 consume.baseUrl 是回环地址（127.0.0.1 / localhost / [::1]）时
+ *                             仍然上传 —— **强制不写清单**（回环包连不上任何真机后端，见 #601）
+ *   --yes                     跳过「将要做的三件事」的交互确认；`--add-to-manifest --yes` 组合还要求
+ *                             环境变量 I_KNOW_THIS_IS_PUBLIC=1（清单是公开可读的）
  *   --exercise                演练：真上传 + 真加清单条目 + 立刻全量回滚（要求 version 形如 0.0.0）
  *   --skip-apk-validation     **仅供演练**：跳过 aapt2 校验（假文件过不了 aapt2）
  *   --force                   演练时允许 version 不是 0.0.0 开头（危险，别用）
@@ -55,6 +65,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import crypto from 'node:crypto';
+import readline from 'node:readline';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
@@ -74,6 +85,9 @@ import {
 import { validate as validateReleasesSchema } from './validate-releases-manifest.mjs';
 // 变体标记的解析只有一份实现：aapt2 dump xmltree 的输出由它来判
 import { parseVariantFromXmltree } from '../deploy/dl-release/variant.mjs';
+// 回环 baseUrl 的抽取与判定同样只有一份实现（Issue #601）：与 dl-release 服务端同一段代码
+import { extractConsumeBaseUrl } from '../deploy/dl-release/apk-manifest.mjs';
+import { isLoopbackBaseUrl, LOOPBACK_PACKAGE_HINT } from '../shared/loopback-consume.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -294,6 +308,52 @@ function dieEnv(message) {
   process.exit(2);
 }
 
+/**
+ * 真发布前的交互确认（Issue #601）：把「将要做的三件事」原样打出来，默认必须按 y。
+ *
+ * 为什么这一步值钱：2026-11-20 那次事故里，命令是一条一条敲下去的 ——
+ * 敲的人当时并没有「我这一下会把一个连不上后端的包放到公网」这句话摆在眼前。
+ * 三件事里最关键的是第 ② 条：**这次到底动不动公开清单**。默认不动，动了要显式说明。
+ *
+ * `--yes` 跳过确认；但「写清单 + --yes」在 `resolvePublishPlan` 里还要求
+ * `I_KNOW_THIS_IS_PUBLIC=1`（两道都省掉就等于没有任何一步需要人点头）。
+ *
+ * @returns {Promise<boolean>} true = 继续执行
+ */
+async function confirmBeforePublish(opts, { fileName, remoteApkDir, fileUrl }) {
+  const headline = opts.addToManifest ? '将要做的三件事（本次会改公开清单）' : '将要做的三件事（本次不改清单）';
+  log.head(headline);
+  log.info(`① 上传 ${path.basename(opts.apk)} → ${opts.sshHost}:${remoteApkDir}/${fileName}（先 .tmp 再原子 mv）`);
+  log.info(
+    opts.addToManifest
+      ? `② 备份并原子替换 releases.json：加入 ${opts.version}（${opts.variant}，versionCode ${opts.versionCode}），latest 保持不变` +
+        ' —— 清单是公开的，任何人不带令牌就能读'
+      : '② **不写** releases.json（默认行为）：清单一个字节都不动，只上传文件并打印直链',
+  );
+  log.info(
+    `③ 立刻验证：直链 200 + Content-Type + Content-Length + 下载回来算 sha256${opts.addToManifest ? ' + latest 未变' : ''}`,
+  );
+  log.info(`直链（上传成功后才可达）：${fileUrl}`);
+
+  if (opts.yes) {
+    log.warn('--yes：跳过交互确认，直接执行');
+    return true;
+  }
+  if (!process.stdin.isTTY) {
+    dieEnv(
+      '真发布必须交互确认，但当前 stdin 不是终端（管道 / CI）。' +
+        '要么在终端里跑，要么显式加 --yes（写清单时还需要 I_KNOW_THIS_IS_PUBLIC=1）',
+    );
+  }
+  const rl = readline.createInterface({ input: process.stdin, output: process.stderr });
+  try {
+    const answer = await new Promise((resolve) => rl.question('\n确认执行以上三件事？输入 y 继续，其它任意输入取消：', resolve));
+    return /^(y|yes)$/i.test(answer.trim());
+  } finally {
+    rl.close();
+  }
+}
+
 // ---------------------------------------------------------------------------
 // 外部命令（ssh / scp / curl / aapt2）
 // ---------------------------------------------------------------------------
@@ -423,6 +483,10 @@ function help() {
       '  --variant <v>          internal（默认）| standard（DL_PRIVATE_VARIANT）',
       '  --changes <text>       清单 changes 条目，可重复',
       '  --dry-run              只打印动作与清单条目，不落地（默认是真发布）',
+      '  --add-to-manifest      **显式**要求把条目写进 releases.json（默认不写；清单是公开的）',
+      '  --no-manifest          显式声明不写清单（与 --add-to-manifest 互斥，写清意图用）',
+      '  --allow-loopback       APK 内 consume.baseUrl 是回环时仍放行上传（强制不写清单；#601）',
+      '  --yes                  跳过交互确认（写清单时还要求 I_KNOW_THIS_IS_PUBLIC=1）',
       '  --exercise             真上传 + 真加清单条目 + 立刻全量回滚（要求 version 形如 0.0.0）',
       '  --skip-apk-validation  仅演练：跳过 aapt2 校验',
       '  --force                演练时允许非 0.0.0 版本（危险）',
@@ -440,9 +504,113 @@ function readArg(args, flag, envName) {
   return null;
 }
 
+/**
+ * 参数解析里的**判定部分**（纯函数：不碰磁盘、不 process.exit，方便单测）。
+ *
+ * Issue #601 之后新增的三条硬规则都长在这里，而不是散在 main 里：
+ *   1. 默认**不写** `releases.json`（只有显式 `--add-to-manifest` 才写）——
+ *      私有包默认只做「上传文件 + 打印直链」，少一次「顺手改了公开清单」的机会；
+ *   2. 回环 baseUrl 默认拒绝上传；`--allow-loopback` 放行时**强制 `--no-manifest`**
+ *      （回环包连不上任何真机后端，不许出现在任何人能读到的清单里）；
+ *   3. `--add-to-manifest` + `--yes` 组合要求环境变量 `I_KNOW_THIS_IS_PUBLIC=1`：
+ *      清单是公开可读的（`https://dl.rose7.cn/releases.json`），跳过交互确认等于连读一眼的机会都没有。
+ *
+ * @param {object} input 原始取值（字符串/布尔/环境变量）
+ * @returns {object} 规范化后的选项
+ * @throws {PublishEnvError} 参数/环境不满足（调用方 exit 2，一个字节都没发）
+ */
+export function resolvePublishPlan(input) {
+  const env = input.env || {};
+  const apk = input.apk ? String(input.apk) : null;
+  const version = input.version ? String(input.version) : null;
+  const versionCodeRaw = input.versionCode === undefined || input.versionCode === null ? null : String(input.versionCode);
+  const variant = input.variant ? String(input.variant) : 'internal';
+
+  const missing = [];
+  if (!version) missing.push('--version（或 DL_PRIVATE_VERSION）');
+  if (!versionCodeRaw) missing.push('--versionCode（或 DL_PRIVATE_VERSION_CODE）');
+  if (missing.length) throw new PublishEnvError(`缺必填参数：${missing.join('、')}（--help 看全部参数）`);
+
+  if (!RE_VERSION.test(version)) throw new PublishEnvError(`--version 格式非法（要 x.y.z 或 x.y.z-beta.N）：'${version}'`);
+  const versionCode = Number(versionCodeRaw);
+  if (!Number.isInteger(versionCode) || versionCode <= 0) {
+    throw new PublishEnvError(`--versionCode 必须是正整数：'${versionCodeRaw}'`);
+  }
+  if (!VARIANTS.includes(variant)) throw new PublishEnvError(`--variant 只能是 ${VARIANTS.join('|')}：'${variant}'`);
+
+  const siteRoot = String(input.siteRoot || DEFAULT_SITE_ROOT);
+  if (!/^\/[A-Za-z0-9._/-]+$/.test(siteRoot)) {
+    throw new PublishEnvError(`--site-root 必须是绝对路径且不含空格/引号：'${siteRoot}'`);
+  }
+  const publicBaseRaw = String(input.publicBase || DEFAULT_PUBLIC_BASE);
+  if (!/^https?:\/\//.test(publicBaseRaw)) throw new PublishEnvError(`--public-base 必须是 http(s) URL：'${publicBaseRaw}'`);
+  const publicBase = publicBaseRaw.replace(/\/+$/, '') + '/';
+
+  // ---- 清单模式（#601 起默认不写）----
+  const addFlag = input.addToManifest === true;
+  const noFlag = input.noManifest === true;
+  const allowLoopback = input.allowLoopback === true;
+  const exercise = input.exercise === true;
+
+  if (addFlag && noFlag) throw new PublishEnvError('--add-to-manifest 与 --no-manifest 互斥，别两个都给');
+  if (allowLoopback && addFlag) {
+    throw new PublishEnvError(
+      '--allow-loopback 只能上传文件，不允许写清单：回环包连不上任何真机后端，不许进 releases.json。' +
+        '去掉 --add-to-manifest（或用 --no-manifest 显式写清）再跑（Issue #601）',
+    );
+  }
+  if (allowLoopback && exercise) {
+    throw new PublishEnvError('--exercise 要验证「加清单 → 回滚」这条链，与 --allow-loopback（强制不写清单）互斥');
+  }
+
+  // 演练必须能验清单改动，所以 --exercise 隐含 --add-to-manifest
+  const addToManifest = exercise ? true : addFlag && !noFlag;
+
+  if (addToManifest && exercise && !FAKE_VERSION_RE.test(version) && !input.force) {
+    throw new PublishEnvError(
+      `--exercise 只允许演练用的假版本号（0.0.0 开头），拿到的是 '${version}'。真版本走正常发布，别拿来演练。`,
+    );
+  }
+  if (!exercise && !FAKE_VERSION_RE.test(version) && input.force) {
+    // --force 只对演练有意义；真发布上带着它容易被误读成「强推」，直接拒掉
+    throw new PublishEnvError('--force 只用于演练（--exercise），真发布不需要它');
+  }
+
+  // 清单是公开的：跳过交互确认（--yes）又写清单，必须由人显式承认这件事
+  if (addToManifest && !exercise && input.yes === true) {
+    if (String(env.I_KNOW_THIS_IS_PUBLIC ?? '').trim() !== '1') {
+      throw new PublishEnvError(
+        '--add-to-manifest + --yes：清单 releases.json 是**公开可读**的（任何人可 curl）。' +
+          '要跳过交互确认就必须同时给环境变量 I_KNOW_THIS_IS_PUBLIC=1；' +
+          '更稳的做法是去掉 --yes，让脚本把「将要做的三件事」打出来、你亲眼确认一次（Issue #601）',
+      );
+    }
+  }
+
+  const changes = Array.isArray(input.changes) ? input.changes.filter((c) => typeof c === 'string' && c.trim()) : [];
+
+  return {
+    apk,
+    version,
+    versionCode,
+    variant,
+    changes,
+    dryRun: input.dryRun === true,
+    exercise,
+    skipApkValidation: input.skipApkValidation === true,
+    allowLoopback,
+    addToManifest,
+    yes: input.yes === true,
+    sshHost: String(input.sshHost || DEFAULT_SSH_HOST),
+    siteRoot,
+    publicBase,
+    aapt2: input.aapt2 || null,
+  };
+}
+
 function parseCli(argv) {
   const args = parseArgs(argv, {
-    flags: ['dry-run', 'exercise', 'skip-apk-validation', 'force', 'help'],
+    flags: ['dry-run', 'exercise', 'skip-apk-validation', 'force', 'help', 'allow-loopback', 'add-to-manifest', 'no-manifest', 'yes'],
     multi: ['changes'],
   });
   if (args.help) {
@@ -450,49 +618,37 @@ function parseCli(argv) {
     process.exit(0);
   }
   const apk = readArg(args, 'apk', 'DL_PRIVATE_APK');
-  const version = readArg(args, 'version', 'DL_PRIVATE_VERSION');
-  const versionCodeRaw = readArg(args, 'versionCode', 'DL_PRIVATE_VERSION_CODE');
-  const variant = readArg(args, 'variant', 'DL_PRIVATE_VARIANT') || 'internal';
-  const sshHost = readArg(args, 'ssh-host', 'DL_PRIVATE_SSH_HOST') || DEFAULT_SSH_HOST;
-  const siteRoot = readArg(args, 'site-root', 'DL_PRIVATE_SITE_ROOT') || DEFAULT_SITE_ROOT;
-  const publicBase = (readArg(args, 'public-base', 'DL_PRIVATE_PUBLIC_BASE') || DEFAULT_PUBLIC_BASE).replace(/\/+$/, '') + '/';
+  if (!apk) dieEnv('缺必填参数：--apk（或 DL_PRIVATE_APK）（--help 看全部参数）');
 
-  const missing = [];
-  if (!apk) missing.push('--apk（或 DL_PRIVATE_APK）');
-  if (!version) missing.push('--version（或 DL_PRIVATE_VERSION）');
-  if (!versionCodeRaw) missing.push('--versionCode（或 DL_PRIVATE_VERSION_CODE）');
-  if (missing.length) dieEnv(`缺必填参数：${missing.join('、')}（--help 看全部参数）`);
-
-  if (!RE_VERSION.test(version)) dieEnv(`--version 格式非法（要 x.y.z 或 x.y.z-beta.N）：'${version}'`);
-  const versionCode = Number(versionCodeRaw);
-  if (!Number.isInteger(versionCode) || versionCode <= 0) dieEnv(`--versionCode 必须是正整数：'${versionCodeRaw}'`);
-  if (!VARIANTS.includes(variant)) dieEnv(`--variant 只能是 ${VARIANTS.join('|')}：'${variant}'`);
-  if (!/^\/[A-Za-z0-9._/-]+$/.test(siteRoot)) dieEnv(`--site-root 必须是绝对路径且不含空格/引号：'${siteRoot}'`);
-  if (!/^https?:\/\//.test(publicBase)) dieEnv(`--public-base 必须是 http(s) URL：'${publicBase}'`);
-
-  const exercise = args.exercise === true;
-  const force = args.force === true;
-  if (exercise && !FAKE_VERSION_RE.test(version) && !force) {
-    dieEnv(`--exercise 只允许演练用的假版本号（0.0.0 开头），拿到的是 '${version}'。真版本走正常发布，别拿来演练。`);
+  let opts;
+  try {
+    opts = resolvePublishPlan({
+      apk,
+      version: readArg(args, 'version', 'DL_PRIVATE_VERSION'),
+      versionCode: readArg(args, 'versionCode', 'DL_PRIVATE_VERSION_CODE'),
+      variant: readArg(args, 'variant', 'DL_PRIVATE_VARIANT'),
+      sshHost: readArg(args, 'ssh-host', 'DL_PRIVATE_SSH_HOST'),
+      siteRoot: readArg(args, 'site-root', 'DL_PRIVATE_SITE_ROOT'),
+      publicBase: readArg(args, 'public-base', 'DL_PRIVATE_PUBLIC_BASE'),
+      changes: Array.isArray(args.changes) ? args.changes : [],
+      dryRun: args['dry-run'] === true,
+      exercise: args.exercise === true,
+      skipApkValidation: args['skip-apk-validation'] === true,
+      force: args.force === true,
+      allowLoopback: args['allow-loopback'] === true,
+      addToManifest: args['add-to-manifest'] === true,
+      noManifest: args['no-manifest'] === true,
+      yes: args.yes === true,
+      aapt2: readArg(args, 'aapt2', 'AAPT2'),
+      env: process.env,
+    });
+  } catch (e) {
+    if (e instanceof PublishEnvError) dieEnv(e.message);
+    throw e;
   }
-  if (!fs.existsSync(apk)) dieEnv(`APK 不存在：${apk}`);
 
-  const changes = Array.isArray(args.changes) ? args.changes.filter((c) => typeof c === 'string' && c.trim()) : [];
-
-  return {
-    apk: path.resolve(apk),
-    version,
-    versionCode,
-    variant,
-    changes,
-    dryRun: args['dry-run'] === true,
-    exercise,
-    skipApkValidation: args['skip-apk-validation'] === true,
-    sshHost,
-    siteRoot,
-    publicBase,
-    aapt2: readArg(args, 'aapt2', 'AAPT2'),
-  };
+  if (!fs.existsSync(opts.apk)) dieEnv(`APK 不存在：${opts.apk}`);
+  return { ...opts, apk: path.resolve(opts.apk) };
 }
 
 async function main() {
@@ -508,6 +664,7 @@ async function main() {
   log.info(`目标         ${opts.sshHost}:${remoteApkDir}/`);
   log.info(`公共基址     ${opts.publicBase}`);
   log.info(`模式         ${opts.dryRun ? 'dry-run（不落地）' : opts.exercise ? 'exercise（真上传 + 真改清单 + 立刻回滚）' : '真发布'}`);
+  log.info(`清单         ${opts.addToManifest ? '写 releases.json（--add-to-manifest）' : '**不写** releases.json（默认；只上传文件 + 打印直链）'}`);
 
   // ---- 1. APK 校验 ----
   log.head('1/6 校验 APK（aapt2）');
@@ -525,6 +682,29 @@ async function main() {
     log.ok(`变体标记 ${VARIANT_META_NAME} = ${facts.variant}（source=apk-manifest）`);
   }
 
+  // ---- 1b. 回环 baseUrl 闸门（Issue #601：上传侧第一道，dl-release 服务端还有第二道）----
+  // 判据与构建期 / 服务端同一段代码（deploy/dl-release/apk-manifest.mjs + shared/loopback-consume.mjs）。
+  // 抽不到 baseUrl 不拒收（老包可能压根没内联 consume），只告警 —— 误杀正常发布比漏查更贵。
+  log.head('1b/6 校验 consume.baseUrl 不是本机回环');
+  const consumeProbe = extractConsumeBaseUrl(opts.apk);
+  if (consumeProbe.baseUrl && isLoopbackBaseUrl(consumeProbe.baseUrl)) {
+    if (!opts.allowLoopback) {
+      die(
+        [
+          `APK 内的 consume.baseUrl 是本机回环地址：${consumeProbe.baseUrl}（来自 ${consumeProbe.source}）`,
+          LOOPBACK_PACKAGE_HINT,
+          '确实要把它放到分发目录（仅供联调机自取）请显式加 --allow-loopback —— 该模式强制不写清单',
+        ],
+        '回环包禁止进入分发通道 → 停止。',
+      );
+    }
+    log.warn(`回环 baseUrl ${consumeProbe.baseUrl}：--allow-loopback 已放行，本次只上传文件、不写清单`);
+  } else if (!consumeProbe.baseUrl) {
+    log.warn(`抽不到 APK 内的 consume.baseUrl（${consumeProbe.reason}）：回环校验跳过，请人工核对`);
+  } else {
+    log.ok(`consume.baseUrl = ${consumeProbe.baseUrl}（来自 ${consumeProbe.source}）`);
+  }
+
   // ---- 2. hash ----
   log.head('2/6 算 sha256 / md5 / size');
   hashes = hashFile(opts.apk);
@@ -540,8 +720,8 @@ async function main() {
   log.ok(`文件名    ${fileName}`);
   log.ok(`直链      ${fileUrl}`);
 
-  // ---- 4. 读线上清单 + 预演合并（不发任何字节） ----
-  log.head('4/6 读线上清单并预演合并（latest 必须不变）');
+  // ---- 4. 清单：默认**不写**（#601 起）；只有显式 --add-to-manifest 才读线上清单并预演合并 ----
+  log.head(opts.addToManifest ? '4/6 读线上清单并预演合并（latest 必须不变）' : '4/6 不写清单：本次只上传文件');
   let remoteOk = false;
   let beforeText = '';
   let beforeManifest = null;
@@ -550,17 +730,41 @@ async function main() {
   let entry = null;
   let backupPath = '';
 
+  const probeCmd = opts.addToManifest
+    ? `test -r ${quote(remoteManifest)} && test -w ${quote(remoteApkDir)} && sha256sum ${quote(remoteManifest)}`
+    : `test -w ${quote(remoteApkDir)} && echo DIR_OK`;
   try {
-    const probe = sshExec(opts.sshHost, `test -r ${quote(remoteManifest)} && test -w ${quote(remoteApkDir)} && sha256sum ${quote(remoteManifest)}`);
+    const probe = sshExec(opts.sshHost, probeCmd);
     remoteOk = true;
     beforeSha = probe.stdout.trim().split(/\s+/)[0] || '';
-    log.ok(`ssh ${opts.sshHost} 可达；清单 sha256 = ${beforeSha}`);
+    log.ok(
+      opts.addToManifest
+        ? `ssh ${opts.sshHost} 可达；清单 sha256 = ${beforeSha}`
+        : `ssh ${opts.sshHost} 可达；${remoteApkDir} 可写（清单不参与本次发布）`,
+    );
   } catch (e) {
-    if (!opts.dryRun) dieEnv(`连不上 ${opts.sshHost} 或清单/目录不可读写：${e.message}`);
+    if (!opts.dryRun) dieEnv(`连不上 ${opts.sshHost} 或目标目录不可读/写：${e.message}`);
     log.warn(`ssh 不可用（dry-run 继续，只打印动作）：${e.message.split('\n')[0]}`);
   }
 
-  if (remoteOk) {
+  const draftEntry = () =>
+    buildEntry({
+      version: opts.version,
+      versionCode: opts.versionCode,
+      variant: opts.variant,
+      fileName,
+      size: hashes.size,
+      md5: hashes.md5,
+      sha256: hashes.sha256,
+      changes: opts.changes,
+    });
+
+  if (!opts.addToManifest) {
+    // 默认路径：不碰 releases.json。包只在分发目录里（文件名不可猜），清单里没有它 ——
+    // 客户端不会通过清单发现/更新到它，而人也少了一次「顺手改了公开清单」的机会（#601）。
+    entry = draftEntry();
+    log.info('不写 releases.json（未加 --add-to-manifest）：包只存在于分发目录，清单里没有它');
+  } else if (remoteOk) {
     beforeText = sshExec(opts.sshHost, `cat ${quote(remoteManifest)}`).stdout;
     try {
       beforeManifest = JSON.parse(beforeText);
@@ -578,16 +782,7 @@ async function main() {
     }
     log.ok(`线上清单 ${beforeManifest.releases.length} 条，latest = ${beforeManifest.latest}（往返序列化逐字节一致）`);
 
-    entry = buildEntry({
-      version: opts.version,
-      versionCode: opts.versionCode,
-      variant: opts.variant,
-      fileName,
-      size: hashes.size,
-      md5: hashes.md5,
-      sha256: hashes.sha256,
-      changes: opts.changes,
-    });
+    entry = draftEntry();
     afterManifest = mergeEntry(beforeManifest, entry);
     const verdict = verifyMerge({ before: beforeManifest, after: afterManifest, entry });
     // 既有 19 条的历史 warning（缺 sha256 / 缺 artifactVariant / 旧命名）不是本次发布的事，
@@ -599,44 +794,51 @@ async function main() {
     if (verdict.errors.length) die(verdict.errors, '合并后的清单不合法 → 停止（线上一个字节都没动）。');
     log.ok(`合并后 ${afterManifest.releases.length} 条；latest 仍是 ${afterManifest.latest}（未改）；既有 ${beforeManifest.releases.length} 条原样保留`);
   } else {
-    entry = buildEntry({
-      version: opts.version,
-      versionCode: opts.versionCode,
-      variant: opts.variant,
-      fileName,
-      size: hashes.size,
-      md5: hashes.md5,
-      sha256: hashes.sha256,
-      changes: opts.changes,
-    });
+    entry = draftEntry();
+    log.warn('dry-run：ssh 不可用，清单预演跳过（下面打印的条目没做合并校验）');
   }
 
-  // ---- 5. 打印计划 / 执行 ----
+  // ---- 5. 打印计划 / 交互确认 / 执行 ----
   const afterText = afterManifest ? JSON.stringify(afterManifest, null, 2) + '\n' : '';
   const plan = [
     `scp ${opts.apk} ${opts.sshHost}:${remoteApkDir}/${fileName}.tmp-${stamp}`,
     `ssh ${opts.sshHost} 'chown www-data:www-data <tmp> && chmod 644 <tmp> && mv <tmp> ${remoteApkDir}/${fileName}'   # 原子改名`,
-    `ssh ${opts.sshHost} 'cp ${remoteManifest} ${remoteManifest}.bak-private-${stamp}'` +
-      `   # 清单先备份`,
-    `scp releases.json → ${opts.sshHost}:${remoteManifest}.tmp-${stamp} && ssh ${opts.sshHost} 'chown www-data:www-data … && mv … ${remoteManifest}'   # 原子替换`,
+    ...(opts.addToManifest
+      ? [
+          `ssh ${opts.sshHost} 'cp ${remoteManifest} ${remoteManifest}.bak-private-${stamp}'   # 清单先备份`,
+          `scp releases.json → ${opts.sshHost}:${remoteManifest}.tmp-${stamp} && ssh ${opts.sshHost} 'chown www-data:www-data … && mv … ${remoteManifest}'   # 原子替换`,
+        ]
+      : [`（不写清单）releases.json 一个字节都不动`]),
     `curl -I ${fileUrl}                    # 期望 200 + ${APK_CONTENT_TYPE} + content-length=${hashes.size}`,
     `curl ${fileUrl} | sha256sum            # 期望 ${hashes.sha256}`,
-    `curl ${opts.publicBase}releases.json   # 期望 latest 与发布前逐字节相同（${beforeManifest ? beforeManifest.latest : '<上线后才知道>'})`,
+    ...(opts.addToManifest
+      ? [`curl ${opts.publicBase}releases.json   # 期望 latest 与发布前逐字节相同（${beforeManifest ? beforeManifest.latest : '<上线后才知道>'})`]
+      : []),
   ];
 
   log.head(opts.dryRun ? '5/6 dry-run：将要执行的动作（一个字节都没发）' : '5/6 执行');
   if (opts.dryRun) {
     plan.forEach((line, i) => log.info(`(${i + 1}) ${line}`));
-    log.head('清单里将要加入的条目');
+    log.head(opts.addToManifest ? '清单里将要加入的条目' : '将要上传的包（不进清单）');
     console.log(JSON.stringify(entry, null, 2));
     if (afterManifest) {
       log.info(`（合并位置：releases[${afterManifest.releases.findIndex((r) => r.version === entry.version && r.artifactVariant === entry.artifactVariant)}]，按 versionCode 降序）`);
     }
     log.head('回滚方法（真发布后要撤时）');
-    log.info(`ssh ${opts.sshHost} 'mv ${remoteManifest}.bak-private-${stamp} ${remoteManifest}'   # 恢复清单`);
+    if (opts.addToManifest) {
+      log.info(`ssh ${opts.sshHost} 'mv ${remoteManifest}.bak-private-${stamp} ${remoteManifest}'   # 恢复清单`);
+    }
     log.info(`ssh ${opts.sshHost} 'rm -f ${remoteApkDir}/${fileName}'                            # 删包`);
     log.ok('dry-run 结束：没有上传、没有改清单');
     return;
+  }
+
+  // 真发布前必须把人将要做的三件事打出来并等确认（#601）。--yes 可跳过，
+  // 但「写清单 + --yes」还要求 I_KNOW_THIS_IS_PUBLIC=1（见 resolvePublishPlan）。
+  const proceed = await confirmBeforePublish(opts, { fileName, remoteApkDir, fileUrl, hashes });
+  if (!proceed) {
+    console.error('\n已取消（一个字节都没有发出去）。');
+    process.exit(1);
   }
 
   // 上传前再确认文件名没被占用（随机撞车概率可忽略，但撞了就必须换一个）
@@ -658,27 +860,31 @@ async function main() {
     state.uploaded = true;
     log.ok(`上传完成（原子改名）：${remoteApkDir}/${fileName}`);
 
-    // 5b. 清单：备份 → 写 tmp → 原子 mv
-    backupPath = `${remoteManifest}.bak-private-${stamp}`;
-    sshExec(opts.sshHost, `cp -p ${quote(remoteManifest)} ${quote(backupPath)} && sha256sum ${quote(backupPath)}`);
-    state.backupPath = backupPath;
-    log.ok(`清单已备份：${backupPath}`);
+    // 5b. 清单：备份 → 写 tmp → 原子 mv（只有 --add-to-manifest 才走这一段）
+    if (opts.addToManifest) {
+      backupPath = `${remoteManifest}.bak-private-${stamp}`;
+      sshExec(opts.sshHost, `cp -p ${quote(remoteManifest)} ${quote(backupPath)} && sha256sum ${quote(backupPath)}`);
+      state.backupPath = backupPath;
+      log.ok(`清单已备份：${backupPath}`);
 
-    const tmpLocal = path.join(os.tmpdir(), `releases-${crypto.randomBytes(4).toString('hex')}.json`);
-    fs.writeFileSync(tmpLocal, afterText, 'utf8');
-    const remoteManifestTmp = `${remoteManifest}.tmp-${stamp}`;
-    state.remoteTmpFiles.push(remoteManifestTmp);
-    scpTo(opts.sshHost, tmpLocal, remoteManifestTmp);
-    sshExec(
-      opts.sshHost,
-      `chown www-data:www-data ${quote(remoteManifestTmp)} && chmod 644 ${quote(remoteManifestTmp)} && mv -f ${quote(remoteManifestTmp)} ${quote(remoteManifest)}`,
-    );
-    fs.rmSync(tmpLocal, { force: true });
-    state.manifestWritten = true;
-    log.ok(`清单已原子替换（${beforeManifest.releases.length} → ${afterManifest.releases.length} 条，latest 仍是 ${afterManifest.latest}）`);
+      const tmpLocal = path.join(os.tmpdir(), `releases-${crypto.randomBytes(4).toString('hex')}.json`);
+      fs.writeFileSync(tmpLocal, afterText, 'utf8');
+      const remoteManifestTmp = `${remoteManifest}.tmp-${stamp}`;
+      state.remoteTmpFiles.push(remoteManifestTmp);
+      scpTo(opts.sshHost, tmpLocal, remoteManifestTmp);
+      sshExec(
+        opts.sshHost,
+        `chown www-data:www-data ${quote(remoteManifestTmp)} && chmod 644 ${quote(remoteManifestTmp)} && mv -f ${quote(remoteManifestTmp)} ${quote(remoteManifest)}`,
+      );
+      fs.rmSync(tmpLocal, { force: true });
+      state.manifestWritten = true;
+      log.ok(`清单已原子替换（${beforeManifest.releases.length} → ${afterManifest.releases.length} 条，latest 仍是 ${afterManifest.latest}）`);
+    } else {
+      log.info('未加 --add-to-manifest：releases.json 一个字节都没动（清单里没有这个包）');
+    }
 
     // 6. 验证（失败也要先把演练现场收拾干净，再决定退出码）
-    log.head('6/6 验证（直链 / 校验和 / latest）');
+    log.head(opts.addToManifest ? '6/6 验证（直链 / 校验和 / latest）' : '6/6 验证（直链 / 校验和）');
     let verifyError = null;
     try {
       verifyLive({ opts, fileName, fileUrl, hashes, beforeManifest, entry });
@@ -694,11 +900,17 @@ async function main() {
       log.ok('演练完成：上传 / 清单改动 / 回滚三条都真的走了一遍，线上无残留');
     } else if (verifyError) {
       throw verifyError;
-    } else {
+    } else if (opts.addToManifest) {
       log.head('发布成功 —— 清单条目');
       console.log(JSON.stringify(entry, null, 2));
       log.info(`回滚：ssh ${opts.sshHost} 'mv ${backupPath} ${remoteManifest}' && ssh ${opts.sshHost} 'rm -f ${remoteApkDir}/${fileName}'`);
-      log.info(`证据：见上方「验证」段；五项核对全部通过`);
+      log.info('证据：见上方「验证」段；五项核对全部通过');
+    } else {
+      log.head('上传成功（未写清单）—— 直链');
+      log.info(`直链：${fileUrl}`);
+      log.info(`sha256：${hashes.sha256}`);
+      log.info(`撤销：ssh ${opts.sshHost} 'rm -f ${remoteApkDir}/${fileName}'`);
+      log.info('清单没动过（latest 与原样一致）；要让它进清单请显式重跑并加 --add-to-manifest');
     }
   } catch (e) {
     console.error(`\n执行失败：${e.message}`);
@@ -742,6 +954,13 @@ function verifyLive({ opts, fileName, fileUrl, hashes, beforeManifest, entry }) 
   log.info(`curl ${fileUrl} | sha256sum`);
   log.info(`  → ${got.sha256}（本地 ${hashes.sha256}）`);
   if (got.sha256 !== hashes.sha256) errors.push(`下载件的 sha256 与本地不一致：${got.sha256} != ${hashes.sha256}`);
+
+  if (!beforeManifest || !entry) {
+    // 不写清单的模式（#601 起的默认）：清单与本次发布无关，四项里只验前三项
+    if (errors.length) throw new CliError(`上传后验证失败：\n  - ${errors.join('\n  - ')}`);
+    log.ok('三项验证通过：200 + Content-Type + Content-Length / 下载 sha256 一致（本次不写清单，latest 未参与）');
+    return true;
+  }
 
   // latest 逐字节比较：抓线上文本里 `"latest": "<x>"` 那一行，与发布前文本的同一行逐字节比
   const liveText = run('curl', ['-sS', `${opts.publicBase}releases.json`], { timeout: 60_000 }).stdout;

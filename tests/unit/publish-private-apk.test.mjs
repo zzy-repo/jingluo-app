@@ -167,3 +167,58 @@ test('aapt2 dump badging 解析：package / versionCode / versionName / debuggab
   assert.equal(junk.packageName, null)
   assert.equal(junk.versionCode, null, '解析不出版本号时必须是 null，不是 0')
 })
+
+// ---------------------------------------------------------------------------
+// Issue #601：事故之后新增的三条硬规则（默认不写清单 / 回环拒绝 / 公开清单确认）
+// 都长在 resolvePublishPlan 这个纯函数里，这里逐条钉住 —— 它们是「命令行层」的红线，
+// 一旦被顺手放宽（比如把默认改回「顺手写清单」），事故的土壤就回来了。
+// ---------------------------------------------------------------------------
+const { resolvePublishPlan } = await import('../../scripts/publish-private-apk.mjs')
+
+/** 一份能过校验的最小输入；用例只覆盖自己关心的那几项 */
+const plan = (over = {}) =>
+  resolvePublishPlan({
+    apk: '/tmp/app-release.apk',
+    version: '1.4.2',
+    versionCode: '21',
+    env: {},
+    ...over,
+  })
+
+test('#601：默认**不写** releases.json（只有 --add-to-manifest 才写）', () => {
+  assert.equal(plan().addToManifest, false, '默认必须是「只上传文件」：清单是公开的，少一次顺手改它的机会')
+  assert.equal(plan({ addToManifest: true }).addToManifest, true, '--add-to-manifest 才写清单')
+  assert.equal(plan({ noManifest: true }).addToManifest, false, '--no-manifest 显式不写')
+  // 演练要验「加清单 → 回滚」，所以隐含写清单
+  assert.equal(plan({ exercise: true, version: '0.0.0' }).addToManifest, true, '--exercise 隐含写清单')
+})
+
+test('#601：--allow-loopback 强制不写清单（回环包不许进 releases.json）', () => {
+  assert.equal(plan({ allowLoopback: true }).addToManifest, false, '--allow-loopback 只能上传文件')
+  assert.throws(
+    () => plan({ allowLoopback: true, addToManifest: true }),
+    /--allow-loopback 只能上传文件/,
+    '--allow-loopback + --add-to-manifest 必须直接拒（exit 2），不许「先写着再说」',
+  )
+  assert.throws(() => plan({ allowLoopback: true, exercise: true, version: '0.0.0' }), /互斥/)
+})
+
+test('#601：--add-to-manifest + --yes 必须带 I_KNOW_THIS_IS_PUBLIC=1', () => {
+  assert.throws(
+    () => plan({ addToManifest: true, yes: true }),
+    /I_KNOW_THIS_IS_PUBLIC/,
+    '跳过交互确认又写公开清单 → 必须由人显式承认',
+  )
+  assert.equal(
+    plan({ addToManifest: true, yes: true, env: { I_KNOW_THIS_IS_PUBLIC: '1' } }).addToManifest,
+    true,
+    '给了 I_KNOW_THIS_IS_PUBLIC=1 才允许「写清单 + --yes」',
+  )
+  assert.equal(plan({ yes: true }).addToManifest, false, '只 --yes 不写清单：不需要那个环境变量')
+})
+
+test('#601：--add-to-manifest 与 --no-manifest 互斥；--force 只对演练有意义', () => {
+  assert.throws(() => plan({ addToManifest: true, noManifest: true }), /互斥/)
+  assert.throws(() => plan({ force: true }), /--force 只用于演练/)
+  assert.equal(plan({ exercise: true, version: '0.0.0', force: true }).exercise, true)
+})

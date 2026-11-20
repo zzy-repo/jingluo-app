@@ -184,6 +184,39 @@ cd android && ./gradlew assembleDebug -PallowLoopbackConsume=true   # 只在「�
 - **发版不要用这个开关。** 要出可分发的包，只能把 `config/endpoints.json` 的 base 换成 https
   生产地址（生产 host 见 #482；临时覆盖见 §14）。
 
+#### 3.1.1 闸 1 的 Web 半边（`scripts/build.mjs`）
+
+gradle 那道闸只管「打不打得出来」，`pnpm build:internal` / `pnpm build` 出来的 `dist/`
+同样会进 APK（`cap sync` 拷过去）。所以 Web 层包装脚本也判一次，判据与 gradle 侧同源
+（`shared/loopback-consume.mjs` + `scripts/lib/consumeEndpoints.mjs` 的 `assessLoopbackConsume`）：
+
+| 变体 | `consume.baseUrl` 是回环时 |
+| --- | --- |
+| `internal`（`--internal` 或 `INTERNAL_BUILD=1`） | **默认失败**；`ALLOW_LOOPBACK_CONSUME=1` 才放行，产物在 `dist/build-info.json` 里写 `loopbackConsume: true` / `allowLoopbackConsume: true` |
+| `standard` | 放行（仓库当前提交的就是回环地址，硬失败会让构建当天全红）—— 只告警，且同样写 `loopbackConsume: true` |
+
+> 变体判定与 rspack 同口径：`--internal` **或** `INTERNAL_BUILD=1` 都算 internal
+> （只看 `--internal` 会留一个洞：`INTERNAL_BUILD=1 pnpm build` 出的内测包会被当 standard 放行）。
+
+#### 3.1.2 闸 2 的第二条判据：不看标记，直接看 APK 里真实的 `consume.baseUrl`
+
+闸 2 读 `LOOPBACK_CONSUME` 标记的前提是「包是新版 gradle 打的」。事故里那个包（以及一切历史包、
+手工 `aapt2 link` 或直接 `scp` 上去的包）**没有这个标记** —— 按「读不到标记就放行」它照样能进库。
+所以服务端还查一条与标记无关的事实：
+
+- 从 APK 的 `assets/**/*.js` 里抽出 `consume:{baseUrl:"…"}`（构建时 `__ENDPOINTS__` 内联处）；
+- 是回环 → **400 `BAD_CONSUME_BASE`**（APK 与 `releases.json` 都不落盘）；
+- 抽不到（老包没内联 consume / 没有 JS）→ 放行，但响应里带
+  `consumeBaseUrl: null` + `warnings: ["未能从 APK 的 JS bundle 抽出 consume.baseUrl（…），回环校验已跳过 —— 请人工核对"]`。
+  抽不到 ≠ 回环：误杀一次正常发布比漏查更贵，但「未核验」必须写出来，别假装查过。
+
+两个错误码对应的是两种不同的发现，别混：
+
+| 错误码 | 含义 |
+| --- | --- |
+| `400 LOOPBACK_BUILD_REJECTED` | APK 自带 `LOOPBACK_CONSUME="true"` 标记（新版 gradle 用逃生舱打出来的包） |
+| `400 BAD_CONSUME_BASE` | APK 内的 `consume.baseUrl` **实际就是回环地址**（与标记无关，老包也能被这条拦住） |
+
 ---
 
 ## 4. 步骤 3 — 五项人工核对（**全部通过才准上传**）
@@ -834,8 +867,12 @@ APK=android/app/build/outputs/apk/release/app-release.apk
 # 2) 先看要做什么（不落地：不上传、不改清单）
 node scripts/publish-private-apk.mjs --apk $APK --version 1.4.2 --versionCode 21 --dry-run
 
-# 3) 真发布（**没有** --dry-run 就是真发布）
+# 3) 真上传（Issue #601 起的默认：只上传文件 + 打印直链，**不写** releases.json）
 node scripts/publish-private-apk.mjs --apk $APK --version 1.4.2 --versionCode 21
+
+# 4) 确实要让 internal 客户端从清单里自动更新，再显式加 --add-to-manifest
+#    （会先把「将要做的三件事」打出来，等你按 y；清单是公开可读的）
+node scripts/publish-private-apk.mjs --apk $APK --version 1.4.2 --versionCode 21 --add-to-manifest
 ```
 
 跑完会打印**直链、sha256、size 与五项验证结果**，并在清单里留一条 `artifactVariant: "internal"` 记录。
@@ -851,6 +888,10 @@ node scripts/publish-private-apk.mjs --apk $APK --version 1.4.2 --versionCode 21
 | `--variant <v>` | `internal` | `internal` \| `standard`（`DL_PRIVATE_VARIANT`）。打回 standard 变体别用这条管线，走 §5 |
 | `--changes <text>` | 一行默认说明 | 清单里的变更说明，可重复给多条 |
 | `--dry-run` | 关 | 只打印动作与清单条目，**一个字节都不发** |
+| `--add-to-manifest` | **关** | **显式**要求把条目写进 `releases.json`。默认不写（见 §14.8） |
+| `--no-manifest` | 关 | 显式声明不写清单（与 `--add-to-manifest` 互斥，用于把意图写在命令行上） |
+| `--allow-loopback` | 关 | APK 内 `consume.baseUrl` 是回环时仍放行上传；**强制不写清单**（见 §3.1.2） |
+| `--yes` | 关 | 跳过「将要做的三件事」的交互确认；`--add-to-manifest --yes` 还要求 `I_KNOW_THIS_IS_PUBLIC=1` |
 | `--exercise` | 关 | 演练：真上传 + 真加清单条目 + **立刻全量回滚**（只允许 `0.0.0` 开头的假版本号） |
 | `--skip-apk-validation` | 关 | **仅供演练**：假文件过不了 `aapt2`，跳过 APK 校验 |
 | `--ssh-host` / `--site-root` / `--public-base` | `aliyun` / `/var/www/dl` / `https://dl.rose7.cn/` | 换分发主机时才动 |
@@ -867,6 +908,7 @@ node scripts/publish-private-apk.mjs --apk $APK --version 1.4.2 --versionCode 21
 | 3 | `aapt2 dump xmltree` 的 `<meta-data …ARTIFACT_VARIANT>` = `--variant` | 标记缺失/取值不符 → 让你按 `-PartifactVariant=` 重出包 |
 | 4 | 合并后的清单 schema（`buildType ∈ stable\|prerelease`、`artifactVariant ∈ internal\|standard`、`file`/`sha256`/`md5`/`size`/`releasedAt` 形态） | 逐条报出（复用 `scripts/validate-releases-manifest.mjs`，不另写枚举） |
 | 5 | **公共 `latest` 一个字节没变** + 既有记录逐条 JSON 相同 | 「latest 被改了 / 既有条目被改了」 |
+| 6 | APK 内 JS bundle 的 `consume.baseUrl` **不是回环**（`127.0.0.1` / `localhost` / `[::1]`） | 「回环包禁止进入分发通道」→ 要发必须显式 `--allow-loopback`（且强制不写清单），见 §3.1 |
 
 ### 14.4 为什么文件名要不可猜测
 
@@ -958,3 +1000,52 @@ node scripts/publish-private-apk.mjs --apk /tmp/fake.apk --version 0.0.0 --versi
 
 脚本会把 1/2/3 在发布后立刻算、4/5 在回滚后立刻算，任何一条不符就 `exit 1` 并打印现场。
 **演练数据（`0.0.0` / versionCode 9999）不允许留在线上** —— 演练结束前脚本就把备份也消耗掉了（零残留）。
+
+### 14.8 默认更保守：不写清单 + 执行前必须确认（Issue #601）
+
+私有包脚本的默认行为在这一版**变保守**，理由只有一个：`releases.json` 是**公开可读**的
+（`https://dl.rose7.cn/releases.json`，任何人 curl 就能拿），而 2026-11-20 那次事故里，
+一个连不上后端的包正是从「改公开清单」这一步流出去的。所以：
+
+| 行为 | 默认 | 显式要求时 |
+| --- | --- | --- |
+| 写 `releases.json` | **不写**（只上传文件 + 打印直链 + sha256） | `--add-to-manifest` |
+| 执行前确认 | **要**（打印「将要做的三件事」并等输入 `y`） | `--yes` 跳过；且 `--add-to-manifest --yes` 还要求 `I_KNOW_THIS_IS_PUBLIC=1` |
+| 非交互环境（管道 / CI） | **拒绝**（真发布必须有人看一眼） | 同上，必须 `--yes`（+ 写清单时的那个环境变量） |
+| 回环 `consume.baseUrl` | **拒绝** | `--allow-loopback`（强制不写清单，见 §3.1） |
+
+不写清单时脚本仍会算 sha256 / size、打印直链并做三项验证（`200` + Content-Type + Content-Length、
+下载回来 sha256 一致），只是不再碰 `releases.json` —— 要让它进清单就显式重跑一次并加 `--add-to-manifest`。
+
+### 14.9 自己复核这两道闸（负向对照，不碰任何线上分发机）
+
+```bash
+export PATH="/opt/node24/bin:$PATH"
+
+# ① 构建期（Web 半边）：internal + 回环 → 必须失败
+node scripts/build.mjs --internal                       # 期望 exit 1 +「internal 变体 + 回环 baseUrl 默认禁止出包」
+# ② 显式开关 → 必须成功，且产物带标记
+ALLOW_LOOPBACK_CONSUME=1 node scripts/build.mjs --internal
+node -e 'console.log(require("./dist/build-info.json").loopbackConsume)'       # 期望 true
+# ③ 构建期（gradle 半边，见 §3.1）
+cd android && ./gradlew --offline -q :app:help                                 # 期望 FAILED（回环地址）
+./gradlew --offline -q :app:help -PallowLoopbackConsume=true                   # 期望 BUILD SUCCESSFUL
+cd ..
+
+# ④ 上传侧（私有包脚本）：回环包 → 必须拒绝
+node scripts/publish-private-apk.mjs --apk $APK --version 1.4.2 --versionCode 21 --dry-run   # 期望 exit 1
+# ⑤ --allow-loopback 必须强制不写清单
+node scripts/publish-private-apk.mjs --apk $APK --version 1.4.2 --versionCode 21 \
+  --allow-loopback --add-to-manifest --dry-run            # 期望 exit 2（互斥）
+
+# ⑥ 上传侧（接口）：本地起临时实例打请求，期望 400
+DL_LISTEN_PORT=8899 DL_APK_DIR=/tmp/dl-apk DL_RELEASES_JSON=/tmp/dl-apk/releases.json \
+DL_TOKEN_FILE=/tmp/dl-token DL_AAPT2=$ANDROID_HOME/build-tools/36.0.0/aapt2 \
+  node deploy/dl-release/server.mjs &
+curl -sS -H "Authorization: Bearer <token>" \
+  -F "apk=@回环包.apk" -F 'meta={"version":"1.4.2","versionCode":21}' \
+  http://127.0.0.1:8899/api/v1/release | head -c 200       # 期望 LOOPBACK_BUILD_REJECTED / BAD_CONSUME_BASE
+```
+
+> ⚠️ **不要**为了「验证拦得住」往真分发机上传有效 APK。第 ⑥ 步用本地临时目录的实例即可：
+> 两个错误码都发生在落盘之前（`/tmp/dl-apk` 里不会出现任何文件，`releases.json` 字节不变）。

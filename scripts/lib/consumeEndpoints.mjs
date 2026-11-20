@@ -30,6 +30,13 @@ import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
+// 回环判定只有一份实现（Issue #601）：构建期 / 上传侧 / 私有包脚本共用同一个判据。
+// 历史原因这里曾经自己写了一份 `hostname === '127.0.0.1' || …`，正是这种复制让「回环」的
+// 判据在某个出口上悄悄漂移过 —— 现在改为从 shared/ 取，再把名字原样导出给老调用方。
+import { isLoopbackBaseUrl, isLoopbackHost, LOOPBACK_PACKAGE_HINT } from '../../shared/loopback-consume.mjs'
+
+export { isLoopbackHost, isLoopbackBaseUrl }
+
 const LIB_DIR = path.dirname(fileURLToPath(import.meta.url))
 
 /** 端点配置文件（唯一事实来源） */
@@ -138,10 +145,6 @@ const where = (lineLines, key) => {
   const line = lineLines?.get(key)
   return line ? `${ENDPOINTS_LABEL}:${line}` : ENDPOINTS_LABEL
 }
-
-/** 本机回环：只有这几种 host 允许明文 http（本地联调的 sub2api 实例） */
-export const isLoopbackHost = (hostname) =>
-  hostname === '127.0.0.1' || hostname === 'localhost' || hostname === '::1' || hostname === '[::1]'
 
 /** 解析 base URL；形态不对返回 null（调用方统一报「缺失或不是合法 URL」） */
 export const parseBaseUrl = (value) => {
@@ -308,8 +311,64 @@ export const validateConsumePay = (raw, text = '') => {
 }
 
 /**
- * 占位地址提醒（**不是错误**，不影响 exit code）。
+ * 构建期「回环 baseUrl」闸门的判定（纯函数，Issue #601 技术兜底的第一道）。
  *
+ * 事故背景：2026-11-20 22:14，一个 `consume.baseUrl = http://127.0.0.1:18000` 的 internal 包
+ * 被发到公网分发机，公网可见约 30 分钟。这个包在任何真机上都连不上后端 —— 它只对
+ * 「本机 sub2api + `adb reverse`」有意义，**不该存在任何分发通道里**。
+ *
+ * 规则（与 `android/app/build.gradle` 的同一段逐条对应）：
+ *   - `internal` + 回环 + 没开显式开关 → **拦**（blocked）；
+ *   - `internal` + 回环 + 显式开关 → 放行，但产物要带标记（供上传侧识别）；
+ *   - `standard` + 回环 → 现状保留（不放行「发布」，但也不额外拦构建）：仓库当前
+ *     `config/endpoints.json` 的 `consume.baseUrl` 就是回环地址，`pnpm build` / CI 的
+ *     标准产物都靠它，改成硬失败会让整条链路当天全红；标准包的回环地址由**上传侧**
+ *     （`server.mjs` 的 `BAD_CONSUME_BASE`）兜底，见 Issue #601 第 2 条。
+ *
+ * @param {{variant:'internal'|'standard', baseUrl:string, allowLoopback?:boolean}} input
+ * @returns {{loopback:boolean, blocked:boolean, mark:boolean, message:string}}
+ *   `mark` = 产物里要打「这个包带的是回环地址」的标记（上传侧据此拒收）。
+ */
+export const assessLoopbackConsume = ({ variant, baseUrl, allowLoopback = false }) => {
+  const loopback = isLoopbackBaseUrl(baseUrl)
+  if (!loopback) return { loopback: false, blocked: false, mark: false, message: '' }
+
+  if (variant === 'standard') {
+    return {
+      loopback: true,
+      blocked: false,
+      mark: true,
+      message:
+        `standard 变体 + 回环 consume.baseUrl（${baseUrl}）：${LOOPBACK_PACKAGE_HINT}。` +
+        '本次按现状放行（仓库配置当前就是回环，见 #487），上传侧会拒收这样的包',
+    }
+  }
+
+  if (allowLoopback) {
+    return {
+      loopback: true,
+      blocked: false,
+      mark: true,
+      message:
+        `internal 变体 + 回环 consume.baseUrl（${baseUrl}）：已按显式开关放行（ALLOW_LOOPBACK_CONSUME=1 / ` +
+        `-PallowLoopbackConsume=true）。${LOOPBACK_PACKAGE_HINT}；产物已打上回环标记，上传侧会拒收`,
+    }
+  }
+
+  return {
+    loopback: true,
+    blocked: true,
+    mark: true,
+    message:
+      `internal 变体 + 回环 baseUrl 默认禁止出包（${baseUrl}）：${LOOPBACK_PACKAGE_HINT}。\n` +
+      '  确需出包请显式传 ALLOW_LOOPBACK_CONSUME=1（Web 构建）/ -PallowLoopbackConsume=true（gradle），' +
+      '且该包不得上传到任何分发站。\n' +
+      '  本地联调的正确姿势：本机起 sub2api 实例 + 真机 `adb reverse tcp:18000 tcp:18000`。',
+  }
+}
+
+/**
+ * 占位地址提醒（**不是错误**，不影响 exit code）。
  * 维护者还没给出 sub2api 真实 host 时，`consume.baseUrl` 只能是 RFC 2606 的保留域名
  * （`*.invalid` 永不解析）。构建与门禁要能过，但每次都要说清楚「现在这个地址是占位的」——
  * 悄悄用一个连不上的地址出包，比构建失败更难查（#487 W1-A 的待填项）。

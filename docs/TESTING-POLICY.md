@@ -109,7 +109,7 @@ npm run test:integration -- --baseline          # 集成全量与基线比对，
 | 改 UI / 设置页 / 渠道 | `tests/which.mjs --git`（域内 1~2 个集成） | 1~2min |
 | 改构建脚本 / 产物注入 | `internal-build` + `auto-title` | 2~3min |
 | 改 `android/` 的 gradle 脚本（`build.gradle` / `variables.gradle`） | `pnpm exec cap sync android && cd android && ./gradlew help --no-daemon`（先看第 9.6 节） | 20~40s（warm 缓存） |
-| 改 `deploy/dl-release/`（发布服务端 / APK 门禁 / 变体） | `pnpm run test:dl-release`（37 条）或 `node tests/run-layer.mjs server` | < 15s |
+| 改 `deploy/dl-release/`（发布服务端 / APK 门禁 / 变体） | `pnpm run test:dl-release`（55 条）或 `node tests/run-layer.mjs server` | < 15s |
 | **新增 / 修改一道 CI 门禁** | `node tests/run-layer.mjs unit --only gate-negative-controls`（先看第 9 节） | < 30s |
 | **判断一条红是 flaky / 真红 / runner-dependent** | `node tests/run-layer.mjs --cross-runner-scan`（先看第 11.5 节） | < 10s |
 | **改跨 runner 判据本身** | `node tests/run-layer.mjs --selftest-cross-runner`（四拍自证 + 两条负向对照） | < 10s |
@@ -243,7 +243,7 @@ npm run test:integration -- --baseline          # 集成全量与基线比对，
 **这句话是这条门禁唯一的存在理由，请照着念一遍**：`type` / `lint` / `pnpm test` / 产物扫描全绿，
 **不等于**这个仓库出得了包。
 
-证据是 #557：main 上 22 道门禁全绿，`./gradlew` 直接 FAILURE —— `android/app/build.gradle:148`
+证据是 #557：main 上 22 道门禁全绿，`./gradlew` 直接 FAILURE —— `android/app/build.gradle:154`
 把 Groovy 闭包的箭头写在了 `}` 外面（`{ String name, int from } ->`），gradle 在**配置阶段**
 就 `Unexpected input: '->' @ line 148` 退出，APK 根本走不到编译。这一行**没有任何 JS 侧门禁看得见**：
 tsc 不读 `.gradle`、oxlint 只扫 `src`、单测不碰 Android、产物扫描只看 `dist/`。

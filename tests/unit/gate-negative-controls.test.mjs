@@ -273,8 +273,12 @@ test('N3 build（rspack）：往仓库临时副本注入语法错模块 → 构�
   const entryFile = path.join(dir, 'src/main.tsx')
   const originalEntry = readFileSync(entryFile, 'utf8')
   const probeName = '__gate-neg-build-probe'
+  // #601：`internal` + 回环 consume.baseUrl 默认构建失败（那是事故防线）。这里测的是「构建门禁能红」，
+  // 不是「回环包能出」——所以显式放行回环，别让新闸门把这条**正例**顶红（顶红后负向对照会以
+  // 「本来就是红的」形式失真）。回环闸门自己的负向对照见 deploy/dl-release/test/consume-loopback.test.mjs。
+  const BUILD_ALLOW_LOOPBACK = { ALLOW_LOOPBACK_CONSUME: '1' }
   const buildGreen = (cmd, label) => {
-    const result = run(cmd, { cwd: dir, timeoutMs: 600_000 })
+    const result = run(cmd, { cwd: dir, timeoutMs: 600_000, env: BUILD_ALLOW_LOOPBACK })
     assert.equal(result.status, 0, `${label}：临时副本里的构建必须 exit=0\n--- 输出 ---\n${result.out}`)
     assert.match(result.out, /\[build\] OK/, `${label}：成功时应有 [build] OK\n--- 输出 ---\n${result.out}`)
   }
@@ -289,7 +293,7 @@ test('N3 build（rspack）：往仓库临时副本注入语法错模块 → 构�
     cpSync(path.join(FIXTURES, 'rspack/syntax-error.ts.txt'), path.join(dir, `src/${probeName}.ts`))
     writeFileSync(entryFile, `${originalEntry}\nimport './${probeName}'\n`)
     for (const [cmd, label] of [[internal, 'build:internal'], [standard, 'build（标准包）']]) {
-      const red = run(cmd, { cwd: dir, timeoutMs: 600_000 })
+      const red = run(cmd, { cwd: dir, timeoutMs: 600_000, env: BUILD_ALLOW_LOOPBACK })
       assert.notEqual(
         red.status,
         0,

@@ -99,6 +99,9 @@ test('two suite entrypoints reuse injected dist without build, and fail missing 
   await cp(path.join(root, 'tests/helpers'), path.join(dir, 'tests/helpers'), { recursive: true })
   await cp(path.join(root, 'scripts'), path.join(dir, 'scripts'), { recursive: true })
   await cp(path.join(root, 'config'), path.join(dir, 'config'), { recursive: true })
+  // #601：`scripts/lib/consumeEndpoints.mjs` 现在 import `shared/loopback-consume.mjs`（回环判定的
+  // 唯一实现）—— 副本少这棵子树，入口就会 ERR_MODULE_NOT_FOUND（又一次「真因是副本缺文件」）。
+  await cp(path.join(root, 'shared'), path.join(dir, 'shared'), { recursive: true })
   await mkdir(path.join(dir, 'tests/fixtures/domain03-04'), { recursive: true })
   await cp(path.join(root, 'tests/fixtures/domain03-04/ours-upstream.mjs'), path.join(dir, 'tests/fixtures/domain03-04/ours-upstream.mjs'))
   const dist = path.join(dir, 'prebuilt'); await mkdir(dist); await writeFile(path.join(dist, 'index.html'), 'immutable')
@@ -145,6 +148,8 @@ test('CLI exact failure rerun, JSON, no-match, invalid arguments and node:test d
   await cp(path.join(root, 'tests/helpers'), path.join(dir, 'tests/helpers'), { recursive: true })
   await cp(path.join(root, 'scripts'), path.join(dir, 'scripts'), { recursive: true })
   await cp(path.join(root, 'config'), path.join(dir, 'config'), { recursive: true })
+  // #601：同上，`scripts/lib/consumeEndpoints.mjs` 依赖 `shared/loopback-consume.mjs`
+  await cp(path.join(root, 'shared'), path.join(dir, 'shared'), { recursive: true })
   await writeFile(path.join(dir, 'tests/unit/pass.test.mjs'), `import test from 'node:test'; test('pass',()=>{});`)
   await writeFile(path.join(dir, 'tests/unit/fail.test.mjs'), 'process.exit(9)')
   const runner = path.join(dir, 'tests/run-layer.mjs'), report = path.join(dir, 'report.json')

@@ -47,7 +47,12 @@ function findEocd(buf) {
  * 读 zip 里一个具名条目；不存在返回 null。
  * 只支持 store(0) 与 deflate(8) —— Android 打包只用这两种。
  */
-export function readZipEntry(buf, entryName) {
+/**
+ * 遍历 zip 中央目录。`visit(name, info)` 返回 `true` 表示「找到了，别再往下走」。
+ * 抽出来是为了让 `readZipEntry`（读清单）与 `extractConsumeBaseUrl`（要扫多个 JS 条目，Issue #601）
+ * 共用同一份中央目录解析 —— 两处各写一遍的话，将来只有一处会被修。
+ */
+function forEachZipEntry(buf, visit) {
   const eocd = findEocd(buf);
   if (eocd < 0) throw new Error('不是 ZIP（找不到 EOCD，可能不是 APK）');
   const count = buf.readUInt16LE(eocd + 10);
@@ -56,27 +61,44 @@ export function readZipEntry(buf, entryName) {
     if (off + 46 > buf.length || buf.readUInt32LE(off) !== 0x02014b50) {
       throw new Error('ZIP 中央目录损坏');
     }
-    const method = buf.readUInt16LE(off + 10);
-    const compSize = buf.readUInt32LE(off + 20);
-    const plainSize = buf.readUInt32LE(off + 24);
     const nameLen = buf.readUInt16LE(off + 28);
     const extraLen = buf.readUInt16LE(off + 30);
     const commentLen = buf.readUInt16LE(off + 32);
-    const localOff = buf.readUInt32LE(off + 42);
+    const info = {
+      method: buf.readUInt16LE(off + 10),
+      compSize: buf.readUInt32LE(off + 20),
+      plainSize: buf.readUInt32LE(off + 24),
+      localOff: buf.readUInt32LE(off + 42),
+    };
     const name = buf.toString('utf8', off + 46, off + 46 + nameLen);
-    if (name === entryName) {
-      if (buf.readUInt32LE(localOff) !== 0x04034b50) throw new Error('ZIP 本地头损坏');
-      const lNameLen = buf.readUInt16LE(localOff + 26);
-      const lExtraLen = buf.readUInt16LE(localOff + 28);
-      const start = localOff + 30 + lNameLen + lExtraLen;
-      const raw = buf.subarray(start, start + compSize);
-      if (method === 0) return raw;
-      if (method === 8) return zlib.inflateRawSync(raw, { maxOutputLength: Math.max(plainSize, 1) + 1024 });
-      throw new Error(`不支持的 zip 压缩方式: ${method}`);
-    }
+    if (visit(name, info) === true) return true;
     off += 46 + nameLen + extraLen + commentLen;
   }
-  return null;
+  return false;
+}
+
+/** 取出一条条目的**解压后**字节；store(0) 与 deflate(8) 之外一律抛（Android 只用这两种） */
+function entryBytes(buf, info) {
+  if (buf.readUInt32LE(info.localOff) !== 0x04034b50) throw new Error('ZIP 本地头损坏');
+  const lNameLen = buf.readUInt16LE(info.localOff + 26);
+  const lExtraLen = buf.readUInt16LE(info.localOff + 28);
+  const start = info.localOff + 30 + lNameLen + lExtraLen;
+  const raw = buf.subarray(start, start + info.compSize);
+  if (info.method === 0) return raw;
+  if (info.method === 8) return zlib.inflateRawSync(raw, { maxOutputLength: Math.max(info.plainSize, 1) + 1024 });
+  throw new Error(`不支持的 zip 压缩方式: ${info.method}`);
+}
+
+export function readZipEntry(buf, entryName) {
+  let found = null;
+  forEachZipEntry(buf, (name, info) => {
+    if (name === entryName) {
+      found = info;
+      return true;
+    }
+    return false;
+  });
+  return found ? entryBytes(buf, found) : null;
 }
 
 // -------------------------------------------------------------- AXML 解析
@@ -369,4 +391,80 @@ export function inspectApkDebugState(input) {
     info = {};
   }
   return { debuggable: res.state, reason: res.reason, info, file };
+}
+
+// ------------------------------------------------------- consume.baseUrl 抽取（Issue #601）
+
+/**
+ * APK 里 `consume.baseUrl` 的抽取判据。
+ *
+ * 为什么从 JS bundle 里抽、而不是读 AndroidManifest：`consume.baseUrl` 是**前端**的运行时配置 ——
+ * 构建时由 `rspack.config.ts` 的 DefinePlugin 把 `__ENDPOINTS__.consume.baseUrl` 内联进
+ * `assets/public/static/js/*.js`（见 config/endpoints.json）。AndroidManifest 里没有这个值，
+ * `BuildConfig.CONSUME_BASE` 也只在 dex 里（要反编译，零依赖做不到）。
+ *
+ * 判据写得宽松一点（三个可选点都不影响命中）：
+ *   - 键名可能带引号（`"consume"`）也可能不带（压缩器去掉引号）；
+ *   - `consume` 对象里可能还有 `apiV1Prefix` / `gatewayPrefix` / `timeoutMs`（所以用 `[^{}]*?`
+ *     只吃到 `baseUrl` 那一项为止）；
+ *   - 值一律是 `http(s)://…`（构建期已经校验过形状）。
+ * 抽不到**不等于**有问题：老包里可能压根没内联 consume（#484 之前的版本），调用方按「未核验」处理，
+ * 只告警不拒收 —— 误杀一个正常发布比漏查一个回环包的代价大得多（这正是本模块的取舍）。
+ */
+export const CONSUME_BASE_URL_PATTERN =
+  /["']?consume["']?\s*:\s*\{[^{}]*?["']?baseUrl["']?\s*:\s*["'](https?:\/\/[^"'\s\\]+)["']/;
+
+/** 单个 JS 条目的扫描上限：主 bundle 约 2MB，超过这个数说明不是我们要找的东西 */
+export const MAX_JS_SCAN_BYTES = 8 * 1024 * 1024;
+
+/** 只看 Capacitor 拷进来的 web 资源（`assets/public/**`），不扫 dex / 原生库 */
+const isWebAssetJs = (name) => /^assets\/.*\.js$/i.test(name);
+
+/**
+ * 从 APK（路径或 Buffer）里抽出 `consume.baseUrl`。
+ *
+ * @param {string|Buffer} input APK 路径或字节
+ * @returns {{baseUrl: string|null, source: string|null, reason: string, scanned: number}}
+ *   `reason`：
+ *     - `ok`           抽到了（`baseUrl` / `source` 有值）
+ *     - `no_js_assets` 包里没有 `assets/**\/*.js`（老包 / 不是 Capacitor 包）
+ *     - `no_match`     扫了 JS 但没有 `consume.baseUrl` 段
+ *     - `zip_failed` / `read_failed`  读不出来
+ *   抽不到时 `baseUrl` 是 null —— 调用方**按「未核验」处理（放行 + 告警）**，不要当成回环。
+ */
+export function extractConsumeBaseUrl(input) {
+  const isBuffer = Buffer.isBuffer(input);
+  let buf;
+  try {
+    buf = isBuffer ? input : fs.readFileSync(String(input));
+  } catch (e) {
+    return { baseUrl: null, source: null, reason: 'read_failed', scanned: 0 };
+  }
+
+  let scanned = 0;
+  try {
+    let hit = null;
+    forEachZipEntry(buf, (name, info) => {
+      if (!isWebAssetJs(name)) return false;
+      // 超过上限的条目跳过：这不是我们要扫的东西，解压它只会吃内存
+      if (info.plainSize > MAX_JS_SCAN_BYTES || info.compSize > MAX_JS_SCAN_BYTES) return false;
+      let text;
+      try {
+        text = entryBytes(buf, info).toString('utf8');
+      } catch {
+        return false; // 单个条目解压失败不算整体失败（其余条目还有机会）
+      }
+      scanned += 1;
+      const m = CONSUME_BASE_URL_PATTERN.exec(text);
+      if (m) {
+        hit = { baseUrl: m[1], source: name };
+        return true;
+      }
+      return false;
+    });
+    if (hit) return { ...hit, reason: 'ok', scanned };
+    return { baseUrl: null, source: null, reason: scanned === 0 ? 'no_js_assets' : 'no_match', scanned };
+  } catch (e) {
+    return { baseUrl: null, source: null, reason: 'zip_failed', scanned };
+  }
 }

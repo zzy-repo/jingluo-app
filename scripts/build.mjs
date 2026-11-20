@@ -19,6 +19,14 @@
  * 环境变量（原样透传，与改前一致）：
  *   DIST_OUT=dist-xxx   输出目录（默认 dist）
  *   APP_VERSION=...     覆盖 build-info 里的版本号
+ *   INTERNAL_BUILD=1    等价于 --internal（变体判定与 rspack 侧同口径；只认 --internal 会漏判）
+ *   ALLOW_LOOPBACK_CONSUME=1
+ *                       显式放行「回环 consume.baseUrl」出包（Issue #601 第一道闸）。
+ *                       不开这个开关时，`internal` 变体 + 回环 baseUrl **直接构建失败**：
+ *                       那种包只对本机 adb reverse 联调有意义，真机上连不上任何后端，
+ *                       2026-11-20 正是在这条默认路径上把一个 127.0.0.1 的包发到了公网。
+ *                       开了开关的产物会在 build-info.json 里留 `loopbackConsume: true`，
+ *                       上传侧（dl-release）据此拒收 —— 出得来也发不出去。
  *
  * 构建前会先过 `config/endpoints.json` 的 consume / pay 两段校验（#484 §6.3）：
  * https、废弃域黑名单、两个 base 不许相同、缺字段 / 未知键（报键名 + 行号）→ 一律中止。
@@ -32,7 +40,8 @@ import path from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 
-import { ENDPOINTS_LABEL, loadConsumePay, placeholderNotice } from './lib/consumeEndpoints.mjs';
+import { assessLoopbackConsume, ENDPOINTS_LABEL, loadConsumePay, placeholderNotice } from './lib/consumeEndpoints.mjs';
+import { ALLOW_LOOPBACK_ENV, allowLoopbackFromEnv } from '../shared/loopback-consume.mjs';
 import { SEAM_FLAG, scanForSeam, seamEnabled } from './lib/testAuthSeam.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -69,8 +78,28 @@ function checkConsumeEndpoints() {
   return config;
 }
 
-/** 本地解析 @rspack/cli 的 bin，不经过 npx / shell（npx 会按需向网络拉包，版本不锚定） */
-function resolveRspackBin() {
+/**
+ * 构建期 fail-fast 第二道（Issue #601）：`internal` 变体 + 回环 `consume.baseUrl` 默认拒绝出包。
+ *
+ * 事故（2026-11-20 22:14）：一个 `consume.baseUrl = http://127.0.0.1:18000` 的 internal 包
+ * 被发到公网分发机，公网可见约 30 分钟。这种包在真机上连不上任何后端（127.0.0.1 是手机自己），
+ * 只对「本机 sub2api + adb reverse」有意义 —— 却和普通包长得一模一样，人眼在文件名上分不出来。
+ * 所以「出得来 → 就能发」这条默认路径必须断掉：默认失败，要出包就显式承认自己在出联调包。
+ *
+ * 判定逻辑不在这里（在 `scripts/lib/consumeEndpoints.mjs` 的 `assessLoopbackConsume`，
+ * 单测覆盖；gradle 侧是同一套规则的对照实现），这里只负责「拦 or 告警 + 给产物打标记」。
+ *
+ * @returns {boolean} 产物是否需要打「带的是回环地址」标记
+ */
+function checkLoopbackConsume(config, variant, allowLoopback) {
+  const verdict = assessLoopbackConsume({ variant, baseUrl: config.consume.baseUrl, allowLoopback });
+  if (!verdict.loopback) return false;
+  if (verdict.blocked) die(verdict.message);
+  process.stderr.write(`[build][WARN] ${verdict.message}\n`);
+  return verdict.mark;
+}
+
+/** 本地解析 @rspack/cli 的 bin，不经过 npx / shell（npx 会按需向网络拉包，版本不锚定） */function resolveRspackBin() {
   let pkgPath;
   try {
     const require = createRequire(path.join(ROOT, 'package.json'));
@@ -88,7 +117,10 @@ function resolveRspackBin() {
 
 async function main() {
   const argv = process.argv.slice(2);
-  const internal = argv.includes('--internal');
+  // 变体判定必须与 rspack 侧同口径：`--internal` 或 `INTERNAL_BUILD=1` 都算 internal。
+  // 只看 `--internal` 会留一个洞 —— `INTERNAL_BUILD=1 pnpm build` 出来的产物本质是内测包，
+  // 而闸门却按 standard 放行（#601：闸门的漏判就是这么产生的）。
+  const internal = argv.includes('--internal') || process.env.INTERNAL_BUILD === '1';
   const passthrough = argv.filter((a) => a !== '--internal');
 
   const outDir = (process.env.DIST_OUT ?? '').trim() || 'dist';
@@ -96,7 +128,10 @@ async function main() {
   const { bin, version } = resolveRspackBin();
 
   // 0. 端点配置 fail-fast（不合法直接 exit 1，绝不带着错地址打包）
-  checkConsumeEndpoints();
+  const endpoints = checkConsumeEndpoints();
+
+  // 0b. 回环 baseUrl 闸门（Issue #601 第一道）：internal + 回环 → 默认拒绝出包
+  const loopbackMark = checkLoopbackConsume(endpoints, variant, allowLoopbackFromEnv());
 
   // 1. 清输出目录（原脚本的 rm -rf dist）
   await fsp.rm(path.join(ROOT, outDir), { recursive: true, force: true });
@@ -105,6 +140,10 @@ async function main() {
   const env = { ...process.env, NODE_ENV: 'production' };
   if (internal) env.INTERNAL_BUILD = '1';
   else delete env.INTERNAL_BUILD;
+  // 产物自述（build-info.json）里要留下「这个包带的是回环地址」这条事实：
+  // 上传侧 / 事后取证都靠它，而不是靠人回忆当时 config 长什么样（#601）。
+  if (loopbackMark) env.LOOPBACK_CONSUME = '1';
+  else delete env.LOOPBACK_CONSUME;
 
   log(`variant=${variant} NODE_ENV=${env.NODE_ENV}${internal ? ' INTERNAL_BUILD=1' : ''}`);
   log(`out=${outDir} rspack=@rspack/cli@${version} config=${RSPACK_CONFIG} node=${process.version}`);
