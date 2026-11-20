@@ -255,9 +255,9 @@ const canScroll = /auto|scroll/.test(style.overflowY)
   // 但结论从「已知缺陷」换成更强的「不许回流」不变量（与上面 :has() 同一手法）。
   const focusHits = summary.byFeature[':focus-visible']
   assert.ok(focusHits, ':focus-visible 的命中必须仍被盘点器看到（不能静默跳过）')
-  assert.equal(focusHits.count, 16, ':focus-visible 命中数变了就要同步 docs/capabilities/css.md')
+  assert.equal(focusHits.count, 17, ':focus-visible 命中数变了就要同步 docs/capabilities/css.md')
   assert.equal(focusHits.defect, 0, 'src 里不应再有「无 `:focus` 兜底」的 :focus-visible（#215）')
-  assert.equal(focusHits.covered, 16, ':focus-visible 的每一处都该判成「已有兜底」')
+  assert.equal(focusHits.covered, 17, ':focus-visible 的每一处都该判成「已有兜底」')
   // #213 之后 :has() 在 src 里已清零（改由渲染期显式状态类承载），
   // 从「已知缺陷清单」换成更强的「不许回流」不变量。
   assert.equal(summary.byFeature[':has()']?.count ?? 0, 0, 'src 里不应再有 :has()')
