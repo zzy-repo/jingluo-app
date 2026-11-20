@@ -322,6 +322,87 @@ const usable = async (nameRe) => {
 }
 const gone = async (nameRe) => !(await usable(nameRe))
 
+/**
+ * 输入区那两个「附件」入口是**两件不同的事**（#586 的根因就在这一步没分清）：
+ *
+ *  - **图片入口** `[data-testid="attach-image"]`（#548 / #551 / #552）：带视觉能力的渠道都该有。
+ *    三家 base64 渠道本地编码内联，deepseek 走 `files` 上传 + `file_id`；
+ *  - **文档入口** `[data-testid="attach-document"]`（#480 / #538）：收 txt / docx / pdf，
+ *    能不能用**只由 `acceptsDocuments(kind)` 决定**；能力门关掉时它不是消失，而是渲染成
+ *    `data-attachment-entry="unavailable"` 的解释按钮（看得见、点下去给原因）。
+ *
+ * 以前两处都靠 `aria-label` 的中文去认，而「上传文件」这个可访问名挂在**图片入口**上 ——
+ * `usable(/^上传文件$/)`、`getByRole('button', {name: '上传文件'})` 数的一直是图片入口，
+ * 却按「附件入口」的旧口径写期望。#548 把图片入口开给三个渠道之后那些断言必然红（#586）。
+ * 按文案前缀（`^添加文档`）数「能用的那个 picker」也不够：那样数不出 DeepSeek 的禁用态占位
+ * 在不在，#538 的能力门在用例里就没人守了（#596 把这条升回精确断言）。
+ */
+const ATTACH_IMAGE = '[data-testid="attach-image"]'
+const ATTACH_DOC = '[data-testid="attach-document"]'
+
+/** 一个入口的客观事实：在不在、看不看得见、有没有被标成不可用 */
+const entryFacts = async (selector) => {
+  const locator = page.locator(selector)
+  const count = await locator.count()
+  if (count === 0) {
+    return { count, visible: false, ariaDisabled: null, unavailableMarker: null }
+  }
+  const first = locator.first()
+  return {
+    count,
+    visible: await first.isVisible(),
+    ariaDisabled: await first.getAttribute('aria-disabled'),
+    unavailableMarker: await first.getAttribute('data-attachment-entry'),
+  }
+}
+
+/**
+ * 三态口径：`ready`（在且可点）/ `disabled`（在、但明确不可用）/ `absent`（DOM 里没有）。
+ * 图片入口只有 `ready` / `absent`：它不可用时是「点下去给提示」的真实入口，
+ * 没有「只剩解释」这一态（那是文档入口被能力门关掉时的形态）。
+ */
+const expectAttachEntries = async (where, want) => {
+  const image = await entryFacts(ATTACH_IMAGE)
+  const doc = await entryFacts(ATTACH_DOC)
+  note(`${where} 附件入口：${JSON.stringify({ image, document: doc })}`)
+
+  if (want.image === 'ready') {
+    if (image.count === 1 && image.ariaDisabled !== 'true') {
+      ok(`${where}) 图片入口在且可点（attach-image ×1，#548）`)
+    } else {
+      bad(
+        `${where}) 图片入口应存在且可点，实际 count=${image.count} aria-disabled=${image.ariaDisabled}`
+      )
+    }
+  } else if (image.count !== 0) {
+    bad(`${where}) 图片入口应完全隐藏，实际 count=${image.count}`)
+  } else {
+    ok(`${where}) 图片入口不存在（DOM 里没有节点）`)
+  }
+
+  if (want.document === 'ready') {
+    if (doc.count === 1 && doc.unavailableMarker === null && doc.ariaDisabled !== 'true') {
+      ok(`${where}) 文档入口在且可点（attach-document ×1，acceptsDocuments=true）`)
+    } else {
+      bad(
+        `${where}) 文档入口应存在且可点，实际 count=${doc.count} marker=${doc.unavailableMarker} aria-disabled=${doc.ariaDisabled}`
+      )
+    }
+  } else if (want.document === 'disabled') {
+    if (doc.count === 1 && doc.unavailableMarker === 'unavailable' && doc.ariaDisabled === 'true') {
+      ok(`${where}) 文档入口按能力门渲染为不可用（acceptsDocuments=false，点下去给原因）`)
+    } else {
+      bad(
+        `${where}) 文档入口应保留「不可用」解释按钮，实际 count=${doc.count} marker=${doc.unavailableMarker} aria-disabled=${doc.ariaDisabled}`
+      )
+    }
+  } else if (doc.count !== 0) {
+    bad(`${where}) 文档入口应完全隐藏，实际 count=${doc.count}`)
+  } else {
+    ok(`${where}) 文档入口不存在（DOM 里没有节点）`)
+  }
+}
+
 try {
   // ============ 3/4. 翻译器单测：直接 import 适配器，不启浏览器 ============
   console.log('\n[3] 翻译器单测（OpenAI SSE → Anthropic 事件流）')
@@ -496,10 +577,9 @@ try {
     ok(`自动标题生效：侧边栏显示「${TITLE}」`)
     note(`deepseek 自动标题 = ${TITLE}`)
   }
-  // 三个入口都在
+  // 三个入口都在（图片入口单独断言：它的可访问名也叫「上传文件」，混在这个 loop 里会重）
   for (const [label, re] of [
     ['智能搜索', /^智能搜索$|^Search$/],
-    ['上传文件', /^上传文件$|^Upload files$/],
     ['语音输入', /^语音输入$|^Voice input$/],
     ['朗读', /^朗读$|^Read aloud$/],
   ]) {
@@ -507,6 +587,9 @@ try {
       bad(`7a) deepseek 模式下「${label}」入口不可用`)
     }
   }
+  // deepseek 的两条附件通路**不同**：图片能收（`files` 上传 + `file_id`），文档收不了
+  // （`acceptsDocuments('deepseek') === false`，#538）。这一条就是能力门的 DOM 侧守卫。
+  await expectAttachEntries('7a', { image: 'ready', document: 'disabled' })
   // 第三条路径 tools：真的录一次音，断言 /v1/tools/asr 逐字一致（models / messages 已在上方断言）
   await page.locator('textarea').last().fill('')
   await page.getByRole('button', { name: /语音输入|Voice input/ }).first().click()
@@ -599,10 +682,9 @@ try {
 
   // ============ 5. anthropic 能力降级 ============
   console.log('\n[7d] 回归：anthropic 模式能力降级')
-  // 随 #552 变更：三渠道支持图片 —— 「上传文件」（纸夹 / 图片入口）从本列表移出。
-  // 它走 `image.base64` 本地编码内联，不需要 `paths.files`（这条渠道没有），所以**应当可用**；
-  // 下面单独断言它「在且可用」。**文档入口**（添加文档 TXT/DOCX/PDF）走 #480 的文本注入，
-  // 一直是可用的那个 picker，这次没动 —— 也单独钉一条，别把两条能力混成一条。
+  // 随 #552 变更：三渠道支持图片 —— 图片入口从本列表移出（它走 `image.base64` 本地编码内联，
+  // 不需要 `paths.files`）。**文档入口**（TXT/DOCX/PDF）走 #480 的文本注入，这次没动。
+  // 两个附件入口都在下面用同一条两轴断言（testid）钉住，别把两条能力混成一条。
   for (const [label, re] of [
     ['智能搜索', /^智能搜索$|^Search$/],
     ['语音输入', /^语音输入$|^Voice input$/],
@@ -614,16 +696,9 @@ try {
       bad(`7d) anthropic 模式下「${label}」入口仍可用`)
     }
   }
-  if (await usable(/^上传文件$|^Upload files$/)) {
-    ok('「上传文件」（图片入口）可用（随 #552：三渠道支持图片，走 base64 内联）')
-  } else {
-    bad('7d) anthropic 模式下「上传文件」（图片入口）不可用：#552 起三渠道支持图片')
-  }
-  if (await usable(/^添加文档|^Add document/)) {
-    ok('「添加文档」（文档入口）仍可用（#480 文本注入，未被 #552 影响）')
-  } else {
-    bad('7d) anthropic 模式下「添加文档」（文档入口）消失了：#480 的文本注入仍然成立')
-  }
+  // 两个附件入口分别按 testid 断言（#596）：图片走 base64 内联、文档走文本注入，**都该可用**。
+  // （原来这里按 `^添加文档` 这个文案前缀数「能用的 picker」，现在并入同一条两轴断言。）
+  await expectAttachEntries('7d', { image: 'ready', document: 'ready' })
   if (!(await usable(/^深度思考$|^DeepThink$/))) {
     bad('7d) anthropic 模式下「深度思考」被误删')
   } else {
@@ -634,27 +709,34 @@ try {
   const domDump = await page.evaluate(() => {
     const wanted = ['智能搜索', '上传文件', '语音输入', '朗读', '深度思考']
     const buttons = [...document.querySelectorAll('button')]
-    return wanted.map((label) => {
+    const nodes = (hits) =>
+      hits.slice(0, 2).map((button) => ({
+        ariaLabel: button.getAttribute('aria-label'),
+        testId: button.getAttribute('data-testid'),
+        ariaDisabled: button.getAttribute('aria-disabled'),
+        unavailableMarker: button.getAttribute('data-attachment-entry'),
+        disabled: button.disabled,
+        hidden: button.hidden,
+        display: getComputedStyle(button).display,
+        visibility: getComputedStyle(button).visibility,
+        className: button.className,
+      }))
+    const byLabel = wanted.map((label) => {
       const hits = buttons.filter(
         (button) =>
           button.getAttribute('aria-label')?.includes(label) ||
           button.textContent?.trim() === label ||
           button.textContent?.includes(label)
       )
-      return {
-        label,
-        count: hits.length,
-        nodes: hits.slice(0, 2).map((button) => ({
-          ariaLabel: button.getAttribute('aria-label'),
-          ariaDisabled: button.getAttribute('aria-disabled'),
-          disabled: button.disabled,
-          hidden: button.hidden,
-          display: getComputedStyle(button).display,
-          visibility: getComputedStyle(button).visibility,
-          className: button.className,
-        })),
-      }
+      return { label, count: hits.length, nodes: nodes(hits) }
     })
+    // 两个附件入口按 testid 单独落盘（#586 / #596）：`上传文件` 只挂在**图片**入口上，
+    // 按文案数节点分不清「图片 / 文档」，证据里必须给出各自的真实形态。
+    const byAttach = ['attach-image', 'attach-document'].map((testId) => {
+      const hits = buttons.filter((button) => button.getAttribute('data-testid') === testId)
+      return { label: `data-testid=${testId}`, count: hits.length, nodes: nodes(hits) }
+    })
+    return [...byLabel, ...byAttach]
   })
   writeFileSync(
     SHOT_DIR + '/1.2.3-anthropic-dom.txt',
@@ -829,19 +911,9 @@ try {
       bad(`6) openai 模式下「${label}」入口 count=${count}，应完全隐藏`)
     }
   }
-  {
-    const uploadCount = await page.getByRole('button', { name: /^上传文件$|^Upload files$/ }).count()
-    if (uploadCount === 1 && (await usable(/^上传文件$|^Upload files$/))) {
-      ok('「上传文件」（图片入口）count=1 且可用（随 #552：三渠道支持图片）')
-    } else {
-      bad(`6) openai 模式下「上传文件」（图片入口）应为「在且可用」，实际 count=${uploadCount}`)
-    }
-    if (await usable(/^添加文档|^Add document/)) {
-      ok('「添加文档」（文档入口）仍可用（#480 文本注入，未被 #552 影响）')
-    } else {
-      bad('6) openai 模式下「添加文档」（文档入口）消失了：#480 的文本注入仍然成立')
-    }
-  }
+  // 两个附件入口按 testid 精确断言（#596）：openai 渠道图片走 base64 内联、文档走文本注入，
+  // 都**必须在且可点** —— 不随搜索 / 语音 / 朗读一起降级。
+  await expectAttachEntries('6', { image: 'ready', document: 'ready' })
   // #341 起「深度思考」在四个渠道**恒常驻**（不隐藏、不置灰），能不能真生效由请求侧 REQUEST_GATES 决定；
   // openai 通道不发思考字段，所以入口在、但必须标记「不真生效」。老断言要求 count=0，已过时（#406 复核）。
   {
@@ -857,13 +929,25 @@ try {
   const openaiCapsDom = await page.evaluate(() => {
     const wanted = ['智能搜索', '上传文件', '语音输入', '朗读', '深度思考', '重新生成']
     const buttons = [...document.querySelectorAll('button')]
-    return wanted.map((label) => ({
+    const byLabel = wanted.map((label) => ({
       label,
       count: buttons.filter(
         (button) =>
           button.getAttribute('aria-label')?.includes(label) || button.textContent?.includes(label)
       ).length,
     }))
+    // 两个附件入口按 testid 单独落盘（#586 / #596）：`上传文件` 这个可访问名只挂在**图片**入口上，
+    // 按文案数节点分不清「图片 / 文档」，证据里必须给出各自的真实计数与不可用标记。
+    const byAttach = ['attach-image', 'attach-document'].map((testId) => {
+      const hits = buttons.filter((button) => button.getAttribute('data-testid') === testId)
+      return {
+        label: `data-testid=${testId}`,
+        count: hits.length,
+        ariaDisabled: hits.map((button) => button.getAttribute('aria-disabled')),
+        unavailableMarker: hits.map((button) => button.getAttribute('data-attachment-entry')),
+      }
+    })
+    return [...byLabel, ...byAttach]
   })
   writeFileSync(
     SHOT_DIR + '/1.3.0-openai-dom.txt',
