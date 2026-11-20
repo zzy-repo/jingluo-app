@@ -15,6 +15,7 @@ import {
   clearHistory,
   exportHistory,
   importHistory,
+  type ExportProgress,
 } from '../../services/chat/backup.js'
 import type { ImportMode } from '../../services/chat/history/mergeSessions.js'
 import type { ImportSkip } from '../../services/chat/history/toLocal.js'
@@ -926,18 +927,22 @@ const SettingCell = ({
   description,
   status,
   action,
+  extra,
   className,
 }: {
   label: string
   description?: string
   status: Status
   action: ReactNode
+  /** 说明位下方的附加内容（导出进度条，见 #336 §1）。 */
+  extra?: ReactNode
   className?: string
 }) => (
   <div className={clsx(styles.cell, styles.row, className)}>
     <div className={styles.text}>
       <div className={styles.label}>{label}</div>
       <CellText status={status} description={description} />
+      {extra}
     </div>
     <div className={styles.cellActions}>{action}</div>
   </div>
@@ -1338,23 +1343,40 @@ const ImportHistoryUrl = ({
   )
 }
 
+/** 空历史时的说明（#336 §2）：按钮灰着不说原因，用户分不清「点不动」和「点了没产出」。 */
+const emptyExportStatus: Status = { key: 'historyExportEmptyNoSessions' }
+
 /** 将全部会话及图片导出为 ZIP 文件并下载 */
 const ExportHistory = ({ disabled }: { disabled: boolean }) => {
   const t = useTranslate()
-  const empty = useChatStore((state) => state.sessions.length === 0)
-  const [busy, setBusy] = useState(false)
+  const total = useChatStore((state) => state.sessions.length)
+  const empty = total === 0
+  // 导出中 = 有进度对象；用它代替原来的 busy 布尔，省掉两个状态可能打架的一格。
+  const [progress, setProgress] = useState<ExportProgress | null>(null)
   const [status, setStatus] = useState<Status>(null)
+  // 进度节流：打包回调是每条会话一次，500 条会话就 500 次 setState，没必要。
+  const lastPaint = useRef(0)
+  const onProgress = (next: ExportProgress) => {
+    const now = Date.now()
+    if (next.exported < next.total && now - lastPaint.current < PROGRESS_MIN_INTERVAL_MS) {
+      return
+    }
+    lastPaint.current = now
+    setProgress(next)
+  }
 
   const onExport = async () => {
-    setBusy(true)
     setStatus(null)
+    lastPaint.current = 0
+    // 先立起 0/N：按钮立刻变成「导出中…」，而不是等第一条会话打完才有反馈。
+    setProgress({ exported: 0, total })
     try {
-      const { name, blob } = await exportHistory()
+      const { name, blob } = await exportHistory({ onProgress })
       downloadBlob(blob, name)
     } catch (error) {
       setStatus(errorStatus('historyExportFailed', error))
     } finally {
-      setBusy(false)
+      setProgress(null)
     }
   }
 
@@ -1362,17 +1384,39 @@ const ExportHistory = ({ disabled }: { disabled: boolean }) => {
     <SettingCell
       label={t('exportAllLabel')}
       description={t('historyExportDescription')}
-      status={status}
+      status={progress ? null : (status ?? (empty ? emptyExportStatus : null))}
+      extra={
+        progress ? (
+          <div className={styles.progressBlock}>
+            <div className={styles.progressLabel}>
+              {t('historyExportProgress', {
+                exported: progress.exported,
+                total: progress.total,
+              })}
+            </div>
+            <div className={styles.progressTrack}>
+              <div
+                className={styles.progressFill}
+                style={{
+                  transform: `scaleX(${
+                    progress.total > 0 ? Math.min(1, progress.exported / progress.total) : 0
+                  })`,
+                }}
+              />
+            </div>
+          </div>
+        ) : null
+      }
       action={
         <Button
           variant="outlined"
           size="m"
           className={styles.cellButton}
-          disabled={disabled || busy || empty}
+          disabled={disabled || progress !== null || empty}
           onClick={() => void onExport()}
         >
           <IconDownloadOutline16 />
-          {t('exportAllDownload')}
+          {t(progress ? 'historyExporting' : 'exportAllDownload')}
         </Button>
       }
     />

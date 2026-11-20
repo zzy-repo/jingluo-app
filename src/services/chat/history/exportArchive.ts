@@ -8,10 +8,32 @@ import { writeArchive } from './zipWriter.js'
 
 const json = (value: unknown) => new Blob([JSON.stringify(value)], { type: 'application/json' })
 
+/** 导出进度：已打包会话数 / 会话总数（#336 §1）。 */
+export type ExportProgress = { exported: number; total: number }
+
+/**
+ * 每打包多少条会话让出一次宏任务（#336 §1）。
+ *
+ * 「让出」必须是宏任务（`setTimeout 0`）而不是 `await Promise.resolve()`：微任务队列跑完
+ * 才会轮到渲染，只 await 微任务的话几百条会话照样是一帧不落的一整块，界面还是假死。
+ * 20 条一批是取舍：更小则 DOM 更新比打包还频繁，更大则单批可能撑过一帧。
+ */
+export const EXPORT_YIELD_EVERY = 20
+
+/** 让出一个宏任务，给渲染 / 输入事件插队的机会。 */
+const yieldMacrotask = (): Promise<void> =>
+  new Promise((resolve) => {
+    setTimeout(resolve, 0)
+  })
+
 /** 导出范围（#390）：不传 `sessionIds` = 全量导出；传了就只导出这些会话，包结构与全量导出完全一致。 */
 export type ExportArchiveOptions = {
   /** 勾选的会话 id（选择性导出）。传空集合由调用方拦住；这里匹配不到任何会话也会明确报错。 */
   sessionIds?: readonly string[] | ReadonlySet<string>
+  /** 会话总数：调用方拿得到列表长度就传，进度才能显示「已导出 N / 共 M」（#336 §1）。 */
+  total?: number
+  /** 每打包完一条会话回调一次；不传就是纯打包（导入侧 / 测试里不需要进度）。 */
+  onProgress?: (progress: ExportProgress) => void
 }
 
 /**
@@ -30,11 +52,13 @@ export const exportArchive = async (
     // 空选择不能产出一个「看着像备份、其实一条会话都没有」的包。
     fail('historyExportEmptySelection')
   }
+  const { total = 0, onProgress } = options
   const manifest: Manifest = { export_format_version: EXPORT_FORMAT_VERSION }
   const entries = [{ name: MANIFEST_PATH, blob: json(manifest) }]
   const imageEntries: { name: string; blob: Blob }[] = []
   const index: SessionIndexEntry[] = []
   const originals = new Map<string, Blob | undefined>()
+  let exported = 0
   for await (const session of sessions) {
     if (selected !== undefined && !selected.has(session.id)) {
       continue
@@ -63,6 +87,11 @@ export const exportArchive = async (
       imageEntries.push({ name, blob })
     }
     index.push(toIndexEntry(data))
+    exported += 1
+    onProgress?.({ exported, total })
+    if (exported % EXPORT_YIELD_EVERY === 0) {
+      await yieldMacrotask()
+    }
   }
   if (selected !== undefined && index.length === 0) {
     // 勾选的会话在导出途中被删干净（或 id 对不上）时同样要报错，而不是产出一个空包。

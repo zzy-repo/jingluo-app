@@ -5,13 +5,15 @@
 // 覆盖功能点：
 //   F-05-23 导出全部历史为 ZIP（zipWriter 的写法契约：顺序 / STORE / 条目名 / 确定性）
 //   F-05-26 空历史（数据侧：空历史也要产出合法包，UI 置灰由 N9 断）
-//   F-05-27 导出上限（**现状只有 ZIP32/ZIP64 硬限**：65535 条目、单条目 4GiB；200MB 业务上限见下方说明）
+//   F-05-27 导出上限（ZIP32/ZIP64 硬限：65535 条目、单条目 4GiB；业务上限 200MB = 导入上限，见 A6）
+//
+// 关于 F-05-27 的 200MB 业务上限（#336 §3）：A4 钉「格式装不下」（ZIP32 硬限），A6 钉「导回来装不下」
+// （超过导入上限就在写第一个字节之前拒）。两条不能合并：前者是格式问题，后者是往返一致性问题。
 //   F-05-29 TXT 导出桥 JS 侧（取消 / 48KiB 分块 / 写失败 abort / 老内核无 TextEncoder）
 //   F-05-30-ish「导出途中会话被删 → 整次失败，不产半份文件」（exportHistory 的快照语义）
 //
-// 关于 F-05-27（导出上限与导入对齐 200MB）：main 上**还没有**这条业务上限（只有 ZIP32 硬限），
-// #336 的功能单尚未落地。本表钉住的是「现在真实存在的上界」，一旦那三条硬限被删就红；
-// 200MB 对齐落地后，在下面 A4 行尾部追加一行「超 200MB 的声称体积 → ExportTooLargeError」即可，不新增用例条数。
+// 关于 F-05-27（导出上限与导入对齐 200MB）：#336 §3 已把「导回来装不下」这条补上（A6 行），
+// 上限不是新数字而是 DEFAULT_MAX_IMPORT_BYTES 的转出；A4 继续钉 ZIP32 硬限。三条硬限被删照样红。
 //
 //   node --test tests/unit/domain05-export-contract.test.mjs
 import { registerHooks } from 'node:module'
@@ -108,9 +110,9 @@ globalThis.__exportBridge = {
 
 const { exportHistory } = await import('../../src/services/chat/backup.ts')
 const { exportArchive } = await import('../../src/services/chat/history/exportArchive.ts')
-const { ArchiveLimitError, writeArchive } = await import(
-  '../../src/services/chat/history/zipWriter.ts'
-)
+const { ArchiveLimitError, ExportTooLargeError, MAX_EXPORT_BYTES, isWithinExportLimit, writeArchive } =
+  await import('../../src/services/chat/history/zipWriter.ts')
+const { DEFAULT_MAX_IMPORT_BYTES } = await import('../../src/services/chat/history/importLimit.ts')
 const { saveText } = await import('../../src/services/exportText.ts')
 const db = globalThis.__exportDB
 const store = globalThis.__exportStore
@@ -361,6 +363,33 @@ test('N7 导出器契约表 + TXT 桥子表（F-05-23/26/27/29）', async () => 
           'manifest.json,chat_session_index.json',
           '空历史的包结构'
         )
+      },
+    },
+    {
+      name: 'A6 业务上限 = 导入上限（200MB）：超限在写第一个字节之前拒（ExportTooLargeError），零字节写出、零次保存面板',
+      async run() {
+        // 只「声称」体积，绝不真分配：blob 没有任何字节可读，stream 一被碰就炸。
+        let streamCalls = 0
+        const claimed = {
+          size: MAX_EXPORT_BYTES + 1024 * 1024,
+          stream: () => {
+            streamCalls += 1
+            throw new Error('不该走到这里：上限必须在写字节之前判')
+          },
+        }
+        const error = await writeArchive([{ name: 'big.json', blob: claimed }]).then(
+          () => null,
+          (failure) => failure
+        )
+        expectOk(error instanceof ExportTooLargeError, '超 200MB 必须抛 ExportTooLargeError')
+        expectEqual(error.expectedBytes > MAX_EXPORT_BYTES, true, '错误要带上算准的实测体积')
+        expectEqual(error.limitBytes, MAX_EXPORT_BYTES, '错误要带上真正生效的上限')
+        expectMatch(String(error.message), /200MB export limit/, '错误信息要说清上限')
+        expectEqual(streamCalls, 0, '超限时一个字节都不能写（stream 一次都不许读）')
+        // 上限不是第二个数字：与导入侧那一个恒等，且比较口径同为 `<=`（等于上限能导回）。
+        expectEqual(MAX_EXPORT_BYTES, DEFAULT_MAX_IMPORT_BYTES, '导出上限必须等于导入上限')
+        expectEqual(isWithinExportLimit(MAX_EXPORT_BYTES), true, '等于上限要放行')
+        expectEqual(isWithinExportLimit(MAX_EXPORT_BYTES + 1), false, '多一个字节就要拒')
       },
     },
   ]

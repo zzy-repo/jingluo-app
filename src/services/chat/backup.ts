@@ -29,11 +29,25 @@ const enqueueBackup = <T>(run: () => Promise<T>): Promise<T> => {
 
 const backupFileName = (date: Date) => `deepseek_data-${formatDate(date)}.zip`
 
+/** 导出进度：已打包会话数 / 会话总数（#336 §1）。 */
+export type ExportProgress = { exported: number; total: number }
+
 /** 导出范围（#390）：不传 `sessionIds` = 导出全部会话；传了就只导出勾选的这些。 */
 export type ExportHistoryOptions = {
   /** 会话列表里勾选的会话 id。传空数组直接报错，不产出一个「看着像备份、其实空的」包。 */
   sessionIds?: readonly string[]
+  /** 每条会话打包完成后回调；界面用它显示「已导出 N / 共 M」（#336 §1）。不传就是纯打包。 */
+  onProgress?: (progress: ExportProgress) => void
 }
+
+/**
+ * 体积超限的类型判定（#336 §3）。
+ *
+ * `zipWriter.js` 是**动态导入**的（fflate 只该进导出那一块，不进首屏 chunk），
+ * 所以这里不能用 `instanceof`（那会把 fflate 拉回静态依赖图），只按 name 认 —— 类名由本仓库固定。
+ */
+const isExportTooLarge = (error: unknown): error is { expectedBytes: number; limitBytes: number } =>
+  error instanceof Error && error.name === 'ExportTooLargeError'
 
 /**
  * 导出为历史会话导出格式的 ZIP，可再次导入。
@@ -67,7 +81,24 @@ export const exportHistory = (
     }
     const { exportArchive } = await import('./history/exportArchive.js')
     const now = new Date()
-    const blob = await exportArchive(readSessions(), selected === undefined ? {} : { sessionIds })
+    let blob: Blob
+    try {
+      blob = await exportArchive(readSessions(), {
+        ...(selected === undefined ? {} : { sessionIds }),
+        // 总数用开始时的可导出列表快照：进度里的 M 与最终包里的会话数必须是同一个数。
+        total: exportable.length,
+        onProgress: options.onProgress,
+      })
+    } catch (error) {
+      // 超限发生在「字节数算准、一个字节没写」那一刻，此时还没走到保存出口（#336 §3）。
+      if (isExportTooLarge(error)) {
+        fail('historyExportTooLarge', {
+          size: maxImportMegabytes(error.limitBytes),
+          actual: formatImportBytes(error.expectedBytes),
+        })
+      }
+      throw error
+    }
     return { name: backupFileName(now), blob, sessions: exportable.length }
   })
 
