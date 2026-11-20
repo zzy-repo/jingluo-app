@@ -36,7 +36,7 @@
 
 ## 盘点表
 
-**总计 122 条命中**（`已有兜底` 72 / `无风险` 37 / `真实漏洞` 5 / `需动态验证` 8）；风险分布：高 4、中 9、低 109。
+**总计 123 条命中**（`已有兜底` 72 / `无风险` 37 / `真实漏洞` 5 / `需动态验证` 9）；风险分布：高 4、中 10、低 109。
 
 | 文件:行 | 假设内容 | 类别 | 风险(高/中/低) | 处置(已有兜底/需探测/需动态验证/拆单) |
 | --- | --- | --- | --- | --- |
@@ -80,6 +80,7 @@
 | `src/services/api/speech.ts:65` | Body.text/arrayBuffer 引入于 Chrome 76，83 必有 | 3 | 低 | 已有兜底 |
 | `src/services/api/sse.ts:130` | ReadableStream.getReader 引入于 Chrome 43，83 必有；真正要防的是 body 为 null | 3 | 低 | 已有兜底 |
 | `src/services/appUpdate.ts:34` | registerPlugin 一定返回代理对象，但原生侧没注册时调用只会 reject；插件在不在要探测 | 3 | 中 | 需动态验证 |
+| `src/components/settings/AppUpdateField.tsx:103` | registerPlugin 一定返回代理对象，但原生侧没注册时调用只会 reject；插件在不在要探测（#412 手动下载入口用 `registerPlugin('Browser')`，失败走 `catch` 给可读提示） | 3 | 中 | 需动态验证 |
 | `src/services/appUpdate.ts:35` | @capacitor/core 随包发布，函数一定在；native-bridge 没注入时会退化成 "web" | 3 | 低 | 已有兜底 |
 | `src/services/attachments.ts` 的 `uploadAttachment` | AbortController 引入于 Chrome 66，83 必有（启动守卫也把它列进 REQUIRED） | 3 | 低 | 已有兜底 |
 | `src/services/chat/appAssets.ts:14` | createImageBitmap 引入于 Chrome 50，83 必有 | 3 | 低 | 已有兜底 |
@@ -203,7 +204,7 @@
 
 - `Intl.DisplayNames`（2 处：`src/index.html:120`、`src/services/diagnostics/capabilityTruth.ts:80`）：Chrome 81 才有，落在 83 之内，但语言数据（ICU）齐不齐要看具体机型；`src/index.html` 启动守卫已把它列进 `REQUIRED`，探不到会画提示页。
   **口径留痕**：`src/index.html:120` 那一行是**注释**（注释里写着「不检查 Intl.DisplayNames」），扫描器只做字面量匹配，注释行也算命中——为保住「0 命中就是真的 0 命中」，这条不一致不改规则，在这里写明。
-- `Capacitor.registerPlugin`（4 处：`src/services/appUpdate.ts:34`、`src/services/diagnostics/collector.ts:1459`、`src/services/exportText.ts:13`、`src/services/invite/fingerprint.ts` 的 `registerPlugin`）：`registerPlugin` 永远返回代理对象，插件没注册时只会在调用时 reject。**全仓 `isPluginAvailable` 命中数为 0**，也就是没有任何一处正面探测「原生侧到底注册没注册」。已人工核对：`android/app/src/main/java/com/example/deepseekchat/MainActivity.java:49-52` 注册了 4 个插件，Java 侧 `@PluginMethod` 名字与 JS 调用一一对应，**没有名字对不上的情况**；所有调用点也都有 `try…catch` 降级。但「插件注册失败 / 被裁剪 / 旧版本 APK 没有这个插件」这条路径仍无正面探测。本轮 #243 新增的 `DeviceFingerprint`（`invite/fingerprint.ts` 的 `registerPlugin`）也计入这几处；`CheckoutBrowser`（原 `ours/transport.ts:37`，`/buy` 收银台的原生桥）已随 #331 的旧支付链路停用一起删除，那条 `需动态验证` 命中不再存在。
+- `Capacitor.registerPlugin`（5 处：`src/services/appUpdate.ts:34`、`src/services/diagnostics/collector.ts:1459`、`src/services/exportText.ts:13`、`src/services/invite/fingerprint.ts` 的 `registerPlugin`、`src/components/settings/AppUpdateField.tsx:103` 的 `registerPlugin('Browser')`）：`registerPlugin` 永远返回代理对象，插件没注册时只会在调用时 reject。**全仓 `isPluginAvailable` 命中数为 0**，也就是没有任何一处正面探测「原生侧到底注册没注册」。已人工核对：`android/app/src/main/java/com/example/deepseekchat/MainActivity.java:49-52` 注册了 4 个插件，Java 侧 `@PluginMethod` 名字与 JS 调用一一对应，**没有名字对不上的情况**；所有调用点也都有 `try…catch` 降级。但「插件注册失败 / 被裁剪 / 旧版本 APK 没有这个插件」这条路径仍无正面探测。本轮 #243 新增的 `DeviceFingerprint`（`invite/fingerprint.ts` 的 `registerPlugin`）也计入这几处；`CheckoutBrowser`（原 `ours/transport.ts:37`，`/buy` 收银台的原生桥）已随 #331 的旧支付链路停用一起删除，那条 `需动态验证` 命中不再存在。
 - `canvas.toBlob`（1 处：`src/services/chat/appAssets.ts:60`）：回调可能拿到 `null`，个别 WebView 上不触发。
 - `new AudioContext({ sampleRate })`（1 处：`src/services/speech/readAloud.ts:92`）：采样率选项与自动播放策略在真机上表现不一致。
 - `visualViewport`：API 在（Chrome 61），键盘弹出后的 `resize` / `scroll` 时序与去抖仍需真机确认（这一条是人工补记，扫描器的结论本来就在 `已有兜底` 里）。
@@ -241,7 +242,7 @@
 | `Capacitor.isNativePlatform` | 10 | 2 | 8 | 0 | 0 |
 | `URL.createObjectURL` | 7 | 3 | 4 | 0 | 0 |
 | `URL.revokeObjectURL` | 7 | 3 | 4 | 0 | 0 |
-| `Capacitor.registerPlugin` | 5 | 1 | 0 | 0 | 4 |
+| `Capacitor.registerPlugin` | 6 | 1 | 0 | 0 | 5 |
 | `ResizeObserver` | 5 | 5 | 0 | 0 | 0 |
 | `matchMedia` | 5 | 1 | 4 | 0 | 0 |
 | `Intl.DisplayNames` | 4 | 2 | 0 | 0 | 2 |
