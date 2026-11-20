@@ -13,6 +13,12 @@ import { test } from 'node:test'
 // 端点地址唯一来源：config/endpoints.json（#274）
 import { chatBaseUrl } from '../../scripts/lib/endpoints.mjs'
 
+// 构建期注入值（`__ENDPOINTS__`）的兜底：直接复用 --import 预加载那一份（tests/helpers/injected.mjs）。
+// 少了这一行，`node --test tests/unit/provider-ours.test.mjs` 会在**第一条断言之前**就
+// `ReferenceError: __ENDPOINTS__ is not defined` 崩掉（exit 1、一条 `not ok` 都没有）——
+// runner 里跑是绿的（它带 --import），直跑是崩的，于是「跑过」变成了假象（#487）。
+import '../helpers/injected.mjs'
+
 // 与打包器一致：源码内部用 .js 说明符指向 .ts 文件
 registerHooks({
   resolve(specifier, context, nextResolve) {

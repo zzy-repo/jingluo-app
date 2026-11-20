@@ -2,7 +2,7 @@
 // Sequential adapter for legacy self-executing scripts and node:test files.
 import { appendFile, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { execFileSync } from 'node:child_process'
-import { cpus, freemem, hostname, loadavg, tmpdir, availableParallelism } from 'node:os'
+import { cpus, freemem, hostname, loadavg, tmpdir, totalmem, availableParallelism } from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { runCase, runMergedBatch } from './helpers/runtime.mjs'
@@ -241,13 +241,106 @@ async function planShard(list, shard) {
  * #366：并行车道数。unit 层默认吃满本机核数（上限 4，CI 4 核 / 本机 4 核都用得上，再多只是
  * 互相抢 CPU 且更容易把真计时用例挤成假红）；其他层默认仍是 1 —— 行为与 #365 接线时一模一样。
  * 用法：`--jobs 4` 或 `TEST_JOBS=4`（两者都在，CI 想按机器调不用改代码）。
+ *
+ * #487：**再加一层内存约束**。实测（本仓 unit 层，16 文件/批）：一个合并批次进程峰值 RSS ≈ 250 MB，
+ * 单文件进程 ≈ 120 MB，共享标准产物服务另算；N 条车道并发时峰值 ≈ N × 320 MB。车道数只看核数时，
+ * 4 核但只剩 1 GB 可用内存的机器上并发批次会把内存吃光，内核 OOM killer 挑最大的进程杀掉 ——
+ * runner 只看到「批次进程没跑完」，于是把**资源不足误报成测试失败**（本单的故障）。
+ * 所以默认车道数 = min(核数上限 4, 内存预算)，并在终端写明算出来的理由（不许悄悄降）。
  */
+const LANE_RSS_ESTIMATE_MB = 320
+const HOST_MEMORY_RESERVE_MB = 768
+
+/** 当前可用内存与「能安全开几条车道」（导出给 resolveJobs 与车道日志共用） */
+function memoryLaneBudget() {
+  const availableMb = Math.floor(freemem() / (1024 * 1024))
+  const lanes = Math.max(1, Math.floor(Math.max(0, availableMb - HOST_MEMORY_RESERVE_MB) / LANE_RSS_ESTIMATE_MB))
+  return { availableMb, totalMb: Math.floor(totalmem() / (1024 * 1024)), lanes }
+}
+
 function resolveJobs(plan, explicit) {
-  if (Number.isSafeInteger(explicit) && explicit > 0) return explicit
+  const mem = memoryLaneBudget()
+  if (!plan.includes('unit')) return { lanes: 1, why: '非 unit 层：串行（#365 行为不变）' }
+  const cores = availableParallelism()
+  if (Number.isSafeInteger(explicit) && explicit > 0) {
+    return { lanes: explicit, why: `--jobs ${explicit} 显式指定（不按内存改；超过内存预算 ${mem.lanes} 时崩溃会被自动降级并留痕）` }
+  }
   const env = Number(process.env.TEST_JOBS)
-  if (Number.isSafeInteger(env) && env > 0) return env
-  if (!plan.includes('unit')) return 1
-  return Math.min(availableParallelism(), 4)
+  if (Number.isSafeInteger(env) && env > 0) {
+    return { lanes: env, why: `TEST_JOBS=${env} 显式指定（不按内存改；超过内存预算 ${mem.lanes} 时崩溃会被自动降级并留痕）` }
+  }
+  const lanes = Math.max(1, Math.min(Math.min(cores, 4), mem.lanes))
+  return { lanes, why: `核 ${cores}（上限 4）· 可用内存 ${mem.availableMb}/${mem.totalMb} MB（每车道估 ${LANE_RSS_ESTIMATE_MB} MB + 预留 ${HOST_MEMORY_RESERVE_MB} MB → 预算 ${mem.lanes} 条）` }
+}
+
+/**
+ * #487：子进程的内存上限。V8 默认按「物理内存的一半」（64 位上封顶 4 GB）算堆上限 ——
+ * 一个失控的批次足以吃干净整台机器，然后被内核按限额杀掉，日志里只剩一个 `Killed`，
+ * 谁也看不出是内存。这里给每个用例子进程一个**明确可见**的上限：
+ *   · 超限 → V8 打 `FATAL ERROR: Reached heap limit ... JavaScript heap out of memory`，
+ *     run-layer 据此判成 `oom`（可降级复跑、可指名报告），而不是「测试断言失败」；
+ *   · `TEST_CHILD_HEAP_MB` 可覆盖；用户自己在 `NODE_OPTIONS` 里设了就不抢。
+ */
+const CHILD_HEAP_FLOOR_MB = 1024
+const CHILD_HEAP_CEIL_MB = 4096
+function childHeapPlan() {
+  const explicit = Number(process.env.TEST_CHILD_HEAP_MB)
+  if (Number.isSafeInteger(explicit) && explicit > 0) return { mb: explicit, source: 'TEST_CHILD_HEAP_MB', inject: true }
+  // 用户自己在 NODE_OPTIONS 里设了就别抢：那是显式意志（子进程会继承同一个值）
+  const inherited = /--max-old-space-size=(\d+)/.exec(process.env.NODE_OPTIONS ?? '')
+  if (inherited) return { mb: Number(inherited[1]), source: 'NODE_OPTIONS', inject: false }
+  const { availableMb } = memoryLaneBudget()
+  const mb = Math.min(CHILD_HEAP_CEIL_MB, Math.max(CHILD_HEAP_FLOOR_MB, Math.floor(availableMb * 0.4)))
+  return { mb, source: `按可用内存 ${availableMb} MB × 0.4 自动`, inject: true }
+}
+
+/**
+ * #487：**「进程怎么死的」和「用例断言怎么红的」是两件事。**
+ *
+ * 以前两种情况在报告里是同一句话（`批内崩溃，该文件未跑完`），于是「内存不足 / 被内核杀掉 /
+ * 还没跑到断言就 exit」全被当成测试失败 —— 每个 PR 的 CI 随机变红。这里按**证据**分类：
+ * 只有分类结果是「用例自己红了」才判失败，`oom` / `killed` 先走降级复跑。
+ */
+const OOM_SIGNATURES = [
+  /FATAL ERROR: Reached heap limit/i,
+  /JavaScript heap out of memory/i,
+  /Allocation failed/i,
+  /ERR_WORKER_OUT_OF_MEMORY/,
+  /Cannot allocate memory/i,
+  /std::bad_alloc/,
+]
+const isOomText = (text) => OOM_SIGNATURES.some((pattern) => pattern.test(text))
+/** 从被截断的 stderr 里挑出「有用的那几行」（跳过 `<--- Last few GCs --->` 那种噪音） */
+function stderrExcerpt(text, limit = 12) {
+  const lines = String(text ?? '').split('\n').filter((line) => line.trim())
+  if (!lines.length) return []
+  // 内存类：稳定命中 `FATAL ERROR: Reached heap limit …` 那一行开始的一小段
+  //（tail 里混着 stdout 的 TAP 行，取「最后 N 行」会正好错过它 —— 实测过）
+  const oom = lines.findIndex((line) => isOomText(line))
+  if (oom >= 0) return lines.slice(oom, oom + Math.min(6, limit))
+  const hit = lines.findIndex((line) => /Error|error:|ERR_|Killed|not found|Cannot|FATAL/.test(line))
+  const from = hit >= 0 ? Math.max(0, hit - 1) : Math.max(0, lines.length - limit)
+  return lines.slice(from, from + limit)
+}
+/**
+ * 返回 `{ kind, label, excerpt }`：
+ *   · `timeout`  批/用例超时
+ *   · `oom`      堆上限触顶（V8 FATAL）或外部 OOM（Cannot allocate memory）
+ *   · `killed`   被 SIGKILL 杀掉（exit 137，常见于系统内存不足时的内核 OOM killer）
+ *   · `signal`   其它信号（SIGSEGV / SIGABRT 没有 OOM 文本）
+ *   · `exit`     以非 0 码退出、但没有收尾行
+ */
+function classifyDeath(result) {
+  const text = (result?.tail ?? []).join('')
+  const excerpt = stderrExcerpt(text)
+  if (result?.timedOut) return { kind: 'timeout', label: '超时（timeout，进程被 runner 停掉）', excerpt }
+  if (isOomText(text)) return { kind: 'oom', label: '内存不足（V8 堆上限触顶 / 分配失败）', excerpt }
+  if (result?.signal === 'SIGKILL' || result?.code === 137) {
+    return { kind: 'killed', label: '被信号 SIGKILL 终止（exit 137，通常是系统内存不足时内核 OOM killer 挑中）', excerpt }
+  }
+  if (result?.signal) return { kind: 'signal', label: `被信号 ${result.signal} 终止`, excerpt }
+  if (typeof result?.code === 'number' && result.code !== 0) return { kind: 'exit', label: `进程异常退出（exit ${result.code}），没跑到收尾行`, excerpt }
+  return { kind: 'unknown', label: '进程没跑到收尾行就结束了', excerpt }
 }
 
 /**
@@ -806,33 +899,75 @@ async function main() {
   const identity = runnerIdentity()
   const commit = currentCommit()
   console.log(`runner: ${identity.id}${identity.loadClass ? `（负载档 ${identity.loadClass}）` : ''} · commit: ${commit} · 运行记录目录: ${dirLabel(recordDir)}`)
-  const lanes = resolveJobs(plan, jobs)
+  const lanePlan = resolveJobs(plan, jobs)
+  const lanes = lanePlan.lanes
+  /**
+   * #487：子进程内存上限（所有用例子进程都带）。降级复跑时用一个更大的上限 ——
+   * 「撞到自己上限」是可恢复的资源问题，「撞到系统上限」才需要人介入。
+   */
+  const heapPlan = childHeapPlan()
+  const heapCap = heapPlan.mb
+  const caseNodeArgs = heapPlan.inject ? [`--max-old-space-size=${heapCap}`] : []
+  const degradedHeapMb = Math.min(CHILD_HEAP_CEIL_MB * 2, Math.max(CHILD_HEAP_FLOOR_MB, heapCap * 2))
+  const degradedNodeArgs = heapPlan.inject ? [`--max-old-space-size=${degradedHeapMb}`] : []
+  console.log(
+    `车道：${lanes}（${lanePlan.why}）· 子进程堆上限 ${heapCap} MB（来源：${heapPlan.source}${heapPlan.inject ? '，TEST_CHILD_HEAP_MB 可覆盖' : '，不覆盖'}）`,
+  )
   const unitWeights = await loadUnitWeights()
   const work = await buildWorkUnits(planned, unitWeights.files)
 
   // 每个工作单元跑完再整段打印：并行时几个文件的日志交错成一团既看不出失败在哪，也不好粘进 Issue
   const emit = (text) => process.stdout.write(text)
+  /**
+   * #487：单个用例进程的环境（APP_URL / DIST_DIR 注入）。抽出来是因为**降级复跑**（批次崩溃后
+   * 逐文件串行重跑）必须拿到与正常单文件路径完全一样的环境，否则「串行能过」就成了假象。
+   */
+  const caseEnv = async (item) => {
+    const env = { ...process.env }
+    const base = path.basename(item.file)
+    if (SELF_SERVED.has(base)) env.APP_URL = ''
+    else if (APP_URL_FILES.has(base) && !process.env.APP_URL) env.APP_URL = (await ensureSharedStd()).url
+    // 要 standard 变体却读 DIST_DIR 的用例：指到标准产物，别让它们对着内测包 SKIP(env)（#365）
+    if (STANDARD_DIST_DIR_FILES.has(base) && !process.env.DIST_DIR) env.DIST_DIR = standardDistDir()
+    return env
+  }
+  /** #487：本轮被降级重跑救回来的用例（`PASS(degraded)`）—— 只降并发不留痕是不允许的 */
+  const degradedRuns = []
+  /** #487：批次进程崩了的工作单元，主队列排空后串行重跑（见 runUnit 里的 pendingDegrade） */
+  const pendingCrashes = []
   const runUnit = async (unit) => {
     const log = []
-    const say = (line) => { if (lanes === 1) process.stdout.write(`${line}\n`) ; else log.push(line) }
+    const say = (line) => { if (lanes === 1) process.stdout.write(`${line}\n`) ; else log.push(`${line}\n`) }
     const startedUnit = performance.now()
     if (!unit.merged) {
       const item = unit.items[0]
       const name = rel(item.file)
       say(`\n>> ${name} (timeout ${timeoutMs}ms)`)
-      const env = { ...process.env }
-      const base = path.basename(item.file)
-      if (SELF_SERVED.has(base)) env.APP_URL = ''
-      else if (APP_URL_FILES.has(base) && !process.env.APP_URL) env.APP_URL = (await ensureSharedStd()).url
-      // 要 standard 变体却读 DIST_DIR 的用例：指到标准产物，别让它们对着内测包 SKIP(env)（#365）
-      if (STANDARD_DIST_DIR_FILES.has(base) && !process.env.DIST_DIR) env.DIST_DIR = standardDistDir()
+      const env = await caseEnv(item)
       // #456：attempts 要记下来 —— 判据里「同 runner 重跑绿」与「跨 runner 结论不同」是两件事，
       // 报告里必须能分开看（前者是 flaky，后者是 runner-dependent）。
       let attempts = 1
-      const run = () => runCase(item.file, { cwd: ROOT, env, timeoutMs, output: lanes === 1 })
+      const run = (nodeArgs = caseNodeArgs) => runCase(item.file, { cwd: ROOT, env, timeoutMs, output: lanes === 1, nodeArgs })
       let result = await run()
       if (lanes !== 1 && result.output) log.push(result.output)
       let skipped = result.code === SKIP_CODE
+      /**
+       * #487：撞到自己那条堆上限 → **不算失败**，把上限翻倍串行再来一次。
+       * 这跟「重跑碰运气」（#406 flaky）是两回事：这里改的是资源配额，不是掷骰子。
+       */
+      let degradeReason = ''
+      if (!result.ok && !skipped && heapPlan.inject && classifyDeath(result).kind === 'oom') {
+        const death = classifyDeath(result)
+        say(`   ⬆ ${death.label}；把子进程堆上限从 ${heapCap} MB 提到 ${degradedHeapMb} MB 重跑一次（资源配额问题，不是断言失败）`)
+        attempts += 1
+        result = await run(degradedNodeArgs)
+        if (lanes !== 1 && result.output) log.push(result.output)
+        if (result.ok) {
+          degradeReason = `${death.label} → 提高子进程堆上限后通过（原上限 ${heapCap} MB）。调大 TEST_CHILD_HEAP_MB 或减小 --jobs 可消除降级`
+          degradedRuns.push({ file: name, reason: degradeReason })
+        }
+        skipped = result.code === SKIP_CODE
+      }
       /**
        * #406：失败自动重跑 **1 次**。
        *
@@ -880,20 +1015,28 @@ async function main() {
       }
       const skipReason = skipped ? (/SKIP\(env\) (.+)/.exec(result.tail.join(''))?.[1] ?? '环境不满足').trim() : ''
       const status = result.ok
-        ? flaky
-          ? 'PASS(flaky)'
-          : 'PASS'
+        ? degradeReason
+          ? 'PASS(degraded)'
+          : flaky
+            ? 'PASS(flaky)'
+            : 'PASS'
         : skipped
           ? 'SKIP(env)'
           : result.timedOut
             ? 'TIMEOUT'
-            : 'FAIL'
+            : classifyDeath(result).kind === 'oom'
+              ? 'FAIL(OOM)'
+              : 'FAIL'
       say(`<< ${status} ${name} (${result.ms}ms)`)
+      if (degradeReason) say(`   ↧ ${degradeReason}`)
       if (skipped) say(`   ↳ ${skipReason}`)
       // 真的绿了（不是重跑才绿）：连续 flaky 计数清零，quarantine 自动解除（修好就移除，不用手改 JSON）
       if (result.ok && !flaky) recordPass(flakyRegistry, name, { today })
       return {
-        results: [{ layer: item.layer, file: name, ...result, skipped, skipReason, attempts, runner: identity.id }],
+        results: [{
+          layer: item.layer, file: name, ...result, skipped, skipReason, attempts, runner: identity.id,
+          ...(degradeReason ? { degraded: true, degradeReason } : {}),
+        }],
         log: log.join(''),
         interrupted: result.interrupted,
         failed: !result.ok && !skipped,
@@ -903,23 +1046,25 @@ async function main() {
     const files = unit.items.map((item) => item.file)
     say(`\n>> 合并批次 ${unit.items.length} 个文件 (timeout ${timeoutMs}ms/批)`)
     for (const item of unit.items) say(`   · ${rel(item.file)}`)
-    const result = await runMergedBatch(files, { cwd: ROOT, env: { ...process.env }, timeoutMs, output: lanes === 1 })
+    const result = await runMergedBatch(files, { cwd: ROOT, env: { ...process.env }, timeoutMs, output: lanes === 1, nodeArgs: caseNodeArgs })
     if (lanes !== 1 && result.output) log.unshift(result.output)
     const byFile = new Map(result.files.map((entry) => [entry.file, entry]))
     const unitResults = []
+    /** #487：这批里「没有收尾行」的文件 —— 先不判红，交给排空后的串行降级复跑 */
+    const missing = []
     for (const item of unit.items) {
       const name = rel(item.file)
       const entry = byFile.get(name)
       if (!entry) {
-        // 没有收尾行 = 这个文件没跑完（import 抛错 / 进程被杀 / 超时）。不许当成通过。
-        const reason = result.timedOut ? '批超时，该文件未跑完' : '批内崩溃，该文件未跑完'
+        // 没有收尾行 = 这个文件没跑完（import 抛错 / 进程被杀 / 超时）。**不许当成通过**，
+        // 但也不许直接判失败（#487）：先记成「待降级复跑」，由排空后的串行阶段定性。
+        missing.push(item)
         unitResults.push({
           layer: item.layer, file: name, ok: false, skipped: false, skipReason: '',
           code: result.code, signal: result.signal, timedOut: result.timedOut, interrupted: result.interrupted,
-          error: reason, skips: 0, skipDetails: [], ms: 0, tail: result.tail, merged: true,
-          attempts: 1, runner: identity.id,
+          error: '批次进程没跑到收尾行（待串行降级复跑）', skips: 0, skipDetails: [], ms: 0, tail: result.tail, merged: true,
+          pendingDegrade: true, attempts: 1, runner: identity.id,
         })
-        say(`<< FAIL ${name}（${reason}）`)
         continue
       }
       const skipped = entry.outcome === 'SKIP'
@@ -934,18 +1079,39 @@ async function main() {
       const status = entry.outcome === 'PASS' ? 'PASS' : entry.outcome === 'FAIL' ? 'FAIL' : 'SKIP'
       say(`<< ${status} ${name} (${entry.ms}ms, ${entry.tests} 用例)`)
     }
+    /**
+     * #487：**崩溃 != 失败**。
+     *
+     * 批次进程没跑完时，以前直接把缺收尾行的文件判 FAIL（reason 只有一句「批内崩溃」）。可这类
+     * 崩溃绝大多是**资源不够**：16 个文件在一个进程里顺序 import，峰值 RSS ≈ 250 MB，几条车道
+     * 并发就足以把可用内存吃光，被内核 OOM killer 挑中整批杀掉；单文件重跑只要 120 MB，必过。
+     * 于是「内存不足」被稳定地误报成「测试失败」——每个 PR 的 CI 随机变红。
+     *
+     * 现在的处置：这里只**暂记**（pendingDegrade），主队列排空后由 runDegradedRetry() 串行重跑：
+     *   1) 整批独占（没有别的车道抢内存）跑一次 → 全过则整批 `PASS(degraded)`；
+     *   2) 仍有文件没跑完 → 逐个单文件进程串行跑 → 过则 `PASS(degraded)`；
+     *   3) 串行仍崩/仍红 → 才是真失败，并打印**真实 stderr**（不是只有一句「批内崩溃」）。
+     */
+    const death = missing.length ? classifyDeath(result) : null
+    if (missing.length) {
+      say(`\n⚠ 批次进程没跑完（${death.label}）：${missing.length}/${unit.items.length} 个文件没有收尾行`)
+      say('   ⟹ 不判红：主队列排空后整批独占串行重跑（再退到逐文件串行），仍崩才算真失败')
+      for (const line of death.excerpt) say(`   ⚠ ${line}`)
+      for (const item of missing) say(`<< CRASH ${rel(item.file)}（${death.kind}，待串行降级复跑）`)
+    }
     // 批次里有红：**不能直接相信** —— 合并的前提是「文件之间零串扰」，红了要么是真红，要么
     // 是这个批次不该合在一起（模块级装配互相影响 / 用例依赖 event loop 的时序）。于是把这几个
     // 文件按**单文件进程**（合并之前的老跑法）重跑一遍，结果以单文件为准：
     //   · 单跑绿 → 批次不兼容（打印 ⚠，建议把可疑文件登记进 UNIT_SOLO）
     //   · 单跑红 → 真红，照旧上报
-    const reds = unitResults.filter((entry) => !entry.ok && !entry.skipped)
+    // #487：pendingDegrade 的条目不走这条（它们没有批内结论可比），由降级阶段统一处理。
+    const reds = unitResults.filter((entry) => !entry.ok && !entry.skipped && !entry.pendingDegrade)
     if (reds.length) {
       say(`\n⚠ 批次 ${unit.items.length} 个文件里 ${reds.length} 个红了：改按单文件进程重跑这几个（结果以单文件为准）`)
       for (const red of reds) {
         const item = unit.items.find((candidate) => rel(candidate.file) === red.file)
-        const env = { ...process.env }
-        const single = await runCase(item.file, { cwd: ROOT, env, timeoutMs, output: lanes === 1 })
+        const env = await caseEnv(item)
+        const single = await runCase(item.file, { cwd: ROOT, env, timeoutMs, output: lanes === 1, nodeArgs: caseNodeArgs })
         if (lanes !== 1 && single.output) log.push(single.output)
         const skipped = single.code === SKIP_CODE
         const skipReason = skipped ? (/SKIP\(env\) (.+)/.exec(single.tail.join(''))?.[1] ?? '环境不满足').trim() : ''
@@ -967,11 +1133,13 @@ async function main() {
         }
       }
     }
+    if (missing.length) pendingCrashes.push({ unit, death, results: unitResults })
     return {
       results: unitResults,
       log: log.join(''),
       interrupted: result.interrupted,
-      failed: unitResults.some((entry) => !entry.ok && !entry.skipped),
+      // #487：待降级复跑的文件先不算「失败」—— 否则 `--bail` 会在定性之前就把整轮掐掉
+      failed: unitResults.some((entry) => !entry.ok && !entry.skipped && !entry.pendingDegrade),
     }
   }
 
@@ -995,10 +1163,111 @@ async function main() {
     }
   }
   await Promise.all(Array.from({ length: Math.min(lanes, work.length) }, worker))
+
+  /**
+   * #487：批次崩溃的**降级复跑**（串行，独占机器）。
+   *
+   * 为什么必须放在主队列**排空之后**：崩溃的成因绝大多数是「几条车道同时把内存吃光」，
+   * 这时独占重跑才是干净的对照实验 —— 别的车道还在抢内存时重跑，只会再崩一次，
+   * 于是「资源不足」又被读成「测试红」，白白多花时间还得出错误结论。
+   *
+   * 三级阶梯（每一级都留痕，不许悄悄降并发换绿）：
+   *   1) 整批独占串行（子进程堆上限翻倍）→ 全过 ⇒ 整批 `PASS(degraded)`；
+   *   2) 仍有文件没跑完/批内红 → 逐文件单进程串行 → 过 ⇒ `PASS(degraded)`；
+   *   3) 串行仍崩 ⇒ 真失败，打印**真实 stderr** + 分类 + 复跑命令（不再只有一句「批内崩溃」）。
+   */
+  if (pendingCrashes.length && !interrupted) {
+    console.log(
+      `\n${'='.repeat(70)}\n== #487 降级复跑：${pendingCrashes.length} 个批次进程没跑完（${[...new Set(pendingCrashes.map((item) => item.death.kind))].join('/')}）\n${'='.repeat(70)}`,
+    )
+    console.log('主队列已排空 → 下面是独占串行复跑：能过就说明是「资源不足」，不是「测试失败」；仍崩才算真失败。')
+    for (const crash of pendingCrashes) {
+      if (interrupted) break
+      const files = crash.unit.items.map((item) => item.file)
+      const death = crash.death
+      console.log(`\n↺ 整批独占串行重跑（${crash.unit.items.length} 个文件，堆上限 ${heapPlan.inject ? degradedHeapMb : heapCap} MB；上次死因：${death.label}）`)
+      for (const line of death.excerpt) console.log(`   ⚠ 上次 stderr：${line}`)
+      const alone = await runMergedBatch(files, {
+        cwd: ROOT, env: { ...process.env }, timeoutMs, output: true, nodeArgs: degradedNodeArgs,
+      })
+      const aloneByFile = new Map(alone.files.map((entry) => [entry.file, entry]))
+      const aloneDeath = classifyDeath(alone)
+      const stillBroken = []
+      for (const item of crash.unit.items) {
+        const name = rel(item.file)
+        const index = crash.results.findIndex((entry) => entry.file === name)
+        if (index < 0) continue
+        const entry = aloneByFile.get(name)
+        if (entry && entry.ok) {
+          const reason = `批次进程没跑完（${death.kind}：${death.label}）→ 独占串行整批重跑通过${entry.skip ? `（批内 ${entry.skip} 条用例自带 SKIP，判定不变）` : ''}`
+          Object.assign(crash.results[index], {
+            ok: true, skipped: entry.outcome === 'SKIP', skipReason: '', code: 0, signal: null, timedOut: false,
+            error: null, tests: entry.tests, pass: entry.pass, fail: entry.fail, skips: entry.skip,
+            skipDetails: entry.skipDetails ?? [], ms: entry.ms, tail: [], merged: true, pendingDegrade: false,
+            batchFallback: true, degraded: true, degradeReason: reason, attempts: 2,
+          })
+          degradedRuns.push({ file: name, reason: `${reason}（批次资源不足）` })
+          console.log(`   ↧ PASS(degraded) ${name}（${entry.ms}ms, ${entry.tests} 用例）`)
+          continue
+        }
+        stillBroken.push(item)
+      }
+      if (!stillBroken.length) {
+        console.log('   ⟹ 整批独占串行全过 → 判定为**批次资源不足**，不判红（已在 summary 记 DEGRADED）')
+        continue
+      }
+      console.log(`   ⟹ 整批串行仍有 ${stillBroken.length} 个文件没跑完（${aloneDeath.label}），退到逐文件单进程串行`)
+      for (const item of stillBroken) {
+        const name = rel(item.file)
+        const index = crash.results.findIndex((entry) => entry.file === name)
+        const env = await caseEnv(item)
+        const solo = await runCase(item.file, { cwd: ROOT, env, timeoutMs, output: true, nodeArgs: degradedNodeArgs })
+        const soloDeath = solo.ok ? null : classifyDeath(solo)
+        const skipped = solo.code === SKIP_CODE
+        const skipReason = skipped ? (/SKIP\(env\) (.+)/.exec(solo.tail.join(''))?.[1] ?? '环境不满足').trim() : ''
+        if (solo.ok) {
+          const reason = `批次进程没跑完（${death.kind}：${death.label}）→ 逐文件串行通过`
+          if (index >= 0) {
+            Object.assign(crash.results[index], {
+              ...solo, file: name, layer: item.layer, skipped: false, skipReason: '', merged: false,
+              pendingDegrade: false, batchFallback: true, degraded: true, degradeReason: reason, attempts: 2,
+            })
+          }
+          degradedRuns.push({ file: name, reason })
+          console.log(`   ↧ PASS(degraded) ${name}（逐文件串行 ${solo.ms}ms）`)
+          continue
+        }
+        // 串行仍崩/仍红：**这才是真失败**。必须把真实 stderr 打出来，不许只写「批内崩溃」。
+        const why = skipped
+          ? `SKIP(env) ${skipReason}`
+          : `${soloDeath.label}；逐文件串行仍没跑到收尾行`
+        console.log(`\n   ✖ FAIL ${name}（${why}）`)
+        console.log(`      批内死因：${death.label}${death.excerpt.length ? ` —— ${death.excerpt.join(' ⏎ ')}` : ''}`)
+        for (const line of soloDeath?.excerpt ?? []) console.log(`      串行 stderr：${line}`)
+        console.log(`      复跑：node tests/run-layer.mjs ${item.layer} --case ${name}`)
+        if (index >= 0) {
+          Object.assign(crash.results[index], {
+            ok: false, skipped, skipReason, code: solo.code, signal: solo.signal, timedOut: solo.timedOut,
+            merged: false, pendingDegrade: false, batchFallback: true, attempts: 2,
+            error: why,
+            crash: { batch: death.kind, solo: soloDeath?.kind ?? null, batchLabel: death.label, soloLabel: soloDeath?.label ?? null },
+            stderr: { batch: death.excerpt, solo: soloDeath?.excerpt ?? [] },
+            tail: solo.tail,
+          })
+        }
+      }
+    }
+  }
+  // 极端情况（中断 / 降级阶段被跳过）：待定条目一律按失败收口，绝不让「没跑完」被当成通过。
   sharedStd?.kill()
   // 结果按选择顺序归位：并行完成顺序不确定，报告顺序必须稳定
   const order = new Map(planned.map((item, index) => [rel(item.file), index]))
   results.push(...outcomes.sort((a, b) => (order.get(a.file) ?? 0) - (order.get(b.file) ?? 0)))
+  for (const entry of results) {
+    if (!entry.pendingDegrade) continue
+    entry.pendingDegrade = false
+    entry.error = entry.error ?? '批次崩溃后没有完成降级复跑（本轮被中断）'
+  }
   const failures = results.filter((r) => !r.ok && !r.skipped)
   const skips = results.filter((r) => r.skipped)
   const totalMs = Math.round(performance.now() - started)
@@ -1088,7 +1357,19 @@ async function main() {
       `| flaky（同 runner 重跑绿） | ${tri.summary.flaky} | ${TRI_STATE_ACTION.flaky} |`,
       `| **runner-dependent（跨 runner 结论不一致）** | ${tri.summary['runner-dependent']} | ${TRI_STATE_ACTION['runner-dependent']} |`,
       `| 真红（同 runner 重跑仍红） | ${tri.summary['true-red']} | ${TRI_STATE_ACTION['true-red']} |`,
+      `| **降级通过（批次资源不足 → 串行重跑绿）** | ${degraded.length} | 不算失败，但必须留痕；调小 \`--jobs\` 或调大 \`TEST_CHILD_HEAP_MB\` |`,
     )
+    if (degraded.length) {
+      lines.push(
+        '',
+        `### 降级通过 ${degraded.length} 个 —— 并发/内存不足，串行重跑才绿（不是 flake，不是真红）`,
+        '',
+        `本轮车道 ${lanes}（${lanePlan.why}）· 子进程堆上限 ${heapCap} MB（${heapPlan.source}）。`,
+        '降级是「资源不够」的证据，不是「调小并发换绿」的许可：同一批次反复降级时请修资源口径，别让 summary 变绿了事。',
+        '',
+      )
+      for (const r of degraded) lines.push(`- \`${r.file}\` —— ${r.degradeReason}`)
+    }
     if (flakyRuns.length) {
       lines.push('', `### flaky（重跑才通过）${flakyRuns.length} 个 —— 不阻塞合并，但必须留痕`, '')
       for (const name of flakyRuns) lines.push(`- \`${name}\` —— ${describeEntry(flakyRegistry.tests[name])}`)
@@ -1125,6 +1406,12 @@ async function main() {
   // 让跳过在报告里永远露头；判红门禁仍只看真实失败，避免把「产物没构建」误报成回归。
   const nodeSkips = results.filter((r) => (r.skips ?? 0) > 0)
   const failedCount = failures.length
+  /**
+   * #487：降级通过的名单（`PASS(degraded)`）。**必须与「绿」分开数**：它们是靠「降并发 / 提内存
+   * 上限的串行重跑」才绿的，掩盖起来就等于「用降低并发换绿」。
+   */
+  const degraded = results.filter((r) => r.ok && r.degraded)
+  const crashedFails = failures.filter((r) => r.crash)
   const report = {
     version: 1,
     totalMs,
@@ -1134,6 +1421,10 @@ async function main() {
     failed: failedCount,
     skipped: skips.length,
     skippedSubtests: nodeSkips.reduce((sum, r) => sum + (r.skips ?? 0), 0),
+    /** #487：降级（批次资源不足 / 堆上限触顶）后串行重跑通过的名单，与 green 分开统计 */
+    degraded: degraded.map((r) => ({ file: r.file, reason: r.degradeReason })),
+    /** #487：这次跑的并发口径（事后能复核「是不是机子太小」） */
+    lanes: { planned: lanes, why: lanePlan.why, childHeapMb: heapCap, childHeapSource: heapPlan.source, memory: memoryLaneBudget() },
     /** #406：重跑才通过的名单（不是「通过」的同义词，必须能被单独筛出来） */
     flaky: flakyRuns,
     /** #406：被隔离区跳过、本轮没有执行的用例 */
@@ -1161,8 +1452,25 @@ async function main() {
   }
   if (!planned.length) console.error('No matching cases')
   console.log(
-    `\nTotal ${results.length}: PASS ${report.passed}, FAIL ${failedCount}, SKIP(env) ${skips.length}, NODE-SKIP ${report.skippedSubtests}; elapsed ${totalMs}ms`,
+    `\nTotal ${results.length}: PASS ${report.passed}, FAIL ${failedCount}, SKIP(env) ${skips.length}, NODE-SKIP ${report.skippedSubtests}, DEGRADED ${degraded.length}; elapsed ${totalMs}ms`,
   )
+  // #487：降级必须留痕 —— 否则「调小并发换绿」就成了一条静默的作弊路径
+  if (degraded.length) {
+    console.log(
+      `\nDEGRADED（批次/进程资源不足 → 降级串行重跑通过，${degraded.length} 个；**不算失败，但必须留痕**）`,
+    )
+    console.log(`  本轮车道 ${lanes}（${lanePlan.why}）· 子进程堆上限 ${heapCap} MB（${heapPlan.source}）`)
+    for (const r of degraded) console.log(`  DEGRADED  ${r.file} —— ${r.degradeReason}`)
+    console.log('  处置：调小 `--jobs` / 调大 `TEST_CHILD_HEAP_MB`；若某个批次反复降级，把其中文件登记进 UNIT_SOLO')
+  }
+  // #487：崩溃型失败的**真实 stderr** 必须打出来。以前只有一句「批内崩溃，该文件未跑完」，
+  // 看报告的人无从判断是内存不足、是 import 抛错、还是被信号杀掉。
+  for (const r of crashedFails) {
+    console.log(`\nCRASH  ${r.file}`)
+    console.log(`  批内：${r.crash.batchLabel ?? r.crash.batch}${r.stderr?.batch?.length ? ` —— ${r.stderr.batch.join(' ⏎ ')}` : ''}`)
+    if (r.crash.soloLabel) console.log(`  串行：${r.crash.soloLabel}`)
+    for (const line of r.stderr?.solo ?? []) console.log(`    ${line}`)
+  }
   for (const r of failures) console.log(`Rerun: node tests/run-layer.mjs ${r.layer} --case ${r.file}`)
   for (const r of skips) console.log(`Skipped (environment): ${r.file} — ${r.skipReason}`)
   // #298：跳过必须**指名道姓**。以前只有 `Skipped (in-case # SKIP ×2): <文件>` 一行，报告里

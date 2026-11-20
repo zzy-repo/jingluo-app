@@ -80,8 +80,15 @@ async function spawnCase(argv, { cwd, timeoutMs = 180000, env = process.env, out
     }
     const keep = (stream, chunk) => {
       const text = chunk.toString()
+      // #487：**必须一律收进 `collected`**。这里原来是二选一（实时转发 or 攒起来），
+      // 于是 `--jobs 1`（串行）时子进程输出全被转走、`collected` 恒为空 —— 而
+      // ./runtime.mjs 的 runMergedBatch 正是从 `collected` 里解析每个文件的 `<< FILE` 收尾行。
+      // 结果：串行跑合并批次时**一个收尾行都解析不到**，整批 16 个文件全被报成「批内崩溃」，
+      // 再靠单文件重跑兜回绿（实测 `node tests/run-layer.mjs unit --jobs 1` 在干净 main 上
+      // 就是 16×「批内崩溃」+ 16×「单文件重跑，与批内结果不同」）。资源不足不是原因，
+      // 丢失输出才是。转发与否只影响"要不要同时打到终端"，与「留不留证据」无关。
+      collected.push(text)
       if (output) stream.write(chunk)
-      else collected.push(text)
       scanSkips(text)
       tail.push(text)
       if (tail.length > 100) tail.shift()
@@ -110,11 +117,11 @@ async function spawnCase(argv, { cwd, timeoutMs = 180000, env = process.env, out
 }
 
 // One invocation owns one directory and (on POSIX) one process group. Never pkill by name.
-export async function runCase(file, { cwd, timeoutMs = 180000, env = process.env, output = true } = {}) {
+export async function runCase(file, { cwd, timeoutMs = 180000, env = process.env, output = true, nodeArgs = [] } = {}) {
   const source = await readFile(file, 'utf8')
   const nodeTest = /(?:from\s*|import\s*|require\(\s*)['"]node:test['"]/.test(source)
   const result = await spawnCase(
-    [...TRANSFORM_TYPES_ARGS, ...(nodeTest ? ['--test'] : []), ...preloadArgs, file],
+    [...nodeArgs, ...TRANSFORM_TYPES_ARGS, ...(nodeTest ? ['--test'] : []), ...preloadArgs, file],
     { cwd, timeoutMs, env, output },
   )
   const { collected, ...rest } = result
@@ -128,9 +135,9 @@ export async function runCase(file, { cwd, timeoutMs = 180000, env = process.env
  * 批次进程崩了/超时了，没有收尾行的文件不会出现在 `files` 里 —— caller 负责把它们判失败，
  * 「没跑完」不许被当成「通过」。
  */
-export async function runMergedBatch(files, { cwd, timeoutMs = 180000, env = process.env, output = true } = {}) {
+export async function runMergedBatch(files, { cwd, timeoutMs = 180000, env = process.env, output = true, nodeArgs = [] } = {}) {
   const result = await spawnCase(
-    [...TRANSFORM_TYPES_ARGS, ...preloadArgs, MERGED_ENTRY, ...files],
+    [...nodeArgs, ...TRANSFORM_TYPES_ARGS, ...preloadArgs, MERGED_ENTRY, ...files],
     { cwd, timeoutMs, env, output },
   )
   const text = result.collected.join('')
