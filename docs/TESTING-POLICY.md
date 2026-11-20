@@ -7,6 +7,8 @@
 - `tests/run-layer.mjs --baseline` —— 按基线清单比对并输出差异
 - `docs/testing.md` —— 集成层怎么跑、产物/端口/夹具要求
 - `tests/unit/gate-negative-controls.test.mjs` + `tests/gates/` —— 门禁自身的负向对照（见第 9 节）
+- [`docs/diagnostics-spec.md`](diagnostics-spec.md) —— 诊断日志的**最小字段集**（`stage` / `status` / `reason` /
+  `retryable` / `durationMs` + `meta` ≥ 2 键）与 `reason` 字典口径；新增埋点前先读它，`pnpm check:log-coverage` 只挡退化、不判合格
 
 一句话原则：**门禁要快，慢检查只在发版前跑一次；失败要可比，只和基线比，不追「全绿」幻想。**
 

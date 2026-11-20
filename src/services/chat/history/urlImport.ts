@@ -1,6 +1,7 @@
 import { Capacitor, CapacitorHttp, type HttpResponse } from '@capacitor/core'
 import { errorMeta, record, recordAction, recordEvent, redactUrl } from '../../diagnostics/collector.js'
 import { buildMeta } from '../../diagnostics/fields.js'
+import { isLogReason, REASON, retryableFor } from '../../diagnostics/reasons.js'
 import { bytesPerSecond } from '../../diagnostics/timing.js'
 import { importHistory } from '../backup.js'
 import { LIMITS } from '../../limits.js'
@@ -254,7 +255,7 @@ const tooLarge = (limitBytes: number, measuredBytes: number, correlationId: stri
   // 拒绝也要留痕：只给用户一句提示、日志里却什么都没有，事后就查不出「到底是哪个包、差多少」。
   record('import_error', 'error', 'import rejected: archive too large', {
     correlationId,
-    reason: 'archive-too-large',
+    reason: REASON.archiveTooLarge,
     'limit.bytes': limitBytes,
     'download.bytes': measuredBytes,
     ...buildMeta({
@@ -466,6 +467,10 @@ const elapsedSince = (startedAt: number): number => Math.max(0, Math.round(monot
 /**
  * 再试一次有没有用（#313）：链路类（超时 / 断流 / 停滞 / 预算 / 网络 / 空包）可重试；
  * 包本身坏了、地址永久无效、403 过期/签名错误都不可 —— 重试只会再等一遍。
+ *
+ * **迁移中**（#301 维度 3）：取值在 `reasons.ts` 字典里的走统一默认值 `retryableFor()`，
+ * 下面这份名单只剩「还没迁移的历史取值」（`interrupted` / `unreachable` 等）。
+ * 名单本身只能缩不能涨：新原因一律进字典，别再往这里加词。
  */
 const RETRYABLE_FAILURES = new Set([
   'timeout',
@@ -499,7 +504,8 @@ const recordDownloadFailure = (
       flow: 'import',
       stage: 'import.download',
       status: 'error',
-      retryable: RETRYABLE_FAILURES.has(reason),
+      // 字典里的原因用全链路统一的默认可重试性；历史取值继续走本地名单（两者对同一取值的结论一致）
+      retryable: isLogReason(reason) ? retryableFor(reason) : RETRYABLE_FAILURES.has(reason),
       durationMs: elapsedSince(startedAt),
     }),
     // error.msg 一律给：没有异常对象时用失败原因兜底，日志里不留空字段（#19）
@@ -909,13 +915,13 @@ const fetchChunk = async (
     // 真离线时 WebView 抛的是 `TypeError: Failed to fetch`，与被墙端口/中间设备拦截一模一样，
     // 靠错误串永远分不出来 —— 过去就因此把「手机没网」报成了「网络异常，请检查网络连接」。
     if (!isBrowserOnline()) {
-      recordDownloadFailure('offline', url, state.correlationId, startedAt, { 'download.bytes': downloaded }, error)
+      recordDownloadFailure(REASON.offline, url, state.correlationId, startedAt, { 'download.bytes': downloaded }, error)
       trace?.({ at: elapsedSince(startedAt), kind: 'error', bytes: downloaded, totalBytes: total, message: 'offline' })
       return fail('historyImportUrlOffline')
     }
     if (isTimeout(error)) {
       // 超时且已经下到一半：说明链路慢，不是链接坏了。
-      recordDownloadFailure('timeout', url, state.correlationId, startedAt, { 'download.bytes': downloaded, percent }, error)
+      recordDownloadFailure(REASON.timeout, url, state.correlationId, startedAt, { 'download.bytes': downloaded, percent }, error)
       trace?.({ at: elapsedSince(startedAt), kind: 'error', bytes: downloaded, totalBytes: total, message: 'timeout' })
       return downloaded > 0
         ? fail('historyImportUrlTimeoutPartial', { percent })
@@ -928,7 +934,7 @@ const fetchChunk = async (
       // 真离线在上面已经被 `!isBrowserOnline()` 收口，不会走到这里。
       const classified = classifyImportFailure({ error, online: isBrowserOnline() })
       const tier: ImportFailureReason =
-        classified === 'refused' ? 'refused' : classified === 'offline' ? 'offline' : 'unreachable'
+        classified === 'refused' ? REASON.refused : classified === 'offline' ? REASON.offline : 'unreachable'
       recordDownloadFailure(tier, url, state.correlationId, startedAt, { 'download.bytes': downloaded }, error)
       trace?.({ at: elapsedSince(startedAt), kind: 'error', bytes: downloaded, totalBytes: total, message: tier })
       return fail(IMPORT_FAILURE_KEYS[tier])
@@ -938,7 +944,7 @@ const fetchChunk = async (
       trace?.({ at: elapsedSince(startedAt), kind: 'error', bytes: downloaded, totalBytes: total, message: 'interrupted', status: 0 })
       return fail('historyImportUrlInterrupted', { percent })
     }
-    recordDownloadFailure('network', url, state.correlationId, startedAt, { 'download.bytes': downloaded }, error)
+    recordDownloadFailure(REASON.network, url, state.correlationId, startedAt, { 'download.bytes': downloaded }, error)
     trace?.({ at: elapsedSince(startedAt), kind: 'error', bytes: downloaded, totalBytes: total, message: 'network' })
     return fail('historyImportUrlNetwork')
   }
@@ -1133,12 +1139,12 @@ const downloadArchive = async (
     }
     throwIfCancelled(options.signal)
     if (state.downloaded === 0) {
-      recordDownloadFailure('empty', url, state.correlationId, startedAt, { 'download.bytes': 0 })
+      recordDownloadFailure(REASON.empty, url, state.correlationId, startedAt, { 'download.bytes': 0 })
       fail('historyImportUrlBadResponse')
     }
     if (state.total !== undefined && state.downloaded < state.total) {
       // 链路中途断掉：块级别已经拿到结果但字节不足，绝不能当成功导入。
-      recordDownloadFailure('incomplete', url, state.correlationId, startedAt, {
+      recordDownloadFailure(REASON.incomplete, url, state.correlationId, startedAt, {
         'download.bytes': state.downloaded,
         'download.total': state.total,
       })
@@ -1201,7 +1207,7 @@ const downloadArchive = async (
     if (error instanceof DownloadStalled) {
       const idleMs = elapsedSince(state.lastProgressAt)
       const seconds = Math.max(1, Math.round(state.stallMs / 1000))
-      recordDownloadFailure('stalled', url, state.correlationId, startedAt, {
+      recordDownloadFailure(REASON.stalled, url, state.correlationId, startedAt, {
         ...meta,
         'idle.ms': idleMs,
         'stall.ms': state.stallMs,
@@ -1234,7 +1240,7 @@ const downloadArchive = async (
         // 与 stalled 那条对齐：不看这个数，日志里分不清「一直在推进但太慢」和「根本没动静」
         'idle.ms': elapsedSince(state.lastProgressAt),
       }
-      recordDownloadFailure('deadline', url, state.correlationId, startedAt, budgetFields)
+      recordDownloadFailure(REASON.deadline, url, state.correlationId, startedAt, budgetFields)
       trace?.({
         at: elapsedSince(startedAt),
         kind: 'error',
@@ -1297,7 +1303,7 @@ export const importHistoryFromUrl = async (
   if (!/^https?:\/\/\S+$/i.test(link)) {
     // 非法 URL（负向用例）：与「下载失败」分开成一条一眼能认的记录
     record('import_error', 'error', 'import rejected: invalid url', {
-      reason: 'invalid-url',
+      reason: REASON.invalidUrl,
       ...buildMeta({
         flow: 'import',
         stage: 'import.check',
@@ -1392,7 +1398,7 @@ export const importHistoryFromUrl = async (
       // 带 stage / status / retryable / durationMs：一眼看出卡在哪一步、还来不来得及重试。
       record('warning', 'warn', 'import cancelled by user', {
         correlationId,
-        reason: 'cancelled',
+        reason: REASON.cancelled,
         ...buildMeta({
           flow: 'import',
           stage: phase === 'download' ? 'import.download' : 'import.commit',
@@ -1414,7 +1420,7 @@ export const importHistoryFromUrl = async (
       // 后者由 backup.ts 的 `import failed at import.check` 记录（同一 stage、不同 msg）。
       record('import_error', 'error', 'import failed: archive unreadable after download', {
         correlationId,
-        reason: 'archive-unreadable',
+        reason: REASON.archiveUnreadable,
         ...buildMeta({
           flow: 'import',
           stage: 'import.check',

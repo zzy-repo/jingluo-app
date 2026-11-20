@@ -12,8 +12,8 @@
 
 | 项 | 值 |
 | --- | --- |
-| 扫描范围 | `src/**` 全部源文件 **261** 个（`.css` **45** 个，其中 `*.module.css` **38** 个；其余 `.ts / .tsx / .html` 共 **216** 个） |
-| 口径拆分 | 45 `.css` + 159 `.ts` + 56 `.tsx` + 1 `.html` = 261 |
+| 扫描范围 | `src/**` 全部源文件 **262** 个（`.css` **45** 个，其中 `*.module.css` **38** 个；其余 `.ts / .tsx / .html` 共 **217** 个） |
+| 口径拆分 | 45 `.css` + 160 `.ts` + 56 `.tsx` + 1 `.html` = 262 |
 | 命中总数 | **355** 处，分布在 **39** 个文件 |
 | 运行时下限 | WebView **83**（Chromium 83）。**首支持 ≤ 83 的特性一律记「无风险」，与有没有兜底无关** |
 | 构建期因素 | `rspack.config.ts` 用 `builtin:lightningcss-loader`，`targets` 取自 `package.json` 的 `browserslist`（强制含 `chrome >= 83`）。**已被构建期翻译掉的写法不算运行时假设** |
@@ -328,3 +328,4 @@ node --test tests/unit/css-assumption-audit.test.mjs
 - 复核（2026-11-20 08:30，基准 `dfe6db0`，本单 #434 / #374 分支 `fix/error-readability-434-374`）：新增 1 个 `.ts` 源文件（`src/services/api/keyFailure.ts`：Key 失效的细分与尾号），扫描范围 254 → **255** 个源文件（其余 `.ts / .tsx / .html` 210 → **211**），`.css` 仍是 44 个（`*.module.css` 37）。本单改的都是 TS / TSX（分类、提示文案、折叠区与一个 i18n key），**不含任何 CSS 特性假设**，命中总数仍是 **347 处 / 39 个文件**，逐特性表与 §2 明细的 `文件:行` 未变。
 - 复核（2026-11-20 08:35，基准 `dfe6db0`，本单 #326 分支 `feat/payment-trail-paging-326`）：`PaymentTrailDialog.module.css` 为支付记录的分页与状态筛选新增 2 处 flex `gap` —— `.tabs`（六个状态页签换行排开，`gap: 6px`，`:71`）与 `.moreError`（「加载更多」失败提示行，`gap: 8px`，`:113`）。flex `gap` 118 → **120**、命中总数 347 → **349**（已有兜底 302 → **304**，分布仍是 39 个文件）；两处都由 `pnpm run check:gap` 生成 `html[data-flex-gap-fallback]` 兜底块（已兜底 119 → **121** 条），没有新增裸 gap；新增的 `border-radius` / `min-height` / `font-weight` 等不在盘点口径里，嵌套 `&` 未变（附录 A 不受影响）。§1 逐特性表、§2.6 明细与合计行已同步。
 - 复核（2026-11-20 12:20，基准 `e5ee313`，本单 #386 分支 `feat/scroll-to-bottom-386`）：新增 1 个 `.css`（`src/components/session/ScrollToBottomButton.module.css`：输入框上方「回到底部」小圆按钮的定位、44×44 命中区、淡入 keyframes 与 reduced-motion 关断），扫描范围 256 → **259** 个源文件（`.css` 44 → **45**，其中 `*.module.css` 37 → **38**；其余 `.ts / .tsx / .html` 212 → **214**）。新文件**一处可盘点特性都没有**：没有 flex `gap`、没有 `inset`（显式写 `top/right/bottom/left`）、没有 `min()/max()`、没有 `@supports`、没有 `:focus-visible`（焦点环复用 `IconButton` 的既有三档兜底）、也没有嵌套 `&`（全部是顶层单类选择器），所以**命中总数仍是 349 处 / 39 个文件**，逐特性表与 §2 明细的 `文件:行` 一字未动。
+- 复核（2026-11-20 13:35，基准 `b34ffb4`，本单 #301 分支 `feat/log-spec-301`）：新增 1 个 `.ts` 源文件（`src/services/diagnostics/reasons.ts`），扫描范围 261 → **262** 个源文件（其余 `.ts / .tsx / .html` 216 → **217**），`.css` 仍是 45 个（`*.module.css` 38）。新文件是纯常量与类型，**不含任何 CSS 特性假设**，命中总数仍是 **355 处 / 39 个文件**，逐特性表与 §2 明细的 `文件:行` 未变（本单只改 TS 侧的字面量）。

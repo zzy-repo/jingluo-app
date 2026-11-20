@@ -19,6 +19,7 @@ import {
 } from '../diagnostics/collector.js'
 import { getApiKey, getBaseUrl, getCurrentSpec, getModel } from '../api/apiConfig.js'
 import { buildMeta, endpointKeyFromUrl } from '../diagnostics/fields.js'
+import { REASON } from '../diagnostics/reasons.js'
 import { createStreamMeter, streamTimingMeta } from '../diagnostics/timing.js'
 import { requestGates } from '../api/providers.js'
 import { LIMITS } from '../limits.js'
@@ -498,7 +499,8 @@ const reportSessionDamage: SessionDamageReporter = (damage) => {
   const first = damage[0]
   recordError('session data repaired', {
     stage: 'session.normalize',
-    reason: 'corrupt-storage',
+    // 取值来自 reasons.ts 的字典（#301 维度 3），不是就地写的裸字符串
+    reason: REASON.corruptStorage,
     'damage.count': damage.length,
     'damage.fields': Array.from(new Set(damage.map((item) => `${item.field}:${item.action}`)))
       .sort()
