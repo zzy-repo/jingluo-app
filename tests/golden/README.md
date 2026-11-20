@@ -41,8 +41,8 @@ pnpm run test:golden              # = node tests/run-golden.mjs（并行 + 每�
 动了 `src/services/attachments/**` 或 `src/components/attachments/**`（文档解析 / 注入 / 卡片）就跑 **G13**，
 动了图片那条通路（`attachments/imageSource.ts`、`chat/drafts.ts` 的选图编码、`chat/reply.ts` 的 `toFileBlocks`
 内联块、`api/openaiAdapter.ts` 的 data URL 翻译）就跑 **G14**（文档与图片是同目录的两条独立通路，各跑各的）。
-拿不准就 `pnpm run test:golden` 全跑 —— 12 条约 16 秒（g12 单独约 0.9s，自带 mock，不需要 dist；
-g13 单跑约 1.2s、4 并发整层里约 3.9s；g14 整层加入后墙钟 16.2s；g15 约 1.7s）。
+拿不准就 `pnpm run test:golden` 全跑 —— 12 条约 18 秒（g12 单独约 0.9s，自带 mock，不需要 dist；
+g13 单跑约 1.2s、4 并发整层里约 3.9s；g14 约 4.3s；g15 约 1.7s）。
 
 > **购买域的黄金回归换过人（W1-D #487 → #567）**：老的 `g07-quota-purchase.test.mjs` 跟着旧额度/邀请体系
 > 一起删了 —— 它断言的「领取 → 刷新 → 兑换」走的是 `device_id` + 本机池那条整条被替换的链路。
@@ -277,7 +277,8 @@ B 线（#548）的黄金哨兵，与第四批的 G13 **并行**（同目录、�
 | --- | --- | --- | --- |
 | 图片 vision | 附 1 张 png → 内联编码 → 发一条消息（三渠道形状不同、字节相同） | `g14-vision.test.mjs` | ✅ |
 
-实测（2026-11-20，本机，标准产物）：G14 单跑约 2.9s（三渠道各一次）；整层 12 条 4 并发约 16s。
+实测（2026-11-20，本机，标准产物 + `TEST_AUTH_SEAM=1`）：G14 约 4.3s（7 步，三渠道各一次）；
+整层 12 条 4 并发**墙钟 18.0s**（预算 300s）。
 
 负向验证（人为破坏一次、确认变红后再还原）：
 
