@@ -195,6 +195,18 @@ npm run test:integration -- --baseline          # 集成全量与基线比对，
 并直接告诉你「该在哪里补一条负向对照」。缺口写进同一个文件的 `KNOWN_GAPS`（要带原因、关联 Issue、修法），
 缺口一旦补上，`N6` 会再红一次提醒你删条目 —— 缺口可以存在，但不许静默。
 
+**C8 的判据是派生的，不是手写清单（#407，第 3 次复发后改）。**
+`tests/unit/contract-c8-gate-negative.test.mjs` 原先维护一张「门禁名 → 正则」的手写表（`CI_MARKERS`）：
+每多一道登记在 ci.yml 上的门禁，就得有人记得回来补一行。而「记得」正是这一族门禁全部失效的原因本身 ——
+同一形状在一天内红了三次（#413 `check:endpoints` / #413 `check:i18n` / #463 `check:doc-refs`），
+三次都不是门禁坏了，而是那张清单少一行。现在改成现场派生，每一环都从盘上读：
+
+    ci.yml 的 `pnpm run <gate>` → package.json 那条 script 命令 → 命令里的 `scripts/*.mjs`
+      → ci.yml 里**真在跑这个脚本、且带判定**的步骤（`if …; then … exit 1` 或 `--selftest`）
+
+任何一环断了直接红，报错指到**该补的那一环**（补 ci.yml 的对照步骤），而不是回来补测试里的一行正则。
+"只 echo 不判定"的步骤不算对照：`exit 1` 必须是独立命令行，文案里出现 `exit 1` 不算数。
+
 ### 9.5 `build` 为什么**能**做负向对照（成本实测，别再当"不适用"）
 
 `build`（`node scripts/build.mjs --internal`）曾被登记为"慢，可能不适用"。实测**没必要放弃**：

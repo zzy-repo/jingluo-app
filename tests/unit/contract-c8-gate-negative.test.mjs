@@ -19,6 +19,8 @@
 //        （只 echo 不判定的步骤是假对照）；
 //      · 指向 `tests/unit/*.test.mjs` 的：必须落在单元层（`pnpm test` 每次都会跑它），
 //        放在任何 LAYERS 之外的目录里都等于没写（#368 的坑）。
+//      **G3 的判据本身也是派生的**（不再是一张手写的「门禁 → 正则」表，见下方
+//      `deriveCiNegativeControl`）：手写清单一定会漂移，一天内已经漂了三次。
 //
 // 与 `tests/unit/gate-negative-controls.test.mjs` 的 N6 的分工：N6 是**登记簿自己的**自检
 // （门禁集合 ↔ 它自己的 REGISTRY）；本契约是外部的**消费者视角**，额外钉住「脚本真的存在」
@@ -87,22 +89,141 @@ const readRegistry = () => {
 const REGISTRY = readRegistry()
 
 /**
- * 登记指向 `ci.yml` 的门禁：它们的具体负向对照步骤各自长什么样（登记簿只写文件，不写这一句）。
- * 指向 ci.yml 的**每一道**都必须在这里有一句判据，否则「门禁还在、对照被删」查不出来。
+ * ── 为什么这一节是**派生**的，而不是一份手写清单（#407 / 第 3 次复发）──────────────
+ * 这里原本是一张手写的 `CI_MARKERS` 表（`'check:redact': /check-redact\.mjs\s+--selftest/`
+ * 这类「门禁名 → 正则」）。每多一道登记在 ci.yml 上的门禁，就得有人记得**再**回来补一行；
+ * 而「记得」恰恰是这一族门禁全部失效的原因本身。实测同一形状在一天内红了三次：
+ *   #413 `check:endpoints`（对照已进 ci.yml，判据没跟）→ C8 红（「CI_MARKERS 缺一行」）
+ *   #413 `check:i18n`     （同上）                    → C8 红（同上）
+ *   #463 `check:doc-refs` （同上）                    → C8 红（同上）
+ * 三次都不是门禁坏了，而是「判据清单少一行」。**手写清单一定会漂移** —— 它的正确性依赖
+ * 「一个不会忘记的人」，而这个人不存在。所以改成现场派生，链条每一环都从盘上读：
+ *
+ *     gate（ci.yml 的 `pnpm run <gate>`）
+ *       → package.json 里那条 script 命令
+ *       → 命令里的脚本文件（`scripts/*.mjs`；`check:legacy` 叫 check-bundle-syntax.mjs，按名字猜必错）
+ *       → ci.yml 里**真在跑这个脚本、且带判定**的步骤（`if …; then … exit 1` 或 `--selftest`）
+ *
+ * 任一环断掉就红，而且报错直接指到**该补的那一环**（补 ci.yml 的对照步骤），
+ * 而不是回来补测试里的一行正则 —— 于是「新增门禁忘了同步判据」不可能再以绿的形式漂过去。
  */
-const CI_MARKERS = {
-  'check:redact': /check-redact\.mjs\s+--selftest/,
-  'check:legacy': /__ciNeg/,
-  // #413 把「往 src 塞一份端点地址字面量 → check:endpoints 必须 exit 1」接进了 ci.yml，
-  // 但本表的判据没跟上：C8 因此在 main 上红（`check:endpoints 的负向对照登记在 ci.yml 上，
-  // 但本契约没有它的判据`）。判据就用那段现场注入的命令本身（`check-endpoints.mjs`）。
-  'check:endpoints': /check-endpoints\.mjs/,
-  // 同理：#413 的 check:i18n 负向对照（删掉一个 zh key 必须 exit 1）也没登记判据。
-  'check:i18n': /check-i18n\.mjs/,
+
+/** 吃掉正则元字符（把这些名字拼进判据时用） */
+const esc = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+
+/**
+ * gate → 它真正执行的脚本文件，**从 package.json 的命令里解析**，不按门禁名猜。
+ * `check:legacy` → `scripts/check-bundle-syntax.mjs`（不同名）；`check:matrix` → 两个脚本。
+ * 解析结果为空 = 这道门禁映射不到证据，由 `deriveCiNegativeControl` 报红。
+ */
+const gateScripts = (gate) => {
+  const command = String(pkg.scripts?.[gate] ?? '')
+  const found = [...command.matchAll(/(?:^|[\s'"=])((?:scripts|tests)\/[\w./-]+\.mjs)/g)].map((m) => m[1])
+  return [...new Set(found)]
+}
+
+/**
+ * 把 ci.yml 切成一个个 `run:` 块（单行命令 + `|` / `>` 多行块），每块带上所属步骤名
+ * （红的时候能直接指到那一步）。按缩进切：多行块的内容行比 `run:` 那一行更深。
+ */
+const ciRunBlocks = () => {
+  const blocks = []
+  const lines = ci.split('\n')
+  let step = '(未命名步骤)'
+  for (let i = 0; i < lines.length; i++) {
+    const name = /^\s*-\s*name:\s*(.+)$/.exec(lines[i])
+    if (name) step = name[1].trim()
+    const run = /^(\s*)run:\s*(.*)$/.exec(lines[i])
+    if (!run) continue
+    const indent = run[1].length
+    const inline = run[2].trim()
+    if (!/^[|>]/.test(inline)) {
+      blocks.push({ step, body: inline })
+      continue
+    }
+    const body = []
+    let end = i
+    for (let j = i + 1; j < lines.length; j++) {
+      if (lines[j].trim() === '') {
+        body.push('')
+        end = j
+        continue
+      }
+      if (lines[j].search(/\S/) <= indent) break
+      body.push(lines[j])
+      end = j
+    }
+    blocks.push({ step, body: body.join('\n') })
+    i = end
+  }
+  return blocks
+}
+
+/**
+ * 一块 `run:` 是不是 `script` 的**负向对照**，且是**真判定**（不是只 echo）。两种合法形状，
+ * 都是 ci.yml 里已有的实例：
+ *   · `inject`   现场注入：`if node <script> …; then … exit 1`（塞坏输入 → 门禁必须红、必须让流水线红）
+ *   · `selftest` 自带反例：`node <script> --selftest`（脚本自己跑反例，失败即 exit≠0）
+ * 只 echo / `|| true` / 只跑正例的步骤两种都不满足 —— 那正是 #369 的「绿灯空跑」。
+ */
+const negativeControlShape = (block, script) => {
+  const path = esc(script)
+  if (new RegExp(`${path}\\s+--selftest`).test(block.body)) return 'selftest'
+  const isIfThen = new RegExp(`if [^\\n]*${path}[^\\n]*;[^\\n]*then`).test(block.body)
+  // `exit 1` 必须是**一条独立的命令行**，不能只是 echo 文案里的字样：
+  // 这些步骤的最后一句常常是 `echo "… → exit 1，删掉 → exit 0"`，用 `/\bexit 1\b/`
+  // 去判会被自己的说明文字骗过去（实测：把真对照里的 `exit 1` 删掉，它照样判绿）。
+  const isRealExit = /^[ \t]*exit 1[ \t]*$/m.test(block.body)
+  return isIfThen && isRealExit ? 'inject' : null
+}
+
+/**
+ * 派生「这道门禁在 ci.yml 上的负向对照」：gate → package.json → 脚本文件 → 真判定步骤。
+ * 成功返回 `{ gate, script, shape, step }`；失败返回 `{ gate, failure }`（由 G3 报红，
+ * 文案指到该补的那一环）。**没有任何手写的例外表可以绕过它** —— 绕过就等于漂移回来了。
+ */
+const deriveCiNegativeControl = (gate) => {
+  const scripts = gateScripts(gate)
+  if (scripts.length === 0) {
+    return {
+      gate,
+      failure:
+        `\`${pkg.scripts?.[gate] ?? `(package.json 里没有 ${gate})`}\` 里找不到可识别的脚本文件（\`scripts/*.mjs\`），` +
+        '判据无法自动派生：把这道门禁的实现落到 scripts/*.mjs，或把它的负向对照挪进 tests/unit/ 的用例',
+    }
+  }
+  const blocks = ciRunBlocks()
+  for (const script of scripts) {
+    for (const block of blocks) {
+      const shape = negativeControlShape(block, script)
+      if (shape) return { gate, script, shape, step: block.step }
+    }
+  }
+  return {
+    gate,
+    failure:
+      `ci.yml 里没有 \`${scripts.join('` / `')}\` 的负向对照步骤（门禁本身在跑，但没有东西证明它会红）。` +
+      `补法二选一：① 现场注入 \`if node ${scripts[0]} …; then … exit 1\`；` +
+      `② 脚本自带 \`--selftest\`（失败即 exit≠0）。只 echo 不判定的步骤不算对照`,
+  }
 }
 
 /** 证据所在文件是不是「执行入口」：ci.yml 的步骤，或单元层（`pnpm test` 每次都跑）的用例 */
 const isUnitLayerTest = (relative) => /^tests\/unit\/[^/]+\.test\.mjs$/.test(relative)
+
+/** 登记在 ci.yml 上的门禁：它们的判据必须从 ci.yml 现场派生，不存在「手写一行」这条路 */
+const CI_REGISTERED = GATES.filter((gate) => String(REGISTRY[gate]?.where ?? '').endsWith('.yml'))
+
+// 抽取器自己退化时必须红：ci.yml 里 run 块抽不出来 → 派生会把「没抽到」当成「没有对照」，
+// 报出来的红会指错方向（让人去补一条其实已经存在的步骤）。
+assert.ok(
+  ciRunBlocks().length >= 20,
+  `ci.yml 的 run 块抽取退化了：只抽到 ${ciRunBlocks().length} 块（预期 ≥20），派生判据不可信`
+)
+assert.ok(
+  CI_REGISTERED.length >= 4,
+  `登记在 ci.yml 上的门禁只抽到 ${CI_REGISTERED.length} 道（预期 ≥4），派生覆盖面退化了：${CI_REGISTERED.join(', ')}`
+)
 
 test('C8 门禁接线：ci.yml 里跑的每个 script 都必须在 package.json 里真的存在（防空跑）', tableTest(
   'C8-wiring',
@@ -135,16 +256,11 @@ test('C8 可执行：登记的负向对照必须真的在某个执行入口里�
     assert.ok(hasFile(entry.where), `${gate} 的负向对照指向不存在的文件：${entry.where}`)
 
     if (entry.where.endsWith('.yml')) {
-      // 指向 ci.yml：**这一道**门禁的负向对照步骤必须还在（别的门禁的步骤不能替它作证）
-      const marker = CI_MARKERS[gate]
-      assert.ok(marker, `${gate} 的负向对照登记在 ci.yml 上，但本契约没有它的判据（CI_MARKERS 缺一行）`)
-      assert.match(ci, marker, `ci.yml 里找不到 ${gate} 的负向对照步骤（${marker}）—— 对照被摘掉了`)
-      assert.match(
-        ci,
-        /if node scripts\/check-bundle-syntax\.mjs \/tmp\/dist-neg; then[\s\S]{0,200}exit 1/,
-        'check:legacy 的负向对照不是 `if … then exit 1` 形状：门禁红了流水线也不会红（假对照）'
-      )
-      checked.push(`${gate}@ci.yml`)
+      // 指向 ci.yml：判据**从 ci.yml 派生**（gate → script → 真判定步骤），没有手写清单可漂。
+      // 派生不出来就红，且红在该补的那一环上。
+      const derived = deriveCiNegativeControl(gate)
+      assert.ok(derived.failure === undefined, `C8 判据派生失败：${gate} —— ${derived.failure}`)
+      checked.push(`${gate}@${derived.script}(${derived.shape})`)
       continue
     }
 
@@ -167,5 +283,8 @@ test('C8 可执行：登记的负向对照必须真的在某个执行入口里�
     }
     checked.push(`${gate}@${entry.where}`)
   }
-  t.diagnostic(`C8: 证据可执行 ${checked.length}/${GATES.length} —— ${checked.join(' · ')}`)
+  t.diagnostic(
+    `C8: 证据可执行 ${checked.length}/${GATES.length} —— ${checked.join(' · ')}\n` +
+      `C8: 其中 ${CI_REGISTERED.length} 道登记在 ci.yml 上的由「门禁→script→真判定步骤」现场派生（无手写清单）`
+  )
 })
