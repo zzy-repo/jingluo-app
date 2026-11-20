@@ -17,23 +17,9 @@ import assert from 'node:assert/strict'
 import { registerHooks } from 'node:module'
 import { readFileSync } from 'node:fs'
 
-// 端点地址唯一来源：config/endpoints.json（#274）。api.ts 模块顶层就读 __ENDPOINTS__，
-// 所以必须在 import 之前放好（run-layer 的 --import 预加载也注入同一份）。
-import {
-  allowedHosts,
-  chatBaseUrl,
-  feedbackUrl,
-  inviteBaseUrl,
-  legacyHosts,
-} from '../../scripts/lib/endpoints.mjs'
-
-globalThis.__ENDPOINTS__ ??= Object.freeze({
-  chatBaseUrl,
-  feedbackUrl,
-  inviteBaseUrl,
-  legacyHosts: Object.freeze([...legacyHosts]),
-  allowedHosts: Object.freeze([...allowedHosts]),
-})
+// 构建期注入值（`__ENDPOINTS__`）的兜底：直接复用 --import 预加载那一份，不在这里再抄一遍
+// （tests/helpers/injected.mjs；#274 之后端点只有 config/endpoints.json 一个来源）
+import '../helpers/injected.mjs'
 
 registerHooks({
   resolve(specifier, context, nextResolve) {
