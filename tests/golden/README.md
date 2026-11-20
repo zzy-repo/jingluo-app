@@ -13,6 +13,11 @@ pnpm run test:golden              # = node tests/run-golden.mjs（并行 + 每�
 > 未登录冷启动只画登录页，侧栏 / 设置 / 输入框全都拿不到 —— 那样 G1~G11、G15 会在第一步就红，
 > 红的是环境不是用例。CI 的 golden job 就是带这个开关构建的（见 `.github/workflows/ci.yml`），
 > 并在构建后跑 `check:test-seam --expect-seam` 做正向对照。发版产物**绝不允许**带它。
+>
+> **唯一的例外是 `g16-account-optional`**（#608）：它守的正是「没账号也能用」，而接缝产物在首帧就把
+> 假会话灌进 store —— 拿它测「未登录」等于测了个假前提。所以这条用例**自己准备**一份发版形态产物
+> （`DIST_OUT=dist-noseam`，**不带** `TEST_AUTH_SEAM`，缺了在用例里构建一次约 6s），并用
+> `serveGoldenApp(dist-noseam)` 起服务；CI 的构建步骤不用为它改。
 
 ## 「改了哪个域必须跑哪条」——提交前对照这张表
 
@@ -30,6 +35,7 @@ pnpm run test:golden              # = node tests/run-golden.mjs（并行 + 每�
 | 文档附件 | 选 tiny.txt → 卡片 success → 发送「帮我总结」→ 收到回复（顺带 docx/pdf 只断非空正文 + 表格/页码标记） | `g13-documents.test.mjs` ✅（A 线 #480 落地，#567 的 g13） | `services/attachments/parsers/{txt,docx,pdf}.ts`、`attachments/{manager,inject,providerCapability,requestDocs}.ts`、`attachments/contextBuilder.ts`（buildWithDocuments）、`components/attachments/*`（卡片五态）、`chat/{store,reply}.ts`（请求组装） |
 | 图片 vision | 附 1 张 png → 内联编码 → 发一条消息（三渠道形状不同、图片字节相同） | `g14-vision.test.mjs` ✅（B 线 #548 落地） | `services/attachments/imageSource.ts`（编码）、`chat/drafts.ts`（选图编码 / 就绪态）、`chat/reply.ts`（内联块）、`api/openaiAdapter.ts`（data URL 翻译） |
 | 支付/购买 | 打开「账户与消费」→ 套餐列表 → 下单（`/api/pay-link`）→ 回跳 → 卡密 → 一键复制 | `g15-purchase.test.mjs` | `components/consume/{AccountConsumePage,BuyTab,MyCardsTab}.tsx`、`services/ours/{api,purchases,transport}.ts`、`components/consume/quotaPanelModel.ts`（额度口径） |
+| 账户可选 | 全新安装不登录 → 首屏直接进聊天；只填 Key → 发消息收回复；设置 → 我们的渠道 → 账户与消费 → 账号 tab 能注册；未登录额度给引导 | `g16-account-optional.test.mjs` | `src/main.tsx`（无登录墙）、`components/auth/{AuthGate,LoginPage,RegisterPage}.tsx`（局部卡）、`components/consume/{AccountPanel,QuotaPanel,accountPanelModel,quotaPanelModel}.ts(x)` |
 
 > **三条黄金哨兵都已落地**（#567 定的三主线各一条：A 文档附件 g13 / B 图片 vision g14 / C 购买 g15）：
 > `g13`（A 线 #480）、`g15`（C 线购买）、**`g14`（B 线 #548，随本次合并进 main）** 全部在树上并有 ✅ 判定。
@@ -41,7 +47,7 @@ pnpm run test:golden              # = node tests/run-golden.mjs（并行 + 每�
 动了 `src/services/attachments/**` 或 `src/components/attachments/**`（文档解析 / 注入 / 卡片）就跑 **G13**，
 动了图片那条通路（`attachments/imageSource.ts`、`chat/drafts.ts` 的选图编码、`chat/reply.ts` 的 `toFileBlocks`
 内联块、`api/openaiAdapter.ts` 的 data URL 翻译）就跑 **G14**（文档与图片是同目录的两条独立通路，各跑各的）。
-拿不准就 `pnpm run test:golden` 全跑 —— 12 条约 18 秒（g12 单独约 0.9s，自带 mock，不需要 dist；
+拿不准就 `pnpm run test:golden` 全跑 —— 13 条约 20 秒（g12 单独约 0.9s，自带 mock，不需要 dist；
 g13 单跑约 1.2s、4 并发整层里约 3.9s；g14 约 4.3s；g15 约 1.7s）。
 
 > **购买域的黄金回归换过人（W1-D #487 → #567）**：老的 `g07-quota-purchase.test.mjs` 跟着旧额度/邀请体系
