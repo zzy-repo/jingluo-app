@@ -61,6 +61,70 @@
   list-style: none;
 }
 
+/*
+ * #326 状态筛选页签：全部 / 待支付 / 已支付 / 已完成 / 已关闭 / 支付异常。
+ * 六个胶囊在 390 / 360 两档都要换行排开（不横向滚动），点选区域按移动端 32px 起步。
+ */
+.tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.tab {
+  min-height: 32px;
+  padding: 6px 12px;
+  border: 1px solid var(--dsh-border, rgba(127, 127, 127, 0.24));
+  border-radius: 999px;
+  background: transparent;
+  color: var(--dsh-text-secondary, #6b7280);
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+/* 选中态用边框 + 主色文字（不只靠颜色深浅：弱视/强光下也要分得出） */
+.tabActive,
+.tab[data-active='true'] {
+  border-color: var(--dsh-text-primary, #111827);
+  color: var(--dsh-text-primary, #111827);
+  background: var(--dsh-surface-secondary, rgba(127, 127, 127, 0.08));
+  font-weight: 600;
+}
+
+/* 「加载更多」：居中一行，不是页脚右对齐的 .actions */
+.loadMore {
+  display: flex;
+  justify-content: center;
+}
+
+/* 加载更多失败：只在列表底部提示 + 重试，不动上面的记录 */
+.moreError {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  font-size: 12px;
+  color: var(--dsh-text-danger, #b91c1c);
+  background: rgba(239, 68, 68, 0.1);
+}
+
+.moreErrorText {
+  flex: 1;
+  min-width: 0;
+}
+
+/* 末页：按钮消失后换成这一行，不再占一个可点区域 */
+.end {
+  padding: 10px;
+  font-size: 12px;
+  color: var(--dsh-text-secondary, #6b7280);
+  text-align: center;
+}
+
 .order {
   display: flex;
   flex-direction: column;
@@ -312,6 +376,16 @@
 
 :global(html[data-flex-gap-fallback]) .list > *:not(:last-child) {
   margin-bottom: 10px;
+}
+
+:global(html[data-flex-gap-fallback]) .tabs > *:not(:last-child) {
+  margin-right: 6px;
+  margin-bottom: 6px;
+}
+
+:global(html[data-flex-gap-fallback]) .moreError > *:not(:last-child) {
+  margin-right: 8px;
+  margin-bottom: 8px;
 }
 
 :global(html[data-flex-gap-fallback]) .order > *:not(:last-child) {

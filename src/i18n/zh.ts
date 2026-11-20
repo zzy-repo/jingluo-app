@@ -907,6 +907,13 @@ export const zh = {
   oursTrailErrBadResponse: '服务返回的内容读不懂，稍后再试',
   oursTrailErrUnknown: '读取失败，稍后再试',
   oursTrailCount: '共 {total} 笔',
+  oursTrailTabAll: '全部',
+  oursTrailFilterLabel: '按状态筛选',
+  oursTrailLoadMore: '加载更多',
+  oursTrailLoadingMore: '正在加载…',
+  oursTrailLoadMoreFailed: '这一页没拉下来，上面的记录还在',
+  oursTrailEndOfList: '已经到底了',
+  oursTrailEmptyFiltered: '这个状态下没有记录，换个筛选看看',
   oursTrailTotalPaid: '累计实付 {amount}',
   oursTrailEntryDescription: '按时间线看每笔订单从下单、支付、发卡到兑换的全过程',
 } as const

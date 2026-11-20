@@ -1,5 +1,6 @@
 import { createElement, type ReactNode } from 'react'
 import type { TranslationKey, TranslationParams } from '../../i18n/index.js'
+import { hasMoreTrail, TRAIL_ORDER_STATUSES } from '../../services/ours/trail.js'
 import type {
   CardTrail,
   TrailCard,
@@ -72,6 +73,102 @@ export const TRAIL_POLL_MAX_MS = LIMITS.paymentTrail.pollMaxMs
  * 渲染出来只会得到一串 401 / 网络错误。判定放在这里，容器只管调它。
  */
 export const shouldShowPaymentTrail = (kind: string | undefined | null): boolean => kind === 'ours'
+
+// ------------------------------------------------------------------ 分页 / 筛选（#326）
+
+/**
+ * 状态筛选页签：`all` = 不传 `status`（服务端不需要这个参数），其余就是数据层的五个状态值。
+ *
+ * 页签文案**复用**既有的 `oursTrailStatus*`，只新增「全部」一个 key —— 这样页签上的字和卡片上的
+ * 状态字永远是同一个词，不会出现「筛选写已完成、卡片写 FULFILLED」这种两套叫法。
+ */
+export type TrailStatusTab = 'all' | TrailOrderStatus
+
+export type TrailStatusTabDef = { value: TrailStatusTab; labelKey: TranslationKey }
+
+export const TRAIL_STATUS_TABS: readonly TrailStatusTabDef[] = [
+  { value: 'all', labelKey: 'oursTrailTabAll' },
+  { value: 'created', labelKey: 'oursTrailStatusCreated' },
+  { value: 'paid', labelKey: 'oursTrailStatusPaid' },
+  { value: 'fulfilled', labelKey: 'oursTrailStatusFulfilled' },
+  { value: 'expired', labelKey: 'oursTrailStatusExpired' },
+  { value: 'failed', labelKey: 'oursTrailStatusFailed' },
+]
+
+/**
+ * 页签 → 请求参数。`all` 返回 null 时**连参数都不加**（`trailUrl` 只在 status 非 null 时 set，
+ * `?status=` 空值多一种歧义，别给服务端）。
+ *
+ * 取值一律**小写**：#189 的 `normalizeStatus` 与单测固化的就是小写契约；
+ * 2026-11-19 实测服务端对 `status` 不校验（大小写 / 逗号 / 垃圾值都回 200），
+ * 所以发错大小写不会报错，而是**静默**换一种过滤结果 —— 只能靠客户端守住这个小写口径。
+ */
+export const tabToTrailStatus = (tab: TrailStatusTab): TrailOrderStatus | null =>
+  tab === 'all' ? null : tab
+
+/** 未知值（旧版本存的、URL 里拼的）一律归 `all`，不要让筛选条出现一个不存在的选中项 */
+export const normalizeTrailTab = (value: unknown): TrailStatusTab =>
+  typeof value === 'string' && (TRAIL_ORDER_STATUSES as readonly string[]).includes(value)
+    ? (value as TrailOrderStatus)
+    : 'all'
+
+/**
+ * 翻页去重（#326 的唯一实现点）：按 `out_trade_no` 合并，**已有顺序不动**，
+ * 同号用新数据覆盖旧项 —— 轮询回填与「服务端两页有重叠」都走这一条。
+ *
+ * 空单号（服务端缺字段）不去重：把它们并成一条比多显示一行更糟。
+ */
+export const mergeTrailOrders = (
+  existing: readonly TrailOrder[],
+  incoming: readonly TrailOrder[]
+): TrailOrder[] => {
+  const merged: TrailOrder[] = []
+  const indexByNo = new Map<string, number>()
+  for (const order of [...existing, ...incoming]) {
+    const outTradeNo = typeof order.outTradeNo === 'string' ? order.outTradeNo : ''
+    if (outTradeNo === '') {
+      merged.push(order)
+      continue
+    }
+    const seen = indexByNo.get(outTradeNo)
+    if (seen === undefined) {
+      indexByNo.set(outTradeNo, merged.length)
+      merged.push(order)
+      continue
+    }
+    merged[seen] = order
+  }
+  return merged
+}
+
+/** 下一页的 `offset` = 已加载条数（`offset` 是纯 skip 计数，不是页码） */
+export const nextTrailOffset = (items: readonly TrailOrder[]): number =>
+  Array.isArray(items) ? items.length : 0
+
+/**
+ * 还有没有下一页：接上数据层那个一直没人调用的 `hasMoreTrail`（`trail.ts:555`），
+ * 再补两条「不能让用户点到一个永远没进展的按钮」的护栏：
+ *  - 这一页一条都没回来（服务端把 offset 丢了）→ 停；
+ *  - 已加载条数已经到 `total`（服务端两页重叠、去重后没增加）→ 停。
+ *
+ * 注意 `total` 只从响应读：`hasMoreTrail` 用的是服务端回显的 `offset` + 本页条数 vs `total`，
+ * 不是 `items.length` 推算出来的。
+ */
+export const canLoadMore = (
+  page: Pick<TrailPage, 'total' | 'offset' | 'orders'> | null,
+  loadedCount?: number
+): boolean => {
+  if (page === null || !Array.isArray(page.orders) || page.orders.length === 0) {
+    return false
+  }
+  if (!hasMoreTrail(page)) {
+    return false
+  }
+  if (typeof loadedCount === 'number' && Number.isFinite(loadedCount)) {
+    return loadedCount < page.total
+  }
+  return true
+}
 
 const pad = (value: number): string => String(value).padStart(2, '0')
 
@@ -238,10 +335,23 @@ export const shouldKeepPolling = (
 
 // ------------------------------------------------------------------ 视图状态
 
+/** 「加载更多」的三态：与首屏 loading / 整页 error 分开，失败只影响列表底部那一行 */
+export type TrailMoreState = 'idle' | 'loading' | 'error'
+
 export type TrailView =
   | { status: 'loading' }
   | { status: 'error'; error: TrailErrorView }
-  | { status: 'ok'; page: TrailPage | null }
+  | {
+      status: 'ok'
+      /** 最近一次请求回来的那一页（`hasMoreTrail` 判定要用它的 `offset` / `total`） */
+      page: TrailPage | null
+      /** 已累积的记录（首页 + 每次「加载更多」的追加，已按 `out_trade_no` 去重）；缺省 = `page.orders` */
+      items?: TrailOrder[]
+      /** 服务端 `total`：只来自响应，**永远不用 `items.length` 推算**（#326 关闭条件之一） */
+      total?: number
+      /** 加载更多的进度；缺省 `idle` */
+      more?: TrailMoreState
+    }
 
 export type TrailFetcher = (params: {
   apiKey: string
@@ -257,10 +367,13 @@ export type TrailLoadResult =
 /**
  * 拉一页并归一成视图状态。**永不抛**（容器里不用再包 try/catch）：
  * 没填 Key 直接给 `keyMissing` 且**一个请求都不发**（省掉一次必然 401 的往返）。
+ *
+ * `status` 只在非 null 时进 query（`all` 页签连参数都不加），取值按 #189 的小写契约。
  */
 export async function loadTrailPage(params: {
   fetchTrail: TrailFetcher
   apiKey: string
+  /** 首页传 0；加载更多传「已加载条数」（`nextTrailOffset`） */
   offset: number
   status?: TrailOrderStatus | null
 }): Promise<TrailLoadResult> {
@@ -283,6 +396,98 @@ export async function loadTrailPage(params: {
     return { status: 'error', error: describeTrailError(error) }
   }
 }
+
+// ------------------------------------------------------------------ 列表状态机（分页 / 筛选，#326）
+
+/**
+ * 列表状态的唯一写入口。放进本文件而不是 `.tsx`，是为了让「切换筛选要整段重置」
+ * 「加载更多失败不清空列表」这类口径能在裸 Node 里直接跑断言（#189 的架构约定）。
+ *
+ * 两条最容易写错的语义，在这里用类型和分支钉死：
+ *  - `tab`：切筛选 = `offset 0` + `items 清空` + `more idle`（旧页绝不能拼到新筛选后面）；
+ *  - `more-failed`：只把底部标记成 error，`items` / `total` 一个字都不动。
+ */
+export type TrailListState = {
+  tab: TrailStatusTab
+  view: TrailView
+}
+
+export type TrailListAction =
+  /** 切筛选页签：整段重置（不含 tab 本身） */
+  | { type: 'tab'; tab: TrailStatusTab }
+  /** 回到第一页重新拉（手动刷新 / 首屏）：保留 tab，清空已累积的页 */
+  | { type: 'reload' }
+  /** 第一页回来了 */
+  | { type: 'loaded'; page: TrailPage }
+  /** 第一页失败 */
+  | { type: 'failed'; error: TrailErrorView }
+  /** 点了「加载更多」 */
+  | { type: 'more-start' }
+  /** 加载更多成功：追加 + 去重 */
+  | { type: 'more-loaded'; page: TrailPage }
+  /** 加载更多失败：**不清空**已渲染的列表 */
+  | { type: 'more-failed'; error: TrailErrorView }
+  /** 静默轮询（4 秒）：只合并第一页，不动已加载的第 2 页起的内容 */
+  | { type: 'silent'; page: TrailPage }
+
+export const initialTrailListState: TrailListState = { tab: 'all', view: { status: 'loading' } }
+
+/** 组一个成功视图：`items` 与 `total` 分开存，翻页时 total 不会被 items 的长度带偏 */
+const okView = (page: TrailPage, items: TrailOrder[], more: TrailMoreState): TrailView => ({
+  status: 'ok',
+  page,
+  items,
+  total: page.total,
+  more,
+})
+
+const itemsOf = (view: TrailView): TrailOrder[] =>
+  view.status === 'ok' ? (view.items ?? view.page?.orders ?? []) : []
+
+export const trailListReducer = (
+  state: TrailListState,
+  action: TrailListAction
+): TrailListState => {
+  const { view } = state
+  switch (action.type) {
+    case 'tab':
+      // 换了筛选：offset 回到 0、旧列表整段丢掉，等新响应（页签条本身保留，只换列表区）
+      return { tab: action.tab, view: { status: 'loading' } }
+    case 'reload':
+      return { ...state, view: { status: 'loading' } }
+    case 'loaded':
+      return { ...state, view: okView(action.page, mergeTrailOrders([], action.page.orders), 'idle') }
+    case 'failed':
+      return { ...state, view: { status: 'error', error: action.error } }
+    case 'more-start':
+      if (view.status !== 'ok') {
+        return state
+      }
+      return { ...state, view: { ...view, more: 'loading' } }
+    case 'more-loaded':
+      if (view.status !== 'ok') {
+        return state
+      }
+      return { ...state, view: okView(action.page, mergeTrailOrders(itemsOf(view), action.page.orders), 'idle') }
+    case 'more-failed':
+      if (view.status !== 'ok') {
+        return state
+      }
+      return { ...state, view: { ...view, more: 'error' } }
+    case 'silent':
+      // 轮询只拉第一页：同号覆盖、顺序不变、第 2 页起的记录原地不动
+      return {
+        ...state,
+        view: okView(action.page, mergeTrailOrders(itemsOf(view), action.page.orders), view.status === 'ok' ? (view.more ?? 'idle') : 'idle'),
+      }
+    default:
+      return state
+  }
+}
+
+/** 「是否还要继续 4 秒轮询」：看**全部已加载记录**，不能只看第一页（第 2 页有 paid 单也得刷） */
+export const hasWaitingCard = (items: readonly TrailOrder[]): boolean =>
+  items.some((order) => order.status === 'paid')
 
 // ------------------------------------------------------------------ 时间线
 
@@ -494,15 +699,75 @@ export type PaymentTrailViewProps = {
   classNames: TrailClassNames
   button: ViewButtonComponent
   view: TrailView
+  /** 当前筛选页签：缺省 `all`（不传 tab 的老调用方行为不变） */
+  tab?: TrailStatusTab
+  /** 不给就不渲染页签条 */
+  onTabChange?: (tab: TrailStatusTab) => void
+  /** 点「加载更多」：追加下一页（不清空已渲染内容） */
+  onLoadMore?: () => void
+  /** 加载更多失败后的重试：重打**同一个 offset** */
+  onRetryMore?: () => void
   onRetry?: () => void
   onRefresh?: () => void
   onCopyOrderNo?: (outTradeNo: string) => void
 }
 
 export const PaymentTrailView = (props: PaymentTrailViewProps): ReactNode => {
-  const { t, classNames: c, button: btn, view, onRetry, onRefresh, onCopyOrderNo } = props
+  const {
+    t,
+    classNames: c,
+    button: btn,
+    view,
+    tab = 'all',
+    onTabChange,
+    onLoadMore,
+    onRetryMore,
+    onRetry,
+    onRefresh,
+    onCopyOrderNo,
+  } = props
   const page = view.status === 'ok' ? view.page : null
-  const orders = page?.orders ?? []
+  // `items` 是累积结果（翻页追加、已去重）；`page.orders` 只是最近一页，老调用方没传 items 时按它渲染
+  const orders = view.status === 'ok' ? (view.items ?? page?.orders ?? []) : []
+  const total = view.status === 'ok' ? (view.total ?? page?.total ?? 0) : 0
+  const more: TrailMoreState = view.status === 'ok' ? (view.more ?? 'idle') : 'idle'
+
+  /**
+   * 状态筛选页签。只在调用方给了 `onTabChange` 时渲染 —— 卡密溯源面板复用本模块时不该长出筛选条。
+   * 用 `role="tablist"` + `aria-selected`，和 #158 的「我的购买」同一套无障碍口径。
+   */
+  const tabs =
+    typeof onTabChange !== 'function'
+      ? null
+      : createElement(
+          'div',
+          {
+            className: c.tabs,
+            role: 'tablist',
+            'aria-label': t('oursTrailFilterLabel'),
+            'data-testid': 'trail-tabs',
+          },
+          ...TRAIL_STATUS_TABS.map((item) => {
+            const active = item.value === tab
+            const className = [c.tab, active ? c.tabActive : null]
+              .filter((name) => typeof name === 'string' && name !== '')
+              .join(' ')
+            return createElement(
+              'button',
+              {
+                key: item.value,
+                type: 'button',
+                role: 'tab',
+                className: className === '' ? undefined : className,
+                'aria-selected': active ? 'true' : 'false',
+                'data-active': active ? 'true' : 'false',
+                'data-testid': `trail-tab-${item.value}`,
+                onClick: () => onTabChange(item.value),
+              },
+              t(item.labelKey)
+            )
+          })
+        )
 
   const head = createElement(
     'div',
@@ -514,7 +779,8 @@ export const PaymentTrailView = (props: PaymentTrailViewProps): ReactNode => {
       : createElement(
           'div',
           { className: c.summary, 'data-testid': 'trail-summary' },
-          createElement('span', { className: c.count }, t('oursTrailCount', { total: page.total })),
+          // `total` 只从响应读：加载第 2、3 页时这个数不能变（更不能用 items.length 推算）
+          createElement('span', { className: c.count }, t('oursTrailCount', { total })),
           createElement(
             'span',
             { className: c.totalPaid },
@@ -575,7 +841,8 @@ export const PaymentTrailView = (props: PaymentTrailViewProps): ReactNode => {
       ? createElement(
           'div',
           { className: c.hint, 'data-testid': 'trail-empty' },
-          t('oursTrailEmpty')
+          // 筛选后的空态和「一笔都没买过」是两件事：前者要提示换个筛选，后者才是真没有
+          tab === 'all' ? t('oursTrailEmpty') : t('oursTrailEmptyFiltered')
         )
       : null
 
@@ -588,14 +855,65 @@ export const PaymentTrailView = (props: PaymentTrailViewProps): ReactNode => {
           ...orders.map((order, index) => orderNode(order, index, c, t, btn, onCopyOrderNo))
         )
 
+  /**
+   * 列表底部四态：加载更多 / 正在加载 / 失败可重试 / 已经到底了。
+   *
+   * 用**按钮**而不是无限滚动：弹层自己就是滚动容器，而 4 秒静默轮询会在滚动途中换掉内容，
+   * 两者叠在一起既容易打断阅读，也难判「到底」。按钮式追加还能保证失败时旧内容原地不动。
+   * 末页把按钮**换掉**（而不是禁用）：禁用的按钮在手机上仍占位，还会诱使用户反复点。
+   */
+  const moreNode =
+    view.status !== 'ok' || page === null || orders.length === 0
+      ? null
+      : more === 'error'
+        ? createElement(
+            'div',
+            { className: c.moreError, role: 'alert', 'data-testid': 'trail-more-error' },
+            createElement('span', { className: c.moreErrorText }, t('oursTrailLoadMoreFailed')),
+            btn({
+              variant: 'outlined',
+              size: 's',
+              testId: 'trail-more-retry',
+              onClick: onRetryMore ?? onLoadMore,
+              children: t('oursTrailRetry'),
+            })
+          )
+        : more === 'loading'
+          ? createElement(
+              'div',
+              { className: c.hint, 'data-testid': 'trail-loading-more' },
+              t('oursTrailLoadingMore')
+            )
+          : canLoadMore(page, orders.length)
+            ? typeof onLoadMore === 'function'
+              ? createElement(
+                  'div',
+                  { className: c.loadMore },
+                  btn({
+                    variant: 'outlined',
+                    size: 's',
+                    testId: 'trail-load-more',
+                    onClick: onLoadMore,
+                    children: t('oursTrailLoadMore'),
+                  })
+                )
+              : null
+            : createElement(
+                'div',
+                { className: c.end, 'data-testid': 'trail-end' },
+                t('oursTrailEndOfList')
+              )
+
   return createElement(
     'div',
     { className: c.root, 'data-testid': 'payment-trail' },
     head,
+    tabs,
     loading,
     error,
     empty,
-    list
+    list,
+    moreNode
   )
 }
 

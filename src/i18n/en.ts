@@ -927,6 +927,13 @@ export const en = {
   oursTrailErrBadResponse: 'Unexpected response from the service, try again later',
   oursTrailErrUnknown: 'Could not load, try again later',
   oursTrailCount: '{total} records',
+  oursTrailTabAll: 'All',
+  oursTrailFilterLabel: 'Filter by status',
+  oursTrailLoadMore: 'Load more',
+  oursTrailLoadingMore: 'Loading…',
+  oursTrailLoadMoreFailed: "Couldn't load that page; the records above are still here",
+  oursTrailEndOfList: "That's everything",
+  oursTrailEmptyFiltered: 'No records with this filter, try another one',
   oursTrailTotalPaid: 'Total paid {amount}',
   oursTrailEntryDescription:
     'Follow each order on a timeline from checkout through payment, card issuing and redemption',

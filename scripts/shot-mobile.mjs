@@ -36,6 +36,43 @@ import { inviteBaseUrl } from './lib/endpoints.mjs'
 // 截图里看到的五状态 + 长链路就是单测断言的那几条，不另造一份假数据。
 import { cardTrailRedeemed, orderTrailResponse, trailPage } from '../tests/fixtures/domain06-07/ours-trail.mjs'
 
+/**
+ * #326（支付记录分页 + 状态筛选）专用夹具：45 条订单 = 20 + 20 + 5 三页，按状态配额分布
+ * （fulfilled 18 / created 9 / expired 9 / failed 9），所以切到「已关闭」正好筛出 9 条。
+ *
+ * 两点刻意的取舍：
+ *  - **不放 `PAID`**：该状态会触发 4 秒静默轮询，量数与截图之间内容会被换掉；分页要的是稳定帧，
+ *    「已支付·等待发卡」那条分支由 #189 场景（`payment-trail`）覆盖。
+ *  - **单号唯一**：客户端按 `out_trade_no` 去重，夹具里留重复单号会把「翻页重复」这个缺陷掩盖掉。
+ */
+const pagedTrailPage = (() => {
+  const templateOf = (status) => trailPage.orders.find((item) => item.status === status)
+  const quota = [
+    ['FULFILLED', 18],
+    ['CREATED', 9],
+    ['EXPIRED', 9],
+    ['FAILED', 9],
+  ]
+  const orders = []
+  for (const [status, count] of quota) {
+    const template = templateOf(status)
+    if (template === undefined) throw new Error(`夹具里没有 ${status} 状态的订单，分页场景无法生成`)
+    for (let index = 0; index < count; index += 1) {
+      orders.push({ ...template, out_trade_no: `CP2026111900${String(1000 + orders.length)}` })
+    }
+  }
+  return { ...trailPage, total: orders.length, orders }
+})()
+
+/** 等列表里的订单条数到达 `expected`（「加载更多」是异步追加，不等就量会量到旧帧） */
+const waitForOrderCount = async (page, expected) => {
+  await page.waitForFunction(
+    (count) => document.querySelectorAll('[data-testid="trail-order"]').length === count,
+    expected,
+    { timeout: 15000 }
+  )
+}
+
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const ROOT = path.resolve(HERE, '..')
 
@@ -1244,6 +1281,155 @@ export const PAGES = {
         warn(`长列表没溢出：scrollHeight=${bottom.scrollable.scrollHeight} clientHeight=${bottom.scrollable.clientHeight}`)
       }
       await shot('03-trail-long-order')
+    },
+  },
+
+  /**
+   * #326 验收：支付记录的分页 + 状态筛选。
+   *
+   * 与上面 `payment-trail` 分开一条场景（目录也分开），理由：那条是 #189 的证据，夹具是 6 条订单、
+   * 本来就「一屏到底」；分页要看的是 45 条（20 + 20 + 5）三页的追加行为与末页，混在一起会互相覆盖截图。
+   *
+   * 45 条按五状态轮转生成（各 9 条），这样「已关闭」页签筛出来的正好 9 条，能同时证明
+   * ①加载更多按 20 递增 ②末页按钮换成「已经到底了」③切筛选后列表与 total 一起重置
+   * ④页签条在 390 / 360 两档都不横向溢出。
+   */
+  'payment-trail-paging': {
+    dir: 'docs/ui/326-payment-trail',
+    title: '#326 支付记录：分页（20/页 + 加载更多）与状态筛选（全部 / 五状态）',
+    sessions: () => [makeReadingSession()],
+    mockOrders: false,
+    providerKind: 'ours',
+    trail: { page: pagedTrailPage },
+    run: async (ctx) => {
+      const { page, shot, record, warn } = ctx
+      /** 量数：页签文案、列表条数、统计条、底部状态块，以及有没有横向溢出 */
+      const measure = () =>
+        page.evaluate(() => {
+          const root = document.querySelector('[data-testid="payment-trail"]')
+          const viewportWidth = document.documentElement.clientWidth
+          const overflowing = []
+          if (root !== null) {
+            for (const node of root.querySelectorAll('*')) {
+              const rect = node.getBoundingClientRect()
+              if (rect.width > 0 && rect.right > viewportWidth + 1) {
+                overflowing.push({ tag: node.tagName, right: Math.round(rect.right) })
+              }
+            }
+          }
+          const tabs = Array.from(root?.querySelectorAll('[role="tab"]') ?? []).map((node) => ({
+            text: (node.textContent ?? '').trim(),
+            selected: node.getAttribute('aria-selected') === 'true',
+          }))
+          const nos = Array.from(root?.querySelectorAll('[data-testid="trail-order"]') ?? []).map(
+            (node) => node.getAttribute('data-out-trade-no')
+          )
+          return {
+            viewportWidth,
+            documentScrollWidth: Math.round(document.documentElement.scrollWidth),
+            tabs,
+            orderCount: nos.length,
+            uniqueOrderCount: new Set(nos).size,
+            statuses: Array.from(root?.querySelectorAll('[data-testid="trail-order"]') ?? []).map(
+              (node) => node.getAttribute('data-status')
+            ),
+            summary: (root?.querySelector('[data-testid="trail-summary"]')?.textContent ?? '').trim(),
+            loadMore: root?.querySelector('[data-testid="trail-load-more"]') !== null,
+            loadingMore: root?.querySelector('[data-testid="trail-loading-more"]') !== null,
+            moreError: root?.querySelector('[data-testid="trail-more-error"]') !== null,
+            end: root?.querySelector('[data-testid="trail-end"]') !== null,
+            endText: (root?.querySelector('[data-testid="trail-end"]')?.textContent ?? '').trim(),
+            overflowCount: overflowing.length,
+            overflowSamples: overflowing.slice(0, 5),
+          }
+        })
+
+      await openSettings(page, S.tabData)
+      const entry = page.locator(S.paymentTrailOpen)
+      await entry.waitFor({ state: 'visible', timeout: 10000 })
+      await entry.click()
+      const root = page.locator('[data-testid="payment-trail"]')
+      await root.waitFor({ state: 'visible', timeout: 10000 })
+      await page.waitForTimeout(700)
+
+      const first = await measure()
+      record('page1', first)
+      if (first.orderCount !== 20) {
+        throw new Error(`第一页应该是 20 条，实际 ${first.orderCount} 条（分页参数没生效？）`)
+      }
+      if (!first.loadMore) {
+        throw new Error('第一页底部没有「加载更多」按钮')
+      }
+      if (first.tabs.length !== 6 || !first.tabs.some((tab) => tab.selected && tab.text === '全部')) {
+        throw new Error(`页签条不对：${JSON.stringify(first.tabs)}`)
+      }
+      if (!first.summary.includes('共 45 笔')) {
+        throw new Error(`统计条没有按服务端 total 显示 45 笔：${first.summary}`)
+      }
+      if (first.overflowCount > 0) {
+        warn(`页签条 / 卡片横向溢出 ${first.overflowCount} 处：${JSON.stringify(first.overflowSamples)}`)
+      }
+      await shot('01-trail-paging-first-page')
+
+      // 第 2 页：点一次「加载更多」，已渲染的 20 条必须原地保留
+      await page.locator('[data-testid="trail-load-more"]').scrollIntoViewIfNeeded()
+      await page.waitForTimeout(200)
+      await shot('02-trail-load-more-button')
+      await page.locator('[data-testid="trail-load-more"]').click()
+      await waitForOrderCount(page, 40)
+      const second = await measure()
+      record('page2', second)
+      if (second.orderCount !== 40 || second.uniqueOrderCount !== 40) {
+        throw new Error(`第 2 页应累加到 40 条且不重复，实际 ${second.orderCount}/${second.uniqueOrderCount}`)
+      }
+      if (!second.summary.includes('共 45 笔')) {
+        throw new Error(`翻页把统计条改掉了：${second.summary}`)
+      }
+      // 截「追加出来的那一段」：滚到最后一单，画面里是第 21 条起的新记录（而不是又一张首屏）
+      await page.locator('[data-testid="trail-order"]').last().scrollIntoViewIfNeeded()
+      await page.waitForTimeout(320)
+      await shot('03-trail-second-page')
+
+      // 第 3 页：末页应把按钮换成「已经到底了」
+      await page.locator('[data-testid="trail-load-more"]').scrollIntoViewIfNeeded()
+      await page.locator('[data-testid="trail-load-more"]').click()
+      await waitForOrderCount(page, 45)
+      const last = await measure()
+      record('page3', last)
+      if (last.orderCount !== 45 || last.uniqueOrderCount !== 45) {
+        throw new Error(`末页应有 45 条不重复记录，实际 ${last.orderCount}/${last.uniqueOrderCount}`)
+      }
+      if (last.loadMore || !last.end) {
+        throw new Error(`末页应换「已经到底了」：loadMore=${last.loadMore} end=${last.end}`)
+      }
+      // 「已经到底了」在最后一单下面：滚到底才截得到（否则画面里只有卡片、看不出末页状态）
+      await page.locator('[data-testid="trail-end"]').scrollIntoViewIfNeeded()
+      await page.waitForTimeout(320)
+      await shot('04-trail-end-of-list')
+
+      // 状态筛选：切到「已关闭」→ 只剩 expired，且 total 换成筛选后的数字
+      await page.locator('[data-testid="trail-tab-expired"]').scrollIntoViewIfNeeded()
+      await page.locator('[data-testid="trail-tab-expired"]').click()
+      await page.waitForTimeout(700)
+      const filtered = await measure()
+      record('filteredExpired', filtered)
+      if (filtered.orderCount !== 9 || filtered.statuses.some((status) => status !== 'expired')) {
+        throw new Error(`「已关闭」页签应只剩 9 条 expired，实际 ${filtered.orderCount} 条 ${JSON.stringify(filtered.statuses)}`)
+      }
+      if (!filtered.summary.includes('共 9 笔') || filtered.loadMore) {
+        throw new Error(`筛选后统计条 / 底部状态不对：${filtered.summary} loadMore=${filtered.loadMore}`)
+      }
+      await shot('05-trail-filter-expired')
+
+      // 切回「全部」：恢复 20 条第一页（offset 重新从 0 开始）
+      await page.locator('[data-testid="trail-tab-all"]').click()
+      await page.waitForTimeout(700)
+      const back = await measure()
+      record('backToAll', back)
+      if (back.orderCount !== 20 || !back.summary.includes('共 45 笔')) {
+        throw new Error(`切回「全部」没有重新从第一页开始：${back.orderCount} 条 / ${back.summary}`)
+      }
+      await shot('06-trail-back-to-all')
     },
   },
 
