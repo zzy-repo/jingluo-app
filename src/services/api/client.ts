@@ -11,6 +11,7 @@ import {
 import { markKeyRejected } from './keyRejection.js'
 import { OpenAIStreamError, toOpenAIRequest, translateOpenAIStream } from './openaiAdapter.js'
 import type { ProviderSpec } from './providers.js'
+import { sessionIdHeaders } from './sessionId.js'
 import { parseModelPayload } from './modelPayload.js'
 export { parseModelPayload, pickModelIds } from './modelPayload.js'
 import { readMessageEvent } from './parseEvent.js'
@@ -500,6 +501,18 @@ export type StreamTimingHook = {
 }
 
 /**
+ * 生成请求的可选参数：计时钩子 + 本轮所属会话（#576）。
+ *
+ * `sessionId` 只用来**追加一个请求头**（`X-Session-Id`，见 `api/sessionId.ts`）：
+ * 服务端据此把用量归到这段对话上。它**不进请求体、不进 URL**（请求体现在逐字节等于
+ * 改造前，DeepSeek 官方渠道零影响），也不由这里生成 —— id 由会话创建处生成一次、全程复用。
+ */
+export type StreamOptions = StreamTimingHook & {
+  /** 本轮所属会话 id；有会话上下文就带（首轮也有），没有就不发这个头 */
+  sessionId?: string
+}
+
+/**
  * OpenAI 兼容上游（spec.protocol = 'openai'）：POST {paths.messages}（通常 /v1/chat/completions）。
  * 请求体与响应流都经 openaiAdapter 双向翻译，向上层产出的仍是 Anthropic 风格事件，
  * 因此 UI 与 store 不需要任何分支。断流/脏数据由翻译器收尾，这里只把错误帧转成 ApiError。
@@ -508,7 +521,7 @@ async function* streamOpenAIMessage(
   apiKey: string,
   body: CreateMessageRequest,
   signal: AbortSignal,
-  timing?: StreamTimingHook
+  options?: StreamOptions
 ): AsyncGenerator<MessageStreamEvent> {
   ensureBaseUrl()
   // spec 与地址/鉴权头来自同一份当前 spec：思考参数按它翻译（#297）
@@ -517,13 +530,15 @@ async function* streamOpenAIMessage(
     method: 'POST',
     headers: {
       ...authHeaders(apiKey, { spec }),
+      // 会话标识（#576）：渠道能力表说了算；不发时是空对象，请求头与改造前一致
+      ...sessionIdHeaders(spec.kind, options?.sessionId),
       'Content-Type': 'application/json',
       Accept: 'text/event-stream',
     },
     body: JSON.stringify(toOpenAIRequest(body, spec)),
     signal,
   })
-  timing?.onHeaders?.()
+  options?.onHeaders?.()
   const contentType = response.headers.get('Content-Type') ?? ''
   if (!response.body || !contentType.includes('text/event-stream')) {
     throw await readErrorResponse(response, 'protocol', '')
@@ -535,7 +550,7 @@ async function* streamOpenAIMessage(
         model: body.model,
       }
     )) {
-      timing?.onEvent?.()
+      options?.onEvent?.()
       yield event
       if (event.type === 'message_stop') {
         return
@@ -566,17 +581,20 @@ export async function* streamMessage(
   apiKey: string,
   body: CreateMessageRequest,
   signal: AbortSignal,
-  timing?: StreamTimingHook
+  options?: StreamOptions
 ): AsyncGenerator<MessageStreamEvent> {
   ensureBaseUrl()
-  if (getCurrentSpec().protocol === 'openai') {
-    yield* streamOpenAIMessage(apiKey, body, signal, timing)
+  const spec = getCurrentSpec()
+  if (spec.protocol === 'openai') {
+    yield* streamOpenAIMessage(apiKey, body, signal, options)
     return
   }
   const response = await request(getMessagesUrl(), {
     method: 'POST',
     headers: {
       ...authHeaders(apiKey, { beta: hasFile(body) }),
+      // 会话标识（#576）：同上，只加一个头，请求体一字不改
+      ...sessionIdHeaders(spec.kind, options?.sessionId),
       'Content-Type': 'application/json',
       Accept: 'text/event-stream',
     },
@@ -584,7 +602,7 @@ export async function* streamMessage(
     signal,
   })
   // 响应头到手：TTFB 到此为止（此后每一次读数据的间隔才是「吐字」）
-  timing?.onHeaders?.()
+  options?.onHeaders?.()
   const contentType = response.headers.get('Content-Type') ?? ''
   if (!response.body || !contentType.includes('text/event-stream')) {
     throw await readErrorResponse(response, 'protocol', '')
@@ -627,7 +645,7 @@ export async function* streamMessage(
       if (!event) {
         continue
       }
-      timing?.onEvent?.()
+      options?.onEvent?.()
       yield event
       if (event.type === 'message_stop') {
         return

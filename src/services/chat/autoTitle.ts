@@ -29,6 +29,7 @@ import {
   getModel,
 } from '../api/apiConfig.js'
 import { authHeaders, request } from '../api/client.js'
+import { sessionIdHeaders } from '../api/sessionId.js'
 import { readServerSentEvents } from '../api/sse.js'
 import { translate } from '../../i18n/index.js'
 import { autoTitleLimiter, isAutoTitleThrottled } from './autoTitleQueue.js'
@@ -298,7 +299,11 @@ const readTitleReply = async (
  * 真正发一次标题请求（不含背压）。任何异常（超时、网络、非 2xx、非 JSON、finish 原因异常）
  * 都收成结局返回，这里不抛错、不打日志、不影响对话流。
  */
-const attemptTitle = async (text: string, signal?: AbortSignal): Promise<TitleAttempt> => {
+const attemptTitle = async (
+  text: string,
+  signal?: AbortSignal,
+  sessionId?: string
+): Promise<TitleAttempt> => {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), AUTO_TITLE_TIMEOUT_MS)
   const onAbort = () => controller.abort()
@@ -307,7 +312,13 @@ const attemptTitle = async (text: string, signal?: AbortSignal): Promise<TitleAt
     const spec = getCurrentSpec()
     const response = await request(getMessagesUrl(), {
       method: 'POST',
-      headers: { ...authHeaders(getApiKey()), 'Content-Type': 'application/json' },
+      headers: {
+        ...authHeaders(getApiKey()),
+        // 会话标识（#576）：标题请求也属于这段对话，服务端 usage_logs.session_id 不该在这里断掉。
+        // 同样只加请求头、不改请求体；渠道不发时是空对象。
+        ...sessionIdHeaders(spec.kind, sessionId),
+        'Content-Type': 'application/json',
+      },
       body: JSON.stringify(toTitleRequest(text)),
       signal: controller.signal,
     })
@@ -326,14 +337,18 @@ const attemptTitle = async (text: string, signal?: AbortSignal): Promise<TitleAt
  * 发起一次标题请求（带背压，见 autoTitleQueue.ts）：并发上限 + 有界队列，
  * 队列溢出或排队期间被取消就明确跳过（不发请求），任何失败都返回 null 交给本地截取兜底。
  */
-const requestTitle = async (text: string, signal?: AbortSignal): Promise<string | null> => {
+const requestTitle = async (
+  text: string,
+  signal?: AbortSignal,
+  sessionId?: string
+): Promise<string | null> => {
   if (!text.trim()) {
     return null
   }
   if (!getBaseUrl()) {
     return null
   }
-  const outcome = await autoTitleLimiter.run(() => attemptTitle(text, signal), signal)
+  const outcome = await autoTitleLimiter.run(() => attemptTitle(text, signal, sessionId), signal)
   if (outcome.status === 'skipped') {
     // dropped / aborted：这次就是不发（背压的目的），标题交给本地截取
     return null
@@ -350,8 +365,12 @@ const requestTitle = async (text: string, signal?: AbortSignal): Promise<string 
  * 生成会话标题：优先用模型返回的清洗结果，任何失败都回退到本地截取。
  * 返回空串表示首条消息本身没有可用的文本（例如只发了附件），调用方保持「新对话」。
  */
-export const generateSessionTitle = async (text: string, signal?: AbortSignal): Promise<string> => {
-  const raw = await requestTitle(text, signal)
+export const generateSessionTitle = async (
+  text: string,
+  signal?: AbortSignal,
+  sessionId?: string
+): Promise<string> => {
+  const raw = await requestTitle(text, signal, sessionId)
   const cleaned = sanitizeTitle(raw)
   if (cleaned) {
     return cleaned

@@ -227,7 +227,7 @@ export const renameSession = async () => {}
 const probe = async (response, timeoutMs = 25) => { … if (value.status < 200 || value.status >= 300) return { ok: false, status: value.status, reason: 'http', models: [] } … }
 ```
 
-文件标题里的「401/404/200/timeout」断言的是用例自己写的映射；真 `probeProvider`（`src/services/api/client.ts:651`）的四条分支仍未被约束。故这 4 条计入「减法」而非「覆盖」。
+文件标题里的「401/404/200/timeout」断言的是用例自己写的映射；真 `probeProvider`（`src/services/api/client.ts:669`）的四条分支仍未被约束。故这 4 条计入「减法」而非「覆盖」。
 
 **B-3 功能在分支上、不在检出上。** #339 修复提交 `27bef71` 在 `origin/fix/deepseek-model-residue-339`；`git merge-base --is-ancestor 27bef71 HEAD` 在本检出（`ci/wire-manifest-log-gates`）为假，`src/services/api/configMigration.ts` 不存在。因此 F3-09 的「残留清理」在当前分支**既无实现也无测试**，N3-A 写的是「先写用例（红）→ 随 #339 合入转绿」，不按「已实现未覆盖」记。
 

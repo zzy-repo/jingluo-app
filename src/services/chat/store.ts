@@ -1615,7 +1615,7 @@ const scheduleAutoTitle = (sessionId: string) => {
   }
   const task = new AbortController()
   autoTitleTasks.set(sessionId, task)
-  void generateSessionTitle(text, task.signal)
+  void generateSessionTitle(text, task.signal, sessionId)
     .then((title) => {
       if (!title || task.signal.aborted) {
         return
@@ -1811,6 +1811,11 @@ const streamReply = async (sessionId: string, initial: AssistantMessage, request
           title: titleRequests.has(controller),
         })
         const events = streamMessage(getApiKey(), body, controller.signal, {
+          // 会话标识（#576）：`sessionId` 是这段对话的**主键，建会话时生成一次**（见 sendMessage 里
+          // 的 `createId()`），首轮就有、后续每一轮都相同 —— 服务端 `usage_logs.session_id`
+          // 因此能把整段对话的请求串起来。这里绝不重新生成 id：id 一变，#345 的稳定前缀
+          // 缓存和「记忆归属」两件事会一起失效。
+          sessionId,
           // 只接「响应头到手」这一个时刻：首字与分段的间隔在下面的事件循环里记（要带字符数）
           onHeaders: () => {
             meter.markHeaders()
