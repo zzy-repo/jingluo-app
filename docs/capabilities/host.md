@@ -36,7 +36,7 @@
 
 ## 盘点表
 
-**总计 128 条命中**（`已有兜底` 75 / `无风险` 39 / `真实漏洞` 5 / `需动态验证` 9）；风险分布：高 4、中 10、低 114。
+**总计 130 条命中**（`已有兜底` 75 / `无风险` 41 / `真实漏洞` 5 / `需动态验证` 9）；风险分布：高 4、中 10、低 116。
 
 | 文件:行 | 假设内容 | 类别 | 风险(高/中/低) | 处置(已有兜底/需探测/需动态验证/拆单) |
 | --- | --- | --- | --- | --- |
@@ -135,12 +135,14 @@
 | `src/services/diagnostics/transport.legacy.ts:411` | @capacitor/core 随包发布，函数一定在；它回答的是「跑在壳里吗」不是「插件在吗」 | 3 | 低 | 已有兜底 |
 | `src/services/diagnostics/transport.legacy.ts:421` | AbortController 引入于 Chrome 66，83 必有（启动守卫也把它列进 REQUIRED） | 3 | 低 | 已有兜底 |
 | `src/services/diagnostics/transport.legacy.ts:430` | Body.text/arrayBuffer 引入于 Chrome 76，83 必有 | 3 | 低 | 已有兜底 |
-| `src/services/exportText.ts:13` | registerPlugin 一定返回代理对象，但原生侧没注册时调用只会 reject；插件在不在要探测 | 3 | 中 | 需动态验证 |
-| `src/services/exportText.ts:42` | @capacitor/core 随包发布，函数一定在；它回答的是「跑在壳里吗」不是「插件在吗」 | 3 | 低 | 已有兜底 |
-| `src/services/exportText.ts:76` | @capacitor/core 随包发布，函数一定在；它回答的是「跑在壳里吗」不是「插件在吗」 | 3 | 低 | 已有兜底 |
-| `src/services/exportText.ts:81` | URL.createObjectURL 引入于 Chrome 8，83 必有 | 3 | 低 | 已有兜底 |
-| `src/services/exportText.ts:90` | URL.createObjectURL 引入于 Chrome 8，83 必有 | 3 | 低 | 已有兜底 |
-| `src/services/exportText.ts:100` | URL.revokeObjectURL 引入于 Chrome 8，83 必有 | 3 | 低 | 已有兜底 |
+| `src/services/exportText.ts:19` | registerPlugin 一定返回代理对象，但原生侧没注册时调用只会 reject；插件在不在要探测 | 3 | 中 | 需动态验证 |
+| `src/services/exportText.ts:61` | @capacitor/core 随包发布，函数一定在；它回答的是「跑在壳里吗」不是「插件在吗」 | 3 | 低 | 无风险 |
+| `src/services/exportText.ts:113` | Body.text/arrayBuffer 引入于 Chrome 76，83 必有 | 3 | 低 | 无风险 |
+| `src/services/exportText.ts:121` | URL.createObjectURL 引入于 Chrome 8，83 必有（调用前另有 `typeof` 探测） | 3 | 低 | 已有兜底 |
+| `src/services/exportText.ts:128` | URL.createObjectURL 引入于 Chrome 8，83 必有 | 3 | 低 | 已有兜底 |
+| `src/services/exportText.ts:140` | URL.revokeObjectURL 引入于 Chrome 8，83 必有 | 3 | 低 | 无风险 |
+| `src/services/exportText.ts:151` | @capacitor/core 随包发布，函数一定在；它回答的是「跑在壳里吗」不是「插件在吗」 | 3 | 低 | 无风险 |
+| `src/services/exportText.ts:162` | @capacitor/core 随包发布，函数一定在；它回答的是「跑在壳里吗」不是「插件在吗」 | 3 | 低 | 无风险 |
 | `src/services/invite/device.ts:90` | localStorage 在无痕 / 配额满 / 分区存储受限时抛错，写入必须自带 try…catch | 3 | 低 | 已有兜底 |
 | `src/services/invite/device.ts:97` | localStorage 在无痕 / 配额满 / 分区存储受限时抛错，写入必须自带 try…catch | 3 | 低 | 已有兜底 |
 | `src/services/invite/device.ts` 的 `localStorageDeviceIdStorage()` | localStorage 在无痕 / 配额满 / 分区存储受限时抛错，写入必须自带 try…catch | 3 | 低 | 已有兜底 |
@@ -208,7 +210,7 @@
 
 - `Intl.DisplayNames`（2 处：`src/index.html:120`、`src/services/diagnostics/capabilityTruth.ts:80`）：Chrome 81 才有，落在 83 之内，但语言数据（ICU）齐不齐要看具体机型；`src/index.html` 启动守卫已把它列进 `REQUIRED`，探不到会画提示页。
   **口径留痕**：`src/index.html:120` 那一行是**注释**（注释里写着「不检查 Intl.DisplayNames」），扫描器只做字面量匹配，注释行也算命中——为保住「0 命中就是真的 0 命中」，这条不一致不改规则，在这里写明。
-- `Capacitor.registerPlugin`（5 处：`src/services/appUpdate.ts:34`、`src/services/diagnostics/collector.ts:1459`、`src/services/exportText.ts:13`、`src/services/invite/fingerprint.ts` 的 `registerPlugin`、`src/components/settings/AppUpdateField.tsx:103` 的 `registerPlugin('Browser')`）：`registerPlugin` 永远返回代理对象，插件没注册时只会在调用时 reject。**全仓 `isPluginAvailable` 命中数为 0**，也就是没有任何一处正面探测「原生侧到底注册没注册」。已人工核对：`android/app/src/main/java/com/example/deepseekchat/MainActivity.java:49-52` 注册了 4 个插件，Java 侧 `@PluginMethod` 名字与 JS 调用一一对应，**没有名字对不上的情况**；所有调用点也都有 `try…catch` 降级。但「插件注册失败 / 被裁剪 / 旧版本 APK 没有这个插件」这条路径仍无正面探测。本轮 #243 新增的 `DeviceFingerprint`（`invite/fingerprint.ts` 的 `registerPlugin`）也计入这几处；`CheckoutBrowser`（原 `ours/transport.ts:37`，`/buy` 收银台的原生桥）已随 #331 的旧支付链路停用一起删除，那条 `需动态验证` 命中不再存在。
+- `Capacitor.registerPlugin`（6 处：`src/services/appUpdate.ts:40`、`src/services/diagnostics/collector.ts:504`、`src/services/diagnostics/collector.ts:1509`、`src/services/exportText.ts:19`、`src/services/invite/fingerprint.ts:232`、`src/components/settings/AppUpdateField.tsx:103` 的 `registerPlugin('Browser')`）：`registerPlugin` 永远返回代理对象，插件没注册时只会在调用时 reject。**全仓 `isPluginAvailable` 命中数为 0**，也就是没有任何一处正面探测「原生侧到底注册没注册」。已人工核对：`android/app/src/main/java/com/example/deepseekchat/MainActivity.java:49-52` 注册了 4 个插件，Java 侧 `@PluginMethod` 名字与 JS 调用一一对应，**没有名字对不上的情况**；所有调用点也都有 `try…catch` 降级。但「插件注册失败 / 被裁剪 / 旧版本 APK 没有这个插件」这条路径仍无正面探测。本轮 #243 新增的 `DeviceFingerprint`（`invite/fingerprint.ts` 的 `registerPlugin`）也计入这几处；`CheckoutBrowser`（原 `ours/transport.ts:37`，`/buy` 收银台的原生桥）已随 #331 的旧支付链路停用一起删除，那条 `需动态验证` 命中不再存在。
 - `canvas.toBlob`（1 处：`src/services/chat/appAssets.ts:60`）：回调可能拿到 `null`，个别 WebView 上不触发。
 - `new AudioContext({ sampleRate })`（1 处：`src/services/speech/readAloud.ts:92`）：采样率选项与自动播放策略在真机上表现不一致。
 - `visualViewport`：API 在（Chrome 61），键盘弹出后的 `resize` / `scroll` 时序与去抖仍需真机确认（这一条是人工补记，扫描器的结论本来就在 `已有兜底` 里）。
@@ -242,8 +244,8 @@
 | --- | --- | --- | --- | --- | --- |
 | `localStorage` | 20 | 19 | 1 | 0 | 0 |
 | `AbortController` | 14 | 14 | 0 | 0 | 0 |
-| `Body.text/arrayBuffer` | 16 | 10 | 6 | 0 | 0 |
-| `Capacitor.isNativePlatform` | 11 | 2 | 9 | 0 | 0 |
+| `Body.text/arrayBuffer` | 17 | 10 | 7 | 0 | 0 |
+| `Capacitor.isNativePlatform` | 12 | 2 | 10 | 0 | 0 |
 | `URL.createObjectURL` | 7 | 3 | 4 | 0 | 0 |
 | `URL.revokeObjectURL` | 7 | 2 | 5 | 0 | 0 |
 | `Capacitor.registerPlugin` | 6 | 1 | 0 | 0 | 5 |
@@ -294,6 +296,7 @@
 - 复核（2026-11-20 12:20，基准 `e5ee313`，本单 #386 分支 `feat/scroll-to-bottom-386`）：新增 1 个 `.tsx`（`src/components/session/ScrollToBottomButton.tsx`）与 1 个 `.ts`（同名 `.module.css.d.ts` 类型声明），扫描范围 212 → **214** 个源文件。新文件不碰 storage / clipboard / fetch / Capacitor，也不直接调 `matchMedia`（reduced-motion 判定走既有的 `src/utils/usePresence.ts` 的 `prefersReducedMotion()`），**命中总数仍是 122 条**，各能力计数与风险分布（高 4 / 中 9 / 低 109）未变；`src/components/messages/MessageList.tsx` 因新增 import 与一段按钮状态逻辑整体下移，`ResizeObserver` 两处从 `:110` / `:125` → **`:195` / `:212`**、`CSS.escape` 从 `:195` → **`:282`**。
 
 - 复核（2026-11-20 17:35，基准 `54a45f8`，本单 #487 W1-C1 分支 `feat/account-consume-page`，「账户与消费」页）：新增 3 个源文件 —— `src/components/consume/**` 的 `.tsx`（`AccountConsumePage` 页面壳 / `MyCardsTab` 我的卡密 / `BuyTab` 购买），Tab3 / Tab4 直接挂 W1-C2 的 `QuotaPanel` / `AccountPanel`（同一个 `consume` 实例 + `onNeedLogin` 递下去，没有第二套状态机）。三个新文件都**不直接碰宿主能力**：复制卡密走既有的 `src/utils/clipboard.ts`（`copyText`），apia 请求走既有的 `services/ours/transport.ts`（`httpTransport` / `openPayLinkInApp`），sub2api 请求走 `services/consume`，所以 `navigator.clipboard` / `Capacitor.isNativePlatform` 的命中都没有新增。扫描范围 244 → **247** 个源文件（`.tsx` 63 → **66**），命中总数（127）、各能力计数与风险分布均未变；`src/components/settings/SettingsDialog.tsx` 因为删掉三格入口（#482 三弹层合一）少了 45 行，其中两处 `AbortController` 整体上移（明细表里那三条 `:979` / `:1231` / `:1236` 是更早一次 PR 留下的漂移，本单未动）。
+- 复核（2026-11-20 18:35，基准 `05d45a4`，本单 #487 W1-B 后半分支 `feat/auth-gate-wiring`，sync 到 main 之后重算）：本轮两件事都不新增宿主能力：① 登录接缝（`__TEST_AUTH_STATE__`）只加一句构建期常量读取 + 一次 `useAuthStore.setState`，不碰 storage / fetch / Capacitor；② `src/legacy/migration/README.md` 的 USD → 元只是文档措辞。命中总数 128 → **130 条**（`无风险` 39 → **41**，风险分布 低 114 → **116**，高 / 中未变），两处增量全部来自 main 上 #307 落到 `src/services/exportText.ts` 的历史归档导出出口（`Body.text/arrayBuffer` 16 → **17**、`Capacitor.isNativePlatform` 11 → **12**，两条都是「裸调用但引入版本 ≤ 83」→ `无风险`）。该文件的 `文件:行` 锚点随重写整体漂移，盘点表已按 `scripts/lib/hostCapabilityAudit.mjs` 的复算结果重锚（`registerPlugin` 明细也由 5 处更正为 6 处）；扫描范围仍是 **255** 个源文件。
 - 复核（2026-11-20 16:20，基准 `d198ccc`，本单 #487 W1-A 分支 `feat/consume-layer`）：新增 9 个 `.ts`（`src/services/consume/**`：http / errors / auth / keys / usage / redeem / aff / email / index）。`http.ts` 用 `Capacitor.isNativePlatform()` 判「是不是原生环境」（非原生直接回 `unsupported`，不做 fetch 兜底），因此 `Capacitor.isNativePlatform` 10 → **11**（`无风险` 8 → **9**，Chromium 83 无此 API 但它是 Capacitor 注入的宿主能力，非原生分支即兜底）。命中总数 123 → **124**、`无风险` 38 → **39**、风险分布 低 109 → **110**（高 / 中未变）。扫描范围 217 → **226** 个源文件（`.ts` 169 / `.tsx` 56 / `.html` 1）。其余能力计数与 §「真实漏洞」5 条一处未变；`src/services/consume/http.ts` 新增的 `AbortController` / `fetch` 是**注释里的说明文字**，不进命中。
 - 复核（2026-11-20 16:35，基准 `e504986`，本单 #487 W1-B 分支 `feat/auth-layer-skeleton`）：新增 5 个 `.ts`（`src/services/auth/{types,transport,store,flags}.ts`、`src/components/auth/authForm.ts`）与 3 个 `.tsx`（`AuthGate` / `LoginPage` / `RegisterPage`），扫描范围 226 → **234** 个源文件（`.ts` 169 → **174**、`.tsx` 56 → **59**）。命中总数 124 → **127** 条：`src/services/auth/store.ts` 的凭据存储 `read`（`:92`）与 `write`（`removeItem` `:101` / `setItem` `:103`）各 1 处 `localStorage`，三处都自带 `try…catch`（存储不可用只影响「下次要不要重登」），记 `已有兜底`；`localStorage` 16 → **19**（`已有兜底` 15 → **18**）。风险分布 低 110 → **113**（高 4 / 中 10 未变）。
 - 复核（2026-11-20 17:00，基准 `3392efa`，本单 #487 W1-C2 分支 `feat/consume-panels`，「账户与消费」四面板）：新增 10 个 `.ts / .tsx`（`src/components/consume/**`），扫描范围 234 → **244** 个源文件。新代码**不新增任何宿主能力调用**：不碰 storage（余额不落本地，#484 §七 第 6 条）、不碰 fetch / Capacitor（网络全走 W1-A 的 `services/consume/**`），复制仍走既有的 `src/utils/clipboard.ts` 的 `copyText`，`navigator.clipboard` 的命中数与判定不变。**命中总数仍是 127 条**，各能力计数与风险分布未变。
