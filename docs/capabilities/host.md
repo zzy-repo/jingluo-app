@@ -82,14 +82,14 @@
 | `src/services/api/sse.ts:130` | ReadableStream.getReader 引入于 Chrome 43，83 必有；真正要防的是 body 为 null | 3 | 低 | 已有兜底 |
 | `src/services/appUpdate.ts:40` | registerPlugin 一定返回代理对象，但原生侧没注册时调用只会 reject；插件在不在要探测 | 3 | 中 | 需动态验证 |
 | `src/services/appUpdate.ts:41` | @capacitor/core 随包发布，函数一定在；native-bridge 没注入时会退化成 "web" | 3 | 低 | 已有兜底 |
-| `src/services/attachments/imageSource.ts:245` | Body.text/arrayBuffer 引入于 Chrome 76，83 必有 | 3 | 低 | 已有兜底 |
-| `src/services/attachments/imageSource.ts:252` | FileReader 引入于 Chrome 6，83 必有 | 3 | 低 | 已有兜底 |
-| `src/services/attachments/imageSource.ts:270` | URL.createObjectURL 引入于 Chrome 8，83 必有 | 3 | 低 | 已有兜底 |
-| `src/services/attachments/imageSource.ts:273` | URL.revokeObjectURL 引入于 Chrome 8，83 必有 | 3 | 低 | 已有兜底 |
-| `src/services/attachments/imageSource.ts:277` | URL.revokeObjectURL 引入于 Chrome 8，83 必有 | 3 | 低 | 已有兜底 |
-| `src/services/attachments/imageSource.ts:353` | toBlob 的回调在部分 WebView 上会拿到 null 甚至不触发，静态判不出 | 3 | 中 | 需动态验证 |
-| `src/services/attachments/imageSource.ts:365` | Body.text/arrayBuffer 引入于 Chrome 76，83 必有 | 3 | 低 | 已有兜底 |
-| `src/services/attachments/imageSource.ts:511` | toBlob 的回调在部分 WebView 上会拿到 null 甚至不触发，静态判不出 | 3 | 中 | 需动态验证 |
+| `src/services/attachments/imageSource.ts:279` | Body.text/arrayBuffer 引入于 Chrome 76，83 必有 | 3 | 低 | 已有兜底 |
+| `src/services/attachments/imageSource.ts:286` | FileReader 引入于 Chrome 6，83 必有 | 3 | 低 | 已有兜底 |
+| `src/services/attachments/imageSource.ts:304` | URL.createObjectURL 引入于 Chrome 8，83 必有 | 3 | 低 | 已有兜底 |
+| `src/services/attachments/imageSource.ts:307` | URL.revokeObjectURL 引入于 Chrome 8，83 必有 | 3 | 低 | 已有兜底 |
+| `src/services/attachments/imageSource.ts:311` | URL.revokeObjectURL 引入于 Chrome 8，83 必有 | 3 | 低 | 已有兜底 |
+| `src/services/attachments/imageSource.ts:387` | toBlob 的回调在部分 WebView 上会拿到 null 甚至不触发，静态判不出 | 3 | 中 | 需动态验证 |
+| `src/services/attachments/imageSource.ts:399` | Body.text/arrayBuffer 引入于 Chrome 76，83 必有 | 3 | 低 | 已有兜底 |
+| `src/services/attachments/imageSource.ts:545` | toBlob 的回调在部分 WebView 上会拿到 null 甚至不触发，静态判不出 | 3 | 中 | 需动态验证 |
 | `src/services/attachments/parsers/docx.ts:1118` | Body.text/arrayBuffer 引入于 Chrome 76，83 必有 | 3 | 低 | 已有兜底 |
 | `src/services/attachments/parsers/docx.ts:1157` | Body.text/arrayBuffer 引入于 Chrome 76，83 必有 | 3 | 低 | 已有兜底 |
 | `src/services/attachments/parsers/pdf.ts:213` | Body.text/arrayBuffer 引入于 Chrome 76，83 必有 | 3 | 低 | 已有兜底 |

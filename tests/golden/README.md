@@ -22,10 +22,17 @@ pnpm run test:golden    # = node tests/run-golden.mjs（并行 + 每条耗时 + 
 | 诊断 | 触发错误 → 诊断复制内容已脱敏 | `g09-diagnostics.test.mjs` | `services/chat/describe.ts`、`replyErrorReport.ts`、`services/diagnostics/redact.ts`、`app/errorReport.ts` |
 | 更新 | 检查 → 解析清单 → 选对版本 → 下载校验 | `g10-update.test.mjs` | `services/updateManifest.ts`、`components/settings/AppUpdateField.tsx` |
 | 账户与消费 | JWT 登录 → 读余额 → 兑换卡密 → 余额变化（+ 冷启动续期）；mock 驱动 | `g12-consume.test.mjs` | `services/auth/{store,transport}.ts`、`services/consume/{auth,usage,redeem}.ts` |
+| 文档附件 | 附 1 个 docx / pdf / txt → 解析 → 进上下文 → 发一条消息 | `g13-documents.test.mjs`（待 A 线 #480 落地） | `services/attachments/parsers/{docx,pdf,txt}.ts`、`attachments/manager.ts`、`contextBuilder.ts` |
+| 图片 vision | 附 1 张 png → 内联编码 → 发一条消息（三渠道形状不同、图片字节相同） | `g14-vision.test.mjs` | `services/attachments/imageSource.ts`（编码）、`chat/drafts.ts`（选图编码 / 就绪态）、`chat/reply.ts`（内联块）、`api/openaiAdapter.ts`（data URL 翻译） |
+| 购买 | 已登录 → 账户与消费 → 点购买 → 打开小铺收款页 | `g15-purchase.test.mjs`（待 C 线落地） | `services/consume/*`、`services/pay/*`、`components/settings/*`（账户与消费） |
+
+> **带「待 … 落地」的是占位**（#567 定了三主线各补一条黄金：A 文档附件 g13 / B 图片 vision g14 /
+> C 购买 g15）。**g14 已落地**（#548），g13 / g15 由各自主线补。它们要用的最小真二进制夹具
+> 已经先备好（见下面「夹具怎么用」），写用例的人不用再从零造文件。
 
 对应关系按「**改动落在哪就至少跑那一条**」用，不是穷举：动了 `src/services/chat/` 就跑 G1/G2/G4/G5/G6，
 动了设置面板/渠道就跑 G3/G5/G6/G9/G10（`g11` 邮箱见 `tests/golden/g11-email.test.mjs`）。
-拿不准就 `pnpm run test:golden` 全跑 —— 10 条约 12 秒（g12 单独约 0.9s，自带 mock，不需要 dist）。
+拿不准就 `pnpm run test:golden` 全跑 —— 2026-11-20 加入 G14 后本机 4 并发 **16.2s**（g12 自带 mock，不需要 dist）。
 
 > **额度 / 卡密 / 购买的黄金回归已删除（W1-D，#487）**：`g07-quota-purchase.test.mjs` 跟着旧额度/邀请体系
 > 一起删了 —— 它断言的「领取 → 刷新 → 兑换」走的是 `device_id` + 本机池那条即将整体替换的链路，
@@ -44,6 +51,62 @@ pnpm run test:golden    # = node tests/run-golden.mjs（并行 + 每条耗时 + 
 内核分配；不连 127.0.0.1:18000 的真实例，用例结尾有「所有请求都落在本次 mock 上」的守卫）。
 两条路径：① 登录 → 读余额 → 兑换 `MOCK-OK-0001` → 余额 +10；② 冷启动过期 → 续期换新 token → 仍能读余额。
 等页面外壳合并后，把「调客户端」换成「点按钮」即可，步骤名与断言不用改。
+
+### g14「图片 vision」为什么抓请求体、而不是看界面
+
+图片比纯文本多一段「本地编码 → 内联进请求体」的链路（`imageSource.ts` 编码 → 草稿就绪态 →
+`store.prepareInlineImages` → `reply.toFileBlocks` → `openaiAdapter` 翻成 data URL）。**任何一环接错，
+界面上都不会红**：文字照发、回复照收，只是模型看不见图（发出去是一张空图也一样绿）。所以这一条
+不看界面长什么样，直接把真浏览器发出去的请求体抓下来按**字节**钉三件事：
+
+1. 图片在请求体里，且 `media_type` / data URL 前缀是 `image/png`；
+2. 这份 base64 **逐字等于** `tests/fixtures/golden/tiny.png`（阈值内原图直发，一个字节不改）；
+3. 把它解回像素是 8×8 纯色 `#3366cc`（「有段 base64」不算过，能出图才算）。
+
+三渠道（anthropic / openai / ours）各跑一次：**形状不同**（`{type:'image', source:{type:'base64'…}}`
+vs `{type:'image_url', image_url:{url:'data:…'}}`）、**字节相同**。渠道配置用 localStorage 预置
+（`provider-kind` + `api-key` + 自填渠道的 `base-url:<kind>` / `model:<kind>`），上游用 `page.route`
+拦成两套 SSE —— 「切渠道」本身归 G3，这里不重复。
+
+## 夹具怎么用（`tests/fixtures/golden/`）
+
+g13（文档附件）/ g14（图片 vision）需要**真文件**喂进真实解析链路，这里的 `tiny.*` 就是为此准备的最小夹具：
+**它们是真二进制、随仓库入库**，用例直接读文件即可 ——
+
+> **不要手拼 base64。** 这几天反复踩的坑就在这里：手拼的 png 前缀对、CRC 错，浏览器 `<img>` 直接不出图；
+> 手拼的 docx 少了 `_rels/.rels`，`zipReader` 读得到条目、OOXML 侧认不出主文档。
+> 断言挂在这种文件上，红起来像是产品坏了，其实是夹具坏了。
+
+| 夹具 | 体积 | 内容 | 谁用 |
+| --- | --- | --- | --- |
+| `tiny.txt` | 114 B | 3 段中英混排纯文本 | g13 → `parseTxtFile` |
+| `tiny.docx` | 1.7 KB | 合法 OOXML（5 条目 zip）：1 个 Heading1 标题 + 1 段正文 + **1 个 2×2 表格** | g13 → `parseDocxFile` |
+| `tiny.pdf` | 700 B | 合法 PDF 1 页、**有文本层**，正文 `Hello golden` + 一行补充（凑过 `pdfMinCharsPerPage=20`） | g13 → `parsePdfFile`（pdfjs） |
+| `tiny.png` | 74 B | 8×8 纯色 RGB（`#3366cc`） | g14 → 图片附件 / vision 上传 |
+
+取用方式（黄金用例里就这么读，别内联字节）：
+
+```js
+import { readFile } from 'node:fs/promises'
+const bytes = await readFile(new URL('../fixtures/golden/tiny.docx', import.meta.url))
+const blob = new Blob([bytes], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' })
+```
+
+**重新生成**（唯一入口，不要手改这四个文件）：
+
+```bash
+node tests/fixtures/golden/make-fixtures.mjs           # 生成 + 自检（幂等：内容没变就不写盘）
+node tests/fixtures/golden/make-fixtures.mjs --check   # 只自检不写盘
+```
+
+脚本有**两层自检**，不过就 throw：① 字节级结构（zip 中央目录与每个条目 CRC / PNG 每个 chunk 的 CRC 与像素 /
+PDF 的 xref 偏移与 `/Length`）；② **真解析器**——`parseTxtFile` / `parseDocxFile` / `parsePdfFile` 在树上存在就
+真解析一遍并断言取到了正文与表格行列，不存在（#480 还没合入 main）或环境缺件（node 里没有 pdfjs）时打印
+`SKIP` 并给出原因，**不假装通过**。
+
+与 `tests/fixtures/480/` 的分工：那边的 `minimal.docx` / `text-layer.pdf` / 六种编码 txt 是 #528 L0/L1
+**验收矩阵**的样本（要覆盖空文件、加密、XXE、zip 炸弹这些坏形态）；这里只保留**黄金路径够用的最小合法文件**，
+一份一 KB 上下，目的是「链路没断」可断言、跑得快。
 
 ## 与 L1 的分工（硬要求）
 
@@ -103,3 +166,4 @@ G6 3.9s / G9 3.4s / G10 3.9s，**墙钟 11.4s**（第二批加入前是 5.7s；G
 | G4 | `store.ts` 的 `removeSessionData` 不再 `db.deleteSession` | 「删除真的落到 IndexedDB（sessions=2）」 |
 | G6 | `exportArchive.ts` 不再写 `manifest.json` | 「首条是 manifest.json（实际 chat_sessions/…）」 |
 | G9 | `redact.ts` 跳过值维度脱敏（只留 key 维度） | 「复制内容里没有任何一项敏感值原文（设备码,卡密,手机号）」 |
+| G14 | `reply.ts` 的 `toFileBlocks` 不再产出内联图片块（`const part = undefined && imagePartOf(id)`） | 「请求体里带上了图片 · 实际=user content="这张图是什么颜色？"」（三渠道第一站就红） |

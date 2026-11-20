@@ -359,7 +359,11 @@ export const zh = {
   uploadFileStatusUploading: '上传中...',
   uploadServerBusy: '服务器繁忙',
   uploadParseFailed: '解析失败',
-  imageUnsupportedFormat: '不支持的图片格式：仅支持 PNG / JPEG / WebP（HEIC 请先转成 JPEG）',
+  /**
+   * `{formats}` 由 `IMAGE_MEDIA_TYPES` 派生（`imageSource.ts` 的 `IMAGE_FORMAT_LABELS`）：
+   * 白名单里有的格式必须在这句里都出现（GIF 曾漏写，见 #580）。
+   */
+  imageUnsupportedFormat: '不支持的图片格式：仅支持 {formats}（HEIC 请先转成 JPEG）',
   imageDecodeFailed: '这张图片无法打开，请换一张或先转成 PNG / JPEG',
   imageTooLarge: '图片压缩后仍超过 {size}MB，请先压缩或裁剪后再发',
   imageAnimatedTooLarge: '动图超过 {size}MB 或尺寸过大，压缩会把动画拍成静帧，请先压缩后再发',
