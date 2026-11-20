@@ -189,10 +189,12 @@ test('C4/4 F6-14 换 Key 必须点两下：确认前 0 条请求；确认后 /ro
   const view = await harness.mount(OursServicesRow, {})
   await view.click('ours-rotate-open')
 
-  // 二次确认还没点：一条 /rotate 都不许发（破坏性操作）
+  // 二次确认还没点：一条 /rotate 都不许发（仍保留点两下）
   assert.deepEqual(withoutEmailProbe(harness.ctx.paths), ['GET /me'])
   assert.equal(view.has('ours-rotate-confirm'), true)
-  assert.match(view.text('ours-rotate-confirm-body'), /立即失效/u)
+  // #357：/rotate 改成「原地重置额度、不换 Key 字符串」，确认文案跟着改口径
+  // （原来这里断言的是「旧 Key 立即失效」，那句已经和实际不符）
+  assert.match(view.text('ours-rotate-confirm-body'), /额度/u)
 
   await view.click('ours-rotate-submit')
   assert.deepEqual(

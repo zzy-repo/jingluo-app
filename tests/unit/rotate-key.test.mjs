@@ -288,16 +288,21 @@ test('[7c] 兜底也不通：报错且旧 Key 不动', async () => {
 test('[8] 三个错误码文案与 issue 表格逐字一致', () => {
   assert.equal(zh.oursRotateErrDeviceNotFound, '本机还没有领取过 Key，请先领取')
   assert.equal(zh.oursRotateErrInvalidDevice, '设备标识异常，请重启 App 重试')
-  assert.equal(zh.oursRotateErrInternal, '更换失败，请稍后重试')
+  // #357：云端语义变成「原地重置额度」，界面上这个动作也叫「重置」，失败文案跟着同一口径
+  assert.equal(zh.oursRotateErrInternal, '重置失败，请稍后重试')
 })
 
-test('[8b] 二次确认文案必须写明「旧 Key 立即失效」+「换出后无法找回」', () => {
-  assert.match(zh.oursRotateConfirmBody, /立即失效/)
-  assert.match(zh.oursRotateConfirmBody, /无法找回/)
-  // 别的客户端也会立刻报错（issue 前端清单第 3 条）
+test('[8b] 二次确认文案必须如实说明「只重算额度、Key 不变、别的客户端不受影响」', () => {
+  // #357：/rotate 不再换发新的 Key 字符串，旧 Key 也不会失效 ——
+  // 原来这里钉的是「立即失效 / 无法找回」，那句已经和实际不符，改成钉新语义。
+  assert.match(zh.oursRotateConfirmBody, /额度/)
+  assert.match(zh.oursRotateConfirmBody, /Key 本身不变|Key 不变/)
+  // 必须说清「不影响别的客户端」，避免用户以为要重新填 Key
   assert.match(zh.oursRotateConfirmBody, /其它|其他/)
-  assert.match(en.oursRotateConfirmBody, /cannot be recovered/i)
-  assert.match(en.oursRotateConfirmBody, /immediately/i)
+  // 反面：不许再声称旧 Key 会失效 / 找不回来
+  assert.equal(/立即失效|无法找回/.test(zh.oursRotateConfirmBody), false, 'Key 不再失效，文案不许再这么说')
+  assert.match(en.oursRotateConfirmBody, /stays the same|cannot|unchanged/i)
+  assert.equal(/cannot be recovered|stops working immediately/i.test(en.oursRotateConfirmBody), false)
 })
 
 test('[8c] zh / en 的文案 key 一一对应（新增键只加不改）', () => {

@@ -677,30 +677,36 @@ export const en = {
   oursBindErrTimeout: 'The request timed out. Try again later.',
   oursBindErrInvalidResponse: 'Unexpected server response. Try again later.',
   oursBindErrUnknown: 'Binding failed. Try again later.',
-  // Issue #90: rotate the API key (POST /rotate) — quota carries over, the old key dies instantly
-  oursRotateTitle: 'Change key',
-  oursRotateEntryAction: 'Change key',
+  // Issue #90: rotate / reset the key (POST /rotate); #357: the server now resets quota in place
+  // and no longer issues a new key string.
+  oursRotateTitle: 'Change / reset key',
+  oursRotateEntryAction: 'Change / reset',
   oursRotateDescription:
-    'Get a fresh key. Your quota is not consumed: remaining points and used points carry over to the new key.',
-  oursRotateConfirmTitle: 'Change the key?',
+    'Recomputes the quota of this device key from "welcome grant + earned rewards". The server resets the quota in place and usually does not issue a new key string; the key keeps working and other clients are unaffected.',
+  oursRotateConfirmTitle: 'Reset the quota?',
   oursRotateConfirmBody:
-    'Once you switch, the old key stops working immediately and cannot be recovered. Any other client still using the old key breaks right away, and in-flight requests may fail. You only get one key, so make sure you really want to switch.',
-  oursRotateConfirmOk: 'Change it',
+    'The quota of the current key is recomputed from "welcome grant + earned rewards", so already consumed points stop using it up. The key itself stays the same (still this device key), no other client is logged out, and you do not need to re-enter the key.',
+  oursRotateConfirmOk: 'Reset it',
   oursRotateConfirmCancel: 'Cancel',
-  oursRotateBusy: 'Changing…',
-  oursRotateOk: 'Key changed. The new key is saved on this device.',
-  oursRotateOkUnchanged: 'The server did not rotate (it returned the same key). Try again later.',
-  oursRotateRetryHint: 'Changing only needs your device code, so retrying is safe: no quota is lost.',
+  oursRotateBusy: 'Resetting…',
+  // #357: four "success" wordings, one per RotateSuccessMode in src/services/invite/rotate.ts
+  oursRotateOk: 'Quota reset and a new key issued. The new key is saved on this device.',
+  oursRotateOkNoQuota:
+    'A new key was issued and saved on this device (the server returned no quota; tap "Refresh quota" to confirm).',
+  oursRotateOkQuotaReset: 'Quota reset. The key itself is unchanged (still this device key).',
+  oursRotateOkUnverified:
+    'Done. The key is unchanged and the server returned no quota info; tap "Refresh quota" to confirm.',
+  oursRotateRetryHint: 'Resetting only needs your device code, so retrying is safe: no quota is lost.',
   oursRotateErrDeviceNotFound: 'This device has no key yet. Claim one first.',
   oursRotateErrInvalidDevice: 'That device code looks wrong. Restart the app and try again.',
-  oursRotateErrInternal: 'Change failed. Try again later.',
+  oursRotateErrInternal: 'Reset failed. Try again later.',
   oursRotateErrDeviceMissing: 'Cannot read this device code. Restart the app and try again.',
-  oursRotateErrNoKeyInResponse: 'The server did not return a new key. Try again.',
+  oursRotateErrNoKeyInResponse: 'The server did not return a key. Try again later.',
   oursRotateErrRateLimited: 'Too many attempts. Try again later.',
   oursRotateErrNetwork: 'No network. Check your connection and try again.',
   oursRotateErrTimeout: 'The request timed out. Try again later.',
   oursRotateErrInvalidResponse: 'Unexpected server response. Try again later.',
-  oursRotateErrUnknown: 'Change failed. Try again later.',
+  oursRotateErrUnknown: 'Reset failed. Try again later.',
   oursRotateKeptOldKey: 'Your local key was left untouched and still works',
   // Issue #46: thinking display mode
   settingDialogThinkingDisplayLabel: 'Thinking process',

@@ -702,17 +702,21 @@ const OursServicesDialog = ({ onClose }: { onClose: () => void }) => {
     setCopied(done ? target : null)
   }
 
-  // ---------------------------------------------------------------- 更换 Key（#90）
+  // ---------------------------------------------------------------- 更换 / 重置 Key（#90 #357）
 
   /**
-   * 换一把 Key：`POST /rotate` 只认设备码，所以**旧 Key 丢了也能换**（这是它和 /bind 的关键差别）。
+   * 重置 Key 额度：`POST /rotate` 只认设备码，所以**旧 Key 丢了也能用**（这是它和 /bind 的关键差别）。
+   *
+   * #357：云端已改成「原地重置额度、不换 Key 字符串」，所以这里**不再比对返回的 Key 和本地是否相同**
+   * 来决定成不成败 —— 成败只看服务层给的 `kind`，成功的说法由 `outcome.mode`
+   * （`rotateSuccessKey`）决定。把「Key 没变」当成失败是 #357 那条误报的根因。
    *
    * 三条硬约束，都落在这一小段里：
    *  1. `saveKey` 只在服务层判定成功时才会被调用一次 —— 失败**绝不清本地旧 Key**，
-   *     用户不会因为一次换失败就彻底没服务（`rotateKey` 内部保证，这里只负责接住结果）。
-   *  2. `rotateBusy` 期间按钮置灰：连点不会在服务端产生多把 Key。
-   *  3. 成功后立刻用响应里的额度档案刷新余额显示（不用等用户再点「刷新额度」），
-   *     并把旧的 Key 探测结果清掉（那是对作废的旧 Key 探的，留着会误导）。
+   *     用户不会因为一次失败就彻底没服务（`rotateKey` 内部保证，这里只负责接住结果）。
+   *  2. `rotateBusy` 期间按钮置灰：连点不会在服务端产生多条重置。
+   *  3. 成功后立刻用响应里的额度档案刷新余额显示（不用等用户再点「刷新额度」）；
+   *     响应没带额度档案时主动去查一次 /me，并把旧的 Key 探测结果清掉（留着会误导）。
    */
   const submitRotate = async () => {
     if (rotateBusy) {
@@ -1132,7 +1136,7 @@ const OursServicesDialog = ({ onClose }: { onClose: () => void }) => {
           </section>
         ) : null}
 
-        {/* 1c. 更换 Key（#90）：只认设备码，旧 Key 丢了也能换；破坏性操作，必须点两下才发请求 */}
+        {/* 1c. 重置额度 / 更换 Key（#90 #357）：只认设备码；仍保留二次确认，避免误点 */}
         <section className={styles.section} data-testid="ours-rotate">
           <div className={styles.sectionHead}>
             <h3 className={styles.sectionTitle}>{t('oursRotateTitle')}</h3>
@@ -1184,6 +1188,7 @@ const OursServicesDialog = ({ onClose }: { onClose: () => void }) => {
             <div
               role="status"
               data-testid="ours-rotate-result"
+              data-rotate-mode={rotateResult.kind === 'ok' ? rotateResult.mode : undefined}
               className={clsx(
                 styles.value,
                 rotateResult.kind === 'error' ? styles.valueError : styles.valueSuccess
