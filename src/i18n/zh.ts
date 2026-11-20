@@ -971,11 +971,22 @@ export const zh = {
   attachFailUnsupportedFormat: '文件类型不受支持（当前仅支持 TXT、DOCX、PDF）',
   attachFailMimeMismatch: '文件内容与扩展名不一致，可能被改过扩展名',
   attachFailEmpty: '文件为空，没有可解析的内容',
-  attachFailTooLarge: '文件超过该类型的大小上限',
+  attachFailTooLarge: '文件超过该类型的大小上限，请压缩或拆分后重新上传',
   attachFailNotFound: '找不到这条附件记录，请重新添加',
   attachFailSourceMissing: '本地原件已不存在，请重新添加该文件',
   attachFailNoParser: '该格式的解析器尚未就绪，暂时无法解析',
   attachFailUnknown: '解析过程中出现了未知问题',
+  // PDF 解析器的硬失败码（#574）：每种成因一句人话 + 下一步怎么做。
+  // 扫描版 PDF 那句是 #480 §5.3 原文，别改字。
+  attachPdfErrNoTextLayer:
+    '该 PDF 未检测到可提取的文本，暂不支持扫描版 PDF，请上传包含文本层的 PDF 文件',
+  attachPdfErrTooManyPages: 'PDF 共 {pages} 页，超过上限 {limit} 页，请拆分后再上传',
+  attachPdfErrTooManyPagesPlain: 'PDF 页数超过上限 {limit} 页，请拆分后再上传',
+  attachPdfErrEncrypted: '不支持加密 PDF，请先解除密码保护后再上传',
+  attachPdfErrNotPdf: '这个文件不是有效的 PDF（内容与扩展名对不上），请确认文件后重新上传',
+  attachPdfErrFileTooLarge: 'PDF 超过该类型的体积上限，请压缩或拆分后再上传',
+  attachPdfErrLibUnavailable: 'PDF 解析组件没有加载成功，请重试；反复失败请检查网络后刷新页面',
+  attachPdfErrOpenFailed: 'PDF 打不开，文件可能已损坏，请重新导出后再上传',
   // 解析阶段（manager 的 onProgress.stage）
   attachStageValidate: '校验文件',
   attachStageUnzip: '解压文档',

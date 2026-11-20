@@ -55,9 +55,22 @@ export type UseAttachmentDrafts = {
   clear: () => void
 }
 
+/**
+ * UI 侧兜底的那条失败原文：与 manager 的 `describeAttachmentError()` **同一条约定**
+ * （`<码>: <人话>`，见 `services/attachments/manager.ts`）。
+ *
+ * 为什么这里也要认码（#574）：`service.parse()` 抛出来的不一定都是落库的 `failed` 记录
+ * （`not-found` / 被取消 / 接线方直接 reject 一个 `PdfParseError`），那条路径不经过 manager
+ * 的 `describeError`，只留 `error.message` 同样会把码丢掉，面板就退回「未知问题」。
+ *
+ * 这里**不 import** `parsers/pdf.ts`：那会把 pdfjs 拖进输入区这个热点模块，
+ * 只按鸭子类型认 `code`（`PdfParseError` 的 `code` 是必填 string）。
+ */
 const describeError = (error: unknown): string => {
   if (error instanceof Error) {
-    return error.message === '' ? error.name : error.message
+    const detail = error.message === '' ? error.name : error.message
+    const code = (error as { code?: unknown }).code
+    return typeof code === 'string' && code !== '' ? `${code}: ${detail}` : detail
   }
   return String(error)
 }

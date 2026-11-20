@@ -35,7 +35,18 @@ import type { SupportedExtension } from '../../services/attachments/limits.js'
 import type { DocumentAttachment, ParseOptions } from '../../services/attachments/types.js'
 import { showToast } from '../base/toastState.js'
 
-/** manager 抛的 `AttachmentError.reason` 的码集合（PR #529 的 `AttachmentErrorReason`） */
+/**
+ * 失败原因码集合：manager 抛的 `AttachmentError.reason`（PR #529）**加上**解析器抛的
+ * `PdfParseError.code`（#574）。
+ *
+ * 两套码共用同一个命名空间，是因为它们在界面上是同一件事 ——「这条附件为什么失败」，
+ * 而 `errorMessage` 的约定是 `<码>: <人话>`（见 manager 的 `describeAttachmentError()`），
+ * 面板只需要按冒号前半段查表。
+ *
+ * 以前这里只有 manager 的 7 个码，PDF 解析器的码（`noTextLayer` / `tooManyPages` …）一旦
+ * 传到界面就查不到表，只剩「未知问题」兜底；补全后 `FAILURE_KEYS` 是
+ * `Record<AttachmentErrorReason, TranslationKey>`，**漏一个码 `npx tsc` 就红**。
+ */
 export type AttachmentErrorReason =
   | 'unsupported-format'
   | 'mime-mismatch'
@@ -44,6 +55,14 @@ export type AttachmentErrorReason =
   | 'not-found'
   | 'source-missing'
   | 'no-parser'
+  // PDF 解析器（`parsers/pdf.ts::PdfParseErrorCode`）的硬失败码，#574
+  | 'fileTooLarge'
+  | 'notPdfFile'
+  | 'encryptedPdf'
+  | 'tooManyPages'
+  | 'noTextLayer'
+  | 'libUnavailable'
+  | 'openFailed'
   | 'unknown'
 
 /** 拒绝原因：manager 的码 + UI 侧自己判的「超出单条消息数量上限」 */
@@ -86,12 +105,21 @@ export const ATTACHMENT_ID_PREFIX = 'att-'
 
 export const isAttachmentRefId = (id: string): boolean => id.startsWith(ATTACHMENT_ID_PREFIX)
 
-/** 从 manager 抛出的 `AttachmentError` 里取 `reason`；不是它抛的就归 `unknown` */
+/**
+ * 从抛出的错误里取原因码：manager 的 `AttachmentError.reason`，或解析器的 `PdfParseError.code`
+ * （#574：两套码同一命名空间，见上面的 `AttachmentErrorReason`）。
+ * 两个字段都没有、或码不在白名单里 → `unknown`。
+ */
 export const rejectReasonOf = (error: unknown): AttachmentErrorReason => {
-  if (typeof error === 'object' && error !== null && 'reason' in error) {
-    const reason = (error as { reason?: unknown }).reason
-    if (typeof reason === 'string' && KNOWN_REASONS.indexOf(reason as AttachmentErrorReason) >= 0) {
-      return reason as AttachmentErrorReason
+  if (typeof error === 'object' && error !== null) {
+    for (const field of ['reason', 'code'] as const) {
+      if (!(field in error)) {
+        continue
+      }
+      const value = (error as Record<string, unknown>)[field]
+      if (typeof value === 'string' && KNOWN_REASONS.indexOf(value as AttachmentErrorReason) >= 0) {
+        return value as AttachmentErrorReason
+      }
     }
   }
   return 'unknown'
@@ -105,6 +133,15 @@ const KNOWN_REASONS: readonly AttachmentErrorReason[] = [
   'not-found',
   'source-missing',
   'no-parser',
+  // PDF 解析器的码（#574）：`addFile()` 阶段不会出现，但 `parse()` 的失败路径会出现，
+  // 同一套 `rejectReasonOf()` 也要认得它们（免得日志/埋点把已知原因记成 unknown）
+  'fileTooLarge',
+  'notPdfFile',
+  'encryptedPdf',
+  'tooManyPages',
+  'noTextLayer',
+  'libUnavailable',
+  'openFailed',
 ]
 
 /** 各扩展名的单文件上限，全部来自 `limits.ts`（不在 UI 里另写数字） */

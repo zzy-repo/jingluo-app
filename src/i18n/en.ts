@@ -980,11 +980,23 @@ export const en = {
   attachFailMimeMismatch:
     'The file content does not match its extension; it may have been renamed',
   attachFailEmpty: 'The file is empty, so there is nothing to parse',
-  attachFailTooLarge: 'The file is over the size limit for its type',
+  attachFailTooLarge: 'The file is over the size limit for its type. Compress or split it and upload again',
   attachFailNotFound: 'This attachment record no longer exists. Add the file again',
   attachFailSourceMissing: 'The local copy is gone. Add the file again',
   attachFailNoParser: 'The parser for this format is not ready yet, so it cannot be parsed',
   attachFailUnknown: 'Something unexpected went wrong while parsing',
+  // PDF parser hard-failure codes (#574): one plain sentence per cause, plus the next step.
+  attachPdfErrNoTextLayer:
+    'This PDF has no extractable text. Scanned PDFs are not supported yet, so please upload a PDF with a text layer',
+  attachPdfErrTooManyPages: 'This PDF has {pages} pages, over the {limit}-page limit. Split it and upload again',
+  attachPdfErrTooManyPagesPlain: 'This PDF is over the {limit}-page limit. Split it and upload again',
+  attachPdfErrEncrypted: 'Encrypted PDFs are not supported yet. Remove the password protection and upload again',
+  attachPdfErrNotPdf:
+    'This file is not a valid PDF (its content does not match the extension). Check the file and upload again',
+  attachPdfErrFileTooLarge: 'This PDF is over the size limit for its type. Compress or split it and upload again',
+  attachPdfErrLibUnavailable:
+    'The PDF parser component failed to load. Try again; if it keeps failing, check your network and reload the page',
+  attachPdfErrOpenFailed: 'This PDF cannot be opened — the file may be corrupt. Export it again and upload',
   // Parsing stages (manager onProgress.stage)
   attachStageValidate: 'Checking the file',
   attachStageUnzip: 'Unpacking the document',

@@ -6,6 +6,7 @@
  * success | partial | failed`），本文件只做「读出来怎么显示」。
  */
 import type { TranslationKey, TranslationParams } from '../../i18n/index.js'
+import { ATTACHMENT_LIMITS } from '../../services/attachments/limits.js'
 import type { AttachmentStatus, DocumentAttachment } from '../../services/attachments/types.js'
 import type { AttachmentErrorReason } from './attachmentService.js'
 
@@ -158,7 +159,20 @@ export const stageLabel = (progress: AttachmentProgress | null, t: Translate): s
   return t('attachStatusParsingStage', { stage: t(key) })
 }
 
-const FAILURE_KEYS: Record<AttachmentErrorReason, TranslationKey> = {
+/**
+ * 原因码 → 标题文案的**唯一**映射表。
+ *
+ * 类型是 `Record<AttachmentErrorReason, TranslationKey>`：`AttachmentErrorReason` 里加一个码
+ * 而这里不补，`npx tsc` 立刻红 —— 这正是 #574 的缺口所在（`PdfParseError.code` 到了界面上
+ * 没有对应条目，只能落 `attachFailUnknown`「解析过程中出现了未知问题」）。
+ *
+ * `attachFailUnknown` **只留给真正不认识的码**（没有任何已知码能映射到它）。
+ *
+ * 导出（而不是文件内私有）：这是「码 → 文案」的唯一真相源，用例要能逐行拿它跟
+ * `AttachmentErrorReason` / `PdfParseErrorCode` 对表 —— 见
+ * `tests/unit/attachment-failure-copy-574.test.mjs`。
+ */
+export const ATTACHMENT_FAILURE_KEYS: Record<AttachmentErrorReason, TranslationKey> = {
   'unsupported-format': 'attachFailUnsupportedFormat',
   'mime-mismatch': 'attachFailMimeMismatch',
   'empty-file': 'attachFailEmpty',
@@ -166,7 +180,48 @@ const FAILURE_KEYS: Record<AttachmentErrorReason, TranslationKey> = {
   'not-found': 'attachFailNotFound',
   'source-missing': 'attachFailSourceMissing',
   'no-parser': 'attachFailNoParser',
+  // PDF 解析器的硬失败码（#574）：每种成因一句人话 + 下一步怎么做，不再是「未知问题」
+  fileTooLarge: 'attachPdfErrFileTooLarge',
+  notPdfFile: 'attachPdfErrNotPdf',
+  encryptedPdf: 'attachPdfErrEncrypted',
+  tooManyPages: 'attachPdfErrTooManyPages',
+  noTextLayer: 'attachPdfErrNoTextLayer',
+  libUnavailable: 'attachPdfErrLibUnavailable',
+  openFailed: 'attachPdfErrOpenFailed',
   unknown: 'attachFailUnknown',
+}
+
+/**
+ * 页数超限时把「共 N 页」也说出来（`PDF 共 800 页，超过上限 500 页，请拆分后再上传`）。
+ *
+ * 页数不在任何结构化字段里 —— 失败记录只剩 `errorMessage`，而解析器已经把这个数字写在自己
+ * 那句人话里（`该 PDF 有 800 页，超过 500 页上限，请拆分后再上传`）。所以这里只从**技术信息**
+ * 里取第一个 `<数字> 页`：取到就带上（用户不用展开技术信息才知道差多少），取不到就不带数字
+ * （`attachPdfErrTooManyPagesPlain`），不猜、不用默认值。
+ */
+const pagesInFailureText = (raw: string | undefined): number | undefined => {
+  if (raw === undefined) {
+    return undefined
+  }
+  const matched = /(\d+)\s*页/u.exec(raw)
+  if (matched === null) {
+    return undefined
+  }
+  const pages = Number(matched[1])
+  return Number.isFinite(pages) && pages > 0 ? pages : undefined
+}
+
+/** 需要额外参数的原因码：目前只有页数超限（上限来自 limits，页数从上文的文案里取） */
+const failureParams = (
+  reason: AttachmentErrorReason,
+  raw: string | undefined
+): TranslationParams | undefined => {
+  if (reason !== 'tooManyPages') {
+    return undefined
+  }
+  const limit = ATTACHMENT_LIMITS.pdfMaxPages
+  const pages = pagesInFailureText(raw)
+  return pages === undefined ? { limit } : { pages, limit }
 }
 
 /**
@@ -176,16 +231,26 @@ const FAILURE_KEYS: Record<AttachmentErrorReason, TranslationKey> = {
 export const failureOf = (view: AttachmentView, t: Translate): { title: string; raw?: string } => {
   const message = view.errorMessage
   if (message === undefined) {
-    return { title: t(FAILURE_KEYS.unknown) }
+    return { title: t(ATTACHMENT_FAILURE_KEYS.unknown) }
   }
   const separator = message.indexOf(':')
   const code = separator > 0 ? message.slice(0, separator).trim() : ''
   const raw = separator > 0 ? message.slice(separator + 1).trim() : message
   const reason = code === '' ? 'unknown' : (code as AttachmentErrorReason)
-  const key = FAILURE_KEYS[reason]
-  const result: { title: string; raw?: string } = {
-    title: key === undefined ? t(FAILURE_KEYS.unknown) : t(key),
+  const key = ATTACHMENT_FAILURE_KEYS[reason]
+  if (key === undefined) {
+    // 真正不认识的码（解析器/管理器的更新版本写进来的）：兜底标题 + 原文进「技术信息」，
+    // 不假装知道原因。已知码一律不会走到这里（`ATTACHMENT_FAILURE_KEYS` 的 Record 类型 + 用例双重保证）。
+    const fallback: { title: string; raw?: string } = { title: t(ATTACHMENT_FAILURE_KEYS.unknown) }
+    if (raw !== '') {
+      fallback.raw = raw
+    }
+    return fallback
   }
+  const params = failureParams(reason, raw)
+  const usePlainPages = reason === 'tooManyPages' && params !== undefined && params.pages === undefined
+  const title = usePlainPages ? t('attachPdfErrTooManyPagesPlain', params) : t(key, params)
+  const result: { title: string; raw?: string } = { title }
   if (raw !== '') {
     result.raw = raw
   }

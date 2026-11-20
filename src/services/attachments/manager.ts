@@ -18,7 +18,7 @@ import { estimateTokens } from '../chat/contextBudget.js'
 import { getChatDB, reportStorageError } from '../chat/db.js'
 import { ATTACHMENT_LIMITS, SUPPORTED_EXTENSIONS, type SupportedExtension } from './limits.js'
 import { parseDocxFile } from './parsers/docx.js'
-import { parsePdfFile } from './parsers/pdf.js'
+import { isPdfParseError, parsePdfFile } from './parsers/pdf.js'
 import { parseTxtFile } from './parsers/txt.js'
 import { sha256Hex } from './sha256.js'
 import {
@@ -155,9 +155,23 @@ const resolveExtension = (filename: string, mimeType: string): SupportedExtensio
   return extension
 }
 
-const describeError = (error: unknown): string => {
+/**
+ * 失败原文的统一出口：`<码>: <人话>`。
+ *
+ * **码必须留在字符串里**（#574）：UI 的失败面板按 `码 → 文案` 查表给标题，取不到码就只
+ * 剩下「未知问题」兜底。解析器抛的 `PdfParseError` 早就带着 `code`（`noTextLayer` /
+ * `tooManyPages` / `encryptedPdf` …），以前这里只留 `error.message`，码在这一行丢掉，
+ * 「扫描版 PDF」「页数超限」在界面上就变成了「解析过程中出现了未知问题」。
+ *
+ * 导出（而不是文件内私有）：这是「码不丢」的唯一落点，用例要能直接钉住它 —— 见
+ * `tests/unit/attachment-failure-copy-574.test.mjs`。
+ */
+export const describeAttachmentError = (error: unknown): string => {
   if (error instanceof AttachmentError) {
     return `${error.reason}: ${error.message}`
+  }
+  if (isPdfParseError(error)) {
+    return `${error.code}: ${error.message}`
   }
   if (error instanceof Error) {
     return error.message === '' ? error.name : error.message
@@ -331,7 +345,7 @@ const runParse = async (
     const failed: DocumentAttachment = {
       ...record,
       status: 'failed',
-      errorMessage: describeError(error),
+      errorMessage: describeAttachmentError(error),
       parserVersion,
     }
     delete failed.parsedTextPath
