@@ -95,6 +95,7 @@ export type ConsumeMessageKey =
   | 'consumeRedeemProcessing'
   | 'consumeErrInvitationInvalid'
   | 'consumeErrEmailCodeInvalid'
+  | 'consumeErrEmailVerifyRequired'
   | 'consumeErrNotEnabled'
 
 /** 归一化错误：界面只认这几项，其中 `i18nKey` 是唯一该上屏的东西 */
@@ -177,6 +178,10 @@ export const CONSUME_ERROR_KEYS: Record<string, { kind: ConsumeErrorKind; i18nKe
   INVITATION_CODE_DISABLED: { kind: 'bad_request', i18nKey: 'consumeErrNotEnabled' },
   INVALID_VERIFY_CODE: { kind: 'bad_request', i18nKey: 'consumeErrEmailCodeInvalid' },
   VERIFY_CODE_INVALID: { kind: 'bad_request', i18nKey: 'consumeErrEmailCodeInvalid' },
+  // 邮箱还没验证（实测存在，契约 §4.1 漏列；#512 记录的缺口 2）：
+  // 归 auth（会话本身是好的，缺的是「验证」这一步），文案要给出**下一步**（先去验证），
+  // 不许掉到 `consumeErrUnknown`（「这次请求没成功」= 用户照着做也没用）。
+  EMAIL_VERIFY_REQUIRED: { kind: 'auth', i18nKey: 'consumeErrEmailVerifyRequired' },
 }
 
 /** 缺口记录：映射表覆盖不到的服务端码（#484 §四「覆盖不到时打日志并上报缺口」） */

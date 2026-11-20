@@ -18,11 +18,12 @@
 //   R3 用户确认后重试一次 → 恰好 2 发，且第二发之前有核对  R4 history 本身失败 → 停手报「待确认」，仍不重发
 //   R5 409 已用过 + history 命中 → 是**自己上次成功**       R6 409 已用过 + history 未命中 → 明确「未到账」
 //   R7 明确的业务失败（卡密不存在）→ 不查历史、不重试、也不给 pending
+//   R8 202 受理态（`{code:0,message:"accepted"}` / `status:"processing"`）→ **不是** redeemed：
+//      先查一次 history，未命中给 processing（不 failed、不带 canRetry）
+//   R9 202 受理态 + history 命中 → 已到账，`credited:"history"`（结论来自核对，不是那句 accepted）
 //
-// 已知缺口（观察，本单不改 `src/`，只记录）：服务端若回 `202 {code:0,message:"accepted"}`
-// （`docs/sub2api-client-contract.md` §4 的异步受理形状），`http.call()` 会把它当成功 →
-// `redeemCode` 直接返回 `redeemed`（**未经过 history 核对**）。真实实例目前回收 200，故此处按
-// 「pending 只能由可重试失败产生」写用例；该缺口写进 PR 评论，等 W 侧确认后再补一条红用例。
+// 缺口 1 已修（PR #512 记录）：`202` 与 `status:"accepted|processing|pending"` 归「受理，结果待定」，
+// 必须走一次 `GET /api/v1/redeem/history` 核对，**只有核对确认到账才回 `redeemed`**。
 //
 //   node --test tests/unit/consume-redeem-compensation.test.mjs
 import assert from 'node:assert/strict'
@@ -158,6 +159,54 @@ const ROWS = [
       assert.equal(outcome.kind, 'failed')
       assert.equal(outcome.error.i18nKey, 'consumeErrCardNotFound')
       assert.equal(outcome.verified, 'unknown')
+    },
+  },
+  {
+    id: 'R8',
+    what: '202 受理态（`{code:0,message:"accepted"}` / `status:"accepted|processing"`）→ **不是** redeemed：先核对 history，未命中给 processing',
+    run: async () => {
+      // 服务端三种「已受理」写法（契约 §4 的异步形状）：都要落同一结论
+      const ACCEPTED_REPLIES = [
+        { why: '202 + message:"accepted"', reply: () => jsonReply(202, { code: 0, message: 'accepted' }) },
+        {
+          why: '200 + data.status:"accepted"',
+          reply: () => jsonReply(200, { code: 0, message: 'success', data: { status: 'accepted' } }),
+        },
+        {
+          why: '200 + data.status:"processing"',
+          reply: () => jsonReply(200, { code: 0, message: 'success', data: { status: 'processing' } }),
+        },
+      ]
+      for (const { why, reply } of ACCEPTED_REPLIES) {
+        const scene = scenario({ post: reply, history: () => jsonReply(200, HISTORY_MISS) })
+        const outcome = await redeemCode(scene.http, { code: CODE })
+        assert.deepEqual(scene.sequence(), [REDEEM_POST, HISTORY_GET], `${why}：受理态必须先核对到账才给结论`)
+        assert.notEqual(outcome.kind, 'redeemed', `${why}：受理 ≠ 到账，判成功就是骗用户额度到了`)
+        assert.equal(outcome.kind, 'processing', `${why}：结论应是 processing（界面提示「正在确认兑换结果」）`)
+        assert.equal(outcome.verified, 'not_credited', `${why}：核对过，且这一页没有这张卡`)
+        assert.equal('canRetry' in outcome, false, `${why}：服务端已接单，给 canRetry 的把手就等于允许重复兑换`)
+
+        // 用户点了「再试一次」也不许发第二发：202 说明服务端已经收了这一单
+        const confirmed = scenario({ post: reply, history: () => jsonReply(200, HISTORY_MISS) })
+        await redeemCode(confirmed.http, { code: CODE, retryAfterConfirm: true })
+        assert.equal(confirmed.countOf('POST'), 1, `${why}：受理态下 retryAfterConfirm 也不许重发`)
+      }
+    },
+  },
+  {
+    id: 'R9',
+    what: '202 受理态 + history 命中 → 按「已到账」返回（`credited:"history"`），且不重发',
+    run: async () => {
+      const scene = scenario({
+        post: () => jsonReply(202, { code: 0, message: 'accepted' }),
+        history: () => jsonReply(200, HISTORY_HIT),
+      })
+      const outcome = await redeemCode(scene.http, { code: CODE })
+      assert.equal(scene.countOf('POST'), 1, '核对命中就更没有理由重发')
+      assert.deepEqual(scene.sequence(), [REDEEM_POST, HISTORY_GET], '先核对，后下结论')
+      assert.equal(outcome.kind, 'redeemed', '只有 history 确认到账才回 redeemed')
+      assert.equal(outcome.credited, 'history', '依据是历史核对，不是那句 accepted')
+      assert.equal(outcome.refreshUsage, true)
     },
   },
 ]
