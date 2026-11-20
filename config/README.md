@@ -70,3 +70,39 @@
 4. **换分发机之后**：`pnpm check:endpoints` + `pnpm check:ip` + `pnpm check:identity` → 重新打包
    （`pnpm build[:internal]` → `npx cap sync android` → `./gradlew assembleRelease`）。详细步骤见
    [`docs/RELEASE-MANUAL.md`](../docs/RELEASE-MANUAL.md) §13。
+
+### 消费侧 / 支付侧端点：`consume` 与 `pay`（#484 / #487）
+
+> **接口约束正文在 [`docs/sub2api-client-contract.md`](../docs/sub2api-client-contract.md)。**
+> 那一份说「客户端**允许**调哪些路径、怎么鉴权、怎么重试」；这一节只说
+> 「`config/endpoints.json` 里的这两组字段是什么、谁读、改了要做什么」。
+
+`config/endpoints.json` 新增两组（**不要动**原有的 `download`）：
+
+| 字段 | 含义 | 谁消费 | 改它要重新打包吗 |
+| --- | --- | --- | --- |
+| `consume.baseUrl` | sub2api 的 base（scheme + host + 可选端口，**不带路径**）。一个 host 同时承载 `/api/v1`（JWT）与 `/v1`（sk- Key） | Web：`__ENDPOINTS__.consume.baseUrl`（构建期注入）→ `src/services/consume/**`；原生：`BuildConfig.CONSUME_BASE` | **要**。地址在构建期被替换进 JS，原生侧进 dex 字符串表，**没有任何热更新通道能改它** |
+| `consume.apiV1Prefix` | JWT 通道前缀，默认 `/api/v1` | 消费层拼路径（`baseUrl + apiV1Prefix + …`） | 要（同一次构建） |
+| `consume.gatewayPrefix` | sk- Key 通道前缀，默认 `/v1` | 消费层拼路径、`/v1/usage` 与 `/v1/chat/completions` | 要（同一次构建） |
+| `consume.timeoutMs.read` / `.write` / `.redeem` | 只读 / 写 / 兑换三档超时（毫秒）。**调用点不许再硬编码毫秒数** | 消费层传输封装 | 要（同一次构建） |
+| `pay.baseUrl` | apia 的 base（只负责买：套餐、下单、支付、发卡密、订单查询） | Web：`__ENDPOINTS__.pay.baseUrl` → `src/services/ours/**`；原生：`BuildConfig.PAY_BASE` | **要**（同上） |
+| `pay.timeoutMs.read` / `.write` | 支付侧两档超时 | 支付传输封装 | 要（同一次构建） |
+
+**为什么这两组必须分开**（不是风格，是构建期校验项）：`consume` 与 `pay` 是两个职责不同的后端，
+`check:endpoints` 的新增校验会把「两者 base 相同」判为 FAIL。合并成一个 base 的那一刻，
+「买」和「用」的边界就没了，卡密该进谁的余额也说不清。
+
+**改这两组之前 / 之后必须做的事**
+
+1. 改之前：`consume.baseUrl` 的 host 要同时加进 `allowedHosts`（`check:ip` 的豁免名单），否则
+   门禁把新域名判成硬编码地址；`pay.baseUrl` 同理。
+2. 改之后：`pnpm check:endpoints` + `pnpm check:ip`（两者都会读这份 JSON）→ 重新打包。
+3. **构建期 fail-fast**：base 必须是 `https`；不得命中废弃域黑名单（`140.210.13.146`、`:60013`、旧池域）；
+   `consume.baseUrl ≠ pay.baseUrl`；缺字段 / 空值 / 未知键直接中止构建并点名键名与文件行号。
+4. 灰度：`-PconsumeBase=<host>` 只在打包时临时覆盖，**不落盘**（不进 `config/endpoints.json`）。
+   换 host 的完整步骤（改一行 → 重打包 → 灰度验证 → 回滚）见
+   [`docs/RELEASE-MANUAL.md`](../docs/RELEASE-MANUAL.md)「换 sub2api host」。
+
+**状态说明**：这两组字段由 #487 的配置改造落地；本文件只描述契约。
+如果 `config/endpoints.json` 里还没有 `consume` / `pay`，说明配置改造尚未合并 —— 此时
+`src/services/consume/**` 不应存在（消费层的存在以这两组字段存在为前提）。

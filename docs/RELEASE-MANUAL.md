@@ -687,3 +687,93 @@ cd android && ./gradlew assembleRelease -PartifactVariant=internal
 - `-PdlPrimaryBase` / `-PdlFallbackBase` 覆盖通道**没有在真实 tag 上跑过**（只在本地 `assembleRelease` 验过配置读取与 `BuildConfig` 生成）。
 - 换地址后的「新机可下 / 旧机仍可下」要人工 `curl` 验（见 ④），离线门禁不做网络探测。
 - 上 TLS 后再把 `config/appIdentity.json` 的 `allowInsecureUpdateTransport` 置 `false`（顺序不能反，否则 `pnpm check:identity` 会红）。
+
+---
+
+## 14. 换 sub2api host：只改一处 + 重打包 + 灰度验证（Issue #484 / #487）
+
+**适用**：sub2api 的入口地址变了（换机器、换域名、上 TLS）。**不适用**：换分发包地址（那是 §13）、
+换 apia（支付侧，同法但改 `pay.baseUrl`）。
+
+> 接口约束前提：客户端**只允许**调 [`docs/sub2api-client-contract.md`](sub2api-client-contract.md) §3 白名单里的路径。
+> 换 host 不改变白名单 —— 如果新 host 上跑的不是同一个 sub2api（不同版本/不同 DB），那是**迁移**，不是换地址。
+
+### ⓿ 换之前必须确认的四件事（缺一条就别开始）
+
+| # | 要确认什么 | 谁确认 | 判据 |
+| --- | --- | --- | --- |
+| 1 | 新 host 是 **https** | 维护者 | `curl -sI https://<new-host>/health` → 200；构建期校验也会拦明文 http |
+| 2 | 新 host 与旧 host 是**同一套 sub2api 数据**（同库） | 维护者 | 老账号能在新 host 登录、老 Key 在 `/v1/usage` 仍返回额度；否则老用户的余额与 Key 全部失联 |
+| 3 | CORS 放行了客户端 origin | 部署方（**客户端侧无法解决**） | WebView origin 是 `https://localhost`；`cors.allowed_origins` 为空数组时 sub2api 会拒绝所有跨域请求 |
+| 4 | 新 host 已加进 `allowedHosts` | 改配置的人 | 否则 `pnpm check:ip` 把新域名判成硬编码地址 |
+
+### ① 只改一处 + 过门禁
+
+```bash
+$EDITOR config/endpoints.json      # 只改 consume.baseUrl 这一行，其余不动
+pnpm check:endpoints               # 配置自洽（https / consume≠pay / 字段齐全）
+pnpm check:ip                      # 主机白名单（新 host 必须在 allowedHosts 里）
+pnpm check:consume-api             # 白名单路径门禁（随 #484 交付物 2 上线后才有）
+```
+
+**提交信息里写清新的 host 与验证日期**。这一步之后不要顺手改 `src/**` —— 地址只活在配置里。
+
+### ② 重打包（三步，与 §3 同源）
+
+```bash
+pnpm build:internal                        # 构建期把 consume.baseUrl 注入 __ENDPOINTS__
+npx cap sync android                       # 同步 web 产物进 android 工程
+cd android && ./gradlew assembleRelease -PartifactVariant=internal
+```
+
+原生侧地址来自 `BuildConfig.CONSUME_BASE`（`android/app/build.gradle` 读同一份 JSON 生成
+`buildConfigField`；**AGP 8 默认关闭 `buildConfig` 特性，必须显式 `buildFeatures { buildConfig true }`**，
+否则这个常量根本不存在，表现为编译期 `cannot find symbol`）。
+
+### ③ 灰度验证：`-PconsumeBase` 临时覆盖，不动配置文件
+
+```bash
+cd android && ./gradlew assembleRelease -PartifactVariant=internal \
+  -PconsumeBase=https://<new-host>
+```
+
+覆盖只在这次打包生效，**不落盘、不进仓库**。装这台内测包，按下面五条链路验（顺序即依赖顺序）：
+
+1. `GET /api/v1/settings/public` —— 启动就有结果（注册/邀请/邮箱入口按开关显隐）。
+2. `POST /api/v1/auth/login` → `GET /api/v1/auth/me`；把 access token 手动过期，验 `POST /api/v1/auth/refresh` 能续上。
+3. `GET /api/v1/keys` —— 列表出来（空数组也算通过，空列表不是错误）。
+4. `GET /v1/usage`（用 sk- Key）—— 三种形态至少命中一种（`quota_limited` / 订阅 / 钱包余额）。
+5. `POST /api/v1/redeem` + `GET /api/v1/redeem/history` —— **用测试卡密**；
+   顺便验 §5 的补偿路径：把超时调到 1ms 制造失败，确认客户端去查 history/usage 而不是盲重试。
+
+红线的判据：出现 CORS 报错（⓿ 第 3 条没做）、出现 400 `api_key_in_query_deprecated`（key 被写进 query）、
+或兑换失败后立刻重发（违反「绝不可盲重试」）—— 任何一条都算灰度不通过，回 ①。
+
+### ④ 证明包里的地址真的换了
+
+```bash
+APK=android/app/build/outputs/apk/release/app-release.apk
+NEW=$(node -e 'process.stdout.write(require("./config/endpoints.json").consume.baseUrl)')
+grep -lF "$NEW" dist/static/js/*.js                              # 命中 = Web 侧注入生效
+unzip -p "$APK" classes.dex | strings | grep -cF "${NEW#*//}"    # ≥1 = 原生侧注入生效
+grep -rn "$NEW" src android/app/src/main/java                    # 必须 0 行（地址只活在配置里）
+```
+
+### ⑤ 回滚
+
+```bash
+git checkout -- config/endpoints.json
+pnpm build:internal && npx cap sync android
+cd android && ./gradlew assembleRelease -PartifactVariant=internal
+```
+
+已发出去的包回滚不了 —— 回滚的实质是「让**旧 host 继续可达**」：sub2api 只要还在旧地址上服务，
+老包的登录/额度/兑换就都还能用。**换 host 不要先拆旧入口**，等新版本覆盖率够了再下线。
+
+### 未测边界（如实记录）
+
+- `-PconsumeBase` 覆盖通道**没有在真实 tag 上跑过**（只在本地 `assembleRelease` 验配置读取与 `BuildConfig` 生成）。
+- sub2api 的真实 host 至今**未定**（#484 待维护者提供）：本节在新 host 落地前只能验「地址换了」，
+  不能验「链路通了」。别把前者写成后者。
+- CORS 是否放行 `https://localhost` 属**部署侧动作**，客户端只能通过「灰度第 3 条」间接观察。
+- 本节不涉及分发链路（§13）与签名（§1），两者互不影响。
