@@ -10,5 +10,74 @@
     "same-runner": "同一台 runner 上第一次红、重跑绿（时序/首帧/端口竞态）。处置：自动重跑 + 登记；连续 3 次进 quarantine（每周提醒）。",
     "cross-runner": "同 commit + 同用例 + 结果不同 + runner 不同（机器快慢/负载差异）。处置：必须改成等终态（until 轮询），禁止加 sleep / 提高超时；不进 quarantine。"
   },
-  "tests": {}
+  "tests": {
+    "tests/unit/capabilities-docs-sync.test.mjs": {
+      "test": "tests/unit/capabilities-docs-sync.test.mjs",
+      "kind": "cross-runner",
+      "firstSeen": "2026-11-20",
+      "count": 2,
+      "lastSeen": "2026-11-20",
+      "streak": 0,
+      "history": [
+        "2026-11-20T08:16:05.679Z",
+        "2026-11-20T08:19:42.460Z"
+      ],
+      "runners": [
+        "local:zzy-EQ.localdomain#busy",
+        "local:zzy-EQ.localdomain#normal"
+      ],
+      "evidence": [
+        {
+          "runner": "local:zzy-EQ.localdomain#normal",
+          "ok": false,
+          "flaky": false,
+          "ms": 1522,
+          "attempts": 2,
+          "runId": "zzy-EQ.localdomain@2026-11-20T08:15:10.386Z",
+          "loadClass": "normal",
+          "at": "2026-11-20T08:15:10.406Z",
+          "commit": "6ecc08b264b0"
+        },
+        {
+          "runner": "local:zzy-EQ.localdomain#busy",
+          "ok": true,
+          "flaky": false,
+          "ms": 3801,
+          "attempts": 1,
+          "runId": "zzy-EQ.localdomain@2026-11-20T08:16:01.766Z",
+          "loadClass": "busy",
+          "at": "2026-11-20T08:16:01.805Z",
+          "commit": "6ecc08b264b0"
+        },
+        {
+          "runner": "local:zzy-EQ.localdomain#normal",
+          "ok": false,
+          "flaky": false,
+          "ms": 1522,
+          "attempts": 2,
+          "runId": "zzy-EQ.localdomain@2026-11-20T08:15:10.386Z",
+          "loadClass": "normal",
+          "at": "2026-11-20T08:15:10.406Z",
+          "commit": "6ecc08b264b0"
+        },
+        {
+          "runner": "local:zzy-EQ.localdomain#busy",
+          "ok": true,
+          "flaky": false,
+          "ms": 4266,
+          "attempts": 1,
+          "runId": "zzy-EQ.localdomain@2026-11-20T08:17:59.557Z",
+          "loadClass": "busy",
+          "at": "2026-11-20T08:17:59.764Z",
+          "commit": "6ecc08b264b0"
+        }
+      ],
+      "quarantinedAt": null,
+      "lastRemindedAt": null,
+      "lastGreen": null,
+      "lastRedAt": null,
+      "reason": "红：local:zzy-EQ.localdomain#normal / 绿：local:zzy-EQ.localdomain#busy",
+      "lastCrossRunnerCommit": "6ecc08b264b0"
+    }
+  }
 }

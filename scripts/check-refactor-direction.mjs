@@ -27,7 +27,10 @@
  * 2. **A3 的通道判定只看行内文本**（`accessToken` / `jwt` ↔ `sk-` / `apiKey` / `x-api-key`），
  *    或在同一行写 `// JWT` / `// sk-` 标死。这条是启发式，不是命名规范 —— 判不出来时的提示
  *    就是"要么改名，要么标一行"，不会因为函数叫 `token` 而悄悄算通过。
- * 3. **A6 只拦"后端域名"**。`src/` 里的 `https://www.unicode.org`、`https://api.deepseek.com`
+ * 3. **A6 的 https 判据允许回环例外**（`127.0.0.1` / `localhost` / `[::1]`）。本地联调的 sub2api
+ *    实例跑在 `http://127.0.0.1:18000`，回环地址上的明文是开发环境的正当需求；**非回环明文仍然
+ *    判红**（生产 host 必须是 https，见 `scripts/lib/consumeEndpoints.mjs` 与 build 期校验）。
+ * 4. **A6 只拦"后端域名"**。`src/` 里的 `https://www.unicode.org`、`https://api.deepseek.com`
  *    这类上游/文档地址不算违规 —— 后端域名白名单来自 `config/endpoints.json`（`allowedHosts` /
  *    `legacyHosts` / 两组 `download` / `consume` / `pay` 的 host），外加 #484 §一 写死的支付域名
  *    与任何 IP 字面量 URL。
@@ -70,6 +73,7 @@
 
 import { spawnSync } from 'node:child_process'
 import fs from 'node:fs'
+import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
@@ -127,8 +131,9 @@ const TEXT_EXT = new Set([
 const USAGE = `把 #484 §九 的 A1–A7 方向验收跑成一条命令
 
 用法:
-  node scripts/check-refactor-direction.mjs [--report] [--json [文件]] [--root 目录]
+  node scripts/check-refactor-direction.mjs [--report] [--json [文件]] [--root 目录] [--selftest]
 
+  --selftest     A6 的负向对照：https / 回环 → PASS，非回环明文 → 必须 FAIL（证明例外没放水）
   --report       报告模式：只报告，不因 FAIL 退出非零（重构期用它，CI 暂时别接）
   --json [文件]  输出机器可读结果；不给文件名就打 stdout（阶段②出验收报告用）
   --root 目录    换一个仓库根（默认脚本所在的仓库）
@@ -688,6 +693,16 @@ const backendHostsOf = (config) => {
   return hosts
 }
 
+/**
+ * A6 的 base 判据：**https**，唯一例外是**本机回环**。
+ *
+ * 为什么要有例外：本地联调的 sub2api 实例就是 `http://127.0.0.1:18000`（维护者 2026-11-20 明确
+ * 联调与 base URL 都以本地实例为准）。回环地址出不了网，明文不会把 Key 交给中间人；
+ * 而**非回环**的明文仍然是硬红线（公网 IP / 域名都必须照样红）—— 例外只对回环成立，不是整体放水。
+ */
+const isHttpsOrLoopback = (value) =>
+  typeof value === 'string' && (/^https:\/\//iu.test(value) || /^http:\/\/(?:127\.0\.0\.1|localhost|\[::1\])(?::\d+)?\/?$/iu.test(value))
+
 const checkA6 = (corpus, root) => {
   const file = path.join(root, ENDPOINTS_FILE)
   const evidence = []
@@ -721,13 +736,13 @@ const checkA6 = (corpus, root) => {
 
     sub.push({ what: 'consume 组存在', ok: stats.consume })
     sub.push({ what: 'pay 组存在', ok: stats.pay })
-    const consumeHttps = Boolean(stats.consumeBase) && /^https:\/\//u.test(stats.consumeBase)
-    const payHttps = Boolean(stats.payBase) && /^https:\/\//u.test(stats.payBase)
+    const consumeHttps = isHttpsOrLoopback(stats.consumeBase)
+    const payHttps = isHttpsOrLoopback(stats.payBase)
     sub.push({
-      what: `consume.baseUrl 是 https（当前 ${stats.consumeBase ?? '缺失'}）`,
+      what: `consume.baseUrl 是 https 或回环（当前 ${stats.consumeBase ?? '缺失'}）`,
       ok: consumeHttps,
     })
-    sub.push({ what: `pay.baseUrl 是 https（当前 ${stats.payBase ?? '缺失'}）`, ok: payHttps })
+    sub.push({ what: `pay.baseUrl 是 https 或回环（当前 ${stats.payBase ?? '缺失'}）`, ok: payHttps })
     const distinct =
       Boolean(stats.consumeBase) && Boolean(stats.payBase) && stats.consumeBase !== stats.payBase
     sub.push({ what: 'consume 与 pay 不指向同一个 base（职责不能混）', ok: distinct })
@@ -744,8 +759,15 @@ const checkA6 = (corpus, root) => {
           '`{ baseUrl: "https://apia.ecsafe.cn", timeoutMs: { read, write } }`（apia 只负责买，不改协议）。',
       )
     }
-    if (stats.consumeBase && !consumeHttps) hints.push('consume.baseUrl 必须是 https：明文 http 直接中止构建（#484 §6.3）。')
-    if (stats.payBase && !payHttps) hints.push('pay.baseUrl 必须是 https：明文 http 直接中止构建（#484 §6.3）。')
+    if (stats.consumeBase && !consumeHttps) {
+      hints.push(
+        'consume.baseUrl 必须是 https，唯一例外是本机回环（127.0.0.1 / localhost / [::1]）：' +
+          '非回环明文会中止构建（#484 §6.3）；生产 host 待维护者提供，届时填 https。',
+      )
+    }
+    if (stats.payBase && !payHttps) {
+      hints.push('pay.baseUrl 必须是 https（唯一例外是本机回环）：明文 http 直接中止构建（#484 §6.3）。')
+    }
     if (!distinct && stats.consumeBase && stats.payBase) {
       hints.push('consume.baseUrl 与 pay.baseUrl 不许相同：一个卖卡、一个消费，职责不能混（#484 §6.3）。')
     }
@@ -895,8 +917,66 @@ const formatReport = (report) => {
   return out.join('\n')
 }
 
+/**
+ * `--selftest`：A6 的负向对照（#487 W1-A 要求「回环例外不是整体放水」）。
+ *
+ * 做法：在一个临时目录里造「只够 A6 判」的合成仓库（`src/` 空 + `config/endpoints.json`），
+ * 只断言 **A6 这一项**的 PASS/FAIL —— 其它项在合成仓库里本来就是红的，不参与断言。
+ *
+ * 六个用例：https / `127.0.0.1` / `localhost` / `[::1]` → **PASS**；
+ * `http://8.8.8.8`（check-ip-allow：负向对照的靶子地址，不发任何请求）与 `http://consume.example.com`（非回环明文）→ **必须 FAIL**。
+ */
+const selftestA6 = () => {
+  const cases = [
+    { base: 'https://consume.example.com', expect: 'PASS', label: 'https' },
+    { base: 'http://127.0.0.1:18000', expect: 'PASS', label: '回环 127.0.0.1' },
+    { base: 'http://localhost:18000', expect: 'PASS', label: '回环 localhost' },
+    { base: 'http://[::1]:18000', expect: 'PASS', label: '回环 [::1]' },
+    // check-ip-allow: A6 负向对照的靶子地址（非回环明文必须判红），只作字符串比对，不发请求
+    { base: 'http://8.8.8.8', expect: 'FAIL', label: '非回环明文 IP（例外不许放水）' },
+    { base: 'http://consume.example.com', expect: 'FAIL', label: '非回环明文域名（例外不许放水）' },
+  ]
+  const failures = []
+  for (const item of cases) {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rd-a6-'))
+    fs.mkdirSync(path.join(dir, 'src'), { recursive: true })
+    fs.mkdirSync(path.join(dir, 'config'), { recursive: true })
+    const config = {
+      chatBaseUrl: 'https://chat.example.com',
+      inviteBaseUrl: 'https://chat.example.com',
+      feedbackUrl: 'https://chat.example.com/feedback',
+      legacyHosts: ['legacy.example.com'],
+      allowedHosts: ['chat.example.com'],
+      allowedPorts: [443],
+      download: { primaryBase: 'https://dl.example.com', fallbackBase: 'https://dl2.example.com' },
+      consume: {
+        baseUrl: item.base,
+        apiV1Prefix: '/api/v1',
+        gatewayPrefix: '/v1',
+        timeoutMs: { read: 10000, write: 20000, redeem: 30000 },
+      },
+      pay: { baseUrl: 'https://pay.example.com', timeoutMs: { read: 10000, write: 20000 } },
+    }
+    fs.writeFileSync(path.join(dir, ENDPOINTS_FILE), JSON.stringify(config, null, 2))
+    const report = runAll(dir, { report: true })
+    const a6 = report.items.find((entry) => entry.id === 'A6')
+    fs.rmSync(dir, { recursive: true, force: true })
+    if (!a6 || a6.status !== item.expect) {
+      failures.push(`${item.label}：期望 A6 ${item.expect}，实际 ${a6?.status ?? '缺失'}`)
+    }
+  }
+  if (failures.length > 0) {
+    console.error(`A6 负向对照失败，${failures.length} 处：`)
+    for (const failure of failures) console.error(`  - ${failure}`)
+    return 1
+  }
+  // check-ip-allow: 这是负向对照的说明文字（靶子地址），不发请求
+  console.log('A6 负向对照通过：https / 127.0.0.1 / localhost / [::1] → PASS；非回环明文（8.8.8.8 与域名）→ FAIL')
+  return 0
+}
+
 const parseArgs = (argv) => {
-  const options = { root: ROOT, report: false, json: false, jsonPath: null, help: false }
+  const options = { root: ROOT, report: false, json: false, jsonPath: null, help: false, selftest: false }
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index]
     if (arg === '--report') options.report = true
@@ -912,7 +992,8 @@ const parseArgs = (argv) => {
       if (!value || value.startsWith('--')) throw new Error('--root 需要一个目录')
       options.root = path.resolve(value)
       index += 1
-    } else if (arg === '--help' || arg === '-h') options.help = true
+    } else if (arg === '--selftest') options.selftest = true
+    else if (arg === '--help' || arg === '-h') options.help = true
     else throw new Error(`未知参数：${arg}`)
   }
   return options
@@ -931,6 +1012,7 @@ export const main = (argv) => {
     console.log(USAGE)
     return 0
   }
+  if (options.selftest) return selftestA6()
   if (!fs.existsSync(path.join(options.root, 'src'))) {
     console.error(`${options.root} 下没有 src/，不像仓库根（--root 指错了？）`)
     return 2

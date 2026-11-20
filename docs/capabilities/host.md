@@ -4,9 +4,9 @@
 >
 > **快照基准：`acf6826`**（`origin/main` tip，2026-11-19 12:28:21 +0800）· 采集时间：2026-11-19 18:55 (+0800)
 >
-> **扫描范围**：`src/**` 的 **217** 个源文件。
+> **扫描范围**：`src/**` 的 **226** 个源文件。
 >
-> 拆分：`.ts` 160 / `.tsx` 56 / `.html` 1 = 217（#434 / #374 新增 `src/services/api/keyFailure.ts` 后 +1）。上一版写 190，是缺了 `#237`（`fetch` 通道计数、`readBytesOf`）与 `#243`（设备指纹）新增的 5 个文件。
+> 拆分：`.ts` 169 / `.tsx` 56 / `.html` 1 = 226（#487 W1-A 新增 `src/services/consume/**` 9 个 `.ts` 后 +9）。上一版写 190，是缺了 `#237`（`fetch` 通道计数、`readBytesOf`）与 `#243`（设备指纹）新增的 5 个文件。
 >
 > **本盘点只审计、只出单、只做工具，不修任何代码。** 每条真实漏洞都另开独立 Issue（见「真实漏洞与拆单」），修复在各自单里做，不在 #209 的 PR 里改产品代码。
 >
@@ -36,7 +36,7 @@
 
 ## 盘点表
 
-**总计 123 条命中**（`已有兜底` 71 / `无风险` 38 / `真实漏洞` 5 / `需动态验证` 9）；风险分布：高 4、中 10、低 109。
+**总计 124 条命中**（`已有兜底` 71 / `无风险` 39 / `真实漏洞` 5 / `需动态验证` 9）；风险分布：高 4、中 10、低 110。
 
 | 文件:行 | 假设内容 | 类别 | 风险(高/中/低) | 处置(已有兜底/需探测/需动态验证/拆单) |
 | --- | --- | --- | --- | --- |
@@ -239,7 +239,7 @@
 | `localStorage` | 16 | 15 | 1 | 0 | 0 |
 | `AbortController` | 14 | 14 | 0 | 0 | 0 |
 | `Body.text/arrayBuffer` | 16 | 10 | 6 | 0 | 0 |
-| `Capacitor.isNativePlatform` | 10 | 2 | 8 | 0 | 0 |
+| `Capacitor.isNativePlatform` | 11 | 2 | 9 | 0 | 0 |
 | `URL.createObjectURL` | 7 | 3 | 4 | 0 | 0 |
 | `URL.revokeObjectURL` | 7 | 2 | 5 | 0 | 0 |
 | `Capacitor.registerPlugin` | 6 | 1 | 0 | 0 | 5 |
@@ -286,3 +286,5 @@
 - 复核（2026-11-20 01:00，基准 `519a721`，本单 #421 分支 `feat/email-adapt`）：新增 2 个 `.ts` 源文件（`src/services/invite/email.ts`、`src/services/invite/emailCooldown.ts` 发码倒计时纯函数），扫描范围 208 → **210** 个源文件。新文件不碰 storage / clipboard / fetch / Capacitor（设备码存储走注入的 `storage` 接口，网络走注入的传输层），**命中总数仍是 118 条**，各能力计数与风险分布未变；`OursServicesDialog.tsx` 新增的邮箱区复用既有 `Button` / 输入框写法，未新增宿主能力调用。
 - 复核（2026-11-20 08:30，基准 `dfe6db0`，本单 #434 / #374 分支 `fix/error-readability-434-374`）：新增 1 个 `.ts` 源文件（`src/services/api/keyFailure.ts`：Key 失效的细分与尾号，不碰 storage / clipboard / fetch / Capacitor），扫描范围 210 → **211** 个源文件（`.ts` 152 → **153**）。命中总数 121 → **122**：`src/services/api/client.ts` 的 `htmlResponseDetail()` 新增一处 `response.text()`（读上游 HTML 报错页的正文前 200 字，给 #434 的折叠区），所以 `Body.text/arrayBuffer` 15 → **16**（`已有兜底` 9 → **10**），风险分布 低 108 → **109**（高 4 / 中 9 未变）。`src/services/api/client.ts` 的 4 处 `文件:行` 与 `src/services/chat/store.ts` 的 1 处按本次实时复算重锚：`:155` → **`:168`**、`:260` → **`:289`**、`:646` → **`:688`**、`:666` → **`:708`**、store.ts `:1281` → **`:1315`**。
 - 复核（2026-11-20 12:20，基准 `e5ee313`，本单 #386 分支 `feat/scroll-to-bottom-386`）：新增 1 个 `.tsx`（`src/components/session/ScrollToBottomButton.tsx`）与 1 个 `.ts`（同名 `.module.css.d.ts` 类型声明），扫描范围 212 → **214** 个源文件。新文件不碰 storage / clipboard / fetch / Capacitor，也不直接调 `matchMedia`（reduced-motion 判定走既有的 `src/utils/usePresence.ts` 的 `prefersReducedMotion()`），**命中总数仍是 122 条**，各能力计数与风险分布（高 4 / 中 9 / 低 109）未变；`src/components/messages/MessageList.tsx` 因新增 import 与一段按钮状态逻辑整体下移，`ResizeObserver` 两处从 `:110` / `:125` → **`:195` / `:212`**、`CSS.escape` 从 `:195` → **`:282`**。
+
+- 复核（2026-11-20 16:20，基准 `d198ccc`，本单 #487 W1-A 分支 `feat/consume-layer`）：新增 9 个 `.ts`（`src/services/consume/**`：http / errors / auth / keys / usage / redeem / aff / email / index）。`http.ts` 用 `Capacitor.isNativePlatform()` 判「是不是原生环境」（非原生直接回 `unsupported`，不做 fetch 兜底），因此 `Capacitor.isNativePlatform` 10 → **11**（`无风险` 8 → **9**，Chromium 83 无此 API 但它是 Capacitor 注入的宿主能力，非原生分支即兜底）。命中总数 123 → **124**、`无风险` 38 → **39**、风险分布 低 109 → **110**（高 / 中未变）。扫描范围 217 → **226** 个源文件（`.ts` 169 / `.tsx` 56 / `.html` 1）。其余能力计数与 §「真实漏洞」5 条一处未变；`src/services/consume/http.ts` 新增的 `AbortController` / `fetch` 是**注释里的说明文字**，不进命中。
