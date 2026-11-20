@@ -13,8 +13,7 @@
  *
  * ## 服务端给不了，所以这是**本机记账**
  *
- * 邀请 / 额度服务（`services/invite/api.ts` 的 `/apply` 与 `/me`）只回额度档案
- * （`quota_points` / `used_points` / `remaining_points` / `key_status` …），
+ * 额度档案类接口只回额度与 Key 状态那几个数字，
  * **没有** `bound_at` 与 `last_used_at` 这类字段；今天（2026-11-20）也不打算为它改服务端契约。
  * 所以本文件只在客户端记两件事：
  *

@@ -125,7 +125,7 @@ if (providers.gradleProperty('dlPrimaryBase').present || providers.gradlePropert
 //   发布后必须在 CHANGELOG 记一笔。
 // 判据与 scripts/lib/consumeEndpoints.mjs 一一对应（改那边要同步改这里）：
 //   1) 必须 https —— **唯一例外**是本机回环（127.0.0.1 / localhost / [::1]），本地联调实例就是明文；
-//   2) 不得命中废弃域黑名单（旧池域 IP / :60013 / legacyHosts）；
+//   2) 不得命中废弃域黑名单（旧池域 IP / 旧池域端口 / legacyHosts）；
 //   3) consume.baseUrl 与 pay.baseUrl 不得相同（两个后端职责不能混）；
 //   4) 缺字段 / 未知键 / 空值 → 一律中止，并打印**键名 + 配置文件行号**。
 // 带着错地址出包只会在真机上表现为「登录一直失败」或「额度转圈」，比构建失败难查得多。
@@ -137,6 +137,7 @@ def PAY_TIMEOUT_KEYS = ['read', 'write']
 def TIMEOUT_MIN_MS = 1000
 def TIMEOUT_MAX_MS = 120000
 // 废弃域标记：写出来才能拦住它们（与 scripts/lib/consumeEndpoints.mjs 的 DEPRECATED_MARKERS 同源）
+// check-ip-allow：这份名单是「废弃域黑名单」本身 —— 下方拿它比对 consume.baseUrl / pay.baseUrl / legacyHosts，不是可调地址；删掉它等于删掉这道 build 期拦截（Issue #590）
 def CONSUME_DEPRECATED_MARKERS = ['140.210.13.146', ':60013']
 def CONSUME_BASE_PATTERN = ~/https?:\/\/[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?(:\d{1,5})?/
 

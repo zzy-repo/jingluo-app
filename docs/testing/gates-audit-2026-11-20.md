@@ -57,7 +57,7 @@ OK：没有字节完全相同的两份实现        # exit 0
 | --- | --- | --- |
 | 干净仓库 | exit 0 | ✅ exit 0 |
 | 复制 `scripts/lib/endpoints.mjs` → `endpoints-copy-nc.mjs` | exit 1 | ✅ exit 1（打印 sha256 + 两个文件名） |
-| 复制 `src/services/invite/api.ts` → `api-copy-nc.ts` | exit 1 | ✅ exit 1（扩范围前是 **exit 0** —— 这就是漏洞） |
+| 复制 ~~`src/services/invite/api.ts`~~（#590 已随旧设备码体系删除，本行是当日实验记录） → `api-copy-nc.ts` | exit 1 | ✅ exit 1（扩范围前是 **exit 0** —— 这就是漏洞） |
 | 删掉副本 | exit 0 | ✅ exit 0 |
 
 ## 3. 真正的失效项（本次修掉 / 记录）

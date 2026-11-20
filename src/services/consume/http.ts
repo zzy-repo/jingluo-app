@@ -173,7 +173,7 @@ export const readConsumeEndpoints = (): ConsumeEndpoints => {
     throw new ConsumeConfigError(`__ENDPOINTS__.consume 缺字段或为空：${missing.join(' / ')}`, missing)
   }
   const baseUrl = (consume.baseUrl as string).trim()
-  // https 是默认要求；**唯一例外**是本机回环（本地联调的 sub2api 实例就是 http://127.0.0.1:<port>）。
+  // https 是默认要求；**唯一例外**是本机回环（本地联调的 sub2api 实例就是回环上的明文，只有本机可达）。
   // 非回环的明文 http 一律拒绝：那等于把 Key 交给中间人（#484 §6.3 / §七 第 5 条）。
   const loopback = /^http:\/\/(?:127\.0\.0\.1|localhost|\[::1\])(?::\d+)?$/i.test(baseUrl)
   if (!baseUrl.toLowerCase().startsWith('https://') && !loopback) {

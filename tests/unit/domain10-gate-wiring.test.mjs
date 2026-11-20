@@ -51,6 +51,10 @@ const REQUIRED_CI_GATES = [
   'check:case-collision',
   // #547：DB 版本硬编码门禁 —— 摘掉它，下一次库升级（图片线可能要升 v14）又会把 L1 用例打成 VersionError
   'check:db-version',
+  // #590：方向验收 A1–A7 —— #487 阶段②建好时它是「设计性红」（A1/A4/A6 全是 FAIL），
+  // 接一道恒红的门禁等于没有门禁，所以等 #590 把三项降到 0 命中之后才接线。摘掉它，
+  // 「旧体系又回来了 / 额度又被搬回本地 / base 又被写死」这三件事就再没人守。
+  'check:refactor-direction',
 ]
 
 /**
@@ -74,7 +78,6 @@ const KNOWN_UNWIRED = {
   'check:hardcoded-ports': '硬编码端口扫描；语义已由 tests/unit/check-hardcoded-ports.test.mjs 覆盖',
   'check:limits': '上限常量一致性扫描；无任何调用点（本次体检新增登记）',
   'check:icon': '图标边缘留白扫描；无任何调用点（本次体检新增登记）',
-  'check:refactor-direction': '#487 明确「阶段②之后才接 CI」：现在 A1–A6 全红，接了等于天天红',
 }
 
 /** 有脚本、没别名、也没接线的门禁：手工跑（合并前看 issue 关键字），故不设 npm script */

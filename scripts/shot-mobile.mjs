@@ -553,6 +553,66 @@ const measureSkippedBox = () => {
 }
 
 /**
+ * 量 A7 那一格「账户与消费」（#487 阶段② 的验收判据，不是「看着像」）：
+ *
+ *   - `account-consume-open` 只能有 **1** 个（三个钱入口合成一格，多一个就是没合干净）；
+ *   - 旧三个入口（`payment-records-open` / `purchases-open` / `payment-trail-open`）必须 **各 0 个**
+ *     —— 它们真的搬进新页面了，而不是藏在别处；
+ *   - 设置页正文里不许再出现「付款记录 / 我的购买 / 支付记录」三种旧叫法（同一件东西两份名字，
+ *     用户会以为是两件事）；
+ *   - 窄档不许横向溢出；「查看」按钮的点击区高度 ≥ 44px（移动端下限）；
+ *   - 这一格必须**完整落在视口内**，否则这张图证明不了「设置里一眼就能看到」。
+ */
+const measureAccountConsumeEntry = () => {
+  const open = document.querySelector('[data-testid="account-consume-open"]')
+  const round = (value) => Math.round(value)
+  const box = (rect) =>
+    rect === null
+      ? null
+      : { x: round(rect.x), y: round(rect.y), width: round(rect.width), height: round(rect.height) }
+  const count = (testid) => document.querySelectorAll(`[data-testid="${testid}"]`).length
+  const viewport = { width: document.documentElement.clientWidth, height: document.documentElement.clientHeight }
+  // 正文文本取「数据管理」那一栏的可视文本，去掉按钮里的「查看」这类噪声后再判断旧叫法
+  const text = (document.body.innerText ?? '').replace(/\s+/gu, ' ')
+  const legacyWordings = ['付款记录', '我的购买', '支付记录'].filter((word) => text.includes(word))
+  if (open === null) {
+    return {
+      present: false,
+      accountConsumeOpen: 0,
+      legacyEntries: {
+        'payment-records-open': count('payment-records-open'),
+        'purchases-open': count('purchases-open'),
+        'payment-trail-open': count('payment-trail-open'),
+      },
+      legacyWordings,
+      horizontalOverflow: document.documentElement.scrollWidth > viewport.width + 1,
+      viewport,
+    }
+  }
+  const rect = open.getBoundingClientRect()
+  const cell = open.closest('div')
+  const row = cell === null ? null : cell.parentElement
+  const rowRect = row === null ? null : row.getBoundingClientRect()
+  return {
+    present: true,
+    accountConsumeOpen: count('account-consume-open'),
+    legacyEntries: {
+      'payment-records-open': count('payment-records-open'),
+      'purchases-open': count('purchases-open'),
+      'payment-trail-open': count('payment-trail-open'),
+    },
+    legacyWordings,
+    label: (row?.innerText ?? '').replace(/\s+/gu, ' ').trim(),
+    button: box(rect),
+    row: box(rowRect),
+    inViewport: rect.top >= 0 && rect.bottom <= viewport.height + 1,
+    clickTargetHeight: round(rect.height),
+    horizontalOverflow: document.documentElement.scrollWidth > viewport.width + 1,
+    viewport,
+  }
+}
+
+/**
  * 量「抖音号」这一行：胶囊的位置/字号/颜色（醒目不醒目看这些数）、值本身、
  * 以及左侧文字列有没有被挤成窄条（#57 的坑：.text 的 flex-basis:0 会把 label 压成竖排）。
  */
@@ -2005,6 +2065,53 @@ export const PAGES = {
         warn(`没看到复制成功的提示：${JSON.stringify(toastText)}`)
       }
       await shot('03-douyin-copied-toast')
+    },
+  },
+
+  'a7-entry': {
+    dir: 'docs/ui/487-a7-entry',
+    title:
+      '#487 A7：设置 → 数据管理里「付款记录 / 我的购买 / 支付时间线」三个钱入口已合成一格「账户与消费」（390 宽验收）',
+    sessions: () => [makeReadingSession()],
+    // 这一格只在自有渠道出现（#166）：别的渠道没有自己的卡密与套餐
+    providerKind: 'ours',
+    run: async (ctx) => {
+      const { page, shot, record, warn } = ctx
+      await openSettings(page, S.tabData)
+      const entry = page.locator(S.accountConsumeOpen)
+      await entry.waitFor({ state: 'visible', timeout: 15000 })
+      await entry.scrollIntoViewIfNeeded()
+      await page.waitForTimeout(320)
+
+      const measured = await page.evaluate(measureAccountConsumeEntry)
+      record('accountConsumeEntry', measured)
+      if (!measured.present) {
+        throw new Error('设置 → 数据管理里没有「账户与消费」这一格（[data-testid="account-consume-open"]）')
+      }
+      if (measured.accountConsumeOpen !== 1) {
+        warn(`「账户与消费」入口有 ${measured.accountConsumeOpen} 个，应该恰好 1 个（三个入口合成一格）`)
+      }
+      for (const [testid, n] of Object.entries(measured.legacyEntries)) {
+        if (n !== 0) warn(`旧入口 ${testid} 还有 ${n} 个：钱入口没合干净`)
+      }
+      if (measured.legacyWordings.length > 0) {
+        warn(`设置页正文里还有旧叫法：${measured.legacyWordings.join(' / ')}`)
+      }
+      if (measured.horizontalOverflow) warn('设置页横向溢出（scrollWidth > clientWidth）')
+      if (measured.clickTargetHeight < 44) {
+        warn(`「查看」按钮点击区只有 ${measured.clickTargetHeight}px（移动端下限 44px）`)
+      }
+      if (!measured.inViewport) warn('这一格没有完整落在视口内：这张图证明不了「一眼看到」')
+      await shot('01-settings-data-account-consume-entry')
+      const box = measured.row ?? measured.button ?? { x: 0, y: 0, width: ctx.size.width, height: 0 }
+      await shot('02-entry-closeup', {
+        clip: {
+          x: Math.max(0, box.x - 4),
+          y: Math.max(0, box.y - 4),
+          width: Math.min(box.width + 8, ctx.size.width),
+          height: box.height + 8,
+        },
+      })
     },
   },
 

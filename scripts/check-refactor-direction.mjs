@@ -27,10 +27,15 @@
  * 2. **A3 的通道判定只看行内文本**（`accessToken` / `jwt` ↔ `sk-` / `apiKey` / `x-api-key`），
  *    或在同一行写 `// JWT` / `// sk-` 标死。这条是启发式，不是命名规范 —— 判不出来时的提示
  *    就是"要么改名，要么标一行"，不会因为函数叫 `token` 而悄悄算通过。
- * 3. **A6 的 https 判据允许回环例外**（`127.0.0.1` / `localhost` / `[::1]`）。本地联调的 sub2api
+ * 3. **生成目录不进扫描范围**（#590 ①）。`android/app/src/main/assets/**` 是 `cap sync android`
+ *    从 `dist` 拷进去的产物，`.gitignore` 已忽略、`git ls-files` 为 0 条：本地跑过一次 cap sync
+ *    就有它、CI 干净 checkout 没有它。同一份代码因此会**本地红、CI 绿**，两种结论都不可信 ——
+ *    门禁判的是仓库里的源码，不是本机上次构建的残渣。跳过时会打印「已跳过生成目录 N 个文件」，
+ *    **不是静默放行**（口径见 `GENERATED_DIRS`；负向对照见文件末 #590 一节的用法）。
+ * 4. **A6 的 https 判据允许回环例外**（`127.0.0.1` / `localhost` / `[::1]`）。本地联调的 sub2api
  *    实例跑在 `http://127.0.0.1:18000`，回环地址上的明文是开发环境的正当需求；**非回环明文仍然
  *    判红**（生产 host 必须是 https，见 `scripts/lib/consumeEndpoints.mjs` 与 build 期校验）。
- * 4. **A6 只拦"后端域名"**。`src/` 里的 `https://www.unicode.org`、`https://api.deepseek.com`
+ * 5. **A6 只拦"后端域名"**。`src/` 里的 `https://www.unicode.org`、`https://api.deepseek.com`
  *    这类上游/文档地址不算违规 —— 后端域名白名单来自 `config/endpoints.json`（`allowedHosts` /
  *    `legacyHosts` / 两组 `download` / `consume` / `pay` 的 host），外加 #484 §一 写死的支付域名
  *    与任何 IP 字面量 URL。
@@ -45,8 +50,11 @@
  * pnpm check:refactor-direction --report
  * ```
  *
- * **不进 CI**（#487 明确：CI 接线推迟到阶段②之后）。重构期间 A1–A6 全是红的，接了 CI 等于
- * 常红，红成常态的门禁等于没有门禁。
+ * **已接进 CI**（#590，2026-11-20）：`ci.yml` 里 `pnpm run check:refactor-direction` 紧跟一条
+ * 负向对照（生成目录里的旧池域地址必须**仍然 exit 0**、src/ 里同一条必须 exit 1、删掉后 exit 0）。
+ * 接线的前提是**先全绿** —— #487 阶段②把它建出来时 A1/A4/A6 全是 FAIL，接一道恒红的门禁等于
+ * 没有门禁，所以等 #590 把三项降到 0 命中之后再接的。**别在它重新变红时把这一步摘掉**：
+ * 这道门禁判的不是「这一处有没有违规」，而是「重构的方向还在不在」。
  *
  * ## 退出码
  *
@@ -109,6 +117,26 @@ const SKIP_DIRS = new Set([
   '.work-compat',
 ])
 
+/**
+ * **生成目录**（相对仓库根，前缀匹配）：`cap sync` / 构建产物，**不进扫描范围**（#590 ①）。
+ *
+ * 为什么必须跳过：`android/app/src/main/assets/public/` 是 `pnpm exec cap sync android` 把 `dist`
+ * 原样拷进去的结果 —— `.gitignore:11` 已忽略、`git ls-files` 为 **0 条**。于是同一份代码在两种
+ * 机器上得到两种结论：
+ *   - 本地（跑过一次 cap sync，或按 docs/TESTING-POLICY 第 8/9.6 节做过 gradle 配置校验）：
+ *     `static/js/main.*.js` 就在盘上，A1 命中里面还没重打的历史 IP → **红**；
+ *   - CI（干净 checkout）：那些文件根本不存在 → **绿**。
+ * 门禁要判的是**仓库里的源码**，不是"本机上次构建留下的残渣"。继续把生成目录算进来的后果不是
+ * 「更严格」，而是「结论不可复现」：谁在本地复跑都能得出不同的 A1 命中数，收口就永远说不清。
+ *
+ * 跳过是**写进输出**的（`已跳过生成目录 N 个文件`），不是静默放行；而且**范围只到这一条前缀**——
+ * 同一个目录里如果放了人写的源码（理论上不该有），要先把源码搬出 assets/ 再来谈豁免。
+ * 负向对照（#590 验收项）：在该目录里放一个含旧池域 IP 的文件 → 命中数**不变**；
+ * 同时在 `src/` 里放一个同样的文件 → 命中数**必须 +1**（证明不是整体失明）。
+ */
+const GENERATED_DIRS = ['android/app/src/main/assets/']
+const isGeneratedPath = (relPath) => GENERATED_DIRS.some((dir) => relPath.startsWith(dir))
+
 /** 只看会进产物 / 会打真实请求的文本（图片与二进制一律跳过） */
 const TEXT_EXT = new Set([
   '.ts',
@@ -168,21 +196,60 @@ const collectFiles = (dir, out) => {
 
 const relOf = (root, file) => path.relative(root, file).split(path.sep).join('/')
 
-/** 读盘：`Map<仓库相对路径, 行数组>`。读不了的文件直接跳过（不谎报"扫过"）。 */
+/**
+ * 读盘：`Map<仓库相对路径, 行数组>`。读不了的文件直接跳过（不谎报"扫过"）。
+ *
+ * `skipped`：被 `GENERATED_DIRS` 挡掉的生成目录文件数（#590 ①）—— 由调用方打到输出里，
+ * 「跳过」这件事必须是可见的，否则下一个人会以为扫描器真的读了那些文件。
+ */
 const readCorpus = (root, dirs) => {
   const files = []
   for (const dir of dirs) collectFiles(path.join(root, dir), files)
   const corpus = new Map()
+  const skipped = []
   for (const file of files) {
+    const rel = relOf(root, file)
+    if (isGeneratedPath(rel)) {
+      skipped.push(rel)
+      continue
+    }
     let text
     try {
       text = fs.readFileSync(file, 'utf8')
     } catch {
       continue
     }
-    corpus.set(relOf(root, file), text.split('\n'))
+    corpus.set(rel, text.split('\n'))
   }
-  return corpus
+  return { corpus, skipped }
+}
+
+/**
+ * 「白名单标记」—— 与 `scripts/check-hardcoded-ip.mjs`（`check:ip`）**同一个 token、同一套语义**
+ * （#590 ②）：同一行、或紧跟其上的前一行带 `check-ip-allow` 的字面量，不判违规。
+ *
+ * 为什么 A1 需要它：A1 的判据是「`140.210.13.146` / `:60013` 在 `src/` `android/` 里 grep 到 0 命中」，
+ * 但**废弃域黑名单本身**必须把这个地址写出来才能拦住它 ——
+ * `android/app/build.gradle` 的 `CONSUME_DEPRECATED_MARKERS` 就是拿它去比对 `consume.baseUrl` /
+ * `pay.baseUrl` / `legacyHosts`（同文件 :211），`scripts/lib/consumeEndpoints.mjs` 的
+ * `DEPRECATED_MARKERS` 是同一份名单的 Node 侧副本。把「拦旧域的清单」判成「旧域还在用」是纯粹的
+ * 自反错误：名单删掉，等于把这道 build 期拦截一起删掉（那才是真的退回旧体系）。
+ *
+ * 约束（防止它变成万能后门）：
+ *   - 只对 A1 的**字面量规则**生效（`LEGACY_ADDRESS_RULES`）；`device_id` 那两条规则不给标记豁免 ——
+ *     「用 device_id 当凭据」没有「必须写出 device_id 才能拦它」的等价情形。
+ *   - 标记必须带理由（`check-ip-allow：<理由>`），A1 会把命中的白名单行**逐条打出来**
+ *     （`↪ 白名单`），不是静默丢弃：谁加的、为什么加，评审时看得见。
+ *   - 只认「同一行 / 紧邻上一行」，不做整文件豁免 —— 一个文件里写一条标记就全文件免检，那就等于没有门禁。
+ */
+const ALLOW_MARKER = /check-ip-allow/u
+
+/** 该行（或紧邻的上一行）有没有白名单标记；有就返回理由文本 */
+const allowReasonOf = (lines, index) => {
+  for (const candidate of [lines[index], index > 0 ? lines[index - 1] : '']) {
+    if (typeof candidate === 'string' && ALLOW_MARKER.test(candidate)) return candidate.trim()
+  }
+  return null
 }
 
 /**
@@ -190,8 +257,9 @@ const readCorpus = (root, dirs) => {
  *
  * @param {Map<string, string[]>} corpus 语料
  * @param {(line: string, file: string) => boolean} test 行判定（第二个参数是文件，供「同文件里有前缀」这类判定用）
- * @param {{ skip?: (file: string) => boolean }} [options] `skip` 用来排除测试文件之类
- * @returns {{ file: string, line: number, text: string, comment: boolean }[]}
+ * @param {{ skip?: (file: string) => boolean, allowMarker?: boolean }} [options]
+ *   `skip` 用来排除测试文件之类；`allowMarker` 为真时认 `check-ip-allow` 白名单（只有 A1 的字面量规则开它）
+ * @returns {{ file: string, line: number, text: string, comment: boolean, allow?: string }[]}
  */
 const findLines = (corpus, test, options = {}) => {
   const hits = []
@@ -200,7 +268,10 @@ const findLines = (corpus, test, options = {}) => {
     for (let index = 0; index < lines.length; index += 1) {
       const text = lines[index]
       if (!test(text, file)) continue
-      hits.push({ file, line: index + 1, text: text.trim(), comment: isCommentOnlyLine(text) })
+      const hit = { file, line: index + 1, text: text.trim(), comment: isCommentOnlyLine(text) }
+      const allow = options.allowMarker ? allowReasonOf(lines, index) : null
+      if (allow) hit.allow = allow
+      hits.push(hit)
     }
   }
   // 代码行排在注释行前面：样本只打前几条，先给"真的会跑的那几行"
@@ -259,12 +330,44 @@ const DEVICE_AUTH_RULES = [
   },
 ]
 
-const checkA1 = (corpus) => {
-  const rules = [...LEGACY_ADDRESS_RULES, ...DEVICE_AUTH_RULES]
-  const results = rules.map((rule) => ({ what: rule.what, hits: findLines(corpus, rule.test) }))
-  const all = results.flatMap((result) => result.hits)
-  const evidence = [`扫描 src/ + android/：${corpus.size} 个文件`]
-  for (const result of results) evidence.push(...evidenceOfHits(result.what, result.hits))
+/**
+ * A1 的扫描口径（#590 收口时钉死）：
+ *   - 语料 = `src/` + `android/`，**排除生成目录**（`GENERATED_DIRS`：cap sync 产物，git 未跟踪）；
+ *   - 字面量规则认 `check-ip-allow` 白名单（只认「同一行 / 紧邻上一行」，且逐条打印），
+ *     `device_id` 规则**不认**（没有「必须写出 device_id 才能拦它」的等价情形）。
+ */
+const checkA1 = (corpus, skippedGenerated = []) => {
+  const results = [
+    ...LEGACY_ADDRESS_RULES.map((rule) => ({
+      what: rule.what,
+      hits: findLines(corpus, rule.test, { allowMarker: true }),
+    })),
+    ...DEVICE_AUTH_RULES.map((rule) => ({ what: rule.what, hits: findLines(corpus, rule.test) })),
+  ]
+  // 白名单行从「违规」里摘出来，但**逐条报出来**：它们不是违规，也不许变成隐形豁免
+  const allowed = results.flatMap((result) => result.hits.filter((hit) => hit.allow))
+  const resultsVerdict = results.map((result) => ({
+    what: result.what,
+    hits: result.hits.filter((hit) => !hit.allow),
+  }))
+  const all = resultsVerdict.flatMap((result) => result.hits)
+  const evidence = [
+    `扫描 src/ + android/：${corpus.size} 个文件` +
+      (skippedGenerated.length > 0
+        ? `（已跳过生成目录 ${skippedGenerated.length} 个文件：${GENERATED_DIRS.join(' / ')}**，cap sync 产物不入库）`
+        : `（生成目录 ${GENERATED_DIRS.join(' / ')}** 本机不存在，跳过 0 个文件）`),
+  ]
+  for (const result of resultsVerdict) evidence.push(...evidenceOfHits(result.what, result.hits))
+  if (allowed.length > 0) {
+    // 同一行可能同时命中「IP」与「端口」两条规则：按 文件:行 去重，别把一条名单印两遍
+    const allowedLines = [...new Map(allowed.map((hit) => [`${hit.file}:${hit.line}`, hit])).values()]
+    evidence.push(
+      `白名单（check-ip-allow，共 ${allowedLines.length} 处）：这些字面量是「废弃域黑名单」的定义，` +
+        '用来拦住旧域、不是可调地址 —— 判红等于把这道拦截删掉：',
+    )
+    for (const hit of allowedLines) evidence.push(`    ↪ ${formatSample(hit)}`)
+    if (allowedLines[0]?.allow) evidence.push(`      理由：${allowedLines[0].allow}`)
+  }
 
   if (all.length === 0) {
     return {
@@ -273,16 +376,21 @@ const checkA1 = (corpus) => {
       status: 'PASS',
       evidence,
       hints: [],
-      stats: { files: corpus.size, hits: 0 },
+      stats: {
+        files: corpus.size,
+        hits: 0,
+        whitelisted: allowed.length,
+        skippedGenerated: skippedGenerated.length,
+      },
     }
   }
 
   const hints = []
-  const addressCode = results
+  const addressCode = resultsVerdict
     .slice(0, LEGACY_ADDRESS_RULES.length)
     .flatMap((result) => result.hits)
     .filter((hit) => !hit.comment)
-  const addressComment = results
+  const addressComment = resultsVerdict
     .slice(0, LEGACY_ADDRESS_RULES.length)
     .flatMap((result) => result.hits)
     .filter((hit) => hit.comment)
@@ -299,7 +407,7 @@ const checkA1 = (corpus) => {
         'IP/端口 的描述即可 —— #484 A1 的口径是 grep 0 命中，注释里留着会被下一个人照抄。',
     )
   }
-  const deviceHits = results.slice(LEGACY_ADDRESS_RULES.length).flatMap((result) => result.hits)
+  const deviceHits = resultsVerdict.slice(LEGACY_ADDRESS_RULES.length).flatMap((result) => result.hits)
   if (deviceHits.length > 0) {
     hints.push(
       `device_id 不再当鉴权参数（#484 §二 / #253 已作废）：身份走 POST /api/v1/auth/login，` +
@@ -313,7 +421,12 @@ const checkA1 = (corpus) => {
     status: 'FAIL',
     evidence,
     hints,
-    stats: { files: corpus.size, ...countBy(all) },
+    stats: {
+      files: corpus.size,
+      ...countBy(all),
+      whitelisted: allowed.length,
+      skippedGenerated: skippedGenerated.length,
+    },
   }
 }
 
@@ -524,6 +637,24 @@ const checkA3 = (corpus) => {
 // A4 额度来自后端（客户端不再当账本）
 // ---------------------------------------------------------------------------
 
+/**
+ * ## 豁免规则（#590 收口时钉死：**当前一条都没有**）
+ *
+ * 口径是「客户端不再持有消费账本」，判据是**行内字面量**（注释行也算）。曾经出现过一类灰色情形：
+ * 旧设备码体系的服务层（`services/invite/**`）把服务端响应里的额度字段原样解析进展示结构 ——
+ * 它不是账本、不落盘、不参与「能不能发送」的判断，但字段名一样会命中这条规则。
+ *
+ * #590 的处置是**按「调用点归零就删」办，不开口子**：`OursServicesDialog`（唯一调用方）随 #562
+ * 退役之后，`invite/{api,bind,rotate,email,openFlow,copy}.ts` 在 `src/` 里引用数归零
+ * （`git grep -c "services/invite/\(api\|bind\|rotate\|email\|openFlow\|copy\)\.js" -- src` → 0），
+ * 于是 20 处命中随文件一起删除，**不需要任何豁免**。
+ *
+ * 给后来人的规矩：**先查调用点**。
+ *   - 调用点为 0 → 删代码（真的减少），不要把字段名改个花名骗过这条正则；
+ *   - 调用点 > 0 → 说明还有活路径，**先在这段注释里写清「哪条路径、为什么必须留、谁来收」**
+ *     并同步进 Issue，才允许把它判成「仍在生产路径，不计入」。没有这条记录的放宽一律视为放水 ——
+ *     与「不许为了绿而硬删」是同一条纪律的两面。
+ */
 const LEDGER_RULES = [
   { what: '本地余额账本字段 remaining_points', test: (line) => /remaining[_-]points/iu.test(line) },
   {
@@ -849,12 +980,16 @@ const STATUS_LABEL = { PASS: 'PASS', FAIL: 'FAIL', SKIP: 'SKIP', MANUAL: 'MANUAL
 
 const runAll = (root, options) => {
   // 一次遍历两份语料：A1 要连 android/ 一起扫（旧体系在原生侧也有痕迹），其余各项只看 src/
-  const srcCorpus = readCorpus(root, ['src'])
+  // 生成目录（android/app/src/main/assets/**）两份语料都不进 —— 见 GENERATED_DIRS
+  const srcScan = readCorpus(root, ['src'])
+  const srcCorpus = srcScan.corpus
+  const androidScan = readCorpus(root, ['android'])
   const fullCorpus = new Map(srcCorpus)
-  for (const [file, lines] of readCorpus(root, ['android'])) fullCorpus.set(file, lines)
+  for (const [file, lines] of androidScan.corpus) fullCorpus.set(file, lines)
+  const skippedGenerated = [...srcScan.skipped, ...androidScan.skipped]
 
   const items = [
-    checkA1(fullCorpus),
+    checkA1(fullCorpus, skippedGenerated),
     checkA2(root),
     checkA3(srcCorpus),
     checkA4(srcCorpus),
@@ -882,6 +1017,12 @@ const runAll = (root, options) => {
       manual: counts.MANUAL,
       ok: counts.FAIL === 0,
     },
+    // #590 ①：扫描范围的自述 —— 跳过生成目录这件事必须在机器可读结果里也留痕
+    scan: {
+      excludedDirs: GENERATED_DIRS,
+      skippedGenerated: skippedGenerated.length,
+      skippedSamples: skippedGenerated.slice(0, MAX_SAMPLES),
+    },
     items,
   }
 }
@@ -890,6 +1031,17 @@ const formatReport = (report) => {
   const out = []
   out.push(`#484 §九 方向验收（A1–A7）· ${report.mode === 'report' ? '报告模式' : '门禁模式'}`)
   out.push(`仓库根：${report.root}`)
+  // #590 ①：跳过生成目录要说出来（不是静默放行）
+  const scan = report.scan ?? { excludedDirs: [], skippedGenerated: 0, skippedSamples: [] }
+  if (scan.skippedGenerated > 0) {
+    out.push(
+      `已跳过生成目录 ${scan.skippedGenerated} 个文件（${scan.excludedDirs.join(' / ')}**：` +
+        'cap sync 产物，git 未跟踪，本地有、CI 没有 —— 算进来会让同一份代码两种结论）',
+    )
+    for (const sample of scan.skippedSamples) out.push(`    · 跳过 ${sample}`)
+  } else {
+    out.push(`生成目录（${scan.excludedDirs.join(' / ')}**）本机不存在 → 本次跳过 0 个文件`)
+  }
   out.push('')
   for (const item of report.items) {
     out.push(`[${item.id}] ${STATUS_LABEL[item.status]}  ${item.title}`)

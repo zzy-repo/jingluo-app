@@ -1,0 +1,42 @@
+{
+  "page": "a7-entry",
+  "title": "#487 A7：设置 → 数据管理里「付款记录 / 我的购买 / 支付时间线」三个钱入口已合成一格「账户与消费」（390 宽验收）",
+  "viewport": 390,
+  "size": "390×844",
+  "shots": [
+    "docs/ui/487-a7-entry/390/a7-entry-01-settings-data-account-consume-entry-390.png",
+    "docs/ui/487-a7-entry/390/a7-entry-02-entry-closeup-390.png"
+  ],
+  "notes": [],
+  "accountConsumeEntry": {
+    "present": true,
+    "accountConsumeOpen": 1,
+    "legacyEntries": {
+      "payment-records-open": 0,
+      "purchases-open": 0,
+      "payment-trail-open": 0
+    },
+    "legacyWordings": [],
+    "label": "账户与消费 我的卡密、购买套餐、额度与账号，一个页面四件事 查看",
+    "button": {
+      "x": 294,
+      "y": 478,
+      "width": 72,
+      "height": 44
+    },
+    "row": {
+      "x": 24,
+      "y": 457,
+      "width": 342,
+      "height": 86
+    },
+    "inViewport": true,
+    "clickTargetHeight": 44,
+    "horizontalOverflow": false,
+    "viewport": {
+      "width": 390,
+      "height": 844
+    }
+  },
+  "consoleErrors": []
+}

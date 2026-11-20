@@ -6,9 +6,8 @@
  * （Issue #331 之后我们不再建单，cid 只剩「查询历史订单」这一个用途。）
  *
  * cid 从哪来（实测 2026-11-18，用真 Key 打过只读接口）：
- *  - `GET /api/orders`（Bearer Key）→ `{"customer_id": 10, ...}`：**唯一实测过的来源**；
- *  - 没有 Key（首购用户）时退回设备码通道：`GET <invite>/me?device_id=…`（邀请服务返回
- *    `customer_id`，`bind.ts` 的 `POST /bind` 也用它）——这条未在真机实测，失败就当拿不到。
+ *  - `GET /api/orders`（Bearer Key）→ `{"customer_id": 10, ...}`：**唯一实测过的来源**，
+ *    现在也是**唯一**的来源 —— 没有 Key 时不再退回旧设备码通道（#590：那条链路随旧体系一起删了）。
  *
  * 本文件是纯逻辑（不碰 DOM / Capacitor），Node 单测直接 import；localStorage 一律注入。
  */
@@ -26,13 +25,11 @@ export {
   CUSTOMER_ID_STORAGE_KEY,
   cacheCustomerId,
   ensureCustomerId,
-  fetchCustomerIdFromProfile,
   parseCustomerId,
   readCachedCustomerId,
   resetCustomerIdCache,
   setCustomerIdProvider,
   type CustomerIdProvider,
-  type CustomerIdTransport,
 } from './customerId.js'
 
 /** 记录页最多展示 50 条（倒序，最新的在最前） */
