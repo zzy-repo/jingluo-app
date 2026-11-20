@@ -103,6 +103,9 @@ test('two suite entrypoints reuse injected dist without build, and fail missing 
   await mkdir(path.join(dir, 'config'), { recursive: true })
   await cp(path.join(root, 'scripts/lib/endpoints.mjs'), path.join(dir, 'scripts/lib/endpoints.mjs'))
   await cp(path.join(root, 'scripts/lib/endpointsSchema.mjs'), path.join(dir, 'scripts/lib/endpointsSchema.mjs'))
+  // #487 W1-A：`endpoints.mjs` 现在还会 import `consumeEndpoints.mjs`（consume / pay 两段的校验），
+  // 沙箱缺它会在加载端点读取器时 ERR_MODULE_NOT_FOUND。
+  await cp(path.join(root, 'scripts/lib/consumeEndpoints.mjs'), path.join(dir, 'scripts/lib/consumeEndpoints.mjs'))
   await cp(path.join(root, 'config/endpoints.json'), path.join(dir, 'config/endpoints.json'))
   const dist = path.join(dir, 'prebuilt'); await mkdir(dist); await writeFile(path.join(dist, 'index.html'), 'immutable')
   for (const name of ['auto-title', 'diagnostics-contract']) {
