@@ -40,8 +40,10 @@ install -m 600 deploy/dl-release/artifact-variants.json.example /etc/dl-release/
 ## 部署代码
 
 ```bash
-# 私有清单目录（#620）：webroot 之外，Caddy 的 file_server 够不着
-ssh aliyun 'install -d -m 755 /var/lib/dl-private /var/lib/dl-private/apk'
+# 私有（internal）分发目录：webroot 之外，Caddy 的 file_server 够不着
+#   私有根 = /opt/dl-private（webroot 外），由 DL_PRIVATE_ROOT 覆盖；包在 /opt/dl-private/apk（DL_PRIVATE_APK_DIR）
+#   私有清单 = /var/www/dl-private/releases.internal.json（DL_PRIVATE_RELEASES_JSON）—— 线上不在私有根下（#621 收尾）
+ssh aliyun 'install -d -m 755 /opt/dl-private /opt/dl-private/apk /var/www/dl-private'
 scp deploy/dl-release/server.mjs deploy/dl-release/variant.mjs deploy/dl-release/apk-manifest.mjs \
     deploy/dl-release/release-target.mjs aliyun:/opt/dl-release/
 scp deploy/dl-release/dl-release.service aliyun:/etc/systemd/system/dl-release.service
@@ -54,7 +56,9 @@ ssh aliyun 'systemctl is-active dl-release; journalctl -u dl-release -n 5 --no-p
 > 服务启动时会核「私有根不在 webroot 内」，配错（比如把 `DL_PRIVATE_ROOT` 指到 `/var/www/dl/private`）
 > 会直接拒绝启动并打 `fatal_private_root_in_webroot`。
 > Caddy 片段见 `caddy-dl-api.conf`（粘进已有 `handle @dl` 内，validate → reload，禁止 restart）；
-> 它反代 `/api/v1/release`、**`/api/v1/release/private`**（#620）与 `/api/v1/version`。
+> 它反代 `/api/v1/release`（公网写）、`/api/v1/version`（#441）与 `/api/v1/releases/*`（#621 私有读）。
+> **`/api/v1/release/private`（#620 私有写）不反代**：私有包发布走 `scripts/publish-private-apk.mjs` + `ssh`/`scp`
+> 直接落盘，不出公网（线上实测公网发它 = 404）；只有本机 `127.0.0.1:8799` 能发。理由见 `docs/RELEASE-MANUAL.md` §14.1b。
 
 ## 本地验证（不碰线上）
 

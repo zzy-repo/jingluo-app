@@ -32,7 +32,7 @@
  *   `POST /api/v1/release`（公网清单 `/var/www/dl/releases.json`）
  *       artifactVariant !== "standard" → 400 VARIANT_NOT_PUBLIC（内部包/判不出变体的包一律拒）
  *       buildType      !== "stable"   → 400 BUILD_TYPE_NOT_PUBLIC
- *    `POST /api/v1/release/private`（私有清单 `/var/lib/dl-private/releases.internal.json`，webroot 之外）
+ *    `POST /api/v1/release/private`（私有清单 `DL_PRIVATE_RELEASES_JSON`，线上 `/var/www/dl-private/releases.internal.json`，webroot 之外）
  *       artifactVariant !== "internal" → 400 VARIANT_NOT_PRIVATE（standard 走 GitHub Release）
  *
  * 判据在 `release-target.mjs`（纯函数，与 scripts/publish-private-apk.mjs 的 G1、
@@ -103,7 +103,10 @@ const RELEASES_JSON = process.env.DL_RELEASES_JSON || '/var/www/dl/releases.json
 // 默认取公网清单所在目录 —— 两者部署上永远同一个地方，少一个要配的环境变量。
 const WEBROOT = path.resolve(process.env.DL_WEBROOT || path.dirname(RELEASES_JSON));
 // 私有清单与私有包目录（#609）：**webroot 之外**，Caddy 的 file_server 够不着。
-const PRIVATE_ROOT = path.resolve(process.env.DL_PRIVATE_ROOT || '/var/lib/dl-private');
+// 默认值与线上对齐（#621 收尾，**以线上为准**）：私有根 = /opt/dl-private（包目录 /opt/dl-private/apk）；
+// 线上清单不在私有根下，单独钉在 /var/www/dl-private/releases.internal.json。
+// 三个都能用同名 env 覆盖，服务启动期仍会核「都不许落在 webroot 内」。
+const PRIVATE_ROOT = path.resolve(process.env.DL_PRIVATE_ROOT || '/opt/dl-private');
 const PRIVATE_RELEASES_JSON = path.resolve(
   process.env.DL_PRIVATE_RELEASES_JSON || path.join(PRIVATE_ROOT, 'releases.internal.json'),
 );

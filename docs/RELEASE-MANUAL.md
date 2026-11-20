@@ -625,11 +625,13 @@ scp deploy/dl-release/server.mjs deploy/dl-release/release-target.mjs aliyun:/op
 ssh aliyun 'node --check /opt/dl-release/server.mjs && systemctl restart dl-release && sleep 1 && systemctl is-active dl-release'
 
 # 4) Caddy：只有**新增**了 API 路径才需要动。片段见 deploy/dl-release/caddy-dl-api.conf，
-#    @api 必须同时匹配 /api/v1/release、/api/v1/release/private（#620）与 /api/v1/version；
+#    @api 匹配 /api/v1/release（公网写）、/api/v1/version 与 /api/v1/releases/*（#621 私有读）；
+#    /api/v1/release/private（#620 私有写）**刻意不反代**（理由见 §14.1b）；
 #    validate 通过再 reload，禁止 restart。
 #
-# 5) 私有清单目录（#620）：webroot 之外，且服务启动时会核一次（落在 webroot 内就拒绝启动）
-ssh aliyun 'install -d -m 755 /var/lib/dl-private /var/lib/dl-private/apk'
+# 5) 私有目录（#620/#621）：都在 webroot 之外，服务启动时会核一次（落在 webroot 内就拒绝启动）
+#    私有根 = /opt/dl-private（DL_PRIVATE_ROOT）；私有清单 = /var/www/dl-private/releases.internal.json
+ssh aliyun 'install -d -m 755 /opt/dl-private /opt/dl-private/apk /var/www/dl-private'
 ```
 
 #### ⚠️ 部署布局是写死的：`/shared/build-types.mjs` 必须存在（#441 第 3 条）
@@ -901,29 +903,77 @@ cd android && ./gradlew assembleRelease -PartifactVariant=internal
 | 发布 | 走哪条 | 清单 |
 | --- | --- | --- |
 | **正式发布（standard）** | **只走 GitHub Release**（裁决 #614 决定 2：dl 不再是正式渠道；操作见 §6.1：手工 `gh release create`，或手动触发 `release.yml`） | 公网 `releases.json` **冻结**，只保留历史 standard 条目；发版**不再要求**清单里有这一条 |
-| **私有（internal）** | `node scripts/publish-private-apk.mjs`（默认 `--target private`） | **独立私有清单** `<private-root>/releases.internal.json`（webroot 之外） |
+| **私有（internal）** | `node scripts/publish-private-apk.mjs`（默认 `--target private`，`ssh`/`scp` 直连分发主机，**不出公网**） | **独立私有清单**（`DL_PRIVATE_RELEASES_JSON`，线上 `/var/www/dl-private/releases.internal.json`，webroot 之外） |
 | 公网 `releases.json` | 冻结：只允许 `artifactVariant === 'standard'` 且 `buildType === 'stable'` | 出现 `internal` 条目 = 硬 FAIL（**接口 + 校验器 + 发布脚本 + 卫生门禁四道**，见 14.4b / 14.8） |
 
-### 14.1 私有清单放在哪、客户端怎么取（`/var/lib/dl-private/`）
+### 14.1 私有清单放在哪、客户端怎么取（私有根 = `/opt/dl-private`）
+
+> **口径（#621 收尾裁决：以线上为准）**：私有根 = **`/opt/dl-private`**（**webroot 外**），由 `DL_PRIVATE_ROOT`
+> 覆盖；私有包目录 = `/opt/dl-private/apk`（`DL_PRIVATE_APK_DIR`）；私有清单 =
+> `/var/www/dl-private/releases.internal.json`（`DL_PRIVATE_RELEASES_JSON`）。
+> 线上清单**不在**私有根下 —— 那是 #614 清库时只搬了包、清单留在原处的分叉，本单按实况写明，
+> 仓库里 docs / scripts / 校验器 / 单测 fixture / service 单元的默认值全部已对齐这三个值。
+> 另一个读写同源的证据：`dl-release.service` 的 `DL_PRIVATE_*` 三个 env 就是这三个路径，服务启动期核它们都不在 webroot 内。
 
 ```
-/var/lib/dl-private/                     ← webroot 之外：Caddy 的 file_server 够不着
-├── releases.internal.json               ← 私有清单（只有 internal 条目，latest = 最新内测版）
-└── apk/deepseek-chat-<ver>-internal-<8位随机>.apk
+/opt/dl-private/                         ← 私有根：webroot 之外，Caddy 的 file_server 够不着
+├── apk/deepseek-chat-<ver>-internal-<8位随机>.apk   ← 私有包（清单里的 file 就是这里的 basename）
+└── private/<16hex>/<…>.apk              ← #601 事故包的取证归档（12 个，不进任何清单，端点不给下载）
+
+/var/www/dl-private/
+└── releases.internal.json               ← 私有清单（只有 internal 条目，latest = 最新内测版）
 ```
 
 - **为什么不能放 `/var/www/dl/`**：那是 `file_server` 的 root，目录里的每个文件都有一个公网直链 ——
   连「从清单里删掉」都没用（静态目录不看清单）。#601 的处置就是「清单恢复 + 文件删掉」，两件必须一起做。
   发布脚本的 G1 会**直接拒绝**把私有根指进 webroot。
-- **鉴权 / 取用方式**：由 `deploy/dl-release` 服务提供带令牌的两个端点
-  — `GET /api/v1/private/releases.json`、`GET /api/v1/private/apk/<file>`，
-  令牌与发布接口同一份（`/etc/dl-release/token`，chmod 600，`Authorization: Bearer <token>`），
-  Caddy 只把这两条前缀反代到 `127.0.0.1:8799`（**不**经过 `file_server`），无令牌一律 401。
-  装了 internal 变体的客户端在**构建期**带 `DL_PRIVATE_MANIFEST`（内置开关，不下发到 standard 包），
-  从私有清单取更新。
-- **现状（如实记录）**：本单（#609）只做**生产侧**（脚本把包写进 webroot 之外的私有根 + 四条硬闸 +
-  卫生门禁）。带令牌的读端点是后续单；在那之前内测包按「人工交接」发：`scp` 到对方机器（走 Tailscale）
+- **鉴权 / 取用方式（#621 已上线）**：`deploy/dl-release` 服务提供带令牌的两个**读**端点
+  — `GET /api/v1/releases/internal`（清单，仅 internal 条目 + `apkName`/`downloadUrl`）、
+  `GET /api/v1/releases/internal/download?file=<basename>.apk`（私有包流式下载）。
+  令牌与发布接口同一份（`/etc/dl-release/token`，chmod 600），写法 `X-DL-Token: <token>` 或
+  `Authorization: Bearer <token>`；无令牌/错令牌一律 401，超 60 次/分钟/IP → 429，清单缺失 → 503，
+  `file` 带任何路径成分 → 400。Caddy 只把 `/api/v1/releases/*` 反代到 `127.0.0.1:8799`
+  （**不**经过 `file_server`）。装了 internal 变体的客户端在**构建期**带 `DL_PRIVATE_MANIFEST`
+  （内置开关，不下发到 standard 包），从私有清单取更新。
+  > ⚠️ 历史文档里写的 `GET /api/v1/private/releases.json` / `/api/v1/private/apk/<file>` **从来没实现过**
+  > （#621 立项的原因之一），上面的复数 `releases/internal*` 才是线上真路径；契约全文见 `docs/dl-release-api.md`。
+- **兜底**：读端点不可用时（503/网络不通），内测包仍可按「人工交接」发：`scp` 到对方机器（走 Tailscale）
   + 把 `sha256` 一起给，让对方 `sha256sum` 核对。**任何情况下都不要**把包放回 `/var/www/dl/`。
+
+### 14.1b 私有包发布要不要反代？（#621 收尾裁决：**不需要**）
+
+**私有包发布走哪条路（代码事实，不是猜的）**
+
+| 环节 | 实际实现 | 出不出公网 |
+| --- | --- | --- |
+| 真发布 | `scripts/publish-private-apk.mjs`，默认 `--transport ssh`：`scp` 把包传到主机私有根 → `ssh` 原子 `mv` 到 `/opt/dl-private/apk/`、备份并原子替换私有清单（回滚命令脚本会原样打印） | **不出**（Tailscale 内 `ssh aliyun`，公网 22 打不通） |
+| 接口层闸（#620） | `POST /api/v1/release/private`，与 `/api/v1/release` 同一套变体口径（`release-target.mjs`） | **不反代**：Caddy `@api` 只有 `/api/v1/release`、`/api/v1/version`、`/api/v1/releases/*`；线上实测公网 `POST https://dl.rose7.cn/api/v1/release/private` → **404**（落到 `file_server`）。只有本机 `127.0.0.1:8799` 或 `ssh -L` 隧道内可达 |
+| 读端点（#621） | `GET /api/v1/releases/internal*` | 出公网，但**只读**、带令牌、限流 60/min/IP |
+
+**结论：`POST /api/v1/release/private` 不需要反代。** 三条理由：
+
+1. **发布工具链根本不走 HTTP**：脚本是 `ssh`/`scp` 直连宿主，接口层那条闸只是「同一份判据的第二个入口」，
+   不是发布主路径。反代它不会让发布更顺，只会多开一个写入口。
+2. **写入口越少越好**：#601 的形状就是「换个入口发就绕过去」。公网能打的写端点只保留 `/api/v1/release`
+   （公网清单，只收 standard+stable），私有清单的写入口留在本机。
+3. **放开就得重新验一遍**：401 / 限流桶 / 50MB 上传 / 清单原子写，收益为零、风险为正。
+
+**若将来确实要从公网（或公网 CI）发私有包**，改一处 + 三步验收：
+
+```bash
+# 1) 把 /api/v1/release/private 加进 deploy/dl-release/caddy-dl-api.conf 的 @api（并同步线上 Caddyfile，先备份）
+# 2) validate → reload（禁止 restart，会掉 cert 管理进程）
+cd /opt/caddy && set -a; . /opt/caddy/caddy.env; set +a
+./caddy-alidns validate --config /opt/caddy/Caddyfile --adapter caddyfile
+./caddy-alidns reload   --config /opt/caddy/Caddyfile --adapter caddyfile --address unix//run/caddy/admin.sock
+# 3) 复验（缺一条都不算过）
+curl -sS -o /dev/null -w '%{http_code}\n' -X POST https://dl.rose7.cn/api/v1/release/private -d '{}'   # 期望 401
+curl -sS -o /dev/null -w '%{http_code}\n' -X POST https://dl.rose7.cn/api/v1/release -d '{}'           # 仍 401
+curl -sS https://dl.rose7.cn/releases.json | sha256sum    # 与改动前逐字节相同
+curl -sS -o /dev/null -w '%{http_code}\n' https://dl.rose7.cn/                                        # 200
+```
+
+回滚 = 把 `@api` 那行还原成 `path /api/v1/release /api/v1/version /api/v1/releases/*` → validate → reload。
 
 ### 14.2 一条命令
 
@@ -934,10 +984,13 @@ cd android && ./gradlew --no-daemon --max-workers=1 assembleRelease -PartifactVa
 APK=android/app/build/outputs/apk/release/app-release.apk
 
 # 2) 先看要做什么（不落地：不上传、不改清单，但四条硬闸会真跑）
-node scripts/publish-private-apk.mjs --apk $APK --version 1.4.3 --versionCode 22 --dry-run
+#    --private-root 缺省就是 /opt/dl-private；线上清单不在私有根下，所以必须带 --private-manifest
+#    （等价 env：DL_PRIVATE_ROOT / DL_PRIVATE_RELEASES_JSON）
+PRIV="--private-root /opt/dl-private --private-manifest /var/www/dl-private/releases.internal.json"
+node scripts/publish-private-apk.mjs --apk $APK --version 1.4.3 --versionCode 22 $PRIV --dry-run
 
 # 3) 真发布（**没有** --dry-run 就是真发布；默认 --target private）
-node scripts/publish-private-apk.mjs --apk $APK --version 1.4.3 --versionCode 22
+node scripts/publish-private-apk.mjs --apk $APK --version 1.4.3 --versionCode 22 $PRIV
 ```
 
 跑完会打印文件名、sha256、size、远端字节核对结果，并把条目写进**私有清单**。
@@ -952,7 +1005,8 @@ node scripts/publish-private-apk.mjs --apk $APK --version 1.4.3 --versionCode 22
 | `--versionCode <n>` | **必填** | 正整数，必须与 APK 内一致（`DL_PRIVATE_VERSION_CODE`） |
 | `--variant <v>` | `internal` | `internal` \| `standard`；与 `--target` 的匹配由 G1 强制 |
 | `--target <t>` | `private` | `private`（私有清单）\| `public`（公网清单，只收 standard+stable） |
-| `--private-root <dir>` | `/var/lib/dl-private` | 私有根，**必须在 webroot 之外**（G1 会核） |
+| `--private-root <dir>` | `/opt/dl-private` | 私有根（`DL_PRIVATE_ROOT`），**必须在 webroot 之外**（G1 会核） |
+| `--private-manifest <path>` | `<private-root>/releases.internal.json` | 私有清单路径（`DL_PRIVATE_RELEASES_JSON`）；**线上是 `/var/www/dl-private/releases.internal.json`**（不在私有根下），必带 |
 | `--webroot <dir>` | `/var/www/dl` | 公网站点根（`--site-root` 是旧名） |
 | `--transport <t>` | `ssh` | `ssh`（真发布）\| `local`（只读本机目录，**只允许 `--dry-run`**，演练用） |
 | `--changes <text>` | 一行默认说明 | 清单 `changes` 条目，可重复给多条 |
@@ -983,7 +1037,7 @@ node scripts/publish-private-apk.mjs --apk $APK --version 1.4.3 --versionCode 22
 | 端点 | 写哪份清单 | 只收 | 不合口径时 |
 | --- | --- | --- | --- |
 | `POST /api/v1/release` | `/var/www/dl/releases.json`（webroot 内，公开） | `artifactVariant="standard"` **且** `buildType="stable"` | `400 VARIANT_NOT_PUBLIC` / `400 BUILD_TYPE_NOT_PUBLIC` |
-| `POST /api/v1/release/private` | `/var/lib/dl-private/releases.internal.json`（webroot 之外） | `artifactVariant="internal"` | `400 VARIANT_NOT_PRIVATE` |
+| `POST /api/v1/release/private`（**不反代**，仅本机 8799/隧道，见 14.1b） | `/var/www/dl-private/releases.internal.json`（webroot 之外） | `artifactVariant="internal"` | `400 VARIANT_NOT_PRIVATE` |
 
 - **变体判不出来（unknown）也拒**：`unknown !== 'standard'`，不默认 standard（fail-closed）。
 - 拒绝发生在**任何落盘之前**：临时 APK 删掉，目标清单一个字节不改（用例用 sha256 逐字节比对）。
@@ -1034,12 +1088,12 @@ adb install deepseek-chat-1.4.3-internal-XXXXXXXX.apk
 
 ```bash
 # 1) 恢复清单（原子 mv）
-ssh aliyun 'mv -f /var/lib/dl-private/releases.internal.json.bak-private-<epoch> /var/lib/dl-private/releases.internal.json'
-# 2) 删掉上传的包
-ssh aliyun 'rm -f /var/lib/dl-private/apk/deepseek-chat-<version>-internal-<8位随机>.apk'
+ssh aliyun 'mv -f /var/www/dl-private/releases.internal.json.bak-private-<epoch> /var/www/dl-private/releases.internal.json'
+# 2) 删掉上传的包（私有包在 /opt/dl-private/apk，清单在 /var/www/dl-private —— 两个目录别搞混）
+ssh aliyun 'rm -f /opt/dl-private/apk/deepseek-chat-<version>-internal-<8位随机>.apk'
 # 3) 复核：文件没了、清单与发布前逐字节一致
-ssh aliyun 'sha256sum /var/lib/dl-private/releases.internal.json'
-ssh aliyun 'test -e /var/lib/dl-private/apk/deepseek-chat-<version>-internal-<8位随机>.apk && echo FILE_LEFT || echo FILE_GONE'
+ssh aliyun 'sha256sum /var/www/dl-private/releases.internal.json'
+ssh aliyun 'test -e /opt/dl-private/apk/deepseek-chat-<version>-internal-<8位随机>.apk && echo FILE_LEFT || echo FILE_GONE'
 ```
 
 真发布时脚本会把这两条回滚命令**原样打印在最后**（连 epoch 一起），照抄即可。
@@ -1087,5 +1141,5 @@ node scripts/check-webroot-hygiene.mjs --selftest
 | R4（#620） | `releases.json` 里 `artifactVariant !== "standard"` 的条目（含 `internal`）；清单读不出来/缺失也判红（fail-closed） |
 
 处置：R1 的备份/取证文件移到 webroot 之外（例如 `/var/lib/dl-quarantine/`）；R2 的目录整棵搬走
-（私有清单的合法位置是 `/var/lib/dl-private/`）；R3 的内部包移出 webroot；R4 的 internal 条目从公网清单里
+（私有包/私有清单的合法位置在 webroot 之外：`/opt/dl-private/` 与 `/var/www/dl-private/`）；R3 的内部包移出 webroot；R4 的 internal 条目从公网清单里
 删掉 —— **先确认它已经在私有清单里再删**，顺序反了就等于丢包。

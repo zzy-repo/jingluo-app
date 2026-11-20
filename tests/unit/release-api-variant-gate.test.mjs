@@ -116,7 +116,7 @@ test('#620 整份清单互斥：公网清单里 internal 条目 → 拒（#601 �
 })
 
 test('#620 私有根不许在 webroot 内（#609 G1 的接口层复刻）', () => {
-  assert.equal(isInsideDir('/var/lib/dl-private', '/var/www/dl'), false)
+  assert.equal(isInsideDir('/opt/dl-private', '/var/www/dl'), false)
   assert.equal(isInsideDir('/var/www/dl/private', '/var/www/dl'), true)
   assert.equal(isInsideDir('/var/www/dl', '/var/www/dl'), true, '相等也算在内')
   assert.equal(isInsideDir('/var/www/dl2/x', '/var/www/dl'), false, '词缀相同的兄弟目录不算在内')

@@ -9,8 +9,12 @@
  * 2026-11-20 22:14 那次泄漏，就是「进了公网清单 + 文件在 `/apk/`」两件凑齐。
  *
  * 所以现在：
- *   - 私有包**绝不进公网清单**，改走**独立私有清单**：`<private-root>/releases.internal.json`，
- *     默认 `/var/lib/dl-private/`（**webroot 之外**，公网 file_server 够不着），包在同目录 `apk/` 下；
+ *   - 私有包**绝不进公网清单**，改走**独立私有清单**（默认 `<private-root>/releases.internal.json`），
+ *     私有根默认 `/opt/dl-private/`（**webroot 之外**，公网 file_server 够不着），包在 `<private-root>/apk/` 下；
+ *     线上实况（#621 收尾，**以线上为准**）：`DL_PRIVATE_ROOT=/opt/dl-private`、
+ *     `DL_PRIVATE_APK_DIR=/opt/dl-private/apk`、`DL_PRIVATE_RELEASES_JSON=/var/www/dl-private/releases.internal.json`
+ *     —— 清单与包目录**不在同一个目录**，所以清单路径另有开关 `--private-manifest`
+ *     （env `DL_PRIVATE_RELEASES_JSON`，与 `deploy/dl-release/server.mjs` 同名同义）；
  *   - 公网 `releases.json` 只允许 `artifactVariant === 'standard'` 且 `buildType === 'stable'`
  *     （校验器与这里的 G1 各拦一次，`scripts/validate-releases-manifest.mjs` 的 public 口径）；
  *   - 客户端取用方式（内置开关）见 docs/RELEASE-MANUAL.md §14：internal 变体在构建期带
@@ -42,7 +46,8 @@
  *
  * 参数（全部可用环境变量给，见 `--help`）：
  *   --target private|public   默认 private。public 只允许 standard + stable（G1）
- *   --private-root <dir>      默认 /var/lib/dl-private（**必须不在 webroot 内**，G1 会核）
+ *   --private-root <dir>      默认 /opt/dl-private（**必须不在 webroot 内**，G1 会核）
+ *   --private-manifest <p>    默认 <private-root>/releases.internal.json（env DL_PRIVATE_RELEASES_JSON）
  *   --webroot <dir>           默认 /var/www/dl（公网站点根）；`--site-root` 是它的旧名
  *   --transport ssh|local     默认 ssh。`local` 只读本机目录、只允许 --dry-run（演练用）
  *   --apk/--version/--versionCode/--variant/--changes/--dry-run/--exercise/--force/--ssh-host/--aapt2
@@ -95,8 +100,13 @@ export const FILE_PREFIX = 'deepseek-chat';
 export const DEFAULT_SSH_HOST = 'aliyun';
 /** 公网站点根（webroot）：Caddy 本地直服（/var/www/dl/releases.json、/var/www/dl/apk/*.apk） */
 export const DEFAULT_WEBROOT = '/var/www/dl';
-/** 私有根：**故意在 webroot 之外** —— 公网 file_server 够不着（#609 的核心） */
-export const DEFAULT_PRIVATE_ROOT = '/var/lib/dl-private';
+/**
+ * 私有根：**故意在 webroot 之外** —— 公网 file_server 够不着（#609 的核心）。
+ * 默认值与线上对齐（#621 收尾，以线上为准）：生产 `DL_PRIVATE_ROOT=/opt/dl-private`。
+ * env `DL_PRIVATE_ROOT` 可覆盖；`--private-manifest`（env `DL_PRIVATE_RELEASES_JSON`）
+ * 单独管清单路径，因为线上清单不在私有根下。
+ */
+export const DEFAULT_PRIVATE_ROOT = '/opt/dl-private';
 /** 两种清单的文件名 */
 export const PUBLIC_MANIFEST_NAME = 'releases.json';
 export const PRIVATE_MANIFEST_NAME = 'releases.internal.json';
@@ -339,7 +349,7 @@ export function gateTargetVariant({ target, variant, buildType, webroot, private
     if (inside) {
       errors.push(
         `G1 私有根 ${to} 在 webroot ${from} 内：webroot 里的文件会被公网 file_server 直出，` +
-          '私有包必须放在 webroot 之外（默认 /var/lib/dl-private）',
+          '私有包必须放在 webroot 之外（默认 /opt/dl-private）',
       );
     }
   }
@@ -416,7 +426,12 @@ export function gateOrphanFiles({ manifest, presentFiles, planned = null }) {
 
 /**
  * 目标路径（manifest / apk 目录 / 根）。
- * @param {{target:string, webroot:string, privateRoot:string}} opts
+ *
+ * 私有一侧的两个路径**分开算**（#621 收尾）：线上 `DL_PRIVATE_ROOT=/opt/dl-private`（包目录在
+ * `/opt/dl-private/apk`）而清单在 `/var/www/dl-private/releases.internal.json` —— 一个 `--private-root`
+ * 拼不出线上布局，所以清单路径可由 `privateManifest`（`--private-manifest` / env
+ * `DL_PRIVATE_RELEASES_JSON`）单独指定，缺省仍回落 `<private-root>/releases.internal.json`。
+ * @param {{target:string, webroot:string, privateRoot:string, privateManifest?:string}} opts
  */
 export function targetPaths(opts) {
   const target = opts.target ?? 'private';
@@ -432,12 +447,13 @@ export function targetPaths(opts) {
     };
   }
   const root = opts.privateRoot ?? DEFAULT_PRIVATE_ROOT;
+  const manifestPath = opts.privateManifest || `${root}/${PRIVATE_MANIFEST_NAME}`;
   return {
     target,
     root,
-    manifestPath: `${root}/${PRIVATE_MANIFEST_NAME}`,
+    manifestPath,
     apkDir: `${root}/${APK_SUBDIR}`,
-    label: `私有清单 ${root}/${PRIVATE_MANIFEST_NAME}（webroot 之外，带令牌的端点才提供）`,
+    label: `私有清单 ${manifestPath}（webroot 之外，带令牌的端点才提供）`,
     publiclyReadable: false,
   };
 }
@@ -708,7 +724,9 @@ function help() {
       '  --versionCode <n>      必填（DL_PRIVATE_VERSION_CODE）',
       '  --variant <v>          internal（默认）| standard（DL_PRIVATE_VARIANT）',
       '  --target <t>           private（默认）| public（DL_PRIVATE_TARGET）',
-      '  --private-root <dir>   /var/lib/dl-private（DL_PRIVATE_ROOT）；必须在 webroot 之外',
+      '  --private-root <dir>   /opt/dl-private（DL_PRIVATE_ROOT）；必须在 webroot 之外',
+      '  --private-manifest <p> <private-root>/releases.internal.json（DL_PRIVATE_RELEASES_JSON）；',
+      '                         线上是 /var/www/dl-private/releases.internal.json（不在私有根下）',
       '  --webroot <dir>        /var/www/dl（DL_PRIVATE_WEBROOT）；--site-root 是它的旧名',
       '  --transport <t>        ssh（默认）| local（只读本机目录，仅 --dry-run）（DL_PRIVATE_TRANSPORT）',
       '  --changes <text>       清单 changes 条目，可重复',
@@ -749,6 +767,9 @@ function parseCli(argv) {
     || readArg(args, 'site-root', 'DL_PRIVATE_SITE_ROOT')
     || DEFAULT_WEBROOT;
   const privateRoot = readArg(args, 'private-root', 'DL_PRIVATE_ROOT') || DEFAULT_PRIVATE_ROOT;
+  // 清单路径单独可配：线上 DL_PRIVATE_RELEASES_JSON=/var/www/dl-private/… 不在私有根下（#621 收尾）。
+  // 缺省回落 <private-root>/releases.internal.json（与 server.mjs 的同名 env 同义）。
+  const privateManifest = readArg(args, 'private-manifest', 'DL_PRIVATE_RELEASES_JSON') || '';
   const publicBase = (readArg(args, 'public-base', 'DL_PRIVATE_PUBLIC_BASE') || DEFAULT_PUBLIC_BASE).replace(/\/+$/, '') + '/';
 
   const missing = [];
@@ -765,6 +786,9 @@ function parseCli(argv) {
   if (!TRANSPORTS.includes(transport)) dieEnv(`--transport 只能是 ${TRANSPORTS.join('|')}：'${transport}'`);
   for (const [flag, dir] of [['--webroot', webroot], ['--private-root', privateRoot]]) {
     if (!/^\/[A-Za-z0-9._/-]+$/.test(dir)) dieEnv(`${flag} 必须是绝对路径且不含空格/引号：'${dir}'`);
+  }
+  if (privateManifest && !/^\/[A-Za-z0-9._/-]+$/.test(privateManifest)) {
+    dieEnv(`--private-manifest 必须是绝对路径且不含空格/引号：'${privateManifest}'`);
   }
   if (!/^https?:\/\//.test(publicBase)) dieEnv(`--public-base 必须是 http(s) URL：'${publicBase}'`);
 
@@ -808,6 +832,7 @@ function parseCli(argv) {
     sshHost,
     webroot,
     privateRoot,
+    privateManifest,
     publicBase,
     aapt2: readArg(args, 'aapt2', 'AAPT2'),
   };
@@ -839,7 +864,10 @@ async function main() {
   if (g1.length) die(g1, '硬闸 G1 拒绝：公网清单只收 standard + stable；私有清单只收 internal。改目标或改变体，别改闸门。');
   log.ok(`目标 ${opts.target} 只收 ${TARGET_VARIANT[opts.target]}，本次 ${opts.variant} ✓`);
   if (opts.target === 'public') log.ok(`公网清单 buildType 只收 ${PUBLIC_ALLOWED_BUILD_TYPES.join('|')}，本次 ${buildType} ✓`);
-  else log.ok(`私有根 ${path.resolve(opts.privateRoot)} 在 webroot ${path.resolve(opts.webroot)} 之外 ✓`);
+  else {
+    log.ok(`私有根 ${path.resolve(opts.privateRoot)} 在 webroot ${path.resolve(opts.webroot)} 之外 ✓`);
+    log.info(`私有清单     ${target.manifestPath}${opts.privateManifest ? '' : '（缺省 = 私有根下；线上是 /var/www/dl-private/）'}`);
+  }
 
   // ---- 1. APK 校验（aapt2）----
   log.head('1/7 校验 APK（aapt2）');

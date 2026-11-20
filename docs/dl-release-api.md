@@ -18,7 +18,7 @@
 | 发布目标 | URL | 写哪份清单 | 只收 |
 | --- | --- | --- | --- |
 | 公网（正式分发） | `https://dl.rose7.cn/api/v1/release` | `/var/www/dl/releases.json`（webroot 内，公开可读） | `artifactVariant="standard"` **且** `buildType="stable"` |
-| 私有（内测） | `https://dl.rose7.cn/api/v1/release/private` | `/var/lib/dl-private/releases.internal.json`（**webroot 之外**，公网 file_server 够不着） | `artifactVariant="internal"`（渠道不限） |
+| 私有（内测） | `POST http://127.0.0.1:8799/api/v1/release/private`（**不反代**，见 §5c；公网 POST 它 = 404） | `/var/www/dl-private/releases.internal.json`（**webroot 之外**，公网 file_server 够不着；`DL_PRIVATE_RELEASES_JSON`） | `artifactVariant="internal"`（渠道不限） |
 
 | 项目 | 值 |
 | --- | --- |
@@ -27,8 +27,10 @@
 | 请求类型 | `multipart/form-data` |
 | 服务 | `dl-release.service`（Node 单文件零依赖，监听 `127.0.0.1:8799`，仅由 Caddy 反代，公网不可直连） |
 
-Caddy 里只在 `@dl`（`host dl.rose7.cn`）这个 handle 内对 `/api/v1/release`、`/api/v1/release/private`
-与 `/api/v1/version` 做了 `reverse_proxy`，其余路径仍是 `file_server` 静态文件。
+Caddy 里只在 `@dl`（`host dl.rose7.cn`）这个 handle 内对 `/api/v1/release`（公网写）、`/api/v1/version`
+与 `/api/v1/releases/*`（#621 私有读，带令牌）做了 `reverse_proxy`，其余路径仍是 `file_server` 静态文件。
+`/api/v1/release/private`（#620 私有写）**不在反代里**：私有包发布走 `scripts/publish-private-apk.mjs`
++ `ssh`/`scp` 直接落盘（不出公网），接口层那条闸只在本机 `127.0.0.1:8799` / ssh 隧道内可达（§5c、手册 §14.1b）。
 
 > 私有端点不是「另一个公网通道」：它写的是 webroot 之外的目录，回包也**不给公网 URL**。
 > 服务启动时会核一遍「私有根不在 webroot 内」，配错了直接拒绝启动（日志 `fatal_private_root_in_webroot`）。
@@ -169,7 +171,7 @@ curl -sS -X POST https://dl.rose7.cn/api/v1/release \
 ## 5. 副作用
 
 - APK 落到目标目录：公网端点 → `/var/www/dl/apk/deepseek-chat-<version>.apk`；私有端点 →
-  `/var/lib/dl-private/apk/deepseek-chat-<version>.apk`（webroot 之外）。文件名由**服务端解析出的
+  `/opt/dl-private/apk/deepseek-chat-<version>.apk`（私有根 `DL_PRIVATE_ROOT=/opt/dl-private`，webroot 之外）。文件名由**服务端解析出的
   versionName** 决定，先写 `.upload-*` 临时文件再 `rename`，同一文件系统内原子替换。
 - 目标清单原子更新（公网 → `releases.json`；私有 → `releases.internal.json`）：同目录临时文件 → `fsync` → `rename` → `fsync` 目录。结构保持 `latest` + `releases[]`（`version` / `versionCode` / `releasedAt` / `file` / `size` / `md5` / `sha256` / `changes` / `buildType` / `breaking`，
 变体可判定时再加 `artifactVariant` + `artifactVariantSource`，判不出来就**不写**该字段），按 `versionCode` 降序，新版本在首位。
@@ -196,7 +198,9 @@ curl -sS -X POST https://dl.rose7.cn/api/v1/release \
   -F "apk=@$APK" -F 'meta={"buildType":"stable","changes":["…"]}'
 
 # 内测包（APK 内 ARTIFACT_VARIANT=internal）→ 私有清单（webroot 之外），公网清单零影响
-curl -sS -X POST https://dl.rose7.cn/api/v1/release/private \
+# ⚠️ 这个端点**不反代**（公网 POST 它 = 404）：只有本机 8799 能发，所以在 DL 主机上执行，
+#    或 `ssh -L 8799:127.0.0.1:8799 aliyun` 开隧道后打 127.0.0.1。日常发布走脚本（`scripts/publish-private-apk.mjs`，见 docs/RELEASE-MANUAL.md §14.2）。
+curl -sS -X POST http://127.0.0.1:8799/api/v1/release/private \
   -H "Authorization: Bearer $TOKEN" \
   -F "apk=@$APK" -F 'meta={"changes":["…"]}'
 ```
@@ -209,7 +213,7 @@ curl -sS -X POST https://dl.rose7.cn/api/v1/release/private \
 | 变体判不出来（老包且没登记白名单） | `/api/v1/release` | `400 VARIANT_NOT_PUBLIC`（**不默认 standard**） |
 | `buildType=prerelease`（或版本号 `-beta`） | `/api/v1/release` | `400 BUILD_TYPE_NOT_PUBLIC` |
 | standard 包 | `/api/v1/release/private` | `400 VARIANT_NOT_PRIVATE` |
-| internal 包 | `/api/v1/release/private` | `200`，写 `/var/lib/dl-private/releases.internal.json` |
+| internal 包 | `/api/v1/release/private`（本机/隧道，不反代） | `200`，写 `/var/www/dl-private/releases.internal.json` |
 | standard + stable 包 | `/api/v1/release` | `200`，写 `/var/www/dl/releases.json` |
 
 公网清单里出现 internal 条目这件事，除了接口拒绝（写之前）和 `check:webroot-hygiene` 的 R4（写完之后的

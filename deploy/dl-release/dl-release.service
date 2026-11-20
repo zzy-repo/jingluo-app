@@ -23,8 +23,10 @@ Environment=DL_RELEASES_JSON=/var/www/dl/releases.json
 Environment=DL_WEBROOT=/var/www/dl
 # 私有清单与私有包目录（#620：POST /api/v1/release/private 写这里）—— **webroot 之外**，
 # Caddy 的 file_server 够不着。服务启动时会核一遍：落在 webroot 内就直接拒绝启动。
-# 私有（internal）分发目录（#621 按线上实际布局钉死）：包在 /opt/dl-private/apk（公网 404），
-# 清单在 /var/www/dl-private/（webroot /var/www/dl 之外，file_server 够不着）。
+# 私有（internal）分发目录（#621 收尾：以线上为准，仓库口径已统一到这一组值）：
+#   私有根   = /opt/dl-private          （DL_PRIVATE_ROOT；webroot 之外，file_server 够不着）
+#   私有包   = /opt/dl-private/apk      （DL_PRIVATE_APK_DIR）
+#   私有清单 = /var/www/dl-private/releases.internal.json（DL_PRIVATE_RELEASES_JSON；线上清单不在私有根下）
 Environment=DL_PRIVATE_ROOT=/opt/dl-private
 Environment=DL_PRIVATE_RELEASES_JSON=/var/www/dl-private/releases.internal.json
 Environment=DL_PRIVATE_APK_DIR=/opt/dl-private/apk

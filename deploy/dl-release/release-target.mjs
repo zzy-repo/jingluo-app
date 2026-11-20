@@ -12,7 +12,7 @@
  * | 目标清单 | 唯一允许的变体 | 唯一允许的渠道(buildType) | 与谁同口径 |
  * | --- | --- | --- | --- |
  * | `public`（`/var/www/dl/releases.json`） | `standard` | `stable` | `publish-private-apk.mjs` G1 + 校验器 public 口径 |
- * | `private`（`/var/lib/dl-private/releases.internal.json`，webroot 之外） | `internal` | 任意合法枚举 | `publish-private-apk.mjs` G1 + 校验器 private 口径 |
+ * | `private`（`DL_PRIVATE_RELEASES_JSON`，线上 `/var/www/dl-private/releases.internal.json`，webroot 之外） | `internal` | 任意合法枚举 | `publish-private-apk.mjs` G1 + 校验器 private 口径 |
  *
  * 变体判不出来（unknown）时**不默认 standard**：`unknown !== 'standard'`，公网直接拒。
  * 这一条是 #620 的要害 —— 历史包/没写标记的包如果没有服务器白名单兜底，就进不了公网清单。
@@ -86,7 +86,7 @@ export function judgeVariant({ target, variant, source = null }) {
       ? `公网清单只收 artifactVariant="standard" 的正式包，本次是 ${variantLabel(variant)}${origin}。`
         + 'internal / 判不出变体的包绝不进公网清单：清单是公开的，`file` 字段等于把内部包直链广播出去'
         + '（#601 事故形态，裁决 #614 决定 3）。internal 包请改走私有清单端点 POST /api/v1/release/private'
-        + '（写 /var/lib/dl-private/releases.internal.json，webroot 之外）。'
+        + '（写私有清单 DL_PRIVATE_RELEASES_JSON，线上 /var/www/dl-private/releases.internal.json，webroot 之外）。'
         + '本次上传未落盘，releases.json 一个字节都没改。'
       : `私有清单只收 artifactVariant="internal" 的包，本次是 ${variantLabel(variant)}${origin}。`
         + 'standard 包走 GitHub Release（裁决 #614 决定 2），不进私有清单。'
@@ -170,7 +170,7 @@ export function judgeMergedManifest({ target, manifest }) {
       + `（${head}${bad.length > 3 ? ' …' : ''}）。`
       + (target === 'public'
         ? '公网清单出现 internal 条目 = 把内部包直链广播出去（#601 事故形态）：'
-          + '先把它们挪进私有清单（/var/lib/dl-private/releases.internal.json）再发'
+          + '先把它们挪进私有清单（DL_PRIVATE_RELEASES_JSON，线上 /var/www/dl-private/releases.internal.json）再发'
         : '私有清单只收 internal 条目：standard 包走 GitHub Release')
       + '。整份清单校验未通过，本次上传未落盘（APK 与清单均未改）。',
   };

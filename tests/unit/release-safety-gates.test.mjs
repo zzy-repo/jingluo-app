@@ -176,17 +176,17 @@ const internalEntry = (over = {}) => ({
 test('G1：公网清单拒 internal（#601 事故形状）、私有清单拒 standard；私有根不许在 webroot 内', () => {
   // 公网清单 + internal → 拒
   assert.match(
-    gateTargetVariant({ target: 'public', variant: 'internal', buildType: 'stable', webroot: '/var/www/dl', privateRoot: '/var/lib/dl-private' }).join('\n'),
+    gateTargetVariant({ target: 'public', variant: 'internal', buildType: 'stable', webroot: '/var/www/dl', privateRoot: '/opt/dl-private' }).join('\n'),
     /G1 目标清单只允许 standard 变体/,
   )
   // 公网清单 + standard + prerelease → 拒（决定 2：dl 只留 stable 历史条目）
   assert.match(
-    gateTargetVariant({ target: 'public', variant: 'standard', buildType: 'prerelease', webroot: '/var/www/dl', privateRoot: '/var/lib/dl-private' }).join('\n'),
+    gateTargetVariant({ target: 'public', variant: 'standard', buildType: 'prerelease', webroot: '/var/www/dl', privateRoot: '/opt/dl-private' }).join('\n'),
     /G1 公网清单只允许 stable 渠道/,
   )
   // 私有清单 + standard → 拒（另一半口径）
   assert.match(
-    gateTargetVariant({ target: 'private', variant: 'standard', buildType: 'stable', webroot: '/var/www/dl', privateRoot: '/var/lib/dl-private' }).join('\n'),
+    gateTargetVariant({ target: 'private', variant: 'standard', buildType: 'stable', webroot: '/var/www/dl', privateRoot: '/opt/dl-private' }).join('\n'),
     /G1 目标清单只允许 internal 变体/,
   )
   // 私有根被放进 webroot → 拒（否则「清单里没有」也白搭：静态目录照样直出）
@@ -196,7 +196,7 @@ test('G1：公网清单拒 internal（#601 事故形状）、私有清单拒 sta
   )
   // 正例：私有清单 + internal + 私有根在 webroot 外
   assert.deepEqual(
-    gateTargetVariant({ target: 'private', variant: 'internal', buildType: 'stable', webroot: '/var/www/dl', privateRoot: '/var/lib/dl-private' }),
+    gateTargetVariant({ target: 'private', variant: 'internal', buildType: 'stable', webroot: '/var/www/dl', privateRoot: '/opt/dl-private' }),
     [],
   )
 })
@@ -344,11 +344,20 @@ test('发行脚本：local 传输不许真发布（不是另一条发布通道�
 })
 
 test('发行脚本：targetPaths 把私有清单指向 webroot 之外 / 公网清单指向 webroot 内', () => {
-  const priv = targetPaths({ target: 'private', webroot: '/var/www/dl', privateRoot: '/var/lib/dl-private' });
-  assert.equal(priv.manifestPath, '/var/lib/dl-private/releases.internal.json');
-  assert.equal(priv.apkDir, '/var/lib/dl-private/apk');
+  const priv = targetPaths({ target: 'private', webroot: '/var/www/dl', privateRoot: '/opt/dl-private' });
+  assert.equal(priv.manifestPath, '/opt/dl-private/releases.internal.json');
+  assert.equal(priv.apkDir, '/opt/dl-private/apk');
   assert.equal(priv.publiclyReadable, false);
-  const pub = targetPaths({ target: 'public', webroot: '/var/www/dl', privateRoot: '/var/lib/dl-private' });
+  // #621 收尾：线上清单不在私有根下（DL_PRIVATE_RELEASES_JSON），清单路径必须能单独指
+  const live = targetPaths({
+    target: 'private',
+    webroot: '/var/www/dl',
+    privateRoot: '/opt/dl-private',
+    privateManifest: '/var/www/dl-private/releases.internal.json',
+  });
+  assert.equal(live.manifestPath, '/var/www/dl-private/releases.internal.json');
+  assert.equal(live.apkDir, '/opt/dl-private/apk', 'apk 目录仍跟着私有根');
+  const pub = targetPaths({ target: 'public', webroot: '/var/www/dl', privateRoot: '/opt/dl-private' });
   assert.equal(pub.manifestPath, '/var/www/dl/releases.json');
   assert.equal(pub.publiclyReadable, true);
 })
