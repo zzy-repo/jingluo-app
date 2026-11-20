@@ -1530,7 +1530,13 @@ const withRequestDocuments = async (
     const notice = [...result.warnings, formatDocumentInjection(result)].join('；')
     return { messages: result.messages, notice }
   } catch (error) {
-    recordError('文档注入失败，本次请求不带附件正文', { stage: 'chat.request' }, error)
+    // 埋点规范 R3：error 级至少两个可切片键 —— 除了 stage 再记「哪个渠道 × 几份文档」，
+    // 否则事后只能看到「注入失败」，分不清是单份解析炸了还是多渠道某一档不支持。
+    recordError(
+      '文档注入失败，本次请求不带附件正文',
+      { stage: 'chat.request', provider: kind, attachments: refs.length },
+      error
+    )
     return {
       messages: stripAttachmentRefs(messages),
       notice: '附件正文注入失败，本次只发送提问内容',
