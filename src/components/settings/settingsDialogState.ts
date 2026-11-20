@@ -15,8 +15,6 @@ export const useSettingsDialog = create(() => ({
    * 让用户看到「正在查询订单」（见 main.tsx 的 consumeOrderReturn）。
    */
   oursOpen: false,
-  /** 付款记录弹层（Issue #115）：与「我们的渠道」弹层同层叠放，互不影响 */
-  paymentRecordsOpen: false,
   /**
    * 这次打开弹层时刚覆盖掉一笔未完成订单（Issue #157）：
    * 由付款回跳（consumeOrderReturn）带过来，弹层读一次就清掉，只提示一次。
@@ -51,11 +49,6 @@ export const clearApiKeyFormatBlocked = () => {
 
 export const setOursServicesOpen = (open: boolean) => {
   useSettingsDialog.setState({ oursOpen: open })
-}
-
-/** 付款记录弹层（Issue #115）：只读历史，不受渠道类型限制，打开即可查 */
-export const setPaymentRecordsOpen = (open: boolean) => {
-  useSettingsDialog.setState({ paymentRecordsOpen: open })
 }
 
 /** 付款回跳后直接进「订单查询」：打开设置并展开「我们的渠道」弹层 */

@@ -275,13 +275,9 @@
       "doc": "docs/testing/coverage/domain-06-07.md",
       "note": "旧体系的回归基准（领取 / 额度 / 卡密兑换 / 订单状态 / 购买链路）已随 W1-D 删除，待阶段③按新链路重建；删除清单与重建要求见 docs/testing/rebuild-after-refactor.md",
       "paths": {
-        "src/services/ours/purchases.ts": ["tests/unit/ours-purchases.test.mjs", "tests/unit/purchases-ui.test.mjs", "tests/integration/ours-services.test.mjs"],
+        "src/services/ours/purchases.ts": ["tests/unit/ours-purchases.test.mjs", "tests/integration/ours-services.test.mjs"],
         "src/services/ours/paymentRecords.ts": ["tests/unit/ours-payment-records.test.mjs", "tests/integration/ours-services.test.mjs"],
-        "src/services/ours/trail.ts": ["tests/unit/ours-trail.test.mjs", "tests/unit/payment-trail-ui.test.mjs", "tests/integration/ours-services.test.mjs"],
-        "src/services/ours/transport.ts": ["tests/unit/ours-inapp-buy.test.mjs", "tests/unit/pay-link.test.mjs", "tests/integration/ours-services.test.mjs"],
-        "src/components/settings/PurchaseRecords*.tsx": ["tests/unit/purchases-ui.test.mjs", "tests/integration/ours-services.test.mjs"],
-        "src/components/settings/PaymentRecordsDialog.tsx": ["tests/integration/ours-services.test.mjs"],
-        "src/components/settings/PaymentTrail*.ts*": ["tests/unit/payment-trail-ui.test.mjs", "tests/integration/ours-services.test.mjs"]
+        "src/services/ours/transport.ts": ["tests/unit/ours-inapp-buy.test.mjs", "tests/unit/pay-link.test.mjs", "tests/integration/ours-services.test.mjs"]
       },
       "tests": {
         "unit": ["tests/unit/limits-config.test.mjs"],

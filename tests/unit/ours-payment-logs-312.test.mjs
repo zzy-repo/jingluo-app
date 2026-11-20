@@ -6,7 +6,8 @@
 //   node tests/unit/ours-payment-logs-312.test.mjs
 //
 // 覆盖：
-//   [1] 八个节点各留一条带 stage 的日志（balance / plans / pay / redeem / cid / orders / trail / order）
+//   [1] 六个节点各留一条带 stage 的日志（balance / plans / pay / redeem / cid / orders）
+//       时间线节点（trail / order）随旧支付 UI 一起下线（#487 三弹层合一的收口），不再断言
 //   [2] 每条 meta ≥2 个键（MIN_META_KEYS），且键都落在采集层白名单里（sanitizeMeta 不静默丢键）
 //   [3] 脱敏：完整 Key / 完整卡密 / 单号明文 / 收款页地址 / device_id 一个字都不进日志
 //   [4] 语义：202 是 pending 不是 error；409 带 upstreamCode；空记录页与失败页可区分；503 重试有轮次
@@ -35,7 +36,6 @@ const api = await import('../../src/services/ours/api.ts')
 const customerId = await import('../../src/services/ours/customerId.ts')
 const purchases = await import('../../src/services/ours/purchases.ts')
 const paymentRecords = await import('../../src/services/ours/paymentRecords.ts')
-const trail = await import('../../src/services/ours/trail.ts')
 
 const KEY = 'sk-live-ABCDEFGHIJKLMN9f3a2b7c1d3812'
 const CARD = 'MUSE-3CYP-5NA3-AHSE-A3SR'
@@ -46,10 +46,6 @@ const DEVICE_ID = 'd-0123456789abcdef0123456789abcdef'
 const json = (status, body) => ({ kind: 'response', status, text: JSON.stringify(body) })
 const raw = (status, text) => ({ kind: 'response', status, text })
 const once = (result) => async () => result
-const sequence = (results) => {
-  let cursor = 0
-  return async () => results[Math.min(cursor++, results.length - 1)]
-}
 const memoryStorage = (entries = {}) => {
   const map = new Map(Object.entries(entries))
   return {
@@ -88,16 +84,9 @@ const exerciseAllNodes = async () => {
   )
   // 付款记录：2xx 但不是 JSON（badResponse）
   await paymentRecords.fetchPaymentRecords(KEY, once(raw(200, '<html>nope</html>')), null)
-  // 时间线：503 自动重试一次后成功
-  await trail.fetchTrailVia(
-    { apiKey: KEY, limit: 20, offset: 0 },
-    sequence([json(503, { code: 'UNAVAILABLE' }), json(200, { total: 1, orders: [{ out_trade_no: ORDER_NO, status: 'paid' }] })])
-  )
-  // 按单号查一笔
-  await trail.fetchOrderTrailVia({ apiKey: KEY, outTradeNo: ORDER_NO }, once(json(200, { out_trade_no: ORDER_NO, status: 'fulfilled' })))
 }
 
-test('八个节点各留一条带 stage 的日志，meta 都够用且键在白名单里', async () => {
+test('六个节点各留一条带 stage 的日志，meta 都够用且键在白名单里', async () => {
   await clearLogs()
   await exerciseAllNodes()
   const logs = quotaLogs()
@@ -108,8 +97,6 @@ test('八个节点各留一条带 stage 的日志，meta 都够用且键在白�
     'quota.redeem',
     'quota.cid',
     'quota.orders',
-    'quota.trail',
-    'quota.order',
   ]
   for (const stage of expected) {
     assert.ok(STAGES.includes(stage), `stage ${stage} 必须在 fields.ts 的 STAGES 里（否则 buildMeta 会静默丢掉）`)
@@ -151,10 +138,11 @@ test('脱敏铁律：凭证原文、收款页地址、设备码一个都不进�
   // 只留尾 4 位，且带掩码前缀（读日志的人一眼能看出这是打码值）
   assert.equal(firstOf('quota.balance').meta['key.tail'], '••••3812', 'Key 只留尾 4 位')
   assert.equal(firstOf('quota.redeem').meta['card.tail'], '••••A3SR', '卡密只留尾 4 位')
-  assert.equal(firstOf('quota.order').meta['order.tail'], '••••F8AA', '单号只留尾 4 位')
+  // 单号只留尾 4 位那条断言原本挂在时间线的「按单号查一笔」上；时间线随旧支付 UI 下线（#487）后
+  // 这条链路上已经没有写 `order.tail` 的调用点，字段仍留在 META_KEYS 里用于读旧日志。
 })
 
-test('语义：202 是 pending、409 带错误码、空记录页与失败页分得开、503 重试有轮次', async () => {
+test('语义：202 是 pending、409 带错误码、空记录页与失败页分得开', async () => {
   await clearLogs()
   await exerciseAllNodes()
   const redeemLogs = quotaLogs().filter((entry) => entry.meta?.stage === 'quota.redeem')
@@ -174,9 +162,4 @@ test('语义：202 是 pending、409 带错误码、空记录页与失败页分�
   assert.equal(okPage?.meta.result, 'ok')
   assert.equal(okPage?.meta.total, 57, '页大小与 total 都要记，否则分不出「没数据」与「只拉了第一页」')
   assert.equal(okPage?.meta.limit, 20)
-
-  // 503 自动重试：轮次必须落地
-  const retry = quotaLogs().find((entry) => entry.meta?.result === 'retry')
-  assert.equal(retry?.meta.attempt, 1, '503 自动重试要记轮次')
-  assert.equal(retry?.meta.status, 503)
 })
