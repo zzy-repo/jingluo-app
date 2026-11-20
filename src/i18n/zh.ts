@@ -916,4 +916,13 @@ export const zh = {
   oursTrailEmptyFiltered: '这个状态下没有记录，换个筛选看看',
   oursTrailTotalPaid: '累计实付 {amount}',
   oursTrailEntryDescription: '按时间线看每笔订单从下单、支付、发卡到兑换的全过程',
+  /**
+   * 检查更新失败兜底（Issue #412）：失败态下展示上次成功的清单快照 + 手动下载出口。
+   * 文案里只放用户已知的事实（时间、条数），不放地址、不放堆栈。
+   */
+  updateCacheFallbackTitle: '缓存数据，可能不是最新',
+  updateCacheFallbackNote:
+    '这是 {time} 成功取到的版本列表（共 {count} 条）。当前连不上更新服务，列表可能已经过期。',
+  updateManualDownload: '手动下载最新版',
+  updateManualOpenFailed: '没能在 App 内打开下载页，请稍后再试，或复制诊断信息反馈给我们。',
 } as const

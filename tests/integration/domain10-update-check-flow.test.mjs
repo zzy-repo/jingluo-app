@@ -35,6 +35,13 @@ const DIST = path.resolve(ROOT, process.env.DIST_DIR || 'dist')
 const PRIMARY = 'http://62.106.70.167:8888'
 const FALLBACK = 'https://dl.rose7.cn'
 
+/**
+ * #412：预置的「上次成功时间」= 1 小时前。取固定相对时间而不是写死某一天：
+ * 缓存有 30 天过期判定（MANIFEST_CACHE_MAX_AGE_MS），写死的日期过几个月就变成「过期缓存」，
+ * 用例会红得莫名其妙。
+ */
+const CACHE_SAVED_AT = Date.now() - 60 * 60 * 1000
+
 /** 与线上同形状的一条发布记录 */
 const release = (over = {}) => ({
   version: '1.4.0-beta.11',
@@ -170,6 +177,19 @@ const probe = () => {
       inMain: mainRect !== null && lastRect.top >= mainRect.top - 1 && lastRect.bottom <= mainRect.bottom + 1,
     },
     buttonsInViewport,
+    // #412：失败兜底的观察点 —— 缓存区块整段文案（含「缓存数据，可能不是最新」与上次成功时间）、
+    // 「手动下载最新版」这一条出口（文字 + href）、下拉框当前值（重开设置后是否保留）
+    cacheFallback: (() => {
+      const node = dialog === null ? null : dialog.querySelector('[data-testid="update-cache-fallback"]')
+      return node === null ? null : (node.textContent ?? '').replace(/\s+/gu, ' ').trim()
+    })(),
+    manual: (() => {
+      const node = dialog === null ? null : dialog.querySelector('[data-testid="update-manual-download"]')
+      return node === null
+        ? null
+        : { text: (node.textContent ?? '').trim(), href: node.getAttribute('href') ?? null }
+    })(),
+    channel: dialog === null ? null : (dialog.querySelector('select')?.value ?? null),
     dialogBox: dialog === null ? null : (() => {
       const rect = dialog.getBoundingClientRect()
       return { top: round(rect.top), bottom: round(rect.bottom), height: round(rect.height) }
@@ -320,11 +340,24 @@ const SCENARIOS = [
       assert.doesNotMatch(p.status, /\d+\.\d+\.\d+\.\d+/, `文案不许出现 IP：${p.status}`)
       assert.doesNotMatch(p.status, /https?:\/\//, `文案不许出现 URL：${p.status}`)
       assert.doesNotMatch(p.status, /Error:|stack|at\s+\w+\s*\(/i, `文案不许出现堆栈：${p.status}`)
-      // 失败时底部仍然给「重新检查」，不给下载入口
+      // 失败时底部仍然给「重新检查」，不给 APK 直链（包没校验过，装了也不知道是什么）
       assert.equal(p.hasConfirmDownloadButton, false, '失败时不该出现「确认下载」')
-      assert.equal(p.linkHref, null, '失败时不该出现下载链接')
+      assert.equal(p.linkHref, null, '失败时不该出现「下载 APK」直链')
       // 诊断区仍可复制（#310：失败时用户说不出有效信息）
       assert.ok(p.diagnostics.length > 0, '失败时诊断区也要在（复制诊断信息是唯一的求助手段）')
+      // #412 第 1 项的反面：**没有缓存时不许编造缓存区块**，界面必须还是原来那句失败文案
+      assert.equal(
+        (p.cacheFallback ?? '').includes('缓存数据'),
+        false,
+        `没有缓存时不该出现「缓存数据」标注：${p.cacheFallback}`
+      )
+      // #412 第 2 项：失败态必须有「手动下载最新版」这条出口（#310 的期望第 4 条）
+      assert.equal(p.manual?.text, '手动下载最新版', `失败态应给「手动下载最新版」入口：${JSON.stringify(p.manual)}`)
+      assert.equal(
+        p.manual?.href,
+        'https://dl.rose7.cn/',
+        `没有缓存时手动下载应指向公开下载站首页，实际 ${p.manual?.href}`
+      )
     },
   },
   {
@@ -384,6 +417,89 @@ const SCENARIOS = [
       assert.ok(p.dialogBox.top >= -1 && p.dialogBox.bottom <= 900, `弹窗不许超出视口：${JSON.stringify(p.dialogBox)}`)
     },
   },
+  {
+    id: 'C7',
+    f10: ['F10-10', 'F10-12'],
+    name: '断网 + 有缓存：展示上次成功的版本列表（标注「可能不是最新」+ 上次成功时间），并给缓存里的直链',
+    plan: { primary: { status: 503 }, fallback: { status: 503 } },
+    // 预置一份「上次成功拉到的清单」：线上同形状，versionCode 高于当前 17，所以能被选成下载目标
+    storage: {
+      // 结构版本 1 = src/services/updateManifest.ts 的 MANIFEST_CACHE_VERSION（同源，改一处要改两处）
+      'chat-demo:update-manifest-cache': JSON.stringify({
+        version: 1,
+        savedAt: CACHE_SAVED_AT,
+        base: PRIMARY,
+        rows: [release({ versionCode: 20 }), release({ version: '1.4.0', versionCode: 19, buildType: 'stable' })],
+      }),
+    },
+    waitFor: /更新服务返回了 HTTP 503/,
+    assert: (p) => {
+      // 失败文案照旧（缓存不是用来掩盖失败的，是用来给「上次看到过什么」的）
+      assert.match(p.status, /更新服务返回了 HTTP 503/, `失败文案必须保留：${p.status}`)
+      const cache = p.cacheFallback ?? ''
+      assert.ok(cache.includes('缓存数据，可能不是最新'), `缓存区块必须明确标注不是最新：${cache}`)
+      assert.ok(cache.includes('成功取到的版本列表'), `缓存区块要说清这是上次成功的列表：${cache}`)
+      assert.match(cache, /共 2 条/, `缓存区块要给出条数：${cache}`)
+      assert.match(cache, /\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}/, `缓存区块要给上次成功时间（带日期，不然会被当成刚拉的）：${cache}`)
+      assert.ok(cache.includes('1.4.0-beta.11'), `缓存区块要列出上次看到的版本号：${cache}`)
+      // 手动下载：有缓存且能选出可装版本 → 直链指向那条记录，拼在缓存里的 base 上
+      assert.equal(p.manual?.text, '手动下载最新版', `应给「手动下载最新版」入口：${JSON.stringify(p.manual)}`)
+      assert.equal(
+        p.manual?.href,
+        `${PRIMARY}/apk/deepseek-chat-1.4.0-beta.11.apk`,
+        `有缓存时应直接给缓存里最新可装记录的直链，实际 ${p.manual?.href}`
+      )
+      // 缓存里的版本只是「上次看到过」，不许因此冒出一个可点的「下载 APK」按钮
+      assert.equal(p.linkHref, null, '缓存兜底不许把旧记录当成「已确认可装的新版本」')
+      assert.equal(p.hasConfirmDownloadButton, false, '缓存兜底不许出现「确认下载」')
+      assert.ok(p.diagnostics.length > 0, '失败时诊断区仍要在')
+    },
+  },
+  {
+    id: 'C8',
+    f10: ['F10-10', 'F10-12'],
+    name: '断网 + 缓存脏了（buildType:"release"）：整份丢弃，不许把脏数据端给用户',
+    plan: { primary: { status: 503 }, fallback: { status: 503 } },
+    storage: {
+      'chat-demo:update-manifest-cache': JSON.stringify({
+        version: 1,
+        savedAt: CACHE_SAVED_AT,
+        base: PRIMARY,
+        // #330 的事故形状：非法枚举。缓存也是外部可变数据，读的时候必须重新校验
+        rows: [{ ...release({ versionCode: 20 }), buildType: 'release' }],
+      }),
+    },
+    waitFor: /更新服务返回了 HTTP 503/,
+    assert: (p) => {
+      assert.match(p.status, /更新服务返回了 HTTP 503/, `失败文案必须保留：${p.status}`)
+      assert.equal(
+        (p.cacheFallback ?? '').includes('缓存数据'),
+        false,
+        `脏缓存必须整份丢弃（不许展示半份）：${p.cacheFallback}`
+      )
+      assert.equal(p.manual?.href, 'https://dl.rose7.cn/', `脏缓存时手动下载退回下载站首页，实际 ${p.manual?.href}`)
+    },
+  },
+  {
+    id: 'C9',
+    f10: ['F10-07'],
+    name: '渠道选择持久化：切到「仅稳定版」后重开设置（含刷新页面）仍是「仅稳定版」',
+    plan: { primary: { releases: [release()] }, fallback: { status: 500 } },
+    waitFor: '发现新版本，确认后再下载。',
+    drive: async (page) => {
+      // 默认渠道是预发布（内测包版本号带 -beta），先切到「仅稳定版」并等结论变化
+      await page.getByRole('combobox').selectOption('stable')
+      await page.getByText(/已是最新|没有可直接安装的新版本/).first().waitFor({ timeout: 15000 })
+      // 「重开设置」= 刷新整页后重新进设置 → 应用更新：渠道必须还是用户选的「仅稳定版」
+      await page.reload({ waitUntil: 'domcontentloaded' })
+      await page.waitForTimeout(600)
+      await openUpdateDialog(page, { waitFor: /已是最新|没有可直接安装的新版本/ })
+    },
+    assert: (p) => {
+      assert.equal(p.channel, 'stable', `重开设置后渠道选择丢了（#412 第 3 项）：实际 ${p.channel}`)
+      assert.match(p.status, /稳定版/, `结论行的渠道名也要跟着走：${p.status}`)
+    },
+  },
 ]
 
 // ---------------------------------------------------------------- 跑
@@ -424,13 +540,18 @@ try {
       context.on('request', (request) => {
         if (request.url().endsWith('/releases.json')) requests.push({ url: request.url() })
       })
-      await context.addInitScript(() => {
+      // 首屏前预置 localStorage：`scenario.storage` 让「有缓存 / 缓存脏了」这类现场可配置
+      // （#412 的失败兜底必须真的读到 localStorage 里的那份快照，不能靠组件内部 state 假装）
+      await context.addInitScript((seed) => {
         try {
-          localStorage.setItem('chat-demo:api-key', 'sk-domain10-fixture')
-          localStorage.setItem('chat-demo:provider-kind', 'deepseek')
+          for (const [key, value] of Object.entries(seed)) localStorage.setItem(key, value)
         } catch {
           // 首屏前不可用就跳过（本用例只看设置页）
         }
+      }, {
+        'chat-demo:api-key': 'sk-domain10-fixture',
+        'chat-demo:provider-kind': 'deepseek',
+        ...(scenario.storage ?? {}),
       })
       await routeManifest(context, scenario.plan)
       const page = await context.newPage()

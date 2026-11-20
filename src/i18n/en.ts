@@ -937,4 +937,10 @@ export const en = {
   oursTrailTotalPaid: 'Total paid {amount}',
   oursTrailEntryDescription:
     'Follow each order on a timeline from checkout through payment, card issuing and redemption',
+  updateCacheFallbackTitle: 'Cached data — may not be up to date',
+  updateCacheFallbackNote:
+    'This is the release list fetched successfully at {time} ({count} record(s)). The update service cannot be reached right now, so it may already be out of date.',
+  updateManualDownload: 'Download the latest version manually',
+  updateManualOpenFailed:
+    'Could not open the download page inside the app. Try again later, or copy the diagnostics and send them to us.',
 } satisfies Record<keyof typeof zh, string>

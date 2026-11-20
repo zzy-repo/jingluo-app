@@ -11,12 +11,20 @@ import {
 import {
   fetchManifest,
   parseManifest,
+  manualDownloadTarget,
+  readManifestSnapshot,
+  readUpdateChannel,
   releaseUrl,
+  saveManifestSnapshot,
+  saveUpdateChannel,
   selectUpdate,
   DEFAULT_RELEASE_BASE,
+  type ArtifactVariant,
+  type ManifestSnapshot,
   type UpdateChannel,
   type UpdateRelease,
 } from '../../services/updateManifest.js'
+import { useTranslate } from '../../i18n/index.js'
 import {
   classifyUpdateError,
   describeUpdateFailure,
@@ -56,14 +64,39 @@ const clockText = (at: number | undefined): string => {
       ).padStart(2, '0')}`
 }
 
+/**
+ * 「上次成功时间」（Issue #412）：带日期，因为缓存可能来自好几天前 ——
+ * 只给 `19:05:16` 会让用户以为是今天拉到的。当天只给时分会更短，但**短不等于准**，
+ * 缓存标注的第一原则是「别让用户误以为这是刚拿到的」。
+ */
+const snapshotText = (at: number): string => {
+  const date = new Date(at)
+  if (Number.isNaN(date.getTime())) {
+    return '—'
+  }
+  const pad = (value: number) => String(value).padStart(2, '0')
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(
+    date.getHours()
+  )}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`
+}
+
+/** 失败兜底里最多列几条：够让用户认出「上次看到过哪个版本」，也不至于把弹窗撑爆 */
+const CACHE_PREVIEW_ROWS = 5
+
 /** Update operations are isolated from history, API settings and feedback transport. */
 export const AppUpdateField = () => {
   /** 失败文案是按界面语言取一侧的双语对（见 services/updateFailure.ts） */
   const locale = useSettings((state) => state.locale)
   const lang = locale === 'zh-CN' ? 'zh' : 'en'
+  /** #412：新增文案走 i18n（zh/en 成对，check:i18n 的 R1/R2/R4 会盯着） */
+  const t = useTranslate()
   const [opened, setOpened] = useState(false)
-  const [channel, setChannel] = useState<UpdateChannel>(
-    /-/.test(bundledApp().version) ? 'prerelease' : 'stable'
+  /**
+   * 渠道默认值按「装的是不是预发布包」猜；**用户选过就以用户的为准**（#412 第 3 项）——
+   * 以前这里只有猜测，于是「我把渠道切到稳定版了」在重开设置后根本不成立。
+   */
+  const [channel, setChannel] = useState<UpdateChannel>(() =>
+    readUpdateChannel(/-/.test(bundledApp().version) ? 'prerelease' : 'stable')
   )
   const [release, setRelease] = useState<UpdateRelease>()
   /** 本次清单实际生效的分发机：相对 file 必须拼在它上面（回退到旧机后别拼新机域名）。 */
@@ -85,6 +118,21 @@ export const AppUpdateField = () => {
   const [outcome, setOutcome] = useState<UpdateFailureView>()
   const [checkedAt, setCheckedAt] = useState<number>()
   const [copyState, setCopyState] = useState<'idle' | 'done' | 'failed'>('idle')
+  /**
+   * 失败兜底（#412）：`failed` 只表示「本次检查以失败收场」，界面据此决定要不要给
+   * 「缓存版本列表 + 手动下载」两个出口；`snapshot` 是失败那一刻从 localStorage 读到的
+   * 上次成功清单（读不到就保持 undefined，界面退回原来的失败文案）。
+   */
+  const [failed, setFailed] = useState(false)
+  const [snapshot, setSnapshot] = useState<ManifestSnapshot>()
+  /**
+   * 本机已装包的变体与 versionCode：失败时也要用来从**缓存**里挑「最新可装的那一条」。
+   * 用 ref 而不是 state —— 它们由检查流程写、由兜底链接读，不参与任何渲染分支。
+   */
+  const installedRef = useRef<{ code: number; variant: ArtifactVariant }>({
+    code: bundledApp().versionCode,
+    variant: currentVariant(),
+  })
   /** 下载进度也要给失败文案用：state 在一次下载里是旧值，这里留一份最新的 */
   const progressRef = useRef<{ received: number; total: number }>()
   const operation = useRef<AbortController>()
@@ -139,6 +187,8 @@ export const AppUpdateField = () => {
     setProgress(undefined)
     setOutcome(undefined)
     setCopyState('idle')
+    setFailed(false)
+    setSnapshot(undefined)
     setCheckedAt(Date.now())
     setMessage('正在检查更新…')
     const startedAt = Date.now()
@@ -178,6 +228,10 @@ export const AppUpdateField = () => {
         effectiveBase = manifest.base
       }
       phase('update.check.manifest')
+      // #412：本机变体与 versionCode 记进 ref —— 失败时要用它们从**缓存快照**里挑最新可装版本
+      installedRef.current = { code: current.versionCode, variant }
+      // 清单拿到了就存一份快照：下次失败时它就是唯一的兜底（写不进去不影响本次检查）
+      saveManifestSnapshot({ rows, base: effectiveBase })
       const result = selectUpdate(rows, current.versionCode, variant, activeChannel)
       if (controller.signal.aborted) {
         return
@@ -235,6 +289,14 @@ export const AppUpdateField = () => {
           error
         )
         showFailure(error, activeChannel, bundledApp().version)
+        /**
+         * #412 第 1 项：失败时不再只剩一句「检查失败」。
+         * 上次成功拉到的清单还在 localStorage 里，读出来给用户看（标注缓存时间 + 「可能不是最新」），
+         * 至少让他知道「上次看到的是哪个版本」。读不到（没缓存 / 过期 / 结构变了）就保持 undefined，
+         * 界面回到原来的失败文案 —— 不拿过期数据硬凑。
+         */
+        setSnapshot(readManifestSnapshot())
+        setFailed(true)
       }
     } finally {
       checking.current = false
@@ -360,6 +422,47 @@ export const AppUpdateField = () => {
     )
     setCopyState(ok ? 'done' : 'failed')
   }
+  /**
+   * 「手动下载最新版」的目标地址（#412 第 2 项）。判定本体在 services/updateManifest.ts 的
+   * `manualDownloadTarget`（纯函数、单测钉住）：有缓存就给最新可装那条记录的直链，
+   * 没有就退到公开下载站首页。组件这里只负责「怎么打开」。
+   */
+  const manual = manualDownloadTarget(snapshot, installedRef.current, channel)
+  /**
+   * 原生侧用 App 内嵌浏览器打开（与 #331 的「前往购买」同一条通道）；插件缺失 / 打不开时
+   * 留在弹窗里给一句可读提示，不做 `window.open` / `location` 兜底（整页跳走就等于把设置界面弄丢）。
+   */
+  const openManualDownload = async () => {
+    try {
+      const { Browser } = await import('@capacitor/browser')
+      await Browser.open({ url: manual.url, presentationStyle: 'popover' })
+    } catch {
+      setMessage(t('updateManualOpenFailed'))
+    }
+  }
+  /** 缓存列表只列最新几条：按 versionCode 降序，读的是已校验过的快照 */
+  const cachedPreview = snapshot
+    ? [...snapshot.rows].sort((a, b) => b.versionCode - a.versionCode).slice(0, CACHE_PREVIEW_ROWS)
+    : []
+  /**
+   * 「手动下载最新版」那个入口本身：原生侧是按钮（走 App 内嵌浏览器），网页预览是链接。
+   * 抽成一个元素是因为失败态有「有缓存 / 没缓存」两种排版，出口必须**一模一样**——
+   * 复制一份 JSX 迟早会有一边改了另一边没改。
+   */
+  const manualEntry = native ? (
+    <button
+      type="button"
+      className={dialogStyles.copyButton}
+      data-testid="update-manual-download"
+      onClick={() => void openManualDownload()}
+    >
+      {t('updateManualDownload')}
+    </button>
+  ) : (
+    <a href={manual.url} target="_blank" rel="noreferrer" data-testid="update-manual-download">
+      {t('updateManualDownload')}
+    </a>
+  )
   return (
     <>
       <div className={styles.cell}>
@@ -422,6 +525,9 @@ export const AppUpdateField = () => {
                 setChannel(next)
                 setRelease(undefined)
                 setReady(false)
+                // #412 第 3 项：选择要记住（否则「切到仅稳定版」重开设置就不成立了）。
+                // 写失败（隐私模式 / 配额满）只影响下次默认值，不影响本次检查。
+                saveUpdateChannel(next)
                 // 切渠道后自动重查（#310 验收）：不再让用户再点一次「检查更新」
                 void check(next)
               }}
@@ -433,6 +539,41 @@ export const AppUpdateField = () => {
           <p role="status" aria-live="polite">
             {message}
           </p>
+          {/*
+           * 失败兜底（#412）：检查失败时不再只剩一句「更新服务不可达」。
+           * 有缓存 → 列出上次成功拉到的版本 + 明确标注「缓存数据，可能不是最新」+ 上次成功时间；
+           * 没缓存 → 只有下面那一行「手动下载最新版」，不画缓存底纹（不拿过期数据硬凑）。
+           * 失败文案（`role="status"`）照旧不变：缓存是补充，不是用来掩盖失败的。
+           * 无论有没有缓存，都留一个「手动下载最新版」出口 —— 更新服务整体挂掉时，
+           * 这是用户唯一还能拿到安装包的通道。
+           */}
+          {failed ? (
+            snapshot ? (
+              <div className={dialogStyles.cacheFallback} data-testid="update-cache-fallback">
+                <p className={dialogStyles.cacheTitle}>{t('updateCacheFallbackTitle')}</p>
+                <p className={dialogStyles.cacheNote}>
+                  {t('updateCacheFallbackNote', {
+                    time: snapshotText(snapshot.savedAt),
+                    count: snapshot.rows.length,
+                  })}
+                </p>
+                <ul className={dialogStyles.cacheList}>
+                  {cachedPreview.map((row) => (
+                    <li key={`${row.versionCode}-${row.file}`}>
+                      {row.version} · {sizeText(row.size)}
+                      {row.buildType ? ` · ${CHANNEL_LABEL[row.buildType][lang]}` : ''}
+                    </li>
+                  ))}
+                </ul>
+                <div className={dialogStyles.cacheManual}>{manualEntry}</div>
+              </div>
+            ) : (
+              // 没有缓存：不画那块「缓存」底纹（画了会让人以为里面有数据），只留唯一还能走的出口
+              <div className={dialogStyles.cacheManual} data-testid="update-cache-fallback">
+                {manualEntry}
+              </div>
+            )
+          ) : null}
           {release ? (
             <>
               <h3>{release.version}</h3>
