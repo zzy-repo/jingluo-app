@@ -6,6 +6,10 @@
 本轮只新增 `src/components/attachments/`，**不改** `src/components/consume/**` 与 `src/services/**`。
 附件状态的权威在 `AttachmentManager`（#523 / PR #529），UI 不自己造状态机。
 
+> **复用优先（第二轮）**：卡片外观不再自研，直接复用 `files/FileCard`；类型图标并入
+> `files/FileIcon`；16px 文档入口图标归位到 `base/icons`。附件模块只剩「附件才有的语义」。
+> 见下方「复用审计」一节。
+
 ## 组件结构
 
 | 文件 | 职责 |
@@ -14,18 +18,33 @@
 | `viewModel.ts` | 记录 → 视图（含 UI 独有的 `cancelled`）、进度百分比、阶段文案、失败原因码、warnings 归并 |
 | `useAttachmentDrafts.ts` | 输入区编排：`addFile → parse(onProgress/signal)`、取消、重试、移除、注入结果回填 |
 | `AttachmentPicker.tsx` | 入口按钮 + `<input type="file" multiple accept=".txt,.docx,.pdf">` |
-| `AttachmentCard.tsx` | **单张卡片**，输入区与消息内复用（`variant: 'draft' \| 'message'`） |
+| `AttachmentCard.tsx` | **单张卡片 + 卡片列表**（`AttachmentCard` / `AttachmentList`），输入区与消息内复用（`variant: 'draft' \| 'message'`）；外观复用 `files/FileCard` |
 | `AttachmentPanel.tsx` | 点卡片弹出的小面板：warnings / 失败原因 / 重新解析 / 移除（复用 `base/anchored.ts`） |
-| `AttachmentList.tsx` | 卡片列表（draft 左对齐、message 右对齐） |
 | `MessageAttachments.tsx` | 消息内按附件 id 取元信息后复用同一张卡片（只读，不含取消/移除） |
-| `AttachmentTypeIcon.tsx` | PDF / DOCX / TXT 三种类型图标（PDF 复用 `files/FileIcon`） |
+| `Attachments.module.css` | 唯一一份附件样式：列表排版 / 详情浮层 / 消息内提示（卡片样式在 `files/FileCard.module.css`） |
 | `index.ts` | 对外出口 |
+
+### 复用审计（既有资产 → 复用 / 保留）
+
+| 附件 UI 里的东西 | 复用的既有资产 | 结论 |
+| --- | --- | --- |
+| 卡片布局、图标位、文件名/副标题、圆角尺寸、hover、焦点环 | `files/FileCard.tsx` + `FileCard.module.css` | **复用**：`FileCard` 加 5 个可选槽位（`statusText`/`progress`/`corner`/`actions`/`activator`）与 4 个解析态状态类，布局零复制 |
+| PDF / DOCX / TXT 类型图标 | `files/FileIcon.tsx`（已有 `FileIconFrame` 工厂） | **复用**：DOCX/TXT 作为两条新成员加进同一个工厂，删掉自建的 `AttachmentTypeIcon.tsx` |
+| 16px 文档入口图标 | `base/icons.tsx` | **复用**：图标归位到既有图标库，`ChatInput` 与回形针同处导入 |
+| 取消 / 移除 / 关闭按钮 | `base/IconButton` | **复用**（原本就已复用） |
+| 面板动作按钮 | `base/Button`（`outlined` / `dangerOutlined`、`s` 档） | **复用**（原本就已复用） |
+| 浮层定位与关闭 | `base/anchored.ts` 的 `useAnchoredPosition` / `useDismiss` | **复用**（原本就已复用） |
+| 扩展名 / 大小格式 | `services/attachments` 的 `getExtension` / `formatSize` | **复用**：顺手删掉 `viewModel.metaLine`（与 `FileCard` 副标题同源，原本两套） |
+| 关闭按钮文案 | i18n 既有 `close` | **复用**：删掉新增的 `attachCloseDetail` |
+| 列表排版、详情浮层、消息内提示 | 无对应既有组件 | **保留自研**（合并为 1 份 CSS） |
+| `parsing` 进度条 / `partial` 角标 / warnings 列表 / 失败原因分节 | 无对应既有组件 | **保留自研**（语义确实不同） |
+| 图片上传卡片、图片缩略图 | `messages/MessageFile.tsx` | 不改动；它和附件卡片共用 `FileCard`，两条线互不影响 |
 
 ## 五态视觉差异
 
 | 状态 | 卡片视觉 | 状态行文案 |
 | --- | --- | --- |
-| `pending` | 虚线边框、中性色 | 等待解析 |
+| `pending` | 虚线边框、中性色（`FileCard` 的 `.pending`） | 等待解析 |
 | `parsing` | 品牌色进度条 + 百分比；无页数信息时走不确定态滑动条；右侧取消按钮 | 解析中 58% / 解析中 · 提取第 3 页 |
 | `success` | 常规边框、绿色状态行 | 已就绪 |
 | `partial` | 琥珀色边框 + **右上角黄色警告角标**（`16px` 胶囊，图标 + 条数） | 部分内容已就绪 · N 条警告 |
@@ -74,6 +93,6 @@ hook 里（`addFailureToast`）。
 
 ## 本轮未做
 
-- **截图**：390 / 360 两档尚未拍（维护者口径：最后统一拍）。组件已按 240px 卡片宽度 + 换行列表
-  实现，角标用 `-6px` 负偏移并由列表 `padding` 收进可视区，不产生横向溢出。
+- **截图**：390 / 360 两档尚未拍（维护者口径：最后统一拍）。卡片宽度 240px（与既有上传卡片同宽，
+  因为就是同一张卡）+ 换行列表，角标用 `-6px` 负偏移并由列表 `padding` 收进可视区，不产生横向溢出。
 - **搜索框 / 拖拽区**之外的入口（如粘贴板图片）不在本单范围。

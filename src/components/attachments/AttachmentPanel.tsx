@@ -12,7 +12,7 @@
 import clsx from 'clsx'
 import { useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
-import { formatSize } from '../../services/attachments.js'
+import { formatSize, getExtension } from '../../services/attachments.js'
 import { useTranslate } from '../../i18n/index.js'
 import { useAnchoredPosition, useDismiss } from '../base/anchored.js'
 import { Button } from '../base/Button.js'
@@ -23,8 +23,8 @@ import {
   IconTrashOutline16,
   IconWarningOutline16,
 } from '../base/icons.js'
-import { attachmentWarnings, failureOf, metaLine, type AttachmentView } from './viewModel.js'
-import styles from './AttachmentPanel.module.css'
+import { attachmentWarnings, failureOf, type AttachmentView } from './viewModel.js'
+import styles from './Attachments.module.css'
 
 export type AttachmentPanelTriggerProps = { open: boolean; toggle: () => void }
 
@@ -60,7 +60,9 @@ export const AttachmentPanel = ({
   )
   useDismiss(open, [anchorRef, floatingRef], close, { captureEscape: true })
 
-  const details: string[] = [metaLine(view, formatSize)]
+  // 与卡片副标题同源（`FileCard` 也是「扩展名 + formatSize」），不再各写一份
+  const typeAndSize = [getExtension(view.filename), formatSize(view.size)].filter(Boolean).join(' ')
+  const details: string[] = [typeAndSize]
   if (view.characterCount !== undefined) {
     details.push(
       t('attachDetailCharacters', {
@@ -99,7 +101,7 @@ export const AttachmentPanel = ({
                 <IconButton
                   size="xs"
                   icon={<IconCloseFill14 />}
-                  tooltip={t('attachCloseDetail')}
+                  tooltip={t('close')}
                   onClick={close}
                 />
               </div>

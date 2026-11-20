@@ -1,6 +1,7 @@
 import clsx from 'clsx'
 import { memo, useCallback, useEffect, useLayoutEffect, useRef } from 'react'
 import {
+  IconDocumentOutline16,
   IconGlobeLanguageOutline14,
   IconPaperclipOutline16,
   IconSendOutline16,
@@ -28,7 +29,6 @@ import { docInjectionFor } from '../../services/attachments/providerCapability.j
 import {
   AttachmentList,
   AttachmentPicker,
-  IconDocumentOutline16,
   extensionOf,
   useAttachmentDrafts,
 } from '../attachments/index.js'
