@@ -1,0 +1,13 @@
+{
+  "_meta": {
+    "request": "GET /api/v1/does-not-exist-xyz   and   GET /v1/does-not-exist-xyz",
+    "auth": "none",
+    "captured_at": "2026-11-20T15:44:48+08:00",
+    "http_status": 404,
+    "content_type": "text/plain",
+    "shape": "NOT JSON - gin default body '404 page not found'. No response envelope at all.",
+    "ui_warning": "Any JSON parse of an unknown-path 404 will throw. Guard on content-type.",
+    "source": "sub2api 实例只读探测（2026-11-20，实例 0.2.22）；主机名已脱敏移除"
+  },
+  "_raw_text_body": "404 page not found"
+}

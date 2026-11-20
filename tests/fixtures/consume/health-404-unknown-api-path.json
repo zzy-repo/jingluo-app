@@ -1,0 +1,17 @@
+{
+  "_meta": {
+    "request": "GET /health   (also /healthz, /livez, /readyz, /metrics, /random-nonexistent-path)",
+    "auth": "none",
+    "captured_at": "2026-11-20T15:44:48+08:00",
+    "http_status": 404,
+    "shape": "sub2api gateway-style not_found_error, but 'code' here is a lowercase snake string and it lists the only valid API paths",
+    "doc_conflict": "Research doc §1.2 declares GET /health as a public health endpoint (routes/common.go:12). It does not exist on this build.",
+    "note": "Tried /health /healthz /api/health /api/v1/health /livez /readyz /api/v1/status /api/v1/version — all 404. No usable health probe exists.",
+    "source": "sub2api 实例只读探测（2026-11-20，实例 0.2.22）；主机名已脱敏移除"
+  },
+  "error": {
+    "type": "not_found_error",
+    "message": "unknown API path: /health (valid: /v1/messages, /v1/chat/completions, /v1/models)",
+    "code": "unknown_api_path"
+  }
+}

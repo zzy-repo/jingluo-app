@@ -106,3 +106,25 @@
 **状态说明**：这两组字段由 #487 的配置改造落地；本文件只描述契约。
 如果 `config/endpoints.json` 里还没有 `consume` / `pay`，说明配置改造尚未合并 —— 此时
 `src/services/consume/**` 不应存在（消费层的存在以这两组字段存在为前提）。
+
+---
+
+# 落地补充（W1-A / #487）：`consume` / `pay` 的校验口径与当前取值
+
+> 上面那一节的**契约**已经由 #488 写完，这里只补三件「实现落地后才确定」的事。
+
+| 项 | 落地值 / 口径 |
+| --- | --- |
+| 当前 `consume.baseUrl` | **`http://127.0.0.1:18000`** —— 本地联调实例（维护者 2026-11-20 明确：联调与 base URL 都以本地实例为准）。**生产 host 待维护者提供**，出正式包前必须换掉 |
+| https 规则 | 两个 base 一律 https；**唯一例外是本机回环**（`127.0.0.1` / `localhost` / `[::1]`）。非回环的明文 `http://` 仍然中止构建 |
+| 校验在哪 | `scripts/lib/consumeEndpoints.mjs`（`scripts/build.mjs` 打包前跑）与 `android/app/build.gradle` 的 `[consume]` 段，**同一套判据**；门禁 `pnpm check:consume-api` 再独立跑一遍 |
+
+**一处需要更正上面的说法**：`consume.baseUrl` / `pay.baseUrl` 的 host **不需要**加进 `allowedHosts`。
+`allowedHosts` 只服务旧池域那三份地址（`chatBaseUrl` / `inviteBaseUrl` / `feedbackUrl`）与 `check:ip` 的豁免，
+它们的判据是「同一台机器 + 端口白名单」；`consume` / `pay` 是另外两台机器，走自己的判据
+（https / 废弃域黑名单 / 两者不许相同）。把新域名塞进 `allowedHosts` 反而会让 `check:endpoints`
+判「三个端点不在同一台机器上」变红。
+
+其余落地细节（接口白名单、错误信封、幂等规则、字段实测状态）见
+[`docs/consume-layer.md`](../docs/consume-layer.md) 与
+[`docs/sub2api-client-contract.md`](../docs/sub2api-client-contract.md)。

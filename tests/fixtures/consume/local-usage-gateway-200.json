@@ -1,0 +1,49 @@
+{
+  "_meta": {
+    "request": "GET /v1/usage（API Key）",
+    "auth": "JWT / API key（值已脱敏）",
+    "captured_at": "2026-11-20T16:00:00+08:00",
+    "http_status": 200,
+    "content_type": "application/json; charset=utf-8",
+    "envelope": "NONE - flat JSON（不套 {code,message,data}）",
+    "instance_version": "0.2.20",
+    "source": "本地联调实例（http://127.0.0.1:18000）真实响应；凭据已替换为占位符"
+  },
+  "daily_usage": [],
+  "isValid": true,
+  "mode": "quota_limited",
+  "quota": {
+    "limit": 1,
+    "remaining": 1,
+    "unit": "USD",
+    "used": 0
+  },
+  "remaining": 1,
+  "status": "active",
+  "unit": "USD",
+  "usage": {
+    "average_duration_ms": 0,
+    "rpm": 0,
+    "today": {
+      "actual_cost": 0,
+      "cache_creation_tokens": 0,
+      "cache_read_tokens": 0,
+      "cost": 0,
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "requests": 0,
+      "total_tokens": 0
+    },
+    "total": {
+      "actual_cost": 0,
+      "cache_creation_tokens": 0,
+      "cache_read_tokens": 0,
+      "cost": 0,
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "requests": 0,
+      "total_tokens": 0
+    },
+    "tpm": 0
+  }
+}

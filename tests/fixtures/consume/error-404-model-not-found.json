@@ -1,0 +1,16 @@
+{
+  "_meta": {
+    "request": "GET /v1/models/nope-model",
+    "auth": "API Key: Authorization: Bearer sk-...",
+    "captured_at": "2026-11-20T15:44:48+08:00",
+    "http_status": 404,
+    "shape": "GATEWAY envelope: {error:{type,message,param,code}} (OpenAI/Anthropic compatible) - code is lowercase snake",
+    "source": "sub2api 实例只读探测（2026-11-20，实例 0.2.22）；主机名已脱敏移除"
+  },
+  "error": {
+    "code": "model_not_found",
+    "message": "Model \"nope-model\" does not exist or is not available for this group",
+    "param": "model",
+    "type": "invalid_request_error"
+  }
+}

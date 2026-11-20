@@ -1,0 +1,18 @@
+{
+  "_meta": {
+    "request": "GET /setup/status   (also /setup, /setup/install, /admin, /dashboard, /login)",
+    "auth": "HTTP Basic, realm=\"admin\" — an EDGE REVERSE PROXY, not sub2api",
+    "captured_at": "2026-11-20T15:44:48+08:00",
+    "http_status": 401,
+    "content_type": "text/plain; charset=utf-8",
+    "response_headers": {
+      "WWW-Authenticate": "Basic realm=\"admin\"",
+      "Content-Length": "23"
+    },
+    "shape": "PLAIN TEXT 'authentication required' — no JSON, no sub2api envelope",
+    "impact": "The panel UI paths and every /setup* path are unreachable without the proxy's Basic credentials. This is why no self-service JWT could be obtained.",
+    "doc_conflict": "Research doc §1.2 declares GET /setup/status as public and unauthenticated.",
+    "source": "sub2api 实例只读探测（2026-11-20，实例 0.2.22）；主机名已脱敏移除"
+  },
+  "_raw_text_body": "authentication required"
+}

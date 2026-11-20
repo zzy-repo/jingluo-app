@@ -1,0 +1,15 @@
+{
+  "_meta": {
+    "request": "POST /api/v1/redeem  {\"code\":\"<不存在>\"}",
+    "auth": "JWT / API key（值已脱敏）",
+    "captured_at": "2026-11-20T16:00:00+08:00",
+    "http_status": 404,
+    "content_type": "application/json; charset=utf-8",
+    "envelope": "panel error: {code:<int>, message, reason}",
+    "instance_version": "0.2.20",
+    "source": "本地联调实例（http://127.0.0.1:18000）真实响应；凭据已替换为占位符"
+  },
+  "code": 404,
+  "message": "redeem code not found",
+  "reason": "REDEEM_CODE_NOT_FOUND"
+}

@@ -59,6 +59,16 @@ const endpoints = JSON.parse(readFileSync(new URL('./config/endpoints.json', imp
   feedbackUrl: string
   legacyHosts: string[]
   download: { primaryBase: string; fallbackBase: string }
+  // 消费侧（sub2api，#484 W1-A）：账号/额度/卡密兑换/Key 管理。
+  // 这里只读、只注入；形状与 fail-fast 校验在 scripts/lib/consumeEndpoints.mjs（build.mjs 打包前跑）。
+  consume: {
+    baseUrl: string
+    apiV1Prefix: string
+    gatewayPrefix: string
+    timeoutMs: { read: number; write: number; redeem: number }
+  }
+  // 支付侧（apia）：只负责买卡，不迁（#482 定调）
+  pay: { baseUrl: string; timeoutMs: { read: number; write: number } }
 }
 
 /**
@@ -219,6 +229,18 @@ export const createConfig = ({
         // 分发地址（Issue #269）：源码只写 __ENDPOINTS__.dlPrimaryBase，打包前替换一次
         dlPrimaryBase: endpoints.download.primaryBase,
         dlFallbackBase: endpoints.download.fallbackBase,
+        // 消费侧 / 支付侧（#484 W1-A）：src/services/consume/** 只从这两组里取地址、前缀与超时，
+        // 源码里不许再出现任何后端地址或毫秒数（pnpm check:consume-api 会拦）。
+        consume: {
+          baseUrl: endpoints.consume.baseUrl,
+          apiV1Prefix: endpoints.consume.apiV1Prefix,
+          gatewayPrefix: endpoints.consume.gatewayPrefix,
+          timeoutMs: endpoints.consume.timeoutMs,
+        },
+        pay: {
+          baseUrl: endpoints.pay.baseUrl,
+          timeoutMs: endpoints.pay.timeoutMs,
+        },
       }),
     }),
     buildInfoPlugin(internalBuild ? 'internal' : 'standard', appVersion, outputPath),

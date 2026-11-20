@@ -15,11 +15,17 @@
 import {
   allowedHosts,
   chatBaseUrl,
+  consumeApiV1Prefix,
+  consumeBaseUrl,
+  consumeGatewayPrefix,
+  consumeTimeouts,
   downloadFallbackBase,
   downloadPrimaryBase,
   feedbackUrl,
   inviteBaseUrl,
   legacyHosts,
+  payBaseUrl,
+  payTimeouts,
 } from '../../scripts/lib/endpoints.mjs'
 
 globalThis.__ENDPOINTS__ ??= Object.freeze({
@@ -31,4 +37,13 @@ globalThis.__ENDPOINTS__ ??= Object.freeze({
   // 分发地址（Issue #269）：updateManifest.ts 顶层就读它，缺了就是 undefined base
   dlPrimaryBase: downloadPrimaryBase,
   dlFallbackBase: downloadFallbackBase,
+  // 消费侧 / 支付侧（#484 W1-A）：services/consume/** 顶层不读它（读取是懒的、可注入），
+  // 但用例自己要按同一份配置拼断言时从这里取，避免在测试里再抄一遍地址。
+  consume: Object.freeze({
+    baseUrl: consumeBaseUrl,
+    apiV1Prefix: consumeApiV1Prefix,
+    gatewayPrefix: consumeGatewayPrefix,
+    timeoutMs: consumeTimeouts,
+  }),
+  pay: Object.freeze({ baseUrl: payBaseUrl, timeoutMs: payTimeouts }),
 })

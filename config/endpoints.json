@@ -8,5 +8,15 @@
   "download": {
     "primaryBase": "http://62.106.70.167:8888",
     "fallbackBase": "https://dl.rose7.cn"
+  },
+  "consume": {
+    "baseUrl": "http://127.0.0.1:18000",
+    "apiV1Prefix": "/api/v1",
+    "gatewayPrefix": "/v1",
+    "timeoutMs": { "read": 10000, "write": 20000, "redeem": 30000 }
+  },
+  "pay": {
+    "baseUrl": "https://apia.ecsafe.cn",
+    "timeoutMs": { "read": 10000, "write": 20000 }
   }
 }

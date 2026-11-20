@@ -118,6 +118,142 @@ if (providers.gradleProperty('dlPrimaryBase').present || providers.gradlePropert
 }
 
 // ---------------------------------------------------------------------------
+// 消费侧 / 支付侧地址（Issue #484 §6.2 / #487 W1-A）：同一份 config/endpoints.json 的另一端
+//   consume.baseUrl → BuildConfig.CONSUME_BASE（Web 侧由 rspack 注入 __ENDPOINTS__.consume.baseUrl）
+//   pay.baseUrl     → BuildConfig.PAY_BASE    （Web 侧由 rspack 注入 __ENDPOINTS__.pay.baseUrl）
+// -PconsumeBase / -PpayBase 是**例外通道**（内测 / 灰度临时覆盖）：产物里的地址就不在仓库里了，
+//   发布后必须在 CHANGELOG 记一笔。
+// 判据与 scripts/lib/consumeEndpoints.mjs 一一对应（改那边要同步改这里）：
+//   1) 必须 https —— **唯一例外**是本机回环（127.0.0.1 / localhost / [::1]），本地联调实例就是明文；
+//   2) 不得命中废弃域黑名单（旧池域 IP / :60013 / legacyHosts）；
+//   3) consume.baseUrl 与 pay.baseUrl 不得相同（两个后端职责不能混）；
+//   4) 缺字段 / 未知键 / 空值 → 一律中止，并打印**键名 + 配置文件行号**。
+// 带着错地址出包只会在真机上表现为「登录一直失败」或「额度转圈」，比构建失败难查得多。
+// ---------------------------------------------------------------------------
+def CONSUME_KEYS = ['baseUrl', 'apiV1Prefix', 'gatewayPrefix', 'timeoutMs']
+def PAY_KEYS = ['baseUrl', 'timeoutMs']
+def CONSUME_TIMEOUT_KEYS = ['read', 'write', 'redeem']
+def PAY_TIMEOUT_KEYS = ['read', 'write']
+def TIMEOUT_MIN_MS = 1000
+def TIMEOUT_MAX_MS = 120000
+// 废弃域标记：写出来才能拦住它们（与 scripts/lib/consumeEndpoints.mjs 的 DEPRECATED_MARKERS 同源）
+def CONSUME_DEPRECATED_MARKERS = ['140.210.13.146', ':60013']
+def CONSUME_BASE_PATTERN = ~/https?:\/\/[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?(:\d{1,5})?/
+
+// 配置文件行号：先找段名（`"consume"` / `"pay"`）所在行，再在该行之后找字段名。
+// 不用完整 JSON 解析器：端点表是手写的小 JSON，键名唯一，这个精度足够指到人要看的那一行。
+def consumeEndpointsRawText = endpointsJsonFile.getText('UTF-8')
+def consumeEndpointLines = consumeEndpointsRawText.readLines()
+def quoted = { String name -> '"'.toString() + name + '"'.toString() }
+def findLine = { String name, int from } ->
+    int found = 0
+    consumeEndpointLines.eachWithIndex { line, i ->
+        if (found == 0 && i >= from && line.contains(quoted(name))) {
+            found = i + 1
+        }
+    }
+    return found
+}
+def lineOfKey = { String dotted ->
+    def parts = dotted.tokenize('.')
+    int from = 0
+    int found = 0
+    parts.each { part ->
+        found = findLine(part, from)
+        if (found > 0) {
+            from = found
+        }
+    }
+    return found > 0 ? ':' + found : ''
+}
+
+def failConsume = { String key, String why ->
+    throw new GradleException("[consume] config/endpoints.json${lineOfKey(key)} ${key} ${why}")
+}
+
+def consumeConfig = endpointsJson.consume
+if (!(consumeConfig instanceof Map)) {
+    failConsume('consume', '缺失：消费侧（sub2api）地址与超时的唯一来源')
+}
+def payConfig = endpointsJson.pay
+if (!(payConfig instanceof Map)) {
+    failConsume('pay', '缺失：支付侧（apia）地址与超时的唯一来源')
+}
+consumeConfig.keySet().each { k ->
+    if (!CONSUME_KEYS.contains(k.toString())) {
+        failConsume('consume.' + k, "是未知键（只认 ${CONSUME_KEYS.join(' / ')}）")
+    }
+}
+payConfig.keySet().each { k ->
+    if (!PAY_KEYS.contains(k.toString())) {
+        failConsume('pay.' + k, "是未知键（只认 ${PAY_KEYS.join(' / ')}）")
+    }
+}
+
+// base：https 或本机回环；不带路径 / 查询串 / 凭据；不命中废弃域
+def readConsumeBase = { String section, String propName, List<String> legacyHosts ->
+    def fromProp = providers.gradleProperty(propName).orNull?.trim()
+    def fromConfig = endpointsJson[section].baseUrl?.toString()?.trim()
+    def value = fromProp ?: fromConfig
+    if (!value) {
+        failConsume("${section}.baseUrl", "缺失（也没传 -P${propName}）：无法确定 ${section} 地址")
+    }
+    if (!(value ==~ CONSUME_BASE_PATTERN)) {
+        failConsume("${section}.baseUrl", "必须是「协议://主机[:端口]」，不带路径 / 查询串 / 凭据：'${value}'")
+    }
+    def isLoopback = value ==~ /http:\/\/(?:127\.0\.0\.1|localhost|\[::1\])(?::\d+)?/
+    if (!value.startsWith('https://') && !isLoopback) {
+        failConsume("${section}.baseUrl", "必须是 https（唯一例外是本机回环 127.0.0.1 / localhost）：'${value}'")
+    }
+    (CONSUME_DEPRECATED_MARKERS + legacyHosts).each { marker ->
+        if (value.contains(marker.toString())) {
+            failConsume("${section}.baseUrl", "命中废弃域黑名单 ${marker}（旧池域已下线）：'${value}'")
+        }
+    }
+    return value.toString()
+}
+
+def consumeLegacyHosts = (endpointsJson.legacyHosts instanceof List) ? endpointsJson.legacyHosts.collect { it.toString().trim() } : []
+def consumeBase = readConsumeBase('consume', 'consumeBase', consumeLegacyHosts)
+def payBase = readConsumeBase('pay', 'payBase', consumeLegacyHosts)
+if (consumeBase.replaceAll('/+$', '') == payBase.replaceAll('/+$', '')) {
+    failConsume('pay.baseUrl', "与 consume.baseUrl 相同（'${payBase}'）：消费侧与支付侧是两个后端，职责不能混")
+}
+if (providers.gradleProperty('consumeBase').present || providers.gradleProperty('payBase').present) {
+    logger.warn('[consume] 本次用 -P 覆盖了 config/endpoints.json：产物里的后端地址不在仓库里，发布后在 CHANGELOG 记一笔')
+}
+
+// 超时档位：正整数 + 单调递增（read ≤ write [≤ redeem]）。gradle 这一侧只校验、不进 BuildConfig ——
+// 前端用 __ENDPOINTS__.consume.timeoutMs，原生侧不需要毫秒数（请求都由 CapacitorHttp 发）。
+def checkConsumeTimeouts = { String section, List<String> keys ->
+    def timeouts = endpointsJson[section].timeoutMs
+    if (!(timeouts instanceof Map)) {
+        failConsume("${section}.timeoutMs", "缺失或不是对象（需要 ${keys.join(' / ')} 毫秒数）")
+    }
+    timeouts.keySet().each { k ->
+        if (!keys.contains(k.toString())) {
+            failConsume("${section}.timeoutMs.${k}", "是未知键（只认 ${keys.join(' / ')}）")
+        }
+    }
+    def values = [:]
+    keys.each { k ->
+        def raw = timeouts[k]
+        def ms = (raw instanceof Number) ? (raw as Number).intValue() : -1
+        if (ms < TIMEOUT_MIN_MS || ms > TIMEOUT_MAX_MS) {
+            failConsume("${section}.timeoutMs.${k}", "必须是 ${TIMEOUT_MIN_MS}–${TIMEOUT_MAX_MS} 之间的整数毫秒：'${raw}'")
+        }
+        values[k] = ms
+    }
+    for (int i = 1; i < keys.size(); i++) {
+        if (values[keys[i]] < values[keys[i - 1]]) {
+            failConsume("${section}.timeoutMs.${keys[i]}", "档位必须递增（${keys[i - 1]} ≤ ${keys[i]}）：${values[keys[i - 1]]} > ${values[keys[i]]}")
+        }
+    }
+}
+checkConsumeTimeouts('consume', CONSUME_TIMEOUT_KEYS)
+checkConsumeTimeouts('pay', PAY_TIMEOUT_KEYS)
+
+// ---------------------------------------------------------------------------
 // 签名配置：凭据从 android/keystore/keystore.properties 读取（该文件已 gitignore）
 // 若文件缺失（例如全新 clone），构建脚本 build-apk.sh 会自动生成 keystore + properties。
 //
@@ -307,6 +443,9 @@ android {
         // 源码不留字面量。换分发机 = 改那份 JSON 一处 + 重打包（Issue #269）。
         buildConfigField "String", "DL_PRIMARY", "\"${dlPrimaryBase}\""
         buildConfigField "String", "DL_FALLBACK", "\"${dlFallbackBase}\""
+        // 消费侧 / 支付侧（config/endpoints.json → BuildConfig，见文件顶部 #484 / #487 W1-A）
+        buildConfigField "String", "CONSUME_BASE", "\"${consumeBase}\""
+        buildConfigField "String", "PAY_BASE", "\"${payBase}\""
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.

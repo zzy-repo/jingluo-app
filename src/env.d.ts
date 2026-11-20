@@ -29,7 +29,9 @@ declare const __APP_VERSION_CODE__: number
  *   - `legacyHosts`   已下线主机重写表（apiConfig.ts 的 LEGACY_HOSTS）
  *   - `dlPrimaryBase` / `dlFallbackBase` 分发首选机 / 回退机（updateManifest.ts 的
  *     PRIMARY_RELEASE_BASE / FALLBACK_RELEASE_BASE，Issue #269）
- * 源码里不许再出现地址字面量：`pnpm check:ip` / `pnpm check:endpoints` 会拦。
+ *   - `consume`       消费侧（sub2api）：base / 两套路径前缀 / 三档超时（services/consume，Issue #484）
+ *   - `pay`           支付侧（apia）：base / 两档超时（只负责买卡，Issue #482 定调）
+ * 源码里不许再出现地址字面量：`pnpm check:ip` / `pnpm check:endpoints` / `pnpm check:consume-api` 会拦。
  * 非打包环境（`node --test` 直接 import .ts）由 tests/helpers/injected.mjs 兜底注入。
  */
 declare const __ENDPOINTS__: {
@@ -39,6 +41,23 @@ declare const __ENDPOINTS__: {
   readonly legacyHosts: readonly string[]
   readonly dlPrimaryBase: string
   readonly dlFallbackBase: string
+  /**
+   * 消费侧（sub2api，Issue #484 / #487 W1-A）：`services/consume/**` 的**唯一**地址来源。
+   * `baseUrl` 同时承载两套路由：`apiV1Prefix`（JWT 通道）与 `gatewayPrefix`（sk- Key 通道），
+   * 两者之间**没有重写规则**，不许把 `/api/v1` 当 `/v1` 用。
+   * 超时也只从这里取（调用点不许写死毫秒数）。
+   */
+  readonly consume: {
+    readonly baseUrl: string
+    readonly apiV1Prefix: string
+    readonly gatewayPrefix: string
+    readonly timeoutMs: { readonly read: number; readonly write: number; readonly redeem: number }
+  }
+  /** 支付侧（apia）：套餐 / 收款页 / 订单 / 卡密溯源，只负责买卡（Issue #482 定调） */
+  readonly pay: {
+    readonly baseUrl: string
+    readonly timeoutMs: { readonly read: number; readonly write: number }
+  }
 }
 
 /** Prism 语言包通过副作用注册到全局 Prism */
