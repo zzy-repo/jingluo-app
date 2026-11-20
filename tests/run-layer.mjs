@@ -128,6 +128,10 @@ const UNIT_SOLO = new Set([
   'quota-exhausted.test.mjs', 'feedback-export.test.mjs', 'legacy-bundle-target.test.mjs',
   // 读仓库/产物文件、起真实静态服务
   'matrix-config.test.mjs', 'shot-mobile.test.mjs',
+  // #553（vision 验收）：`imageSource.probeAutoOrient()` 的探测结果是**模块级缓存**（一个进程只探一次），
+  // 而这两个文件一个要「引擎会自动应用 EXIF」（83 档）、一个要「不会」（79 档）。并进批次时后一个会读到
+  // 前一个探到的结论 —— 实测批内红、单跑绿（正是本清单开头那条「吃到前一个文件的替身」）。单列最诚实。
+  'vision-acceptance-553.test.mjs', 'vision-exif-manual-553.test.mjs',
 ].map((s) => s))
 
 /**
