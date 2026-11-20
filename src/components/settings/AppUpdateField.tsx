@@ -1,3 +1,4 @@
+import { registerPlugin } from '@capacitor/core'
 import { useEffect, useRef, useState } from 'react'
 import { Button } from '../base/Button.js'
 import { Modal } from '../base/Modal.js'
@@ -82,6 +83,24 @@ const snapshotText = (at: number): string => {
 
 /** 失败兜底里最多列几条：够让用户认出「上次看到过哪个版本」，也不至于把弹窗撑爆 */
 const CACHE_PREVIEW_ROWS = 5
+
+/**
+ * 原生侧「App 内嵌浏览器」：与 #331 的「前往购买」同一个插件（`@capacitor/browser`）。
+ *
+ * 这里刻意**不** `import('@capacitor/browser')`：那个包的 web 实现 `extends WebPlugin`，
+ * 会把 `WebPlugin` 这个 `@capacitor/core` 导出拉进打包图 —— 而域10 / #373 的 harness 用
+ * `tests/fixtures/<域>/capacitor-mock.ts` 顶替 `@capacitor/core`（只有 Capacitor / registerPlugin /
+ * CapacitorHttp 三个导出），一旦进图就是构建期 `export 'WebPlugin' was not found`，整批集成用例红。
+ *
+ * `registerPlugin('Browser')` 与官方 wrapper 内部做的事完全一样（Android 侧
+ * `android/capacitor.settings.gradle` 已 include `:capacitor-browser`，原生插件真的在），
+ * 但不需要把 web 实现打进产物；网页预览下这个按钮根本不会渲染。
+ */
+/** 只用到 `open` 一个方法（本文件是 .tsx，泛型写法会被当成 JSX，所以用类型别名 + 断言） */
+interface NativeBrowserPlugin {
+  open(options: { url: string; presentationStyle?: string }): Promise<void>
+}
+const nativeBrowser = registerPlugin('Browser') as unknown as NativeBrowserPlugin
 
 /** Update operations are isolated from history, API settings and feedback transport. */
 export const AppUpdateField = () => {
@@ -434,9 +453,9 @@ export const AppUpdateField = () => {
    */
   const openManualDownload = async () => {
     try {
-      const { Browser } = await import('@capacitor/browser')
-      await Browser.open({ url: manual.url, presentationStyle: 'popover' })
+      await nativeBrowser.open({ url: manual.url, presentationStyle: 'popover' })
     } catch {
+      // 插件缺失（旧壳子）/ 打不开：留在弹窗里说清楚，不整页跳走
       setMessage(t('updateManualOpenFailed'))
     }
   }
