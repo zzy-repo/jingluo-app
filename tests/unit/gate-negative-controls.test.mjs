@@ -9,8 +9,9 @@
 //   N1 `type`（tsc -p tsconfig.json）       —— fixture 里放必错 .ts → 拷进 src/ → tsc 必红
 //   N2 `lint`（oxlint src rspack.config.ts）—— fixture 里放已知 lint 违规 → 拷进 src/ → oxlint 必红
 //   N3 `build`（node scripts/build.mjs）     —— 往**仓库临时副本**注入语法错模块并让 entry 真的 import
-//   N4 `check:test-layout`                   —— 造一个跑不到的用例（层级目录里的子目录）→ 必红
+//   N4 `check:test-layout`                   —— 造跑不到的用例（层级目录里的子目录 + #415 白名单目录里同样建子目录）→ 必红
 //   N5 `check:test-duplication`              —— 复制整份用例文件 → 必报「逐字重复」
+//   N7 `test:dl-release`（#415 接线的那一步）—— 往 deploy/dl-release/test 塞一条必红用例 → 入口必须 exit≠0，删掉后 exit 0
 //
 // 统一模板（#369 第 4 条要求，四拍，全文件只用这一套；实现在 tests/gates/lib/gate-negative-harness.mjs）：
 //
@@ -60,6 +61,8 @@ import {
 const PROBE_TYPE = 'src/__gate-neg-type-probe.ts'
 const PROBE_LINT = 'src/__gate-neg-lint-probe.ts'
 const PROBE_LAYOUT_DIR = 'tests/unit/__gate-neg-layout-probe'
+/** #415：白名单目录（不在 tests/ 下）里的注入点 —— 白名单不等于免检，所以它也要有对照 */
+const PROBE_LAYOUT_WHITELIST_DIR = 'deploy/dl-release/test/__gate-neg-layout-probe'
 const PROBE_DUP_COPY = 'tests/unit/__gate-neg-dup-copy.test.mjs'
 /** 「复制整份用例」的源文件：110 行、无 #362 域声明、改它的人会顺手看到这里 */
 const DUP_SOURCE = 'tests/unit/check-ip-version.test.mjs'
@@ -115,17 +118,30 @@ const ROWS = [
     gate: 'check:test-layout',
     script: 'check:test-layout',
     scriptExpect: /^node scripts\/check-test-layout\.mjs$/,
-    what: '造一个跑不到的用例：tests/unit/__gate-neg-layout-probe/probe.test.mjs（层级目录里的子目录）',
-    artifact: `${PROBE_LAYOUT_DIR}/probe.test.mjs`,
+    what:
+      '造两个跑不到的用例：tests/unit/__gate-neg-layout-probe/probe.test.mjs（层级目录里的子目录）+ '
+      + 'deploy/dl-release/test/__gate-neg-layout-probe/probe.test.mjs（#415 的白名单目录里建子目录）',
+    artifact: `${PROBE_LAYOUT_DIR}/probe.test.mjs + ${PROBE_LAYOUT_WHITELIST_DIR}/probe.test.mjs`,
     inject: () => {
       const dir = path.join(ROOT, PROBE_LAYOUT_DIR)
       cpSync(path.join(FIXTURES, 'layout/unreachable-probe'), dir, { recursive: true })
-      return () => rmSync(dir, { recursive: true, force: true })
+      // #415：白名单目录（deploy/dl-release/test，由 run-layer 的 server 层枚举）**也不是免检区**：
+      // 里面建子目录同样跑不到（run-layer 用非递归 readdir），必须照样报落位 + 孤儿。
+      const whitelistDir = path.join(ROOT, PROBE_LAYOUT_WHITELIST_DIR)
+      cpSync(path.join(FIXTURES, 'layout/unreachable-probe'), whitelistDir, { recursive: true })
+      return () => {
+        rmSync(dir, { recursive: true, force: true })
+        rmSync(whitelistDir, { recursive: true, force: true })
+      }
     },
     // #393 是手工验的这条（造未登记测试文件 → exit 1），这里把它固化：
     // 两条硬规则都要报出来（落位 + 孤儿），只报一条说明另一条规则死了。
+    // #415 起再加一处白名单目录的注入 —— 白名单（EXTRA_TEST_DIRS）是「允许目录存在」，
+    // 不是「这个目录里不检查」，所以它的违规也必须在这条对照里露头。
     red: new RegExp(
       `\\[layer-placement\\] ${PROBE_LAYOUT_DIR}/probe\\.test\\.mjs[\\s\\S]*\\[orphan\\] ${PROBE_LAYOUT_DIR}/probe\\.test\\.mjs`
+      + `[\\s\\S]*\\[layer-placement\\] ${PROBE_LAYOUT_WHITELIST_DIR}/probe\\.test\\.mjs`
+      + `[\\s\\S]*\\[orphan\\] ${PROBE_LAYOUT_WHITELIST_DIR}/probe\\.test\\.mjs`
     ),
   },
   {
@@ -312,6 +328,14 @@ const REGISTRY = {
   'check:redact': { where: '.github/workflows/ci.yml', kind: 'ci', what: 'CI 跑 `check-redact.mjs --selftest`（脱敏器换成恒等函数必须红）' },
   'check:test-layout': { where: 'tests/unit/gate-negative-controls.test.mjs', kind: 'inject', what: '造一个跑不到的用例（孤立子目录）' },
   'check:test-duplication': { where: 'tests/unit/gate-negative-controls.test.mjs', kind: 'inject', what: '整份复制一份用例文件' },
+  // #415：CI 新增的 `pnpm run test:dl-release` 是「跑用例」而不是扫描器，但它同样是「被换成软命令就永远绿」
+  // 的位置（`|| true` / 加 continue-on-error / glob 改窄到只剩一个文件）。所以按同一套四拍：
+  // 塞一条必红用例 → 入口必须 exit≠0 → 删掉 → exit 0（N7）。
+  'test:dl-release': {
+    where: 'tests/unit/gate-negative-controls.test.mjs',
+    kind: 'inject',
+    what: '往 deploy/dl-release/test 拷一条必红用例（fixture: dl-release/failing-probe）→ 入口必须 exit≠0，删掉后 exit 0',
+  },
   type: { where: 'tests/unit/gate-negative-controls.test.mjs', kind: 'inject', what: 'fixture 里的 TS2322 拷进 src/' },
   lint: { where: 'tests/unit/gate-negative-controls.test.mjs', kind: 'inject', what: 'fixture 里的 debugger 拷进 src/' },
   'build:internal': { where: 'tests/unit/gate-negative-controls.test.mjs', kind: 'inject', what: '临时副本里注入语法错模块并真的 import（N3）' },
@@ -380,6 +404,45 @@ const ciGates = () => {
   const ci = readFileSync(path.join(ROOT, '.github/workflows/ci.yml'), 'utf8')
   return [...new Set([...ci.matchAll(/run:\s*pnpm run ([a-z0-9:.-]+)/gi)].map((m) => m[1]))]
 }
+
+/**
+ * N7（#415）：`test:dl-release` —— CI 里那一步真的会红吗？
+ *
+ * 四拍与 N1/N2/N4/N5 同模板，只是注入物是「一条必然失败的用例」：入口是
+ * `node --test deploy/dl-release/test/*.test.mjs`，多一份必红文件退出码就必须非 0。
+ * 这条对照同时钉住三件容易悄悄发生的事：入口被加 `|| true`、被塞 `continue-on-error`、
+ * 被改窄成只跑某一个文件（那样注入的探针根本不会被跑到 → 正例红）。
+ */
+test('N7 test:dl-release：塞一条必红用例 → 34 条那个入口必须 exit≠0，删掉后必须 exit 0', () => {
+  const PROBE = 'deploy/dl-release/test/__gate-neg-dl-release-probe.test.mjs'
+  /**
+   * 这一步的特殊之处：被测命令**自己就是 `node --test`**。父 runner 会在环境里留下
+   * `NODE_TEST_CONTEXT`，子进程看到它就以为「我在测试运行器里被递归调用」，直接
+   * `skipping running files` 并 exit 0 —— 四拍会全部失真（正例绿、注入也绿 = 对照失效）。
+   * 所以在 spawn 之前把它摘掉，本拍结束后原样还回去（只影响本进程的这几百毫秒）。
+   */
+  const saved = process.env.NODE_TEST_CONTEXT
+  delete process.env.NODE_TEST_CONTEXT
+  try {
+    assertNegativeControl({
+      id: 'N7',
+      gate: 'test:dl-release',
+      script: 'test:dl-release',
+      scriptExpect: /^node --test deploy\/dl-release\/test\/\*\.test\.mjs$/,
+      what: `把 tests/gates/fixtures/dl-release/failing-probe.test.mjs 拷成 ${PROBE}`,
+      artifact: PROBE,
+      inject: () => {
+        copyFixture('dl-release/failing-probe.test.mjs', PROBE)
+        return () => rmSync(path.join(ROOT, PROBE), { force: true })
+      },
+      // node --test 的 spec reporter 打「ℹ fail 1」、tap reporter 打「# fail 1」，两种都认
+      red: /(?:#|ℹ) fail [1-9]/,
+    })
+  } finally {
+    if (saved === undefined) delete process.env.NODE_TEST_CONTEXT
+    else process.env.NODE_TEST_CONTEXT = saved
+  }
+})
 
 test('N6 每道 CI 门禁都登记了负向对照（新增门禁不登记就会红）', () => {
   const gates = ciGates()

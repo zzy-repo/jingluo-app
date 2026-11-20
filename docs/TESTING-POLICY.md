@@ -103,6 +103,7 @@ npm run test:integration -- --baseline          # 集成全量与基线比对，
 | 改一个 `.ts` 逻辑 | `tests/which.mjs --git --layer unit` | < 20s |
 | 改 UI / 设置页 / 渠道 | `tests/which.mjs --git`（域内 1~2 个集成） | 1~2min |
 | 改构建脚本 / 产物注入 | `internal-build` + `auto-title` | 2~3min |
+| 改 `deploy/dl-release/`（发布服务端 / APK 门禁 / 变体） | `pnpm run test:dl-release`（34 条）或 `node tests/run-layer.mjs server` | < 15s |
 | **新增 / 修改一道 CI 门禁** | `node tests/run-layer.mjs unit --only gate-negative-controls`（先看第 9 节） | < 30s |
 | 合并候选 | L0 + L1 | < 5min |
 | 发版前一次 | `npm test` + `npm run test:integration -- --baseline` | 10~15min |
@@ -159,7 +160,7 @@ npm run test:integration -- --baseline          # 集成全量与基线比对，
 
 所以：**用例进 `tests/unit/`（`run-layer` 枚举得到、CI 每次跑），必错输入与骨架进 `tests/gates/`。**
 
-### 9.4 现状清单（2026-11-20，ci.yml 里的 19 道门禁）
+### 9.4 现状清单（2026-11-20，ci.yml 里的 20 道门禁）
 
 > 口径：ci.yml 里每一条 `run: pnpm run <gate>` 算一道。单元层那一步是 `run: pnpm test`（整层），不在此列。
 
@@ -184,6 +185,7 @@ npm run test:integration -- --baseline          # 集成全量与基线比对，
 | `check:i18n`（#413 接线） | ✅ CI 注入 | CI 删掉 zh 的一条真实文案（`compatBootTitle`）→ R1「只在 en 里」必红，还原后绿 | `.github/workflows/ci.yml` |
 | `check:endpoints`（#413 接线） | ✅ CI 注入 | CI 往 `src/` 塞一份端点地址字面量（从 `config/endpoints.json` 读）→ 必红，删掉后绿 | `.github/workflows/ci.yml` |
 | `check:capabilities`（#413 接线） | ⚠️ **缺口** | 默认 warn 档永远 `exit 0`（10 处能力假设缺陷在案，见 `KNOWN_GAPS`）；`--strict` 档才有红可打 | `scripts/check-capabilities.mjs` |
+| `test:dl-release`（#415 接线） | ✅ 注入（#415） | 往 `deploy/dl-release/test` 拷一条**必红**用例 → `node --test deploy/dl-release/test/*.test.mjs` 必须 exit≠0，删掉后 exit 0（N7；同时钉住「入口被加 `\|\| true` / `continue-on-error` / glob 改窄」三种软化） | `tests/unit/gate-negative-controls.test.mjs` |
 
 「登记」不是给人看的注释：`tests/unit/gate-negative-controls.test.mjs` 的 `N6` 用例会读
 `.github/workflows/ci.yml`，**每出现一条 `run: pnpm run <gate>`，登记表里就必须有一条**，否则这个用例红，
@@ -325,3 +327,68 @@ npm run test:integration -- --baseline          # 集成全量与基线比对，
 
 **删条目的硬要求**：跑绿 ⇒ `--baseline` 会报 `FIXED?` 并要求删条目；反过来说，条目没删就等于没修好。
  (test: known-red 清零（7→1）+ flaky 自动登记 + 硬编码端口检查（#406）)
+
+---
+
+## 12. `server` 层与 `deploy/dl-release/test` 白名单（Issue #415）
+
+**一句话：`deploy/dl-release/test` 那 34 条用例现在有入口、有 CI 步骤、也有门禁盯着「会不会又被摘掉」。**
+
+### 12.1 接线前的状态（为什么这算一条 bug 而不是一条优化）
+
+`deploy/dl-release/test/*.test.mjs`（变体解析 / APK debuggable / 服务端 buildType / 上传契约矩阵）
+实测 34 pass，但三处入口全空：
+
+- 不在 `tests/run-layer.mjs` 的 `LAYERS` 里 → `node tests/run-layer.mjs <任何层>` 都跑不到；
+- CI 没有对应 step → PR 上不会出现它的红；
+- 结果：**全绿、零执行**。删掉这四个文件，没有任何人会收到信号（和 #368 的 `regression` 层、
+  #365 的 `integration` 层是同一个病）。
+
+### 12.2 两条路，选了哪条（以及为什么不选另一条）
+
+| 方案 | 做法 | 代价 |
+| --- | --- | --- |
+| A 搬进 `tests/<层>/`（推荐给**新**用例） | 把 4 个文件挪到 `tests/server/` 或 `tests/integration/` | 这 4 个文件与被测实现**同目录**：`import ... from '../apk-manifest.mjs'`、`path.resolve(HERE, '..', 'server.mjs')` 起真服务、读同目录 `xmltree-fixtures/`（真 aapt2 输出）。搬家要同时改断这些相对引用 + `deploy/README.md` + 域10 覆盖文档（`docs/testing/coverage/` 下）的路径引用 |
+| **B 留在原地 + 白名单 + 真入口（本单采用）** | `LAYERS += server`；`LAYER_DIRS.server` 指向 `deploy/dl-release/test`；`check-test-layout.mjs` 开一条带理由的 `EXTRA_TEST_DIRS` 条目并**一起扫描**该目录 | 多一条白名单条目；用例目录不在 `tests/` 下，`test:affected` 的域映射暂时覆盖不到（见 12.5） |
+
+选 B 的判据：**A 的收益只是目录好看，代价是把一批「现在能跑」的相对路径改成「改一处就断」**。
+但 B 有一个前提条件 —— 白名单**不许是免检区**，所以：
+
+- 白名单目录被 `check-test-layout.mjs` 一起扫（`walkTests` 追加根），孤儿 / 落位 / 命名三条硬规则照判；
+- 新增一条硬规则 `layer-unwired`：白名单目录名下的 `server` 层从 `LAYERS` 里消失 → 直接红
+  （「用例在这、层没了」和「层在这、用例没人枚举」是同一种失效，不许降级成 warning）；
+- 负向对照（`tests/unit/gate-negative-controls.test.mjs` 的 N4）现在往**两处**注入：
+  `tests/unit/__gate-neg-layout-probe/`（层级目录里的子目录）和
+  `deploy/dl-release/test/__gate-neg-layout-probe/`（白名单目录里的子目录），
+  两处都必须报 `layer-placement` + `orphan`。白名单目录变免检，N4 会红。
+- CI 那一步本身也有负向对照：同一文件的 **N7** 往 `deploy/dl-release/test` 拷一条必红用例，
+  断言 `pnpm run test:dl-release` exit≠0、删掉后 exit 0（顺带钉住「入口被加 `|| true` /
+  `continue-on-error` / glob 改窄」，见第 9.4 节的登记表）。
+
+### 12.3 两个入口（都跑同一批 34 条）
+
+| 入口 | 命令 | 用途 |
+| --- | --- | --- |
+| 层入口（测试体系的统一口径） | `node tests/run-layer.mjs server`（也含在 `--all` 里） | 枚举口径 / `--list` / `--case` / `--json` / flaky 重跑与留痕；CI 的布局门禁就是实跑它的 `--list` 判孤儿 |
+| npm script（CI 用这个） | `pnpm run test:dl-release`（= `node --test deploy/dl-release/test/*.test.mjs`） | 直接打印 `# pass 34`；纯 Node、不依赖 `dist`、不开浏览器 |
+
+CI 位置：`.github/workflows/ci.yml` 的 `checks` job，紧跟 `check:manifest` 之后（该 job 里其余都是
+< 10s 的静态检查，这一步实测 ~3-7s，不占 L1 的 4 分钟预算）。**没有 `continue-on-error`**。
+`server` 层不进 L1 分片：它不需要产物、也没有浏览器，进分片只会给 6 个 job 各加一次 checkout 成本。
+
+### 12.4 跑法与红线
+
+- 单跑这批用例：`pnpm run test:dl-release`；只跑某一份：`node tests/run-layer.mjs server --only variant`。
+- 单文件直跑仍然有效：`node --test deploy/dl-release/test/variant.test.mjs`（用例自己可独立执行）。
+- **不许**为了让它变绿删掉 `package.json` 的 `test:dl-release`、`LAYERS` 里的 `server`、CI 那一步或
+  `EXTRA_TEST_DIRS` 条目：前两处有 L0 断言（`tests/unit/domain10-gate-wiring.test.mjs` W2 +
+  用例末尾那条「本目录有执行入口」），第三处有布局门禁（`layer-unwired` / 孤儿），删任何一处都会红。
+
+### 12.5 已知缺口（不在本单范围，别当成已覆盖）
+
+1. `check-test-duplication` 只扫 `tests/{unit,integration,regression,e2e,device}`，
+   `deploy/dl-release/test` **不在扫描范围**（`tests/server` 若将来出现同理）——这两份 APK 最小编码器
+   本来就同源，接进重复门禁要先抽 helper，属独立批次。
+2. `tests/domain-map.json` + `test:affected` 的层推断基于 `tests/<层>/` 前缀，覆盖不到 `deploy/`；
+   `deploy/dl-release/**` 的改动目前只能靠 `test:dl-release` 手动/CI 跑。
+3. `offline-check.sh`（8 组手工断言，要真 APK + 真 aapt2）仍是手工，不在任何自动入口里。

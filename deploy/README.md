@@ -53,7 +53,9 @@ ssh aliyun 'systemctl is-active dl-release; journalctl -u dl-release -n 5 --no-p
 
 ```bash
 node --check deploy/dl-release/server.mjs
-node --test deploy/dl-release/test/*.test.mjs
+# 34 条用例（变体解析 / APK debuggable / 服务端 buildType / 上传契约矩阵），两种跑法等价：
+node --test deploy/dl-release/test/*.test.mjs     # 或 pnpm run test:dl-release
+node tests/run-layer.mjs server                   # 统一 runner（CI 的布局门禁就是实跑它的 --list 判孤儿）
 
 # 清单结构 / 新字段契约
 node scripts/validate-releases-manifest.mjs deploy/dl-release/fixtures/live-2026-11-18.json

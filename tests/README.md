@@ -80,17 +80,25 @@ npm run test:e2e
 npm run test:device
 npm run test:golden     # = node tests/run-golden.mjs（黄金回归：每域 1 条主路径，≤5 分钟，#404）
 npm run test:all        # unit → regression → integration
+node tests/run-layer.mjs server   # = deploy/dl-release/test 那 34 条（#415 新增的层，见下）
+pnpm run test:dl-release          # 同上，直接 node --test（CI 用的就是这条）
 ```
 
 > `regression/` 这一层在 #368 之前是**死的**：既不在 `run-layer` 的 `LAYERS` 里，CI 也不引用，
 > 于是 `issue-135` 长期 import 已删除的 `startCheckout`、`issue-38`/`issue-79` 各自静默失效都没人发现。
 > 现在它进了 `LAYERS`（`node tests/run-layer.mjs regression` 可跑，11 个文件 ~3.5s），
 > CI 的自动触发点仍然留给 #365。
+>
+> `server/`（#415）是**唯一一层没有 `tests/server/` 目录**的层：`LAYER_DIRS.server` 指向
+> `deploy/dl-release/test/`（变体解析 / APK debuggable / 服务端 buildType / 上传契约矩阵，34 条）。
+> 不搬家的原因是用例与被测实现同目录（`../apk-manifest.mjs`、同目录 `xmltree-fixtures/`、真 server 进程），
+> 布局门禁为此开了一条带理由的白名单条目（`scripts/check-test-layout.mjs` 的 `EXTRA_TEST_DIRS`），
+> 但白名单**不免检**：目录照样被扫，枚举不到的照判孤儿。完整取舍见 `docs/TESTING-POLICY.md` 第 12 节。
 
 `run-layer.mjs` 的用法：
 
 ```bash
-node tests/run-layer.mjs <unit|integration|regression|e2e|device|all>
+node tests/run-layer.mjs <unit|integration|regression|server|e2e|device|all>
 node tests/run-layer.mjs integration --only motion   # 只跑文件名含 motion 的
 node tests/run-layer.mjs integration --list          # 只列出要跑哪些
 node tests/run-layer.mjs integration --bail          # 第一个失败就停
@@ -106,6 +114,7 @@ diagnostics-contract / auto-title）**不吃外部 `APP_URL`**，runner 会把 `
 | --- | --- | --- | --- |
 | unit | `npm test` | < 5s | 无（不启浏览器，不需要产物） |
 | golden | `npm run test:golden` | ~6s（4 条并行，预算 5 分钟） | 标准产物 `pnpm build` + chromium；**缺产物直接红**（不像 L1 会 SKIP(env)），说明见 `tests/golden/README.md` |
+| server | `node tests/run-layer.mjs server`（= `pnpm run test:dl-release`） | ~7s（4 个文件 / 34 条） | 无（纯 Node，不启浏览器、不读产物、不要 aapt2 —— 假 aapt2 只回放文本） |
 | integration | `npm run test:integration` | 8~15 分钟（18 个文件） | `npx playwright install chromium`；**标准构建**（`pnpm build` 后把 `dist/` 挂在 `APP_URL`，默认 `http://127.0.0.1:5181`）；内测类用例还要一份**内测构建**在 `dist/`（或 `DIST_DIR` 指定） |
 | e2e | `npm run test:e2e` | 1~2 分钟 | `E2E_API_KEY`、真上游可达、`dist/` 已部署在 `E2E_APP_URL`；`diagnostics-upload` 还要能访问反馈后端 |
 | device | `npm run test:device` | 3~8 分钟 | 已启动的 AVD（`-memory 1280`）+ `adb` + 一份装好的 APK |
@@ -161,8 +170,8 @@ E2E_API_KEY=sk-xxx node tests/e2e/real-upstream.test.mjs
 7. **不要引入 jest/vitest/mocha**：`unit` 层用自建 `ok()` 或 `node:test` 都行，runner 两种都支持。
 8. **门禁的负向对照放 `unit/`，不要新开目录**：`tests/gates/` 只放必错输入（fixture）与四拍骨架
    （`tests/gates/lib/gate-negative-harness.mjs`），用例本体是 `unit/gate-negative-controls.test.mjs`。
-   新开 `tests/gates/*.test.mjs` 会被 `check:test-layout` 判红（只允许五个层级目录），
-   而且 `run-layer` 枚举不到 = 写了没人跑。规矩正文见 `docs/TESTING-POLICY.md` 第 9 节。
+   新开 `tests/gates/*.test.mjs` 会被 `check:test-layout` 判红（只允许五个层级目录 + 一条
+   `EXTRA_TEST_DIRS` 白名单），而且 `run-layer` 枚举不到 = 写了没人跑。规矩正文见 `docs/TESTING-POLICY.md` 第 9 / 12 节。
 
 ## 6. 常见坑
 

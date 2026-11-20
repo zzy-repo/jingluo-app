@@ -116,6 +116,21 @@ jobs:
       - name: 清单 fixture 校验（check:manifest）
         run: pnpm run check:manifest
 
+      # ─────────────── Issue #415：把 deploy/dl-release/test 的 34 条用例接进流水线 ───────────────
+      # 同一类教训的第四处（前有 #368 的 regression 层、#365 的 integration 层、#413 的门禁）：
+      # `deploy/dl-release/test` 的 34 条用例（variant 9 / apk-manifest 9 / server-buildtype 6 /
+      # domain10-server-contract 10）一直**全绿但零触发点** —— 不在 `run-layer` 的 LAYERS、CI 无步骤，
+      # 删掉它们不会有任何红。
+      # 接线方式（#415 的取舍见 docs/TESTING-POLICY.md 第 12 节）：
+      #   · 用例留在原地（与被测实现 deploy/dl-release/*.mjs 同目录，相对引用搬不动）；
+      #   · `tests/run-layer.mjs` 的 LAYERS 新增 `server` 层（LAYER_DIRS 指向该目录），
+      #     `node tests/run-layer.mjs server` 可跑；
+      #   · `scripts/check-test-layout.mjs` 有一条带理由的白名单条目，把「枚举不到」判红；
+      #   · 这一步按 `pnpm run test:dl-release`（= `node --test deploy/dl-release/test/*.test.mjs`）跑，
+      #     纯 Node、无浏览器、不依赖 dist，实测 ~3-7s。不加 continue-on-error：真红必须红。
+      - name: dl-release 用例（deploy/dl-release/test，34 条，纯 Node）
+        run: pnpm run test:dl-release
+
       # ─────────────── Issue #413：把已经存在但没人按的那几道门禁接进流水线 ───────────────
       # 和 check:manifest 同一条教训：脚本能判红 ≠ 有人在跑。#314 的 i18n 门禁建好后，
       # 因为没接线，main 上 17 个 compatBoot* 孤立 key 一路绿着漂到 #421 验收才被发现。

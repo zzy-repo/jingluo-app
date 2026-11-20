@@ -89,6 +89,20 @@ const ROWS = [
         files.includes('domain10-server-contract.test.mjs'),
         `${dir} 里缺域10 的上传契约矩阵（F10-17/18/19/20 的断言在这里）`
       )
+      // #415：npm script 只证明「有人能手跑」，还要证明它在**测试体系的枚举口径**里 ——
+      // `run-layer` 的 LAYERS 含 `server`，且该层目录就是本目录（LAYER_DIRS）。
+      // 少了这一段，`check:test-layout` 的孤儿判定（它实跑 --list）会把这里判红。
+      const runner = read('tests/run-layer.mjs')
+      assert.match(
+        runner,
+        /const LAYERS = \[[^\]]*'server'[^\]]*\]/,
+        'tests/run-layer.mjs 的 LAYERS 里应有 server 层（#415）—— 去掉它这批用例又回到「写了没人跑」'
+      )
+      assert.match(
+        runner,
+        /server: path\.join\(ROOT, 'deploy\/dl-release\/test'\)/,
+        'run-layer.mjs 的 LAYER_DIRS 应把 server 层指向 deploy/dl-release/test（#415）'
+      )
     },
   },
   {

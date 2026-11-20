@@ -19,7 +19,7 @@
 | --- | --- | --- | --- |
 | `tests/unit` | 纯 Node，零浏览器 | **L0** | 直接 `import` 源码 `.ts`；也能 `spawnSync` 跑门禁脚本 |
 | `tests/integration` | Playwright + 真实 dist + 打桩上游 | **L1** | 按 #362 语义多已具 L2 性质（真实 DOM） |
-| `tests/e2e`、`tests/device`、`deploy/dl-release/test/*`、手工 `offline-check.sh` | 真上游 / AVD / 真 APK + aapt2 / 起真服务 | **L3 或手工** | `deploy/dl-release/test` 其实是"零 Android SDK 可跑的 L1"，但当前**无人执行**（见 §3.2） |
+| `tests/e2e`、`tests/device`、手工 `offline-check.sh` | 真上游 / AVD / 真 APK + aapt2 / 起真服务 | **L3 或手工** | `deploy/dl-release/test/*` 其实是"零 Android SDK 可跑的 L1"，**#415 已接进 `run-layer` 的 `server` 层 + CI 的 `pnpm run test:dl-release`**（取舍见 `docs/TESTING-POLICY.md` §12） |
 
 `✓` 该层有断言；`部分` 只覆盖部分分支；`—` 无；`需真机/手动` 只有 L3 手段；`⁺` = 用例存在但**未接任何执行入口**（"写了但没人跑"）。
 
@@ -84,10 +84,10 @@
 | — | `check:identity` | 身份字面量 / 证书 / 明文更新传输 | **未接线** | **无** | ❌ | 与 F10-02 裸 HTTP 决策耦合，改坏了不红 |
 | — | `check:apk` | debuggable | 仅 `release.yml` + 人工 | 部分（`apk-manifest.test.mjs` 有真 debuggable 反例，未接线） | △⁺ | 本地门禁无人跑 |
 | — | `check:keystore` / `check:icon` / `check:endpoints` / `check:limits` / `check:docs` / `check:compat-baseline` | 各自领域 | **未接线** | 无 | ❌ | 只写在文档里 |
-| — | `deploy/dl-release/test/*.test.mjs`（24 条，全绿） | 变体 / debuggable 解析 / 服务端 buildType + MANIFEST_DIRTY | **不在 `run-layer` 的 LAYERS，也不是 npm script，CI 无步骤** | 有（自带正反） | ❌⁺ | **本域最大的"写了但没人跑"** |
+| — | `deploy/dl-release/test/*.test.mjs`（34 条，全绿） | 变体 / debuggable 解析 / 服务端 buildType + MANIFEST_DIRTY + 上传契约矩阵 | **#415 已接线**：`run-layer` 的 `server` 层（`node tests/run-layer.mjs server`）+ CI `checks` job 的 `pnpm run test:dl-release`（紧跟 `check:manifest`） | 有（自带正反） | ✅ | 本域曾经最大的"写了但没人跑"，已成历史 |
 | — | `release:check` / `release:verify` | 版本号单一来源 / tag 一致 / 防降级前置 | 手工 | **无（零单测）** | ❌ | F10-21 / F10-22 的唯一实现，全裸奔 |
 
-**三句话结论**：① 真正"能自证"的门禁只有 5 道（G8–G12、G13）；② 本域最相关的 `check:identity` / `check:apk` / `release:check` 全裸奔；③ `deploy/dl-release/test` 24 条绿测试**不在任何执行入口**——今天谁把它删了都不会有人发现。
+**三句话结论**：① 真正"能自证"的门禁只有 5 道（G8–G12、G13）；② 本域最相关的 `check:identity` / `check:apk` / `release:check` 全裸奔；③ ~~`deploy/dl-release/test` 24 条绿测试不在任何执行入口~~ —— **#415 已修**：34 条进了 `run-layer` 的 `server` 层与 CI，且布局门禁（白名单不免检）+ `domain10-gate-wiring` W2 三重钉住入口，删任何一处都会红。
 
 ---
 
@@ -98,7 +98,7 @@
 | 现状 | 条目数 | 处置 | 之后 | 减 |
 | --- | --- | --- | --- | --- |
 | `tests/unit/app-update.test.mjs`（12）+ `update-failure.test.mjs`（8）+ `update-manifest-compat.test.mjs`（2）+ `releases-manifest-buildtype.test.mjs`（12） | 34 | 合并为 **`tests/unit/update-matrix.test.mjs`**：一张 `parseManifest/selectUpdate/releaseUrl/fetchManifest/classify` 矩阵（12 行），共享构造器；断言不删，只去重 | 12 | −22 |
-| `deploy/dl-release/test/{variant,apk-manifest,server-buildtype}.test.mjs` | 24 | 前两个（18 条）保留**不动**（纯函数 + 最小编码器，已被服务端用例复用）；只把它们**接进执行入口** | 24 | 0 |
+| `deploy/dl-release/test/{variant,apk-manifest,server-buildtype}.test.mjs` | 24 | 前两个（18 条）保留**不动**（纯函数 + 最小编码器，已被服务端用例复用）；只把它们**接进执行入口**（#415 已落地：`server` 层 + CI 步骤；实测该目录现为 34 条 = 这 24 条 + `domain10-server-contract` 的 10 条） | 34 | 0 |
 | `deploy/dl-release/test/offline-check.sh`（8 组手工断言） | 8（手工） | 其中 6 组（401 / 非 APK / 降级 409 / 变体冲突 409 / 幂等覆盖 / debuggable 拒收）**搬进 §3.2 的 N3**；脚本只留 2 条真 APK + 真 aapt2 的 L3 冒烟 | 2 | −6 |
 | `tests/integration/update-dialog-scroll.test.mjs` | 1 个自执行文件（无 `test()`，断言内联） | 滚动断言并入 N4，删掉 `DIST_DIR=dist-172` 孤岛（该目录不存在就直接抛错、且不在 `integration-baseline.json`） | 0 文件 | −1 文件 |
 

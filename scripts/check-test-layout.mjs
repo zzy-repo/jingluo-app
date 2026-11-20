@@ -25,6 +25,14 @@
  *      （archive-fixture / ours-upstream / mock-anthropic / ours-trail / input-row-baseline），
  *      根目录现在只剩目录；以后往根目录扔夹具，`--strict` 直接红。
  *
+ * #415 白名单（`EXTRA_TEST_DIRS`，**带理由、且不免检**）：
+ *   `deploy/dl-release/test/` 是唯一一个不在 `tests/` 下的用例目录（34 条：变体解析 / APK
+ *   debuggable / 服务端 buildType / 上传契约矩阵）。它此前属于「写了没人跑」——`run-layer` 的
+ *   LAYERS 不含它、CI 无步骤。两条路（搬家 vs 留原地开白名单），#415 选后者，理由写在
+ *   `EXTRA_TEST_DIRS` 的 `reason` 里。关键是**白名单不等于免检**：该目录现在也被扫进来，
+ *   里面的 `*.test.mjs` 必须被 `run-layer` 的 `server` 层枚举到，否则照样判 `orphan` 红；
+ *   LAYERS 里把 `server` 删掉则会命中硬规则 `layer-unwired`（不是 warning）。CI 步骤见 `.github/workflows/ci.yml`。
+ *
  * 基线（`tests/test-layout-baseline.json`，规则**只减不增**）：
  *   #408 之后基线已清空（孤儿 0 / 命名 0 / 落位 0，regression 层已由 #391 进 LAYERS），
  *   所以现在的口径是「违规一律红」；机制保留，是为了下次真有大面积存量时还能登记而不是关掉门禁。
@@ -60,6 +68,30 @@ const BASELINE_FILE = path.join(TESTS_DIR, 'test-layout-baseline.json')
 const ALLOWED_LAYERS = ['unit', 'integration', 'regression', 'device', 'golden']
 const OPTIONAL_LAYERS = ['e2e']
 
+/**
+ * #415：**唯一**一个不在 `tests/` 下的用例目录（白名单条目，必须带 `reason`）。
+ *
+ * 为什么不是「搬进 tests/」：这 34 条用例与被测实现同目录 —— `import ... from '../apk-manifest.mjs'`、
+ * `path.resolve(HERE, '..', 'server.mjs')` 起真服务、读同目录 `xmltree-fixtures/` 的真 aapt2 输出。
+ * 搬家要同时改断这些相对引用、`deploy/README.md` 与 `docs/testing/coverage/domain-10.md` 的路径，
+ * 而收益只是目录好看；代价是又制造一批「改了就跑不动」的路径。
+ *
+ * 但白名单**不是免检**：本目录被 `walkTests` 一起扫（孤儿 / 落位 / 命名三条硬规则照判），
+ * 且必须由一个真的 `LAYERS` 层枚举到（`layer` 字段）。所以「新增一个用例却没入口」照样红：
+ *   · 目录里多一个 `*.test.mjs` 但 `run-layer` 枚举不到 → `orphan`；
+ *   · 把 `server` 从 `run-layer.mjs` 的 LAYERS 里删掉 → `layer-unwired`（硬红）。
+ * 加第二个目录请先读 `docs/TESTING-POLICY.md` 第 12 节：默认答案是搬到 `tests/<层>/`。
+ */
+const EXTRA_TEST_DIRS = [
+  {
+    dir: 'deploy/dl-release/test',
+    layer: 'server',
+    reason:
+      '用例与被测实现 deploy/dl-release/*.mjs 同目录（相对 import / 同目录 xmltree-fixtures / 起真 server 进程），搬迁只会改断一批相对路径；'
+      + '入口由 run-layer 的 server 层提供（LAYERS += server，LAYER_DIRS 指向本目录），CI 步骤 pnpm run test:dl-release（#415）',
+  },
+]
+
 /** 域批次文件名的唯一合法形状：domain05-export-contract.test.mjs */
 const DOMAIN_NAME_RE = /^domain\d{2}-[a-z0-9][a-z0-9-]*\.test\.mjs$/
 /** 头部声明域批次（#362）的识别：前 15 行里同时出现 #362 与「域 3 / 域3」 */
@@ -67,7 +99,9 @@ const HEADER_LINES = 15
 const HEADER_DOMAIN_RE = /域\s*([0-9]{1,2})/g
 
 /** 硬规则（可基线化）：孤儿 / 落位 / 命名。fixture 散放单独算 warning。 */
-const HARD_RULES = new Set(['orphan', 'layer-placement', 'naming', 'naming-declared-domain'])
+// `layer-unwired`（#415）：白名单目录名下的 LAYERS 层被删掉 —— 和孤儿同级的硬红：
+// 「用例在这、层没了」和「层在这、用例没人枚举」是同一种失效（写了没人跑），不许降级成 warning。
+const HARD_RULES = new Set(['orphan', 'layer-placement', 'naming', 'naming-declared-domain', 'layer-unwired'])
 
 const rel = (file) => path.relative(ROOT, file).split(path.sep).join('/')
 
@@ -219,22 +253,41 @@ async function collectViolations(testFiles) {
     for (const file of listed.files) enumerated.add(file)
   }
 
+  // #415：白名单目录必须真的被某个 LAYERS 层枚举到。少了这一条，白名单就成了「免检区」：
+  // 目录扫进来、文件被判 orphan（因为没人枚举），但没人会注意到「层被删了」。
+  for (const extra of EXTRA_TEST_DIRS) {
+    if (!layers.includes(extra.layer)) {
+      violations.push({
+        rule: 'layer-unwired',
+        file: extra.dir,
+        detail:
+          `白名单目录 ${extra.dir} 名下的层 ${extra.layer} 不在 run-layer.mjs 的 LAYERS（${layers.join(' / ')}）里`
+          + ` —— 该目录的用例又变成「写了没人跑」。修法：把 ${extra.layer} 加回 LAYERS（并有 LAYER_DIRS 指向该目录）`,
+      })
+    }
+  }
+
   for (const file of testFiles) {
     const relPath = rel(file)
     const parts = relPath.split('/')
-    const layer = parts[1]
+    // #415：白名单目录按自己的前缀判定落位；其余文件仍按 tests/<层>/ 判定。
+    const extra = EXTRA_TEST_DIRS.find((entry) => relPath.startsWith(`${entry.dir}/`))
+    const layer = extra ? extra.layer : parts[1]
+    // 层级目录下的最大段数：tests/<层>/a.test.mjs = 3；deploy/dl-release/test/a.test.mjs = 4
+    const maxParts = extra ? extra.dir.split('/').length + 1 : 3
     // ---- 规则 2：落位 ----
-    if (!allowed.has(layer)) {
+    if (!extra && !allowed.has(layer)) {
       violations.push({
         rule: 'layer-placement',
         file: relPath,
-        detail: `目录 ${parts.slice(0, -1).join('/')} 不是合法层级（只允许 ${[...allowed].join(' / ')}）`,
+        detail: `目录 ${parts.slice(0, -1).join('/')} 不是合法层级（只允许 ${[...allowed].join(' / ')}`
+          + `${EXTRA_TEST_DIRS.length ? ` / 白名单 ${EXTRA_TEST_DIRS.map((entry) => entry.dir).join(' / ')}` : ''}）`,
       })
-    } else if (parts.length > 3) {
+    } else if (parts.length > maxParts) {
       violations.push({
         rule: 'layer-placement',
         file: relPath,
-        detail: `层级目录内不允许建子目录（run-layer 用非递归 readdir，${parts.slice(2, -1).join('/')} 里的用例跑不到）`,
+        detail: `层级目录内不允许建子目录（run-layer 用非递归 readdir，${parts.slice(maxParts - 1, -1).join('/')} 里的用例跑不到）`,
       })
     }
     // ---- 规则 1：孤儿 ----
@@ -301,6 +354,8 @@ const keyOf = (v) => `${v.rule}\u0000${v.file}`
 async function main() {
   const opts = parseArgs(process.argv.slice(2))
   const testFiles = await walkTests(TESTS_DIR)
+  // #415：白名单目录一起扫 —— 不扫就等于免检。扫进来的文件同样走孤儿 / 落位 / 命名三条硬规则。
+  for (const extra of EXTRA_TEST_DIRS) await walkTests(path.join(ROOT, extra.dir), testFiles)
   const { violations, layers, layerCounts, allowed, layerErrors } = await collectViolations(testFiles)
   const baseline = await readBaseline()
 
@@ -320,6 +375,10 @@ async function main() {
     .join(' / ')
   console.log(`  ${perLayer}（合计 ${[...new Set(Object.values(layerCounts))].reduce((a, b) => a + b, 0)} 个文件）`)
   console.log(`允许的层级目录：${allowed.map((l) => `tests/${l}`).join(' / ')}`)
+  // #415：白名单目录要显式打印（谁在 `tests/` 之外还有用例，一眼能看到，不用翻源码）
+  for (const extra of EXTRA_TEST_DIRS) {
+    console.log(`白名单用例目录：${extra.dir}（入口 = run-layer 的 ${extra.layer} 层；理由见 EXTRA_TEST_DIRS）`)
+  }
   console.log(`文件系统：tests/**/*.test.mjs 共 ${testFiles.length} 个\n`)
 
   const byRule = (rule) => hard.filter((v) => v.rule === rule)

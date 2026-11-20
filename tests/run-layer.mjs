@@ -26,8 +26,26 @@ const ROOT = path.resolve(TESTS_DIR, '..')
  * 已接线的层。#368：`regression` 补进来 —— tests/regression/ 那 11 个文件（纯 Node，无浏览器/网络）
  * 一直写好放在仓库里，却既不在 LAYERS 也不在 CI 引用里，等于整层从未执行；`issue-135` 因此
  * 死了很久（import 了 #331 已删除的 `startCheckout`）也没人发现。CI 接线见 #365。
+ *
+ * #415：`server` 补进来 —— `deploy/dl-release/test/` 的 34 条用例（变体解析 / APK debuggable /
+ * 服务端 buildType 门禁 / 上传契约矩阵）同样是「全绿但零入口」：不在 LAYERS、CI 无步骤。
+ * 这一层没有对应的 `tests/server/` 目录，用例目录由下面的 `LAYER_DIRS` 指到 deploy/ 下
+ * （为什么不搬：见那里的注释）。枚举口径与其它层一致，`node tests/run-layer.mjs server` 可跑。
  */
-const LAYERS = ['unit', 'integration', 'regression', 'e2e', 'device']
+const LAYERS = ['unit', 'integration', 'regression', 'server', 'e2e', 'device']
+/**
+ * #415：层级 → 用例目录。默认就是 `tests/<层>/`，唯一的例外是 `server`：
+ * `deploy/dl-release/test/*.test.mjs` 与被测实现（`deploy/dl-release/*.mjs`）**同目录** ——
+ * 用例按 `import ... from '../apk-manifest.mjs'`、`path.resolve(HERE, '..', 'server.mjs')` 取被测物，
+ * 并读同目录的 `xmltree-fixtures/` 真 aapt2 输出。搬进 `tests/` 要同时改断这些相对引用、
+ * `deploy/README.md` 与 `docs/testing/coverage/domain-10.md` 的路径，收益只是目录好看；
+ * 所以 #415 的取舍是「留在原地 + 让它真的被跑到」，而不是搬家。
+ * 与之配套：`scripts/check-test-layout.mjs` 的 `EXTRA_TEST_DIRS` 有一条同名白名单条目
+ * （带理由、不可免检）—— 该目录里新增一个用例却没被这一层枚举到，照样判 orphan 红。
+ */
+const LAYER_DIRS = { server: path.join(ROOT, 'deploy/dl-release/test') }
+/** 某一层对应的用例目录（默认 tests/<层>，`server` 见 LAYER_DIRS） */
+const layerDirOf = (name) => LAYER_DIRS[name] ?? path.join(TESTS_DIR, name)
 const SELF_SERVED = new Set([
   'internal-build', 'motion', 'mode-switch', 'diagnostics', 'diagnostics-contract', 'auto-title',
   'provider-channels', 'feedback-export', 'mode-switch-plain',
@@ -316,8 +334,9 @@ async function main() {
   }
   if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1) throw new Error('timeout-ms must be a positive integer')
   if (jobs !== undefined && (!Number.isSafeInteger(jobs) || jobs < 1)) throw new Error('jobs must be a positive integer')
-  const plan = layer === 'all' ? ['unit', 'regression', 'integration'] : [layer]
-  if (plan.some((name) => !LAYERS.includes(name))) throw new Error('Usage: node tests/run-layer.mjs <unit|integration|regression|e2e|device|all> [--only substring] [--case exact-path] [--shard 1/3] [--jobs N] [--timeout-ms 180000] [--json result.json] [--failed-from result.json] [--bail] [--list] [--no-retry] [--include-quarantined]')
+  // #415：`all` 也要带 `server` —— 「接进 LAYERS 但不在 all 里」等于又留一个「全量跑不到」的口子
+  const plan = layer === 'all' ? ['unit', 'regression', 'integration', 'server'] : [layer]
+  if (plan.some((name) => !LAYERS.includes(name))) throw new Error('Usage: node tests/run-layer.mjs <unit|integration|regression|server|e2e|device|all> [--only substring] [--case exact-path] [--shard 1/3] [--jobs N] [--timeout-ms 180000] [--json result.json] [--failed-from result.json] [--bail] [--list] [--no-retry] [--include-quarantined]')
   let failed
   if (failedFrom) {
     const report = JSON.parse(await readFile(failedFrom, 'utf8'))
@@ -327,9 +346,11 @@ async function main() {
   const selected = []
   for (const name of plan) {
     // Missing/unreadable layer is an infrastructure error, never an empty PASS.
-    const names = await readdir(path.join(TESTS_DIR, name))
+    // #415：目录由 LAYER_DIRS 解析（默认 tests/<层>，server 在 deploy/dl-release/test）。
+    const layerDir = layerDirOf(name)
+    const names = await readdir(layerDir)
     for (const basename of names.filter((n) => n.endsWith('.test.mjs')).sort()) {
-      const file = path.join(TESTS_DIR, name, basename)
+      const file = path.join(layerDir, basename)
       if (only && !basename.includes(only)) continue
       if (caseName && caseName !== rel(file) && caseName !== basename) continue
       if (failed && !failed.has(rel(file))) continue
