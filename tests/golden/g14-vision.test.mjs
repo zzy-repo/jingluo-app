@@ -22,6 +22,8 @@ import { readFile } from 'node:fs/promises'
 import { inflateSync } from 'node:zlib'
 
 import { openAiSse } from '../fixtures/domain03-04/ours-upstream.mjs'
+// #596：ours 的 Key 由服务端下发，种子数据要带「下发标记」，否则发送前守卫会拦（这是产品行为）
+import { claimedOursStorage } from '../helpers/ours-claim.mjs'
 import {
   bodyText,
   brief,
@@ -79,7 +81,7 @@ const CHANNELS = [
     kind: 'ours',
     name: '我们的渠道',
     protocol: 'openai',
-    storage: { 'chat-demo:provider-kind': 'ours', 'chat-demo:api-key': KEY },
+    storage: { 'chat-demo:provider-kind': 'ours', ...claimedOursStorage(KEY) },
   },
 ]
 

@@ -29,6 +29,8 @@ import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import { chromium } from 'playwright'
 import { serveDir, verifyAppUrl, verifyDist } from '../helpers/env.mjs'
+// #596：ours 的 Key 只能由服务端下发 —— 种子数据要带「下发标记」，否则发送前守卫会拦（产品行为）
+import { seedClaimedApiKey } from '../helpers/ours-claim.mjs'
 import { capturePaths, selectProviderKind } from '../helpers/helpers.mjs'
 import { chatBaseUrl } from '../../scripts/lib/endpoints.mjs'
 
@@ -211,9 +213,33 @@ const expectOnlyApiKeyInputs = async (dialog, where, keySaved = false) => {
   }
 }
 
+/**
+ * #596：ours 的 Key 行形态 —— **没有可编辑输入框**（不是 disabled），有只读值与「重新领取」。
+ */
+const expectManagedKeyRow = async (dialog, where) => {
+  const types = await dialog.locator('input').evaluateAll((list) => list.map((item) => item.type))
+  const editable = types.filter((type) => type !== 'file')
+  note(`${where} 输入框：${JSON.stringify(types)}`)
+  if (editable.length !== 0) {
+    bad(`${where} 仍有可编辑输入框（#596 禁止手填 Key）：${JSON.stringify(types)}`)
+  } else {
+    ok(`${where} 没有任何可编辑输入框（Key 只能由服务端下发）`)
+  }
+  const claim = await dialog.locator('[data-testid="settings-managed-key-claim"]').count()
+  const value = await dialog.locator('[data-testid="settings-managed-key-value"]').count()
+  if (claim !== 1 || value !== 1) {
+    bad(`${where} 缺只读行或「重新领取」按钮（value=${value}, claim=${claim}）`)
+  } else {
+    ok(`${where} 只读行 + 「重新领取」按钮在位`)
+  }
+}
+
 try {
   await page.goto(APP_URL, { waitUntil: 'domcontentloaded' })
   await page.evaluate(() => window.localStorage.clear())
+  // #596：内测构建默认渠道是 ours，Key 不再能手填 —— 种「已领取」形态（Key + 下发标记），
+  // 与真机上领取成功后的落盘一致；否则启动就会弹设置、发送会被发送前守卫拦下。
+  await seedClaimedApiKey(page, KEY)
   await page.reload({ waitUntil: 'domcontentloaded' })
   await page.waitForTimeout(900)
 
@@ -248,7 +274,8 @@ try {
     }
   }
 
-  await expectOnlyApiKeyInputs(dialog, 'ours 渠道')
+  // #596：ours 的 Key 行是只读的（结构上没有输入框）+「重新领取」
+  await expectManagedKeyRow(dialog, 'ours 渠道')
 
   // 后端地址与内置模型名不出现在界面上（用户不该看到后端地址）
   const dialogText = await dialog.innerText()
@@ -276,13 +303,18 @@ try {
     ok('通用设置里没有位置信息项')
   }
 
-  // ---------- [E] 保存 API Key ----------
-  console.log('\n[E] 保存 API Key + localStorage')
+  // ---------- [E] ours 的 Key 只读（#596）+ localStorage ----------
+  console.log('\n[E] ours 的 Key 行只读 + localStorage')
   await page.getByRole('tab', { name: /数据管理|Data/ }).first().click()
   await page.waitForTimeout(300)
-  await page.locator('input[type="password"]').first().fill(KEY)
-  await page.getByRole('button', { name: /^确定$|^Confirm$/ }).first().click()
-  await page.waitForTimeout(1200)
+  await expectManagedKeyRow(dialog, 'ours 渠道（数据管理）')
+  const oursValue = (await dialog.locator('[data-testid="settings-managed-key-value"]').innerText()).trim()
+  if (!oursValue.includes(`···${KEY.slice(-4)}`)) {
+    bad(`只读行没显示当前 Key 尾号 ···${KEY.slice(-4)}：${JSON.stringify(oursValue)}`)
+  } else {
+    ok(`只读行显示当前 Key 尾号 ···${KEY.slice(-4)}`)
+  }
+  await page.waitForTimeout(400)
 
   const readStorage = () =>
     page.evaluate(() => {
@@ -301,6 +333,7 @@ try {
   } else {
     ok('API Key 已保存')
   }
+  // #596：`chat-demo:ours-server-key` 是**下发标记**（只含指纹/尾号），属于预期落盘，不在禁止清单里
   const forbiddenKeys = ['chat-demo:base-url', 'chat-demo:model', 'chat-demo:provider-kind']
   const leaked = forbiddenKeys.filter((key) => Object.hasOwn(stored, key))
   if (leaked.length > 0) {

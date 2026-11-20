@@ -118,7 +118,19 @@ export const openAccountConsume = (tab: AccountConsumeTab = 'cards') => {
  * 这两条**刻意不使用**「服务器繁忙」「未知错误」这类掩盖性说法：那正是 #596 第 1 条事故里
  * 用户被误导的原因（本地存着旧 Key，服务端换了，401 被读成「服务器忙」）。
  */
-export const ensureApiKey = () => {
+export type EnsureApiKeyOptions = {
+  /**
+   * 启动时的那一次调用（`App` 里「首次打开先配 Key」）。
+   *
+   * 只为「一个 Key 都没有」打开设置 —— 与 #374 之前那条既有路径完全一致。
+   * 「有一把、但不是服务端下发的那把」（`claim` / `stale`）**不在启动时弹窗**：
+   * 用户没做任何事，弹一层设置只会打断他；等发送时再拦（那时才是他需要知道的一刻），
+   * 而设置页只要被打开就会自己把原因写在 Key 那一行（`managedKeyBlocked`）。
+   */
+  fromBoot?: boolean
+}
+
+export const ensureApiKey = (options: EnsureApiKeyOptions = {}) => {
   const status = checkApiKeyBeforeSend()
   if (status === 'ok') {
     return true
@@ -128,6 +140,10 @@ export const ensureApiKey = () => {
     return false
   }
   if (status === 'claim' || status === 'stale') {
+    if (options.fromBoot === true && getApiKey().trim() !== '') {
+      // 启动 + 手上已经有一把（只是不对）：不弹设置，留给发送时那一拦（见 EnsureApiKeyOptions）
+      return false
+    }
     const blocked = status === 'stale' ? 'stale' : 'unclaimed'
     // 「我们的渠道」的 Key 只能由服务端下发（#596）：这两种状态下本地那把**一定**不是服务端那把，
     // 发出去只会换回一次 401。先在诊断里留痕（只记判定档位与长度，Key 原文不进日志），再打开设置。

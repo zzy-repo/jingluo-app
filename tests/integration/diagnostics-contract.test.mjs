@@ -18,6 +18,8 @@ import { serveDist, requireDist } from '../helpers/runtime.mjs'
 import { verifyAppUrl } from '../helpers/env.mjs'
 import { providerKindTrigger } from '../helpers/helpers.mjs'
 import { OURS_CHAT_PATH } from '../fixtures/domain03-04/ours-upstream.mjs'
+// #596：内测构建默认渠道是 ours，Key 只能由服务端下发 —— 种「已领取」形态（Key + 下发标记）
+import { oursServerKeyMark } from '../helpers/ours-claim.mjs'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import { chromium } from 'playwright'
@@ -90,12 +92,18 @@ const openApp = async ({ appUrl = INTERNAL_URL, native, routes, apiKey = true } 
     await page.route(pattern, handler)
   }
   await page.goto(`${appUrl}?diag-debug=1`, { waitUntil: 'domcontentloaded' })
-  await page.evaluate((key) => {
-    window.localStorage.clear()
-    if (key) {
-      window.localStorage.setItem('chat-demo:api-key', key)
-    }
-  }, apiKey ? API_KEY : '')
+  await page.evaluate(
+    ([key, mark]) => {
+      window.localStorage.clear()
+      if (key) {
+        window.localStorage.setItem('chat-demo:api-key', key)
+        // #596：ours 的 Key 行只能由服务端下发；发送前守卫会拿这把 Key 与「下发标记」比对，
+        // 只写 Key 会被判成「未领取」并拦下（那是产品行为，不是本用例要测的诊断链路）
+        window.localStorage.setItem('chat-demo:ours-server-key', mark)
+      }
+    },
+    [apiKey ? API_KEY : '', JSON.stringify(oursServerKeyMark(API_KEY))]
+  )
   await page.reload({ waitUntil: 'domcontentloaded' })
   await page.waitForFunction(() => Boolean(window.__diagnostics), null, { timeout: 10000 })
   await page.waitForTimeout(600)

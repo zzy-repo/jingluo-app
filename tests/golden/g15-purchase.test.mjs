@@ -31,6 +31,8 @@ import assert from 'node:assert'
 import { test } from 'node:test'
 
 import { brief, bodyText, openGoldenPage, runGolden, serveGoldenApp, waitFor } from '../helpers/golden.mjs'
+// #596：ours 的 Key 由服务端下发 —— 种子数据要带「下发标记」，否则发送前守卫会拦（这是产品行为）
+import { claimedOursStorage } from '../helpers/ours-claim.mjs'
 
 /** 种子 Key：卡密列表（`GET /api/orders`）与额度（`GET /v1/usage`）都要用它 */
 const API_KEY = 'sk-golden-g15-000000000000000015'
@@ -212,7 +214,8 @@ test('G15 支付 / 购买：套餐 → 下单（pay-link）→ 回跳 → 卡密
         },
       },
     ],
-    storage: { 'chat-demo:provider-kind': 'ours', 'chat-demo:api-key': API_KEY },
+    // #596：ours 的 Key 只能由服务端下发 —— 种「已领取」形态（Key + 下发标记）
+    storage: { 'chat-demo:provider-kind': 'ours', ...claimedOursStorage(API_KEY) },
   })
   try {
     const result = await runGolden(

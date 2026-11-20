@@ -199,6 +199,32 @@ test('[3] ours + 没有 Key：发送被拦，设置页说「请先领取 Key」'
   assert.equal(state.managedKeyBlocked, 'unclaimed', '设置页要知道这次是「还没领取」')
 })
 
+test('[3] 启动那一次不弹窗（手上已经有一把时），发送那一次一定拦', () => {
+  reset()
+  apiConfig.setProviderKind('ours')
+  apiConfig.setApiKey(HAND_KEY) // 有一把、但没有下发标记（老版本残留 / 手填）
+
+  // 启动：不打扰用户（只有「一个都没有」才弹设置，与 #451 之前的既有路径一致）
+  assert.equal(dialogState.ensureApiKey({ fromBoot: true }), false)
+  assert.equal(
+    dialogState.useSettingsDialog.getState().open,
+    false,
+    '启动时手上有 Key 就不该弹设置：用户还没做任何事，弹窗只会打断他'
+  )
+
+  // 发送：拦下并把原因写进设置（这才是有用的一刻）
+  assert.equal(dialogState.ensureApiKey(), false)
+  assert.equal(dialogState.useSettingsDialog.getState().open, true)
+  assert.equal(dialogState.useSettingsDialog.getState().managedKeyBlocked, 'unclaimed')
+
+  // 启动 + 一个 Key 都没有：仍然弹设置（既有行为不变）
+  reset()
+  apiConfig.setProviderKind('ours')
+  dialogState.useSettingsDialog.setState({ open: false })
+  assert.equal(dialogState.ensureApiKey({ fromBoot: true }), false)
+  assert.equal(dialogState.useSettingsDialog.getState().open, true, '没有 Key 时启动就该打开设置')
+})
+
 test('[3] 拦截文案含「领取」，且不含「服务器繁忙 / 未知错误」这类掩盖性说法', () => {
   const blocked = viewMarkup({ verdict: 'unclaimed', tail: '', blocked: 'unclaimed' })
   const text = textOf(blocked, 'settings-managed-key-blocked')

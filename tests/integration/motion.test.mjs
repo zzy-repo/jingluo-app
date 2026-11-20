@@ -26,6 +26,8 @@ import path from 'node:path'
 import { chromium } from 'playwright'
 import { serveDir, verifyAppUrl, verifyDist } from '../helpers/env.mjs'
 import { OURS_MODEL, routeOurs } from '../fixtures/domain03-04/ours-upstream.mjs'
+// #596：内测构建默认渠道是 ours，Key 只能由服务端下发 —— 种子数据带「下发标记」
+import { seedClaimedApiKey } from '../helpers/ours-claim.mjs'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const ROOT = path.resolve(HERE, '../..')
@@ -448,20 +450,23 @@ const launch = async (reducedMotion, viewport = mobileViewport) => {
   await routeOurs(page, { reply: REPLY })
   await page.goto(APP_URL, { waitUntil: 'domcontentloaded' })
   await page.evaluate(() => window.localStorage.clear())
+  // #596：ours 的 Key 只能由服务端下发 —— 种「已领取」形态（Key + 下发标记），
+  // 否则启动弹设置、发送被拦，动效断言测的就不是动效了
+  await seedClaimedApiKey(page, KEY)
   await page.reload({ waitUntil: 'domcontentloaded' })
   await page.waitForTimeout(1000)
   return { browser, page, errors }
 }
 
-/** 首次打开会自动弹设置；填 API Key 并关掉，回到干净的空会话页 */
+/**
+ * 首次打开若弹了设置就关掉，回到干净的空会话页。
+ *
+ * #596：内测构建默认渠道是 ours，Key 行已经没有输入框（Key 只能由服务端下发，见 `openApp`
+ * 里的种子），所以这里不再「填 Key + 确定」，只负责把可能弹出的设置关掉。
+ */
 const prepare = async (page) => {
   const dialog = page.getByRole('dialog').first()
   if ((await dialog.count()) > 0) {
-    await page.getByRole('tab', { name: /数据管理|Data/ }).first().click()
-    await page.waitForTimeout(250)
-    await page.locator('input[type="password"]').first().fill(KEY)
-    await page.getByRole('button', { name: /^确定$|^Confirm$/ }).first().click()
-    await page.waitForTimeout(800)
     await dialog.getByRole('button', { name: /^关闭$|^Close$/ }).first().click()
     await page.waitForTimeout(600)
   }

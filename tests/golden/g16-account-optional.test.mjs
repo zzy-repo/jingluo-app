@@ -34,6 +34,8 @@ import { test } from 'node:test'
 import { startMockUpstream, writeStream } from '../fixtures/domain01-02/mock-upstream.mjs'
 import { bodyText, brief, openGoldenPage, runGolden, serveGoldenApp, waitFor, waitForBoot } from '../helpers/golden.mjs'
 import { consumeBaseUrl } from '../../scripts/lib/endpoints.mjs'
+// #596：切到 ours 时 Key 只能是「服务端下发」的形态（Key + 下发标记）
+import { seedClaimedOursKey } from '../helpers/ours-claim.mjs'
 
 const ROOT = path.resolve(import.meta.dirname, '../..')
 /**
@@ -301,7 +303,8 @@ test('G16 账户可选：不登录首屏可用 → 只填 Key 能收发 → 账�
 
         // ── 3. 切到「我们的渠道」：账户入口只在这里出现（#166 的判据没变）────────
         ctx.begin('切到我们的渠道')
-        await page.evaluate(() => window.localStorage.setItem('chat-demo:provider-kind', 'ours'))
+        // #596：切到 ours 时把 Key 种成「服务端下发」形态（只写 Key 会被发送前守卫判成未领取）
+        await seedClaimedOursKey(page, KEY)
         await page.reload({ waitUntil: 'domcontentloaded' })
         if (!(await waitForBoot(page))) {
           ctx.abort('切渠道后重新进主界面', '欢迎页 / 会话列表可见', `body=${brief(await bodyText(page))}`)
@@ -312,7 +315,8 @@ test('G16 账户可选：不登录首屏可用 → 只填 Key 能收发 → 账�
         // 前置条件：这一页（「账户与消费」入口）只在**自有渠道**下出现（#166 / #562 的判据没变）。
         // 第 2 步为了打本地 mock 上游走的是 anthropic 渠道，这里把渠道切到 ours 再 reload ——
         // 这是用例自己的环境准备，不是产品行为（切换后「只填的 Key」仍在，未登录态不变）。
-        await page.evaluate(() => window.localStorage.setItem('chat-demo:provider-kind', 'ours'))
+        // #596：切到 ours 时把 Key 种成「服务端下发」形态（只写 Key 会被发送前守卫判成未领取）
+        await seedClaimedOursKey(page, KEY)
         await page.reload({ waitUntil: 'domcontentloaded' })
         await waitForBoot(page)
         ctx.expect('切到自有渠道后仍未登录（切渠道不动账号态）', (await page.evaluate(() => window.localStorage.getItem('chat-demo:auth-token'))) === null, {

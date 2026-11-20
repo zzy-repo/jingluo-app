@@ -12,6 +12,8 @@ import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
 import { serveDir, verifyAppUrl, verifyDist } from '../helpers/env.mjs'
 import { OURS_CHAT_PATH, OURS_CORS, OURS_HOST, modelsJson, openAiSse } from '../fixtures/domain03-04/ours-upstream.mjs'
+// #596：ours 的 Key 由服务端下发 —— 切到该渠道时种子要带「下发标记」，否则发送被拦
+import { seedClaimedOursKey } from '../helpers/ours-claim.mjs'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const ROOT = path.resolve(HERE, '../..')
@@ -281,7 +283,7 @@ const modeAfterTyping = await readSegment(page, 'fast')
 expect(modeAfterTyping.ariaPressed === 'true', '输入文字不影响模式选中态（仍为快速模式）')
 
 console.log('\n[5] 切回内测默认渠道（ours）：入口恒常驻、可点、请求真的带 reasoning_effort + 发消息')
-await page.evaluate(() => window.localStorage.setItem('chat-demo:provider-kind', 'ours'))
+await seedClaimedOursKey(page, 'sk-mode-accept-0001')
 await page.reload({ waitUntil: 'domcontentloaded' })
 await page.getByText(/今天有什么可以帮到你|How can I help you/).first().waitFor({ timeout: 15000 })
 const oursToggle = await page.locator('button[data-mode]').count()

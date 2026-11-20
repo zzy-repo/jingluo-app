@@ -99,10 +99,8 @@ try {
   await wireMock(page)
 
   await page.goto(APP_URL, { waitUntil: 'domcontentloaded' })
-  await page.evaluate(() => {
-    window.localStorage.clear()
-    window.localStorage.setItem('chat-demo:provider-kind', 'ours')
-  })
+  await page.evaluate(() => window.localStorage.clear())
+  await seedClaimedOursKey(page, 'sk-ours-services-0001')
   await page.reload({ waitUntil: 'domcontentloaded' })
   await page.waitForTimeout(900)
 

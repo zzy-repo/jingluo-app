@@ -79,8 +79,8 @@ export const App = () => {
 
   useEffect(() => {
     void initChat()
-    // 首次打开先在设置里输入 API Key
-    ensureApiKey()
+    // 首次打开先在设置里输入 API Key（启动这一次只为「一个都没有」打开设置，见 #596）
+    ensureApiKey({ fromBoot: true })
   }, [])
 
   /**

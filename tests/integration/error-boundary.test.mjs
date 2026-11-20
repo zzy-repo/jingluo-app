@@ -18,6 +18,8 @@ import { mkdtemp, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
+// #596：内测构建默认渠道是 ours，Key 只能由服务端下发 —— 种「已领取」形态
+import { seedClaimedApiKey } from '../helpers/ours-claim.mjs'
 import { serveDist } from '../helpers/runtime.mjs'
 import { buildArchive } from '../fixtures/domain05/archive-fixture.mjs'
 
@@ -219,6 +221,9 @@ const run = async () => {
       for (const info of await indexedDB.databases())
         if (info.name) indexedDB.deleteDatabase(info.name)
     })
+    // #596：ours 的 Key 行不再能手填 —— 种「已领取」形态，否则每次 reload 都会弹设置，
+    // 遮罩挡住会话点击（本用例测的是错误边界，不是 Key 配置）
+    await seedClaimedApiKey(page, FAKE_KEY)
     await page.reload({ waitUntil: 'domcontentloaded' })
     await page.waitForTimeout(1200)
 
