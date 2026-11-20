@@ -127,7 +127,6 @@ export const en = {
   /** Server-busy error in a reply (#324): states explicitly that retrying may work */
   replyServerBusy:
     'Server busy — a temporary failure, the reply did not finish. You can retry (tap regenerate).',
-  unknownError: 'Unknown error',
   replyUnknownError: 'The reply did not finish due to an unknown error. Please regenerate.',
   /** Context over the model limit (#122): retrying will not help, offer two ways out */
   replyContextLimit:
@@ -278,7 +277,6 @@ export const en = {
   importTraceCancel: 'Cancelled',
   importTraceError: 'Failed ({stage}): {reason}',
   importTraceStageDownload: 'download',
-  importTraceStageImport: 'import',
   importTraceReasonUnreachable: 'network unreachable',
   importTraceReasonInterrupted: 'connection interrupted',
   importTraceReasonTimeout: 'download timed out',
@@ -293,7 +291,6 @@ export const en = {
   importTraceHeartbeatUnknown: 'still downloading… ({done}, no new data for {idle}s)',
   importTraceResume: 'resumed from {done} (not from zero)',
   importTraceRestart: 'link does not support resuming; restarted from the beginning',
-  importTraceReasonFormat: 'invalid archive format',
   detailsExpand: 'Show more',
   detailsCollapse: 'Show less',
   historyImportUrlDownloading: 'Downloading...',
@@ -357,7 +354,6 @@ export const en = {
   voiceInputPermissionDenied:
     'Microphone access is blocked. Please allow it in your browser settings.',
   voiceInputNoDevice: 'No microphone detected',
-  voiceInputTooLong: 'Recording is too long. Please shorten it and try again.',
   voiceInputFailed: 'Speech recognition failed. Please try again later.',
   voiceInputEmpty: 'No speech detected',
   voiceInputLimitReached: 'Maximum recording length reached',
@@ -493,7 +489,6 @@ export const en = {
   feedbackSubmitting: 'Submitting…',
   feedbackTicketLabel: 'Submitted, ticket',
   feedbackTicketLogSize: '(log {size})',
-  feedbackSubmitOk: 'Submitted, ticket {id}',
   feedbackDone: 'Done',
   feedbackClearLogs: 'Clear local logs',
   feedbackLogsCleared: 'Local logs cleared',
@@ -508,7 +503,6 @@ export const en = {
 
   feedbackIntegrityCheck: 'Check log coverage',
   feedbackIntegrityTitle: 'Log coverage self-check',
-  feedbackIntegrityRefresh: 'Refresh',
   feedbackIntegrityCount: 'Entries: {count} (max 500, last 30 minutes)',
   feedbackIntegritySpan: 'Time span: {span}',
   feedbackIntegrityKinds: 'Event kinds covered: {count}',
@@ -539,11 +533,8 @@ export const en = {
   oursDeviceDescription: 'Your device code is your account credential. Back it up: losing it means losing the account.',
   oursDeviceCopy: 'Copy device code',
   oursDeviceCopied: 'Device code copied',
-  oursCopyFailed: 'Copy failed, long-press to select manually',
-  oursClaimTitle: 'Credential',
   oursClaimAction: 'Claim / re-claim',
   oursClaimBusy: 'Claiming…',
-  oursClaimAuto: 'First use: claiming automatically…',
   oursOpenChoiceTitle: 'Choose how to start',
   oursOpenChoiceHint:
     'This device has no key yet. Claim a new one from the server, or bind the key you already use elsewhere.',
@@ -555,7 +546,6 @@ export const en = {
   oursClaimAlreadyGranted: 'This device has already claimed the new-user credit; none was granted this time',
   oursClaimKeyTail: 'Current Key {tail}',
   oursClaimUseKey: 'Use the Key issued by the server {tail}',
-  oursClaimNeedsDevice: 'Device code unavailable, reopen settings to retry',
   oursQuotaTitle: 'Remaining quota',
   /** Points unit (#94): appended by formatPoints in services/ours/api.ts — never hardcode a unit there */
   oursPointsUnit: 'points',
@@ -583,10 +573,8 @@ export const en = {
   oursInviteRuleInvitee: 'Invitee gets {points}',
   oursInviteRuleCashback: 'After your friend pays for the first time, the inviter gets {points} more',
   oursInviteCashbackEarned: 'Cashback earned: {points}',
-  oursPlansTitle: 'Plans',
   oursPlansLoading: 'Loading plans…',
   oursPlansFailed: 'Plans failed to load, try again',
-  oursPlansRetry: 'Reload',
   oursBuyAction: 'Pay',
   // Purchase entry (Issue #331): plans are all retired, open the shop checkout page instead
   oursPayTitle: 'Purchase',
@@ -744,7 +732,6 @@ export const en = {
   oursRotateOkQuotaReset: 'Quota reset. The key itself is unchanged (still this device key).',
   oursRotateOkUnverified:
     'Done. The key is unchanged and the server returned no quota info; tap "Refresh quota" to confirm.',
-  oursRotateRetryHint: 'Resetting only needs your device code, so retrying is safe: no quota is lost.',
   oursRotateErrDeviceNotFound: 'This device has no key yet. Claim one first.',
   oursRotateErrInvalidDevice: 'That device code looks wrong. Restart the app and try again.',
   oursRotateErrInternal: 'Reset failed. Try again later.',
@@ -801,7 +788,6 @@ export const en = {
   oursPayRecordsCopied: 'Card code copied',
   oursPayRecordsCardTail: 'Card',
   oursPayRecordsNeedKey: 'Fill in your API key to see the payment records of this account',
-  oursPayRecordsReplacedHint: 'The previous unpaid order was replaced by the new one, so the latest applies',
   // Issue #45: unified request timeout notice (kept apart from network failure and 4xx/5xx)
   requestTimeout: 'Request timed out ({seconds}s with no response). Check your network and try again.',
   // Issue #106: double-tap the mobile title bar to jump back to the first message

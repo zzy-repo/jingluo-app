@@ -187,22 +187,11 @@
   }
 }
 
-.planActive {
-  border-color: var(--dsw-alias-brand-primary);
-}
-
 .planName {
   min-width: 0;
   font-size: 14px;
   line-height: 20px;
   overflow-wrap: anywhere;
-}
-
-.planMeta {
-  flex-shrink: 0;
-  color: var(--dsw-alias-label-secondary);
-  font-size: 12px;
-  line-height: 18px;
 }
 
 /* ---------- 兑换 ---------- */

@@ -118,7 +118,6 @@ export const zh = {
   completionServerBusyToast: '服务器繁忙，请稍后再试',
   /** 回答失败时的「服务器繁忙」（#324）：显式写明可重试，与终态错误的「不要重试」区分开 */
   replyServerBusy: '服务器繁忙，属于临时故障，回答没有完成，可以重试（点重新生成）',
-  unknownError: '未知错误',
   replyUnknownError: '回答没有完成，出现了未知错误，可以重新生成',
   /** 上下文超出模型上限（#122）：重试没用，给两条能走的路 */
   replyContextLimit:
@@ -267,7 +266,6 @@ export const zh = {
   importTraceCancel: '已取消',
   importTraceError: '失败（{stage}）：{reason}',
   importTraceStageDownload: '下载',
-  importTraceStageImport: '导入',
   importTraceReasonUnreachable: '无法连接网络',
   importTraceReasonInterrupted: '连接被中断',
   importTraceReasonTimeout: '下载超时',
@@ -282,7 +280,6 @@ export const zh = {
   importTraceHeartbeatUnknown: '仍在下载…（已下载 {done}，已 {idle} 秒没有新数据）',
   importTraceResume: '从已下载的 {done} 处继续（不清零）',
   importTraceRestart: '该链接不支持断点续传，已从头重新下载',
-  importTraceReasonFormat: '文件格式不正确',
   detailsExpand: '展开',
   detailsCollapse: '收起',
   historyImportUrlDownloading: '下载中...',
@@ -341,7 +338,6 @@ export const zh = {
   voiceInputCancel: '正在转写，点击取消',
   voiceInputPermissionDenied: '无法使用麦克风，请在浏览器设置中允许访问',
   voiceInputNoDevice: '未检测到麦克风',
-  voiceInputTooLong: '录音过长，请缩短后重试',
   voiceInputFailed: '语音识别失败，请稍后再试',
   voiceInputEmpty: '未识别到语音内容',
   voiceInputLimitReached: '已达到单次录音时长上限',
@@ -477,7 +473,6 @@ export const zh = {
   feedbackSubmitting: '提交中…',
   feedbackTicketLabel: '已提交，工单号',
   feedbackTicketLogSize: '（日志 {size}）',
-  feedbackSubmitOk: '提交成功，工单号 {id}',
   feedbackDone: '完成',
   feedbackClearLogs: '清空本地日志',
   feedbackLogsCleared: '本地日志已清空',
@@ -492,7 +487,6 @@ export const zh = {
 
   feedbackIntegrityCheck: '检查日志完整性',
   feedbackIntegrityTitle: '日志完整性自检',
-  feedbackIntegrityRefresh: '刷新',
   feedbackIntegrityCount: '条数：{count}（上限 500，保留最近 30 分钟）',
   feedbackIntegritySpan: '时间跨度：{span}',
   feedbackIntegrityKinds: '覆盖事件类型：{count} 类',
@@ -524,12 +518,9 @@ export const zh = {
   oursDeviceDescription: '设备码就是你的账号凭据：复制备份好，丢失等于丢账号。',
   oursDeviceCopy: '复制设备码',
   oursDeviceCopied: '设备码已复制',
-  oursCopyFailed: '复制失败，请长按文字手动选择',
   // 领取
-  oursClaimTitle: '凭据',
   oursClaimAction: '领取 / 重新领取',
   oursClaimBusy: '领取中…',
-  oursClaimAuto: '首次使用，正在自动领取…',
   oursOpenChoiceTitle: '先选一种方式',
   oursOpenChoiceHint:
     '本机还没有可用的 Key：点「领取新 Key」由服务端发一把，或者把你在别处已有的 Key 绑到本机。',
@@ -542,7 +533,6 @@ export const zh = {
   oursClaimAlreadyGranted: '这台设备已领过新人额度，本次未发放新额度',
   oursClaimKeyTail: '当前 Key {tail}',
   oursClaimUseKey: '改用服务端下发的 Key {tail}',
-  oursClaimNeedsDevice: '设备码异常，无法领取，请重新打开设置页',
   // 额度
   oursQuotaTitle: '剩余额度',
   /** 积分单位（#94）：由 services/ours/api.ts 的 formatPoints 拼接，别在代码里写死中文 */
@@ -573,10 +563,8 @@ export const zh = {
   oursInviteRuleCashback: '好友首次付款后，邀请人再得 {points}',
   oursInviteCashbackEarned: '已获返现 {points}',
   // 套餐
-  oursPlansTitle: '套餐',
   oursPlansLoading: '正在加载套餐…',
   oursPlansFailed: '套餐加载失败，请重试',
-  oursPlansRetry: '重新加载',
   oursBuyAction: '去支付',
   // 购买入口（Issue #331）：套餐全线下架，直接打开联动小铺收款页
   oursPayTitle: '购买',
@@ -734,7 +722,6 @@ export const zh = {
   oursRotateOkNoQuota: '已换发新 Key 并保存到本机（服务端未返回额度，可点「刷新额度」确认）',
   oursRotateOkQuotaReset: '额度已重置（Key 未变，仍是本机这一把）',
   oursRotateOkUnverified: '请求已完成（Key 未变），服务端未返回额度信息，请点「刷新额度」确认',
-  oursRotateRetryHint: '重置只认设备码，重复点不会丢额度，失败可以直接重试。',
   oursRotateErrDeviceNotFound: '本机还没有领取过 Key，请先领取',
   oursRotateErrInvalidDevice: '设备标识异常，请重启 App 重试',
   oursRotateErrInternal: '重置失败，请稍后重试',
@@ -794,7 +781,6 @@ export const zh = {
   oursPayRecordsCopied: '卡密已复制',
   oursPayRecordsCardTail: '卡号',
   oursPayRecordsNeedKey: '填写 API Key 后可以查看这个账号的付款记录',
-  oursPayRecordsReplacedHint: '上一笔未支付订单已被新的下单覆盖，以最新一单为准',
   // Issue #45：请求统一超时的提示（与网络失败、4xx/5xx 分开说）
   requestTimeout: '请求超时（{seconds} 秒没有响应），请检查网络后重试',
   // Issue #106：移动端标题栏双击回到首条消息
