@@ -25,6 +25,7 @@ import { createRequire } from 'node:module'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
+import { DB_NAME, ensureChatDb, writeSessions } from '../helpers/chat-db.mjs'
 import { serveDir, verifyAppUrl } from '../helpers/env.mjs'
 
 const require = createRequire(import.meta.url)
@@ -33,8 +34,8 @@ const HERE = path.dirname(fileURLToPath(import.meta.url))
 const ROOT = path.resolve(HERE, '../..')
 let APP_URL = process.env.APP_URL || ''
 const LIMIT = 512 * 1024
-/** 与 src/services/chat/db.ts 的 DB_VERSION 保持一致；fixture 建库结构必须与之一致。 */
-const DB_VERSION = 12
+// 库名 / 版本号不再写在这里：fixture 用的是「应用自己建好的那个库」，
+// 两者都从 src/services/chat/db.ts 取（见 tests/helpers/chat-db.mjs，#547）。
 
 const failures = []
 let checks = 0
@@ -129,51 +130,10 @@ const makeSession = ({ id, title, text }) => {
   }
 }
 
+// 库由应用自己建（启动即 openDB(name, DB_VERSION)），fixture 只等它就绪再写数据。
+// 这里不再手写 schema / 版本号：写死一份 v12 时，库一升级就整条用例在建库那一步 VersionError（#547）。
 const seedSessions = (page, sessions) =>
-  page.evaluate(
-    async ({ sessions, version }) => {
-      const db = await new Promise((resolve, reject) => {
-        const request = indexedDB.open('chat-demo', version)
-        request.onupgradeneeded = () => {
-          const opened = request.result
-          for (const name of ['sessions', 'files', 'sessionsStaging', 'filesStaging']) {
-            if (!opened.objectStoreNames.contains(name)) {
-              opened.createObjectStore(name, { keyPath: 'id' })
-            }
-          }
-          const summaries = opened.objectStoreNames.contains('sessionSummaries')
-            ? request.transaction.objectStore('sessionSummaries')
-            : opened.createObjectStore('sessionSummaries', { keyPath: 'id' })
-          if (!summaries.indexNames.contains('fileIds')) {
-            summaries.createIndex('fileIds', 'fileIds', { multiEntry: true })
-          }
-          if (!opened.objectStoreNames.contains('appAssets')) {
-            opened.createObjectStore('appAssets', { keyPath: 'key' })
-          }
-        }
-        request.onsuccess = () => resolve(request.result)
-        request.onerror = () => reject(request.error)
-      })
-      await new Promise((resolve, reject) => {
-        const tx = db.transaction(['sessions', 'sessionSummaries'], 'readwrite')
-        for (const session of sessions) {
-          tx.objectStore('sessions').put(session)
-          tx.objectStore('sessionSummaries').put({
-            id: session.id,
-            title: session.title,
-            createdAt: session.createdAt,
-            updatedAt: session.updatedAt,
-            fileIds: [],
-          })
-        }
-        tx.oncomplete = () => resolve()
-        tx.onerror = () => reject(tx.error)
-        tx.onabort = () => reject(tx.error)
-      })
-      db.close()
-    },
-    { sessions, version: DB_VERSION }
-  )
+  page.evaluate(writeSessions, { name: DB_NAME, items: sessions })
 
 // ---------- 2) 浏览器 ----------
 const browser = await chromium.launch()
@@ -247,9 +207,10 @@ try {
   // 先播种，再每个场景新建 page，让 store 首次 hydration 读到 fixture
   const seeder = await context.newPage()
   await seeder.goto(APP_URL, { waitUntil: 'domcontentloaded' })
+  const seededDb = await ensureChatDb(seeder)
   await seedSessions(seeder, SESSIONS.map(makeSession))
   await seeder.close()
-  note('已写入 3 个会话 fixture（chat-demo v12），后续每个场景都新建 page 打开')
+  note(`已写入 3 个会话 fixture（${DB_NAME} v${seededDb.version}），后续每个场景都新建 page 打开`)
 
   // [1] 超限（中文）：弹窗 + 不写剪贴板 + 取消
   {

@@ -17,6 +17,7 @@
 //   F4-07 双击标题回顶：移动端标题栏双击（真实触摸语义用 click 两次模拟）
 //   F4-09 损坏会话隔离的**列表侧降级**：列表读取失败给「对话列表加载失败，请重试」+ 重试按钮
 import { chromium } from 'playwright'
+import { DB_NAME, clearAllStores, ensureChatDb, writeSessions } from '../helpers/chat-db.mjs'
 import { serveDir, verifyAppUrl } from '../helpers/env.mjs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -32,77 +33,14 @@ const bad = (message) => {
   console.error(`  ✗   ${message}`)
 }
 
-/** 打开（必要时建）应用自己的库：schema 与 src/services/chat/db.ts 一致 */
-const OPEN_DB = async (page) =>
-  page.evaluate(async () => {
-    const db = await new Promise((resolve, reject) => {
-      const request = indexedDB.open('chat-demo', 12)
-      request.onupgradeneeded = () => {
-        const opened = request.result
-        for (const name of ['sessions', 'files', 'sessionsStaging', 'filesStaging', 'appAssets']) {
-          if (!opened.objectStoreNames.contains(name)) {
-            opened.createObjectStore(name, { keyPath: name === 'appAssets' ? 'key' : 'id' })
-          }
-        }
-        if (!opened.objectStoreNames.contains('sessionSummaries')) {
-          const store = opened.createObjectStore('sessionSummaries', { keyPath: 'id' })
-          store.createIndex('fileIds', 'fileIds', { multiEntry: true })
-        }
-      }
-      request.onerror = () => reject(request.error)
-      request.onsuccess = () => resolve(request.result)
-    })
-    db.close()
-  })
-
+// 库名 / 版本号 / schema 都不再写在本文件里（#547）：库由应用自己建（启动即 openDB(name, DB_VERSION)），
+// 这里只等它建好并核对版本 —— 旧写法写死一份 v12 schema，库一升级就整块 VersionError。
+// 具体实现（以及「为什么不手写 schema」）见 tests/helpers/chat-db.mjs。
 /** 清空业务数据（不删库：应用自己还连着，deleteDatabase 会被 blocked 卡住） */
-const CLEAR_DB = async (page) =>
-  page.evaluate(async () => {
-    const db = await new Promise((resolve, reject) => {
-      const request = indexedDB.open('chat-demo', 12)
-      request.onerror = () => reject(request.error)
-      request.onsuccess = () => resolve(request.result)
-    })
-    await new Promise((resolve, reject) => {
-      const names = [...db.objectStoreNames]
-      const tx = db.transaction(names, 'readwrite')
-      for (const name of names) {
-        tx.objectStore(name).clear()
-      }
-      tx.oncomplete = resolve
-      tx.onerror = () => reject(tx.error)
-    })
-    db.close()
-  })
+const CLEAR_DB = (page) => page.evaluate(clearAllStores, { name: DB_NAME })
 
 /** 直接写 IndexedDB：确定性造数据，避免靠 UI 发消息攒会话 */
-const SEED = async (page, sessions) =>
-  page.evaluate(async (items) => {
-    const db = await new Promise((resolve, reject) => {
-      const request = indexedDB.open('chat-demo', 12)
-      request.onerror = () => reject(request.error)
-      request.onsuccess = () => resolve(request.result)
-    })
-    await new Promise((resolve, reject) => {
-      const tx = db.transaction(['sessions', 'sessionSummaries'], 'readwrite')
-      const sessionsStore = tx.objectStore('sessions')
-      const summaryStore = tx.objectStore('sessionSummaries')
-      for (const item of items) {
-        sessionsStore.put(item)
-        summaryStore.put({
-          id: item.id,
-          title: item.title,
-          createdAt: item.createdAt,
-          updatedAt: item.updatedAt,
-          ...(item.pinnedAt === undefined ? {} : { pinnedAt: item.pinnedAt }),
-          fileIds: [],
-        })
-      }
-      tx.oncomplete = resolve
-      tx.onerror = () => reject(tx.error)
-    })
-    db.close()
-  }, sessions)
+const SEED = (page, sessions) => page.evaluate(writeSessions, { name: DB_NAME, items: sessions })
 
 const sessionOf = (id, title, { updatedAt, pinnedAt, messages = 2 } = {}) => ({
   id,
@@ -143,7 +81,8 @@ try {
       // 有 Key 才不会在启动时自动弹设置（那层 overlay 会挡住侧栏点击）
       window.localStorage.setItem('chat-demo:api-key', 'sk-domain04-flow-key')
     })
-    await OPEN_DB(page)
+    // 应用启动即建库（当前版本，schema 由产物自己给）；等它就绪，不再用 fixture 手写 schema
+    await ensureChatDb(page)
     await CLEAR_DB(page)
     await SEED(page, sessions)
     await page.reload({ waitUntil: 'domcontentloaded' })
@@ -388,7 +327,8 @@ try {
       window.localStorage.clear()
       window.localStorage.setItem('chat-demo:api-key', 'sk-domain04-flow-key')
     })
-    await OPEN_DB(mobilePage)
+    // 移动端是独立 context（独立 IndexedDB）：同样等应用自己建库
+    await ensureChatDb(mobilePage)
     await CLEAR_DB(mobilePage)
     await SEED(mobilePage, [sessionOf('long', '长会话', { updatedAt: 500, messages: 60 })])
     await mobilePage.reload({ waitUntil: 'domcontentloaded' })

@@ -14,8 +14,14 @@ import { toSessionSummary, type Session, type SessionSummary } from './types.js'
  * v12 → v13（#480）：只**新增**两个文档附件存储（`attachments` / `attachmentTexts`）与它们的索引，
  * 不迁移、不改写、不清空任何已有的会话 / 摘要 / 原件数据 —— 升级回调里全部是 `contains()` 守卫，
  * 老用户升级后打开旧会话得到的内容与升级前逐字节相同。
+ *
+ * **导出给测试用**（#547）：`tests/helpers/chat-db.mjs` 从这里取 `DB_VERSION` / `DB_NAME`，
+ * L1 集成用例的 fixture 不再各写一份「12」「13」—— 版本号只有这一处来源，加 store 时改这里就够了。
  */
-const DB_VERSION = 13
+export const DB_VERSION = 13
+
+/** IndexedDB 库名；只在这里出现一次，测试夹具同样从这里取（#547）。 */
+export const DB_NAME = 'chat-demo'
 
 /** 文件原件按附件的本地 id 存储，所有引用同一 id 的消息共用一份；用于缩略图、打开查看，以及没有 serverId 时补传。 */
 export type StoredFile = {
@@ -110,7 +116,7 @@ const abortTransaction = (tx: { abort(): void }) => {
 
 // 每个操作拿到连接后立即创建事务；IndexedDB 按创建顺序执行范围重叠的事务，读取总能看到之前发起的写入。
 const getDB = () =>
-  (dbPromise ??= openDB<ChatDB>('chat-demo', DB_VERSION, {
+  (dbPromise ??= openDB<ChatDB>(DB_NAME, DB_VERSION, {
     upgrade(db, _oldVersion, _newVersion, tx) {
       // 初始化当前格式需要的存储与索引，不迁移旧消息。
       for (const name of ['sessions', 'files', 'sessionsStaging', 'filesStaging'] as const) {
