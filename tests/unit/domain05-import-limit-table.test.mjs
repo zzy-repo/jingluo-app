@@ -124,8 +124,9 @@ test('N4 上限与总长判定表：8 行（F-05-20/21/22）', async () => {
         resetEnv()
         const source = zipBytes([['manifest.json', new Uint8Array(64)]])
         const file = new File([source], 'deepseek_data.zip')
-        const count = await importHistory(file, { maxBytes: file.size })
-        expectEqual(count, 1, '返回的会话数')
+        // #390：importHistory 返回结果摘要（模式 + 新增/覆盖/跳过），写入条数在 count 里
+        const result = await importHistory(file, { maxBytes: file.size })
+        expectEqual(result.count, 1, '返回的会话数')
         expectEqual(
           globalThis.__staged.map((entry) => entry.stage).join(','),
           'check,import',

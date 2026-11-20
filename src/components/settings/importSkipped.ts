@@ -3,9 +3,11 @@ import {
   isTranslationKey,
   reportMissingKey,
   type TranslationKey,
+  type TranslationMessage,
   type TranslationParams,
 } from '../../i18n/index.js'
 import type { ImportSkip } from '../../services/chat/history/toLocal.js'
+import type { HistoryImportSummary } from '../../services/chat/store.js'
 
 /**
  * #49：导入结果的「跳过明细」。
@@ -146,13 +148,46 @@ export const ImportSkippedDetails = ({
 }
 
 /**
- * 导入成功后的状态文案：有跳过时把数量一起说出来（「已导入 2 个会话，跳过 3 处损坏数据」），
- * 让人一眼知道这不是整包失败、也不是全都进来了。
+ * 增量导入的结果明细（#390）：紧跟在「已导入 N 个会话」后面，用括号带出「新增 / 覆盖 / 跳过」。
+ * 整包覆盖没有冲突概念（本地会话全被替换），保持原来那一句，不加多余的数字。
  */
-export const importedMessage = (
-  count: number,
-  skipped: number
-): { key: TranslationKey; params?: TranslationParams } =>
-  skipped > 0
-    ? { key: 'historyImportedPartial', params: { count, skipped } }
-    : { key: count === 1 ? 'historyImportedOne' : 'historyImported', params: { count } }
+export const importSummaryDetail = (
+  summary: HistoryImportSummary
+): { key: TranslationKey; params: TranslationParams } | undefined =>
+  summary.mode === 'overwrite'
+    ? undefined
+    : {
+        key: 'historyImportSummaryDetail',
+        params: {
+          added: summary.added,
+          overwritten: summary.overwritten,
+          skipped: summary.skipped,
+        },
+      }
+
+/** 成功文案 + 可选的增量明细（#390）：`detail` 直接拼在主文案后面展示。 */
+export type ImportedMessage = TranslationMessage & { detail?: TranslationMessage }
+
+/**
+ * 导入成功后的状态文案：有跳过时把数量一起说出来（「已导入 2 个会话，跳过 3 处损坏数据」），
+ * 让人一眼知道这不是整包失败、也不是全都进来了；增量模式再补一段新增 / 覆盖 / 跳过的明细。
+ */
+export const importedMessage = (summary: HistoryImportSummary, skipped: number): ImportedMessage => {
+  const count = summary.count
+  const base: TranslationMessage =
+    skipped > 0
+      ? { key: 'historyImportedPartial', params: { count, skipped } }
+      : { key: count === 1 ? 'historyImportedOne' : 'historyImported', params: { count } }
+  const detail = importSummaryDetail(summary)
+  return detail === undefined ? base : { ...base, detail }
+}
+
+/** 拿不到摘要时的兜底（只有条数）：按整包覆盖展示，不编造新增 / 覆盖明细。 */
+export const summaryFromCount = (count: number): HistoryImportSummary => ({
+  mode: 'overwrite',
+  count,
+  added: count,
+  overwritten: 0,
+  skipped: 0,
+  skippedTitles: [],
+})

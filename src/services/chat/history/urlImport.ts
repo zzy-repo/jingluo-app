@@ -5,6 +5,7 @@ import { bytesPerSecond } from '../../diagnostics/timing.js'
 import { importHistory } from '../backup.js'
 import { LIMITS } from '../../limits.js'
 import { BackupError, fail } from './errors.js'
+import type { ImportMode } from './mergeSessions.js'
 import {
   ARCHIVE_READ_FAILURE_KEY,
   classifyImportFailure,
@@ -198,6 +199,8 @@ export type UrlImportOptions = {
   heartbeatIntervalMs?: number
   /** 大小上限（字节）；默认 DEFAULT_MAX_IMPORT_BYTES，与本地文件导入同一个数字。UI 不传。 */
   maxBytes?: number
+  /** 导入方式（#390）：与本地文件导入同一套 merge / skip / overwrite，默认 merge。 */
+  mode?: ImportMode
 }
 
 /** 原生（APK）才具备绕过 CORS 的原生 HTTP；网页版不提供该能力。 */
@@ -1330,6 +1333,7 @@ export const importHistoryFromUrl = async (
     emit({ kind: 'check', bytes: file.size })
     return await importHistory(file, {
       signal: options.signal,
+      mode: options.mode,
       onProgress: (progress) => {
         options.onProgress?.({
           phase: 'importing',
@@ -1358,7 +1362,9 @@ export const importHistoryFromUrl = async (
           emit({ kind: 'image', images: progress.images })
         }
       },
-    }).then((count) => {
+    }).then((summary) => {
+      // 返回给调用方的仍是「本次写入的会话数」（增量模式下跳过的不算），结果明细由 store 带进界面。
+      const count = summary.count
       emit({ kind: 'done', sessions: count })
       // 成功结论（#313）：文件导入在 backup.ts 里有 `import_done`，链接导入此前只有内存 trace，
       // 上传的日志里查不到「这次到底导进去了没有、导进了多少」——对不上「导入后会话变少」的反馈。

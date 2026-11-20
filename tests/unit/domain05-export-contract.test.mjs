@@ -36,6 +36,10 @@ const fakeStoreSource = `
 export const state = { sessions: [], sessionCache: {} }
 export const useChatStore = { getState: () => state }
 export const replaceHistory = async (run) => await run()
+export const importHistoryInto = async (run) => {
+  await run()
+  return { mode: 'overwrite', count: 0, added: 0, overwritten: 0, skipped: 0, skippedTitles: [] }
+}
 globalThis.__exportStore = state
 `
 /** 原生桥替身：Capacitor 原生平台 + ExportText 插件（SAF 三态）。 */

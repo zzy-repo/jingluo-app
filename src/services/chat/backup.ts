@@ -7,7 +7,13 @@ import { fail } from './history/errors.js'
 import { formatImportBytes, maxImportMegabytes, resolveMaxImportBytes } from './history/importLimit.js'
 import { parseSessionPath } from './history/paths.js'
 import { listArchivePaths } from './history/zipReader.js'
-import { replaceHistory, useChatStore } from './store.js'
+import type { ImportMode } from './history/mergeSessions.js'
+import {
+  importHistoryInto,
+  replaceHistory,
+  useChatStore,
+  type HistoryImportSummary,
+} from './store.js'
 import type { Session } from './types.js'
 
 export { BackupError } from './history/errors.js'
@@ -23,13 +29,32 @@ const enqueueBackup = <T>(run: () => Promise<T>): Promise<T> => {
 
 const backupFileName = (date: Date) => `deepseek_data-${formatDate(date)}.zip`
 
-/** 导出为历史会话导出格式的 ZIP，可再次导入。 */
-export const exportHistory = (): Promise<{ name: string; blob: Blob }> =>
+/** 导出范围（#390）：不传 `sessionIds` = 导出全部会话；传了就只导出勾选的这些。 */
+export type ExportHistoryOptions = {
+  /** 会话列表里勾选的会话 id。传空数组直接报错，不产出一个「看着像备份、其实空的」包。 */
+  sessionIds?: readonly string[]
+}
+
+/**
+ * 导出为历史会话导出格式的 ZIP，可再次导入。
+ * 选择性导出只缩小 `sessionIds`，包结构（manifest / 条目顺序 / 图片路径）与全量导出完全一致。
+ */
+export const exportHistory = (
+  options: ExportHistoryOptions = {}
+): Promise<{ name: string; blob: Blob; sessions: number }> =>
   enqueueBackup(async () => {
     // 列表和已加载内容保留导出开始时的快照；未打开的会话逐条读取，不填满详情缓存。
     const { sessions, sessionCache } = useChatStore.getState()
+    const sessionIds = options.sessionIds
+    const selected = sessionIds === undefined ? undefined : new Set(sessionIds)
+    // 空选择（一条都没勾）与「勾了的会话刚好都被删了」都要明确报错，不能静默导出空包。
+    const exportable =
+      selected === undefined ? sessions : sessions.filter((summary) => selected.has(summary.id))
+    if (selected !== undefined && exportable.length === 0) {
+      fail('historyExportEmptySelection')
+    }
     async function* readSessions(): AsyncGenerator<Session> {
-      for (const summary of sessions) {
+      for (const summary of exportable) {
         const session = Object.hasOwn(sessionCache, summary.id)
           ? sessionCache[summary.id]
           : await db.loadSession(summary.id)
@@ -42,8 +67,8 @@ export const exportHistory = (): Promise<{ name: string; blob: Blob }> =>
     }
     const { exportArchive } = await import('./history/exportArchive.js')
     const now = new Date()
-    const blob = await exportArchive(readSessions())
-    return { name: backupFileName(now), blob }
+    const blob = await exportArchive(readSessions(), selected === undefined ? {} : { sessionIds })
+    return { name: backupFileName(now), blob, sessions: exportable.length }
   })
 
 /** 导入进度：已处理会话数 / 会话总数（拿不到总数时不传）。 */
@@ -56,6 +81,11 @@ export type ImportHistoryOptions = {
   onProgress?: (progress: ImportProgress) => void
   /** 大小上限（字节）；默认 DEFAULT_MAX_IMPORT_BYTES，与「从链接导入」同一个数字。UI 不传。 */
   maxBytes?: number
+  /**
+   * 导入方式（#390）：merge（默认，保留本地会话、按 id/更新时间取舍冲突）/ skip（本地已有同 id 就跳过）/
+   * overwrite（整包覆盖，现有行为）。解析与暂存路径三种模式完全相同，只在提交那一步分叉。
+   */
+  mode?: ImportMode
 }
 
 /** 与「从链接导入」复用同一条提示文案：都是「这个包太大，先别导」，都要说清上限与实测体积（#195）。 */
@@ -72,11 +102,15 @@ const countSessions = async (file: File): Promise<number | undefined> => {
 }
 
 /**
- * 确认覆盖后调用：先查大小上限，再检查 ZIP 格式与版本，校验失败时保留正在生成的回答；
- * 通过后从 ZIP 流式写入暂存，成功才替换原有会话与图片原件。返回导入的会话数。
+ * 确认导入方式后调用：先查大小上限，再检查 ZIP 格式与版本，校验失败时保留正在生成的回答；
+ * 通过后从 ZIP 流式写入暂存，成功才按模式落到正式数据（整包覆盖 / 增量合并）。返回导入结果摘要。
  */
-export const importHistory = (file: File, options: ImportHistoryOptions = {}): Promise<number> =>
+export const importHistory = (
+  file: File,
+  options: ImportHistoryOptions = {}
+): Promise<HistoryImportSummary> =>
   enqueueBackup(async () => {
+    const mode = options.mode ?? 'merge'
     const startedAt = Date.now()
     // 分阶段计时（#306）：每个 import_stage 都带自己那一段的 durationMs，卡在哪个阶段不用再靠时间戳相减
     const timer = createStageTimer()
@@ -86,6 +120,7 @@ export const importHistory = (file: File, options: ImportHistoryOptions = {}): P
       bytes: file.size,
       totalBytes: file.size,
       source: 'file',
+      mode,
       ...buildMeta({ flow: 'import', stage: 'import.check', attempt: 1, status: 'ok' }),
     })
     try {
@@ -120,15 +155,21 @@ export const importHistory = (file: File, options: ImportHistoryOptions = {}): P
           bytes: file.size,
         }),
       })
-      const count = await replaceHistory(() =>
-        importArchive(file, {
-          signal: options.signal,
-          totalSessions,
-          onProgress: options.onProgress,
-        })
+      const summary = await importHistoryInto(
+        () =>
+          importArchive(file, {
+            signal: options.signal,
+            totalSessions,
+            onProgress: options.onProgress,
+          }),
+        mode
       )
       recordAction('import_done', 'import-history', {
-        count,
+        count: summary.count,
+        mode: summary.mode,
+        added: summary.added,
+        overwritten: summary.overwritten,
+        conflictSkipped: summary.skipped,
         ...buildMeta({
           flow: 'import',
           stage: 'import.commit',
@@ -143,7 +184,7 @@ export const importHistory = (file: File, options: ImportHistoryOptions = {}): P
         }),
       })
       void captureStateSnapshot('after-import')
-      return count
+      return summary
     } catch (error) {
       // 失败必录：error 级 + 阶段 + 耗时 + 错误原文（BackupError 的 message 就是中文原因）
       record('import_error', 'error', `import failed at ${stage}`, {

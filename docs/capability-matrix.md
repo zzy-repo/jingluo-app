@@ -147,7 +147,7 @@
 | 重新生成 | 重新构造请求（同一 `question`，`history` 截到前一轮） | 全新一轮 block | `AssistantMessage.tsx` 的 `regenerateReply` 按钮（`store.ts` 的 `regenerateReply()`） |
 | 编辑消息 | 同上（`question` 内容替换） | 同上 | `UserMessage.tsx` 的编辑态（`editMessage()`）（`store.ts` 的 `editMessage()`） |
 | 消息分支 | 无（纯本地） | 无（纯本地） | `BranchSwitcher.tsx:28-30`（`branches.ts:40-117`、`branches.ts` 的 `MessageVersions` / `selectVersion()`） |
-| 继续生成 | 尾部 assistant 消息（prefill）：`reply.ts:350-362`；OpenAI 只能原样排在末尾（`openaiAdapter.ts:77-86`） | 新事件继续追加到原有 block（`reply.ts:72-137` 的 `blockIndexes` 映射） | `AssistantMessage.tsx:160-173`（`store.ts:989-1007`） |
+| 继续生成 | 尾部 assistant 消息（prefill）：`reply.ts:350-362`；OpenAI 只能原样排在末尾（`openaiAdapter.ts:77-86`） | 新事件继续追加到原有 block（`reply.ts:72-137` 的 `blockIndexes` 映射） | `AssistantMessage.tsx:160-173`（`store.ts:1061-1079`） |
 | 复制 | 无 | 本地拼接 text block（`reply.ts:163-164`） | `AssistantMessage.tsx:145`、`CopyButton.tsx` |
 | Markdown/KaTeX/Mermaid | 无 | 无（纯本地渲染） | `Markdown.tsx:1-20`、`MarkdownAstRenderer.tsx`、`MathFormula.tsx:1-10`、`MermaidDiagram.tsx` 的 `MermaidDiagram`、`CodeBlock.tsx` |
 | 会话管理 | 无（IndexedDB） | 无 | `Sider.tsx:66-75,121`、`SessionItem.tsx:23-70`、`store.ts:462,478,503` |

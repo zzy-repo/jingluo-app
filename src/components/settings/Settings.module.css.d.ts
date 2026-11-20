@@ -37,6 +37,18 @@ declare const styles: {
   readonly "mobileConfirm": string;
   readonly "importConfirm": string;
   readonly "importConfirmText": string;
+  readonly "importModeGroup": string;
+  readonly "importMode": string;
+  readonly "importModeSelected": string;
+  readonly "importModeDanger": string;
+  readonly "importModeRadio": string;
+  readonly "importModeRadioOn": string;
+  readonly "importModeText": string;
+  readonly "importModeTitle": string;
+  readonly "importModeHint": string;
+  readonly "importModeAcknowledgement": string;
+  readonly "importModeConflictRule": string;
+  readonly "importConflictSkipped": string;
   readonly "errorBox": string;
   readonly "errorClamped": string;
   readonly "errorActions": string;

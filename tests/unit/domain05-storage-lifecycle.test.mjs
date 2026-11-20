@@ -94,6 +94,10 @@ export const replaceHistory = async (run) => {
     active -= 1
   }
 }
+export const importHistoryInto = async (run, mode = 'overwrite') => {
+  const count = await replaceHistory(run)
+  return { mode, count, added: count, overwritten: 0, skipped: 0, skippedTitles: [] }
+}
 globalThis.__lifecycle = { order: [], maxActive: 0 }
 `
 const errorsStub = new URL('../fixtures/import-archive-stubs/errors.mjs', import.meta.url).href

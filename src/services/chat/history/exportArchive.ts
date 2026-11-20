@@ -1,5 +1,6 @@
 import * as db from '../db.js'
 import type { Session } from '../types.js'
+import { fail } from './errors.js'
 import { EXPORT_FORMAT_VERSION, type Manifest, type SessionIndexEntry } from './format.js'
 import { INDEX_PATH, MANIFEST_PATH, imagePath, sessionPath } from './paths.js'
 import { toIndexEntry, toSessionFile } from './toArchive.js'
@@ -7,19 +8,37 @@ import { writeArchive } from './zipWriter.js'
 
 const json = (value: unknown) => new Blob([JSON.stringify(value)], { type: 'application/json' })
 
+/** 导出范围（#390）：不传 `sessionIds` = 全量导出；传了就只导出这些会话，包结构与全量导出完全一致。 */
+export type ExportArchiveOptions = {
+  /** 勾选的会话 id（选择性导出）。传空集合由调用方拦住；这里匹配不到任何会话也会明确报错。 */
+  sessionIds?: readonly string[] | ReadonlySet<string>
+}
+
 /**
  * 按导出格式生成 ZIP：manifest → 全部会话 JSON → index → 全部图片。没有账号信息，不写 user.json。
  * 只写出本地有原件的图片，每个会话目录各写一份；其他附件只有元数据。
+ *
+ * 选择性导出（#390）只改变「写哪些会话」，条目顺序、manifest、index 与图片路径一律不变，
+ * 因此产出的包和全量导出是同一个格式，能被本 App 原路导入。
  */
 export const exportArchive = async (
-  sessions: Iterable<Session> | AsyncIterable<Session>
+  sessions: Iterable<Session> | AsyncIterable<Session>,
+  options: ExportArchiveOptions = {}
 ): Promise<Blob> => {
+  const selected = options.sessionIds === undefined ? undefined : new Set(options.sessionIds)
+  if (selected !== undefined && selected.size === 0) {
+    // 空选择不能产出一个「看着像备份、其实一条会话都没有」的包。
+    fail('historyExportEmptySelection')
+  }
   const manifest: Manifest = { export_format_version: EXPORT_FORMAT_VERSION }
   const entries = [{ name: MANIFEST_PATH, blob: json(manifest) }]
   const imageEntries: { name: string; blob: Blob }[] = []
   const index: SessionIndexEntry[] = []
   const originals = new Map<string, Blob | undefined>()
   for await (const session of sessions) {
+    if (selected !== undefined && !selected.has(session.id)) {
+      continue
+    }
     for (const message of session.messages) {
       if (message.role === 'user') {
         for (const file of message.files) {
@@ -44,6 +63,10 @@ export const exportArchive = async (
       imageEntries.push({ name, blob })
     }
     index.push(toIndexEntry(data))
+  }
+  if (selected !== undefined && index.length === 0) {
+    // 勾选的会话在导出途中被删干净（或 id 对不上）时同样要报错，而不是产出一个空包。
+    fail('historyExportEmptySelection')
   }
   entries.push({ name: INDEX_PATH, blob: json(index) })
   return writeArchive(entries.concat(imageEntries))

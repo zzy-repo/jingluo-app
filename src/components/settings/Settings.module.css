@@ -808,6 +808,99 @@
   color: var(--dsw-alias-label-primary);
 }
 
+/* 导入方式三选一（#390）：合并 / 跳过已存在 / 整包覆盖，默认合并 */
+.importModeGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.importMode {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.importModeSelected {
+  border-color: var(--dsw-alias-brand-primary);
+  background-color: var(--dsw-specific-selector);
+}
+
+/* 单选圆点：选中时外圈品牌色 + 内圈前景色（与主按钮文字同源），一眼能看出选的是哪一项 */
+.importModeRadio {
+  box-sizing: border-box;
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  margin-top: 2px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 50%;
+}
+
+.importModeRadioOn {
+  border-color: var(--dsw-alias-brand-primary);
+  background-color: var(--dsw-alias-brand-primary);
+  box-shadow: inset 0 0 0 3px var(--dsw-alias-label-primary-foreground);
+}
+
+/* 整包覆盖是破坏性选项：选中后标题与说明都按危险色区分，避免和另外两项混在一起 */
+.importModeDanger {
+  color: var(--dsw-alias-label-error, #d92d20);
+}
+
+.importModeText {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.importModeTitle {
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 500;
+}
+
+.importModeHint {
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-tertiary);
+  white-space: normal;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
+/* 覆盖导入的二次确认：必须显式勾选，勾选前主按钮不可点 */
+.importModeAcknowledgement {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 10px;
+  font-size: 13px;
+  line-height: 20px;
+  cursor: pointer;
+}
+
+.importModeConflictRule {
+  margin-top: 12px;
+}
+
+.importConflictSkipped {
+  margin-top: 8px;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-tertiary);
+  white-space: normal;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
 .deleteConfirm {
   /* 视口高度统一写法（issue #13）：dvh 一律放在 @supports 里，说明见 .feedbackDialog */
   max-height: calc(100vh - 32px);
@@ -1445,6 +1538,22 @@
   :global(html[data-flex-gap-fallback]) .locationSelectors > *:not(:last-child) {
     margin-right: 12px;
   }
+}
+
+:global(html[data-flex-gap-fallback]) .importModeGroup > *:not(:last-child) {
+  margin-bottom: 8px;
+}
+
+:global(html[data-flex-gap-fallback]) .importMode > *:not(:last-child) {
+  margin-right: 8px;
+}
+
+:global(html[data-flex-gap-fallback]) .importModeText > *:not(:last-child) {
+  margin-bottom: 2px;
+}
+
+:global(html[data-flex-gap-fallback]) .importModeAcknowledgement > *:not(:last-child) {
+  margin-right: 8px;
 }
 
 :global(html[data-flex-gap-fallback]) .deleteActions > *:not(:last-child) {

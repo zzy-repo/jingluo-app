@@ -37,7 +37,7 @@
 | `src/components/settings/PaymentRecords.module.css:5` `min(640px, calc(100vh - 48px))`，无 `@supports` 兜底 | 100vh 等于可视高度 | 4 | 中 | 需探测 |
 | `src/components/settings/PaymentTrailDialog.module.css:5` `min(720px, calc(100vh - 32px))`，无 `@supports` 兜底 | 100vh 等于可视高度 | 4 | 中 | 需探测 |
 | `src/components/settings/PurchaseRecordsDialog.module.css:7` `min(680px, calc(100vh - 48px))`，无 `@supports` 兜底 | 100vh 等于可视高度 | 4 | 中 | 需探测 |
-| `src/components/settings/Settings.module.css:818`（`:820` `@supports (max-height:100dvh)` 里升 `100dvh`）、`:837`/`:839` `min(560px, …)`、`:780`/`:781` `.feedbackDialog` | 100vh 等于可视高度 | 4 | 低 | 已有兜底 |
+| `src/components/settings/Settings.module.css:906`（`:908` `@supports (max-height:100dvh)` 里升 `100dvh`）、`:963`/`:965` `min(560px, …)`、`:935`/`:936` `.feedbackDialog` | 100vh 等于可视高度 | 4 | 低 | 已有兜底 |
 | `src/components/settings/AppUpdateField.module.css:21`/`:24`、`:33`/`:37` `vh` 与 `dvh` 分开写在 `@supports` 两侧（#13 的坑） | 100vh 等于可视高度 | 4 | 低 | 已有兜底 |
 | `src/app/App.module.css:104`/`:105` `height: var(--app-viewport-height, 100vh)` + `@supports` 升 `100dvh` | 100vh 等于可视高度 | 4 | 低 | 已有兜底 |
 | `src/components/chatInput/ChatInput.module.css:227`/`:228` `max-height: calc(var(--app-viewport-height, 100vh) - 120px)` + `@supports` | 100vh 等于可视高度 | 4 | 低 | 已有兜底 |

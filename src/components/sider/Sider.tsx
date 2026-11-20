@@ -4,8 +4,10 @@ import { useTranslate } from '../../i18n/index.js'
 import { IconPanelLeftOutline16, IconSettingsOutline16, NewChatIcon } from '../base/icons.js'
 import { setSiderCollapsed } from '../../services/settings.js'
 import { groupSessions } from '../../services/chat/sessionGroups.js'
+import { BackupError, exportHistory } from '../../services/chat/backup.js'
 import { newChat, removeSession, useChatStore } from '../../services/chat/store.js'
 import type { SessionSummary } from '../../services/chat/types.js'
+import { downloadBlob } from '../../utils/downloadBlob.js'
 import { MOTION_EXIT, usePresence } from '../../utils/usePresence.js'
 import { Button } from '../base/Button.js'
 import { IconButton } from '../base/IconButton.js'
@@ -30,6 +32,53 @@ export const Sider = ({ mobile = false }: { mobile?: boolean }) => {
   }, [sessions, now, t])
   const [deleting, setDeleting] = useState<SessionSummary | null>(null)
   const [deletePending, setDeletePending] = useState(false)
+  // #390 选择性导出：进入「选择」模式后逐条勾选，只导出勾中的会话（包格式与全量导出一致）。
+  const [selecting, setSelecting] = useState(false)
+  const [selected, setSelected] = useState<string[]>([])
+  const [exporting, setExporting] = useState(false)
+
+  const selectedSet = useMemo(() => new Set(selected), [selected])
+  const exitSelection = () => {
+    setSelecting(false)
+    setSelected([])
+  }
+  const toggleSelected = (id: string) =>
+    setSelected((current) =>
+      current.includes(id) ? current.filter((item) => item !== id) : [...current, id]
+    )
+  const selectAll = () => setSelected(sessions.map((session) => session.id))
+  const invertSelection = () =>
+    setSelected(
+      sessions.filter((session) => !selectedSet.has(session.id)).map((session) => session.id)
+    )
+
+  /** 导出勾选的会话：空选择要给明确提示，不能静默什么都不发生。 */
+  const exportSelected = async () => {
+    const ids = sessions.filter((session) => selectedSet.has(session.id)).map((session) => session.id)
+    if (ids.length === 0) {
+      showToast({ key: 'historyExportSelectedEmpty', type: 'error' })
+      return
+    }
+    setExporting(true)
+    try {
+      const { name, blob, sessions: exported } = await exportHistory({ sessionIds: ids })
+      downloadBlob(blob, name)
+      showToast({ key: 'historyExportedSelectedCount', params: { count: exported } })
+      exitSelection()
+    } catch (error) {
+      showToast(
+        error instanceof BackupError
+          ? { key: error.key, params: error.params, type: 'error' }
+          : {
+              key: 'historyExportFailed',
+              params: { message: error instanceof Error ? error.message : String(error) },
+              type: 'error',
+            }
+      )
+    } finally {
+      setExporting(false)
+    }
+  }
 
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout>
@@ -80,6 +129,17 @@ export const Sider = ({ mobile = false }: { mobile?: boolean }) => {
         </span>
         {t('newChat')}
       </button>
+      {sessions.length > 0 ? (
+        <div className={styles.selectionToggleRow}>
+          <button
+            type="button"
+            className={styles.selectionToggle}
+            onClick={() => (selecting ? exitSelection() : setSelecting(true))}
+          >
+            {t(selecting ? 'historySelectModeExit' : 'historySelectModeEnter')}
+          </button>
+        </div>
+      ) : null}
       <div className={styles.listWrap}>
         <div className={styles.list}>
           {groups.map((group) => (
@@ -90,6 +150,9 @@ export const Sider = ({ mobile = false }: { mobile?: boolean }) => {
                   key={session.id}
                   session={session}
                   active={session.id === activeId}
+                  selecting={selecting}
+                  selected={selectedSet.has(session.id)}
+                  onToggle={toggleSelected}
                   onDelete={() => setDeleting(session)}
                 />
               ))}
@@ -97,6 +160,30 @@ export const Sider = ({ mobile = false }: { mobile?: boolean }) => {
           ))}
         </div>
       </div>
+      {selecting ? (
+        // 选择模式的底栏：已选 N 条 + 全选 / 反选 / 导出选中（移动端也在同一处，不另做一套）
+        <div className={styles.selectionBar}>
+          <div className={styles.selectionCount}>
+            {t('historyExportSelectedCount', { count: selectedSet.size })}
+          </div>
+          <div className={styles.selectionActions}>
+            <button type="button" className={styles.selectionAction} onClick={selectAll}>
+              {t('historySelectAll')}
+            </button>
+            <button type="button" className={styles.selectionAction} onClick={invertSelection}>
+              {t('historySelectInvert')}
+            </button>
+            <Button
+              variant="outlined"
+              size="m"
+              disabled={exporting}
+              onClick={() => void exportSelected()}
+            >
+              {t('historyExportSelected')}
+            </Button>
+          </div>
+        </div>
+      ) : null}
       <div className={styles.bottom}>
         <button type="button" className={styles.settings} onClick={() => openSettings('general')}>
           <span className={styles.settingsIcon}>

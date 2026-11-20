@@ -38,6 +38,37 @@
   }
 }
 
+.selectable {
+  /* 选择模式：整行都能点，勾选状态用左侧方框表达（#390）。
+     勾选框与标题的间距用 margin 而不是 flex gap：Chromium 83 上没有 flex gap，
+     而这个类总是和 .item 一起用，写成 gap 会让 `check:gap` 看不见、也给不出兜底。 */
+}
+
+.selected {
+  background-color: var(--dsw-specific-sidebar-nav-item-hover);
+}
+
+.check {
+  display: inline-flex;
+  flex-shrink: 0;
+  margin-right: 8px;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  width: 18px;
+  height: 18px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 6px;
+  /* 勾选态是品牌蓝底，勾必须用「品牌底上的前景色」（浅色主题里 brand-primary-invert 也是蓝，
+     勾会看不见，与主按钮的文字色同源） */
+  color: var(--dsw-alias-label-primary-foreground);
+}
+
+.checkOn {
+  border-color: var(--dsw-alias-brand-primary);
+  background-color: var(--dsw-alias-brand-primary);
+}
+
 .title {
   flex: 1;
   min-width: 0;

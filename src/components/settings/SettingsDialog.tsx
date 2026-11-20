@@ -16,6 +16,7 @@ import {
   exportHistory,
   importHistory,
 } from '../../services/chat/backup.js'
+import type { ImportMode } from '../../services/chat/history/mergeSessions.js'
 import type { ImportSkip } from '../../services/chat/history/toLocal.js'
 import {
   canImportFromUrl,
@@ -25,9 +26,10 @@ import {
   type UrlImportProgress,
 } from '../../services/chat/history/urlImport.js'
 import { copyText } from '../../utils/clipboard.js'
-import { ImportSkippedDetails, importedMessage } from './importSkipped.js'
+import { downloadBlob } from '../../utils/downloadBlob.js'
+import { ImportSkippedDetails, importedMessage, summaryFromCount } from './importSkipped.js'
 import { useIsMobile } from '../../app/viewport.js'
-import { useChatStore } from '../../services/chat/store.js'
+import { useChatStore, type HistoryImportSummary } from '../../services/chat/store.js'
 import {
   setLocale,
   setEnterKeyMode,
@@ -441,8 +443,18 @@ const TtsVoiceSetting = () => {
   )
 }
 
+/** 导入方式三选一（#390）：默认合并，整包覆盖是破坏性的那一项。 */
+const importModeOptions: { value: ImportMode; label: TranslationKey; hint: TranslationKey }[] = [
+  { value: 'merge', label: 'historyImportModeMerge', hint: 'historyImportModeMergeHint' },
+  { value: 'skip', label: 'historyImportModeSkip', hint: 'historyImportModeSkipHint' },
+  { value: 'overwrite', label: 'historyImportModeOverwrite', hint: 'historyImportModeOverwriteHint' },
+]
+
 /**
- * 覆盖导入的二次确认，叠在设置弹窗上。
+ * 导入确认，叠在设置弹窗上：**先选导入方式**（合并 / 跳过已存在 / 整包覆盖），再确认。
+ *
+ * 整包覆盖要保持「二次确认」：选中它之后主按钮换成「确认覆盖导入」，且必须再勾一次
+ * 「本地现有 N 条会话将被清除」才可点 —— 一次点击走不到清空数据那一步。
  * 链接导入在这一步之后还要下载 → 解析 → 导入，全程不关闭弹窗：
  * 逐阶段显示「已下载 8.4MB/20.2MB（42%）」这类真实进度，任何时候都能取消。
  */
@@ -454,6 +466,11 @@ const ImportConfirm = ({
   const t = useTranslate()
   const progress = historyImport.progress
   const percent = progressPercent(progress)
+  const localSessions = useChatStore((state) => state.sessions.length)
+  const overwrite = historyImport.mode === 'overwrite'
+  // 整包覆盖：本地确实有会话时必须显式勾选，勾选前主按钮不可点（二次确认）。
+  const needsAcknowledgement = overwrite && localSessions > 0
+  const canConfirm = progress === null && (!needsAcknowledgement || historyImport.acknowledged)
   return (
     <Modal
       title={t('historyImportConfirmTitle')}
@@ -465,19 +482,83 @@ const ImportConfirm = ({
             {t('cancel')}
           </Button>
           <Button
-            variant="dangerOutlined"
+            variant={overwrite ? 'danger' : 'dangerOutlined'}
             size="m"
-            disabled={progress !== null}
+            disabled={!canConfirm}
             onClick={() => void historyImport.confirm()}
           >
-            {t(progress === null ? 'historyImportConfirm' : 'historyImportUrlDownloading')}
+            {t(
+              progress !== null
+                ? 'historyImportUrlDownloading'
+                : overwrite
+                  ? 'historyImportConfirmOverwrite'
+                  : 'historyImportConfirm'
+            )}
           </Button>
         </>
       }
     >
       <div className={styles.importConfirmText}>
         {progress === null ? (
-          t('historyImportConfirmDescription')
+          <>
+            <div className={styles.description}>{t('historyImportConfirmDescription')}</div>
+            <div
+              role="radiogroup"
+              aria-label={t('historyImportModeLabel')}
+              className={styles.importModeGroup}
+            >
+              {importModeOptions.map((option) => {
+                const selected = historyImport.mode === option.value
+                return (
+                  <button
+                    key={option.value}
+                    type="button"
+                    role="radio"
+                    aria-checked={selected}
+                    data-import-mode={option.value}
+                    className={clsx(styles.importMode, selected && styles.importModeSelected)}
+                    onClick={() => historyImport.setMode(option.value)}
+                  >
+                    <span
+                      className={clsx(
+                        styles.importModeRadio,
+                        selected && styles.importModeRadioOn
+                      )}
+                      aria-hidden="true"
+                    />
+                    <span className={styles.importModeText}>
+                      <span
+                        className={clsx(
+                          styles.importModeTitle,
+                          option.value === 'overwrite' && styles.importModeDanger
+                        )}
+                      >
+                        {t(option.label)}
+                      </span>
+                      <span className={styles.importModeHint}>
+                        {t(option.hint, { count: localSessions })}
+                      </span>
+                    </span>
+                  </button>
+                )
+              })}
+            </div>
+            {needsAcknowledgement ? (
+              <label className={styles.importModeAcknowledgement}>
+                <input
+                  type="checkbox"
+                  checked={historyImport.acknowledged}
+                  onChange={(event) => historyImport.setAcknowledged(event.currentTarget.checked)}
+                />
+                <span className={styles.importModeDanger}>
+                  {t('historyImportOverwriteAcknowledge', { count: localSessions })}
+                </span>
+              </label>
+            ) : null}
+            <div className={clsx(styles.description, styles.importModeConflictRule)}>
+              {t('historyImportConflictRule')}
+            </div>
+          </>
         ) : (
           <div className={styles.progressBlock}>
             <div className={styles.progressLabel}>{progressLabel(t, progress)}</div>
@@ -548,8 +629,13 @@ const ThemeSetting = () => {
   )
 }
 
-/** `reason` 为失败原因的文案 key，展示时按当前语言翻译后填入 `message` 参数。 */
-type Status = (TranslationMessage & { error?: boolean; reason?: TranslationKey }) | null
+/**
+ * `reason` 为失败原因的文案 key，展示时按当前语言翻译后填入 `message` 参数；
+ * `detail` 是紧跟在主文案后面的补充（#390：增量导入的「新增 / 覆盖 / 跳过」明细）。
+ */
+type Status =
+  | (TranslationMessage & { error?: boolean; reason?: TranslationKey; detail?: TranslationMessage })
+  | null
 
 /** 导入状态带来源：文件导入的提示只显示在「导入历史对话」行，链接导入只显示在「从链接导入」行。 */
 type ImportStatus = { target: 'file' | 'url'; message: Status }
@@ -567,10 +653,10 @@ const errorStatus = (key: TranslationKey, error: unknown): Status => ({
 const statusText = (t: ReturnType<typeof useTranslate>, status: Status): string =>
   status === null
     ? ''
-    : t(status.key, {
+    : `${t(status.key, {
         ...status.params,
         ...(status.reason ? { message: t(status.reason, status.params) } : {}),
-      })
+      })}${status.detail ? t(status.detail.key, status.detail.params) : ''}`
 
 /** 说明文字：有状态就显示状态（失败标红），否则显示静态说明。 */
 const CellText = ({ status, description }: { status: Status; description?: string }) => {
@@ -907,18 +993,23 @@ const urlErrorStatus = (error: unknown): Status =>
       }
 
 /**
- * 导入状态：选中来源后先提示覆盖，确认后才真正导入。
+ * 导入状态：选中来源后先选导入方式（默认合并），确认后才真正导入。
  * 链接导入多一段「分阶段进度」：下载（字节/百分比）→ 解析 → 导入 n/总数；
  * 进度节流 100ms，取消后界面上立刻回到可重试状态（下载结果被丢弃，不写任何数据）。
  */
 const useHistoryImport = () => {
   const [source, setSource] = useState<ImportSource | null>(null)
+  /** #390：导入方式三选一，默认 merge（保留本地会话，最安全）；整包覆盖必须再勾一次确认。 */
+  const [mode, setMode] = useState<ImportMode>('merge')
+  const [acknowledged, setAcknowledged] = useState(false)
   const [busy, setBusy] = useState(false)
   const [progress, setProgress] = useState<UrlImportProgress | null>(null)
   const [trace, setTrace] = useState<ImportTraceEntry[]>([])
   const [status, setStatus] = useState<ImportStatus | null>(null)
   // #49：这一次导入里被丢掉的条目（损坏的消息 / 整会话）。成功提示要带上条数，明细列在下面。
   const [skipped, setSkipped] = useState<ImportSkip[]>([])
+  // #390：这一次导入的结果摘要（模式 + 新增/覆盖/跳过 + 被跳过的会话标题），用于结果明细。
+  const [summary, setSummary] = useState<HistoryImportSummary | null>(null)
   const [url, setUrl] = useState('')
   const importing = useRef(false)
   // 取消后仍可能有已发出的下载在跑：用自增的 run 标记作废旧结果，不影响新的一轮导入。
@@ -962,20 +1053,21 @@ const useHistoryImport = () => {
     }
   }
 
-  const importFile = async (file: File) => {
+  const importFile = async (file: File, mode: ImportMode) => {
     try {
-      const count = await importHistory(file)
+      const result = await importHistory(file, { mode })
       // 条数与明细都取自 store：importArchive 把跳过条目交回 store.importSkipped，这里只负责显示。
       const dropped = useChatStore.getState().importSkipped
       setSkipped(dropped)
-      setStatus({ target: 'file', message: importedMessage(count, dropped.length) })
+      setSummary(result)
+      setStatus({ target: 'file', message: importedMessage(result, dropped.length) })
     } catch {
       setStatus({ target: 'file', message: { key: 'historyImportFailed', error: true } })
     }
   }
 
   /** 下载 + 解析 + 导入；取消后 (signal.aborted) 不提示、不写入。 */
-  const importLink = async (link: string) => {
+  const importLink = async (link: string, mode: ImportMode) => {
     const controller = new AbortController()
     abort.current = controller
     setTrace([])
@@ -983,13 +1075,17 @@ const useHistoryImport = () => {
     try {
       const count = await importHistoryFromUrl(link, {
         signal: controller.signal,
+        mode,
         onProgress: emitProgress,
         onTrace: pushTrace,
       })
       const dropped = useChatStore.getState().importSkipped
       setSource(null)
       setSkipped(dropped)
-      setStatus({ target: 'url', message: importedMessage(count, dropped.length) })
+      // 结果摘要（含合并明细）由 store 带出来；链接导入返回的仍然只是写入条数，作为兜底。
+      const result = useChatStore.getState().importSummary ?? summaryFromCount(count)
+      setSummary(result)
+      setStatus({ target: 'url', message: importedMessage(result, dropped.length) })
     } catch (error) {
       if (controller.signal.aborted || error instanceof UrlImportCancelled) {
         // 取消：不提示失败，界面上什么错误都不留。
@@ -1011,17 +1107,25 @@ const useHistoryImport = () => {
     setBusy(true)
     setStatus(null)
     setSkipped([])
+    setSummary(null)
     try {
       if (source.kind === 'file') {
         setSource(null)
-        await importFile(source.file)
+        await importFile(source.file, mode)
       } else {
-        await importLink(source.url)
+        await importLink(source.url, mode)
       }
     } finally {
       abort.current = null
       finish(id)
     }
+  }
+
+  /** 换一个来源就回到默认方式：上一次勾的「整包覆盖」不该带到下一次导入上。 */
+  const chooseSource = (next: ImportSource) => {
+    setMode('merge')
+    setAcknowledged(false)
+    setSource(next)
   }
 
   /** 取消：关闭弹窗并丢弃结果（CapacitorHttp 不能 abort，只能不发新块、不再采用它的返回值）。 */
@@ -1033,6 +1137,7 @@ const useHistoryImport = () => {
     resetProgress()
     setBusy(false)
     setSource(null)
+    setAcknowledged(false)
   }
 
   /** 重试：从当前链接重新走一遍完整流程（下载 → 解析 → 导入）。 */
@@ -1051,10 +1156,15 @@ const useHistoryImport = () => {
     trace,
     status,
     skipped,
+    summary,
     url,
     setUrl,
-    selectFile: (file: File) => setSource({ kind: 'file', file }),
-    selectUrl: () => setSource({ kind: 'url', url }),
+    mode,
+    setMode,
+    acknowledged,
+    setAcknowledged,
+    selectFile: (file: File) => chooseSource({ kind: 'file', file }),
+    selectUrl: () => chooseSource({ kind: 'url', url }),
     cancel,
     retry,
     confirm,
@@ -1123,6 +1233,18 @@ const ImportHistory = ({
           </>
         }
       />
+      {historyImport.status?.target === 'file' &&
+      historyImport.summary !== null &&
+      historyImport.summary.skippedTitles.length > 0 ? (
+        // #390：增量导入里被「保留本地版本」的会话，逐条列出来，别让用户以为它们没进包。
+        <div className={clsx(styles.cell, styles.row)}>
+          <div className={styles.text}>
+            <div className={styles.importConflictSkipped}>
+              {t('historyImportConflictSkippedTitle')}：{historyImport.summary.skippedTitles.join('、')}
+            </div>
+          </div>
+        </div>
+      ) : null}
       {historyImport.status?.target === 'file' && historyImport.skipped.length > 0 ? (
         // #49：跳过了什么、为什么，摊开在导入这一项下面，不藏在折叠里
         <div className={clsx(styles.cell, styles.row)}>
@@ -1228,12 +1350,7 @@ const ExportHistory = ({ disabled }: { disabled: boolean }) => {
     setStatus(null)
     try {
       const { name, blob } = await exportHistory()
-      const url = URL.createObjectURL(blob)
-      const link = document.createElement('a')
-      link.href = url
-      link.download = name
-      link.click()
-      setTimeout(() => URL.revokeObjectURL(url), 10_000)
+      downloadBlob(blob, name)
     } catch (error) {
       setStatus(errorStatus('historyExportFailed', error))
     } finally {

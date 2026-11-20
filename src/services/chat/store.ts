@@ -51,6 +51,7 @@ import {
 import { buildMessageBody } from './requestBody.js'
 import { STREAM_NOTICE_TIERS } from './streamNotice.js'
 import { composeWaitNotice, needsUpload, type WaitHint, type WaitStage } from './waitStage.js'
+import type { MergePlan, ImportMode } from './history/mergeSessions.js'
 import type { ImportSkip } from './history/toLocal.js'
 import {
   toSessionSummary,
@@ -116,6 +117,8 @@ type ChatState = {
   streaming: Record<string, AbortController>
   /** 最近一次历史导入被跳过的条目（损坏的会话 / 消息），供「导入详情」展示（#49） */
   importSkipped: ImportSkip[]
+  /** 最近一次历史导入的结果摘要（模式 + 新增/覆盖/跳过），供「导入详情」展示（#390）；没导过为 null */
+  importSummary: HistoryImportSummary | null
   /**
    * 还在等首字的会话：当前该显示的等待提示（阶段 + 分档）；收到首字或本轮结束就删掉。
    * **不按秒写入**：秒数只活在叶子组件里（1Hz 只重渲染那一行），避免整棵消息列表每秒重渲染。
@@ -134,6 +137,7 @@ export const useChatStore = create<ChatState>(() => ({
   activeId: null,
   streaming: {},
   importSkipped: [],
+  importSummary: null,
   waitHints: {},
 }))
 
@@ -619,6 +623,22 @@ const skippedOf = (error: unknown): { skipped: ImportSkip[]; staged: number } | 
 }
 
 /**
+ * 一次历史导入的结果（#390）：模式 + 条数统计 + 明细。
+ *
+ * `count` 是本次**写入**的会话数（新增 + 覆盖）：整包覆盖模式下它就是包内会话数，
+ * 增量模式下「跳过」的不算进 count，界面据此显示「新增 N / 覆盖 M / 跳过 K」。
+ */
+export type HistoryImportSummary = {
+  mode: ImportMode
+  count: number
+  added: number
+  overwritten: number
+  skipped: number
+  /** 因冲突被跳过的会话标题（本地版本胜出），用于导入结果明细 */
+  skippedTitles: string[]
+}
+
+/**
  * 替换历史对话：先写入暂存，成功后原子替换旧记录；写入为空即删除全部会话与附件。
  * 期间停止生成并禁止修改会话。
  *
@@ -626,11 +646,23 @@ const skippedOf = (error: unknown): { skipped: ImportSkip[]; staged: number } | 
  * 逐条事务与摘要记账，不在本条 lane 的所有权内），但**不再整包回滚**——
  * write() 正常返回并带上 skipped，或抛出「已暂存部分」的部分成功错误时，已写入的会话照常提交，
  * 失败条目记进 state.importSkipped 上报；只有整包不可用（一条都没写成）才清暂存并抛错。
+ *
+ * 返回写入的会话数（= 提交后本地会话总数），供旧调用方沿用。
  */
-export const replaceHistory = async (
+export const replaceHistory = async (write: () => Promise<unknown>): Promise<number> =>
+  (await importHistoryInto(write, 'overwrite')).count
+
+/**
+ * 历史导入（#390）：与 `replaceHistory` 同一条解析 / 暂存路径，只在**提交**这一步按模式分叉——
+ *   - `overwrite`（现有行为）：清空本地会话与附件后整包替换；
+ *   - `merge` / `skip`：本地会话一条都不删，只把暂存里的会话合并进来
+ *     （同 id 冲突按更新时间取舍 / 一律跳过，口径见 `history/mergeSessions.ts`）。
+ */
+export const importHistoryInto = async (
   // 允许返回 skipped 清单；返回 void / 数字的旧调用方照旧可用（返回类型统一按 unknown 收）
-  write: () => Promise<unknown>
-): Promise<number> => {
+  write: () => Promise<unknown>,
+  mode: ImportMode = 'overwrite'
+): Promise<HistoryImportSummary> => {
   if (get().importingHistory) {
     throw new Error('History replacement is already in progress')
   }
@@ -646,11 +678,21 @@ export const replaceHistory = async (
     sessionLoads.clear()
     await waitForIdle()
     await db.clearStaging()
-    let summaries: SessionSummary[]
+    type Committed = { summaries: SessionSummary[]; plan: MergePlan | null }
+    /** 提交暂存：整包覆盖是「清空 + 整体搬入」，增量模式是「按冲突口径合并」。 */
+    const commit = async (): Promise<Committed> => {
+      if (mode === 'overwrite') {
+        return { summaries: await db.commitStaging(), plan: null }
+      }
+      const plan = await db.mergeStaging(mode)
+      // 合并后本地会话是「原有的 + 新增的」，与包内会话数无关，必须重新读一遍列表。
+      return { summaries: await db.loadSessionSummaries(), plan }
+    }
+    let committed: Committed
     let skipped: ImportSkip[] = []
     try {
       skipped = readSkipped(await write())
-      summaries = await db.commitStaging()
+      committed = await commit()
     } catch (error) {
       // 部分成功：调用方已确认有会话写进暂存（staged > 0）并带上了 skipped，
       // 此时按「能导入的先导入」提交已写入部分，不整包回滚。
@@ -665,27 +707,57 @@ export const replaceHistory = async (
         skipped: partial.skipped.length,
       })
       try {
-        summaries = await db.commitStaging()
+        committed = await commit()
       } catch (commitError) {
         await db.clearStaging().catch(db.reportStorageError('clear unfinished history replacement'))
         throw commitError
       }
     }
+    const { summaries, plan } = committed
+    const summary: HistoryImportSummary = {
+      mode,
+      count: plan === null ? summaries.length : plan.added + plan.overwritten,
+      added: plan === null ? summaries.length : plan.added,
+      overwritten: plan?.overwritten ?? 0,
+      skipped: plan?.skipped ?? 0,
+      skippedTitles: plan?.skippedTitles ?? [],
+    }
     sessionAccess.clear()
     unsavedSessions.clear()
     pendingFiles.clear()
-    clearAllDrafts()
-    set({
-      ready: true,
-      initError: false,
-      sessions: sortSessions(summaries),
-      sessionCache: {},
-      sessionLoadErrors: {},
-      sessionSaveErrors: {},
-      importSkipped: skipped,
-      activeId: null,
-    })
-    return summaries.length
+    if (mode === 'overwrite') {
+      clearAllDrafts()
+      set({
+        ready: true,
+        initError: false,
+        sessions: sortSessions(summaries),
+        sessionCache: {},
+        sessionLoadErrors: {},
+        sessionSaveErrors: {},
+        importSkipped: skipped,
+        importSummary: summary,
+        activeId: null,
+      })
+    } else {
+      // 增量模式只丢弃「本次被写入」那些会话的草稿：其余本地会话连草稿都不该被动到。
+      for (const id of plan?.written ?? []) {
+        clearDraft(id)
+      }
+      const activeId = get().activeId
+      set({
+        ready: true,
+        initError: false,
+        sessions: sortSessions(summaries),
+        sessionCache: {},
+        sessionLoadErrors: {},
+        sessionSaveErrors: {},
+        importSkipped: skipped,
+        importSummary: summary,
+        // 当前打开的会话本地还在就继续停在它上面，别把用户从正在看的那条会话上踢走。
+        activeId: activeId !== null && summaries.some((item) => item.id === activeId) ? activeId : null,
+      })
+    }
+    return summary
   } finally {
     set({ importingHistory: false })
     retrySaveSessions()
