@@ -90,8 +90,15 @@ export const zh = {
     '当前填写的 API Key 格式不对（含空格、换行，或长度不像一把 Key），请求还没有发到上游',
   /** Key 不存在 / 已被服务端删除（#374） */
   replyApiKeyNotFound: '这把 API Key 无效或已被删除（上游查不到它：没绑定成功，或已被服务端删除）',
-  /** Key 被轮换后旧 Key 失效（#374，对应 #90 的 /rotate 语义：旧 Key 立即作废、额度不丢） */
-  replyApiKeyRotated: '这把 API Key 已被轮换，旧的已经失效（换 Key 时旧 Key 会立即作废）',
+  /**
+   * Key 被轮换 / 吊销（#374 的 `rotated` 档）。
+   *
+   * #451 校对（与 #357 对齐）：本机设置里的「重置额度」（`/rotate`）**不换 Key**、只重算额度，
+   * 所以这条失效**不是**用户在这里点出来的 —— 是服务端那边把旧 Key 作废了。旧文案那句
+   * 「换 Key 时旧 Key 会立即作废」是 #90 时代的说法，留着会让用户以为「点了重置把我的 Key 弄废了」。
+   */
+  replyApiKeyRotated:
+    '这把 API Key 已被轮换或吊销，旧的已经失效（本机「重置额度」只重算额度、不换 Key，所以是服务端那边作废的）；可以在「我们的渠道」里按设备码重新取回当前 Key，或直接换一把新 Key',
   /** 提示里的 Key 身份：只说尾 4 位，让用户确认「是哪把 Key 出问题」（#374） */
   replyApiKeyTailNote: '（当前 Key 尾号 {tail}）',
   /**
@@ -337,7 +344,8 @@ export const zh = {
   voiceInputEmpty: '未识别到语音内容',
   voiceInputLimitReached: '已达到单次录音时长上限',
   voiceInputRequiresHttps: '非 HTTPS 页面无法使用语音输入',
-  apiKeyInvalidRetry: 'API Key 无效，请更换后重试',
+  /** #451：判据与出路一起说清 —— 「换一把」之外还有「按设备码取回本机那把」这条路（#357 之后仍然成立） */
+  apiKeyInvalidRetry: 'API Key 无效，请重新填写；或在「我们的渠道」里用「重置额度」按设备码取回本机 Key',
   /** 上游 401 之后的统一提示（#303 问题 3）：既要说明原因，也要说明下一步怎么修 */
   apiKeyRejected: 'Key 无效或已过期，请重新登录或重新填写',
   insufficientBalance: '账户余额不足',
@@ -355,6 +363,15 @@ export const zh = {
   settingsProviderKindLabel: '渠道',
   settingsProviderKindKeyHint: '切换渠道后，请确认 API Key 是否适用',
   settingsApiKeyLabel: 'API Key',
+  /**
+   * 发送前本地拦截（#451 第 2 点）：Key 有、但格式明显不对 → 消息**没有发出去**。
+   * 必须写明「没发出去」：否则用户只会以为是网络或上游问题，然后不停地重发同一条消息。
+   */
+  settingsApiKeyFormatBlocked:
+    '当前填写的 API Key 格式不对（含空格、换行，或长度不像一把 Key），这条消息没有发出去。请清空后重新粘贴一把完整的 Key（去掉空格 / 换行），再发送。',
+  /** 只是存着一条可疑的 Key（还没试过发送）：普通提示，不用红字吓人 */
+  settingsApiKeyFormatHint:
+    '这一行的内容不像一把 API Key（可能多了空格 / 换行，或没复制完整），发送前会被拦下来。',
   settingsBaseUrlLabel: '服务地址',
   settingsBaseUrlPlaceholder: '例如 https://your-gateway.example.com',
   settingsModelPlaceholder: '例如 deepseek-v4.1-flash',
@@ -727,6 +744,24 @@ export const zh = {
   oursRotateErrInvalidResponse: '服务端返回异常，请稍后重试',
   oursRotateErrUnknown: '重置失败，请稍后重试',
   oursRotateKeptOldKey: '本地旧 Key 未被改动，仍可继续使用',
+  // #451：Key 身份（绑定时间 / 最近一次确认可用时间）。两个时间都来自**本机记录**。
+  oursKeyIdentityTitle: 'Key 身份',
+  oursKeyIdentityTail: '当前 Key 尾号 {tail}',
+  /** 太短的 Key 一个字符都不回显（与 #374 的 keyTail 同一口径） */
+  oursKeyIdentityTailUnknown: '当前 Key 太短，不回显尾号',
+  oursKeyIdentityBoundAt: '绑定时间：{time}（这把 Key 第一次写进本机的时间）',
+  oursKeyIdentityLastSuccess: '最近一次成功使用：{time}',
+  oursKeyIdentityNoSuccess: '最近一次成功使用：本机还没有记录',
+  oursKeyIdentityNoRecord: '本机没有这把 Key 的时间记录（刚换过 Key，或本地记录已被清掉）',
+  /** 数据来源如实说明：服务端额度接口只回额度，没有这两个时间 */
+  oursKeyIdentitySource:
+    '这两个时间来自本机记录：额度接口只返回额度，不返回绑定时间与最近使用时间。',
+  /**
+   * 「成功使用」的准确定义：#451 只在真的拿到成功应答时记（校验 / 探测 / 重置额度 / 兑换卡密）。
+   * 不写成「最后一次对话成功」—— 聊天那一轮的写入点不在本单改动范围（见 issue #451）。
+   */
+  oursKeyIdentitySuccessSource:
+    '「成功使用」指本机最后一次确认这把 Key 可用（设置里校验、连通性测试、Key 探测、重置额度、兑换卡密成功时记录）。换一把 Key 会重新记账。',
   // Issue #46：思考过程显示方式三档
   settingDialogThinkingDisplayLabel: '思考过程',
   settingDialogThinkingDisplayDescription: '深度思考开启后，思考内容在消息里怎么显示；切换后立即对已打开的会话生效。',

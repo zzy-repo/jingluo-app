@@ -3,12 +3,14 @@ import { IconEditOutline16 } from '../base/icons.js'
 import {
   getBaseUrl,
   normalizeBaseUrl,
+  recordKeySuccess,
   setBaseUrl,
   setModel,
   setProviderKind,
   useApiConfig,
   recordConfigRejection,
 } from '../../services/api/apiConfig.js'
+import { isKeyFormatInvalid } from '../../services/api/keyFailure.js'
 import {
   PROVIDER_SPECS,
   getSpec,
@@ -24,6 +26,7 @@ import { IconButton } from '../base/IconButton.js'
 import { Select } from '../base/Select.js'
 import { useSettings } from '../../services/settings.js'
 import { useApiKeyForm } from './useApiKeyForm.js'
+import { useSettingsDialog } from './settingsDialogState.js'
 import { useTranslate, type TranslationKey } from '../../i18n/index.js'
 import styles from './Settings.module.css'
 
@@ -37,7 +40,19 @@ export const useApiKeyEditor = () => {
     onSaved: () => setEditing(false),
     onFailed: () => setEditing(true),
   })
-  return { apiKey, editing, setEditing, form, showInput: !apiKey || editing }
+  /**
+   * #451：被「发送前拦截」拦过的那把 Key 即使已保存（掩码视图）也必须把输入框摆出来 ——
+   * 提示说「格式不对、请在这一行改正」，却让人再点一次铅笔图标才能改，是把话说一半。
+   */
+  const blocked = useSettingsDialog((state) => state.apiKeyFormatBlocked)
+  return {
+    apiKey,
+    editing,
+    setEditing,
+    form,
+    showInput: !apiKey || editing || blocked,
+    formatBlocked: blocked,
+  }
 }
 
 type ApiKeyEditor = ReturnType<typeof useApiKeyEditor>
@@ -168,12 +183,24 @@ const ApiKeyField = ({ editor }: { editor: ApiKeyEditor }) => {
   // 上游已经用 401 判过这把 Key（#303）：直接在 Key 这一行说清怎么修，而不是等用户去点测试
   const rejection = useKeyRejection((state) => state.rejection)
   const rejected = isKeyRejected()
+  /**
+   * #451：Key 看起来就不像一把 Key（含空格 / 换行、长度异常）。
+   *
+   * 两种状态分开显示：
+   *  - `formatBlocked`（这次发送**被拦下来了**）→ 红字，明确写「这条消息没有发出去」；
+   *  - 只是存着一条格式不对的 Key（还没试过发）→ 普通提示，别把人吓一跳。
+   * 判据与请求前的拦截、与 #374 的失败细分同一个函数（`isKeyFormatInvalid`），不另写一套。
+   */
+  const formatBlocked = editor.formatBlocked
+  const formatSuspicious = apiKey !== '' && isKeyFormatInvalid(apiKey)
 
   return (
     <div className={styles.cell}>
       <div className={styles.apiKey}>
         <div className={styles.label}>{t('settingsApiKeyLabel')}</div>
-        {apiKey && !editing ? (
+        {/* #451：被拦下来的那把 Key 直接进编辑态 —— 提示写着「请在这一行改正」，
+            却还盖着一层掩码与铅笔图标，等于把话说一半 */}
+        {apiKey && !editing && !formatBlocked ? (
           <div className={styles.apiKeySaved}>
             <span className={styles.apiKeyMask}>{'*'.repeat(apiKey.length)}</span>
             <IconButton
@@ -229,6 +256,15 @@ const ApiKeyField = ({ editor }: { editor: ApiKeyEditor }) => {
             ? <div className={styles.error}>{t('apiKeyRejected')}</div>
             : null
           : null}
+        {formatBlocked ? (
+          <div className={styles.error} role="status" data-testid="settings-api-key-format-blocked">
+            {t('settingsApiKeyFormatBlocked')}
+          </div>
+        ) : formatSuspicious ? (
+          <div className={styles.description} data-testid="settings-api-key-format-hint">
+            {t('settingsApiKeyFormatHint')}
+          </div>
+        ) : null}
       </div>
     </div>
   )
@@ -361,6 +397,8 @@ const ModelField = ({ spec }: { spec: ProviderSpec }) => {
     setError(null)
     setModels(result.models)
     setStatus(result.models.length ? 'ready' : 'empty')
+    // #451：GET /models 成功 = 这把 Key 现在被上游认了，记一次「确认可用」（见 services/invite/keyIdentity.ts）
+    recordKeySuccess(apiKey)
   }, [baseUrl, apiKey, defaultBaseUrl])
 
   // 订阅判定状态：Key 被判失效时这里会重渲染，但下面的 effect 不会再发自动请求
@@ -474,7 +512,12 @@ const ConnectionTestField = ({ editor }: { editor: ApiKeyEditor }) => {
     setTesting(true)
     setProbe(null)
     try {
-      setProbe(await probeProvider({ baseUrl, apiKey }))
+      const result = await probeProvider({ baseUrl, apiKey })
+      // #451：只有真的拿到成功应答才记「最近一次确认可用」；失败一次都不写
+      if (result.ok) {
+        recordKeySuccess(apiKey)
+      }
+      setProbe(result)
     } finally {
       setTesting(false)
     }

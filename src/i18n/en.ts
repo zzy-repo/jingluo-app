@@ -96,9 +96,16 @@ export const en = {
   /** Key does not exist / was deleted on the server (#374) */
   replyApiKeyNotFound:
     'This API Key is invalid or has been deleted (the upstream cannot find it: it was never bound, or the server deleted it).',
-  /** Old key invalidated by rotation (#374; same semantics as /rotate in #90) */
+  /**
+   * Key rotated / revoked (#374's `rotated` case).
+   *
+   * #451 alignment with #357: "Reset quota" in settings (`/rotate`) does NOT change the key,
+   * it only recomputes the quota — so this invalidation did not come from that button; the
+   * server invalidated the old key. The old wording ("rotating a key invalidates the old key
+   * immediately") is the pre-#357 story and made users think the reset button broke their key.
+   */
   replyApiKeyRotated:
-    'This API Key has been rotated and the old one is no longer valid (rotating a key invalidates the old key immediately).',
+    'This API Key has been rotated or revoked and the old one no longer works. (Resetting the quota on this device only recomputes it and keeps the same key, so the server is what invalidated it.) You can recover the current key from the server by device code under Our channel, or simply paste a new key.',
   /** Key identity in the notice: last 4 characters only (#374) */
   replyApiKeyTailNote: ' (current key ends with {tail})',
   /**
@@ -353,7 +360,9 @@ export const en = {
   voiceInputEmpty: 'No speech detected',
   voiceInputLimitReached: 'Maximum recording length reached',
   voiceInputRequiresHttps: 'Voice input requires HTTPS',
-  apiKeyInvalidRetry: 'Invalid API Key. Please change it and try again.',
+  /** #451: state the diagnosis and both ways out — paste another key, or recover this device's key */
+  apiKeyInvalidRetry:
+    'Invalid API Key. Paste it again, or recover this device key with "Reset quota" under Our channel.',
   apiKeyRejected: 'The API key is invalid or expired. Please log in again or re-enter it.',
   insufficientBalance: 'Insufficient balance',
   rateLimited: 'Too many requests. Please try again later.',
@@ -370,6 +379,15 @@ export const en = {
   settingsProviderKindLabel: 'Channel',
   settingsProviderKindKeyHint: 'Check that your API Key still applies after switching channels',
   settingsApiKeyLabel: 'API Key',
+  /**
+   * Pre-send local block (#451): the key exists but is clearly malformed, so the message was
+   * NOT sent. Saying so explicitly matters — otherwise people keep retrying and blame the network.
+   */
+  settingsApiKeyFormatBlocked:
+    'The saved API Key looks malformed (it contains spaces or line breaks, or is not key-length), so this message was not sent. Clear the field, paste the whole key again (no spaces or line breaks), then send.',
+  /** A suspicious key is stored but no send has been attempted yet: keep it calm, no red text */
+  settingsApiKeyFormatHint:
+    'This value does not look like an API Key (stray spaces or line breaks, or an incomplete paste). Sending will be blocked until it is fixed.',
   settingsBaseUrlLabel: 'Service URL',
   settingsBaseUrlPlaceholder: 'e.g. https://your-gateway.example.com',
   settingsModelPlaceholder: 'e.g. deepseek-v4.1-flash',
@@ -736,6 +754,19 @@ export const en = {
   oursRotateErrInvalidResponse: 'Unexpected server response. Try again later.',
   oursRotateErrUnknown: 'Reset failed. Try again later.',
   oursRotateKeptOldKey: 'Your local key was left untouched and still works',
+  // #451: key identity (bound time / last confirmed-success time). Both come from local records.
+  oursKeyIdentityTitle: 'Key identity',
+  oursKeyIdentityTail: 'Current key ends with {tail}',
+  oursKeyIdentityTailUnknown: 'This key is too short to show a tail',
+  oursKeyIdentityBoundAt: 'Bound at: {time} (when this key was first saved on this device)',
+  oursKeyIdentityLastSuccess: 'Last successful use: {time}',
+  oursKeyIdentityNoSuccess: 'Last successful use: nothing recorded on this device yet',
+  oursKeyIdentityNoRecord:
+    'No time record for this key on this device (the key was just changed, or the local record was cleared)',
+  oursKeyIdentitySource:
+    'Both times come from this device: the quota endpoint returns quota only, not the bound time or the last-used time.',
+  oursKeyIdentitySuccessSource:
+    '"Successful use" means the last time this device confirmed the key works (on a successful key check, connection test, key probe, quota reset, or card redemption). Changing the key starts a new record.',
   // Issue #46: thinking display mode
   settingDialogThinkingDisplayLabel: 'Thinking process',
   settingDialogThinkingDisplayDescription: 'How thinking content appears in messages when deep thinking is on. Switching applies to already open chats immediately.',

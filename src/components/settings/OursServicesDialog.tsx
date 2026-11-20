@@ -1,6 +1,12 @@
 import clsx from 'clsx'
 import { useEffect, useRef, useState } from 'react'
-import { setApiKey, useApiConfig, useIsOursChannel } from '../../services/api/apiConfig.js'
+import {
+  getCurrentKeyIdentity,
+  recordKeySuccess,
+  setApiKey,
+  useApiConfig,
+  useIsOursChannel,
+} from '../../services/api/apiConfig.js'
 import { useTranslate } from '../../i18n/index.js'
 import {
   fetchPayLink,
@@ -41,6 +47,10 @@ import {
 } from '../../services/invite/emailCooldown.js'
 import { inviteCashbackLine, inviteOkCopy, inviteRuleLines } from '../../services/invite/copy.js'
 import { rotateKey, rotateSuccessKey, type RotateOutcome } from '../../services/invite/rotate.js'
+import {
+  formatIdentityTime,
+  type KeyIdentityView,
+} from '../../services/invite/keyIdentity.js'
 import { prepareDialogOpen, refreshProfile } from '../../services/invite/openFlow.js'
 import { resolveDeviceFp } from '../../services/invite/fingerprint.js'
 import {
@@ -166,6 +176,12 @@ const OursServicesDialog = ({ onClose }: { onClose: () => void }) => {
   const [claim, setClaim] = useState<ClaimView>({ status: 'idle' })
   const [balance, setBalance] = useState<BalanceView>({ status: 'idle' })
   const [keyProbe, setKeyProbe] = useState<OursKeyProbe | null>(null)
+  /**
+   * 当前这把 Key 的身份记录（#451）：绑定时间 / 最近一次确认可用时间。
+   * 全部来自本机记录（服务端的额度接口没有这两个字段，见 `services/invite/keyIdentity.ts`）。
+   * 初值就地读一次；下面那个 effect 在 Key 变化后重读，成功类动作之后再显式重读一次。
+   */
+  const [keyIdentity, setKeyIdentity] = useState<KeyIdentityView>(() => getCurrentKeyIdentity())
   /** 服务端为该设备生成的 Key 与当前已填的不同：不自动覆盖，等用户点「使用此 Key」 */
   const [pendingKey, setPendingKey] = useState('')
   /** 「前往购买」（Issue #331）：地址每次现取，取不到就只给提示，绝不整页跳走 */
@@ -235,6 +251,14 @@ const OursServicesDialog = ({ onClose }: { onClose: () => void }) => {
    *  - 装进 ref 而不是 state：它不进渲染，也不该触发重渲染。
    */
   const deviceFpRef = useRef('')
+
+  /**
+   * #451：Key 一换（领取 / 绑定 / 重置 / 手动改 Key），身份记录就是新 Key 的 —— 立刻重读，
+   * 免得界面还挂着上一把 Key 的绑定时间。这里只读本机记录，不发请求。
+   */
+  useEffect(() => {
+    setKeyIdentity(getCurrentKeyIdentity())
+  }, [apiKey])
 
   useEffect(() => {
     alive.current = true
@@ -492,6 +516,10 @@ const OursServicesDialog = ({ onClose }: { onClose: () => void }) => {
     const probe = await probeApiKey(result.apiKey, httpTransport)
     if (alive.current) {
       setKeyProbe(probe)
+      // #451：探测说「有效」才记「最近一次确认可用」——刚领到的 Key 也可能当场就是坏的
+      if (probe.status === 'valid' && recordKeySuccess(result.apiKey)) {
+        setKeyIdentity(getCurrentKeyIdentity())
+      }
     }
     // #421：刚领到账号 -> 再探一次邮箱入口（打开弹层时没有 Key，探过也是白探）
     if (alive.current) {
@@ -528,6 +556,9 @@ const OursServicesDialog = ({ onClose }: { onClose: () => void }) => {
       return
     }
     setApiKey(result.apiKey)
+    // #451：绑定成功 = 服务端确认过这把 Key 属于这台设备，记一次「确认可用」
+    recordKeySuccess(result.apiKey)
+    setKeyIdentity(getCurrentKeyIdentity())
     setPendingKey('')
     setBindInput('')
     setBindResult({ kind: 'ok', alreadyBound: result.alreadyBound })
@@ -669,6 +700,10 @@ const OursServicesDialog = ({ onClose }: { onClose: () => void }) => {
     // 走到这里只可能是 success / pending（错误已在上面 return）：202 也按「收下了」处理，
     // 所以清空输入并刷新一次额度（pending 时服务端稍后才入账，用户可点「刷新额度」再看）
     setRedeem(outcome.value)
+    // #451：卡密是拿当前 Key 提交的，服务端受理了 = 这把 Key 被认可，记一次「确认可用」
+    if (recordKeySuccess()) {
+      setKeyIdentity(getCurrentKeyIdentity())
+    }
     setCardNo('')
     void refreshBalance()
   }
@@ -743,6 +778,13 @@ const OursServicesDialog = ({ onClose }: { onClose: () => void }) => {
     setPendingKey('')
     setKeyProbe(null)
     setProfileFrom('me')
+    /**
+     * #451：重置成功时服务端把这把 Key 原样还回来了（#357：常态就是同一把）——
+     * 那就等于它此刻认可这把 Key，记一次「确认可用」，让「最近一次成功使用」跟着动。
+     */
+    if (outcome.apiKey.trim() !== '' && recordKeySuccess(outcome.apiKey)) {
+      setKeyIdentity(getCurrentKeyIdentity())
+    }
     if (outcome.profile !== null) {
       setBalance({ status: 'ok', profile: outcome.profile })
     } else {
@@ -907,7 +949,47 @@ const OursServicesDialog = ({ onClose }: { onClose: () => void }) => {
           ) : null}
         </section>
 
-        {/* 1a. 邮箱账号（#421）：探测成功才出现；已绑显示脱敏邮箱，未绑显示「绑定邮箱」。
+        {/* 1a. Key 身份（#451）：这把 Key 什么时候绑的、最后一次确认可用是什么时候。
+            两个时间都是**本机记录**（服务端的额度接口没有这两个字段）；换一把 Key 就换一条记录，
+            界面只会显示当前这把的，绝不把上一把的时间挂上来。 */}
+        {hasKey ? (
+          <section className={styles.section} data-testid="ours-key-identity">
+            <div className={styles.sectionHead}>
+              <h3 className={styles.sectionTitle}>{t('oursKeyIdentityTitle')}</h3>
+            </div>
+            {keyIdentity.kind === 'none' ? (
+              <div className={styles.hint} data-testid="ours-key-identity-none">
+                {t('oursKeyIdentityNoRecord')}
+              </div>
+            ) : (
+              <>
+                <div className={styles.value} data-testid="ours-key-identity-tail">
+                  {keyIdentity.tail === ''
+                    ? t('oursKeyIdentityTailUnknown')
+                    : t('oursKeyIdentityTail', { tail: keyIdentity.tail })}
+                </div>
+                <div className={styles.hint} data-testid="ours-key-identity-bound">
+                  {t('oursKeyIdentityBoundAt', { time: formatIdentityTime(keyIdentity.boundAt) })}
+                </div>
+                <div className={styles.hint} data-testid="ours-key-identity-success">
+                  {keyIdentity.lastSuccessAt === null
+                    ? t('oursKeyIdentityNoSuccess')
+                    : t('oursKeyIdentityLastSuccess', {
+                        time: formatIdentityTime(keyIdentity.lastSuccessAt),
+                      })}
+                </div>
+              </>
+            )}
+            <div className={styles.hint} data-testid="ours-key-identity-source">
+              {t('oursKeyIdentitySource')}
+            </div>
+            <div className={styles.hint} data-testid="ours-key-identity-success-source">
+              {t('oursKeyIdentitySuccessSource')}
+            </div>
+          </section>
+        ) : null}
+
+        {/* 1b. 邮箱账号（#421）：探测成功才出现；已绑显示脱敏邮箱，未绑显示「绑定邮箱」。
             服务端未开启时（404 not_found）整块不渲染，旧流程一字不动。 */}
         {emailEntryVisible ? (
           <section className={styles.section} data-testid="ours-email">
@@ -1076,7 +1158,7 @@ const OursServicesDialog = ({ onClose }: { onClose: () => void }) => {
           </section>
         ) : null}
 
-        {/* 1b. 我已经有 Key：把已有 Key 绑到本机设备码（#86）。
+        {/* 1c. 我已经有 Key：把已有 Key 绑到本机设备码（#86）。
             本机已经绑过（/me 读得到档案）就不再显示这个入口：一台设备只留一把 Key。 */}
         {canBindKey ? (
           <section className={styles.section} data-testid="ours-bind">
@@ -1136,7 +1218,7 @@ const OursServicesDialog = ({ onClose }: { onClose: () => void }) => {
           </section>
         ) : null}
 
-        {/* 1c. 重置额度 / 更换 Key（#90 #357）：只认设备码；仍保留二次确认，避免误点 */}
+        {/* 1d. 重置额度 / 更换 Key（#90 #357）：只认设备码；仍保留二次确认，避免误点 */}
         <section className={styles.section} data-testid="ours-rotate">
           <div className={styles.sectionHead}>
             <h3 className={styles.sectionTitle}>{t('oursRotateTitle')}</h3>

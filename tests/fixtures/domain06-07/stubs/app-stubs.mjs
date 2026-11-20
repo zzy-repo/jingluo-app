@@ -59,6 +59,24 @@ export const setApiKey = (key) => {
 
 export const useIsOursChannel = () => true
 
+/**
+ * #451：Key 身份（绑定时间 / 最近一次确认可用时间），真实现见 `services/invite/keyIdentity.ts`
+ * 与 `apiConfig.getCurrentKeyIdentity / recordKeySuccess`。
+ *
+ * 这里给**空态替身**而不是编一个假时间戳：域 6/7 的用例断言的是「打开弹层发了几条请求、
+ * 界面说了哪句话」，时间戳不在断言范围内；给一个确切可信的「本机没有记录」比给假时间安全
+ * （假时间会让「界面上的时间来自本机记录」这条变得无法核对）。
+ */
+export const getKeyIdentity = () => null
+
+export const getCurrentKeyIdentity = () => ({ kind: 'none' })
+
+/** 与真实现同一契约：没有 Key 时什么都不记（返回 false） */
+export const recordKeySuccess = () => env().apiKey !== ''
+
+/** 发送前拦截的三态（#451）；本替身只用来让「有 Key」的用例照常往下走 */
+export const checkApiKeyBeforeSend = () => (env().apiKey === '' ? 'missing' : 'ok')
+
 // ------------------------------------------------------------------ 设置页弹层开合（替换 settingsDialogState）
 
 export const useSettingsDialog = (selector) =>
