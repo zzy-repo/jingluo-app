@@ -21,6 +21,7 @@ export const AttachmentPicker = ({
   className,
   tooltip,
   icon,
+  testId,
 }: {
   /** 选中（或拖入）的文件原样传出去，由调用方统一分拣 + 提示 */
   onFiles: (files: File[]) => void
@@ -30,6 +31,13 @@ export const AttachmentPicker = ({
   tooltip?: string
   /** 入口图标；缺省回形针。输入区还有「图片」入口时用它区分两个入口的语义 */
   icon?: ReactNode
+  /**
+   * 稳定的测试标识（`data-testid`）。输入区同时有**文档**与**图片**两个附件入口，
+   * 两者都长成一个图标按钮、文案又都带「上传/附件」字样 —— 用例若靠 `aria-label` 里
+   * 的中文去数「附件入口」，注定分不清是哪一个（#548 / #586）。标识由组件自己给出，
+   * 用例就不必猜文案。
+   */
+  testId?: string
 }) => {
   const t = useTranslate()
   const inputRef = useRef<HTMLInputElement>(null)
@@ -39,6 +47,7 @@ export const AttachmentPicker = ({
         size="m"
         tone="primary"
         className={className}
+        data-testid={testId}
         icon={icon === undefined ? <IconPaperclipOutline16 /> : icon}
         tooltip={tooltip === undefined ? t('attachPickButton') : tooltip}
         disabled={disabled}
