@@ -32,6 +32,7 @@ import { createRequire } from 'node:module'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
+import { CURRENT, CHANNEL_BUILD_TYPE, PREVIOUS } from '../helpers/current-version.mjs'
 import { serveDir, ROOT } from '../helpers/env.mjs'
 
 const require = createRequire(import.meta.url)
@@ -41,14 +42,19 @@ const SHOTS = path.join(ROOT, 'docs/ui/373-update-failure')
 /** 截图与证据前缀：修复前取证跑 UPDATE_SHOT_PREFIX=before，平时留 after（PR 里前后对照用） */
 const PREFIX = process.env.UPDATE_SHOT_PREFIX || 'after'
 
-/** 与 Issue 截图同形状的一条发布记录：5.2 MB、beta.11 */
+/**
+ * 与 Issue 截图同形状的一条发布记录（5.2 MB）：**就是当前这一版**（清单里最新可装的那条）。
+ * 版本号 / versionCode / buildType 都按当前产物派生（tests/helpers/current-version.mjs），
+ * 不再抄字面量 —— 抄字面量在改版本号后会变成「清单里没有比已安装版本更高的记录」，
+ * 表现为「连『确认下载』按钮都出现不了」，红得莫名其妙。
+ */
 const RELEASE = {
-  version: '1.4.0-beta.11',
-  versionCode: 18,
+  version: CURRENT.version,
+  versionCode: CURRENT.versionCode,
   size: 5452595,
-  file: 'apk/deepseek-chat-1.4.0-beta.11.apk',
+  file: `apk/deepseek-chat-${CURRENT.version}.apk`,
   changes: ['修复重试与离线提示'],
-  buildType: 'prerelease',
+  buildType: CHANNEL_BUILD_TYPE,
   artifactVariant: 'standard',
   sha256: 'a'.repeat(64),
 }
@@ -92,7 +98,11 @@ const bootstrap = (plan) => {
   const handlers = {
     installed: async () => {
       calls.push({ method: 'installed' })
-      return { version: '1.4.0-beta.10', versionCode: 17, artifactVariant: 'standard' }
+      // 设备上装的是**上一版**（更新用例的语义就是旧包装新包）；见 current-version.mjs 的 PREVIOUS
+      // 设备上装的是**上一版**（更新用例的语义就是旧包装新包）——
+      // 注意：这个函数被 addInitScript 序列化进页面执行，**不能**引用模块作用域常量，
+      // 所以版本由 plan.installedApp 带进来（见 current-version.mjs 的 PREVIOUS）。
+      return { ...plan.installedApp, artifactVariant: 'standard' }
     },
     manifest: async () => {
       calls.push({ method: 'manifest' })
@@ -328,7 +338,11 @@ try {
         isMobile: true,
         hasTouch: true,
       })
-      await context.addInitScript(bootstrap, { ...scenario.plan, manifest: MANIFEST })
+      await context.addInitScript(bootstrap, {
+        ...scenario.plan,
+        manifest: MANIFEST,
+        installedApp: PREVIOUS,
+      })
       const page = await context.newPage()
       const pageErrors = []
       page.on('pageerror', (error) => pageErrors.push(String(error)))

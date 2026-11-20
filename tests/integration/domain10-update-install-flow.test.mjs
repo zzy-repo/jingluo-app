@@ -34,6 +34,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
+import { CURRENT, CHANNEL_BUILD_TYPE, PREVIOUS } from '../helpers/current-version.mjs'
 import { serveDir, ROOT } from '../helpers/env.mjs'
 
 const require = createRequire(import.meta.url)
@@ -41,14 +42,18 @@ const HERE = path.dirname(fileURLToPath(import.meta.url))
 const HARNESS = path.join(ROOT, 'tests/fixtures/domain10')
 const PREFIX = process.env.UPDATE_SHOT_PREFIX || 'domain10'
 
-/** 与线上 releases.json 同形状的一条记录（5.2 MB、beta.11） */
+/**
+ * 与线上 releases.json 同形状的一条记录（5.2 MB）：**就是当前这一版**。
+ * 版本号 / versionCode / buildType 按当前产物派生（tests/helpers/current-version.mjs）：
+ * 「有可装的新版本」依赖「清单里的 versionCode 高于已安装版本 + 渠道对得上」，两件事都要跟版本走。
+ */
 const RELEASE = {
-  version: '1.4.0-beta.11',
-  versionCode: 18,
+  version: CURRENT.version,
+  versionCode: CURRENT.versionCode,
   size: 5452595,
-  file: 'apk/deepseek-chat-1.4.0-beta.11.apk',
+  file: `apk/deepseek-chat-${CURRENT.version}.apk`,
   changes: ['修复重试与离线提示', '下载失败不再残留满格进度'],
-  buildType: 'prerelease',
+  buildType: CHANNEL_BUILD_TYPE,
   artifactVariant: 'standard',
   sha256: 'a'.repeat(64),
 }
@@ -93,8 +98,10 @@ const bootstrap = (plan) => {
     installed: async () => {
       calls.push({ method: 'installed' })
       return {
-        version: '1.4.0-beta.10',
-        versionCode: 17,
+        // 设备上装的是**上一版**（更新用例的语义就是旧包装新包）。
+        // 这个函数会被 addInitScript 序列化进页面执行，引用不到模块作用域常量，
+        // 所以版本由 plan.installedApp 带进来（见 current-version.mjs 的 PREVIOUS）。
+        ...plan.installedApp,
         artifactVariant: plan.variant ?? 'standard',
       }
     },
@@ -210,7 +217,7 @@ const SCENARIOS = [
       assert.equal(probe.progress.value, probe.progress.max, '下载成功时进度应到满格')
       // F10-02：相对 file 必须拼在「真的回了清单」的 base 上
       assert.ok(
-        probe.downloadUrl?.startsWith('https://dl.rose7.cn/apk/deepseek-chat-1.4.0-beta.11.apk'),
+        probe.downloadUrl?.startsWith(`https://dl.rose7.cn/${RELEASE.file}`),
         `下载 URL 应拼在原生回传的 base 上，实际 ${probe.downloadUrl}`
       )
       assert.match(probe.status, /下载及校验完成/)
@@ -403,7 +410,7 @@ try {
         isMobile: true,
         hasTouch: true,
       })
-      await context.addInitScript(bootstrap, scenario.plan)
+      await context.addInitScript(bootstrap, { ...scenario.plan, installedApp: PREVIOUS })
       const page = await context.newPage()
       const pageErrors = []
       page.on('pageerror', (error) => pageErrors.push(String(error)))

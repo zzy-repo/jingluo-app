@@ -10,23 +10,32 @@
 // 两台分发机都要 route 住：只拦一台时首选机一旦真的可达，用例会连真服务器（离线环境下表现为超时）。
 //
 // 跑法（仓库根目录）：pnpm run build && node tests/golden/g10-update.test.mjs
+import {
+  CURRENT,
+  CHANNEL_BUILD_TYPE,
+  NEWEST_INSTALLABLE,
+  nextPatch,
+} from '../helpers/current-version.mjs'
 import { bodyText, brief, openGoldenPage, runGolden, serveGoldenApp, waitFor, waitForBoot } from '../helpers/golden.mjs'
 
 /** 与 src/services/updateManifest.ts 的 RELEASE_BASES 同源 */
 const PRIMARY = 'http://62.106.70.167:8888'
 const FALLBACK = 'https://dl.rose7.cn'
-/** 当前产物版本是 1.4.0-beta.10（build-info.json / __APP_VERSION__），所以清单里要有更高的版本 */
-const NEWEST_INSTALLABLE = '1.4.0-beta.11'
-const RELEASE_FILE = 'apk/deepseek-chat-1.4.0-beta.11.apk'
+/**
+ * 当前产物版本（build-info.json / __APP_VERSION__）与「更高版本」一律从 tests/helpers/current-version.mjs
+ * 派生 —— 版本号只有一个来源（package.json），用例里不抄第二份。
+ */
+const NEW_VERSION = NEWEST_INSTALLABLE.version
+const RELEASE_FILE = `apk/deepseek-chat-${NEW_VERSION}.apk`
 const APK_BYTES = 5_452_595
 
 const release = (over = {}) => ({
-  version: NEWEST_INSTALLABLE,
-  versionCode: 18,
+  version: NEW_VERSION,
+  versionCode: NEWEST_INSTALLABLE.versionCode,
   size: APK_BYTES,
   file: RELEASE_FILE,
   changes: ['修复重试与离线提示'],
-  buildType: 'prerelease',
+  buildType: CHANNEL_BUILD_TYPE,
   artifactVariant: 'standard',
   sha256: 'a'.repeat(64),
   ...over,
@@ -39,8 +48,12 @@ const release = (over = {}) => ({
  *   3) 唯一可安装的新版本（= 期望被选中的那条）
  */
 const RELEASES = [
-  release({ version: '1.4.0-beta.10', versionCode: 17 }),
-  release({ version: '1.4.0-beta.12', versionCode: 19, sha256: undefined }),
+  release({ version: CURRENT.version, versionCode: CURRENT.versionCode }),
+  release({
+    version: nextPatch(CURRENT.version, 2),
+    versionCode: CURRENT.versionCode + 2,
+    sha256: undefined,
+  }),
   release(),
 ]
 
@@ -117,10 +130,10 @@ const result = await runGolden(
         ctx.abort('清单解析出结论', 'status 含「发现新版本」', `status=${brief(seen.status)}`)
       }
 
-      // ── 3. 选对版本：可安装的最新版（缺 sha256 的 beta.12 不算） ────────────────
+      // ── 3. 选对版本：可安装的最新版（versionCode 更高但缺 sha256 的那条不算） ────
       ctx.begin('选对版本')
-      ctx.expect(`弹窗标题是 ${NEWEST_INSTALLABLE}`, seen.title === NEWEST_INSTALLABLE, {
-        expected: NEWEST_INSTALLABLE,
+      ctx.expect(`弹窗标题是 ${NEW_VERSION}`, seen.title === NEW_VERSION, {
+        expected: NEW_VERSION,
         actual: brief(seen.title),
       })
       ctx.expect('清单里的更新说明被渲染出来', (await bodyText(page)).includes('修复重试与离线提示'), {
