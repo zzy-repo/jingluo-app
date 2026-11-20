@@ -401,6 +401,8 @@ export const zh = {
   apiKeyInvalidRetry: 'API Key 无效，请重新填写；或在「我们的渠道」里用「重置额度」按设备码取回本机 Key',
   /** 上游 401 之后的统一提示（#303 问题 3）：既要说明原因，也要说明下一步怎么修 */
   apiKeyRejected: 'Key 无效或已过期，请重新登录或重新填写',
+  /** #596：我们的渠道没有可填的地方，401 的出路只有一个 —— 重新领取 */
+  apiKeyRejectedOurs: '我们的渠道的 Key 已失效：请在设置里点「重新领取」，由服务端重新下发',
   insufficientBalance: '账户余额不足',
   rateLimited: '操作过于频繁，请稍后再试',
   ttsPlay: '朗读',
@@ -425,6 +427,24 @@ export const zh = {
   /** 只是存着一条可疑的 Key（还没试过发送）：普通提示，不用红字吓人 */
   settingsApiKeyFormatHint:
     '这一行的内容不像一把 API Key（可能多了空格 / 换行，或没复制完整），发送前会被拦下来。',
+  /**
+   * #596：「我们的渠道」的 API Key 由服务端下发 —— 界面只读（当前尾号）+「重新领取」，
+   * 没有输入框。文案里**不许**出现「服务器繁忙」「未知错误」这类掩盖性说法：
+   * #596 第 1 条事故就是用户拿着旧 Key 一直 401，却被告知「服务器忙」。
+   */
+  settingsManagedKeyValue: '当前 Key ···{tail}',
+  settingsManagedKeyUnclaimedValue: '尚未领取 Key',
+  settingsManagedKeyHint: '由设备自动领取，无需填写；如需更换请重新领取',
+  settingsManagedKeyClaim: '重新领取',
+  settingsManagedKeyClaiming: '正在领取…',
+  settingsManagedKeyClaimed: '已领取，当前 Key 尾号 ···{tail}',
+  settingsManagedKeyStale: 'Key 已更新，请重新领取',
+  settingsManagedKeyBlockedClaim:
+    '请先领取 Key：这条消息没有发出去。我们的渠道的 Key 由服务端下发，不能手填。',
+  settingsManagedKeyBlockedStale:
+    'Key 已更新，请重新领取：本地这把已经不是服务端下发的那把，这条消息没有发出去。',
+  settingsManagedKeyClaimFailed: '领取失败：{message}',
+  settingsManagedKeyNeedLogin: '请先在「账户与消费 → 账号」登录，再领取 Key。',
   settingsBaseUrlLabel: '服务地址',
   settingsBaseUrlPlaceholder: '例如 https://your-gateway.example.com',
   settingsModelPlaceholder: '例如 deepseek-v4.1-flash',

@@ -415,6 +415,9 @@ export const en = {
   apiKeyInvalidRetry:
     'Invalid API Key. Paste it again, or recover this device key with "Reset quota" under Our channel.',
   apiKeyRejected: 'The API key is invalid or expired. Please log in again or re-enter it.',
+  /** #596: on Our channel there is nothing to re-enter — re-claim is the only way out */
+  apiKeyRejectedOurs:
+    'The Our-channel key is no longer valid: tap "Re-claim" in Settings and the server will issue a new one.',
   insufficientBalance: 'Insufficient balance',
   rateLimited: 'Too many requests. Please try again later.',
   ttsPlay: 'Read aloud',
@@ -439,6 +442,24 @@ export const en = {
   /** A suspicious key is stored but no send has been attempted yet: keep it calm, no red text */
   settingsApiKeyFormatHint:
     'This value does not look like an API Key (stray spaces or line breaks, or an incomplete paste). Sending will be blocked until it is fixed.',
+  /**
+   * #596: the Our-channel API key is issued by the server — this row is read-only (current tail)
+   * plus "Re-claim"; there is no input. Never phrase this as "server busy" / "unknown error":
+   * accident #1 in #596 was a stale local key 401-ing while the user was told the server was busy.
+   */
+  settingsManagedKeyValue: 'Current key ···{tail}',
+  settingsManagedKeyUnclaimedValue: 'No key claimed yet',
+  settingsManagedKeyHint: 'Claimed automatically by this device — nothing to fill in. Re-claim to replace it.',
+  settingsManagedKeyClaim: 'Re-claim',
+  settingsManagedKeyClaiming: 'Claiming…',
+  settingsManagedKeyClaimed: 'Claimed — current key ends with ···{tail}',
+  settingsManagedKeyStale: 'The key has changed — please re-claim',
+  settingsManagedKeyBlockedClaim:
+    'Claim a key first: this message was not sent. The Our-channel key is issued by the server and cannot be typed in.',
+  settingsManagedKeyBlockedStale:
+    'The key has changed — please re-claim: the local key is no longer the one issued by the server, so this message was not sent.',
+  settingsManagedKeyClaimFailed: 'Claim failed: {message}',
+  settingsManagedKeyNeedLogin: 'Sign in under Account & usage → Account first, then claim the key.',
   settingsBaseUrlLabel: 'Service URL',
   settingsBaseUrlPlaceholder: 'e.g. https://your-gateway.example.com',
   settingsModelPlaceholder: 'e.g. deepseek-v4.1-flash',

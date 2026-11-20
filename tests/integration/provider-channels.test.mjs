@@ -13,7 +13,8 @@
 //       图片入口在且可点（#548）、文档入口在且可点（#480）；搜索/语音不渲染
 //   [4] OpenAI 兼容：三件套；请求打到 /v1/chat/completions；搜索/语音不渲染，
 //       图片入口在且可点（#548）、文档入口在且可点（#480），思考入口恒常驻（#341，请求不带字段）
-//   [5] 我们的渠道：只渲染 API Key（1 个 password 输入框），界面不出现后端地址与内置模型名；
+//   [5] 我们的渠道：**没有任何可编辑输入框**（#596：Key 只能由服务端下发，界面只读 + 「重新领取」），
+//       界面不出现后端地址与内置模型名；本机已有服务端下发的那把时，请求头里带的正是那一把；
 //       图片入口在且可点（#548）、文档入口在且可点（#480）；
 //       请求打到 http://140.210.13.146:60010/v1/chat/completions（OpenAI 协议）+ model deepseek-v4.1-flash，
 //       鉴权 Authorization: Bearer <key>（不带 x-api-key）；深度思考入口恒常驻（#341，请求不带字段）
@@ -33,8 +34,14 @@ import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import { chromium } from 'playwright'
 import { serveDir, verifyAppUrl } from '../helpers/env.mjs'
+import { installTsResolve } from '../helpers/dom-env.mjs'
 import { capturePaths, providerKindTrigger, selectProviderKind } from '../helpers/helpers.mjs'
 import { chatBaseUrl } from '../../scripts/lib/endpoints.mjs'
+
+// 页面里种「服务端下发标记」时要用**真的**指纹函数（不在这里重算一份 djb2）：
+// 本仓的 `.js` 说明符指向 `.ts` 源码，裸 Node 解析不到，先装解析 hook 再动态 import。
+installTsResolve()
+const { keyFingerprint } = await import('../../src/services/invite/keyIdentity.ts')
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const ROOT = path.resolve(HERE, '../..')
@@ -191,6 +198,36 @@ const expectOnlyApiKey = async (dialog, where) => {
     bad(`${where} 还有额外的可编辑输入框：${JSON.stringify(types)}`)
   } else {
     ok(`${where} 只有 1 个可见输入框（API Key，type=password）`)
+  }
+}
+
+/**
+ * 我们的渠道的 Key 行（#596）：**结构上没有输入框**，只有「当前 Key ···尾号」+「重新领取」。
+ *
+ * 为什么数 input 而不是数 `disabled`：禁用的输入框能被 devtools 打开、能被脚本填值，
+ * 「用户填不进来」只有在 DOM 上没有那个节点时才成立 —— 这条断言就是钉这个形态。
+ */
+const expectManagedKeyRow = async (dialog, where) => {
+  const types = await visibleInputTypes(dialog)
+  note(`${where} 输入框：${JSON.stringify(types)}`)
+  if (types.length !== 0) {
+    bad(`${where} 不该有任何可编辑输入框（#596 禁止手填 Key），实际：${JSON.stringify(types)}`)
+  } else {
+    ok(`${where} 没有任何可编辑输入框（Key 只能由服务端下发）`)
+  }
+  const row = await dialog.locator('[data-testid="settings-managed-key"]').count()
+  const claim = await dialog.locator('[data-testid="settings-managed-key-claim"]').count()
+  if (row !== 1 || claim !== 1) {
+    bad(`${where} 缺只读行或「重新领取」按钮（row=${row}, claim=${claim}）`)
+  } else {
+    ok(`${where} 只读行 + 「重新领取」按钮在位`)
+  }
+  const text = await dialog.innerText()
+  const masks = ['服务器繁忙', '未知错误'].filter((word) => text.includes(word))
+  if (masks.length > 0) {
+    bad(`${where} 出现掩盖性文案：${masks.join(' / ')}（#596 第 1 条事故就是被这类话骗的）`)
+  } else {
+    ok(`${where} 没有「服务器繁忙 / 未知错误」这类掩盖性文案`)
   }
 }
 
@@ -601,8 +638,11 @@ try {
   dialog = await openSettings()
   await selectProviderKind(page, /我们的渠道|Our Channel/)
   dialog = page.getByRole('dialog').first()
-  // 清掉 Key 再看「只显示唯一一个输入框」的形态（有 Key 时那行是掩码，不是输入框）
-  await page.evaluate(() => window.localStorage.removeItem('chat-demo:api-key'))
+  // 清掉 Key 再看形态（#596：不管有没有 Key，这一行都不该有输入框）
+  await page.evaluate(() => {
+    window.localStorage.removeItem('chat-demo:api-key')
+    window.localStorage.removeItem('chat-demo:ours-server-key')
+  })
   await page.reload({ waitUntil: 'domcontentloaded' })
   await page.waitForTimeout(1000)
   dialog = await openSettings()
@@ -612,7 +652,15 @@ try {
   } else {
     ok(`刷新后渠道仍是 ${oursLabel}（渠道选择持久化）`)
   }
-  await expectOnlyApiKey(dialog, '我们的渠道')
+  // #596：没有 Key 时也**没有输入框**（不是 disabled 的输入框），只有「重新领取」
+  await expectManagedKeyRow(dialog, '我们的渠道（未领取）')
+  const unclaimedText = await dialog.innerText()
+  if (!/尚未领取 Key|No key claimed yet/.test(unclaimedText)) {
+    bad('未领取时只读行没有说清「尚未领取」')
+  } else {
+    ok('未领取时只读行显示「尚未领取 Key」')
+  }
+  await shot('channel-ours-unclaimed')
   const oursText = await dialog.innerText()
   // 内置地址的主机与端口取自 config/endpoints.json（#274），不在这里另抄一份
   for (const secret of [new URL(OURS_HOST).hostname, new URL(OURS_HOST).port, OURS_MODEL]) {
@@ -623,10 +671,33 @@ try {
     }
   }
   await expectNoCapabilityCopy(dialog, '我们的渠道')
+  // 本机已有「服务端下发的那把」时：只读行显示尾号，请求头里带的也必须是这一把。
+  // 这里直接把领取结果写进本地（与 `applyManagedKey` 的落盘形态一致：Key + 下发标记），
+  // 不走网络 —— 领取链路本身在 `tests/unit/managed-key-596.test.mjs` 里按接口逐格验过。
+  const oursMark = {
+    fingerprint: keyFingerprint(KEY),
+    tail: KEY.slice(-4),
+    at: Date.now(),
+    id: 1,
+  }
+  await page.evaluate(
+    ([key, mark]) => {
+      window.localStorage.setItem('chat-demo:api-key', key)
+      window.localStorage.setItem('chat-demo:ours-server-key', JSON.stringify(mark))
+    },
+    [KEY, oursMark]
+  )
+  await page.reload({ waitUntil: 'domcontentloaded' })
+  await page.waitForTimeout(1000)
+  dialog = await openSettings()
+  await expectManagedKeyRow(dialog, '我们的渠道（已领取）')
+  const claimedText = await dialog.innerText()
+  if (!claimedText.includes(`···${KEY.slice(-4)}`)) {
+    bad(`只读行没有显示服务端那把的尾号 ···${KEY.slice(-4)}`)
+  } else {
+    ok(`只读行显示当前 Key 尾号 ···${KEY.slice(-4)}`)
+  }
   await shot('channel-ours')
-  await page.locator('input[type="password"]').first().fill(KEY)
-  await page.getByRole('button', { name: /^确定$|^Confirm$/ }).first().click()
-  await page.waitForTimeout(1200)
   await closeSettings(dialog)
   // 随 #552 变更：三渠道支持图片（`vision: true`）；文档仍是文本注入（`docs: true`，未改）。
   await expectCaps('我们的渠道', {
@@ -654,7 +725,7 @@ try {
     if (hitOurs.headers.authorization !== `Bearer ${KEY}`) {
       bad(`我们的渠道 Authorization 头不对：${JSON.stringify(hitOurs.headers.authorization)}`)
     } else {
-      ok('我们的渠道 Authorization = Bearer <用户填的 key>')
+      ok('我们的渠道 Authorization = Bearer <服务端下发的那把>')
     }
     if (hitOurs.headers['x-api-key']) {
       bad(`我们的渠道不该再带 x-api-key：${JSON.stringify(hitOurs.headers['x-api-key'])}`)

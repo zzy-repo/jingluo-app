@@ -12,6 +12,13 @@ import {
 } from '../invite/keyIdentity.js'
 import { isKeyFormatInvalid } from './keyFailure.js'
 import {
+  managedKeyVerdict,
+  serverKeyMark,
+  usesManagedKey,
+  type ManagedKeyVerdict,
+  type ServerKeyMark,
+} from './managedKey.js'
+import {
   DEFAULT_PROVIDER_KIND,
   getSpec,
   isUserField,
@@ -60,6 +67,15 @@ export const CONFIG_KEYS = {
    * 「这条记录还是不是当前这把 Key 的」（判定在 `../invite/keyIdentity.ts`，这里只管读写）。
    */
   keyIdentity: 'chat-demo:key-identity',
+  /**
+   * 「我们的渠道」服务端下发标记（Issue #596）：`{f: 指纹, tail: 尾 4 位, at: 下发时间, id?: Key 的 id}`。
+   *
+   * 与 `chat-demo:api-key` 分开存，理由和上面的身份记录一样：Key 会被多条路径覆写，
+   * 而「这把 Key 是服务端给的那把吗」必须能独立回答。**只有下发成功才会写它**
+   * （`applyManagedKey`），手填走 `setApiKey` 写不到这里 —— 所以「手填混过发送前校验」
+   * 在结构上不可能发生。
+   */
+  serverKey: 'chat-demo:ours-server-key',
 } as const
 
 /** 用户自填字段按渠道分开存：chat-demo:base-url:anthropic 这类 */
@@ -331,6 +347,84 @@ export const recordKeySuccess = (apiKey?: string, at: number = Date.now()): bool
 }
 
 /**
+ * 服务端下发标记的存储形态（Issue #596）：键名压到最短，坏数据一律当没有。
+ * 只留指纹 / 尾号 / 时间 / id —— **Key 原文不进这条记录**（与 #451 的身份记录同一口径）。
+ */
+const isServerKeyMark = (value: unknown): value is ServerKeyMark => {
+  if (value === null || typeof value !== 'object') {
+    return false
+  }
+  const record = value as Record<string, unknown>
+  return (
+    typeof record.fingerprint === 'string' &&
+    record.fingerprint !== '' &&
+    typeof record.tail === 'string' &&
+    typeof record.at === 'number' &&
+    Number.isFinite(record.at)
+  )
+}
+
+/** 已记录的服务端下发标记；没下发过 / 记录坏了都是 null */
+export const getServerKeyMark = (): ServerKeyMark | null => {
+  const raw = read(CONFIG_KEYS.serverKey)
+  if (raw === null) {
+    return null
+  }
+  try {
+    const parsed: unknown = JSON.parse(raw)
+    return isServerKeyMark(parsed) ? parsed : null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * 记下「服务端刚才把这把 Key 下发给了本机」。**只在下发成功之后调用**（见 managedKey.ts）。
+ *
+ * 单独一个函数而不是塞进 `setApiKey`：手填 Key 与下发 Key 必须走两条路，
+ * 否则「标记还在、Key 被换掉」这种事故就能靠手填复现（#596 第 3 条要防的就是它）。
+ */
+export const markServerKey = (apiKey: string, id?: number, at: number = Date.now()): boolean => {
+  const value = apiKey.trim()
+  if (value === '') {
+    return false
+  }
+  const mark = serverKeyMark(value, at, id)
+  write(CONFIG_KEYS.serverKey, JSON.stringify(mark))
+  return true
+}
+
+/** 清掉下发标记（退出账号 / 记录坏了自愈时用）；不动 Key 本身 */
+export const clearServerKeyMark = (): void => {
+  write(CONFIG_KEYS.serverKey, null)
+}
+
+/**
+ * 落盘一把**服务端下发**的 Key：Key 本身 + 下发标记**同时写**（Issue #596 第 3 条）。
+ *
+ * 两件事分开写会出现「界面尾号来自 A、请求用的是 B」的中间态；这一个入口保证
+ * 「显示的那把 = 发送时用的那把 = 服务端刚下发的那把」。
+ */
+export const applyManagedKey = (apiKey: string, id?: number): boolean => {
+  const value = apiKey.trim()
+  if (value === '') {
+    return false
+  }
+  setApiKey(value)
+  markServerKey(value, id)
+  return true
+}
+
+/**
+ * 「我们的渠道」下本机 Key 与服务端的关系（Issue #596 的判据）。
+ * 其它渠道恒为 `ok` —— 那是用户自己的 Key，我们不管。
+ */
+export const getManagedKeyVerdict = (): ManagedKeyVerdict =>
+  usesManagedKey(getProviderKind())
+    ? managedKeyVerdict({ localKey: getApiKey(), mark: getServerKeyMark() })
+    : 'ok'
+
+/**
  * 发送前能不能放行（Issue #451 第 2 点）：`ok` 放行 / `missing` 没填 / `format` 本地就能判死的格式问题。
  *
  * 三态而不是布尔：调用方对前三者的处理不同 ——
@@ -339,12 +433,22 @@ export const recordKeySuccess = (apiKey?: string, at: number = Date.now()): bool
  *    不给他这句话，他只会以为 Key 被删了；
  *  - 两者都**不发请求**，所以拿不到 401 也拿不到上游原文 —— 这条拦截的全部价值就在这里。
  *
- * 判据只有 `isKeyFormatInvalid`（#374 定的口径），本函数不另立一套：
+ * #596 给「我们的渠道」加了两档（`claim` / `stale`），排在最前面：这两档说的是
+ * 「本地 Key 不是服务端那把」，先于格式判断 —— 一把格式完美的手填 Key 同样要被拦。
+ *
+ * 判据只有 `isKeyFormatInvalid`（#374 定的口径）+ `managedKeyVerdict`（#596），本函数不另立一套：
  * 两处判断一旦分叉，就会出现「发送被拦、但失败文案说没问题」这种互相打架的状态。
  */
-export type PreSendApiKeyStatus = 'ok' | 'missing' | 'format'
+export type PreSendApiKeyStatus = 'ok' | 'missing' | 'format' | 'claim' | 'stale'
 
 export const checkApiKeyBeforeSend = (): PreSendApiKeyStatus => {
+  if (usesManagedKey(getProviderKind())) {
+    const verdict = getManagedKeyVerdict()
+    if (verdict !== 'ok') {
+      return verdict === 'stale' ? 'stale' : 'claim'
+    }
+    return 'ok'
+  }
   const apiKey = getApiKey()
   if (apiKey.trim() === '') {
     return 'missing'

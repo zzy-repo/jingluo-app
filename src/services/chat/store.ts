@@ -35,7 +35,7 @@ import {
   recordError,
   recordEvent,
 } from '../diagnostics/collector.js'
-import { getApiKey, getBaseUrl, getCurrentSpec, getModel } from '../api/apiConfig.js'
+import { getApiKey, getBaseUrl, getCurrentSpec, getModel, getProviderKind } from '../api/apiConfig.js'
 import { buildMeta, endpointKeyFromUrl } from '../diagnostics/fields.js'
 import { REASON } from '../diagnostics/reasons.js'
 import { createStreamMeter, streamTimingMeta } from '../diagnostics/timing.js'
@@ -1960,7 +1960,11 @@ const streamReply = async (sessionId: string, initial: AssistantMessage, request
                 { key: 'replyInsufficientBalance' as const }
               : error instanceof ApiError && error.status === 401
                 ? // 401（#303 问题 3）：上游说 Key 无效，界面就说同一件事，并把自动探测一起停掉
-                  { key: 'apiKeyRejected' as const }
+                  // #596：我们的渠道的 Key 只能「重新领取」，没有「重新填写」这条路 —— 用另一句
+                  // 文案，免得把人指到一个根本不存在的输入框上
+                  getProviderKind() === 'ours'
+                  ? { key: 'apiKeyRejectedOurs' as const }
+                  : { key: 'apiKeyRejected' as const }
                 : error instanceof ApiError
                   ? error.localMessage
                   : undefined

@@ -32,6 +32,14 @@ export const useSettingsDialog = create(() => ({
    * 修好 Key（保存成功）或关掉设置即清，不会变成一条挂着的僵尸提示。
    */
   apiKeyFormatBlocked: false,
+  /**
+   * 这次打开设置是**「我们的渠道」拿不到服务端那把 Key** 触发的（Issue #596）：
+   * `unclaimed` = 本机根本没有 / 不是服务端给的；`stale` = 服务端换过了、本机还是旧的。
+   *
+   * 与上面的格式拦截分开一格：两者可以同时成立，但用户要看到的下一步不同
+   * （格式拦截是「去改这一行」，这里是「去领取」——我们的渠道根本没有可改的输入框）。
+   */
+  managedKeyBlocked: null as null | 'unclaimed' | 'stale',
 }))
 
 export const openSettings = (section: SettingsSection) => {
@@ -43,13 +51,21 @@ export const openSettings = (section: SettingsSection) => {
 export const closeSettings = () => {
   recordAction('nav', 'close-settings', {})
   // #451：拦截提示只服务于「这一次打开」；关掉就清，下次发送还会重新判一次
-  useSettingsDialog.setState({ open: false, apiKeyFormatBlocked: false })
+  // #596：领取拦截同理 —— 关掉设置不该留下一条挂着的「请先领取 Key」
+  useSettingsDialog.setState({ open: false, apiKeyFormatBlocked: false, managedKeyBlocked: null })
 }
 
 /** 修好 Key 之后调用（保存成功）：那条「格式不对，消息没发出」的提示到此为止（#451） */
 export const clearApiKeyFormatBlocked = () => {
   if (useSettingsDialog.getState().apiKeyFormatBlocked) {
     useSettingsDialog.setState({ apiKeyFormatBlocked: false })
+  }
+}
+
+/** 领取成功之后调用：那条「请先领取 Key / 请重新领取」的提示到此为止（#596） */
+export const clearManagedKeyBlocked = () => {
+  if (useSettingsDialog.getState().managedKeyBlocked !== null) {
+    useSettingsDialog.setState({ managedKeyBlocked: null })
   }
 }
 
@@ -91,6 +107,16 @@ export const openAccountConsume = (tab: AccountConsumeTab = 'cards') => {
  *
  * 判据统一在 `apiConfig.checkApiKeyBeforeSend()`（底层是 #374 的 `isKeyFormatInvalid`）：
  * 拦截与失败文案看同一份口径，不会出现「发送时说过格式没错、失败文案说格式不对」。
+ *
+ * #596 又多两条路，只对「我们的渠道」成立（另外三个渠道一字不改）：
+ *
+ *  4. `claim` → 本机没有服务端下发的那把 Key（没领过 / 手填的 / 老版本留下的）。**不发请求**，
+ *     打开设置并在 Key 那一行写「请先领取 Key」+「重新领取」按钮；
+ *  5. `stale` → 本机这把与服务端下发标记不一致（服务端换过了）。同样不发请求，写「Key 已更新，
+ *     请重新领取」。
+ *
+ * 这两条**刻意不使用**「服务器繁忙」「未知错误」这类掩盖性说法：那正是 #596 第 1 条事故里
+ * 用户被误导的原因（本地存着旧 Key，服务端换了，401 被读成「服务器忙」）。
  */
 export const ensureApiKey = () => {
   const status = checkApiKeyBeforeSend()
@@ -99,6 +125,19 @@ export const ensureApiKey = () => {
   }
   if (status === 'missing') {
     openSettings('data')
+    return false
+  }
+  if (status === 'claim' || status === 'stale') {
+    const blocked = status === 'stale' ? 'stale' : 'unclaimed'
+    // 「我们的渠道」的 Key 只能由服务端下发（#596）：这两种状态下本地那把**一定**不是服务端那把，
+    // 发出去只会换回一次 401。先在诊断里留痕（只记判定档位与长度，Key 原文不进日志），再打开设置。
+    recordConfigRejection('apiKey', status)
+    recordAction('nav', 'block-send-managed-key', {
+      reason: status,
+      length: getApiKey().length,
+    })
+    openSettings('data')
+    useSettingsDialog.setState({ managedKeyBlocked: blocked })
     return false
   }
   // format：先在诊断里留痕（这类「有 Key 却发不出去」只看状态是查不出来的），再打开设置

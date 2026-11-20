@@ -27,6 +27,8 @@ import { Select } from '../base/Select.js'
 import { useSettings } from '../../services/settings.js'
 import { useApiKeyForm } from './useApiKeyForm.js'
 import { useSettingsDialog } from './settingsDialogState.js'
+import { ManagedKeyField } from './ManagedKeyField.js'
+import { apiKeyFieldMode } from './managedKeyView.js'
 import { useTranslate, type TranslationKey } from '../../i18n/index.js'
 import styles from './Settings.module.css'
 
@@ -129,7 +131,15 @@ const ApiConfigField = ({
 }) => {
   switch (field) {
     case 'apiKey':
-      return <ApiKeyField editor={editor} />
+      /**
+       * #596：Key 行的形态按渠道分（`apiKeyFieldMode`，唯一判定处）。
+       * 我们的渠道 = 只读 + 「重新领取」，**没有输入框**；另外三个渠道一行都不改（#608 的硬验收）。
+       */
+      return apiKeyFieldMode(spec.kind) === 'managed' ? (
+        <ManagedKeyField />
+      ) : (
+        <ApiKeyField editor={editor} />
+      )
     case 'baseUrl':
       return <BaseUrlField spec={spec} />
     case 'model':
@@ -583,6 +593,12 @@ const describeProbe = (
 /** 移动端：输入 API Key 时在选项下方显示整行「确定」 */
 export const ApiKeyConfirm = ({ editor: { showInput, form } }: { editor: ApiKeyEditor }) => {
   const t = useTranslate()
+  const kind = useApiConfig((state) => state.kind)
+  // #596：我们的渠道没有输入框，底部就不该冒出一个「确定」——它只会把上一次在别的渠道里
+  // 没提交的草稿提交掉（Key 在本仓是四个渠道共用一把，草稿会跨渠道留着）
+  if (apiKeyFieldMode(kind) === 'managed') {
+    return null
+  }
   return showInput && form.value.trim() ? (
     <button
       type="button"

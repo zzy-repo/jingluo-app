@@ -15,6 +15,8 @@ import { SessionView } from '../components/session/SessionView.js'
 import { MobileHeader } from '../components/session/MobileHeader.js'
 import { Welcome } from '../components/session/Welcome.js'
 import { ensureApiKey } from '../components/settings/settingsDialogState.js'
+import { syncManagedKeyFromServer } from '../components/settings/managedKeyRuntime.js'
+import { useIsOursChannel } from '../services/api/apiConfig.js'
 import { SettingsDialog } from '../components/settings/SettingsDialog.js'
 import { Toast } from '../components/base/Toast.js'
 import { showToast } from '../components/base/toastState.js'
@@ -52,6 +54,8 @@ export const App = () => {
   const activeId = useChatStore((state) => state.activeId)
   // 聊天背景图存在 IndexedDB，刷新/重开后读回；只作用于聊天主区域
   const backgroundUrl = useChatBackground((state) => state.url)
+  // #596：自有渠道的 Key 由服务端下发，进入该渠道时要与本地对齐一次（见下面的 effect）
+  const oursChannel = useIsOursChannel()
 
   usePreventPageScroll(isMobile)
 
@@ -78,6 +82,23 @@ export const App = () => {
     // 首次打开先在设置里输入 API Key
     ensureApiKey()
   }, [])
+
+  /**
+   * 「我们的渠道」的 Key 由服务端管理（Issue #596）：进入该渠道时对齐一次。
+   *
+   * 为什么在启动就对齐、而不是等用户点「重新领取」：事故里那一类是「服务端早换了、
+   * 本机还留着旧的」，等用户点就永远等不到。这里用幂等的领取问一次服务端那把是哪把，
+   * 不一样就覆盖本地（`syncManagedKeyFromServer` 内部完成落盘 + 写下发标记）。
+   *
+   * 失败（未登录 / 离线 / 服务端异常）**静默**：本机现状不动，发送前那道闸会用标记
+   * 判出「这把不是服务端那把」并拦下来，把话说在设置页而不是启动路径上。
+   */
+  useEffect(() => {
+    if (!oursChannel) {
+      return
+    }
+    void syncManagedKeyFromServer().catch(() => {})
+  }, [oursChannel])
 
   return (
     <>
