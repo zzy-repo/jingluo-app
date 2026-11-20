@@ -145,7 +145,7 @@ def CONSUME_BASE_PATTERN = ~/https?:\/\/[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?(
 def consumeEndpointsRawText = endpointsJsonFile.getText('UTF-8')
 def consumeEndpointLines = consumeEndpointsRawText.readLines()
 def quoted = { String name -> '"'.toString() + name + '"'.toString() }
-def findLine = { String name, int from } ->
+def findLine = { String name, int from  ->
     int found = 0
     consumeEndpointLines.eachWithIndex { line, i ->
         if (found == 0 && i >= from && line.contains(quoted(name))) {

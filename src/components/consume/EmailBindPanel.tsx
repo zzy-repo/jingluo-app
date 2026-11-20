@@ -14,7 +14,7 @@ import {
   runUnbindEmail,
   type EmailBindEvent,
   type EmailBindSource,
-} from './emailBindPanel.js'
+} from './emailBindPanelModel.js'
 import styles from './panels.module.css'
 
 /**
