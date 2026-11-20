@@ -334,11 +334,19 @@ export const createConfig = ({
         migration: endpoints.migration,
       }),
       // PDF 文本解析（#480）：版本 + 静态路径注入，运行期只读 __PDFJS_ASSET__（见 pdfLoader.ts）
+      //
+      // `script` / `worker` 注入的是**产物里的文件名**（`path.basename`），不是包装内的相对路径。
+      // 运行期按 `assetDir/script` 拼地址（`pdfAssetUrl`），而下面 CopyRspackPlugin 拷的正是
+      // `path.basename(...)` —— 两边口径必须一致，否则浏览器会去取
+      // `static/pdfjs/legacy/build/pdf.min.js`（404），PDF 解析在真产物里整篇失败：
+      // 脚本 404 → `libUnavailable`；worker 404 → pdfjs 退回 fake worker → `openFailed`。
+      // 这条链路只在**真产物**里才走得通（L0 用例换的是 node 侧加载口），所以由
+      // `docs/ui/480-attachments` 的浏览器截图首次发现，见 acceptance-480.md「未覆盖项 / 已修」。
       __PDFJS_ASSET__: JSON.stringify({
         version: readPdfjsVersion(),
         assetDir: pdfjsAsset.assetDir,
-        script: pdfjsAsset.script,
-        worker: pdfjsAsset.worker,
+        script: path.basename(pdfjsAsset.script),
+        worker: path.basename(pdfjsAsset.worker),
         cmapsDir: pdfjsAsset.cmapsDir,
       }),
     }),

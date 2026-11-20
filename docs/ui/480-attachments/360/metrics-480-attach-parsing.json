@@ -1,0 +1,82 @@
+{
+  "page": "480-attach-parsing",
+  "title": "#480 附件卡片 parsing 态：逐页进度条 + 取消按钮，取消后落「已取消」（1600 页真 PDF）",
+  "viewport": 360,
+  "size": "360×740",
+  "shots": [
+    "docs/ui/480-attachments/360/480-attach-parsing-01-card-parsing-progress-360.png",
+    "docs/ui/480-attachments/360/480-attach-parsing-02-card-cancelled-360.png"
+  ],
+  "notes": [],
+  "parsing": {
+    "cardCount": 1,
+    "cards": [
+      {
+        "variant": "draft",
+        "expanded": false,
+        "name": "480-长文档-1600页.pdf",
+        "subCaption": "PDF 690 KB",
+        "status": "解析中 2%",
+        "corner": null,
+        "progress": {
+          "text": "解析中 2%",
+          "width": 2.3,
+          "trackWidth": 114
+        },
+        "actions": [
+          "取消解析",
+          "移除附件"
+        ],
+        "borderColor": "rgba(0, 0, 0, 0.1)",
+        "background": "rgb(255, 255, 255)",
+        "box": {
+          "left": 29,
+          "right": 269,
+          "width": 240,
+          "height": 85,
+          "insideViewport": true
+        }
+      }
+    ],
+    "panels": [],
+    "viewportWidth": 360,
+    "documentScrollWidth": 360,
+    "bodyScrollWidth": 360,
+    "overflowCount": 0,
+    "overflowSamples": []
+  },
+  "parsingAfterMs": 572,
+  "cancelled": {
+    "cardCount": 1,
+    "cards": [
+      {
+        "variant": "draft",
+        "expanded": false,
+        "name": "480-长文档-1600页.pdf",
+        "subCaption": "PDF 690 KB",
+        "status": "解析已取消",
+        "corner": null,
+        "progress": null,
+        "actions": [
+          "移除附件"
+        ],
+        "borderColor": "rgba(0, 0, 0, 0.1)",
+        "background": "rgba(38, 49, 72, 0.06)",
+        "box": {
+          "left": 29,
+          "right": 269,
+          "width": 240,
+          "height": 78,
+          "insideViewport": true
+        }
+      }
+    ],
+    "panels": [],
+    "viewportWidth": 360,
+    "documentScrollWidth": 360,
+    "bodyScrollWidth": 360,
+    "overflowCount": 0,
+    "overflowSamples": []
+  },
+  "consoleErrors": []
+}

@@ -95,8 +95,12 @@ export const DEFAULT_VIEWPORTS = ['390', '360']
 export const DEFAULT_PORT = 5420
 export const DEFAULT_DIST = 'dist'
 
-/** 与 src/services/chat/db.ts 的 DB_VERSION 保持一致；fixture 建库结构必须与之一致 */
-export const DB_VERSION = 12
+/**
+ * 与 src/services/chat/db.ts 的 DB_VERSION 保持一致；fixture 建库结构必须与之一致。
+ * #480 把库升到 v13（新增 `attachments` / `attachmentTexts` 两个 store）：这里只建基线四张表 +
+ * `sessionSummaries`，附件两张表交给应用自己的 v12 → v13 升级路径去建 —— 顺带每次截图都走一遍真升级。
+ */
+export const DB_VERSION = 13
 /** 假 Key：只喂给界面让「服务配置」不是空态；订单接口被 route 拦掉，不会真的发出去 */
 const FIXTURE_API_KEY = 'sk-shot-mobile-fixture-0000'
 /**
@@ -992,6 +996,295 @@ const routeTrail = async (context, def) => {
   })
 }
 
+
+// ---------------------------------------------------------------- #480 文档附件场景夹具
+
+/**
+ * 手搓一份最小 PDF（真文本层，Helvetica / ASCII）。
+ *
+ * 为什么自己拼而不是拿现成文件：截图要两种**真实解析行为**，都在文件字节里决定，不靠桩：
+ *  - `pages.length` 很大 → 逐页取文本要好几秒，`parsing` 态的进度条与取消按钮才有稳定的取证窗口；
+ *  - 某一页 `corrupt: true` → 该页内容流声明 `FlateDecode` 但数据是坏的，pdfjs 取这一页文本时抛错，
+ *    `parsePdfFile` 按「单页失败不中断整篇」记账 → `extractedPages < pages` + 「第 N 页提取失败」warning
+ *    → manager 落 `partial`。这是**真文件**造成的 partial（`pdftotext` 对同一份文件也报
+ *    `Unknown compression method in flate stream` 并跳过那一页），不是往解析器里注故障。
+ *
+ * 文字只用 ASCII：`/Length` 与实际字节数必须逐字节相等，多字节字符会让长度算错、把好页也拖坏。
+ */
+const buildShotPdf = (pages) => {
+  const escapeText = (value) => value.replace(/([()\\])/gu, '\\$1')
+  const pageStream = (lines) =>
+    `BT /F1 10 Tf 20 180 Td 12 TL ${lines.map((line) => `(${escapeText(line)}) Tj T*`).join(' ')} ET`
+  const pageIds = pages.map((_, index) => 3 + index)
+  const contentIds = pages.map((_, index) => 3 + pages.length + index)
+  const fontId = 3 + pages.length * 2
+  const objects = [
+    [1, '<</Type/Catalog/Pages 2 0 R>>'],
+    [2, `<</Type/Pages/Kids[${pageIds.map((id) => `${id} 0 R`).join(' ')}]/Count ${pages.length}>>`],
+  ]
+  pages.forEach((_, index) => {
+    objects.push([
+      pageIds[index],
+      `<</Type/Page/Parent 2 0 R/MediaBox[0 0 420 300]/Contents ${contentIds[index]} 0 R/Resources<</Font<</F1 ${fontId} 0 R>>>>>>`,
+    ])
+  })
+  pages.forEach((page, index) => {
+    if (page.corrupt === true) {
+      // 合法 zlib 头 + 半截 deflate 数据：解不开，但整份文件的结构（xref / 对象偏移）仍然完好，
+      // 所以坏的是「这一页」而不是「整篇」（整篇坏会走 openFailed，那是另一条分支）
+      const payload = 'x\u009c\u0093\u00f3'
+      objects.push([
+        contentIds[index],
+        `<</Length ${payload.length}/Filter/FlateDecode>>\nstream\n${payload}\nendstream`,
+      ])
+      return
+    }
+    const stream = pageStream(page.lines)
+    objects.push([contentIds[index], `<</Length ${stream.length}>>\nstream\n${stream}\nendstream`])
+  })
+  objects.push([fontId, '<</Type/Font/Subtype/Type1/BaseFont/Helvetica>>'])
+
+  const chunks = ['%PDF-1.4\n']
+  const offsets = new Map()
+  let cursor = chunks[0].length
+  for (const [id, body] of objects) {
+    offsets.set(id, cursor)
+    const piece = `${id} 0 obj\n${body}\nendobj\n`
+    chunks.push(piece)
+    cursor += piece.length
+  }
+  const maxId = Math.max(...objects.map(([id]) => id))
+  const xrefStart = cursor
+  chunks.push(`xref\n0 ${maxId + 1}\n`, '0000000000 65535 f \n')
+  for (let id = 1; id <= maxId; id += 1) {
+    chunks.push(`${String(offsets.get(id) ?? 0).padStart(10, '0')} 00000 n \n`)
+  }
+  chunks.push(`trailer\n<</Size ${maxId + 1}/Root 1 0 R>>\nstartxref\n${xrefStart}\n%%EOF\n`)
+  return Buffer.from(chunks.join(''), 'latin1')
+}
+
+/**
+ * 「解析要好几秒」的那份 PDF：页多、每页字少。
+ * 每页 2 行是为了把总字符数压在 `ATTACHMENT_LIMITS.maxExtractedChars`（40 万）之内 ——
+ * 超了 manager 会额外记一条「超过单份注入预算」warning，那是另一个话题（注入预算），
+ * 不该混进「解析进度」这张图里。
+ */
+const SLOW_PDF_PAGES = 1600
+const makeSlowPdf = () => {
+  const pages = []
+  for (let index = 1; index <= SLOW_PDF_PAGES; index += 1) {
+    pages.push({
+      // 只用 ASCII：`/Length` 必须与实际字节数一致，多字节字符会让页内容流错位，
+      // 结果是「整篇看起来像没有文本层」（noTextLayer），而不是我们想看到的进度
+      lines: [
+        `Slow 480 fixture page ${index} line 1: page-by-page text extraction keeps the progress bar moving.`,
+        `Slow 480 fixture page ${index} line 2: ascii only, so every stream length is exact.`,
+      ],
+    })
+  }
+  return buildShotPdf(pages)
+}
+
+/** 3 页里第 2 页内容流坏掉：真 partial（`第 2 页提取失败` + `第 2/3 页`） */
+const makePartialPdf = () =>
+  buildShotPdf([
+    { lines: ['Hello 480 partial page 1', 'second line page 1'] },
+    { corrupt: true, lines: ['Hello 480 partial page 2'] },
+    { lines: ['Hello 480 partial page 3', 'second line page 3'] },
+  ])
+
+/** 消息内附件的正文标记：只该出现在文档与请求体里，不该出现在消息气泡 / 卡片 / 面板上 */
+const DOC_ONLY_MARKER = '480 截图夹具：这句话只应出现在文档里，不该出现在消息气泡里。'
+const makeMessageDocTxt = () =>
+  Buffer.from(
+    [
+      DOC_ONLY_MARKER,
+      '第二段：这份 TXT 会走真实的解析链路（编码识别 → 规范化 → 落库 → 注入）。',
+      '第三段：消息里只保留附件 id 引用，卡片上只有文件名 / 大小 / 状态。',
+    ].join('\n\n'),
+    'utf8'
+  )
+
+/** 输入区文档入口的文案（与 i18n 一致；改文案时这里要跟着改，否则截图会等不到元素） */
+const ATTACH_LABELS = {
+  pickEnabled: '添加文档（TXT / DOCX / PDF）',
+  openDetail: '查看附件详情',
+  cancelParse: '取消解析',
+  retryParse: '重新解析',
+  statusSuccess: '已就绪',
+  statusFailed: '解析失败，点击查看原因',
+  statusCancelled: '解析已取消',
+}
+
+/**
+ * 量输入区的文档附件入口：可用态（`AttachmentPicker`）与禁用态（`aria-disabled` + toast 原因）的差别。
+ * 判据取**无障碍属性**而不是类名：禁用的是 `aria-disabled="true"` + `attachChannelUnsupported` 文案。
+ */
+const measureDocEntry = (labels) => {
+  const round = (value) => Math.round(value * 10) / 10
+  const buttons = Array.from(document.querySelectorAll('button[aria-label]'))
+  const byLabel = (pattern) =>
+    buttons.find((button) => pattern.test(button.getAttribute('aria-label') ?? '')) ?? null
+  const describe = (button) => {
+    if (button === null) {
+      return null
+    }
+    const rect = button.getBoundingClientRect()
+    const style = getComputedStyle(button)
+    return {
+      ariaLabel: button.getAttribute('aria-label'),
+      ariaDisabled: button.getAttribute('aria-disabled'),
+      disabled: button.disabled,
+      opacity: style.opacity,
+      cursor: style.cursor,
+      box: { width: round(rect.width), height: round(rect.height) },
+    }
+  }
+  const enabled = byLabel(/添加文档/u)
+  const disabled = byLabel(/当前渠道不支持文档附件/u)
+  const inputs = Array.from(document.querySelectorAll('input[type="file"]')).map((input) => ({
+    accept: input.getAttribute('accept'),
+    multiple: input.multiple,
+    hidden: input.hidden,
+  }))
+  return {
+    // 当前渠道：三张「可用态」截图的像素是一样的（入口长相同一张），靠这一项证明
+    // 确实是切到不同渠道之后的同一处渲染，而不是把一张图复制三份
+    channelKind: (() => {
+      try {
+        return localStorage.getItem('chat-demo:provider-kind')
+      } catch {
+        return null
+      }
+    })(),
+    enabled: enabled !== null,
+    disabled: disabled !== null,
+    entry: describe(enabled ?? disabled),
+    docInputs: inputs.filter((input) => input.accept === '.txt,.docx,.pdf').length,
+    allFileInputs: inputs.length,
+    expectedPickLabel: labels.pickEnabled,
+  }
+}
+
+/** 读当前 toast（`role="status"`）：禁用入口点下去必须给一句带原因的人话 */
+const readToast = () => {
+  const node = document.querySelector('[role="status"]')
+  return node === null ? null : (node.textContent ?? '').replace(/\s+/gu, ' ').trim()
+}
+
+/**
+ * 量附件卡片（输入区 / 消息内同一组件，只有 `variant` 不同）。
+ *
+ * 卡片没有 `data-testid`（#541 明确复用既有 `FileCard`、不新加测试钩子），所以按**语义**找：
+ * `AttachmentCard` 给卡片的 `activator.label` 就是「查看附件详情」。
+ * 进度条 / 角标 / 状态行按 CSS Module 的**类名前缀**取（构建后形如 `progressBar-_282ec`）。
+ */
+const measureAttachmentCards = () => {
+  const round = (value) => Math.round(value * 10) / 10
+  const text = (node) => (node === null ? '' : (node.textContent ?? '').replace(/\s+/gu, ' ').trim())
+  const hasClass = (node, prefix) =>
+    Array.from(node.classList).some((name) => name.startsWith(`${prefix}-`))
+  const pick = (root, prefix, selector = 'div,span') =>
+    Array.from(root.querySelectorAll(selector)).find((node) => hasClass(node, prefix)) ?? null
+  const viewportWidth = document.documentElement.clientWidth
+  const cards = Array.from(document.querySelectorAll('[role="button"][aria-label]')).filter(
+    (node) => node.getAttribute('aria-label') === '查看附件详情'
+  )
+  const panels = Array.from(document.querySelectorAll('[role="dialog"]')).map((panel) => {
+    const rect = panel.getBoundingClientRect()
+    const warnings = Array.from(panel.querySelectorAll('li')).map((item) => text(item))
+    return {
+      label: panel.getAttribute('aria-label'),
+      title: text(pick(panel, 'title')),
+      meta: text(pick(panel, 'meta')),
+      failureTitle: text(pick(panel, 'failureTitle')),
+      raw: text(pick(panel, 'rawText')),
+      warnings,
+      actions: Array.from(panel.querySelectorAll('button'))
+        .map((button) => button.getAttribute('aria-label') ?? text(button))
+        .filter((label) => label !== ''),
+      box: {
+        left: round(rect.left),
+        right: round(rect.right),
+        width: round(rect.width),
+        insideViewport:
+          rect.left >= 0 && rect.right <= viewportWidth + 1 && rect.top >= 0 && rect.bottom <= window.innerHeight + 1,
+      },
+      // 位置怎么定下来的（inline style 是 `useAnchoredPosition` 算出来的结果，
+      // 越界时靠它判断是「算错了」还是「宽度根本放不下」）
+      position: {
+        inline: panel.getAttribute('style'),
+        computedLeft: getComputedStyle(panel).left,
+        computedTop: getComputedStyle(panel).top,
+        maxHeight: getComputedStyle(panel).maxHeight,
+      },
+    }
+  })
+  const read = (card) => {
+    const rect = card.getBoundingClientRect()
+    const style = getComputedStyle(card)
+    const bar = pick(card, 'progressBar', 'span')
+    const track = pick(card, 'progress')
+    const corner = pick(card, 'warnCorner', 'span')
+    return {
+      variant: hasClass(card, 'messageCard') ? 'message' : 'draft',
+      expanded: card.getAttribute('aria-expanded') === 'true',
+      name: text(pick(card, 'caption')),
+      subCaption: text(pick(card, 'subCaption')),
+      status: text(pick(card, 'statusText')),
+      corner: corner === null ? null : { count: text(corner), title: corner.getAttribute('title') },
+      progress:
+        bar === null
+          ? null
+          : {
+              text: text(pick(card, 'statusText')),
+              width: round(bar.getBoundingClientRect().width),
+              trackWidth: track === null ? null : round(track.getBoundingClientRect().width),
+            },
+      actions: Array.from(card.querySelectorAll('button'))
+        .map((button) => button.getAttribute('aria-label') ?? text(button))
+        .filter((label) => label !== ''),
+      borderColor: style.borderTopColor,
+      background: style.backgroundColor,
+      box: {
+        left: round(rect.left),
+        right: round(rect.right),
+        width: round(rect.width),
+        height: round(rect.height),
+        insideViewport: rect.left >= 0 && rect.right <= viewportWidth + 1,
+      },
+    }
+  }
+  const overflow = []
+  for (const element of document.querySelectorAll('*')) {
+    const rect = element.getBoundingClientRect()
+    if (rect.width > 0 && rect.right > viewportWidth + 1) {
+      overflow.push({
+        tag: element.tagName,
+        right: round(rect.right),
+        text: (element.textContent ?? '').slice(0, 24),
+      })
+    }
+  }
+  return {
+    cardCount: cards.length,
+    cards: cards.map(read),
+    panels,
+    viewportWidth,
+    documentScrollWidth: Math.round(document.documentElement.scrollWidth),
+    bodyScrollWidth: Math.round(document.body.scrollWidth),
+    overflowCount: overflow.length,
+    overflowSamples: overflow.slice(0, 5),
+  }
+}
+
+/**
+ * 页面上**看得见的文字**（`innerText`）：用来断言「文档正文没有漏到界面上」。
+ * §3.5 要求卡片与面板只显示元信息 —— 所以把文档正文里那句独一无二的标记拿去搜，
+ * 消息气泡、卡片、详情面板整页都不该出现它。
+ */
+const readVisibleText = () => (document.body.innerText ?? '').replace(/\s+/gu, ' ').trim()
+
 // ---------------------------------------------------------------- UI 动作
 
 const S = {
@@ -1022,6 +1315,54 @@ const openSiderIfNeeded = async (page) => {
   await menu.waitFor({ state: 'visible', timeout: 8000 })
   await menu.click()
   await page.waitForTimeout(320)
+}
+
+/**
+ * #480：输入区那个隐藏的文档 `<input type="file">`。
+ *
+ * **不能**用 `accept*=".docx"` 找：「图片 / 文件上传」那个入口的 `ACCEPT` 白名单里同样有
+ * pdf / txt / docx（历史上 Files API 也传文档），按包含关系找会选中错的那个 input。
+ * 文档入口的 accept 是 `ACCEPT_DOCUMENTS = SUPPORTED_EXTENSIONS.join(',')`，只这三样，按**精确值**取。
+ */
+const ATTACH_DOC_ACCEPT = '.txt,.docx,.pdf'
+const attachDocInput = (page) =>
+  page.locator(`input[type="file"][accept="${ATTACH_DOC_ACCEPT}"]`).first()
+
+/**
+ * 等附件卡片从「等待解析 / 解析中」落到终态（成功 / partial / 失败 / 已取消）。
+ * 判据取卡片第三行状态文案：`parsing` 才有进度，终态一定没有「解析中」这行。
+ */
+const waitForAttachSettled = async (page, timeout = 60000) => {
+  await page.waitForFunction(
+    () => {
+      const cards = Array.from(document.querySelectorAll('[role="button"][aria-label]')).filter(
+        (node) => node.getAttribute('aria-label') === '查看附件详情'
+      )
+      if (cards.length === 0) {
+        return false
+      }
+      return cards.every((card) => {
+        const lines = Array.from(card.querySelectorAll('div')).map((node) =>
+          (node.textContent ?? '').trim()
+        )
+        return !lines.some((line) => line.startsWith('解析中') || line === '等待解析')
+      })
+    },
+    undefined,
+    { timeout }
+  )
+  // 让状态行的过渡动画走完再截图
+  await page.waitForTimeout(260)
+}
+
+/** 点开第一张附件卡片的详情面板（`AttachmentCard` 的整卡就是激活器） */
+const openAttachPanel = async (page) => {
+  await page
+    .locator('[role="button"][aria-label="查看附件详情"]')
+    .first()
+    .click()
+  await page.getByRole('dialog', { name: '查看附件详情' }).waitFor({ state: 'visible', timeout: 8000 })
+  await page.waitForTimeout(260)
 }
 
 const openSession = async (page, title) => {
@@ -2773,6 +3114,339 @@ export const PAGES = {
       }
     },
   },
+
+  // ------------------------------------------------ #480 文档附件（390 / 360 两档）
+
+  '480-attach-entry': {
+    dir: 'docs/ui/480-attachments',
+    title: '#480 输入区文档入口：anthropic / openai / ours 三渠道可用，DeepSeek 禁用并给出原因（toast）',
+    sessions: () => [makeReadingSession()],
+    run: async (ctx) => {
+      const { page, shot, record, warn } = ctx
+      /**
+       * 换渠道走**设置页里那个「渠道」选择器**（真实用户路径）。
+       *
+       * 为什么不直接改 localStorage 再 reload：`addInitScript` 每次导航都会把
+       * `chat-demo:provider-kind` 重置成本场景的默认渠道（`def.providerKind`），reload 之后就白改了；
+       * 而 store 的初值在模块加载时读进内存，不 reload 又读不到。走 UI 避开这两条，还顺带证明了
+       * 「切渠道 → 入口开关跟着变」是真的接线了（#538 的 UI 门）。
+       */
+      const switchChannel = async (optionLabel) => {
+        // 「渠道」选择器在设置页第二格（服务配置那块），不是「通用设置」
+        await openSettings(page, S.tabData)
+        const trigger = page.getByRole('button', { name: '渠道', exact: true })
+        await trigger.click()
+        const listbox = page.getByRole('listbox', { name: '渠道' })
+        await listbox.waitFor({ state: 'visible', timeout: 5000 })
+        await listbox.getByRole('option', { name: optionLabel, exact: true }).click()
+        await page.waitForTimeout(320)
+        await closeDialog(page)
+        // 设置是从抽屉里进去的：关掉设置还得把抽屉收起来，否则输入区被遮罩盖着，
+        // 截出来的是「侧栏」而不是「附件入口」
+        await closeSider(page, ctx.size)
+        await page.waitForTimeout(320)
+      }
+
+      // ①②③ 三个走「文本注入」的渠道：入口渲染成可选，且背后挂着隐藏的文档 file input
+      const enabled = [
+        ['Anthropic 协议', 'anthropic'],
+        ['OpenAI 兼容', 'openai'],
+        ['我们的渠道', 'ours'],
+      ]
+      for (const [index, [optionLabel, kind]] of enabled.entries()) {
+        await switchChannel(optionLabel)
+        const state = await page.evaluate(measureDocEntry, ATTACH_LABELS)
+        record(`entry-${kind}`, state)
+        if (state.enabled !== true) {
+          throw new Error(`${kind} 渠道（${optionLabel}）的文档入口没有渲染出来（该渠道 acceptsDocuments 为真）`)
+        }
+        if (state.docInputs !== 1) {
+          throw new Error(`${kind} 渠道没有挂上文档 file input（accept="${ATTACH_DOC_ACCEPT}" 找不到）`)
+        }
+        await shot(`0${index + 1}-doc-entry-${kind}-enabled`)
+      }
+
+      // ④ DeepSeek：入口是既有禁用态，点下去必须给一句**带原因**的提示
+      await switchChannel('DeepSeek 官方')
+      const disabled = await page.evaluate(measureDocEntry, ATTACH_LABELS)
+      record('entry-deepseek', disabled)
+      if (disabled.enabled !== false || disabled.disabled !== true) {
+        throw new Error('DeepSeek 渠道的文档入口没有渲染成禁用态（#538 的入口门没生效）')
+      }
+      if (disabled.docInputs !== 0) {
+        throw new Error('DeepSeek 渠道仍然挂着文档 file input：入口藏了但别的路还能塞进来')
+      }
+      await shot('04-doc-entry-deepseek-disabled')
+      await page.evaluate(() => {
+        const button = Array.from(document.querySelectorAll('button[aria-label]')).find((node) =>
+          /当前渠道不支持文档附件/u.test(node.getAttribute('aria-label') ?? '')
+        )
+        if (button !== undefined) {
+          button.click()
+        }
+      })
+      await page.waitForFunction(() => document.querySelector('[role="status"]') !== null, undefined, {
+        timeout: 6000,
+      })
+      const toast = await page.evaluate(readToast)
+      record('deepseekReasonToast', toast)
+      if (toast === null || !toast.includes('不支持文档附件')) {
+        warn(`DeepSeek 禁用入口点下去没给出原因：${String(toast)}`)
+      }
+      await shot('05-doc-entry-deepseek-reason-toast')
+    },
+  },
+
+  '480-attach-parsing': {
+    dir: 'docs/ui/480-attachments',
+    title: '#480 附件卡片 parsing 态：逐页进度条 + 取消按钮，取消后落「已取消」（1600 页真 PDF）',
+    sessions: () => [makeReadingSession()],
+    providerKind: 'ours',
+    run: async (ctx) => {
+      const { page, shot, record, warn } = ctx
+      await openSession(page, READING_SESSION_TITLE)
+      const started = Date.now()
+      await attachDocInput(page).setInputFiles({
+        name: '480-长文档-1600页.pdf',
+        mimeType: 'application/pdf',
+        buffer: makeSlowPdf(),
+      })
+      // 等到进度真的在动（≥ 2%）：0% 那一帧证明不了「进度在走」
+      await page.waitForFunction(
+        () => {
+          const card = Array.from(document.querySelectorAll('[role="button"][aria-label]')).find(
+            (node) => node.getAttribute('aria-label') === '查看附件详情'
+          )
+          const statusLine = Array.from(card === undefined ? [] : card.querySelectorAll('div'))
+            .map((node) => (node.textContent ?? '').trim())
+            .find((line) => line.startsWith('解析中'))
+          const percent = /解析中 (\d+)%/u.exec(statusLine ?? '')
+          return percent !== null && Number(percent[1]) >= 2
+        },
+        undefined,
+        { timeout: 30000 }
+      )
+      const parsing = await page.evaluate(measureAttachmentCards)
+      record('parsing', parsing)
+      record('parsingAfterMs', Date.now() - started)
+      const card = parsing.cards[0]
+      if (card === undefined) {
+        throw new Error('没等到附件卡片')
+      }
+      if (card.progress === null) {
+        throw new Error('解析中却没有进度条（progress 元素没渲染）')
+      }
+      if (!card.actions.includes(ATTACH_LABELS.cancelParse)) {
+        throw new Error(`解析中的卡片没有「取消解析」按钮：${JSON.stringify(card.actions)}`)
+      }
+      await shot('01-card-parsing-progress')
+
+      // 取消 → 视图立刻转「已取消」（中性色，不给红）：证明取消按钮真的接上了 abort
+      await page.getByRole('button', { name: ATTACH_LABELS.cancelParse }).first().click()
+      await page.waitForTimeout(700)
+      const cancelled = await page.evaluate(measureAttachmentCards)
+      record('cancelled', cancelled)
+      if (cancelled.cards[0]?.status !== ATTACH_LABELS.statusCancelled) {
+        warn(`点了取消，卡片状态却是「${cancelled.cards[0]?.status}」`)
+      }
+      await shot('02-card-cancelled')
+    },
+  },
+
+  '480-attach-partial': {
+    dir: 'docs/ui/480-attachments',
+    title: '#480 附件卡片 partial 态：黄色警告角标 + 点开详情看 warnings（真 PDF 第 2 页内容流损坏）',
+    sessions: () => [makeReadingSession()],
+    providerKind: 'ours',
+    run: async (ctx) => {
+      const { page, shot, record, warn } = ctx
+      await openSession(page, READING_SESSION_TITLE)
+      await attachDocInput(page).setInputFiles({
+        name: '480-部分页提取失败.pdf',
+        mimeType: 'application/pdf',
+        buffer: makePartialPdf(),
+      })
+      await waitForAttachSettled(page)
+      const settled = await page.evaluate(measureAttachmentCards)
+      record('partial', settled)
+      const card = settled.cards[0]
+      if (card === undefined) {
+        throw new Error('没等到附件卡片')
+      }
+      if (!card.status.startsWith('部分内容已就绪')) {
+        throw new Error(`期望 partial（部分内容已就绪），实际「${card.status}」`)
+      }
+      if (card.corner === null) {
+        throw new Error('partial 态的卡片没有黄色警告角标')
+      }
+      await shot('01-card-partial-warn-corner')
+
+      // 点卡片 → 详情面板：warnings 列表（解析器原文）+ 页数元信息
+      await openAttachPanel(page)
+      const opened = await page.evaluate(measureAttachmentCards)
+      const panel = opened.panels[0]
+      record('panel', panel)
+      if (panel === undefined) {
+        throw new Error('点卡片没有弹出详情面板')
+      }
+      if (!panel.warnings.some((warning) => warning.includes('第 2 页提取失败'))) {
+        warn(`详情面板的 warnings 没点名失败页：${JSON.stringify(panel.warnings)}`)
+      }
+      if (!panel.meta.includes('第 2/3 页')) {
+        warn(`详情面板没显示页数元信息：${panel.meta}`)
+      }
+      if (panel.box.insideViewport !== true) {
+        warn(`详情面板超出视口：right=${panel.box.right}（视口宽 ${opened.viewportWidth}）`)
+      }
+      await shot('02-panel-warnings')
+    },
+  },
+
+  '480-attach-failed': {
+    dir: 'docs/ui/480-attachments',
+    title: '#480 附件卡片 failed 态：红色卡片 + 失败原因 + 重新解析（扩展名骗人的 PDF）',
+    sessions: () => [makeReadingSession()],
+    providerKind: 'ours',
+    run: async (ctx) => {
+      const { page, shot, record, warn } = ctx
+      await openSession(page, READING_SESSION_TITLE)
+      await attachDocInput(page).setInputFiles({
+        name: '480-伪装成PDF的文本.pdf',
+        mimeType: 'application/pdf',
+        // 扩展名骗人的「PDF」：没有 `%PDF-` 文件头 → PdfParseError('notPdfFile') → 卡片落 failed。
+        // 不用仓库里的夹具文件：`tests/fixtures/480/` 属于 #545 的验收用例集（PR #545，未并入集成分支），
+        // 截图脚本不该依赖它的存在，所以这里现造同一份「假 PDF」字节。
+        buffer: Buffer.from('this file is plain text renamed to .pdf, no PD F header here\n', 'utf8'),
+      })
+      await waitForAttachSettled(page)
+      const failed = await page.evaluate(measureAttachmentCards)
+      record('failed', failed)
+      const card = failed.cards[0]
+      if (card === undefined) {
+        throw new Error('没等到附件卡片')
+      }
+      if (card.status !== ATTACH_LABELS.statusFailed) {
+        warn(`期望「${ATTACH_LABELS.statusFailed}」，实际「${card.status}」`)
+      }
+      await shot('01-card-failed')
+
+      // 详情面板：失败原因（人话）+ 技术信息原文 + 「重新解析」
+      await openAttachPanel(page)
+      const opened = await page.evaluate(measureAttachmentCards)
+      const panel = opened.panels[0]
+      record('panel', panel)
+      if (panel === undefined) {
+        throw new Error('点卡片没有弹出详情面板')
+      }
+      if (panel.raw.length === 0) {
+        warn('失败面板没有给技术信息原文：排查时唯一的线索缺了')
+      }
+      if (!panel.actions.includes(ATTACH_LABELS.retryParse)) {
+        warn(`失败面板没有「重新解析」按钮：${JSON.stringify(panel.actions)}`)
+      }
+      await shot('02-panel-failure-and-retry')
+
+      // 点「重新解析」：真的又跑了一遍（同一份坏文件 → 仍旧失败），证明按钮不是摆设
+      const retry = page.getByRole('button', { name: ATTACH_LABELS.retryParse }).first()
+      if ((await retry.count()) > 0) {
+        await retry.click()
+        await waitForAttachSettled(page)
+        const again = await page.evaluate(measureAttachmentCards)
+        record('afterRetry', { status: again.cards[0]?.status, cardCount: again.cardCount })
+        await shot('03-after-retry')
+      }
+    },
+  },
+
+  '480-attach-in-message': {
+    dir: 'docs/ui/480-attachments',
+    title: '#480 用户消息里的附件卡片：只有元信息（文件名 / 大小 / 状态），正文只在请求体里',
+    sessions: () => [makeReadingSession()],
+    providerKind: 'ours',
+    run: async (ctx) => {
+      const { page, shot, record, warn } = ctx
+      await openSession(page, READING_SESSION_TITLE)
+      // 拦 ours 上游：把**真实请求体**留下来，用来对照「正文进了请求、没进消息」
+      let requestBody = null
+      await page.route(`**${OURS_CHAT_PATH}`, async (route) => {
+        const request = route.request()
+        if (request.method() === 'OPTIONS') {
+          await route.fulfill({ status: 204, headers: OURS_CORS })
+          return
+        }
+        requestBody = request.postData()
+        await route.fulfill({
+          status: 200,
+          headers: { ...OURS_CORS, 'content-type': 'text/event-stream' },
+          body: openAiSse('收到这份文档了，正文我读到了。'),
+        })
+      })
+
+      await attachDocInput(page).setInputFiles({
+        name: '480-会议纪要.txt',
+        mimeType: 'text/plain',
+        buffer: makeMessageDocTxt(),
+      })
+      await waitForAttachSettled(page)
+      const draft = await page.evaluate(measureAttachmentCards)
+      record('draft', draft)
+      if (draft.cards[0]?.status !== ATTACH_LABELS.statusSuccess) {
+        warn(`草稿卡片状态不是「${ATTACH_LABELS.statusSuccess}」：${draft.cards[0]?.status}`)
+      }
+      await shot('01-draft-card-ready')
+
+      const textarea = page.locator('textarea').last()
+      await textarea.click()
+      await textarea.fill('这份文档你看到了吗？')
+      await page.getByRole('button', { name: /^发送$|^Send$/u }).first().click()
+      await page.getByText('收到这份文档了，正文我读到了。').first().waitFor({ timeout: 15000 })
+      await page.waitForTimeout(400)
+
+      const message = await page.evaluate(measureAttachmentCards)
+      record('message', message)
+      const visibleText = await page.evaluate(readVisibleText)
+      record('messageCard', {
+        cards: message.cards.map((item) => ({
+          variant: item.variant,
+          name: item.name,
+          subCaption: item.subCaption,
+          status: item.status,
+        })),
+        bodyHasDocumentText: visibleText.includes(DOC_ONLY_MARKER),
+      })
+      if (message.cards.length === 0) {
+        throw new Error('消息里没有渲染附件卡片')
+      }
+      if (message.cards.some((item) => item.variant !== 'message')) {
+        warn('消息里的附件卡片没有走 message 变体')
+      }
+      if (visibleText.includes(DOC_ONLY_MARKER)) {
+        throw new Error('文档正文漏到界面上了（§3.5 只允许元信息）')
+      }
+      record('requestBody', {
+        captured: requestBody !== null,
+        chars: requestBody === null ? 0 : requestBody.length,
+        hasDocumentText: requestBody !== null && requestBody.includes(DOC_ONLY_MARKER),
+      })
+      if (requestBody === null) {
+        warn('没能抓到请求体：注入是否真的发生无法对照')
+      } else if (!requestBody.includes(DOC_ONLY_MARKER)) {
+        warn('请求体里没有文档正文：注入没生效（或标记被转义）')
+      }
+
+      await shot('02-message-attachment-card')
+
+      // 消息里的卡片点开：还是只有元信息（页数 / 字符数 / 警告条数），没有正文
+      await openAttachPanel(page)
+      const opened = await page.evaluate(measureAttachmentCards)
+      record('messagePanel', opened.panels[0])
+      const panelText = await page.evaluate(readVisibleText)
+      if (panelText.includes(DOC_ONLY_MARKER)) {
+        throw new Error('详情面板里出现了文档正文')
+      }
+      await shot('03-message-panel-metadata')
+    },
+  },
 }
 
 // ---------------------------------------------------------------- 主流程
@@ -2793,16 +3467,18 @@ const printUsage = () => {
 环境变量：SHOT_PAGES / SHOT_VIEWPORTS / SHOT_OUT / SHOT_DIST_DIR / SHOT_PORT
 
 产物：<out>/<宽度>/<场景>-<状态>-<宽度>.png 与 <out>/<宽度>/metrics.json
+      多个场景共用一个 --out 目录时：每个场景落 metrics-<场景>.json，另落一份汇总 metrics.json
 注意：这是浏览器视口截图（设备模拟），不是真机截图。`)
 }
 
-const makeContext = ({ page, def, pageName, viewport, outDir, log }) => {
+const makeContext = ({ page, def, pageName, viewport, outDir, log, metricsName = 'metrics.json' }) => {
   const size = VIEWPORTS[viewport]
   const dir = shotDir(outDir, viewport)
   const relative = (file) => path.relative(ROOT, file).split(path.sep).join('/')
   const metrics = { page: pageName, title: def.title, viewport: Number(viewport), size: size.label, shots: [], notes: [] }
   return {
     page,
+    metricsName,
     size,
     dir,
     metrics,
@@ -2843,6 +3519,27 @@ export const main = async (argv = process.argv.slice(2), env = process.env) => {
   const hasDist = await stat(indexFile).then((info) => info.isFile()).catch(() => false)
   if (!hasDist) {
     throw new Error(`找不到被测产物：${indexFile}（先 pnpm build:internal，或用 --dist= 指定目录）`)
+  }
+
+  /**
+   * 每个「场景 × 视口」都往 `<out>/<宽度>/metrics.json` 落一份；**多个场景共用一个目录时**
+   * （#480 的五个附件场景都落 `docs/ui/480-attachments`）后跑的那份会把前一份覆盖掉，
+   * 于是「两档 overflowCount 是不是 0」这种按目录看的证据就丢了。
+   *
+   * 规则：目录只被一个场景用 → 仍叫 `metrics.json`（老文档里的路径不变）；
+   * 被多个场景共用 → 每个场景落 `metrics-<场景>.json`，再在目录里落一份**汇总** `metrics.json`
+   * （顶层 `overflowCount` 是所有场景里最大的那个，`pages` 里逐场景列出关键量）。
+   */
+  const outDirs = new Map()
+  for (const pageName of pageNames) {
+    for (const viewport of viewportKeys) {
+      const key = `${path.resolve(ROOT, options.out ?? PAGES[pageName].dir)}|${viewport}`
+      outDirs.set(key, (outDirs.get(key) ?? 0) + 1)
+    }
+  }
+  const metricsNameFor = (pageName, viewport) => {
+    const key = `${path.resolve(ROOT, options.out ?? PAGES[pageName].dir)}|${viewport}`
+    return (outDirs.get(key) ?? 1) > 1 ? `metrics-${pageName}.json` : 'metrics.json'
   }
 
   const log = (message) => console.log(message)
@@ -2933,13 +3630,21 @@ export const main = async (argv = process.argv.slice(2), env = process.env) => {
           page.on('pageerror', (error) => consoleErrors.push(String(error)))
           await page.goto(server.origin, { waitUntil: 'domcontentloaded' })
           await page.waitForTimeout(600)
-          const ctx = makeContext({ page, def, pageName, viewport, outDir, log })
+          const ctx = makeContext({
+            page,
+            def,
+            pageName,
+            viewport,
+            outDir,
+            log,
+            metricsName: metricsNameFor(pageName, viewport),
+          })
           await def.run(ctx)
           ctx.record('consoleErrors', consoleErrors.slice(0, 10))
-          const metricsFile = path.join(ctx.dir, 'metrics.json')
+          const metricsFile = path.join(ctx.dir, ctx.metricsName)
           await writeFile(metricsFile, `${JSON.stringify(ctx.metrics, null, 2)}\n`, 'utf8')
           log(`  · 量数落盘 ${path.relative(ROOT, metricsFile).split(path.sep).join('/')}`)
-          results.push(ctx.metrics)
+          results.push({ ...ctx.metrics, outDir: ctx.dir, metricsName: ctx.metricsName })
         } finally {
           await context.close()
         }
@@ -2948,6 +3653,49 @@ export const main = async (argv = process.argv.slice(2), env = process.env) => {
   } finally {
     await browser.close()
     await server.close()
+  }
+  /**
+   * 共用目录的汇总：顶层 `overflowCount` 取该目录里所有场景/视口里最大的那个 ——
+   * 只有它能回答「390 / 360 两档有没有横向溢出」这个按目录验收的问题（0 才算干净）。
+   *
+   * 每个场景自己记的 `record()` 里也可能带 `overflowCount`（卡片、面板、列表各自量过），
+   * 所以先逐场景取「自己所有量数里的最大值」，再对整个目录取最大值。
+   */
+  const maxOverflowOf = (item) => {
+    let max = typeof item.overflowCount === 'number' ? item.overflowCount : 0
+    for (const value of Object.values(item)) {
+      if (value !== null && typeof value === 'object' && typeof value.overflowCount === 'number') {
+        max = Math.max(max, value.overflowCount)
+      }
+    }
+    return max
+  }
+  const groups = new Map()
+  for (const item of results) {
+    const key = `${item.outDir}|${item.viewport}`
+    groups.set(key, [...(groups.get(key) ?? []), item])
+  }
+  for (const [, items] of groups) {
+    if (items.length < 2) {
+      continue
+    }
+    const pages = items.map((item) => ({
+      page: item.page,
+      metrics: item.metricsName,
+      overflowCount: maxOverflowOf(item),
+      shots: item.shots.length,
+      notes: item.notes,
+    }))
+    const summary = {
+      page: `${items.length} 个场景汇总`,
+      viewport: items[0].viewport,
+      size: items[0].size,
+      overflowCount: Math.max(...pages.map((entry) => entry.overflowCount)),
+      pages,
+    }
+    const file = path.join(items[0].outDir, 'metrics.json')
+    await writeFile(file, `${JSON.stringify(summary, null, 2)}\n`, 'utf8')
+    log(`  · 汇总落盘 ${path.relative(ROOT, file).split(path.sep).join('/')}（overflowCount=${summary.overflowCount}）`)
   }
   log(`\n完成：${results.length} 个「场景 × 视口」组合`)
   return 0

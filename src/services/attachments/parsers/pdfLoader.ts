@@ -42,8 +42,10 @@ export type PdfJsAssetConfig = {
 const FALLBACK_ASSET: PdfJsAssetConfig = {
   version: 'unknown',
   assetDir: 'static/pdfjs',
-  script: 'legacy/build/pdf.min.js',
-  worker: 'legacy/build/pdf.worker.min.js',
+  // 与构建期注入同形：`assetDir` 下的**文件名**（不是包内相对路径 `legacy/build/...`）。
+  // 口径不一致会让真产物去取 `static/pdfjs/legacy/build/*.js`（404），见 rspack.config.ts 的注入注释。
+  script: 'pdf.min.js',
+  worker: 'pdf.worker.min.js',
   cmapsDir: 'cmaps',
 }
 

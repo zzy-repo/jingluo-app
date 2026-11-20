@@ -146,12 +146,21 @@ export const useAnchoredPosition = <T extends HTMLElement, F extends HTMLElement
     const available = Math.max(0, resolved === 'top' ? spaceAbove : spaceBelow)
     // 内容比可用空间小时按内容收口，避免浮层留出多余空白
     const height = Math.max(40, Math.min(maxHeight, available, floating.scrollHeight + 2))
+    /**
+     * 水平位置与无 `maxHeight` 的分支用**同一套** `alignLeft`（含视口收口）。
+     *
+     * 这里原来是写死贴右边缘的（`right: innerWidth - rect.right`），把 `align` 完全忽略了：
+     * 浮层比触发元素宽时左边缘会被挤出视口 —— 390 档实测附件详情面板 `left = -31`，
+     * 标题 / 警告文案左侧被裁掉（证据：docs/ui/480-attachments 的 390 截图与 metrics.json）。
+     * `align: 'end'` 的调用方（设置页的 `Select`）结果不变，只是多了一道「不许出左边界」的收口。
+     */
+    const floatingWidth = floating.getBoundingClientRect().width
     applyPosition({
       top:
         resolved === 'top'
           ? Math.max(VIEWPORT_PADDING, rect.top - offset - height)
           : rect.bottom + offset,
-      right: Math.max(VIEWPORT_PADDING, window.innerWidth - rect.right),
+      left: alignLeft(rect, floatingWidth, align, alignOffset),
       maxHeight: height,
     })
   }, [align, alignOffset, applyPosition, floatingRef, getAnchor, maxHeight, minSpace, offset, side])

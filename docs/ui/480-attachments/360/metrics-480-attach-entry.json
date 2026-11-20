@@ -1,0 +1,92 @@
+{
+  "page": "480-attach-entry",
+  "title": "#480 输入区文档入口：anthropic / openai / ours 三渠道可用，DeepSeek 禁用并给出原因（toast）",
+  "viewport": 360,
+  "size": "360×740",
+  "shots": [
+    "docs/ui/480-attachments/360/480-attach-entry-01-doc-entry-anthropic-enabled-360.png",
+    "docs/ui/480-attachments/360/480-attach-entry-02-doc-entry-openai-enabled-360.png",
+    "docs/ui/480-attachments/360/480-attach-entry-03-doc-entry-ours-enabled-360.png",
+    "docs/ui/480-attachments/360/480-attach-entry-04-doc-entry-deepseek-disabled-360.png",
+    "docs/ui/480-attachments/360/480-attach-entry-05-doc-entry-deepseek-reason-toast-360.png"
+  ],
+  "notes": [],
+  "entry-anthropic": {
+    "channelKind": "anthropic",
+    "enabled": true,
+    "disabled": false,
+    "entry": {
+      "ariaLabel": "添加文档（TXT / DOCX / PDF）",
+      "ariaDisabled": null,
+      "disabled": false,
+      "opacity": "1",
+      "cursor": "pointer",
+      "box": {
+        "width": 34,
+        "height": 34
+      }
+    },
+    "docInputs": 1,
+    "allFileInputs": 1,
+    "expectedPickLabel": "添加文档（TXT / DOCX / PDF）"
+  },
+  "entry-openai": {
+    "channelKind": "openai",
+    "enabled": true,
+    "disabled": false,
+    "entry": {
+      "ariaLabel": "添加文档（TXT / DOCX / PDF）",
+      "ariaDisabled": null,
+      "disabled": false,
+      "opacity": "1",
+      "cursor": "pointer",
+      "box": {
+        "width": 34,
+        "height": 34
+      }
+    },
+    "docInputs": 1,
+    "allFileInputs": 1,
+    "expectedPickLabel": "添加文档（TXT / DOCX / PDF）"
+  },
+  "entry-ours": {
+    "channelKind": "ours",
+    "enabled": true,
+    "disabled": false,
+    "entry": {
+      "ariaLabel": "添加文档（TXT / DOCX / PDF）",
+      "ariaDisabled": null,
+      "disabled": false,
+      "opacity": "1",
+      "cursor": "pointer",
+      "box": {
+        "width": 34,
+        "height": 34
+      }
+    },
+    "docInputs": 1,
+    "allFileInputs": 1,
+    "expectedPickLabel": "添加文档（TXT / DOCX / PDF）"
+  },
+  "entry-deepseek": {
+    "channelKind": "deepseek",
+    "enabled": false,
+    "disabled": true,
+    "entry": {
+      "ariaLabel": "当前渠道不支持文档附件：本渠道既没有可用的原生文件上传，也不做文本注入，请切换到其他渠道",
+      "ariaDisabled": "true",
+      "disabled": false,
+      "opacity": "0.4",
+      "cursor": "not-allowed",
+      "box": {
+        "width": 34,
+        "height": 34
+      }
+    },
+    "docInputs": 0,
+    "allFileInputs": 1,
+    "expectedPickLabel": "添加文档（TXT / DOCX / PDF）"
+  },
+  "deepseekReasonToast": "当前渠道不支持文档附件：本渠道既没有可用的原生文件上传，也不做文本注入，请切换到其他渠道",
+  "consoleErrors": []
+}
