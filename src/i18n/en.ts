@@ -1170,6 +1170,8 @@ export const en = {
   attachPickEmpty: '"{name}" is empty, so there is nothing to parse',
   attachPickTooMany: 'A message can hold at most {limit} documents; {count} extra were rejected',
   attachUnavailable: 'The attachment manager is not ready, so no document was added',
+  attachChannelUnsupported:
+    'This channel cannot parse documents (documents need text injection). Switch to a supported channel',
   // Five states + cancel
   attachStatusPending: 'Waiting to parse',
   attachStatusParsing: 'Parsing {percent}%',

@@ -46,6 +46,13 @@ export type UseAttachmentDrafts = {
   annotateInjection: (info: Record<string, AttachmentInjectionInfo>) => void
   /** 还有附件没就绪（解析中/等待中）时为 `true`，此时不允许发送依赖它的消息 */
   busy: boolean
+  /**
+   * 清空输入区列表（发送成功后调用）。
+   *
+   * 只清视图、abort 进行中的解析：manager 里的记录**不动** —— 消息已经引用了它们的 id，
+   * 真正的回收是删除消息 / 会话后的 `sweepOrphanAttachmentsAfterDelete()`。
+   */
+  clear: () => void
 }
 
 const describeError = (error: unknown): string => {
@@ -105,7 +112,18 @@ const addFailureToast = (file: File, error: unknown): LinkedMessage => {
   return { key: 'attachUnavailable' }
 }
 
-export const useAttachmentDrafts = (options?: { maxFiles?: number }): UseAttachmentDrafts => {
+export const useAttachmentDrafts = (options?: {
+  /** 单条消息的附件数量上限（来自 `ATTACHMENT_LIMITS.maxFilesPerMessage`，缺省不限） */
+  maxFiles?: number
+  /**
+   * 挂载时先把这些 id 的元信息读回来铺成卡片。
+   *
+   * 输入区的文档草稿与其他草稿一样存在 `chat/drafts.ts` 里，切换会话会把本 hook 的状态
+   * （随 `Input` 的 key 重挂载）丢掉；不还原的话「草稿里还挂着引用、界面上却一张卡都没有」，
+   * 用户会以为附件没带上。只在首次渲染读一次（`restoreIds` 之后的更新由 `addFiles` 负责）。
+   */
+  restoreIds?: string[]
+}): UseAttachmentDrafts => {
   const maxFiles = options?.maxFiles
   const [attachments, setAttachments] = useState<AttachmentView[]>([])
   /** 正在进行的解析：`remove` / 卸载时用它 abort，避免解析结果落到已经消失的卡片上 */
@@ -123,6 +141,39 @@ export const useAttachmentDrafts = (options?: { maxFiles?: number }): UseAttachm
       running.forEach((controller) => controller.abort())
       running.clear()
     }
+  }, [])
+
+  /** 首次渲染时把草稿里已有的文档引用读回卡片（见 `restoreIds` 说明） */
+  useEffect(() => {
+    const ids = options?.restoreIds ?? []
+    const service = getAttachmentService()
+    if (service === null || ids.length === 0) {
+      return
+    }
+    let cancelled = false
+    void Promise.all(
+      ids.map((id) =>
+        service.getMeta(id).then(
+          (meta) => meta,
+          () => undefined
+        )
+      )
+    ).then((metas) => {
+      if (cancelled || !aliveRef.current) {
+        return
+      }
+      const views = metas
+        .filter((meta): meta is DocumentAttachment => meta !== undefined)
+        .map((meta) => toAttachmentView(meta))
+      if (views.length > 0) {
+        setAttachments(views)
+      }
+    })
+    return () => {
+      cancelled = true
+    }
+    // 只在挂载时跑一次：之后列表由 addFiles / remove / retry 维护
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const update = useCallback((id: string, change: (view: AttachmentView) => AttachmentView) => {
@@ -289,9 +340,15 @@ export const useAttachmentDrafts = (options?: { maxFiles?: number }): UseAttachm
     )
   }, [])
 
+  const clear = useCallback(() => {
+    controllers.current.forEach((controller) => controller.abort())
+    controllers.current.clear()
+    setAttachments([])
+  }, [])
+
   const busy = attachments.some((item) => item.status === 'pending' || item.status === 'parsing')
 
-  return { attachments, addFiles, cancel, retry, remove, annotateInjection, busy }
+  return { attachments, addFiles, cancel, retry, remove, annotateInjection, busy, clear }
 }
 
 /** 供调试/上报用：`PDF 2.4 MB` 这类一行摘要（不含正文，符合 §3.5） */

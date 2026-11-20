@@ -3,6 +3,7 @@ declare const styles: {
   readonly "session": string;
   readonly "home": string;
   readonly "attachments": string;
+  readonly "docAttachments": string;
   readonly "attachment": string;
   readonly "remove": string;
   readonly "uploading": string;

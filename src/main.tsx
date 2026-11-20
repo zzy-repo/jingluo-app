@@ -20,6 +20,11 @@ import { createAuthTransport, createPublicSettingsReader } from './services/auth
 import { setPublicSettingsReader } from './services/auth/flags.js'
 import { createConsumeClient } from './services/consume/index.js'
 import {
+  attachmentManager,
+  collectReferencedAttachmentIds,
+} from './services/attachments/manager.js'
+import { setAttachmentService } from './components/attachments/attachmentService.js'
+import {
   initDiagnostics,
   installDiagnosticsDebugHandle,
 } from './services/diagnostics/index.js'
@@ -101,6 +106,26 @@ setCustomerIdProvider(async () => {
 const consumeClient = createConsumeClient({ accessToken: getAccessToken, apiKey: getApiKey })
 setAuthTransport(createAuthTransport(consumeClient))
 setPublicSettingsReader(createPublicSettingsReader(consumeClient))
+
+/**
+ * 文档附件接线（#480 / #527）：把 `AttachmentManager` 单例注入 UI。
+ *
+ * 为什么在入口注入而不是组件里静态 import：`components/attachments/**` 只声明 manager 的
+ * 公开签名（`AttachmentService`），不依赖它的实现 —— 单测 / 宿主可以换替身，UI 也永远不会自己
+ * 造一套附件状态机（状态的权威在 manager：IndexedDB 记录 + 五态状态机 + 解析缓存去重）。
+ * 与上面 `consumeClient` 的模式一致：入口一次注入，组件通过 `getAttachmentService()` 使用。
+ *
+ * `collectReferencedAttachmentIds` 一起注册：删除会话 / 消息后的孤儿清扫要先知道
+ * 「还有哪些附件被消息引用着」，否则会把在用的记录一起清掉。
+ */
+setAttachmentService({
+  addFile: (file) => attachmentManager.addFile(file),
+  parse: (id, options) => attachmentManager.parse(id, options),
+  remove: (id) => attachmentManager.remove(id),
+  getMeta: (id) => attachmentManager.getMeta(id),
+  sweepOrphans: (referenced) => attachmentManager.sweepOrphans(referenced),
+  collectReferencedAttachmentIds,
+})
 
 // [占位] 身份检查：**当前保持「跳过」**——只跑一次启动恢复（读安全存储里的 JWT，没有就什么都不做），
 // 渲染树与首启流程一行没动，现有启动行为不变。

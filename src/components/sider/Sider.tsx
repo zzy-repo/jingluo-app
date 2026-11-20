@@ -6,6 +6,7 @@ import { setSiderCollapsed } from '../../services/settings.js'
 import { groupSessions } from '../../services/chat/sessionGroups.js'
 import { BackupError, exportHistory } from '../../services/chat/backup.js'
 import { newChat, removeSession, useChatStore } from '../../services/chat/store.js'
+import { sweepOrphanAttachmentsAfterDelete } from '../attachments/index.js'
 import type { SessionSummary } from '../../services/chat/types.js'
 import { downloadBlob } from '../../utils/downloadBlob.js'
 import { MOTION_EXIT, usePresence } from '../../utils/usePresence.js'
@@ -213,6 +214,12 @@ export const Sider = ({ mobile = false }: { mobile?: boolean }) => {
                   try {
                     if (await removeSession(deleting.id)) {
                       setDeleting(null)
+                      /**
+                       * 文档附件孤儿清扫（#480 / #527）：会话删除事务提交**之后**再扫，
+                       * 先收集「当前仍被任一消息引用的附件 id」，再连元数据 / 全文 / 原件一起回收。
+                       * 不 await：清理失败不该让「删除会话」这条主流程看起来失败（失败会自己 toast）。
+                       */
+                      void sweepOrphanAttachmentsAfterDelete()
                     } else {
                       showToast({ key: 'sessionDeleteFailed', type: 'error' })
                     }

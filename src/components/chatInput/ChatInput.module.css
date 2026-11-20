@@ -163,6 +163,12 @@
   background-color: var(--dsw-alias-state-error-primary);
 }
 
+/* 文档附件卡片（#527）：与图片缩略图共用同一条横向列表的间距语义 */
+.docAttachments {
+  padding: 12px 12px 0;
+  cursor: default;
+}
+
 .textareaWrapper {
   position: relative;
   width: 100%;

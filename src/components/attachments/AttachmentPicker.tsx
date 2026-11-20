@@ -9,7 +9,7 @@
  *  3. 拖入 / 粘贴进输入框的文件走同一个 `onFiles`：ChatInput 已有 `DragMask` 收集 `File[]`，
  *     接线时把那个数组直接转给 `useAttachmentDrafts().addFiles` 即可。
  */
-import { useRef } from 'react'
+import { useRef, type ReactNode } from 'react'
 import { useTranslate } from '../../i18n/index.js'
 import { IconButton } from '../base/IconButton.js'
 import { IconPaperclipOutline16 } from '../base/icons.js'
@@ -20,6 +20,7 @@ export const AttachmentPicker = ({
   disabled,
   className,
   tooltip,
+  icon,
 }: {
   /** 选中（或拖入）的文件原样传出去，由调用方统一分拣 + 提示 */
   onFiles: (files: File[]) => void
@@ -27,6 +28,8 @@ export const AttachmentPicker = ({
   className?: string
   /** 缺省「添加文档（TXT / DOCX / PDF）」 */
   tooltip?: string
+  /** 入口图标；缺省回形针。输入区还有「图片」入口时用它区分两个入口的语义 */
+  icon?: ReactNode
 }) => {
   const t = useTranslate()
   const inputRef = useRef<HTMLInputElement>(null)
@@ -36,7 +39,7 @@ export const AttachmentPicker = ({
         size="m"
         tone="primary"
         className={className}
-        icon={<IconPaperclipOutline16 />}
+        icon={icon === undefined ? <IconPaperclipOutline16 /> : icon}
         tooltip={tooltip === undefined ? t('attachPickButton') : tooltip}
         disabled={disabled}
         onClick={() => inputRef.current?.click()}

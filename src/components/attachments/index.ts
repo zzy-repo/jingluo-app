@@ -17,7 +17,7 @@ export { AttachmentCard, type AttachmentCardHandlers } from './AttachmentCard.js
 export { AttachmentList } from './AttachmentList.js'
 export { AttachmentPanel } from './AttachmentPanel.js'
 export { AttachmentPicker } from './AttachmentPicker.js'
-export { AttachmentTypeIcon } from './AttachmentTypeIcon.js'
+export { AttachmentTypeIcon, IconDocumentOutline16 } from './AttachmentTypeIcon.js'
 export { MessageAttachments } from './MessageAttachments.js'
 export {
   ACCEPT_DOCUMENTS,

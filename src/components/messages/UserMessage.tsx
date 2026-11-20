@@ -14,6 +14,7 @@ import {
   type MessageVersions,
   type SelectMessageVersion,
 } from './BranchSwitcher.js'
+import { MessageAttachments, isAttachmentRefId } from '../attachments/index.js'
 import { MessageFile } from './MessageFile.js'
 import { CopyButton } from './CopyButton.js'
 import { asArray } from '../../utils/safeArray.js'
@@ -47,6 +48,15 @@ export const UserMessage = memo(function UserMessage({
   // 存储里的 files 可能被写成 null（半写入 / 导入中断 / 外部改库）：兜底成空数组，
   // 否则 message.files.length 直接抛 TypeError → 整屏白屏（issue #28）
   const files = asArray(message.files)
+  /**
+   * 文档附件（#480 / #527）与图片附件共用 `files` 这一个字段，靠 `att-` 前缀区分
+   * （attachmentService 的 `isAttachmentRefId`，与 manager 的 `isAttachmentId` 同一套约定）。
+   *
+   * 为什么要分开渲染：图片是「缩略图 + 补传重试」，文档附件是「元信息卡片 + 解析状态 + 警告」，
+   * 而且卡片**不渲染正文**（§3.5）——正文只按需送到请求里，从不进界面。
+   */
+  const documents = files.filter((file) => isAttachmentRefId(file.id))
+  const uploads = files.filter((file) => !isAttachmentRefId(file.id))
   const canSend = !busy && (draft.trim() !== '' || files.length > 0)
 
   useLayoutEffect(() => {
@@ -66,14 +76,17 @@ export const UserMessage = memo(function UserMessage({
 
   return (
     <div className={clsx(styles.container, isFirst && styles.isFirst)}>
-      {files.length > 0 ? (
+      {documents.length > 0 ? (
+        <MessageAttachments ids={documents.map((file) => file.id)} />
+      ) : null}
+      {uploads.length > 0 ? (
         <div
           className={clsx(
             styles.files,
-            files.some((file) => !file.isImage) && styles.filesWithDocuments
+            uploads.some((file) => !file.isImage) && styles.filesWithDocuments
           )}
         >
-          {files.map((file) => (
+          {uploads.map((file) => (
             <MessageFile
               key={file.id}
               file={file}
