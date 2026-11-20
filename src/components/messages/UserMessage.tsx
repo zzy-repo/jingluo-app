@@ -1,7 +1,6 @@
 import { useTranslate } from '../../i18n/index.js'
 import clsx from 'clsx'
 import { memo, useLayoutEffect, useRef, useState } from 'react'
-import { useIsMobile } from '../../app/viewport.js'
 import { IconEditOutline16 } from '../base/icons.js'
 import { editMessage, retryUpload } from '../../services/chat/store.js'
 import { stopReadAloud } from '../../services/speech/readAloud.js'
@@ -19,6 +18,24 @@ import { MessageFile } from './MessageFile.js'
 import { CopyButton } from './CopyButton.js'
 import { asArray } from '../../utils/safeArray.js'
 import styles from './UserMessage.module.css'
+
+/**
+ * 在 textarea 光标处插入一个换行（#610）。
+ *
+ * 换行档的回车要「彻底吃掉」：先 `preventDefault()`，再自己插 —— 这样上层不可能再把它当快捷键。
+ * 插入走 `execCommand('insertLineBreak')`：它被标了废弃，但仍是唯一插完还保留**原生撤销栈**的接口，
+ * 老内核（Chromium 83 / Android WebView）都认。不支持时退回 `setRangeText` + 派发 `input`，
+ * 让 React 的受控值跟着更新（否则 `value={draft}` 会在下一次渲染把插入的换行覆盖掉）。
+ */
+const insertLineBreak = (textarea: HTMLTextAreaElement) => {
+  if (typeof document.execCommand === 'function' && document.execCommand('insertLineBreak')) {
+    return
+  }
+  const start = textarea.selectionStart ?? textarea.value.length
+  const end = textarea.selectionEnd ?? start
+  textarea.setRangeText('\n', start, end, 'end')
+  textarea.dispatchEvent(new Event('input', { bubbles: true }))
+}
 
 export const UserMessage = memo(function UserMessage({
   sessionId,
@@ -44,7 +61,6 @@ export const UserMessage = memo(function UserMessage({
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(message.content)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
-  const isMobile = useIsMobile()
   // 存储里的 files 可能被写成 null（半写入 / 导入中断 / 外部改库）：兜底成空数组，
   // 否则 message.files.length 直接抛 TypeError → 整屏白屏（issue #28）
   const files = asArray(message.files)
@@ -66,6 +82,22 @@ export const UserMessage = memo(function UserMessage({
       textarea.style.height = `${Math.min(textarea.scrollHeight, 202)}px`
     }
   }, [editing, draft])
+
+  /**
+   * #610：进编辑态时自己聚焦，**禁止原生 scroll-into-view**。
+   *
+   * 原来靠 `autoFocus`：浏览器的聚焦滚动会把视口甩到被编辑的那条消息上（长会话里实测一次
+   * 跳 900+ px），用户看到的就是「进入编辑/按回车，屏幕滑到上面去了」；跳得太远时那一行还会
+   * 被虚拟列表回收，编辑态跟着整个消失。光标放到末尾，与直接聚焦 textarea 的默认一致。
+   */
+  useLayoutEffect(() => {
+    const textarea = textareaRef.current
+    if (!editing || !textarea) {
+      return
+    }
+    textarea.focus({ preventScroll: true })
+    textarea.setSelectionRange(textarea.value.length, textarea.value.length)
+  }, [editing])
 
   const sendEdit = () => {
     if (canSend && ensureApiKey() && editMessage(sessionId, message.id, draft.trim())) {
@@ -101,21 +133,37 @@ export const UserMessage = memo(function UserMessage({
             ref={textareaRef}
             className={styles.textarea}
             aria-label={t('editMessage')}
-            autoFocus
             rows={1}
             value={draft}
             disabled={busy}
             onChange={(event) => setDraft(event.target.value)}
+            enterKeyHint="enter"
             onKeyDown={(event) => {
-              if (event.nativeEvent.isComposing) {
+              // 输入法选词期间的 Enter 是「上屏」，一概交给输入法（#108 / #610）：
+              // keyCode 229 是部分 Android 输入法在合成中报的键码，和 isComposing 一起判。
+              if (event.nativeEvent.isComposing || event.keyCode === 229) {
                 return
               }
               if (event.key === 'Escape') {
+                event.stopPropagation()
                 setEditing(false)
-              } else if (event.key === 'Enter' && !event.shiftKey && !event.ctrlKey && !isMobile) {
+                return
+              }
+              if (event.key !== 'Enter') {
+                return
+              }
+              // #610：编辑框是多行文本，**回车只换行**，发送走按钮（桌面端 Ctrl / Cmd + Enter 也能发）。
+              // 以前桌面端把纯 Enter 当「发送」：用户在段首按回车想换行，结果整段退出编辑并重新提问。
+              // stopPropagation：换行档的回车不许冒到上层被当成全局快捷键（切会话 / 退编辑）。
+              event.stopPropagation()
+              if (event.ctrlKey || event.metaKey) {
                 event.preventDefault()
                 sendEdit()
+                return
               }
+              // 换行档：吃掉默认行为（否则上层或输入法还能对这次回车另做解释），换行自己插。
+              event.preventDefault()
+              insertLineBreak(event.currentTarget)
             }}
           />
           <div className={styles.editorActions}>

@@ -9,6 +9,12 @@ import { selectMessageVersion } from '../../services/chat/store.js'
 import type { Session } from '../../services/chat/types.js'
 import { closeSearchPanel } from '../search/searchPanelState.js'
 import { prefersReducedMotion } from '../../utils/usePresence.js'
+import {
+  anchorShift,
+  pickAnchor,
+  type RowSpan,
+  type ScrollAnchor,
+} from '../../utils/scrollAnchor.js'
 import { AssistantMessage } from './AssistantMessage.js'
 import { ScrollToBottomContext, ScrollToBottomStateContext } from './scrollContext.js'
 import { UserMessage } from './UserMessage.js'
@@ -62,6 +68,42 @@ const smoothScrollToBottom = (element: HTMLElement) => {
 }
 
 /**
+ * #610：读出挂载窗口里「锚点行」与「第一条可见行」为止的几行几何（内容坐标）。
+ *
+ * 只读到够用为止（锚点行 + 首条可见行），不遍历整份列表：长会话里挂载的行本来就只有
+ * 视口 ± overscan 这一小段。行序与 DOM 顺序一致，所以拿到首条可见行就能提前收工。
+ */
+const readRowSpans = (
+  scroll: HTMLElement,
+  content: HTMLElement,
+  anchorId: string | null
+): RowSpan[] => {
+  // 内容坐标原点：滚动容器自身的内容顶部（rect.top 是视口坐标，加回 scrollTop 即内容坐标）
+  const base = scroll.getBoundingClientRect().top - scroll.scrollTop
+  const spans: RowSpan[] = []
+  let foundAnchor = anchorId === null
+  let foundVisible = false
+  for (const row of content.querySelectorAll<HTMLElement>('[data-row-id]')) {
+    const id = row.dataset.rowId
+    if (!id) {
+      continue
+    }
+    const box = row.getBoundingClientRect()
+    spans.push({ id, top: box.top - base, height: box.height })
+    if (id === anchorId) {
+      foundAnchor = true
+    }
+    if (box.bottom - base > scroll.scrollTop) {
+      foundVisible = true
+    }
+    if (foundAnchor && foundVisible) {
+      break
+    }
+  }
+  return spans
+}
+
+/**
  * 消息列表（虚拟化，Issue #45）。
  *
  * 只挂载视口附近的行：行高由 `ResizeObserver` 按行实测（流式增长的回答随时在变），
@@ -89,8 +131,13 @@ export const MessageList = ({
   const heightsRef = useRef(new Map<string, number>())
   const measureRef = useRef<ResizeObserver | null>(null)
   const observedRowsRef = useRef(new Set<Element>())
-  /** 上一次渲染时窗口首行的 id 与偏移，用来在实测高度改变上方占位时把阅读位置钉住。 */
-  const anchorOffsetRef = useRef<{ id: string; top: number } | null>(null)
+  /**
+   * #610：上一次提交时「第一条可见行」的锚点（id + 内容坐标系偏移）。
+   * 行高实测回填 / 估值变化会改动上方占位，靠它把阅读位置钉住，见文件末尾那条 layout effect。
+   */
+  const anchorRef = useRef<ScrollAnchor | null>(null)
+  /** #610：本帧的滚动位置是「故意挪的」（版本切换定位），不要被锚点修正拉回去。 */
+  const skipAnchorRef = useRef(false)
   const sessionIdRef = useRef(session.id)
   // 实测结果存在 ref 里，靠这个版本的计数触发重算占位。
   const [, setMeasureVersion] = useState(0)
@@ -268,7 +315,7 @@ export const MessageList = ({
     if (sessionIdRef.current !== session.id) {
       sessionIdRef.current = session.id
       heightsRef.current.clear()
-      anchorOffsetRef.current = null
+      anchorRef.current = null
       setMeasureVersion((version) => version + 1)
     }
   }, [session.id])
@@ -283,6 +330,8 @@ export const MessageList = ({
       )
       if (switcher) {
         scroll.scrollTop += switcher.getBoundingClientRect().top - anchor.top
+        // 这一跳是「把版本选择器留在原处」的故意定位，本帧不再做阅读位置修正（#610）
+        skipAnchorRef.current = true
       }
       restoreScrollRef.current = null
       return
@@ -344,6 +393,38 @@ export const MessageList = ({
     el.addEventListener('scroll', onScroll, { passive: true })
     return () => el.removeEventListener('scroll', onScroll)
   }, [isMobile, scrollToBottom, syncToBottom])
+
+  /**
+   * #610（症状二）：把阅读位置钉住。
+   *
+   * 虚拟列表的行高是实测出来的，没实测的用估值（实测均值）。窗口里新挂上一行、或流式回答长高，
+   * 都会改动上方占位的总高 —— 同一份 scrollTop 下，用户正在读的那一行就跳一段，
+   * 表现出来正是长会话上滑「滚到某个位置被弹回去」。这里每次提交后记下第一条可见行
+   * （`pickAnchor`），下一次提交算出它移动了多少（`anchorShift`），再把这个量补进 scrollTop。
+   * layout effect 阶段执行，早于绘制，所以不会闪中间态。
+   *
+   * 三种情况不修正：贴底跟随（#386 由 scrollToBottom 负责）、版本切换的故意定位、
+   * 以及锚点行已经不在列表里（编辑截断 / 删消息 —— 这时宁可不挪）。
+   */
+  useLayoutEffect(() => {
+    const scroll = scrollRef.current
+    const content = contentRef.current
+    if (!scroll || !content) {
+      return
+    }
+    const skip = skipAnchorRef.current
+    skipAnchorRef.current = false
+    const rows = readRowSpans(scroll, content, anchorRef.current?.id ?? null)
+    if (!skip && !stickyRef.current && !jumpRef.current) {
+      const shift = anchorShift(anchorRef.current, rows)
+      if (Math.abs(shift) >= 0.5) {
+        scroll.scrollTop += shift
+        scrollTopRef.current = scroll.scrollTop
+      }
+    }
+    // 下一次提交的参照：本帧第一条可见行（内容坐标，滚动不会让它失效）
+    anchorRef.current = pickAnchor(rows, scroll.scrollTop)
+  })
 
   const lastIndex = messages.length - 1
   const uploadRetryId = getUploadRetryId(messages, streaming)

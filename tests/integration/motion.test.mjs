@@ -93,7 +93,11 @@ const MESSAGE_FLOW_ALLOWLIST = new Map([
   ],
   [
     'src/components/messages/MessageList.tsx',
-    '#386 输入框上方「回到底部」按钮：只有滚动层的**主人**才知道「离底部多远」与「离开期间内容有没有长高」（scroll 监听 + 内容 ResizeObserver 都在这个文件里），不在这里量就得在外面另建一套 DOM 探测，反而更容易错。改动是纯逻辑（多一个 state + scrollTo 调用），没有一条动效声明 —— 按钮的淡入在 `src/components/session/ScrollToBottomButton.module.css`（消息流目录之外）',
+    '#386 输入框上方「回到底部」按钮：只有滚动层的**主人**才知道「离底部多远」与「离开期间内容有没有长高」（scroll 监听 + 内容 ResizeObserver 都在这个文件里），不在这里量就得在外面另建一套 DOM 探测，反而更容易错。改动是纯逻辑（多一个 state + scrollTo 调用），没有一条动效声明 —— 按钮的淡入在 `src/components/session/ScrollToBottomButton.module.css`（消息流目录之外）。\n  #610：虚拟列表的行高实测回填后要把阅读位置钉住 —— 锚点只能在持有 scrollRef / 行几何的这里取（算法本身在 src/utils/scrollAnchor.ts，可单测），改动是纯逻辑（一次 layout effect 里读行位置、补 scrollTop），没有一条动效声明。',
+  ],
+  [
+    'src/components/messages/MessageList.module.css',
+    '#610 滚动容器要关掉浏览器的 scroll anchoring（`overflow-anchor: none`，只在 .container / 窄屏 .scroll 两处各一行）：虚拟列表的上下占位会随实测行高变化，原生锚定会跟着自己改 scrollTop（实测一次跳 900+ px）。这是滚动定位属性，与动效无关：改动里没有 transition / animation / transform / @keyframes。',
   ],
   [
     'src/components/messages/scrollContext.ts',
@@ -108,7 +112,7 @@ const MESSAGE_FLOW_ALLOWLIST = new Map([
    */
   [
     'src/components/messages/UserMessage.tsx',
-    '#480 / #527 用户消息要带上文档附件卡片（元信息 + 五态 + 警告/失败原因 + 详情抽屉）：`files` 与图片附件共用同一字段、靠 `att-` 前缀分流，渲染点只能在这个文件里；改动只是把 `att-` 的 id 交给 `<AttachmentCard variant="message">`（样式与动效全在 src/components/files/FileCard.module.css 与 src/components/attachments/Attachments.module.css，消息流目录之外），本身没有任何动效声明',
+    '#480 / #527 用户消息要带上文档附件卡片（元信息 + 五态 + 警告/失败原因 + 详情抽屉）：`files` 与图片附件共用同一字段、靠 `att-` 前缀分流，渲染点只能在这个文件里；改动只是把 `att-` 的 id 交给 `<AttachmentCard variant="message">`（样式与动效全在 src/components/files/FileCard.module.css 与 src/components/attachments/Attachments.module.css，消息流目录之外），本身没有任何动效声明。\n  #610：编辑态的回车语义与聚焦都只能写在渲染 textarea 的这一处 —— 回车只换行且事件不外泄（fail-safe 的 keydown 处理）、聚焦改成 `focus({ preventScroll: true })`（原生 scroll-into-view 会把长会话甩走）。都是键盘/焦点逻辑，没有一条动效声明。',
   ],
   [
     'src/components/chatInput/ChatInput.tsx',

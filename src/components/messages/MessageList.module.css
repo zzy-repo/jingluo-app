@@ -3,6 +3,10 @@
   min-height: 0;
   display: flex;
   flex-direction: column;
+  /* #610：虚拟列表的上下占位会随行高实测变化，浏览器的 scroll anchoring 会跟着自己改
+     scrollTop（实测一次跳 900+ px，用户看到的就是长会话上滑「被弹回去」）。
+     阅读位置改由 MessageList 自己按锚点行修正（见 src/utils/scrollAnchor.ts）。 */
+  overflow-anchor: none;
   /* #216：`scrollbar-gutter` 首支持 Chromium 94，运行时下限是 Chromium 83（WebView 83）——
      低内核上这条声明被整条丢弃，槽位退回动态，滚动条出现/消失时整列消息横向跳一个滚动条宽度。
      兜底写在外面：滚动条常驻（`overflow-y: scroll`），槽位宽度因此恒定，
@@ -41,6 +45,8 @@
     overflow-y: auto;
     overscroll-behavior-y: contain;
     scrollbar-color: var(--scroll-color) transparent;
+    /* #610：窄屏下滚动换手给了这一层，锚定同样要关（理由见 .container） */
+    overflow-anchor: none;
   }
 }
 
