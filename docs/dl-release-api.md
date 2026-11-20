@@ -251,13 +251,17 @@ set -a; . /opt/caddy/caddy.env; set +a
 
 ## 8. GitHub Release 流水线
 
-`.github/workflows/release.yml`，`push` 到 `v*` tag 时触发：
+`.github/workflows/release.yml`，**手动 `workflow_dispatch` 触发**（裁决 #614 决定 2 之后：正式发布渠道是
+GitHub Release，dl 只是历史分发，所以「发 Release」不再由 tag push 自动跑，也**不再读 `releases.json`**）：
 
-1. 从 tag 名解析版本号（`v1.4.0-beta.4` → `1.4.0-beta.4`）；
-2. 拉 `https://dl.rose7.cn/releases.json`，找到该版本的 `file` / `md5` / `size` / `changes`（找不到就失败并列出已发布版本）；
-3. 下载 `https://dl.rose7.cn/apk/deepseek-chat-<ver>.apk` 并校验 MD5（不符报 `::error::`），**不在 CI 里构建 APK**；
-4. 用内置 `GITHUB_TOKEN`（`permissions: contents: write`）`gh release create <tag> --target <commit sha> --notes-file notes.md`；Release 已存在则 `gh release upload --clobber` + `gh release edit`；
-5. 版本号含 `-beta` / `-rc` 时自动 `--prerelease`。
+1. 校验输入 `tag` 存在且形如 `v<version>`（不存在 → 提示先 push tag）；
+2. 校验 **tag 指向的 commit** 里 `package.json` 的 `version` == tag 版本、`androidVersionCode` 为正整数；
+3. 取 APK 字节：`apk_url`（https 直链）→ 已有 Release 的 `.apk` 资产 → `https://dl.rose7.cn/apk/deepseek-chat-<ver>.apk`
+   依次尝试；算 `sha256` / `md5` / size。**这里只是取字节，不做任何清单校验**，**不在 CI 里构建 APK**；
+4. `node scripts/check-apk-debuggable.mjs`：debuggable 包或判不出来 → 拒（fail-closed）；
+5. 由 `CHANGELOG.md` 同版本小节生成 notes，并把 sha256 写进正文；
+6. 用内置 `GITHUB_TOKEN`（`permissions: contents: write`）`gh release create <tag> --target <commit sha> --notes-file notes.md`；Release 已存在则 `gh release upload --clobber` + `gh release edit`；
+7. 版本号含 `-beta` / `-rc` 时自动 `--prerelease`。
 
 > 发布方提示：一键发版脚本 `release-apk.sh` 已删除（原因见 [`RELEASE.md`](../RELEASE.md)），现在上传由
 > **发版人手工执行一条 `curl`** 完成，对应 [`docs/RELEASE-MANUAL.md`](RELEASE-MANUAL.md) 的步骤 4。

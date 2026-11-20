@@ -1,19 +1,44 @@
 name: Release
 
-# tag 触发：v1.4.0-beta.4 → 从 dl.rose7.cn 拉已经发布好的 APK，创建 GitHub Release。
-# 这里【不构建 APK】：keystore 永不离开构建机，Release 只是把已发布的产物镜像到 GitHub。
+# 正式发布渠道 = **GitHub Release**（裁决 #614 决定 2：dl 不再是正式渠道）。
+#
+# 本工作流只做一件事：把一个**已在签名机上构建好、已签名**的 APK 挂成 GitHub Release 资产。
+#   · 这里【不构建 APK】：keystore 永不离开构建机；
+#   · 这里【不查】https://dl.rose7.cn/releases.json：dl 清单只是历史分发记录，不再是发版前置条件。
 # 用的是内置 GITHUB_TOKEN（permissions.contents: write），不需要任何 PAT。
+#
+# 为什么改成只在手动 `workflow_dispatch` 触发（不再由 tag push 自动跑）：
+#   旧版本在 tag push 后先要求「dl 的 releases.json 里已经有这个版本且 md5 合法」，再建 Release。
+#   于是「发 GitHub Release」被绑死在「dl 清单已收录」上：1.4.3 按 #614 裁决根本不进 dl，
+#   tag 一推就必然 `::error::releases.json 里没有版本 1.4.3` → exit 1 → main 的发布 check 常红。
+#   发版本来就是人做的一次性动作（见 docs/RELEASE-MANUAL.md §6.1），所以触发面收敛到手动：
+#   **不自动跑 ⇒ 不会因为「清单里没这个版本」而红；手动跑 ⇒ 跑就绿（前置不满足时给可执行的下一步）。**
+#
+# 用法（Actions → Release → Run workflow）：
+#   tag     = 已存在的版本 tag（例 v1.4.3），必须与 tag 内 package.json 的 version 一致
+#   apk_url = ① 要上传的 APK 的 https 直链，可留空。留空时按顺序取：
+#             ② Release $TAG 里已上传的 *.apk 资产（手工 gh release upload 之后的校验/补 notes 模式）
+#             ③ https://dl.rose7.cn/apk/deepseek-chat-<version>.apk（历史版本在 dl 上的存量地址）
+#             三者都没有 → 报错并列出三条出路，不会去读任何清单。
 
 on:
-  push:
-    tags:
-      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: '已存在的版本 tag（例 v1.4.3；必须与 package.json 的 version 一致）'
+        required: true
+        type: string
+      apk_url:
+        description: '要上传的 APK 的 https 直链（留空 = https://dl.rose7.cn/apk/deepseek-chat-<version>.apk）'
+        required: false
+        type: string
+        default: ''
 
 permissions:
   contents: write
 
 concurrency:
-  group: release-${{ github.ref_name }}
+  group: release-${{ github.event.inputs.tag }}
   cancel-in-progress: false
 
 jobs:
@@ -24,27 +49,37 @@ jobs:
       contents: write
     env:
       GH_TOKEN: ${{ github.token }}
-      TAG: ${{ github.ref_name }}
-      SHA: ${{ github.sha }}
+      TAG: ${{ inputs.tag }}
+      APK_URL_INPUT: ${{ inputs.apk_url }}
     steps:
-      - name: Checkout（取 tag 指向的 commit）
+      - name: Checkout（取默认分支 + 全部 tag；release 目标由下面的 tag 校验决定）
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
           fetch-tags: true
 
-      # v1.4.0-beta.4 → 1.4.0-beta.4；含 -beta/-rc 时标记为 prerelease
-      - name: 解析 tag 得到版本号
+      # v1.4.0-beta.4 → 1.4.0-beta.4；含 -beta/-rc 时标记为 prerelease。
+      # 同时确认 tag **真的存在**：不存在就明确说「先 push tag」，不再去下载任何清单。
+      - name: 解析并校验 tag
         id: ver
         run: |
           set -euo pipefail
           tag="$TAG"
+          if [ -z "$tag" ]; then
+            echo "::error::inputs.tag 为空；应当填一个已存在的版本 tag，例如 v1.4.3"
+            exit 1
+          fi
           if [[ ! "$tag" =~ ^v[0-9][0-9A-Za-z.+-]*$ ]]; then
-            echo "::error::tag '$tag' 不符合 v<version> 约定（例：v1.4.0-beta.4）"
+            echo "::error::tag '$tag' 不符合 v<version> 约定（例：v1.4.3）"
+            exit 1
+          fi
+          if ! sha="$(git rev-list -n1 "refs/tags/${tag}" 2>/dev/null)"; then
+            echo "::error::仓库里没有 tag '$tag'。请先在要发布的 commit 上打 tag 并 push（git tag -a $tag -m \"$tag\" && git push origin $tag），再回来触发本工作流"
             exit 1
           fi
           version="${tag#v}"
           echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
           if [[ "$version" == *-beta* || "$version" == *-rc* ]]; then
             echo "prerelease=--prerelease" >> "$GITHUB_OUTPUT"
             echo "is_prerelease=true" >> "$GITHUB_OUTPUT"
@@ -52,118 +87,190 @@ jobs:
             echo "prerelease=" >> "$GITHUB_OUTPUT"
             echo "is_prerelease=false" >> "$GITHUB_OUTPUT"
           fi
-          echo "版本号: $version（prerelease=$([[ "$version" == *-beta* || "$version" == *-rc* ]] && echo true || echo false)）"
+          echo "版本号: $version（commit ${sha:0:7}）"
 
-      # 版本是否真的已经发布到 dl —— releases.json 是唯一权威
-      - name: 从 dl.rose7.cn/releases.json 查该版本
-        id: meta
+      # 前置校验 ①：tag 指向的那个 commit 里，package.json 的 version / androidVersionCode 必须自洽。
+      # 这是把「发错版本号」拦在 Release 之前的地方 —— 以前这一步靠「dl 清单里有这个版本」间接兜住。
+      - name: 校验 package.json 版本与 tag 一致
+        id: pkg
         run: |
           set -euo pipefail
           version="${{ steps.ver.outputs.version }}"
-          if ! curl -fsSL --retry 3 --retry-delay 2 --max-time 30 \
-              https://dl.rose7.cn/releases.json -o releases.json; then
-            echo "::error::下载 https://dl.rose7.cn/releases.json 失败（站点不可达？）"
-            exit 1
-          fi
+          git show "${TAG}:package.json" > pkg-at-tag.json
+          # 注意：错误注解一律写 stderr。stdout 是 $GITHUB_OUTPUT（文件命令），
+          # 往里打 `::error::…` 会让 GitHub 报 "Invalid format"/"Unable to process file command 'output'"
+          # —— 旧版 workflow 在 1.4.3 那次就是这么把真正的错误信息吞掉的。
           python3 - "$version" >> "$GITHUB_OUTPUT" <<'PY'
           import json, sys
           version = sys.argv[1]
-          data = json.load(open("releases.json", encoding="utf-8"))
-          releases = data.get("releases") or []
-          hit = [r for r in releases if r.get("version") == version]
-          if not hit:
-              known = ", ".join(r.get("version", "?") for r in releases[:8])
-              print(f"::error::releases.json 里没有版本 {version}；已发布版本: {known}")
+          pkg = json.load(open("pkg-at-tag.json", encoding="utf-8"))
+          got = str(pkg.get("version") or "")
+          if got != version:
+              print(f"::error::tag v{version} 指向的 package.json version 是 {got!r}，与 tag 不一致；"
+                    f"先把版本号改对再打 tag（本工作流不再下载 dl 清单做兜底）", file=sys.stderr)
               sys.exit(1)
-          r = hit[0]
-          md5 = (r.get("md5") or "").strip()
-          if len(md5) != 32:
-              print(f"::error::releases.json 中 {version} 的 md5 缺失或格式非法: {md5!r}")
+          code = pkg.get("androidVersionCode")
+          if not isinstance(code, int) or isinstance(code, bool) or code <= 0:
+              print(f"::error::package.json 的 androidVersionCode 必须是正整数，实际 {code!r}", file=sys.stderr)
               sys.exit(1)
-          print(f"file={r.get('file') or f'apk/deepseek-chat-{version}.apk'}")
-          print(f"md5={md5}")
-          print(f"size={r.get('size') or 0}")
-          print(f"version_code={r.get('versionCode') or ''}")
-          print(f"released_at={r.get('releasedAt') or ''}")
-          print(f"latest={data.get('latest') or ''}")
+          print(f"version_code={code}")
+          print(f"package_name={pkg.get('name') or ''}")
           PY
-          echo "  file=${{ steps.meta.outputs.file }} md5=${{ steps.meta.outputs.md5 }}"
+          code="$(sed -n 's/^version_code=//p' "$GITHUB_OUTPUT" | tail -1)"
+          echo "  version=$version androidVersionCode=$code"
 
-      # notes 完全由 releases.json 的 changes 生成，不手写
+      # 取产物字节。**这里只是取字节，不查任何清单**。三个来源，按顺序：
+      #   ① inputs.apk_url（任何 https 直链，例如历史 dl 上的包、或自己搭的临时分发地址）
+      #   ② 已存在的 Release 里已经手工上传好的 *.apk（「先 gh release upload，再跑本工作流」的常规流程）
+      #   ③ https://dl.rose7.cn/apk/deepseek-chat-<version>.apk（历史版本在 dl 上的存量地址）
+      # 三个都没有 → 明确报错并列出三条出路；不再出现「releases.json 里没有这个版本」这种假原因。
+      - name: 取得 APK 字节（不查清单）
+        run: |
+          set -euo pipefail
+          version="${{ steps.ver.outputs.version }}"
+          url="${APK_URL_INPUT:-}"
+          src=""
+          if [ -n "$url" ]; then
+            case "$url" in
+              https://*) : ;;
+              *)
+                echo "::error::apk_url 必须是 https 直链，实际: $url"
+                exit 1
+                ;;
+            esac
+            echo "来源 ①  apk_url: $url"
+            if ! curl -fsSL --retry 3 --retry-delay 3 --max-time 600 -o artifact.apk "$url"; then
+              echo "::error::下载 $url 失败。该地址只是取字节的地方，不是发版前置：换一个可达的 https 直链填进 apk_url 再重跑"
+              exit 1
+            fi
+            src="apk_url"
+          elif gh release view "$TAG" >/dev/null 2>&1; then
+            echo "来源 ②  已存在的 Release $TAG 里已上传的 .apk 资产（手工上传后校验/补 notes）"
+            rm -rf dl-assets && mkdir -p dl-assets
+            if ! gh release download "$TAG" --pattern '*.apk' --dir dl-assets --clobber; then
+              echo "::error::Release $TAG 里没有 .apk 资产，也没给 apk_url。先手工 gh release upload $TAG deepseek-chat-${version}.apk，或填一个 https 直链到 apk_url"
+              exit 1
+            fi
+            found="$(find dl-assets -maxdepth 1 -name '*.apk' | head -n 1)"
+            if [ -z "$found" ]; then
+              echo "::error::Release $TAG 里没有 .apk 资产，也没给 apk_url"
+              exit 1
+            fi
+            cp "$found" artifact.apk
+            src="release-asset:$(basename "$found")"
+          else
+            url="https://dl.rose7.cn/apk/deepseek-chat-${version}.apk"
+            echo "来源 ③  历史 dl 直链: $url"
+            if ! curl -fsSL --retry 3 --retry-delay 3 --max-time 600 -o artifact.apk "$url"; then
+              echo "::error::取不到 APK。三条出路：① 填 apk_url=<可达 https 直链>；② 先手工 gh release upload $TAG deepseek-chat-${version}.apk 再重跑；③ 直接按 docs/RELEASE-MANUAL.md 的 GitHub Release 章节手工发（不含本工作流）。本工作流不依赖 dl 清单里有没有这个版本"
+              exit 1
+            fi
+            src="dl"
+          fi
+          size=$(stat -c%s artifact.apk)
+          if [ "$size" -le 0 ]; then
+            echo "::error::取到的文件是空的（来源: $src）"
+            exit 1
+          fi
+          sha256=$(sha256sum artifact.apk | awk '{print $1}')
+          md5=$(md5sum artifact.apk | awk '{print $1}')
+          echo "  size: $size bytes"
+          echo "  sha256: $sha256"
+          echo "  md5: $md5"
+          ren="deepseek-chat-${version}.apk"
+          mv artifact.apk "$ren"
+          {
+            echo "ASSET=$ren"
+            echo "APK_SOURCE=$src"
+            echo "SHA256=$sha256"
+            echo "MD5=$md5"
+            echo "SIZE=$size"
+          } >> "$GITHUB_ENV"
+
+      # 前置校验 ②：产物不得是 debuggable 构建（Issue #60）。判不出来同样拒（fail-closed）。
+      - name: 校验产物不是 debuggable 构建（Issue #60/#84）
+        run: |
+          set -euo pipefail
+          if [ ! -f scripts/check-apk-debuggable.mjs ]; then
+            echo "::error::缺少 scripts/check-apk-debuggable.mjs（fail-closed：无法校验就不上传）"
+            exit 1
+          fi
+          node scripts/check-apk-debuggable.mjs "$ASSET"
+          echo "debuggable 关卡通过：该 APK 为 release 构建，无 android:debuggable"
+
+      # notes：版本段优先取 CHANGELOG.md 里同名的小节，再把实测元数据（含 sha256）拼在正文里。
       - name: 生成 Release Notes
         run: |
           set -euo pipefail
           python3 - <<'PY'
-          import json
-          data = json.load(open("releases.json", encoding="utf-8"))
-          version = "${{ steps.ver.outputs.version }}"
-          r = [x for x in (data.get("releases") or []) if x.get("version") == version][0]
-          changes = r.get("changes") or []
-          out = [f"## deepseek-chat {version}", ""]
-          out.append(f"- versionCode: `{r.get('versionCode')}`")
-          out.append(f"- 发布站点: https://dl.rose7.cn/")
-          out.append(f"- APK: `{r.get('file')}`")
-          out.append(f"- MD5: `{r.get('md5')}`")
-          out.append(f"- size: {r.get('size')} bytes")
-          if r.get("breaking"):
-              out += ["", "> **BREAKING**: 本版本包含不兼容变更"]
-          out += ["", "### 变更", ""]
-          out += [f"- {c}" for c in changes] if changes else ["- （无变更记录）"]
-          out += ["", "---", "", f"构建产物由 dl.rose7.cn 分发；本 Release 仅做镜像，未在 CI 中重新构建。"]
+          import os, re
+          version = os.environ["VERSION"]
+          head = [f"## deepseek-chat {version}", ""]
+          head.append("| 项 | 值 |")
+          head.append("| --- | --- |")
+          head.append(f"| version | `{version}` |")
+          head.append(f"| versionCode | `{os.environ['VERSION_CODE']}` |")
+          head.append(f"| 构建 commit | `{os.environ['RELEASE_SHA']}` |")
+          head.append(f"| APK | `{os.environ['ASSET']}` |")
+          head.append(f"| size | {os.environ['SIZE']} bytes |")
+          head.append(f"| sha256 | `{os.environ['SHA256']}` |")
+          head.append(f"| md5 | `{os.environ['MD5']}` |")
+
+          title, body = "", ""
+          if os.path.exists("CHANGELOG.md"):
+              text = open("CHANGELOG.md", encoding="utf-8").read()
+              m = re.compile(r"^##[ \t]+" + re.escape(version) + r"(?![0-9A-Za-z.+-]+)[ \t]*(.*)$", re.M).search(text)
+              if m:
+                  # 标题形如 "1.4.3 (2026-11-21) — 首个正式版：…"：去掉日期前缀，只留一句话主题
+                  title = re.sub(r"^\([^)]*\)[ \t]*[—–-]*[ \t]*", "", m.group(1).strip()).strip()
+                  rest = text[m.end():]
+                  nxt = re.search(r"^##[ \t]+", rest, re.M)
+                  body = (rest[: nxt.start()] if nxt else rest).strip()
+
+          out = head + ["", "### 变更", ""]
+          if title:
+              out += [f"**{title}**", ""]
+          if body:
+              out += [body]
+          else:
+              out += [f"- CHANGELOG.md 里没有 {version} 的小节；变更见 `{os.environ['RELEASE_SHA'][:7]}` 及其之前的提交"]
+          out += [
+              "",
+              "---",
+              "",
+              "## 安装与校验",
+              "",
+              "```bash",
+              f"curl -fL -o {os.environ['ASSET']} {os.environ['ASSET_URL']}",
+              f"sha256sum {os.environ['ASSET']}   # 应为 {os.environ['SHA256']}",
+              "```",
+              "",
+              "正式发布渠道为本页 GitHub Release；dl.rose7.cn 只保留历史分发记录，不再是发版前置。",
+          ]
           open("notes.md", "w", encoding="utf-8").write("\n".join(out) + "\n")
           print(open("notes.md", encoding="utf-8").read())
           PY
-
-      - name: 下载 APK 并校验 MD5
-        run: |
-          set -euo pipefail
-          version="${{ steps.ver.outputs.version }}"
-          path="${{ steps.meta.outputs.file }}"
-          expect="${{ steps.meta.outputs.md5 }}"
-          url="https://dl.rose7.cn/${path}"
-          echo "下载: $url"
-          if ! curl -fsSL --retry 3 --retry-delay 3 --max-time 600 -o artifact.apk "$url"; then
-            echo "::error::下载 $url 失败；若是 404，说明该版本的 APK 还没有通过发布接口上传到 dl.rose7.cn"
-            exit 1
-          fi
-          actual=$(md5sum artifact.apk | awk '{print $1}')
-          echo "  期望 md5: $expect"
-          echo "  实际 md5: $actual"
-          if [ "$actual" != "$expect" ]; then
-            echo "::error::MD5 不一致（期望 $expect，实际 $actual）；APK 可能损坏、被替换，或 releases.json 记录过期"
-            exit 1
-          fi
-          size=$(stat -c%s artifact.apk)
-          echo "  size: $size bytes（releases.json 记录 ${{ steps.meta.outputs.size }}）"
-          ren="./deepseek-chat-${version}.apk"
-          mv artifact.apk "$ren"
-          echo "asset=$ren" >> "$GITHUB_ENV"
-          echo "MD5 校验通过"
-
-      - name: 校验产物不是 debuggable 构建（Issue #84）
-        run: |
-          set -euo pipefail
-          if [ ! -f scripts/check-apk-debuggable.mjs ]; then
-            echo "::error::缺少 scripts/check-apk-debuggable.mjs（fail-closed：无法校验就不镜像）"
-            exit 1
-          fi
-          node scripts/check-apk-debuggable.mjs "$asset"
-          echo "debuggable 关卡通过：该 APK 为 release 构建，无 android:debuggable"
+        env:
+          # ASSET / SHA256 / MD5 / SIZE 由上一步写进 $GITHUB_ENV，后续步骤的进程环境里直接可读
+          VERSION: ${{ steps.ver.outputs.version }}
+          VERSION_CODE: ${{ steps.pkg.outputs.version_code }}
+          RELEASE_SHA: ${{ steps.ver.outputs.sha }}
+          ASSET_URL: https://github.com/${{ github.repository }}/releases/download/${{ inputs.tag }}/deepseek-chat-${{ steps.ver.outputs.version }}.apk
 
       - name: 创建或更新 Release
         run: |
           set -euo pipefail
-          notes_args=(--notes-file notes.md)
+          sha="${{ steps.ver.outputs.sha }}"
           pre="${{ steps.ver.outputs.prerelease }}"
           if gh release view "$TAG" >/dev/null 2>&1; then
             echo "Release $TAG 已存在 → 覆盖资产并更新说明"
-            gh release upload "$TAG" "$asset" --clobber
-            gh release edit "$TAG" --title "$TAG" "${notes_args[@]}" $pre
+            gh release upload "$TAG" "$ASSET" --clobber
+            gh release edit "$TAG" --title "$TAG" --notes-file notes.md $pre
             action=updated
           else
-            echo "创建 Release $TAG（target=$SHA, prerelease=${{ steps.ver.outputs.is_prerelease }}）"
-            gh release create "$TAG" "$asset" \
-              --target "$SHA" \
+            echo "创建 Release $TAG（target=$sha, prerelease=${{ steps.ver.outputs.is_prerelease }}）"
+            gh release create "$TAG" "$ASSET" \
+              --target "$sha" \
               --title "$TAG" \
               --notes-file notes.md \
               $pre
@@ -175,11 +282,12 @@ jobs:
         if: always()
         run: |
           {
-            echo "### Release ${TAG}"
+            echo "### Release ${TAG:-（未提供）}"
             echo ""
             echo "- 版本: \`${{ steps.ver.outputs.version }}\`"
-            echo "- 资产: \`${{ steps.meta.outputs.file }}\`"
-            echo "- MD5: \`${{ steps.meta.outputs.md5 }}\`"
+            echo "- commit: \`${{ steps.ver.outputs.sha }}\`"
+            echo "- 资产: \`${ASSET:-（未取到）}\`（来源: ${APK_SOURCE:-未知}）"
+            echo "- sha256: \`${SHA256:-（未算出）}\`"
             echo "- prerelease: ${{ steps.ver.outputs.is_prerelease }}"
             echo "- 结果: ${action:-见上方步骤日志}"
           } >> "$GITHUB_STEP_SUMMARY"

@@ -13,7 +13,7 @@
 | `scripts/release-check.mjs` / `release-upload.mjs` / `release-verify.mjs`（`pnpm run release:check` / `release:upload` / `release:verify`） | 可脚本化的三段：版本号三处一致 + 产物自检、multipart 上传（`--dry-run` 可先看）、`releases.json` 生效与三方 hash 复核。退出码 0/1/2 = 通过/不通过/用法环境错误（一个字节都没发） |
 | [`docs/dl-release-api.md`](docs/dl-release-api.md) | `POST /api/v1/release` 上传接口（multipart、Bearer 令牌、服务端自校验 md5/sha256/变体） |
 | [`docs/releases-manifest.md`](docs/releases-manifest.md) | `releases.json` 契约与校验器 `scripts/validate-releases-manifest.mjs` |
-| [`.github/workflows/release.yml`](.github/workflows/release.yml) | tag `v*` 触发：从 dl 拉已发布 APK、校验 MD5、镜像成 GitHub Release（**不构建、不碰 keystore**） |
+| [`.github/workflows/release.yml`](.github/workflows/release.yml) | **手动 `workflow_dispatch`**：把已构建/已签名的 APK 挂成 GitHub Release（校验 debuggable、算 sha256 写进正文）。**不查 dl 清单、不构建、不碰 keystore** |
 | [`CHANGELOG.md`](CHANGELOG.md) | 各版本变更；`## <version>` 段落会被抄进 dl 的 `changes` 与 Release notes |
 
 ---
@@ -31,7 +31,7 @@
 **保留**：`build-apk.sh`（调试/发布两种模式的构建脚本，行为未改；首次运行仍会自动生成 keystore 与
 `keystore.properties`）。是否需要继续保留由维护者决定，本次不动。
 
-**不动的**：`.github/workflows/release.yml` 的发布逻辑一行未改 —— 它本来就不构建 APK，只做镜像。
+**不动的**：`.github/workflows/release.yml` 仍然不构建 APK、不碰 keystore —— 正式发布的产物由签名机产出，workflow 只负责挂成 GitHub Release。
 
 **同时收紧的两处**：
 

@@ -2,8 +2,9 @@
 /**
  * release-verify.mjs —— 复核「线上 releases.json 真的生效了」（Issue #107 的「校验」这一步）。
  *
- * `https://dl.rose7.cn/releases.json` 是**唯一事实来源**：App 的自动更新看它、release.yml 也从它取
- * file/md5/changes 去镜像 GitHub Release。所以上传返回 ok:true 之后，真正的验收是：
+ * `https://dl.rose7.cn/releases.json` 是**dl 分发侧**的事实来源：存量客户端的自动更新看它。
+ * 注意（裁决 #614 决定 2）：正式发布渠道已改成 GitHub Release，`release.yml` 不再从这里取任何东西，
+ * 本脚本复核的是「dl 清单真的写进去了没有」（internal/私有包与历史版本仍需要它）。所以上传返回 ok:true 之后，真正的验收是：
  *   1. releases.json 里出现这个版本，并且 latest / releases[0] / 记录三处对得上
  *   2. 记录的 versionCode / size / sha256 / buildType 与本次一致
  *   3. 把 APK 从 dl 下载回来算 sha256，与本地构建产物、与记录里的 sha256 三者一致
@@ -16,7 +17,7 @@
  *
  * 退出码：
  *   0  线上已生效且三方 hash 一致（可以往下打 tag）
- *   1  不一致 / 线上还没有这个版本（**此时绝不能打 tag**：release.yml 会 404）
+ *   1  不一致 / 线上还没有这个版本（不是发版阻塞项 —— 正式发布只走 GitHub Release，但这说明上传没生效）
  *   2  用法或网络错误
  */
 
@@ -132,7 +133,7 @@ async function main(argv) {
   log.head(`2) 定位记录 ${version}`);
   const idx = releases.findIndex((r) => r && r.version === version);
   if (idx < 0) {
-    fail(`releases.json 里没有 ${version} —— 上传没生效（或发的是另一个版本）。**此时绝不能打 tag**：release.yml 会 404 退出`);
+    fail(`releases.json 里没有 ${version} —— 上传没生效（或发的是另一个版本）。若这次是 internal/私有包，先修上传再交付；standard 正式版走 GitHub Release，不阻塞打 tag`);
     log.info(`线上最新是 ${manifest.latest}（releases[0].version=${releases[0] && releases[0].version}）`);
     if (args.json === true) console.log(JSON.stringify({ ok: false, version, latest: manifest.latest, fails }, null, 2));
     return EXIT_FAIL;
@@ -238,7 +239,7 @@ async function main(argv) {
     return EXIT_FAIL;
   }
   console.log(`  PASS  ${version} 已在线上生效，hash 一致`);
-  console.log(`  下一步: 打 tag v${version} 并推送（会触发 .github/workflows/release.yml 镜像 GitHub Release）`);
+  console.log(`  下一步: 打 tag v${version} 并推送，然后按 docs/RELEASE-MANUAL.md §6.1 发 GitHub Release（.github/workflows/release.yml 已改成手动触发，推 tag 不再自动跑）`);
   if (args.json === true) console.log(JSON.stringify({ ok: true, version, record, warns }, null, 2));
   return EXIT_OK;
 }

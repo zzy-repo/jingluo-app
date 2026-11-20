@@ -2,6 +2,10 @@
 
 适用：从 `1.4.0-beta.8` 起。发布 = 按本清单一步步做，**没有一键脚本**。
 
+> **正式发布 = GitHub Release**（裁决 #614 决定 2）。dl.rose7.cn 只作**历史分发**，
+> 不再作为发版前置：不必先让公网 `releases.json` 收录该版本，也不再校验它的 `md5`。
+> 发包 → 打 tag → 发 GitHub Release，具体命令见 **§6.1**。
+
 ---
 
 ## 0. 为什么不再提供一键脚本
@@ -24,8 +28,9 @@
 > `pnpm run release:check`（版本号三处一致 + 产物自检）、`pnpm run release:upload`（multipart 上传，带 `--dry-run`）、
 > `pnpm run release:verify`（复核 `releases.json` 已生效 + 下载件三方 hash 一致）。
 
-`.github/workflows/release.yml` 的逻辑没有改：它仍然只在 tag 推送后**镜像**已上传的 APK 到 GitHub Release，
-不在 CI 里构建、不接触 keystore。
+> 打 tag **不再触发任何 workflow**：`.github/workflows/release.yml` 已改为**手动 `workflow_dispatch`**，
+> 它只做「把已构建、已签名的 APK 挂成 Release 资产 + 校验 debuggable + 写 sha256」，
+> 不构建、不碰 keystore、**不读 `releases.json`**（详见 §6.1）。
 
 ---
 
@@ -111,10 +116,11 @@ e7c5baee517ca2b2258950e934521f2fad448d00f72f2ff7297bdf4fa00aa8a1
 
 清单：
 
-- [ ] `androidVersionCode` 比线上 `latest` 大（`curl -fsS https://dl.rose7.cn/releases.json | head -c 400` 看最新一条）
+- [ ] `androidVersionCode` 比**上一个已发布 tag** 的 `androidVersionCode` 大：`git show $(git describe --tags --abbrev=0 --match 'v*'):package.json | grep androidVersionCode`
+      （比的是 tag，不再是 dl 清单：公网 `releases.json` 已冻结，只留历史 standard 条目）
 - [ ] `version` 与即将打的 tag 一致（tag 是 `v<version>`）
 - [ ] 没改 `android/app/build.gradle` 里的版本（那里已没有硬编码版本号；缺字段会让构建直接报错）
-- [ ] `CHANGELOG.md` 加了 `## <version> (<日期>) — <标题>` 段，写用户能看懂的话（会进 dl 的 `changes` 与 Release notes）
+- [ ] `CHANGELOG.md` 加了 `## <version> (<日期>) — <标题>` 段，写用户能看懂的话（会进 **GitHub Release notes**；不再进 dl 的 `changes`）
 
 `package.json` 的 `version` / `androidVersionCode` 缺失或格式非法时，gradle 配置阶段直接 `GradleException` 中止，不会用默认值发版。
 
@@ -252,7 +258,7 @@ BT=${ANDROID_HOME:-$HOME/android-sdk}/build-tools/${BUILD_TOOLS_VERSION:?先 cp 
   | 位置 | 行为 |
   | --- | --- |
   | `./build-apk.sh release` | 出包后自动跑关卡，判不过直接失败（debug 模式只告警，因为 debug 变体天生 debuggable） |
-  | `.github/workflows/release.yml` | 下载 APK、校验 MD5 之后、创建 Release 之前拦一道 |
+  | `.github/workflows/release.yml`（手动触发） | 取到 APK 字节之后、创建 Release 之前拦一道（判不出来也拒） |
   | `POST /api/v1/release`（dl 服务端） | 拒收 debuggable 包，返回 `400 APK_DEBUGGABLE` |
 
 
@@ -260,7 +266,12 @@ BT=${ANDROID_HOME:-$HOME/android-sdk}/build-tools/${BUILD_TOOLS_VERSION:?先 cp 
 
 ---
 
-## 5. 步骤 4 — 上传 dl.rose7.cn
+## 5. 步骤 4 — 上传 dl.rose7.cn（**仅 internal/私有包与历史版本**）
+
+> **裁决 #614 决定 2：dl 不再是正式（standard）渠道。** 正式发布走 §6.1 的 GitHub Release，
+> **不需要**先上传 dl —— 公网 `releases.json` 已冻结（只留历史 standard 条目），也不会再有新条目。
+> 本节只用于：① internal/私有包的发布（实际命令见 §14.2 的 `publish-private-apk.mjs`）；
+> ② 万一要补一个历史 standard 版本的分发记录。**standard 正式版不要走这里。**
 
 接口细节见 [`docs/dl-release-api.md`](dl-release-api.md)（`POST /api/v1/release`，multipart，Bearer 令牌）。
 服务端自己解析 APK 真身、自己算 MD5/sha256、原子更新 `releases.json`。
@@ -335,37 +346,97 @@ git tag -a v1.4.0-beta.9 -m "1.4.0-beta.9"
 git push origin v1.4.0-beta.9
 ```
 
-- tag 必须是 `v<version>`（workflow 用它解析版本号，格式不符会 `::error::` 退出）。
+- tag 必须是 `v<version>`（本手册与可选的 workflow 都按这个约定解析版本号，格式不符会 `::error::` 退出）。
 - tag 一旦推错 commit：**不要 force 改已有 tag**。删 Release 后删 tag 再重打，或换新版本号。
-- push tag 会触发 `.github/workflows/release.yml`：它从 `https://dl.rose7.cn/releases.json` 查该版本、
-  校验 MD5、把 APK 镜像成 GitHub Release（prerelease 自动判定）。**所以 tag 必须在 §5 上传成功之后再推。**
-- 观察：`gh run list --workflow=release.yml --limit 3`；workflow 失败最常见原因是 dl 上查不到该版本。
+- **push tag 不会触发任何 workflow**（`.github/workflows/release.yml` 已改成手动触发，见 §6.1）。
+  这是刻意的：以前「推 tag → workflow 去 dl 清单里找这个版本 → 找不到就红」把发版绑死在 dl 上，
+  1.4.3 按 #614 裁决不进 dl，于是每次发布都必然红。现在 tag 只是 tag。
+- 推完 tag 就去做 §6.1 发 GitHub Release。
+
+### 6.1 发 GitHub Release（正式渠道）
+
+**做法 A（推荐，最省事）：手工一条命令发。** 在**签名机**上打包完直接推上去，keystore 不出机器：
+
+```bash
+V=1.4.3                                     # 不带 v
+APK=deepseek-chat-$V.apk
+SHA=$(sha256sum $APK | awk '{print $1}')
+CODE=$(python3 -c 'import json;print(json.load(open("package.json"))["androidVersionCode"])')
+COMMIT=$(git rev-list -n1 v$V)
+
+cat > /tmp/notes-$V.md <<EOF
+## deepseek-chat $V
+
+| 项 | 值 |
+| --- | --- |
+| version | \`$V\` |
+| versionCode | \`$CODE\` |
+| 构建 commit | \`$COMMIT\` |
+| APK | \`$APK\` |
+| size | $(stat -c%s $APK) bytes |
+| sha256 | \`$SHA\` |
+
+### 变更
+
+（把 CHANGELOG.md 里 $V 那一节贴进来）
+
+EOF
+
+gh release create v$V $APK \
+  --repo zzy-repo/deepseek-app \
+  --title v$V \
+  --notes-file /tmp/notes-$V.md
+```
+
+- Release 正文至少要写：`version` / `versionCode` / 构建 commit / 资产文件名 / size / **sha256**。
+- 版本号含 `-beta` / `-rc` 时加 `--prerelease`。
+- 已经有 Release 要换包：`gh release upload v$V deepseek-chat-$V.apk --clobber`。
+
+**做法 B（可选）：手动触发 workflow 帮你建/补。** Actions → `Release` → Run workflow：
+
+| 输入 | 填什么 |
+| --- | --- |
+| `tag` | 已存在的 tag，例 `v1.4.3`（必须与 tag 内 `package.json` 的 `version` 一致） |
+| `apk_url` | 要上传的 APK 的 https 直链；**留空**则依次尝试「Release 里已上传的 `.apk` 资产」→「dl 上该版本的存量地址」 |
+
+它做的事（每一步都会在日志里说清）：
+
+1. 校验 tag 存在、格式是 `v<version>`；
+2. 校验 **tag 指向的那个 commit** 的 `package.json`：`version` == tag 版本、`androidVersionCode` 是正整数；
+3. 取 APK 字节（不查任何清单），算 `sha256` / `md5` / size；
+4. `node scripts/check-apk-debuggable.mjs <apk>` —— 是 debuggable 包直接拒（fail-closed，判不出来也拒）；
+5. 用 `CHANGELOG.md` 里同版本小节生成 notes，并把 sha256 写进正文；
+6. `gh release create`（已存在则 `upload --clobber` + `edit`）。
+
+失败时它给的是**可执行的下一步**，不是「清单里没有这个版本」这种假原因：
+tag 不存在 → 提示先 push tag；`package.json` 版本对不上 → 指名两边版本号；
+取不到 APK → 列出三条出路（填 `apk_url` / 先手工 `gh release upload` / 走做法 A）。
+
+- 观察：`gh run list --workflow=release.yml --limit 3`（手动触发的那条）。
 
 ---
 
-## 7. 步骤 6 — 两端下载比 hash
+## 7. 步骤 6 — 下载回来比 hash（正式渠道 = GitHub Release）
 
 ```bash
-V=1.4.0-beta.9
-curl -fsSL -o /tmp/dl-$V.apk https://dl.rose7.cn/apk/deepseek-chat-$V.apk
-sha256sum /tmp/dl-$V.apk                 # 必须 == §4.4 的 sha256
-curl -fsSL https://dl.rose7.cn/releases.json | python3 -c 'import json,sys; d=json.load(sys.stdin); r=[x for x in d["releases"] if x["version"]=="'$V'"][0]; print(r["version"], r["versionCode"], r["size"], r["sha256"][:16], r["artifactVariant"])'
+V=1.4.3
 gh release download v$V --pattern "*.apk" --dir /tmp/gh-$V --clobber
-sha256sum /tmp/gh-$V/*.apk               # 与 dl、与本地三者一致
+sha256sum /tmp/gh-$V/*.apk               # 必须 == §4.4 本地构建产物的 sha256
 ```
 
-- [ ] dl 下载的 sha256 == 本地构建产物 sha256
-- [ ] GitHub Release 资产的 sha256 == 同上
+- [ ] GitHub Release 资产的 sha256 == 本地构建产物 sha256（**这一条是硬关卡**：用户下载的就是这个文件）
+- [ ] Release 正文里的 sha256 == 同上
 
-**等价脚本（自动做上面第 1、2 条，并顺带校验记录字段与 `package.json` 口径）：**
+**历史版本（dl 上仍有存量、且还在公网清单里的）**，可以额外做一次 dl 侧比对，
+但**它不是发版前置**：1.4.3 起 dl 上不再有新版本，比对不到不是失败。
 
 ```bash
-pnpm run release:verify -- --version $V --apk android/app/build/outputs/apk/release/app-release.apk
+curl -fsSL -o /tmp/dl-$V.apk https://dl.rose7.cn/apk/deepseek-chat-$V.apk \
+  && sha256sum /tmp/dl-$V.apk             # 与本地一致才算过；404 说明这版没进 dl（1.4.3+ 的正常状态）
 ```
 
-它会把本地构建产物 / 线上记录 / dl 下载件三者算一遍 sha256 做对比，并把「还没打 tag」之后的下一步提示出来。
-GitHub Release 资产那一条仍需 `gh release download` 人工确认（脚本不碰 GitHub）。
-- [ ] `releases.json` 的 `versionCode` / `size` / `artifactVariant` 与本次一致
+`pnpm run release:verify` 复核的是 **dl 清单**（现仅用于 internal/私有包与历史版本），
+它不校验 GitHub Release 资产 —— 资产那一条始终靠上面的 `gh release download` + `sha256sum` 人工确认。
 
 ---
 
@@ -634,8 +705,8 @@ ssh aliyun 'cp -a /root/dl-release-backups/server.mjs.<时间戳> /opt/dl-releas
 
 ## 13. 本清单不管的事（未覆盖）
 
-- 不自动算 `versionCode`（不读线上 `releases.json` 做 `max(本地,远端)+1`）——手动看一眼线上 latest 再填，§2 有命令。
-- 不自动写 `CHANGELOG.md`、不自动生成 Release notes（notes 由 workflow 从 `releases.json` 的 `changes` 生成，所以 `changes` 要写人话）。
+- 不自动算 `versionCode`（不读线上 `releases.json` 做 `max(本地,远端)+1`）——手动对着上一个已发布 tag 看一眼再填，§2 有命令。
+- 不自动写 `CHANGELOG.md`（Release notes 会从它取同版本小节，所以那一节要写人话；手工发 Release 时正文自己写）。
 - 不自动修 APK 元信息不一致（aapt2 校验靠人做，§4.1）。
 - 不处理 `dist/` 缓存导致的旧产物：怀疑时 `rm -rf dist && pnpm build[:internal]` 再 `npx cap sync android`。
 - 不在 CI 里构建 APK、不上传 keystore（这条永远不变）。
@@ -829,7 +900,7 @@ cd android && ./gradlew assembleRelease -PartifactVariant=internal
 
 | 发布 | 走哪条 | 清单 |
 | --- | --- | --- |
-| **正式发布（standard）** | **只走 GitHub Release**（裁决 #614 决定 2：dl 不再是正式渠道） | 公网 `releases.json` **冻结**，只保留历史 standard 条目 |
+| **正式发布（standard）** | **只走 GitHub Release**（裁决 #614 决定 2：dl 不再是正式渠道；操作见 §6.1：手工 `gh release create`，或手动触发 `release.yml`） | 公网 `releases.json` **冻结**，只保留历史 standard 条目；发版**不再要求**清单里有这一条 |
 | **私有（internal）** | `node scripts/publish-private-apk.mjs`（默认 `--target private`） | **独立私有清单** `<private-root>/releases.internal.json`（webroot 之外） |
 | 公网 `releases.json` | 冻结：只允许 `artifactVariant === 'standard'` 且 `buildType === 'stable'` | 出现 `internal` 条目 = 硬 FAIL（**接口 + 校验器 + 发布脚本 + 卫生门禁四道**，见 14.4b / 14.8） |
 

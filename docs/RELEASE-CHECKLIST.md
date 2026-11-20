@@ -210,8 +210,10 @@ pnpm run release:upload -- --apk $APK
 
 ### 阶段 D｜打 tag（任意机器，需要你自己的 GitHub 账号）
 
-> `release.yml` 只做一件事：按 tag 里的版本号去 `releases.json` 找记录 → 下载 APK → 校验 MD5 → `gh release create`。
-> **它不构建。** 所以 tag 必须在 C3 成功之后打。
+> **正式发布 = GitHub Release**（裁决 #614 决定 2）。**推 tag 不会触发任何 workflow**：
+> `release.yml` 已改成手动 `workflow_dispatch`，它只做「把已构建、已签名的 APK 挂成 Release 资产 + 校验 debuggable
+> + 算 sha256 写进正文」，**不查 `releases.json`、不校验 dl 的 md5**。它也不构建，keystore 不出签名机。
+> 所以阶段 C（上传 dl）只对 internal/私有包还有意义；standard 正式版打完 tag 直接进 D2 发 Release。
 
 #### D1. 在阶段 A 的 merge commit 上打 tag 并推送
 
@@ -226,10 +228,27 @@ git push origin v$V
   若 Release 已经建出来了，先 `gh release delete v$V --repo zzy-repo/deepseek-app --yes` 再删 tag。
   **绝不把已存在的 tag 强推到别的 commit**（`-f` 会让已下载过的人拿到不一致的内容）。
 
-#### D2. 看 CI 把 GitHub Release 建出来
+#### D2. 发 GitHub Release（正式渠道，二选一）
+
+做法 A —— 签名机上一把推（推荐）：
 
 ```bash
-gh run list --workflow release.yml --limit 3
+sha256sum $APK                              # 记下来，写进 Release 正文
+gh release create v$V $APK \
+  --repo zzy-repo/deepseek-app --title v$V \
+  --notes-file /tmp/notes-$V.md            # 正文含 version / versionCode / commit / sha256
+```
+
+做法 B —— 手工触发 workflow（Actions → `Release` → Run workflow，`tag` 填 `v$V`，
+`apk_url` 留空则优先取「Release 里已上传的 .apk 资产」，其次取 dl 上该版本的存量地址）：
+
+```bash
+gh run list --workflow release.yml --limit 3     # 手动触发的那一条
+```
+
+两端都看：
+
+```bash
 gh release view v$V --repo zzy-repo/deepseek-app
 ```
 
