@@ -72,6 +72,26 @@ declare const __ENDPOINTS__: {
     readonly endpoint: string
     readonly timeoutMs: number
   }
+  /**
+   * 私有清单（Issue #622）：`GET /api/v1/releases/internal`（#621 的令牌鉴权读端点）。
+   *
+   * `enabled` 默认 `false` —— 关掉时**一个字节都不请求**；只有 `enabled:true` **且**本机是
+   * internal 变体（`__INTERNAL_BUILD__`）时才优先读它，失败静默回退公网 `releases.json`。
+   *
+   * `token` 是**构建期从 `tokenEnv` 指名的环境变量读到并注入的令牌原文**，只用于
+   * `X-DL-Token` 请求头：不进 URL、不进日志、不进埋点。它在 `standard` 构建里恒为空串
+   * （rspack.config.ts 的 `privateManifestInjection` 整段按关闭注入），
+   * 所以 public / standard 产物里连端点地址都不出现。
+   *
+   * 非打包环境（`node --test`）取不到这一段，运行时按「关闭」处理（updateManifest.ts 自己判）。
+   */
+  readonly update?: {
+    readonly privateManifest?: {
+      readonly enabled: boolean
+      readonly url: string
+      readonly token: string
+    }
+  }
 }
 
 /** Prism 语言包通过副作用注册到全局 Prism */

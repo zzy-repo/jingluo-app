@@ -91,6 +91,11 @@ const endpoints = JSON.parse(readFileSync(new URL('./config/endpoints.json', imp
   // 默认 `enabled:false`：关掉时客户端不采集、不请求、不显示按钮（三处判定见 src/legacy/migration/）。
   // 这里只读、只注入；`enabled:true` 时形状不对会在下面 assertMigrationConfig 直接中止构建。
   migration: { enabled: boolean; baseUrl: string; endpoint: string; timeoutMs: number }
+  // 私有清单（#622）：只有 **internal 包**会去读；默认 `enabled:false`（公网 / standard 用户永不请求）。
+  // `url` 是**完整端点**（含路径，例 `/api/v1/releases/internal`）；令牌不进 JSON，构建期从
+  // `tokenEnv` 指名的环境变量读，注入成 `__ENDPOINTS__.update.privateManifest.token`。
+  // 这里只读、只注入；`enabled:true` 时形状不对会在下面 `privateManifestInjection` 直接中止构建。
+  update?: { privateManifest?: { enabled?: boolean; url?: string; tokenEnv?: string } }
 }
 
 /**
@@ -175,6 +180,91 @@ const assertMigrationConfig = (migration: { enabled: boolean; baseUrl: string; e
 }
 
 assertMigrationConfig(endpoints.migration)
+
+/**
+ * 私有清单（#622）的**构建期 fail-fast + 注入值**。
+ *
+ * 只拦「开关打开了却取不到 / 发不出去」这一类：运行时对私有清单的态度是「不合法就当没有」
+ * （`src/services/updateManifest.ts` 里失败一律静默回退公网），于是配错的表现是**内测用户
+ * 悄悄永远拿公网清单** —— 那是最贵的一类假绿（配置生效了没？没人答得上来）。把判据提前到
+ * 构建期，报错里带键名。
+ *
+ * 三条边界（与 #622 的安全说明一一对应）：
+ *   1. **令牌只进 internal 包**：`internalBuild=false` 时整段按 `enabled:false` 注入（url 与 token
+ *      都置空）—— standard 产物里连私有端点地址都不出现，双保险（运行时的变体判定是第一层）。
+ *   2. **令牌不进 JSON、不进 URL**：JSON 里只有 `tokenEnv`（环境变量名），令牌值由构建环境提供，
+ *      注入后只作为 `X-DL-Token` 请求头使用（见 updateManifest.ts 的 `PRIVATE_TOKEN_HEADER`）。
+ *   3. **enabled=true 时端点必须能发**：url 非空、绝对 URL、https（明文 http 只允许本机回环，
+ *      与 migration 同口径）、不带凭据 / 查询串 / 片段；internal 构建还必须有令牌值。
+ *
+ * 开关关着（默认）时**一条都不校验**：`url: ""` 是配置里的默认值，不该拦住正常出包。
+ */
+export const privateManifestInjection = (
+  /** `config/endpoints.json` 的 `update.privateManifest` 段（读不到时传 undefined） */
+  segment: { enabled?: boolean; url?: string; tokenEnv?: string } | undefined,
+  internalBuild: boolean
+): { enabled: boolean; url: string; token: string } => {
+  if (segment?.enabled !== true) {
+    return { enabled: false, url: '', token: '' }
+  }
+  const problems: string[] = []
+  const url = typeof segment.url === 'string' ? segment.url.trim() : ''
+  if (url === '') {
+    problems.push(
+      'update.privateManifest.url 为空：enabled=true 时必须给出私有清单端点' +
+        '（例 https://dl.rose7.cn/api/v1/releases/internal）'
+    )
+  } else {
+    let parsed: URL | null = null
+    try {
+      parsed = new URL(url)
+    } catch {
+      parsed = null
+    }
+    if (parsed === null) {
+      problems.push(`update.privateManifest.url 不是合法的绝对 URL：${JSON.stringify(segment.url)}`)
+    } else {
+      const loopback =
+        parsed.hostname === '127.0.0.1' || parsed.hostname === 'localhost' || parsed.hostname === '[::1]'
+      if (parsed.protocol !== 'https:' && !(parsed.protocol === 'http:' && loopback)) {
+        problems.push(`update.privateManifest.url 必须是 https（明文 http 只允许本机回环）：${url}`)
+      }
+      if (parsed.pathname === '/' || parsed.pathname === '') {
+        problems.push(
+          `update.privateManifest.url 必须是完整端点（含路径，例 /api/v1/releases/internal）：${url}`
+        )
+      }
+      if (parsed.username || parsed.password || parsed.search || parsed.hash) {
+        problems.push(`update.privateManifest.url 不许带凭据 / 查询串 / 片段（令牌走请求头）：${url}`)
+      }
+    }
+  }
+  const tokenEnv = typeof segment.tokenEnv === 'string' ? segment.tokenEnv.trim() : ''
+  if (!/^[A-Z_][A-Z0-9_]*$/.test(tokenEnv)) {
+    problems.push(
+      `update.privateManifest.tokenEnv 必须是环境变量名（大写字母 / 数字 / 下划线）：` +
+        `${JSON.stringify(segment.tokenEnv)}`
+    )
+  }
+  if (problems.length > 0) {
+    throw new Error(`config/endpoints.json 的 update.privateManifest 段不合法：\n  - ${problems.join('\n  - ')}`)
+  }
+  // 标准包：整段按关闭注入。它本来就不请求私有清单（变体判定），这一层是为了让产物里
+  // **连端点地址与令牌都不出现** —— 令牌随 internal 包分发是这个设计的固有代价，
+  // 但它没有任何理由出现在 public / standard 产物里。
+  if (!internalBuild) {
+    return { enabled: false, url: '', token: '' }
+  }
+  const token = (process.env[tokenEnv] ?? '').trim()
+  if (token === '') {
+    throw new Error(
+      `update.privateManifest.enabled=true，但构建环境没有 ${tokenEnv}：internal 包必须带令牌才能读私有清单。\n` +
+        '  · 出内测包：`DL_PRIVATE_TOKEN=<令牌> INTERNAL_BUILD=1 node scripts/build.mjs --internal`\n' +
+        '  · 只出公网包：把 config/endpoints.json 的 update.privateManifest.enabled 改回 false'
+    )
+  }
+  return { enabled: true, url, token }
+}
 
 /**
  * 构建期注入的版本号优先级：环境变量 APP_VERSION > package.json 的 version。
@@ -353,6 +443,11 @@ export const createConfig = ({
         // 客户端只从 __ENDPOINTS__.migration 读，源码里不许出现迁移服务的地址或毫秒数。
         // 删这条尾巴时删掉这一行（README 的「删除方法」第 3 步）。
         migration: endpoints.migration,
+        // 私有清单（#622）：internal 变体读私有清单、失败回退公网。注入值由
+        // `privateManifestInjection` 给出 —— enabled=false 时 url / token 都是空串，
+        // standard 包整段按关闭注入（令牌只进 internal 包）。源码只读
+        // `__ENDPOINTS__.update.privateManifest`，令牌**只进 `X-DL-Token` 请求头**。
+        update: { privateManifest: privateManifestInjection(endpoints.update?.privateManifest, internalBuild) },
       }),
       // PDF 文本解析（#480）：版本 + 静态路径注入，运行期只读 __PDFJS_ASSET__（见 pdfLoader.ts）
       //

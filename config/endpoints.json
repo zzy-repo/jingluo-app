@@ -40,5 +40,12 @@
     "baseUrl": "",
     "endpoint": "/legacy/claim",
     "timeoutMs": 20000
+  },
+  "update": {
+    "privateManifest": {
+      "enabled": false,
+      "url": "",
+      "tokenEnv": "DL_PRIVATE_TOKEN"
+    }
   }
 }

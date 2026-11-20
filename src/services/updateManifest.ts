@@ -209,36 +209,161 @@ export const selectUpdate = (
     : { release: undefined, incomplete, reason: reasonOf(aboveCurrent, variant, channel) }
 }
 
+export type ManifestSource = 'public' | 'private'
+
 export interface ManifestFetch {
   rows: UpdateRelease[]
   /** 真正回了清单的那个 base；相对 file 必须拼在它上面。 */
   base: string
+  /** 清单来源（#622）：`private` = 带令牌的私有清单端点，`public` = 公网 `releases.json`。 */
+  source: ManifestSource
+}
+
+// ---------------------------------------------------------------------------
+// 私有清单（Issue #622）：internal 变体优先读私有清单，失败静默回退公网
+//
+// #377 的现场：公网 `releases.json` 里不再有 internal 条目（#614 裁决，两条渠道分开），
+// 于是装了 internal 包的设备**永远**选不出更新 —— 那不是「已是最新」，是「这条渠道的包公网看不到」。
+// #621 上线了带令牌的读端点（`GET /api/v1/releases/internal`），本段补上客户端那一半。
+//
+// 五条纪律（每条都对应一种会真出事的写法）：
+//   1. **默认关**：`enabled:false` 一个字节都不请求（公网 / standard 用户与这条链路无关）；
+//   2. **只给 internal 变体**：standard 包即便被误配成 `enabled:true` 也不请求（变体是硬判据）；
+//   3. **同一套 schema**：私有清单与公网清单走同一个 `parseManifest` + `selectUpdate`，
+//      绝不写第二份筛选逻辑（#484 的硬规矩）；「私有清单里混进 standard 条目」由 `selectUpdate`
+//      的变体相等判定挡掉，这里**不再加一层**过滤（加一层就等于承认筛选有两份）；
+//   4. **失败静默**：401 / 网络 / 脏清单一律回退公网清单，不许让整个更新流程失败 ——
+//      私有清单是锦上添花，公网清单仍是唯一「必须成功」的来源；
+//   5. **令牌只进请求头**：不进 URL、不进日志、不进埋点（本文件从不 import 诊断通道）。
+// ---------------------------------------------------------------------------
+
+/** 私有清单的令牌请求头（#621 的契约；服务端也收 `Authorization: Bearer`，客户端只用前者） */
+export const PRIVATE_MANIFEST_TOKEN_HEADER = 'X-DL-Token'
+/** 清单响应体上限：公网 / 私有同一档（2 MiB）—— 私有清单没有理由更大 */
+const MANIFEST_MAX_BYTES = 2 * 1024 * 1024
+
+/** 私有清单的运行期配置（构建期注入值的收窄结果，令牌原文只活在这个对象里） */
+export interface PrivateManifestConfig {
+  url: string
+  token: string
+}
+
+/**
+ * 取构建期注入的私有清单配置；**任何一项不合格都返回 undefined**（= 当作没配）。
+ *
+ * 为什么要懒读 + 容错：
+ *   · 非打包环境（`node --test` 直接 import）的 `__ENDPOINTS__` 没有 `update` 这一段；
+ *   · 裁剪构建 / 旧产物可能拿到半截注入值；
+ *   · 单测要按用例替换 `globalThis.__ENDPOINTS__`，懒读就不必重开进程。
+ * 三种情况都退化成「关闭」，绝不抛错 —— 私有清单不允许把更新检查带崩。
+ */
+const privateManifestConfig = (): PrivateManifestConfig | undefined => {
+  if (typeof __ENDPOINTS__ === 'undefined' || !__ENDPOINTS__) {
+    return undefined
+  }
+  const segment = __ENDPOINTS__.update?.privateManifest
+  if (!segment || segment.enabled !== true) {
+    return undefined
+  }
+  const url = typeof segment.url === 'string' ? segment.url.trim() : ''
+  const token = typeof segment.token === 'string' ? segment.token.trim() : ''
+  // 端点或令牌缺失 = 这次构建没真的配好：当关闭处理（构建期 fail-fast 已拦过一遍，
+  // 这里只兜「运行时拿到裁剪值」这种残留情形，避免白打一次必然 401 的请求）
+  if (url === '' || token === '') {
+    return undefined
+  }
+  return { url, token }
+}
+
+/**
+ * 本机装的是不是 internal 包。判据只有一条：构建期 `__INTERNAL_BUILD__`。
+ *
+ * 与 `appUpdate.currentVariant()` 同源（同一个注入常量），但这里**不 import appUpdate**：
+ * `appUpdate.ts` 已经 import 本文件，反向 import 会成环。判定本身只有一行，不存在两份逻辑
+ * 走偏的空间；装配变体的唯一出口仍是 `__INTERNAL_BUILD__`。
+ */
+const isInternalVariant = (): boolean =>
+  typeof __INTERNAL_BUILD__ !== 'undefined' && __INTERNAL_BUILD__ === true
+
+/** 私有清单端点 → 该清单的 base（`file` 相对路径属于这台机器）。解不开时退默认分发机。 */
+const privateManifestBase = (url: string): string => {
+  try {
+    return new URL(url).origin
+  } catch {
+    return DEFAULT_RELEASE_BASE
+  }
+}
+
+/**
+ * 拉私有清单。**所有失败都抛**（HTTP / 网络 / 解析），由 `fetchManifest` 静默回退公网。
+ *
+ * 与公网清单的唯一差别是**多一枚请求头**：schema、大小上限、解析器全部共用。
+ * 错误短码**不带 URL、不带令牌**（这条分支的异常最终会被吞掉，但也不能留下含密信息）。
+ */
+const fetchPrivateManifest = async (
+  config: PrivateManifestConfig,
+  signal: AbortSignal,
+  request: typeof fetch
+): Promise<ManifestFetch> => {
+  // 令牌全程只在这一行出现（#622 §安全）：它只是请求头的一个值，不进 URL、不进错误短码
+  const body = await fetchManifestText(config.url, {
+    signal,
+    request,
+    headers: { [PRIVATE_MANIFEST_TOKEN_HEADER]: config.token },
+    codePrefix: 'PRIVATE_MANIFEST',
+  })
+  return {
+    rows: parseManifest(JSON.parse(body)),
+    base: privateManifestBase(config.url),
+    source: 'private',
+  }
+}
+
+/**
+ * 取清单文本。公网 / 私有**只差三样**：URL、可选的令牌头、错误短码前缀。
+ *
+ * 为什么收敛成一个函数：这两份「发请求 → 查 ok → 读 text → 限长 → 出短码」几乎逐字相同，
+ * 边界（不跟随跳转 / 不带凭据 / 限长 / 状态码短码）只要在**一份**里漏掉，就是「一条渠道悄悄少校验」。
+ * 短码前缀区分来源（`MANIFEST_HTTP_` / `PRIVATE_MANIFEST_HTTP_`），两者**都不带 URL 与令牌**。
+ */
+const fetchManifestText = async (
+  url: string,
+  options: {
+    signal: AbortSignal
+    request: typeof fetch
+    /** 额外请求头：私有清单的令牌只从这里进去 */
+    headers?: Record<string, string>
+    /** 错误短码前缀（`MANIFEST` / `PRIVATE_MANIFEST`） */
+    codePrefix: string
+  }
+): Promise<string> => {
+  const response = await options.request(url, {
+    signal: options.signal,
+    credentials: 'omit',
+    cache: 'no-store',
+    redirect: 'error',
+    ...(options.headers ? { headers: options.headers } : {}),
+  })
+  if (!response.ok) {
+    // 带上状态码的短码（#310）：404 / 502 与「连不上」对用户是两件事，界面要能分开说
+    throw new Error(`${options.codePrefix}_HTTP_${response.status}`)
+  }
+  const body = await response.text()
+  if (body.length > MANIFEST_MAX_BYTES) {
+    throw new Error(`${options.codePrefix}_TOO_LARGE`)
+  }
+  return body
 }
 
 const fetchBody = async (
   base: string,
   signal: AbortSignal,
   request: typeof fetch
-): Promise<string> => {
-  const response = await request(`${base}/releases.json`, {
-    signal,
-    credentials: 'omit',
-    cache: 'no-store',
-    redirect: 'error',
-  })
-  if (!response.ok) {
-    // 带上状态码的短码（#310）：404 / 502 与「连不上」对用户是两件事，界面要能分开说
-    throw new Error(`MANIFEST_HTTP_${response.status}`)
-  }
-  const body = await response.text()
-  if (body.length > 2 * 1024 * 1024) {
-    throw new Error('MANIFEST_TOO_LARGE')
-  }
-  return body
-}
+): Promise<string> =>
+  fetchManifestText(`${base}/releases.json`, { signal, request, codePrefix: 'MANIFEST' })
 
 /**
- * 按 RELEASE_BASES 顺序取清单：首个「能解析」的成功即生效（新机 HTTP → 旧机 HTTPS）。
+ * 按 RELEASE_BASES 顺序取**公网**清单：首个「能解析」的成功即生效（新机 HTTP → 旧机 HTTPS）。
  *
  * 解析失败也继续试下一台（Issue #330）：200 只说明「服务器回了字节」，清单被写脏
  * （例如 buildType:"release"）时整份清单不可用，另一台很可能还是好的。2026-11-19 的
@@ -248,9 +373,9 @@ const fetchBody = async (
  * updateFailure 已按 INVALID_RELEASE/INVALID_MANIFEST 归类为 manifest 故障）；
  * 全是网络/HTTP 失败 → 抛最后一个网络错误（报错信息保持 #310 的 MANIFEST_HTTP_xxx）。
  */
-export const fetchManifest = async (
+const fetchPublicManifest = async (
   signal: AbortSignal,
-  request: typeof fetch = fetch
+  request: typeof fetch
 ): Promise<ManifestFetch> => {
   let networkFailure: unknown = new Error('MANIFEST_NETWORK')
   let parseFailure: unknown
@@ -266,7 +391,7 @@ export const fetchManifest = async (
       continue
     }
     try {
-      return { rows: parseManifest(JSON.parse(body)), base }
+      return { rows: parseManifest(JSON.parse(body)), base, source: 'public' }
     } catch (error) {
       if (signal.aborted) {
         throw error
@@ -277,6 +402,35 @@ export const fetchManifest = async (
     }
   }
   throw parseFailure ?? networkFailure
+}
+
+/**
+ * 取更新清单（Issue #622）。
+ *
+ * 顺序：**internal 变体 + 配置开启 → 先私有清单，失败静默回退公网**；其余情况只走公网。
+ * 「先私有」放在这里而不是调用点，是因为调用点有两个（原生 bridge 之外的 Web 预览路径与测试），
+ * 放服务层才能被 L0 用例按表钉住。
+ *
+ * 回退的边界：只有「私有清单这条分支失败」不回传任何异常 —— 取消（用户自己点的）照常上抛，
+ * 公网清单的失败也照常上抛（那是真的检查失败，界面该说话）。
+ */
+export const fetchManifest = async (
+  signal: AbortSignal,
+  request: typeof fetch = fetch
+): Promise<ManifestFetch> => {
+  const priv = isInternalVariant() ? privateManifestConfig() : undefined
+  if (priv) {
+    try {
+      return await fetchPrivateManifest(priv, signal, request)
+    } catch (error) {
+      if (signal.aborted) {
+        throw error
+      }
+      // 401 / 429 / 超时 / 脏清单：静默。不记日志、不上报、不弹窗 ——
+      // 私有端点的存在性与令牌有效性都不该出现在任何可见面（#622 §安全）。
+    }
+  }
+  return fetchPublicManifest(signal, request)
 }
 
 export const loadManifest = async (

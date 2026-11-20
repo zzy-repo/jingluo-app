@@ -219,6 +219,46 @@ curl -sS -X POST http://127.0.0.1:8799/api/v1/release/private \
 公网清单里出现 internal 条目这件事，除了接口拒绝（写之前）和 `check:webroot-hygiene` 的 R4（写完之后的
 巡检）之外，还有 `scripts/validate-releases-manifest.mjs` 的公网口径（离线校验）拦一道 —— 三处同一份枚举。
 
+## 5d. 客户端读私有清单（Issue #622 —— #377「内测用户无法自动更新」的解法）
+
+服务端给了带令牌的读端点（#621），客户端那一半是 `src/services/updateManifest.ts`：
+**internal 变体优先读私有清单，任何失败静默回退公网 `releases.json`**。
+
+| 项 | 值 |
+| --- | --- |
+| 配置 | `config/endpoints.json` 的 `update.privateManifest`：`enabled`（默认 `false`）/ `url`（完整端点）/ `tokenEnv`（令牌来源的环境变量名，默认 `DL_PRIVATE_TOKEN`） |
+| 注入 | 构建期由 `rspack.config.ts` 的 `privateManifestInjection` 注入成 `__ENDPOINTS__.update.privateManifest`（`enabled` + `url` + `token`） |
+| 判据 | 请求条件是 **`enabled === true` 且本机变体是 `internal`**（`__INTERNAL_BUILD__`）；standard 包即使被误配成 `enabled:true` 也不请求 |
+| 令牌 | **只进 `X-DL-Token` 请求头**：不进 URL、不进日志、不进埋点（`updateManifest.ts` 不 import 诊断通道，`tests/unit/private-manifest-622.test.mjs` 有静态扫描断言） |
+| 回退 | 401 / 429 / 超时 / 网络 / 清单被写脏 → **静默回退公网**，不让整个检查失败；取消照常上抛 |
+| 解析 | 与公网清单**同一套 schema**：`parseManifest` + `selectUpdate`，没有第二份筛选逻辑（#484 的硬规矩） |
+
+**令牌随 internal 包分发到设备 —— 这是本设计的固有代价，不是疏忽。** 三条边界说明它的影响面：
+
+1. 令牌只进 **internal 产物**：`internalBuild=false` 时整段按 `enabled:false` 注入（`url` 与 `token` 都为空串），
+   public / standard 包里连私有端点地址都不出现（实测见 #622 的 PR：standard 产物里令牌与端点命中数都是 0）。
+2. 泄漏后的能力上限 = **读私有清单 + 下载 internal 包**，不含任何用户数据、不含发布能力
+   （写端点用的是同一枚令牌 —— 这是目前的**已知放大点**：拿到令牌的人也能发私有包，见 follow-up）。
+3. 令牌可以轮换，代价只是**重出 internal 包**（standard 包不受影响）。
+
+### 轮换令牌（读端点这一侧）
+
+```bash
+# 1) 主机上换令牌（与 §7 同一条命令）
+head -c 32 /dev/urandom | base64 | tr -d '\n=+/' | cut -c1-48 > /etc/dl-release/token
+chmod 600 /etc/dl-release/token && node --check /opt/dl-release/server.mjs && systemctl restart dl-release
+
+# 2) 本机出新的 internal 包（令牌只在构建环境里，不进仓库、不进 config/endpoints.json）
+DL_PRIVATE_TOKEN="$(ssh aliyun cat /etc/dl-release/token)" INTERNAL_BUILD=1 \
+  DIST_OUT=dist-internal node scripts/build.mjs --internal
+
+# 3) 按 docs/RELEASE-MANUAL.md §14 发这个 internal 包（写私有清单 + 私有根）
+#    —— 老 internal 包里的令牌此刻已经失效：它们会静默回退公网清单（不崩、不弹错，只是看不到内测版）
+```
+
+忘了给令牌就出内测包时，构建会直接中止（`update.privateManifest.enabled=true，但构建环境没有 DL_PRIVATE_TOKEN`），
+不会出一个「装了却永远静默走公网」的包。
+
 ## 6. 限流与日志
 
 - 限流：每 IP 每分钟 2 次（滑动窗口）。IP 取 Caddy 覆盖写入的 `X-Real-IP`，缺失时取 `X-Forwarded-For` **最右一跳**（客户端自带的 XFF 无法绕过）。
