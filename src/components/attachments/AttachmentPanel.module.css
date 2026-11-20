@@ -1,0 +1,147 @@
+/* 面板是 portal 到 body 的浮层，锚点本身零尺寸 */
+.anchor {
+  display: contents;
+}
+
+.panel {
+  position: fixed;
+  z-index: 900;
+  box-sizing: border-box;
+  width: 300px;
+  max-width: calc(100vw - 32px);
+  overflow-y: auto;
+  padding: 12px;
+  border-radius: 14px;
+  background-color: var(--dsw-specific-menu);
+  box-shadow: var(--dsw-shadow-lv3);
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--dsw-alias-label-primary);
+}
+
+.header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.title {
+  flex: 1;
+  min-width: 0;
+  /* 文件名可能很长：两行截断，别把面板撑成一条 */
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 500;
+  word-break: break-word;
+}
+
+.header button {
+  margin-left: 6px;
+}
+
+.meta {
+  margin-top: 2px;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-tertiary);
+  word-break: break-word;
+}
+
+.sectionTitle {
+  margin-top: 12px;
+  font-size: 12px;
+  line-height: 18px;
+  font-weight: 500;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.failure,
+.warnings {
+  margin-top: 2px;
+}
+
+.failureTitle {
+  margin-top: 4px;
+  color: var(--dsw-alias-state-error-primary);
+  word-break: break-word;
+}
+
+.raw {
+  margin-top: 6px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  background-color: var(--dsw-alias-bg-skeleton);
+  font-size: 11px;
+  line-height: 16px;
+  color: var(--dsw-alias-label-tertiary);
+  word-break: break-word;
+}
+
+.rawLabel {
+  display: block;
+  font-size: 11px;
+  color: var(--dsw-alias-label-caption);
+}
+
+.rawText {
+  display: block;
+  white-space: pre-wrap;
+}
+
+.warningList {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.warning {
+  display: flex;
+  align-items: flex-start;
+  margin-top: 6px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.warningIcon {
+  display: flex;
+  flex-shrink: 0;
+  height: 20px;
+  align-items: center;
+  margin-right: 6px;
+  color: var(--dsw-static-amber-500);
+}
+
+.warningText {
+  flex: 1;
+  min-width: 0;
+  word-break: break-word;
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  margin-top: 14px;
+}
+
+.action {
+  height: var(--ds-control-height-s);
+  min-width: 0;
+  padding: 0 12px;
+  font-size: 13px;
+  line-height: 18px;
+}
+
+/* Button 的 s 档没有给内联图标留位置：这里补一份，别用 gap（WebView 83 不支持 flex gap） */
+.action svg {
+  width: 14px;
+  height: 14px;
+  margin-right: 4px;
+}
+
+.remove {
+  margin-left: 8px;
+}

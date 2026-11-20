@@ -19,9 +19,19 @@ import {
   prepareDraftMessage,
   removeDraftAttachment,
   retryDraftAttachment,
+  setDraftDocuments,
   setDraftText,
   useDrafts,
 } from '../../services/chat/drafts.js'
+import { ATTACHMENT_LIMITS, SUPPORTED_EXTENSIONS } from '../../services/attachments/limits.js'
+import { docInjectionFor } from '../../services/attachments/providerCapability.js'
+import {
+  AttachmentList,
+  AttachmentPicker,
+  IconDocumentOutline16,
+  extensionOf,
+  useAttachmentDrafts,
+} from '../attachments/index.js'
 import { stopReadAloud } from '../../services/speech/readAloud.js'
 import { IconButton } from '../base/IconButton.js'
 import { Tooltip } from '../base/Tooltip.js'
@@ -47,7 +57,7 @@ export const ChatInput = memo(function ChatInput({ sessionId }: { sessionId: str
 const Input = ({ sessionId }: { sessionId: string | null }) => {
   const t = useTranslate()
   const draft = useDrafts((state) => state.drafts.get(sessionId) ?? EMPTY_DRAFT)
-  const { text, attachments } = draft
+  const { text, attachments, documents } = draft
   const setText = (value: string) => setDraftText(sessionId, value)
   const draftReady = useUploads((state) => prepareDraftMessage(draft, state.tasks) !== null)
   const streaming = useChatStore(
@@ -60,7 +70,15 @@ const Input = ({ sessionId }: { sessionId: string | null }) => {
   // 回车键行为（issue #108）：默认 enter-send 等于改造前的写死行为
   const enterKeyMode = useSettings((state) => state.enterKeyMode)
   // 能力开关来自当前服务类型的 spec：不支持的入口直接不渲染
-  const caps = getSpec(useApiConfig((state) => state.kind)).caps
+  const kind = useApiConfig((state) => state.kind)
+  const caps = getSpec(kind).caps
+  /**
+   * 文档附件入口是否可用（#480 §7）：只有走**文本注入**的渠道（anthropic / openai / ours）
+   * 才有意义。DeepSeek 官方是原生 `file_id` 通道（`textInjection: false`），而本仓库没有
+   * 文档上传链路 —— 在那里挂一个「能选、选了也没用」的入口就是本单最忌讳的
+   * 「看得见但用不了」。不满足时入口仍然渲染，但点下去给明确提示（与图片入口同一套做法）。
+   */
+  const canAttachDocs = docInjectionFor(kind).textInjection
   /**
    * 附件入口是否真的可用：既要渠道声明了 vision 能力，也要它**显式声明了 Files API 端点**
    * （`spec.paths.files`）。只有 caps.vision 是不够的——以前就是拿 messages 前缀拼出
@@ -71,6 +89,35 @@ const Input = ({ sessionId }: { sessionId: string | null }) => {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const togglesRef = useRef<HTMLDivElement>(null)
+  /**
+   * 文档附件（#480 / #527）：`addFile → parse（后台，带进度） → 卡片`，状态机在 manager。
+   * 数量上限取 `ATTACHMENT_LIMITS.maxFilesPerMessage`（超出逐条提示，不静默丢弃）。
+   */
+  const docDrafts = useAttachmentDrafts({
+    maxFiles: ATTACHMENT_LIMITS.maxFilesPerMessage,
+    restoreIds: documents.map((item) => item.id),
+  })
+  /**
+   * 把「已就绪」的文档同步进草稿存储：`sendMessage()` 只读草稿，所以附件引用必须在发送前
+   * 就落到 `drafts.documents` 上。解析中 / 失败 / 已取消的卡片留在输入区，但不进消息。
+   */
+  const readyDocs = docDrafts.attachments.filter(
+    (view) => view.status === 'success' || view.status === 'partial'
+  )
+  const readyDocKey = readyDocs.map((view) => view.id).join('|')
+  useEffect(() => {
+    setDraftDocuments(
+      sessionId,
+      readyDocs.map((view) => ({
+        id: view.id,
+        name: view.filename,
+        size: view.size,
+        // MIME 只用于展示与去重指纹，文档的权威类型在 manager 的记录里
+        mimeType: '',
+      }))
+    )
+    // 依赖落在 id 串上：视图对象每次渲染都是新的，直接依赖数组会无限触发同步
+  }, [readyDocKey, sessionId])
 
   useLayoutEffect(() => {
     const toggles = togglesRef.current
@@ -93,6 +140,26 @@ const Input = ({ sessionId }: { sessionId: string | null }) => {
     if (files.length === 0) {
       return
     }
+    // 拖入 / 粘贴的文件按扩展名分流：文档走 manager（#480），其余仍走原来的上传链路。
+    // 两条线各自「不合格就明说」，不互相吞掉（分成两批也不会把图片报成「不支持的文档类型」）。
+    const docFiles = files.filter((file) =>
+      (SUPPORTED_EXTENSIONS as readonly string[]).includes(extensionOf(file.name))
+    )
+    const uploads = files.filter((file) => docFiles.indexOf(file) < 0)
+    if (docFiles.length > 0) {
+      if (canAttachDocs) {
+        docDrafts.addFiles(docFiles)
+      } else {
+        showToast({ key: 'attachChannelUnsupported' })
+      }
+    }
+    if (uploads.length === 0) {
+      return
+    }
+    acceptUploadFiles(uploads)
+  }
+
+  const acceptUploadFiles = (files: File[]) => {
     if (!canAttach) {
       // 拖拽 / 粘贴进来的文件同样要说清为什么不收：静默忽略会让用户以为界面卡住
       showToast({ key: 'uploadChannelUnsupported' })
@@ -153,7 +220,8 @@ const Input = ({ sessionId }: { sessionId: string | null }) => {
   const recording = voice.status === 'recording'
 
   // 排队、上传中或上传失败的附件都留在输入框，全部上传成功后才能发送
-  const canSend = !importingHistory && !streaming && voice.status === 'idle' && draftReady
+  const canSend =
+    !importingHistory && !streaming && voice.status === 'idle' && draftReady && !docDrafts.busy
 
   const send = () => {
     if (
@@ -167,6 +235,9 @@ const Input = ({ sessionId }: { sessionId: string | null }) => {
     if (!ensureApiKey() || !sendMessage(sessionId)) {
       return
     }
+    // 引用已经挂到消息上（store 的 sendMessage 读的是草稿），输入区的卡片到此清空；
+    // manager 里的记录不动 —— 消息还引用着它们，回收由删除消息 / 会话后的 sweep 负责。
+    docDrafts.clear()
     stopReadAloud()
     if (isMobile) {
       textareaRef.current?.blur()
@@ -185,6 +256,15 @@ const Input = ({ sessionId }: { sessionId: string | null }) => {
       }}
     >
       <DraftAttachments items={attachments} onRetry={retryFile} onRemove={removeFile} />
+      {/* 文档附件卡片：五态 + 解析进度 + 取消 / 重试 / 移除（只展示元信息，不展示正文） */}
+      <AttachmentList
+        attachments={docDrafts.attachments}
+        variant="draft"
+        className={styles.docAttachments}
+        onCancel={docDrafts.cancel}
+        onRetry={docDrafts.retry}
+        onRemove={docDrafts.remove}
+      />
       <div className={styles.textareaWrapper}>
         <textarea
           ref={textareaRef}
@@ -283,6 +363,24 @@ const Input = ({ sessionId }: { sessionId: string | null }) => {
               }}
             />
           ) : null}
+          {canAttachDocs ? (
+            <AttachmentPicker
+              onFiles={docDrafts.addFiles}
+              disabled={importingHistory}
+              icon={<IconDocumentOutline16 />}
+            />
+          ) : (
+            <IconButton
+              size="m"
+              tone="primary"
+              className={styles.unavailableEntry}
+              icon={<IconDocumentOutline16 />}
+              tooltip={t('attachChannelUnsupported')}
+              aria-disabled="true"
+              disabled={importingHistory}
+              onClick={() => showToast({ key: 'attachChannelUnsupported' })}
+            />
+          )}
           <IconButton
             size="m"
             tone="primary"

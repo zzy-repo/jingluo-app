@@ -921,7 +921,9 @@ export const sendMessage = (targetSessionId: string | null) => {
   if (!prepared) {
     return false
   }
-  const { text, files } = prepared
+  // `documents`：文档附件引用（#480 / #527）。它们没有 blob、也没有 serverId ——
+  // 原件与解析全文在 AttachmentManager 里，消息只存 id。
+  const { text, files, documents } = prepared
   // 关键业务动作：只记字符数、附件数与本轮模式，正文绝不进日志
   // （模式进日志是为了 issue #25 的取证口径：用户反馈「专家模式和快速没区别」时能直接对上）
   recordAction('chat_send', 'send-message', {
@@ -971,14 +973,20 @@ export const sendMessage = (targetSessionId: string | null) => {
     id: createId(),
     role: 'user',
     content: text,
-    files: files.map(({ id, serverId, name, size, isImage, mimeType }) => ({
-      id,
-      serverId,
-      name,
-      size,
-      isImage,
-      mimeType,
-    })),
+    files: [
+      ...files.map(({ id, serverId, name, size, isImage, mimeType }) => ({
+        id,
+        serverId,
+        name,
+        size,
+        isImage,
+        mimeType,
+      })),
+      // 文档附件带 `att-` 前缀的 id，`isImage: false`、`serverId: null`：
+      // 请求侧按「非图片 files[].id」收引用（attachments/requestDocs.ts），
+      // 孤儿清扫也按它认引用（attachments/manager.ts 的 collectReferencedAttachmentIds）。
+      ...documents,
+    ],
     createdAt: now,
   }
   const reply = createReply()
@@ -986,6 +994,7 @@ export const sendMessage = (targetSessionId: string | null) => {
     ...appendBranch(session, history.at(-1)?.id ?? null, [question, reply]),
     updatedAt: now,
   }))
+  // 只登记真正有原件的上传件；文档附件的原件归 manager，不进 files 表
   if (files.length > 0) {
     pendingFiles.set(sessionId, [
       ...(pendingFiles.get(sessionId) ?? []),

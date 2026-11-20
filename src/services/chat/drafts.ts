@@ -19,9 +19,27 @@ export type DraftAttachment = {
   previewUrl: string | null
 }
 
-type Draft = { text: string; attachments: DraftAttachment[] }
+/**
+ * 已就绪的**文档附件引用**（#480 / #527 接线）。
+ *
+ * 文档附件不走上传：原件与解析全文都在 `AttachmentManager`（IndexedDB），消息里只需要
+ * 一个 id 引用。所以它不是 `DraftAttachment`（那个类型带 `File` + 上传任务），单独一个数组，
+ * 发送时由 `prepareDraftMessage()` 折成 `FileAttachment`（`serverId: null`、`isImage: false`）——
+ * 与 `attachments/manager.ts` 的 `collectReferencedAttachmentIds()`
+ * （「消息里的文档附件以 `UserMessage.files[].id` 的形式被引用」）和请求侧
+ * （`attachments/requestDocs.ts` 把非图片 `files[].id` 转成 `ChatAttachmentRef`）同一口径。
+ */
+export type DraftDocument = {
+  /** `DocumentAttachment.id`（`att-` 前缀），消息里存的就是它 */
+  id: string
+  name: string
+  size: number
+  mimeType: string
+}
 
-export const EMPTY_DRAFT: Draft = { text: '', attachments: [] }
+type Draft = { text: string; attachments: DraftAttachment[]; documents: DraftDocument[] }
+
+export const EMPTY_DRAFT: Draft = { text: '', attachments: [], documents: [] }
 
 /** 草稿只保存在本次页面的内存中，独立于会话详情缓存；null 是新对话的草稿。 */
 export const useDrafts = create<{ drafts: Map<string | null, Draft> }>(() => ({
@@ -35,7 +53,7 @@ const updateDraft = (sessionId: string | null, update: (draft: Draft) => Draft) 
   useDrafts.setState((state) => {
     const draft = update(state.drafts.get(sessionId) ?? EMPTY_DRAFT)
     const drafts = new Map(state.drafts)
-    if (draft.text || draft.attachments.length > 0) {
+    if (draft.text || draft.attachments.length > 0 || draft.documents.length > 0) {
       drafts.set(sessionId, draft)
     } else {
       drafts.delete(sessionId)
@@ -98,7 +116,7 @@ export const retryDraftAttachment = (
 /** 发送按钮和实际提交共用规则：有内容，且全部附件已上传成功。 */
 export const prepareDraftMessage = (draft: Draft, tasks: Record<string, UploadTask>) => {
   const text = draft.text.trim()
-  if (!text && draft.attachments.length === 0) {
+  if (!text && draft.attachments.length === 0 && draft.documents.length === 0) {
     return null
   }
   const files: (FileAttachment & { serverId: string; blob: Blob })[] = []
@@ -117,7 +135,21 @@ export const prepareDraftMessage = (draft: Draft, tasks: Record<string, UploadTa
       blob: attachment.file,
     })
   }
-  return { text, files }
+  /**
+   * 文档附件引用（#480）：`serverId: null` + 无 blob。
+   * - 不给 `serverId` → `reply.ts` 的 `toFileBlocks()` 自然排除它，不会拼出 `file_id` 块；
+   * - 不进 `pendingFiles`（发送处只收 `files` 里带 blob 的那些）→ 永远不会被当成图片补传；
+   * - 但仍挂在 `UserMessage.files` 上：请求侧与孤儿清扫都按这个字段认出「这条消息引用了哪份文档」。
+   */
+  const documents: FileAttachment[] = draft.documents.map((item) => ({
+    id: item.id,
+    serverId: null,
+    name: item.name,
+    size: item.size,
+    isImage: false,
+    mimeType: item.mimeType,
+  }))
+  return { text, files, documents }
 }
 
 const releaseAttachment = (attachment: DraftAttachment, cancel: boolean) => {
@@ -139,6 +171,24 @@ export const removeDraftAttachment = (sessionId: string | null, attachmentId: st
     ...draft,
     attachments: draft.attachments.filter((item) => item.id !== attachmentId),
   }))
+}
+
+/**
+ * 输入区已就绪的文档附件列表整体同步（#527）。
+ *
+ * 由 `ChatInput` 在 `useAttachmentDrafts().attachments` 变化时调用：只有 `success` / `partial`
+ * 的附件才进这里（解析中 / 失败 / 取消的卡片留在输入区，但不进消息）。
+ * 整体覆盖而不是增量：输入区的卡片列表本来就是唯一权威，增量同步迟早对不上。
+ */
+export const setDraftDocuments = (sessionId: string | null, documents: DraftDocument[]) => {
+  const current = getDraft(sessionId).documents
+  const same =
+    current.length === documents.length &&
+    current.every((item, index) => item.id === documents[index].id)
+  if (same) {
+    return
+  }
+  updateDraft(sessionId, (draft) => ({ ...draft, documents }))
 }
 
 /** 发送成功后原件与 serverId 已交给会话，释放预览但保留上传完成态。 */

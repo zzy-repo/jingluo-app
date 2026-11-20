@@ -1,0 +1,232 @@
+/* 卡片：输入区与消息内同一套尺寸（240px），360px 视口下也放得下且不横向溢出 */
+.card {
+  position: relative;
+  display: flex;
+  align-items: center;
+  box-sizing: border-box;
+  width: 240px;
+  max-width: 100%;
+  min-height: 64px;
+  margin: 0 10px 10px 0;
+  padding: 8px 8px 8px 12px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 16px;
+  background-color: var(--dsw-specific-input-major);
+  transition: background-color var(--ds-transition-duration) var(--ds-ease-in-out);
+}
+
+.message {
+  background-color: transparent;
+}
+
+.opened {
+  background-color: var(--dsw-alias-interactive-bg-hover);
+}
+
+/* ---- 五态视觉差异 ---- */
+
+/* 等待：虚线 + 中性文案，一眼看出「还没开始」 */
+.pending {
+  border-style: dashed;
+
+  .status {
+    color: var(--dsw-alias-label-tertiary);
+  }
+}
+
+/* 解析中：进度条 + 取消按钮（进度条本体在 .progress） */
+.parsing {
+  .status {
+    color: var(--dsw-alias-brand-text);
+  }
+}
+
+/* 就绪：绿色状态文案 */
+.success {
+  .status {
+    color: var(--dsw-static-green-500);
+  }
+}
+
+/* 部分成功：琥珀色描边 + 右上角警告角标 */
+.partial {
+  border-color: var(--dsw-static-amber-500);
+
+  .status {
+    color: var(--dsw-static-amber-600);
+  }
+}
+
+/* 失败：红色描边 + 红色状态文案，点开看原因 */
+.failed {
+  border-color: var(--dsw-alias-state-error-primary);
+
+  .status {
+    color: var(--dsw-alias-state-error-primary);
+  }
+}
+
+/* 取消：与 pending 同一套中性虚线，不制造第二个「错误」 */
+.cancelled {
+  border-style: dashed;
+
+  .status {
+    color: var(--dsw-alias-label-tertiary);
+  }
+}
+
+/* 点卡片的整块热区（a11y：真 button，键盘可达） */
+.open {
+  display: flex;
+  align-items: center;
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  border: none;
+  background-color: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  outline: none;
+
+  /* #215：Chromium 83 不认 :focus-visible，`&:focus` 是低内核兜底；后两条在现代内核把鼠标态收回 */
+  &:focus {
+    box-shadow: 0 0 0 2px var(--dsw-alias-button-primary-fill);
+    border-radius: 12px;
+  }
+
+  &:focus:not(:focus-visible) {
+    box-shadow: none;
+  }
+
+  &:focus-visible {
+    box-shadow: 0 0 0 2px var(--dsw-alias-button-primary-fill);
+    border-radius: 12px;
+  }
+}
+
+.icon {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  margin-right: 10px;
+}
+
+.body {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+
+.filename {
+  overflow: hidden;
+  font-size: 14px;
+  line-height: 20px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--dsw-alias-label-primary);
+}
+
+.meta {
+  overflow: hidden;
+  font-size: 12px;
+  line-height: 16px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.status {
+  overflow: hidden;
+  font-size: 12px;
+  line-height: 16px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.progress {
+  display: block;
+  height: 2px;
+  margin-top: 5px;
+  border-radius: 1px;
+  background-color: var(--dsw-alias-border-l2);
+  overflow: hidden;
+}
+
+.progressBar {
+  display: block;
+  height: 2px;
+  max-width: 100%;
+  border-radius: 1px;
+  background-color: var(--dsw-alias-brand-primary);
+  transition: width 120ms linear;
+}
+
+/* 没有页数信息时（TXT / DOCX 的阶段进度）走不确定态：一条来回滑的进度块 */
+.progressIndeterminate {
+  width: 40%;
+  animation: attach-progress-slide 1.2s ease-in-out infinite;
+}
+
+@keyframes attach-progress-slide {
+  0% {
+    transform: translateX(-100%);
+  }
+
+  100% {
+    transform: translateX(250%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .progressBar {
+    transition: none;
+  }
+
+  .progressIndeterminate {
+    width: 100%;
+    animation: none;
+  }
+}
+
+/* 右上角黄色警告角标：负偏移 6px，靠列表的 padding 收进可视区，不会造成横向溢出 */
+.warnCorner {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  display: flex;
+  align-items: center;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background-color: var(--dsw-static-amber-500);
+  color: var(--dsw-static-neutral-bluish-00);
+  font-size: 11px;
+  line-height: 16px;
+  font-weight: 500;
+  pointer-events: none;
+}
+
+.warnCorner svg {
+  width: 10px;
+  height: 10px;
+  margin-right: 1px;
+}
+
+.warnCount {
+  display: block;
+}
+
+.actions {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  margin-left: 4px;
+}
+
+.actions > *:not(:first-child) {
+  margin-left: 2px;
+}

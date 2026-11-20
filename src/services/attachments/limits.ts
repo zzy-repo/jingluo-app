@@ -25,6 +25,15 @@ export const ATTACHMENT_LIMITS = {
    */
   minInjectableChars: 200,
 
+  /**
+   * 单条消息最多带几个文档附件（#527 接线时追加，只追加不改既有值）。
+   *
+   * 为什么要有这个数：UI 的 `maxFiles` 原先缺省是 `undefined`（= 不限），用户一次选 50 个
+   * 文件就会同时起 50 路解析；超出时必须**明确拒绝并提示**（`attachPickTooMany`），不许静默丢弃。
+   * 10 是「输入区一屏放得下、单轮注入预算还够分摊」的量级，不是协议上限。
+   */
+  maxFilesPerMessage: 10,
+
   /** DOCX 解压防护 */
   maxZipEntries: 2000,
   maxZipUncompressedBytes: 100 * 1024 * 1024,
