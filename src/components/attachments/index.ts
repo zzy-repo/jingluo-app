@@ -3,7 +3,8 @@
  *
  * 组件（输入区 / 消息内复用同一张卡片）：
  *  - `AttachmentPicker`        选择入口（多选、只列 .txt/.docx/.pdf、非法类型明确拒绝）
- *  - `AttachmentCard`          单张卡片（五态 / 进度 / 取消 / 警告角标 / 失败红）
+ *  - `AttachmentCard`          单张卡片（五态 / 进度 / 取消 / 警告角标 / 失败红）——
+ *                              外观复用 `files/FileCard`，不另建一套卡片
  *  - `AttachmentList`          卡片列表（`draft` 输入区 / `message` 消息内）
  *  - `AttachmentPanel`         点击卡片弹出的详情小面板（warnings / 失败原因 / 移除）
  *  - `MessageAttachments`      消息里按 id 取元信息后渲染卡片
@@ -13,11 +14,9 @@
  *  - `setAttachmentService()`  注入 `AttachmentManager`（manager 合入 base 后调用一次，见文件内 TODO）
  *  - `sweepOrphanAttachmentsAfterDelete()`  删除消息 / 会话后的清理收尾
  */
-export { AttachmentCard, type AttachmentCardHandlers } from './AttachmentCard.js'
-export { AttachmentList } from './AttachmentList.js'
+export { AttachmentCard, AttachmentList, type AttachmentCardHandlers } from './AttachmentCard.js'
 export { AttachmentPanel } from './AttachmentPanel.js'
 export { AttachmentPicker } from './AttachmentPicker.js'
-export { AttachmentTypeIcon, IconDocumentOutline16 } from './AttachmentTypeIcon.js'
 export { MessageAttachments } from './MessageAttachments.js'
 export {
   ACCEPT_DOCUMENTS,
@@ -45,7 +44,6 @@ export {
 export {
   attachmentWarnings,
   failureOf,
-  metaLine,
   parsePercent,
   stageLabel,
   statusLine,

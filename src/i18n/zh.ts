@@ -1182,7 +1182,6 @@ export const zh = {
   attachRemoveFailed: '移除附件失败，请重试',
   // 详情小面板
   attachOpenDetail: '查看附件详情',
-  attachCloseDetail: '关闭附件详情',
   attachDetailWarnings: '警告（{count} 条）',
   attachDetailFailure: '失败原因',
   attachDetailCharacters: '{chars} 字符 · 约 {tokens} tokens',

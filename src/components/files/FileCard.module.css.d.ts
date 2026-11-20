@@ -2,6 +2,7 @@ declare const styles: {
   readonly "card": string;
   readonly "remove": string;
   readonly "clickable": string;
+  readonly "activatable": string;
   readonly "editable": string;
   readonly "failed": string;
   readonly "icon": string;
@@ -11,7 +12,17 @@ declare const styles: {
   readonly "content": string;
   readonly "caption": string;
   readonly "subCaption": string;
+  readonly "statusText": string;
+  readonly "pending": string;
+  readonly "cancelled": string;
+  readonly "parsing": string;
+  readonly "done": string;
+  readonly "partial": string;
+  readonly "progress": string;
+  readonly "progressBar": string;
+  readonly "progressIndeterminate": string;
+  readonly "fileCardProgressSlide": string;
+  readonly "actions": string;
   readonly "invalidRemove": string;
 };
 export = styles;
-

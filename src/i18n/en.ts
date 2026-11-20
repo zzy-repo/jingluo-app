@@ -1187,7 +1187,6 @@ export const en = {
   attachRemoveFailed: 'Could not remove the attachment. Try again',
   // Detail panel
   attachOpenDetail: 'View attachment details',
-  attachCloseDetail: 'Close attachment details',
   attachDetailWarnings: 'Warnings ({count})',
   attachDetailFailure: 'Why it failed',
   attachDetailCharacters: '{chars} characters · about {tokens} tokens',

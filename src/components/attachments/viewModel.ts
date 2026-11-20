@@ -8,7 +8,6 @@
 import type { TranslationKey, TranslationParams } from '../../i18n/index.js'
 import type { AttachmentStatus, DocumentAttachment } from '../../services/attachments/types.js'
 import type { AttachmentErrorReason } from './attachmentService.js'
-import { extensionOf } from './attachmentService.js'
 
 /**
  * 卡片上的状态 = 服务层五态 + UI 独有的 `cancelled`。
@@ -25,8 +24,6 @@ export type AttachmentProgress = { page?: number; totalPages?: number; stage: st
 export type AttachmentView = {
   id: string
   filename: string
-  /** 大写扩展名（PDF / DOCX / TXT），决定类型图标 */
-  extension: string
   size: number
   status: AttachmentViewStatus
   /** 仅在 `parsing` 时有值 */
@@ -62,7 +59,6 @@ export const toAttachmentView = (
   const view: AttachmentView = {
     id: attachment.id,
     filename: attachment.filename,
-    extension: extensionOf(attachment.filename).replace('.', '').toUpperCase(),
     size: attachment.size,
     status: extra?.status ?? attachment.status,
     progress: extra?.progress ?? null,
@@ -194,12 +190,6 @@ export const failureOf = (view: AttachmentView, t: Translate): { title: string; 
     result.raw = raw
   }
   return result
-}
-
-/** 卡片副标题：`PDF · 2.4 MB` —— 类型与大小始终在，符合「文件名、大小、类型图标」三条 */
-export const metaLine = (view: AttachmentView, formatBytes: (bytes: number) => string): string => {
-  const parts = [view.extension, formatBytes(view.size)]
-  return parts.filter((part) => part !== '').join(' · ')
 }
 
 /** 状态文案（卡片第二行）：五态 + 取消，逐态不同 */

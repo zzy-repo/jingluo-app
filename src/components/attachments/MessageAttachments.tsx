@@ -9,9 +9,9 @@
 import { useEffect, useState } from 'react'
 import { useTranslate } from '../../i18n/index.js'
 import { getAttachmentService } from './attachmentService.js'
-import { AttachmentList } from './AttachmentList.js'
+import { AttachmentList } from './AttachmentCard.js'
 import { toAttachmentView, type AttachmentView } from './viewModel.js'
-import styles from './MessageAttachments.module.css'
+import styles from './Attachments.module.css'
 
 type Loaded = {
   key: string
