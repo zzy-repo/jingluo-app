@@ -116,6 +116,7 @@ node scripts/shot-mobile.mjs \
 | `480-attach-failed` | `failed`：红描边 + 失败原因 + 重新解析（点一次真的再跑一遍） | 3 |
 | `480-attach-in-message` | 消息内卡片（只元信息、无正文）+ 详情面板仍只有元信息 | 3 |
 
-产物：`docs/ui/480-attachments/{390,360}/480-attach-*.png`；量数在同目录 `metrics-480-attach-*.json`，
-汇总在 `metrics.json`（顶层 `overflowCount`，两档都是 0）。验收结论与未覆盖项见
+产物：`docs/ui/480-attachments/{390,360}/480-attach-*.png`（每档 15 张，两档共 30 张）；量数在同目录
+`metrics-480-attach-*.json`（每场景一份），**每档目录各有一份汇总** `390/metrics.json` / `360/metrics.json`
+（顶层 `overflowCount`，两档实测都是 0；本目录（两档的上一层）**没有**汇总文件，别去找它）。验收结论与未覆盖项见
 [`docs/testing/acceptance-480.md`](../../testing/acceptance-480.md)。

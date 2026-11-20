@@ -61,6 +61,7 @@
     "test:regression": "node tests/run-layer.mjs regression",
     "test:e2e": "node tests/run-layer.mjs e2e",
     "test:device": "node tests/run-layer.mjs device",
+    "test:doc": "node --test --import ./tests/helpers/injected.mjs tests/unit/txt-parser-480.test.mjs tests/unit/docx-parser-480.test.mjs tests/unit/pdf-parser-480.test.mjs tests/unit/pdf-parser-partial-480.test.mjs tests/unit/attachment-character-count-480.test.mjs tests/unit/attachment-context-builder-480.test.mjs tests/unit/attachment-doc-wiring-480.test.mjs tests/unit/attachment-store-572.test.mjs tests/unit/attachment-preserve-import-531.test.mjs tests/unit/export-selected-native-536.test.mjs",
     "test:golden": "node tests/run-golden.mjs",
     "test:all": "npm run test && npm run test:regression && npm run test:integration",
     "test:which": "node tests/which.mjs",
