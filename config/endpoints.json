@@ -2,22 +2,38 @@
   "chatBaseUrl": "http://140.210.13.146:60010",
   "inviteBaseUrl": "http://140.210.13.146:60013",
   "feedbackUrl": "http://140.210.13.146:60012/feedback",
-  "legacyHosts": ["123.207.199.196", "62.106.70.167"],
-  "allowedHosts": ["140.210.13.146"],
-  "allowedPorts": [60010, 60012, 60013],
+  "legacyHosts": [
+    "123.207.199.196",
+    "62.106.70.167"
+  ],
+  "allowedHosts": [
+    "140.210.13.146"
+  ],
+  "allowedPorts": [
+    60010,
+    60012,
+    60013
+  ],
   "download": {
     "primaryBase": "http://62.106.70.167:8888",
     "fallbackBase": "https://dl.rose7.cn"
   },
   "consume": {
-    "baseUrl": "http://127.0.0.1:18000",
+    "baseUrl": "https://sub2api.rose7.cn",
     "apiV1Prefix": "/api/v1",
     "gatewayPrefix": "/v1",
-    "timeoutMs": { "read": 10000, "write": 20000, "redeem": 30000 }
+    "timeoutMs": {
+      "read": 10000,
+      "write": 20000,
+      "redeem": 30000
+    }
   },
   "pay": {
     "baseUrl": "https://apia.ecsafe.cn",
-    "timeoutMs": { "read": 10000, "write": 20000 }
+    "timeoutMs": {
+      "read": 10000,
+      "write": 20000
+    }
   },
   "migration": {
     "enabled": false,
