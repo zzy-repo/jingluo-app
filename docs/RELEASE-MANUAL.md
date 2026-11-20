@@ -366,6 +366,7 @@ adb logcat -d | tail -50
 | GitHub Release | `gh release delete v<ver> --repo zzy-repo/deepseek-app --yes`（或先改 draft 下架） |
 | tag | 先删 Release 再删 tag：`git push origin :refs/tags/v<ver>` + `git tag -d v<ver>`；**不 force 改已有 tag** |
 | 发布 commit | `git revert <commit>`；仓库有并行改动，**禁止 `git reset --hard`** |
+| 发布服务端（`server.mjs` / `variant.mjs`） | 用 §12.2 第 1 步的备份盖回去再重启，回滚后照样要过 §12.3 的三方 sha256 比对（见 §12.4） |
 
 ---
 
@@ -476,7 +477,127 @@ npm run test:e2e         # e2e（含真实上游用例，需要 E2E_API_KEY）
 
 ---
 
-## 12. 本清单不管的事（未覆盖）
+## 12. 改过发布服务端之后：部署后必须三方 sha256 一致（Issue #441）
+
+只发 APK 不需要这一节。**改的是发布服务端本体**（`deploy/dl-release/server.mjs`，连带同目录的
+`variant.mjs` / `apk-manifest.mjs`）才走这一节：它不在 CI 产物里、没有版本号、靠人手 `scp` 上去，
+所以「部署成功」必须有它自己的证据，而不是看服务是不是 active。
+
+### 12.1 为什么定成硬要求
+
+2026-11-20 的实况：线上 `/opt/dl-release/server.mjs` **566 行**、仓库 main **585 行**，差了 19 行，
+门禁失效一个多月没人发现 —— 期间所有上传都跑在一份没人审过的代码上。当时"部署成功"的判据只有
+`systemctl is-active dl-release`：服务活着，但跑的是谁审过的版本，没人能回答。
+
+现在服务端自己回答：`GET /api/v1/version`（**免令牌**，只回非敏感信息）
+
+```json
+{ "ok": true,
+  "sha256": "<server.mjs 自身内容的 sha256，启动时算一次并缓存>",
+  "builtAt": "<进程启动时间，ISO 8601>",
+  "nodeVersion": "v24.x",
+  "variants": ["internal", "standard"],
+  "buildTypes": ["stable", "prerelease"] }
+```
+
+两个容易看错的点：
+
+- `sha256` 是**启动那一刻**读到的字节，不是每请求重读文件 —— 于是「文件换了但重启没成功」不会被它掩盖
+  （进程还在报旧指纹，正对上表第 1 行）。
+- `builtAt` 是**进程启动时刻**，不是构建时刻；重启过、回滚过，它就该变。
+
+### 12.2 上线步骤（备份 → 同步 → 语法检查 → 重启 → 验收）
+
+```bash
+# 0) 本机先过语法与用例（不碰线上）
+node --check deploy/dl-release/server.mjs
+pnpm run test:dl-release
+
+# 1) 备份（带时间戳 —— 回滚就靠这个文件）
+ssh aliyun 'mkdir -p /root/dl-release-backups && cp -a /opt/dl-release/server.mjs /root/dl-release-backups/server.mjs.$(date +%Y%m%d-%H%M%S)'
+
+# 2) 同步（server.mjs import 同目录的 variant.mjs / apk-manifest.mjs，改了哪个传哪个，两个以上一起传）
+scp deploy/dl-release/server.mjs aliyun:/opt/dl-release/
+
+# 3) 语法检查 + 重启（check 不过就不重启）
+ssh aliyun 'node --check /opt/dl-release/server.mjs && systemctl restart dl-release && sleep 1 && systemctl is-active dl-release'
+
+# 4) Caddy：只有**新增**了 API 路径才需要动。片段见 deploy/dl-release/caddy-dl-api.conf，
+#    @api 必须同时匹配 /api/v1/release 与 /api/v1/version；validate 通过再 reload，禁止 restart。
+```
+
+#### ⚠️ 部署布局是写死的：`/shared/build-types.mjs` 必须存在（#441 第 3 条）
+
+`server.mjs` 里有一句 `import ... from '../../shared/build-types.mjs'`（buildType 枚举的单一真相源，见 #330）。
+从 `/opt/dl-release/server.mjs` 解析两个 `..` → **`/shared/build-types.mjs`**（Node 实算，不是
+`/opt/shared/`，也不是 `deploy/dl-release/shared/`）。**这一步漏了，服务起来就 `ERR_MODULE_NOT_FOUND` 直接崩**，
+而它不会在 `systemctl status` 里说人话，只会在 `journalctl` 里留下一行栈。
+
+所以目标机器上必须有 `/shared/`，且内容与仓库逐字节一致（`variant.mjs` / `apk-manifest.mjs` 则在
+`/opt/dl-release/`，同目录）：
+
+```bash
+# 首次布置（缺 /shared 时）
+ssh aliyun 'install -d -m 755 /shared'
+scp shared/build-types.mjs shared/build-types.d.mts aliyun:/shared/
+
+# 两边内容必须逐字节一致（部署验收的一环）
+ssh aliyun 'sha256sum /shared/build-types.mjs /opt/dl-release/server.mjs /opt/dl-release/variant.mjs /opt/dl-release/apk-manifest.mjs'
+sha256sum shared/build-types.mjs deploy/dl-release/server.mjs deploy/dl-release/variant.mjs deploy/dl-release/apk-manifest.mjs
+```
+
+### 12.3 验收：三方 sha256 必须一致（缺一不可）
+
+```bash
+# ① 线上文件到底是谁
+ssh aliyun 'sha256sum /opt/dl-release/server.mjs'
+# ② 仓库 main 上应该是什么
+git show origin/main:deploy/dl-release/server.mjs | sha256sum
+# ③ 正在跑的进程自报是什么（走公网、不带令牌，顺便验反代通了）
+curl -s https://dl.rose7.cn/api/v1/version | python3 -m json.tool
+```
+
+**三个 sha256 完全相同才算部署成功。** 不一致就按下表分诊，别"看着像好了"就收工：
+
+| 现象 | 含义 | 动作 |
+| --- | --- | --- |
+| ① == ②，③ 不同 | 文件传对了，但**进程没重启成功**或在跑旧进程 | `systemctl restart dl-release` 后重新验收 |
+| ① != ② | 传上去的本来就不是仓库那份 | 重传；先 `git status` 确认本地没夹带未合并改动 |
+| ③ 是 404 / 502 | 反代没匹配到新路径，或服务没起来 | 查 `@api path` 是否含 `/api/v1/version`；`journalctl -u dl-release -n 50 --no-pager` |
+| ③ 回的不是 JSON | 命中静态文件（`/var/www/dl` 下同名路径）或服务异常 | 同上；必要时回滚 |
+
+同一次验收里再确认两件事（都很便宜，但都能挡住事故）：
+
+```bash
+# 免令牌只针对版本端点：上传仍然必须 401
+curl -s -o /dev/null -w '%{http_code}\n' -X POST https://dl.rose7.cn/api/v1/release
+
+# 部署服务端不该碰任何数据：releases.json 的 sha256 前后必须不变
+ssh aliyun 'sha256sum /var/www/dl/releases.json'     # 部署前记一次，部署后再比一次
+```
+
+另外，`/shared/build-types.mjs` 与 `/opt/dl-release/{variant,apk-manifest}.mjs` 也要和仓库逐字节一致
+（同一台机器上四个文件的 sha256 一起比，见 §12.2 末尾那条命令）—— 服务能起来只证明文件存在，
+不证明它是仓库那份。
+
+事后翻日志也能对上「那段时间跑的是哪一版」：
+
+```bash
+ssh aliyun 'journalctl -u dl-release --no-pager | grep version_fingerprint'
+```
+
+### 12.4 起不来就立刻回滚（不要在线调试）
+
+```bash
+ssh aliyun 'cp -a /root/dl-release-backups/server.mjs.<时间戳> /opt/dl-release/server.mjs \
+  && node --check /opt/dl-release/server.mjs && systemctl restart dl-release && systemctl is-active dl-release'
+```
+
+回滚完再走一遍 12.3 的三方比对 —— 回滚本身也要有证据，`builtAt` 必须变。
+
+---
+
+## 13. 本清单不管的事（未覆盖）
 
 - 不自动算 `versionCode`（不读线上 `releases.json` 做 `max(本地,远端)+1`）——手动看一眼线上 latest 再填，§2 有命令。
 - 不自动写 `CHANGELOG.md`、不自动生成 Release notes（notes 由 workflow 从 `releases.json` 的 `changes` 生成，所以 `changes` 要写人话）。

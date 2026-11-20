@@ -26,7 +26,7 @@
  *      根目录现在只剩目录；以后往根目录扔夹具，`--strict` 直接红。
  *
  * #415 白名单（`EXTRA_TEST_DIRS`，**带理由、且不免检**）：
- *   `deploy/dl-release/test/` 是唯一一个不在 `tests/` 下的用例目录（34 条：变体解析 / APK
+ *   `deploy/dl-release/test/` 是唯一一个不在 `tests/` 下的用例目录（37 条：变体解析 / APK
  *   debuggable / 服务端 buildType / 上传契约矩阵）。它此前属于「写了没人跑」——`run-layer` 的
  *   LAYERS 不含它、CI 无步骤。两条路（搬家 vs 留原地开白名单），#415 选后者，理由写在
  *   `EXTRA_TEST_DIRS` 的 `reason` 里。关键是**白名单不等于免检**：该目录现在也被扫进来，
@@ -71,7 +71,7 @@ const OPTIONAL_LAYERS = ['e2e']
 /**
  * #415：**唯一**一个不在 `tests/` 下的用例目录（白名单条目，必须带 `reason`）。
  *
- * 为什么不是「搬进 tests/」：这 34 条用例与被测实现同目录 —— `import ... from '../apk-manifest.mjs'`、
+ * 为什么不是「搬进 tests/」：这 37 条用例与被测实现同目录 —— `import ... from '../apk-manifest.mjs'`、
  * `path.resolve(HERE, '..', 'server.mjs')` 起真服务、读同目录 `xmltree-fixtures/` 的真 aapt2 输出。
  * 搬家要同时改断这些相对引用、`deploy/README.md` 与 `docs/testing/coverage/domain-10.md` 的路径，
  * 而收益只是目录好看；代价是又制造一批「改了就跑不动」的路径。

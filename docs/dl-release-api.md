@@ -20,7 +20,26 @@
 | 请求类型 | `multipart/form-data` |
 | 服务 | `dl-release.service`（Node 单文件零依赖，监听 `127.0.0.1:8799`，仅由 Caddy 反代，公网不可直连） |
 
-Caddy 里只在 `@dl`（`host dl.rose7.cn`）这个 handle 内对该路径做了 `reverse_proxy`，其余路径仍是 `file_server` 静态文件。
+Caddy 里只在 `@dl`（`host dl.rose7.cn`）这个 handle 内对 `/api/v1/release` 与 `/api/v1/version` 做了
+`reverse_proxy`，其余路径仍是 `file_server` 静态文件。
+
+### `GET /api/v1/version`（Issue #441，免令牌）
+
+回答「线上跑的是哪一版」——不靠 ssh 数行数。只回非敏感信息，不需要令牌，也不吃上传限流额度：
+
+```json
+{ "ok": true,
+  "sha256": "<server.mjs 自身内容的 sha256，启动时算一次并缓存>",
+  "builtAt": "<进程启动时间，ISO 8601>",
+  "nodeVersion": "v24.16.0",
+  "variants": ["internal", "standard"],
+  "buildTypes": ["stable", "prerelease"] }
+```
+
+- `sha256` 是**启动时**读到的字节，之后替换文件不会改变它（进程还在跑旧字节）；
+- `builtAt` 是进程启动时刻，重启/回滚后应变化；
+- 部署后三方比对（线上文件 / `origin/main` / 本端点）必须一致，流程见
+  [`docs/RELEASE-MANUAL.md`](RELEASE-MANUAL.md) §12。
 
 ## 2. 请求
 

@@ -139,9 +139,10 @@ jobs:
       - name: 清单 fixture 校验（check:manifest）
         run: pnpm run check:manifest
 
-      # ─────────────── Issue #415：把 deploy/dl-release/test 的 34 条用例接进流水线 ───────────────
+      # ─────────────── Issue #415：把 deploy/dl-release/test 的用例接进流水线（#441 起 37 条）───────────────
       # 同一类教训的第四处（前有 #368 的 regression 层、#365 的 integration 层、#413 的门禁）：
-      # `deploy/dl-release/test` 的 34 条用例（variant 9 / apk-manifest 9 / server-buildtype 6 /
+      # `deploy/dl-release/test` 的用例（variant 9 / apk-manifest 9 / server-buildtype 6 /
+      # version-endpoint 3（#441）/
       # domain10-server-contract 10）一直**全绿但零触发点** —— 不在 `run-layer` 的 LAYERS、CI 无步骤，
       # 删掉它们不会有任何红。
       # 接线方式（#415 的取舍见 docs/TESTING-POLICY.md 第 12 节）：
@@ -151,7 +152,7 @@ jobs:
       #   · `scripts/check-test-layout.mjs` 有一条带理由的白名单条目，把「枚举不到」判红；
       #   · 这一步按 `pnpm run test:dl-release`（= `node --test deploy/dl-release/test/*.test.mjs`）跑，
       #     纯 Node、无浏览器、不依赖 dist，实测 ~3-7s。不加 continue-on-error：真红必须红。
-      - name: dl-release 用例（deploy/dl-release/test，34 条，纯 Node）
+      - name: dl-release 用例（deploy/dl-release/test，37 条，纯 Node）
         run: pnpm run test:dl-release
 
       # ─────────────── Issue #413：把已经存在但没人按的那几道门禁接进流水线 ───────────────

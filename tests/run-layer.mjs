@@ -37,7 +37,7 @@ const ROOT = path.resolve(TESTS_DIR, '..')
  * 一直写好放在仓库里，却既不在 LAYERS 也不在 CI 引用里，等于整层从未执行；`issue-135` 因此
  * 死了很久（import 了 #331 已删除的 `startCheckout`）也没人发现。CI 接线见 #365。
  *
- * #415：`server` 补进来 —— `deploy/dl-release/test/` 的 34 条用例（变体解析 / APK debuggable /
+ * #415：`server` 补进来 —— `deploy/dl-release/test/` 的用例（#441 起 37 条；变体解析 / APK debuggable /
  * 服务端 buildType 门禁 / 上传契约矩阵）同样是「全绿但零入口」：不在 LAYERS、CI 无步骤。
  * 这一层没有对应的 `tests/server/` 目录，用例目录由下面的 `LAYER_DIRS` 指到 deploy/ 下
  * （为什么不搬：见那里的注释）。枚举口径与其它层一致，`node tests/run-layer.mjs server` 可跑。

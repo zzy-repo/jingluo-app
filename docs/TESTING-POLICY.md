@@ -103,7 +103,7 @@ npm run test:integration -- --baseline          # 集成全量与基线比对，
 | 改一个 `.ts` 逻辑 | `tests/which.mjs --git --layer unit` | < 20s |
 | 改 UI / 设置页 / 渠道 | `tests/which.mjs --git`（域内 1~2 个集成） | 1~2min |
 | 改构建脚本 / 产物注入 | `internal-build` + `auto-title` | 2~3min |
-| 改 `deploy/dl-release/`（发布服务端 / APK 门禁 / 变体） | `pnpm run test:dl-release`（34 条）或 `node tests/run-layer.mjs server` | < 15s |
+| 改 `deploy/dl-release/`（发布服务端 / APK 门禁 / 变体） | `pnpm run test:dl-release`（37 条）或 `node tests/run-layer.mjs server` | < 15s |
 | **新增 / 修改一道 CI 门禁** | `node tests/run-layer.mjs unit --only gate-negative-controls`（先看第 9 节） | < 30s |
 | **判断一条红是 flaky / 真红 / runner-dependent** | `node tests/run-layer.mjs --cross-runner-scan`（先看第 11.5 节） | < 10s |
 | **改跨 runner 判据本身** | `node tests/run-layer.mjs --selftest-cross-runner`（四拍自证 + 两条负向对照） | < 10s |
