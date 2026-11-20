@@ -100,13 +100,22 @@ for (const name of [/深度思考/, /智能搜索/, /上传文件|附件/, /语�
 
 const think = page.getByRole('button', { name: /深度思考/ }).first()
 const search = page.getByRole('button', { name: /智能搜索/ }).first()
+// #363 起缺省档位是专家模式：深度思考进来就是「开」的，点一下是关。
+// 这里断言的是「可切换」（翻转 + 能复原），不写死某一档的初始值。
+const thinkStart = await think.getAttribute('aria-pressed')
 await think.click()
 await search.click()
 await wait(120)
-expect((await think.getAttribute('aria-pressed')) === 'true', '深度思考可切换')
+expect(
+  (await think.getAttribute('aria-pressed')) === (thinkStart === 'true' ? 'false' : 'true'),
+  '深度思考可切换',
+  `${thinkStart} → ${await think.getAttribute('aria-pressed')}`
+)
 expect((await search.getAttribute('aria-pressed')) === 'true', '智能搜索可切换')
 await think.click()
 await search.click()
+await wait(120)
+expect((await think.getAttribute('aria-pressed')) === thinkStart, '深度思考再点一次复原', await think.getAttribute('aria-pressed'))
 
 const textarea = page.locator('textarea').first()
 await textarea.type('正式包回归输入')
@@ -141,10 +150,13 @@ const styles = await page.evaluate(async () => {
   }
   return previous
 })
+// #363：缺省档位从 fast 改成 expert（默认就思考），所以选中态落在「专家模式」上
 expect(
-  styles.fast.bg === 'rgb(232, 237, 255)' && styles.fast.color === 'rgb(77, 107, 254)',
-  '正式包默认选中「快速模式」',
-  `${styles.fast.bg} / ${styles.fast.color}`
+  styles.expert.bg === 'rgb(232, 237, 255)' &&
+    styles.expert.color === 'rgb(77, 107, 254)' &&
+    styles.fast.bg === 'rgba(0, 0, 0, 0)',
+  '正式包默认选中「专家模式」（#363 缺省档 = 开思考）',
+  `expert=${styles.expert.bg} / ${styles.expert.color}，fast=${styles.fast.bg}`
 )
 
 console.log('\n[2] 与 baseline 对比输入区按钮清单')
