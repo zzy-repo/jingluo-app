@@ -484,3 +484,85 @@ npm run test:e2e         # e2e（含真实上游用例，需要 E2E_API_KEY）
 - 不处理 `dist/` 缓存导致的旧产物：怀疑时 `rm -rf dist && pnpm build[:internal]` 再 `npx cap sync android`。
 - 不在 CI 里构建 APK、不上传 keystore（这条永远不变）。
 - 不负责服务端地址迁移的下线动作：三代地址、过渡策略（C 强制升级）、旧机停之前的「请升级」兜底响应、以及「下次先配域名再搬」的前向建议，都记在 [`docs/server-migration.md`](server-migration.md)。**发版前扫一眼那份文档，确认自己踩在迁移窗口期里没有。**
+
+---
+
+## 13. 换分发地址：只改一处 + 重打包（Issue #269）
+
+切分发机（换机 / 换域名 / 上 TLS）**不需要改任何 `.java` / `.ts` / `.gradle`**：分发地址的唯一来源是
+`config/endpoints.json` 的 `download.*`，打包时替换一次。
+
+| 配置项 | 打进哪个常量 | 谁在用 |
+| --- | --- | --- |
+| `download.primaryBase` | `__ENDPOINTS__.dlPrimaryBase`（Web）/ `BuildConfig.DL_PRIMARY`（原生） | 清单与 `/apk/` 的首选机 |
+| `download.fallbackBase` | `__ENDPOINTS__.dlFallbackBase` / `BuildConfig.DL_FALLBACK` | 首选不可达时的回退机（必须 https） |
+
+原生下载白名单由这两个 base 派生（主机 / 端口 / 协议），所以**不需要**另外配一份主机名单 ——
+天然不会出现「改了 base 忘了改白名单」那种丢更新的事故。
+
+### ① 只改一行 + 过门禁
+
+```bash
+$EDITOR config/endpoints.json     # 换首选机：只改 download.primaryBase；换回退机才动 fallbackBase
+
+pnpm check:endpoints   # 形态 + 互不冲突：必须「协议://主机[:端口]」、回退 https、两个 base 不同；并检查客户端
+                       # 可执行代码（src / android/app/src/main/java / android/app/build.gradle）里没有地址副本
+pnpm check:ip          # 源码里不许有写死的上游 IP
+pnpm check:identity    # 明文更新传输闸门（allowInsecureUpdateTransport=false 时 http:// 会被点名到行）
+```
+
+门禁红了就改配置，别改门禁。常见红：
+
+- `download.primaryBase 只能是「协议://主机[:端口]」…` —— 带上了路径（`/apk`）或末尾的 `/`。
+- `download.fallbackBase 必须走 https…` —— 回退机是历史版本的最后兜底，不许明文。
+- `分发地址字面量 …` —— 有人又把地址写回了 `UpdateEndpoint.java` / `updateManifest.ts` / `build.gradle`。
+
+### ② 重打包（三步，与 §3 同源）
+
+```bash
+pnpm build:internal                # 或 pnpm build（standard）；rspack 注入 __ENDPOINTS__ → dist/
+npx cap sync android               # dist → android/app/src/main/assets/public
+cd android && ./gradlew assembleRelease -PartifactVariant=internal   # build.gradle 读 JSON → BuildConfig.DL_*
+```
+
+例外通道（**不推荐**，产物里的地址就不在仓库里了）：`./gradlew assembleRelease -PdlPrimaryBase=https://…`。
+用了它必须在 `CHANGELOG.md` 记一笔（gradle 会打警告）。
+
+### ③ 证明包里的地址真的换了
+
+```bash
+APK=android/app/build/outputs/apk/release/app-release.apk
+NEW=$(node -e 'import("./scripts/lib/endpoints.mjs").then(m=>console.log(m.downloadPrimaryBase))')
+grep -lF "$NEW" dist/static/js/*.js                  # 命中 = Web 侧注入生效
+unzip -p "$APK" classes.dex | strings | grep -cF "${NEW#*//}"   # ≥1 = 原生侧注入生效
+# 旧地址：新包里只应该剩 fallbackBase
+unzip -p "$APK" classes.dex | strings | grep -oE 'https?://[a-z0-9.:/-]+' | sort -u
+```
+
+再按 §4 的五项人工核对走完才准上传。**`grep -rn` 归零是可自证的**：
+`grep -rn "$NEW" src android/app/src/main/java` 必须是 0 行（地址只活在 `config/endpoints.json` 里）。
+
+### ④ 旧地址必须继续可达（这条最容易漏）
+
+已发出去的包（≤ 1.4.0-beta.10）把地址写死在 dex / JS 里，**没有任何热更新通道能改它**
+（清单与下载都不跟随重定向：`setInstanceFollowRedirects(false)` / `redirect: 'error'`）。所以换机之后：
+
+- 旧首选机在新包的 `download.fallbackBase` 之外，仍要**为老包继续返回 200 的 `releases.json`**，
+  且里面至少要有一条「能让最老版本升上来」的记录（`versionCode` / `sha256` / `buildType` / `artifactVariant` 齐全）。
+- 允许「内容降级」，**不允许** 301/302 跳转到新地址：客户端两条链路都不跟随重定向。
+
+### ⑤ 回滚
+
+```bash
+git checkout -- config/endpoints.json
+pnpm build:internal && npx cap sync android
+cd android && ./gradlew assembleRelease -PartifactVariant=internal
+```
+
+已发出去的包本身回滚不了 —— 回滚的实质是「让旧地址继续可达」，见 ④。
+
+### 未测边界（如实记录）
+
+- `-PdlPrimaryBase` / `-PdlFallbackBase` 覆盖通道**没有在真实 tag 上跑过**（只在本地 `assembleRelease` 验过配置读取与 `BuildConfig` 生成）。
+- 换地址后的「新机可下 / 旧机仍可下」要人工 `curl` 验（见 ④），离线门禁不做网络探测。
+- 上 TLS 后再把 `config/appIdentity.json` 的 `allowInsecureUpdateTransport` 置 `false`（顺序不能反，否则 `pnpm check:identity` 会红）。

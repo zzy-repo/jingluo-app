@@ -27,6 +27,8 @@ declare const __APP_VERSION_CODE__: number
  *   - `inviteBaseUrl` 邀请 / 额度 / 卡密服务（invite/api.ts 的 INVITE_API_BASE）
  *   - `feedbackUrl`   反馈上传（diagnostics/config.ts 的 LEGACY_FEEDBACK_URL）
  *   - `legacyHosts`   已下线主机重写表（apiConfig.ts 的 LEGACY_HOSTS）
+ *   - `dlPrimaryBase` / `dlFallbackBase` 分发首选机 / 回退机（updateManifest.ts 的
+ *     PRIMARY_RELEASE_BASE / FALLBACK_RELEASE_BASE，Issue #269）
  * 源码里不许再出现地址字面量：`pnpm check:ip` / `pnpm check:endpoints` 会拦。
  * 非打包环境（`node --test` 直接 import .ts）由 tests/helpers/injected.mjs 兜底注入。
  */
@@ -35,6 +37,8 @@ declare const __ENDPOINTS__: {
   readonly inviteBaseUrl: string
   readonly feedbackUrl: string
   readonly legacyHosts: readonly string[]
+  readonly dlPrimaryBase: string
+  readonly dlFallbackBase: string
 }
 
 /** Prism 语言包通过副作用注册到全局 Prism */

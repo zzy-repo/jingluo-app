@@ -13,8 +13,9 @@
  *      其余任何位置出现 = 又添了一份副本 → FAIL 并打印 `文件:行: 字面量`。
  *   2. config 的 applicationId / label.zh / expectedCertSha256 必须与
  *      scripts/lib/appIdentity.mjs 的 PUBLISHED_IDENTITY 一致（改身份必须显式化 + 带迁移方案）。
- *   3. allowInsecureUpdateTransport=false 时，更新链路（updateManifest.ts / UpdateEndpoint.java）
- *      里不许出现 http:// 地址（把 #268 的明文决策钉在配置里）。
+ *   3. allowInsecureUpdateTransport=false 时，更新链路（config/endpoints.json 的 download.*、
+ *      updateManifest.ts、UpdateEndpoint.java）里不许出现 http:// 地址（把 #268 的明文决策钉在
+ *      配置里；#269 把地址搬进 JSON 后，这份 JSON 也是扫描源，否则这条闸门会空转）。
  *   4. 消费方实际解析出来的包名必须等于配置值（device.mjs / release-common.mjs），
  *      strings.xml 不许再声明那四个由 resValue 生成的字符串。
  *

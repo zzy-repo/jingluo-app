@@ -42,3 +42,31 @@
 - 改 `expectedCertSha256`：签名迁移，另开单，`build.gradle` 里有明确禁止事项。
 - 改 `allowInsecureUpdateTransport`：置 `false` 之前先把 `updateManifest.ts` 与
   `UpdateEndpoint.java` 的清单地址换成 `https://`。
+
+---
+
+# 服务端端点与分发地址（`config/endpoints.json`）
+
+`config/endpoints.json` 是**服务端端点 + 分发地址的唯一来源**（端点见 Issue #274，分发见 #269）。
+两边都是「改一处 + 重打包」，但用途不同：
+
+| 字段 | 用途 | 谁读它 | 换机器时改哪一行 |
+| --- | --- | --- | --- |
+| `chatBaseUrl` / `inviteBaseUrl` / `feedbackUrl` | 对话上游 / 邀请额度 / 反馈上传 | `rspack.config.ts` → `__ENDPOINTS__`；`scripts/lib/endpoints.mjs` | 改这三行 + 同步 `allowedHosts` / `allowedPorts`（`pnpm check:endpoints` 会拦） |
+| `legacyHosts` | 已下线**聊天**主机的重写表 | `src/services/api/apiConfig.ts` 的 `LEGACY_HOSTS` | **别删**（删了老用户本地存的旧地址就失联）；换机时把旧主机加进来 |
+| `allowedHosts` / `allowedPorts` | `check:ip` 豁免名单 / 端口白名单 | 两个门禁脚本 | 与上面三份地址一起改 |
+| `download.primaryBase` | **分发首选机**（清单 `releases.json` + `/apk/`） | Web：`__ENDPOINTS__.dlPrimaryBase`（`updateManifest.ts`）；原生：`BuildConfig.DL_PRIMARY`（`UpdateEndpoint.java`） | **换分发机只改这一行** |
+| `download.fallbackBase` | **分发回退机**（所有历史版本的最后兜底） | `__ENDPOINTS__.dlFallbackBase` / `BuildConfig.DL_FALLBACK` | 换回退机才改 |
+
+要点：
+
+1. **分发地址不进 `URL_FIELDS`。** `validateEndpoints` 的第 6 条要求「三个服务端点在同一台机器上」，
+   而分发机是另一台机器（清单 + `/apk/`）。所以 `download.*` 由 `validateDownload` 单独校验：
+   必须是「协议://主机[:端口]」（不带路径 / 查询串 / 凭据、不带尾斜杠）、回退机必须 https、两个 base 不许相同。
+2. **下载白名单不单独配。** 原生 `UpdateEndpoint` 的主机 / 端口 / 协议全部由这两个 base 派生。
+   以前 base 与 `PRIMARY_HOST` / `FALLBACK_HOST` 是两份副本，改一处漏一处 —— 现在配置里只有两个 base。
+3. **`legacyHosts` 里的 `62.106.70.167` 与 `download.primaryBase` 是同一台机器，但语义相反**：
+   前者是「旧聊天主机，存过即视为没配过」，后者是「当前分发机」。别因为「这机器已经不在用了」顺手删掉前者。
+4. **换分发机之后**：`pnpm check:endpoints` + `pnpm check:ip` + `pnpm check:identity` → 重新打包
+   （`pnpm build[:internal]` → `npx cap sync android` → `./gradlew assembleRelease`）。详细步骤见
+   [`docs/RELEASE-MANUAL.md`](../docs/RELEASE-MANUAL.md) §13。

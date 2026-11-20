@@ -11,6 +11,8 @@
  * | `legacyHosts` | 已下线主机（存过即视为没配过，回落默认） | `src/services/api/apiConfig.ts` 的 `LEGACY_HOSTS` |
  * | `allowedHosts` | `check:ip` 门禁豁免的线上主机白名单 | `scripts/lib/hardcodedIpAudit.mjs` 的 `ALLOWED_HOSTS` |
  * | `allowedPorts` | 同一台机器上开放的端口白名单 | `scripts/check-endpoints.mjs` 交叉校验 |
+ * | `download.primaryBase` | 分发首选机（清单 + `/apk/`） | `src/services/updateManifest.ts` 的 `PRIMARY_RELEASE_BASE`（经 `__ENDPOINTS__.dlPrimaryBase`）；原生 `UpdateEndpoint.java` 的 `PRIMARY_BASE`（经 `BuildConfig.DL_PRIMARY`） |
+ * | `download.fallbackBase` | 分发回退机 | `src/services/updateManifest.ts` 的 `FALLBACK_RELEASE_BASE`（经 `__ENDPOINTS__.dlFallbackBase`）；原生 `UpdateEndpoint.java` 的 `FALLBACK_BASE`（经 `BuildConfig.DL_FALLBACK`） |
  *
  * 谁读它：
  *   - 构建期：`rspack.config.ts` 读同一份 JSON 注入 `__ENDPOINTS__`，前端源码只用注入值；
@@ -28,6 +30,9 @@
  *   - 这个模块**读盘就校验，不合法立刻抛**（fail fast）：带着错地址跑起来只会更难查。
  *     只想拿「校验」这一半（配置不合法时仍要打印问题）就用 `endpointsSchema.mjs`。
  *   - 不碰网络、不缓存、不读环境变量。
+ *   - 分发地址（`download.*`，Issue #269）也在这份配置里：换分发机只改这里一处，
+ *     Web 侧由 rspack 注入、原生侧由 `android/app/build.gradle` 读成 `BuildConfig.DL_*`。
+ *     原生下载白名单由这两个 base 派生，所以配置里不许再出现第三份主机名单。
  */
 
 import { readFileSync } from 'node:fs'
@@ -53,6 +58,8 @@ export const loadEndpoints = (file = ENDPOINTS_FILE) => {
     legacyHosts: Object.freeze(raw.legacyHosts.map((h) => h.trim())),
     allowedHosts: Object.freeze(raw.allowedHosts.map((h) => h.trim())),
     allowedPorts: Object.freeze([...raw.allowedPorts]),
+    downloadPrimaryBase: raw.download.primaryBase.trim(),
+    downloadFallbackBase: raw.download.fallbackBase.trim(),
   })
 }
 
@@ -70,6 +77,10 @@ export const legacyHosts = config.legacyHosts
 export const allowedHosts = config.allowedHosts
 /** 端口白名单（`check:endpoints` 交叉校验用） */
 export const allowedPorts = config.allowedPorts
+/** 分发首选机（`UpdateEndpoint.PRIMARY_BASE` / `PRIMARY_RELEASE_BASE`，Issue #269） */
+export const downloadPrimaryBase = config.downloadPrimaryBase
+/** 分发回退机（`UpdateEndpoint.FALLBACK_BASE` / `FALLBACK_RELEASE_BASE`，Issue #269） */
+export const downloadFallbackBase = config.downloadFallbackBase
 
 /** 三个地址字段 → 值（提示文案 / 注入 / 文案表格用，不要再另抄一份） */
 export const endpointUrls = Object.freeze({

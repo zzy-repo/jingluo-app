@@ -103,6 +103,11 @@ eq(scanIdentityLiterals(), [], '全仓没有允许清单之外的身份字面量
 
 console.log('\n[4] 门禁不是空跑：配置漂移 / 字面量副本都会 FAIL')
 
+/** 沙箱里的分发配置：https，作为「明文闸门」以外的断言的安静基线 */
+const ENDPOINTS_FIXTURE = {
+  download: { primaryBase: 'https://dl-primary.test.invalid', fallbackBase: 'https://dl-fallback.test.invalid' },
+}
+
 /** 造一棵最小仓库树：真 appIdentity.mjs + 一份可改的配置 + 若干声明点 */
 const makeTree = ({ configPatch = {}, files = {} } = {}) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'cfg271-'))
@@ -115,6 +120,10 @@ const makeTree = ({ configPatch = {}, files = {} } = {}) => {
   })
   const config = { ...JSON.parse(read(APP_IDENTITY_REL_PATH)), ...configPatch }
   fs.writeFileSync(path.join(root, APP_IDENTITY_REL_PATH), JSON.stringify(config, null, 2))
+  // 更新链路的第三个扫描源（#269）：config/endpoints.json 的 download.* 也是真会被请求的地址。
+  // 沙箱里必须有这份文件，否则每条用例都会先撞上 missing-transport-source（扫描源不存在）。
+  // 默认给 https 版本，专测明文闸门的用例会自己覆盖它。
+  fs.writeFileSync(path.join(root, 'config/endpoints.json'), JSON.stringify(ENDPOINTS_FIXTURE, null, 2))
   fs.cpSync(path.join(REPO_ROOT, 'scripts/lib/appIdentity.mjs'), path.join(root, 'scripts/lib/appIdentity.mjs'))
   // 更新链路扫描源：默认为 https，避免它干扰其它断言
   fs.writeFileSync(
@@ -242,6 +251,24 @@ console.log('\n[5] 明文更新传输闸门（#268 决策的落点）')
   truthy(Boolean(insecure), '扫到 http:// 清单地址 → insecure-update-transport FAIL')
   eq(Boolean(insecure) && insecure.line, 1, '带行号（能直接定位到那行地址）')
   fs.rmSync(root, { recursive: true, force: true })
+
+  // #269：地址搬进 config/endpoints.json 之后，这份配置本身也必须在扫描源里 ——
+  // 只扫 .ts / .java 会扫到空文件，闸门永远是绿的（假绿）。
+  const root2 = makeTree({ configPatch: { allowInsecureUpdateTransport: false } })
+  fs.writeFileSync(
+    path.join(root2, 'config/endpoints.json'),
+    JSON.stringify(
+      { download: { primaryBase: 'http://dl-primary.test.invalid', fallbackBase: 'https://dl-fallback.test.invalid' } },
+      null,
+      2,
+    ),
+  )
+  const gate2 = await identityGate(root2)
+  const plainConfig = gate2.violations.find(
+    (v) => v.code === 'insecure-update-transport' && v.file === 'config/endpoints.json',
+  )
+  truthy(Boolean(plainConfig), '配置里的明文分发地址 → 立刻 FAIL（闸门不会因为地址搬家而空转）')
+  fs.rmSync(root2, { recursive: true, force: true })
 }
 
 console.log('\n[6] 配置校验：缺字段 / 格式错不许静默兜底')

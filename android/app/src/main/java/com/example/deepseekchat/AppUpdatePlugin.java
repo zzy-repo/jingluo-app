@@ -189,10 +189,10 @@ public class AppUpdatePlugin extends Plugin {
                     }
                 }
                 URL url = new URL(call.getString("url", ""));
-                // 白名单规则集中在 UpdateEndpoint：https 放行新旧两台分发机，裸 http 只放行新机
-                // 62.106.70.167:8888。允许明文不会让伪造包装进设备：Android 安装器强制校验 APK
-                // 签名，本类的 verify() 还先比对包名/versionCode/SHA-256/同一签名，明文只能让
-                // 更新失败或被抑制。域名 + TLS 是后续项，在 #269 做。
+                // 白名单规则集中在 UpdateEndpoint：https 放行配置里的两台分发机，裸 http 只放行首选机。
+                // 具体主机从 config/endpoints.json 派生（#269），本类不写任何地址。允许明文不会让伪造包
+                // 装进设备：Android 安装器强制校验 APK 签名，本类的 verify() 还先比对包名 / versionCode /
+                // SHA-256 / 同一签名，明文只能让更新失败或被抑制。
                 if (!UpdateEndpoint.allowsDownloadUrl(url)) throw new Exception("INVALID_URL");
                 HttpURLConnection connection = (HttpURLConnection) url.openConnection();
                 transfer.connection = connection;

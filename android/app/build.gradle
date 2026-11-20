@@ -66,6 +66,58 @@ if (!identityLabel?.trim()) {
 }
 
 // ---------------------------------------------------------------------------
+// 分发地址唯一来源：仓库根 config/endpoints.json 的 download.*（Issue #269）
+//   download.primaryBase  → BuildConfig.DL_PRIMARY  → UpdateEndpoint.PRIMARY_BASE
+//   download.fallbackBase → BuildConfig.DL_FALLBACK → UpdateEndpoint.FALLBACK_BASE
+// 换分发机 = 改 config/endpoints.json 一处 + 重新打包；源码（Java / TS / gradle）里不留地址字面量。
+// -PdlPrimaryBase / -PdlFallbackBase 只作例外通道（产物里的地址就不在仓库里了，发布后必须在
+// CHANGELOG 记一笔）。
+// 缺字段 / 不是「协议://主机[:端口]」/ 回退机不是 https / 两个 base 相同，一律中止：
+// 带着错地址出包只会在用户点「检查更新」时表现为转圈，比构建失败难查得多。
+// 注：下载白名单由这两个 base 在 UpdateEndpoint 里派生，这里不需要再配第二份主机名单。
+// ---------------------------------------------------------------------------
+def endpointsJsonFile = rootProject.file('../config/endpoints.json')
+if (!endpointsJsonFile.exists()) {
+    throw new GradleException("[dl] 找不到 ${endpointsJsonFile}：分发地址的唯一来源（download.primaryBase / download.fallbackBase）")
+}
+def endpointsJson
+try {
+    endpointsJson = new groovy.json.JsonSlurper().parse(endpointsJsonFile)
+} catch (Exception e) {
+    throw new GradleException("[dl] 解析 ${endpointsJsonFile} 失败：${e.message}")
+}
+// 只允许「协议://主机[:端口]」：这样拼进 Java 字符串字面量时不可能带引号 / 反斜杠，下面不用做转义
+def DL_BASE_PATTERN = ~/https?:\/\/[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?(:\d{1,5})?/
+def downloadConfig = endpointsJson.download
+if (!(downloadConfig instanceof Map)) {
+    throw new GradleException("[dl] config/endpoints.json 缺少 download 段（download.primaryBase / download.fallbackBase）")
+}
+def readDlBase = { String key, String propName ->
+    def fromProp = providers.gradleProperty(propName).orNull?.trim()
+    // 键必须是 String：用 GString 去 Map 取值查不到（GString 的 equals/hashCode 与 String 不同）
+    def fromConfig = downloadConfig[key]?.toString()?.trim()
+    def value = fromProp ?: fromConfig
+    if (!value) {
+        throw new GradleException("[dl] config/endpoints.json 缺少 download.${key}（也没传 -P${propName}）：无法确定分发地址")
+    }
+    if (!(value ==~ DL_BASE_PATTERN)) {
+        throw new GradleException("[dl] download.${key} 必须是「协议://主机[:端口]」，不带路径 / 查询串 / 凭据：'${value}'")
+    }
+    return value.toString()
+}
+def dlPrimaryBase = readDlBase('primaryBase', 'dlPrimaryBase')
+def dlFallbackBase = readDlBase('fallbackBase', 'dlFallbackBase')
+if (dlPrimaryBase == dlFallbackBase) {
+    throw new GradleException("[dl] 首选与回退分发地址相同（'${dlPrimaryBase}'）：回退要有意义，改 config/endpoints.json")
+}
+if (!dlFallbackBase.startsWith('https://')) {
+    throw new GradleException("[dl] 回退分发机必须走 https（'${dlFallbackBase}'）：它承载所有历史版本的兜底升级")
+}
+if (providers.gradleProperty('dlPrimaryBase').present || providers.gradleProperty('dlFallbackBase').present) {
+    logger.warn("[dl] 本次用 -P 覆盖了 config/endpoints.json：产物里的分发地址不在仓库里，发布后在 CHANGELOG 记一笔")
+}
+
+// ---------------------------------------------------------------------------
 // 签名配置：凭据从 android/keystore/keystore.properties 读取（该文件已 gitignore）
 // 若文件缺失（例如全新 clone），构建脚本 build-apk.sh 会自动生成 keystore + properties。
 //
@@ -229,6 +281,12 @@ android {
     // 包名 / 应用名都来自 config/appIdentity.json（见文件顶部）：这里不再写死任何字面量。
     namespace = identityNamespace
     compileSdk = rootProject.ext.compileSdkVersion
+    buildFeatures {
+        // AGP 8 起 BuildConfig 默认不生成（android.defaults.buildfeatures.buildconfig=false）：
+        // 不显式打开，下面的 buildConfigField 会被静默忽略，UpdateEndpoint 编译期直接找不到符号。
+        // 这是 #269 唯一新增的构建机制，别顺手删。
+        buildConfig true
+    }
     defaultConfig {
         applicationId identityApplicationId
         minSdkVersion rootProject.ext.minSdkVersion
@@ -245,6 +303,10 @@ android {
         resValue "string", "title_activity_main", identityLabel
         resValue "string", "package_name", identityApplicationId
         resValue "string", "custom_url_scheme", identityApplicationId
+        // 分发地址（config/endpoints.json → BuildConfig，见文件顶部）：UpdateEndpoint 只从这里读，
+        // 源码不留字面量。换分发机 = 改那份 JSON 一处 + 重打包（Issue #269）。
+        buildConfigField "String", "DL_PRIMARY", "\"${dlPrimaryBase}\""
+        buildConfigField "String", "DL_FALLBACK", "\"${dlFallbackBase}\""
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.

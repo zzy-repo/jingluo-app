@@ -12,6 +12,11 @@
  *   3. 端口在 `allowedPorts` 里 —— 报「配置里的端口与白名单不一致」（负向 2：只改端口不改白名单必须红）；
  *   4. `legacyHosts`（已下线重写表）与 `allowedHosts` 不重叠；
  *   5. 三个端点在同一台机器上（本单的前提：一台机器、三个端口）。
+ *
+ * 校验项（对应 Issue #269，见 `validateDownload`）：
+ *   6. `download.primaryBase` / `download.fallbackBase` 存在，且只能是「协议://主机[:端口]」；
+ *   7. 回退机必须走 https；两个 base 不许相同（回退要有意义）。
+ *   分发地址**不进** `URL_FIELDS`：第 5 条要求三个端点同机，而分发机是另一台机器。
  */
 
 import path from 'node:path'
@@ -24,6 +29,14 @@ export const ENDPOINTS_FILE = path.resolve(LIB_DIR, '..', '..', 'config', 'endpo
 
 /** 三个地址字段（顺序即报错顺序；「三个端口同一台机器」指的就是它们） */
 export const URL_FIELDS = ['chatBaseUrl', 'inviteBaseUrl', 'feedbackUrl']
+
+/**
+ * 分发地址字段（Issue #269，顺序即报错顺序）。
+ *
+ * 为什么不并进 `URL_FIELDS`：第 6 条校验要求「三个端点在同一台机器上」，而分发机是另一台机器
+ * （清单 + `/apk/`）。并进去只会让「换分发机」把服务端配置一起改坏。
+ */
+export const DOWNLOAD_FIELDS = ['primaryBase', 'fallbackBase']
 
 const isNonEmptyString = (value) => typeof value === 'string' && value.trim() !== ''
 const isHostList = (value) => Array.isArray(value) && value.length > 0 && value.every(isNonEmptyString)
@@ -42,6 +55,56 @@ export const parseUrl = (value) => {
 
 /** URL 的端口：没写时按协议补默认值（http 80 / https 443） */
 export const portOf = (url) => (url.port ? Number(url.port) : url.protocol === 'https:' ? 443 : 80)
+
+/**
+ * 校验分发地址 `download.*`（Issue #269），返回问题清单（空数组 = 通过）。
+ *
+ * 只校验「形态」与「互相不打架」：地址能不能真的下到东西是发布后的验证步骤，不在离线门禁里做。
+ * 措辞会和 `check:endpoints` 的输出一起打给人看，所以写清「哪个字段、为什么」。
+ */
+export const validateDownload = (raw) => {
+  const download = raw?.download
+  if (typeof download !== 'object' || download === null || Array.isArray(download)) {
+    return ['download 缺失：分发地址的唯一来源，必须给出 download.primaryBase / download.fallbackBase']
+  }
+  const problems = []
+  const bases = new Map()
+  for (const field of DOWNLOAD_FIELDS) {
+    const value = download[field]
+    const url = parseUrl(value)
+    if (!url) {
+      problems.push(`download.${field} 缺失或不是合法的绝对 URL：${JSON.stringify(value)}`)
+      continue
+    }
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+      problems.push(`download.${field} 必须是 http/https：${value}`)
+      continue
+    }
+    // base 只能是「协议://主机[:端口]」：带路径/查询串/片段/凭据时，拼 /releases.json 与 /apk/ 都会拼错。
+    // 末尾带 `/` 在 URL 层看不出来（pathname 同样是 '/'），按字符串判 —— 和 build.gradle 的
+    // DL_BASE_PATTERN 对齐，避免「check:endpoints 绿、assembleRelease 红」。
+    if (value.trim().endsWith('/')) {
+      problems.push(`download.${field} 末尾不要带 /：${value}（拼 /releases.json 会变成 //releases.json）`)
+      continue
+    }
+    if (url.pathname !== '/' || url.search || url.hash || url.username || url.password) {
+      problems.push(`download.${field} 只能是「协议://主机[:端口]」，不许带路径/查询串/片段/凭据：${value}`)
+      continue
+    }
+    bases.set(field, url)
+  }
+  const fallback = bases.get('fallbackBase')
+  // 回退机承载所有历史版本的最后兜底，必须走 TLS；明文只允许出现在首选机
+  if (fallback && fallback.protocol !== 'https:') {
+    problems.push(`download.fallbackBase 必须走 https：${download.fallbackBase}（回退机是已发布版本的最后兜底）`)
+  }
+  const primary = bases.get('primaryBase')
+  // 两个 base 相同 = 回退没有意义，还会让「首选失败才回退」白打一次同一台机器
+  if (primary && fallback && primary.href === fallback.href) {
+    problems.push(`download.primaryBase 与 download.fallbackBase 相同：${primary.href}（回退要有意义）`)
+  }
+  return problems
+}
 
 /**
  * 校验一份端点配置，返回问题清单（空数组 = 通过）。
@@ -118,6 +181,9 @@ export const validateEndpoints = (raw) => {
       )
     }
   }
+
+  // 7. 分发地址（Issue #269）：形态与互不冲突，规则见 validateDownload
+  problems.push(...validateDownload(raw))
 
   return problems
 }

@@ -2,7 +2,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { registerHooks } from 'node:module'
-import { existsSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 registerHooks({
   resolve(specifier, context, next) {
@@ -151,8 +151,10 @@ test('manifest fetch is anonymous, nonredirecting, cancellable and injectable', 
 })
 test('首选新机不可达时按固定顺序回退旧机，并回传生效 base', async () => {
   assert.deepEqual(RELEASE_BASES, [PRIMARY_RELEASE_BASE, FALLBACK_RELEASE_BASE], '顺序写死：先新后旧')
-  assert.equal(PRIMARY_RELEASE_BASE, 'http://62.106.70.167:8888')
-  assert.equal(FALLBACK_RELEASE_BASE, 'https://dl.rose7.cn')
+  // 地址只有 config/endpoints.json 一个来源（#269）：这里跟着配置走，不再抄第二份字面量
+  const dlConfig = JSON.parse(readFileSync(new URL('../../config/endpoints.json', import.meta.url), 'utf8'))
+  assert.equal(PRIMARY_RELEASE_BASE, dlConfig.download.primaryBase, '首选地址 = download.primaryBase')
+  assert.equal(FALLBACK_RELEASE_BASE, dlConfig.download.fallbackBase, '回退地址 = download.fallbackBase')
   const seen = []
   const { rows: parsed, base } = await fetchManifest(new AbortController().signal, async (url) => {
     seen.push(url)
@@ -214,45 +216,59 @@ test('下载地址用的是本次清单生效的 base（回退后不会拿新机
     `${PRIMARY_RELEASE_BASE}/apk/deepseek-chat-1.5.0.apk`,
   ])
 })
-test('Java 端两处地址成对：新机 http 首选 + 旧机 https 回退，白名单只放行这两台', async () => {
+test('Java 端地址只来自 BuildConfig：源码零字面量，白名单由 base 派生（#269）', async () => {
   const { readFile } = await import('node:fs/promises')
   const read = (file) => readFile(new URL(`../../${file}`, import.meta.url), 'utf8')
   const JAVA = 'android/app/src/main/java/com/example/deepseekchat'
   const endpoint = await read(`${JAVA}/UpdateEndpoint.java`)
   const plugin = await read(`${JAVA}/AppUpdatePlugin.java`)
   const junit = await read('android/app/src/test/java/com/example/deepseekchat/UpdateEndpointTest.java')
-  // 地址成对出现，顺序写死
-  assert.match(endpoint, /PRIMARY_BASE = "http:\/\/62\.106\.70\.167:8888"/)
-  assert.match(endpoint, /FALLBACK_BASE = "https:\/\/dl\.rose7\.cn"/)
-  assert.ok(endpoint.indexOf('PRIMARY_BASE =') < endpoint.indexOf('FALLBACK_BASE ='))
+  const gradle = await read('android/app/build.gradle')
+  // 地址不再写在 Java 里：两处 base 都从 BuildConfig 读（= config/endpoints.json 的 download.*）
+  assert.match(endpoint, /PRIMARY_BASE = BuildConfig\.DL_PRIMARY/)
+  assert.match(endpoint, /FALLBACK_BASE = BuildConfig\.DL_FALLBACK/)
+  assert.doesNotMatch(endpoint, /https?:\/\//, 'Java 源码里不许有任何地址字面量（#269 零副本）')
+  assert.ok(endpoint.indexOf('PRIMARY_BASE =') < endpoint.indexOf('FALLBACK_BASE ='), '顺序写死：先首选后回退')
   assert.match(endpoint, /MANIFEST_BASES = \{PRIMARY_BASE, FALLBACK_BASE\}/)
   assert.match(endpoint, /return base \+ "\/releases\.json"/)
-  // 白名单：https 放行新旧两台，明文 http 只放行新机 8888
-  const https = endpoint.slice(
-    endpoint.indexOf('if ("https".equals(scheme))'),
-    endpoint.indexOf('if ("http".equals(scheme))')
-  )
-  assert.match(https, /FALLBACK_HOST\.equals\(host\)/)
-  assert.match(https, /PRIMARY_HOST\.equals\(host\)/)
+  // 白名单由 base 派生：主机 / 端口 / 协议不许再存一份副本
+  assert.doesNotMatch(endpoint, /PRIMARY_HOST|FALLBACK_HOST/, '主机不许另存一份副本（那正是 #269 要消掉的）')
+  assert.match(endpoint, /private static final Base PRIMARY = new Base\(PRIMARY_BASE\)/)
+  assert.match(endpoint, /private static final Base FALLBACK = new Base\(FALLBACK_BASE\)/)
+  const https = endpoint.slice(endpoint.indexOf('if (https)'), endpoint.indexOf('if ("http".equals(scheme))'))
+  assert.match(https, /host\.equals\(FALLBACK\.host\)/)
+  assert.match(https, /host\.equals\(PRIMARY\.host\)/)
   const http = endpoint.slice(endpoint.indexOf('if ("http".equals(scheme))'))
-  assert.match(http, /PRIMARY_HOST\.equals\(host\) && port == 8888/)
-  assert.doesNotMatch(http, /FALLBACK_HOST/, '明文 http 不给旧机')
-  assert.doesNotMatch(http, /evil/, '明文 http 不给任意第三方主机')
-  // 为什么允许裸 http 必须写在代码里（签名由安装器强制校验，TLS 在 #269）
+  assert.match(http, /!PRIMARY\.tls && host\.equals\(PRIMARY\.host\) && port == PRIMARY\.port/)
+  assert.doesNotMatch(http, /FALLBACK/, '明文 http 不给回退机')
+  // 为什么允许裸 http 必须写在代码里（签名由安装器强制校验）
   assert.match(endpoint, /#269/)
   assert.match(endpoint, /签名/)
   // 插件侧从同一份策略派生：地址、白名单都不再各自硬编码
   assert.match(plugin, /for \(String base : UpdateEndpoint\.MANIFEST_BASES\)/)
   assert.match(plugin, /result\.put\("base", base\)/)
   assert.match(plugin, /UpdateEndpoint\.allowsDownloadUrl\(url\)/)
-  assert.doesNotMatch(plugin, /rose7/, '旧地址只许出现在 UpdateEndpoint，避免只改一处')
+  assert.doesNotMatch(plugin, /rose7/, '旧地址只许出现在 config/endpoints.json，避免只改一处')
   assert.doesNotMatch(plugin, /getHost\(\)\.equals/)
-  // Java 单测覆盖四类判定
+  // 构建期注入：配置 → buildConfigField → BuildConfig（不开 buildConfig true 会被 AGP 8 静默丢弃）
+  assert.match(gradle, /buildConfig true/, '必须显式打开 buildFeatures.buildConfig（AGP 8 默认关）')
+  assert.ok(
+    gradle.includes('buildConfigField "String", "DL_PRIMARY", "\\"${dlPrimaryBase}\\""'),
+    'build.gradle 把 download.primaryBase 落成 BuildConfig.DL_PRIMARY'
+  )
+  assert.ok(
+    gradle.includes('buildConfigField "String", "DL_FALLBACK", "\\"${dlFallbackBase}\\""'),
+    'build.gradle 把 download.fallbackBase 落成 BuildConfig.DL_FALLBACK'
+  )
+  assert.match(gradle, /config\/endpoints\.json/, 'gradle 从配置读，不写死地址')
+  assert.doesNotMatch(gradle, /62\.106\.70\.167|rose7/, 'build.gradle 里不许有地址字面量')
+  // Java 单测覆盖的判定类别（地址一律从 BuildConfig / base 派生，测试里不抄配置）
   for (const name of [
-    'allowsOldHostHttps',
-    'allowsNewHostHttps',
-    'allowsPlainHttpOnlyOnNewHost',
+    'allowsFallbackHostHttps',
+    'allowsPrimaryHostHttps',
+    'allowsPlainHttpOnlyOnPrimary',
     'rejectsThirdPartyHosts',
+    'configuredBasesAreWellFormed',
   ]) {
     assert.ok(junit.includes(name), name)
   }

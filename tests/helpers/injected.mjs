@@ -12,7 +12,15 @@
 //
 // 端点值全部来自 config/endpoints.json（经 scripts/lib/endpoints.mjs），测试不再自己抄地址。
 
-import { allowedHosts, chatBaseUrl, feedbackUrl, inviteBaseUrl, legacyHosts } from '../../scripts/lib/endpoints.mjs'
+import {
+  allowedHosts,
+  chatBaseUrl,
+  downloadFallbackBase,
+  downloadPrimaryBase,
+  feedbackUrl,
+  inviteBaseUrl,
+  legacyHosts,
+} from '../../scripts/lib/endpoints.mjs'
 
 globalThis.__ENDPOINTS__ ??= Object.freeze({
   chatBaseUrl,
@@ -20,4 +28,7 @@ globalThis.__ENDPOINTS__ ??= Object.freeze({
   feedbackUrl,
   legacyHosts: Object.freeze([...legacyHosts]),
   allowedHosts: Object.freeze([...allowedHosts]),
+  // 分发地址（Issue #269）：updateManifest.ts 顶层就读它，缺了就是 undefined base
+  dlPrimaryBase: downloadPrimaryBase,
+  dlFallbackBase: downloadFallbackBase,
 })

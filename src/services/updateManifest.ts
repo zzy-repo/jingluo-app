@@ -5,13 +5,19 @@
 import { isBuildType, type BuildType } from '../../shared/build-types.mjs'
 
 /**
- * 分发端点（Issue #268）。首选新静态分发机（见 PRIMARY_RELEASE_BASE，裸 HTTP，无域名无 TLS），
- * 不可达才回退旧机 `https://dl.rose7.cn`。顺序写死在 RELEASE_BASES 里，不做随机或轮询。
+ * 分发端点（Issue #268 / #269）。首选新静态分发机（裸 HTTP，无域名无 TLS），不可达才回退旧机。
+ * 顺序写死在 RELEASE_BASES 里，不做随机或轮询。
  * 裸 HTTP 之所以可接受：APK 签名由 Android 安装器强制校验，下载前后还会比对 SHA-256、
- * 包名与 versionCode，明文只能让更新失败或被抑制；域名 + TLS 在 #269 补。
+ * 包名与 versionCode，明文只能让更新失败或被抑制。
+ *
+ * **本文件不留任何地址字面量**：唯一来源是 `config/endpoints.json` 的
+ * `download.primaryBase` / `download.fallbackBase`，构建期由 rspack 的 DefinePlugin 注入
+ * `__ENDPOINTS__`（契约见 `src/env.d.ts`）。换分发机 = 改那份 JSON 一处 + 重打包；
+ * 原生侧 `UpdateEndpoint.java` 读同一份 JSON（config → build.gradle → `BuildConfig.DL_*`），
+ * 两侧不会各自漂移。下载白名单已经是 `RELEASE_BASES` 的派生值，换地址不用改规则。
  */
-export const PRIMARY_RELEASE_BASE = 'http://62.106.70.167:8888' // check-ip-allow: 新分发机（#268），原生白名单同源
-export const FALLBACK_RELEASE_BASE = 'https://dl.rose7.cn'
+export const PRIMARY_RELEASE_BASE = __ENDPOINTS__.dlPrimaryBase
+export const FALLBACK_RELEASE_BASE = __ENDPOINTS__.dlFallbackBase
 /** 尝试顺序：先新机后旧机。 */
 export const RELEASE_BASES = [PRIMARY_RELEASE_BASE, FALLBACK_RELEASE_BASE] as const
 export const DEFAULT_RELEASE_BASE = PRIMARY_RELEASE_BASE

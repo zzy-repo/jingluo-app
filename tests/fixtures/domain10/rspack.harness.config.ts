@@ -26,6 +26,8 @@ const endpoints = JSON.parse(readFileSync(path.join(root, 'config/endpoints.json
   inviteBaseUrl: string
   feedbackUrl: string
   legacyHosts: string[]
+  /** 分发地址（Issue #269）：updateManifest.ts 顶层读 __ENDPOINTS__.dl*，缺了就是 undefined base */
+  download: { primaryBase: string; fallbackBase: string }
 }
 
 const config: Configuration = {
@@ -80,6 +82,8 @@ const config: Configuration = {
         inviteBaseUrl: endpoints.inviteBaseUrl,
         feedbackUrl: endpoints.feedbackUrl,
         legacyHosts: endpoints.legacyHosts,
+        dlPrimaryBase: endpoints.download.primaryBase,
+        dlFallbackBase: endpoints.download.fallbackBase,
       }),
     }),
   ],

@@ -20,6 +20,8 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import {
   allowedHosts,
   chatBaseUrl,
+  downloadFallbackBase,
+  downloadPrimaryBase,
   feedbackUrl,
   inviteBaseUrl,
   legacyHosts,
@@ -36,6 +38,9 @@ globalThis.__ENDPOINTS__ ??= Object.freeze({
   feedbackUrl,
   legacyHosts: Object.freeze([...legacyHosts]),
   allowedHosts: Object.freeze([...allowedHosts]),
+  // 分发地址（Issue #269）：本 harness 不测更新链路，但要与真实注入的形状一致
+  dlPrimaryBase: downloadPrimaryBase,
+  dlFallbackBase: downloadFallbackBase,
 })
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))

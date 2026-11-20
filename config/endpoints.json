@@ -4,5 +4,9 @@
   "feedbackUrl": "http://140.210.13.146:60012/feedback",
   "legacyHosts": ["123.207.199.196", "62.106.70.167"],
   "allowedHosts": ["140.210.13.146"],
-  "allowedPorts": [60010, 60012, 60013]
+  "allowedPorts": [60010, 60012, 60013],
+  "download": {
+    "primaryBase": "http://62.106.70.167:8888",
+    "fallbackBase": "https://dl.rose7.cn"
+  }
 }
