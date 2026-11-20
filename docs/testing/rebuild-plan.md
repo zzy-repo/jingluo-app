@@ -18,13 +18,16 @@ apia 兑换）在新链路里已经不存在了，留着只会以「known-red」
 
 ### 1.1 删除清单（阶段①，W1-D 归属）
 
+> 下表删除线里的路径（`~~…~~`）= **已经删掉的文件**。`check:doc-refs` 把删除线认作「已删除」
+> 标记（计数、不判「文件不存在」），所以这张清单在 #492 落地后不会把 CI 判红。
+
 | 删除对象 | 为什么删 |
 | --- | --- |
-| `tests/golden/g07-quota-purchase.test.mjs` | 主路径是「领取额度 → 刷新 → 兑换」，兑换打的是池域/apia；新链路里没有「领取」，兑换改打 sub2api |
-| `tests/unit/contract-c4-order-state.test.mjs` | 锁的是 apia 订单状态机；客户端不再持有订单状态（#482：不做双写、不做旧端点兼容） |
-| `tests/unit/contract-c6-quota-key.test.mjs` | 锁「1 元 = 100 积分」「换 Key 额度不丢」「同指纹不重复发新人额度」——全部是旧邀请/额度体系语义 |
-| `tests/unit/domain06-*.test.mjs` / `domain07-*.test.mjs` | 域 6/7 的批次用例，主体是兑换矩阵、邀请领取、额度换算 |
-| `tests/unit/ours-*.test.mjs` / `invite-*.test.mjs` 里依赖旧语义的部分 | 同上；**只删依赖旧语义的**，纯解析/脱敏/格式化的行保留 |
+| ~~`tests/golden/g07-quota-purchase.test.mjs`~~ | 主路径是「领取额度 → 刷新 → 兑换」，兑换打的是池域/apia；新链路里没有「领取」，兑换改打 sub2api |
+| ~~`tests/unit/contract-c4-order-state.test.mjs`~~ | 锁的是 apia 订单状态机；客户端不再持有订单状态（#482：不做双写、不做旧端点兼容） |
+| ~~`tests/unit/contract-c6-quota-key.test.mjs`~~ | 锁「1 元 = 100 积分」「换 Key 额度不丢」「同指纹不重复发新人额度」——全部是旧邀请/额度体系语义 |
+| ~~`tests/unit/domain06-*.test.mjs` / `domain07-*.test.mjs`~~ | 域 6/7 的批次用例，主体是兑换矩阵、邀请领取、额度换算 |
+| ~~`tests/unit/ours-*.test.mjs` / `invite-*.test.mjs` 里依赖旧语义的部分~~ | 同上；**只删依赖旧语义的**，纯解析/脱敏/格式化的行保留 |
 
 同步要求（#487 明文）：删测试的同一个 PR 要改 `.github/workflows/ci.yml` 与门禁登记的引用，
 保持 CI 绿；**不许用 `continue-on-error` 或放宽门禁换绿**。

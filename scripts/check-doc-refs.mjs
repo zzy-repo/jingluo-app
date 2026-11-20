@@ -32,7 +32,11 @@
  * - 通配 / 模板（`*.module.css`、`scripts/lib/*AssumptionAudit.mjs`、`xxxAssumptionAudit.mjs`）——
  *   它们是「命名约定」，不是「某个文件」；
  * - 依赖与产物目录（`node_modules/**` 等）；
- * - `fenced code block` 里的命令与输出。
+ * - `fenced code block` 里的命令与输出；
+ * - **删除线里的路径**（`~~tests/golden/g07-xxx.test.mjs~~`）：这是「曾有、现已删除」的记录，
+ *   迁移 / 删除清单必须写得清删了什么，硬判「文件不存在」会逼人把删除记录也删掉。
+ *   这类引用**单独计数并打印**（`已删除（删除线…）N 处`），不是静默放行 ——
+ *   此前它被「`~` 开头的路径是家目录」那条规则顺手丢掉，等于一个谁都能用、且谁也看不见的后门。
  *
  * ## 豁免
  *
@@ -183,6 +187,9 @@ const judgeRef = (index, ref, docDir) => {
   const { file, start, end } = ref
   const hasLine = start !== null
 
+  // 删除线里的引用：文档明说「这个对象已经删了」，不该再要求它指得着（但会计数打印）
+  if (ref.deleted) return { verdict: 'ok', kind: 'deleted-marker' }
+
   // ---- 解析目标文件 ----
   let target = null
   if (file.includes('/')) {
@@ -260,6 +267,17 @@ const judgeRef = (index, ref, docDir) => {
 }
 
 /** 从 md 文本抽引用（fenced code block 里的命令/输出不算） */
+/** `~~…~~` 删除线区间（`~~` 与 `**` 一样是「这里的东西已经不在了」的通用标记） */
+const STRIKE_RE = /~~.+?~~/g
+
+const strikeSpans = (line) => {
+  const spans = []
+  STRIKE_RE.lastIndex = 0
+  let s
+  while ((s = STRIKE_RE.exec(line)) !== null) spans.push([s.index, s.index + s[0].length])
+  return spans
+}
+
 const extractRefs = (text) => {
   const refs = []
   const lines = text.split(/\r?\n/)
@@ -270,11 +288,27 @@ const extractRefs = (text) => {
       return
     }
     if (inFence) return
+    const strikes = strikeSpans(line)
     REF_RE.lastIndex = 0
     let m
     while ((m = REF_RE.exec(line)) !== null) {
       const file = m[1]
       const before = m.index === 0 ? '' : line[m.index - 1]
+      // 删除线里的路径 = 「曾有、现已删除」的记录（迁移/删除清单要写清删了什么）。
+      // 以前这类引用被下面 `before === '~'` 那条规则**静默丢掉**（一个看不见的后门：
+      // 任何文档只要给死引用套一层 `~~` 就能过门禁，且没人知道发生过）。
+      // 现在单独计数并打印 —— 放行是**显式**的，能数出来，也能被 review 看到。
+      if (strikes.some(([start, end]) => m.index >= start && m.index + m[0].length <= end)) {
+        refs.push({
+          file,
+          start: m[2] === undefined ? null : Number(m[2]),
+          end: m[3] === undefined ? null : Number(m[3]),
+          line: i + 1,
+          raw: m[0],
+          deleted: true,
+        })
+        continue
+      }
       // 绝对路径 / URL / 通配 / 名字的一部分，都不是独立引用
       if (before === '/' || before === '~' || before === '*' || before === '.') continue
       if (ARTIFACT_RE.test(file)) continue
@@ -317,6 +351,7 @@ const main = () => {
   const withLine = []
   const pathOnly = []
   const exempt = []
+  const deleted = []
   const findings = []
 
   for (const full of files) {
@@ -329,6 +364,7 @@ const main = () => {
         exempt.push(record)
         continue
       }
+      if (result.kind === 'deleted-marker') deleted.push(record)
       if (ref.start === null) pathOnly.push(record)
       else withLine.push(record)
       if (result.verdict !== 'ok') findings.push(record)
@@ -346,6 +382,7 @@ const main = () => {
           withLine: withLine.length,
           pathOnly: pathOnly.length,
           exempt: exempt.length,
+          deletedMarkers: deleted.length,
           fails,
           warns,
         },
@@ -361,6 +398,9 @@ const main = () => {
     `  扫描 ${files.length} 个文档：带行号引用 ${withLine.length} 处 / 纯路径引用 ${pathOnly.length} 处`,
   )
   console.log(`  豁免（历史取证只读）${exempt.length} 处，不判定、不影响退出码`)
+  console.log(
+    `  已删除（删除线 ~~…~~ 标记，视为「曾存在、现已删除」）${deleted.length} 处，不判定；改引用为真活路径时请去掉删除线`,
+  )
   console.log('')
 
   const printGroup = (title, list) => {

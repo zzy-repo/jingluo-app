@@ -45,8 +45,32 @@ const REQUIRED_CI_GATES = [
   'check:doc-refs',
 ]
 
-/** 这三道目前**没接线**，但必须在 issue 里有交代 —— 断言它们至少没被"假装"接线 */
-const KNOWN_UNWIRED = ['check:identity', 'check:apk', 'check:guard']
+/**
+ * 目前**没接线**（ci.yml 里没有 `run: pnpm run <alias>`）的门禁，逐条给理由。
+ *
+ * #487 全量体检（2026-11-20）实测：`scripts/check-*.mjs` 28 道，接进 CI 的 15 道，
+ * 剩下 13 道里有 10 道**连交代都没有** —— 这就是 #362 说的「脚本能判红 ≠ 有人在跑」，
+ * 而且比判红更隐蔽：一道从未被跑过的门禁，谁也不知道它其实早就判不动了。
+ * 这里把清单补全：只要有别名却没接线，就必须出现在这张表里，代码 review 时才看得见这笔账。
+ */
+const KNOWN_UNWIRED = {
+  'check:identity': '语义由 L0 用例（tests/unit/app-identity.test.mjs 等 3 条）覆盖；脚本本体未接 CI',
+  'check:apk': 'release.yml 每次发布对每个产物实跑（需要 apk 路径参数，checks job 里没有产物）',
+  'check:keystore': '需要本机 android/keystore/keystore.properties（不入库），在 CI 里必然 exit 2',
+  'check:guard': 'ES5 守卫顺序扫描；存量与 check:legacy 重叠，待定是否合并后接线',
+  'check:gap': 'CSS flex gap 兜底扫描；四个 fallback 门禁统一在「阶段③测试重建」后接线',
+  'check:focus': 'CSS focus-visible 兜底扫描；同上',
+  'check:gutter': 'CSS scrollbar-gutter 兜底扫描；同上',
+  'check:container': 'CSS 容器查询兜底扫描；语义已由 tests/unit/container-query-fallback.test.mjs 覆盖',
+  'check:compat-baseline': '静态兼容基线；语义已由 tests/unit/compat-baseline.test.mjs 覆盖',
+  'check:hardcoded-ports': '硬编码端口扫描；语义已由 tests/unit/check-hardcoded-ports.test.mjs 覆盖',
+  'check:limits': '上限常量一致性扫描；无任何调用点（本次体检新增登记）',
+  'check:icon': '图标边缘留白扫描；无任何调用点（本次体检新增登记）',
+  'check:refactor-direction': '#487 明确「阶段②之后才接 CI」：现在 A1–A6 全红，接了等于天天红',
+}
+
+/** 有脚本、没别名、也没接线的门禁：手工跑（合并前看 issue 关键字），故不设 npm script */
+const SCRIPT_WITHOUT_ALIAS = ['check-issue-close-keywords.mjs']
 
 const ROWS = [
   {
@@ -107,6 +131,42 @@ const ROWS = [
     },
   },
   {
+    id: 'W4',
+    f10: ['F10-16'],
+    name: '门禁入口自检：每个 check:* 别名 / CI 里 node scripts/*.mjs 都指向真实文件（跑不起来比判红更危险）',
+    verify: () => {
+      // ① 别名 → 文件：`check:dup-impl` 这类别名如果写成 `scripts/check-dup-impl.mjs`（少了 duplicate），
+      //    那条 CI 步骤只会 MODULE_NOT_FOUND 崩掉；脚本还在，但「这道门禁」等于不存在。
+      const missing = []
+      for (const [name, command] of Object.entries(pkg.scripts ?? {})) {
+        if (!name.startsWith('check:')) continue
+        for (const m of command.matchAll(/([A-Za-z0-9_.@/-]+\.mjs)/g)) {
+          if (m[1].includes('*')) continue
+          if (!existsSync(path.join(ROOT, m[1]))) missing.push(`${name} → ${m[1]}`)
+        }
+      }
+      assert.deepEqual(missing, [], `这些门禁别名指向不存在的脚本（点开就是个 MODULE_NOT_FOUND）：${missing.join(', ')}`)
+
+      // ② 反过来：scripts/check-*.mjs 里躺着的每个脚本都得有别名或明确登记，否则没人记得它存在
+      const aliased = new Set()
+      for (const command of Object.values(pkg.scripts ?? {})) {
+        for (const m of command.matchAll(/(check-[A-Za-z0-9_.-]+\.mjs)/g)) aliased.add(m[1])
+      }
+      const orphans = readdirSync(path.join(ROOT, 'scripts'))
+        .filter((name) => /^check-.*\.mjs$/.test(name))
+        .filter((name) => !aliased.has(name) && !SCRIPT_WITHOUT_ALIAS.includes(name))
+      assert.deepEqual(orphans, [], `这些门禁脚本既没有 npm 别名也没有登记，等于藏起来了：${orphans.join(', ')}`)
+
+      // ③ CI 里以 `node scripts/xxx.mjs` 直接入场的脚本同样必须存在（如 release.yml 的 apk 校验、ci.yml 的负向对照）
+      for (const file of ['.github/workflows/ci.yml', '.github/workflows/release.yml']) {
+        for (const m of read(file).matchAll(/node (scripts\/[A-Za-z0-9_.@/-]+\.mjs)/g)) {
+          if (m[1].includes('*')) continue
+          assert.ok(existsSync(path.join(ROOT, m[1])), `${file} 里执行的 ${m[1]} 不存在 —— 这条 CI 步骤会直接崩掉`)
+        }
+      }
+    },
+  },
+  {
     id: 'W3',
     f10: ['F10-15'],
     name: 'shared/build-types.mjs 改动能反查到用例（不再是「不在已知范围 → 忽略」）',
@@ -133,8 +193,9 @@ test('域10 接线矩阵的表结构自洽（id 唯一 / 功能点 ID 合法）'
       assert.match(id, /^F10-(0[1-9]|1[0-9]|2[0-2])$/, `${row.id} 的功能点 ID 不合法：${id}`)
     }
   }
-  // 3 行：ci.yml / deploy 入口 / which.mjs 反查（#362 §3.2 N6 的分支行数 6 = 3 行 × 正反两半）
-  assert.equal(ROWS.length, 3, 'N6 应正好 3 行（配置 / 入口 / 反查）')
+  // 4 行：ci.yml / deploy 入口 / which.mjs 反查 / 门禁入口自检（#487 体检补的第 4 条不变量：
+  // 前三行都在验「门禁在不在跑」，这一行验「门禁自己还站得住吗」—— 崩溃的门禁同样是零覆盖）
+  assert.equal(ROWS.length, 4, 'N6 应正好 4 行（配置 / 入口 / 反查 / 入口自检）')
 })
 
 for (const row of ROWS) {
@@ -144,7 +205,8 @@ for (const row of ROWS) {
 }
 
 test('未接线的门禁有明确交代（不许悄悄躺在 package.json 里当摆设）', () => {
-  for (const gate of KNOWN_UNWIRED) {
+  for (const [gate, reason] of Object.entries(KNOWN_UNWIRED)) {
+    assert.ok(reason && reason.length >= 8, `${gate} 的未接线理由太短，等于没有理由`)
     assert.ok(Object.hasOwn(pkg.scripts ?? {}, gate), `${gate} 连 script 都没了，issue 里的登记也失效了`)
     assert.doesNotMatch(
       ci,
