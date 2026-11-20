@@ -1147,7 +1147,7 @@ export const zh = {
   consumeLogoutConfirm: '退出后需要重新登录才能继续使用，确认退出吗？',
   consumeLogoutSuccess: '已退出登录',
 
-  // 邀请面板（返利按 USD 比例结算，邀请关系只在注册时一次填定）
+  // 邀请面板（返利按消费额的比例以「元」结算，邀请关系只在注册时一次填定）
   inviteRebateRate: '返利按下线消费额的 {percent}% 结算，结算后计入返利余额',
   inviteRebateFrozen: '其中 {amount} 冻结中',
 
@@ -1156,4 +1156,13 @@ export const zh = {
   emailBindCodeLabel: '验证码',
   emailBindUnbindConfirm: '解绑后这个邮箱将不再与账号关联，确认解绑吗？',
   emailBindCannotUnbind: '这是账号唯一的登录方式，不能解绑',
+  // 老账号额度迁移（#498 的临时尾巴，@remove-after 1.6.0）：
+  // 登录后一次性调用，失败静默；这几条只服务于那一个自包含按钮（src/legacy/migration/）。
+  // 删除方法见 src/legacy/migration/README.md（届时这 5 条一起删）。
+  legacyMigrateTitle: '迁移历史额度',
+  legacyMigrateDone: '历史额度已迁移：{amount}',
+  legacyMigrateManual: '如需迁移历史额度，请联系客服',
+  legacyMigrateExpired: '额度迁移已结束',
+  legacyMigrateFailed: '迁移失败',
+  legacyMigrateDeviceMismatch: '设备信息不匹配，请联系客服',
 } as const

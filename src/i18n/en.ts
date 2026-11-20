@@ -1160,4 +1160,13 @@ export const en = {
   emailBindCodeLabel: 'Verification code',
   emailBindUnbindConfirm: 'After unbinding, this email is no longer linked to the account. Unbind?',
   emailBindCannotUnbind: 'This is the only way to sign in to the account, so it cannot be unbound',
+  // Legacy credit migration (#498 temporary tail, @remove-after 1.6.0):
+  // called once after sign-in, failures stay silent; only the self-contained button
+  // in src/legacy/migration/ uses these. Delete them together with that directory.
+  legacyMigrateTitle: 'Migrate old credit',
+  legacyMigrateDone: 'Old credit migrated: {amount}',
+  legacyMigrateManual: 'To migrate your old credit, please contact support',
+  legacyMigrateExpired: 'Credit migration has ended',
+  legacyMigrateFailed: 'Migration failed',
+  legacyMigrateDeviceMismatch: 'Device info does not match, please contact support',
 } satisfies Record<keyof typeof zh, string>

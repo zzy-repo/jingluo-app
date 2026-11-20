@@ -18,5 +18,11 @@
   "pay": {
     "baseUrl": "https://apia.ecsafe.cn",
     "timeoutMs": { "read": 10000, "write": 20000 }
+  },
+  "migration": {
+    "enabled": false,
+    "baseUrl": "",
+    "endpoint": "/legacy/claim",
+    "timeoutMs": 20000
   }
 }
