@@ -327,7 +327,20 @@ export const createConfig = ({
     }),
     buildInfoPlugin(internalBuild ? 'internal' : 'standard', appVersion, outputPath),
     new rspack.CopyRspackPlugin({
-      patterns: [{ from: path.resolve(root, 'LICENSE'), to: 'LICENSE', toType: 'file' }],
+      patterns: [
+        { from: path.resolve(root, 'LICENSE'), to: 'LICENSE', toType: 'file' },
+        // Issue #571（PDF 文本提取）：PDF.js 的 worker 必须是一个**独立、同源、可被
+        // `new Worker(src)` 直接加载**的脚本，不能被打进 main.js（打进去就没有 worker 了）。
+        // 所以这里把 pdfjs-dist 2.16.105 的 legacy worker 原样拷到产物里，用**固定文件名**
+        // （不能走 [contenthash]，因为运行时是按 document.baseURI 相对推导地址的）。
+        // 路径字符串与 src/services/documents/pdf.ts 的 PDF_WORKER_ASSET 必须一致 ——
+        // tests/unit/doc-571-pdf.test.mjs 有一条断言把这个约定钉住，改单边就会红。
+        {
+          from: path.resolve(root, 'node_modules/pdfjs-dist/legacy/build/pdf.worker.min.js'),
+          to: 'static/pdf/pdf.worker.min.js',
+          toType: 'file',
+        },
+      ],
     }),
   ],
   performance: { hints: false },
