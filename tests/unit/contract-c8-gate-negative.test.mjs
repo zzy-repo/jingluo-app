@@ -93,6 +93,12 @@ const REGISTRY = readRegistry()
 const CI_MARKERS = {
   'check:redact': /check-redact\.mjs\s+--selftest/,
   'check:legacy': /__ciNeg/,
+  // #413 把「往 src 塞一份端点地址字面量 → check:endpoints 必须 exit 1」接进了 ci.yml，
+  // 但本表的判据没跟上：C8 因此在 main 上红（`check:endpoints 的负向对照登记在 ci.yml 上，
+  // 但本契约没有它的判据`）。判据就用那段现场注入的命令本身（`check-endpoints.mjs`）。
+  'check:endpoints': /check-endpoints\.mjs/,
+  // 同理：#413 的 check:i18n 负向对照（删掉一个 zh key 必须 exit 1）也没登记判据。
+  'check:i18n': /check-i18n\.mjs/,
 }
 
 /** 证据所在文件是不是「执行入口」：ci.yml 的步骤，或单元层（`pnpm test` 每次都跑）的用例 */

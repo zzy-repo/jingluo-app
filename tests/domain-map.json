@@ -359,6 +359,22 @@
         "integration": ["tests/integration/internal-build.test.mjs"],
         "golden": ["tests/golden/g10-update.test.mjs"]
       }
+    },
+    {
+      "id": "domain11",
+      "name": "邮箱账号（绑定 / 换机登录）",
+      "doc": "docs/testing/coverage/domain-11.md",
+      "paths": {
+        "src/services/invite/**email**": ["tests/unit/domain11-*.test.mjs", "tests/unit/contract-c9-email.test.mjs", "tests/integration/domain11-email-flow.test.mjs", "tests/golden/g11-*.test.mjs"],
+        "src/services/invite/api.ts": ["tests/unit/domain11-email-parse.test.mjs", "tests/unit/domain11-email-conflict.test.mjs", "tests/unit/contract-c9-email.test.mjs", "tests/integration/domain11-email-flow.test.mjs", "tests/golden/g11-*.test.mjs"],
+        "src/components/settings/OursServicesDialog.tsx": ["tests/unit/domain11-*.test.mjs", "tests/unit/contract-c9-email.test.mjs", "tests/integration/domain11-email-flow.test.mjs", "tests/golden/g11-*.test.mjs"],
+        "src/i18n/**": ["tests/unit/domain11-email-parse.test.mjs", "tests/unit/contract-c9-email.test.mjs"]
+      },
+      "tests": {
+        "unit": ["tests/unit/domain11-email-parse.test.mjs", "tests/unit/domain11-email-entry.test.mjs", "tests/unit/domain11-email-conflict.test.mjs", "tests/unit/contract-c9-email.test.mjs"],
+        "integration": ["tests/integration/domain11-email-flow.test.mjs"],
+        "golden": ["tests/golden/g11-email.test.mjs"]
+      }
     }
   ],
   "fallback": {
