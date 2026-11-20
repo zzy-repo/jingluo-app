@@ -21,10 +21,11 @@ pnpm run test:golden    # = node tests/run-golden.mjs（并行 + 每条耗时 + 
 | 导出+导入 | 导出 → 校验包结构 → 可再次导入 | `g06-export-import.test.mjs` | `services/chat/backup.ts`、`history/exportArchive.ts`、`zipWriter.ts`、`components/settings/SettingsDialog.tsx`（导出/上传） |
 | 诊断 | 触发错误 → 诊断复制内容已脱敏 | `g09-diagnostics.test.mjs` | `services/chat/describe.ts`、`replyErrorReport.ts`、`services/diagnostics/redact.ts`、`app/errorReport.ts` |
 | 更新 | 检查 → 解析清单 → 选对版本 → 下载校验 | `g10-update.test.mjs` | `services/updateManifest.ts`、`components/settings/AppUpdateField.tsx` |
+| 账户与消费 | JWT 登录 → 读余额 → 兑换卡密 → 余额变化（+ 冷启动续期）；mock 驱动 | `g12-consume.test.mjs` | `services/auth/{store,transport}.ts`、`services/consume/{auth,usage,redeem}.ts` |
 
 对应关系按「**改动落在哪就至少跑那一条**」用，不是穷举：动了 `src/services/chat/` 就跑 G1/G2/G4/G5/G6，
 动了设置面板/渠道就跑 G3/G5/G6/G9/G10（`g11` 邮箱见 `tests/golden/g11-email.test.mjs`）。
-拿不准就 `pnpm run test:golden` 全跑 —— 9 条约 11 秒。
+拿不准就 `pnpm run test:golden` 全跑 —— 10 条约 12 秒（g12 单独约 0.9s，自带 mock，不需要 dist）。
 
 > **额度 / 卡密 / 购买的黄金回归已删除（W1-D，#487）**：`g07-quota-purchase.test.mjs` 跟着旧额度/邀请体系
 > 一起删了 —— 它断言的「领取 → 刷新 → 兑换」走的是 `device_id` + 本机池那条即将整体替换的链路，
@@ -34,6 +35,15 @@ pnpm run test:golden    # = node tests/run-golden.mjs（并行 + 每条耗时 + 
 > **两处合并**（Issue #404 允许：「某两域天然同一流程就合成一条」）：
 > · **导出 + 导入** → G6：只有把导出的字节真的喂回导入，`manifest` 首条、条目路径、索引与会话的一一对应才被同时钉住；
 > · （原「额度 + 购买」合并成 G7 的那条已随 W1-D 删除，见上。）
+
+### g12「账户与消费」为什么是 mock 驱动、而不是 dist + 浏览器
+
+新链路（JWT 身份层 + 四个消费面板）**还没有页面外壳**：`src/main.tsx` 尚未挂 `AuthGate`，
+账户页（W1-C1）未合并，所以 dist 里点不到登录 / 兑换入口。这一条因此把**链路**端到端跑通：
+真 `createConsumeClient` / `createAuthTransport` / `store`，对面是 `tools/mock-sub2api`（端口 0，
+内核分配；不连 127.0.0.1:18000 的真实例，用例结尾有「所有请求都落在本次 mock 上」的守卫）。
+两条路径：① 登录 → 读余额 → 兑换 `MOCK-OK-0001` → 余额 +10；② 冷启动过期 → 续期换新 token → 仍能读余额。
+等页面外壳合并后，把「调客户端」换成「点按钮」即可，步骤名与断言不用改。
 
 ## 与 L1 的分工（硬要求）
 
