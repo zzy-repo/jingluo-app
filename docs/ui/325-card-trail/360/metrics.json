@@ -1,0 +1,62 @@
+{
+  "page": "card-trail-lookup",
+  "title": "#325 支付记录 → 卡密块「查这张卡」：卡密溯源弹层（已兑换 / 他人卡 404）",
+  "viewport": 360,
+  "size": "360×740",
+  "shots": [
+    "docs/ui/325-card-trail/360/card-trail-lookup-01-trail-card-lookup-entry-360.png",
+    "docs/ui/325-card-trail/360/card-trail-lookup-02-card-trail-panel-360.png",
+    "docs/ui/325-card-trail/360/card-trail-lookup-03-card-trail-other-user-404-360.png"
+  ],
+  "notes": [
+    "第 ③ 步的 404 是刻意造的：consoleErrors 里那条 404 资源错误属于预期"
+  ],
+  "list": {
+    "viewportWidth": 360,
+    "documentScrollWidth": 360,
+    "cardCount": 2,
+    "lookupCount": 2,
+    "lookupText": "查这张卡",
+    "panelVisible": false,
+    "panelText": "",
+    "sourceText": "",
+    "hasMaskedCard": true,
+    "fullCardInDom": false,
+    "errorText": "",
+    "overflowCount": 0,
+    "overflowSamples": []
+  },
+  "panel": {
+    "viewportWidth": 360,
+    "documentScrollWidth": 360,
+    "cardCount": 2,
+    "lookupCount": 2,
+    "lookupText": "查这张卡",
+    "panelVisible": true,
+    "panelText": "卡密••••A3SR已兑换3,0002026-11-19 06:40兑换 Key 尾号 013812本人兑换兑换来源本 App 内兑换订单号CP20261119063300003只能查到自己账号下这张卡的记录；别人的卡会显示「没有找到这笔记录」。",
+    "sourceText": "兑换来源本 App 内兑换",
+    "hasMaskedCard": true,
+    "fullCardInDom": false,
+    "errorText": "",
+    "overflowCount": 0,
+    "overflowSamples": []
+  },
+  "otherUser404": {
+    "viewportWidth": 360,
+    "documentScrollWidth": 360,
+    "cardCount": 2,
+    "lookupCount": 2,
+    "lookupText": "查这张卡",
+    "panelVisible": false,
+    "panelText": "",
+    "sourceText": "",
+    "hasMaskedCard": true,
+    "fullCardInDom": false,
+    "errorText": "没有找到这笔记录",
+    "overflowCount": 0,
+    "overflowSamples": []
+  },
+  "consoleErrors": [
+    "Failed to load resource: the server responded with a status of 404 (Not Found)"
+  ]
+}

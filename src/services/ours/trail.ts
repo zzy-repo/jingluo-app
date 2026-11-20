@@ -696,6 +696,20 @@ export async function fetchTrailVia(
   return page
 }
 
+/** 卡号溯源的注入点：界面层只认这个形状，单测给假传输层就能断言「发了什么请求」 */
+export type CardTrailFetcher = (params: { apiKey: string; cardNo: string }) => Promise<CardTrail>
+
+/**
+ * 按卡号溯源（界面用，Issue #325）：`GET {base}/api/card/trail?card_no=` + `Authorization: Bearer <apiKey>`。
+ *
+ * 与 `fetchTrail` 同形：走真传输层与 `OURS_API_BASE`，界面层不需要知道 transport。
+ * **只读**：这条路径只有 GET，客户端不发任何写请求。
+ * 卡号只进 query（契约如此），Key 只在请求头 —— 两者都不落日志、不进埋点、不进剪贴板。
+ */
+export function fetchCardTrail(params: { apiKey: string; cardNo: string }): Promise<CardTrail> {
+  return fetchCardTrailVia(params, httpTransport, OURS_API_BASE)
+}
+
 /** 按单号查一笔（`GET {base}/api/order/trail?out_trade_no=`）；传输层与 base 可注入。 */
 export async function fetchOrderTrailVia(
   params: { apiKey: string; outTradeNo: string },

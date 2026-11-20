@@ -45,6 +45,13 @@ import { cardTrailRedeemed, orderTrailResponse, trailPage } from '../tests/fixtu
  *    「已支付·等待发卡」那条分支由 #189 场景（`payment-trail`）覆盖。
  *  - **单号唯一**：客户端按 `out_trade_no` 去重，夹具里留重复单号会把「翻页重复」这个缺陷掩盖掉。
  */
+/**
+ * #325 卡密溯源场景的拦截配置。**故意做成可变对象**：场景里查完「自己的卡」后
+ * 把 `cardStatus` 改成 404 再点一次，模拟「拿自己的 Key 查别人的卡」——
+ * `routeTrail` 的闭包和 `run` 拿到的是同一份，所以改一处就换口径。
+ */
+const cardTrailDef = { page: trailPage, card: cardTrailRedeemed }
+
 const pagedTrailPage = (() => {
   const templateOf = (status) => trailPage.orders.find((item) => item.status === status)
   const quota = [
@@ -816,11 +823,18 @@ const routeTrail = async (context, def) => {
       return
     }
     const url = new URL(request.url())
+    // 卡号查询单独一档状态码（#325）：要截「他人卡 404」又不能让 `/api/trail` 一起红，
+    // 所以 `cardStatus` 只作用在 `/api/card/trail` 上（`status` 仍是三个接口共用的老口径）。
+    const isCardTrail = url.pathname === '/api/card/trail'
     let body
     if (url.pathname === '/api/order/trail') {
       body = def.order ?? orderTrailResponse
-    } else if (url.pathname === '/api/card/trail') {
-      body = def.card ?? cardTrailRedeemed
+    } else if (isCardTrail) {
+      const cardStatus = def.cardStatus ?? def.status ?? 200
+      body =
+        cardStatus >= 400
+          ? (def.cardError ?? { code: 'CARD_NOT_FOUND', message: '卡密不存在', request_id: 'card-325' })
+          : (def.card ?? cardTrailRedeemed)
     } else {
       const page = def.page ?? trailPage
       const limit = Number(url.searchParams.get('limit') ?? page.limit)
@@ -839,7 +853,7 @@ const routeTrail = async (context, def) => {
       }
     }
     await route.fulfill({
-      status: def.status ?? 200,
+      status: isCardTrail ? (def.cardStatus ?? def.status ?? 200) : (def.status ?? 200),
       contentType: 'application/json',
       headers,
       body: JSON.stringify(body),
@@ -1430,6 +1444,144 @@ export const PAGES = {
         throw new Error(`切回「全部」没有重新从第一页开始：${back.orderCount} 条 / ${back.summary}`)
       }
       await shot('06-trail-back-to-all')
+    },
+  },
+
+  /**
+   * #325 验收：卡密溯源从死代码接上界面（`/api/card/trail` 原本零界面入口）。
+   *
+   * 这条场景要证明的是「入口 + 三态 + 权限边界」，不是又一张列表截图：
+   *  ① 支付记录里**已发卡**的卡密块上有「查这张卡」（`trail-card-lookup`）；
+   *  ② 点开是卡密溯源弹层：卡号只有后 4 位，能看到关联订单号 / 积分 / 兑换来源；
+   *  ③ 同一张卡按「他人卡」口径回 404 → 只有一句「没有找到这笔记录」，
+   *     既不是空态，也不带金额 / 订单号（服务端不区分「不存在」与「不是你的」，界面也不许猜）。
+   *
+   * 三个接口的拦截沿用 `routeTrail`；`cardStatus` 只作用在 `/api/card/trail` 上，
+   * 否则第 ③ 步会把支付记录列表一起打成错误态。
+   */
+  'card-trail-lookup': {
+    dir: 'docs/ui/325-card-trail',
+    title: '#325 支付记录 → 卡密块「查这张卡」：卡密溯源弹层（已兑换 / 他人卡 404）',
+    sessions: () => [makeReadingSession()],
+    mockOrders: false,
+    providerKind: 'ours',
+    trail: cardTrailDef,
+    run: async (ctx) => {
+      const { page, shot, record, warn } = ctx
+      // 每个视口重跑时先复位：360 档不能带着上一档的 404 开局
+      cardTrailDef.cardStatus = 200
+
+      /** 量数：入口 / 面板文案 / 掩码 / 横向溢出；`errorText` 给第 ③ 步用 */
+      const measure = () =>
+        page.evaluate(() => {
+          const viewportWidth = document.documentElement.clientWidth
+          const overflowing = []
+          for (const node of document.querySelectorAll(
+            '[data-testid="trail-card-lookup"], [data-testid="trail-card-panel"], [data-testid="trail-error"]'
+          )) {
+            const rect = node.getBoundingClientRect()
+            if (rect.width > 0 && rect.right > viewportWidth + 1) {
+              overflowing.push({ right: Math.round(rect.right) })
+            }
+          }
+          const panel = document.querySelector('[data-testid="trail-card-panel"]')
+          const errorNode = document.querySelector('[data-testid="trail-error"]')
+          const bodyText = document.body.textContent ?? ''
+          return {
+            viewportWidth,
+            documentScrollWidth: Math.round(document.documentElement.scrollWidth),
+            cardCount: document.querySelectorAll('[data-testid="trail-card"]').length,
+            lookupCount: document.querySelectorAll('[data-testid="trail-card-lookup"]').length,
+            lookupText: (document.querySelector('[data-testid="trail-card-lookup"]')?.textContent ?? '').trim(),
+            panelVisible: panel !== null,
+            panelText: (panel?.textContent ?? '').replace(/\s+/gu, ' ').trim(),
+            sourceText: (document.querySelector('[data-testid="trail-card-source"]')?.textContent ?? '').trim(),
+            hasMaskedCard: bodyText.includes('••••'),
+            fullCardInDom: bodyText.includes('MUSE-3CYP-5NA3-AHSE-A3SR'),
+            errorText: (errorNode?.textContent ?? '').replace(/\s+/gu, ' ').trim(),
+            overflowCount: overflowing.length,
+            overflowSamples: overflowing.slice(0, 5),
+          }
+        })
+
+      await openSettings(page, S.tabData)
+      const entry = page.locator(S.paymentTrailOpen)
+      await entry.waitFor({ state: 'visible', timeout: 10000 })
+      await entry.click()
+      const root = page.locator('[data-testid="payment-trail"]')
+      await root.waitFor({ state: 'visible', timeout: 10000 })
+      await page.waitForTimeout(700)
+
+      const list = await measure()
+      record('list', list)
+      if (list.cardCount < 1) {
+        throw new Error('支付记录里一个卡密块都没有：夹具或卡密渲染不对')
+      }
+      if (list.lookupCount < 1) {
+        throw new Error('已发卡的卡密块上没有「查这张卡」入口（#325 的入口没接上）')
+      }
+      if (list.fullCardInDom) {
+        throw new Error('完整卡号漏进了 DOM：截图 / 转发会把卡密带出去')
+      }
+      const firstLookup = page.locator('[data-testid="trail-card-lookup"]').first()
+      await firstLookup.scrollIntoViewIfNeeded()
+      await page.waitForTimeout(260)
+      await shot('01-trail-card-lookup-entry')
+
+      // ② 点开：卡密溯源弹层（已兑换的卡）
+      await firstLookup.click()
+      await page.locator('[data-testid="trail-card-panel"]').waitFor({ state: 'visible', timeout: 10000 })
+      await page.waitForTimeout(420)
+      const panel = await measure()
+      record('panel', panel)
+      if (!panel.panelVisible) {
+        throw new Error('点了「查这张卡」没有出现溯源面板')
+      }
+      if (panel.fullCardInDom || !panel.panelText.includes('••••A3SR')) {
+        throw new Error(`面板里的卡号不是掩码：${panel.panelText}`)
+      }
+      if (!panel.panelText.includes('CP20261119063300003')) {
+        throw new Error(`面板里没有关联订单号：${panel.panelText}`)
+      }
+      if (!panel.sourceText.includes('本 App 内兑换')) {
+        throw new Error(`兑换来源没渲染（#325 关闭条件点名要它）：${panel.sourceText}`)
+      }
+      if (panel.overflowCount > 0) {
+        warn(`溯源面板横向溢出 ${panel.overflowCount} 处：${JSON.stringify(panel.overflowSamples)}`)
+      }
+      await shot('02-card-trail-panel')
+
+      // 关掉溯源弹层：Esc 只关最上层（叠放栈），关了要确认下层支付记录还在
+      await page.keyboard.press('Escape')
+      await page.waitForTimeout(360)
+      if ((await measure()).panelVisible) {
+        await page.locator('button[aria-label="关闭"]').last().click()
+        await page.waitForTimeout(360)
+      }
+      if ((await measure()).panelVisible) {
+        throw new Error('溯源弹层关不掉：下一步点不到列表')
+      }
+
+      // ③ 他人卡：服务端 404 → 只有一句「没有找到这笔记录」，不带金额 / 订单号
+      cardTrailDef.cardStatus = 404
+      await page.locator('[data-testid="trail-card-lookup"]').first().click()
+      await page.locator('[data-testid="trail-error"]').last().waitFor({ state: 'visible', timeout: 10000 })
+      await page.waitForTimeout(320)
+      const notFound = await measure()
+      record('otherUser404', notFound)
+      if (!notFound.errorText.includes('没有找到这笔记录')) {
+        throw new Error(`404 的文案不对：#325 要求统一「没有找到这笔记录」，实际 ${notFound.errorText}`)
+      }
+      if (notFound.panelVisible) {
+        throw new Error('404 被渲染成了面板：那一刻界面在说「这张卡有记录」')
+      }
+      if (notFound.errorText.includes('CP20261119063300003') || notFound.errorText.includes('¥')) {
+        throw new Error(`404 文案里带了订单信息（等于确认了这张卡存在）：${notFound.errorText}`)
+      }
+      // 这一步的 404 是刻意造的：控制台那条 `Failed to load resource ... 404` 属于预期，
+      // 不是缺陷（metrics 的 consoleErrors 会带上它，这里显式说明一句）
+      warn('第 ③ 步的 404 是刻意造的：consoleErrors 里那条 404 资源错误属于预期')
+      await shot('03-card-trail-other-user-404')
     },
   },
 

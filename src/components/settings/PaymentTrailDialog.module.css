@@ -290,6 +290,17 @@
   color: var(--dsh-text-secondary, #6b7280);
 }
 
+/* 卡密块里的「查这张卡」入口（#325）：单独占一行右对齐，别和卡号 / 积分挤在同一行点错 */
+.cardLookup {
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* 兑换来源（#325）：与卡号同色，值比标签更醒目一点 */
+.cardSource {
+  color: var(--dsh-text-primary, #111827);
+}
+
 .cardNo {
   font-family: var(--ds-font-family-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
   letter-spacing: 0.06em;

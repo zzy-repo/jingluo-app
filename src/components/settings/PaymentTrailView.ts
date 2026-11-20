@@ -3,6 +3,7 @@ import type { TranslationKey, TranslationParams } from '../../i18n/index.js'
 import { hasMoreTrail, TRAIL_ORDER_STATUSES } from '../../services/ours/trail.js'
 import type {
   CardTrail,
+  CardTrailFetcher,
   TrailCard,
   TrailErrorKind,
   TrailEvent,
@@ -563,8 +564,20 @@ const statusTone = (status: TrailOrderStatus): TrailTone => {
   return 'pending'
 }
 
-/** 卡密块：完整卡号不进 DOM，只给后 4 位 + 积分 + 兑换状态 */
-const cardNode = (card: TrailCard, c: TrailClassNames, t: TrailTranslate): ReactNode =>
+/**
+ * 卡密块：完整卡号不进 DOM，只给后 4 位 + 积分 + 兑换状态。
+ *
+ * 「查这张卡」（#325）：回调收到的是**完整卡号**（查询要它），但渲染出来的永远只有
+ * `maskTrailCard` 的掩码 —— 事件参数不进 DOM、不进剪贴板。没传回调就不渲染入口
+ * （别的宿主复用这个模块时不该冒出一个按不动的按钮）。
+ */
+const cardNode = (
+  card: TrailCard,
+  c: TrailClassNames,
+  t: TrailTranslate,
+  btn: ViewButtonComponent,
+  onLookupCard?: (cardNo: string) => void
+): ReactNode =>
   createElement(
     'div',
     { className: c.card, 'data-testid': 'trail-card', 'data-state': card.state },
@@ -602,7 +615,22 @@ const cardNode = (card: TrailCard, c: TrailClassNames, t: TrailTranslate): React
             formatTrailTime(card.redeemedAt)
           )
         : null
-    )
+    ),
+    // 入口就在卡密块里（#325）：用户看到「这张卡」的同一行才有动机反查它，
+    // 不另开设置入口 —— 卡号是凭据，入口越少越好。
+    typeof onLookupCard === 'function' && card.cardNo.trim() !== ''
+      ? createElement(
+          'div',
+          { className: c.cardLookup },
+          btn({
+            variant: 'outlined',
+            size: 's',
+            testId: 'trail-card-lookup',
+            onClick: () => onLookupCard(card.cardNo),
+            children: t('oursTrailCardLookup'),
+          })
+        )
+      : null
   )
 
 const orderNode = (
@@ -611,7 +639,8 @@ const orderNode = (
   c: TrailClassNames,
   t: TrailTranslate,
   btn: ViewButtonComponent,
-  onCopyOrderNo?: (outTradeNo: string) => void
+  onCopyOrderNo?: (outTradeNo: string) => void,
+  onLookupCard?: (cardNo: string) => void
 ): ReactNode => {
   const tone = statusTone(order.status)
   const waiting = order.card === null && order.status === 'paid'
@@ -653,7 +682,7 @@ const orderNode = (
           t('oursTrailWaitingCard')
         )
       : null,
-    order.card === null ? null : cardNode(order.card, c, t),
+    order.card === null ? null : cardNode(order.card, c, t, btn, onLookupCard),
     order.timeline.length === 0
       ? null
       : createElement(
@@ -710,6 +739,11 @@ export type PaymentTrailViewProps = {
   onRetry?: () => void
   onRefresh?: () => void
   onCopyOrderNo?: (outTradeNo: string) => void
+  /**
+   * 点「查这张卡」（#325）：收到**完整卡号**，由容器负责查 `/api/card/trail`。
+   * 不传就不渲染入口 —— 展示层不自己发请求，也不自己决定权限。
+   */
+  onLookupCard?: (cardNo: string) => void
 }
 
 export const PaymentTrailView = (props: PaymentTrailViewProps): ReactNode => {
@@ -725,6 +759,7 @@ export const PaymentTrailView = (props: PaymentTrailViewProps): ReactNode => {
     onRetry,
     onRefresh,
     onCopyOrderNo,
+    onLookupCard,
   } = props
   const page = view.status === 'ok' ? view.page : null
   // `items` 是累积结果（翻页追加、已去重）；`page.orders` 只是最近一页，老调用方没传 items 时按它渲染
@@ -852,7 +887,9 @@ export const PaymentTrailView = (props: PaymentTrailViewProps): ReactNode => {
       : createElement(
           'ul',
           { className: c.list, 'data-testid': 'trail-order-list' },
-          ...orders.map((order, index) => orderNode(order, index, c, t, btn, onCopyOrderNo))
+          ...orders.map((order, index) =>
+            orderNode(order, index, c, t, btn, onCopyOrderNo, onLookupCard)
+          )
         )
 
   /**
@@ -917,22 +954,94 @@ export const PaymentTrailView = (props: PaymentTrailViewProps): ReactNode => {
   )
 }
 
-// ------------------------------------------------------------------ 卡密溯源
+// ------------------------------------------------------------------ 卡密溯源（#325：死代码转正）
 
 export type CardTrailView =
   | { status: 'loading' }
   | { status: 'error'; error: TrailErrorView }
   | { status: 'ok'; trail: CardTrail | null }
 
+/** 卡号查询的可注入形状就是数据层的 `CardTrailFetcher`：真实现是 `trail.ts` 的 `fetchCardTrail` */
+export type { CardTrailFetcher }
+
+export type CardTrailLoadResult =
+  | { status: 'ok'; trail: CardTrail }
+  | { status: 'error'; error: TrailErrorView }
+
+/**
+ * 查一张卡的溯源并归一成视图状态。**永不抛**，与 `loadTrailPage` 同一套口径：
+ *
+ *  - 没填 Key → `keyMissing`，**一个请求都不发**（省掉一次必然 401 的往返）；
+ *  - 空卡号 → 直接按「没找到」收口，不发请求；
+ *  - 404 → `notFound`：服务端对「这张卡不存在」和「这张卡不是你的」回**同一个** 404，
+ *    客户端也只用一句话说明（`oursTrailErrNotFound`）。不区分才能保证这个入口
+ *    不会被当成「拿卡号探别人订单」的探针（#325 权限边界）；
+ *  - 其余交给 `describeTrailError`：401/403 引导重新绑定 Key（重试无意义），
+ *    503 可重试且**不是空态**（沿用 #189 的「停服≠没记录」）。
+ *
+ * 卡号只顺着 `fetchCardTrail` 的参数进 query：本函数不打印、不埋点、不写剪贴板、不落存储。
+ */
+export async function loadCardTrail(params: {
+  fetchCardTrail: CardTrailFetcher
+  apiKey: string
+  cardNo: string
+}): Promise<CardTrailLoadResult> {
+  const apiKey = typeof params.apiKey === 'string' ? params.apiKey.trim() : ''
+  if (apiKey === '') {
+    return { status: 'error', error: describeTrailError({ kind: 'keyMissing' }) }
+  }
+  const cardNo = typeof params.cardNo === 'string' ? params.cardNo.trim() : ''
+  if (cardNo === '') {
+    return { status: 'error', error: describeTrailError({ kind: 'notFound' }) }
+  }
+  try {
+    const trail = await params.fetchCardTrail({ apiKey, cardNo })
+    return { status: 'ok', trail }
+  } catch (error) {
+    return { status: 'error', error: describeTrailError(error) }
+  }
+}
+
+/**
+ * 兑换来源 → 文案：认识的原样翻译，不认识的原样显示服务端值。
+ * 服务端以后加新来源（`mini_program` 之类）时，用户至少能看到原始标记，而不是一句「未知」。
+ */
+const CARD_SOURCE_KEYS: Record<string, TranslationKey> = {
+  in_app: 'oursTrailCardSourceInApp',
+  inapp: 'oursTrailCardSourceInApp',
+  app: 'oursTrailCardSourceInApp',
+  web: 'oursTrailCardSourceWeb',
+  h5: 'oursTrailCardSourceWeb',
+  site: 'oursTrailCardSourceWeb',
+}
+
+export const cardSourceText = (source: string, t: TrailTranslate): string => {
+  const raw = typeof source === 'string' ? source.trim() : ''
+  const key = CARD_SOURCE_KEYS[raw.toLowerCase()]
+  if (key !== undefined) {
+    return t(key)
+  }
+  return raw === '' ? t('oursTrailCardSourceUnknown') : raw
+}
+
 export type CardTrailPanelProps = {
   t: TrailTranslate
   classNames: TrailClassNames
   view: CardTrailView
+  /** 重试上一张卡；只在可重试的错误上渲染按钮（401/403/404 重试没意义） */
+  onRetry?: () => void
+  /** 重试按钮的渲染器；不给就只有文案、没有按钮（纯文案也能测） */
+  button?: ViewButtonComponent
 }
 
-/** 卡密溯源面板：这张卡怎么来的、积分到账了没、是不是本人兑换的 */
+/**
+ * 卡密溯源面板：这张卡怎么来的、积分到账了没、是不是本人兑换的、从哪个渠道兑换的。
+ *
+ * 面板本身**不知道卡号也不知道 Key**：数据由容器查好，这里只渲染三种状态。
+ * 卡号永远是 `maskTrailCard` 的掩码（后 4 位），完整卡号既不在 DOM 里，也不在 title/aria 里。
+ */
 export const CardTrailPanel = (props: CardTrailPanelProps): ReactNode => {
-  const { t, classNames: c, view } = props
+  const { t, classNames: c, view, onRetry, button } = props
   if (view.status === 'loading') {
     return createElement(
       'div',
@@ -944,7 +1053,24 @@ export const CardTrailPanel = (props: CardTrailPanelProps): ReactNode => {
     return createElement(
       'div',
       { className: c.error, role: 'alert', 'data-testid': 'trail-error' },
-      t(view.error.messageKey)
+      // 404 与「不是你的卡」共用这一句：服务端不回区分，界面也不许猜
+      createElement('div', null, t(view.error.messageKey)),
+      view.error.needsKey
+        ? createElement('div', { className: c.hint }, t('oursTrailNeedKey'))
+        : null,
+      view.error.retryable && typeof onRetry === 'function' && typeof button === 'function'
+        ? createElement(
+            'div',
+            { className: c.actions },
+            button({
+              variant: 'outlined',
+              size: 's',
+              testId: 'trail-card-retry',
+              onClick: onRetry,
+              children: t('oursTrailRetry'),
+            })
+          )
+        : null
     )
   }
   const trail = view.trail
@@ -958,7 +1084,11 @@ export const CardTrailPanel = (props: CardTrailPanelProps): ReactNode => {
   const { redemption } = trail
   return createElement(
     'div',
-    { className: c.cardPanel, 'data-testid': 'trail-card-panel', 'data-redeemed': redemption.redeemed ? 'true' : 'false' },
+    {
+      className: c.cardPanel,
+      'data-testid': 'trail-card-panel',
+      'data-redeemed': redemption.redeemed ? 'true' : 'false',
+    },
     createElement(
       'div',
       { className: c.cardRow },
@@ -995,6 +1125,13 @@ export const CardTrailPanel = (props: CardTrailPanelProps): ReactNode => {
                   ? t('oursTrailRedeemedByOther')
                   : t('oursTrailRedeemedByUnknown')
             )
+          ),
+          // 兑换来源（#325 关闭条件点名要的字段）：/api/trail 的订单卡块里没有这一项
+          createElement(
+            'div',
+            { className: c.cardRow, 'data-testid': 'trail-card-source' },
+            createElement('span', { className: c.cardLabel }, t('oursTrailCardSourceLabel')),
+            createElement('span', { className: c.cardSource }, cardSourceText(redemption.source, t))
           )
         )
       : createElement(
@@ -1009,6 +1146,12 @@ export const CardTrailPanel = (props: CardTrailPanelProps): ReactNode => {
           { className: c.cardRow },
           createElement('span', { className: c.cardLabel }, t('oursTrailOrderNoLabel')),
           createElement('span', { className: c.orderNo }, trail.purchase.outTradeNo)
-        )
+        ),
+    // 权限边界写在用户看得见的地方：查不到不等于没有，别人的卡一律按「没找到」回
+    createElement(
+      'div',
+      { className: c.hint, 'data-testid': 'trail-card-lookup-hint' },
+      t('oursTrailCardLookupHint')
+    )
   )
 }

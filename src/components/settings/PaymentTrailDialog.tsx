@@ -19,24 +19,27 @@
  *     整段重置（offset 回 0、旧列表丢掉、「全部」不带 status）。所有状态变化都走
  *     `PaymentTrailView.ts` 的 `trailListReducer`，容器只负责发请求与派发动作。
  */
-import { createElement, useCallback, useEffect, useReducer, useRef } from 'react'
+import { Fragment, createElement, useCallback, useEffect, useReducer, useRef, useState } from 'react'
 import { useApiConfig } from '../../services/api/apiConfig.js'
 import { useTranslate } from '../../i18n/index.js'
-import { fetchTrail } from '../../services/ours/trail.js'
+import { fetchCardTrail, fetchTrail, type CardTrailFetcher } from '../../services/ours/trail.js'
 import { copyText } from '../../utils/clipboard.js'
 import { Button } from '../base/Button.js'
 import { Modal } from '../base/Modal.js'
 import {
+  CardTrailPanel,
   PaymentTrailView,
   TRAIL_POLL_INTERVAL_MS,
   hasWaitingCard,
   initialTrailListState,
+  loadCardTrail,
   loadTrailPage,
   nextTrailOffset,
   shouldKeepPolling,
   shouldShowPaymentTrail,
   tabToTrailStatus,
   trailListReducer,
+  type CardTrailView,
   type TrailFetcher,
   type TrailStatusTab,
   type ViewButtonComponent,
@@ -53,6 +56,8 @@ export type PaymentTrailDialogProps = {
   onClose: () => void
   /** 测试注入；默认走数据层的真实现 */
   fetchTrail?: TrailFetcher
+  /** 卡密溯源的注入点（#325）；默认 `GET /api/card/trail`，只读 */
+  fetchCardTrail?: CardTrailFetcher
   /** 复制订单号；默认写剪贴板（测试注入以便断言） */
   onCopyOrderNo?: (outTradeNo: string) => void
 }
@@ -60,6 +65,7 @@ export type PaymentTrailDialogProps = {
 export const PaymentTrailDialog = ({
   onClose,
   fetchTrail: load = fetchTrail,
+  fetchCardTrail: loadCard = fetchCardTrail,
   onCopyOrderNo,
 }: PaymentTrailDialogProps) => {
   const t = useTranslate()
@@ -80,6 +86,15 @@ export const PaymentTrailDialog = ({
    */
   const firstSeq = useRef(0)
   const moreSeq = useRef(0)
+  /**
+   * 卡密溯源（#325）：`cardNo` 是要查的那张卡，`view` 是它的三态。
+   * 卡号只活在这个 state 里（重试要用它）：不进日志、不进埋点、不进剪贴板、不落存储。
+   * 序号只管一件事——晚到的旧响应不许盖掉新的一次查询。
+   */
+  const [card, setCard] = useState<{ cardNo: string; view: CardTrailView } | null>(null)
+  const cardSeq = useRef(0)
+  /** 「重试」要重打同一个卡号：只留一个 ref，读它比读 state 少一层闭包陷阱 */
+  const lastCardNo = useRef<string | null>(null)
 
   useEffect(() => {
     alive.current = true
@@ -186,6 +201,39 @@ export const PaymentTrailDialog = ({
     // 追加分页也会让它重排一次计时（最多推迟一个周期），但绝不产生第二个定时器。
   }, [waitingCard, view, loadFirst])
 
+  /**
+   * 打开一张卡的溯源。先落 loading（弹层立刻出现，长请求不会「点了没反应」），
+   * 再由 `loadCardTrail` 归一结果（404 统一「没有找到这笔记录」，503 可重试且不是空态）。
+   * 这里的 `cardNo` 是**完整卡号**：只作为请求参数，DOM 里由面板 `maskTrailCard` 掩码。
+   */
+  const openCardTrail = useCallback(
+    (cardNo: string) => {
+      const seq = (cardSeq.current += 1)
+      lastCardNo.current = cardNo
+      setCard({ cardNo, view: { status: 'loading' } })
+      void loadCardTrail({ fetchCardTrail: loadCard, apiKey, cardNo }).then((result) => {
+        if (!alive.current || seq !== cardSeq.current) {
+          return
+        }
+        setCard({
+          cardNo,
+          view:
+            result.status === 'ok'
+              ? { status: 'ok', trail: result.trail }
+              : { status: 'error', error: result.error },
+        })
+      })
+    },
+    [loadCard, apiKey]
+  )
+
+  const retryCardTrail = useCallback(() => {
+    const cardNo = lastCardNo.current
+    if (cardNo !== null) {
+      openCardTrail(cardNo)
+    }
+  }, [openCardTrail])
+
   const copyOrderNo = (outTradeNo: string) => {
     if (onCopyOrderNo !== undefined) {
       onCopyOrderNo(outTradeNo)
@@ -200,7 +248,7 @@ export const PaymentTrailDialog = ({
     return null
   }
 
-  return createElement(
+  const trailModal = createElement(
     Modal,
     {
       title: t('oursTrailTitle'),
@@ -237,6 +285,37 @@ export const PaymentTrailDialog = ({
       onRetryMore: loadMore,
       onRetry: () => loadFirst(false),
       onCopyOrderNo: copyOrderNo,
+      // 卡密块上的「查这张卡」（#325）：完整卡号只在这里进 query，DOM 里仍是掩码
+      onLookupCard: openCardTrail,
     })
   )
+
+  /**
+   * 卡密溯源弹层（#325）：叠在支付记录弹层之上（`zIndex` 1300），
+   * 关掉它只关这一层（`Modal` 的 `openModals` 栈按挂载顺序让 Esc 只关最上层）。
+   * 标题就是 `oursTrailCardLookupTitle`，正文三态全部在 `CardTrailPanel`。
+   */
+  const cardModal =
+    card === null
+      ? null
+      : createElement(
+          Modal,
+          {
+            title: t('oursTrailCardLookupTitle'),
+            closable: true,
+            zIndex: 1300,
+            className: styles.dialog,
+            mainClassName: styles.main,
+            onClose: () => setCard(null),
+          },
+          createElement(CardTrailPanel, {
+            t,
+            classNames: styles,
+            view: card.view,
+            onRetry: retryCardTrail,
+            button: renderButton,
+          })
+        )
+
+  return createElement(Fragment, null, trailModal, cardModal)
 }

@@ -897,6 +897,15 @@ export const en = {
   oursTrailRedeemedByMe: 'Redeemed by me',
   oursTrailRedeemedByOther: 'Redeemed by another account',
   oursTrailRedeemedByUnknown: 'Redeemer unknown',
+  // Card trail lookup (#325): the entry sits on the card block; the sheet only queries your own cards
+  oursTrailCardLookup: 'Look up this card',
+  oursTrailCardLookupTitle: 'Card trail',
+  oursTrailCardLookupHint:
+    'Only records for cards in your own account are shown; for another account\'s card you will see "No such record found".',
+  oursTrailCardSourceLabel: 'Redeemed via',
+  oursTrailCardSourceInApp: 'Redeemed in this app',
+  oursTrailCardSourceWeb: 'Redeemed on the web',
+  oursTrailCardSourceUnknown: 'Redemption source unknown',
   oursTrailBackfilled: 'Backfilled time',
   oursTrailEventUnknown: 'Other action (no description from the server)',
   oursTrailEventOrderCreated: 'Order created, awaiting payment',
