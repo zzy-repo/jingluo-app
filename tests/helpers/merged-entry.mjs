@@ -13,11 +13,17 @@
 // 这里自己控顺序，三条：
 //   1. **一个文件一个文件加载**：`await import(file)` → 等它的用例全部跑完（记账见
 //      ./merged-tracker.mjs）→ 再下一个。前一个文件的装配不会活到后一个文件的用例里。
-//   2. **globalThis 快照/还原**：文件跑完就把全局还原成它动手之前的样子，下一个文件看到的是干净的
-//      全局（localStorage / document / window / rAF / `__xxx` 开关一律复原，不许串扰）。
+//   2. **globalThis 快照/还原 + 文件级状态复位**（#366 → #513）：文件跑完就把全局还原成它动手之前
+//      的样子（localStorage / document / window / rAF / `__xxx` 开关一律复原），并把 `process.env`
+//      还原、把文件漏掉的定时器清掉、跑一遍已登记的清场函数 —— 见 ./merged-tracker.mjs。
+//      复位动了什么会打印成 `·· reset <文件>：…`，是「谁在污染」的证据，不许静默。
 //   3. `registerHooks` 装的解析 hook 没有反注册 API（进程级、只增不减），所以顺序很重要：文件 N
-//      注册的 stub 只可能影响 N **之后**的文件，而 N 已经跑完了；且 N 之后加载的文件自己注册的
-//      hook 优先级更高（后注册先命中），自己的装配不会被前人的 stub 抢走。
+//      注册的 stub 只可能影响 N **之后**的文件，而 N 已经跑完了。
+//      **但「后注册优先级更高」只解决了一半（#513 实测）**：后一个文件的条件路由常常写在 `catch`
+//      分支里（`nextResolve` 抛错才走），而前一个文件的通吃兜底会**先替它解析成功**，那段分支根本
+//      进不去；ESM 模块缓存也是「首写者胜」，前一个文件装好的替身实例后一个文件改不掉。
+//      这两类串扰在进程内不可修 —— 只能靠 `run-layer` 的 `UNIT_SOLO` 独占进程（机制与实测症状写在
+//      那份清单里），不要指望「hook 顺序」把它们解决掉。
 //
 // ## #501（P0）：逐文件结局**不许**只看我们的记账
 //
@@ -40,7 +46,19 @@ import { closeSync, existsSync, openSync, readFileSync, readSync, statSync } fro
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { setTimeout as sleep } from 'node:timers/promises'
-import { drain, reset, setListener } from './merged-tracker.mjs'
+// #513：文件级状态复位（globalThis 之外还有 process.env / 定时器 / 模块级单例）与用例记账同住一处 ——
+// 两者都是「换文件时要把上一个文件的东西清干净」，而且自检沙箱是按这份 helper 清单拷文件的
+//（`tests/unit/runner-verdict-self-check.test.mjs` 的 HELPERS），新开一个文件就得同步改那份清单。
+import {
+  captureTestState,
+  describeReset,
+  drain,
+  installTimerTracker,
+  reset,
+  resetAllTestState,
+  restoreGlobals,
+  setListener,
+} from './merged-tracker.mjs'
 import { parseTap } from './tap.mjs'
 import { countsOf, mismatchNotes, verdictOf } from './merge-verdict.mjs'
 
@@ -51,31 +69,15 @@ const WRAPPER = pathToFileURL(path.join(HERE, 'merged-node-test.mjs')).href
 const toAbsolute = (file) => (String(file).startsWith('file:') ? fileURLToPath(String(file)) : String(file))
 const rel = (file) => path.relative(ROOT, toAbsolute(file)).split(path.sep).join('/')
 
-/** 不参与快照/还原的内建（改动它们只会把还原逻辑自己搞坏） */
-const PINNED = new Set(['globalThis', 'undefined', 'Infinity', 'NaN'])
-
-const snapshotGlobals = () => {
-  const snapshot = new Map()
-  for (const key of Object.getOwnPropertyNames(globalThis)) {
-    if (PINNED.has(key)) continue
-    snapshot.set(key, Object.getOwnPropertyDescriptor(globalThis, key))
-  }
-  return snapshot
-}
-
-const restoreGlobals = (snapshot) => {
-  for (const key of Object.getOwnPropertyNames(globalThis)) {
-    if (PINNED.has(key) || snapshot.has(key)) continue
-    try { delete globalThis[key] } catch { /* 不可删的内建：留着 */ }
-  }
-  for (const [key, descriptor] of snapshot) {
-    try {
-      const current = Object.getOwnPropertyDescriptor(globalThis, key)
-      if (current && current.value === descriptor.value && current.get === descriptor.get) continue
-      Object.defineProperty(globalThis, key, descriptor)
-    } catch { /* 只读内建：保持原样 */ }
-  }
-}
+/**
+ * #513：快照/还原搬进 ./merged-tracker.mjs —— 只留 globalThis 这一半是不够的。
+ * 实测的第三类串扰（`process.env` 被改、残留定时器跑到下一个文件、模块级单例没清）都在那边，
+ * 复位口径统一收在一处，免得「合并入口清一半、别处清一半」。
+ *
+ * 注意：`restoreGlobals` 仍然在这里逐文件调用（行为与 #366 完全一致：文件跑完立刻复原全局），
+ * 复位阶段（`resetAllTestState`）又兜一次 —— 因为它还要管 env / 定时器 / 清场函数，
+ * 而且**跑红的文件**更容易留残渣，两条路都要走。
+ */
 
 // 把批内用例的 `import … from 'node:test'` 换成本文件的记账壳。
 // 壳自己 import 'node:test' 时不能再换一次（否则无限递归），用 parentURL 认出来放行。
@@ -228,10 +230,10 @@ const settleTap = async (expectedTests) => {
 }
 
 /** 依次加载并跑完每个文件；每个文件的用例事件在这一段里被收成 TAP 行与计数 */
-const runFile = async (file, source) => {
+const runFile = async (file, source, baseline) => {
   const name = rel(file)
   const counters = { tests: 0, pass: 0, fail: 0, skip: 0 }
-  const snapshot = snapshotGlobals()
+  const snapshot = baseline.globals
   const startedAt = performance.now()
   console.log(`>> FILE ${name}`)
   setListener((event) => {
@@ -268,7 +270,17 @@ const runFile = async (file, source) => {
   const ms = Math.round(performance.now() - startedAt)
   setListener(null)
   reset()
-  restoreGlobals(snapshot)
+  /**
+   * #513：文件级复位 —— 这是本单的核心改动，两条路都要走：
+   *   ① `restoreGlobals`（#366 原有行为，逐文件立刻复原 globalThis）；
+   *   ② `resetAllTestState`：再兜一次全局 + 还原 `process.env` + 清掉文件漏掉的定时器 +
+   *      调已登记的清场函数（模块级单例，见 ./merged-tracker.mjs）。
+   * 差集非空就打一行 `·· reset`：**谁在污染是证据，不许静默**。没有这一行就等于「没人知道
+   * 上一个文件把什么留在了进程里」，下一个人又要去查一个不存在的产品问题（本单的起因）。
+   */
+  const undone = resetAllTestState(baseline, { file: name })
+  const resetNote = describeReset(undone)
+  if (resetNote) console.log(`·· reset ${name}：${resetNote}`)
   // 脚本自己设的 `process.exitCode = 1` 也要算数（不能把失败留在进程上，否则整批判红）
   const declaredCode = process.exitCode === exitCodeBefore ? 0 : Number(process.exitCode ?? 0)
   process.exitCode = exitCodeBefore
@@ -312,9 +324,16 @@ const runFile = async (file, source) => {
   if (outcome === 'FAIL' || outcome === 'EMPTY') exitCode = 1
 }
 
+/**
+ * #513：批次开始抓一份干净基线（globalThis / process.env）+ 装定时器记账。
+ * 每个文件跑完都复位到这份基线，而不是「复位到上一个文件留下的样子」。
+ */
+const timers = installTimerTracker()
+const baseline = captureTestState({ timers })
 for (const file of resolved) {
-  await runFile(file, readFileSync(file, 'utf8'))
+  await runFile(file, readFileSync(file, 'utf8'), baseline)
 }
+timers.uninstall()
 
 // 批内有文件起了服务/定时器没关干净时事件循环可能挂着不退出 —— 用例都跑完了，直接收工。
 // 先等 stdout 冲干净再 exit，避免最后的汇总行被截掉。

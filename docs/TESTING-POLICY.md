@@ -543,6 +543,58 @@ stack: … node:internal/test_runner/runner:354 → FileTest.parseMessage
    表驱动用例**绿时只打一行汇总**，红了才逐行打失败行（含期望/实际，诊断能力不减），
    把常态日志从「行数 × 一行」压到 1 行。
 
+### 11.10 合并批次的跨文件串扰与 `DEGRADED` 阈值（Issue #513）
+
+一句话：**`DEGRADED > 5` 视为回归，去查串扰，不许当常态。** `DEGRADED` 记的是「结论靠换个进程
+再跑一次才对」的文件数，两种成因分开写理由：**批次资源不足**（崩溃/超时 → 串行重跑绿）与
+**批次跨文件串扰**（批内红 → 单文件重跑绿）。串扰型从前不计入 `DEGRADED`（summary 里恒为 0），
+于是「23 个文件批内红、单跑复核绿」被计数口径直接抹掉 —— 本单第一件事就是把它记进账。
+
+#### 为什么会有串扰（三类机制，都有实测证据）
+
+合并批次（#366）是「一个进程顺序 `import` 十几个文件」。`registerHooks()` 装的解析 hook
+**没有反注册 API**、ESM 模块缓存也不会回滚，所以：
+
+| # | 机制 | 实测形态 |
+| --- | --- | --- |
+| ① | **替身泄漏** | `api-key-failure-374` 调 `installChatBridge()`，把 `diagnostics/collector.js` 换成 `chat-stubs/collector.mjs`（没有 `recordError`）。同批后面的 4 个 `attachment-*` 加载即失败：`does not provide an export named 'recordError'`。单跑必绿 |
+| ② | **hook 链抢占条件路由** | `api-request-timeout` 的 `catch` 兜底先把 `./db.js` 解析成 `./db.ts` 成功返回，于是 `chat-retry-retryable` 那套「按 parentURL 换假 db」的分支**根本没进去** → `sendMessage()` 返回 false（`草稿非空时应能发出去`） |
+| ③ | **模块缓存首写者胜 / 模块级单例** | `pdf-parser-480` 先把 `pdfjs-dist` 换成替身，`pdf-parser-partial-480` 拿到同一份实例（`PDF 打开失败`）；`reading-settings` 装上的 settings 订阅活到后面 thinking-* 文件里（`document is not defined`） |
+
+#### 三层处置（按「能不能在进程内修」分）
+
+| 层 | 位置 | 覆盖什么 |
+| --- | --- | --- |
+| ① **文件级状态复位** | `tests/helpers/merged-tracker.mjs` 的 `resetAllTestState()`（合并入口逐文件调用） | `globalThis` 差异、`process.env` 改动、文件漏掉的 `setTimeout/setInterval/setImmediate`、以及用 `onTestStateReset()` **登记**的清场函数。复位动了什么会打 `·· reset <文件>：…`，是「谁在污染」的证据 |
+| ② **分组键认得全** | `tests/run-layer.mjs` 的 `harnessKey()` | 「替身家族」必须从**三处**认出来：字面量 `tests/fixtures/<目录>/`、`fixtureUrl('<目录>/…')` / `new URL('…/fixtures/<目录>/…')`、以及 **helpers 里装上的整族替身**（`installChatBridge` / `installChatEnv` / `installSessionMatrixEnv` / `chatStub`）。少认一处，那一族就会落进 `no-fixture` 桶跟别人抢替身（#513 的 ① 类串扰就是这么来的） |
+| ③ **`UNIT_SOLO` 独占进程** | `tests/run-layer.mjs` 的 `UNIT_SOLO` | ②③ 类（模块缓存 / 模块级单例）在**进程内不可修**：复位清不掉已加载的模块实例与已注册的 hook。登记时必须写清**机制类别 + 实测症状**，而不是塞进某个桶里赌邻居不变 |
+
+#### 反向抽样：批次不许把真红洗成绿
+
+原有兜底是单向的（批内红 → 单文件复核）；「**批内绿、单跑红**」没人看得见。所以每轮从
+`merged: true && ok` 的文件里随机抽 3~5 个，用单文件进程复核：
+
+- 单跑绿 → 一致（印 ✓ + 耗时，作为「批次判定可信」的抽样证据）；
+- 单跑红 → **判定 runner 不可信，本轮判红**（`REVERSE-SAMPLE UNTRUSTWORTHY`），把两边结论都打出来。
+
+口径：抽样种子打在终端上（`REVERSE_SAMPLE_SEED=<seed>` 可原样复现同一批名单）；
+`--reverse-sample N` 改条数；`--no-reverse-sample` 只允许在**明确知道自己在放弃这条保护**时用，
+CI 里不要加。负向对照（不入库，需要时手动跑一遍）：造两个探针 —— A 在 `tmpdir()` 写一个带
+`process.pid` 的标记文件、B 断言该文件存在 —— 两个文件同批跑，B 批内绿、单跑必红；
+`node tests/run-layer.mjs unit --only zz-513probe` 应当打出 `REVERSE-SAMPLE UNTRUSTWORTHY(1)` 且 `exit 1`。
+
+#### 四条硬规矩
+
+1. **`DEGRADED > 5` 就是回归**：先看名单里是「资源型」还是「串扰型」。资源型调 `--jobs` /
+   `TEST_CHILD_HEAP_MB`；串扰型查 `harnessKey` 分组键、把脆弱文件登记 `UNIT_SOLO`，
+   **不许**靠「反正会兜底」把它留在账外。
+2. **不许用改断言的方式治串扰**：批内红单跑绿就是串扰的证据，改断言等于把测试改软。
+3. **新文件并进批次前先跑两次**：`--jobs 1` 跑一遍、`--case` 单跑一遍，结论必须一致。
+   不一致就把**受害者**（依赖条件路由 / 真模块 / 模块级单例只能一个写者）登记 `UNIT_SOLO`。
+4. **抽样与复位都是「保护」，不是「结论」**：抽样一致 ≠ 批次零串扰；`·· reset` 打得再多也不代表
+   复位成功（模块级单例复位不了）。真正可核对的只有：`DEGRADED ≤ 5`、抽样无 UNTRUSTWORTHY、
+   连续三次 `node tests/run-layer.mjs unit` 结果一致。
+
 ---
 
 ## 12. `server` 层与 `deploy/dl-release/test` 白名单（Issue #415）

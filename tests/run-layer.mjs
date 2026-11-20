@@ -144,6 +144,54 @@ const UNIT_SOLO = new Set([
   // 而这两个文件一个要「引擎会自动应用 EXIF」（83 档）、一个要「不会」（79 档）。并进批次时后一个会读到
   // 前一个探到的结论 —— 实测批内红、单跑绿（正是本清单开头那条「吃到前一个文件的替身」）。单列最诚实。
   'vision-acceptance-553.test.mjs', 'vision-exif-manual-553.test.mjs',
+
+  // ── #513：实测「批内红 → 单跑绿」，且在进程内**不可修**的那一批 ────────────────────────────
+  //
+  // 先说清为什么不可修（这是本单花最久的一段，结论有实测支撑）：
+  //
+  //   `registerHooks()` 装的解析 hook **没有反注册 API**（进程级、只增不减），ESM 模块缓存同理。
+  //   于是同一个进程里跑第二个文件时，它的装配只对「还没被加载过」的模块有效：
+  //     ① **hook 链**：后注册的先跑，但先注册的 `catch` 兜底可能**先替它把 `.js` 解析成 `.ts` 成功** ——
+  //        于是后一个文件「条件路由」（按 parentURL 换假 db / 换诊断替身）那段**根本进不去**。
+  //        实测：`api-request-timeout` + `chat-retry-retryable`（两者都装 `@capacitor/core` 替身）
+  //        合批，后者拿到的 `chat/store.ts` 里 `./db.js` 用了**真 db** 而不是自己的假 db，
+  //        于是 `sendMessage()` 返回 false（`草稿非空时应能发出去`），单跑全绿。
+  //     ② **模块缓存首写者胜**：`pdf-parser-480` 先把 `pdfjs-dist` 换成替身，`pdf-parser-partial-480`
+  //        再 import 时拿到的是**同一份替身实例**，自己的真 pdfjs 装配不再生效
+  //        （`PDF 打开失败，文件可能已损坏`）。反过来排序则前一个红 —— 两头都不成立，必须两个进程。
+  //     ③ **模块级单例的订阅/缓存**：`reading-settings` 导入 `reading.ts` 时注册的 settings 订阅活到了
+  //        后面 thinking-* 的用例里（它触发 `document.documentElement.setAttribute` 时，那个文件
+  //        自己的 `document` 假体早已被文件级复位还原掉 → `document is not defined`）。
+  //
+  //   这三条都不是「复位一下就好」：`resetAllTestState()`（见 helpers/merged-tracker.mjs）能清 globalThis、
+  //   `process.env`、残留定时器和登记过的清场函数，但**清不掉已经加载的模块实例与已注册的 hook**。
+  //   进程内唯一的真隔离是「一个文件一个进程」。所以按本单给的路子登记在这里，**并注明机制类别**，
+  //   而不是塞进 `no-fixture` 桶里赌邻居不变（本单之前正是这么赌的）。
+  //
+  //   分批口径：优先登记「受害者」——受害者才是装配最脆弱的那个（它依赖条件路由 / 真模块 / 模块级缓存
+  //   只能有一个写者）；只有当污染者一次拖红好几个文件时，单列污染者更划算（见下面 reading-settings 那段）。
+  //   每一条都用 `--jobs 1` 的全量跑验证过：把这些文件摘出批次后，所属批次全绿
+  //   （`DEGRADED` 由 23 降到 0，见 PR 里的三次连跑）。
+  //
+  // ① hook 链：条件路由被前一个文件的 catch-all 抢先（同一 src 模块被两个文件按不同方式装配）
+  'chat-prefix-stability-345.test.mjs', 'chat-context-limit-error.test.mjs', 'chat-retry-retryable.test.mjs',
+  'chat-wait-stage.test.mjs', 'import-hardening.test.mjs', 'import-partial-skip.test.mjs',
+  'import-skipped-ui.test.mjs', 'imported-attachment-379.test.mjs', 'import-refuse-before-download.test.mjs',
+  'log-313-attachment-import.test.mjs', 'export-selection-390.test.mjs', 'export-ux-336.test.mjs',
+  'export-text-bridge.test.mjs', 'import-merge-390.test.mjs', 'ours-purchases.test.mjs',
+  'domain05-archive-reject-matrix.test.mjs', 'domain05-skip-degrade-matrix.test.mjs',
+  // ② 模块缓存首写者胜：同一 src 模块实例只能有一个装配（pdfjs 替身 / 诊断采集层通道）
+  'pdf-parser-partial-480.test.mjs', 'diagnostics-fetch-channel.test.mjs', 'diagnostics-stream-timing.test.mjs',
+  // ③ 模块级单例（Intl 补丁 / DisplayNames 守卫 / 诊断记账 / settings 订阅）装一次就回不去
+  'intl-segmenter-fallback.test.mjs', 'issue-219-displaynames-boot-guard.test.mjs', 'latest-reminder-fields.test.mjs',
+  // ③ 的「污染者侧」：这两个文件本身不红，但它留下的东西**回不去**，会把同批的 6 个文件拖红 ——
+  //   · `reading-settings`：导入 `src/services/reading.ts` 时装上的 settings 订阅活到下一个文件，
+  //     后者改设置时触发 `document.documentElement.setAttribute`，而它自己的 `document` 假体已被复位
+  //     → thinking-* 四个文件全红（`document is not defined` / `reading of undefined`）；
+  //   · `provider-caps-lock`：`globalThis.__ENDPOINTS__` 换成自己那套 + 装 settings 相关替身，
+  //     provider-deepseek-model / provider-ours 随后按错误的端点与模型表判定（`旧地址必须被默认值覆盖`）。
+  //   单列这两个比单列 6 个受害者划算（同样「一个文件一个进程」，但少 4 次冷启动）。
+  'reading-settings.test.mjs', 'provider-caps-lock.test.mjs',
 ].map((s) => s))
 
 /**
@@ -363,6 +411,19 @@ function classifyDeath(result) {
 }
 
 /**
+ * #513：把抽样种子（任意字符串）折成 [0,1) —— 只用来洗牌，不用于任何「随机判定红绿」。
+ * 先把字符串哈希成 32 位整数，再线性同余洗牌（同一个种子 ⇒ 同一批抽样名单，出问题能原样复现）。
+ */
+function randomOf(seed) {
+  let hash = 2166136261
+  for (const char of String(seed)) {
+    hash ^= char.codePointAt(0)
+    hash = Math.imul(hash, 16777619) >>> 0
+  }
+  return (hash % 4294967296) / 4294967296
+}
+
+/**
  * #366：一个文件能不能并进批次 —— 静态可判的那一条（源码读一次，缓存起来）：
  *
  * `node:test` 用例里调 `process.exit(`：会把同批其他文件的用例半路带走，结局不可归因，不合并。
@@ -400,14 +461,45 @@ async function mergeBlocker(file) {
  * `registerPlugin`」这种组合一合批就红（实测把 8 个域 8~10 的文件塞一批时，8 个文件同时红）。
  * 同组文件引用的是**同一个夹具目录**，替身集合一致，谁也不抢谁的。
  *
- * 键 = 源码里引用到的 `tests/fixtures/<目录>/` 集合（排序去重）；一个都不引用的（纯逻辑/
- * 只读源码）归到 `no-fixture`，彼此之间没有替身可抢。
+ * 键 = 文件「会用到的替身家族」集合（排序去重）；一个都不用的（纯逻辑 / 只读源码）归到
+ * `no-fixture`，彼此之间没有替身可抢。
+ *
+ * ## #513：键必须认得**经由 helpers 装上的**替身
+ *
+ * 原来这里只认源码里的字面量 `tests/fixtures/<目录>/`，于是三类替身**全都漏进了 `no-fixture`**：
+ *   1. `fixtureUrl('url-import-stubs/collector.mjs')` —— 目录名不以 `fixtures/` 开头（`fixtureUrl`
+ *      自己拼的），30 个 import-* / url-import-* 文件因此与「要真 collector」的文件同桶；
+ *   2. `new URL('.../fixtures/<目录>/x', import.meta.url)` 拼字符串的写法（`stub('collector.mjs')`）；
+ *   3. **helpers 里装上的整族替身**：`installChatBridge()` / `installChatEnv()` / `chatStub()` /
+ *      `installSessionMatrixEnv()`（见 helpers/dom-env.mjs）。用例源码里只有一行函数调用，
+ *      看不出来它其实把 `@capacitor/core` 与 `diagnostics/collector.js` 换成了 `<家族>/` 下的夹具。
+ * 这是本单实测到的**第一大类串扰**：`api-key-failure-374`（`installChatBridge()` → chat-stubs）排在
+ * `attachment-*` 前面，把 `diagnostics/collector.js` 换成了没有 `recordError` 的替身，后面 4 个文件
+ * 加载即失败（`does not provide an export named 'recordError'`），单跑必绿。
+ * 把「替身家族」算全之后，这两拨文件直接落到不同桶，谁也不用独占进程。
  */
+const HELPER_FIXTURE_FAMILY = {
+  // helpers/dom-env.mjs 里的整族装配：函数名 → 它装上的夹具目录
+  installChatBridge: 'chat-stubs',
+  installChatEnv: 'chat-stubs',
+  installSessionMatrixEnv: 'domain03-04',
+  chatStub: 'chat-stubs',
+  chatCollectorStub: 'chat-stubs',
+  chatFakeDb: 'chat-stubs',
+}
 const harnessKeyCache = new Map()
 async function harnessKey(file, source) {
   if (harnessKeyCache.has(file)) return harnessKeyCache.get(file)
   const dirs = new Set()
+  // ① 字面量 `tests/fixtures/<目录>/`
   for (const matched of source.matchAll(/fixtures\/([a-z0-9-]+)\//g)) dirs.add(matched[1])
+  // ② `fixtureUrl('<目录>/…')` / `new URL('../fixtures/<目录>/…')`：目录名不带 `fixtures/` 前缀的写法
+  for (const matched of source.matchAll(/fixtureUrl\(\s*['"`]([a-z0-9-]+)\//g)) dirs.add(matched[1])
+  for (const matched of source.matchAll(/new URL\(\s*[`'"][^`'"]*fixtures\/([a-z0-9-]+)\//g)) dirs.add(matched[1])
+  // ③ helpers 装上的整族替身：按「调了哪个 helper」认家族（含 `import { … as … }` 的别名口径）
+  for (const [helper, family] of Object.entries(HELPER_FIXTURE_FAMILY)) {
+    if (new RegExp(`\\b${helper}\\s*\\(`).test(source)) dirs.add(family)
+  }
   const key = dirs.size ? [...dirs].sort().join('+') : 'no-fixture'
   harnessKeyCache.set(file, key)
   return key
@@ -775,13 +867,15 @@ test('取消点必须落在「导入中」窗口内（只在慢环境红）', as
 async function main() {
   const argv = process.argv.slice(2)
   let layer, only = '', caseName = '', json, failedFrom, timeoutMs = 180000, shard = null, jobs
+  /** #513：反向抽样条数（`--reverse-sample N` 覆盖；默认 3~5 随机） */
+  let reverseSampleCount
   // #456：`--record-dir` 指的是运行记录（跨 runner 判据的输入）写哪；`--registry` 换登记簿文件（自证/沙箱用）
   let recordDir = FLAKY_RUNS_DIR
   let registryPath = FLAKY_FILE
   const flags = new Set()
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i]
-    if (['--only', '--case', '--json', '--failed-from', '--timeout-ms', '--shard', '--jobs', '--record-dir', '--registry'].includes(arg)) {
+    if (['--only', '--case', '--json', '--failed-from', '--timeout-ms', '--shard', '--jobs', '--record-dir', '--registry', '--reverse-sample'].includes(arg)) {
       const value = argv[++i]
       if (!value || value.startsWith('--')) throw new Error(`Missing value: ${arg}`)
       if (arg === '--only') only = value
@@ -793,8 +887,9 @@ async function main() {
       if (arg === '--jobs') jobs = Number(value)
       if (arg === '--record-dir') recordDir = path.resolve(value)
       if (arg === '--registry') registryPath = path.resolve(value)
+      if (arg === '--reverse-sample') reverseSampleCount = Number(value)
     } else if (
-      ['--bail', '--list', '--baseline', '--write-weights', '--no-retry', '--include-quarantined', '--no-record', '--cross-runner-scan', '--selftest-cross-runner'].includes(arg)
+      ['--bail', '--list', '--baseline', '--write-weights', '--no-retry', '--include-quarantined', '--no-record', '--no-reverse-sample', '--cross-runner-scan', '--selftest-cross-runner'].includes(arg)
     ) {
       flags.add(arg)
     }
@@ -954,6 +1049,67 @@ async function main() {
   const degradedRuns = []
   /** #487：批次进程崩了的工作单元，主队列排空后串行重跑（见 runUnit 里的 pendingDegrade） */
   const pendingCrashes = []
+  /**
+   * #513 §3：反向抽样核对（实现）。挑「本轮在批次里跑绿」的文件，单文件进程复核。
+   * 只抽 `merged: true` 的：单文件进程的结论本来就是权威，抽它证明不了批次可信。
+   */
+  async function runReverseSampleCheck() {
+    if (!plan.includes('unit')) return { skipped: '非 unit 层' }
+    if (flags.has('--no-reverse-sample')) return { skipped: '--no-reverse-sample' }
+    const pool = results.filter((entry) => entry.ok && !entry.skipped && entry.merged && !entry.pendingDegrade)
+    if (!pool.length) return { skipped: '本轮没有「批内跑绿」的文件（全被 UNIT_SOLO 拆成单文件了）' }
+    const seed = String(process.env.REVERSE_SAMPLE_SEED || `${Date.now()}`)
+    // 3~5 个：条数固定会被人记住然后绕过，随机区间才有抽样的意义
+    const wanted = Number.isSafeInteger(reverseSampleCount) && reverseSampleCount >= 0
+      ? reverseSampleCount
+      : 3 + Math.floor(randomOf(seed) * 3)
+    // 洗牌（同一个 seed 结果可复现），取前 N 个
+    {
+      const shuffled = [...pool]
+      let state = randomOf(seed)
+      for (let i = shuffled.length - 1; i > 0; i--) {
+        state = (state * 1664525 + 1013904223) % 4294967296
+        const j = Math.floor((state / 4294967296) * (i + 1))
+        const tmp = shuffled[i]
+        shuffled[i] = shuffled[j]
+        shuffled[j] = tmp
+      }
+      const picked = shuffled.slice(0, Math.min(wanted, shuffled.length))
+      if (!picked.length) return { skipped: `抽样条数为 0（--reverse-sample ${wanted}）` }
+      console.log(
+        `\n⟲ #513 反向抽样核对：从 ${pool.length} 个「批内跑绿」的文件里抽 ${picked.length} 个单跑复核（seed=${seed}，REVERSE_SAMPLE_SEED 可复现）`,
+      )
+      const checked = []
+      const untrustworthy = []
+      for (const entry of picked) {
+        if (interrupted) break
+        const item = planned.find((candidate) => rel(candidate.file) === entry.file)
+        if (!item) continue
+        const env = await caseEnv(item)
+        const solo = await runCase(item.file, { cwd: ROOT, env, timeoutMs, output: false, nodeArgs: caseNodeArgs })
+        if (solo.ok || solo.code === SKIP_CODE) {
+          checked.push({ file: entry.file, ms: solo.ms, skipped: solo.code === SKIP_CODE })
+          console.log(`   ✓ ${entry.file} —— 批内绿、单跑也绿（${solo.ms}ms）`)
+          continue
+        }
+        untrustworthy.push({ file: entry.file, ms: solo.ms, error: solo.error ?? '单文件进程退出码非 0' })
+        console.log(`   ✖ ${entry.file} —— **批内绿、单跑红**（${solo.ms}ms）`)
+        for (const line of (solo.tail ?? []).join('').split('\n').filter((line) => /error|Error|not ok|#/.test(line)).slice(0, 6)) {
+          console.log(`       ${line.trim()}`)
+        }
+        console.log(`       ⟹ 批次把真红掩盖成了绿：runner 不可信（复跑：node tests/run-layer.mjs ${item.layer} --case ${entry.file}）`)
+      }
+      if (untrustworthy.length) {
+        console.log(
+          `\n✖ 反向抽样失败：${untrustworthy.length}/${picked.length} 个「批内绿」的文件单跑是红的 —— **本轮判红**。\n` +
+          '   这不是用例的错，是批次判定的错：去查这个文件跟同批谁抢了状态（#513），不要改断言。',
+        )
+      } else if (checked.length) {
+        console.log(`   ⟹ ${checked.length}/${picked.length} 一致：批内绿的文件单跑也绿，批次判定可信（抽样，不是全量复核）`)
+      }
+      return { seed, picked: picked.length, checked, untrustworthy }
+    }
+  }
   const runUnit = async (unit) => {
     const log = []
     const say = (line) => { if (lanes === 1) process.stdout.write(`${line}\n`) ; else log.push(`${line}\n`) }
@@ -1234,6 +1390,18 @@ async function main() {
         say(`<< ${status} ${red.file}（单文件重跑${red.ok === single.ok ? '' : '，与批内结果不同'}）(${single.ms}ms)`)
         if (outcome.infra === 'fail') say(`   ✖ ${single.error ?? infraFailNote()}`)
         const index = unitResults.findIndex((entry) => entry.file === red.file)
+        /**
+         * #513：**「批内红 → 单跑绿」必须记进 DEGRADED**。
+         *
+         * 从前这条路只打一行 ⚠、`degraded` 不记 —— 于是「23 个文件批内红、单跑复核绿」在 summary 里
+         * 是 `DEGRADED 0`：串扰的规模被这一层的计数口径直接抹掉了（本单的起点就是这个）。
+         * 它和 #487 的「资源不足降级」是同一种性质的东西：**结论靠「换一个进程再跑一次」才对**，
+         * 所以合进同一个计数、同一段留痕，理由写清是「批次串扰」还是「资源不足」。
+         * 单跑仍红的不算 DEGRADED —— 那是真红，照旧判 FAIL。
+         */
+        if (single.ok) {
+          degradedRuns.push({ file: red.file, reason: `批内红 → 单文件重跑通过（批次串扰；判定用单文件退出码 ${single.ms}ms）` })
+        }
         unitResults[index] = {
           ...unitResults[index],
           ...single,
@@ -1243,6 +1411,9 @@ async function main() {
           skipReason,
           merged: false,
           batchFallback: true,
+          ...(single.ok
+            ? { degraded: true, degradeReason: `批内红 → 单文件重跑通过（批次串扰，${single.ms}ms）；根因归 UNIT_SOLO 或分组键，不要靠这一行换绿` }
+            : {}),
           // 批内红 → 单文件重跑，所以这条确实是第 2 次 attempt（但机器没变，仍算 same-runner 的证据）
           // #611：命中 INFRA 时单文件还要再跑一次定性 → 第 3 次
           attempts: outcome.infra === 'none' ? 2 : 3,
@@ -1419,6 +1590,17 @@ async function main() {
     entry.pendingDegrade = false
     entry.error = entry.error ?? '批次崩溃后没有完成降级复跑（本轮被中断）'
   }
+  /**
+   * #513 §3：**反向抽样核对** —— 现有兜底只覆盖「批内红 → 单文件复核」，方向是单向的：
+   * 批次把**真红**掩盖成绿（例如某个断言依赖了「上一个文件留下的状态」，整批刚好满足）没有任何人看得见。
+   *
+   * 所以每轮随机抽 3~5 个「批内跑绿」的文件，按单文件进程再跑一遍：
+   *   · 单跑绿 → 一致（印 ✓ + 耗时，作为「批次判定可信」的抽样证据）；
+   *   · 单跑红 → **判 runner 不可信**：批次结论被推翻，本轮**红**（`exit 1`），并把两个结论都打出来。
+   * 抽到的名单与种子都打出来（`REVERSE_SAMPLE_SEED` 可复现），"--reverse-sample N" 改条数，
+   * `--no-reverse-sample` 关掉（只在明确知道自己在干什么时关：关掉等于放弃这条反向保护）。
+   */
+  const reverseSample = await runReverseSampleCheck()
   const failures = results.filter((r) => !r.ok && !r.skipped)
   /**
    * #487：降级通过的名单（`PASS(degraded)`）。**必须与「绿」分开数**：它们是靠「降并发 / 提内存
@@ -1522,7 +1704,8 @@ async function main() {
       `| flaky（同 runner 重跑绿） | ${tri.summary.flaky} | ${TRI_STATE_ACTION.flaky} |`,
       `| **runner-dependent（跨 runner 结论不一致）** | ${tri.summary['runner-dependent']} | ${TRI_STATE_ACTION['runner-dependent']} |`,
       `| 真红（同 runner 重跑仍红） | ${tri.summary['true-red']} | ${TRI_STATE_ACTION['true-red']} |`,
-      `| **降级通过（批次资源不足 → 串行重跑绿）** | ${degraded.length} | 不算失败，但必须留痕；调小 \`--jobs\` 或调大 \`TEST_CHILD_HEAP_MB\` |`,
+      `| **DEGRADED（批次串扰 / 资源不足 → 换进程才绿）** | ${degraded.length} | 不算失败，但必须留痕；**> 5 视为回归**（#513 / docs §11.10） |`,
+      `| 反向抽样（#513：批内绿 → 单跑复核） | ${reverseSample.skipped ? '未执行' : `${reverseSample.checked.length}/${reverseSample.picked} 一致${reverseSample.untrustworthy.length ? `，**${reverseSample.untrustworthy.length} 个不一致**` : ''}`} | 出现「批内绿单跑红」= runner 不可信，本轮判红 |`,
       `| **INFRA-FAIL（runner IPC 崩，不是用例失败）** | ${infraFails.length} | 红保留（裁决 #614），但按 #611 修 runner —— **不要去改断言** |`,
       `| INFRA-RETRIED（runner 崩过一次 → 单文件重跑绿） | ${infraRetried.length} | 绿，但不是「一次就绿」：留痕，见 #611 |`,
     )
@@ -1613,6 +1796,13 @@ async function main() {
      *   · `fail`：命中且重跑仍是同一签名（仍判红，措辞是「不是用例失败」，指向 #611）。
      * `signature` 写的是**判定用的签名**（文案 / failureType / stack 位置三条件），不是文件放行名单。
      */
+    /**
+     * #513：反向抽样核对的证据。`untrustworthy` 非空 = 批次把一个真红掩盖成绿，本轮判红。
+     * 只放「抽了哪几个、结论是否一致」，不放「批次可信」这种结论 —— 抽样本来就只是抽样。
+     */
+    reverseSample: reverseSample.skipped
+      ? { skipped: reverseSample.skipped }
+      : { seed: reverseSample.seed, picked: reverseSample.picked, checked: reverseSample.checked, untrustworthy: reverseSample.untrustworthy },
     infra: {
       signature: {
         message: INFRA_IPC_SIGNATURE.message,
@@ -1646,8 +1836,25 @@ async function main() {
   }
   if (!planned.length) console.error('No matching cases')
   console.log(
-    `\nTotal ${results.length}: PASS ${report.passed}, FAIL ${failedCount}, SKIP(env) ${skips.length}, NODE-SKIP ${report.skippedSubtests}, DEGRADED ${degraded.length}, INFRA-RETRIED ${infraRetried.length}, INFRA-FAIL ${infraFails.length}; elapsed ${totalMs}ms`,
+    `\nTotal ${results.length}: PASS ${report.passed}, FAIL ${failedCount}, SKIP(env) ${skips.length}, NODE-SKIP ${report.skippedSubtests}, DEGRADED ${degraded.length}, INFRA-RETRIED ${infraRetried.length}, INFRA-FAIL ${infraFails.length}${reverseSample.skipped ? '' : `, REVERSE-SAMPLE ${reverseSample.untrustworthy.length ? `UNTRUSTWORTHY(${reverseSample.untrustworthy.length})` : `ok ${reverseSample.checked.length}/${reverseSample.picked}`}`}; elapsed ${totalMs}ms`,
   )
+  /**
+   * #513：DEGRADED 是**串扰规模**的计量表，不是「反正会兜底」的免罪符。
+   * 阈值 5：超过就是回归（要回去查批次串扰 / 分组键 / UNIT_SOLO），不许无声无息地变成常态。
+   */
+  const DEGRADED_REGRESSION_THRESHOLD = 5
+  if (degraded.length > DEGRADED_REGRESSION_THRESHOLD) {
+    console.log(
+      `\n⚠ DEGRADED ${degraded.length} > ${DEGRADED_REGRESSION_THRESHOLD} —— **按回归处理**（docs/TESTING-POLICY.md §11.10）：` +
+      '批次跨文件串扰变多了，去查分组键（harnessKey）/ 该不该登记 UNIT_SOLO，别把它当常态。',
+    )
+  }
+  if (reverseSample.untrustworthy?.length) {
+    console.log(
+      `\n✖ REVERSE-SAMPLE UNTRUSTWORTHY：${reverseSample.untrustworthy.length} 个「批内绿」的文件单跑是红的（seed=${reverseSample.seed}）——` +
+      ' 批次判定不可信，本轮判红。复跑上面列出的文件，并查它与同批谁抢了状态（#513）。',
+    )
+  }
   // #611：INFRA 必须**自己一段**打出来。塞进 FAIL 里等于把「runner 崩了」和「断言错了」写成一句话 ——
   // 下一个人就会去改一个没坏的断言（本单要治的就是这件事）。
   if (infraRetried.length) {
@@ -1663,11 +1870,13 @@ async function main() {
   // #487：降级必须留痕 —— 否则「调小并发换绿」就成了一条静默的作弊路径
   if (degraded.length) {
     console.log(
-      `\nDEGRADED（批次/进程资源不足 → 降级串行重跑通过，${degraded.length} 个；**不算失败，但必须留痕**）`,
+      `\nDEGRADED（结论靠「换个进程再跑一次」才对，${degraded.length} 个；**不算失败，但必须留痕**）`,
     )
+    console.log('  两种成因分开看：**批次资源不足**（崩溃/超时 → 串行重跑绿）与**批次跨文件串扰**（批内红 → 单跑绿，见 #513）')
     console.log(`  本轮车道 ${lanes}（${lanePlan.why}）· 子进程堆上限 ${heapCap} MB（${heapPlan.source}）`)
     for (const r of degraded) console.log(`  DEGRADED  ${r.file} —— ${r.degradeReason}`)
-    console.log('  处置：调小 `--jobs` / 调大 `TEST_CHILD_HEAP_MB`；若某个批次反复降级，把其中文件登记进 UNIT_SOLO')
+    console.log(`  处置：**DEGRADED > ${DEGRADED_REGRESSION_THRESHOLD} 视为回归**（docs/TESTING-POLICY.md §11.10）——`)
+    console.log('        串扰型：查分组键（harnessKey）/ 把脆弱文件登记进 UNIT_SOLO；资源型：调小 `--jobs` / 调大 `TEST_CHILD_HEAP_MB`。')
   }
   // #487：崩溃型失败的**真实 stderr** 必须打出来。以前只有一句「批内崩溃，该文件未跑完」，
   // 看报告的人无从判断是内存不足、是 import 抛错、还是被信号杀掉。
@@ -1689,7 +1898,9 @@ async function main() {
   }
   const verdict = await compareWithBaseline(results)
   if (verdict !== null) return interrupted ? 130 : verdict
-  return interrupted ? 130 : planned.length && !failedCount ? 0 : 1
+  // #513：反向抽样不一致 ⇒ 红（批次掩盖了真红，这是 runner 的错，必须挡住合并）
+  const reverseUntrustworthy = reverseSample.untrustworthy?.length ?? 0
+  return interrupted ? 130 : planned.length && !failedCount && !reverseUntrustworthy ? 0 : 1
 
   /** --baseline：与 tests/integration-baseline.json 比对，只判「相对基线没有新增失败」 */
   async function compareWithBaseline(list) {
