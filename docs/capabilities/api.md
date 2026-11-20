@@ -8,7 +8,7 @@
 | 项目 | 值 |
 | --- | --- |
 | 兼容基线 | Android WebView **83**（Chromium 83.0.4103.106，Android 11 出厂镜像） |
-| 扫描范围 | `src/**` 共 **303** 个文件（**185** `.ts` / 67 `.tsx` / 48 `.css` / 1 `.html` / 2 `.md`） |
+| 扫描范围 | `src/**` 共 **326** 个文件（**203** `.ts` / 71 `.tsx` / 49 `.css` / 1 `.html` / 2 `.md`） |
 | 真值来源 | `scripts/check-bundle-syntax.mjs` 的 `LEGACY_RUNTIME_APIS`、`scripts/compat/matrix-scan.mjs` 的 `RUNTIME_APIS` / `LEGACY_POLYFILLED`、`src/polyfills/legacy.ts`；本单**没有**新建第四份清单 |
 
 - 复核（%s，基准 `f8b8125`，本单 #498 分支 `feat/legacy-migration-tail`）：新增 `src/legacy/migration/**` 5 个源文件（4 个 `.ts`：`claim` / `collect` / `index` / `types`，1 个 `.tsx`：`LegacyMigrationButton`）与 1 个 `.md`（该目录 README），扫描范围 297 → **303** （`.ts` 181 → **185**、`.tsx` 66 → **67**、`.md` 1 → **2**）。新代码只用 `try/catch`、`JSON.parse`、`Object.entries`、`String#includes` 这类基线内能力（`localStorage` 的读取走既有兜底写法），**没有任何一条本表里的 API**，**命中总数仍是 52 处**（31 / 21 / 0）、按 API 分项（15 / 14 / 13 / 4 / 3 / 2 / 1）未变；§二 明细未动。
@@ -43,7 +43,7 @@
 | `src/app/App.tsx:41` | `Object.hasOwn` 存在（Chromium 93） | 1 | 中 | 已有兜底 |
 | `src/app/App.tsx:50` | `Object.hasOwn` 存在（Chromium 93） | 1 | 中 | 已有兜底 |
 | `src/components/base/Modal.tsx:97` | `Array.prototype.at` 存在（Chromium 92；13 处接收者全是数组，零字符串接收者） | 1 | 中 | 已有兜底 |
-| `src/components/chatInput/ChatInput.tsx:54` | `Object.hasOwn` 存在（Chromium 93） | 1 | 中 | 已有兜底 |
+| `src/components/chatInput/ChatInput.tsx:64` | `Object.hasOwn` 存在（Chromium 93） | 1 | 中 | 已有兜底 |
 | `src/components/markdown/MermaidDiagram.tsx:49` | `String.prototype.trimEnd` 存在（Chromium 66，低于基线） | 1 | 低 | —（基线内，无需处置） |
 | `src/components/messages/MessageList.tsx:23` | `Array.prototype.at` 存在（Chromium 92；13 处接收者全是数组，零字符串接收者） | 1 | 中 | 已有兜底 |
 | `src/components/messages/MessageList.tsx:109` | `Array.prototype.at` 存在（Chromium 92；13 处接收者全是数组，零字符串接收者） | 1 | 中 | 已有兜底 |
@@ -54,8 +54,8 @@
 | `src/services/api/openaiAdapter.ts:354` | `Array.prototype.flatMap` 存在（Chromium 69，低于基线） | 1 | 低 | —（基线内，无需处置） |
 | `src/services/appUpdate.ts:63` | `crypto.randomUUID` 存在（Chromium 92） | 1 | 中 | 已有兜底 |
 | `src/services/chat/backup.ts:72` | `Object.hasOwn` 存在（Chromium 93） | 1 | 中 | 已有兜底 |
-| `src/services/chat/db.ts:50` | `Array.prototype.flatMap` 存在（Chromium 69，低于基线） | 1 | 低 | —（基线内，无需处置） |
-| `src/services/chat/db.ts:330` | `Array.prototype.flatMap` 存在（Chromium 69，低于基线） | 1 | 低 | —（基线内，无需处置） |
+| `src/services/chat/db.ts:98` | `Array.prototype.flatMap` 存在（Chromium 69，低于基线） | 1 | 低 | —（基线内，无需处置） |
+| `src/services/chat/db.ts:397` | `Array.prototype.flatMap` 存在（Chromium 69，低于基线） | 1 | 低 | —（基线内，无需处置） |
 | `src/services/chat/history/toArchive.ts:61` | `Array.prototype.flatMap` 存在（Chromium 69，低于基线） | 1 | 低 | —（基线内，无需处置） |
 | `src/services/chat/history/toArchive.ts:258` | `Array.prototype.at` 存在（Chromium 92；13 处接收者全是数组，零字符串接收者） | 1 | 中 | 已有兜底 |
 | `src/services/chat/history/toLocal.ts:77` | `Array.prototype.flatMap` 存在（Chromium 69，低于基线） | 1 | 低 | —（基线内，无需处置） |
@@ -63,20 +63,20 @@
 | `src/services/chat/history/toLocal.ts:214` | `Array.prototype.flatMap` 存在（Chromium 69，低于基线） | 1 | 低 | —（基线内，无需处置） |
 | `src/services/chat/history/toLocal.ts:291` | `Array.prototype.flatMap` 存在（Chromium 69，低于基线） | 1 | 低 | —（基线内，无需处置） |
 | `src/services/chat/history/urlImport.ts:1279` | `crypto.randomUUID` 存在（Chromium 92） | 1 | 中 | 已有兜底 |
-| `src/services/chat/reply.ts:35` | `Array.prototype.flatMap` 存在（Chromium 69，低于基线） | 1 | 低 | —（基线内，无需处置） |
-| `src/services/chat/reply.ts:164` | `Array.prototype.flatMap` 存在（Chromium 69，低于基线） | 1 | 低 | —（基线内，无需处置） |
-| `src/services/chat/reply.ts:243` | `Array.prototype.flatMap` 存在（Chromium 69，低于基线） | 1 | 低 | —（基线内，无需处置） |
-| `src/services/chat/reply.ts:263` | `Array.prototype.at` 存在（Chromium 92；13 处接收者全是数组，零字符串接收者） | 1 | 中 | 已有兜底 |
+| `src/services/chat/reply.ts:38` | `Array.prototype.flatMap` 存在（Chromium 69，低于基线） | 1 | 低 | —（基线内，无需处置） |
+| `src/services/chat/reply.ts:167` | `Array.prototype.flatMap` 存在（Chromium 69，低于基线） | 1 | 低 | —（基线内，无需处置） |
+| `src/services/chat/reply.ts:270` | `Array.prototype.flatMap` 存在（Chromium 69，低于基线） | 1 | 低 | —（基线内，无需处置） |
+| `src/services/chat/reply.ts:290` | `Array.prototype.at` 存在（Chromium 92；13 处接收者全是数组，零字符串接收者） | 1 | 中 | 已有兜底 |
 | `src/services/chat/sessionGroups.ts:25` | `Array.prototype.at` 存在（Chromium 92；13 处接收者全是数组，零字符串接收者） | 1 | 中 | 已有兜底 |
-| `src/services/chat/store.ts:152` | `Object.hasOwn` 存在（Chromium 93） | 1 | 中 | 已有兜底 |
-| `src/services/chat/store.ts:157` | `Object.hasOwn` 存在（Chromium 93） | 1 | 中 | 已有兜底 |
-| `src/services/chat/store.ts:303` | `Object.hasOwn` 存在（Chromium 93） | 1 | 中 | 已有兜底 |
-| `src/services/chat/store.ts:323` | `Object.hasOwn` 存在（Chromium 93） | 1 | 中 | 已有兜底 |
-| `src/services/chat/store.ts:570` | `Object.hasOwn` 存在（Chromium 93） | 1 | 中 | 已有兜底 |
-| `src/services/chat/store.ts:977` | `Array.prototype.at` 存在（Chromium 92；13 处接收者全是数组，零字符串接收者） | 1 | 中 | 已有兜底 |
-| `src/services/chat/store.ts:1072` | `Array.prototype.at` 存在（Chromium 92；13 处接收者全是数组，零字符串接收者） | 1 | 中 | 已有兜底 |
-| `src/services/chat/store.ts:1073` | `Array.prototype.at` 存在（Chromium 92；13 处接收者全是数组，零字符串接收者） | 1 | 中 | 已有兜底 |
-| `src/services/chat/store.ts:1206` | `Promise.allSettled` 存在（Chromium 76，低于基线） | 1 | 低 | —（基线内，无需处置） |
+| `src/services/chat/store.ts:161` | `Object.hasOwn` 存在（Chromium 93） | 1 | 中 | 已有兜底 |
+| `src/services/chat/store.ts:166` | `Object.hasOwn` 存在（Chromium 93） | 1 | 中 | 已有兜底 |
+| `src/services/chat/store.ts:312` | `Object.hasOwn` 存在（Chromium 93） | 1 | 中 | 已有兜底 |
+| `src/services/chat/store.ts:332` | `Object.hasOwn` 存在（Chromium 93） | 1 | 中 | 已有兜底 |
+| `src/services/chat/store.ts:579` | `Object.hasOwn` 存在（Chromium 93） | 1 | 中 | 已有兜底 |
+| `src/services/chat/store.ts:1019` | `Array.prototype.at` 存在（Chromium 92；13 处接收者全是数组，零字符串接收者） | 1 | 中 | 已有兜底 |
+| `src/services/chat/store.ts:1115` | `Array.prototype.at` 存在（Chromium 92；13 处接收者全是数组，零字符串接收者） | 1 | 中 | 已有兜底 |
+| `src/services/chat/store.ts:1116` | `Array.prototype.at` 存在（Chromium 92；13 处接收者全是数组，零字符串接收者） | 1 | 中 | 已有兜底 |
+| `src/services/chat/store.ts:1249` | `Promise.allSettled` 存在（Chromium 76，低于基线） | 1 | 低 | —（基线内，无需处置） |
 | `src/services/chat/view.ts:167` | `String.prototype.trimEnd` 存在（Chromium 66，低于基线） | 1 | 低 | —（基线内，无需处置） |
 | `src/services/chat/view.ts:269` | `Array.prototype.at` 存在（Chromium 92；13 处接收者全是数组，零字符串接收者） | 1 | 中 | 已有兜底 |
 | `src/services/chat/view.ts:275` | `Array.prototype.flatMap` 存在（Chromium 69，低于基线） | 1 | 低 | —（基线内，无需处置） |
