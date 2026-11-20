@@ -413,6 +413,7 @@ const Input = ({ sessionId }: { sessionId: string | null }) => {
               onFiles={docDrafts.addFiles}
               disabled={importingHistory}
               icon={<IconDocumentOutline16 />}
+              testId="attach-document"
             />
           ) : (
             /*
@@ -421,6 +422,10 @@ const Input = ({ sessionId }: { sessionId: string | null }) => {
              * 是给门禁看的显式标记 —— `mode-switch-plain` 数「输入区功能性按钮」时要把它排除，
              * 否则一句解释文案会混进按钮清单（`发送` 在空输入时也是 aria-disabled，
              * 所以不能笼统地按 aria-disabled 过滤，只能按这个标记排除）。
+             *
+             * `data-testid="attach-document"` 与可用分支**同名**是刻意的（#586）：两条分支是
+             * 「同一件事的两种状态」，用例数「文档入口在不在」不该因为能力门开关而换选择器；
+             * 「能不能用」由 `data-attachment-entry="unavailable"` / `aria-disabled` 判断。
              */
             <IconButton
               size="m"
@@ -429,15 +434,27 @@ const Input = ({ sessionId }: { sessionId: string | null }) => {
               icon={<IconDocumentOutline16 />}
               tooltip={t('attachChannelUnsupported')}
               aria-disabled="true"
+              data-testid="attach-document"
               data-attachment-entry="unavailable"
               disabled={importingHistory}
               onClick={() => showToast({ key: 'attachChannelUnsupported' })}
             />
           )}
+          {/*
+           * 图片入口（#548 / #551 / #552）：与上面那个**文档**入口是两件事，所以各自带一个
+           * 稳定的 `data-testid`。两家都长成图标按钮、文案里又都有「上传/附件」字样，
+           * 用例按 `aria-label` 数节点会把这两个入口搅在一起（#586 的根因）。
+           *
+           * 注意**不要**给它加 `data-attachment-entry="unavailable"`：那个标记的语义是
+           * 「这个入口不提供功能」，`mode-switch-plain` 靠它把解释性按钮排除出功能性按钮清单；
+           * 图片入口即使当前渠道不可用，也仍然是一个真实入口（点下去给可读提示），
+           * 与文档那条「能力门关掉就只剩解释」的语义不同。
+           */}
           <IconButton
             size="m"
             tone="primary"
             className={clsx(!canAttach && styles.unavailableEntry)}
+            data-testid="attach-image"
             icon={<IconPaperclipOutline16 />}
             tooltip={canAttach ? t('uploadFile') : t(attachDenied)}
             aria-disabled={canAttach ? undefined : 'true'}

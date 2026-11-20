@@ -7,10 +7,14 @@
 //
 // 断言（对应任务书验收 1~8、10）：
 //   [1] 标准构建默认渠道 = DeepSeek 官方；只渲染 API Key 一行（无 baseUrl / model 输入元素）
-//   [2] DeepSeek 官方：发消息 /anthropic/v1/messages + model deepseek-flash；搜索/附件/语音/思考入口都在
-//   [3] Anthropic 协议：三件套（服务地址 / 模型 / API Key）；切过去后 Key 不丢；请求按填的值发出 /v1/messages
-//   [4] OpenAI 兼容：三件套；请求打到 /v1/chat/completions；搜索/附件/语音不渲染，思考入口恒常驻（#341，请求不带字段）
+//   [2] DeepSeek 官方：发消息 /anthropic/v1/messages + model deepseek-flash；搜索/语音/思考入口都在，
+//       图片入口在且可点，**文档入口按能力门渲染为不可用**（acceptsDocuments('deepseek') === false，#538）
+//   [3] Anthropic 协议：三件套（服务地址 / 模型 / API Key）；切过去后 Key 不丢；请求按填的值发出 /v1/messages；
+//       图片入口在且可点（#548）、文档入口在且可点（#480）；搜索/语音不渲染
+//   [4] OpenAI 兼容：三件套；请求打到 /v1/chat/completions；搜索/语音不渲染，
+//       图片入口在且可点（#548）、文档入口在且可点（#480），思考入口恒常驻（#341，请求不带字段）
 //   [5] 我们的渠道：只渲染 API Key（1 个 password 输入框），界面不出现后端地址与内置模型名；
+//       图片入口在且可点（#548）、文档入口在且可点（#480）；
 //       请求打到 http://140.210.13.146:60010/v1/chat/completions（OpenAI 协议）+ model deepseek-v4.1-flash，
 //       鉴权 Authorization: Bearer <key>（不带 x-api-key）；深度思考入口恒常驻（#341，请求不带字段）
 //   [6] 切换渠道后能力入口随之显隐（搜不到 DOM 节点，不是置灰）；刷新后渠道选择持久化
@@ -203,20 +207,111 @@ const expectNoCapabilityCopy = async (dialog, where) => {
   }
 }
 
+/**
+ * 输入区那两个「附件」入口是**两件不同的事**（#586 的根因就在这一步没分清）：
+ *
+ *  - **图片入口** `[data-testid="attach-image"]`（#548 / #551）：带视觉能力的渠道都该有。
+ *    它收的是图片 —— 三家 base64 渠道本地编码内联，deepseek 走 `files` 上传 + `file_id`；
+ *  - **文档入口** `[data-testid="attach-document"]`（#480 / #538）：收的是 txt / docx / pdf，
+ *    能不能用**只由 `acceptsDocuments(kind)` 决定**。能力门关掉时入口不是消失，而是渲染成
+ *    带 `data-attachment-entry="unavailable"` 的解释按钮（看得见、点下去给原因，这是 #538 的口径）。
+ *
+ * 这两个入口此前在 DOM 里没有各自的稳定标识，只能靠 `aria-label` 里的中文去数
+ * （图片入口 = 「上传文件」、文档入口 = 「添加文档（TXT / DOCX / PDF）」）。于是这条用例里的
+ * `button[aria-label="上传文件"]` 数的**一直是图片入口**，却按「附件入口」的口径写期望 ——
+ * #548 给三个渠道开了图片入口之后，「三渠道不该有附件入口」这条旧断言就红了。
+ * 断言该随行为更新，但**不能靠删掉它**：把两个入口分开断言，强度是升的（见下）。
+ */
+const ATTACH_IMAGE = '[data-testid="attach-image"]'
+const ATTACH_IMAGE_READY = `${ATTACH_IMAGE}:not([aria-disabled="true"])`
+const ATTACH_DOC = '[data-testid="attach-document"]'
+const ATTACH_DOC_READY = `${ATTACH_DOC}:not([data-attachment-entry="unavailable"])`
+const ATTACH_DOC_DISABLED = `${ATTACH_DOC}[data-attachment-entry="unavailable"]`
+
 /** 聊天页某入口的 DOM 节点数（找不到 = 入口压根没渲染） */
 const capNodes = async () => ({
   search: await page.locator('button[aria-label="智能搜索"]').count(),
-  vision: await page.locator('button[aria-label="上传文件"]').count(),
   asr: await page.locator('button[aria-label="语音输入"]').count(),
   thinking: await page.locator('button[aria-label="深度思考"]').count(),
+  image: await page.locator(ATTACH_IMAGE).count(),
+  imageReady: await page.locator(ATTACH_IMAGE_READY).count(),
+  document: await page.locator(ATTACH_DOC).count(),
+  documentReady: await page.locator(ATTACH_DOC_READY).count(),
+  documentDisabled: await page.locator(ATTACH_DOC_DISABLED).count(),
 })
+
+/**
+ * 图片入口的三态期望：`ready`（在 + 可点）/ `absent`（DOM 里没有）。
+ * 四个渠道都应该是 `ready`：这是 #548 的功能本身，也是本文件从「一个附件入口」升级到
+ * 「图片 + 文档两个入口」之后唯一新增的期望。
+ */
+const expectImageEntry = (where, want, nodes) => {
+  if (want === 'ready') {
+    if (nodes.image !== 1) {
+      bad(`${where} 图片入口（attach-image）应有且仅有 1 个，实际 ${nodes.image} 个`)
+    } else if (nodes.imageReady !== 1) {
+      bad(`${where} 图片入口存在但不可点（aria-disabled=true，实际可点 ${nodes.imageReady} 个）`)
+    } else {
+      ok(`${where} 图片入口存在且可点（attach-image ×1，#548 的三渠道图片通路）`)
+    }
+    return
+  }
+  if (nodes.image !== 0) {
+    bad(`${where} 仍然渲染了图片入口（期望 DOM 里没有，实际 ${nodes.image} 个）`)
+  } else {
+    ok(`${where} 图片入口不存在（DOM 里没有节点）`)
+  }
+}
+
+/**
+ * 文档入口的三态期望：
+ *  - `ready`：`acceptsDocuments(kind)` 为真 → 入口在且可点；
+ *  - `disabled`：能力门关掉（今天只有 deepseek）→ 入口**仍在**，但明确标成不可用
+ *    （`data-attachment-entry="unavailable"` + `aria-disabled="true"`），点下去给原因而不是静默；
+ *  - `absent`：DOM 里没有。
+ */
+const expectDocumentEntry = (where, want, nodes) => {
+  if (want === 'ready') {
+    if (nodes.documentReady !== 1) {
+      bad(
+        `${where} 文档入口应存在且可点（attach-document 可点 ${nodes.documentReady} 个 / 总数 ${nodes.document} 个）`
+      )
+    } else if (nodes.documentDisabled !== 0) {
+      bad(`${where} 文档入口同时出现了「不可用」标记，能力表自相矛盾`)
+    } else {
+      ok(`${where} 文档入口存在且可点（attach-document ×1，acceptsDocuments=true）`)
+    }
+    return
+  }
+  if (want === 'disabled') {
+    if (nodes.document !== 1) {
+      bad(`${where} 文档入口应渲染 1 个「不可用」解释按钮，实际 ${nodes.document} 个`)
+    } else if (nodes.documentDisabled !== 1 || nodes.documentReady !== 0) {
+      bad(
+        `${where} 文档入口没有标成不可用（unavailable=${nodes.documentDisabled}、ready=${nodes.documentReady}）`
+      )
+    } else {
+      ok(`${where} 文档入口按能力门渲染为不可用（acceptsDocuments=false，点下去给原因）`)
+    }
+    return
+  }
+  if (nodes.document !== 0) {
+    bad(`${where} 仍然渲染了文档入口（期望 DOM 里没有，实际 ${nodes.document} 个）`)
+  } else {
+    ok(`${where} 文档入口不存在（DOM 里没有节点）`)
+  }
+}
 
 const expectCaps = async (where, expected) => {
   const nodes = await capNodes()
   note(`${where} 入口节点数：${JSON.stringify(nodes)}`)
-  for (const [name, want] of Object.entries(expected)) {
+  for (const name of ['search', 'asr', 'thinking']) {
+    if (!(name in expected)) {
+      continue
+    }
     const got = nodes[name]
-    const label = { search: '智能搜索', vision: '附件', asr: '语音输入', thinking: '深度思考' }[name]
+    const want = expected[name]
+    const label = { search: '智能搜索', asr: '语音输入', thinking: '深度思考' }[name]
     if (want && got === 0) {
       bad(`${where} 缺少「${label}」入口`)
     } else if (!want && got !== 0) {
@@ -225,6 +320,8 @@ const expectCaps = async (where, expected) => {
       ok(`${where} ${label}入口${want ? '存在' : '不存在（DOM 里没有节点）'}`)
     }
   }
+  expectImageEntry(where, expected.image, nodes)
+  expectDocumentEntry(where, expected.document, nodes)
 }
 
 const lastMessageRequest = (requests) =>
@@ -367,7 +464,17 @@ try {
 
   // ---------- [2] DeepSeek 官方：能力全开 + 请求路径 ----------
   console.log('\n[2] DeepSeek 官方渠道')
-  await expectCaps('DeepSeek 官方', { search: true, vision: true, asr: true, thinking: true })
+  await expectCaps('DeepSeek 官方', {
+    search: true,
+    // 图片：deepseek 一直走 `files` 上传 + `file_id`（#551 的零改动边界，入口照旧可用）
+    image: 'ready',
+    // 文档：`acceptsDocuments('deepseek') === false`（#538 的能力门，本分支合并后仍是 false）→
+    // 入口不会消失，而是渲染成带 `data-attachment-entry="unavailable"` 的解释按钮。
+    // 这条断言就是「能力门没有被削弱」的 DOM 侧守卫。
+    document: 'disabled',
+    asr: true,
+    thinking: true,
+  })
   const hitDeepseek = await sendAndCapture(requests, '你好，官方渠道')
   if (!hitDeepseek) {
     bad('DeepSeek 官方渠道没有发出消息请求')
@@ -411,7 +518,14 @@ try {
   }
   await shot('channel-anthropic')
   await closeSettings(dialog)
-  await expectCaps('Anthropic 协议', { search: false, vision: false, asr: false, thinking: true })
+  await expectCaps('Anthropic 协议', {
+    search: false,
+    // #548 给三家开了图片入口（base64 内联），#480/#538 的文档入口照旧可用
+    image: 'ready',
+    document: 'ready',
+    asr: false,
+    thinking: true,
+  })
   const hitAnthropic = await sendAndCapture(requests, '你好，Anthropic 协议')
   if (!hitAnthropic) {
     bad('Anthropic 协议渠道没有发出消息请求')
@@ -443,7 +557,13 @@ try {
   await page.waitForTimeout(400)
   await shot('channel-openai')
   await closeSettings(dialog)
-  await expectCaps('OpenAI 兼容', { search: false, vision: false, asr: false, thinking: true })
+  await expectCaps('OpenAI 兼容', {
+    search: false,
+    image: 'ready',
+    document: 'ready',
+    asr: false,
+    thinking: true,
+  })
   const hitOpenai = await sendAndCapture(requests, '你好，OpenAI 兼容')
   if (!hitOpenai) {
     bad('OpenAI 兼容渠道没有发出消息请求')
@@ -493,7 +613,13 @@ try {
   await page.getByRole('button', { name: /^确定$|^Confirm$/ }).first().click()
   await page.waitForTimeout(1200)
   await closeSettings(dialog)
-  await expectCaps('我们的渠道', { search: false, vision: false, asr: false, thinking: true })
+  await expectCaps('我们的渠道', {
+    search: false,
+    image: 'ready',
+    document: 'ready',
+    asr: false,
+    thinking: true,
+  })
   const hitOurs = await sendAndCapture(requests, '你好，我们的渠道')
   if (!hitOurs) {
     bad('我们的渠道没有发出消息请求')

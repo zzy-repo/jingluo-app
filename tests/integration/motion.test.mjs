@@ -121,6 +121,33 @@ const MESSAGE_FLOW_ALLOWLIST = new Map([
     'src/components/chatInput/ChatInput.module.css.d.ts',
     'CSS Module 的手写类型声明（本仓 *.css.d.ts 由人跟着对应模块同步），本次只多了对应的键（docAttachments 等）；无逻辑、无动效',
   ],
+  /**
+   * #548 / #551 / #552（三渠道图片入口，母单 **#548**）：base64 渠道「选图即就绪」之后，
+   * 输入区与消息里的**图片卡片**要多说一句「发出去的到底是哪份字节」（压缩过的图发出去是
+   * webp、体积也和原件不同）。这是结构改动 —— 只有输入区知道草稿的状态机、只有消息卡片
+   * 知道自己渲染的是哪张图，搬到 FLOW_DIRS 之外就得在外面重建一套 DOM 探测。
+   * 下面五条的改动里都没有 transition / animation / transform（[8] 会逐条扫新增行确认）。
+   */
+  [
+    'src/components/chatInput/DraftAttachments.tsx',
+    '#548 / #551 / #552 草稿卡片要认得渠道给的第三种就绪态：base64 渠道的图片在选图阶段就编好了（`inline`），对卡片而言与 `done` 同义（都表示「可以发送」），另在缩略图上标出真正发出去的格式与体积（`describeSentImage()`）。纯状态映射与一行文案，没有任何动效声明',
+  ],
+  [
+    'src/components/chatInput/DragMask.tsx',
+    '#548 / #562 拖拽遮罩这条**只有 import 换了路径**：A 线把附件模块目录化（`services/attachments.js` → `services/attachments/upload.js`），`MAX_SIZE_MB` / `MAX_COUNT` 的来源跟着搬家，取值与提示文案一个字都没动，更没有动效。登记它只是不让「路径搬家」把 [8] 卡死',
+  ],
+  [
+    'src/components/messages/MessageFile.tsx',
+    '#548 / #552 消息里的图片卡片要标出「发出去的真实形态」（`WEBP · 218 KB`）：编码产物在选图阶段就进了 `imageSource` 的缓存，这里同步查一次 `imagePartOf()` 即可（缓存里没有就不显示，绝不拿原件体积冒充发出去的体积）。多一次查缓存 + 一处 `sentLabel` 渲染，无动效声明',
+  ],
+  [
+    'src/components/messages/MessageFile.module.css',
+    '#548 / #552 上一条的样式：底部一条渐变上写「格式 · 体积」，可见性复用既有的 `--message-file-reason-display` 自定义属性（与失败原因同一档），只用到 position / display / padding / font-size / color / background，**没有 transition / animation / transform**',
+  ],
+  [
+    'src/components/messages/MessageFile.module.css.d.ts',
+    'CSS Module 的手写类型声明，只多了 `.meta` 一个键；无逻辑、无动效',
+  ],
 ])
 
 const failures = []
