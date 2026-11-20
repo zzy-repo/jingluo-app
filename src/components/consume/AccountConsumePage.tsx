@@ -26,8 +26,8 @@ import { useCallback, useMemo, useState } from 'react'
 import { useTranslate, type TranslationKey } from '../../i18n/index.js'
 import type { ConsumeClient, ConsumeUser } from '../../services/consume/index.js'
 import { getConsumeClient } from '../../services/consumeClient.js'
-import { useAuthStore } from '../../services/auth/store.js'
-import type { AccountConsumeTab } from '../settings/settingsDialogState.js'
+import { useAuthStatus } from '../../services/auth/useAuthStatus.js'
+import { openSettings, type AccountConsumeTab } from '../settings/settingsDialogState.js'
 import { Modal } from '../base/Modal.js'
 import { BuyTab } from './BuyTab.js'
 import { AccountPanel, QuotaPanel } from './index.js'
@@ -58,9 +58,12 @@ export type AccountConsumePageProps = {
    * 传进来，整页共用一份，不出现第二个 token 来源。
    */
   consume?: ConsumeClient
-  /** 当前用户；不传则取 W1-B 的 `useAuthStore().user`（仍未登录时 Tab4 自己引导登录） */
+  /** 当前用户；不传则取 W1-B 的 `useAuthStore().user`（仍未登录时 Tab4 自己给可选登录卡） */
   user?: ConsumeUser | null
-  /** 需要登录时的出口（W1-B 的 AuthGate / 登录页由上层提供）；不传时面板只显示「登录已失效」。 */
+  /**
+   * 需要登录时的出口。**默认实现已经够用**（切到「账号」tab —— 那里有局部登录卡）；
+   * 上层要接管（例如整页换壳）再传自己的。
+   */
   onNeedLogin?: () => void
 }
 
@@ -82,12 +85,33 @@ export const AccountConsumePage = ({
    */
   const consume = useMemo(() => injected ?? getConsumeClient(), [injected])
   // Tab4 的「当前用户」默认取 W1-B 的登录态；上层传了以传入的为准
-  const authUser = useAuthStore((state) => state.user)
+  const auth = useAuthStatus()
+  const authUser = auth.user
   /**
-   * 登录出口：面板的 `onNeedLogin` 是必填（会话失效时它们只负责喊，不自己跳转），
-   * 上层没接 AuthGate 之前给一个空实现 —— 面板内部仍会把 401 显示成「登录状态已失效」。
+   * 登录态（#608）：三档，`null` = 启动恢复还没跑完。
+   *
+   * 为什么不直接用 `user !== null`：恢复期间 store 里既没有 token 也没有 user，但那不等于
+   * 「未登录」—— 先按「未知」给 loading，免得回访用户一进来就看到一句「登录后可查看额度」。
    */
-  const needLogin = useCallback(() => onNeedLogin?.(), [onNeedLogin])
+  const signedIn = auth.restored ? auth.authenticated : null
+  /**
+   * 登录出口：面板的 `onNeedLogin` 是必填（会话失效时它们只负责喊，不自己跳转）。
+   * 拆掉登录墙之后**没有一个可以由外壳切走的登录页**了，默认行为就是切到「账号」tab ——
+   * 那里的局部登录卡正是这条出口的落点（#608）。上层要接管再传 `onNeedLogin`。
+   */
+  const needLogin = useCallback(() => {
+    setTab('account')
+    onNeedLogin?.()
+  }, [onNeedLogin])
+
+  /**
+   * 未登录态的主 CTA：「去填 API Key」（#608 —— 账户是次要的，能不发请求就不发请求）。
+   * 落在「设置 → 数据管理 → API Key」那一行：关掉本页、回到设置的数据管理分组。
+   */
+  const fillKey = useCallback(() => {
+    onClose()
+    openSettings('data')
+  }, [onClose])
 
   /** 关掉收款页后回到「我的卡密」：卡密由小铺发到订单上，重进这个 tab 就会重拉一次 */
   const backToCards = useCallback(() => setTab('cards'), [])
@@ -121,9 +145,16 @@ export const AccountConsumePage = ({
           <MyCardsTab consume={consume} onGoBuy={() => setTab('buy')} onNeedLogin={onNeedLogin} />
         ) : null}
         {tab === 'buy' ? <BuyTab onPurchased={backToCards} /> : null}
-        {tab === 'quota' ? <QuotaPanel consume={consume} onNeedLogin={needLogin} /> : null}
+        {tab === 'quota' ? (
+          <QuotaPanel consume={consume} onNeedLogin={needLogin} signedIn={signedIn} onSignIn={needLogin} />
+        ) : null}
         {tab === 'account' ? (
-          <AccountPanel consume={consume} user={user ?? authUser} onNeedLogin={needLogin} />
+          <AccountPanel
+            consume={consume}
+            user={user ?? authUser}
+            onNeedLogin={needLogin}
+            onFillKey={fillKey}
+          />
         ) : null}
       </div>
     </Modal>

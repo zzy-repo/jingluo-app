@@ -832,6 +832,28 @@ export const zh = {
   accountConsumeTabQuota: '我的额度',
   accountConsumeTabAccount: '账号',
 
+  // 拆掉登录墙（#608）：账户降级为「我们的渠道」里的**可选**能力。
+  // 口径三条（改文案前先看 #608 / #421）：① 主 CTA 是「填 Key 就能用」，不是「登录」；
+  // ② 不登录失去的只有账单类信息，聊天 / Key / 导入导出一样不少；③ 不许写「账号更安全」这类夸大。
+  accountOptionalHint: '不登录也可以：在设置里填 API Key 即可使用各渠道',
+  accountOptionalStatusLoggedOut: '当前未登录 —— 只填 Key 也能正常聊天',
+  accountOptionalStatusLoggedIn: '当前已登录：{email}',
+  accountOptionalBenefitsTitle: '账号只多这些账单类信息',
+  accountOptionalBenefitBalance: '余额与用量明细（我们的渠道按账号结算）',
+  accountOptionalBenefitKeys: 'Key 管理：创建、停用、删除',
+  accountOptionalBenefitInvite: '邀请码与返利余额',
+  accountOptionalKeep: '聊天、各渠道 Key、导入导出都不受影响 —— 不登录一样不少',
+  accountOptionalLoginEntry: '登录 / 注册（可选）',
+  accountOptionalChecking: '正在检查登录状态…',
+  // 主 CTA 与它的落点（#608）：账户是次要的 —— 先能聊天，再谈账号
+  accountFillKeyCta: '去填 API Key',
+  accountFillKeyHint: '设置 → 数据管理 → API Key，填上就能直接聊天',
+  accountSignInCta: '去登录',
+  quotaNeedLoginTitle: '登录后可查看额度',
+  quotaNeedLoginBody: '额度按账号结算；只想聊天的话，在设置里填 Key 即可',
+  inviteNeedLoginTitle: '登录后可查看邀请',
+  inviteNeedLoginBody: '邀请码与返利跟着账号走；不登录不影响聊天',
+
   // 账户与消费（金额单位是元：1 元 = 1 额度，无 USD；展示走 utils/money.ts，客户端不做汇率）
   consumeBalance: '¥{amount}',
   consumeBalanceApprox: '约合 ¥{amount}',

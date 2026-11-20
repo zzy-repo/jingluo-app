@@ -1,0 +1,99 @@
+{
+  "page": "487-account-optional",
+  "title": "#608 拆掉登录墙：未登录直接进主界面（无登录墙）/ 账号 tab 的未登录引导 + 可选登录卡 / 已登录态（390 与 360 两档）",
+  "viewport": 360,
+  "size": "360×740",
+  "shots": [
+    "docs/ui/487-account-optional/360/487-account-optional-01-signed-out-boot-main-ui-360.png",
+    "docs/ui/487-account-optional/360/487-account-optional-02-signed-out-account-tab-360.png",
+    "docs/ui/487-account-optional/360/487-account-optional-03-signed-out-inline-login-card-360.png",
+    "docs/ui/487-account-optional/360/487-account-optional-04-signed-out-quota-guide-360.png",
+    "docs/ui/487-account-optional/360/487-account-optional-05-signed-in-account-tab-360.png"
+  ],
+  "notes": [],
+  "signedOutBoot": {
+    "hasComposer": true,
+    "passwordFields": 0,
+    "hasAuthCard": false,
+    "hasSiderEntry": false,
+    "head": "今天有什么可以帮到你？ 快速模式 专家模式 深度思考 内容由 AI 生成，请仔细甄别",
+    "viewportWidth": 360,
+    "documentScrollWidth": 360,
+    "overflowCount": 0,
+    "overflowSamples": []
+  },
+  "signedOutAccountTab": {
+    "notice": "不登录也可以：在设置里填 API Key 即可使用各渠道 当前未登录 —— 只填 Key 也能正常聊天",
+    "signedOutState": "当前未登录 —— 只填 Key 也能正常聊天",
+    "keep": "聊天、各渠道 Key、导入导出都不受影响 —— 不登录一样不少",
+    "hasInlineAuthCard": true,
+    "inlineCardHasPassword": true,
+    "hasLoggedInStatus": false,
+    "dialogWidth": 328,
+    "viewport": 360,
+    "scrollWidth": 360,
+    "viewportWidth": 360,
+    "documentScrollWidth": 360,
+    "overflowCount": 0,
+    "overflowSamples": []
+  },
+  "inlineLoginCard": {
+    "cardWidth": 250,
+    "dialogWidth": 328,
+    "cardHeight": 254,
+    "viewportHeight": 740,
+    "viewportWidth": 360,
+    "documentScrollWidth": 360,
+    "overflowCount": 0,
+    "overflowSamples": []
+  },
+  "signedOutQuotaTab": {
+    "guide": "登录后可查看额度 额度按账号结算；只想聊天的话，在设置里填 Key 即可",
+    "errors": 0,
+    "signIn": 1,
+    "viewportWidth": 360,
+    "documentScrollWidth": 360,
+    "overflowCount": 0,
+    "overflowSamples": []
+  },
+  "signedInAccountTab": {
+    "status": "当前已登录：demo@example.com",
+    "profile": "邮箱 demo@example.com 余额 ¥128.50 注册时间 —",
+    "keyRows": 2,
+    "hasSignedOutNotice": false,
+    "scrollWidth": 360,
+    "viewport": 360,
+    "tokenOnScreen": false,
+    "viewportWidth": 360,
+    "documentScrollWidth": 360,
+    "overflowCount": 0,
+    "overflowSamples": []
+  },
+  "overflow": {
+    "overflowCount": 0,
+    "assertion": "overflowCount === 0（390 / 360 两档，每个状态各量一次）",
+    "states": [
+      {
+        "label": "首屏（未登录）",
+        "overflowCount": 0
+      },
+      {
+        "label": "账号 tab（未登录）",
+        "overflowCount": 0
+      },
+      {
+        "label": "局部登录卡",
+        "overflowCount": 0
+      },
+      {
+        "label": "额度 tab（未登录）",
+        "overflowCount": 0
+      },
+      {
+        "label": "账号 tab（已登录）",
+        "overflowCount": 0
+      }
+    ]
+  },
+  "consoleErrors": []
+}

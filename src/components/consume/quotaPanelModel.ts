@@ -49,8 +49,13 @@ export type QuotaSource = {
 /** 每页条数（界面与请求共用；服务端默认 20） */
 export const QUOTA_USAGE_PAGE_SIZE = 10
 
-/** 额度区三态 + `noKey`（没有 Key 不是错误，是「还没开始用」） */
-export type QuotaState = { phase: 'noKey' } | PanelAsync<ConsumeGatewayUsage>
+/**
+ * 额度区三态 + 两个**不是错误**的空态（#608）：
+ *  - `noKey`：登录了但还没建 Key（「还没开始用」）；
+ *  - `anonymous`：根本没登录 —— 余额与用量跟着账号走，这里只能给引导。
+ *    放在 `noKey` 之前判：没登录时连「账号页创建 Key」都做不到，先说「登录后可查看额度」。
+ */
+export type QuotaState = { phase: 'anonymous' } | { phase: 'noKey' } | PanelAsync<ConsumeGatewayUsage>
 
 /** 用量列表里的一行：字段随服务端版本变，这里只挑界面能显示的四个 */
 export type QuotaUsageRow = {
@@ -204,6 +209,8 @@ export type QuotaPanelViewProps = PanelBlockProps & {
   onLoadMore: () => void
   onRetryQuota: () => void
   onRetryUsage: () => void
+  /** 未登录态的「去登录」出口（#608）：由外壳切到账号 tab（那里有局部登录卡） */
+  onSignIn?: () => void
 }
 
 const usageRows = ({ t, c }: PanelBlockProps, rows: QuotaUsageRow[]): ReactNode =>
@@ -232,11 +239,45 @@ const usageRows = ({ t, c }: PanelBlockProps, rows: QuotaUsageRow[]): ReactNode 
 
 /** 额度面板（纯渲染：状态、重试、复制全由容器注入） */
 export const QuotaPanelView = (props: QuotaPanelViewProps): ReactNode => {
-  const { t, c, Button, quota, expanded, usage, loadingMore, loadMoreError, onToggle, onLoadMore, onRetryQuota, onRetryUsage } =
-    props
+  const {
+    t,
+    c,
+    Button,
+    quota,
+    expanded,
+    usage,
+    loadingMore,
+    loadMoreError,
+    onToggle,
+    onLoadMore,
+    onRetryQuota,
+    onRetryUsage,
+    onSignIn,
+  } = props
   const body: ReactNode[] = []
 
-  if (quota.phase === 'noKey') {
+  if (quota.phase === 'anonymous') {
+    // 没登录 = 引导，不是错误（#608）：不发请求、不显示 401 文案、不空白
+    body.push(
+      createElement(
+        'div',
+        { className: c.guide, 'data-testid': 'quota-signed-out' },
+        createElement('p', { className: c.guideTitle }, t('quotaNeedLoginTitle')),
+        createElement('p', { className: c.hint }, t('quotaNeedLoginBody'))
+      )
+    )
+    body.push(
+      createElement(
+        'div',
+        { className: c.actions },
+        createElement(
+          Button,
+          { size: 's', variant: 'outlined', testId: 'quota-sign-in', onClick: () => onSignIn?.() },
+          t('accountSignInCta')
+        )
+      )
+    )
+  } else if (quota.phase === 'noKey') {
     body.push(
       createElement(
         'div',
@@ -327,3 +368,17 @@ export const QuotaPanelView = (props: QuotaPanelViewProps): ReactNode => {
 /** 首屏状态：有 Key 也先给 `loading`，避免闪一下空态 */
 export const initialQuotaState = (source: QuotaSource): QuotaState =>
   source.hasApiKey() ? panelLoading<ConsumeGatewayUsage>() : { phase: 'noKey' }
+
+/**
+ * 按登录态算首屏状态（#608）：`null` = 还在恢复登录态（给 loading，别先喊「未登录」），
+ * `false` = 未登录（引导态，**不发请求**），`true` = 走原来的「有 Key 就查」。
+ *
+ * 为什么未登录要单独一档而不是复用 `noKey`：`noKey` 的文案是「去账号页创建 Key」，
+ * 对没登录的人是一句做不到的指令（建 Key 本身要登录）；而且 `/v1/usage` 用 JWT 打会 401。
+ */
+export const quotaStateFor = (source: QuotaSource, signedIn: boolean | null): QuotaState => {
+  if (signedIn === null) {
+    return panelLoading<ConsumeGatewayUsage>()
+  }
+  return signedIn ? initialQuotaState(source) : { phase: 'anonymous' }
+}

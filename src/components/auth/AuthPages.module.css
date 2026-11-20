@@ -222,6 +222,33 @@
   background-color: var(--dsw-alias-bg-base);
 }
 
+/**
+ * 嵌进「账号」面板的形态（#608）：只排版自身，不占满一屏、不再铺底色 ——
+ * 底色与内边距归宿主面板（`.panel`）所有，这里多给一层就成了「卡里套卡」。
+ */
+.embedded {
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  width: 100%;
+  color: var(--dsw-alias-label-primary);
+}
+
+/* 局部形态的「正在恢复登录态」占位：给宿主一个可视高度，别让面板在恢复期间塌成一条线 */
+.inlineLoading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 96px;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 13px;
+}
+
+.inlineLoadingText {
+  line-height: 20px;
+}
+
 .gateSpinner {
   width: 22px;
   height: 22px;
@@ -277,5 +304,9 @@
 :global(html[data-flex-gap-fallback]) .switchRow > *:not(:last-child) {
   margin-right: 14px;
   margin-bottom: 6px;
+}
+
+:global(html[data-flex-gap-fallback]) .inlineLoading > *:not(:last-child) {
+  margin-right: 8px;
 }
 /* #173-fallback:end */

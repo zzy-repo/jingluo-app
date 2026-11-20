@@ -29,6 +29,8 @@ import styles from './AuthPages.module.css'
 const CODE_COOLDOWN_SECONDS = 60
 
 export type RegisterPageProps = {
+  /** 嵌进「账号」面板时的形态（#608）：与 `LoginPage` 的 `embedded` 同一口径 */
+  embedded?: boolean
   /** `settings/public` 的三开关：邮箱验证 / 邀请码两行由它控制显隐 */
   flags: AuthFlags
   busy: boolean
@@ -41,6 +43,7 @@ export type RegisterPageProps = {
 }
 
 export const RegisterPage = ({
+  embedded = false,
   flags,
   busy,
   sendingCode,
@@ -119,7 +122,7 @@ export const RegisterPage = ({
   const codeButtonDisabled = busy || sendingCode || cooldown > 0
 
   return (
-    <div className={styles.page}>
+    <div className={embedded ? styles.embedded : styles.page}>
       <div className={styles.card}>
         <h1 className={styles.title}>{t('sub2authRegister')}</h1>
 

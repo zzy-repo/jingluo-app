@@ -372,6 +372,17 @@ export const AccountPanelView = (props: AccountPanelViewProps): ReactNode => {
   const busy = state.busy !== null
   const body: ReactNode[] = []
 
+  // ── 当前态（#608：登录 / 未登录都要在第一屏说清「我现在是什么态」）──────────
+  if (state.profile.phase === 'ready') {
+    body.push(
+      createElement(
+        'p',
+        { className: c.hint, 'data-testid': 'account-optional-status' },
+        t('accountOptionalStatusLoggedIn', { email: state.profile.data.email === '' ? '—' : state.profile.data.email })
+      )
+    )
+  }
+
   // ── 资料 ────────────────────────────────────────────────────────────────
   body.push(sectionTitle(c, t('consumeProfileTitle')))
   if (state.profile.phase === 'loading') {
@@ -502,6 +513,84 @@ export const AccountPanelView = (props: AccountPanelViewProps): ReactNode => {
           t('sub2authLogout')
         )
   )
+
+  return panelShell(c, t('consumeAccountTitle'), body, 'account-panel')
+}
+
+/**
+ * 「账号」面板的**未登录态**（#608 拆登录墙之后的主路径）。
+ *
+ * 为什么它必须存在：拆掉登录墙之后，绝大多数用户不会登录 —— 他们只填一把 Key 就开始聊天。
+ * 于是这个面板第一眼要回答的是三件事，**一屏之内**，且顺序固定（维护者点名的「好一点」）：
+ *  1. 我现在是什么态：`当前未登录`（不是错误、不是「登录失效」—— 从没登录过不是故障）；
+ *  2. 登录能得到什么 / 不登录会缺什么：余额与用量、云端 Key 管理、邀请返利这三件；
+ *  3. 下一步做什么：**主 CTA 是「去填 API Key」**，登录只是它下面那块可选项。
+ *
+ * 两条硬约束：
+ *  - **不发请求**：未登录时不去问 `profile()` / `keys.list()`（那两条只会回 401，把「没登录」
+ *    显示成「登录已失效」是 #608 要消掉的那种错）；这里全是静态文案 + 一个回调。
+ *  - **不重写表单**：登录 / 注册卡片由容器把 `<AuthGate variant="inline" />` 作为 `auth` 传进来，
+ *    表单逻辑与 `sub2auth*` 文案都在那一份里（LoginPage / RegisterPage），这里只负责排版与引导。
+ */
+export type AccountSignedOutViewProps = PanelBlockProps & {
+  /** 局部登录 / 注册卡片（容器注入，见上） */
+  auth: ReactNode
+  /** 主 CTA：跳到「设置 → 数据管理 → API Key」 */
+  onFillKey: () => void
+}
+
+/** 账号面板（未登录态，纯渲染：不读 store、不发请求） */
+export const AccountSignedOutView = (props: AccountSignedOutViewProps): ReactNode => {
+  const { t, c, Button, auth, onFillKey } = props
+  const body: ReactNode[] = []
+
+  // ① 顶部固定一句「不登录也能用」—— 维护者定调的原话，位置不动
+  body.push(
+    createElement(
+      'div',
+      { className: c.guide, 'data-testid': 'account-optional-notice' },
+      createElement('p', { className: c.guideTitle }, t('accountOptionalHint')),
+      createElement('p', { className: c.hint, 'data-testid': 'account-signed-out-state' }, t('accountOptionalStatusLoggedOut'))
+    )
+  )
+
+  // ② 能得到什么：三行账单类信息（账号**只**多这些，不是「更安全」）
+  body.push(sectionTitle(c, t('accountOptionalBenefitsTitle')))
+  body.push(
+    createElement(
+      'ul',
+      { className: c.list, 'data-testid': 'account-benefits' },
+      [t('accountOptionalBenefitBalance'), t('accountOptionalBenefitKeys'), t('accountOptionalBenefitInvite')].map(
+        (text, index) =>
+          createElement(
+            'li',
+            { className: c.listItem, key: `benefit-${index}`, 'data-testid': 'account-benefit' },
+            createElement('span', { className: c.listTitle }, text)
+          )
+      )
+    )
+  )
+
+  // ③ 不登录会失去什么 —— 反过来把「不会失去的」也说清楚（聊天 / Key / 导入导出）
+  body.push(createElement('p', { className: c.hint, 'data-testid': 'account-optional-keep' }, t('accountOptionalKeep')))
+
+  // ④ 主 CTA：能不发请求就不发请求 —— 填 Key 才是「用起来」的那条路
+  body.push(
+    createElement(
+      'div',
+      { className: c.actions },
+      createElement(
+        Button,
+        { size: 'm', variant: 'primary', testId: 'account-fill-key', onClick: onFillKey },
+        t('accountFillKeyCta')
+      )
+    )
+  )
+  body.push(createElement('p', { className: c.hint, 'data-testid': 'account-fill-key-hint' }, t('accountFillKeyHint')))
+
+  // ⑤ 次要入口：登录 / 注册（可选能力，放在主 CTA 之后）
+  body.push(sectionTitle(c, t('accountOptionalLoginEntry')))
+  body.push(createElement('div', { 'data-testid': 'account-auth-card' }, auth))
 
   return panelShell(c, t('consumeAccountTitle'), body, 'account-panel')
 }

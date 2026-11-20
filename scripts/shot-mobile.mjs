@@ -31,7 +31,9 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import { zipSync, strToU8 } from 'fflate'
 import { chromium } from 'playwright'
 
-import { inviteBaseUrl } from './lib/endpoints.mjs'
+// 消费层（sub2api）地址同样来自 `config/endpoints.json`（#274）：#608 的已登录态要点打桩，
+// 这里不许写字面量端口，否则本机改了 `config/endpoints.json` 之后这张截图会静默打到别处。
+import { consumeApiV1Prefix, consumeBaseUrl, inviteBaseUrl } from './lib/endpoints.mjs'
 // #386 的「流式中」截图要把 streaming 这个状态撑开：用同一份 ours 上游契约回 SSE（含 CORS 头），
 // 只是刻意延后 4 秒再回，好在上翻之后再截。
 import { OURS_CHAT_PATH, OURS_CORS, openAiSse } from '../tests/fixtures/domain03-04/ours-upstream.mjs'
@@ -62,6 +64,67 @@ const FIXTURE_API_KEY = 'sk-shot-mobile-fixture-0000'
  */
 const SHOT_INVITE_API = inviteBaseUrl
 const SHOT_CARD_API = 'https://apia.ecsafe.cn'
+
+/**
+ * #608「账号」tab 截图用的假账号：字段名与 sub2api 的 `User` DTO 一致（snake_case），
+ * 映射交给消费层（`toConsumeUser` / `toAuthUser`），这里不预先 camelCase 化。
+ * 金额 / 额度一律服务端说了算 —— 这几个数只为了让界面有东西可读，不参与任何推导。
+ */
+const SHOT_ACCOUNT_USER = {
+  id: 2,
+  email: 'demo@example.com',
+  username: 'demo',
+  role: 'user',
+  balance: 128.5,
+  frozen_balance: 0,
+  concurrency: 5,
+  status: 'active',
+  identities: { email: { bound: true } },
+}
+
+/**
+ * 原生桥桩（Capacitor 替身）—— 与 `tests/golden/g15-purchase.test.mjs` /
+ * `g16-account-optional.test.mjs` 同一套配方（出处见 `tests/golden/README.md`）。
+ *
+ * 为什么截图需要它：消费层（`services/consume/http.ts`，#484 §4.6）**只走原生**
+ * `CapacitorHttp` —— sub2api 的 CORS 默认拒绝所有跨域，WebView 里裸 fetch 必然失败，
+ * 所以浏览器里 `Capacitor.isNativePlatform()` 为假时它直接返回 `unsupported`，面板上只会出现
+ * 「当前版本不支持这个功能」（#487 留下的旧链路截图就是那样）。也就是说：**浏览器里这套接口
+ * 一个请求都发不出去**，「已登录态到底长什么样」根本拍不到。
+ *
+ * 做法：`window.androidBridge` 存在 → 平台判定为 android → `isNativePlatform()` 为真；
+ * `window.Capacitor.PluginHeaders` 把 `CapacitorHttp.request` 声明成 promise 方法 → 核心层调
+ * `nativePromise` 而不是 web 实现。这里让 `nativePromise` **在页面里真发一次 `fetch`** ——
+ * 于是请求仍然落在本场景自己的 `page.route` 路由表上（打桩、CORS 预检、响应映射全部照旧），
+ * 替身只负责「让原生通道存在」，不替用例改任何响应。
+ */
+const nativeBridgeStub = () => {
+  window.androidBridge = { postMessage: () => {} }
+  window.Capacitor = {
+    PluginHeaders: [{ name: 'CapacitorHttp', methods: [{ name: 'request', rtype: 'promise' }] }],
+    nativePromise: async (plugin, method, options) => {
+      if (plugin !== 'CapacitorHttp') {
+        return {}
+      }
+      const headers = {}
+      for (const [name, value] of Object.entries(options?.headers ?? {})) {
+        headers[String(name).toLowerCase()] = String(value)
+      }
+      const init = { method: String(options?.method ?? 'GET'), headers }
+      if (typeof options?.data === 'string' && options.data !== '') {
+        init.body = options.data
+      }
+      const response = await fetch(String(options?.url ?? ''), init)
+      const text = await response.text()
+      const responseHeaders = {}
+      response.headers.forEach((value, key) => {
+        responseHeaders[key] = value
+      })
+      return { status: response.status, headers: responseHeaders, data: text, url: response.url }
+    },
+    nativeCallback: async () => '',
+  }
+}
 
 // ---------------------------------------------------------------- 参数与命名（纯函数，单测直接 import）
 
@@ -2635,6 +2698,337 @@ export const PAGES = {
         throw new Error('详情面板里出现了文档正文')
       }
       await shot('03-message-panel-metadata')
+    },
+  },
+
+  /**
+   * #608 拆掉登录墙的三份验收证据 —— 为什么必须新拍，而不是复用 #487 的旧图：
+   * 拆墙**之前**「未登录」只有一种界面（整屏登录页），所以「未登录进 App 能直接看到主界面」
+   * 这件事没有任何历史截图能证明；而「账号」tab 在未登录 / 已登录下的差别（引导态 vs 数据态）
+   * 正是这次改动的落点，两态都得留证据。
+   *
+   * 已登录那张**不是摆拍**：先往 localStorage 写一份真实格式的落盘凭据
+   * （`chat-demo:auth-token` = `{v:1,token,user}`，见 `services/auth/store.ts`）再整页 reload，
+   * 让 `main.tsx` 的后台 `restoreAuth()` 真的走一遍（`/auth/me` + `/user/profile` + `/keys` +
+   * `/user/aff` 全由本页打桩）。登录态的唯一真值来源仍是 `useAuthStore`，没有第二条旁路。
+   *
+   * 未登录那张的反向证据同样重要：sub2api 一律回 **401**（真实口径），首屏照样进得去 ——
+   * 这正是「登录墙没了」与「接口挡着」两件事互不干扰的证明。
+   */
+  '487-account-optional': {
+    dir: 'docs/ui/487-account-optional',
+    title:
+      '#608 拆掉登录墙：未登录直接进主界面（无登录墙）/ 账号 tab 的未登录引导 + 可选登录卡 / 已登录态（390 与 360 两档）',
+    sessions: () => [makeReadingSession()],
+    providerKind: 'ours',
+    // 打开这一页默认落在「我的卡密」，它会拉 apia 的订单（fetch 通道）：按真契约形状回一条，
+    // 免得本页 console 里全是跨域报错、把真正的失败盖住（卡密内容不是本单要看的东西）。
+    mockPurchases: {
+      totalPaidYuan: 0,
+      orders: [
+        {
+          out_trade_no: 'CP202611200000608',
+          plan_id: 'standard',
+          plan_name: '标准包 500万 token',
+          plan_points: 3900,
+          amount_yuan: 39,
+          status: 'FULFILLED',
+          status_text: '已完成',
+          card_no: 'MUSE-6080-0000-0000-0001',
+          card_status: 'leased',
+          redeem_state: 'issued',
+          created_at: 1795055400,
+          paid_at: 1795055460,
+        },
+      ],
+    },
+    run: async (ctx) => {
+      const { page, shot, record, warn } = ctx
+      const reply = (body, status = 200) => ({
+        status,
+        headers: { 'content-type': 'application/json', 'access-control-allow-origin': '*' },
+        body: JSON.stringify(body),
+      })
+      /**
+       * 横向溢出：`overflowCount` 是本单的硬指标（390 / 360 两档都必须是 **0**，见 #106 的口径）。
+       * 量的是文档范围（设置弹层与「账户与消费」页都在里面），每次 `record` 都带上这个数，
+       * `metrics.json` 的顶层 `overflowCount` 会取所有记录里的最大值 —— 也就是「这一档最坏的那一屏」。
+       */
+      const measureOverflow = () =>
+        page.evaluate(() => {
+          const viewportWidth = document.documentElement.clientWidth
+          const overflow = []
+          for (const element of document.querySelectorAll('*')) {
+            const rect = element.getBoundingClientRect()
+            if (rect.width > 0 && rect.right > viewportWidth + 1) {
+              overflow.push({ tag: element.tagName, right: Math.round(rect.right), text: (element.textContent ?? '').slice(0, 24) })
+            }
+          }
+          return {
+            viewportWidth,
+            documentScrollWidth: Math.round(document.documentElement.scrollWidth),
+            overflowCount: overflow.length,
+            overflowSamples: overflow.slice(0, 5),
+          }
+        })
+      /** 每次量到的溢出都记在这里：结尾汇总成 `metrics.json` 顶层的 `overflowCount` */
+      const overflowSeen = []
+      /** 溢出必须是 0：这一条不许只 warn（`warn` 不进 CI 判定，等于没断言） */
+      const requireNoOverflow = async (label) => {
+        const measured = await measureOverflow()
+        overflowSeen.push({ label, overflowCount: measured.overflowCount })
+        if (measured.overflowCount !== 0) {
+          throw new Error(`${label} 出现横向溢出 ${measured.overflowCount} 处：${JSON.stringify(measured.overflowSamples)}`)
+        }
+        return measured
+      }
+      /** 消费层统一信封 `{code:0,message:'success',data}`（`services/consume/http.ts` 只认这个形状） */
+      const envelope = (data) => reply({ code: 0, message: 'success', data })
+
+      // 先「未登录」，拍完前两张再翻成「已登录」并 reload —— 一个路由处理器管两种态，
+      // 比注册两套 route 更接近真实：同一台机器上登录态翻了，接口才开始给数据。
+      let signedIn = false
+      await page.route(`${consumeBaseUrl}${consumeApiV1Prefix}/**`, async (route) => {
+        // 带 `Authorization` 的跨域请求会先发预检：预检必须自己回，否则真实请求根本发不出去
+        if (route.request().method() === 'OPTIONS') {
+          await route.fulfill({
+            status: 204,
+            headers: {
+              'access-control-allow-origin': '*',
+              'access-control-allow-headers': 'authorization,accept,content-type',
+              'access-control-allow-methods': 'GET,POST,PUT,DELETE,OPTIONS',
+              'access-control-max-age': '600',
+            },
+          })
+          return
+        }
+        const { pathname } = new URL(route.request().url())
+        // 开关是**公开**接口（`auth: null`）：未登录也必须读得到，注册入口的显隐全靠它
+        if (pathname.endsWith('/settings/public')) {
+          await route.fulfill(
+            envelope({ registration_enabled: true, email_verify_enabled: false, invitation_code_enabled: true })
+          )
+          return
+        }
+        if (!signedIn) {
+          await route.fulfill(reply({ code: 401, message: 'unauthorized' }, 401))
+          return
+        }
+        if (pathname.endsWith('/auth/me') || pathname.endsWith('/user/profile')) {
+          await route.fulfill(envelope(SHOT_ACCOUNT_USER))
+          return
+        }
+        if (pathname.endsWith('/keys')) {
+          await route.fulfill(
+            envelope({
+              items: [
+                { id: 11, name: '主力 Key', key: 'sk-shot-mobile-fixture-0000', status: 'active', quota: 5000000, quota_used: 1250000, created_at: '2026-11-01T10:00:00+08:00' },
+                { id: 12, name: '备用 Key', key: 'sk-shot-mobile-fixture-1111', status: 'inactive', quota: 1000000, quota_used: 0, created_at: '2026-11-12T10:00:00+08:00' },
+              ],
+              total: 2,
+              page: 1,
+              page_size: 20,
+              pages: 1,
+            })
+          )
+          return
+        }
+        if (pathname.endsWith('/user/aff')) {
+          await route.fulfill(
+            envelope({ aff_code: 'SHOT608', aff_count: 3, aff_quota: 12.5, aff_frozen_quota: 0, aff_history_quota: 12.5 })
+          )
+          return
+        }
+        // 其余（额度 / 卡密 / 订单）这一页不看，给空信封即可，别让 401 把面板画成错误态
+        await route.fulfill(envelope({}))
+      })
+
+      // ── ① 未登录冷启动：主界面必须在，登录墙必须不在 ───────────────────────
+      await page.locator('textarea').first().waitFor({ state: 'visible', timeout: 15000 })
+      await page.waitForTimeout(500)
+      const boot = await page.evaluate(() => {
+        const text = (document.body.innerText ?? '').replace(/\s+/gu, ' ')
+        return {
+          hasComposer: document.querySelector('textarea') !== null,
+          // 登录墙的判据：整屏表单会带一个密码框；没有它才叫「拆掉了」
+          passwordFields: document.querySelectorAll('input[type="password"]').length,
+          hasAuthCard: document.querySelector('[data-testid="account-auth-card"]') !== null,
+          hasSiderEntry: Array.from(document.querySelectorAll('button')).some((button) =>
+            ['打开边栏', '设置'].includes((button.textContent ?? '').trim())
+          ),
+          head: text.slice(0, 160),
+        }
+      })
+      record('signedOutBoot', { ...boot, ...(await requireNoOverflow('首屏（未登录）')) })
+      if (!boot.hasComposer) {
+        throw new Error('未登录冷启动没有输入框：登录墙没拆干净（首屏进不了主界面）')
+      }
+      if (boot.passwordFields > 0) {
+        throw new Error('未登录冷启动出现了密码输入框：首屏仍被登录页挡着')
+      }
+      await shot('01-signed-out-boot-main-ui')
+
+      // ── ② 设置 → 数据管理 → 账户与消费 → 「账号」tab（未登录态）────────────
+      const openAccountTab = async () => {
+        await openSettings(page, S.tabData)
+        const entry = page.locator(S.accountConsumeOpen)
+        await entry.waitFor({ state: 'visible', timeout: 10000 })
+        await entry.scrollIntoViewIfNeeded()
+        await page.waitForTimeout(240)
+        await entry.click()
+        await page.locator('[data-testid="account-consume-page"]').waitFor({ state: 'visible', timeout: 10000 })
+        await page.getByTestId('account-consume-tab-account').click()
+        await page.waitForTimeout(700)
+      }
+
+      await openAccountTab()
+      const signedOut = await page.evaluate(() => {
+        const read = (selector) => {
+          const node = document.querySelector(selector)
+          return node === null ? null : (node.innerText ?? '').replace(/\s+/gu, ' ').trim()
+        }
+        const body = document.querySelector('[data-testid="account-consume-page"]')
+        const dialog = body === null ? null : body.closest('[role="dialog"]')
+        const card = document.querySelector('[data-testid="account-auth-card"]')
+        return {
+          notice: read('[data-testid="account-optional-notice"]'),
+          signedOutState: read('[data-testid="account-signed-out-state"]'),
+          keep: read('[data-testid="account-optional-keep"]'),
+          // 局部登录卡的判据：卡在、且**表单真的渲染出来了**（有密码框）
+          hasInlineAuthCard: card !== null,
+          inlineCardHasPassword: card === null ? false : card.querySelector('input[type="password"]') !== null,
+          // 未登录时不该有「已登录」才有的东西
+          hasLoggedInStatus: document.querySelector('[data-testid="account-optional-status"]') !== null,
+          dialogWidth: dialog === null ? null : Math.round(dialog.getBoundingClientRect().width),
+          viewport: document.documentElement.clientWidth,
+          scrollWidth: document.documentElement.scrollWidth,
+        }
+      })
+      record('signedOutAccountTab', { ...signedOut, ...(await requireNoOverflow('账号 tab（未登录）')) })
+      if (signedOut.notice === null || !signedOut.notice.includes('不登录也可以')) {
+        throw new Error(`未登录态顶部没有「不登录也可以」那句：${String(signedOut.notice)}`)
+      }
+      if (!signedOut.inlineCardHasPassword) {
+        throw new Error('未登录态的局部登录卡没渲染出表单（密码框缺失）')
+      }
+      if (signedOut.hasLoggedInStatus) {
+        throw new Error('未登录却显示了「已登录」状态行')
+      }
+      if (signedOut.scrollWidth > signedOut.viewport) {
+        warn(`未登录态出现横向滚动：scrollWidth=${signedOut.scrollWidth} > viewport=${signedOut.viewport}`)
+      }
+      await shot('02-signed-out-account-tab')
+
+      // 局部登录卡拉到视口中央再拍一张：它是这次改动的核心（登录从「墙」变成「可选的一块」）
+      await page.locator('[data-testid="account-auth-card"]').scrollIntoViewIfNeeded()
+      await page.waitForTimeout(320)
+      const inline = await page.evaluate(() => {
+        const card = document.querySelector('[data-testid="account-auth-card"]')
+        const dialog = card === null ? null : card.closest('[role="dialog"]')
+        const cardRect = card === null ? null : card.getBoundingClientRect()
+        const dialogRect = dialog === null ? null : dialog.getBoundingClientRect()
+        return {
+          cardWidth: cardRect === null ? null : Math.round(cardRect.width),
+          dialogWidth: dialogRect === null ? null : Math.round(dialogRect.width),
+          // 局部形态**不许**占满一屏：卡高必须小于弹层可视高度（`min-height: 100vh` 会顶破这里）
+          cardHeight: cardRect === null ? null : Math.round(cardRect.height),
+          viewportHeight: document.documentElement.clientHeight,
+        }
+      })
+      record('inlineLoginCard', { ...inline, ...(await requireNoOverflow('局部登录卡')) })
+      if (inline.cardHeight !== null && inline.cardHeight >= inline.viewportHeight) {
+        warn(`局部登录卡高度 ${inline.cardHeight} ≥ 视口高 ${inline.viewportHeight}：embedded 形态没生效`)
+      }
+      await shot('03-signed-out-inline-login-card')
+
+      // ── ③ 「我的额度」（未登录）＝引导态，不是报错也不是空白 ─────────────────
+      await page.getByTestId('account-consume-tab-quota').click()
+      await page.locator('[data-testid="quota-signed-out"]').waitFor({ state: 'visible', timeout: 10000 })
+      await page.waitForTimeout(400)
+      const quotaSignedOut = await page.evaluate(() => {
+        const guide = document.querySelector('[data-testid="quota-signed-out"]')
+        return {
+          guide: guide === null ? null : (guide.innerText ?? '').replace(/\s+/gu, ' ').trim(),
+          // 未登录**不许**画成错误态（那正是拆墙前的老样子）
+          errors: document.querySelectorAll('[data-testid="quota-error"]').length,
+          signIn: document.querySelectorAll('[data-testid="quota-sign-in"]').length,
+        }
+      })
+      record('signedOutQuotaTab', { ...quotaSignedOut, ...(await requireNoOverflow('额度 tab（未登录）')) })
+      if (quotaSignedOut.guide === null || !quotaSignedOut.guide.includes('登录后')) {
+        throw new Error(`未登录的额度面板没有引导文案：${String(quotaSignedOut.guide)}`)
+      }
+      if (quotaSignedOut.errors !== 0) {
+        throw new Error('未登录的额度面板画成了错误态（应当给引导）')
+      }
+      await shot('04-signed-out-quota-guide')
+
+      // ── ④ 已登录态：写落盘凭据 → reload → 后台恢复真的跑一次 ────────────────
+      signedIn = true
+      await page.evaluate(
+        ({ persisted }) => {
+          localStorage.setItem('chat-demo:auth-token', persisted)
+        },
+        {
+          persisted: JSON.stringify({
+            v: 1,
+            token: {
+              accessToken: 'shot-mobile-access-token',
+              tokenType: 'Bearer',
+              // 远未来：不触发续期，让恢复只走 `me()` 这一条（截图不该依赖 refresh 的时序）
+              expiresAt: Date.now() + 86_400_000,
+            },
+            user: { id: 2, email: 'demo@example.com', username: 'demo', role: 'user', emailVerified: true },
+          }),
+        }
+      )
+      /**
+       * 原生桥桩（**只在这一步注入**，注释见模块顶部的 `nativeBridgeStub`）。
+       *
+       * 它不改产品行为：没有绕过登录（凭据是真格式的落盘值，`restoreAuth()` 真跑一遍），
+       * 也没有给产物留旁路（这是截图脚本，不进 bundle）。**只在 ③ 之前**注入 ——
+       * ①② 两张图仍是浏览器真实行为（未登录、不发请求），不为拍照去改被测物。
+       */
+      await page.addInitScript(nativeBridgeStub)
+      await page.reload({ waitUntil: 'domcontentloaded' })
+      await page.locator('textarea').first().waitFor({ state: 'visible', timeout: 15000 })
+      await openAccountTab()
+      await page.locator('[data-testid="account-optional-status"]').waitFor({ state: 'visible', timeout: 15000 })
+      const signedInState = await page.evaluate(() => {
+        const read = (selector) => {
+          const node = document.querySelector(selector)
+          return node === null ? null : (node.innerText ?? '').replace(/\s+/gu, ' ').trim()
+        }
+        return {
+          status: read('[data-testid="account-optional-status"]'),
+          profile: read('[data-testid="account-profile"]'),
+          keyRows: document.querySelectorAll('[data-testid="account-key-row"]').length,
+          hasSignedOutNotice: document.querySelector('[data-testid="account-optional-notice"]') !== null,
+          scrollWidth: document.documentElement.scrollWidth,
+          viewport: document.documentElement.clientWidth,
+          // 凭据不许上屏（#484 §七 第 4 条）：整页文本里不能出现 token 字面量
+          tokenOnScreen: (document.body.innerText ?? '').includes('shot-mobile-access-token'),
+        }
+      })
+      record('signedInAccountTab', { ...signedInState, ...(await requireNoOverflow('账号 tab（已登录）')) })
+      if (signedInState.status === null || !signedInState.status.includes('demo@example.com')) {
+        throw new Error(`已登录态没有显示账号邮箱：${String(signedInState.status)}`)
+      }
+      if (signedInState.hasSignedOutNotice) {
+        throw new Error('已登录却仍在显示未登录引导')
+      }
+      if (signedInState.tokenOnScreen) {
+        throw new Error('JWT 字面量出现在界面文本上（#484 §七 第 4 条）')
+      }
+      await shot('05-signed-in-account-tab')
+
+      // 收口：顶层 `overflowCount` = 这一档里所有状态的最大值（本单要求是 0）。
+      // 逐状态已经在上面各自断言过；这里落一个总账，让人只看 metrics.json 也能核对「两档都是 0」。
+      record('overflow', {
+        overflowCount: Math.max(...overflowSeen.map((entry) => entry.overflowCount)),
+        assertion: 'overflowCount === 0（390 / 360 两档，每个状态各量一次）',
+        states: overflowSeen,
+      })
     },
   },
 }

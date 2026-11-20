@@ -855,6 +855,29 @@ export const en = {
   accountConsumeTabQuota: 'My quota',
   accountConsumeTabAccount: 'Account',
 
+  // Login wall removed (#608): the account is now an *optional* capability inside "our channels".
+  // Three rules: ① the primary call to action is "fill in a Key", not "log in";
+  // ② what you lose without an account is billing views only — chat / Keys / import-export stay;
+  // ③ no "an account is safer" style claims (#421 boundary).
+  accountOptionalHint: 'No account needed: fill in an API Key in Settings and every channel works',
+  accountOptionalStatusLoggedOut: 'Not logged in — a Key alone is enough to chat',
+  accountOptionalStatusLoggedIn: 'Logged in as {email}',
+  accountOptionalBenefitsTitle: 'An account only adds these billing views',
+  accountOptionalBenefitBalance: 'Balance and usage details (our channels bill per account)',
+  accountOptionalBenefitKeys: 'Key management: create, disable, delete',
+  accountOptionalBenefitInvite: 'Invite code and rebate balance',
+  accountOptionalKeep: 'Chat, channel Keys and import/export are unaffected — nothing is lost without an account',
+  accountOptionalLoginEntry: 'Log in / sign up (optional)',
+  accountOptionalChecking: 'Checking sign-in status…',
+  // Primary CTA and where it lands (#608): chat first, account second
+  accountFillKeyCta: 'Go enter an API Key',
+  accountFillKeyHint: 'Settings → Data management → API Key; once filled you can chat right away',
+  accountSignInCta: 'Sign in',
+  quotaNeedLoginTitle: 'Log in to see your balance',
+  quotaNeedLoginBody: 'Balance is billed per account; to chat only, just fill in a Key in Settings',
+  inviteNeedLoginTitle: 'Log in to see your invites',
+  inviteNeedLoginBody: 'Invite code and rebates live with the account; chat works without it',
+
   // Account and consumption (amounts are in yuan: 1 yuan = 1 credit; rendering goes through utils/money.ts — no FX on the client)
   consumeBalance: '¥{amount}',
   consumeBalanceApprox: 'About ¥{amount}',

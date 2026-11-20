@@ -13,11 +13,10 @@ import { setCustomerIdProvider } from './services/ours/customerId.js'
 import { fetchPaymentRecords } from './services/ours/paymentRecords.js'
 import { httpTransport } from './services/ours/transport.js'
 import { setupFlexGapFallback } from './utils/flexGap.js'
-import { setAuthTransport } from './services/auth/store.js'
+import { restoreAuth, setAuthTransport } from './services/auth/store.js'
 import { createAuthTransport, createPublicSettingsReader } from './services/auth/transport.js'
-import { setPublicSettingsReader } from './services/auth/flags.js'
+import { loadAuthFlags, setPublicSettingsReader } from './services/auth/flags.js'
 import { getConsumeClient } from './services/consumeClient.js'
-import { AuthGate } from './components/auth/AuthGate.js'
 import {
   attachmentManager,
   collectReferencedAttachmentIds,
@@ -122,17 +121,35 @@ setAttachmentService({
   collectReferencedAttachmentIds,
 })
 
-// 首启 = 登录墙（W1-B 后半，#487）：**没有「跳过」这条分支了**。
-//  - `AuthGate` 自己跑启动恢复（`restoreAuth`）并读 `settings/public` 开关，恢复期间只画 loading，
-//    所以这里不再单独调 `restoreAuth()`，也不会先渲染主界面再跳走；
-//  - 未登录 → 登录 / 注册页（注册入口由 `registration_enabled` 决定显隐，读不到就隐藏）；
-//  - 已登录 → 原来的 `<App />` 一行没动；
-//  - 退出登录在设置页（`components/auth/AccountRow.tsx`）：`revokeAllSessions` + 清本地态 → 回登录页。
+/**
+ * 启动时的登录态恢复（#608 拆登录墙之后）—— **后台静默，不挡首屏**。
+ *
+ * 拆掉登录墙之前，根部被 AuthGate 包着整个 App，于是未登录冷启动只有登录页，连「官方渠道 +
+ * 自己的 Key」都用不了（#487 引入、#608 拆掉）。现在账户是「我们的渠道 → 账户与消费 → 账号」
+ * 里的一块可选能力，规则的边界在这里：
+ *
+ *  - **不阻塞**：先把 `<App/>` 渲出去，恢复在后台跑；首屏不等任何网络。
+ *  - **不跳页**：恢复结果只改 `useAuthStore` 的登录态（账号面板 / 额度面板据此切自己的局部
+ *    登录卡或引导态），没有任何一条「未登录就换整屏」的分支。
+ *  - **失败静默**：没登录 / 续期失败 / 离线都只是「这台机器当前没有账号」，`restoreAuth` 内部
+ *    已经按「网络错误保留本地会话、JWT 不认才清态」处理；这里再兜一层 catch，绝不让恢复把
+ *    启动路径带崩（`) => {}` 是这段代码的一部分，不是省事）。
+ *  - 开关（`settings/public` 的注册 / 邀请码 / 验证码）同批读一次：账号区的局部登录卡要靠它
+ *    决定注册入口显不显示，读不到就落保守默认（隐藏），与 #484 §3.1d 一致。
+ *
+ * `__TEST_AUTH_STATE__` 是构建期常量（见 `scripts/lib/testAuthSeam.mjs`）：测试构建里它已经被
+ * 内联成假会话，此时**绝不能**再跑 `restoreAuth()` —— 盘上没有凭据，恢复会把假会话清成未登录，
+ * 黄金回归的「启动即进主界面」就不再成立。生产构建里它折叠成 `undefined`，这个 `if` 恒真。
+ */
+declare const __TEST_AUTH_STATE__: unknown
+if (typeof __TEST_AUTH_STATE__ === 'undefined') {
+  void restoreAuth().catch(() => {})
+  void loadAuthFlags()
+}
+
 // 根部包一层错误边界：渲染期异常不再是整屏白屏，而是一张可读的错误页（issue #28）
 createRoot(document.getElementById('root') as HTMLElement).render(
   <ErrorBoundary>
-    <AuthGate>
-      <App />
-    </AuthGate>
+    <App />
   </ErrorBoundary>
 )

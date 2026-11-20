@@ -17,6 +17,11 @@ import { issueMessageKey, validateLogin, type AuthIssue, type LoginValues } from
 import styles from './AuthPages.module.css'
 
 export type LoginPageProps = {
+  /**
+   * 嵌进「账号」面板时的形态（#608）：不再占满一屏（`min-height: 100vh` 会把它撑出宿主弹层），
+   * 只留卡片本身。表单、校验、文案与整屏形态**完全同一份**。
+   */
+  embedded?: boolean
   /** 注册入口是否显示：由 `settings/public` 的 `registration_enabled` 决定（false 时整块隐藏，#484 §3.1d） */
   showRegisterEntry: boolean
   /** 提交中：按钮置灰 + aria-busy，表单其余部分保持可见（不要闪成另一种布局） */
@@ -33,6 +38,7 @@ export type LoginPageProps = {
 }
 
 export const LoginPage = ({
+  embedded = false,
   showRegisterEntry,
   busy,
   error,
@@ -67,7 +73,7 @@ export const LoginPage = ({
   const passwordIssue = issueOf('password')
 
   return (
-    <div className={styles.page}>
+    <div className={embedded ? styles.embedded : styles.page}>
       <div className={styles.card}>
         <h1 className={styles.title}>{t('sub2authLogin')}</h1>
 

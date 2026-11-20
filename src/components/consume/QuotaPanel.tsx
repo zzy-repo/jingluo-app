@@ -8,8 +8,8 @@ import { panelLoading, type PanelAsync, type PanelError } from './panels.js'
 import {
   QuotaPanelView,
   appendUsagePage,
-  initialQuotaState,
   loadQuota,
+  quotaStateFor,
   loadUsagePage,
   type QuotaSource,
   type QuotaState,
@@ -25,20 +25,33 @@ import styles from './panels.module.css'
  * 余额 / 已用 / 剩余的口径全在 `quotaSummaryOf`（`spent = actual_cost`，不是 `quota.used`）。
  *
  * 这里**不缓存余额**：每次进来都重新问服务端，本地不留第二份「还能不能发消息」的账本（A4）。
+ *
+ * #608 之后多一个「没登录」的档：余额与用量跟着账号走，未登录时这里只给引导（`quotaSignedOut*`）
+ * + 一个「去登录」出口，**一个请求都不发** —— 拿 JWT 打 `/v1/usage` 只会 401，把「没登录」
+ * 显示成「会话失效」正是拆登录墙要消掉的那种错。
  */
 export type QuotaPanelProps = {
   consume: ConsumeClient
   /** 401 / 会话失效时调一次：由「账户与消费」页切到登录，面板不自己跳转 */
   onNeedLogin: () => void
+  /**
+   * 登录态（#608）：`true` 已登录 / `false` 未登录 / `null` 还在恢复登录态（给 loading，
+   * 别先喊「未登录」）。**不传按已登录处理**，老的挂载点行为一字不变。
+   */
+  signedIn?: boolean | null
+  /** 未登录态「去登录」的出口（外壳切到账号 tab） */
+  onSignIn?: () => void
 }
 
-export const QuotaPanel = ({ consume, onNeedLogin }: QuotaPanelProps) => {
+export const QuotaPanel = ({ consume, onNeedLogin, signedIn, onSignIn }: QuotaPanelProps) => {
   const t = useTranslate()
+  /** `undefined` = 老挂载点没传登录态 → 按已登录处理（与 #608 之前完全一致） */
+  const signedInNow: boolean | null = signedIn === undefined ? true : signedIn
   const source = useMemo<QuotaSource>(
     () => ({ hasApiKey: () => consume.http.hasApiKey(), usage: consume.usage }),
     [consume]
   )
-  const [quota, setQuota] = useState<QuotaState>(() => initialQuotaState(source))
+  const [quota, setQuota] = useState<QuotaState>(() => quotaStateFor(source, signedInNow))
   const [expanded, setExpanded] = useState(false)
   const [usage, setUsage] = useState<PanelAsync<QuotaUsagePage> | null>(null)
   const [loadingMore, setLoadingMore] = useState(false)
@@ -61,16 +74,25 @@ export const QuotaPanel = ({ consume, onNeedLogin }: QuotaPanelProps) => {
     })
   }, [source])
 
+  // 登录态决定「查什么」：没登录 → 引导态（不发请求）；恢复中 → loading；已登录 → 原来那条
   useEffect(() => {
+    if (signedInNow === null) {
+      setQuota(panelLoading<ConsumeGatewayUsage>())
+      return
+    }
+    if (!signedInNow) {
+      setQuota({ phase: 'anonymous' })
+      return
+    }
     reload()
-  }, [reload])
+  }, [reload, signedInNow])
 
   // 会话失效：交给外壳切登录态（面板不自己清 token）
   useEffect(() => {
-    if (quota.phase === 'failed' && quota.error.needLogin) {
+    if (signedInNow !== false && quota.phase === 'failed' && quota.error.needLogin) {
       onNeedLogin()
     }
-  }, [quota, onNeedLogin])
+  }, [signedInNow, quota, onNeedLogin])
 
   const loadUsage = useCallback(
     (page: number) => {
@@ -128,5 +150,6 @@ export const QuotaPanel = ({ consume, onNeedLogin }: QuotaPanelProps) => {
     onLoadMore,
     onRetryQuota: reload,
     onRetryUsage: () => loadUsage(1),
+    onSignIn: () => onSignIn?.(),
   })
 }

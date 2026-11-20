@@ -1,27 +1,35 @@
 /**
- * 登录墙（W1-B，Issue #487）—— 未登录挡住主界面，已登录放行 children。
+ * 账号区的登录 / 注册卡（W1-B 引入，**#608 拆掉登录墙后降级为局部组件**）。
  *
- * 三件事，全部是「接线」而不是「实现」：
- *  1. 启动时并行做两件事：读 `settings/public` 的开关（`loadAuthFlags`）、恢复登录态（`restoreAuth`）。
- *     两件事互不阻塞 —— 开关读失败只影响「注册入口显不显示」，不该让登录也跟着转圈。
- *  2. 按登录态决定渲染：`restored=false` → 加载中；`authenticated` → 主界面；
- *     其余（`unauthenticated` / `expired` / `authenticating`）→ 登录页或注册页。
+ * ## 现在它是什么（#608）
+ *
+ * 它**不再是登录墙**：`src/main.tsx` 已经不再用它包住整个 `<App/>`，首屏直接进聊天，没账号、
+ * 只填了 API Key 的用户照样能用（维护者定调：「账户体系只是一小部分，不是主体」）。它现在只有
+ * 一个用法 —— **「我们的渠道 → 账户与消费 → 账号」tab 里的局部卡片**（`variant="inline"`，
+ * 由 `AccountPanel` 在未登录时挂载）。旧的整屏形态（`variant="page"`，默认值）保留给
+ * 「需要一个独立登录页」的场合（截图脚本 / 将来的换账号弹层），不再有任何启动路径走它。
+ *
+ * ## 它做的三件事（全是接线，不是实现）
+ *  1. 读 `settings/public` 的开关（`loadAuthFlags`）、恢复登录态（`restoreAuth`）。启动时
+ *     `main.tsx` 已经在后台跑过一次（幂等，重复调用共用同一个 promise），这里再调一次只是为了
+ *     「这一块自己能独立成立」，不承担首屏时序。
+ *  2. 按登录态决定渲染：`restored=false` → 转圈；`authenticated` → `children`（整屏形态下是主界面；
+ *     局部形态下没人传 children，登录态由 `AccountPanel` 自己判）；其余 → 登录或注册卡。
  *  3. 把 store 的动作接到页面回调上：页面本身不认识 store（见 LoginPage / RegisterPage 的文件头）。
  *
  * 注册入口的显隐口径（#484 §3.1d）：`registration_enabled !== true` → **整块隐藏**，不是置灰。
  * 用户已经停在注册页时开关被关掉（服务端随时可能改），这里主动送回登录页。
  *
- * 恢复期间**不闪白屏、也不先渲染主界面再跳走**：只画一个极简 loading（`gateLoading`），
- * 等 `restored` 变成 true 才决定渲染哪一边。弱网 / 离线时另有一道超时兜底
- * （`GATE_RESTORE_TIMEOUT_MS`）：到点就放弃等待、回登录页并挂一句「网络错误，请检查网络后重试」——
- * 登录表单本身就是那条重试路径，不弹错误框、也不再转圈。
+ * 恢复期间不闪白屏：只画一个极简 loading（`gateLoading` / 局部形态的 `inlineLoading`）。
+ * 弱网 / 离线时另有一道超时兜底（`GATE_RESTORE_TIMEOUT_MS`）：到点就放弃等待、把界面交给
+ * 登录表单 —— 表单本身就是那条重试路径，不弹错误框、也不再转圈。
  *
- * 「登录已过期」（`expired`：续期失败 / JWT 不被认）同样落在登录页，额外挂一句 `sub2authSessionExpired`，
+ * 「登录已过期」（`expired`：续期失败 / JWT 不被认）同样落在表单上，额外挂一句 `sub2authSessionExpired`，
  * 让用户知道不是他填错了密码。
  */
 
 import { useEffect, useState, type ReactNode } from 'react'
-import type { TranslationKey } from '../../i18n/index.js'
+import { useTranslate, type TranslationKey } from '../../i18n/index.js'
 import { loadAuthFlags, useAuthFlags } from '../../services/auth/flags.js'
 import { restoreAuth, useAuthStore } from '../../services/auth/store.js'
 import type { AuthUser } from '../../services/auth/types.js'
@@ -35,7 +43,7 @@ type AuthMode = 'login' | 'register'
 /**
  * 登录接缝（Issue #487 W1-B 后半，#510）—— **构建期常量**，不是运行期开关。
  *
- * 背景：`src/main.tsx` 把整个 `<App/>` 包在 `<AuthGate>` 里之后，未登录冷启动只画登录页，
+ * 背景：W1-B 把整个 `<App/>` 包在 `<AuthGate>` 里之后，未登录冷启动只画登录页，
  * 于是所有「启动即进主界面」的浏览器用例（黄金回归 G2~G11、L1 的 feedback-scroll…）拿不到侧栏
  * 与输入框。测试需要一种「这台机器上的这份产物，启动就是已登录」的方式，而**不能**是
  * URL 参数 / localStorage 标记 / `diag-debug` 这类运行期旁路：那种分支会原样留在线上 bundle 里，
@@ -84,11 +92,21 @@ if (TEST_AUTH_STATE !== undefined) {
 const GATE_RESTORE_TIMEOUT_MS = 12_000
 
 export type AuthGateProps = {
-  /** 已登录时渲染的内容（W1-B 后半接的是整个 App） */
+  /** 已登录时渲染的内容（整屏形态下接的是整个 App；#608 之后入口不再这么用） */
   children?: ReactNode
+  /**
+   * 形态（#608）：
+   *  - `'page'`（默认）：整屏一张卡 —— 独立的登录 / 注册页；
+   *  - `'inline'`：嵌进「账号」面板里的局部卡片 —— 桌面/手机都在设置弹层内部，不占满屏。
+   * 两种形态的**表单与接线完全同一份**（`LoginPage` / `RegisterPage` 只换外层容器），
+   * 差别仅在于「占满一屏」还是「跟着宿主排版」。
+   */
+  variant?: 'page' | 'inline'
 }
 
-export const AuthGate = ({ children }: AuthGateProps) => {
+export const AuthGate = ({ children, variant = 'page' }: AuthGateProps) => {
+  const inline = variant === 'inline'
+  const t = useTranslate()
   const authState = useAuthStore((state) => state.state)
   const restored = useAuthStore((state) => state.restored)
   const busy = useAuthStore((state) => state.submitting)
@@ -159,8 +177,10 @@ export const AuthGate = ({ children }: AuthGateProps) => {
   // 启动恢复没跑完：只转圈，不闪登录页（否则每次冷启动都会看到登录页一闪而过）
   if (!restored) {
     return (
-      <div className={styles.gateLoading} role="status" aria-busy="true">
+      <div className={inline ? styles.inlineLoading : styles.gateLoading} role="status" aria-busy="true">
         <span className={styles.gateSpinner} aria-hidden="true" />
+        {/* 局部形态必须有一句人话：面板里单转一个圈，用户不知道在等什么 */}
+        {inline ? <span className={styles.inlineLoadingText}>{t('accountOptionalChecking')}</span> : null}
       </div>
     )
   }
@@ -175,6 +195,7 @@ export const AuthGate = ({ children }: AuthGateProps) => {
   if (mode === 'register') {
     return (
       <RegisterPage
+        embedded={inline}
         flags={flags}
         busy={busy}
         sendingCode={sendingCode}
@@ -188,6 +209,7 @@ export const AuthGate = ({ children }: AuthGateProps) => {
 
   return (
     <LoginPage
+      embedded={inline}
       showRegisterEntry={flags.registrationEnabled}
       noticeKey={noticeKey}
       busy={busy}

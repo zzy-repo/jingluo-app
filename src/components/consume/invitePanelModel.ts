@@ -45,8 +45,21 @@ export type InviteDetail = {
   ratePercent?: number
 }
 
-/** `hidden` = 功能未开（整块不渲染），与「加载失败」是两件事 */
-export type InviteState = { phase: 'hidden' } | PanelAsync<InviteDetail>
+/**
+ * `hidden` = 功能未开（整块不渲染），`signedOut` = 没登录（引导态，不发请求），
+ * 与「加载失败」是三件不同的事（#608：没登录不是错误）。
+ */
+export type InviteState = { phase: 'hidden' } | { phase: 'signedOut' } | PanelAsync<InviteDetail>
+
+/**
+ * 未登录时的状态（#608）。
+ *
+ * 判据只用 `settings/public` 的开关（公开接口，启动时就读到了，不需要账号）：
+ * 部署方没开邀请 → 整块隐藏（与已登录路径同一口径，不因为「没登录」就露一个死入口）；
+ * 开了 → 引导态「登录后可查看邀请」。**不发任何请求**（`aff.detail()` 需要 JWT，打了只会 401）。
+ */
+export const inviteStateSignedOut = (flags: { invitationCodeEnabled: boolean }): InviteState =>
+  flags.invitationCodeEnabled ? { phase: 'signedOut' } : { phase: 'hidden' }
 
 export const toInviteDetail = (affiliate: ConsumeAffiliate): InviteDetail => {
   const detail: InviteDetail = {
@@ -86,16 +99,39 @@ export type InvitePanelViewProps = PanelBlockProps & {
   copied: boolean
   onCopy: () => void
   onRetry: () => void
+  /** 未登录态的「去登录」出口（由外壳切到账号 tab / 打开局部登录卡） */
+  onSignIn?: () => void
 }
 
 /** 邀请面板（纯渲染）。`hidden` 时返回 `null` —— 由容器直接不挂载 */
 export const InvitePanelView = (props: InvitePanelViewProps): ReactNode => {
-  const { t, c, state, copied } = props
+  const { t, c, state, copied, Button } = props
   if (state.phase === 'hidden') {
     return null
   }
   const body: ReactNode[] = []
-  if (state.phase === 'loading') {
+  if (state.phase === 'signedOut') {
+    // 没登录 = 引导，不是错误：说清「登录后能看到什么」，并给一个出口（#608）
+    body.push(
+      createElement(
+        'div',
+        { className: c.guide, 'data-testid': 'invite-signed-out' },
+        createElement('p', { className: c.guideTitle }, t('inviteNeedLoginTitle')),
+        createElement('p', { className: c.hint }, t('inviteNeedLoginBody'))
+      )
+    )
+    body.push(
+      createElement(
+        'div',
+        { className: c.actions },
+        createElement(
+          Button,
+          { size: 's', variant: 'outlined', testId: 'invite-sign-in', onClick: () => props.onSignIn?.() },
+          t('accountSignInCta')
+        )
+      )
+    )
+  } else if (state.phase === 'loading') {
     body.push(loadingBlock(props))
   } else if (state.phase === 'failed') {
     body.push(errorBlock(props, state.error, props.onRetry, 'invite-error'))

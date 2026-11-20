@@ -1,12 +1,15 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react'
 
 import { useTranslate } from '../../i18n/index.js'
+import { useAuthStatus } from '../../services/auth/useAuthStatus.js'
 import type { ConsumeClient } from '../../services/consume/index.js'
 import type { ConsumeUser } from '../../services/consume/auth.js'
 import { copyText } from '../../utils/clipboard.js'
+import { AuthGate } from '../auth/AuthGate.js'
 import { Button } from '../base/Button.js'
 import {
   AccountPanelView,
+  AccountSignedOutView,
   initialAccountState,
   loggedOut,
   reduceAccount,
@@ -18,15 +21,25 @@ import {
   type AccountEvent,
   type AccountSource,
 } from './accountPanelModel.js'
+import { InvitePanel } from './InvitePanel.js'
 import styles from './panels.module.css'
 
 /**
- * 「账号」面板的容器（W1-C2 #487）。
+ * 「账号」面板的容器（W1-C2 #487，**#608 之后分成登录 / 未登录两条路**）。
  *
- * 状态机全在 `reduceAccount`（纯 reducer，单测直接跑），这里只做三件事：
+ * 已登录：状态机全在 `reduceAccount`（纯 reducer，单测直接跑），这里只做三件事：
  *  1. 把真客户端注射成 {@link AccountSource}；
  *  2. 每个动作按「先标 busy → 等结果 → 依次 dispatch」走一遍，避免连点；
  *  3. 退出登录成功后调 `onNeedLogin()`（token 由外壳清，面板不碰存储）。
+ *
+ * 未登录（#608 的主路径）：**一个请求都不发**，只渲染 `AccountSignedOutView` —— 顶部一句
+ * 「不登录也可以：在设置里填 API Key 即可使用各渠道」，主 CTA「去填 API Key」，下面是可选的
+ * 局部登录 / 注册卡（`<AuthGate variant="inline" />`，表单与 `sub2auth*` 文案都是既有那一份）。
+ * 为什么不在未登录时照旧拉 `profile()` / `keys.list()`：那两条只会回 401，把「从没登录过」
+ * 显示成「登录已失效」是 #608 要消掉的误导。
+ *
+ * 登录成功后 `useAuthStore` 的登录态翻成 `authenticated` → 这里自动切到已登录视图并拉一次数据，
+ * 不需要外壳做任何跳转（登录不再是「换掉整个界面」的事）。
  *
  * 复制：`copyText` 失败**不假装成功**（老 WebView 上剪贴板可能没有），失败就不显示「已复制」。
  */
@@ -35,13 +48,21 @@ export type AccountPanelProps = {
   /** 外壳已经知道当前用户就先渲染资料，再用 `profile()` 的结果覆盖 */
   user: ConsumeUser | null
   onNeedLogin: () => void
+  /** 未登录态的主 CTA：去「设置 → 数据管理 → API Key」。不传时只渲染文案（测试 / 孤立挂载） */
+  onFillKey?: () => void
 }
 
 /** 「已复制」提示的存活时间 */
 const COPIED_MS = 2000
 
-export const AccountPanel = ({ consume, user, onNeedLogin }: AccountPanelProps) => {
+export const AccountPanel = ({ consume, user, onNeedLogin, onFillKey }: AccountPanelProps) => {
   const t = useTranslate()
+  /**
+   * 登录态是**这一块自己的开关**（#608）：未登录不再由登录墙拦在门外，而是落在这里的引导态。
+   * 判据只有 `useAuthStatus().authenticated` 一条（与 `AuthGate` 的放行分支同一口径）——
+   * 订阅 store 而不是吃外壳传来的 `user`：登录 / 退出就发生在下面那张卡里，翻态后要立刻重渲染。
+   */
+  const signedIn = useAuthStatus().authenticated
   const source = useMemo<AccountSource>(
     () => ({
       auth: { profile: consume.auth.profile, revokeAllSessions: consume.auth.revokeAllSessions },
@@ -68,9 +89,12 @@ export const AccountPanel = ({ consume, user, onNeedLogin }: AccountPanelProps) 
     })
   }, [source])
 
+  // 未登录不发请求（`profile()` / `keys.list()` 只会回 401）；登录态一翻过来就拉一次
   useEffect(() => {
-    reload()
-  }, [reload])
+    if (signedIn) {
+      reload()
+    }
+  }, [reload, signedIn])
 
   // 会话失效（资料或列表读到 401）→ 交给外壳切登录
   const needLogin =
@@ -78,10 +102,10 @@ export const AccountPanel = ({ consume, user, onNeedLogin }: AccountPanelProps) 
     (state.keys.phase === 'failed' && state.keys.error.needLogin) ||
     (state.actionError !== null && state.actionError.needLogin)
   useEffect(() => {
-    if (needLogin) {
+    if (signedIn && needLogin) {
       onNeedLogin()
     }
-  }, [needLogin, onNeedLogin])
+  }, [signedIn, needLogin, onNeedLogin])
 
   useEffect(() => {
     if (!copied) {
@@ -119,23 +143,43 @@ export const AccountPanel = ({ consume, user, onNeedLogin }: AccountPanelProps) 
     })
   }, [])
 
-  return AccountPanelView({
-    t,
-    c: styles,
-    Button,
-    state,
-    copied,
-    onCopyKey: copy,
-    onDraft: (name) => dispatch({ type: 'draft', name }),
-    onCreate: () => run('create', () => runCreateKey(source, state.draftName)),
-    onToggleKey: (key) => run(`key:${key.id}`, () => runToggleKey(source, key)),
-    onAskDelete: (id) => dispatch({ type: 'confirmDelete', id }),
-    onCancelDelete: () => dispatch({ type: 'confirmDelete', id: null }),
-    onConfirmDelete: (id) => run(`key:${id}`, () => runDeleteKey(source, id)),
-    onDismissCreated: () => dispatch({ type: 'createdDismiss' }),
-    onAskLogout: () => dispatch({ type: 'confirmLogout', value: true }),
-    onCancelLogout: () => dispatch({ type: 'confirmLogout', value: false }),
-    onLogout: () => run('logout', () => runLogout(source)),
-    onRetry: reload,
-  })
+  // 未登录：引导态（不登录也能用）+ 可选的登录 / 注册卡。表单本体不在这里，见 AuthGate
+  if (!signedIn) {
+    return AccountSignedOutView({
+      t,
+      c: styles,
+      Button,
+      auth: <AuthGate variant="inline" />,
+      onFillKey: () => onFillKey?.(),
+    })
+  }
+
+  return (
+    <>
+      {AccountPanelView({
+        t,
+        c: styles,
+        Button,
+        state,
+        copied,
+        onCopyKey: copy,
+        onDraft: (name) => dispatch({ type: 'draft', name }),
+        onCreate: () => run('create', () => runCreateKey(source, state.draftName)),
+        onToggleKey: (key) => run(`key:${key.id}`, () => runToggleKey(source, key)),
+        onAskDelete: (id) => dispatch({ type: 'confirmDelete', id }),
+        onCancelDelete: () => dispatch({ type: 'confirmDelete', id: null }),
+        onConfirmDelete: (id) => run(`key:${id}`, () => runDeleteKey(source, id)),
+        onDismissCreated: () => dispatch({ type: 'createdDismiss' }),
+        onAskLogout: () => dispatch({ type: 'confirmLogout', value: true }),
+        onCancelLogout: () => dispatch({ type: 'confirmLogout', value: false }),
+        onLogout: () => run('logout', () => runLogout(source)),
+        onRetry: reload,
+      })}
+      {/*
+        邀请（#608）：「账号」tab 里的第二块 —— 登录后还能得到什么（邀请码 / 返利余额）。
+        未登录时面板自己给引导（`inviteSignedOut*`），不发请求、不报错。
+      */}
+      <InvitePanel consume={consume} signedIn={signedIn} onSignIn={onNeedLogin} />
+    </>
+  )
 }
