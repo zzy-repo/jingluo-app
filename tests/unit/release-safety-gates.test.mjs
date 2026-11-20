@@ -355,7 +355,7 @@ test('发行脚本：targetPaths 把私有清单指向 webroot 之外 / 公网�
 
 // ------------------------------------------------------------------ webroot 卫生门禁
 
-test('卫生门禁：四类脏东西各命中对应规则，干净 webroot 不误杀', (t) => {
+test('卫生门禁：五类脏东西各命中对应规则，干净 webroot 不误杀', (t) => {
   const dir = scratch();
   t.after(() => cleanup(dir));
   makeCleanWebroot(dir);
@@ -385,13 +385,36 @@ test('卫生门禁：四类脏东西各命中对应规则，干净 webroot 不�
   assert.ok(scanWebroot(dir).violations.some((v) => v.rule === 'R3'));
   fs.rmSync(path.join(dir, 'apk', 'deepseek-chat-1.4.2-internal-HJ5NWRHQ.apk'), { force: true });
 
+  // R4（#620）：公网清单里的 internal 条目数必须为 0 —— 注入一条就必须红，且点到那条记录
+  const cleanJson = fs.readFileSync(path.join(dir, 'releases.json'), 'utf8');
+  const internalManifest = JSON.parse(cleanJson);
+  assert.equal(internalManifest.releases.filter((r) => r.artifactVariant !== 'standard').length, 0);
+  internalManifest.releases[0].artifactVariant = 'internal';
+  fs.writeFileSync(path.join(dir, 'releases.json'), `${JSON.stringify(internalManifest, null, 2)}\n`, 'utf8');
+  const r4 = scanWebroot(dir).violations.filter((v) => v.rule === 'R4');
+  assert.equal(r4.length, 1, `清单里的 internal 条目必须命中 R4，实际 ${JSON.stringify(scanWebroot(dir).violations)}`);
+  assert.match(r4[0].at, /releases\.json:releases\[0\]\(1\.4\.1\)/, '要点到是哪一条记录');
+  assert.match(r4[0].why, /internal/);
+
+  // R4 fail-closed：清单读不出来时不许当作「没有 internal 条目」
+  fs.writeFileSync(path.join(dir, 'releases.json'), '{"latest": "1.4.1", "releases": [', 'utf8');
+  assert.ok(
+    scanWebroot(dir).violations.some((v) => v.rule === 'R4'),
+    '清单解析失败也必须命中 R4（证明不了 internal=0 就不许判绿）',
+  );
+  // 清单整个不见了也一样
+  fs.rmSync(path.join(dir, 'releases.json'), { force: true });
+  assert.ok(scanWebroot(dir).violations.some((v) => v.rule === 'R4'), '清单缺失必须命中 R4');
+
+  fs.writeFileSync(path.join(dir, 'releases.json'), cleanJson, 'utf8');
   assert.deepEqual(scanWebroot(dir).violations, [], '还原后必须干净');
 })
 
 test('卫生门禁：内置演练（--selftest 的那条路）每一类脏东西都咬得住', () => {
   const st = hygieneSelftest();
   assert.deepEqual(st.failures, [], `内置演练必须全过：\n${st.failures.join('\n')}`);
-  assert.ok(st.rows.length >= 8, `演练至少覆盖 8 类脏东西，实际 ${st.rows.length}`);
+  assert.ok(st.rows.length >= 10, `演练至少覆盖 10 类脏东西（R1×5 / R2 / R3×2 / R4×2），实际 ${st.rows.length}`);
+  assert.ok(st.rows.some((row) => row.rule === 'R4'), '演练必须覆盖 R4（公网清单里的 internal 条目，#620）');
 })
 
 test('卫生门禁 CLI：干净 exit 0 / 脏 exit 1 且点到文件；--selftest exit 0', (t) => {
@@ -412,6 +435,18 @@ test('卫生门禁 CLI：干净 exit 0 / 脏 exit 1 且点到文件；--selftest
   fs.rmSync(path.join(dir, 'apk', 'deepseek-chat-1.4.2-internal-HJ5NWRHQ.apk'), { force: true });
 
   assert.equal(runHygiene(dir).status, 0, '还原后必须 exit 0');
+
+  // R4：公网清单里塞一条 internal → CLI 必须 exit 1 且点到记录（#620 常驻断言）
+  const cleanJson = fs.readFileSync(path.join(dir, 'releases.json'), 'utf8');
+  const internalManifest = JSON.parse(cleanJson);
+  internalManifest.releases[0].artifactVariant = 'internal';
+  fs.writeFileSync(path.join(dir, 'releases.json'), `${JSON.stringify(internalManifest, null, 2)}\n`, 'utf8');
+  const r4Run = runHygiene(dir);
+  assert.equal(r4Run.status, 1, `清单里的 internal 条目必须 exit 1\n${r4Run.stdout}${r4Run.stderr}`);
+  assert.match(r4Run.stdout, /\[R4/);
+  assert.match(r4Run.stdout, /releases\[0\]\(1\.4\.1\)/);
+  fs.writeFileSync(path.join(dir, 'releases.json'), cleanJson, 'utf8');
+  assert.equal(runHygiene(dir).status, 0, '还原后必须 exit 0（R4 不是恒红）');
 
   const self = spawnSync(process.execPath, [HYGIENE, '--selftest'], { cwd: ROOT, encoding: 'utf8' });
   assert.equal(self.status, 0, `--selftest 必须 exit 0\n${self.stdout}${self.stderr}`);

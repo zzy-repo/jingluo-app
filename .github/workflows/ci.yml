@@ -319,8 +319,9 @@ jobs:
       #   R1 备份/取证残留 —— *.bak* / *LEAKED* / _withdrawn* / releases.json.*（白名单外）/ *.tmp-*
       #   R2 webroot 内出现非 apk/ 的目录 —— private/ 尤其必须在 webroot 之外（/var/lib/dl-private/）
       #   R3 apk/ 下出现 internal|dev 字样的文件 —— 内部包绝不进公网静态目录
+      #   R4 releases.json 里出现非 standard 条目（internal 条目数必须为 0，#620）—— 清单读不出来也红
       # runner 上没有 /var/www/dl（不是分发机），脚本会改为**内置演练**：在本地临时目录里逐个注入
-      # 8 类脏东西 → 必红 → 还原 → 必绿。所以这一步永远不是「什么都没检查还全绿」。
+      # 10 类脏东西 → 必红 → 还原 → 必绿。所以这一步永远不是「什么都没检查还全绿」。
       # 真 webroot 的扫描在分发机上做（部署验收第 6 步，见 docs/RELEASE-MANUAL.md §14.7）。
       - name: webroot 卫生门禁（check:webroot-hygiene）
         run: pnpm run check:webroot-hygiene
@@ -330,7 +331,7 @@ jobs:
       # 必须 exit 1，且报错要**点到注入的那条规则与那个文件**（只证明 exit≠0 不够：
       # 扫描目录被改窄、脚本恒红，都会让 exit≠0 成立）→ 还原 → 必须 exit 0。
       # 全程只碰 $RUNNER_TEMP —— #609 的硬要求：不许拿生产机当试验田。
-      - name: 负向对照：webroot 里的脏东西必须被 check:webroot-hygiene 拦下（R1/R2/R3 各一类）
+      - name: 负向对照：webroot 里的脏东西必须被 check:webroot-hygiene 拦下（R1/R2/R3/R4 各一类）
         run: |
           set -euo pipefail
           root="$RUNNER_TEMP/dl-webroot-neg"
@@ -380,11 +381,54 @@ jobs:
           echo "$out" | grep -q 'deepseek-chat-1.4.2-internal-HJ5NWRHQ.apk' || { echo "::error::门禁红了但没点到注入的包"; exit 1; }
           rm -f "$root/apk/deepseek-chat-1.4.2-internal-HJ5NWRHQ.apk"
 
+          # ④b R4（#620）：公网清单里塞一条 internal 条目 → 必须 exit 1 且点到那条记录。
+          #     这条断言要常驻：公网页面上「看起来没这条」不算数，清单里 internal 条目数必须为 0。
+          cp "$root/releases.json" "$root/releases.clean.json"
+          node -e '
+            const fs = require("fs");
+            const p = process.argv[1];
+            const d = JSON.parse(fs.readFileSync(p, "utf8"));
+            d.releases.push({
+              version: "0.9.9", versionCode: 1, releasedAt: "2026-11-01T10:00:00+08:00",
+              file: "apk/deepseek-chat-0.9.9.apk", size: 1, md5: "0".repeat(32), sha256: "a".repeat(64),
+              changes: ["注入物"], buildType: "stable", breaking: false,
+              artifactVariant: "internal", artifactVariantSource: "apk-manifest",
+            });
+            d.latest = d.latest || "0.9.9";
+            fs.writeFileSync(p, JSON.stringify(d, null, 2) + "\n");
+          ' "$root/releases.json"
+          if out="$(DL_WEBROOT="$root" node scripts/check-webroot-hygiene.mjs 2>&1)"; then
+            echo "$out"
+            echo "::error::负向对照失败：公网清单里塞了一条 internal 条目后门禁仍然通过"
+            exit 1
+          fi
+          echo "$out"
+          echo "$out" | grep -q '\[R4' || { echo "::error::门禁红了但没报 R4（判据没咬住）"; exit 1; }
+          echo "$out" | grep -q '0\.9\.9' || { echo "::error::门禁红了但没点到注入的那条记录"; exit 1; }
+          cp "$root/releases.clean.json" "$root/releases.json"
+          rm -f "$root/releases.clean.json"
+          if ! DL_WEBROOT="$root" node scripts/check-webroot-hygiene.mjs > /dev/null 2>&1; then
+            echo "::error::负向对照失败：还原后门禁仍红（R4 成了恒红）"
+            exit 1
+          fi
+
+          # ④c R4 fail-closed：清单读不出来时**不许**当作「没有 internal 条目」
+          cp "$root/releases.json" "$root/releases.clean.json"
+          printf '{"latest": "1.4.1", "releases": [' > "$root/releases.json"
+          if out="$(DL_WEBROOT="$root" node scripts/check-webroot-hygiene.mjs 2>&1)"; then
+            echo "$out"
+            echo "::error::负向对照失败：清单解析不了时门禁仍然通过（fail-open）"
+            exit 1
+          fi
+          echo "$out" | grep -q '\[R4' || { echo "::error::清单坏掉时门禁红了但没报 R4"; exit 1; }
+          cp "$root/releases.clean.json" "$root/releases.json"
+          rm -f "$root/releases.clean.json"
+
           # ⑤ 还原 → 必绿，并且临时目录里没留注入物
           DL_WEBROOT="$root" node scripts/check-webroot-hygiene.mjs
           test -z "$(ls -A "$root/apk" | grep -v '^deepseek-chat-1.4.1.apk$')" || { echo "::error::临时 webroot 里还有注入物"; exit 1; }
           rm -rf "$root"
-          echo "负向对照通过：R1/R2/R3 各自 → exit 1 且点到注入物，还原 → exit 0"
+          echo "负向对照通过：R1/R2/R3/R4 各自 → exit 1 且点到注入物，还原 → exit 0"
 
       # check:consume-api（#484 §6.5 / #487 W1-A 落地的脚本，本轮接线）：消费侧调用门禁 ——
       #   路径白名单（`/api/v1/**` 等字面量必须在 #484 §三 的表里）/ 地址零副本 / 废弃域 /
@@ -467,7 +511,7 @@ jobs:
       #   · `scripts/check-test-layout.mjs` 有一条带理由的白名单条目，把「枚举不到」判红；
       #   · 这一步按 `pnpm run test:dl-release`（= `node --test deploy/dl-release/test/*.test.mjs`）跑，
       #     纯 Node、无浏览器、不依赖 dist，实测 ~3-7s。不加 continue-on-error：真红必须红。
-      - name: dl-release 用例（deploy/dl-release/test，44 条，纯 Node）
+      - name: dl-release 用例（deploy/dl-release/test，54 条，纯 Node）
         run: pnpm run test:dl-release
 
       # ─────────────── Issue #413：把已经存在但没人按的那几道门禁接进流水线 ───────────────

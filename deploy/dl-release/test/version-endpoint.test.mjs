@@ -130,12 +130,13 @@ test('GET /api/v1/version：不需要令牌，sha256 == 仓库里 server.mjs 的
 })
 
 test('sha256 启动时算一次并缓存：文件被替换后端点仍报启动时那份', async () => {
-  // 复制一份可执行的目录树（server 会 import 同目录 variant/apk-manifest 与 shared/build-types）
+  // 复制一份可执行的目录树（server 会 import 同目录 variant/apk-manifest/release-target 与
+  // shared/build-types；#620 起多了 release-target.mjs —— 少拷一个服务就起不来，这条用例会红）
   const tree = fs.mkdtempSync(path.join(os.tmpdir(), 'dl-version-tree-'))
   const dlDir = path.join(tree, 'deploy/dl-release')
   fs.mkdirSync(dlDir, { recursive: true })
   fs.mkdirSync(path.join(tree, 'shared'), { recursive: true })
-  for (const f of ['server.mjs', 'variant.mjs', 'apk-manifest.mjs']) {
+  for (const f of ['server.mjs', 'variant.mjs', 'apk-manifest.mjs', 'release-target.mjs']) {
     fs.copyFileSync(path.join(ROOT, 'deploy/dl-release', f), path.join(dlDir, f))
   }
   fs.copyFileSync(path.join(ROOT, 'shared/build-types.mjs'), path.join(tree, 'shared/build-types.mjs'))

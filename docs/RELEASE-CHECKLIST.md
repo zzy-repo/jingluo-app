@@ -360,6 +360,8 @@ node scripts/release-upload.mjs --apk $APK --dry-run
 | `pnpm run release:verify -- --version $V --apk $APK` | 复核 releases.json 已生效 + 下载件三方 hash 一致 | ❌ | ❌ |
 | `node scripts/publish-private-apk.mjs --apk $APK --version $V --versionCode $C --dry-run` | **私有（internal）包**：默认写**私有清单**（webroot 之外，`/var/lib/dl-private/`），四条硬闸先跑一遍再打印动作（不上传、不改清单）；去掉 `--dry-run` 即真发布，见手册 §14 | ❌ | ❌（要能 `ssh` 到 DL 主机） |
 | `node scripts/validate-releases-manifest.mjs <file> --strict` | 离线校验一份 releases.json 是否满足契约（已有脚本，本单复用） | ❌ | ❌ |
+| `DL_WEBROOT=/var/www/dl node scripts/check-webroot-hygiene.mjs` | 真 webroot 巡检：R1–R3 文件残留 + **R4 公网清单 internal 条目数必须为 0**（#620） | ❌ | ✅（分发机） |
+| `curl -X POST https://dl.rose7.cn/api/v1/release ...`（公网端点） | 正式包上传：服务端自己再判一次 `standard`+`stable`，否则 `400 VARIANT_NOT_PUBLIC` / `400 BUILD_TYPE_NOT_PUBLIC`（#620：脚本闸挡不住 HTTP 上传，所以接口也拒） | ✅ | ❌ |
 | `node scripts/check-apk-debuggable.mjs $APK` | 单独查 debuggable（已有的 Issue #60 闸门） | ❌ | ❌ |
 
 三个 `release:*` 脚本的退出码统一为：**0 通过 / 1 不通过 / 2 用法或环境错误（什么都没发生）**。

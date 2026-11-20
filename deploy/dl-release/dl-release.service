@@ -19,6 +19,13 @@ Environment=DL_LISTEN_PORT=8799
 Environment=DL_TOKEN_FILE=/etc/dl-release/token
 Environment=DL_APK_DIR=/var/www/dl/apk
 Environment=DL_RELEASES_JSON=/var/www/dl/releases.json
+# webroot（公网站点根）：只用来判「私有清单/私有包目录不许落在里面」（#609 G1 / #620）
+Environment=DL_WEBROOT=/var/www/dl
+# 私有清单与私有包目录（#620：POST /api/v1/release/private 写这里）—— **webroot 之外**，
+# Caddy 的 file_server 够不着。服务启动时会核一遍：落在 webroot 内就直接拒绝启动。
+Environment=DL_PRIVATE_ROOT=/var/lib/dl-private
+Environment=DL_PRIVATE_RELEASES_JSON=/var/lib/dl-private/releases.internal.json
+Environment=DL_PRIVATE_APK_DIR=/var/lib/dl-private/apk
 Environment=DL_PUBLIC_BASE=https://dl.rose7.cn
 Environment=DL_AAPT2=/opt/dl-release/bin/aapt2
 Environment=DL_REQUIRED_PACKAGE=com.example.deepseekchat
@@ -33,12 +40,12 @@ StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=dl-release
 
-# 轻量加固：可写仅 /var/www/dl 与私有 /tmp（aapt2 需要临时目录）
+# 轻量加固：可写仅 /var/www/dl（公网清单）与 /var/lib/dl-private（私有清单）以及私有 /tmp
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
-ReadWritePaths=/var/www/dl
+ReadWritePaths=/var/www/dl /var/lib/dl-private
 ReadOnlyPaths=/etc/dl-release /opt/dl-release
 ProtectKernelTunables=true
 ProtectControlGroups=true

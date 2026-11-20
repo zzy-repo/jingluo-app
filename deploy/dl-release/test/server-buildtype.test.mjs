@@ -259,7 +259,14 @@ async function startServer() {
   fs.writeFileSync(tokenFile, `${token}\n`, { mode: 0o600 });
   const releasesFile = path.join(work, 'releases.json');
   const variantsFile = path.join(work, 'artifact-variants.json');
-  fs.writeFileSync(variantsFile, '{"apks":{}}\n');
+  // #620：公网端点只收 artifactVariant="standard" —— 这个夹具的 APK 没有变体标记
+  // （它的 AXML 编码器不写 meta-data），所以在这里用**服务器侧白名单**把它的 sha256 登记成
+  // standard（白名单本来就是给「没有标记的历史包」用的补救通道）。这样每一行验的仍是它
+  // 自己要验的 buildType 契约，而不是被变体闸提前拦下。
+  fs.writeFileSync(
+    variantsFile,
+    `${JSON.stringify({ apks: { [hex(APK_BYTES)]: { variant: 'standard', version: '1.4.0', note: '#620 夹具' } } }, null, 2)}\n`,
+  );
 
   // 假 aapt2：每次调用记一行（用来断言「非法 buildType 根本没走到解析 APK」），
   // badging 从 badging.txt 回放，xmltree 空输出 = 无变体标记（unknown）。
@@ -375,13 +382,20 @@ test('非法 buildType（release/debug/空串/null）→ 400 BAD_BUILD_TYPE，�
   assert.equal(fs.readFileSync(ctx.stubLog, 'utf8'), '', '非法 buildType 时不该解析 APK（aapt2 未调用）');
 });
 
-test('字段缺失 → 保留历史行为：按 versionName 推导（-beta → prerelease）', async () => {
+test('字段缺失 → 仍按 versionName 推导（-beta → prerelease），但公网清单只收 stable → 400 BUILD_TYPE_NOT_PUBLIC', async () => {
+  // #620 / 裁决 #614 决定 2/3：预发布版不进公网清单（走 GitHub Release 的 prerelease 资产）。
+  // 这条用例的**前半段语义没变**：推导还在（否则报错说不清是「没写」还是「写错了」），
+  // 只是推导出来的 prerelease 现在被接口拒绝 —— 收紧，不是放宽。
+  const before = sha256File(ctx.releasesFile);
+  const beforeApk = fs.readdirSync(ctx.apkDir);
   ctx.badging('1.4.1-beta.1', 19);
   const r = await ctx.post({ changes: ['缺 buildType'] });
-  assert.equal(r.status, 200, r.text);
-  const man = JSON.parse(fs.readFileSync(ctx.releasesFile, 'utf8'));
-  assert.equal(man.latest, '1.4.1-beta.1');
-  assert.equal(man.releases[0].buildType, 'prerelease');
+  assert.equal(r.status, 400, `推导出 prerelease 应被拒，实际 ${r.status} ${r.text}`);
+  assert.equal(r.json.code, 'BUILD_TYPE_NOT_PUBLIC');
+  assert.match(r.json.message, /prerelease/, '文案要说明推导结果是 prerelease（证明推导真的发生了）');
+  assert.match(r.json.message, /GitHub Release/, '要指出预发布该走哪里');
+  assert.equal(sha256File(ctx.releasesFile), before, '被拒后 releases.json 必须字节不变');
+  assert.deepEqual(fs.readdirSync(ctx.apkDir), beforeApk, '被拒后 APK 目录必须不变（含无 .upload-* 残留）');
 });
 
 test('字段缺失 + 正式版本号 → stable（buildTypeFor 的另一个分支）', async () => {
@@ -392,13 +406,21 @@ test('字段缺失 + 正式版本号 → stable（buildTypeFor 的另一个分�
   assert.equal(man.releases[0].buildType, 'stable');
 });
 
-test('合法显式值原样写入（版本号推导会得 stable，显式 prerelease 必须写 prerelease）', async () => {
+test('合法显式值原样写入：显式 stable 写 stable；显式 prerelease 在公网端点被拒（#620）', async () => {
+  // 「显式值不被版本号推导覆盖」这半条断言在私有端点仍然成立（见
+  // server-variant-gate-620.test.mjs 的 V10：显式 prerelease + 推导会得 stable → 私有清单仍写 prerelease）。
+  const before = sha256File(ctx.releasesFile);
   ctx.badging('1.6.0', 21);
-  const r = await ctx.post({ buildType: 'prerelease', changes: ['显式渠道'] });
-  assert.equal(r.status, 200, r.text);
+  const rejected = await ctx.post({ buildType: 'prerelease', changes: ['显式预发布'] });
+  assert.equal(rejected.status, 400, `公网端点不收 prerelease，实际 ${rejected.status} ${rejected.text}`);
+  assert.equal(rejected.json.code, 'BUILD_TYPE_NOT_PUBLIC');
+  assert.equal(sha256File(ctx.releasesFile), before, '被拒的上传不许改清单');
+
+  const ok = await ctx.post({ buildType: 'stable', changes: ['显式渠道'] });
+  assert.equal(ok.status, 200, ok.text);
   const man = JSON.parse(fs.readFileSync(ctx.releasesFile, 'utf8'));
   assert.equal(man.releases[0].version, '1.6.0');
-  assert.equal(man.releases[0].buildType, 'prerelease');
+  assert.equal(man.releases[0].buildType, 'stable');
 });
 
 test('历史清单脏（buildType:"release"）→ 409 MANIFEST_DIRTY，APK 与 releases.json 都不落盘', async () => {

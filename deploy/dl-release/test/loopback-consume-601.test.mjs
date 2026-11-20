@@ -18,7 +18,7 @@
 //
 // 覆盖的分支：
 //   L1 标记 = true            → 400 LOOPBACK_BUILD_REJECTED，零副作用（不落盘、清单字节不变）
-//   L2 标记缺失（老包）        → 200 放行（**不能误伤历史包**）
+//   L2 回环标记缺失（老包）    → 200 放行（**不能误伤历史包**；包本身是 standard 变体，见上）
 //   L3 标记 = false           → 200 放行（普通 https 构建）
 //   L4 标记 = true + 版本号更小 → 仍是 400 LOOPBACK（闸 2 排在防降级之前，先报更准确的原因）
 //   L5 解析层（不起服务）      → 认不出 / 空值 / 坏字节 一律 loopback:false，且 reason 说清为什么
@@ -58,8 +58,24 @@ const LOOPBACK_APK_BOOL = buildApk({
   versionName: '1.4.3',
   versionCode: 22,
 })
-const LEGACY_APK = buildApk({ metaData: { [VARIANT_MARKER]: 'internal' }, versionName: '1.4.2', versionCode: 21 })
-const CLEAN_APK = buildApk({ metaData: { [MARKER]: 'false' }, versionName: '1.4.2', versionCode: 21 })
+// 包 2/3 都是 **standard** 变体：本文件验的是「回环标记」这一道闸，#620 起公网端点还要求
+// artifactVariant === "standard"，两者不能混在一起 —— 否则 L2/L3 会被变体闸拒而看不出回环闸的行为。
+const LEGACY_APK = buildApk({ metaData: { [VARIANT_MARKER]: 'standard' }, versionName: '1.4.2', versionCode: 21 })
+const CLEAN_APK = buildApk({ metaData: { [MARKER]: 'false', [VARIANT_MARKER]: 'standard' }, versionName: '1.4.2', versionCode: 21 })
+
+/**
+ * 假 aapt2 回放的 xmltree 文本（变体标记）。#620 起公网端点要求 artifactVariant === "standard"，
+ * 本文件不测变体，所以默认回放 standard；回环标记仍由 apk-manifest.mjs 从**真 AXML 字节**里读。
+ */
+const xmltreeOf = (variant) =>
+  [
+    'E: manifest (line=2)',
+    'E: application (line=6)',
+    '  E: meta-data (line=7)',
+    `    A: http://schemas.android.com/apk/res/android:name(0x01010003)="${VARIANT_MARKER}"`,
+    `    A: http://schemas.android.com/apk/res/android:value(0x01010024)="${variant}"`,
+    '',
+  ].join('\n')
 
 const sha256Of = (buffer) => crypto.createHash('sha256').update(buffer).digest('hex')
 const sha256File = (file) => sha256Of(fs.readFileSync(file))
@@ -78,7 +94,9 @@ const record = (over = {}) => ({
   changes: ['既有版本'],
   buildType: 'stable',
   breaking: false,
-  artifactVariant: 'internal',
+  // #620：种子的公网清单必须是干净的（只含 standard）—— 公网清单里出现 internal 条目时，
+  // 服务端会在写盘前整单拒收（MANIFEST_INTERNAL_ENTRY），L2/L3 的「放行」就无从验证了。
+  artifactVariant: 'standard',
   artifactVariantSource: 'apk-manifest',
   ...over,
 })
@@ -109,8 +127,8 @@ const startServer = async ({ seed = { latest: '1.4.1', releases: [record()] }, b
   const badgingFile = path.join(work, 'badging.txt')
   const xmltreeFile = path.join(work, 'xmltree.txt')
   fs.writeFileSync(badgingFile, badging)
-  // 变体标记的回放内容留空：本文件不测变体，只在需要时按行覆盖
-  fs.writeFileSync(xmltreeFile, '')
+  // 变体标记回放 standard：本文件不测变体；#620 的公网端点要求 standard 才收（见 xmltreeOf）
+  fs.writeFileSync(xmltreeFile, xmltreeOf('standard'))
   const stub = path.join(work, 'aapt2')
   fs.writeFileSync(
     stub,
@@ -231,9 +249,10 @@ test('L1b 标记按「布尔」编码（aapt2 真实形态之一）→ 同样 40
   })
 })
 
-test('L2 标记缺失（历史包）→ 200 放行：不因读不到标记而误伤（#601 闸 2）', async () => {
+test('L2 回环标记缺失（历史包）→ 200 放行：不因读不到标记而误伤（#601 闸 2）', async () => {
   await withServer(async (ctx, before) => {
-    const result = await ctx.post({ buildType: 'prerelease', changes: ['老包'] }, { apk: LEGACY_APK })
+    // #620：公网端点只收 buildType="stable"（pre 版本走 GitHub Release），所以这里用 stable
+    const result = await ctx.post({ buildType: 'stable', changes: ['老包'] }, { apk: LEGACY_APK })
     assert.equal(result.status, 200, `历史包必须放行，实际 ${result.status}\n${result.text}`)
     assert.equal(result.json?.ok, true)
     assert.equal(result.json?.sha256, sha256Of(LEGACY_APK), '回包 sha256 必须是服务端自己算的字节摘要')
@@ -250,7 +269,7 @@ test('L2 标记缺失（历史包）→ 200 放行：不因读不到标记而误
 
 test('L3 标记 = false（普通 https 构建）→ 200 放行', async () => {
   await withServer(async (ctx) => {
-    const result = await ctx.post({ buildType: 'prerelease', changes: ['普通包'] }, { apk: CLEAN_APK })
+    const result = await ctx.post({ buildType: 'stable', changes: ['普通包'] }, { apk: CLEAN_APK })
     assert.equal(result.status, 200, `标记 false 必须放行，实际 ${result.status}\n${result.text}`)
     assert.equal(result.json?.sha256, sha256Of(CLEAN_APK))
     assert.match(ctx.logs.join(''), /loopback_marker.*reason="marker_false"/)

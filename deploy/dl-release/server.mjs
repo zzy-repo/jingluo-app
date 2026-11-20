@@ -26,6 +26,19 @@
  *     在写任何文件之前就 400 拒收（Issue #330）
  *   - 落盘前对「新条目 + 现有清单」合并后的**整份**清单再校验一次：历史条目脏
  *     （例如早先写进去的 buildType:"release"）同样 409 拒收，APK 与清单都不落盘
+ *
+ * 发布目标（Issue #620 / 裁决 #614 决定 3）—— **接口层与脚本层同口径**：
+ *
+ *   `POST /api/v1/release`（公网清单 `/var/www/dl/releases.json`）
+ *       artifactVariant !== "standard" → 400 VARIANT_NOT_PUBLIC（内部包/判不出变体的包一律拒）
+ *       buildType      !== "stable"   → 400 BUILD_TYPE_NOT_PUBLIC
+ *    `POST /api/v1/release/private`（私有清单 `/var/lib/dl-private/releases.internal.json`，webroot 之外）
+ *       artifactVariant !== "internal" → 400 VARIANT_NOT_PRIVATE（standard 走 GitHub Release）
+ *
+ * 判据在 `release-target.mjs`（纯函数，与 scripts/publish-private-apk.mjs 的 G1、
+ * scripts/validate-releases-manifest.mjs 的 public/private 双口径同一份枚举）。
+ * 为什么接口层也要判：#601 事故的形状就是「脚本有闸，换个入口发就绕过去」——
+ * 「能不能发」必须由接口拒绝，而不是靠调用方自觉。
  */
 
 import http from 'node:http';
@@ -47,6 +60,15 @@ import { inspectApkDebugState, inspectApkLoopback } from './apk-manifest.mjs';
 // buildType 的枚举只有一处定义（Issue #330）——服务端不再自带字符串数组，
 // 也不再把 Gradle 构建类型（release/debug）当发布渠道。
 import { BUILD_TYPES, buildTypeFor, isBuildType } from '../../shared/build-types.mjs';
+// 发布目标 × 变体 × 渠道的判定（Issue #620）：纯函数、可单测，接口层与脚本层同口径。
+import {
+  TARGETS,
+  isInsideDir,
+  judgeBuildType,
+  judgeMergedManifest,
+  judgeVariant,
+  resolveTarget,
+} from './release-target.mjs';
 
 // ---------------------------------------------------------------- 配置
 const LISTEN_HOST = process.env.DL_LISTEN_HOST || '127.0.0.1';
@@ -55,6 +77,15 @@ const LISTEN_PORT = Number(process.env.DL_LISTEN_PORT || 8799);
 const TOKEN_FILE = process.env.DL_TOKEN_FILE || '/etc/dl-release/token';
 const APK_DIR = process.env.DL_APK_DIR || '/var/www/dl/apk';
 const RELEASES_JSON = process.env.DL_RELEASES_JSON || '/var/www/dl/releases.json';
+// webroot（公网站点根）：只用来判「私有清单/私有包目录绝不许落在里面」（#609 G1 的接口层复刻）。
+// 默认取公网清单所在目录 —— 两者部署上永远同一个地方，少一个要配的环境变量。
+const WEBROOT = path.resolve(process.env.DL_WEBROOT || path.dirname(RELEASES_JSON));
+// 私有清单与私有包目录（#609）：**webroot 之外**，Caddy 的 file_server 够不着。
+const PRIVATE_ROOT = path.resolve(process.env.DL_PRIVATE_ROOT || '/var/lib/dl-private');
+const PRIVATE_RELEASES_JSON = path.resolve(
+  process.env.DL_PRIVATE_RELEASES_JSON || path.join(PRIVATE_ROOT, 'releases.internal.json'),
+);
+const PRIVATE_APK_DIR = path.resolve(process.env.DL_PRIVATE_APK_DIR || path.join(PRIVATE_ROOT, 'apk'));
 const PUBLIC_BASE = process.env.DL_PUBLIC_BASE || 'https://dl.rose7.cn';
 const AAPT2 = process.env.DL_AAPT2 || '/opt/dl-release/bin/aapt2';
 
@@ -75,6 +106,49 @@ const VARIANT_MARKER = process.env.DL_VARIANT_MARKER || DEFAULT_MARKER;
 // 不依赖 aapt2 —— 「这个包是不是只能本地联调」这种事，任何一台跑服务的机器都要判得出来。
 const LOOPBACK_MARKER = process.env.DL_LOOPBACK_MARKER || DEFAULT_LOOPBACK_MARKER;
 const VARIANTS_FILE = process.env.DL_VARIANTS_FILE || '/etc/dl-release/artifact-variants.json';
+
+// ---------------------------------------------------------------- 发布目标（Issue #620）
+// 一条路径 = 一个目标，不做「同一个 URL 靠参数切换口径」：口径藏在参数里，
+// 迟早会有人（或某个模型）用错参数把 internal 包发到公网清单上，而接口不会拒绝。
+const TARGET_SPECS = Object.freeze({
+  public: Object.freeze({
+    id: 'public',
+    apkDir: path.resolve(APK_DIR),
+    manifestFile: path.resolve(RELEASES_JSON),
+    publicBase: PUBLIC_BASE,
+    createIfMissing: false,
+    okEvent: 'release_ok',
+    label: '公网清单',
+  }),
+  private: Object.freeze({
+    id: 'private',
+    apkDir: PRIVATE_APK_DIR,
+    manifestFile: PRIVATE_RELEASES_JSON,
+    publicBase: null,          // 私有清单没有「公网直链」这回事，回包不给 URL
+    createIfMissing: true,
+    okEvent: 'release_private_ok',
+    label: '私有清单',
+  }),
+});
+
+/**
+ * 私有根必须整棵在 webroot 之外 —— 否则公网 file_server 照样能把内部包发出去（#609 G1）。
+ * 这是**启动期**硬门禁：配置写错了服务就不许起来（宁可发布接口缺席，也不要一个能把
+ * internal 包写进 webroot 的服务在跑）。
+ */
+function assertPrivateRootOutsideWebroot() {
+  const leaks = [
+    ['私有根', PRIVATE_ROOT],
+    ['私有清单', PRIVATE_RELEASES_JSON],
+    ['私有包目录', PRIVATE_APK_DIR],
+  ].filter(([, dir]) => isInsideDir(dir, WEBROOT));
+  if (!leaks.length) return;
+  log('fatal_private_root_in_webroot', {
+    webroot: WEBROOT,
+    detail: leaks.map(([name, dir]) => `${name}=${dir}`).join(' '),
+  });
+  process.exit(1);
+}
 
 // ---------------------------------------------------------------- 版本指纹（Issue #441）
 // 「线上跑的是哪一版」必须由服务自己证明，而不是靠人 ssh 上去数行数。
@@ -106,6 +180,8 @@ const VERSION_INFO = Object.freeze({
   // 枚举都取自单一真相源（#330 / variant.mjs），不在这里另抄一份字符串数组
   variants: [...VARIANTS],
   buildTypes: [...BUILD_TYPES],
+  // #620：接口层的两个目标（公网清单 / 私有清单）也一起自证，部署验收能核对「闸在不在」
+  targets: [...TARGETS],
 });
 
 // ---------------------------------------------------------------- 令牌
@@ -325,12 +401,23 @@ async function readVariantAllowlist() {
   }
 }
 
-// ---------------------------------------------------------------- releases.json
-async function readReleases() {
-  const txt = await fsp.readFile(RELEASES_JSON, 'utf8');
-  const data = JSON.parse(txt);
-  if (!data || !Array.isArray(data.releases)) throw new Error('releases.json malformed');
-  return data;
+// ---------------------------------------------------------------- 清单读取（两种口径）
+/**
+ * 读目标清单。公网清单缺失/损坏 = 环境坏了（500，不许猜着新建）；
+ * 私有清单缺失 = 还没有私有发布过（ENOENT 视为空清单，第一次写入由 mkdir + 原子写完成）。
+ */
+async function readReleases(target) {
+  try {
+    const txt = await fsp.readFile(target.manifestFile, 'utf8');
+    const data = JSON.parse(txt);
+    if (!data || !Array.isArray(data.releases)) {
+      throw new Error(`${path.basename(target.manifestFile)} malformed`);
+    }
+    return data;
+  } catch (e) {
+    if (target.createIfMissing && e.code === 'ENOENT') return { latest: null, releases: [] };
+    throw e;
+  }
 }
 
 /**
@@ -383,7 +470,7 @@ async function writeJsonAtomic(targetPath, obj) {
 }
 
 // ---------------------------------------------------------------- 主流程
-async function handleRelease(req, res, ip) {
+async function handleRelease(req, res, ip, target) {
   // (1) 鉴权
   if (!tokenOk(req.headers.authorization)) {
     log('reject_auth', { ip });
@@ -455,8 +542,18 @@ async function handleRelease(req, res, ip) {
   }
 
   // (5) 落临时文件 + 服务端自己算 md5/sha256（不接受客户端提供的摘要）
+  // 私有清单/私有包目录是第一次发布时才建的（不在 webroot 内 → 公网 file_server 够不着）
+  if (target.createIfMissing) {
+    try {
+      await fsp.mkdir(target.apkDir, { recursive: true, mode: 0o755 });
+      await fsp.mkdir(path.dirname(target.manifestFile), { recursive: true, mode: 0o755 });
+    } catch (e) {
+      log('reject_io', { ip, target: target.id, error: e.message });
+      return fail(res, 500, 'INTERNAL', '私有目录创建失败');
+    }
+  }
   const stamp = `${process.pid}-${Date.now()}`;
-  const staging = path.join(APK_DIR, `${STAGING_PREFIX}${stamp}.apk`);
+  const staging = path.join(target.apkDir, `${STAGING_PREFIX}${stamp}.apk`);
   const md5 = crypto.createHash('md5').update(apkPart.data).digest('hex');
   const sha256 = crypto.createHash('sha256').update(apkPart.data).digest('hex');
   try {
@@ -541,9 +638,37 @@ async function handleRelease(req, res, ip) {
   const artifactVariant = resolved.variant;
   const artifactVariantSource = resolved.source;
   log('variant_resolved', {
-    ip, variant: artifactVariant || 'unknown', source: artifactVariantSource || '-',
+    ip, target: target.id, variant: artifactVariant || 'unknown', source: artifactVariantSource || '-',
     marker: marker.reason || '-', sha256,
   });
+
+  // (7c) 发布目标 × 变体 × 渠道（Issue #620）：与 #619 的 G1 同一口径，判据在 release-target.mjs。
+  // 位置是有意的 —— 变体判定之后（判据来自 APK 字节/服务器白名单），任何落盘之前：
+  //   · 排在这里 → internal 包连 .upload-* 都不留，目标清单一个字节不改；
+  //   · 排在这里 → 它比防降级更早报出真正的原因（内部包不该发，而不是「版本号不大」）。
+  const variantGate = judgeVariant({
+    target: target.id, variant: artifactVariant, source: artifactVariantSource,
+  });
+  if (!variantGate.ok) {
+    await fsp.rm(staging, { force: true });
+    log('reject_variant_target', {
+      ip, target: target.id, variant: artifactVariant || 'unknown',
+      source: artifactVariantSource || '-', code: variantGate.code, sha256,
+    });
+    return failCode(res, 400, variantGate.code, variantGate.message);
+  }
+
+  // 渠道（buildType）在这里就定下来：meta 显式给出优先，否则按版本号推导（buildTypeFor）。
+  // 公网清单只收 stable（裁决 #614 决定 2/3）—— 推导出来的 prerelease 也一样拒。
+  const buildType = meta.buildType !== undefined ? meta.buildType : buildTypeFor(versionName);
+  const buildTypeGate = judgeBuildType({ target: target.id, buildType });
+  if (!buildTypeGate.ok) {
+    await fsp.rm(staging, { force: true });
+    log('reject_build_type_target', {
+      ip, target: target.id, buildType, code: buildTypeGate.code, sha256,
+    });
+    return failCode(res, 400, buildTypeGate.code, buildTypeGate.message);
+  }
 
   // meta 声明与 APK 真相不一致时只记日志，一律以 APK 为准
   if (meta.version !== undefined && String(meta.version) !== versionName) {
@@ -556,11 +681,11 @@ async function handleRelease(req, res, ip) {
   // (8) 防降级
   let data;
   try {
-    data = await readReleases();
+    data = await readReleases(target);
   } catch (e) {
     await fsp.rm(staging, { force: true });
-    log('reject_state', { ip, error: e.message });
-    return fail(res, 500, 'INTERNAL', 'releases.json 读取失败');
+    log('reject_state', { ip, target: target.id, error: e.message });
+    return fail(res, 500, 'INTERNAL', `${path.basename(target.manifestFile)} 读取失败`);
   }
   const latestVersion = data.latest || (data.releases[0] && data.releases[0].version);
   const latestRecord = data.releases.find((r) => r.version === latestVersion) || data.releases[0];
@@ -577,13 +702,11 @@ async function handleRelease(req, res, ip) {
     );
   }
 
-  // (9) 先算出新条目与「新条目 + 现有清单」的合并结果，并在**落盘前**整份校验（Issue #330）
+  // (9) 先算出新条目与「新条目 + 现有清单」的合并结果，并在**落盘前**整份校验（Issue #330 / #620）
   // 顺序是有意的：校验放在 rename 之前，脏清单时 APK 也不落盘，不会留下
-  // 「目录里有新包、清单没收录」的半成品。缺 buildType 的走 buildTypeFor(versionName)。
-  const buildType = meta.buildType !== undefined ? meta.buildType : buildTypeFor(versionName);
-
+  // 「目录里有新包、清单没收录」的半成品。buildType 已在 (7c) 定过（含渠道门禁）。
   const fileName = `deepseek-chat-${versionName}.apk`;
-  const finalPath = path.join(APK_DIR, fileName);
+  const finalPath = path.join(target.apkDir, fileName);
   const relFile = `apk/${fileName}`;
 
   const record = {
@@ -619,7 +742,7 @@ async function handleRelease(req, res, ip) {
     const head = dirty.slice(0, 3)
       .map((d) => `releases[${d.index}] ${d.version} buildType=${d.buildType}`).join('；');
     log('reject_manifest_dirty', {
-      ip, count: dirty.length, first: head, stagingRemoved: true,
+      ip, target: target.id, count: dirty.length, first: head, stagingRemoved: true,
     });
     return failCode(
       res, 409, 'MANIFEST_DIRTY',
@@ -629,33 +752,48 @@ async function handleRelease(req, res, ip) {
     );
   }
 
+  // (9c) 整份清单的**变体**互斥校验（Issue #620 / #619 双口径的接口层复刻）：
+  // 公网清单里只要有一条 internal（历史上漏进去的也算），这次上传就把那条直链又写回去了，
+  // 所以整单拒收（fail-closed）。判据与 scripts/validate-releases-manifest.mjs 的
+  // public/private 口径同一份枚举（见 release-target.mjs）。
+  const manifestGate = judgeMergedManifest({ target: target.id, manifest: next });
+  if (!manifestGate.ok) {
+    await fsp.rm(staging, { force: true });
+    log('reject_manifest_variant', {
+      ip, target: target.id, code: manifestGate.code, count: manifestGate.count, stagingRemoved: true,
+    });
+    return failCode(res, 409, manifestGate.code, manifestGate.message);
+  }
+
   // (10) 原子落盘 APK → 目标文件名由服务端解析出的 versionName 决定
   try {
     await fsp.rename(staging, finalPath);
-    const dh = await fsp.open(APK_DIR, 'r');
+    const dh = await fsp.open(target.apkDir, 'r');
     try { await dh.sync(); } finally { await dh.close(); }
   } catch (e) {
     await fsp.rm(staging, { force: true });
-    log('reject_io', { ip, error: e.message });
+    log('reject_io', { ip, target: target.id, error: e.message });
     return fail(res, 500, 'INTERNAL', 'APK 落盘失败');
   }
 
-  // (11) 原子更新 releases.json
+  // (11) 原子更新目标清单（公网 / 私有各自那一份）
   try {
-    await writeJsonAtomic(RELEASES_JSON, next);
+    await writeJsonAtomic(target.manifestFile, next);
   } catch (e) {
-    log('reject_state_write', { ip, error: e.message });
-    return fail(res, 500, 'INTERNAL', 'releases.json 更新失败');
+    log('reject_state_write', { ip, target: target.id, error: e.message });
+    return fail(res, 500, 'INTERNAL', `${path.basename(target.manifestFile)} 更新失败`);
   }
 
-  log('release_ok', {
-    ip, version: versionName, versionCode, size: apkPart.data.length, md5,
-    buildType, overwrite: sameVersion,
+  log(target.okEvent, {
+    ip, target: target.id, version: versionName, versionCode, size: apkPart.data.length, md5,
+    buildType, variant: artifactVariant || 'unknown', overwrite: sameVersion,
   });
 
+  // 私有清单没有公网直链：回包不给 url（那不是「少给一步」，是私有包本来就不该有公网 URL）
   return sendJson(res, 200, {
     ok: true,
-    url: `${PUBLIC_BASE}/apk/${fileName}`,
+    target: target.id,
+    ...(target.publicBase ? { url: `${target.publicBase}/apk/${fileName}` } : { file: relFile }),
     latest: versionName,
     md5,
     sha256,
@@ -683,9 +821,14 @@ const server = http.createServer(async (req, res) => {
     return sendJson(res, 200, VERSION_INFO);
   }
 
-  if (url.pathname !== '/api/v1/release') {
+  // 发布端点：一条路径 = 一个目标（公网清单 / 私有清单，Issue #620）。
+  // 目标不是「靠 meta 参数切换」—— 口径一旦能被参数选择，就会有人（或某个模型）选错，
+  // 而错的那一次正是把 internal 包写进公网清单的那一次。
+  const targetId = resolveTarget(url.pathname);
+  if (!targetId) {
     return fail(res, 404, 'NOT_FOUND', '未知路径');
   }
+  const target = TARGET_SPECS[targetId];
 
   const rl = rateLimit(ip);
   if (!rl.ok) {
@@ -699,7 +842,7 @@ const server = http.createServer(async (req, res) => {
   }
 
   try {
-    await handleRelease(req, res, ip);
+    await handleRelease(req, res, ip, target);
   } catch (e) {
     log('internal_error', { ip, error: e && e.message });
     if (!res.headersSent) fail(res, 500, 'INTERNAL', '服务器内部错误');
@@ -717,8 +860,15 @@ try {
   process.exit(1);
 }
 
+// #620 / #609 G1：私有根不许落在 webroot 内 —— 配置错了就不许起来（宁可接口缺席）
+assertPrivateRootOutsideWebroot();
+
 server.listen(LISTEN_PORT, LISTEN_HOST, async () => {
-  log('listening', { host: LISTEN_HOST, port: LISTEN_PORT, apkDir: APK_DIR, aapt2: AAPT2 });
+  log('listening', {
+    host: LISTEN_HOST, port: LISTEN_PORT, apkDir: APK_DIR, aapt2: AAPT2,
+    webroot: WEBROOT, privateManifest: PRIVATE_RELEASES_JSON, privateApkDir: PRIVATE_APK_DIR,
+  });
+  log('targets', { public: '/api/v1/release', private: '/api/v1/release/private' });
   // 启动指纹也进日志：事后翻 journalctl 就能对上「那段时间跑的是哪一版」
   log('version_fingerprint', { sha256: SELF_SHA256, builtAt: STARTED_AT, node: process.version });
   const allow = await readVariantAllowlist();

@@ -40,20 +40,28 @@ install -m 600 deploy/dl-release/artifact-variants.json.example /etc/dl-release/
 ## 部署代码
 
 ```bash
-scp deploy/dl-release/server.mjs deploy/dl-release/variant.mjs aliyun:/opt/dl-release/
+# 私有清单目录（#620）：webroot 之外，Caddy 的 file_server 够不着
+ssh aliyun 'install -d -m 755 /var/lib/dl-private /var/lib/dl-private/apk'
+scp deploy/dl-release/server.mjs deploy/dl-release/variant.mjs deploy/dl-release/apk-manifest.mjs \
+    deploy/dl-release/release-target.mjs aliyun:/opt/dl-release/
 scp deploy/dl-release/dl-release.service aliyun:/etc/systemd/system/dl-release.service
 ssh aliyun 'node --check /opt/dl-release/server.mjs && systemctl daemon-reload && systemctl restart dl-release'
 ssh aliyun 'systemctl is-active dl-release; journalctl -u dl-release -n 5 --no-pager'
 ```
 
-> `server.mjs` 依赖同目录的 `variant.mjs`，**两个文件一起传**，否则服务起不来。
-> Caddy 片段见 `caddy-dl-api.conf`（粘进已有 `handle @dl` 内，validate → reload，禁止 restart）。
+> `server.mjs` 依赖同目录的 `variant.mjs` / `apk-manifest.mjs` / `release-target.mjs`，**四个文件一起传**
+> （`release-target.mjs` 是 #620 的接口层变体闸），否则服务起不来。
+> 服务启动时会核「私有根不在 webroot 内」，配错（比如把 `DL_PRIVATE_ROOT` 指到 `/var/www/dl/private`）
+> 会直接拒绝启动并打 `fatal_private_root_in_webroot`。
+> Caddy 片段见 `caddy-dl-api.conf`（粘进已有 `handle @dl` 内，validate → reload，禁止 restart）；
+> 它反代 `/api/v1/release`、**`/api/v1/release/private`**（#620）与 `/api/v1/version`。
 
 ## 本地验证（不碰线上）
 
 ```bash
 node --check deploy/dl-release/server.mjs
-# 37 条用例（变体解析 / APK debuggable / 服务端 buildType / 上传契约矩阵 / 版本端点 #441），两种跑法等价：
+# 54 条用例（变体解析 / APK debuggable / 服务端 buildType / 上传契约矩阵 / 版本端点 #441 /
+# 接口层变体闸 #620），两种跑法等价：
 node --test deploy/dl-release/test/*.test.mjs     # 或 pnpm run test:dl-release
 node tests/run-layer.mjs server                   # 统一 runner（CI 的布局门禁就是实跑它的 --list 判孤儿）
 
@@ -64,11 +72,18 @@ node scripts/validate-releases-manifest.mjs deploy/dl-release/fixtures/invalid-*
 node scripts/validate-releases-manifest.mjs --private deploy/dl-release/fixtures/private-valid-internal.json    # 期望 PASS
 node scripts/validate-releases-manifest.mjs --private deploy/dl-release/fixtures/private-invalid-*.json         # 期望 FAIL
 
+# webroot 卫生门禁（#609；R4 = 公网清单 internal 条目数必须为 0，#620）
+node scripts/check-webroot-hygiene.mjs                       # 本机没有 /var/www/dl 时自动跑内置演练
+DL_WEBROOT=/var/www/dl node scripts/check-webroot-hygiene.mjs  # 分发机上扫真 webroot
+
 # 端到端（需要 aapt2 + 真 APK，会在 /tmp 起临时实例，不写线上任何文件）
+# 样本要求：APK_STANDARD / APK_INTERNAL 必须**非 debuggable**（debuggable 包会被 Issue #60 的闸先拒，
+# 用它验变体闸等于什么都没验）；APK_NO_MARKER 同理，缺合格样本时脚本打印 SKIP 原因而不是假绿。
 AAPT2=/path/aapt2 \
-APK_NO_MARKER=/path/deepseek-chat-1.4.0-beta.4.apk \
-APK_NO_MARKER_OLD=/path/deepseek-chat-1.4.0-beta.3.apk \
-APK_WITH_MARKER=/path/marker.apk \
+APK_STANDARD=/path/deepseek-chat-1.4.0.apk \
+APK_INTERNAL=/path/deepseek-chat-1.4.0-beta.10.apk \
+APK_NO_MARKER=/path/no-marker-history.apk \
+APK_DEBUGGABLE=/path/deepseek-chat-1.4.0-beta.8.apk \
 bash deploy/dl-release/test/offline-check.sh
 ```
 

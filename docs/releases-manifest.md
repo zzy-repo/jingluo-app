@@ -41,6 +41,14 @@
 > 私有 `deploy/dl-release/fixtures/private-valid-internal.json`（`--private` PASS）；
 > 反例是 `invalid-internal-in-public-*.json`（#601 泄漏的那份形状，公网口径必 FAIL）。
 > 发布入口是 `scripts/publish-private-apk.mjs`（手册 §14）。
+>
+> **同一份口径有四道门，判据必须同值（Issue #620）**：
+> 1. 接口层（写之前）：`POST /api/v1/release` 只收 `standard`+`stable`，否则 `400`；
+>    合并后的清单里出现 internal → `409 MANIFEST_INTERNAL_ENTRY`（`deploy/dl-release/release-target.mjs`）；
+> 2. 发布脚本（写之前）：`scripts/publish-private-apk.mjs` 的 G1；
+> 3. 校验器（离线）：本文件描述的 public / private 双口径；
+> 4. 卫生门禁（写完之后的巡检）：`scripts/check-webroot-hygiene.mjs` 的 R4 —— 真 webroot 的
+>    `releases.json` 里 internal 条目数必须为 0，读不出来也判红。
 
 ## 2. 单条版本记录
 
@@ -154,11 +162,15 @@ node scripts/validate-releases-manifest.mjs deploy/dl-release/fixtures/invalid-*
 node scripts/validate-releases-manifest.mjs --private deploy/dl-release/fixtures/private-valid-internal.json
 node scripts/validate-releases-manifest.mjs --private deploy/dl-release/fixtures/private-invalid-*.json  # 应全部 FAIL
 
+# 公网清单 internal 条目数 = 0（真 webroot；本机没有 /var/www/dl 时自动跑内置演练）
+DL_WEBROOT=/var/www/dl node scripts/check-webroot-hygiene.mjs
+
 # 服务端行为（真 APK 打真服务端，临时目录，不碰线上）
 node --test deploy/dl-release/test/*.test.mjs
 AAPT2=/path/to/aapt2 \
-APK_NO_MARKER=/path/deepseek-chat-1.4.0-beta.4.apk \
-APK_NO_MARKER_OLD=/path/deepseek-chat-1.4.0-beta.3.apk \
-APK_WITH_MARKER=/path/marker.apk \
+APK_STANDARD=/path/deepseek-chat-1.4.0.apk \
+APK_INTERNAL=/path/deepseek-chat-1.4.0-beta.10.apk \
+APK_NO_MARKER=/path/no-marker-history.apk \
+APK_DEBUGGABLE=/path/deepseek-chat-1.4.0-beta.8.apk \
 bash deploy/dl-release/test/offline-check.sh
 ```

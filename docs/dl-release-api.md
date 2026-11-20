@@ -12,16 +12,26 @@
 
 ## 1. 端点
 
+**一条路径 = 一个发布目标**（#620）。口径不靠参数切换：口径一旦能被参数选择，就会有人选错，
+而错的那一次正是把 internal 包写进公网清单的那一次（#601 事故形态）。
+
+| 发布目标 | URL | 写哪份清单 | 只收 |
+| --- | --- | --- | --- |
+| 公网（正式分发） | `https://dl.rose7.cn/api/v1/release` | `/var/www/dl/releases.json`（webroot 内，公开可读） | `artifactVariant="standard"` **且** `buildType="stable"` |
+| 私有（内测） | `https://dl.rose7.cn/api/v1/release/private` | `/var/lib/dl-private/releases.internal.json`（**webroot 之外**，公网 file_server 够不着） | `artifactVariant="internal"`（渠道不限） |
+
 | 项目 | 值 |
 | --- | --- |
-| URL | `https://dl.rose7.cn/api/v1/release` |
 | 方法 | `POST`（其他方法 → 405） |
-| 鉴权 | `Authorization: Bearer <发布令牌>` |
+| 鉴权 | `Authorization: Bearer <发布令牌>`（两个端点同一枚令牌） |
 | 请求类型 | `multipart/form-data` |
 | 服务 | `dl-release.service`（Node 单文件零依赖，监听 `127.0.0.1:8799`，仅由 Caddy 反代，公网不可直连） |
 
-Caddy 里只在 `@dl`（`host dl.rose7.cn`）这个 handle 内对 `/api/v1/release` 与 `/api/v1/version` 做了
-`reverse_proxy`，其余路径仍是 `file_server` 静态文件。
+Caddy 里只在 `@dl`（`host dl.rose7.cn`）这个 handle 内对 `/api/v1/release`、`/api/v1/release/private`
+与 `/api/v1/version` 做了 `reverse_proxy`，其余路径仍是 `file_server` 静态文件。
+
+> 私有端点不是「另一个公网通道」：它写的是 webroot 之外的目录，回包也**不给公网 URL**。
+> 服务启动时会核一遍「私有根不在 webroot 内」，配错了直接拒绝启动（日志 `fatal_private_root_in_webroot`）。
 
 ### `GET /api/v1/version`（Issue #441，免令牌）
 
@@ -33,7 +43,8 @@ Caddy 里只在 `@dl`（`host dl.rose7.cn`）这个 handle 内对 `/api/v1/relea
   "builtAt": "<进程启动时间，ISO 8601>",
   "nodeVersion": "v24.16.0",
   "variants": ["internal", "standard"],
-  "buildTypes": ["stable", "prerelease"] }
+  "buildTypes": ["stable", "prerelease"],
+  "targets": ["public", "private"] }
 ```
 
 - `sha256` 是**启动时**读到的字节，之后替换文件不会改变它（进程还在跑旧字节）；
@@ -58,6 +69,9 @@ Content-Type: multipart/form-data; boundary=...
 
 - `changes`: 字符串数组，写进 `releases.json`，也会被 GitHub Actions 用来生成 Release Notes。
 - `buildType`: `stable` / `prerelease`；省略时按版本号自动判定（含 `-alpha`/`-beta`/`-rc` → `prerelease`）。
+  **公网端点只收 `stable`**（预发布版走 GitHub Release 的 `prerelease` 资产）；私有端点不限渠道。
+- `artifactVariant`: 客户端写什么都不被采信（只记一条 `meta_variant_ignored`）。变体由 APK 内标记 /
+  服务器白名单判定，判据在服务端；`standard` 才能进公网清单，`internal` 只能进私有清单。
 - `version` / `versionCode`: **仅供参考**。服务端一律以 APK 二进制里解析出的 `versionName` / `versionCode` 为准，与 APK 冲突时只记一条 `meta_versioncode_mismatch` / `meta_version_mismatch` 日志，不会采信客户端。
 - `breaking`（可选）: 布尔值，原样写入记录。
 
@@ -79,17 +93,31 @@ curl -sS -X POST https://dl.rose7.cn/api/v1/release \
 
 ## 3. 响应
 
-成功 `200`：
+成功 `200`（公网端点）：
 
 ```json
 {
   "ok": true,
-  "url": "https://dl.rose7.cn/apk/deepseek-chat-1.4.0-beta.4.apk",
-  "latest": "1.4.0-beta.4",
+  "target": "public",
+  "url": "https://dl.rose7.cn/apk/deepseek-chat-1.4.0.apk",
+  "latest": "1.4.0",
   "md5": "9f2c...（服务端自己算的）",
   "sha256": "70ffd8...（服务端自己算的）",
-  "artifactVariant": "internal",          // 判定不出来时为 null
-  "artifactVariantSource": "apk-manifest" // 或 "sha256-allowlist"；null 表示 unknown
+  "artifactVariant": "standard",          // 公网端点这里恒为 "standard"
+  "artifactVariantSource": "apk-manifest" // 或 "sha256-allowlist"
+}
+```
+
+成功 `200`（私有端点 —— 注意**没有 `url`**，改给 `file` 相对路径；私有包不该有公网直链）：
+
+```json
+{
+  "ok": true,
+  "target": "private",
+  "file": "apk/deepseek-chat-1.4.0-beta.10.apk",
+  "latest": "1.4.0-beta.10",
+  "md5": "...", "sha256": "...",
+  "artifactVariant": "internal", "artifactVariantSource": "apk-manifest"
 }
 ```
 
@@ -104,12 +132,17 @@ curl -sS -X POST https://dl.rose7.cn/api/v1/release \
 | 400 | `BAD_REQUEST` | 不是 multipart、缺 `apk`/`meta`、`meta` 不是合法 JSON 对象、`changes` 不是字符串数组 |
 | 400 | `INVALID_APK` | `aapt2` 解析失败（不是 APK / 损坏），或包名不是 `com.example.deepseekchat` |
 | 400 | `APK_DEBUGGABLE` | APK 里 `application/android:debuggable` 为 `true`，或无法确认该属性（fail-closed）。可调试包会被 `adb run-as` 读私有数据，发布路径一律拒收（Issue #60） |
+| 400 | `VARIANT_NOT_PUBLIC` | **公网端点收到 `artifactVariant !== "standard"` 的包**（internal，或变体判不出来 = unknown）。公网清单是公开的，`file` 字段等于把内部包直链广播出去（#601 / 裁决 #614 决定 3）。internal 包改走 `POST /api/v1/release/private`。零落盘，`releases.json` 一个字节不改（#620 的接口层硬闸） |
+| 400 | `VARIANT_NOT_PRIVATE` | **私有端点收到 `artifactVariant="standard"` 的包**：standard 走 GitHub Release（裁决 #614 决定 2），不进私有清单。两份清单都不动 |
+| 400 | `BUILD_TYPE_NOT_PUBLIC` | **公网端点收到 `buildType !== "stable"`**（显式 `prerelease`，或按版本号推导出 `prerelease`）：预发布版走 GitHub Release 的 `prerelease` 资产。零落盘 |
 | 400 | `LOOPBACK_BUILD_REJECTED` | APK 内 `<meta-data …LOOPBACK_CONSUME="true">`：这是用回环地址（`127.0.0.1` / `localhost` / `::1`）打出的 consume 构建，**仅用于本地联调**（真机上 `127.0.0.1` 指的是手机自己，只能配 `adb reverse`），禁止入库分发。标记缺失（历史包）照旧放行（Issue #601） |
 | 401 | `UNAUTHORIZED` | 令牌缺失/错误（常数时间比较） |
 | 404 | `NOT_FOUND` | 路径不是 `/api/v1/release` |
 | 405 | `METHOD_NOT_ALLOWED` | 非 POST |
 | 409 | `VERSION_CONFLICT` | `versionCode` 不大于当前 `latest`（防降级），且版本号与 latest 不同 |
 | 409 | `VARIANT_CONFLICT` | APK 内变体标记与服务器 sha256 白名单不一致（不静默取一个） |
+| 409 | `MANIFEST_INTERNAL_ENTRY` | 公网端点：合并后的公网清单里还有 `artifactVariant !== "standard"` 的条目（历史上漏进过一条 internal）。整单拒收，先把它们挪进私有清单再发（#620） |
+| 409 | `MANIFEST_STANDARD_ENTRY` | 私有端点：合并后的私有清单里还有 `standard` 条目（两种口径互斥，与 `validate-releases-manifest.mjs --private` 同判据） |
 | 413 | `PAYLOAD_TOO_LARGE` | APK > 50 MB（或整个请求体超限） |
 | 429 | `RATE_LIMITED` | 同 IP 每分钟超过 2 次，带 `Retry-After` |
 | 500 | `INTERNAL` | 写盘 / 状态文件更新等内部错误 |
@@ -128,12 +161,17 @@ curl -sS -X POST https://dl.rose7.cn/api/v1/release \
 | 6 | 防降级 | APK 真值 `versionCode` 必须 > `releases.json` 当前 latest 的 `versionCode`，否则 `409` |
 | 6b | 算 sha256 | 与 md5 同时计算，写入记录，供 App 内更新做完整性强校验（App 不用 md5 决策） |
 | 6c | 判定构建变体 | APK 内 `com.example.deepseekchat.ARTIFACT_VARIANT` 标记（`aapt2 dump xmltree`）> 服务器 sha256 白名单 > unknown；**客户端 meta 不采信** |
+| 6d | **目标清单 × 变体**（#620） | 公网端点 + 非 `standard`（含 unknown）→ `400 VARIANT_NOT_PUBLIC`；私有端点 + 非 `internal` → `400 VARIANT_NOT_PRIVATE`。判据在 `deploy/dl-release/release-target.mjs`（纯函数），与 `scripts/publish-private-apk.mjs` 的 G1、`scripts/validate-releases-manifest.mjs` 的 public/private 双口径**同一份枚举**（`tests/unit/release-api-variant-gate.test.mjs` 钉住三处同值） |
+| 6e | **目标清单 × 渠道**（#620） | 公网端点只收 `buildType="stable"`（显式或推导），否则 `400 BUILD_TYPE_NOT_PUBLIC`；私有端点不限渠道 |
+| 6f | 合并后整份清单的变体互斥（#620） | 公网合并结果里出现非 standard / 私有合并结果里出现 standard → `409`，写盘前 fail-closed（同 #330 的 `MANIFEST_DIRTY` 手法） |
 | 7 | 同版本重传 | `versionName` 与 latest 完全相同时允许覆盖（幂等），记录不重复出现，`releases[]` 数量不变 |
 
 ## 5. 副作用
 
-- APK 落到 `/var/www/dl/apk/deepseek-chat-<version>.apk`（文件名由**服务端解析出的 versionName** 决定，先写 `.upload-*` 临时文件再 `rename`，同一文件系统内原子替换）。
-- `releases.json` 原子更新：同目录临时文件 → `fsync` → `rename` → `fsync` 目录。结构保持 `latest` + `releases[]`（`version` / `versionCode` / `releasedAt` / `file` / `size` / `md5` / `sha256` / `changes` / `buildType` / `breaking`，
+- APK 落到目标目录：公网端点 → `/var/www/dl/apk/deepseek-chat-<version>.apk`；私有端点 →
+  `/var/lib/dl-private/apk/deepseek-chat-<version>.apk`（webroot 之外）。文件名由**服务端解析出的
+  versionName** 决定，先写 `.upload-*` 临时文件再 `rename`，同一文件系统内原子替换。
+- 目标清单原子更新（公网 → `releases.json`；私有 → `releases.internal.json`）：同目录临时文件 → `fsync` → `rename` → `fsync` 目录。结构保持 `latest` + `releases[]`（`version` / `versionCode` / `releasedAt` / `file` / `size` / `md5` / `sha256` / `changes` / `buildType` / `breaking`，
 变体可判定时再加 `artifactVariant` + `artifactVariantSource`，判不出来就**不写**该字段），按 `versionCode` 降序，新版本在首位。
 - 失败路径不写任何生产文件（临时文件即删）。
 
@@ -146,10 +184,43 @@ curl -sS -X POST https://dl.rose7.cn/api/v1/release \
   （仅 root 可写，服务端只读；只用于没有标记的历史包）。
 - 详细契约见 `docs/releases-manifest.md`。
 
+## 5c. 两个发布目标（#620）
+
+```bash
+TOKEN=$(ssh aliyun 'cat /etc/dl-release/token')
+APK=android/app/build/outputs/apk/release/app-release.apk
+
+# 正式包（standard + stable）→ 公网清单，公开可下载
+curl -sS -X POST https://dl.rose7.cn/api/v1/release \
+  -H "Authorization: Bearer $TOKEN" \
+  -F "apk=@$APK" -F 'meta={"buildType":"stable","changes":["…"]}'
+
+# 内测包（APK 内 ARTIFACT_VARIANT=internal）→ 私有清单（webroot 之外），公网清单零影响
+curl -sS -X POST https://dl.rose7.cn/api/v1/release/private \
+  -H "Authorization: Bearer $TOKEN" \
+  -F "apk=@$APK" -F 'meta={"changes":["…"]}'
+```
+
+判据与拒绝码（都是 4xx + 明确 `code`，且**失败路径零落盘**）：
+
+| 你发了什么 | 发到哪个端点 | 结果 |
+| --- | --- | --- |
+| internal 包 | `/api/v1/release`（公网） | `400 VARIANT_NOT_PUBLIC` |
+| 变体判不出来（老包且没登记白名单） | `/api/v1/release` | `400 VARIANT_NOT_PUBLIC`（**不默认 standard**） |
+| `buildType=prerelease`（或版本号 `-beta`） | `/api/v1/release` | `400 BUILD_TYPE_NOT_PUBLIC` |
+| standard 包 | `/api/v1/release/private` | `400 VARIANT_NOT_PRIVATE` |
+| internal 包 | `/api/v1/release/private` | `200`，写 `/var/lib/dl-private/releases.internal.json` |
+| standard + stable 包 | `/api/v1/release` | `200`，写 `/var/www/dl/releases.json` |
+
+公网清单里出现 internal 条目这件事，除了接口拒绝（写之前）和 `check:webroot-hygiene` 的 R4（写完之后的
+巡检）之外，还有 `scripts/validate-releases-manifest.mjs` 的公网口径（离线校验）拦一道 —— 三处同一份枚举。
+
 ## 6. 限流与日志
 
 - 限流：每 IP 每分钟 2 次（滑动窗口）。IP 取 Caddy 覆盖写入的 `X-Real-IP`，缺失时取 `X-Forwarded-For` **最右一跳**（客户端自带的 XFF 无法绕过）。
-- 日志：`journalctl -u dl-release -f`。字段化输出 `event=...`，**不打印令牌、Authorization、请求体**。事件包括 `release_ok` / `reject_auth` / `reject_not_apk` / `reject_package` / `reject_downgrade` / `reject_rate_limit` / `meta_versioncode_mismatch` 等。
+- 日志：`journalctl -u dl-release -f`。字段化输出 `event=...`，**不打印令牌、Authorization、请求体**。事件包括 `release_ok` / `release_private_ok` / `reject_auth` / `reject_not_apk` / `reject_package` /
+`reject_downgrade` / `reject_rate_limit` / `reject_variant_target` / `reject_build_type_target` /
+`reject_manifest_variant` / `fatal_private_root_in_webroot` / `meta_versioncode_mismatch` 等。
 
 ## 7. 运维
 

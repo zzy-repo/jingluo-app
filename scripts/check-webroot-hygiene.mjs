@@ -9,8 +9,14 @@
  * 猜到 URL 就能下载。当时的处置是「清单恢复 + 文件删掉」，两件事必须一起做；
  * 之后再没人机械化地检查过「目录里有没有不该在的文件」。
  *
- * 这条门禁只回答一个问题：**webroot 里有没有不该在的东西**。它不看清单内容
- * （那是 `scripts/validate-releases-manifest.mjs` 的活），只看文件系统。
+ * 这条门禁回答两个问题：**webroot 里有没有不该在的东西**（文件系统，R1–R3），以及
+ * **公网清单里还有没有 internal 条目**（R4，#620 加的常驻断言）。结构性的字段校验
+ * （versionCode 降序 / sha256 形态 / buildType 枚举……）仍然只由
+ * `scripts/validate-releases-manifest.mjs` 管，这里不重复造一套规则。
+ *
+ * 为什么 R4 必须落在这条门禁里（而不是只留在校验器里）：校验器只在**仓库里的 fixture**
+ * 上跑，没人拿它扫线上那份 `releases.json`。#601 的病根是「清单里可以出现 internal 条目」，
+ * 而线上唯一能把这份清单与它的目录一起看到的地方，就是这条门禁（`DL_WEBROOT=/var/www/dl`）。
  *
  * ## 判据（命中任一即 exit 1）
  *
@@ -23,6 +29,8 @@
  * | R1 | `*.tmp-*` | 发布协议的半成品（`<name>.apk.tmp-<stamp>` / `releases*.json.tmp-<stamp>`）：说明有一次发布没跑完 |
  * | R2 | 非 `apk/` 的顶层目录 | webroot 的合法形状只有「顶层文件 + `apk/`」；`private/` 尤其必须在 webroot **之外** |
  * | R3 | `apk/` 下文件名含 `internal` 或 `dev` | 内部包**绝不**出现在公网静态目录（#609 的核心） |
+ * | R4 | `releases.json` 里 `artifactVariant !== "standard"` 的条目（含 internal） | 公网清单里的 `file` 字段等于把内部包直链广播出去（#601 事故形态）；`internal` 条目数**必须为 0**（#620） |
+ * | R4 | `releases.json` 不存在 / 读不出 / 不是合法清单 | 证明不了「internal 条目 = 0」时不许判绿（fail-closed） |
  *
  * ## 演练（不许拿生产机当试验田）
  *
@@ -44,6 +52,12 @@ import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 
+// 「公网清单允许哪种变体」只有一份定义（#609 裁决 → #620 接口层）：
+//   校验器 MODE_VARIANT（离线口径）/ 发布脚本 TARGET_VARIANT（写之前）/ 本门禁 R4（写完之后的巡检）。
+// 三处必须同值，由 tests/unit/release-api-variant-gate.test.mjs 钉住。
+import { MODE_VARIANT } from './validate-releases-manifest.mjs';
+import { findMismatchedVariants } from '../deploy/dl-release/release-target.mjs';
+
 /** 默认 webroot（分发机上的站点根；Caddy 本地直服） */
 export const DEFAULT_WEBROOT = '/var/www/dl';
 /** webroot 里唯一允许存在的子目录 */
@@ -58,6 +72,7 @@ export const RULES = Object.freeze({
   R1: 'R1 事故/备份残留（*.bak* / *LEAKED* / _withdrawn* / releases.json.* / *.tmp-*）',
   R2: 'R2 webroot 内出现非 apk/ 的目录（private/ 必须在 webroot 之外）',
   R3: 'R3 apk/ 下出现 internal|dev 字样的文件',
+  R4: 'R4 公网 releases.json 里出现非 standard 条目（internal 条目数必须为 0）/ 清单读不出来',
 });
 
 /**
@@ -89,15 +104,63 @@ export function internalNameViolation(name) {
 }
 
 /**
+ * R4：读 webroot 里的公网清单，数出「不属于公网口径」的条目（`artifactVariant !== "standard"`）。
+ *
+ * 判据复用 `deploy/dl-release/release-target.mjs` 的 `findMismatchedVariants` —— 与
+ * `server.mjs` 写盘前的整份清单校验、`validat-release-manifest.mjs` 的 public 口径是**同一份**
+ * 实现（#620 要求「与 #619 已有的 public/private 双口径接上」，不是再抄一条 if）。
+ *
+ * @param {string} manifestFile
+ * @returns {{violations:Array<{rule:string, at:string, why:string}>, records:number|null}}
+ */
+export function scanManifest(manifestFile) {
+  const violations = [];
+  let data;
+  try {
+    data = JSON.parse(fs.readFileSync(manifestFile, 'utf8'));
+  } catch (e) {
+    violations.push({
+      rule: 'R4',
+      at: path.basename(manifestFile),
+      why:
+        e.code === 'ENOENT'
+          ? 'webroot 里没有 releases.json —— 证明不了「internal 条目数 = 0」，不许判绿（#620）'
+          : `releases.json 读不出来/不是合法 JSON（${e.message}）—— 判不了就必须红，不许当作"没有 internal 条目"`,
+    });
+    return { violations, records: null };
+  }
+  const list = Array.isArray(data && data.releases) ? data.releases : null;
+  if (!list) {
+    violations.push({
+      rule: 'R4',
+      at: path.basename(manifestFile),
+      why: 'releases.json 没有 releases 数组 —— 无法枚举条目，也就无法证明 internal 条目数 = 0',
+    });
+    return { violations, records: null };
+  }
+  for (const bad of findMismatchedVariants(data, 'public')) {
+    violations.push({
+      rule: 'R4',
+      at: `releases.json:releases[${bad.index}](${bad.version})`,
+      why:
+        `公网清单只允许 artifactVariant="${MODE_VARIANT.public}"，这条是 ${JSON.stringify(bad.variant)}`
+        + ' —— `file` 字段等于把内部包直链广播出去（#601 事故形态 / #620）',
+    });
+  }
+  return { violations, records: list.length };
+}
+
+/**
  * 扫一个 webroot。**只扫两层**（顶层 + `apk/`）：webroot 的形状就这两层，
  * 更深的东西本身就是「有人在 webroot 里搭了个目录」（已由 R2 判红）。
+ * 另外对顶层清单做一次 R4 体检（#620）。
  *
  * @param {string} root
  * @returns {{violations:Array<{rule:string, at:string, why:string}>, scanned:{top:number, apk:number}}}
  */
 export function scanWebroot(root) {
   const violations = [];
-  const scanned = { top: 0, apk: 0 };
+  const scanned = { top: 0, apk: 0, manifestRecords: null };
   const entries = fs.readdirSync(root, { withFileTypes: true });
 
   for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
@@ -120,6 +183,10 @@ export function scanWebroot(root) {
     if (why) violations.push({ rule: 'R1', at: rel, why });
   }
 
+  // R4（#620）：公网清单里的 internal 条目必须为 0
+  const manifest = scanManifest(path.join(root, 'releases.json'));
+  violations.push(...manifest.violations);
+
   const apkDir = path.join(root, 'apk');
   if (fs.existsSync(apkDir) && fs.statSync(apkDir).isDirectory()) {
     for (const entry of fs.readdirSync(apkDir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
@@ -136,15 +203,18 @@ export function scanWebroot(root) {
     }
   }
 
-  return { violations, scanned };
+  return { violations, scanned: { ...scanned, manifestRecords: manifest.records } };
 }
 
 /** 打印一份扫描结果 */
 function report(root, { violations, scanned }) {
   console.log(`webroot  ${root}`);
-  console.log(`扫了     顶层 ${scanned.top} 项 / apk/ ${scanned.apk} 项`);
+  console.log(
+    `扫了     顶层 ${scanned.top} 项 / apk/ ${scanned.apk} 项`
+      + ` / releases.json ${scanned.manifestRecords === null ? '读不出' : `${scanned.manifestRecords} 条`}`,
+  );
   if (!violations.length) {
-    console.log('干净     没有 R1/R2/R3 命中');
+    console.log('干净     没有 R1/R2/R3/R4 命中（清单里 internal 条目数 = 0）');
     return;
   }
   console.log(`命中     ${violations.length} 处（每条都会让门禁 exit 1）`);
@@ -155,12 +225,35 @@ function report(root, { violations, scanned }) {
 // 演练（本地临时目录；不碰任何生产机）
 // ---------------------------------------------------------------------------
 
-/** 造一个干净 webroot：顶层 releases.json + apk/ 两个正常包 */
+/** 干净公网清单的正本（R4 的正例：条目全是 standard） */
+export function cleanManifest() {
+  return {
+    latest: '1.4.1',
+    releases: [
+      {
+        version: '1.4.1',
+        versionCode: 19,
+        releasedAt: '2026-11-20T10:00:00+08:00',
+        file: 'apk/deepseek-chat-1.4.1.apk',
+        size: 4096,
+        md5: '0'.repeat(32),
+        sha256: 'a'.repeat(64),
+        changes: ['标准包'],
+        buildType: 'stable',
+        breaking: false,
+        artifactVariant: 'standard',
+        artifactVariantSource: 'apk-manifest',
+      },
+    ],
+  };
+}
+
+/** 造一个干净 webroot：顶层 releases.json（只有 standard 条目）+ apk/ 两个正常包 */
 export function makeCleanWebroot(root) {
   fs.mkdirSync(path.join(root, 'apk'), { recursive: true });
   fs.writeFileSync(
     path.join(root, 'releases.json'),
-    `${JSON.stringify({ latest: '1.4.1', releases: [] }, null, 2)}\n`,
+    `${JSON.stringify(cleanManifest(), null, 2)}\n`,
     'utf8',
   );
   fs.writeFileSync(path.join(root, 'apk', 'deepseek-chat-1.4.1.apk'), 'apk', 'utf8');
@@ -238,6 +331,38 @@ export function selftest() {
       make: () => fs.writeFileSync(path.join(root, 'apk', 'deepseek-chat-1.4.2-dev.apk'), 'x', 'utf8'),
       undo: () => fs.rmSync(path.join(root, 'apk', 'deepseek-chat-1.4.2-dev.apk'), { force: true }),
     },
+    {
+      // #620：R4 —— 清单里出现 internal 条目（#601 泄漏的那一条的形状）
+      id: 'internal-in-manifest',
+      rule: 'R4',
+      what: '把 releases.json 里的 1.4.1 改成 artifactVariant="internal"（#601 事故的那一条）',
+      make: () =>
+        fs.writeFileSync(
+          path.join(root, 'releases.json'),
+          `${JSON.stringify(
+            (() => {
+              const data = cleanManifest();
+              data.releases[0].artifactVariant = 'internal';
+              data.releases[0].artifactVariantSource = 'apk-manifest';
+              return data;
+            })(),
+            null,
+            2,
+          )}\n`,
+          'utf8',
+        ),
+      undo: () =>
+        fs.writeFileSync(path.join(root, 'releases.json'), `${JSON.stringify(cleanManifest(), null, 2)}\n`, 'utf8'),
+    },
+    {
+      // #620：R4 fail-closed —— 清单读不出来时**不许**当作「没有 internal 条目」
+      id: 'manifest-unreadable',
+      rule: 'R4',
+      what: '把 releases.json 截断成不可解析的字节（证明不了就该红）',
+      make: () => fs.writeFileSync(path.join(root, 'releases.json'), '{"latest": "1.4.1", "releases": [', 'utf8'),
+      undo: () =>
+        fs.writeFileSync(path.join(root, 'releases.json'), `${JSON.stringify(cleanManifest(), null, 2)}\n`, 'utf8'),
+    },
   ];
 
   try {
@@ -298,10 +423,20 @@ function main(argv) {
     process.exit(failed ? 1 : 0);
   }
 
-  if (!fs.existsSync(root)) {
+  // 空目录（没有 releases.json、也没有任何文件）不是 webroot，只是「恰好有同名的空目录」
+  // —— 例如开发机上残留的 /var/www/dl。这时和「没有 webroot」一样走内置演练，并把事实说出来，
+  // 而不是报一个谁都看不懂的 R4（「清单读不出来」）。一旦目录里有任何东西，就必须按 webroot 判。
+  const emptyWebroot = fs.existsSync(root) && fs.statSync(root).isDirectory()
+    && fs.readdirSync(root).length === 0;
+
+  if (!fs.existsSync(root) || emptyWebroot) {
     // 这台机器不是分发机（CI runner / 开发机）：**不能**判绿了事 —— 那样这一步就是「什么都没检查还全绿」。
     // 改成跑内置演练：证明门禁本身咬得住（等价于 --selftest），并把「真 webroot 没扫」明说出来。
-    console.log(`SKIP(no-webroot)  ${root} 不存在 —— 本机不是分发机，改为内置演练（--selftest）`);
+    console.log(
+      emptyWebroot
+        ? `SKIP(empty-webroot)  ${root} 是空目录（没有 releases.json、也没有任何文件）—— 不是 webroot，改为内置演练（--selftest）`
+        : `SKIP(no-webroot)  ${root} 不存在 —— 本机不是分发机，改为内置演练（--selftest）`,
+    );
     const st = selftest();
     for (const row of st.rows) console.log(`  · ${row.id} [${RULES[row.rule]}] — ${row.why}`);
     if (!st.ok) {
@@ -315,6 +450,9 @@ function main(argv) {
       '\n注意：真实 webroot 没有被扫（本机没有）。部署后必须在分发机上跑一次：' +
         `DL_WEBROOT=/var/www/dl node scripts/check-webroot-hygiene.mjs`,
     );
+    if (emptyWebroot) {
+      console.log('（空目录不算 webroot：目录里一旦有 releases.json / apk/ 等任何东西，就按真 webroot 判 R1–R4）');
+    }
     if (jsonPath) fs.writeFileSync(jsonPath, `${JSON.stringify({ skipped: true, selftest: st }, null, 2)}\n`, 'utf8');
     process.exit(failed ? 1 : 0);
   }
@@ -330,7 +468,8 @@ function main(argv) {
   if (result.violations.length) {
     console.log(
       '\n处置：R1 的备份/取证文件移到 webroot 之外（例如 /var/lib/dl-quarantine/）；' +
-        'R2 的目录整棵搬走（私有清单的合法位置是 /var/lib/dl-private/）；R3 的内部包移出 webroot 并从公网清单里确认没有登记。',
+        'R2 的目录整棵搬走（私有清单的合法位置是 /var/lib/dl-private/）；R3 的内部包移出 webroot；' +
+        'R4 的 internal 条目从公网清单里删掉（先确认它已经在私有清单里，再删 —— 顺序反了就等于丢包）。',
     );
     process.exit(1);
   }

@@ -103,7 +103,9 @@ const startServer = async ({
   seed = null,
   allowlist = {},
   badging = badgingOf('1.4.0', 18),
-  xmltree = '',
+  // #620：公网端点只收 artifactVariant="standard" —— 默认回放一个 standard 标记，
+  // 让每一行验的是它自己要验的那条契约（不再是「变体未知也照收」的老行为）。
+  xmltree = xmltreeOf('standard'),
 } = {}) => {
   const work = fs.mkdtempSync(path.join(os.tmpdir(), 'domain10-contract-'))
   const apkDir = path.join(work, 'apk')

@@ -508,8 +508,9 @@ npm run test:e2e         # e2e（含真实上游用例，需要 E2E_API_KEY）
 ## 12. 改过发布服务端之后：部署后必须三方 sha256 一致（Issue #441）
 
 只发 APK 不需要这一节。**改的是发布服务端本体**（`deploy/dl-release/server.mjs`，连带同目录的
-`variant.mjs` / `apk-manifest.mjs`）才走这一节：它不在 CI 产物里、没有版本号、靠人手 `scp` 上去，
-所以「部署成功」必须有它自己的证据，而不是看服务是不是 active。
+`variant.mjs` / `apk-manifest.mjs` / `release-target.mjs`，后者是 #620 的接口层变体闸）才走这一节：
+它不在 CI 产物里、没有版本号、靠人手 `scp` 上去，所以「部署成功」必须有它自己的证据，
+而不是看服务是不是 active。
 
 ### 12.1 为什么定成硬要求
 
@@ -525,7 +526,8 @@ npm run test:e2e         # e2e（含真实上游用例，需要 E2E_API_KEY）
   "builtAt": "<进程启动时间，ISO 8601>",
   "nodeVersion": "v24.x",
   "variants": ["internal", "standard"],
-  "buildTypes": ["stable", "prerelease"] }
+  "buildTypes": ["stable", "prerelease"],
+  "targets": ["public", "private"] }
 ```
 
 两个容易看错的点：
@@ -544,14 +546,19 @@ pnpm run test:dl-release
 # 1) 备份（带时间戳 —— 回滚就靠这个文件）
 ssh aliyun 'mkdir -p /root/dl-release-backups && cp -a /opt/dl-release/server.mjs /root/dl-release-backups/server.mjs.$(date +%Y%m%d-%H%M%S)'
 
-# 2) 同步（server.mjs import 同目录的 variant.mjs / apk-manifest.mjs，改了哪个传哪个，两个以上一起传）
-scp deploy/dl-release/server.mjs aliyun:/opt/dl-release/
+# 2) 同步（server.mjs import 同目录的 variant.mjs / apk-manifest.mjs / release-target.mjs，
+#    改了哪个传哪个，两个以上一起传；#620 起 release-target.mjs 是必需的第四个文件）
+scp deploy/dl-release/server.mjs deploy/dl-release/release-target.mjs aliyun:/opt/dl-release/
 
 # 3) 语法检查 + 重启（check 不过就不重启）
 ssh aliyun 'node --check /opt/dl-release/server.mjs && systemctl restart dl-release && sleep 1 && systemctl is-active dl-release'
 
 # 4) Caddy：只有**新增**了 API 路径才需要动。片段见 deploy/dl-release/caddy-dl-api.conf，
-#    @api 必须同时匹配 /api/v1/release 与 /api/v1/version；validate 通过再 reload，禁止 restart。
+#    @api 必须同时匹配 /api/v1/release、/api/v1/release/private（#620）与 /api/v1/version；
+#    validate 通过再 reload，禁止 restart。
+#
+# 5) 私有清单目录（#620）：webroot 之外，且服务启动时会核一次（落在 webroot 内就拒绝启动）
+ssh aliyun 'install -d -m 755 /var/lib/dl-private /var/lib/dl-private/apk'
 ```
 
 #### ⚠️ 部署布局是写死的：`/shared/build-types.mjs` 必须存在（#441 第 3 条）
@@ -570,8 +577,8 @@ ssh aliyun 'install -d -m 755 /shared'
 scp shared/build-types.mjs shared/build-types.d.mts aliyun:/shared/
 
 # 两边内容必须逐字节一致（部署验收的一环）
-ssh aliyun 'sha256sum /shared/build-types.mjs /opt/dl-release/server.mjs /opt/dl-release/variant.mjs /opt/dl-release/apk-manifest.mjs'
-sha256sum shared/build-types.mjs deploy/dl-release/server.mjs deploy/dl-release/variant.mjs deploy/dl-release/apk-manifest.mjs
+ssh aliyun 'sha256sum /shared/build-types.mjs /opt/dl-release/server.mjs /opt/dl-release/variant.mjs /opt/dl-release/apk-manifest.mjs /opt/dl-release/release-target.mjs'
+sha256sum shared/build-types.mjs deploy/dl-release/server.mjs deploy/dl-release/variant.mjs deploy/dl-release/apk-manifest.mjs deploy/dl-release/release-target.mjs
 ```
 
 ### 12.3 验收：三方 sha256 必须一致（缺一不可）
@@ -824,7 +831,7 @@ cd android && ./gradlew assembleRelease -PartifactVariant=internal
 | --- | --- | --- |
 | **正式发布（standard）** | **只走 GitHub Release**（裁决 #614 决定 2：dl 不再是正式渠道） | 公网 `releases.json` **冻结**，只保留历史 standard 条目 |
 | **私有（internal）** | `node scripts/publish-private-apk.mjs`（默认 `--target private`） | **独立私有清单** `<private-root>/releases.internal.json`（webroot 之外） |
-| 公网 `releases.json` | 冻结：只允许 `artifactVariant === 'standard'` 且 `buildType === 'stable'` | 出现 `internal` 条目 = 硬 FAIL（校验器 + 发布脚本两道） |
+| 公网 `releases.json` | 冻结：只允许 `artifactVariant === 'standard'` 且 `buildType === 'stable'` | 出现 `internal` 条目 = 硬 FAIL（**接口 + 校验器 + 发布脚本 + 卫生门禁四道**，见 14.4b / 14.8） |
 
 ### 14.1 私有清单放在哪、客户端怎么取（`/var/lib/dl-private/`）
 
@@ -897,6 +904,27 @@ node scripts/publish-private-apk.mjs --apk $APK --version 1.4.3 --versionCode 22
 四条都可以用本地临时目录演练，不需要任何机器（`--transport local --dry-run`），
 对照用例见 `tests/unit/release-safety-gates.test.mjs`，CI 里也各有一条现场注入的对照。
 
+### 14.4b 接口层同口径（Issue #620）：脚本闸挡不住一次 HTTP 上传
+
+四条硬闸守的是**脚本路径**。只要有人（或某个模型）改用 `POST /api/v1/release` 发，闸就被绕过去了 ——
+「能不能发」取决于调用方自觉，而不是接口拒绝。**#601 事故就是这个形状**，所以接口层必须有同一套判据：
+
+| 端点 | 写哪份清单 | 只收 | 不合口径时 |
+| --- | --- | --- | --- |
+| `POST /api/v1/release` | `/var/www/dl/releases.json`（webroot 内，公开） | `artifactVariant="standard"` **且** `buildType="stable"` | `400 VARIANT_NOT_PUBLIC` / `400 BUILD_TYPE_NOT_PUBLIC` |
+| `POST /api/v1/release/private` | `/var/lib/dl-private/releases.internal.json`（webroot 之外） | `artifactVariant="internal"` | `400 VARIANT_NOT_PRIVATE` |
+
+- **变体判不出来（unknown）也拒**：`unknown !== 'standard'`，不默认 standard（fail-closed）。
+- 拒绝发生在**任何落盘之前**：临时 APK 删掉，目标清单一个字节不改（用例用 sha256 逐字节比对）。
+- 合并后的整份清单也要查：公网清单里历史上漏进过 internal 条目 → `409 MANIFEST_INTERNAL_ENTRY`，
+  整单拒收（和 #330 的 `MANIFEST_DIRTY` 同一手法）。
+- 判据只有一份：`deploy/dl-release/release-target.mjs`（纯函数），与发布脚本的 G1、
+  `scripts/validate-releases-manifest.mjs` 的 public/private 双口径**同值**，
+  由 `tests/unit/release-api-variant-gate.test.mjs` 钉住。
+- 私有根落在 webroot 内 → 服务**拒绝启动**（`fatal_private_root_in_webroot`），不做「跑起来再说」。
+
+对照用例（真 HTTP handler，不是打桩）：`deploy/dl-release/test/server-variant-gate-620.test.mjs`。
+
 ### 14.5 清单是公开的 → 文件名等于公开（**原来那句「不可猜测就安全」是错的，已删除**）
 
 历史写法是：私有包用 `deepseek-chat-<version>-<variant>-<8位随机>.apk`，随机段 40 bit，
@@ -967,13 +995,14 @@ node scripts/publish-private-apk.mjs --apk /tmp/fake.apk --version 0.0.0 --versi
 | 4 | 回滚后文件 | `FILE_GONE`（真删了） |
 | 5 | 回滚后清单 | `sha256` 与演练前**完全一致**、无 `bak-private` / `tmp-` 残留 |
 
-**② 部署后卫生检查（`check:webroot-hygiene`）**：扫的是**文件系统**，不是清单内容。
+**② 部署后卫生检查（`check:webroot-hygiene`）**：R1–R3 扫**文件系统**，R4 扫**公网清单内容**
+（#620 的常驻断言：公网清单里的 internal 条目数必须为 0）。
 
 ```bash
 # 在分发机上（真 webroot）
 DL_WEBROOT=/var/www/dl node scripts/check-webroot-hygiene.mjs     # 或 pnpm run check:webroot-hygiene
 
-# 本机演练（不碰任何机器）：8 类脏东西逐个「注入 → 必红 → 还原」
+# 本机演练（不碰任何机器）：10 类脏东西逐个「注入 → 必红 → 还原」
 node scripts/check-webroot-hygiene.mjs --selftest
 ```
 
@@ -984,6 +1013,8 @@ node scripts/check-webroot-hygiene.mjs --selftest
 | R1 | `*.bak*` / `*LEAKED*` / `_withdrawn*` / `releases.json.*`（白名单外）/ `*.tmp-*` |
 | R2 | webroot 内出现非 `apk/` 的目录（`private/` 尤其不许） |
 | R3 | `apk/` 下文件名含 `internal` 或 `dev` 的文件 |
+| R4（#620） | `releases.json` 里 `artifactVariant !== "standard"` 的条目（含 `internal`）；清单读不出来/缺失也判红（fail-closed） |
 
 处置：R1 的备份/取证文件移到 webroot 之外（例如 `/var/lib/dl-quarantine/`）；R2 的目录整棵搬走
-（私有清单的合法位置是 `/var/lib/dl-private/`）；R3 的内部包移出 webroot，并确认公网清单里没有登记它。
+（私有清单的合法位置是 `/var/lib/dl-private/`）；R3 的内部包移出 webroot；R4 的 internal 条目从公网清单里
+删掉 —— **先确认它已经在私有清单里再删**，顺序反了就等于丢包。
