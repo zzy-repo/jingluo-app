@@ -78,7 +78,10 @@ npm run test:integration -- --baseline          # 集成全量与基线比对，
 1. **禁止每次改动跑全量集成。** 一次提交跑 20 个文件 ≈ 10 分钟，等于把门禁变成「没人跑」。
 2. **禁止重复构建多份 dist。** 一轮验证只允许一份标准构建（标准包）或一份内测构建；
    需要两套产物的用例（`mode-switch-plain`）自己按需构建到 `dist-plain/`，不许手工复制目录。
-3. **禁止真机/模拟器测试混入门禁。** `device/` 层需要 AVD，只人工跑；CI 与本门禁不启动模拟器、不跑 Gradle。
+3. **禁止真机/模拟器测试混入门禁。** `device/` 层需要 AVD，只人工跑；CI 与本门禁不启动模拟器、不做 APK 构建
+   （`assembleRelease` / `assembleDebug` 都不进门禁）。
+   例外只有一条：`checks` job 里的 `cd android && ./gradlew help` —— 它只做**配置阶段求值**（不编译、不打包、
+   不需要模拟器），用来拦「gradle 脚本坏了 → 打不出包」，见第 9.6 节。
 4. **禁止为无关用例反复重建产物。** 改 `docs/`、改单测时重建 dist 属于浪费，L0/L1 不做。
 5. **禁止用 skip 掩盖失败。** 期望红的用例照常执行，只在基线清单里标注 `known-red` + 原因；
    `known-red` 条目必须关联 Issue，修好后从清单删除。
@@ -105,6 +108,7 @@ npm run test:integration -- --baseline          # 集成全量与基线比对，
 | 改一个 `.ts` 逻辑 | `tests/which.mjs --git --layer unit` | < 20s |
 | 改 UI / 设置页 / 渠道 | `tests/which.mjs --git`（域内 1~2 个集成） | 1~2min |
 | 改构建脚本 / 产物注入 | `internal-build` + `auto-title` | 2~3min |
+| 改 `android/` 的 gradle 脚本（`build.gradle` / `variables.gradle`） | `pnpm exec cap sync android && cd android && ./gradlew help --no-daemon`（先看第 9.6 节） | 20~40s（warm 缓存） |
 | 改 `deploy/dl-release/`（发布服务端 / APK 门禁 / 变体） | `pnpm run test:dl-release`（37 条）或 `node tests/run-layer.mjs server` | < 15s |
 | **新增 / 修改一道 CI 门禁** | `node tests/run-layer.mjs unit --only gate-negative-controls`（先看第 9 节） | < 30s |
 | **判断一条红是 flaky / 真红 / runner-dependent** | `node tests/run-layer.mjs --cross-runner-scan`（先看第 11.5 节） | < 10s |
@@ -165,7 +169,7 @@ npm run test:integration -- --baseline          # 集成全量与基线比对，
 
 所以：**用例进 `tests/unit/`（`run-layer` 枚举得到、CI 每次跑），必错输入与骨架进 `tests/gates/`。**
 
-### 9.4 现状清单（2026-11-20，#557 后 ci.yml 里的 24 道门禁）
+### 9.4 现状清单（2026-11-20，#563 / #547 后 ci.yml 里的 25 道门禁）
 
 > 口径：ci.yml 里每一条 `run: pnpm run <gate>` 算一道。单元层那一步是 `run: pnpm test`（整层），不在此列。
 
@@ -193,6 +197,7 @@ npm run test:integration -- --baseline          # 集成全量与基线比对，
 | `test:dl-release`（#415 接线） | ✅ 注入（#415） | 往 `deploy/dl-release/test` 拷一条**必红**用例 → `node --test deploy/dl-release/test/*.test.mjs` 必须 exit≠0，删掉后 exit 0（N7；同时钉住「入口被加 `\|\| true` / `continue-on-error` / glob 改窄」三种软化） | `tests/unit/gate-negative-controls.test.mjs` |
 | `check:doc-refs`（本轮接线） | ✅ CI 注入 | CI 往 `docs/` 塞一份写着不存在路径的 md → 必 exit 1，删掉后 exit 0 | `.github/workflows/ci.yml` |
 | `check:case-collision`（#557 新建） | ✅ CI 注入 + 自带 `--selftest` | CI 在 `src/` 下造一对仅大小写不同的模块文件（同一个名字、只差大小写）→ 必 exit 1，删掉后 exit 0；脚本 `--selftest` 另有 4 条反例（R1 路径 / R2 目录 / R3 模块 stem / `.d.ts`）+ 2 条正例 | `.github/workflows/ci.yml` / `scripts/check-case-collision.mjs` |
+| `check:db-version`（#547 新建） | ✅ CI 注入 | CI 往 `tests/unit/check-ip-version.test.mjs` 追加一行 `indexedDB.open('chat-demo', 99)` → 必 exit 1，且必须报出「文件:行 硬编码版本 99」并指到注入文件（两条都查，防止扫描目录被改窄后仍然 exit≠0），还原后 exit 0；脚本另有 `--selftest`（13 条：注释/字符串放行、变量放行、`openDB<…>` 泛型必报） | `.github/workflows/ci.yml` / `scripts/check-db-version.mjs` |
 | `check:consume-api`（#487 接线） | ✅ CI 注入 | CI 往 `src/` 塞一条**白名单外**的 `/api/v1/**` 路径字面量（`/api/v1/__gate_neg_not_whitelisted`）→ R3 必 exit 1 且指到注入文件，删掉后 exit 0（不用脚本自带的 `--selftest`：那条只证明 R2，白名单 R3 才是主判据） | `.github/workflows/ci.yml` |
 
 「登记」不是给人看的注释：`tests/unit/gate-negative-controls.test.mjs` 的 `N6` 用例会读
@@ -232,6 +237,34 @@ npm run test:integration -- --baseline          # 集成全量与基线比对，
 
 因此 `build` 有真负向对照，不再登记为"不适用"。ci.yml 里的**两条**构建命令（`build:internal` 与黄金 job 的
 `build`）共用同一个包装脚本，N3 对两条都做了一遍，避免出现「内测包有对照、标准包没有」的半覆盖。
+
+### 9.6 `gradle help`：**JS 侧全绿 ≠ 出得了包**（Issue #563）
+
+**这句话是这条门禁唯一的存在理由，请照着念一遍**：`type` / `lint` / `pnpm test` / 产物扫描全绿，
+**不等于**这个仓库出得了包。
+
+证据是 #557：main 上 22 道门禁全绿，`./gradlew` 直接 FAILURE —— `android/app/build.gradle:148`
+把 Groovy 闭包的箭头写在了 `}` 外面（`{ String name, int from } ->`），gradle 在**配置阶段**
+就 `Unexpected input: '->' @ line 148` 退出，APK 根本走不到编译。这一行**没有任何 JS 侧门禁看得见**：
+tsc 不读 `.gradle`、oxlint 只扫 `src`、单测不碰 Android、产物扫描只看 `dist/`。
+所以补的这一条不在「JS 门禁」的延长线上，它补的是一个**盲区**：
+
+| 项 | 值 |
+| --- | --- |
+| 步骤 | `cd android && ./gradlew help --no-daemon --console=plain`（`checks` job，排在 `Build (internal)` 之后） |
+| 前置 | `pnpm exec cap sync android`（`android/capacitor-cordova-android-plugins/` 与 assets 是 **cap 生成物、不入库**；不加这一步，干净 checkout 上必然红在 `Could not read script …/cordova.variables.gradle`——那是假红，不是门禁在工作） |
+| 缓存 | `~/.gradle/caches` + `~/.gradle/wrapper`（`actions/cache`，key 含 wrapper / gradle 脚本的 hash） |
+| 上限 | `timeout-minutes: 5`（冷缓存首跑要下 `gradle-8.14.3-all`）；超时即红，不静默拖慢 PR |
+| 实测（CI，冷缓存首跑：`~/.gradle` 全空，gradle 发行版是真下的） | **34s**（run `44741030036`，`13:05:17 → 13:05:51`）；同 job 全程 142s → 远低于「>3 分钟才退到只在 main 跑」的阈值，故 PR 与 main 都跑 |
+| 实测（本机 warm 缓存，Linux + JDK 21） | 首次 35.6s / 二次 19.9s；**注入 #557 那个语法错后 12.7s FAILED**，报错逐字复现 `151: Unexpected input: '->'`；还原后 19.9s OK |
+| 为什么不用 `assembleRelease` | 太贵（真下 AGP 依赖 + 打 dex，分钟级）。`help` 属于 configuration 阶段，`build.gradle` / `app/build.gradle` / `capacitor.build.gradle` / `settings.gradle` 都会被求值——语法错、`apply from` 到不存在的文件、未知属性全在这一步红 |
+
+**它不是一道 `pnpm run <gate>`，所以**
+（1）不进 9.4 的 25 道计数；
+（2）不走 C8 的「gate → script → 真判定步骤」派生链（那套链条的起点是 `package.json` 的 script）；
+（3）负向对照因此**不进 ci.yml**（每加一次注入就要多跑一次 gradle，成本与收益不成比例），
+而是以「本机四拍 + 结论写进 #563」的形式留证：**正例 OK → 注入 #557 那种闭包语法错 → 必红且报错点对 → 还原 → OK**。
+以后要加第二条 gradle 类门禁（例如 `./gradlew tasks --all`），先把这条的负向对照补成 CI 步骤，再加新的。
 
 
 ---

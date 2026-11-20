@@ -408,6 +408,19 @@ const REGISTRY = {
     kind: 'ci',
     what: 'CI 往 dist/ 塞一份写着假 token 的 js → 必 exit 1，删掉后 exit 0（golden job 另有 --expect-seam 正向对照）',
   },
+  // DB 版本硬编码门禁（#547 新建）：对照写在 ci.yml 里现场注入 —— 往一份**真实用例**末尾追加
+  // `indexedDB.open('chat-demo', 99)`（门禁扫的就是 tests/**，注入点必须是它真会扫到的位置）
+  // → 必须 exit 1，且报出「文件:行 硬编码版本 99」+ 指到注入的那个文件 → 还原 → exit 0。
+  // 为什么不做成 L0 注入（像 N1/N2 那样往 src/ 塞探针）：塞的正是脚本自己扫的源码/用例，
+  // 放在 ci.yml 里成本 ≈1s 且与被测命令同环境（与 check:consume-api / check:doc-refs 同款）。
+  // 两条「红必须点到」的断言写在 ci.yml 那一步里（`grep -q "硬编码版本 99"` / `grep -q "$probe:"`）：
+  // 只证明「exit≠0」不够 —— 扫描目录被改窄、脚本恒红，都会让 exit≠0 成立。
+  'check:db-version': {
+    where: '.github/workflows/ci.yml',
+    kind: 'ci',
+    what: 'CI 往 tests/unit/check-ip-version.test.mjs 追加一行 indexedDB.open(…, 99) → 必 exit 1 且指到注入文件与版本号，还原后 exit 0',
+    mention: /check-db-version\.mjs/,
+  },
   // 大小写撞车门禁（#557 新建）：对照写在 ci.yml 里现场注入 —— 造一对仅大小写不同的模块
   // （`src/__GateCaseProbe.ts` / `src/__gatecaseprobe.ts`）→ 必 exit 1，删掉 → exit 0。
   // 和 check:consume-api / check:doc-refs 同款：塞的正是脚本自己扫的文件清单，放 ci.yml 里 ≈1s。

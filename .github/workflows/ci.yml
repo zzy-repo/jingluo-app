@@ -86,6 +86,41 @@ jobs:
           node scripts/check-case-collision.mjs
           echo "负向对照通过：仅大小写不同 → exit 1，删掉 → exit 0"
 
+      # DB 版本硬编码门禁（#547 新建）：测试与源码里不许出现写死的 IndexedDB 版本号。
+      # #547 的事故形状：库从 v12 升到 v13（#529），两个 L1 用例各自硬编码
+      # `indexedDB.open('chat-demo', 12)` → `VersionError: The requested version (12) is less than
+      # the existing version (13)`，CI 真红、重跑仍红，而报错看上去像「用例坏了」——
+      # 真毛病是**版本号有两份**。三条主线（文件 / 图片 / 支付）都要碰这套存储，图片线可能还要升
+      # v14，所以这条必须机械化：版本只许有 `src/services/chat/db.ts` 的 `DB_VERSION` 一个来源。
+      # 纯文本扫描（不 import .ts、不依赖 dist，实测 < 1s），跟着最便宜的那批放在前面。
+      - name: DB 版本硬编码（check:db-version）
+        run: pnpm run check:db-version
+
+      # 负向对照（同 check:consume-api / check:doc-refs / check:i18n 的写法，**无** continue-on-error）：
+      # 往一份**真实用例**里追加一行写死的版本号（门禁扫的是 tests/**，注入必须落在它真会扫的位置）
+      # → 必须 exit 1 且报出「文件:行 硬编码版本 99」→ 还原 → 必须 exit 0。
+      # 还原放在 trap 里：任何一拍失败都不会把探针留在仓库里（假红比不测更糟）。
+      - name: 负向对照：测试里写死 DB 版本号必须被 check:db-version 拦下
+        run: |
+          set -euo pipefail
+          probe=tests/unit/check-ip-version.test.mjs
+          backup="$(mktemp)"
+          cp "$probe" "$backup"
+          trap 'cp "$backup" "$probe"; rm -f "$backup"' EXIT
+          printf '\nconst __negDbVersion = indexedDB.open(%s, 99)\n' "'chat-demo'" >> "$probe"
+          if out="$(node scripts/check-db-version.mjs 2>&1)"; then
+            echo "$out"
+            echo "::error::负向对照失败：测试里写死 indexedDB.open('chat-demo', 99) 后 check:db-version 仍然通过，说明门禁没有真正生效"
+            exit 1
+          fi
+          echo "$out"
+          # 红必须点到「注入的那个文件」和「注入的那个版本号」，否则可能红在别处（比如扫描目录被改窄）
+          echo "$out" | grep -q "硬编码版本 99" || { echo "::error::门禁红了但没报出注入的版本号 99（判据没咬住，报错点不对）"; exit 1; }
+          echo "$out" | grep -q "$probe:" || { echo "::error::门禁红了但没指到注入的文件 $probe（判据没咬住，报错点不对）"; exit 1; }
+          cp "$backup" "$probe"
+          node scripts/check-db-version.mjs
+          echo "负向对照通过：写死版本号 → exit 1 且指到 $probe，还原 → exit 0"
+
       # 测试布局与重复检测（#362 阶段二 / #366 → #408 转 block）：同样是纯文本扫描
       # （各 < 2s、不依赖构建产物）。#408 起了 block，条件都已在仓库里落地：
       #   布局（--strict）：命名违规 0（域 3/4 六个批次文件已按 domainNN- 改名）+ fixture 散放 0
@@ -147,6 +182,47 @@ jobs:
 
       - name: Build (internal)
         run: pnpm run build:internal
+
+      # ─────────────── Issue #563：gradle 配置可解析（拦住「JS 全绿但打不出包」）───────────────
+      # #557 的教训：main 上 22 道门禁全绿，`./gradlew` 却直接 FAILURE（`build.gradle:148` 把闭包箭头
+      # 写在了花括号外）。tsc / lint / 单测 / 产物扫描**都看不见 gradle 脚本**——「JS 侧全绿」本来
+      # 就不等于「出得了包」。这一步只做一件事：让 gradle 把脚本求值一遍。
+      #
+      # 为什么不跑 assembleRelease：太贵（真要下 AGP 依赖 + 打 dex，分钟级），而 `help` 在
+      # configuration 阶段就会执行 build.gradle / app/build.gradle / capacitor.build.gradle /
+      # settings.gradle —— 语法错、apply 到不存在的文件、未知属性，全在这一步红。
+      #
+      # 为什么前面要先 `cap sync`：`android/capacitor-cordova-android-plugins/` 与
+      # `android/app/src/main/assets/*` 是 **cap 生成物、不入库**（android/.gitignore），
+      # 干净 checkout 上直接 `./gradlew help` 会红在
+      # `Could not read script …/cordova.variables.gradle`——那是「生成物缺失」，不是「脚本坏了」，
+      # 一条恒红的门禁等于没有门禁（实测确认过：不加这一步，本步骤在干净副本上必然 FAILED）。
+      # 用 `cap sync`（与 build-apk.sh 同一条命令）而不是手搓桩文件：桩文件和真生成物一旦漂移，
+      # 这一步验的就不是「我们的 gradle 能不能被求值」了。实测 `cap sync` 约 1.7s。
+      # 顺序要求：必须排在 Build (internal) 之后 —— `cap sync` 要把 dist/ 拷进 assets。
+      - name: Setup JDK 21（gradle 配置校验用，与 build-apk.sh 的 REQUIRED_JAVA_MAJOR 对齐）
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Gradle 缓存（wrapper 发行版 + 依赖；命中后这一步只剩配置时间）
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          # key 里带上 wrapper / gradle 脚本的 hash：升 gradle 或改 build.gradle 时自然换一份缓存
+          key: gradle-${{ runner.os }}-${{ hashFiles('android/gradle/wrapper/gradle-wrapper.properties', 'android/build.gradle', 'android/app/build.gradle', 'android/variables.gradle', 'android/settings.gradle') }}
+          restore-keys: gradle-${{ runner.os }}-
+
+      - name: 生成 capacitor 原生配置（cap 生成物不入库，gradle 求值需要它们）
+        run: pnpm exec cap sync android
+
+      - name: gradle 配置可解析（拦住 build.gradle 语法错）
+        # 5 分钟硬上限：冷缓存首次要下 gradle-8.14.3-all（~200MB）。超时就是红，不会静默拖慢 PR。
+        timeout-minutes: 5
+        run: cd android && ./gradlew help --no-daemon --console=plain
 
       # 登录接缝守卫（#510）：`AuthGate` 的 `__TEST_AUTH_STATE__` 必须是**构建期常量**，
       # 正常构建由 DefinePlugin 内联成 undefined → 守卫被死代码消除。这个 job 构建的是**不带**

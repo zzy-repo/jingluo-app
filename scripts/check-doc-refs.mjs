@@ -64,7 +64,15 @@ export const SCAN_TARGETS = ['docs', 'CHANGELOG.md']
 /** 历史取证归档：只读，不做判定 */
 export const EXEMPT_PREFIXES = ['docs/repro/', 'docs/redteam/', 'docs/compat/compat-old/']
 
-/** 索引 / 解析时跳过的目录**名**（依赖、产物、缓存 —— 都不算「仓库里的文件」） */
+/**
+ * 索引 / 解析时跳过的目录**名**（依赖、产物、缓存 —— 都不算「仓库里的文件」）
+ *
+ * `capacitor-cordova-android-plugins`（#563）：cap 的生成物，android/.gitignore 里明确忽略，
+ * 干净 checkout 上没有。但只要本机按 docs/TESTING-POLICY.md 第 8/9.6 节跑过一次
+ * `pnpm exec cap sync android`（gradle 配置校验的前置），它就会出现在盘上，于是
+ * `docs/capabilities/behavior.md` 里那句裸文件名引用 `AndroidManifest.xml:19` 立刻变成
+ * 「2 个同名文件，无法定位」的假红 —— 门禁自己制造的噪音，和 #461 是同一类病。
+ */
 const SKIP_DIR_NAMES = new Set([
   '.git',
   'node_modules',
@@ -74,6 +82,7 @@ const SKIP_DIR_NAMES = new Set([
   '.work-compat',
   'coverage',
   '__pycache__',
+  'capacitor-cordova-android-plugins',
 ])
 
 /**

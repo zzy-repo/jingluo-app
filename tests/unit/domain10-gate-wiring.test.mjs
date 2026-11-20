@@ -49,6 +49,8 @@ const REQUIRED_CI_GATES = [
   'check:doc-refs',
   // #557：大小写撞车门禁 —— 摘掉它，consume 面板那 4 对同名文件就会再次漂回 main
   'check:case-collision',
+  // #547：DB 版本硬编码门禁 —— 摘掉它，下一次库升级（图片线可能要升 v14）又会把 L1 用例打成 VersionError
+  'check:db-version',
 ]
 
 /**
