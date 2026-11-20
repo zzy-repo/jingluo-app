@@ -15,11 +15,13 @@
 //   [5] i18n：中英都有一对一的 key，且没有改动既有 key
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { installChatEnv } from '../helpers/dom-env.mjs'
+import { installChatEnv, installEndpointsGlobals } from '../helpers/dom-env.mjs'
 
 // 装配走公共入口（#366 第二批 / #408）：原生桥 + 诊断写入口 + 「只有 chat/store.ts 的 ./db.js 才是假库」这条按父模块的规则，
 // 都收在 installChatEnv 里。以前这段是本文件手抄的 41 行样板，chat 一族 5 个文件各一份。
 const { stub } = installChatEnv()
+// 构建期注入值（`__ENDPOINTS__`）不在 `installChatEnv` 里：单跑本文件（不经 run-layer 的 `--import` 预加载）要自己挂，否则 import `api/providers.ts` 顶层读它就 ReferenceError
+installEndpointsGlobals({ apiOrigin: 'https://api.test.invalid', internalBuild: true, resetLogRecords: false })
 
 globalThis.__API_ORIGIN__ = 'https://api.test.invalid'
 globalThis.INTERNAL_BUILD = false
