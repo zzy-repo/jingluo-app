@@ -53,7 +53,7 @@
 | 继续生成 | ✅可用 —— assistant prefill，本轮思考与签名一并回传（`reply.ts:350-362,261-264`） | ✅可用 —— 原生 prefill，语义完全一致 | ⚠️部分 —— OpenAI 没有 prefill 字段，只能把 assistant 消息挂到 messages 末尾碰运气续写（`openaiAdapter.ts:77-86`） |
 | 复制 | ✅可用 —— 本地拼接全部 text 块（`AssistantMessage.tsx:145`、`reply.ts:163-164`） | ✅可用 —— 同上 | ✅可用 —— 同上 |
 | Markdown/KaTeX/Mermaid 渲染 | ✅可用 —— 全本地渲染（AST → 组件），与上游无关（`Markdown.tsx:1-20`、`MathFormula.tsx:1-10`、`MermaidDiagram.tsx` 的 `MermaidDiagram`） | ✅可用 —— 同上 | ✅可用 —— 同上 |
-| 会话管理（新建/重命名/删除） | ✅可用 —— IndexedDB 本地 CRUD（`Sider.tsx:66-75,121`、`SessionItem.tsx:29,63-70`、`store.ts:462,478,503`） | ✅可用 —— 同上 | ✅可用 —— 同上 |
+| 会话管理（新建/重命名/删除） | ✅可用 —— IndexedDB 本地 CRUD（`Sider.tsx:66-75,121`、`SessionItem.tsx:29,63-70`、`src/services/chat/store.ts:462,478,503`） | ✅可用 —— 同上 | ✅可用 —— 同上 |
 | 历史导入导出 | ✅可用 —— ZIP 导入/导出纯本地，含附件（`SettingsDialog.tsx:470,517`、`history/zipWriter.ts`） | ✅可用 —— 同上 | ✅可用 —— 同上 |
 | 附件/图片 | ✅可用 —— Files API 上传（`{messages}/files`，带 `anthropic-beta`），引用走 `image`/`document` + `file_id`（`client.ts:27,181-200`、`reply.ts:22-32`） | ❌不可用 —— 我们主动砍掉：`caps.vision=false`，回形针与拖拽入口都不渲染（`providers.ts:124`、`ChatInput.tsx:81-94,260-275`） | ❌不可用 —— 入口不渲染；即使硬塞，翻译层也只取 `text` 块、图片/文档直接丢弃（`openaiAdapter.ts:57-65`） |
 | 语音输入 ASR | ✅可用 —— `POST /v1/tools/asr`（multipart WAV/Ogg）返回全文（`speech.ts:17-46`、`providers.ts` 里 deepseek 的 `paths.tools`） | ❌不可用 —— `caps.asr=false`（上游没接口），VoiceButton 不渲染（`providers.ts:125`、`ChatInput.tsx:245-259`） | ❌不可用 —— `caps.asr=false`，且 `paths.tools` 是空串，连工具前缀都没定义（`providers.ts:136`） |
@@ -94,12 +94,12 @@
 ### 2.3 自动标题（Anthropic ❌ / OpenAI ❌）
 
 - **为什么做不到**：**主动砍掉**。`title:{enabled:true}` 是 DeepSeek 私有请求字段，标题从 `message_delta.delta.title` 回来（`store.ts` 的 `title:{enabled:true}` + `event.delta.title`、`parseEvent.ts:208-224`）。`caps.title=false` 后请求不带该字段，`session.title` 永远为空，侧边栏回落到「未命名对话」（`SessionItem.tsx:23`）。代码里**没有任何本地生成标题的兜底**（`store.ts` 全文只有 `renameSession` 会写 title）。
-- **变通办法与代价**：本地生成——首轮回答结束后用同一上游再发一条廉价请求（「给这段对话起 6 字标题」），或在客户端直接截首条提问前 N 字。代价：多一次计费请求（且要处理"标题请求失败不能污染会话"）；截断方案质量差、中英混排难看；还要加节流（现有 `titleRequests` Set 只服务于服务端标题，`store.ts:79`）。
-- **未来补的话依赖**：一次额外的轻量补全调用 + 一套「标题只写一次、手动重命名后不再覆盖」的规则（规则已有：`store.ts:1056` 的 `session.title ? session : ...`、`store.ts:484`）。
+- **变通办法与代价**：本地生成——首轮回答结束后用同一上游再发一条廉价请求（「给这段对话起 6 字标题」），或在客户端直接截首条提问前 N 字。代价：多一次计费请求（且要处理"标题请求失败不能污染会话"）；截断方案质量差、中英混排难看；还要加节流（现有 `titleRequests` Set 只服务于服务端标题，`src/services/chat/store.ts:79`）。
+- **未来补的话依赖**：一次额外的轻量补全调用 + 一套「标题只写一次、手动重命名后不再覆盖」的规则（规则已有：`src/services/chat/store.ts:1056` 的 `session.title ? session : ...`、`src/services/chat/store.ts:484`）。
 
 ### 2.4 服务端内容安全审核（Anthropic ⚠️ / OpenAI ⚠️）
 
-- **为什么做不到**：**上游没这个参数**。`safety_check:{level:'high'}` 是 DeepSeek 私有顶层字段，裸 Anthropic 收到未知顶层字段直接 400，所以 `gates.safety_check=false`（`providers.ts:185`、`store.ts:1038`）。剩下的只有协议自带的 `stop_reason:'refusal'`（`parseEvent.ts:211`）与 OpenAI 的 `finish_reason:'content_filter'`（`openaiAdapter.ts:104`）——**审核强度、审核时机、审核文案全由上游决定，客户端无法要求**。
+- **为什么做不到**：**上游没这个参数**。`safety_check:{level:'high'}` 是 DeepSeek 私有顶层字段，裸 Anthropic 收到未知顶层字段直接 400，所以 `gates.safety_check=false`（`providers.ts:185`、`src/services/chat/store.ts:1038`）。剩下的只有协议自带的 `stop_reason:'refusal'`（`parseEvent.ts:211`）与 OpenAI 的 `finish_reason:'content_filter'`（`openaiAdapter.ts:104`）——**审核强度、审核时机、审核文案全由上游决定，客户端无法要求**。
 - **变通办法与代价**：客户端自建审核（敏感词/分类模型前置拦截）。代价：多一份模型或词表依赖、多一次延迟；误杀无法申诉；且挡不住上游自己的拒答，两套策略要合并展示（`describe.ts:19-59` 的 Notice 体系要扩展）。
 - **未来补的话依赖**：一个可配置的审核服务；或上游（中转商）暴露同类开关。
 
@@ -147,10 +147,10 @@
 | 重新生成 | 重新构造请求（同一 `question`，`history` 截到前一轮） | 全新一轮 block | `AssistantMessage.tsx` 的 `regenerateReply` 按钮（`store.ts` 的 `regenerateReply()`） |
 | 编辑消息 | 同上（`question` 内容替换） | 同上 | `UserMessage.tsx` 的编辑态（`editMessage()`）（`store.ts` 的 `editMessage()`） |
 | 消息分支 | 无（纯本地） | 无（纯本地） | `BranchSwitcher.tsx:28-30`（`branches.ts:40-117`、`branches.ts` 的 `MessageVersions` / `selectVersion()`） |
-| 继续生成 | 尾部 assistant 消息（prefill）：`reply.ts:350-362`；OpenAI 只能原样排在末尾（`openaiAdapter.ts:77-86`） | 新事件继续追加到原有 block（`reply.ts:72-137` 的 `blockIndexes` 映射） | `AssistantMessage.tsx:160-173`（`store.ts:1063-1081`） |
+| 继续生成 | 尾部 assistant 消息（prefill）：`reply.ts:350-362`；OpenAI 只能原样排在末尾（`openaiAdapter.ts:77-86`） | 新事件继续追加到原有 block（`reply.ts:72-137` 的 `blockIndexes` 映射） | `AssistantMessage.tsx:160-173`（`src/services/chat/store.ts:1063-1081`） |
 | 复制 | 无 | 本地拼接 text block（`reply.ts:163-164`） | `AssistantMessage.tsx:145`、`CopyButton.tsx` |
 | Markdown/KaTeX/Mermaid | 无 | 无（纯本地渲染） | `Markdown.tsx:1-20`、`MarkdownAstRenderer.tsx`、`MathFormula.tsx:1-10`、`MermaidDiagram.tsx` 的 `MermaidDiagram`、`CodeBlock.tsx` |
-| 会话管理 | 无（IndexedDB） | 无 | `Sider.tsx:66-75,121`、`SessionItem.tsx:23-70`、`store.ts:462,478,503` |
+| 会话管理 | 无（IndexedDB） | 无 | `Sider.tsx:66-75,121`、`SessionItem.tsx:23-70`、`src/services/chat/store.ts:462,478,503` |
 | 历史导入导出 | 无（ZIP 本地） | 无 | `SettingsDialog.tsx` 的「数据管理」分组、`history/zipWriter.ts`、`history/importArchive.ts` |
 | 附件/图片 | `POST {messages}/files`（`client.ts:181-200`）+ `anthropic-beta:files-api-2025-04-14`（`client.ts:27,160-163`）；引用 `image`/`document` + `file_id`（`reply.ts:22-32`） | 无特殊事件（图片只上行） | `ChatInput.tsx:81-94,260-275`、`DraftAttachments.tsx`、`FileCard.tsx`、`MessageFile.tsx` |
 | 语音输入 ASR | `POST {baseUrl}{paths.tools}/asr`（`speech.ts:24`） | 纯 JSON `{text}`（`speech.ts:30-45`） | `ChatInput.tsx:245-259`、`VoiceButton.tsx`、`useVoiceInput.ts` |
@@ -180,7 +180,7 @@
 **若要尽量补齐「纯文字功能」，按性价比排序的待办**：
 
 1. **用量统计小标签 + 放宽 `isUsage`**（成本最低、三模式同时受益）。改 `parseEvent.ts:168-172` 让四个 token 字段逐个可选、缺失记 0，再在 `AssistantMessage` 底部加一行 `↑in ↓out`。这一步同时顺手修掉「中转少给 `cache_*` 就丢掉整条 usage」的隐性 bug。
-2. **本地自动标题兜底**（Anthropic/OpenAI 立刻有标题）。复用现有 `titleRequests` 节流与「只写一次」规则（`store.ts:79,1056`），在首轮回答结束后用同上游发一条廉价补全；失败不影响会话。代价是一次额外调用，可以加开关。
+2. **本地自动标题兜底**（Anthropic/OpenAI 立刻有标题）。复用现有 `titleRequests` 节流与「只写一次」规则（`src/services/chat/store.ts:79,1056`），在首轮回答结束后用同上游发一条廉价补全；失败不影响会话。代价是一次额外调用，可以加开关。
 3. **给 Anthropic 模式打 `cache_control` 断点**（省的是真金白银）。按「system → 历史 → 本轮」顺序给最多 4 个 ephemeral 断点，需要 `types.ts` 扩展 block 级字段 + 逐中转验证透传。
 4. **客户端工具往返框架**（补齐搜索/阅读链接的唯一正路）。先在 `applyEvent`（`reply.ts:88`）里把 `tool_use` 从"丢弃"改成"可执行"，接一个第三方搜索 API；这条路也是唯一能同时救活 Anthropic/OpenAI 两个模式的搜索方案，但工作量最大、要新写 UI 态。
 5. **OpenAI 侧 prefill 探测 + 降级策略**（小修）。检测上游是否支持 assistant 尾部续写，不支持时把「继续生成」按钮置灰并给出说明，避免用户点了没反应（`canContinueReply` 加一个 `caps` 判断）。

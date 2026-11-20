@@ -1,0 +1,212 @@
+{
+  "login": {
+    "docWidth": 360,
+    "scrollWidth": 360,
+    "scrollHeight": 740,
+    "clientHeight": 740,
+    "horizontalOverflow": false,
+    "inputHeights": [
+      44,
+      44
+    ],
+    "buttonHeights": [
+      {
+        "text": "登录",
+        "h": 40
+      },
+      {
+        "text": "注册",
+        "h": 32
+      }
+    ],
+    "title": "登录"
+  },
+  "login-error": {
+    "docWidth": 360,
+    "scrollWidth": 360,
+    "scrollHeight": 740,
+    "clientHeight": 740,
+    "horizontalOverflow": false,
+    "inputHeights": [
+      44,
+      44
+    ],
+    "buttonHeights": [
+      {
+        "text": "登录",
+        "h": 40
+      },
+      {
+        "text": "注册",
+        "h": 32
+      }
+    ],
+    "title": "登录"
+  },
+  "login-busy": {
+    "docWidth": 360,
+    "scrollWidth": 360,
+    "scrollHeight": 740,
+    "clientHeight": 740,
+    "horizontalOverflow": false,
+    "inputHeights": [
+      44,
+      44
+    ],
+    "buttonHeights": [
+      {
+        "text": "登录",
+        "h": 40
+      },
+      {
+        "text": "注册",
+        "h": 32
+      }
+    ],
+    "title": "登录"
+  },
+  "login-no-register": {
+    "docWidth": 360,
+    "scrollWidth": 360,
+    "scrollHeight": 740,
+    "clientHeight": 740,
+    "horizontalOverflow": false,
+    "inputHeights": [
+      44,
+      44
+    ],
+    "buttonHeights": [
+      {
+        "text": "登录",
+        "h": 40
+      }
+    ],
+    "title": "登录"
+  },
+  "register": {
+    "docWidth": 360,
+    "scrollWidth": 360,
+    "scrollHeight": 740,
+    "clientHeight": 740,
+    "horizontalOverflow": false,
+    "inputHeights": [
+      44,
+      44,
+      44,
+      44,
+      44
+    ],
+    "buttonHeights": [
+      {
+        "text": "发送验证码",
+        "h": 40
+      },
+      {
+        "text": "注册",
+        "h": 40
+      },
+      {
+        "text": "登录",
+        "h": 32
+      }
+    ],
+    "title": "注册"
+  },
+  "register-code-sent": {
+    "docWidth": 360,
+    "scrollWidth": 360,
+    "scrollHeight": 740,
+    "clientHeight": 740,
+    "horizontalOverflow": false,
+    "inputHeights": [
+      44,
+      44,
+      44,
+      44,
+      44
+    ],
+    "buttonHeights": [
+      {
+        "text": "发送验证码",
+        "h": 40
+      },
+      {
+        "text": "注册",
+        "h": 40
+      },
+      {
+        "text": "登录",
+        "h": 32
+      }
+    ],
+    "title": "注册"
+  },
+  "register-invalid": {
+    "docWidth": 360,
+    "scrollWidth": 360,
+    "scrollHeight": 740,
+    "clientHeight": 740,
+    "horizontalOverflow": false,
+    "inputHeights": [
+      44,
+      44,
+      44,
+      44,
+      44
+    ],
+    "buttonHeights": [
+      {
+        "text": "发送验证码",
+        "h": 40
+      },
+      {
+        "text": "注册",
+        "h": 40
+      },
+      {
+        "text": "登录",
+        "h": 32
+      }
+    ],
+    "title": "注册"
+  },
+  "register-busy": {
+    "docWidth": 360,
+    "scrollWidth": 360,
+    "scrollHeight": 740,
+    "clientHeight": 740,
+    "horizontalOverflow": false,
+    "inputHeights": [
+      44,
+      44,
+      44,
+      44,
+      44
+    ],
+    "buttonHeights": [
+      {
+        "text": "发送验证码",
+        "h": 40
+      },
+      {
+        "text": "注册",
+        "h": 40
+      },
+      {
+        "text": "登录",
+        "h": 32
+      }
+    ],
+    "title": "注册"
+  },
+  "gate-loading": {
+    "docWidth": 360,
+    "scrollWidth": 360,
+    "scrollHeight": 740,
+    "clientHeight": 740,
+    "horizontalOverflow": false,
+    "inputHeights": [],
+    "buttonHeights": [],
+    "title": null
+  }
+}

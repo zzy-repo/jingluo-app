@@ -15,6 +15,10 @@ import { httpTransport } from './services/ours/transport.js'
 import { INVITE_API_BASE } from './services/invite/api.js'
 import { ensureDeviceId } from './services/invite/device.js'
 import { setupFlexGapFallback } from './utils/flexGap.js'
+import { getAccessToken, restoreAuth, setAuthTransport } from './services/auth/store.js'
+import { createAuthTransport, createPublicSettingsReader } from './services/auth/transport.js'
+import { setPublicSettingsReader } from './services/auth/flags.js'
+import { createConsumeClient } from './services/consume/index.js'
 import {
   initDiagnostics,
   installDiagnosticsDebugHandle,
@@ -91,6 +95,17 @@ setCustomerIdProvider(async () => {
     transport: httpTransport,
   })
 })
+
+// 身份层接线（W1-B 前半，#487）：JWT 通道与 `settings/public` 开关都走 W1-A 的消费层客户端。
+// `accessToken` 传的是「每次请求现取」的提供者，续期之后立刻生效；`apiKey` 只服务 `/v1/**`。
+const consumeClient = createConsumeClient({ accessToken: getAccessToken, apiKey: getApiKey })
+setAuthTransport(createAuthTransport(consumeClient))
+setPublicSettingsReader(createPublicSettingsReader(consumeClient))
+
+// [占位] 身份检查：**当前保持「跳过」**——只跑一次启动恢复（读安全存储里的 JWT，没有就什么都不做），
+// 渲染树与首启流程一行没动，现有启动行为不变。
+// TODO(W1-B 后半)：把下面这行换成 <AuthGate> 包住 <App />，并在 restore 完成前不渲染主界面。
+void restoreAuth()
 
 // 根部包一层错误边界：渲染期异常不再是整屏白屏，而是一张可读的错误页（issue #28）
 createRoot(document.getElementById('root') as HTMLElement).render(

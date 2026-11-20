@@ -4,9 +4,9 @@
 >
 > **快照基准：`acf6826`**（`origin/main` tip，2026-11-19 12:28:21 +0800）· 采集时间：2026-11-19 18:55 (+0800)
 >
-> **扫描范围**：`src/**` 的 **226** 个源文件。
+> **扫描范围**：`src/**` 的 **234** 个源文件。
 >
-> 拆分：`.ts` 169 / `.tsx` 56 / `.html` 1 = 226（#487 W1-A 新增 `src/services/consume/**` 9 个 `.ts` 后 +9）。上一版写 190，是缺了 `#237`（`fetch` 通道计数、`readBytesOf`）与 `#243`（设备指纹）新增的 5 个文件。
+> 拆分：`.ts` 174 / `.tsx` 59 / `.html` 1 = 234（#487 W1-A 新增 `src/services/consume/**` 9 个 `.ts`，W1-B 再新增 `src/services/auth/**` 5 个 `.ts` 与 `src/components/auth/**` 3 个 `.tsx`）。上一版写 190，是缺了 `#237`（`fetch` 通道计数、`readBytesOf`）与 `#243`（设备指纹）新增的 5 个文件。
 >
 > **本盘点只审计、只出单、只做工具，不修任何代码。** 每条真实漏洞都另开独立 Issue（见「真实漏洞与拆单」），修复在各自单里做，不在 #209 的 PR 里改产品代码。
 >
@@ -36,7 +36,7 @@
 
 ## 盘点表
 
-**总计 124 条命中**（`已有兜底` 71 / `无风险` 39 / `真实漏洞` 5 / `需动态验证` 9）；风险分布：高 4、中 10、低 110。
+**总计 127 条命中**（`已有兜底` 74 / `无风险` 39 / `真实漏洞` 5 / `需动态验证` 9）；风险分布：高 4、中 10、低 113。
 
 | 文件:行 | 假设内容 | 类别 | 风险(高/中/低) | 处置(已有兜底/需探测/需动态验证/拆单) |
 | --- | --- | --- | --- | --- |
@@ -69,6 +69,9 @@
 | `src/services/api/apiConfig.ts:58` | localStorage 在无痕 / 配额满 / 分区存储受限时抛错，写入必须自带 try…catch | 3 | 低 | 已有兜底 |
 | `src/services/api/apiConfig.ts:67` | localStorage 在无痕 / 配额满 / 分区存储受限时抛错，写入必须自带 try…catch | 3 | 低 | 已有兜底 |
 | `src/services/api/apiConfig.ts:69` | localStorage 在无痕 / 配额满 / 分区存储受限时抛错，写入必须自带 try…catch | 3 | 低 | 已有兜底 |
+| `src/services/auth/store.ts:92` | 身份层凭据存储 `read`：包在 try 里，存储不可用（隐私模式 / 配额满）时当「没登录过」，不抛错 | 3 | 低 | 已有兜底 |
+| `src/services/auth/store.ts:101` | 同上（`write` 的 `removeItem` 分支）：清态失败只影响「下次启动要不要重登」，不影响本次会话 | 3 | 低 | 已有兜底 |
+| `src/services/auth/store.ts:103` | 同上（`write` 的 `setItem` 分支）：写不进去同样吞掉，绝不让登录流程因存储异常崩掉 | 3 | 低 | 已有兜底 |
 | `src/services/api/client.ts:168` | Body.text/arrayBuffer 引入于 Chrome 76，83 必有 | 3 | 低 | 已有兜底 |
 | `src/services/api/client.ts:201` | Body.text/arrayBuffer 引入于 Chrome 76，83 必有（#434 折叠区的响应摘要：`response.text()` 读正文前 200 字） | 3 | 低 | 已有兜底 |
 | `src/services/api/client.ts:289` | AbortController 引入于 Chrome 66，83 必有（启动守卫也把它列进 REQUIRED） | 3 | 低 | 已有兜底 |
@@ -236,7 +239,7 @@
 
 | 能力 | 命中 | 已有兜底 | 无风险 | 真实漏洞 | 需动态验证 |
 | --- | --- | --- | --- | --- | --- |
-| `localStorage` | 16 | 15 | 1 | 0 | 0 |
+| `localStorage` | 19 | 18 | 1 | 0 | 0 |
 | `AbortController` | 14 | 14 | 0 | 0 | 0 |
 | `Body.text/arrayBuffer` | 16 | 10 | 6 | 0 | 0 |
 | `Capacitor.isNativePlatform` | 11 | 2 | 9 | 0 | 0 |
@@ -288,3 +291,4 @@
 - 复核（2026-11-20 12:20，基准 `e5ee313`，本单 #386 分支 `feat/scroll-to-bottom-386`）：新增 1 个 `.tsx`（`src/components/session/ScrollToBottomButton.tsx`）与 1 个 `.ts`（同名 `.module.css.d.ts` 类型声明），扫描范围 212 → **214** 个源文件。新文件不碰 storage / clipboard / fetch / Capacitor，也不直接调 `matchMedia`（reduced-motion 判定走既有的 `src/utils/usePresence.ts` 的 `prefersReducedMotion()`），**命中总数仍是 122 条**，各能力计数与风险分布（高 4 / 中 9 / 低 109）未变；`src/components/messages/MessageList.tsx` 因新增 import 与一段按钮状态逻辑整体下移，`ResizeObserver` 两处从 `:110` / `:125` → **`:195` / `:212`**、`CSS.escape` 从 `:195` → **`:282`**。
 
 - 复核（2026-11-20 16:20，基准 `d198ccc`，本单 #487 W1-A 分支 `feat/consume-layer`）：新增 9 个 `.ts`（`src/services/consume/**`：http / errors / auth / keys / usage / redeem / aff / email / index）。`http.ts` 用 `Capacitor.isNativePlatform()` 判「是不是原生环境」（非原生直接回 `unsupported`，不做 fetch 兜底），因此 `Capacitor.isNativePlatform` 10 → **11**（`无风险` 8 → **9**，Chromium 83 无此 API 但它是 Capacitor 注入的宿主能力，非原生分支即兜底）。命中总数 123 → **124**、`无风险` 38 → **39**、风险分布 低 109 → **110**（高 / 中未变）。扫描范围 217 → **226** 个源文件（`.ts` 169 / `.tsx` 56 / `.html` 1）。其余能力计数与 §「真实漏洞」5 条一处未变；`src/services/consume/http.ts` 新增的 `AbortController` / `fetch` 是**注释里的说明文字**，不进命中。
+- 复核（2026-11-20 16:35，基准 `e504986`，本单 #487 W1-B 分支 `feat/auth-layer-skeleton`）：新增 5 个 `.ts`（`src/services/auth/{types,transport,store,flags}.ts`、`src/components/auth/authForm.ts`）与 3 个 `.tsx`（`AuthGate` / `LoginPage` / `RegisterPage`），扫描范围 226 → **234** 个源文件（`.ts` 169 → **174**、`.tsx` 56 → **59**）。命中总数 124 → **127** 条：`src/services/auth/store.ts` 的凭据存储 `read`（`:92`）与 `write`（`removeItem` `:101` / `setItem` `:103`）各 1 处 `localStorage`，三处都自带 `try…catch`（存储不可用只影响「下次要不要重登」），记 `已有兜底`；`localStorage` 16 → **19**（`已有兜底` 15 → **18**）。风险分布 低 110 → **113**（高 4 / 中 10 未变）。
