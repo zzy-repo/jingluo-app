@@ -59,6 +59,7 @@ import { AppUpdateField } from './AppUpdateField.js'
 import { ChatBackgroundField } from './ChatBackgroundField.js'
 import { DOUYIN_ACCOUNT_ID, douyinCopyToast } from './douyinAccount.js'
 import { OursServicesRow } from './OursServicesDialog.js'
+import { AccountRow } from '../auth/AccountRow.js'
 import { FeedbackDialog } from './FeedbackDialog.js'
 import { closeSettings, useSettingsDialog, type SettingsSection } from './settingsDialogState.js'
 import { AccountConsumePage } from '../consume/AccountConsumePage.js'
@@ -144,6 +145,8 @@ const SettingsContent = ({ visible }: { visible: boolean }) => {
         <div role="tabpanel" className={styles.content}>
           {section === 'general' ? (
             <>
+              {/* 账号（W1-B 后半 #487）：当前登录邮箱 + 退出登录；未登录时不渲染 */}
+              <AccountRow />
               <ThemeSetting />
               <LocaleSetting />
               <TtsVoiceSetting />

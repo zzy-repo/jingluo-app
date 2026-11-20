@@ -547,7 +547,8 @@ export const zh = {
   oursServicesTitle: '额度与卡密',
   // 设备码
   oursDeviceTitle: '设备码',
-  oursDeviceDescription: '设备码就是你的账号凭据：复制备份好，丢失等于丢账号。',
+  // W1-B 后半（#487）：账号已换成 JWT 邮箱账号，设备码不再代表账号，所以这句不再提「凭据 / 备份」
+  oursDeviceDescription: '本机设备标识（旧版凭据体系遗留）：账号与额度请用邮箱登录后的账户页查看。',
   oursDeviceCopy: '复制设备码',
   oursDeviceCopied: '设备码已复制',
   // 领取
@@ -714,8 +715,6 @@ export const zh = {
   oursRedeemProcessing: '兑换处理中，稍后自动到账',
   oursRedeemDuplicate: '该卡密此前已兑换，已到账 {points}',
   oursRedeemRefreshBalance: '刷新额度',
-  oursDeviceBackupHint: '设备码就是你的账号凭据：请复制备份，清理站点数据或换机后无法找回。',
-  oursDeviceBackupHintOk: '我知道了',
   oursInviteErrApplyRateLimited: '今天领取次数过多，请明天再试',
   oursInviteErrAlreadyClaimed: '这台设备已经领取过 Key，不能重复领取',
   // Issue #86：「我已经有 Key」——把已有 Key 绑到本机设备码（POST /bind）
@@ -1011,6 +1010,8 @@ export const zh = {
   sub2authNetworkError: '网络错误，请检查网络后重试',
   sub2authLogout: '退出登录',
   sub2authSwitchAccount: '切换账号',
+  sub2authAccount: '账号',
+  sub2authSessionExpired: '登录已过期，请重新登录',
   sub2authRegisterSuccess: '注册成功',
   sub2authEmailVerifyRequired: '需要先验证邮箱',
   sub2authTwoFactorHint: '这个账号已开启两步验证，请输入验证器里的 6 位验证码',

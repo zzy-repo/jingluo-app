@@ -13,8 +13,8 @@
 
 | 项 | 值 |
 | --- | --- |
-| 扫描范围 | `src/**` 全部源文件 **324** 个（`.css` **49** 个，其中 `*.module.css` **42** 个；其余 `.ts / .tsx / .html` 共 **275** 个） |
-| 口径拆分 | 49 `.css` + 203 `.ts` + 71 `.tsx` + 1 `.html` = 324 |
+| 扫描范围 | `src/**` 全部源文件 **326** 个（`.css` **49** 个，其中 `*.module.css` **42** 个；其余 `.ts / .tsx / .html` 共 **277** 个） |
+| 口径拆分 | 49 `.css` + 204 `.ts` + 72 `.tsx` + 1 `.html` = 326 |
 | 命中总数 | **393** 处，分布在 **41** 个文件 |
 | 运行时下限 | WebView **83**（Chromium 83）。**首支持 ≤ 83 的特性一律记「无风险」，与有没有兜底无关** |
 | 构建期因素 | `rspack.config.ts` 用 `builtin:lightningcss-loader`，`targets` 取自 `package.json` 的 `browserslist`（强制含 `chrome >= 83`）。**已被构建期翻译掉的写法不算运行时假设** |
@@ -185,7 +185,7 @@
 | `components/messages/AssistantMessage.module.css:21,27` | `.waiting { display:flex; flex-wrap:wrap; column-gap:6px; row-gap:2px }`（#328 等待提示可能出现第二行） | 2 | 低 | **#328 已补**：`margin-right: 6px` + `margin-bottom: 2px`，由 `pnpm run check:gap` 生成 |
 | `components/settings/PaymentTrailDialog.module.css:71,113` | `.tabs { display:flex; flex-wrap:wrap; gap:6px }`（#326 状态筛选页签）与 `.moreError { display:flex; flex-wrap:wrap; gap:8px }`（#326 加载更多失败行） | 2 | 低 | **#326 已补**：两处都生成 `html[data-flex-gap-fallback]` 兜底块（`.tabs` 用 `margin-right/bottom: 6px`，`.moreError` 用 `margin-right/bottom: 8px`），`pnpm run check:gap` 报「已兜底 121 条」 |
 
-> 口径（#217 之后统一）：`pnpm run check:gap` 报「扫描 **49** 个 CSS 文件（其中 **42** 个 CSS Module）：已兜底 **150** 条，跳过 **3** 条」。41 = `find src -name '*.module.css' | wc -l`；3 条跳过 = #159 的 `Settings.module.css:.backgroundRow` 1 条 + 非 flex 容器 2 条。（#501 复核：`#499` 登录/注册页、`#502`/`#505` 面板与账户消费页进场后口径从 45/38/121 漂到这里，本条与 `tests/unit/flex-gap-fallback.test.mjs` 的模块数断言同步。）原先的两种口径（38 module / 109 处 vs 含非 module 的 109 处）已合并成同一个口径。
+> 口径（#217 之后统一）：`pnpm run check:gap` 报「扫描 **48** 个 CSS 文件（其中 **41** 个 CSS Module）：已兜底 **150** 条，跳过 **3** 条」。41 = `find src -name '*.module.css' | wc -l`；3 条跳过 = #159 的 `Settings.module.css:.backgroundRow` 1 条 + 非 flex 容器 2 条。（#501 复核：`#499` 登录/注册页、`#502`/`#505` 面板与账户消费页进场后口径从 45/38/121 漂到这里，本条与 `tests/unit/flex-gap-fallback.test.mjs` 的模块数断言同步。）原先的两种口径（38 module / 109 处 vs 含非 module 的 109 处）已合并成同一个口径。
 
 ### 2.7 `inset`（16 处，构建期降级 → 已有兜底）
 
@@ -316,6 +316,7 @@ node --test tests/unit/css-assumption-audit.test.mjs
 
 ## 复核记录
 
+- 复核（2026-11-20 18:20，基准 `553cddd`，本单 #487 W1-B 后半分支 `feat/auth-gate-wiring`）：新增 `src/services/consumeClient.ts` 1 个 `.ts` 与 `src/components/auth/AccountRow.tsx` 1 个 `.tsx`，扫描范围 301 → **303** 个源文件（其余 253 → **255**），`.css` 仍是 48 个（`*.module.css` 41）。`AuthPages.module.css` 只新增了账号行的两条排版规则（无 `gap` / 无新特性），**没有新增样式表**，命中总数仍是 **389 处 / 41 个文件**，逐特性表与 §2 明细的 `文件:行` 未变。
 - 复核（2026-11-20 18:05，基准 `f8b8125`，本单 #498 分支 `feat/legacy-migration-tail`）：新增 `src/legacy/migration/**` 4 个 `.ts` 与 1 个 `.tsx`，扫描范围 296 → **301** 个源文件（其余 `.ts / .tsx / .html` 248 → **253**），`.css` 仍是 48 个（`*.module.css` 41）。迁移按钮复用既有 `Settings.module.css` 的类名，**没有新增任何 `.css` / 内联样式**，命中总数仍是 **389 处 / 41 个文件**，逐特性表与 §2 明细的 `文件:行` 未变。
 - 复核（2026-11-19 18:32，基准 `452debb`，本单 #303 分支 HEAD `204bd6e`）：新增 1 个 `.ts` 源文件（`src/services/api/keyRejection.ts`），扫描范围 246 → **247** 个源文件（`.ts` 147 → **148**，其余 `.ts / .tsx / .html` 202 → **203**），`.css` 仍是 44 个（`*.module.css` 37）。新文件是纯状态计算，**不含任何 CSS 特性假设**，命中总数仍是 **343 处 / 39 个文件**，逐特性表与 §2 明细的 `文件:行` 未变。
 - 复核（2026-11-19 18:35，基准 `68c4d9d`，本单 #305）：`src/components/settings/logView.ts` 新增 1 个 `.ts` 源文件（扫描范围 243 → **244** 个），`Settings.module.css` 的日志预览区新增 8 处 flex `gap`（`.feedbackLogViewer` / `.feedbackLogToolbar` / `.feedbackLogToolbarRow` / `.feedbackLogChipRow` / `.feedbackLogGroupToggle` / `.feedbackLogGroupHeader` / `.feedbackLogGroup` / `.feedbackLogGroupItems`）与 4 处嵌套 `&`（`:hover` / `::placeholder` / `:focus`），因此命中总数 331 → **343**（flex `gap` 109 → **117**、嵌套 136 → **140**，其余特性未变），分布文件数仍是 39。这 8 处 gap 全部由 `pnpm run check:gap` 自动补齐 `html[data-flex-gap-fallback]` 兜底块（已兜底 111 → **119** 条），没有新增裸 gap；新增的 `@media (max-width: 420px)` 只是窄屏排版，不构成新特性假设。

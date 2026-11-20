@@ -53,14 +53,15 @@ const ORPHAN_BASELINE = new Set([
   'settingsLocationCity',
   'settingsLocationProvince',
   'settingsLocationRegion',
+  // W1-B 后半（#487）：额度改为读 sub2api（`consumeBalance`，单位元：1 元 = 1 额度，无 USD），设置页那一格不再用积分口径的
+  // 显示模板；但 tests/unit（format-points-i18n / ours-api）仍断言它的文案，所以先把 key 留着、
+  // 在基线里登记为「已不引用」。随旧额度链一起清理（W1-C 重写额度 UI / W1-D 删旧账本）。
+  'oursQuotaValue',
   // 重构中，UI 落地后移除（#487 铺路）：登录注册 / 账户与消费 / 卡密兑换 / 邀请 / 邮箱绑定
   // 四条链路的词条骨架。这批 key 的引用方由 #487 的 UI 线接入，接入一个就从这里删一个（基线只许减）。
   // `inviteCode` 不在此列：它已经是既有代码里的字段名（src/services/invite/**），R4 视为已引用。
-  // #487 计量单位统一（元）：四个面板的金额改由组件层的 `formatCurrency` 按 `currency` 渲染
-  // （不硬编码符号，也不再拼 `consumeBalance` 这份 `$…` 模板）。这条 key 的**归属是 i18n 统一线**，
-  // 它把金额模板改成元之后要么被别处引用、要么随旧模板一起删 —— 在那之前先登记在这里，
-  // 免得「定义了但没人用」的孤立 key 被一条注释里的同名引用悄悄放行。
-  'consumeBalance',
+  // `consumeBalance` 已由 W1-B 后半接入设置页额度格（`OursServicesDialog` 里 `t('consumeBalance', …)`），
+  // 金额口径由 W1-A 的 `utils/money.ts` 负责（1 元 = 1 额度，无 USD），故从基线删掉。
   'consumeBalanceApprox',
   'consumeKeyExpiresAt',
   'consumeRedeemBusy',

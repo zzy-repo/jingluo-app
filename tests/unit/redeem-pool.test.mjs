@@ -354,9 +354,11 @@ console.log('\n[8] 设备码可见可备份 + 只提示一次')
   eq(device.shouldShowDeviceBackupHint(store), true, '首次打开要提示')
   device.markDeviceBackupHintSeen(store)
   eq(device.shouldShowDeviceBackupHint(store), false, '标记后不再提示')
+  // W1-B 后半（#487）：旧引导文案（「设备码就是你的账号凭据，请复制备份」）已删除。
+  // 设备相关函数本体仍在（归 W1-D 删），但 i18n 里不该再留着这句会误导人的话。
   truthy(
-    translate('oursDeviceBackupHint').includes('丢') || translate('oursDeviceBackupHint').includes('备份'),
-    `备份提示文案：${translate('oursDeviceBackupHint')}`
+    zh.oursDeviceBackupHint === undefined && en.oursDeviceBackupHint === undefined,
+    '旧的「设备码=账号，请复制备份」文案已删除'
   )
 }
 
@@ -559,8 +561,6 @@ console.log('\n[11] i18n：新 key 中英齐全，既有 key 未被改写')
     'oursRedeemProcessing',
     'oursRedeemDuplicate',
     'oursRedeemRefreshBalance',
-    'oursDeviceBackupHint',
-    'oursDeviceBackupHintOk',
     'oursInviteErrApplyRateLimited',
     'oursInviteErrAlreadyClaimed',
   ]

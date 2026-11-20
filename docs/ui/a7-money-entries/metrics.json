@@ -1,0 +1,74 @@
+{
+  "page": "settings-data-entries",
+  "title": "A7：设置 → 数据管理 —「付款记录 / 我的购买 / 支付记录」三格合成一格「账户与消费」",
+  "shots": [
+    "docs/ui/a7-money-entries/390/settings-data-entries-390.png",
+    "docs/ui/a7-money-entries/360/settings-data-entries-360.png"
+  ],
+  "measurements": [
+    {
+      "viewport": "390×844",
+      "accountConsumeEntries": 1,
+      "legacyEntries": [
+        [
+          "payment-records-open",
+          0
+        ],
+        [
+          "purchases-open",
+          0
+        ],
+        [
+          "payment-trail-open",
+          0
+        ]
+      ],
+      "oursServicesEntries": 1,
+      "entryBox": {
+        "top": 478,
+        "left": 294,
+        "w": 72,
+        "h": 44
+      },
+      "horizontalOverflow": 0,
+      "bodyText": "鲸落 开启新对话 设置 今天有什么可以帮到你？ 快速模式 专家模式 深度思考 内容由 AI 生成，请仔细甄别 设置 通用设置 数据管理 渠道 我们的渠道 API Key ************************ 连通性测试 测试 额度与卡密 设备码、剩余额度、邀请码、套餐购买、卡密兑换 打开 聊天背景 图片只保存在本机（IndexedDB），不会上传；最长边压缩到 1600px — 上传 清除 导入历史对话 导入历史对话时会先选择导入方式（合并 / 跳过已存在 / 整包覆盖），支持 DeepSeek 导出的 ZIP 文件。 网页版无法直接下载导出链接，请手动下载 ZIP 后上传。 上传 导出所有历史对话 当前没有可导出的对话 下载 账户与消费 我的卡密、购买套餐、额度与账号，一个页面四件事 查看 反馈与日志 提交问题反馈时会附上最近的操作日志（已在本机脱敏），不包含对话内容与 AP",
+      "legacyWordCounts": {
+        "付款记录": 0,
+        "我的购买": 0,
+        "支付记录": 0
+      }
+    },
+    {
+      "viewport": "360×740",
+      "accountConsumeEntries": 1,
+      "legacyEntries": [
+        [
+          "payment-records-open",
+          0
+        ],
+        [
+          "purchases-open",
+          0
+        ],
+        [
+          "payment-trail-open",
+          0
+        ]
+      ],
+      "oursServicesEntries": 1,
+      "entryBox": {
+        "top": 426,
+        "left": 264,
+        "w": 72,
+        "h": 44
+      },
+      "horizontalOverflow": 0,
+      "bodyText": "鲸落 开启新对话 设置 今天有什么可以帮到你？ 快速模式 专家模式 深度思考 内容由 AI 生成，请仔细甄别 设置 通用设置 数据管理 渠道 我们的渠道 API Key ************************ 连通性测试 测试 额度与卡密 设备码、剩余额度、邀请码、套餐购买、卡密兑换 打开 聊天背景 图片只保存在本机（IndexedDB），不会上传；最长边压缩到 1600px — 上传 清除 导入历史对话 导入历史对话时会先选择导入方式（合并 / 跳过已存在 / 整包覆盖），支持 DeepSeek 导出的 ZIP 文件。 网页版无法直接下载导出链接，请手动下载 ZIP 后上传。 上传 导出所有历史对话 当前没有可导出的对话 下载 账户与消费 我的卡密、购买套餐、额度与账号，一个页面四件事 查看 反馈与日志 提交问题反馈时会附上最近的操作日志（已在本机脱敏），不包含对话内容与 AP",
+      "legacyWordCounts": {
+        "付款记录": 0,
+        "我的购买": 0,
+        "支付记录": 0
+      }
+    }
+  ]
+}

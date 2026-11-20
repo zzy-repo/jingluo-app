@@ -120,6 +120,34 @@ jobs:
       - name: Build (internal)
         run: pnpm run build:internal
 
+      # 登录接缝守卫（#510）：`AuthGate` 的 `__TEST_AUTH_STATE__` 必须是**构建期常量**，
+      # 正常构建由 DefinePlugin 内联成 undefined → 守卫被死代码消除。这个 job 构建的是**不带**
+      # `TEST_AUTH_SEAM=1` 的生产/内测产物，所以 dist/ 里一旦扫到那个标识符或假 token
+      # `test-token-not-real`，就说明接缝漏进了产物（线上多一条不用登录的路）→ exit 1。
+      # 紧跟一条负向对照（同 check:consume-api 的写法）：往产物里塞一个假 token，门禁必须判红。
+      - name: 登录接缝不进产物（check:test-seam）
+        run: pnpm run check:test-seam
+
+      # 负向对照（同 check:consume-api / check:doc-refs 的四拍写法）：往产物里塞一个假 token，
+      # 门禁必须判红、且必须让流水线红 —— 只跑正例的步骤算「绿灯空跑」（#369）。
+      # 直接调脚本而不是 `pnpm run check:test-seam`：contract-c8 的「门禁 → script → 真判定步骤」
+      # 是现场派生的，它认 `if node scripts/<script>.mjs …; then … exit 1` 这个形状。
+      - name: 负向对照：产物里塞假 token 后 check:test-seam 必须判红
+        run: |
+          set -euo pipefail
+          # 假 token 不在 YAML 里抄一份：从唯一来源（scripts/lib/testAuthSeam.mjs）读
+          marker="$(node --input-type=module -e 'import { SEAM_ACCESS_TOKEN } from "./scripts/lib/testAuthSeam.mjs"; process.stdout.write(SEAM_ACCESS_TOKEN)')"
+          test -n "$marker"
+          printf 'var leak="%s";\n' "$marker" > dist/__seam_neg_probe.js
+          if node scripts/check-test-seam.mjs; then
+            rm -f dist/__seam_neg_probe.js
+            echo "::error::负向对照失败：产物里塞了假 token 后 check:test-seam 仍然通过，说明扫描没有真正生效"
+            exit 1
+          fi
+          rm -f dist/__seam_neg_probe.js
+          node scripts/check-test-seam.mjs
+          echo "负向对照通过：产物里塞假 token → exit 1，删掉 → exit 0"
+
       # 依赖 dist：没有产物时脚本直接 exit 1（不是跳过），因此必须排在 Build (internal) 之后。
       - name: 产物目标门禁（check:bundle-target）
         run: pnpm run check:bundle-target
@@ -328,8 +356,21 @@ jobs:
           done < <(printf '%s\n' "$plan" | awk '/Install location:/ {print $3}')
           [ "$missing" -eq 0 ]
 
-      - name: 构建标准产物（dist，variant=standard）
+      # #510：黄金回归里的「启动即进主界面」用例（G1~G11）要的是**已登录**产物 ——
+      # `src/main.tsx` 把整个 App 包在 `<AuthGate>` 里之后，未登录冷启动只画登录页，
+      # 侧栏 / 输入框根本拿不到。所以这一步带 `TEST_AUTH_SEAM=1` 构建：rspack 的 DefinePlugin
+      # 把 `__TEST_AUTH_STATE__` 内联成一个**假会话**，AuthGate 直接放行。
+      # 发版产物绝不允许带这个开关：checks job 的 `check:test-seam` 扫的就是**不带**它的产物，
+      # `build.mjs` 每次构建后也会自扫一遍（见 scripts/lib/testAuthSeam.mjs）。
+      - name: 构建标准产物（dist，variant=standard，带登录接缝）
+        env:
+          TEST_AUTH_SEAM: '1'
         run: pnpm run build
+
+      # 正向对照：上面这一步确实是「接缝构建」——扫不到假 token 说明开关没生效，
+      # 那样 G1~G11 会以「登录页挡住了」的形式假红，先在这里拆穿。
+      - name: 正向对照：接缝构建的产物里必须扫得到假会话（check:test-seam --expect-seam）
+        run: node scripts/check-test-seam.mjs --expect-seam dist
 
       - name: 黄金回归（每域 1 条主路径）
         env:
@@ -408,6 +449,13 @@ jobs:
     name: L1 集成层 ${{ matrix.shard }}/${{ matrix.total }}
     runs-on: ubuntu-latest
     timeout-minutes: 25
+    env:
+      # #510：L1 里大量用例要「启动即进主界面」（未登录冷启动只画登录页时拿不到侧栏）。
+      # 放在 **job 级** 是为了让用例**自建产物**的那几条也带上：
+      # copy-limit / update-stuck-button-373 自己 spawn rspack 打 dist-copy-limit / dist-update-373，
+      # 用的是 `{ ...process.env }`，job 级 env 会继承下去。不带它的生产产物由
+      # checks job 的 check:test-seam 与 scripts/build.mjs 的自扫守卫保证干净。
+      TEST_AUTH_SEAM: '1'
     container:
       image: mcr.microsoft.com/playwright:v1.64.1-jammy
       # 同 golden job：容器默认 64MB /dev/shm 会让 Chromium 渲染长页面时崩成环境假红。
@@ -493,7 +541,9 @@ jobs:
       # 集成层只读预构建产物，不隐式构建；缺产物时用例会 SKIP(env)（不算失败）而不是真跑。
       # 这里把三份变体都备齐：dist=internal / dist-standard / dist-scroll。
       # copy-limit 与 update-stuck-button-373 各带自建产物（dist-copy-limit / dist-update-373），不在此列。
-      - name: 构建被测产物（internal / standard / scroll）
+      - name: 构建被测产物（internal / standard / scroll，带登录接缝）
+        # 三份变体都带上 job 级的 `TEST_AUTH_SEAM=1`（见 job env）：DefinePlugin 内联假会话，
+        # AuthGate 直接放行；用例自建的 dist-copy-limit / dist-update-373 也继承这个开关。
         run: |
           set -euo pipefail
           pnpm run build:internal                 # → dist/          内测变体（diagnostics / motion / mode-switch 等）
