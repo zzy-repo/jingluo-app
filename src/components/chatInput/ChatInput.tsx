@@ -390,6 +390,13 @@ const Input = ({ sessionId }: { sessionId: string | null }) => {
               icon={<IconDocumentOutline16 />}
             />
           ) : (
+            /*
+             * 渠道不支持文本注入时的「不可用」文档附件入口（#480 §7 / #538）。
+             * 它看得见、点下去给可读提示，但**不提供功能**：`data-attachment-entry="unavailable"`
+             * 是给门禁看的显式标记 —— `mode-switch-plain` 数「输入区功能性按钮」时要把它排除，
+             * 否则一句解释文案会混进按钮清单（`发送` 在空输入时也是 aria-disabled，
+             * 所以不能笼统地按 aria-disabled 过滤，只能按这个标记排除）。
+             */
             <IconButton
               size="m"
               tone="primary"
@@ -397,6 +404,7 @@ const Input = ({ sessionId }: { sessionId: string | null }) => {
               icon={<IconDocumentOutline16 />}
               tooltip={t('attachChannelUnsupported')}
               aria-disabled="true"
+              data-attachment-entry="unavailable"
               disabled={importingHistory}
               onClick={() => showToast({ key: 'attachChannelUnsupported' })}
             />

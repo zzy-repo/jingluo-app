@@ -46,12 +46,23 @@ const expect = (cond, message, detail) => {
 }
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
-/** 读出输入区（含所有功能性按钮）的可见文案/aria-label 列表 */
+/**
+ * 读出输入区（含所有功能性按钮）的可见文案/aria-label 列表。
+ *
+ * `[data-attachment-entry="unavailable"]` 的入口**不算功能性按钮**（#480 §7 / #538 / #527）：
+ * 渠道不支持文本注入时，那个文档附件入口是有意保留的「禁用态图标按钮」—— 看得见、点下去给可读
+ * 提示，但不提供任何功能。它的可访问名是一整句解释（「当前渠道不支持文档附件：…」），
+ * 混进「功能按钮集合」就会让下面「与 baseline 完全一致」被一句话污染。
+ *
+ * 只按这个**显式标记**排除，不按通用状态排除：`发送` 在空输入时同样是 `aria-disabled="true"`，
+ * 笼统过滤会把基线里的 `发送` 一起丢掉。停用入口「必须还在」由 [1] 的
+ * `readUnavailableDocEntry` 单独断言 —— 所以这不是放宽。
+ */
 const readFunctionRow = (page) =>
   page.evaluate(() => {
     const row = document.querySelector('textarea')?.closest('div[class*="wrapper"]')?.parentElement
     const scope = row ?? document.body
-    return [...scope.querySelectorAll('button')]
+    return [...scope.querySelectorAll('button:not([data-attachment-entry="unavailable"])')]
       .map((button) => {
         const label = button.getAttribute('aria-label') || button.textContent?.trim() || ''
         const style = getComputedStyle(button)
@@ -59,6 +70,17 @@ const readFunctionRow = (page) =>
       })
       .filter(Boolean)
   })
+
+/** 读出那个被标记的「不可用」文档附件入口，用来证明「不是把入口删了」 */
+const readUnavailableDocEntry = (page) =>
+  page.evaluate(() =>
+    [...document.querySelectorAll('button[data-attachment-entry="unavailable"]')].map((button) => ({
+      label: button.getAttribute('aria-label') || button.textContent?.trim() || '',
+      ariaDisabled: button.getAttribute('aria-disabled'),
+      visible: getComputedStyle(button).display !== 'none' && getComputedStyle(button).visibility !== 'hidden',
+    }))
+  )
+
 
 const browser = await chromium.launch()
 const context = await browser.newContext({
@@ -97,6 +119,18 @@ const labels = await readFunctionRow(page)
 for (const name of [/深度思考/, /智能搜索/, /上传文件|附件/, /语音|Voice/]) {
   expect(labels.some((label) => name.test(label)), `入口仍在：${name}`, labels.join(' / '))
 }
+
+// #480 §7 / #538：渠道不支持时那个文档附件入口是**禁用态**：必须还在（不许靠删入口对齐清单）、
+// 必须仍然可见、必须带解释文案且 aria-disabled="true"，只是不计入上面的功能按钮集合。
+const unavailableDocEntry = await readUnavailableDocEntry(page)
+expect(
+  unavailableDocEntry.length === 1 &&
+    unavailableDocEntry[0].ariaDisabled === 'true' &&
+    unavailableDocEntry[0].visible &&
+    /文档附件/.test(unavailableDocEntry[0].label),
+  '不可用的文档附件入口仍在（禁用态 + 解释文案），但不计入功能按钮',
+  JSON.stringify(unavailableDocEntry)
+)
 
 const think = page.getByRole('button', { name: /深度思考/ }).first()
 const search = page.getByRole('button', { name: /智能搜索/ }).first()

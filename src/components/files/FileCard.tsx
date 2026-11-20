@@ -152,12 +152,14 @@ export const FileCard = ({
         {statusText === undefined ? null : <div className={styles.statusText}>{statusText}</div>}
         {progress === undefined ? null : (
           <span className={styles.progress}>
+            {/* 进度只改 transform（#480 / #527）：`width` 是布局属性，过渡它每帧重排、必然掉帧。
+                轨道占满，条子用 scaleX 表达百分比（条子本身宽度固定 100%，见 .progressBar） */}
             <span
               className={clsx(
                 styles.progressBar,
                 progress === null && styles.progressIndeterminate
               )}
-              style={progress === null ? undefined : { width: `${progress}%` }}
+              style={progress === null ? undefined : { transform: `scaleX(${progress / 100})` }}
             />
           </span>
         )}

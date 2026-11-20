@@ -171,17 +171,26 @@
   overflow: hidden;
 }
 
+/* 进度可视化只动 transform（#480 / #527）：
+   以前把进度写进 `width` 并在 `transition: width` 上过渡 —— 这是**布局属性**，每帧都要重排，
+   解析文档时（卡片还挂在滚动列表里）必然掉帧，也被 tests/integration/motion.test.mjs 的 [4] 判红。
+   现在条子固定占满轨道，进度靠 `transform: scaleX(百分比)` 表达：合成层内缩放，不触发布局。 */
 .progressBar {
   display: block;
+  width: 100%;
   height: 2px;
   max-width: 100%;
   border-radius: 1px;
   background-color: var(--dsw-alias-brand-primary);
-  transition: width 120ms linear;
+  transform: scaleX(0);
+  transform-origin: left center;
+  transition: transform 120ms linear;
 }
 
 .progressIndeterminate {
   width: 40%;
+  /* 不确定态不表达百分比：把 .progressBar 的基础 scaleX 让给下面关键帧的 translateX */
+  transform: none;
   animation: fileCardProgressSlide 1.2s ease-in-out infinite;
 }
 
@@ -202,6 +211,7 @@
 
   .progressIndeterminate {
     width: 100%;
+    transform: none;
     animation: none;
   }
 }
