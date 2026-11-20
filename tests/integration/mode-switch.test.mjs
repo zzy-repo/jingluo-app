@@ -120,6 +120,8 @@ context.on('page', (page) => {
 })
 
 const upstreamLog = []
+/** ours 聊天请求体（#363）：证明「档位」真的落进了请求，而不是只改了界面 */
+const upstreamBodies = []
 await context.route('**/*', async (route) => {
   const request = route.request()
   const url = new URL(request.url())
@@ -141,6 +143,11 @@ await context.route('**/*', async (route) => {
     return
   }
   if (url.pathname.endsWith(OURS_CHAT_PATH)) {
+    try {
+      upstreamBodies.push(JSON.parse(request.postData() ?? '{}'))
+    } catch {
+      upstreamBodies.push({})
+    }
     // ours 渠道走 OpenAI 协议：SSE 是 chat.completion.chunk，不再是 Anthropic message_*
     await route.fulfill({
       status: 200,
@@ -162,7 +169,9 @@ await page.evaluate(() => window.localStorage.setItem('chat-demo:provider-kind',
 await page.reload({ waitUntil: 'domcontentloaded' })
 await page.getByRole('button', { name: /快速模式|Fast mode/ }).waitFor({ timeout: 15000 })
 
-console.log('\n[1] 默认态（快速模式选中）')
+// #363 起缺省档位是「专家模式（开思考）」：从没碰过开关的机器默认就思考，
+// 所以这里的初始态是 expert（缺省值本身由 tests/unit/thinking-effort-363.test.mjs [1] 钉住）。
+console.log('\n[1] 默认态（专家模式选中，缺省档 #363）')
 const layout = await page.evaluate(() => {
   const group = document.querySelector('[role="group"][aria-label]')
   const fast = document.querySelector('button[data-mode="fast"]')
@@ -206,16 +215,16 @@ expect(
   `控件紧贴问候语正下方（问候语底 ${layout.greetingBottom}px → 控件顶 ${layout.groupTop}px）`
 )
 
-const initial = await assertState(page, '默认态', 'fast')
-await page.screenshot({ path: `${OUT_DIR}/mode-01-fast.png` })
-ok(`截图 ${OUT_DIR}/mode-01-fast.png`)
+const initial = await assertState(page, '默认态', 'expert')
+await page.screenshot({ path: `${OUT_DIR}/mode-01-default-expert.png` })
+ok(`截图 ${OUT_DIR}/mode-01-default-expert.png`)
 
-console.log('\n[2] 点击「专家模式」后')
-await page.getByRole('button', { name: /专家模式|Expert mode/ }).click()
+console.log('\n[2] 点击「快速模式」后')
+await page.getByRole('button', { name: /快速模式|Fast mode/ }).click()
 await wait(220)
-const afterClick = await assertState(page, '点击后', 'expert')
-await page.screenshot({ path: `${OUT_DIR}/mode-02-expert.png` })
-ok(`截图 ${OUT_DIR}/mode-02-expert.png`)
+const afterClick = await assertState(page, '点击后', 'fast')
+await page.screenshot({ path: `${OUT_DIR}/mode-02-fast.png` })
+ok(`截图 ${OUT_DIR}/mode-02-fast.png`)
 
 console.log('\n[3] 连续切换 3 次')
 const sequence = [
@@ -271,25 +280,37 @@ expect((await textarea.inputValue()) === '模式切换回归：发一条消息',
 const modeAfterTyping = await readSegment(page, 'fast')
 expect(modeAfterTyping.ariaPressed === 'true', '输入文字不影响模式选中态（仍为快速模式）')
 
-console.log('\n[5] 切回内测默认渠道（ours）：入口恒常驻、可点、请求不带思考字段 + 发消息')
+console.log('\n[5] 切回内测默认渠道（ours）：入口恒常驻、可点、请求真的带 reasoning_effort + 发消息')
 await page.evaluate(() => window.localStorage.setItem('chat-demo:provider-kind', 'ours'))
 await page.reload({ waitUntil: 'domcontentloaded' })
 await page.getByText(/今天有什么可以帮到你|How can I help you/).first().waitFor({ timeout: 15000 })
 const oursToggle = await page.locator('button[data-mode]').count()
 expect(oursToggle === 2, 'ours 渠道仍渲染快速/专家两个按钮（#341 恒常驻）', `count=${oursToggle}`)
-// 内测包默认渠道是我们自己的渠道（ours）：OpenAI 协议、reasoningParam='none'。
-// #341 起深度思考入口常驻、可点，但请求侧由 REQUEST_GATES 拦下，一个思考字段都不发；
-// 智能搜索仍按 caps.search 不渲染。
+// 内测包默认渠道是我们自己的渠道（ours）：OpenAI 协议。
+// #363 起 ours 的 reasoningParam 是 'reasoning_effort'（档位 high）：入口（#341 恒常驻）点了真的生效，
+// 请求体带 reasoning_effort: 'high'；智能搜索仍按 caps.search 不渲染。
 const thinkButton = page.getByRole('button', { name: /深度思考|DeepThink|Thinking/ }).first()
 const thinkCount = await thinkButton.count()
 expect(thinkCount === 1, 'ours 渠道深度思考入口仍渲染（#341 恒常驻）', `count=${thinkCount}`)
 expect(
-  (await thinkButton.getAttribute('data-thinking-effective')) === 'false',
-  'ours 渠道标记为「不真生效」（不可见）',
+  (await thinkButton.getAttribute('data-thinking-effective')) === 'true',
+  'ours 渠道标记为「真生效」（不可见）#363',
   await thinkButton.getAttribute('data-thinking-effective')
 )
 const searchCount = await page.getByRole('button', { name: /智能搜索|Search/ }).count()
 expect(searchCount === 0, 'ours 渠道不渲染智能搜索入口（该协议不提供）', `count=${searchCount}`)
+
+// #363：档位要真的联动 —— 前面几步停在快速模式（关思考），这里点一下开关再用。
+// 老实现下这一步是「点了也白点」：请求侧被 REQUEST_GATES 拦掉，一个思考字段都不发。
+if ((await thinkButton.getAttribute('aria-pressed')) === 'false') {
+  await thinkButton.click()
+  await wait(220)
+}
+expect(
+  (await thinkButton.getAttribute('aria-pressed')) === 'true',
+  'ours 渠道点一下深度思考 → 档位真的翻转（#363 联动）',
+  await thinkButton.getAttribute('aria-pressed')
+)
 
 const oursTextarea = page.locator('textarea').first()
 await oursTextarea.click()
@@ -306,6 +327,17 @@ expect(
   `请求按 ours 契约打到 ${OURS_CHAT_PATH}（OpenAI 协议）`,
   upstreamLog.join(' | ')
 )
+// #363 的验收口径：档位必须真的落进请求体（默认档 = 专家模式 → reasoning_effort: 'high'）。
+// 自动起标题也是同一个上游的流式请求（max_tokens=32 的小请求），先把它排掉再取最后一条。
+const chatBodies = upstreamBodies.filter(
+  (body) => !(typeof body.max_tokens === 'number' && body.max_tokens <= 64)
+)
+const oursBody = chatBodies.at(-1) ?? {}
+expect(
+  oursBody.reasoning_effort === 'high',
+  'ours 请求体真的带 reasoning_effort: "high"（#363：以前一个思考字段都没有）',
+  JSON.stringify(oursBody)
+)
 
 expect(consoleErrors.length === 0, 'console error = 0', consoleErrors.join(' | '))
 
@@ -313,10 +345,10 @@ await browser.close()
 
 console.log('\n=== 汇总 ===')
 console.log(
-  `默认态 fast: bg=${initial.fast.backgroundColor} color=${initial.fast.color} / expert: bg=${initial.expert.backgroundColor} color=${initial.expert.color}`
+  `默认态（专家）fast: bg=${initial.fast.backgroundColor} color=${initial.fast.color} / expert: bg=${initial.expert.backgroundColor} color=${initial.expert.color}`
 )
 console.log(
-  `点击后 fast: bg=${afterClick.fast.backgroundColor} color=${afterClick.fast.color} / expert: bg=${afterClick.expert.backgroundColor} color=${afterClick.expert.color}`
+  `点击后（快速）fast: bg=${afterClick.fast.backgroundColor} color=${afterClick.fast.color} / expert: bg=${afterClick.expert.backgroundColor} color=${afterClick.expert.color}`
 )
 served.kill()
 if (failures.length === 0) {

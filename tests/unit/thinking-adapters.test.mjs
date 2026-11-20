@@ -19,7 +19,7 @@
 //   [5] ath 开              → 含 thinking: { type: 'enabled', budget_tokens: 4096 }
 //   [6] ath 关              → 不含 thinking 参数（type=disabled 且没有 budget_tokens）
 //   [7] deepseek 开         → thinking:{type:'enabled'} 且不带 budget_tokens（回归：不动官方渠道）
-//   [8] ours                → 不发任何思考参数（回归：内测渠道不受影响）
+//   [8] ours                → reasoning_effort: 'high'（#363：以前是零字段，开关点了也不生效）
 //   [9] 响应侧 oai          → reasoning_content → thinking 块 + thinking_delta，正文进 text 块
 //  [10] 响应侧 ath          → thinking_delta 事件同理
 //  [11] UI：四渠道开关恒常驻 + data-thinking-effective 标记（#341）
@@ -351,13 +351,16 @@ test('[7] deepseek 开：thinking:{type:enabled} 且不带 budget_tokens（回�
   assert.equal(Object.hasOwn(received ?? {}, 'title'), true, `官方渠道丢了 title：${snippet(received)}`)
 })
 
-test('[8] ours：不发任何思考参数（回归，内测渠道不受影响）', async () => {
+test('[8] ours：开档位发出 reasoning_effort: "high"（#363 之前这里零字段）', async () => {
   mock.reset()
   mock.on(() => ({ status: 200, headers: SSE_HEADERS, body: openaiContentOnlySse('你好') }))
   const { received } = await send('ours', { thinking: true })
-  assert.equal(Object.hasOwn(received ?? {}, 'reasoning_effort'), false, `ours 不该带 reasoning_effort：${snippet(received)}`)
-  assert.equal(Object.hasOwn(received ?? {}, 'thinking'), false, `ours 不该带 thinking：${snippet(received)}`)
-  assert.equal(providers.getSpec('ours').caps.thinking, false, 'ours 不该声明思考能力')
+  // #363：我们自己的网关认 reasoning_effort（服务端 forceReasoning 用的就是同一个字段），
+  // 所以 ours 不该再是「开关亮着、请求里什么都没有」的那一档。档位固定 high。
+  assert.equal(received?.reasoning_effort, 'high', `ours 开档位必须带 reasoning_effort: "high"：${snippet(received)}`)
+  assert.equal(Object.hasOwn(received ?? {}, 'thinking'), false, `reasoning_effort 档不该带 thinking：${snippet(received)}`)
+  assert.equal(providers.getSpec('ours').caps.thinking, true, 'ours 现在必须声明思考能力，否则 data-thinking-effective 会误报')
+  assert.equal(providers.requestGates(providers.getSpec('ours')).reasoning_param, true)
 })
 
 // ============ [9]–[10] 响应侧 ============

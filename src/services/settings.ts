@@ -168,13 +168,27 @@ const initialEnterKeyMode = (): EnterKeyMode => {
 /** 未保存过时使用服务端默认音色 stella（海星） */
 const initialTtsVoice = (): TtsVoice => (read(KEYS.ttsVoice) === 'tide' ? 'tide' : 'stella')
 
-/** 未保存过模式时按旧的「深度思考」键迁移：开着的用户继续算专家模式 */
+/**
+ * 档位默认值 = 专家模式（开思考）。
+ *
+ * #363 的线上取证：1516 个请求里 765 个显式 `reasoning_effort=none`、750 个不带任何思考字段、
+ * **只有 1 个 high** —— 不开思考平均输出 79–121 token，`finish_reason` 全是 `stop`，
+ * 用户反馈的「内容很短」不是被 `max_tokens` 砍的，就是没走推理。产品口径是
+ * 「默认就思考，想省钱/要快可以自己关」（#363 第 2 点），所以缺省档从 fast 改成 expert。
+ *
+ * 已存过档位的用户完全不受影响（`chat-demo:chat-mode` 一读就返回他们自己选的值）；
+ * 只有从没碰过这个开关的机器才会落到缺省值。老键 `chat-demo:thinking` 仍是迁移依据：
+ * 用户明确关过（'false'）才沿用 fast，其余（含从没写过）按新的缺省档走。
+ *
+ * 注意这里改的只是「默认开不开」：某个渠道到底发不发思考字段，仍由 `REQUEST_GATES.reasoning_param`
+ * 按渠道能力决定（#341 / #297 的设计不动，第三方 openai 渠道默认仍是零字段）。
+ */
 const initialChatMode = (): ChatMode => {
   const saved = read(KEYS.chatMode)
   if (saved === 'fast' || saved === 'expert') {
     return saved
   }
-  return read(KEYS.thinking) === 'true' ? 'expert' : 'fast'
+  return read(KEYS.thinking) === 'false' ? 'fast' : 'expert'
 }
 
 export const useSettings = create<Settings>(() => {

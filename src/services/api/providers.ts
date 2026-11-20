@@ -12,7 +12,8 @@
  *   1. deepseek  DeepSeek 官方：地址与模型内置（https://api.deepseek.com / deepseek-flash），只需 Key，能力全开
  *   2. anthropic Anthropic 协议：地址 / 模型 / Key 都要自己填，只有对话 + 深度思考
  *   3. openai    OpenAI 兼容：地址 / 模型 / Key 都要自己填，只有基础对话；深度思考按 reasoningParam 三档（#297）
- *   4. ours      我们的渠道：地址与模型内置（见下），只需 Key，走 OpenAI 协议（/v1/chat/completions + Bearer），只有基础对话
+ *   4. ours      我们的渠道：地址与模型内置（见下），只需 Key，走 OpenAI 协议（/v1/chat/completions + Bearer），
+ *                基础对话 + 深度思考（`reasoning_effort`，档位 high；#363 起真的下发）
  *
  * 内置地址/模型的渠道（deepseek / ours）在 fields 里没有 baseUrl / model，
  * 设置页因此不渲染地址与模型输入行，值只从 defaults 取。
@@ -37,7 +38,8 @@ export type ProviderAuth = 'x-api-key' | 'bearer'
 /**
  * OpenAI 协议下的**显式思考参数**三档（#297）。OpenAI 的 chat/completions 没有通用的思考参数，
  * 各家中转的形状不一样，所以不能写死一个字段：
- * - `none`（默认）：请求侧丢弃，`caps.thinking = false`（入口仍常驻，只改本地档位，#341） —— 第三方中转完全不受影响
+ * - `none`（第三方 openai 渠道的默认）：请求侧丢弃，`caps.thinking = false`（入口仍常驻，只改本地档位，#341）
+ *   —— 第三方中转完全不受影响；`ours` 不再用这一档（#363：我们自己网关的能力是确定的，见下方 spec）
  * - `reasoning_effort`：开启思考时请求体加 `reasoning_effort: low|medium|high`（OpenAI / vLLM 系）
  * - `thinking_enabled`：开启思考时请求体加 `thinking: { type: 'enabled' }`（DeepSeek V3.1 系）
  *
@@ -181,7 +183,8 @@ export const reasoningEffortOf = (
  * #341 起 UI 入口恒常驻：能力位只作为不可见的 `data-thinking-effective` 标记，
  * 不再参与「渲不渲染」的判断。
  * - Anthropic 协议：协议天生有 `thinking` 块，恒为 true
- * - OpenAI 协议：`reasoningParam !== 'none'` 才为 true（默认 none = 保持现状）
+ * - OpenAI 协议：`reasoningParam !== 'none'` 才为 true。第三方 openai 渠道缺省 none（不猜别人的能力），
+ *   我们自己的 ours 渠道是 `reasoning_effort` + high（#363：以前写 none，开关点了也不生效）
  */
 export const thinkingAvailable = (
   spec: Pick<ProviderSpec, 'protocol' | 'reasoningParam'>
@@ -277,8 +280,6 @@ const RAW_SPECS: Record<ProviderKind, RawProviderSpec> = {
     auth: 'bearer',
     // 不带 anthropic-version：OpenAI 协议路径不需要；带上去反而会让中转 CORS 预检失败
     locked: true,
-    // 能力对齐现有 openai 渠道（基础对话）：该路径没有 thinking，开关不要露出来
-    // （reasoningParam 缺省即 none，写着是为了让「这一档是有意选的」在代码里看得见）
     caps: {
       text: true,
       search: false,
@@ -287,7 +288,19 @@ const RAW_SPECS: Record<ProviderKind, RawProviderSpec> = {
       tts: false,
       asr: false,
     },
-    reasoningParam: 'none',
+    /**
+     * 我们自己的网关**认 `reasoning_effort`**（#363）：它是 sub2api 的 OpenAI 兼容面，
+     * 服务端的临时兜底（`forceReasoning()`）已经在往上游塞同一个字段，说明这条链路的
+     * 形状是确定的，不需要靠猜第三方能力（那是 openai 渠道保持 `none` 的理由）。
+     *
+     * 以前这里写 `none`：`thinkingAvailable()` 因此恒为 false → `REQUEST_GATES.reasoning_param`
+     * 恒拦截 → 深度思考开关（#341 起四渠道恒常驻、可点、高亮照翻）**点了也不生效**，
+     * 一个思考字段都不会发；加上默认档位是 fast，线上 1516 个请求里只有 1 个带 high，
+     * 输出自然又短又平（#363 的 79–121 token）。
+     */
+    reasoningParam: 'reasoning_effort',
+    /** 档位固定 high：产品预期是「开思考就真的思考」，medium 对输出长度没有实质改善（#363） */
+    reasoningEffort: 'high',
   },
 }
 

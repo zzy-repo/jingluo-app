@@ -2,14 +2,15 @@
 //
 // GitHub issue #341：深度思考 / 专家模式入口在四个渠道表现一致 —— 入口恒常驻、
 // 外观不降级（不置灰、不带 disabled / aria-disabled）、可点击、档位真翻转；
-// 请求侧由 REQUEST_GATES 拦截，openai / ours 一个思考字段都不发。
+// 请求侧由 REQUEST_GATES 拦截：第三方 openai 一个思考字段都不发；ours 自 #363 起认
+// reasoning_effort（档位 high），门禁放行。
 //
 // 覆盖（对应 issue 的 4 渠道 × 2 入口矩阵）：
 //   [1] 深度思考入口：四渠道都渲染；无 disabled；data-thinking-effective 只标记是否真生效；
 //       点击后 settings.chatMode / thinking / localStorage 真翻转
 //   [2] 快速/专家入口：Welcome.tsx 不再用 caps.thinking 早退，两个 button[data-mode] 恒渲染、
 //       无 disabled、挂 data-thinking-effective；setChatMode 在四渠道都真写档位
-//   [3] 请求体：deepseek / anthropic 照旧带 thinking；openai / ours 经适配层后零思考字段
+//   [3] 请求体：deepseek / anthropic 照旧带 thinking；openai 零思考字段；ours 带 reasoning_effort: high（#363）
 //
 //   node tests/run-layer.mjs unit --only thinking-entry-consistency
 import assert from 'node:assert/strict'
@@ -50,7 +51,9 @@ const { ThinkingToggle, THINKING_TOGGLE_ATTR } = await import(
 )
 
 const KINDS = providers.PROVIDER_KINDS
-const EXPECTED_EFFECTIVE = { deepseek: 'true', anthropic: 'true', openai: 'false', ours: 'false' }
+// #363：ours 从「开关点了也不生效」改成真生效（reasoning_effort + high），所以这里从 false 变 true。
+// 第三方 openai 仍是 false：它的能力我们不知道，不猜（REQUEST_GATES.reasoning_param 拦下）。
+const EXPECTED_EFFECTIVE = { deepseek: 'true', anthropic: 'true', openai: 'false', ours: 'true' }
 
 const TOGGLE_PROPS = {
   label: '深度思考',
@@ -140,8 +143,8 @@ test('[2] 四渠道快速/专家入口恒常驻、无 disabled（Welcome.tsx 不
   }
 })
 
-// ============ [3] 请求侧：四渠道矩阵（官方零变化、openai/ours 零字段） ============
-test('[3] 请求体：deepseek/anthropic 照旧带 thinking，openai/ours 零思考字段（#341）', () => {
+// ============ [3] 请求侧：四渠道矩阵（官方零变化、openai 零字段、ours 带档位） ============
+test('[3] 请求体：deepseek/anthropic 带 thinking，openai 零字段，ours 带 reasoning_effort（#341 / #363）', () => {
   const input = {
     model: 'mock-model',
     system: 'system',
@@ -166,6 +169,16 @@ test('[3] 请求体：deepseek/anthropic 照旧带 thinking，openai/ours 零思
         true,
         `${kind} 的 reasoning_param 门禁应放行`
       )
+    } else if (kind === 'ours') {
+      // #363：我们自己的网关认 reasoning_effort，门禁放行、档位 high —— 开关必须真的生效
+      assert.equal(body.thinking?.type, 'enabled', `ours 请求侧必须开启 thinking：${JSON.stringify(body)}`)
+      assert.equal(sent.reasoning_effort, 'high', `ours 适配后应带 reasoning_effort: high：${JSON.stringify(sent)}`)
+      assert.equal(
+        Object.hasOwn(sent, 'thinking'),
+        false,
+        `ours 走 reasoning_effort 档，不该再带 thinking：${JSON.stringify(sent)}`
+      )
+      assert.equal(providers.requestGates(spec).reasoning_param, true, 'ours 的 reasoning_param 门禁应放行')
     } else {
       assert.equal(body.thinking?.type, 'disabled', `${kind} 请求侧不该开启 thinking`)
       assert.equal(
