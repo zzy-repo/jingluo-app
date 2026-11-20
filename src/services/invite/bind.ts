@@ -2,10 +2,10 @@
  * 「我已经有 Key」——把**已有的** Key 绑定到本机设备码（Issue #86）。
  *
  * 与 /apply（服务端给你的设备**发**一把 Key）是两条不同的链路：
- *   POST http://140.210.13.146:60013/bind   Content-Type: application/json
+ *   POST <invite base>/bind   Content-Type: application/json
  *        { "device_id": "d-xxxxxxxxxxxxxxxx", "api_key": "sk-live-..." }
  *     → 200 { customer_id, invite_code, key, already_bound, adopted_points, bonus_points,
- *             invited_count, max_invites, quota_points, used_points, remaining_points, key_status }
+ *             invited_count, max_invites, quota_points, used_points, <剩余额度字段>, key_status }
  *     → 400 invalid_device / 400 invalid_api_key / 409 key_already_bound / 409 device_already_bound
  *   错误格式与邀请服务一致：{ "error": { "code": "...", "message": "..." } }
  *
@@ -13,7 +13,7 @@
  *  1. **already_bound:true 是成功**，不是错误：同一把 Key 再绑一次，服务端只是重复确认。
  *     所以对外只有一条成功文案（{@link bindSuccessKey}），文案里不出现「已绑定过」。
  *  2. **adopted_points 不给用户看**：它是服务端内部的折算/迁移值，本文件连解析都不解析，
- *     界面上也就没有可显示的入口。额度一律只看 remaining_points（与 #75 的口径一致）。
+ *     界面上也就没有可显示的入口。额度一律只看服务端的剩余额度字段（与 #75 的口径一致）。
  *  3. **兜底只兜链路不通**：只在 NETWORK / TIMEOUT / ROUTE_MISSING 时换 https 备用域名；
  *     业务错误（400/409）说明请求已经到服务端并被处理，绝不重发。
  *

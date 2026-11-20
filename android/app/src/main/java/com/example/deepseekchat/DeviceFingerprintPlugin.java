@@ -49,7 +49,7 @@ import java.util.UUID;
  * {@code android_id_missing | android_id_placeholder | hash_failed}。
  *
  * <p><b>服务端现状</b>（2026-11 实测，证据贴在 Issue #243）：{@code invite/1.0} 目前不认识
- * 指纹，CORS 允许头只有 {@code Content-Type, X-Device-Id}，同一枚指纹换 3 个新 device_id 照样
+ * 指纹，CORS 允许头只有 {@code Content-Type} 与旧设备码头，同一枚指纹换 3 个新设备码照样
  * 各发 100 分。所以这一段是「能力就绪」，不是「漏洞已堵」。
  */
 @CapacitorPlugin(name = "DeviceFingerprint")

@@ -12,7 +12,7 @@
  *  - 界面只调 {@link verifyEmailAndAdopt}，拿到结果渲染。
  *
  * 登录冲突（`device_has_account`）也走这里：`verifyEmailAndAdopt` 把服务端给的
- * {@link EmailConflict}（`email_masked` / `device_remaining_points` / `options`）原样交给界面，
+ * {@link EmailConflict}（`email_masked` / 设备剩余额度字段 / `options`）原样交给界面，
  * 用户选完再带同一个验证码 + `choice` 重发一次 —— 验证码在冲突那次没有被消耗。
  *
  * 范围外（#421 明确不做）：**自动合并账号**（服务端不合并，本机原账号额度保留但要客服处理）、

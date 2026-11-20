@@ -1,16 +1,16 @@
 /**
  * 邀请 / 额度服务的客户端契约层（纯逻辑，网络通过注入的 transport 发出）。
  *
- * 服务端：http://140.210.13.146:60013 —— **明文 HTTP**（同一台机器上的对话上游也是 http，
+ * 服务端：旧池域（invite base，地址只来自 config/endpoints.json）—— **明文 HTTP**（同一台机器上的对话上游也是 http，
  * 见 providers.ts 的 ours.defaults）。只承载设备码、邀请码、积分账本，不承载支付凭据：
- * 卡密与支付一律走 https://apia.ecsafe.cn（见 services/ours/api.ts）。
+ * 卡密与支付一律走支付域（pay base，见 services/ours/api.ts）。
  *
  * 契约（2026-11-18 实测）：
  *   POST /apply   {device_id}
  *        → 201 首次绑定 / 200 已申请（同一 device_id 幂等，可安全重试）
  *        → { key, invite_code, invited_count, max_invites, bonus_points, redeemed,
- *            quota_points, used_points, remaining_points, key_status }
- *   GET  /me?device_id=…
+ *            quota_points, used_points, <剩余额度字段>, key_status }
+ *   GET  /me（设备码作 query 参数）
  *        → 同上但**不含 key**
  *   POST /redeem  {device_id, invite_code}
  *        → 200 { …, reward_points, reward_points_inviter, cashback_points, synced }
@@ -25,7 +25,7 @@
  *   规则数值一律读服务端（/me 与 /redeem 的 `invite_rules`，以及 `cashback_points`），
  *   前端不写死金额/积分数；字段缺失（老服务端）解析成 null，界面整行隐藏。
  *
- * 额度口径：**remaining_points 就是可消费积分**，1 元 = 100 积分。
+ * 额度口径：旧服务返回的「剩余额度」字段就是可消费积分，1 元 = 100 积分。
  * 不要用卡密服务的 /api/balance 当余额（它只回答 Key 是否有效）。
  */
 
@@ -470,7 +470,7 @@ export type InviteProfileResult =
     }
   | ({ kind: 'error' } & Failure)
 
-/** 查档案与额度：GET /me?device_id=…（不含 key）。`deviceFp` 同上：有就带，没有就照旧。 */
+/** 查档案与额度：GET /me（设备码作 query，不含 key）。`deviceFp` 同上：有就带，没有就照旧。 */
 export const fetchInviteProfile = async (
   deviceId: string,
   transport: OursTransport,
@@ -573,9 +573,9 @@ export const isInviteCodeShape = (value: string): boolean => /^[A-Z0-9]{4,16}$/.
 // ------------------------------------------------------------------ 卡密兑换迁本机池（Issue #72）
 
 /**
- * 卡密兑换改打本机池：POST http://140.210.13.146:60013/redeem-card
+ * 卡密兑换改打本机池：POST <invite base>/redeem-card
  *
- * 为什么搬：旧链路 https://apia.ecsafe.cn/api/redeem 要走公网 + 跨机校验，实测直接超时
+ * 为什么搬：旧链路（支付域的 /api/redeem）要走公网 + 跨机校验，实测直接超时
  * （curl: (28) timed out after 8015 ms, http_code=000）；本机池实测 0.98s 就能返回
  * 真实的业务错误码。旧接口保留为兜底，池不可达（网络层失败 / 路由不存在）时退回它。
  *
@@ -889,7 +889,7 @@ export const runWithDeviceSelfHeal = async <T extends { kind: string; code?: str
  *
  * 登录冲突（`device_has_account`）在这里被翻成 {@link EmailConflict} 而不是普通错误：
  * 弹窗与「带 choice 重发」的交互在界面层，本层只负责把 `email_masked` /
- * `device_remaining_points` / `options` 如实交出去（验证码此时尚未消耗）。
+ * 本机原账号的设备剩余额度字段 / `options` 如实交出去（验证码此时尚未消耗）。
  *
  * 明确不做（#421 范围外）：**自动合并账号**（服务端不合并，数据保留、需客服处理）、支付链路改动。
  */
@@ -1132,7 +1132,7 @@ export type EmailConflict = {
   kind: 'conflict'
   /** 这次要换上的那个脱敏邮箱（服务端 `email_masked`）；没回就是 null */
   emailMasked: string | null
-  /** 本机原账号剩余额度（服务端 `device_remaining_points`）：**必须展示** */
+  /** 本机原账号剩余额度（服务端返回的设备剩余额度字段）：**必须展示** */
   deviceRemainingPoints: number | null
   /** 服务端允许的选项；没给 / 给坏时按契约的两个都给 */
   options: EmailChoice[]
@@ -1296,7 +1296,7 @@ export type EmailStatusResult =
   | EmailError
 
 /**
- * 查本机账号是否已绑邮箱：GET /email/status?device_id=（只读，不返回 Key）。
+ * 查本机账号是否已绑邮箱：GET /email/status（设备码作 query，只读，不返回 Key）。
  *
  * 入口探测的唯一判据（#421 第 4 点）：
  *  - 404 + error.code === 'not_found' → disabled（隐藏入口）；

@@ -1,10 +1,10 @@
 /**
  * 换一把 Key —— `POST /rotate`（Issue #90；云端语义变更见 #357）。
  *
- *   POST http://140.210.13.146:60013/rotate   Content-Type: application/json
+ *   POST <invite base>/rotate   Content-Type: application/json
  *        { "device_id": "d-xxxxxxxxxxxxxxxx" }        ← **只要设备码，不要旧 Key**
  *     → 200 { key, rotated, key_id, note, total_points,
- *             customer_id, invite_code, quota_points, remaining_points, key_status, ... }
+ *             customer_id, invite_code, quota_points, <剩余额度字段>, key_status, ... }
  *     → 404 device_not_found / 400 invalid_device / 500 internal
  *   错误格式与邀请服务一致：{ "error": { "code": "...", "message": "..." } }
  *
@@ -16,7 +16,7 @@
  *     不是「没换成功」；
  *   - 旧 Key 不会失效（因为这还是同一把），所以 #90 时代「旧 Key 立即失效、换出无法找回」
  *     的文案也已经和实际不符，随本单一并改掉；
- *   - 重置后的总额度看 `total_points` / `remaining_points`（额度口径仍只认 `remaining_points`）。
+ *   - 重置后的总额度看 `total_points` / 服务端剩余额度字段（额度口径仍只认它）。
  *
  * ## 判定口径（本文件的核心，#357）
  *
@@ -46,7 +46,7 @@
  *     再点一次拿到的就是当前可用的那把 Key，额度按同一套规则重算。
  *
  * 排查字段 `previous_key_id` / `carried_used_points` **连解析都不做**（issue 要求不展示），
- * 所以界面上也没有可显示的入口。额度一律只看 `remaining_points`（与 #75 的口径一致）；
+ * 所以界面上也没有可显示的入口。额度一律只看服务端剩余额度字段（与 #75 的口径一致）；
  * 判断「这次响应里到底有没有额度信息」另有一个只看字段是否存在的探针
  * `hasQuotaFields`（#357），它不解析、不外泄字段名。
  *
@@ -152,7 +152,7 @@ export type RotateVia = 'primary' | 'fallback'
  *
  * 为什么不能只看 `parseInviteProfile` 的结果：#357 正文的样例响应是
  * `{ key, rotated: false, key_id, note, total_points: 300 }` —— 既没有 `invite_code`
- * 也没有 `remaining_points`，`profile` 会是 null，但额度信息**确实有**。
+ * 也没有剩余额度字段，`profile` 会是 null，但额度信息**确实有**。
  */
 const QUOTA_FIELDS = ['total_points', 'quota_points', 'remaining_points', 'carried_used_points'] as const
 

@@ -6,7 +6,7 @@
  * 见 transport.ts）。因此 Node 单测可以直接 import 本文件，用假 transport 断言
  * 「发了什么请求、怎么解释响应」。
  *
- * 服务端契约（2026-11-19 实测，https://apia.ecsafe.cn，全站 HTTPS）：
+ * 服务端契约（2026-11-19 实测，pay base = __ENDPOINTS__.pay.baseUrl，全站 HTTPS）：
  *   GET  /api/plans                      → { plans: [{ id, name, price, points, currency, enabled }] }
  *                                          价格与积分由服务端决定，App 不得硬编码
  *                                          （Issue #331：套餐全线下架，现返回 {"plans": []}）
@@ -17,7 +17,7 @@
  *   GET  /api/balance  Authorization: Bearer <Key>
  *                                        → { api_key: "…013812", valid: true }
  *                                          ⚠️ 只反映 Key 是否有效，**不返回剩余积分**：
- *                                          额度一律取邀请服务 /me 的 remaining_points（见 services/invite）
+ *                                          额度一律取旧邀请服务 /me 的剩余额度字段（见 services/invite）
  *   错误统一 { code, message, request_id }
  *
  * Issue #331：支付已切到联动小铺 —— 收款页地址由 `/api/pay-link` 下发、在 App 内浏览器打开，
@@ -38,8 +38,8 @@ import { maskCard, maskKey, maskTail } from './mask.js'
 
 export { maskCard, maskDeviceId, maskKey, maskTail } from './mask.js'
 
-/** 卡密 / 支付服务地址（HTTPS）：价格、积分、发卡、兑换都问它 */
-export const OURS_API_BASE = 'https://apia.ecsafe.cn'
+/** 卡密 / 支付服务地址（HTTPS）：价格、积分、发卡、兑换都问它 —— 只来自 config/endpoints.json 的 `pay.baseUrl`（#484 §6.1 / A6） */
+export const OURS_API_BASE = __ENDPOINTS__.pay.baseUrl.replace(/\/+$/u, '')
 
 /** 各接口的读超时（毫秒）；超时与网络错误在状态里分开，文案也不同 */
 export const OURS_TIMEOUTS = {
@@ -206,7 +206,7 @@ export const formatPoints = (points: number, unit: string): string =>
 
 /**
  * Key 校验结果。**只回答「这把 Key 服务端认不认」**，不携带任何额度信息：
- * 额度属于邀请服务（/me 的 remaining_points），不要拿这里当余额用。
+ * 额度属于旧邀请服务（/me 的剩余额度字段），不要拿这里当余额用。
  */
 export type OursKeyProbe =
   | { status: 'valid' | 'invalid'; keyTail: string }
