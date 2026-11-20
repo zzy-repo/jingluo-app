@@ -7,7 +7,17 @@ import {
   getFileErrorCode,
   isRetryableApiError,
 } from '../api/errors.js'
-import { cancelUpload, describeUploadError, uploadAttachment, useUploads } from '../attachments.js'
+import {
+  cancelUpload,
+  describeUploadError,
+  dismissUploadTask,
+  uploadAttachment,
+  useUploads,
+} from '../attachments.js'
+import {
+  shouldReuploadHistoryAttachment,
+  shouldUploadQuestionAttachment,
+} from './historyAttachment.js'
 import {
   captureStateSnapshot,
   errorMeta,
@@ -1053,7 +1063,7 @@ const prepareFiles = async (sessionId: string, request: Request, signal: AbortSi
     signal.addEventListener('abort', () => reject(signal.reason), { once: true })
   })
   const uploads = Promise.allSettled(
-    request.question.files.map(async (file) => {
+    request.question.files.filter(shouldUploadQuestionAttachment).map(async (file) => {
       const serverId = await ensureServerId(apiKey, file)
       if (serverId) {
         serverIds.set(file.id, serverId)
@@ -1075,7 +1085,11 @@ const prepareFiles = async (sessionId: string, request: Request, signal: AbortSi
   // toReversed 同样是 ES2023（WebView 110+），旧 WebView 会抛错；复制后 reverse 语义等价。
   for (const [user] of [...getContextRounds(request.history)].reverse()) {
     for (const file of user.files) {
-      if (!file.serverId && !serverIds.has(file.id) && !pending.has(file.id)) {
+      if (
+        shouldReuploadHistoryAttachment(file) &&
+        !serverIds.has(file.id) &&
+        !pending.has(file.id)
+      ) {
         pending.set(file.id, file)
       }
     }
@@ -1090,6 +1104,9 @@ const prepareFiles = async (sessionId: string, request: Request, signal: AbortSi
       }
     } catch {
       signal.throwIfAborted()
+      // 补传失败不阻断发送（该附件本来就不进入本次请求），但失败态不能留在任务表里：
+      // 消息卡片读任务表，留着就会显示成「这张历史附件上传失败」（#379）
+      dismissUploadTask(file.id)
     }
   }
 

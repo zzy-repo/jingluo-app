@@ -320,6 +320,19 @@ export const cancelUpload = (id: string) => {
   setTask(id, null)
 }
 
+/**
+ * 清掉某个附件的上传任务状态（不取消进行中的请求）。
+ *
+ * 历史附件补传是「尽力而为」：失败时该附件本来就不进入本次请求，
+ * 但任务表里的 error 会被消息卡片读走、显示成「这张附件上传失败」（#379）。
+ * 补传失败后把状态清回 null，卡片只剩缩略图，不会误导用户去修一个本来就不该发的附件。
+ */
+export const dismissUploadTask = (id: string) => {
+  if (useUploads.getState().tasks[id]?.status === 'error') {
+    setTask(id, null)
+  }
+}
+
 /** 各扩展名对应的 MIME：部分系统（如 Windows）给不出 file.type，按扩展名补齐 */
 const MIME_BY_EXT: Record<string, string> = {
   png: 'image/png',

@@ -67,6 +67,8 @@ const toFile = (file: FileEntry): FileAttachment => ({
   isImage: file.is_image,
   // 图片身份来自归档；原件随后从 ZIP 读取后补充具体 MIME。
   mimeType: '',
+  // 归档附件属于既有记录：不参与后续补传（#379），原件只用于展示历史缩略图。
+  imported: true,
 })
 
 const toUser = (message: ChatMessage): UserMessage => ({
