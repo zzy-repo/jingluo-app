@@ -58,6 +58,11 @@ const argv = process.argv.slice(2)
 let expectSeam = false
 const targets = []
 for (const arg of argv) {
+  // `pnpm run <script> -- --expect-seam` 会把那个 `--` 原样透传给脚本（pnpm 9 实测，
+  // npm 会吃掉它）—— 两个包管理器都得能用，所以这里直接忽略分隔符本身。
+  if (arg === '--') {
+    continue
+  }
   if (arg === '--expect-seam') {
     expectSeam = true
     continue

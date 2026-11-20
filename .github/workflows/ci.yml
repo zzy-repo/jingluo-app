@@ -364,7 +364,7 @@ jobs:
       # 正向对照：上面这一步确实是「接缝构建」——扫不到假 token 说明开关没生效，
       # 那样 G1~G11 会以「登录页挡住了」的形式假红，先在这里拆穿。
       - name: 正向对照：接缝构建的产物里必须扫得到假会话（check:test-seam --expect-seam）
-        run: pnpm run check:test-seam -- --expect-seam dist
+        run: node scripts/check-test-seam.mjs --expect-seam dist
 
       - name: 黄金回归（每域 1 条主路径）
         env:

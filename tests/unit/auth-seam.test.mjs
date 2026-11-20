@@ -152,3 +152,8 @@ test('未打包环境（node --test）的接缝只走显式安装：installTestA
   }
   assert.equal(typeof __TEST_AUTH_STATE__, 'undefined', '卸掉之后必须回到「读不到」')
 })
+
+test('门禁脚本认 `--` 分隔符（pnpm run <script> -- --expect-seam 会把 `--` 原样透传）', () => {
+  const script = readSource('scripts/check-test-seam.mjs')
+  assert.match(script, /if \(arg === '--'\) \{\s*continue/u, 'pnpm 9 会把 `--` 透传给脚本，解析时必须忽略它')
+})
