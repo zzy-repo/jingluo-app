@@ -37,6 +37,7 @@
 
 import { readFileSync } from 'node:fs'
 
+import { validateConsumePay } from './consumeEndpoints.mjs'
 import { ENDPOINTS_FILE, URL_FIELDS, validateEndpoints } from './endpointsSchema.mjs'
 
 export { ENDPOINTS_FILE, URL_FIELDS, parseUrl, portOf, validateEndpoints } from './endpointsSchema.mjs'
@@ -46,8 +47,11 @@ export { ENDPOINTS_FILE, URL_FIELDS, parseUrl, portOf, validateEndpoints } from 
  * 不合法直接抛错 —— 端点表不对的时候宁可启动失败，也不要带着错地址跑。
  */
 export const loadEndpoints = (file = ENDPOINTS_FILE) => {
-  const raw = JSON.parse(readFileSync(file, 'utf8'))
-  const problems = validateEndpoints(raw)
+  const text = readFileSync(file, 'utf8')
+  const raw = JSON.parse(text)
+  // 旧池域那三份地址（#274）与消费 / 支付两段（#484 W1-A）各用各的判据：
+  // 前者要求同一台机器 + 主机/端口白名单，后者是另外两台机器（https + 废弃域 + 互不相同）。
+  const problems = [...validateEndpoints(raw), ...validateConsumePay(raw, text)]
   if (problems.length > 0) {
     throw new Error(`${file} 不合法：\n  - ${problems.join('\n  - ')}`)
   }
@@ -60,6 +64,14 @@ export const loadEndpoints = (file = ENDPOINTS_FILE) => {
     allowedPorts: Object.freeze([...raw.allowedPorts]),
     downloadPrimaryBase: raw.download.primaryBase.trim(),
     downloadFallbackBase: raw.download.fallbackBase.trim(),
+    // 消费侧（sub2api）：账号/额度/卡密兑换/Key 管理（#484 W1-A）
+    consumeBaseUrl: raw.consume.baseUrl.trim(),
+    consumeApiV1Prefix: raw.consume.apiV1Prefix,
+    consumeGatewayPrefix: raw.consume.gatewayPrefix,
+    consumeTimeouts: Object.freeze({ ...raw.consume.timeoutMs }),
+    // 支付侧（apia）：只负责买卡，不迁（#482 定调）
+    payBaseUrl: raw.pay.baseUrl.trim(),
+    payTimeouts: Object.freeze({ ...raw.pay.timeoutMs }),
   })
 }
 
@@ -81,6 +93,19 @@ export const allowedPorts = config.allowedPorts
 export const downloadPrimaryBase = config.downloadPrimaryBase
 /** 分发回退机（`UpdateEndpoint.FALLBACK_BASE` / `FALLBACK_RELEASE_BASE`，Issue #269） */
 export const downloadFallbackBase = config.downloadFallbackBase
+
+/** 消费侧地址（sub2api 的 `__ENDPOINTS__.consume.baseUrl` / `BuildConfig.CONSUME_BASE`） */
+export const consumeBaseUrl = config.consumeBaseUrl
+/** 消费侧 JWT 前缀（固定 `/api/v1`，见 #484 §三） */
+export const consumeApiV1Prefix = config.consumeApiV1Prefix
+/** 消费侧 API Key 前缀（固定 `/v1`） */
+export const consumeGatewayPrefix = config.consumeGatewayPrefix
+/** 消费侧超时档位（read / write / redeem，毫秒）：调用点不许再写死毫秒数 */
+export const consumeTimeouts = config.consumeTimeouts
+/** 支付侧地址（apia 的 `__ENDPOINTS__.pay.baseUrl` / `BuildConfig.PAY_BASE`） */
+export const payBaseUrl = config.payBaseUrl
+/** 支付侧超时档位（read / write，毫秒） */
+export const payTimeouts = config.payTimeouts
 
 /** 三个地址字段 → 值（提示文案 / 注入 / 文案表格用，不要再另抄一份） */
 export const endpointUrls = Object.freeze({

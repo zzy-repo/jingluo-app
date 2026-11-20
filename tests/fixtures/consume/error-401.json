@@ -1,0 +1,52 @@
+{
+  "_meta": {
+    "request": "GET /api/v1/auth/me",
+    "auth": "none (deliberately no Authorization header)",
+    "captured_at": "2026-11-20T15:44:48+08:00",
+    "http_status": 401,
+    "content_type": "application/json; charset=utf-8",
+    "shape": "MIDDLEWARE envelope: {code:<UPPER_SNAKE_STRING>, message} - NOT the {code:0/HTTP-int,...} panel envelope",
+    "variants_observed": [
+      {
+        "trigger": "no Authorization header at all",
+        "status": 401,
+        "code": "UNAUTHORIZED",
+        "message": "Authorization header is required"
+      },
+      {
+        "trigger": "Authorization header without 'Bearer ' prefix",
+        "status": 401,
+        "code": "INVALID_AUTH_HEADER",
+        "message": "Authorization header format must be 'Bearer {token}'"
+      },
+      {
+        "trigger": "Bearer with unparsable/foreign JWT",
+        "status": 401,
+        "code": "INVALID_TOKEN",
+        "message": "Invalid token"
+      },
+      {
+        "trigger": "/api/v1/admin/* with no header",
+        "status": 401,
+        "code": "UNAUTHORIZED",
+        "message": "Authorization required"
+      },
+      {
+        "trigger": "/v1/* gateway with no key",
+        "status": 401,
+        "code": "API_KEY_REQUIRED",
+        "message": "API key is required in Authorization header (Bearer scheme), x-api-key header, or x-goog-api-key header"
+      },
+      {
+        "trigger": "/v1/* gateway with wrong sk- key",
+        "status": 401,
+        "code": "INVALID_API_KEY",
+        "message": "Invalid API key"
+      }
+    ],
+    "ui_warning": "The admin variant message is 'Authorization required' while the user variant is 'Authorization header is required'. Never match on message text - match on code.",
+    "source": "sub2api 实例只读探测（2026-11-20，实例 0.2.22）；主机名已脱敏移除"
+  },
+  "code": "UNAUTHORIZED",
+  "message": "Authorization header is required"
+}

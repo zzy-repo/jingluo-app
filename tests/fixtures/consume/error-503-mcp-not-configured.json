@@ -1,0 +1,14 @@
+{
+  "_meta": {
+    "request": "GET /api/v1/mcp",
+    "auth": "none",
+    "captured_at": "2026-11-20T15:44:48+08:00",
+    "http_status": 503,
+    "shape": "middleware envelope with UPPER_SNAKE code, status 503",
+    "cause": "settings.public.mcp_enabled = false",
+    "doc_conflict": "Doc §1.2 lists /api/v1/mcp as returning OAuth discovery metadata; the 503 branch is undocumented.",
+    "source": "sub2api 实例只读探测（2026-11-20，实例 0.2.22）；主机名已脱敏移除"
+  },
+  "code": "MCP_OAUTH_NOT_CONFIGURED",
+  "message": "Configure the public MCP endpoint URL before enabling MCP OAuth."
+}

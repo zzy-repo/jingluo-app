@@ -1,0 +1,21 @@
+{
+  "_meta": {
+    "request": "GET /api/v1/usage?start_date=&end_date=&timezone=Asia/Shanghai（JWT）",
+    "auth": "JWT（值已脱敏）",
+    "captured_at": "2026-11-20T16:00:00+08:00",
+    "http_status": 200,
+    "content_type": "application/json; charset=utf-8",
+    "envelope": "panel success: data = PaginatedData{items,total,page,page_size,pages}（item 字段未观测到：本账号无用量）",
+    "instance_version": "0.2.20",
+    "source": "本地联调实例（http://127.0.0.1:18000）真实响应"
+  },
+  "code": 0,
+  "message": "success",
+  "data": {
+    "items": [],
+    "total": 0,
+    "page": 1,
+    "page_size": 20,
+    "pages": 1
+  }
+}
