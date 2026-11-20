@@ -1,0 +1,270 @@
+/**
+ * 登录 / 注册页样式（W1-B 前半，Issue #487）。
+ *
+ * 取舍：
+ *  - **单列、窄容器**：390 / 360 两档手机视口下不横向滚动，输入框高度沿用仓库控件下限（44px）；
+ *  - 颜色全走 `theme.css` 的 alias token，不写死色值 —— 深色主题跟着变，不另开一套；
+ *  - 认证页是「全屏一张卡」而不是弹层：它在登录墙后面，没有可关闭的宿主界面（AuthGate 的用法）。
+ */
+
+.page {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  box-sizing: border-box;
+  min-height: 100vh;
+  padding: 32px 20px calc(32px + env(safe-area-inset-bottom));
+  background-color: var(--dsw-alias-bg-base);
+  color: var(--dsw-alias-label-primary);
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 372px;
+  margin: 0 auto;
+}
+
+.title {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 600;
+  line-height: 30px;
+  letter-spacing: -0.2px;
+}
+
+/* 错误条：颜色只表达「这次提交失败了」，具体说什么由 i18n key 决定 */
+.banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background-color: var(--dsw-alias-interactive-bg-hover-danger);
+  color: var(--dsw-alias-state-error-primary);
+  font-size: 13px;
+  line-height: 20px;
+  word-break: break-word;
+}
+
+.bannerIcon {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.label {
+  color: var(--dsw-alias-label-secondary);
+  font-size: 13px;
+  line-height: 18px;
+  user-select: none;
+}
+
+.input {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 44px;
+  padding: 11px 12px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 10px;
+  background-color: var(--dsw-specific-login-input);
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  font-size: 14px;
+  line-height: 20px;
+  outline: none;
+
+  &::placeholder {
+    color: var(--dsw-alias-label-caption);
+  }
+
+  /* #215：WebView 下限 Chromium 83 不认 `:focus-visible` —— 只用它会整条丢规则，键盘走上来什么都看不到。
+  ① `:focus` 兜底（83 上只有这段生效）②现代内核用 `:focus:not(:focus-visible)` 收回鼠标点击态
+  ③ `:focus-visible` 接管键盘态。三段与 Button.module.css 同一口径。 */
+  &:focus {
+    border-color: var(--dsw-alias-brand-primary);
+    outline: 2px solid var(--dsw-alias-brand-primary);
+    outline-offset: 1px;
+  }
+
+  &:focus:not(:focus-visible) {
+    outline: none;
+  }
+
+  &:focus-visible {
+    border-color: var(--dsw-alias-brand-primary);
+    outline: 2px solid var(--dsw-alias-brand-primary);
+    outline-offset: 1px;
+  }
+}
+
+/* 本地校验没过：只标记红框 + aria-invalid（缺文案的词条见 authForm.ts 的 TODO，不在这里硬编文案） */
+.inputInvalid {
+  border-color: var(--dsw-alias-state-error-primary);
+}
+
+.fieldError {
+  color: var(--dsw-alias-state-error-primary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.hint {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+/* 验证码行：输入框吃满剩余宽度，按钮固定不换行；360 档也不挤成两行 */
+.codeRow {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+}
+
+.codeRow .input {
+  flex: 1;
+  min-width: 0;
+}
+
+.codeButton {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.actions {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 2px;
+}
+
+.submit {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+/* 提交中：按钮里的小 spinner（不引入新文案，「正在做什么」由按钮自身的文字表达） */
+.spinner {
+  width: 14px;
+  height: 14px;
+  box-sizing: border-box;
+  border: 2px solid rgb(255 255 255 / 45%);
+  border-top-color: var(--dsw-alias-label-primary-inverted);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+.switchRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 6px 14px;
+  margin-top: 6px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 13px;
+  line-height: 20px;
+}
+
+/* 文字按钮：48px 高、透明底 —— 手机上点击区够大，视觉上仍是一行链接 */
+.linkButton {
+  min-height: 32px;
+  padding: 4px 2px;
+  border: 0;
+  background: none;
+  color: var(--dsw-alias-brand-text);
+  font: inherit;
+  font-size: 13px;
+  line-height: 20px;
+  cursor: pointer;
+
+  &:disabled {
+    color: var(--dsw-alias-label-caption);
+    cursor: default;
+  }
+}
+
+/* 启动恢复中的占位：只有一个 spinner，不做假骨架（登录墙后面什么都不该假装已经加载好了） */
+.gateLoading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  background-color: var(--dsw-alias-bg-base);
+}
+
+.gateSpinner {
+  width: 22px;
+  height: 22px;
+  box-sizing: border-box;
+  border: 2px solid var(--dsw-alias-border-l3);
+  border-top-color: var(--dsw-alias-brand-primary);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spinner,
+  .gateSpinner {
+    animation: none;
+  }
+}
+
+/* #173-fallback:start —— 由 node scripts/gen-flex-gap-fallback.mjs 生成，勿手改（issue #173） */
+:global(html[data-flex-gap-fallback]) .card > *:not(:last-child) {
+  margin-bottom: 18px;
+}
+
+:global(html[data-flex-gap-fallback]) .banner > *:not(:last-child) {
+  margin-right: 8px;
+}
+
+:global(html[data-flex-gap-fallback]) .form > *:not(:last-child) {
+  margin-bottom: 14px;
+}
+
+:global(html[data-flex-gap-fallback]) .field > *:not(:last-child) {
+  margin-bottom: 6px;
+}
+
+:global(html[data-flex-gap-fallback]) .codeRow > *:not(:last-child) {
+  margin-right: 8px;
+}
+
+:global(html[data-flex-gap-fallback]) .actions > *:not(:last-child) {
+  margin-bottom: 4px;
+}
+
+:global(html[data-flex-gap-fallback]) .submit > *:not(:last-child) {
+  margin-right: 8px;
+}
+
+:global(html[data-flex-gap-fallback]) .switchRow > *:not(:last-child) {
+  margin-right: 14px;
+  margin-bottom: 6px;
+}
+/* #173-fallback:end */
