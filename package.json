@@ -40,6 +40,7 @@
     "check:i18n": "node scripts/check-i18n.mjs",
     "gen:grapheme": "node scripts/gen-grapheme-tables.mjs",
     "shot:mobile": "node scripts/shot-mobile.mjs",
+    "shot:consume-panels": "node scripts/shot-consume-panels.mjs",
     "mock:sub2api": "node tools/mock-sub2api/server.mjs",
     "lint": "oxlint src rspack.config.ts",
     "format": "oxfmt --write .",

@@ -1113,4 +1113,41 @@ export const en = {
   consumeErrInvitationInvalid: 'Invalid invitation code. Check it and try again.',
   consumeErrEmailCodeInvalid: 'The verification code is wrong or has expired. Request a new one.',
   consumeErrNotEnabled: 'This feature is not enabled yet. Contact support to enable it.',
+  // ---------------------------------------------------------------------------
+  // W1-C2 account/consume panels (quota / account / invites / email binding, #487).
+  // The `consumeErr*` error wording already landed in #504, so it is not redefined here;
+  // these are only the plain labels the four panels need. Amounts are CNY (1 yuan = 1 quota):
+  // the symbol comes from the panels' formatCurrency helper, never from a template here.
+  // ---------------------------------------------------------------------------
+  consumeBalanceLabel: 'Balance',
+  consumeAccountTitle: 'Account',
+  consumeProfileTitle: 'Account details',
+  consumeUsed: 'Used',
+  consumeRemaining: 'Remaining',
+  consumeUnlimited: 'Unlimited',
+  consumeRegisteredAt: 'Registered',
+  consumeKeyEmpty: 'No Key yet. Name it and press “Create Key”.',
+  consumeLoadMore: 'Load more',
+  consumeLoadingMore: 'Loading…',
+  consumeUsageEmpty: 'No usage records yet',
+  consumeRequestsCount: '{count} requests',
+  consumeTokensCount: '{count} tokens',
+  consumeNoKeyTitle: 'No usable Key yet',
+  consumeNoKeyBody: 'Balance and usage can only be read with a Key. Create one in the Account tab.',
+  consumeKeyOnceTitle: 'This Key is shown only once',
+  consumeKeyOnceBody:
+    'For security the full Key is shown once, right after it is created, and cannot be viewed again. Copy and store it now.',
+  consumeKeyTailOnly: 'The list only shows the last 4 characters',
+  consumeKeyOnceSaved: 'I saved it',
+  consumeKeyNameRequired: 'Give the Key a name first',
+  consumeKeyDeleted: 'Deleted',
+  consumeNeedLogin: 'Your session expired, please log in again',
+  consumeLogoutConfirm: 'You will need to log in again to keep using the app. Log out?',
+  consumeLogoutSuccess: 'Logged out',
+  inviteRebateRate: 'Rebates pay {percent}% of what your invitees spend, credited to the rebate balance',
+  inviteRebateFrozen: '{amount} of it is frozen',
+  emailBindNotBound: 'No email bound yet',
+  emailBindCodeLabel: 'Verification code',
+  emailBindUnbindConfirm: 'After unbinding, this email is no longer linked to the account. Unbind?',
+  emailBindCannotUnbind: 'This is the only way to sign in to the account, so it cannot be unbound',
 } satisfies Record<keyof typeof zh, string>

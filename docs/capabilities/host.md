@@ -4,7 +4,7 @@
 >
 > **快照基准：`acf6826`**（`origin/main` tip，2026-11-19 12:28:21 +0800）· 采集时间：2026-11-19 18:55 (+0800)
 >
-> **扫描范围**：`src/**` 的 **234** 个源文件。
+> **扫描范围**：`src/**` 的 **244** 个源文件。
 >
 > 拆分：`.ts` 174 / `.tsx` 59 / `.html` 1 = 234（#487 W1-A 新增 `src/services/consume/**` 9 个 `.ts`，W1-B 再新增 `src/services/auth/**` 5 个 `.ts` 与 `src/components/auth/**` 3 个 `.tsx`）。上一版写 190，是缺了 `#237`（`fetch` 通道计数、`readBytesOf`）与 `#243`（设备指纹）新增的 5 个文件。
 >
@@ -292,3 +292,4 @@
 
 - 复核（2026-11-20 16:20，基准 `d198ccc`，本单 #487 W1-A 分支 `feat/consume-layer`）：新增 9 个 `.ts`（`src/services/consume/**`：http / errors / auth / keys / usage / redeem / aff / email / index）。`http.ts` 用 `Capacitor.isNativePlatform()` 判「是不是原生环境」（非原生直接回 `unsupported`，不做 fetch 兜底），因此 `Capacitor.isNativePlatform` 10 → **11**（`无风险` 8 → **9**，Chromium 83 无此 API 但它是 Capacitor 注入的宿主能力，非原生分支即兜底）。命中总数 123 → **124**、`无风险` 38 → **39**、风险分布 低 109 → **110**（高 / 中未变）。扫描范围 217 → **226** 个源文件（`.ts` 169 / `.tsx` 56 / `.html` 1）。其余能力计数与 §「真实漏洞」5 条一处未变；`src/services/consume/http.ts` 新增的 `AbortController` / `fetch` 是**注释里的说明文字**，不进命中。
 - 复核（2026-11-20 16:35，基准 `e504986`，本单 #487 W1-B 分支 `feat/auth-layer-skeleton`）：新增 5 个 `.ts`（`src/services/auth/{types,transport,store,flags}.ts`、`src/components/auth/authForm.ts`）与 3 个 `.tsx`（`AuthGate` / `LoginPage` / `RegisterPage`），扫描范围 226 → **234** 个源文件（`.ts` 169 → **174**、`.tsx` 56 → **59**）。命中总数 124 → **127** 条：`src/services/auth/store.ts` 的凭据存储 `read`（`:92`）与 `write`（`removeItem` `:101` / `setItem` `:103`）各 1 处 `localStorage`，三处都自带 `try…catch`（存储不可用只影响「下次要不要重登」），记 `已有兜底`；`localStorage` 16 → **19**（`已有兜底` 15 → **18**）。风险分布 低 110 → **113**（高 4 / 中 10 未变）。
+- 复核（2026-11-20 17:00，基准 `3392efa`，本单 #487 W1-C2 分支 `feat/consume-panels`，「账户与消费」四面板）：新增 10 个 `.ts / .tsx`（`src/components/consume/**`），扫描范围 234 → **244** 个源文件。新代码**不新增任何宿主能力调用**：不碰 storage（余额不落本地，#484 §七 第 6 条）、不碰 fetch / Capacitor（网络全走 W1-A 的 `services/consume/**`），复制仍走既有的 `src/utils/clipboard.ts` 的 `copyText`，`navigator.clipboard` 的命中数与判定不变。**命中总数仍是 127 条**，各能力计数与风险分布未变。

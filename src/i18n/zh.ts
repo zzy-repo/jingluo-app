@@ -1098,4 +1098,55 @@ export const zh = {
   consumeErrInvitationInvalid: '邀请码无效，请核对后再填',
   consumeErrEmailCodeInvalid: '验证码不对或已过期，请重新获取',
   consumeErrNotEnabled: '这个功能还没开放，请联系客服开通',
+  // ---------------------------------------------------------------------------
+  // W1-C2 四个面板（额度 / 账号 / 邀请 / 邮箱绑定，#487）：
+  //   1. `consumeErr*` 的 27 条错误文案已由 #504 落地（W1-A 收尾），本单**不重复定义**；
+  //      面板只认 `error.i18nKey` 取文案，永不显示服务端英文 message（#484 §四）。
+  //   2. 这里只补四个面板必需的纯标签（已用 / 剩余 / 加载更多 / 一次性 Key 提示…）。金额一律「元」
+  //      （CNY，1 元 = 1 额度）：符号由组件层的 formatCurrency 按 currency 渲染，不经这份表；
+  //      不写任何「填邀请码立刻得积分」的旧玩法（#484 §3.1b）。
+  // ---------------------------------------------------------------------------
+  /** 卡密「已用过」= 可能正是自己上一次成功：先让用户核对余额，不要直接说失败 */
+  /** `REDEEM_CODE_LOCKED` 是「处理中」不是失败（#484 §4.4：禁止提示换卡 / 重复提交） */
+
+  // 额度面板（唯一入口是 sk- Key 的 /v1/usage；余额只在内存里跟着响应走）
+  /** 「余额」标签：`consumeBalance` 是金额模板（`${amount}`），不是标签，别混用 */
+  consumeBalanceLabel: '余额',
+  consumeUsed: '已用',
+  consumeRemaining: '剩余',
+  /** `quota.limit === 0` = 不限（不是零额度，#484 §4.5 第 10 条） */
+  consumeUnlimited: '不限',
+  consumeLoadMore: '加载更多',
+  consumeLoadingMore: '正在加载…',
+  consumeUsageEmpty: '还没有用量记录',
+  consumeRequestsCount: '{count} 次请求',
+  consumeTokensCount: '{count} 令牌',
+  consumeNoKeyTitle: '还没有可用的 Key',
+  consumeNoKeyBody: '余额和用量都要用 Key 才能查。请到「账号」标签页创建一把 Key。',
+
+  // 账号面板（Key 创建后只完整显示一次是安全设计，必须在界面上说清）
+  consumeAccountTitle: '账号',
+  consumeProfileTitle: '账号资料',
+  consumeRegisteredAt: '注册时间',
+  consumeKeyEmpty: '还没有 Key。给它起个名字，点「创建 Key」就好。',
+  consumeKeyOnceTitle: 'Key 只显示这一次',
+  consumeKeyOnceBody: '为了安全，完整 Key 只在创建成功后显示一次，关掉后就无法再次查看。请现在复制并妥善保存。',
+  consumeKeyTailOnly: '列表里只显示末尾 4 位',
+  /** 一次性 Key 那个块的关闭按钮：说「我保存好了」而不是干巴巴的「确定」 */
+  consumeKeyOnceSaved: '我保存好了',
+  consumeKeyNameRequired: '请先给 Key 起个名字',
+  consumeKeyDeleted: '已删除',
+  consumeNeedLogin: '登录状态已失效，请重新登录',
+  consumeLogoutConfirm: '退出后需要重新登录才能继续使用，确认退出吗？',
+  consumeLogoutSuccess: '已退出登录',
+
+  // 邀请面板（返利按 USD 比例结算，邀请关系只在注册时一次填定）
+  inviteRebateRate: '返利按下线消费额的 {percent}% 结算，结算后计入返利余额',
+  inviteRebateFrozen: '其中 {amount} 冻结中',
+
+  // 邮箱绑定面板（`email_verify_enabled=false` 时不再强调「必须先验证」）
+  emailBindNotBound: '尚未绑定邮箱',
+  emailBindCodeLabel: '验证码',
+  emailBindUnbindConfirm: '解绑后这个邮箱将不再与账号关联，确认解绑吗？',
+  emailBindCannotUnbind: '这是账号唯一的登录方式，不能解绑',
 } as const
