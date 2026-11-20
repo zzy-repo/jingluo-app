@@ -38,8 +38,12 @@ import { loadOrCreateDeviceId, type DeviceIdState, type DeviceIdStorage, type Ra
 /** 主链路：与设备码 / 邀请 / 额度同一台机器（明文 HTTP） */
 export const BIND_URL = `${INVITE_API_BASE}/bind`
 
-/** 备用域名：主链路整条不通（DNS / 反代没配 / 超时）时用，HTTPS */
-export const BIND_FALLBACK_URL = 'https://apia.ecsafe.cn/invite/bind'
+/**
+ * 备用域名：主链路整条不通（DNS / 反代没配 / 超时）时用，HTTPS。
+ * 地址不写字面量（#484 A6）：就是支付侧 apia 的 base（`config/endpoints.json` 的 `pay.baseUrl`），
+ * 构建期经 `__ENDPOINTS__` 注入。
+ */
+export const BIND_FALLBACK_URL = `${__ENDPOINTS__.pay.baseUrl}/invite/bind`
 
 export const BIND_TIMEOUTS = {
   bind: 15000,

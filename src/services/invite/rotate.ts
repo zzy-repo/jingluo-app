@@ -70,8 +70,12 @@ import {
 /** 主链路：与设备码 / 邀请 / 额度同一台机器（明文 HTTP） */
 export const ROTATE_URL = `${INVITE_API_BASE}/rotate`
 
-/** 备用域名：主链路整条不通（DNS / 反代没配 / 超时）时用，HTTPS，会绕跨机链路但能通 */
-export const ROTATE_FALLBACK_URL = 'https://apia.ecsafe.cn/invite/rotate'
+/**
+ * 备用域名：主链路整条不通（DNS / 反代没配 / 超时）时用，HTTPS，会绕跨机链路但能通。
+ * 地址不写字面量（#484 A6）：就是支付侧 apia 的 base（`config/endpoints.json` 的 `pay.baseUrl`），
+ * 构建期经 `__ENDPOINTS__` 注入；与 `services/ours/api.ts` 的服务端同一台。
+ */
+export const ROTATE_FALLBACK_URL = `${__ENDPOINTS__.pay.baseUrl}/invite/rotate`
 
 export const ROTATE_TIMEOUTS = {
   rotate: 15000,

@@ -14,12 +14,20 @@
 // （apiConfig.ts / providers.ts / invite/api.ts / diagnostics/config.ts），没预加载就会
 // `ReferenceError: __ENDPOINTS__ is not defined`。
 //
+// 登录接缝（`__TEST_AUTH_STATE__`，#510）**故意不在这里设默认值** ——
+// 它读的是构建期常量（`AuthGate` 里那句 `typeof __TEST_AUTH_STATE__`），而预加载一旦给出
+// 「已登录」的默认会话，所有「未登录才该出现登录页」的单测就一起变成假红/假绿：登录页、注册入口、
+// 过期提示这些断言全都测不到东西了。需要它的用例自己调文件末尾的 `installTestAuthState()`（显式、可搜）；
+// 浏览器层的黄金回归 / L1 不靠这条预加载 —— 它们读的是**测试构建**的产物
+// （`TEST_AUTH_SEAM=1 pnpm build`），见 scripts/lib/testAuthSeam.mjs。
+//
 // 只设 `__ENDPOINTS__`，**不动** `__API_ORIGIN__` / `__INTERNAL_BUILD__`：
 // 那两个的取值是按用例来的（有的用例要 https://api.deepseek.com，有的要内部构建号），
 // 各用例自己 `globalThis.X ??= ...` 设，预加载要是抢先把默认值占住，用例显式设的值就失效了。
 //
 // 端点值全部来自 config/endpoints.json（经 scripts/lib/endpoints.mjs），测试不再自己抄地址。
 
+import { SEAM_SESSION } from '../../scripts/lib/testAuthSeam.mjs'
 import {
   allowedHosts,
   chatBaseUrl,
@@ -75,3 +83,28 @@ export const installEndpointsGlobals = () => {
 // `import './injected.mjs'`（tests/helpers/contract.mjs / 各单测文件）、以及
 // `tests/helpers/dom-env.mjs` 顶部的副作用导入，三种路径都在这里落地，不需要谁再记得调函数。
 installEndpointsGlobals()
+
+// --------------------------------------------------------------------------- 登录接缝（#510）
+
+/**
+ * 假会话（取值来自唯一来源 `scripts/lib/testAuthSeam.mjs` 的 `SEAM_SESSION`，token 一眼假）。
+ * 只导出、**不自动安装**：见文件头「故意不在这里设默认值」。
+ */
+export const TEST_AUTH_STATE = SEAM_SESSION
+
+/**
+ * 给「需要启动即已登录」的单测装上接缝：设成**运行期 global**（构建期常量在没打包的 Node 里不存在，
+ * 而 `AuthGate` 用的是 `typeof __TEST_AUTH_STATE__` 写法，正好能读到 global）。
+ *
+ * 浏览器层别用这个：dist 里那句已经是 `typeof undefined`，设 global 不会有任何效果 ——
+ * 那边靠 `TEST_AUTH_SEAM=1` 构建（见 docs/TESTING-POLICY.md 第 13 节）。
+ */
+export const installTestAuthState = (session = TEST_AUTH_STATE) => {
+  globalThis.__TEST_AUTH_STATE__ = session
+  return session
+}
+
+/** 卸掉接缝（用例之间互不污染） */
+export const uninstallTestAuthState = () => {
+  delete globalThis.__TEST_AUTH_STATE__
+}

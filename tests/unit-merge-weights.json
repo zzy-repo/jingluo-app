@@ -333,14 +333,8 @@
   "ours-purchases.test.mjs": {
    "ms": 54
   },
-  "ours-trail.test.mjs": {
-   "ms": 58
-  },
   "pay-link.test.mjs": {
    "ms": 227
-  },
-  "payment-trail-ui.test.mjs": {
-   "ms": 73
   },
   "provider-caps-lock.test.mjs": {
    "ms": 6
@@ -356,9 +350,6 @@
   },
   "domain03-provider-probe-matrix.test.mjs": {
    "ms": 15662
-  },
-  "purchases-ui.test.mjs": {
-   "ms": 33
   },
   "quota-exhausted.test.mjs": {
    "ms": 1309

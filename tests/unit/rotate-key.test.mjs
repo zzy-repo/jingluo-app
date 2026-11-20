@@ -252,14 +252,16 @@ test('[6b] 400 invalid_device 不重生设备码、不重发：交用户重启 A
 
 // ------------------------------------------------------------------ [7] 兜底只兜链路不通
 
-test('[7] 主链路不通 → 兜底 https://apia.ecsafe.cn/invite/rotate，且只兜一次', async () => {
+test('[7] 主链路不通 → 兜底支付侧 base 的 /invite/rotate，且只兜一次', async () => {
   const { transport, calls } = makeTransport([{ kind: 'timeout', message: 't' }, json(200, SUCCESS_BODY)])
   const { outcome, storage } = await runRotate({ transport })
 
+  // 兜底地址不再写字面量（#484 A6）：就是 config/endpoints.json 里 pay.baseUrl 那一台
+  const fallbackUrl = `${globalThis.__ENDPOINTS__.pay.baseUrl}/invite/rotate`
   assert.equal(calls.length, 2)
   assert.equal(calls[0].url, rotate.ROTATE_URL)
-  assert.equal(calls[1].url, 'https://apia.ecsafe.cn/invite/rotate')
-  assert.equal(rotate.ROTATE_FALLBACK_URL, 'https://apia.ecsafe.cn/invite/rotate')
+  assert.equal(calls[1].url, fallbackUrl)
+  assert.equal(rotate.ROTATE_FALLBACK_URL, fallbackUrl)
   assert.equal(JSON.parse(calls[1].body).device_id, DEVICE_ID)
   assert.equal(outcome.kind, 'ok')
   assert.equal(outcome.via, 'fallback')

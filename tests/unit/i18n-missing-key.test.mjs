@@ -85,17 +85,17 @@ test('30 分钟去重：同一个 key 连调 50 次只留 1 条', async () => {
   assert.equal(missingKeyHits('noSuchKeySpam').length, 1)
 })
 
-test('缺占位符：保留 {total} 不崩，只记参数名不记值', async () => {
+test('缺占位符：保留 {count} 不崩，只记参数名不记值', async () => {
   await clearLogs()
-  const output = translate('oursTrailCount', {})
-  // zh 的 oursTrailCount 是 `共 {total} 笔`：没传参会原样保留占位符，而不是静默变成空串
-  assert.equal(output, '共 {total} 笔')
+  const output = translate('messageSearchSummaries', {})
+  // zh 的 messageSearchSummaries 是 `{count} 个网页`：没传参会原样保留占位符，而不是静默变成空串
+  assert.equal(output, '{count} 个网页')
   await settle()
   const hits = hitsOf((entry) => entry.meta?.reason === 'missing_param')
   assert.equal(hits.length, 1)
   assert.equal(hits[0].msg, 'i18n param missing')
-  assert.equal(hits[0].meta.i18nKey, 'oursTrailCount')
-  assert.equal(hits[0].meta.param, 'total')
+  assert.equal(hits[0].meta.i18nKey, 'messageSearchSummaries')
+  assert.equal(hits[0].meta.param, 'count')
   assert.ok(!JSON.stringify(hits[0].meta).includes('undefined'))
 })
 

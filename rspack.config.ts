@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url'
 import { defineConfig } from '@rspack/cli'
 import { rspack, type Configuration } from '@rspack/core'
 import { assertBrowserslist } from './scripts/lib/compatBaseline.mjs'
+import { SEAM_FLAG, SEAM_SESSION, seamEnabled } from './scripts/lib/testAuthSeam.mjs'
 
 const dev = process.env.NODE_ENV !== 'production'
 const root = path.dirname(fileURLToPath(import.meta.url))
@@ -38,6 +39,23 @@ const targets = pkg.browserslist ?? []
 // 而且 targets 为空时代码会先塞 fallback `['chrome >= 83']` 再去断言 —— 断言被自己塞进去的值满足，
 // 等于恒真，「browserslist 被人删了」这种最该拦的情形反而通过。
 assertBrowserslist(targets)
+
+/**
+ * 登录接缝（Issue #487 W1-B 后半，#510）：**构建期常量**，与运行期开关无关。
+ *
+ * 只有测试构建（`TEST_AUTH_SEAM=1`，CI 的黄金回归 / L1 那两步）注入真值；其余构建（含
+ * `pnpm build` 与发版构建）一律注入字符串 `'undefined'`，于是 AuthGate 里
+ * `typeof __TEST_AUTH_STATE__ !== 'undefined' ? __TEST_AUTH_STATE__ : undefined` 会折叠成
+ * `undefined`、守卫整段被死代码消除 —— 线上产物里**没有这条路**。
+ *
+ * 为什么不用「运行期读 globalThis / URL 参数 / localStorage 标记」：那种写法会把「读到某个值就
+ * 放行」的分支原样留在线上 bundle 里，等于给出一条可被利用的旁路。取值、标记与安全论证的唯一
+ * 出处是 `scripts/lib/testAuthSeam.mjs`（构建后扫描与 CI 门禁读同一份标记）。
+ */
+const testAuthSeam = seamEnabled()
+if (testAuthSeam) {
+  process.stderr.write(`[rspack][WARN] ${SEAM_FLAG}=1：正在构建**测试接缝**产物（内联假会话），绝不能用于发版\n`)
+}
 
 /** Android versionCode（诊断上报用，读不到记 0） */
 const readVersionCode = (): number => Number(pkg.androidVersionCode ?? 0) || 0
@@ -273,6 +291,9 @@ export const createConfig = ({
       meta: { 'application-version': appVersion },
     }),
     new rspack.DefinePlugin({
+      // 登录接缝（#510）：默认注入 `undefined` —— 见上方 `testAuthSeam` 的说明；
+      // 真值只在 `TEST_AUTH_SEAM=1` 的测试构建里出现（假 token 是产物扫描的拦截标记）。
+      __TEST_AUTH_STATE__: testAuthSeam ? JSON.stringify(SEAM_SESSION) : 'undefined',
       __API_ORIGIN__: JSON.stringify(apiOrigin),
       __INTERNAL_BUILD__: JSON.stringify(internalBuild),
       __APP_VERSION__: JSON.stringify(appVersion),

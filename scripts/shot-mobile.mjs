@@ -32,56 +32,9 @@ import { zipSync, strToU8 } from 'fflate'
 import { chromium } from 'playwright'
 
 import { inviteBaseUrl } from './lib/endpoints.mjs'
-// 支付记录时间线的夹具与单测共用一份（tests/fixtures/domain06-07/ours-trail.mjs）：
-// 截图里看到的五状态 + 长链路就是单测断言的那几条，不另造一份假数据。
-import { cardTrailRedeemed, orderTrailResponse, trailPage } from '../tests/fixtures/domain06-07/ours-trail.mjs'
 // #386 的「流式中」截图要把 streaming 这个状态撑开：用同一份 ours 上游契约回 SSE（含 CORS 头），
 // 只是刻意延后 4 秒再回，好在上翻之后再截。
 import { OURS_CHAT_PATH, OURS_CORS, openAiSse } from '../tests/fixtures/domain03-04/ours-upstream.mjs'
-
-/**
- * #326（支付记录分页 + 状态筛选）专用夹具：45 条订单 = 20 + 20 + 5 三页，按状态配额分布
- * （fulfilled 18 / created 9 / expired 9 / failed 9），所以切到「已关闭」正好筛出 9 条。
- *
- * 两点刻意的取舍：
- *  - **不放 `PAID`**：该状态会触发 4 秒静默轮询，量数与截图之间内容会被换掉；分页要的是稳定帧，
- *    「已支付·等待发卡」那条分支由 #189 场景（`payment-trail`）覆盖。
- *  - **单号唯一**：客户端按 `out_trade_no` 去重，夹具里留重复单号会把「翻页重复」这个缺陷掩盖掉。
- */
-/**
- * #325 卡密溯源场景的拦截配置。**故意做成可变对象**：场景里查完「自己的卡」后
- * 把 `cardStatus` 改成 404 再点一次，模拟「拿自己的 Key 查别人的卡」——
- * `routeTrail` 的闭包和 `run` 拿到的是同一份，所以改一处就换口径。
- */
-const cardTrailDef = { page: trailPage, card: cardTrailRedeemed }
-
-const pagedTrailPage = (() => {
-  const templateOf = (status) => trailPage.orders.find((item) => item.status === status)
-  const quota = [
-    ['FULFILLED', 18],
-    ['CREATED', 9],
-    ['EXPIRED', 9],
-    ['FAILED', 9],
-  ]
-  const orders = []
-  for (const [status, count] of quota) {
-    const template = templateOf(status)
-    if (template === undefined) throw new Error(`夹具里没有 ${status} 状态的订单，分页场景无法生成`)
-    for (let index = 0; index < count; index += 1) {
-      orders.push({ ...template, out_trade_no: `CP2026111900${String(1000 + orders.length)}` })
-    }
-  }
-  return { ...trailPage, total: orders.length, orders }
-})()
-
-/** 等列表里的订单条数到达 `expected`（「加载更多」是异步追加，不等就量会量到旧帧） */
-const waitForOrderCount = async (page, expected) => {
-  await page.waitForFunction(
-    (count) => document.querySelectorAll('[data-testid="trail-order"]').length === count,
-    expected,
-    { timeout: 15000 }
-  )
-}
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const ROOT = path.resolve(HERE, '..')
@@ -933,65 +886,6 @@ const routeOrders = async (context, makeBody) => {
   })
 }
 
-/**
- * 拦 `GET /api/trail` / `/api/order/trail` / `/api/card/trail`（#189 截图用）。
- *
- * 与 `routeOrders` 同一套坑：查询串要用正则匹配路径、OPTIONS 预检要 204 + 齐 CORS 头，
- * 否则请求会真的打到线上域名（截出来是「正在读取支付记录…」的假象）。
- * `/api/trail` 真的按 limit / offset / status 过滤，截到的是「发了一次请求再渲染」的结果。
- */
-const routeTrail = async (context, def) => {
-  await context.route(/\/api\/(?:trail|order\/trail|card\/trail)(?:\?|$)/u, async (route) => {
-    const request = route.request()
-    const headers = {
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Headers': 'authorization,accept,content-type',
-      'Access-Control-Allow-Methods': 'GET,OPTIONS',
-      'Access-Control-Max-Age': '600',
-    }
-    if (request.method() === 'OPTIONS') {
-      await route.fulfill({ status: 204, headers })
-      return
-    }
-    const url = new URL(request.url())
-    // 卡号查询单独一档状态码（#325）：要截「他人卡 404」又不能让 `/api/trail` 一起红，
-    // 所以 `cardStatus` 只作用在 `/api/card/trail` 上（`status` 仍是三个接口共用的老口径）。
-    const isCardTrail = url.pathname === '/api/card/trail'
-    let body
-    if (url.pathname === '/api/order/trail') {
-      body = def.order ?? orderTrailResponse
-    } else if (isCardTrail) {
-      const cardStatus = def.cardStatus ?? def.status ?? 200
-      body =
-        cardStatus >= 400
-          ? (def.cardError ?? { code: 'CARD_NOT_FOUND', message: '卡密不存在', request_id: 'card-325' })
-          : (def.card ?? cardTrailRedeemed)
-    } else {
-      const page = def.page ?? trailPage
-      const limit = Number(url.searchParams.get('limit') ?? page.limit)
-      const offset = Number(url.searchParams.get('offset') ?? 0)
-      const status = (url.searchParams.get('status') ?? '').trim().toUpperCase()
-      const matched =
-        status === ''
-          ? page.orders
-          : page.orders.filter((item) => String(item.status).toUpperCase() === status)
-      body = {
-        ...page,
-        total: matched.length,
-        limit,
-        offset,
-        orders: matched.slice(offset, offset + limit),
-      }
-    }
-    await route.fulfill({
-      status: isCardTrail ? (def.cardStatus ?? def.status ?? 200) : (def.status ?? 200),
-      contentType: 'application/json',
-      headers,
-      body: JSON.stringify(body),
-    })
-  })
-}
-
 // ---------------------------------------------------------------- UI 动作
 
 const S = {
@@ -1006,8 +900,6 @@ const S = {
   optionXLarge: '特大',
   optionBold: '粗体',
   optionRelaxed: '宽松',
-  paymentRecordsOpen: '[data-testid="payment-records-open"]',
-  paymentTrailOpen: '[data-testid="payment-trail-open"]',
   oursServicesOpen: '[data-testid="ours-services-open"]',
   douyinCopy: '[data-testid="douyin-id-copy"]',
   titleButton: 'button[aria-label*="回到首条消息"]',
@@ -1147,11 +1039,9 @@ const dialogClip = async (page, minHeight = 200) =>
  *  - `dir`        截图默认落地目录（`--out=` 可覆盖）
  *  - `title`      一句话说明（`--list` 会打印）
  *  - `sessions`   IndexedDB fixture，返回要写进 `chat-demo` 的会话数组
- *  - `mockOrders` 是否把 `GET /api/orders` 换成空订单响应（只在付款记录场景打开）
  *  - `mockPurchases` 用给定订单回真实的 `GET /api/orders`（带 limit/offset/status 过滤），
  *    这样分页与筛选 tab 截到的是「真的走了一遍请求」的结果，见 #158
- *  - `trail`      用给定夹具回 `GET /api/trail` / `/api/order/trail` / `/api/card/trail`（#189）
- *  - `providerKind` 覆盖 localStorage 里的渠道类型（默认 deepseek）；#189 的入口只在 ours 下出现
+ *  - `providerKind` 覆盖 localStorage 里的渠道类型（默认 deepseek）；自有渠道的入口只在 ours 下出现
  *  - `run`        该场景的截图与量数步骤
  */
 export const PAGES = {
@@ -1159,7 +1049,6 @@ export const PAGES = {
     dir: 'docs/ui/106-mobile-header-scroll-top',
     title: '#106 移动端顶栏：「双击回顶」提示、44px 点击区、双击后回到首条消息',
     sessions: () => [makeLongSession()],
-    mockOrders: false,
     run: async (ctx) => {
       const { page, shot, record, warn } = ctx
       await openSession(page, LONG_SESSION_TITLE)
@@ -1213,7 +1102,6 @@ export const PAGES = {
     dir: 'docs/ui/386-scroll-to-bottom',
     title: '#386 输入框上方「回到底部」小箭头：上翻浮现 / 点击回底 / 流式中的新内容圆点 / 深色主题',
     sessions: () => [makeLongSession()],
-    mockOrders: false,
     // 流式那条要真的走 ours 上游（被 route 打到本地桩），所以渠道也切到 ours
     providerKind: 'ours',
     run: async (ctx) => {
@@ -1341,7 +1229,6 @@ export const PAGES = {
     dir: 'docs/ui/102-reading-settings',
     title: '#102 设置 → 通用设置 → 阅读设置：三个下拉的渲染，默认档与最大档的文字渲染对比',
     sessions: () => [makeReadingSession()],
-    mockOrders: false,
     run: async (ctx) => {
       const { page, shot, record, warn } = ctx
       await openSession(page, READING_SESSION_TITLE)
@@ -1406,449 +1293,10 @@ export const PAGES = {
     },
   },
 
-  'payment-records': {
-    dir: 'docs/ui/115-payment-records',
-    title: '#115 设置 → 数据管理 → 付款记录：入口与弹层（当前无订单，只截空状态）',
-    sessions: () => [makeReadingSession()],
-    mockOrders: true,
-    run: async (ctx) => {
-      const { page, shot, record } = ctx
-      await openSettings(page, S.tabData)
-      const entry = page.locator(S.paymentRecordsOpen)
-      await entry.scrollIntoViewIfNeeded()
-      await page.waitForTimeout(240)
-      await shot('01-settings-data-entry')
-      await entry.click()
-      await page.waitForTimeout(700)
-      // 付款记录是叠在设置面板之上的第二层对话框：取 DOM 里最后一个可见的，别把外层设置面板的量进去
-      const dialog = await page.evaluate(() => {
-        const dialogs = Array.from(document.querySelectorAll('[role="dialog"]')).filter((element) => {
-          const rect = element.getBoundingClientRect()
-          return rect.width > 200 && rect.height > 100
-        })
-        const element = dialogs[dialogs.length - 1]
-        if (element === undefined) return null
-        const rect = element.getBoundingClientRect()
-        return {
-          layers: dialogs.length,
-          text: (element.innerText ?? '').trim(),
-          box: {
-            x: Math.round(rect.x),
-            y: Math.round(rect.y),
-            width: Math.round(rect.width),
-            height: Math.round(rect.height),
-          },
-        }
-      })
-      if (dialog === null) {
-        throw new Error('付款记录弹层没有打开')
-      }
-      record('dialog', dialog)
-      record('state', {
-        empty: dialog.text.includes('还没有付款记录'),
-        error: /Unauthorized|请求失败|网络错误|订单查询失败/i.test(dialog.text),
-      })
-      await shot('02-payment-records')
-      await shot('03-payment-records-closeup', {
-        clip: { x: dialog.box.x, y: dialog.box.y, width: dialog.box.width, height: dialog.box.height },
-      })
-    },
-  },
-
-  'payment-trail': {
-    dir: 'docs/ui/189-payment-trail',
-    title: '#189 设置 → 数据管理 → 支付记录：订单与卡密全程时间线（五状态 / 已关闭≠失败 / 长链路滚动）',
-    sessions: () => [makeReadingSession()],
-    mockOrders: false,
-    // 这条入口只在自有渠道出现（#166 的门禁思路），所以把渠道类型切到 ours；
-    // 默认的 deepseek 下它不该出现，这一点由单测 shouldShowPaymentTrail 断言，截图不重复证明。
-    providerKind: 'ours',
-    trail: { page: trailPage },
-    run: async (ctx) => {
-      const { page, shot, record, warn } = ctx
-      // 量数：弹层里真的渲染了多少单、多少事件、滚动容器够不够滚、有没有横向溢出
-      const measure = () =>
-        page.evaluate(() => {
-          const root = document.querySelector('[data-testid="payment-trail"]')
-          const viewportWidth = document.documentElement.clientWidth
-          const overflowing = []
-          if (root !== null) {
-            for (const node of root.querySelectorAll('*')) {
-              const rect = node.getBoundingClientRect()
-              if (rect.width > 0 && rect.right > viewportWidth + 1) {
-                overflowing.push({
-                  tag: node.tagName,
-                  right: Math.round(rect.right),
-                  text: (node.textContent ?? '').slice(0, 20),
-                })
-              }
-            }
-          }
-          // 滚动发生在哪一层由布局决定，不写死选择器：从 trail-root 往上找第一个真溢出的
-          let host = null
-          for (let node = root; node !== null; node = node.parentElement) {
-            if (node.scrollHeight - node.clientHeight > 2) {
-              host = node
-              break
-            }
-          }
-          const statuses = Array.from(root?.querySelectorAll('[data-testid="trail-order"]') ?? []).map(
-            (node) => node.getAttribute('data-status')
-          )
-          const tones = Array.from(root?.querySelectorAll('[data-testid="trail-order"]') ?? []).map(
-            (node) => node.getAttribute('data-tone')
-          )
-          return {
-            viewportWidth,
-            documentScrollWidth: Math.round(document.documentElement.scrollWidth),
-            orderCount: root?.querySelectorAll('[data-testid="trail-order"]').length ?? 0,
-            eventCount: root?.querySelectorAll('[data-testid="trail-event"]').length ?? 0,
-            cardCount: root?.querySelectorAll('[data-testid="trail-card"]').length ?? 0,
-            backfilledCount: root?.querySelectorAll('[data-testid="trail-backfilled"]').length ?? 0,
-            nextStepCount: root?.querySelectorAll('[data-testid="trail-next-step"]').length ?? 0,
-            statuses,
-            tones,
-            scrollable:
-              host === null
-                ? null
-                : {
-                    scrollHeight: Math.round(host.scrollHeight),
-                    clientHeight: Math.round(host.clientHeight),
-                    scrollTop: Math.round(host.scrollTop),
-                  },
-            overflowCount: overflowing.length,
-            overflowSamples: overflowing.slice(0, 5),
-          }
-        })
-
-      await openSettings(page, S.tabData)
-      const entry = page.locator(S.paymentTrailOpen)
-      await entry.waitFor({ state: 'visible', timeout: 10000 })
-      await entry.scrollIntoViewIfNeeded()
-      await page.waitForTimeout(240)
-      await shot('01-settings-data-entry')
-
-      await entry.click()
-      const root = page.locator('[data-testid="payment-trail"]')
-      await root.waitFor({ state: 'visible', timeout: 10000 })
-      await page.waitForTimeout(700)
-      const top = await measure()
-      record('list', top)
-      if (top.orderCount === 0) {
-        throw new Error('支付记录弹层里一单都没有：路由没拦住或渲染报错')
-      }
-      if (!top.statuses.includes('expired') || !top.tones.includes('muted')) {
-        warn(`已关闭的订单没有走弱化色调：statuses=${top.statuses} tones=${top.tones}`)
-      }
-      await shot('02-trail-list')
-
-      // 长链路：最后一单有 9 个事件（含补录），滚到底再截一张，证明长列表在弹层内部滚动
-      const lastOrder = page.locator('[data-testid="trail-order"]').last()
-      await lastOrder.scrollIntoViewIfNeeded()
-      await page.waitForTimeout(420)
-      const bottom = await measure()
-      record('longOrder', bottom)
-      if (bottom.scrollable === null) {
-        warn('弹层里没有可滚动的容器：长列表会撑破视口')
-      } else if (bottom.scrollable.scrollHeight <= bottom.scrollable.clientHeight) {
-        warn(`长列表没溢出：scrollHeight=${bottom.scrollable.scrollHeight} clientHeight=${bottom.scrollable.clientHeight}`)
-      }
-      await shot('03-trail-long-order')
-    },
-  },
-
-  /**
-   * #326 验收：支付记录的分页 + 状态筛选。
-   *
-   * 与上面 `payment-trail` 分开一条场景（目录也分开），理由：那条是 #189 的证据，夹具是 6 条订单、
-   * 本来就「一屏到底」；分页要看的是 45 条（20 + 20 + 5）三页的追加行为与末页，混在一起会互相覆盖截图。
-   *
-   * 45 条按五状态轮转生成（各 9 条），这样「已关闭」页签筛出来的正好 9 条，能同时证明
-   * ①加载更多按 20 递增 ②末页按钮换成「已经到底了」③切筛选后列表与 total 一起重置
-   * ④页签条在 390 / 360 两档都不横向溢出。
-   */
-  'payment-trail-paging': {
-    dir: 'docs/ui/326-payment-trail',
-    title: '#326 支付记录：分页（20/页 + 加载更多）与状态筛选（全部 / 五状态）',
-    sessions: () => [makeReadingSession()],
-    mockOrders: false,
-    providerKind: 'ours',
-    trail: { page: pagedTrailPage },
-    run: async (ctx) => {
-      const { page, shot, record, warn } = ctx
-      /** 量数：页签文案、列表条数、统计条、底部状态块，以及有没有横向溢出 */
-      const measure = () =>
-        page.evaluate(() => {
-          const root = document.querySelector('[data-testid="payment-trail"]')
-          const viewportWidth = document.documentElement.clientWidth
-          const overflowing = []
-          if (root !== null) {
-            for (const node of root.querySelectorAll('*')) {
-              const rect = node.getBoundingClientRect()
-              if (rect.width > 0 && rect.right > viewportWidth + 1) {
-                overflowing.push({ tag: node.tagName, right: Math.round(rect.right) })
-              }
-            }
-          }
-          const tabs = Array.from(root?.querySelectorAll('[role="tab"]') ?? []).map((node) => ({
-            text: (node.textContent ?? '').trim(),
-            selected: node.getAttribute('aria-selected') === 'true',
-          }))
-          const nos = Array.from(root?.querySelectorAll('[data-testid="trail-order"]') ?? []).map(
-            (node) => node.getAttribute('data-out-trade-no')
-          )
-          return {
-            viewportWidth,
-            documentScrollWidth: Math.round(document.documentElement.scrollWidth),
-            tabs,
-            orderCount: nos.length,
-            uniqueOrderCount: new Set(nos).size,
-            statuses: Array.from(root?.querySelectorAll('[data-testid="trail-order"]') ?? []).map(
-              (node) => node.getAttribute('data-status')
-            ),
-            summary: (root?.querySelector('[data-testid="trail-summary"]')?.textContent ?? '').trim(),
-            loadMore: root?.querySelector('[data-testid="trail-load-more"]') !== null,
-            loadingMore: root?.querySelector('[data-testid="trail-loading-more"]') !== null,
-            moreError: root?.querySelector('[data-testid="trail-more-error"]') !== null,
-            end: root?.querySelector('[data-testid="trail-end"]') !== null,
-            endText: (root?.querySelector('[data-testid="trail-end"]')?.textContent ?? '').trim(),
-            overflowCount: overflowing.length,
-            overflowSamples: overflowing.slice(0, 5),
-          }
-        })
-
-      await openSettings(page, S.tabData)
-      const entry = page.locator(S.paymentTrailOpen)
-      await entry.waitFor({ state: 'visible', timeout: 10000 })
-      await entry.click()
-      const root = page.locator('[data-testid="payment-trail"]')
-      await root.waitFor({ state: 'visible', timeout: 10000 })
-      await page.waitForTimeout(700)
-
-      const first = await measure()
-      record('page1', first)
-      if (first.orderCount !== 20) {
-        throw new Error(`第一页应该是 20 条，实际 ${first.orderCount} 条（分页参数没生效？）`)
-      }
-      if (!first.loadMore) {
-        throw new Error('第一页底部没有「加载更多」按钮')
-      }
-      if (first.tabs.length !== 6 || !first.tabs.some((tab) => tab.selected && tab.text === '全部')) {
-        throw new Error(`页签条不对：${JSON.stringify(first.tabs)}`)
-      }
-      if (!first.summary.includes('共 45 笔')) {
-        throw new Error(`统计条没有按服务端 total 显示 45 笔：${first.summary}`)
-      }
-      if (first.overflowCount > 0) {
-        warn(`页签条 / 卡片横向溢出 ${first.overflowCount} 处：${JSON.stringify(first.overflowSamples)}`)
-      }
-      await shot('01-trail-paging-first-page')
-
-      // 第 2 页：点一次「加载更多」，已渲染的 20 条必须原地保留
-      await page.locator('[data-testid="trail-load-more"]').scrollIntoViewIfNeeded()
-      await page.waitForTimeout(200)
-      await shot('02-trail-load-more-button')
-      await page.locator('[data-testid="trail-load-more"]').click()
-      await waitForOrderCount(page, 40)
-      const second = await measure()
-      record('page2', second)
-      if (second.orderCount !== 40 || second.uniqueOrderCount !== 40) {
-        throw new Error(`第 2 页应累加到 40 条且不重复，实际 ${second.orderCount}/${second.uniqueOrderCount}`)
-      }
-      if (!second.summary.includes('共 45 笔')) {
-        throw new Error(`翻页把统计条改掉了：${second.summary}`)
-      }
-      // 截「追加出来的那一段」：滚到最后一单，画面里是第 21 条起的新记录（而不是又一张首屏）
-      await page.locator('[data-testid="trail-order"]').last().scrollIntoViewIfNeeded()
-      await page.waitForTimeout(320)
-      await shot('03-trail-second-page')
-
-      // 第 3 页：末页应把按钮换成「已经到底了」
-      await page.locator('[data-testid="trail-load-more"]').scrollIntoViewIfNeeded()
-      await page.locator('[data-testid="trail-load-more"]').click()
-      await waitForOrderCount(page, 45)
-      const last = await measure()
-      record('page3', last)
-      if (last.orderCount !== 45 || last.uniqueOrderCount !== 45) {
-        throw new Error(`末页应有 45 条不重复记录，实际 ${last.orderCount}/${last.uniqueOrderCount}`)
-      }
-      if (last.loadMore || !last.end) {
-        throw new Error(`末页应换「已经到底了」：loadMore=${last.loadMore} end=${last.end}`)
-      }
-      // 「已经到底了」在最后一单下面：滚到底才截得到（否则画面里只有卡片、看不出末页状态）
-      await page.locator('[data-testid="trail-end"]').scrollIntoViewIfNeeded()
-      await page.waitForTimeout(320)
-      await shot('04-trail-end-of-list')
-
-      // 状态筛选：切到「已关闭」→ 只剩 expired，且 total 换成筛选后的数字
-      await page.locator('[data-testid="trail-tab-expired"]').scrollIntoViewIfNeeded()
-      await page.locator('[data-testid="trail-tab-expired"]').click()
-      await page.waitForTimeout(700)
-      const filtered = await measure()
-      record('filteredExpired', filtered)
-      if (filtered.orderCount !== 9 || filtered.statuses.some((status) => status !== 'expired')) {
-        throw new Error(`「已关闭」页签应只剩 9 条 expired，实际 ${filtered.orderCount} 条 ${JSON.stringify(filtered.statuses)}`)
-      }
-      if (!filtered.summary.includes('共 9 笔') || filtered.loadMore) {
-        throw new Error(`筛选后统计条 / 底部状态不对：${filtered.summary} loadMore=${filtered.loadMore}`)
-      }
-      await shot('05-trail-filter-expired')
-
-      // 切回「全部」：恢复 20 条第一页（offset 重新从 0 开始）
-      await page.locator('[data-testid="trail-tab-all"]').click()
-      await page.waitForTimeout(700)
-      const back = await measure()
-      record('backToAll', back)
-      if (back.orderCount !== 20 || !back.summary.includes('共 45 笔')) {
-        throw new Error(`切回「全部」没有重新从第一页开始：${back.orderCount} 条 / ${back.summary}`)
-      }
-      await shot('06-trail-back-to-all')
-    },
-  },
-
-  /**
-   * #325 验收：卡密溯源从死代码接上界面（`/api/card/trail` 原本零界面入口）。
-   *
-   * 这条场景要证明的是「入口 + 三态 + 权限边界」，不是又一张列表截图：
-   *  ① 支付记录里**已发卡**的卡密块上有「查这张卡」（`trail-card-lookup`）；
-   *  ② 点开是卡密溯源弹层：卡号只有后 4 位，能看到关联订单号 / 积分 / 兑换来源；
-   *  ③ 同一张卡按「他人卡」口径回 404 → 只有一句「没有找到这笔记录」，
-   *     既不是空态，也不带金额 / 订单号（服务端不区分「不存在」与「不是你的」，界面也不许猜）。
-   *
-   * 三个接口的拦截沿用 `routeTrail`；`cardStatus` 只作用在 `/api/card/trail` 上，
-   * 否则第 ③ 步会把支付记录列表一起打成错误态。
-   */
-  'card-trail-lookup': {
-    dir: 'docs/ui/325-card-trail',
-    title: '#325 支付记录 → 卡密块「查这张卡」：卡密溯源弹层（已兑换 / 他人卡 404）',
-    sessions: () => [makeReadingSession()],
-    mockOrders: false,
-    providerKind: 'ours',
-    trail: cardTrailDef,
-    run: async (ctx) => {
-      const { page, shot, record, warn } = ctx
-      // 每个视口重跑时先复位：360 档不能带着上一档的 404 开局
-      cardTrailDef.cardStatus = 200
-
-      /** 量数：入口 / 面板文案 / 掩码 / 横向溢出；`errorText` 给第 ③ 步用 */
-      const measure = () =>
-        page.evaluate(() => {
-          const viewportWidth = document.documentElement.clientWidth
-          const overflowing = []
-          for (const node of document.querySelectorAll(
-            '[data-testid="trail-card-lookup"], [data-testid="trail-card-panel"], [data-testid="trail-error"]'
-          )) {
-            const rect = node.getBoundingClientRect()
-            if (rect.width > 0 && rect.right > viewportWidth + 1) {
-              overflowing.push({ right: Math.round(rect.right) })
-            }
-          }
-          const panel = document.querySelector('[data-testid="trail-card-panel"]')
-          const errorNode = document.querySelector('[data-testid="trail-error"]')
-          const bodyText = document.body.textContent ?? ''
-          return {
-            viewportWidth,
-            documentScrollWidth: Math.round(document.documentElement.scrollWidth),
-            cardCount: document.querySelectorAll('[data-testid="trail-card"]').length,
-            lookupCount: document.querySelectorAll('[data-testid="trail-card-lookup"]').length,
-            lookupText: (document.querySelector('[data-testid="trail-card-lookup"]')?.textContent ?? '').trim(),
-            panelVisible: panel !== null,
-            panelText: (panel?.textContent ?? '').replace(/\s+/gu, ' ').trim(),
-            sourceText: (document.querySelector('[data-testid="trail-card-source"]')?.textContent ?? '').trim(),
-            hasMaskedCard: bodyText.includes('••••'),
-            fullCardInDom: bodyText.includes('MUSE-3CYP-5NA3-AHSE-A3SR'),
-            errorText: (errorNode?.textContent ?? '').replace(/\s+/gu, ' ').trim(),
-            overflowCount: overflowing.length,
-            overflowSamples: overflowing.slice(0, 5),
-          }
-        })
-
-      await openSettings(page, S.tabData)
-      const entry = page.locator(S.paymentTrailOpen)
-      await entry.waitFor({ state: 'visible', timeout: 10000 })
-      await entry.click()
-      const root = page.locator('[data-testid="payment-trail"]')
-      await root.waitFor({ state: 'visible', timeout: 10000 })
-      await page.waitForTimeout(700)
-
-      const list = await measure()
-      record('list', list)
-      if (list.cardCount < 1) {
-        throw new Error('支付记录里一个卡密块都没有：夹具或卡密渲染不对')
-      }
-      if (list.lookupCount < 1) {
-        throw new Error('已发卡的卡密块上没有「查这张卡」入口（#325 的入口没接上）')
-      }
-      if (list.fullCardInDom) {
-        throw new Error('完整卡号漏进了 DOM：截图 / 转发会把卡密带出去')
-      }
-      const firstLookup = page.locator('[data-testid="trail-card-lookup"]').first()
-      await firstLookup.scrollIntoViewIfNeeded()
-      await page.waitForTimeout(260)
-      await shot('01-trail-card-lookup-entry')
-
-      // ② 点开：卡密溯源弹层（已兑换的卡）
-      await firstLookup.click()
-      await page.locator('[data-testid="trail-card-panel"]').waitFor({ state: 'visible', timeout: 10000 })
-      await page.waitForTimeout(420)
-      const panel = await measure()
-      record('panel', panel)
-      if (!panel.panelVisible) {
-        throw new Error('点了「查这张卡」没有出现溯源面板')
-      }
-      if (panel.fullCardInDom || !panel.panelText.includes('••••A3SR')) {
-        throw new Error(`面板里的卡号不是掩码：${panel.panelText}`)
-      }
-      if (!panel.panelText.includes('CP20261119063300003')) {
-        throw new Error(`面板里没有关联订单号：${panel.panelText}`)
-      }
-      if (!panel.sourceText.includes('本 App 内兑换')) {
-        throw new Error(`兑换来源没渲染（#325 关闭条件点名要它）：${panel.sourceText}`)
-      }
-      if (panel.overflowCount > 0) {
-        warn(`溯源面板横向溢出 ${panel.overflowCount} 处：${JSON.stringify(panel.overflowSamples)}`)
-      }
-      await shot('02-card-trail-panel')
-
-      // 关掉溯源弹层：Esc 只关最上层（叠放栈），关了要确认下层支付记录还在
-      await page.keyboard.press('Escape')
-      await page.waitForTimeout(360)
-      if ((await measure()).panelVisible) {
-        await page.locator('button[aria-label="关闭"]').last().click()
-        await page.waitForTimeout(360)
-      }
-      if ((await measure()).panelVisible) {
-        throw new Error('溯源弹层关不掉：下一步点不到列表')
-      }
-
-      // ③ 他人卡：服务端 404 → 只有一句「没有找到这笔记录」，不带金额 / 订单号
-      cardTrailDef.cardStatus = 404
-      await page.locator('[data-testid="trail-card-lookup"]').first().click()
-      await page.locator('[data-testid="trail-error"]').last().waitFor({ state: 'visible', timeout: 10000 })
-      await page.waitForTimeout(320)
-      const notFound = await measure()
-      record('otherUser404', notFound)
-      if (!notFound.errorText.includes('没有找到这笔记录')) {
-        throw new Error(`404 的文案不对：#325 要求统一「没有找到这笔记录」，实际 ${notFound.errorText}`)
-      }
-      if (notFound.panelVisible) {
-        throw new Error('404 被渲染成了面板：那一刻界面在说「这张卡有记录」')
-      }
-      if (notFound.errorText.includes('CP20261119063300003') || notFound.errorText.includes('¥')) {
-        throw new Error(`404 文案里带了订单信息（等于确认了这张卡存在）：${notFound.errorText}`)
-      }
-      // 这一步的 404 是刻意造的：控制台那条 `Failed to load resource ... 404` 属于预期，
-      // 不是缺陷（metrics 的 consoleErrors 会带上它，这里显式说明一句）
-      warn('第 ③ 步的 404 是刻意造的：consoleErrors 里那条 404 资源错误属于预期')
-      await shot('03-card-trail-other-user-404')
-    },
-  },
-
   'ours-buy-inapp': {
     dir: 'docs/ui/235-pay-return',
     title: '#235 设置 → 数据管理 → 我们的渠道：套餐列表 / 去支付 / 收银台提示（390 与 360 两档）',
     sessions: () => [makeReadingSession()],
-    mockOrders: false,
     // 入口只在自有渠道出现（#166 的门禁思路），与支付记录/我的购买同一份判定
     providerKind: 'ours',
     run: async (ctx) => {
@@ -1939,7 +1387,6 @@ export const PAGES = {
     title:
       '#487 设置 → 数据管理 → 账户与消费：我的卡密（未兑换 / 已兑换 / 复制 / 兑换结果）/ 购买（套餐 / 收款页）/ 我的额度 / 账号 四个 tab（390 与 360 两档）',
     sessions: () => [makeReadingSession()],
-    mockOrders: false,
     // 入口仍然只在自有渠道出现（#166 的判据没变，只是三联格并成了一格）
     providerKind: 'ours',
     // 「我的卡密」的数据就是 apia 的 GET /api/orders：按真契约形状回两张卡 ——
@@ -2095,265 +1542,10 @@ export const PAGES = {
     },
   },
 
-  purchases: {
-    dir: 'docs/ui/158-purchases',
-    title: '#158 设置 → 数据管理 → 我的购买：列表 / 待支付筛选 / 展开完整卡号 / 空态（390 与 360 两档）',
-    sessions: () => [makeReadingSession()],
-    mockOrders: false,
-    // 时间按「秒」，与 /api/orders 一致；status 大写、status_text 中文，都是后端真实形状
-    mockPurchases: {
-      totalPaidYuan: 138.8,
-      orders: [
-        {
-          out_trade_no: 'CP202611190000001',
-          plan_id: 'starter',
-          plan_name: '体验套餐',
-          plan_points: 300,
-          amount_yuan: 1.0,
-          status: 'FULFILLED',
-          status_text: '已完成',
-          card_no: 'MUSE-3CYP-5NA3-AHSE-A3SR',
-          card_status: 'leased',
-          redeem_state: 'issued',
-          created_at: 1795055400,
-          paid_at: 1795055460,
-        },
-        {
-          out_trade_no: 'CP202611180000002',
-          plan_id: 'pro',
-          plan_name: '进阶套餐',
-          plan_points: 6000,
-          amount_yuan: 29.9,
-          status: 'FULFILLED',
-          status_text: '已完成',
-          card_no: 'MUSE-7QKD-2MPR-9XCE-B8TW',
-          card_status: 'used',
-          redeem_state: 'redeemed',
-          created_at: 1794969000,
-          paid_at: 1794969060,
-        },
-        {
-          out_trade_no: 'CP202611170000003',
-          plan_id: 'standard',
-          plan_name: '标准套餐',
-          plan_points: 1800,
-          amount_yuan: 9.9,
-          status: 'PENDING',
-          status_text: '待支付',
-          card_no: null,
-          card_status: null,
-          redeem_state: null,
-          created_at: 1794882600,
-          paid_at: null,
-        },
-        {
-          out_trade_no: 'CP202611160000004',
-          plan_id: 'starter',
-          plan_name: '体验套餐',
-          plan_points: 300,
-          amount_yuan: 1.0,
-          status: 'EXPIRED',
-          status_text: '已过期',
-          card_no: null,
-          card_status: null,
-          redeem_state: null,
-          created_at: 1794796200,
-          paid_at: null,
-        },
-        {
-          out_trade_no: 'CP202611150000005',
-          plan_id: 'premium',
-          plan_name: '尊享套餐',
-          plan_points: 22000,
-          amount_yuan: 99.0,
-          status: 'FULFILLED',
-          status_text: '已完成',
-          card_no: 'MUSE-5HTN-8VKB-3DRQ-C6YL',
-          card_status: 'used',
-          redeem_state: 'redeemed',
-          created_at: 1794709800,
-          paid_at: 1794709860,
-        },
-      ],
-    },
-    run: async (ctx) => {
-      const { page, shot, record } = ctx
-      // 量「有没有横向溢出」：视口 + 弹层根节点两级，外加把越界的元素点名
-      const measure = () =>
-        page.evaluate(() => {
-          const root = document.querySelector('[data-testid="purchases-root"]')
-          const viewportWidth = document.documentElement.clientWidth
-          const overflowing = []
-          if (root !== null) {
-            for (const node of root.querySelectorAll('*')) {
-              const rect = node.getBoundingClientRect()
-              if (rect.width > 0 && rect.right > viewportWidth + 1) {
-                overflowing.push({
-                  tag: node.tagName,
-                  right: Math.round(rect.right),
-                  text: (node.textContent ?? '').slice(0, 20),
-                })
-              }
-            }
-          }
-          return {
-            viewportWidth,
-            documentScrollWidth: Math.round(document.documentElement.scrollWidth),
-            rootWidth: root === null ? null : Math.round(root.getBoundingClientRect().width),
-            rootScrollWidth: root === null ? null : Math.round(root.scrollWidth),
-            rootClientWidth: root === null ? null : Math.round(root.clientWidth),
-            rootHorizontalOverflow:
-              root === null ? null : root.scrollWidth > root.clientWidth + 1,
-            overflowCount: overflowing.length,
-            overflowSamples: overflowing.slice(0, 5),
-            countText: document.querySelector('[data-testid="purchases-count"]')?.textContent ?? '',
-            itemCount: document.querySelectorAll('[data-testid="purchase-item"]').length,
-            hasRedeem: document.querySelector('[data-testid="purchase-redeem"]') !== null,
-            hasPay: document.querySelector('[data-testid="purchase-pay"]') !== null,
-            hasEmpty: document.querySelector('[data-testid="purchases-empty"]') !== null,
-          }
-        })
-
-      await openSettings(page, S.tabData)
-      const entry = page.locator('[data-testid="purchases-open"]')
-      await entry.scrollIntoViewIfNeeded()
-      await page.waitForTimeout(240)
-      await shot('01-settings-data-entry')
-
-      await entry.click()
-      const root = page.locator('[data-testid="purchases-root"]')
-      await root.waitFor({ state: 'visible', timeout: 10000 })
-      await page.waitForTimeout(700)
-      record('list', await measure())
-      await shot('02-list')
-
-      // 筛选 tab：待支付 —— 这一档只剩「去支付」，没有任何「去兑换」
-      await page.locator('[data-testid="purchases-tab-pending"]').click()
-      await page.waitForTimeout(500)
-      record('filtered', await measure())
-      await shot('03-filtered-pending')
-
-      // 回到全部，展开一条「已兑换」的完整卡号（只在用户点开之后才进 DOM）
-      await page.locator('[data-testid="purchases-tab-all"]').click()
-      await page.waitForTimeout(500)
-      const toggle = page.locator('[data-testid="purchase-card-toggle"]').first()
-      await toggle.scrollIntoViewIfNeeded()
-      await toggle.click()
-      await page.waitForTimeout(320)
-      record('expanded', await measure())
-      await shot('04-redeemed-expanded')
-
-      // 空态：把订单接口临时换成空列表再点「刷新」，走的是同一条真实请求路径
-      // （page 级 route 优先于 context 级，正则 + CORS 头的坑见 routeOrders 的注释）
-      await page.route(/\/api\/orders(?:\?|$)/u, (route) =>
-        route.fulfill({
-          status: route.request().method() === 'OPTIONS' ? 204 : 200,
-          headers: {
-            'Access-Control-Allow-Origin': '*',
-            'Access-Control-Allow-Headers': 'authorization,accept,content-type',
-            'Access-Control-Allow-Methods': 'GET,OPTIONS',
-          },
-          ...(route.request().method() === 'OPTIONS'
-            ? {}
-            : {
-                contentType: 'application/json',
-                body: JSON.stringify({
-                  customer_id: 10,
-                  total: 0,
-                  limit: 20,
-                  offset: 0,
-                  total_paid_yuan: 0,
-                  orders: [],
-                }),
-              }),
-        })
-      )
-      await page.locator('[data-testid="purchases-refresh"]').click()
-      await page.waitForTimeout(600)
-      record('empty', await measure())
-      await shot('05-empty')
-    },
-  },
-
-  'purchases-dark': {
-    dir: 'docs/ui/158-purchases',
-    title: '#158 我的购买：深色主题下列表（颜色全部走主题变量，不写死 hex）',
-    sessions: () => [makeReadingSession()],
-    mockOrders: false,
-    colorScheme: 'dark',
-    // 与 purchases 场景同一套订单，只是浏览器按深色偏好渲染
-    mockPurchases: {
-      totalPaidYuan: 138.8,
-      orders: [
-        {
-          out_trade_no: 'CP202611190000001',
-          plan_id: 'starter',
-          plan_name: '体验套餐',
-          plan_points: 300,
-          amount_yuan: 1.0,
-          status: 'FULFILLED',
-          status_text: '已完成',
-          card_no: 'MUSE-3CYP-5NA3-AHSE-A3SR',
-          card_status: 'leased',
-          redeem_state: 'issued',
-          created_at: 1795055400,
-          paid_at: 1795055460,
-        },
-        {
-          out_trade_no: 'CP202611180000002',
-          plan_id: 'pro',
-          plan_name: '进阶套餐',
-          plan_points: 6000,
-          amount_yuan: 29.9,
-          status: 'FULFILLED',
-          status_text: '已完成',
-          card_no: 'MUSE-7QKD-2MPR-9XCE-B8TW',
-          card_status: 'used',
-          redeem_state: 'redeemed',
-          created_at: 1794969000,
-          paid_at: 1794969060,
-        },
-        {
-          out_trade_no: 'CP202611170000003',
-          plan_id: 'standard',
-          plan_name: '标准套餐',
-          plan_points: 1800,
-          amount_yuan: 9.9,
-          status: 'PENDING',
-          status_text: '待支付',
-          card_no: null,
-          card_status: null,
-          redeem_state: null,
-          created_at: 1794882600,
-          paid_at: null,
-        },
-      ],
-    },
-    run: async (ctx) => {
-      const { page, shot, record } = ctx
-      await openSettings(page, S.tabData)
-      const entry = page.locator('[data-testid="purchases-open"]')
-      await entry.scrollIntoViewIfNeeded()
-      await entry.click()
-      await page.locator('[data-testid="purchases-root"]').waitFor({ state: 'visible', timeout: 10000 })
-      await page.waitForTimeout(700)
-      record(
-        'theme',
-        await page.evaluate(() => ({
-          dark: document.body.getAttribute('data-ds-dark-theme'),
-          items: document.querySelectorAll('[data-testid="purchase-item"]').length,
-          summary: document.querySelector('[data-testid="purchases-summary"]')?.textContent ?? '',
-        }))
-      )
-      await shot('01-list-dark')
-    },
-  },
-
   'import-skipped': {
     dir: 'docs/ui/49-import-skipped',
     title: '#49 设置 → 数据管理 → 导入历史：部分损坏的包照样导入，界面列出跳过的条数与逐条定位',
     sessions: () => [makeReadingSession()],
-    mockOrders: false,
     run: async (ctx) => {
       const { page, shot, record, warn } = ctx
       await openSettings(page, S.tabData)
@@ -2416,7 +1608,6 @@ export const PAGES = {
     dir: 'docs/ui/settings-douyin',
     title: '设置 → 数据管理 → 抖音号：shiro_0824 的胶囊展示（等宽 + 强调色）与点击复制',
     sessions: () => [makeReadingSession()],
-    mockOrders: false,
     run: async (ctx) => {
       const { page, shot, record, warn } = ctx
       await openSettings(page, S.tabData)
@@ -2478,7 +1669,6 @@ export const PAGES = {
     dir: 'docs/ui/215-focus-visible',
     title: ':focus-visible（#215）：键盘走到控件时出焦点环，鼠标点击同一控件不出环',
     sessions: () => [makeReadingSession()],
-    mockOrders: false,
     run: async (ctx) => {
       const { page, shot, record, warn } = ctx
 
@@ -2544,7 +1734,6 @@ export const PAGES = {
     dir: 'docs/ui/324-official-error-classify',
     title: '#324 官方渠道失败分类：模型不可用 / 未识别带状态码与诊断，390 与 360 两档',
     sessions: () => [makeErrorSession()],
-    mockOrders: false,
     run: async (ctx) => {
       const { page, shot, record, warn } = ctx
       await openSession(page, ERROR_SESSION_TITLE)
@@ -2625,7 +1814,6 @@ export const PAGES = {
     dir: 'docs/ui/310-update-failure',
     title: '#310 检查更新失败的分类文案：渠道不可达 / 清单 404 / 清单非法 JSON / 无可用版本',
     sessions: () => [makeReadingSession()],
-    mockOrders: false,
     run: async (ctx) => {
       const { page, shot, record, warn } = ctx
       /**
@@ -2881,17 +2069,6 @@ export const main = async (argv = process.argv.slice(2), env = process.env) => {
           },
           { apiKey: FIXTURE_API_KEY, providerKind: def.providerKind ?? 'deepseek' }
         )
-        if (def.mockOrders) {
-          // 只拦只读的订单查询，回代码注释里记录的真实响应形状（orders 为空）：
-          // 截到的是「真的没有订单」的空状态，不是伪造的订单列表
-          await routeOrders(context, () => ({ customer_id: 10, total_paid_yuan: 0.0, orders: [] }))
-        }
-
-        if (def.trail) {
-          // #189：三个只读接口都拦，回的是 tests/fixtures/domain06-07/ours-trail.mjs 里那份真契约数据
-          await routeTrail(context, def.trail)
-        }
-
         if (def.mockPurchases) {
           // 只拦只读的订单查询，按真实契约回数据：`status` 大写、`status_text` 中文、
           // 时间和金额都是数字（时间按秒，与服务端一致），并真的按 limit / offset / status 过滤。

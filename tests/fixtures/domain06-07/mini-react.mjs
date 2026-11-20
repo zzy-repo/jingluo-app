@@ -390,3 +390,44 @@ export const findAll = (tree, predicate) => {
 
 export const byTestId = (tree, testId) =>
   findAll(tree, (node) => node.props['data-testid'] === testId)[0] ?? null
+
+// ---------------------------------------------------------------------------
+// 默认导出：`import ReactExports from 'react'` 也要能拿到（#510 引入 zustand 依赖链）
+//
+// 真实 `react` 是 CJS，Node 的 ESM 互操作会给出一个 default，所以 `import React from 'react'`
+// 一直合法；而本替身原先只有具名导出，于是任何走默认导出的库（zustand 4 在模块初始化时
+// `const { useDebugValue } = ReactExports`）一 import 就 `SyntaxError:
+// The requested module 'react' does not provide an export named 'default'`。
+//
+// 这里**只做聚合**：把上面已有的具名导出收进一个对象，不改变任何一条具名导出的语义，
+// 也不假装实现新的宿主行为。`useDebugValue` 是 zustand 明确解构的那一个，补成与真实
+// React 语义一致的 no-op（真实实现只在 React DevTools 里起作用，测试环境无副作用）。
+const noopDebugValue = () => {}
+
+const React = {
+  useState,
+  useReducer,
+  useRef,
+  useEffect,
+  useMemo,
+  useCallback,
+  useStoreValue,
+  useDebugValue: noopDebugValue,
+  Fragment,
+  jsx,
+  jsxs,
+  jsxDEV,
+  createElement,
+  createRoot,
+  settle,
+  unmount,
+  markDirty,
+  walk,
+  toHtml,
+  textOf,
+  findAll,
+  byTestId,
+}
+
+export const useDebugValue = noopDebugValue
+export default React

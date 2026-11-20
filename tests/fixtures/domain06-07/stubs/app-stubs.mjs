@@ -60,6 +60,17 @@ export const setApiKey = (key) => {
 export const useIsOursChannel = () => true
 
 /**
+ * 取当前 Key（#510 的 `services/consumeClient.ts` 把它当凭据提供者传给消费层客户端）。
+ * 与真实现同一契约：`read(CONFIG_KEYS.apiKey) ?? ''` —— 没有 Key 就是空串，不抛错。
+ * 本替身直接读 env 里的 `apiKey`，`setApiKey` 写入后立刻可读到。
+ */
+export const getApiKey = () => env().apiKey ?? ''
+
+/** 同上，仅为了与真实现 `apiConfig` 的导出面保持一致（消费层用不到，但缺了会 import 失败） */
+export const getBaseUrl = () => env().baseUrl ?? ''
+export const getModel = () => env().model ?? ''
+
+/**
  * #451：Key 身份（绑定时间 / 最近一次确认可用时间），真实现见 `services/invite/keyIdentity.ts`
  * 与 `apiConfig.getCurrentKeyIdentity / recordKeySuccess`。
  *

@@ -25,6 +25,24 @@
 > **重构后的功能点清单**（哪些点还在、哪些随体系消失）。重建要求与替代路径见
 > `docs/testing/rebuild-after-refactor.md`。
 
+> ## ⚠️ #487 收口追加（2026-11-20）：旧支付 UI 的 5 个用例已随之删除
+>
+> 三弹层合一（设置页三个入口 → 一个「账户与消费」页）合并完之后，旧弹层本体与时间线数据层
+> 一并下线，测它们的用例也一起删（测的是已不存在的 DOM / 已删的模块，留着只会红）：
+>
+> | 已删除用例 | 原本测什么 |
+> | --- | --- |
+> | `tests/unit/ours-trail.test.mjs` | 时间线数据层（`ours/trail.ts`，已删）的解析 / 分页 / 重试 |
+> | `tests/unit/payment-trail-ui.test.mjs` | 时间线视图（`PaymentTrailView.ts`，已删）的渲染与筛选 |
+> | `tests/unit/payment-trail-paging.test.mjs` | 时间线「加载更多」/ 空筛选（同上，已删） |
+> | `tests/unit/payment-trail-card-lookup.test.mjs` | 卡密溯源面板（同上，已删） |
+> | `tests/unit/purchases-ui.test.mjs` | 「我的购买」列表视图（`PurchaseRecordsView.ts`，已删） |
+>
+> 仍然保留并继续覆盖本域：`ours-api` / `ours-purchases` / `ours-payment-records` / `ours-inapp-buy` /
+> `pay-link` / `ours-payment-logs-312`（时间线那两个 stage 已从断言里去掉）与
+> `tests/integration/ours-services.test.mjs`。下表「覆盖状态」列里提到这几个已删用例的行，
+> 以本块为准。
+
 
 > 归属：Issue #362「功能点收集与分层测试覆盖盘点」。本文件只做**盘点与映射**，不写测试、不改源码、不产生资金流。
 > 表格格式、分层定义（L0/L1/L2/L3）、`覆盖状态` 取值均按 #362 原文；额外增加一列 `需真实后端?`（资损域专用口径）。

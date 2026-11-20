@@ -69,10 +69,6 @@ const WATCHED = [
     ],
   },
   {
-    file: 'src/components/settings/PaymentTrailView.ts',
-    allow: [{ value: 1000, count: 1, reason: '秒 → 毫秒换算（服务端时间戳是秒，value * 1000）' }],
-  },
-  {
     file: 'src/index.html',
     allow: [
       // 内联脚本在 bundle 之前执行，import 不到 LIMITS；数值由 tests/unit/limits-config.test.mjs 断言相等。
