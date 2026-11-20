@@ -13,6 +13,10 @@
 //   [3] 遮蔽不越界：字符串/模板/正则/注释里的 '||=' 不报（不假红），真实代码里的 '||=' 照报（不假绿）
 //   [4] 形状契约：等长、换行位置不变（positionOf 的行列才能和原文对齐）；acorn 缺失时明确抛错，
 //       绝不静默降级
+// #507：`__ENDPOINTS__` 全局兜底 —— 装载即挂（幂等）。单跑本文件（不经 run-layer 的 `--import` 预加载）也不会
+// `ReferenceError: __ENDPOINTS__ is not defined`；走门禁时与预加载是同一份模块，无副作用叠加。
+import '../helpers/injected.mjs'
+
 import assert from 'node:assert/strict'
 import test from 'node:test'
 

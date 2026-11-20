@@ -17,6 +17,10 @@
 //   B 锁生效场景（目标不在任何可滚容器里）→ 仍然要 preventDefault（防「把锁废掉」）
 //   C Modal 侧：scale !== 1 时也必须写出 --modal-viewport-height（读 style 断言非空）
 //   D 可滚容器滚到顶 / 到底的边界不误锁
+// #507：`__ENDPOINTS__` 全局兜底 —— 装载即挂（幂等）。单跑本文件（不经 run-layer 的 `--import` 预加载）也不会
+// `ReferenceError: __ENDPOINTS__ is not defined`；走门禁时与预加载是同一份模块，无副作用叠加。
+import '../helpers/injected.mjs'
+
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { test } from 'node:test'

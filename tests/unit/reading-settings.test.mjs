@@ -12,6 +12,10 @@
 //   D 只作用于消息区：设置面板与输入框的样式不引用阅读 token；消息区（正文 / 用户气泡）引用
 //   E 接线：main.tsx 调 setupReading；reading.ts 把三档写到根元素 data-*；设置面板真的渲染三项
 //   F i18n：新键 zh/en 成对存在且文案不同
+// #507：`__ENDPOINTS__` 全局兜底 —— 装载即挂（幂等）。单跑本文件（不经 run-layer 的 `--import` 预加载）也不会
+// `ReferenceError: __ENDPOINTS__ is not defined`；走门禁时与预加载是同一份模块，无副作用叠加。
+import '../helpers/injected.mjs'
+
 import assert from 'node:assert/strict'
 import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { registerHooks } from 'node:module'

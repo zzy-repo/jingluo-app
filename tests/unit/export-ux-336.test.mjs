@@ -8,6 +8,10 @@
 //   §3 上限前置：超 200MB（= 导入上限）在**写第一个字节之前**就拒，文案要说「怎么办」
 //
 //   node --test tests/unit/export-ux-336.test.mjs
+// #507：`__ENDPOINTS__` 全局兜底 —— 装载即挂（幂等）。单跑本文件（不经 run-layer 的 `--import` 预加载）也不会
+// `ReferenceError: __ENDPOINTS__ is not defined`；走门禁时与预加载是同一份模块，无副作用叠加。
+import '../helpers/injected.mjs'
+
 import assert from 'node:assert/strict'
 import { registerHooks } from 'node:module'
 import { test } from 'node:test'

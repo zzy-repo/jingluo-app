@@ -6,6 +6,10 @@
 //   1 toLocalSession()（toLocal.ts 的 buildTree 里曾用 toSorted）
 //   2 store 的模块加载 + retryUpload()（prepareFiles 里曾用 toReversed）
 // 并静态断言这两个新 API 不再出现在调用点上（防止回退）。
+// #507：`__ENDPOINTS__` 全局兜底 —— 装载即挂（幂等）。单跑本文件（不经 run-layer 的 `--import` 预加载）也不会
+// `ReferenceError: __ENDPOINTS__ is not defined`；走门禁时与预加载是同一份模块，无副作用叠加。
+import '../helpers/injected.mjs'
+
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { registerHooks } from 'node:module'

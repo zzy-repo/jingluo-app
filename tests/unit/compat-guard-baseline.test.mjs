@@ -11,6 +11,10 @@
 //   - MAX_COPY_CHARS 与 MAX_REPORT_CHARS 不一致：一张卡片复制出来两个上限，反馈时被截一半；
 //   - DEVICE_ID_KEY / DEVICE_ID_PATTERN 与业务侧不一致：脱敏读到的是空值或非法值，
 //     要么整行消失（看不出问题），要么把不该露的形态当成合法设备码。
+// #507：`__ENDPOINTS__` 全局兜底 —— 装载即挂（幂等）。单跑本文件（不经 run-layer 的 `--import` 预加载）也不会
+// `ReferenceError: __ENDPOINTS__ is not defined`；走门禁时与预加载是同一份模块，无副作用叠加。
+import '../helpers/injected.mjs'
+
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { registerHooks } from 'node:module'

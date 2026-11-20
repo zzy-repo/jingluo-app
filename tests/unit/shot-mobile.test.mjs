@@ -4,6 +4,10 @@
  * 只测 scripts/shot-mobile.mjs 里的纯函数（参数解析、视口/场景规范化、截图命名）。
  * 真正截图要开浏览器，属于 UI 验收工具，不在单测里跑。
  */
+// #507：`__ENDPOINTS__` 全局兜底 —— 装载即挂（幂等）。单跑本文件（不经 run-layer 的 `--import` 预加载）也不会
+// `ReferenceError: __ENDPOINTS__ is not defined`；走门禁时与预加载是同一份模块，无副作用叠加。
+import '../helpers/injected.mjs'
+
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 

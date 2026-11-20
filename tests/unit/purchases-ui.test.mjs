@@ -11,6 +11,10 @@
 // 除了静态 markup，本文件还**直接调用组件函数拿到 React 元素树**，按 data-testid 找到按钮并
 // 调用它的 onClick：这能在没有 DOM 的情况下验证「点了到底会不会走对分支」，
 // 而不是只断言「按钮长得对」。
+// #507：`__ENDPOINTS__` 全局兜底 —— 装载即挂（幂等）。单跑本文件（不经 run-layer 的 `--import` 预加载）也不会
+// `ReferenceError: __ENDPOINTS__ is not defined`；走门禁时与预加载是同一份模块，无副作用叠加。
+import '../helpers/injected.mjs'
+
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { registerHooks } from 'node:module'

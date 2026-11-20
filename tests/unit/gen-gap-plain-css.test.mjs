@@ -12,6 +12,10 @@
 //  2. 幂等：重复跑不叠加、不重排；
 //  3. 与人工 `#173-fallback:` 块共存：已手写的选择器不重复生成；
 //  4. `.module.css` 的既有产物**逐字节不变**（`:global()` 写法一个字节都不能动）。
+// #507：`__ENDPOINTS__` 全局兜底 —— 装载即挂（幂等）。单跑本文件（不经 run-layer 的 `--import` 预加载）也不会
+// `ReferenceError: __ENDPOINTS__ is not defined`；走门禁时与预加载是同一份模块，无副作用叠加。
+import '../helpers/injected.mjs'
+
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { cp, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'

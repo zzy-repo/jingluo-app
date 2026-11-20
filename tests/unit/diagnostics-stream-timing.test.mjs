@@ -15,6 +15,10 @@
 //   A 假时钟：分段算术精确（不靠 sleep 猜）
 //   B 真流：ttfb / 首字 / 吐字 / 分段 / 吞吐 都是真实数字，且能从采集层读回来
 //   C 落库的 meta 键全部通过字段契约（没有被清洗掉）
+// #507：`__ENDPOINTS__` 全局兜底 —— 装载即挂（幂等）。单跑本文件（不经 run-layer 的 `--import` 预加载）也不会
+// `ReferenceError: __ENDPOINTS__ is not defined`；走门禁时与预加载是同一份模块，无副作用叠加。
+import '../helpers/injected.mjs'
+
 import assert from 'node:assert/strict'
 import { registerHooks } from 'node:module'
 import { test } from 'node:test'

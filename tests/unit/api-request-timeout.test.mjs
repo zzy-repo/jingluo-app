@@ -7,6 +7,10 @@
 //
 // 本层的断言全部围绕 request()：把全局 fetch 换成一个「永不 settle、只认 abort」的桩
 // （真实卡死的形态），用短超时（40ms）在有限时间内拿到结论，不靠真的等待。
+// #507：`__ENDPOINTS__` 全局兜底 —— 装载即挂（幂等）。单跑本文件（不经 run-layer 的 `--import` 预加载）也不会
+// `ReferenceError: __ENDPOINTS__ is not defined`；走门禁时与预加载是同一份模块，无副作用叠加。
+import '../helpers/injected.mjs'
+
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { registerHooks } from 'node:module'

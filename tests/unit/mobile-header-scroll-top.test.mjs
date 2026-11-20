@@ -16,6 +16,10 @@
 //   H 连续双击：后一次接管前一次，不会两个动画互相拉扯，最后仍停在首条
 //   I 接线：MobileHeader 真的绑了这套逻辑，标题区 ≥44px，有可发现性提示，单击行为不变
 //   J i18n：zh/en 成对，文案不同
+// #507：`__ENDPOINTS__` 全局兜底 —— 装载即挂（幂等）。单跑本文件（不经 run-layer 的 `--import` 预加载）也不会
+// `ReferenceError: __ENDPOINTS__ is not defined`；走门禁时与预加载是同一份模块，无副作用叠加。
+import '../helpers/injected.mjs'
+
 import assert from 'node:assert/strict'
 import { existsSync, readFileSync } from 'node:fs'
 import { registerHooks } from 'node:module'

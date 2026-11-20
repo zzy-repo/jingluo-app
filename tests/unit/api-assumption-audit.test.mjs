@@ -10,6 +10,10 @@
 //
 // 另外单独钉「注释与字符串里的 API 名不算命中」—— 仓库里全是解释性注释（legacy.ts 通篇
 // 都在写 `Object.hasOwn` / `structuredClone`），状态机一松就会把盘点结果灌成假红。
+// #507：`__ENDPOINTS__` 全局兜底 —— 装载即挂（幂等）。单跑本文件（不经 run-layer 的 `--import` 预加载）也不会
+// `ReferenceError: __ENDPOINTS__ is not defined`；走门禁时与预加载是同一份模块，无副作用叠加。
+import '../helpers/injected.mjs'
+
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 

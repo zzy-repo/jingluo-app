@@ -17,6 +17,10 @@
 // **拒绝时不写入任何暂存**（除了索引完整性那几行，它们的清理由 replaceHistory 负责，见 N8）。
 //
 //   node --test tests/unit/domain05-archive-reject-matrix.test.mjs
+// #507：`__ENDPOINTS__` 全局兜底 —— 装载即挂（幂等）。单跑本文件（不经 run-layer 的 `--import` 预加载）也不会
+// `ReferenceError: __ENDPOINTS__ is not defined`；走门禁时与预加载是同一份模块，无副作用叠加。
+import '../helpers/injected.mjs'
+
 import { test } from 'node:test'
 import { installImportEnv } from '../helpers/import-env.mjs'
 import { strToU8 } from 'fflate'

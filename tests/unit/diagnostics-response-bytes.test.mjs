@@ -17,6 +17,10 @@
 //   ③ Content-Length 是空串 / 非数字 / 负数 → 视为缺失（空串不许当 0）
 //   ④ text/event-stream → 报「不可测」、一次都不 clone、立刻返回（不阻塞）
 //   ⑤ 对照实验：同一条流上直接 clone().text() 确实会等到流关闭 —— ④ 的取舍不是臆测
+// #507：`__ENDPOINTS__` 全局兜底 —— 装载即挂（幂等）。单跑本文件（不经 run-layer 的 `--import` 预加载）也不会
+// `ReferenceError: __ENDPOINTS__ is not defined`；走门禁时与预加载是同一份模块，无副作用叠加。
+import '../helpers/injected.mjs'
+
 import assert from 'node:assert/strict'
 import { registerHooks } from 'node:module'
 import { test } from 'node:test'

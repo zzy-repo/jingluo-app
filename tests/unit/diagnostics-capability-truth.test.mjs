@@ -12,6 +12,10 @@
 //   2 runtime 维度保持原语义（能调就 true），已上线的老字段消费者不受影响
 //   3 原生具备时（等价于新版 WebView：每个 installer 直接早退）native 为 true、polyfilled 为空
 //   4 degradedClones 从 legacyPolyfillReport() 原样透出（structuredClone 降级可观测）
+// #507：`__ENDPOINTS__` 全局兜底 —— 装载即挂（幂等）。单跑本文件（不经 run-layer 的 `--import` 预加载）也不会
+// `ReferenceError: __ENDPOINTS__ is not defined`；走门禁时与预加载是同一份模块，无副作用叠加。
+import '../helpers/injected.mjs'
+
 import assert from 'node:assert/strict'
 import { registerHooks } from 'node:module'
 import { test } from 'node:test'

@@ -11,6 +11,10 @@
 // 这是全仓唯一一条「引信已装好、还没扣扳机」的高危假设（`collector.ts:980`），
 // 只要它被降级成「已有兜底」，本文件必须失败。
 
+// #507：`__ENDPOINTS__` 全局兜底 —— 装载即挂（幂等）。单跑本文件（不经 run-layer 的 `--import` 预加载）也不会
+// `ReferenceError: __ENDPOINTS__ is not defined`；走门禁时与预加载是同一份模块，无副作用叠加。
+import '../helpers/injected.mjs'
+
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 

@@ -14,6 +14,10 @@
 //   [5] 高度未知（未实测）：按估值占位，滚动高度不塌，挂载数仍有限
 //   [6] 高度实测后覆盖估值：后续偏移跟着实测值走，不按固定高度错位
 //   [7] 流式增长：最后一条变大后总高度跟着变大，且前后不重叠
+// #507：`__ENDPOINTS__` 全局兜底 —— 装载即挂（幂等）。单跑本文件（不经 run-layer 的 `--import` 预加载）也不会
+// `ReferenceError: __ENDPOINTS__ is not defined`；走门禁时与预加载是同一份模块，无副作用叠加。
+import '../helpers/injected.mjs'
+
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 

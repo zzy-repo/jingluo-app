@@ -14,6 +14,10 @@
 //   [5] zh：本地截取兜底逐字不变（与 tests/integration/auto-title.test.mjs 的期望值同源）
 //   [6] en：本地截取兜底不含中文
 //   [7] 行为不回归：「标题：」这类中文前缀在 en 下也要剥掉（清洗规则不随语言变）
+// #507：`__ENDPOINTS__` 全局兜底 —— 装载即挂（幂等）。单跑本文件（不经 run-layer 的 `--import` 预加载）也不会
+// `ReferenceError: __ENDPOINTS__ is not defined`；走门禁时与预加载是同一份模块，无副作用叠加。
+import '../helpers/injected.mjs'
+
 import { registerHooks } from 'node:module'
 
 // 与打包器一致：源码内部用 .js 说明符指向 .ts 文件

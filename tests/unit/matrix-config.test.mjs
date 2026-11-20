@@ -10,6 +10,10 @@
 //      不许再把 390/360、D 盘路径抄回去。
 //
 // 这些断言全部离线（不启动模拟器、不连 adb），本单的重启矩阵由单测 + `--dry-run` 覆盖。
+// #507：`__ENDPOINTS__` 全局兜底 —— 装载即挂（幂等）。单跑本文件（不经 run-layer 的 `--import` 预加载）也不会
+// `ReferenceError: __ENDPOINTS__ is not defined`；走门禁时与预加载是同一份模块，无副作用叠加。
+import '../helpers/injected.mjs'
+
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'

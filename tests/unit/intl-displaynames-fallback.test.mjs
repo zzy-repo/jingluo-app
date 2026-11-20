@@ -12,6 +12,8 @@
 //
 // 为什么能直接 import 源码 .ts：node 22 的 type stripping + 下面的 resolve hook
 // （与 tests/unit/legacy-polyfills.test.mjs 同一套手法）。
+import '../helpers/injected.mjs'
+
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { registerHooks } from 'node:module'

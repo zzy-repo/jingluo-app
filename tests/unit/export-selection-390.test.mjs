@@ -13,6 +13,10 @@
 // 只把 IndexedDB（`../db.js`）换成内存假存储 —— 与 tests/unit/archive-fixture-roundtrip 同一套口径。
 //
 //   node --test tests/unit/export-selection-390.test.mjs
+// #507：`__ENDPOINTS__` 全局兜底 —— 装载即挂（幂等）。单跑本文件（不经 run-layer 的 `--import` 预加载）也不会
+// `ReferenceError: __ENDPOINTS__ is not defined`；走门禁时与预加载是同一份模块，无副作用叠加。
+import '../helpers/injected.mjs'
+
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { strFromU8, unzipSync } from 'fflate'

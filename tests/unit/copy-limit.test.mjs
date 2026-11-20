@@ -11,6 +11,10 @@
 // clipboard.ts 现在还 import 了 utils/capabilities.ts（#209 统一能力探测），源码里的相对 import
 // 是 `.js` 写法（tsc NodeNext 要求），所以这里要挂 resolve hook 把它指到 `.ts`——和
 // tests/unit/legacy-polyfills.test.mjs 同一套手法，因此改为动态 import。
+// #507：`__ENDPOINTS__` 全局兜底 —— 装载即挂（幂等）。单跑本文件（不经 run-layer 的 `--import` 预加载）也不会
+// `ReferenceError: __ENDPOINTS__ is not defined`；走门禁时与预加载是同一份模块，无副作用叠加。
+import '../helpers/injected.mjs'
+
 import { registerHooks } from 'node:module'
 
 registerHooks({

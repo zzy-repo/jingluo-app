@@ -8,6 +8,10 @@
 // 同时有一条**反向**约束：Object.hasOwn / Array.prototype.at / structuredClone 已经在
 // src/polyfills/legacy.ts 里补齐了，守卫**不能**把它们当致命缺失 —— 否则 WebView 83 上明明
 // 能用却会弹“页面启动失败”，那就把 P0 修成了另一个 P0。
+// #507：`__ENDPOINTS__` 全局兜底 —— 装载即挂（幂等）。单跑本文件（不经 run-layer 的 `--import` 预加载）也不会
+// `ReferenceError: __ENDPOINTS__ is not defined`；走门禁时与预加载是同一份模块，无副作用叠加。
+import '../helpers/injected.mjs'
+
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { test } from 'node:test'

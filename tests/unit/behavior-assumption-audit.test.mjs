@@ -8,6 +8,10 @@
 //  2. 每个证伪条件都能真的触发不成立（否则「成立」可能只是判据写漏了）；
 //  3. 没有溢出 / 没有键盘读数时判「未测」而不是「成立」—— 未测就该显示未测，
 //     不能拿静息态的漂亮数字冒充全部场景（100vh 最经典的失灵就在键盘态）。
+// #507：`__ENDPOINTS__` 全局兜底 —— 装载即挂（幂等）。单跑本文件（不经 run-layer 的 `--import` 预加载）也不会
+// `ReferenceError: __ENDPOINTS__ is not defined`；走门禁时与预加载是同一份模块，无副作用叠加。
+import '../helpers/injected.mjs'
+
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
