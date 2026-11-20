@@ -67,6 +67,10 @@ pnpm install                      # 会装上 playwright 1.64.1（根 package.js
 npx playwright install chromium   # 下载浏览器（~150MB，只需一次）
 ```
 
+> L0 里只有一个用例要**真 IndexedDB**：`tests/unit/attachment-preserve-import-531.test.mjs`
+> 验 `commitStaging()` 对 `files` store 的替换语义（#531），桩掉 db 就等于把被测物换成替身，
+> 所以宿主用 `fake-indexeddb`（纯 JS 内存实现，随 `pnpm install` 一起装，无需额外步骤）。
+
 > 历史坑：以前 `tests/node_modules` 是指向本机路径的软链，`pnpm install` 也会跳过它。
 > **软链已删除**，依赖统一由根 `package.json` 管；如果你在哪里又看到这个软链，直接删掉，别再建。
 
