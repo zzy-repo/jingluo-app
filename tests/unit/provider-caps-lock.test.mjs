@@ -117,6 +117,12 @@ test('能力矩阵快照：四个渠道逐字段锁定（防止改错误分类�
       ]
     })
   )
+  /**
+   * #552：`vision` 一列从 #480 的「只有 deepseek 有图」变成「四个渠道都有图」——
+   * anthropic / openai / ours 走本地 base64 内联（能力表 `image.base64`），
+   * deepseek 走 Files API 的 `file_id`（`image.nativeFile`）。**这是能力增加，不是减少**
+   * （#324 第 5 条禁止的是削能力）；入口门禁仍要求「表里有可用通路」，见 `ChatInput.tsx`。
+   */
   assert.deepEqual(snapshot, {
     deepseek: {
       caps: {
@@ -137,7 +143,7 @@ test('能力矩阵快照：四个渠道逐字段锁定（防止改错误分类�
         thinking: true,
         search: false,
         title: false,
-        vision: false,
+        vision: true,
         tts: false,
         asr: false,
       },
@@ -150,7 +156,7 @@ test('能力矩阵快照：四个渠道逐字段锁定（防止改错误分类�
         thinking: false,
         search: false,
         title: false,
-        vision: false,
+        vision: true,
         tts: false,
         asr: false,
       },
@@ -165,7 +171,7 @@ test('能力矩阵快照：四个渠道逐字段锁定（防止改错误分类�
         thinking: true,
         search: false,
         title: false,
-        vision: false,
+        vision: true,
         tts: false,
         asr: false,
       },

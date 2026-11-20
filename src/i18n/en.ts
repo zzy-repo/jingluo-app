@@ -383,6 +383,12 @@ export const en = {
   imageAnimatedTooLarge:
     'This animated image is over {size} MB or too large; compressing it would flatten the animation. Please compress it first.',
   imageEncodeFailed: 'Failed to encode the image. Please retry or use another file.',
+  imageSourceMissing:
+    'The local copy of this image is gone, so it cannot be sent. Please add it again.',
+  imageTooMany: 'A message can include at most {count} images.',
+  imageTotalTooLarge: 'Images in this message exceed {size} MB in total. Please send fewer images.',
+  uploadImageOnly: 'This channel can only send images. Switch to a supported channel for documents.',
+  visionUnsupported: 'This channel does not support images. Switch to a channel or model that does.',
   uploadFileCountLimit: 'Uploaded file limit reached ({limit} files). ',
   uploadStorageLimit: 'Uploaded file storage limit reached ({limit} GB). ',
   uploadDeleteFiles: 'Delete files',

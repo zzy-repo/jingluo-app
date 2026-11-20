@@ -97,6 +97,28 @@ button.image {
   pointer-events: none;
 }
 
+/* 发出去的格式与体积（#552）：压缩过的图发出去是 webp、字节也和原件不同，写在底部渐变上。
+   可见性与失败原因同一档（`--message-file-reason-display`）——64px 混排缩略图里放不下，
+   收起规则复用同一条自定义属性，不再引入任何新判据。 */
+.meta {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  display: var(--message-file-reason-display, flex);
+  justify-content: center;
+  box-sizing: border-box;
+  padding: 0 4px 6px;
+  font-size: 11px;
+  line-height: 14px;
+  font-weight: 500;
+  text-align: center;
+  word-break: break-word;
+  color: var(--dsw-static-neutral-bluish-00);
+  background: linear-gradient(to bottom, rgba(0, 0, 0, 0), rgba(0, 0, 0, 0.65));
+  pointer-events: none;
+}
+
 /* 原来这里是一条 `@container (max-width: 63px)`：63px 是 64px 盒减去两侧 1px 边框后的内容盒宽度，
    也就是「与文件混排」那一档（64px）专属。低内核整块丢弃 → 换成 `.filesWithDocuments` 里的
    `--message-file-reason-display: none`（同一个 64px 档的声明处），语义不变、零特性依赖。 */

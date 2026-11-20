@@ -12,7 +12,17 @@ import { cancelUpload, describeUploadError, uploadAttachment, useUploads } from 
 // #480 §7 / §9：文档正文的文本注入（渠道能力表 + ContextBuilder + 附件引用收集）。
 // DeepSeek 官方 `textInjection === false`，这条链路一次都不进（见 streamReply 里的能力闸）。
 import { buildWithDocuments, formatDocumentInjection, type ChatMessage } from '../attachments/contextBuilder.js'
-import { acceptsDocuments, docInjectionFor } from '../attachments/providerCapability.js'
+import { acceptsDocuments, docInjectionFor, visionFor } from '../attachments/providerCapability.js'
+// #551 / #552：图片的 base64 内联通路（编码产物缓存 + 编码入口）。
+import {
+  dropImagePart,
+  ImageSourceError,
+  imagePartBytes,
+  imagePartOf,
+  putImagePart,
+  toImagePart,
+  type ImagePart,
+} from '../attachments/imageSource.js'
 import {
   collectAttachmentsForRequest,
   stripAttachmentRefs,
@@ -30,7 +40,7 @@ import { buildMeta, endpointKeyFromUrl } from '../diagnostics/fields.js'
 import { REASON } from '../diagnostics/reasons.js'
 import { createStreamMeter, streamTimingMeta } from '../diagnostics/timing.js'
 import { requestGates, type ProviderKind } from '../api/providers.js'
-import { LIMITS } from '../limits.js'
+import { LIMITS, mbOf } from '../limits.js'
 import { useSettings } from '../settings.js'
 import { generateSessionTitle } from './autoTitle.js'
 import { estimateChars, estimateTokens } from './contextBudget.js'
@@ -1193,7 +1203,16 @@ const saveServerIds = (sessionId: string, serverIds: Map<string, string>) => {
  * 附件的服务端 id：已有直接用；正在上传的等待同一任务；否则读取本地原件补传。
  * 本地也没有原件（导入的文档附件只有元数据）时返回 null，该附件只展示、不进入请求。
  */
-const ensureServerId = async (apiKey: string, file: FileAttachment): Promise<string | null> => {
+const ensureServerId = async (
+  apiKey: string,
+  file: FileAttachment,
+  /**
+   * 内存里的原件（本轮刚发出的附件）：`persist` 是异步的，`db.loadFile()` 可能还读不到。
+   * 少了这一手，刚发出的图在某些时序下会拿不到 `serverId` → `toFileBlocks()` 直接不产块 →
+   * **静默丢图**（#548 明令禁止）。
+   */
+  direct?: Blob
+): Promise<string | null> => {
   if (file.serverId) {
     return file.serverId
   }
@@ -1201,7 +1220,7 @@ const ensureServerId = async (apiKey: string, file: FileAttachment): Promise<str
   if (task?.status === 'done') {
     return task.serverId
   }
-  const blob = await db.loadFile(file.id)
+  const blob = direct ?? (await db.loadFile(file.id))
   if (!blob) {
     return null
   }
@@ -1225,6 +1244,105 @@ const refreshRequest = (sessionId: string, request: Request): Request => {
 }
 
 /**
+ * 图片编码失败 / 原件缺失这类「本地就能判死」的错误，转成带可读文案的 ApiError，
+ * 这样 streamReply 的失败分支会把它当 `localMessage` 显示给用户（而不是泛化的「生成失败」）。
+ * 文案取自 `imageSource` 抛出的 `localMessage`，与选图阶段的提示是同一份 key。
+ */
+const imageFailure = (error: unknown): unknown =>
+  error instanceof ImageSourceError
+    ? new ApiError('protocol', error.localMessage)
+    : error
+
+/**
+ * base64 渠道的图片准备（#551）：把本轮 + 历史里的图片在本地编码成内联块。
+ *
+ * 三条口径：
+ * 1. **不发任何上传请求**（这些渠道没有 `paths.files`，#360 的 404 就是这么来的）；
+ * 2. 本轮提问的图片**要么成功、要么明确报错**：原件缺失 / 格式不支持 / 编码失败 / 超限
+ *    都会中止发送并给出可读原因 —— 绝不静默丢图（母单 #548 的硬约束）；
+ * 3. 历史图片有原件就编（导入会话的图片因此也能发，顺带修好 `serverId` 恒 null 的老问题），
+ *    编不出来只记日志、不阻断发送（与 #379「历史附件不阻断发送」同一口径）。
+ *
+ * 选图阶段（`drafts.prepareInline`）已经把本轮的图编好了，这里的 `imagePartOf()` 直接命中；
+ * 没命中才补编一次（导入的历史 / 换渠道前选的老图）。编码结果按「附件 id + 参数」缓存，
+ * 同一张图每次得到的字节相同（#345 前缀稳定的前提）。
+ */
+const prepareInlineImages = async (
+  sessionId: string,
+  request: Request,
+  signal: AbortSignal
+): Promise<void> => {
+  /**
+   * 取原件：刚发出的消息可能还没落盘（`persist` 是异步的），先看内存里的 pendingFiles，
+   * 再回落到 IndexedDB —— 只查 db 会有「图片还没写完就读」的空窗。
+   */
+  const blobOf = async (id: string): Promise<Blob | undefined> => {
+    const pending = pendingFiles.get(sessionId)?.find((item) => item.id === id)?.blob
+    return pending ?? (await db.loadFile(id))
+  }
+  const encode = async (file: FileAttachment): Promise<ImagePart> => {
+    const cached = imagePartOf(file.id)
+    if (cached) {
+      return cached
+    }
+    const blob = await blobOf(file.id)
+    if (!blob) {
+      throw new ImageSourceError({ key: 'imageSourceMissing' }, false)
+    }
+    return toImagePart(blob)
+  }
+
+  const questionImages = request.question.files.filter((file) => file.isImage)
+  if (questionImages.length > LIMITS.images.maxCount) {
+    throw new ApiError('protocol', {
+      key: 'imageTooMany',
+      params: { count: LIMITS.images.maxCount },
+    })
+  }
+  let total = 0
+  for (const file of questionImages) {
+    signal.throwIfAborted()
+    let part: ImagePart
+    try {
+      part = await encode(file)
+    } catch (error) {
+      throw imageFailure(error)
+    }
+    putImagePart(file.id, part)
+    total += imagePartBytes(part)
+  }
+  if (total > LIMITS.images.maxTotalBytes) {
+    throw new ApiError('protocol', {
+      key: 'imageTotalTooLarge',
+      params: { size: mbOf(LIMITS.images.maxTotalBytes) },
+    })
+  }
+
+  let skipped = 0
+  for (const [user] of getContextRounds(request.history)) {
+    for (const file of user.files) {
+      if (!file.isImage || imagePartOf(file.id)) {
+        continue
+      }
+      signal.throwIfAborted()
+      try {
+        putImagePart(file.id, await encode(file))
+      } catch {
+        // 历史图片编不出来（导入的图片没有原件 / 超限）：跳过它这一张，不阻断本次发送
+        skipped++
+      }
+    }
+  }
+  if (skipped > 0) {
+    record('chat_send', 'warn', 'history images not inlined', {
+      count: skipped,
+      reason: 'history',
+      status: 'error',
+    })
+  }
+}
+
+/**
  * 发送前补齐附件的 serverId。
  * - 本轮提问的附件并行补齐，任一失败则整体失败，已成功的照常写回，重试时复用成功结果；
  * - **历史轮次的附件默认不补传**（#379）：它们属于既有消息记录，发新消息不该触发上传。
@@ -1241,6 +1359,20 @@ const prepareFiles = async (sessionId: string, request: Request, signal: AbortSi
   // 否则快照里仍是旧 id，补传会直接复用它。
   request = refreshRequest(sessionId, request)
   const apiKey = getApiKey()
+  /**
+   * 本渠道的图片通路（#551，`providerCapability.visionFor()` 唯一判定，#562 的单一能力表）。
+   * `base64 = false` 时下面每一条都以**原样**执行 —— 这就是 deepseek 路径零改动的意思。
+   */
+  const vision = visionFor(getCurrentSpec().kind)
+  const hasImage = request.question.files.some((file) => file.isImage)
+  if (hasImage && !vision.base64 && !vision.nativeFile) {
+    // 既不能内联、也没有 Files API：明确报错并提示换渠道，绝不静默丢图（母单 #548）
+    throw new ApiError('protocol', { key: 'visionUnsupported' })
+  }
+  if (vision.base64) {
+    // base64 渠道：图片本地编码内联，**一个上传请求都不发**
+    await prepareInlineImages(sessionId, request, signal)
+  }
   const serverIds = new Map<string, string>()
   // 停止生成立即生效；上传本身不取消（输入框与其他消息可能共用同一任务），完成后照常写回 serverId
   const aborted = new Promise<never>((_, reject) => {
@@ -1248,7 +1380,24 @@ const prepareFiles = async (sessionId: string, request: Request, signal: AbortSi
   })
   const uploads = Promise.allSettled(
     request.question.files.map(async (file) => {
-      const serverId = await ensureServerId(apiKey, file)
+      // base64 渠道的图片不进 Files API（#360：这条渠道没有上传端点，也不许回落）
+      if (file.isImage && vision.base64) {
+        return
+      }
+      if (file.isImage) {
+        /**
+         * 这张图本渠道按 `file_id` 发原图（deepseek 通路）。若它在**选图时**已经因为渠道是
+         * base64 而编过一份（用户中途换了渠道），那份产物就不再代表这次真正发出去的字节：
+         * 清掉缓存，卡片才不会拿 webp 的体积去描述一次原图上传（#552）。
+         * 只碰展示缓存 —— 请求本身（上传 + file_id）与改造前逐字节一致。
+         */
+        dropImagePart(file.id)
+      }
+      const serverId = await ensureServerId(
+        apiKey,
+        file,
+        pendingFiles.get(sessionId)?.find((item) => item.id === file.id)?.blob
+      )
       if (serverId) {
         serverIds.set(file.id, serverId)
       }
@@ -1272,6 +1421,10 @@ const prepareFiles = async (sessionId: string, request: Request, signal: AbortSi
   for (const [user] of getContextRounds(request.history)) {
     for (const file of user.files) {
       if (file.serverId || serverIds.has(file.id)) {
+        continue
+      }
+      // base64 渠道的图片不参与补传：它们的正文在本地，压根不需要 file_id
+      if (file.isImage && vision.base64) {
         continue
       }
       const recovering = recoveringFiles.get(file.id)
@@ -1620,7 +1773,8 @@ const streamReply = async (sessionId: string, initial: AssistantMessage, request
           latestReminder,
           // 裁剪边界跟着会话走（#345）：同一会话的后续轮次沿用同一个边界，
           // 请求前缀逐字节稳定，上游上下文缓存才会命中
-          { anchorKey: sessionId, attachmentRefs: documentInjection }
+          // vision：本渠道图片走 file_id 还是 base64 内联（#551）；deepseek 仍只认 file_id
+          { anchorKey: sessionId, attachmentRefs: documentInjection, vision: visionFor(spec.kind) }
         )
         /**
          * 注入正文（#480 §9）：`buildWithDocuments()` 是**唯一入口** —— 它按预算挑正文、

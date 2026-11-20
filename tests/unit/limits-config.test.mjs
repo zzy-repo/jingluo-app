@@ -117,7 +117,6 @@ const ORIGINAL_VALUES = {
     maxCount: 20,
     maxTotalBytes: 20 * 1024 * 1024,
     cacheEntries: 24,
-    sniffHeadBytes: 4096,
     maxHeadBytes: 262_144,
   },
   paymentTrail: { pollIntervalMs: 4000, pollMaxMs: 120_000 },
@@ -185,13 +184,9 @@ test('每个 LIMITS 叶子都被生产代码引用（表里不许有没人用的
   const exempt = {
     bootDeadlineMs: '内联脚本 src/index.html 在 bundle 之前执行，import 不到模块；由本文件断言两处相等',
     importMaxBytes: '单一来源仍在 importLimit.ts（#34 的纪律），消费方经由 DEFAULT_MAX_IMPORT_BYTES 使用',
-    // #562 的顺序：先把 B 线的骨架对齐到 A 线（限制合一 / 模块归位 / 能力表只留一张），
-    // 图片注入本身**下一步**才接进 A 的单入口管线。这三个值是 #548 已经拍板的量（ref-vision.md
-    // 5.3：单条 20 张 / 20MB、选图时读 4KB 头部），删掉会让「已定的数」丢失，所以先留在表里，
-    // 接线那一步会把它们真正用起来（届时这三条豁免必须删掉 —— 本文件会报「豁免烂在那里」）。
-    'images.maxCount': '图片注入接线（#562 的下一步）后由 store.prepareFiles 使用',
-    'images.maxTotalBytes': '图片注入接线（#562 的下一步）后由 store.prepareFiles 使用',
-    'images.sniffHeadBytes': '图片注入接线（#562 的下一步）后由 drafts 的选图预检使用',
+    // #552 接线完成：`images.maxCount` / `images.maxTotalBytes` 已由 `store.prepareInlineImages()`
+    // 真正使用（#562 暂押的那两条豁免到此删除）；`images.sniffHeadBytes` 随选图预检并入
+    // `toImagePart()` 的 magic-bytes 探测一并删除 —— 选图阶段不再单独读一遍头部。
   }
   const text = readSrcText()
   const missing = leaves(LIMITS).filter((leaf) => !exempt[leaf] && !text.includes(`LIMITS.${leaf}`))

@@ -29,14 +29,18 @@
  * `store.prepareFiles`）负责取原件，这样 `reply.ts` 拼请求时只需同步查一次缓存，
  * 整条链路不用改成 async。
  *
- * ## 现在的接线状态（#562 的结构对齐）
+ * ## 接线状态（#562 结构对齐 → #552 接线）
  *
- * 本文件是**传输层实现**，已经落在附件域目录里，与 #480 的文档链路共用同一套
- * `limits`（`LIMITS.images`）与同一张渠道能力表（`providerCapability.ts` 的 `visionFor()`）。
- * 把它接进 A 线那条「挂附件 → 组装」的单入口管线（`store.prepareFiles` → `reply.toFileBlocks`
- * → `inject.ts`）是**下一步**（#562 的执行顺序：结构先合、注入后接）。
- * 在那之前 `visionFor()` 已经如实声明了三个渠道的 `base64` 通路，但入口仍按 #480 的门
- * （`caps.vision && paths.files`）走，所以不会出现「选了图却被静默丢掉」的半截状态。
+ * 本文件是**传输层实现**，与 #480 的文档链路共用同一套 `limits`（`LIMITS.images`）与同一张
+ * 渠道能力表（`providerCapability.ts` 的 `visionFor()`）。链路已经接通：
+ *
+ * - **选图时**编码一次（`chat/drafts.ts` 的 `prepareInline`，串行队列），产物进下面的缓存，
+ *   卡片当场显示「发出去的是 WEBP · 218 KB」/ 可读的失败原因（#552）；
+ * - **发送前**`store.prepareInlineImages()` 只查缓存（没命中才补编一次），本轮图片要么编好
+ *   要么明确报错，**绝不静默丢图**；
+ * - **拼请求时**`reply.toFileBlocks()` 同步查一次 `imagePartOf()`，把内联块放进 user content。
+ *
+ * 深链约束不变：deepseek 走 `file_id`，缓存对它永远是空的，那条路径逐字节与改造前一致。
  */
 
 import type { TranslationMessage } from '../../i18n/index.js'
@@ -662,6 +666,15 @@ export const putImagePart = (id: string, part: ImagePart): void => {
 
 /** 取已编码结果：`reply.ts` 拼请求时同步查这一下，没命中就当这张图没有内联形态 */
 export const imagePartOf = (id: string): ImagePart | undefined => parts.get(cacheKey(id))
+
+/**
+ * 丢掉某一张图的编码产物（#552）：同一批附件换了渠道发（例如先在 base64 渠道选了图、
+ * 后来切到按 `file_id` 上传的渠道），此前编好的内联产物就不再代表「发出去的字节」，
+ * 留着只会让卡片拿 webp 的体积去描述一次原图上传。**只影响展示用的缓存，不影响任何请求。**
+ */
+export const dropImagePart = (id: string): void => {
+  parts.delete(cacheKey(id))
+}
 
 /** 清空缓存（会话删除 / 单测用；编码结果是可重算的派生物，生产不主动清） */
 export const clearImageParts = (): void => {

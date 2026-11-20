@@ -76,7 +76,14 @@ export type ProviderCaps = {
   search: boolean
   /** 服务端自动生成会话标题 */
   title: boolean
-  /** 图片等附件（Files API + image/document block） */
+  /**
+   * **UI 上有没有图片附件入口**（不是「图片怎么发」——那是 `attachments/providerCapability.ts`
+   * 的 `image` 维度，#562 的单一能力表）。
+   *
+   * 三个 base64 渠道（anthropic / openai / ours）从 #552 起置 true：它们不走 Files API，
+   * 图片在本地编码后内联（`visionFor(kind).base64`），入口与通路同时打开，不会出现
+   * 「入口亮着、点下去拿不到图」的假承诺。
+   */
   vision: boolean
   /** 朗读（TTS） */
   tts: boolean
@@ -230,7 +237,7 @@ const RAW_SPECS: Record<ProviderKind, RawProviderSpec> = {
       text: true,
       search: false,
       title: false,
-      vision: false,
+      vision: true,
       tts: false,
       asr: false,
     },
@@ -253,7 +260,8 @@ const RAW_SPECS: Record<ProviderKind, RawProviderSpec> = {
     // Authorization: Bearer <key>
     auth: 'bearer',
     /**
-     * 只做基础对话：搜索/标题/附件/语音/朗读全关。
+     * 只做基础对话：搜索/标题/语音/朗读全关；图片附件从 #552 起可用（本地 base64 内联，
+     * 不需要 Files API —— 这个协议的上游一般也没有那条路由），文档走文本注入（#480）。
      * 深度思考走 reasoningParam 三档（#297）：默认 `none` = 请求侧丢弃 thinking，
      * 与 1.3.0 行为逐字一致（第三方中转不受影响）；配成另外两档才会露开关、才会发显式参数。
      */
@@ -261,7 +269,7 @@ const RAW_SPECS: Record<ProviderKind, RawProviderSpec> = {
       text: true,
       search: false,
       title: false,
-      vision: false,
+      vision: true,
       tts: false,
       asr: false,
     },
@@ -284,7 +292,7 @@ const RAW_SPECS: Record<ProviderKind, RawProviderSpec> = {
       text: true,
       search: false,
       title: false,
-      vision: false,
+      vision: true,
       tts: false,
       asr: false,
     },

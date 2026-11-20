@@ -160,6 +160,19 @@ const enqueueUpload = (
 }
 
 /**
+ * 内联编码的产物摘要（#552）：卡片要如实告诉用户「真正发出去的是什么」——
+ * 超过阈值的图会被压成 **webp**，字节数和原件也不一样（`attachments/imageSource.ts`
+ * 的 `toImagePart()` 是唯一产出方）。完整字节留在那边的缓存里（`imagePartOf()`），
+ * 这里只放展示要用的两样，避免为了显示体积去解一遍 base64。
+ */
+export type InlineImageInfo = {
+  /** 编码产物的媒体类型（`image/webp` 等），**不是**文件名的扩展名 */
+  mediaType: string
+  /** 编码产物的真实字节数（由 base64 长度换算） */
+  bytes: number
+}
+
+/**
  * 上传任务按附件的本地 id 登记：输入框选中即开始上传，全部成功后携带 serverId 发送，
  * 不会重复上传；导入的历史附件没有任务，发送前按本地原件补传。
  * 任务只在内存里，历史附件补传未完成时，刷新后会在下次请求前重新上传。
@@ -167,6 +180,13 @@ const enqueueUpload = (
 export type UploadTask =
   | { status: 'uploading' }
   | { status: 'done'; serverId: string }
+  /**
+   * 内联就绪（#551 的通路 / #552 的时机）：base64 渠道的图片**不进 Files API**
+   * （这些渠道没有 `paths.files`，发了就是 #360 那类 404），选中即在本地编码，
+   * 成功落成这个终态并带上编码产物的格式与体积。
+   * 它和 `done` 一样代表「可以发送」，差别只是没有 `serverId`。
+   */
+  | ({ status: 'inline' } & InlineImageInfo)
   | { status: 'error'; error: TranslationMessage; retryable: boolean }
 
 type UploadState = { tasks: Record<string, UploadTask> }
@@ -328,6 +348,31 @@ export const cancelUpload = (id: string) => {
   setTask(id, null)
 }
 
+/**
+ * 开始本地编码（base64 渠道的图片，#552）：卡片回到「进行中」态（与上传中的蒙层同一套），
+ * 首轮和「重试」都从这里进 —— 重试要先把上一次的错误态清掉。
+ * 不在这里编码：编码是 async + 吃 canvas 的活，由 `chat/drafts.ts` 的 `prepareInline` 发起。
+ */
+export const markInlineEncoding = (id: string) => {
+  setTask(id, { status: 'uploading' })
+}
+
+/**
+ * 标记某个附件「内联就绪」（#551）。顺带记下编码产物的格式与体积（#552），
+ * 卡片据此显示「发出去的是 webp · 218 KB」。
+ */
+export const markInlineReady = (id: string, info: InlineImageInfo) => {
+  setTask(id, { status: 'inline', ...info })
+}
+
+/**
+ * base64 渠道的图片被判死（magic bytes 不是图片 / 原始体积超硬上限 / 编码失败）：
+ * 卡片上直接给原因，`retryable` 决定要不要给重试入口（#551 的「明确拒绝」）。
+ */
+export const markInlineRejected = (id: string, error: TranslationMessage, retryable: boolean) => {
+  setTask(id, { status: 'error', error, retryable })
+}
+
 /** 各扩展名对应的 MIME：部分系统（如 Windows）给不出 file.type，按扩展名补齐 */
 const MIME_BY_EXT: Record<string, string> = {
   png: 'image/png',
@@ -360,4 +405,31 @@ export const formatSize = (bytes: number) => {
     unit++
   }
   return `${value < 10 ? value.toFixed(1) : Math.round(value)} ${units[unit]}`
+}
+
+/**
+ * 图片格式的展示名，**只从字节判定得出的 mediaType 取**（`image/webp` → `WEBP`）。
+ * 不能拿文件名的扩展名：`photo.png` 被压缩后发出去的是 `image/webp`，
+ * 拿扩展名显示会把用户看到的东西写反。
+ */
+export const formatOfImageMediaType = (mediaType: string) =>
+  (mediaType.split('/')[1] ?? '').toUpperCase()
+
+/**
+ * 「真正发出去的是什么」的卡片标签（#552）：用户有权知道压缩后的格式与体积。
+ *
+ * 判定只有一条：**字节和原件一样就是原图直发**（`toImagePart()` 的 passthrough 分支），
+ * 卡片上什么都不加；字节变了说明过了 canvas 重编码（阈值触发，输出 webp，或 jpeg 回落），
+ * 这时给出 `WEBP · 218 KB` —— 格式来自编码产物，体积是 base64 换算出来的真实字节数。
+ *
+ * 为什么用字节而不是「格式是否相同」来判断：浏览器的 `file.type` 可能为空或撒谎
+ * （相册导出的 HEIC 常报 `image/jpeg`），拿它比较会既漏报又误报。
+ */
+export const describeSentImage = (sent: InlineImageInfo, originalBytes: number): string | null => {
+  if (sent.bytes === originalBytes) {
+    return null
+  }
+  return [formatOfImageMediaType(sent.mediaType), formatSize(sent.bytes)]
+    .filter(Boolean)
+    .join(' · ')
 }

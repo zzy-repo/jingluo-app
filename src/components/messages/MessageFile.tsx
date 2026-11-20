@@ -1,7 +1,8 @@
 import clsx from 'clsx'
 import { useEffect, useState } from 'react'
 import { useTranslate } from '../../i18n/index.js'
-import { useUploads } from '../../services/attachments/upload.js'
+import { describeSentImage, useUploads } from '../../services/attachments/upload.js'
+import { imagePartBytes, imagePartOf } from '../../services/attachments/imageSource.js'
 import { loadFile } from '../../services/chat/db.js'
 import type { FileAttachment } from '../../services/chat/types.js'
 import { IconPhotoErrorFill20, IconRefreshOutline16 } from '../base/icons.js'
@@ -45,6 +46,8 @@ const useUploadState = (file: FileAttachment) =>
  * 消息里的附件：
  * - 图片：纯图片显示 120×120 缩略图，与文件混排时为 64×64；上传中显示 loading 蒙层，
  *   上传失败显示品牌色描边 + 中心重试图标（可重试）或 photo-error 图标（不可重试）。
+ *   走 base64 内联通路的图（#552）在正常态额外标出**发出去的格式与体积**（例：`WEBP · 218 KB`），
+ *   因为压缩后的字节和用户手上的原件不是一回事，这一点不能瞒着。
  * - 文件：显示文件卡片。
  */
 export const MessageFile = ({
@@ -59,6 +62,19 @@ export const MessageFile = ({
   const url = useFileUrl(file.id)
   const [failedUrl, setFailedUrl] = useState<string | null>(null)
   const upload = useUploadState(file)
+  /**
+   * 这张图**真正发出去的形态**（#552）：编码产物在选图阶段就进了 `imageSource` 的缓存
+   * （`drafts.prepareInline`），而消息是在发送前就挂上来的，所以这里同步查一次就能拿到。
+   * 刷新页面 / 换设备后缓存里没有这条 → 不显示（缩略图照常，原件仍在 IndexedDB）：
+   * 宁可不写，也不拿原件的体积冒充发出去的体积。
+   */
+  const sentPart = file.isImage ? imagePartOf(file.id) : undefined
+  const sentLabel = sentPart
+    ? describeSentImage(
+        { mediaType: sentPart.mediaType, bytes: imagePartBytes(sentPart) },
+        file.size
+      )
+    : null
   const uploading = upload?.status === 'uploading'
   const failed = upload?.status === 'error'
   const retryable = failed && upload.retryable
@@ -144,6 +160,8 @@ export const MessageFile = ({
         title={file.name}
       >
         {preview}
+        {/* 压缩过的图发出去是 webp、字节也比原件小：底部渐变上写清楚，与失败原因同一套样式 */}
+        {sentLabel ? <span className={styles.meta}>{sentLabel}</span> : null}
       </a>
     ) : (
       // 原件还没加载出来（极短暂）
