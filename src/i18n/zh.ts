@@ -889,7 +889,7 @@ export const zh = {
   accountConsumeGroupSource: '模型来源',
   accountConsumeSourceBuiltin: '内置服务',
   accountConsumeSourceThird: '第三方服务',
-  accountConsumeSourceDeepseek: 'DeepSeek 官方服务',
+  accountConsumeSourceOfficial: 'DeepSeek 官方服务',
   accountConsumeSourceAnthropic: 'Anthropic 协议服务',
   accountConsumeSourceKeyInvalid: 'API Key 无效，请检查后重试',
   accountConsumeSourcePickHint: '选一个来源后按「保存」，主界面会立刻用它',

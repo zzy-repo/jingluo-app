@@ -51,7 +51,7 @@ export const sourceKeyOf = (kind: ProviderKind): SourceKey =>
 const SOURCE_LABEL: Record<SourceKey, TranslationKey> = {
   builtin: 'accountConsumeSourceBuiltin',
   third: 'accountConsumeSourceThird',
-  deepseek: 'accountConsumeSourceDeepseek',
+  deepseek: 'accountConsumeSourceOfficial',
   anthropic: 'accountConsumeSourceAnthropic',
 }
 

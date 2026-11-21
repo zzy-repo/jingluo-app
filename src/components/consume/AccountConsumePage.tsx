@@ -9,7 +9,8 @@
  *     └─ Tab3 账户与消费   ← 本文件
  *         L1（列表页，页首就是余额卡）
  *           ├─ 余额卡：剩余余额 ¥x.xx（+ 卡内「我的额度」入口）
- *           ├─ 模型来源        → 行（右侧当前渠道名）→ L2 页：渠道 / API Key / 模型 / 连通性测试
+ *           ├─ 模型来源        → 行（右侧当前来源名）→ L2 页：**三行**（内置服务 / 第三方服务 /
+ *           │                     DeepSeek 官方服务）→ 点某一行进 L3 子页：字段 / 连通性测试
  *           ├─ 我的卡密        → 行 → L2 页（卡密列表 + 兑换卡密）
  *           ├─ 历史消费        → 行 → L2 页（消费记录）
  *           └─ 账号            → 行 → L2 页（资料 / 账号 ID / 绑定邮箱 / 登录方式 / 账号与安全 / 退出登录）
@@ -21,13 +22,14 @@
  *  3. **不做第二份客户端**：一个 `ConsumeClient`，默认用全应用共享的 `getConsumeClient()`；
  *  4. **面板逻辑原样复用**：卡密 / 购买 / 额度 / 账号还是 `MyCardsTab` / `BuyTab` / `QuotaPanel` /
  *     `AccountPanel` 那四个既有组件，本文件只负责「把它们放到原型的位置上」；
- *  5. L1 只留**一行**「模型来源」（右侧显示当前渠道名）；渠道下拉 / API Key / 模型 / 连通性测试
- *     都在它点进去的 L2 页里（设置弹层把这些字段通过 `sourceConfig` 注入，内容区不自己造第二份）。
+ *  5. L1 只留**一行**「模型来源」（右侧显示当前来源名）；它点进去是**三行 inset 列表**（每行 56px、
+ *     左右 20px、1px 极浅下边框、右侧 `›`，**不是分段控件**），再点某一行才进字段子页：
+ *     API Key / 服务地址 / 模型 / 连通性测试（设置弹层把这些字段通过 `sourceConfig` 注入，不造第二份）。
  *
  * #608 仍然成立：未登录可用、只填 Key 可用；未登录态账号页 = 登录 / 注册入口 + 「不登录也可以…」，
  * **没有登录墙**。
  */
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useTranslate, type TranslationKey } from '../../i18n/index.js'
 import {
   getApiKey,
@@ -65,13 +67,16 @@ type ConnState = { phase: 'idle' } | { phase: 'testing' } | { phase: 'ok'; ms: n
 /** 「模型来源」的三个选项（底层 kind：内置=ours / 第三方=openai|anthropic / 官方=deepseek） */
 type SourceOption = 'builtin' | 'third' | 'official'
 
-const SOURCE_OPTIONS: { id: SourceOption; labelKey: TranslationKey }[] = [
-  { id: 'builtin', labelKey: 'settingsSourceBuiltin' },
-  { id: 'third', labelKey: 'settingsSourceThird' },
-  { id: 'official', labelKey: 'settingsSourceOfficial' },
-]
+/** 三行的文案（行名与子页标题共用同一份；**不再用「渠道」那套旧词条**） */
+const SOURCE_LABEL_KEY: Record<SourceOption, TranslationKey> = {
+  builtin: 'accountConsumeSourceBuiltin',
+  third: 'accountConsumeSourceThird',
+  official: 'accountConsumeSourceOfficial',
+}
 
-/** 第三方渠道下的两个协议（既有两个 kind，不新增） */
+const SOURCE_OPTIONS: SourceOption[] = ['builtin', 'third', 'official']
+
+/** 第三方服务下的两个协议（既有两个 kind，不新增） */
 const THIRD_PARTY_PROTOCOLS: { kind: 'openai' | 'anthropic'; labelKey: TranslationKey }[] = [
   { kind: 'openai', labelKey: 'settingsProtocolOpenai' },
   { kind: 'anthropic', labelKey: 'settingsProtocolAnthropic' },
@@ -125,6 +130,13 @@ export const AccountConsumePage = ({
   const apiKey = useApiConfig((state) => state.apiKey)
 
   const [sheet, setSheet] = useState(false)
+  /**
+   * 「模型来源」里点开的是哪一行（`null` = 三行列表本身）。
+   *
+   * 这一层**留在内容区**：它只是同一页里的下一屏（标题换成行名、左上「‹ 返回」），
+   * 不进设置层的 `page`，所以返回不会离开设置、也不会把 tab 换掉。
+   */
+  const [sourceRow, setSourceRow] = useState<SourceOption | null>(null)
   const [conn, setConn] = useState<ConnState>({ phase: 'idle' })
   const [balance, setBalance] = useState<number | undefined>(undefined)
   const [walletTick, setWalletTick] = useState(0)
@@ -139,6 +151,13 @@ export const AccountConsumePage = ({
       alive.current = false
     }
   }, [])
+
+  /** 离开「模型来源」这一页时收起子页：下次进来先看到三行，而不是上次停的那一行 */
+  useEffect(() => {
+    if (page !== 'source') {
+      setSourceRow(null)
+    }
+  }, [page])
 
   /**
    * 余额：只读 sub2api 的 `balance`（元）。未登录 / 恢复中**一个请求都不发**（拿 JWT 打只会 401），
@@ -215,7 +234,7 @@ export const AccountConsumePage = ({
   const SOURCE_LABEL_KEYS: Record<string, TranslationKey> = {
     builtin: 'accountConsumeSourceBuiltin',
     third: 'accountConsumeSourceThird',
-    deepseek: 'accountConsumeSourceDeepseek',
+    deepseek: 'accountConsumeSourceOfficial',
     anthropic: 'accountConsumeSourceAnthropic',
   }
   const sourceLabelKey = SOURCE_LABEL_KEYS[sourceKeyOf(kind)]
@@ -275,41 +294,45 @@ export const AccountConsumePage = ({
     return name.slice(0, 1).toUpperCase() || '—'
   })()
 
+  /** 连通性测试一行（子页的兜底、以及不接 `sourceConfig` 的独立渲染共用同一份 JSX） */
+  const connRow = (
+    <button
+      type="button"
+      className={styles.row}
+      data-testid="account-consume-conn"
+      onClick={() => void runTest()}
+    >
+      <span className={styles.rowMain}>{t('settingsTestLabel')}</span>
+      <span className={styles.value} data-testid="account-consume-conn-state">
+        <i className={connDot} aria-hidden="true" />
+        {connText}
+      </span>
+    </button>
+  )
+
   /**
-   * L2「模型来源」页：渠道 / API Key / 模型 / 连通性测试都收在这里（L1 只留一行入口）。
+   * 来源子页里的字段区（服务地址 / API Key / 模型 / 连通性测试）。
    *
-   * 设置弹层里这些字段由外层注入（`sourceConfig`）；独立渲染时回落到「点一行开底部 sheet +
-   * 一行连通性测试」的老形态，保证面板联调 / 截图脚本仍能跑。
+   * 设置弹层里这些字段由外层注入（`sourceConfig`，按 `spec.fields` 渲染）；独立渲染时回落到
+   * 「只有一行连通性测试」的老形态，保证面板联调 / 截图脚本仍能跑。
    */
-  const sourcePage = sourceConfig ? (
-    <div className={styles.viewBody}>{sourceConfig}</div>
-  ) : (
-    <>
-      <div className={styles.rows}>
-        <button
-          type="button"
-          className={styles.row}
-          data-testid="account-consume-source"
-          onClick={() => setSheet(true)}
-        >
-          <span className={styles.rowMain}>{t('accountConsumeGroupSource')}</span>
-          <span className={styles.value}>{configured ? t(sourceLabelKey) : ''} ›</span>
-        </button>
-        <div className={styles.divider} />
-        <button
-          type="button"
-          className={styles.row}
-          data-testid="account-consume-conn"
-          onClick={() => void runTest()}
-        >
-          <span className={styles.rowMain}>{t('settingsTestLabel')}</span>
-          <span className={styles.value} data-testid="account-consume-conn-state">
-            <i className={connDot} aria-hidden="true" />
-            {connText}
-          </span>
-        </button>
-      </div>
-    </>
+  const sourceFields = sourceConfig ? <div className={styles.viewBody}>{sourceConfig}</div> : null
+
+  /** 独立渲染（没有 `sourceConfig`）时的兜底：一行「模型来源」开底部 sheet + 一行连通性测试 */
+  const sourcePage = sourceFields ?? (
+    <div className={styles.rows}>
+      <button
+        type="button"
+        className={styles.row}
+        data-testid="account-consume-source"
+        onClick={() => setSheet(true)}
+      >
+        <span className={styles.rowMain}>{t('accountConsumeGroupSource')}</span>
+        <span className={styles.value}>{configured ? t(sourceLabelKey) : ''} ›</span>
+      </button>
+      <div className={styles.divider} />
+      {connRow}
+    </div>
   )
 
   /** 余额卡：剩余余额（余额卡不是行）；额度收进卡里的一个入口，点它进 L2「我的额度」 */
@@ -344,10 +367,10 @@ export const AccountConsumePage = ({
 
   /** 下级页面的头部：左上角「返回」+ 本页标题（设置弹层的头部与 X 不动，这里只是内容区的二级头） */
   /**
-   * 选「模型来源」里的某一项。
+   * 点「模型来源」里的某一行 → 进它的子页（同一容器内换一屏）。
    *
-   * **只有内置渠道判断登录**（托管 Key / 余额挂在账号上）：未登录 → 去登录/注册；
-   * 第三方渠道与官方渠道永远不拦，直接切 kind 让用户填 Key（#608）。
+   * **只有内置服务判断登录**（托管 Key / 余额挂在账号上）：未登录 → 去登录/注册，不留在子页；
+   * 第三方服务与 DeepSeek 官方服务永远不拦，直接切 kind 让用户填 Key（#608）。
    */
   const chooseSource = useCallback(
     (source: SourceOption) => {
@@ -357,14 +380,17 @@ export const AccountConsumePage = ({
           return
         }
         setProviderKind('ours')
+        setSourceRow('builtin')
         return
       }
       if (source === 'official') {
         setProviderKind('deepseek')
+        setSourceRow('official')
         return
       }
-      // 第三方渠道：保持当前协议（老用户已选 anthropic 就还是 anthropic），默认 OpenAI 兼容
+      // 第三方服务：保持当前协议（老用户已选 anthropic 就还是 anthropic），默认 OpenAI 兼容
       setProviderKind(kind === 'anthropic' ? 'anthropic' : 'openai')
+      setSourceRow('third')
     },
     [kind, onNavigate, signedIn]
   )
@@ -451,56 +477,99 @@ export const AccountConsumePage = ({
     )
   }
 
-  // ───────────────────────────── L2：模型来源（三个选项） ────────────────────────
+  // ───────────────────── L2：模型来源（三行 inset 列表）／L3：每行的子页 ────────────────
   if (page === 'source') {
     /**
-     * 「模型来源」= 三个选项（不是四个渠道，进来也不跳登录）：
+     * 「模型来源」= **一屏三行**（inset 列表，不是分段控件），每行点进去是**同一容器内的子页**：
      *
-     *   内置渠道（kind=ours）    → **只有它判断登录**：未登录 → 登录/注册；已登录 → 托管 Key
-     *   第三方渠道               → 协议（OpenAI 兼容 / Anthropic）+ Base URL + API Key + 模型名
-     *   官方渠道（kind=deepseek） → 只填 API Key
+     *   内置服务（kind=ours）       → **只有它判断登录**：未登录 → 登录/注册；已登录 → 托管 Key + 余额入口 + 连通性测试
+     *   第三方服务                   → 协议（OpenAI 兼容 / Anthropic）+ 服务地址 + API Key + 模型 + 连通性测试
+     *   DeepSeek 官方服务（deepseek）→ API Key + 内置模型（只读）+ 连通性测试
      *
-     * 底层仍是既有的 `ProviderKind`：这里只是把「四个渠道」换成「三个来源 + 一个协议切换」的入口，
+     * 底层仍是既有的 `ProviderKind`：这里只是「三个来源 + 一个协议切换」的入口，
      * 字段渲染照旧由 `spec.fields` 决定（`ApiConfigFields`），不新增任何渠道状态。
      */
-    const currentSource: SourceOption =
-      kind === 'ours' ? 'builtin' : kind === 'deepseek' ? 'official' : 'third'
+    if (sourceRow !== null) {
+      // 子页：标题就是行名，左上「‹ 返回」只回三行列表 —— 不离开设置这个容器
+      return (
+        <div className={`${styles.page} ${styles.embedded}`} data-testid="account-consume-page">
+          <div className={styles.subHeader}>
+            <button
+              type="button"
+              className={styles.subBack}
+              data-testid="account-consume-source-back"
+              onClick={() => setSourceRow(null)}
+            >
+              <IconChevronRightOutline14 />
+              {t('back')}
+            </button>
+            <span className={styles.subTitle}>{t(SOURCE_LABEL_KEY[sourceRow])}</span>
+          </div>
+          {sourceRow === 'builtin' ? (
+            /* 余额挂在账号上：内置服务的子页里给一个回「我的钱包」的入口（金额只登录后读得到） */
+            <div className={styles.rows}>
+              <button
+                type="button"
+                className={styles.row}
+                data-testid="account-consume-source-balance"
+                onClick={() => onNavigate('wallet')}
+              >
+                <span className={styles.rowMain}>{t('accountConsumeRemaining')}</span>
+                <span className={styles.value}>
+                  {signedIn === true ? formatCurrency(balance ?? 0) : ''}
+                  <i className={styles.chevron} aria-hidden="true">
+                    ›
+                  </i>
+                </span>
+              </button>
+              <div className={styles.divider} />
+            </div>
+          ) : null}
+          {sourceRow === 'third' ? (
+            /* 协议是第三方服务自己的事，所以这一组分段只在这个子页里出现 */
+            <div className={styles.authSegmented} role="group" aria-label={t('settingsThirdPartyProtocol')}>
+              {THIRD_PARTY_PROTOCOLS.map((protocol) => (
+                <button
+                  key={protocol.kind}
+                  type="button"
+                  className={kind === protocol.kind ? `${styles.authSeg} ${styles.authSegOn}` : styles.authSeg}
+                  aria-pressed={kind === protocol.kind}
+                  data-testid={`settings-protocol-${protocol.kind}`}
+                  onClick={() => setProviderKind(protocol.kind)}
+                >
+                  {t(protocol.labelKey)}
+                </button>
+              ))}
+            </div>
+          ) : null}
+          {sourcePage}
+          {sheetNode}
+        </div>
+      )
+    }
     return (
       <div className={`${styles.page} ${styles.embedded}`} data-testid="account-consume-page">
         {subHeader('source', null)}
-        <div className={styles.authSegmented} role="group" aria-label={t('accountConsumeGroupSource')}>
-          {SOURCE_OPTIONS.map((option) => (
-            <button
-              key={option.id}
-              type="button"
-              className={
-                currentSource === option.id ? `${styles.authSeg} ${styles.authSegOn}` : styles.authSeg
-              }
-              aria-pressed={currentSource === option.id}
-              data-testid={`settings-source-${option.id}`}
-              onClick={() => chooseSource(option.id)}
-            >
-              {t(option.labelKey)}
-            </button>
+        <div className={styles.rows} data-testid="account-consume-source-list">
+          {SOURCE_OPTIONS.map((option, index) => (
+            <Fragment key={option}>
+              {index === 0 ? null : <div className={styles.divider} />}
+              <button
+                type="button"
+                className={styles.row}
+                data-testid={`settings-source-${option}`}
+                onClick={() => chooseSource(option)}
+              >
+                <span className={styles.rowMain}>{t(SOURCE_LABEL_KEY[option])}</span>
+                <span className={styles.value}>
+                  <i className={styles.chevron} aria-hidden="true">
+                    ›
+                  </i>
+                </span>
+              </button>
+            </Fragment>
           ))}
         </div>
-        {currentSource === 'third' ? (
-          <div className={styles.authSegmented} role="group" aria-label={t('settingsThirdPartyProtocol')}>
-            {THIRD_PARTY_PROTOCOLS.map((protocol) => (
-              <button
-                key={protocol.kind}
-                type="button"
-                className={kind === protocol.kind ? `${styles.authSeg} ${styles.authSegOn}` : styles.authSeg}
-                aria-pressed={kind === protocol.kind}
-                data-testid={`settings-protocol-${protocol.kind}`}
-                onClick={() => setProviderKind(protocol.kind)}
-              >
-                {t(protocol.labelKey)}
-              </button>
-            ))}
-          </div>
-        ) : null}
-        {sourcePage}
         {sheetNode}
       </div>
     )
