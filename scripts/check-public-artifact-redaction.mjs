@@ -74,109 +74,12 @@
  * bundle 里 `http://` 的四类分布（多少是命名空间、多少是内网地址）实测在
  * `docs/public-artifact-http-audit.md`（#745 第一步），不在这里重复。
  *
- * ## 与 `check:redaction`（#750，基线只减不增）的分工 —— 两条不是一回事
+ * ## 曾经的 `check:redaction`（#750）已退场
  *
- * `check:redaction` 的口径是「**基线登记存量、只减不增**」：现有包里的那几处内网地址被登记成
- * 合法存量（`config/artifact-redaction-baseline.json`），新塞一条才红；它的内网主机 / 端口是脚本里
- * 写死的两份清单。本门禁反过来：**命中即红**（登记过的存量不是豁免），主机 / 端口表从
- * `config/endpoints.json` 动态读，判不了就是 exit 2。
- *
- * 两条并存是有意的，因为它们回答不同的问题：#750 守「不许再多出一处」，本门禁守「发布前这个包
- * 必须是干净的」。**#745 收口**（`config/endpoints.json` 换成后端给的 https 域名、包重出）之后，
- * 建议把 `check:redaction` 与那份基线一起退场，只留本门禁 —— 那时基线本来就该是空的。
- */
-
-import fs from 'node:fs'
-import path from 'node:path'
-import { fileURLToPath } from 'node:url'
-
-import { listZipEntries, readZipEntryRecord } from '../deploy/dl-release/apk-manifest.mjs'
-import { ENDPOINTS_FILE } from './lib/endpointsSchema.mjs'
-
-const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
-
-/** 退出码（CLI 与单测共用，别在测试里另写一遍数字） */
-export const EXIT = Object.freeze({ CLEAN: 0, LEAK: 1, UNKNOWN: 2 })
-
-/** 单个 zip 条目最多解压多少字节（与 deploy/dl-release/apk-consume.mjs 同口径，防畸形包吃光内存） */
-const MAX_ENTRY_BYTES = 48 * 1024 * 1024
-
-/** APK 里哪些条目算「bundle」：assets 下的文本类产物（.js 为主，index.html / build-info.json 一起看） */
-const APK_BUNDLE_ENTRY_RE = /^assets\/.*\.(?:js|mjs|json|html?|css|txt|xml)$/i
-
-/** `--dist` 模式扫的扩展名：与 APK 内同一套「文本产物」口径 */
-const DIST_TEXT_EXT = new Set(['.js', '.mjs', '.json', '.html', '.htm', '.css', '.txt', '.xml'])
-
-/**
- * XML 命名空间主机：这些 URL 不是「服务地址」，是 SVG / XHTML / XLink 标签名的一部分。
- * 命中就计数跳过（打印处数），不算违规 —— 否则门禁第一天就红在自己身上。
- */
-const XMLNS_HOSTS = new Set(['www.w3.org', 'w3.org', 'schemas.android.com', 'ns.adobe.com'])
-
-/** 保留 / 占位域名后缀：不是可连地址（文档占位、脱敏样例、本机名），判「占位」跳过并计数 */
-const PLACEHOLDER_SUFFIXES = ['.local', '.test', '.example', '.invalid', '.localhost', '.example.invalid']
-/** 占位主机名本身（不含后缀匹配） */
-const PLACEHOLDER_HOSTS = new Set(['localhost', 'example', 'invalid', 'redacted'])
-
-/** 私有 / 保留 IPv4 段：裸 IP 字面量落在这里就是泄漏（不用查配置也判） */
-const PRIVATE_RANGES = [
-  [/^10\./, '10/8'],
-  [/^127\./, '127/8 回环'],
-  [/^169\.254\./, '169.254/16 链路本地'],
-  [/^192\.168\./, '192.168/16'],
-  [/^172\.(?:1[6-9]|2\d|3[01])\./, '172.16/12'],
-  [/^100\.(?:6[4-9]|[7-9]\d|1[01]\d|12[0-7])\./, '100.64/10 CGNAT'],
-  [/^192\.0\.2\./, '192.0.2/24 文档段'],
-  [/^198\.51\.100\./, '198.51.100/24 文档段'],
-  [/^203\.0\.113\./, '203.0.113/24 文档段'],
-]
-
-/** 四段十进制的**规范**写法（不许有前导零；产物里那种「三段补零的四段数字表」不会被误判成 IP） */
-const OCTET = '(?:25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)'
-const IPV4_RE = new RegExp(`^${OCTET}(?:\\.${OCTET}){3}$`)
-
-/** `http(s)://<authority><rest>`：只认显式 scheme（协议相对 `//x` 在产物里几乎都是注释/语法，不碰） */
-const SCHEME_URL_RE = /\b(https?):\/\/([^\s/?#"'`<>()\\|]+)([^\s"'`<>()\\|]*)/gi
-
-/** 引号包着的裸四段十进制：只认字符串字面量形态，避免把数字表 / 版本号误伤 */
-const QUOTED_IPV4_RE = /(['"`])(\d{1,3}(?:\.\d{1,3}){3})\1/g
-
-/** 端口出现：`:60010`；后面不许还跟数字（`:600101` 不是 60010） */
-const PORT_RE = /:(\d{2,5})(?!\d)/g
-
-const rel = (file) => path.relative(ROOT, file).split(path.sep).join('/')
-
-// ------------------------------------------------------------------ 配置 → 内网地址表
-
-/** 递归遍历配置，按 key 路径回调（数组用 `[i]`，便于点名 `legacyHosts[0]`） */
-const walkConfig = (node, keyPath, visit) => {
-  if (Array.isArray(node)) {
-    node.forEach((value, index) => walkConfig(value, `${keyPath}[${index}]`, visit))
-    return
-  }
-  if (node && typeof node === 'object') {
-    for (const [key, value] of Object.entries(node)) {
-      walkConfig(value, keyPath ? `${keyPath}.${key}` : key, visit)
-    }
-    return
-  }
-  if (typeof node === 'string' || typeof node === 'number') visit(node, keyPath)
-}
-
-const normalizeHost = (host) => String(host ?? '').trim().toLowerCase().replace(/^\[|\]$/g, '')
-
-/** 解析成 http(s) URL；不是绝对 http(s) 地址返回 null */
-const parseHttpUrl = (value) => {
-  try {
-    const url = new URL(value)
-    return url.protocol === 'http:' || url.protocol === 'https:' ? url : null
-  } catch {
-    return null
-  }
-}
-
-/**
- * 从配置原文派生「内网地址表」与「内网端口表」（**唯一**来源：不改第二份名单）。
+ * #750 曾经并存过一条同题门禁：口径是「基线登记存量、只减不增」，且内网主机 / 端口是脚本里
+ * **写死的两份清单** —— 那正是本仓库反复要避免的「第二份真相源」（配置改了、清单不改就会漏判）。
+ * 现在只有本门禁：**命中即红**，主机 / 端口表从 `config/endpoints.json` 动态读，判不了就是 exit 2。
+ * （退场理由与取舍见 #753。）
  *
  * @param {object} raw `config/endpoints.json` 解析后的对象
  * @param {string} [configFile] 仅用于报错文案

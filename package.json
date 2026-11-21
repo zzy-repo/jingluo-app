@@ -88,8 +88,7 @@
     "check:webroot-hygiene": "node scripts/check-webroot-hygiene.mjs",
     "check:private-publish-root": "node scripts/check-private-publish-root.mjs",
     "check:public-artifact-redaction": "node scripts/check-public-artifact-redaction.mjs",
-    "measure:scroll-shift": "node scripts/measure-narrow-scroll-shift.mjs",
-    "check:redaction": "node scripts/check-artifact-redaction.mjs"
+    "measure:scroll-shift": "node scripts/measure-narrow-scroll-shift.mjs"
   },
   "dependencies": {
     "@capacitor/browser": "8.0.5",
