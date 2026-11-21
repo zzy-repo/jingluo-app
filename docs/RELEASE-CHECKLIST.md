@@ -146,29 +146,45 @@ pnpm run release:check -- --apk $APK --tag v$V --manifest https://dl.rose7.cn/re
   - 末尾打印 `下一步（上传）需要这个 sha256: ...` ← **抄下来，交给阶段 C**。
 - 失败回滚：同 B2，重跑构建；不要为了让脚本过而改脚本里的期望值。
 
-#### B3b. 公开产物脱敏自检（#745 第 3 步；**CI 不跑，因为需要已构建的 APK**）
+#### B3b. 公开产物脱敏自检（#745 第 3/4 步；**CI 不跑，因为需要已构建的 APK**）
 
 ```bash
 pnpm run check:public-artifact-redaction -- $APK
 ```
 
-- 做：断言**正式发布包的 bundle 里不得出现内网 IP / 内网端口**。判据是**产物字节**（APK 里
+- 做：断言**正式发布包的 bundle 里不得出现已经没用的旧地址**。判据是**产物字节**（APK 里
   `assets/public/static/js/*.js`），不是源码 —— `check:ip` / `check:endpoints` 守的是源码，守不住
   被构建期注入进包的那一份（`1.4.5` / `1.4.6` 实测：包里能 grep 到内网 IP 与 `60010/60012/60013/8888`）。
-  内网地址表 / 内网端口表从 `config/endpoints.json` **动态派生**（`allowedHosts`、`allowedPorts`、
-  三个端点 URL、`legacyHosts`、`download.primaryBase`），本脚本里没有第二份名单。
-- 成功判据：打印 `通过：产物里没有未经放行的内网 IP / 内网端口`，退出码 0。输出里还会写清
-  「已跳过 N 处 XML 命名空间、M 处占位、K 处模板主机，不判」—— 跳过也要看得见，不许静默。
-- 失败判据：退出码 1 = 产物里真的有内网地址，逐条点名
-  （`[FAIL] http://<ip>:<port> → 内网 IP（在 config.endpoints.<字段>）`）。**#745 收口前，现有包
-  （1.4.5 / 1.4.6）跑这条就是红的，这是正确的**。退出码 2 = 判不了（APK 打不开 / 包里没有 bundle /
-  配置读不了），判不了同样按「不许发布」处理。
-- **这一步暂时不是发布阻塞门**：`config/endpoints.json` 是外部契约（等后端给 https 域名），#745 收口
-  之前先在发布前人工跑、把输出记进 #745；收口后再转硬门（并考虑并进 `release:check`）。联调 / staging
-  包确实需要带内网地址时，用 `--allow-host <ip> --allow-port <port>` 显式放行（脚本会打印放行清单），
-  **正式包不许带这两个参数**。
+  主机表 / 端口表从 `config/endpoints.json` **动态派生**，本脚本里没有第二份地址名单。
+- **口径是「三分类」，不是「一律判红」**（指挥台 11:12 裁决第 4 条）：要清的不是「产物里不许出现 IP」，
+  是「产物里不许出现已经没用的旧地址」。四类标签照下面读，**只有中间两类计红**：
+
+  | 标签 | 是什么 | 处置 |
+  | --- | --- | --- |
+  | `[OK-ENDPOINT]` | **产品端点**：客户端真要连（`chatBaseUrl` / `pay.baseUrl` / `download.fallbackBase`） | **保留**，出现在产物里是功能需要，不是泄漏 |
+  | `[FAIL-LEGACY]` | **旧池地址**：已下线 / 没有调用方（`inviteBaseUrl`、`feedbackUrl`、`legacyHosts[]`、`allowedHosts[]`、`allowedPorts[]`） | **清零**：先 grep 调用方，确认 0 处再删 |
+  | `[FAIL-UNREGISTERED]` | **未登记 / 未裁决**：配置里查不到，或登记在一个既不是产品端点也不是旧池的字段上（如 `download.primaryBase`，裁决未定） | **清零**：要么登记并裁决归类，要么从产物里摘掉 |
+  | `[WARN-DISPUTED]` | **争议域名**：`sub2api.rose7.cn`（`#624` 说生产实例 vs 11:12 说无关） | **不动**：等 #745 的 A/B/C 裁决，门禁不替裁决投票 |
+
+- 区分原则（为什么产品端点不算泄漏、旧池必须清）见 [`docs/RELEASE-MANUAL.md`](RELEASE-MANUAL.md) 的
+  §11.1；判定实现是 `scripts/check-public-artifact-redaction.mjs` 的 `classifyAddress`（纯函数，
+  同一 `(host, port)` 只许落一类，落两类直接 exit 2）。
+- 成功判据：退出码 0，且汇总行写「旧池地址 0 条 / 未登记 0 条」。输出里还会写清
+  「已跳过 N 处 XML 命名空间、M 处占位、K 处模板主机、争议域名」—— 跳过也要看得见，不许静默。
+- 失败判据：退出码 1 = 产物里有**旧池**或**未登记**地址，逐条点名并给出来源字段，汇总行形如
+  `结论：产品端点 1 条（允许）/ 旧池地址 4 条（必须清）/ 未登记 1 条（必须清）/ 争议 2 条（待裁决）`。
+  退出码 2 = 判不了（APK 打不开 / 包里没有 bundle / 配置读不了 / 分类自相矛盾），判不了同样按
+  「不许发布」处理。
+- **2026-11-21 对 1.4.7 包实测**（`deepseek-chat-1.4.7.apk`，exit 1）：`chatBaseUrl` → `[OK-ENDPOINT]`；
+  `inviteBaseUrl` / `feedbackUrl` / `legacyHosts[0]` / `legacyHosts[1]` → 4 条 `[FAIL-LEGACY]`；
+  `download.primaryBase` → 1 条 `[FAIL-UNREGISTERED]`（该字段归属未裁决，先判红）；
+  `sub2api.rose7.cn` → `[WARN-DISPUTED]`。红的原因比"一律判红"时更精确，条数更少。
+- **这一步暂时不是发布阻塞门**：`config/endpoints.json` 是外部契约（等后端给 https 域名 / 等 P0 裁决），
+  #745 收口之前先在发布前人工跑、把输出记进 #745；收口后再转硬门（并考虑并进 `release:check`）。
+  联调 / staging 包确实需要旧池地址时，用 `--allow-host <ip> --allow-port <port>` 显式放行
+  （脚本会打印放行清单），**正式包不许带这两个参数**。
 - 与 `check:redaction`（#750，基线只减不增）**不是一回事**：那条把现有包里的几处内网地址登记成合法存量、
-  只拦「新增一处」；这条是**命中即红**，回答的是「这个包现在干净吗」。两条都留着，直到 #745 收口。
+  只拦「新增一处」；这条**按处置分类判定**，回答的是「这个包现在干净吗」。两条都留着，直到 #745 收口。
 - 失败回滚：不产生任何线上状态；换包重出即可。
 
 #### B4. 签名指纹人工复核（脚本不替你验这个）

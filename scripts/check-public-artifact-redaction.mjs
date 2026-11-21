@@ -15,24 +15,48 @@
  * 产物 —— 构建期注入、别处拼装、`config` 里本来就这么写，全都能合法地进包。所以缺的这一层是
  * **以产物字节为准**的判据：**正式发布包的 bundle 里不许出现内网 IP / 内网端口**。
  *
- * ## 只判两类（刻意不追求「把 http:// 清零」）
+ * ## 先按形态扫「可疑地址」，再按处置分三类（指挥台 11:12 裁决，2026-11-21）
  *
  * bundle 里 `http://` 有一百多处，绝大多数是**合法的**：XML 命名空间（`http://www.w3.org/2000/svg`
  * 这类标签名的一部分）、占位域名（`redacted.local`）、公网 https 域名。把它们一律判红，门禁第一次
- * 上线就得关掉。真正的病灶只有两类：
+ * 上线就得关掉。所以这道门禁分两层：**形态层**只负责把「可能是地址的字节」捞出来，
+ * **处置层**才决定它是红是绿。
+ *
+ * ### 形态层（R1 / R1b / R2，只回答「像不像一个要连的地址」）
  *
  *   R1 **内网 / 裸 IP 主机**：`http(s)://<IPv4>` 或 `://<IPv4>:<port>` 形态 —— 主机是 IP 字面量。
- *      `config/endpoints.json` 里登记过的 IP 点名到字段（`在 config.endpoints.chatBaseUrl`），
- *      没登记的点名「未登记」。**默认全红**，只有显式 `--allow-host <ip>` 才放行（联调 / staging 包）。
  *   R2 **内网端口**：出现 `:<port>` 且 port 落在**内网端口表**里 —— 表从配置**动态派生**
  *      （配置里每个 URL 的显式端口 ∪ `allowedPorts`），不在本脚本里抄第二份。
- *      同理只有显式 `--allow-port <port>` 才放行。
- *   R1b **内网主机字面量**（R1 的补充，只认 config 登记过 / 私有段）：引号包着的一串裸四段十进制
+ *   R1b **裸 IP 主机字面量**（R1 的补充，只认 config 登记过 / 私有段）：引号包着的一串裸四段十进制
  *      （`legacyHosts` 里那些旧主机就是这么被 `apiConfig.ts` 的 `LEGACY_HOSTS` 打进包的）。
  *      只在**登记过或私有段**上判 —— 四段十进制和版本号在语法上无法区分（`"<段>.<段>.<段>.<段>"`
  *      既是版本号也是合法 IP），全判会把产物里任何一个版本字符串变成假红。
  *
- * **不判的也要记账**（不静默）：XML 命名空间、占位 / 保留域名逐类计数并打印名字与处数。
+ * ### 处置层（这一层是本单 #745 第四步的改动）
+ *
+ * 口诀：**清的不是「产物里不许出现 IP」，是「产物里不许出现已经没用的旧地址」。**
+ *
+ * | 类 | 判据（可机械判定） | 输出 | 计入红？ |
+ * | --- | --- | --- | --- |
+ * | **产品端点** | 命中地址的**来源字段** ∈ `PRODUCT_ENDPOINT_FIELDS`（`chatBaseUrl` / `pay.baseUrl` / `download.fallbackBase`）—— 客户端真要连它，删了功能就废 | `[OK-ENDPOINT]` | **否** |
+ * | **旧池地址** | 来源字段 ∈ `LEGACY_FIELDS`（`inviteBaseUrl` / `feedbackUrl` / `legacyHosts[]` / `allowedHosts[]` / `allowedPorts[]`）—— 已下线或没有调用方 | `[FAIL-LEGACY]` | **是** |
+ * | **未登记 / 未裁决** | 其它：配置里根本没登记，或登记在一个**既不在产品端点表、也不在旧池表**的字段上 | `[FAIL-UNREGISTERED]` | **是** |
+ * | **争议域名** | 主机 ∈ `DISPUTED_HOSTS`（目前只有 `sub2api.rose7.cn`） | `[WARN-DISPUTED]` | **否**（等 #745 的 A/B/C 裁决） |
+ *
+ * 三条不许踩的线：
+ *   1. **只做分类，不许放宽**。旧池与未登记仍然必须红；把它们从红里摘出去不是分类，是拆门禁。
+ *   2. **一个地址只许落一类**。先分类再计数（`classifyAddress` 是 `(host, port)` 的纯函数），
+ *      `summarize` 里有一条断言：同一个 `(host, port)` 落进两个类就 **exit 2**（自相矛盾的报告
+ *      比红更坏 —— 读的人不知道信哪一行）。
+ *   3. **同一地址既像产品端点又像旧池时，按产品端点算**（客户端真要连的字段赢），
+ *      并在那一行把「为什么归这一类」打印出来（`同时也在 config.endpoints.<旧字段>`）。
+ *
+ * `sub2api.rose7.cn` **刻意不硬判红也不硬判绿**：`#624` 说它是生产 https 实例，指挥台 11:12 裁决
+ * 说它与本项目无关。两边都还在桌上，硬判任何一边都是拿门禁去投票。所以只 WARN + 点名，
+ * 等 #745 的 A/B/C 裁决 —— 裁决出来以后，要么把它加进 `PRODUCT_ENDPOINT_FIELDS`，
+ * 要么连 `DISPUTED_HOSTS` 这一条一起删掉，都是一行改动。
+ *
+ * **不判的也要记账**（不静默）：XML 命名空间、占位 / 保留域名、争议域名逐类计数并打印名字与处数。
  * 这条规矩来自 #678：门禁「看起来在守」、底下却有一整类东西从没被看过，是最坏的绿。
  *
  * ## 允许清单从哪来（不写死第二份）
@@ -43,7 +67,11 @@
  *     `legacyHosts` / `download.primaryBase` 全部递归遍历，凡是「字符串里是 http(s) URL」或
  *     「裸四段十进制」的，记进**内网地址表**（带字段名，用于点名）；`allowedPorts` 里的整数记进
  *     内网端口表。换机器只改那份 JSON，这里不用同步。
- *   · **登记 ≠ 允许**：登记只用来生成报错里的「在 config.endpoints.<字段>」。出现在正式包里默认红。
+ *   · **登记 ≠ 允许，登记 = 能点名**：登记只用来（a）生成报错里的「在 config.endpoints.<字段>」，
+ *     （b）把命中分到「产品端点 / 旧池 / 未登记」三类 —— 三分靠的是**字段名**（`PRODUCT_ENDPOINT_FIELDS`
+ *     / `LEGACY_FIELDS` 两份表，只写字段名不写地址值），不是地址本身。
+ *   · 「哪些字段算产品端点」是**裁决**，不是配置：所以那两份表在本脚本里，且只有字段名。
+ *     地址值一律现读 `config/endpoints.json` —— 配置改了、表不用改。
  *
  * ## 用法
  *
@@ -54,9 +82,10 @@
  *   pnpm run check:public-artifact-redaction -- <apk>
  *
  * 退出码：
- *   0  干净（没有内网地址，或全部被 --allow-host / --allow-port 显式放行）
- *   1  发现内网地址（逐条点名，附 config 字段来源）
- *   2  判不了（APK 打不开 / 不是 zip / 包里没有 bundle / 产物目录没有可扫文件 / 配置读不了 / 用法错）
+ *   0  干净：没有「旧池」也没有「未登记」（产品端点与争议域名不计红）
+ *   1  发现旧池地址或未登记 / 未裁决地址（逐条点名，附 config 字段来源）
+ *   2  判不了（APK 打不开 / 不是 zip / 包里没有 bundle / 产物目录没有可扫文件 / 配置读不了 / 用法错
+ *      / 分类自相矛盾 —— 同一地址落进两个类）
  *      —— 判不了一律当失败：不知道有没有泄漏，不等于没有泄漏。
  *
  * ## 接线边界（别接进 ci.yml）
@@ -68,8 +97,8 @@
  * ## 与 #745 修复的关系
  *
  * 门禁建好时**现有包就是红的**（现状确实不合格）。`config/endpoints.json` 是外部契约（等后端给
- * https 域名），本单不动它。所以在 #745 收口之前，这道门禁**不是发布阻塞门**：先在发布前人工跑、
- * 把输出记进 issue；#745 收口后再转硬门。
+ * https 域名），本单不动它（P0 在等裁决）。所以在 #745 收口之前，这道门禁**不是发布阻塞门**：
+ * 先在发布前人工跑、把输出记进 issue；#745 收口后再转硬门。
  *
  * bundle 里 `http://` 的四类分布（多少是命名空间、多少是内网地址）实测在
  * `docs/public-artifact-http-audit.md`（#745 第一步），不在这里重复。
@@ -78,8 +107,8 @@
  *
  * #750 曾并存过一条同题门禁，口径是「基线登记存量、只减不增」，且内网主机 / 端口是脚本里
  * **写死的两份清单** —— 那正是本仓库反复要避免的「第二份真相源」（配置改了、清单不改就漏判）。
- * 现在只有本门禁：**命中即红**，主机 / 端口表从 `config/endpoints.json` 动态读，判不了就是 exit 2。
- * （退场理由与取舍见 #753。）
+ * 现在只有本门禁：**按处置三分类，旧池与未登记命中即红**，主机 / 端口表从 `config/endpoints.json`
+ * 动态读，判不了就是 exit 2。（退场理由与取舍见 #753。）
  */
 
 import fs from 'node:fs'
@@ -93,6 +122,79 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 
 /** 退出码（CLI 与单测共用，别在测试里另写一遍数字） */
 export const EXIT = Object.freeze({ CLEAN: 0, LEAK: 1, UNKNOWN: 2 })
+
+/**
+ * 处置分类（命中最终只能落在四类之一 + 一个「显式放行」的横切开关）。
+ * 名字即输出标签的语义，别在别处另写字符串。
+ */
+export const CLASS = Object.freeze({
+  /** `[OK-ENDPOINT]` 产品端点：客户端真要连，产物里出现是功能需要，不许"清零" */
+  ENDPOINT: 'endpoint',
+  /** `[FAIL-LEGACY]` 旧池地址：已下线 / 没有调用方，命中即红 */
+  LEGACY: 'legacy',
+  /** `[FAIL-UNREGISTERED]` 未登记 / 未裁决：默认红（宁可红，也不替人猜它有用） */
+  UNREGISTERED: 'unregistered',
+  /** `[WARN-DISPUTED]` 争议域名：关系待裁决，不计入红也不计入绿 */
+  DISPUTED: 'disputed',
+})
+
+/** 输出标签（一处定义，报告与用例都照它比） */
+export const CLASS_TAG = Object.freeze({
+  [CLASS.ENDPOINT]: '[OK-ENDPOINT]',
+  [CLASS.LEGACY]: '[FAIL-LEGACY]',
+  [CLASS.UNREGISTERED]: '[FAIL-UNREGISTERED]',
+  [CLASS.DISPUTED]: '[WARN-DISPUTED]',
+})
+
+/** 计入红的类（**只有这两个**：分类不许把任何一类悄悄变绿） */
+const RED_CLASSES = Object.freeze([CLASS.LEGACY, CLASS.UNREGISTERED])
+
+/**
+ * 产品端点字段：客户端真要连的服务，`config/endpoints.json` 里这几个字段的值出现在产物里
+ * **是功能需要，不是泄漏**（指挥台 11:12 裁决第 4 条）。只写字段名，地址值仍在配置里。
+ *
+ * 为什么 `consume.baseUrl` 不在这张表里：它的域名 `sub2api.rose7.cn` 目前是**争议域名**
+ * （`#624` 说生产实例 vs 指挥台 11:12 说无关，等 #745 的 A/B/C 裁决）。裁决为「生产实例」
+ * 之后再把它加进来 —— 那时它会走 `[OK-ENDPOINT]`；在那之前它走 `[WARN-DISPUTED]`，
+ * **一个地址只许落一类**，所以这里先不写，免得同一条命中两头都算。
+ */
+export const PRODUCT_ENDPOINT_FIELDS = new Map([
+  ['chatBaseUrl', '客户端真连的聊天后端（src/services/api/providers.ts）'],
+  ['pay.baseUrl', '买卡支付（src/services/ours/api.ts）'],
+  ['download.fallbackBase', '分发回退机（src/services/updateManifest.ts）'],
+])
+
+/**
+ * 旧池字段：已经没用的旧地址，出现在公开产物里就是泄漏，必须清零。
+ *
+ * `download.primaryBase` **不在这张表里**，也不在产品端点表里 —— 它落在「未裁决」那一类
+ * （判红，见 `classifyAddress`）。理由：`docs/public-artifact-http-audit.md` 说它还有调用方
+ * （`src/services/updateManifest.ts` 拉 `${base}/releases.json`），而 11:12 裁决的处置表没点名
+ * 它。这个矛盾还没裁决，所以**判红而不是猜绿**：猜绿等于替裁决投票，猜红只是保持现状。
+ */
+export const LEGACY_FIELDS = new Map([
+  ['inviteBaseUrl', '旧 invite 已随 #604 删除，调用方 0 处'],
+  ['feedbackUrl', '指挥台 11:12 裁决归入旧池（删前先 grep 调用方 0 处）'],
+  ['legacyHosts', '已下线主机重写表：这些主机只用来「被拒绝」，没有调用方'],
+  ['allowedHosts', '白名单里的旧 IP：给 check:ip 放行源码用，客户端并不连它'],
+  ['allowedPorts', '内网端口表：只描述联调机开哪几个端口，客户端不连'],
+])
+
+/**
+ * 争议域名：与本项目的关系**待裁决**，所以既不硬判红也不硬判绿（`[WARN-DISPUTED]`，不计入红）。
+ *
+ * 目前只有一条，且是**裁决状态**而不是配置数据 —— 它绝不从 `config/endpoints.json` 派生，
+ * 因为「这个域名跟本项目有没有关系」不是配置能回答的问题。裁决落地后二选一：
+ * 判定为生产实例 → 把它加进 `PRODUCT_ENDPOINT_FIELDS` 并删掉这一条；
+ * 判定为无关 / 该删 → 只删这一条（`config/endpoints.json` 里那一项由 P0 单独改）。
+ */
+export const DISPUTED_HOSTS = new Map([
+  ['sub2api.rose7.cn', '#624 说它是生产 https 实例；指挥台 11:12 裁决说与本项目无关'],
+])
+
+/** 争议域名的说明文案（报告与用例共用一份，免得两处措辞漂移） */
+const DISPUTED_WHY = (host) =>
+  `争议域名：该域名与本项目关系待 #745 裁决（#624 vs 11:12）—— ${DISPUTED_HOSTS.get(host) ?? ''}`.trim()
 
 /** 单个 zip 条目最多解压多少字节（与 deploy/dl-release/apk-consume.mjs 同口径，防畸形包吃光内存） */
 const MAX_ENTRY_BYTES = 48 * 1024 * 1024
@@ -172,16 +274,25 @@ const parseHttpUrl = (value) => {
 }
 
 /**
- * 从配置原文派生「内网地址表」与「内网端口表」（**唯一**来源：不改第二份名单）。
+ * 从配置原文派生「内网地址表」「内网端口表」与「全部登记主机表」（**唯一**来源：不改第二份名单）。
+ *
+ * 三张表的用途不同，别混：
+ *   · `addresses` / `hosts` —— 只装**内网形态**（IP 字面量 / 主机带端口），用来判「形态层」命中；
+ *   · `ports` —— 内网端口表；
+ *   · `knownHosts` —— **所有**在配置里出现过的 URL 主机（含 `dl.rose7.cn` 这种公网域名）。
+ *     只服务两件事：把命中按字段名分类（处置层）、以及发现 `DISPUTED_HOSTS` 里的域名已经不在
+ *     配置里了（裁决落地后忘了删 → 打印提示，不静默）。
  *
  * @param {object} raw `config/endpoints.json` 解析后的对象
  * @param {string} [configFile] 仅用于报错文案
  * @returns {{configFile:string, addresses:Array<{key:string,host:string,port:number|null,url:string|null}>,
  *            hosts:Map<string,Array<{key:string,port:number|null,url:string|null}>>,
+ *            knownHosts:Map<string,Array<{key:string,port:number|null,url:string|null}>>,
  *            ports:Map<number,string[]>}}
  */
 export function buildPolicy(raw, configFile = ENDPOINTS_FILE) {
   const addresses = []
+  const known = []
   const ports = new Map()
 
   const addPort = (port, key) => {
@@ -207,6 +318,8 @@ export function buildPolicy(raw, configFile = ENDPOINTS_FILE) {
     if (url) {
       const host = normalizeHost(url.hostname)
       const port = url.port ? Number(url.port) : null
+      // 登记主机：**不分公网 / 内网**都记，分类时才不会把产品端点当成「未登记」
+      known.push({ key, host, port, url: text })
       if (IPV4_RE.test(host) || host.includes(':')) {
         addresses.push({ key, host, port, url: text })
         if (port) addPort(port, key)
@@ -219,22 +332,28 @@ export function buildPolicy(raw, configFile = ENDPOINTS_FILE) {
     }
     // 裸主机（`legacyHosts` / `allowedHosts` 就是这种写法）
     if (IPV4_RE.test(text) || text.includes(':')) {
-      addresses.push({ key, host: normalizeHost(text), port: null, url: null })
+      const host = normalizeHost(text)
+      addresses.push({ key, host, port: null, url: null })
+      known.push({ key, host, port: null, url: null })
     }
   })
 
-  const hosts = new Map()
-  for (const entry of addresses) {
-    if (!entry.host) continue
-    const list = hosts.get(entry.host) ?? []
-    list.push(entry)
-    hosts.set(entry.host, list)
+  const group = (entries) => {
+    const map = new Map()
+    for (const entry of entries) {
+      if (!entry.host) continue
+      const list = map.get(entry.host) ?? []
+      list.push(entry)
+      map.set(entry.host, list)
+    }
+    return map
   }
 
   return {
     configFile: rel(configFile),
     addresses,
-    hosts,
+    hosts: group(addresses),
+    knownHosts: group(known),
     ports,
     allowHosts: new Set(),
     allowPorts: new Set(),
@@ -283,24 +402,99 @@ const splitAuthority = (authority) => {
 }
 
 /** 报错里点名「这个地址出自配置哪个字段」；没有登记就是没有登记 */
-const attribution = (keys) => (keys?.length ? `在 config.endpoints.${keys[0]}` : '未在 config.endpoints.json 登记')
+const attribution = (keys) =>
+  keys?.length ? `在 config.endpoints.${keys.join(' / ')}` : '未在 config.endpoints.json 登记'
+
+const uniq = (list) => [...new Set(list)]
 
 /**
- * 在配置表里找「这个主机（+端口）」出自哪个字段：先按端口精确匹配（chatBaseUrl / inviteBaseUrl /
- * feedbackUrl 是同一台机器的三个端口，只看主机分不开），再退回只按主机匹配。
+ * 字段**族**：`legacyHosts[0]` → `legacyHosts`。
+ * 分类看族（数组下标不改变"这一项属于哪一类"），点名看全键（`legacyHosts[0]` 比 `legacyHosts`
+ * 更能让人找到是哪一条）。两张表都按族写。
  */
-const keysForHost = (policy, host, port) => {
-  const list = policy.hosts.get(host)
-  if (!list?.length) return []
-  if (port) {
-    const exact = list.filter((entry) => entry.port === port).map((entry) => entry.key)
-    if (exact.length) return exact
-  }
-  const keyed = list.filter((entry) => entry.url).map((entry) => entry.key)
-  return keyed.length ? keyed : list.map((entry) => entry.key)
-}
+const fieldFamily = (key) => String(key).replace(/\[\d+\]$/, '')
 
 const keysForPort = (policy, port) => policy.ports.get(port) ?? []
+
+/**
+ * 找「这个地址出自配置哪些字段」：**端口优先**，主机次之，端口表兜底。
+ *
+ * 为什么不能只按主机找：`chatBaseUrl` / `inviteBaseUrl` / `feedbackUrl` 是**同一台机器**的三个端口，
+ * 只看主机分不开它们；反过来同一台旧机也有**两副面孔** —— `legacyHosts[]` 里的裸主机（要拒的旧机）
+ * 与 `download.primaryBase` 的「主机 + 端口」（正在用的分发机），只看主机同样分不开。
+ * 所以按这个顺序退让：
+ *   1. 带端口且该主机有精确端口登记 → 就是它（这是唯一能区分同机多端口的一步）；
+ *   2. 该主机的**裸主机登记**（`legacyHosts` / `allowedHosts` 那种写法，没有端口）；
+ *   3. 该主机的全部字段；
+ *   4. 主机根本没登记过 → 用**端口表**（`api.somewhere:7002` 这种：主机不判，但端口是内网的）。
+ * 退让到越后面，点名越粗；但**永远不静默返回空**，因为「未登记」本身也是一个判定。
+ */
+const fieldsForAddress = (policy, host, port) => {
+  const portKeys = port === null ? [] : keysForPort(policy, port)
+  const list = host ? (policy.knownHosts?.get(host) ?? []) : []
+  if (!list.length) return uniq(portKeys)
+  if (port !== null) {
+    const exact = list.filter((entry) => entry.port === port).map((entry) => entry.key)
+    if (exact.length) return uniq(exact)
+  }
+  const bare = list.filter((entry) => entry.port === null).map((entry) => entry.key)
+  if (bare.length) return uniq(bare)
+  return uniq([...list.map((entry) => entry.key), ...portKeys])
+}
+
+/**
+ * 判定一个地址（主机 + 端口）属于哪一类 —— **纯函数**，同一个 `(host, port)` 永远落同一类。
+ *
+ * 判定顺序即优先级（先分类再计数，一条命中只许落一类）：
+ *   争议域名 → 产品端点 → 旧池 → 未登记 / 未裁决。
+ *
+ * 「既在产品端点表又像旧池」的那条命中**按产品端点算**，并把原因打进 `why`：
+ * 客户端真要连的字段赢，否则同一个地址会在报告里既"必须清"又"必须留"，读的人只能信一半。
+ *
+ * @param {ReturnType<typeof buildPolicy>} policy
+ * @param {{host?:string, port?:number|null}} address
+ * @returns {{className:string, fields:string[], why:string}}
+ */
+export function classifyAddress(policy, { host = '', port = null } = {}) {
+  const target = normalizeHost(host)
+  if (target && DISPUTED_HOSTS.has(target)) {
+    return { className: CLASS.DISPUTED, fields: [], why: DISPUTED_WHY(target) }
+  }
+
+  const fields = fieldsForAddress(policy, target, port ?? null)
+  const endpoints = fields.filter((key) => PRODUCT_ENDPOINT_FIELDS.has(fieldFamily(key)))
+  const legacy = fields.filter((key) => LEGACY_FIELDS.has(fieldFamily(key)))
+
+  if (endpoints.length) {
+    const alsoLegacy = legacy.length
+      ? `；同时也在 config.endpoints.${legacy[0]}，按「产品端点优先」归类（客户端真要连的字段赢）`
+      : ''
+    return {
+      className: CLASS.ENDPOINT,
+      fields: endpoints,
+      why: `产品端点（${attribution(endpoints)}：${PRODUCT_ENDPOINT_FIELDS.get(fieldFamily(endpoints[0]))}）${alsoLegacy}`,
+    }
+  }
+  if (legacy.length) {
+    // 理由只归给**第一个**字段（那是这条地址的主要出处）；其余同族字段只点名，
+    // 免得把「inviteBaseUrl 的删除理由」误安到 feedbackUrl 头上。
+    const others = legacy.length > 1 ? `；同一条也登记在 ${legacy.slice(1).map((key) => `config.endpoints.${key}`).join(' / ')}` : ''
+    return {
+      className: CLASS.LEGACY,
+      fields: legacy,
+      why: `旧池地址（${attribution([legacy[0]])}：${LEGACY_FIELDS.get(fieldFamily(legacy[0]))}${others}）`,
+    }
+  }
+  if (fields.length) {
+    return {
+      className: CLASS.UNREGISTERED,
+      fields,
+      why: `未裁决字段（${attribution(fields)}，该字段既不在产品端点表、也不在旧池表 —— 先判红，等裁决）`,
+    }
+  }
+  return { className: CLASS.UNREGISTERED, fields: [], why: '未在 config.endpoints.json 登记' }
+}
+
 
 /**
  * 扫一段产物文本，返回分类统计 + 逐条命中（**纯函数**，CLI 与单测共用）。
@@ -313,6 +507,7 @@ export function scanText(text, { file = '', policy, allowHosts = new Set(), allo
   const stats = {
     urls: 0,
     publicHosts: 0,
+    disputedHosts: 0,
     ipHosts: 0,
     ipHostPorts: 0,
     internalPorts: 0,
@@ -333,6 +528,19 @@ export function scanText(text, { file = '', policy, allowHosts = new Set(), allo
 
   const bump = (map, name) => map.set(name, (map.get(name) ?? 0) + 1)
 
+  /**
+   * 记一条命中：顺手按 `(host, port)` 归一次类（`classifyAddress`）。
+   * 类别 / 来源字段 / 归类理由在**落下那一刻**就定好 —— 报告不再二次判断，
+   * 否则「谁算红」就有两份实现，两份迟早不一致。
+   */
+  const record = (hit) => {
+    const cls = classifyAddress(policy, { host: hit.host ?? '', port: hit.port ?? null })
+    hits.push({ ...hit, className: cls.className, fields: cls.fields, why: cls.why })
+  }
+
+  /** 拼 detail：空段丢掉，用 ` · ` 连（报告里一眼能读完一行） */
+  const detailOf = (...parts) => parts.filter(Boolean).join(' · ')
+
   for (const match of String(text).matchAll(SCHEME_URL_RE)) {
     const [raw, scheme, authority, rest] = match
     const start = match.index ?? 0
@@ -343,6 +551,15 @@ export function scanText(text, { file = '', policy, allowHosts = new Set(), allo
     const host = normalizeHost(rawHost)
     const token = `${scheme.toLowerCase()}://${authority}${(rest ?? '').split(/[?#]/)[0].slice(0, 60)}`
 
+    // 争议域名：与本项目的关系待 #745 裁决 → **WARN + 点名**，既不判红也不判绿。
+    // 放在 IP / 占位判定之前：它既不是「内网 IP」，也不该被算进「公网域名（不判）」那笔账 ——
+    // 那笔账的意思是「看过了、确认无害」，而争议域名是「看过了、还不知道」。
+    if (DISPUTED_HOSTS.has(host)) {
+      stats.disputedHosts += 1
+      record({ kind: 'disputed-host', file, token, host, port, allowed: false, detail: '' })
+      continue
+    }
+
     if (IPV4_RE.test(host) || host.includes(':')) {
       stats.ipHosts += 1
       const portInTable = port !== null && policy.ports.has(port)
@@ -352,19 +569,18 @@ export function scanText(text, { file = '', policy, allowHosts = new Set(), allo
       // 会顺手把 `X:任意端口` 全放过，而「这台机器的哪个端口」正是 #745 要藏的东西。
       const hostAllowed = allowHosts.has(host)
       const portAllowed = port === null || allowPorts.has(port)
-      hits.push({
+      record({
         kind: 'ip-host',
         file,
         token,
         host,
         port,
         allowed: hostAllowed && portAllowed,
-        detail: [
-          `内网 IP`,
-          `（${attribution(keysForHost(policy, host, port))}${range ? ` / ${range} 段` : ''}）`,
-          portInTable ? `，端口 ${port} 也在内网端口表` : '',
-          hostAllowed && !portAllowed ? `，主机已放行但端口 ${port} 没放行（缺 --allow-port ${port}）` : '',
-        ].join(''),
+        detail: detailOf(
+          `内网 IP${range ? `（${range}）` : ''}`,
+          portInTable ? `端口 ${port} 也在内网端口表` : '',
+          hostAllowed && !portAllowed ? `主机已放行但端口 ${port} 没放行（缺 --allow-port ${port}）` : ''
+        ),
       })
       continue
     }
@@ -388,14 +604,14 @@ export function scanText(text, { file = '', policy, allowHosts = new Set(), allo
     // 除了「某个端口号」什么都没泄漏（这也是 #745 收口后的目标形态：域名 + 端口不算泄漏）。
     if (port !== null && policy.ports.has(port)) {
       stats.internalPorts += 1
-      hits.push({
+      record({
         kind: 'internal-port',
         file,
         token,
         host,
         port,
         allowed: allowPorts.has(port),
-        detail: `内网端口 ${port}（${attribution(keysForPort(policy, port))}）`,
+        detail: `内网端口 ${port}`,
       })
     }
   }
@@ -412,16 +628,14 @@ export function scanText(text, { file = '', policy, allowHosts = new Set(), allo
       continue
     }
     stats.bareHosts += 1
-    const keys = policy.hosts.get(ip)?.map((entry) => entry.key) ?? []
-    const bare = policy.hosts.get(ip)?.find((entry) => !entry.url)?.key
-    hits.push({
+    record({
       kind: 'bare-host',
       file,
       token: ip,
       host: ip,
       port: null,
       allowed: allowHosts.has(ip),
-      detail: `裸 IP 主机字面量（${attribution(bare ? [bare] : keys)}${range ? ` / ${range} 段` : ''}）`,
+      detail: detailOf('裸 IP 主机字面量', range ? `（${range}）` : ''),
     })
   }
 
@@ -434,14 +648,14 @@ export function scanText(text, { file = '', policy, allowHosts = new Set(), allo
     const index = match.index ?? 0
     if (inUrl(index)) continue
     stats.internalPorts += 1
-    hits.push({
+    record({
       kind: 'internal-port',
       file,
       token: `:${port}`,
       host: '',
       port,
       allowed: allowPorts.has(port),
-      detail: `内网端口 ${port}（${attribution(keysForPort(policy, port))}）`,
+      detail: `内网端口 ${port}`,
     })
   }
 
@@ -553,6 +767,11 @@ export function inspectDist(dir, { policy, allowHosts, allowPorts }) {
 /**
  * 汇总逐条命中：**同一个地址 + 同一份产物**只占一行（打 `×N`），
  * 因为压缩后的 bundle 是单行，同一个常量出现两次会打两行一模一样的字，谁都不会读完。
+ *
+ * 汇总只做一件事：**按类别分桶 + 计数**（判定在 `classifyAddress` 已经做完）。
+ * 分桶之后立刻跑一次**去重断言**（`assertOneClass`）：同一个地址落进两个类就抛 —— CLI 转成
+ * exit 2。理由：分类判据有 bug 时，最坏的后果不是少报一条，而是**报告自相矛盾**
+ * （同一行地址既"必须清"又"必须留"），读的人只会不知道信哪一行。宁可判不了。
  */
 export function summarize(results) {
   const byKey = new Map()
@@ -568,11 +787,36 @@ export function summarize(results) {
   const all = [...byKey.values()].sort(
     (a, b) => a.file.localeCompare(b.file) || a.token.localeCompare(b.token) || a.kind.localeCompare(b.kind)
   )
-  const denied = all.filter((hit) => !hit.allowed)
-  const allowed = all.filter((hit) => hit.allowed)
+  assertOneClass(all)
+
+  const byClass = {
+    [CLASS.ENDPOINT]: [],
+    [CLASS.LEGACY]: [],
+    [CLASS.UNREGISTERED]: [],
+    [CLASS.DISPUTED]: [],
+  }
+  const allowed = []
+  for (const hit of all) {
+    if (hit.allowed) {
+      allowed.push(hit)
+      continue
+    }
+    ;(byClass[hit.className] ?? byClass[CLASS.UNREGISTERED]).push(hit)
+  }
+  const counts = {
+    [CLASS.ENDPOINT]: byClass[CLASS.ENDPOINT].length,
+    [CLASS.LEGACY]: byClass[CLASS.LEGACY].length,
+    [CLASS.UNREGISTERED]: byClass[CLASS.UNREGISTERED].length,
+    [CLASS.DISPUTED]: byClass[CLASS.DISPUTED].length,
+    allowed: allowed.length,
+  }
+  /** 只有「旧池」与「未登记」计入红 —— 这两类的判定口径一个字都没放宽 */
+  const denied = RED_CLASSES.flatMap((name) => byClass[name])
+
   const totals = {
     urls: 0,
     publicHosts: 0,
+    disputedHosts: 0,
     ipHosts: 0,
     ipHostPorts: 0,
     internalPorts: 0,
@@ -596,10 +840,38 @@ export function summarize(results) {
       }
     }
   }
-  return { totals, skips: skip, denied, allowed }
+  return { totals, skips: skip, byClass, counts, denied, allowed, hits: all }
 }
 
-const KIND_LABEL = { 'ip-host': '内网 IP', 'bare-host': '裸 IP 主机', 'internal-port': '内网端口' }
+/**
+ * 去重断言：**同一个地址（host+port）只许落一类**，同一个 token 也只许落一类。
+ * 违反就抛（CLI → exit 2）。这不是防御性编程，是判据的契约：`classifyAddress` 是纯函数，
+ * 一旦这里抛了，说明分类被改坏了（例如有人又加了一条「按 IP 判」的分支）。
+ */
+function assertOneClass(hits) {
+  const byAddress = new Map()
+  const byToken = new Map()
+  for (const hit of hits) {
+    const address = `${hit.host ?? ''}\u0000${hit.port ?? ''}\u0000${hit.allowed ? 'allow' : hit.className}`
+    const key = `${hit.host ?? ''}\u0000${hit.port ?? ''}`
+    const previous = byAddress.get(key)
+    if (previous && previous !== address) {
+      throw new Error(
+        `分类自相矛盾：${hit.host || hit.token}${hit.port ? `:${hit.port}` : ''} 同时落进两类 ` +
+          `（${previous.split('\u0000').pop()} / ${address.split('\u0000').pop()}）`
+      )
+    }
+    byAddress.set(key, address)
+
+    const seen = byToken.get(hit.token)
+    if (seen && seen !== hit.className) {
+      throw new Error(`分类自相矛盾：地址 ${hit.token} 同时落进两类（${seen} / ${hit.className}）`)
+    }
+    byToken.set(hit.token, hit.className)
+  }
+}
+
+const KIND_LABEL = { 'ip-host': '内网 IP', 'bare-host': '裸 IP 主机', 'internal-port': '内网端口', 'disputed-host': '争议域名' }
 
 const formatNames = (map, limit = 80) =>
   [...map.entries()]
@@ -614,7 +886,8 @@ const usage = () =>
     '  node scripts/check-public-artifact-redaction.mjs <apk> [--allow-host <ip>]... [--allow-port <port>]... [--json] [--quiet]',
     '  node scripts/check-public-artifact-redaction.mjs --dist <dir> [...]',
     '',
-    '退出码：0 干净 / 1 发现内网地址 / 2 判不了（打不开 APK、包里没有 bundle、配置读不了、用法错）',
+    '退出码：0 干净（无旧池 / 无未登记）/ 1 有旧池或未登记地址 / 2 判不了（打不开 APK、包里没有 bundle、' +
+      '配置读不了、用法错、分类自相矛盾）',
   ].join('\n')
 
 /** 解析参数（导出给单测用：参数口径必须是同一份，不能在测试里抄第二套） */
@@ -687,11 +960,21 @@ function reportConsole({ opts, policy, inspection, summary }) {
   if (policy.ports.size === 0) {
     console.log('  注意   配置里没有源出任何内网端口 → R2 端口维度本次不判（不是漏了，是表为空）')
   }
+  // 争议域名是**裁决状态**，不是配置数据：裁决落地后忘了删这一条，会让一个配置里已经不存在的
+  // 域名永久挂在 WARN 里（谁也不会注意到）。对不上就当场说一句，不静默。
+  for (const host of DISPUTED_HOSTS.keys()) {
+    if (!policy.knownHosts.has(host)) {
+      console.log(
+        `  提示   争议域名 ${host} 已不在 ${policy.configFile} 里 —— 若它是被删掉的旧地址（裁决结论），` +
+          '请同时删掉 DISPUTED_HOSTS 里那一条'
+      )
+    }
+  }
   for (const problem of inspection.problems) console.log(`  提示   ${problem}`)
 
   const { totals, skips } = summary
   console.log('')
-  console.log('分类统计：')
+  console.log('分类统计（形态层：捞出了哪些"像地址的字节"）：')
   console.log(`  http(s):// 出现          ${totals.urls} 处`)
   console.log(`  · 公网 / 普通域名（不判） ${totals.publicHosts} 处`)
   console.log(
@@ -706,6 +989,7 @@ function reportConsole({ opts, policy, inspection, summary }) {
     `  · 判：独立的 :端口        ${totals.internalPorts} 处（内网端口表：${[...policy.ports.keys()].join(' / ') || '空'}）`
   )
   console.log(`  · 判：裸 IP 主机字面量     ${totals.bareHosts} 处`)
+  console.log(`  · 争议域名（不算红，待裁决） ${totals.disputedHosts} 处`)
   if (totals.unjudgedBare > 0) {
     console.log(
       `  · 未判的四段数字          ${totals.unjudgedBare} 处（既没在配置里登记、也不在私有段 —— 多为版本号，不判）`
@@ -719,19 +1003,39 @@ function reportConsole({ opts, policy, inspection, summary }) {
     return granted.length ? granted.join('；') : ''
   }
 
-  if (summary.denied.length) {
+  const line = (tag, hit, suffix = '') => {
+    const where = hit.file ? `${hit.file}  ` : ''
+    const parts = [hit.why, hit.detail].filter(Boolean).join(' · ')
+    return `${tag} ${where}${hit.token} → ${parts}${hit.count > 1 ? ` ×${hit.count}` : ''}${suffix}`
+  }
+
+  // 争议域名先打：它既不是红也不是绿，放在两类红中间最容易被误读成"红里的一种"
+  if (summary.byClass[CLASS.DISPUTED].length) {
     console.log('')
-    for (const hit of summary.denied) {
-      const where = hit.file ? `${hit.file}  ` : ''
-      console.log(`[FAIL] ${where}${hit.token} → ${hit.detail}${hit.count > 1 ? ` ×${hit.count}` : ''}`)
+    for (const hit of summary.byClass[CLASS.DISPUTED]) console.log(line(CLASS_TAG[CLASS.DISPUTED], hit))
+  }
+  if (summary.byClass[CLASS.ENDPOINT].length) {
+    console.log('')
+    for (const hit of summary.byClass[CLASS.ENDPOINT]) {
+      console.log(line(CLASS_TAG[CLASS.ENDPOINT], hit, '（客户端真要连，删了功能就废 —— 保留，不许"清零"）'))
+    }
+  }
+  for (const name of RED_CLASSES) {
+    if (!summary.byClass[name].length) continue
+    console.log('')
+    for (const hit of summary.byClass[name]) console.log(line(CLASS_TAG[name], hit))
+    if (name === CLASS.LEGACY) {
+      console.log(
+        '  旧池处置：先 grep 调用方，确认 **0 处** 再删 —— 例：grep -rn "<地址>" src/ ；' +
+          '删完重出包再跑本门禁。重写表（legacyHosts[]）要连引用它的重写逻辑一起看。'
+      )
     }
   }
   if (summary.allowed.length) {
     console.log('')
     console.log(`放行清单（--allow-host / --allow-port 显式给出，仅供联调 / staging 包，正式包不许带）： ${allowedNote()}`)
     for (const hit of summary.allowed) {
-      const where = hit.file ? `${hit.file}  ` : ''
-      console.log(`[ALLOW] ${where}${hit.token} → ${hit.detail}${hit.count > 1 ? ` ×${hit.count}` : ''}（显式放行）`)
+      console.log(line('[ALLOW]', hit, '（显式放行）'))
     }
     // 给了但从没命中的白名单：打印出来，避免「以为放行了、其实清单给错了」和「悄悄多放行了一条」
     const usedHosts = new Set(summary.allowed.filter((hit) => hit.host).map((hit) => hit.host))
@@ -742,6 +1046,20 @@ function reportConsole({ opts, policy, inspection, summary }) {
     ]
     if (unused.length) console.log(`  本次没命中（清单给错了？）：${unused.join(' / ')}`)
   }
+
+  // 结论行：**四类计数**一行读完（口径见文件头「处置层」那张表）
+  const { counts } = summary
+  console.log('')
+  console.log(
+    `结论：产品端点 ${counts[CLASS.ENDPOINT]} 条（允许）/ 旧池地址 ${counts[CLASS.LEGACY]} 条（必须清）/ ` +
+      `未登记 ${counts[CLASS.UNREGISTERED]} 条（必须清）/ 争议 ${counts[CLASS.DISPUTED]} 条（待裁决）`
+  )
+  const red = counts[CLASS.LEGACY] + counts[CLASS.UNREGISTERED]
+  console.log(
+    red > 0
+      ? `exit 1  ← 只要「旧池」或「未登记」> 0（本次 ${red} 条）`
+      : 'exit 0  ← 「旧池」与「未登记」都是 0 条（产品端点 / 争议域名不计红）'
+  )
 }
 
 /**
@@ -791,7 +1109,14 @@ export function run(argv, { stdout = console, cwd = ROOT } = {}) {
     return { code: EXIT.UNKNOWN, reason: inspection.reason }
   }
 
-  const summary = summarize(inspection.results)
+  let summary
+  try {
+    summary = summarize(inspection.results)
+  } catch (e) {
+    // 分类自相矛盾（同一地址落进两个类）→ 判不了，不许当干净放过
+    stdout.error(`判不了：门禁自检失败 —— ${e.message}`)
+    return { code: EXIT.UNKNOWN, reason: 'class-conflict' }
+  }
 
   if (opts.json) {
     stdout.log(
@@ -802,13 +1127,22 @@ export function run(argv, { stdout = console, cwd = ROOT } = {}) {
           config: policy.configFile,
           internalHosts: [...policy.hosts.keys()],
           internalPorts: [...policy.ports.keys()],
+          disputedHosts: [...DISPUTED_HOSTS.keys()],
           allowHosts: [...opts.allowHosts],
           allowPorts: [...opts.allowPorts],
           scanned: inspection.sources,
           stats: summary.totals,
           skipped: { xmlns: summary.skips.xmlns, placeholder: summary.skips.placeholder },
-          denied: summary.denied.map(({ kind, file, token, detail, count }) => ({ kind, file, token, detail, count })),
-          allowed: summary.allowed.map(({ kind, file, token, detail, count }) => ({ kind, file, token, detail, count })),
+          counts: summary.counts,
+          classes: {
+            endpoint: summary.byClass[CLASS.ENDPOINT].map(projectHit),
+            legacy: summary.byClass[CLASS.LEGACY].map(projectHit),
+            unregistered: summary.byClass[CLASS.UNREGISTERED].map(projectHit),
+            disputed: summary.byClass[CLASS.DISPUTED].map(projectHit),
+            allowed: summary.allowed.map(projectHit),
+          },
+          denied: summary.denied.map(projectHit),
+          allowed: summary.allowed.map(projectHit),
           verdict: summary.denied.length ? 'leak' : 'clean',
         },
         null,
@@ -824,7 +1158,10 @@ export function run(argv, { stdout = console, cwd = ROOT } = {}) {
       const granted = summary.allowed.length
         ? `（其中 ${summary.allowed.length} 个地址由 --allow-* 显式放行，正式包不许带这些参数）`
         : ''
-      console.log(`\n通过：产物里没有未经放行的内网 IP / 内网端口${granted}。`)
+      console.log(
+        `\n通过：产物里没有「旧池地址」也没有「未登记地址」` +
+          `（产品端点 ${summary.counts[CLASS.ENDPOINT]} 条按功能需要保留，争议域名 ${summary.counts[CLASS.DISPUTED]} 条待裁决）${granted}。`
+      )
     }
     return { code: EXIT.CLEAN, summary }
   }
@@ -833,13 +1170,26 @@ export function run(argv, { stdout = console, cwd = ROOT } = {}) {
     const kinds = new Set(summary.denied.map((hit) => KIND_LABEL[hit.kind] ?? hit.kind))
     console.error('')
     console.error(
-      `发现内网地址：${summary.denied.length} 个不同的内网地址出现在公开产物里（${[...kinds].join(' / ')}）—— 这些包不许公开发布。`
+      `清不掉的地址：${summary.counts[CLASS.LEGACY]} 条旧池 + ${summary.counts[CLASS.UNREGISTERED]} 条未登记出现在公开产物里` +
+        `（${[...kinds].join(' / ')}）—— 这些包不许公开发布。`
     )
-    console.error('  正确处理：等 #745 把 config/endpoints.json 换成后端给的 https 域名后重出包；')
+    console.error('  旧池：先 grep 调用方，确认 0 处再删（删完重出包，再跑本门禁复核）。')
+    console.error('  未登记：要么在 config/endpoints.json 里登记并裁决它属于哪一类，要么把它从产物里摘掉。')
     console.error('  联调 / staging 包确实需要时，用 --allow-host / --allow-port 显式放行，并把这些参数留在命令记录里。')
   }
   return { code: EXIT.LEAK, summary }
 }
+
+/** JSON 输出里每条命中的字段（固定形状：别把内部字段名漏出去，也别少给） */
+const projectHit = ({ kind, file, token, detail, why, className, count }) => ({
+  kind,
+  file,
+  token,
+  class: className,
+  why,
+  detail,
+  count,
+})
 
 /** 只有被直接执行时才跑 CLI（被 import 时不许触发 process.exit） */
 const invokedDirectly = () => {
