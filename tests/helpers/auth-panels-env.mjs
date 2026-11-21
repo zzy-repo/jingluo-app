@@ -50,9 +50,27 @@ const renderKit = (zh) => {
   /** 真文案：`t('sub2authCredentialInvalid')` → `账号或密码错误` */
   const translate = translateWith(zh)
 
-  /** 设计系统 Button 的替身：只多认一个 `testId`（真机忽略它） */
+  /**
+   * 设计系统 Button 的替身：只多认一个 `testId`（真机忽略它）。
+   *
+   * `variant` / `size` / `block` 是**真机吃进样式的入参**（`base/Button` 自己解构掉，不落到 DOM），
+   * 替身也不许透出去 —— 否则 `block={true}` 会让 React 打
+   * `Received \`true\` for a non-boolean attribute \`block\`` 的警告，把用例输出弄脏。
+   */
+  const DESIGN_ONLY_BUTTON_PROPS = ['variant', 'size', 'block']
   const ButtonStub = ({ testId, children, onClick, ...rest }) =>
-    createElement('button', { type: 'button', 'data-testid': testId, onClick, ...rest }, children)
+    createElement(
+      'button',
+      {
+        type: 'button',
+        'data-testid': testId,
+        onClick,
+        ...Object.fromEntries(
+          Object.entries(rest).filter(([key]) => !DESIGN_ONLY_BUTTON_PROPS.includes(key))
+        ),
+      },
+      children
+    )
 
   /** CSS Module 类名表：取什么给什么（断言不依赖类名，只为让真视图能渲染） */
   const classNames = new Proxy({}, { get: (_target, name) => String(name) })

@@ -840,6 +840,23 @@ export const zh = {
   settingsAuthHaveAccount: '已有账号？登录',
   settingsAuthForgotSent: '重置邮件已发送，请查收邮箱',
   settingsAuthForgotNeedsEmail: '请先填写邮箱，再点「忘记密码」',
+  // #797：注册的「确认密码」与密码可见切换
+  settingsAuthConfirmPlaceholder: '请再次输入密码',
+  /** 两次输入不一致（只在客户端校验，不上服务端；提交前就拦下） */
+  settingsAuthPasswordMismatch: '两次输入的密码不一致',
+  /** 眼睛按钮的可访问名（说的是「点了会发生什么」：现在隐藏 → 「显示密码」） */
+  settingsAuthShowPassword: '显示密码',
+  settingsAuthHidePassword: '隐藏密码',
+  // #795：忘记密码的小页
+  settingsAuthForgotTitle: '找回密码',
+  settingsAuthForgotSend: '发送重置邮件',
+  settingsAuthForgotBack: '返回登录',
+  /**
+   * 后端把重置链接所需配置（`frontend_url` / SMTP）缺着时的追加提示（#795）。
+   * `auth/forgot-password` 原样回的是英文 `Password reset is not configured`，光看那句话用户
+   * 不知道下一步做什么 —— 所以「后端原话」照抄，再补这一句可操作的。
+   */
+  settingsAuthForgotNotReady: '密码重置暂未开通，请联系客服',
   sub2authPassword: '密码',
   sub2authConfirmPassword: '确认密码',
   sub2authLogin: '登录',

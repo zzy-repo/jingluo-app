@@ -1,35 +1,51 @@
 /**
- * 设置里「账户与消费 → 账号」未登录时的那张登录卡（#727 阶段 1 布局）。
+ * 设置里「账户与消费 → 账号」未登录时的那张登录卡（#727 阶段 1 布局；#797 / #795 扩了注册与找回密码）。
  *
- * 版式照维护者给的原型，1:1：
+ * 版式照维护者给的原型，1:1（`注册` 分段多一行「确认密码」，登录分段没有）：
  *
  *   ┌─────────────────────────────┐
  *   │ [ 登录 ✓ ][  注册  ]        │  ← 分段控件（选中项白底 + 轻阴影）
  *   │ [ 请输入邮箱            ]    │
  *   │ [ 请输入验证码 │ 获取验证码 ]│  ← 只在「注册」分段出现；按钮**定宽右贴**，倒计时 59s 不换行
- *   │ [ 请输入密码（≥6 位）    ]   │
- *   │ [        登 录         ]     │  ← 主按钮整宽 48px；空表单时降透明度禁用（不是灰底黑字）
+ *   │ [ 请输入密码（≥6 位）   👁 ]│  ← 眼睛按钮：默认隐藏，点一下明文（#797）
+ *   │ [ 请再次输入密码        👁 ]│  ← 只在「注册」分段出现；两次不一致就地飘红、**不发请求**
+ *   │      两次输入的密码不一致     │
+ *   │ [        登 录         ]     │  ← 主按钮整宽 48px；不满足条件时降透明度禁用（不是灰底黑字）
  *   │         暂不登录             │  ← #608 的口子：直接去填 API Key
- *   │        忘记密码？            │  ← 走真实接口 `/api/v1/auth/forgot-password`
+ *   │        忘记密码？            │  ← 打开卡内的「找回密码」小页（#795，真实接口）
  *   │  未注册的邮箱将自动创建账号   │
  *   └─────────────────────────────┘
  *
  * 三条纪律：
- *  1. **不弹第二层**：它就是设置弹层内容区里的一张卡（没有自己的遮罩 / `role=dialog`）；
+ *  1. **不弹第二层**：它就是设置弹层内容区里的一张卡（没有自己的遮罩 / `role=dialog`）——
+ *     所以 #795 的「忘记密码」做成**卡内小页**（`step: 'forgot'`），不再叠一个 dialog；
  *  2. **状态与表单逻辑不另写一套**：动作全部走既有的 `useAuthStore`（`login` / `register` /
- *     `sendCode`），失败文案用后端给的 `message`，不写「未知错误」；
- *  3. **开关只认服务端**：`registration_enabled !== true` 时分段里不出现「注册」（#484 §3.1d），
- *     不在这里本地兜一个入口。
+ *     `sendCode`），失败文案用 store 给的 `error.messageKey`，不写「未知错误」。
+ *     表单状态机与视图在 `settingsAuthCardModel.ts`（裸 Node 可渲染，见那边的文件头）；
+ *  3. **开关只认服务端**：`registration_enabled !== true` 时提交注册会被拦下并给一句文案（#484 §3.1d），
+ *     不在这里本地兜一个「注册中不可用」的假成功。
+ *
+ * 本文件只做三件事：订阅 store、跑计时器、把「事件 → reducer」「点击 → 发请求」接上。
  */
-import { useEffect, useRef, useState } from 'react'
+
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react'
+
 import { useTranslate } from '../../i18n/index.js'
 import { loadAuthFlags, useAuthFlags } from '../../services/auth/flags.js'
 import { useAuthStore } from '../../services/auth/store.js'
 import type { ConsumeClient } from '../../services/consume/index.js'
 import { Button } from '../base/Button.js'
+import { IconEyeOffOutline16, IconEyeOutline16 } from '../base/icons.js'
+import {
+  initialAuthCardState,
+  reduceAuthCard,
+  SettingsAuthCardView,
+  submitAuthCard,
+  submitForgotPassword,
+  type AuthCardEvent,
+  type AuthCardSource,
+} from './settingsAuthCardModel.js'
 import styles from './AccountConsume.module.css'
-
-type AuthMode = 'login' | 'register'
 
 /** 验证码倒计时秒数（与原型一致：60 → 0） */
 const CODE_COUNTDOWN = 60
@@ -50,12 +66,8 @@ export const SettingsAuthCard = ({ consume, onSkip }: SettingsAuthCardProps) => 
   const sendingCode = useAuthStore((state) => state.sendingCode)
   const error = useAuthStore((state) => state.error)
 
-  const [mode, setMode] = useState<AuthMode>('login')
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
-  const [code, setCode] = useState('')
+  const [state, dispatch] = useReducer(reduceAuthCard, undefined, () => initialAuthCardState())
   const [countdown, setCountdown] = useState(0)
-  const [notice, setNotice] = useState<string | null>(null)
   const alive = useRef(true)
 
   useEffect(() => {
@@ -83,184 +95,70 @@ export const SettingsAuthCard = ({ consume, onSkip }: SettingsAuthCardProps) => 
     }
   }, [countdown])
 
-  const emailFilled = email.trim() !== ''
-  const canSubmit = emailFilled && password !== '' && !submitting
-  const codeLoading = sendingCode || countdown > 0
+  /** 卡里四个网络口子（真机实现；判定在 `settingsAuthCardModel.ts`，这里只是接线） */
+  const source = useMemo<AuthCardSource>(
+    () => ({
+      signIn: (input) => signIn(input),
+      signUp: (input) => signUp(input),
+      forgotPassword: (input) => consume.auth.forgotPassword(input),
+    }),
+    [signIn, signUp, consume]
+  )
 
-  const switchTo = (next: AuthMode) => {
-    setMode(next)
-    setNotice(null)
-  }
-
-  const submit = () => {
-    if (!canSubmit) {
-      return
-    }
-    setNotice(null)
-    if (mode === 'login') {
-      void signIn({ email: email.trim(), password })
-      return
-    }
-    if (flags.loaded && !flags.registrationEnabled) {
-      setNotice(t('sub2authRegistrationDisabled'))
-      return
-    }
-    // 原型没有「确认密码」一行，所以只递服务端要的两项（+ 可选验证码）
-    void signUp({
-      email: email.trim(),
-      password,
-      verifyCode: code.trim() === '' ? undefined : code.trim(),
+  /** 跑一次「判定 → 请求 → 事件」并派发。请求结果由 store / 结果对象承载，不在这里吞 */
+  const run = useCallback((work: () => Promise<AuthCardEvent[]>) => {
+    void work().then((events) => {
+      if (alive.current) {
+        events.forEach(dispatch)
+      }
     })
-  }
+  }, [])
 
-  const requestCode = () => {
-    if (codeLoading || !emailFilled) {
+  const submit = useCallback(() => {
+    run(() =>
+      submitAuthCard(source, state, {
+        submitting,
+        registrationLoaded: flags.loaded,
+        registrationEnabled: flags.registrationEnabled,
+      })
+    )
+  }, [run, source, state, submitting, flags.loaded, flags.registrationEnabled])
+
+  const requestCode = useCallback(() => {
+    if (sendingCode || countdown > 0 || state.email.trim() === '') {
       return
     }
-    void sendCode({ email: email.trim() })
+    void sendCode({ email: state.email.trim() })
     setCountdown(CODE_COUNTDOWN)
-  }
+  }, [sendingCode, countdown, state.email, sendCode])
 
-  /**
-   * 忘记密码：接口是有的（`POST /api/v1/auth/forgot-password`），所以**走真接口**：
-   * 成功 → 一句「重置邮件已发送」；失败 → 后端 `message`。邮箱没填就先提示填邮箱，
-   * 不做死链、也不假装成功。
-   */
-  const forgot = async () => {
-    if (!emailFilled) {
-      setNotice(t('settingsAuthForgotNeedsEmail'))
+  const forgotSubmit = useCallback(() => {
+    if (state.forgot.sending) {
       return
     }
-    const result = await consume.auth.forgotPassword({ email: email.trim() })
-    if (!alive.current) {
-      return
-    }
-    if (result.ok) {
-      setNotice(t('settingsAuthForgotSent'))
-      return
-    }
-    setNotice(result.error.message)
-  }
+    dispatch({ type: 'forgot-sending' })
+    run(() => submitForgotPassword(source, state))
+  }, [run, source, state])
 
   return (
-    <div className={styles.authCard} data-testid="settings-auth-card">
-      {/* #727：分段控件**常显**（登录 | 注册）。服务端开关只影响「提交注册」时是否放行，
-          不再让注册入口整块消失 —— 用户必须能看见并点到注册。 */}
-      <div className={styles.authSegmented} role="group" aria-label={t('sub2authAccount')}>
-        <button
-          type="button"
-          className={mode === 'login' ? `${styles.authSeg} ${styles.authSegOn}` : styles.authSeg}
-          aria-pressed={mode === 'login'}
-          data-testid="auth-segmented-login"
-          onClick={() => switchTo('login')}
-        >
-          {t('sub2authLogin')}
-        </button>
-        <button
-          type="button"
-          className={mode === 'register' ? `${styles.authSeg} ${styles.authSegOn}` : styles.authSeg}
-          aria-pressed={mode === 'register'}
-          data-testid="auth-segmented-register"
-          onClick={() => switchTo('register')}
-        >
-          {t('sub2authRegister')}
-        </button>
-      </div>
-
-      <input
-        className={styles.authInput}
-        type="email"
-        inputMode="email"
-        autoComplete="email"
-        spellCheck={false}
-        placeholder={t('settingsAuthEmailPlaceholder')}
-        aria-label={t('sub2authEmail')}
-        value={email}
-        onChange={(event) => setEmail(event.target.value)}
-      />
-
-      {mode === 'register' ? (
-        <div className={styles.authCodeRow}>
-          <input
-            className={`${styles.authInput} ${styles.authCodeInput}`}
-            type="text"
-            inputMode="numeric"
-            autoComplete="one-time-code"
-            spellCheck={false}
-            placeholder={t('settingsAuthCodePlaceholder')}
-            aria-label={t('settingsAuthCodePlaceholder')}
-            value={code}
-            onChange={(event) => setCode(event.target.value)}
-          />
-          <button
-            type="button"
-            className={styles.authCodeButton}
-            data-testid="settings-auth-send-code"
-            disabled={codeLoading || !emailFilled}
-            onClick={requestCode}
-          >
-            {countdown > 0
-              ? t('settingsAuthCountdown', { seconds: countdown })
-              : t('settingsAuthSendCode')}
-          </button>
-        </div>
-      ) : null}
-
-      <input
-        className={styles.authInput}
-        type="password"
-        autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
-        placeholder={t('settingsAuthPasswordPlaceholder')}
-        aria-label={t('sub2authPassword')}
-        value={password}
-        onChange={(event) => setPassword(event.target.value)}
-        onKeyDown={(event) => {
-          if (event.key === 'Enter' && !event.nativeEvent.isComposing) {
-            submit()
-          }
-        }}
-      />
-
-      <Button
-        block
-        variant="primary"
-        size="l"
-        className={styles.authPrimary}
-        disabled={!canSubmit}
-        data-testid="settings-auth-submit"
-        onClick={submit}
-      >
-        {mode === 'login' ? t('sub2authLogin') : t('sub2authRegister')}
-      </Button>
-
-      {error ? (
-        <div className={styles.authError} role="alert" data-testid="settings-auth-error">
-          {t(error.messageKey)}
-        </div>
-      ) : null}
-      {notice ? (
-        <div className={styles.authNotice} role="status" data-testid="settings-auth-notice">
-          {notice}
-        </div>
-      ) : null}
-
-      {/* #608 的口子：不登录也能用，直接去填 API Key */}
-      <button type="button" className={styles.authLink} data-testid="account-consume-skip-login" onClick={onSkip}>
-        {t('settingsAuthSkip')}
-      </button>
-      <button type="button" className={styles.authLink} data-testid="settings-auth-forgot" onClick={() => void forgot()}>
-        {t('sub2authForgotPassword')}？
-      </button>
-      {mode === 'register' ? (
-        <button
-          type="button"
-          className={styles.authLinkDim}
-          data-testid="settings-auth-switch-login"
-          onClick={() => switchTo('login')}
-        >
-          {t('settingsAuthHaveAccount')}
-        </button>
-      ) : null}
-    </div>
+    <SettingsAuthCardView
+      t={t}
+      c={styles}
+      Button={Button}
+      EyeIcon={IconEyeOutline16}
+      EyeOffIcon={IconEyeOffOutline16}
+      state={state}
+      submitting={submitting}
+      sendingCode={sendingCode}
+      countdown={countdown}
+      errorKey={error === null ? null : error.messageKey}
+      registrationLoaded={flags.loaded}
+      registrationEnabled={flags.registrationEnabled}
+      onEvent={dispatch}
+      onSubmit={submit}
+      onSendCode={requestCode}
+      onForgotSubmit={forgotSubmit}
+      onSkip={onSkip}
+    />
   )
 }

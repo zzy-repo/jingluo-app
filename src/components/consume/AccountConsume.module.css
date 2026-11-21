@@ -657,6 +657,65 @@
   padding-right: 108px;
 }
 
+/* #797 密码行：输入框 + 右侧「眼睛」按钮。按钮绝对定位贴右，输入框留出 padding-right，
+   和上面验证码行同一套做法（不给行加 `gap` —— 那会多一处 flex-gap 兼容兜底要维护） */
+.authPasswordRow {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.authPasswordInput {
+  padding-right: 46px;
+}
+
+.authPasswordToggle {
+  position: absolute;
+  right: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+}
+
+.authPasswordToggle:hover {
+  color: var(--dsw-alias-label-primary);
+}
+
+/* #215：统一用 `:focus`（83 上没有 `:focus-visible`），键盘用户才看得到焦点 */
+.authPasswordToggle:focus {
+  outline: none;
+  color: var(--dsw-alias-label-primary);
+  background-color: var(--dsw-alias-interactive-bg-hover);
+  box-shadow: 0 0 0 2px var(--dsw-alias-brand-primary);
+}
+
+/* #797 确认密码的错误行：贴在确认框下方，颜色与 `.authError` 同一状态色（左对齐，别居中） */
+.authFieldError {
+  margin: -6px 0 0;
+  color: var(--dsw-alias-state-error-primary);
+  font-size: 13px;
+  line-height: 18px;
+  text-align: left;
+}
+
+/* #795 「找回密码」小页的标题 */
+.authForgotTitle {
+  margin: 0;
+  color: var(--dsw-alias-label-primary);
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 24px;
+  text-align: center;
+}
+
 .authCodeButton {
   position: absolute;
   right: 6px;
@@ -706,6 +765,12 @@
 
 .authError {
   color: var(--dsw-alias-state-error-primary);
+}
+
+/* #795：失败时是「后端原话 + 可操作提示」两行；段落默认外边距会把这堆撑得比卡片还高，收平 */
+.authNotice > p,
+.authError > p {
+  margin: 0;
 }
 
 /* 次要文字链接（暂不登录 / 忘记密码 / 已有账号） */

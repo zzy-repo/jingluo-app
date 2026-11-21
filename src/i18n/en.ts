@@ -854,6 +854,23 @@ export const en = {
   settingsAuthHaveAccount: 'Already have an account? Sign in',
   settingsAuthForgotSent: 'Reset email sent — check your inbox',
   settingsAuthForgotNeedsEmail: 'Enter your email first, then tap "Forgot password"',
+  // #797: confirm password on sign-up + show/hide password toggles
+  settingsAuthConfirmPlaceholder: 'Re-enter your password',
+  /** The two entries differ (client-side check only — never sent to the server; blocked before submit) */
+  settingsAuthPasswordMismatch: 'The two passwords do not match',
+  /** Eye button accessible name — it names the action: hidden now → "Show password" */
+  settingsAuthShowPassword: 'Show password',
+  settingsAuthHidePassword: 'Hide password',
+  // #795: forgot-password step
+  settingsAuthForgotTitle: 'Reset password',
+  settingsAuthForgotSend: 'Send reset email',
+  settingsAuthForgotBack: 'Back to sign in',
+  /**
+   * Appended hint when the backend lacks the reset configuration (`frontend_url` / SMTP, #795).
+   * The server answers `Password reset is not configured`; that alone gives the user no next step,
+   * so the raw message is shown verbatim and this actionable line is added after it.
+   */
+  settingsAuthForgotNotReady: 'Password reset is not available yet — please contact support',
   sub2authPassword: 'Password',
   sub2authConfirmPassword: 'Confirm password',
   sub2authLogin: 'Log in',

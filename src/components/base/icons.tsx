@@ -559,3 +559,37 @@ export const IconToastError16 = () => (
     />
   </svg>
 )
+
+/**
+ * 睁眼（= 密码**正在明文显示**，见 #797）：镜片轮廓 + 瞳孔，颜色跟随 currentColor。
+ *
+ * 为什么外轮廓与瞳孔是两个子路径：外轮廓用 `fillRule="evenodd"` 抠出镜片中间的空腔，
+ * 瞳孔再单独画一层圆 —— 这样镜框是描线感、瞳孔是实心，16px 下比「一个实心椭圆」清楚得多。
+ */
+export const IconEyeOutline16 = () => (
+  <svg width={16} height={16} viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <path
+      fillRule="evenodd"
+      clipRule="evenodd"
+      d="M8 3.2c3.4 0 6.3 2.2 7.5 4.55l.1.25-.1.25C14.3 10.6 11.4 12.8 8 12.8S1.7 10.6.5 8.25L.4 8l.1-.25C1.7 5.4 4.6 3.2 8 3.2Zm0 1.4C5.3 4.6 3 6.3 1.9 8c1.1 1.7 3.4 3.4 6.1 3.4s5-1.7 6.1-3.4C13 6.3 10.7 4.6 8 4.6Z"
+      fill="currentColor"
+    />
+    <path d="M8 5.9a2.1 2.1 0 1 1 0 4.2 2.1 2.1 0 0 1 0-4.2Z" fill="currentColor" />
+  </svg>
+)
+
+/** 闭眼（= 密码**已隐藏**）：同样的镜片轮廓，去掉瞳孔、加一道斜杠 —— 与睁眼成对使用（#797） */
+export const IconEyeOffOutline16 = () => (
+  <svg width={16} height={16} viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <path
+      fillRule="evenodd"
+      clipRule="evenodd"
+      d="M8 3.2c3.4 0 6.3 2.2 7.5 4.55l.1.25-.1.25C14.3 10.6 11.4 12.8 8 12.8S1.7 10.6.5 8.25L.4 8l.1-.25C1.7 5.4 4.6 3.2 8 3.2Zm0 1.4C5.3 4.6 3 6.3 1.9 8c1.1 1.7 3.4 3.4 6.1 3.4s5-1.7 6.1-3.4C13 6.3 10.7 4.6 8 4.6Z"
+      fill="currentColor"
+    />
+    <path
+      d="M12.55 1.75a.75.75 0 0 1 1.06 1.06L3.45 14.31a.75.75 0 0 1-1.06-1.06L12.55 1.75Z"
+      fill="currentColor"
+    />
+  </svg>
+)
