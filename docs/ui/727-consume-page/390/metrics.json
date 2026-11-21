@@ -12,7 +12,8 @@
     "docs/ui/727-consume-page/390/727-consume-page-05-history-390.png",
     "docs/ui/727-consume-page/390/727-consume-page-06-account-signed-out-390.png",
     "docs/ui/727-consume-page/390/727-consume-page-07-page-home-signed-in-390.png",
-    "docs/ui/727-consume-page/390/727-consume-page-08-account-signed-in-390.png"
+    "docs/ui/727-consume-page/390/727-consume-page-08-account-signed-in-390.png",
+    "docs/ui/727-consume-page/390/727-consume-page-09-history-signed-in-390.png"
   ],
   "notes": [],
   "entry": {
@@ -68,7 +69,7 @@
     "overflowSamples": []
   },
   "connectivity": {
-    "text": "正常 14 ms",
+    "text": "正常 13 ms",
     "dotColor": "rgb(34, 197, 94)",
     "viewportWidth": 390,
     "documentScrollWidth": 390,
@@ -87,8 +88,10 @@
     "overflowCount": 0,
     "overflowSamples": []
   },
-  "history": {
-    "text": "模型来源 内置服务 › 连通性测试 正常 14 ms 我的钱包 剩余余额 — 我的卡密 › 历史消费 › 我的额度 › 购买 › 暂无消费记录 使用模型后的扣费会显示在这里 账号 账号与安全 登录 / 注册",
+  "historySignedOut": {
+    "text": "模型来源 内置服务 › 连通性测试 正常 13 ms 我的钱包 剩余余额 — 我的卡密 › 历史消费 › 我的额度 › 购买 › 暂无消费记录 使用模型后的扣费会显示在这里 账号 账号与安全 登录 / 注册",
+    "emptyText": "暂无消费记录 使用模型后的扣费会显示在这里",
+    "rows": 0,
     "viewportWidth": 390,
     "documentScrollWidth": 390,
     "overflowCount": 0,
@@ -158,6 +161,25 @@
     "overflowCount": 0,
     "overflowSamples": []
   },
+  "historySignedIn": {
+    "rows": [
+      "deepseek-v4.1-flash 14:32 −¥0.12",
+      "deepseek-v4.1-flash 21:08 −¥0.36"
+    ],
+    "containerFound": true,
+    "testIdNodes": 2,
+    "groups": [
+      "2026-11-21",
+      "2026-11-20"
+    ],
+    "negativeAmounts": 2,
+    "emptyState": false,
+    "text": "模型来源 内置服务 › 连通性测试 点一下测试 我的钱包 剩余余额 ¥128.50 我的卡密 › 历史消费 › 我的额度 › 购买 › 2026-11-21 deepseek-v4.1-flash 14:32 −¥0.12 2026-11-20 deepseek-v4.1-flash 21:08 −¥0.36 账号 D demo d•••@example.com 账号与安全 › 账号 ID 00000002 绑定邮箱 d•••@example.com 登录方式 邮箱登录 退出登录",
+    "viewportWidth": 390,
+    "documentScrollWidth": 390,
+    "overflowCount": 0,
+    "overflowSamples": []
+  },
   "overflowCount": 0,
   "overflow": {
     "overflowCount": 0,
@@ -180,7 +202,7 @@
         "overflowCount": 0
       },
       {
-        "label": "历史消费",
+        "label": "历史消费（未登录·空态）",
         "overflowCount": 0
       },
       {
@@ -193,6 +215,10 @@
       },
       {
         "label": "账号（已登录）",
+        "overflowCount": 0
+      },
+      {
+        "label": "历史消费（已登录·有数据）",
         "overflowCount": 0
       }
     ]

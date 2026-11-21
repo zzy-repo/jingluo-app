@@ -2745,14 +2745,28 @@ export const PAGES = {
       }
       await shot('04-cards')
 
-      // ── ⑤ 历史消费（`HistoryView`，按日期分组）──────────────────────────
+      /**
+       * ── ⑤ 历史消费（**未登录**）：这一张只能是空态，因为 `HistoryView` 在 `signedIn === false`
+       * 时**一个请求都不发**（`HistoryView.tsx` 的 `load()`：没登录 / 没 Key 直接给空列表 ——
+       * 拿 JWT 硬打 `/v1/usage` 只会 401）。所以它不是「mock 形状没被认出来」，
+       * 而是**拍的时间点还没登录**；「有扣费记录」的那一态在 ⑨。
+       */
       await page.getByTestId('account-consume-history').click()
-      await page.waitForTimeout(900)
+      await page.locator('[data-testid="account-consume-history-empty"]').waitFor({ state: 'visible', timeout: 15000 })
+      await page.waitForTimeout(400)
       const history = await page.evaluate(() => {
         const body = document.querySelector('[data-testid="account-consume-page"]')
-        return { text: body === null ? null : (body.innerText ?? '').replace(/\s+/gu, ' ').trim().slice(0, 400) }
+        const empty = document.querySelector('[data-testid="account-consume-history-empty"]')
+        return {
+          text: body === null ? null : (body.innerText ?? '').replace(/\s+/gu, ' ').trim().slice(0, 400),
+          emptyText: empty === null ? null : (empty.innerText ?? '').replace(/\s+/gu, ' ').trim(),
+          rows: document.querySelectorAll('[data-testid="account-consume-history-row"]').length,
+        }
       })
-      record('history', { ...history, ...(await requireNoOverflow('历史消费')) })
+      record('historySignedOut', { ...history, ...(await requireNoOverflow('历史消费（未登录·空态）')) })
+      if (history.rows !== 0 || history.emptyText === null) {
+        throw new Error(`未登录的历史消费应当是空态（不发请求）：rows=${history.rows} empty=${String(history.emptyText)}`)
+      }
       await shot('05-history')
 
       // ── ⑥ 账号（未登录）：登录 / 注册入口 + segmented，**不是登录墙** ────────
@@ -2835,6 +2849,70 @@ export const PAGES = {
         throw new Error('JWT 字面量出现在界面文本上（#484 §七 第 4 条）')
       }
       await shot('08-account-signed-in')
+
+      /**
+       * ── ⑨ 历史消费（**已登录 + 有数据**）─────────────────────────────────
+       *
+       * 为什么必须单独一张：⑤ 那张拍在登录之前，空态是 `HistoryView` 的既定行为（不发请求），
+       * 于是 #727 验收里「历史消费」这一项**只被空态覆盖过** —— 真实扣费记录怎么排版、
+       * 日期怎么分组、金额带不带负号，一次都没进过仓库。这里在 ⑦ 恢复完登录态之后
+       * 再点一次「历史消费」，`/api/v1/usage` 的打桩这时才真的命中（见上面 `signedIn` 开关）。
+       */
+      await page.getByTestId('account-consume-history').click()
+      const historyRows = page.locator('[data-testid="account-consume-history-row"]')
+      await historyRows.first().waitFor({ state: 'visible', timeout: 15000 })
+      await historyRows.first().scrollIntoViewIfNeeded()
+      await page.waitForTimeout(400)
+      const historyData = await page.evaluate(() => {
+        const body = document.querySelector('[data-testid="account-consume-page"]')
+        /**
+         * `account-consume-history` 这个 testid 在页面上有**两份**：钱包里那个「历史消费」行按钮，
+         * 和 `HistoryView` 的根节点。`querySelector` 会拿到行按钮（它里面没有记录行），
+         * 所以这里按「里面真的有记录行」挑那一份。两份同名本身是个小契约缺陷，
+         * 记录在 `historyTestIdCollision` 里（本单只补证据，不改 src）。
+         */
+        const historyNodes = Array.from(document.querySelectorAll('[data-testid="account-consume-history"]'))
+        const container =
+          historyNodes.find((node) => node.querySelector('[data-testid="account-consume-history-row"]') !== null) ?? null
+        const rows = Array.from(document.querySelectorAll('[data-testid="account-consume-history-row"]')).map((node) =>
+          (node.innerText ?? '').replace(/\s+/gu, ' ').trim()
+        )
+        const containerText = container === null ? '' : (container.innerText ?? '')
+        return {
+          rows,
+          containerFound: container !== null,
+          testIdNodes: historyNodes.length,
+          // 日期分组的小标题（`.ghead` = `yyyy-mm-dd`）：按日期原文取，
+          // 不认 CSS module 哈希后的类名（类名带 hash，类名后缀不是契约）
+          groups: containerText.match(/\d{4}-\d{2}-\d{2}/gu) ?? [],
+          // 金额一律带负号（原型 `−¥0.12`），且是 `formatCurrency` 那一份口径
+          negativeAmounts: rows.filter((text) => text.includes('−¥')).length,
+          emptyState: document.querySelector('[data-testid="account-consume-history-empty"]') !== null,
+          text: body === null ? null : (body.innerText ?? '').replace(/\s+/gu, ' ').trim().slice(0, 400),
+        }
+      })
+      record('historySignedIn', { ...historyData, ...(await requireNoOverflow('历史消费（已登录·有数据）')) })
+      if (historyData.rows.length < 2) {
+        throw new Error(`已登录的历史消费应有扣费记录（打桩给了 2 条），实际 ${historyData.rows.length} 条`)
+      }
+      if (historyData.groups.length < 2) {
+        throw new Error(`历史消费应按日期分组（两条记录跨两天）：实际分组 ${JSON.stringify(historyData.groups)}`)
+      }
+      if (historyData.negativeAmounts !== historyData.rows.length) {
+        throw new Error(`每条扣费都要带负号：${JSON.stringify(historyData.rows)}`)
+      }
+      if (historyData.emptyState) {
+        throw new Error('已登录且打桩命中时仍显示空态')
+      }
+      // 松开焦点再截：点过的那一行会留一圈 `:focus-visible` 蓝框（行为是对的，但不是这一格要说明的事）
+      await page.evaluate(() => {
+        const active = document.activeElement
+        if (active instanceof HTMLElement) {
+          active.blur()
+        }
+      })
+      await page.waitForTimeout(160)
+      await shot('09-history-signed-in')
 
       // 顶层标量：`metrics.json` 里直接能读到 `overflowCount`（#727 的硬指标，两档都必须是 0）
       record('overflowCount', Math.max(...overflowSeen.map((item) => item.overflowCount)))
