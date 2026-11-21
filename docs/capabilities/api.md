@@ -32,7 +32,7 @@
 
 可接受，但**约束是隐式的**，这是本类别唯一的结构性风险：
 
-1. 生效方式正确：`src/main.tsx:3` 是文件里的第一条 import（`src/main.tsx:1-2` 有注释锁定），`rspack.config.ts:117` 只有一个入口 `./src/main.tsx`，没有第二条入口能绕过；
+1. 生效方式正确：`src/main.tsx:3` 是文件里的第一条 import（`src/main.tsx:1-2` 有注释锁定），`rspack.config.ts` 的 `entry` 只有 `'./src/main.tsx'` 一条，没有第二条入口能绕过；
 2. 兜底本身规矩：幂等（重复 install 方法引用不变）、不覆盖原生实现（新版内核等于什么都没做）、无第三方依赖、只用 ≤ ES2020 语法（自己不能被降级目标反噬）；
 3. **缺口**：这条「必须第一个 import」的顺序约束目前只靠注释和单测，没有构建期门禁（产物里若 legacy chunk 被排到调用方之后就会重演 #39 的 beta.8 白屏）。构建期校验归 `scripts/check-capabilities.mjs`（另一条 lane 的工作），本条只记录缺口，不在本单实现。
 

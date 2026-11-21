@@ -126,7 +126,15 @@ const findLine = (lines, pred, what) => {
   return index
 }
 
-/** 把一张表的数据行整体替换掉（表头 + 分隔线由文档保留）。 */
+/**
+ * 把一张表的数据行整体替换掉（表头 + 分隔线由文档保留）。
+ *
+ * 返回「这次替换改了几行」的记账，供 `--check` 累加 —— **以前这里不记账**，于是
+ * 明细表里那些 `文件:行` 漂了也不报漂移：`--check` 说「一致」，`gen` 一跑却把
+ * 4 行旧行号（`src/index.html:227/262/362/472` → `236/278/378/488`）静默改写。
+ * 门禁看不见的漂移等于没有门禁（#652 车道 A / D12 的实测：`check:doc-refs`
+ * 的 host.md WARN 就是这么攒出来的）。
+ */
 const replaceTableRows = (lines, headerPred, rows, what) => {
   const header = findLine(lines, (l) => l.startsWith('|') && headerPred(l), what)
   let end = header + 1
@@ -134,7 +142,11 @@ const replaceTableRows = (lines, headerPred, rows, what) => {
   if (end === header + 1 || !lines[header + 1]?.startsWith('|')) {
     throw new AnchorError(`表格「${what}」没有分隔线，格式不是本脚本认识的形状`)
   }
+  const before = lines.slice(header + 2, end)
   lines.splice(header + 2, end - header - 2, ...rows)
+  const after = lines.slice(header + 2, header + 2 + rows.length)
+  const drifted = before.length !== after.length || before.some((line, i) => line !== after[i])
+  return drifted ? { before: `${before.length} 行`, after: `${after.length} 行` } : null
 }
 
 /** 对表格里第一列匹配到 needle 的那一行的某个单元格做替换。 */
@@ -285,17 +297,21 @@ const genHost = (doc) => {
   if (seen !== 2) throw new AnchorError(`host.md 应有 2 处「总计 … 条命中」行，实际 ${seen}`)
 
   const rows = hostRows(lines)
-  replaceTableRows(
-    lines,
-    (l) => l.includes('文件:行') && l.includes('假设内容'),
-    rows,
-    'host.md 明细表',
+  changes.push(
+    replaceTableRows(
+      lines,
+      (l) => l.includes('文件:行') && l.includes('假设内容'),
+      rows,
+      'host.md 明细表',
+    ),
   )
-  replaceTableRows(
-    lines,
-    (l) => l.includes('能力') && l.includes('需动态验证'),
-    hostCapabilityRows(),
-    'host.md 各能力命中数表',
+  changes.push(
+    replaceTableRows(
+      lines,
+      (l) => l.includes('能力') && l.includes('需动态验证'),
+      hostCapabilityRows(),
+      'host.md 各能力命中数表',
+    ),
   )
 
   return changes.filter(Boolean)

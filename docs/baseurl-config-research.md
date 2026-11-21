@@ -91,7 +91,7 @@ $ cd /root/deepseek-app/dist && grep -ro "https://api.deepseek.com" . | sort | u
 | 派生常量 | 定义位置 | 值 | 使用位置 |
 | --- | --- | --- | --- |
 | `API_ORIGIN` | `client.ts:13` | `__API_ORIGIN__` | `client.ts:94`、`speech.ts:9`（经 import） |
-| `ANTHROPIC_BASE_URL` | `client.ts:15` | `${API_ORIGIN}/anthropic/v1` | `client.ts:116`、`client.ts` 的 `streamMessage()`、`client.ts:149` |
+| `ANTHROPIC_BASE_URL` | `client.ts:15` | `${API_ORIGIN}/anthropic/v1` | `client.ts` 的 `uploadFile()`、`deleteFile()`、`streamMessage()`（三个使用点按函数名定位；原文写的是当次行号 116/127/149，会漂） |
 | `TOOLS_BASE_URL` | `speech.ts:9` | `${API_ORIGIN}/v1/tools` | `speech.ts:24`、`speech.ts:55` |
 
 ### 2.2 每种能力的完整 URL（以 `ORIGIN=https://api.deepseek.com` 为例）
@@ -113,7 +113,7 @@ $ cd /root/deepseek-app/dist && grep -ro "https://api.deepseek.com" . | sort | u
 
 ### 2.3 请求体里的非标准字段（决定中转站能否用）
 
-`client.ts:149` 发往 `/anthropic/v1/messages` 的 body（`store.ts` 里 `streamMessage(...)` 的请求体 + `src/services/api/types.ts` 的 `CreateMessageRequest`）：
+`client.ts` 的 `streamMessage()` 发往 `/anthropic/v1/messages` 的 body（`store.ts` 里 `streamMessage(...)` 的请求体 + `src/services/api/types.ts` 的 `CreateMessageRequest`）：
 
 ```ts
 model: 'deepseek-flash' | 'deepseek-v4-pro'     // src/services/chat/store.ts:36, types.ts:7
@@ -251,7 +251,7 @@ export const setApiKey = (apiKey: string | null) => {
 ### 5.1 附件（Files API）——最容易坏，且是"历史数据级"的坑
 
 - 上传走 `POST {base}/anthropic/v1/files`，带**专有头** `anthropic-beta: files-api-2025-04-14`（`client.ts:17/85-90`）和 `purpose: rich_layout_recognition | user_data`（`attachments.ts` 的 `getUploadPurpose()`）。中转站若不实现，附件功能整体不可用。
-- 会话里已存的 `serverId` 指向**旧服务的 file_id**，新服务不认。仓库有自愈逻辑：`src/services/chat/store.ts:896-926` 在服务端报 `invalid file_id` 时清空 `serverId`，再用 IndexedDB 里的原件补传（`db.ts:7-11`、`src/services/chat/store.ts:43` `FILE_RETRY_LIMIT=2`）。
+- 会话里已存的 `serverId` 指向**旧服务的 file_id**，新服务不认。仓库有自愈逻辑：`src/services/chat/store.ts:896-926` 在服务端报 `invalid file_id` 时清空 `serverId`，再用 IndexedDB 里的原件补传（`db.ts` 的 `StoredFile`（原件按附件本地 id 存储）、`src/services/chat/store.ts:43` `FILE_RETRY_LIMIT=2`）。
 - **但有代价**：① 每次首轮遇到旧 file_id 会多一轮 400 + 重传；② 若该附件在 IndexedDB 没有原件（例如从外部导入的历史 ZIP 里的**非图片**附件，见 README 数据章节），则永远补不回来 → 旧会话里这类附件会静默变成"不进入请求"。
 - 结论：**切换 baseurl 后建议明确提示"历史附件可能需要重新上传"**，或提供"清空旧 serverId"的一次性迁移。
 
@@ -266,7 +266,7 @@ export const setApiKey = (apiKey: string | null) => {
 ### 5.4 CORS 预检（前端只能给出误导性的「网络错误」）
 
 - 触发点：`application/json`（非安全列表 MIME）+ 自定义头 `x-api-key` / `anthropic-beta` / `authorization` → **所有 POST 都先发 OPTIONS 预检**。
-- 前端对预检失败的处理：`client.ts:69-78` 把任何 `fetch` 抛出的 `TypeError: Failed to fetch` 包成 `ApiError('network')`，UI 只显示"网络错误"（`useApiKeyForm.ts:19-20`）。**用户无法从界面区分"地址填错/CORS 被拦/服务挂了"**。
+- 前端对预检失败的处理：`client.ts` 的 `request()` 把任何 `fetch` 抛出的 `TypeError: Failed to fetch` 包成 `ApiError('network')`，UI 只显示"网络错误"（`useApiKeyForm.ts:19-20`）。**用户无法从界面区分"地址填错/CORS 被拦/服务挂了"**。
 - 官方端点的实测基准（作为中转站的验收标准，`curl -X OPTIONS` 于 2026-11-17）：
 
 ```
