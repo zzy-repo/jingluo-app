@@ -272,6 +272,49 @@
   }
 }
 
+/* #727：登录 / 注册的分段控件（原型 `.segmented`）。只用 token，不写死颜色；
+   这里**不用 gap**（#173：Chromium 83 的 flex gap 不生效，还得另生兜底），间距走 margin。 */
+.segmented {
+  display: flex;
+  box-sizing: border-box;
+  margin-bottom: 12px;
+  padding: 3px;
+  border-radius: 10px;
+  background-color: var(--dsw-alias-interactive-bg-hover);
+}
+
+.segmentedButton {
+  flex: 1 1 0;
+  padding: 6px 4px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--dsw-alias-label-secondary);
+  font: inherit;
+  font-size: 14px;
+  line-height: 20px;
+  cursor: pointer;
+}
+
+.segmentedButton:focus {
+  outline: 2px solid var(--dsw-alias-brand-primary);
+  outline-offset: 1px;
+}
+
+/* #727：上面已经有分段控件在切换「登录 / 注册」，表单底部那行文字链接就重复了 —— 视觉上收掉。
+   为什么用 CSS 而不是把 `showRegisterEntry` 传成 false：注册入口的显隐必须**只**由
+   `flags.registrationEnabled` 决定（#484 §3.1d，`auth-flags-gate` 那条接线断言钉的就是这一行），
+   所以那行 prop 保持原样，重复的是「第二个切换控件」，不是「第二个开关」。 */
+.segmented ~ * .switchRow {
+  display: none;
+}
+
+.segmentedButtonOn {
+  background-color: var(--dsw-alias-bg-base);
+  color: var(--dsw-alias-label-primary);
+  font-weight: 600;
+}
+
 /* #173-fallback:start —— 由 node scripts/gen-flex-gap-fallback.mjs 生成，勿手改（issue #173） */
 :global(html[data-flex-gap-fallback]) .card > *:not(:last-child) {
   margin-bottom: 18px;

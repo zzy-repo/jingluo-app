@@ -696,7 +696,6 @@ export const en = {
   autoTitlePromptLength: 'Target length: about 8–14 characters for Chinese, or 3–5 words for English.',
   autoTitlePromptFallback:
     'If the message carries too little information, still give a short best-guess title (for example "Greetings"), without explanation.',
-  oursPayRecordsEntryAction: 'View',
   oursPayRecordsNotRedeemed: 'Not redeemed',
   oursPayRecordsRedeemed: 'Redeemed',
   oursPayRecordsCopyCard: 'Copy card code',
@@ -864,10 +863,34 @@ export const en = {
 
   // "Account & billing" page (three dialogs → one page, #482 / W1-C1 #487)
   accountConsumeTitle: 'Account & billing',
-  accountConsumeEntryDescription: 'Card keys, plans, quota and account — all in one page',
   accountConsumeTabCards: 'My cards',
   accountConsumeTabQuota: 'My quota',
   accountConsumeTabAccount: 'Account',
+  // #727: the page is now "one full page + four sections" (model source / connectivity / wallet / account).
+  accountConsumeGroupSource: 'Model source',
+  accountConsumeSourceBuiltin: 'Built-in service',
+  accountConsumeSourceThird: 'Third-party service',
+  accountConsumeSourceDeepseek: 'DeepSeek official service',
+  accountConsumeSourceAnthropic: 'Anthropic-compatible service',
+  accountConsumeSourceKeyInvalid: 'Invalid API key — check it and try again',
+  accountConsumeSourcePickHint: 'Pick a source and press Save; the app uses it right away',
+  accountConsumeWallet: 'My wallet',
+  accountConsumeRemaining: 'Remaining balance',
+  accountConsumeHistory: 'Spending history',
+  accountConsumeHistoryEmpty: 'No spending yet',
+  accountConsumeHistoryEmptyHint: 'Charges show up here after you use a model',
+  accountConsumeHistoryMore: 'Load more',
+  accountConsumeConnOk: 'OK {ms} ms',
+  accountConsumeConnIdle: 'Tap to test',
+  accountConsumeConnFail: 'Failed · retry',
+  accountConsumeAccountId: 'Account ID',
+  accountConsumeBindEmail: 'Linked email',
+  accountConsumeLoginMethod: 'Sign-in method',
+  accountConsumeLoginMethodEmail: 'Email',
+  accountConsumeSecurity: 'Account & security',
+  accountConsumeSignedOutCta: 'Log in / Sign up',
+  accountConsumeEmailUnbound: 'Not linked',
+  accountConsumeSignOutConfirm: 'Sign out now?',
 
   // Login wall removed (#608): the account is now an *optional* capability inside "our channels".
   // Three rules: ① the primary call to action is "fill in a Key", not "log in";

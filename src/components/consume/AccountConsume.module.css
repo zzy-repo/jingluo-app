@@ -6,17 +6,6 @@
  *  3. 点击区 ≥ 36px（`Button` 的 size="m" 就是 36px），不用 12px 的小链接当主操作。
  */
 
-.dialog {
-  width: min(560px, calc(100vw - 16px));
-  max-height: min(720px, calc(100vh - 24px));
-}
-
-.main {
-  /* 内容再长也只在弹层内部滚，不把弹层顶出屏幕 */
-  overflow-y: auto;
-  overflow-x: hidden;
-}
-
 /* ---------------------------------------------------------------- 四个 tab */
 
 .tabs {
@@ -312,6 +301,455 @@
   line-height: 18px;
   color: var(--dsw-alias-label-tertiary);
   overflow-wrap: anywhere;
+}
+
+
+
+/* ============================================================================
+ * #727：「账户与消费」整页（模型来源 / 连通性测试 / 我的钱包 / 账号）
+ *
+ * 布局词汇照原型 HTML（`服务Tab.html`），不是旧的 tab 样式：
+ *   `.phone` → `.page`；`.h1` → `.pageTitle`（34px 大标题）；`.rows/.row` → 56px inset 行 +
+ *   `.divider`；`.balance` → 余额卡；`.ghead/.rec` → 消费记录；`.profile` → 账号资料头；
+ *   `.logout` → 红字退出行；`.mask+.sheet` → 模型来源底部 sheet；`.dialog` → 登录 / 注册居中卡片。
+ *
+ * 三条约束（与文件头那三条同一口径）：只用 design token、390/360 不横向滚动、
+ * #173 —— **不写 `gap`**（Chromium 83 上 flex gap 不生效，还得另生成兜底），间距一律 margin / padding。
+ * ========================================================================== */
+
+/* ---------------------------------------------------------------- 页面容器 */
+
+.dialog {
+  /* 原型是 375 宽的手机整页：这里取「接近满屏的卡片」，桌面端不至于拉成一条 */
+  width: min(420px, calc(100vw - 16px));
+  height: min(760px, calc(100vh - 32px));
+  max-height: min(760px, calc(100vh - 32px));
+  padding-bottom: 0;
+}
+
+.main {
+  /* 整页只在内部滚：sheet 是绝对定位覆盖在 `.page` 上（`.main` 是它的定位上下文）。
+     `flex: 1 1 auto` 必须有 —— Modal 的 `.content` 是 flex 列，不给这一项就撑不满既定的高度。 */
+  position: relative;
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+  margin: 0 -24px;
+  padding: 0 0 8px;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+.page {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+  color: var(--dsw-alias-label-primary);
+}
+
+.pageTitle {
+  font-size: 34px;
+  font-weight: 700;
+  line-height: 41px;
+  letter-spacing: -0.4px;
+}
+
+/* ---------------------------------------------------------------- 大标题 / 行 */
+
+.h1 {
+  margin: 4px 0 12px;
+  padding: 0 20px;
+  font-size: 34px;
+  font-weight: 700;
+  line-height: 41px;
+}
+
+.ghead {
+  padding: 18px 20px 6px;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 18px;
+}
+
+.rows {
+  display: flex;
+  flex-direction: column;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 56px;
+  padding: 0 20px;
+  border: 0;
+  background: none;
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  font-size: 17px;
+  line-height: 24px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.row:active {
+  background-color: var(--dsw-alias-interactive-bg-hover);
+}
+
+/* #215：83 上 `:focus-visible` 整条失效，所以 `:focus` 兜底 + 现代内核收鼠标环 */
+.row:focus {
+  outline: 2px solid var(--dsw-alias-brand-primary);
+  outline-offset: -2px;
+}
+
+/* 行内不可点的版本（只是显示一行值） */
+.rowStatic {
+  cursor: default;
+}
+
+.rowStatic:active {
+  background: none;
+}
+
+.rowMain {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.value {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  margin-left: 8px;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 15px;
+  line-height: 20px;
+}
+
+.valueStrong {
+  color: var(--dsw-alias-label-primary);
+  font-weight: 600;
+}
+
+.divider {
+  height: 1px;
+  margin-left: 20px;
+  background-color: var(--dsw-alias-border-l1);
+}
+
+.dividerFull {
+  height: 1px;
+  margin: 0;
+  background-color: var(--dsw-alias-border-l1);
+}
+
+/* 状态点：绿 / 黄 / 红 */
+.dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 6px;
+  border-radius: 50%;
+  background-color: var(--dsw-static-green-500);
+}
+
+.dotIdle {
+  background-color: var(--dsw-alias-label-caption);
+}
+
+.dotTesting {
+  background-color: var(--dsw-static-amber-500);
+}
+
+.dotFail {
+  background-color: var(--dsw-alias-state-error-primary);
+}
+
+.spacer {
+  flex: 1 1 auto;
+  min-height: 12px;
+}
+
+/* ---------------------------------------------------------------- 余额卡 */
+
+.balance {
+  margin: 8px 20px 4px;
+  padding: 20px;
+  border-radius: 16px;
+  background-color: var(--dsw-alias-interactive-bg-hover);
+}
+
+.balanceKey {
+  color: var(--dsw-alias-label-secondary);
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.balanceValue {
+  margin-top: 4px;
+  font-size: 32px;
+  font-weight: 700;
+  line-height: 38px;
+}
+
+/* ---------------------------------------------------------------- 账号资料 */
+
+.profile {
+  display: flex;
+  align-items: center;
+  padding: 12px 20px 16px;
+}
+
+.avatar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 56px;
+  height: 56px;
+  margin-right: 14px;
+  border-radius: 28px;
+  background-color: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 22px;
+  font-weight: 600;
+}
+
+.profileText {
+  min-width: 0;
+}
+
+.profileName {
+  font-size: 17px;
+  font-weight: 600;
+  line-height: 24px;
+  overflow-wrap: anywhere;
+}
+
+.profileMail {
+  margin-top: 3px;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 13px;
+  line-height: 18px;
+  overflow-wrap: anywhere;
+}
+
+.logout {
+  display: block;
+  width: 100%;
+  padding: 15px 20px;
+  border: 0;
+  background: none;
+  color: var(--dsw-alias-state-error-primary);
+  font: inherit;
+  font-size: 16px;
+  font-weight: 500;
+  line-height: 22px;
+  text-align: center;
+  cursor: pointer;
+}
+
+.logout:active {
+  background-color: var(--dsw-alias-interactive-bg-hover-danger);
+}
+
+/* ---------------------------------------------------------------- 消费记录 */
+
+.rec {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 13px 20px;
+}
+
+.recMain {
+  min-width: 0;
+}
+
+.recName {
+  font-size: 16px;
+  line-height: 22px;
+  overflow-wrap: anywhere;
+}
+
+.recTime {
+  margin-top: 2px;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.recAmount {
+  flex-shrink: 0;
+  margin-left: 10px;
+  font-size: 16px;
+  font-weight: 500;
+  line-height: 22px;
+}
+
+/* ---------------------------------------------------------------- 空 / 错 / 加载 */
+
+.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 48px 24px;
+  text-align: center;
+}
+
+.emptyMain {
+  font-size: 15px;
+  font-weight: 500;
+  line-height: 22px;
+}
+
+.emptySub {
+  margin-top: 6px;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.errorText {
+  margin: 8px 20px;
+  color: var(--dsw-alias-state-error-primary);
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.viewBody {
+  padding: 4px 0 12px;
+}
+
+/* ---------------------------------------------------------------- 底部 sheet */
+
+.mask {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  z-index: 20;
+  background-color: rgb(0 0 0 / 32%);
+}
+
+.sheet {
+  box-sizing: border-box;
+  width: 100%;
+  padding-bottom: 12px;
+  border-radius: 20px 20px 0 0;
+  background-color: var(--dsw-alias-bg-layer-2);
+  animation: sheetUp 180ms ease;
+}
+
+@keyframes sheetUp {
+  from {
+    transform: translateY(100%);
+  }
+
+  to {
+    transform: translateY(0);
+  }
+}
+
+.handle {
+  width: 36px;
+  height: 5px;
+  margin: 8px auto 0;
+  border-radius: 3px;
+  background-color: var(--dsw-alias-border-l2);
+}
+
+.sheetTitle {
+  padding: 14px 20px 12px;
+  font-size: 17px;
+  font-weight: 600;
+  line-height: 24px;
+  text-align: center;
+}
+
+.band {
+  height: 8px;
+  background-color: var(--dsw-alias-interactive-bg-hover);
+}
+
+.cancelRow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 56px;
+  color: var(--dsw-alias-brand-primary);
+  font-size: 17px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+/* ---------------------------------------------------------------- 表单（输入框） */
+
+.label {
+  padding: 12px 20px 0;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 18px;
+}
+
+.field {
+  display: flex;
+  align-items: center;
+  box-sizing: border-box;
+  height: 48px;
+  margin: 8px 20px 0;
+  padding: 0 14px;
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: 12px;
+  background-color: var(--dsw-alias-bg-base);
+}
+
+.field input {
+  flex: 1 1 auto;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: none;
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  font-size: 15px;
+  line-height: 20px;
+}
+
+.sheetActions {
+  padding: 16px 20px 8px;
+}
+
+/* ---------------------------------------------------------------- 居中 dialog（登录 / 注册） */
+
+.authDialog {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 300px;
+  margin: 8px auto 0;
+  padding: 14px 14px 8px;
+  border-radius: 20px;
+  background-color: var(--dsw-alias-bg-layer-3);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 18%);
+}
+
+@media (max-width: 480px) {
+  .dialog {
+    width: calc(100vw - 8px);
+    height: calc(100vh - 16px);
+    max-height: calc(100vh - 16px);
+  }
 }
 
 /* #173-fallback:start —— 由 node scripts/gen-flex-gap-fallback.mjs 生成，勿手改（issue #173） */

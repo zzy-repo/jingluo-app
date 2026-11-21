@@ -50,12 +50,17 @@ export type AccountPanelProps = {
   onNeedLogin: () => void
   /** 未登录态的主 CTA：去「设置 → 数据管理 → API Key」。不传时只渲染文案（测试 / 孤立挂载） */
   onFillKey?: () => void
+  /**
+   * 登录 / 注册卡的容器类名（#727）：这一页按原型把它做成**居中 dialog**，外壳注入 dialog 的类名。
+   * 不传时保持原样（普通卡片），老挂载点一字不变。
+   */
+  authDialog?: string
 }
 
 /** 「已复制」提示的存活时间 */
 const COPIED_MS = 2000
 
-export const AccountPanel = ({ consume, user, onNeedLogin, onFillKey }: AccountPanelProps) => {
+export const AccountPanel = ({ consume, user, onNeedLogin, onFillKey, authDialog }: AccountPanelProps) => {
   const t = useTranslate()
   /**
    * 登录态是**这一块自己的开关**（#608）：未登录不再由登录墙拦在门外，而是落在这里的引导态。
@@ -149,7 +154,9 @@ export const AccountPanel = ({ consume, user, onNeedLogin, onFillKey }: AccountP
       t,
       c: styles,
       Button,
-      auth: <AuthGate variant="inline" />,
+      // #727：登录 / 注册用分段控件切换（原型 `.segmented`），表单本体仍是既有的 LoginPage / RegisterPage
+      auth: <AuthGate variant="inline" segmented />,
+      authDialog,
       onFillKey: () => onFillKey?.(),
     })
   }

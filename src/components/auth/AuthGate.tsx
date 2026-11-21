@@ -102,9 +102,17 @@ export type AuthGateProps = {
    * 差别仅在于「占满一屏」还是「跟着宿主排版」。
    */
   variant?: 'page' | 'inline'
+  /**
+   * 「登录 / 注册」的切换控件用**分段控件**（#727 的布局词汇：原型 `.segmented`）而不是
+   * 「去注册」那种文字链接。打开后注册入口就由分段控件承担，`LoginPage` 那边不再重复露一次。
+   *
+   * 只是**同一份模式状态的另一种摆法**：`mode` 还是本组件的那一个 state，
+   * 两个按钮调的还是 `switchTo()`，不存在第二套登录状态。
+   */
+  segmented?: boolean
 }
 
-export const AuthGate = ({ children, variant = 'page' }: AuthGateProps) => {
+export const AuthGate = ({ children, variant = 'page', segmented = false }: AuthGateProps) => {
   const inline = variant === 'inline'
   const t = useTranslate()
   const authState = useAuthStore((state) => state.state)
@@ -192,30 +200,62 @@ export const AuthGate = ({ children, variant = 'page' }: AuthGateProps) => {
   // 「登录已过期」要说清楚原因：不然用户会以为是自己密码填错了
   const noticeKey: TranslationKey | null = authState === 'expired' ? 'sub2authSessionExpired' : null
 
+  /** #727：分段控件只在开关允许注册时才有第二段（`registration_enabled=false` 时整块隐藏） */
+  const switcher = segmented ? (
+    <div className={styles.segmented} role="group" aria-label={t('accountOptionalLoginEntry')}>
+      <button
+        type="button"
+        className={mode === 'login' ? `${styles.segmentedButton} ${styles.segmentedButtonOn}` : styles.segmentedButton}
+        aria-pressed={mode === 'login'}
+        data-testid="auth-segmented-login"
+        onClick={() => switchTo('login')}
+      >
+        {t('sub2authLogin')}
+      </button>
+      {flags.registrationEnabled ? (
+        <button
+          type="button"
+          className={mode === 'register' ? `${styles.segmentedButton} ${styles.segmentedButtonOn}` : styles.segmentedButton}
+          aria-pressed={mode === 'register'}
+          data-testid="auth-segmented-register"
+          onClick={() => switchTo('register')}
+        >
+          {t('sub2authRegister')}
+        </button>
+      ) : null}
+    </div>
+  ) : null
+
   if (mode === 'register') {
     return (
-      <RegisterPage
-        embedded={inline}
-        flags={flags}
-        busy={busy}
-        sendingCode={sendingCode}
-        error={error}
-        onSubmit={handleRegister}
-        onSendCode={handleSendCode}
-        onSwitchToLogin={() => switchTo('login')}
-      />
+      <>
+        {switcher}
+        <RegisterPage
+          embedded={inline}
+          flags={flags}
+          busy={busy}
+          sendingCode={sendingCode}
+          error={error}
+          onSubmit={handleRegister}
+          onSendCode={handleSendCode}
+          onSwitchToLogin={() => switchTo('login')}
+        />
+      </>
     )
   }
 
   return (
-    <LoginPage
-      embedded={inline}
-      showRegisterEntry={flags.registrationEnabled}
-      noticeKey={noticeKey}
-      busy={busy}
-      error={error}
-      onSubmit={handleLogin}
-      onSwitchToRegister={() => switchTo('register')}
-    />
+    <>
+      {switcher}
+      <LoginPage
+        embedded={inline}
+        showRegisterEntry={flags.registrationEnabled}
+        noticeKey={noticeKey}
+        busy={busy}
+        error={error}
+        onSubmit={handleLogin}
+        onSwitchToRegister={() => switchTo('register')}
+      />
+    </>
   )
 }

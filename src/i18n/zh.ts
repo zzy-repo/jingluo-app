@@ -685,7 +685,6 @@ export const zh = {
   autoTitlePromptLanguage: '使用消息的语言。',
   autoTitlePromptLength: '目标长度：约 8–14 个中文字符（或 3–5 个英文单词）。',
   autoTitlePromptFallback: '如果消息信息量太少，也要给一个简短的最佳猜测标题（如「打招呼」），不要解释。',
-  oursPayRecordsEntryAction: '查看',
   oursPayRecordsNotRedeemed: '尚未兑换',
   oursPayRecordsRedeemed: '已兑换',
   oursPayRecordsCopyCard: '复制卡密',
@@ -853,10 +852,36 @@ export const zh = {
   // 「账户与消费」页（#482 三弹层合一 / #487 W1-C1）：一个页面四个 tab。
   // 标题与三个 tab 名在词条骨架里没有对应项，这里最小新增；Tab 2「购买」复用 oursPayTitle。
   accountConsumeTitle: '账户与消费',
-  accountConsumeEntryDescription: '我的卡密、购买套餐、额度与账号，一个页面四件事',
   accountConsumeTabCards: '我的卡密',
   accountConsumeTabQuota: '我的额度',
   accountConsumeTabAccount: '账号',
+  // #727：这一页重排成「一级整页 + 四个分区」（模型来源 / 连通性测试 / 我的钱包 / 账号）。
+  // 分区名与行文案都走词条：原型里的 34px 大标题 / 56px inset 行 / 底部 sheet / 居中 dialog
+  // 只吃这里的字符串，不在组件里写死中文。
+  accountConsumeGroupSource: '模型来源',
+  accountConsumeSourceBuiltin: '内置服务',
+  accountConsumeSourceThird: '第三方服务',
+  accountConsumeSourceDeepseek: 'DeepSeek 官方服务',
+  accountConsumeSourceAnthropic: 'Anthropic 协议服务',
+  accountConsumeSourceKeyInvalid: 'API Key 无效，请检查后重试',
+  accountConsumeSourcePickHint: '选一个来源后按「保存」，主界面会立刻用它',
+  accountConsumeWallet: '我的钱包',
+  accountConsumeRemaining: '剩余余额',
+  accountConsumeHistory: '历史消费',
+  accountConsumeHistoryEmpty: '暂无消费记录',
+  accountConsumeHistoryEmptyHint: '使用模型后的扣费会显示在这里',
+  accountConsumeHistoryMore: '加载更多',
+  accountConsumeConnOk: '正常 {ms} ms',
+  accountConsumeConnIdle: '点一下测试',
+  accountConsumeConnFail: '连接失败 · 重试',
+  accountConsumeAccountId: '账号 ID',
+  accountConsumeBindEmail: '绑定邮箱',
+  accountConsumeLoginMethod: '登录方式',
+  accountConsumeLoginMethodEmail: '邮箱登录',
+  accountConsumeSecurity: '账号与安全',
+  accountConsumeSignedOutCta: '登录 / 注册',
+  accountConsumeEmailUnbound: '未绑定',
+  accountConsumeSignOutConfirm: '确定退出？',
 
   // 拆掉登录墙（#608）：账户降级为「我们的渠道」里的**可选**能力。
   // 口径三条（改文案前先看 #608 / #421）：① 主 CTA 是「填 Key 就能用」，不是「登录」；

@@ -558,11 +558,17 @@ export type AccountSignedOutViewProps = PanelBlockProps & {
   auth: ReactNode
   /** 主 CTA：跳到「设置 → 数据管理 → API Key」 */
   onFillKey: () => void
+  /**
+   * 登录卡的容器类名（#727）：这一页按原型把登录 / 注册做成**居中 dialog**
+   * （radius 20 + 阴影 + 300px），所以外壳要把 dialog 的类名递进来。
+   * 不传时保持原来那块普通卡片，老挂载点外观一字不变。
+   */
+  authDialog?: string
 }
 
 /** 账号面板（未登录态，纯渲染：不读 store、不发请求） */
 export const AccountSignedOutView = (props: AccountSignedOutViewProps): ReactNode => {
-  const { t, c, Button, auth, onFillKey } = props
+  const { t, c, Button, auth, onFillKey, authDialog } = props
   const body: ReactNode[] = []
 
   // ① 顶部固定一句「不登录也能用」—— 维护者定调的原话，位置不动
@@ -611,7 +617,15 @@ export const AccountSignedOutView = (props: AccountSignedOutViewProps): ReactNod
 
   // ⑤ 次要入口：登录 / 注册（可选能力，放在主 CTA 之后）
   body.push(sectionTitle(c, t('accountOptionalLoginEntry')))
-  body.push(createElement('div', { 'data-testid': 'account-auth-card' }, auth))
+  // #727：原型把登录 / 注册放在**居中 dialog**里（`.dialog`：300px、radius 20、阴影），
+  // 所以这里多套一层容器；`authDialog` 由外壳注入（不传就还是一块普通卡片）。
+  body.push(
+    createElement(
+      'div',
+      { 'data-testid': 'account-auth-card', className: authDialog },
+      auth
+    )
+  )
 
   return panelShell(c, t('consumeAccountTitle'), body, 'account-panel')
 }
