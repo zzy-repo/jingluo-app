@@ -852,6 +852,14 @@ export const en = {
   sub2authSessionExpired: 'Session expired, please sign in again',
   sub2authRegisterSuccess: 'Account created',
   sub2authEmailVerifyRequired: 'Verify your email first',
+  /** Server `reason:"REGISTRATION_DISABLED"` (403): sign-up is switched off (#735) — never "wrong password" */
+  sub2authRegistrationDisabled: 'Sign-up is not open yet. Please try again later or contact the administrator.',
+  /** Server `reason:"EMAIL_EXISTS"` (409): this email is already registered (#735) */
+  sub2authEmailExists: 'This email is already registered. Please log in instead.',
+  /** 403 without a usable business code (gateway/WAF block, unlisted reason): denied ≠ wrong password (#735) */
+  sub2authForbiddenUnknown: 'This action was denied (no permission, or the feature is not available yet). Try again later or contact the administrator.',
+  /** Server `reason:"USER_NOT_ACTIVE"` (403): the password is right but the account is disabled (#735) */
+  sub2authUserNotActive: 'This account has been disabled. Please contact the administrator.',
   sub2authTwoFactorHint: 'Two-factor authentication is on, enter the 6-digit code from your authenticator app',
 
   // "Account & billing" page (three dialogs → one page, #482 / W1-C1 #487)

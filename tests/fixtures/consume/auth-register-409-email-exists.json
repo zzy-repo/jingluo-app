@@ -1,0 +1,19 @@
+{
+  "_meta": {
+    "request": "POST /api/v1/auth/register 与 POST /api/v1/auth/send-verify-code（同体，两个端点都实测过）",
+    "auth": "anonymous",
+    "captured_at": "2026-11-21T17:40:00+08:00",
+    "http_status": 409,
+    "shape": "PANEL error envelope with INTEGER code = HTTP status + reason",
+    "cause": "该邮箱已注册（先成功注册一次，再用同一邮箱打同一个端点）",
+    "source": "本地 sub2api 实例 0.2.20 只读复现（生产未做真实注册）",
+    "variants_observed": [
+      "register 重复邮箱: 409 {\"code\":409,\"message\":\"email already exists\",\"reason\":\"EMAIL_EXISTS\"}",
+      "send-verify-code 已注册邮箱: 409 同上（逐字一致）—— 点「发送验证码」也会撞到这个码",
+      "码是 EMAIL_EXISTS，**不是** EMAIL_ALREADY_EXISTS"
+    ]
+  },
+  "code": 409,
+  "message": "email already exists",
+  "reason": "EMAIL_EXISTS"
+}

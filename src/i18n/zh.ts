@@ -834,6 +834,20 @@ export const zh = {
   sub2authSessionExpired: '登录已过期，请重新登录',
   sub2authRegisterSuccess: '注册成功',
   sub2authEmailVerifyRequired: '需要先验证邮箱',
+  /**
+   * 服务端 `reason:"REGISTRATION_DISABLED"`（403）：注册开关被关掉（#735）。
+   * **绝不能**说成「账号或密码错误」—— 用户会以为密码错，反复重试也没用；文案必须指向下一步。
+   */
+  sub2authRegistrationDisabled: '注册暂未开放，请稍后或联系管理员',
+  /** 服务端 `reason:"EMAIL_EXISTS"`（409）：这个邮箱已经注册过（#735） */
+  sub2authEmailExists: '该邮箱已注册，请直接登录',
+  /**
+   * 403 但**没有**可用的业务码（网关/WAF 拦截、表外 reason）：拒绝 ≠ 密码错（#735）。
+   * 不许退回「账号或密码错误」—— 那会把「服务端不让你做」说成「你输错了」。
+   */
+  sub2authForbiddenUnknown: '操作被拒绝（无权限或该功能未开放），请稍后重试或联系管理员',
+  /** 服务端 `reason:"USER_NOT_ACTIVE"`（403）：密码是对的，但账号被停用（#735 实测复现） */
+  sub2authUserNotActive: '账号已被停用，请联系管理员',
   sub2authTwoFactorHint: '这个账号已开启两步验证，请输入验证器里的 6 位验证码',
 
   // 「账户与消费」页（#482 三弹层合一 / #487 W1-C1）：一个页面四个 tab。

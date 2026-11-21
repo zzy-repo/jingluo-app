@@ -18,10 +18,15 @@
  * 就是唯一实现 —— 它只做三件事，**没有任何 HTTP 代码**：
  *  1. 调 `consume.auth.*` / `consume.settings.get()`；
  *  2. 把 `ConsumeCallResult<T>` 解包成 `AuthResult<T>`（`expires_in` 秒 → `expiresAt` 毫秒）；
- *  3. 把 `Sub2ApiError.i18nKey`（`consumeErr*`，词条由 W1-C 补）映射成**现在就能上屏的 key**
- *     （`sub2auth*` / `inviteCode*`）：网络/超时 → `sub2authNetworkError`，凭据类 →
- *     `sub2authCredentialInvalid`，邮箱验证码 → `sub2authCodeInvalid`，邀请码 → `inviteCodeInvalid`，
- *     其余 → `sub2authLoginFailed`。
+ *  3. 把 `Sub2ApiError` 映射成**现在就能上屏的 key**（`sub2auth*` / `inviteCode*`），
+ *     **先看服务端业务码 `reason`/`code`、再看归一化类别 `i18nKey`**（#735）：
+ *     业务码（`REGISTRATION_DISABLED` / `INVALID_CREDENTIALS` / `EMAIL_EXISTS` / `USER_NOT_ACTIVE`）
+ *     → 各自的专用文案；没业务码时沿用 `consumeErr*`（`consumeErrNetwork` → `sub2authNetworkError`，
+ *     `consumeErrUnauthorized` → `sub2authCredentialInvalid`，**`consumeErrForbidden` → `sub2authForbiddenUnknown`**，
+ *     `consumeErrEmailCodeInvalid` → `sub2authCodeInvalid`，其余 → `sub2authLoginFailed`）。
+ *     顺序不能反过来：403 既可能是「注册被关掉」也可能是「真没权限」，只有业务码能分辨。
+ *     反过来也成立：**403 一律不许说成「账号或密码错误」** —— 服务端说「我不让你做这件事」，
+ *     不等于「你密码输错了」（无 reason 的 403 走 `sub2authForbiddenUnknown`）。
  * **不要**在 UI 里碰 `Sub2ApiError`，界面只认 `AuthError.messageKey`。
  *
  * 硬约束（照抄 #484 §二，别在实现里放宽）：
@@ -144,7 +149,10 @@ const AUTH_MESSAGE_KEY: Partial<Record<ConsumeMessageKey, TranslationKey>> = {
   consumeErrTimeout: 'sub2authNetworkError',
   consumeErrUnsupported: 'sub2authNetworkError',
   consumeErrUnauthorized: 'sub2authCredentialInvalid',
-  consumeErrForbidden: 'sub2authCredentialInvalid',
+  // 403 与凭据无关：可能是「没权限」「功能没开」，所以**不能**沿用「账号或密码错误」。
+  // 这是 #735 的另一半残留 —— 只修 REGISTRATION_DISABLED 的话，无 reason 的 403（网关/WAF、
+  // 表外码）仍旧会冒充密码错，同一类错误换个入口复发。
+  consumeErrForbidden: 'sub2authForbiddenUnknown',
   consumeErrAccountDisabled: 'sub2authLoginFailed',
   consumeErrRateLimited: 'sub2authLoginFailed',
   consumeErrBadRequest: 'sub2authLoginFailed',
@@ -157,14 +165,66 @@ const AUTH_MESSAGE_KEY: Partial<Record<ConsumeMessageKey, TranslationKey>> = {
   consumeErrUnknown: 'sub2authLoginFailed',
 }
 
-/** 服务端码比 i18n key 更细的两处特例：邀请码无效、邮箱还没验证 */
+/**
+ * 服务端**业务码** → 上屏文案 key（#735）。
+ *
+ * 为什么需要它：`consumeErrUnauthorized` / `consumeErrForbidden` 这一层只分到「没通过鉴权」，
+ * 而注册/登录这两个入口的**语义差得很远** —— 401 可能是「密码错」，403 可能是「注册被关掉」。
+ * 上一轮把 403 也映射成 `sub2authCredentialInvalid`，于是「注册暂未开放」被渲染成
+ * 「账号或密码错误」，用户以为密码错、反复重试（#735 的注册那一半）。
+ *
+ * 判据**只看服务端的码**（面板信封的 `reason`、中间件信封的 `code`），**永不匹配 `message`** ——
+ * 文案随版本变、同一码有多种 message（#679 收口口径，`consume/errors.ts` 头注释同一条）。
+ *
+ * 表里的四项都是**实测**来的（2026-11-21；原始回包见 `tests/fixtures/consume/`）：
+ *   · 生产 0.2.15 `POST /api/v1/auth/register` 与 `/auth/send-verify-code`（合法邮箱）
+ *       → 403 `{"code":403,"message":"registration is currently disabled","reason":"REGISTRATION_DISABLED"}`
+ *       （`GET /api/v1/settings/public` 同时给出 `registration_enabled:false`，两条互相印证）
+ *   · 生产 0.2.15 + 本地 0.2.20 `POST /api/v1/auth/login`（错密码）→ 401 `{"reason":"INVALID_CREDENTIALS"}`
+ *   · 本地 0.2.20 `POST /api/v1/auth/register`（邮箱已存在）/ `/auth/send-verify-code`（同上）
+ *       → 409 `{"code":409,"message":"email already exists","reason":"EMAIL_EXISTS"}`
+ *     注意码是 `EMAIL_EXISTS`，**不是** `EMAIL_ALREADY_EXISTS` —— 客户端按实测的码写。
+ *   · 本地 0.2.20 **账号被停用 + 密码正确** → 403 `{"code":403,"message":"user is not active","reason":"USER_NOT_ACTIVE"}`
+ *       （复现方式：注册 → 用正确密码登录得 200 → 把 `users.status` 置 `disabled` → 同一密码再登录得 403；
+ *        同一账号换成错密码仍回 401 `INVALID_CREDENTIALS`，因为服务端先校验密码再看状态
+ *        —— 所以「密码错」那句在 401 上仍然是对的，只有 403 不能那么说）
+ *
+ * 没实测到的码（例如验证码错）**不在这里臆造**：验证码错已有 `consumeErrEmailCodeInvalid`
+ * → `sub2authCodeInvalid` 的既有通路，其余落回状态码兜底（403 → `sub2authForbiddenUnknown`）。
+ */
+const AUTH_CODE_MESSAGE_KEYS: Partial<Record<string, TranslationKey>> = {
+  REGISTRATION_DISABLED: 'sub2authRegistrationDisabled',
+  // 显式写出来（不是靠状态码兜底撞对）：401 的「账号或密码错误」是**正确**文案，别再被改回去
+  INVALID_CREDENTIALS: 'sub2authCredentialInvalid',
+  EMAIL_EXISTS: 'sub2authEmailExists',
+  // 账号被停用：密码对、但服务端不认这个账号 —— 说「账号或密码错误」会让用户一直去改密码（实测复现）
+  USER_NOT_ACTIVE: 'sub2authUserNotActive',
+}
+
+/**
+ * `Sub2ApiError` → 上屏文案 key。
+ *
+ * **顺序是硬要求**：① 服务端业务码 → ② 既有特例（邀请码 / 邮箱待验证）→ ③ `consumeErr*` 类别兜底
+ * → ④ 兜底 `sub2authLoginFailed`。业务码排在状态码之前，是因为 403 既可能是「注册关了」
+ * （`REGISTRATION_DISABLED`）、也可能是「账号被停用」，只有码能分辨；拿状态码先判就一定分错。
+ */
 const messageKeyFor = (error: Sub2ApiError): TranslationKey => {
+  // ① 业务码优先。面板信封里 `code` 与 `reason` 同源（`errors.ts` 取 `reason`），中间件信封只有 `code`，
+  //    所以两个都查一遍：`reason` 先、`code` 后。
+  const byServerCode = AUTH_CODE_MESSAGE_KEYS[error.reason ?? ''] ?? AUTH_CODE_MESSAGE_KEYS[error.code]
+  if (byServerCode !== undefined) {
+    return byServerCode
+  }
+  // ② 服务端码比 i18n key 更细的两处特例：邀请码无效、邮箱还没验证
   if (error.code === 'INVITATION_CODE_INVALID' || error.reason === 'INVITATION_CODE_INVALID') {
     return 'inviteCodeInvalid'
   }
   if (error.code === 'EMAIL_NOT_VERIFIED' || error.code === 'EMAIL_VERIFY_REQUIRED') {
     return 'sub2authEmailVerifyRequired'
   }
+  // ③ 没业务码（纯文本 / 表外的码）：按**状态码类别**兜底。
+  //    401 → `sub2authCredentialInvalid`（真凭据错）；403 → `sub2authForbiddenUnknown`（拒绝 ≠ 密码错）。
+  //    宁可说「操作被拒绝，请联系管理员」，也不许把「服务端不让你做」说成「你密码错了」。
   return AUTH_MESSAGE_KEY[error.i18nKey] ?? 'sub2authLoginFailed'
 }
 

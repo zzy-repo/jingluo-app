@@ -1,0 +1,20 @@
+{
+  "_meta": {
+    "request": "POST /api/v1/auth/register 与 POST /api/v1/auth/send-verify-code（同体，两个端点都实测过）",
+    "auth": "anonymous",
+    "captured_at": "2026-11-21T17:40:00+08:00",
+    "http_status": 403,
+    "shape": "PANEL error envelope with INTEGER code = HTTP status + reason",
+    "cause": "settings.public.registration_enabled = false（同一实例的 /api/v1/settings/public 实测返回 false，两条互相印证）",
+    "source": "生产 sub2api（version 0.2.15）只读探测：用**合法格式但必然被拒**的邮箱打 register / send-verify-code，只拿到拒绝体，没有建号",
+    "request_body_note": "register {email, password, verify_code}；send-verify-code {email}",
+    "variants_observed": [
+      "register: 403 {\"code\":403,\"message\":\"registration is currently disabled\",\"reason\":\"REGISTRATION_DISABLED\"}",
+      "send-verify-code: 403 同上（逐字一致）",
+      "对照：同一实例 400 校验失败时**没有** reason 字段（{\"code\":400,\"message\":\"Invalid request: ...\"}）→ 说明本码确实走 403 分支"
+    ]
+  },
+  "code": 403,
+  "message": "registration is currently disabled",
+  "reason": "REGISTRATION_DISABLED"
+}
