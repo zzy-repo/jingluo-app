@@ -27,6 +27,8 @@ import {
   selectProviderKind,
 } from '../helpers/helpers.mjs'
 import { verifyAppUrl } from '../helpers/env.mjs'
+// #596：本用例以「已领取 Key 的内测用户」为前置（只写 kind 会让启动就弹设置、且发消息被拦）
+import { seedClaimedOursKey } from '../helpers/ours-claim.mjs'
 
 const name = 'tests/integration/ours-services.test.mjs'
 
