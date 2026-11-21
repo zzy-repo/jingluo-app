@@ -101,7 +101,7 @@ staging 地址是 `http://140.210.13.146:16000`（明文）。它今天撞三道
 ### 3.2 为什么只放宽构建期会白屏
 
 `src/main.tsx:100` 是**模块级**调用 `getConsumeClient()`；它一路同步走到
-`src/services/consume/index.ts:180` →`src/services/consume/http.ts:268` 读配置，
+`src/services/consume/index.ts` → `src/services/consume/http.ts` 的 `readConsumeEndpoints()` 读配置，
 配置非法就在**模块求值阶段**抛异常（`src/services/consume/http.ts:189`）。
 入口模块抛异常 = React 一个字节都没渲染 = 白屏，且界面上没有任何提示（用户只看到空白页）。
 
