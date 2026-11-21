@@ -202,20 +202,23 @@ test('三类失败互不混淆：超时 / 网络失败 / 4xx / 5xx', async () =>
   assert.equal(isRetryableApiError(busy), true, '5xx 可重试')
 })
 
-test('默认超时与 probeProvider 同口径（15s），且可配置；非法值回到默认', async () => {
-  assert.equal(client.DEFAULT_REQUEST_TIMEOUT_MS, 15000, '默认值必须与 probeProvider 的 15s 一致')
-  assert.equal(client.getRequestTimeout(), 15000, '未配置时用默认值')
+test('默认超时（#771 起 connect 段 60s）可配置；探测另有独立的 15s', async () => {
+  assert.equal(client.DEFAULT_REQUEST_TIMEOUT_MS, 60000, 'connect 段默认 60s（#771）')
+  // #771：探测与 connect 段**解耦** —— 「测试连接」不能被拖成转圈一分钟
+  assert.equal(client.PROBE_TIMEOUT_MS, 15000, '探测仍是 15s 级别')
+  assert.notEqual(client.PROBE_TIMEOUT_MS, client.DEFAULT_REQUEST_TIMEOUT_MS, '两者不再同一个数')
+  assert.equal(client.getRequestTimeout(), 60000, '未配置时用默认值')
   try {
     client.setRequestTimeout(1234)
     assert.equal(client.getRequestTimeout(), 1234, '可配置')
     client.setRequestTimeout(Number.NaN)
-    assert.equal(client.getRequestTimeout(), 15000, '非法值回到默认，不能变成「永不超时」')
+    assert.equal(client.getRequestTimeout(), 60000, '非法值回到默认，不能变成「永不超时」')
     client.setRequestTimeout(0)
-    assert.equal(client.getRequestTimeout(), 15000, '0 不是有效超时，回到默认')
+    assert.equal(client.getRequestTimeout(), 60000, '0 不是有效超时，回到默认')
   } finally {
     client.setRequestTimeout(client.DEFAULT_REQUEST_TIMEOUT_MS)
   }
-  assert.equal(client.getRequestTimeout(), 15000, '用例结束恢复默认')
+  assert.equal(client.getRequestTimeout(), 60000, '用例结束恢复默认（connect 段 60s）')
 })
 
 test('调用方传入的超时优先于全局配置', async () => {

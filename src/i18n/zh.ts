@@ -138,6 +138,13 @@ export const zh = {
   /** 上下文超出模型上限（#122）：重试没用，给两条能走的路 */
   replyContextLimit:
     '这段对话已经超出模型的上下文上限，这次请求没能发出去。可以开一个新会话继续，或者删掉几条较早的消息后再试',
+  /**
+   * 网络不可达 / DNS / 跨域（#771 第 2 类）：请求**根本没发到上游**。
+   * 这一句必须明说「不是上游慢」—— 用户最常把本地断网/代理问题当成模型慢，
+   * 然后反复点重新生成，等下去也不会有任何变化。
+   */
+  replyNetworkUnreachable:
+    '网络请求没有发出去（断网、DNS 解析失败或被跨域拦截），不是上游慢：检查网络或代理后点「重新生成」再试',
   replyStreamInterrupted:
     '连接中断，回答没有接收完整；已收到的内容已保留，属于临时故障，可以重试（点重新生成）',
   /** 空响应（#324）：上游 200 却什么内容都没给，换条连接通常就好 */
@@ -187,7 +194,8 @@ export const zh = {
    * 秒数由实现按实际阈值注入（connect / first_token / idle 各用各的数字），文案里不写死。
    */
   replyIdleTimeout: '等待时间过长：连续 {seconds} 秒没有收到新内容，可以停止后重新生成',
-  replyFirstTokenTimeout: '已连上上游，但 {seconds} 秒内没等到第一个字，可以重新发送或稍后再试',
+  replyFirstTokenTimeout:
+    '已连上上游，但 {seconds} 秒内没等到第一个字（上游可能在排队或模型过载）：点「重新生成」再发一次，或稍后再试',
   /** 首字前的阶段名（#328）：和三档提示一起显示，秒数由 waitElapsed 注入，不写死 */
   waitStagePreparing: '正在准备请求',
   waitStageUploading: '正在上传附件',
@@ -693,7 +701,8 @@ export const zh = {
   oursPayRecordsCopied: '卡密已复制',
   // Issue #45：请求统一超时的提示（与网络失败、4xx/5xx 分开说）
   /// #568：这一段只覆盖「发起到拿到响应头」，所以文案说「连接」，与首字/空闲分开
-  requestTimeout: '连接上游超时（{seconds} 秒内没有拿到响应），网络较慢时可以重新发送',
+  requestTimeout:
+    '连接上游超时（{seconds} 秒内没拿到响应头，请求还没连上上游，不是上游回错了）：检查网络或代理后点「重新生成」再发一次',
   // Issue #106：移动端标题栏双击回到首条消息
   scrollToFirstMessage: '回到首条消息（双击标题）',
   scrollToFirstMessageHint: '双击回顶',

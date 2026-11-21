@@ -1,6 +1,8 @@
 import type { TranslationKey, TranslationMessage } from '../../i18n/index.js'
 import {
+  STALL_NOTICE_AFTER_MS,
   STREAM_NOTICE_TIERS,
+  stallNoticeAfterMs,
   streamNoticeTier,
   type StreamNoticeTier,
 } from './streamNotice.js'
@@ -68,9 +70,17 @@ export type WaitHint = TranslationMessage & {
 export const waitSeconds = (startedAt: number, now: number): number =>
   Math.max(0, Math.floor((now - startedAt) / 1000))
 
-/** 三档到点的绝对时刻：定时器按「离 startedAt 还剩多久」挂，跨阶段不会重新计时 */
-export const waitDeadlines = (startedAt: number): number[] =>
-  STREAM_NOTICE_TIERS.map((tier) => startedAt + tier.afterMs)
+/**
+ * 三档到点的绝对时刻：定时器按「离 startedAt 还剩多久」挂，跨阶段不会重新计时。
+ *
+ * 传入 `stageBudgetMs`（#771）时，若该阶段的预算比最高档更晚，会**多返回一个判死档的到点时刻**
+ * —— 否则界面在第 60 秒就会判死，而 connect 请求其实还要跑到 60s / 重试后才收口。
+ */
+export const waitDeadlines = (startedAt: number, stageBudgetMs?: number): number[] => {
+  const base = STREAM_NOTICE_TIERS.map((tier) => startedAt + tier.afterMs)
+  const stallAfter = stallNoticeAfterMs(stageBudgetMs)
+  return stallAfter > STALL_NOTICE_AFTER_MS ? [...base, startedAt + stallAfter] : base
+}
 
 /** 本轮请求会用到的附件里还有没有没上到服务端的（要显示「正在上传附件」） */
 export const needsUpload = (files: readonly { serverId?: string | null }[]): boolean =>
@@ -87,13 +97,19 @@ export const composeWaitNotice = ({
   startedAt,
   now,
   retry,
+  stageBudgetMs,
 }: {
   stage: WaitStage | null
   startedAt: number
   now: number
   retry?: { attempt: number; limit: number }
+  /**
+   * 当前阶段自己的超时预算（#771）：连接段 = connectMs，等首字 = 该渠道/思考态的首字预算。
+   * 传了它，「可以停止」那一档就不会出现在「请求其实还活着」的时刻；不传 = 只看时长。
+   */
+  stageBudgetMs?: number
 }): WaitHint | null => {
-  const tier = streamNoticeTier(Math.max(0, now - startedAt))
+  const tier = streamNoticeTier(Math.max(0, now - startedAt), stageBudgetMs)
   if (stage === 'retrying') {
     return {
       key: WAIT_STAGE_KEYS.retrying,

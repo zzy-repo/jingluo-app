@@ -147,6 +147,13 @@ export const en = {
   /** Context over the model limit (#122): retrying will not help, offer two ways out */
   replyContextLimit:
     'This conversation is over the model’s context limit, so the request was not sent. Start a new session to continue, or delete a few older messages and try again.',
+  /**
+   * Network unreachable / DNS / CORS (#771 case 2): the request never reached the upstream.
+   * Say explicitly that the upstream is NOT slow — users mistake a local network problem
+   * for a slow model and keep regenerating while nothing can change.
+   */
+  replyNetworkUnreachable:
+    'The request never left the app (offline, DNS failure, or blocked by CORS) — the upstream is not slow. Check your network or proxy, then tap “regenerate”.',
   replyStreamInterrupted:
     'The connection was interrupted and the reply is incomplete. What was received is kept — a temporary failure, you can retry (tap regenerate).',
   /** Empty stream (#324): the upstream returned 200 but no content at all */
@@ -190,7 +197,7 @@ export const en = {
   replyIdleTimeout:
     'Taking too long: no new content for {seconds}s. You can stop and regenerate.',
   replyFirstTokenTimeout:
-    'Connected upstream, but no first token within {seconds}s. You can send again or retry later.',
+    'Connected upstream, but no first token within {seconds}s (the upstream may be queueing or overloaded). Tap “regenerate” to send it again, or try later.',
   /** Stage names before the first token (#328); the seconds come from waitElapsed, never hardcoded */
   waitStagePreparing: 'Preparing the request',
   waitStageUploading: 'Uploading attachments',
@@ -704,7 +711,7 @@ export const en = {
   // Issue #45: unified request timeout notice (kept apart from network failure and 4xx/5xx)
   /// #568: this stage only covers "request sent → response headers", hence "connect"
   requestTimeout:
-    'Connect timeout (no response within {seconds}s). You can send again once the network is better.',
+    'Connect timeout (no response headers within {seconds}s — the request never connected upstream, so this is not an upstream error). Check your network or proxy, then tap “regenerate” to send it again.',
   // Issue #106: double-tap the mobile title bar to jump back to the first message
   scrollToFirstMessage: 'Back to the first message (double-tap the title)',
   scrollToFirstMessageHint: 'Double-tap to top',

@@ -1,6 +1,11 @@
 import { create } from 'zustand'
 import { createId } from '../../utils/id.js'
-import { ApiError, streamMessage } from '../api/client.js'
+import {
+  ApiError,
+  getFirstTokenTimeout,
+  getRequestTimeout,
+  streamMessage,
+} from '../api/client.js'
 import {
   classifyApiError,
   extractFileIds,
@@ -77,7 +82,8 @@ import {
   toRequestMessages,
 } from './reply.js'
 import { buildMessageBody } from './requestBody.js'
-import { STREAM_NOTICE_TIERS } from './streamNotice.js'
+import { pickErrorNotice, rowKey } from './errorNotice.js'
+import { waitDeadlines } from './waitStage.js'
 import { composeWaitNotice, needsUpload, type WaitHint, type WaitStage } from './waitStage.js'
 import type { MergePlan, ImportMode } from './history/mergeSessions.js'
 import type { ImportSkip } from './history/toLocal.js'
@@ -227,8 +233,34 @@ const setWaitHint = (sessionId: string, hint?: WaitHint) => {
  */
 const waitStates = new Map<
   string,
-  { startedAt: number; stage: WaitStage | null; retry?: { attempt: number; limit: number } }
+  {
+    startedAt: number
+    stage: WaitStage | null
+    retry?: { attempt: number; limit: number }
+    /**
+     * 当前阶段自己的超时预算（#771）：连接段 = connectMs（60s），等首字 = 该渠道/思考态的首字预算。
+     * 界面靠它算「判死档最早什么时候可以出现」，避免「提示已可停止、请求还在跑」。
+     */
+    stageBudgetMs?: number
+  }
 >()
+
+/**
+ * 当前阶段的超时预算（#771）。只有「在等上游」的三个阶段有预算：
+ * 上传 / 准备 / 重试阶段没有上游请求在跑，停止本来就是安全的（返回 undefined）。
+ */
+const stageBudgetOf = (stage: WaitStage | null): number | undefined => {
+  switch (stage) {
+    case 'connecting':
+      return getRequestTimeout()
+    case 'awaitingFirstToken':
+      return getFirstTokenTimeout()
+    case 'thinking':
+      return getFirstTokenTimeout(true)
+    default:
+      return undefined
+  }
+}
 
 /** 按当前阶段与已等待时长重算提示；不足 5s（且不在重试）时什么都不显示 */
 const syncWaitHint = (sessionId: string) => {
@@ -241,6 +273,7 @@ const syncWaitHint = (sessionId: string) => {
     startedAt: current.startedAt,
     now: Date.now(),
     retry: current.retry,
+    stageBudgetMs: current.stageBudgetMs,
   })
   setWaitHint(sessionId, hint ?? undefined)
 }
@@ -252,10 +285,27 @@ const syncWaitHint = (sessionId: string) => {
 const armWaitHints = (sessionId: string, startedAt: number) => {
   clearWaitHints(sessionId)
   waitStates.set(sessionId, { startedAt, stage: null })
+  armWaitTimers(sessionId, startedAt)
+}
+
+/**
+ * 按当前阶段的预算重新挂升级定时器（#771）。
+ *
+ * 定时器清单来自 `waitStage.ts`（它又把 `streamNotice.ts` 的三档与 #771 的阶段预算合起来算），
+ * 本文件只负责按会话挂 / 清，不在 store 里另写一套分档规则。
+ *
+ * 为什么阶段变化要重挂而不是只加一个：判死档的到点时刻取决于**该阶段自己的预算**
+ * （连接段 60s、等首字才是 30s、思考档 45~120s），阶段一换这个时刻就变了。
+ * 5s / 30s 两档仍是固定阈值，重挂只是把它们按同一个 startedAt 再算一遍（不重置计时）。
+ */
+const armWaitTimers = (sessionId: string, startedAt: number, stageBudgetMs?: number) => {
+  for (const timer of waitHintTimers.get(sessionId) ?? []) {
+    clearTimeout(timer)
+  }
   waitHintTimers.set(
     sessionId,
-    STREAM_NOTICE_TIERS.map((tier) =>
-      setTimeout(() => syncWaitHint(sessionId), Math.max(0, startedAt + tier.afterMs - Date.now()))
+    waitDeadlines(startedAt, stageBudgetMs).map((at) =>
+      setTimeout(() => syncWaitHint(sessionId), Math.max(0, at - Date.now()))
     )
   )
 }
@@ -272,6 +322,8 @@ const setWaitStage = (
   }
   current.stage = stage
   current.retry = retry
+  current.stageBudgetMs = stageBudgetOf(stage)
+  armWaitTimers(sessionId, current.startedAt, current.stageBudgetMs)
   syncWaitHint(sessionId)
 }
 
@@ -2075,22 +2127,38 @@ const streamReply = async (sessionId: string, initial: AssistantMessage, request
         }
         // 上下文超长（#122）：和普通失败分开，界面换成能照着做的固定文案，上游原文只进日志
         const condition = classifyApiError(error)
+        /**
+         * 界面文案由**一张表**决定（#771）：`chat/errorNotice.ts` 的
+         * 「判据 → 文案 key → 是否可重试 → 是否显示重新生成」。
+         * 改前这里是三层嵌套三元（contextLimit / 额度 / 401），加一档就要往里再塞一层，
+         * review 时看不出「哪些场景其实会掉进 replyUnknownError」。
+         */
+        const apiError = error instanceof ApiError ? error : null
+        const noticeCtx = {
+          kind: apiError?.kind,
+          code: apiError?.code,
+          status: apiError?.status,
+          upstreamCode: apiError?.upstreamCode,
+          condition,
+          providerKind: getProviderKind(),
+          receivedContent,
+          // store 这边手里只有我们自己那句本地化文案，不作为「未分类是否自证」的证据
+          hasReadableText: false,
+        }
+        const noticeRow = pickErrorNotice(noticeCtx)
+        const noticeKey = rowKey(noticeRow, noticeCtx)
+        /**
+         * 落盘的 `localMessage` 只在**请求层已经把同一句连同占位符算好**时沿用
+         * （`{seconds}` 之类）。表只负责「这条失败落在哪一句」，不负责重新拼文案 ——
+         * 需要参数的那些行（参数错 / 模型名 / 4xx 原文）由 `describe.ts` 渲染时按落盘信息补齐，
+         * 在这里塞一个不带参数的 key 只会让界面出现「请求参数有误（{status}）」这种未替换的模板。
+         */
         const notice =
-          condition === 'contextLimit'
-            ? { key: 'replyContextLimit' as const }
-            : condition === 'insufficientBalance'
-              ? // 额度不足（#299）：界面文案固定（不认上游英文原文），日志也能看出「用户看到了什么」
-                { key: 'replyInsufficientBalance' as const }
-              : error instanceof ApiError && error.status === 401
-                ? // 401（#303 问题 3）：上游说 Key 无效，界面就说同一件事，并把自动探测一起停掉
-                  // #596：我们的渠道的 Key 只能「重新领取」，没有「重新填写」这条路 —— 用另一句
-                  // 文案，免得把人指到一个根本不存在的输入框上
-                  getProviderKind() === 'ours'
-                  ? { key: 'apiKeyRejectedOurs' as const }
-                  : { key: 'apiKeyRejected' as const }
-                : error instanceof ApiError
-                  ? error.localMessage
-                  : undefined
+          apiError?.localMessage && apiError.localMessage.key === noticeKey
+            ? apiError.localMessage
+            : noticeRow.paramsFromRenderer
+              ? undefined
+              : { key: noticeKey }
         // 失败必录：请求阶段、HTTP 状态、耗时、错误原文一次记全
         const failedTiming = meter.snapshot()
         const apiFailure = error instanceof ApiError ? error : null
@@ -2140,9 +2208,8 @@ const streamReply = async (sessionId: string, initial: AssistantMessage, request
           ...(idleMs ? { 'idle.ms': Number(idleMs) } : {}),
           // 用户在界面上会看到什么：条件分类 + i18n 文案 key（用来核实「到底有没有提示」）
           'ui.condition': condition,
-          ...(notice
-            ? { 'ui.notice': notice.key }
-            : { 'ui.notice': error instanceof ApiError ? error.kind : 'unknown' }),
+          // 界面上会看到什么：表判出来的那一句（没算参数 key 也照记，便于按文案切片）
+          'ui.notice': notice?.key ?? noticeKey,
           // 额度不足单独打标（#299）：诊断层不新增枚举，用结构化字段统计，
           // 这样「余额不足次数」能被单独筛出来，不会混进网络/限流错误里。
           ...(condition === 'insufficientBalance'

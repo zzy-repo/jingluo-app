@@ -393,11 +393,15 @@ test('阈值的默认值有据可依，且可配置；非法值回默认（不�
 
   const fallback = client.STREAM_IDLE_TIMEOUT_MS
   assert.equal(client.getStreamIdleTimeout(), fallback, '未配置时用默认值')
-  // 默认值要比请求头预算（15s）宽得多：正文阶段的弱网抖动比建连更常见，
-  // 但又要小于「用户已经在怀疑卡死」的 60s 量级，否则体验上等于没超时。
+  // 默认值不能比请求头预算更短：正文阶段的弱网抖动比建连更常见，
+  // 但又要不超过「用户已经在怀疑卡死」的 60s 量级，否则体验上等于没超时。
+  //
+  // #771：请求头预算（connectMs）从 15s 放宽到 60s，两者因此**相等**（不再是「明显大于」）。
+  // 这不是把门槛放宽了，而是原来那条「空闲要长于建连」的关系式在 connect 放宽后自然成立为等号；
+  // 空闲段本身的 60s 没有动（#568 的取值依据仍然有效）。
   assert.ok(
-    fallback > client.DEFAULT_REQUEST_TIMEOUT_MS,
-    `空闲阈值应明显大于响应头预算（${client.DEFAULT_REQUEST_TIMEOUT_MS}ms），实际 ${fallback}ms`
+    fallback >= client.DEFAULT_REQUEST_TIMEOUT_MS,
+    `空闲阈值不能短于响应头预算（${client.DEFAULT_REQUEST_TIMEOUT_MS}ms），实际 ${fallback}ms`
   )
   assert.ok(fallback <= 60_000, `空闲阈值不能大到用户以为卡死，实际 ${fallback}ms`)
 

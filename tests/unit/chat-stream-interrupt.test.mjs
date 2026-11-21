@@ -281,11 +281,13 @@ test('本地化：中英文案各自落地，未知英文原文不上界面', as
   })
   assert.equal(chinese.text, '当前模型不支持图片输入', '中文原文可读就直接展示')
 
-  // 网络错误仍然是「网络异常」，不受本次改动影响
+  // 网络错误（#771 第 2 类）：文案从通用「网络异常」换成「请求没发出去、不是上游慢」，
+  // 并给出下一步（检查网络/代理后点重新生成）—— 阶段与归因都不能说错。
   const network = describeReply({
     ...emptyReply(),
     status: 'error',
     error: { kind: 'network', message: 'Failed to fetch' },
   })
-  assert.equal(network.text, translate('commonNetworkErrorToast'), '普通网络错误文案不变')
+  assert.equal(network.text, translate('replyNetworkUnreachable'), '网络不可达文案')
+  assert.doesNotMatch(network.text, /已连上/, '不能说「已连上」')
 })

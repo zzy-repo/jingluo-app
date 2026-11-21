@@ -754,10 +754,16 @@ export type ProviderProbeResult = {
 /**
  * 连通性测试：GET {baseUrl}{paths.models}，鉴权头按当前 spec。
  * 超时、断网/跨域、非 2xx、返回网页、非 JSON 分别给出可读原因，不抛异常。
+ *
+ * 超时**默认用 `LIMITS.probeTimeoutMs`（#771），不再跟 connectMs 走**：探测是「这个地址通不通」
+ * 的即时反馈，connectMs 放宽到 60s 之后若继续共用，点一下「测试连接」就要转一分钟。
+ * 调用方仍可显式覆盖（测试与将来按渠道分档都用这个参数）。
  */
+export const PROBE_TIMEOUT_MS = LIMITS.probeTimeoutMs
+
 export const probeProvider = async (
   config: { baseUrl: string; apiKey: string },
-  timeoutMs = DEFAULT_REQUEST_TIMEOUT_MS
+  timeoutMs = PROBE_TIMEOUT_MS
 ): Promise<ProviderProbeResult> => {
   const baseUrl = normalizeBaseUrl(config.baseUrl)
   if (!baseUrl) {

@@ -67,14 +67,17 @@ const ORIGINAL_VALUES = {
   /**
    * #568：原来的一整段 `requestTimeoutMs` / `streamIdleTimeoutMs` 拆成三段超时表。
    * 值的变化只有一处，且是本单的立项理由：
-   * - `connectMs` = 原 requestTimeoutMs（15000，值未变）；
+   * - `connectMs` = 原 requestTimeoutMs（15000）**在 #771 放宽到 60s** —— 15s 是「整轮只有一个
+   *   总超时」时代的遗留值，弱网 / 跨境线路上光建连就可能几十秒，判死太早；`probeTimeoutMs`
+   *   是 #771 新增的独立项，专门保住「测试连接」15s 的体感（探测不再跟 connectMs 走）；
    * - `firstTokenMs` = 新增的一段（原先根本没有「等首字」这一档，只有 45s 空闲兜底）；
    * - `idleMs` = 原 streamIdleTimeoutMs **从 45s 放宽到 60s**（弱网 / 长回答被 45s 误杀的实测见 #150/#133）。
    * `channels` 是**新增**的渠道覆盖表（#568 第 3 条：首字要能按渠道/思考态调，不许写死一个数），
    * 不是搬家项；手抄在这里同样是为了「改阈值必须两边一起改」。
    */
+  probeTimeoutMs: 15000,
   requestTimeouts: {
-    connectMs: 15000,
+    connectMs: 60000,
     firstTokenMs: 30000,
     idleMs: 60000,
     channels: {

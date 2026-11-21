@@ -342,7 +342,9 @@ test('负向：普通 400 不重试，落到参数错误档（#324 之前这里�
 test('负向：网络断开仍重试并给出网络异常文案', async () => {
   const { calls, notice } = await runRound({ respond: networkError })
   assert.equal(calls, 1 + retryLimit(), '断网仍按上限重试')
-  assert.equal(notice?.text, zh.commonNetworkErrorToast)
+  // #771：网络不可达不再复用那句通用「网络异常」—— 要说清「请求没发出去、不是上游慢」，
+  // 并给下一步（检查网络/代理后点重新生成）。可重试这件事没变。
+  assert.equal(notice?.text, zh.replyNetworkUnreachable)
 })
 
 test('负向：超时仍重试，报超时文案', async () => {

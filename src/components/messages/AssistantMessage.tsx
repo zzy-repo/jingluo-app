@@ -275,16 +275,20 @@ export const AssistantMessage = memo(function AssistantMessage({
             {responseText && !refused ? (
               <ReadAloudButton messageId={message.id} text={responseText} />
             ) : null}
-            <IconButton
-              icon={<IconRefreshOutline16 />}
-              tooltip={t('regenerate')}
-              tooltipPlacement="bottom"
-              disabled={busy || refused}
-              onClick={() => {
-                stopReadAloud()
-                regenerateReply(sessionId, message.id)
-              }}
-            />
+            {/* #771：终态错误（Key 失效 / 额度不足 / 参数错 / 内容拦截 / 打到网关）不给重新生成 ——
+                同样的请求再发一次是同一个结果，按钮只会让人白点；文案里已经写明该去动哪里。 */}
+            {notice?.regenerate === false ? null : (
+              <IconButton
+                icon={<IconRefreshOutline16 />}
+                tooltip={t('regenerate')}
+                tooltipPlacement="bottom"
+                disabled={busy || refused}
+                onClick={() => {
+                  stopReadAloud()
+                  regenerateReply(sessionId, message.id)
+                }}
+              />
+            )}
           </div>
           {isLast && canContinueReply(message) ? (
             <Button
