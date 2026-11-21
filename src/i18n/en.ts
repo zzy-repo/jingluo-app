@@ -784,6 +784,27 @@ export const en = {
   updateManualDownload: 'Download the latest version manually',
   updateManualOpenFailed:
     'Could not open the download page inside the app. Try again later, or copy the diagnostics and send them to us.',
+  /**
+   * Update dialog and policy (issue #517): forced / soft / normal.
+   * Only user-facing actions and known facts — no internal names, error codes or SOPs.
+   */
+  updateDialogTitleNormal: 'Update available',
+  updateDialogTitleSoft: 'A new version is available',
+  updateDialogTitleForced: 'Update required to keep using the app',
+  updateDialogChangesTitle: "What's new",
+  updateDialogLabelSize: 'Download size',
+  updateDialogLabelPublishedAt: 'Released',
+  updateDialogLabelCurrent: 'Current version',
+  updateDialogPublishedUnknown: 'Not provided',
+  updateDialogForcedNotice: 'You need to update before you can keep using this app.',
+  updateDialogBelowMinimumNotice:
+    'Your current version {current} is below the minimum supported version. Update to {version} to keep using the app.',
+  updateDialogForcedReason: 'Note: {reason}',
+  updateDialogSoftNotice: 'You can be reminded later — this prompt stays hidden for {hours} hours.',
+  updateDialogSnooze: 'Remind me later',
+  updateDialogClose: 'Close',
+  updateDialogCancel: 'Cancel',
+  updateDialogSnoozed: 'Reminder postponed — this prompt stays hidden for {hours} hours.',
   // ---------------------------------------------------------------------------
   // Refactor key skeleton (prep for #487): sign-in/sign-up, account and consumption,
   // card-key redemption, invites, email binding. Only new keys here; existing text above is untouched.

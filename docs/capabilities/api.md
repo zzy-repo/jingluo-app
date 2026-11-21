@@ -8,7 +8,7 @@
 | 项目 | 值 |
 | --- | --- |
 | 兼容基线 | Android WebView **83**（Chromium 83.0.4103.106，Android 11 出厂镜像） |
-| 扫描范围 | `src/**` 共 **321** 个文件（**204** `.ts` / 69 `.tsx` / 45 `.css` / 1 `.html` / 2 `.md`） |
+| 扫描范围 | `src/**` 共 **324** 个文件（**205** `.ts` / 70 `.tsx` / 46 `.css` / 1 `.html` / 2 `.md`） |
 | 真值来源 | `scripts/check-bundle-syntax.mjs` 的 `LEGACY_RUNTIME_APIS`、`scripts/compat/matrix-scan.mjs` 的 `RUNTIME_APIS` / `LEGACY_POLYFILLED`、`src/polyfills/legacy.ts`；本单**没有**新建第四份清单 |
 
 - 复核（%s，基准 `f8b8125`，本单 #498 分支 `feat/legacy-migration-tail`）：新增 `src/legacy/migration/**` 5 个源文件（4 个 `.ts`：`claim` / `collect` / `index` / `types`，1 个 `.tsx`：`LegacyMigrationButton`）与 1 个 `.md`（该目录 README），扫描范围 297 → **303** （`.ts` 181 → **185**、`.tsx` 66 → **67**、`.md` 1 → **2**）。新代码只用 `try/catch`、`JSON.parse`、`Object.entries`、`String#includes` 这类基线内能力（`localStorage` 的读取走既有兜底写法），**没有任何一条本表里的 API**，**命中总数仍是 52 处**（31 / 21 / 0）、按 API 分项（15 / 14 / 13 / 4 / 3 / 2 / 1）未变；§二 明细未动。

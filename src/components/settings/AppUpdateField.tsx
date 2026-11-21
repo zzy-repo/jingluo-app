@@ -36,7 +36,14 @@ import { recordError, recordEvent } from '../../services/diagnostics/collector.j
 import { buildMeta, type Stage } from '../../services/diagnostics/fields.js'
 import { bytesPerSecond, createStageTimer } from '../../services/diagnostics/timing.js'
 import { copyText } from '../../utils/clipboard.js'
-import { useSettings } from '../../services/settings.js'
+import { setUpdateSnoozeUntil, useSettings } from '../../services/settings.js'
+import {
+  resolveUpdatePolicy,
+  resolveUpdatePrompt,
+  snoozeDeadline,
+  type ResolvedUpdatePolicy,
+} from '../../services/updatePolicy.js'
+import { UpdateDialog } from '../update/UpdateDialog.js'
 import { buildUpdateReport, hostOf, releaseHosts } from '../../services/updateReport.js'
 import dialogStyles from './AppUpdateField.module.css'
 import styles from './Settings.module.css'
@@ -145,6 +152,23 @@ export const AppUpdateField = () => {
   const [failed, setFailed] = useState(false)
   const [snapshot, setSnapshot] = useState<ManifestSnapshot>()
   /**
+   * 更新策略弹窗（Issue #517）：`undefined` = 不弹。
+   *
+   * 触发条件只有一条：**选中的那条记录真的带了下发策略**（`release.updatePolicy`）。
+   * 没带策略的清单（老服务端 / 现有 L1 契约里的形状）行为一个字不变 —— 结果仍旧在下面这块面板里展示。
+   * 这条边界的理由：弹窗是「服务端策略」的载体，不是「有新版本」的另一种画法；
+   * 混在一起会让没有策略的清单也突然多一层遮罩，把面板里的渠道切换 / 诊断 / 缓存兜底全挡住。
+   */
+  const [prompt, setPrompt] = useState<{ release: UpdateRelease; policy: ResolvedUpdatePolicy }>()
+  /**
+   * 用户是否已经在弹窗里按过「下载 / 安装」。
+   *
+   * 弹窗里的状态行只在**动过手之后**出现：一开始那句「发现新版本，确认后再下载」是面板的结论，
+   * 弹窗自己在标题 + 版本号里已经说完了，重复一遍只是噪音；而一旦开始下载，
+   * 「正在下载 / 已就绪 / 失败原因」必须在这个弹层里可见（面板被它盖住了）。
+   */
+  const [promptActed, setPromptActed] = useState(false)
+  /**
    * 本机已装包的变体与 versionCode：失败时也要用来从**缓存**里挑「最新可装的那一条」。
    * 用 ref 而不是 state —— 它们由检查流程写、由兜底链接读，不参与任何渲染分支。
    */
@@ -208,6 +232,8 @@ export const AppUpdateField = () => {
     setCopyState('idle')
     setFailed(false)
     setSnapshot(undefined)
+    setPrompt(undefined)
+    setPromptActed(false)
     setCheckedAt(Date.now())
     setMessage('正在检查更新…')
     const startedAt = Date.now()
@@ -273,6 +299,21 @@ export const AppUpdateField = () => {
       setBase(effectiveBase)
       if (result.release) {
         setMessage('发现新版本，确认后再下载。')
+        /**
+         * #517：判定「这次要不要弹策略弹窗」（纯函数，L0 钉住）。三件事一次算清：
+         *   1. 档位（forced / soft / normal，见 resolveUpdatePolicy 的判定顺序）；
+         *   2. snooze 是否仍在有效期内（soft 才会被它挡住）；
+         *   3. 有没有下发策略 —— 没下发就不弹（见上面 prompt 的注释）。
+         */
+        const resolved = resolveUpdatePolicy(result.release.updatePolicy, current.versionCode)
+        const decision = resolveUpdatePrompt({
+          policy: result.release.updatePolicy,
+          currentVersionCode: current.versionCode,
+          // 读一次当前值就够：snooze 只由这个弹窗写，本次检查期间不会变
+          snoozedUntil: useSettings.getState().updateSnoozeUntil,
+        })
+        const show = result.release.updatePolicy !== undefined && decision.show
+        setPrompt(show ? { release: result.release, policy: resolved } : undefined)
       } else {
         // 无新版也要说清「哪个渠道、当前版本、为什么没有可装的记录」（#310 验收第 5 条）。
         // #377：`reason` 把「本机变体在清单里断链」与「确实已是最新」分开——前者要给的是
@@ -426,6 +467,22 @@ export const AppUpdateField = () => {
       }
     }
   }
+  /**
+   * 策略弹窗的两个出口（#517）。
+   *
+   * `soft` 的「稍后提醒」= 按服务端给的 `snoozeHours` 写一条到期时刻再关；到期前的检查都不再弹
+   * （`resolveUpdatePrompt` 判定，手改系统时间也不影响口径：比较的是绝对时间戳）。
+   * `forced` 根本没有这个出口：不渲染按钮、也不写 snooze —— 强制更新不许「稍后」。
+   */
+  const snoozePrompt = () => {
+    if (!prompt) {
+      return
+    }
+    const hours = prompt.policy.snoozeHours
+    setUpdateSnoozeUntil(snoozeDeadline(Date.now(), hours))
+    setPrompt(undefined)
+    setMessage(t('updateDialogSnoozed', { hours }))
+  }
   const copyReport = async () => {
     const ok = await copyText(
       buildUpdateReport({
@@ -509,29 +566,36 @@ export const AppUpdateField = () => {
           className={dialogStyles.dialog}
           mainClassName={dialogStyles.main}
           onClose={close}
+          /*
+           * 弹窗打开时底部整块不渲染：同一个动作不许出现在两个地方
+           * （用户会不知道点哪个；用例按名字取按钮也会撞见两个同名按钮）。
+           * 弹窗的底部按钮走的是**同一条**下载 / 安装 / 取消链路，状态也读同一份。
+           */
           footer={
-            <>
-              {busy ? (
-                <Button variant="outlined" onClick={() => operation.current?.abort()}>
-                  取消
-                </Button>
-              ) : (
-                <Button variant="outlined" onClick={() => void check()}>
-                  重新检查
-                </Button>
-              )}
-              {release && !busy ? (
-                native ? (
-                  <Button onClick={() => void (ready ? install() : download())}>
-                    {ready ? '安装更新' : '确认下载'}
+            prompt ? null : (
+              <>
+                {busy ? (
+                  <Button variant="outlined" onClick={() => operation.current?.abort()}>
+                    取消
                   </Button>
                 ) : (
-                  <a href={releaseUrl(release.file, base)} target="_blank" rel="noreferrer">
-                    下载 APK
-                  </a>
-                )
-              ) : null}
-            </>
+                  <Button variant="outlined" onClick={() => void check()}>
+                    重新检查
+                  </Button>
+                )}
+                {release && !busy ? (
+                  native ? (
+                    <Button onClick={() => void (ready ? install() : download())}>
+                      {ready ? '安装更新' : '确认下载'}
+                    </Button>
+                  ) : (
+                    <a href={releaseUrl(release.file, base)} target="_blank" rel="noreferrer">
+                      下载 APK
+                    </a>
+                  )
+                ) : null}
+              </>
+            )
           }
         >
           <label>
@@ -665,6 +729,40 @@ export const AppUpdateField = () => {
             </button>
           </div>
         </Modal>
+      ) : null}
+      {/*
+       * 策略弹窗（Issue #517）：叠在设置面板之上。
+       * 内容区可滚动、底部按钮常驻（同 #172 的高度链），三档行为由 policy.mode 决定。
+       * 只在清单条目带了下发策略时出现 —— 没策略的清单仍是上面那块面板（零回归）。
+       */}
+      {prompt ? (
+        <UpdateDialog
+          release={prompt.release}
+          currentVersion={bundledApp().version}
+          policy={prompt.policy}
+          primary={
+            native
+              ? {
+                  // 原生：与面板原来是同一颗按钮、同一套状态（ready 决定「确认下载 / 安装更新」）
+                  label: ready ? '安装更新' : '确认下载',
+                  onClick: () => {
+                    setPromptActed(true)
+                    void (ready ? install() : download())
+                  },
+                }
+              : {
+                  // 网页预览：降级成下载链接（与面板同一条 releaseUrl，拼在本次生效的 base 上）
+                  label: '下载 APK',
+                  href: releaseUrl(prompt.release.file, base),
+                }
+          }
+          busy={busy}
+          onCancel={() => operation.current?.abort()}
+          message={promptActed ? message : undefined}
+          progress={progress}
+          onSnooze={snoozePrompt}
+          onClose={() => setPrompt(undefined)}
+        />
       ) : null}
     </>
   )

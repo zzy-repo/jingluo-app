@@ -13,9 +13,9 @@
 
 | 项 | 值 |
 | --- | --- |
-| 扫描范围 | `src/**` 全部源文件 **319** 个（`.css` **45** 个，其中 `*.module.css` **38** 个；其余 `.ts / .tsx / .html` 共 **274** 个） |
-| 口径拆分 | 45 `.css` + 204 `.ts` + 69 `.tsx` + 1 `.html` = 319 |
-| 命中总数 | **330** 处，分布在 **37** 个文件 |
+| 扫描范围 | `src/**` 全部源文件 **322** 个（`.css` **46** 个，其中 `*.module.css` **39** 个；其余 `.ts / .tsx / .html` 共 **276** 个） |
+| 口径拆分 | 46 `.css` + 205 `.ts` + 70 `.tsx` + 1 `.html` = 322 |
+| 命中总数 | **338** 处，分布在 **38** 个文件 |
 | 运行时下限 | WebView **83**（Chromium 83）。**首支持 ≤ 83 的特性一律记「无风险」，与有没有兜底无关** |
 | 构建期因素 | `rspack.config.ts` 用 `builtin:lightningcss-loader`，`targets` 取自 `package.json` 的 `browserslist`（强制含 `chrome >= 83`）。**已被构建期翻译掉的写法不算运行时假设** |
 
@@ -37,14 +37,14 @@
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | 嵌套 `&` | — （构建期） | 140 | 140 | 0 | 0 | 0 | 0 | lightningcss 按 `chrome >= 83` 展开，非运行时假设 |
 | flex `gap` | 84 | 104 | 104 | 0 | 0 | 0 | 0 | 兜底已全覆盖（#217 补齐最后 2 处；W1-C1 / W1-C2 的新样式由 `pnpm run gen:gap` 补齐）；`check:gap` 口径见 §2.6 |
-| `min()` / `max()` | 79 | 17 | 0 | 17 | 0 | 0 | 0 | 79 ≤ 83，无风险（W1-C1 弹层宽高上限新增 2 处） |
+| `min()` / `max()` | 79 | 21 | 0 | 21 | 0 | 0 | 0 | 79 ≤ 83，无风险（W1-C1 弹层宽高上限新增 2 处） |
 | `:has()` | 105 | **0** | 0 | 0 | 0 | 0 | 0 | 16 处已由 #213 清零：改成渲染期显式状态类 `ds-markdown-before-ul` / `ds-markdown-before-ol`，低内核上零特性依赖 |
 | `:focus-visible` | 86 | 16 | 16 | 0 | 0 | 0 | 0 | 16 处全部合规：每处都有同选择器的 `:focus` 兜底 + `:focus:not(:focus-visible)` 收回（#215；W1-C1 的 `.tab` / `.input` 按同一套三件套写）；`pnpm run check:focus` 守住 |
-| `@supports` 块（9 处 `(height/max-height: 100dvh)` + 2 处 `(scrollbar-gutter: …)`） | 108 | 9 | 9 | 0 | 0 | 0 | 0 | **11/11 前置等价兜底**：9 处有 `vh` 基座；2 处（`MessageList.module.css:18,68`，#216 / #236）有常驻 `overflow-y: scroll` 槽位 |
-| `overscroll-behavior` | 63 | 6 | 0 | 6 | 0 | 0 | 0 | 63 ≤ 83，无风险 |
+| `@supports` 块（9 处 `(height/max-height: 100dvh)` + 2 处 `(scrollbar-gutter: …)`） | 108 | 11 | 11 | 0 | 0 | 0 | 0 | **11/11 前置等价兜底**：9 处有 `vh` 基座；2 处（`MessageList.module.css:18,68`，#216 / #236）有常驻 `overflow-y: scroll` 槽位 |
+| `overscroll-behavior` | 63 | 7 | 0 | 7 | 0 | 0 | 0 | 63 ≤ 83，无风险 |
 | `env(safe-area-inset-*)` | 69 | 6 | 0 | 6 | 0 | 0 | 0 | 69 ≤ 83，无风险（见 §5 的一致性备注） |
 | `getComputedStyle` 声明回读 | — （运行时） | 3 | 3 | 0 | 0 | 0 | **0** | #218 已修：`viewport.ts:55`、`scrollToFirstMessage.ts:30`、`collector.ts:723` 三处都有实测回读，假阳性归零（历史条目见 §3） |
-| `touch-action` | 36 | 5 | 0 | 5 | 0 | 0 | 0 | 36 ≤ 83，无风险 |
+| `touch-action` | 36 | 6 | 0 | 6 | 0 | 0 | 0 | 36 ≤ 83，无风险 |
 | `backdrop-filter` | 76 | 2 | 0 | 2 | 0 | 0 | 0 | 76 ≤ 83，无风险（`-webkit-` 前缀另计 1 处） |
 | `inset` | 87 | 16 | 16 | 0 | 0 | 0 | 0 | 构建期由 lightningcss 翻成物理属性，非运行时假设（§2.7） |
 | `scrollbar-gutter` | 94 | 5 | 0 | 0 | 0 | **5** | 0 | 声明被丢，滚动条出现时横向跳动 → #216 / #236。**5 处里有 2 处是 `@supports` 收回块本身**，且判定器不认「常驻 `overflow-y: scroll`」这种跨属性等价兜底，所以 5 处全记 `真实缺陷`；人工核对结论见 §2.5 / §4 |
@@ -59,7 +59,7 @@
 | `color-mix()` | 111 | 0 | — | — | — | 0 | 0 | 未使用（且 lightningcss 会降级） |
 | `@layer` | 99 | 0 | — | — | — | 0 | 0 | 未使用 |
 | `accent-color` | 93 | 0 | — | — | — | 0 | 0 | 未使用 |
-| **合计** | | **330** | **288** | **36** | **1** | **5** | **0** | |
+| **合计** | | **338** | **290** | **42** | **1** | **5** | **0** | |
 
 > `100dvh` 的每一处声明，**没有一处**落在 `@supports` 之外（`dvh` 裸用命中数为 0）。这是本仓 #13 之后形成的最好的一条既有纪律，也是本次盘点最重要的**正面结论**：`dvh` 这一类零缺陷。
 
@@ -179,7 +179,7 @@
 
 | 文件:行 | 假设内容 | 类别 | 风险 | 处置 |
 | --- | --- | --- | --- | --- |
-| 38 个 `*.module.css` + `markdown.css` 共 120 处 | flex 容器上的 `gap` / `row-gap` | 2 | 低 | 已有兜底（`html[data-flex-gap-fallback]` + `margin` 块，由 `pnpm run check:gap` 逐条产出清单） |
+| 39 个 `*.module.css` + `markdown.css` 共 120 处 | flex 容器上的 `gap` / `row-gap` | 2 | 低 | 已有兜底（`html[data-flex-gap-fallback]` + `margin` 块，由 `pnpm run check:gap` 逐条产出清单） |
 | `components/markdown/markdown.css:370` | `.md-code-block-switch { display:flex; gap:4px }`，文件不是 CSS Module、原先不在 `check:gap` 扫描范围 | 2 | 低 | **#217 已补**：裸写 `html[data-flex-gap-fallback]` 兜底块（` :global()` 在非 module 文件里非法），扫描范围同时扩到全部 `.css` |
 | `components/messages/ReplyArea.module.css:224` | `.toolBody { display:flex; flex-wrap:wrap; row-gap:6px }`，原先被 `flex-wrap` 排除规则放过 | 2 | 低 | **#217 已补**：`margin-bottom: 6px`；排除规则改为「交叉轴 gap 只在**不换行**时才不需要兜底」 |
 | `components/messages/AssistantMessage.module.css:21,27` | `.waiting { display:flex; flex-wrap:wrap; column-gap:6px; row-gap:2px }`（#328 等待提示可能出现第二行） | 2 | 低 | **#328 已补**：`margin-right: 6px` + `margin-bottom: 2px`，由 `pnpm run check:gap` 生成 |
@@ -316,6 +316,7 @@ node --test tests/unit/css-assumption-audit.test.mjs
 
 ## 复核记录
 
+- 复核（2026-11-21 09:20，基准 `d1175ba`，本单 #517 分支 `feat/517-update-policy-dialog`）：新增 `src/components/update/UpdateDialog.module.css` 1 个 `.module.css`（`*.module.css` 38 → **39**），弹窗复用 `base/Modal` 的遮罩与高度链，只补了 `max-height: min(70vh, …)` 两档（`vh` 基座 + `@supports (100dvh)` 升级）、内容区 `overflow-y: auto` / `touch-action: pan-y` / `overscroll-behavior-y: contain`。命中总数 330 → **338**（`min()`/`max()` 17 → 21、`@supports` 9 → 11、`touch-action` 5 → 6、`overscroll-behavior` 6 → 7），全部落在「无风险 / 已有兜底」两列，**没有新增裸 `gap`**（间距一律 `margin`），`pnpm run check:gap` 仍是 OK。逐特性表与 §1/§2 的 `文件:行` 已由 `pnpm run gen:capabilities` 复算，`tests/unit/flex-gap-fallback.test.mjs` 的模块数断言同步到 39。
 - 复核（2026-11-20 18:20，基准 `553cddd`，本单 #487 W1-B 后半分支 `feat/auth-gate-wiring`）：新增 `src/services/consumeClient.ts` 1 个 `.ts` 与 `src/components/auth/AccountRow.tsx` 1 个 `.tsx`，扫描范围 301 → **303** 个源文件（其余 253 → **255**），`.css` 仍是 48 个（`*.module.css` 41）。`AuthPages.module.css` 只新增了账号行的两条排版规则（无 `gap` / 无新特性），**没有新增样式表**，命中总数仍是 **389 处 / 41 个文件**，逐特性表与 §2 明细的 `文件:行` 未变。
 - 复核（2026-11-20 18:05，基准 `f8b8125`，本单 #498 分支 `feat/legacy-migration-tail`）：新增 `src/legacy/migration/**` 4 个 `.ts` 与 1 个 `.tsx`，扫描范围 296 → **301** 个源文件（其余 `.ts / .tsx / .html` 248 → **253**），`.css` 仍是 48 个（`*.module.css` 41）。迁移按钮复用既有 `Settings.module.css` 的类名，**没有新增任何 `.css` / 内联样式**，命中总数仍是 **389 处 / 41 个文件**，逐特性表与 §2 明细的 `文件:行` 未变。
 - 复核（2026-11-19 18:32，基准 `452debb`，本单 #303 分支 HEAD `204bd6e`）：新增 1 个 `.ts` 源文件（`src/services/api/keyRejection.ts`），扫描范围 246 → **247** 个源文件（`.ts` 147 → **148**，其余 `.ts / .tsx / .html` 202 → **203**），`.css` 仍是 44 个（`*.module.css` 37）。新文件是纯状态计算，**不含任何 CSS 特性假设**，命中总数仍是 **343 处 / 39 个文件**，逐特性表与 §2 明细的 `文件:行` 未变。

@@ -768,6 +768,27 @@ export const zh = {
     '这是 {time} 成功取到的版本列表（共 {count} 条）。当前连不上更新服务，列表可能已经过期。',
   updateManualDownload: '手动下载最新版',
   updateManualOpenFailed: '没能在 App 内打开下载页，请稍后再试，或复制诊断信息反馈给我们。',
+  /**
+   * 更新弹窗与策略（Issue #517）：三档策略（强制 / 软性 / 普通）的文案都在这里。
+   * 只讲用户能做的动作与已知事实，不出现 SOP、错误码或服务端内部名字。
+   */
+  updateDialogTitleNormal: '发现新版本',
+  updateDialogTitleSoft: '有新版本可用',
+  updateDialogTitleForced: '必须更新后才能继续使用',
+  updateDialogChangesTitle: '更新内容',
+  updateDialogLabelSize: '安装包大小',
+  updateDialogLabelPublishedAt: '发布时间',
+  updateDialogLabelCurrent: '当前版本',
+  updateDialogPublishedUnknown: '未提供',
+  updateDialogForcedNotice: '这个版本必须更新后才能继续使用。',
+  updateDialogBelowMinimumNotice:
+    '当前版本 {current} 已低于最低支持版本，更新到 {version} 后才能继续使用。',
+  updateDialogForcedReason: '说明：{reason}',
+  updateDialogSoftNotice: '可以稍后提醒，{hours} 小时内不再弹出。',
+  updateDialogSnooze: '稍后提醒',
+  updateDialogClose: '关闭',
+  updateDialogCancel: '取消',
+  updateDialogSnoozed: '已设为稍后提醒，{hours} 小时内不再弹出该提示。',
   // ---------------------------------------------------------------------------
   // 重构词条骨架（#487 铺路）：登录注册 / 账户与消费 / 卡密兑换 / 邀请 / 邮箱绑定
   // 只新增、不改上面的既有文案；语义依据 #482（支付与消费拆分）与 #484（sub2api 客户端约束）。

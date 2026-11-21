@@ -66,11 +66,49 @@
 | `artifactVariant` | `"internal"` \| `"standard"` | ➕ 可选 | 构建变体：内测包 / 对外包。**缺失 = 未知，不等于 standard** |
 | `artifactVariantSource` | `"apk-manifest"` \| `"sha256-allowlist"` | ⚠️ 与 `artifactVariant` 同存同缺 | 变体判定来源，留痕用 |
 | `breaking` | boolean | 可选 | 是否有不兼容变更 |
+| `releasedAt` | string | 可选（历史记录多缺） | ISO8601；App 的更新弹窗拿它显示「发布时间」，解析不出来就显示「未提供」（Issue #517）。别名 `publishedAt` 也认 |
+| `updatePolicy` | object | 可选 | 这次更新该怎么提示（强制 / 软性 / 普通），见 §2.1。**没下发 = App 沿用设置面板里的结果**，不弹策略弹窗 |
 
 > ⚠️ `buildType` 与 `artifactVariant` 是**两个不同维度**，不要混用：
 > `buildType` 表达「稳定版还是预发布版」（由版本号决定）；
 > `artifactVariant` 表达「这个包是内测构建还是对外构建」（由构建方式决定）。
 > 两者可以任意组合，例如 `1.4.0-beta.4` + `internal`。
+
+### 2.1 更新策略 `updatePolicy`（Issue #517）
+
+服务端在**单条记录**上下发「这次更新是不是必须装」，客户端据此决定弹窗形态：
+
+```jsonc
+{
+  "versionCode": 14040,
+  "version": "1.4.4",
+  "releasedAt": "2026-11-20T10:00:00+08:00",
+  "updatePolicy": {
+    "mode": "normal",              // normal | soft | forced（别名：none→normal、hard/force→forced）
+    "minSupportedVersionCode": 0,  // 低于此值一律强制；0/缺省 = 没设下限
+    "snoozeHours": 24,             // soft 的「稍后提醒」时长，夹到 [1, 720] 小时
+    "reason": "当前版本存在严重缺陷，请更新后继续使用", // forced 时展示给用户（可选，>500 字符丢弃）
+    "expiresAt": "2026-12-31T23:59:59+08:00"           // 策略过期即整体失效（可选）
+  }
+}
+```
+
+客户端判定顺序（唯一实现：`src/services/updatePolicy.ts` 的 `resolveUpdatePolicy()`，表驱动用例
+`tests/unit/update-policy-517.test.mjs`）：
+
+1. `expiresAt` 已过期 → **normal**（陈旧缓存 / 误配不许把用户永久锁在强制弹窗里，连下限一起失效）；
+2. `versionCode < minSupportedVersionCode` → **forced**，**优先于** `mode`；
+3. 否则按 `mode`；
+4. `mode` 缺失 / 非法 / 整份策略不像对象 → **normal**（判定失败一律站用户这边）。
+
+| 档位 | 弹窗行为 |
+| --- | --- |
+| `forced` | 不渲染关闭按钮、点遮罩无效、`Esc` 无效、返回键无效；只保留下载出口（不能把用户困在点不动的界面里） |
+| `soft` | 「稍后提醒」按 `snoozeHours` 写入本地设置 `chat-demo:update-snooze-until`，期内同一版本不再弹；`X` / `Esc` / 遮罩 / 返回键等同于「稍后提醒」 |
+| `normal` | 随时可关（关闭 / `Esc` / 遮罩 / 返回键），**不写** snooze |
+
+> 没下发 `updatePolicy` 的记录**不弹策略弹窗**：老服务端（以及现有 L1 契约）行为一个字不变，
+> 结果仍在「设置 → 应用更新」面板里展示（渠道切换 / 诊断 / 缓存兜底都还在那里）。
 
 ## 3. 读取侧（App）必须遵守的语义
 

@@ -1,0 +1,196 @@
+/*
+ * 更新弹窗（Issue #517）。
+ *
+ * 高度链与 #172 的教训完全一样：Modal 的 `.content` 本身没有高度上限，中间内容区如果是普通块
+ * （overflow 可见、没有 min-height: 0），长更新说明会把标题顶到屏幕外、把底部按钮挤出去，
+ * 而遮罩又把页面滚动锁住（#30）—— 于是十几条说明的后半段谁都滚不到。
+ * 所以这里只给这一个弹窗补上限与滚动容器（className / mainClassName 传进来），不碰 Modal 的通用规则。
+ *
+ * 间距一律用 margin（不用 flex `gap`）：仓库的 #173 门禁要求每个 flex gap 都有兜底；
+ * 这里没有需要 gap 的等高排列，也就不带兜底规则。
+ */
+
+.dialog {
+  /*
+   * 上限取「视口高度 - 32px」与 70vh 里更小的那个。
+   * --modal-viewport-height 由 Modal.tsx 写在遮罩上（visualViewport 高度，键盘弹起时变小），
+   * 拿不到时退回 100vh。dvh 只写在 @supports 里（#13 的坑：放进 var() 缺省值会让旧内核把整条声明打回 initial）。
+   */
+  max-height: min(70vh, calc(var(--modal-viewport-height, 100vh) - 32px));
+}
+
+@supports (max-height: 100dvh) {
+  .dialog {
+    max-height: min(70vh, calc(var(--modal-viewport-height, 100dvh) - 32px));
+  }
+}
+
+/* 矮屏（含 360×740 这档）再降一档：70vh 在 740 高上只剩约 518px，压到 62vh 才给底部按钮留出余量 */
+@media (max-height: 760px) {
+  .dialog {
+    max-height: min(62vh, calc(var(--modal-viewport-height, 100vh) - 24px));
+  }
+}
+
+@supports (max-height: 100dvh) {
+  @media (max-height: 760px) {
+    .dialog {
+      max-height: min(62vh, calc(var(--modal-viewport-height, 100dvh) - 24px));
+    }
+  }
+}
+
+/* 中间内容区：能滚的是它自己，标题与底部按钮留在外面常驻 */
+.main {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  /* 滚动惯性 + 只吃竖向手势，横向手势留给外层（避免和遮罩拖动打架） */
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
+  /* 滚到底不把外层页面带着一起回弹 */
+  overscroll-behavior-y: contain;
+  /* 悬浮滚动条不压住文字 */
+  padding-right: 2px;
+}
+
+.body {
+  display: flex;
+  flex-direction: column;
+}
+
+/*
+ * 强制 / 软性两种档位的说明条。
+ * 强制用错误色系（这一屏用户没有「稍后」这个选项）；软性用中性底色（只是一句提醒）。
+ * 两者都只看 alias token —— 深浅色由主题变量负责，这里不写任何具体颜色。
+ */
+.notice {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--dsw-alias-label-primary);
+  background-color: var(--dsw-alias-interactive-bg-hover);
+  /* 长句在 360 档不许把弹窗撑出横向滚动 */
+  overflow-wrap: anywhere;
+}
+
+.reason {
+  margin: 0 0 12px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  border-left: 2px solid var(--dsw-alias-state-error-primary);
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--dsw-alias-label-secondary);
+  background-color: var(--dsw-alias-interactive-bg-hover);
+  overflow-wrap: anywhere;
+}
+
+.version {
+  margin: 0;
+  font-size: 16px;
+  line-height: 24px;
+  font-weight: 600;
+  color: var(--dsw-alias-label-primary);
+  overflow-wrap: anywhere;
+}
+
+/* 三行事实（当前版本 / 包大小 / 发布时间）：标签列定宽对齐，不用 gap */
+.facts {
+  margin: 10px 0 0;
+  display: block;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.facts > div {
+  display: flex;
+  min-width: 0;
+}
+
+.facts > div + div {
+  margin-top: 4px;
+}
+
+.facts dt {
+  flex: 0 0 auto;
+  margin-right: 8px;
+  color: var(--dsw-alias-label-caption);
+}
+
+.facts dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--dsw-alias-label-primary);
+}
+
+.changesTitle {
+  margin: 16px 0 0;
+  font-size: 13px;
+  line-height: 20px;
+  font-weight: 600;
+  color: var(--dsw-alias-label-primary);
+}
+
+.changes {
+  margin: 6px 0 0;
+  padding-left: 18px;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--dsw-alias-label-secondary);
+  overflow-wrap: anywhere;
+}
+
+.changes li + li {
+  margin-top: 4px;
+}
+
+/* 下载进度：进度条 + 一行「已下 / 总计」。数值文案由调用方给（与设置面板同一份），这里只管排版 */
+.progress {
+  width: 100%;
+  margin: 16px 0 0;
+}
+
+.progressText {
+  margin: 4px 0 0;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+/* 状态行（下载中 / 已就绪 / 失败原因）：只在有话说时出现 */
+.status {
+  margin: 10px 0 0;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--dsw-alias-label-secondary);
+  overflow-wrap: anywhere;
+}
+
+/*
+ * 网页预览的「主按钮」其实是一个下载链接：外观与 base/Button 的 primary 保持一致，
+ * 免得同一个位置在原生 / 网页两侧长得完全不像。
+ */
+.linkButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 40px;
+  padding: 0 16px;
+  border-radius: 12px;
+  background-color: var(--dsw-alias-button-primary-fill);
+  color: var(--dsw-alias-label-primary-foreground);
+  font-size: 14px;
+  line-height: 22px;
+  font-weight: 500;
+  text-decoration: none;
+}
+
+.linkButton:hover {
+  background-color: var(--dsw-alias-button-primary-hover);
+}

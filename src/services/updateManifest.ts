@@ -3,6 +3,9 @@
 // buildType 的唯一定义在 shared/build-types.mjs（Issue #330）：客户端、发布脚本、校验器共用。
 // 这里只 import 判定函数与类型，不再写第二份 'stable' | 'prerelease' 字面量。
 import { isBuildType, type BuildType } from '../../shared/build-types.mjs'
+// 更新策略（Issue #517）：形状收窄与判定都在 updatePolicy.ts，本文件只负责「把清单里的字段带出来」。
+// 单向依赖（manifest → policy），updatePolicy 不 import 本文件，不存在环。
+import { parseUpdatePolicy, type UpdatePolicy } from './updatePolicy.js'
 
 /**
  * 分发端点（Issue #268 / #269）。首选新静态分发机（裸 HTTP，无域名无 TLS），不可达才回退旧机。
@@ -34,6 +37,20 @@ export interface UpdateRelease {
   buildType?: UpdateChannel
   artifactVariant?: ArtifactVariant
   sha256?: string
+  /**
+   * 服务端下发的更新策略（Issue #517）。**总是存在**（缺省 = normal），
+   * 由 `parseUpdatePolicy` 收窄：脏字段逐个丢弃，绝不让服务端数据异常把用户锁死在强制弹窗里。
+   * 判定入口是 `resolveUpdatePolicy()` / `resolveUpdatePrompt()`（见 services/updatePolicy.ts）。
+   */
+  updatePolicy?: UpdatePolicy
+  /**
+   * 发布时间（Issue #517 的弹窗要展示「发布时间」）。
+   *
+   * 线上清单的真字段名是 `releasedAt`（见 docs/releases-manifest.md §2），
+   * 契约草稿里写的是 `publishedAt` —— 两个都认，取第一个能解析成日期的。
+   * 缺失 / 非法 → 不带这个字段，界面显示「未提供」而不是编一个时间出来。
+   */
+  releasedAt?: string
 }
 /**
  * 「没有可装版本」的可解释原因（Issue #377）。
@@ -65,8 +82,24 @@ export interface UpdateSelection {
 }
 const object = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value)
-const isAllowedBase = (base: string): boolean =>
-  (RELEASE_BASES as readonly string[]).includes(base)
+
+/**
+ * 发布时间（Issue #517）：只认能解析成日期的短串，其余一律**不带**这个字段。
+ *
+ * 不抛、不猜：清单里写 `"昨天"` / 空串 / 数字时间戳（服务端没这么发过）都退化成「未提供」，
+ * 弹窗里宁可显示「未提供」也不编一个日期 —— 时间一旦编错，用户会拿它判断「这次更新是不是我要的」。
+ */
+const releasedAtOf = (value: unknown): string | undefined => {
+  if (typeof value !== 'string') {
+    return undefined
+  }
+  const text = value.trim()
+  if (text === '' || text.length > 64 || Number.isNaN(Date.parse(text))) {
+    return undefined
+  }
+  return text
+}
+const isAllowedBase = (base: string): boolean => (RELEASE_BASES as readonly string[]).includes(base)
 
 /**
  * 清单里的 file 是相对路径，必须拼在「本次清单实际生效的那个 base」上——回退到旧机后
@@ -117,6 +150,16 @@ export const parseManifest = (input: unknown): UpdateRelease[] => {
       throw new Error('INVALID_RELEASE')
     }
     releaseUrl(value.file)
+    /*
+     * #517：策略与发布时间都走「容错读取」——它们只影响怎么提示，不影响「能不能装」，
+     * 所以绝不因为它们脏而整条拒收（那会让用户连更新都检查不出来）。
+     *
+     * 注意「键存在才带」而不是「一律带默认值」：`updatePolicy === undefined` 表示
+     * **这条清单根本没下发策略**（老服务端），界面据此沿用原来的结果面板；
+     * 下发了一个脏值则是「下发了但读不懂」，收窄成 normal —— 两种情形必须能分开。
+     */
+    const policyRaw = value.updatePolicy === undefined ? value.policy : value.updatePolicy
+    const releasedAt = releasedAtOf(value.releasedAt ?? value.publishedAt)
     return {
       version: value.version,
       versionCode: Number(value.versionCode),
@@ -132,6 +175,8 @@ export const parseManifest = (input: unknown): UpdateRelease[] => {
         typeof value.sha256 === 'string' && /^[a-f0-9]{64}$/.test(value.sha256)
           ? value.sha256
           : undefined,
+      ...(policyRaw === undefined ? {} : { updatePolicy: parseUpdatePolicy(policyRaw) }),
+      ...(releasedAt === undefined ? {} : { releasedAt }),
     }
   })
 }
@@ -182,8 +227,7 @@ export const selectUpdate = (
   // 高于当前版本的全部记录（先不过渠道）：区分「没有更高版本」和「有但被渠道过滤」
   const aboveCurrent = releases.filter((row) => row.versionCode > currentCode)
   const candidates = aboveCurrent.filter(
-    (row) =>
-      row.buildType === undefined || channel === 'prerelease' || row.buildType === 'stable'
+    (row) => row.buildType === undefined || channel === 'prerelease' || row.buildType === 'stable'
   )
   const eligible = candidates.filter(
     (row) => row.artifactVariant === variant && row.sha256 && row.buildType
@@ -638,7 +682,9 @@ export const saveManifestSnapshot = (
     // 连自己刚解析成功的清单都过不了校验：不写（写进去也只能被读回时丢掉）
     return false
   }
-  rows = [...rows].sort((a, b) => b.versionCode - a.versionCode).slice(0, MANIFEST_CACHE_MAX_RELEASES)
+  rows = [...rows]
+    .sort((a, b) => b.versionCode - a.versionCode)
+    .slice(0, MANIFEST_CACHE_MAX_RELEASES)
   const savedAt = Number.isSafeInteger(snapshot.savedAt) ? Number(snapshot.savedAt) : Date.now()
   const base = isAllowedBase(snapshot.base) ? snapshot.base : DEFAULT_RELEASE_BASE
   try {

@@ -61,6 +61,14 @@ type Settings = {
   enterKeyMode: EnterKeyMode
   search: boolean
   siderCollapsed: boolean
+  /**
+   * 「稍后提醒」的到期时刻（毫秒时间戳，Issue #517）；0 = 没有暂缓。
+   *
+   * 只由 soft 更新弹窗写入（forced 不许写 —— 强制更新没有「稍后」）。
+   * 这里存**时间戳**而不是「已读版本号」：下次检查一眼就能算出「还能不能弹」，
+   * 也不必为每个版本各留一条记录。
+   */
+  updateSnoozeUntil: number
 }
 
 const KEYS = {
@@ -77,6 +85,8 @@ const KEYS = {
   enterKeyMode: 'chat-demo:enter-key-mode',
   search: 'chat-demo:search',
   siderCollapsed: 'chat-demo:sider-collapsed',
+  /** 更新弹窗「稍后提醒」的到期时刻（#517）。与其它设置项同一前缀，不另开 store */
+  updateSnoozeUntil: 'chat-demo:update-snooze-until',
 } as const
 
 const read = (key: string) => {
@@ -191,6 +201,16 @@ const initialChatMode = (): ChatMode => {
   return read(KEYS.thinking) === 'false' ? 'fast' : 'expert'
 }
 
+/**
+ * 「稍后提醒」到期时刻（#517）。读出来的必须是**正整数毫秒时间戳**：
+ * 空串 / 'null' / 负数 / 非数字（用户手改过、旧版本写过别的形状）一律按「没暂缓」。
+ * 宁可多弹一次，也不要因为一个坏时间戳把更新提示永远静音。
+ */
+const initialUpdateSnoozeUntil = (): number => {
+  const saved = Number(read(KEYS.updateSnoozeUntil))
+  return Number.isSafeInteger(saved) && saved > 0 ? saved : 0
+}
+
 export const useSettings = create<Settings>(() => {
   const chatMode = initialChatMode()
   return {
@@ -207,6 +227,7 @@ export const useSettings = create<Settings>(() => {
     enterKeyMode: initialEnterKeyMode(),
     search: read(KEYS.search) === 'true',
     siderCollapsed: read(KEYS.siderCollapsed) === 'true',
+    updateSnoozeUntil: initialUpdateSnoozeUntil(),
   }
 })
 
@@ -274,3 +295,18 @@ export const setSiderCollapsed = (siderCollapsed: boolean) => {
   write(KEYS.siderCollapsed, String(siderCollapsed))
   useSettings.setState({ siderCollapsed })
 }
+
+/**
+ * 写「稍后提醒」的到期时刻（#517）。唯一写入口，只由 soft 更新弹窗调用。
+ *
+ * 非法值（NaN / 负数 / 非整数）直接归零并**清掉键**，不做「写一个坏值进去、以后自己读不懂」：
+ * 归零 = 没暂缓 = 下次检查照常弹。
+ */
+export const setUpdateSnoozeUntil = (until: number) => {
+  const value = Number.isSafeInteger(until) && until > 0 ? until : 0
+  write(KEYS.updateSnoozeUntil, value === 0 ? null : String(value))
+  useSettings.setState({ updateSnoozeUntil: value })
+}
+
+/** 清掉「稍后提醒」（手动检查拿到新版后重弹 / 排查时用） */
+export const clearUpdateSnooze = () => setUpdateSnoozeUntil(0)
