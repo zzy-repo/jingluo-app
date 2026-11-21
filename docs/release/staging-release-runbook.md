@@ -1,6 +1,8 @@
 # v1.4.4-staging 发布 runbook（车道 A｜只发 GitHub Release）
 
 > **状态：未解锁，现在不能发。**
+
+> 本文件的跨文件引用**刻意用「函数名 / 章节标题」锚点而不是行号**：今天实测 #691 合入后 1 小时内就把 `build.gradle` 的 3 处行号挪走、`consumeEndpoints` 2 处也漂，行号锚点在并行开发时必然失效。
 > 本文件是「解锁之后照抄执行」的机械清单，**不是**「已经能发了」的结论。当前唯一阻塞点是
 > staging 后端是**明文 HTTP**，被三道守卫拦着（§3），而解锁方式（A / B）**尚未决定**（§4）。
 > 谁要发布：先按 §5 的前置门逐条跑通、把输出贴到 #652；任一门不绿就停在这里，不要往下走。
@@ -68,15 +70,8 @@ staging 地址是 `http://140.210.13.146:16000`（明文）。它今天撞三道
 
 | # | 层 | 位置 | 判据 | 现象 |
 | --- | --- | --- | --- | --- |
-| ① | 构建期（web 产物） | `scripts/lib/consumeEndpoints.mjs:239`，由 `scripts/build.mjs:79` 在打包前调用（调用点 `scripts/build.mjs:167`） | `consume.baseUrl` 必须 `https://`，唯一例外是本机回环（`scripts/lib/consumeEndpoints.mjs:199`） | `pnpm build` 在打第一个字节前就中止 |
-| ② | 构建期（gradle） | `android/app/build.gradle:242`（https）+ `android/app/build.gradle:254`（命中废弃域黑名单） | 黑名单 `android/app/build.gradle:141` 里**就含 `140.210.13.146`** | `assembleRelease` 在配置阶段 `GradleException` |
-| ③ | **运行时** | `src/services/consume/http.ts:189` | 同一套判据：非 https 且非回环 → 抛 `ConsumeConfigError` | **App 白屏** |
-
-> **2026-11-21 更新（PR #693 / #601 守卫的补正面）**：①②③ 三层现在都有**显式放行通道**（staging-only）——
-> web 构建期 `ALLOW_INSECURE_CONSUME=true`、原生构建期 `-PallowInsecureConsume=true`，产物带
-> `INSECURE_CONSUME=true` 自证标记，`pnpm verify:apk` 不带 `--allow-insecure` 直接 exit 1。三层的语义与
-> 完整命令链见 `docs/RELEASE-MANUAL.md` 的「staging 明文联调包」一节。也就是说：**不必再为了过① 去改配置
-> 或拆守卫**；但明文包仍然只许内网 staging 联调，禁止公开分发。
+<<<<<<< HEAD
+>>>>>>> origin/main
 
 ### 3.1 为什么②过不去：那个 IP 本身在黑名单里
 
@@ -86,7 +81,7 @@ staging 地址是 `http://140.210.13.146:16000`（明文）。它今天撞三道
 
 ### 3.1b 地址是怎么进产物的（#691 之后，先搞清楚再谈解锁）
 
-改地址有两条通道，**只有一条能改到真正发请求的那一层**（`docs/RELEASE-MANUAL.md:976` 是同一结论）：
+改地址有两条通道，**只有一条能改到真正发请求的那一层**（`docs/RELEASE-MANUAL.md` §14「换消费后端地址」是同一结论）：
 
 | 通道 | 改到哪 | 能不能用 |
 | --- | --- | --- |

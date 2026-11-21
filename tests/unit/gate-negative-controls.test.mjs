@@ -13,6 +13,13 @@
 //   N5 `check:test-duplication`              —— 复制整份用例文件 → 必报「逐字重复」
 //   N7 `test:dl-release`（#415 接线的那一步）—— 往 deploy/dl-release/test 塞一条必红用例 → 入口必须 exit≠0，删掉后 exit 0
 //
+// #453 的审计把这 33 道门禁判成四态，其中**三道零负向对照**（「判得动但没人知道它判不判得动」）。
+// 本节末尾的 N8/N9/N10 就是给它们各配的一组「破坏 → 必红 → 还原」证明（详见那一段的注释）：
+//
+//   N8  `check:keystore`           —— 键名错 / 路径错 / 口令错 / 别名错 → exit 1 且点名；缺文件 exit 2
+//   N9  `check:limits`             —— 注入裸阈值 → exit 1 且点名 文件:行:值；镜像常量漂移 → 点名两个不同值
+//   N10 `check:capabilities`       —— `--strict` 注入低内核用法 → exit 1 且点名 文件:行（warn 档同一份注入仍 exit 0）
+//
 // 统一模板（#369 第 4 条要求，四拍，全文件只用这一套；实现在 tests/gates/lib/gate-negative-harness.mjs）：
 //
 //     ① 正例（干净仓库 exit=0） → ② 注入缺陷 → ③ exit≠0 且报错点出注入物 → ④ 还原 → ⑤ 再 exit=0
@@ -39,7 +46,8 @@
 //     例外（#413 接线批次）：`check:i18n` / `check:endpoints` 的对照是「现场往仓库里塞一份坏输入
 //     再跑脚本」，塞的正是脚本自己扫的那份源码，放在 ci.yml 里成本 ≈1s 且与被测命令同环境，
 //     所以这两条登记成 `kind: 'ci'`（和 `check:legacy` / `check:redact` 同款）；
-//     `check:capabilities` 的 warn 档没有红可打，缺口写在 KNOWN_GAPS。
+//     `check:capabilities` 的 warn 档没有红可打（#453 之后它有了 `--strict` 档的对照，见 N10；
+//     剩下的缺口只是 ci.yml 还没改 --strict），那部分写在 KNOWN_GAPS。
 //     同一形状后来还有 `check:doc-refs`（#463）与本轮的 `check:consume-api`（#487 接线）：
 //     都是「往 src/ 或 docs/ 塞一条脚本自己会扫的坏输入 → 必红 → 还原」，一律 `kind: 'ci'`。
 //   · 不验 `check:log-coverage` 的 `--selftest`：脚本自带反例，但 CI 调用没带这个 flag
@@ -51,7 +59,7 @@ import '../helpers/injected.mjs'
 
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { cpSync, existsSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { test } from 'node:test'
 
@@ -391,10 +399,44 @@ const REGISTRY = {
     what: 'CI 往生成目录（assets/**）塞旧池域地址 → 必须仍 exit 0；再塞进 src/ → 必 exit 1；删掉 → exit 0',
     mention: /check-refactor-direction\.mjs/,
   },
+  // 签名凭据形状门禁（#272 的脚本，#453 补的对照）：对照落在本文件 N8 —— 四键 properties 的
+  // 键名错（`storeFileRelease` → `storeFile`）/ `storeFile` 指向不存在的路径 / 口令错 / 别名错
+  // 各自 exit 1 且**点名具体键名与路径**；缺文件 exit 2（与「配错」的 1 区分开，硬要求）。
+  // `unwired: true`：这道门禁至今零 CI 入口 —— 它要本机 `android/keystore/keystore.properties`
+  // （不入库），CI 里必然 exit 2；`tests/unit/domain10-gate-wiring.test.mjs` 的 KNOWN_UNWIRED 有同一份交代。
+  // 也就是说：**判据现在有证明了，但还是没人跑它** —— 这个区别正是 #453 要暴露的东西。
+  'check:keystore': {
+    where: 'tests/unit/gate-negative-controls.test.mjs',
+    kind: 'inject',
+    what:
+      '键名错（storeFileRelease→storeFile）/ storeFile 指向不存在的路径 / 口令错 / 别名错 → 各自 exit 1 且点名键名与路径；' +
+      '缺文件 → exit 2 且给出「cp example + 补四键」的修法（N8）',
+    unwired: true,
+    mention: /check-keystore-config\.mjs/,
+  },
+  // 运行期阈值单一来源门禁（#275 的脚本，#453 补的对照）：对照落在本文件 N9 —— 往受保护文件
+  // 注入裸阈值 `45000` 必 exit 1 且点名 `文件:行: 值`；再把镜像常量（src/index.html 的
+  // BOOT_DEADLINE_MS 12000）改成 13000 → 报错里必须**同时**出现登记值与实际值两个不同数字。
+  // 与 N8 一样：`unwired: true`（零 CI 入口），对照是真的，跑它的人还没有。
+  'check:limits': {
+    where: 'tests/unit/gate-negative-controls.test.mjs',
+    kind: 'inject',
+    what:
+      '临时副本里往 src/services/attachments/limits.ts 注入裸阈值 45000 → exit 1 且点名 文件:行:值；' +
+      '改掉 src/index.html 的镜像常量 12000→13000 → 同时点名两个不同值（N9）',
+    unwired: true,
+    mention: /check-limits\.mjs/,
+  },
   'check:capabilities': {
-    where: 'scripts/check-capabilities.mjs',
-    kind: 'builtin',
-    what: '自带 --strict 档（有缺陷 exit 1）；CI 目前只跑默认 warn 档 → 缺口登记在 KNOWN_GAPS',
+    // #453 之前这里登记成 `scripts/check-capabilities.mjs` + `kind: 'builtin'`（「自带 --strict 档」），
+    // 那其实**不是负向对照**：没人注入过东西，没人见过它红。现在换成真对照（本文件 N10）——
+    // 干净 fixture → `--strict` exit 0；注入 `Promise.withResolvers`（首支持 Chromium 119）→
+    // exit 1 且点名 `文件:行`；同一份注入下 **warn 档仍 exit 0**（= CI 现在这步恒绿，#413）。
+    where: 'tests/unit/gate-negative-controls.test.mjs',
+    kind: 'inject',
+    what:
+      '干净 fixture root 上 --strict exit 0 → 注入 Promise.withResolvers → --strict exit 1 且点名 文件:行、' +
+      'warn 档同一份注入仍 exit 0（N10）；另在真仓库上钉住「warn 恒 0 / strict 与缺陷数一致」',
   },
   // 文档引用门禁（#290 的脚本，本轮才接线）：对照写在 ci.yml 里现场注入 ——
   // 往 docs/ 丢一份写着不存在路径的 md → 必须 exit 1，删掉 → exit 0。
@@ -531,8 +573,9 @@ const KNOWN_GAPS = {
   'check:capabilities': {
     reason:
       '默认档是 warn 级：无论有几处缺陷都 exit 0（当前 10 处能力假设缺陷在案、6 条修复 lane 在飞，' +
-      '硬拦截会互相卡死）。所以 CI 现在这一步只证明「扫描器每次都被跑、口径不被悄悄改宽」，没有红可打；' +
-      '真正的检测能力在 `--strict` 档（有缺陷即 exit 1）',
+      '硬拦截会互相卡死）。所以 CI 现在这一步只证明「扫描器每次都被跑、口径不被悄悄改宽」，没有红可打。' +
+      '#453 之后**检测能力本身已有对照**（本文件 N10：注入低内核用法 → `--strict` exit 1 且点名 文件:行；' +
+      '同一份注入下 warn 档仍 exit 0），剩下的缺口**只剩接线**：ci.yml 还没把这条命令换成 --strict',
     issue: '#413',
     fix: '缺陷清零后把 ci.yml 的调用改成 `node scripts/check-capabilities.mjs --strict`（届时缺陷即 exit 1，本身就是对照）',
     // 缺口还开着 = ci.yml 里仍然没有带 --strict 的那一步
@@ -640,6 +683,373 @@ test('N6 已确认的缺口仍然如实登记（缺口消失时要回来删条�
       `${gate} 的缺口看起来已经补上了 —— 请从 KNOWN_GAPS 删掉这条，并在 REGISTRY 里改成真实对照`
     )
   }
+})
+
+// ================================================================ #453 补的三道（N8 / N9 / N10）
+//
+// #453 的审计把 33 道 `scripts/check-*.mjs` 判成四态，其中三道**零负向对照**（「判得动，但没人
+// 知道它判不判得动」）。本节给这三道各配一组「破坏 → 必红 → 还原」的可复现证明：
+//
+//   N8  `check:keystore`（P0 发布链：签名凭据形状错 → 新机器出不了包 / 悄悄换证书）
+//   N9  `check:limits`（阈值单一来源：改一处不改另一处 = 第二份真相源回来了）
+//   N10 `check:capabilities --strict`（低内核白屏的历史事故；warn 档结构上永不 exit 1）
+//
+// 硬约束：**没有一道门禁被删、没有一条判据被放宽**，`scripts/**` 一个字节都不动 ——
+// 注入物全部落在 `mkdtemp` 的临时目录 / 临时副本里，跑完仓库原样（下面的「收尾体检」再兜一遍）。
+//
+// 三道都不走 `assertNegativeControl`（原因各写在各段开头）：keystore 的「正例」需要一把真
+// keystore，limits 的注入点是被别的用例读盘的源码（单元层并行），capabilities 的 `--strict`
+// 在真仓库本来就红（基线 10 处缺陷）—— 三者的「① 正例 exit 0」都不在真仓库上成立，
+// 硬套模板只能靠删掉 ① 拍，而 ① 拍正是「证明它不是恒红」的那一捶。所以这三段各自把四拍的
+// 语义写全（正例 → 注入 → 必红且点名 → 还原 → 再正例），只是正例跑在临时树 / `--root` 上。
+
+// ---------------------------------------------------------------- N8 check:keystore（#453 第 1 优先）
+
+/**
+ * 为什么 N8 不用统一骨架：这道门禁的最后一拍要 `keytool` 打开 keystore（`--quiet` 之外没有开关能绕），
+ * 而 ci.yml 的 `setup-java` 排在 `pnpm test` **之后**（checks job 里 `pnpm test` 在 305 行、
+ * setup-java 在 336 行）。所以分成两张表：
+ *
+ *   · 「不需要 keystore」的三拍 —— 缺文件 / 缺键（键名错） / 路径错。任何环境都必须跑，
+ *     而且正是 #272 事故里最难定位的那几种（gradle 报起来长得一模一样）。
+ *   · 「需要 keystore」的四拍 —— 真 keystore 正例 / 口令错 / 别名错 / 指纹不符。没有 keytool 时
+ *     **照样跑**，但断言换成「门禁 fail-closed」（exit 2 且点名找不到 keytool），并打一条 diagnostic
+ *     说明本机限制。不许静默 skip：跳过的对照在 CI 上等于不存在，正是本单要消灭的形态。
+ */
+const KS_STORE_PASS = 'gateNegStorePass'
+const KS_ALIAS = 'gate-neg-release'
+/** 四键 properties 文本；`overrides` 里给 `undefined` 表示把这个键**删掉**（造「键名写错」用） */
+const ksProps = (storeFile, overrides = {}) => {
+  const values = {
+    storeFileRelease: storeFile,
+    storePasswordRelease: KS_STORE_PASS,
+    keyAliasRelease: KS_ALIAS,
+    keyPasswordRelease: KS_STORE_PASS,
+    ...overrides,
+  }
+  return `${Object.entries(values)
+    .filter(([, value]) => value !== undefined)
+    .map(([key, value]) => `${key}=${value}`)
+    .join('\n')}\n`
+}
+
+/** 找 keytool（与 check-keystore-config.mjs 的 findKeytool 同一套候选：先 JAVA_HOME，再 PATH） */
+const findKeytool = () => {
+  const exe = process.platform === 'win32' ? 'keytool.exe' : 'keytool'
+  const candidates = []
+  if (process.env.JAVA_HOME) candidates.push(path.join(process.env.JAVA_HOME, 'bin', exe))
+  candidates.push(exe)
+  for (const candidate of candidates) {
+    try {
+      execFileSync(candidate, ['-help'], { stdio: 'ignore', timeout: 30_000 })
+      return candidate
+    } catch {
+      // 换下一个候选（keytool 的 -help 退出码各家不同，能起来就算找到）
+    }
+  }
+  return null
+}
+
+test('N8 check:keystore：缺键 / 路径错 / 口令错 / 别名错 → exit 1 且点名；缺文件 → exit 2（明确要人配）', (t) => {
+  const gate = commandOf('check:keystore')
+  // 命令行不许被改软：加 `--quiet` 会把「读了哪个文件 / 哪个别名」藏掉，加固定 `--file` 会把
+  // 被测对象钉死在某个文件上（那样它就不再检查『本机到底配了没有』）。
+  assert.match(
+    gate.raw,
+    /^node scripts\/check-keystore-config\.mjs$/,
+    `check:keystore 的命令行变了（现在是 \`${gate.raw}\`）——负向对照要跟着重新确认`
+  )
+  assert.doesNotMatch(gate.raw, /--quiet|--file/, `check:keystore 不许默认带 ${gate.raw.includes('--quiet') ? '--quiet' : '--file'}：那会把被测对象藏起来`)
+
+  const dir = scratch('keystore')
+  t.after(() => rmSync(dir, { recursive: true, force: true }))
+  const propsPath = path.join(dir, 'keystore.properties')
+  const storeFile = path.join(dir, `${KS_ALIAS}.p12`)
+  const runProps = () => run(commandOf('check:keystore', ['--file', propsPath]))
+  const writeProps = (text) => writeFileSync(propsPath, text)
+
+  // ---- ① 缺文件：exit **2**（环境不合格），且必须明确告诉人「这份文件要你自己放」----
+  // （这是本单硬要求里点名的那条区分：缺文件 = 2 / 配错 = 1。混成一个码，新机器就只知道「签名不行」）
+  rmSync(propsPath, { force: true })
+  const missing = runProps()
+  assert.equal(missing.status, 2, `缺 properties 文件必须 exit 2（环境不合格），实际 ${missing.status}\n${missing.out}`)
+  assert.match(missing.out, /\[FAIL\] 找不到签名属性文件/, `缺文件时必须点名「缺哪个文件」\n${missing.out}`)
+  assert.match(
+    missing.out,
+    /keystore\.properties\.example/,
+    `缺文件时不能只说「没有」——要给出「cp 哪份 example + 填哪四个键」的修法\n${missing.out}`
+  )
+
+  // ---- ② 缺键（#272 事故本体：`storeFileRelease` 写成 `storeFile`）→ exit 1，且必须点出错的那个键名 ----
+  writeProps(ksProps(storeFile, { storeFileRelease: undefined, storeFile: storeFile }))
+  const typo = runProps()
+  assert.equal(typo.status, 1, `键名错必须 exit 1（配置不合格），实际 ${typo.status}\n${typo.out}`)
+  assert.match(typo.out, /缺少 1 个必填键/, `必须报「缺几个键」\n${typo.out}`)
+  assert.match(typo.out, /- storeFileRelease/, `必须点名缺的那个键 storeFileRelease\n${typo.out}`)
+  assert.match(typo.out, /写的是 `storeFile`，键名错了/, `必须点出「文件里写的是哪个错键名」（否则人还在原地猜）\n${typo.out}`)
+
+  // ---- ③ storeFileRelease 指向不存在的路径 → exit 1，且必须把「解析后的绝对路径」打印出来 ----
+  // （相对路径按 android/app/ 解析、不是仓库根 —— 这就是 gradle 里那句 file() 的坑，报错必须带走这一点）
+  const ghost = path.join(dir, 'nope.keystore')
+  writeProps(ksProps(ghost))
+  const badPath = runProps()
+  assert.equal(badPath.status, 1, `路径错必须 exit 1，实际 ${badPath.status}\n${badPath.out}`)
+  assert.match(badPath.out, /storeFileRelease 指向的文件不存在/, `必须点名是 storeFileRelease 这个键\n${badPath.out}`)
+  assert.ok(
+    badPath.out.includes(ghost),
+    `必须把解析后的绝对路径原样打出来（${ghost}）——只说「文件不存在」等于让人全盘搜\n${badPath.out}`
+  )
+  assert.match(badPath.out, /相对 android\/app\/ 解析/, `必须带上「相对 android/app/ 解析」这条修法（#272 的坑）\n${badPath.out}`)
+
+  // ---- ④ 需要真 keystore 的几拍 ----
+  const keytool = findKeytool()
+  if (!keytool) {
+    // 没有 JDK：门禁自己的行为是 fail-closed（exit 2 且点名 keytool）。这不是「跳过」——
+    // 断言它确实 fail-closed，并明确登记「本机跑不了这一步」。
+    writeProps(ksProps(storeFile))
+    const noKeytool = runProps()
+    assert.equal(noKeytool.status, 2, `没有 keytool 时必须 fail-closed exit 2（不许静默放行），实际 ${noKeytool.status}\n${noKeytool.out}`)
+    assert.match(noKeytool.out, /找不到 keytool/, `没有 keytool 时必须点名它\n${noKeytool.out}`)
+    assert.match(noKeytool.out, /不跳过/, `必须说清「不跳过」（否则下一个人会以为是环境提示）\n${noKeytool.out}`)
+    t.diagnostic('N8：本机没有 keytool（JDK），口令错 / 别名错 / 指纹这三拍只验了门禁 fail-closed；装了 JDK 的机器会跑全四拍')
+    return
+  }
+
+  // 造一把**只在本次用例里存在**的 keystore（每次新生成 → 指纹必然与已发布证书不同）
+  execFileSync(
+    keytool,
+    [
+      '-genkeypair', '-keystore', storeFile, '-storetype', 'PKCS12',
+      '-alias', KS_ALIAS, '-keyalg', 'RSA', '-keysize', '2048', '-validity', '3650',
+      '-dname', 'CN=Gate Neg Probe, O=dsh',
+      '-storepass', KS_STORE_PASS, '-keypass', KS_STORE_PASS,
+    ],
+    { stdio: 'ignore', timeout: 120_000 }
+  )
+
+  // ④a 正例：四键齐全 + 真 keystore → exit 0（这一拍才证明后面几个 exit 1 不是恒红）
+  writeProps(ksProps(storeFile))
+  const good = runProps()
+  assert.equal(good.status, 0, `四键齐全 + 真 keystore 必须 exit 0\n${good.out}`)
+  assert.match(good.out, /通过: 四个 release 键齐全/, `正例输出要说清「过了什么」\n${good.out}`)
+  const probeSha = (/证书 SHA-256\s*=\s*([0-9a-f]{64})/.exec(good.out) ?? [])[1]
+  assert.ok(probeSha, `正例里应能读出这张证书的 SHA-256（后面的指纹拍要用）\n${good.out}`)
+
+  // ④b 口令错 → exit 1，且点名「口令打不开」（而不是含糊地说「签名不行」）
+  writeProps(ksProps(storeFile, { storePasswordRelease: 'gateNegWrongPass' }))
+  const badPass = runProps()
+  assert.equal(badPass.status, 1, `口令错必须 exit 1，实际 ${badPass.status}\n${badPass.out}`)
+  assert.match(badPass.out, /口令打不开 keystore/, `必须点明是口令问题\n${badPass.out}`)
+
+  // ④c 别名错 → exit 1，且点名那个不存在的别名
+  writeProps(ksProps(storeFile, { keyAliasRelease: 'no-such-alias' }))
+  const badAlias = runProps()
+  assert.equal(badAlias.status, 1, `别名错必须 exit 1，实际 ${badAlias.status}\n${badAlias.out}`)
+  assert.match(badAlias.out, /别名 `no-such-alias` 在 keystore 里不存在/, `必须点名那个别名\n${badAlias.out}`)
+
+  // ④d 指纹不符：**门禁刻意不判红**（形状门禁 ≠ 签名身份门禁，换证书归 #271 / gradle 的
+  //     `releaseSigningApproved` 管），所以这里如实钉住「它现在的真实行为」，不伪造一条红：
+  //     期望是「exit 0 + ⚠ 点名『这不是已发布证书』并给出期望值」。
+  //     ⚠ 本单发现这条 ⚠ 支路**当前是空转**：expectedCertSha256() 用正则去 build.gradle 里找
+  //     `EXPECTED_CERT_SHA256 = '<64 hex>'` 字面量，而 #271 之后该值已经从 build.gradle 挪到
+  //     `config/appIdentity.json`（build.gradle 只写 `def EXPECTED_CERT_SHA256 = expectedCertSha256Raw`），
+  //     于是 expected 恒为 null、比较分支永不进入 —— 实测下面这把它们自己生成的证书**一句警告都没有**。
+  //     这条断言是**绊线**：修好支路（改成读 config/appIdentity.json）之后它会红，提示把这里换成
+  //     「不符必须点名期望值」的真断言；修之前它也钉住了「现在到底有没有在警告」这个事实。
+  writeProps(ksProps(storeFile))
+  const mismatch = runProps()
+  assert.equal(mismatch.status, 0, `指纹不符**不是**这道门禁的判据（换证书归 #271），不该 exit≠0\n${mismatch.out}`)
+  assert.match(mismatch.out, new RegExp(`证书 SHA-256\\s*=\\s*${probeSha}`), `必须打出实际指纹\n${mismatch.out}`)
+  assert.doesNotMatch(
+    mismatch.out,
+    /这不是已发布证书/,
+    '指纹告警支路看起来已经修好了（现在会点名「这不是已发布证书」）—— 请把这条断言换成真正向对照：' +
+      '另造一把 key 的 keystore → 必须点名 build.gradle 期望值与实际值两个不同指纹（#453 N8）'
+  )
+  // 顺带把「它靠什么判期望值」的事实也钉住：值不在 build.gradle 的字面量里了
+  const appIdentity = JSON.parse(readFileSync(path.join(ROOT, 'config/appIdentity.json'), 'utf8'))
+  assert.equal(typeof appIdentity.expectedCertSha256, 'string', 'config/appIdentity.json 里应有 expectedCertSha256')
+  assert.notEqual(
+    appIdentity.expectedCertSha256.toLowerCase(),
+    probeSha,
+    '这把临时 keystore 的指纹不该等于已发布证书（否则④d 这一拍什么都没证明）'
+  )
+})
+
+// ---------------------------------------------------------------- N9 check:limits（#453 第 3 优先）
+
+test('N9 check:limits：注入裸阈值 → exit 1 且点名 文件:行:值；改掉镜像常量（第二份真相源）→ 点名两个不同值；还原 → exit 0', (t) => {
+  const gate = commandOf('check:limits')
+  assert.match(
+    gate.raw,
+    /^node scripts\/check-limits\.mjs$/,
+    `check:limits 的命令行变了（现在是 \`${gate.raw}\`）——负向对照要跟着重新确认`
+  )
+
+  // 为什么在**临时副本**里注入，而不是像 N1/N2 那样往真仓库的 src/ 塞文件：
+  //   ① check-limits 的扫描对象是固定的 10 个「持有运行期阈值」的文件（WATCHED），
+  //      所以注入只能**改这些文件**（新塞一个文件它根本不看）。而 src/index.html 与
+  //      src/services/attachments/limits.ts 同时被 tests/unit/limits-config.test.mjs 读盘断言 ——
+  //      单元层是多文件并行跑的，在真仓库里改它们几百毫秒 = 给隔壁用例埋一颗随机红（#456 那个坑）。
+  //   ② 脚本的 ROOT 由自身路径推出（`scripts/check-limits.mjs` → 上一级），所以把
+  //      `scripts/check-limits.mjs` + `src/` 一起复制到 mkdtemp 目录，扫的就是副本；
+  //      命令行仍然是 commandOf() 从 package.json 读出来的**同一条**（不另写一份命令）。
+  const dir = scratch('limits')
+  t.after(() => rmSync(dir, { recursive: true, force: true }))
+  mkdirSync(path.join(dir, 'scripts'), { recursive: true })
+  cpSync(path.join(ROOT, 'scripts/check-limits.mjs'), path.join(dir, 'scripts/check-limits.mjs'))
+  cpSync(path.join(ROOT, 'src'), path.join(dir, 'src'), { recursive: true })
+
+  /** 注入点：`limits.ts` 的 WATCHED 登记是 `allow: []`（一处裸数字都不许有），最干净 */
+  const PROBE_REL = 'src/services/attachments/limits.ts'
+  /** 镜像点：`src/index.html` 的 BOOT_DEADLINE_MS = 12000（与 LIMITS.bootDeadlineMs 同值，单测守） */
+  const MIRROR_REL = 'src/index.html'
+  const probeFile = path.join(dir, PROBE_REL)
+  const mirrorFile = path.join(dir, MIRROR_REL)
+  const originalProbe = readFileSync(probeFile, 'utf8')
+  const originalMirror = readFileSync(mirrorFile, 'utf8')
+  assert.match(
+    originalMirror,
+    /BOOT_DEADLINE_MS = 12000/,
+    `镜像常量换写法了（${MIRROR_REL} 里找不到 BOOT_DEADLINE_MS = 12000）——第二拍要跟着改`
+  )
+
+  // 第一拍：裸阈值（#275 的回归形态 —— 有人顺手又写一个 45000）
+  assertNegativeControl(
+    {
+      id: 'N9',
+      gate: 'check:limits',
+      script: 'check:limits',
+      scriptExpect: /^node scripts\/check-limits\.mjs$/,
+      what: `往受保护文件 ${PROBE_REL} 尾部追加 \`export const __GATE_NEG_BARE_TIMEOUT = 45000\``,
+      artifact: `（临时副本里的）${PROBE_REL}`,
+      inject: () => {
+        writeFileSync(probeFile, `${originalProbe}\nexport const __GATE_NEG_BARE_TIMEOUT = 45000\n`)
+        return () => writeFileSync(probeFile, originalProbe)
+      },
+      // 红必须点到「哪个文件、哪一行、哪个值」——只说「有未收敛阈值」等于让人全仓 grep（#275 的原病）
+      // 行号必须点到注入的那一行（文件路径里的 . 要转义，其余字符对 RegExp 字面量无害）
+      red: new RegExp(`${PROBE_REL.replace(/\./g, '\\.')}:\\d+: 45000（换算值 45000）`),
+    },
+    { cwd: dir, positiveOut: /阈值收敛检查通过/ }
+  )
+
+  // 第二拍：「把某个上限常量改一处而不改另一处」= 制造第二份真相源。
+  // 这里改的是**镜像那份**（src/index.html 的 12000 → 13000）：WATCHED 里登记的是 12000，
+  // 实际代码里出现的是 13000 —— 报错必须**同时**点出这两个不同的值，人才知道该看哪一处。
+  assertNegativeControl(
+    {
+      id: 'N9',
+      gate: 'check:limits',
+      script: 'check:limits',
+      scriptExpect: /^node scripts\/check-limits\.mjs$/,
+      what: `把 ${MIRROR_REL} 的镜像常量 12000 改成 13000（登记的是 12000，代码里是 13000）`,
+      artifact: `（临时副本里的）${MIRROR_REL}`,
+      inject: () => {
+        writeFileSync(mirrorFile, originalMirror.replace('BOOT_DEADLINE_MS = 12000', 'BOOT_DEADLINE_MS = 13000'))
+        return () => writeFileSync(mirrorFile, originalMirror)
+      },
+      red: [
+        // 登记值（12000）与实际值（13000）两个不同值都要出现在报错里
+        /豁免登记 12000 × 1，实际 0 次/,
+        new RegExp(`${MIRROR_REL.replace(/\./g, '\\.')}:\\d+: 13000（换算值 13000）`),
+      ],
+    },
+    { cwd: dir, positiveOut: /阈值收敛检查通过/ }
+  )
+})
+
+// ---------------------------------------------------------------- N10 check:capabilities --strict（#453 第 2 优先）
+
+test('N10 check:capabilities：--strict 咬得住（注入低内核用法 → exit 1 且点名 文件:行），warn 档同一份注入仍 exit 0', (t) => {
+  const gate = commandOf('check:capabilities')
+  // CI 现在跑的就是这条**不带参数的** warn 档 —— 它必须恒 exit 0（这正是 #413 记的缺口），
+  // 一旦有人把它改成 `--strict`，这条断言会红，提示回来删掉 KNOWN_GAPS 里那条。
+  assert.match(
+    gate.raw,
+    /^node scripts\/check-capabilities\.mjs$/,
+    `check:capabilities 的命令行变了（现在是 \`${gate.raw}\`）——如果 CI 已经改 --strict，请把 KNOWN_GAPS 那条删掉并更新本用例`
+  )
+
+  // 为什么用 `--root <fixture>`：真仓库现在**本来就是 --strict exit 1**（基线 10 处缺陷，见下面第 ⑤ 拍），
+  // 所以「注入 → 红」在真仓库上证明不了任何事（红在存量上）。脚本自带 `--root`（就是给测试留的口子），
+  // 于是四拍可以完全脱离真仓库：干净 fixture → exit 0；注入 → exit 1 且点名注入的那一行；删掉 → exit 0。
+  const dir = scratch('capabilities')
+  t.after(() => rmSync(dir, { recursive: true, force: true }))
+  const srcDir = path.join(dir, 'src')
+  mkdirSync(srcDir, { recursive: true })
+  writeFileSync(path.join(srcDir, 'ok.ts'), 'export const probeAnswer = 42\n')
+  const probeRel = 'src/__gate-neg-capabilities-probe.ts'
+  const probeFile = path.join(dir, probeRel)
+  const runGate = (extra) => run(commandOf('check:capabilities', ['--root', dir, ...extra]))
+
+  // ① 正例：干净 fixture root → --strict exit 0（没有这一拍，后面的 exit 1 可能只是「恒红」）
+  const clean = runGate(['--strict'])
+  assert.equal(clean.status, 0, `干净 fixture 上 --strict 必须 exit 0\n${clean.out}`)
+  assert.match(clean.out, /✅ 四类盘点都没有缺陷/, `正例要能看出「真的扫了且没缺陷」\n${clean.out}`)
+
+  // ② 注入「低内核不支持」的能力用法（#453 点名的形态之一：Promise.withResolvers 首支持 Chromium 119）。
+  //    同时钉住「判据不是见 at 就报」：Array.prototype.at 也是 92，但入口 polyfill 装了它 → 不算缺陷。
+  try {
+    writeFileSync(
+      probeFile,
+      [
+        '// 低内核（Android WebView 83）不支持：Promise.withResolvers 首支持 Chromium 119，入口 polyfill 没补',
+        'export const deferred = Promise.withResolvers()',
+        '',
+        '// Array.prototype.at 也是 92，但 polyfill 装了它 —— 这一行不该被算成缺陷',
+        'export const legacyFirst = [1, 2, 3].at(-1)',
+        '',
+      ].join('\n')
+    )
+
+    // ③a --strict：必须 exit 1，且**点名注入的文件:行 + 那条判据**
+    const strict = runGate(['--strict'])
+    assert.notEqual(strict.status, 0, `--strict 在注入低内核用法后必须 exit≠0（负向对照失效 = 恒绿）\n${strict.out}`)
+    assert.match(
+      strict.out,
+      /\[api\] src\/__gate-neg-capabilities-probe\.ts:2  Promise\.withResolvers 存在（首支持 Chromium 119，无兜底）/,
+      `--strict 的红必须点到「注入的文件:行」与「哪一条能力」\n${strict.out}`
+    )
+    assert.match(strict.out, /各类缺陷数：api 1 /, `缺陷数必须正好 1（.at 被 polyfill 覆盖了，不该算缺陷）\n${strict.out}`)
+
+    // ③b 同一份注入下的 warn 档（= CI 现在跑的那条命令）：**exit 0，但缺陷清单照旧列出来**
+    //     —— 这就是 KNOWN_GAPS #413 说的「结构上恒绿」：扫描器在工作，CI 那道门却咬不住。
+    const warn = runGate([])
+    assert.equal(warn.status, 0, `warn 档必须恒 exit 0（这就是 #413 的缺口；它一旦变红，请回来更新 KNOWN_GAPS）\n${warn.out}`)
+    assert.match(warn.out, /⚠ 1 处能力假设缺陷/, `warn 档必须把缺陷列出来（只是不拦截）\n${warn.out}`)
+    assert.match(
+      warn.out,
+      /\[api\] src\/__gate-neg-capabilities-probe\.ts:2/,
+      `warn 档必须点名同一处缺陷 —— 否则「恒绿」的原因是「它根本没扫到」，性质完全不同\n${warn.out}`
+    )
+  } finally {
+    // ④ 还原（探针在临时目录里，仍然显式删除，后面的 ⑤ 拍就是「还原后必须绿」的证明）
+    rmSync(probeFile, { force: true })
+  }
+
+  // ⑤ 还原后重新 exit 0（证明 ③ 的红是注入引起的）
+  const again = runGate(['--strict'])
+  assert.equal(again.status, 0, `还原后 --strict 必须回到 exit 0\n${again.out}`)
+
+  // ⑥ 真仓库口径：两档互不矛盾 —— warn 恒 0；--strict 在「有缺陷」时必须 1、在「没缺陷」时必须 0。
+  //    这一拍不写死「现在有 10 处缺陷」（那是 #413 各 lane 的进度），而是从输出里**读出**缺陷数再判，
+  //    所以 lane 全部落地后它照样绿；反过来若 --strict 判据被改软（缺陷 >0 却不红），它立刻红。
+  const realWarn = run(commandOf('check:capabilities'))
+  assert.equal(realWarn.status, 0, `真仓库 warn 档必须 exit 0（CI 跑的就是这一档）\n${realWarn.out}`)
+  const scanned = /扫描范围：src\/\*\* 共 (\d+) 个文件/.exec(realWarn.out)
+  assert.ok(Number(scanned?.[1] ?? 0) >= 100, `真仓库应扫到 ≥100 个 src 文件（实测 ${scanned?.[1]}）—— 扫不动就是口径坏了\n${realWarn.out}`)
+  const defects = Number(/合计 (\d+)/.exec(realWarn.out)?.[1] ?? 0)
+  const realStrict = run(commandOf('check:capabilities', ['--strict']))
+  assert.equal(
+    realStrict.status,
+    defects > 0 ? 1 : 0,
+    `真仓库有 ${defects} 处缺陷，--strict 却 exit ${realStrict.status} —— 两档口径不一致（warn 恒 0 是设计，strict 恒 0 是坏了）\n${realStrict.out}`
+  )
+  if (defects > 0) {
+    assert.match(realStrict.out, /\[(?:api|css|host|behavior)\] src\/[^\s:]+:\d+/, `--strict 必须逐条点名 文件:行\n${realStrict.out}`)
+  }
+  t.diagnostic(`N10：真仓库 warn 档 exit 0 / --strict exit ${realStrict.status}（存量缺陷 ${defects} 处，不写死）`)
 })
 
 // ---------------------------------------------------------------- 收尾体检
