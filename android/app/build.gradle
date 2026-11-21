@@ -140,6 +140,8 @@ def TIMEOUT_MAX_MS = 120000
 // check-ip-allow：这份名单是「废弃域黑名单」本身 —— 下方拿它比对 consume.baseUrl / pay.baseUrl / legacyHosts，不是可调地址；删掉它等于删掉这道 build 期拦截（Issue #590）
 def CONSUME_DEPRECATED_MARKERS = ['140.210.13.146', ':60013']
 def CONSUME_BASE_PATTERN = ~/https?:\/\/[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?(:\d{1,5})?/
+// 带可选环境路径前缀（/staging 等）；查询串 / 凭据仍不允许
+def CONSUME_BASE_WITH_PATH_PATTERN = ~/https?:\/\/[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?(:\d{1,5})?(\/[A-Za-z0-9._~-]+)*\/?/
 
 // 配置文件行号：先找段名（`"consume"` / `"pay"`）所在行，再在该行之后找字段名。
 // 不用完整 JSON 解析器：端点表是手写的小 JSON，键名唯一，这个精度足够指到人要看的那一行。
@@ -235,8 +237,22 @@ def readConsumeBase = { String section, String propName, List<String> legacyHost
     if (!value) {
         failConsume("${section}.baseUrl", "缺失（也没传 -P${propName}）：无法确定 ${section} 地址")
     }
-    if (!(value ==~ CONSUME_BASE_PATTERN)) {
-        failConsume("${section}.baseUrl", "必须是「协议://主机[:端口]」，不带路径 / 查询串 / 凭据：'${value}'")
+    if (!(value ==~ CONSUME_BASE_WITH_PATH_PATTERN)) {
+        failConsume("${section}.baseUrl", "必须是「协议://主机[:端口][/环境前缀]」，不带查询串 / 凭据：'${value}'")
+    }
+    // 允许**环境路径前缀**（如 `/staging`）：客户端拼装是 `${baseUrl}${path}`，
+    // base 带 /staging 与 path 带 /api/v1 拼出来是 /staging/api/v1，不会双份。
+    // 真正要防的是「base 自己已经含了接口前缀」→ 那才会拼成 /api/v1/api/v1（#651 P0 裁决 2026-11-21）。
+    // 用普通字符串正则（不用斜杠字面量），避免 Groovy 解析歧义。
+    def basePathOnly = value.replaceFirst('^https?://[^/]+', '')
+    if (basePathOnly && basePathOnly != '/') {
+        def trimmed = basePathOnly.replaceAll('/+$', '')
+        if (trimmed == '/api/v1' || trimmed.endsWith('/api/v1') || trimmed == '/v1' || trimmed.endsWith('/v1')) {
+            failConsume("${section}.baseUrl", "的路径前缀已包含 /api/v1 或 /v1，会拼成双份前缀：'${value}'（base 只写环境前缀，如 /staging）")
+        }
+        if (trimmed.contains('//')) {
+            failConsume("${section}.baseUrl", "的路径前缀里出现连续斜杠：'${value}'")
+        }
     }
     def isLoopback = value ==~ /http:\/\/(?:127\.0\.0\.1|localhost|\[::1\])(?::\d+)?/
     if (!value.startsWith('https://') && !isLoopback) {
