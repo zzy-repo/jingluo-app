@@ -1,0 +1,11 @@
+{
+  "_meta": {
+    "version": 1,
+    "policy": "docs/RELEASE-MANUAL.md §6.2「发布溯源：tag 必须是 main 祖先」（锚点 #62-发布溯源tag-必须是-main-祖先）；每条必须 reason + reviewAfter，到期必须复审"
+  },
+  "v1.4.1": {
+    "reason": "版本提交 c504ee51 从未并入 main（main 从 1.4.0 直接到 1.4.3），tag 无法重指",
+    "addedAt": "2026-11-21",
+    "reviewAfter": "2027-01-31"
+  }
+}

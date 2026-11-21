@@ -600,6 +600,28 @@ const REGISTRY = {
     what: 'CI：默认参数必落私有根（exit 0）；默认根改回 /var/www/dl → 门禁 exit 1 且报 R2 + 脚本拒并点到 #601；还原 → exit 0（另有 --selftest 5 种改坏方式）',
     mention: /check-private-publish-root\.mjs/,
   },
+  // 发布溯源门禁（v1.4.5 事故新建）：tag 指向 PR 分支提交 `d5391944`，而 main 上同题提交是 squash 后的
+  // `b43d5559` —— `git merge-base --is-ancestor v1.4.5 origin/main` 退出码 1。当时 30+ 道门禁全绿，
+  // 因为是它们看的都是「产物」与「工作区」，**没有一道问过「这个 tag 在不在 main 上」**。
+  //
+  // 判据只有一条：tag 指向的提交必须是 `origin/main` 的祖先。**不是** `git diff <tag> main`：那次差异里
+  // `auth.ts` 那 7 行全是注释、另两个文件根本不进包 —— 拿文本差异当判据会得出错误结论（事故当晚差点）。
+  //
+  // 对照写在 ci.yml 里现场注入（四拍）：同一个临时 tag 先指 `origin/main`（必须绿）→ 再指一个用
+  // `git commit-tree` 造出来的提交（父提交是 origin/main，所以必然不在 main 历史里）→ **必须 exit 1 且
+  // 点名 tag 与 sha** → 还原（指回 origin/main）→ 绿。commit-tree 只写一个对象，不动工作区/分支/远端，
+  // 「不在 main 历史里」这个形状因此完全可控，且不依赖 PR 分支上有什么。
+  // 同一份判据另有离线可重复的 L0（`tests/unit/release-traceability.test.mjs`），专钉 ci.yml 里造不出来的
+  // 形态：annotated tag 必须先 deref（v1.2.3 / v1.3.0 真是 annotated）/ gh 不可用 → exit 2（不许伪装成
+  // 「不在 main 上」）/ 浅克隆与缺 `origin/main` → exit 2 + 点明修法 / `--offline-skip` 在 CI 里被硬禁。
+  'check:release-traceability': {
+    where: '.github/workflows/ci.yml',
+    kind: 'ci',
+    what:
+      'CI 造一个不在 origin/main 历史里的 tag（commit-tree 造父提交是 main 的提交）→ 必 exit 1 且点名 tag 与 sha；' +
+      '指回 origin/main → exit 0（另有 L0 钉 annotated deref / gh 不可用 exit 2 / 浅克隆 exit 2 / --offline-skip CI 禁用）',
+    mention: /check-release-traceability\.mjs/,
+  },
 }
 
 /**

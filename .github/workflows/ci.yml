@@ -291,6 +291,106 @@ jobs:
           node scripts/check-ui-shots.mjs
           echo "负向对照通过：删被引用的图 → exit 1，塞无人引用的图 → exit 1，还原后 → exit 0"
 
+      # ──────── v1.4.5 事故：已发布的 tag 必须在 main 历史里（check:release-traceability）────────
+      # 事故（2026-11-21）：`v1.4.5` 的 tag 指向 `d5391944` —— 版本号 PR 分支上的提交，而 main 上同题提交是
+      # squash 之后的 `b43d5559`：
+      #
+      #     $ git merge-base --is-ancestor v1.4.5 origin/main ; echo $?
+      #     1
+      #
+      # 后果不是「包里差几行」，是**溯源链断了**：想「从 tag 复现问题」会 checkout 到一棵不在主线上的树，
+      # 发布物与 main 上哪个提交对应只能靠人记。当时 30 多道门禁全绿 —— 它们检查的都是「产物」与「工作区」。
+      #
+      # 判据只有一条：**tag 指向的提交必须是 origin/main 的祖先**。
+      # 不是 `git diff <tag> main`：那次差异里 `auth.ts` 那 7 行全是注释、另两个文件根本不进包，
+      # 拿文本差异当判据会得出错误结论（详见 scripts/check-release-traceability.mjs 头部那段）。
+      #
+      # 前提（实测，不是猜）：`actions/checkout` 默认 `fetch-depth: 1` = **浅克隆且不带 tag**：
+      #   · 浅克隆下 merge-base 只剩两头各 1 个提交，缺失的历史会被读成「不是祖先」→ 假红；
+      #   · 不带 tag 时 `refs/tags/*` 根本不存在。
+      # 所以下面先把 main 的完整历史与 tags 补齐（两次 fetch，实测 ≈1~2s）。脚本对「浅克隆 / 缺 origin/main /
+      # 缺 tag」三种前提缺失一律 exit 2 并点明修法（fail-closed，不伪装成「tag 不在 main 上」那种红）。
+      #
+      # **无** continue-on-error：这道门禁存在的理由就是「发布物是否出自 main」必须每次被真判一遍。
+      # ⚠ 现状（合入时，见 #651）：main 上有两个 tag 过不了 —— `v1.4.5`（d5391944）与 `v1.4.1`（c504ee51），
+      #   同根因（版本号 PR 分支上打 tag、再 squash 合并）。修法是把 tag 重指到 main 上对应提交后重发；
+      #   tag 修好之前这一步是红的 —— 红的是真问题，不是门禁误判。不要用 continue-on-error 掩盖它。
+      # 前提单独一步（两件事分开：fetch 是「把判据的输入准备好」，门禁是「判定」）。
+      # 拆成两步不只是好看：`tests/unit/gate-negative-controls.test.mjs` 的 N6 与
+      # `tests/unit/contract-c8-gate-negative.test.mjs` 的 G1 都从 ci.yml 里抽
+      # `run: pnpm run <gate>`（**单行**形态）来认定「这道门禁接线了」—— 写成多行块里的
+      # `pnpm run ...` 会从两套登记机制里一起消失（登记表当场变 stale，接线也没人看得见）。
+      - name: release 溯源：补齐 main 历史与 tags（check:release-traceability 的前提）
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+          if [ "$(git rev-parse --is-shallow-repository)" = "true" ]; then
+            git fetch --no-tags --unshallow origin
+          fi
+          git fetch --force --tags origin
+          echo "origin/main=$(git rev-parse --short origin/main)｜tags=$(git tag --list | wc -l)｜shallow=$(git rev-parse --is-shallow-repository)"
+
+      - name: release 溯源（check:release-traceability）
+        env:
+          # gh 读 releases（哪些 tag 算「已发布」）；workflow 级 permissions: contents: read 足够
+          GH_TOKEN: ${{ github.token }}
+        run: pnpm run check:release-traceability
+
+      # 负向对照（四拍，**无** continue-on-error）：同一个临时 tag，先指 origin/main（必须绿）→ 再指一个
+      # **不在** main 历史里的提交（必须 exit 1 且点名 tag 与 sha）→ 还原（指回 main）→ 必须绿。
+      # 为什么用 `git commit-tree` 造那个提交：它只写一个对象（父提交是 origin/main），不动工作区、不动分支、
+      # 不推远端 —— 「不在 main 历史里」这个形状因此完全可控，且不依赖 PR 分支上有什么。
+      # 这一步同时证明上面那两次 fetch 真把足够的历史拿到了：否则「必须红」会退化成「永远红」。
+      - name: 负向对照：不在 main 历史里的 tag 必须被 check:release-traceability 拦下
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          PROBE=zz-gate-neg-release-trace
+          OUT=$(mktemp)
+          trap 'rm -f "$OUT"; git tag -d "$PROBE" >/dev/null 2>&1 || true' EXIT
+          MAIN=$(git rev-parse origin/main)
+
+          # ① 正例：临时 tag 指向 origin/main 本身 → 必须 exit 0（同一个 tag 名，下面只换指向）
+          git tag -f "$PROBE" "$MAIN"
+          node scripts/check-release-traceability.mjs --tag "$PROBE" > "$OUT" 2>&1 || {
+            echo "::error::负向对照的正例失败：tag 指向 origin/main 本身却判红了（前提 fetch 不够？）"
+            cat "$OUT"
+            exit 1
+          }
+          echo "① 指向 origin/main：exit 0"
+
+          # ② 注入：同一个 tag 改指到一个**不在** main 历史里的提交（父提交是 origin/main）
+          OFF=$(git -c user.name=ci -c user.email=ci@example.invalid commit-tree "$MAIN^{tree}" -p "$MAIN" -m "ci 负向对照：不在 origin/main 历史里的提交")
+          git tag -f "$PROBE" "$OFF"
+
+          # ③ 必须红，且报错点出「这个 tag + 这个 sha + 不在 origin/main 历史里」
+          if node scripts/check-release-traceability.mjs --tag "$PROBE" > "$OUT" 2>&1; then
+            echo "::error::负向对照失败：tag 指向非 main 提交后门禁仍然通过（判据没生效 / 被改软）"
+            cat "$OUT"
+            exit 1
+          fi
+          grep -F -q 'tag `'"$PROBE"'` 指向 `'"$(printf %s "$OFF" | cut -c1-8)"'`' "$OUT" || {
+            echo "::error::负向对照失败：红了，但报错没点出「$PROBE → ${OFF}」"
+            cat "$OUT"
+            exit 1
+          }
+          grep -F -q '不在 origin/main 历史里' "$OUT" || {
+            echo "::error::负向对照失败：红了，但没点明「不在 origin/main 历史里」"
+            cat "$OUT"
+            exit 1
+          }
+          echo "② 指向非 main 提交：exit 1，且点到了 $PROBE → ${OFF}"
+
+          # ④ 还原 → 必须回到 exit 0（证明「红」是注入引起的，不是恒红）
+          git tag -f "$PROBE" "$MAIN"
+          node scripts/check-release-traceability.mjs --tag "$PROBE" > "$OUT" 2>&1 || {
+            echo "::error::负向对照的还原拍失败：指回 origin/main 之后仍然红 —— 门禁可能恒红"
+            cat "$OUT"
+            exit 1
+          }
+          echo "③ 还原（指回 origin/main）：exit 0 —— 四拍全过"
+
       # ─────────── Issue #697（P0 发布链）：签名凭据门禁接进流水线 ───────────
       # 脚本是 #272 建的，但指纹判据一直是半死的：`expectedCertSha256()` 去 build.gradle 找
       # `EXPECTED_CERT_SHA256 = '<64 hex>'` 字面量，而 #271 之后这个值只在 config/appIdentity.json

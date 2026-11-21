@@ -441,6 +441,7 @@ git push origin v1.4.0-beta.9
 
 - tag 必须是 `v<version>`（本手册与可选的 workflow 都按这个约定解析版本号，格式不符会 `::error::` 退出）。
 - tag 一旦推错 commit：**不要 force 改已有 tag**。删 Release 后删 tag 再重打，或换新版本号。
+- tag 指向的提交必须是 `main` 的祖先（从 tag 就能复现问题）：判据、门禁与豁免流程见 [§6.2](#62-发布溯源tag-必须是-main-祖先)。
 - **push tag 不会触发任何 workflow**（`.github/workflows/release.yml` 已改成手动触发，见 §6.1）。
   这是刻意的：以前「推 tag → workflow 去 dl 清单里找这个版本 → 找不到就红」把发版绑死在 dl 上，
   1.4.3 按 #614 裁决不进 dl，于是每次发布都必然红。现在 tag 只是 tag。
@@ -506,6 +507,59 @@ tag 不存在 → 提示先 push tag；`package.json` 版本对不上 → 指名
 取不到 APK → 列出三条出路（填 `apk_url` / 先手工 `gh release upload` / 走做法 A）。
 
 - 观察：`gh run list --workflow=release.yml --limit 3`（手动触发的那条）。
+
+---
+
+### 6.2 发布溯源：tag 必须是 main 祖先
+
+**判据只有一条**：tag 指向的提交必须是 `origin/main` 的祖先。
+
+```bash
+git merge-base --is-ancestor v$V origin/main ; echo $?      # 必须是 0
+```
+
+为什么单独立这一节：`v1.4.5` 发出去之后才发现 tag 指向的是**版本号 PR 分支上的提交** `d5391944`，
+而 main 上同题提交是 squash 之后的 `b43d5559` —— 于是「从 tag 复现问题」checkout 出来是一棵
+**不在主线上**的树，发布物与 main 的对应关系只能靠人记。当时 30 多道门禁全绿，因为它们检查的都是
+「产物」和「工作区」，**没有一道问过「这个 tag 在不在 main 上」**。
+
+门禁：`pnpm run check:release-traceability`（`scripts/check-release-traceability.mjs`，CI 里每跑一次；
+`--tag <t>` 只查一个，`--limit <n>` 改窗口）。注意它判的是**祖先关系**，不是
+`git diff <tag> main` —— 那次差异里 7 行是注释、两个文件根本不进包，拿文本差异当判据会得出错误结论。
+
+红了怎么办：
+
+1. **能重指就重指**：删 Release → 删 tag → 在 main 的合并提交上重打 → 重建/重发（别 force 改已有 tag）。
+2. **确实无法重指**（版本提交从未进过 main，重指等于伪造祖先关系）→ 走下面的豁免流程。
+   这类历史遗留**只准豁免，不准重指**：把 tag 挪到 main 上某个提交，会让溯源链看起来是通的，实际是拼出来的。
+
+#### 豁免流程（有到期日的显式例外，不是「放宽」）
+
+唯一载体：**`scripts/release-traceability-allowlist.json`（入库文件）**。不提供任何命令行开关 ——
+开关会被当成默认值，入库清单要过 review、而且每次运行都会把名字打在屏幕上。
+
+- **谁能加**：只有 release owner 或当次发布负责人。PR 里必须附证据（`git merge-base --is-ancestor … ; echo $?`
+  的输出 + 为什么那条版本提交从未进 main），经 owner 批准后合入。
+- **必须写什么**：每条 `reason`（为什么不能重指）+ `reviewAfter`（到期日 `YYYY-MM-DD`，一般不超过 90 天）。
+  缺一个 / 日期非法在 `--strict` 下直接 exit 1，而 **CI 里严格口径自动开启**（脚本检测到 CI 环境变量即等价 `--strict`，
+  不靠 ci.yml 那一行怎么写）。`addedAt` 记登记日期，供审计。
+- **跑起来长什么样**（不静默，且**不计入失败**）：
+
+  ```
+  [ALLOW] tag=v1.4.1 reason="版本提交 c504ee51 从未并入 main（main 从 1.4.0 直接到 1.4.3），tag 无法重指" reviewAfter=2027-01-31
+  ```
+
+- **到期必须复审**：`今天 > reviewAfter` → 门禁 exit 1，报「豁免已过期，请重指或删除该 tag」并打印该条 reason。
+  复审后三选一：重指 tag / 由 owner 复审后**重设 `reviewAfter` 并写清复审结论**（续期是复审，不是免检）/
+  删掉该 tag 与其豁免条目。**到期日就是这套机制的全部意义**：永久豁免 = 永久后门。
+- **条目用不上就清理**：tag 已删除、没有 release 记录、或者它其实**已经是 main 祖先**时，运行会打
+  `[WARN]` 点名要求清理 —— 豁免清单不许变成垃圾桶。
+- **禁止**把「有对应 main 提交、只是还没重指」的 tag 塞进清单：那种 tag 的正确修法是**重指**（`v1.4.5`
+  就是这一类，它有 main 上的对应提交 `b43d5559`）。
+
+当前登记（#651）：`v1.4.1` —— 版本提交 `c504ee51` 从未并入 main，`reviewAfter` 2027-01-31。
+
+> 引用这一节请用锚点 `#62-发布溯源tag-必须是-main-祖先`，不要写行号（行号会漂）。
 
 ---
 
