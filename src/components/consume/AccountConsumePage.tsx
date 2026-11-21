@@ -57,6 +57,21 @@ export type AccountSubPage = 'wallet' | 'source' | 'cards' | 'buy' | 'quota' | '
 /** 连通性三态（#727 §二）：`idle` 还没测 / `testing` 测试中 / `ok` 正常 / `fail` 失败可重试 */
 type ConnState = { phase: 'idle' } | { phase: 'testing' } | { phase: 'ok'; ms: number } | { phase: 'fail' }
 
+/** 「模型来源」的三个选项（底层 kind：内置=ours / 第三方=openai|anthropic / 官方=deepseek） */
+type SourceOption = 'builtin' | 'third' | 'official'
+
+const SOURCE_OPTIONS: { id: SourceOption; labelKey: TranslationKey }[] = [
+  { id: 'builtin', labelKey: 'settingsSourceBuiltin' },
+  { id: 'third', labelKey: 'settingsSourceThird' },
+  { id: 'official', labelKey: 'settingsSourceOfficial' },
+]
+
+/** 第三方渠道下的两个协议（既有两个 kind，不新增） */
+const THIRD_PARTY_PROTOCOLS: { kind: 'openai' | 'anthropic'; labelKey: TranslationKey }[] = [
+  { kind: 'openai', labelKey: 'settingsProtocolOpenai' },
+  { kind: 'anthropic', labelKey: 'settingsProtocolAnthropic' },
+]
+
 export type AccountConsumePanelProps = {
   /**
    * 当前显示哪一屏：`null` = L1 列表页，其余 = 各自的下级页面（L2）。
@@ -319,6 +334,32 @@ export const AccountConsumePage = ({
   }
 
   /** 下级页面的头部：左上角「返回」+ 本页标题（设置弹层的头部与 X 不动，这里只是内容区的二级头） */
+  /**
+   * 选「模型来源」里的某一项。
+   *
+   * **只有内置渠道判断登录**（托管 Key / 余额挂在账号上）：未登录 → 去登录/注册；
+   * 第三方渠道与官方渠道永远不拦，直接切 kind 让用户填 Key（#608）。
+   */
+  const chooseSource = useCallback(
+    (source: SourceOption) => {
+      if (source === 'builtin') {
+        if (signedIn !== true) {
+          onNavigate('account')
+          return
+        }
+        setProviderKind('ours')
+        return
+      }
+      if (source === 'official') {
+        setProviderKind('deepseek')
+        return
+      }
+      // 第三方渠道：保持当前协议（老用户已选 anthropic 就还是 anthropic），默认 OpenAI 兼容
+      setProviderKind(kind === 'anthropic' ? 'anthropic' : 'openai')
+    },
+    [kind, onNavigate, signedIn]
+  )
+
   /** 与 `subHeader` 同形，只是标题换成一个自定义词条（例如登录卡出现时这一屏叫「登录」） */
   const subHeaderWithTitle = (back: AccountSubPage | null, titleKey: TranslationKey) => (
     <div className={styles.subHeader}>
@@ -401,30 +442,56 @@ export const AccountConsumePage = ({
     )
   }
 
-  // ───────────────────────────── L2：模型来源（渠道 / API Key / 模型 / 连通性） ────
+  // ───────────────────────────── L2：模型来源（三个选项） ────────────────────────
   if (page === 'source') {
     /**
-     * 四个渠道里**只有「我们的渠道」需要账号**（托管 Key / 余额都挂在账号上）：
-     * 未登录且当前选中的是它 → 这一页换成登录界面（同一个容器、没有第二层弹层）。
-     * DeepSeek 官方 / OpenAI 兼容 / Anthropic 三个渠道**永远不拦登录**，只填 Key 就能用（#608）。
+     * 「模型来源」= 三个选项（不是四个渠道，进来也不跳登录）：
+     *
+     *   内置渠道（kind=ours）    → **只有它判断登录**：未登录 → 登录/注册；已登录 → 托管 Key
+     *   第三方渠道               → 协议（OpenAI 兼容 / Anthropic）+ Base URL + API Key + 模型名
+     *   官方渠道（kind=deepseek） → 只填 API Key
+     *
+     * 底层仍是既有的 `ProviderKind`：这里只是把「四个渠道」换成「三个来源 + 一个协议切换」的入口，
+     * 字段渲染照旧由 `spec.fields` 决定（`ApiConfigFields`），不新增任何渠道状态。
      */
-    const oursNeedsLogin = kind === 'ours' && signedIn !== true
+    const currentSource: SourceOption =
+      kind === 'ours' ? 'builtin' : kind === 'deepseek' ? 'official' : 'third'
     return (
       <div className={`${styles.page} ${styles.embedded}`} data-testid="account-consume-page">
-        {oursNeedsLogin
-          ? subHeaderWithTitle(null, 'sub2authLogin')
-          : subHeader('source', null)}
-        {oursNeedsLogin ? (
-          <>
-            <div className={styles.authNotice} role="status" data-testid="settings-ours-needs-login">
-              {t('settingsOursNeedsLogin')}
-            </div>
-            {/* 「暂不登录」= 回退到不需要账号的 DeepSeek 官方渠道（不是停在半死状态） */}
-            <SettingsAuthCard consume={consume} onSkip={() => setProviderKind('deepseek')} />
-          </>
-        ) : (
-          sourcePage
-        )}
+        {subHeader('source', null)}
+        <div className={styles.authSegmented} role="group" aria-label={t('accountConsumeGroupSource')}>
+          {SOURCE_OPTIONS.map((option) => (
+            <button
+              key={option.id}
+              type="button"
+              className={
+                currentSource === option.id ? `${styles.authSeg} ${styles.authSegOn}` : styles.authSeg
+              }
+              aria-pressed={currentSource === option.id}
+              data-testid={`settings-source-${option.id}`}
+              onClick={() => chooseSource(option.id)}
+            >
+              {t(option.labelKey)}
+            </button>
+          ))}
+        </div>
+        {currentSource === 'third' ? (
+          <div className={styles.authSegmented} role="group" aria-label={t('settingsThirdPartyProtocol')}>
+            {THIRD_PARTY_PROTOCOLS.map((protocol) => (
+              <button
+                key={protocol.kind}
+                type="button"
+                className={kind === protocol.kind ? `${styles.authSeg} ${styles.authSegOn}` : styles.authSeg}
+                aria-pressed={kind === protocol.kind}
+                data-testid={`settings-protocol-${protocol.kind}`}
+                onClick={() => setProviderKind(protocol.kind)}
+              >
+                {t(protocol.labelKey)}
+              </button>
+            ))}
+          </div>
+        ) : null}
+        {sourcePage}
         {sheetNode}
       </div>
     )

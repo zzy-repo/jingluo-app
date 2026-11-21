@@ -833,7 +833,12 @@ export const en = {
 
   // Sign-in / sign-up (sub2api /api/v1/auth)
   sub2authEmail: 'Email',
-  settingsOursNeedsLogin: 'The built-in channel needs an account: sign in to claim the managed key (or switch back to DeepSeek official and just enter an API key)',
+  settingsSourceBuiltin: 'Built-in channel',
+  settingsSourceThird: 'Third-party channel',
+  settingsSourceOfficial: 'Official channel',
+  settingsThirdPartyProtocol: 'Protocol',
+  settingsProtocolOpenai: 'OpenAI-compatible',
+  settingsProtocolAnthropic: 'Anthropic-compatible',
   settingsAuthEmailPlaceholder: 'Email',
   settingsAuthPasswordPlaceholder: 'Password (at least 6 characters)',
   settingsAuthCodePlaceholder: 'Verification code',
@@ -841,7 +846,6 @@ export const en = {
   settingsAuthCountdown: '{seconds}s',
   settingsAuthSkip: 'Skip sign-in',
   settingsAuthHaveAccount: 'Already have an account? Sign in',
-  settingsAuthAutoCreateHint: 'An unregistered email creates an account automatically',
   settingsAuthForgotSent: 'Reset email sent — check your inbox',
   settingsAuthForgotNeedsEmail: 'Enter your email first, then tap "Forgot password"',
   sub2authPassword: 'Password',

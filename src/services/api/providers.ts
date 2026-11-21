@@ -204,7 +204,7 @@ type RawProviderSpec = Omit<ProviderSpec, 'caps'> & { caps: Omit<ProviderCaps, '
 const RAW_SPECS: Record<ProviderKind, RawProviderSpec> = {
   deepseek: {
     kind: 'deepseek',
-    label: { zh: 'DeepSeek 官方', en: 'DeepSeek Official' },
+    label: { zh: '官方渠道', en: 'Official channel' },
     protocol: 'anthropic',
     // 官方地址与模型内置，用户只需要填 Key；内置渠道优先 spec.defaults，
     // 只有老中转（共享 chat-demo:base-url 仍在用）才保留已存模型，见 apiConfig.ts（#339）

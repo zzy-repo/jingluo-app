@@ -101,6 +101,10 @@ export const SettingsAuthCard = ({ consume, onSkip }: SettingsAuthCardProps) => 
       void signIn({ email: email.trim(), password })
       return
     }
+    if (flags.loaded && !flags.registrationEnabled) {
+      setNotice(t('sub2authRegistrationDisabled'))
+      return
+    }
     // 原型没有「确认密码」一行，所以只递服务端要的两项（+ 可选验证码）
     void signUp({
       email: email.trim(),
@@ -140,7 +144,8 @@ export const SettingsAuthCard = ({ consume, onSkip }: SettingsAuthCardProps) => 
 
   return (
     <div className={styles.authCard} data-testid="settings-auth-card">
-      {flags.registrationEnabled ? (
+      {/* #727：分段控件**常显**（登录 | 注册）。服务端开关只影响「提交注册」时是否放行，
+          不再让注册入口整块消失 —— 用户必须能看见并点到注册。 */}
       <div className={styles.authSegmented} role="group" aria-label={t('sub2authAccount')}>
         <button
           type="button"
@@ -161,7 +166,6 @@ export const SettingsAuthCard = ({ consume, onSkip }: SettingsAuthCardProps) => 
           {t('sub2authRegister')}
         </button>
       </div>
-      ) : null}
 
       <input
         className={styles.authInput}
@@ -256,9 +260,7 @@ export const SettingsAuthCard = ({ consume, onSkip }: SettingsAuthCardProps) => 
         >
           {t('settingsAuthHaveAccount')}
         </button>
-      ) : (
-        <div className={styles.authHint}>{t('settingsAuthAutoCreateHint')}</div>
-      )}
+      ) : null}
     </div>
   )
 }
