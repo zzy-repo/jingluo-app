@@ -14,6 +14,7 @@
  *  2. Key 原文只从服务端拿（`sk-` + 32 字节 hex）。**客户端不得自行拼接/伪造**；本层不打日志、不进 URL。
  */
 
+import { confirmEffect, probeOnce, unconfirmedEffectError } from './confirmEffect.js'
 import type { ConsumeCallResult, ConsumeEmpty, ConsumeHttp } from './http.js'
 
 /**
@@ -225,8 +226,36 @@ export const createKey = async (
     .then((result) => (result.ok ? { ...result, data: toConsumeApiKey(result.data) } : result))
 }
 
-/** 更新（改名 / 停用 / 改额度）。**没有 `key` 字段**：想换 Key 值只能新建再删旧（#484 §3.2） */
-export const updateKey = (
+/** 更新里**可被回查验证**的字段（`reset_quota` 是命令不是状态，不进这张表） */
+const updateBodyIsVerifiable = (body: Record<string, unknown>): boolean =>
+  Object.keys(body).some((key) => key !== 'reset_quota')
+
+/** 服务端实体是否已经带上请求里的每个可验证字段（只有「全都一致」才算证据） */
+const keyMatchesUpdate = (key: ConsumeApiKey, body: Record<string, unknown>): boolean => {
+  if (body.name !== undefined && key.name !== body.name) {return false}
+  if (body.group_id !== undefined && (key.groupId ?? null) !== body.group_id) {return false}
+  if (body.status !== undefined && key.status !== body.status) {return false}
+  if (body.quota !== undefined && key.quota !== body.quota) {return false}
+  if (body.ip_whitelist !== undefined && (key.ipWhitelist ?? null) !== body.ip_whitelist) {return false}
+  if (body.ip_blacklist !== undefined && (key.ipBlacklist ?? null) !== body.ip_blacklist) {return false}
+  if (body.expires_at !== undefined && (key.expiresAt ?? null) !== body.expires_at) {return false}
+  return true
+}
+
+/**
+ * 更新（改名 / 停用 / 改额度）。**没有 `key` 字段**：想换 Key 值只能新建再删旧（#484 §3.2）。
+ *
+ * 成功判据（#679 第 3 处）：**2xx 不算数**。改名 / 改额度回 2xx + 空体时，界面会显示新值而服务端
+ * 还是旧值（额度改错了直接错算钱）。所以：
+ *   1. 响应体里带回的实体已带上请求的每个可验证字段 → 已确认（省一次请求）；
+ *   2. 否则**回查一次** `GET /api/v1/keys/:id`，同上判据；
+ *   3. 回查成功但字段还是旧值 → 反证（没生效）；回查失败 / 字段缺失 → 未知。2/3 都返回 `ok: false`。
+ *
+ * 唯一的软肋写在明处：`reset_quota` 是**命令**（「把已用量清零」），回查没法证明它发生过。
+ * 只带 `reset_quota` 的请求按「响应体里有实体就认它」处理（那实体至少说明服务端处理了这次写），
+ * 空体时同样判未确认 —— 宁可让用户再点一次「清零」，也不要谎报「已清零」。
+ */
+export const updateKey = async (
   http: ConsumeHttp,
   id: number,
   input: ConsumeKeyUpdateInput
@@ -240,16 +269,92 @@ export const updateKey = (
   if (input.quota !== undefined) {body.quota = input.quota}
   if (input.expiresAt !== undefined) {body.expires_at = input.expiresAt}
   if (input.resetQuota !== undefined) {body.reset_quota = input.resetQuota}
-  return http
-    .call<unknown>({ method: 'PUT', path: `/api/v1/keys/${id}`, body, timeout: 'write' })
-    .then((result) => (result.ok ? { ...result, data: toConsumeApiKey(result.data) } : result))
+  const result = await http.call<unknown>({ method: 'PUT', path: `/api/v1/keys/${id}`, body, timeout: 'write' })
+  if (!result.ok) {
+    return result
+  }
+  const verifiable = updateBodyIsVerifiable(body)
+  /** 响应 / 回查体里的实体：可验证字段全一致才算证据（纯命令请求：有实体就算认下） */
+  const accepted = (value: unknown): ConsumeApiKey | undefined => {
+    const key = toConsumeApiKey(value)
+    // `id === 0` 说明这个体里连实体都没有（空体 / `{message}`）
+    if (key.id === 0) {return undefined}
+    return verifiable && !keyMatchesUpdate(key, body) ? undefined : key
+  }
+  const stale = (value: unknown): boolean => {
+    const key = toConsumeApiKey(value)
+    return key.id !== 0 && verifiable && !keyMatchesUpdate(key, body)
+  }
+  const outcome = await confirmEffect<ConsumeApiKey>({
+    response: { data: result.data, raw: result.raw },
+    accept: accepted,
+    probe: probeOnce(() => getKey(http, id), accepted, stale),
+  })
+  if (outcome.confirmed) {
+    return { ok: true, data: outcome.value, status: result.status, raw: result.raw }
+  }
+  return {
+    ok: false,
+    error: unconfirmedEffectError({
+      i18nKey: 'consumeErrUpdateUnconfirmed',
+      code: 'UPDATE_UNCONFIRMED',
+      message:
+        outcome.reason === 'probe-negative'
+          ? `更新接口回了 2xx，但回查 GET /keys/${id} 的字段仍是旧值：改动没有生效`
+          : `更新接口回了 2xx，但没能确认 GET /keys/${id} 的字段已经变成请求的值`,
+      status: result.status,
+      outcome,
+    }),
+    raw: result.raw,
+  }
 }
 
 /**
  * 删除（近似幂等）：已经删掉再删会回 404，那种情况当**已完成**处理（#484 §4.3「不要当致命错」）。
+ *
+ * 成功判据（#679 第 4 处，**有额度 / 计费含义**）：`DELETE` 实测只回 `{code:0,data:{message}}`
+ * （**没有实体**），所以 2xx 完全不能证明「真的删了」。删不掉而列表里消失，等于用户以为吊销了
+ * 那把 Key、实际它还能继续烧额度。判据：
+ *   1. 响应体里没有可判定的实体（accept 恒无证据）→ 直接进回查；
+ *   2. **回查一次** `GET /api/v1/keys/:id`：404 → 真的没了（confirmed）；200 且实体还在 → 反证；
+ *   3. 回查失败 → 未知。2/3 都返回 `ok: false`（`consumeErrDeleteUnconfirmed`），界面不许说「已删除」。
+ *
+ * 注意上面那条 404-即已完成的老规则**不变**：它是「服务端明确说目标不存在」，是证据，不是猜。
  */
 export const deleteKey = async (http: ConsumeHttp, id: number): Promise<ConsumeCallResult<ConsumeEmpty>> => {
   const result = await http.call<ConsumeEmpty>({ method: 'DELETE', path: `/api/v1/keys/${id}`, timeout: 'write' })
   if (!result.ok && result.error.status === 404) {return { ok: true, data: undefined, status: 404, raw: result.raw }}
-  return result
+  if (!result.ok) {return result}
+  const outcome = await confirmEffect<ConsumeEmpty>({
+    response: { data: result.data, raw: result.raw },
+    // 成功体只有 `{message}`：没有任何可判定的字段
+    accept: () => undefined,
+    probe: async () => {
+      const probed = await getKey(http, id)
+      if (!probed.ok) {
+        // 404 = 目标确实不存在 = 已经删掉了（与上面那条老规则同一口径）
+        if (probed.error.status === 404) {return { verdict: 'confirmed', value: undefined }}
+        return { verdict: 'unknown', error: probed.error }
+      }
+      // 还读得到这把 Key = 没删掉 = 反证
+      return { verdict: 'negative' }
+    },
+  })
+  if (outcome.confirmed) {
+    return { ok: true, data: undefined, status: result.status, raw: result.raw }
+  }
+  return {
+    ok: false,
+    error: unconfirmedEffectError({
+      i18nKey: 'consumeErrDeleteUnconfirmed',
+      code: 'DELETE_UNCONFIRMED',
+      message:
+        outcome.reason === 'probe-negative'
+          ? `删除接口回了 2xx，但回查 GET /keys/${id} 仍然 200：这把 Key 还在，可能继续产生费用`
+          : `删除接口回了 2xx，但没能确认 GET /keys/${id} 已经 404`,
+      status: result.status,
+      outcome,
+    }),
+    raw: result.raw,
+  }
 }

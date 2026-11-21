@@ -963,6 +963,16 @@ export const en = {
   // A write returned 2xx but with no evidence (#660: email bind 200 + empty body, and the profile
   // recheck has no masked email either): the result is unknown, not success — always give the next step.
   consumeErrBindUnconfirmed: 'The binding result is unconfirmed. Retry, or check the account page later.',
+  // Sign out everywhere (#679 item 5, security semantics): the revoke call returned 2xx but the recheck
+  // cannot prove the sessions are gone. Never claim "signed out on all devices" — say it is unconfirmed
+  // and give the next step (sign in again to verify / check your other devices).
+  consumeErrRevokeUnconfirmed:
+    'Sign-out was submitted but the result is unconfirmed (whether every device is signed out is still unknown): sign in again to verify, and check whether your other devices are still signed in.',
+  // Unbind / update-key / delete-key "2xx but not in effect" (#679 items 2/3/4): ask the user to verify
+  // the real state instead of showing success.
+  consumeErrUnbindUnconfirmed: 'The unbind result is unconfirmed. Refresh the account page; retry if it still shows as bound.',
+  consumeErrUpdateUnconfirmed: 'The change is unconfirmed. Refresh and check this key\'s current values, then save again if needed.',
+  consumeErrDeleteUnconfirmed: 'The deletion is unconfirmed: this key may still be active and keep incurring charges. Refresh the list and retry.',
   // The line under a confirmed failure: HTTP status + the redacted upstream text (rendered by errorBlock)
   consumeErrUpstreamDetail: 'Server response: {detail}',
   // ---------------------------------------------------------------------------

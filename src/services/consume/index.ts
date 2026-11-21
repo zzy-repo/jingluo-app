@@ -153,6 +153,20 @@ export {
   type ConsumeInvitationCheck,
 } from './aff.js'
 export { bindEmail, sendBindEmailCode, unbindProvider } from './email.js'
+// ── 效果确认（#679：「2xx ≠ 生效」的唯一落点，见 confirmEffect.ts 文件头）─────────
+export {
+  confirmEffect,
+  CONSUME_EFFECT_POLICIES,
+  effectPolicyOf,
+  probeOnce,
+  unconfirmedEffectError,
+  type ConfirmEffectInput,
+  type ConfirmEffectOutcome,
+  type ConfirmFailureReason,
+  type ConfirmProbe,
+  type ConfirmProbeResult,
+  type ConsumeEffectPolicy,
+} from './confirmEffect.js'
 
 /** `createConsumeClient` 的入参：与传输层一致（token 提供者 + 可选 transport 注入） */
 export type ConsumeClientOptions = ConsumeHttpOptions

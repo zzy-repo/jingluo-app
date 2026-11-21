@@ -26,6 +26,8 @@
  *  - 返利按比例结算（比例由服务端下发），旧文案 `circular_invite` / `already_redeemed` 全部不再适用。
  */
 
+import { confirmEffect, unconfirmedEffectError } from './confirmEffect.js'
+import { isSessionError } from './errors.js'
 import type { ConsumeCallResult, ConsumeEmpty, ConsumeHttp } from './http.js'
 
 /**
@@ -332,7 +334,15 @@ export const loginWithTwoFactor = (
     .call<unknown>({ method: 'POST', path: '/api/v1/auth/login/2fa', body: { ...input }, timeout: 'write', auth: null })
     .then((result) => (result.ok ? { ...result, data: toAuthSession(result.data) } : result))
 
-/** 发注册验证码（服务端限流 5/min：429 时按 `Retry-After` 倒计时，**不要**自己另算间隔） */
+/**
+ * 发注册验证码（服务端限流 5/min：429 时按 `Retry-After` 倒计时，**不要**自己另算间隔）。
+ *
+ * 成功判据（#679 第 6 处的「发码」类）：**例外，只信 2xx** ——
+ * 依据见 `confirmEffect.ts` 的 `CONSUME_EFFECT_POLICIES.sendVerifyCode`：纯通知类，服务端没有
+ * 「这个码发出去没有」的查询端点（`/user/profile` 里没有待发验证码），回查无从谈起；
+ * 重发无副作用（只是再发一封），频控 5/min + 429 的 `retry_after` 本身就是受理证据。
+ * 所以这里**不发明一次假回查**；界面文案也不许写「验证码已发出」以外更硬的承诺（没收到就再发）。
+ */
 export const sendVerifyCode = (http: ConsumeHttp, input: { email: string; captcha?: string }): Promise<ConsumeCallResult<ConsumeEmpty>> =>
   http.call<ConsumeEmpty>({ method: 'POST', path: '/api/v1/auth/send-verify-code', body: { ...input }, timeout: 'write', auth: null })
 
@@ -349,11 +359,24 @@ export const refresh = (http: ConsumeHttp, input: { refreshToken: string }): Pro
     })
     .then((result) => (result.ok ? { ...result, data: toAuthSession(result.data) } : result))
 
-/** 忘记密码（发重置邮件 / 验证码，5/min） */
+/**
+ * 忘记密码（发重置邮件 / 验证码，5/min）。
+ *
+ * 成功判据：**例外，只信 2xx** —— 依据见 `CONSUME_EFFECT_POLICIES.forgotPassword`：
+ * 纯通知类、匿名接口无会话可回查；而且**刻意不回查**（服务端不区分「邮箱存不存在」正是为了
+ * 不泄漏账号是否存在，客户端自己回查一遍等于把这个探测口开回来）。重发无副作用。
+ */
 export const forgotPassword = (http: ConsumeHttp, input: { email: string }): Promise<ConsumeCallResult<ConsumeEmpty>> =>
   http.call<ConsumeEmpty>({ method: 'POST', path: '/api/v1/auth/forgot-password', body: { ...input }, timeout: 'write', auth: null })
 
-/** 重置密码（10/min）：`token` 与 `code` 两种形态由服务端版本决定，原样透传 */
+/**
+ * 重置密码（10/min）：`token` 与 `code` 两种形态由服务端版本决定，原样透传。
+ *
+ * 成功判据：**例外，只信 2xx** —— 依据见 `CONSUME_EFFECT_POLICIES.resetPassword`：
+ * 匿名流程没有会话（`GET /user/profile` 打不了）、接口也不回实体，**没有可回查的证据**。
+ * 唯一真正的确认是「用新密码登录一次」，那是登录流程的事（见 `login`），不是本接口能给的东西。
+ * 因此调用方**不许**把 `ok: true` 说成「密码已改」，只能说「重置请求已提交，请用新密码登录验证」。
+ */
 export const resetPassword = (
   http: ConsumeHttp,
   input: { password: string; token?: string; code?: string }
@@ -376,6 +399,68 @@ export const getProfile = (http: ConsumeHttp): Promise<ConsumeCallResult<Consume
     .call<unknown>({ method: 'GET', path: '/api/v1/user/profile', timeout: 'read' })
     .then((result) => (result.ok ? { ...result, data: toConsumeUser(result.data) } : result))
 
-/** 退出所有设备（成功后本地必须清 token：服务端已经把它全撤了） */
-export const revokeAllSessions = (http: ConsumeHttp): Promise<ConsumeCallResult<ConsumeEmpty>> =>
-  http.call<ConsumeEmpty>({ method: 'POST', path: '/api/v1/auth/revoke-all-sessions', timeout: 'write' })
+/**
+ * 退出所有设备 —— **本单（#679）第一优先修的安全语义点**。
+ *
+ * 病灶：原来 `POST /revoke-all-sessions` 拿到 2xx 就 `ok: true`，界面于是显示「已退出所有设备」。
+ * 撤销其实没生效时，这句话是**最坏的一类谎**：用户以为公用设备 / 丢失设备上的会话已经没了，
+ * 于是不再改密码、不再检查。
+ *
+ * 判据（#660 的模式，`confirmEffect` 固化）：服务端**不给实体**（实测形态是空体 / `{code:0,data:{message}}`），
+ * 唯一能自证撤销生效的手段是「**旧凭据还能不能用**」：用**同一个** JWT 回查一次 `GET /user/profile`。
+ *   - 401/403（会话类错误）→ 凭据确实失效了 → **confirmed**（`via: 'probe'`）；
+ *   - 200（还能读到自己）→ **反证**：会话没被撤销 → `confirmed: false`（`probe-negative`）；
+ *   - 回查本身失败（网络 / 5xx）→ 结论**未知** → `confirmed: false`（`probe-failed`）。
+ *
+ * 「未确认」**不是失败也不是成功**：返回 `ok: false` + `consumeErrRevokeUnconfirmed`，
+ * 文案专门说「已提交撤销请求，但结果未确认」并给出下一步（重新登录验证 / 稍后检查其他设备），
+ * **界面不许出现「已退出所有设备」**。本地 token 该清仍然要清（那是调用方的事：`store.ts` 的
+ * `signOut` 无论服务端结果如何都会清本地 —— 继续留着一个「可能还有效」的凭据才是更糟的选择）。
+ *
+ * 回查**只做一次**、不循环：撤销类写操作后的查询放大，等于把「一次网络抖动」变成「一串请求」。
+ */
+export const revokeAllSessions = async (http: ConsumeHttp): Promise<ConsumeCallResult<ConsumeEmpty>> => {
+  const result = await http.call<ConsumeEmpty>({
+    method: 'POST',
+    path: '/api/v1/auth/revoke-all-sessions',
+    timeout: 'write',
+  })
+  if (!result.ok) {
+    return result
+  }
+  const outcome = await confirmEffect<ConsumeEmpty>({
+    response: { data: result.data, raw: result.raw },
+    // 响应体里没有任何能自证的字段（不给回显「撤销了几个会话」这种契约），所以 accept 恒无证据
+    accept: () => undefined,
+    probe: async () => {
+      const probed = await getProfile(http)
+      if (probed.ok) {
+        // 旧 JWT 还能读到自己的资料 = 会话仍然有效 = **反证**
+        return { verdict: 'negative' }
+      }
+      if (isSessionError(probed.error)) {
+        // 会话类错误是**唯一**能证明「撤销生效」的证据：凭据已经不能用了
+        return { verdict: 'confirmed', value: undefined }
+      }
+      // 429 / 5xx / 网络：既不能证明撤了，也不能证明没撤
+      return { verdict: 'unknown', error: probed.error }
+    },
+  })
+  if (outcome.confirmed) {
+    return { ok: true, data: undefined, status: result.status, raw: result.raw }
+  }
+  return {
+    ok: false,
+    error: unconfirmedEffectError({
+      i18nKey: 'consumeErrRevokeUnconfirmed',
+      code: 'REVOKE_UNCONFIRMED',
+      message:
+        outcome.reason === 'probe-negative'
+          ? '撤销接口回了 2xx，但用同一个 JWT 回查 /user/profile 仍然 200：会话没有被撤销'
+          : '撤销接口回了 2xx，但没能确认会话已经失效（回查 /user/profile 的结果不可判定）',
+      status: result.status,
+      outcome,
+    }),
+    raw: result.raw,
+  }
+}

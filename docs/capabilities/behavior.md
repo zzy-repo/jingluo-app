@@ -8,7 +8,7 @@
 （主战场），宽度 360 / 390 / 412 三档。复现脚本与原始读数在
 [`docs/ui/209-behavior/`](../ui/209-behavior/README.md)。
 
-> - 快照基准：`acf6826`（`origin/main` tip，2026-11-19 12:28:21 +0800）· 采集时间：2026-11-19 18:55 (+0800)
+> - 快照基准：`171f02f`（`origin/main` tip，2026-11-19 12:28:21 +0800）· 采集时间：2026-11-21 11:56 (+0800)
 > - 本轮只重打基准：四条假设的实测读数来自已提交的 `docs/ui/209-behavior/*.json`，本轮没有设备可重跑，数字一个没动（见文末「未测边界」）
 > - 表里的**行号**与**合计数字**都在快照基准上复算过；`tests/unit/capabilities-docs-sync.test.mjs` 会拿本表的行数 / 处置分布 / 风险分布去对，文档落后于代码就红
 > - 判定规则只在 `scripts/lib/behaviorAssumptionAudit.mjs`；改口径要同时改那个模块与 `tests/unit/behavior-assumption-audit.test.mjs`

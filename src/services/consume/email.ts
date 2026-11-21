@@ -16,12 +16,18 @@
  */
 
 import { getProfile, toConsumeUser, type ConsumeUser } from './auth.js'
+import { confirmEffect, probeOnce, unconfirmedEffectError } from './confirmEffect.js'
 import type { Sub2ApiError } from './errors.js'
 import { emptyRawResponse, type ConsumeCallResult, type ConsumeEmpty, type ConsumeHttp } from './http.js'
 
 /**
  * 绑定邮箱的验证码（JWT）。
  * 返回体是空 / `{message}`，这里不猜字段，`pending: true` 表示「已发出，去查收」。
+ *
+ * 成功判据（#679 第 1 处）：**例外，只信 2xx** —— 依据见 `CONSUME_EFFECT_POLICIES.sendBindEmailCode`。
+ * 服务端没有「这个邮箱有没有收到码」的查询端点（`/user/profile` 里没有待发验证码之类的状态），
+ * 回查无从谈起；重发本身无副作用（只是再发一封），频控 5/min + 429 的 `retry_after` 即受理证据。
+ * 所以这里不发明一次假回查；但也**不许**在文案上写得比事实更硬（没收到就再发）。
  */
 export const sendBindEmailCode = (http: ConsumeHttp, email: string): Promise<ConsumeCallResult<ConsumeEmpty>> =>
   http.call<ConsumeEmpty>({
@@ -105,11 +111,20 @@ export const bindEmail = async (
  * 解绑某个身份（`provider`：`email` / `linuxdo` / `github` / …）。
  *
  * `provider` 只允许**路径段**：拼进 URL 前做一次白名单校验，避免把 `../` 或查询串拼进路径。
+ *
+ * 成功判据（#679 第 2 处）：**2xx 不算数**。解绑不生效意味着账号上仍挂着一个第三方登录入口
+ * （别人还能用那个身份进来），而 DELETE 的 2xx 只说明「服务端收下了请求」。所以：
+ *   1. 响应体里就带回了账号主体，且 `identities[provider].bound === false` → 已确认（省一次请求）；
+ *   2. 否则**回查一次** `GET /user/profile`，同上判据；
+ *   3. 回查说 `bound === true` → 反证（没生效）；回查失败 / 字段缺失 → 未知。
+ * 2/3 两种都返回 `ok: false`（`consumeErrUnbindUnconfirmed`）：界面不许显示「已解绑」。
+ *
+ * `bound` 字段整个缺失 = **不知道**，不是「未绑定」—— 拿「不知道」当证据是 #660 记下的那类错。
  */
-export const unbindProvider = (http: ConsumeHttp, provider: string): Promise<ConsumeCallResult<ConsumeUser>> => {
+export const unbindProvider = async (http: ConsumeHttp, provider: string): Promise<ConsumeCallResult<ConsumeUser>> => {
   const name = provider.trim()
   if (!/^[a-z][a-z0-9_-]*$/i.test(name)) {
-    return Promise.resolve({
+    return {
       ok: false,
       error: {
         kind: 'bad_request',
@@ -121,9 +136,38 @@ export const unbindProvider = (http: ConsumeHttp, provider: string): Promise<Con
         i18nKey: 'consumeErrBadRequest',
       },
       raw: emptyRawResponse(),
-    })
+    }
   }
-  return http
-    .call<unknown>({ method: 'DELETE', path: `/api/v1/user/account-bindings/${name}`, timeout: 'write' })
-    .then((result) => (result.ok ? { ...result, data: toConsumeUser(result.data) } : result))
+  const result = await http.call<unknown>({ method: 'DELETE', path: `/api/v1/user/account-bindings/${name}`, timeout: 'write' })
+  if (!result.ok) {
+    return result
+  }
+  /** 账号主体里这个 provider 是否**明确**未绑定（`undefined` = 服务端没说，不算证据） */
+  const unbound = (value: unknown): ConsumeUser | undefined => {
+    const user = toConsumeUser(value)
+    return user.identities?.[name]?.bound === false ? user : undefined
+  }
+  const stillBound = (value: unknown): boolean => toConsumeUser(value).identities?.[name]?.bound === true
+  const outcome = await confirmEffect<ConsumeUser>({
+    response: { data: result.data, raw: result.raw },
+    accept: unbound,
+    probe: probeOnce(() => getProfile(http), unbound, stillBound),
+  })
+  if (outcome.confirmed) {
+    return { ok: true, data: outcome.value, status: result.status, raw: result.raw }
+  }
+  return {
+    ok: false,
+    error: unconfirmedEffectError({
+      i18nKey: 'consumeErrUnbindUnconfirmed',
+      code: 'UNBIND_UNCONFIRMED',
+      message:
+        outcome.reason === 'probe-negative'
+          ? `解绑接口回了 2xx，但回查 /user/profile 里 identities.${name}.bound 仍是 true：解绑没有生效`
+          : `解绑接口回了 2xx，但没能确认 identities.${name}.bound 已变成 false`,
+      status: result.status,
+      outcome,
+    }),
+    raw: result.raw,
+  }
 }

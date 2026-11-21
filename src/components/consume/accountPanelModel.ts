@@ -81,8 +81,13 @@ export type AccountState = {
   busy: string | null
   /** 动作级错误（列表还在，只是这次点击失败），与 `keys.phase === 'failed'` 分开 */
   actionError: PanelError | null
-  /** 一次性提示：删掉了 / 已退出 */
-  notice: 'deleted' | 'loggedOut' | null
+  /**
+   * 一次性提示：删掉了 / 已退出 / 退出**未确认**。
+   *
+   * `logoutUnconfirmed`（#679 第 5 处，安全语义）：撤销接口回了 2xx，但回查证明不了会话已失效。
+   * 这时**不许**显示「已退出登录」—— 用户会以为公用 / 丢失设备上的会话也没了，于是不再改密码。
+   */
+  notice: 'deleted' | 'loggedOut' | 'logoutUnconfirmed' | null
   /** 删除的二次确认（一次只对一个 Key） */
   confirmDeleteId: number | null
   /** 退出登录的二次确认 */
@@ -265,10 +270,22 @@ export const runDeleteKey = async (source: AccountSource, id: number): Promise<A
   return [{ type: 'removeKey', id }, { type: 'notice', notice: 'deleted' }]
 }
 
-/** 退出登录：撤掉**所有设备**的会话（不只是当前这台） */
+/**
+ * 退出登录：撤掉**所有设备**的会话（不只是当前这台）。
+ *
+ * 三条出口（#679 第 5 处）：
+ *   1. `ok: true` = `revokeAllSessions` 已经**回查确认**旧凭据失效 → 才可以说「已退出登录」；
+ *   2. `ok: false` 且 `i18nKey === 'consumeErrRevokeUnconfirmed'` = 撤销请求已提交但**未确认** →
+ *      `notice: 'logoutUnconfirmed'`，文案给下一步（重新登录验证 / 查其他设备），**不出现「已退出」**；
+ *      本地会话该清仍然要清（`store.signOut` 与服务端结果无关，见 `auth/store.ts`）；
+ *   3. 其余失败 = 普通动作错误（`actionError`），按钮留在原地让用户重试。
+ */
 export const runLogout = async (source: AccountSource): Promise<AccountEvent[]> => {
   const result = await source.auth.revokeAllSessions()
   if (!result.ok) {
+    if (result.error.i18nKey === 'consumeErrRevokeUnconfirmed') {
+      return [{ type: 'notice', notice: 'logoutUnconfirmed' }, { type: 'confirmLogout', value: false }]
+    }
     return [{ type: 'actionError', error: toPanelError(result.error) }, { type: 'confirmLogout', value: false }]
   }
   return [{ type: 'notice', notice: 'loggedOut' }, { type: 'confirmLogout', value: false }]
@@ -484,7 +501,11 @@ export const AccountPanelView = (props: AccountPanelViewProps): ReactNode => {
       createElement(
         'p',
         { className: c.notice, 'data-testid': 'account-notice' },
-        state.notice === 'deleted' ? t('consumeKeyDeleted') : t('consumeLogoutSuccess')
+        state.notice === 'deleted'
+          ? t('consumeKeyDeleted')
+          : state.notice === 'logoutUnconfirmed'
+            ? t('consumeErrRevokeUnconfirmed')
+            : t('consumeLogoutSuccess')
       )
     )
   }
@@ -595,6 +616,11 @@ export const AccountSignedOutView = (props: AccountSignedOutViewProps): ReactNod
   return panelShell(c, t('consumeAccountTitle'), body, 'account-panel')
 }
 
-/** 供容器判断：这批事件里是否已经有人要求重新登录（退出成功） */
+/**
+ * 供容器判断：这批事件里是否已经有人要求重新登录。
+ *
+ * 两种情况都算（#679 第 5 处）：「已确认退出」与「退出未确认」—— 后者本地凭据同样要停用，
+ * 只是文案上不许把它说成「所有设备都已退出」。
+ */
 export const loggedOut = (events: AccountEvent[]): boolean =>
-  events.some((event) => event.type === 'notice' && event.notice === 'loggedOut')
+  events.some((event) => event.type === 'notice' && (event.notice === 'loggedOut' || event.notice === 'logoutUnconfirmed'))

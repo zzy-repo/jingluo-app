@@ -2,11 +2,11 @@
 
 > 本文件是 **#209「能力探测替代一切假设」** 的类别 3（平台 / 宿主）盘点结果，范围是全仓 `src/**`，扫描器为 `scripts/lib/hostCapabilityAudit.mjs`。
 >
-> **快照基准：`acf6826`**（`origin/main` tip，2026-11-19 12:28:21 +0800）· 采集时间：2026-11-19 18:55 (+0800)
+> **快照基准：`171f02f`**（`origin/main` tip，2026-11-21 11:39:38 +0800）· 采集时间：2026-11-21 11:56 (+0800)
 >
-> **扫描范围**：`src/**` 的 **277** 个源文件。
+> **扫描范围**：`src/**` 的 **278** 个源文件。
 >
-> 拆分：`.ts` **206** / `.tsx` 70 / `.html` 1 = 277（#487 W1-A 新增 `src/services/consume/**` 9 个 `.ts`，W1-B 新增 `src/services/auth/**` 5 个 `.ts` 与 `src/components/auth/**` 3 个 `.tsx`，W1-C2 新增 `src/components/consume/**` 的 7 个面板文件，W1-C1 再新增 3 个 `.tsx`，「统一计量」再新增 `src/utils/money.ts` 1 个 `.ts`，「迁移尾巴」再新增 `src/legacy/migration/**` 4 个 `.ts` 与 1 个 `.tsx`，W1-B 后半再新增 `src/services/consumeClient.ts` 与 `src/components/auth/AccountRow.tsx`）。上一版写 190，是缺了 `#237`（`fetch` 通道计数、`readBytesOf`）与 `#243`（设备指纹）新增的 5 个文件。
+> 拆分：`.ts` **207** / `.tsx` 70 / `.html` 1 = 278（#487 W1-A 新增 `src/services/consume/**` 9 个 `.ts`，W1-B 新增 `src/services/auth/**` 5 个 `.ts` 与 `src/components/auth/**` 3 个 `.tsx`，W1-C2 新增 `src/components/consume/**` 的 7 个面板文件，W1-C1 再新增 3 个 `.tsx`，「统一计量」再新增 `src/utils/money.ts` 1 个 `.ts`，「迁移尾巴」再新增 `src/legacy/migration/**` 4 个 `.ts` 与 1 个 `.tsx`，W1-B 后半再新增 `src/services/consumeClient.ts` 与 `src/components/auth/AccountRow.tsx`）。上一版写 190，是缺了 `#237`（`fetch` 通道计数、`readBytesOf`）与 `#243`（设备指纹）新增的 5 个文件。
 >
 > **本盘点只审计、只出单、只做工具，不修任何代码。** 每条真实漏洞都另开独立 Issue（见「真实漏洞与拆单」），修复在各自单里做，不在 #209 的 PR 里改产品代码。
 >
@@ -296,6 +296,7 @@
 
 ## 复核记录
 
+- 复核（2026-11-21 11:56，基准 `171f02f`，本单 #679）：新增 `src/services/consume/confirmEffect.ts` 1 个 `.ts`，扫描范围 277 → **278** 个源文件（`.ts` 206 → **207**）。新文件不碰 `window` / `document` / `navigator` / 原生桥（只做 `Promise` 与纯函数判定），**命中数与风险分布未变**（143 条 / 高 4 / 中 12 / 低 127），明细表未动。
 - 复核（2026-11-20 18:55，基准 `ffb305f`，本单 #542）：**第一次由生成器写盘**（`node scripts/gen-capabilities-docs.mjs`），不再手抄数字。命中总数 128 → **130 条**（`无风险` 39 → **41**，`已有兜底` 75 / `真实漏洞` 5 / `需动态验证` 9 不变）；风险分布 低 114 → **116**（高 4 / 中 10 不变）。各能力表：`Body.text/arrayBuffer` 16 → **17**、`Capacitor.isNativePlatform` 11 → **12**。明细表整表重写：127 行 → **130 行**，其中 **42 处旧 `文件:行` 已指不到实时命中**（漂移），另 10 行过去只写文件名 / 函数名、没有行号，现在一律带 `文件:行`；人的现场说明（`#104` / `#412` / `#434` / `#498` 等）按「同文件同能力、行数未变就沿用原文」保留。
 - 复核（2026-11-20 18:05，基准 `f8b8125`，本单 #498 分支 `feat/legacy-migration-tail`）：新增 `src/legacy/migration/**` 4 个 `.ts` 与 1 个 `.tsx`，扫描范围 248 → **253** 个源文件。新代码**只新增 1 处宿主能力调用**：`src/legacy/migration/collect.ts:40` 读老账号额度槽位的 `localStorage`（读取包在 `try` 里、读不到当没有 → **已有兜底**，低风险），所以命中总数 127 → **128 条**（`已有兜底` 74 → **75**，其余三类不变），风险分布 低 113 → **114**（高 4 / 中 10 不变），`localStorage` 19 → **20**；其余各能力计数未变。
 - 复核（2026-11-20 11:40，本单 #451 分支 `feat/key-identity-451`）：新增 1 个 `.ts` 源文件（`src/services/invite/keyIdentity.ts`，Key 身份时间记录），扫描范围 211 → **212** 个源文件。新文件**不碰任何宿主能力**（纯计算，localStorage 读写仍只发生在 `src/services/api/apiConfig.ts` 的既有 `read` / `write` 两个函数里，没有新增调用点），命中总数与各能力计数、风险分布均未变。

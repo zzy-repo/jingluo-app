@@ -102,6 +102,18 @@ export type ConsumeMessageKey =
    * 也没有脱敏邮箱。这是「结果未知」，不是「已经成了」——文案必须给下一步（重试 / 去账号页看）。
    */
   | 'consumeErrBindUnconfirmed'
+  /**
+   * 退出所有设备的**安全语义**（#679 第 5 处）：`revoke-all-sessions` 回了 2xx，但回查
+   * `GET /user/profile` 用同一个 JWT 仍然 200 —— 会话没被撤销。「已提交撤销请求，但结果未确认」，
+   * 界面**不许**显示「已退出所有设备」。
+   */
+  | 'consumeErrRevokeUnconfirmed'
+  /** 解绑 2xx 但 `identities[provider].bound` 没变成 false（#679 第 2 处） */
+  | 'consumeErrUnbindUnconfirmed'
+  /** 改 Key 2xx 但回查字段仍是旧值（#679 第 3 处）：改额度改错了会直接错算钱 */
+  | 'consumeErrUpdateUnconfirmed'
+  /** 删 Key 2xx 但回查 `GET /keys/:id` 仍然 200（#679 第 4 处）：**有额度 / 计费含义** */
+  | 'consumeErrDeleteUnconfirmed'
 
 /** 归一化错误：界面只认这几项，其中 `i18nKey` 是唯一该上屏的东西 */
 export type Sub2ApiError = {

@@ -5,7 +5,7 @@
 > - 盘点工具：`scripts/lib/cssAssumptionAudit.mjs`（`auditCssAssumptions(files)` 纯判定函数，不碰盘、不联网、不起浏览器）
 > - 单元测试：`tests/unit/css-assumption-audit.test.mjs`
 > - 盘点日期：2026-11-19 12:19 (+0800)
-> - 快照基准：`acf6826`（`origin/main` tip，2026-11-19 12:28:21 +0800）
+> - 快照基准：`171f02f`（`origin/main` tip，2026-11-21 11:39:38 +0800）
 > - 采集时间：2026-11-19 18:55 (+0800)
 > - 写盘：`node scripts/gen-capabilities-docs.mjs`（`pnpm gen:capabilities`，`pnpm check:capabilities-docs` 只比对不写）——本文件的机器可读数字与 §1 逐特性计数都由它重算，**别手改**
 
@@ -13,8 +13,8 @@
 
 | 项 | 值 |
 | --- | --- |
-| 扫描范围 | `src/**` 全部源文件 **323** 个（`.css` **46** 个，其中 `*.module.css` **39** 个；其余 `.ts / .tsx / .html` 共 **277** 个） |
-| 口径拆分 | 46 `.css` + 206 `.ts` + 70 `.tsx` + 1 `.html` = 323 |
+| 扫描范围 | `src/**` 全部源文件 **324** 个（`.css` **46** 个，其中 `*.module.css` **39** 个；其余 `.ts / .tsx / .html` 共 **278** 个） |
+| 口径拆分 | 46 `.css` + 207 `.ts` + 70 `.tsx` + 1 `.html` = 324 |
 | 命中总数 | **338** 处，分布在 **38** 个文件 |
 | 运行时下限 | WebView **83**（Chromium 83）。**首支持 ≤ 83 的特性一律记「无风险」，与有没有兜底无关** |
 | 构建期因素 | `rspack.config.ts` 用 `builtin:lightningcss-loader`，`targets` 取自 `package.json` 的 `browserslist`（强制含 `chrome >= 83`）。**已被构建期翻译掉的写法不算运行时假设** |
@@ -317,6 +317,7 @@ node --test tests/unit/css-assumption-audit.test.mjs
 ## 复核记录
 
 - 复核（2026-11-21 09:20，基准 `d1175ba`，本单 #517 分支 `feat/517-update-policy-dialog`）：新增 `src/components/update/UpdateDialog.module.css` 1 个 `.module.css`（`*.module.css` 38 → **39**），弹窗复用 `base/Modal` 的遮罩与高度链，只补了 `max-height: min(70vh, …)` 两档（`vh` 基座 + `@supports (100dvh)` 升级）、内容区 `overflow-y: auto` / `touch-action: pan-y` / `overscroll-behavior-y: contain`。命中总数 330 → **338**（`min()`/`max()` 17 → 21、`@supports` 9 → 11、`touch-action` 5 → 6、`overscroll-behavior` 6 → 7），全部落在「无风险 / 已有兜底」两列，**没有新增裸 `gap`**（间距一律 `margin`），`pnpm run check:gap` 仍是 OK。逐特性表与 §1/§2 的 `文件:行` 已由 `pnpm run gen:capabilities` 复算，`tests/unit/flex-gap-fallback.test.mjs` 的模块数断言同步到 39。
+- 复核（2026-11-21 11:56，基准 `171f02f`，本单 #679 分支 `fix/consume-confirm-effect-679`）：新增 `src/services/consume/confirmEffect.ts` 1 个 `.ts`，扫描范围 323 → **324** 个源文件（其余 `.ts / .tsx / .html` 277 → **278**），`.css` 仍是 46 个（`*.module.css` 39）。纯逻辑文件，**没有新增样式表、没有内联样式**，命中总数仍是 **338 处 / 38 个文件**，逐特性表与 §2 明细未变。
 - 复核（2026-11-20 18:20，基准 `553cddd`，本单 #487 W1-B 后半分支 `feat/auth-gate-wiring`）：新增 `src/services/consumeClient.ts` 1 个 `.ts` 与 `src/components/auth/AccountRow.tsx` 1 个 `.tsx`，扫描范围 301 → **303** 个源文件（其余 253 → **255**），`.css` 仍是 48 个（`*.module.css` 41）。`AuthPages.module.css` 只新增了账号行的两条排版规则（无 `gap` / 无新特性），**没有新增样式表**，命中总数仍是 **389 处 / 41 个文件**，逐特性表与 §2 明细的 `文件:行` 未变。
 - 复核（2026-11-20 18:05，基准 `f8b8125`，本单 #498 分支 `feat/legacy-migration-tail`）：新增 `src/legacy/migration/**` 4 个 `.ts` 与 1 个 `.tsx`，扫描范围 296 → **301** 个源文件（其余 `.ts / .tsx / .html` 248 → **253**），`.css` 仍是 48 个（`*.module.css` 41）。迁移按钮复用既有 `Settings.module.css` 的类名，**没有新增任何 `.css` / 内联样式**，命中总数仍是 **389 处 / 41 个文件**，逐特性表与 §2 明细的 `文件:行` 未变。
 - 复核（2026-11-19 18:32，基准 `452debb`，本单 #303 分支 HEAD `204bd6e`）：新增 1 个 `.ts` 源文件（`src/services/api/keyRejection.ts`），扫描范围 246 → **247** 个源文件（`.ts` 147 → **148**，其余 `.ts / .tsx / .html` 202 → **203**），`.css` 仍是 44 个（`*.module.css` 37）。新文件是纯状态计算，**不含任何 CSS 特性假设**，命中总数仍是 **343 处 / 39 个文件**，逐特性表与 §2 明细的 `文件:行` 未变。

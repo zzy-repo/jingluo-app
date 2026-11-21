@@ -67,6 +67,33 @@ type ConsumeCallResult<T> =
 
 白名单**之外**一律禁止（含 `/api/v1/admin/**`、`/api/v1/payment/**`）。新增能力走 #484 重新评审。
 
+## 三点五、写操作的「效果确认」：2xx ≠ 生效（#679）
+
+判据只看 HTTP 状态是本层以前最贵的一类错（#660 的邮箱绑定 200 + 空体 → 界面说「已绑定」，
+实际没落库）。现在所有写操作统一走 `confirmEffect.ts`：
+
+```
+accept(响应体) → 仍无证据 → probe() 回查一次 → 仍无证据 → confirmed: false
+```
+
+- **回查最多一次**：`confirmEffect` 内部只调一次 `probe`，没有循环、没有重试（写后查询放大是 #484 §4.3 的教训）；
+- **不认识证据就当没证据**：`accept` 返回 `undefined` = 这个响应体里没有可信证据，不是「大概成了」；
+- **回查失败 ≠ 生效**：结论是「未知」，文案要给下一步（重试 / 重新登录验证 / 去账号页核对）；
+- 每个调用点的判据、理由、例外都登记在 `CONSUME_EFFECT_POLICIES`（`confirmEffect.ts`），
+  `tests/unit/consume-confirm-effect-679.test.mjs` 有一条 drift 守卫：**标了例外的点不许调 `confirmEffect`**、
+  其余点必须调。
+
+| 调用 | 已确认的判据 | 回查 |
+| --- | --- | --- |
+| `revokeAllSessions` | 同一个 JWT 打 `GET /user/profile` 回 401/403（凭据确实失效） | ✅ 一次 |
+| `unbindProvider` | `identities[provider].bound === false` | ✅ 一次 |
+| `updateKey` | `GET /keys/:id` 的可验证字段（name / group_id / status / quota / ip_* / expires_at）全一致 | ✅ 一次 |
+| `deleteKey` | `GET /keys/:id` 回 404（还 200 = 没删，**继续计费**） | ✅ 一次 |
+| `sendBindEmailCode` / `sendVerifyCode` / `forgotPassword` / `resetPassword` | **例外**：纯通知类，无实体、无回查手段、重发无副作用 → 只信 2xx | — |
+
+「未确认」一律 `ok: false` + 专门的 `consumeErr*Unconfirmed` 文案，界面**不许**把它显示成成功；
+`revokeAllSessions` 这条是**安全语义**（撤销失败却说「已退出所有设备」），文案还必须给出下一步。
+
 ## 四、卡密兑换的四态（`ConsumeRedeemOutcome`）
 
 sub2api 的兑换**没有幂等键**（请求体只有 `{code}`），所以：
