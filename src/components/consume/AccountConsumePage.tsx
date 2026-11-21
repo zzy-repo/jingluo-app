@@ -40,6 +40,7 @@ import {
 import { PROBE_TIMEOUT_MS, probeProvider } from '../../services/api/client.js'
 import type { ConsumeClient, ConsumeUser } from '../../services/consume/index.js'
 import { getConsumeClient } from '../../services/consumeClient.js'
+import { fetchPurchases, type PurchaseOrder } from '../../services/ours/purchases.js'
 import { useAuthStatus } from '../../services/auth/useAuthStatus.js'
 import { SettingsAuthCard } from './SettingsAuthCard.js'
 import { useAuthStore } from '../../services/auth/store.js'
@@ -230,21 +231,34 @@ export const AccountConsumePage = ({
    * 所以进钱包页 / 进卡密 tab / 挂载组件都**不会**走到这里 —— 自动兑现只在付款回来这一下发生。
    *
    * 自动兑现本身不在这里写逻辑：判定与不发第二枪的规则全在 `walletAutoRedeem.ts`（复用既有的
-   * `consume.redeem` 封装，一行兑换逻辑都没有重写）。这里只负责「把结局交给界面」：
-   *  - 未登录 → 一句「登录后自动到账」，不提交；
-   *  - 到账 → toast「已自动到账 ¥X」+ 让余额卡重拉一次；
-   *  - 其余（处理中 / 失败 / 打码卡）→ 卡片 + 「去兑换」手动出口，**没有自动重试**。
+   * `consume.redeem` 封装，一行兑换逻辑都没有重写）。这里只负责两件事：
+   *  1. 把**数据源**接进去 —— #784 修正后「哪些卡还没兑」只问 `GET /api/orders`
+   *     （`fetchPurchases`，`redeemState === 'issued'` = 未兑换）；没有 apiKey 就不注入，
+   *     自动兑现那边连请求都不会发；
+   *  2. 把结局交给界面：未登录 → 一句「登录后自动到账」，不提交；到账 → toast「已自动到账 ¥X」
+   *     + 让余额卡重拉一次；其余（处理中 / 失败 / 打码卡）→ 卡片 + 「去兑换」手动出口，**没有自动重试**。
    */
   const backToCards = useCallback(() => {
     onNavigate('cards')
     setWalletTick((tick) => tick + 1)
-    void runWalletAutoRedeem({ client: consume, signedIn: signedIn === true })
+    const loadOrders =
+      apiKey.trim() === ''
+        ? undefined
+        : () =>
+            fetchPurchases({ apiKey, limit: 20, offset: 0 }).then(
+              (page): PurchaseOrder[] => page.orders
+            )
+    void runWalletAutoRedeem({
+      client: consume,
+      signedIn: signedIn === true,
+      ...(loadOrders === undefined ? {} : { loadOrders }),
+    })
       .then((outcome) => {
         if (!alive.current) {
           return
         }
         if (outcome.kind === 'skipped') {
-          // 只有「没登录」要说话：其余跳过（历史读不到 / 没有待兑 / 已经兑过）都是「没事发生」
+          // 只有「没登录」要说话：其余跳过（订单读不到 / 没有待兑 / 已经兑过）都是「没事发生」
           if (outcome.reason === 'not-signed-in') {
             showToast(t('walletAutoRedeemNeedSignIn'))
           }
@@ -262,7 +276,7 @@ export const AccountConsumePage = ({
         }
       })
       .catch(() => undefined)
-  }, [consume, onNavigate, signedIn, t])
+  }, [apiKey, consume, onNavigate, signedIn, t])
 
   const SOURCE_LABEL_KEYS: Record<string, TranslationKey> = {
     builtin: 'accountConsumeSourceBuiltin',
