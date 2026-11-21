@@ -59,18 +59,27 @@ const read = (rel) => fs.readFileSync(path.join(REPO_ROOT, rel), 'utf8')
 
 // 改动前的指纹输入（写死的历史值：改它等于改全网老设备的账号身份）
 const ANDROID_ID = 'a1b2c3d4e5f60718'
+// 第三方见证（tripwire），不是副本：见 [1] 顶部说明与下面的证书指纹断言（#705 裁决）。
 const PUBLISHED_PACKAGE = 'com.example.deepseekchat'
 const BEFORE_FP = createHash('sha256').update(ANDROID_ID + PUBLISHED_PACKAGE).digest('hex')
 
-console.log('\n[1] 配置是唯一来源，且值与已发布身份一致')
+console.log('\n[1] 配置是唯一来源，且值与已发布身份一致（写死的已发布值 = 第三方见证 tripwire）')
+// 这是有意保留的「第三方见证（tripwire）」，不是与 config 重复的副本。
+// 作用：若有人同时改 config/appIdentity.json 与 PUBLISHED_IDENTITY，
+// 这条 pin 会红 —— 强迫「换签名 key」是一次显式三处改动，而不是静默改配置。
+// 删除它等于拿掉这道人工减速带（见 #705 裁决），请勿以「去重」为理由删除。
+//
+// 注意：本节里写死已发布值的几条断言（包名 / 应用名 / 证书指纹）是**同一个绊线模式**——
+// 它们与 `eq(..., PUBLISHED_IDENTITY.xxx)` 那条**不是**重复：后者只保证「两份配置自洽」，
+// 前面几条才保证「没人把两份配置一起改」。改成比 PUBLISHED_IDENTITY = 拿掉减速带（#708 被否）。
 const identity = loadAppIdentity()
-eq(identity.applicationId, PUBLISHED_PACKAGE, 'applicationId 仍是已发布包名（改它 = 换用户账号）')
-eq(identity.namespace, PUBLISHED_PACKAGE, 'namespace 仍是已发布包名（Java 包结构目录绑定它）')
-eq(identity.label.zh, '鲸落', '应用名仍是「鲸落」')
+eq(identity.applicationId, PUBLISHED_PACKAGE, '已发布包名（第三方见证 tripwire：换包名必须显式改三处）')
+eq(identity.namespace, PUBLISHED_PACKAGE, 'namespace 仍是已发布包名（Java 包结构目录绑定它；同一绊线）')
+eq(identity.label.zh, '鲸落', '应用名仍是「鲸落」（同一绊线：换名必须显式改三处）')
 eq(
   identity.expectedCertSha256,
   'e7c5baee517ca2b2258950e934521f2fad448d00f72f2ff7297bdf4fa00aa8a1',
-  '证书指纹仍是已发布证书（签名迁移必须另开单）',
+  '已发布证书指纹（第三方见证 tripwire：换 key 必须显式改三处）',
 )
 eq(identity.expectedCertSha256, PUBLISHED_IDENTITY.expectedCertSha256, '配置与 PUBLISHED_IDENTITY 的证书一致')
 eq(identity.allowInsecureUpdateTransport, true, '明文更新传输 = true（#268 现状：新分发机只有 http）')
