@@ -1,4 +1,10 @@
-import { openDB, type DBSchema, type IDBPDatabase } from 'idb'
+import {
+  openDB,
+  type DBSchema,
+  type IDBPDatabase,
+  type IDBPTransaction,
+  type StoreNames,
+} from 'idb'
 import {
   planMerge,
   type MergePlan,
@@ -16,10 +22,15 @@ import { toSessionSummary, type Session, type SessionSummary } from './types.js'
  * 不迁移、不改写、不清空任何已有的会话 / 摘要 / 原件数据 —— 升级回调里全部是 `contains()` 守卫，
  * 老用户升级后打开旧会话得到的内容与升级前逐字节相同。
  *
+ * v13 → v14（#399）：只**新增**一个窗口记忆存储（`sessionMemory`）与它的 `sessionId` 索引，
+ * 同样不迁移、不改写、不清空任何已有数据。记忆是**派生数据**（丢了能重算），
+ * 所以升级时**不从消息重建**：老用户升上来记忆是空的，第一次写记忆时才建条目。
+ * 「旧 store / 旧数据一条不动」由 `tests/unit/memory-session-scope-399.test.mjs` 的 T7 钉住。
+ *
  * **导出给测试用**（#547）：`tests/helpers/chat-db.mjs` 从这里取 `DB_VERSION` / `DB_NAME`，
  * L1 集成用例的 fixture 不再各写一份「12」「13」—— 版本号只有这一处来源，加 store 时改这里就够了。
  */
-export const DB_VERSION = 13
+export const DB_VERSION = 14
 
 /** IndexedDB 库名；只在这里出现一次，测试夹具同样从这里取（#547）。 */
 export const DB_NAME = 'chat-demo'
@@ -66,6 +77,45 @@ export type StoredAttachmentText = {
   createdAt: number
 }
 
+/**
+ * #399 窗口记忆：**按会话隔离**的一条记忆（原文片段 / 摘要片段，附带可选向量）。
+ *
+ * `id = `${sessionId}:${key}`` —— **会话 ID 是主键的一部分**，这是隔离的落点：两个会话用同一个
+ * `key` 写记忆，落在两条不同的记录上，谁也读不到谁的。反过来说，把 `sessionId` 从主键里去掉
+ * （改成全局键 `key`）会让 `tests/unit/memory-session-scope-399.test.mjs` 的隔离用例当场变红 ——
+ * 那条用例就是这条不变量的负向对照。
+ *
+ * `sessionId` 索引只服务两件事：① 删会话时按会话整批清理（`deleteSession`）；② 按会话取全量。
+ * 读写都走主键，索引不参与「按 key 取某一条」。
+ */
+export type StoredSessionMemory = {
+  /** `${sessionId}:${key}` */
+  id: string
+  sessionId: string
+  /** 会话内的记忆键（chunk 序号 / 摘要块 id 等，由写入口决定） */
+  key: string
+  /** 记忆正文 */
+  text: string
+  /**
+   * 向量：**只有 embedding 开关打开且请求成功时才有**（#398/#399）。
+   * 关闭态一条都不写 —— 那既保证了「关闭即零请求」，也保证关闭态的记忆不占向量字节，
+   * 召回退回到本地 BM25（`recall.js` 的 `recallSync` 本来就是这条路）。
+   */
+  vec?: number[]
+  /** 向量模型名（换模型后旧向量不该被当成同一空间比较） */
+  model?: string
+  /** 向量维度（缺席 = 没有向量） */
+  dim?: number
+  /**
+   * 预计算的字节数（正文 UTF-8 字节 + 向量 4 字节/分量）：容量判定不必把整批正文读进内存再算。
+   * 口径的唯一实现在 `memory/sessionMemory.ts` 的 `memoryEntryBytes()`。
+   */
+  bytes: number
+  createdAt: number
+  /** 最近一次写入时间：容量淘汰按它排序（规则见 `memory/sessionMemory.ts` 的 `evictOldest`） */
+  updatedAt: number
+}
+
 interface ChatDB extends DBSchema {
   /** 当前使用的会话，界面读写都在这里 */
   sessions: { key: string; value: Session }
@@ -93,6 +143,15 @@ interface ChatDB extends DBSchema {
   }
   /** #480 附件解析全文：主键 `sha256:parserVersion` */
   attachmentTexts: { key: string; value: StoredAttachmentText; indexes: { sha256: string } }
+  /**
+   * #399 窗口记忆（v14）：**按会话隔离**，主键里带 `sessionId`，`sessionId` 索引用于按会话
+   * 整批读写 / 删除。与 `sessions` 在同一个库里，删会话时同一个事务里一起清（不新开第二套 DB）。
+   */
+  sessionMemory: {
+    key: string
+    value: StoredSessionMemory
+    indexes: { sessionId: string }
+  }
 }
 
 let dbPromise: Promise<IDBPDatabase<ChatDB>> | null = null
@@ -119,45 +178,68 @@ const abortTransaction = (tx: { abort(): void }) => {
   }
 }
 
+/**
+ * 库结构升级回调：**只新增、不迁移、不清空**（#399 起的口径，v12→v13、v13→v14 都是这样）。
+ *
+ * 为什么从 `getDB()` 里提出来单独导出：迁移不变量用例（
+ * `tests/unit/memory-session-scope-399.test.mjs` 的 T7）需要在**一个历史版本的真库**上跑
+ * **同一个**回调，才能证明「旧 store / 旧数据一条不动」。用例里另写一份 schema 就等于把被验的
+ * 东西换成替身 —— 那份替身漂移时不会报错，只会让用例在「库长得和真机不一样」的前提下变绿
+ * （#547 的教训，见 `tests/helpers/chat-db.mjs` 文件头）。这里导出的就是这个回调本体，
+ * 版本号仍然只有 `openDB(DB_NAME, DB_VERSION, …)` 那一处。
+ */
+export const upgradeChatDB = (
+  db: IDBPDatabase<ChatDB>,
+  _oldVersion: number,
+  _newVersion: number | null,
+  tx: IDBPTransaction<ChatDB, StoreNames<ChatDB>[], 'versionchange'>
+): void => {
+  // 初始化当前格式需要的存储与索引，不迁移旧消息。
+  for (const name of ['sessions', 'files', 'sessionsStaging', 'filesStaging'] as const) {
+    if (!db.objectStoreNames.contains(name)) {
+      db.createObjectStore(name, { keyPath: 'id' })
+    }
+  }
+  const summaries = db.objectStoreNames.contains('sessionSummaries')
+    ? tx.objectStore('sessionSummaries')
+    : db.createObjectStore('sessionSummaries', { keyPath: 'id' })
+  if (!summaries.indexNames.contains('fileIds')) {
+    summaries.createIndex('fileIds', 'fileIds', { multiEntry: true })
+  }
+  // 应用素材（聊天背景等）单独一个 store：只新增，不重建、不清空已有会话/原件
+  if (!db.objectStoreNames.contains('appAssets')) {
+    db.createObjectStore('appAssets', { keyPath: 'key' })
+  }
+  // #480 文档附件（v12 → v13）：同样只新增。
+  // `sha256` 索引用于「同内容的原件/全文还有没有人引用」的计数，`parsedTextPath` 索引用于
+  // 「这段全文还有没有附件指向它」的计数 —— 都走索引计数，不扫全表。
+  if (!db.objectStoreNames.contains('attachments')) {
+    const attachments = db.createObjectStore('attachments', { keyPath: 'id' })
+    attachments.createIndex('sha256', 'sha256')
+    // 未解析的附件没有 parsedTextPath，IndexedDB 会自然跳过这类记录，正是想要的行为
+    attachments.createIndex('parsedTextPath', 'parsedTextPath')
+  }
+  if (!db.objectStoreNames.contains('attachmentTexts')) {
+    const texts = db.createObjectStore('attachmentTexts', { keyPath: 'key' })
+    texts.createIndex('sha256', 'sha256')
+  }
+  // #399 窗口记忆（v13 → v14）：同样只新增，不动任何已有 store。
+  // 主键里带会话 ID（`sessionId:key`），`sessionId` 索引只用于「按会话取全量 / 整批删除」。
+  if (!db.objectStoreNames.contains('sessionMemory')) {
+    const memory = db.createObjectStore('sessionMemory', { keyPath: 'id' })
+    memory.createIndex('sessionId', 'sessionId')
+  }
+}
+
 // 每个操作拿到连接后立即创建事务；IndexedDB 按创建顺序执行范围重叠的事务，读取总能看到之前发起的写入。
 const getDB = () =>
-  (dbPromise ??= openDB<ChatDB>(DB_NAME, DB_VERSION, {
-    upgrade(db, _oldVersion, _newVersion, tx) {
-      // 初始化当前格式需要的存储与索引，不迁移旧消息。
-      for (const name of ['sessions', 'files', 'sessionsStaging', 'filesStaging'] as const) {
-        if (!db.objectStoreNames.contains(name)) {
-          db.createObjectStore(name, { keyPath: 'id' })
-        }
-      }
-      const summaries = db.objectStoreNames.contains('sessionSummaries')
-        ? tx.objectStore('sessionSummaries')
-        : db.createObjectStore('sessionSummaries', { keyPath: 'id' })
-      if (!summaries.indexNames.contains('fileIds')) {
-        summaries.createIndex('fileIds', 'fileIds', { multiEntry: true })
-      }
-      // 应用素材（聊天背景等）单独一个 store：只新增，不重建、不清空已有会话/原件
-      if (!db.objectStoreNames.contains('appAssets')) {
-        db.createObjectStore('appAssets', { keyPath: 'key' })
-      }
-      // #480 文档附件（v12 → v13）：同样只新增。
-      // `sha256` 索引用于「同内容的原件/全文还有没有人引用」的计数，`parsedTextPath` 索引用于
-      // 「这段全文还有没有附件指向它」的计数 —— 都走索引计数，不扫全表。
-      if (!db.objectStoreNames.contains('attachments')) {
-        const attachments = db.createObjectStore('attachments', { keyPath: 'id' })
-        attachments.createIndex('sha256', 'sha256')
-        // 未解析的附件没有 parsedTextPath，IndexedDB 会自然跳过这类记录，正是想要的行为
-        attachments.createIndex('parsedTextPath', 'parsedTextPath')
-      }
-      if (!db.objectStoreNames.contains('attachmentTexts')) {
-        const texts = db.createObjectStore('attachmentTexts', { keyPath: 'key' })
-        texts.createIndex('sha256', 'sha256')
-      }
-    },
-  }).catch((error: unknown) => {
-    // 打开失败后允许界面重试，避免一直复用已拒绝的 Promise。
-    dbPromise = null
-    throw error
-  }))
+  (dbPromise ??= openDB<ChatDB>(DB_NAME, DB_VERSION, { upgrade: upgradeChatDB }).catch(
+    (error: unknown) => {
+      // 打开失败后允许界面重试，避免一直复用已拒绝的 Promise。
+      dbPromise = null
+      throw error
+    }
+  ))
 
 /**
  * 同一份 `chat-demo` 连接给库内其它存储层复用（#480 的 `attachments/store.ts`）：
@@ -235,9 +317,20 @@ export const renameSession = async (id: string, title: string): Promise<void> =>
   ])
 }
 
-/** 删除会话，仅清理已无会话引用的本地原件；远端文件不删。 */
+/**
+ * 删除会话，仅清理已无会话引用的本地原件；远端文件不删。
+ *
+ * #399：该会话的**窗口记忆在同一个事务里一起清掉** —— 用的是与聊天图片原件同一套思路
+ * （先按索引数出「还有谁引用」，再决定删不删），记忆这边更简单：`sessionId` 索引就是「本会话的
+ * 全部记忆」，删完即 0，孤儿不可能留下（事务失败则整体回滚，不会出现「会话没了、记忆还在」）。
+ * **只删本会话的键**：别的会话的记忆一条都不碰，这条由
+ * `tests/unit/memory-session-scope-399.test.mjs` 的 T5 钉住。
+ */
 export const deleteSession = async (sessionId: string): Promise<void> => {
-  const tx = (await getDB()).transaction(['sessions', 'sessionSummaries', 'files'], 'readwrite')
+  const tx = (await getDB()).transaction(
+    ['sessions', 'sessionSummaries', 'files', 'sessionMemory'],
+    'readwrite'
+  )
   await Promise.all([
     (async () => {
       try {
@@ -249,6 +342,19 @@ export const deleteSession = async (sessionId: string): Promise<void> => {
           if ((await summaries.index('fileIds').count(id)) === 0) {
             await tx.objectStore('files').delete(id)
           }
+        }
+        // #399：先收齐键再删（边删边 continue 的游标语义依赖实现细节）
+        const memory = tx.objectStore('sessionMemory')
+        const memoryKeys: string[] = []
+        for (
+          let cursor = await memory.index('sessionId').openKeyCursor(sessionId);
+          cursor;
+          cursor = await cursor.continue()
+        ) {
+          memoryKeys.push(String(cursor.primaryKey))
+        }
+        for (const key of memoryKeys) {
+          await memory.delete(key)
         }
       } catch (error) {
         abortTransaction(tx)
@@ -325,7 +431,11 @@ export const updateStagingFileTypes = async (types: ReadonlyMap<string, string>)
 export const commitStaging = async (): Promise<SessionSummary[]> => {
   const summaries: SessionSummary[] = []
   const tx = (await getDB()).transaction(
-    ['sessions', 'sessionSummaries', 'files', 'sessionsStaging', 'filesStaging'],
+    // #399：整包替换会换掉**全部**会话（连 id 一起换），旧会话的记忆全部失去归属，
+    // 所以在同一个事务里一起清空 `sessionMemory` —— 这是「不留孤儿」的另一半：
+    // 删单个会话走 `deleteSession`，整包替换走这里，两条路都清在同一事务里，不另造清扫机制。
+    // 增量导入（`mergeStaging`）不删任何会话，因此**不**碰记忆。
+    ['sessions', 'sessionSummaries', 'files', 'sessionsStaging', 'filesStaging', 'sessionMemory'],
     'readwrite'
   )
   /**
@@ -362,6 +472,8 @@ export const commitStaging = async (): Promise<SessionSummary[]> => {
       } else {
         await target.clear()
         await tx.objectStore('sessionSummaries').clear()
+        // #399：会话整批被替换 = 旧会话全部没了，它们（按 sessionId 存的）记忆一并清掉
+        await tx.objectStore('sessionMemory').clear()
       }
       for (
         let cursor = await tx.objectStore(from).openCursor();

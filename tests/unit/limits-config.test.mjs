@@ -87,6 +87,14 @@ const ORIGINAL_VALUES = {
   streamRetryLimit: 2,
   retryBaseDelayMs: 1000,
   contextBudget: { maxTokens: 120_000, maxRounds: 200 },
+  /**
+   * #399 **新增**的一组（不是搬家项）：窗口记忆的每会话容量双限。
+   * 手抄在这里同样是为了「改了阈值必须两边一起改」，参考 #551 的 `images` 组。
+   */
+  memory: {
+    maxEntriesPerSession: 200,
+    maxBytesPerSession: 2 * 1024 * 1024,
+  },
   importMaxBytes: 200 * 1024 * 1024,
   importConnectMs: 10_000,
   importChunkReadMs: 12_000,

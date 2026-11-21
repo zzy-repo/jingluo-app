@@ -731,6 +731,10 @@ export const en = {
     'It is on, but the current channel has no embedding endpoint (only OpenAI-compatible channels provide one). Switch to an OpenAI-compatible channel in Data and fill in the service address.',
   settingDialogMemoryEmbeddingNoCredential:
     'It is on, but the current channel is missing usable embedding credentials (service address or API key). Complete them in Data, otherwise recall falls back to local keyword matching.',
+  // Window memory capacity notices (#399): eviction and rejection must be spoken, never silent.
+  memoryEvicted:
+    'This chat has reached its memory capacity; the {count} oldest entries were removed (this chat only)',
+  memoryEntryTooLarge: 'This memory entry exceeds the per-entry limit ({kb} KB) and was not saved',
   // Issue #49: tolerant import — damaged messages are truncated, damaged chats skipped, and the
   // result view has to say which items were dropped and why.
   historyImportedPartial: 'Imported {count} chats, skipped {skipped} damaged items',

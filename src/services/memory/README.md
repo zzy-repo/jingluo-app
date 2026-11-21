@@ -12,10 +12,18 @@ cross-session or global profile, and nothing is shared between windows.
   判定与实际发请求的门在**自研**的 `embeddingGate.ts`（`isEmbeddingEnabled()` / `embed()`）：
   关闭态任何人调 `embed()` 都在 `fetch` 之前抛 `EmbeddingDisabledError`，一个外部请求都不发。
   那一个文件不属于 vendored 上游代码（它是我们写在这目录里的门面）。
-- To run inside this app it still needs: wiring to per-window storage (#399)。#399 接线时
-  **`index.js` / `recall.js` / `embedding.js` 这三份上游调用点必须改走 `embeddingGate.embed()`**，
-  否则会出现「一套代码两种判断」。届时建议一并把本目录从 `scripts/lib/vendoredPaths.mjs`
-  的排除名单里拿出来（那才是「真正变成自研代码」的时刻）。
+- **按会话隔离的存储已就位（#399）**：`sessionMemory.ts`（**自研**，与 `embeddingGate.ts` 同一档）
+  把记忆写进 app 既有的 `chat-demo` 库（`chat/db.ts` 的 v14 新 store `sessionMemory`），
+  **主键里带会话 ID**（`sessionId + ':' + key`），所以两个窗口永不共享条目；容量双限在
+  `src/services/limits.ts` 的 `memory` 组，超限按 oldest-first **只在会话内**淘汰并给提示 + 日志；
+  删会话时与 `sessions` / 摘要 / 原件在**同一个事务**里清掉（`db.deleteSession()`）。
+  写入需要向量化时**只**走 `embeddingGate.embed()`；开关关闭时**只存文本、不写向量**、零请求
+  （召回退到本地 BM25）。
+- **仍未接线**：`index.js` / `recall.js` / `embedding.js` 那三份上游调用点还在自己的文件里直接调
+  `embedTexts()`，**没有**进 app 运行时（`src/` 里没有模块 import 它们）。等它们真接进运行时的
+  那次，必须改走 `embeddingGate.embed()`（否则会出现「一套代码两种判断」），并把本目录从
+  `scripts/lib/vendoredPaths.mjs` 的排除名单里拿出来（那才是「整块变成自研代码」的时刻；
+  #399 只新增了同目录下的自研 TS 文件，`.js` 那几个仍是 vendored）。
 - `node --test tests/recall.test.cjs` covers recall, budget packing and cache reuse
   （需在**没有 `type: module` 的 package.json** 的目录下跑，见该文件头）。
 

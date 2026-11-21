@@ -60,6 +60,12 @@ const WATCHED = [
     allow: [],
   },
   { file: 'src/services/chat/autoTitle.ts', allow: [] },
+  {
+    // #399 窗口记忆的存储层：容量双限全在 limits.ts 的 `memory` 组，这里一个裸数字都不许留
+    // （字节 → KB 的换算走 limits.ts 的 `kbOf()`，不在这里写 1024 —— 与 `mbOf` 同一口径）
+    file: 'src/services/memory/sessionMemory.ts',
+    allow: [],
+  },
   { file: 'src/services/chat/autoTitleQueue.ts', allow: [] },
   {
     file: 'src/services/attachments.ts',

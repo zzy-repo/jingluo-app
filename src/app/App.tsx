@@ -22,6 +22,7 @@ import { Toast } from '../components/base/Toast.js'
 import { showToast } from '../components/base/toastState.js'
 import { initChatBackground, useChatBackground } from '../services/chat/background.js'
 import { onUploadNotice } from '../services/attachments.js'
+import { onMemoryNotice } from '../services/memory/sessionMemory.js'
 import { Button } from '../components/base/Button.js'
 import { stopReadAloud } from '../services/speech/readAloud.js'
 import { CollapsedSider } from '../components/sider/CollapsedSider.js'
@@ -65,6 +66,8 @@ export const App = () => {
 
   // 文件数、存储空间达到上限时，附件上只显示「上传失败」，原因用 toast 说明
   useEffect(() => onUploadNotice(showToast), [])
+  // #399：记忆超出容量上限淘汰了条目 / 单条超上限被拒绝时，必须让用户看见（不许静默丢）
+  useEffect(() => onMemoryNotice(showToast), [])
   useEffect(() => {
     void initChatBackground()
   }, [])

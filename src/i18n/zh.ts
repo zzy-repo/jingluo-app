@@ -719,6 +719,10 @@ export const zh = {
     '已开启，但当前渠道没有 embedding 端点（只有 OpenAI 兼容渠道提供）：请到「数据管理」换成 OpenAI 兼容渠道并填好服务地址。',
   settingDialogMemoryEmbeddingNoCredential:
     '已开启，但当前渠道还缺可用的 embedding 凭据（服务地址或 API Key）：请到「数据管理」补齐，否则记忆检索会退化为本地关键词匹配。',
+  // 窗口记忆的容量提示（#399）：淘汰与拒绝**都要说出来**，不许静默丢。
+  // 两条都点明「只在当前会话内」——用户最容易误解的是「我的记忆被别的会话挤掉了」。
+  memoryEvicted: '当前会话的记忆已达容量上限，已清理最早写入的 {count} 条（只影响当前会话）',
+  memoryEntryTooLarge: '这条记忆超过单条容量上限（约 {kb} KB），没有写入',
   // Issue #49：导入容错——坏消息截断、坏会话跳过，界面要能说清「丢了哪几条、为什么」
   historyImportedPartial: '已导入 {count} 个会话，跳过 {skipped} 处损坏数据',
   historyImportSkippedTitle: '跳过了 {count} 处损坏数据',
