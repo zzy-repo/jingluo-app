@@ -18,7 +18,11 @@
 //
 // 负向对照（人工各跑一次，结论写在 PR 与 file 末）：
 //   ① 把 `memoryEntryId()` 里的 `sessionId` 去掉（变成全局键 `id = key`）→ T1 变红；
-//   ② 删掉 `db.deleteSession()` 里清 `sessionMemory` 的那段 → T5 变红。
+//   ② 删掉 `db.deleteSession()` 里清 `sessionMemory` 的那段 → T5 变红；
+//   ③ 把 T4 的淘汰序反过来（「最新优先」而不是 oldest-first）→ T4 的不变量①变红；
+//   ④ 把 T4 的会话键改回不定宽（`b-${i}`）：同毫秒平局落到主键**字典序**（`b-10 < b-2`）→
+//      T4 在本机变成**间歇**红（就是 #399 这次 CI 红的那种形状）。零填充把字典序钉成写入序，
+//      所以用例与「这批写入落在几个毫秒里」无关 —— 这是修**确定性**，不是放宽断言。
 //
 //   node tests/run-layer.mjs unit --only memory-session-scope-399
 import 'fake-indexeddb/auto'
@@ -88,6 +92,9 @@ globalThis.fetch = async (url, init = {}) => {
 
 const db = await loadTsModule('src/services/chat/db.ts')
 const memory = await loadTsModule('src/services/memory/sessionMemory.ts')
+// 同一个 ESM 实例（`loadTsModule` 走动态 import，模块图共享）：`isEmbeddingEnabled()` 读的就是
+// `sessionMemory.ts` 里那道门读的那份设置 —— T4 用它**断言**当前确实是关闭态，不靠默认值假设。
+const embeddingGate = await loadTsModule('src/services/memory/embeddingGate.ts')
 const settings = await loadTsModule('src/services/settings.ts')
 const apiConfig = await loadTsModule('src/services/api/apiConfig.ts')
 const { LIMITS } = await loadTsModule('src/services/limits.ts')
@@ -232,6 +239,18 @@ test('T2 同会话覆盖写：后者覆盖前者，不产生重复条目，creat
 // ─────────────────────────────────────────────────── T3 超条数上限（只淘汰本会话）
 
 /**
+ * 会话内记忆键：**必须定宽零填充**（`c-0000`…），不是 `c-0`…
+ *
+ * 实现的淘汰序是 `(updatedAt 升序, 同一毫秒按主键 id 升序)`（见 `sessionMemory.ts` 文件头），
+ * 而主键是 `` `${sessionId}:${key}` ``。键不定宽时同毫秒平局落到**字典序**：`c-10 < c-2`，
+ * 于是「谁是最新写入的那批」在「这批写入全落在同一毫秒」时按数值序算就错位（#399 的 CI 红
+ * 就是这一种形状：本地跑得快/慢决定了撞不撞平局，所以它看起来像间歇性 flaky）。
+ * 零填充让**字典序 == 写入序**，用例因此与「这批写入跨了几个毫秒」无关 ——
+ * 确定性来自契约（`(updatedAt, id)`），不靠写入速度碰运气。T3 的条数上限用例同理。
+ */
+const paddedSessKey = (prefix, index) => `${prefix}-${String(index).padStart(4, '0')}`
+
+/**
  * 表驱动：每行 = 一个会话的「写多少条 + 上限是多少」。
  * 期望值全部由 `LIMITS.memory` 现算，不写死数字 —— 阈值调整时用例跟着变，不会悄悄失效。
  */
@@ -257,7 +276,7 @@ test('T3 超条数上限：oldest-first 淘汰、只淘汰本会话、有提示�
   // 邻居会话先写几条（远离上限），用来证明「淘汰只在本会话内」
   await memory.clearSessionMemory(neighbour)
   for (let i = 0; i < CAP_NEIGHBOUR_ENTRIES; i += 1) {
-    await memory.saveMemoryEntry(neighbour, { key: `n-${i}`, text: `邻居的第 ${i} 条` })
+    await memory.saveMemoryEntry(neighbour, { key: paddedSessKey('n', i), text: `邻居的第 ${i} 条` })
   }
   const neighbourBefore = await memory.listMemoryEntries(neighbour)
   await memory.clearSessionMemory(victim)
@@ -270,7 +289,7 @@ test('T3 超条数上限：oldest-first 淘汰、只淘汰本会话、有提示�
     for (let i = 0; i < limit + ENTRY_LIMIT_CASES[0].over; i += 1) {
       const text = `本会话第 ${i} 条`
       texts.push(text)
-      outcomes.push(await memory.saveMemoryEntry(victim, { key: `c-${i}`, text }))
+      outcomes.push(await memory.saveMemoryEntry(victim, { key: paddedSessKey('c', i), text }))
     }
   } finally {
     off()
@@ -317,46 +336,166 @@ const BYTE_LIMIT_CASES = [
   { id: 'T4-a', label: '每条约 64 KB，写 上限/条大小 + 2 条', sizeOf: 64 * 1024, over: 2 },
 ]
 
+/** 按实现的排序契约排一遍：`updatedAt` 升序，同毫秒按主键 `id` 升序（用例自己排，不借模块的顺序） */
+const byContractOrder = (a, b) =>
+  a.updatedAt === b.updatedAt ? (a.id < b.id ? -1 : 1) : a.updatedAt - b.updatedAt
+
 test('T4 超字节上限：按 oldest-first 淘汰、边界「正好等于上限」不淘汰', async () => {
+  // ── 状态隔离：不依赖「上一个文件跑完时的开关状态」。embedding 开着时每条会多算
+  // 4 字节/分量的向量，字节口径就变了（同一个用例就会淘汰出不同的条数），所以这里
+  // **显式置关闭 + 断言当前确实是关闭态**，跑完在 finally 里还原成进来时的值。
+  const embeddingWasEnabled = embeddingGate.isEmbeddingEnabled()
   settings.setEmbeddingEnabled(false)
-  const limit = MEMORY_LIMITS.maxBytesPerSession
-  const row = BYTE_LIMIT_CASES[0]
-  const session = 'sess-399-bytes'
-  await memory.clearSessionMemory(session)
-
-  const fit = Math.floor(limit / row.sizeOf)
-  assert.ok(fit >= 2, '用例前提：单条大小至少能放下两条，否则测的是「单条超上限」（T7）')
-  const body = (i) => `${String(i).padStart(4, '0')}${'x'.repeat(row.sizeOf - 4)}`
-
-  const { notices, off } = collectNotices()
-  resetLog()
-  const outcomes = []
   try {
-    for (let i = 0; i < fit + row.over; i += 1) {
-      outcomes.push(await memory.saveMemoryEntry(session, { key: `b-${i}`, text: body(i) }))
-    }
-  } finally {
-    off()
-  }
+    assert.equal(
+      embeddingGate.isEmbeddingEnabled(),
+      false,
+      '用例前提：T4 必须在 embedding 关闭态下跑（打开态每条会带上向量分量，字节口径就不是纯正文了）'
+    )
 
-  const survivors = await memory.listMemoryEntries(session)
-  assert.equal(survivors.length, fit, `字节上限下应当只剩 ${fit} 条`)
-  assert.ok(
-    survivors.every((entry) => entry.bytes === row.sizeOf),
-    '每条都该正好等于用例设定的字节数（口径唯一：memoryEntryBytes）'
-  )
-  const sum = survivors.reduce((total, entry) => total + entry.bytes, 0)
-  assert.equal(sum, limit, '留下的正好填满上限（边界闭区间，不多淘汰一条）')
-  assert.deepEqual(
-    survivors.map((entry) => entry.key),
-    Array.from({ length: fit }, (_, index) => `b-${row.over + index}`),
-    '留下的是最新写入的那批（oldest-first）'
-  )
-  const totalEvicted = outcomes.reduce((total, item) => total + (item.written ? item.evicted : 0), 0)
-  assert.equal(totalEvicted, row.over)
-  assert.ok(notices.some((notice) => notice.key === 'memoryEvicted'))
-  assert.ok(memoryRecords().some((entry) => entry.fields['memory.evicted'] >= 1))
-  await memory.clearSessionMemory(session)
+    const limit = MEMORY_LIMITS.maxBytesPerSession
+    const row = BYTE_LIMIT_CASES[0]
+    const session = 'sess-399-bytes'
+    await memory.clearSessionMemory(session)
+
+    // 用例前提（对夹具数字，不对运行结果断言）：条大小整除上限 —— 只有这样
+    // 「写满 上限/条 条」才正好是「正好等于上限」的边界，也才能断言「剩下的正好填满上限」。
+    assert.equal(limit % row.sizeOf, 0, '用例前提：单条大小整除字节上限（边界用例要用它）')
+    const fit = Math.floor(limit / row.sizeOf)
+    assert.ok(fit >= 2, '用例前提：单条大小至少能放下两条，否则测的是「单条超上限」（T7）')
+    const body = (i) => `${String(i).padStart(4, '0')}${'x'.repeat(row.sizeOf - 4)}`
+
+    // 字节口径**只有一份**：用例拿被测模块导出的同一个 `memoryEntryBytes` 去核对，
+    // 不另写一套 `Buffer.byteLength` / `TextEncoder` 估算（两套算法迟早漂移）。
+    for (let i = 0; i < fit + row.over; i += 1) {
+      assert.equal(
+        memory.memoryEntryBytes(body(i)),
+        row.sizeOf,
+        `用例前提：正文正好 ${row.sizeOf} 字节（口径 = 实现的 memoryEntryBytes，UTF-8）`
+      )
+    }
+
+    const { notices, off } = collectNotices()
+    resetLog()
+    const outcomes = []
+    try {
+      for (let i = 0; i < fit + row.over; i += 1) {
+        outcomes.push(await memory.saveMemoryEntry(session, { key: paddedSessKey('b', i), text: body(i) }))
+      }
+    } finally {
+      off()
+    }
+
+    // 三个观测面：模块列表 / **直接读库** / 每次写入的返回值。期望值全部现算，不硬编码 id 列表。
+    const survivors = await memory.listMemoryEntries(session)
+    const dbRows = (await rawMemoryRows()).filter((item) => item.sessionId === session)
+    const written = outcomes
+      .filter((item) => item.written)
+      .map((item) => ({
+        id: memory.memoryEntryId(session, item.entry.key),
+        key: item.entry.key,
+        updatedAt: item.entry.updatedAt,
+        bytes: item.entry.bytes,
+      }))
+    assert.equal(written.length, fit + row.over, '每一次写入都应当写成功（单条远小于上限）')
+
+    // 每条字节数 = 用例设定（关闭态：不含向量分量）
+    assert.ok(
+      survivors.every((entry) => entry.bytes === row.sizeOf),
+      '每条都该正好等于用例设定的字节数（口径唯一：memoryEntryBytes）'
+    )
+    assert.equal(
+      survivors.length,
+      fit,
+      `字节上限下应当只剩 ${fit} 条（条数由字节口径现算：上限 / 条大小，不写死数字）`
+    )
+
+    // ① 顺序契约：幸存集合 == 全部写入按 (updatedAt, id) 升序的**最后 N 条**，且顺序就是那个升序。
+    //    N 取幸存条数（由字节口径决定），所以换条大小 / 换上限也照样成立。
+    const expectedSurvivorKeys = [...written]
+      .sort(byContractOrder)
+      .slice(-survivors.length)
+      .map((item) => item.key)
+    assert.deepEqual(
+      survivors.map((entry) => entry.key),
+      expectedSurvivorKeys,
+      '留下的是最新写入的那批（oldest-first：按 (updatedAt,id) 升序取尾部）'
+    )
+    //    同一个不变量在**库上**再核一遍（不经被测模块的排序：`listMemoryEntries` 自己也会排）
+    assert.deepEqual(
+      [...dbRows].sort(byContractOrder).map((item) => item.key),
+      expectedSurvivorKeys,
+      '直接读库的幸存集合与模块列表一致（读回核对，不是信模块自报）'
+    )
+
+    // ② 幸存总字节 ≤ 上限；且是「能留的最大一批」：把最老的那条被淘汰项放回来必然超上限。
+    //    （后者比「条数对上」更硬：多淘汰一条，这个不等式立刻不成立。）
+    const sum = survivors.reduce((total, entry) => total + entry.bytes, 0)
+    assert.ok(sum <= limit, `幸存总字节 ${sum} 不该超过上限 ${limit}`)
+    const survivorKeySet = new Set(survivors.map((entry) => entry.key))
+    const evictedByContract = [...written]
+      .sort(byContractOrder)
+      .filter((item) => !survivorKeySet.has(item.key))
+    assert.ok(evictedByContract.length > 0, '本用例写了「上限/条 + 2」条，必须真的发生淘汰（否则断言的是空转）')
+    assert.ok(
+      sum + evictedByContract[0].bytes > limit,
+      `不许超额淘汰：把最老的被淘汰项（${evictedByContract[0].key}）放回来就该超上限`
+    )
+    //    边界（闭区间）：条大小整除上限（上面已钉住为前提）→ 剩下的必须**正好填满**上限，
+    //    也就是「正好等于上限不淘汰」这条边界：多淘汰一条，这个等式立刻不成立。
+    assert.equal(sum, limit, '留下的正好填满上限（边界闭区间，不多淘汰一条）')
+
+    // ③ 有淘汰就有账：条数、提示、日志三样都得在（不许静默丢）
+    const totalEvicted = outcomes.reduce((total, item) => total + (item.written ? item.evicted : 0), 0)
+    assert.ok(totalEvicted > 0, '必须真的淘汰过（本用例超了 2 条）')
+    assert.equal(totalEvicted, row.over, `累计淘汰条数应当是「超出的条数」${row.over}`)
+    assert.ok(notices.some((notice) => notice.key === 'memoryEvicted'), '淘汰必须给提示（不许静默丢）')
+    assert.ok(memoryRecords().some((entry) => entry.fields['memory.evicted'] >= 1), '淘汰必须留一条诊断日志')
+
+    // ── 边界专测：「正好等于上限」→ 一条都不淘汰 ─────────────────────────────
+    // 上面那条 `sum === limit` 是「淘汰后正好填满」；这里直接构造「写进去的正好等于上限」，
+    // 钉住的是另一侧：**判据是闭区间**（> 上限才淘汰，== 上限不淘汰）。
+    const boundarySession = 'sess-399-bytes-boundary'
+    await memory.clearSessionMemory(boundarySession)
+    const boundary = collectNotices()
+    resetLog()
+    const boundaryOutcomes = []
+    try {
+      for (let i = 0; i < fit; i += 1) {
+        boundaryOutcomes.push(
+          await memory.saveMemoryEntry(boundarySession, { key: paddedSessKey('b', i), text: body(i) })
+        )
+      }
+    } finally {
+      boundary.off()
+    }
+    const boundaryRows = (await rawMemoryRows()).filter((item) => item.sessionId === boundarySession)
+    assert.equal(
+      boundaryRows.length,
+      fit,
+      `正好等于上限（${fit} × ${row.sizeOf} = ${limit} 字节）不该淘汰任何一条`
+    )
+    assert.equal(
+      boundaryRows.reduce((total, item) => total + item.bytes, 0),
+      limit,
+      '边界用例的库内总字节必须正好等于上限'
+    )
+    assert.deepEqual(
+      boundaryOutcomes.map((item) => (item.written ? item.evicted : -1)),
+      Array.from({ length: fit }, () => 0),
+      '正好等于上限 → 每次写入的 evicted 都是 0（闭区间：只有 > 上限才淘汰）'
+    )
+    assert.deepEqual(boundary.notices, [], '没淘汰就不该有淘汰提示')
+    assert.deepEqual(
+      memoryRecords().filter((entry) => entry.fields['memory.evicted'] !== undefined),
+      [],
+      '没淘汰就不该留淘汰日志'
+    )
+  } finally {
+    await memory.clearSessionMemory('sess-399-bytes')
+    await memory.clearSessionMemory('sess-399-bytes-boundary')
+    settings.setEmbeddingEnabled(embeddingWasEnabled)
+  }
 })
 
 // ──────────────────────────────────────────────────── T5 删除会话联动清理
