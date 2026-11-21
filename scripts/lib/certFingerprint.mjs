@@ -12,7 +12,8 @@
  * **从来没有真正比对过指纹**。一处读对、另一处读错 = 同一判据两个实现，一个真一个假
  * （#285「第二份真相源」的镜像形态）。
  *
- * 所以读取逻辑只留这一份，两个脚本都调它：
+ * 所以读取逻辑只留这一份，三个脚本都调它（`verify-release-apk.mjs` 是 #705 接进来的第三个 ——
+ * 它原来自带一份字面量默认值，被单测钉着「暂时没漂移」，但那仍是同一事实的第三份副本）：
  *
  *   主源（唯一来源，#271）：`config/appIdentity.json` 的 `expectedCertSha256`（64 位小写十六进制）；
  *   兼容回落（老 checkout）：`android/app/build.gradle` 里若还有 64 位字面量，照读并点明来源；
@@ -77,6 +78,44 @@ export const resolveExpectedCertSha256 = (root = REPO_ROOT) => {
   const literal = gradleCertLiteral(root)
   if (literal) return { value: literal, source: CERT_FALLBACK_REL, invalid: null }
   return { value: null, source: null, invalid: null }
+}
+
+/** 读不到期望值（配置缺失 / 不合法 / 两份副本不等）：闸门必须直接报错，不许退回任何内置默认值。 */
+export class MissingExpectedCertError extends Error {
+  constructor(message) {
+    super(message)
+    this.name = 'MissingExpectedCertError'
+  }
+}
+
+/**
+ * `resolveExpectedCertSha256` 的**严格版**：判不出来就抛，绝不给默认值（Issue #705）。
+ *
+ * 为什么要这一层：`resolveExpectedCertSha256` 返回 `value: null` 把决定权留给调用方，
+ * 而调用方最常见的手滑就是 `?? '<某个写死的指纹>'` —— 那一行就把 fail-closed 变回 fail-open，
+ * 而且**看不出来**（配置坏了照样过闸，只是拿的是另一份真相）。所以「必须有期望值才能继续」
+ * 的闸门（`scripts/verify-release-apk.mjs`）改用这个：读不到 = 抛，没有兜底可写。
+ *
+ * @returns {{value: string, source: string, invalid: null}} 一定带上实际来源
+ * @throws {MissingExpectedCertError} 读不到 / 不合法（消息里点名文件、字段与修法）
+ */
+export const requireExpectedCertSha256 = (root = REPO_ROOT) => {
+  const expected = resolveExpectedCertSha256(root)
+  if (expected.value) return expected
+  const lines = [
+    '[FAIL] 读不到「已发布证书指纹」的期望值 —— 校验中止（fail-closed，不会退回任何内置默认值）：',
+  ]
+  if (expected.invalid) {
+    lines.push(`       ${CERT_PRIMARY_REL} 读到了但不合法：${expected.invalid}`)
+  } else {
+    lines.push(`       ${CERT_PRIMARY_REL} 不存在，且 ${CERT_FALLBACK_REL} 里也没有 EXPECTED_CERT_SHA256 字面量`)
+  }
+  lines.push('')
+  lines.push('  为什么不能猜一个值继续跑: 期望值对不上的时候，这道闸门唯一的作用就是拦人；')
+  lines.push('       拿默认值放行 = 看起来校验了、其实没校验（#697 / #702 / #705 的同一个根因）。')
+  lines.push('  修法: 期望值不是常量，是配置 —— 补回 config/appIdentity.json 的 expectedCertSha256')
+  lines.push('        （64 位小写十六进制，#271 的唯一来源）；不要往脚本里写一份字面量兜底。')
+  throw new MissingExpectedCertError(lines.join('\n'))
 }
 
 /** 仓库里「已发布证书指纹」这条断言（不是来源，是闸门：改它 = 声明一次签名迁移） */

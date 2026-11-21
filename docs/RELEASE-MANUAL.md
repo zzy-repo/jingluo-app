@@ -290,7 +290,7 @@ BT=${ANDROID_HOME:-$HOME/android-sdk}/build-tools/${BUILD_TOOLS_VERSION:?先 cp 
   | 1 | `debuggable` 不存在或 false | 复用 `scripts/check-apk-debuggable.mjs` 的 `evaluateApkDebuggable()`（判定只有一份，不复制） |
   | 2 | `ARTIFACT_VARIANT == --variant`（默认 `standard`） | `aapt2 dump xmltree --file AndroidManifest.xml` 读 meta-data |
   | 3 | `LOOPBACK_CONSUME` 不存在或 false | 同上；**标记缺失视为通过**（与 #601 闸 2 同口径：老包没有这个标记，不误伤历史包） |
-  | 4 | 签名证书 SHA-256 == `--expect-cert` | `apksigner verify --print-certs`；默认值 = §4.3 那个已发布证书 |
+  | 4 | 签名证书 SHA-256 == `--expect-cert` | `apksigner verify --print-certs`；默认值从 `config/appIdentity.json` 的 `expectedCertSha256` **派生**（#705 单一来源；读不到 = exit 2，不退回内置值） |
   | 5 | `INSECURE_CONSUME` 不存在或 false（**或者带了 `--allow-insecure`**） | 同上；缺失视为 false（老包向后兼容）。<br>`true` 且没带 `--allow-insecure` → **exit 1**（明文联调包，禁止公开分发）；带了 → 通过，但结论行强制标 `INSECURE(staging-only)`、`--json` 里 `insecure: true` |
   | 6 | 附加输出（不算失败项） | `versionName` / `versionCode` / `sha256` / `md5` / `size`，直接抄进 Release 正文 |
 
@@ -303,7 +303,7 @@ BT=${ANDROID_HOME:-$HOME/android-sdk}/build-tools/${BUILD_TOOLS_VERSION:?先 cp 
   ```
   APK   : android/app/build/outputs/apk/release/app-release.apk
   工具  : build-tools 36.0.0 · auto-max（$ANDROID_HOME；未钉住 BUILD_TOOLS_VERSION，取已装最高档 36.0.0）
-  期望  : variant=standard  cert=e7c5baee517ca2b2258950e934521f2fad448d00f72f2ff7297bdf4fa00aa8a1
+  期望  : variant=standard  cert=e7c5baee517ca2b2258950e934521f2fad448d00f72f2ff7297bdf4fa00aa8a1（来源 config/appIdentity.json；#705 起默认值只从这里派生）
 
   #  检查                             结果     实际
   -  -------------------------------  --------  ------------------------

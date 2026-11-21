@@ -18,7 +18,7 @@
  *        [--allow-insecure] [--json]
  * ```
  *   --variant         期望的构建变体（默认 `standard`，可选 `internal`）
- *   --expect-cert     期望的签名证书 SHA-256（默认取下面的 `EXPECTED_CERT_SHA256`，与仓库那份一致）
+ *   --expect-cert     期望的签名证书 SHA-256（不给就**从 config/appIdentity.json 派生**，见 `resolveExpectedCert`）
  *   --allow-insecure  明确认可「这是明文联调包」（`INSECURE_CONSUME=true`）：不加就 exit 1
  *   --json            输出结构化结果（workflow / 脚本消费；此时不打印表格）
  *
@@ -64,17 +64,51 @@ import {
   parseMetaDataFromXmltree,
 } from '../deploy/dl-release/variant.mjs';
 import { loadBuildEnv, resolveBuildTools, toolchainHint } from './lib/androidTools.mjs';
+import { REPO_ROOT } from './lib/appIdentity.mjs';
+import {
+  assertMatchesPublishedCert,
+  assertSingleFingerprintSource,
+  publishedCertSha256,
+  requireExpectedCertSha256,
+} from './lib/certFingerprint.mjs';
 
 export const EXIT_OK = 0;
 export const EXIT_FAIL = 1;
 export const EXIT_UNKNOWN = 2;
 
 /**
- * 已发布证书指纹（= `/root/.android/debug.keystore`，全历史版本都用它签名）。
- * 与 `android/app/build.gradle` 的 `EXPECTED_CERT_SHA256`、`docs/RELEASE-MANUAL.md` §4.3 是同一个值：
- * 换证书会让已装用户无法覆盖升级，所以这里**默认就查**，不靠人记得传 --expect-cert。
+ * 期望的签名证书指纹 —— **从唯一来源派生，不在这里再存一份**（Issue #705，同根因 #697 / #702）。
+ *
+ * 这里原本是一个写死的常量 `EXPECTED_CERT_SHA256 = '<64 hex>'`：单测把它钉成「等于 config」，
+ * 所以当时没有漂移，但它仍是「已发布证书指纹」这个事实的**第三份副本**（配置 / 已发布断言 / 这里）。
+ * 危险不在「现在会错」，而在下一个改签名的人会先看到这份字面量、把它当成事实来源去改 —— 改完闸门
+ * 就跟着他走了，而配置里那份还是旧的（正是 #697 / #702 各自踩过的形态）。
+ *
+ * 所以：默认值一律由 `scripts/lib/certFingerprint.mjs` 的 `requireExpectedCertSha256` 派生，
+ * 只接受 `config/appIdentity.json` 的 `expectedCertSha256`（#271 的唯一来源），并且当场过两道拦截：
+ *   1. 第二份真相源：`android/app/build.gradle` 若还留着 EXPECTED_CERT_SHA256 字面量，必须相等；
+ *   2. 签名身份：期望值必须等于 `PUBLISHED_IDENTITY.expectedCertSha256`（改一个字立刻红）。
+ * 读不到配置 / 两道拦截任一不过 → **不猜值**，按「判不出来」exit 2（fail-closed）。
+ *
+ * @returns {{ok: boolean, value: string|null, source: string|null, published: string|null,
+ *            detail: string|null}} `ok: false` 时 `detail` 是人要读的原因（调用方禁止当默认值用）
  */
-export const EXPECTED_CERT_SHA256 = 'e7c5baee517ca2b2258950e934521f2fad448d00f72f2ff7297bdf4fa00aa8a1';
+export function resolveExpectedCert({ root = REPO_ROOT } = {}) {
+  const notes = [];
+  const collect = (line) => notes.push(line);
+  let expected;
+  try {
+    expected = requireExpectedCertSha256(root);
+  } catch (error) {
+    return { ok: false, value: null, source: null, published: null, detail: error.message };
+  }
+  const parityOk = assertSingleFingerprintSource(expected, { log: collect, root });
+  const publishedOk = parityOk && assertMatchesPublishedCert(expected, { log: collect });
+  if (!parityOk || !publishedOk) {
+    return { ok: false, value: null, source: expected.source, published: publishedCertSha256(), detail: notes.join('\n') };
+  }
+  return { ok: true, value: expected.value, source: expected.source, published: publishedCertSha256(), detail: null };
+}
 
 /** 检查项状态：pass 通过 / fail 明确不过 / unknown 判不出来（fail-closed） */
 export const STATUS = Object.freeze({ PASS: 'pass', FAIL: 'fail', UNKNOWN: 'unknown' });
@@ -197,20 +231,21 @@ const STATUS_LABEL = {
  * 校验一个 APK。
  *
  * @param {{apk: string, variant?: string, expectCert?: string, env?: NodeJS.ProcessEnv,
- *          buildToolsVersion?: string|null, allowInsecure?: boolean}} options
+ *          buildToolsVersion?: string|null, allowInsecure?: boolean, root?: string}} options
+ *   `expectCert` 缺省时从 `root` 的 `config/appIdentity.json` 派生（#705）；`root` 只给用例用。
  * @returns {object} 结构化结果（形状见文件头；`--json` 直接打印它）
  */
 export function verifyReleaseApk(options) {
   const env = options.env ?? process.env;
   const expectedVariant = options.variant ?? 'standard';
-  const expectCert = String(options.expectCert ?? EXPECTED_CERT_SHA256).toLowerCase();
-  // 「明文联调包」必须是**显式**认可的一件事：不传就是不许发（见下面第 5 项）
   const allowInsecure = options.allowInsecure === true;
+  const root = options.root ?? REPO_ROOT;
   const apkArg = typeof options.apk === 'string' ? options.apk : '';
   const base = {
     apk: apkArg,
     variant: expectedVariant,
-    expectedCert: expectCert,
+    expectedCert: null,
+    expectedCertSource: null,
     allowInsecure,
     insecure: false,
     buildTools: null,
@@ -220,6 +255,29 @@ export function verifyReleaseApk(options) {
   if (!VARIANTS.includes(expectedVariant)) {
     return unknownResult(base, `--variant 只能是 ${VARIANTS.join(' / ')}，收到 "${expectedVariant}"`);
   }
+
+  // ── 期望指纹：默认从唯一来源派生；`--expect-cert` 只决定「比哪个值」（#705）────────────────
+  //
+  // 这里**没有**默认字面量：不给 `--expect-cert` 就用 `config/appIdentity.json` 的值，
+  // 读不到 / 两份副本不等 / 与已发布证书不符 → exit 2（判不出来，禁止发布）。
+  // 不许写成 `options.expectCert ?? '<64 hex>'`：那一行会把 fail-closed 变回 fail-open，
+  // 而且配置坏掉时看不出来（闸门照过，只是拿的是另一份真相）。
+  //
+  // 配置完整性**无条件先过**（连显式 `--expect-cert` 也一样）：显式值只改「比哪个指纹」，
+  // 不豁免「期望值这件事本身还说得清吗」—— 否则把配置删掉再随手传个值，就又回到 fail-open。
+  const resolved = resolveExpectedCert({ root });
+  if (!resolved.ok) {
+    return unknownResult(
+      { ...base, expectedCert: '未能从 config/appIdentity.json 派生' },
+      resolved.detail,
+    );
+  }
+  const explicitCert = typeof options.expectCert === 'string' ? options.expectCert.trim() : '';
+  const expectCert = explicitCert ? explicitCert.toLowerCase() : resolved.value;
+  base.expectedCert = expectCert;
+  base.expectedCertSource = explicitCert
+    ? '--expect-cert（命令行显式指定；config/appIdentity.json 已另行校验）'
+    : resolved.source;
 
   const apk = path.resolve(apkArg);
   base.apk = apk;
@@ -319,7 +377,7 @@ export function verifyReleaseApk(options) {
   } else if (!digests.length) {
     checks.push(check('cert', STATUS.UNKNOWN, expectCert, '判不出来', 'apksigner 没打印任何 SHA-256 指纹'));
   } else if (digests.some((digest) => digest !== expectCert)) {
-    checks.push(check('cert', STATUS.FAIL, expectCert, digests.join(', '), '换证书会让已装用户无法覆盖升级；不要为了过闸门改 EXPECTED_CERT_SHA256'));
+    checks.push(check('cert', STATUS.FAIL, expectCert, digests.join(', '), '换证书会让已装用户无法覆盖升级；不要为了过闸门改期望值（config/appIdentity.json 的 expectedCertSha256 是唯一来源，#705）'));
   } else {
     checks.push(check('cert', STATUS.PASS, expectCert, digests.join(', '), null));
   }
@@ -405,7 +463,8 @@ export function formatReport(result) {
   if (result.buildTools) {
     lines.push(`工具  : build-tools ${result.buildTools.version} · ${result.buildTools.source}`);
   }
-  lines.push(`期望  : variant=${result.variant}  cert=${result.expectedCert}`);
+  const certFrom = result.expectedCertSource ? `（来源 ${result.expectedCertSource}）` : '';
+  lines.push(`期望  : variant=${result.variant}  cert=${result.expectedCert}${certFrom}`);
   lines.push('');
   const titleWidth = Math.max(...CHECKS.map((item) => displayWidth(item.title.replace(/^\d+ /, ''))));
   lines.push(`${pad('#', 1)}  ${pad('检查', titleWidth)}  结果     实际`);
@@ -467,7 +526,8 @@ function usage() {
     '                  禁止公开分发；不带它时，带 INSECURE_CONSUME=true 标记的包一律 exit 1',
     '',
     '退出码: 0 五项全过 / 1 有项目明确不过（报告点名） / 2 判不出来（缺 SDK 工具等，同样禁止发布）',
-    `默认证书: ${EXPECTED_CERT_SHA256}`,
+    '默认证书: 取自 config/appIdentity.json 的 expectedCertSha256（唯一来源，#705）——',
+    '          读不到就 exit 2，不会退回任何内置默认指纹（fail-closed）',
   ].join('\n');
 }
 

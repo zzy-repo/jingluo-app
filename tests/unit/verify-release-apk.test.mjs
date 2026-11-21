@@ -31,17 +31,20 @@ import { fileURLToPath } from 'node:url';
 
 import {
   CHECKS,
-  EXPECTED_CERT_SHA256,
   EXIT_FAIL,
   EXIT_OK,
   EXIT_UNKNOWN,
   parseBadgingVersion,
   parseCertDigests,
+  resolveExpectedCert,
 } from '../../scripts/verify-release-apk.mjs';
+import { PUBLISHED_IDENTITY } from '../../scripts/lib/appIdentity.mjs';
 import { buildFixtures, cleanupFixtures, skipReason } from '../helpers/apk-release-fixtures.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const CLI = path.join(ROOT, 'scripts', 'verify-release-apk.mjs');
+/** 已发布证书指纹（取自断言本身；不从被测脚本取，否则「两边一起改错」也会绿） */
+const PUBLISHED = PUBLISHED_IDENTITY.expectedCertSha256.toLowerCase();
 
 /** 跑一次 CLI，返回 spawn 结果（`status` 就是被测的退出码） */
 const runCli = (args, { env = {} } = {}) => spawnSync(process.execPath, [CLI, ...args], {
@@ -70,16 +73,151 @@ test('五件套就是五项，顺序与 id 固定（少一项 = 报告里会少�
   for (const item of CHECKS) assert.match(item.title, /^\d+ /, '每项都要带序号，表格里靠它跟 --json 对齐');
 });
 
-test('默认证书指纹与 config/appIdentity.json 的 expectedCertSha256 一致（Issue #271 的唯一记录点）', () => {
-  // gradle 的 EXPECTED_CERT_SHA256 是从 config/appIdentity.json 派生的（见 android/app/build.gradle），
-  // 所以这里对着那份配置比 —— 脚本里写死的常量一旦漂移，这条立刻红。
+test('期望指纹从唯一来源派生（config/appIdentity.json）并点明来源（Issue #271 / #705）', () => {
+  // #705 之前这里钉的是「脚本里的常量 == 配置」：常量当时没漂，但它仍是「已发布证书指纹」的
+  // **第三份副本**。默认值现在只能派生，所以改钉「派生结果 == 配置 + 来源正确」。
   const identity = JSON.parse(fs.readFileSync(path.join(ROOT, 'config/appIdentity.json'), 'utf8'));
   assert.match(identity.expectedCertSha256, /^[0-9a-f]{64}$/, 'config/appIdentity.json 里没有可用的 expectedCertSha256');
-  assert.equal(
-    EXPECTED_CERT_SHA256,
-    identity.expectedCertSha256,
-    '脚本里的默认证书指纹与 config/appIdentity.json 不一致：换证书是发布级迁移，不许只改一处',
+  const resolved = resolveExpectedCert();
+  assert.equal(resolved.ok, true, `本仓配置合法时必须派生成功：${resolved.detail}`);
+  assert.equal(resolved.value, identity.expectedCertSha256, '派生的期望指纹与 config/appIdentity.json 不一致');
+  assert.equal(resolved.source, 'config/appIdentity.json', '期望值必须来自唯一来源，不许落到兼容回落（build.gradle）');
+  assert.equal(resolved.published, identity.expectedCertSha256, '本仓期望值与「已发布证书」断言必须相等');
+});
+
+test('第三份副本已消除：verify-release-apk.mjs 里不许再出现 64 位指纹字面量（Issue #705）', () => {
+  // 这条比原来的「常量 == 配置」更强：连「写死一个和配置相同的字面量」也拦。
+  // 为什么必须拦：危险不在现在会错，而在下一个换签名的人会先看到那份字面量、把它当事实来源去改。
+  const src = fs.readFileSync(CLI, 'utf8');
+  const literals = src.match(/\b[0-9a-fA-F]{64}\b/g) ?? [];
+  assert.deepEqual(literals, [], `脚本里又出现了 64 位十六进制字面量：${literals.join(', ')}（期望值只许从配置派生）`);
+  assert.ok(
+    !src.includes(PUBLISHED),
+    '已发布指纹的第三份副本不许回来：期望值只能来自 config/appIdentity.json（#705）',
   );
+});
+
+// ─────────── 1b. 期望指纹的负向对照三拍：改配置 / 删配置 / 两份副本不等（不需要 SDK） ───────────
+//
+// 三拍都跑**真 CLI**（整棵 scripts/ + deploy/ 拷进临时树，REPO_ROOT 随之换成临时树），
+// 因为要验的就是「退出码」，而临时树里只放配置和 gradle —— 不碰真仓库的 config。
+
+/** 与已发布值不同的合法 64 位十六进制 = 「改一个字」的注入值 */
+const TYPOED = `${PUBLISHED.slice(0, -1)}${PUBLISHED.endsWith('1') ? '2' : '1'}`;
+
+/**
+ * 造一棵能跑 `verify:apk` 的临时树（脚本 + deploy + 可选配置 / gradle 字面量）。
+ * **不碰真仓库**：这三拍要改配置、删配置，改完必须能干净地还原。
+ */
+const makeTree = (t, { sha = null, gradleLiteral = null } = {}) => {
+  const tree = fs.mkdtempSync(path.join(os.tmpdir(), 'verify-apk-cert-'));
+  t.after(() => fs.rmSync(tree, { recursive: true, force: true }));
+  fs.cpSync(path.join(ROOT, 'scripts'), path.join(tree, 'scripts'), { recursive: true });
+  fs.cpSync(path.join(ROOT, 'deploy'), path.join(tree, 'deploy'), { recursive: true });
+  const writeSha = (value) => {
+    fs.mkdirSync(path.join(tree, 'config'), { recursive: true });
+    fs.writeFileSync(
+      path.join(tree, 'config/appIdentity.json'),
+      `${JSON.stringify({
+        applicationId: 'com.example.deepseekchat',
+        namespace: 'com.example.deepseekchat',
+        label: { zh: '鲸落', en: 'Whale Fall' },
+        expectedCertSha256: value,
+        allowInsecureUpdateTransport: true,
+      }, null, 2)}\n`,
+    );
+  };
+  const writeGradle = (value) => {
+    fs.mkdirSync(path.join(tree, 'android/app'), { recursive: true });
+    fs.writeFileSync(path.join(tree, 'android/app/build.gradle'), `def EXPECTED_CERT_SHA256 = '${value}'\n`);
+  };
+  if (sha) writeSha(sha);
+  if (gradleLiteral) writeGradle(gradleLiteral);
+  // 期望值这一拍总在「读 APK / 找 SDK」之前，所以临时树里不需要真的 APK 与 build-tools：
+  // 配置坏掉的树会停在期望值这一步（这正是要验的），配置正常的树会往后走到「读不到 APK」。
+  const run = (args = [path.join(tree, 'no-such.apk'), '--json']) => spawnSync(
+    process.execPath,
+    [path.join(tree, 'scripts/verify-release-apk.mjs'), ...args],
+    {
+      cwd: tree,
+      encoding: 'utf8',
+      timeout: 120_000,
+      env: { ...process.env, LANG: process.env.LANG ?? 'zh_CN.UTF-8', ANDROID_HOME: '', ANDROID_SDK_ROOT: '', BUILD_TOOLS_VERSION: '' },
+    },
+  );
+  return { tree, run, writeSha, writeGradle, rmGradle: () => fs.rmSync(path.join(tree, 'android/app/build.gradle'), { force: true }) };
+};
+
+/** 一份结果里「期望值这一拍」的信息（--json 的 expectedCert / error 字段） */
+const certGate = (result) => {
+  const json = JSON.parse(result.stdout || '{}');
+  return { exitCode: result.status, json, error: String(json.error ?? ''), out: combined(result) };
+};
+
+test('负向 ①：配置被改一个字 → exit 2 且点名「配置 vs 已发布」两个值（不再静默跟着配置走）', (t) => {
+  const { run, writeSha } = makeTree(t, { sha: TYPOED });
+  const bad = certGate(run());
+  assert.notEqual(bad.exitCode, 0, `改配置必须 exit≠0（fail-closed）\n${bad.out}`);
+  assert.equal(bad.json.exitCode, EXIT_UNKNOWN, `期望值对不上 = 判不出来（exit 2）\n${bad.out}`);
+  assert.match(bad.error, /与「已发布证书」不一致/, `必须明说「与已发布证书不一致」\n${bad.out}`);
+  assert.ok(
+    bad.error.includes(`配置   ${TYPOED}`) && bad.error.includes(`已发布 ${PUBLISHED}`),
+    `必须同时点名两个值（配置 ${TYPOED} / 已发布 ${PUBLISHED}）：只说「不一致」等于让人自己猜\n${bad.out}`,
+  );
+  assert.doesNotMatch(
+    String(bad.json.expectedCert),
+    /^[0-9a-f]{64}$/,
+    `没判出来时不许给出任何 64 位期望值（那就是「悄悄用了个默认值」）\n${bad.out}`,
+  );
+  // 还原 → 这一拍不再是「证书期望值」的问题（临时树没有 APK，所以停在「读不到 APK」）
+  writeSha(PUBLISHED);
+  const restored = certGate(run());
+  assert.equal(restored.json.exitCode, EXIT_UNKNOWN, `还原后仍是 exit 2（没有 APK），但原因必须换了\n${restored.out}`);
+  assert.doesNotMatch(restored.error, /已发布证书|两份来源/, `还原配置后不许再红在指纹上\n${restored.out}`);
+  assert.match(restored.error, /读不到 APK/, `还原后应当往后走到「读不到 APK」这一步（证明上面不是恒红）\n${restored.out}`);
+});
+
+test('负向 ②：删配置 → fail-closed（exit 2 + 点名文件/字段），绝不退回内置默认指纹', (t) => {
+  const { run, writeSha } = makeTree(t);  // 既无 config/appIdentity.json，也无 gradle 字面量
+  const missing = certGate(run());
+  assert.notEqual(missing.exitCode, 0, `删配置必须 exit≠0（fail-closed，不是静默默认）\n${missing.out}`);
+  assert.equal(missing.json.exitCode, EXIT_UNKNOWN, `读不到期望值 = 判不出来（exit 2）\n${missing.out}`);
+  assert.match(missing.error, /config\/appIdentity\.json/, `必须点名是哪个文件缺了\n${missing.out}`);
+  assert.match(missing.error, /expectedCertSha256/, `必须点名是哪个字段\n${missing.out}`);
+  assert.match(missing.error, /fail-closed/, `必须明说这是 fail-closed，不是「跳过这一项」\n${missing.out}`);
+  assert.doesNotMatch(
+    String(missing.json.expectedCert),
+    /^[0-9a-f]{64}$/,
+    `配置缺失时不许出现任何 64 位期望值（那是 fail-open 的默认值）\n${missing.out}`,
+  );
+  assert.deepEqual(missing.json.checks.map((item) => item.status), CHECKS.map(() => 'unknown'), `期望值都没拿到，五项一律记 unknown\n${missing.out}`);
+  // 显式 --expect-cert 也**不豁免**配置完整性：否则「删配置 + 随手给个值」又是一次 fail-open
+  const withExplicit = certGate(run([path.join('no-such.apk'), '--expect-cert', PUBLISHED, '--json']));
+  assert.equal(withExplicit.json.exitCode, EXIT_UNKNOWN, `配置缺失时，显式 --expect-cert 也必须先报配置问题\n${withExplicit.out}`);
+  assert.match(withExplicit.error, /config\/appIdentity\.json/, `必须点名缺的是配置文件，而不是「APK 读不到」\n${withExplicit.out}`);
+  // 还原（补回配置）→ 不再是「配置缺失」的问题
+  writeSha(PUBLISHED);
+  const restored = certGate(run());
+  assert.doesNotMatch(restored.error, /config\/appIdentity\.json/, `补回配置后不许再报「读不到配置」\n${restored.out}`);
+  assert.match(restored.error, /读不到 APK/, `补回配置后应当往后走到「读不到 APK」\n${restored.out}`);
+});
+
+test('负向 ③：两份副本不等（配置 ≠ gradle 遗留字面量）→ exit 2 且分别点名两个值与来源', (t) => {
+  const { run, rmGradle } = makeTree(t, { sha: PUBLISHED, gradleLiteral: TYPOED });
+  const parity = certGate(run());
+  assert.notEqual(parity.exitCode, 0, `两份副本不等必须 exit≠0\n${parity.out}`);
+  assert.equal(parity.json.exitCode, EXIT_UNKNOWN, `两份副本不等 = 判不出来（exit 2）\n${parity.out}`);
+  assert.match(parity.error, /两份来源且不一致|第二份真相源/, `必须点明「第二份真相源」\n${parity.out}`);
+  assert.ok(
+    parity.error.includes(`期望 ${PUBLISHED}（来源 config/appIdentity.json）`) &&
+      parity.error.includes(`实际 ${TYPOED}（来源 android/app/build.gradle 的 EXPECTED_CERT_SHA256 字面量）`),
+    `点名两个值时必须分别标出来源\n${parity.out}`,
+  );
+  // 删掉那份遗留副本（= 收敛到单一来源）→ 不再是「两份不等」的问题
+  rmGradle();
+  const restored = certGate(run());
+  assert.doesNotMatch(restored.error, /两份来源且不一致|第二份真相源/, `删掉副本后不许再红在「两份来源」上\n${restored.out}`);
+  assert.match(restored.error, /读不到 APK/, `删掉副本后应当往后走到「读不到 APK」（证明上面不是恒红）\n${restored.out}`);
 });
 
 test('import 校验脚本/check-apk-debuggable 不会顺带跑 CLI（复用方不该被副作用带走）', () => {
@@ -105,13 +243,16 @@ test('解析器：badging 首行的 versionName / versionCode / packageName', ()
   assert.deepEqual(parseBadgingVersion(null), {});
 });
 
+/** 解析器用例的样本值（#705 之后脚本里没有常量可取，也不该有：这里要的只是一个 64 位十六进制串） */
+const SAMPLE_CERT = 'a'.repeat(64);
+
 test('解析器：apksigner --print-certs 的 SHA-256（多 signer 全收，十六进制统一小写）', () => {
   const out = [
     'Signer #1 certificate DN: C=US, O=Android, CN=Android Debug',
-    `Signer #1 certificate SHA-256 digest: ${EXPECTED_CERT_SHA256.toUpperCase()}`,
+    `Signer #1 certificate SHA-256 digest: ${SAMPLE_CERT.toUpperCase()}`,
     'Signer #1 certificate SHA-1 digest: 1bf254cc4881ca14a32379b7c487de4ad9548b5e',
   ].join('\n');
-  assert.deepEqual(parseCertDigests(out), [EXPECTED_CERT_SHA256]);
+  assert.deepEqual(parseCertDigests(out), [SAMPLE_CERT]);
   assert.deepEqual(parseCertDigests('no certs here'), []);
   assert.deepEqual(parseCertDigests(undefined), []);
 });
