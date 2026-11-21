@@ -1,11 +1,14 @@
 // [layer: unit | 纯 Node + 本机 Android SDK build-tools（缺工具时**声明期** SKIP）| 耗时: ~20s]
 //
-// 「发布 APK 五件套校验」的用例（Issue #607；第 5 项 INSECURE_CONSUME 是 #601 守卫的补正面）。
+// 「发布 APK 六件套校验」的用例（Issue #607；第 5 项 INSECURE_CONSUME 是 #601 守卫的补正面，
+// 第 6 项「包内 consume.baseUrl」是 #763 的补正面）。
 // 被测脚本：`scripts/verify-release-apk.mjs`。
 //
 // 这个文件要回答的只有三个问题，别把它写成「脚本能跑」：
-//   1. **五项都在**：debuggable / ARTIFACT_VARIANT / LOOPBACK_CONSUME / 证书 / INSECURE_CONSUME
-//      —— 少一项就是「五件套」三个字在骗人；
+//   1. **六项都在**：debuggable / ARTIFACT_VARIANT / LOOPBACK_CONSUME / 证书 / INSECURE_CONSUME /
+//      包内 consume.baseUrl —— 少一项就是「六件套」三个字在骗人；
+//      第 6 项（#763）另外单独证明：包内地址与 `config/endpoints.json` 不符 → exit 1 且点名两个值；
+//      build-info.json 缺失 → exit 2（判不出来）；`--forbid-host` 是**独立维度**（期望 == 实际也判红）；
 //   2. **每项都会真的红**：五种坏包（debuggable / 变体不对 / 回环标记 / 换签证书 / 明文联调包没带
 //      --allow-insecure）各自 **exit 1**，并且**点名**是哪一项挂了（`结论：FAIL（debuggable 不通过）`
 //      这行，不是「反正红了」）；反过来，明文联调包带 `--allow-insecure` 必须过、且结论行标
@@ -76,11 +79,24 @@ const combined = (result) => `${result.stdout ?? ''}${result.stderr ?? ''}`;
  */
 const CONFIG_CERT = resolveExpectedCertSha256(ROOT).value;
 
-/** 造一个只含 `config/appIdentity.json` 的临时仓库根（证明派生 / 缺失 / 非法三条路径） */
+/** 「判不出来」时六项（#763 起是 6 项）必须全是 unknown —— 顺序与 `CHECKS` 一致 */
+const UNKNOWN_CHECKS = ['unknown', 'unknown', 'unknown', 'unknown', 'unknown', 'unknown'];
+
+/**
+ * 造一个临时仓库根的 `config/`：
+ *   · `config/endpoints.json` —— **从仓库复制一份**（第 6 项 #763 的期望值只能从这份配置读；
+ *     临时根里没有它 → 第 6 项判不出来 exit 2，会掩盖本节真正要钉的行为）。复制而不是抄常量，
+ *     否则测试里就有了第二份真相源（#705 / #763 同一个病）；
+ *   · `config/appIdentity.json` —— 调用方给的 `identity`（`undefined` = 故意不给，证明「读不到」）。
+ */
 function makeRoot(identity) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'verify-apk-root-'));
+  fs.mkdirSync(path.join(root, 'config'), { recursive: true });
+  fs.copyFileSync(
+    path.join(ROOT, 'config', 'endpoints.json'),
+    path.join(root, 'config', 'endpoints.json'),
+  );
   if (identity !== undefined) {
-    fs.mkdirSync(path.join(root, 'config'), { recursive: true });
     fs.writeFileSync(path.join(root, 'config', 'appIdentity.json'), identity);
   }
   return root;
@@ -97,10 +113,13 @@ const SKIP_REASON = skipReason();
  */
 const SKIP = SKIP_REASON ? { skip: SKIP_REASON } : {};
 
-// ────────────────────────────── 1. 「五项都在」与常量一致性（不需要 SDK） ──────────────────────────────
+// ────────────────────────────── 1. 「六项都在」与常量一致性（不需要 SDK） ──────────────────────────────
 
-test('五件套就是五项，顺序与 id 固定（少一项 = 报告里会少一行）', () => {
-  assert.deepEqual(CHECKS.map((item) => item.id), ['debuggable', 'variant', 'loopback', 'cert', 'insecure']);
+test('六件套就是六项，顺序与 id 固定（少一项 = 报告里会少一行）', () => {
+  assert.deepEqual(
+    CHECKS.map((item) => item.id),
+    ['debuggable', 'variant', 'loopback', 'cert', 'insecure', 'consumeBase'],
+  );
   for (const item of CHECKS) assert.match(item.title, /^\d+ /, '每项都要带序号，表格里靠它跟 --json 对齐');
 });
 
@@ -200,27 +219,27 @@ test('文件不存在 / 少参数 / 变体名非法 → exit 2 且给用法', ()
 // ────────────────────────────── 3. 正例 + 四种负向对照（需要 SDK：真签名夹具） ──────────────────────────────
 //
 // `expect.code` = 退出码；`expect.conclusion` = 「结论」行必须**点名**的那一项
-// （正例是 `PASS（5/5 项通过）`，负例是 `FAIL（<id> 不通过）`）——「红了但不知道红在哪」不算咬住。
+// （正例是 `PASS（6/6 项通过）`，负例是 `FAIL（<id> 不通过）`）——「红了但不知道红在哪」不算咬住。
 
 const ROWS = [
   {
     id: 'P1',
     what: '干净 standard 包（LOOPBACK_CONSUME=false）：四项全绿',
     fixture: 'clean',
-    expect: { code: EXIT_OK, conclusion: /结论：PASS（5\/5 项通过）—— 可以发布。/ },
+    expect: { code: EXIT_OK, conclusion: /结论：PASS（6\/6 项通过）—— 可以发布。/ },
   },
   {
     id: 'P2',
     what: '老包没有 LOOPBACK_CONSUME 标记 → 缺失视为通过（不误伤历史包）',
     fixture: 'noLoopback',
-    expect: { code: EXIT_OK, conclusion: /结论：PASS（5\/5 项通过）/, also: /标记缺失（视为 false）/ },
+    expect: { code: EXIT_OK, conclusion: /结论：PASS（6\/6 项通过）/, also: /标记缺失（视为 false）/ },
   },
   {
     id: 'P3',
     what: '--variant internal 验 internal 包 → 通过（变体是参数，不是写死 standard）',
     fixture: 'internal',
     args: ['--variant', 'internal'],
-    expect: { code: EXIT_OK, conclusion: /结论：PASS（5\/5 项通过）/, also: /internal/ },
+    expect: { code: EXIT_OK, conclusion: /结论：PASS（6\/6 项通过）/, also: /internal/ },
   },
   {
     id: 'N1',
@@ -263,7 +282,7 @@ const ROWS = [
     args: ['--allow-insecure'],
     expect: {
       code: EXIT_OK,
-      conclusion: /结论：PASS（5\/5 项通过）—— \*\*INSECURE\(staging-only\)\*\*/,
+      conclusion: /结论：PASS（6\/6 项通过）—— \*\*INSECURE\(staging-only\)\*\*/,
       also: /禁止公开分发/,
     },
   },
@@ -312,7 +331,17 @@ test('P5 --json 是结构化结果（workflow / 脚本消费的那份形状）',
   assert.equal(report.variant, 'standard');
   assert.equal(report.expectedCert, built.certA);
   assert.equal(report.expectCertSource, CERT_SOURCE_CLI, '--expect-cert 显式传入时来源要标 CLI（复核的人靠它）');
-  assert.deepEqual(report.checks.map((item) => item.id), ['debuggable', 'variant', 'loopback', 'cert', 'insecure']);
+  assert.deepEqual(
+    report.checks.map((item) => item.id),
+    ['debuggable', 'variant', 'loopback', 'cert', 'insecure', 'consumeBase'],
+  );
+  // 第 6 项（#763）：--json 里要能直接读出「期望哪个地址、包内实际是哪个、期望值哪来的、禁止域是什么」
+  assert.equal(report.expectConsumeBase, built.consumeBase, '期望 consume.baseUrl 必须来自配置（不是脚本文面量）');
+  assert.equal(report.expectConsumeBaseSource, 'config/endpoints.json', '来源要标明（复核的人靠它判断比的是哪来的值）');
+  assert.deepEqual(report.forbidHosts, [], '没传 --forbid-host 时是空数组（不是 undefined）');
+  assert.equal(report.consumeBase.expected, built.consumeBase);
+  assert.equal(report.consumeBase.actual, built.consumeBase, '夹具包内的 build-info 写的就是配置值');
+  assert.equal(report.consumeBase.forbiddenHit, null);
   assert.equal(report.insecure, false, '干净包的 insecure 必须是 false');
   for (const item of report.checks) {
     assert.equal(item.status, 'pass', `${item.id} 应为 pass：${JSON.stringify(item)}`);
@@ -348,6 +377,104 @@ test('P5 --json 是结构化结果（workflow / 脚本消费的那份形状）',
   assert.equal(insecureRed.ok, false);
   assert.equal(insecureRed.insecure, true);
   assert.deepEqual(insecureRed.failing, ['insecure']);
+});
+
+// ─────────────────── 3b. 第 6 项：包内 consume.baseUrl（#763）的负向对照 ───────────────────
+//
+// 这一节是「第 6 项真的咬人」的证明，三条各钉一件事：
+//   N6  **判不出来 ≠ 通过**：包里没有 `assets/public/build-info.json`（cap sync 没跑 / 老产物）
+//       → exit 2，且文案点名缺的是哪个文件；
+//   N7  **地址不符 ≠ 灰度容忍**：包内 `consume.baseUrl` 是那个错实例（1.4.5–1.4.8 的真实形态）
+//       → exit 1，且**两个值都点名**（期望 / 实际）——「红了但不知道哪两个值不一样」不算咬住；
+//   N8  **禁止域是独立维度**：期望 == 实际（都指向那个错域名）时，靠「期望值自比」是发现不了的，
+//       必须由 `--forbid-host` 单独判红 —— 这是「有人把期望值一起改成错域名」的唯一防线。
+// 三条都只用夹具包，不碰真实 APK；缺 SDK 时整节在声明期 SKIP（与第 3 节同口径）。
+
+test('N6 包里没有 build-info.json → exit 2（判不出来），且点名缺的是 assets/public/build-info.json', SKIP, () => {
+  const built = fixtures();
+  const result = runCli([built.apks.noBuildInfo, '--expect-cert', built.certA]);
+  assert.equal(
+    result.status,
+    EXIT_UNKNOWN,
+    `缺自述文件必须 exit 2（不是 0「当通过」、也不是 1「当某项不过」），实际 ${result.status}\n${combined(result)}`,
+  );
+  assert.match(combined(result), /没有 assets\/public\/build-info\.json/, '文案要点名缺的是哪个文件（人得知道去查哪一步）');
+  assert.match(combined(result), /结论：UNKNOWN（判不出来）/, '结论行要说清是「判不出来」，不是「某一项不过」');
+  assert.match(combined(result), /consume\.baseUrl|consume\.baseUrl 与期望一致/, '报告里要指出是第 6 项判不出来');
+  // --json 里同样要能读出「这一项是 unknown」以及「为什么」
+  const report = JSON.parse(runCli([built.apks.noBuildInfo, '--expect-cert', built.certA, '--json']).stdout);
+  assert.equal(report.exitCode, EXIT_UNKNOWN);
+  assert.deepEqual(report.unknown, ['consumeBase'], 'unknown 点名到 consumeBase 这一项');
+  assert.deepEqual(report.failing, [], '「判不出来」不许表述成「某项不过」');
+  assert.match(report.checks.find((item) => item.id === 'consumeBase').detail, /assets\/public\/build-info\.json/);
+  assert.equal(report.consumeBase, null, '判不出来时不许给出「实际值」（那就是猜）');
+  assert.equal(report.expectConsumeBase, built.consumeBase, '期望值仍然要报出来（判不出来的是包内值，不是期望值）');
+});
+
+test('N7 包内 consume.baseUrl 不是配置里那个 → exit 1，且点名「期望 / 实际」两个值', SKIP, () => {
+  const built = fixtures();
+  assert.notEqual(built.wrongConsumeBase, built.consumeBase, '夹具前提：错地址与配置值必须不同');
+  const result = runCli([built.apks.consumeWrong, '--expect-cert', built.certA]);
+  assert.equal(result.status, EXIT_FAIL, `地址不符必须 exit 1，实际 ${result.status}\n${combined(result)}`);
+  const output = combined(result);
+  assert.match(output, /结论：FAIL（consumeBase 不通过）/, '结论行要点名是第 6 项挂了');
+  // 两个值都点名（期望来自配置 / 实际来自包内）：只红不说值，等于让人自己去 grep
+  assert.ok(output.includes(`期望 '${built.consumeBase}'`), `要点名期望值 ${built.consumeBase}\n${output}`);
+  assert.ok(output.includes(`实际 '${built.wrongConsumeBase}'`), `要点名实际值 ${built.wrongConsumeBase}\n${output}`);
+  assert.match(output, /config\/endpoints\.json/, '要点名期望值的来源（人要知道去哪改）');
+  assert.match(output, /assets\/public\/build-info\.json/, '要点名实际值是从包里哪个文件读出来的');
+  // 前五项一个都不该红：这类坏包正是「旧判据看不见」的那种（#763 的根因）
+  const report = JSON.parse(runCli([built.apks.consumeWrong, '--expect-cert', built.certA, '--json']).stdout);
+  assert.deepEqual(report.failing, ['consumeBase'], '只有第 6 项红 —— 前五项照旧全绿，所以以前这道闸报 5/5');
+  assert.equal(report.checks.find((item) => item.id === 'debuggable').status, 'pass');
+  assert.equal(report.checks.find((item) => item.id === 'cert').status, 'pass');
+  assert.equal(report.consumeBase.actual, built.wrongConsumeBase);
+  assert.equal(report.consumeBase.expected, built.consumeBase);
+});
+
+test('N8 --forbid-host 是独立维度：期望 == 实际（都指向禁止域）也必须 exit 1', SKIP, () => {
+  const built = fixtures();
+  // ① 期望仍是配置值 + 禁止域：红的理由要被点名成「禁止域」，而不是笼统的「不符」
+  const withForbid = runCli([
+    built.apks.consumeWrong, '--expect-cert', built.certA, '--forbid-host', built.wrongConsumeHost,
+  ]);
+  assert.equal(withForbid.status, EXIT_FAIL, combined(withForbid));
+  assert.match(combined(withForbid), /命中禁止域/, '要明确是禁止域这一维度判红的');
+  assert.match(combined(withForbid), /sub2api\.rose7\.cn/, '要点名命中的那个域名');
+
+  // ② 关键的一条：期望值也被改成那个错域名（期望 == 实际），只靠「逐字比对」是绿的 ——
+  //    禁止域必须自己把它判红（这是 #763 的防线：不能靠「改期望值」把闸门弄绿）
+  const sameBoth = runCli([
+    built.apks.consumeWrong,
+    '--expect-cert', built.certA,
+    '--expect-consume-base', built.wrongConsumeBase,
+    '--forbid-host', built.wrongConsumeHost,
+  ]);
+  assert.equal(
+    sameBoth.status,
+    EXIT_FAIL,
+    `期望 == 实际时只有禁止域能挡住（#763）：\n${combined(sameBoth)}`,
+  );
+  assert.match(combined(sameBoth), /命中禁止域/);
+  const sameBothJson = JSON.parse(runCli([
+    built.apks.consumeWrong,
+    '--expect-cert', built.certA,
+    '--expect-consume-base', built.wrongConsumeBase,
+    '--forbid-host', built.wrongConsumeHost,
+    '--json',
+  ]).stdout);
+  assert.deepEqual(sameBothJson.failing, ['consumeBase']);
+  assert.equal(sameBothJson.expectConsumeBaseSource, '--expect-consume-base', '覆盖要留痕（来源标 CLI）');
+  assert.equal(sameBothJson.consumeBase.expected, built.wrongConsumeBase);
+  assert.equal(sameBothJson.consumeBase.actual, built.wrongConsumeBase, '期望与实际相同');
+  assert.equal(sameBothJson.consumeBase.forbiddenHit.host, built.wrongConsumeHost, '命中记录要能直接读出域名');
+
+  // ③ 反证：同一个包，把地址换成配置值（即 clean 夹具）→ 通过。说明 N7/N8 红的是「地址不对」，不是「第 6 项永远红」
+  const healthy = runCli([
+    built.apks.clean, '--expect-cert', built.certA, '--forbid-host', built.wrongConsumeHost,
+  ]);
+  assert.equal(healthy.status, EXIT_OK, `正确地址 + 禁止域不该误伤：\n${combined(healthy)}`);
+  assert.match(combined(healthy), /结论：PASS（6\/6 项通过）/, '六项全过（第 6 项也要在通过数里）');
 });
 
 // ─────────────────── 4. 期望指纹的单一来源 + fail-closed（#705 / #705 收尾） ───────────────────
@@ -436,7 +563,7 @@ test('C3 配置缺失 / 非法 → value = null（判不出来），且不给任
   }
 });
 
-test('C4 配置缺失 / 非法 → exit 2、五项全 unknown、文案说清来源与修法（不需要 SDK）', () => {
+test('C4 配置缺失 / 非法 → exit 2、六项全 unknown、文案说清来源与修法（不需要 SDK）', () => {
   // 期望值判不出来发生在「碰 APK 之前」，所以这里故意拿一个非 APK 路径：能证明是配置这一关先挡住的
   for (const identity of [undefined, JSON.stringify({ expectedCertSha256: 'z'.repeat(64) })]) {
     const root = makeRoot(identity);
@@ -453,8 +580,8 @@ test('C4 配置缺失 / 非法 → exit 2、五项全 unknown、文案说清来�
       assert.match(result.error, /--expect-cert/, '文案要给修法（临时换指纹的通道）');
       assert.deepEqual(
         result.checks.map((item) => item.status),
-        ['unknown', 'unknown', 'unknown', 'unknown', 'unknown'],
-        '判不出来 = 五项全 unknown（不是「证书一项不过」，更不是 pass）',
+        UNKNOWN_CHECKS,
+        '判不出来 = 六项全 unknown（不是「证书一项不过」，更不是 pass）',
       );
       assert.deepEqual(result.failing, [], '「判不出来」不许表述成「某几项不过」');
     } finally {
@@ -472,10 +599,7 @@ test('C4b 配置缺失 + 真 APK → exit 2（不是 0、也不是 1：不许拿
     const result = verifyReleaseApk({ apk: built.apks.clean, root });
     assert.equal(result.exitCode, EXIT_UNKNOWN, `配置缺失必须 exit 2，实际 ${result.exitCode}（0 = 用了内置默认值跑完，1 = 被当成证书不符）`);
     assert.match(result.error ?? '', /期望证书指纹判不出来/);
-    assert.deepEqual(
-      result.checks.map((item) => item.status),
-      ['unknown', 'unknown', 'unknown', 'unknown', 'unknown'],
-    );
+    assert.deepEqual(result.checks.map((item) => item.status), UNKNOWN_CHECKS);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
@@ -504,8 +628,8 @@ test('C5 --expect-cert 不豁免配置完整性（收尾加固）：配置被改
       assert.match(result.error, /--expect-cert 不豁免这条/, `${label}：文案要写清 --expect-cert 的语义`);
       assert.deepEqual(
         result.checks.map((item) => item.status),
-        ['unknown', 'unknown', 'unknown', 'unknown', 'unknown'],
-        `${label}：前门拦下时 APK 一项都没判（五项全 unknown，不是 pass）`,
+        UNKNOWN_CHECKS,
+        `${label}：前门拦下时 APK 一项都没判（六项全 unknown，不是 pass）`,
       );
     }
 

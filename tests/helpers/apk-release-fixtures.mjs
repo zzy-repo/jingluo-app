@@ -21,6 +21,7 @@ import path from 'node:path';
 
 import { buildApk } from '../fixtures/domain10/apk-fixture.mjs';
 import { resolveBuildTools } from '../../scripts/lib/androidTools.mjs';
+import { loadConsumePay } from '../../scripts/lib/consumeEndpoints.mjs';
 
 /** 变体标记名（与 `deploy/dl-release/variant.mjs` 的 DEFAULT_MARKER 一致） */
 export const VARIANT_MARKER = 'com.example.deepseekchat.ARTIFACT_VARIANT';
@@ -28,6 +29,45 @@ export const VARIANT_MARKER = 'com.example.deepseekchat.ARTIFACT_VARIANT';
 export const LOOPBACK_MARKER = 'com.example.deepseekchat.LOOPBACK_CONSUME';
 /** 明文联调包标记名（#601 守卫的补正面：INSECURE_CONSUME） */
 export const INSECURE_MARKER = 'com.example.deepseekchat.INSECURE_CONSUME';
+
+/**
+ * 包内产物自述文件的 zip 条目名（#763：`verify:apk` 第 6 项读它，与脚本的 `BUILD_INFO_ENTRY` 同一个名字）。
+ * 写在夹具里是**故意的**：判据要的是「真产物里有这个文件」，夹具缺了就该被判「判不出来」。
+ */
+export const BUILD_INFO_ENTRY = 'assets/public/build-info.json';
+
+/**
+ * 配置里的 consume / pay 地址（**从 `config/endpoints.json` 读**，不在测试里另立一份常量）。
+ * 第 6 项是「包内值 == 配置值」的逐字比对，所以夹具要抄的就是这份配置值 —— 但它只能从配置读，
+ * 抄成字面量就成了第 N 份副本（#705 / #763 同一个病）。
+ */
+const CONSUME_PAY = loadConsumePay();
+
+/** 配置里的 `consume.baseUrl`（夹具默认塞进 build-info.json 的值） */
+export const CONSUME_BASE = CONSUME_PAY.consume.baseUrl;
+
+/**
+ * 「错的域名」——1.4.5–1.4.8 那四个包实际指向的实例（#763 的事故域）。
+ * 这是**负向对照用的故意写错的值**，不是配置值的副本（配置值从上面读），
+ * 所以它可以、也只能以字面量形式出现在这里。`--forbid-host` 收的是**主机名**，所以单独留一个常量。
+ */
+export const WRONG_CONSUME_HOST = 'sub2api.rose7.cn';
+
+/** 上面那个域的 https base（夹具包内 build-info 里塞它，模拟那四个错包） */
+export const WRONG_CONSUME_BASE = `https://${WRONG_CONSUME_HOST}`;
+
+/**
+ * build-info.json 的内容：形状照 `rspack.config.ts` 的 BuildInfoPlugin（只保留闸门真正读的字段）。
+ * `variant` 与清单里的 `ARTIFACT_VARIANT` 保持一致 —— 真实产物就是这么自洽的。
+ */
+const buildInfoJson = ({ variant, consumeBase }) => `${JSON.stringify({
+  variant,
+  version: '0.0.0',
+  endpoints: {
+    consume: { baseUrl: consumeBase },
+    pay: { baseUrl: CONSUME_PAY.pay.baseUrl },
+  },
+}, null, 2)}\n`;
 
 const KEYSTORE_PASS = 'android';
 
@@ -133,7 +173,9 @@ export function certDigest(apk) {
  *
  * 返回值：
  *   `certA` / `certB` —— 两把不同的证书指纹（A =「已发布那把」的角色，B =「换签了」的角色）
- *   `apks.*` —— 六个已签名 APK 的绝对路径，`apks` 名对应下面的清单
+ *   `apks.*` —— 八个已签名 APK 的绝对路径，`apks` 名对应下面的清单
+ *   `consumeBase` —— 配置里那个 `consume.baseUrl`（夹具包内 build-info 里塞的就是它，第 6 项靠它比）
+ *   `wrongConsumeBase` / `wrongConsumeHost` —— 负向对照用的错地址与其主机名（#763 的事故域）
  */
 let fixtureCache;
 export function buildFixtures() {
@@ -165,17 +207,51 @@ export function buildFixtures() {
     loopbackTrue: { debuggable: false, metaData: { [VARIANT_MARKER]: 'standard', [LOOPBACK_MARKER]: true } },
     // debug 变体：application 上写着 android:debuggable="true"
     debuggable: { debuggable: true, metaData: { [VARIANT_MARKER]: 'standard', [LOOPBACK_MARKER]: false } },
+    // 包内 consume.baseUrl 指到了错实例（1.4.5–1.4.8 的真实事故形态，#763）：
+    // 其余五项全绿，只有第 6 项该红 —— 这一条就是「前五项看不见的那类坏包」
+    consumeWrong: {
+      debuggable: false,
+      metaData: { [VARIANT_MARKER]: 'standard', [LOOPBACK_MARKER]: false, [INSECURE_MARKER]: false },
+      consumeBase: WRONG_CONSUME_BASE,
+    },
+    // 没有 build-info.json 的包（cap sync 没跑 / 老产物）：第 6 项**判不出来** → exit 2
+    noBuildInfo: {
+      debuggable: false,
+      metaData: { [VARIANT_MARKER]: 'standard', [LOOPBACK_MARKER]: false, [INSECURE_MARKER]: false },
+      noBuildInfo: true,
+    },
   };
+
+  /**
+   * 清单变体 → `buildApk()` 的实参。
+   *
+   * 除了一处例外，每个夹具都带 `assets/public/build-info.json`：真产物（`pnpm build` + cap sync）
+   * 一定有这个自述文件，缺了它第 6 项就判「不知道包里连的是哪台后端」（#763）。
+   * `noBuildInfo` 那条**故意不带** —— 它是「判不出来就 fail-closed」的负向对照。
+   */
+  const apkOptions = (spec) => ({
+    debuggable: spec.debuggable,
+    metaData: spec.metaData,
+    extraEntries: spec.noBuildInfo
+      ? []
+      : [{
+        name: BUILD_INFO_ENTRY,
+        data: Buffer.from(buildInfoJson({
+          variant: spec.metaData?.[VARIANT_MARKER] ?? 'standard',
+          consumeBase: spec.consumeBase ?? CONSUME_BASE,
+        })),
+      }],
+  });
 
   const apks = {};
   for (const [name, spec] of Object.entries(specs)) {
     const unsigned = path.join(dir, `${name}.unsigned.apk`);
-    fs.writeFileSync(unsigned, buildApk(spec));
+    fs.writeFileSync(unsigned, buildApk(apkOptions(spec)));
     apks[name] = signApk({ input: unsigned, output: path.join(dir, `${name}.apk`), signer: signerA });
   }
   // 同一个清单，换另一把证书签：证书检查的负向对照
   const unsignedMismatch = path.join(dir, 'certMismatch.unsigned.apk');
-  fs.writeFileSync(unsignedMismatch, buildApk(specs.clean));
+  fs.writeFileSync(unsignedMismatch, buildApk(apkOptions(specs.clean)));
   apks.certMismatch = signApk({
     input: unsignedMismatch,
     output: path.join(dir, 'certMismatch.apk'),
@@ -187,6 +263,9 @@ export function buildFixtures() {
     certA: certDigest(apks.clean),
     certB: certDigest(apks.certMismatch),
     apks,
+    consumeBase: CONSUME_BASE,
+    wrongConsumeBase: WRONG_CONSUME_BASE,
+    wrongConsumeHost: WRONG_CONSUME_HOST,
     buildToolsVersion: tools.version,
   };
   return fixtureCache;

@@ -17,6 +17,8 @@
 // 用法：
 //   buildApk({ debuggable: true, versionName: '1.4.1', versionCode: 19 })
 //   buildApk({ packageName: 'com.other.app' })      // 令服务端的包名白名单拒收
+//   buildApk({ extraEntries: [{ name: 'assets/public/build-info.json', data: Buffer.from('{}') }] })
+//                                                    // 追加 zip 条目（#763：发布闸第 6 项要读包内 build-info）
 
 /** AXML 字符串池（UTF-8 变体，UTF16 length + UTF8 length 双长度前缀） */
 const stringPool = (strings) => {
@@ -278,9 +280,15 @@ export const buildZip = (entries) => {
   return Buffer.concat([...locals, centralBuf, eocd])
 }
 
-/** 造一个「像真的」APK：AndroidManifest.xml + classes.dex */
+/**
+ * 造一个「像真的」APK：AndroidManifest.xml + classes.dex。
+ *
+ * `extraEntries`（可选）原样追加进 zip —— 给「包里还得有某个 assets 文件」的判据用
+ * （#763：`verify:apk` 第 6 项读 `assets/public/build-info.json`）。默认不追加，老调用方行为不变。
+ */
 export const buildApk = (options = {}) =>
   buildZip([
     { name: 'AndroidManifest.xml', data: buildManifestAxml(options) },
     { name: 'classes.dex', data: Buffer.from('dex\n035\0', 'binary') },
+    ...(options.extraEntries ?? []),
   ])
