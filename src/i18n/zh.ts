@@ -112,7 +112,7 @@ export const zh = {
    * 「换 Key 时旧 Key 会立即作废」是 #90 时代的说法，留着会让用户以为「点了重置把我的 Key 弄废了」。
    */
   replyApiKeyRotated:
-    '这把 API Key 已被轮换或吊销，旧的已经失效（本机「重置额度」只重算额度、不换 Key，所以是服务端那边作废的）；可以在「我们的渠道」里按设备码重新取回当前 Key，或直接换一把新 Key',
+    '这把 API Key 已被轮换或吊销，旧的已经失效（本机「重置额度」只重算额度、不换 Key，所以是服务端那边作废的）；可以在「内置渠道」里按设备码重新取回当前 Key，或直接换一把新 Key',
   /** 提示里的 Key 身份：只说尾 4 位，让用户确认「是哪把 Key 出问题」（#374） */
   replyApiKeyTailNote: '（当前 Key 尾号 {tail}）',
   /**
@@ -427,11 +427,11 @@ export const zh = {
   voiceInputLimitReached: '已达到单次录音时长上限',
   voiceInputRequiresHttps: '非 HTTPS 页面无法使用语音输入',
   /** #451：判据与出路一起说清 —— 「换一把」之外还有「按设备码取回本机那把」这条路（#357 之后仍然成立） */
-  apiKeyInvalidRetry: 'API Key 无效，请重新填写；或在「我们的渠道」里用「重置额度」按设备码取回本机 Key',
+  apiKeyInvalidRetry: 'API Key 无效，请重新填写；或在「内置渠道」里用「重置额度」按设备码取回本机 Key',
   /** 上游 401 之后的统一提示（#303 问题 3）：既要说明原因，也要说明下一步怎么修 */
   apiKeyRejected: 'Key 无效或已过期，请重新登录或重新填写',
   /** #596：我们的渠道没有可填的地方，401 的出路只有一个 —— 重新领取 */
-  apiKeyRejectedOurs: '我们的渠道的 Key 已失效：请在设置里点「重新领取」，由服务端重新下发',
+  apiKeyRejectedOurs: '内置渠道的 Key 已失效：请在设置里点「重新领取」，由服务端重新下发',
   insufficientBalance: '账户余额不足',
   rateLimited: '操作过于频繁，请稍后再试',
   ttsPlay: '朗读',
@@ -469,7 +469,7 @@ export const zh = {
   settingsManagedKeyClaimed: '已领取，当前 Key 尾号 ···{tail}',
   settingsManagedKeyStale: 'Key 已更新，请重新领取',
   settingsManagedKeyBlockedClaim:
-    '请先领取 Key：这条消息没有发出去。我们的渠道的 Key 由服务端下发，不能手填。',
+    '请先领取 Key：这条消息没有发出去。内置渠道的 Key 由服务端下发，不能手填。',
   settingsManagedKeyBlockedStale:
     'Key 已更新，请重新领取：本地这把已经不是服务端下发的那把，这条消息没有发出去。',
   settingsManagedKeyClaimFailed: '领取失败：{message}',
@@ -817,7 +817,7 @@ export const zh = {
   // 登录注册（sub2api /api/v1/auth）
   sub2authEmail: '邮箱',
   // #727 阶段 1：设置里的登录卡（账号页未登录态 / 模型来源未登录态）
-  settingsOursNeedsLogin: '「我们的渠道」需要账号：登录后自动领取托管 Key（也可切回 DeepSeek 官方，只填 API Key 就能用）',
+  settingsOursNeedsLogin: '「内置渠道」需要账号：登录后自动领取托管 Key（也可切回 DeepSeek 官方，只填 API Key 就能用）',
   settingsAuthEmailPlaceholder: '请输入邮箱',
   settingsAuthPasswordPlaceholder: '请输入密码（至少 6 位）',
   settingsAuthCodePlaceholder: '请输入验证码',
@@ -906,7 +906,7 @@ export const zh = {
   accountOptionalStatusLoggedOut: '当前未登录 —— 只填 Key 也能正常聊天',
   accountOptionalStatusLoggedIn: '当前已登录：{email}',
   accountOptionalBenefitsTitle: '账号只多这些账单类信息',
-  accountOptionalBenefitBalance: '余额与用量明细（我们的渠道按账号结算）',
+  accountOptionalBenefitBalance: '余额与用量明细（内置渠道按账号结算）',
   accountOptionalBenefitKeys: 'Key 管理：创建、停用、删除',
   accountOptionalBenefitInvite: '邀请码与返利余额',
   accountOptionalKeep: '聊天、各渠道 Key、导入导出都不受影响 —— 不登录一样不少',

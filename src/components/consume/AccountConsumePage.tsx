@@ -319,6 +319,22 @@ export const AccountConsumePage = ({
   }
 
   /** 下级页面的头部：左上角「返回」+ 本页标题（设置弹层的头部与 X 不动，这里只是内容区的二级头） */
+  /** 与 `subHeader` 同形，只是标题换成一个自定义词条（例如登录卡出现时这一屏叫「登录」） */
+  const subHeaderWithTitle = (back: AccountSubPage | null, titleKey: TranslationKey) => (
+    <div className={styles.subHeader}>
+      <button
+        type="button"
+        className={styles.subBack}
+        data-testid="account-consume-back"
+        onClick={() => onNavigate(back)}
+      >
+        <IconChevronRightOutline14 />
+        {t('back')}
+      </button>
+      <span className={styles.subTitle}>{t(titleKey)}</span>
+    </div>
+  )
+
   const subHeader = (target: AccountSubPage, back: AccountSubPage | null) => (
     <div className={styles.subHeader}>
       <button
@@ -395,7 +411,9 @@ export const AccountConsumePage = ({
     const oursNeedsLogin = kind === 'ours' && signedIn !== true
     return (
       <div className={`${styles.page} ${styles.embedded}`} data-testid="account-consume-page">
-        {subHeader('source', null)}
+        {oursNeedsLogin
+          ? subHeaderWithTitle(null, 'sub2authLogin')
+          : subHeader('source', null)}
         {oursNeedsLogin ? (
           <>
             <div className={styles.authNotice} role="status" data-testid="settings-ours-needs-login">
@@ -506,7 +524,7 @@ export const AccountConsumePage = ({
     }
     return (
       <div className={`${styles.page} ${styles.embedded}`} data-testid="account-consume-page">
-        {subHeader('account', null)}
+        {signedIn === true ? subHeader('account', null) : subHeaderWithTitle(null, 'sub2authLogin')}
 
         {/* 资料区：已登录 = 头像 + 昵称 + 邮箱；未登录 = 一句「未登录」（登录 / 注册入口在下方的账号面板） */}
         {signedIn === true ? (

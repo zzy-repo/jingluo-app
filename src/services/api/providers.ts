@@ -278,7 +278,7 @@ const RAW_SPECS: Record<ProviderKind, RawProviderSpec> = {
   },
   ours: {
     kind: 'ours',
-    label: { zh: '我们的渠道', en: 'Our Channel' },
+    label: { zh: '内置渠道', en: 'Built-in' },
     protocol: 'openai',
     // 地址与模型内置（locked）：设置页只有 API Key 一行，用户看不到也不该看到后端地址
     fields: ['apiKey'],

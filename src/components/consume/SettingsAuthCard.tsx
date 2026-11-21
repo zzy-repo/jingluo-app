@@ -140,6 +140,7 @@ export const SettingsAuthCard = ({ consume, onSkip }: SettingsAuthCardProps) => 
 
   return (
     <div className={styles.authCard} data-testid="settings-auth-card">
+      {flags.registrationEnabled ? (
       <div className={styles.authSegmented} role="group" aria-label={t('sub2authAccount')}>
         <button
           type="button"
@@ -150,18 +151,17 @@ export const SettingsAuthCard = ({ consume, onSkip }: SettingsAuthCardProps) => 
         >
           {t('sub2authLogin')}
         </button>
-        {flags.registrationEnabled ? (
-          <button
-            type="button"
-            className={mode === 'register' ? `${styles.authSeg} ${styles.authSegOn}` : styles.authSeg}
-            aria-pressed={mode === 'register'}
-            data-testid="auth-segmented-register"
-            onClick={() => switchTo('register')}
-          >
-            {t('sub2authRegister')}
-          </button>
-        ) : null}
+        <button
+          type="button"
+          className={mode === 'register' ? `${styles.authSeg} ${styles.authSegOn}` : styles.authSeg}
+          aria-pressed={mode === 'register'}
+          data-testid="auth-segmented-register"
+          onClick={() => switchTo('register')}
+        >
+          {t('sub2authRegister')}
+        </button>
       </div>
+      ) : null}
 
       <input
         className={styles.authInput}

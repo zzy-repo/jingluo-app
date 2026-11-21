@@ -118,7 +118,7 @@ export const en = {
    * immediately") is the pre-#357 story and made users think the reset button broke their key.
    */
   replyApiKeyRotated:
-    'This API Key has been rotated or revoked and the old one no longer works. (Resetting the quota on this device only recomputes it and keeps the same key, so the server is what invalidated it.) You can recover the current key from the server by device code under Our channel, or simply paste a new key.',
+    'This API Key has been rotated or revoked and the old one no longer works. (Resetting the quota on this device only recomputes it and keeps the same key, so the server is what invalidated it.) You can recover the current key from the server by device code under The built-in channel, or simply paste a new key.',
   /** Key identity in the notice: last 4 characters only (#374) */
   replyApiKeyTailNote: ' (current key ends with {tail})',
   /**
@@ -439,9 +439,9 @@ export const en = {
   voiceInputRequiresHttps: 'Voice input requires HTTPS',
   /** #451: state the diagnosis and both ways out — paste another key, or recover this device's key */
   apiKeyInvalidRetry:
-    'Invalid API Key. Paste it again, or recover this device key with "Reset quota" under Our channel.',
+    'Invalid API Key. Paste it again, or recover this device key with "Reset quota" under The built-in channel.',
   apiKeyRejected: 'The API key is invalid or expired. Please log in again or re-enter it.',
-  /** #596: on Our channel there is nothing to re-enter — re-claim is the only way out */
+  /** #596: on The built-in channel there is nothing to re-enter — re-claim is the only way out */
   apiKeyRejectedOurs:
     'The Our-channel key is no longer valid: tap "Re-claim" in Settings and the server will issue a new one.',
   insufficientBalance: 'Insufficient balance',
@@ -905,7 +905,7 @@ export const en = {
   accountConsumeEmailUnbound: 'Not linked',
   accountConsumeSignOutConfirm: 'Sign out now?',
 
-  // Login wall removed (#608): the account is now an *optional* capability inside "our channels".
+  // Login wall removed (#608): the account is now an *optional* capability inside "the built-in channels".
   // Three rules: ① the primary call to action is "fill in a Key", not "log in";
   // ② what you lose without an account is billing views only — chat / Keys / import-export stay;
   // ③ no "an account is safer" style claims (#421 boundary).
@@ -913,7 +913,7 @@ export const en = {
   accountOptionalStatusLoggedOut: 'Not logged in — a Key alone is enough to chat',
   accountOptionalStatusLoggedIn: 'Logged in as {email}',
   accountOptionalBenefitsTitle: 'An account only adds these billing views',
-  accountOptionalBenefitBalance: 'Balance and usage details (our channels bill per account)',
+  accountOptionalBenefitBalance: 'Balance and usage details (the built-in channels bill per account)',
   accountOptionalBenefitKeys: 'Key management: create, disable, delete',
   accountOptionalBenefitInvite: 'Invite code and rebate balance',
   accountOptionalKeep: 'Chat, channel Keys and import/export are unaffected — nothing is lost without an account',
