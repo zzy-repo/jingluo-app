@@ -18,14 +18,27 @@
 
 ## 支持的内核下限（重要）
 
-本项目的 Web 产物按 **Chrome 83 / WebView 83** 的语法与内置 API 下限构建（Android 11 出厂镜像即 WebView 83），并在入口脚本里补齐低内核缺失的内置 API（`Object.hasOwn`、`Array.prototype.at`、`toSorted`、`replaceAll`、`structuredClone` 等）。
+本项目的 Web 产物按 **Chrome 83 / WebView 83** 的能力集构建（Android 11 出厂镜像即 WebView 83），并在入口脚本里补齐低内核缺失的内置 API（`Object.hasOwn`、`Array.prototype.at`、`toSorted`、`replaceAll`、`structuredClone` 等）。
 
-- 产物层门禁：`pnpm run check:legacy`（语法 + 内置 API + CSS `dvh` 回退，不合格即失败）
+**「构建目标 83」不等于「产物能被解析的最低内核」**（issue #104）。Chrome 83 的能力集里包含 ES2020，所以可选链 / 空值合并（Chrome 80 起支持）会**原样留在产物里**、不会被降级：实测入口 chunk 的真实语法下限是 **Chrome 80**。于是实际分四档：
+
+| 内核（Android System WebView 主版本） | 表现 |
+| --- | --- |
+| ≥ 83 | 正常（承诺支持的档） |
+| 80 ~ 82 | 能解析、能启动，个别功能可能缺失；兜底页若出现，文案是「低于推荐的 83」 |
+| ≤ 79 | **产物整包解析失败**（`Uncaught SyntaxError: Unexpected token '?'`），只剩 `src/index.html` 的 ES5 兜底页；文案点名「低于最低要求 80」并给升级路径 |
+| ≲ 63 | 连兜底页的启动探针都过不了（缺 `fetch` / `ResizeObserver` 等），走兜底页出口 ① |
+
+**最低要求：WebView 80（推荐 83 及以上）**。这个数字的唯一来源是 `config/compat.json:syntaxFloorChromium`；兜底页里那份字面量（`src/index.html` 的 `MIN_ENGINE_CHROMIUM`）由 `tests/unit/compat-guard-baseline.test.mjs` 钉住两边相等，用户可见文案引用的就是它。
+
+- 产物层门禁：`pnpm run check:legacy`（语法 + 内置 API + CSS `dvh` 回退，含懒加载 chunk、vendored 的 `static/pdfjs/**`、以及**不在 `dist/` 里的 Capacitor 注入脚本** `native-bridge.js`；不合格即失败）
+- 语法下限门禁（issue #104）：`pnpm run check:syntax-floor` —— 把「声明的最低内核」和「入口产物真实的最低内核」放在一起比。**缺了它，`check:legacy` 永远不会因为 `?.` / `??` 变红**（它们在 Chrome 83 的能力集里），这正是「线上白屏、门禁全绿」能反复发生的原因
 - 产物门禁（硬，issue #298）：`pnpm run check:bundle-target` —— E-1/E-2 的独立入口，**没有 `dist/` 就是 exit 1（打印「产物未构建，请先 pnpm build」），不存在「跳过」这个结果**
+- 兜底页 ES5 门禁：`pnpm run check:guard` —— `src/index.html` / `dist/index.html` 的每段内联脚本都要能被 **ES5 解析器**解析（兜底页自己崩掉 = 用户连提示都看不到）
 - 兼容矩阵扫描：`pnpm run check:matrix`（WebView 79 / 83 / 91 / 109 各自会在哪一层挂）
-- 两者都在 CI（`.github/workflows/ci.yml`）与发版流程中强制运行，且带**负向对照**证明关卡有效。
+- 上述门禁都在 CI（`.github/workflows/ci.yml`）与发版流程中强制运行，且带**负向对照**证明关卡有效。
 
-**低于 WebView 83 的内核不在支持范围**：这类设备上应用会在启动阶段显示兜底页（提示更新 Android System WebView），而不是静默白屏。详见 Issue #104、#13、#39。
+**低于 WebView 80 的内核不在支持范围**：这类设备上应用会在启动阶段显示兜底页（点名「低于最低要求 80」+ 升级路径），而不是静默白屏，也不是 `Unexpected token '?'` 原文。详见 Issue #104、#13、#39。
 
 ## 使用
 

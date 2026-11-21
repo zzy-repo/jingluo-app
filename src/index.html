@@ -162,7 +162,14 @@
           'zh-CN': {
             title: '页面启动失败',
             lead: '这个页面需要更新版本的 Android System WebView（或浏览器）才能正常打开。',
-            leadOld: '本机系统浏览器内核过旧（{version}），请更新 Android System WebView。',
+            // #104：主文案分两句，因为「低于最低要求」和「低于推荐」是两件事 ——
+            //   leadBlocked：main 版本 < 语法下限（80），产物在本机**根本解析不了**，只能更新内核，
+            //                重试没有意义（OPPO 反馈就是停在这一档，旧文案只说「过旧 + 请更新」）；
+            //   leadOld    ：语法下限 <= 版本 < 承诺下限（80~82），能启动但功能可能缺失，建议更新。
+            leadBlocked:
+              '本机系统浏览器内核过旧（{version}），低于本应用的最低要求 {min}，无法解析本应用的页面脚本。请更新 Android System WebView（推荐 {recommended} 及以上）后重新打开本应用。',
+            leadOld:
+              '本机系统浏览器内核偏旧（{version}），低于推荐的 {recommended}。部分功能可能不完整，建议更新 Android System WebView。',
             upgradePath:
               '升级路径：设置 → 应用 → Android System WebView → 更新（或在应用商店搜索「Android System WebView」），完成后重新打开本应用。',
             missing: '缺少的运行环境能力：{apis}',
@@ -189,8 +196,10 @@
           'en-US': {
             title: 'This page could not start',
             lead: 'This page needs a newer Android System WebView (or browser) to open properly.',
+            leadBlocked:
+              "This device's system WebView engine ({version}) is below this app's minimum requirement {min} and cannot parse the app's page scripts. Update Android System WebView (recommended {recommended} or newer) and reopen this app.",
             leadOld:
-              "This device's system WebView engine is outdated ({version}). Please update Android System WebView.",
+              "This device's system WebView engine ({version}) is older than the recommended {recommended}. Some features may be missing; updating Android System WebView is advised.",
             upgradePath:
               'To update: Settings → Apps → Android System WebView → Update (or search "Android System WebView" in your app store), then reopen this app.',
             missing: 'Missing runtime features: {apis}',
@@ -238,6 +247,13 @@
         // 兼容下限：唯一来源是 config/compat.json:2 的 baselineChromium；内联脚本读不到 JSON，
         // 所以同样留字面量，由 tests/unit/compat-baseline.test.mjs 断言两处相等（照 BOOT_DEADLINE_MS 的老办法）。
         var BASELINE_CHROMIUM = 83
+        // 产物语法下限：唯一来源是 config/compat.json 的 syntaxFloorChromium。80 = ES2020
+        // （可选链 / 空值合并）首次落地的那一档 —— 构建目标 chrome >= 83 的能力集**包含** ES2020，
+        // 所以那两种写法原样留在产物里，产物真实语法下限是 80，不是 83（issue #104）。
+        // 低于这条线的内核整包解析失败（Unexpected token），唯一还能跑的只有这段 ES5 守卫，
+        // 所以它必须把「最低要多少」直接写给用户看，而不是让用户"重试"。
+        // 两边相等由 tests/unit/compat-guard-baseline.test.mjs 钉住。
+        var MIN_ENGINE_CHROMIUM = 80
         // 复制文本上限：与 src/app/errorReport.ts 的 MAX_REPORT_CHARS 同口径，单测断言相等。
         var MAX_COPY_CHARS = 4000
         // 设备码存储键（src/services/invite/device.ts 的 DEVICE_ID_STORAGE_KEY）与合法形态。
@@ -548,6 +564,8 @@
           var at = Date.now()
           var stage = stageOf(text, code)
           var outdated = engine.major !== null && engine.major < BASELINE_CHROMIUM
+          // #104：低于语法下限（80）时是「解析期就挂」，和「能启动但功能缺失」（80~82）必须分开说
+          var blocked = engine.major !== null && engine.major < MIN_ENGINE_CHROMIUM
           var missingList = extra && extra.missing ? extra.missing : []
           var detail = {
             branch: branch,
@@ -571,7 +589,18 @@
           }
           var lines = [
             text.title,
-            outdated ? fill(text.leadOld, { version: engine.short }) : text.lead,
+            blocked
+              ? fill(text.leadBlocked, {
+                  version: engine.short,
+                  min: String(MIN_ENGINE_CHROMIUM),
+                  recommended: String(BASELINE_CHROMIUM),
+                })
+              : outdated
+                ? fill(text.leadOld, {
+                    version: engine.short,
+                    recommended: String(BASELINE_CHROMIUM),
+                  })
+                : text.lead,
             fill(text.envApp, { version: appVersion ? appVersion : UNKNOWN }),
             engine.version ? fill(text.envEngine, { version: engine.version }) : text.envEngineUnknown,
             fill(text.envAndroid, { version: engine.android ? engine.android : UNKNOWN }),

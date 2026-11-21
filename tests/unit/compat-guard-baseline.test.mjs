@@ -53,6 +53,21 @@ test('#104 守卫的 BASELINE_CHROMIUM 等于 config/compat.json 的 baselineChr
   assert.ok(compat.probeTiers.includes(compat.baselineChromium), 'probeTiers 要含下限档')
 })
 
+test('#104 守卫的 MIN_ENGINE_CHROMIUM 等于 config/compat.json 的 syntaxFloorChromium', () => {
+  // 语法下限（产物真实能被解析的最低内核）与承诺下限（baselineChromium）是两件事：
+  // 构建目标 chrome>=83 的能力集包含 ES2020，`?.` / `??` 因此原样留在产物里，
+  // 真实语法下限是 80（见 config/compat.json 与 scripts/lib/compatBaseline.mjs 的注释）。
+  const literalFloor = Number(literal(/var MIN_ENGINE_CHROMIUM = (\d+)/, 'MIN_ENGINE_CHROMIUM'))
+  assert.equal(literalFloor, compat.syntaxFloorChromium)
+  assert.ok(
+    literalFloor <= compat.baselineChromium,
+    `语法下限（${literalFloor}）不能高于承诺下限（${compat.baselineChromium}）`
+  )
+  // 判据必须是「主版本 < 下限」：80 本身能解析 ES2020，把它判成「解析不了」就是误报
+  assert.match(guardSource, /engine\.major < MIN_ENGINE_CHROMIUM/)
+  assert.doesNotMatch(guardSource, /engine\.major <= MIN_ENGINE_CHROMIUM/)
+})
+
 test('#104 守卫的复制文本上限与 errorReport.ts 的 MAX_REPORT_CHARS 相等', async () => {
   const { MAX_REPORT_CHARS } = await import('../../src/app/errorReport.ts')
   assert.equal(Number(literal(/var MAX_COPY_CHARS = (\d+)/, 'MAX_COPY_CHARS')), MAX_REPORT_CHARS)

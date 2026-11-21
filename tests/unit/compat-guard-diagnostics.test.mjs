@@ -29,6 +29,8 @@ const html = readFileSync(new URL('../../src/index.html', import.meta.url), 'utf
 const guardSource = html.match(/<script>([\s\S]*?)<\/script>/)[1]
 const BOOT_DEADLINE_MS = 12000
 const LF = String.fromCharCode(10)
+const COMPAT = JSON.parse(readFileSync(new URL('../../config/compat.json', import.meta.url), 'utf8'))
+
 
 /** 实测机型的 UA 原文（api26 = WebView 69.0.3497.100） */
 const UA_69 =
@@ -143,10 +145,15 @@ const stampOf = (at) => {
   ].join(' ')
 }
 
+// #104：69 < 语法下限 80 → 走 leadBlocked（「低于最低要求 80，无法解析本应用的页面脚本」）
 const cardLines = (table, { code, extra, at = START_AT }) => {
   const lead =
     code === 'boot-timeout' || code === 'runtime-error' || code === 'missing-api'
-      ? fill(table.compatBootLeadOld, { version: '69.0' })
+      ? fill(table.compatBootLeadBlocked, {
+          version: '69.0',
+          min: String(COMPAT.syntaxFloorChromium),
+          recommended: String(COMPAT.baselineChromium),
+        })
       : table.compatBootLead
   return [
     table.compatBootTitle,

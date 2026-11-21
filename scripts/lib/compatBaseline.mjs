@@ -72,6 +72,15 @@ export const readCompatConfig = (file = COMPAT_CONFIG_FILE) => {
     throw new CompatBaselineError('config/compat.json 必须是一个 JSON 对象')
   }
   const baselineChromium = requirePositiveInteger(raw.baselineChromium, 'baselineChromium')
+  // #104：语法下限（产物真实能被解析的最低内核）必须单独声明，不能等于 baselineChromium —— 见
+  // `syntaxFloorChromium` 的说明。缺字段直接炸：宁可门禁红，也不要让下游各自猜一个数。
+  const syntaxFloorChromium = requirePositiveInteger(raw.syntaxFloorChromium, 'syntaxFloorChromium')
+  if (syntaxFloorChromium > baselineChromium) {
+    throw new CompatBaselineError(
+      `config/compat.json:syntaxFloorChromium（${syntaxFloorChromium}）不能大于 baselineChromium（${baselineChromium}）——` +
+        'baseline 是「我们承诺支持的档」，语法下限只会更低；落在这个区间说明工具档位被抬过，先改工具档位'
+    )
+  }
   const minAndroidSdk = requirePositiveInteger(raw.minAndroidSdk, 'minAndroidSdk')
   if (!Array.isArray(raw.probeTiers) || raw.probeTiers.length === 0) {
     throw new CompatBaselineError('config/compat.json:probeTiers 必须是非空数组')
@@ -89,14 +98,28 @@ export const readCompatConfig = (file = COMPAT_CONFIG_FILE) => {
       )
     }
   }
-  return { baselineChromium, probeTiers, minAndroidSdk }
+  return { baselineChromium, syntaxFloorChromium, probeTiers, minAndroidSdk }
 }
 
 /** 进程级唯一来源：模块加载时读一次，坏了直接炸 */
 export const COMPAT_CONFIG = readCompatConfig()
 
-/** 兼容下限（Chromium 主版本号） */
+/** 兼容下限（Chromium 主版本号）：我们**承诺支持**的最低档，兜底页按它判「内核过旧」（issue #104） */
 export const BASELINE_CHROMIUM = COMPAT_CONFIG.baselineChromium
+
+/**
+ * 产物语法下限（Chromium 主版本号）：构建产物**真实能解析**的最低内核。
+ *
+ * 为什么它不等于 BASELINE_CHROMIUM（issue #104）：构建目标 `chrome >= 83` 的能力集里
+ * **包含 ES2020** —— 可选链 `?.` / 空值合并 `??` 是 Chrome 80 就有的语法，SWC 不会把它们降级。
+ * 所以产物一旦用了 `??`（本仓确实用了，`src/app/errorReport.ts:84` 等处），真实语法下限就是 80，
+ * 而"承诺支持 83"这句话只对 83+ 成立。80~82 能解析但不在承诺范围；**< 80 直接整包解析失败**
+ * （`Uncaught SyntaxError: Unexpected token '?'`），此时唯一还能跑的是 `src/index.html` 的 ES5 兜底守卫。
+ *
+ * 这个数字的用途只有一个：让兜底页能对用户说清「最低要多少」，而不是让用户"重试"
+ * （`src/index.html` 的 `MIN_ENGINE_CHROMIUM`，由 tests/unit/compat-guard-baseline.test.mjs 钉住两边相等）。
+ */
+export const SYNTAX_FLOOR_CHROMIUM = COMPAT_CONFIG.syntaxFloorChromium
 
 /** 探针 / 矩阵要回答的 WebView 档位 */
 export const PROBE_TIERS = COMPAT_CONFIG.probeTiers

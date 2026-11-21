@@ -25,6 +25,7 @@
     "check:case-collision": "node scripts/check-case-collision.mjs",
     "check:db-version": "node scripts/check-db-version.mjs",
     "check:matrix": "node scripts/compat/check-matrix-config.mjs && node scripts/compat/matrix-scan.mjs",
+  "check:syntax-floor": "node scripts/compat/check-syntax-floor.mjs",
     "check:compat-baseline": "node scripts/check-compat-baseline.mjs",
     "check:ip": "node scripts/check-hardcoded-ip.mjs",
     "check:guard": "node scripts/check-guard-es5.mjs",

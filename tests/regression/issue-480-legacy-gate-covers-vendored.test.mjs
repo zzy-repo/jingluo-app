@@ -92,7 +92,11 @@ test('[绿 3] 全部干净 → exit 0，且输出里报出 vendored 的扫描份
       `扫描范围必须报出 vendored 份数（否则「扫了没扫」无法自证）：\n${output}`
     )
     assert.ok(output.includes('static/pdfjs/pdf.min.js'), output)
-    assert.ok(output.includes('全部 *.js 共 4 个'), output)
+    // #104：覆盖范围又多了一组 —— Capacitor 注入脚本（不在 dist/ 里，旧实现天生扫不到），
+    // 所以份数从 4 变 5，并且必须在报告里点名它（同样要能「自证扫了」）。
+    assert.ok(output.includes('全部 *.js 共 5 个'), output)
+    assert.ok(output.includes('Capacitor 注入脚本 1 个'), output)
+    assert.ok(output.includes('native-bridge.js'), output)
   })
 })
 

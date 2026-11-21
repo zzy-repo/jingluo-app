@@ -28,6 +28,14 @@ const BOOT_DEADLINE_MS = 12000
 const LF = String.fromCharCode(10)
 const START_AT = 1_700_000_000_000
 
+// #104：主文案里的「最低 / 推荐」两个数取自唯一来源 config/compat.json，别在断言里再写一份数字
+const compatConfig = JSON.parse(readFileSync(new URL('../../config/compat.json', import.meta.url), 'utf8'))
+const leadValues = (version) => ({
+  version,
+  min: String(compatConfig.syntaxFloorChromium),
+  recommended: String(compatConfig.baselineChromium),
+})
+
 const fill = (template, values) =>
   String(template).replace(/\{(\w+)\}/g, (match, name) => (values[name] === undefined ? match : String(values[name])))
 
@@ -48,6 +56,10 @@ const UA_69 =
 const UA_79 =
   'Mozilla/5.0 (Linux; Android 10; PDEM10 Build/QKQ1.200209.002; wv) ' +
   'AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/79.0.3945.93 Mobile Safari/537.36'
+/** 语法下限 80 <= 81 < 承诺下限 83：能解析，属「低于推荐」而不是「低于最低要求」（#104） */
+const UA_81 =
+  'Mozilla/5.0 (Linux; Android 11; Pixel 4a Build/RQ3A.210905.001; wv) ' +
+  'AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/81.0.4044.138 Mobile Safari/537.36'
 const UA_83 =
   'Mozilla/5.0 (Linux; Android 11; Pixel 4 Build/RQ3A.210805.001.A1; wv) ' +
   'AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/83.0.4103.106 Mobile Safari/537.36'
@@ -270,7 +282,8 @@ test('#104 内核 < 83：主文案点名「内核过旧（79.0）」并给出设
   const h = harness({ userAgent: UA_79 })
   h.runtimeError()
   const lines = linesOf(h.card.textContent)
-  assert.equal(lines[1], fill(zh.compatBootLeadOld, { version: '79.0' }))
+  // 79 < 语法下限 80：解析期就挂，主文案必须是 leadBlocked（带「最低要求 80」）
+  assert.equal(lines[1], fill(zh.compatBootLeadBlocked, leadValues('79.0')))
   assert.ok(lines.includes(zh.compatBootUpgradePath), '缺「设置 → 应用 → Android System WebView → 更新」')
   assert.match(h.card.textContent, /设置 → 应用 → Android System WebView → 更新/)
   assert.doesNotMatch(h.card.textContent, /Unexpected token|SyntaxError|main\.0badf00d\.js/, '卡片正文不许出现异常原文')
@@ -313,8 +326,37 @@ test('#104 UA 表：内核版本 / Android 版本 / 是否 WebView / 是否判�
     assert.equal(h.detail.isWebView, isWebView)
     assert.equal(h.detail.stage, en.compatBootStageRuntime)
     const lead = linesOf(h.card.textContent)[1]
-    assert.equal(lead, outdated ? fill(en.compatBootLeadOld, { version: h.detail.engineShort }) : en.compatBootLead)
+    // #104：三档措辞 —— < 80 说「低于最低要求，解析不了」；80~82 说「低于推荐，功能可能不完整」；>= 83 通用
+    const blocked = major !== null && major < compatConfig.syntaxFloorChromium
+    const expectedLead = blocked
+      ? fill(en.compatBootLeadBlocked, leadValues(h.detail.engineShort))
+      : outdated
+        ? fill(en.compatBootLeadOld, leadValues(h.detail.engineShort))
+        : en.compatBootLead
+    assert.equal(lead, expectedLead)
   }
+})
+
+test('#104 三档措辞：<80 说「低于最低要求」、80~82 说「低于推荐」、>=83 不误报', () => {
+  const blocked = harness({ userAgent: UA_79 })
+  blocked.runtimeError()
+  const blockedLead = linesOf(blocked.card.textContent)[1]
+  assert.equal(blockedLead, fill(zh.compatBootLeadBlocked, leadValues('79.0')))
+  // 用户必须看得到「最低要求 80」这个数，否则不知道该更到哪一版（旧文案只写「过旧 + 请更新」）
+  assert.match(blockedLead, new RegExp(`最低要求 ${compatConfig.syntaxFloorChromium}`))
+  assert.match(blockedLead, /推荐 83 及以上/)
+  // 解析期就挂的用户，说「无法解析页面脚本」比说「页面脚本启动时报错」准确
+  assert.match(blockedLead, /无法解析本应用的页面脚本/)
+
+  const degraded = harness({ userAgent: UA_81 })
+  degraded.runtimeError()
+  const degradedLead = linesOf(degraded.card.textContent)[1]
+  assert.equal(degradedLead, fill(zh.compatBootLeadOld, leadValues('81.0')))
+  assert.doesNotMatch(degradedLead, /最低要求/, '81 能解析产物，不能说它低于最低要求')
+
+  const ok = harness({ userAgent: UA_83 })
+  ok.runtimeError()
+  assert.equal(linesOf(ok.card.textContent)[1], zh.compatBootLead)
 })
 
 test('#104 复制第 ① 层：有 navigator.clipboard 就直接写，textarea 不参与', () => {
@@ -444,7 +486,7 @@ test('#104 英文界面：卡片与技术细节不出中文（除了设计上就
   h.runtimeError()
   assert.match(h.card.textContent, /Copy environment info|Engine version/)
   const lines = linesOf(h.card.textContent)
-  assert.equal(lines[1], fill(en.compatBootLeadOld, { version: '79.0' }))
+  assert.equal(lines[1], fill(en.compatBootLeadBlocked, leadValues('79.0')))
   assert.ok(lines.includes(fill(en.compatBootEnvStage, { stage: en.compatBootStageRuntime })))
   // 中文只允许出现在「设置 → 应用 → …」这句升级路径里？不 —— 英文文案走的是 Settings → Apps，
   // 所以整张卡片一个汉字都不该有。

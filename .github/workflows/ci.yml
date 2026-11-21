@@ -335,6 +335,13 @@ jobs:
       - name: 产物语法/API 下限（check:legacy）
         run: pnpm run check:legacy
 
+      # issue #104：把「声明的最低内核」与「入口产物真实的最低内核」放在一起比。
+      # 为什么单开一条：check:legacy 的判据是「Chromium 83 能力集」，而 `?.` / `??` 是 Chrome 80，
+      # 本来就在 83 的能力集里 —— 所以产物真实下限被抬到 80（甚至更高）时它**永远是绿的**。
+      # 「OPPO 上白屏 + 抱怨 Unexpected token '?'，而门禁全绿」就是这么来的。
+      - name: 语法下限对账（check:syntax-floor）
+        run: pnpm run check:syntax-floor
+
       - name: 静态兼容矩阵（check:matrix）
         run: pnpm run check:matrix
 

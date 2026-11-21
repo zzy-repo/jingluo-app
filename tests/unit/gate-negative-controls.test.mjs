@@ -339,6 +339,14 @@ const REGISTRY = {
   'check:matrix': { where: 'tests/unit/matrix-config.test.mjs', kind: 'builtin', what: '截断档位 / AVD 版本不符 / 路径缺失三条负向' },
   'check:ip': { where: 'tests/unit/check-ip-version.test.mjs', kind: 'builtin', what: '版本号不报 vs 真写死地址照报（两头都钉）' },
   'check:guard': { where: 'tests/unit/guard-es5-gate.test.mjs', kind: 'inject', what: '内联守卫注入 ?. / ?? / 箭头函数', unwired: true, mention: /check-guard-es5\.mjs/ },
+  // #104 新门禁：把「声明的最低内核」和「入口产物真实最低内核」放一起比。
+  // 对照落在 L0（legacy-syntax-floor-gate.test.mjs）：入口塞 ||= → 真实下限 85 > 声明 80 → 必 exit 1；
+  // 另一拍把声明值调到 79（产物仍 80）→ 同样必红 —— 两个方向都钉住，避免「判据反了也全绿」。
+  'check:syntax-floor': {
+    where: 'tests/unit/legacy-syntax-floor-gate.test.mjs',
+    kind: 'inject',
+    what: '入口产物塞 ||= → 真实下限 85 高于声明 80 必 exit 1；声明值调到 79 → 同样必红',
+  },
   'check:legacy': { where: '.github/workflows/ci.yml', kind: 'ci', what: 'CI 往产物副本追加 ?. / ??= 后必须红' },
   'check:redact': { where: '.github/workflows/ci.yml', kind: 'ci', what: 'CI 跑 `check-redact.mjs --selftest`（脱敏器换成恒等函数必须红）' },
   'check:test-layout': { where: 'tests/unit/gate-negative-controls.test.mjs', kind: 'inject', what: '造一个跑不到的用例（孤立子目录）' },

@@ -1,5 +1,6 @@
 {
   "baselineChromium": 83,
+  "syntaxFloorChromium": 80,
   "probeTiers": [79, 83, 91, 109],
   "minAndroidSdk": 24
 }

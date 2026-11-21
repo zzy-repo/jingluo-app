@@ -33,6 +33,7 @@
 // | --- | --- | --- |
 // | `dist/static/js/**` | 打包器产物（入口 main + `async/*` 懒加载 chunk） | index.html / 动态 import |
 // | `dist/static/pdfjs/**` | 第三方经典脚本（`pdfjs-dist` 的 `pdf.min.js` / `pdf.worker.min.js`） | 运行期插入 `<script src>` |
+// | `node_modules/@capacitor/android/**/assets/native-bridge.js` | Capacitor 原生桥接脚本（**不在 `dist/` 里**，由原生 `Bridge` 在页面脚本之前注入 WebView） | `WebView.evaluateJavascript` |
 //
 // 旧实现只扫 `static/js`，于是 `static/pdfjs/` 这两份**从来没被这道门量过** —— rpm 的
 // `rspack.config.ts` 把 pdfjs 拷到 `static/pdfjs/` 时写的理由就是「避开语法门禁」，等于
@@ -70,7 +71,7 @@
 // | `Symbol.asyncDispose` | 129 | 需要 `using` 语法才生效，而 `using` 本身在 83 上是语法错（构建期就会炸），这层拦不住也不该拦 |
 //
 // 判据始终是**这条规则会不会在干净产物上假红**：误报一条，发布门禁就被迫加豁免，豁免一多等于没有门禁。
-import { readdirSync, readFileSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -382,6 +383,38 @@ const BUNDLED_DIR = path.join('static', 'js')
  * 在词法层与 AST 层都是 0 违规（`?.` / `??` 属于 ES2020，Chrome 80 就有，本门禁本来就不禁）。
  */
 const VENDORED_SYNTAX_ALLOWANCES = []
+
+/**
+ * Capacitor 注入脚本（issue #104 的第 4 个覆盖点）：**不在 `dist/` 里**，所以上面那条
+ * 「扫产物目录下全部 *.js」天生扫不到它 —— 却和产物跑在同一个 WebView 里，还是**最先执行**的那段。
+ *
+ * 它由 `@capacitor/android` 的 AAR 提供（`capacitor/src/main/assets/native-bridge.js`），
+ * 原生侧 `Bridge` 在页面脚本之前 `evaluateJavascript` 注入。语法超限时整段不执行，
+ * 结果不是「桥接功能缺失」而是**页面脚本之前就抛错**，用户看到的还是兜底卡片。
+ *
+ * 现状（2026-11-21 实测 @capacitor/android 8.6.2）：ES2017 下限，0 处可选链 / 空值合并 ——
+ * 所以它不是 #104 的病因。但**没有任何门禁在看它**，升级 Capacitor 时它完全可以悄悄带进
+ * `?.` / `??`，而 `check:legacy` 依旧全绿。所以这里把它并进同一套判定。
+ *
+ * 位置变了（升级换了目录 / 改成别的文件名）就 **exit 2 明确失败**，绝不「找不到就跳过」——
+ * 「扫了个空」和「扫了没违规」在报告里长得一样，那正是假绿的来源。
+ */
+export const CAPACITOR_BRIDGE_RELATIVE = path.join(
+  'node_modules',
+  '@capacitor',
+  'android',
+  'capacitor',
+  'src',
+  'main',
+  'assets',
+  'native-bridge.js'
+)
+
+/** 注入脚本的绝对路径（可被 CLI 的 `--bridge <path>` 覆盖，负向对照要用） */
+export const resolveInjectedBridge = (override) => {
+  const file = override ? path.resolve(override) : path.join(ROOT, CAPACITOR_BRIDGE_RELATIVE)
+  return { file, relative: path.relative(ROOT, file).split(path.sep).join('/') }
+}
 
 /** 按来源把产物 JS 分开：打包器产物 vs vendored 经典脚本 */
 const partitionJsFiles = (distDir, files) => {
@@ -761,7 +794,19 @@ const main = () => {
     console.error('  修复：pnpm install（acorn 是 @rspack 的传递依赖，不在 package.json 里）')
     process.exit(2)
   }
-  const distDir = path.resolve(ROOT, process.argv[2] ?? 'dist')
+  const args = process.argv.slice(2)
+  const bridgeFlag = args.indexOf('--bridge')
+  const bridgeOverride = bridgeFlag >= 0 ? args[bridgeFlag + 1] : null
+  if (bridgeFlag >= 0 && !bridgeOverride) {
+    console.error('--bridge 需要一个路径参数')
+    process.exit(2)
+  }
+  // 位置参数（产物目录）不能把 `--bridge` 的值当目录：bridgeFlag < 0 时没有那个值要排除。
+  // 这个 `index !== bridgeFlag + 1` 少了前半句就会在「只传一个目录」时把目录也滤掉（CI 上无人构建时假绿/假红）。
+  const positional = args.filter(
+    (arg, index) => !arg.startsWith('--') && (bridgeFlag < 0 || index !== bridgeFlag + 1)
+  )
+  const distDir = path.resolve(ROOT, positional[0] ?? 'dist')
   const bundledFiles = walkFiles(path.join(distDir, 'static', 'js'), '.js')
   const cssFiles = walkFiles(path.join(distDir, 'static', 'css'), '.css')
   if (bundledFiles.length === 0) {
@@ -775,7 +820,16 @@ const main = () => {
    * `static/js` 里、一直是覆盖的；真正漏的只有 vendored 目录，这里一并扫进来并分开报数。
    */
   const jsFiles = partitionJsFiles(distDir, walkFiles(distDir, '.js'))
-  const allJsFiles = [...jsFiles.bundled, ...jsFiles.vendored]
+  // 注入脚本（Capacitor 桥接）：不在产物目录里，但和产物跑在同一个 WebView 上（见文件头覆盖范围表）
+  const bridge = resolveInjectedBridge(bridgeOverride)
+  if (!existsSync(bridge.file)) {
+    console.error(`✗ 找不到 Capacitor 注入脚本：${bridge.relative}`)
+    console.error('  它由 @capacitor/android 的 AAR 提供，语法超限时页面脚本之前就会抛错（issue #104）。')
+    console.error('  这里**不跳过**：跳过等于「扫了 0 个文件也算合格」，是假绿的典型来源。')
+    console.error('  修复：pnpm install；若 Capacitor 升级后换了目录，改 scripts/check-bundle-syntax.mjs 的 CAPACITOR_BRIDGE_RELATIVE')
+    process.exit(2)
+  }
+  const allJsFiles = [...jsFiles.bundled, ...jsFiles.vendored, bridge.file]
   const js = checkJavaScript(allJsFiles)
   const css = checkCssUnits(cssFiles)
   const runtime = checkRuntimeApis(distDir, allJsFiles)
@@ -788,7 +842,8 @@ const main = () => {
   console.log(`产物兼容性检查（语法 + 运行时 API）：${path.relative(ROOT, distDir) || '.'}`)
   console.log(
     `  扫描范围：全部 *.js 共 ${js.files} 个（打包产物 ${jsFiles.bundled.length} 个含懒加载 chunk` +
-      `${vendoredNames.length ? ` + vendored 经典脚本 ${vendoredNames.length} 个：${vendoredNames.join(', ')}` : ''}）`
+      `${vendoredNames.length ? ` + vendored 经典脚本 ${vendoredNames.length} 个：${vendoredNames.join(', ')}` : ''}` +
+      ` + Capacitor 注入脚本 1 个：${bridge.relative}）`
   )
   console.log(
     `  语法：词法层违规 ${js.lexical.length} 个；AST 层违规 ${js.ast.length} 个（acorn ${js.acornVersion ?? '缺失'}, ecmaVersion 2022 + 禁用项断言；字面量遮蔽 = acorn AST 边界）`,
@@ -823,7 +878,7 @@ const main = () => {
     process.exit(1)
   }
   console.log(
-    '\n结论：合格 —— 全部产物（含懒加载 chunk 与 vendored 经典脚本）落在 Chromium 83 能力集内' +
+    '\n结论：合格 —— 全部产物（含懒加载 chunk、vendored 经典脚本与 Capacitor 注入脚本）落在 Chromium 83 能力集内' +
       '（无 83 解析不了的语法 / 无 dvh 裸用 / 内置 API 有 polyfill 兜底）'
   )
 }

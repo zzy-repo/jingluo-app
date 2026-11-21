@@ -18,7 +18,11 @@ const { en: enI18n } = await import('../../../src/i18n/en.ts')
 
 /** 只存在于兜底页的文案（#104 / #180）：运行时读不到 i18n，故 i18n 表里已不再定义 */
 const fallbackZh = {
-  compatBootLeadOld: '本机系统浏览器内核过旧（{version}），请更新 Android System WebView。',
+  // #104：必须同时给出「本机 / 最低 / 推荐」三个数，否则用户不知道该更到哪一版
+  compatBootLeadBlocked:
+    '本机系统浏览器内核过旧（{version}），低于本应用的最低要求 {min}，无法解析本应用的页面脚本。请更新 Android System WebView（推荐 {recommended} 及以上）后重新打开本应用。',
+  compatBootLeadOld:
+    '本机系统浏览器内核偏旧（{version}），低于推荐的 {recommended}。部分功能可能不完整，建议更新 Android System WebView。',
   compatBootUpgradePath:
     '升级路径：设置 → 应用 → Android System WebView → 更新（或在应用商店搜索「Android System WebView」），完成后重新打开本应用。',
   compatBootEnvApp: 'App 版本：{version}',
@@ -39,8 +43,10 @@ const fallbackZh = {
 }
 
 const fallbackEn = {
+  compatBootLeadBlocked:
+    "This device's system WebView engine ({version}) is below this app's minimum requirement {min} and cannot parse the app's page scripts. Update Android System WebView (recommended {recommended} or newer) and reopen this app.",
   compatBootLeadOld:
-    "This device's system WebView engine is outdated ({version}). Please update Android System WebView.",
+    "This device's system WebView engine ({version}) is older than the recommended {recommended}. Some features may be missing; updating Android System WebView is advised.",
   compatBootUpgradePath:
     'To update: Settings → Apps → Android System WebView → Update (or search "Android System WebView" in your app store), then reopen this app.',
   compatBootEnvApp: 'App version: {version}',
