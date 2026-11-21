@@ -7,10 +7,17 @@
 // 所以用 node:test 的假 timer（setTimeout/setInterval/Date 一起假），**不 sleep**。
 // 这里只替换 Capacitor 原生桥 / diagnostics / backup，urlImport 的真实代码
 // （分块、自适应块大小、块级重试、停滞看门狗、心跳、续传、分类、清理定时器）原样运行。
+//
+// 跑法（Issue #459）：本文件断言的是「停顿到窗口上限就判死」，这条判据一旦失效
+// （`stallVerdict()` 恒 `null`），**旧写法既不会 fail、也不会被 `--test-timeout` 收口** ——
+// 它卡在假时钟的同步自旋里，整轮 node --test 直接挂住。现在用例自带两个 deadline
+// （真实 5s + 假时间预算，见 drive），所以下面的 30s 只是兜底：
+//   node --test --test-timeout=30000 tests/unit/url-import-stall.test.mjs tests/unit/import-budget-vs-stall.test.mjs
+// 推荐直接走分层入口（自带超时）：`npm test`（= node tests/run-layer.mjs unit）。
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { fixtureUrl, installTsResolve, moduleUrl } from '../helpers/dom-env.mjs'
-import { zipBytes } from '../helpers/url-import-fixtures.mjs'
+import { settleInRealTime, zipBytes } from '../helpers/url-import-fixtures.mjs'
 
 // 装配走公共入口（#366 第二批 / #408）：`.js→.ts` 解析 + 替身表收成一张表，
 // 不再是本文件手抄的 ~30 行 `registerHooks` + 本地 `asTypescript`（urlImport 一族 4 个文件各有一份）。
@@ -159,13 +166,43 @@ const noRangeNative = (url, source) =>
     })
   )
 
-/** 假时钟：setTimeout / setInterval / Date 一起假，tick 之后让出微任务再继续。 */
+/**
+ * 同一个 tick 内允许的「0 延迟重新 arm」次数。
+ * 正常路径最多出现一次（判死那一刻 `stallAt - now === 0`），几百次只可能是判据没了在自旋。
+ */
+const ZERO_DELAY_SPIN_LIMIT = 200
+
+/**
+ * 假时钟：setTimeout / setInterval / Date 一起假，tick 之后让出微任务再继续。
+ *
+ * Issue #459：`t.mock.timers.tick()` **不可中断**。停滞判据一旦失效，看门狗醒来发现
+ * 「还是没进展」就按 `stallAt - now === 0` 重新 arm —— 一个 tick 内部同步无限自旋。
+ * 实测：不是「在等一个永远不来的 Promise」（那种至少能被 `--test-timeout` 收口判
+ * `cancelled`），而是**同步死循环**，`--test-timeout` 也进不去，整轮 node --test 直接挂住。
+ * 所以在 tick 期间给 setTimeout 装一个「单 tick 内 0 延迟重新 arm」计数器，超阈值直接
+ * 变成一句人话的失败：几毫秒内红，而不是永久挂死。
+ */
 const fakeTime = (t, start = 1_700_000_000_000) => {
   t.mock.timers.enable({ apis: ['setTimeout', 'setInterval', 'Date'], now: start })
-  return {
-    now: () => Date.now(),
-    tick: (ms) => t.mock.timers.tick(ms),
+  const mockedSetTimeout = globalThis.setTimeout
+  const tick = (ms) => {
+    let zeroDelayArms = 0
+    globalThis.setTimeout = (callback, delay, ...args) => {
+      if ((delay ?? 0) === 0 && (zeroDelayArms += 1) > ZERO_DELAY_SPIN_LIMIT) {
+        assert.fail(
+          `停滞判死失效：假时钟 ${Date.now()}ms 处，同一个 tick 内连续 ${ZERO_DELAY_SPIN_LIMIT}` +
+            ' 次 0 延迟重新 arm 看门狗，却始终给不出 stalled 终态 —— #38 的唯一失败判据不见了（#459）'
+        )
+      }
+      return mockedSetTimeout(callback, delay, ...args)
+    }
+    try {
+      t.mock.timers.tick(ms)
+    } finally {
+      globalThis.setTimeout = mockedSetTimeout
+    }
   }
+  return { now: () => Date.now(), tick }
 }
 
 /** 让出微任务 + 一个真 macrotask，好让 tick 触发的 Promise 链继续跑。 */
@@ -199,20 +236,49 @@ const startImport = (url, options = {}) => {
 /**
  * 推进假时钟直到导入结束（成功或失败）。
  * step 越小越贴近真实事件顺序；返回判定为终态时已经用掉的假时间。
+ *
+ * Issue #459：**「等终态」本身必须有 deadline。** 旧写法只按假时间推进，判据一失效
+ * （`stallVerdict()` 恒 `null`）就永远撞不到那句断言：卡死在停滞窗口那一刻的
+ * `t.mock.timers.tick()` 里（看门狗按 0 延迟反复重新 arm，同步自旋），
+ * CI 里于是表现为 `cancelled` / job 超时而不是 `fail`。现在两个预算同时生效：
+ *   · 假时间预算 maxMs —— 越过就立刻判红（`导入在 Nms 假时间内没有终态`）；
+ *   · **真实时间预算 deadlineMs（5s）** —— 假 timer 会把节奏拖慢，到点仍无终态即判红，
+ *     失败信息直说「停滞判死失效」。
+ * 三种态必须能分开，由用例显式断言：
+ *   stalled   → `{ state: 'settled', error: <BackupError> }`
+ *   completed → `{ state: 'settled', error: null }`（停滞场景下「不该发生」）
+ *   hung      → 直接 assert.fail（既没 resolve 也没 reject）
  */
-const drive = async (clock, run, { maxMs = 400_000, step = 200 } = {}) => {
-  let outcome
-  run.done.then((error) => {
-    outcome = { error }
-  })
+const drive = async (clock, run, { maxMs = 400_000, step = 200, deadlineMs = 5_000 } = {}) => {
   let spent = 0
-  while (outcome === undefined && spent < maxMs) {
-    clock.tick(step)
-    await flush()
-    spent += step
+  const outcome = await settleInRealTime(run.done, {
+    deadlineMs,
+    pump: () => {
+      // 假时间预算耗尽仍无终态 = 在无限转圈，不必再等真实 deadline
+      if (spent >= maxMs) {
+        assert.fail(`导入在 ${maxMs}ms 假时间内没有终态（还在无限转圈）`)
+      }
+      clock.tick(step)
+      spent += step
+    },
+  })
+  if (outcome.state === 'hung') {
+    assert.fail(
+      `停滞判死失效：假时钟推进 ${spent}ms（真实 ${outcome.realMs}ms）后导入既没有 resolve 也没有 reject —— ` +
+        '#38 的唯一失败判据（连续无进展即判 stalled）没有兑现，用例不许靠超时兜底'
+    )
   }
-  assert.notEqual(outcome, undefined, `导入在 ${maxMs}ms 假时间内没有终态（还在无限转圈）`)
-  return { error: outcome.error, spent }
+  return { error: outcome.value, spent }
+}
+
+/**
+ * 「本该判死却成功」是第三种要分开的态（Issue #459）：
+ * hung（永久等待）由 drive 内部 assert.fail 掉，这里负责把 completed 变成一句人话，
+ * 而不是让它落到 `error.key` 是 undefined 的含糊断言上。
+ */
+const expectFailed = (error, label) => {
+  assert.notEqual(error, null, `${label}：不该 completed —— 本该判死的场景竟然成功返回（判据丢了）`)
+  assert.equal(error?.name, 'BackupError', `${label}：失败终态必须是 BackupError，实际 ${error?.name}`)
 }
 
 test('慢速但持续推进：总时长超过旧 120s 预算也不判死，最终成功', async (t) => {
@@ -256,7 +322,8 @@ test('真正停滞（拿到 1MB 后再无数据）：N 秒后判 stalled，文�
 
   const { error, spent } = await drive(clock, run, { maxMs: 200_000 })
 
-  assert.equal(error?.name, 'BackupError')
+  // 三态分开（#459）：hung 由 drive 判红，这里先把 completed 挑出来
+  expectFailed(error, '真停滞')
   assert.equal(error.key, 'historyImportUrlStalled', '停滞必须给出「停滞」终态，而不是别的分类')
   // 判定时机 = 最后一次进度 + 窗口：不能提前，也不能拖太久
   assert.ok(spent >= STALL_MS, `必须撑满停滞窗口才判死（实际 ${spent}ms）`)
@@ -326,7 +393,8 @@ test('重试续传：同链接第二次从已下载字节继续，不再从 0 �
     startImport(URL_RESUME, { downloadStallMs: 5_000, heartbeatIntervalMs: 1_000 }),
     { maxMs: 60_000 }
   )
-  assert.equal(first.error?.key, 'historyImportUrlStalled')
+  expectFailed(first.error, '续传前的停滞')
+  assert.equal(first.error.key, 'historyImportUrlStalled')
   const resumeFrom = records('import_error')[0].fields['download.bytes']
   assert.ok(resumeFrom >= LIMIT)
 
@@ -370,7 +438,8 @@ test('服务端不支持 Range（回 200 整包）：丢弃本地字节从头重
     startImport(URL_RANGE, { downloadStallMs: 5_000, heartbeatIntervalMs: 1_000 }),
     { maxMs: 60_000 }
   )
-  assert.equal(first.error?.key, 'historyImportUrlStalled')
+  expectFailed(first.error, '回 200 前的停滞')
+  assert.equal(first.error.key, 'historyImportUrlStalled')
   assert.ok(records('import_error')[0].fields['download.bytes'] >= LIMIT)
 
   // 第二轮：服务端不再认 Range，任何请求都回 200 整包
@@ -403,7 +472,8 @@ test('防御性总上限：字节一直在增长但超过上限 → 判「下载
 
   const { error, spent } = await drive(clock, run, { maxMs: 60_000 })
 
-  assert.equal(error?.key, 'historyImportUrlDeadline')
+  expectFailed(error, '总上限')
+  assert.equal(error.key, 'historyImportUrlDeadline')
   assert.ok(spent >= MAX_TOTAL_MS && spent < MAX_TOTAL_MS + 4_000, `应在总上限附近收口（实际 ${spent}ms）`)
   const failure = records('import_error')[0]
   assert.equal(failure.fields.reason, 'deadline')
@@ -421,7 +491,8 @@ test('永久 pending 的原生 Promise（首块就没数据）：窗口到点必
 
   const { error, spent } = await drive(clock, run, { maxMs: 40_000 })
 
-  assert.ok(error, '原生 Promise 永不 settle 时也必须失败，不能一直 pending')
+  // 三态分开（#459）：hung 由 drive 判红；这里断言「不会 completed」
+  expectFailed(error, '永久 pending')
   // 与真机同形：原生永不 settle 就只会有 1 次请求（没有重试、没有响应）
   assert.equal(native.calls.length, 1, `永不 settle 时只有首请求，实际 ${native.calls.length}`)
   assert.equal(error.key, 'historyImportUrlStalledUnknownTotal', '拿不到总数时要走「无总数」文案')

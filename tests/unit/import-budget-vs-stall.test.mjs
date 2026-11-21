@@ -14,10 +14,17 @@
 //
 // 本层只替换 Capacitor 原生桥 / diagnostics / backup；分块、看门狗、心跳、分类全部跑真代码。
 // 断言只看用户能看见的结果（终态错误码 / 用户文案）与诊断里的事实字段。
+//
+// 跑法（Issue #459）：**必须带 `--test-timeout`**。①② 等的是「停滞判死」这个终态，
+// 判据一旦失效（`stallVerdict()` 恒 `null`）就不再有终态，旧写法于是永久 await ——
+// 不带超时会挂到天荒地老。用例内部另有 5s **真实时钟** deadline（见 awaitVerdict），
+// 下面 30s 只是兜底：
+//   node --test --test-timeout=30000 tests/unit/url-import-stall.test.mjs tests/unit/import-budget-vs-stall.test.mjs
+// 推荐直接走分层入口（自带超时）：`npm test`（= node tests/run-layer.mjs unit）。
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { fixtureUrl, installTsResolve, moduleUrl } from '../helpers/dom-env.mjs'
-import { zipBytes } from '../helpers/url-import-fixtures.mjs'
+import { raceInRealTime, zipBytes } from '../helpers/url-import-fixtures.mjs'
 
 // 装配走公共入口（#366 第二批 / #408）：`.js→.ts` 解析 + 替身表收成一张表，
 // 不再是本文件手抄的 ~30 行 `registerHooks` + 本地 `asTypescript`（urlImport 一族 4 个文件各有一份）。
@@ -95,16 +102,50 @@ const serveNothing = () => {
   return globalThis.__native
 }
 
-const startImport = async (url, options) => {
+/** 等终态的真实时钟预算（Issue #459）：停滞窗口本身只有几百毫秒，5s 已经极宽松。 */
+const HANG_DEADLINE_MS = 5_000
+
+/**
+ * 起一次导入但**不** await（Issue #459）：等待要有 deadline，所以先拿 promise 交给 awaitVerdict。
+ * 顺带挂一个 AbortController —— 挂死时用它收尾（见 awaitVerdict）。
+ */
+const beginImport = (url, options = {}) => {
   const trace = []
-  const error = await importHistoryFromUrl(url, {
+  const controller = new AbortController()
+  const done = importHistoryFromUrl(url, {
     onTrace: (entry) => trace.push(entry),
+    signal: controller.signal,
     ...options,
   }).then(
     () => null,
     (value) => value
   )
-  return { trace, error }
+  return { trace, done, abort: () => controller.abort() }
+}
+
+/**
+ * 等导入终态，**最多 HANG_DEADLINE_MS 真实毫秒**（Issue #459）。
+ *
+ * 为什么不能直接 `await`：①② 断言的是「零进展就判 stalled / 有进展但预算耗尽就判 deadline」，
+ * 两个判据都出自 `stallVerdict()`。它一旦恒 `null`，导入既不会 resolve 也不会 reject，
+ * 直接 await 就是永久挂起 —— CI 里表现为 `cancelled`（90s 超时）而不是 `fail`，
+ * 失败信号里连一句人话都没有（#459）。
+ *
+ * 挂住时必须**先收尾再判红**：本文件的替身用真 setInterval 做心跳（不像 url-import-stall
+ * 用假 timer），挂死的导入会把 interval 留到进程退出前一直转 —— 那样 assert 红了进程也不退，
+ * 外面看到的还是「卡住」。所以先 abort（产品侧会清掉心跳），再 assert.fail。
+ */
+const awaitVerdict = async (run, label) => {
+  const outcome = await raceInRealTime(run.done, { deadlineMs: HANG_DEADLINE_MS, onHang: () => run.abort() })
+  if (outcome.state === 'hung') {
+    // 让 abort 的清理走完（停心跳 interval），否则 assert 红了进程也不退
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    assert.fail(
+      `停滞判死失效：${label} 真实等了 ${outcome.realMs}ms，导入既没有 resolve 也没有 reject —— ` +
+        '本该在停滞窗口内给出「长时间无响应」终态'
+    )
+  }
+  return outcome.value
 }
 
 test('① 一直在收字节但总预算先耗尽 → 判「超出下载时限」，不是「长时间无响应」', async () => {
@@ -113,11 +154,12 @@ test('① 一直在收字节但总预算先耗尽 → 判「超出下载时限�
   const source = zipBytes(1024 * 1024)
   const native = serveSlowChunks(source, 150)
 
-  const { error } = await startImport(URL_SLOW, {
+  const run = beginImport(URL_SLOW, {
     downloadMaxTotalMs: 600,
     downloadStallMs: 5_000,
     heartbeatIntervalMs: 200,
   })
+  const error = await awaitVerdict(run, '预算耗尽')
 
   assert.ok(error !== null, '慢链路也必须有有限时间内的终态，不能一直 pending')
   // 回归锁：预算耗尽必须是 deadline 这一档，谁把它合回 stalled 这里就红
@@ -151,7 +193,8 @@ test('② 零字节增长（真停滞）→ 仍判「长时间无响应」', asy
   resetEnv()
   const native = serveNothing()
 
-  const { error } = await startImport(URL_HANG, { downloadStallMs: 300, heartbeatIntervalMs: 200 })
+  const run = beginImport(URL_HANG, { downloadStallMs: 300, heartbeatIntervalMs: 200 })
+  const error = await awaitVerdict(run, '真停滞')
 
   assert.ok(error !== null, '真停滞必须有终态')
   assert.equal(error.key.startsWith('historyImportUrlStalled'), true, `真停滞应报「长时间无响应」，实际 ${error.key}`)
