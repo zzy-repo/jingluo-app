@@ -22,6 +22,7 @@ export const en = {
   deleteSessionWithFilesDescription:
     'This chat and its uploaded files will be permanently deleted and cannot be recovered. Delete this chat?',
   cancel: 'Cancel',
+  back: 'Back',
   delete: 'Delete',
   sessionItemMenuRenameOption: 'Rename',
   sessionItemMenuPinOption: 'Pin chat',

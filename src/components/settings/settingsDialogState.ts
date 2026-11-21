@@ -14,7 +14,7 @@ import { captureStateSnapshot, recordAction } from '../../services/diagnostics/c
 import { showToast } from '../base/toastState.js'
 
 /**
- * 设置弹窗的分组：通用设置 / 数据管理。
+ * 设置弹窗的分组：通用设置 / 数据管理 / 账户与消费。
  *
  * `memory` 是 #398 为「窗口记忆」加的第三个分组（组内只有 embedding 开关一行）；#711 决定
  * **下线这个入口**，所以这里直接把它从联合里删掉 —— 收窄而不是「留着值但入口不可达」：
@@ -23,18 +23,22 @@ import { showToast } from '../base/toastState.js'
  *
  * 只切 UI 入口：`src/services/memory/**` 与 `settings.embeddingEnabled` 的持久化 / 迁移
  * **一律不动**（它们不依赖这个类型）。
+ *
+ * #727 阶段 1：加回第三项 `'account'`（账户与消费），而且**常显** —— 它不再依赖「渠道是不是
+ * 我们的渠道」（那是维护者明确否掉的条件渲染）：渠道 / API Key / 模型 / 连通性测试就住在这个
+ * tab 里，任何渠道下都必须能进得去。三个 tab 都是设置弹层**内部**的内容区，没有第二层弹层。
  */
-export type SettingsSection = 'general' | 'data'
+export type SettingsSection = 'general' | 'data' | 'account'
 
 /**
  * 把任意来源的分组值收敛成合法值（#711 兜底）。
  *
  * 非法值是真会出现的：小版本回滚 / 旧包里可能留下 `'memory'`，JS 调用方（`open({ section })`
  * 没有 tsc 把关）也可能塞脏值。设置弹窗**任何时候都要有一块非空面板**，不能因为一个分组
- * 下线就渲染出空白，所以：只认 `'data'`，其余一律落到 `'general'`（老行为的默认落点）。
+ * 下线就渲染出空白，所以：只认 `'data'` / `'account'`，其余一律落到 `'general'`（老行为的默认落点）。
  */
 export const normalizeSettingsSection = (value: unknown): SettingsSection =>
-  value === 'data' ? 'data' : 'general'
+  value === 'data' ? 'data' : value === 'account' ? 'account' : 'general'
 
 /**
  * 「账户与消费」页的四个 tab（#482 三弹层合一 / #487）。
@@ -49,13 +53,14 @@ export const useSettingsDialog = create(() => ({
   open: false,
   section: 'general' as SettingsSection,
   /**
-   * 「账户与消费」页是否打开（#482 三弹层合一 / #487，旧 `OursServicesDialog` 的替代物）。
+   * 「账户与消费」里要落在哪一页（#482 三弹层合一 / #487；#727 阶段 1 改成「切到第三个 tab」）。
    *
-   * 放在这里而不是组件本地 state：付款回跳（?no=&order_token=）要能直接把它打开，
-   * 让用户落在「我的卡密」tab；消息流里的额度不足 / Key 失效 CTA 也要能指到别的 tab。
+   * 放在这里而不是组件本地 state：付款回跳（?no=&order_token=）要能直接指到「我的卡密」，
+   * 消息流里的额度不足 / Key 失效 CTA 也要能指到别的页。
+   *
+   * **不再有「打开独立页」的开关**：这里只是「切到第三个 tab + 落在哪一页」，
+   * 内容永远渲染在设置弹层内部（维护者口径：不弹第二层窗口）。
    */
-  accountConsumeOpen: false,
-  /** 打开时落在哪个 tab（只在下一次打开时读一次，之后由页面自己切） */
   accountConsumeTab: 'cards' as AccountConsumeTab,
   /**
    * 这次打开设置是**发送前拦截**触发的（Issue #451 第 2 点）：Key 已填但格式明显不对，
@@ -129,27 +134,22 @@ export const clearSendConfigBlocked = (field?: SendBlockField) => {
   useSettingsDialog.setState({ sendConfigBlocked: null })
 }
 
-export const setAccountConsumeOpen = (open: boolean) => {
-  useSettingsDialog.setState({ accountConsumeOpen: open })
-}
-
 /**
- * 打开「账户与消费」页并落在指定 tab（#482 三弹层合一 / #487）。
+ * 切到设置里的第三个 tab（账户与消费）并落在指定子页（#482 三弹层合一 / #487 / #727）。
  *
- * 三个既有入口共用这一个出口，只是落的 tab 不同：
+ * 三个既有入口共用这一个出口，只是落的子页不同：
  *   - 付款回跳（`?no=&order_token=`）：`cards`（默认）—— 回跳就是为了让用户看到卡密；
  *   - 消息流「额度不足 → 去充值 / 兑换卡密」CTA：`quota`；
  *   - 消息流「Key 失效 → 查看额度」CTA：`account`（换 Key / 核对账号都在这一页）。
  *
- * 打开设置并选中「数据管理」：面包屑仍是「设置 → 数据管理 → 账户与消费」，
- * 与旧的 `openOursServices` 一致；页面层级由 `AccountConsumePage` 自己的 Modal zIndex 抬高，
- * 不依赖挂载先后。
+ * 打开设置并**选中第三个 tab**（账户与消费），落在指定子页：
+ * 面包屑是「设置 → 账户与消费 → 我的卡密 / 我的额度 / 账号」。内容渲染在设置弹层内部，
+ * 不再抬高 zIndex 叠一层独立弹窗（维护者口径：#727 阶段 1 只许有一个容器）。
  */
 export const openAccountConsume = (tab: AccountConsumeTab = 'cards') => {
   useSettingsDialog.setState({
     open: true,
-    section: 'data',
-    accountConsumeOpen: true,
+    section: 'account',
     accountConsumeTab: tab,
   })
 }

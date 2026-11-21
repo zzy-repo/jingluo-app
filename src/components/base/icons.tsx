@@ -65,6 +65,13 @@ export const IconDarkOutline16 = () => (
   </svg>
 )
 
+/** #727 阶段 1：设置第三个 tab「账户与消费」 */
+export const IconUserOutline16 = () => (
+  <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+    <path d="M8 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6Zm0 1c-2.76 0-5 1.34-5 3v1c0 .55.45 1 1 1h8c.55 0 1-.45 1-1v-1c0-1.66-2.24-3-5-3Z" />
+  </svg>
+)
+
 export const IconDataOutline16 = () => (
   <svg width={16} height={16} viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
     <path

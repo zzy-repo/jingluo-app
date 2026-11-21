@@ -1,5 +1,5 @@
 import clsx from 'clsx'
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useRef, useState, type ReactNode } from 'react'
 import {
   IconCopyOutline16,
   IconDarkOutline16,
@@ -9,6 +9,7 @@ import {
   IconLightOutline16,
   IconSettingsOutline16,
   IconUploadOutline14,
+  IconUserOutline16,
 } from '../base/icons.js'
 import {
   BackupError,
@@ -54,7 +55,6 @@ import { Modal } from '../base/Modal.js'
 import { Select } from '../base/Select.js'
 import { showToast } from '../base/toastState.js'
 import { ApiConfigFields, ApiKeyConfirm, useApiKeyEditor } from './ApiConfigFields.js'
-import { useIsOursChannel } from '../../services/api/apiConfig.js'
 import { AppUpdateField } from './AppUpdateField.js'
 import { ChatBackgroundField } from './ChatBackgroundField.js'
 import { DOUYIN_ACCOUNT_ID, douyinCopyToast } from './douyinAccount.js'
@@ -63,8 +63,6 @@ import { FeedbackDialog } from './FeedbackDialog.js'
 import {
   closeSettings,
   normalizeSettingsSection,
-  openAccountConsume,
-  setAccountConsumeOpen,
   useSettingsDialog,
   type SettingsSection,
 } from './settingsDialogState.js'
@@ -90,6 +88,13 @@ const sections: { value: SettingsSection; label: TranslationKey; icon: ReactNode
     icon: <IconSettingsOutline16 />,
   },
   { value: 'data', label: 'settingDialogAsideDataOptionLabel', icon: <IconDataOutline16 /> },
+  /**
+   * #727 阶段 1：第三个 tab **常显**。
+   *
+   * 渠道 / API Key / 模型 / 连通性测试就住在这个 tab 里（从「数据管理」搬过来），所以它不能再
+   * 由「渠道是不是我们的渠道」控制出现 —— 任何渠道下都必须是三项，这也正是维护者否掉的那个条件。
+   */
+  { value: 'account', label: 'accountConsumeTitle', icon: <IconUserOutline16 /> },
 ]
 
 const SettingsContent = ({ visible }: { visible: boolean }) => {
@@ -107,28 +112,7 @@ const SettingsContent = ({ visible }: { visible: boolean }) => {
   const historyDelete = useHistoryDelete()
   // 反馈弹窗：integrity=true 表示从「检查日志完整性」进入，自检面板默认展开
   const [feedback, setFeedback] = useState({ open: false, integrity: false })
-  /**
-   *「账户与消费」页开合（#482 三弹层合一 / #487 W1-C1）。
-   *
-   * 原来这里是三份独立开关（付款记录 #115 / 我的购买 #158 / 支付记录时间线 #189），
-   * 三个入口指向三个弹层，同一个「我的钱花哪儿了」要靠三个页面拼出来。合并后只剩这一个。
-   *
-   * 开合状态与落哪个 tab 放在 `settingsDialogState`（不再用本地 state）：付款回跳与消息流里的
-   * 额度不足 / Key 失效 CTA 都要能直接把它打开（见 `openAccountConsume`）。
-   */
-  const accountConsumeOpen = useSettingsDialog((state) => state.accountConsumeOpen)
-  const accountConsumeTab = useSettingsDialog((state) => state.accountConsumeTab)
-  /**
-   * 设置整层被关掉时把「账户与消费」一起收掉。
-   *
-   * 开合状态搬到 store 是为了让付款回跳 / 消息流 CTA 能直接打开它，代价是它**不随设置一起销毁**：
-   * 用户开着页面按 Esc 关掉设置，下一次从侧栏打开设置会直接弹出那个页面 —— 不是他要的东西。
-   * 所以在设置内容卸载时归位（页面自己的「关闭」仍走 `setAccountConsumeOpen(false)`）。
-   */
-  useEffect(() => () => setAccountConsumeOpen(false), [])
   const replacingHistory = useChatStore((state) => state.importingHistory)
-  // 自有渠道判定：付款记录 / 我的购买两格（以及它们在下面的弹层）只在这条渠道下存在（#166）
-  const oursChannel = useIsOursChannel()
   const historyBusy = historyImport.busy || historyDelete.busy || replacingHistory
   // 覆盖确认 / 删除确认叠在设置之上时，设置层的 X 与点击遮罩一律不可用：
   // 那层遮罩是全屏的，第一次点击只会落到上层的「取消」上，用户会以为 X 坏了、
@@ -157,26 +141,15 @@ const SettingsContent = ({ visible }: { visible: boolean }) => {
               role="tab"
               aria-selected={section === item.value}
               className={clsx(styles.navItem, section === item.value && styles.navItemActive)}
+              data-testid={item.value === 'account' ? 'account-consume-open' : undefined}
               onClick={() => setSection(item.value)}
             >
               {item.icon}
               {t(item.label)}
             </button>
           ))}
-          {/* #727：**一级入口** —— 和「通用设置 / 数据管理」平级，点开是整页（不是弹层里的 tab）。
-              仍然只在自有渠道下出现：卡密 / 套餐来自 apia，别的渠道没有自己的订单（#166）。
-              层级硬指标：设置 →（本项）→ 账号 = 2 次点击到登录 / 注册。 */}
-          {oursChannel ? (
-            <button
-              type="button"
-              className={styles.navItem}
-              data-testid="account-consume-open"
-              onClick={() => openAccountConsume('cards')}
-            >
-              <IconDataOutline16 />
-              {t('accountConsumeTitle')}
-            </button>
-          ) : null}
+          {/* #727 阶段 1：第三项现在是上面 `sections` 里的普通 tab（常显），这里不再有第二个入口 ——
+              两套入口并存正是要消掉的东西。 */}
         </div>
         <div role="tabpanel" className={styles.content}>
           {section === 'general' ? (
@@ -193,15 +166,13 @@ const SettingsContent = ({ visible }: { visible: boolean }) => {
               {/* 「位置信息」已从设置页移除（1.4.0-beta.1）：location 仍在 store 里读取，
                   只用于 latest_reminder 快照，界面上不再暴露入口。 */}
             </>
-          ) : (
+          ) : section === 'data' ? (
             <>
-              <ApiConfigFields editor={apiKeyEditor} />
               <ChatBackgroundField />
               <ImportHistory historyImport={historyImport} disabled={historyBusy} />
               <ExportHistory disabled={historyBusy} />
-              {/* 「账户与消费」已经提成**一级入口**（#727 10:48 的更正）：它现在是左侧导航里的
-                  第三项（见下面 `navigation` 里的 `account-consume-open`），不再是「数据管理」
-                  里的一格。这里刻意什么都不留 —— 两套入口并存正是 #727 要消掉的东西。 */}
+              {/* 渠道 / API Key / 模型 / 连通性测试已经搬到第三个 tab（账户与消费），这里**故意不留**：
+                  两处都有 = 维护者截图里那种重复。 */}
               <SettingCell
                 label={t('feedbackCellLabel')}
                 description={t('feedbackCellDescription')}
@@ -245,20 +216,21 @@ const SettingsContent = ({ visible }: { visible: boolean }) => {
                   </Button>
                 }
               />
+            </>
+          ) : (
+            <>
+              {/* 第三个 tab：模型来源（渠道 / API Key / 模型）+ 连通性测试 + 我的钱包 + 账号。
+                  全部**渲染在设置弹层内部**（不新开弹层、不叠遮罩），子行点进去是内容区换屏。 */}
+              <div className={styles.groupHead}>{t('accountConsumeGroupSource')}</div>
+              <ApiConfigFields editor={apiKeyEditor} />
               {isMobile ? <ApiKeyConfirm editor={apiKeyEditor} /> : null}
+              <AccountConsumePage showSourceRows={false} />
             </>
           )}
         </div>
       </Modal>
       {historyImport.source ? <ImportConfirm historyImport={historyImport} /> : null}
       {historyDelete.opened ? <DeleteAllConfirm historyDelete={historyDelete} /> : null}
-      {/* 账户与消费（#487 W1-C1）：一个页面四个 tab，zIndex 由页面自己抬高到设置层之上 */}
-      {oursChannel && accountConsumeOpen ? (
-        <AccountConsumePage
-          initialTab={accountConsumeTab}
-          onClose={() => setAccountConsumeOpen(false)}
-        />
-      ) : null}
       <FeedbackDialog
         open={feedback.open}
         integrity={feedback.integrity}

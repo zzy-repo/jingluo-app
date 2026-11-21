@@ -18,6 +18,8 @@ export const zh = {
   deleteSessionModalContentTitle: '永久删除对话',
   deleteSessionWithFilesDescription: '删除后，该对话及其中上传的文件将不可恢复。确认删除吗？',
   cancel: '取消',
+  // #727 阶段 1：下级页面（L2）左上角的返回，内容区换屏用，容器不关
+  back: '返回',
   delete: '删除',
   sessionItemMenuRenameOption: '重命名',
   sessionItemMenuPinOption: '置顶会话',

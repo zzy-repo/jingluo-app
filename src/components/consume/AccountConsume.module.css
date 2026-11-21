@@ -401,10 +401,18 @@
   background-color: var(--dsw-alias-interactive-bg-hover);
 }
 
-/* #215：83 上 `:focus-visible` 整条失效，所以 `:focus` 兜底 + 现代内核收鼠标环 */
+/* #47 无边设计：聚焦 / 按下只用「底色深一档」表达。
+   以前这里是一条 2px 品牌色 outline（截图里「我的卡密」外面那个蓝框），已去掉；
+   用 background-color 而不是 outline/border，键盘态同样可见（#215：83 上 `:focus-visible` 失效，
+   所以判据只挂在 `:focus` 上）。 */
 .row:focus {
-  outline: 2px solid var(--dsw-alias-brand-primary);
-  outline-offset: -2px;
+  outline: none;
+  background-color: var(--dsw-alias-interactive-bg-hover);
+}
+
+.row:focus:not(:focus-visible) {
+  /* 现代内核：鼠标点击不额外加深，键盘态仍由上面的 `:focus` 给出底色 */
+  background-color: transparent;
 }
 
 /* 行内不可点的版本（只是显示一行值） */
@@ -446,6 +454,83 @@
   height: 1px;
   margin: 0;
   background-color: var(--dsw-alias-border-l1);
+}
+
+/* 内嵌在设置弹层的内容区里（#727 阶段 1）：设置自己有 24px 横向内边距，
+   这里的行 / 分组标题不再各带 20px，避免二次缩进；余额卡作为卡片收掉左右外边距。 */
+.embedded .row,
+.embedded .ghead {
+  padding-left: 0;
+  padding-right: 0;
+}
+
+.embedded .divider {
+  margin-left: 0;
+}
+
+.embedded .balance {
+  margin-left: 0;
+  margin-right: 0;
+}
+
+/* 余额卡里的「我的额度」入口（额度并进余额卡，不再占一行） */
+.balanceMore {
+  display: inline-flex;
+  align-items: center;
+  margin-top: 8px;
+  padding: 4px 0;
+  border: 0;
+  background: none;
+  color: var(--dsw-alias-label-secondary);
+  font: inherit;
+  font-size: 14px;
+  line-height: 20px;
+  cursor: pointer;
+}
+
+.balanceMore:focus {
+  outline: none;
+  color: var(--dsw-alias-label-primary);
+}
+
+/* 下级页面（L2）的二级头：左上角「返回」+ 本页标题 */
+.subHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  margin: 4px 0 4px;
+}
+
+.subBack {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 6px 8px 6px 4px;
+  border: 0;
+  border-radius: 10px;
+  background: none;
+  color: var(--dsw-alias-label-secondary);
+  font: inherit;
+  font-size: 14px;
+  line-height: 20px;
+  cursor: pointer;
+}
+
+.subBack:focus {
+  outline: none;
+  background-color: var(--dsw-alias-interactive-bg-hover);
+}
+
+.subBack svg {
+  transform: rotate(180deg);
+}
+
+.subTitle {
+  color: var(--dsw-alias-label-primary);
+  font-size: 17px;
+  font-weight: 600;
+  line-height: 24px;
 }
 
 /* 状态点：绿 / 黄 / 红 */

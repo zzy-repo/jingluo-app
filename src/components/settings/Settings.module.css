@@ -90,6 +90,20 @@
   overflow-y: auto;
 }
 
+/* 分组标题（#727 阶段 1）：第三个 tab 里「模型来源」等分组的清晰抬头 + 与上方的间距 */
+.groupHead {
+  flex-shrink: 0;
+  margin: 16px 0 4px;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 18px;
+
+  &:first-child {
+    margin-top: 4px;
+  }
+}
+
 .cell {
   box-sizing: border-box;
   flex-shrink: 0;

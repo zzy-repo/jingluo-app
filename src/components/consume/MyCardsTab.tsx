@@ -86,9 +86,17 @@ export type MyCardsTabProps = {
   onGoBuy?: () => void
   /** 需要登录时的出口（W1-B 提供登录页/弹层） */
   onNeedLogin?: () => void
+  /**
+   * 是否渲染列表自己的「我的卡密」小标题（#727 阶段 1）。
+   *
+   * 设置弹层里这一块是**由「我的卡密」那一行点开的**：行上已经写了分组名，视图里再写一遍
+   * 就是维护者截图里看到的重复（同一个名字当一次分组标题、又当一次列表标题）。独立渲染
+   * （截图脚本 / 面板联调）时不传，行为一字不变。
+   */
+  hideListTitle?: boolean
 }
 
-export const MyCardsTab = ({ consume, onGoBuy, onNeedLogin }: MyCardsTabProps) => {
+export const MyCardsTab = ({ consume, onGoBuy, onNeedLogin, hideListTitle = false }: MyCardsTabProps) => {
   const t = useTranslate()
   const apiKey = useApiConfig((state) => state.apiKey)
   const [view, setView] = useState<CardsView>({ status: 'loading' })
@@ -238,7 +246,7 @@ export const MyCardsTab = ({ consume, onGoBuy, onNeedLogin }: MyCardsTabProps) =
       </section>
 
       <section className={styles.section}>
-        <h3 className={styles.sectionTitle}>{t('accountConsumeTabCards')}</h3>
+        {hideListTitle ? null : <h3 className={styles.sectionTitle}>{t('accountConsumeTabCards')}</h3>}
         {view.status === 'loading' ? (
           <div className={styles.state} aria-busy>
             <p className={styles.stateText}>{t('oursPurchasesLoading')}</p>
