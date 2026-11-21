@@ -19,18 +19,35 @@ import type { ManagedKeyFailure } from '../../services/api/managedKey.js'
 /** `idle` = 没在跑也没有失败；`running` = 正在「查重 → 建 → 重试」；`failed` = 两次都没拿到 */
 export type ManagedKeyEnsureStatus = 'idle' | 'running' | 'failed'
 
+/**
+ * 失败时**定位用**的两条现场信息（#812 第 4 条）。
+ *
+ * 有了它们，下次看板上的一句提示就能回答「哪把 Key、打到哪个地址」——
+ * #812 的现场是「Key 有效但提示 Key 无效」，缺的正是这两条：Key 前 6 位说明用的是哪一把，
+ * 请求地址说明它被打到了哪个环境（staging 的 Key 打到生产网关，必然 401）。
+ */
+export type ManagedKeyEnsureContext = {
+  /** 当前用于推理的 Key 的**前 6 位**（`sk-xxx`；不是钥匙本体，够定位即可） */
+  keyPrefix: string
+  /** 这把 Key 会被打到的**推理请求地址**（当前生效的 `getMessagesUrl()`） */
+  requestUrl: string
+}
+
 export type ManagedKeyEnsureState = {
   status: ManagedKeyEnsureStatus
   /** 最后一次失败（`status === 'failed'` 时非空；拿它出「原因 + 状态码」） */
   failure: ManagedKeyFailure | null
   /** 这一次一共尝试了几次（1 = 没重试；2 = 重试过）—— 界面据此说「已自动重试一次」 */
   attempts: number
+  /** 失败现场（Key 前 6 位 + 推理地址）；成功时清空 */
+  context: ManagedKeyEnsureContext | null
 }
 
 export const useManagedKeyEnsure = create<ManagedKeyEnsureState>(() => ({
   status: 'idle',
   failure: null,
   attempts: 0,
+  context: null,
 }))
 
 /**
@@ -45,15 +62,24 @@ export const markManagedKeyEnsureRunning = (): void => {
 
 /** 成功：把上一次的失败提示收掉（不清 `attempts`，成功也要能说清「重试过一次才成功」） */
 export const markManagedKeyEnsureOk = (attempts: number): void => {
-  useManagedKeyEnsure.setState({ status: 'idle', failure: null, attempts })
+  useManagedKeyEnsure.setState({ status: 'idle', failure: null, attempts, context: null })
 }
 
-/** 两次都失败：留下原因 + 次数，界面必须据此出提示与「重试」（不许静默失败） */
-export const markManagedKeyEnsureFailed = (failure: ManagedKeyFailure, attempts: number): void => {
-  useManagedKeyEnsure.setState({ status: 'failed', failure, attempts })
+/**
+ * 两次都失败：留下原因 + 次数 + **现场**，界面必须据此出提示与「重试」（不许静默失败）。
+ *
+ * `context` 是 #812 加的：状态码只说「服务端回了什么」，说不清「用的是哪把 Key、打到哪」——
+ * 而 #812 的现场恰恰是这两条决定的（staging 的 Key 打到生产网关 → 401「Key 无效」）。
+ */
+export const markManagedKeyEnsureFailed = (
+  failure: ManagedKeyFailure,
+  attempts: number,
+  context: ManagedKeyEnsureContext | null = null
+): void => {
+  useManagedKeyEnsure.setState({ status: 'failed', failure, attempts, context })
 }
 
 /** 清空（切号 / 退出登录 / 用户手动重试前） */
 export const resetManagedKeyEnsure = (): void => {
-  useManagedKeyEnsure.setState({ status: 'idle', failure: null, attempts: 0 })
+  useManagedKeyEnsure.setState({ status: 'idle', failure: null, attempts: 0, context: null })
 }

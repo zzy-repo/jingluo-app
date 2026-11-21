@@ -23,7 +23,10 @@ declare const __APP_VERSION_CODE__: number
 /**
  * 服务端端点表，唯一来源是仓库根的 `config/endpoints.json`（Issue #274），
  * 由 rspack.config.ts 的 DefinePlugin 在构建期注入：
- *   - `chatBaseUrl`   对话上游（providers.ts 的 ours.defaults.baseUrl）
+ *   - `chatBaseUrl`   旧池域（邀请 / 反馈同一台机器）。**#812 起不再是推理地址**：
+ *                     `ours.defaults.baseUrl` 改为从 `consume.baseUrl` 派生
+ *                     （`services/api/environment.ts` 的 `inferenceBaseUrl`）——
+ *                     推理必须与登录同环境，同环境是构造出来的，不是靠人记的纪律。
  *   - `inviteBaseUrl` 邀请 / 额度 / 卡密服务（invite/api.ts 的 INVITE_API_BASE）
  *   - `feedbackUrl`   反馈上传（diagnostics/config.ts 的 LEGACY_FEEDBACK_URL）
  *   - `legacyHosts`   已下线主机重写表（apiConfig.ts 的 LEGACY_HOSTS）

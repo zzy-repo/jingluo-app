@@ -50,8 +50,8 @@ const ANSWER = '这是一整块蓝色'
  * 请求挡下来并留证 —— 「没连真实服务」这件事要被断言，而不是靠自觉。
  */
 const ENDPOINTS = JSON.parse(await readFile(new URL('../../config/endpoints.json', import.meta.url), 'utf8'))
-/** ours 的地址内置且 locked：唯一来源是 config/endpoints.json（构建期注入），不是 127.0.0.1:18000 */
-const OURS_HOST = new URL(ENDPOINTS.chatBaseUrl).host
+/** ours 的地址内置且 locked：唯一来源是登录环境 consume.baseUrl（#812：推理与登录同环境），不是 127.0.0.1:18000 */
+const OURS_HOST = new URL(ENDPOINTS.consume.baseUrl).host
 const ANTHROPIC_STUB_HOST = '127.0.0.1:18414'
 const OPENAI_STUB_HOST = '127.0.0.1:18415'
 /** 本机真实例端口：任何请求打到这里都算「测试连了真服务」 */

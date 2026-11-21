@@ -33,7 +33,13 @@ import { chromium } from 'playwright'
 
 // 消费层（sub2api）地址同样来自 `config/endpoints.json`（#274）：#608 的已登录态要点打桩，
 // 这里不许写字面量端口，否则本机改了 `config/endpoints.json` 之后这张截图会静默打到别处。
-import { chatBaseUrl, consumeApiV1Prefix, consumeBaseUrl, consumeGatewayPrefix, inviteBaseUrl } from './lib/endpoints.mjs'
+import {
+  consumeApiV1Prefix,
+  consumeBaseUrl,
+  consumeGatewayPrefix,
+  inferenceBaseUrl,
+  inviteBaseUrl,
+} from './lib/endpoints.mjs'
 // #386 的「流式中」截图要把 streaming 这个状态撑开：用同一份 ours 上游契约回 SSE（含 CORS 头），
 // 只是刻意延后 4 秒再回，好在上翻之后再截。
 import { OURS_CHAT_PATH, OURS_CORS, openAiSse } from '../tests/fixtures/domain03-04/ours-upstream.mjs'
@@ -2603,7 +2609,8 @@ export const PAGES = {
         )
       })
       // 连通性：点下去才发请求（复用 `probeProvider` → GET /v1/models）
-      await page.route(`${chatBaseUrl}/v1/models`, async (route) => {
+      // #812：ours 推理/模型探测打的是登录环境（consume.baseUrl），不再是旧池域 chatBaseUrl
+      await page.route(`${inferenceBaseUrl}/v1/models`, async (route) => {
         if (route.request().method() === 'OPTIONS') {
           await route.fulfill(preflight)
           return

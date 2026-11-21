@@ -206,9 +206,17 @@ test('[4] 内置服务不再有「重新领取」：401 / 未领取的出路是�
   )
   const alignBody = managedSource.slice(managedSource.indexOf('export const ensureManagedKey ='))
   assert.equal(/rotate/u.test(alignBody), false, '对齐那一段里不许出现 rotate（对齐≠换一把）')
+  // #812 起判据升级成「本机是否真的能用上这把 Key」：`getManagedKeyVerdict() === 'ok'`
+  // 同时覆盖「Key 对得上但下发标记不在」这一档（标记缺失 → verdict=unclaimed → 必须再写一次），
+  // 也覆盖「查重命中的明文还没落到本机」那一档（#812 的病根）。
   assert.match(
     runtime,
-    /getServerKeyMark\(\) === null/u,
+    /const alreadyApplied = getManagedKeyVerdict\(\) === 'ok'/u,
     '「Key 对得上但没有下发标记」也必须算一次对齐，否则发送前永远判 unclaimed（#800 之后没有按钮可点）'
+  )
+  assert.match(
+    runtime,
+    /if \(!alreadyApplied\) \{\s*applyManagedKey\(result\.key, result\.id\)/u,
+    '没生效就必须走 applyManagedKey（Key + 标记同一个入口写），不许只判断名字存在就收工'
   )
 })

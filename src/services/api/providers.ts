@@ -19,6 +19,7 @@
  * 设置页因此不渲染地址与模型输入行，值只从 defaults 取。
  */
 import { INTERNAL_BUILD } from './internalBuild.js'
+import { inferenceBaseUrl } from './environment.js'
 import { LIMITS, type RequestTimeoutOverride } from '../limits.js'
 
 export type ProviderKind = 'deepseek' | 'anthropic' | 'openai' | 'ours'
@@ -283,8 +284,13 @@ const RAW_SPECS: Record<ProviderKind, RawProviderSpec> = {
     // 地址与模型内置（locked）：设置页只有 API Key 一行，用户看不到也不该看到后端地址
     fields: ['apiKey'],
     // 2026-11-18 起该上游走 OpenAI 协议：/v1/chat/completions + Authorization: Bearer
-    // 地址唯一来源是 config/endpoints.json 的 chatBaseUrl（#274），构建期注入 __ENDPOINTS__
-    defaults: { baseUrl: __ENDPOINTS__.chatBaseUrl, model: 'deepseek-v4.1-flash' },
+    //
+    // **地址 = 登录环境**（#812）：以前这里取的是另一份 `chatBaseUrl`（旧池域 / 生产环境），
+    // 而登录走 `consume.baseUrl`。staging 包只覆盖了后者，于是「staging 发的 Key 打到生产网关」
+    // → `/v1/models`、`/v1/chat/completions` 全 401，客户端提示的却是「Key 无效」（Key 本身是好的）。
+    // 现在地址只从 `consume.baseUrl` 派生（见 services/api/environment.ts），
+    // 同环境是构造出来的：想分叉都没有第二个开关可改。
+    defaults: { baseUrl: inferenceBaseUrl(__ENDPOINTS__), model: 'deepseek-v4.1-flash' },
     paths: { models: '/v1/models', messages: '/v1/chat/completions', tools: '' },
     auth: 'bearer',
     // 不带 anthropic-version：OpenAI 协议路径不需要；带上去反而会让中转 CORS 预检失败

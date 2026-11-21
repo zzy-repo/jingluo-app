@@ -262,7 +262,10 @@ export type ManagedKeyFailure = {
   detail: string
 }
 
-/** 成功：`created === false` 表示查重命中、「直接沿用了服务端那一把」，这次没有 POST */
+/**
+ * 成功：`created === false` 表示查重命中、「直接沿用了服务端那一把」，这次没有 POST
+ * （`key` 就是列表里那把的**完整明文**，调用方必须落盘并生效 —— #812）
+ */
 export type ManagedKeyEnsureSuccess = {
   ok: true
   key: string
@@ -318,6 +321,44 @@ export const managedKeyLookupQuery = (
   search: keyName,
 })
 
+/**
+ * 从查重结果里挑出「这台设备**该用**的那一把」（#812）。
+ *
+ * 为什么要挑，而不是 `find(名字相同)`：服务端**允许同名**（`POST /keys` 没有幂等键，
+ * 一次超时重发就是第二把），所以同名命中可能不止一条，而列表顺序不保证是「最近下发的那把在前」。
+ * 以前取第一条，等于把「哪一把能用」交给服务端的分页顺序 —— 先撞上一条 `inactive`（换过 Key
+ * 之后被 `PUT` 停用的旧那把）就会一直 401「Key 无效」，本机却以为已经领到了。判据四层：
+ *
+ *  1. **名字精确相等**：`search` 是模糊匹配，`app-abc-2` 会被搜到 `app-abc` 的查询里；
+ *  2. **`status === 'active'` 优先**：停用的那把服务端已经不认（用它必然 401）；
+ *  3. 同状态里**取最新**：`createdAt` 大者优先，缺时间戳时退回 `id` 大者（服务端自增）；
+ *  4. **明文必须非空**：列表每项的 `key` 是完整明文 —— 取不到明文就等于没拿到，不许当命中。
+ *
+ * 返回 `undefined` = 没有可用的同名 Key（调用方据此去 `POST`）；返回项里的 `key` 已是 trim 过的明文。
+ */
+export const pickManagedKey = (
+  items: readonly ConsumeApiKey[],
+  name: string
+): ConsumeApiKey | undefined => {
+  const candidates = items.filter((item) => item.name === name && item.key.trim() !== '')
+  if (candidates.length === 0) {
+    return undefined
+  }
+  const recency = (item: ConsumeApiKey): number => {
+    const at = item.createdAt === undefined ? Number.NaN : Date.parse(item.createdAt)
+    // 时间戳缺失 / 不可解析时退回 id：两者都是「越大越新」，混用时也只用来在同类里排序
+    return Number.isFinite(at) ? at : Number.NEGATIVE_INFINITY
+  }
+  const active = candidates.filter((item) => item.status === 'active')
+  const pool = active.length > 0 ? active : candidates
+  return pool.reduce((best, item) => {
+    if (recency(item) !== recency(best)) {
+      return recency(item) > recency(best) ? item : best
+    }
+    return item.id > best.id ? item : best
+  })
+}
+
 /** 服务端错误 → 失败细节（`status === 0` 一律归为 `transport`，与 http 层同一口径） */
 const managedKeyFailureOf = (step: 'list' | 'create', error: Sub2ApiError): ManagedKeyFailure => ({
   kind: error.status === 0 ? 'transport' : 'http',
@@ -350,14 +391,17 @@ type ManagedKeyAttempt =
 const ensureOnce = async (source: ManagedKeySource, name: string): Promise<ManagedKeyAttempt> => {
   const listed = await source.keys.list(managedKeyLookupQuery(name))
   if (listed.ok) {
-    // 服务端的 `search` 是模糊匹配：必须再按 name **精确**比一次，否则 `app-abc-2` 会被当成 `app-abc`
-    const hit = listed.data.items.find((item) => item.name === name)
+    // 命中的那一把**必须连明文一起取回**（#812）：列表每项的 `key` 是完整明文，
+    // 少了这一步就只是「名字存在」—— 本机仍然没有能用的 Key，请求照旧 401「Key 无效」。
+    // 多把同名时按 `pickManagedKey()` 的判据挑（active 优先、再取最新）。
+    const hit = pickManagedKey(listed.data.items, name)
     if (hit !== undefined) {
-      const key = hit.key.trim()
-      if (key === '') {
-        return { ok: false, failure: emptyKeyFailure('list', listed.status) }
-      }
-      return { ok: true, key, id: hit.id, name: hit.name, created: false }
+      return { ok: true, key: hit.key.trim(), id: hit.id, name: hit.name, created: false }
+    }
+    // 同名命中但没有明文（`key` 为空）：这仍然是「没拿到」，不许当成功（#803 第 4 条）。
+    const namedWithoutKey = listed.data.items.filter((item) => item.name === name)
+    if (namedWithoutKey.length > 0) {
+      return { ok: false, failure: emptyKeyFailure('list', listed.status) }
     }
   } else {
     return { ok: false, failure: managedKeyFailureOf('list', listed.error) }

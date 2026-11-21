@@ -1,7 +1,9 @@
 // 「我们的渠道」（ours）上游契约 —— 只有一处定义，改契约就改这里。
 //
 // 现状（1.4.0-beta.6 起，src/services/api/providers.ts 的 ours spec）：
-//   地址    config/endpoints.json 的 chatBaseUrl（内置，设置页不渲染；#274 前是写死 IP）
+//   地址    **登录环境**（config/endpoints.json 的 consume.baseUrl，内置、设置页不渲染）。
+//           #812 起推理与登录同环境是构造出来的：以前取另一份 chatBaseUrl（旧池域），
+//           staging 包于是「登录在 staging、推理打到生产」，服务端发的 Key 被判 401「Key 无效」。
 //   模型    deepseek-v4.1-flash             （内置）
 //   协议    OpenAI 兼容：POST /v1/chat/completions，SSE 事件是 chat.completion.chunk + [DONE]
 //   鉴权    Authorization: Bearer <key>      （不带 x-api-key、不带 anthropic-version）
@@ -10,9 +12,9 @@
 // 历史坑（Issue #19）：地址曾是 http://123.207.199.196:60010 且走 Anthropic Messages 协议
 // （/v1/messages + x-api-key），契约换了以后 motion / mode-switch / provider-channels /
 // internal-build 里各自写死的旧打桩全变假红。这里集中成 fixture，用例只 import 常量。
-import { chatBaseUrl } from '../../../scripts/lib/endpoints.mjs'
+import { inferenceBaseUrl } from '../../../scripts/lib/endpoints.mjs'
 
-export const OURS_HOST = chatBaseUrl
+export const OURS_HOST = inferenceBaseUrl
 export const OURS_MODEL = 'deepseek-v4.1-flash'
 export const OURS_CHAT_PATH = '/v1/chat/completions'
 export const OURS_CHAT_URL = `${OURS_HOST}${OURS_CHAT_PATH}`

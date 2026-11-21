@@ -29,7 +29,7 @@ import { createElement, type ComponentType, type ReactNode } from 'react'
 import type { TranslationKey, TranslationParams } from '../../i18n/index.js'
 import type { ManagedKeyFailure, ManagedKeyVerdict } from '../../services/api/managedKey.js'
 import type { ProviderKind } from '../../services/api/providers.js'
-import type { ManagedKeyEnsureStatus } from './managedKeyEnsureState.js'
+import type { ManagedKeyEnsureContext, ManagedKeyEnsureStatus } from './managedKeyEnsureState.js'
 
 /** Key 行的形态：只读（服务端管理）还是可编辑（用户自己的 Key） */
 export type ApiKeyFieldMode = 'managed' | 'editable'
@@ -205,10 +205,31 @@ export type ManagedKeyEnsureBannerProps = {
   failure: ManagedKeyFailure | null
   /** 这次一共尝试了几次（2 = 已自动重试过一次） */
   attempts: number
+  /**
+   * 失败现场（#812 第 4 条）：Key 前 6 位 + 推理请求地址。
+   * 没传就不渲染这一行（老调用点 / 还没有 Key 的现场）；传了就一定有内容。
+   */
+  context?: ManagedKeyEnsureContext | null
   onRetry: () => void
   Button: ManagedKeyButton
   styles: Record<string, string>
 }
+
+/**
+ * 失败现场那一行的人话（#812）：`使用的 Key：sk-liv… · 请求地址：https://…/v1/chat/completions`。
+ *
+ * 为什么值得单独一行：状态码只说「服务端回了什么」。#812 的现场是「Key 有效却提示 Key 无效」，
+ * 根因是**Key 与请求地址不在同一个环境**（staging 发的 Key 打到生产网关）。这两条并排放在一起，
+ * 下一次一眼就能定位；少了它们，只能靠翻日志猜。
+ */
+export const managedKeyEnsureContextText = (
+  t: ManagedKeyViewText,
+  context: ManagedKeyEnsureContext
+): string =>
+  t('settingsManagedKeyEnsureContext', {
+    keyPrefix: context.keyPrefix === '' ? t('settingsManagedKeyNoKeyYet') : context.keyPrefix,
+    address: context.requestUrl === '' ? t('settingsManagedKeyNoAddress') : context.requestUrl,
+  })
 
 /**
  * 「自动获取 Key 失败」的提示块：**红字 + 「重试」按钮**，不是一句静默的日志（#803 第 5 条）。
@@ -222,12 +243,13 @@ export type ManagedKeyEnsureBannerProps = {
  * 只是把按钮置灰换成「正在领取…」—— 重试在飞的时候连点会打出两次 `POST /api/v1/keys`。
  */
 export const ManagedKeyEnsureBanner = (props: ManagedKeyEnsureBannerProps): ReactNode => {
-  const { t, status, failure, attempts, onRetry, Button, styles } = props
+  const { t, status, failure, attempts, context, onRetry, Button, styles } = props
   if (status === 'idle' || failure === null) {
     return null
   }
   const reason = managedKeyEnsureFailureReason(t, failure)
   const running = status === 'running'
+  const detail = context === undefined || context === null ? null : managedKeyEnsureContextText(t, context)
   return createElement(
     'div',
     {
@@ -240,6 +262,13 @@ export const ManagedKeyEnsureBanner = (props: ManagedKeyEnsureBannerProps): Reac
       { key: 'reason', className: styles.errorText, 'data-testid': 'settings-managed-key-ensure-reason' },
       t('settingsManagedKeyEnsureFailed', { reason, attempts: String(Math.max(attempts, 1)) })
     ),
+    detail === null
+      ? null
+      : createElement(
+          'p',
+          { key: 'context', className: styles.sourceNote, 'data-testid': 'settings-managed-key-ensure-context' },
+          detail
+        ),
     createElement(
       'p',
       { key: 'hint', className: styles.sourceNote, 'data-testid': 'settings-managed-key-ensure-hint' },

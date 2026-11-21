@@ -505,6 +505,13 @@ export const zh = {
   settingsManagedKeyFailNetwork: '网络超时或连接不上',
   settingsManagedKeyFailHttp: '服务端返回 {status}',
   settingsManagedKeyFailEmpty: '服务端回了成功，但响应里没有 Key 值',
+  /**
+   * #812：失败提示里的**现场** —— 用的是哪把 Key（前 6 位）+ 打到哪个地址。
+   * 这两条并排放在一起才能一眼看出「Key 与环境对不上」（staging 的 Key 打到生产网关 → 401）。
+   */
+  settingsManagedKeyEnsureContext: '使用的 Key：{keyPrefix}…（前 6 位）· 请求地址：{address}',
+  settingsManagedKeyNoKeyYet: '尚未领取',
+  settingsManagedKeyNoAddress: '（地址未知）',
   settingsBaseUrlLabel: '服务地址',
   settingsBaseUrlPlaceholder: '例如 https://your-gateway.example.com',
   settingsModelPlaceholder: '例如 deepseek-v4.1-flash',

@@ -5,7 +5,8 @@
  *
  * | 字段 | 用途 | 前端消费方 |
  * | --- | --- | --- |
- * | `chatBaseUrl` | 对话上游 | `src/services/api/providers.ts` 的 `ours.defaults.baseUrl` |
+ * | `chatBaseUrl` | 旧池域（邀请 / 反馈同一台机器；**#812 起不再用于推理**） | 仅作为「对话端点」的历史标识与 `check:ip` 白名单依据 |
+ * | `consume.baseUrl` | 登录环境 + **推理上游**（#812：同一份部署） | `src/services/api/providers.ts` 的 `ours.defaults.baseUrl`（经 `services/api/environment.ts` 的 `inferenceBaseUrl`） |
  * | `inviteBaseUrl` | 邀请 / 额度 / 卡密服务 | `src/services/invite/api.ts` 的 `INVITE_API_BASE` |
  * | `feedbackUrl` | 反馈上传 | `src/services/diagnostics/config.ts` 的 `LEGACY_FEEDBACK_URL` |
  * | `legacyHosts` | 已下线主机（存过即视为没配过，回落默认） | `src/services/api/apiConfig.ts` 的 `LEGACY_HOSTS` |
@@ -96,6 +97,15 @@ export const downloadFallbackBase = config.downloadFallbackBase
 
 /** 消费侧地址（sub2api 的 `__ENDPOINTS__.consume.baseUrl` / `BuildConfig.CONSUME_BASE`） */
 export const consumeBaseUrl = config.consumeBaseUrl
+
+/**
+ * `ours` 渠道的**推理地址**（#812）：与登录环境同源，就是 `consume.baseUrl`。
+ *
+ * 以前推理取的是 `chatBaseUrl`（旧池域），于是 staging 包出现「登录在 staging、推理打到生产」
+ * —— 服务端发的 Key 被另一个环境判 401。源码侧的推导在 `src/services/api/environment.ts`，
+ * 这里给同一份推导的脚本版：用例与截图脚本都 import 它，不再各自写 `chatBaseUrl` 当推理地址。
+ */
+export const inferenceBaseUrl = consumeBaseUrl.replace(/\/+$/, '')
 /** 消费侧 JWT 前缀（固定 `/api/v1`，见 #484 §三） */
 export const consumeApiV1Prefix = config.consumeApiV1Prefix
 /** 消费侧 API Key 前缀（固定 `/v1`） */

@@ -19,6 +19,12 @@
 //   [⑥] 并发：profile 与建 Key 同时触发 → 只建出 1 把 Key
 //   [⑦] 退出登录 → 本机 Key + 下发标记 + token 被清（换号不会用旧 Key）；别的渠道不误清
 //
+// #812（同一份流程的补丁，用例加在本文件里而不是另起一套）：
+//   [①-b] 服务端已有同名 Key → 一次 `POST /keys` 都没有，且**列表里那把的明文**被写进本地并成为当前 Key
+//   [②-b] 用这把 Key 真发一次 `chat/completions` → 请求头里的 Key **等于**列表明文
+//   [③-b] 多把同名 → 取 `status=active` 且最新的那一把（不能拿列表第一条）
+//   [④-b] 环境一致性：推理地址必须与登录环境（`consume.baseUrl`）同源 —— 两份地址不同环境时用例必须红
+//
 // 判据不自己编：流程在 `services/api/managedKey.ts` 的 `ensureManagedKey()`（纯逻辑，`ManagedKeySource`
 // 由用例注入），接线在 `components/settings/managedKeyRuntime.ts`（单飞 + 落盘 + 日志），
 // 触发时机在 `services/auth/store.ts` 的**会话建立钩子**（`setSessionEstablishedHook`）里。
@@ -58,6 +64,11 @@ const runtime = await import('../../src/components/settings/managedKeyRuntime.ts
 const { setConsumeClient } = await import('../../src/services/consumeClient.ts')
 const { createConsumeClient } = await import('../../src/services/consume/index.ts')
 const auth = await import('../../src/services/auth/store.ts')
+const providers = await import('../../src/services/api/providers.ts')
+const environment = await import('../../src/services/api/environment.ts')
+const { streamMessage } = await import('../../src/services/api/client.ts')
+const { buildMessageBody } = await import('../../src/services/chat/requestBody.ts')
+const endpointScript = await import('../../scripts/lib/endpoints.mjs')
 
 const { renderToStaticMarkup } = await import('react-dom/server')
 
@@ -642,4 +653,240 @@ test('[接线] 会话钩子在 main.tsx 挂上、领取链路只此一份', () =
     false,
     '接线层不许自己拼请求（路径白名单在 services/consume/**）'
   )
+})
+
+// ------------------------------------------------ #812：查到的 Key 必须**取回并生效**
+
+/**
+ * #812 的现场（staging）：
+ *   `POST /auth/register 200` → `GET /user/profile 200` → `GET /keys?...&search=app-…` **200（查到了那把 Key）**
+ *   → 之后**没有任何 `POST /keys`，也没有推理请求**，客户端却提示「Key 无效」。
+ * 服务端拿同一把 Key 直连网关 200、计费正常 —— Key 是好的，是客户端「查到了但没用上」。
+ *
+ * 所以下面三条打在「取回 → 写盘 → 生效 → 真的发出去」这条链上，而不是「名字存在就 return」。
+ */
+
+/** 上一把（旧）Key：本机本来就有，且带着自己的下发标记 —— 新账号那把必须把它换掉 */
+const STALE_KEY = 'sk-live-stale-00000000'
+/** 明文必须**逐字**进本地存储：这是「取回」与「只是比了一下」的分界 */
+const LOCAL_KEY_SLOT = 'chat-demo:api-key'
+
+test('[①-b] 服务端已有同名 Key → 不 POST，且把列表那把的**明文**写进本地并成为当前 Key', async () => {
+  reset()
+  // 本机先留着上一把（旧 Key + 旧标记）：只有真的「取回并落盘」才会变成本机正在用的这把
+  assert.equal(apiConfig.applyManagedKey(STALE_KEY, 41), true)
+  const { client, recorder } = existingKeyScene()
+  setConsumeClient(client)
+  pretendPreviousUserSignedIn()
+
+  const outcome = await runtime.ensureManagedKeyForDevice()
+
+  assert.deepEqual(endpointsOf(recorder), ['GET /api/v1/keys'], '只查重：查到了就**不许**再建一把')
+  assert.equal(recorder.countOf('POST'), 0, '一次 POST /keys 都不许有')
+  assert.equal(outcome, 'updated', '本机被写成服务端那把（不是「名字存在所以什么都不用做」）')
+
+  // ① 明文取回来了，而且真的落到了本地存储（不是只在内存里比了一下）
+  assert.equal(apiConfig.getApiKey(), SERVER_KEY, '当前推理用的 Key = 列表里那把的明文')
+  assert.equal(dom.localStorage.getItem(LOCAL_KEY_SLOT), SERVER_KEY, '明文必须写进本地存储（重启后仍然是这把）')
+
+  // ② 下发标记跟着这一把（否则发送前那道闸判 unclaimed / stale）
+  const mark = apiConfig.getServerKeyMark()
+  assert.notEqual(mark, null, '下发标记必须写上')
+  assert.equal(mark.fingerprint, managed.serverKeyMark(SERVER_KEY).fingerprint, '标记的指纹必须属于**这一把**')
+  assert.equal(mark.id, 42, '标记里记的是列表里那把的 id（换 Key 之后要靠它停用旧的）')
+  assert.equal(apiConfig.getManagedKeyVerdict(), 'ok', '发送前那道闸放行')
+
+  // ③ 日志说得清这次是「沿用（adopted）」而不是「新建」
+  const ensureActions = globalThis.__log.actions.filter(
+    (item) => item.action === 'ours-managed-key-ensure' && item.fields.result === 'updated'
+  )
+  assert.ok(ensureActions.length >= 1, '成功也要留痕')
+  assert.equal(ensureActions[ensureActions.length - 1].fields.created, false, '这次没有新建 Key')
+  assert.equal(ensureActions[ensureActions.length - 1].fields.adopted, true, '日志里要能分出「沿用服务端那把」这条路')
+})
+
+test('[②-b] 用这把 Key 真发一次 chat/completions → 请求头里的 Key 等于列表那把明文', async () => {
+  reset()
+  apiConfig.applyManagedKey(STALE_KEY, 41)
+  const { client } = existingKeyScene()
+  setConsumeClient(client)
+  pretendPreviousUserSignedIn()
+  assert.equal(await runtime.ensureManagedKeyForDevice(), 'updated')
+
+  // 真链路：`streamMessage` 会自己拼地址与鉴权头（不是用例里另拼一份）
+  const requests = []
+  const realFetch = globalThis.fetch
+  globalThis.fetch = async (url, init) => {
+    requests.push({
+      url: String(url),
+      headers: Object.fromEntries(
+        Object.entries(init?.headers ?? {}).map(([key, value]) => [key.toLowerCase(), String(value)])
+      ),
+    })
+    const chunk = (delta) => `data: ${JSON.stringify({ id: 'chatcmpl-812', choices: [{ index: 0, delta }] })}\n\n`
+    const payload = `${chunk({ role: 'assistant', content: '' })}${chunk({ content: '收到' })}${chunk({})}data: [DONE]\n\n`
+    return new Response(payload, { status: 200, headers: { 'Content-Type': 'text/event-stream' } })
+  }
+
+  try {
+    const body = buildMessageBody(apiConfig.getCurrentSpec(), {
+      model: apiConfig.getModel(),
+      system: '你是助手',
+      messages: [{ role: 'user', content: '你好' }],
+      thinking: false,
+      search: false,
+      title: false,
+    })
+    for await (const event of streamMessage(apiConfig.getApiKey(), body, new AbortController().signal)) {
+      assert.ok(typeof event?.type === 'string', '流里应当只有可识别的事件')
+    }
+  } finally {
+    globalThis.fetch = realFetch
+  }
+
+  assert.equal(requests.length, 1, '一次调用只发一个请求')
+  const sent = requests[0]
+  assert.equal(sent.headers.authorization, `Bearer ${SERVER_KEY}`, '请求头里必须是**列表那把的明文**，不是本机残留的旧 Key')
+  // 地址与登录同环境（#812 第 3 条）：推理打的不是另一份「旧池域」
+  assert.equal(sent.url, apiConfig.getMessagesUrl(), '推理地址取当前生效的 baseUrl + paths.messages')
+})
+
+test('[③-b] 多把同名 → 取 status=active 且**最新**的那一把（不是列表第一条）', async () => {
+  // 纯判据：先按名字精确过滤 → active 优先 → 同状态取最新（createdAt，缺失时退回 id）
+  const rows = [
+    { id: 11, name: KEY_NAME, key: 'sk-old-inactive-1111', status: 'inactive', quota: 0, quotaUsed: 0, createdAt: '2026-03-09T00:00:00Z' },
+    { id: 12, name: KEY_NAME, key: 'sk-active-older-2222', status: 'active', quota: 0, quotaUsed: 0, createdAt: '2026-03-01T00:00:00Z' },
+    { id: 13, name: KEY_NAME, key: 'sk-active-newest-33', status: 'active', quota: 0, quotaUsed: 0, createdAt: '2026-03-08T00:00:00Z' },
+    { id: 14, name: `${KEY_NAME}-other`, key: 'sk-other-4444', status: 'active', quota: 0, quotaUsed: 0, createdAt: '2026-03-10T00:00:00Z' },
+  ]
+  const picked = managed.pickManagedKey(rows, KEY_NAME)
+  assert.equal(picked.id, 13, '同名里取 active + 最新那一把')
+  assert.equal(picked.key, 'sk-active-newest-33')
+
+  // 没有 active 时退到「最新那把」（总比一条都不用强：至少本机有一把，界面能说清是哪把）
+  const noActive = managed.pickManagedKey(
+    [
+      { id: 21, name: KEY_NAME, key: 'sk-inactive-older-21', status: 'inactive', quota: 0, quotaUsed: 0 },
+      { id: 22, name: KEY_NAME, key: 'sk-inactive-newest-2', status: 'inactive', quota: 0, quotaUsed: 0 },
+    ],
+    KEY_NAME
+  )
+  assert.equal(noActive.id, 22, '没有 active 时取最新（时间戳缺失按 id 判新旧）')
+
+  // 明文为空的不算命中（`key` 取不到 = 没拿到，不许当成功）
+  assert.equal(
+    managed.pickManagedKey([{ id: 90, name: KEY_NAME, key: '   ', status: 'active', quota: 0, quotaUsed: 0 }], KEY_NAME),
+    undefined,
+    '`key` 是空串 / 空白的条目不算命中'
+  )
+
+  // 端到端：列表第一条是被停用的那把（且最新），本机不许采用它
+  reset()
+  const { client, recorder } = clientFrom((request) =>
+    request.method === 'GET'
+      ? keysPage([
+          keyRow({ id: 11, status: 'inactive', key: 'sk-old-inactive-1111', created_at: '2026-03-09T00:00:00Z' }),
+          keyRow({ id: 12, status: 'active', key: 'sk-active-older-2222', created_at: '2026-03-01T00:00:00Z' }),
+          keyRow({ id: 13, status: 'active', key: 'sk-active-newest-33', created_at: '2026-03-08T00:00:00Z' }),
+        ])
+      : jsonReply(500, { code: 500, message: 'should not POST', reason: 'BOOM' })
+  )
+  setConsumeClient(client)
+  pretendPreviousUserSignedIn()
+
+  assert.equal(await runtime.ensureManagedKeyForDevice(), 'updated')
+  assert.equal(recorder.countOf('POST'), 0, '同名多把也**不许**再建一把')
+  assert.equal(apiConfig.getApiKey(), 'sk-active-newest-33', '本机用的必须是 active 且最新的那把，不是列表第一条（被停用的）')
+  assert.equal(apiConfig.getServerKeyMark().id, 13, '标记跟着选中的那一把')
+})
+
+test('[④-b] 环境一致性：推理地址必须与登录环境同源（两份地址不同环境时用例必须红）', () => {
+  // ① 真注入表：推理地址就是「登录环境」，不是另一个开关配出来的值
+  const oursSpec = providers.PROVIDER_SPECS.find((spec) => spec.kind === 'ours')
+  assert.equal(
+    oursSpec.defaults.baseUrl,
+    environment.inferenceBaseUrl(globalThis.__ENDPOINTS__),
+    '推理地址只能从注入表按 inferenceBaseUrl() 派生（不许各写一份）'
+  )
+  assert.equal(
+    environment.inferenceMatchesLoginEnvironment(globalThis.__ENDPOINTS__),
+    true,
+    '真注入表里推理与登录必须同环境'
+  )
+  // 脚本侧（用例 / 截图 / e2e 用它取同一个值）与源码侧同源
+  assert.equal(endpointScript.inferenceBaseUrl, endpointScript.consumeBaseUrl, '脚本侧同样以 consume.baseUrl 作为推理地址')
+
+  // ② 负向：一份「登录在子路径、推理在另一台机器」的表 —— 这正是 #812 的现场（staging vs 生产池）
+  //    地址全部是合成域名：用例不认产品域名，只认「环境」这件事本身。
+  const login = 'https://login.test.invalid/staging'
+  const pool = 'https://pool.test.invalid:60010'
+  const stagingTable = { chatBaseUrl: pool, consume: { baseUrl: login } }
+  assert.equal(environment.inferenceBaseUrl(stagingTable), login, '推理必须跟着登录环境走')
+  assert.equal(environment.inferenceMatchesLoginEnvironment(stagingTable), true)
+  // 老实现（推理取 chatBaseUrl）在这张表上就是**不同环境** —— 这条断言红，说明用例真能暴露它
+  assert.equal(
+    environment.sameEndpointEnvironment(pool, login),
+    false,
+    '取 chatBaseUrl 当推理地址时与登录环境不一致：这就是「Key 有效却提示 Key 无效」的根因'
+  )
+
+  // ③ 没有登录环境时不算「一致」：fail-closed，宁可报警也不要静默打到别处
+  assert.equal(environment.inferenceMatchesLoginEnvironment({ chatBaseUrl: pool }), false, '缺 consume.baseUrl 时不许判一致')
+
+  // ④ 环境 = origin + 路径第一段：同 host 的 /staging 与 /prod 是两个环境；更深的路径段不是
+  assert.equal(environment.sameEndpointEnvironment('https://h.test.invalid/staging', 'https://h.test.invalid/prod'), false)
+  assert.equal(environment.sameEndpointEnvironment('https://h.test.invalid/staging', 'https://h.test.invalid/staging/v1'), true)
+  assert.equal(environment.sameEndpointEnvironment('', 'https://h.test.invalid'), false, '空地址判不出来 → 不算一致')
+})
+
+test('[④-b] 自动领取失败时，banner 里带「Key 前 6 位」与「请求地址」（#803 那条提示的增强）', async () => {
+  reset()
+  // 本机有一把（前 6 位 = `sk-liv`），这次领取两次都失败
+  apiConfig.setApiKey(SERVER_KEY)
+  const { client } = clientFrom(() => jsonReply(500, { code: 500, message: 'db down', reason: 'INTERNAL' }))
+  setConsumeClient(client)
+  pretendPreviousUserSignedIn()
+
+  assert.equal(await runtime.ensureManagedKeyForDevice(), 'failed')
+
+  const state = ensureState.useManagedKeyEnsure.getState()
+  assert.notEqual(state.context, null, '失败必须留下现场（Key 前 6 位 + 请求地址）')
+  assert.equal(state.context.keyPrefix, SERVER_KEY.slice(0, 6), '取当前 Key 的前 6 位，够定位即可（不是钥匙本体）')
+  assert.equal(state.context.requestUrl, apiConfig.getMessagesUrl(), '带上这把 Key 真正会被打到的地址')
+
+  const markup = renderToStaticMarkup(
+    createElement(view.ManagedKeyEnsureBanner, {
+      t: translate,
+      status: state.status,
+      failure: state.failure,
+      attempts: state.attempts,
+      context: state.context,
+      onRetry() {},
+      Button: ButtonStub,
+      styles: classNames,
+    })
+  )
+  assert.match(markup, /500/u, '状态码照旧要在')
+  assert.match(markup, new RegExp(SERVER_KEY.slice(0, 6), 'u'), `提示里要有 Key 前 6 位：${markup}`)
+  assert.match(markup, /data-testid="settings-managed-key-ensure-context"/u, '现场那一行要可被断言')
+  assert.equal(markup.includes(SERVER_KEY), false, '完整 Key 绝不许上屏（只能是前 6 位）')
+
+  // 失败日志里也要有（下次翻日志能直接对上一个地址）
+  const failed = globalThis.__log.actions.filter(
+    (item) => item.action === 'ours-managed-key-ensure' && item.fields.result === 'failed'
+  )
+  assert.equal(failed[failed.length - 1].fields.keyPrefix, SERVER_KEY.slice(0, 6), '日志带 Key 前 6 位')
+  assert.equal(failed[failed.length - 1].fields.requestUrl, apiConfig.getMessagesUrl(), '日志带请求地址')
+})
+
+test('[④-b] 中英文案成对：现场那一行 + 两个占位词', () => {
+  for (const key of ['settingsManagedKeyEnsureContext', 'settingsManagedKeyNoKeyYet', 'settingsManagedKeyNoAddress']) {
+    assert.equal(typeof zh[key], 'string', `zh 缺 ${key}`)
+    assert.equal(typeof en[key], 'string', `en 缺 ${key}`)
+    assert.ok(zh[key].trim().length > 0 && en[key].trim().length > 0, `${key} 不许是空串`)
+  }
+  assert.match(zh.settingsManagedKeyEnsureContext, /\{keyPrefix\}/u, '中文占位符：Key 前缀')
+  assert.match(zh.settingsManagedKeyEnsureContext, /\{address\}/u, '中文占位符：请求地址')
+  assert.match(en.settingsManagedKeyEnsureContext, /\{keyPrefix\}/u, '英文占位符（R2 占位符对齐）')
+  assert.match(en.settingsManagedKeyEnsureContext, /\{address\}/u, '英文占位符：请求地址')
 })

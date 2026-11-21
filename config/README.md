@@ -52,7 +52,7 @@
 
 | 字段 | 用途 | 谁读它 | 换机器时改哪一行 |
 | --- | --- | --- | --- |
-| `chatBaseUrl` / `inviteBaseUrl` / `feedbackUrl` | 对话上游 / 邀请额度 / 反馈上传 | `rspack.config.ts` → `__ENDPOINTS__`；`scripts/lib/endpoints.mjs` | 改这三行 + 同步 `allowedHosts` / `allowedPorts`（`pnpm check:endpoints` 会拦） |
+| `chatBaseUrl` / `inviteBaseUrl` / `feedbackUrl` | 旧池域三兄弟：**邀请额度 / 反馈上传仍在用**；`chatBaseUrl` 自 #812 起**不再是推理地址**（见下面 consume 一节：推理与登录同环境） | `rspack.config.ts` → `__ENDPOINTS__`；`scripts/lib/endpoints.mjs` | 改这三行 + 同步 `allowedHosts` / `allowedPorts`（`pnpm check:endpoints` 会拦） |
 | `legacyHosts` | 已下线**聊天**主机的重写表 | `src/services/api/apiConfig.ts` 的 `LEGACY_HOSTS` | **别删**（删了老用户本地存的旧地址就失联）；换机时把旧主机加进来 |
 | `allowedHosts` / `allowedPorts` | `check:ip` 豁免名单 / 端口白名单 | 两个门禁脚本 | 与上面三份地址一起改 |
 | `download.primaryBase` | **分发首选机**（清单 `releases.json` + `/apk/`） | Web：`__ENDPOINTS__.dlPrimaryBase`（`updateManifest.ts`）；原生：`BuildConfig.DL_PRIMARY`（`UpdateEndpoint.java`） | **换分发机只改这一行** |
@@ -81,7 +81,7 @@
 
 | 字段 | 含义 | 谁消费 | 改它要重新打包吗 |
 | --- | --- | --- | --- |
-| `consume.baseUrl` | sub2api 的 base（scheme + host + 可选端口，**不带路径**）。一个 host 同时承载 `/api/v1`（JWT）与 `/v1`（sk- Key） | Web：`__ENDPOINTS__.consume.baseUrl`（构建期注入）→ `src/services/consume/**`；原生：`BuildConfig.CONSUME_BASE` | **要**。地址在构建期被替换进 JS，原生侧进 dex 字符串表，**没有任何热更新通道能改它** |
+| `consume.baseUrl` | sub2api 的 base（scheme + host + 可选端口；bundle 里可带路径前缀如 `/staging`）。一个 host 同时承载 `/api/v1`（JWT）与 `/v1`（sk- Key），**也是 `ours` 的推理地址**（#812：推理必须与登录同环境，代码里由 `src/services/api/environment.ts` 的 `inferenceBaseUrl()` 派生，不存在第二个开关） | Web：`__ENDPOINTS__.consume.baseUrl`（构建期注入）→ `src/services/consume/**`；原生：`BuildConfig.CONSUME_BASE` | **要**。地址在构建期被替换进 JS，原生侧进 dex 字符串表，**没有任何热更新通道能改它** |
 | `consume.apiV1Prefix` | JWT 通道前缀，默认 `/api/v1` | 消费层拼路径（`baseUrl + apiV1Prefix + …`） | 要（同一次构建） |
 | `consume.gatewayPrefix` | sk- Key 通道前缀，默认 `/v1` | 消费层拼路径、`/v1/usage` 与 `/v1/chat/completions` | 要（同一次构建） |
 | `consume.timeoutMs.read` / `.write` / `.redeem` | 只读 / 写 / 兑换三档超时（毫秒）。**调用点不许再硬编码毫秒数** | 消费层传输封装 | 要（同一次构建） |

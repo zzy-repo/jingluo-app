@@ -7,7 +7,7 @@
 // 两条线从未交叉——「真实 SSE 能不能被前端解析并渲染成文字」这件事一直没有自动化覆盖。
 //
 // 配置（全部走环境变量，API Key 绝不写进文件）：
-//   E2E_UPSTREAM_URL  默认 config/endpoints.json 的 chatBaseUrl
+//   E2E_UPSTREAM_URL  默认**推理地址**（= 登录环境 consume.baseUrl，#812）
 //   E2E_API_KEY       必填
 //   E2E_MODEL         默认 deepseek-v4.1-flash
 //   E2E_APP_URL       默认 http://100.113.135.55:5181
@@ -22,9 +22,9 @@
 import { chromium } from 'playwright'
 import { networkInterfaces } from 'node:os'
 
-import { chatBaseUrl } from '../../scripts/lib/endpoints.mjs'
+import { inferenceBaseUrl } from '../../scripts/lib/endpoints.mjs'
 
-const UPSTREAM_URL = (process.env.E2E_UPSTREAM_URL || chatBaseUrl).replace(/\/+$/, '')
+const UPSTREAM_URL = (process.env.E2E_UPSTREAM_URL || inferenceBaseUrl).replace(/\/+$/, '')
 const API_KEY = process.env.E2E_API_KEY || ''
 const MODEL = process.env.E2E_MODEL || 'deepseek-v4.1-flash'
 const APP_URL = process.env.E2E_APP_URL || 'http://100.113.135.55:5181'

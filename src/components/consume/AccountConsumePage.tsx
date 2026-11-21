@@ -142,6 +142,8 @@ export const AccountConsumePage = ({
   const keyEnsureStatus = useManagedKeyEnsure((state) => state.status)
   const keyEnsureFailure = useManagedKeyEnsure((state) => state.failure)
   const keyEnsureAttempts = useManagedKeyEnsure((state) => state.attempts)
+  /** #812：失败现场（Key 前 6 位 + 推理地址），让提示能一眼定位「哪把 Key 打到哪」 */
+  const keyEnsureContext = useManagedKeyEnsure((state) => state.context)
 
   /**
    * #807：「模型来源」这一页的全部界面状态 —— 展开的是哪一行、两行的草稿、内置服务的领取状态。
@@ -169,6 +171,7 @@ export const AccountConsumePage = ({
       status={keyEnsureStatus}
       failure={keyEnsureFailure}
       attempts={keyEnsureAttempts}
+      context={keyEnsureContext}
       onRetry={() => {
         void ensureManagedKeyForDevice()
       }}

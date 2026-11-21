@@ -20,6 +20,11 @@
  *  4. 并发幂等：本文件的「进行中」标记是**进程级单飞** —— 注册后 profile 与建 Key 同时触发时，
  *     它们等的是同一个 promise，服务端只会看到一次 `POST /api/v1/keys`。
  *
+ * #812 补的是**「查到了就要真的用上」**：查重命中那条路以前只是「名字存在」就返回，
+ * 列表里那把的明文没被取回、也没写进本机，于是客户端提示「Key 无效」而服务端那把明明是好的。
+ * 现在命中即 {@link applyManagedKey}（写 Key + 写标记，同一个入口），并且多把同名时按
+ * `pickManagedKey()` 挑 active 且最新的那一把；失败提示里带上「Key 前 6 位 + 推理地址」。
+ *
  * 三条边界：
  *  1. 这里不拼 URL、不发原始请求：路径白名单在 `services/consume/**`（#484）；
  *  2. Key 原文只在内存里过一手，落盘只走 `applyManagedKey`（写 Key + 写标记，同一处）；
@@ -28,9 +33,10 @@
 import {
   applyManagedKey,
   getApiKey,
+  getManagedKeyVerdict,
+  getMessagesUrl,
   getProviderKind,
   getServerKeyMark,
-  markServerKey,
 } from '../../services/api/apiConfig.js'
 import {
   claimManagedKey,
@@ -52,6 +58,7 @@ import {
   markManagedKeyEnsureOk,
   markManagedKeyEnsureRunning,
   resetManagedKeyEnsure,
+  type ManagedKeyEnsureContext,
 } from './managedKeyEnsureState.js'
 
 /** 真实客户端 → 领取链路要的那一小撮能力（结构化取子集，换实现不用改判定） */
@@ -134,6 +141,11 @@ const runManagedKeyEnsure = async (): Promise<ManagedKeySyncOutcome> => {
     // 未登录不该留下「失败」提示：那不是用户能修的错，登录之后这条流程会自己再跑一次
     return 'signed-out'
   }
+  if (!usesManagedKey(getProviderKind())) {
+    // 别的渠道的 Key 是**用户自己的**（#608）：这条流程一旦跑起来就会把用户手填的那把覆盖成
+    // 服务端的 Key，所以渠道判定放在这里而不是只放在触发点 —— 任何入口调进来都拦住。
+    return 'unchanged'
+  }
   markManagedKeyEnsureRunning()
   const result = await syncManagedKey(managedKeySource(), {
     deviceId: ensureDeviceId(),
@@ -144,19 +156,27 @@ const runManagedKeyEnsure = async (): Promise<ManagedKeySyncOutcome> => {
   if (!result.ok) {
     return recordEnsureFailure(result)
   }
-  const changed = result.key.trim() !== getApiKey().trim()
-  if (changed) {
+  /**
+   * #812：「拿到」的唯一判据是**本机现在真的能用这把 Key**，不是「这次是新建还是查到」。
+   *
+   * 以前这里按 `changed` 才落盘、且只在「没有标记」时补标记 —— 于是两种现场会卡在「名字存在、
+   * 但本机没生效」上：查重命中的明文没写进本机（`result.key` 取回来了却只用它比了一下），
+   * 或者标记在、指纹却不是这一把（判 `stale` 一辈子修不好）。现在一次问到底：
+   * 判据 `getManagedKeyVerdict() === 'ok'` 才算「已经生效」，否则**一律走既有的 `applyManagedKey`**
+   * （Key + 标记同一个入口写，不出现「界面尾号来自 A、请求用的是 B」的中间态）。
+   */
+  const alreadyApplied = getManagedKeyVerdict() === 'ok' && getApiKey().trim() === result.key.trim()
+  if (!alreadyApplied) {
     applyManagedKey(result.key, result.id)
-  } else if (getServerKeyMark() === null) {
-    // Key 对得上但标记不在（老版本留下的 / 标记被清掉的）：补写标记，
-    // 否则发送前那道闸会永远判 `unclaimed`（#800 起没有「重新领取」按钮可点）
-    markServerKey(result.key, result.id)
   }
+  const changed = !alreadyApplied
   markManagedKeyEnsureOk(result.attempts)
   recordAction('config_change', 'ours-managed-key-ensure', {
     result: changed ? 'updated' : 'unchanged',
     attempts: result.attempts,
     created: result.created,
+    // #812：`created: false` 时这一条就是「从列表里取回明文并生效」那条路，日志要能分开数
+    adopted: !result.created,
     length: result.key.length,
   })
   return changed ? 'updated' : 'unchanged'
@@ -166,10 +186,15 @@ const runManagedKeyEnsure = async (): Promise<ManagedKeySyncOutcome> => {
  * 两次都失败：写诊断（**带状态码**，这是 #803 第 5 条的原文要求）与可见状态，然后返回 `failed`。
  *
  * 失败原因只留「性质 + 状态码 + 码」，不留响应体原文（里面可能有别的账号的信息）。
+ *
+ * #812 起还记两条**现场**（`keyPrefix` / `requestUrl`）：状态码只说「服务端回了什么」，
+ * 说不清「用的是哪把 Key、打到哪个地址」。而 #812 的现场正是这两条决定的 ——
+ * 提示「Key 无效」时，一眼就能看出是不是 Key 与环境对不上（staging 的 Key 打到生产网关）。
  */
 const recordEnsureFailure = (result: ManagedKeyEnsureFailure): 'failed' => {
   const last = result.failures[result.failures.length - 1]
   if (last !== undefined) {
+    const context = ensureFailureContext()
     recordAction('config_change', 'ours-managed-key-ensure', {
       result: 'failed',
       attempts: result.attempts,
@@ -179,10 +204,33 @@ const recordEnsureFailure = (result: ManagedKeyEnsureFailure): 'failed' => {
       code: last.code || 'UNKNOWN',
       step: last.step,
       refreshed: result.refreshed,
+      keyPrefix: context.keyPrefix,
+      requestUrl: context.requestUrl,
     })
-    markManagedKeyEnsureFailed(last, result.attempts)
+    markManagedKeyEnsureFailed(last, result.attempts, context)
   }
   return 'failed'
+}
+
+/**
+ * 失败现场（#812 第 4 条）：**当前推理要用的那把 Key 的前 6 位** + **推理请求地址**。
+ *
+ * 只取前 6 位：`sk-…` 的形状对定位足够了（同一台机器上看是「有没有换过那把」），
+ * 而完整 Key 永远不许进日志与 DOM（#484 §7 红线）。本机还没有 Key 时给空串，界面会换成占位词。
+ *
+ * 地址取 `getMessagesUrl()` 而不是领取接口的地址：这条提示要回答的是「Key 会被打到哪里」——
+ * #812 里出问题的正是这一点（登录在 staging、推理打到生产池，于是拿着有效 Key 也 401「Key 无效」）。
+ */
+const ensureFailureContext = (): ManagedKeyEnsureContext => {
+  const key = getApiKey().trim()
+  let requestUrl = ''
+  try {
+    requestUrl = getMessagesUrl()
+  } catch {
+    // 渠道表 / 注入值异常时不该让「报错」再炸一次：地址留空，界面只少一行
+    requestUrl = ''
+  }
+  return { keyPrefix: key === '' ? '' : key.slice(0, 6), requestUrl }
 }
 
 /**

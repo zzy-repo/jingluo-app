@@ -198,8 +198,28 @@ const originOf = (value: string): string | null => {
 }
 
 /**
+ * 登录环境（`consume.baseUrl`）的 origin（#812）：`ours` 的推理就打在它上面，所以日志里
+ * 这一台机器上的请求仍然是**对话端点**。读不到（非打包环境 / 注入不全）返回 null。
+ */
+const consumeOrigin = (): string | null => {
+  try {
+    if (typeof __ENDPOINTS__ === 'undefined' || !__ENDPOINTS__) {
+      return null
+    }
+    const base = (__ENDPOINTS__ as unknown as { consume?: { baseUrl?: unknown } }).consume?.baseUrl
+    return typeof base === 'string' && base ? originOf(base) : null
+  } catch {
+    return null
+  }
+}
+
+/**
  * 把一次请求的地址映射成端点键。相对路径（同源请求）按当前页面 origin 兜底 —— 与 `redactHost` 同口径。
  * 认不出来一律 `other`：宁可粗一档，也不把一个自建中转错标成官方端点。
+ *
+ * #812：`consume.baseUrl` 的 origin 也算**对话端点**，因为 `ours` 的推理地址就是它
+ * （同环境是构造出来的，见 `services/api/environment.ts`）。不认这一条，线上所有 chat 请求
+ * 都会掉进 `other`，排查时反而看不出「打的是哪台机器」。
  */
 export const endpointKeyFromUrl = (url: string): EndpointKey => {
   const origin = originOf(url)
@@ -213,7 +233,7 @@ export const endpointKeyFromUrl = (url: string): EndpointKey => {
       return key
     }
   }
-  return 'other'
+  return consumeOrigin() === origin ? 'chatBaseUrl' : 'other'
 }
 
 // ---------------------------------------------------------------- 状态

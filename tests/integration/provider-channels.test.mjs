@@ -36,7 +36,7 @@ import { chromium } from 'playwright'
 import { serveDir, verifyAppUrl } from '../helpers/env.mjs'
 import { installTsResolve } from '../helpers/dom-env.mjs'
 import { capturePaths, providerKindTrigger, selectProviderKind } from '../helpers/helpers.mjs'
-import { chatBaseUrl } from '../../scripts/lib/endpoints.mjs'
+import { inferenceBaseUrl } from '../../scripts/lib/endpoints.mjs'
 
 // 页面里种「服务端下发标记」时要用**真的**指纹函数（不在这里重算一份 djb2）：
 // 本仓的 `.js` 说明符指向 `.ts` 源码，裸 Node 解析不到，先装解析 hook 再动态 import。
@@ -55,7 +55,8 @@ const BASE_A = 'https://relay.example.com'
 const MODEL_A = 'claude-relay-model'
 const BASE_O = 'https://oai.example.com'
 const MODEL_O = 'gpt-relay-model'
-const OURS_HOST = chatBaseUrl
+// #812：推理地址 = 登录环境（consume.baseUrl），不再是另一份 chatBaseUrl
+const OURS_HOST = inferenceBaseUrl
 const OURS_URL = `${OURS_HOST}/v1/chat/completions`
 const OURS_MODEL = 'deepseek-v4.1-flash'
 /** 界面上禁止出现的能力描述（能不能用只体现在入口显隐上，不写文案） */

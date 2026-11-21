@@ -518,6 +518,10 @@ export const en = {
   settingsManagedKeyFailNetwork: 'the request timed out or could not connect',
   settingsManagedKeyFailHttp: 'the server answered {status}',
   settingsManagedKeyFailEmpty: 'the server answered 2xx but returned no key value',
+  /** #812: on-site facts in the failure banner — which key (first 6 chars) hit which address */
+  settingsManagedKeyEnsureContext: 'Key in use: {keyPrefix}… (first 6 chars) · Request URL: {address}',
+  settingsManagedKeyNoKeyYet: 'not claimed yet',
+  settingsManagedKeyNoAddress: '(address unknown)',
   settingsBaseUrlLabel: 'Service URL',
   settingsBaseUrlPlaceholder: 'e.g. https://your-gateway.example.com',
   settingsModelPlaceholder: 'e.g. deepseek-v4.1-flash',

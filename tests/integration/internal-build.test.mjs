@@ -32,14 +32,15 @@ import { serveDir, verifyAppUrl, verifyDist } from '../helpers/env.mjs'
 // #596：ours 的 Key 只能由服务端下发 —— 种子数据要带「下发标记」，否则发送前守卫会拦（产品行为）
 import { seedClaimedApiKey } from '../helpers/ours-claim.mjs'
 import { capturePaths, selectProviderKind } from '../helpers/helpers.mjs'
-import { chatBaseUrl } from '../../scripts/lib/endpoints.mjs'
+import { inferenceBaseUrl } from '../../scripts/lib/endpoints.mjs'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const ROOT = path.resolve(HERE, '../..')
 const DIST = process.env.DIST_DIR || path.join(ROOT, 'dist')
 const PORT = process.env.PORT
 let APP_URL = process.env.APP_URL || ''
-const API_URL = chatBaseUrl
+// #812：推理地址与登录环境同源（consume.baseUrl）
+const API_URL = inferenceBaseUrl
 const MESSAGES_URL = `${API_URL}/v1/chat/completions`
 const MODEL = 'deepseek-v4.1-flash'
 const KEY = 'sk-internal-acceptance-key'

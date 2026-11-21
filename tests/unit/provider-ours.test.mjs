@@ -11,7 +11,7 @@ import { registerHooks } from 'node:module'
 import { test } from 'node:test'
 
 // 端点地址唯一来源：config/endpoints.json（#274）
-import { chatBaseUrl } from '../../scripts/lib/endpoints.mjs'
+import { inferenceBaseUrl, consumeBaseUrl } from '../../scripts/lib/endpoints.mjs'
 
 // 构建期注入值（`__ENDPOINTS__`）的兜底：直接复用 --import 预加载那一份（tests/helpers/injected.mjs）。
 // 少了这一行，`node --test tests/unit/provider-ours.test.mjs` 会在**第一条断言之前**就
@@ -54,7 +54,9 @@ test('ours 渠道契约：OpenAI 协议 + Bearer + 内置新地址/模型', () =
   const ours = specOf('ours')
   assert.equal(ours.protocol, 'openai', 'ours 必须走 openai 协议（经 openaiAdapter 翻译）')
   assert.equal(ours.auth, 'bearer', 'ours 鉴权必须是 Bearer')
-  assert.equal(ours.defaults.baseUrl, chatBaseUrl)
+  // #812：推理地址 = 登录环境（consume.baseUrl），不再是另一份 chatBaseUrl
+  assert.equal(ours.defaults.baseUrl, inferenceBaseUrl)
+  assert.equal(ours.defaults.baseUrl, consumeBaseUrl, '推理必须与登录同环境（结构性保证）')
   assert.equal(ours.defaults.model, 'deepseek-v4.1-flash')
   assert.equal(ours.paths.messages, '/v1/chat/completions', '请求路径必须是 chat/completions，不能仍是 /v1/messages')
   assert.equal(ours.paths.tools, '')
@@ -77,10 +79,10 @@ test('ours 迁移：旧 base/model 被 locked defaults 覆盖，用户 Key 保�
   store.set('chat-demo:api-key', 'sk-user-provided-only-in-test-memory')
 
   assert.equal(cfg.getProviderKind(), 'ours')
-  assert.equal(cfg.getBaseUrl(), chatBaseUrl, '旧地址必须被默认值覆盖')
+  assert.equal(cfg.getBaseUrl(), inferenceBaseUrl, '旧地址必须被默认值覆盖')
   assert.equal(cfg.getModel(), 'deepseek-v4.1-flash', '旧模型必须被默认值覆盖')
   assert.equal(cfg.getApiKey(), 'sk-user-provided-only-in-test-memory', '用户自己填的 Key 必须保留')
-  assert.equal(cfg.getMessagesUrl(), chatBaseUrl + '/v1/chat/completions')
+  assert.equal(cfg.getMessagesUrl(), inferenceBaseUrl + '/v1/chat/completions')
 })
 
 // #181 服务端迁移：本地存过旧 IP 的用户升级后必须落到新地址。
@@ -97,10 +99,10 @@ test('ours 迁移：两个旧 IP 都会被默认值覆盖（#181）', () => {
 
     assert.equal(
       cfg.getBaseUrl(),
-      chatBaseUrl,
+      inferenceBaseUrl,
       `存了 ${ip} 的用户升级后必须被迁到新地址`,
     )
-    assert.equal(cfg.getMessagesUrl(), chatBaseUrl + '/v1/chat/completions')
+    assert.equal(cfg.getMessagesUrl(), inferenceBaseUrl + '/v1/chat/completions')
     assert.equal(cfg.getApiKey(), 'sk-user-provided-only-in-test-memory', '用户 Key 不能丢')
   }
 })
