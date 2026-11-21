@@ -27,6 +27,8 @@
 > 脚本化部分见 §5 之前的三条命令（等价于本手册 §4/§5/§7 的自动化版本，不替代 §4 的人工核对）：
 > `pnpm run release:check`（版本号三处一致 + 产物自检）、`pnpm run release:upload`（multipart 上传，带 `--dry-run`）、
 > `pnpm run release:verify`（复核 `releases.json` 已生效 + 下载件三方 hash 一致）。
+> **`release:check` 不验签名**（零依赖、不装 Android SDK，读不出已签名 APK 里的证书）：指纹判据在
+> `check:keystore`（keystore 侧）与 `verify:apk`（APK 侧），三者的分工与「为什么不塞进 release:check」见 **§16**。
 
 > 打 tag **不再触发任何 workflow**：`.github/workflows/release.yml` 已改为**手动 `workflow_dispatch`**，
 > 它只做「把已构建、已签名的 APK 挂成 Release 资产 + 校验 debuggable + 写 sha256」，
@@ -1569,3 +1571,80 @@ SKIP 或每天红一次（"红着红着就没人看"正是本合同类门禁的�
 - **`/opt/dl-private/releases.internal.json` 清单本体** —— 清单是唯一真相，只有发布 / 下架流程能改它；
 - **被清单引用的任何文件** —— 不许以「保留策略」的名义删（`/opt/dl-private/apk/` 的 8 个包就是这一类）；
 - **`/opt/dl-private/private/` 目录本身** —— `www-data` 属主、历史路径仍要被追溯，只删里面的文件。
+
+---
+
+## 16. 签名证书指纹：判据归谁管（Issue #702 / #705）
+
+**`pnpm run release:check` 不验签名。** 「已发布证书的 SHA-256」这**一个事实**由**三处判据各守一个界面**，
+彼此不重复，谁也不许再抄一份值：
+
+| 界面 | 判据 | 载体 | 能不能验真签名 |
+| --- | --- | --- | --- |
+| 配置侧一致性 | 期望值读得出来 + 两份副本相等 + 等于 `PUBLISHED_IDENTITY` | `release-check` 第 4 段（`scripts/release-check.mjs`） | 否（无 Android SDK 契约，见 §16.2） |
+| keystore 侧指纹 | 给的那把 keystore 的证书指纹 == 期望值 | `pnpm run check:keystore`（`scripts/check-keystore-config.mjs`，#697） | 验 keystore，不验 APK |
+| APK 侧签名 | APK 里实际的签名证书 == 期望值 | `pnpm run verify:apk` / `scripts/verify-release-apk.mjs` | **是** |
+
+这三行之外还有一道**构建期闸门**（不在上表里，因为它不是「验」而是「不让包出来」）：
+`android/app/build.gradle` 的 `EXPECTED_CERT_SHA256` 在 `assembleRelease` 时比对签名配置，不符直接
+`GradleException` 中止 —— 包根本出不来，所以也不需要事后判。
+
+### 16.1 期望值只有一个来源，读取实现也只有一份
+
+- **来源**：`config/appIdentity.json` 的 `expectedCertSha256`（#271）。想知道期望值是哪个，读它，
+  或者看 `pnpm run check:identity` 的输出 —— **不要从任何脚本里抄**。
+- **读取实现**：`scripts/lib/certFingerprint.mjs` 的 `resolveExpectedCertSha256()`（#702 / #704 把原先
+  两处各自为政的读取收敛到这一处）。三处判据都调它，`verify:apk` 的**缺省**期望值也来自它。
+- **不留副本**（#705）：`scripts/verify-release-apk.mjs` 里那份 `EXPECTED_CERT_SHA256` 字面量默认值
+  已删除。缺省从配置读；读不到就 **exit 2（fail-closed）**，不猜值放行。手工核另一把 key / 包时用
+  `--expect-cert <sha256>`，无仓库上下文（脚本被复制到别处）时用 `--expect-cert` 或
+  `$VERIFY_APK_EXPECT_CERT` 显式给值。
+- **改这个值 = 换签名 = 签名迁移**：另开单，同一个 PR 里改 `scripts/lib/appIdentity.mjs` 的
+  `PUBLISHED_IDENTITY` + 写清已装用户的迁移方案（新包名 / 应用商店渠道 / 引导重装）。
+  **不许**为了让某次发版变绿而改它：签名不同，新包装不上已装用户。
+
+### 16.2 为什么 `release-check` 不验签名
+
+`release:check` 的契约是**零依赖、不需要 Android SDK**：[`docs/RELEASE-CHECKLIST.md`](RELEASE-CHECKLIST.md)
+的阶段 A 把它列成「Windows 开发机或任意有 git+node 的机器」「纯离线比对，任何机器一样」。
+
+要从一个**已签名**的 APK 里读出证书指纹只有两条路，两条都会破契约：
+
+1. **调 `apksigner`** —— 它是 Android SDK 的一部分，阶段 A 的机器上没有（为了一条判据去装 SDK，
+   等于把「任何机器都能跑」变成「签名机专属」）；
+2. **自己解 APK Signing Block** —— 等于给同一判据**再造一个实现**。本仓 APK 是 minSdk 24 的 v2/v3 签名，
+   包里没有 `META-INF/*.RSA`，手写解析就是第三份实现（#285「第二份真相源」的老路）。
+
+所以 `release-check` 只做它能诚实做到的那一半：**期望值这一侧** —— 读得到、两份副本一致、等于已发布断言。
+它判的是「有人在动签名身份」，不是「这份包是不是那把 key 签的」；后者归 `verify:apk`，
+中间那段（机器上的签名材料对不对）归 `check:keystore`。
+
+### 16.3 三处判据不符时的输出（长什么样）
+
+```text
+# 1) 配置侧一致性（release-check 第 4 段）：配置被改了一个字
+[4) 期望证书指纹（发版证据：唯一来源 + 一致性）]
+[FAIL] 期望证书指纹与「已发布证书」不一致（有人在动签名身份）：
+       配置   e7c5baee…aa8a2（来源 config/appIdentity.json）
+       已发布 e7c5baee…aa8a1（来源 scripts/lib/appIdentity.mjs 的 PUBLISHED_IDENTITY.expectedCertSha256）
+
+# 2) keystore 侧（check:keystore）：拿错了一把 key（exit 1）
+[FAIL] 证书指纹不符 —— 这把 key 不是已发布证书
+       期望 e7c5baee…aa8a1 实际 fa071271…5652（来源 config/appIdentity.json）
+
+# 3) APK 侧（verify:apk）：包不是那把 key 签的，或期望值被改坏（exit 1）
+4  签名证书 SHA-256 与期望一致      FAIL     e7c5baee…aa8a1
+结论：FAIL（cert 不通过）—— 禁止发布。
+```
+
+（`…` 是省略写法，真实输出是完整 64 位；三段都能点名「期望 / 实际 / 来源」，不是只给一个退出码。）
+
+### 16.4 历史（别再回退）
+
+`scripts/release-common.mjs` 里曾有一个 `expectedCertSha256(root)`，用正则去 `android/app/build.gradle`
+找 `EXPECTED_CERT_SHA256 = '<64 hex>'` 字面量。`#271` 把该值搬进 `config/appIdentity.json`（build.gradle
+改成从配置派生）之后它**恒返回 `null`**，于是 `release:check` 里那句「签名证书指纹必须为 …」实际从不生效 ——
+「指纹一致」这条证据**看起来在验、一次都没比过**。同一根因的另一处是 `check-keystore-config.mjs`
+（死读取，#697 修好）。#702（PR #704）删掉这个假读取、补上「配置侧一致性」三段判；#705 再把
+`verify-release-apk.mjs` 里那份**默认值副本**收敛到单一来源。**方向是加严与去重，不是删判据**：
+任何一次「这条太麻烦，先去掉」的改动，都应该先读 §16.2 那两条路。
