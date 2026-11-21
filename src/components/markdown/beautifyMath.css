@@ -1,0 +1,34 @@
+/* #821：「美化规则」用 \rule 画出来的形状（见 services/markdown/mathCompat.ts 的 SHAPES）。
+   class 名固定，由 isTrustedMathCommand 白名单放行；尺寸全是 em，跟着外层 \scalebox 一起缩放。
+   端帽的占位宽度（0.6em）要和原字形的前进宽度一致，规则里的负 \hspace 就是按它算的；
+   圆角用 clip-path 的 em 半径画，高度 0.5em → 半径 0.25em 即半圆。 */
+.katex .md-cap-l .rule {
+  clip-path: inset(0 round 0.25em 0 0 0.25em);
+}
+
+.katex .md-cap-r .rule {
+  clip-path: inset(0 round 0 0.25em 0.25em 0);
+}
+
+.katex .md-tail-bl .rule {
+  clip-path: polygon(0 0, 0 100%, 100% 100%);
+}
+
+.katex .md-tail-br .rule {
+  clip-path: polygon(100% 0, 0 100%, 100% 100%);
+}
+
+/* 端帽与文字在 DOM 里是后来者，会盖住前面的字（时间的最后一个 M）。放到文字后面：
+   给公式块开独立层叠上下文，形状 z-index:-1 就只在公式内部垫底，不会落到消息气泡背景后面。
+   不用 :has() 按「是否含形状」条件开启（WebView 83 不认，#213）：无条件开启对普通公式没有可见差异。 */
+.ds-markdown-math {
+  isolation: isolate;
+}
+
+.katex .md-cap-l .rule,
+.katex .md-cap-r .rule,
+.katex .md-tail-bl .rule,
+.katex .md-tail-br .rule {
+  position: relative;
+  z-index: -1;
+}

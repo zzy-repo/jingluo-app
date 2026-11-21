@@ -1,6 +1,8 @@
+import './beautifyMath.css'
 import { memo, useEffect, useMemo, useRef, useState, type RefObject } from 'react'
 import { useTranslate } from '../../i18n/index.js'
 import { ensureKatex, type Katex } from '../../services/markdown/katex.js'
+import { isTrustedMathCommand, normalizeBeautifyMath } from '../../services/markdown/mathCompat.js'
 import { readMathTexSource, stripMathDelimiters } from '../../services/markdown/mathSource.js'
 import { IconCheckOutline16, IconCopyOutline16 } from '../base/icons.js'
 import { showToast } from '../base/toastState.js'
@@ -39,8 +41,16 @@ const useMathHtml = (input: string, isInline: boolean): MathHtmlResult => {
     }
     try {
       const [prefix, suffix] = KATEX_WRAPPER[isInline ? 'inline' : 'display']
+      // #821：「美化规则」用 graphicx 命令画气泡。先改写成 KaTeX 认识的写法；`trust` 不是开关，
+      // 只放行改写自己生成的 font-size / rotate 样式（见 mathCompat.ts），用户手写的 \htmlStyle 一律拒绝。
+      // `throwOnError` 仍为 true：真写坏的公式照旧走「保留上次成功结果 / 回落原文」，不在页面上渲染红字。
       const html = katex
-        .renderToString(input, { throwOnError: true, strict: false, displayMode: !isInline })
+        .renderToString(normalizeBeautifyMath(input), {
+          throwOnError: true,
+          strict: 'ignore',
+          trust: isTrustedMathCommand,
+          displayMode: !isInline,
+        })
         .slice(prefix.length, -suffix.length)
       const result = { html, renderMode: 'katex' } as const
       previousResultRef.current = result
