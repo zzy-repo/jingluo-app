@@ -45,7 +45,7 @@ bb3dbf1（`fix/settings-overflow`）建立了 `.cellActions` 包裹 + `min-width
   - 修前：`/tmp/scf-before.apk` sha256 `9346c04ee1f5cd3787524ee5c2658287322ee2b4236241d7da0945ca2db00d03`
   - 修后：`/tmp/scf-fixed.apk` sha256 `c93c67a259587c9b3f490137cf716ed3de97e6bceaa100b40de0644e2062503e`
   - 两者同为 versionName 1.4.0-beta.9 / versionCode 16（只差这两处样式）。
-- 测量方式：`repro/wv91.sh` 先 `adb forward` 到 `webview_devtools_remote_<pid>`，再用 page 级 CDP
+- 测量方式：`wv91.sh`（**曾用脚本，未入库** —— 全仓 `git log --all` 都查不到该路径，别照着找）先 `adb forward` 到 `webview_devtools_remote_<pid>`，再用 page 级 CDP
   （`Runtime.evaluate` 读 computed style、`Page.captureScreenshot` 截图）；导航用 `adb shell input tap` 真实触摸。
   WebView 91 的 `Input.dispatchTouchEvent` 会卡在 `touchEnd`，故点按走 adb；未做任何 CSS 能力模拟。
 - 语言：走 App 自己的语言设置（localStorage `chat-demo:locale`），不是 CSS 模拟。
@@ -74,7 +74,7 @@ bb3dbf1（`fix/settings-overflow`）建立了 `.cellActions` 包裹 + `min-width
 
 ### 新版内核对照（Chromium 156，两种语言，修前/修后）
 
-`Chromium 156.0.8078.4`（playwright `chromium-1248`）+ `repro/settings-cell-shots.mjs`，
+`Chromium 156.0.8078.4`（playwright `chromium-1248`）+ `settings-cell-shots.mjs`（**曾用脚本，未入库**），
 行宽 312（360dp）/ 342（390dp）：
 
 | 视口 | 语言 | 版本 | 文本列 | 标题行数 | 动作区 | 行高 | 文本自身横向溢出 |
@@ -98,7 +98,7 @@ bb3dbf1（`fix/settings-overflow`）建立了 `.cellActions` 包裹 + `min-width
 
 ### 机制取证：哪个变量在起作用（360dp / 英文 / Chrome 156）
 
-`repro/settings-cell-mechanism.mjs` → `mechanism-chromium156-360-en.json`，只改一个变量后重新量：
+`settings-cell-mechanism.mjs`（**曾用脚本，未入库**）→ `mechanism-chromium156-360-en.json`，只改一个变量后重新量：
 
 行宽 312，动作区 `.cellActions` max-content = **298.1**，`.text` min-content = 20.2 / max-content = 620.5。
 

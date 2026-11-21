@@ -184,7 +184,7 @@ export const setApiKey = (apiKey: string | null) => {
 ### 3.4 新增 "Server URL" 字段需要动的位置（严格照现有模式）
 
 1. `settings.ts`：`Settings` 加 `serverUrl: string | null`；`KEYS` 加 `serverUrl: 'chat-demo:server-url'`；新增 `initialServerUrl()`（校验协议 + 去尾斜杠）；store 初始化加一行；新增 `setServerUrl`（两行，照抄 `setApiKey`）。
-2. `components/settings/ServerUrlField.tsx`（新增，~60–80 行）：照 `ApiKeyField.tsx` 的输入框 + 确认按钮模式；`<input type="url">` 而非 `type="password"`；占位符显示默认值 `https://api.deepseek.com`。
+2. `ServerUrlField.tsx`（`src/components/settings/` 下**设计稿里的「待新增」，至今未实现** —— 本单从未落地，别照着这行找文件；~60–80 行）：照 `ApiKeyField.tsx` 的输入框 + 确认按钮模式；`<input type="url">` 而非 `type="password"`；占位符显示默认值 `https://api.deepseek.com`。
 3. `SettingsDialog.tsx`：在数据分组 106 行 `ApiKeyField` 之前（或通用分组 103 行 `LocationSetting` 之后）挂一行 `<ServerUrlField />`。**建议放在 `ApiKeyField` 之前**，因为改地址后 API Key 的可用性会变。
 4. `i18n/zh.ts` + `i18n/en.ts`：新增 4–6 个 key（`settingsServerUrl` 标题、`settingsServerUrlPlaceholder`、`settingsServerUrlDescription`、`settingsServerUrlInvalid`、`settingsServerUrlReset`）。
 5. `Settings.module.css`：若直接复用 `.apiKey / .apiKeyInput / .apiKeySaved / .confirm`，**可以 0 新增**；要独立命名再加 ~20 行。
@@ -309,7 +309,7 @@ OPTIONS https://api.deepseek.com/v1/tools/asr
 | settings 增加字段 / KEYS / 初始化 / setter / URL 规范化 | `services/settings.ts` | 1.0 |
 | `client.ts`：`API_ORIGIN` → `apiOrigin()` 函数，改 3 处调用点（含 `ANTHROPIC_BASE_URL` 改为函数内拼接） | `services/api/client.ts` | 0.5 |
 | `speech.ts`：`TOOLS_BASE_URL` 模块常量 → 函数，改 2 处调用点 | `services/api/speech.ts` | 0.5 |
-| 设置页新字段组件 + 挂载（复用现有 CSS 类） | `settings/ServerUrlField.tsx`(新增)、`SettingsDialog.tsx` | 2.0 |
+| 设置页新字段组件 + 挂载（复用现有 CSS 类） | `ServerUrlField.tsx`（`src/components/settings/`，拟新增，**未实现**）、`SettingsDialog.tsx` | 2.0 |
 | 中英文案 4–6 个 key | `i18n/zh.ts`、`i18n/en.ts` | 0.5 |
 | 保存 baseurl 后重校验 Key / 旧 Key 处理提示 | `ServerUrlField.tsx`、`useApiKeyForm.ts`（可选） | 1.0 |
 | 手工回归：聊天、深度思考、搜索+读链接、自动标题、附件上传（图/PDF）、ASR、TTS、错误路径（错地址/CORS/401）、刷新后持久化 | — | 3.0 |

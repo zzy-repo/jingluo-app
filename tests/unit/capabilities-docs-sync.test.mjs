@@ -133,8 +133,13 @@ const refsInFirstColumn = (lines) => {
     let j = i + 2
     for (; j < lines.length && lines[j].startsWith('|'); j += 1) {
       if (historical) continue
-      const cell = plain(cells(lines[j])[0])
-      for (const m of cell.matchAll(/([A-Za-z0-9_@./-]+.(?:css|ts|tsx|html)):([d,s]+)/g)) {
+      // 删除线里的引用是「曾存在、现已删除」的记录（与 `scripts/check-doc-refs.mjs` 同一口径），
+      // 不参与「该行真有命中」的断言 —— 文件都没了，自然没有命中行。
+      const cell = plain(cells(lines[j])[0]).replace(/~~[^~]*~~/g, '')
+      // #681：这里的正则曾写成 `([d,s]+)`（转义丢了），于是**一条引用都没匹配到**，
+      // 这条断言看起来在守 §2 整张表，实际什么都没验 —— 同 #678 的「静默跳过」是同一类病。
+      // 修好后 §2.1 / §2.5 / §2.6 / §2.7 / §2.8 的每个 `文件:行` 都必须落在实时命中集里。
+      for (const m of cell.matchAll(/([A-Za-z0-9_@./-]+\.(?:css|ts|tsx|html)):([\d,]+)/g)) {
         for (const line of m[2].split(',').map((s) => s.trim()).filter(Boolean)) {
           refs.push(`${m[1]}:${line}`)
         }

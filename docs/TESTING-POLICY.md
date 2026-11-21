@@ -557,7 +557,7 @@ stack: … node:internal/test_runner/runner:354 → FileTest.parseMessage
 
 | # | 机制 | 实测形态 |
 | --- | --- | --- |
-| ① | **替身泄漏** | `api-key-failure-374` 调 `installChatBridge()`，把 `diagnostics/collector.js` 换成 `chat-stubs/collector.mjs`（没有 `recordError`）。同批后面的 4 个 `attachment-*` 加载即失败：`does not provide an export named 'recordError'`。单跑必绿 |
+| ① | **替身泄漏** | `api-key-failure-374` 调 `installChatBridge()`，把 `diagnostics/collector` 这个模块说明符（解析到 `src/services/diagnostics/collector.ts`）换成 `chat-stubs/collector.mjs`（没有 `recordError`）。同批后面的 4 个 `attachment-*` 加载即失败：`does not provide an export named 'recordError'`。单跑必绿 |
 | ② | **hook 链抢占条件路由** | `api-request-timeout` 的 `catch` 兜底先把 `./db.js` 解析成 `./db.ts` 成功返回，于是 `chat-retry-retryable` 那套「按 parentURL 换假 db」的分支**根本没进去** → `sendMessage()` 返回 false（`草稿非空时应能发出去`） |
 | ③ | **模块缓存首写者胜 / 模块级单例** | `pdf-parser-480` 先把 `pdfjs-dist` 换成替身，`pdf-parser-partial-480` 拿到同一份实例（`PDF 打开失败`）；`reading-settings` 装上的 settings 订阅活到后面 thinking-* 文件里（`document is not defined`） |
 

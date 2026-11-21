@@ -13,7 +13,7 @@
 | 第三代 | `140.210.13.146` | beta.9 起（PR #186） | 同上三端口 | 在线，契约已实测 |
 
 三个端口**都没有域名，全是明文 HTTP**，靠 Android 壳的 `usesCleartextTraffic="true"` 才能用。
-地址写死在客户端里（`providers.ts` 的 `ours.defaults`、`invite/api.ts` 的 `INVITE_API_BASE`、
+地址写死在客户端里（`providers.ts` 的 `ours.defaults`、~~`invite/api.ts`~~ 的 `INVITE_API_BASE`（#604 已删，邀请 / 卡密迁到 `src/services/consume/`）、
 `diagnostics/config.ts` 的 `LEGACY_FEEDBACK_URL`），所以每次搬机器都等于**再发一次版**。
 
 ## 2. 过渡策略：**C —— 旧机下线，强制升级**

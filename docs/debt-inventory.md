@@ -14,7 +14,7 @@
 
 | # | 债务条目 | 位置（`文件:行` / 目录） | 类型 | 证据（量化） | 处置 | 归属 |
 | --- | --- | --- | --- | --- | --- | --- |
-| D01 | 附件域有两个模块入口：单文件 `attachments.ts` 与同名目录 `attachments/` 并存（#562 明确要求二选一，至今未合） | `src/services/attachments.ts:15` / `src/services/attachments/` | 第二份真相源 | 单文件 **435 行**、被 **8 个文件** import（`src/app/App.tsx:24` 等）；目录 **18 个 .ts / 5866 行**、被 **12 处** import；两者**同名不同物**，`import ... from 'services/attachments.js'` 与 `.../attachments/limits.js` 只差一个斜杠 | 合并到 `src/services/attachments/`（单文件迁为 `attachments/upload.ts`，8 处 import 各改一行） | 车道 B（动 `src/services/attachments/**` 前先在车道单声明与 A/C 无交集） |
+| D01 | 附件域有两个模块入口：单文件 `attachments.ts` 与同名目录 `attachments/` 并存（#562 明确要求二选一，至今未合） | `src/services/attachments.ts:15` / `src/services/attachments/` | 第二份真相源 | 单文件 **435 行**、被 **8 个文件** import（`src/app/App.tsx:24` 等）；目录 **18 个 .ts / 5866 行**、被 **12 处** import；两者**同名不同物**，`import` 语句里 `services/attachments`（解析到单文件 `src/services/attachments.ts`）与 `services/attachments/limits`（落到同名目录）只差一个斜杠 | 合并到 `src/services/attachments/`（单文件内容迁为该目录下的 `upload.ts` —— **拟新增，未实现**；8 处 import 各改一行） | 车道 B（动 `src/services/attachments/**` 前先在车道单声明与 A/C 无交集） |
 | D02 | 废弃域黑名单有两份：Gradle 一份、Node 一份，**没有任何断言钉住它们相等** | `android/app/build.gradle:141` / `scripts/lib/consumeEndpoints.mjs:45` | 第二份真相源 | 两份各 **2 项**（`140.210.13.146`、`:60013`）；`git grep -c CONSUME_DEPRECATED_MARKERS tests/` → **0 个文件**（无一致性断言）；加第三项时漏改一处即可让 build 期拦截失效而 CI 全绿 | 接线（新增一条 L0 断言：两份名单逐项相等，缺一项即红） | 车道 C |
 | D03 | ES5 兜底页把主包文案抄了第二份（兜底页必须是 ES5，**无法 import i18n**，所以这是结构性重复） | `src/index.html:163` / `src/i18n/zh.ts:754` | 第二份真相源 | 内联脚本 **510 行**（文件 667 行 / 30KB）；脚本里含中文串 **25 条（去重）**，其中 **8 条**与 `zh.ts` **逐字相同**（如「页面启动失败」「资源加载失败」）；改一处文案要记得改两处 | 合并到（构建期从同一份文案表生成兜底页；不能生成则保留并在文件头写明「改文案要改两处」） | 车道 B |
 | D04 | 曾怀疑 `LIMITS` 与 `attachments/limits.ts` 有重复数字 | `src/services/attachments/limits.ts:25` / `src/services/limits.ts:131` | 第二份真相源（**核实为否**） | 该文件 **43 行纯逐字段转出**；`grep -oE "[0-9]{4,}"` → **0 个**；`node scripts/check-limits.mjs` → 「未收敛阈值 0 处」，扫 10 文件 / 豁免 27 处。数字只有 `LIMITS` 一处 | 保留并说明理由（域视图层，非第二份；理由已写在文件头 21 行注释里） | 车道 B |
@@ -43,7 +43,7 @@
 | --- | --- | --- |
 | 第二份真相源 | D01–D04（其中 D04 核实为否） | 2 个模块入口（435 行 vs 5866 行 / 8 vs 12 处 import）+ 2 份黑名单（各 2 项、0 条一致性断言）+ 8 条重复文案 |
 | 孤儿资源 | D05–D11（其中 D06/D11 核实为否，D10 已处理） | 生产机：12 项 / 64MB（清单引用 0）+ 回滚物 10 文件 184KB + 重复清单备份 7.4KB；仓库：`docs/ui` 未引用图片 **155 张 / 17.4 MiB（#661 已归档外迁，原记 266 张 / 26.6MB）** |
-| 过期文档 | D12–D15 | WARN 8 条 → **0**（D12 已处理：6 条结构行 + 2 条空行区间全部改成函数名/常量名定位）；2 处注释声称的门禁不存在；1 处注释数字漂移（5 → 8） |
+| 过期文档 | D12–D15 | WARN 8 条 → **0**（D12 已处理：6 条结构行 + 2 条空行区间全部改成函数名/常量名定位）；**#681 续账：41 条 WARN → 18 条**（A 归属 23 条本批清零，剩 18 条全在车道 B → #653）；2 处注释声称的门禁不存在；1 处注释数字漂移（5 → 8） |
 | 未接线门禁 | D16–D17（外加 D22 合并项） | 33 道脚本 / CI 跑 20 道 / 11 道零接线 / **1484 行** + 1 道无别名 261 行 |
 | 死代码 | D18–D19 | 2081 个导出定义里 **532 个外部引用为 0**；最硬 **21 条只有定义行命中**（src 11 + scripts 10） |
 | 兼容层残留 | D20–D22（D21 含 D14 的数字漂移） | 3 个别名 → 1 个脚本（2 个死别名）；899 行 + 16 条 key 的到期日无人检查；150 行重复门禁 |
@@ -64,6 +64,7 @@
 | B1-3 | **D20** 删 `check:docrefs` / `check:docs` 两个死别名 + 改 2 处文字 | CI 用的是 `check:doc-refs`，删的是没人调用的键 | 车道 A（已完成） |
 | B1-4 | **D12** 修 4 条非生成器 WARN（`docs/baseurl-config-research.md` 4 处）+ 4 条 `docs/capabilities/*` WARN（重跑生成器 + 补 `--check` 的明细表漂移记账） | 只改文档的**定位方式**（结构行 / 空行 → 函数名 / 常量名 / 代码字面量），判定口径一个字没动；负向对照：指到不存在的文件 → `FAIL 1`；把引用改回旧写法（指向某文件 149 行的孤立 `}`）→ WARN 复现；指到空行 → `FAIL 1`；还原 → `FAIL 0 / WARN 0` | 车道 A（已完成） |
 | B1-5 | **D02** 加一致性断言：两份废弃域黑名单逐项相等 | 纯新增断言，不改名单本身；**负向对照**：给任一份加一项 → 必须红 | 车道 C |
+| B1-6 | **D12 续（#681）** 收口 `check-doc-refs` 首次可见的 41 条 WARN 里的 **A 归属 23 条**（`capabilities/css.md` 13 · `ui/settings-cell-wrap/README.md` 3 · 本条清单 2 · `baseurl-config-research.md` 2 · `TESTING-POLICY.md` 1 · `server-migration.md` 1 · `capabilities/api.md` 1）；B 归属 18 条（`rebuild-after-refactor.md` 16 · `acceptance-480.md` 1 · `in-app-update-acceptance.md` 1）转 #653 | 判定口径**一个字没动**（`suffix-unmatched` 照旧 WARN 点名，没改回静默跳过、没降级成忽略）；已删文件的引用一律用删除线（门禁认可的「曾存在、现已删除」标记），不删说明句；`css.md` §2 明细是**手写表**（生成器只管 §0/§1 与统计数字），所以是整表重锚不是重跑生成器；顺带修了 `tests/unit/capabilities-docs-sync.test.mjs` 里一条**空断言**（正则 `[d,s]+` 转义丢失 → 一条引用都没匹配到，§2 整表「每行真有命中」这条实际从未生效）；**负向对照**：把 §2.5 的 `MessageList.module.css:17` 改成 `:26`（一行孤立的 `}`）→ `check-doc-refs` 点名「起行 26 是结构行」+ `capabilities-docs-sync` 那条单测红「§2.5 记了 …:26，但复算在该行没有命中」；还原 → WARN 18 / 单测 12 绿 | 车道 A（已完成） |
 
 ## 五、后续批
 
@@ -106,6 +107,8 @@ git grep -c useAuth -- src/services/attachments src/components | wc -l   # → 0
 
 # D12 文档漂移
 node scripts/check-doc-refs.mjs | tail -3                           # → 合格：FAIL 0 / WARN 0（D12 处理前是 FAIL 0 / WARN 8）
+node scripts/check-doc-refs.mjs | grep -E '^WARN|^  docs/'          # → #681 后 WARN 18，全部是车道 B 那三份文件（→ #653）
+node --test tests/unit/capabilities-docs-sync.test.mjs              # → 12 绿（含 §2 明细表逐行命中；该断言的匹配正则坏了很久，见 B1-6）
 node scripts/gen-capabilities-docs.mjs --check                      # → ✔ 一致（明细表里的 `文件:行` 漂了也会红，见 D12）
 
 # D21 到期日有没有人检查
