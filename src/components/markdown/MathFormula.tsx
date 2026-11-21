@@ -1,3 +1,4 @@
+import './beautifyMath.css'
 import { memo, useEffect, useMemo, useRef, useState, type RefObject } from 'react'
 import { useTranslate } from '../../i18n/index.js'
 import { ensureKatex, type Katex } from '../../services/markdown/katex.js'
@@ -6,6 +7,7 @@ import {
   type MathBlockPart,
   type MathRenderPlan,
 } from '../../services/markdown/mathBlocks.js'
+import { isTrustedMathCommand, normalizeBeautifyMath } from '../../services/markdown/mathCompat.js'
 import { readMathTexSource, stripMathDelimiters } from '../../services/markdown/mathSource.js'
 import { IconCheckOutline16, IconCopyOutline16 } from '../base/icons.js'
 import { showToast } from '../base/toastState.js'
@@ -54,9 +56,18 @@ const useMathRender = (input: string, isInline: boolean) => {
     if (!katex) {
       return null
     }
+    // #821：「美化规则」用 graphicx 命令画气泡。每一次渲染（整块 / 逐块降级）都先改写成 KaTeX 认识的写法，
+    // 这样 `\scalebox` 这类命令是真的渲染出来，而不是被 `planMathRender` 当成「不支持」降级成原文。
+    // `trust` 不是开关，只放行改写自己生成的 font-size / rotate 样式与固定 class（见 mathCompat.ts），
+    // 用户手写的 `\htmlStyle` / `\href` 一律拒绝。`throwOnError` 仍为 true：真写坏的公式照旧走降级，不渲染红字。
     const render = (tex: string): string =>
       stripWrapper(
-        katex.renderToString(tex, { throwOnError: true, strict: false, displayMode: !isInline }),
+        katex.renderToString(normalizeBeautifyMath(tex), {
+          throwOnError: true,
+          strict: 'ignore',
+          trust: isTrustedMathCommand,
+          displayMode: !isInline,
+        }),
         isInline
       )
     const plan = planMathRender(input, render)
