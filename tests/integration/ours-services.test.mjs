@@ -27,8 +27,6 @@ import {
   selectProviderKind,
 } from '../helpers/helpers.mjs'
 import { verifyAppUrl } from '../helpers/env.mjs'
-// #596：本用例以「已领取 Key 的内测用户」为前置（只写 kind 会让启动就弹设置、且发消息被拦）
-import { seedClaimedOursKey } from '../helpers/ours-claim.mjs'
 
 const name = 'tests/integration/ours-services.test.mjs'
 
@@ -101,8 +99,12 @@ try {
   await wireMock(page)
 
   await page.goto(APP_URL, { waitUntil: 'domcontentloaded' })
-  await page.evaluate(() => window.localStorage.clear())
-  await seedClaimedOursKey(page, 'sk-ours-services-0001')
+  await page.evaluate(() => {
+    window.localStorage.clear()
+    // 本用例不发消息，只要渠道门禁：保持「没有 Key」的形态 —— 应用会自己弹出设置并选中「数据管理」
+    // （390 视口下侧栏是抽屉，`设置` 按钮不在可视区，靠共享 helper 点它本就会超时）
+    window.localStorage.setItem('chat-demo:provider-kind', 'ours')
+  })
   await page.reload({ waitUntil: 'domcontentloaded' })
   await page.waitForTimeout(900)
 

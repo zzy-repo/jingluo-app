@@ -15,6 +15,8 @@
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
+// #596：切到 ours 后 Key 必须带「下发标记」，否则发送前守卫会拦（产品行为），402 场景就等不到
+import { seedClaimedApiKey } from '../helpers/ours-claim.mjs'
 import { requireDist, serveDist } from '../helpers/runtime.mjs'
 import { verifyAppUrl } from '../helpers/env.mjs'
 import { MESSAGES_SSE_OK, providerKindTrigger } from '../helpers/helpers.mjs'
@@ -84,6 +86,8 @@ const selectOursChannel = async (page) => {
   await providerKindTrigger(page.getByRole('dialog').first()).first().click()
   await page.getByRole('option', { name: /我们的渠道|Our Channel/ }).first().click()
   await page.waitForTimeout(400)
+  // #596：切渠道不会动 Key，但 ours 的 Key 只能由服务端下发 —— 补上「已领取」形态（Key + 下发标记）
+  await seedClaimedApiKey(page, KEY)
 }
 
 /** 发一条消息 */
