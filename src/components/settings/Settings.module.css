@@ -677,10 +677,12 @@
   }
 
   .navItem {
-    flex: 1 0 auto;
+    /* #727：导航多了第三项「账户与消费」，108px × 3 在 360 档会顶出右边界（第三项被切一半）。
+       改成「可收缩 + 更小的下限」：三项平分一行，360 档实测不再横向滚动。 */
+    flex: 1 1 auto;
     justify-content: center;
     width: auto;
-    min-width: 108px;
+    min-width: 92px;
     margin: 0;
     white-space: nowrap;
 
