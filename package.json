@@ -78,8 +78,6 @@
     "check:capabilities": "node scripts/check-capabilities.mjs",
     "gen:capabilities": "node scripts/gen-capabilities-docs.mjs",
     "check:capabilities-docs": "node scripts/gen-capabilities-docs.mjs --check",
-    "check:docs": "node scripts/check-doc-refs.mjs",
-    "check:docrefs": "node scripts/check-doc-refs.mjs",
     "check:doc-refs": "node scripts/check-doc-refs.mjs",
     "check:ui-shots": "node scripts/check-ui-shots.mjs",
     "check:limits": "node scripts/check-limits.mjs",

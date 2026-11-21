@@ -2,7 +2,7 @@
 /**
  * 文档引用门禁（GitHub issue #290）。
  *
- *   node scripts/check-doc-refs.mjs           # 或 pnpm check:docs
+ *   node scripts/check-doc-refs.mjs           # 或 pnpm check:doc-refs
  *   node scripts/check-doc-refs.mjs --json
  *
  * 回答一个问题：**文档里那些 `文件:行号`，还指得着吗？**
