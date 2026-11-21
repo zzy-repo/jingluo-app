@@ -253,7 +253,7 @@ E2E_API_KEY=sk-xxx npm run test:e2e               # 真上游握手（发版前�
 | --- | --- |
 | `tests/domain-map.json` | 改动路径 glob → 用例文件 glob，10 个域（对齐 `docs/testing/coverage/domain-*.md`） |
 | `tests/fast-subset.json` | `test:fast` 排除的 20 个最慢单元文件 + 逐条理由（它们仍在 `pnpm test` / `test:full` 里跑） |
-| `tests/timing-baseline.json` | 各层上次实测耗时/用例数（只由 `test:report --measure` 写，供看板引用） |
+| `tests/timing-baseline.json` | 各层上次实测耗时/用例数（只由 `test:report --measure` 写，供看板引用）+ **超时档**（`timeoutClasses` / `fileTimeoutClasses`，#733，runner 读它决定每个文件给多少秒） |
 | `tests/test-layout-baseline.json` | 布局门禁的存量豁免清单（**只减不增**，#408 后已清空：命名 / 孤儿 / 落位 / fixture 散放全 0） |
 | `tests/test-duplication-baseline.json` | 逐字重复门禁的存量豁免清单（21 组，#408 起从 32 组降下来；新组不许进，抽掉一组删一条） |
 | `tests/test-duplication-whitelist.json` | 允许长期存在的跨层重复（必须写 reason），R1 组 / R2 topic / R3 title 三种键 |
