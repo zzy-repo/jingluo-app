@@ -178,7 +178,7 @@ export const setApiKey = (apiKey: string | null) => {
 
 ### 3.3 i18n
 
-- 字典：`src/i18n/zh.ts`、`src/i18n/en.ts`；`TranslationKey = keyof typeof zh`（`i18n/index.ts:5`）→ **新增 key 必须两套同步加**，缺 en 会类型报错。
+- 字典：`src/i18n/zh.ts`、`src/i18n/en.ts`；`TranslationKey = keyof typeof zh`（`i18n/index.ts:6`）→ **新增 key 必须两套同步加**，缺 en 会类型报错。
 - 设置项文案集中在 `zh.ts` 第 87–105 行 / `en.ts` 第 92–110 行附近（`settingsTtsVoice`、`settingsLocation`、`apiKeyStart`、`apiKeyEdit`、`apiKeyPlaceholder`、`apiKeyVerifying`、`apiKeyInvalid`、`apiKeyVerificationFailed`）。
 
 ### 3.4 新增 "Server URL" 字段需要动的位置（严格照现有模式）

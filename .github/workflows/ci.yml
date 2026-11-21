@@ -194,6 +194,65 @@ jobs:
           node scripts/check-doc-refs.mjs
           echo "负向对照通过：写死路径 → exit 1，删掉 → exit 0"
 
+      # #678：**省略前缀**的引用（`i18n/index.ts:5`、`components/…/MessageList.module.css:68`）
+      # 以前在 extractRefs 里被 `continue` 静默丢掉 —— 不判存在性、不判行号。
+      # 于是 `docs/capabilities/css.md` §2 整张表（全是 `components/…` 这种省略写法）连
+      # 「文件还在不在」都没人验过，行号漂到 `}` 上也没人知道。现在改成按路径后缀找唯一匹配
+      # 后照常判定；多匹配/零匹配报 WARN 点名（不静默）。
+      # 这段对照专打「省略前缀 + 行号错」这个形状（**四拍**，还原放 trap）：
+      #   ①干净 → exit 0   ②`i18n/index.ts:9999`（越界）→ 必 exit 1
+      #   ③`i18n/index.ts:5`（空行）→ 必 exit 1   ④剩下的多匹配条目必须是 WARN 而非无声放行
+      # 为什么不能只留上面那条 `src/services/does-not-exist-nc.ts`：它写全了路径，走的是老分支，
+      # 恰恰证明不了「省略前缀」这一类进了判定（#678 之前它也是红的，而 css.md 那 12 处照样漏）。
+      - name: 负向对照：省略前缀 + 行号错必须被 check:doc-refs 拦下（#678）
+        run: |
+          set -euo pipefail
+          NC=docs/zz-negative-control-678.md
+          OUT=$(mktemp)
+          trap 'rm -f "$NC" "$OUT"' EXIT
+          # 注意：不要写成 `node … | grep -q …`。开了 pipefail 之后，grep 先退出会让 node
+          # 吃 SIGPIPE（141），管道整体判非零 —— 明明命中了也当没命中。先落盘再 grep。
+          gate() { node scripts/check-doc-refs.mjs > "$OUT" 2>&1; }
+
+          gate && echo "① 干净仓库：exit 0"
+
+          printf '省略前缀 + 行号越界：`i18n/index.ts:9999`\n' > "$NC"
+          if gate; then
+            echo "::error::负向对照失败（②）：省略前缀的越界行号没有被判出来 —— 这类引用又回到「静默跳过」"
+            exit 1
+          fi
+          grep -q '行号越界：9999' "$OUT" || {
+            echo "::error::负向对照失败（②）：exit 1 了，但不是因为省略前缀那条引用（报错没点到 9999）"
+            cat "$OUT"
+            exit 1
+          }
+          echo "② 省略前缀 + 行号越界：exit 1，且点到了 i18n/index.ts:9999"
+
+          printf '省略前缀 + 行号落在空行：`i18n/index.ts:5`\n' > "$NC"
+          if gate; then
+            echo "::error::负向对照失败（③）：省略前缀 + 空行行号没有被判出来"
+            exit 1
+          fi
+          grep -q '起行 5 是空行' "$OUT" || {
+            echo "::error::负向对照失败（③）：exit 1 了，但没点到「起行 5 是空行」"
+            cat "$OUT"
+            exit 1
+          }
+          echo "③ 省略前缀 + 空行行号：exit 1，且点到了「起行 5 是空行」"
+
+          # 多匹配 / 零匹配不许静默：既不能判红（它没法定到唯一文件），也不许无输出地放过
+          printf '省略前缀 + 后缀多匹配：`390/metrics.json`\n' > "$NC"
+          gate || true
+          grep -qE '后缀匹配到 [0-9]+ 个文件，无法定位' "$OUT" || {
+            echo "::error::负向对照失败（④）：后缀多匹配的引用既没判红也没 WARN 点名 —— 静默跳过回潮了"
+            exit 1
+          }
+          echo "④ 省略前缀 + 后缀多匹配：WARN 点名（不判红，但绝不静默）"
+
+          rm -f "$NC"
+          gate
+          echo "⑤ 改对 / 删掉后：exit 0（负向对照四拍全过）"
+
       # #661：`docs/ui/**` 的截图曾只进不出 —— 553 张里 155 张（17.4 MiB）在仓库任何 tracked
       # 文本里零命中，既不是关单证据也不在任何 README 的结论表里。check:doc-refs 看不见这件事
       # （REF_EXT 里没有 png/jpg），所以单开一道：截图必须有出处，出处指到的截图必须还在。

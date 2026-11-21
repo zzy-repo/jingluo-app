@@ -403,7 +403,11 @@ const REGISTRY = {
   'check:doc-refs': {
     where: '.github/workflows/ci.yml',
     kind: 'ci',
-    what: 'CI 往 docs/ 塞一份写着不存在路径的 md → 必 exit 1，删掉后 exit 0',
+    what:
+      'CI 往 docs/ 塞一份写着不存在路径的 md → 必 exit 1，删掉后 exit 0；' +
+      '另有 #678 那一拍的对照组：**省略前缀**的 `i18n/index.ts:9999`（越界）与 ' +
+      '`i18n/index.ts:5`（空行）→ 两条都必须 exit 1，后缀多匹配的 `390/metrics.json` ' +
+      '必须 WARN 点名（不许静默跳过），删掉后 exit 0',
     mention: /check-doc-refs\.mjs/,
   },
   // 截图引用门禁（#661：`docs/ui` 553 张里 155 张零引用）：双向都现场注入 ——
