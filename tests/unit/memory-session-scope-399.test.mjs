@@ -15,10 +15,16 @@
 //   T6 embedding 关闭/打开 —— 关闭态 `fetchCalls === 0` 且库里没有向量；打开态真的发请求并落向量
 //   T7 单条超上限          —— 明确拒绝写入 + 提示（不是「写进去再淘汰自己」）
 //   T8 DB 迁移不变量       —— 在一个真 v13 库上跑**同一个** upgrade 回调：旧 store / 旧数据一条不动
+//   T9 顺序契约            —— 同毫秒平局按**主键 id 升序**打破（读侧列表 + 写侧淘汰各钉一处）
 //
 // 负向对照（人工各跑一次，结论写在 PR 与 file 末）：
 //   ① 把 `memoryEntryId()` 里的 `sessionId` 去掉（变成全局键 `id = key`）→ T1 变红；
-//   ② 删掉 `db.deleteSession()` 里清 `sessionMemory` 的那段 → T5 变红。
+//   ② 删掉 `db.deleteSession()` 里清 `sessionMemory` 的那段 → T5 变红；
+//   ③ 把 `sessionMemory.ts` 两处平局分支的 `<` 改成 `>`（平局序反过来）→ T9 两条断言都变红；
+//   ④ 把 T3/T4 的键改回不定宽（`b-9` / `b-10`）→ T3/T4 变**间歇**红：平局落到字典序
+//      （`b-10 < b-9`），「留下的是最新写入的那批」就只在「这批写入横跨毫秒边界」时成立，
+//      而同毫秒写几条取决于机器快慢 —— 也就是「跑得快就红」。见 T3 前的 `sessKey()`
+//      与末节 T9（平局序是**被断言的契约**，不是用例的隐含假设）。
 //
 //   node tests/run-layer.mjs unit --only memory-session-scope-399
 import 'fake-indexeddb/auto'
@@ -232,6 +238,25 @@ test('T2 同会话覆盖写：后者覆盖前者，不产生重复条目，creat
 // ─────────────────────────────────────────────────── T3 超条数上限（只淘汰本会话）
 
 /**
+ * 本文件里「批量顺序写」用的键：**定宽零填充**（`c-0007`），不是 `c-7`。
+ *
+ * 为什么要定宽（main@292fafe 那次红的根因，`#399` / PR #701）：实现的完整排序是
+ * 「`updatedAt`（读侧是 `createdAt`）升序，**同一毫秒按主键 `id` 升序**」，主键是
+ * `` `${sessionId}:${key}` ``（见 `sessionMemory.ts` 文件头「为什么选它」）。这是**契约**，
+ * 而且 T9 专门断言它。但主键比较是**字典序**：键不定宽时 `b-10 < b-9`，于是
+ * 「同毫秒写入的两条，谁算更老」与「谁先写」不一致 —— T3/T4 断言「留下的是最新写入的那批、
+ * 顺序就是写入顺序」，就只在**相邻两次写入没有落在同一毫秒**时成立。
+ * 而一批 34 次 `saveMemoryEntry`（每次一条 64 KB + 一次 readwrite 事务）落在几个毫秒里、
+ * 撞不撞平局，取决于机器快慢：慢机器每次 >1 ms（全绿），快机器同毫秒成对（红）。
+ * 同一个提交 `f609ac62`（引入实现+用例的那次）CI 绿、`292fafe6`（**只改文档**、没碰
+ * `src/services/memory/**`）CI 红，正是这个形状 —— 用例本身不确定，不是实现回归。
+ *
+ * 零填充把**字典序钉成写入序**（`c-0009 < c-0010`），断言强度一点没降（仍是逐条逐序
+ * `deepStrictEqual`），但结果不再取决于「这批写入横跨了几个毫秒」。平局分支本身由 T9 直接钉住。
+ */
+const sessKey = (prefix, index) => `${prefix}-${String(index).padStart(4, '0')}`
+
+/**
  * 表驱动：每行 = 一个会话的「写多少条 + 上限是多少」。
  * 期望值全部由 `LIMITS.memory` 现算，不写死数字 —— 阈值调整时用例跟着变，不会悄悄失效。
  */
@@ -257,7 +282,7 @@ test('T3 超条数上限：oldest-first 淘汰、只淘汰本会话、有提示�
   // 邻居会话先写几条（远离上限），用来证明「淘汰只在本会话内」
   await memory.clearSessionMemory(neighbour)
   for (let i = 0; i < CAP_NEIGHBOUR_ENTRIES; i += 1) {
-    await memory.saveMemoryEntry(neighbour, { key: `n-${i}`, text: `邻居的第 ${i} 条` })
+    await memory.saveMemoryEntry(neighbour, { key: sessKey('n', i), text: `邻居的第 ${i} 条` })
   }
   const neighbourBefore = await memory.listMemoryEntries(neighbour)
   await memory.clearSessionMemory(victim)
@@ -270,7 +295,7 @@ test('T3 超条数上限：oldest-first 淘汰、只淘汰本会话、有提示�
     for (let i = 0; i < limit + ENTRY_LIMIT_CASES[0].over; i += 1) {
       const text = `本会话第 ${i} 条`
       texts.push(text)
-      outcomes.push(await memory.saveMemoryEntry(victim, { key: `c-${i}`, text }))
+      outcomes.push(await memory.saveMemoryEntry(victim, { key: sessKey('c', i), text }))
     }
   } finally {
     off()
@@ -333,7 +358,7 @@ test('T4 超字节上限：按 oldest-first 淘汰、边界「正好等于上限
   const outcomes = []
   try {
     for (let i = 0; i < fit + row.over; i += 1) {
-      outcomes.push(await memory.saveMemoryEntry(session, { key: `b-${i}`, text: body(i) }))
+      outcomes.push(await memory.saveMemoryEntry(session, { key: sessKey('b', i), text: body(i) }))
     }
   } finally {
     off()
@@ -349,7 +374,7 @@ test('T4 超字节上限：按 oldest-first 淘汰、边界「正好等于上限
   assert.equal(sum, limit, '留下的正好填满上限（边界闭区间，不多淘汰一条）')
   assert.deepEqual(
     survivors.map((entry) => entry.key),
-    Array.from({ length: fit }, (_, index) => `b-${row.over + index}`),
+    Array.from({ length: fit }, (_, index) => sessKey('b', row.over + index)),
     '留下的是最新写入的那批（oldest-first）'
   )
   const totalEvicted = outcomes.reduce((total, item) => total + (item.written ? item.evicted : 0), 0)
@@ -646,4 +671,102 @@ test('T8 DB 迁移不变量：v13 旧库升级后旧 store / 旧数据一条不�
     assert.deepEqual(after.data[store], before.data[store], `${store} 的旧数据被升级改动了`)
   }
   assert.deepEqual(after.data.sessionMemory, [])
+})
+
+// ──────────────────────────────────────────────────── T9 顺序契约（平局按主键）
+
+/**
+ * 平局序是**契约**，不是用例的隐含假设（T3/T4 的定宽键依赖它，所以这里直接钉住）。
+ *
+ * 实现的完整排序：`updatedAt`（读侧 `createdAt`）升序，**同一毫秒按主键 `id` 升序**
+ * （见 `sessionMemory.ts` 文件头「为什么选它：确定且可测」）。主键是 `` `${sessionId}:${key}` ``，
+ * 所以平局时比的是**键的字典序**，不是写入的先后（`tie-10 < tie-9`）。
+ *
+ * 这里用**直读库落行**（不经 `saveMemoryEntry`）造一个确定的同毫秒平局：时间戳写死成同一毫秒，
+ * 于是「这批写入跨了几个毫秒」这件由机器快慢决定的事不再参与判定 —— 断言因此完全确定。
+ */
+const TIE_SESSION = 'sess-399-tie'
+const TIE_STAMP = 1_600_000_000_000
+/**
+ * 写入顺序：先 tie-9，再 tie-10，然后一堆字典序更大的 tie-zNN。
+ * 行数由 `LIMITS.memory.maxEntriesPerSession` 现算（不写死 200）：阈值调整时这里跟着变。
+ */
+const TIE_BULK_DIGITS = 3
+const TIE_WRITE_ORDER = [
+  'tie-9',
+  'tie-10',
+  ...Array.from(
+    { length: MEMORY_LIMITS.maxEntriesPerSession - 2 },
+    // 平局比较的是键的字典序：定宽才能让 tie-z000… 这一段「字典序 = 生成序」，断言才确定
+    (_, index) => `tie-z${String(index).padStart(TIE_BULK_DIGITS, '0')}`
+  ),
+]
+
+test('T9 顺序契约：同毫秒平局按主键 id 升序（读侧列表与写侧淘汰同一口径）', async () => {
+  settings.setEmbeddingEnabled(false)
+  assert.equal(TIE_WRITE_ORDER.length, MEMORY_LIMITS.maxEntriesPerSession, '用例前提：正好写满条数上限')
+  assert.ok(
+    MEMORY_LIMITS.maxEntriesPerSession - 2 <= 10 ** TIE_BULK_DIGITS,
+    '用例前提：批量键的定宽位数放得下这批行（否则字典序不再等于生成序）'
+  )
+  await memory.clearSessionMemory(TIE_SESSION)
+
+  // ① 直读库造平局：200 行完全相同的时间戳（同一毫秒），写入顺序与字典序故意不一致
+  const handle = await openDB(DB_NAME)
+  try {
+    const tx = handle.transaction('sessionMemory', 'readwrite')
+    for (const key of TIE_WRITE_ORDER) {
+      const text = `${key} 的正文`
+      await tx.store.put({
+        id: memory.memoryEntryId(TIE_SESSION, key),
+        sessionId: TIE_SESSION,
+        key,
+        text,
+        bytes: memory.memoryEntryBytes(text),
+        createdAt: TIE_STAMP,
+        updatedAt: TIE_STAMP,
+      })
+    }
+    await tx.done
+  } finally {
+    handle.close()
+  }
+  assert.equal(await rawCountOf(TIE_SESSION), TIE_WRITE_ORDER.length)
+
+  // ② 读侧：列表顺序 = `createdAt` 升序 + 同毫秒按主键字典序（`tie-10` 排在 `tie-9` 之前）
+  const listed = await memory.listMemoryEntries(TIE_SESSION)
+  assert.deepEqual(
+    listed.map((entry) => entry.key),
+    ['tie-10', 'tie-9', ...TIE_WRITE_ORDER.slice(2)],
+    '同毫秒平局必须按主键 id 升序（字典序），不是按写入先后'
+  )
+  assert.deepEqual(
+    listed.map((entry) => entry.createdAt),
+    TIE_WRITE_ORDER.map(() => TIE_STAMP),
+    '用例前提：这批行的 createdAt 确实是同一毫秒'
+  )
+
+  // ③ 写侧：再写一条就超条数上限 → 淘汰的必须是**平局组里主键最小**的那条（tie-10，第二个写的）
+  const outcome = await memory.saveMemoryEntry(TIE_SESSION, { key: 'tie-z98', text: '最后写的一条' })
+  assert.equal(outcome.written, true)
+  assert.deepEqual(
+    outcome.written ? outcome.evictedKeys : [],
+    ['tie-10'],
+    '淘汰序与读侧同一口径：同毫秒按主键 id 升序（不是按写入先后）'
+  )
+  const rows = await rawMemoryRows()
+  const mine = rows.filter((row) => row.sessionId === TIE_SESSION)
+  assert.equal(mine.length, MEMORY_LIMITS.maxEntriesPerSession, '淘汰后正好回到条数上限')
+  assert.equal(
+    mine.some((row) => row.key === 'tie-10'),
+    false,
+    '平局组里字典序最小的 tie-10 被淘汰'
+  )
+  assert.equal(
+    mine.some((row) => row.key === 'tie-9'),
+    true,
+    'tie-9 虽然先写，但主键字典序更大 —— 同一毫秒里它不算「更老」，留着'
+  )
+
+  await memory.clearSessionMemory(TIE_SESSION)
 })
