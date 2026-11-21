@@ -925,7 +925,6 @@ export const zh = {
   // 标题与三个 tab 名在词条骨架里没有对应项，这里最小新增；Tab 2「购买」复用 oursPayTitle。
   accountConsumeTitle: '账户与消费',
   accountConsumeTabCards: '我的卡密',
-  accountConsumeTabQuota: '我的额度',
   accountConsumeTabAccount: '账号',
   // #727：这一页重排成「一级整页 + 四个分区」（模型来源 / 连通性测试 / 我的钱包 / 账号）。
   // 分区名与行文案都走词条：原型里的 34px 大标题 / 56px inset 行 / 底部 sheet / 居中 dialog
@@ -956,6 +955,7 @@ export const zh = {
   settingsSourceClaimNeedLoginAction: '去登录',
   accountConsumeSourcePickHint: '选一个来源后按「保存」，主界面会立刻用它',
   accountConsumeWallet: '我的钱包',
+  accountConsumeWalletTopUp: '充值',
   accountConsumeRemaining: '剩余余额',
   accountConsumeHistory: '历史消费',
   accountConsumeHistoryEmpty: '暂无消费记录',

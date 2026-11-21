@@ -24,7 +24,7 @@
  *     手风琴（#807），展开某一行不换页、也不出现第三个「返回」；
  *  3. **不做第二份客户端**：一个 `ConsumeClient`，默认用全应用共享的 `getConsumeClient()`；
  *  4. **面板逻辑原样复用**：卡密 / 购买 / 额度还是 `MyCardsTab` / `BuyTab` /
- *     `QuotaPanel` 那三个既有组件，本文件只负责「把它们放到原型的位置上」；
+ *     `BuyTab` 等既有组件，本文件只负责「把它们放到原型的位置上」；
  *  5. L1 只留**一行**「模型来源」（右侧显示当前来源名）；它点进去是**手风琴**（每行 56px、
  *     左右 20px、1px 极浅下边框、右侧箭头，**不是分段控件**）：点行头只展开它自己的字段区
  *     （服务地址 / API Key / 模型 + 「确认使用」），不再有第三层页面。
@@ -54,8 +54,8 @@ import { useLegacyMigrationResult } from '../../legacy/migration/resultState.js'
 import { Button } from '../base/Button.js'
 import { IconChevronRightOutline14 } from '../base/icons.js'
 import { showToast } from '../base/toastState.js'
-import { QuotaPanel } from './index.js'
 import { BuyTab } from './BuyTab.js'
+import { usePayCheckout } from './usePayCheckout.js'
 import { HistoryView } from './HistoryView.js'
 import { MyCardsTab } from './MyCardsTab.js'
 import { runWalletAutoRedeem, type WalletAutoRedeemOutcome } from './walletAutoRedeem.js'
@@ -93,7 +93,7 @@ import styles from './AccountConsume.module.css'
  * 类型放在这里而不是设置的状态层：它只描述「这一页内部展示什么」，进出都由内容区自己点，
  * 不参与 `openSettings` / 付款回跳那套跨模块状态。
  */
-export type AccountSubPage = 'wallet' | 'source' | 'cards' | 'buy' | 'quota' | 'history' | 'account'
+export type AccountSubPage = 'wallet' | 'source' | 'cards' | 'buy' | 'history' | 'account'
 
 export type AccountConsumePanelProps = {
   /**
@@ -504,22 +504,38 @@ export const AccountConsumePage = ({
       </p>
     </div>
   )
-  /** 余额卡：剩余余额（余额卡不是行）；额度收进卡里的一个入口，点它进 L2「我的额度」 */
+  /**
+   * 钱包页的付款入口（#817）：跟「购买」页里每个套餐的「去支付」是**同一条链路**（`usePayCheckout`），
+   * 不另写付款逻辑。付款回来仍然只走 `backToCards` —— #784 的自动兑现触发点不变、不新增第二个。
+   */
+  const walletPay = usePayCheckout(backToCards)
+
+  /**
+   * 余额卡（#817）：**左**是「剩余余额」，**右**是付款入口，同一行。
+   *
+   * 窄屏（360 / 390）的折行规则：余额这一栏 `flex: 1 1 0; min-width: 0`，付款按钮 `flex: none`，
+   * 所以放不下时是**余额栏收缩、按钮不动**；余额数字 `overflow-wrap: anywhere` 兜底，
+   * 不会把数字顶出卡片，按钮也不会被挤成一条缝。
+   * 「我的额度」入口已删（#817）：额度页的用量和余额卡 / 历史消费重复。
+   */
   const balanceCard = (
     <div className={styles.balance} data-testid="account-consume-balance">
-      <div className={styles.balanceKey}>{t('accountConsumeRemaining')}</div>
-      {/* 未登录 / 恢复中：给「—」，不显示一个来路不明的 0.00 */}
-      <div className={styles.balanceValue}>
-        {signedIn === null ? '…' : balance === undefined ? '—' : formatCurrency(balance)}
+      <div className={styles.balanceMain}>
+        <div className={styles.balanceKey}>{t('accountConsumeRemaining')}</div>
+        {/* 未登录 / 恢复中：给「—」，不显示一个来路不明的 0.00 */}
+        <div className={styles.balanceValue}>
+          {signedIn === null ? '…' : balance === undefined ? '—' : formatCurrency(balance)}
+        </div>
       </div>
-      <button
-        type="button"
-        className={styles.balanceMore}
-        data-testid="account-consume-tab-quota"
-        onClick={() => onNavigate('quota')}
+      <Button
+        size="m"
+        className={styles.balancePay}
+        testId="account-consume-wallet-pay"
+        disabled={walletPay.payBusy}
+        onClick={() => void walletPay.openCheckout()}
       >
-        {t('accountConsumeTabQuota')} ›
-      </button>
+        {walletPay.payBusy ? t('oursPayBusy') : t('accountConsumeWalletTopUp')}
+      </Button>
     </div>
   )
 
@@ -529,7 +545,6 @@ export const AccountConsumePage = ({
     source: 'accountConsumeGroupSource',
     cards: 'accountConsumeTabCards',
     buy: 'oursPayTitle',
-    quota: 'accountConsumeTabQuota',
     history: 'accountConsumeHistory',
     account: 'accountConsumeTabAccount',
   }
@@ -573,6 +588,20 @@ export const AccountConsumePage = ({
         {subHeader('wallet', null)}
         {/* 余额卡放在这一页的最上面 */}
         {balanceCard}
+        {walletPay.pay.status === 'error' ? (
+          <div
+            className={`${styles.feedback} ${styles.feedbackError}`}
+            role="alert"
+            data-testid="account-consume-wallet-pay-status"
+          >
+            <span>{t(walletPay.pay.messageKey)}</span>
+            <div className={styles.feedbackActions}>
+              <Button variant="outlined" size="m" onClick={() => void walletPay.openCheckout()}>
+                {t('oursPurchasesRetry')}
+              </Button>
+            </div>
+          </div>
+        ) : null}
         <div className={styles.rows}>
           <button
             type="button"
@@ -707,19 +736,6 @@ export const AccountConsumePage = ({
     )
   }
 
-  // ───────────────────────────── L2：我的额度（用量） ────────────────────────────
-  if (page === 'quota') {
-    return (
-      <div className={`${styles.page} ${styles.embedded}`} data-testid="account-consume-page">
-        {subHeader('quota', 'wallet')}
-        <div className={styles.viewBody}>
-        <QuotaPanel consume={consume} onNeedLogin={needLogin} signedIn={signedIn} onSignIn={needLogin} />
-        </div>
-      </div>
-    )
-  }
-
-  // ───────────────────────────── L2：历史消费 ──────────────────────────────────
   if (page === 'history') {
     return (
       <div className={`${styles.page} ${styles.embedded}`} data-testid="account-consume-page">

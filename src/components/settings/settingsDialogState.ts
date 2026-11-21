@@ -48,7 +48,7 @@ export const normalizeSettingsSection = (value: unknown): SettingsSection =>
  * 类型放在这里而不是页面组件里：`settingsDialogState` 要能被消息流（额度不足 / Key 失效的 CTA）
  * 与付款回跳直接调用，**组件不许反向被状态层 import**（页面自己从这里取同一个类型）。
  */
-export type AccountConsumeTab = 'cards' | 'buy' | 'quota' | 'account'
+export type AccountConsumeTab = 'cards' | 'buy' | 'wallet' | 'account'
 
 /** 设置弹窗：侧边栏底部、没有 API Key 时的操作与 401 提示都可以打开；section 为打开时选中的分组 */
 export const useSettingsDialog = create(() => ({
@@ -141,11 +141,11 @@ export const clearSendConfigBlocked = (field?: SendBlockField) => {
  *
  * 三个既有入口共用这一个出口，只是落的子页不同：
  *   - 付款回跳（`?no=&order_token=`）：`cards`（默认）—— 回跳就是为了让用户看到卡密；
- *   - 消息流「额度不足 → 去充值 / 兑换卡密」CTA：`quota`；
+ *   - 消息流「额度不足 → 去充值 / 兑换卡密」CTA：`wallet`（余额 + 付款入口 + 我的卡密都在这一页，#817）；
  *   - 消息流「Key 失效 → 查看额度」CTA：`account`（换 Key / 核对账号都在这一页）。
  *
  * 打开设置并**选中第三个 tab**（账户与消费），落在指定子页：
- * 面包屑是「设置 → 账户与消费 → 我的卡密 / 我的额度 / 账号」。内容渲染在设置弹层内部，
+ * 面包屑是「设置 → 账户与消费 → 我的钱包 / 我的卡密 / 账号」。内容渲染在设置弹层内部，
  * 不再抬高 zIndex 叠一层独立弹窗（维护者口径：#727 阶段 1 只许有一个容器）。
  */
 export const openAccountConsume = (tab: AccountConsumeTab = 'cards') => {

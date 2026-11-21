@@ -71,7 +71,12 @@ const { CUSTOMER_ID_STORAGE_KEY } = await import('../../src/services/ours/custom
  * 「前往购买」这一段现在住在新页面的「购买」tab：`components/consume/BuyTab.tsx`，
  * 断言口径不变（现取地址 / App 内打开 / 不写死地址），只换成新文件的源码体检。
  */
-const buyTabSource = readFileSync(new URL('../../src/components/consume/BuyTab.tsx', import.meta.url), 'utf8')
+// #817：付款链路（取地址 → App 内打开 → 关页回调）抽进了 `usePayCheckout`，「购买」页与「我的钱包」页共用；
+// 源码体检的对象就是「购买」tab 这一整条链路 = BuyTab + 它引用的共用 hook。
+const buyTabSource =
+  readFileSync(new URL('../../src/components/consume/BuyTab.tsx', import.meta.url), 'utf8') +
+  '\n' +
+  readFileSync(new URL('../../src/components/consume/usePayCheckout.ts', import.meta.url), 'utf8')
 const transportSource = readFileSync(new URL('../../src/services/ours/transport.ts', import.meta.url), 'utf8')
 const apiSource = readFileSync(new URL('../../src/services/ours/api.ts', import.meta.url), 'utf8')
 const zhSource = readFileSync(new URL('../../src/i18n/zh.ts', import.meta.url), 'utf8')

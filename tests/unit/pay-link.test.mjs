@@ -52,7 +52,8 @@ const transport = await import('../../src/services/ours/transport.ts')
 const ROOT = fileURLToPath(new URL('../../', import.meta.url))
 const read = (relative) => readFileSync(path.join(ROOT, relative), 'utf8')
 // 旧 `OursServicesDialog.tsx` 已退役（#562）：「前往购买」这一段现在住在新页面的「购买」tab
-const buyTabSource = read('src/components/consume/BuyTab.tsx')
+// #817：付款链路在共用 hook `usePayCheckout` 里，「购买」tab 的体检要把它算进来
+const buyTabSource = read('src/components/consume/BuyTab.tsx') + '\n' + read('src/components/consume/usePayCheckout.ts')
 const accountConsumePageSource = read('src/components/consume/AccountConsumePage.tsx')
 const apiSource = read('src/services/ours/api.ts')
 const transportSource = read('src/services/ours/transport.ts')

@@ -178,7 +178,7 @@ export const AssistantMessage = memo(function AssistantMessage({
                     <button
                       type="button"
                       className={styles.noticeAction}
-                      onClick={() => openAccountConsume('quota')}
+                      onClick={() => openAccountConsume('wallet')}
                     >
                       {t('quotaTopUpEntry')}
                     </button>

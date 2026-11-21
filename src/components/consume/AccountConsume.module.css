@@ -473,26 +473,6 @@
   margin-right: 0;
 }
 
-/* 余额卡里的「我的额度」入口（额度并进余额卡，不再占一行） */
-.balanceMore {
-  display: inline-flex;
-  align-items: center;
-  margin-top: 8px;
-  padding: 4px 0;
-  border: 0;
-  background: none;
-  color: var(--dsw-alias-label-secondary);
-  font: inherit;
-  font-size: 14px;
-  line-height: 20px;
-  cursor: pointer;
-}
-
-.balanceMore:focus {
-  outline: none;
-  color: var(--dsw-alias-label-primary);
-}
-
 /* 下级页面（L2）的二级头：左上角「返回」，标题居中原型版式（#727 阶段 1）。
    右上角**没有** X —— 关闭按钮是设置弹层自己的，这里不再出第二个。 */
 .subHeader {
@@ -848,10 +828,30 @@
 /* ---------------------------------------------------------------- 余额卡 */
 
 .balance {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
   margin: 8px 20px 4px;
   padding: 20px;
   border-radius: 16px;
   background-color: var(--dsw-alias-interactive-bg-hover);
+}
+
+/* #817：左栏余额（可收缩、数字兜底折行）+ 右栏付款按钮（不收缩）。
+   360 / 390 放不下时是余额栏让位，按钮保持完整可点。 */
+.balanceMain {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.balanceMain .balanceValue {
+  overflow-wrap: anywhere;
+}
+
+.balancePay {
+  flex: none;
+  white-space: nowrap;
 }
 
 .balanceKey {

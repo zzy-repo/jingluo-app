@@ -932,7 +932,6 @@ export const en = {
   // "Account & billing" page (three dialogs → one page, #482 / W1-C1 #487)
   accountConsumeTitle: 'Account & billing',
   accountConsumeTabCards: 'My cards',
-  accountConsumeTabQuota: 'My quota',
   accountConsumeTabAccount: 'Account',
   // #727: the page is now "one full page + four sections" (model source / connectivity / wallet / account).
   accountConsumeGroupSource: 'Model source',
@@ -955,6 +954,7 @@ export const en = {
   settingsSourceClaimNeedLoginAction: 'Sign in',
   accountConsumeSourcePickHint: 'Pick a source and press Save; the app uses it right away',
   accountConsumeWallet: 'My wallet',
+  accountConsumeWalletTopUp: 'Top up',
   accountConsumeRemaining: 'Remaining balance',
   accountConsumeHistory: 'Spending history',
   accountConsumeHistoryEmpty: 'No spending yet',
