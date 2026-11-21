@@ -29,12 +29,20 @@
  *
  * 失败必须能**一句话定位**（Issue #404 硬要求 5）：
  *   `✗ G1 启动 · 会话列表渲染 · 期望=3 条 · 实际=2 条（会话二|会话一）`
+ *
+ * **需要登录态的用例要声明出来**（#510）：`serveGoldenApp(dist, { requiresAuthSeam: true })`。
+ * 声明之后，若产物是**无接缝**的（`pnpm build` 忘了带 `TEST_AUTH_SEAM=1`），会在起服务那一刻
+ * 立刻报错并把正确命令写进错误里 —— 而不是让用例跑 20 秒后报一条看着像「产品坏了」的断言失败。
+ * 明确**不需要**接缝的用例（g16 用 `dist-noseam` 测「未登录也能用」）保持默认，不传这个开关。
  */
 import { readdirSync, statSync } from 'node:fs'
 import path from 'node:path'
 import { chromium } from 'playwright'
 import { requireDist, serveDist } from './runtime.mjs'
 import { ROOT, readBuildInfo } from './env.mjs'
+// 「产物里有没有登录接缝标记」只认这一份实现（scripts/check-test-seam.mjs 用的也是它）。
+// 别在这里另写一份判定：两份判定迟早会分叉，而分叉的那天产物已经出了门（#510）。
+import { SEAM_FLAG, scanForSeam } from '../../scripts/lib/testAuthSeam.mjs'
 
 /** 单个域的预算（Issue #404 硬要求 4：单条 ≤60s） */
 export const PATH_BUDGET_MS = 60_000
@@ -355,18 +363,76 @@ export const STEP_TIMEOUT_MS = 20_000
 export const goldenDist = () => process.env.GOLDEN_DIST_DIR || process.env.DIST_DIR || path.join(ROOT, 'dist')
 
 /**
+ * 前置自检失败（#510 / #654）：这条用例要的前提，这份产物里根本没有。
+ *
+ * 它和普通断言失败不是一回事：断言失败说「产品在 X 步断了」，这一类说的是「**这轮根本测不了**」。
+ * 所以单独一个类型 —— `runGolden` 认它，原文照打、不做 `brief()` 截断（要给出的是一条可复制的命令）。
+ */
+export class GoldenPreflightError extends Error {
+  constructor(message) {
+    super(message)
+    this.name = 'GoldenPreflightError'
+    // 故意不留调用栈：这条错误的位置**恒在** `serveGoldenApp` 里（永远是同一个地方），栈没有信息量，
+    // 却会把「正确命令」挤出 `node --test … | tail -6` 的可视范围（实测：带栈时尾巴只剩 5 行 frame，
+    // 人看到的还是「某个 helper 抛了个错」）。定位靠上面那行 `✗ 前置自检 …`。
+    this.stack = `${this.name}: ${message}`
+  }
+}
+
+/** 需要登录态的用例装到**无接缝产物**上时必须打印的那段话（#510 的口径，别改） */
+const SEAM_PREFLIGHT_MESSAGE = [
+  'dist 是无接缝产物，但本用例需要登录态（#510）。',
+  `正确命令：${SEAM_FLAG}=1 pnpm build`,
+  '（这是环境问题，不是产品缺陷；CI 的 golden job 就是带这个开关构建的）',
+].join('\n')
+
+/**
+ * 登录接缝前置自检：声明了 `requiresAuthSeam` 的用例，产物里**必须**有接缝标记。
+ *
+ * 为什么要有它（这条陷阱今天连着骗了两个人）：`pnpm build` 不带 `TEST_AUTH_SEAM=1` 时 `AuthGate`
+ * 把 App 挡在未登录态，G15 会在「我的额度」那一步等 20 秒，然后报一条
+ * 「期望 quota-spent 出现 · 实际 body=额度 登录后可查看额度…去登录」的断言失败 —— 那条信息
+ * **完全指向「产品坏了」**，而真正错的是构建方式（同样的代码接缝构建 1.7s 全绿）。
+ * 现在把「构建方式错」提前成一条 0 秒的环境错，并把正确命令直接写进错误里。
+ *
+ * 判定**不在这里实现**：`scanForSeam`（`scripts/lib/testAuthSeam.mjs`）是「产物里有没有接缝标记」
+ * 的唯一实现 —— `scripts/check-test-seam.mjs` 与 `scripts/build.mjs` 用的都是它，这里只调用。
+ */
+const assertAuthSeamPreflight = (dist) => {
+  // 明确不需要接缝的用例（如 g16 的 `dist-noseam`）压根不进这里：调用方直接不声明
+  if (scanForSeam(dist).length > 0) {
+    return
+  }
+  const where = path.relative(ROOT, dist).split(path.sep).join('/') || dist
+  // 先打一段人能照着抄的东西：`node --test` 单跑时它就在报错上方；走 `tests/run-golden.mjs` 时，
+  // 它是子进程尾巴里**唯一以 `✗` 开头**的行 —— runner 正是靠这个前缀做一句话定位。
+  console.error(`✗ 前置自检 · 产物 ${where}/ 无接缝 · 本用例需要登录态 · 正确命令：${SEAM_FLAG}=1 pnpm build`)
+  console.error(SEAM_PREFLIGHT_MESSAGE)
+  throw new GoldenPreflightError(SEAM_PREFLIGHT_MESSAGE)
+}
+
+/**
  * 起被测产物服务。
  *
  * 与 L1 的区别：L1 缺产物时 `SKIP(env)`（不产生假红，因为它是「细节回归」）；
  * 黄金套件是**阻塞门禁**，缺产物/产物种类不对必须当场红 —— 否则「CI 绿了但一条没跑」。
+ *
+ * `requiresAuthSeam`：这条用例是否**需要登录态**（头注释里写着「CI 用 TEST_AUTH_SEAM=1 构建」的那些）。
+ * 传 `true` 就在起服务之前先做接缝自检：构建方式错了**立刻**报错并给出正确命令（#510 / #654）。
+ * 默认 `false`：只有真的拿「已登录」当前提的用例才认这个前置；别的用例的产物形态另有门禁
+ * （`pnpm run check:test-seam`）为它把关。
  */
-export const serveGoldenApp = async (dist = goldenDist()) => {
+export const serveGoldenApp = async (dist = goldenDist(), { requiresAuthSeam = false } = {}) => {
   await requireDist(dist).catch((error) => {
     throw new Error(`黄金套件需要标准产物：${dist}（${error.message}）；先跑 pnpm run build`)
   })
   const info = readBuildInfo(dist)
   if (info && info.variant && info.variant !== 'standard') {
     throw new Error(`黄金套件要 standard 产物，${dist} 里是 ${info.variant} 包；先跑 pnpm run build（不是 build:internal）`)
+  }
+  // 产物**种类**不对（无接缝 vs 接缝）比产物陈旧更根本，先判它：0 秒出结论，不用等浏览器起来
+  if (requiresAuthSeam) {
+    assertAuthSeamPreflight(dist)
   }
   // 陈旧产物守卫：**必须红，不能绿**。改了 src 不重建，用例对着旧 bundle「跑绿」是最坏的一种假绿
   // （#404 负向验证时亲历：改坏 loadSessionSummaries 仍全绿，因为 dist 还是旧的）。
@@ -485,6 +551,25 @@ export const brief = (value, limit = 120) => {
 }
 
 /**
+ * 登录墙的指纹（#510）：无接缝产物里 `AuthGate` 把面板画成「未登录」，正文长这样 ——
+ * 「额度 登录后可查看额度…去登录」。只在**需要接缝的用例**的取证里用（g16 的未登录引导是正常现象）。
+ */
+const LOGIN_WALL = /登录后可查看|去登录|请先登录/u
+
+/**
+ * 失败取证的一行：`body=…`，正文明显是**登录墙**时再补一句「先确认构建带了接缝」。
+ *
+ * 为什么自检都做了还要这一句：自检守的是「产物里有没有接缝标记」，这句守的是「看到的现象像不像
+ * 登录墙」—— 两条证据不同源（产物被别处覆盖、`GOLDEN_DIST_DIR` 指到别的目录时自检的结论未必适用，
+ * 而正文不会骗人）。它只往 `actual` 里加话，不参与任何断言取值：不会让任何断言由红转绿或由绿转红。
+ */
+export const bodyEvidence = (text) => {
+  const raw = String(text ?? '')
+  const hint = LOGIN_WALL.test(raw) ? `（正文是登录墙：先确认构建带了 ${SEAM_FLAG}=1，见 tests/golden/README.md）` : ''
+  return `body=${brief(raw)}${hint}`
+}
+
+/**
  * 跑一条黄金路径。
  *
  * 成功：`[golden-result] {...}` + 一行人类可读结果（带耗时），退出码 0。
@@ -503,6 +588,17 @@ export const runGolden = async ({ id, domain, title, budgetMs = PATH_BUDGET_MS }
     const line = `✗ ${id} ${domain} · ${step} · 期望=${brief(expected)} · 实际=${brief(actual)}`
     failures.push(line)
     console.error(line)
+  }
+
+  /**
+   * 前置自检失败（#510）：**不**走 `record()` 的 `brief()` 截断 —— 它要给出的是一条能照抄的命令，
+   * 而 120 字上限正好会把命令截在后面。原文照打，另记一条 `✗` 行给 runner / node:test 做定位。
+   */
+  const recordPreflight = (step, message) => {
+    const lines = String(message ?? '').split('\n')
+    failures.push(`✗ ${id} ${domain} · ${step} · ${lines.join(' · ')}`)
+    console.error(`✗ ${id} ${domain} · ${step}（环境问题，不是产品缺陷）`)
+    console.error(lines.join('\n'))
   }
 
   const ctx = {
@@ -537,7 +633,10 @@ export const runGolden = async ({ id, domain, title, budgetMs = PATH_BUDGET_MS }
   try {
     await body(ctx)
   } catch (error) {
-    if (!(error instanceof GoldenAbort)) {
+    if (error instanceof GoldenPreflightError) {
+      // 前置自检：与「跑到哪一步断了」无关，是「这轮测不了」。原文照打（含正确命令），只留一条失败。
+      recordPreflight('前置自检', error.message)
+    } else if (!(error instanceof GoldenAbort)) {
       record(state.at, '不抛异常地跑完这一步', `${error?.name ?? 'Error'}: ${brief(error?.message) || '无消息'}`)
     }
   }

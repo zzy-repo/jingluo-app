@@ -30,7 +30,7 @@
 import assert from 'node:assert'
 import { test } from 'node:test'
 
-import { brief, bodyText, openGoldenPage, runGolden, serveGoldenApp, waitFor } from '../helpers/golden.mjs'
+import { bodyEvidence, bodyText, brief, goldenDist, openGoldenPage, runGolden, serveGoldenApp, waitFor } from '../helpers/golden.mjs'
 // #596：ours 的 Key 由服务端下发 —— 种子数据要带「下发标记」，否则发送前守卫会拦（这是产品行为）
 import { claimedOursStorage } from '../helpers/ours-claim.mjs'
 
@@ -200,7 +200,9 @@ const callsOf = (page) => page.evaluate(() => window.__goldenPurchase.calls)
 const countCalls = (calls, predicate) => calls.filter(predicate).length
 
 test('G15 支付 / 购买：套餐 → 下单（pay-link）→ 回跳 → 卡密 → 一键复制', async () => {
-  const app = await serveGoldenApp()
+  // 需要登录态（#510）：无接缝产物里额度面板画的是「登录后可查看额度…去登录」，第 6 步必红。
+  // 声明之后，构建方式错了会在起服务那一刻**立刻**报错（含正确命令），而不是等 20 秒看一条断言失败。
+  const app = await serveGoldenApp(goldenDist(), { requiresAuthSeam: true })
   // 后端全桩、一个真请求都不发：总闸在这里是**空闸**（CapacitorHttp 替身接住一切，页面不该发任何请求）
   const { page, close, guard } = await openGoldenPage(app.url, {
     initScripts: [
@@ -230,12 +232,12 @@ test('G15 支付 / 购买：套餐 → 下单（pay-link）→ 回跳 → 卡密
         await page.getByRole('tab', { name: /数据管理|Data/ }).first().click()
         const entry = page.getByTestId('account-consume-open')
         if (!(await waitFor(page, async () => (await entry.count()) > 0))) {
-          ctx.abort('设置 → 数据管理有「账户与消费」入口', '入口按钮存在', `body=${brief(await bodyText(page))}`)
+          ctx.abort('设置 → 数据管理有「账户与消费」入口', '入口按钮存在', bodyEvidence(await bodyText(page)))
         }
         await entry.click()
         const tabsReady = await waitFor(page, async () => (await page.getByTestId('account-consume-tab-cards').count()) > 0)
         if (!tabsReady) {
-          ctx.abort('「账户与消费」页打开', '四个 tab 都在', `body=${brief(await bodyText(page))}`)
+          ctx.abort('「账户与消费」页打开', '四个 tab 都在', bodyEvidence(await bodyText(page)))
         }
 
         // ── 2. 套餐列表：apia 下发的套餐渲染出来（价格由服务端定，界面不硬编码）──────
@@ -243,7 +245,7 @@ test('G15 支付 / 购买：套餐 → 下单（pay-link）→ 回跳 → 卡密
         await page.getByTestId('account-consume-tab-buy').click()
         const planRow = page.getByTestId('account-consume-buy-plan').first()
         if (!(await waitFor(page, async () => (await planRow.count()) > 0))) {
-          ctx.abort('购买 tab 有套餐列表', `1 条套餐（${PLAN_NAME}）`, `body=${brief(await page.getByTestId('account-consume-page').innerText())}`)
+          ctx.abort('购买 tab 有套餐列表', `1 条套餐（${PLAN_NAME}）`, bodyEvidence(await page.getByTestId('account-consume-page').innerText()))
         }
         const planText = (await planRow.innerText()).replace(/\s+/gu, ' ').trim()
         ctx.expect('套餐名与价格都来自 apia（不是客户端兜底的空表）', planText.includes(PLAN_NAME) && planText.includes(PLAN_PRICE), {
@@ -256,7 +258,7 @@ test('G15 支付 / 购买：套餐 → 下单（pay-link）→ 回跳 → 卡密
         await page.getByTestId('account-consume-buy-open').first().click()
         const paid = await waitFor(page, () => page.evaluate(() => window.__goldenPurchase.paid === true))
         if (!paid) {
-          ctx.abort('点「去支付」后现取收款页地址', 'GET /api/pay-link ≥1 次', `body=${brief(await page.getByTestId('account-consume-page').innerText())}`)
+          ctx.abort('点「去支付」后现取收款页地址', 'GET /api/pay-link ≥1 次', bodyEvidence(await page.getByTestId('account-consume-page').innerText()))
         }
         // 收款页的打开是**后置条件**：监听先挂上、再 open（`openPayLinkInApp` 的顺序保证），
         // 所以等到这两件事都发生再断言「真的在 App 内打开了」，而不是只看到 pay-link 就往下走。
@@ -274,7 +276,7 @@ test('G15 支付 / 购买：套餐 → 下单（pay-link）→ 回跳 → 卡密
         await page.evaluate(() => window.__goldenPurchase.closeCheckout?.())
         const cardRow = page.getByTestId('account-consume-card-row').first()
         if (!(await waitFor(page, async () => (await cardRow.count()) > 0))) {
-          ctx.abort('关掉收款页后卡密出现在「我的卡密」', `1 行卡密（${CARD_TAIL}）`, `body=${brief(await page.getByTestId('account-consume-page').innerText())}`)
+          ctx.abort('关掉收款页后卡密出现在「我的卡密」', `1 行卡密（${CARD_TAIL}）`, bodyEvidence(await page.getByTestId('account-consume-page').innerText()))
         }
         const cardText = (await cardRow.innerText()).replace(/\s+/gu, ' ').trim()
         const onCardsTab =
@@ -300,7 +302,7 @@ test('G15 支付 / 购买：套餐 → 下单（pay-link）→ 回跳 → 卡密
         const spentRow = page.getByTestId('quota-spent')
         const spentReady = await waitFor(page, async () => (await spentRow.count()) > 0)
         if (!spentReady) {
-          ctx.abort('「我的额度」读到 sub2api 额度', 'quota-spent 出现', `body=${brief(await page.getByTestId('account-consume-page').innerText())}`)
+          ctx.abort('「我的额度」读到 sub2api 额度', 'quota-spent 出现', bodyEvidence(await page.getByTestId('account-consume-page').innerText()))
         }
         const spentText = (await spentRow.innerText()).replace(/\s+/gu, ' ').trim()
         ctx.expect('已用 = usage.total.actual_cost（¥12.34，不是 quota.used 的 ¥0.00）', spentText.includes('¥12.34') && !spentText.includes('¥0.00'), {

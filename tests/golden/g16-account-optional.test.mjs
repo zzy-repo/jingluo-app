@@ -238,7 +238,9 @@ const openSettingsDataTab = async (page) => {
 test('G16 账户可选：不登录首屏可用 → 只填 Key 能收发 → 账号 tab 能注册 → 未登录额度给引导', async () => {
   // 发版形态产物（无登录接缝）：这条路径的前提就是「这台机器没有账号」
   ensureNoSeamDist()
-  const app = await serveGoldenApp(NOSEAM_DIST)
+  // 明确**不需要**接缝，跳过登录接缝前置自检（#510）：这条用例测的就是「没有账号也能用」，
+  // 它要的恰恰是**无接缝**产物（`ensureNoSeamDist()` 用 `TEST_AUTH_SEAM=''` 构建的那一份）。
+  const app = await serveGoldenApp(NOSEAM_DIST, { requiresAuthSeam: false })
   const mock = await startMockUpstream()
   mock.state.respond = async (_call, res) => writeStream(res, { chunks: [ANSWER] })
 

@@ -17,7 +17,21 @@ pnpm run test:golden              # = node tests/run-golden.mjs（并行 + 每�
 > **唯一的例外是 `g16-account-optional`**（#608）：它守的正是「没账号也能用」，而接缝产物在首帧就把
 > 假会话灌进 store —— 拿它测「未登录」等于测了个假前提。所以这条用例**自己准备**一份发版形态产物
 > （`DIST_OUT=dist-noseam`，**不带** `TEST_AUTH_SEAM`，缺了在用例里构建一次约 6s），并用
-> `serveGoldenApp(dist-noseam)` 起服务；CI 的构建步骤不用为它改。
+> `serveGoldenApp(dist-noseam, { requiresAuthSeam: false })` 起服务；CI 的构建步骤不用为它改。
+
+> **构建方式错了会立刻报错，不再拖成断言失败**（#510 / #654）：需要登录态的用例用
+> `serveGoldenApp(dist, { requiresAuthSeam: true })` 把这个前提**声明出来**（现在是 G13、G15）。
+> 声明之后，装到**无接缝产物**上会在起服务那一刻（~0.5s，浏览器都没起）报：
+>
+> ```
+> dist 是无接缝产物，但本用例需要登录态（#510）。
+> 正确命令：TEST_AUTH_SEAM=1 pnpm build
+> （这是环境问题，不是产品缺陷；CI 的 golden job 就是带这个开关构建的）
+> ```
+>
+> 判定复用 `scripts/lib/testAuthSeam.mjs` 的 `scanForSeam`（`check:test-seam` 用的同一份，**别另写一份**）。
+> 新增一条「拿已登录态当前提」的用例时记得加这个声明；反过来，测「未登录也能用」的用例不要加
+> （否则它会被自己的前置拦住）。
 
 ## 「改了哪个域必须跑哪条」——提交前对照这张表
 

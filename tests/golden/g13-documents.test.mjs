@@ -34,7 +34,7 @@ import { readFile } from 'node:fs/promises'
 import { test } from 'node:test'
 
 import { configureAnthropicChannel, startMockUpstream, writeStream } from '../fixtures/domain01-02/mock-upstream.mjs'
-import { bodyText, brief, openGoldenPage, runGolden, serveGoldenApp, waitFor, waitForBoot } from '../helpers/golden.mjs'
+import { bodyEvidence, bodyText, brief, goldenDist, openGoldenPage, runGolden, serveGoldenApp, waitFor, waitForBoot } from '../helpers/golden.mjs'
 
 const KEY = 'sk-golden-g13-000000000000000013'
 /** 输入框里那句话：请求体尾部的「用户问题：<原文>」要逐字是它 */
@@ -131,7 +131,9 @@ const forbiddenIn = (raw) => {
 }
 
 test('G13 文档附件：选 tiny.txt → 解析成功 → 发送「帮我总结」→ 收到回复', async () => {
-  const app = await serveGoldenApp()
+  // 需要登录态（#510）：头注释与 README 都写着「CI 用 TEST_AUTH_SEAM=1 构建」，这个前提必须在这里声明，
+  // 否则构建方式错了会以「卡片/输入区找不到」的样子报出来（看着像产品坏了）。声明之后立刻报环境错。
+  const app = await serveGoldenApp(goldenDist(), { requiresAuthSeam: true })
   const mock = await startMockUpstream()
   // 上游的回答：一句能一眼认出「这一轮真的走完了」的正文（不断言措辞，只断言它到了）
   mock.state.respond = async (call, res) => {
@@ -157,7 +159,7 @@ test('G13 文档附件：选 tiny.txt → 解析成功 → 发送「帮我总结
         const card = docCard(page, 'tiny.txt')
         const appeared = await waitFor(page, async () => (await card.count()) > 0)
         if (!appeared) {
-          ctx.abort('选完文件后输入区出现附件卡片', '一张 tiny.txt 的卡片', `body=${brief(await bodyText(page))}`)
+          ctx.abort('选完文件后输入区出现附件卡片', '一张 tiny.txt 的卡片', bodyEvidence(await bodyText(page)))
         }
 
         // ── 2. ① 解析成功：卡片进入 success（状态行逐字是「已就绪」）──────────────────
@@ -182,7 +184,7 @@ test('G13 文档附件：选 tiny.txt → 解析成功 → 发送「帮我总结
         })
         ctx.expect('回复上屏（这一轮的请求真的走完并流回来了）', answered, {
           expected: '回答区含「总结如下：」',
-          actual: `body=${brief(await bodyText(page))}`,
+          actual: bodyEvidence(await bodyText(page)),
         })
         const sent = mock.state.chatCalls.length === 1
         ctx.expect('上行只发了 1 次回答请求（附件没有触发额外的上传 / 重发）', sent, {
@@ -245,7 +247,7 @@ test('G13 文档附件：选 tiny.txt → 解析成功 → 发送「帮我总结
           return states.every((line) => line !== '' && !/等待解析|解析中/u.test(line))
         })
         if (!bothParsed) {
-          ctx.abort('DOCX / PDF 两张卡片都解析完', '两张卡都有终态状态行', `body=${brief(await bodyText(page))}`)
+          ctx.abort('DOCX / PDF 两张卡片都解析完', '两张卡都有终态状态行', bodyEvidence(await bodyText(page)))
         }
         ctx.expect('DOCX / PDF 都没有落到解析失败', !/解析失败/u.test(`${await cardStatus(docxCard)}${await cardStatus(pdfCard)}`), {
           expected: '两张卡都不是「解析失败」',
