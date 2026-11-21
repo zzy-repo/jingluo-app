@@ -5,6 +5,10 @@
 //   POST /v1/tools/asr          （语音输入）
 // 路径一旦漂移，官方接口立刻不可用，所以这里按字符串全等断言。
 //
+// ⚠ #813：官方渠道的输入区工具栏精简后**不再渲染语音入口**（全仓只有 deepseek 的 `caps.asr`
+// 为 true），`/v1/tools/asr` 这条腿在 UI 上已经不可达 —— 见下面 `recordVoice` 前的入口探测：
+// 入口不在时记一条 note 并跳过这条断言（不再「假装录一次音」），入口回来时自动恢复覆盖。
+//
 // 跑法（需要 localhost 这类安全上下文才能用麦克风）：
 //   APP_URL=http://127.0.0.1:5181 node tests/integration/paths.test.mjs
 import {
@@ -52,8 +56,19 @@ try {
   await waitFor(() => requests.some((r) => r.method === 'POST' && r.path.endsWith('/messages')))
   await page.waitForTimeout(500)
 
-  await recordVoice(page)
-  await waitFor(() => requests.some((r) => r.path.endsWith('/v1/tools/asr')), 20000)
+  // #813：语音入口在官方渠道已彻底不渲染 → 有声就走原路径，没声就跳过这条腿（不静默变成假绿）
+  const voiceEntry = await page
+    .getByRole('button', { name: /^语音输入$|^Voice input$/ })
+    .first()
+    .count()
+  let voiceExercised = false
+  if (voiceEntry > 0) {
+    await recordVoice(page)
+    await waitFor(() => requests.some((r) => r.path.endsWith('/v1/tools/asr')), 20000)
+    voiceExercised = true
+  } else {
+    console.log('note: 语音入口已按 #813 从官方渠道移除 → /v1/tools/asr 本次不可达，跳过该条断言')
+  }
 
   const models = requests.filter((r) => r.path.endsWith('/models'))
   const messages = requests.filter((r) => r.method === 'POST' && r.path.endsWith('/messages'))
@@ -74,7 +89,9 @@ try {
 
   check('GET /models', models, '/models')
   check('POST messages', messages, '/anthropic/v1/messages')
-  check('POST asr', asr, '/v1/tools/asr')
+  if (voiceExercised) {
+    check('POST asr', asr, '/v1/tools/asr')
+  }
 } catch (error) {
   failures.push(`用例异常：${error instanceof Error ? error.message : String(error)}`)
 } finally {

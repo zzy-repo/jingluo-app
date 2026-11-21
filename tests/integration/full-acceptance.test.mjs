@@ -586,37 +586,63 @@ try {
     ok(`自动标题生效：侧边栏显示「${TITLE}」`)
     note(`deepseek 自动标题 = ${TITLE}`)
   }
-  // 三个入口都在（图片入口单独断言：它的可访问名也叫「上传文件」，混在这个 loop 里会重）
+  /**
+   * #813：官方渠道的输入区右侧工具栏**只留最右边的文件上传** —— 语音入口与文档入口
+   * （连「不可用」占位那一支）都彻底不渲染。所以这一节从「三个入口都在」改成：
+   *   · 智能搜索 / 朗读 仍在（这两个不在 #813 的范围内）；
+   *   · 语音入口**不在**（不是置灰，是 DOM 里没有节点）；
+   *   · 文档入口 `absent`（`disabled` 那一档随 #813 一起退场）。
+   */
   for (const [label, re] of [
     ['智能搜索', /^智能搜索$|^Search$/],
-    ['语音输入', /^语音输入$|^Voice input$/],
     ['朗读', /^朗读$|^Read aloud$/],
   ]) {
     if (!(await usable(re))) {
       bad(`7a) deepseek 模式下「${label}」入口不可用`)
     }
   }
-  // deepseek 的两条附件通路**不同**：图片能收（`files` 上传 + `file_id`），文档收不了
-  // （`acceptsDocuments('deepseek') === false`，#538）。这一条就是能力门的 DOM 侧守卫。
-  await expectAttachEntries('7a', { image: 'ready', document: 'disabled' })
-  // 第三条路径 tools：真的录一次音，断言 /v1/tools/asr 逐字一致（models / messages 已在上方断言）
-  await page.locator('textarea').last().fill('')
-  await page.getByRole('button', { name: /语音输入|Voice input/ }).first().click()
-  await page.waitForTimeout(1200)
-  await page.getByRole('button', { name: /结束录音并转写|Stop and transcribe/ }).first().click()
-  const asrHit = await waitFor(async () => posts(mockOk.log, '/v1/tools/asr').length > 0, 20000)
+  if (await usable(/^语音输入$|^Voice input$/)) {
+    bad('7a) deepseek 模式下仍然渲染了语音入口（#813 起应彻底不渲染）')
+  } else {
+    ok('7a) 官方渠道没有语音入口（精简工具栏，#813）')
+  }
+  // 图片通路不变（`files` 上传 + `file_id`）；文档入口两种状态都不渲染（#813）
+  await expectAttachEntries('7a', { image: 'ready', document: 'absent' })
+  /**
+   * 第三条路径 tools（`/v1/tools/asr`）：它**只能**从语音入口触发，而 #813 之后语音入口在
+   * 任何渠道都不再渲染（全仓只有 deepseek 的 `caps.asr` 是 true）—— 这条腿因此不可达。
+   * 这里不再假装录一次音，只在入口真的回来时才断言（回归时自动接上），并且**记一条 note**
+   * 让「ASR 无 UI 覆盖」这件事在输出里看得见，而不是静默消失。
+   */
+  const voiceEntry = await page.getByRole('button', { name: /语音输入|Voice input/ }).first().count()
   const dsPaths = {
     models: mockOk.log.filter((entry) => entry.path === '/models').length,
     messages: posts(mockOk.log, '/anthropic/v1/messages').length,
     tools: posts(mockOk.log, '/v1/tools/asr').length,
   }
-  if (!asrHit || dsPaths.tools === 0) {
-    bad(`7a) 没有捕获到 /v1/tools/asr：${JSON.stringify(dsPaths)}`)
-  } else if (dsPaths.models === 0 || dsPaths.messages === 0) {
-    bad(`7a) deepseek 三条路径没齐：${JSON.stringify(dsPaths)}`)
+  if (voiceEntry === 0) {
+    note('deepseek 语音入口已按 #813 移除 → /v1/tools/asr 本用例不可达（UI 侧无入口）')
+    if (dsPaths.models === 0 || dsPaths.messages === 0) {
+      bad(`7a) deepseek 两条路径没齐：${JSON.stringify(dsPaths)}`)
+    } else {
+      ok('deepseek 两条路径逐字一致：/models、/anthropic/v1/messages')
+      note(`deepseek paths 命中次数 = ${JSON.stringify(dsPaths)}`)
+    }
   } else {
-    ok(`deepseek 三条路径逐字一致：/models、/anthropic/v1/messages、/v1/tools/asr`)
-    note(`deepseek paths 命中次数 = ${JSON.stringify(dsPaths)}`)
+    await page.locator('textarea').last().fill('')
+    await page.getByRole('button', { name: /语音输入|Voice input/ }).first().click()
+    await page.waitForTimeout(1200)
+    await page.getByRole('button', { name: /结束录音并转写|Stop and transcribe/ }).first().click()
+    const asrHit = await waitFor(async () => posts(mockOk.log, '/v1/tools/asr').length > 0, 20000)
+    dsPaths.tools = posts(mockOk.log, '/v1/tools/asr').length
+    if (!asrHit || dsPaths.tools === 0) {
+      bad(`7a) 没有捕获到 /v1/tools/asr：${JSON.stringify(dsPaths)}`)
+    } else if (dsPaths.models === 0 || dsPaths.messages === 0) {
+      bad(`7a) deepseek 三条路径没齐：${JSON.stringify(dsPaths)}`)
+    } else {
+      ok(`deepseek 三条路径逐字一致：/models、/anthropic/v1/messages、/v1/tools/asr`)
+      note(`deepseek paths 命中次数 = ${JSON.stringify(dsPaths)}`)
+    }
   }
   await page.waitForTimeout(1200)
   await page.screenshot({ path: SHOT_DIR + '/1.2.3-deepseek-full.png' })

@@ -1159,6 +1159,9 @@ export const zh = {
   attachUnavailable: '附件管理器尚未就绪，本次没有添加任何文档',
   attachChannelUnsupported:
     '当前渠道不支持文档附件：本渠道既没有可用的原生文件上传，也不做文本注入，请切换到其他渠道',
+  // #813：卡在「草稿里有别的渠道留下的文档」时，不只说「不支持」，还要给出可操作出路
+  attachDraftChannelUnsupported:
+    '当前渠道不支持文档附件：草稿里还挂着 {count} 个文档，点「移除附件」先清掉再发送，或切换到支持文档的渠道',
   // 五态 + 取消
   attachStatusPending: '等待解析',
   attachStatusParsing: '解析中 {percent}%',

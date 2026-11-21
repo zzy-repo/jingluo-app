@@ -1,6 +1,14 @@
 // [layer: integration | 依赖: playwright + chromium + 本地静态服务/mock 上游 | 耗时: 1~3 分钟] 说明见 tests/README.md
-// 正式包（非内测）回归：deepseek spec 下「深度思考 / 智能搜索 / 附件 / 语音」入口一个不少，
+// 正式包（非内测）回归：deepseek spec 下「深度思考 / 智能搜索 / 附件」入口一个不少，
 // 并对比「改动前」的输入区按钮清单，证明空态加的模式切换没有动到输入区。
+//
+// #813 之后标准包的官方渠道是**精简工具栏**（只留最右边的文件上传回形针）：语音入口与文档入口
+// （含 `data-attachment-entry="unavailable"` 那一支占位）**彻底不渲染**，所以本用例对这个渠道的
+// 期望按能力表区分 —— 「语音入口在不在」不再是通用断言：
+//   · 官方渠道（`kind === 'deepseek'`，标准包的默认渠道）：只有 深度思考 / 智能搜索 / 上传文件 / 发送；
+//   · 其它渠道：语音本来也不渲染（三渠道 `caps.asr === false`），文档入口按 `acceptsDocuments()`
+//     渲染成真入口或禁用态占位 —— 那半边由 `provider-channels` / `caps` / `compact-toolbar-813` 守。
+// 单子 #813 的口径是「改门禁而不是回退 UI」，所以这里改的是期望，不是产品。
 //
 //   node tests/integration/mode-switch-plain.test.mjs
 //
@@ -15,6 +23,7 @@ import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
 import { serveDir, verifyAppUrl } from '../helpers/env.mjs'
 import { assertNoEgress, installEgressGate } from '../helpers/helpers.mjs'
+import { consumeApiV1Prefix, consumeBaseUrl } from '../../scripts/lib/endpoints.mjs'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const ROOT = path.resolve(HERE, '../..')
@@ -97,8 +106,23 @@ const open = async (url) => {
    * #686：出站总闸，**必须在 `page.goto` 之前**装上（首屏请求一旦发出去就收不回来，#673 的 g16 就是这么漏的）。
    * 白名单 = 本页自己的 origin（正式包 / 可选的真实旧产物 baseline 各算一个；BASELINE_URL 为空时
    * 根本不打开第二页，白名单自然只剩一个）。
+   *
+   * `settings/public` 是应用启动时**合法**要拉一次的服务端开关（`main.tsx` 的身份层接线），
+   * 与本用例无关：登记成桩（精确 host + path）而不是让它掉进「未登记 → abort」，
+   * 否则那两条 `ERR_FAILED` 会混进下面「console error = 0」的断言里（存量假红）。
    */
-  await installEgressGate(page, { appUrl: url })
+  await installEgressGate(page, {
+    appUrl: url,
+    stubs: [
+      {
+        name: 'settings-public',
+        host: new URL(consumeBaseUrl).host,
+        // `consumeBaseUrl` 自带路径前缀（/staging），所以 pathname = 前缀 + /api/v1 + /settings/public
+        path: `${new URL(consumeBaseUrl).pathname}${consumeApiV1Prefix}/settings/public`,
+        respond: () => ({ status: 200, body: '{}' }),
+      },
+    ],
+  })
   page.on('console', (message) => {
     if (message.type() === 'error') {
       consoleErrors.push(`${url} :: ${message.text()}`)
@@ -110,6 +134,9 @@ const open = async (url) => {
     window.localStorage.clear()
     // 种一个 API Key，避免空态自动弹「设置」挡住输入区（与本用例无关）
     window.localStorage.setItem('chat-demo:api-key', 'sk-plain-regression-0001')
+    // 显式钉住「官方渠道」：本用例断言的是 deepseek 这一档的入口清单（标准包的默认渠道也是它），
+    // 写出来是为了让「按渠道区分期望」这件事在用例里看得见（#813）。
+    window.localStorage.setItem('chat-demo:provider-kind', 'deepseek')
   })
   await page.reload({ waitUntil: 'domcontentloaded' })
   await page.locator('textarea').first().waitFor({ timeout: 15000 })
@@ -120,23 +147,48 @@ const open = async (url) => {
   return page
 }
 
-console.log('\n[1] 当前正式包：输入区入口齐全')
+console.log('\n[1] 当前正式包（官方渠道）：精简工具栏')
 const page = await open(plainUrl)
 const labels = await readFunctionRow(page)
-for (const name of [/深度思考/, /智能搜索/, /上传文件|附件/, /语音|Voice/]) {
+for (const name of [/深度思考/, /智能搜索/, /上传文件|附件/]) {
   expect(labels.some((label) => name.test(label)), `入口仍在：${name}`, labels.join(' / '))
 }
 
-// #480 §7 / #538：渠道不支持时那个文档附件入口是**禁用态**：必须还在（不许靠删入口对齐清单）、
-// 必须仍然可见、必须带解释文案且 aria-disabled="true"，只是不计入上面的功能按钮集合。
+/**
+ * #813：官方渠道（`kind === 'deepseek'`）的输入框右侧**只留最右边的文件上传**。
+ *
+ * 这一节原来断言「语音入口在」+「文档入口的禁用态占位在」（#480 §7 / #538 定的口径），
+ * 那是精简之前的现实。现在两者都**彻底不渲染**（不是渲成禁用态），所以期望整体翻过来：
+ *   · 语音入口：DOM 里 0 个节点；
+ *   · 文档入口：`attach-document` 0 个、`data-attachment-entry="unavailable"` 也是 0 个；
+ *   · 回形针（图片入口 `attach-image`）仍在 —— 精简不许把「最右边那个」也删了。
+ * 这不是把门禁放宽成「什么都不用有」：下面 [2] 仍然逐字对比 baseline（只减去 #813 有意移除的
+ * 语音入口），其它渠道的入口显隐由 `provider-channels` / `compact-toolbar-813` 守。
+ */
+const officialEntries = await page.evaluate(() => ({
+  voice: document.querySelectorAll('button[aria-label="语音输入"],body button[aria-label="Voice input"]').length,
+  voiceLabels: [...document.querySelectorAll('button')]
+    .map((button) => button.getAttribute('aria-label') ?? '')
+    .filter((label) => /语音|Voice/.test(label)),
+  document: document.querySelectorAll('[data-testid="attach-document"]').length,
+  image: document.querySelectorAll('[data-testid="attach-image"]').length,
+}))
+expect(
+  officialEntries.voice === 0 && officialEntries.voiceLabels.length === 0,
+  '语音输入入口不存在（官方渠道精简工具栏，#813）',
+  JSON.stringify(officialEntries.voiceLabels)
+)
+// #480 §7 / #538 的「禁用态占位」在官方渠道也一起退场（#813）：两种状态都不许有节点
 const unavailableDocEntry = await readUnavailableDocEntry(page)
 expect(
-  unavailableDocEntry.length === 1 &&
-    unavailableDocEntry[0].ariaDisabled === 'true' &&
-    unavailableDocEntry[0].visible &&
-    /文档附件/.test(unavailableDocEntry[0].label),
-  '不可用的文档附件入口仍在（禁用态 + 解释文案），但不计入功能按钮',
-  JSON.stringify(unavailableDocEntry)
+  officialEntries.document === 0 && unavailableDocEntry.length === 0,
+  '文档入口两种状态都不渲染（既没有真入口，也没有「不可用」占位）',
+  `attach-document=${officialEntries.document} / unavailable=${unavailableDocEntry.length}`
+)
+expect(
+  officialEntries.image === 1,
+  '最右边的文件上传（attach-image）仍在',
+  `attach-image=${officialEntries.image}`
 )
 
 const think = page.getByRole('button', { name: /深度思考/ }).first()
@@ -214,13 +266,20 @@ if (BASELINE_URL) {
   baselineLabels = baselineFixture.functionRowButtons
   baselineHasMode = baselineFixture.modeSwitchRendered ? 1 : 0
 }
+/**
+ * baseline 是「改动前」正式包的快照（含语音入口）。#813 有意从官方渠道移除了语音入口，
+ * 所以对比前**只减去这一条**（`语音输入` / `Voice input`），其余一条都不许差：
+ * 多出 / 少掉任何别的按钮仍然是红 —— 模式切换这条线（本用例的初衷）照旧被守住。
+ */
+const removedBy813 = /^(语音输入|Voice input)$/u
+const expected = normalize(baselineLabels.filter((label) => !removedBy813.test(label)))
 const same =
   JSON.stringify(normalize(labels.filter((label) => !/模式/.test(label)))) ===
-  JSON.stringify(normalize(baselineLabels))
+  JSON.stringify(expected)
 expect(
   same,
-  '输入区功能性按钮与 baseline 完全一致',
-  `current=[${normalize(labels).join(' | ')}] baseline=[${normalize(baselineLabels).join(' | ')}]`
+  '输入区功能性按钮与 baseline 一致（#813 移除的语音入口除外）',
+  `current=[${normalize(labels).join(' | ')}] baseline(#813 后预期)=[${expected.join(' | ')}]`
 )
 expect(baselineHasMode === 0, 'baseline 确实没有模式切换（对比基准有效）')
 

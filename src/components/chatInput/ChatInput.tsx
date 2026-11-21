@@ -57,7 +57,12 @@ import { useTranslate } from '../../i18n/index.js'
 import { ThinkingToggle } from './ThinkingToggle.js'
 import styles from './ChatInput.module.css'
 
-/** 输入框：自适应高度的文本框 + 文件 + 深度思考与智能搜索开关 + 语音输入 + 发送 / 停止 */
+/**
+ * 输入框：自适应高度的文本框 + 文件 + 深度思考与智能搜索开关 + 语音输入 + 发送 / 停止。
+ *
+ * #813：官方渠道（`kind === 'deepseek'`）走**精简工具栏** —— 语音输入与文档上传都不渲染，
+ * 右侧只剩最右边的文件上传（回形针）与发送 / 停止，见 `Input` 里的 `compactToolbar`。
+ */
 export const ChatInput = memo(function ChatInput({ sessionId }: { sessionId: string | null }) {
   // 切换目标时释放录音、转写和 DOM 状态；文字与附件由草稿服务保留。
   return <Input key={sessionId === null ? 'new' : `session:${sessionId}`} sessionId={sessionId} />
@@ -93,6 +98,19 @@ const Input = ({ sessionId }: { sessionId: string | null }) => {
    * （`AttachmentPicker` + 隐藏 `input[type=file]` + `ACCEPT` 过滤），本单没有另起一套。
    */
   const canAttachDocs = acceptsDocuments(kind)
+  /**
+   * 官方渠道的**精简工具栏**（#813）：`kind === 'deepseek'` 时输入框右侧只留最右边的文件上传
+   * （回形针 `attach-image`）与发送 / 停止，**语音输入**与**文档上传**（含「不可用」占位那一支）
+   * 彻底不渲染 —— 不是渲成禁用态，是 DOM 里压根没有节点。
+   *
+   * 为什么单开一个派生值而不是改 `caps.asr` / `acceptsDocuments()`：那两个是**能力声明**，
+   * 设置页、发送门禁、朗读链路都在读它们，把它们按渠道改掉会连带影响别处；
+   * 这里改的只是「这个渠道的输入区摆几个按钮」这一个展示决策。
+   *
+   * 其它渠道（`anthropic` / `openai` / `ours`）保持原样：三家 `caps.asr` 本来就是 false，
+   * 文档入口照旧按 `canAttachDocs` 渲染真入口。
+   */
+  const compactToolbar = kind === 'deepseek'
   /**
    * 图片附件入口是否真的可用（#552）：判定**只查那一张渠道能力表**
    * （`providerCapability.ts` 的 `image` 维度，`supportsImage()` / `visionFor()`），
@@ -254,8 +272,23 @@ const Input = ({ sessionId }: { sessionId: string | null }) => {
     [cancelVoice]
   )
 
-  // 移动端录音时用频谱替代输入框内容
-  const recording = voice.status === 'recording'
+  /**
+   * #813：官方渠道不渲染语音入口，**录音状态也得跟着收敛** —— `useVoiceInput` 是无条件调用的
+   * （hook 不能在渠道分支里调），所以「切到官方渠道时正在录音 / 正在转写」这一支只能在这里兜：
+   * 不 cancel 的话 `voice.status !== 'idle'` 会让发送按钮永远不放行，移动端还会留着
+   * 「频谱盖住输入框」（`recording && isMobile`），用户既看不见输入框也发不出消息。
+   *
+   * 只取消**已经发生**的录音与转写：`useVoiceInput` 的麦克风权限只在 `toggle()` 里申请，
+   * 按钮不渲染 = 没有人能按到它 = 不会弹权限框；频谱 / 隐藏输入框由下面的 `recording` 一起收敛。
+   */
+  useEffect(() => {
+    if (compactToolbar) {
+      cancelVoice()
+    }
+  }, [compactToolbar, cancelVoice])
+
+  // 移动端录音时用频谱替代输入框内容（官方渠道没有语音入口，这一支同时失效）
+  const recording = !compactToolbar && voice.status === 'recording'
 
   // 排队、上传中或上传失败的附件都留在输入框，全部上传成功后才能发送
   const canSend =
@@ -277,7 +310,32 @@ const Input = ({ sessionId }: { sessionId: string | null }) => {
      * 服务层还有一道同样的闸（`chat/store.ts` 的 `sendMessage`），绕过 UI 也挡得住。
      */
     if (getDraft(sessionId).documents.length > 0 && !canAttachDocs) {
-      showToast({ key: 'attachChannelUnsupported' })
+      /**
+       * #813：官方渠道的工具栏里**已经没有文档入口**（连「不可用」占位都不渲染），而草稿里的
+       * 文档引用可能来自别的渠道 —— 只说一句「当前渠道不支持」会把用户卡在死局：发不出去，
+       * 又看不出从哪儿把文档拿掉。所以这里换成一条**带出路**的提示：
+       *   · 文案点名「草稿里还有几个文档、先移除再发」；
+       *   · 提示条上给一个真的能点的「移除附件」动作，一键把这些引用清掉（清完就能发）。
+       * 卡片本身的「移除附件」按钮也还在（`AttachmentList` 的 `onRemove` 不随工具栏精简），
+       * 所以两条路都通；服务层 `chat/store.ts` 的同名 gate 不受影响。
+       */
+      const pending = docDrafts.attachments.map((view) => view.id)
+      const blocked = getDraft(sessionId).documents.length
+      showToast(
+        { key: 'attachDraftChannelUnsupported', params: { count: blocked } },
+        {
+          action: {
+            key: 'attachRemove',
+            run: () => {
+              for (const id of pending) {
+                docDrafts.remove(id)
+              }
+              // 卡片可能已经不在（例如恢复失败），引用本身也要清掉，否则「移除」点完还是发不出去
+              setDraftDocuments(sessionId, [])
+            },
+          },
+        }
+      )
       return
     }
     /**
@@ -409,7 +467,8 @@ const Input = ({ sessionId }: { sessionId: string | null }) => {
           ) : null}
         </div>
         <div className={styles.right}>
-          {caps.asr ? (
+          {/* #813：官方渠道的精简工具栏里连语音入口都不渲染（`caps.asr` 本身不动，见 compactToolbar） */}
+          {caps.asr && !compactToolbar ? (
             <VoiceButton
               status={voice.status}
               disabled={!voice.available}
@@ -424,7 +483,7 @@ const Input = ({ sessionId }: { sessionId: string | null }) => {
               }}
             />
           ) : null}
-          {canAttachDocs ? (
+          {compactToolbar ? null : canAttachDocs ? (
             <AttachmentPicker
               onFiles={docDrafts.addFiles}
               disabled={importingHistory}
@@ -434,8 +493,14 @@ const Input = ({ sessionId }: { sessionId: string | null }) => {
           ) : (
             /*
              * 渠道不支持文本注入时的「不可用」文档附件入口（#480 §7 / #538）。
-             * 它看得见、点下去给可读提示，但**不提供功能**：`data-attachment-entry="unavailable"`
-             * 是给门禁看的显式标记 —— `mode-switch-plain` 数「输入区功能性按钮」时要把它排除，
+             *
+             * **#813 之后，官方渠道（`deepseek`）连这一支都不渲染**（`compactToolbar`）：
+             * 官方渠道的右侧工具栏只留最右边的文件上传回形针。这个禁用态分支仍保留给
+             * 「能力门关掉但不是官方渠道」的情形（今天的未知渠道 / 未来新增渠道），
+             * 语义不变：它看得见、点下去给可读提示，但**不提供功能**。
+             *
+             * `data-attachment-entry="unavailable"` 是给门禁看的显式标记 ——
+             * `mode-switch-plain` 数「输入区功能性按钮」时要把它排除，
              * 否则一句解释文案会混进按钮清单（`发送` 在空输入时也是 aria-disabled，
              * 所以不能笼统地按 aria-disabled 过滤，只能按这个标记排除）。
              *

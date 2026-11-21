@@ -7,8 +7,8 @@
 //
 // 断言（对应任务书验收 1~8、10）：
 //   [1] 标准构建默认渠道 = DeepSeek 官方；只渲染 API Key 一行（无 baseUrl / model 输入元素）
-//   [2] DeepSeek 官方：发消息 /anthropic/v1/messages + model deepseek-flash；搜索/图片/语音/思考入口都在，
-//       **文档入口按能力门渲染为不可用**（acceptsDocuments('deepseek') === false，#538）
+//   [2] DeepSeek 官方：发消息 /anthropic/v1/messages + model deepseek-flash；搜索/图片/思考入口都在，
+//       **右侧工具栏只有最右边的文件上传**：语音入口与文档入口（含「不可用」占位）都不渲染（#813）
 //   [3] Anthropic 协议：三件套（服务地址 / 模型 / API Key）；切过去后 Key 不丢；请求按填的值发出 /v1/messages；
 //       图片入口在且可点（#548）、文档入口在且可点（#480）；搜索/语音不渲染
 //   [4] OpenAI 兼容：三件套；请求打到 /v1/chat/completions；搜索/语音不渲染，
@@ -257,8 +257,11 @@ const expectNoCapabilityCopy = async (dialog, where) => {
  *  - **图片入口** `[data-testid="attach-image"]`（#548 / #551）：带视觉能力的渠道都该有。
  *    它收的是图片 —— 三家 base64 渠道本地编码内联，deepseek 走 `files` 上传 + `file_id`；
  *  - **文档入口** `[data-testid="attach-document"]`（#480 / #538）：收的是 txt / docx / pdf，
- *    能不能用**只由 `acceptsDocuments(kind)` 决定**。能力门关掉时入口不是消失，而是渲染成
- *    带 `data-attachment-entry="unavailable"` 的解释按钮（看得见、点下去给原因，这是 #538 的口径）。
+ *    能不能用**只由 `acceptsDocuments(kind)` 决定**。对**非官方渠道**，能力门关掉时入口不是消失，
+ *    而是渲染成带 `data-attachment-entry="unavailable"` 的解释按钮（看得见、点下去给原因，
+ *    这是 #538 的口径）。**官方渠道例外**：#813 起它的右侧工具栏只留最右边的文件上传，
+ *    语音与文档入口（两种状态都算）**彻底不渲染** —— 所以 deepseek 那一档期望的是
+ *    `asr: false` + `document: 'absent'`，而不是从前的 `asr: true` + `document: 'disabled'`。
  *
  * 这两个入口以前在 DOM 里没有各自的稳定标识，只能靠 `aria-label` 里的中文去数
  * （图片入口 = 「上传文件」、文档入口 = 「添加文档（TXT / DOCX / PDF）」）。而「上传文件」这个
@@ -510,17 +513,19 @@ try {
 
   // ---------- [2] DeepSeek 官方：能力全开 + 请求路径 ----------
   console.log('\n[2] DeepSeek 官方渠道')
-  // 随 #552 变更：三渠道支持图片。DeepSeek 的文档能力（#538）没变 —— 它不吃文档，
-  // 所以文档入口仍是禁用态占位，`docs`（可用的文档 picker）在这里必须为 0。
+  // 随 #552 变更：三渠道支持图片。DeepSeek 的文档能力（#538）没变 —— 它不吃文档。
+  // 随 #813 变更：官方渠道是**精简工具栏** —— 右侧只留最右边的文件上传（`attach-image`），
+  // 语音入口与文档入口（含 `data-attachment-entry="unavailable"` 那种占位）**都不渲染**。
   await expectCaps('DeepSeek 官方', {
     search: true,
     // 图片：deepseek 一直走 `files` 上传 + `file_id`（#551 的零改动边界，入口照旧可用）
     image: 'ready',
-    // 文档：`acceptsDocuments('deepseek') === false`（#538 的能力门，本 PR 换过写法后仍是 false）→
-    // 入口不会消失，而是渲染成带 `data-attachment-entry="unavailable"` 的解释按钮。
-    // 这条断言就是「能力门没有被削弱」的 DOM 侧守卫：占位**必须在**、必须标着不可用。
-    document: 'disabled',
-    asr: true,
+    // 文档：`acceptsDocuments('deepseek') === false`（#538 的能力门仍然是 false），
+    // 但 #813 起连「不可用」占位也不渲染 → `absent`（DOM 里没有节点）。
+    // 「能力门没有被削弱」在别的渠道继续被守：[3]~[5] 的 `document: 'ready'` 三条都在。
+    document: 'absent',
+    // 语音：官方渠道同样不再渲染语音入口（#813 同一刀）
+    asr: false,
     thinking: true,
   })
   const hitDeepseek = await sendAndCapture(requests, '你好，官方渠道')

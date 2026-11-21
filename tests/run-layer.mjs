@@ -65,6 +65,8 @@ const layerDirOf = (name) => LAYER_DIRS[name] ?? path.join(TESTS_DIR, name)
 const SELF_SERVED = new Set([
   'internal-build', 'motion', 'mode-switch', 'diagnostics', 'diagnostics-contract', 'auto-title',
   'provider-channels', 'feedback-export', 'mode-switch-plain',
+  // #813：精简工具栏的 markup 用例自己起 dist-standard 的静态服务（与 provider-channels 同一套）
+  'compact-toolbar-813',
 ].map((s) => `${s}.test.mjs`))
 /**
  * 这几个用例历史上是「外部先起一个静态服务，再 APP_URL=... 跑」（旧 README 让手起 5181）。

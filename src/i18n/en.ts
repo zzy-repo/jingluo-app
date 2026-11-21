@@ -1154,6 +1154,9 @@ export const en = {
   attachUnavailable: 'The attachment manager is not ready, so no document was added',
   attachChannelUnsupported:
     'This channel does not support document attachments: it has no working native file upload and does not use text injection. Switch to another channel',
+  // #813: when the draft still holds documents added on another channel, name the way out
+  attachDraftChannelUnsupported:
+    'This channel does not support document attachments: {count} document(s) are still in the draft. Tap "Remove attachment" to clear them before sending, or switch to a channel that supports documents',
   // Five states + cancel
   attachStatusPending: 'Waiting to parse',
   attachStatusParsing: 'Parsing {percent}%',
