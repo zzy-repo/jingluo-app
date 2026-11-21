@@ -35,7 +35,7 @@
 | `POST /api/v1/auth/login` | `src/services/consume/auth.ts:322 login`；`src/components/auth/LoginPage.tsx` | ✅ 已对接 |
 | `POST /api/v1/auth/login/2fa` | `src/services/consume/auth.ts:334 loginWithTwoFactor` + `src/services/consume/index.ts login2fa`；**`src/services/auth/transport.ts:58` 明写「2FA 属于后半，暂不接」**，登录页没有二次校验步骤 | 🟡 层内已接 / UI 未接（staging `totp_enabled=false`，本期开不了 2FA 账号，**不阻塞**） |
 | `POST /api/v1/auth/refresh` | `src/services/consume/auth.ts:355 refresh`（`auth: null`，不带旧 token） | ✅ 已对接 |
-| `POST /api/v1/auth/logout` | 客户端**不调**它；退出走 `src/services/consume/auth.ts:429 revokeAllSessions` → `POST /api/v1/auth/revoke-all-sessions`（`src/services/auth/store.ts` 的 `signOut`） | 🔴 路径不符 **但不改**，理由见下 |
+| `POST /api/v1/auth/logout` | 客户端**不调**它；退出走 `src/services/consume/auth.ts:526 revokeAllSessions` → `POST /api/v1/auth/revoke-all-sessions`（`src/services/auth/store.ts` 的 `signOut`） | 🔴 路径不符 **但不改**，理由见下 |
 
 **关于 `logout`（判定要写清楚，别改成更糟的）**
 - staging 实测：`POST /api/v1/auth/logout` → **502**（nginx 502，连打两次都一样）；`POST /api/v1/auth/revoke-all-sessions` → **200**。
@@ -46,7 +46,7 @@
 
 | 字段 | 客户端 | 判定 |
 | --- | --- | --- |
-| `balance` | `toConsumeUser`（`src/services/consume/auth.ts:144`）→ `ConsumeUser.balance`；账号页 `statRow(consumeBalanceLabel, formatCurrency(balance))`（`src/components/consume/accountPanelModel.ts:415`）→ 渲染成 **¥2.02** | ✅ 已用，单位按**元**（`formatCurrency` 默认 `CNY`，`src/components/consume/panels.ts:170`） |
+| `balance` | `toConsumeUser`（`src/services/consume/auth.ts:146`）→ `ConsumeUser.balance`；账号页 `statRow(consumeBalanceLabel, formatCurrency(balance))`（`src/components/consume/accountPanelModel.ts:415`）→ 渲染成 **¥2.02** | ✅ 已用，单位按**元**（`formatCurrency` 默认 `CNY`，`src/components/consume/panels.ts:170`） |
 | `concurrency` | 映射进 `ConsumeUser.concurrency`，**界面没有任何地方显示** | 🟡 字段已接、未展示（不影响功能） |
 | `status` | 映射进 `ConsumeUser.status`，未展示；`status` 只在 **Key** 上被用（`accountPanelModel.ts:257`） | 🟡 同上 |
 | `total_recharged` | 映射进 `ConsumeUser.totalRecharged`，未展示 | 🟡 同上 |
