@@ -10,12 +10,16 @@
  *   1. package.json 的 version（→ versionName）格式合法
  *   2. package.json 的 androidVersionCode（→ versionCode）是正整数
  *   3. CHANGELOG.md 有 `## <version>` 段（它同时是 dl 的 meta.changes 与 Release notes 的来源）
- *   4. --tag 给定 时：tag 必须是 v<version>
- *   5. --apk 给定 时：文件存在、0 < size ≤ 50 MB、算出 sha256/md5，
+ *   4. 期望证书指纹（**总是**判，Issue #702）：期望值必须读得到（主源 `config/appIdentity.json`，
+ *      老 checkout 兼容回落到 `android/app/build.gradle` 的字面量）、与 gradle 里那份副本（若有）相等、
+ *      且等于仓库记录的已发布证书（`PUBLISHED_IDENTITY`）。任一条不过 = FAIL。
+ *      #702 之前这里「拿到 null 只打一句提示」= 看起来检查了、其实没检查；现在读不到期望值直接 FAIL。
+ *   5. --tag 给定 时：tag 必须是 v<version>
+ *   6. --apk 给定 时：文件存在、0 < size ≤ 50 MB、算出 sha256/md5，
  *      并**零依赖**解 APK 内的二进制 AndroidManifest 复核包名 / versionName / versionCode /
  *      ARTIFACT_VARIANT 变体标记 / debuggable（不需要 aapt2，也不需要 Android SDK）
- *   6. --manifest 给定 时：本地 versionCode 必须 > 线上 latest.versionCode（防降级 / 防 409）
- *   7. --expect-sha256 给定 时：APK 的 sha256 必须等于它（用来复核「上传后下载回来的包」）
+ *   7. --manifest 给定 时：本地 versionCode 必须 > 线上 latest.versionCode（防降级 / 防 409）
+ *   8. --expect-sha256 给定 时：APK 的 sha256 必须等于它（用来复核「上传后下载回来的包」）
  *
  * 用法：
  *   node scripts/release-check.mjs
@@ -35,19 +39,23 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import {
+  CERT_FALLBACK_REL,
+  CERT_PRIMARY_REL,
   MAX_APK_BYTES,
   PACKAGE_NAME,
   RE_SHA256,
   RE_VERSION,
   ReleaseEnvError,
+  assertMatchesPublishedCert,
+  assertSingleFingerprintSource,
   buildTypeFor,
   changelogHasVersion,
-  expectedCertSha256,
   hashFile,
   inspectApk,
   log,
   parseArgs,
   readPackageVersion,
+  resolveExpectedCertSha256,
 } from './release-common.mjs';
 
 const EXIT_OK = 0;
@@ -139,13 +147,38 @@ async function main(argv) {
   }
   if (pkg.version) log.info(`本次 buildType（按版本号判定）: ${buildTypeFor(pkg.version)}`);
 
+  // ---- 4) 期望证书指纹：来源 + 一致性（#702：这一段以前是「拿到 null 只打提示」）----
+  // 判据三条，任一不过 = FAIL（exit 1）：
+  //   ① 期望值读得到（主源 config/appIdentity.json，老 checkout 回落到 build.gradle 字面量）；
+  //      读不到就**报错**，不许「看着像检查了」——那是 #702 要治的病。
+  //   ② 两份副本（配置 vs gradle 字面量）必须相等（第二份真相源显式拦截，#697 同口径）。
+  //   ③ 期望值必须等于仓库记录的已发布证书（PUBLISHED_IDENTITY）—— 本脚本零依赖、没有 apksigner，
+  //      读不到 APK 内的真实证书，所以这是它唯一能真正判红的口径：配置里的指纹被改一个字就红。
+  log.head('4) 期望证书指纹（发版证据：唯一来源 + 一致性）');
+  const expectedCert = resolveExpectedCertSha256(ROOT);
+  if (!expectedCert.value) {
+    fail(
+      `读不到已发布证书指纹的期望值（${expectedCert.source ?? `既没有 ${CERT_PRIMARY_REL}，也没有 ${CERT_FALLBACK_REL} 的字面量`}）` +
+        (expectedCert.invalid ? `：${CERT_PRIMARY_REL} 的 expectedCertSha256 ${expectedCert.invalid}` : ''),
+    );
+    log.info(`唯一的来源是 ${CERT_PRIMARY_REL} 的 expectedCertSha256（64 位小写十六进制，#271）；读不到就是仓库被改坏了`);
+  } else if (!assertSingleFingerprintSource(expectedCert, { root: ROOT, log: console.log })) {
+    fail('证书指纹有两份来源且不一致（第二份真相源，两个值见上）—— 一处改了另一处没改，不许发版');
+  } else if (!assertMatchesPublishedCert(expectedCert, { log: console.log })) {
+    fail('期望证书指纹与「已发布证书」不一致（两个值见上）—— 换证书 = 已装用户无法覆盖升级');
+  } else {
+    log.ok(`期望证书 SHA-256 = ${expectedCert.value}（来源 ${expectedCert.source}）`);
+    log.info('本脚本不验签名（要 apksigner）：APK 的真实证书指纹由 `pnpm run check:keystore` / `release:verify` 比对');
+    log.info('换证书 = 已装用户无法覆盖升级；不符时换 key，不许改期望值（docs/RELEASE-MANUAL.md §1）');
+  }
+
   let apkHash = null;
   let apkInfo = null;
   if (args.apk === undefined) {
-    log.head('4) 产物');
+    log.head('5) 产物');
     log.info('没给 --apk，跳过产物检查（构建机上必须给）');
   } else {
-    log.head(`4) 产物 ${args.apk}`);
+    log.head(`5) 产物 ${args.apk}`);
     const apkPath = path.resolve(ROOT, args.apk);
     if (!fs.existsSync(apkPath)) {
       fail(`产物不存在：${apkPath}（构建没跑、或跑在另一个 worktree 上）`);
@@ -194,17 +227,11 @@ async function main(argv) {
       } else {
         fail(`判不出 debuggable（${apkInfo.debuggableReason}）—— 按不通过处理，不许猜着放行`);
       }
-
-      const expectedCert = expectedCertSha256(ROOT);
-      if (expectedCert) {
-        log.info(`签名证书指纹必须为 ${expectedCert}（= /root/.android/debug.keystore，换证书 = 已装用户无法覆盖升级）`);
-        log.info('本脚本不验签名（要 apksigner）：构建机上用 docs/RELEASE-MANUAL.md §4.3 的 apksigner 命令人工确认');
-      }
     }
   }
 
   if (args['expect-sha256'] !== undefined) {
-    log.head('5) 期望 sha256 复核');
+    log.head('6) 期望 sha256 复核');
     const want = String(args['expect-sha256']).trim().toLowerCase();
     if (!RE_SHA256.test(want)) fail(`--expect-sha256 不是 64 位小写 hex：${args['expect-sha256']}`);
     else if (!apkHash) fail('--expect-sha256 需要同时给 --apk 才算得出来');
@@ -213,7 +240,7 @@ async function main(argv) {
   }
 
   if (args.manifest !== undefined) {
-    log.head(`6) 与线上 latest 比 versionCode（${args.manifest}）`);
+    log.head(`7) 与线上 latest 比 versionCode（${args.manifest}）`);
     try {
       const manifest = await loadManifest(String(args.manifest));
       const latest = manifest && manifest.latest;

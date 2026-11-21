@@ -24,6 +24,7 @@ import {
   readZipEntry,
 } from '../deploy/dl-release/apk-manifest.mjs';
 import { loadAppIdentity } from './lib/appIdentity.mjs';
+import { resolveExpectedCertSha256 } from './lib/certFingerprint.mjs';
 
 /**
  * 应用包名（服务端白名单，写错直接 400 INVALID_APK）
@@ -285,16 +286,39 @@ export function resolveReleaseToken(opts = {}) {
  */
 export { BUILD_TYPES, BUILD_TYPE_SUFFIX_RE, buildTypeFor, isBuildType } from '../shared/build-types.mjs';
 
-/** 读 android/app/build.gradle 的 EXPECTED_CERT_SHA256（避免指纹在文档里再抄一份） */
+/**
+ * 已发布证书指纹的期望值（#702）。
+ *
+ * 读取逻辑**不在本文件**：唯一实现是 `scripts/lib/certFingerprint.mjs`（#697 修好的那一份）。
+ * 这里以前自带一份「去 `android/app/build.gradle` 找 EXPECTED_CERT_SHA256 字面量」的实现 ——
+ * #271 之后该值已迁到 `config/appIdentity.json`，于是它**恒返回 null**，
+ * `release-check` 拿到 null 只打一句提示，从来没有真正比对过指纹（#702）。
+ *
+ * 现在：主源 `config/appIdentity.json` 的 `expectedCertSha256`，`build.gradle` 字面量只作老
+ * checkout 的兼容回落；要拿到来源与「余下两份副本是否一致」的完整结论，用
+ * `resolveExpectedCertSha256(root)`（同模块转出），别在这里再判一遍。
+ *
+ * @returns {string|null} 64 位小写十六进制；`null` = 判不出来（调用方**必须报错**，不许当通过）
+ */
 export function expectedCertSha256(root) {
-  const file = path.join(root, 'android', 'app', 'build.gradle');
-  try {
-    const m = /EXPECTED_CERT_SHA256\s*=\s*['"]([0-9a-fA-F]{64})['"]/.exec(fs.readFileSync(file, 'utf8'));
-    return m ? m[1].toLowerCase() : null;
-  } catch {
-    return null;
-  }
+  return resolveExpectedCertSha256(root).value;
 }
+
+/**
+ * 期望指纹的完整解析结果 `{ value, source, invalid }` 与两条一致性判定（#702）。
+ * 转出而不是各脚本自己实现：同一个判据两份实现 = 一个真一个假（#697 / #702）。
+ *   · `assertSingleFingerprintSource`：配置与 build.gradle 字面量（若有）必须相等；
+ *   · `assertMatchesPublishedCert`：期望值必须等于仓库记录的已发布证书（PUBLISHED_IDENTITY）。
+ */
+export {
+  CERT_FALLBACK_REL,
+  CERT_PRIMARY_REL,
+  assertMatchesPublishedCert,
+  assertSingleFingerprintSource,
+  gradleCertLiteral,
+  publishedCertSha256,
+  resolveExpectedCertSha256,
+} from './lib/certFingerprint.mjs';
 
 /** 解析命令行：--flag value / --flag=value / --bool / 位置参数 */
 export function parseArgs(argv, { flags = [], multi = [] } = {}) {

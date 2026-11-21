@@ -19,12 +19,16 @@
  *   5. 读出来的证书 SHA-256 **必须等于已发布证书**（期望值来自 `config/appIdentity.json` 的
  *      `expectedCertSha256`，与 build.gradle 的 `EXPECTED_CERT_SHA256` 闸门同一个值）
  *
- * #697 —— 第 5 条以前是**死代码**：`expectedCertSha256()` 用正则去 `android/app/build.gradle`
+ * #697 —— 第 5 条以前是**死代码**：旧的内联 `expectedCertSha256()` 用正则去 `android/app/build.gradle`
  * 找 `EXPECTED_CERT_SHA256 = '<64 hex>'` 字面量，而 #271 之后该值已迁到 `config/appIdentity.json`
  * （build.gradle 改成从配置派生），于是期望值恒为 null、比较分支永不进入 —— 指纹不符一句警告都
  * 打不出来，「已发布证书」这道唯一能发现「签名换了一把 key」的检查等于不存在。
  * 现在：主源是 `config/appIdentity.json`（唯一来源），build.gradle 的字面量只作**兼容回落**，
  * 两处都有副本时必须一致（否则就是第二份真相源 → 判红）；不符 → exit 1 并点名期望/实际。
+ *
+ * #702 —— 读取逻辑**已抽到 `scripts/lib/certFingerprint.mjs`**，本脚本只调用它：
+ * `scripts/release-common.mjs` 的 `expectedCertSha256(root)` 曾经是同一判据的第二份实现（还留在
+ * gradle 字面量上，恒返回 null），两处必须同源才能避免「一个真一个假」。本文件不再有任何读取代码。
  *
  * 降级模式 `--config-only`（#697 接线用）：CI 上**没有** release keystore（secret 只在
  * `.github/workflows/release.yml` 里注入），这一步没法验真签名。于是显式跑降级档：
@@ -52,6 +56,16 @@ import path from 'node:path'
 import { execFileSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 
+// 期望指纹的读取/一致性判定：**唯一实现**（#702）。本脚本不再自带一份 ——
+// 同一个判据两份实现时，一份改了另一份没跟上（#697 / #702 就是这么发生的）。
+import {
+  CERT_FALLBACK_REL,
+  CERT_PRIMARY_REL,
+  assertSingleFingerprintSource,
+  gradleCertLiteral,
+  resolveExpectedCertSha256,
+} from './lib/certFingerprint.mjs'
+
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 
 const EXIT_OK = 0
@@ -61,11 +75,13 @@ const EXIT_BAD_ENV = 2
 /** 默认属性文件（与 android/app/build.gradle 的 rootProject.file("keystore/keystore.properties") 一致） */
 const DEFAULT_PROPS = path.join(ROOT, 'android/keystore/keystore.properties')
 const EXAMPLE_PROPS = path.join(ROOT, 'android/keystore/keystore.properties.example')
-const BUILD_GRADLE = path.join(ROOT, 'android/app/build.gradle')
-/** 已发布证书指纹的**唯一来源**（#271：身份事实只记在 config/appIdentity.json） */
-const APP_IDENTITY = path.join(ROOT, 'config/appIdentity.json')
-const APP_IDENTITY_REL = 'config/appIdentity.json'
-const BUILD_GRADLE_REL = 'android/app/build.gradle'
+/**
+ * 期望指纹的读取**不在本文件**：唯一实现是 `scripts/lib/certFingerprint.mjs`（#702）。
+ * 名字保持不变（本文件的历史变量名），值来自那份单一实现 ——
+ * 主源 `config/appIdentity.json`（#271 的唯一来源），兼容回落 `android/app/build.gradle` 的空壳字面量。
+ */
+const APP_IDENTITY_REL = CERT_PRIMARY_REL
+const BUILD_GRADLE_REL = CERT_FALLBACK_REL
 /** storeFile* 的相对路径基准：Gradle 在 app 模块里调 file()，所以是 android/app/ */
 const STORE_FILE_BASE = path.join(ROOT, 'android/app')
 
@@ -143,60 +159,12 @@ function findKeytool() {
   return null
 }
 
-/** build.gradle 里遗留的指纹字面量（老 checkout 的兼容来源；#271 之后本仓改为从配置派生） */
-function gradleCertLiteral() {
-  try {
-    const m = /EXPECTED_CERT_SHA256\s*=\s*['"]([0-9a-fA-F]{64})['"]/.exec(fs.readFileSync(BUILD_GRADLE, 'utf8'))
-    return m ? m[1].toLowerCase() : null
-  } catch {
-    return null
-  }
-}
-
-/**
- * 读已发布证书指纹：**主源 `config/appIdentity.json` 的 `expectedCertSha256`**（#271 的唯一来源）。
- * 读不到/格式不对才回落到 build.gradle 的字面量（老 checkout 兼容），两者都在时由
- * `assertSingleFingerprintSource` 判一致。
- * 返回 `{ value, source, invalid }`：`value === null` 表示判不出来（调用方 fail-closed）。
- */
-function expectedCertSha256() {
-  try {
-    const parsed = JSON.parse(fs.readFileSync(APP_IDENTITY, 'utf8'))
-    const raw = typeof parsed?.expectedCertSha256 === 'string' ? parsed.expectedCertSha256.trim().toLowerCase() : ''
-    if (/^[0-9a-f]{64}$/.test(raw)) return { value: raw, source: APP_IDENTITY_REL }
-    return { value: null, source: APP_IDENTITY_REL, invalid: raw === '' ? '缺失或不是字符串' : `不是 64 位小写十六进制：'${raw}'` }
-  } catch (e) {
-    // 文件不存在 → 走兼容回落；解析失败 / 读不动 → 判不出来（不做「猜一个」）
-    if (e?.code !== 'ENOENT') return { value: null, source: APP_IDENTITY_REL, invalid: `读不出来（${e.message}）` }
-  }
-  const literal = gradleCertLiteral()
-  if (literal) return { value: literal, source: BUILD_GRADLE_REL }
-  return { value: null, source: null }
-}
-
-/**
- * 期望值的两份副本必须相等（主源 JSON + 兼容回落 gradle 字面量）。
- * 不相等 = 第二份真相源：一处改了另一处没改，迟早「按这份配置过闸、按那份配置构建」。
- */
-function assertSingleFingerprintSource(expected, log = console.error) {
-  const literal = gradleCertLiteral()
-  if (!expected.value || !literal || literal === expected.value) return true
-  log('[FAIL] 证书指纹有两份来源且不一致（第二份真相源）：')
-  log(`       期望 ${expected.value}（来源 ${expected.source}）`)
-  log(`       实际 ${literal}（来源 ${BUILD_GRADLE_REL} 的 EXPECTED_CERT_SHA256 字面量）`)
-  log('')
-  log('  修法: 指纹只许有一个来源 —— config/appIdentity.json 的 expectedCertSha256（#271）。')
-  log(`        把 ${BUILD_GRADLE_REL} 里那份字面量删掉（改成从配置派生），或把它改成与配置相同的值。`)
-  log('        不要通过改期望值让闸门变绿：换证书 = 已装用户无法覆盖升级（docs/RELEASE-MANUAL.md §1）。')
-  return false
-}
-
 /**
  * 降级档（`--config-only`）：CI 上没有 release keystore 时用。
  * 只判「期望值从哪来、一致不一致」，**不判真签名** —— 并把这件事明确打出来（不是静默跳过）。
  */
 function configOnlyCheck(quiet) {
-  const expected = expectedCertSha256()
+  const expected = resolveExpectedCertSha256(ROOT)
   if (!expected.value) {
     console.error(`[FAIL] 读不到已发布证书指纹的期望值（来源 ${expected.source ?? `既没有 ${APP_IDENTITY_REL}，也没有 ${BUILD_GRADLE_REL} 的字面量`}）`)
     if (expected.invalid) console.error(`       ${APP_IDENTITY_REL} 的 expectedCertSha256 ${expected.invalid}`)
@@ -205,7 +173,7 @@ function configOnlyCheck(quiet) {
     console.error('        这份文件入库、不该读不到；读不到就是仓库被改坏了，先修它再谈签名。')
     return EXIT_BAD_ENV
   }
-  if (!assertSingleFingerprintSource(expected)) return EXIT_BAD_CONFIG
+  if (!assertSingleFingerprintSource(expected, { root: ROOT })) return EXIT_BAD_CONFIG
 
   if (!quiet) {
     console.log('模式: --config-only（CI 降级档）')
@@ -213,7 +181,7 @@ function configOnlyCheck(quiet) {
     console.log('  本档**不校验真签名**：本机/CI 没有 release keystore 时无从比对，所以只校验「期望值的来源与一致性」。')
     console.log(`  全量（keytool 读出证书指纹并要求等于上面的值）由发布机跑：pnpm run check:keystore（.github/workflows/release.yml 已接）。`)
   }
-  if (!quiet) console.log(`\n通过: ${APP_IDENTITY_REL} 的 expectedCertSha256 可用${gradleCertLiteral() ? `，且与 ${BUILD_GRADLE_REL} 的字面量一致` : `（${BUILD_GRADLE_REL} 已无副本）`}。`)
+  if (!quiet) console.log(`\n通过: ${APP_IDENTITY_REL} 的 expectedCertSha256 可用${gradleCertLiteral(ROOT) ? `，且与 ${BUILD_GRADLE_REL} 的字面量一致` : `（${BUILD_GRADLE_REL} 已无副本）`}。`)
   return EXIT_OK
 }
 
@@ -413,7 +381,7 @@ function main(argv) {
   // 只作兼容回落。读不出来 / 判不出来 → fail-closed（exit 2），不猜着放行。
   const sha = (/SHA-?256:\s*([0-9A-Fa-f:]{64,95})/.exec(list.out) ?? [])[1]
   const shaHex = sha ? sha.replace(/:/g, '').toLowerCase() : null
-  const expected = expectedCertSha256()
+  const expected = resolveExpectedCertSha256(ROOT)
   if (!quiet) console.log(`  证书 SHA-256         = ${shaHex ?? '（keytool 没有输出 SHA-256）'}`)
 
   if (!shaHex) {
@@ -432,7 +400,7 @@ function main(argv) {
     return EXIT_BAD_ENV
   }
 
-  if (!assertSingleFingerprintSource(expected)) return EXIT_BAD_CONFIG
+  if (!assertSingleFingerprintSource(expected, { root: ROOT })) return EXIT_BAD_CONFIG
 
   if (shaHex !== expected.value) {
     console.error('[FAIL] 证书指纹不符 —— 这把 key 不是已发布证书')

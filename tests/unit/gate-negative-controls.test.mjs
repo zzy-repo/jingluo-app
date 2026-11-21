@@ -20,6 +20,10 @@
 //   N9  `check:limits`             —— 注入裸阈值 → exit 1 且点名 文件:行:值；镜像常量漂移 → 点名两个不同值
 //   N10 `check:capabilities`       —— `--strict` 注入低内核用法 → exit 1 且点名 文件:行（warn 档同一份注入仍 exit 0）
 //
+// #702 又补了一道（与 #697 同根因：同一判据的第二份实现）：
+//
+//   N11 `release:check`            —— 期望证书指纹改一个字 / 冒出第二份副本 / 读不到期望值 → 都必须红
+//
 // 统一模板（#369 第 4 条要求，四拍，全文件只用这一套；实现在 tests/gates/lib/gate-negative-harness.mjs）：
 //
 //     ① 正例（干净仓库 exit=0） → ② 注入缺陷 → ③ exit≠0 且报错点出注入物 → ④ 还原 → ⑤ 再 exit=0
@@ -62,6 +66,7 @@ import { execFileSync } from 'node:child_process'
 import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { test } from 'node:test'
+import { pathToFileURL } from 'node:url'
 
 import {
   FIXTURES,
@@ -414,6 +419,23 @@ const REGISTRY = {
       '缺文件 → exit 2 且给出「cp example + 补四键」的修法；**指纹不符 → exit 1 且点名「期望 X 实际 Y（来源 config/appIdentity.json）」**' +
       '（临时树里再把期望值换成该证书 → exit 0，证明不是恒红）（N8）',
     mention: /check-keystore-config\.mjs/,
+  },
+  // 发版前自检（#107 的脚本；#702 才让它真正判指纹）：对照落在本文件 N11 —— `release-check` 的第 4 段
+  // 「期望证书指纹」在 #702 之前是**同一处死读取**的第二份实现（`release-common.mjs` 的
+  // `expectedCertSha256(root)` 还在 gradle 里找字面量 → 恒 null → 只打一句提示，从来没比对过）。
+  // 现在：配置里的期望值改一个字 → 与已发布证书（PUBLISHED_IDENTITY）不符 exit 1 且点名两个值；
+  // build.gradle 冒出第二份副本 → 点名两个值 exit 1；期望值读不到（截成 63 位）→ fail-closed exit≠0。
+  // 未接线：`release:check` 不在 ci.yml 里跑（它是发布机上的人工步骤），所以按 unwired 登记；
+  // 对照本身是 L0 用例，`pnpm test` 每次都跑。
+  'release:check': {
+    where: 'tests/unit/gate-negative-controls.test.mjs',
+    kind: 'inject',
+    what:
+      '临时树里把 config/appIdentity.json 的期望指纹改一个字（仍合法 hex）→ 与已发布证书不一致 → exit 1 且点名两个值；' +
+      'build.gradle 冒出另一份字面量 → 「两份来源不一致」点名两个值 exit 1；期望值截成 63 位 → fail-closed exit≠0；' +
+      '三种都带回正例与还原（N11）',
+    unwired: true,
+    mention: /release-check\.mjs/,
   },
   // 运行期阈值单一来源门禁（#275 的脚本，#453 补的对照）：对照落在本文件 N9 —— 往受保护文件
   // 注入裸阈值 `45000` 必 exit 1 且点名 `文件:行: 值`；再把镜像常量（src/index.html 的
@@ -857,6 +879,9 @@ test('N8 check:keystore：缺键 / 路径错 / 口令错 / 别名错 / 指纹不
   const treeScript = (tree) => {
     mkdirSync(path.join(tree, 'scripts'), { recursive: true })
     cpSync(scriptSrc, path.join(tree, 'scripts/check-keystore-config.mjs'))
+    // #702：期望指纹的读取逻辑已抽到 `scripts/lib/certFingerprint.mjs`（唯一实现），临时树也必须有它。
+    // 少了这一份，脚本会在 import 期就 MODULE_NOT_FOUND —— 那不是「判据坏了」，是树造得不完整。
+    cpSync(path.join(ROOT, 'scripts/lib'), path.join(tree, 'scripts/lib'), { recursive: true })
   }
   const writeIdentity = (tree, sha) => {
     mkdirSync(path.join(tree, 'config'), { recursive: true })
@@ -1005,6 +1030,144 @@ test('N8 check:keystore：缺键 / 路径错 / 口令错 / 别名错 / 指纹不
     probeSha,
     '这把临时 keystore 的指纹不该等于已发布证书（否则 ④d 这一拍什么都没证明）'
   )
+})
+
+// ------------------------------------------------- N11 release:check 的指纹证据（#702）
+
+/**
+ * N11（#702）：`release-check` 的「期望证书指纹」以前是**同一处死读取**的第二份实现。
+ *
+ * 背景：#697 把 `scripts/check-keystore-config.mjs` 的指纹判据改成读 `config/appIdentity.json`，
+ * 但 `scripts/release-common.mjs` 的 `expectedCertSha256(root)` 仍在 `android/app/build.gradle` 里
+ * 找 64 位字面量 —— #271 之后那里已经改成从配置派生，于是它**恒返回 null**，而 `release-check` 是
+ * `if (expectedCert) { ...提示... }`：拿不到就什么都不说。结果「指纹一致」这条产物证据从来没被检查过
+ * （一处读对、另一处读错 = 同一判据两个实现，一个真一个假）。
+ *
+ * 这一条对照钉住「它现在真的会红」。三种注入、每种都自带正例与还原（全部在 mkdtemp 临时树里，
+ * 真仓库一个字节不动 —— 单元层是多文件并行读盘的）：
+ *   ① 配置里的期望值改一个字（仍是合法 64 位 hex）→ 与已发布证书（PUBLISHED_IDENTITY）不符 → exit 1
+ *   ② build.gradle 冒出第二份副本且 ≠ 配置 → 点名两个值 → exit 1
+ *   ③ 配置里的期望值坏掉（截成 63 位）→ fail-closed（exit≠0）且点名 config/appIdentity.json
+ * 另在库层直测 `scripts/lib/certFingerprint.mjs`：老 checkout 的兼容回落、以及「两份都没有 → 判不出来」。
+ */
+test('N11 release:check：期望指纹改一个字 / 冒出第二份副本 / 读不到期望值 → 都必须红（#702）', async (t) => {
+  const pkg = JSON.parse(readFileSync(path.join(ROOT, 'package.json'), 'utf8'))
+  const tag = `v${pkg.version}`
+  const published = JSON.parse(readFileSync(path.join(ROOT, 'config/appIdentity.json'), 'utf8')).expectedCertSha256.toLowerCase()
+
+  /** 造一棵 `release-check` 能跑的最小树：它按自身路径推 ROOT，所以整棵树都得在临时目录里 */
+  const makeTree = (label) => {
+    const tree = scratch(label)
+    mkdirSync(path.join(tree, 'scripts'), { recursive: true })
+    cpSync(path.join(ROOT, 'scripts'), path.join(tree, 'scripts'), { recursive: true })
+    cpSync(path.join(ROOT, 'shared'), path.join(tree, 'shared'), { recursive: true })
+    cpSync(path.join(ROOT, 'deploy/dl-release'), path.join(tree, 'deploy/dl-release'), { recursive: true })
+    cpSync(path.join(ROOT, 'package.json'), path.join(tree, 'package.json'))
+    cpSync(path.join(ROOT, 'CHANGELOG.md'), path.join(tree, 'CHANGELOG.md'))
+    mkdirSync(path.join(tree, 'config'), { recursive: true })
+    cpSync(path.join(ROOT, 'config/appIdentity.json'), path.join(tree, 'config/appIdentity.json'))
+    t.after(() => rmSync(tree, { recursive: true, force: true }))
+    return tree
+  }
+  const runCheck = (tree) =>
+    run({ bin: process.execPath, args: [path.join(tree, 'scripts/release-check.mjs'), '--tag', tag] })
+  const writeSha = (tree, sha) => {
+    const file = path.join(tree, 'config/appIdentity.json')
+    const identity = JSON.parse(readFileSync(file, 'utf8'))
+    writeFileSync(file, `${JSON.stringify({ ...identity, expectedCertSha256: sha }, null, 2)}\n`)
+  }
+
+  const tree = makeTree('release-check-cert')
+
+  // ① 正例：配置里的指纹 = 已发布证书 → 那一段必须真的跑，并且点明来源
+  const good = runCheck(tree)
+  assert.equal(good.status, 0, `干净树上 release:check 必须 exit 0\n${good.out}`)
+  assert.match(good.out, /期望证书指纹/, `第 4 段要真的跑（#702 之前它拿到 null 只打一句提示）\n${good.out}`)
+  assert.ok(
+    good.out.includes(`期望证书 SHA-256 = ${published}（来源 config/appIdentity.json）`),
+    `正例必须打出期望值**和来源**（config/appIdentity.json = #271 的唯一来源）\n${good.out}`
+  )
+
+  // ② 改一个字（仍是合法 64 位十六进制）→ 与已发布证书不符 → exit 1 且点名两个值
+  const typoed = `${published.slice(0, -1)}${published.endsWith('1') ? '2' : '1'}`
+  assert.notEqual(typoed, published, '注入值必须与已发布值不同')
+  assert.match(typoed, /^[0-9a-f]{64}$/, '注入值必须仍是合法的 64 位十六进制（否则红的原因会变成格式错，不是判据）')
+  writeSha(tree, typoed)
+  const changed = runCheck(tree)
+  assert.equal(changed.status, 1, `期望值改一个字必须 exit 1（#702 之前这一项恒绿）\n${changed.out}`)
+  assert.match(changed.out, /期望证书指纹与「已发布证书」不一致/, `必须明说「与已发布证书不一致」\n${changed.out}`)
+  assert.ok(
+    changed.out.includes(`配置   ${typoed}`) && changed.out.includes(`已发布 ${published}`),
+    `必须同时点名两个值（配置 ${typoed} / 已发布 ${published}）：只说「不一致」等于让人自己猜\n${changed.out}`
+  )
+  writeSha(tree, published)
+  assert.equal(runCheck(tree).status, 0, '还原配置后必须再绿（证明上面的红不是恒红）')
+
+  // ③ 第二份真相源：build.gradle 冒出另一份字面量 → 点名两个值 + exit 1；删掉 → 再绿
+  const gradle = path.join(tree, 'android/app/build.gradle')
+  mkdirSync(path.dirname(gradle), { recursive: true })
+  writeFileSync(gradle, `def EXPECTED_CERT_SHA256 = '${typoed}'\n`)
+  const parity = runCheck(tree)
+  assert.equal(parity.status, 1, `两处副本不等必须 exit 1\n${parity.out}`)
+  assert.match(parity.out, /两份来源且不一致|第二份真相源/, `必须点明「两份来源」这件事\n${parity.out}`)
+  assert.ok(
+    parity.out.includes(`期望 ${published}（来源 config/appIdentity.json）`) &&
+      parity.out.includes(`实际 ${typoed}（来源 android/app/build.gradle 的 EXPECTED_CERT_SHA256 字面量）`),
+    `点名两个值时必须分别标出来源\n${parity.out}`
+  )
+  rmSync(gradle, { force: true })
+  assert.equal(runCheck(tree).status, 0, '删掉 gradle 里那份副本后必须再绿')
+
+  // ④ 拿不到期望值 → fail-closed（不许「看起来检查了、其实没检查」）。
+  //    这里截成 63 位：`config/appIdentity.json` 是身份的唯一来源，它坏掉时上游（loadAppIdentity）
+  //    在 import 期就 fail-closed（实测 exit 2），所以断言「exit≠0 + 点名文件 + 点名字段」，
+  //    不钉具体退出码（那一层属于 loadAppIdentity 的口径，本单不动）。
+  writeSha(tree, published.slice(0, 63))
+  const broken = runCheck(tree)
+  assert.notEqual(broken.status, 0, `期望值读不到必须 fail-closed（不许 exit 0）\n${broken.out}`)
+  assert.match(broken.out, /config\/appIdentity\.json/, `必须点名是哪个文件坏了\n${broken.out}`)
+  assert.match(broken.out, /expectedCertSha256/, `必须点名是哪个字段坏了\n${broken.out}`)
+  writeSha(tree, published)
+  assert.equal(runCheck(tree).status, 0, '还原后必须再绿')
+
+  // ⑤ 判据本体（`scripts/lib/certFingerprint.mjs`）直测。老 checkout 的兼容回落与「判不出来」
+  //    这两条**走不到** `release-check` 的入口（配置一坏，import 期就已经 exit 2），所以在库层直接钉，
+  //    免得「兼容回落」成为一条没人验过的注释。
+  const { resolveExpectedCertSha256 } = await import(
+    pathToFileURL(path.join(ROOT, 'scripts/lib/certFingerprint.mjs')).href
+  )
+  const bare = scratch('cert-resolve')
+  t.after(() => rmSync(bare, { recursive: true, force: true }))
+  assert.deepEqual(
+    resolveExpectedCertSha256(bare),
+    { value: null, source: null, invalid: null },
+    '既没有 config/appIdentity.json 也没有 gradle 字面量 → 判不出来（value=null，调用方必须报错，不许放行）'
+  )
+  const legacyGradle = path.join(bare, 'android/app/build.gradle')
+  mkdirSync(path.dirname(legacyGradle), { recursive: true })
+  writeFileSync(legacyGradle, `def EXPECTED_CERT_SHA256 = '${published.toUpperCase()}'\n`)
+  assert.deepEqual(
+    resolveExpectedCertSha256(bare),
+    { value: published, source: 'android/app/build.gradle', invalid: null },
+    '老 checkout（只有 build.gradle 字面量）→ 兼容回落并点明来源，且统一成小写'
+  )
+  mkdirSync(path.join(bare, 'config'), { recursive: true })
+  writeFileSync(
+    path.join(bare, 'config/appIdentity.json'),
+    `${JSON.stringify({ applicationId: 'com.example.deepseekchat', expectedCertSha256: published }, null, 2)}\n`
+  )
+  assert.deepEqual(
+    resolveExpectedCertSha256(bare),
+    { value: published, source: 'config/appIdentity.json', invalid: null },
+    '两处都在时以配置为主源（build.gradle 那份只作一致性比对）'
+  )
+  writeFileSync(
+    path.join(bare, 'config/appIdentity.json'),
+    `${JSON.stringify({ applicationId: 'com.example.deepseekchat', expectedCertSha256: published.slice(0, 63) }, null, 2)}\n`
+  )
+  const invalidResult = resolveExpectedCertSha256(bare)
+  assert.equal(invalidResult.value, null, '配置里格式非法必须判不出来（不许悄悄回落到 build.gradle 掩盖）')
+  assert.match(String(invalidResult.invalid), /64 位/, '必须说清「不是 64 位十六进制」')
 })
 
 // ---------------------------------------------------------------- N9 check:limits（#453 第 3 优先）
