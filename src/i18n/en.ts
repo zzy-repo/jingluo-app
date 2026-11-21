@@ -910,7 +910,6 @@ export const en = {
   accountConsumeBindEmail: 'Linked email',
   accountConsumeLoginMethod: 'Sign-in method',
   accountConsumeLoginMethodEmail: 'Email',
-  accountConsumeSecurity: 'Account & security',
   accountConsumeSignedOutCta: 'Log in / Sign up',
   accountConsumeSignOutConfirm: 'Sign out now?',
 

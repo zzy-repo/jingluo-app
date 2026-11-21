@@ -13,15 +13,15 @@
  *           │                     DeepSeek 官方服务）→ 点某一行进 L3 子页：字段 / 连通性测试
  *           ├─ 我的卡密        → 行 → L2 页（卡密列表 + 兑换卡密）
  *           ├─ 历史消费        → 行 → L2 页（消费记录）
- *           └─ 账号            → 行 → L2 页（资料 / 账号 ID / 绑定邮箱 / 登录方式 / 账号与安全 / 退出登录）
+ *           └─ 账号            → 行 → L2 页（资料 / 账号 ID / 绑定邮箱 / 登录方式 / 退出登录）
  *
  * 五条硬约定（本阶段只动布局）：
  *  1. **不自带外壳**：没有 `Modal`、没有遮罩、没有第二个 X —— 头部 / 关闭按钮全部复用设置的；
  *  2. **子行是「进入下一级页面」**，不是在导航下面原地展开：`page` 由外层（设置弹层）持有，
  *     非 `null` 时设置头部换成该页标题 + 「返回」，内容区整体替换；
  *  3. **不做第二份客户端**：一个 `ConsumeClient`，默认用全应用共享的 `getConsumeClient()`；
- *  4. **面板逻辑原样复用**：卡密 / 购买 / 额度 / 账号还是 `MyCardsTab` / `BuyTab` / `QuotaPanel` /
- *     `AccountPanel` 那四个既有组件，本文件只负责「把它们放到原型的位置上」；
+ *  4. **面板逻辑原样复用**：卡密 / 购买 / 额度还是 `MyCardsTab` / `BuyTab` /
+ *     `QuotaPanel` 那三个既有组件，本文件只负责「把它们放到原型的位置上」；
  *  5. L1 只留**一行**「模型来源」（右侧显示当前来源名）；它点进去是**三行 inset 列表**（每行 56px、
  *     左右 20px、1px 极浅下边框、右侧 `›`，**不是分段控件**），再点某一行才进字段子页：
  *     API Key / 服务地址 / 模型 / 连通性测试（设置弹层把这些字段通过 `sourceConfig` 注入，不造第二份）。
@@ -45,7 +45,7 @@ import { SettingsAuthCard } from './SettingsAuthCard.js'
 import { useAuthStore } from '../../services/auth/store.js'
 import { Button } from '../base/Button.js'
 import { IconChevronRightOutline14 } from '../base/icons.js'
-import { AccountPanel, QuotaPanel } from './index.js'
+import { QuotaPanel } from './index.js'
 import { BuyTab } from './BuyTab.js'
 import { HistoryView } from './HistoryView.js'
 import { MyCardsTab } from './MyCardsTab.js'
@@ -141,8 +141,6 @@ export const AccountConsumePage = ({
   const [balance, setBalance] = useState<number | undefined>(undefined)
   const [walletTick, setWalletTick] = useState(0)
   const [signOutAsk, setSignOutAsk] = useState(false)
-  /** 账号页里的「账号与安全」下级（同一页内的下一屏，仍然没有第二层弹层） */
-  const [securityOpen, setSecurityOpen] = useState(false)
   const alive = useRef(true)
 
   useEffect(() => {
@@ -216,14 +214,6 @@ export const AccountConsumePage = ({
     onNavigate('account')
     onNeedLogin?.()
   }, [onNavigate, onNeedLogin])
-
-  /**
-   * 未登录态「去填 API Key」：Key / 渠道就住在这张 L1 页顶上的配置区，
-   * 所以这里只是把「模型来源」的 sheet 打开 —— 换 tab、开新弹层都是多余的。
-   */
-  const fillKey = useCallback(() => {
-    onNavigate('source')
-  }, [onNavigate])
 
   /** 收款页关掉后回到「我的卡密」（卡密由小铺发到订单上）并让余额重拉一次 */
   const backToCards = useCallback(() => {
@@ -639,34 +629,6 @@ export const AccountConsumePage = ({
   // 行间只一条 1px 极浅分隔线，不给每行套描边盒子）；「退出登录」独立一行、红字居中、无箭头。
   // 主题全走 token（`--dsw-alias-*` / danger），不硬编码浅色 —— 深色下同样是这套版式。
   if (page === 'account') {
-    if (securityOpen) {
-      return (
-        <div className={`${styles.page} ${styles.embedded}`} data-testid="account-consume-page">
-          <div className={styles.subHeader}>
-            <button
-              type="button"
-              className={styles.subBack}
-              data-testid="account-consume-back"
-              onClick={() => setSecurityOpen(false)}
-            >
-              <IconChevronRightOutline14 />
-              {t('back')}
-            </button>
-            <span className={styles.subTitle}>{t('accountConsumeSecurity')}</span>
-          </div>
-          <div className={styles.viewBody} data-testid="account-consume-tab-account">
-            <AccountPanel
-              consume={consume}
-              user={authUser}
-              onNeedLogin={needLogin}
-              onFillKey={fillKey}
-              authDialog={styles.authDialog}
-            />
-          </div>
-          {sheetNode}
-        </div>
-      )
-    }
     return (
       <div className={`${styles.page} ${styles.embedded}`} data-testid="account-consume-page">
         {signedIn === true ? subHeader('account', null) : subHeaderWithTitle(null, 'sub2authLogin')}
@@ -720,20 +682,6 @@ export const AccountConsumePage = ({
                 </i>
               </span>
             </div>
-            <div className={styles.divider} />
-            <button
-              type="button"
-              className={styles.row}
-              data-testid="account-consume-security-row"
-              onClick={() => setSecurityOpen(true)}
-            >
-              <span className={styles.rowMain}>{t('accountConsumeSecurity')}</span>
-              <span className={styles.value}>
-                <i className={styles.chevron} aria-hidden="true">
-                  ›
-                </i>
-              </span>
-            </button>
           </div>
         ) : (
           <div className={styles.viewBody} data-testid="account-consume-tab-account">

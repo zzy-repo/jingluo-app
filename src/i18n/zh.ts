@@ -906,7 +906,6 @@ export const zh = {
   accountConsumeBindEmail: '绑定邮箱',
   accountConsumeLoginMethod: '登录方式',
   accountConsumeLoginMethodEmail: '邮箱登录',
-  accountConsumeSecurity: '账号与安全',
   accountConsumeSignedOutCta: '登录 / 注册',
   accountConsumeSignOutConfirm: '确定退出？',
 
