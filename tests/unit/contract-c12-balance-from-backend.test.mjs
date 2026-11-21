@@ -23,7 +23,7 @@ import path from 'node:path'
 import { test } from 'node:test'
 
 import { ROOT, installResolveHooks, tableTest } from '../helpers/contract.mjs'
-import { jsonReply, loadFixture, panelOk, recordingTransport } from '../helpers/consume-fixtures.mjs'
+import { jsonReply, loadFixture, panelOk, pathOf, recordingTransport } from '../helpers/consume-fixtures.mjs'
 
 installResolveHooks()
 
@@ -102,7 +102,7 @@ const ROWS = [
       globalThis.sessionStorage = probe.sessionStorage
       try {
         const recorder = recordingTransport((request) => {
-          const p = request.url.replace(/^https?:\/\/[^/]+/, '').split('?')[0]
+          const p = pathOf(request.url).split('?')[0]
           if (p === '/v1/usage') {return jsonReply(200, gatewayBody)}
           if (p === '/api/v1/user/profile') {return panelOk(profileBody.data)}
           if (p === '/api/v1/keys') {return panelOk(keysBody.data)}

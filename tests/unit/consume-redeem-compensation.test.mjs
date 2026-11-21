@@ -30,7 +30,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
 import { installResolveHooks, tableTest } from '../helpers/contract.mjs'
-import { jsonReply, recordingTransport } from '../helpers/consume-fixtures.mjs'
+import { jsonReply, pathOf, recordingTransport } from '../helpers/consume-fixtures.mjs'
 
 installResolveHooks()
 
@@ -48,7 +48,7 @@ const HISTORY_MISS = { code: 0, message: 'success', data: { items: [], total: 0 
 /** 造一个「按端点应答」的兑换场景：`post` / `history` 各自决定这一发回什么 */
 const scenario = ({ post, history, token = 'jwt-redeem' }) => {
   const recorder = recordingTransport((request) => {
-    const path = request.url.replace(/^https?:\/\/[^/]+/, '')
+    const path = pathOf(request.url)
     if (request.method === 'POST' && path.startsWith('/api/v1/redeem')) {return post(request)}
     if (request.method === 'GET' && path.startsWith('/api/v1/redeem/history')) {return history(request)}
     throw new Error(`没有预期的端点被打到：${request.method} ${path}`)

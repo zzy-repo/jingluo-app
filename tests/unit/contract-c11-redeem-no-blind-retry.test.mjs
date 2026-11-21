@@ -27,7 +27,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
 import { installResolveHooks, tableTest } from '../helpers/contract.mjs'
-import { jsonReply, recordingTransport } from '../helpers/consume-fixtures.mjs'
+import { jsonReply, pathOf, recordingTransport } from '../helpers/consume-fixtures.mjs'
 
 installResolveHooks()
 
@@ -54,7 +54,7 @@ const FIRST_SHOTS = {
 /** 一次完整的「首发 → 补偿核对」场景 */
 const runScene = async ({ first, history, confirm = false }) => {
   const recorder = recordingTransport((request) => {
-    const path = request.url.replace(/^https?:\/\/[^/]+/, '').split('?')[0]
+    const path = pathOf(request.url).split('?')[0]
     if (request.method === 'POST' && path === '/api/v1/redeem') {return FIRST_SHOTS[first]()}
     if (request.method === 'GET' && path === '/api/v1/redeem/history') {return history()}
     throw new Error(`没有预期的端点被打到：${request.method} ${path}`)
