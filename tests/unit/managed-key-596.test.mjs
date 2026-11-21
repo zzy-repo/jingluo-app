@@ -195,7 +195,10 @@ test('[3] ours + 没有 Key：发送被拦，设置页说「请先领取 Key」'
   assert.equal(dialogState.ensureApiKey(), false, '必须拦下，不许带着空 Key 发请求')
   const state = dialogState.useSettingsDialog.getState()
   assert.equal(state.open, true, '拦截要打开设置')
-  assert.equal(state.section, 'data', '落在「数据管理」')
+  // #727 阶段 1：Key 那一行搬到了第三个 tab（账户与消费）。断言口径不变（「落在 Key 所在的那个
+  // 分组」），只是分组值从旧 IA 的 `data` 换成新 IA 的 `account` —— 落在 `data` 会让用户看到
+  // 一个没有 Key 输入框的面板（SettingsDialog 的 data tab 已明确不留渠道 / Key / 模型）。
+  assert.equal(state.section, 'account', '落在「账户与消费」')
   assert.equal(state.managedKeyBlocked, 'unclaimed', '设置页要知道这次是「还没领取」')
 })
 
@@ -289,15 +292,30 @@ test('[4] 手填一把「格式完美」的 Key 也过不去：没有下发标�
   assert.equal(apiConfig.checkApiKeyBeforeSend(), 'claim')
 })
 
-test('[4] ours 的 401 文案另说一句（没有「重新填写」这条不存在的路）', () => {
+test('[4] ours 的 401 文案另说一句（没有「重新填写」这条不存在的路）', async () => {
   assert.match(zh.apiKeyRejectedOurs, /重新领取/u, 'ours 401 的出路只有重新领取')
   assert.equal(/未知错误|服务器繁忙/u.test(zh.apiKeyRejectedOurs), false)
-  // 接线：聊天 401 分渠道选文案
-  const store = sourceOf('src/services/chat/store.ts')
-  assert.match(
-    store,
-    /getProviderKind\(\) === 'ours'[\s\S]{0,120}apiKeyRejectedOurs/u,
+  // 接线（#771 之后）：401 该说哪句由 `chat/errorNotice.ts` 的报错矩阵按渠道选 —— 原来那段
+  // `store.ts` 里的 `getProviderKind() === 'ours' ? … : …` 三元已经收进表里（表驱动 = 唯一判定处）。
+  // 所以断言从「读 store.ts 源码正则」改成**直接调那张表**：行为不变，判据更强（源码换个写法也拦得住）。
+  const notices = await import('../../src/services/chat/errorNotice.ts')
+  assert.equal(
+    notices.errorNoticeKey({ status: 401, providerKind: 'ours' }),
+    'apiKeyRejectedOurs',
     'chat 401 必须按渠道选文案：ours 用 apiKeyRejectedOurs'
+  )
+  assert.equal(
+    notices.errorNoticeKey({ status: 401, providerKind: 'deepseek' }),
+    'apiKeyRejected',
+    '其它渠道的 401 仍是「重新填写」那句（对照：不是一律换成 ours 的文案）'
+  )
+  // 并钉住「store 真的走这张表」：401 的文案在 store 里只能经由 errorNotice 取，不许再长回一段三元
+  const store = codeOf('src/services/chat/store.ts')
+  assert.match(store, /errorNoticeKey|pickErrorNotice/u, 'store 的报错文案必须来自 errorNotice 表（#771）')
+  assert.equal(
+    /getProviderKind\(\) === 'ours'[\s\S]{0,120}apiKeyRejectedOurs/u.test(store),
+    false,
+    'store 里不该再有「按渠道挑 401 文案」的本地三元：那是 errorNotice 表的事'
   )
 })
 

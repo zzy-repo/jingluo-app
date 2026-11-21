@@ -310,7 +310,10 @@ test('[2] ensureSendConfig：五类各自拦下、清空请求之外的副作用
   assert.equal(dialogState.ensureSendConfig(), false, '模型名为空必须拦下')
   let state = dialogState.useSettingsDialog.getState()
   assert.equal(state.open, true, '拦截要打开设置')
-  assert.equal(state.section, 'data', '落在「数据管理」（地址与模型都在这一页）')
+  // #727 阶段 1：地址与模型搬到了第三个 tab（账户与消费）。断言口径不变（「落在地址与模型所在的
+  // 那一页」），值换成新 IA 的 `account` —— `SettingsDialog` 的 data tab 已经**明确不留**这几行，
+  // 落在 `data` 等于把人送到一个没有输入框的面板（`ensureSendConfig` 里也是 `openSettings('account')`）。
+  assert.equal(state.section, 'account', '落在「账户与消费」（地址与模型都在这一页）')
   assert.equal(state.sendConfigBlocked, 'model_empty', '设置页要知道被点名的是哪一类')
   assert.deepEqual(useToast.getState().message, { key: 'sendBlockedModelEmpty' }, 'toast 说明原因')
 

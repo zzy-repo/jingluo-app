@@ -7,11 +7,16 @@
 // 侧边栏只剩「通用设置」「数据管理」，`SettingsSection` **直接收窄**成 `'general' | 'data'`
 // （不是「留着值但入口不可达」—— 靠 tsc 让残留引用报错），渲染分支与只服务它的组件一起删。
 //
-// 本文件钉住四件事（与 issue 验收表一一对应）：
-//   T1 侧边栏数据只剩两项，顺序与图标不变（general → 齿轮，data → 数据）
+// #727 阶段 1（本文件随之上移了一项判据）：侧边栏第二项之后**加回** `'account'`（账户与消费，
+// 常显第三个 tab，渠道 / Key / 模型住进去），于是 `SettingsSection` 是 `'general' | 'data' | 'account'`。
+// 本文件钉的仍然是「#711 那条不许回来」：`memory` 的值 / 文案 key / 图标一样都不许出现 ——
+// 判据从「只剩两项」改成「恰好这三项，顺序与图标固定」，`deepEqual` 逐位比，不是「包含就算过」。
+//
+// 本文件钉住四件事（与 issue 验收表一一对应，#727 后的形状）：
+//   T1 侧边栏恰好三项，顺序与图标固定（general → 齿轮，data → 数据，account → 人形）
 //   T2 旧值兜底：store 里残留 `'memory'`（老包/回滚留下的脏值）→ 收敛成 `general`，不崩不空白
 //   T3 旧调用方 `openSettings('memory')`（JS 侧不受 tsc 管）→ 打开的仍是设置，落在 `general`
-//   T4 收窄后两项仍可切换（general / data），别的入口（账户与消费）仍落 `data`
+//   T4 三项仍可切换（general / data / account），账户与消费入口落 `account`
 //
 // 另加三条「没被顺手改坏」的护栏：
 //   T5 类型真的收窄了（源码层面；**硬门是 `npx tsc`**：留一处 `'memory'` 就 TS2322）
@@ -51,7 +56,6 @@ const reset = () => {
   dialog.useSettingsDialog.setState({
     open: false,
     section: 'general',
-    accountConsumeOpen: false,
     accountConsumeTab: 'cards',
   })
 }
@@ -75,25 +79,35 @@ const sidebarOf = (source) => {
   }
 }
 
-/** 判据本体：侧边栏**只**允许「通用设置 + 数据管理」，顺序与图标保持原样 */
+/**
+ * 判据本体：侧边栏**恰好**是「通用设置 + 数据管理 + 账户与消费」这三项，顺序与图标保持原样。
+ *
+ * #711 要求的是「`memory` 彻底不回来」，而不是「永远只有两项」—— #727 阶段 1 把账户与消费提成
+ * 常显的第三项，是**另一次刻意的 IA 变更**（`SettingsDialog.tsx` 里写着「任何渠道下都必须是三项」）。
+ * 所以判据逐位 `deepEqual` 这三项，多一项、少一项、换顺序、换图标都会红。
+ */
 const assertSidebarSections = (source, { whence }) => {
   const { values, labels, icons } = sidebarOf(source)
-  assert.deepEqual(values, ['general', 'data'], `${whence}：侧边栏必须只剩两项，顺序 general → data`)
+  assert.deepEqual(
+    values,
+    ['general', 'data', 'account'],
+    `${whence}：侧边栏必须是这三项，顺序 general → data → account`
+  )
   assert.deepEqual(
     labels,
-    ['settingDialogAsideGeneralOptionLabel', 'settingDialogAsideDataOptionLabel'],
-    `${whence}：两项的文案 key 不许换`
+    ['settingDialogAsideGeneralOptionLabel', 'settingDialogAsideDataOptionLabel', 'accountConsumeTitle'],
+    `${whence}：三项的文案 key 不许换`
   )
   assert.deepEqual(
     icons,
-    ['IconSettingsOutline16', 'IconDataOutline16'],
-    `${whence}：两项的图标不许换（#711 只删「记忆」这一项）`
+    ['IconSettingsOutline16', 'IconDataOutline16', 'IconUserOutline16'],
+    `${whence}：三项的图标不许换（#711 只删「记忆」这一项，#727 加的是账户与消费）`
   )
 }
 
 // ------------------------------------------------------------------ T1 侧边栏只剩两项
 
-test('T1 侧边栏只剩 general / data 两项，顺序与图标不变', () => {
+test('T1 侧边栏恰好 general / data / account 三项，顺序与图标不变', () => {
   const source = sourceOf(DIALOG_FILE)
   assertSidebarSections(source, { whence: 'SettingsDialog.tsx' })
 
@@ -165,32 +179,35 @@ test("T3 openSettings('memory')（JS 调用方，tsc 管不到）→ 该照常�
 
 // ------------------------------------------------------------------ T4 两项仍可切换
 
-test('T4 收窄后两项仍可切换；账户与消费入口仍落「数据管理」', () => {
-  for (const target of ['general', 'data']) {
+test('T4 三项仍可切换；账户与消费入口落「账户与消费」（#727 后不再是「数据管理」）', () => {
+  for (const target of ['general', 'data', 'account']) {
     reset()
     dialog.openSettings(target)
     assert.equal(
       dialog.useSettingsDialog.getState().section,
       target,
-      `「${target}」仍要能作为落点（收窄不等于弄坏既有入口）`
+      `「${target}」仍要能作为落点（收窄 / 加项都不等于弄坏既有入口）`
     )
   }
   reset()
   dialog.openAccountConsume()
   assert.equal(
     dialog.useSettingsDialog.getState().section,
-    'data',
-    '付款回跳 / 额度 CTA 仍走「设置 → 数据管理 → 账户与消费」'
+    'account',
+    '付款回跳 / 额度 CTA 走「设置 → 账户与消费 → 我的卡密」：Key 与模型都在这个 tab 里'
   )
 })
 
 // ------------------------------------------------------------------ T5 类型收窄
 
-test("T5 SettingsSection 直接收窄成 'general' | 'data'（硬门是 npx tsc，这里钉住形状）", () => {
+test("T5 SettingsSection 恰好是 'general' | 'data' | 'account'（硬门是 npx tsc，这里钉住形状）", () => {
   const source = sourceOf(STATE_FILE)
+  // #727 之后联合里多了 `account`，所以这里**逐字钉住整行**。原来写的是
+  // `match(/… = 'general' \| 'data'/)`，那是**前缀匹配** —— 联合后面再接几个值它照样过，
+  // 等于这条判据会随着改动悄悄失效。改成正则锚定整行，多一个值就红。
   assert.match(
     source,
-    /export type SettingsSection = 'general' \| 'data'/u,
+    /export type SettingsSection = 'general' \| 'data' \| 'account'\n/u,
     "必须是「直接收窄」：保留 'memory' 但入口不可达不算完成（issue 明确要求）"
   )
   assert.equal(
@@ -263,8 +280,22 @@ test('[N1] 负向对照：把「记忆」项加回侧边栏 → T1 的判据必�
   assert.deepEqual(sidebarOf(withMemory).values, ['general', 'memory', 'data'], '对照前提：加回去确实三项')
   assert.throws(
     () => assertSidebarSections(withMemory, { whence: '负向对照' }),
-    /只剩两项/u,
-    '判据必须把「三项」判红 —— 否则 T1 就是一条永远绿的空跑用例'
+    /必须是这三项/u,
+    '判据必须把「memory 回来了」判红 —— 否则 T1 就是一条永远绿的空跑用例'
+  )
+  // 再抽一位：把 account 换成 memory（项数对、位置对，只有身份不对）也必须红 ——
+  // 否则「三项」会被凑数满足，`deepEqual(values, …)` 就形同虚设
+  const accountAsMemory = [
+    'const sections: … = [',
+    "  { value: 'general', label: 'settingDialogAsideGeneralOptionLabel', icon: <IconSettingsOutline16 /> },",
+    "  { value: 'data', label: 'settingDialogAsideDataOptionLabel', icon: <IconDataOutline16 /> },",
+    "  { value: 'memory', label: 'settingDialogAsideMemoryOptionLabel', icon: <IconThinkOutline16 /> },",
+    ']',
+  ].join('\n')
+  assert.throws(
+    () => assertSidebarSections(accountAsMemory, { whence: '负向对照：account 被换回 memory' }),
+    /必须是这三项/u,
+    '第三项必须是 account：换成 memory 也得红（项数对不代表身份对）'
   )
 
   // 同一个判据对**当前真源码**必须不抛：红只对回归成立，不是恒红

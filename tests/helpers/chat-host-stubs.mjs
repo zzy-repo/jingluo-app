@@ -115,13 +115,26 @@ export const installChatHostStubs = (options = {}) => {
       if (/diagnostics\/collector\.js$/.test(specifier)) {
         return { url: collectorStub, shortCircuit: true }
       }
+      /**
+       * 内存 db 的换法**必须写在 `nextResolve` 之前**，不能放进 `catch` 分支。
+       *
+       * 曾经这一段在 catch 里（「先让 node 自己解析，解析失败才换成替身」）。单跑时成立，
+       * 但在合并批次里必红 —— `registerHooks` 的钩子**只增不减**，同批前一个文件（例如
+       * `auto-title-prompt-i18n.test.mjs`）在模块顶层注册了一个通吃兜底
+       * （`.js` 解析失败 → 换成 `.ts`）。于是本钩子里 `nextResolve('./db.js')` 会被**那个**兜底
+       * 解析成功（`./db.ts`），`catch` 根本进不去 → `chat/store.ts` 绑到**真 db** →
+       * 没有 `indexedDB` → `initChat()` 读不到会话 → `sendMessage()` 返回 false。
+       * 现象：`chat-session-id-576` 单跑 7/7 绿，批内 3 条红（`首轮应能发出去`）。
+       * 这就是 #513 记的「先注册的 catch 兜底抢在条件路由前面」那一类，只是**这一类有解**：
+       * 判据（specifier + parentURL）本身就是充分的，不必依赖「解析失败」这个旁观者能改的前置条件。
+       */
+      const parent = String(context.parentURL ?? '')
+      if (specifier === './db.js' && parent.endsWith('/chat/store.ts')) {
+        return { url: fakeDB, shortCircuit: true }
+      }
       try {
         return nextResolve(specifier, context)
       } catch (error) {
-        const parent = String(context.parentURL ?? '')
-        if (specifier === './db.js' && parent.endsWith('/chat/store.ts')) {
-          return { url: fakeDB, shortCircuit: true }
-        }
         // 与打包器一致：源码内部用 .js 说明符指向 .ts 文件
         if (specifier.startsWith('.') && specifier.endsWith('.js')) {
           return nextResolve(`${specifier.slice(0, -3)}.ts`, context)

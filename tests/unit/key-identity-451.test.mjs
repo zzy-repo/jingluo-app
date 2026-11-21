@@ -219,13 +219,16 @@ test('[2] ensureApiKey：合法放行 / 没填走既有路径 / 格式错才拦�
   assert.equal(dialogState.ensureApiKey(), true, '有合法 Key 必须放行')
   assert.equal(dialogState.useSettingsDialog.getState().open, false, '不该顺手把设置弹窗打开')
 
-  // ② 没填：既有路径（打开设置 + 选中「数据管理」），但**不能**戴上「格式不对」的帽子
+  // ② 没填：既有路径（打开设置 + 选中「账户与消费」），但**不能**戴上「格式不对」的帽子
+  // #727 阶段 1：渠道 / API Key / 模型搬到了第三个 tab（账户与消费）。落在「数据管理」会让
+  // 用户被送到一个**没有 Key 输入框**的面板（SettingsDialog 里那个 tab 已明确不留这三行），
+  // 所以这里钉的是新 IA —— 断言不变，只换分组值。
   apiConfig.setApiKey('')
   dialogState.closeSettings()
   assert.equal(dialogState.ensureApiKey(), false)
   const missing = dialogState.useSettingsDialog.getState()
   assert.equal(missing.open, true, '没填 Key 时打开设置（#374 之前就有的行为）')
-  assert.equal(missing.section, 'data', 'Key 在「数据管理」分组里')
+  assert.equal(missing.section, 'account', 'Key 在「账户与消费」分组里（#727 后的位置）')
   assert.equal(missing.apiKeyFormatBlocked, false, '「没填」与「格式错」必须分开说')
 
   // ③ 格式错：拦下 + 跳转设置 + 说明原因（这条消息根本没发出去）
@@ -234,7 +237,7 @@ test('[2] ensureApiKey：合法放行 / 没填走既有路径 / 格式错才拦�
   assert.equal(dialogState.ensureApiKey(), false, '格式不对必须在发送前拦下，不浪费一次 401')
   const blocked = dialogState.useSettingsDialog.getState()
   assert.equal(blocked.open, true, '要跳转到设置让人就地改正')
-  assert.equal(blocked.section, 'data')
+  assert.equal(blocked.section, 'account', '同样落在 Key 真正所在的那个 tab（#727）')
   assert.equal(blocked.apiKeyFormatBlocked, true, '设置页要知道这次是「被拦下来的」')
 
   // 修好 Key（保存成功路径）→ 提示撤掉；直接关掉弹窗也会撤
