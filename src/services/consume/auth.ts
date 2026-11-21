@@ -4,7 +4,7 @@
  * 覆盖的端点（**只能用这些**，白名单外一律不许调，`pnpm check:consume-api` 会拦）：
  *
  *   GET  /api/v1/settings/public            启动时读功能开关（注册/邮箱验证/邀请码/验证码）
- *   POST /api/v1/auth/register              注册（可带 verify_code / invitation_code / aff_code）
+ *   POST /api/v1/auth/register              注册（可带 verify_code / invitation_code / aff_code / deviceId）
  *   POST /api/v1/auth/login                 登录
  *   POST /api/v1/auth/login/2fa             两步验证
  *   POST /api/v1/auth/send-verify-code      发邮箱验证码（注册用，5/min）
@@ -30,6 +30,8 @@
  *  - 邀请关系只能在**注册时一次填定**（sub2api 没有「登录后补填邀请码」）；
  *  - 返利按比例结算（比例由服务端下发），旧文案 `circular_invite` / `already_redeemed` 全部不再适用。
  */
+
+import { ensureDeviceId, isDeviceId } from '../invite/device.js'
 
 import { confirmEffect, unconfirmedEffectError } from './confirmEffect.js'
 import { isSessionError } from './errors.js'
@@ -252,7 +254,27 @@ export type ConsumeRegisterInput = {
   turnstileToken?: string
   tencentCaptchaTicket?: string
   tencentCaptchaRandstr?: string
+  /**
+   * 设备码（**可选**，Issue #717 契约）：只用于老账号额度迁移时做一致性校验 / 风控统计。
+   *
+   * 契约（`#717` 原文）：
+   *  - 格式 `^[A-Za-z0-9._:-]{8,128}$`；**缺省或非法 → 整个字段省略**，不传空串、不传占位值
+   *    （后端对缺省 / 非法一律「忽略该字段」，不会因此返回错误、**不阻断注册**）；
+   *  - **不是凭据**：不能单独认领老额度，也不能替代密码 / 免验证登录。真正决定迁移的是
+   *    `oldApiKey`（持有证明），deviceId 只是配角（老系统「知道设备码就能顶号」的毛病不延续）；
+   *  - **只进请求体**：不进 URL query（`check:consume-api` 的 R7 也拦），不进日志 / 埋点 / 诊断
+   *    （凭据类，真要出现在日志里最多尾 4 位 —— 本层一处都不打印）；
+   *  - 后端当前（`RegisterRequest`）**还没有**这个字段：传过去会被直接忽略，注册照常成功；
+   *    后端上线后同一份代码自动生效，客户端不用再改。
+   *
+   * 不传时本层自己取一次（`resolveRegisterDeviceId` → `services/invite/device.ts` 的
+   * `ensureDeviceId()`，首次生成并持久化、之后复用）；取不到 / 不支持就**不传**，绝不阻断注册。
+   */
+  deviceId?: string
 }
+
+/** 设备码采集口（返回 `undefined` = 没有 / 不支持，直接省略该字段） */
+export type RegisterDeviceIdSource = () => string | undefined
 
 /** 登录入参（`captcha` 是服务端可选的图形/人机校验票据） */
 export type ConsumeLoginInput = { email: string; password: string; captcha?: string }
@@ -300,13 +322,83 @@ export const getPublicSettings = (http: ConsumeHttp): Promise<ConsumeCallResult<
       return { ...result, data: settings }
     })
 
-/** 注册（**不可重试**：没有幂等键，重发只会得到「邮箱已存在」，#484 §4.3） */
-export const register = (http: ConsumeHttp, input: ConsumeRegisterInput): Promise<ConsumeCallResult<ConsumeAuthSession>> =>
+/**
+ * 注册（**不可重试**：没有幂等键，重发只会得到「邮箱已存在」，#484 §4.3）。
+ *
+ * 第三个参数是设备码采集口，**只给测试替换用**（默认实现见 `loadRegisterDeviceId`）；
+ * 生产调用点（`createConsumeClient` / `createAuthTransport`）不传它，走默认的
+ * 「取一次 `ensureDeviceId()`，取不到就不传」。
+ */
+export const register = (
+  http: ConsumeHttp,
+  input: ConsumeRegisterInput,
+  deviceIdSource: RegisterDeviceIdSource = loadRegisterDeviceId
+): Promise<ConsumeCallResult<ConsumeAuthSession>> =>
   http
-    .call<unknown>({ method: 'POST', path: '/api/v1/auth/register', body: toRegisterBody(input), timeout: 'write', auth: null })
+    .call<unknown>({ method: 'POST', path: '/api/v1/auth/register', body: toRegisterBody(input, deviceIdSource), timeout: 'write', auth: null })
     .then((result) => (result.ok ? { ...result, data: toAuthSession(result.data) } : result))
 
-const toRegisterBody = (input: ConsumeRegisterInput): Record<string, unknown> => {
+/**
+ * 默认采集实现 —— **全仓唯一一处**「注册时取设备码」的实现，复用 `services/invite/device.ts`：
+ * `ensureDeviceId()` 就是 `loadOrCreateDeviceId(localStorageDeviceIdStorage()).deviceId`
+ * （首次生成并落盘，之后复用同一个值），这里**不重写**生成 / 校验 / 存储逻辑，只加一层兜底。
+ *
+ * 为什么用「读取或新建」而不是 `legacy/migration/collect.ts` 的只读采集：迁移采集的口径是
+ * 「只认真的存在过的东西」（只读不建，缺失就没线索），注册时则相反 —— 新设备本来就该有设备码，
+ * 注册是它第一次落盘的时机。两处口径不同，所以这里不共用那个只读函数。
+ *
+ * 任何异常（`node --test` 没有 `localStorage`、隐私模式写不进去、老 WebView 没有 WebCrypto……）
+ * 都当「没有」：注册是主流程，设备码只是迁移时的可选关联（#717「缺省 / 非法 → 后端忽略，
+ * 不阻断注册」）。
+ */
+const loadRegisterDeviceId: RegisterDeviceIdSource = () => {
+  try {
+    return ensureDeviceId()
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * 决定这次注册带不带 `deviceId`（返回 `undefined` = **整个字段省略**）。
+ *
+ *  1. 调用方**显式**给了（哪怕空串 / 非法值）→ 只按格式判定，**不再去采集**。传了非法值就当
+ *     没有（省略），绝不偷偷换成「本机的设备码」：那会把用户想关联的那台设备和当前设备搞混，
+ *     而且调用方会以为自己传的值被用了。
+ *  2. 没给 → 取**一次**采集值；采集本身抛错 / 返回非字符串也当没有（`#717`：不阻断注册）。
+ *  3. 两种情况都复用 `isDeviceId()`（`services/invite/device.ts` 的**唯一一份**格式校验，
+ *     `^[A-Za-z0-9._:-]{8,128}$`），不在这里另抄一个正则 —— 两份正则迟早会分叉。
+ */
+const resolveRegisterDeviceId = (
+  explicit: string | undefined,
+  source: RegisterDeviceIdSource
+): string | undefined => {
+  const pick = (value: unknown): string | undefined => {
+    if (typeof value !== 'string') {return undefined}
+    const trimmed = value.trim()
+    return isDeviceId(trimmed) ? trimmed : undefined
+  }
+  if (explicit !== undefined) {
+    return pick(explicit)
+  }
+  let collected: unknown
+  try {
+    collected = source()
+  } catch {
+    return undefined
+  }
+  return pick(collected)
+}
+
+/**
+ * 注册请求体。`deviceId` 是**可选**字段（#717）：只有「存在且格式合法」才放进去，
+ * 否则整个键不出现（缺省 / 空串 / 非法 / 采集失败都一样 —— 服务端按可选处理）。
+ * 键名保持契约里的 camelCase `deviceId`，本层不做 snake_case 转换。
+ */
+const toRegisterBody = (
+  input: ConsumeRegisterInput,
+  deviceIdSource: RegisterDeviceIdSource
+): Record<string, unknown> => {
   const body: Record<string, unknown> = { email: input.email, password: input.password }
   if (input.verifyCode) {body.verify_code = input.verifyCode}
   if (input.invitationCode) {body.invitation_code = input.invitationCode}
@@ -315,6 +407,8 @@ const toRegisterBody = (input: ConsumeRegisterInput): Record<string, unknown> =>
   if (input.turnstileToken) {body.turnstile_token = input.turnstileToken}
   if (input.tencentCaptchaTicket) {body.tencent_captcha_ticket = input.tencentCaptchaTicket}
   if (input.tencentCaptchaRandstr) {body.tencent_captcha_randstr = input.tencentCaptchaRandstr}
+  const deviceId = resolveRegisterDeviceId(input.deviceId, deviceIdSource)
+  if (deviceId !== undefined) {body.deviceId = deviceId}
   return body
 }
 
