@@ -33,7 +33,7 @@ import { test } from 'node:test'
 
 import { startMockUpstream, writeStream } from '../fixtures/domain01-02/mock-upstream.mjs'
 import { bodyText, brief, openGoldenPage, runGolden, serveGoldenApp, waitFor, waitForBoot } from '../helpers/golden.mjs'
-import { consumeBaseUrl } from '../../scripts/lib/endpoints.mjs'
+import { consumeBaseUrl, payBaseUrl } from '../../scripts/lib/endpoints.mjs'
 // #596：切到 ours 时 Key 只能是「服务端下发」的形态（Key + 下发标记）
 import { seedClaimedOursKey } from '../helpers/ours-claim.mjs'
 
@@ -118,82 +118,73 @@ const answerText = async (page) => {
 }
 
 /**
- * consume（sub2api）全桩。
+ * consume（sub2api）+ 支付（apia）全桩，**按 host + path 登记**（#667 跟进）。
  *
- * 只有三条被允许的路由：`settings/public`（注册入口显不显示由它说了算）、`auth/register`、
+ * 只有四条被允许的 consume 路由：`settings/public`（注册入口显不显示由它说了算）、`auth/register`、
  * `user/profile` 与 `keys`。**其余一律 404** —— 主路径若悄悄多打一个接口，会在记录里露出来
- * （`window.__g16Calls`），不会因为「恰好也返回 200」被兜住。
+ * （`consumeCalls`），不会因为「恰好也返回 200」被兜住。
  *
- * CORS 是必须的：页面 origin 是本地静态服务，而 consume base 是 `config/endpoints.json` 里的
- * 另一个 origin（127.0.0.1:18000），真机走 CapacitorHttp 没有 CORS，浏览器里就必须自己给头，
- * 并接住 `OPTIONS` 预检（带 `Authorization` 的请求一定会有预检）。
+ * 为什么 host 必须进桩（原来只按 `page.route(`${consumeBaseUrl}/**`)` 前缀匹配）：那串前缀一旦
+ * 因为端点配置改写而对不上，请求会**真的出网**打到真站；而如果代码把地址改道到另一台机器，
+ * 桩不命中 → 请求要么出网、要么安静失败，用例只表现为「注册不成功」。现在未命中的请求由总闸
+ * 记录（`method host+path`）并 abort，收尾断言直接点名它。
  */
-const stubConsume = async (page, consumeCalls) => {
-  await page.route(`${consumeBaseUrl}/**`, async (route) => {
-    const request = route.request()
-    const cors = {
-      'access-control-allow-origin': '*',
-      'access-control-allow-methods': 'GET,POST,PUT,DELETE,OPTIONS',
-      'access-control-allow-headers': 'authorization,accept,content-type,x-session-id',
-      'access-control-max-age': '600',
-    }
-    if (request.method() === 'OPTIONS') {
-      await route.fulfill({ status: 204, headers: cors })
-      return
-    }
-    const { pathname } = new URL(request.url())
-    // 记录在 Node 侧（**不要**在 route handler 里调 page.evaluate：那会和页面的 fetch 互相等）
-    consumeCalls.push(pathname)
-    const json = (status, body) =>
-      route.fulfill({ status, headers: { ...cors, 'content-type': 'application/json' }, body: JSON.stringify(body) })
+const consumeHost = new URL(consumeBaseUrl).host
+const apiaHost = new URL(payBaseUrl).host
+const jsonHeaders = { 'content-type': 'application/json' }
 
-    if (pathname === '/api/v1/settings/public') {
-      // 注册入口必须由服务端开关打开：本地不许写死（#484 §3.1d）
-      await json(
-        200,
-        envelope({ registration_enabled: true, email_verify_enabled: false, invitation_code_enabled: false })
-      )
-      return
-    }
-    if (pathname === '/api/v1/auth/register') {
-      // 注册即登录：成功体与 login 同形（`access_token` + `user`），见 services/auth/transport.ts 的文件头
-      await json(
-        200,
-        envelope({
-          access_token: 'g16-access-token',
-          refresh_token: 'g16-refresh-token',
-          expires_in: 3600,
-          token_type: 'Bearer',
-          user: { id: 16, email: EMAIL, username: '', role: 'user' },
-        })
-      )
-      return
-    }
-    if (pathname === '/api/v1/user/profile') {
-      await json(200, envelope({ id: 16, email: EMAIL, username: '', role: 'user', balance: 12.5 }))
-      return
-    }
-    if (pathname === '/api/v1/keys') {
-      // 空列表是正常态（不是错误）：账号 tab 登录后第一屏就是「还没有 Key」+ 创建框
-      await json(200, envelope({ items: [], total: 0, page: 1, page_size: 20, pages: 0 }))
-      return
-    }
-    await json(404, { code: 404, message: `no route ${pathname}` })
-  })
-  // 支付侧（apia）：「我的卡密」tab 一打开就取 `/api/orders`，不桩会去连真站
-  await page.route('https://apia.ecsafe.cn/**', async (route) => {
-    const cors = { 'access-control-allow-origin': '*', 'access-control-allow-headers': 'authorization,accept,content-type,x-session-id' }
-    if (route.request().method() === 'OPTIONS') {
-      await route.fulfill({ status: 204, headers: cors })
-      return
-    }
-    await route.fulfill({
+const backendStubs = (consumeCalls) => [
+  {
+    // 整台 consume 主机都登记下来：命中后逐条分派，未登记的路径回 404（留证据而不是兜住）
+    name: 'consume',
+    host: consumeHost,
+    path: /^\/.*$/u,
+    respond: ({ path }) => {
+      // 记录在 Node 侧（**不要**在 route handler 里调 page.evaluate：那会和页面的 fetch 互相等）
+      consumeCalls.push(path)
+      const json = (status, body) => ({ status, headers: jsonHeaders, body: JSON.stringify(body) })
+      if (path === '/api/v1/settings/public') {
+        // 注册入口必须由服务端开关打开：本地不许写死（#484 §3.1d）
+        return json(
+          200,
+          envelope({ registration_enabled: true, email_verify_enabled: false, invitation_code_enabled: false })
+        )
+      }
+      if (path === '/api/v1/auth/register') {
+        // 注册即登录：成功体与 login 同形（`access_token` + `user`），见 services/auth/transport.ts 的文件头
+        return json(
+          200,
+          envelope({
+            access_token: 'g16-access-token',
+            refresh_token: 'g16-refresh-token',
+            expires_in: 3600,
+            token_type: 'Bearer',
+            user: { id: 16, email: EMAIL, username: '', role: 'user' },
+          })
+        )
+      }
+      if (path === '/api/v1/user/profile') {
+        return json(200, envelope({ id: 16, email: EMAIL, username: '', role: 'user', balance: 12.5 }))
+      }
+      if (path === '/api/v1/keys') {
+        // 空列表是正常态（不是错误）：账号 tab 登录后第一屏就是「还没有 Key」+ 创建框
+        return json(200, envelope({ items: [], total: 0, page: 1, page_size: 20, pages: 0 }))
+      }
+      return json(404, { code: 404, message: `no route ${path}` })
+    },
+  },
+  {
+    // 支付侧（apia）：「我的卡密」tab 一打开就取 `/api/orders`，不桩会去连真站
+    name: 'apia-orders',
+    host: apiaHost,
+    path: /^\/api\/orders$/u,
+    respond: () => ({
       status: 200,
-      headers: { ...cors, 'content-type': 'application/json' },
+      headers: jsonHeaders,
       body: JSON.stringify({ customer_id: 0, total: 0, limit: 20, offset: 0, total_paid_yuan: 0, orders: [] }),
-    })
-  })
-}
+    }),
+  },
+]
 
 /**
  * 原生桥桩（Capacitor 替身）—— 与 `g15-purchase.test.mjs` 同一套配方（见 `tests/golden/README.md`）。
@@ -251,8 +242,10 @@ test('G16 账户可选：不登录首屏可用 → 只填 Key 能收发 → 账�
   const mock = await startMockUpstream()
   mock.state.respond = async (_call, res) => writeStream(res, { chunks: [ANSWER] })
 
+  /** consume 侧打过的路径（Node 侧收集，主路径断言「注册走了白名单端点」用） */
+  const consumeCalls = []
   // 全新安装的全部「凭据」：只有服务配置 + 一把 Key，**没有** `chat-demo:auth-token`
-  const { page, close } = await openGoldenPage(app.url, {
+  const { page, close, guard } = await openGoldenPage(app.url, {
     // 原生通道替身：没有它，消费层在浏览器里恒返回 `unsupported`，「注册」那一步走不到端点
     initScripts: [nativeBridgeStub],
     storage: {
@@ -261,10 +254,12 @@ test('G16 账户可选：不登录首屏可用 → 只填 Key 能收发 → 账�
       'chat-demo:base-url:anthropic': mock.url,
       'chat-demo:model:anthropic': MODEL,
     },
+    backends: {
+      stubs: backendStubs(consumeCalls),
+      // 对话上游是本机真起的 mock（端口 0）：显式放行，别的 host 一律拦下并记账
+      allowHosts: [new URL(mock.url).host],
+    },
   })
-  /** consume 侧打过的路径（Node 侧收集，主路径断言「注册走了白名单端点」用） */
-  const consumeCalls = []
-  await stubConsume(page, consumeCalls)
   try {
     await waitForBoot(page)
 
@@ -401,6 +396,10 @@ test('G16 账户可选：不登录首屏可用 → 只填 Key 能收发 → 账�
           expected: '/api/v1/auth/register 被调用',
           actual: consumeCalls.join(' | '),
         })
+
+        // ── 出站总闸（#667 跟进）：整条路径没有一条请求漏到白名单之外 ────────────
+        ctx.begin('不连真实服务')
+        guard.assertNoLeak(ctx)
       }
     )
 

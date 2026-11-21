@@ -137,7 +137,10 @@ test('G13 文档附件：选 tiny.txt → 解析成功 → 发送「帮我总结
   mock.state.respond = async (call, res) => {
     await writeStream(res, { chunks: ['总结如下：', '夹具三段话，', `第 ${call} 轮。`] })
   }
-  const { page, close } = await openGoldenPage(app.url)
+  // 出站总闸：只放行本机 mock 上游（端口 0），别的 host 一律拦下并记账（#667 跟进）
+  const { page, close, guard } = await openGoldenPage(app.url, {
+    backends: { allowHosts: [new URL(mock.url).host] },
+  })
   try {
     // 渠道指向本机 mock（anthropic 协议 = `textInjection: true` 的那一档）；
     // 走 DeepSeek 官方档会**整条闸关掉**，那样这条用例测的就不是文档主路径了。
@@ -273,6 +276,10 @@ test('G13 文档附件：选 tiny.txt → 解析成功 → 发送「帮我总结
           expected: '一处都没有',
           actual: allHits.length === 0 ? '干净' : `命中：${[...new Set(allHits)].join('、')}`,
         })
+
+        // ── 出站总闸（#667 跟进）：整条路径没有一条请求漏到白名单之外 ────────────
+        ctx.begin('不连真实服务')
+        guard.assertNoLeak(ctx)
       }
     )
     // runGolden 只记失败、不抛：抬成 node:test 的失败（`node --test` 单跑也才算真红）

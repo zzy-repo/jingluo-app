@@ -43,7 +43,10 @@ const result = await runGolden(
       }
       await writeStream(res, { chunks: [FINAL_ANSWER] })
     }
-    const { page, close } = await openGoldenPage(app.url)
+    // 出站总闸：本机 mock 上游（端口 0）显式放行，别的 host 一律拦下并记账（#667 跟进）
+    const { page, close, guard } = await openGoldenPage(app.url, {
+      backends: { allowHosts: [new URL(mock.url).host] },
+    })
     try {
       await configureAnthropicChannel(page, { url: mock.url, apiKey: KEY })
       await page.reload({ waitUntil: 'domcontentloaded' })
@@ -96,6 +99,10 @@ const result = await runGolden(
         expected: '回答请求 2 次（首发 1 + 重新生成 1）',
         actual: `${mock.state.chatCalls.length} 次`,
       })
+
+      // ── 出站总闸（#667 跟进）：整条路径没有一条请求漏到白名单之外 ──────────────
+      ctx.begin('不连真实服务')
+      guard.assertNoLeak(ctx)
     } finally {
       await close()
       await mock.close()

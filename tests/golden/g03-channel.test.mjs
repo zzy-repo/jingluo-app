@@ -42,7 +42,10 @@ const result = await runGolden(
     const mock = await startMockUpstream()
     mock.state.respond = async (_call, res) => writeStream(res, { chunks: [ANSWER] })
     // 探测请求（GET {baseUrl}/v1/models）由 mock 上游的 /models 路由应答，这里只负责记录
-    const { page, close } = await openGoldenPage(app.url, { storage: {} })
+    // 出站总闸：本机 mock 上游（端口 0）显式放行，别的 host 一律拦下并记账（#667 跟进）
+    const { page, close, guard } = await openGoldenPage(app.url, {
+      backends: { allowHosts: [new URL(mock.url).host] },
+    })
     const probes = captureProbeRequests(page)
     try {
       await waitForBoot(page)
@@ -139,6 +142,11 @@ const result = await runGolden(
         expected: 'x-api-key 带上 Key，且没有 anthropic-version',
         actual: `x-api-key=${call.headers['x-api-key'] === KEY ? '对' : '不对/缺失'}，anthropic-version=${call.headers['anthropic-version'] === undefined ? '（没带）' : '带了'}`,
       })
+
+      // ── 出站总闸（#667 跟进）：整条路径没有一条请求漏到白名单之外 ──────────────
+      ctx.begin('不连真实服务')
+      guard.assertNoLeak(ctx)
+
       // 兜底：configureAnthropicChannel 只用来证明「同样的渠道配置也能被 localStorage 直接表达」，
       // 这里不调用它 —— 保留导入是为了让「本地存储键名」这层契约在改动时立刻红。
       void configureAnthropicChannel

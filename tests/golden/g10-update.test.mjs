@@ -57,30 +57,44 @@ const RELEASES = [
   release(),
 ]
 
-/** 拦发布清单（跨域 GET 必须自己给 CORS 头，否则会变成 network 类失败） */
-const routeManifest = async (context) => {
-  await context.route(`${PRIMARY}/releases.json`, (route) =>
-    route.fulfill({
+/**
+ * 发布清单 / APK 的桩：**按 host + path** 登记（#667 跟进）。
+ *
+ * 原来用的是 `context.route('http://62.106.70.167:8888/releases.json')` —— 那种写法看起来带了
+ * host，但 Playwright 的 glob 语义里它只是「整串 URL 前缀」，一旦清单地址被改道到第三台机器，
+ * 这条桩不再命中、请求会真的出网，而用例只会以「清单解析失败」的样子红（甚至绿）。
+ * 现在走总闸：host 精确匹配 + path 精确匹配，命中才算数，未命中一律 abort 并记账。
+ */
+const manifestStubs = () => [
+  {
+    name: 'releases-primary',
+    host: new URL(PRIMARY).host,
+    path: '/releases.json',
+    respond: () => ({
       status: 200,
-      headers: {
-        'access-control-allow-origin': '*',
-        'access-control-allow-methods': 'GET',
-        'content-type': 'application/json',
-        'cache-control': 'no-store',
-      },
+      headers: { 'content-type': 'application/json', 'cache-control': 'no-store' },
       body: JSON.stringify({ releases: RELEASES }),
-    })
-  )
-  await context.route(`${FALLBACK}/releases.json`, (route) => route.fulfill({ status: 503, body: '' }))
+    }),
+  },
+  // 备选机：503 → 用例要验证「首选机可用时不回落到备选机」之外的清单解析路径
+  {
+    name: 'releases-fallback',
+    host: new URL(FALLBACK).host,
+    path: '/releases.json',
+    respond: () => ({ status: 503, body: '' }),
+  },
   // APK 本体：给固定字节数，让「下载校验」能真的取到东西
-  await context.route(`${PRIMARY}/${RELEASE_FILE}`, (route) =>
-    route.fulfill({
+  {
+    name: 'apk-primary',
+    host: new URL(PRIMARY).host,
+    path: `/${RELEASE_FILE}`,
+    respond: () => ({
       status: 200,
-      headers: { 'access-control-allow-origin': '*', 'content-type': 'application/vnd.android.package-archive' },
+      headers: { 'content-type': 'application/vnd.android.package-archive' },
       body: Buffer.alloc(APK_BYTES, 7),
-    })
-  )
-}
+    }),
+  },
+]
 
 /** 页面内取数：结论行 + 版本号 + 下载入口 */
 const probe = () =>
@@ -100,11 +114,12 @@ const result = await runGolden(
   { id: 'G10', domain: '更新', title: '检查 → 解析清单 → 选对版本 → 下载校验' },
   async (ctx) => {
     const app = await serveGoldenApp()
-    const { page, context, close } = await openGoldenPage(app.url, {
+    const { page, close, guard } = await openGoldenPage(app.url, {
       storage: { 'chat-demo:api-key': 'sk-golden-g10' },
+      // 两台分发机都登记成桩：只拦一台时首选机一旦真的可达，用例会连真服务器（离线环境下表现为超时）
+      backends: { stubs: manifestStubs() },
     })
     try {
-      await routeManifest(context)
       await waitForBoot(page)
 
       // ── 1. 打开「设置 → 检查更新」──────────────────────────────────────────────
@@ -162,6 +177,10 @@ const result = await runGolden(
         expected: `HTTP 200 且 ${APK_BYTES} 字节`,
         actual: `HTTP ${downloaded.status} / ${downloaded.bytes} 字节`,
       })
+
+      // ── 出站总闸（#667 跟进）：整条路径没有一条请求漏到白名单之外 ──────────────
+      ctx.begin('不连真实服务')
+      guard.assertNoLeak(ctx)
     } finally {
       await close()
       await app.close()

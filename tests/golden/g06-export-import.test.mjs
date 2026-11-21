@@ -57,7 +57,8 @@ const result = await runGolden(
   { id: 'G6', domain: '导出+导入', title: '导出 → 校验包结构 → 可再次导入' },
   async (ctx) => {
     const app = await serveGoldenApp()
-    const { page, close } = await openGoldenPage(app.url, { storage: { 'chat-demo:api-key': KEY } })
+    // 导出 / 导入全走本地文件与 IndexedDB：总闸是空的（任何出站请求都算漏）
+    const { page, close, guard } = await openGoldenPage(app.url, { storage: { 'chat-demo:api-key': KEY } })
     const dir = await mkdtemp(path.join(tmpdir(), 'deepseek-golden-export-'))
     const zipPath = path.join(dir, 'deepseek_data.zip')
     try {
@@ -149,6 +150,10 @@ const result = await runGolden(
         expected: `body 含「${TITLES[1]}」`,
         actual: `body=${brief(await bodyText(page))}`,
       })
+
+      // ── 出站总闸（#667 跟进）：整条路径没有一条请求漏到白名单之外 ──────────────
+      ctx.begin('不连真实服务')
+      guard.assertNoLeak(ctx)
     } finally {
       await close()
       await app.close()

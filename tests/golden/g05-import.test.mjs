@@ -48,7 +48,8 @@ const result = await runGolden(
   { id: 'G5', domain: '导入', title: '链接导入：manifest → 下载 → 解析 → 入库' },
   async (ctx) => {
     const app = await serveGoldenApp()
-    const { page, close } = await openGoldenPage(app.url, {
+    // 下载走原生桥（CapacitorHttp 桩），页面本身不发请求：总闸是空的
+    const { page, close, guard } = await openGoldenPage(app.url, {
       initScripts: [
         {
           fn: nativeDownloadStub,
@@ -137,6 +138,10 @@ const result = await runGolden(
         expected: `body 含「${TITLE_PREFIX}」`,
         actual: `body=${brief(await bodyText(page))}`,
       })
+
+      // ── 出站总闸（#667 跟进）：整条路径没有一条请求漏到白名单之外 ──────────────
+      ctx.begin('不连真实服务')
+      guard.assertNoLeak(ctx)
     } finally {
       await close()
       await app.close()

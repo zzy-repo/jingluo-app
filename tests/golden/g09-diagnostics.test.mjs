@@ -48,8 +48,10 @@ const result = await runGolden(
     // 418：不参与退避重试（不是 429/5xx），且没有上游 code → 落到「可复制诊断」那一档
     mock.state.respond = async (_call, res) =>
       writeJsonError(res, 418, { message: UPSTREAM_MESSAGE })
-    const { page, close } = await openGoldenPage(app.url, {
+    // 出站总闸：只放行本机 mock 上游（端口 0），别的 host 一律拦下并记账（#667 跟进）
+    const { page, close, guard } = await openGoldenPage(app.url, {
       initScripts: [{ fn: clipboardStub, arg: null }],
+      backends: { allowHosts: [new URL(mock.url).host] },
     })
     try {
       await configureAnthropicChannel(page, { url: mock.url, apiKey: KEY })
@@ -117,6 +119,10 @@ const result = await runGolden(
         expected: '含 ••••cdef / ••••ABCD / ••••8000',
         actual: brief(copied, 200),
       })
+
+      // ── 出站总闸（#667 跟进）：整条路径没有一条请求漏到白名单之外 ──────────────
+      ctx.begin('不连真实服务')
+      guard.assertNoLeak(ctx)
     } finally {
       await close()
       await mock.close()

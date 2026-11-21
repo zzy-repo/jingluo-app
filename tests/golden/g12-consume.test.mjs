@@ -24,7 +24,7 @@ import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
 import path from 'node:path'
 
-import { runGolden, brief } from '../helpers/golden.mjs'
+import { createEgressGuard, runGolden, brief } from '../helpers/golden.mjs'
 import { installEndpointsGlobals, installTsResolve, setupDom } from '../helpers/dom-env.mjs'
 import { consumeApiV1Prefix, consumeGatewayPrefix, consumeTimeouts } from '../../scripts/lib/endpoints.mjs'
 
@@ -92,12 +92,15 @@ const startMock = () =>
  * 真 HTTP transport（只给测试用）：`ConsumeTransport` 的形状是
  * `{kind:'response'|'timeout'|'network'|'unsupported'}`，这里用 Node 的 fetch 实现。
  *
- * 同时记下每次请求的 URL —— 结尾那条「一条都没打到真实例」的断言就靠它。
+ * 同时记下每次请求的 URL —— 结尾那条「一条都没打到真实例」的断言就靠它；并且每发一次都交给
+ * 出站总闸（`createEgressGuard`，#667 跟进）记 host —— 这条用例没有浏览器、没有 `page.route`，
+ * 但「host 必须在白名单里」这件事一样要机械判。
  */
-const createNodeTransport = () => {
+const createNodeTransport = (egress) => {
   const urls = []
   const transport = async ({ method, url, headers, body, timeoutMs }) => {
     urls.push(`${method} ${url}`)
+    egress.note(method, url)
     try {
       const response = await fetch(url, {
         method,
@@ -151,8 +154,8 @@ const createTokenStorage = () => {
 }
 
 /** 装配「真客户端 + 真身份层」，端点显式指向 mock */
-const wire = ({ base }) => {
-  const { transport, urls } = createNodeTransport()
+const wire = ({ base }, egress) => {
+  const { transport, urls } = createNodeTransport(egress)
   const consume = createConsumeClient({
     transport,
     endpoints: {
@@ -201,7 +204,9 @@ test('G12 账户与消费：登录 → 读到余额 → 兑换卡密 → 余额�
       { id: 'G12', domain: '账户与消费', title: '登录 → 读到余额 → 兑换卡密 → 余额变化' },
       async (ctx) => {
         resetState(storage)
-        const { consume, urls } = wire(mock)
+        // 出站总闸（#667 跟进）：只放行本次自起的 mock（host 精确匹配）
+        const egress = createEgressGuard({ allowHosts: [new URL(mock.base).host], label: 'G12 consume' })
+        const { consume, urls } = wire(mock, egress)
 
         // ── 1. 启动读开关：入口显隐的唯一来源 ────────────────────────────────
         ctx.begin('读 settings/public')
@@ -291,6 +296,8 @@ test('G12 账户与消费：登录 → 读到余额 → 兑换卡密 → 余额�
           expected: `全部以 ${mock.base} 开头`,
           actual: guarded ?? brief(urls.join(' | '), 200),
         })
+        // 共享总闸：出站 host ⊆ 白名单（未登记的请求会被点名成 `METHOD host+path`）
+        egress.assertNoLeak(ctx)
       }
     )
     // runGolden 只记失败、不抛：这里抬成 node:test 的失败（`node --test` 单跑也才算真红）
@@ -308,7 +315,9 @@ test('G12b 身份恢复：冷启动过期 → 续期换新 token → 仍能读�
       { id: 'G12b', domain: '账户与消费', title: '冷启动恢复 → 续期 → 再读余额' },
       async (ctx) => {
         resetState(storage)
-        const { consume, urls } = wire(mock)
+        // 出站总闸（#667 跟进）：只放行本次自起的 mock（host 精确匹配）
+        const egress = createEgressGuard({ allowHosts: [new URL(mock.base).host], label: 'G12 consume' })
+        const { consume, urls } = wire(mock, egress)
 
         // ── 1. 先真登录一次，拿到一对可续期的 token ───────────────────────────
         ctx.begin('先登录拿 token')
@@ -369,6 +378,8 @@ test('G12b 身份恢复：冷启动过期 → 续期换新 token → 仍能读�
           expected: `全部以 ${mock.base} 开头`,
           actual: guarded ?? brief(urls.join(' | '), 200),
         })
+        // 共享总闸：出站 host ⊆ 白名单（未登记的请求会被点名成 `METHOD host+path`）
+        egress.assertNoLeak(ctx)
       }
     )
     assert.equal(result.status, 'PASS', result.failures.join(' | '))

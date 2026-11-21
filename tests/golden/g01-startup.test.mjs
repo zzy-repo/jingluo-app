@@ -26,7 +26,8 @@ const result = await runGolden(
   { id: 'G1', domain: '启动', title: '冷启动 → 会话列表渲染 → 打开最近会话' },
   async (ctx) => {
     const app = await serveGoldenApp()
-    const { page, close } = await openGoldenPage(app.url, { storage: { 'chat-demo:api-key': KEY } })
+    // 这条路径不该有任何出站请求：只装一个空总闸（命中 0 条桩 = 任何出站都算漏）
+    const { page, close, guard } = await openGoldenPage(app.url, { storage: { 'chat-demo:api-key': KEY } })
     try {
       // ── 1. 冷启动：首屏可用，不是白屏 / 永久 loading ────────────────────────────
       ctx.begin('冷启动')
@@ -69,6 +70,10 @@ const result = await runGolden(
         actual: '页面没有输入框',
       })
       ctx.expect('打开会话不是「什么都没发生」', opened, { expected: '主区出现「丙的回答」', actual: `body=${text}` })
+
+      // ── 出站总闸（#667 跟进）：整条路径没有一条请求漏到白名单之外 ──────────────
+      ctx.begin('不连真实服务')
+      guard.assertNoLeak(ctx)
     } finally {
       await close()
       await app.close()

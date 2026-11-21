@@ -52,7 +52,8 @@ const result = await runGolden(
   { id: 'G4', domain: '会话', title: '新建 → 重命名 → 置顶 → 删除 → 回空态' },
   async (ctx) => {
     const app = await serveGoldenApp()
-    const { page, close } = await openGoldenPage(app.url, { storage: { 'chat-demo:api-key': KEY } })
+    // 会话 CRUD 全程只碰 IndexedDB：总闸是空的（任何出站请求都算漏）
+    const { page, close, guard } = await openGoldenPage(app.url, { storage: { 'chat-demo:api-key': KEY } })
     try {
       await waitForBoot(page)
       await seedSessions(page, ENTRIES)
@@ -140,6 +141,10 @@ const result = await runGolden(
         expected: 'sessions = 0',
         actual: `sessions = ${remaining}`,
       })
+
+      // ── 出站总闸（#667 跟进）：整条路径没有一条请求漏到白名单之外 ──────────────
+      ctx.begin('不连真实服务')
+      guard.assertNoLeak(ctx)
     } finally {
       await close()
       await app.close()

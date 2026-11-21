@@ -201,7 +201,8 @@ const countCalls = (calls, predicate) => calls.filter(predicate).length
 
 test('G15 支付 / 购买：套餐 → 下单（pay-link）→ 回跳 → 卡密 → 一键复制', async () => {
   const app = await serveGoldenApp()
-  const { page, close } = await openGoldenPage(app.url, {
+  // 后端全桩、一个真请求都不发：总闸在这里是**空闸**（CapacitorHttp 替身接住一切，页面不该发任何请求）
+  const { page, close, guard } = await openGoldenPage(app.url, {
     initScripts: [
       {
         fn: purchaseBridgeStub,
@@ -343,6 +344,10 @@ test('G15 支付 / 购买：套餐 → 下单（pay-link）→ 回跳 → 卡密
           countCalls(calls, (entry) => entry.path === '/me') === 0,
           { expected: '/me 请求数 = 0', actual: brief(paths, 200) }
         )
+
+        // ── 8. 出站总闸（#667 跟进）：整条路径没有一条请求漏到白名单之外 ──────────
+        ctx.begin('不连真实服务')
+        guard.assertNoLeak(ctx)
       }
     )
     // runGolden 只记失败、不抛：抬成 node:test 的失败（`node --test` 单跑也才算真红）
