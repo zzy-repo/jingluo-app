@@ -79,6 +79,8 @@ export type Stage =
   | 'quota.orders'
   | 'quota.trail'
   | 'quota.order'
+  // 钱包（#784）：付款回来 → 自动兑现卡密进账号余额（一条日志一个结论）
+  | 'wallet.auto-redeem'
   // 反馈上传
   | 'feedback.upload'
   // 启动与渲染
@@ -113,6 +115,7 @@ export const STAGES: readonly Stage[] = [
   'quota.orders',
   'quota.trail',
   'quota.order',
+  'wallet.auto-redeem',
   'feedback.upload',
   'app.launch',
   'ui.render',
