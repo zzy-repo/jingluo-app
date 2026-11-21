@@ -907,13 +907,11 @@ export const en = {
   accountConsumeConnIdle: 'Tap to test',
   accountConsumeConnFail: 'Failed · retry',
   accountConsumeAccountId: 'Account ID',
-  accountConsumeSkipLoginFillKey: 'Skip sign-in and enter an API key',
   accountConsumeBindEmail: 'Linked email',
   accountConsumeLoginMethod: 'Sign-in method',
   accountConsumeLoginMethodEmail: 'Email',
   accountConsumeSecurity: 'Account & security',
   accountConsumeSignedOutCta: 'Log in / Sign up',
-  accountConsumeEmailUnbound: 'Not linked',
   accountConsumeSignOutConfirm: 'Sign out now?',
 
   // Login wall removed (#608): the account is now an *optional* capability inside "the built-in channels".

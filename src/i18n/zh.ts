@@ -903,14 +903,11 @@ export const zh = {
   accountConsumeConnIdle: '点一下测试',
   accountConsumeConnFail: '连接失败 · 重试',
   accountConsumeAccountId: '账号 ID',
-  // #727 阶段 1：账号页未登录态（同一页把资料区换成一句提示 + 下方的登录 / 注册入口）
-  accountConsumeSkipLoginFillKey: '暂不登录，直接填 API Key',
   accountConsumeBindEmail: '绑定邮箱',
   accountConsumeLoginMethod: '登录方式',
   accountConsumeLoginMethodEmail: '邮箱登录',
   accountConsumeSecurity: '账号与安全',
   accountConsumeSignedOutCta: '登录 / 注册',
-  accountConsumeEmailUnbound: '未绑定',
   accountConsumeSignOutConfirm: '确定退出？',
 
   // 拆掉登录墙（#608）：账户降级为「我们的渠道」里的**可选**能力。

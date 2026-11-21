@@ -47,11 +47,10 @@ const ORPHAN_BASELINE = new Set([
   'compatBootVersion',
   'compatBootVersionUnknown',
   'completionServerBusyToast',
-  // #771 顺带核对（2026-11-21）：main 上 `2fadf81`（#776 「账户与消费」tab 合入）起就用不到的
-  // 两条账户入口词条 —— 与 #771 无关，但门禁在 #771 的 PR 上会跟着红，所以按本脚本的规矩
-  // 登记成**存量**（只许减不许增）：#776 的 owner 侧要么接上引用，要么删 key，删掉后从这里移除。
-  'accountConsumeSkipLoginFillKey',
-  'accountConsumeEmailUnbound',
+  // #771 顺带核对（2026-11-21）：`2fadf81`（#776「账户与消费」tab 合入）起就用不到的两条账户入口词条
+  // `accountConsumeSkipLoginFillKey`（「暂不登录，直接填 API Key」）与 `accountConsumeEmailUnbound`（「未绑定」）。
+  // 当天由 `fix/main-existing-reds` 按本脚本的规矩结清：src/ 与 tests/ 全库 grep 0 引用 → 删 zh/en 两条文案，
+  // 并从这里移除（登记簿只能减）。基线 29 → 27。
   'historyImportUrlRestarted',
   'historyImportUrlResumed',
   'settingsLocation',
