@@ -11,10 +11,11 @@
  * 所以现在：
  *   - 私有包**绝不进公网清单**，改走**独立私有清单**（默认 `<private-root>/releases.internal.json`），
  *     私有根默认 `/opt/dl-private/`（**webroot 之外**，公网 file_server 够不着），包在 `<private-root>/apk/` 下；
- *     线上实况（#621 收尾，**以线上为准**）：`DL_PRIVATE_ROOT=/opt/dl-private`、
- *     `DL_PRIVATE_APK_DIR=/opt/dl-private/apk`、`DL_PRIVATE_RELEASES_JSON=/var/www/dl-private/releases.internal.json`
- *     —— 清单与包目录**不在同一个目录**，所以清单路径另有开关 `--private-manifest`
- *     （env `DL_PRIVATE_RELEASES_JSON`，与 `deploy/dl-release/server.mjs` 同名同义）；
+ *     线上实况（#637 方案 A 收敛：私有根**唯一**）：`DL_PRIVATE_ROOT=/opt/dl-private`、
+ *     `DL_PRIVATE_APK_DIR=/opt/dl-private/apk`、`DL_PRIVATE_RELEASES_JSON=/opt/dl-private/releases.internal.json`
+ *     —— 清单就在私有根下（#621 时代它曾分叉在 `/var/www/dl-private/`），所以 `--private-manifest`
+ *     的缺省值就是线上值，一般不用带；开关仍保留（env `DL_PRIVATE_RELEASES_JSON`，与
+ *     `deploy/dl-release/server.mjs` 同名同义），给「清单必须单独放」的托管方留口子；
  *   - 公网 `releases.json` 只允许 `artifactVariant === 'standard'` 且 `buildType === 'stable'`
  *     （校验器与这里的 G1 各拦一次，`scripts/validate-releases-manifest.mjs` 的 public 口径）；
  *   - 客户端取用方式（内置开关）见 docs/RELEASE-MANUAL.md §14：internal 变体在构建期带
@@ -102,9 +103,9 @@ export const DEFAULT_SSH_HOST = 'aliyun';
 export const DEFAULT_WEBROOT = '/var/www/dl';
 /**
  * 私有根：**故意在 webroot 之外** —— 公网 file_server 够不着（#609 的核心）。
- * 默认值与线上对齐（#621 收尾，以线上为准）：生产 `DL_PRIVATE_ROOT=/opt/dl-private`。
+ * 默认值与线上对齐（#637 方案 A 收敛）：生产 `DL_PRIVATE_ROOT=/opt/dl-private`，清单也在根下。
  * env `DL_PRIVATE_ROOT` 可覆盖；`--private-manifest`（env `DL_PRIVATE_RELEASES_JSON`）
- * 单独管清单路径，因为线上清单不在私有根下。
+ * 仍可单独指清单路径（#621 留下的口子），缺省回落 `<private-root>/releases.internal.json`。
  */
 export const DEFAULT_PRIVATE_ROOT = '/opt/dl-private';
 /** 两种清单的文件名 */
@@ -427,10 +428,11 @@ export function gateOrphanFiles({ manifest, presentFiles, planned = null }) {
 /**
  * 目标路径（manifest / apk 目录 / 根）。
  *
- * 私有一侧的两个路径**分开算**（#621 收尾）：线上 `DL_PRIVATE_ROOT=/opt/dl-private`（包目录在
- * `/opt/dl-private/apk`）而清单在 `/var/www/dl-private/releases.internal.json` —— 一个 `--private-root`
- * 拼不出线上布局，所以清单路径可由 `privateManifest`（`--private-manifest` / env
- * `DL_PRIVATE_RELEASES_JSON`）单独指定，缺省仍回落 `<private-root>/releases.internal.json`。
+ * 私有一侧的两个路径**分开算**（#621 留下的口子，#637 收敛后两者同根）：线上
+ * `DL_PRIVATE_ROOT=/opt/dl-private`（包目录 `/opt/dl-private/apk`）、清单
+ * `/opt/dl-private/releases.internal.json` —— 缺省就是一个 `--private-root` 拼出来的布局。
+ * `privateManifest`（`--private-manifest` / env `DL_PRIVATE_RELEASES_JSON`）仍可单独指清单，
+ * 缺省回落 `<private-root>/releases.internal.json`。
  * @param {{target:string, webroot:string, privateRoot:string, privateManifest?:string}} opts
  */
 export function targetPaths(opts) {
@@ -726,7 +728,7 @@ function help() {
       '  --target <t>           private（默认）| public（DL_PRIVATE_TARGET）',
       '  --private-root <dir>   /opt/dl-private（DL_PRIVATE_ROOT）；必须在 webroot 之外',
       '  --private-manifest <p> <private-root>/releases.internal.json（DL_PRIVATE_RELEASES_JSON）；',
-      '                         线上是 /var/www/dl-private/releases.internal.json（不在私有根下）',
+      '                         线上就是缺省值 /opt/dl-private/releases.internal.json（#637 起在私有根下）',
       '  --webroot <dir>        /var/www/dl（DL_PRIVATE_WEBROOT）；--site-root 是它的旧名',
       '  --transport <t>        ssh（默认）| local（只读本机目录，仅 --dry-run）（DL_PRIVATE_TRANSPORT）',
       '  --changes <text>       清单 changes 条目，可重复',
@@ -767,8 +769,8 @@ function parseCli(argv) {
     || readArg(args, 'site-root', 'DL_PRIVATE_SITE_ROOT')
     || DEFAULT_WEBROOT;
   const privateRoot = readArg(args, 'private-root', 'DL_PRIVATE_ROOT') || DEFAULT_PRIVATE_ROOT;
-  // 清单路径单独可配：线上 DL_PRIVATE_RELEASES_JSON=/var/www/dl-private/… 不在私有根下（#621 收尾）。
-  // 缺省回落 <private-root>/releases.internal.json（与 server.mjs 的同名 env 同义）。
+  // 清单路径单独可配（#621 留下的口子）：线上 /opt/dl-private/releases.internal.json 就在私有根下（#637），
+  // 所以缺省回落 <private-root>/releases.internal.json —— 与 server.mjs 的同名 env 同义。
   const privateManifest = readArg(args, 'private-manifest', 'DL_PRIVATE_RELEASES_JSON') || '';
   const publicBase = (readArg(args, 'public-base', 'DL_PRIVATE_PUBLIC_BASE') || DEFAULT_PUBLIC_BASE).replace(/\/+$/, '') + '/';
 
@@ -866,7 +868,7 @@ async function main() {
   if (opts.target === 'public') log.ok(`公网清单 buildType 只收 ${PUBLIC_ALLOWED_BUILD_TYPES.join('|')}，本次 ${buildType} ✓`);
   else {
     log.ok(`私有根 ${path.resolve(opts.privateRoot)} 在 webroot ${path.resolve(opts.webroot)} 之外 ✓`);
-    log.info(`私有清单     ${target.manifestPath}${opts.privateManifest ? '' : '（缺省 = 私有根下；线上是 /var/www/dl-private/）'}`);
+    log.info(`私有清单     ${target.manifestPath}${opts.privateManifest ? '' : '（缺省 = 私有根下；#637 起线上就是这个值）'}`);
   }
 
   // ---- 1. APK 校验（aapt2）----

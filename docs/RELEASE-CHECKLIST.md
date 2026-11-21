@@ -377,7 +377,7 @@ node scripts/release-upload.mjs --apk $APK --dry-run
 | `pnpm run release:upload -- --apk $APK --dry-run` | 打印将要发的请求（令牌只显示来源/长度） | 可选 | ❌ |
 | `pnpm run release:upload -- --apk $APK` | 真上传 + 核对回包 sha256/md5/latest | ✅ | ❌ |
 | `pnpm run release:verify -- --version $V --apk $APK` | 复核 releases.json 已生效 + 下载件三方 hash 一致 | ❌ | ❌ |
-| `node scripts/publish-private-apk.mjs --apk $APK --version $V --versionCode $C --dry-run` | **私有（internal）包**：默认写**私有清单**（webroot 之外，线上 `/var/www/dl-private/releases.internal.json`；私有根 `/opt/dl-private`），四条硬闸先跑一遍再打印动作（不上传、不改清单）；去掉 `--dry-run` 即真发布（`ssh`/`scp` 直连主机，不出公网），见手册 §14 | ❌ | ❌（要能 `ssh` 到 DL 主机） |
+| `node scripts/publish-private-apk.mjs --apk $APK --version $V --versionCode $C --dry-run` | **私有（internal）包**：默认写**私有清单**（webroot 之外，线上 `/opt/dl-private/releases.internal.json`；它就在私有根下，私有根唯一 = `/opt/dl-private`），四条硬闸先跑一遍再打印动作（不上传、不改清单）；去掉 `--dry-run` 即真发布（`ssh`/`scp` 直连主机，不出公网），见手册 §14 | ❌ | ❌（要能 `ssh` 到 DL 主机） |
 | `node scripts/validate-releases-manifest.mjs <file> --strict` | 离线校验一份 releases.json 是否满足契约（已有脚本，本单复用） | ❌ | ❌ |
 | `DL_WEBROOT=/var/www/dl node scripts/check-webroot-hygiene.mjs` | 真 webroot 巡检：R1–R3 文件残留 + **R4 公网清单 internal 条目数必须为 0**（#620） | ❌ | ✅（分发机） |
 | `curl -X POST https://dl.rose7.cn/api/v1/release ...`（公网端点） | 正式包上传：服务端自己再判一次 `standard`+`stable`，否则 `400 VARIANT_NOT_PUBLIC` / `400 BUILD_TYPE_NOT_PUBLIC`（#620：脚本闸挡不住 HTTP 上传，所以接口也拒） | ✅ | ❌ |

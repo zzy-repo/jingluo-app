@@ -18,7 +18,7 @@
 | 发布目标 | URL | 写哪份清单 | 只收 |
 | --- | --- | --- | --- |
 | 公网（正式分发） | `https://dl.rose7.cn/api/v1/release` | `/var/www/dl/releases.json`（webroot 内，公开可读） | `artifactVariant="standard"` **且** `buildType="stable"` |
-| 私有（内测） | `POST http://127.0.0.1:8799/api/v1/release/private`（**不反代**，见 §5c；公网 POST 它 = 404） | `/var/www/dl-private/releases.internal.json`（**webroot 之外**，公网 file_server 够不着；`DL_PRIVATE_RELEASES_JSON`） | `artifactVariant="internal"`（渠道不限） |
+| 私有（内测） | `POST http://127.0.0.1:8799/api/v1/release/private`（**不反代**，见 §5c；公网 POST 它 = 404） | `/opt/dl-private/releases.internal.json`（**私有根下、webroot 之外**，公网 file_server 够不着；`DL_PRIVATE_RELEASES_JSON`，#637 起私有根唯一） | `artifactVariant="internal"`（渠道不限） |
 
 | 项目 | 值 |
 | --- | --- |
@@ -213,7 +213,7 @@ curl -sS -X POST http://127.0.0.1:8799/api/v1/release/private \
 | 变体判不出来（老包且没登记白名单） | `/api/v1/release` | `400 VARIANT_NOT_PUBLIC`（**不默认 standard**） |
 | `buildType=prerelease`（或版本号 `-beta`） | `/api/v1/release` | `400 BUILD_TYPE_NOT_PUBLIC` |
 | standard 包 | `/api/v1/release/private` | `400 VARIANT_NOT_PRIVATE` |
-| internal 包 | `/api/v1/release/private`（本机/隧道，不反代） | `200`，写 `/var/www/dl-private/releases.internal.json` |
+| internal 包 | `/api/v1/release/private`（本机/隧道，不反代） | `200`，写 `/opt/dl-private/releases.internal.json` |
 | standard + stable 包 | `/api/v1/release` | `200`，写 `/var/www/dl/releases.json` |
 
 公网清单里出现 internal 条目这件事，除了接口拒绝（写之前）和 `check:webroot-hygiene` 的 R4（写完之后的

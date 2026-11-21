@@ -32,7 +32,7 @@
  *   `POST /api/v1/release`（公网清单 `/var/www/dl/releases.json`）
  *       artifactVariant !== "standard" → 400 VARIANT_NOT_PUBLIC（内部包/判不出变体的包一律拒）
  *       buildType      !== "stable"   → 400 BUILD_TYPE_NOT_PUBLIC
- *    `POST /api/v1/release/private`（私有清单 `DL_PRIVATE_RELEASES_JSON`，线上 `/var/www/dl-private/releases.internal.json`，webroot 之外）
+ *    `POST /api/v1/release/private`（私有清单 `DL_PRIVATE_RELEASES_JSON`，线上 `/opt/dl-private/releases.internal.json`，webroot 之外）
  *       artifactVariant !== "internal" → 400 VARIANT_NOT_PRIVATE（standard 走 GitHub Release）
  *
  * 判据在 `release-target.mjs`（纯函数，与 scripts/publish-private-apk.mjs 的 G1、
@@ -131,10 +131,10 @@ const RELEASES_JSON = process.env.DL_RELEASES_JSON || '/var/www/dl/releases.json
 // webroot（公网站点根）：只用来判「私有清单/私有包目录绝不许落在里面」（#609 G1 的接口层复刻）。
 // 默认取公网清单所在目录 —— 两者部署上永远同一个地方，少一个要配的环境变量。
 const WEBROOT = path.resolve(process.env.DL_WEBROOT || path.dirname(RELEASES_JSON));
-// 私有清单与私有包目录（#609）：**webroot 之外**，Caddy 的 file_server 够不着。
-// 默认值与线上对齐（#621 收尾，**以线上为准**）：私有根 = /opt/dl-private（包目录 /opt/dl-private/apk）；
-// 线上清单不在私有根下，单独钉在 /var/www/dl-private/releases.internal.json。
-// 三个都能用同名 env 覆盖，服务启动期仍会核「都不许落在 webroot 内」。
+// 私有分发的**唯一**根（#637 方案 A 收敛）：`/opt/dl-private` —— webroot 之外，Caddy 的
+// file_server 够不着。根下三样：`apk/`（私有包）、`private/`（历史包）、`releases.internal.json`（私有清单）。
+// 三个都能用同名 env 覆盖，服务启动期仍会核「都不许落在 webroot 内」；
+// 启动时若发现**另一个**疑似私有根又冒出来（#637），只记 warn，不拦截启动 —— 见 warnStrayPrivateRoots()。
 const PRIVATE_ROOT = path.resolve(process.env.DL_PRIVATE_ROOT || '/opt/dl-private');
 const PRIVATE_RELEASES_JSON = path.resolve(
   process.env.DL_PRIVATE_RELEASES_JSON || path.join(PRIVATE_ROOT, 'releases.internal.json'),
@@ -217,6 +217,44 @@ function assertPrivateRootOutsideWebroot() {
     detail: leaks.map(([name, dir]) => `${name}=${dir}`).join(' '),
   });
   process.exit(1);
+}
+
+/**
+ * 私有根**唯一**是 issue #637 的落脚点：同一概念曾经散在两处（私有根 `/opt/dl-private/`
+ * 与清单 `/var/www/dl-private/`），#637 方案 A 已把清单挪进私有根、旧目录删掉。
+ *
+ * 这条**不是**启动门禁，只是报警：又冒出一个疑似私有根，多半是有人照旧口径重新建了目录、
+ * 或者把配置指回了旧路径 —— 但生产不能因为「看着不顺眼」就起不来，所以**只 warn 不 exit**。
+ *
+ * 疑似根跟着 WEBROOT 推导，不写死第二份路径清单（写死就会和真布局再次分叉）：
+ *   `<webroot 同级>-private`（线上 = `/var/www/dl-private`）与 `<webroot>/private`（线上 = `/var/www/dl/private`）。
+ * 已经配成私有根/清单目录的路径不算 —— 有人确实可以这么配，这层没资格替他判错。
+ */
+function warnStrayPrivateRoots() {
+  const configured = new Set([
+    PRIVATE_ROOT,
+    path.dirname(PRIVATE_RELEASES_JSON),
+    PRIVATE_APK_DIR,
+  ]);
+  const candidates = [
+    `${WEBROOT.replace(/\/+$/, '')}-private`,
+    path.join(WEBROOT, 'private'),
+  ].map((p) => path.resolve(p));
+  const strays = candidates.filter((dir) => {
+    if (configured.has(dir)) return false;
+    try {
+      return fs.statSync(dir).isDirectory();
+    } catch {
+      return false; // 不存在 = 正常（#637 收敛后的线上就是这个状态）
+    }
+  });
+  if (!strays.length) return;
+  log('warn_stray_private_root', {
+    canonical: PRIVATE_ROOT,
+    manifest: PRIVATE_RELEASES_JSON,
+    strays: strays.join(','),
+    hint: '私有根唯一 = /opt/dl-private（#637）；多出来的私有根请合并进私有根或删除',
+  });
 }
 
 // ---------------------------------------------------------------- 版本指纹（Issue #441）
@@ -1263,6 +1301,8 @@ try {
 
 // #620 / #609 G1：私有根不许落在 webroot 内 —— 配置错了就不许起来（宁可接口缺席）
 assertPrivateRootOutsideWebroot();
+// #637：私有根只许有一个 —— 又冒出来的疑似私有根只 warn，不拦启动（见函数注释）
+warnStrayPrivateRoots();
 
 server.listen(LISTEN_PORT, LISTEN_HOST, async () => {
   log('listening', {

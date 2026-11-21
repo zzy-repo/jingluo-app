@@ -41,9 +41,9 @@ install -m 600 deploy/dl-release/artifact-variants.json.example /etc/dl-release/
 
 ```bash
 # 私有（internal）分发目录：webroot 之外，Caddy 的 file_server 够不着
-#   私有根 = /opt/dl-private（webroot 外），由 DL_PRIVATE_ROOT 覆盖；包在 /opt/dl-private/apk（DL_PRIVATE_APK_DIR）
-#   私有清单 = /var/www/dl-private/releases.internal.json（DL_PRIVATE_RELEASES_JSON）—— 线上不在私有根下（#621 收尾）
-ssh aliyun 'install -d -m 755 /opt/dl-private /opt/dl-private/apk /var/www/dl-private'
+#   #637 收敛：私有根**唯一** = /opt/dl-private（webroot 外），由 DL_PRIVATE_ROOT 覆盖
+#   包在 /opt/dl-private/apk（DL_PRIVATE_APK_DIR）；清单在 /opt/dl-private/releases.internal.json（DL_PRIVATE_RELEASES_JSON）
+ssh aliyun 'install -d -m 755 /opt/dl-private /opt/dl-private/apk'
 scp deploy/dl-release/server.mjs deploy/dl-release/variant.mjs deploy/dl-release/apk-manifest.mjs \
     deploy/dl-release/release-target.mjs aliyun:/opt/dl-release/
 scp deploy/dl-release/dl-release.service aliyun:/etc/systemd/system/dl-release.service

@@ -658,7 +658,7 @@ function main(argv) {
   if (result.violations.length) {
     console.log(
       '\n处置：R1 的备份/取证文件移到 webroot 之外（例如 /var/lib/dl-quarantine/）；' +
-        'R2 的目录整棵搬走（私有包/私有清单的合法位置是 webroot 之外：/opt/dl-private/ 与 /var/www/dl-private/）；R3 的内部包移出 webroot；' +
+        'R2 的目录整棵搬走（私有包/私有清单的合法位置是 webroot 之外、且只有一个私有根 /opt/dl-private/）；R3 的内部包移出 webroot；' +
         'R4 的 internal 条目从公网清单里删掉（先确认它已经在私有清单里，再删 —— 顺序反了就等于丢包）。',
     );
     process.exit(1);

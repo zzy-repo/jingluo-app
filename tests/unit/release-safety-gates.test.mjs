@@ -348,15 +348,24 @@ test('发行脚本：targetPaths 把私有清单指向 webroot 之外 / 公网�
   assert.equal(priv.manifestPath, '/opt/dl-private/releases.internal.json');
   assert.equal(priv.apkDir, '/opt/dl-private/apk');
   assert.equal(priv.publiclyReadable, false);
-  // #621 收尾：线上清单不在私有根下（DL_PRIVATE_RELEASES_JSON），清单路径必须能单独指
+  // #637 方案 A 收敛：私有根唯一 —— 清单与包目录都在 /opt/dl-private 下，缺省值就是线上值，
+  // 发布时不必再带 --private-manifest（#621 时代线上清单曾分叉在 /var/www/dl-private/）。
   const live = targetPaths({
     target: 'private',
     webroot: '/var/www/dl',
     privateRoot: '/opt/dl-private',
-    privateManifest: '/var/www/dl-private/releases.internal.json',
   });
-  assert.equal(live.manifestPath, '/var/www/dl-private/releases.internal.json');
-  assert.equal(live.apkDir, '/opt/dl-private/apk', 'apk 目录仍跟着私有根');
+  assert.equal(live.manifestPath, '/opt/dl-private/releases.internal.json', '线上清单就在私有根下（#637）');
+  assert.equal(live.apkDir, '/opt/dl-private/apk', 'apk 目录跟着私有根');
+  // 覆盖能力仍在（#621 留下的口子，给「清单必须单独放」的托管方）：显式指哪写哪，但**不是**线上口径
+  const override = targetPaths({
+    target: 'private',
+    webroot: '/var/www/dl',
+    privateRoot: '/opt/dl-private',
+    privateManifest: '/srv/private-manifest-override/releases.internal.json',
+  });
+  assert.equal(override.manifestPath, '/srv/private-manifest-override/releases.internal.json');
+  assert.equal(override.apkDir, '/opt/dl-private/apk', '清单可另指，包目录仍跟着私有根');
   const pub = targetPaths({ target: 'public', webroot: '/var/www/dl', privateRoot: '/opt/dl-private' });
   assert.equal(pub.manifestPath, '/var/www/dl/releases.json');
   assert.equal(pub.publiclyReadable, true);

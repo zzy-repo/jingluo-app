@@ -12,7 +12,7 @@
 //   V2 公网端点 + 变体判不出来（无标记/无白名单）      → 400 VARIANT_NOT_PUBLIC（不默认 standard）
 //   V3 公网端点 + standard 包但渠道是 prerelease（显式 / 按版本号推导）→ 400 BUILD_TYPE_NOT_PUBLIC
 //   V4 **负向对照**：干净(200) → 注入 internal POST(4xx + sha256 不变) → 还原(200)
-//   V5 私网端点 + internal 包 → 200 写私有清单（线上实况 /var/www/dl-private/releases.internal.json），公网清单**一字未动**
+//   V5 私网端点 + internal 包 → 200 写私有清单（线上实况 /opt/dl-private/releases.internal.json，#637 起在私有根下），公网清单**一字未动**
 //   V6 私网端点 + standard 包 → 400 VARIANT_NOT_PRIVATE（standard 走 GitHub Release）
 //   V10 私网端点 + 显式 buildType=prerelease → 200 原样写入（私有清单不限渠道，#330 的语义保留）
 //   V7 公网清单历史上已有 internal 条目 → 合并后整份校验 409 MANIFEST_INTERNAL_ENTRY（写盘前 fail-closed）

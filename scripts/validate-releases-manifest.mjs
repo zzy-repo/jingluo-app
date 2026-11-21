@@ -22,7 +22,7 @@
  * | 模式 | 文件 | 允许的条目 |
  * | --- | --- | --- |
  * | `public`（默认） | `https://dl.rose7.cn/releases.json` | **只允许** `artifactVariant: "standard"`；出现 `internal` 一律 FAIL |
- * | `private`（--private） | 私有清单（线上 `/var/www/dl-private/releases.internal.json`，webroot 外；私有根 `/opt/dl-private`） | **只允许** `artifactVariant: "internal"`；且 sha256 / buildType / 来源必须齐全 |
+ * | `private`（--private） | 私有清单（线上 `/opt/dl-private/releases.internal.json`，私有根 `/opt/dl-private` 下、webroot 外；#637 私有根唯一） | **只允许** `artifactVariant: "internal"`；且 sha256 / buildType / 来源必须齐全 |
  *
  * #601 事故的根因不是「清单里 internal 条目恰好 0 条」，而是**它当时可以出现**：
  * 一旦公网清单里能写 internal 条目，`file` 字段就等于把内部包的直链广播出去了（文件名不可猜毫无意义）。
