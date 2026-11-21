@@ -11,12 +11,37 @@ logcat 摘录。**口径**：除各子目录 README 另注明的，全部是 **P
 ## 门禁
 
 ```bash
-pnpm check:hygiene   # scripts/check-repo-hygiene.mjs：本机绝对路径 + 单文本文件 > 512 KiB
+pnpm check:hygiene     # scripts/check-repo-hygiene.mjs：本机绝对路径 + 单文本文件 > 512 KiB
+pnpm check:ui-shots    # scripts/check-ui-shots.mjs：每张截图必须有出处 + 每处引用必须指得着（#661）
 ```
 
 `#302` 起本目录**没有目录级豁免**（`EXEMPT_ABS_DIRS` 已删）：一次性 `measure/cdp/weaknet` 脚本里的
 adb 默认值改成走 `PATH` 的 `adb`，`result-180.json` / `firstscreen-results.json` 的 provenance 字段改成
 仓库相对路径或 `<worktree>` 占位。
+
+## 硬约定：**提交截图必须被某份文档引用**
+
+`docs/ui/**` 的图片只进不出过一次（#661：553 张里 155 张、17.4 MiB 在仓库任何 tracked 文本里零命中），
+所以这条不靠自觉，靠门禁：
+
+> **一张截图要么出现在某份文档 / 测试 / 脚本的正文里（写全文件名或能被通配指到），要么不许进仓库。**
+> 新增取证产物时，同一次提交里必须带上指向它的那份 `README.md`（子目录 README 的表格里写全文件名即可）。
+
+验证命令（CI 里是同一步 `pnpm check:ui-shots`，`scripts/check-ui-shots.mjs`）：
+
+```bash
+export PATH="/opt/node24/bin:$PATH" LANG=zh_CN.UTF-8
+pnpm check:ui-shots                    # 孤儿截图 + 悬空引用，双向判；红即拦
+node scripts/check-ui-shots.mjs --list # 逐条看是哪张图没人要 / 哪处引用指空
+
+# 手判单张（= #661 用的双判据；两条都无命中才算未引用）
+git grep -l -F "<文件名>.png" -- docs tests scripts '*.md'
+git grep -l -F "<文件名>.png"
+```
+
+「没人引用」的图**不要直接 `rm`**：按 #661 的流程先在仓库外归档（保留目录结构 + `MANIFEST.txt`
+记 sha256 / 字节 / 路径），再一个 commit `git rm`，这样要还原时 `cp` 回去就行。
+归档位置与前后体积见 `docs/debt-inventory.md` 的 D10。
 
 ## 留存判据（谁必须留、谁可以删）
 
@@ -67,6 +92,21 @@ git grep -n -F 1.4.0-beta.1-settings-apikey.png -- '*.md' '*.json' '*.html' '*.t
 | `180-guard-i18n/api26/logcat-api26.txt` | 117 083 B / 831 行 | 24 400 B / 164 行 | 同上；`README.md` 里引用的守卫行走号从原文 505 改成摘录内的 144 |
 | `app-icon/source.png` | 1 025 854 B | 968 204 B | 无损重编码（Pillow `optimize=True, compress_level=9`）：**解码后逐像素完全相同**（maxdiff = 0），1254×1254 尺寸与色彩不变，`scripts/gen-app-icon.py` 的输入契约不变 |
 
+## `#661` 孤儿截图外迁（删除 155 张，共 18 205 597 B）
+
+`docs/ui` 只进不出攒下的那批「谁的结论都不依赖」的图，在 #661 里**先归档、再删**：
+
+| 项 | 值 |
+| --- | --- |
+| 归档位置（**仓库外**） | `/root/archived-ui-shots-661/`（保留 `docs/ui/…` 目录结构） |
+| 清单 | `MANIFEST.txt`（155 行：`sha256  size_bytes  path`）+ `MANIFEST.paths`（155 行，可 `cp` 还原） |
+| 归档体积 | 18 231 036 B（155 张 PNG 合计 18 205 597 B） |
+| 判定口径 | 双判据（`grep -rl "<文件名>" docs/ tests/ scripts/ *.md` + `git grep -l "<文件名>"`）**都零命中**；`360/*.png`、`quota-{390,360}.png` 这类通配、祖先裸名、`metrics.json` 的 stem key（`390/01-失败-有缓存兜底`）、`.md` 目录级连带**都算引用**，先扣掉再判 |
+| 按 basename 字面判 | 261 张 / 25.8 MiB（含被通配/前缀/目录连带指着的 106 张，故不是删除口径） |
+| 最终删除 | **155 张 / 17.4 MiB**，一个 commit `git rm`（`git revert` 可整体还原） |
+| 体积 | `63 447 574 B → 45 242 283 B`（−18.2 MB / −28.7%）；图片 `553 → 398` 张 |
+| 保留 | 每张「只被目录/README 连带引用」的图都留了；2 张人工豁免见 `scripts/check-ui-shots.mjs` 的 `EXEMPT`（#213） |
+
 ## 前后对比
 
 | 指标 | `#302` 前（`origin/main` @ 7a65f55） | `#302` 后 | 差 |
@@ -84,5 +124,7 @@ git grep -n -F 1.4.0-beta.1-settings-apikey.png -- '*.md' '*.json' '*.html' '*.t
 1. **`thinking-collapse` 的 before/after 同字节**：`before-{360,390}-default.png` 与 `after-{360,390}-expanded.png`
    逐字节相同，但 README 把前者写成「改动前：思考正文整段铺在消息里」、后者写成「展开后：正文出现」。
    两者不可能同像素 —— 极可能是其中一张存错。**未在此单重拍**（要起 `rspack serve` + 注入 IndexedDB）。
-2. 索引不全：363 张 PNG 里只有 22 个子目录有 `README.md`，根目录另有 131 个散图靠文件名（`1.4.0-beta.8-ours-pay-…`）
-   标识出处。要做「同一屏多帧只留首末帧」那一步，得先把这些散图标进索引。
+2. 索引不全：398 张 PNG 里只有 33 个子目录有 `README.md`，根目录另有 **32 个散图**靠文件名
+   （`1.4.0-beta.8-ours-pay-…`）标识出处。要做「同一屏多帧只留首末帧」那一步，得先把这些散图标进索引。
+   （#661 之前是 363 张 + 根目录 131 个散图；那 99 个散图在 #661 里因为**零引用**被归档外迁了，
+   剩下的 32 个是「文件名字面出现在某份文档/测试里」的。）

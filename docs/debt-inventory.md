@@ -23,7 +23,7 @@
 | D07 | #601 事故取证目录没有到期日 | `/opt/dl-leak-evidence/` | 孤儿资源 | **9 个文件 / 152KB**（含 `releases.json.LEAKED-1795185887`、`releases.json.withdrawn11-1795188331` 等）；无任何文件写明保留期限 | 保留并说明理由（取证；在 `docs/RELEASE-MANUAL.md` 补一段「保留到什么时候、谁能删」） | 车道 A |
 | D08 | 分发机回滚物既没到期日、也分不清哪份是唯一副本 | `/root/dl-release-backups/` | 孤儿资源 | **10 个文件 / 184KB**；`server.mjs.20261121-100414` sha256 `bb076a1e…` = **改动前的旧 main**（当前 main `3ffea8cc…`）；`dl-release.service.20261121-100519` `1a7f3eb2…` ≠ 线上 `fe75f984…`（已被取代）；其中 `Caddyfile.*` 2 份是 Caddy 配置**在机器上的唯一留存** | 另开单 **#662**（保留 Caddyfile/variant/apk-manifest，其余归档） | 车道 A（生产操作） |
 | D09 | 私有清单的 `.bak` 与线上清单**逐字节相同** | `/opt/dl-private/releases.internal.json.bak-1795225673` | 孤儿资源 | 两份 sha256 同为 `64f39885d94d25e0dd60f540e4d53718dadca4e05291190aee44baf1839a8183`，各 7595 B —— 备份价值为 0 | 删除（并入 **#662**；这是唯一可以真删的一份） | 车道 A（生产操作） |
-| D10 | 仓库里 266 张截图没有任何文档指向 | `docs/ui/` | 孤儿资源 | `docs/ui` **737 文件 / 63.0MB**（514 张图片）；把文件名在 `docs/**/*.md` 全文 grep：命中 248 张、**未命中 266 张**，未命中部分合计 **26,601,289 B ≈ 26.6MB**；`docs/` 整体 **81MB / 989 文件** | 另开单 **#661**（删或外迁，需裁决） | 需人类决策（“删”与“留”都改变证据链，且 26.6MB 属体积决策） |
+| D10 | 仓库里大量截图没有任何文档指向（原记 266 张） | `docs/ui/` | 孤儿资源（**已处理**） | #661 复核（`origin/main@72db2da1`）：`docs/ui` **740 文件 / 63,447,574 B（63.0MB）**、其中图片 **553 张 / 59.32 MiB**（不是 514 张 —— 盘点后又进来一批）。按 #661 的双判据（`grep -rl "<文件名>" docs/ tests/ scripts/ *.md` + `git grep -l "<文件名>"`）逐张核，再扣掉 glob（`360/*.png`、`quota-{390,360}.png`）、祖先裸名、`metrics.json` 的 stem key（`390/01-失败-有缓存兜底`）、`.md` 目录级连带 → **未引用 155 张 / 18,205,597 B = 17.4 MiB**（按 basename 字面判是 261 张 / 25.8 MiB，差的那 106 张都是「名字没出现、但被通配/前缀/目录连带指着」） | **已处理**：155 张先归档到**仓库外** `/root/archived-ui-shots-661/`（保留目录结构 + `MANIFEST.txt` 155 行：sha256 / 字节 / 路径；`MANIFEST.paths` 可一键还原）→ 再用**一个 commit** `git rm`（可 revert）→ 新增门禁 `check:ui-shots`（孤儿 + 悬空引用双向，已接 ci.yml 并带负向对照）→ 约定写进 `docs/ui/README.md`。删后 `docs/ui` **585 文件 / `du -sb` 45,242,283 B（45MB）**、图片 398 张 / 43,996,870 B = 41.96 MiB（−155 文件 / −17.4 MiB） | 车道 A（已做） |
 | D11 | 曾怀疑 `android/app/build/` 产物被误提交 | `android/app/build/` | 孤儿资源（**核实为否**） | `git ls-files android/app/build` → **0 个文件**；`git ls-files` 里 `.apk/.aab/.zip/.jar/.so` → **0 个**；`.gitignore:9` 与 `android/.gitignore:24` 都已挡；`dist/`、`node_modules/` 亦 **0** | 保留并说明理由（不入库，无需动作） | 车道 A |
 | D12 | `check:doc-refs` 有 7 条 WARN，全是「引用指到了结构行 / 空行」 | `docs/baseurl-config-research.md:94`（另 `:116`/`:254`/`:269`）、`docs/capabilities/css.md:258`、`docs/capabilities/css.md:261`、`docs/capabilities/api.md:35` | 过期文档 | `node scripts/check-doc-refs.mjs` → **FAIL 0 / WARN 7**（其中 5 条「起行是结构行 `}`」、2 条「区间收在空行」）；扫描 88 个文档、带行号引用 454 处；另外 2 条（`capabilities/*`）是**生成器产物**，手改会被下次生成覆盖 | 3 条改生成器（`scripts/gen-capabilities-docs.mjs`）+ 4 条手改为「函数名/常量名」定位 | 车道 A |
 | D13 | 两处源码注释声称 `pnpm check:limits` 在守阈值，但该门禁**不在 CI** | `src/services/limits.ts:13` / `src/services/attachments/limits.ts:6` | 过期文档 | 两处注释写「`pnpm check:limits` 会扫 WATCHED 清单并逐条报 `文件:行`」；`grep -c "limits" .github/workflows/ci.yml` → **0**（该步骤不存在）；`tests/unit/domain10-gate-wiring.test.mjs:82` 自己登记的是「无任何调用点」——**注释与登记互相矛盾** | 接线（见 D16，把 `check:limits` 接进 CI；接线前注释属谎话） | 车道 C |
@@ -42,7 +42,7 @@
 | 类型 | 条目 | 量化合计 |
 | --- | --- | --- |
 | 第二份真相源 | D01–D04（其中 D04 核实为否） | 2 个模块入口（435 行 vs 5866 行 / 8 vs 12 处 import）+ 2 份黑名单（各 2 项、0 条一致性断言）+ 8 条重复文案 |
-| 孤儿资源 | D05–D11（其中 D06/D11 核实为否） | 生产机：12 项 / 64MB（清单引用 0）+ 回滚物 10 文件 184KB + 重复清单备份 7.4KB；仓库：`docs/ui` 未引用图片 266 张 / 26.6MB |
+| 孤儿资源 | D05–D11（其中 D06/D11 核实为否，D10 已处理） | 生产机：12 项 / 64MB（清单引用 0）+ 回滚物 10 文件 184KB + 重复清单备份 7.4KB；仓库：`docs/ui` 未引用图片 **155 张 / 17.4 MiB（#661 已归档外迁，原记 266 张 / 26.6MB）** |
 | 过期文档 | D12–D15 | WARN 7 条（5 条结构行 + 2 条空行区间）；2 处注释声称的门禁不存在；1 处注释数字漂移（5 → 8） |
 | 未接线门禁 | D16–D17（外加 D22 合并项） | 33 道脚本 / CI 跑 20 道 / 11 道零接线 / **1484 行** + 1 道无别名 261 行 |
 | 死代码 | D18–D19 | 2081 个导出定义里 **532 个外部引用为 0**；最硬 **21 条只有定义行命中**（src 11 + scripts 10） |
@@ -73,7 +73,7 @@
 | B3（结构） | **D01** `attachments.ts` 并入目录、**D03** 兜底页文案去重、**D14** 注释数字 | D01 动 `src/services/attachments/**`，须先在车道 B 声明与 A/C 无交集 |
 | B4（到期） | **D21** `@remove-after` 断言、**D13** 注释与接线对齐 | 与 B2 同一批改 CI 时一起做 |
 | B5（生产机，#662） | **D05** 12 包 64MB 归档、**D08** 回滚物归整、**D09** 删重复备份 | 需 #652 放行；验收含 #637 的四条复验重跑 |
-| B6（体积决策，#661） | **D10** 266 张 26.6MB 截图 | 需人类裁决「删 / 外迁 / 补索引」 |
+| B6（体积决策，#661） | **D10 → 已处理**：155 张 / 17.4 MiB 先归档到仓库外再 `git rm` | 裁决已落地为「先归档（仓库外，可还原）再删」，不是硬删：#661 只删「双判据 + 通配/前缀/目录连带都算过后仍零引用」的那批。防复发加了 `check:ui-shots`（**这一条动了 `ci.yml`**，按 #285「除单独讨论」的口径在 PR 里单列了理由与负向对照） | 车道 A（已完成） |
 | 不动作 | **D04 / D06 / D07 / D11 / D15** | 已核实为否或不该删，理由写在总表「处置」列 |
 
 ## 六、复现命令
@@ -109,6 +109,15 @@ node scripts/check-doc-refs.mjs | tail -3                           # → 合格
 
 # D21 到期日有没有人检查
 grep -rln "@remove-after" scripts tests | wc -l                     # → 0
+
+# D10 截图引用（#661 后：双向门禁，孤儿 / 悬空引用都判红）
+node scripts/check-ui-shots.mjs                                     # → check:ui-shots OK（退出码 0）
+node scripts/check-ui-shots.mjs --list | head                       # 逐条看孤儿/悬空（无则空）
+git ls-files -z docs/ui | tr '\0' '\n' | grep -cE '\.png$'          # → 398（#661 删前 553）
+du -sh docs/ui                                                      # → 43M（删前 63M）
+# 复核当年那 155 张「真的没人引用」：归档里逐张 git grep，必须全 0 命中
+while read -r p; do git grep -l -F "$(basename "$p")" -- . || echo "孤儿确认: $p"; done \
+  < /root/archived-ui-shots-661/MANIFEST.paths | grep -c '孤儿确认'  # → 155
 ```
 
 生产机部分（D05–D09）在自己的机器上复现：
