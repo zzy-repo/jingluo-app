@@ -441,6 +441,9 @@ test('[3] 五类必错配置：一条请求都不发（请求数 = 0），也不
 
     fetchCalls = 0
     const sessionsBefore = useChatStore.getState().sessions.length
+    // 合并批次里同一个进程可能已经跑过别的用例（会话不是空的）：只断言「这一拦没有改动它」，
+    // 不假设 activeId 是 null —— 那会让本文件在批内假红、单跑假绿（#408 的教训）
+    const activeBefore = useChatStore.getState().activeId
     const outcome = await attemptSend()
 
     assert.equal(outcome, 'blocked', `${item.code}：发送入口必须停下`)
@@ -450,7 +453,11 @@ test('[3] 五类必错配置：一条请求都不发（请求数 = 0），也不
       sessionsBefore,
       `${item.code}：不许先建一条会话再拦`
     )
-    assert.equal(useChatStore.getState().activeId, null, `${item.code}：不许切换会话`)
+    assert.equal(
+      useChatStore.getState().activeId,
+      activeBefore,
+      `${item.code}：不许切换会话`
+    )
   }
 })
 

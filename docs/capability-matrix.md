@@ -57,7 +57,7 @@
 | 历史导入导出 | ✅可用 —— ZIP 导入/导出纯本地，含附件（`SettingsDialog.tsx:470,517`、`history/zipWriter.ts`） | ✅可用 —— 同上 | ✅可用 —— 同上 |
 | 文档附件（TXT / DOCX / PDF） | ❌不可用 —— 两条通路都不成立：本仓库没有可用的原生上传实现（`/v1/chat/completions/files` 在 #360 确认不存在），也不做文本注入（`providerCapability.ts` 的 `acceptsDocuments('deepseek')` 为 false，#538）；入口渲染成禁用态并给出原因，不静默收下 | ✅可用 —— **文本注入**：解析正文按预算拼进 user 消息的 `<document name="…">` 块，附件引用注入后由 `contextBuilder.ts` 的 `buildWithDocuments()` 剥掉（`inject.ts` 的 `injectDocumentBlocks()`；能力表 `documents.textInjection=true`） | ✅可用 —— 同上，`buildWithDocuments()` 是**唯一请求入口**，文档与图片都从这里进（`documents.textInjection=true`） |
 | 图片 vision | ✅可用 —— Files API 上传拿 `file_id`，请求里 `image` + `file_id`（`client.ts` 的 `uploadFile()`、`FILES_BETA`；`reply.ts` 的 `toFileBlocks()`；能力表 `image.nativeFile=true`） | ✅可用 —— 本地编码后 base64 内联，**不发上传请求**（`imageSource.ts` 的 `toImagePart()`、`reply.ts` 的 `toFileBlocks()`；能力表 `image.base64=true`） | ✅可用 —— 同上，翻译层把内联图翻成 `{type:'image_url', image_url:{url:'data:…'}}`（`openaiAdapter.ts` 的 `toOpenAIRequest()` / 图片 part 映射；`image.base64=true`） |
-| 语音输入 ASR | ✅可用 —— `POST /v1/tools/asr`（multipart WAV/Ogg）返回全文（`speech.ts:17-46`、`providers.ts` 里 deepseek 的 `paths.tools`） | ❌不可用 —— `caps.asr=false`（上游没接口），VoiceButton 不渲染（`providers.ts:125`、`ChatInput.tsx:396-409`） | ❌不可用 —— `caps.asr=false`，且 `paths.tools` 是空串，连工具前缀都没定义（`providers.ts:136`） |
+| 语音输入 ASR | ✅可用 —— `POST /v1/tools/asr`（multipart WAV/Ogg）返回全文（`speech.ts:17-46`、`providers.ts` 里 deepseek 的 `paths.tools`） | ❌不可用 —— `caps.asr=false`（上游没接口），VoiceButton 不渲染（`providers.ts:125`、`ChatInput.tsx:403-416`） | ❌不可用 —— `caps.asr=false`，且 `paths.tools` 是空串，连工具前缀都没定义（`providers.ts:136`） |
 | 朗读 TTS | ✅可用 —— `POST /v1/tools/tts` 返回裸 PCM（24k 单声道），服务端过滤 markdown（`speech.ts:49-68`） | ❌不可用 —— `caps.tts=false`，`ReadAloudButton` 直接 `return null`（`providers.ts:126`、`ReadAloudButton.tsx:18-22`） | ❌不可用 —— 同上，无工具前缀 |
 
 **统计**（23 项能力 × 3 模式 = 69 格）
@@ -165,7 +165,7 @@
 | 内容安全审核/拒答 | `safety_check:{level:'high'}`（`requestBody.ts` 的 `SAFETY_CHECK` + `gates.safety_check`、`providers.ts:382`）；OpenAI `content_filter` 映射（`openaiAdapter.ts:212`） | `message_delta.delta.stop_reason:'refusal'`（`parseEvent.ts:211`）→ 丢弃文本/思考（`reply.ts:143-160`）→ 模板（`describe.ts` 的 `describeReply()`） | `AssistantMessage.tsx:95-126`（notice 区） |
 | 上下文缓存 | 无请求字段（Anthropic 缺 `cache_control`，`grep` 零命中） | `usage.cache_read_input_tokens` / `cache_creation_input_tokens`（`parseEvent.ts:168-172`、`openaiAdapter.ts` 的 `readUsage()`） | 无 UI（仅 `toArchive.ts:200-207` 导出用） |
 | 用量统计 | OpenAI 侧 `stream_options.include_usage`（`openaiAdapter.ts:92`） | `message.usage` / `message_delta.usage`（`reply.ts:97,147`） | 无 UI；仅 `toArchive.ts:200-207` |
-| 停止生成 | `AbortSignal`（`client.ts` 的 `streamMessage`） | 中断 → `settleReply('stopped')`（`settleReply('stopped')`、`reply.ts:143-160`） | `ChatInput.tsx:290`（发送键切换为停止键，`store.ts` 的 `stopReply()`） |
+| 停止生成 | `AbortSignal`（`client.ts` 的 `streamMessage`） | 中断 → `settleReply('stopped')`（`settleReply('stopped')`、`reply.ts:143-160`） | `ChatInput.tsx` 的发送键（`streaming` 时切换为停止键，调 `store.ts` 的 `stopReply()`） |
 | 重新生成 | 重新构造请求（同一 `question`，`history` 截到前一轮） | 全新一轮 block | `AssistantMessage.tsx` 的 `regenerateReply` 按钮（`store.ts` 的 `regenerateReply()`） |
 | 编辑消息 | 同上（`question` 内容替换） | 同上 | `UserMessage.tsx` 的编辑态（`editMessage()`）（`store.ts` 的 `editMessage()`） |
 | 消息分支 | 无（纯本地） | 无（纯本地） | `BranchSwitcher.tsx:28-30`（`branches.ts:40-117`、`branches.ts` 的 `MessageVersions` / `selectVersion()`） |
@@ -176,7 +176,7 @@
 | 历史导入导出 | 无（ZIP 本地） | 无 | `SettingsDialog.tsx` 的「数据管理」分组、`history/zipWriter.ts`、`history/importArchive.ts` |
 | 文档附件（TXT / DOCX / PDF） | **无请求字段**：走文本注入，正文拼进 user 消息的 `<document name="…">` 块，附件引用键 `attachments` 注入后即剥掉（`contextBuilder.ts` 的 `buildWithDocuments()`、`inject.ts` 的 `injectDocumentBlocks()`）；DeepSeek 一个字段都不发（`acceptsDocuments()` 为 false） | 无特殊事件（文本只上行） | `ChatInput.tsx` 的「添加文档」入口（`canAttachDocs` 门，`acceptsDocuments()`）、`AttachmentCard.tsx`（五态卡片）、`AttachmentPanel.tsx`（详情面板）、`MessageAttachments.tsx`（消息内） |
 | 图片 vision | 两条通路二选一：`POST {paths.files}`（`client.ts` 的 `uploadFile()` + `FILES_BETA`）拿 `file_id` 配 `image`/`file_id`（deepseek）；或本地编码 `{type:'image', source:{type:'base64'…}}` 内联（anthropic / openai / ours），OpenAI 侧再翻成 `{type:'image_url', image_url:{url:'data:…'}}`（`reply.ts` 的 `toFileBlocks()`、`openaiAdapter.ts` 的图片 part 映射）。走哪条只查 `providerCapability.ts` 的 `visionFor()` | 无特殊事件（图片只上行） | `ChatInput.tsx` 的图片入口（`canAttach` 门：`supportsImage()` + `visionFor()`）、`DraftAttachments.tsx`、`FileCard.tsx`、`MessageFile.tsx` |
-| 语音输入 ASR | `POST {baseUrl}{paths.tools}/asr`（`speech.ts:24`） | 纯 JSON `{text}`（`speech.ts:30-45`） | `ChatInput.tsx:396-409`（`caps.asr` 门下的 `VoiceButton`）、`VoiceButton.tsx`、`useVoiceInput.ts` |
+| 语音输入 ASR | `POST {baseUrl}{paths.tools}/asr`（`speech.ts:24`） | 纯 JSON `{text}`（`speech.ts:30-45`） | `ChatInput.tsx:403-416`（`caps.asr` 门下的 `VoiceButton`）、`VoiceButton.tsx`、`useVoiceInput.ts` |
 | 朗读 TTS | `POST {baseUrl}{paths.tools}/tts`（`speech.ts:55`） | 裸 PCM 流（`speech.ts:64-67`） | `ReadAloudButton.tsx:15-33`、`ReadingBars.tsx`、`services/speech/readAloud.ts` |
 
 **已有测试覆盖**（`tests/integration/full-acceptance.test.mjs`，8 组断言）
