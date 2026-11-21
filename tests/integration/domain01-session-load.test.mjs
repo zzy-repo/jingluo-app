@@ -27,6 +27,7 @@ import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
 import { requireDist, serveDist } from '../helpers/runtime.mjs'
 import { verifyAppUrl } from '../helpers/env.mjs'
+import { assertNoEgress, installEgressGate } from '../helpers/helpers.mjs'
 import {
   installFaultPatch,
   orphanSummary,
@@ -101,6 +102,11 @@ const waitForGone = (page, part, timeout = 15_000) =>
 const boot = async ({ entries, fault }) => {
   const context = await browser.newContext({ locale: 'zh-CN', viewport: { width: 1280, height: 800 } })
   const page = await context.newPage()
+  /**
+   * #686：出站总闸，**必须在 `page.goto` 之前**装上（首屏请求一旦发出去就收不回来，#673 的 g16 就是这么漏的）。
+   * 本用例只读本机 IndexedDB、只跟被测产物自己的 origin 打交道，白名单里只需要它。
+   */
+  await installEgressGate(page, { appUrl: APP_URL })
   // 故障补丁必须在应用脚本之前注入；此时策略为空，不影响建库
   await page.addInitScript(installFaultPatch)
   await page.goto(APP_URL, { waitUntil: 'domcontentloaded' })
@@ -255,6 +261,8 @@ try {
     }
   }
 } finally {
+  // #686：收尾断言「漏出 = 0」（未登记的出站请求一条都不许有）—— 先断言再关浏览器
+  assertNoEgress(failures)
   await browser.close()
   await server.close()
   if (failures.length > 0) {

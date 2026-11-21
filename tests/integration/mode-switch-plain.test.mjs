@@ -14,6 +14,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
 import { serveDir, verifyAppUrl } from '../helpers/env.mjs'
+import { assertNoEgress, installEgressGate } from '../helpers/helpers.mjs'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const ROOT = path.resolve(HERE, '../..')
@@ -92,6 +93,12 @@ const consoleErrors = []
 
 const open = async (url) => {
   const page = await context.newPage()
+  /**
+   * #686：出站总闸，**必须在 `page.goto` 之前**装上（首屏请求一旦发出去就收不回来，#673 的 g16 就是这么漏的）。
+   * 白名单 = 本页自己的 origin（正式包 / 可选的真实旧产物 baseline 各算一个；BASELINE_URL 为空时
+   * 根本不打开第二页，白名单自然只剩一个）。
+   */
+  await installEgressGate(page, { appUrl: url })
   page.on('console', (message) => {
     if (message.type() === 'error') {
       consoleErrors.push(`${url} :: ${message.text()}`)
@@ -219,6 +226,8 @@ expect(baselineHasMode === 0, 'baseline 确实没有模式切换（对比基准�
 
 expect(consoleErrors.length === 0, 'console error = 0', consoleErrors.join(' | '))
 
+// #686：收尾断言「漏出 = 0」（未登记的出站请求一条都不许有）
+assertNoEgress(failures)
 await browser.close()
 plainServed?.kill()
 if (failures.length === 0) {

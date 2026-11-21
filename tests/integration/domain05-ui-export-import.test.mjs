@@ -27,6 +27,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { chromium } from 'playwright'
 import { buildArchiveZip } from '../fixtures/domain05/archive-fixture.mjs'
+import { assertNoEgress, installEgressGate } from '../helpers/helpers.mjs'
 
 const APP_URL = process.env.APP_URL || 'http://127.0.0.1:5181'
 const TITLE_PREFIX = '域5往返会话'
@@ -72,6 +73,11 @@ const run = async () => {
     acceptDownloads: true,
   })
   const page = await context.newPage()
+  /**
+   * #686：出站总闸，**必须在 `page.goto` 之前**装上（首屏请求一旦发出去就收不回来，#673 的 g16 就是这么漏的）。
+   * 本用例的全部通路（导入 ZIP / 导出下载）都在被测产物自己的 origin 上，白名单里只需要它。
+   */
+  await installEgressGate(page, { appUrl: APP_URL })
   const consoleErrors = []
   page.on('console', (message) => {
     if (message.type() === 'error') {
@@ -196,6 +202,9 @@ const run = async () => {
 
   console.log('\n[N9-7] 整条通路没有 console error / 未捕获异常')
   check('console error = 0', consoleErrors.length === 0, consoleErrors.slice(0, 3).join(' | '))
+
+  // #686：收尾断言「漏出 = 0」（未登记的出站请求一条都不许有）
+  assertNoEgress(failures)
 
   await browser.close()
   if (failures.length > 0) {

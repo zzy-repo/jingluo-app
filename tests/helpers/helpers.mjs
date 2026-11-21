@@ -28,10 +28,45 @@ export const assertNoEgress = (failures, step = '不连真实服务') => {
       expect: (label, pass, { expected, actual }) => {
         if (!pass) {
           failures.push(`${label || step} · 期望=${expected} · 实际=${actual}`)
+          return
         }
+        // #686：通过时也留一行证据。「漏出 = 0」要能原样贴进 Issue/PR，不能只靠「没红」反推；
+        // 这一行只说事实（命中几次、白名单是谁），不放宽任何判据。
+        console.log(`  ok  ${label || step}：${actual}`)
       },
     })
   }
+}
+
+/**
+ * 给**自起静态服务 / 自己要视口 / 自己要 mock 上游**的 L1 用例装同一个出站总闸（#686）。
+ *
+ * 为什么不直接用 `openApp()`：`openApp()` 只服务「5181 注入 + 干净应用」那 9 个文件；其余 20 个
+ * 集成层文件各有各的脚手架（自 serve `dist` / 自建上下文 / 自己起本机 mock 上游 / 自建 harness 产物），
+ * 但它们要的是**同一道闸**。所以这里只做两件事，**不另写一份实现**：
+ *   1. 调 `withStubbedBackends`（golden 层那一套：host+path 匹配、未登记一律记录 + abort）；
+ *   2. 把闸登记进本模块的 `egressGates`，让 `assertNoEgress(failures)` 收尾统一断言。
+ *
+ * 必须在 `page.goto()` **之前**调用 —— 首屏请求一旦发出去就收不回来了（#673 的 g16 就是这么漏的）。
+ *
+ * 白名单口径比 `openApp()` 更严：默认 `allowLoopback: false`。这些用例里本机服务的 `host:port`
+ * 在起服务那一刻就知道了，能写精确值就别退化成「回环随便哪个端口」。
+ *
+ *   const guard = await installEgressGate(page, {
+ *     appUrl: APP_URL,
+ *     allowHosts: [new URL(mock.url).host],   // 本机真起的 mock 上游（精确 host:port）
+ *     stubs: [{ name: 'feedback', host: 'feedback.rose7.cn', path: '/api/v1/feedback', respond: () => ({ status: 503 }) }],
+ *   })
+ *   …用例…
+ *   assertNoEgress(failures)                   // 收尾：漏出 = 0，否则进 failures → 非 0 退出
+ */
+export const installEgressGate = async (
+  page,
+  { appUrl = '', stubs = [], allowHosts = [], allowLoopback = false } = {}
+) => {
+  const guard = await withStubbedBackends(page, { appUrl, stubs, allowHosts, allowLoopback })
+  egressGates.push(guard)
+  return guard
 }
 
 /** 启动浏览器并进入「干净」的应用状态：清掉 localStorage 里已保存的配置后重载 */

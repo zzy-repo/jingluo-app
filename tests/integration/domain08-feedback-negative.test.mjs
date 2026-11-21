@@ -23,6 +23,7 @@ import { test } from 'node:test'
 
 import { chromium } from 'playwright'
 import { defaultDist, serveDir, verifyDist } from '../helpers/env.mjs'
+import { assertNoEgress, installEgressGate } from '../helpers/helpers.mjs'
 import { KNOWN_GAPS, NEGATIVE_CASES, TOAST } from '../fixtures/domain08-09/feedback-negative-cases.mjs'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
@@ -110,6 +111,13 @@ const runCase = async (browser, appUrl, row) => {
   const context = await browser.newContext({ locale: 'zh-CN', viewport: { width: 1280, height: 900 } })
   try {
     const page = await context.newPage()
+    /**
+     * #686：出站总闸，**必须在 `page.goto` 之前**装上（首屏请求一旦发出去就收不回来，#673 的 g16 就是这么漏的）。
+     * 本用例只在本地造图 / 读相册 / 点剪贴板，**一次都不该往反馈后端发**（写反馈的提交通路归
+     * `feedback-export` 与 L0 的单测）；白名单里只有被测产物自己的 origin —— 一旦界面背地里
+     * 往 `feedback.rose7.cn` 之类的地方发东西，这一行的失败就会点名那个 host。
+     */
+    await installEgressGate(page, { appUrl })
     await page.addInitScript(PATCHES[row.patch])
     const form = await openFeedbackDialog(page, appUrl)
 
@@ -165,6 +173,8 @@ const runCase = async (browser, appUrl, row) => {
         }
       }
     }
+    // #686：收尾断言「漏出 = 0」—— 与这一行自己的断言同一条判决（表外变红就是真实回归）
+    assertNoEgress(failures)
     return failures
   } finally {
     await context.close()

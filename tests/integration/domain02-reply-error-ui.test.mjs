@@ -24,6 +24,7 @@ import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
 import { requireDist, serveDist } from '../helpers/runtime.mjs'
 import { verifyAppUrl } from '../helpers/env.mjs'
+import { assertNoEgress, installEgressGate } from '../helpers/helpers.mjs'
 import {
   configureAnthropicChannel,
   startMockUpstream,
@@ -80,6 +81,16 @@ const openChat = async (mock) => {
   mock.state.calls.length = 0
   const context = await browser.newContext({ locale: 'zh-CN', viewport: { width: 1280, height: 800 } })
   const page = await context.newPage()
+  /**
+   * #686：出站总闸，**必须在 `page.goto` 之前**装上（首屏请求一旦发出去就收不回来，#673 的 g16 就是这么漏的）。
+   *
+   * 白名单 = 被测产物自己的 origin ∪ **本机真起的 mock 流式上游**（精确 `host:port`，`startMockUpstream`
+   * 起在 `127.0.0.1` 的随机端口上，端口在这一刻已知，所以写得出精确值 —— 不用 `allowLoopback`
+   * 那种「本机任意端口」的宽口径）。这一档的响应形态（SSE 断流 / 空闲 / 4xx）就是被测物要看的输入，
+   * 换成 `page.route` 的假 SSE 等于把「真连接真的被掐断」这件事一起替掉，所以这里是**放行到真服务**
+   * 而不是打桩：闸要管的是「有没有打到白名单以外的机器」。
+   */
+  await installEgressGate(page, { appUrl: APP_URL, allowHosts: [new URL(mock.url).host] })
   await page.goto(APP_URL, { waitUntil: 'domcontentloaded' })
   await page.evaluate(() => window.localStorage.clear())
   await configureAnthropicChannel(page, { url: mock.url, apiKey: KEY })
@@ -302,6 +313,8 @@ try {
     }
   }
 } finally {
+  // #686：收尾断言「漏出 = 0」（未登记的出站请求一条都不许有）—— 先断言再关浏览器
+  assertNoEgress(failures)
   await browser.close()
   await server.close()
   await mock.close()

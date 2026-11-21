@@ -6,6 +6,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
 import { buildArchiveZip } from '../fixtures/domain05/archive-fixture.mjs'
+import { assertNoEgress, installEgressGate } from '../helpers/helpers.mjs'
 
 const APP_URL = process.env.APP_URL || 'http://127.0.0.1:5181'
 // fileURLToPath：Windows 下 pathname 是 /D:/...，当路径用会变成 D:\D:\...
@@ -48,6 +49,11 @@ const run = async () => {
     viewport: { width: 1280, height: 900 },
   })
   const page = await context.newPage()
+  /**
+   * #686：出站总闸，**必须在 `page.goto` 之前**装上（首屏请求一旦发出去就收不回来，#673 的 g16 就是这么漏的）。
+   * 本用例只操作应用自身（上传本地 ZIP / 导出），走的是被测产物自己的 origin，白名单里只需要它。
+   */
+  await installEgressGate(page, { appUrl: APP_URL })
   const consoleErrors = []
   page.on('console', (message) => {
     if (message.type() === 'error') {
@@ -106,6 +112,9 @@ const run = async () => {
 
   console.log('\n[web 3] console error = 0')
   check('console error = 0', consoleErrors.length === 0, consoleErrors.join(' | '))
+
+  // #686：收尾断言「漏出 = 0」（未登记的出站请求一条都不许有）
+  assertNoEgress(failures)
 
   await browser.close()
   if (failures.length > 0) {
