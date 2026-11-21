@@ -1365,3 +1365,85 @@ node scripts/check-webroot-hygiene.mjs --selftest
 符号链接删掉（私有包/私有清单的合法位置在 webroot 之外、且**只有一个私有根**：`/opt/dl-private/`）；
 R3 的内部包移出 webroot；R4 的 internal 条目从公网清单里
 删掉 —— **先确认它已经在私有清单里再删**，顺序反了就等于丢包。
+
+---
+
+## 15. 分发机保留策略（Issue #662）
+
+分发机（`aliyun` / 主机名 `zzy`）上有一批**不在任何清单里**的文件：私有包、发布备份、事故取证物。
+它们常年没人清，原因是「没有到期日」——没有到期日的东西永远不会过期，于是 #285 盘点出来的那几条
+（私有根里 12 个清单查不到的包 64 MB、#601 的 9 份取证物、`/root/dl-release-backups` 的十几份备份）
+一直在原地，谁也说不清「哪份能删、哪份是唯一副本」。
+
+本节把这件事变成**可执行**的：每个目录写清 TTL 与负责人，能写账本的写账本，然后交给一条命令去对账
+（`pnpm check:retention`）。**过期 ≠ 立刻 `rm`** —— 过期只是「该有人做判断了」。
+
+### 15.1 四类目录：TTL / 账本 / 负责人
+
+| 目录 | 里面是什么 | 允不允许动 | 到期规则 | 账本 | 负责人 |
+| --- | --- | --- | --- | --- | --- |
+| `/opt/dl-private/apk/` | **活资源**：私有清单逐条引用的包（#662 时 8 个 / 45 MB，逐条命中清单） | **不动** | **无 TTL** —— 它由「发布 / 下架」流程管，不由保留策略管。删它的唯一合法路径是 §14 的下架流程（先从清单删条目、再删包） | 无（清单本身就是账） | 发布 owner |
+| `/opt/dl-private/private/` | **孤儿私有包**：清单引用 0 的包（#662 时 12 个 / 64 MB，9 个 `<16hex>/` 目录 + 3 个 `*-internal*.apk`） | 只按账删 | **`addedAt` + 30 天**（#662 那一批 = 2026-11-21 → **2026-12-21**）；到期后由运维核对 MANIFEST 再删，可能仍需留作 #601 取证对比 | `/opt/dl-private/private/.retention.json`（12 条） | 运维 / 发布 owner |
+| `/opt/dl-leak-evidence/` | **#601 事故取证物**：公网清单被篡改前后的快照（9 份，含 `releases.json.LEAKED-*`、`bak-withdraw-*`） | 只按账删，**删前必须人确认** | **条件到期**：事故复盘正式关闭**并人工确认**后 30 天。账本里 `deleteAfter: null` + `deleteAfterRule` + `reviewAfter`（复核日，到点未确认就判红逼人做决定） | `/opt/dl-leak-evidence/.retention.json`（9 条） | 事故复盘 owner（当前由发布 owner 兼任） |
+| `/root/dl-release-backups/` | **发布备份**：`server.mjs.*` / `dl-release.service.*` / `Caddyfile.*` / `variant.mjs.*` / `apk-manifest.mjs.*` / `641-*` 备份组 | 按「留最近一份」裁剪 | **每次发布覆盖时裁剪**（§12 步骤 1 备份之前）：只留**最近一份 + 当前线上前一份**；`Caddyfile.*` 例外——机器上**没有** git 留存（仓库只有 `deploy/dl-release/caddy-dl-api.conf` 片段），**不许删** | 无账本（见下方说明） | 发布 owner |
+
+**为什么 `/root/dl-release-backups/` 没有 `.retention.json`**：它的到期由**发布流程自己**触发（每次覆盖前先裁），
+不依赖日历。真要纳管，给 `check-retention.mjs` 加一对 `--dir /root/dl-release-backups` 即可（支持多对），
+但那份账本得由发布脚本维护，手工维护会漂。
+
+**删除的硬前提（三条同时满足，缺一条就留着）**：
+
+1. 线上已有更新版本，或另有一份**逐字节相同**的文件；
+2. 字节**能在 git 历史中完整取回**（`git log --all --find-object=$(git hash-object <file>)` 有命中）；
+3. 不是机器级唯一留存（典型反例：整份 Caddyfile、`dl-release.service` 某个只存在于机器上的版本）。
+
+### 15.2 检查命令（不靠记性）
+
+```bash
+# 在分发机上跑（本机 / CI 上没有这两个目录 —— 那是 SKIP，不是失败）
+ssh aliyun 'cd <repo> && pnpm check:retention'
+
+# 逐条看（默认只打印异常 + 汇总）
+node scripts/check-retention.mjs --verbose
+
+# 演练 / 复盘：假定「今天」是某一天，看看会不会报
+node scripts/check-retention.mjs --now 2026-12-22
+
+# 对一份账本副本做演练（不改线上账本），把某条改成昨天 → 必须 exit 1
+node scripts/check-retention.mjs --dir /opt/dl-private/private --ledger /tmp/neg.json
+```
+
+| 退出码 | 含义 | 该做什么 |
+| --- | --- | --- |
+| 0 | 全部未到期且 sha256/大小与账本一致；或目录不在本机（SKIP） | 什么都不用做 |
+| 1 | 有 `EXPIRED`（过期）/ `REVIEW-DUE`（复核日过了没确认）/ `DRIFT`（文件与账本对不上）/ `BAD-LEDGER`（账本缺 `reviewAfter`，等于无限期） | 按 §15.3 处置 |
+| 2 | 用法不对或账本不是合法 JSON | 修命令 / 修账本 |
+
+**为什么不接 CI**：账本与文件都在分发机上，CI runner 上不存在这两个目录，接进 CI 只会每天
+SKIP 或每天红一次（"红着红着就没人看"正是本合同类门禁的反面）。它由**运维定期在分发机上跑**：
+每次发布后必跑一次，另外**每月 1 日**在值班 checklist 里跑一次（`--verbose` 留输出）。
+
+### 15.3 到期了怎么删（顺序不能反）
+
+1. 打开 #662 的 **MANIFEST**（37 条：路径 / 大小 / sha256 / mtime / 清单引用 / 是否已被取代），
+   核对这一条的 `sha256` 与 `size` —— 对不上就**别删**，先查谁改的；
+2. 按上一节的「三条硬前提」确认不是唯一副本；
+3. 删（`rm` 或 `mv` 进隔离目录都行，但**删之前先把 sha256/大小记进 MANIFEST**）；
+4. 把该条从 `.retention.json` **划掉** —— 不划掉的话下次会报 `MISSING`（不判红，但会一直是噪音）；
+5. 复验（缺一条都不算过）：
+
+   ```bash
+   ssh aliyun 'TOK=$(cat /etc/dl-release/token); curl -s -o /dev/null -w "%{http_code}\n" \
+     -H "X-DL-Token: $TOK" http://127.0.0.1:8799/api/v1/releases/internal'   # 200
+   # 计数必须仍是 8；/api/v1/version 的 sha256 必须等于仓库 deploy/dl-release/server.mjs 的 sha256
+   ```
+
+   令牌只在命令里用，**不要打印明文**。
+
+### 15.4 边界（这几样永远不在这套策略里）
+
+- **`/var/www/dl`（webroot）** —— 公网直出目录，卫生另有门禁（`pnpm check:webroot-hygiene`，§14 末段），
+  不在本节管辖；
+- **`/opt/dl-private/releases.internal.json` 清单本体** —— 清单是唯一真相，只有发布 / 下架流程能改它；
+- **被清单引用的任何文件** —— 不许以「保留策略」的名义删（`/opt/dl-private/apk/` 的 8 个包就是这一类）；
+- **`/opt/dl-private/private/` 目录本身** —— `www-data` 属主、历史路径仍要被追溯，只删里面的文件。
