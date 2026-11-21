@@ -6,10 +6,12 @@ import {
   recordConfigRejection,
 } from '../../services/api/apiConfig.js'
 import {
+  checkSendPrerequisites,
   sendBlockFieldOf,
   type SendBlockCode,
   type SendBlockField,
 } from '../../services/api/sendConfigCheck.js'
+import { getAuthSnapshot } from '../../services/auth/store.js'
 import { captureStateSnapshot, recordAction } from '../../services/diagnostics/collector.js'
 import { showToast } from '../base/toastState.js'
 
@@ -224,6 +226,55 @@ export const ensureApiKey = (options: EnsureApiKeyOptions = {}) => {
   recordAction('nav', 'block-send-invalid-key', { reason: 'format', length: getApiKey().length })
   openSettings('account')
   useSettingsDialog.setState({ apiKeyFormatBlocked: true })
+  return false
+}
+
+/**
+ * 发送前的**凭据**守卫（Issue #793）：**既没登录、也没有一把能用的 Key** 时，一个请求都不发。
+ *
+ * 为什么这就是 #793 的那个洞：三道既有门禁（`ensureApiKey` / `ensureSendConfig`）都长在 UI 的
+ * 发送入口上，服务层（`chat/store.ts` 的 `sendMessage` / `regenerateReply` / `editMessage`）
+ * 一道都没有 —— 于是「重新生成」「继续」这类**没有走输入框**的入口，以及任何绕过 UI 的调用，
+ * 会带着空 `x-api-key` / `Authorization` 直接把请求打出去：上游回 401，界面停在转圈上，
+ * 一句可读的话都没有（用户不知道该登录、还是该选渠道）。
+ *
+ * 判据全在纯函数 `checkSendPrerequisites()`（`sendConfigCheck.ts`），这里只做三件事：
+ *  1. **说清是什么都缺**：toast 写「请先登录或选择模型渠道后再发送，这条消息没有发出」；
+ *  2. **给一个按键就能过去的入口**：toast 上挂一个「去选择渠道」的动作，点了走
+ *     `openSettings('account')` 那条既有路径（#727 的第三个 tab，模型来源那三行就在里面）——
+ *     toast 三秒就没了，动作按钮给了 8 秒（`ACTION_DURATION`），点不到等于没有入口；
+ *  3. **返回 false**：调用方据此不再往下走 —— 请求数为 0 是这条拦截的全部价值。
+ *
+ * 与另外两道门的分工（不重复判定、不互相顶替）：
+ *  - `ensureSendPrerequisites`：**身份**有没有（登录态 / 一把能用的 Key）—— 两样都没有才拦；
+ *  - `ensureApiKey`：Key 有没有、像不像、是不是服务端发的那把（#374 / #451 / #596）——
+ *    已登录（或已有一把好 Key）时仍由它说「去填 Key / 去领取 / 格式不对」；
+ *  - `ensureSendConfig`：地址与模型填得对不对（#490）。
+ *
+ * 顺序上它排在 `ensureApiKey` **之前**：未登录 + 没 Key 时，把用户送进设置里「去领取 / 去填 Key」
+ * 是一句做不到的话（我们的渠道要先登录才领得到，自填渠道在 web 上也确实能填 —— 所以这里给的
+ * 是「登录或选渠道」二选一的入口，而不是断言他必须登录）。
+ */
+export const ensureSendPrerequisites = (): boolean => {
+  const verdict = checkSendPrerequisites({
+    authenticated: getAuthSnapshot().state === 'authenticated',
+    // 「能用的 Key」与发送时那一份口径相同：`ok` 才放行（`missing` / `format` / `claim` / `stale` 都不算）
+    hasUsableKey: checkApiKeyBeforeSend() === 'ok',
+  })
+  if (verdict.ok) {
+    return true
+  }
+  // 请求都没发出去，只有本地判定：这类「什么都没配」的状态在请求日志里根本看不见，先留痕
+  recordConfigRejection('apiKey', verdict.code)
+  recordAction('nav', 'block-send-no-credentials', {
+    code: verdict.code,
+    // 只记判定档位，Key 原文 / 登录态细节都不进日志（与 `setApiKey` 同一口径）
+    authenticated: false,
+  })
+  showToast(
+    { key: verdict.messageKey },
+    { action: { key: verdict.actionKey, run: () => openSettings('account') } }
+  )
   return false
 }
 

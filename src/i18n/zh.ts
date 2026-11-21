@@ -1169,4 +1169,9 @@ export const zh = {
     '服务地址填成了具体接口地址（如 …/chat/completions），这条消息没有发出：请只填到域名，可以带 /v1',
   sendBlockedModelEmpty: '模型名为空，这条消息没有发出：请先填写模型名',
   sendBlockedModelSpace: '模型名里有空格（首尾或中间），这条消息没有发出：模型名必须是连续的一串字符',
+  // 发送前拦截「没有身份」（#793）：未登录 + 没有可用 Key 时，请求只会带着空凭据打上游。
+  // 两句话缺一不可：第一句说清为什么没发出去，第二句是 toast 上的按钮（直达「服务 Tab → 模型来源」）
+  sendBlockedNoCredentials:
+    '还没有登录，也没有可用的模型渠道，这条消息没有发出：请先登录或选择模型渠道后再发送',
+  sendBlockedPickProvider: '去选择渠道',
 } as const

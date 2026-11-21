@@ -23,6 +23,11 @@
  *
  * 返回结构里的 `messageKey` / `jumpTo` 是给调用方直接用的：toast 的文案就是它，
  * 设置里要定位到哪一行也是它（`sendBlocked*` 的键在 `src/i18n/{zh,en}.ts`）。
+ *
+ * #793 在同一份「发送前判定」里加了另一半：{@link checkSendPrerequisites} ——
+ * 五类说的是「填错了」，它说的是「根本没有身份」（未登录 + 没有可用 Key）。
+ * 两者用各自的一张表（`SEND_BLOCK_TABLE` / `SEND_PREREQ_TABLE`），互不顶替：
+ * 前者的落点是某个输入行，后者的落点是「服务 Tab → 模型来源」那三行。
  */
 import type { TranslationKey } from '../../i18n/index.js'
 import { PROVIDER_SPECS, type ProviderSpec } from './providers.js'
@@ -71,6 +76,71 @@ const block = (code: SendBlockCode): SendConfigVerdict => ({
   messageKey: SEND_BLOCK_TABLE[code].messageKey,
   jumpTo: SEND_BLOCK_TABLE[code].jumpTo,
 })
+
+// ============================================================
+// 凭据门（#793）：既没登录、也没有一把能用的 Key → 连上游都不该碰
+// ============================================================
+
+/**
+ * 「凭据」门的机器码（#793）。今天只有一类：**未登录 + 没有可用 Key**。
+ *
+ * 为什么单开一张表、不并进上面的五类：那五类是「用户填错了字段」，命中后要跳到**那一行**去改；
+ * 这里不是某个字段填错，而是**根本没有可用的身份**（web / 新装机上既没登录、也没领到 Key）。
+ * 落点因此不是某个输入行，而是「服务 Tab → 模型来源」那三行 —— 用户要先选一个来源、再拿 Key。
+ * 混进 `SEND_BLOCK_TABLE` 会让「五类必错配置」的口径（#490 的关闭条件，用例按码集合钉着）
+ * 多出第六个码，也让 `sendBlockFieldOf()` 的返回值类型混进一个不是输入行的落点。
+ */
+export type SendPrereqCode = 'no_credentials'
+
+export type SendPrereqVerdict =
+  | { ok: true }
+  | {
+      ok: false
+      code: SendPrereqCode
+      /** toast 正文：请先登录或选择模型渠道 */
+      messageKey: TranslationKey
+      /** toast 上的动作按钮文案：去选择渠道（点了切到「服务 Tab → 模型来源」） */
+      actionKey: TranslationKey
+    }
+
+/**
+ * 机器码 → 「说给用户的那句话 + 按钮文案」。
+ * 与 `SEND_BLOCK_TABLE` 同一套写法（表驱动、不写 if-else），`check:i18n` 也在这里看到两个 key 的引用。
+ */
+export const SEND_PREREQ_TABLE: Record<
+  SendPrereqCode,
+  { messageKey: TranslationKey; actionKey: TranslationKey }
+> = {
+  no_credentials: {
+    messageKey: 'sendBlockedNoCredentials',
+    actionKey: 'sendBlockedPickProvider',
+  },
+}
+
+/**
+ * 发送前**凭据**判定（#793）：没有身份就不要发车。
+ *
+ * 判据是**合取**（issue 原文「无登录态 **且** 无可用渠道/Key」）：
+ *  - 已登录：放行 —— 我们的渠道可以现领 Key，自填渠道也可能只是还没填 Key（那条由
+ *    `ensureApiKey` 用「去填 Key」的口径拦，两个提示不该互相顶替）；
+ *  - 未登录但有一把**能用**的 Key（`apiConfig.checkApiKeyBeforeSend() === 'ok'`）：放行 ——
+ *    自填渠道本来就是「拿自己的 Key 直接发」，跟登录没关系。
+ * 只有「两样都没有」时才拦：那时的请求只会带着空 `x-api-key` / `Authorization` 打上游，
+ * 换回一个 401，界面转圈到超时也说不清该干什么。
+ *
+ * 判定本身只有一行（`authenticated || hasUsableKey`），入参是两个**布尔**而不在这里读存储：
+ * 与 `checkSendConfig` 同一条纪律 —— 纯函数、可单测，Key 的判定仍然只有
+ * `apiConfig.checkApiKeyBeforeSend()` 那一份。
+ */
+export const checkSendPrerequisites = (input: {
+  authenticated: boolean
+  hasUsableKey: boolean
+}): SendPrereqVerdict => {
+  if (input.authenticated || input.hasUsableKey) {
+    return { ok: true }
+  }
+  return { ok: false, code: 'no_credentials', ...SEND_PREREQ_TABLE.no_credentials }
+}
 
 /**
  * 渠道表里那些**整段就是接口本身**的路径。

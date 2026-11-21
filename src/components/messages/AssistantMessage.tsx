@@ -12,7 +12,13 @@ import {
 } from '../../services/chat/store.js'
 import { stopReadAloud } from '../../services/speech/readAloud.js'
 import type { AssistantMessage as AssistantMessageType } from '../../services/chat/types.js'
-import { openAccountConsume, openSettings } from '../settings/settingsDialogState.js'
+import {
+  ensureApiKey,
+  ensureSendConfig,
+  ensureSendPrerequisites,
+  openAccountConsume,
+  openSettings,
+} from '../settings/settingsDialogState.js'
 import { useIsOursChannel } from '../../services/api/apiConfig.js'
 import { IconButton } from '../base/IconButton.js'
 import { Button } from '../base/Button.js'
@@ -285,6 +291,12 @@ export const AssistantMessage = memo(function AssistantMessage({
                 disabled={busy || refused}
                 onClick={() => {
                   stopReadAloud()
+                  // #793：重新生成 / 继续都是**发送入口**，但不经过输入框，所以输入框那三道门禁
+                  // （身份 / Key / 配置）以前在这里一条都没走 —— 未登录又没有 Key 时点下去，
+                  // 请求带着空凭据打上游、界面只剩转圈。三道门禁在这里补一遍，命中就一个请求都不发。
+                  if (!ensureSendPrerequisites() || !ensureApiKey() || !ensureSendConfig()) {
+                    return
+                  }
                   regenerateReply(sessionId, message.id)
                 }}
               />
@@ -298,6 +310,10 @@ export const AssistantMessage = memo(function AssistantMessage({
               disabled={busy}
               onClick={() => {
                 stopReadAloud()
+                // #793：与「重新生成」同一个理由（发送入口之一，且不经过输入框）
+                if (!ensureSendPrerequisites() || !ensureApiKey() || !ensureSendConfig()) {
+                  return
+                }
                 continueReply(sessionId, message.id)
               }}
             >

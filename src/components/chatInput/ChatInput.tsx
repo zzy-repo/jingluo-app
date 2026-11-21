@@ -39,7 +39,11 @@ import {
 import { stopReadAloud } from '../../services/speech/readAloud.js'
 import { IconButton } from '../base/IconButton.js'
 import { Tooltip } from '../base/Tooltip.js'
-import { ensureApiKey, ensureSendConfig } from '../settings/settingsDialogState.js'
+import {
+  ensureApiKey,
+  ensureSendConfig,
+  ensureSendPrerequisites,
+} from '../settings/settingsDialogState.js'
 import { enterKeyHintFor, resolveEnterKeyAction } from './enterKey.js'
 import { DragMask, useFileDrop } from './DragMask.js'
 import { showToast } from '../base/toastState.js'
@@ -277,11 +281,15 @@ const Input = ({ sessionId }: { sessionId: string | null }) => {
       return
     }
     /**
-     * 两道发送前门禁，字段不重叠（#451 / #596 管 Key，#490 管地址与模型）：
-     * 先 Key、后配置 —— Key 都没有时先让用户去看 Key 那一行，别拿「地址没填」把人引到别处。
+     * 三道发送前门禁，字段不重叠：
+     *  1. `ensureSendPrerequisites`（#793）：**身份**——未登录且没有一把能用的 Key 时才拦，
+     *     toast 带「去选择渠道」按钮直达「服务 Tab → 模型来源」；
+     *  2. `ensureApiKey`（#451 / #596）：有身份但 Key 缺 / 格式不对 / 不是服务端那把；
+     *  3. `ensureSendConfig`（#490）：地址与模型填得对不对。
+     * 顺序：先身份、再 Key、最后配置 —— 什么都没有时别拿「地址没填」把人引到别处。
      * 任一命中都**不发请求**：这里 return 之后不会再走到 `sendMessage`，请求数为 0。
      */
-    if (!ensureApiKey() || !ensureSendConfig()) {
+    if (!ensureSendPrerequisites() || !ensureApiKey() || !ensureSendConfig()) {
       return
     }
     // 文本与上传完成态由提交动作读取最新快照，不使用上一次渲染的草稿。

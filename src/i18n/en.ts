@@ -1172,4 +1172,9 @@ export const en = {
     'The model name is empty, so this message was not sent. Fill in a model name first.',
   sendBlockedModelSpace:
     'The model name contains a space, so this message was not sent. A model name must be one continuous string.',
+  // Pre-send guard for a missing identity (#793): not signed in and no usable key — the request would
+  // only carry empty credentials. The second line is the toast button (straight to Settings → Service → Provider)
+  sendBlockedNoCredentials:
+    'You are not signed in and no model provider is available, so this message was not sent. Sign in or pick a model provider first.',
+  sendBlockedPickProvider: 'Choose provider',
 } satisfies Record<keyof typeof zh, string>

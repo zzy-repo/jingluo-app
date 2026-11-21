@@ -7,7 +7,11 @@ import { stopReadAloud } from '../../services/speech/readAloud.js'
 import type { UserMessage as UserMessageType } from '../../services/chat/types.js'
 import { Button } from '../base/Button.js'
 import { IconButton } from '../base/IconButton.js'
-import { ensureApiKey, ensureSendConfig } from '../settings/settingsDialogState.js'
+import {
+  ensureApiKey,
+  ensureSendConfig,
+  ensureSendPrerequisites,
+} from '../settings/settingsDialogState.js'
 import {
   BranchSwitcher,
   type MessageVersions,
@@ -106,9 +110,10 @@ export const UserMessage = memo(function UserMessage({
   }, [editing])
 
   const sendEdit = () => {
-    // 编辑后重发同样是发送入口：Key（#451）+ 必错配置（#490）两道门禁都在这里过一遍
+    // 编辑后重发同样是发送入口：身份（#793）+ Key（#451）+ 必错配置（#490）三道门禁都在这里过一遍
     if (
       canSend &&
+      ensureSendPrerequisites() &&
       ensureApiKey() &&
       ensureSendConfig() &&
       editMessage(sessionId, message.id, draft.trim())

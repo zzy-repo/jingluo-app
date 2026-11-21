@@ -1,6 +1,8 @@
 // [layer: unit | 依赖: 内存 localStorage + 假 fetch（只计数，零真实网络） | 耗时: <3s]
 //
 // Issue #490（#347 / #353 明确划界让出的那一半）：**发送前**拦截五类必错配置。
+// Issue #793（同一个方向的另一半，第 [5] 段）：**未登录 + 没有可用渠道/Key** 时同样在发送前拦下 ——
+// 那时请求只会带着空凭据打上游、界面转圈且没有一句可读的话。
 //
 //   1. 模型名为空               → `model_empty`
 //   2. 模型名带空格（首尾/中间） → `model_space`
@@ -48,7 +50,9 @@ const { getSpec } = await import('../../src/services/api/providers.ts')
 const dialogState = await import('../../src/components/settings/settingsDialogState.ts')
 const { useToast } = await import('../../src/components/base/toastState.ts')
 const { setDraftText } = await import('../../src/services/chat/drafts.ts')
-const { useChatStore, initChat, sendMessage } = await import('../../src/services/chat/store.ts')
+const { useChatStore, initChat, sendMessage, regenerateReply } = await import(
+  '../../src/services/chat/store.ts'
+)
 const { useSettings } = await import('../../src/services/settings.ts')
 const { zh } = await import('../../src/i18n/zh.ts')
 const { en } = await import('../../src/i18n/en.ts')
@@ -75,7 +79,7 @@ const reset = () => {
     managedKeyBlocked: null,
     sendConfigBlocked: null,
   })
-  useToast.setState({ id: 0, message: null })
+  useToast.setState({ id: 0, message: null, action: null })
 }
 
 /** 切到「OpenAI 兼容」并给一把格式正常的 Key：把 Key 因素从本文件里剔出去 */
@@ -384,11 +388,17 @@ const flush = async (times = 10) => {
 }
 
 /**
- * 与 `ChatInput.tsx` 的发送入口**同构**：`ensureApiKey()` → `ensureSendConfig()` → `sendMessage()`。
- * 三道顺序、短路语义都与真实入口一致，所以「请求数为 0」是这条链路的结论，不是本文件的臆想。
+ * 与 `ChatInput.tsx` 的发送入口**同构**：
+ * `ensureSendPrerequisites()`（#793 身份）→ `ensureApiKey()`（#451/#596）→ `ensureSendConfig()`（#490）
+ * → `sendMessage()`。四道顺序、短路语义都与真实入口一致，所以「请求数为 0」是这条链路的结论，
+ * 不是本文件的臆想（第 [4] 段还用源码断言钉住这个顺序）。
  */
 const attemptSend = async () => {
-  if (!dialogState.ensureApiKey() || !dialogState.ensureSendConfig()) {
+  if (
+    !dialogState.ensureSendPrerequisites() ||
+    !dialogState.ensureApiKey() ||
+    !dialogState.ensureSendConfig()
+  ) {
     return 'blocked'
   }
   setDraftText(null, '你好')
@@ -502,4 +512,226 @@ test('[4] 两个发送入口都过 ensureSendConfig，且排在 sendMessage / ed
   const fields = source('src/components/settings/ApiConfigFields.tsx')
   assert.ok(fields.includes('<SendBlockedHint field="baseUrl" />'), '地址行要有行内提示')
   assert.ok(fields.includes('<SendBlockedHint field="model" />'), '模型行要有行内提示')
+})
+
+// ============================================================ [5] 凭据门（#793）
+
+/**
+ * Issue #793：**未登录 + 没有可用渠道/Key** 时直接发消息 —— 请求会带着空 `x-api-key` /
+ * `Authorization` 打上游，界面只剩转圈，一句「你该干什么」都没有。
+ *
+ * 本段钉三件事（issue 的验收原文）：
+ *  1. 请求数 = 0（一个上游请求都不发）；
+ *  2. 出现提示（`sendBlockedNoCredentials`，中英成对）；
+ *  3. 提示里带一个**动作**：点了切到「服务 Tab → 模型来源」（`openSettings('account')` 那条既有路径）。
+ *
+ * 外加两条负向/正向边界：
+ *  - 未登录但**自己填了一把能用的 Key** → 照旧发车（自填渠道与登录无关）；
+ *  - 已登录、只是还没 Key → **不走这条新门**（仍由 `ensureApiKey` 说「去填 Key / 去领取」）。
+ */
+const { useAuthStore } = await import('../../src/services/auth/store.ts')
+
+/** 摆成「未登录」：新装机 / web 上没登录就是这个状态（`authenticated` 只认 `state === 'authenticated'`） */
+const signOut = () => useAuthStore.setState({ state: 'unauthenticated', user: null, token: null })
+/** 摆成「已登录」：只有 `state === 'authenticated'` 算登录（与 `useAuthStatus` 同一口径） */
+const signIn = () => useAuthStore.setState({ state: 'authenticated' })
+
+/** 把「什么都没有」摆出来：未登录 + 没 Key + 自填渠道的地址与模型也没填 */
+const nothingConfigured = () => {
+  reset()
+  signOut()
+  apiConfig.setProviderKind('openai')
+  apiConfig.setApiKey('')
+}
+
+test('[5] 纯函数：只有「未登录 且 没有可用 Key」才拦（两样缺一样都放行）', () => {
+  // 合取：issue 原文是「无登录态 **且** 无可用渠道/Key」
+  const cases = [
+    { label: '两样都没有', input: { authenticated: false, hasUsableKey: false }, blocked: true },
+    { label: '未登录但有能用的 Key', input: { authenticated: false, hasUsableKey: true }, blocked: false },
+    { label: '已登录但还没 Key', input: { authenticated: true, hasUsableKey: false }, blocked: false },
+    { label: '两样都有', input: { authenticated: true, hasUsableKey: true }, blocked: false },
+  ]
+  for (const item of cases) {
+    const verdict = sendCheck.checkSendPrerequisites(item.input)
+    assert.equal(verdict.ok, !item.blocked, `${item.label}：放行/拦截判错`)
+    if (!item.blocked) {
+      continue
+    }
+    assert.equal(verdict.code, 'no_credentials', `${item.label}：机器码`)
+    assert.equal(verdict.messageKey, 'sendBlockedNoCredentials', `${item.label}：正文文案 key`)
+    assert.equal(verdict.actionKey, 'sendBlockedPickProvider', `${item.label}：动作文案 key`)
+  }
+  // 五类必错配置的码集合**没有被这条新门污染**（#490 的关闭条件仍在）
+  assert.deepEqual(Object.keys(sendCheck.SEND_BLOCK_TABLE).sort(), [
+    'base_url_empty',
+    'base_url_endpoint_path',
+    'base_url_no_protocol',
+    'model_empty',
+    'model_space',
+  ])
+  // 文案：中英成对，且都写清「没发出去」
+  assert.equal(typeof zh.sendBlockedNoCredentials, 'string')
+  assert.equal(typeof en.sendBlockedNoCredentials, 'string')
+  assert.notEqual(zh.sendBlockedNoCredentials, en.sendBlockedNoCredentials, '真的翻译了')
+  assert.match(zh.sendBlockedNoCredentials, /登录/u, '中文要说清可以登录')
+  assert.match(zh.sendBlockedNoCredentials, /模型渠道/u, '中文要说清可以选渠道')
+  assert.match(zh.sendBlockedNoCredentials, /没有发出/u, '中文要写明这条消息没有发出')
+  assert.match(en.sendBlockedNoCredentials, /not sent/u, '英文要写明这条消息没有发出')
+  assert.equal(zh.sendBlockedPickProvider, '去选择渠道')
+  assert.equal(typeof en.sendBlockedPickProvider, 'string')
+})
+
+test('[5] 未登录 + 没有渠道/Key 发消息：0 次上游请求 + 出现提示 + 动作直达模型来源', async () => {
+  nothingConfigured()
+  // 先确认「确实是什么都没有」：不然下面的 0 可能只是因为别的原因没发出去
+  assert.equal(apiConfig.getApiKey(), '')
+  assert.equal(apiConfig.checkApiKeyBeforeSend(), 'missing')
+  assert.equal(useAuthStore.getState().state, 'unauthenticated')
+  assert.equal(
+    sendCheck.checkSendPrerequisites({ authenticated: false, hasUsableKey: false }).ok,
+    false
+  )
+
+  fetchCalls = 0
+  const sessionsBefore = useChatStore.getState().sessions.length
+  const activeBefore = useChatStore.getState().activeId
+  const outcome = await attemptSend()
+
+  // ① 请求数 = 0（这条拦截的全部价值）
+  assert.equal(outcome, 'blocked', '未登录且没有 Key：发送入口必须停下')
+  assert.equal(fetchCalls, 0, '未登录且没有 Key：一个上游请求都不许发')
+  assert.equal(
+    useChatStore.getState().sessions.length,
+    sessionsBefore,
+    '不许先建一条会话再拦'
+  )
+  assert.equal(useChatStore.getState().activeId, activeBefore, '不许切换会话')
+
+  // ② 出现提示（正文就是那句可操作的话）
+  const toast = useToast.getState()
+  assert.deepEqual(toast.message, { key: 'sendBlockedNoCredentials' }, 'toast 说明原因')
+
+  // ③ 提示里有「去选择渠道」的动作，点了切到「服务 Tab → 模型来源」
+  assert.ok(toast.action !== null, '提示必须带动作（不是一句只能等它自己消失的话）')
+  assert.equal(toast.action.key, 'sendBlockedPickProvider', '动作文案：去选择渠道')
+  assert.equal(dialogState.useSettingsDialog.getState().open, false, '拦下时不自动弹设置')
+  toast.action.run()
+  const settings = dialogState.useSettingsDialog.getState()
+  assert.equal(settings.open, true, '点了动作要打开设置')
+  // #727：渠道 / API Key / 模型都在第三个 tab（服务），「模型来源」三行就在这一页
+  assert.equal(settings.section, 'account', '落在第三个 tab（服务 → 模型来源）')
+})
+
+/**
+ * 「重新生成 / 继续」这条路（#793 里真正会**一直转圈**的入口）：它不经过输入框，改前一条门禁都没有。
+ * 这里把 `AssistantMessage` 现在的那行门禁照抄一遍（三道、顺序一致），再走 `regenerateReply()` ——
+ * 所以「请求数 = 0」是这条链路自己的结论。
+ */
+const attemptRegenerate = async (sessionId, messageId) => {
+  if (
+    !dialogState.ensureSendPrerequisites() ||
+    !dialogState.ensureApiKey() ||
+    !dialogState.ensureSendConfig()
+  ) {
+    return 'blocked'
+  }
+  regenerateReply(sessionId, messageId)
+  await flush()
+  return 'sent'
+}
+
+test('[5] 未登录 + 没有渠道/Key 点「重新生成」：也不许发请求，同样给提示 + 动作', async () => {
+  // 先正常发一轮，拿到一条「有问有答」的会话（这一步有 Key，走的是第 [3] 段验证过的正向链路）
+  reset()
+  signOut()
+  configureChannel()
+  assert.equal(apiConfig.setBaseUrl('https://api.example.com/v1'), true)
+  assert.equal(apiConfig.setModel('deepseek-v4-pro'), true)
+  assert.equal(await attemptSend(), 'sent', '先造一条会话（有 Key 时正常发车）')
+
+  const sessionId = useChatStore.getState().activeId
+  const session = useChatStore.getState().sessionCache[sessionId]
+  const assistant = session.messages.find((message) => message.role === 'assistant')
+  assert.ok(assistant, '会话里要有回答，才能点「重新生成」')
+
+  // 把 Key 抹掉 = 未登录 + 没有可用渠道/Key（换渠道 / 退出登录后最真实的现场）
+  apiConfig.setApiKey('')
+  assert.equal(apiConfig.checkApiKeyBeforeSend(), 'missing')
+
+  fetchCalls = 0
+  const outcome = await attemptRegenerate(sessionId, assistant.id)
+  assert.equal(outcome, 'blocked', '「重新生成」同样是发送入口，必须停下')
+  assert.equal(fetchCalls, 0, '未登录且没有 Key：重新生成也不许打上游')
+  const toast = useToast.getState()
+  assert.deepEqual(toast.message, { key: 'sendBlockedNoCredentials' })
+  assert.equal(toast.action?.key, 'sendBlockedPickProvider', '提示里要有「去选择渠道」的动作')
+  toast.action.run()
+  assert.equal(dialogState.useSettingsDialog.getState().open, true, '动作直达设置')
+  assert.equal(dialogState.useSettingsDialog.getState().section, 'account', '落在第三个 tab')
+})
+
+test('[5] 正向对照：未登录但自己填了能用的 Key，照旧发车（自填渠道与登录无关）', async () => {
+  reset()
+  signOut()
+  configureChannel() // openai 渠道 + 一把格式正常的 Key
+  assert.equal(apiConfig.setBaseUrl('https://api.example.com/v1'), true)
+  assert.equal(apiConfig.setModel('deepseek-v4-pro'), true)
+  assert.equal(dialogState.ensureSendPrerequisites(), true, '有能用的 Key 就不该走这条新门')
+  assert.equal(apiConfig.checkCurrentSendConfig().ok, true)
+
+  fetchCalls = 0
+  const outcome = await attemptSend()
+  assert.equal(outcome, 'sent', '有 Key 时必须真的发出去')
+  assert.ok(fetchCalls >= 1, `同一条链路在有 Key 时会发请求，实际 ${fetchCalls}`)
+})
+
+test('[5] 已登录、只是还没 Key：新门放行，仍由 ensureApiKey 说「去填 Key / 去领取」', () => {
+  reset()
+  signIn()
+  apiConfig.setProviderKind('openai')
+  apiConfig.setApiKey('')
+  assert.equal(dialogState.ensureSendPrerequisites(), true, '已登录时新门不该抢话')
+  assert.equal(useToast.getState().message, null, '新门没说话')
+  assert.equal(dialogState.ensureApiKey(), false, 'Key 那道门照旧拦下')
+  assert.equal(
+    dialogState.useSettingsDialog.getState().section,
+    'account',
+    '仍然落在第三个 tab（Key 那一行在这一页）'
+  )
+  signOut()
+})
+
+test('[5] 接线：三个不经过输入框的发送入口都补上了这条门，且排在真发车之前', () => {
+  const chatInput = source('src/components/chatInput/ChatInput.tsx')
+  const sendBody = chatInput.slice(chatInput.indexOf('const send = () =>'))
+  const prereqAt = sendBody.indexOf('ensureSendPrerequisites()')
+  assert.ok(prereqAt > -1, 'ChatInput.send 要过 ensureSendPrerequisites')
+  assert.ok(
+    prereqAt < sendBody.indexOf('ensureApiKey()'),
+    '身份门排在 Key 门之前：什么都没有时先说「登录或选渠道」'
+  )
+  assert.ok(prereqAt < sendBody.indexOf('sendMessage(sessionId)'), '门禁排在 sendMessage 之前')
+
+  const userMessage = source('src/components/messages/UserMessage.tsx')
+  const editPrereq = userMessage.indexOf('ensureSendPrerequisites()')
+  assert.ok(editPrereq > -1, '编辑后重发也是发送入口')
+  assert.ok(editPrereq < userMessage.indexOf('editMessage('), '门禁排在 editMessage 之前')
+
+  // 「重新生成」「继续」不经过输入框：这是 #793 里真正「一直转圈」的两个入口
+  const assistant = source('src/components/messages/AssistantMessage.tsx')
+  const regenPrereq = assistant.indexOf('ensureSendPrerequisites()')
+  assert.ok(regenPrereq > -1, '重新生成 / 继续都要过身份门')
+  const regenAt = assistant.indexOf('regenerateReply(sessionId, message.id)')
+  const continueAt = assistant.indexOf('continueReply(sessionId, message.id)')
+  assert.ok(regenPrereq < regenAt, '门禁排在 regenerateReply 之前')
+  assert.ok(
+    assistant.indexOf('ensureSendPrerequisites()', regenPrereq + 1) > -1,
+    '「继续」那个入口同样要过（两处 onClicks）'
+  )
+  assert.ok(continueAt > regenAt, '继续按钮在重新生成之后（文件顺序）')
+
+  // toast 的动作按钮是应用内动作（不是外链）：`Toast.tsx` 必须有这枚按钮
+  const toastView = source('src/components/base/Toast.tsx')
+  assert.ok(toastView.includes('data-testid="toast-action"'), 'toast 上要能渲染动作按钮')
 })
