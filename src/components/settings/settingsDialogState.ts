@@ -1,6 +1,17 @@
 import { create } from 'zustand'
-import { checkApiKeyBeforeSend, getApiKey, recordConfigRejection } from '../../services/api/apiConfig.js'
+import {
+  checkApiKeyBeforeSend,
+  checkCurrentSendConfig,
+  getApiKey,
+  recordConfigRejection,
+} from '../../services/api/apiConfig.js'
+import {
+  sendBlockFieldOf,
+  type SendBlockCode,
+  type SendBlockField,
+} from '../../services/api/sendConfigCheck.js'
 import { captureStateSnapshot, recordAction } from '../../services/diagnostics/collector.js'
+import { showToast } from '../base/toastState.js'
 
 /** 设置弹窗的分组：通用设置 / 数据管理 */
 export type SettingsSection = 'general' | 'data'
@@ -40,6 +51,12 @@ export const useSettingsDialog = create(() => ({
    * （格式拦截是「去改这一行」，这里是「去领取」——我们的渠道根本没有可改的输入框）。
    */
   managedKeyBlocked: null as null | 'unclaimed' | 'stale',
+  /**
+   * 这次打开设置是**必错的服务配置**触发的（Issue #490，`checkSendConfig` 的五类）：命中哪一类就记哪个码，
+   * 设置页据此在**对应那一行**（`baseUrl` / `model`）写出原因，而不是让用户自己猜是哪一项填错了。
+   * 修好那一个字段（保存成功）或关掉设置即清 —— 与 #451 的 Key 拦截同一套纪律，不留僵尸提示。
+   */
+  sendConfigBlocked: null as SendBlockCode | null,
 }))
 
 export const openSettings = (section: SettingsSection) => {
@@ -52,7 +69,13 @@ export const closeSettings = () => {
   recordAction('nav', 'close-settings', {})
   // #451：拦截提示只服务于「这一次打开」；关掉就清，下次发送还会重新判一次
   // #596：领取拦截同理 —— 关掉设置不该留下一条挂着的「请先领取 Key」
-  useSettingsDialog.setState({ open: false, apiKeyFormatBlocked: false, managedKeyBlocked: null })
+  // #490：必错配置的红字同理
+  useSettingsDialog.setState({
+    open: false,
+    apiKeyFormatBlocked: false,
+    managedKeyBlocked: null,
+    sendConfigBlocked: null,
+  })
 }
 
 /** 修好 Key 之后调用（保存成功）：那条「格式不对，消息没发出」的提示到此为止（#451） */
@@ -67,6 +90,20 @@ export const clearManagedKeyBlocked = () => {
   if (useSettingsDialog.getState().managedKeyBlocked !== null) {
     useSettingsDialog.setState({ managedKeyBlocked: null })
   }
+}
+
+/** 改对了那个字段之后调用（地址 / 模型保存成功）：那行红字到此为止（#490） */
+export const clearSendConfigBlocked = (field?: SendBlockField) => {
+  const blocked = useSettingsDialog.getState().sendConfigBlocked
+  if (blocked === null) {
+    return
+  }
+  // 只清本次被点名的那一行：改了地址不该顺手把模型的提示也抹掉
+  // （落点从 `sendConfigCheck` 的表里取，不在这里按码前缀再猜一次）
+  if (field && sendBlockFieldOf(blocked) !== field) {
+    return
+  }
+  useSettingsDialog.setState({ sendConfigBlocked: null })
 }
 
 export const setAccountConsumeOpen = (open: boolean) => {
@@ -162,5 +199,39 @@ export const ensureApiKey = (options: EnsureApiKeyOptions = {}) => {
   recordAction('nav', 'block-send-invalid-key', { reason: 'format', length: getApiKey().length })
   openSettings('data')
   useSettingsDialog.setState({ apiKeyFormatBlocked: true })
+  return false
+}
+
+/**
+ * 发送前的**服务配置**守卫（Issue #490）：五类必错配置在本地拦下，一个请求都不发。
+ *
+ * 与 `ensureApiKey` 的分工（两条门，各管各的字段，互不重复判定）：
+ * - `ensureApiKey`：Key 有没有 / 像不像 / 是不是服务端发的那把（#374 / #451 / #596）；
+ * - `ensureSendConfig`：**地址与模型**填得对不对（#490 的五类）—— 判据全在纯函数
+ *   `services/api/sendConfigCheck.ts` 里，这里只负责「说给用户听 + 把他送到那一行」。
+ *
+ * 三步都有意义，缺一条就变成 #490 描述的那个现状（发一条、等一个 4xx、再从英文原文里猜）：
+ *  1. **toast 说清是哪一项**：五种命中各有一句话（`sendBlocked*`），不是笼统的「配置有误」；
+ *  2. **跳到对应设置**：打开设置并落在「数据管理」，同时在**那一行**写红字
+ *     （`sendConfigBlocked`，由 `ApiConfigFields` 的地址 / 模型行读取）；
+ *  3. **返回 false**：调用方据此不再往下走 —— 请求数为 0 是这条拦截的全部价值。
+ *
+ * 不放行「启动时那次」：本函数只在发送入口被调用（`App` 的启动检查走 `ensureApiKey`），
+ * 用户还没做任何事时不该因为一个历史遗留的空模型被弹窗打断。
+ */
+export const ensureSendConfig = (): boolean => {
+  const verdict = checkCurrentSendConfig()
+  if (verdict.ok) {
+    return true
+  }
+  // 先在诊断里留痕：这类「配置根本没填对」只看请求日志是查不出来的（请求都没发）
+  recordConfigRejection(verdict.jumpTo, verdict.code)
+  recordAction('nav', 'block-send-invalid-config', {
+    code: verdict.code,
+    field: verdict.jumpTo,
+  })
+  showToast({ key: verdict.messageKey })
+  openSettings('data')
+  useSettingsDialog.setState({ sendConfigBlocked: verdict.code })
   return false
 }

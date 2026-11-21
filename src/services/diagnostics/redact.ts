@@ -44,9 +44,22 @@ type RedactionRule = {
  * 顺序有意义：`order_token=` 必须排在 `token=` 之前 —— 后者带 `\b`，理论上不会吃到
  * `order_token=` 里的 `token`（`_` 是词内字符），但排前面能避免以后有人把 `\b` 去掉时静默漏掉。
  */
+/**
+ * API Key 的**形状**（DeepSeek / OpenAI 风格）：`sk-` + 一串 key 字符。
+ *
+ * 单独提出来是因为它有两个呈现口径（#490），但只该有**一份**形状判定：
+ * - 日志 / 错误页 / 导出（`redact()`）：整段打成 `sk-***`，一个字都不留；
+ * - 「上游原文」边界（`maskApiKeyTail()`）：留尾 6 位（用户要能对着 Key 列表认出是哪一把）。
+ *
+ * 下限从 20 放到 8：20 是「一把真 Key 的长度」，但**短 Key / 被截断的 Key 一样是密钥**
+ * （#490 的上游原文样本 `sk-abcdef123456` 只有 12 位）。放宽下限只会让更多真实密钥被打码，
+ * 不会放过任何一条旧的命中。
+ */
+const API_KEY_PATTERN = /sk-[A-Za-z0-9_-]{8,}/g
+
 const REDACTION_RULES: RedactionRule[] = [
   // API Key（DeepSeek / OpenAI 风格）
-  { pattern: /sk-[A-Za-z0-9_-]{20,}/g, replacement: 'sk-***' },
+  { pattern: API_KEY_PATTERN, replacement: 'sk-***' },
   // Authorization: Bearer xxx
   { pattern: /Bearer\s+\S+/g, replacement: 'Bearer ***' },
   // 对象存储 / 网盘的签名参数
@@ -174,6 +187,39 @@ export const redactUrl = (value: string): string => {
 
 export const truncate = (text: string, limit: number): string =>
   text.length > limit ? text.slice(0, limit) : text
+
+// ---------------------------------------------------------------- 「上游原文」边界（#490）
+
+/** 上游原文最多保留多少字符：够看清上游到底说了什么，又不至于把整段英文糊满折叠区 */
+export const UPSTREAM_TEXT_MAX_CHARS = 240
+
+/** 压成一行：上游有的响应把整段报错塞进一行带换行的 JSON 里，留着换行会撑破折叠区的行数 */
+const oneLine = (text: string): string => text.replace(/\s+/g, ' ').trim()
+
+/**
+ * API Key 打码但**留尾 6 位**（#490）。
+ *
+ * 与 `redact()` 共用同一条 `API_KEY_PATTERN`、同一个 `maskTail()`，只换呈现：
+ * 日志 / 导出里 Key 整段归零（`sk-***`），而「上游原文」要给用户看的那份留尾 6 位 ——
+ * 用户手上可能有好几把 Key，不给他尾巴就问不出「是哪一把被上游拒了」。
+ */
+export const maskApiKeyTail = (text: string, tail = 6): string =>
+  text.replace(API_KEY_PATTERN, (match) => maskTail(match, tail))
+
+/**
+ * 「上游原文」的脱敏工具：**可以单独调用**（#490 的关闭条件之一：不再只藏在某个组件里）。
+ *
+ * 步骤与顺序都是判据，写死在这里而不是让每个调用方自己排：
+ *  1. 压成一行（脱敏规则按行内形状匹配，先合行才不会让被换行劈开的 Key 溜过去）；
+ *  2. **先脱敏**：Key 留尾 6 位 + `redact()` 的其余规则（Bearer / token= / 签名 / 设备码 / 卡号 / 手机号）；
+ *  3. **后截断**到 `UPSTREAM_TEXT_MAX_CHARS`。
+ *
+ * 为什么 2 必须在 3 之前：反过来先截断，一把跨过 240 边界的 Key 会被切成半截，
+ * 半截既不再是密钥形状（规则认不出来），又还是可用的凭证片段 —— 截断本身成了泄露渠道。
+ * `tests/unit/upstream-redact-490.test.mjs` 里用「密钥跨 240 边界」的样本把这条顺序钉住。
+ */
+export const redactUpstreamText = (text: string): string =>
+  truncate(redact(maskApiKeyTail(oneLine(text))), UPSTREAM_TEXT_MAX_CHARS)
 
 /** 任意值转字符串：错误对象取 message，其余尽量 JSON，最后兜底 String() */
 export const safeString = (value: unknown): string => {

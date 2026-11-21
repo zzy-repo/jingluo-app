@@ -11,6 +11,7 @@ import {
   type KeyIdentityView,
 } from '../invite/keyIdentity.js'
 import { isKeyFormatInvalid } from './keyFailure.js'
+import { checkSendConfig, type SendConfigVerdict } from './sendConfigCheck.js'
 import {
   managedKeyVerdict,
   serverKeyMark,
@@ -313,6 +314,64 @@ const resolveModel = (): string => {
 export const getApiKey = (): string => read(CONFIG_KEYS.apiKey) ?? ''
 export const getBaseUrl = (): string => resolveBaseUrl()
 export const getModel = (): string => resolveModel()
+
+// ---------------------------------------------------------------- 发送前必错配置（#490）
+
+/**
+ * 已存地址的**原样**（不经过 `normalizeBaseUrl`，只按已下线主机那条既有规矩丢弃）。
+ *
+ * 为什么不复用 `storedBaseUrl`：那个函数回答的是「发请求时用哪个地址」，非法值会被
+ * `normalizeBaseUrl` 判成 `''`（于是请求悄悄落到构建期默认地址上）；而 #490 要回答的是
+ * 「用户到底填了什么」—— 填成 `api.example.com`（缺协议）时，`storedBaseUrl` 已经把它抹成 `''`，
+ * 于是「缺协议」这一类**永远命中不了**。原样读出来才判得清他是没填，还是填错了。
+ */
+const rawStoredBaseUrl = (kind: ProviderKind): string => {
+  const spec = getSpec(kind)
+  if (spec.locked || !isUserField(spec, 'baseUrl')) {
+    // 内置地址的渠道（ours）与地址不可编辑的官方渠道：用户没有「填过」，不该被这一栏判死
+    return ''
+  }
+  const key = kind === LEGACY_KIND ? CONFIG_KEYS.baseUrl : scopedKey('baseUrl', kind)
+  return dropLegacyHost((read(key) ?? '').trim())
+}
+
+/**
+ * 「地址到底填了什么」：已存值优先，其次 spec 内置默认；**不套构建期的 `DEFAULT_BASE_URL`**。
+ *
+ * 为什么要与 `getBaseUrl()` 分开：那个兜底（`__API_ORIGIN__`）是给「只有一个官方渠道」的年代
+ * 用的，对自填渠道来说它是**别人的地址**。判定「用户填了没有」必须看用户真正填的那一份，
+ * 否则空地址会被兜底填成一个看着合法的 URL，拦截永远命中不了（#490 的第 3 类）。
+ */
+export const configuredBaseUrl = (): string => {
+  const spec = getCurrentSpec()
+  if (spec.locked) {
+    return spec.defaults?.baseUrl ?? ''
+  }
+  return rawStoredBaseUrl(spec.kind) || spec.defaults?.baseUrl || ''
+}
+
+/**
+ * 「模型到底填了什么」：与 `configuredBaseUrl` 同一个理由，**不套 `DEFAULT_MODEL`**。
+ *
+ * 以前自填渠道没填模型时，`getModel()` 会回 `deepseek-flash`（官方渠道的默认值），
+ * 于是一个「必错配置」在界面上看着完全正常 —— 请求发出去只会换回 400 模型不存在（#490 的第 1 类）。
+ */
+export const configuredModel = (): string => {
+  const spec = getCurrentSpec()
+  if (spec.locked) {
+    return spec.defaults?.model ?? ''
+  }
+  return storedModel(spec.kind) || spec.defaults?.model || ''
+}
+
+/**
+ * 发送前必错配置判定：把「当前渠道 + 用户真正填的值」喂给纯函数 `checkSendConfig()`。
+ *
+ * 判定逻辑一个字都不在这里（`sendConfigCheck.ts` 是纯函数、可单测）；这里只负责**取哪几个值**。
+ * `spec` 也传进去：接口尾巴是从渠道表派生的，判定要知道「当前渠道的接口长什么样」。
+ */
+export const checkCurrentSendConfig = (): SendConfigVerdict =>
+  checkSendConfig({ spec: getCurrentSpec(), baseUrl: configuredBaseUrl(), model: configuredModel() })
 
 // ------------------------------------------------------------------ Key 身份（Issue #451）
 

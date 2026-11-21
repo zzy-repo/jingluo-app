@@ -1066,4 +1066,12 @@ export const zh = {
   attachSweepFailed: '清理无用附件失败，请稍后重试',
   attachMissing: '附件记录已清理，无法查看详情',
   attachLoading: '正在读取附件信息',
+  // 发送前拦截必错配置（#490）：五类各一句话，都写明「这条消息没有发出」——
+  // 用户看到的必须是他该改哪一个字段，而不是一句笼统的「配置有误」
+  sendBlockedBaseUrlEmpty: '服务地址为空，这条消息没有发出：请先填写服务地址',
+  sendBlockedBaseUrlNoProtocol: '服务地址缺少 http:// 或 https://，这条消息没有发出：请补上协议再试',
+  sendBlockedBaseUrlEndpointPath:
+    '服务地址填成了具体接口地址（如 …/chat/completions），这条消息没有发出：请只填到域名，可以带 /v1',
+  sendBlockedModelEmpty: '模型名为空，这条消息没有发出：请先填写模型名',
+  sendBlockedModelSpace: '模型名里有空格（首尾或中间），这条消息没有发出：模型名必须是连续的一串字符',
 } as const

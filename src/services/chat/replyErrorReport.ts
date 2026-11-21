@@ -14,7 +14,7 @@
  * （服务层的日志（diagnostics）另有更细的结构化字段，见 store.ts 的失败记录。）
  */
 import { scrubReportText } from '../../app/errorReport.js'
-import { truncate } from '../diagnostics/redact.js'
+import { redactUpstreamText, truncate } from '../diagnostics/redact.js'
 
 /** 单行最长字符数：与 #104 的 errorReport 同一量级，够看清又不刷屏 */
 const MAX_LINE_CHARS = 240
@@ -109,7 +109,13 @@ export const buildReplyErrorReport = (input: ReplyErrorReportInput): string => {
     lines.push(`接口: ${endpoint}`)
   }
   if (detail) {
-    lines.push(`上游原文: ${truncate(detail, MAX_LINE_CHARS)}`)
+    /**
+     * #490：「上游原文」必须是**先脱敏、后截断**。
+     * 以前是 `truncate(detail, 240)` 再靠最后那道 `scrubReportText` —— 一把跨过 240 边界的 Key
+     * 会先被截成半截，半截既不再是密钥形状（规则认不出来），又还是可用的凭证片段。
+     * 这里不换呈现（仍是 `sk-***`，与 #104 的断言一致），只把顺序摆正。
+     */
+    lines.push(`上游原文: ${truncate(scrubReportText(detail), MAX_LINE_CHARS)}`)
   }
   return scrubReportText(lines.join('\n'))
 }
@@ -147,6 +153,11 @@ export const buildUpstreamSnippet = (
   ]
     .filter(Boolean)
     .join(' · ')
-  const body = truncate(detail, MAX_SNIPPET_CHARS)
+  /**
+   * 折叠区这段「上游原文」走 #490 的独立工具（`redactUpstreamText`）：
+   * 压成一行 → 脱敏（Key **留尾 6 位**，用户要能认出是哪一把被上游拒了）→ 截断。
+   * 顺序写死在工具里，调用方不再各排一遍（以前这里同样是先截断再脱敏）。
+   */
+  const body = truncate(redactUpstreamText(detail), MAX_SNIPPET_CHARS)
   return scrubReportText(head ? `${head}\n${body}` : body)
 }

@@ -39,7 +39,7 @@ import {
 import { stopReadAloud } from '../../services/speech/readAloud.js'
 import { IconButton } from '../base/IconButton.js'
 import { Tooltip } from '../base/Tooltip.js'
-import { ensureApiKey } from '../settings/settingsDialogState.js'
+import { ensureApiKey, ensureSendConfig } from '../settings/settingsDialogState.js'
 import { enterKeyHintFor, resolveEnterKeyAction } from './enterKey.js'
 import { DragMask, useFileDrop } from './DragMask.js'
 import { showToast } from '../base/toastState.js'
@@ -276,8 +276,16 @@ const Input = ({ sessionId }: { sessionId: string | null }) => {
       showToast({ key: 'attachChannelUnsupported' })
       return
     }
+    /**
+     * 两道发送前门禁，字段不重叠（#451 / #596 管 Key，#490 管地址与模型）：
+     * 先 Key、后配置 —— Key 都没有时先让用户去看 Key 那一行，别拿「地址没填」把人引到别处。
+     * 任一命中都**不发请求**：这里 return 之后不会再走到 `sendMessage`，请求数为 0。
+     */
+    if (!ensureApiKey() || !ensureSendConfig()) {
+      return
+    }
     // 文本与上传完成态由提交动作读取最新快照，不使用上一次渲染的草稿。
-    if (!ensureApiKey() || !sendMessage(sessionId)) {
+    if (!sendMessage(sessionId)) {
       return
     }
     // 引用已经挂到消息上（store 的 sendMessage 读的是草稿），输入区的卡片到此清空；

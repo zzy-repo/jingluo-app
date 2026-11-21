@@ -1075,4 +1075,15 @@ export const en = {
   attachSweepFailed: 'Could not clean up unused attachments. Try again later',
   attachMissing: 'This attachment record was cleaned up, so details are unavailable',
   attachLoading: 'Loading attachment details',
+  // Pre-send guard for unusable config (#490): one line per case, each saying the message was not sent
+  sendBlockedBaseUrlEmpty:
+    'The service address is empty, so this message was not sent. Fill in an address first.',
+  sendBlockedBaseUrlNoProtocol:
+    'The service address is missing http:// or https://, so this message was not sent. Add the protocol and try again.',
+  sendBlockedBaseUrlEndpointPath:
+    'The service address points at a concrete endpoint (e.g. …/chat/completions), so this message was not sent. Use the host only, a /v1 suffix is fine.',
+  sendBlockedModelEmpty:
+    'The model name is empty, so this message was not sent. Fill in a model name first.',
+  sendBlockedModelSpace:
+    'The model name contains a space, so this message was not sent. A model name must be one continuous string.',
 } satisfies Record<keyof typeof zh, string>
