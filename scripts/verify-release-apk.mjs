@@ -19,9 +19,26 @@
  * ```
  *   --variant         期望的构建变体（默认 `standard`，可选 `internal`）
  *   --expect-cert     期望的签名证书 SHA-256。不传时**从唯一来源** `config/appIdentity.json` 的
- *                     `expectedCertSha256` 派生（读不到 / 非法 → **exit 2**，不回落到任何内置默认值）
+ *                     `expectedCertSha256` 派生（读不到 / 非法 → **exit 2**，不回落到任何内置默认值）。
+ *                     **语义（#705 收尾）**：传了它只覆盖「拿哪个值与 APK 比对」，
+ *                     **不豁免**配置完整性 —— 配置被删 / 被改时照样 exit≠0。
  *   --allow-insecure  明确认可「这是明文联调包」（`INSECURE_CONSUME=true`）：不加就 exit 1
  *   --json            输出结构化结果（workflow / 脚本消费；此时不打印表格）
+ *
+ * ## 期望指纹的「前门」：三道配置完整性判据（碰 APK 之前，任何情况下都跑）
+ *
+ * #707 只做到「值从配置派生」。但**只读配置不等于校验配置** —— 于是有两处漏：
+ *   ① gradle 里若还留着 `EXPECTED_CERT_SHA256` 第二份副本，「按这份配置过闸、按那份配置构建」
+ *      在 `verify:apk` 眼里毫无差别；
+ *   ② 配置值与仓库里的已发布断言（`PUBLISHED_IDENTITY`）不等 —— 有人把指纹改了一个字 —— 也照样
+ *      拿被改过的值去比 APK，在一个用同一次构建签的包上跑绿。
+ * 还有第三处：显式传 `--expect-cert` 时**完全不读配置**，「删掉配置 + 随手传个值」即可绕过。
+ * 现在这三处都由前门拦住，比较逻辑**全部复用** `scripts/lib/certFingerprint.mjs`（#702 的唯一实现）：
+ *   1. 读得到：`config/appIdentity.json` 的 `expectedCertSha256` 存在且是 64 位小写十六进制
+ *      （且确实来自配置本身，**不接受** gradle 兼容回落）→ 否则 **exit 2**（判不出来，不回落默认值）；
+ *   2. `assertSingleFingerprintSource`：gradle 里第二份副本与配置不等 → **exit 1**，点名两个值；
+ *   3. `assertMatchesPublishedCert`：配置值 ≠ `PUBLISHED_IDENTITY.expectedCertSha256` → **exit 1**，
+ *      点名「配置 / 已发布」两个值。
  *
  * ## 五项 + 附加输出
  * | # | 检查 | 判据 |
@@ -38,16 +55,20 @@
  * **不能公开分发**。所以放行通道必须留下自证标记，由这道闸把它挡住 —— 打得出来，但发不安静悄悄。
  *
  * ## 退出码（与 `check-apk-debuggable` 同一口径）
- *   0  五项全过 → 可以发布
- *   1  有项目**明确不过**（读到值、值不对）→ 禁止发布，报告点名是哪一项
- *   2  判不出来（缺 aapt2 / apksigner、SDK 没装、不是 APK、清单读不出）→ **同样禁止发布**（fail-closed）
+ *   0  五项全过（且前门三道配置判据全过）→ 可以发布
+ *   1  有项目**明确不过**（读到值、值不对；含「配置 ≠ 已发布断言」「gradle 第二份副本 ≠ 配置」）
+ *      → 禁止发布，报告点名是哪一项（前门拦下时 `failing = ['certSources']`，两个值都抄出来）
+ *   2  判不出来（缺 aapt2 / apksigner、SDK 没装、不是 APK、清单读不出、配置读不到、`--expect-cert` 非法）
+ *      → **同样禁止发布**（fail-closed）
  *
  * ## 边界（别夸大）
  *   · 不依赖网络、不修改 APK（只读 + `fs.statSync`）；
  *   · 证书指纹是「这次出包用的是不是那把已发布 key」，不等于「包里的 JS 没被人改过」——
  *     那属于产物审计，不在这张表里；
  *   · 第 2/3/5 项要 `aapt2`，第 4 项要 `apksigner`，两者都从 `$ANDROID_HOME/build-tools/<版本>/` 取
- *     （优先级见 `scripts/lib/androidTools.mjs`：钉住的版本 > 已装最高档），找不到就 exit 2。
+ *     （优先级见 `scripts/lib/androidTools.mjs`：钉住的版本 > 已装最高档），找不到就 exit 2；
+ *   · 前门三道判据**不需要 SDK / APK / keystore**（纯配置层），所以它们进得了 CI：
+ *     负向对照见 `tests/unit/verify-release-apk-cert-sources.test.mjs`。
  */
 
 import { createHash } from 'node:crypto';
@@ -66,7 +87,13 @@ import {
 } from '../deploy/dl-release/variant.mjs';
 import { loadBuildEnv, resolveBuildTools, toolchainHint } from './lib/androidTools.mjs';
 import { RE_CERT_SHA256 } from './lib/appIdentity.mjs';
-import { CERT_PRIMARY_REL, resolveExpectedCertSha256 } from './lib/certFingerprint.mjs';
+import {
+  CERT_FALLBACK_REL,
+  CERT_PRIMARY_REL,
+  assertMatchesPublishedCert,
+  assertSingleFingerprintSource,
+  resolveExpectedCertSha256,
+} from './lib/certFingerprint.mjs';
 
 export const EXIT_OK = 0;
 export const EXIT_FAIL = 1;
@@ -86,33 +113,157 @@ export const CERT_SOURCE_CONFIG = CERT_PRIMARY_REL;
 export const CERT_SOURCE_CLI = '--expect-cert';
 
 /**
- * 解析「这次要比对的期望指纹」与它的来源。`--expect-cert` 显式传入时优先，否则从唯一来源派生。
+ * 「期望指纹来源是否健康」的四种结局。**这不是第 6 项检查，而是碰 APK 之前的一道前门**：
+ * 前门红了就不该判 APK（判了也白判 —— 拿坏期望值比出来的绿是假绿）。
+ */
+export const CERT_SOURCES = Object.freeze({
+  /** 配置健康：读得到 / 是 64 位 hex / 与已发布断言一致 / 没有第二份不等副本 */
+  OK: 'ok',
+  /** 配置读不到或不是 64 位 hex → **判不出来**（exit 2，fail-closed，不回落任何默认值） */
+  UNREADABLE: 'unreadable',
+  /** `android/app/build.gradle` 里还有第二份副本且与配置不等 → **明确不过**（exit 1，点名两值） */
+  DUPLICATE_SOURCE: 'duplicate-source',
+  /** 配置值 ≠ `PUBLISHED_IDENTITY.expectedCertSha256`（已发布断言）→ **明确不过**（exit 1，点名两值） */
+  PUBLISHED_MISMATCH: 'published-mismatch',
+  /** `--expect-cert` 本身不是 64 位 hex → 判不出来（exit 2） */
+  CLI_INVALID: 'cli-invalid',
+});
+
+/**
+ * 期望证书指纹的**来源完整性**（#705 收尾的第一处加固）。
  *
- * @param {{expectCert?: string|null, root?: string}} options
+ * 三道判据，比较逻辑**全部复用** `scripts/lib/certFingerprint.mjs`（#702 的唯一实现）：
+ *   ① 配置读得到、`expectedCertSha256` 是 64 位小写十六进制（且确实来自 `config/appIdentity.json`
+ *      本身，不是 gradle 兼容回落）→ 读不到 = **判不出来**（exit 2）；
+ *   ② `assertSingleFingerprintSource`：gradle 里若还有 `EXPECTED_CERT_SHA256` 第二份副本且与配置不等
+ *      → **exit 1**，并把两个值都打出来；
+ *   ③ `assertMatchesPublishedCert`：配置值 ≠ 仓库里的已发布断言 `PUBLISHED_IDENTITY.expectedCertSha256`
+ *      → **exit 1**，并把「配置 / 已发布」两个值都打出来。
+ *
+ * 为什么 `verify:apk` 自己要跑 ②③（原来只「读配置」）：`release-check` 跑得过不等于这道闸跑得过 ——
+ * 发版那台机器上真正被人执行的是 `pnpm run verify:apk`。只读配置的话，「配置被改了一个字符」在
+ * 这条命令眼里毫无差别（它只会拿被改过的值去比 APK，然后在一个用同一次构建签的包上跑绿）。
+ *
+ * @param {{root?: string, log?: ((...parts: unknown[]) => void)|null}} [options]
+ *   `root` 只为复用方 / 单测存在（把配置指向临时目录）；`log` 缺省时把 assert 的输出收进 `detail`。
+ * @returns {{ok: boolean, kind: string, exitCode: number, value: string|null, source: string|null,
+ *            configValue: string|null, invalid: string|null, detail: string[]}}
+ *   `ok === false` 时调用方**必须**按 `exitCode` 收场，不许继续比 APK。
+ */
+export function assertCertSources(options = {}) {
+  const root = options.root;
+  const detail = [];
+  const record = options.log ?? ((...parts) => detail.push(parts.map(String).join(' ')));
+  const config = resolveExpectedCertSha256(root);
+  const rejection = (kind, exitCode, invalid, source = null) => ({
+    ok: false,
+    kind,
+    exitCode,
+    value: null,
+    source: source ?? config.source ?? CERT_SOURCE_CONFIG,
+    configValue: null,
+    invalid,
+    detail,
+  });
+
+  // ① 读得到，且确实来自配置本身（gradle 字面量的兼容回落是 release-check 的口子，不是这条发版闸的）
+  if (!config.value) {
+    return rejection(
+      CERT_SOURCES.UNREADABLE,
+      EXIT_UNKNOWN,
+      `${CERT_PRIMARY_REL} 的 expectedCertSha256 ${config.invalid ?? '读不到'}` +
+        `（文件不存在、解析失败、或字段缺失；唯一来源只有这份配置，#271）`,
+      CERT_SOURCE_CONFIG,
+    );
+  }
+  if (config.source !== CERT_PRIMARY_REL) {
+    return rejection(
+      CERT_SOURCES.UNREADABLE,
+      EXIT_UNKNOWN,
+      `${CERT_PRIMARY_REL} 里没有可用的 expectedCertSha256，只在 ${config.source} 找到了字面量。` +
+        '发版闸只认配置：兼容回落是 release-check 给老 checkout 的口子，这里不回落 —— ' +
+        '否则「删掉配置」就能让这道闸改读另一份副本',
+      CERT_SOURCE_CONFIG,
+    );
+  }
+
+  // ② 第二份副本（gradle 字面量）必须与配置相等；③ 配置必须等于已发布断言。
+  //    两条都跑（不短路），因为「改配置一个字」往往同时踩中两条，两个值都打出来才好定位。
+  const singleSource = assertSingleFingerprintSource(config, { root, log: record });
+  const matchesPublished = assertMatchesPublishedCert(config, { log: record });
+  if (!singleSource || !matchesPublished) {
+    return {
+      ok: false,
+      kind: singleSource ? CERT_SOURCES.PUBLISHED_MISMATCH : CERT_SOURCES.DUPLICATE_SOURCE,
+      exitCode: EXIT_FAIL,
+      value: null,
+      source: config.source,
+      configValue: config.value,
+      invalid: null,
+      detail,
+    };
+  }
+
+  return {
+    ok: true,
+    kind: CERT_SOURCES.OK,
+    exitCode: EXIT_OK,
+    value: config.value,
+    source: config.source,
+    configValue: config.value,
+    invalid: null,
+    detail,
+  };
+}
+
+/**
+ * 解析「这次要比对的期望指纹」与它的来源。
+ *
+ * **语义（#705 收尾的第二处加固，2026-11 起生效）**：先无条件跑一遍 {@link assertCertSources}
+ * （配置存在 / 64 位 hex / 与已发布断言一致 / 无第二份不等副本），**配置不健康就直接收场**；
+ * `--expect-cert` 只决定「拿哪个值与 APK 比对」，**不豁免**「配置是否健康」。
+ *
+ * 改这条的理由（缺陷）：改之前，显式传 `--expect-cert <hex>` 时**完全不读配置** —— 于是
+ * 「删掉 `config/appIdentity.json` + 随手传个值」就能让这道闸一路跑绿。配置是「发布用的到底是不是
+ * 那把已发布 key」的唯一记录点，它坏掉这件事必须自己单独判红，不许被一个命令行参数顶掉。
+ *
+ * @param {{expectCert?: string|null, root?: string, log?: ((...parts: unknown[]) => void)|null}} options
  *   `root` 只为复用方 / 单测存在（把配置指向临时目录，证明「配置缺失 → 判不出来」）。
- * @returns {{value:string|null, source:string, invalid:string|null}}
- *   `value === null` = 判不出来，调用方**必须 exit 2**，不许回落到任何字面量默认值。
+ * @returns {{ok: boolean, kind: string, exitCode: number, value: string|null, source: string|null,
+ *            configValue: string|null, invalid: string|null, detail: string[]}}
+ *   `ok === false` = 不许继续比 APK，调用方**必须**按 `exitCode` 收场。
  */
 export function resolveExpectCert(options = {}) {
+  const sources = assertCertSources({ root: options.root, log: options.log });
+  if (!sources.ok) return sources;
+
   const raw = typeof options.expectCert === 'string' ? options.expectCert.trim() : '';
   if (raw) {
     const value = raw.toLowerCase();
     if (!RE_CERT_SHA256.test(value)) {
       return {
+        ok: false,
+        kind: CERT_SOURCES.CLI_INVALID,
+        exitCode: EXIT_UNKNOWN,
         value: null,
         source: CERT_SOURCE_CLI,
+        configValue: sources.configValue,
         invalid: `--expect-cert 不是 64 位十六进制指纹：'${raw}'（apksigner 的 AA:BB:… 写法也不接受，请传 64 位 hex）`,
+        detail: [],
       };
     }
-    return { value, source: CERT_SOURCE_CLI, invalid: null };
+    return {
+      ok: true,
+      kind: CERT_SOURCES.OK,
+      exitCode: EXIT_OK,
+      value,
+      source: CERT_SOURCE_CLI,
+      configValue: sources.configValue,
+      invalid: null,
+      detail: [],
+    };
   }
-  const resolved = resolveExpectedCertSha256(options.root);
-  if (resolved.value) return { value: resolved.value, source: resolved.source ?? CERT_SOURCE_CONFIG, invalid: null };
-  return {
-    value: null,
-    source: resolved.source ?? CERT_SOURCE_CONFIG,
-    invalid: resolved.invalid ?? `读不到 ${CERT_PRIMARY_REL}（文件不存在或没有 expectedCertSha256）`,
-  };
+  return sources;
 }
 
 /** 检查项状态：pass 通过 / fail 明确不过 / unknown 判不出来（fail-closed） */
@@ -172,6 +323,58 @@ function unknownResult(base, error) {
     failing: [],
     error,
   };
+}
+
+/**
+ * 「期望指纹前门」拦住时的统一结果（#705 收尾）：APK 一项都还没判，所以五项全记「未校验」。
+ *
+ * 两种收场，区别是**能不能判**：
+ *   · 判不出来（配置读不到 / 不是 64 hex / `--expect-cert` 本身非法）→ exit 2，`failing` 为空
+ *     （「判不出来」不许表述成「某几项不过」，与 release-check 的 FAIL/UNKNOWN 同口径）；
+ *   · 明确不过（配置与已发布断言不等 / gradle 里第二份副本不等）→ exit 1，`failing` 点名 `certSources`,
+ *     报告里把两个值都抄出来 —— 只说红了不说是哪两个值不一致，等于让人自己去 grep。
+ */
+function certSourcesFailure(base, expectation) {
+  const definite = expectation.exitCode === EXIT_FAIL;
+  const head = expectation.kind === CERT_SOURCES.CLI_INVALID
+    ? `--expect-cert 判不出来（配置本身是健康的：${expectation.configValue ?? '—'}）：`
+    : definite
+      ? '期望证书指纹的来源/断言不一致（前门拦下，还没碰 APK）：'
+      : `期望证书指纹判不出来（${expectation.source ?? CERT_SOURCE_CONFIG}）：`;
+  const lines = [head];
+  if (expectation.invalid) lines.push(`  ${expectation.invalid}`);
+  for (const line of expectation.detail ?? []) lines.push(`  ${line}`);
+  lines.push('');
+  if (definite) {
+    // `assertSingleFingerprintSource` / `assertMatchesPublishedCert` 自己已经打过「修法」了（在 detail 里），
+    // 这里只补它们没讲的那一层：为什么 `--expect-cert` 顶不掉这条判据。
+    lines.push(
+      '--expect-cert 不豁免这条: 它只决定「拿哪个值与 APK 比对」，不决定「配置是否健康」。',
+      '因为配置就是「发布用的到底是不是那把已发布 key」的唯一记录点 —— 让一个命令行参数顶掉它，',
+      '「删掉配置 + 随手传个值」就能一路跑绿（#705 收尾时补的第二处）。',
+      '按上面 detail 里的修法把两个值弄成一致，再跑一遍 —— 不要通过改期望值让闸门变绿。',
+    );
+  } else {
+    if (expectation.kind !== CERT_SOURCES.CLI_INVALID) {
+      lines.push(
+        '为什么直接 exit 2：指纹是第 4 项的唯一判据。判不出来就只能「按通过处理」或「猜一个值」，',
+        '两者都会让第 4 项变成假绿灯 —— 所以这里**不回落到任何内置默认值**（#705）。',
+        '',
+      );
+    }
+    lines.push(
+      '修法:',
+      `  1) 确认 ${CERT_PRIMARY_REL} 存在，且 expectedCertSha256 是 64 位小写十六进制；`,
+      '     这个值就是「已发布证书」（换它 = 已装用户无法覆盖升级，见 docs/RELEASE-MANUAL.md §1）。',
+      '  2) 只是想临时按别的指纹验一下 → 显式传 --expect-cert <64 位 hex>（输出里会标来源）。',
+    );
+  }
+  const result = unknownResult(base, lines.join('\n'));
+  result.exitCode = expectation.exitCode;
+  result.conclusion = EXIT_LABEL[expectation.exitCode];
+  result.failing = definite ? ['certSources'] : [];
+  result.certSources = { ok: false, kind: expectation.kind, exitCode: expectation.exitCode };
+  return result;
 }
 
 /** 从 `aapt2 dump badging` 的首行取版本号；取不到返回 {} */
@@ -243,7 +446,8 @@ const STATUS_LABEL = {
 export function verifyReleaseApk(options) {
   const env = options.env ?? process.env;
   const expectedVariant = options.variant ?? 'standard';
-  // 期望指纹：显式 --expect-cert 优先，否则从唯一来源派生；判不出来 → exit 2（不回落到内置默认值）
+  // 期望指纹前门（#705 收尾）：**先无条件校验配置完整性**（存在 / 64 hex / 无第二份不等副本 /
+  // 与已发布断言一致），再决定拿哪个值与 APK 比对。`--expect-cert` 只覆盖后者，不豁免前者。
   const certExpectation = resolveExpectCert({ expectCert: options.expectCert, root: options.root });
   // 「明文联调包」必须是**显式**认可的一件事：不传就是不许发（见下面第 5 项）
   const allowInsecure = options.allowInsecure === true;
@@ -254,25 +458,20 @@ export function verifyReleaseApk(options) {
     expectedCert: certExpectation.value,
     // 这次比对的是**哪来的**期望值：config/appIdentity.json（派生）或 --expect-cert（显式传入）
     expectCertSource: certExpectation.source,
+    // 配置里那个值（即便 --expect-cert 覆盖了比对值，它也存在 —— 复核的人要看得出「配置是健康的」）
+    configCert: certExpectation.configValue ?? null,
     allowInsecure,
     insecure: false,
     buildTools: null,
     info: {},
   };
 
-  if (certExpectation.invalid) {
-    return unknownResult(base, [
-      `期望证书指纹判不出来（${certExpectation.source}）：${certExpectation.invalid}`,
-      '',
-      '为什么直接 exit 2：指纹是第 4 项的唯一判据。判不出来就只能「按通过处理」或「猜一个值」，',
-      '两者都会让第 4 项变成假绿灯 —— 所以这里**不回落到任何内置默认值**（#705）。',
-      '',
-      '修法:',
-      `  1) 确认 ${CERT_PRIMARY_REL} 存在，且 expectedCertSha256 是 64 位小写十六进制；`,
-      '     这个值就是「已发布证书」（换它 = 已装用户无法覆盖升级，见 docs/RELEASE-MANUAL.md §1）。',
-      '  2) 只是想临时按别的指纹验一下 → 显式传 --expect-cert <64 位 hex>（输出里会标来源）。',
-    ].join('\n'));
-  }
+  if (!certExpectation.ok) return certSourcesFailure(base, certExpectation);
+
+  // 前门已过（配置健康、两道来源拦截都过了）：写进每一种结果的同一位置 ——
+  // 复核的人（和 `--json` 消费方）要能看出「这一次比对的期望值经得起配置层复核」，
+  // 而不是只有全绿那一份结果里才带这个字段。
+  base.certSources = { ok: true, kind: CERT_SOURCES.OK, exitCode: EXIT_OK };
 
   const expectCert = certExpectation.value;
 
@@ -460,6 +659,13 @@ export function verifyReleaseApk(options) {
 /** 结论行尾的来源标注（期望指纹是哪来的，复核的人要看得见） */
 const certSourceSuffix = (result) => `（期望指纹来源：${result.expectCertSource ?? '未确定'}）`;
 
+/**
+ * `failing` 里的 id → 结论行里的人话。五项检查直接用 id（`cert` / `insecure` …，与 `--json` 对齐），
+ * 唯一例外是前门那条 `certSources` —— 它不是 APK 的某一项，而是「期望值本身不健康」。
+ */
+const FAILING_LABEL = { certSources: '期望证书指纹的来源/断言' };
+const failingLabel = (result) => result.failing.map((id) => FAILING_LABEL[id] ?? id).join(' / ');
+
 /** 表格 + 附加信息 → 人看的报告 */
 export function formatReport(result) {
   const lines = [];
@@ -505,9 +711,14 @@ export function formatReport(result) {
     }
   } else if (result.conclusion === 'FAIL') {
     const detail = result.checks.filter((item) => item.status === STATUS.FAIL);
-    lines.push(`结论：FAIL（${result.failing.join(' / ')} 不通过）—— 禁止发布。${certSourceSuffix(result)}`);
+    lines.push(`结论：FAIL（${failingLabel(result)} 不通过）—— 禁止发布。${certSourceSuffix(result)}`);
     for (const item of detail) {
       if (item.detail) lines.push(`  · ${item.title}：${item.detail}`);
+    }
+    // 前门拦下时（配置与已发布断言不等 / gradle 第二份副本不等）五项一项都没判，
+    // 红的理由只在 result.error 里 —— 不抄出来就等于「红了但不说是哪两个值」。
+    if (!detail.length && result.error) {
+      for (const line of result.error.split('\n')) lines.push(`  ${line}`);
     }
   } else {
     lines.push(`结论：UNKNOWN（判不出来）—— 按禁止发布处理（fail-closed）。${certSourceSuffix(result)}`);
@@ -526,6 +737,10 @@ function usage() {
   return [
     `用法: node scripts/${SCRIPT} <apk> [--variant standard|internal] [--expect-cert <sha256>] [--allow-insecure] [--json]`,
     '',
+    '前门（碰 APK 之前，任何情况下都先跑）：期望证书指纹的配置完整性 —— 配置存在 / 64 位 hex /',
+    '        与已发布断言一致 / gradle 里没有第二份不等的副本；不健康就 exit≠0。',
+    '        --expect-cert 只覆盖「拿哪个值与 APK 比对」，不豁免上面这几条（详见下面「期望证书指纹」）。',
+    '',
     '五项校验：debuggable 不存在或 false / ARTIFACT_VARIANT 与 --variant 一致 /',
     '          LOOPBACK_CONSUME 不存在或 false / 签名证书 SHA-256 与 --expect-cert 一致 /',
     '          INSECURE_CONSUME 不存在或 false（为 true 时必须显式加 --allow-insecure，否则 exit 1）',
@@ -534,9 +749,20 @@ function usage() {
     '--allow-insecure  确认「这是明文联调包」：只给 staging 联调用，结论行会强制标 INSECURE(staging-only)，',
     '                  禁止公开分发；不带它时，带 INSECURE_CONSUME=true 标记的包一律 exit 1',
     '',
-    '退出码: 0 五项全过 / 1 有项目明确不过（报告点名） / 2 判不出来（缺 SDK 工具等，同样禁止发布）',
-    `默认证书: 不传 --expect-cert 时从 ${CERT_PRIMARY_REL} 的 expectedCertSha256 派生`,
-    '          （读不到 / 非法 → exit 2，不回落到任何内置默认值；来源会写进结论行与 --json 的 expectCertSource）',
+    '期望证书指纹（碰 APK 之前的**前门**，任何情况下都会先跑一遍）：',
+    `  1) 配置完整性：${CERT_PRIMARY_REL} 必须存在、expectedCertSha256 是 64 位小写十六进制`,
+    '     （读不到 / 非法 → exit 2，不回落到任何内置默认值）；',
+    `  2) 单一来源：${CERT_FALLBACK_REL} 里若还有 EXPECTED_CERT_SHA256 字面量且与配置不等 → exit 1，`,
+    '     报告里点名两个值（第二份真相源）；',
+    '  3) 已发布断言：配置值 ≠ scripts/lib/appIdentity.mjs 的 PUBLISHED_IDENTITY.expectedCertSha256',
+    '     → exit 1，报告里点名「配置 / 已发布」两个值（改配置一个字就红）。',
+    '',
+    '--expect-cert <sha256>  只覆盖「拿哪个值与 APK 比对」，**不豁免**上面三条配置完整性判据：',
+    '                  配置被删 / 被改时，即便传了合法指纹也照样 exit≠0（语义自 #705 收尾起）。',
+    '                  不传时比对值从配置派生；来源会写进结论行与 --json 的 expectCertSource。',
+    '',
+    '退出码: 0 五项全过 / 1 有项目明确不过（报告点名；含配置与已发布断言不等） /',
+    '        2 判不出来（缺 SDK 工具、配置读不到、--expect-cert 非法等，同样禁止发布）',
   ].join('\n');
 }
 
@@ -609,7 +835,10 @@ function main(argv) {
     const reason = result.conclusion === 'FAIL'
       ? (result.failing.includes('insecure') && !result.allowInsecure
         ? '发布校验不通过：insecure —— 这是明文联调包，禁止公开分发（确认只做 staging 联调请加 --allow-insecure）'
-        : `发布校验不通过：${result.failing.join(' / ')}`)
+        : result.failing.includes('certSources')
+          // 前门拦下（#705 收尾）：措辞要说清「不是 APK 的问题，是期望值本身不可信」，两个值在报告里
+          ? '发布校验不通过：期望证书指纹的来源/断言不一致（配置 ≠ 已发布，或 gradle 里还有第二份副本）—— 两个值见上面的报告'
+          : `发布校验不通过：${result.failing.join(' / ')}`)
       : '发布校验判不出来（fail-closed）';
     console.error(reason);
   }
