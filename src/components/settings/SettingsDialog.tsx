@@ -66,7 +66,7 @@ import {
   useSettingsDialog,
   type SettingsSection,
 } from './settingsDialogState.js'
-import { AccountConsumePage } from '../consume/AccountConsumePage.js'
+import { AccountConsumePage, type AccountSubPage } from '../consume/AccountConsumePage.js'
 import { MOTION_EXIT, usePresence } from '../../utils/usePresence.js'
 import styles from './Settings.module.css'
 
@@ -112,6 +112,13 @@ const SettingsContent = ({ visible }: { visible: boolean }) => {
   const historyDelete = useHistoryDelete()
   // 反馈弹窗：integrity=true 表示从「检查日志完整性」进入，自检面板默认展开
   const [feedback, setFeedback] = useState({ open: false, integrity: false })
+  /**
+   * 账户与消费里当前打开的下级页面（`null` = L1 列表页，见 `AccountConsumePage`）。
+   *
+   * 放在这里而不是内容区里：进了 L2（我的卡密 / 历史消费 / 账号 / 我的额度）时，tab 3 顶上的
+   * 「模型来源」配置区要让位 —— 内容区整体换成下级页面，且切换 tab 要回到 L1。
+   */
+  const [accountPage, setAccountPage] = useState<AccountSubPage | null>(null)
   const replacingHistory = useChatStore((state) => state.importingHistory)
   const historyBusy = historyImport.busy || historyDelete.busy || replacingHistory
   // 覆盖确认 / 删除确认叠在设置之上时，设置层的 X 与点击遮罩一律不可用：
@@ -142,7 +149,11 @@ const SettingsContent = ({ visible }: { visible: boolean }) => {
               aria-selected={section === item.value}
               className={clsx(styles.navItem, section === item.value && styles.navItemActive)}
               data-testid={item.value === 'account' ? 'account-consume-open' : undefined}
-              onClick={() => setSection(item.value)}
+              onClick={() => {
+                setSection(item.value)
+                // 切 tab 一律回到 L1（下次进来不该停在某个下级页面）
+                setAccountPage(null)
+              }}
             >
               {item.icon}
               {t(item.label)}
@@ -220,11 +231,18 @@ const SettingsContent = ({ visible }: { visible: boolean }) => {
           ) : (
             <>
               {/* 第三个 tab：模型来源（渠道 / API Key / 模型）+ 连通性测试 + 我的钱包 + 账号。
-                  全部**渲染在设置弹层内部**（不新开弹层、不叠遮罩），子行点进去是内容区换屏。 */}
-              <div className={styles.groupHead}>{t('accountConsumeGroupSource')}</div>
-              <ApiConfigFields editor={apiKeyEditor} />
-              {isMobile ? <ApiKeyConfirm editor={apiKeyEditor} /> : null}
-              <AccountConsumePage showSourceRows={false} />
+                  全部**渲染在设置弹层内部**（不新开弹层、不叠遮罩）。
+
+                  L2（我的卡密 / 历史消费 / 账号 / 我的额度）打开时，上面这块配置区让位：
+                  内容区整体换成下级页面，不再"导航下面接一段内容"。 */}
+              {accountPage === null ? (
+                <>
+                  <div className={styles.groupHead}>{t('accountConsumeGroupSource')}</div>
+                  <ApiConfigFields editor={apiKeyEditor} />
+                  {isMobile ? <ApiKeyConfirm editor={apiKeyEditor} /> : null}
+                </>
+              ) : null}
+              <AccountConsumePage page={accountPage} onNavigate={setAccountPage} showSourceRows={false} />
             </>
           )}
         </div>

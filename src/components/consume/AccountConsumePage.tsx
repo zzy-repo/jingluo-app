@@ -58,6 +58,16 @@ export type AccountSubPage = 'cards' | 'buy' | 'quota' | 'history' | 'account'
 type ConnState = { phase: 'idle' } | { phase: 'testing' } | { phase: 'ok'; ms: number } | { phase: 'fail' }
 
 export type AccountConsumePanelProps = {
+  /**
+   * 当前显示哪一屏：`null` = L1 列表页，其余 = 各自的下级页面（L2）。
+   *
+   * **为什么由外层持有**：L2 出现时，tab 3 顶上的「模型来源（渠道 / API Key / 模型）」要让位 ——
+   * 内容区整体换成下级页面，而不是"导航下面接一段内容"。外层（设置弹层）同时也用它决定
+   * 顶部配置区显不显示，所以状态放在外层，本文件只按 `page` 渲染。
+   */
+  page: AccountSubPage | null
+  /** 进入下级页面（`null` = 回 L1） */
+  onNavigate: (page: AccountSubPage | null) => void
   /** 用的消费侧客户端；不传就用全应用共享的那一个 */
   consume?: ConsumeClient
   /** 当前用户；不传则取 W1-B 的登录态 */
@@ -72,6 +82,8 @@ export type AccountConsumePanelProps = {
 }
 
 export const AccountConsumePage = ({
+  page,
+  onNavigate,
   consume: injected,
   user = null,
   onNeedLogin,
@@ -90,12 +102,6 @@ export const AccountConsumePage = ({
   const kind = useApiConfig((state) => state.kind)
   const apiKey = useApiConfig((state) => state.apiKey)
 
-  /**
-   * 当前显示哪一屏：`root` = L1 列表页，其余 = 各自的下级页面（L2）。
-   * 点行只做一件事 —— 换 `view`，内容区整体替换；「返回」把它调回 `root`。
-   * 容器（设置弹层）全程不消失，也不叠第二层。
-   */
-  const [view, setView] = useState<'root' | AccountSubPage>('root')
   const [sheet, setSheet] = useState(false)
   const [conn, setConn] = useState<ConnState>({ phase: 'idle' })
   const [balance, setBalance] = useState<number | undefined>(undefined)
@@ -158,16 +164,11 @@ export const AccountConsumePage = ({
     }
   }, [])
 
-  /** 进入某一屏（L1 ↔ L2） */
-  const onNavigate = useCallback((next: AccountSubPage) => {
-    setView(next)
-  }, [])
-
   /** 登录出口（#608）：登录 / 注册入口就在账号页，不换容器、不设登录墙 */
   const needLogin = useCallback(() => {
-    setView('account')
+    onNavigate('account')
     onNeedLogin?.()
-  }, [onNeedLogin])
+  }, [onNavigate, onNeedLogin])
 
   /**
    * 未登录态「去填 API Key」：Key / 渠道就住在这张 L1 页顶上的配置区，
@@ -179,9 +180,9 @@ export const AccountConsumePage = ({
 
   /** 收款页关掉后回到「我的卡密」（卡密由小铺发到订单上）并让余额重拉一次 */
   const backToCards = useCallback(() => {
-    setView('cards')
+    onNavigate('cards')
     setWalletTick((tick) => tick + 1)
-  }, [])
+  }, [onNavigate])
 
   const SOURCE_LABEL_KEYS: Record<string, TranslationKey> = {
     builtin: 'accountConsumeSourceBuiltin',
@@ -291,18 +292,18 @@ export const AccountConsumePage = ({
   }
 
   /** 下级页面的头部：左上角「返回」+ 本页标题（设置弹层的头部与 X 不动，这里只是内容区的二级头） */
-  const subHeader = (page: AccountSubPage) => (
+  const subHeader = (target: AccountSubPage) => (
     <div className={styles.subHeader}>
       <button
         type="button"
         className={styles.subBack}
         data-testid="account-consume-back"
-        onClick={() => setView('root')}
+        onClick={() => onNavigate(null)}
       >
         <IconChevronRightOutline14 />
         {t('back')}
       </button>
-      <span className={styles.subTitle}>{t(SUB_PAGE_TITLES[page])}</span>
+      <span className={styles.subTitle}>{t(SUB_PAGE_TITLES[target])}</span>
     </div>
   )
 
@@ -321,7 +322,7 @@ export const AccountConsumePage = ({
   ) : null
 
   // ───────────────────────────── L2：我的卡密（列表 + 兑换卡密） ──────────────────
-  if (view === 'cards') {
+  if (page === 'cards') {
     return (
       <div className={`${styles.page} ${styles.embedded}`} data-testid="account-consume-page">
         {subHeader('cards')}
@@ -340,7 +341,7 @@ export const AccountConsumePage = ({
   }
 
   // ───────────────────────────── L2：购买（收款页回跳后落回卡密） ────────────────
-  if (view === 'buy') {
+  if (page === 'buy') {
     return (
       <div className={`${styles.page} ${styles.embedded}`} data-testid="account-consume-page">
         {subHeader('buy')}
@@ -353,7 +354,7 @@ export const AccountConsumePage = ({
   }
 
   // ───────────────────────────── L2：我的额度（用量） ────────────────────────────
-  if (view === 'quota') {
+  if (page === 'quota') {
     return (
       <div className={`${styles.page} ${styles.embedded}`} data-testid="account-consume-page">
         {subHeader('quota')}
@@ -366,7 +367,7 @@ export const AccountConsumePage = ({
   }
 
   // ───────────────────────────── L2：历史消费 ──────────────────────────────────
-  if (view === 'history') {
+  if (page === 'history') {
     return (
       <div className={`${styles.page} ${styles.embedded}`} data-testid="account-consume-page">
         {subHeader('history')}
@@ -379,7 +380,7 @@ export const AccountConsumePage = ({
   }
 
   // ───────────────────────────── L2：账号（资料 / 安全 / 退出登录） ──────────────
-  if (view === 'account') {
+  if (page === 'account') {
     return (
       <div className={`${styles.page} ${styles.embedded}`} data-testid="account-consume-page">
         {subHeader('account')}
