@@ -45,7 +45,12 @@ import { fetchPurchases, type PurchaseOrder } from '../../services/ours/purchase
 import { useAuthStatus } from '../../services/auth/useAuthStatus.js'
 import { managedKeyTail } from '../../services/api/managedKey.js'
 import { detectThirdPartyProtocol } from '../../services/api/protocolDetect.js'
-import { syncManagedKeyFromServer } from '../settings/managedKeyRuntime.js'
+import {
+  ensureManagedKeyForDevice,
+  syncManagedKeyFromServer,
+} from '../settings/managedKeyRuntime.js'
+import { useManagedKeyEnsure } from '../settings/managedKeyEnsureState.js'
+import { ManagedKeyEnsureBanner } from '../settings/managedKeyView.js'
 import { clearManagedKeyBlocked, useSettingsDialog } from '../settings/settingsDialogState.js'
 import { SettingsAuthCard } from './SettingsAuthCard.js'
 import { getAccessToken, useAuthStore } from '../../services/auth/store.js'
@@ -134,6 +139,16 @@ export const AccountConsumePage = ({
   const migrationResult = useLegacyMigrationResult((state) => state.result)
   const kind = useApiConfig((state) => state.kind)
   const apiKey = useApiConfig((state) => state.apiKey)
+  /**
+   * #803：登录 / 注册后那条**自动拿 Key** 的流程跑到哪了。
+   *
+   * 三个字段分开订阅（不取整个对象）：zustand 的 `useStore( selector )` 每次都会算一个新对象，
+   * 合成一个 `{status,failure,attempts}` 会让每次渲染都判成「变了」。失败时界面必须**说话**
+   * （红字 +「重试」），所以这里订阅的不是「有没有 Key」而是「上一次到底成没成」。
+   */
+  const keyEnsureStatus = useManagedKeyEnsure((state) => state.status)
+  const keyEnsureFailure = useManagedKeyEnsure((state) => state.failure)
+  const keyEnsureAttempts = useManagedKeyEnsure((state) => state.attempts)
 
   const [sheet, setSheet] = useState(false)
   /**
@@ -418,6 +433,27 @@ export const AccountConsumePage = ({
     </div>
   )
 
+  /**
+   * #803：自动拿 Key 失败时的可见提示 + 「重试」（内置服务子页 + 账号页各挂一处）。
+   *
+   * 为什么两处都要：注册 / 登录发生在**账号页**，而 Key 的归属说明在**内置服务子页**。
+   * 只在子页显示的话，「注册好了但发不出消息」的用户在账号页仍然什么都看不到 ——
+   * 那正是 #803 第 5 条要禁掉的静默失败。
+   */
+  const keyEnsureBanner = (
+    <ManagedKeyEnsureBanner
+      t={t}
+      status={keyEnsureStatus}
+      failure={keyEnsureFailure}
+      attempts={keyEnsureAttempts}
+      onRetry={() => {
+        void ensureManagedKeyForDevice()
+      }}
+      Button={Button}
+      styles={styles}
+    />
+  )
+
   /** 连通性测试一行（子页的兜底、以及不接 `sourceConfig` 的独立渲染共用同一份 JSX） */
   const connRow = (
     <button
@@ -665,6 +701,7 @@ export const AccountConsumePage = ({
             </div>
           ) : null}
           {sourceRow === 'builtin' ? builtinKeyNote : null}
+          {sourceRow === 'builtin' ? keyEnsureBanner : null}
           {sourcePage}
           {sheetNode}
         </div>
@@ -767,6 +804,9 @@ export const AccountConsumePage = ({
     return (
       <div className={`${styles.page} ${styles.embedded}`} data-testid="account-consume-page">
         {signedIn === true ? subHeader('account', null) : subHeaderWithTitle(null, 'sub2authLogin')}
+
+        {/* #803：注册 / 登录就在这一页，自动拿 Key 失败必须**在这里**也看得见（带「重试」） */}
+        {signedIn === true ? keyEnsureBanner : null}
 
         {/* 资料区：已登录 = 头像 + 昵称 + 邮箱；未登录 = 一句「未登录」（登录 / 注册入口在下方的账号面板） */}
         {signedIn === true ? (

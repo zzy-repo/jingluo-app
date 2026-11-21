@@ -27,8 +27,9 @@
  */
 import { createElement, type ComponentType, type ReactNode } from 'react'
 import type { TranslationKey, TranslationParams } from '../../i18n/index.js'
-import type { ManagedKeyVerdict } from '../../services/api/managedKey.js'
+import type { ManagedKeyFailure, ManagedKeyVerdict } from '../../services/api/managedKey.js'
 import type { ProviderKind } from '../../services/api/providers.js'
+import type { ManagedKeyEnsureStatus } from './managedKeyEnsureState.js'
 
 /** Key 行的形态：只读（服务端管理）还是可编辑（用户自己的 Key） */
 export type ApiKeyFieldMode = 'managed' | 'editable'
@@ -164,6 +165,97 @@ export const ManagedKeyView = (props: ManagedKeyViewProps): ReactNode => {
       { className: styles.apiKey },
       createElement('div', { className: styles.label }, t('settingsApiKeyLabel')),
       ...rows
+    )
+  )
+}
+
+// ---------------------------------------------------------------- 「自动拿 Key 失败」的可见提示（#803）
+
+/**
+ * 失败原因 → 一句人话（**带状态码**，因为「失败了」本身对排查毫无用处）。
+ *
+ * 三种性质分别对应 #803 第 4 条里「没拿到」的三类：超时 / 网络错误（`transport`，status 0）、
+ * 非 2xx（`http`）、2xx 但没有 Key 值（`empty`）。文案里不写「服务器繁忙」「未知错误」这类
+ * 掩盖性说法（#596 的老教训：用户拿着旧 Key 一直 401，却被告知服务器忙）。
+ */
+export const managedKeyEnsureFailureReason = (
+  t: ManagedKeyViewText,
+  failure: ManagedKeyFailure
+): string => {
+  if (failure.kind === 'transport') {
+    return t('settingsManagedKeyFailNetwork')
+  }
+  if (failure.kind === 'empty') {
+    return t('settingsManagedKeyFailEmpty')
+  }
+  return t('settingsManagedKeyFailHttp', { status: String(failure.status) })
+}
+
+/** 视图要的取词签名（与 `useTranslate()` 同形；单测注入真 zh 表） */
+export type ManagedKeyViewText = (
+  key: TranslationKey,
+  params?: TranslationParams
+) => string
+
+export type ManagedKeyEnsureBannerProps = {
+  t: ManagedKeyViewText
+  /** 后台那条「确保有 Key」现在跑到哪一步（`managedKeyEnsureState`） */
+  status: ManagedKeyEnsureStatus
+  /** 最后一次失败（`status === 'failed'` 时非空） */
+  failure: ManagedKeyFailure | null
+  /** 这次一共尝试了几次（2 = 已自动重试过一次） */
+  attempts: number
+  onRetry: () => void
+  Button: ManagedKeyButton
+  styles: Record<string, string>
+}
+
+/**
+ * 「自动获取 Key 失败」的提示块：**红字 + 「重试」按钮**，不是一句静默的日志（#803 第 5 条）。
+ *
+ * 为什么要有它：这条流程是后台跑的（登录 / 注册成功后自己触发），失败时用户手上没有任何按钮可点、
+ * 界面上也什么都没有 —— 表现就是「注册好了，但发不出消息」，而原因（超时 / 500 / 服务端没下发 Key）
+ * 全在日志里。所以失败必须**在界面上停住**，并把重试留在原地。
+ *
+ * 渲染条件只看「有没有留着一条失败」：`idle`（没跑过 / 刚成功）时不占地方；
+ * `running` 时**继续显示上一次的失败**（否则用户点「重试」的瞬间提示会闪没），
+ * 只是把按钮置灰换成「正在领取…」—— 重试在飞的时候连点会打出两次 `POST /api/v1/keys`。
+ */
+export const ManagedKeyEnsureBanner = (props: ManagedKeyEnsureBannerProps): ReactNode => {
+  const { t, status, failure, attempts, onRetry, Button, styles } = props
+  if (status === 'idle' || failure === null) {
+    return null
+  }
+  const reason = managedKeyEnsureFailureReason(t, failure)
+  const running = status === 'running'
+  return createElement(
+    'div',
+    {
+      className: styles.viewBody,
+      role: 'alert',
+      'data-testid': 'settings-managed-key-ensure-failed',
+    },
+    createElement(
+      'p',
+      { key: 'reason', className: styles.errorText, 'data-testid': 'settings-managed-key-ensure-reason' },
+      t('settingsManagedKeyEnsureFailed', { reason, attempts: String(Math.max(attempts, 1)) })
+    ),
+    createElement(
+      'p',
+      { key: 'hint', className: styles.sourceNote, 'data-testid': 'settings-managed-key-ensure-hint' },
+      t('settingsManagedKeyEnsureFailedHint')
+    ),
+    createElement(
+      Button,
+      {
+        key: 'retry',
+        variant: 'outlined',
+        size: 's',
+        disabled: running,
+        testId: 'settings-managed-key-ensure-retry',
+        onClick: onRetry,
+      },
+      running ? t('settingsManagedKeyClaiming') : t('retry')
     )
   )
 }

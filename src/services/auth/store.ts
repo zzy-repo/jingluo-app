@@ -210,6 +210,51 @@ export const setAuthTransport = (next: AuthTransport | null): void => {
 /** 有没有挂上传输层（界面据此区分「还没接线」与「真的失败了」） */
 export const hasAuthTransport = (): boolean => transport !== null
 
+// --------------------------------------------------------------------------- 会话建立钩子（#803）
+
+/**
+ * 「会话建立」的时机：登录成功 / 注册成功（sub2api 注册即登录，两者成功体同形）。
+ *
+ * 单独一个类型而不是字符串：调用方（领取链路）按它记 `trigger`，将来若加 `restore`
+ * 之类的新时机，tsc 会逼着所有分支一起想清楚。
+ */
+export type AuthSessionEstablishedReason = 'login' | 'register'
+
+/**
+ * 会话建立钩子（Issue #803 第 1 条）：**登录 / 注册成功、拿到新 access token 之后立刻**通知一次。
+ *
+ * 为什么需要这个接缝，而不是让业务层订阅 `signedIn` 布尔：
+ *  - 布尔不区分「同一个人又登录了一次」与「换了一个号」。staging 上的事故正是这样：
+ *    A 的旧会话还没清干净（`signedIn` 一直是 `true`），B 注册成功后布尔**没变**，
+ *    订阅它的 effect 不会重跑 —— 于是注册完一次 `/api/v1/keys` 都没有，而那一轮
+ *    `GET /keys` / `POST /keys` 全 401（用的是 A 已经作废的 token）；
+ *  - 钩子在这里而不是直接 import 业务模块：身份层不认识 Key 领取链路（同 `setCustomerIdProvider`
+ *    那类接缝），接线在 `main.tsx` 一处完成。
+ *
+ * 约定：钩子**只在会话真的落地之后**调用（`setState` 已完成，`getAccessToken()` 立刻拿得到新 token）；
+ * 抛异常一律吞掉 —— 登录成功这件事不许被领取链路带崩。
+ */
+let sessionEstablishedHook: ((reason: AuthSessionEstablishedReason) => void) | null = null
+
+/** 挂上会话建立钩子（`main.tsx` 接线；传 null 摘掉，测试用） */
+export const setSessionEstablishedHook = (
+  next: ((reason: AuthSessionEstablishedReason) => void) | null
+): void => {
+  sessionEstablishedHook = next
+}
+
+/** 通知一次（内部用；**只在 `applySession` 里调**，否则「什么时候算登录成功」会有第二份判据） */
+const notifySessionEstablished = (reason: AuthSessionEstablishedReason): void => {
+  if (sessionEstablishedHook === null) {
+    return
+  }
+  try {
+    sessionEstablishedHook(reason)
+  } catch {
+    // 钩子自己炸了不影响登录：它做的事（领 Key）是「尽力而为」，失败了会在界面上留下可重试的提示
+  }
+}
+
 // --------------------------------------------------------------------------- 错误与时间
 
 const errorFor = (code: string, messageKey: AuthError['messageKey'], message = ''): AuthError => ({
@@ -240,7 +285,7 @@ const needsRefresh = (token: AccessToken): boolean =>
 
 // --------------------------------------------------------------------------- 动作
 
-const applySession = (session: AuthSession): void => {
+const applySession = (session: AuthSession, reason: AuthSessionEstablishedReason): void => {
   // 新会话开始：代次 +1，正在飞的旧刷新从此不再有资格落地（见 `sessionEpoch`）
   sessionEpoch += 1
   writePersisted(session.token, session.user)
@@ -261,6 +306,9 @@ const applySession = (session: AuthSession): void => {
   // 而「中途退出 / 切号」由 epoch 判掉，旧会话的结果不会落到新账号的钱包页上。
   const epoch = sessionEpoch
   try { void migrateLegacyAfterLogin(session.token.accessToken, () => sessionEpoch !== epoch) } catch { /* 迁移永不影响登录 */ }
+  // #803：**新 token 已经落进 store 之后**再通知 —— 领取链路按 `getAccessToken()` 现取凭据，
+  // 早一步就是拿上一个账号的旧 token 去建 Key（那一轮全 401 的直接成因）。
+  notifySessionEstablished(reason)
 }
 
 /**
@@ -312,7 +360,7 @@ const signIn = async (input: AuthLoginInput): Promise<AuthResult<AuthUser>> => {
     useAuthStore.setState({ state: 'unauthenticated', submitting: false, error: result.error })
     return result
   }
-  applySession(result.data)
+  applySession(result.data, 'login')
   return { ok: true, data: result.data.user }
 }
 
@@ -336,7 +384,7 @@ const signUp = async (input: AuthRegisterInput): Promise<AuthResult<AuthUser>> =
     useAuthStore.setState({ state: 'unauthenticated', submitting: false, error: result.error })
     return result
   }
-  applySession(result.data)
+  applySession(result.data, 'register')
   return { ok: true, data: result.data.user }
 }
 

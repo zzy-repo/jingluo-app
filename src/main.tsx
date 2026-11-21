@@ -13,10 +13,11 @@ import { setCustomerIdProvider } from './services/ours/customerId.js'
 import { fetchPaymentRecords } from './services/ours/paymentRecords.js'
 import { httpTransport } from './services/ours/transport.js'
 import { setupFlexGapFallback } from './utils/flexGap.js'
-import { restoreAuth, setAuthTransport } from './services/auth/store.js'
+import { restoreAuth, setAuthTransport, setSessionEstablishedHook } from './services/auth/store.js'
 import { createAuthTransport, createPublicSettingsReader } from './services/auth/transport.js'
 import { loadAuthFlags, setPublicSettingsReader } from './services/auth/flags.js'
 import { getConsumeClient } from './services/consumeClient.js'
+import { ensureManagedKeyAfterAuth } from './components/settings/managedKeyRuntime.js'
 import {
   attachmentManager,
   collectReferencedAttachmentIds,
@@ -100,6 +101,20 @@ setCustomerIdProvider(async () => {
 const consumeClient = getConsumeClient()
 setAuthTransport(createAuthTransport(consumeClient))
 setPublicSettingsReader(createPublicSettingsReader(consumeClient))
+
+/**
+ * 登录 / 注册成功后的自动领取（#803 第 1 条）：把「会话建立」这一刻接到领取链路上。
+ *
+ * 挂在这里而不是让业务层去订阅 `signedIn` 布尔：布尔在「A 的会话还没清干净、B 又注册成功」时
+ * **不变**，订阅它的 effect 不会重跑 —— 那正是 #803 里「注册 200 之后一次 `/api/v1/keys` 都没有」
+ * 的成因。`ensureManagedKeyAfterAuth` 内部还做了两件事（都不在这里写）：
+ *   - 渠道判定（只有内置服务的 Key 由服务端下发，别的渠道不许覆盖用户自己的 Key）；
+ *   - 并发幂等（进程级单飞：profile 那条页面 effect 同时触发时只建一把 Key）。
+ * 钩子自己保证不抛；这里再 `void` 掉，登录成功这条路径不等它。
+ */
+setSessionEstablishedHook((reason) => {
+  void ensureManagedKeyAfterAuth(reason)
+})
 
 /**
  * 文档附件接线（#480 / #527）：把 `AttachmentManager` 单例注入 UI。

@@ -494,6 +494,17 @@ export const zh = {
   settingsBuiltinKeySyncing: '正在与服务端对齐 Key…',
   settingsBuiltinKeySynced: '已与服务端对齐，当前 Key 尾号 ···{tail}',
   settingsManagedKeyNeedLogin: '请先在「账户与消费 → 账号」登录，再领取 Key。',
+  /**
+   * #803：登录 / 注册后**自动**拿 Key 的那条流程 —— 两次都失败时必须停在界面上（红字 +「重试」），
+   * 不许静默。文案里要带**状态码**：只说「失败了」对用户和排查都没有用。
+   */
+  settingsManagedKeyEnsureFailed:
+    '自动获取 Key 失败：{reason}（已自动尝试 {attempts} 次），这条消息暂时发不出去。',
+  settingsManagedKeyEnsureFailedHint:
+    '点「重试」会再走一次：先查这台设备有没有同名 Key，没有才新建（不会重复创建）。',
+  settingsManagedKeyFailNetwork: '网络超时或连接不上',
+  settingsManagedKeyFailHttp: '服务端返回 {status}',
+  settingsManagedKeyFailEmpty: '服务端回了成功，但响应里没有 Key 值',
   settingsBaseUrlLabel: '服务地址',
   settingsBaseUrlPlaceholder: '例如 https://your-gateway.example.com',
   settingsModelPlaceholder: '例如 deepseek-v4.1-flash',

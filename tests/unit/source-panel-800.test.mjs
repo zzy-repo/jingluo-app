@@ -195,11 +195,17 @@ test('[4] 内置服务不再有「重新领取」：401 / 未领取的出路是�
   const runtime = codeOf('src/components/settings/managedKeyRuntime.ts')
   assert.match(runtime, /syncManagedKey\(/u, '后台对齐走幂等领取（`syncManagedKey`）')
   assert.equal(/rotate: true/u.test(runtime), false, '后台对齐不许 rotate（那会把用户手上那把作废）')
+  // #803 起「对齐」与「确保有一把」是同一个实现（`syncManagedKey` → `ensureManagedKey`：
+  // 查重 → 建 → 失败重试一次）。判据从「必须是 rotate=false 的领取」改成下面两条**更强**的：
+  // 对齐这一段根本不该出现 rotate（对齐≠换一把），且名字与实现之间只隔一层转发。
+  const managedSource = codeOf('src/services/api/managedKey.ts')
   assert.match(
-    codeOf('src/services/api/managedKey.ts'),
-    /rotate: false/u,
-    '`syncManagedKey` 必须是 rotate=false 的领取，否则「对齐」会变成「换一把」'
+    managedSource,
+    /export const syncManagedKey = [\s\S]*?ensureManagedKey\(source, options\)/u,
+    '`syncManagedKey` 只是 `ensureManagedKey` 的幂等别名（不允许再长出一条领取链路）'
   )
+  const alignBody = managedSource.slice(managedSource.indexOf('export const ensureManagedKey ='))
+  assert.equal(/rotate/u.test(alignBody), false, '对齐那一段里不许出现 rotate（对齐≠换一把）')
   assert.match(
     runtime,
     /getServerKeyMark\(\) === null/u,

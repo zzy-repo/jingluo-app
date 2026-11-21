@@ -439,12 +439,15 @@ test('[5] 启动对齐：服务端那把与本机不一样就覆盖本地（不�
   apiConfig.applyManagedKey(HAND_KEY, 3) // 本机手上是旧的 / 手填的
 
   const { source } = fakeSource({ key: SERVER_KEY, id: 7 })
+  // #803：对齐的实现并入了 `ensureManagedKey`（先 `GET /keys` 查重 → 没有才建 → 失败重试一次），
+  // 所以返回体从 `ConsumeCallResult<ManagedKeyClaim>` 变成扁平的 `ManagedKeyEnsureResult`
+  // （`key` / `id` / `created` / `attempts`）。语义没变：**不 rotate、以服务端为准**。
   const synced = await managed.syncManagedKey(source, {
     deviceId: 'd-0123456789abcdef0123456789abcdef',
   })
   assert.equal(synced.ok, true)
-  assert.notEqual(synced.data.key, apiConfig.getApiKey(), '两者不一致正是要对齐的场景')
-  apiConfig.applyManagedKey(synced.data.key, synced.data.id)
+  assert.notEqual(synced.key, apiConfig.getApiKey(), '两者不一致正是要对齐的场景')
+  apiConfig.applyManagedKey(synced.key, synced.id)
   assert.equal(apiConfig.getApiKey(), SERVER_KEY, '以服务端为准')
   assert.equal(apiConfig.getManagedKeyVerdict(), 'ok')
   assert.equal(apiConfig.getServerKeyMark().id, 7)

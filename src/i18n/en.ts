@@ -506,6 +506,18 @@ export const en = {
   settingsBuiltinKeySyncing: 'Aligning the key with the server…',
   settingsBuiltinKeySynced: 'Aligned with the server — current key ends with ···{tail}',
   settingsManagedKeyNeedLogin: 'Sign in under Account & usage → Account first, then claim the key.',
+  /**
+   * #803：the automatic "make sure this device has a key" flow after sign-in / sign-up — when both
+   * attempts fail the failure must stay on screen (error line + Retry), never be swallowed. The copy
+   * carries the status code: "it failed" alone helps neither the user nor whoever reads the logs.
+   */
+  settingsManagedKeyEnsureFailed:
+    'Could not get the key automatically: {reason} (tried {attempts} times) — messages cannot be sent right now.',
+  settingsManagedKeyEnsureFailedHint:
+    'Retry runs the same flow again: look for a key with this device name first, create one only when it is missing.',
+  settingsManagedKeyFailNetwork: 'the request timed out or could not connect',
+  settingsManagedKeyFailHttp: 'the server answered {status}',
+  settingsManagedKeyFailEmpty: 'the server answered 2xx but returned no key value',
   settingsBaseUrlLabel: 'Service URL',
   settingsBaseUrlPlaceholder: 'e.g. https://your-gateway.example.com',
   settingsModelPlaceholder: 'e.g. deepseek-v4.1-flash',
