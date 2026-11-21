@@ -97,6 +97,10 @@ const applySession = (session: AuthSession): void => {
 3. **只在这里调用一次**：`applySession` 只被 `signIn` / `signUp` 调用，启动恢复不走它，
    所以「每次启动又发一遍」不会发生；重复登录时服务端按老账号标识幂等，最多回 `already_migrated`。
 
+**2026-11-21 复盘（#608 / #727 / #740 之后有没有被打断）**：接线点**完好**，实测「登录成功 → 1 条
+`POST /legacy/claim`、刷新 0 条、未登录 0 条、密码错 0 条」，抓包原文与自查命令见
+`docs/legacy-migration-wiring.md`。别重写这条链路 —— 先读那份文档的第七节。
+
 **结果怎么给 UI**：现在这一行把返回值丢掉了（返回值丢了不影响契约：`already_migrated` 由服务端兜底，
 按钮只要「在用户点的时候再问一次」就够）。要显示「历史额度已迁移：¥X」的话，把 `void` 换成
 `void claimLegacyMigration(...).then((result) => useAuthStore.setState({ migrationResult: result }))`
