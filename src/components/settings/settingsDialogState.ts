@@ -196,7 +196,9 @@ export const ensureApiKey = (options: EnsureApiKeyOptions = {}) => {
     return true
   }
   if (status === 'missing') {
-    openSettings('data')
+    // #727 阶段 1：渠道 / API Key / 模型都搬到了第三个 tab（账户与消费），
+    // 所以「去填 Key」要落在**第三个 tab**，否则用户被送到一个没有 Key 输入框的面板。
+    openSettings('account')
     return false
   }
   if (status === 'claim' || status === 'stale') {
@@ -212,7 +214,7 @@ export const ensureApiKey = (options: EnsureApiKeyOptions = {}) => {
       reason: status,
       length: getApiKey().length,
     })
-    openSettings('data')
+    openSettings('account')
     useSettingsDialog.setState({ managedKeyBlocked: blocked })
     return false
   }
@@ -220,7 +222,7 @@ export const ensureApiKey = (options: EnsureApiKeyOptions = {}) => {
   recordConfigRejection('apiKey', 'format')
   // 只记「有没有 / 多长」这类可切片字段，Key 原文一个字都不进日志（与 setApiKey 同一口径）
   recordAction('nav', 'block-send-invalid-key', { reason: 'format', length: getApiKey().length })
-  openSettings('data')
+  openSettings('account')
   useSettingsDialog.setState({ apiKeyFormatBlocked: true })
   return false
 }
@@ -254,7 +256,7 @@ export const ensureSendConfig = (): boolean => {
     field: verdict.jumpTo,
   })
   showToast({ key: verdict.messageKey })
-  openSettings('data')
+  openSettings('account')
   useSettingsDialog.setState({ sendConfigBlocked: verdict.code })
   return false
 }

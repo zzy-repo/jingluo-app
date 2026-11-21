@@ -493,16 +493,20 @@
   color: var(--dsw-alias-label-primary);
 }
 
-/* 下级页面（L2）的二级头：左上角「返回」+ 本页标题 */
+/* 下级页面（L2）的二级头：左上角「返回」，标题居中原型版式（#727 阶段 1）。
+   右上角**没有** X —— 关闭按钮是设置弹层自己的，这里不再出第二个。 */
 .subHeader {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 8px;
+  justify-content: center;
   min-height: 36px;
-  margin: 4px 0 4px;
+  margin: 4px 0 8px;
 }
 
 .subBack {
+  position: absolute;
+  left: 0;
   display: inline-flex;
   align-items: center;
   gap: 2px;
@@ -526,11 +530,227 @@
   transform: rotate(180deg);
 }
 
+/* 登录界面底部那条「暂不登录，直接填 API Key」（#608 的口子，永远可点） */
+.skipLogin {
+  align-self: center;
+  margin: 4px 0 8px;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 10px;
+  background: none;
+  color: var(--dsw-alias-label-secondary);
+  font: inherit;
+  font-size: 14px;
+  line-height: 20px;
+  cursor: pointer;
+}
+
+.skipLogin:focus {
+  outline: none;
+  color: var(--dsw-alias-label-primary);
+  background-color: var(--dsw-alias-interactive-bg-hover);
+}
+
+/* 行右侧的箭头（原型里是 value 末尾的一个 ›，不是按钮） */
+.chevron {
+  margin-left: 6px;
+  font-style: normal;
+  color: var(--dsw-alias-label-caption);
+}
+
 .subTitle {
   color: var(--dsw-alias-label-primary);
   font-size: 17px;
   font-weight: 600;
   line-height: 24px;
+}
+
+
+/* ---------------------------------------------------------------- 登录卡（#727 阶段 1）
+ *
+ * 版式照原型：分段控件（登录 / 注册）→ 邮箱 → 验证码（仅注册）→ 密码 → 主按钮 → 链接。
+ * 全部走 token：深色主题下自动跟随，不硬编码白底黑字。输入框只靠底色分层，不堆 1px 描边。
+ */
+.authCard {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 340px;
+  margin: 4px auto 8px;
+  padding: 20px;
+  border-radius: 20px;
+  background-color: var(--dsw-alias-bg-layer-2);
+}
+
+/* 分段控件：高 38、内距 3、选中项底色更亮 + 轻阴影 */
+.authSegmented {
+  display: flex;
+  gap: 3px;
+  padding: 3px;
+  border-radius: 12px;
+  background-color: var(--dsw-alias-interactive-bg-hover);
+}
+
+.authSeg {
+  flex: 1 1 0;
+  min-width: 0;
+  height: 32px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 9px;
+  background: none;
+  color: var(--dsw-alias-label-secondary);
+  font: inherit;
+  font-size: 14px;
+  line-height: 20px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.authSegOn {
+  background-color: var(--dsw-alias-bg-base);
+  color: var(--dsw-alias-label-primary);
+  font-weight: 600;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 8%);
+}
+
+.authSeg:focus {
+  outline: none;
+  color: var(--dsw-alias-label-primary);
+}
+
+/* 输入框：高 46、圆角 10、内距 12/14，只靠底色分层 */
+.authInput {
+  box-sizing: border-box;
+  width: 100%;
+  height: 46px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 10px;
+  background-color: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  font-size: 15px;
+  line-height: 22px;
+}
+
+.authInput:focus {
+  /* #215：83 上没有 `:focus-visible`，所以键盘 / 鼠标态统一用 `:focus` 给出焦点环 */
+  outline: none;
+  box-shadow: 0 0 0 2px var(--dsw-alias-brand-primary);
+}
+
+.authInput::placeholder {
+  color: var(--dsw-alias-label-caption);
+}
+
+/* 验证码行：「获取验证码」固定宽度、绝对定位贴右；输入框留出 padding-right，文字永不换行 */
+.authCodeRow {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.authCodeInput {
+  padding-right: 108px;
+}
+
+.authCodeButton {
+  position: absolute;
+  right: 6px;
+  width: 96px;
+  height: 34px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background-color: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-button-primary-fill);
+  font: inherit;
+  font-size: 13px;
+  line-height: 34px;
+  white-space: nowrap;
+  overflow: hidden;
+  cursor: pointer;
+}
+
+.authCodeButton:disabled {
+  color: var(--dsw-alias-label-caption);
+  cursor: default;
+}
+
+.authCodeButton:focus {
+  outline: none;
+  background-color: var(--dsw-alias-bg-layer-2);
+}
+
+/* 主按钮：整宽 48、圆角 10、品牌色；禁用态降透明度（不是灰底黑字） */
+.authPrimary {
+  height: 48px;
+  border-radius: 10px;
+}
+
+/* 提示 / 错误：用状态色 token，不做横幅图标 */
+.authNotice,
+.authError {
+  margin: -4px 0 0;
+  font-size: 13px;
+  line-height: 18px;
+  text-align: center;
+}
+
+.authNotice {
+  color: var(--dsw-alias-label-secondary);
+}
+
+.authError {
+  color: var(--dsw-alias-state-error-primary);
+}
+
+/* 次要文字链接（暂不登录 / 忘记密码 / 已有账号） */
+.authLink {
+  align-self: center;
+  padding: 4px 8px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--dsw-alias-label-secondary);
+  font: inherit;
+  font-size: 14px;
+  line-height: 20px;
+  cursor: pointer;
+}
+
+.authLink:focus {
+  outline: none;
+  color: var(--dsw-alias-label-primary);
+  background-color: var(--dsw-alias-interactive-bg-hover);
+}
+
+.authLinkDim {
+  align-self: center;
+  padding: 2px 6px;
+  border: 0;
+  background: none;
+  color: var(--dsw-alias-label-caption);
+  font: inherit;
+  font-size: 13px;
+  line-height: 18px;
+  cursor: pointer;
+}
+
+.authLinkDim:focus {
+  outline: none;
+  color: var(--dsw-alias-label-secondary);
+}
+
+/* 最底部说明文字 */
+.authHint {
+  color: var(--dsw-alias-label-caption);
+  font-size: 13px;
+  line-height: 18px;
+  text-align: center;
 }
 
 /* 状态点：绿 / 黄 / 红 */
@@ -617,10 +837,10 @@
 }
 
 .profileMail {
-  margin-top: 3px;
+  margin-top: 4px;
   color: var(--dsw-alias-label-secondary);
-  font-size: 13px;
-  line-height: 18px;
+  font-size: 14px;
+  line-height: 20px;
   overflow-wrap: anywhere;
 }
 
@@ -903,5 +1123,17 @@
 
 :global(html[data-flex-gap-fallback]) .planText > *:not(:last-child) {
   margin-bottom: 2px;
+}
+
+:global(html[data-flex-gap-fallback]) .subBack > *:not(:last-child) {
+  margin-right: 2px;
+}
+
+:global(html[data-flex-gap-fallback]) .authCard > *:not(:last-child) {
+  margin-bottom: 12px;
+}
+
+:global(html[data-flex-gap-fallback]) .authSegmented > *:not(:last-child) {
+  margin-right: 3px;
 }
 /* #173-fallback:end */

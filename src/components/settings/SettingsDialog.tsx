@@ -230,19 +230,22 @@ const SettingsContent = ({ visible }: { visible: boolean }) => {
             </>
           ) : (
             <>
-              {/* 第三个 tab：模型来源（渠道 / API Key / 模型）+ 连通性测试 + 我的钱包 + 账号。
-                  全部**渲染在设置弹层内部**（不新开弹层、不叠遮罩）。
+              {/* 第三个 tab：L1 页首就是余额卡，模型来源 / 我的卡密 / 历史消费 / 账号都是一行，
+                  点进去是内容区整体换成 L2（带「返回」）。全部**渲染在设置弹层内部**：
+                  不新开弹层、不叠遮罩、不出现第二个 X。
 
-                  L2（我的卡密 / 历史消费 / 账号 / 我的额度）打开时，上面这块配置区让位：
-                  内容区整体换成下级页面，不再"导航下面接一段内容"。 */}
-              {accountPage === null ? (
-                <>
-                  <div className={styles.groupHead}>{t('accountConsumeGroupSource')}</div>
-                  <ApiConfigFields editor={apiKeyEditor} />
-                  {isMobile ? <ApiKeyConfirm editor={apiKeyEditor} /> : null}
-                </>
-              ) : null}
-              <AccountConsumePage page={accountPage} onNavigate={setAccountPage} showSourceRows={false} />
+                  渠道 / API Key / 模型 / 连通性测试作为 `sourceConfig` 注入 L2「模型来源」页 ——
+                  它们的编辑状态（`useApiKeyEditor`）属于设置层，内容区不造第二份。 */}
+              <AccountConsumePage
+                page={accountPage}
+                onNavigate={setAccountPage}
+                sourceConfig={
+                  <>
+                    <ApiConfigFields editor={apiKeyEditor} />
+                    {isMobile ? <ApiKeyConfirm editor={apiKeyEditor} /> : null}
+                  </>
+                }
+              />
             </>
           )}
         </div>

@@ -816,6 +816,18 @@ export const zh = {
 
   // 登录注册（sub2api /api/v1/auth）
   sub2authEmail: '邮箱',
+  // #727 阶段 1：设置里的登录卡（账号页未登录态 / 模型来源未登录态）
+  settingsOursNeedsLogin: '「我们的渠道」需要账号：登录后自动领取托管 Key（也可切回 DeepSeek 官方，只填 API Key 就能用）',
+  settingsAuthEmailPlaceholder: '请输入邮箱',
+  settingsAuthPasswordPlaceholder: '请输入密码（至少 6 位）',
+  settingsAuthCodePlaceholder: '请输入验证码',
+  settingsAuthSendCode: '获取验证码',
+  settingsAuthCountdown: '{seconds}s',
+  settingsAuthSkip: '暂不登录',
+  settingsAuthHaveAccount: '已有账号？登录',
+  settingsAuthAutoCreateHint: '未注册的邮箱将自动创建账号',
+  settingsAuthForgotSent: '重置邮件已发送，请查收邮箱',
+  settingsAuthForgotNeedsEmail: '请先填写邮箱，再点「忘记密码」',
   sub2authPassword: '密码',
   sub2authConfirmPassword: '确认密码',
   sub2authLogin: '登录',
@@ -877,6 +889,8 @@ export const zh = {
   accountConsumeConnIdle: '点一下测试',
   accountConsumeConnFail: '连接失败 · 重试',
   accountConsumeAccountId: '账号 ID',
+  // #727 阶段 1：账号页未登录态（同一页把资料区换成一句提示 + 下方的登录 / 注册入口）
+  accountConsumeSkipLoginFillKey: '暂不登录，直接填 API Key',
   accountConsumeBindEmail: '绑定邮箱',
   accountConsumeLoginMethod: '登录方式',
   accountConsumeLoginMethodEmail: '邮箱登录',

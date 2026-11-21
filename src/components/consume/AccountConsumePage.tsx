@@ -7,10 +7,9 @@
  *     ├─ Tab1 通用设置
  *     ├─ Tab2 数据管理     → 聊天背景 / 导入 / 导出 / 反馈日志 / 删除
  *     └─ Tab3 账户与消费   ← 本文件
- *         L1（列表页）
- *           ├─ 模型来源        → 行 → 底部 sheet（不换页）
- *           ├─ 连通性测试      → 行（三态）
- *           ├─ 我的钱包        → 剩余余额 ¥x.xx（余额卡）+ 我的额度（卡内入口）
+ *         L1（列表页，页首就是余额卡）
+ *           ├─ 余额卡：剩余余额 ¥x.xx（+ 卡内「我的额度」入口）
+ *           ├─ 模型来源        → 行（右侧当前渠道名）→ L2 页：渠道 / API Key / 模型 / 连通性测试
  *           ├─ 我的卡密        → 行 → L2 页（卡密列表 + 兑换卡密）
  *           ├─ 历史消费        → 行 → L2 页（消费记录）
  *           └─ 账号            → 行 → L2 页（资料 / 账号 ID / 绑定邮箱 / 登录方式 / 账号与安全 / 退出登录）
@@ -22,19 +21,20 @@
  *  3. **不做第二份客户端**：一个 `ConsumeClient`，默认用全应用共享的 `getConsumeClient()`；
  *  4. **面板逻辑原样复用**：卡密 / 购买 / 额度 / 账号还是 `MyCardsTab` / `BuyTab` / `QuotaPanel` /
  *     `AccountPanel` 那四个既有组件，本文件只负责「把它们放到原型的位置上」；
- *  5. `模型来源` / `连通性测试` 两行只在**独立渲染**（`showSourceRows`，截图脚本/旧文档用）时出现；
- *     设置弹层里渠道 / API Key / 模型由 tab 3 顶部的 `ApiConfigFields` 承担，两处都渲染就是重复。
+ *  5. L1 只留**一行**「模型来源」（右侧显示当前渠道名）；渠道下拉 / API Key / 模型 / 连通性测试
+ *     都在它点进去的 L2 页里（设置弹层把这些字段通过 `sourceConfig` 注入，内容区不自己造第二份）。
  *
  * #608 仍然成立：未登录可用、只填 Key 可用；未登录态账号页 = 登录 / 注册入口 + 「不登录也可以…」，
  * **没有登录墙**。
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useTranslate, type TranslationKey } from '../../i18n/index.js'
-import { getApiKey, getBaseUrl, useApiConfig } from '../../services/api/apiConfig.js'
+import { getApiKey, getBaseUrl, setProviderKind, useApiConfig } from '../../services/api/apiConfig.js'
 import { probeProvider } from '../../services/api/client.js'
 import type { ConsumeClient, ConsumeUser } from '../../services/consume/index.js'
 import { getConsumeClient } from '../../services/consumeClient.js'
 import { useAuthStatus } from '../../services/auth/useAuthStatus.js'
+import { SettingsAuthCard } from './SettingsAuthCard.js'
 import { useAuthStore } from '../../services/auth/store.js'
 import { Button } from '../base/Button.js'
 import { IconChevronRightOutline14 } from '../base/icons.js'
@@ -52,7 +52,7 @@ import styles from './AccountConsume.module.css'
  * 类型放在这里而不是设置的状态层：它只描述「这一页内部展示什么」，进出都由内容区自己点，
  * 不参与 `openSettings` / 付款回跳那套跨模块状态。
  */
-export type AccountSubPage = 'cards' | 'buy' | 'quota' | 'history' | 'account'
+export type AccountSubPage = 'wallet' | 'source' | 'cards' | 'buy' | 'quota' | 'history' | 'account'
 
 /** 连通性三态（#727 §二）：`idle` 还没测 / `testing` 测试中 / `ok` 正常 / `fail` 失败可重试 */
 type ConnState = { phase: 'idle' } | { phase: 'testing' } | { phase: 'ok'; ms: number } | { phase: 'fail' }
@@ -75,10 +75,12 @@ export type AccountConsumePanelProps = {
   /** 需要登录时的出口（L2 账号页 = 登录 / 注册入口） */
   onNeedLogin?: () => void
   /**
-   * 是否渲染「模型来源 / 连通性测试」两行。设置弹层里默认由 `ApiConfigFields` 承担（传 `false`），
-   * 只有独立渲染（截图脚本 / 面板联调）时才需要它自己带这两行。
+   * L2「模型来源」页的配置区（渠道下拉 / API Key / 模型 / 连通性测试）。
+   *
+   * 由外层传进来 —— 那些字段的编辑状态（`useApiKeyEditor`）属于设置弹层，内容区不自己造一份。
+   * 不传时（独立渲染 / 截图脚本 / 面板联调）回落到「点一行开底部 sheet」的老形态。
    */
-  showSourceRows?: boolean
+  sourceConfig?: ReactNode
 }
 
 export const AccountConsumePage = ({
@@ -87,7 +89,7 @@ export const AccountConsumePage = ({
   consume: injected,
   user = null,
   onNeedLogin,
-  showSourceRows = true,
+  sourceConfig,
 }: AccountConsumePanelProps) => {
   const t = useTranslate()
   const consume = useMemo(() => injected ?? getConsumeClient(), [injected])
@@ -107,6 +109,8 @@ export const AccountConsumePage = ({
   const [balance, setBalance] = useState<number | undefined>(undefined)
   const [walletTick, setWalletTick] = useState(0)
   const [signOutAsk, setSignOutAsk] = useState(false)
+  /** 账号页里的「账号与安全」下级（同一页内的下一屏，仍然没有第二层弹层） */
+  const [securityOpen, setSecurityOpen] = useState(false)
   const alive = useRef(true)
 
   useEffect(() => {
@@ -175,8 +179,8 @@ export const AccountConsumePage = ({
    * 所以这里只是把「模型来源」的 sheet 打开 —— 换 tab、开新弹层都是多余的。
    */
   const fillKey = useCallback(() => {
-    setSheet(true)
-  }, [])
+    onNavigate('source')
+  }, [onNavigate])
 
   /** 收款页关掉后回到「我的卡密」（卡密由小铺发到订单上）并让余额重拉一次 */
   const backToCards = useCallback(() => {
@@ -226,6 +230,19 @@ export const AccountConsumePage = ({
     }
     return maskedEmail(authUser.email)
   })()
+  /**
+   * 账号 ID 分段显示（原型 `8842 1907`）：补齐 8 位后每 4 位一组，中间一个空格。
+   * 只是显示层排版，值本身不变（`authUser.id`）。
+   */
+  const accountIdText = ((): string => {
+    if (authUser === null) {
+      return '—'
+    }
+    const padded = String(authUser.id).padStart(8, '0')
+    return `${padded.slice(0, 4)} ${padded.slice(4, 8)}`
+  })()
+  /** 「绑定邮箱」行：没有邮箱就留空只给箭头（原型就是这样，不写「未绑定」把人吓一跳） */
+  const emailBound = displayEmail !== ''
   const avatarText = ((): string => {
     if (authUser === null) {
       return '—'
@@ -234,7 +251,15 @@ export const AccountConsumePage = ({
     return name.slice(0, 1).toUpperCase() || '—'
   })()
 
-  const sourceRows = showSourceRows ? (
+  /**
+   * L2「模型来源」页：渠道 / API Key / 模型 / 连通性测试都收在这里（L1 只留一行入口）。
+   *
+   * 设置弹层里这些字段由外层注入（`sourceConfig`）；独立渲染时回落到「点一行开底部 sheet +
+   * 一行连通性测试」的老形态，保证面板联调 / 截图脚本仍能跑。
+   */
+  const sourcePage = sourceConfig ? (
+    <div className={styles.viewBody}>{sourceConfig}</div>
+  ) : (
     <>
       <div className={styles.rows}>
         <button
@@ -261,7 +286,7 @@ export const AccountConsumePage = ({
         </button>
       </div>
     </>
-  ) : null
+  )
 
   /** 余额卡：剩余余额（余额卡不是行）；额度收进卡里的一个入口，点它进 L2「我的额度」 */
   const balanceCard = (
@@ -284,6 +309,8 @@ export const AccountConsumePage = ({
 
   /** L2 页标题（`root` 没有）：与行文案同一批词条，不新写中文 */
   const SUB_PAGE_TITLES: Record<AccountSubPage, TranslationKey> = {
+    wallet: 'accountConsumeWallet',
+    source: 'accountConsumeGroupSource',
     cards: 'accountConsumeTabCards',
     buy: 'oursPayTitle',
     quota: 'accountConsumeTabQuota',
@@ -292,13 +319,13 @@ export const AccountConsumePage = ({
   }
 
   /** 下级页面的头部：左上角「返回」+ 本页标题（设置弹层的头部与 X 不动，这里只是内容区的二级头） */
-  const subHeader = (target: AccountSubPage) => (
+  const subHeader = (target: AccountSubPage, back: AccountSubPage | null) => (
     <div className={styles.subHeader}>
       <button
         type="button"
         className={styles.subBack}
         data-testid="account-consume-back"
-        onClick={() => onNavigate(null)}
+        onClick={() => onNavigate(back)}
       >
         <IconChevronRightOutline14 />
         {t('back')}
@@ -321,11 +348,75 @@ export const AccountConsumePage = ({
     />
   ) : null
 
+  // ───────────────────────────── L2：我的钱包（余额卡 + 我的卡密 / 历史消费） ──────
+  if (page === 'wallet') {
+    return (
+      <div className={`${styles.page} ${styles.embedded}`} data-testid="account-consume-page">
+        {subHeader('wallet', null)}
+        {/* 余额卡放在这一页的最上面 */}
+        {balanceCard}
+        <div className={styles.rows}>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={false}
+            className={styles.row}
+            data-testid="account-consume-tab-cards"
+            onClick={() => onNavigate('cards')}
+          >
+            <span className={styles.rowMain}>{t('accountConsumeTabCards')}</span>
+            <span className={styles.value}>›</span>
+          </button>
+          <div className={styles.divider} />
+          <button
+            type="button"
+            role="tab"
+            aria-selected={false}
+            className={styles.row}
+            data-testid="account-consume-history"
+            onClick={() => onNavigate('history')}
+          >
+            <span className={styles.rowMain}>{t('accountConsumeHistory')}</span>
+            <span className={styles.value}>›</span>
+          </button>
+        </div>
+        {sheetNode}
+      </div>
+    )
+  }
+
+  // ───────────────────────────── L2：模型来源（渠道 / API Key / 模型 / 连通性） ────
+  if (page === 'source') {
+    /**
+     * 四个渠道里**只有「我们的渠道」需要账号**（托管 Key / 余额都挂在账号上）：
+     * 未登录且当前选中的是它 → 这一页换成登录界面（同一个容器、没有第二层弹层）。
+     * DeepSeek 官方 / OpenAI 兼容 / Anthropic 三个渠道**永远不拦登录**，只填 Key 就能用（#608）。
+     */
+    const oursNeedsLogin = kind === 'ours' && signedIn !== true
+    return (
+      <div className={`${styles.page} ${styles.embedded}`} data-testid="account-consume-page">
+        {subHeader('source', null)}
+        {oursNeedsLogin ? (
+          <>
+            <div className={styles.authNotice} role="status" data-testid="settings-ours-needs-login">
+              {t('settingsOursNeedsLogin')}
+            </div>
+            {/* 「暂不登录」= 回退到不需要账号的 DeepSeek 官方渠道（不是停在半死状态） */}
+            <SettingsAuthCard consume={consume} onSkip={() => setProviderKind('deepseek')} />
+          </>
+        ) : (
+          sourcePage
+        )}
+        {sheetNode}
+      </div>
+    )
+  }
+
   // ───────────────────────────── L2：我的卡密（列表 + 兑换卡密） ──────────────────
   if (page === 'cards') {
     return (
       <div className={`${styles.page} ${styles.embedded}`} data-testid="account-consume-page">
-        {subHeader('cards')}
+        {subHeader('cards', 'wallet')}
         <div className={styles.viewBody}>
         {/* 页标题由设置头部给（「我的卡密」+ 返回），这里不再写第二份同名标题 */}
         <MyCardsTab
@@ -344,7 +435,7 @@ export const AccountConsumePage = ({
   if (page === 'buy') {
     return (
       <div className={`${styles.page} ${styles.embedded}`} data-testid="account-consume-page">
-        {subHeader('buy')}
+        {subHeader('buy', 'wallet')}
         <div className={styles.viewBody}>
         <BuyTab onPurchased={backToCards} />
         </div>
@@ -357,7 +448,7 @@ export const AccountConsumePage = ({
   if (page === 'quota') {
     return (
       <div className={`${styles.page} ${styles.embedded}`} data-testid="account-consume-page">
-        {subHeader('quota')}
+        {subHeader('quota', 'wallet')}
         <div className={styles.viewBody}>
         <QuotaPanel consume={consume} onNeedLogin={needLogin} signedIn={signedIn} onSignIn={needLogin} />
         </div>
@@ -370,7 +461,7 @@ export const AccountConsumePage = ({
   if (page === 'history') {
     return (
       <div className={`${styles.page} ${styles.embedded}`} data-testid="account-consume-page">
-        {subHeader('history')}
+        {subHeader('history', 'wallet')}
         <div className={styles.viewBody}>
         <HistoryView consume={consume} signedIn={signedIn === true} />
         </div>
@@ -380,11 +471,44 @@ export const AccountConsumePage = ({
   }
 
   // ───────────────────────────── L2：账号（资料 / 安全 / 退出登录） ──────────────
+  //
+  // 版式照原型 1:1：居中标题 + 左「返回」；资料区（56px 圆头像 + 昵称 + 邮箱）+ 56px 行（左右 20px 内距、
+  // 行间只一条 1px 极浅分隔线，不给每行套描边盒子）；「退出登录」独立一行、红字居中、无箭头。
+  // 主题全走 token（`--dsw-alias-*` / danger），不硬编码浅色 —— 深色下同样是这套版式。
   if (page === 'account') {
+    if (securityOpen) {
+      return (
+        <div className={`${styles.page} ${styles.embedded}`} data-testid="account-consume-page">
+          <div className={styles.subHeader}>
+            <button
+              type="button"
+              className={styles.subBack}
+              data-testid="account-consume-back"
+              onClick={() => setSecurityOpen(false)}
+            >
+              <IconChevronRightOutline14 />
+              {t('back')}
+            </button>
+            <span className={styles.subTitle}>{t('accountConsumeSecurity')}</span>
+          </div>
+          <div className={styles.viewBody} data-testid="account-consume-tab-account">
+            <AccountPanel
+              consume={consume}
+              user={authUser}
+              onNeedLogin={needLogin}
+              onFillKey={fillKey}
+              authDialog={styles.authDialog}
+            />
+          </div>
+          {sheetNode}
+        </div>
+      )
+    }
     return (
       <div className={`${styles.page} ${styles.embedded}`} data-testid="account-consume-page">
-        {subHeader('account')}
-        <div className={styles.viewBody}>
+        {subHeader('account', null)}
+
+        {/* 资料区：已登录 = 头像 + 昵称 + 邮箱；未登录 = 一句「未登录」（登录 / 注册入口在下方的账号面板） */}
         {signedIn === true ? (
           <div className={styles.profile} data-testid="account-consume-profile">
             <div className={styles.avatar} aria-hidden="true">
@@ -400,34 +524,62 @@ export const AccountConsumePage = ({
             </div>
           </div>
         ) : null}
+
+        {/* 行区：未登录时不摆一排「—」，直接给登录 / 注册入口（#608：不设登录墙） */}
         {signedIn === true ? (
           <div className={styles.rows}>
             <div className={`${styles.row} ${styles.rowStatic}`} data-testid="account-consume-id">
               <span className={styles.rowMain}>{t('accountConsumeAccountId')}</span>
-              <span className={styles.value}>{authUser === null ? '—' : String(authUser.id).padStart(8, '0')}</span>
+              <span className={styles.value}>
+                {accountIdText}
+                <i className={styles.chevron} aria-hidden="true">
+                  ›
+                </i>
+              </span>
             </div>
             <div className={styles.divider} />
             <div className={`${styles.row} ${styles.rowStatic}`} data-testid="account-consume-bind-email">
               <span className={styles.rowMain}>{t('accountConsumeBindEmail')}</span>
-              <span className={styles.value}>{displayEmail === '' ? t('accountConsumeEmailUnbound') : displayEmail}</span>
+              <span className={styles.value}>
+                {emailBound ? displayEmail : ''}
+                <i className={styles.chevron} aria-hidden="true">
+                  ›
+                </i>
+              </span>
             </div>
             <div className={styles.divider} />
             <div className={`${styles.row} ${styles.rowStatic}`} data-testid="account-consume-login-method">
               <span className={styles.rowMain}>{t('accountConsumeLoginMethod')}</span>
-              <span className={styles.value}>{t('accountConsumeLoginMethodEmail')}</span>
+              <span className={styles.value}>
+                {t('accountConsumeLoginMethodEmail')}
+                <i className={styles.chevron} aria-hidden="true">
+                  ›
+                </i>
+              </span>
             </div>
+            <div className={styles.divider} />
+            <button
+              type="button"
+              className={styles.row}
+              data-testid="account-consume-security-row"
+              onClick={() => setSecurityOpen(true)}
+            >
+              <span className={styles.rowMain}>{t('accountConsumeSecurity')}</span>
+              <span className={styles.value}>
+                <i className={styles.chevron} aria-hidden="true">
+                  ›
+                </i>
+              </span>
+            </button>
           </div>
-        ) : null}
-        <div className={styles.ghead}>{t('accountConsumeSecurity')}</div>
-        <div data-testid="account-consume-tab-account">
-          <AccountPanel
-            consume={consume}
-            user={authUser}
-            onNeedLogin={needLogin}
-            onFillKey={fillKey}
-            authDialog={styles.authDialog}
-          />
-        </div>
+        ) : (
+          <div className={styles.viewBody} data-testid="account-consume-tab-account">
+            {/* 未登录 = **这一页就是登录界面**：登录 / 注册分段 + 获取验证码 + 忘记密码 +
+                「暂不登录」（#608 的口子，直接去填 API Key）。 */}
+            <SettingsAuthCard consume={consume} onSkip={() => onNavigate('source')} />
+          </div>
+        )}
+
         {/* 退出登录（红字行，原型 `.logout`）：动作就是既有的 auth store `signOut()`，不另写一套 */}
         {signedIn === true ? (
           signOutAsk ? (
@@ -476,50 +628,42 @@ export const AccountConsumePage = ({
             </>
           )
         ) : null}
-        </div>
         {sheetNode}
       </div>
     )
   }
 
-  // ───────────────────────────── L1：列表页 ────────────────────────────────────
+  // ───────────────────────────── L1：列表页（三行：模型来源 / 我的钱包 / 账号） ──
   return (
     <div className={`${styles.page} ${styles.embedded}`} data-testid="account-consume-page">
-      {sourceRows}
-      {showSourceRows ? <div className={styles.dividerFull} /> : null}
-
-      <div className={styles.ghead}>{t('accountConsumeWallet')}</div>
-      {balanceCard}
-
-      {/* 子行 = 进入下一级页面（内容区整体替换 + 头部「返回」），不在导航下面原地展开 */}
-      <div role="tablist" aria-label={t('accountConsumeWallet')} className={styles.rows}>
+      <div role="tablist" aria-label={t('accountConsumeTitle')} className={styles.rows}>
+        {/* 1) 模型来源收成一行：右侧是当前渠道名；未登录先去登录界面（登录后才是配置页） */}
         <button
           type="button"
           role="tab"
           aria-selected={false}
           className={styles.row}
-          data-testid="account-consume-tab-cards"
-          onClick={() => onNavigate('cards')}
+          data-testid="account-consume-source"
+          onClick={() => onNavigate('source')}
         >
-          <span className={styles.rowMain}>{t('accountConsumeTabCards')}</span>
+          <span className={styles.rowMain}>{t('accountConsumeGroupSource')}</span>
+          <span className={styles.value}>{configured ? t(sourceLabelKey) : ''} ›</span>
+        </button>
+        <div className={styles.divider} />
+        {/* 2) 我的钱包：余额卡 / 我的卡密 / 历史消费都在它点进去的那一页，L1 不摊开余额卡 */}
+        <button
+          type="button"
+          role="tab"
+          aria-selected={false}
+          className={styles.row}
+          data-testid="account-consume-wallet"
+          onClick={() => onNavigate('wallet')}
+        >
+          <span className={styles.rowMain}>{t('accountConsumeWallet')}</span>
           <span className={styles.value}>›</span>
         </button>
         <div className={styles.divider} />
-        <button
-          type="button"
-          role="tab"
-          aria-selected={false}
-          className={styles.row}
-          data-testid="account-consume-history"
-          onClick={() => onNavigate('history')}
-        >
-          <span className={styles.rowMain}>{t('accountConsumeHistory')}</span>
-          <span className={styles.value}>›</span>
-        </button>
-      </div>
-
-      <div className={styles.dividerFull} />
-      <div className={styles.rows}>
+        {/* 3) 账号：未登录进去就是登录界面（#608 的 key-only 口子在那页底部） */}
         <button
           type="button"
           className={styles.row}
