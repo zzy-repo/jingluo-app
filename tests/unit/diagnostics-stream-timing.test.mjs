@@ -262,8 +262,20 @@ test('B 真流：ttfb / 首字 / 吐字 / 分段 / 吞吐 是真实数字，且�
     })
 
     // --- B1 数字全是真的，且分段互不串味
-    assert.ok(prepMs >= 0 && prepMs < 100, `prepMs 应在 0-100ms（实测 ${prepMs}）`)
-    assert.ok(timing.ttfbMs !== null && timing.ttfbMs < FIRST_TOKEN_DELAY_MS, `ttfb 应小于首字等待（实测 ${timing.ttfbMs}ms）`)
+    // 口径（docs/TESTING-POLICY.md §11.5）：这一段**只钉顺序（`<=`）与下界（`>=`），不钉任何跨时钟的绝对上界**。
+    // 上面的数字全是真实 `Date.now` 打点，并行负载下同一时刻会被整体推迟；用两个真实时钟量互相比大小
+    // （旧写法 `ttfbMs < FIRST_TOKEN_DELAY_MS`、`prepMs < 100`）机器一忙就反转 —— 红的是负载，不是产品。
+    // 下界保留：负载只会让实测更大，越忙越安全。
+    assert.ok(Number.isFinite(prepMs) && prepMs >= 0, `prepMs 必须是非负有限数（实测 ${prepMs}）`)
+    // 附件补齐（StageTimer）不可能长过整轮总时长（meter）：两个时钟都在「点发送」之后起算，
+    // 后者终点在最后一段之后 —— 钉的是先后，不是快慢。（不设绝对上界，原因见 §11.5）
+    assert.ok(prepMs <= timing.totalMs, `prepMs 不应超过总时长（prep=${prepMs} total=${timing.totalMs}）`)
+    // 响应头不可能晚于首字：两者都来自**同一个 meter 的单调 mark**（`onHeaders` 在拿到 body 之前触发）。
+    // 这才是「分段互不串味」真正的证明，且与机器快慢无关。
+    assert.ok(
+      timing.ttfbMs !== null && timing.firstTokenMs !== null && timing.ttfbMs <= timing.firstTokenMs,
+      `响应头不应晚于首字（ttfb=${timing.ttfbMs} first=${timing.firstTokenMs}）`
+    )
     assert.ok(
       timing.firstTokenMs !== null && timing.firstTokenMs >= FIRST_TOKEN_DELAY_MS - 10,
       `首字至少等 FIRST_TOKEN_DELAY_MS（实测 ${timing.firstTokenMs}ms）`
