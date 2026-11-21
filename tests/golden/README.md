@@ -21,34 +21,40 @@ pnpm run test:golden              # = node tests/run-golden.mjs（并行 + 每�
 
 ## 「改了哪个域必须跑哪条」——提交前对照这张表
 
-| 域 | 黄金路径 | 用例 | 覆盖到的源码（大致） |
-| --- | --- | --- | --- |
-| 启动 | 冷启动 → 会话列表渲染 → 打开最近会话 | `g01-startup.test.mjs` | `services/chat/store.ts`、`db.ts`、`components/sider/*` |
-| 对话 | 发送 → 流式接收 → 停止 → 重新生成 | `g02-chat.test.mjs` | `services/chat/*`（stream / stop / regenerate）、`components/chatInput/*`、`components/messages/*` |
-| 渠道 | 切渠道 → Key 校验 → 发一条消息成功 | `g03-channel.test.mjs` | `services/api/providers.ts`、`apiConfig.ts`、`components/settings/ApiConfigFields.tsx` |
-| 会话 | 新建 → 重命名 → 置顶 → 删除 → 回空态 | `g04-session.test.mjs` | `services/chat/store.ts`（CRUD/pin）、`components/sider/*` |
-| 导入 | 链接导入：manifest → 下载 → 解析 → 入库 | `g05-import.test.mjs` | `services/chat/history/urlImport.ts`、`importArchive.ts`、`backup.ts` |
-| 导出+导入 | 导出 → 校验包结构 → 可再次导入 | `g06-export-import.test.mjs` | `services/chat/backup.ts`、`history/exportArchive.ts`、`zipWriter.ts`、`components/settings/SettingsDialog.tsx`（导出/上传） |
-| 诊断 | 触发错误 → 诊断复制内容已脱敏 | `g09-diagnostics.test.mjs` | `services/chat/describe.ts`、`replyErrorReport.ts`、`services/diagnostics/redact.ts`、`app/errorReport.ts` |
-| 更新 | 检查 → 解析清单 → 选对版本 → 下载校验 | `g10-update.test.mjs` | `services/updateManifest.ts`、`components/settings/AppUpdateField.tsx` |
-| 账户与消费 | JWT 登录 → 读余额 → 兑换卡密 → 余额变化（+ 冷启动续期）；mock 驱动 | `g12-consume.test.mjs` | `services/auth/{store,transport}.ts`、`services/consume/{auth,usage,redeem}.ts` |
-| 文档附件 | 选 tiny.txt → 卡片 success → 发送「帮我总结」→ 收到回复（顺带 docx/pdf 只断非空正文 + 表格/页码标记） | `g13-documents.test.mjs` ✅（A 线 #480 落地，#567 的 g13） | `services/attachments/parsers/{txt,docx,pdf}.ts`、`attachments/{manager,inject,providerCapability,requestDocs}.ts`、`attachments/contextBuilder.ts`（buildWithDocuments）、`components/attachments/*`（卡片五态）、`chat/{store,reply}.ts`（请求组装） |
-| 图片 vision | 附 1 张 png → 内联编码 → 发一条消息（三渠道形状不同、图片字节相同） | `g14-vision.test.mjs` ✅（B 线 #548 落地） | `services/attachments/imageSource.ts`（编码）、`chat/drafts.ts`（选图编码 / 就绪态）、`chat/reply.ts`（内联块）、`api/openaiAdapter.ts`（data URL 翻译） |
-| 支付/购买 | 打开「账户与消费」→ 套餐列表 → 下单（`/api/pay-link`）→ 回跳 → 卡密 → 一键复制 | `g15-purchase.test.mjs` | `components/consume/{AccountConsumePage,BuyTab,MyCardsTab}.tsx`、`services/ours/{api,purchases,transport}.ts`、`components/consume/quotaPanelModel.ts`（额度口径） |
-| 账户可选 | 全新安装不登录 → 首屏直接进聊天；只填 Key → 发消息收回复；设置 → 我们的渠道 → 账户与消费 → 账号 tab 能注册；未登录额度给引导 | `g16-account-optional.test.mjs` | `src/main.tsx`（无登录墙）、`components/auth/{AuthGate,LoginPage,RegisterPage}.tsx`（局部卡）、`components/consume/{AccountPanel,QuotaPanel,accountPanelModel,quotaPanelModel}.ts(x)` |
+| 域 | 主路径（都是用户点得着的入口） | 用例文件 | 覆盖的功能点 | 单条耗时 | 改了这些文件必须跑它 | 为什么只有这一条（不在这里测什么） |
+| --- | --- | --- | --- | --- | --- | --- |
+| 启动 | 冷启动 → 会话列表渲染 → 打开最近会话 | `g01-startup.test.mjs` | 直接打开 App：首屏不是白屏/永久 loading；3 条历史按「最近」排序；点开最近会话，正文与历史对得上 | 3.4s | `src/main.tsx`、`src/app/**`、`src/services/chat/{store,db,view}.ts`、`src/components/{sider,session}/**` | 列表读失败的重试、详情丢失、空库首启 → L1 `domain01-session-load` / `domain04-session-list-flow` |
+| 对话 | 发送 → 流式接收 → 停止 → 重新生成 | `g02-chat.test.mjs` | 输入框 + 发送/停止按钮：两段正文流式上屏、中途停止后不再增长、重新生成拿到完整回答 | 4.0s | `src/services/chat/{reply,stream*,drafts}.ts`、`src/components/{chatInput,messages}/**` | 首字未到就停止、连点三次、切版本回看 → L1 `domain02-stop-regenerate` |
+| 渠道 | 切渠道（DeepSeek 官方 → Anthropic 协议）→ Key 校验 → 发一条消息成功 | `g03-channel.test.mjs` | 设置 → API：渠道切换、「测试」按钮验连通性、请求落在 `/v1/messages` 且鉴权头是 `x-api-key` | 5.5s | `src/services/api/**`、`src/components/settings/{ApiConfigFields.tsx,useApiKeyForm.ts}` | 四渠道 × 入口隐显 × 请求体矩阵 → L1 `provider-channels` / `probe-auth*` |
+| 会话 | 新建 → 重命名 → 置顶 → 删除 → 回空态 | `g04-session.test.mjs` | 侧栏「更多」菜单：四条写操作都落到库里（删完 `sessions` 表真的空，不只看文案）+ 置顶重排 | 7.7s | `src/services/chat/{store,db}.ts`（CRUD/pin）、`src/components/sider/**` | Escape 取消、纯空格不提交、取消置顶、删非当前会话 → L1 `domain04-session-list-flow` |
+| 导入 | 链接导入：manifest → 下载 → 解析 → 入库 | `g05-import.test.mjs` | 设置 → 数据管理 → 链接导入：分块下载 → base64 → ZIP 校验 → `importHistory` → IndexedDB 真有会话 | 5.1s | `src/services/chat/history/**`、`src/services/chat/backup.ts`、`src/components/settings/SettingsDialog.tsx` | 18 个下载/解析分支（Range、416、停滞、8 类失败文案）→ L1 `url-import-native` / `url-import-stages` |
+| 导出+导入 | 导出 → 校验包结构 → 可再次导入 | `g06-export-import.test.mjs` | 设置 → 数据管理 → 导出/上传：manifest 首条、条目路径、**导出的字节真的喂回导入**后会话与索引一一对应 | 5.1s | `src/services/chat/{backup.ts,history/exportArchive.ts,zipWriter.ts}`、`src/components/settings/SettingsDialog.tsx` | 损坏包的分类 → L0 `archive-*` / L1 `domain05-*`。（导出与导入天然是一条往返，按 #404 允许合并成一条） |
+| 诊断 | 触发错误 → 诊断复制内容已脱敏 | `g09-diagnostics.test.mjs` | 错误提示条「复制诊断信息」：失败之后还有可自证的出口；复制出的文本里没有 API Key / 设备码 / 卡密 / 手机号原文 | 3.5s | `src/services/diagnostics/**`、`src/services/chat/{describe,replyErrorReport}.ts`、`src/app/errorReport.ts` | 脱敏规则表与采集/环形缓冲 → L0 `domain08-redact-*`；按钮 44×44 命中区归 #346 |
+| 更新 | 检查 → 解析清单 → 选对版本 → 下载校验 | `g10-update.test.mjs` | 设置 → 关于 → 检查更新：**两台分发机都 route 住**、选对版本、下载地址与校验对得上 | 3.5s | `src/services/{appUpdate,updateManifest,updateFailure,updateReport}.ts`、`src/components/settings/AppUpdateField.tsx`、`scripts/release-*.mjs`、`deploy/dl-release/**` | 清单失败的分类与排序矩阵 → L0 `domain10-*` / L1 `domain10-update-check-flow` |
+| 账户与消费（链路） | JWT 登录 → 读余额 → 兑换卡密 → 余额变化（+ 冷启动续期） | `g12-consume.test.mjs` | 真 `consume`/`auth` 客户端 + 真 store，对面是自起的 `mock-sub2api`（端口 0）；两条路径，结尾断言**所有请求都落在本次 mock**（无 `:18000`） | 2.2s | `src/services/auth/**`、`src/services/consume/**`、`src/services/ours/{api,transport}.ts` | 它是**唯一不跑 dist/DOM** 的一条（消费层链路，理由见下文「g12 为什么是 mock 驱动」）；「点按钮」那条由 G15 承担，两条不重复断言 |
+| 文档附件 | 选 tiny.txt → 卡片 success → 发送「帮我总结」→ 收到回复（顺带 docx/pdf） | `g13-documents.test.mjs` | 输入区「添加文档」：卡片「已就绪」、上行 user message 里有 `<document name="tiny.txt">` 且是夹具真正文、请求体**没有** base64/`file_id`/`{type:'document'}` 块 | 5.5s | `src/services/attachments/**`（parsers / manager / inject / contextBuilder / requestDocs / providerCapability）、`src/components/attachments/**`、`src/services/chat/{store,reply}.ts` | 六种编码、空文件、加密 PDF、zip 炸弹、表格合并、预算截断 → L0 `parsers-*` / `attachments-*` |
+| 图片 vision | 选一张 png → 内联编码 → 发一条消息（三渠道形状不同、字节相同） | `g14-vision.test.mjs` | 输入区「图片」：三渠道各发一次 —— `media_type=image/png`、base64 **逐字等于** `tiny.png`、解回像素是 8×8 `#3366cc`；另加**「请求只落在本渠道登记的桩 host」**（不连生产、不打 `:18000`，见 #654） | 4.9s | `src/services/attachments/imageSource.ts`、`src/services/chat/drafts.ts`、`src/services/chat/reply.ts`（`toFileBlocks`）、`src/services/api/openaiAdapter.ts`、`src/services/api/apiConfig.ts`（`resolveBaseUrl`） | 阈值边界、EXIF 8 方向、前缀稳定、失败 8/8 → L0（#553 的 18 条） |
+| 支付/购买 | 套餐 → 下单（`/api/pay-link`）→ 回跳 → 卡密 → 一键复制 | `g15-purchase.test.mjs` | 设置 → 数据管理 → 账户与消费：卡密后 4 位、「复制」拿到完整卡密、`/buy` 请求数 0、额度取 `usage.total.actual_cost`、下单只走 apia（route 表外一律 404） | 5.0s | `src/components/consume/**`、`src/services/ours/**`、`src/components/consume/quotaPanelModel.ts` | 旧额度/邀请/订单状态机是已删的旧语义（W1-D，勿复活）；新链路的失败分支 → L1 `ours-services` |
+| 账户可选 | 不登录首屏可用 → 只填 Key 能收发 → 账号 tab 能注册 → 未登录额度给引导 | `g16-account-optional.test.mjs` | 全新安装首屏：无登录墙、只填 Key 就能收发、注册走白名单端点 `/api/v1/auth/register`、未登录额度给引导而不是 0 | 10.2s | `src/main.tsx`、`src/components/auth/**`、`src/components/consume/{AccountPanel,QuotaPanel,accountPanelModel,quotaPanelModel}.ts(x)`、`config/endpoints.json` | 登录/注册分支、验证码错、限流 → L0/L1 `consume-flow-*`。**唯一自带 `dist-noseam` 产物**的一条（见上，接缝产物会伪造「已登录」前提） |
 
-> **三条黄金哨兵都已落地**（#567 定的三主线各一条：A 文档附件 g13 / B 图片 vision g14 / C 购买 g15）：
-> `g13`（A 线 #480）、`g15`（C 线购买）、**`g14`（B 线 #548，随本次合并进 main）** 全部在树上并有 ✅ 判定。
-> 它们要用的最小真二进制夹具见下面「夹具怎么用」。
+> **耗时口径**：2026-11-21 本机实测（`node tests/run-golden.mjs`，4 并发，standard 产物 + `TEST_AUTH_SEAM=1`），
+> 单条毫秒数取该次并发运行里这一条的墙钟（含浏览器启动）。同一天连跑三次，**整层墙钟 21.5s / 15.6s / 24.9s**
+> （预算 300s）；上表是**审计那次**（21.5s）的逐条数字。单条在两次运行之间会抖 20~30%（机器负载、
+> chromium 冷启），所以看**数量级**就好：都在 2~11s，离 60s 的单条上限很远；最慢的永远是 G16
+> （~5~10s，因为它自己还要构建一份 `dist-noseam`）。
 
-对应关系按「**改动落在哪就至少跑那一条**」用，不是穷举：动了 `src/services/chat/` 就跑 G1/G2/G4/G5/G6，
-动了设置面板/渠道就跑 G3/G5/G6/G9/G10（`g11` 邮箱见 `tests/golden/g11-email.test.mjs`），
-动了 `src/components/consume/**` 或 `src/services/ours/**`（套餐 / 下单 / 卡密 / 额度口径）就跑 **G15**，
-动了 `src/services/attachments/**` 或 `src/components/attachments/**`（文档解析 / 注入 / 卡片）就跑 **G13**，
-动了图片那条通路（`attachments/imageSource.ts`、`chat/drafts.ts` 的选图编码、`chat/reply.ts` 的 `toFileBlocks`
-内联块、`api/openaiAdapter.ts` 的 data URL 翻译）就跑 **G14**（文档与图片是同目录的两条独立通路，各跑各的）。
-拿不准就 `pnpm run test:golden` 全跑 —— 13 条约 20 秒（g12 单独约 0.9s，自带 mock，不需要 dist；
-g13 单跑约 1.2s、4 并发整层里约 3.9s；g14 约 4.3s；g15 约 1.7s）。
+> **这张表和 `tests/domain-map.json` 是同一份真相**：`pnpm test:affected` 读的是 map 里每个域的
+> `tests.golden` 与 `paths[*]` 里的 `tests/golden/gNN-*.test.mjs` glob。改本表（加/删/换用例）**必须同时**
+> 改 map，否则「改了哪个域跑哪条」就会有一处是错的（#654 已把两处对齐：g01/g16→domain01，
+> g02/g13/g14→domain02，g03→domain03，g04→domain04，g05/g06→domain05，g12/g15→domain06+domain07，
+> g09→domain08，g03/g14 的 base 解析→domain09，g10→domain10）。
+
+**怎么用这张表**：按「改动落在哪就至少跑那一条」，最后一列写着被挪走的细节归谁 —— 黄金层**不重复**测它们。
+拿不准就 `pnpm run test:golden` 全跑（13 条约 25 秒，比读一遍这份文档快）；只想跑一条用
+`node tests/run-golden.mjs --only g14`。**邮箱域（`services/consume/email.ts`、`components/consume/EmailBindPanel.tsx`）
+目前没有 golden**（`domain-map.json` 的 `domain11.tests.golden` 是空数组）：它没有独立的用户主路径，
+入口在「账户与消费 → 邮箱」面板里，改它跑 L0 `consume-panels-*` 与 L1 `ours-services`。
+（早前版本的 README 在这里写过 `tests/golden/g11-email.test.mjs`，那个文件**不存在**，已按实际用例改正。）
 
 > **购买域的黄金回归换过人（W1-D #487 → #567）**：老的 `g07-quota-purchase.test.mjs` 跟着旧额度/邀请体系
 > 一起删了 —— 它断言的「领取 → 刷新 → 兑换」走的是 `device_id` + 本机池那条整条被替换的链路。
@@ -127,6 +133,33 @@ PDF 的 xref 偏移与 `/Length`）；② **真解析器**——`parseTxtFile` /
 与 `tests/fixtures/480/` 的分工：那边的 `minimal.docx` / `text-layer.pdf` / 六种编码 txt 是 #528 L0/L1
 **验收矩阵**的样本（要覆盖空文件、加密、XXE、zip 炸弹这些坏形态）；这里只保留**黄金路径够用的最小合法文件**，
 一份一 KB 上下，目的是「链路没断」可断言、跑得快。
+
+## #404 合规审计（#654，2026-11-21）
+
+五条判据逐条核过 13 条主路径（判据来源：issue #404「硬要求」）。结论先给：**12 条合规；1 条（g12）
+明确不合规但属文档化例外；「不连真实服务」这一条只有 2 条把它写成了断言**。
+
+| 用例 | 真实 DOM<br>（chromium 真渲染） | 真实 dist<br>（`pnpm build` 标准产物） | 只桩后端<br>+ 断言无 `:18000`/生产 | 单条耗时 | 失败一句话定位 | 结论 |
+| --- | --- | --- | --- | --- | --- | --- |
+| g01 启动 | ✅ `openGoldenPage` | ✅ `serveGoldenApp` | ⚠️ 本路径不调后端（只种 IndexedDB）；**没有**「无外部请求」断言 | 3.4s | ✅ | 合规（逃逸未断言） |
+| g02 对话 | ✅ | ✅ | ⚠️ 本机 `mock-upstream`（端口 0），无逃逸断言 | 4.0s | ✅ | 合规（逃逸未断言） |
+| g03 渠道 | ✅ | ✅ | ⚠️ 同上 | 5.5s | ✅ | 合规（逃逸未断言） |
+| g04 会话 | ✅ | ✅ | ⚠️ 本路径不调后端；无逃逸断言 | 7.7s | ✅ | 合规（逃逸未断言） |
+| g05 导入 | ✅ | ✅ | ⚠️ 桩 `CapacitorHttp`（`addInitScript`，记了 url 但不断言） | 5.1s | ✅ | 合规（逃逸未断言） |
+| g06 导出+导入 | ✅ | ✅ | ⚠️ 本路径不调后端；无逃逸断言 | 5.1s | ✅ | 合规（逃逸未断言） |
+| g09 诊断 | ✅ | ✅ | ⚠️ 本机 `mock-upstream` | 3.5s | ✅ | 合规（逃逸未断言） |
+| g10 更新 | ✅ | ✅ | ⚠️ 两台分发机**都** `context.route` 住，无逃逸断言 | 3.5s | ✅ | 合规（逃逸未断言） |
+| **g12 账户与消费** | ❌ 不渲染 DOM（Node 里跑链路） | ❌ 不加载 dist（直接 import `src/**/*.ts`） | ✅ `assertOnlyMock()`：逐条断言 URL 在本次 mock 上、且无 `:18000` | 2.2s | ✅ | **不合规**（#404 前两条不满足；理由见「g12 为什么是 mock 驱动」，属文档化例外） |
+| g13 文档附件 | ✅ | ✅ | ⚠️ 本机 `mock-upstream` | 5.5s | ✅ | 合规（逃逸未断言） |
+| **g14 图片 vision** | ✅ | ✅ | ✅ 每渠道登记 `stubHost` + 兜底闸 + 「无 `:18000`」断言（**#654 补强**） | 4.9s | ✅ | **合规（五条全满足）** |
+| g15 支付/购买 | ✅ | ✅ | ⚠️ 桩 `CapacitorHttp` + route 表外一律 404（挡住但不断言逃逸） | 5.0s | ✅ | 合规（逃逸未断言） |
+| g16 账户可选 | ✅ | ✅ 自带 `dist-noseam`（发版形态） | ⚠️ 桩 consume/apia 两个 origin；只断言「注册走了白名单端点」 | 10.2s | ✅ | 合规（逃逸未断言） |
+
+**剩下那 11 条要不要也补兜底闸？** 不需要「再写 11 份」：`page.route` 的 glob 不看 host 这个坑
+是**同一个**，修法是抽一个共用 helper（`guardNoEscape(page, appUrl)`）然后各文件加两行。
+#654 只补了指挥台点名的 g14；其余 11 条按「网关式兜底闸」统一补是独立的一次改动（别混进本 PR 里
+改 12 个文件）。在那之前，这 11 条**挡得住真实流量**（要求打在生产地址上时桩根本不会应答/路由 404），
+但**不会告诉你它挡过了一次** —— 这就是「没有断言」和「断言过」的区别。
 
 ## 与 L1 的分工（硬要求）
 
@@ -283,11 +316,30 @@ B 线（#548）的黄金哨兵，与第四批的 G13 **并行**（同目录、�
 | --- | --- | --- | --- |
 | 图片 vision | 附 1 张 png → 内联编码 → 发一条消息（三渠道形状不同、字节相同） | `g14-vision.test.mjs` | ✅ |
 
-实测（2026-11-20，本机，标准产物 + `TEST_AUTH_SEAM=1`）：G14 约 4.3s（7 步，三渠道各一次）；
-整层 12 条 4 并发**墙钟 18.0s**（预算 300s）。
+实测（2026-11-21，本机，标准产物 + `TEST_AUTH_SEAM=1`）：G14 约 4.9s（9 步，三渠道各一次 + 兜底闸）；
+整层 13 条 4 并发**墙钟 21.5s**（预算 300s）。
 
-负向验证（人为破坏一次、确认变红后再还原）：
+### 「不连真实服务」是断言出来的，不是自觉出来的（#654 补强）
 
-| 用例 | 破坏方式 | 红在哪一句 |
+`page.route('**/v1/messages')` 这类 glob **只看路径、不看 host** —— 请求发到哪台机器它都接得住，
+于是「请求体对不对」这一组断言对「流量被改道到生产域名」完全无感。负向对照 B4 就是这么发现的：
+把 `apiConfig.ts` 的 `resolveBaseUrl()` 改成忽略用户填的地址、回落到内置默认地址，三个渠道的请求全变成
+发往 `https://api.deepseek.com` / `140.210.13.146:60010`（真生产），而 G14 **照样全绿**。
+
+补强了两层（都在用例里，没动产品代码）：
+
+1. 每个渠道登记一个 `stubHost`（`127.0.0.1:18414` / `127.0.0.1:18415` / `config/endpoints.json` 的
+   `chatBaseUrl` host），**每条 chat 请求的 host 必须等于它**；再收一条「没有第四个 host」的全路径断言；
+2. 一张**兜底闸**（`page.route('**/*')`，最先注册 = 优先级最低）：被测产物同源之外的任何请求都
+   `record + abort`，最后一步断言「漏出去的请求 = 0」「没有任何请求打到 `:18000`」。
+
+补强后 B4 立刻变红（见下表第二行），而正常产物仍然是 9 步全绿。
+
+负向验证（每条都人为破坏一次 → 确认变红 → `git checkout` 还原 → 再跑确认变绿）：
+
+| # | 破坏方式（改产品代码，不改断言） | 红在哪一句 |
 | --- | --- | --- |
-| G14 | `reply.ts` 的 `toFileBlocks` 不再产出内联图片块（`const part = undefined && imagePartOf(id)`） | 「请求体里带上了图片 · 实际=user content="这张图是什么颜色？"」（三渠道第一站就红） |
+| B1 | `chat/reply.ts:55` `toFileBlocks` 不再产出内联图片块（`if (isImage && vision.base64 && false)`） | 「Anthropic 协议 · **请求体里带上了图片** · 期望=content 里有 {type:"image"} · 实际=user content="这张图是什么颜色？"」（三渠道第一站，abort） |
+| B2 | `attachments/imageSource.ts:594` `toImagePart` 的「阈值内原图直发」失效（`withinLimits = false && …`，一律走 canvas 重编码） | 「图片形状是 … · 实际=media_type=**image/webp** / data=732 字符」+「**图片字节 = 夹具原图** · 实际=732 字符（不同）」+「发一条消息 · Error: 不是 PNG 签名」 |
+| B3 | `api/openaiAdapter.ts:144` data URL 前缀写错（`data:${source.media_type}` → `data:application/octet-stream`） | 「OpenAI 兼容 · **图片以 data:image/png;base64, 内联** · 实际=data:application/octet-stream;base64,…」（openai 与 ours 各两条，anthropic 仍绿 = 定位到「最后一公里的翻译」） |
+| B4 | `api/apiConfig.ts:285` `resolveBaseUrl()` 忽略用户填的地址、回落到内置默认（= 把测试流量改道到生产） | **补强前：全绿（抓不住）** → 补强后：「请求落在本渠道登记的桩地址 · 期望=host=127.0.0.1:18414 · 实际=host=**api.deepseek.com**（https://api.deepseek.com/v1/messages）」+「没有第四个 host · 实际=api.deepseek.com、140.210.13.146:60010」 |

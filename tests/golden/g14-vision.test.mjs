@@ -48,6 +48,24 @@ const CORS = {
 }
 
 /**
+ * 本次用例**登记的桩地址**（白名单）：三个渠道各一条。
+ *
+ * 为什么必须白名单（#404 判据「stub 后端：断言没有请求打到 `:18000` / 生产」）：
+ * `page.route` 的 path glob（`v1/messages`、`v1/chat/completions`）**只看路径、不看 host** —— 请求发到哪台机器它都接得住。
+ * 于是「请求体对吗」这一组断言对「流量被改道到生产域名」完全无感：把 `resolveBaseUrl()` 改成
+ * 忽略用户填的地址、回落到内置生产地址，本用例照样全绿（#654 的负向对照 B4 实测如此）。
+ * 所以补两条：① 每条 chat 请求的 host 必须等于该渠道登记的桩 host；② 兜底闸把任何没登记的
+ * 请求挡下来并留证 —— 「没连真实服务」这件事要被断言，而不是靠自觉。
+ */
+const ENDPOINTS = JSON.parse(await readFile(new URL('../../config/endpoints.json', import.meta.url), 'utf8'))
+/** ours 的地址内置且 locked：唯一来源是 config/endpoints.json（构建期注入），不是 127.0.0.1:18000 */
+const OURS_HOST = new URL(ENDPOINTS.chatBaseUrl).host
+const ANTHROPIC_STUB_HOST = '127.0.0.1:18414'
+const OPENAI_STUB_HOST = '127.0.0.1:18415'
+/** 本机真实例端口：任何请求打到这里都算「测试连了真服务」 */
+const REAL_INSTANCE_PORT = 18000
+
+/**
  * 三个 base64 渠道：**同一张图、同一条消息**，各发一次。
  *
  * `ours` 的地址与模型是内置的（`locked`，来自 `config/endpoints.json`），所以只预置 kind + Key；
@@ -65,6 +83,8 @@ const CHANNELS = [
       'chat-demo:base-url:anthropic': 'http://127.0.0.1:18414',
       'chat-demo:model:anthropic': MODEL,
     },
+    /** 这个渠道的请求**只许**落在这个 host 上（桩的门牌号，见上面的白名单说明） */
+    stubHost: ANTHROPIC_STUB_HOST,
   },
   {
     kind: 'openai',
@@ -76,12 +96,14 @@ const CHANNELS = [
       'chat-demo:base-url:openai': 'http://127.0.0.1:18415',
       'chat-demo:model:openai': MODEL,
     },
+    stubHost: OPENAI_STUB_HOST,
   },
   {
     kind: 'ours',
     name: '我们的渠道',
     protocol: 'openai',
     storage: { 'chat-demo:provider-kind': 'ours', ...(await claimedOursStorage(KEY)) },
+    stubHost: OURS_HOST,
   },
 ]
 
@@ -128,9 +150,26 @@ const anthropicSse = (text) =>
 /**
  * 上游桩：两条路径各一套 SSE，**把发出去的原始请求体收下来**。
  * 用 `page.route` 而不是真起一个 HTTP 服务：这里不造流式时序，只需要「请求体那一串字节」。
+ *
+ * 另外挂一张**兜底闸**（`appUrl` 之外的任何请求都挡下并记账）：`page.route` 只匹配
+ * 按 path 的 glob（`v1/messages` 前缀那条），host 不管 —— 流量被改道到生产域名时桩照样应答、
+ * 用例照样绿。兜底闸的作用是让「漏出去的请求」变成一条**可断言的失败行**，而不是静默出网。
+ * 注册顺序有讲究：Playwright 后注册的先匹配，所以兜底闸必须**最先**注册（优先级最低）。
  */
-const stubUpstream = async (page) => {
+const stubUpstream = async (page, appUrl) => {
   const calls = []
+  /** 落在桩表之外的请求（含真实例 / 生产域名）：必须为空，非空就是「测试连了真服务」 */
+  const escaped = []
+  const appOrigin = new URL(appUrl).origin
+  await page.route('**/*', async (route) => {
+    const url = route.request().url()
+    if (url.startsWith(`${appOrigin}/`) || url.startsWith('blob:') || url.startsWith('data:')) {
+      await route.fallback()
+      return
+    }
+    escaped.push(url)
+    await route.abort()
+  })
   const routeOf = (protocol) => async (route) => {
     const request = route.request()
     if (request.method() === 'OPTIONS') {
@@ -151,7 +190,7 @@ const stubUpstream = async (page) => {
   }
   await page.route('**/v1/messages', routeOf('anthropic'))
   await page.route('**/v1/chat/completions', routeOf('openai'))
-  return calls
+  return { calls, escaped }
 }
 
 const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
@@ -324,7 +363,7 @@ const result = await runGolden(
     )
 
     const { page, close } = await openGoldenPage(app.url, { storage: {} })
-    const calls = await stubUpstream(page)
+    const { calls, escaped } = await stubUpstream(page, app.url)
     /** 每个渠道「真正发出去的那份 base64」：渠道之间必须逐字相同 */
     const sentBase64 = new Map()
     try {
@@ -384,6 +423,16 @@ const result = await runGolden(
             `抓到 ${calls.slice(offset).length} 次请求`
           )
         }
+        // 先钉「这一枪打向谁」：host 必须是本渠道登记的桩（`page.route` 不看 host，所以只能靠断言）
+        const landedHost = new URL(call.url).host
+        ctx.expect(
+          `${label} · 请求落在本渠道登记的桩地址（不连生产 / 不连 :${REAL_INSTANCE_PORT}）`,
+          landedHost === channel.stubHost,
+          {
+            expected: `host=${channel.stubHost}`,
+            actual: `host=${landedHost}（${brief(call.url, 70)}）`,
+          }
+        )
         const image = imageInRequest(call.body, channel.protocol)
         if (!image) {
           ctx.abort(
@@ -439,6 +488,41 @@ const result = await runGolden(
         {
           expected: `三份都等于 tiny.png 的 ${expectedBase64.length} 字符 base64`,
           actual: datas.map((data) => (data ? `${data.length} 字符` : '（没抓到）')).join(' / '),
+        }
+      )
+      // ── 4. 不连真实服务：桩表之外一条请求都不许有 ─────────────────────────────
+      ctx.begin('不连真实服务')
+      const escapedHosts = [...new Set(escaped.map((url) => new URL(url).host))]
+      ctx.expect(
+        '整条路径没有请求漏到桩表之外的地址（兜底闸拦下的都记在这里）',
+        escaped.length === 0,
+        {
+          expected: '0 次未登记请求',
+          actual:
+            escaped.length === 0
+              ? '干净'
+              : `${escaped.length} 次：${escapedHosts.join('、')}（首个 ${brief(escaped[0], 80)}）`,
+        }
+      )
+      const chatHosts = [...new Set(calls.map((item) => new URL(item.url).host))]
+      const declaredHosts = new Set(CHANNELS.map((channel) => channel.stubHost))
+      ctx.expect(
+        '每一次 chat 请求都落在三个渠道登记的地址上（没有第四个 host）',
+        chatHosts.every((host) => declaredHosts.has(host)),
+        {
+          expected: `host ∈ {${[...declaredHosts].join('、')}}`,
+          actual: chatHosts.length === 0 ? '（一次都没抓到）' : chatHosts.join('、'),
+        }
+      )
+      const realHits = [...calls.map((item) => item.url), ...escaped].filter((url) =>
+        url.includes(`:${REAL_INSTANCE_PORT}`)
+      )
+      ctx.expect(
+        `没有任何请求打到 :${REAL_INSTANCE_PORT}（本机真实例）`,
+        realHits.length === 0,
+        {
+          expected: '0 次',
+          actual: realHits.length === 0 ? '0 次' : `${realHits.length} 次：${brief(realHits[0], 80)}`,
         }
       )
     } finally {

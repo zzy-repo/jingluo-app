@@ -18,7 +18,8 @@
           "tests/unit/capabilities.test.mjs",
           "tests/unit/check-capabilities.test.mjs",
           "tests/integration/caps.test.mjs",
-          "tests/golden/g01-*.test.mjs"
+          "tests/golden/g01-*.test.mjs",
+          "tests/golden/g16-*.test.mjs"
         ],
         "src/index.html": [
           "tests/unit/legacy-boot-guard.test.mjs",
@@ -60,6 +61,10 @@
           "tests/unit/scrollbar-gutter-fallback.test.mjs",
           "tests/unit/focus-visible-fallback.test.mjs",
           "tests/unit/container-query-fallback.test.mjs"
+        ],
+        "src/components/auth/**": [
+          "tests/golden/g16-*.test.mjs",
+          "tests/unit/consume-panels-487.test.mjs"
         ]
       },
       "tests": {
@@ -71,7 +76,8 @@
           "tests/unit/compat-guard-diagnostics.test.mjs"
         ],
         "regression": ["tests/regression/issue-13-legacy-syntax-gate.test.mjs", "tests/regression/issue-130-fetchable-port.test.mjs"],
-        "integration": ["tests/integration/legacy-config.test.mjs"]
+        "integration": ["tests/integration/legacy-config.test.mjs"],
+        "golden": ["tests/golden/g01-startup.test.mjs", "tests/golden/g16-account-optional.test.mjs"]
       }
     },
     {
@@ -85,7 +91,8 @@
           "tests/unit/stream-idle-timeout.test.mjs",
           "tests/unit/model-invalid-copy.test.mjs",
           "tests/integration/domain02-*.test.mjs",
-          "tests/golden/g02-*.test.mjs"
+          "tests/golden/g02-*.test.mjs",
+          "tests/golden/g14-*.test.mjs"
         ],
         "src/services/chat/streamNotice.ts": ["tests/unit/chat-wait-*.test.mjs", "tests/integration/domain02-wait-thinking-ui.test.mjs"],
         "src/services/chat/waitStage.ts": ["tests/unit/chat-wait-*.test.mjs", "tests/integration/domain02-wait-thinking-ui.test.mjs"],
@@ -94,7 +101,25 @@
         "src/services/chat/contextBudget.ts": ["tests/unit/context-budget.test.mjs", "tests/unit/chat-context-budget-long-session.test.mjs", "tests/unit/chat-context-limit-error.test.mjs"],
         "src/services/chat/branches.ts": ["tests/unit/session-repair.test.mjs", "tests/unit/chat-context-budget-long-session.test.mjs", "tests/integration/domain02-stop-regenerate.test.mjs"],
         "src/services/chat/describe.ts": ["tests/unit/model-invalid-copy.test.mjs", "tests/unit/official-error-classify.test.mjs", "tests/unit/chat-context-limit-error.test.mjs"],
-        "src/services/chat/drafts.ts": ["tests/unit/attachment-endpoint-303.test.mjs", "tests/unit/chat-context-budget-long-session.test.mjs", "tests/integration/feedback-draft.test.mjs"],
+        "src/services/chat/drafts.ts": [
+          "tests/unit/attachment-endpoint-303.test.mjs",
+          "tests/unit/chat-context-budget-long-session.test.mjs",
+          "tests/integration/feedback-draft.test.mjs",
+          "tests/golden/g14-*.test.mjs"
+        ],
+        "src/services/attachments/**": [
+          "tests/unit/attachment-*.test.mjs",
+          "tests/unit/docx-parser-480.test.mjs",
+          "tests/unit/feedback-images.test.mjs",
+          "tests/unit/attachment-endpoint-360.test.mjs",
+          "tests/golden/g13-*.test.mjs",
+          "tests/golden/g14-*.test.mjs"
+        ],
+        "src/components/attachments/**": [
+          "tests/unit/attachment-failure-copy-574.test.mjs",
+          "tests/unit/feedback-images.test.mjs",
+          "tests/golden/g13-*.test.mjs"
+        ],
         "src/services/chat/autoTitle*.ts": ["tests/unit/auto-title-*.test.mjs", "tests/integration/auto-title.test.mjs"],
         "src/services/chat/requestBody.ts": ["tests/unit/thinking-*.test.mjs", "tests/integration/request-body.test.mjs", "tests/integration/provider-channels.test.mjs"],
         "src/components/messages/**": [
@@ -118,7 +143,7 @@
       "tests": {
         "unit": ["tests/unit/quota-exhausted.test.mjs", "tests/unit/api-request-timeout.test.mjs"],
         "integration": ["tests/integration/mode-switch.test.mjs"],
-        "golden": ["tests/golden/g02-chat.test.mjs"]
+        "golden": ["tests/golden/g02-chat.test.mjs", "tests/golden/g13-documents.test.mjs", "tests/golden/g14-vision.test.mjs"]
       }
     },
     {
@@ -140,12 +165,15 @@
           "tests/integration/probe-auth-protocols.test.mjs",
           "tests/integration/probe-nokey.test.mjs",
           "tests/integration/request-body.test.mjs",
-          "tests/integration/upstream-html.test.mjs"
+          "tests/integration/upstream-html.test.mjs",
+          "tests/golden/g03-*.test.mjs",
+          "tests/golden/g14-*.test.mjs"
         ],
         "src/components/settings/ApiConfigFields.tsx": [
           "tests/unit/domain03-provider-config-matrix.test.mjs",
           "tests/integration/domain03-settings-probe-model.test.mjs",
-          "tests/integration/provider-channels.test.mjs"
+          "tests/integration/provider-channels.test.mjs",
+          "tests/golden/g03-*.test.mjs"
         ],
         "src/components/settings/useApiKeyForm.ts": [
           "tests/unit/domain03-provider-config-matrix.test.mjs",
@@ -156,7 +184,8 @@
       "tests": {
         "unit": ["tests/unit/thinking-adapters.test.mjs", "tests/unit/attachment-endpoint-303.test.mjs", "tests/unit/domain03-provider-probe-matrix.test.mjs"],
         "integration": ["tests/integration/paths.test.mjs", "tests/integration/caps.test.mjs"],
-        "regression": ["tests/regression/issue-39-legacy-runtime-api-gate.test.mjs"]
+        "regression": ["tests/regression/issue-39-legacy-runtime-api-gate.test.mjs"],
+        "golden": ["tests/golden/g03-channel.test.mjs"]
       }
     },
     {
@@ -170,10 +199,11 @@
           "tests/unit/quota-exhausted.test.mjs",
           "tests/integration/domain04-session-list-flow.test.mjs",
           "tests/integration/domain01-session-load.test.mjs",
-          "tests/golden/g01-*.test.mjs"
+          "tests/golden/g01-*.test.mjs",
+          "tests/golden/g04-*.test.mjs"
         ],
-        "src/services/chat/db.ts": ["tests/unit/session-*.test.mjs", "tests/integration/domain04-session-list-flow.test.mjs"],
-        "src/services/chat/view.ts": ["tests/unit/domain04-session-load-matrix.test.mjs", "tests/integration/domain04-session-list-flow.test.mjs"],
+        "src/services/chat/db.ts": ["tests/unit/session-*.test.mjs", "tests/integration/domain04-session-list-flow.test.mjs", "tests/golden/g01-*.test.mjs"],
+        "src/services/chat/view.ts": ["tests/unit/domain04-session-load-matrix.test.mjs", "tests/integration/domain04-session-list-flow.test.mjs", "tests/golden/g01-*.test.mjs"],
         "src/services/chat/sessionGroups.ts": ["tests/unit/session-*.test.mjs", "tests/integration/domain04-session-list-flow.test.mjs"],
         "src/components/session/**": [
           "tests/unit/mobile-header-scroll-top.test.mjs",
@@ -182,12 +212,19 @@
           "tests/integration/motion.test.mjs",
           "tests/golden/g01-*.test.mjs"
         ],
-        "src/components/sider/**": ["tests/integration/motion.test.mjs", "tests/integration/domain04-session-list-flow.test.mjs", "tests/integration/mode-switch.test.mjs"],
+        "src/components/sider/**": [
+          "tests/integration/motion.test.mjs",
+          "tests/integration/domain04-session-list-flow.test.mjs",
+          "tests/integration/mode-switch.test.mjs",
+          "tests/golden/g01-*.test.mjs",
+          "tests/golden/g04-*.test.mjs"
+        ],
         "src/components/search/**": ["tests/integration/domain04-session-list-flow.test.mjs", "tests/integration/motion.test.mjs"]
       },
       "tests": {
         "unit": ["tests/unit/domain04-session-crud-matrix.test.mjs", "tests/unit/import-clock-monotonic.test.mjs"],
-        "integration": ["tests/integration/mode-switch-request.test.mjs", "tests/integration/mode-switch-plain.test.mjs"]
+        "integration": ["tests/integration/mode-switch-request.test.mjs", "tests/integration/mode-switch-plain.test.mjs"],
+        "golden": ["tests/golden/g04-session.test.mjs"]
       }
     },
     {
@@ -210,13 +247,15 @@
           "tests/regression/issue-111-import-error-tiers.test.mjs",
           "tests/integration/domain05-*.test.mjs",
           "tests/integration/url-import-*.test.mjs",
-          "tests/golden/g05-*.test.mjs"
+          "tests/golden/g05-*.test.mjs",
+          "tests/golden/g06-*.test.mjs"
         ],
         "src/services/chat/backup.ts": [
           "tests/unit/domain05-*.test.mjs",
           "tests/unit/import-*.test.mjs",
           "tests/integration/domain05-ui-export-import.test.mjs",
-          "tests/golden/g05-*.test.mjs"
+          "tests/golden/g05-*.test.mjs",
+          "tests/golden/g06-*.test.mjs"
         ],
         "src/services/exportText.ts": ["tests/unit/export-text-bridge.test.mjs", "tests/unit/domain05-export-contract.test.mjs", "tests/integration/domain05-ui-export-import.test.mjs"],
         "src/services/limits.ts": ["tests/unit/limits-config.test.mjs", "tests/unit/domain05-import-limit-table.test.mjs"],
@@ -225,14 +264,15 @@
           "tests/unit/import-skipped-ui.test.mjs",
           "tests/unit/i18n-missing-key.test.mjs",
           "tests/integration/domain05-ui-export-import.test.mjs",
-          "tests/integration/domain09-settings-reload.test.mjs"
+          "tests/integration/domain09-settings-reload.test.mjs",
+          "tests/golden/g06-*.test.mjs"
         ],
         "src/components/settings/importSkipped.ts": ["tests/unit/import-skipped-ui.test.mjs", "tests/unit/i18n-missing-key.test.mjs", "tests/integration/domain05-ui-export-import.test.mjs"]
       },
       "tests": {
         "unit": ["tests/unit/legacy-webview-compat.test.mjs"],
         "integration": ["tests/integration/full-acceptance.test.mjs"],
-        "golden": ["tests/golden/g05-import.test.mjs"]
+        "golden": ["tests/golden/g05-import.test.mjs", "tests/golden/g06-export-import.test.mjs"]
       }
     },
     {
@@ -249,18 +289,33 @@
           "tests/unit/ours-api.test.mjs",
           "tests/unit/format-points-i18n.test.mjs",
           "tests/integration/ours-services.test.mjs",
-          "tests/integration/quota-exhausted.test.mjs"
+          "tests/integration/quota-exhausted.test.mjs",
+          "tests/golden/g12-*.test.mjs",
+          "tests/golden/g15-*.test.mjs"
         ],
         "src/services/ours/customerId.ts": ["tests/unit/ours-inapp-buy.test.mjs", "tests/integration/ours-services.test.mjs"],
         "src/services/ours/storage.ts": ["tests/integration/ours-services.test.mjs"],
         "src/services/ours/mask.ts": ["tests/unit/domain08-redact-negative.test.mjs", "tests/unit/format-points-i18n.test.mjs"],
-        "src/components/consume/AccountConsumePage.tsx": ["tests/integration/ours-services.test.mjs", "tests/unit/consume-panels-487.test.mjs"],
-        "src/components/consume/BuyTab.tsx": ["tests/unit/ours-inapp-buy.test.mjs", "tests/unit/pay-link.test.mjs"],
+        "src/components/consume/AccountConsumePage.tsx": [
+          "tests/integration/ours-services.test.mjs",
+          "tests/unit/consume-panels-487.test.mjs",
+          "tests/golden/g15-*.test.mjs"
+        ],
+        "src/components/consume/BuyTab.tsx": [
+          "tests/unit/ours-inapp-buy.test.mjs",
+          "tests/unit/pay-link.test.mjs",
+          "tests/golden/g15-*.test.mjs"
+        ],
+        "src/services/consume/**": [
+          "tests/unit/consume-*.test.mjs",
+          "tests/golden/g12-*.test.mjs"
+        ],
         "src/components/settings/douyinAccount.ts": ["tests/unit/douyin-account.test.mjs", "tests/integration/ours-services.test.mjs"]
       },
       "tests": {
         "unit": ["tests/unit/provider-ours.test.mjs"],
-        "integration": ["tests/integration/domain08-feedback-negative.test.mjs"]
+        "integration": ["tests/integration/domain08-feedback-negative.test.mjs"],
+        "golden": ["tests/golden/g12-consume.test.mjs", "tests/golden/g15-purchase.test.mjs"]
       }
     },
     {
@@ -269,13 +324,23 @@
       "doc": "docs/testing/coverage/domain-06-07.md",
       "note": "旧体系的回归基准（领取 / 额度 / 卡密兑换 / 订单状态 / 购买链路）已随 W1-D 删除，待阶段③按新链路重建；删除清单与重建要求见 docs/testing/rebuild-after-refactor.md",
       "paths": {
-        "src/services/ours/purchases.ts": ["tests/unit/ours-purchases.test.mjs", "tests/integration/ours-services.test.mjs"],
+        "src/services/ours/purchases.ts": [
+          "tests/unit/ours-purchases.test.mjs",
+          "tests/integration/ours-services.test.mjs",
+          "tests/golden/g15-*.test.mjs"
+        ],
         "src/services/ours/paymentRecords.ts": ["tests/unit/ours-payment-records.test.mjs", "tests/integration/ours-services.test.mjs"],
-        "src/services/ours/transport.ts": ["tests/unit/ours-inapp-buy.test.mjs", "tests/unit/pay-link.test.mjs", "tests/integration/ours-services.test.mjs"]
+        "src/services/ours/transport.ts": [
+          "tests/unit/ours-inapp-buy.test.mjs",
+          "tests/unit/pay-link.test.mjs",
+          "tests/integration/ours-services.test.mjs",
+          "tests/golden/g15-*.test.mjs"
+        ]
       },
       "tests": {
         "unit": ["tests/unit/limits-config.test.mjs"],
-        "integration": ["tests/integration/quota-exhausted.test.mjs"]
+        "integration": ["tests/integration/quota-exhausted.test.mjs"],
+        "golden": ["tests/golden/g15-purchase.test.mjs"]
       }
     },
     {
@@ -292,7 +357,8 @@
           "tests/integration/diagnostics-contract.test.mjs",
           "tests/integration/feedback-export.test.mjs",
           "tests/integration/domain08-feedback-negative.test.mjs",
-          "tests/integration/log-viewer.test.mjs"
+          "tests/integration/log-viewer.test.mjs",
+          "tests/golden/g09-*.test.mjs"
         ],
         "src/services/feedbackDraft.ts": ["tests/unit/feedback-draft.test.mjs", "tests/integration/feedback-draft.test.mjs"],
         "src/components/settings/FeedbackDialog.tsx": ["tests/unit/feedback-draft.test.mjs", "tests/integration/feedback-draft.test.mjs", "tests/integration/feedback-scroll.test.mjs", "tests/integration/domain08-feedback-negative.test.mjs"],
@@ -301,7 +367,8 @@
       },
       "tests": {
         "unit": ["tests/unit/error-report.test.mjs"],
-        "integration": ["tests/integration/feedback-draft.test.mjs"]
+        "integration": ["tests/integration/feedback-draft.test.mjs"],
+        "golden": ["tests/golden/g09-diagnostics.test.mjs"]
       }
     },
     {
@@ -310,7 +377,14 @@
       "doc": "docs/testing/coverage/domain-08-09.md",
       "paths": {
         "src/services/settings.ts": ["tests/unit/domain09-*.test.mjs", "tests/unit/reading-settings.test.mjs", "tests/integration/domain09-settings-reload.test.mjs"],
-        "src/services/api/apiConfig.ts": ["tests/unit/domain09-*.test.mjs", "tests/unit/config-migration.test.mjs", "tests/unit/domain03-provider-config-matrix.test.mjs", "tests/integration/domain09-settings-reload.test.mjs"],
+        "src/services/api/apiConfig.ts": [
+          "tests/unit/domain09-*.test.mjs",
+          "tests/unit/config-migration.test.mjs",
+          "tests/unit/domain03-provider-config-matrix.test.mjs",
+          "tests/integration/domain09-settings-reload.test.mjs",
+          "tests/golden/g03-*.test.mjs",
+          "tests/golden/g14-*.test.mjs"
+        ],
         "src/services/api/configMigration.ts": ["tests/unit/domain09-config-migration-invariants.test.mjs", "tests/unit/config-migration.test.mjs", "tests/integration/domain09-settings-reload.test.mjs"],
         "src/i18n/**": ["tests/unit/i18n-missing-key.test.mjs", "tests/unit/format-points-i18n.test.mjs", "tests/regression/issue-94-i18n-parity.test.mjs"],
         "src/components/settings/ChatBackgroundField.tsx": ["tests/integration/domain09-settings-reload.test.mjs", "tests/unit/domain09-settings-persistence.test.mjs"],
@@ -319,7 +393,8 @@
       },
       "tests": {
         "unit": ["tests/unit/modal-touch-scroll.test.mjs"],
-        "integration": ["tests/integration/legacy-config.test.mjs"]
+        "integration": ["tests/integration/legacy-config.test.mjs"],
+        "golden": []
       }
     },
     {
