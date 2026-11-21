@@ -1,6 +1,8 @@
 # v1.4.4-staging 发布 runbook（车道 A｜只发 GitHub Release）
 
 > **状态：未解锁，现在不能发。**
+
+> 本文件的跨文件引用**刻意用「函数名 / 章节标题」锚点而不是行号**：今天实测 #691 合入后 1 小时内就把 `build.gradle` 的 3 处行号挪走、`consumeEndpoints` 2 处也漂，行号锚点在并行开发时必然失效。
 > 本文件是「解锁之后照抄执行」的机械清单，**不是**「已经能发了」的结论。当前唯一阻塞点是
 > staging 后端是**明文 HTTP**，被三道守卫拦着（§3），而解锁方式（A / B）**尚未决定**（§4）。
 > 谁要发布：先按 §5 的前置门逐条跑通、把输出贴到 #652；任一门不绿就停在这里，不要往下走。
@@ -68,7 +70,7 @@ staging 地址是 `http://140.210.13.146:16000`（明文）。它今天撞三道
 
 | # | 层 | 位置 | 判据 | 现象 |
 | --- | --- | --- | --- | --- |
-| ① | 构建期（web 产物） | `scripts/lib/consumeEndpoints.mjs:185`，由 `scripts/build.mjs:71` 在打包前调用（调用点 `scripts/build.mjs:139`） | `consume.baseUrl` 必须 `https://`，唯一例外是本机回环（`scripts/lib/consumeEndpoints.mjs:164`） | `pnpm build` 在打第一个字节前就中止 |
+| ① | 构建期（web 产物） | `scripts/lib/consumeEndpoints.mjs:185`，由 `scripts/build.mjs` 在打包前调用（调用点：`build.mjs` 里 `applyBaseOverrides(config, raw)` 那一处） | `consume.baseUrl` 必须 `https://`，唯一例外是本机回环（`scripts/lib/consumeEndpoints.mjs:164`） | `pnpm build` 在打第一个字节前就中止 |
 | ② | 构建期（gradle） | `android/app/build.gradle:209`（https）+ `android/app/build.gradle:212`（命中废弃域黑名单） | 黑名单 `android/app/build.gradle:141` 里**就含 `140.210.13.146`** | `assembleRelease` 在配置阶段 `GradleException` |
 | ③ | **运行时** | `src/services/consume/http.ts:179` | 同一套判据：非 https 且非回环 → 抛 `ConsumeConfigError` | **App 白屏** |
 
@@ -80,7 +82,7 @@ staging 地址是 `http://140.210.13.146:16000`（明文）。它今天撞三道
 
 ### 3.1b 地址是怎么进产物的（#691 之后，先搞清楚再谈解锁）
 
-改地址有两条通道，**只有一条能改到真正发请求的那一层**（`docs/RELEASE-MANUAL.md:972` 是同一结论）：
+改地址有两条通道，**只有一条能改到真正发请求的那一层**（`docs/RELEASE-MANUAL.md` §14「换消费后端地址」是同一结论）：
 
 | 通道 | 改到哪 | 能不能用 |
 | --- | --- | --- |
