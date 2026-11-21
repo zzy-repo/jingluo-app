@@ -12,6 +12,22 @@
   font-family: var(--ds-font-family-code);
   font-size: 12px;
   line-height: 18px;
+  /* 窄屏（360）上语言名很长时不能把右侧按钮挤出去 */
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 右侧动作区：行号 / 换行 / 下载 / 复制。不用 flex gap（#173：WebView 83 上 flex gap 无效） */
+.actions {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.actions > * + * {
+  margin-left: 2px;
 }
 
 .button {

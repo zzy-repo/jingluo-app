@@ -365,6 +365,131 @@
   overflow-x: auto;
 }
 
+/*
+ * ---- #486 P0-1：代码块行号 / 自动换行 ----
+ *
+ * 默认值等于改造前的现状：`data-line-numbers="false"` + `data-wrap="true"`。
+ * 换行关掉时才切成 `pre`（横向滚动由 `.ds-markdown pre` 的 `overflow: auto` 提供）。
+ * 行号是**每行一个块级 span + 行内数字**：两列式（行号槽 + 代码列）在「换行打开」时
+ * 一旦某行折行，下面所有行号就会错位；行内数字用 `padding-left` / 负 `text-indent`
+ * 做悬挂缩进，折行后的续行仍对齐在源码列。
+ */
+.md-code-block[data-wrap='false'] > pre {
+  white-space: pre;
+  word-break: normal;
+}
+
+.md-code-block-line {
+  display: block;
+  padding-left: var(--md-code-gutter-width, 4ch);
+  text-indent: calc(-1 * var(--md-code-gutter-width, 4ch));
+}
+
+.md-code-block-lineno {
+  display: inline-block;
+  box-sizing: border-box;
+  width: var(--md-code-gutter-width, 4ch);
+  /* 数字右对齐在槽里，再留半个字符的空隙，避免「1def」这种贴字 */
+  padding-right: 0.5em;
+  text-align: right;
+  color: var(--dsw-alias-label-caption);
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/*
+ * ---- #486 P0-2 / P0-3：公式源码复制、表格复制 ----
+ *
+ * 两者共用一颗「浮起的小按钮」：默认 `opacity: 0` + `pointer-events: none`，
+ * 所以**不占位、不改变既有排版**（截图基线与字号行高都不受影响）；父级 `:hover` /
+ * `:focus-within` 时显形，触屏点一下容器同样会进入 `:hover`。
+ * 不用 `visibility: hidden`：那样按钮会离开 Tab 顺序，键盘用户永远够不到。
+ */
+.md-float-copy {
+  position: absolute;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  height: 24px;
+  min-width: 24px;
+  padding: 0 4px;
+  border: none;
+  border-radius: 8px;
+  background: var(--dsw-alias-markdown-code-block-banner);
+  color: var(--dsw-alias-label-secondary);
+  font: var(--dsw-font-xs-13);
+  line-height: 22px;
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--ds-transition-duration) var(--ds-ease-in-out);
+
+  > svg {
+    width: 14px;
+    height: 14px;
+  }
+}
+
+.md-math-block:hover > .md-float-copy,
+.md-math-block:focus-within > .md-float-copy,
+.md-math-inline:hover > .md-float-copy,
+.md-math-inline:focus-within > .md-float-copy,
+.md-table-block:hover > .md-float-copy,
+.md-table-block:focus-within > .md-float-copy {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/*
+ * 焦点环按 #215 的三段式写：`:focus` 兜底（Chromium 83 上没有 :focus-visible）、
+ * `:focus:not(:focus-visible)` 在现代内核里把鼠标点击的环收回、`:focus-visible` 接住键盘态。
+ */
+.md-float-copy:focus {
+  opacity: 1;
+  pointer-events: auto;
+  outline: none;
+  box-shadow: 0 0 0 2px var(--dsw-alias-brand-text);
+}
+
+.md-float-copy:focus:not(:focus-visible) {
+  box-shadow: none;
+}
+
+.md-float-copy:focus-visible {
+  opacity: 1;
+  pointer-events: auto;
+  outline: none;
+  box-shadow: 0 0 0 2px var(--dsw-alias-brand-text);
+}
+
+.md-math-block {
+  position: relative;
+}
+
+.md-math-inline {
+  position: relative;
+}
+
+.md-math-copy {
+  top: 0;
+  right: 0;
+}
+
+.md-math-inline > .md-math-copy {
+  top: -18px;
+  right: -6px;
+}
+
+.md-table-block {
+  position: relative;
+}
+
+.md-table-copy {
+  top: 0;
+  right: 0;
+}
+
 .md-code-block-switch {
   display: flex;
   gap: 4px;

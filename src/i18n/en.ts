@@ -64,6 +64,16 @@ export const en = {
   mermaidLoading: 'Rendering diagram...',
   mermaidRenderFail: 'Mermaid rendering failed.',
   mermaidSwitchLabel: 'Toggle between Mermaid diagram and code',
+  /** Language row actions of a code block: line numbers / wrap / download (#486 P0-1, P0-4) */
+  codeLineNumbers: 'Lines',
+  codeWrap: 'Wrap',
+  codeDownload: 'Download code',
+  codeDownloadSaved: 'Saved',
+  codeDownloadFailed: 'Save failed. Please try again.',
+  /** Copy-the-whole-table action above a table; the clipboard gets standard GFM (#486 P0-3) */
+  tableCopy: 'Copy table',
+  /** Copy-the-source action on a formula; reads pure TeX from the katex-mathml annotation (#486 P0-2) */
+  mathCopySource: 'Copy TeX source',
   toolSearchIntro: 'Searching for',
   messageSearching: 'Searching...',
   imageSearching: 'Searching by image...',

@@ -23,7 +23,7 @@
  * 本脚本**只截图、只量数**，不改任何 src 代码（发现问题写进 Issue 评论，另开单修）。
  */
 import { createReadStream } from 'node:fs'
-import { mkdir, stat, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, stat, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
@@ -54,8 +54,12 @@ export const DEFAULT_DIST = 'dist'
  * 与 src/services/chat/db.ts 的 DB_VERSION 保持一致；fixture 建库结构必须与之一致。
  * #480 把库升到 v13（新增 `attachments` / `attachmentTexts` 两个 store）：这里只建基线四张表 +
  * `sessionSummaries`，附件两张表交给应用自己的 v12 → v13 升级路径去建 —— 顺带每次截图都走一遍真升级。
+ *
+ * #399 把库升到 v14（新增窗口记忆 `sessionMemory` + `sessionId` 索引）之后，这个常量停在了 13：
+ * 冷启动的 warmer 页会先把库按 14 建出来，`seedInPage` 再 `open(…, 13)` 直接 VersionError ——
+ * 于是**全部 `--page` 场景一条都跑不起来**（与 #486 无关，存量问题）。常量必须跟着 `db.ts` 走。
  */
-export const DB_VERSION = 13
+export const DB_VERSION = 14
 /** 假 Key：只喂给界面让「服务配置」不是空态；订单接口被 route 拦掉，不会真的发出去 */
 const FIXTURE_API_KEY = 'sk-shot-mobile-fixture-0000'
 /**
@@ -1560,6 +1564,67 @@ const dialogClip = async (page, minHeight = 200) =>
  *  - `providerKind` 覆盖 localStorage 里的渠道类型（默认 deepseek）；自有渠道的入口只在 ours 下出现
  *  - `run`        该场景的截图与量数步骤
  */
+// ---------------------------------------------------------------- #486 P0 渲染样本
+
+/** 会话标题：截图里靠它进会话 */
+const MARKDOWN_SESSION_TITLE = '截图-Markdown-渲染-486'
+
+/**
+ * 代码块内容：第 4 行故意写得比任何一档视口都长 —— 「换行关掉」时必须出现横向滚动，
+ * 否则那张图证明不了开关真的生效。行数固定 14 行，行号断言按 `MARKDOWN_CODE_LINES` 数。
+ */
+const MARKDOWN_CODE = [
+  'def summarize(items):',
+  '    """把明细汇总成一张表：这段是块注释，故意跨两行',
+  '    用来验证跨行 token 在行号切分后仍然完整。"""',
+  '    total = sum(item["amount"] for item in items if item["amount"] is not None and not item["refunded"])  # 这一行故意写得很长，用来验证「自动换行 / 横向滚动」的切换',
+  '    rows = []',
+  '    for item in items:',
+  '        rows.append([item["name"], item["amount"]])',
+  '    return {',
+  '        "total": total,',
+  '        "count": len(items),',
+  '        "rows": rows,',
+  '    }',
+  '',
+  'print(summarize([]))',
+].join('\n')
+const MARKDOWN_CODE_LINES = MARKDOWN_CODE.split('\n').length
+
+/** 表格样本：一列左对齐、一列居中、一列右对齐；含行内代码与强调，复制出来才能验序列化 */
+const MARKDOWN_TABLE = [
+  '| 能力 | 开关位置 | 默认值 |',
+  '| :--- | :---: | ---: |',
+  '| 行号 | 标题栏「行号」 | 关 |',
+  '| 换行 | 标题栏「换行」 | `开` |',
+  '| 公式复制 | 公式右上角 | **悬停出现** |',
+].join('\n')
+
+/** 行间公式：复制出来应当是纯 TeX（不含 `$$`） */
+const MARKDOWN_MATH = '\\int_0^1 x^2\\,\\mathrm{d}x = \\frac{1}{3}'
+
+const makeMarkdownSession = () => {
+  const now = Date.now()
+  const fence = '```'
+  const text = [
+    '## Markdown 渲染细节（#486 P0）',
+    '行内公式 $a^2 + b^2 = c^2$ 用来验行内公式的复制入口；下面依次是代码块、表格与行间公式。',
+    [`${fence}python`, MARKDOWN_CODE, fence].join('\n'),
+    MARKDOWN_TABLE,
+    ['$$', MARKDOWN_MATH, '$$'].join('\n'),
+  ].join('\n\n')
+  return {
+    id: 'shot-markdown-486',
+    title: MARKDOWN_SESSION_TITLE,
+    createdAt: now,
+    updatedAt: now + 2000,
+    messages: [
+      userMessage('shot-markdown-u1', '给我一段带代码块、表格和公式的回答。', now),
+      assistantMessage('shot-markdown-a1', [{ type: 'text', text }], now + 1),
+    ],
+  }
+}
+
 export const PAGES = {
   'header-scroll-top': {
     dir: 'docs/ui/106-mobile-header-scroll-top',
@@ -3286,6 +3351,346 @@ export const PAGES = {
         assertion: 'overflowCount === 0（390 / 360 两档，每个状态各量一次）',
         states: overflowSeen,
       })
+    },
+  },
+
+  '486-markdown-render': {
+    dir: 'docs/ui/486-markdown-render',
+    title: '#486 P0：代码块行号 / 自动换行（持久化）、公式源码复制、表格复制 GFM、代码下载',
+    sessions: () => [makeMarkdownSession()],
+    run: async (ctx) => {
+      const { page, shot, record, warn } = ctx
+      await openSession(page, MARKDOWN_SESSION_TITLE)
+      const codeBlock = page.locator('.md-code-block').first()
+      await codeBlock.waitFor({ state: 'visible', timeout: 15000 })
+      // KaTeX 是懒加载的：annotation 出现 = MathML 子树真的渲染完（复制公式就是从它取原文）
+      // MathML 子树对肉眼是隐藏的（KaTeX 用 clip 藏起来），所以等 attached 而不是 visible
+      await page.waitForSelector('.katex-mathml annotation[encoding="application/x-tex"]', {
+        state: 'attached',
+        timeout: 20000,
+      })
+      await page.waitForTimeout(300)
+
+      /**
+       * 横向溢出：`overflowCount` 是本车道的硬指标（390 / 360 两档都必须是 0）。
+       * 每换一个状态量一次，只 `warn` 不算断言 —— 这里直接抛错。
+       */
+      let worstOverflow = 0
+      const checkOverflow = async (label) => {
+        const measured = await page.evaluate(() => {
+          const width = document.documentElement.clientWidth
+          /**
+           * 口径：宽表 / 长代码行**故意**在自己的滚动容器里横向滚（`.markdown-table-wrapper`、
+           * `.md-code-block > pre`），那部分溢出不撑破页面，不算「横向溢出」；
+           * 只要有一个祖先能吃掉这个宽度（`overflow-x` 是 auto / scroll / overlay），就不记。
+           * 这条口径能同时抓住「表格把页面撑宽」和「代码块把页面撑宽」—— 那时文档自己会滚。
+           */
+          const absorbedByScrollAncestor = (element) => {
+            let node = element.parentElement
+            while (node !== null) {
+              if (/(auto|scroll|overlay)/u.test(getComputedStyle(node).overflowX)) {
+                return true
+              }
+              node = node.parentElement
+            }
+            return false
+          }
+          const offenders = []
+          for (const element of document.querySelectorAll('*')) {
+            const rect = element.getBoundingClientRect()
+            if (rect.width > 0 && rect.right > width + 1 && !absorbedByScrollAncestor(element)) {
+              offenders.push(`${element.tagName}.${String(element.className).slice(0, 24)}`)
+            }
+          }
+          return {
+            viewportWidth: width,
+            documentScrollWidth: Math.round(document.documentElement.scrollWidth),
+            documentOverflow: document.documentElement.scrollWidth > width + 1,
+            overflowCount: offenders.length,
+            overflowSamples: offenders.slice(0, 4),
+          }
+        })
+        record(`overflow-${label}`, measured)
+        worstOverflow = Math.max(worstOverflow, measured.overflowCount)
+        if (measured.overflowCount !== 0) {
+          throw new Error(`${label} 出现横向溢出 ${measured.overflowCount} 处：${JSON.stringify(measured.overflowSamples)}`)
+        }
+        return measured
+      }
+
+      /**
+       * 行号与源码列的几何关系（量数，不靠看图）：
+       *   gutterGap  —— 行号右边缘到源码起点的像素空隙（小于 2px 就是「数字贴着代码」）
+       *   wrappedLine —— 取第一条**折行**的代码行，量它的第二段（续行）左边缘与首段左边缘的差
+       *                  （悬挂缩进生效时两者应当相等，误差 ≤1px）
+       */
+      const gutterGeometry = () =>
+        codeBlock.evaluate((root) => {
+          const lines = Array.from(root.querySelectorAll('.md-code-block-line'))
+          if (lines.length === 0) {
+            return { gutterGap: null, wrappedLine: null }
+          }
+          const rangeOf = (line, afterGutter) => {
+            const range = document.createRange()
+            range.selectNodeContents(line)
+            if (afterGutter) {
+              const gutter = line.querySelector('.md-code-block-lineno')
+              if (gutter === null) return null
+              range.setStartAfter(gutter)
+            }
+            return range
+          }
+          const first = lines[0]
+          const firstRange = rangeOf(first, true)
+          const firstRects = firstRange === null ? [] : Array.from(firstRange.getClientRects())
+          // 量的是「数字字形」的右边缘（行号槽本身有 padding，槽的 box 右边缘看不出空隙）
+          const numberRange = document.createRange()
+          numberRange.selectNodeContents(first.querySelector('.md-code-block-lineno'))
+          const numberRect = numberRange.getBoundingClientRect()
+          const wrappedLine = (() => {
+            for (const line of lines) {
+              const range = rangeOf(line, true)
+              const rects = range === null ? [] : Array.from(range.getClientRects())
+              if (rects.length > 1) {
+                return {
+                  text: (line.textContent ?? '').slice(0, 12),
+                  segments: rects.length,
+                  firstLeft: Math.round(rects[0].left * 10) / 10,
+                  continuationLeft: Math.round(rects[1].left * 10) / 10,
+                  delta: Math.round((rects[1].left - rects[0].left) * 10) / 10,
+                }
+              }
+            }
+            return null
+          })()
+          return {
+            gutterGap: firstRects.length === 0 ? null : Math.round((firstRects[0].left - numberRect.right) * 10) / 10,
+            codeColumn: firstRects.length === 0 ? null : Math.round(firstRects[0].left * 10) / 10,
+            wrappedLine,
+          }
+        })
+
+      /** 代码块当前状态：行号个数 / 数字文案 / 换行计算样式 / 是否横向滚动 */
+      const codeState = async () => ({
+        ...(await codeBlock.evaluate((root) => {
+          const pre = root.querySelector('pre')
+          const lines = root.querySelectorAll('.md-code-block-lineno')
+          const style = pre === null ? null : getComputedStyle(pre)
+          return {
+            lineNumbers: root.getAttribute('data-line-numbers'),
+            wrap: root.getAttribute('data-wrap'),
+            whiteSpace: style === null ? null : style.whiteSpace,
+            gutterItems: lines.length,
+            firstLineNo: lines.length === 0 ? null : lines[0].textContent,
+            lastLineNo: lines.length === 0 ? null : lines[lines.length - 1].textContent,
+            preScrollWidth: pre === null ? null : Math.round(pre.scrollWidth),
+            preClientWidth: pre === null ? null : Math.round(pre.clientWidth),
+            horizontalScroll: pre === null ? null : pre.scrollWidth > pre.clientWidth + 1,
+          }
+        })),
+        ...(await gutterGeometry()),
+      })
+
+      const banner = codeBlock.locator('.md-code-block-banner')
+      const lineNumbersButton = banner.getByRole('button', { name: '行号', exact: true })
+      const wrapButton = banner.getByRole('button', { name: '换行', exact: true })
+
+      // ① 默认态 = 改造前的现状：没有行号、长行折行（基线不许被这次改动改动）
+      const initial = await codeState()
+      record('codeDefault', initial)
+      if (initial.lineNumbers !== 'false' || initial.gutterItems !== 0) {
+        throw new Error(`默认态出现了行号：${JSON.stringify(initial)}`)
+      }
+      if (initial.whiteSpace !== 'pre-wrap') {
+        warn(`默认换行不是 pre-wrap（${initial.whiteSpace}）：与改造前的 markdown.css 不一致`)
+      }
+      await shot('01-默认-无行号-折行')
+      await checkOverflow('default')
+
+      // ② 打开行号：每个逻辑行一个数字，行尾 token 不丢
+      await lineNumbersButton.click()
+      await page.waitForTimeout(220)
+      const numbered = await codeState()
+      record('codeLineNumbersOn', numbered)
+      if (numbered.gutterItems !== MARKDOWN_CODE_LINES) {
+        throw new Error(`行号数量 ${numbered.gutterItems} ≠ 代码行数 ${MARKDOWN_CODE_LINES}`)
+      }
+      if (numbered.firstLineNo !== '1' || numbered.lastLineNo !== String(MARKDOWN_CODE_LINES)) {
+        throw new Error(`行号不是 1…${MARKDOWN_CODE_LINES}：${numbered.firstLineNo}…${numbered.lastLineNo}`)
+      }
+      await codeBlock.scrollIntoViewIfNeeded()
+      await shot('02-行号开')
+      await checkOverflow('line-numbers')
+
+      // ③ 关掉换行：切成 white-space: pre，长行横向滚动（pre 内滚，不撑破页面）
+      await wrapButton.click()
+      await page.waitForTimeout(220)
+      const noWrap = await codeState()
+      record('codeWrapOff', noWrap)
+      if (noWrap.whiteSpace !== 'pre') {
+        throw new Error(`关掉换行后 white-space 不是 pre：${noWrap.whiteSpace}`)
+      }
+      if (noWrap.horizontalScroll !== true) {
+        warn('关掉换行后长行没有出现横向滚动（样本行可能不够长）')
+      }
+      await shot('03-行号开-换行关-横向滚动')
+      await checkOverflow('wrap-off')
+
+      // ④ 刷新：两个开关必须还在（这就是「持久化」的证据，不靠读 localStorage 自证）
+      await page.reload({ waitUntil: 'domcontentloaded' })
+      await page.waitForTimeout(400)
+      await openSession(page, MARKDOWN_SESSION_TITLE)
+      await codeBlock.waitFor({ state: 'visible', timeout: 15000 })
+      await page.waitForTimeout(300)
+      const afterReload = await codeState()
+      record('codeAfterReload', afterReload)
+      if (afterReload.lineNumbers !== 'true') {
+        throw new Error(`刷新后行号开关丢了：${JSON.stringify(afterReload)}`)
+      }
+      if (afterReload.wrap !== 'false') {
+        throw new Error(`刷新后换行开关丢了：${JSON.stringify(afterReload)}`)
+      }
+      if (afterReload.gutterItems !== MARKDOWN_CODE_LINES) {
+        throw new Error(`刷新后行号数量 ${afterReload.gutterItems} ≠ ${MARKDOWN_CODE_LINES}`)
+      }
+      await shot('04-刷新后开关仍生效')
+      await checkOverflow('after-reload')
+
+      // ⑤ 换行再打开：行号 + 折行同时开着，行号必须仍与逻辑行对齐
+      await wrapButton.click()
+      await page.waitForTimeout(220)
+      const wrapped = await codeState()
+      record('codeWrapOnWithLineNumbers', wrapped)
+      if (wrapped.whiteSpace !== 'pre-wrap') {
+        throw new Error(`换行打开后 white-space 不是 pre-wrap：${wrapped.whiteSpace}`)
+      }
+      if (wrapped.wrappedLine === null) {
+        warn('样本里没有折行的代码行，续行对齐这条量数没取到（不影响行号本身）')
+      } else if (Math.abs(wrapped.wrappedLine.delta) > 1) {
+        throw new Error(
+          `折行后的续行没有对齐源码列：首段 ${wrapped.wrappedLine.firstLeft} / 续行 ${wrapped.wrappedLine.continuationLeft}`
+        )
+      }
+      if (wrapped.gutterGap !== null && wrapped.gutterGap < 2) {
+        warn(`行号与源码之间只有 ${wrapped.gutterGap}px 空隙（数字贴着代码）`)
+      }
+      await shot('05-行号开-换行开')
+      await checkOverflow('wrap-on')
+
+      // ⑥ 表格一键复制为 GFM
+      const tableBlock = page.locator('.md-table-block').first()
+      await tableBlock.scrollIntoViewIfNeeded()
+      const tableCopy = tableBlock.locator('.md-table-copy')
+      const opacityHidden = await tableCopy.evaluate((el) => getComputedStyle(el).opacity)
+      await tableBlock.hover()
+      await page.waitForTimeout(260)
+      const opacityShown = await tableCopy.evaluate((el) => getComputedStyle(el).opacity)
+      record('tableCopyReveal', { opacityHidden, opacityShown })
+      if (Number(opacityShown) <= Number(opacityHidden)) {
+        warn(`表格复制按钮没有因为悬停显形：${opacityHidden} → ${opacityShown}`)
+      }
+      await shot('06-表格悬停出复制')
+      await tableCopy.click()
+      await page.waitForTimeout(280)
+      const tableClipboard = await page.evaluate(() =>
+        navigator.clipboard.readText().catch((error) => `读不到：${String(error)}`)
+      )
+      record('tableClipboard', { text: tableClipboard })
+      if (!String(tableClipboard).startsWith('| ') || !String(tableClipboard).includes('| :--- |')) {
+        throw new Error(`表格复制出来不是标准 GFM：${JSON.stringify(tableClipboard)}`)
+      }
+      await shot('07-表格已复制')
+      // 复制按钮点完会带焦点（现代内核里鼠标点击不给环，但 83 兜底是给的）：点完收掉，
+      // 免得后面几张图里挂着一圈蓝色焦点环
+      await page.evaluate(() => {
+        if (document.activeElement instanceof HTMLElement) {
+          document.activeElement.blur()
+        }
+      })
+      await page.mouse.move(4, 4)
+      await page.waitForTimeout(200)
+
+      // ⑦ 公式源码复制：从 katex-mathml 的 annotation 取纯 TeX（不带 $$），并给出行内公式的入口
+      const mathBlock = page.locator('.md-math-block').first()
+      await mathBlock.scrollIntoViewIfNeeded()
+      await mathBlock.hover()
+      await page.waitForTimeout(260)
+      await shot('08-行间公式悬停出复制')
+      await mathBlock.locator('.md-math-copy').click()
+      await page.waitForTimeout(280)
+      const mathClipboard = await page.evaluate(() =>
+        navigator.clipboard.readText().catch((error) => `读不到：${String(error)}`)
+      )
+      record('mathClipboard', { text: mathClipboard })
+      if (/^\$/.test(String(mathClipboard))) {
+        throw new Error(`公式复制带了 $ 定界符：${JSON.stringify(mathClipboard)}`)
+      }
+      if (!String(mathClipboard).includes('\\frac')) {
+        warn(`公式复制的不是 TeX 原文：${JSON.stringify(mathClipboard)}`)
+      }
+      await shot('09-行间公式已复制')
+
+      // 行内公式：矩形中心多半落在行盒的空白处（Playwright 的 hover 会判成被段落拦截），
+      // 所以这里走**键盘路径**：聚焦按钮 → 父级 `:focus-within` 显形 → Enter 触发。
+      // 顺带证明「按钮不是不可见的 Tab 停靠点」（它真的能聚焦、能显形、能按下去）。
+      const inlineMath = page.locator('.md-math-inline').first()
+      await inlineMath.scrollIntoViewIfNeeded()
+      const inlineCopy = inlineMath.locator('.md-math-copy')
+      const inlineOpacityBefore = await inlineCopy.evaluate((el) => getComputedStyle(el).opacity)
+      await inlineCopy.focus()
+      await page.waitForTimeout(260)
+      const inlineOpacityFocused = await inlineCopy.evaluate((el) => getComputedStyle(el).opacity)
+      record('inlineMathCopyReveal', {
+        opacityHidden: inlineOpacityBefore,
+        opacityFocused: inlineOpacityFocused,
+      })
+      if (Number(inlineOpacityFocused) <= Number(inlineOpacityBefore)) {
+        warn(`行内公式复制按钮聚焦后没有显形：${inlineOpacityBefore} → ${inlineOpacityFocused}`)
+      }
+      await shot('10-行内公式复制入口-键盘聚焦')
+      await page.keyboard.press('Enter')
+      await page.waitForTimeout(280)
+      const inlineClipboard = await page.evaluate(() =>
+        navigator.clipboard.readText().catch((error) => `读不到：${String(error)}`)
+      )
+      record('inlineMathClipboard', { text: inlineClipboard })
+      if (!String(inlineClipboard).includes('c^2')) {
+        warn(`行内公式复制的不是 TeX 原文：${JSON.stringify(inlineClipboard)}`)
+      }
+      await shot('11-行内公式已复制')
+
+      // ⑧ 代码下载：Web 端走 savePlainText → saveTextFile 的 Blob 分支（与原生 ExportText 同一函数）
+      const downloadButton = banner.getByRole('button', { name: '下载代码', exact: true })
+      const [download] = await Promise.all([
+        page.waitForEvent('download', { timeout: 15000 }),
+        downloadButton.click(),
+      ])
+      const savedPath = await download.path()
+      const savedText = savedPath === null ? '' : await readFile(savedPath, 'utf8')
+      record('codeDownload', {
+        suggestedFilename: download.suggestedFilename(),
+        bytes: savedText.length,
+        firstLine: savedText.split('\n')[0],
+        matchesCodeBlock: savedText === MARKDOWN_CODE,
+      })
+      if (download.suggestedFilename() !== 'snippet.py') {
+        warn(`下载文件名不是按语言猜的 snippet.py：${download.suggestedFilename()}`)
+      }
+      if (savedText !== MARKDOWN_CODE) {
+        throw new Error('下载的文件内容与代码块不一致')
+      }
+      await page.waitForTimeout(260)
+      const downloadToast = await page
+        .getByRole('status')
+        .innerText()
+        .catch(() => '')
+      record('codeDownloadToast', { text: downloadToast.replace(/\s+/gu, ' ').trim() })
+      await shot('12-代码已下载')
+
+      record('overflowCount', worstOverflow)
+      if (worstOverflow !== 0) {
+        throw new Error(`横向溢出最大值 ${worstOverflow}，两档都必须是 0`)
+      }
     },
   },
 }

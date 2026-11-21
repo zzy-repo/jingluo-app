@@ -60,6 +60,16 @@ export const zh = {
   mermaidLoading: '图表生成中...',
   mermaidRenderFail: '渲染失败',
   mermaidSwitchLabel: 'Mermaid 图表与代码切换',
+  /** 代码块标题栏的行号 / 换行 / 下载（#486 P0-1、P0-4） */
+  codeLineNumbers: '行号',
+  codeWrap: '换行',
+  codeDownload: '下载代码',
+  codeDownloadSaved: '已保存',
+  codeDownloadFailed: '保存失败，请重试',
+  /** 表格右上角的「复制表格」：复制出来是标准 GFM 管道表格（#486 P0-3） */
+  tableCopy: '复制表格',
+  /** 公式右上角的「复制 TeX 源码」：从 katex-mathml 的 annotation 取纯 TeX（#486 P0-2） */
+  mathCopySource: '复制 TeX 源码',
   toolSearchIntro: '搜索',
   messageSearching: '搜索中...',
   imageSearching: '图像搜索中...',
