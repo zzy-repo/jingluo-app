@@ -14,24 +14,28 @@
 
 - 客户端**不传**目标账号 id（服务端拿 `jwt` 自己去换 `user_id`，传过去的 id 一律不可信）
 - 客户端**不做**任何金额换算（老额度 → 元的口径服务端定死）
-- 客户端**不缓存**迁移结果，也**不重试**（重试只能由用户点按钮触发）
+- 客户端**不持久化**迁移结果（只在内存里放一份给界面显示，切号即清），也**不重试**（重试只能由用户点按钮触发）
 
 ## 目录里有什么（全部收在本目录 = 好删）
 
 | 文件 | 职责 |
 | --- | --- |
 | `index.ts` | **唯一对外出口**，只导出两个函数：`collectLegacyIdentity()` / `claimLegacyMigration(token)` |
-| `collect.ts` | 从本地存储捞老账号线索；**任一读取失败都不抛**，缺字段就省略 |
+| `collect.ts` | 从本地存储捞老账号线索；**任一读取失败都不抛**，缺字段就省略（**同步**只读，不现算指纹） |
 | `claim.ts` | POST 一次迁移请求；**超时 / 网络失败不抛**，返回 `{ status:'failed', retryable:true }`；后端字段名与状态名只在这个文件里出现 |
+| `deviceFpSlot.ts` | 指纹缓存位 `chat-demo:ours-device-fp` 的**唯一写入方**：登录后现算一次并落盘（1.5s 上限、失败静默） |
+| `afterLogin.ts` | 登录后那一次的**顺序总装**：开关关 → 立即返回；否则 **先写指纹 → 再 claim 一次 → 结果进 store** |
+| `resultState.ts` | 「登录后那一次」结果的存放处（zustand，只存 `ClaimResult`，不存凭据；切号时清） |
 | `types.ts` | `ClaimResult` 六状态判别联合 + `LegacyIdentity` |
-| `LegacyMigrationButton.tsx` | 自包含的重试按钮：状态 → 文案 / 能不能再点，全在一处 |
+| `LegacyMigrationButton.tsx` | 自包含的重试按钮：状态 → 文案 / 能不能再点，全在一处（挂在「我的钱包」页底部） |
 | `README.md` | 本文件 |
 
 对外签名（删这条尾巴时只需确认没有第三个调用方）：
 
 ```ts
-collectLegacyIdentity(): { oldApiKey?: string; deviceId?: string; deviceFp?: string }
-claimLegacyMigration(token: string): Promise<ClaimResult>
+collectLegacyIdentity(): { oldApiKey?: string; deviceId?: string; deviceFp?: string }   // 同步
+claimLegacyMigration(token: string): Promise<ClaimResult>                              // 只发一次、永不抛
+migrateLegacyAfterLogin(token: string, isStale?: () => boolean): Promise<void>         // 接线点用：先写指纹再 claim
 ```
 
 ## 开关：`config/endpoints.json` 的 `migration` 组
@@ -77,16 +81,40 @@ claimLegacyMigration(token: string): Promise<ClaimResult>
 
 W1-B 的 `src/services/auth/store.ts` 已在 main 上（#499）。它把「登录成功」收在一个函数里：
 `applySession(session)` —— `signIn()` 与 `signUp()` 成功后**都**走它，而启动恢复 `restoreAuth()` 不走。
-所以「登录 / 注册成功后调用一次」的落点就是它，本单在这里加了 3 行（外加 1 行 import）：
+所以「登录 / 注册成功后调用一次」的落点就是它（3 行 + 2 行 import；`clearSession()` 里另有 1 行清结果）：
 
 ```ts
-import { claimLegacyMigration } from '../../legacy/migration/index.js'   // ← 删这条尾巴时一起删
+// ← 删这条尾巴时一起删
+import { migrateLegacyAfterLogin } from '../../legacy/migration/afterLogin.js'
+import { clearLegacyMigrationResult } from '../../legacy/migration/resultState.js'
 
 const applySession = (session: AuthSession): void => {
   …既有落盘 + setState…
   // 老账号额度迁移（#498 的临时尾巴，@remove-after 1.6.0）：登录 / 注册成功后**只发一次**。
-  try { void claimLegacyMigration(session.token.accessToken) } catch { /* 迁移永不影响登录 */ }
+  // 顺序在 migrateLegacyAfterLogin 里定死：先写指纹 → 再 claim；结果进 resultState。
+  const epoch = sessionEpoch
+  try { void migrateLegacyAfterLogin(session.token.accessToken, () => sessionEpoch !== epoch) } catch { /* 迁移永不影响登录 */ }
 }
+
+const clearSession = (…): void => {
+  sessionEpoch += 1
+  …
+  clearLegacyMigrationResult()   // ← 切号必须清，否则 A 的「已迁移 ¥50」留在 B 的钱包页
+}
+```
+
+### 顺序为什么收在 `afterLogin.ts`（而不是在 `store.ts` 里串）
+
+`applySession` 是**同步**函数：`signIn` / `signUp` 拿到 session 就落盘 + `setState`，不等任何 I/O。
+补指纹写入之后链上多了一步异步，若把 `applySession` 改成 `async` 并 `await`，「登录有多快」就取决于
+指纹解析有多快 —— 等于让一个临时尾巴拖慢主路径。所以只把**「写指纹 → claim」这一段**串成一条后台任务：
+
+```ts
+// afterLogin.ts 的 migrateLegacyAfterLogin()
+if (!isMigrationEnabled()) return                 // ① 关着就什么都不做（连 localStorage 都不碰）
+await ensureLegacyDeviceFp()                      // ② 先写指纹（内部 1.5s 上限，失败静默）
+const result = await claimLegacyMigration(token)  // ③ 再发那一次（此时 collect 才读得到 deviceFp）
+setLegacyMigrationResult(result)                  // ④ 给界面
 ```
 
 三条理由写在这里，免得下一个人「顺手补个 await」：
@@ -97,24 +125,60 @@ const applySession = (session: AuthSession): void => {
 3. **只在这里调用一次**：`applySession` 只被 `signIn` / `signUp` 调用，启动恢复不走它，
    所以「每次启动又发一遍」不会发生；重复登录时服务端按老账号标识幂等，最多回 `already_migrated`。
 
-**结果怎么给 UI**：现在这一行把返回值丢掉了（返回值丢了不影响契约：`already_migrated` 由服务端兜底，
-按钮只要「在用户点的时候再问一次」就够）。要显示「历史额度已迁移：¥X」的话，把 `void` 换成
-`void claimLegacyMigration(...).then((result) => useAuthStore.setState({ migrationResult: result }))`
-或存进任意登录态 store，然后把结果作为 `<LegacyMigrationButton initial={…} />` 传进去。
+**结果怎么给 UI**（这一条原来是个真缺口：返回值被丢掉，于是「服务端已经自动迁了 ¥X」用户永远看不见 ——
+点按钮再问一次会拿到 `already_migrated` + 金额 > 0，而按契约那个状态**永久什么都不显示**，
+结果就是「钱到了、用户不知道」）。现在 `migrateLegacyAfterLogin()` 把结果写进 `resultState.ts` 的
+zustand store，钱包页把它当 `initial` 传给组件：
 
-## 按钮怎么挂（本单没有挂载）
+```ts
+// store.ts（登录后那一次）
+setLegacyMigrationResult(await claimLegacyMigration(token))
+```
 
-组件是自包含的，按路径直接 import 即可（**不走** `index.ts` 的出口，那个出口只放两个函数）：
+store 里**只放 `ClaimResult`**（状态 / 金额 / 币种 / 已收敛的 `reason`），不放 token、不放 `oldApiKey`；
+`clearSession()` 会清它，所以 A 的金额不会留在 B 的钱包页上。
+
+## 指纹怎么带（这一项原来**没有写入方**）
+
+`collect.ts` 读的 `chat-demo:ours-device-fp` 原先全仓无人写，于是生产请求体里 `deviceFp` 常年缺失。
+现在由 `deviceFpSlot.ts` 在**登录成功后、claim 之前**写一次：
+
+| 步骤 | 谁 | 行为 |
+| --- | --- | --- |
+| 1 | `afterLogin.ts` | `await ensureLegacyDeviceFp()` |
+| 2 | `deviceFpSlot.ts` | `resolveDeviceFp()`（原生插件现算，**1.5s 超时**）→ `normalizeDeviceFp()` → 写 `chat-demo:ours-device-fp` |
+| 3 | `claim.ts` | `collectLegacyIdentity()` 这时才读得到 `deviceFp` → 进请求体 |
+
+四条不许踩的线：
+
+- **不用常量 / 全零 / 占位冒充**（#395）：落盘前必须过 `normalizeDeviceFp()`（#395 判据的**唯一**一份，
+  形状不对 / 全相同字符 / 已知常量黑名单都返回 `''`）；拿到 `''` 就一个字节都不写；
+- **失败静默**：解析抛错、原生桥不响应、隐私模式写不进 localStorage —— 全都不抛、不影响登录，
+  最坏结果是「这次迁移少了 `deviceFp` 这一条线索」；
+- **有超时**：它在登录后的链上，原生桥卡住不能把 claim 一起拖住（超时 = 当没有）；
+- **不改 `collect.ts` 的签名**：那一层是同步只读 API，异步现算放在 `deviceFpSlot.ts`。
+
+## 按钮挂在哪（已挂：「我的钱包」页底部）
+
+组件是自包含的，按路径直接 import 即可（**不走** `index.ts` 的出口，那个出口只放两个函数）。
+挂载点：`src/components/consume/AccountConsumePage.tsx` 的 `page === 'wallet'` 分支底部
+（余额卡 / 「我的卡密」「历史消费」两行之后）：
 
 ```tsx
-import { LegacyMigrationButton } from '../legacy/migration/LegacyMigrationButton.js'
+import { getAccessToken } from '../../services/auth/store.js'
+import { LegacyMigrationButton } from '../../legacy/migration/LegacyMigrationButton.js'
+import { useLegacyMigrationResult } from '../../legacy/migration/resultState.js'
 
-// 账户 / 消费页（W1-C 正在写的那一片）里，放在「额度」卡片下面：
-<LegacyMigrationButton
-  initial={migrationResult}          // 登录后那次调用的结果；没有就省略 = 按「可迁移」显示
-  getToken={() => session?.accessToken}
-/>
+const migrationResult = useLegacyMigrationResult((state) => state.result)
+…
+{signedIn === true ? (
+  <LegacyMigrationButton initial={migrationResult ?? undefined} getToken={getAccessToken} />
+) : null}
 ```
+
+**默认关闭的构型里零痕迹**：`migration.enabled !== true` 时组件第 3 处开关判到 → `return null`，
+所以那一页既没有空按钮、也没有占位/说明文字（不是「渲染了但看不见」的 CSS 隐藏）；
+未登录时连这一行都不渲染（`signedIn === true` 才挂）。
 
 渲染规则（组件里 `viewOf()` 一处收口，与 #498 §四 的表一一对应）：
 
@@ -173,11 +237,17 @@ import { LegacyMigrationButton } from '../legacy/migration/LegacyMigrationButton
 
 四步，全部机械可查：
 
-1. **删本目录**：`git rm -r src/legacy/migration/`（连带 `LegacyMigrationButton.tsx` 的挂载点一起删）；
-2. **删两处调用**：
-   - `src/services/auth/store.ts` 的 `applySession()` 里那 3 行 `try { void claimLegacyMigration(…) } catch {…}`
-     **和文件顶部的 `import { claimLegacyMigration } from '../../legacy/migration/index.js'`**；
-   - 账户/消费页里 `<LegacyMigrationButton …/>` 的挂载及其 import；
+1. **删本目录**：`git rm -r src/legacy/migration/`（`deviceFpSlot.ts` / `afterLogin.ts` / `resultState.ts` /
+   `LegacyMigrationButton.tsx` 全在里面，一次删干净；`chat-demo:ours-device-fp` 这个缓存位随之无人读写，
+   不需要清理已落盘的值 —— 它只是本机的一个哈希）；
+2. **删调用点（两处，共 5 行 + 4 行 import）**：
+   - `src/services/auth/store.ts`：`applySession()` 里 `const epoch = …` + `try { void migrateLegacyAfterLogin(…) } catch {…}`，
+     `clearSession()` 里 `clearLegacyMigrationResult()`，**和顶部的两条 import**
+     （`afterLogin.js` / `resultState.js`）；
+   - `src/components/consume/AccountConsumePage.tsx`：「我的钱包」分支里的
+     `{signedIn === true ? <LegacyMigrationButton …/> : null}` 那一段、`const migrationResult = …` 一行、
+     `import { getAccessToken, useAuthStore }` 里的 `getAccessToken`（若别处不用）、两条 import
+     （`LegacyMigrationButton.js` / `resultState.js`）；
 3. **删配置与注入**：`config/endpoints.json` 的 `"migration"` 组 +
    `rspack.config.ts` 的 `assertMigrationConfig()` 与 DefinePlugin 里的 `migration: endpoints.migration,` 一行 +
    `src/env.d.ts` 里 `__ENDPOINTS__.migration` 那段声明；
@@ -197,4 +267,11 @@ npx tsc -p tsconfig.json && npx oxlint src rspack.config.ts                  # �
 node tests/run-layer unit                                                     # 单测层（本单不写新用例）
 node scripts/check-i18n.mjs                                                   # 文案成对 + 无新增孤立 key
 pnpm run check:endpoints && pnpm run check:consume-api                        # 地址零副本 / 路径白名单
+```
+
+补指纹写入方 / 挂载点那一单的额外取证（两条 grep 就是证据本身）：
+
+```bash
+grep -rn "ours-device-fp" src/            # 必须同时看到 deviceFpSlot.ts 的写入与 collect.ts 的读取
+grep -rn "LegacyMigration\|migration.enabled" src/components   # 只有「我的钱包」那一个挂载点
 ```

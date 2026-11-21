@@ -42,7 +42,9 @@ import type { ConsumeClient, ConsumeUser } from '../../services/consume/index.js
 import { getConsumeClient } from '../../services/consumeClient.js'
 import { useAuthStatus } from '../../services/auth/useAuthStatus.js'
 import { SettingsAuthCard } from './SettingsAuthCard.js'
-import { useAuthStore } from '../../services/auth/store.js'
+import { getAccessToken, useAuthStore } from '../../services/auth/store.js'
+import { LegacyMigrationButton } from '../../legacy/migration/LegacyMigrationButton.js'
+import { useLegacyMigrationResult } from '../../legacy/migration/resultState.js'
 import { Button } from '../base/Button.js'
 import { IconChevronRightOutline14 } from '../base/icons.js'
 import { showToast } from '../base/toastState.js'
@@ -128,6 +130,8 @@ export const AccountConsumePage = ({
    */
   const signedIn = auth.restored ? auth.authenticated : null
   const signOut = useAuthStore((state) => state.signOut)
+  /** 「登录后那一次」迁移的结论（#498 的临时尾巴）；`null` = 还没跑过 */
+  const migrationResult = useLegacyMigrationResult((state) => state.result)
   const kind = useApiConfig((state) => state.kind)
   const apiKey = useApiConfig((state) => state.apiKey)
 
@@ -505,6 +509,14 @@ export const AccountConsumePage = ({
             <span className={styles.value}>›</span>
           </button>
         </div>
+        {/* 老账号额度迁移（#498 的临时尾巴，@remove-after 1.6.0）：本行只是**挂载点**，
+            「显不显示」全由组件自己判 —— `migration.enabled !== true` 时组件 `return null`，
+            所以默认关闭的构型里这一页**没有任何痕迹**（不是空按钮、不是占位）。
+            有结果时（登录后那一次已经跑过）传 `initial`：`migrated` → 「历史额度已迁移：¥X」；
+            `already_migrated` + 金额 0 的兜底入口（「仍要迁移」）也在组件里。 */}
+        {signedIn === true ? (
+          <LegacyMigrationButton initial={migrationResult ?? undefined} getToken={getAccessToken} />
+        ) : null}
         {sheetNode}
       </div>
     )

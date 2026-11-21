@@ -16,23 +16,20 @@
  *   - 设备码复用 `services/invite/device.ts` 的常量 / 校验 / 只读存储适配器（它没有顶层副作用，
  *     读失败也已经是「当没有」的语义，与这里的要求一致）。
  *   - 指纹的形状校验复用 `services/invite/fingerprint.ts` 的 `DEVICE_FP_PATTERN`（同样纯函数，
- *     没有顶层副作用），但**指纹本身在本仓库是每次现算的**（原生插件 + `resolveDeviceFp()`），
- *     并不落盘；所以这里只认「曾经写进缓存位的那一份」，没有就省略 —— 绝不拿常量 / 全零 /
- *     占位值冒充指纹（#395 的事故就是这么来的）。
+ *     没有顶层副作用）。指纹本身是**每次现算**的（原生插件 + `resolveDeviceFp()`），本层**不做**
+ *     现算（它是同步 API，现算要异步 + 超时）；只认「登录后由 `deviceFpSlot.ts` 写进缓存位的那一份」，
+ *     没有就省略 —— 绝不拿常量 / 全零 / 占位值冒充指纹（#395 的事故就是这么来的）。
  */
 
 import { DEVICE_FP_PATTERN } from '../../services/invite/fingerprint.js'
 import { isDeviceId, localStorageDeviceIdStorage } from '../../services/invite/device.js'
+// 指纹缓存位（`chat-demo:ours-device-fp`）的常量与**唯一写入方**都在 `deviceFpSlot.ts`：
+// 登录成功后它现算一次并落盘（见 ./README.md「指纹怎么带」）；这里只读，读不到就是 `undefined`。
+import { LEGACY_DEVICE_FP_SLOT } from './deviceFpSlot.js'
 import type { LegacyIdentity } from './types.js'
 
 /** 旧 Key 的槽位（所有者：`services/api/apiConfig.ts` 的 `CONFIG_KEYS.apiKey`） */
 const LEGACY_API_KEY_SLOT = 'chat-demo:api-key'
-
-/**
- * 设备指纹的**缓存位**（约定的写入方是接线点，见 ./README.md「指纹怎么带」）。
- * 当前仓库没有任何写入方 —— 这一项因此通常是 `undefined`，属于设计内的正常结果。
- */
-const LEGACY_DEVICE_FP_SLOT = 'chat-demo:ours-device-fp'
 
 /** 读一个 localStorage 槽位；隐私模式 / 配额 / 非浏览器环境一律当没有（不抛、不写日志） */
 const readSlot = (key: string): string => {

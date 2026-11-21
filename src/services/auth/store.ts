@@ -31,7 +31,8 @@
  */
 
 import { create } from 'zustand'
-import { claimLegacyMigration } from '../../legacy/migration/index.js'
+import { migrateLegacyAfterLogin } from '../../legacy/migration/afterLogin.js'
+import { clearLegacyMigrationResult } from '../../legacy/migration/resultState.js'
 import type { ConsumeRefreshDecision, ConsumeUnauthorizedInfo } from '../consume/http.js'
 import { registerAccountScopedCaches } from './accountCaches.js'
 import { purgeSessionCaches } from './sessionCache.js'
@@ -252,17 +253,24 @@ const applySession = (session: AuthSession): void => {
     restored: true,
   })
   // 老账号额度迁移（#498 的临时尾巴，@remove-after 1.6.0）：登录 / 注册成功后**只发一次**。
-  // 失败静默 —— `claimLegacyMigration` 自己保证不抛，`void` 掉不阻塞登录、也不产生未处理 rejection；
-  // 开关关着时它在读任何本地槽位之前就返回（见 src/legacy/migration/README.md）。
-  try { void claimLegacyMigration(session.token.accessToken) } catch { /* 迁移永不影响登录 */ }
+  // 顺序在 `migrateLegacyAfterLogin` 里定死：**先解析并写入设备指纹**（`chat-demo:ours-device-fp`，
+  // 1.5s 上限）**再发 claim** —— `collect.ts` 是同步只读，先写才有 `deviceFp` 可带；结果进
+  // `resultState`，钱包页据此显示「历史额度已迁移：¥X」。
+  // 失败静默：两个环节各自保证不抛，`void` 掉不阻塞登录、也不产生未处理 rejection（这层 try/catch
+  // 是 `void` 一个可能抛的 promise 的双保险）；开关关着时它在碰任何本地槽位之前就返回，
+  // 而「中途退出 / 切号」由 epoch 判掉，旧会话的结果不会落到新账号的钱包页上。
+  const epoch = sessionEpoch
+  try { void migrateLegacyAfterLogin(session.token.accessToken, () => sessionEpoch !== epoch) } catch { /* 迁移永不影响登录 */ }
 }
 
 /**
  * 清态回登录页：落盘一起清（#484 §二「刷新失败就清登录态」）。
  *
- * 一共清三样（#740 ④）：**access + refresh**（同一个落盘键）+ **账号级缓存**
- * （`purgeSessionCaches()`：余额 / 卡密 / 消费记录 / cid … 见 `accountCaches.ts`）。
- * 少了最后一样，A 退出、B 登录之后 B 就会看到 A 的数据 —— 这是「切号串数据」的唯一来源。
+ * 一共清四样（#740 ④）：**access + refresh**（同一个落盘键）+ **账号级缓存**
+ * （`purgeSessionCaches()`：余额 / 卡密 / 消费记录 / cid … 见 `accountCaches.ts`）
+ * + **登录后那一次的迁移结果**（`clearLegacyMigrationResult()`，同样是「跟着账号走」的数据：
+ * 不清它，A 的「已迁移 ¥50」会留在 B 的钱包页上）。
+ * 少了账号级那几样，A 退出、B 登录之后 B 就会看到 A 的数据 —— 这是「切号串数据」的唯一来源。
  */
 const clearSession = (
   next: Extract<AuthState, 'unauthenticated' | 'expired'>,
@@ -272,6 +280,8 @@ const clearSession = (
   sessionEpoch += 1
   tokenStorage.write(null)
   purgeSessionCaches()
+  // #498 的临时尾巴（@remove-after 1.6.0）：迁移结果是账号维度的展示值，切号必须清
+  clearLegacyMigrationResult()
   useAuthStore.setState({
     state: next,
     token: null,
