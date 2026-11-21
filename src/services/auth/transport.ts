@@ -11,7 +11,7 @@
  *   sendCode(input)             →  `sendVerifyCode(http, {email})`
  *   refresh(input)              →  `refresh(http, {refreshToken})`
  *   refreshToken(input)         →  同上，窄口（只要 token 对，不要 user）
- *   me()                        →  `me(http)`（拿不到就用 `getProfile(http)`）
+ *   me()                        →  `getProfile(http)`（#676 §二：**没有** `/auth/me` 这条路）
  *   logout()                    →  `revokeAllSessions(http)`（+ 本地清态，见 store.ts）
  *
  * **已接线**（W1-A PR #494 的 `createConsumeClient`）：本文件末尾的 `createAuthTransport(consume)`
@@ -35,8 +35,8 @@
  *   POST /api/v1/auth/register         `{email, password, verify_code?, invitation_code?}` → 同 login
  *   POST /api/v1/auth/send-verify-code `{email}` → 无返回体
  *   POST /api/v1/auth/refresh          `{refresh_token}` → `{access_token, refresh_token, expires_in, token_type}`（**无 user**）
- *   GET  /api/v1/auth/me               JWT → 用户对象
  *   GET  /api/v1/user/profile          JWT → 用户对象 + `identities.email`
+ *                                      （「当前用户」**只走这条**：#676 §二 明写 `/auth/me` 不存在）
  *   POST /api/v1/auth/revoke-all-sessions JWT → 退出所有设备
  *
  * 实测补充（2026-11-20，本地实例 0.2.22）：登录成功体是**面板信封** `{code:0,message:"success",data:{…}}`；
@@ -112,7 +112,7 @@ export interface AuthTransport {
    * 不顺手带上 user 解析（实测回包本来也没有 user，多解析一次只会多一处失败点）。
    */
   refreshToken: (input: AuthRefreshInput) => Promise<AuthResult<AccessToken>>
-  /** `GET /api/v1/auth/me`：当前用户（启动恢复时用它校验 token 还活着） */
+  /** `GET /api/v1/user/profile`：当前用户（启动恢复时用它校验 token 还活着） */
   me: () => Promise<AuthResult<AuthUser>>
   /**
    * 退出：`POST /api/v1/auth/revoke-all-sessions`（服务端把该账号所有设备的会话作废）。
@@ -244,7 +244,8 @@ export const createAuthTransport = (consume: ConsumeClient): AuthTransport => ({
   sendCode: async (input) => unwrap(await consume.auth.sendVerifyCode({ email: input.email }), () => undefined),
   refresh: async (input) => unwrap(await consume.auth.refresh(input), (session) => ({ token: toAccessToken(session) })),
   refreshToken: async (input) => unwrap(await consume.auth.refresh(input), toAccessToken),
-  me: async () => unwrap(await consume.auth.me(), toAuthUser),
+  // 「当前用户」= `/api/v1/user/profile`（#676 §二：契约里没有 `/auth/me`，`consume.auth.me` 已删）
+  me: async () => unwrap(await consume.auth.profile(), toAuthUser),
   logout: async () => unwrap(await consume.auth.revokeAllSessions(), () => undefined),
 })
 

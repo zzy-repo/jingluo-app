@@ -19,6 +19,10 @@
  * 幂等：首发只发一次；重试只走 `retryAfterConfirm: true`（用户点了那个按钮才算确认），
  * 绝不在这份界面里写任何自动重试循环（`redeem.ts` 已经把补偿判定做完，这里只负责「问一句」）。
  *
+ * 兑换成功之后**必须重拉 `/api/v1/user/profile`**（#676 §五：余额进 `user.balance`，不再是某把 Key 的
+ * `quota`）。这一段在 `myCardsModel.ts` 的 `afterRedeemed()` 里，本文件只负责把读到的余额显示一行 ——
+ * 组件里写 setState 断言不了「有没有真的拉」，契约就变成口头承诺。
+ *
  * 安全：卡密全文只在内存里交给剪贴板，**不进 DOM 文本、不进日志、不进 localStorage**；
  * 列表只渲染后 4 位（`maskCardNo`，与 `mask.ts` 同一口径）。
  */
@@ -30,6 +34,8 @@ import type { ConsumeClient } from '../../services/consume/index.js'
 import { fetchPurchases, maskCardNo, PurchaseError } from '../../services/ours/purchases.js'
 import type { PurchaseOrder } from '../../services/ours/purchases.js'
 import { copyText } from '../../utils/clipboard.js'
+import { afterRedeemed } from './myCardsModel.js'
+import { formatCurrency } from './panels.js'
 import { formatDate } from '../../utils/format.js'
 import { Button } from '../base/Button.js'
 import { showToast } from '../base/toastState.js'
@@ -50,7 +56,8 @@ type CardsView =
 type RedeemView =
   | { status: 'idle' }
   | { status: 'busy' }
-  | { status: 'redeemed' }
+  /** `balance` 是兑换后重拉 `/user/profile` 读到的余额（元）；读不到就没有这一项（不显示） */
+  | { status: 'redeemed'; balance?: number }
   | { status: 'processing'; error: Sub2ApiError }
   /** 已核对「未到账」：给重试按钮，点了才带 `retryAfterConfirm: true` 再发一次 */
   | { status: 'pending'; code: string }
@@ -161,9 +168,14 @@ export const MyCardsTab = ({ consume, onGoBuy, onNeedLogin }: MyCardsTabProps) =
         return
       }
       if (outcome.kind === 'redeemed') {
-        setRedeem({ status: 'redeemed' })
         setCode('')
-        // 兑换改了服务端余额 / 并发，订单上的兑换态也跟着变：重拉一次列表（不自建账本）
+        // 兑换改了**账户余额**（`user.balance`）：按契约重拉 `/user/profile`，不刷某把 Key 的 quota（#676 §五）
+        const aftermath = await afterRedeemed(outcome, consume.auth)
+        if (!aliveRef.current) {
+          return
+        }
+        setRedeem({ status: 'redeemed', balance: aftermath.refresh ? aftermath.balance : undefined })
+        // 订单上的兑换态也跟着变：重拉一次列表（不自建账本）
         void loadOrders()
         return
       }
@@ -337,6 +349,8 @@ const RedeemFeedback = ({
     return (
       <p className={`${styles.feedback} ${styles.feedbackOk}`} role="status" data-testid={testId}>
         {t('consumeRedeemSuccess')}
+        {/* 余额来自兑换后重拉的那次 `/user/profile`（元）；读不到就只显示「兑换成功」 */}
+        {view.balance === undefined ? '' : ` · ${t('consumeBalanceLabel')} ${formatCurrency(view.balance)}`}
       </p>
     )
   }

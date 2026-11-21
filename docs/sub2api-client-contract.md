@@ -93,7 +93,7 @@
 | POST | `/api/v1/auth/refresh` | 刷新 token（限流 30/min） | `routes/auth.go:54` |
 | POST | `/api/v1/auth/forgot-password` | 找回密码第一步（5/min） | `routes/auth.go:68` |
 | POST | `/api/v1/auth/reset-password` | 找回密码第二步（10/min） | `routes/auth.go:72` |
-| GET | `/api/v1/auth/me` | 当前用户 | `routes/auth.go:257` |
+| GET | `/api/v1/auth/me` | 当前用户（**仅供对照服务端路由**：#676 §二 要求客户端不依赖它，改用 `/user/profile`） | `routes/auth.go:257` |
 | POST | `/api/v1/auth/revoke-all-sessions` | 退出所有设备 | `routes/auth.go:259` |
 | GET | `/api/v1/user/profile` | 账号资料 / 邮箱绑定态 / 余额（元） | `routes/user.go:31`；`handler/user_handler.go:533-565` |
 

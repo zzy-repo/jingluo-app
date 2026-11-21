@@ -23,7 +23,9 @@
  *
  * 另外两条：
  *   - 卡密原文只在请求体里出现，**不进日志、不进 query、不落任何上报字段**（只露尾 4 位由 UI 自己 mask）；
- *   - 到账语义是「余额 / 并发 / 订阅进了 sub2api 账号」，不是客户端账本 —— 客户端不缓存额度（#484 §4.5 第 10 条）。
+ *   - 到账语义是「余额 / 并发 / 订阅进了 sub2api 账号」，不是客户端账本 —— 客户端不缓存额度（#484 §4.5 第 10 条）；
+ *   - 兑换成功后**调用方要重拉 `GET /api/v1/user/profile`**（`refreshProfile`）刷新 `balance`，
+ *     **不是**刷新某把 Key 的 `quota`（#676 §五 / §九 第 3 条：余额口径统一为元，Key 的旧额度已迁进 balance）。
  */
 
 import { isRedeemLocked, isRedeemUsed, type Sub2ApiError } from './errors.js'
@@ -64,8 +66,14 @@ export type ConsumeRedeemOutcome =
       /** 判定依据：`response` = 服务端直接回了到账；`history` = 查历史确认已到账（超时 / 409 / 202 受理态都走这条） */
       credited: 'response' | 'history'
       result: ConsumeRedeemResult
-      /** 重新拉一次余额用的提示（界面据此决定要不要刷新 `/v1/usage`） */
-      refreshUsage: boolean
+      /**
+       * 「该重拉哪个接口」的唯一提示：**`/api/v1/user/profile` 的 `balance`**（#676 §五）。
+       *
+       * 到账进的是 `user.balance`，**不是某把 Key 的 `quota`** —— 所以这里不再叫 `refreshUsage`
+       * （那个名字会把人引去刷 `/v1/usage`，读到的是 Key 的额度而不是账户余额）。恒为 `true`：
+       * 兑换成功后**没有**不需要刷新余额的情况。
+       */
+      refreshProfile: boolean
     }
   | {
       kind: 'pending'
@@ -242,7 +250,7 @@ const settleAccepted = async (
 ): Promise<ConsumeRedeemOutcome> => {
   const verified = await verifyCredited(http, code)
   if (verified === 'credited') {
-    return { kind: 'redeemed', credited: 'history', result: result.data, refreshUsage: true }
+    return { kind: 'redeemed', credited: 'history', result: result.data, refreshProfile: true }
   }
   return {
     kind: 'processing',
@@ -307,7 +315,7 @@ const interpret = async (
   if (result.ok) {
     // 2xx 不等于到账：`202 accepted` / `status:"processing"` 是「受理，结果待定」→ 先核对 history 再定性
     if (isAccepted(result)) {return settleAccepted(http, code, result)}
-    return { kind: 'redeemed', credited: 'response', result: result.data, refreshUsage: true }
+    return { kind: 'redeemed', credited: 'response', result: result.data, refreshProfile: true }
   }
   const error = result.error
 
@@ -322,7 +330,7 @@ const interpret = async (
         kind: 'redeemed',
         credited: 'history',
         result: { message: error.message, type: '', value: 0 },
-        refreshUsage: true,
+        refreshProfile: true,
       }
     }
     return { kind: 'failed', error, verified }
@@ -336,7 +344,7 @@ const interpret = async (
         kind: 'redeemed',
         credited: 'history',
         result: { message: error.message, type: '', value: 0 },
-        refreshUsage: true,
+        refreshProfile: true,
       }
     }
     return { kind: 'pending', error, verified, retried, canRetry: true }

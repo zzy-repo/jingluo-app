@@ -13,7 +13,7 @@
  *     "access_token":"eyJ…","refresh_token":"rt_…","expires_in":86400,"token_type":"Bearer",
  *     "user":{"id":2,"email":"…","username":"","role":"user","balance":100,"concurrency":5,"status":"active"}}}`
  *   POST /api/v1/auth/refresh → 同上但**没有 `user`**（只有 token 三件套）
- *   GET  /api/v1/auth/me、/api/v1/user/profile → 用户对象（多一个 `identities.email.bound` 表示邮箱已绑）
+ *   GET  /api/v1/user/profile → 用户对象（`identities.email.bound` 表示邮箱已绑；#676 §二：没有 `/auth/me`）
  *   401 → `{"code":401,"message":"invalid refresh token","reason":"REFRESH_TOKEN_INVALID"}`
  */
 
@@ -42,7 +42,7 @@ export type AccessToken = {
 /**
  * 当前账号。字段名与 sub2api 的 `User` DTO 对齐（camelCase），snake_case 只在传输层出入口转换一次。
  *
- * 注意：登录 / 注册的成功体里**没有** `emailVerified`，只有 `/auth/me`、`/user/profile` 的
+ * 注意：登录 / 注册的成功体里**没有** `emailVerified`，只有 `/user/profile` 的
  * `identities.email.bound` 能给；所以它可能是「还不知道」——用 `null` 表达，不要拿 `false` 冒充。
  */
 export type AuthUser = {

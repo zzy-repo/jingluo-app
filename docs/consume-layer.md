@@ -51,7 +51,7 @@ type ConsumeCallResult<T> =
 | | `sendVerifyCode` | `POST /api/v1/auth/send-verify-code` | 无 | ❌ 靠服务端频控 |
 | | `refresh` | `POST /api/v1/auth/refresh` | refresh_token | ❌ 失败即清登录态 |
 | | `forgotPassword` / `resetPassword` | `POST /api/v1/auth/forgot-password`、`/reset-password` | 无 | ❌ |
-| | `me` / `getProfile` | `GET /api/v1/auth/me`、`/user/profile` | JWT | ✅ |
+| | `getProfile`（**「当前用户」的唯一入口**） | `GET /api/v1/user/profile` | JWT | ✅ |
 | | `revokeAllSessions` | `POST /api/v1/auth/revoke-all-sessions` | JWT | ⚠️ |
 | `keys` | `listKeys` / `getKey` | `GET /api/v1/keys`、`/keys/:id` | JWT | ✅ |
 | | `createKey` | `POST /api/v1/keys` | JWT | ❌ 先查重（`dedupe`，默认开） |
@@ -133,7 +133,7 @@ sub2api 的兑换**没有幂等键**（请求体只有 `{code}`），所以：
 | 数据 | 来源 | 状态 |
 | --- | --- | --- |
 | `POST /api/v1/auth/login` 200 | 本地实例 0.2.20 | ✅ 实测：`access_token` / `refresh_token` / `expires_in` / `token_type` / `user` |
-| `GET /api/v1/auth/me`、`/user/profile` 200 | 本地实例 | ✅ 实测：`User` + `identities{provider:{bound,can_bind,can_unbind,…}}` |
+| `GET /api/v1/user/profile` 200 | 本地实例 / staging 0.2.20 | ✅ 实测：`User` + `identities{provider:{bound,can_bind,can_unbind,…}}`（**#676 §二：客户端只用这一条**；`/api/v1/auth/me` 实测亦 200，但不在契约里，已从本层删除） |
 | `GET /api/v1/keys` 200 | 本地实例 | ✅ 实测：`PaginatedData{items,total,page,page_size,pages}` + `APIKey` 全字段 |
 | `GET /api/v1/usage` 200 | 本地实例 | ✅ 实测：分页信封（`items` 字段因无用量未观测到） |
 | `POST /api/v1/redeem` 404 | 本地实例 | ✅ 实测：`{code:404,message,reason:"REDEEM_CODE_NOT_FOUND"}` |

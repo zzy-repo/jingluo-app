@@ -99,7 +99,8 @@ const ROWS = [
         assert.equal(postCount, 1, `${first}：核对命中时不许重发`)
         assert.equal(outcome.kind, 'redeemed', `${first}：核对命中就是已到账`)
         assert.equal(outcome.credited, 'history', '依据明说：来自历史核对，不是服务端直接回的成功')
-        assert.equal(outcome.refreshUsage, true, '余额要重读一次（客户端不自己加）')
+        assert.equal(outcome.refreshProfile, true, '余额要重读一次（客户端不自己加）：重拉 /user/profile')
+        assert.equal(outcome.refreshUsage, undefined, '旧字段名 refreshUsage 已废弃：它指的是刷 /v1/usage，口径是 Key 的 quota')
       }
     },
   },

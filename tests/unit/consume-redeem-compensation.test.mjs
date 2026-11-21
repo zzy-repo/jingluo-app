@@ -71,7 +71,8 @@ const ROWS = [
       assert.deepEqual(scene.sequence(), [REDEEM_POST, HISTORY_GET], '先查历史，再下结论')
       assert.equal(outcome.kind, 'redeemed')
       assert.equal(outcome.credited, 'history', '依据是历史，不是重发的运气')
-      assert.equal(outcome.refreshUsage, true)
+      assert.equal(outcome.refreshProfile, true, '兑换成功后要重拉 /user/profile 刷余额（#676 §五）')
+      assert.equal(outcome.refreshUsage, undefined, '旧字段名 refreshUsage 已废弃：它指的是刷 /v1/usage，口径是 Key 的 quota')
     },
   },
   {
@@ -128,7 +129,8 @@ const ROWS = [
       assert.deepEqual(scene.sequence(), [REDEEM_POST, HISTORY_GET], '409 也不许直接判失败：必须先核对')
       assert.equal(outcome.kind, 'redeemed')
       assert.equal(outcome.credited, 'history')
-      assert.equal(outcome.refreshUsage, true)
+      assert.equal(outcome.refreshProfile, true, '兑换成功后要重拉 /user/profile 刷余额（#676 §五）')
+      assert.equal(outcome.refreshUsage, undefined, '旧字段名 refreshUsage 已废弃：它指的是刷 /v1/usage，口径是 Key 的 quota')
     },
   },
   {
@@ -206,7 +208,8 @@ const ROWS = [
       assert.deepEqual(scene.sequence(), [REDEEM_POST, HISTORY_GET], '先核对，后下结论')
       assert.equal(outcome.kind, 'redeemed', '只有 history 确认到账才回 redeemed')
       assert.equal(outcome.credited, 'history', '依据是历史核对，不是那句 accepted')
-      assert.equal(outcome.refreshUsage, true)
+      assert.equal(outcome.refreshProfile, true, '兑换成功后要重拉 /user/profile 刷余额（#676 §五）')
+      assert.equal(outcome.refreshUsage, undefined, '旧字段名 refreshUsage 已废弃：它指的是刷 /v1/usage，口径是 Key 的 quota')
     },
   },
 ]

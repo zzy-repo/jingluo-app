@@ -11,9 +11,14 @@
  *   POST /api/v1/auth/refresh               刷新 token（30/min）
  *   POST /api/v1/auth/forgot-password       忘记密码
  *   POST /api/v1/auth/reset-password        重置密码
- *   GET  /api/v1/auth/me                    当前用户
  *   POST /api/v1/auth/revoke-all-sessions   退出所有设备
- *   GET  /api/v1/user/profile               账号资料 / 邮箱绑定 / 余额（元）
+ *   GET  /api/v1/user/profile               账号资料 / 邮箱绑定 / 余额（元）—— **「当前用户」只走它**
+ *
+ * 「当前用户」**没有**第二个入口（#676 §二）：契约明写「`/api/v1/auth/me` 不存在，请用
+ * `/api/v1/user/profile`」。实测（staging `0.2.20`，2026-11-21）该路由**仍然在**、带有效 JWT 回 200、
+ * 字段与 `/user/profile` 同形 —— 所以这里删掉它不是「修线上故障」，而是**不再依赖契约外的路径**：
+ * 一旦服务端按契约把它摘掉，`restoreAuth()` 会变成「一启动就掉线」。两种体的差异只有
+ * `/user/profile` 多一层 `identities`（邮箱绑定明细），`toConsumeUser` 两边都吃得下。
  *
  * 两条硬约束：
  *  1. JWT **只进 header**（`Authorization: Bearer <access_token>`，cookie 无效）；本层不落盘、不日志 ——
@@ -33,10 +38,10 @@ import type { ConsumeCallResult, ConsumeEmpty, ConsumeHttp } from './http.js'
 /**
  * sub2api 的用户对象（金额单位一律 **元**：1 元 = 1 额度，后端 8b12ab2 明确，无 USD 概念）。
  *
- * 字段来自**本地联调实例的真实 200**（`GET /api/v1/auth/me`、`GET /api/v1/user/profile`，实例 0.2.20）：
+ * 字段来自**联调实例的真实 200**（`GET /api/v1/user/profile`，实例 0.2.20 / staging 0.2.20）：
  * `{id,email,username,role,balance,frozen_balance,concurrency,status,allowed_groups,last_active_at,
  *   created_at,updated_at,balance_notify_*,total_recharged,rpm_limit,identities:{provider:{...}}}`
- * `/user/profile` 比 `/auth/me` 多一层身份绑定明细（`identities`），两者都能喂这个类型。
+ * 登录 / 注册成功体里的 `user` 是它的子集（没有 `identities`），所以同一个 `toConsumeUser` 两处都能用。
  */
 export type ConsumeUser = {
   id: number
@@ -387,11 +392,13 @@ export const resetPassword = (
   return http.call<ConsumeEmpty>({ method: 'POST', path: '/api/v1/auth/reset-password', body, timeout: 'write', auth: null })
 }
 
-/** 当前用户（JWT） */
-export const me = (http: ConsumeHttp): Promise<ConsumeCallResult<ConsumeUser>> =>
-  http
-    .call<unknown>({ method: 'GET', path: '/api/v1/auth/me', timeout: 'read' })
-    .then((result) => (result.ok ? { ...result, data: toConsumeUser(result.data) } : result))
+/**
+ * 「当前用户」= `getProfile()`，**不再有 `me()`**（#676 §二）。
+ *
+ * 原来的 `me()` 打的是 `/api/v1/auth/me`：实测（staging 0.2.20）能回 200，但契约明确说那条路径
+ * 「**不存在**，请用 `/api/v1/user/profile`」。保留两条等价路径等于给「启动恢复」埋一个
+ * 只在服务端删路由那天才爆的雷，所以这里直接删掉 —— 要用户对象就调下面这一个。
+ */
 
 /** 账号资料：余额（元）/ 邮箱绑定 / 身份。**额度只以它和 `/v1/usage` 为准**，客户端不推导 */
 export const getProfile = (http: ConsumeHttp): Promise<ConsumeCallResult<ConsumeUser>> =>
