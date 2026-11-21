@@ -63,5 +63,20 @@
       "note": "tsc 984ms + 快速子集 20682ms（134/154 个单元文件，并发 3）+ 黄金套件 3221ms"
     }
   },
+  "timeoutClasses": {
+    "_what": "runner 的超时档（Issue #733）。`tests/run-layer.mjs` 读这一份，不另建基线文件。默认档 180s 是历史值，不放宽；只有标注了别的档的文件才更长。",
+    "default": {
+      "ms": 180000,
+      "note": "批内 / 单文件默认档（历史值）。改小会造出更多「超时假红」，改大等于把真卡死藏得更久 —— 两种都别顺手调。"
+    },
+    "gate-selfcheck": {
+      "ms": 600000,
+      "note": "门禁自检类：一个文件里顺序跑十几道门禁的「注入缺陷 → 必红 → 还原」，每道都要起子进程 + tsc/oxlint/build。空载 15.1s（见 layers.gates），负载下实测 157–340s，180s 会被误杀成假红（#733 的原始现象）。"
+    }
+  },
+  "fileTimeoutClasses": {
+    "_what": "逐文件的超时档标注：#733 要求「门禁自检类」用 600s 档。标注了的文件**不进合并批次**（独占一个进程），默认档文件照旧 16 个一批。",
+    "tests/unit/gate-negative-controls.test.mjs": "gate-selfcheck"
+  },
   "measuredBy": "node scripts/test-report.mjs --measure"
 }

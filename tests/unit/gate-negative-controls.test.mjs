@@ -92,6 +92,38 @@ const DUP_SOURCE = 'tests/unit/check-ip-version.test.mjs'
  *  （基线自带 window=20，换窗口时门禁不套基线，所以窗口 80 的正例仍然 exit 0。） */
 const DUP_WINDOW = 80
 
+/**
+ * #733：**上一次被掐断的注入物，必须在这一次开跑之前清掉。**
+ *
+ * `assertNegativeControl` 的还原写在 `finally` 里（断言失败也能还原），但 finally 只在**进程活着**时生效：
+ * runner 的超时把进程 SIGKILL 掉、或者人按了 Ctrl-C，进程根本跑不到 finally，注入物就留在**仓库真实路径**上
+ * （实测：`tests/unit/__gate-neg-dup-copy.test.mjs`）。下一次跑本文件时，N5 的**正例**（干净仓库必须 exit 0）
+ * 会在这份垃圾上红 —— 报出来的结论是「main 真红」，与真正的门禁失效长得一模一样，就是 #733 要治的那种骗人。
+ *
+ * 所以模块装载时先按**已知注入物清单**扫一遍：这些路径只可能来自本文件的负向对照，别的用例不会造它们。
+ * 清单要和下面的 `artifact` 字段一起维护（新增注入点 = 这里加一条）。
+ */
+const STALE_INJECTIONS = [
+  PROBE_TYPE,
+  PROBE_LINT,
+  PROBE_LAYOUT_DIR,
+  PROBE_LAYOUT_WHITELIST_DIR,
+  PROBE_DUP_COPY,
+  'deploy/dl-release/test/__gate-neg-dl-release-probe.test.mjs',
+]
+const sweptStaleInjections = STALE_INJECTIONS.filter((entry) => {
+  const target = path.join(ROOT, entry)
+  if (!existsSync(target)) return false
+  rmSync(target, { recursive: true, force: true })
+  return true
+})
+if (sweptStaleInjections.length) {
+  console.log(
+    `\n⚠ #733：清掉上一次被掐断的注入物（${sweptStaleInjections.join(', ')}）—— `
+    + 'SIGKILL / Ctrl-C 跑不到 finally，留着它下一次会在**正例**上红，看起来就是 main 真红',
+  )
+}
+
 /** 一行 = 一道门禁 = 一组正反例。加门禁 = 加一行（+ 在 REGISTRY 登记）。 */
 const ROWS = [
   {

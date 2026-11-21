@@ -224,6 +224,90 @@ const SKIP_CODE = 77
 /** 集成层基线清单：只判「相对基线没有新增失败」 */
 const BASELINE_FILE = path.join(TESTS_DIR, 'integration-baseline.json')
 /**
+ * #733：**「文件跑得太慢被截断」和「断言红了」是两件事，报告上不许长得一样。**
+ *
+ * 现象（今天骗过两个人）：`tests/unit/gate-negative-controls.test.mjs` 空载 ~15s（`layers.gates` 那行），
+ * 负载下实测 157–340s，超过 runner 的批内默认超时 180s。超时后进程被停掉、没有 TAP 收尾行，
+ * 报告里只剩一句「批内没跑到收尾行」，与「断言真红」**无法区分** —— 单跑 15/15 全绿。
+ *
+ * 这里做两件事，数据源**只有一份**（`tests/timing-baseline.json`，不新建第二份基线）：
+ *   1) 超时档：`timeoutClasses`（default 180s / gate-selfcheck 600s）+ `fileTimeoutClasses` 逐文件标注；
+ *      标注过的文件**不进合并批次**（它一慢就会把同批 15 个无辜文件一起拖死，正是假红的来源）；
+ *   2) 超时的文件必须**单跑复核一次**（`confirmTimeouts()`）：
+ *      单跑通过 → `TIMEOUT-PASSED-ON-RERUN`（独立类别，不进 FAIL）；单跑红/仍超时 → 保留 `TIMEOUT` 类别但**判红**。
+ *
+ * 与 #511 / #501 的关系（不许踩回去）：超时是**第 4 个类别**，不是 PASS 的别名。断言失败仍走 TAP 判定，
+ * 一个字节都没动 —— 见 `runner-timeout-not-assert-733.test.mjs` 的三拍。
+ */
+const TIMING_BASELINE_FILE = path.join(TESTS_DIR, 'timing-baseline.json')
+/** 基线文件缺失/损坏时的兜底档：与历史默认一致（180s）。读不到基线**不等于**可以放宽超时 */
+const DEFAULT_TIMEOUT_MS = 180000
+/**
+ * #733：超时复核的预算倍率。**不能**用「被判超时的那个数」再跑一遍 —— 那是循环论证，它必然再超时。
+ * 复核要回答的是「这文件只是慢，还是真的卡死/红」，所以给一个明显更宽的窗口（且不低于默认档）。
+ * 于是「故意把档位设成 1s」的负向对照会得到：先 `TIMEOUT`，单跑复核转绿 → `TIMEOUT-PASSED-ON-RERUN`。
+ */
+const TIMEOUT_CONFIRM_FACTOR = 2
+/** 超时档（#733）：`classes` 是档位表，`byFile` 是逐文件标注；都由 loadTimeoutPolicy() 从基线读 */
+let timeoutPolicy = {
+  defaultMs: DEFAULT_TIMEOUT_MS,
+  classes: new Map(),
+  byFile: new Map(),
+  source: null,
+  note: '',
+}
+
+/** 读基线里的超时档。读不到/坏了就退回内置默认档（并在报告里写清），绝不放宽判据 */
+async function loadTimeoutPolicy(explicitDefaultMs) {
+  let parsed
+  try {
+    parsed = JSON.parse(await readFile(TIMING_BASELINE_FILE, 'utf8'))
+  } catch (error) {
+    timeoutPolicy = {
+      defaultMs: explicitDefaultMs ?? DEFAULT_TIMEOUT_MS,
+      classes: new Map(),
+      byFile: new Map(),
+      source: null,
+      note: `基线读不到（${error.message}）→ 全部按内置默认档 ${explicitDefaultMs ?? DEFAULT_TIMEOUT_MS}ms 跑`,
+    }
+    return timeoutPolicy
+  }
+  const classes = new Map()
+  for (const [name, spec] of Object.entries(parsed.timeoutClasses ?? {})) {
+    if (name.startsWith('_')) continue
+    const ms = Number(spec?.ms)
+    if (Number.isFinite(ms) && ms > 0) classes.set(name, { ms, note: String(spec?.note ?? '') })
+  }
+  const byFile = new Map()
+  for (const [file, className] of Object.entries(parsed.fileTimeoutClasses ?? {})) {
+    if (file.startsWith('_')) continue
+    if (!classes.has(className)) {
+      // 标了不存在的档：按默认档跑，但要吵 —— 静默退档等于「标注了、没生效」
+      console.log(`⚠ ${rel(TIMING_BASELINE_FILE)}：${file} 标注的档位 ${className} 不存在 —— 该文件按默认档跑（#733）`)
+      continue
+    }
+    byFile.set(String(file).split(path.sep).join('/').replace(/^\.?\//, ''), className)
+  }
+  timeoutPolicy = {
+    defaultMs: explicitDefaultMs ?? classes.get('default')?.ms ?? DEFAULT_TIMEOUT_MS,
+    classes,
+    byFile,
+    source: rel(TIMING_BASELINE_FILE),
+    note: explicitDefaultMs ? '--timeout-ms 显式覆盖了默认档（逐文件档位不变）' : '',
+  }
+  return timeoutPolicy
+}
+
+/** 某个文件该用哪个超时档：没标注 → 默认档（180s）。返回 `{ name, ms }`（绝对/相对路径都认） */
+function timeoutOf(file) {
+  const raw = typeof file === 'string' ? file : rel(file)
+  const key = rel(path.isAbsolute(raw) ? raw : path.resolve(ROOT, raw))
+  const className = timeoutPolicy.byFile.get(key) ?? timeoutPolicy.byFile.get(path.basename(key))
+  if (!className) return { name: 'default', ms: timeoutPolicy.defaultMs }
+  const spec = timeoutPolicy.classes.get(className)
+  return { name: className, ms: spec?.ms ?? timeoutPolicy.defaultMs }
+}
+/**
  * #365：集成层全量已经跑到 ~20 分钟，CI 里一个 job 跑完反馈太慢，于是按分片拆成并行 job。
  * 分片只决定「哪个文件落到哪个分片」，**不影响「是否被跑到」**：分片是覆盖全集的划分
  * （没登记权重的文件也有默认权重，一样会被分进某个分片），不会出现「新文件没人跑」。
@@ -541,6 +625,18 @@ async function buildWorkUnits(planned, weights) {
   const buckets = new Map()
   for (const item of planned) {
     const base = path.basename(item.file)
+    /**
+     * #733：超时档不是默认档的文件**独占一个工作单元**，不许进合并批次。
+     *
+     * 批内超时是按「一个进程」算的：门禁自检类文件负载下要 157–340s，
+     * 塞进 16 个文件的批次里就是「它慢 → 整批被杀 → 同批 15 个无辜文件一起没有收尾行」。
+     * 独占之后它用自己的档位（600s）超时，批次里剩下的文件继续按 180s 跑。
+     */
+    const timeoutClass = timeoutOf(item.file)
+    if (timeoutClass.name !== 'default') {
+      units.push({ merged: false, items: [item], weightMs: weightOf(item), timeoutMs: timeoutClass.ms, timeoutClass: timeoutClass.name })
+      continue
+    }
     const blocker = item.layer === 'unit'
       ? (UNIT_SOLO.has(base) ? 'solo' : await mergeBlocker(item.file))
       : 'not-unit'
@@ -883,6 +979,8 @@ test('取消点必须落在「导入中」窗口内（只在慢环境红）', as
 async function main() {
   const argv = process.argv.slice(2)
   let layer, only = '', caseName = '', json, failedFrom, timeoutMs = 180000, shard = null, jobs
+  /** #733：`--timeout-ms` 只覆盖**默认档**；逐文件档位（如 gate-selfcheck 600s）仍按基线生效 */
+  let timeoutExplicit = false
   /** #513：反向抽样条数（`--reverse-sample N` 覆盖；默认 3~5 随机） */
   let reverseSampleCount
   // #456：`--record-dir` 指的是运行记录（跨 runner 判据的输入）写哪；`--registry` 换登记簿文件（自证/沙箱用）
@@ -898,7 +996,7 @@ async function main() {
       if (arg === '--case') caseName = value
       if (arg === '--json') json = value
       if (arg === '--failed-from') failedFrom = value
-      if (arg === '--timeout-ms') timeoutMs = Number(value)
+      if (arg === '--timeout-ms') { timeoutMs = Number(value); timeoutExplicit = true }
       if (arg === '--shard') shard = parseShard(value)
       if (arg === '--jobs') jobs = Number(value)
       if (arg === '--record-dir') recordDir = path.resolve(value)
@@ -913,6 +1011,11 @@ async function main() {
     else throw new Error(`Unknown argument: ${arg}`)
   }
   if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1) throw new Error('timeout-ms must be a positive integer')
+  /**
+   * #733：超时档只有一份数据源 —— `tests/timing-baseline.json`。
+   * 读到就用（`timeoutClasses.default` 180s / 逐文件档位），读不到就退回内置 180s 并留痕。
+   */
+  await loadTimeoutPolicy(timeoutExplicit ? timeoutMs : undefined)
   if (jobs !== undefined && (!Number.isSafeInteger(jobs) || jobs < 1)) throw new Error('jobs must be a positive integer')
   /**
    * #456：两个「不跑用例」的入口，所以不要求给层：
@@ -1102,7 +1205,7 @@ async function main() {
         const item = planned.find((candidate) => rel(candidate.file) === entry.file)
         if (!item) continue
         const env = await caseEnv(item)
-        const solo = await runCase(item.file, { cwd: ROOT, env, timeoutMs, output: false, nodeArgs: caseNodeArgs })
+        const solo = await runCase(item.file, { cwd: ROOT, env, timeoutMs: timeoutOf(item.file).ms, output: false, nodeArgs: caseNodeArgs })
         if (solo.ok || solo.code === SKIP_CODE) {
           checked.push({ file: entry.file, ms: solo.ms, skipped: solo.code === SKIP_CODE })
           console.log(`   ✓ ${entry.file} —— 批内绿、单跑也绿（${solo.ms}ms）`)
@@ -1133,12 +1236,14 @@ async function main() {
     if (!unit.merged) {
       const item = unit.items[0]
       const name = rel(item.file)
-      say(`\n>> ${name} (timeout ${timeoutMs}ms)`)
+      /** #733：单文件路径的超时按**这个文件**的档位算（标注过 gate-selfcheck 的就不是 180s 了） */
+      const budget = timeoutOf(item.file)
+      say(`\n>> ${name} (timeout ${budget.ms}ms${budget.name === 'default' ? '' : `，档 ${budget.name}`})`)
       const env = await caseEnv(item)
       // #456：attempts 要记下来 —— 判据里「同 runner 重跑绿」与「跨 runner 结论不同」是两件事，
       // 报告里必须能分开看（前者是 flaky，后者是 runner-dependent）。
       let attempts = 1
-      const run = (nodeArgs = caseNodeArgs) => runCase(item.file, { cwd: ROOT, env, timeoutMs, output: lanes === 1, nodeArgs })
+      const run = (nodeArgs = caseNodeArgs) => runCase(item.file, { cwd: ROOT, env, timeoutMs: budget.ms, output: lanes === 1, nodeArgs })
       let result = await run()
       if (lanes !== 1 && result.output) log.push(result.output)
       let skipped = result.code === SKIP_CODE
@@ -1205,7 +1310,15 @@ async function main() {
        * #611：已按 INFRA 处置过的（重跑用掉了 / `--no-retry`）不再走这条 —— 尤其**不许**把 INFRA 登记成 flaky。
        */
       let flaky = false
-      if (infraState === 'none' && !result.ok && !skipped && !flags.has('--no-retry')) {
+      /**
+       * #733：**超时不走 flaky 重跑**。flaky 判据问的是「碰运气能不能过」，而超时是「窗口不够 /
+       * 进程真卡死」—— 用同一个窗口再跑一遍只会再撞一次墙，白花掉一个超时周期。
+       * 改由 main() 的 confirmTimeouts() 用**更宽的复核预算**单跑一次定性（通过 ⇒ TIMEOUT-PASSED-ON-RERUN）。
+       */
+      if (result.timedOut && !result.ok && !skipped) {
+        say(`   ⏱ 撞到超时（档 ${budget.name} ${budget.ms}ms，实际跑了 ${Math.round(result.ms / 1000)}s）—— 不按 flaky 重跑，改由超时复核单跑一次（#733）`)
+      }
+      if (infraState === 'none' && !result.ok && !skipped && !result.timedOut && !flags.has('--no-retry')) {
         say(`   ↻ 红了（${result.ms}ms），按 flaky 判据重跑一次…`)
         attempts = 2
         const retry = await run()
@@ -1260,6 +1373,15 @@ async function main() {
                 ? 'FAIL(OOM)'
                 : 'FAIL'
       say(`<< ${status} ${name} (${result.ms}ms)`)
+      /**
+       * #733：超时这一行必须**自己说清**它是超时、不是断言失败，并给出可复现的单跑命令。
+       * 以前这里与真红共用一句「没跑到收尾行」，读报告的人只能去改一个没坏的断言。
+       */
+      if (status === 'TIMEOUT') {
+        say(`   ⏱ ${name} 在 ${Math.round(budget.ms / 1000)}s 内未跑完（超时，档 ${budget.name}），**不是断言失败**；`)
+        say(`      单跑复核命令：node tests/run-layer.mjs ${item.layer} --case ${name}`)
+        say('      ⟹ 稍后会自动单跑一次（复核预算更宽）：通过 ⇒ TIMEOUT-PASSED-ON-RERUN；仍红/仍超时 ⇒ 判红（类别仍是 TIMEOUT）')
+      }
       if (degradeReason) say(`   ↧ ${degradeReason}`)
       if (infraState === 'retried') say(`   ↻ INFRA-RETRIED：runner IPC 崩过一次，单文件重跑通过（#611；不进 flaky 登记簿）`)
       if (infraState === 'fail') say(`   ✖ ${result.error ?? infraFailNote()}`)
@@ -1278,14 +1400,17 @@ async function main() {
         log: log.join(''),
         interrupted: result.interrupted,
         // #611：INFRA-FAIL 依旧是红（裁决：CI 红），只是措辞不再是「用例失败」
-        failed: !result.ok && !skipped,
+        // #733：超时先不算「已定性失败」—— 它还没走单跑复核，`--bail` 不该在定性之前就把整轮掐掉
+        failed: !result.ok && !skipped && !result.timedOut,
       }
     }
     // 合并批次：一次进程跑 N 个文件，逐文件结局从 merged-entry 的 `<< FILE` 收尾行还原
     const files = unit.items.map((item) => item.file)
-    say(`\n>> 合并批次 ${unit.items.length} 个文件 (timeout ${timeoutMs}ms/批)`)
+    /** #733：批次按「同批里最宽的那一档」算；非默认档的文件已在 buildWorkUnits 里被拆成独占单元 */
+    const batchBudgetMs = Math.max(...unit.items.map((candidate) => timeoutOf(candidate.file).ms))
+    say(`\n>> 合并批次 ${unit.items.length} 个文件 (timeout ${batchBudgetMs}ms/批)`)
     for (const item of unit.items) say(`   · ${rel(item.file)}`)
-    const result = await runMergedBatch(files, { cwd: ROOT, env: { ...process.env }, timeoutMs, output: lanes === 1, nodeArgs: caseNodeArgs })
+    const result = await runMergedBatch(files, { cwd: ROOT, env: { ...process.env }, timeoutMs: batchBudgetMs, output: lanes === 1, nodeArgs: caseNodeArgs })
     if (lanes !== 1 && result.output) log.unshift(result.output)
     const byFile = new Map(result.files.map((entry) => [entry.file, entry]))
     const unitResults = []
@@ -1371,7 +1496,8 @@ async function main() {
       for (const red of reds) {
         const item = unit.items.find((candidate) => rel(candidate.file) === red.file)
         const env = await caseEnv(item)
-        const first = await runCase(item.file, { cwd: ROOT, env, timeoutMs, output: lanes === 1, nodeArgs: caseNodeArgs })
+        const redBudget = timeoutOf(item.file)
+        const first = await runCase(item.file, { cwd: ROOT, env, timeoutMs: redBudget.ms, output: lanes === 1, nodeArgs: caseNodeArgs })
         if (lanes !== 1 && first.output) log.push(first.output)
         /**
          * #611：这次单文件复核本身就是一次 `node --test` 跑法 —— 批内判红 + 单跑撞上 runner IPC 崩，
@@ -1384,7 +1510,7 @@ async function main() {
             result: first,
             say,
             rerun: async () => {
-              const retry = await runCase(item.file, { cwd: ROOT, env, timeoutMs, output: lanes === 1, nodeArgs: caseNodeArgs })
+              const retry = await runCase(item.file, { cwd: ROOT, env, timeoutMs: redBudget.ms, output: lanes === 1, nodeArgs: caseNodeArgs })
               if (lanes !== 1 && retry.output) log.push(retry.output)
               return retry
             },
@@ -1517,7 +1643,7 @@ async function main() {
       console.log(`\n↺ 整批独占串行重跑（${crash.unit.items.length} 个文件，堆上限 ${heapPlan.inject ? degradedHeapMb : heapCap} MB；上次死因：${death.label}）`)
       for (const line of death.excerpt) console.log(`   ⚠ 上次 stderr：${line}`)
       const alone = await runMergedBatch(files, {
-        cwd: ROOT, env: { ...process.env }, timeoutMs, output: true, nodeArgs: degradedNodeArgs,
+        cwd: ROOT, env: { ...process.env }, timeoutMs: Math.max(...crash.unit.items.map((candidate) => timeoutOf(candidate.file).ms)), output: true, nodeArgs: degradedNodeArgs,
       })
       const aloneByFile = new Map(alone.files.map((entry) => [entry.file, entry]))
       aloneDeath = classifyDeath(alone)
@@ -1550,7 +1676,9 @@ async function main() {
         const name = rel(item.file)
         const index = crash.results.findIndex((entry) => entry.file === name)
         const env = await caseEnv(item)
-        const solo = await runCase(item.file, { cwd: ROOT, env, timeoutMs, output: true, nodeArgs: degradedNodeArgs })
+        /** #733：逐文件串行也按**这个文件**的档位算 —— 门禁自检类在这里被 180s 截断过一次 */
+        const soloBudget = timeoutOf(item.file)
+        const solo = await runCase(item.file, { cwd: ROOT, env, timeoutMs: soloBudget.ms, output: true, nodeArgs: degradedNodeArgs })
         const soloDeath = solo.ok ? null : classifyDeath(solo)
         /**
          * #611：降级复跑本身就是「换一个进程再跑一次」，所以这里**不再**多跑一遍；只把结论改对 ——
@@ -1606,6 +1734,103 @@ async function main() {
     entry.pendingDegrade = false
     entry.error = entry.error ?? '批次崩溃后没有完成降级复跑（本轮被中断）'
   }
+
+  /**
+   * #733：**超时的文件必须单跑一次**（自动），否则「超时」与「断言真红」在报告里就还是一句话。
+   *
+   * 三拍（每一拍都写进终端，不许只留一句「没跑到收尾行」）：
+   *   ① 判红原因是超时 → 单跑复核，用**更宽的预算**（`max(档位 × 2, 默认档)`）；
+   *      用同一个数再跑一遍是循环论证：它必然再超时，什么也证明不了。
+   *   ② 复核通过 ⇒ `TIMEOUT-PASSED-ON-RERUN`：**独立类别**，不进 FAIL、不记 flaky（这不是碰运气）；
+   *      但要检查它是不是又踩在档位线上 —— 贴着线过，说明档位还得调（`tests/timing-baseline.json`）。
+   *   ③ 复核仍超时 ⇒ `TIMEOUT` 且**判红**（没定性就不许当绿）；
+   *      复核是**断言红** ⇒ 按普通 `FAIL`（超时只是把这个真红藏起来了，绝不许洗白 —— 与 #611 的 ⑤ 同一条道理）。
+   */
+  async function confirmTimeouts() {
+    const pending = results.filter((entry) => !entry.ok && !entry.skipped && entry.timedOut && !entry.timeoutResolved)
+    if (!pending.length) return []
+    console.log(`\n${'='.repeat(70)}\n== #733 超时复核：${pending.length} 个文件撞到超时（**不是断言失败**）\n${'='.repeat(70)}`)
+    console.log('按「更宽的复核预算」把每个文件单跑一次：通过 ⇒ TIMEOUT-PASSED-ON-RERUN（独立类别，不进 FAIL）；')
+    console.log('仍超时 ⇒ 保留 TIMEOUT 类别且判红；复核出断言红 ⇒ 按普通 FAIL（超时不许把真红洗白）。')
+    const confirmations = []
+    for (const entry of pending) {
+      if (interrupted) break
+      const item = planned.find((candidate) => rel(candidate.file) === entry.file) ?? { layer: entry.layer, file: path.resolve(ROOT, entry.file) }
+      const budget = timeoutOf(entry.file)
+      if (flags.has('--no-retry')) {
+        Object.assign(entry, {
+          timeoutResolved: true, timeoutFail: true, timedOut: true,
+          error: `${entry.file} 在 ${Math.round(budget.ms / 1000)}s 内未跑完（超时，档 ${budget.name}），**不是断言失败**；本轮 --no-retry，未做单跑复核（#733，没有复核就不许当绿）`,
+        })
+        console.log(`\n   ⏱ ${entry.file}：--no-retry → 跳过单跑复核，保留 TIMEOUT（判红；复核命令见下）`)
+        console.log(`      单跑复核命令：node tests/run-layer.mjs ${entry.layer} --case ${entry.file}`)
+        confirmations.push({ file: entry.file, verdict: 'unconfirmed', timeoutClass: budget.name, budgetMs: budget.ms })
+        continue
+      }
+      /** 复核预算：`TEST_TIMEOUT_CONFIRM_MS` 只给自检/复现用（把这段流程压到几秒），**不是**掩盖卡死的旋钮 */
+      const confirmOverride = Number(process.env.TEST_TIMEOUT_CONFIRM_MS)
+      const confirmMs = Number.isFinite(confirmOverride) && confirmOverride > 0
+        ? confirmOverride
+        : Math.max(budget.ms * TIMEOUT_CONFIRM_FACTOR, timeoutPolicy.defaultMs)
+      const env = await caseEnv(item)
+      console.log(`\n↺ 单跑复核 ${entry.file}（判超时 ${Math.round((entry.ms ?? 0) / 1000)}s · 档 ${budget.name} ${budget.ms}ms → 复核预算 ${Math.round(confirmMs / 1000)}s）`)
+      console.log(`   复核命令：node tests/run-layer.mjs ${item.layer} --case ${entry.file}`)
+      const solo = await runCase(item.file, { cwd: ROOT, env, timeoutMs: confirmMs, output: true, nodeArgs: degradedNodeArgs })
+      const soloSkipped = solo.code === SKIP_CODE
+      const firstRunMs = entry.ms ?? 0
+      if (solo.ok) {
+        Object.assign(entry, {
+          ...solo, ok: true, skipped: false, skipReason: '', timedOut: false, merged: false,
+          timeoutResolved: true, timeoutPassedOnRerun: true, pendingDegrade: false,
+          timeout: { class: budget.name, budgetMs: budget.ms, confirmMs, firstRunMs, soloMs: solo.ms, verdict: 'passed-on-rerun' },
+          attempts: (entry.attempts ?? 1) + 1, degraded: false, degradeReason: undefined, crash: undefined,
+          error: null,
+          // 复核通过但**贴着档位线**过：说明档位还偏紧，下一次负载略高就又会假红
+          ...(solo.ms > budget.ms * 0.5
+            ? { timeoutTight: true, timeoutAdvice: `复核耗时 ${solo.ms}ms 已超过档位 ${budget.ms}ms 的一半，建议把 tests/timing-baseline.json 里这个文件的档位调大` }
+            : {}),
+        })
+        console.log(`   ✓ TIMEOUT-PASSED-ON-RERUN ${entry.file}（单跑 ${solo.ms}ms，复核预算 ${Math.round(confirmMs / 1000)}s）`)
+        if (entry.timeoutAdvice) console.log(`     ⚠ ${entry.timeoutAdvice}`)
+        confirmations.push({ file: entry.file, verdict: 'passed-on-rerun', timeoutClass: budget.name, budgetMs: budget.ms, confirmMs, soloMs: solo.ms })
+        continue
+      }
+      if (solo.timedOut) {
+        Object.assign(entry, {
+          timeoutResolved: true, timeoutFail: true, timedOut: true, merged: false, pendingDegrade: false,
+          code: solo.code, signal: solo.signal,
+          timeout: { class: budget.name, budgetMs: budget.ms, confirmMs, firstRunMs, soloMs: solo.ms },
+          attempts: (entry.attempts ?? 1) + 1,
+          error: `${entry.file} 在 ${Math.round(budget.ms / 1000)}s 内未跑完（超时，档 ${budget.name}），**不是断言失败**；单跑复核（预算 ${Math.round(confirmMs / 1000)}s）仍超时 → 判红（类别仍是 TIMEOUT，不是断言失败）；单跑复核命令：node tests/run-layer.mjs ${item.layer} --case ${entry.file}`,
+        })
+        console.log(`   ✖ TIMEOUT ${entry.file}：单跑复核（${Math.round(confirmMs / 1000)}s）仍超时 —— 判红，但这不是断言失败；去查它是不是真的卡死（#733）`)
+        confirmations.push({ file: entry.file, verdict: 'still-timeout', timeoutClass: budget.name, budgetMs: budget.ms, confirmMs, soloMs: solo.ms })
+        continue
+      }
+      // 复核出断言红 / 非 0 退出：真红。超时只是把它藏起来了 —— 照常判 FAIL，不许挂在 TIMEOUT 名下蒙混
+      const why = soloSkipped
+        ? `SKIP(env) ${(/SKIP\(env\) (.+)/.exec(solo.tail.join(''))?.[1] ?? '环境不满足').trim()}`
+        : `超时后的单跑复核是断言红（${classifyDeath(solo).label}）→ 照常判 FAIL：**超时只是把这个真红藏起来了**`
+      Object.assign(entry, {
+        ...solo, ok: false, skipped: soloSkipped, timedOut: false, merged: false,
+        timeoutResolved: true, timeoutFail: false, timeoutConfirmedRed: true, pendingDegrade: false,
+        timeout: { class: budget.name, budgetMs: budget.ms, confirmMs, firstRunMs, soloMs: solo.ms },
+        attempts: (entry.attempts ?? 1) + 1, error: why,
+      })
+      console.log(`   ✖ FAIL ${entry.file}：${why}`)
+      console.log(`      单跑复核命令：node tests/run-layer.mjs ${item.layer} --case ${entry.file}`)
+      confirmations.push({ file: entry.file, verdict: 'assert-red', timeoutClass: budget.name, budgetMs: budget.ms, confirmMs, soloMs: solo.ms })
+    }
+    if (confirmations.length) {
+      const passed = confirmations.filter((one) => one.verdict === 'passed-on-rerun').length
+      const still = confirmations.filter((one) => one.verdict === 'still-timeout').length
+      const red = confirmations.filter((one) => one.verdict === 'assert-red').length
+      const unconfirmed = confirmations.filter((one) => one.verdict === 'unconfirmed').length
+      console.log(`\n⟹ 超时复核结论：${passed} 个单跑通过（TIMEOUT-PASSED-ON-RERUN）/ ${still} 个仍超时（TIMEOUT，判红）/ ${red} 个复核出断言红（FAIL）${unconfirmed ? ` / ${unconfirmed} 个未复核（--no-retry）` : ''}`)
+    }
+    return confirmations
+  }
+  const timeoutConfirmations = interrupted ? [] : await confirmTimeouts()
   /**
    * #513 §3：**反向抽样核对** —— 现有兜底只覆盖「批内红 → 单文件复核」，方向是单向的：
    * 批次把**真红**掩盖成绿（例如某个断言依赖了「上一个文件留下的状态」，整批刚好满足）没有任何人看得见。
@@ -1632,6 +1857,15 @@ async function main() {
   const infraRetried = results.filter((r) => r.ok && r.infraRetried)
   const infraFails = failures.filter((r) => r.infraFail)
   const crashedFails = failures.filter((r) => r.crash)
+  /**
+   * #733：超时的两份名单，**与「绿」和「断言真红」都分开数**（和 #611 的 INFRA 同一个道理）：
+   *   · `timeoutFails`：超时且单跑复核仍超时/未复核 → **判红**，但类别是 TIMEOUT 而不是断言失败；
+   *   · `timeoutPassed`：超时 → 单跑复核通过 → `TIMEOUT-PASSED-ON-RERUN`（绿，但不是「一次就绿」）。
+   * `assertFails` 才是「断言真红」那一栏 —— 汇总行里 FAIL 只数它，超时自己单列一行。
+   */
+  const timeoutFails = failures.filter((r) => r.timeoutFail)
+  const assertFails = failures.filter((r) => !r.timeoutFail)
+  const timeoutPassed = results.filter((r) => r.ok && r.timeoutPassedOnRerun)
   const skips = results.filter((r) => r.skipped)
   const totalMs = Math.round(performance.now() - started)
 
@@ -1723,8 +1957,27 @@ async function main() {
       `| **DEGRADED（批次串扰 / 资源不足 → 换进程才绿）** | ${degraded.length} | 不算失败，但必须留痕；**> 5 视为回归**（#513 / docs §11.10） |`,
       `| 反向抽样（#513：批内绿 → 单跑复核） | ${reverseSample.skipped ? '未执行' : `${reverseSample.checked.length}/${reverseSample.picked} 一致${reverseSample.untrustworthy.length ? `，**${reverseSample.untrustworthy.length} 个不一致**` : ''}`} | 出现「批内绿单跑红」= runner 不可信，本轮判红 |`,
       `| **INFRA-FAIL（runner IPC 崩，不是用例失败）** | ${infraFails.length} | 红保留（裁决 #614），但按 #611 修 runner —— **不要去改断言** |`,
+      `| **TIMEOUT（在档位内未跑完，不是断言失败）** | ${timeoutFails.length} | 判红（没定性不许当绿），但按 #733 查「卡死还是档位太紧」—— **不要去改断言** |`,
+      `| TIMEOUT-PASSED-ON-RERUN（超时 → 单跑复核绿） | ${timeoutPassed.length} | 绿，但不是「一次就绿」：档位偏紧的证据，见 \`tests/timing-baseline.json\` 的 \`timeoutClasses\`（#733） |`,
       `| INFRA-RETRIED（runner 崩过一次 → 单文件重跑绿） | ${infraRetried.length} | 绿，但不是「一次就绿」：留痕，见 #611 |`,
     )
+    if (timeoutPassed.length || timeoutFails.length) {
+      lines.push(
+        '',
+        `### TIMEOUT（超时 ≠ 断言失败，Issue #733）—— 默认档 ${timeoutPolicy.defaultMs}ms，逐文件档位见 \`${timeoutPolicy.source ?? '内置默认'}${timeoutPolicy.note ? `（${timeoutPolicy.note}）` : ''}\``,
+        '',
+      )
+      if (timeoutPassed.length) {
+        lines.push(`**TIMEOUT-PASSED-ON-RERUN ${timeoutPassed.length} 个 —— 超时后单跑复核通过（绿，但绿在复核上）：**`, '')
+        for (const r of timeoutPassed) lines.push(`- \`${r.file}\` —— 档 ${r.timeout?.class ?? 'default'} ${r.timeout?.budgetMs ?? '?'}ms；复核 ${r.timeout?.soloMs ?? '?'}ms 通过${r.timeoutAdvice ? `；⚠ ${r.timeoutAdvice}` : ''}`)
+        lines.push('')
+      }
+      if (timeoutFails.length) {
+        lines.push(`**TIMEOUT ${timeoutFails.length} 个 —— 判红，但这不是断言失败：**`, '')
+        for (const r of timeoutFails) lines.push(`- \`${r.file}\` —— ${r.error}`)
+        lines.push('')
+      }
+    }
     if (degraded.length) {
       lines.push(
         '',
@@ -1789,13 +2042,38 @@ async function main() {
   // 让跳过在报告里永远露头；判红门禁仍只看真实失败，避免把「产物没构建」误报成回归。
   const nodeSkips = results.filter((r) => (r.skips ?? 0) > 0)
   const failedCount = failures.length
+  /**
+   * #733：`passed` **不把 TIMEOUT-PASSED-ON-RERUN 算进去**。它们的绿来自「超时之后又跑了一次」，
+   * 与「一次就绿」不是同一件事 —— 混进 PASS 就等于把「档位不够」这条信息抹掉（#487 DEGRADED / #611 INFRA-RETRIED 同款口径）。
+   */
+  const passedCount = results.filter((r) => r.ok && !r.timeoutPassedOnRerun).length
   const report = {
     version: 1,
     totalMs,
     selected: planned.length,
     executed: results.length,
-    passed: results.filter((r) => r.ok).length,
+    passed: passedCount,
+    /** 判红的文件总数：= 断言红 + 超时（含复核仍超时）。分项见 `fail` / `timeout` */
     failed: failedCount,
+    /** #733：断言真红（TAP 判定的那一类）与超时真红分开数，`failed` 是它们的和 */
+    fail: { assert: assertFails.length, timeout: timeoutFails.length },
+    /**
+     * #733：超时这一类的完整账本。`classes` 是这次生效的超时档（数据源：tests/timing-baseline.json），
+     * `passedOnRerun` / `fail` 是两份名单 —— 谁也别想混进对方：
+     *   · `passedOnRerun`：超时 → 单跑复核通过（绿，但绿在复核上；不是断言失败）；
+     *   · `fail`：复核仍超时或没复核（判红，但类别是 TIMEOUT）。
+     */
+    timeout: {
+      classes: {
+        defaultMs: timeoutPolicy.defaultMs,
+        source: timeoutPolicy.source,
+        note: timeoutPolicy.note,
+        byClass: Object.fromEntries([...timeoutPolicy.classes].map(([name, spec]) => [name, spec.ms])),
+        files: Object.fromEntries([...timeoutPolicy.byFile].map(([file, name]) => [file, timeoutPolicy.classes.get(name)?.ms ?? timeoutPolicy.defaultMs])),
+      },
+      passedOnRerun: timeoutPassed.map((r) => ({ file: r.file, ...r.timeout })),
+      fail: timeoutFails.map((r) => ({ file: r.file, error: r.error, ...(r.timeout ?? {}) })),
+    },
     skipped: skips.length,
     skippedSubtests: nodeSkips.reduce((sum, r) => sum + (r.skips ?? 0), 0),
     /** #487：降级（批次资源不足 / 堆上限触顶）后串行重跑通过的名单，与 green 分开统计 */
@@ -1851,9 +2129,16 @@ async function main() {
     console.log(`已更新 unit 层权重表：${rel(UNIT_WEIGHTS_FILE)}（${Object.keys(files).length} 个文件）`)
   }
   if (!planned.length) console.error('No matching cases')
+  /**
+   * #733：`FAIL` 只数**断言真红**；超时自己一行 `TIMEOUT`（判红时也留在这个类别里）。
+   * 「超时被单跑复核救绿」的数量也必须露头 —— 那是「档位不够」的证据，不是「一切正常」。
+   */
   console.log(
-    `\nTotal ${results.length}: PASS ${report.passed}, FAIL ${failedCount}, SKIP(env) ${skips.length}, NODE-SKIP ${report.skippedSubtests}, DEGRADED ${degraded.length}, INFRA-RETRIED ${infraRetried.length}, INFRA-FAIL ${infraFails.length}${reverseSample.skipped ? '' : `, REVERSE-SAMPLE ${reverseSample.untrustworthy.length ? `UNTRUSTWORTHY(${reverseSample.untrustworthy.length})` : `ok ${reverseSample.checked.length}/${reverseSample.picked}`}`}; elapsed ${totalMs}ms`,
+    `\nTotal ${results.length}: PASS ${passedCount}, FAIL ${assertFails.length}, TIMEOUT ${timeoutFails.length}, TIMEOUT-PASSED-ON-RERUN ${timeoutPassed.length}, SKIP(env) ${skips.length}, NODE-SKIP ${report.skippedSubtests}, DEGRADED ${degraded.length}, INFRA-RETRIED ${infraRetried.length}, INFRA-FAIL ${infraFails.length}${reverseSample.skipped ? '' : `, REVERSE-SAMPLE ${reverseSample.untrustworthy.length ? `UNTRUSTWORTHY(${reverseSample.untrustworthy.length})` : `ok ${reverseSample.checked.length}/${reverseSample.picked}`}`}; elapsed ${totalMs}ms`,
   )
+  if (assertFails.length + timeoutFails.length) {
+    console.log(`     （判红合计 ${failedCount} = 断言真红 ${assertFails.length} + 超时 ${timeoutFails.length}；后者不是断言失败，别去改断言）`)
+  }
   /**
    * #513：DEGRADED 是**串扰规模**的计量表，不是「反正会兜底」的免罪符。
    * 阈值 5：超过就是回归（要回去查批次串扰 / 分组键 / UNIT_SOLO），不许无声无息地变成常态。
@@ -1873,6 +2158,23 @@ async function main() {
   }
   // #611：INFRA 必须**自己一段**打出来。塞进 FAIL 里等于把「runner 崩了」和「断言错了」写成一句话 ——
   // 下一个人就会去改一个没坏的断言（本单要治的就是这件事）。
+  /**
+   * #733：TIMEOUT 必须**自己一段**打出来。塞进 FAIL 里等于把「窗口不够/卡死」和「断言错了」写成一句话 ——
+   * 下一个人就会去改一个没坏的断言（本单要治的就是这件事，和 #611 的 INFRA 一个形状）。
+   */
+  if (timeoutPassed.length) {
+    console.log(`\nTIMEOUT-PASSED-ON-RERUN（超时 → 单跑复核通过，${timeoutPassed.length} 个；绿，但不是「一次就绿」）`)
+    for (const r of timeoutPassed) {
+      console.log(`  TIMEOUT-PASSED-ON-RERUN  ${r.file} —— 档 ${r.timeout?.class ?? 'default'} ${r.timeout?.budgetMs ?? '?'}ms：批内/单跑 ${Math.round((r.timeout?.firstRunMs ?? 0) / 1000)}s 未跑完 → 复核（预算 ${Math.round((r.timeout?.confirmMs ?? 0) / 1000)}s）${r.timeout?.soloMs ?? '?'}ms 通过`)
+      if (r.timeoutAdvice) console.log(`      ⚠ ${r.timeoutAdvice}`)
+    }
+    console.log('  这不是断言失败，也不是「用例变快了」：超时与负载相关。要消掉这一行，改 tests/timing-baseline.json 的档位（单一数据源）或把这个大文件按用例组拆小（#733 ③）')
+  }
+  if (timeoutFails.length) {
+    console.log(`\nTIMEOUT（超时且单跑复核仍超时/未复核，${timeoutFails.length} 个；**判红**，但类别是超时，不是断言失败）`)
+    for (const r of timeoutFails) console.log(`  TIMEOUT  ${r.file} —— ${r.error}`)
+    console.log('  处置：先看复核命令的实测耗时再动手 —— 真的卡死就去查它为什么卡；只是慢就把它拆小/调档，**不要删断言、不要 skip**（#456）')
+  }
   if (infraRetried.length) {
     console.log(`\nINFRA-RETRIED（runner IPC 崩过一次 → 单文件重跑通过，${infraRetried.length} 个；绿但不是「一次就绿」）`)
     for (const r of infraRetried) console.log(`  INFRA-RETRIED  ${r.file} —— 首次命中 ${INFRA_IPC_SIGNATURE.stackIncludes} 反序列化失败，重跑通过（#611）`)

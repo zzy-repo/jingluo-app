@@ -130,7 +130,7 @@ staging 上两者会打架（账户 `balance=2.02`，Key 侧 403，见第五节�
 | --- | --- | --- |
 | `POST /legacy/claim` | `src/legacy/migration/claim.ts:236 claimLegacyMigration`（body 四字段、`jwt` **在 body**、只发一次、绝不抛） | 🟡 层内已接 |
 | `GET /legacy/health` | 客户端**没有**探活调用（`grep -rn legacy/health src/` → 0） | ⛔ 未接 |
-| 登录/注册后调一次 | `src/services/auth/store.ts:236` 登录成功后 `void claimLegacyMigration(...)` | 🟡 接线在，但**开关关着就等于不跑**：`config/endpoints.json` 的 `migration.enabled=false`、`baseUrl=""`（`readMigrationConfig` 直接返回 `null`） |
+| 登录/注册后调一次 | `src/services/auth/store.ts` 里 `void claimLegacyMigration(...)` 那一处（登录成功后调用） | 🟡 接线在，但**开关关着就等于不跑**：`config/endpoints.json` 的 `migration.enabled=false`、`baseUrl=""`（`readMigrationConfig` 直接返回 `null`） |
 | 7 种 status 的 UI 处理 | `src/legacy/migration/types.ts:35 CLAIM_STATUSES` = `migrated / already_migrated / no_legacy / need_manual / expired / failed`，`failed` 再按 `retryable` 二分（共 7 种）+ `src/legacy/migration/LegacyMigrationButton.tsx` | 🟡 逻辑齐了，**按钮没有挂载点**：`grep -rn "LegacyMigrationButton" src/ \| grep -v legacy/migration/` → **0 命中** |
 | 整体 | 模块自包含、可单独挂载，但「没挂 + 没开 + 没有 https base」 | ⛔ **实际未接**（#676 七「需另外接」） |
 

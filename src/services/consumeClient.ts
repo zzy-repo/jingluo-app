@@ -11,17 +11,25 @@
  *  1. **不在本文件放业务逻辑**：只有「组装 + 复用」，请求命中哪些端点在 `services/consume/**`；
  *  2. **凭据只在调用瞬间取**：传的是函数不是值，JWT 续期 / 换 Key 之后下一条请求立刻生效；
  *  3. **不碰存储**：凭据存哪儿是 store / apiConfig 的事，这里连 localStorage 都不 import。
+ *
+ * 第四个参数 `onUnauthorized` 是 Issue #740 的接线（401 → 单飞刷新 → 重放）：
+ * 传输层只认状态码，刷新策略与单飞都在身份层（`auth/store.ts` 的 `handleUnauthorized`），
+ * 本文件只负责把两边接起来 —— **不接这一行就等于没做 #740**（401 会照旧直接抛给界面）。
  */
 
 import { getApiKey } from './api/apiConfig.js'
-import { getAccessToken } from './auth/store.js'
+import { getAccessToken, handleUnauthorized } from './auth/store.js'
 import { createConsumeClient, type ConsumeClient } from './consume/index.js'
 
 let client: ConsumeClient | null = null
 
 /** 取共享客户端（首次调用时创建）。凭据提供者在每次请求时求值，不会把旧 token 缓存下来。 */
 export const getConsumeClient = (): ConsumeClient => {
-  client ??= createConsumeClient({ accessToken: getAccessToken, apiKey: getApiKey })
+  client ??= createConsumeClient({
+    accessToken: getAccessToken,
+    apiKey: getApiKey,
+    onUnauthorized: handleUnauthorized,
+  })
   return client
 }
 

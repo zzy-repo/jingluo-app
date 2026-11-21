@@ -1,17 +1,26 @@
 /**
  * 登录态存储 —— W1-B 前半，Issue #487（#482 定调 / #484 §二「JWT 只进 header、刷新失败就清态回登录」）。
+ * 第一步的行为层由 Issue #740 补齐（401 单飞刷新 + 重放 + 切号清理），见下面第 5 条。
  *
- * 这个文件是身份层唯一有副作用的地方，做四件事：
+ * 这个文件是身份层唯一有副作用的地方，做五件事：
  *  1. **凭据落盘**（`AuthTokenStorage`）：默认写 localStorage 单键，**与 API Key 同级**
  *     （`chat-demo:api-key` 也是 localStorage，见 `src/services/api/apiConfig.ts`）。
  *     硬约束：**不许把 JWT 写进 IndexedDB 明文**（#484 §二）—— 所以这里连 `chat/db.ts` 都不 import。
- *  2. **启动恢复**（`restoreAuth`）：读盘 → 过期就先续（`refreshToken`）→ 用 `me()` 验一次。
- *  3. **续期**（`refreshSession`）：**失败即清态回登录**，不静默重试（#484 §二）。
- *  4. **订阅**（`subscribeAuth` / `useAuthStore`）：React 组件用 hook，非组件代码用 `subscribeAuth`。
+ *     **安全存储待 #740-②**：接 Keychain / Keystore 需要新增原生依赖，维护者还没放行，
+ *     所以当前暴露面**等价于 API Key**（同一条 XSS / 本地调试路径就能读走 30 天有效的 refresh_token）。
+ *  2. **启动恢复**（`restoreAuth`）：读盘 → 快过期才先续（`refreshSessionOnce`）→ 用 `me()` 验一次。
+ *     **不强制登录**：有 refresh_token 就静默换，换不到再说（#740 §五 第 1 条）。
+ *  3. **续期**（`refreshSessionOnce`）：**单飞**（并发 401 只发一次 `/auth/refresh`），
+ *     结果分三种（成功 / 会话失效 / 网络失败），只有「会话失效」才清态（#740 ①②⑤）。
+ *  4. **401 换凭据入口**（`handleUnauthorized`）：消费层 `http.ts` 的 `onUnauthorized` 钩子挂在这里 ——
+ *     业务请求 401 → 刷新一次 → 重放（重放由 http 层做，本文件只回答「换了没」）。
+ *  5. **清态与切号**（`clearSession`）：清 access + refresh + 账号级缓存（`purgeSessionCaches()`），
+ *     保证 A 退出后 B 登录看不到 A 的余额 / 卡密 / 消费记录（#740 ③④）。
  *
  * 与 W1-A 的接线点（两条，都是单行）：
  *  - `setAuthTransport(createAuthTransport(http))` —— 把 `src/services/consume/auth.ts` 的实现挂上来；
- *  - `createConsumeHttp({ accessToken: getAccessToken })` —— 反过来让消费层每次请求能取到最新的 JWT。
+ *  - `createConsumeHttp({ accessToken: getAccessToken, onUnauthorized: handleUnauthorized })`
+ *    —— 反过来让消费层每次请求能取到最新的 JWT，并在 401 时回来问「要不要刷新」。
  *    传输层没挂上时所有动作返回 `kind:'unavailable'`，界面照常渲染，不会崩也不会假登录。
  *
  * 顺带两条「不许」：token 不许进日志 / 埋点 / DOM 文本；`AuthSnapshot.token` 只给传输层用，
@@ -23,6 +32,9 @@
 
 import { create } from 'zustand'
 import { claimLegacyMigration } from '../../legacy/migration/index.js'
+import type { ConsumeRefreshDecision, ConsumeUnauthorizedInfo } from '../consume/http.js'
+import { registerAccountScopedCaches } from './accountCaches.js'
+import { purgeSessionCaches } from './sessionCache.js'
 import type {
   AuthLoginInput,
   AuthRegisterInput,
@@ -64,6 +76,11 @@ export type AuthStore = AuthSnapshot & {
   signOut: () => Promise<void>
   /** 发注册验证码：只影响 `sendingCode`，不动登录态 */
   sendCode: (input: AuthSendCodeInput) => Promise<AuthResult<AuthDone>>
+  /**
+   * 续期（布尔视图，为老调用点保留）：true = 现在又有一颗可用 token；false = 没换成
+   * （会话失效**或**网络失败 —— 想知道是哪一种请用导出的 `refreshSessionOnce()` 拿三态）。
+   * 走的是**单飞**：并发调用只会发一次 `/auth/refresh`（#740 ②）。
+   */
   refreshSession: () => Promise<boolean>
   restore: () => Promise<void>
   /**
@@ -80,9 +97,11 @@ export type AuthStore = AuthSnapshot & {
 /**
  * 凭据存储口子：默认 localStorage，**留给原生安全存储替换**（Capacitor Preferences / Android Keystore）。
  *
- * TODO(W1-B 后半)：接原生安全存储时只替换这一个对象（`setAuthTokenStorage`），
- * 上层 store 与 UI 一行都不用改；在那之前 localStorage 已经是「与 API Key 同级」，
- * 满足 #484 §二的最低要求（不许 IndexedDB 明文）。
+ * **安全存储待 #740-②**：接 Keychain / Keystore 要新增原生依赖（`@capacitor/preferences` 的 secure
+ * 选项 / 自写插件），维护者还没放行，所以本单（#740 第一步）**不动存储介质** —— 仍然是这个 seam，
+ * 默认实现仍是 localStorage。⚠️ 当前暴露面**等价于 API Key**（`chat-demo:api-key` 也是明文
+ * localStorage）：WebView 里的 XSS 或本地调试都能读走 30 天有效的 refresh_token，等于长期账号接管。
+ * 换存储时只替换这一个对象（`setAuthTokenStorage`），上层 store 与 UI 一行都不用改。
  */
 export type AuthTokenStorage = {
   read: () => string | null
@@ -221,6 +240,8 @@ const needsRefresh = (token: AccessToken): boolean =>
 // --------------------------------------------------------------------------- 动作
 
 const applySession = (session: AuthSession): void => {
+  // 新会话开始：代次 +1，正在飞的旧刷新从此不再有资格落地（见 `sessionEpoch`）
+  sessionEpoch += 1
   writePersisted(session.token, session.user)
   useAuthStore.setState({
     state: 'authenticated',
@@ -236,12 +257,21 @@ const applySession = (session: AuthSession): void => {
   try { void claimLegacyMigration(session.token.accessToken) } catch { /* 迁移永不影响登录 */ }
 }
 
-/** 清态回登录页：落盘一起清（#484 §二「刷新失败就清登录态」） */
+/**
+ * 清态回登录页：落盘一起清（#484 §二「刷新失败就清登录态」）。
+ *
+ * 一共清三样（#740 ④）：**access + refresh**（同一个落盘键）+ **账号级缓存**
+ * （`purgeSessionCaches()`：余额 / 卡密 / 消费记录 / cid … 见 `accountCaches.ts`）。
+ * 少了最后一样，A 退出、B 登录之后 B 就会看到 A 的数据 —— 这是「切号串数据」的唯一来源。
+ */
 const clearSession = (
   next: Extract<AuthState, 'unauthenticated' | 'expired'>,
   error: AuthError | null = null
 ): void => {
+  // 代次 +1：这一代之后的刷新结果一律作废（迟到的刷新不许把刚清掉的凭据写回去）
+  sessionEpoch += 1
   tokenStorage.write(null)
+  purgeSessionCaches()
   useAuthStore.setState({
     state: next,
     token: null,
@@ -300,41 +330,160 @@ const signUp = async (input: AuthRegisterInput): Promise<AuthResult<AuthUser>> =
   return { ok: true, data: result.data.user }
 }
 
+// --------------------------------------------------------------------------- 续期（单飞）
+
 /**
- * 续期：**失败就清态回登录，绝不静默重试**（#484 §二）。
- * 返回 true = 现在又有一颗可用 token；false = 已经回到登录页。
+ * 一次续期的**结局**（#740 ①）：
+ *  - `refreshed`：换到了新的一对 token，可以重放；
+ *  - `expired`  ：会话真的没了（刷新被 401 拒 / 没有 refresh_token / 传输层没挂）→ 已清态回登录；
+ *  - `retryable`：**这次**没换成，但套 token 仍然保留（网络 / 超时 / 5xx / 429）→ 稍后重试有意义。
+ *
+ * 为什么不折成 boolean：这三种结局对应的界面行为完全不同（重放 / 回登录页 / 提示重试），
+ * 而「网络抖动」折成 false 就是把人白踢下线 —— 那是 #484 之后最容易被写回来的一处回归。
  */
-const refreshSession = async (): Promise<boolean> => {
+export type SessionRefreshOutcome = 'refreshed' | 'expired' | 'retryable'
+
+/**
+ * 单飞槽（single-flight，#740 ②）：**同一时刻只允许一次 `/auth/refresh`**。
+ *
+ * 场景：页面一开就并发 5 个业务请求，token 恰好过期 → 5 个 401 → 若各刷各的，会打 5 次
+ * `/auth/refresh`；服务端**轮换 refresh_token** 时，后发的那次会把先发的那对顶掉，表现成
+ * 「莫名其妙掉登录」。所以这里让它们**等同一个 promise**，拿到的都是同一份新 token，然后各自重放。
+ */
+let refreshInFlight: Promise<SessionRefreshOutcome> | null = null
+
+/**
+ * 会话代次（#740 ④「退出后不能还能进」）：每次**建立**会话（登录 / 注册）或**清掉**会话都 +1。
+ *
+ * 为什么单飞还需要它：刷新是一条**在飞**的网络请求，用户完全可能在它回来之前就点了退出
+ * （或者在这期间登了另一个号）。没有代次校验的话，迟到的刷新结果会 `writePersisted()` 把
+ * 刚清掉的凭据又写回去 —— 表现为「点了退出，重开还是在登录态」，或更糟：A 的 token 盖掉 B 的。
+ * 所以刷新**只在自己开始时那一代仍然是当前代**时才落地。
+ */
+let sessionEpoch = 0
+
+/**
+ * 刷新失败的性质判定：**只有「凭据本身不认」才清态**（#740 ①）。
+ *
+ * 清态判据（任一成立）：HTTP 401、`REFRESH_TOKEN_EXPIRED` / `REFRESH_TOKEN_INVALID` 这类码、
+ * 或归一化后的 `kind === 'auth'`（凭据类，含账号被停用）。
+ * 其余（网络 / 超时 / 5xx / 429）一律**保留 token**：让用户重试，而不是重登。
+ */
+const REFRESH_SESSION_CODES = [
+  'REFRESH_TOKEN_EXPIRED',
+  'REFRESH_TOKEN_INVALID',
+  'REFRESH_TOKEN_REVOKED',
+  'TOKEN_EXPIRED',
+  'TOKEN_REVOKED',
+  'UNAUTHORIZED',
+  'INVALID_TOKEN',
+]
+
+const isRefreshCredentialLost = (error: AuthError): boolean =>
+  error.status === 401 || error.kind === 'auth' || REFRESH_SESSION_CODES.includes(error.code)
+
+/**
+ * 刷新成功后的落盘（#740 ③「整体覆盖」）。
+ *
+ * `/auth/refresh` 回的是**完整的一对 token**（可能顺手轮换了 refresh_token），所以这里**整体替换**
+ * 本地会话，而不是只改 access_token —— 只改一半的话，一旦后端轮换，本地留着的旧 refresh_token
+ * 下一秒就失效，表现同样是「莫名其妙掉登录」。
+ *
+ * 唯一的例外：这次响应**没带** refresh_token 时才沿用旧的。把「没回」当成「作废」会把人误踢下线
+ * （实测会轮换，但「没回」与「作废」是两件事）。
+ */
+const applyRefreshedToken = (fresh: AccessToken, previousRefreshToken: string): void => {
+  const next: AccessToken = { ...fresh, refreshToken: fresh.refreshToken ?? previousRefreshToken }
+  writePersisted(next, useAuthStore.getState().user)
+  useAuthStore.setState({ state: 'authenticated', token: next, error: null, submitting: false })
+}
+
+/** 真发一次刷新（**只从 `refreshSessionOnce` 进**，否则单飞就漏了） */
+const performRefresh = async (): Promise<SessionRefreshOutcome> => {
+  const startedAtEpoch = sessionEpoch
   const current = useAuthStore.getState().token
   const refreshToken = current?.refreshToken
   if (!transport || !refreshToken) {
+    // 没有 refresh_token（老数据 / 传输层没挂）：会话无法续，只能回登录页
     clearSession('expired')
-    return false
+    return 'expired'
   }
   let result: AuthResult<AccessToken>
   try {
     result = await transport.refreshToken({ refreshToken })
   } catch (thrown) {
-    clearSession('expired', unexpected(thrown))
-    return false
+    // 传输层违约（抛异常）≠ 会话失效：**保留 token**，把「稍后重试」交给界面
+    useAuthStore.setState({ error: unexpected(thrown) })
+    return 'retryable'
   }
   if (!result.ok) {
-    clearSession('expired', result.error)
-    return false
+    if (isRefreshCredentialLost(result.error)) {
+      clearSession('expired', result.error)
+      return 'expired'
+    }
+    // 网络 / 5xx / 429：保留 token（**不清态**），只把错误挂到快照上给界面提示重试
+    useAuthStore.setState({ error: result.error })
+    return 'retryable'
   }
-  // 服务端这次没回 refresh_token 时沿用旧的（实测会轮换，但别把「没回」当成「作废」）
-  const next: AccessToken = {
-    ...result.data,
-    refreshToken: result.data.refreshToken ?? refreshToken,
+  if (startedAtEpoch !== sessionEpoch) {
+    // 刷新期间会话被清掉（用户退出）或被换掉（登了另一个号）：**结果作废**，不许写回本地。
+    // 按「会话已经没了」返回 —— 调用方不需要重放，也不需要再清一次（`clearSession` 已经清过了）。
+    return 'expired'
   }
-  writePersisted(next, useAuthStore.getState().user)
-  useAuthStore.setState({ state: 'authenticated', token: next, error: null, submitting: false })
-  return true
+  applyRefreshedToken(result.data, refreshToken)
+  return 'refreshed'
+}
+
+/**
+ * 续期入口（单飞）：并发调用共用同一个 promise，**只发一次** `/auth/refresh`。
+ * 结束后立刻放槽（`finally`），下一次真 401 会重新发起 —— 但同一个请求不会因为「重放后仍 401」
+ * 再进来一次（那次重放不再问钩子，见 `consume/http.ts` 的 `request()`）。
+ */
+export const refreshSessionOnce = (): Promise<SessionRefreshOutcome> => {
+  if (refreshInFlight !== null) {
+    return refreshInFlight
+  }
+  refreshInFlight = performRefresh().finally(() => {
+    refreshInFlight = null
+  })
+  return refreshInFlight
+}
+
+/**
+ * 「续期成功了吗」的布尔视图：给 `AuthStore.refreshSession` 与启动恢复用（老调用点不用改）。
+ * 新代码想知道「为什么没成」请用 `refreshSessionOnce()` 拿三态。
+ */
+const refreshSession = async (): Promise<boolean> => (await refreshSessionOnce()) === 'refreshed'
+
+/**
+ * 消费层 401 钩子（#740 ①②）：`createConsumeHttp({ onUnauthorized: handleUnauthorized })`。
+ *
+ * 这是**唯一**把「业务请求 401」翻译成「刷新 / 放弃」的地方：`http.ts` 只管状态码与重放，
+ * 策略（什么时候清态、什么错误保留 token）全在这里。参数只含路由与动作，**不进日志、不进埋点**。
+ */
+export const handleUnauthorized = async (info: ConsumeUnauthorizedInfo): Promise<ConsumeRefreshDecision> => {
+  // 刻意**不**记录 path / method：这条路径每次 token 过期都会走，写进诊断日志只是噪音，
+  // 而且 #387 的红线是「凭据类与可识别信息不进日志」—— 一个「哪个接口 401 了」的埋点很容易
+  // 顺手把 header 一起带进去。只回答「换没换成」。
+  void info
+  const outcome = await refreshSessionOnce()
+  if (outcome === 'refreshed') {
+    return 'retry'
+  }
+  return outcome === 'expired' ? 'expired' : 'retryable'
 }
 
 /**
  * 退出登录：先尽力让服务端把该账号的会话全部作废（`revoke-all-sessions`），**再**清本地。
  * 顺序不能反 —— 反了就没有 JWT 可发了，服务端会话会留在那儿。
+ *
+ * 端点说明（#740 ④ 写的是 `POST /api/v1/auth/logout`）：客户端**刻意**调
+ * `POST /api/v1/auth/revoke-all-sessions`，理由与实测见 `docs/consume-676-contract-audit.md` §D-676-2
+ * —— staging 上 `/auth/logout` 是 **502**，`revoke-all-sessions` 回 200；换成契约里那条只会把
+ * 「能跑 + 会如实报未确认」换成 502。语义上它就是「退出（这台设备之外的会话也一并作废）」。
+ *
+ * 本地清三样（#740 ④）：access + refresh（`clearSession` 的落盘清空）+ **账号级缓存**
+ * （同一处调 `purgeSessionCaches()`）—— 少了最后一样，B 登录就会看到 A 的余额 / 卡密 / 消费记录。
  */
 const signOut = async (): Promise<void> => {
   if (transport) {
@@ -375,10 +524,14 @@ const sendCode = async (input: AuthSendCodeInput): Promise<AuthResult<AuthDone>>
 let restoring: Promise<void> | null = null
 
 /**
- * 启动恢复：读盘 → 需要就续期 → `me()` 校验一次。
+ * 启动恢复：读盘 → 需要就续期 → `me()` 校验一次。**不强制登录**（#740 §五 第 1 条）：
+ * 盘上有 refresh_token 就静默续，续不上再按下面的规则「清态 / 保留」。
  *
- * 三处刻意的取舍：
+ * 四处刻意的取舍：
  *  - **传输层没挂上时保留本地会话**（`state:'authenticated'`）：W1-A 合并前不能把人无端登出；
+ *  - 续期只在**快过期**时做（`needsRefresh`），不是每次启动都换 —— 多一次网络往返换不来什么，
+ *    而「401 再刷」已经由 `handleUnauthorized` 兜住了；
+ *  - 续期失败分两种（#740 ①）：凭据不认 → 清态回登录；网络 / 5xx → **保留会话**、不打 `me()`；
  *  - `me()` 失败只在 `kind === 'auth'` 时清态，网络错误保留会话（离线启动不该被当成「密码错了」）；
  *  - 幂等：`restored` 为 true 直接返回，并发调用共用同一个 promise（启动接线与 AuthGate 都会调）。
  */
@@ -401,9 +554,19 @@ export const restoreAuth = async (): Promise<void> => {
       user: persisted.user,
       error: null,
     })
-    if (needsRefresh(persisted.token) && !(await refreshSession())) {
-      // refreshSession 内部已经清态回登录（expired），这里不用再补动作
-      return
+    if (needsRefresh(persisted.token)) {
+      const outcome = await refreshSessionOnce()
+      if (outcome === 'expired') {
+        // `performRefresh` 内部已经清态回登录（expired），这里不用再补动作
+        return
+      }
+      if (outcome === 'retryable') {
+        // 网络 / 超时 / 5xx：**保留本地会话**（#740 ①⑤）—— 一次离线不该把人登出。
+        // 也不打 `me()`：token 已经过期，这时候打它只会再拿一个 401 回来，把人误判成「凭据失效」。
+        // 真过期的话，下一条业务请求自己会 401 → `handleUnauthorized` → 再刷一次（那时可能就有网了）。
+        useAuthStore.setState({ state: 'authenticated', restored: true })
+        return
+      }
     }
     if (!transport) {
       useAuthStore.setState({ state: 'authenticated', restored: true })
@@ -462,6 +625,13 @@ const abandonRestore = (): void => {
 }
 
 // --------------------------------------------------------------------------- store
+
+/**
+ * 账号级缓存清单登记（#740 ④）：放在**模块初始化**而不是 `main.tsx`，是因为
+ * 「少一行接线 = 切号串数据」，而这条链上任何入口（界面 / 单测 / 传输层）只要 import 到 store，
+ * 清态时就一定能把业务缓存一起清掉（清单内容见 `accountCaches.ts`，幂等）。
+ */
+registerAccountScopedCaches()
 
 /** 登录态 store：快照 + 动作（动作在上面，初值里直接引用，避免 TDZ） */
 export const useAuthStore = create<AuthStore>(() => ({
