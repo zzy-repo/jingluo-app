@@ -106,7 +106,7 @@ test('V3：覆盖后与 pay 相同 → 抛（两个后端职责不能混）', ()
 })
 
 test('V4：路径 / 查询串 / 凭据 / 末尾斜杠 → 抛（base 只能是 scheme + host + 端口）', () => {
-  expectThrows({ [BASE_OVERRIDE_ENV.consume]: 'https://example-staging.test/api/v1' }, /不许带路径/)
+  expectThrows({ [BASE_OVERRIDE_ENV.consume]: 'https://example-staging.test/api/v1' }, /会拼成双份前缀/)
   expectThrows({ [BASE_OVERRIDE_ENV.consume]: 'https://example-staging.test?a=1' }, /不许带查询串/)
   expectThrows({ [BASE_OVERRIDE_ENV.consume]: 'https://user:pass@example-staging.test' }, /不许带凭据/)
   expectThrows({ [BASE_OVERRIDE_ENV.consume]: 'https://example-staging.test/' }, /末尾不要带 \//)

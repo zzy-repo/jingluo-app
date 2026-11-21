@@ -249,11 +249,23 @@ const checkBase = (problems, keyLines, key, value, extraLegacyHosts, label = END
   if (url.search || url.hash) {
     problems.push(`${at} ${key} 只能是「https://主机[:端口]」，不许带查询串 / 片段：${value}`)
   }
-  if (url.pathname !== '/' && url.pathname !== '') {
-    problems.push(
-      `${at} ${key} 只能是「https://主机[:端口]」，不许带路径：${value}` +
-        '（两套前缀由 apiV1Prefix / gatewayPrefix 拼，写在 base 上会拼成双份）'
+  // 允许**路径前缀**（如 `/staging`）：客户端拼装是 `${baseUrl}${path}`（见 src/services/consume/http.ts），
+  // base 带 `/staging` 与 path 带 `/api/v1` 拼出来的正是 `/staging/api/v1/...`，不会双份。
+  // 真正要防的是「base 自己已经含了前缀」→ 那才会拼成 `/api/v1/api/v1`。见 #727 P0 裁决（2026-11-21）。
+  const basePath = url.pathname.replace(/\/+$/, '')
+  if (basePath !== '' && basePath !== '/') {
+    const doubled = [EXPECTED_API_V1_PREFIX, EXPECTED_GATEWAY_PREFIX].some(
+      (prefix) => basePath === prefix || basePath.endsWith(prefix)
     )
+    if (doubled) {
+      problems.push(
+        `${at} ${key} 的路径前缀已经包含 ${EXPECTED_API_V1_PREFIX} / ${EXPECTED_GATEWAY_PREFIX}，会拼成双份前缀：${value}` +
+          '（base 只写环境前缀，如 `/staging`；两套接口前缀由 apiV1Prefix / gatewayPrefix 拼）'
+      )
+    }
+    if (basePath.includes('//')) {
+      problems.push(`${at} ${key} 的路径前缀里出现连续斜杠：${value}`)
+    }
   }
   if (value.trim().endsWith('/')) {
     problems.push(`${at} ${key} 末尾不要带 /：${value}（拼 /api/v1/... 会变成 //api/v1/...）`)

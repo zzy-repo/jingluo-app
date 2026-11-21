@@ -172,7 +172,7 @@ test('B2 构建期脚本：allowInsecure 时明文 + 黑名单两条都放行，
 test('B3 构建期脚本：放行只覆盖「明文 + 旧池域」两条 —— 形态判据与 consume≠pay 一条不放宽', () => {
   const withPath = { ...CONFIG, consume: { ...CONFIG.consume, baseUrl: `${STAGING_HTTP}/api/v1` } }
   assert.ok(
-    validateConsumePay(withPath, '', { allowInsecure: true }).some((line) => /不许带路径/.test(line)),
+    validateConsumePay(withPath, '', { allowInsecure: true }).some((line) => /会拼成双份前缀/.test(line)),
     '带路径仍然要拒（放行不等于不校验形状）',
   )
   const sameAsPay = { ...CONFIG, consume: { ...CONFIG.consume, baseUrl: CONFIG.pay.baseUrl } }
@@ -218,4 +218,23 @@ test('S1 接缝：三层的载体都在（gradle flag+标记 / rspack 注入 / e
   // ③ 运行时：读产物里的标记
   assert.match(envDts, /readonly insecureConsume: boolean/, '__ENDPOINTS__ 的类型里要有这个字段')
   assert.match(http, /insecureConsume === true/, '运行时判据必须是产物标记（运行时读不到 -P / env）')
+})
+
+// ───────── P0（2026-11-21 裁决）：允许「环境路径前缀」，只拒「双份前缀」 ─────────
+// 客户端拼装是 `${baseUrl}${path}`（src/services/consume/http.ts:346），
+// base 带 /staging + path 带 /api/v1 → /staging/api/v1，不会双份。
+test('P0-1 allowInsecure + 路径前缀 /staging：硬错误里不再出现「不许带路径」', () => {
+  const raw = { ...CONFIG, consume: { ...CONFIG.consume, baseUrl: `${STAGING_HTTP}/staging` } }
+  const problems = validateConsumePay(raw, '', { allowInsecure: true })
+  assert.equal(
+    problems.filter((line) => /不许带路径/.test(line)).length,
+    0,
+    `环境路径前缀不该被拦：${problems.join(' | ')}`,
+  )
+})
+
+test('P0-2 https + 路径前缀 /staging（正式形态）：零硬错误，且不需要明文放行', () => {
+  const raw = { ...CONFIG, consume: { ...CONFIG.consume, baseUrl: 'https://apia.ecsafe.cn/staging' } }
+  const problems = validateConsumePay(raw, '')
+  assert.deepEqual(problems, [], `https + /staging 应当完全合法：${problems.join(' | ')}`)
 })

@@ -19,7 +19,7 @@
     "fallbackBase": "https://dl.rose7.cn"
   },
   "consume": {
-    "baseUrl": "https://sub2api.rose7.cn",
+    "baseUrl": "https://apia.ecsafe.cn/staging",
     "apiV1Prefix": "/api/v1",
     "gatewayPrefix": "/v1",
     "timeoutMs": {
