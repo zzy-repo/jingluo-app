@@ -125,8 +125,22 @@ const openPage = async ({ kind, baseUrl, model, url = APP_URL }) => {
       window.localStorage.clear()
       window.localStorage.setItem('chat-demo:provider-kind', kind)
       window.localStorage.setItem('chat-demo:api-key', key)
-      window.localStorage.setItem('chat-demo:base-url', baseUrl)
-      window.localStorage.setItem('chat-demo:model', model)
+      /**
+       * 地址 / 模型按渠道分开存（`apiConfig.scopedKey()`）：自填渠道（anthropic / openai）读的是
+       * `chat-demo:base-url:<渠道>` / `chat-demo:model:<渠道>`，共享键只属于 DeepSeek 官方那一条。
+       *
+       * #490 之后这条区别是硬的：以前这里只写共享键，自填渠道等于**地址与模型都没填**，
+       * 请求靠 `getBaseUrl()/getModel()` 的构建期兜底发去了官方主机 —— 那正是 #490 要拦的
+       * 「必错配置」（发送前就会停下，本文件 8 个用例会全部卡在等回复上）。
+       * 写对按渠道的键，请求才真的发往用例配置的那个地址（mock 按 path 拦截，不受主机影响）。
+       */
+      window.localStorage.setItem(`chat-demo:base-url:${kind}`, baseUrl)
+      window.localStorage.setItem(`chat-demo:model:${kind}`, model)
+      if (kind === 'deepseek') {
+        // 内置渠道（只有它）的地址 / 模型走共享键（#339）
+        window.localStorage.setItem('chat-demo:base-url', baseUrl)
+        window.localStorage.setItem('chat-demo:model', model)
+      }
     },
     { kind, baseUrl, model, key: KEY }
   )
