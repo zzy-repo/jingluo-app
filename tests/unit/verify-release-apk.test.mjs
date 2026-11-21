@@ -30,13 +30,14 @@ import { after, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 import {
+  CERT_ENV_VAR,
   CHECKS,
-  EXPECTED_CERT_SHA256,
   EXIT_FAIL,
   EXIT_OK,
   EXIT_UNKNOWN,
   parseBadgingVersion,
   parseCertDigests,
+  resolveExpectCert,
 } from '../../scripts/verify-release-apk.mjs';
 import { buildFixtures, cleanupFixtures, skipReason } from '../helpers/apk-release-fixtures.mjs';
 
@@ -70,16 +71,45 @@ test('五件套就是五项，顺序与 id 固定（少一项 = 报告里会少�
   for (const item of CHECKS) assert.match(item.title, /^\d+ /, '每项都要带序号，表格里靠它跟 --json 对齐');
 });
 
-test('默认证书指纹与 config/appIdentity.json 的 expectedCertSha256 一致（Issue #271 的唯一记录点）', () => {
-  // gradle 的 EXPECTED_CERT_SHA256 是从 config/appIdentity.json 派生的（见 android/app/build.gradle），
-  // 所以这里对着那份配置比 —— 脚本里写死的常量一旦漂移，这条立刻红。
+/** 解析用例用的合成指纹：64 位十六进制即可，**不是**已发布证书（真实值只在 config/appIdentity.json） */
+const SAMPLE_CERT = '0123456789abcdef'.repeat(4);
+
+test('期望证书指纹只从单一来源来：脚本里零字面量副本（#705）', () => {
+  // #705：这里原来钉的是 `EXPECTED_CERT_SHA256 === config 的值` —— 那等于承认「同一事实的第三份副本」
+  // 存在、只靠一条单测防漂移。现在钉的是**来源**：脚本自己不许再存这个值。
   const identity = JSON.parse(fs.readFileSync(path.join(ROOT, 'config/appIdentity.json'), 'utf8'));
   assert.match(identity.expectedCertSha256, /^[0-9a-f]{64}$/, 'config/appIdentity.json 里没有可用的 expectedCertSha256');
-  assert.equal(
-    EXPECTED_CERT_SHA256,
-    identity.expectedCertSha256,
-    '脚本里的默认证书指纹与 config/appIdentity.json 不一致：换证书是发布级迁移，不许只改一处',
-  );
+
+  const resolved = resolveExpectCert({ env: {} });
+  assert.equal(resolved.value, identity.expectedCertSha256, '缺省值必须来自 config/appIdentity.json');
+  assert.equal(resolved.source, 'config/appIdentity.json', '缺省值的来源要写明是那份配置（不是本脚本）');
+  assert.equal(resolved.invalid, null);
+
+  const source = fs.readFileSync(path.join(ROOT, 'scripts/verify-release-apk.mjs'), 'utf8');
+  const literals = source.match(/\b[0-9a-fA-F]{64}\b/g) ?? [];
+  assert.deepEqual(literals, [], `verify-release-apk.mjs 里不该再有证书指纹字面量（那就是第三份副本）：${literals.join(', ')}`);
+  assert.doesNotMatch(source, /^export const EXPECTED_CERT_SHA256/m, '不再导出那份字面量常量（注释里提它没关系，代码里不许有）');
+});
+
+test('覆盖顺序：--expect-cert > $VERIFY_APK_EXPECT_CERT > config/appIdentity.json；显式坏值 fail-closed', () => {
+  const viaCli = resolveExpectCert({ expectCert: SAMPLE_CERT.toUpperCase(), env: {} });
+  assert.deepEqual(viaCli, { value: SAMPLE_CERT, source: '--expect-cert', invalid: null }, '参数优先，且大小写归一');
+
+  const viaEnv = resolveExpectCert({ env: { [CERT_ENV_VAR]: SAMPLE_CERT } });
+  assert.deepEqual(viaEnv, { value: SAMPLE_CERT, source: `$${CERT_ENV_VAR}`, invalid: null });
+
+  const cliWins = resolveExpectCert({ expectCert: SAMPLE_CERT, env: { [CERT_ENV_VAR]: 'f'.repeat(64) } });
+  assert.equal(cliWins.value, SAMPLE_CERT, '参数比环境变量优先');
+  assert.equal(cliWins.source, '--expect-cert');
+
+  // 空白 = 没给（不要让它把「没给」悄悄变成「给了空值」）
+  assert.equal(resolveExpectCert({ expectCert: '   ', env: { [CERT_ENV_VAR]: '  ' } }).source, 'config/appIdentity.json');
+
+  // 显式坏值 → 判不出来（exit 2 口径），不是「第 4 项 FAIL」：否则会被读成「APK 签错了」
+  const bad = resolveExpectCert({ expectCert: 'not-a-sha256', env: {} });
+  assert.equal(bad.value, null);
+  assert.equal(bad.source, '--expect-cert');
+  assert.match(bad.invalid, /64 位小写十六进制/);
 });
 
 test('import 校验脚本/check-apk-debuggable 不会顺带跑 CLI（复用方不该被副作用带走）', () => {
@@ -108,10 +138,10 @@ test('解析器：badging 首行的 versionName / versionCode / packageName', ()
 test('解析器：apksigner --print-certs 的 SHA-256（多 signer 全收，十六进制统一小写）', () => {
   const out = [
     'Signer #1 certificate DN: C=US, O=Android, CN=Android Debug',
-    `Signer #1 certificate SHA-256 digest: ${EXPECTED_CERT_SHA256.toUpperCase()}`,
+    `Signer #1 certificate SHA-256 digest: ${SAMPLE_CERT.toUpperCase()}`,
     'Signer #1 certificate SHA-1 digest: 1bf254cc4881ca14a32379b7c487de4ad9548b5e',
   ].join('\n');
-  assert.deepEqual(parseCertDigests(out), [EXPECTED_CERT_SHA256]);
+  assert.deepEqual(parseCertDigests(out), [SAMPLE_CERT]);
   assert.deepEqual(parseCertDigests('no certs here'), []);
   assert.deepEqual(parseCertDigests(undefined), []);
 });
@@ -146,6 +176,49 @@ test('不是 APK（一段文本）→ exit 2', () => {
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('显式给的 --expect-cert 格式不对 → exit 2 且点名格式（不许当成「第 4 项 FAIL」）', () => {
+  const result = runCli([path.join(ROOT, 'package.json'), '--expect-cert', 'deadbeef']);
+  assert.equal(result.status, EXIT_UNKNOWN, `坏值必须 exit 2，实际 ${result.status}\n${combined(result)}`);
+  assert.match(combined(result), /期望值判不出来/);
+  assert.match(combined(result), /64 位小写十六进制/);
+  assert.doesNotMatch(combined(result), /FAIL/, '这不是「APK 签错了」，是期望值本身坏了');
+});
+
+test('无仓库上下文（scripts/ 复制到 /tmp，没有 config/）→ exit 2 fail-closed 并指路显式给值（#705）', () => {
+  // #705 的 fail-closed 路径：本文件不再留字面量默认值，所以「配置读不到」必须明确判不出来，
+  // 而不是悄悄用一个内置默认值继续跑。同时证明逃生口有效：给了 --expect-cert 就能越过这一关。
+  const tree = fs.mkdtempSync(path.join(os.tmpdir(), 'verify-apk-norepo-'));
+  try {
+    for (const dir of ['scripts', 'deploy', 'shared']) {
+      fs.cpSync(path.join(ROOT, dir), path.join(tree, dir), { recursive: true });
+    }
+    const cli = path.join(tree, 'scripts', 'verify-release-apk.mjs');
+    const junk = path.join(tree, 'junk.apk');
+    fs.writeFileSync(junk, '这不是 APK\n');
+    const run = (args) => spawnSync(process.execPath, [cli, ...args], {
+      cwd: tree,
+      encoding: 'utf8',
+      timeout: 120_000,
+      env: { ...process.env, LANG: process.env.LANG ?? 'zh_CN.UTF-8', [CERT_ENV_VAR]: '' },
+    });
+
+    const noRepo = run([junk]);
+    assert.equal(noRepo.status, EXIT_UNKNOWN, `读不到期望值必须 exit 2\n${combined(noRepo)}`);
+    assert.match(combined(noRepo), /期望值判不出来/, '要明确说「期望值判不出来」，不能只说 APK 有问题');
+    assert.match(combined(noRepo), /config\/appIdentity\.json/);
+    assert.match(combined(noRepo), /--expect-cert/, '要指路：显式给值就能跑');
+    assert.match(combined(noRepo), new RegExp(`\\$${CERT_ENV_VAR}`), '环境变量口也要写出来');
+
+    // 逃生口：显式给值 → 越过「读不到期望值」，进入后面的 APK 判定（这里故意不是合法 APK）
+    const explicit = run([junk, '--expect-cert', SAMPLE_CERT]);
+    assert.doesNotMatch(combined(explicit), /期望值判不出来/, `给了 --expect-cert 就不该再卡在期望值上\n${combined(explicit)}`);
+    assert.equal(explicit.status, EXIT_UNKNOWN, '坏 APK 仍然 exit 2（fail-closed 不变）');
+  } finally {
+    fs.rmSync(tree, { recursive: true, force: true });
+  }
+});
+
 
 test('文件不存在 / 少参数 / 变体名非法 → exit 2 且给用法', () => {
   const missing = runCli([path.join(ROOT, 'no-such-file.apk')]);
@@ -311,4 +384,49 @@ test('P5 --json 是结构化结果（workflow / 脚本消费的那份形状）',
   assert.equal(insecureRed.ok, false);
   assert.equal(insecureRed.insecure, true);
   assert.deepEqual(insecureRed.failing, ['insecure']);
+});
+
+// ────────────────────── 4. #705 负向对照：期望值真的来自配置，不是脚本里的默认值 ──────────────────────
+
+/** 末位十六进制 +1（仍是合法 64 位小写十六进制）：模拟「有人手滑改了配置里的期望值」 */
+const bumpLastHex = (sha) => {
+  const last = (parseInt(sha.slice(-1), 16) + 1) % 16;
+  return `${sha.slice(0, -1)}${last.toString(16)}`;
+};
+
+test('N6 临时树里把 config 的期望值改一个字 → 证书判据必须红（期望值取自配置，#705）', SKIP, () => {
+  // 这条是 #705 的负向对照，且**不碰真仓库**：把 scripts/deploy/shared + 一份被改坏的 config
+  // 复制到临时树，让那个副本自己去读配置 —— 也就是说「配置改了、脚本没改」必须红。
+  // 若脚本里还留着字面量默认值（或悄悄回落到一个内置值），这里会误判成 PASS。
+  const built = fixtures();
+  const tree = fs.mkdtempSync(path.join(os.tmpdir(), 'verify-apk-neg705-'));
+  try {
+    for (const dir of ['scripts', 'deploy', 'shared']) {
+      fs.cpSync(path.join(ROOT, dir), path.join(tree, dir), { recursive: true });
+    }
+    const identity = JSON.parse(fs.readFileSync(path.join(ROOT, 'config/appIdentity.json'), 'utf8'));
+    const typoed = bumpLastHex(identity.expectedCertSha256);
+    assert.notEqual(typoed, identity.expectedCertSha256);
+    fs.mkdirSync(path.join(tree, 'config'), { recursive: true });
+    fs.writeFileSync(
+      path.join(tree, 'config/appIdentity.json'),
+      `${JSON.stringify({ ...identity, expectedCertSha256: typoed }, null, 2)}\n`,
+    );
+
+    const cli = path.join(tree, 'scripts', 'verify-release-apk.mjs');
+    const result = spawnSync(process.execPath, [cli, built.apks.clean, '--json'], {
+      cwd: tree,
+      encoding: 'utf8',
+      timeout: 180_000,
+      env: { ...process.env, LANG: process.env.LANG ?? 'zh_CN.UTF-8', [CERT_ENV_VAR]: '' },
+    });
+    const out = combined(result);
+    assert.equal(result.status, EXIT_FAIL, `配置改坏后必须 exit 1\n${out}`);
+    const report = JSON.parse(result.stdout);
+    assert.deepEqual(report.failing, ['cert'], `该红的只有证书这一项\n${out}`);
+    assert.equal(report.expectedCert, typoed, '期望值必须就是配置里那个（改坏的值）');
+    assert.equal(report.expectedCertSource, 'config/appIdentity.json', '来源要点名配置，不是「脚本内置」');
+  } finally {
+    fs.rmSync(tree, { recursive: true, force: true });
+  }
 });

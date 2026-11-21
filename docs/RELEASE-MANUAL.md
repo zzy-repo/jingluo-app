@@ -290,7 +290,7 @@ BT=${ANDROID_HOME:-$HOME/android-sdk}/build-tools/${BUILD_TOOLS_VERSION:?先 cp 
   | 1 | `debuggable` 不存在或 false | 复用 `scripts/check-apk-debuggable.mjs` 的 `evaluateApkDebuggable()`（判定只有一份，不复制） |
   | 2 | `ARTIFACT_VARIANT == --variant`（默认 `standard`） | `aapt2 dump xmltree --file AndroidManifest.xml` 读 meta-data |
   | 3 | `LOOPBACK_CONSUME` 不存在或 false | 同上；**标记缺失视为通过**（与 #601 闸 2 同口径：老包没有这个标记，不误伤历史包） |
-  | 4 | 签名证书 SHA-256 == `--expect-cert` | `apksigner verify --print-certs`；默认值 = §4.3 那个已发布证书 |
+  | 4 | 签名证书 SHA-256 == `--expect-cert` | `apksigner verify --print-certs`；缺省值 = §4.3 那个已发布证书，**从唯一来源 `config/appIdentity.json` 的 `expectedCertSha256` 读**（`scripts/lib/certFingerprint.mjs`，脚本里不留副本，#705）；无仓库上下文（脚本被复制到别处）时用 `--expect-cert` 或 `$VERIFY_APK_EXPECT_CERT` 显式给值，读不到就 **exit 2** |
   | 5 | `INSECURE_CONSUME` 不存在或 false（**或者带了 `--allow-insecure`**） | 同上；缺失视为 false（老包向后兼容）。<br>`true` 且没带 `--allow-insecure` → **exit 1**（明文联调包，禁止公开分发）；带了 → 通过，但结论行强制标 `INSECURE(staging-only)`、`--json` 里 `insecure: true` |
   | 6 | 附加输出（不算失败项） | `versionName` / `versionCode` / `sha256` / `md5` / `size`，直接抄进 Release 正文 |
 

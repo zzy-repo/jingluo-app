@@ -67,12 +67,9 @@ const identity = loadAppIdentity()
 eq(identity.applicationId, PUBLISHED_PACKAGE, 'applicationId 仍是已发布包名（改它 = 换用户账号）')
 eq(identity.namespace, PUBLISHED_PACKAGE, 'namespace 仍是已发布包名（Java 包结构目录绑定它）')
 eq(identity.label.zh, '鲸落', '应用名仍是「鲸落」')
-eq(
-  identity.expectedCertSha256,
-  'e7c5baee517ca2b2258950e934521f2fad448d00f72f2ff7297bdf4fa00aa8a1',
-  '证书指纹仍是已发布证书（签名迁移必须另开单）',
-)
-eq(identity.expectedCertSha256, PUBLISHED_IDENTITY.expectedCertSha256, '配置与 PUBLISHED_IDENTITY 的证书一致')
+// 证书指纹不再在测试里抄第三份（#705）：主源是 config/appIdentity.json，已发布断言是 PUBLISHED_IDENTITY。
+// 下面只比「配置 == 已发布断言」—— 两条独立记录必须相等，本地不再保存一份字面量副本。
+eq(identity.expectedCertSha256, PUBLISHED_IDENTITY.expectedCertSha256, '证书指纹 == 已发布证书（签名迁移必须另开单）')
 eq(identity.allowInsecureUpdateTransport, true, '明文更新传输 = true（#268 现状：新分发机只有 http）')
 
 console.log('\n[2] 设备指纹输入串与改动前逐字节相同')

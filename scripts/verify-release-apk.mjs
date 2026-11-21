@@ -18,7 +18,9 @@
  *        [--allow-insecure] [--json]
  * ```
  *   --variant         期望的构建变体（默认 `standard`，可选 `internal`）
- *   --expect-cert     期望的签名证书 SHA-256（默认取下面的 `EXPECTED_CERT_SHA256`，与仓库那份一致）
+ *   --expect-cert     期望的签名证书 SHA-256（缺省 = 单一来源 `config/appIdentity.json` 的
+ *                     `expectedCertSha256`，经 `scripts/lib/certFingerprint.mjs` 读；本文件**不存副本**，#705）
+ *                     无仓库上下文（把 `scripts/` 复制到 /tmp 之类）时用它或 `$VERIFY_APK_EXPECT_CERT` 显式给值
  *   --allow-insecure  明确认可「这是明文联调包」（`INSECURE_CONSUME=true`）：不加就 exit 1
  *   --json            输出结构化结果（workflow / 脚本消费；此时不打印表格）
  *
@@ -40,6 +42,20 @@
  *   0  五项全过 → 可以发布
  *   1  有项目**明确不过**（读到值、值不对）→ 禁止发布，报告点名是哪一项
  *   2  判不出来（缺 aapt2 / apksigner、SDK 没装、不是 APK、清单读不出）→ **同样禁止发布**（fail-closed）
+ *
+ * ## 期望证书指纹从哪来（Issue #705：本文件不再留副本）
+ *
+ * 「已发布证书指纹」这个事实在仓库里有**三处判据、各管一个界面**（分工见 `docs/RELEASE-MANUAL.md` §16）：
+ * 配置侧一致性（`release-check` 第 4 段）、keystore 侧（`check:keystore`）、APK 侧（本脚本）。
+ * 三处**共用一个期望值**，而那个值的唯一来源是 `config/appIdentity.json` 的 `expectedCertSha256`
+ * （#271），读取实现只有一份：`scripts/lib/certFingerprint.mjs` 的 `resolveExpectedCertSha256()`（#702/#704）。
+ *
+ * 本文件曾经把这个值**又抄了一份**（`export const EXPECTED_CERT_SHA256 = '<64 hex>'`）——同一事实的
+ * 第三份副本，漂移只被单测钉住。钉住不等于治本：它照样诱使人「改这里」而不是改配置。所以现在：
+ *
+ *   · 缺省值 = 走 `resolveExpectCert()` → 单一来源（不再有任何字面量默认值）；
+ *   · 覆盖 = `--expect-cert <sha256>` 或 `$VERIFY_APK_EXPECT_CERT`（无仓库上下文时用，**必须**显式给）；
+ *   · 读不到 / 格式不对 → **exit 2（fail-closed）**，点名缺什么、怎么给值；绝不猜一个默认值放行。
  *
  * ## 边界（别夸大）
  *   · 不依赖网络、不修改 APK（只读 + `fs.statSync`）；
@@ -64,17 +80,51 @@ import {
   parseMetaDataFromXmltree,
 } from '../deploy/dl-release/variant.mjs';
 import { loadBuildEnv, resolveBuildTools, toolchainHint } from './lib/androidTools.mjs';
+import { RE_CERT_SHA256, REPO_ROOT } from './lib/appIdentity.mjs';
+import { CERT_PRIMARY_REL, resolveExpectedCertSha256 } from './lib/certFingerprint.mjs';
 
 export const EXIT_OK = 0;
 export const EXIT_FAIL = 1;
 export const EXIT_UNKNOWN = 2;
 
 /**
- * 已发布证书指纹（= `/root/.android/debug.keystore`，全历史版本都用它签名）。
- * 与 `android/app/build.gradle` 的 `EXPECTED_CERT_SHA256`、`docs/RELEASE-MANUAL.md` §4.3 是同一个值：
- * 换证书会让已装用户无法覆盖升级，所以这里**默认就查**，不靠人记得传 --expect-cert。
+ * 期望证书指纹的**环境变量口**（#705）：无仓库上下文时（例如把 `scripts/` 复制到 /tmp 跑），
+ * `config/appIdentity.json` 读不到 —— 那就必须显式给值，不许回落成一份硬编码默认值。
  */
-export const EXPECTED_CERT_SHA256 = 'e7c5baee517ca2b2258950e934521f2fad448d00f72f2ff7297bdf4fa00aa8a1';
+export const CERT_ENV_VAR = 'VERIFY_APK_EXPECT_CERT';
+
+/**
+ * 解析「期望的签名证书 SHA-256」—— **本文件不存这个值的任何副本**（#705）。
+ *
+ * 优先级（显式覆盖缺省，前者赢）：
+ *   1. `--expect-cert <sha256>`（CLI 参数 / `verifyReleaseApk({ expectCert })`）
+ *   2. 环境变量 `$VERIFY_APK_EXPECT_CERT`
+ *   3. **唯一来源**：`config/appIdentity.json` 的 `expectedCertSha256`
+ *      —— 走 `scripts/lib/certFingerprint.mjs` 的 `resolveExpectedCertSha256()`（全仓唯一读取实现）
+ *
+ * 这里为什么不留一份字面量默认值：那正是 #705 要消掉的**第三份副本**
+ * （`config/appIdentity.json` 是主源，`scripts/lib/appIdentity.mjs` 的 `PUBLISHED_IDENTITY` 是
+ * 已发布断言，本文件原来那份只是「默认值」）。副本被单测钉住也依然诱使人改错地方。
+ *
+ * 读不到 → `value === null`（调用方必须 fail-closed，不许猜值继续跑，见 `verifyReleaseApk`）。
+ *
+ * @param {{expectCert?: string|null, env?: NodeJS.ProcessEnv, root?: string}} [options]
+ * @returns {{value: string|null, source: string|null, invalid: string|null}} 与 `resolveExpectedCertSha256()` 同形状
+ */
+export const resolveExpectCert = ({ expectCert = null, env = process.env, root = REPO_ROOT } = {}) => {
+  const pick = (raw) => (typeof raw === 'string' && raw.trim() !== '' ? raw.trim().toLowerCase() : null);
+  const candidates = [
+    ['--expect-cert', pick(expectCert)],
+    [`$${CERT_ENV_VAR}`, pick(env?.[CERT_ENV_VAR])],
+  ];
+  for (const [source, value] of candidates) {
+    if (value === null) continue;
+    // 显式给的值也要过格式关：坏值不能变成「第 4 项 FAIL」，那会被读成「APK 签错了」
+    if (!RE_CERT_SHA256.test(value)) return { value: null, source, invalid: `不是 64 位小写十六进制：'${value}'` };
+    return { value, source, invalid: null };
+  }
+  return resolveExpectedCertSha256(root);
+};
 
 /** 检查项状态：pass 通过 / fail 明确不过 / unknown 判不出来（fail-closed） */
 export const STATUS = Object.freeze({ PASS: 'pass', FAIL: 'fail', UNKNOWN: 'unknown' });
@@ -203,14 +253,17 @@ const STATUS_LABEL = {
 export function verifyReleaseApk(options) {
   const env = options.env ?? process.env;
   const expectedVariant = options.variant ?? 'standard';
-  const expectCert = String(options.expectCert ?? EXPECTED_CERT_SHA256).toLowerCase();
+  // 期望证书指纹：--expect-cert > $VERIFY_APK_EXPECT_CERT > 单一来源（config/appIdentity.json）。
+  // 三档都给不出来 → 下面 fail-closed（#705：不再有一份字面量默认值兜底）。
+  const cert = resolveExpectCert({ expectCert: options.expectCert ?? null, env });
   // 「明文联调包」必须是**显式**认可的一件事：不传就是不许发（见下面第 5 项）
   const allowInsecure = options.allowInsecure === true;
   const apkArg = typeof options.apk === 'string' ? options.apk : '';
   const base = {
     apk: apkArg,
     variant: expectedVariant,
-    expectedCert: expectCert,
+    expectedCert: cert.value,
+    expectedCertSource: cert.source,
     allowInsecure,
     insecure: false,
     buildTools: null,
@@ -220,6 +273,21 @@ export function verifyReleaseApk(options) {
   if (!VARIANTS.includes(expectedVariant)) {
     return unknownResult(base, `--variant 只能是 ${VARIANTS.join(' / ')}，收到 "${expectedVariant}"`);
   }
+
+  // 判不出来 ≠ 通过：期望值读不到/格式不对时**不许猜一个默认值**继续跑（#705 的 fail-closed 路径）。
+  if (!cert.value) {
+    return unknownResult(
+      base,
+      [
+        `证书指纹的期望值判不出来（fail-closed，不许猜值放行）：${cert.invalid
+          ?? `没读到 ${CERT_PRIMARY_REL} 里的 expectedCertSha256`}`,
+        `唯一的来源是 ${CERT_PRIMARY_REL} 的 expectedCertSha256（#271 / #705）；读不到就是仓库被改坏了，`,
+        `不要在本脚本里临时写一个默认值 —— 换证书 = 已装用户无法覆盖升级（docs/RELEASE-MANUAL.md §1）。`,
+        `没有仓库上下文时（脚本被复制到别的目录）显式给值：--expect-cert <sha256> 或 $${CERT_ENV_VAR}`,
+      ].join('\n'),
+    );
+  }
+  const expectCert = cert.value;
 
   const apk = path.resolve(apkArg);
   base.apk = apk;
@@ -319,7 +387,7 @@ export function verifyReleaseApk(options) {
   } else if (!digests.length) {
     checks.push(check('cert', STATUS.UNKNOWN, expectCert, '判不出来', 'apksigner 没打印任何 SHA-256 指纹'));
   } else if (digests.some((digest) => digest !== expectCert)) {
-    checks.push(check('cert', STATUS.FAIL, expectCert, digests.join(', '), '换证书会让已装用户无法覆盖升级；不要为了过闸门改 EXPECTED_CERT_SHA256'));
+    checks.push(check('cert', STATUS.FAIL, expectCert, digests.join(', '), '换证书会让已装用户无法覆盖升级；不要为了过闸门改 config/appIdentity.json 的 expectedCertSha256（#705：那是唯一来源）'));
   } else {
     checks.push(check('cert', STATUS.PASS, expectCert, digests.join(', '), null));
   }
@@ -405,7 +473,8 @@ export function formatReport(result) {
   if (result.buildTools) {
     lines.push(`工具  : build-tools ${result.buildTools.version} · ${result.buildTools.source}`);
   }
-  lines.push(`期望  : variant=${result.variant}  cert=${result.expectedCert}`);
+  // 期望值后面跟来源：报告要能回答「这个期望是谁给的」（单一来源 / --expect-cert / 环境变量，#705）
+  lines.push(`期望  : variant=${result.variant}  cert=${result.expectedCert}（来源 ${result.expectedCertSource ?? '—'}）`);
   lines.push('');
   const titleWidth = Math.max(...CHECKS.map((item) => displayWidth(item.title.replace(/^\d+ /, ''))));
   lines.push(`${pad('#', 1)}  ${pad('检查', titleWidth)}  结果     实际`);
@@ -455,6 +524,7 @@ export function formatReport(result) {
 }
 
 function usage() {
+  const cert = resolveExpectCert();
   return [
     `用法: node scripts/${SCRIPT} <apk> [--variant standard|internal] [--expect-cert <sha256>] [--allow-insecure] [--json]`,
     '',
@@ -465,9 +535,12 @@ function usage() {
     '',
     '--allow-insecure  确认「这是明文联调包」：只给 staging 联调用，结论行会强制标 INSECURE(staging-only)，',
     '                  禁止公开分发；不带它时，带 INSECURE_CONSUME=true 标记的包一律 exit 1',
+    '--expect-cert     期望的签名证书 SHA-256（缺省从唯一来源读，见下面「期望证书」一行）',
     '',
-    '退出码: 0 五项全过 / 1 有项目明确不过（报告点名） / 2 判不出来（缺 SDK 工具等，同样禁止发布）',
-    `默认证书: ${EXPECTED_CERT_SHA256}`,
+    '退出码: 0 五项全过 / 1 有项目明确不过（报告点名） / 2 判不出来（缺 SDK 工具、期望值读不到等，同样禁止发布）',
+    `期望证书: ${cert.value ?? '读不到'}（来源 ${cert.source ?? `既没有 ${CERT_PRIMARY_REL} 也没有显式给值`}）`,
+    `          期望值的唯一来源是 ${CERT_PRIMARY_REL} 的 expectedCertSha256（#271 / #705，本文件不留副本）；`,
+    `          无仓库上下文时显式给值：--expect-cert <sha256> 或 $${CERT_ENV_VAR}`,
   ].join('\n');
 }
 
