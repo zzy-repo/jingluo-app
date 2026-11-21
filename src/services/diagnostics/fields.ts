@@ -605,6 +605,26 @@ const EXTRA_KEYS: readonly string[] = [
   'i18nKey',
   'locale',
   'param',
+  // #460（方案 A）：账号 / 资损字段**故意留在白名单里**，靠下面的 `SECRET_SEGMENTS` 整条兜住。
+  //
+  // 为什么「放行再丢掉」而不是干脆不放进来：`sanitizeMeta` 的两道判断是
+  // `!isAllowedKey(key) || hasSecretName(key)` —— 白名单先拒的键，`hasSecretName` **根本不会被求值**，
+  // 于是 `SECRET_SEGMENTS` 里 `deviceid` / `cardno` / `phone` 这几条在改造前是**死规则**
+  // （单删它们任何一条，177 个 unit 一条都不红 = 等价变异）。把它们放进来，第二道才**可达**、
+  // 才测得出来；将来白名单再收到同类键（`deviceSn`、`cardNoHashed` …）时，兜底也不是空话。
+  //
+  // 安全性没有变化，只是**变强**了：放行 + 兜底拦 = 仍然整条丢弃（`sanitizeMeta` 输出里没有这些键），
+  // 原来只有一道防线的地方现在有两道，且两道都被
+  // `tests/unit/domain08-sensitive-fields.test.mjs` 的 N1-e 表逐行钉住。
+  // 段名比较做了分隔符归一（见 `normalizeSegment`），`device_id` / `card_no` / `order_token`
+  // 这些 snake_case 变体与驼峰写法落同一个段名 —— 否则它们只靠白名单拦，白名单一动就是明文。
+  'deviceId',
+  'device_id',
+  'cardNo',
+  'card_no',
+  'phone',
+  'orderToken',
+  'order_token',
   // #301（本批）：**生产里已经在写、却被白名单静默丢弃**的键，补进来。
   //   · `billing.quota` / `billing.quota.code`：#299 特意加的「额度不足」标记，注释写着
   //     「这样余额不足次数能被单独筛出来」，但键名一直不在白名单里 —— 于是「查不到余额不足」
@@ -624,6 +644,11 @@ const EXTRA_KEYS: readonly string[] = [
  * #387 补齐账号 / 资损字段：`deviceId` / `cardNo` / `card` / `phone` 这些键名本身就已经说明值的
  * 身份，键名维度整条丢弃比「打码后保留」更干净（打码形状仍有可能被拼回去）。这一层只是**兜底** ——
  * 自由文本里的同类值由 `redact.ts` 的值维度规则处理，两边都要有。
+ *
+ * #460：这一层是**第二道**，只有白名单放行的键才会走到它（`sanitizeMeta` 里 `isAllowedKey` 先判）。
+ * 所以「段名」与「白名单里的代表键」必须成对存在：上面 `EXTRA_KEYS` 里那 7 个账号 / 资损键就是
+ * 本表 `deviceid` / `cardno` / `phone` / `ordertoken` 的**可达性锚点**（放行 → 交给你拦）。
+ * 单删任何一条段名都不再是等价变异：`domain08-sensitive-fields.test.mjs` 的 N1-e 会红。
  */
 const SECRET_SEGMENTS = new Set([
   'key',
@@ -646,6 +671,9 @@ const SECRET_SEGMENTS = new Set([
   'card',
   'cardno',
   'phone',
+  // #460：驼峰 / snake_case 复合键（`orderToken` / `order_token`）的最后一段不是一个「词」，
+  // 归一后落到 `ordertoken`，所以这里必须有一条对应的段名，否则这族键只靠白名单拦。
+  'ordertoken',
 ])
 
 const KEY_SHAPE = /^[A-Za-z][A-Za-z0-9._-]{0,39}$/
@@ -665,9 +693,22 @@ const isAllowedKey = (key: string): boolean => {
   return EXTRA_KEY_PATTERNS.some((pattern) => pattern.test(key))
 }
 
+/**
+ * 段名归一：大小写与分隔符（`_` / `-`）**不参与比较**。
+ *
+ * `deviceId` / `device_id` / `device-id` / `DeviceID` 必须落到同一个段名 `deviceid`。
+ * #460 的实测病根就在这里：改造前只做 `toLowerCase()`，于是 `device_id`（最后一段是
+ * `device_id` 而不是 `deviceid`）**永远命中不了** `SECRET_SEGMENTS` —— 它只被白名单拦着，
+ * 白名单一放行（哪怕是别人顺手加的）就是明文进日志，而当时**没有任何断言**会红。
+ */
+const normalizeSegment = (segment: string): string => segment.toLowerCase().replace(/[_-]/g, '')
+
+/** 归一后的段名集合：`SECRET_SEGMENTS` 仍是**唯一**定义处，这里只是它的比较形态（不另开一张表） */
+const SECRET_SEGMENTS_NORMALIZED = new Set([...SECRET_SEGMENTS].map(normalizeSegment))
+
 const hasSecretName = (key: string): boolean => {
-  const last = key.split('.').pop()?.toLowerCase() ?? key.toLowerCase()
-  return SECRET_SEGMENTS.has(last)
+  const last = key.split('.').pop() ?? key
+  return SECRET_SEGMENTS_NORMALIZED.has(normalizeSegment(last))
 }
 
 /** 字符串值：先脱敏（sk- / Bearer / token= …）→ 再把完整 URL 压成 path → 最后截断 */

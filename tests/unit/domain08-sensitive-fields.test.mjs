@@ -20,6 +20,11 @@
 //   - 任何一格变红 → **本用例失败**（真实泄漏，不许再登记回 KNOWN_GAPS 绕过）；
 //   - 登记簿留残条目 → 失败（表示修复没跟上登记）。
 //
+// **#460 补了 N1-e**：N1-b 只断言「键没进 meta」，**没断言是哪一层拦的**。于是
+// `SECRET_SEGMENTS` 里的 `deviceid` / `cardno` / `phone` 其实是**死规则**（白名单先丢，第二道
+// 根本不被求值）：单删任何一条都一条不红；换成 snake_case（`device_id`）再把白名单放开，
+// 就原样放行明文而本文件**全绿**。N1-e 逐行钉住「丢弃来自哪一层」，两层各留锚点。
+//
 //   node --test tests/unit/domain08-sensitive-fields.test.mjs
 // #507：`__ENDPOINTS__` 全局兜底 —— 装载即挂（幂等）。单跑本文件（不经 run-layer 的 `--import` 预加载）也不会
 // `ReferenceError: __ENDPOINTS__ is not defined`；走门禁时与预加载是同一份模块，无副作用叠加。
@@ -51,7 +56,7 @@ registerHooks({
 })
 
 const { redact } = await import('../../src/services/diagnostics/redact.ts')
-const { sanitizeMeta } = await import('../../src/services/diagnostics/fields.ts')
+const { META_KEYS, sanitizeMeta } = await import('../../src/services/diagnostics/fields.ts')
 const { buildFeedbackExport, redactExportText } = await import('../../src/services/diagnostics/export.ts')
 const { buildErrorReport, scrubReportText } = await import('../../src/app/errorReport.ts')
 const { BOUNDARIES, KEY_CASES, KNOWN_GAPS, VALUE_CASES } = await import(
@@ -227,4 +232,113 @@ test('N1-d 抽取的规则是既有实现（不是本用例自造的期望）', 
   assert.match(maskSource, /maskCard[\s\S]*maskTail\(cardNo, 4\)/, '卡密只留尾 4 位')
   assert.match(maskSource, /maskDeviceId[\s\S]*maskTail\(deviceId, 4\)/, '设备码只留尾 4 位')
   assert.equal(redact('sk-abcdefghijklmnopqrstuvwxyz012345'), 'sk-***', '规则本体可直接调用')
+})
+
+// ---------------------------------------------------------------------------
+// #460 键名维度的**组合语义**：白名单放行之后，`SECRET_SEGMENTS` 必须仍然拦住
+//
+// 病根（issue 已实测，本文件改造前）：
+//   · 单删 `SECRET_SEGMENTS` 的 `'deviceid'` → 一条都不红，而且是**等价变异**：`deviceId` 不在
+//     `EXTRA_KEYS` 里，`sanitizeMeta` 的 `isAllowedKey` 先把它丢了，第二道判断根本不会被求值
+//     （`!isAllowedKey(k) || hasSecretName(k)` 短路）—— 这条规则当时是**死规则**；
+//   · 换成 snake_case 就是组合变异：`EXTRA_KEYS` 收下 `device_id` + 删掉 `'deviceid'`
+//     → `sanitizeMeta({ device_id: '…' })` 原样放行明文，而 N1-a…N1-d **全绿**
+//     （它们只在「键恰好不在白名单」时才发现问题，说不清是哪一层拦的）。
+//
+// 所以本表逐行钉住「这次丢弃是**哪一层**做的」，两列缺一不可：
+//   guard = 'secret-name'：键**在白名单里**（放行）→ 整条丢弃只可能来自键名兜底。
+//        删段名 / 把段名改窄（丢掉分隔符归一）→ 这一列立刻红；把键从 `EXTRA_KEYS` 拿走 → 也红
+//        （规则重新变成不可达，退回 #460 的原始状态）。
+//   guard = 'whitelist'  ：键**不在白名单里** → 第一层丢弃。同时**禁止**它被悄悄收进白名单 ——
+//        那正是组合变异的第一半：收了就必须同步让密钥段归一后命中，否则明文进日志。
+//
+// 值故意选**值维度脱敏规则碰不到**的形状（不是 `d-<32hex>`、不是 16–19 位数字、不是 11 位手机号），
+// 这样断言看到的是**键名维度**本身，不会被 `redact()` 的值规则掩盖（见 N1-f 的自证）。
+// ---------------------------------------------------------------------------
+
+/** 键名维度的探针值：`redact()` 原样放过它（N1-f 直接断言这一点） */
+const KEY_PROBE = 'plain-778899-abcdef'
+
+const KEY_LAYER_CASES = [
+  // —— 白名单放行 + 密钥段必须拦住（#460 方案 A：把这几条从「死规则」变成可达规则）——
+  { id: 'C1', guard: 'secret-name', key: 'deviceId' },
+  { id: 'C2', guard: 'secret-name', key: 'device_id' },
+  { id: 'C3', guard: 'secret-name', key: 'cardNo' },
+  { id: 'C4', guard: 'secret-name', key: 'card_no' },
+  { id: 'C5', guard: 'secret-name', key: 'phone' },
+  { id: 'C6', guard: 'secret-name', key: 'orderToken' },
+  { id: 'C7', guard: 'secret-name', key: 'order_token' },
+  // —— 白名单外：第一层丢弃；而且不许被悄悄收进白名单（收了就得先有密钥段兜住）——
+  { id: 'C8', guard: 'whitelist', key: 'phoneNumber' },
+  { id: 'C9', guard: 'whitelist', key: 'contactPhone' },
+  { id: 'C10', guard: 'whitelist', key: 'deviceNumber' },
+  { id: 'C11', guard: 'whitelist', key: 'cardNumber' },
+  { id: 'C12', guard: 'whitelist', key: 'deviceFingerprint' },
+  { id: 'C13', guard: 'whitelist', key: 'userPhone' },
+]
+
+/**
+ * `fields.ts` 里 `EXTRA_KEYS` 的**字面量**（只认独占一行的 `'name',`：注释里提到的键名不算）。
+ * 直接读源码而不加一个只给测试用的导出 —— `fields.ts` 的公开面是采集层的契约，不为测试开洞。
+ */
+const readExtraKeys = () => {
+  const source = readFileSync(
+    fileURLToPath(new URL('src/services/diagnostics/fields.ts', `file://${ROOT}`)),
+    'utf8'
+  )
+  const block = /const EXTRA_KEYS: readonly string\[\] = \[([\s\S]*?)\n\]/.exec(source)
+  assert.ok(block, 'fields.ts 里应能找到 EXTRA_KEYS 数组字面量')
+  return new Set([...block[1].matchAll(/^ {2}'([^']+)',$/gm)].map((match) => match[1]))
+}
+
+test('N1-e 键名组合语义：白名单放行后密钥段仍须拦住（两层各留锚点）', () => {
+  const extraKeys = readExtraKeys()
+  const inWhitelist = (key) => extraKeys.has(key) || META_KEYS.includes(key)
+  const failures = []
+  for (const row of KEY_LAYER_CASES) {
+    const meta = sanitizeMeta({ [row.key]: KEY_PROBE })
+    // ② 行为：键名维度的契约是**整条丢弃**（不是「打码后保留」），原文更不许进 payload
+    if (row.key in meta) {
+      failures.push(`${row.id} ${row.key}：键没有被丢弃（存活值 ${JSON.stringify(meta[row.key])}）`)
+    }
+    if (JSON.stringify(meta).includes(KEY_PROBE)) {
+      failures.push(`${row.id} ${row.key}：探针值原样进了日志`)
+    }
+    // ① 层次：这次丢弃必须来自表里声明的**那一层**，否则另一层就是没被覆盖到的死规则
+    const actual = inWhitelist(row.key) ? 'secret-name' : 'whitelist'
+    if (actual !== row.guard) {
+      failures.push(
+        row.guard === 'secret-name'
+          ? `${row.id} ${row.key}：已不在白名单里 → SECRET_SEGMENTS 对它将再次**不可达**（#460 的等价变异），丢弃只靠第一层。要放行就把它加回 EXTRA_KEYS，并把归一后的段名写进 SECRET_SEGMENTS`
+          : `${row.id} ${row.key}：被收进了白名单 → 白名单放行后必须由 SECRET_SEGMENTS 拦住，否则整条明文进日志（#460 的组合变异）。确认段名已覆盖后把本行改成 guard: 'secret-name'`
+      )
+    }
+  }
+  // 防「把表削薄」：两层各自至少留几行锚点，删行凑绿会在这里红
+  const byGuard = (guard) => KEY_LAYER_CASES.filter((row) => row.guard === guard)
+  if (byGuard('secret-name').length < 7) {
+    failures.push(
+      `secret-name 行只有 ${byGuard('secret-name').length} 行（应 ≥ 7）：第二层失去锚点，键名兜底又会退回不可达的死规则`
+    )
+  }
+  if (byGuard('whitelist').length < 5) {
+    failures.push(
+      `whitelist 行只有 ${byGuard('whitelist').length} 行（应 ≥ 5）：第一层（白名单）的覆盖被削`
+    )
+  }
+  console.log(
+    `  ·  键名层次：${KEY_LAYER_CASES.length} 行（secret-name ${byGuard('secret-name').length} / whitelist ${byGuard('whitelist').length}），失败 ${failures.length} 条`
+  )
+  assert.deepEqual(failures, [], '键名维度必须两层都可生效：白名单放行后密钥段仍要拦住')
+})
+
+test('N1-f 探针自证：N1-e 的探针值确实是值维度碰不到的形状', () => {
+  // 若将来有人把这行改红成「用会被 redact() 打码的值」，N1-e 就退化成「值维度在兜底」，
+  // 键名维度的组合变异会重新隐身。所以探针本身也要钉住：redact() 必须原样放过它。
+  assert.equal(redact(KEY_PROBE), KEY_PROBE, 'N1-e 的探针值必须不被值维度改写')
+  assert.equal(
+    redactExportText(KEY_PROBE),
+    KEY_PROBE,
+    'N1-e 的探针值必须不被导出层的值维度改写'
+  )
 })
