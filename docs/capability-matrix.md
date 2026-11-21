@@ -106,7 +106,7 @@
 ### 2.4 服务端内容安全审核（Anthropic ⚠️ / OpenAI ⚠️）
 
 - **为什么做不到**：**上游没这个参数**。`safety_check:{level:'high'}` 是 DeepSeek 私有顶层字段，裸 Anthropic 收到未知顶层字段直接 400，所以 `gates.safety_check=false`（`providers.ts:382`、`store.ts` 的 `gates.safety_check`）。剩下的只有协议自带的 `stop_reason:'refusal'`（`parseEvent.ts:211`）与 OpenAI 的 `finish_reason:'content_filter'`（`openaiAdapter.ts:212`）——**审核强度、审核时机、审核文案全由上游决定，客户端无法要求**。
-- **变通办法与代价**：客户端自建审核（敏感词/分类模型前置拦截）。代价：多一份模型或词表依赖、多一次延迟；误杀无法申诉；且挡不住上游自己的拒答，两套策略要合并展示（`describe.ts:19-59` 的 Notice 体系要扩展）。
+- **变通办法与代价**：客户端自建审核（敏感词/分类模型前置拦截）。代价：多一份模型或词表依赖、多一次延迟；误杀无法申诉；且挡不住上游自己的拒答，两套策略要合并展示（`describe.ts:20` 的 `Notice` 类型与 `describe.ts:231` 的 `pickErrorNotice` 查表要扩展）。
 - **未来补的话依赖**：一个可配置的审核服务；或上游（中转商）暴露同类开关。
 
 ### 2.5 用量统计的界面展示（三模式共同 ⚠️）
