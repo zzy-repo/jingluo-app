@@ -19,6 +19,15 @@
 //   4. gh 不可用 → exit 2（**不是** exit 1）：判不了要如实说「判不了」，不能伪装成「不在 main 上」——
 //      两种红的修法完全不同（前者修环境，后者改 tag）。
 //
+// 另钉**豁免清单**（#651 / #738，`scripts/release-traceability-allowlist.json`）那五件：
+//   5. 命中豁免 → 绿，且输出里必须有 `[ALLOW] tag=… reason="…" reviewAfter=…`（**不静默**：红着却 exit 0
+//      这件事只能靠这一行解释，谁把它删掉谁就把「有到期日的例外」变回了「偷偷放过」）；
+//   6. `reviewAfter` 已过期 → 红（用 `--now` 注入日期，不动系统时间；到期**当天**仍有效）；
+//   7. `--strict` 下条目缺 `reason` / `reviewAfter` → 红（CI 里自动等价开启：口径不能只写在 ci.yml 那一行）；
+//   8. 清单里的 tag 已不存在于仓库 → `[WARN]` 点名「过期条目该清理」（豁免清单不许变成垃圾桶）；
+//   9. 清单文件不存在 → 视为空表正常跑（没有历史遗留时，文件在不在都不该改变判据）。
+// 这些用例同样钉住「豁免 ≠ 放宽」：豁免只会让**有到期日的显式例外**通过，判据本身一个字都没软。
+//
 // 另钉两条**前提**用例（CI 上的真实形态，实测过）：浅克隆 / 缺 `origin/main` 都必须 exit 2 并点明修法。
 // `actions/checkout` 默认 `fetch-depth: 1`（浅克隆且不带 tag），这两种缺失在 CI 上是常态而不是意外。
 //
@@ -39,7 +48,15 @@ import path from 'node:path'
 import { test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 
-import { classifyTargetCommitish, parseArgs } from '../../scripts/check-release-traceability.mjs'
+import {
+  DEFAULT_ALLOWLIST,
+  classifyTargetCommitish,
+  expiryOf,
+  isIsoDate,
+  loadAllowlist,
+  parseArgs,
+  resolveStrict,
+} from '../../scripts/check-release-traceability.mjs'
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 const SCRIPT = path.join(ROOT, 'scripts/check-release-traceability.mjs')
@@ -93,6 +110,13 @@ const makeRepo = (t) => {
   git(dir, 'checkout', '-q', 'main')
   git(dir, 'update-ref', 'refs/remotes/origin/main', mainSha)
   return { dir, base, mainSha, offMain }
+}
+
+/** 写一份临时豁免清单（`--allowlist` 指向它：用例永远不碰入库的那份，免得互相影响） */
+const writeAllowlist = (repo, entries) => {
+  const file = path.join(repo.dir, 'allowlist.json')
+  writeFileSync(file, `${JSON.stringify({ _meta: { version: 1, policy: '用例桩' }, ...entries }, null, 2)}\n`)
+  return file
 }
 
 const runGate = (cwd, args, env = {}) => {
@@ -250,6 +274,172 @@ test('--offline-skip：本机打印「已跳过（离线）」并 exit 0；CI �
   const relaxed = runGate(repo.dir, ['--allow-missing-main'])
   assert.equal(relaxed.status, 2, `未知参数必须 exit 2：\n${relaxed.out}`)
   assert.match(relaxed.out, /未知参数/)
+})
+
+// ---------------------------------------------------------------- 豁免清单（有到期日的显式例外，#651 / #738）
+
+test('豁免清单：命中的 tag → exit 0，且 `[ALLOW] tag=… reason="…" reviewAfter=…` 一行不少（不静默）', (t) => {
+  const repo = makeRepo(t)
+  git(repo.dir, 'tag', 'tmp-trace-legacy', repo.offMain)
+  const allowlist = writeAllowlist(repo, {
+    'tmp-trace-legacy': {
+      reason: '版本提交从未并入 main（用例桩），重指等于伪造祖先关系',
+      addedAt: '2026-11-21',
+      reviewAfter: '2027-01-31',
+    },
+  })
+
+  // 未过期：2026-12-01 < 2027-01-31
+  const result = runGate(repo.dir, ['--tag', 'tmp-trace-legacy', '--allowlist', allowlist, '--now', '2026-12-01'])
+  assert.equal(result.status, 0, `命中未过期豁免应 exit 0，实际 ${result.status}：\n${result.out}`)
+  assert.match(
+    result.out,
+    /\[ALLOW\] tag=tmp-trace-legacy reason="版本提交从未并入 main（用例桩），重指等于伪造祖先关系" reviewAfter=2027-01-31/
+  )
+  // 豁免 ≠ 静默：不计入失败，但 sha / 复核命令 / 到期日必须一起摊在输出里（否则「红着但 exit 0」没人看得懂）
+  assert.doesNotMatch(result.out, /\[FAIL\]/)
+  assert.match(result.out, new RegExp(`完整 sha：${repo.offMain}`))
+  assert.match(result.out, /复核命令：git merge-base --is-ancestor/)
+  assert.match(result.out, /未过期；到期后必须复审/)
+  assert.match(result.out, /✓ 1 绿 \/ 0 红/)
+  assert.match(result.out, /其中 1 个走豁免/)
+})
+
+test('豁免到期 → exit 1：报「豁免已过期，请重指或删除该 tag」并点名 reason（到期日是这套机制的全部意义）', (t) => {
+  const repo = makeRepo(t)
+  git(repo.dir, 'tag', 'tmp-trace-legacy', repo.offMain)
+  const allowlist = writeAllowlist(repo, {
+    'tmp-trace-legacy': { reason: 'c504ee51 从未并入 main（用例桩）', reviewAfter: '2027-01-31' },
+  })
+
+  // 到期**当天**仍有效：reviewAfter 是「最晚复审到哪一天」，不是「从哪天起作废」
+  const boundary = runGate(repo.dir, ['--tag', 'tmp-trace-legacy', '--allowlist', allowlist, '--now', '2027-01-31'])
+  assert.equal(boundary.status, 0, `到期当天仍应绿，实际 ${boundary.status}：\n${boundary.out}`)
+
+  const expired = runGate(repo.dir, ['--tag', 'tmp-trace-legacy', '--allowlist', allowlist, '--now', '2027-02-01'])
+  assert.equal(expired.status, 1, `豁免过期必须 exit 1，实际 ${expired.status}：\n${expired.out}`)
+  assert.match(expired.out, /豁免已过期（reviewAfter=2027-01-31 < 今天 2027-02-01）/)
+  assert.match(expired.out, /请重指或删除该 tag/)
+  // 过期了就不能再打 [ALLOW]：否则「到期」只是输出里一句没人看的文本
+  assert.doesNotMatch(expired.out, /\[ALLOW\] tag=tmp-trace-legacy/)
+  // 该条 reason 必须点出来（「红了但不知道该找谁问」= 下一个人把门禁关掉）
+  assert.match(expired.out, /c504ee51 从未并入 main（用例桩）/)
+})
+
+test('--strict：条目缺 reason / 缺 reviewAfter / reviewAfter 不是日期 → exit 1（非 strict 下也 WARN 点名，不静默）', (t) => {
+  const cases = [
+    { name: '缺 reason', entry: { reviewAfter: '2027-01-31' }, pattern: /缺 `reason`/ },
+    { name: '缺 reviewAfter', entry: { reason: 'c504ee51 从未并入 main（用例桩）' }, pattern: /缺 `reviewAfter`/ },
+    { name: 'reviewAfter 不是合法日期', entry: { reason: '用例桩', reviewAfter: '2027-02-30' }, pattern: /不是合法的 YYYY-MM-DD 日期/ },
+  ]
+
+  for (const item of cases) {
+    const repo = makeRepo(t)
+    git(repo.dir, 'tag', 'tmp-trace-legacy', repo.offMain)
+    const allowlist = writeAllowlist(repo, { 'tmp-trace-legacy': item.entry })
+
+    const strict = runGate(repo.dir, ['--tag', 'tmp-trace-legacy', '--allowlist', allowlist, '--now', '2026-12-01', '--strict'])
+    assert.equal(strict.status, 1, `--strict 下「${item.name}」必须 exit 1，实际 ${strict.status}：\n${strict.out}`)
+    assert.match(strict.out, item.pattern)
+    assert.match(strict.out, /豁免清单 `tmp-trace-legacy`/)
+
+    // 非 strict：不红，但必须 WARN 点名（把问题藏起来才是最坏的那种「绿」）
+    const loose = runGate(repo.dir, ['--tag', 'tmp-trace-legacy', '--allowlist', allowlist, '--now', '2026-12-01'])
+    assert.equal(loose.status, 0, `非 strict 下「${item.name}」不该变成红（该红的是 strict 那一拍）：\n${loose.out}`)
+    assert.match(loose.out, /\[WARN\] 豁免清单 `tmp-trace-legacy`/)
+    assert.match(loose.out, item.pattern)
+    assert.match(loose.out, /--strict` \/ CI 里这就是红/)
+  }
+})
+
+test('CI 环境自动等价 --strict（口径不交给 ci.yml 那一行怎么写），且合法条目在 CI 里照样绿', (t) => {
+  const repo = makeRepo(t)
+  git(repo.dir, 'tag', 'tmp-trace-legacy', repo.offMain)
+
+  const legal = writeAllowlist(repo, {
+    'tmp-trace-legacy': { reason: '用例桩：无法重指', addedAt: '2026-11-21', reviewAfter: '2027-01-31' },
+  })
+  const okCi = runGate(repo.dir, ['--tag', 'tmp-trace-legacy', '--allowlist', legal, '--now', '2026-12-01'], { GITHUB_ACTIONS: 'true' })
+  assert.equal(okCi.status, 0, `合法条目在 CI 里必须绿（严格口径不能把合规豁免判红）：\n${okCi.out}`)
+  assert.match(okCi.out, /严格口径：开（CI 环境自动开/)
+  assert.match(okCi.out, /\[ALLOW\] tag=tmp-trace-legacy/)
+
+  const illegal = writeAllowlist(repo, { 'tmp-trace-legacy': { reason: '用例桩：缺到期日' } })
+  const badCi = runGate(repo.dir, ['--tag', 'tmp-trace-legacy', '--allowlist', illegal, '--now', '2026-12-01'], { GITHUB_ACTIONS: 'true' })
+  assert.equal(badCi.status, 1, `CI 里缺 reviewAfter 必须红（否则「CI 严格」只是文档上的一句话）：\n${badCi.out}`)
+  assert.match(badCi.out, /缺 `reviewAfter`/)
+})
+
+test('豁免清单里的 tag 已不存在于仓库 → [WARN] 点名「过期条目该清理」，不静默，也不影响别的 tag 的绿', (t) => {
+  const repo = makeRepo(t)
+  git(repo.dir, 'tag', 'tmp-trace-ok', repo.mainSha)
+  // 只登记一个**根本不存在**的 tag：tag 被删 / release 撤下之后，条目就该被清理
+  const allowlist = writeAllowlist(repo, {
+    'tmp-trace-gone': { reason: '曾豁免过（用例桩）', addedAt: '2026-11-21', reviewAfter: '2027-01-31' },
+  })
+
+  const result = runGate(repo.dir, ['--tag', 'tmp-trace-ok', '--allowlist', allowlist, '--now', '2026-12-01'])
+  assert.equal(result.status, 0, `清单里有失效条目不该把这一跑判红（红的是「不该留在清单里」，不是「tag 不在 main 上」）：\n${result.out}`)
+  assert.match(result.out, /\[WARN\] 豁免清单里的 `tmp-trace-gone` \*\*已不存在于仓库\*\*/)
+  assert.match(result.out, /过期条目该清理/)
+  // 同一次输出里 tmp-trace-ok 必须真的被查过（否则这只是一次「什么都没验的绿」）
+  assert.match(result.out, /\[OK\]   tag `tmp-trace-ok`/)
+})
+
+test('豁免了「其实已经是 main 祖先」的 tag → 仍绿，但 WARN 点名「用不上了，请删掉」（豁免清单不许变成垃圾桶）', (t) => {
+  const repo = makeRepo(t)
+  git(repo.dir, 'tag', 'tmp-trace-ok', repo.mainSha)
+  const allowlist = writeAllowlist(repo, {
+    'tmp-trace-ok': { reason: '曾经无法重指（用例桩，现已可溯源）', addedAt: '2026-11-21', reviewAfter: '2027-01-31' },
+  })
+
+  const result = runGate(repo.dir, ['--tag', 'tmp-trace-ok', '--allowlist', allowlist, '--now', '2026-12-01'])
+  assert.equal(result.status, 0, `已经在 main 历史里的 tag 本来就绿：\n${result.out}`)
+  assert.match(result.out, /\[WARN\] tag `tmp-trace-ok` 其实\*\*已经是 origin\/main 的祖先\*\*/)
+  assert.match(result.out, /请从豁免清单里删除/)
+})
+
+test('豁免清单不存在 → 视为空表正常跑（不报错、不改变判据）；清单 JSON 坏掉 → exit 2（解析不了就不许当空表）', (t) => {
+  const repo = makeRepo(t)
+  git(repo.dir, 'tag', 'tmp-trace-ok', repo.mainSha)
+
+  const missing = runGate(repo.dir, ['--tag', 'tmp-trace-ok', '--allowlist', path.join(repo.dir, 'nope-allowlist.json')])
+  assert.equal(missing.status, 0, `缺清单文件必须正常跑：\n${missing.out}`)
+  assert.match(missing.out, /不存在 → 视为空表/)
+  assert.match(missing.out, /\[OK\]   tag `tmp-trace-ok`/)
+  assert.doesNotMatch(missing.out, /\[ENV\]/)
+
+  // 坏 JSON 不能静默当空表 —— 那等于把清单里所有例外悄悄丢掉（红会出现在别处，比红在这里难查得多）
+  const brokenPath = path.join(repo.dir, 'broken-allowlist.json')
+  writeFileSync(brokenPath, '{ "v9.9.9": { "reason": "x", }\n')
+  const broken = runGate(repo.dir, ['--tag', 'tmp-trace-ok', '--allowlist', brokenPath])
+  assert.equal(broken.status, 2, `坏 JSON 必须 exit 2（环境问题），实际 ${broken.status}：\n${broken.out}`)
+  assert.match(broken.out, /豁免清单不是合法 JSON/)
+})
+
+test('入库的豁免清单自检：每条 reason / reviewAfter 合法，且 v1.4.5 **不许**在里面（它有 main 提交，正确修法是重指）', () => {
+  assert.match(DEFAULT_ALLOWLIST, /scripts\/release-traceability-allowlist\.json$/)
+
+  const allowlist = loadAllowlist({ file: DEFAULT_ALLOWLIST })
+  assert.equal(allowlist.present, true, '入库的豁免清单不见了（政策在 docs/RELEASE-MANUAL.md §6.2）')
+  const entries = allowlist.entries
+  assert.ok(entries.length >= 1, '清单里一条豁免都没有？那 v1.4.1 会红 —— 要么补条目，要么把这条用例一起删掉')
+
+  for (const entry of entries) {
+    assert.deepEqual(entry.problems, [], `豁免条目 \`${entry.tag}\` 不合规：${entry.problems.join('；')}`)
+    assert.ok(isIsoDate(entry.reviewAfter), `\`${entry.tag}\` 的 reviewAfter 不是合法日期`)
+    assert.ok(isIsoDate(entry.addedAt), `\`${entry.tag}\` 的 addedAt 不是合法日期（可审计性）`)
+    // 到期判据必须算得出来：拿「登记那天」和「到期后一天」各拍一次
+    assert.equal(expiryOf(entry, entry.addedAt).expired, false, `\`${entry.tag}\` 在登记当天就过期了？`)
+  }
+
+  // v1.4.1：版本提交 c504ee51 从未并入 main（main 从 1.4.0 直接到 1.4.3）→ 只能豁免
+  assert.ok(entries.some((entry) => entry.tag === 'v1.4.1'), 'v1.4.1 必须留在豁免清单里（重指等于伪造祖先关系）')
+  // v1.4.5：有对应 main 提交 b43d5559 → **必须重指**。一旦被塞进豁免，豁免就变成了「放宽」。
+  assert.ok(
+    !entries.some((entry) => entry.tag === 'v1.4.5'),
+    'v1.4.5 有对应 main 提交（b43d5559），正确修法是重指 tag，不是进豁免清单'
+  )
 })
 
 // ---------------------------------------------------------------- 接线（登记为 kind: 'ci'，命令口径不许被改软）

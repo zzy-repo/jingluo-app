@@ -55,9 +55,13 @@
  *   node scripts/check-release-traceability.mjs --limit 10            # 窗口大小
  *   node scripts/check-release-traceability.mjs --repo owner/name     # 显式指定仓库
  *   node scripts/check-release-traceability.mjs --offline-skip        # 离线跳过（**CI 里禁用**）
+ *   node scripts/check-release-traceability.mjs --strict              # 豁免清单按严格口径校验（CI 自动开）
+ *   node scripts/check-release-traceability.mjs --now 2027-02-01      # 注入「今天」（验到期必红，不改系统时间）
+ *   node scripts/check-release-traceability.mjs --allowlist <path>    # 换一份豁免清单（用例 / 审计用）
  *   pnpm run check:release-traceability
  *
- * 退出码：0 全部在 main 历史里 / 1 有 tag 不在 origin/main 历史里（或 targetCommitish 不一致）/
+ * 退出码：0 全部在 main 历史里（或命中了没过期的豁免）/ 1 有 tag 不在 origin/main 历史里、targetCommitish 不一致、
+ *         **豁免已过期**、或（`--strict`）豁免条目缺 `reason` / `reviewAfter` /
  *         2 环境不成立（gh 缺 / origin/main 缺 / 浅克隆 / tag 没拉到 / 参数错）—— fail-closed，绝不当成绿。
  *
  * ## 逃生舱？没有（只留一个「离线跳过」，且 CI 里是禁用状态）
@@ -67,6 +71,26 @@
  * 唯一的例外是**离线**跑（拿不到 gh / 没有网络）：`--offline-skip` 打印「已跳过（离线）」并 exit 0，
  * 但它**在 CI 里被硬禁**（`assertOfflineSkipAllowed`：见到 GITHUB_ACTIONS / CI 就 exit 2）——
  * 「离线跳过」是给人本机用的，不是给流水线用的。
+ *
+ * ## 豁免：**有到期日的显式例外**，不是放宽（#651 / #738）
+ *
+ * 不是每个红都能靠「重指 tag」修掉。`v1.4.1` → `c504ee51` 的版本提交**从未并入 main**
+ * （main 从 1.4.0 直接到 1.4.3），把 tag 挪到 main 上的某个提交等于**伪造祖先关系** ——
+ * 那比「红着」更糟：它会让溯源链看起来是通的，实际是拼出来的。这类历史遗留只能**豁免**。
+ *
+ * 所以豁免这件事落在**入库的清单**里，而不是命令行开关上：
+ * `scripts/release-traceability-allowlist.json`（政策见 docs/RELEASE-MANUAL.md §6.2）。判据：
+ *
+ *   · 命中条目 → 打印 `[ALLOW] tag=<t> reason="…" reviewAfter=<date>`，**不静默**、不计入失败；
+ *   · 今天 > `reviewAfter` → exit 1：「豁免已过期，请重指或删除该 tag」，并打印该条 reason ——
+ *     到期日是这套机制的全部意义所在（永久豁免 = 永久后门）；
+ *   · `--strict`（**CI 里自动等价开启**，见 `resolveStrict`）→ 每条必须同时有 `reason` 与
+ *     `reviewAfter`，缺一个 / 日期非法 → exit 1；
+ *   · 清单文件不存在 → 视为空表，正常跑（不报错）：没有历史遗留时它为 0 字节存在与否都不该改变判据；
+ *   · 清单里的条目**用不上**了（tag 已删除 / 没有 release 记录 / 或它其实已经是 main 祖先）→ `[WARN]`
+ *     点名，明确要求清理 —— 豁免清单不许变成垃圾桶。
+ *
+ * 与「放宽」的区别就一句话：**豁免有到期日、有理由、有人负责复审，并且每次运行都会把名字打在屏幕上。**
  *
  * ## CI 前提（实测过的，不是猜的）
  *
@@ -81,7 +105,12 @@
  */
 
 import { spawnSync } from 'node:child_process'
-import { pathToFileURL } from 'node:url'
+import { existsSync, readFileSync } from 'node:fs'
+import path from 'node:path'
+import { fileURLToPath, pathToFileURL } from 'node:url'
+
+const HERE = path.dirname(fileURLToPath(import.meta.url))
+const ROOT = path.resolve(HERE, '..')
 
 /** 断言的目标引用：**写死 origin/main**，不给「换个 ref 就绿」的口子 */
 const MAIN_REF = 'origin/main'
@@ -95,6 +124,15 @@ const OFFLINE_SKIP_FLAG = '--offline-skip'
 /** gh 可执行文件。`GH_BIN` 只用来指路径（受限环境 / L0 里证明「gh 不可用」这条错），
  *  **不能放宽任何断言**：指错了只会让门禁 fail-closed（exit 2）。 */
 const GH_BIN = process.env.GH_BIN || 'gh'
+
+/**
+ * 豁免清单默认位置（**入库文件**）：`scripts/release-traceability-allowlist.json`。
+ * `--allowlist` 只换「读哪一份」，不换判据 —— 用例与审计要能指向临时文件，真跑时永远是这个路径。
+ */
+const DEFAULT_ALLOWLIST = path.resolve(ROOT, 'scripts/release-traceability-allowlist.json')
+
+/** 日期的唯一合法形态（豁免的 `addedAt` / `reviewAfter`、`--now` 都是它） */
+const ISO_DATE = /^(\d{4})-(\d{2})-(\d{2})$/
 
 const EXIT_OK = 0
 /** 断言不成立：tag 不在 origin/main 历史里 / targetCommitish 与实际提交不一致 */
@@ -153,6 +191,42 @@ const gitOk = (args, options = {}) => {
 
 const isCi = () => process.env.GITHUB_ACTIONS === 'true' || process.env.CI === 'true'
 
+/**
+ * 严格口径在 **CI 里自动开启**（等价 `--strict`）。
+ *
+ * 为什么不只在 ci.yml 里写 `--strict`：ci.yml 那一行被 #738 的用例钉成**裸跑**
+ * （`run: pnpm run check:release-traceability`，且不许带 continue-on-error），
+ * 把口径交给「某一行怎么写」正是 #369 的病根。判据落在脚本里：见到 CI 环境变量就按严格口径校验，
+ * 并**打印为什么**（`[check:release-traceability] 严格口径：开（CI 环境自动开）`），不静默。
+ * 本机要同样的口径：显式 `--strict`。
+ */
+const resolveStrict = (options) => {
+  if (options.strict) return { strict: true, reason: '--strict' }
+  if (isCi()) return { strict: true, reason: 'CI 环境自动开（GITHUB_ACTIONS / CI）' }
+  return { strict: false, reason: '本机未开（加 --strict 用 CI 同一口径）' }
+}
+
+/** 校验 `YYYY-MM-DD`（形态 + 真实存在：挡掉 2027-02-30 这种「看起来像日期」的值） */
+const isIsoDate = (value) => {
+  if (typeof value !== 'string') return false
+  const matched = ISO_DATE.exec(value)
+  if (!matched) return false
+  const [year, month, day] = matched.slice(1).map(Number)
+  const date = new Date(Date.UTC(year, month - 1, day))
+  return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day
+}
+
+/** 「今天」= 本地日期（可以用 `--now` 注入；到期判据是 `今天 > reviewAfter`，到期当天仍算有效） */
+const resolveToday = (injected) => {
+  if (injected) {
+    if (!isIsoDate(injected)) throw new UsageError(`--now 需要 YYYY-MM-DD 形式的日期，收到：${injected}`)
+    return injected
+  }
+  const now = new Date()
+  const pad = (value) => String(value).padStart(2, '0')
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`
+}
+
 // ---------------------------------------------------------------- 参数
 
 const parseArgs = (argv) => {
@@ -162,6 +236,9 @@ const parseArgs = (argv) => {
     includePrerelease: false,
     offlineSkip: false,
     repo: null,
+    strict: false,
+    now: null,
+    allowlist: DEFAULT_ALLOWLIST,
     help: false,
   }
   for (let index = 0; index < argv.length; index++) {
@@ -177,7 +254,14 @@ const parseArgs = (argv) => {
       const limit = Number(valueOf('--limit'))
       if (!Number.isInteger(limit) || limit < 1) throw new UsageError('--limit 必须是 ≥1 的整数')
       options.limit = limit
-    } else if (arg === '--include-prerelease') options.includePrerelease = true
+    } else if (arg === '--now') {
+      const now = valueOf('--now')
+      if (!isIsoDate(now)) throw new UsageError(`--now 需要 YYYY-MM-DD 形式的日期，收到：${now}`)
+      options.now = now
+    } else if (arg === '--allowlist') {
+      options.allowlist = path.resolve(valueOf('--allowlist'))
+    } else if (arg === '--strict') options.strict = true
+    else if (arg === '--include-prerelease') options.includePrerelease = true
     else if (arg === OFFLINE_SKIP_FLAG) options.offlineSkip = true
     else if (arg === '--help' || arg === '-h') options.help = true
     // 未知参数一律拒绝：有人想加 `--allow-missing-main` 时，必须在这里就被拦住，而不是静默忽略后
@@ -190,11 +274,15 @@ const parseArgs = (argv) => {
 const usage = () => `用法：
   node scripts/check-release-traceability.mjs [--tag <t>]... [--limit <n>] [--include-prerelease]
                                              [--repo <owner/name>] [--offline-skip]
+                                             [--strict] [--now <YYYY-MM-DD>] [--allowlist <path>]
 
   --tag <t>              只查这个 tag（可重复；此时不需要 release 记录，gh 只在能确定仓库时用来交叉核对 targetCommitish）
   --limit <n>            默认查最近 n 个正式版 release（默认 ${DEFAULT_LIMIT}）
   --include-prerelease   连预发布一起查（草稿永不查：草稿不算「已发布」）
   --repo <owner/name>    显式指定仓库（默认取 GITHUB_REPOSITORY，再退回 origin remote）
+  --strict               豁免清单按严格口径校验：每条必须同时有 reason 与 reviewAfter（**CI 里自动等价开启**）
+  --now <YYYY-MM-DD>     注入「今天」，用来验「豁免已过期」那一拍（不改系统时间）
+  --allowlist <path>     换一份豁免清单（默认 scripts/release-traceability-allowlist.json；用例 / 审计用）
   ${OFFLINE_SKIP_FLAG}       离线跳过（打印「已跳过（离线）」并 exit 0；**CI 里禁用**，见到即 exit 2）`
 
 /**
@@ -405,10 +493,79 @@ const staleMainWarning = (commit) => {
   )
 }
 
+// ---------------------------------------------------------------- 豁免清单（有到期日的显式例外）
+
+/**
+ * 读豁免清单。三种形态分开：
+ *   · 文件不存在 → `{ present: false, entries: [] }`，**不是错误**：没有历史遗留时它有没有都不改变判据；
+ *   · JSON 坏 / 顶层不是对象 → **EnvError（exit 2）**：解析不了就等于「没人知道有哪些例外」，
+ *     这种情况静默当空表 = 偷偷把豁免全丢掉，红在别处比红在这里难查得多；
+ *   · 正常 → 逐条解析出 `reason` / `addedAt` / `reviewAfter` / `problems`（字段缺失与日期非法都进 problems，
+ *     由调用方按 strict 决定是红还是 WARN）。
+ *
+ * 顶层 `_` 开头的键是元信息（`_meta`），不算条目 —— 否则每加一条元信息都要被当成一个「tag」。
+ */
+const loadAllowlist = ({ file }) => {
+  const label = path.relative(ROOT, file) || file
+  const result = { file, label, present: false, entries: [], problems: [] }
+  if (!existsSync(file)) return result
+  result.present = true
+  let raw
+  try {
+    raw = readFileSync(file, 'utf8')
+  } catch (error) {
+    throw new EnvError(`豁免清单读不动（${label}）：${error.message}`)
+  }
+  let parsed
+  try {
+    parsed = JSON.parse(raw)
+  } catch (error) {
+    throw new EnvError(
+      `豁免清单不是合法 JSON（${label}）：${error.message}\n` +
+        '  · 解析不了就没法知道「哪些 tag 被豁免了」—— 当空表处理等于偷偷丢掉全部例外，所以这里 fail-closed。'
+    )
+  }
+  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new EnvError(`豁免清单顶层必须是对象（{ "_meta": …, "<tag>": { reason, reviewAfter } }），实际是：${label}`)
+  }
+  for (const [key, value] of Object.entries(parsed)) {
+    if (key.startsWith('_')) continue
+    const entry = {
+      tag: key,
+      label: result.label,
+      reason: typeof value?.reason === 'string' ? value.reason.trim() : '',
+      addedAt: typeof value?.addedAt === 'string' ? value.addedAt.trim() : '',
+      reviewAfter: typeof value?.reviewAfter === 'string' ? value.reviewAfter.trim() : '',
+      problems: [],
+    }
+    if (!entry.reason) entry.problems.push('缺 `reason`（必须写明「为什么这个 tag 不能重指」，否则下一个人无从判断该不该续期）')
+    if (!entry.reviewAfter) {
+      entry.problems.push('缺 `reviewAfter`（豁免必须有到期日 —— 没有到期日的豁免就是永久后门）')
+    } else if (!isIsoDate(entry.reviewAfter)) {
+      entry.problems.push(`\`reviewAfter\`=\`${entry.reviewAfter}\` 不是合法的 YYYY-MM-DD 日期（到期判据无从计算）`)
+    }
+    if (entry.addedAt && !isIsoDate(entry.addedAt)) {
+      entry.problems.push(`\`addedAt\`=\`${entry.addedAt}\` 不是合法的 YYYY-MM-DD 日期（只影响可审计性，不影响判据）`)
+    }
+    result.entries.push(entry)
+  }
+  return result
+}
+
+/**
+ * 条目是否已过期。`今天 > reviewAfter` → 过期（到期当天仍有效：`reviewAfter` 是「最晚复审到哪一天」）。
+ * `reviewAfter` 缺失 / 非法 → **判不了**，返回 `null`（不假装「没过期」，由 strict 那一拍去红）。
+ */
+const expiryOf = (entry, today) => {
+  if (!isIsoDate(entry.reviewAfter)) return null
+  return { expired: today > entry.reviewAfter, today, reviewAfter: entry.reviewAfter }
+}
+
 // ---------------------------------------------------------------- 单个 tag 的判定
 
-const checkOneTag = ({ tag, meta, mainSha }) => {
+const checkOneTag = ({ tag, meta, mainSha, allowEntry = null, today }) => {
   const lines = []
+  const warnings = []
   const { commit, objectType, objectSha } = resolveTagCommit(tag)
   const info = describeCommit(commit)
   const tagged = objectType === 'tag'
@@ -423,12 +580,24 @@ const checkOneTag = ({ tag, meta, mainSha }) => {
   else if (meta?.kind === 'none') lines.push(`  · targetCommitish：跳过 —— ${meta.reason}`)
   else if (meta?.kind === 'unavailable') lines.push(`  · targetCommitish：跳过 —— ${meta.reason}`)
 
+  const allow = allowEntry
+  const expiry = allow ? expiryOf(allow, today) : null
+
   const failures = []
   if (!ancestor) {
-    failures.push(
-      `tag \`${tag}\` 指向 \`${info.short}\`（\`${info.subject}\`），**不在 ${MAIN_REF} 历史里**；` +
-        '请把 tag 重指到 main 上的提交后重建'
-    )
+    if (allow) {
+      // 命中豁免：这条红线**不计入失败**，但也不静默 —— `[ALLOW]` 那一行 + 这里的说明必须一起出现，
+      // 否则「红着但退出码是 0」会被后来的人当成 bug 去修掉。
+      lines.push(
+        `  · 豁免：不在 ${MAIN_REF} 历史里，但清单登记为「无法重指」的历史遗留` +
+          `（${allow.label ?? ''}：重指等于伪造祖先关系，见下方 [ALLOW] 与 docs/RELEASE-MANUAL.md §6.2）`
+      )
+    } else {
+      failures.push(
+        `tag \`${tag}\` 指向 \`${info.short}\`（\`${info.subject}\`），**不在 ${MAIN_REF} 历史里**；` +
+          '请把 tag 重指到 main 上的提交后重建'
+      )
+    }
     lines.push(
       commonAncestor
         ? `  · 诊断：与 ${MAIN_REF} 有共同祖先 \`${commonAncestor.slice(0, 8)}\` —— 该提交在别的分支上（典型：squash 合并前的 PR 头提交）`
@@ -442,9 +611,42 @@ const checkOneTag = ({ tag, meta, mainSha }) => {
     const warning = staleMainWarning(commit)
     if (warning) lines.push(`  · 提醒：${warning}`)
   }
+
+  if (allow) {
+    if (expiry === null) {
+      // 到期判据算不出来：不假装「没过期」。strict 口径下这一条在清单层就是红（见 run 里的 problems 拍）。
+      lines.push('  · 豁免有效期：`reviewAfter` 缺失或非法 —— 无从判断这份豁免还能用多久（`--strict` 下这是红）')
+    } else if (expiry.expired) {
+      failures.push(
+        `豁免已过期（reviewAfter=${allow.reviewAfter} < 今天 ${today}）：**请重指或删除该 tag** —— ` +
+          `豁免是有到期日的显式例外，不是永久放行。清单条目 reason：“${allow.reason || '(缺 reason)'}”`
+      )
+    } else {
+      lines.push(`  · 豁免有效期：reviewAfter=${allow.reviewAfter}（今天 ${today}，未过期；到期后必须复审，否则本门禁红）`)
+      if (ancestor) {
+        warnings.push(
+          `tag \`${tag}\` 其实**已经是 ${MAIN_REF} 的祖先** —— 这条豁免用不上了，请从豁免清单里删除（豁免清单不许变成垃圾桶）`
+        )
+      }
+    }
+  }
+
   lines.push(`  · 复核命令：git merge-base --is-ancestor ${info.full} ${MAIN_REF} ; echo $?`)
 
-  return { tag, ok: failures.length === 0, info, failures, lines, ancestor, mainSha }
+  const ok = failures.length === 0
+  return {
+    tag,
+    ok,
+    kind: !ok ? 'fail' : allow ? 'allow' : 'ok',
+    info,
+    failures,
+    warnings,
+    lines,
+    ancestor,
+    mainSha,
+    allow,
+    expiry,
+  }
 }
 
 // ---------------------------------------------------------------- 主流程
@@ -494,8 +696,24 @@ const run = (options) => {
     tagMetaAvailable = true
   }
 
+  // 豁免清单与「今天」都在打横幅时就定下来：判据要看日期，日期来源必须写在输出里（`--now` 注入过就点名）。
+  const { strict, reason: strictReason } = resolveStrict(options)
+  const allowlist = loadAllowlist({ file: options.allowlist })
+  const today = resolveToday(options.now)
+  const allowByTag = new Map(allowlist.entries.map((entry) => [entry.tag, entry]))
+
   console.log(`[check:release-traceability] 断言：已发布的 tag 必须在 \`${MAIN_REF}\` 历史里（${MAIN_REF} = ${mainSha.slice(0, 8)}）`)
   for (const note of notes) console.log(note)
+  console.log(
+    allowlist.present
+      ? `[check:release-traceability] 豁免清单：${allowlist.label}（${allowlist.entries.length} 条：` +
+          `${allowlist.entries.map((entry) => entry.tag).join(', ') || '(空)'}）`
+      : `[check:release-traceability] 豁免清单：${allowlist.label} 不存在 → 视为空表（正常跑）`
+  )
+  console.log(
+    `[check:release-traceability] 严格口径：${strict ? '开' : '关'}（${strictReason}）｜今天=${today}` +
+      `${options.now ? '（--now 注入）' : ''}`
+  )
 
   const targets = []
   if (options.tags.length > 0) {
@@ -514,32 +732,88 @@ const run = (options) => {
   }
 
   const results = []
-  for (const target of targets) results.push(checkOneTag({ ...target, mainSha }))
+  for (const target of targets) results.push(checkOneTag({ ...target, mainSha, allowEntry: allowByTag.get(target.tag) ?? null, today }))
 
   for (const result of results) {
+    if (result.kind === 'allow') {
+      // 命中豁免：**不静默** —— 一行一个 tag，reason 与到期日都在同一行里，`git log` 里就能对账。
+      console.log(
+        `[ALLOW] tag=${result.tag} reason="${result.allow.reason || '(缺 reason)'}" ` +
+          `reviewAfter=${result.allow.reviewAfter || '(缺 reviewAfter)'}`
+      )
+      for (const line of result.lines) console.log(line)
+      for (const warning of result.warnings) console.log(`[WARN] ${warning}`)
+      continue
+    }
     if (result.ok) {
       console.log(`[OK]   tag \`${result.tag}\` → ${result.info.short}（\`${result.info.subject}\`）在 ${MAIN_REF} 历史里`)
       for (const line of result.lines) console.log(line)
+      for (const warning of result.warnings) console.log(`[WARN] ${warning}`)
       continue
     }
     // 结果统一走 stdout：stdout/stderr 分开写会让「红」与它上面那些「绿」在终端里交错，
     // 证据就没法按顺序读了（本门禁的报告本身就是证据）。
     for (const failure of result.failures) console.log(`[FAIL] ${failure}`)
     for (const line of result.lines) console.log(line)
+    for (const warning of result.warnings) console.log(`[WARN] ${warning}`)
   }
 
+  // 清单层的问题（缺字段 / 日期非法 / 条目已无用）：strict 下判红，非 strict 下至少 WARN 点名，绝不静默。
+  const listFailures = []
+  const listWarnings = []
+  for (const entry of allowlist.entries) {
+    if (entry.problems.length === 0) continue
+    const message = `豁免清单 \`${entry.tag}\`：${entry.problems.join('；')}`
+    if (strict) listFailures.push(message)
+    else listWarnings.push(`${message}（\`--strict\` / CI 里这就是红）`)
+  }
+  const targetTags = new Set(targets.map((target) => target.tag))
+  const staleWarnings = []
+  for (const entry of allowlist.entries) {
+    if (targetTags.has(entry.tag)) continue
+    const ref = git(['rev-parse', '--verify', '--quiet', `refs/tags/${entry.tag}`])
+    if (ref.status !== 0) {
+      // 用例里能离线复现的那一拍：清单里点名的 tag 在仓库里已经不存在 → 过期条目该清理
+      staleWarnings.push(
+        `豁免清单里的 \`${entry.tag}\` **已不存在于仓库**（refs/tags/${entry.tag} 找不到）—— ` +
+          `过期条目该清理（reason：“${entry.reason || '(缺 reason)'}”）`
+      )
+      continue
+    }
+    if (repo && tagMetaAvailable) {
+      const meta = releaseMeta({ repo, tag: entry.tag })
+      if (meta.kind === 'none') {
+        staleWarnings.push(
+          `豁免清单里的 \`${entry.tag}\` 在本仓库**没有 release 记录**（tag 还在，但「已发布」这件事没了）—— ` +
+            `过期条目该清理（reason：“${entry.reason || '(缺 reason)'}”）`
+        )
+      }
+    }
+  }
+  for (const warning of staleWarnings) console.log(`[WARN] ${warning}`)
+  for (const warning of listWarnings) console.log(`[WARN] ${warning}`)
+
   const failed = results.filter((result) => !result.ok)
+  const allowed = results.filter((result) => result.kind === 'allow')
   const summary = `${results.length - failed.length} 绿 / ${failed.length} 红`
-  if (failed.length > 0) {
+  const allowNote = allowed.length > 0
+    ? `；其中 ${allowed.length} 个走豁免（由豁免清单里的到期日管着）：${allowed.map((result) => result.tag).join(', ')}`
+    : ''
+  if (failed.length > 0 || listFailures.length > 0) {
+    for (const failure of listFailures) console.log(`[FAIL] ${failure}`)
+    const failedTags = failed.map((result) => result.tag)
+    const headline = [...failedTags, ...(listFailures.length > 0 ? ['豁免清单（缺字段 / 日期非法）'] : [])].join(', ')
     console.log(
-      `\n[check:release-traceability] ✗ ${summary}：${failed.map((result) => result.tag).join(', ')}\n` +
+      `\n[check:release-traceability] ✗ ${summary}：${headline}\n` +
         '这道门禁判的是**溯源关系**（tag 指向的提交必须是 origin/main 的祖先），不是「包里差几个改动」——\n' +
         '「从 tag 复现问题」必须 checkout 到主线上的树，否则发布物与 main 的对应关系只能靠人记。\n' +
-        '修法：把 tag 重指到 main 上对应的提交，然后重建/重发（不改 tag 就只能重发）。'
+        '修法：把 tag 重指到 main 上对应的提交，然后重建/重发（不改 tag 就只能重发）。\n' +
+        '若红的是「豁免已过期」：① 能重指就重指；② 确实无法重指（版本提交从未进过 main）→ 由 owner 复审后' +
+        '**重设 reviewAfter 并写清复审结论**（续期是复审，不是免检）；③ 删掉该 tag 与其豁免条目。'
     )
     return EXIT_FAIL
   }
-  console.log(`\n[check:release-traceability] ✓ ${summary}（全部在 ${MAIN_REF} 历史里）`)
+  console.log(`\n[check:release-traceability] ✓ ${summary}（全部在 ${MAIN_REF} 历史里${allowNote}）`)
   return EXIT_OK
 }
 
@@ -576,6 +850,7 @@ const main = (argv) => {
 }
 
 export {
+  DEFAULT_ALLOWLIST,
   EXIT_ENV,
   EXIT_FAIL,
   EXIT_OK,
@@ -584,8 +859,12 @@ export {
   assertOfflineSkipAllowed,
   classifyTargetCommitish,
   deriveRepo,
+  expiryOf,
+  isIsoDate,
+  loadAllowlist,
   main,
   parseArgs,
+  resolveStrict,
   resolveTagCommit,
 }
 
