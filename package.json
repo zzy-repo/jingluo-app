@@ -25,7 +25,7 @@
     "check:case-collision": "node scripts/check-case-collision.mjs",
     "check:db-version": "node scripts/check-db-version.mjs",
     "check:matrix": "node scripts/compat/check-matrix-config.mjs && node scripts/compat/matrix-scan.mjs",
-  "check:syntax-floor": "node scripts/compat/check-syntax-floor.mjs",
+    "check:syntax-floor": "node scripts/compat/check-syntax-floor.mjs",
     "check:compat-baseline": "node scripts/check-compat-baseline.mjs",
     "check:ip": "node scripts/check-hardcoded-ip.mjs",
     "check:guard": "node scripts/check-guard-es5.mjs",
@@ -87,7 +87,8 @@
     "check:refactor-direction": "node scripts/check-refactor-direction.mjs",
     "check:webroot-hygiene": "node scripts/check-webroot-hygiene.mjs",
     "check:private-publish-root": "node scripts/check-private-publish-root.mjs",
-    "measure:scroll-shift": "node scripts/measure-narrow-scroll-shift.mjs"
+    "measure:scroll-shift": "node scripts/measure-narrow-scroll-shift.mjs",
+    "check:redaction": "node scripts/check-artifact-redaction.mjs"
   },
   "dependencies": {
     "@capacitor/browser": "8.0.5",
