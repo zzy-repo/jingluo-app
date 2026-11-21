@@ -74,7 +74,6 @@ const readVersionName = (): string => pkg.version?.trim() ?? ''
  */
 const endpoints = JSON.parse(readFileSync(new URL('./config/endpoints.json', import.meta.url), 'utf8')) as {
   chatBaseUrl: string
-  inviteBaseUrl: string
   feedbackUrl: string
   legacyHosts: string[]
   download: { primaryBase: string; fallbackBase: string }
@@ -472,7 +471,8 @@ export const createConfig = ({
         // 默认 false —— 运行时对非回环明文一律抛 ConsumeConfigError（见 services/consume/http.ts）。
         insecureConsume,
         chatBaseUrl: endpoints.chatBaseUrl,
-        inviteBaseUrl: endpoints.inviteBaseUrl,
+        // #745 第二步：inviteBaseUrl 已删（邀请服下线、客户端零读者），不再注入 ——
+        // 它只贡献了公开产物里的 `http://140.210.13.146:60013` 这一条内网地址。
         feedbackUrl: endpoints.feedbackUrl,
         legacyHosts: endpoints.legacyHosts,
         // 分发地址（Issue #269）：源码只写 __ENDPOINTS__.dlPrimaryBase，打包前替换一次

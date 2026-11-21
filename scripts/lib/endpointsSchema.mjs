@@ -7,15 +7,18 @@
  * 所以这里既没有副作用，也不 import 任何读文件的模块。
  *
  * 校验项（对应 Issue #274 的验收）：
- *   1. 三份地址是绝对 http(s) URL；
+ *   1. 端点地址（`chatBaseUrl` / `feedbackUrl`，`inviteBaseUrl` 见 #745）是绝对 http(s) URL；
  *   2. 主机在 `allowedHosts` 里 —— 报「配置里的主机与白名单不一致」；
  *   3. 端口在 `allowedPorts` 里 —— 报「配置里的端口与白名单不一致」（负向 2：只改端口不改白名单必须红）；
  *   4. `legacyHosts`（已下线重写表）与 `allowedHosts` 不重叠；
- *   5. 三个端点在同一台机器上（本单的前提：一台机器、三个端口）。
+ *   5. ~~三个端点在同一台机器上~~ —— **#745 第二步已撤销**：对话上游搬到 sub2api 网关
+ *      （`https://sub2api.rose7.cn`），与仍留在旧池域的反馈上传天然不是一台机器。
+ *      「换机器忘改白名单」由第 2 / 3 条（主机、端口白名单）兜住，这条只为「一台机器三个端口」
+ *      的旧拓扑服务，留着只会把 #745 的正确改动判红。
  *
  * 校验项（对应 Issue #269，见 `validateDownload`）：
  *   6. `download.primaryBase` / `download.fallbackBase` 存在，且只能是「协议://主机[:端口]」；
- *   7. 回退机必须走 https；两个 base 不许相同（回退要有意义）。
+ *   7. 回退机必须走 https。（「两个 base 不许相同」见 #745 第二步：公网只有一个镜像，已撤销。）
  *   分发地址**不进** `URL_FIELDS`：第 5 条要求三个端点同机，而分发机是另一台机器。
  */
 
@@ -27,8 +30,13 @@ const LIB_DIR = path.dirname(fileURLToPath(import.meta.url))
 /** 配置文件的规范位置：仓库根的 `config/endpoints.json` */
 export const ENDPOINTS_FILE = path.resolve(LIB_DIR, '..', '..', 'config', 'endpoints.json')
 
-/** 三个地址字段（顺序即报错顺序；「三个端口同一台机器」指的就是它们） */
-export const URL_FIELDS = ['chatBaseUrl', 'inviteBaseUrl', 'feedbackUrl']
+/**
+ * 端点地址字段（顺序即报错顺序）。
+ *
+ * #745 第二步删掉了 `inviteBaseUrl`：邀请 / 额度 / 卡密服务早已下线（#604 迁到 consume），
+ * 客户端里连一个读者都没有，配置里留着只会把 `http://140.210.13.146:60013` 注入进公开产物。
+ */
+export const URL_FIELDS = ['chatBaseUrl', 'feedbackUrl']
 
 /**
  * 分发地址字段（Issue #269，顺序即报错顺序）。
@@ -98,11 +106,10 @@ export const validateDownload = (raw) => {
   if (fallback && fallback.protocol !== 'https:') {
     problems.push(`download.fallbackBase 必须走 https：${download.fallbackBase}（回退机是已发布版本的最后兜底）`)
   }
-  const primary = bases.get('primaryBase')
-  // 两个 base 相同 = 回退没有意义，还会让「首选失败才回退」白打一次同一台机器
-  if (primary && fallback && primary.href === fallback.href) {
-    problems.push(`download.primaryBase 与 download.fallbackBase 相同：${primary.href}（回退要有意义）`)
-  }
+  // 「两个 base 不许相同」这条在 #745 第二步撤销：公网只有一个镜像 `https://dl.rose7.cn`，
+  // 把 `primaryBase` 从内网分发机（公网用户根本打不到）改到它之后，
+  // 必然与 `fallbackBase` 相同。此时的语义是「首选失败 → 对同一台机器再试一次」，仍然可用；
+  // 等第二个公网镜像就位再把这条严格判定加回来。
   return problems
 }
 
@@ -171,16 +178,9 @@ export const validateEndpoints = (raw) => {
     }
   }
 
-  // 6. 三个端口必须是同一台机器（本单的前提：一台机器、三个端口）
-  if (urls.size === URL_FIELDS.length) {
-    const hosts = [...new Set([...urls.values()].map((url) => url.hostname))]
-    if (hosts.length > 1) {
-      problems.push(
-        `三个端点不在同一台机器上：${URL_FIELDS.map((field) => `${field}=${urls.get(field).hostname}`).join(', ')}` +
-          '（确实要拆机器就先改 config/endpoints.json 与这条校验，并在这里写明理由）'
-      )
-    }
-  }
+  // 6. 「三个端点同一台机器」这条校验已在 #745 第二步撤销（理由见文件头第 5 条）。
+  //    拆分后的拓扑：chatBaseUrl → sub2api 网关（公网 https），feedbackUrl → 旧池域（待 #745 维护者
+  //    决定 a/b 之后同样搬走）。再按「同机」判红等于禁止这次正确的收口。
 
   // 7. 分发地址（Issue #269）：形态与互不冲突，规则见 validateDownload
   problems.push(...validateDownload(raw))

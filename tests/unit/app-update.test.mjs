@@ -153,16 +153,21 @@ test('manifest fetch is anonymous, nonredirecting, cancellable and injectable', 
     '200 但清单不合法时也要试下一台（Issue #330：新机脏、旧机好时不能把可用清单丢掉）'
   )
 })
-test('首选新机不可达时按固定顺序回退旧机，并回传生效 base', async () => {
-  assert.deepEqual(RELEASE_BASES, [PRIMARY_RELEASE_BASE, FALLBACK_RELEASE_BASE], '顺序写死：先新后旧')
+test('首选机不可达时按固定顺序试下一台，并回传生效 base', async () => {
+  assert.deepEqual(RELEASE_BASES, [PRIMARY_RELEASE_BASE, FALLBACK_RELEASE_BASE], '顺序写死：先首选后回退')
   // 地址只有 config/endpoints.json 一个来源（#269）：这里跟着配置走，不再抄第二份字面量
   const dlConfig = JSON.parse(readFileSync(new URL('../../config/endpoints.json', import.meta.url), 'utf8'))
   assert.equal(PRIMARY_RELEASE_BASE, dlConfig.download.primaryBase, '首选地址 = download.primaryBase')
   assert.equal(FALLBACK_RELEASE_BASE, dlConfig.download.fallbackBase, '回退地址 = download.fallbackBase')
+  // #745 第二步：公网只有一个镜像，`primaryBase` 与 `fallbackBase` 同值（都是 dl.rose7.cn）。
+  // 于是「换下一台」实际退化成「对同一台再试一次」——下面的桩按**第几次尝试**失败，而不是按主机名，
+  // 这样无论配置是单镜像还是双镜像，这条回退机制都测得到。
   const seen = []
+  let attempt = 0
   const { rows: parsed, base } = await fetchManifest(new AbortController().signal, async (url) => {
     seen.push(url)
-    if (url.startsWith(PRIMARY_RELEASE_BASE)) {
+    attempt += 1
+    if (attempt === 1) {
       throw new TypeError('fetch failed')
     }
     return new Response(JSON.stringify({ releases: [row()] }))

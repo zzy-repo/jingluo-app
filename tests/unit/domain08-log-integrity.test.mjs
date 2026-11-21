@@ -49,7 +49,6 @@ registerHooks({
 
 globalThis.__ENDPOINTS__ ??= Object.freeze({
   chatBaseUrl,
-  inviteBaseUrl: 'https://invite.test.invalid',
   feedbackUrl: 'https://feedback.test.invalid',
   legacyHosts: Object.freeze([...legacyHosts]),
   allowedHosts: Object.freeze([]),

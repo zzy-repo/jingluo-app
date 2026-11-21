@@ -1,21 +1,20 @@
 {
-  "chatBaseUrl": "http://140.210.13.146:60010",
-  "inviteBaseUrl": "http://140.210.13.146:60013",
+  "chatBaseUrl": "https://sub2api.rose7.cn",
   "feedbackUrl": "http://140.210.13.146:60012/feedback",
   "legacyHosts": [
     "123.207.199.196",
     "62.106.70.167"
   ],
   "allowedHosts": [
+    "sub2api.rose7.cn",
     "140.210.13.146"
   ],
   "allowedPorts": [
-    60010,
-    60012,
-    60013
+    443,
+    60012
   ],
   "download": {
-    "primaryBase": "http://62.106.70.167:8888",
+    "primaryBase": "https://dl.rose7.cn",
     "fallbackBase": "https://dl.rose7.cn"
   },
   "consume": {

@@ -33,7 +33,7 @@ import { chromium } from 'playwright'
 
 // 消费层（sub2api）地址同样来自 `config/endpoints.json`（#274）：#608 的已登录态要点打桩，
 // 这里不许写字面量端口，否则本机改了 `config/endpoints.json` 之后这张截图会静默打到别处。
-import { consumeApiV1Prefix, consumeBaseUrl, inviteBaseUrl } from './lib/endpoints.mjs'
+import { consumeApiV1Prefix, consumeBaseUrl } from './lib/endpoints.mjs'
 // #386 的「流式中」截图要把 streaming 这个状态撑开：用同一份 ours 上游契约回 SSE（含 CORS 头），
 // 只是刻意延后 4 秒再回，好在上翻之后再截。
 import { OURS_CHAT_PATH, OURS_CORS, openAiSse } from '../tests/fixtures/domain03-04/ours-upstream.mjs'
@@ -63,10 +63,9 @@ export const DB_VERSION = 14
 /** 假 Key：只喂给界面让「服务配置」不是空态；订单接口被 route 拦掉，不会真的发出去 */
 const FIXTURE_API_KEY = 'sk-shot-mobile-fixture-0000'
 /**
- * #235：套餐 / 档案都是只读接口，打桩地址与集成测试同一份（明文邀请服 + 卡密主站）。
- * 邀请服地址来自 config/endpoints.json（#274），这里不再写字面量。
+ * #235：套餐 / 档案都是只读接口，打桩地址与集成测试同一份（卡密主站）。
+ * #745 第二步：邀请服（`inviteBaseUrl`）已下线，那一段路由桩随之删除。
  */
-const SHOT_INVITE_API = inviteBaseUrl
 const SHOT_CARD_API = 'https://apia.ecsafe.cn'
 
 /**
@@ -1889,27 +1888,7 @@ export const PAGES = {
         headers: { 'content-type': 'application/json', 'access-control-allow-origin': '*' },
         body: JSON.stringify(body),
       })
-      await page.route(`${SHOT_INVITE_API}/**`, async (route) => {
-        const url = new URL(route.request().url())
-        if (url.pathname === '/me') {
-          await route.fulfill(
-            json({
-              customer_id: 4210,
-              invite_code: 'G7TA7UR3',
-              invited_count: 1,
-              max_invites: 20,
-              bonus_points: 10,
-              redeemed: true,
-              quota_points: 100,
-              used_points: 0,
-              remaining_points: 100,
-              key_status: 'active',
-            })
-          )
-          return
-        }
-        await route.fulfill(json({}))
-      })
+      // #745 第二步：邀请服（`inviteBaseUrl`）已下线，原 /me 打桩随之删除。
       await page.route(`${SHOT_CARD_API}/api/plans`, async (route) => {
         await route.fulfill(
           json({

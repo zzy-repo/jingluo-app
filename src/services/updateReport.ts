@@ -45,7 +45,10 @@ export const hostOf = (value: string | undefined): string => {
 }
 
 /** 首选 → 回退的分发顺序，只写 host */
-export const releaseHosts = (): string => RELEASE_BASES.map((base) => hostOf(base)).join(' → ')
+// 去重：它描述的是「清单镜像有几台」，不是「按什么顺序去试」。#745 第二步之后公网只有一个镜像
+// （`download.primaryBase` 从内网机改到 `dl.rose7.cn`，与 `fallbackBase` 同值），不去重就会打印
+// `dl.rose7.cn → dl.rose7.cn`，读起来像两台机器。
+export const releaseHosts = (): string => [...new Set(RELEASE_BASES.map((base) => hostOf(base)))].join(' → ')
 
 const timeLine = (at: number | undefined): string => {
   if (at === undefined || !Number.isFinite(at)) {

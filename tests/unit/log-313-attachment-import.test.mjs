@@ -132,7 +132,7 @@ registerHooks({
 // ---------------------------------------------------------------- 浏览器环境替身
 
 globalThis.__API_ORIGIN__ = 'https://api.deepseek.com'
-// 构建期注入的端点表（`endpointKeyFromUrl` 靠它把地址归到 chatBaseUrl / inviteBaseUrl / feedbackUrl）
+// 构建期注入的端点表（`endpointKeyFromUrl` 靠它把地址归到 chatBaseUrl / feedbackUrl）
 globalThis.__ENDPOINTS__ = { chatBaseUrl: 'https://api.deepseek.com' }
 globalThis.__INTERNAL_BUILD__ = false
 globalThis.__log = { entries: [] }

@@ -38,7 +38,6 @@ import {
   downloadFallbackBase,
   downloadPrimaryBase,
   feedbackUrl,
-  inviteBaseUrl,
   legacyHosts,
   payBaseUrl,
   payTimeouts,
@@ -55,7 +54,6 @@ const ENDPOINTS = Object.freeze({
   // 要验放行分支的用例自己覆盖 `globalThis.__ENDPOINTS__`（见 tests/unit/insecure-consume-seam.test.mjs）。
   insecureConsume: false,
   chatBaseUrl,
-  inviteBaseUrl,
   feedbackUrl,
   legacyHosts: Object.freeze([...legacyHosts]),
   allowedHosts: Object.freeze([...allowedHosts]),

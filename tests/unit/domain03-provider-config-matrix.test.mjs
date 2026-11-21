@@ -48,7 +48,6 @@ registerHooks({
 // 打包期注入的常量（rspack DefinePlugin）：标准构建 → 默认渠道 deepseek
 globalThis.__ENDPOINTS__ ??= Object.freeze({
   chatBaseUrl,
-  inviteBaseUrl: 'https://invite.test.invalid',
   feedbackUrl: 'https://feedback.test.invalid',
   legacyHosts: Object.freeze([...legacyHosts]),
   allowedHosts: Object.freeze([]),

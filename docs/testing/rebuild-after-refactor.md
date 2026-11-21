@@ -136,7 +136,7 @@
 | --- | --- | --- | --- |
 | 10 | `ours/api.ts` `fetchPlans` / `formatPlanMeta` / `requestIdForCard` | `src/` 引用 **0**，只有测试在调 | W1-E 定案后二选一：要么接回「套餐」入口，要么连测试一起删 |
 | 11 | `ours/api.ts` `redeemCard`（旧 `/api/redeem`） | 仅被 ~~`invite/api.ts`~~ 的兜底路径调用 | A5 落地（走 `api/v1/redeem`）后删 |
-| 12 | ~~`invite/api.ts`~~ 的 `INVITE_API_BASE`（`config/endpoints.json` 的 `inviteBaseUrl` = `140.210.13.146:60013`） | 8 处（`main.tsx` / `bind.ts` / `rotate.ts` / `email.ts`…） | **A1 的门槛**：`consume` 落地后 `inviteBaseUrl` 必须从配置里消失 |
+| 12 | ~~`invite/api.ts`~~ 的 `INVITE_API_BASE`（`config/endpoints.json` 的 `inviteBaseUrl` = `140.210.13.146:60013`） | ~~8 处~~ **0 处**（`invite/api.ts` 已不存在） | ✅ **已清（#745 第二步）**：`inviteBaseUrl` 已从配置、注入与 `URL_FIELDS` 里删掉，公开产物不再出现 `:60013` |
 | 13 | `ours/mask.ts` | **4 个函数仍有 4–9 处引用**（`diagnostics/redact.ts` 也要用） | 不删；#487 的「引用数 0 才删」正是不删的理由 |
 | 14 | `ours/storage.ts` / `ours/paymentRecords.ts` | 支付侧保留（W1-E） | 不删 |
 | 14b | ~~`ours/trail.ts`~~（时间线数据层 800 行） | **本轮已删**：`src/` 里最后两个引用方（`PaymentTrailDialog` / `PaymentTrailView`）随三弹层合一一起下线，API 侧 `/api/trail` / `/api/order/trail` 也不再有人调（`LEGACY_PATHS` 里那两条豁免同步移除，6 → 4 条） | 已删；新页面走 sub2api 的 `/api/v1/redeem/history` 与 apia 的 `/api/orders`，不复用这条链路 |

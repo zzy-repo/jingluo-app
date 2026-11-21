@@ -6,7 +6,6 @@
  * | 字段 | 用途 | 前端消费方 |
  * | --- | --- | --- |
  * | `chatBaseUrl` | 对话上游 | `src/services/api/providers.ts` 的 `ours.defaults.baseUrl` |
- * | `inviteBaseUrl` | 邀请 / 额度 / 卡密服务 | `src/services/invite/api.ts` 的 `INVITE_API_BASE` |
  * | `feedbackUrl` | 反馈上传 | `src/services/diagnostics/config.ts` 的 `LEGACY_FEEDBACK_URL` |
  * | `legacyHosts` | 已下线主机（存过即视为没配过，回落默认） | `src/services/api/apiConfig.ts` 的 `LEGACY_HOSTS` |
  * | `allowedHosts` | `check:ip` 门禁豁免的线上主机白名单 | `scripts/lib/hardcodedIpAudit.mjs` 的 `ALLOWED_HOSTS` |
@@ -57,7 +56,6 @@ export const loadEndpoints = (file = ENDPOINTS_FILE) => {
   }
   return Object.freeze({
     chatBaseUrl: raw.chatBaseUrl.trim(),
-    inviteBaseUrl: raw.inviteBaseUrl.trim(),
     feedbackUrl: raw.feedbackUrl.trim(),
     legacyHosts: Object.freeze(raw.legacyHosts.map((h) => h.trim())),
     allowedHosts: Object.freeze(raw.allowedHosts.map((h) => h.trim())),
@@ -79,8 +77,6 @@ const config = loadEndpoints()
 
 /** 对话上游（`ours.defaults.baseUrl`） */
 export const chatBaseUrl = config.chatBaseUrl
-/** 邀请 / 额度 / 卡密服务（`INVITE_API_BASE`） */
-export const inviteBaseUrl = config.inviteBaseUrl
 /** 反馈上传（`LEGACY_FEEDBACK_URL`） */
 export const feedbackUrl = config.feedbackUrl
 /** 已下线主机重写表（`LEGACY_HOSTS`）：删了老配置就失联，只许从配置读、不许删 */
@@ -107,14 +103,13 @@ export const payBaseUrl = config.payBaseUrl
 /** 支付侧超时档位（read / write，毫秒） */
 export const payTimeouts = config.payTimeouts
 
-/** 三个地址字段 → 值（提示文案 / 注入 / 文案表格用，不要再另抄一份） */
+/** 端点地址字段 → 值（提示文案 / 注入 / 文案表格用，不要再另抄一份） */
 export const endpointUrls = Object.freeze({
   chatBaseUrl,
-  inviteBaseUrl,
   feedbackUrl,
 })
 
-/** 三个端点的主机（同一台机器，去重后应当只有一个） */
+/** 端点主机（去重；#745 之后对话上游与反馈上传已不是同一台机器） */
 export const endpointHosts = Object.freeze([...new Set(Object.values(endpointUrls).map((url) => new URL(url).hostname))])
 
 /** 主机白名单的 Set 形式（门禁判定要用，省得每次重新构造） */

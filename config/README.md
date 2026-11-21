@@ -52,7 +52,7 @@
 
 | 字段 | 用途 | 谁读它 | 换机器时改哪一行 |
 | --- | --- | --- | --- |
-| `chatBaseUrl` / `inviteBaseUrl` / `feedbackUrl` | 对话上游 / 邀请额度 / 反馈上传 | `rspack.config.ts` → `__ENDPOINTS__`；`scripts/lib/endpoints.mjs` | 改这三行 + 同步 `allowedHosts` / `allowedPorts`（`pnpm check:endpoints` 会拦） |
+| `chatBaseUrl` / `feedbackUrl` | 对话上游 / 反馈上传 | `rspack.config.ts` → `__ENDPOINTS__`；`scripts/lib/endpoints.mjs` | 改这两行 + 同步 `allowedHosts` / `allowedPorts`（`pnpm check:endpoints` 会拦） |
 | `legacyHosts` | 已下线**聊天**主机的重写表 | `src/services/api/apiConfig.ts` 的 `LEGACY_HOSTS` | **别删**（删了老用户本地存的旧地址就失联）；换机时把旧主机加进来 |
 | `allowedHosts` / `allowedPorts` | `check:ip` 豁免名单 / 端口白名单 | 两个门禁脚本 | 与上面三份地址一起改 |
 | `download.primaryBase` | **分发首选机**（清单 `releases.json` + `/apk/`） | Web：`__ENDPOINTS__.dlPrimaryBase`（`updateManifest.ts`）；原生：`BuildConfig.DL_PRIMARY`（`UpdateEndpoint.java`） | **换分发机只改这一行** |
@@ -60,13 +60,17 @@
 
 要点：
 
-1. **分发地址不进 `URL_FIELDS`。** `validateEndpoints` 的第 6 条要求「三个服务端点在同一台机器上」，
-   而分发机是另一台机器（清单 + `/apk/`）。所以 `download.*` 由 `validateDownload` 单独校验：
-   必须是「协议://主机[:端口]」（不带路径 / 查询串 / 凭据、不带尾斜杠）、回退机必须 https、两个 base 不许相同。
+1. **分发地址不进 `URL_FIELDS`。** 端点地址与分发地址各用各的判据：`download.*` 由 `validateDownload`
+   单独校验 —— 必须是「协议://主机[:端口]」（不带路径 / 查询串 / 凭据、不带尾斜杠）、回退机必须 https。
+   **#745 第二步撤销了两条旧判定**（原第 6 条「三个端点同一台机器」、原「两个 base 不许相同」）：
+   对话上游已搬到 sub2api 网关、公网又只有一个镜像 `https://dl.rose7.cn`，这两条在新拓扑下必然判红。
+   要恢复「回退要有意义」的严格判定，得先有第二个公网镜像。
 2. **下载白名单不单独配。** 原生 `UpdateEndpoint` 的主机 / 端口 / 协议全部由这两个 base 派生。
    以前 base 与 `PRIMARY_HOST` / `FALLBACK_HOST` 是两份副本，改一处漏一处 —— 现在配置里只有两个 base。
-3. **`legacyHosts` 里的 `62.106.70.167` 与 `download.primaryBase` 是同一台机器，但语义相反**：
-   前者是「旧聊天主机，存过即视为没配过」，后者是「当前分发机」。别因为「这机器已经不在用了」顺手删掉前者。
+3. **`legacyHosts` 里的 `62.106.70.167` 与旧的 `download.primaryBase` 曾是同一台机器，但语义相反**：
+   前者是「旧聊天主机，存过即视为没配过」，后者是「当前分发机」。别因为「这机器已经不在用了」顺手删掉前者 ——
+   `#181` 之前它**就是**对话上游（`defaults.baseUrl = 'http://62.106.70.167:60010'`），老版本把它写进过本地存储，
+   删掉这一行，那批设备会一直打在死主机上、连回落都没有。这也是 `#745` 第二步唯一没能从产物里清掉的内网地址之一。
 4. **换分发机之后**：`pnpm check:endpoints` + `pnpm check:ip` + `pnpm check:identity` → 重新打包
    （`pnpm build[:internal]` → `npx cap sync android` → `./gradlew assembleRelease`）。详细步骤见
    [`docs/RELEASE-MANUAL.md`](../docs/RELEASE-MANUAL.md) §13。
@@ -130,10 +134,12 @@
 | 校验在哪 | `scripts/lib/consumeEndpoints.mjs`（`scripts/build.mjs` 打包前跑）与 `android/app/build.gradle` 的 `[consume]` 段，**同一套判据**；门禁 `pnpm check:consume-api` 再独立跑一遍 |
 
 **一处需要更正上面的说法**：`consume.baseUrl` / `pay.baseUrl` 的 host **不需要**加进 `allowedHosts`。
-`allowedHosts` 只服务旧池域那三份地址（`chatBaseUrl` / `inviteBaseUrl` / `feedbackUrl`）与 `check:ip` 的豁免，
-它们的判据是「同一台机器 + 端口白名单」；`consume` / `pay` 是另外两台机器，走自己的判据
-（https / 废弃域黑名单 / 两者不许相同）。把新域名塞进 `allowedHosts` 反而会让 `check:endpoints`
-判「三个端点不在同一台机器上」变红。
+`allowedHosts` 只服务端点地址（`chatBaseUrl` / `feedbackUrl`）与 `check:ip` 的豁免；`consume` / `pay`
+走自己的判据（https / 废弃域黑名单 / 两者不许相同）。
+
+**#745 第二步之后**：`chatBaseUrl` 已经指向 sub2api 网关，所以 `sub2api.rose7.cn`（+ 端口 443）**进了**
+`allowedHosts` / `allowedPorts` —— 它是端点地址，不是 `consume` 那一档。相应地，「三个端点同一台机器」
+那条校验已撤销（见上面第 1 点），否则这条正确的改动会被判红。
 
 其余落地细节（接口白名单、错误信封、幂等规则、字段实测状态）见
 [`docs/consume-layer.md`](../docs/consume-layer.md) 与

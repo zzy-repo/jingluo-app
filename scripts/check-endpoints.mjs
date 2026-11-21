@@ -247,7 +247,7 @@ const main = () => {
   log(
     `端点配置检查通过：扫了 ${files.length} 个代码文件（${SCAN_DIRS.join(' / ')}）+ ` +
       `${clientFiles.length} 个客户端文件（${CLIENT_DIRS.join(' / ')} / ${CLIENT_FILES.join(' / ')}），` +
-      `地址零副本、废弃占位 0 处；聊天 ${raw.chatBaseUrl} / 邀请 ${raw.inviteBaseUrl} / 反馈 ${raw.feedbackUrl}；` +
+      `地址零副本、废弃占位 0 处；聊天 ${raw.chatBaseUrl} / 反馈 ${raw.feedbackUrl}；` +
       `分发首选 ${raw.download.primaryBase} / 回退 ${raw.download.fallbackBase}（换分发机只改 download.primaryBase 一处）。`
   )
   process.exit(0)

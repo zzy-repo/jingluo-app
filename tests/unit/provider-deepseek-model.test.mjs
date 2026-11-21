@@ -42,7 +42,6 @@ registerHooks({
 // 非打包环境兜底：runner 一般已经用 --import tests/helpers/injected.mjs 注入过，这里只补缺失的那份
 globalThis.__ENDPOINTS__ ??= Object.freeze({
   chatBaseUrl,
-  inviteBaseUrl: 'https://invite.test.invalid',
   feedbackUrl: 'https://feedback.test.invalid',
   legacyHosts: Object.freeze([...legacyHosts]),
   allowedHosts: Object.freeze([]),

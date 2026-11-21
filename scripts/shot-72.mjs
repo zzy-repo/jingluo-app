@@ -2,7 +2,6 @@
 import { chromium } from 'playwright'
 import fs from 'node:fs'
 
-import { inviteBaseUrl } from './lib/endpoints.mjs'
 import { matrixConfig, viewportFor } from './compat/lib/matrix-config.mjs'
 
 const OUT = 'docs/ui/redeem-migrate'
@@ -53,14 +52,9 @@ const run = async (width, height, tag) => {
     { key: KEY, device: DEVICE }
   )
   const page = await context.newPage()
-  // 只拦两套后端（截图用固定报文，不代表真实服务返回）
-  await context.route(`${inviteBaseUrl}/**`, async (route) => {
-    const url = route.request().url()
-    if (url.includes('/me')) return route.fulfill(json(200, PROFILE))
-    if (url.includes('/apply')) return route.fulfill(json(201, PROFILE))
-    if (url.includes('/redeem-card')) return route.fulfill(json(202, { code: 'CREDIT_PENDING' }))
-    return route.fulfill(json(404, { error: { code: 'not_found', message: 'no route' } }))
-  })
+  // 只拦支付那套后端（截图用固定报文，不代表真实服务返回）。
+  // #745 第二步：这里原来还拦 `inviteBaseUrl` 那台邀请服 —— 该服务已下线（#604 迁到 consume），
+  // 客户端不再有调用点，路由桩一并删掉（顺带去掉产物里 `:60013` 的来源）。
   await context.route('https://apia.ecsafe.cn/**', async (route) => {
     const url = route.request().url()
     if (url.includes('/api/plans')) return route.fulfill(json(200, PLANS))

@@ -37,6 +37,15 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 const FIXTURES = path.join(ROOT, 'deploy/dl-release/fixtures')
 const ACCIDENT = 'invalid-buildtype-release.json'
 
+// #745 第二步：真实配置里 `download.primaryBase` 与 `fallbackBase` 现在同值（公网只有一个镜像
+// `https://dl.rose7.cn`），本文件要测的「首台解析失败 → 换下一台」就没有第二台可用了。
+// 所以这里把候选 base 换成两台假机：**回退逻辑**与本文件解耦、继续被测；
+// 「真实配置是不是只有一台镜像」由 tests/unit/update-failure.test.mjs 的 releaseHosts 断言守着。
+globalThis.__ENDPOINTS__ = Object.freeze({
+  ...globalThis.__ENDPOINTS__,
+  dlPrimaryBase: 'https://primary.test.invalid',
+  dlFallbackBase: 'https://fallback.test.invalid',
+})
 const { parseManifest, fetchManifest, RELEASE_BASES, FALLBACK_RELEASE_BASE, PRIMARY_RELEASE_BASE } = await import(
   '../../src/services/updateManifest.ts'
 )

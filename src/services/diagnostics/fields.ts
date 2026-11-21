@@ -150,11 +150,10 @@ export const isStage = (value: unknown): value is Stage =>
  * 端点键：对应 `config/endpoints.json` 的顶层键，**不写完整 URL**（地址写进日志就等于泄漏中转地址，
  * 也没法跨版本聚合）。`other` = 用户自填地址（自建 / 中转），只靠 `url.host` 区分。
  */
-export type EndpointKey = 'chatBaseUrl' | 'inviteBaseUrl' | 'feedbackUrl' | 'other'
+export type EndpointKey = 'chatBaseUrl' | 'feedbackUrl' | 'other'
 
 export const ENDPOINT_KEYS: readonly EndpointKey[] = [
   'chatBaseUrl',
-  'inviteBaseUrl',
   'feedbackUrl',
   'other',
 ]
@@ -172,7 +171,7 @@ const readEndpointTable = (): EndpointTable => {
     }
     const table = __ENDPOINTS__ as unknown as Record<string, unknown>
     const out: EndpointTable = {}
-    for (const key of ['chatBaseUrl', 'inviteBaseUrl', 'feedbackUrl'] as const) {
+    for (const key of ['chatBaseUrl', 'feedbackUrl'] as const) {
       const value = table[key]
       if (typeof value === 'string' && value) {
         out[key] = value
@@ -204,7 +203,7 @@ export const endpointKeyFromUrl = (url: string): EndpointKey => {
     return 'other'
   }
   const table = readEndpointTable()
-  for (const key of ['chatBaseUrl', 'inviteBaseUrl', 'feedbackUrl'] as const) {
+  for (const key of ['chatBaseUrl', 'feedbackUrl'] as const) {
     const base = table[key]
     if (base && originOf(base) === origin) {
       return key

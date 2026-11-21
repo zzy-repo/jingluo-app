@@ -1095,7 +1095,6 @@ const selftestA6 = () => {
     fs.mkdirSync(path.join(dir, 'config'), { recursive: true })
     const config = {
       chatBaseUrl: 'https://chat.example.com',
-      inviteBaseUrl: 'https://chat.example.com',
       feedbackUrl: 'https://chat.example.com/feedback',
       legacyHosts: ['legacy.example.com'],
       allowedHosts: ['chat.example.com'],

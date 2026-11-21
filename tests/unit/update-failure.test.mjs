@@ -229,5 +229,6 @@ test('诊断文本：字段齐、地址只到 host、上游短码与可重试性
   }
   assert.equal(hostOf(undefined), 'unknown')
   assert.equal(hostOf('not a url'), 'unknown')
-  assert.equal(releaseHosts(), '62.106.70.167:8888 → dl.rose7.cn')
+  // #745 第二步：公网只剩一台镜像（名单去重后只打印一台，别读成「两台机器」）
+  assert.equal(releaseHosts(), 'dl.rose7.cn')
 })

@@ -62,7 +62,6 @@ export const installBuildDefines = async () => {
   )
   globalThis.__ENDPOINTS__ ??= Object.freeze({
     chatBaseUrl,
-    inviteBaseUrl: 'https://invite.test.invalid',
     feedbackUrl: 'https://feedback.test.invalid',
     legacyHosts: Object.freeze([...legacyHosts]),
     // 分发地址（Issue #269）：域 5 不测更新链路，只保持注入形状与真实构建一致
