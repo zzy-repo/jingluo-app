@@ -3,6 +3,7 @@ import { IconEditOutline16 } from '../base/icons.js'
 import {
   getBaseUrl,
   normalizeBaseUrl,
+  readSourceField,
   recordKeySuccess,
   setBaseUrl,
   setModel,
@@ -76,28 +77,200 @@ type ApiKeyEditor = ReturnType<typeof useApiKeyEditor>
  * Key 输入框、Key 掩码展示区与「重新领取」—— 领取与恢复全走后台自动对齐
  * （`managedKeyRuntime.syncManagedKeyFromServer`），详见 `sourceFieldPlan.ts` 的文件头。
  */
-export const ApiConfigFields = ({
-  editor,
-  hideProviderKind = false,
-}: {
-  editor: ApiKeyEditor
-  /**
-   * #727 阶段 1：设置第三个 tab 里「来源」由三行（内置 / 第三方 / 官方）自己选，
-   * 这一块就不再重复渲染「渠道」下拉 —— 字段本身仍按 `spec.fields` 走，一个字都不改。
-   */
-  hideProviderKind?: boolean
-}) => {
-  const kind = useApiConfig((state) => state.kind)
+/**
+ * 「模型来源」手风琴里的**草稿绑定**（Issue #807）。
+ *
+ * 为什么要有它：票面要求「展开 / 收起只是查看编辑，只有点『确认使用』才切换生效来源」，
+ * 所以手风琴里的字段不能再像旧子页那样「失焦即落盘」。这里只传两件东西 —— 当前值、改一格的回调 ——
+ * 值的生死由页面的状态机管（`sourceAccordion.sourcePageReducer`：收起时**不动** `drafts`，
+ * 所以草稿不丢）。「确认使用」失败的红字由视图渲染在按钮上方，不在这里重复一份。
+ */
+export type SourceDraftBinding = {
+  /** 草稿当前值（三个字段与 `ProviderField` 同名，`sourceFieldRows` 直接查） */
+  values: { baseUrl: string; apiKey: string; model: string }
+  /** 改一格 */
+  onChange: (field: 'baseUrl' | 'apiKey' | 'model', value: string) => void
+}
+
+/**
+ * 服务配置区：按 `sourceFieldRows(kind)` 循环渲染输入行。
+ * 新增渠道只需要在 providers.ts 里加一个 spec，这里的 JSX 结构不用改。
+ *
+ * 渠道决定这一区长什么样：内置地址/模型的渠道（DeepSeek 官方 / 我们的渠道）fields 里没有
+ * baseUrl / model，于是只渲染 API Key 一行；要自己填地址的渠道（Anthropic 协议 / OpenAI 兼容）
+ * 渲染三行。切换渠道时界面静默变化，不给能力说明。
+ *
+ * #800：`ours`（内置服务）的 Key 由服务端下发，**Key 那一行整行不渲染**
+ * （判定只有一处：`sourceFieldPlan.sourceFieldRows`）。因此这一页在内置服务上不再有
+ * Key 输入框、Key 掩码展示区与「重新领取」—— 领取与恢复全走后台自动对齐
+ * （`managedKeyRuntime.syncManagedKeyFromServer`），详见 `sourceFieldPlan.ts` 的文件头。
+ *
+ * #807：多了一种 **`mode: 'draft'`** 形态 —— 手风琴展开区里的字段只在草稿里改，
+ * 点「确认使用」（`sourceAccordionRuntime.confirmSourceRow`）校验通过才落盘。
+ * 两种形态共用**同一份行清单**（`sourceFieldRows`）与同一批输入控件样式，
+ * 所以「内置服务没有 Key 行」这条 #800 的结论在两种形态下都成立（`ours` 的行清单是空的）。
+ */
+export const ApiConfigFields = (
+  props: (
+    | { mode?: 'store'; editor: ApiKeyEditor }
+    | { mode: 'draft'; draft: SourceDraftBinding }
+  ) & {
+    /**
+     * #727 阶段 1：设置第三个 tab 里「来源」由三行（内置 / 第三方 / 官方）自己选，
+     * 这一块就不再重复渲染「渠道」下拉 —— 字段本身仍按 `spec.fields` 走，一个字都不改。
+     */
+    hideProviderKind?: boolean
+    /**
+     * #807：渲染**哪一行来源**的字段（默认 = 生效来源）。
+     *
+     * 展开≠生效：用户可以在生效来源是「内置服务」时展开「第三方服务」填它的地址，
+     * 这时字段清单要按 `thirdPartyEntryKind()` 那一槽来算，而不是按当前 kind。
+     */
+    kind?: ProviderKind
+  }
+) => {
+  const storeKind = useApiConfig((state) => state.kind)
+  const kind = props.kind ?? storeKind
   const spec = getSpec(kind)
+  const hideProviderKind = props.hideProviderKind === true
+  if (props.mode === 'draft') {
+    return (
+      <>
+        {hideProviderKind ? null : <ProviderKindField />}
+        {sourceFieldRows(kind).map((field) => (
+          <DraftField key={field} field={field} spec={spec} draft={props.draft} />
+        ))}
+        {showsBuiltInBaseUrl(spec) ? <BuiltInBaseUrlField spec={spec} /> : null}
+        {showsBuiltInModel(spec) ? <BuiltInModelField spec={spec} /> : null}
+        <DraftTestField spec={spec} draft={props.draft} />
+      </>
+    )
+  }
+  const editor = props.editor
   return (
     <>
       {hideProviderKind ? null : <ProviderKindField />}
       {sourceFieldRows(kind).map((field) => (
         <ApiConfigField key={field} field={field} spec={spec} editor={editor} />
       ))}
+      {showsBuiltInBaseUrl(spec) ? <BuiltInBaseUrlField spec={spec} /> : null}
       {showsBuiltInModel(spec) ? <BuiltInModelField spec={spec} /> : null}
       <ConnectionTestField editor={editor} />
     </>
+  )
+}
+
+/**
+ * 草稿形态的一行输入（#807）：**受控**，改了就回调，不落盘也不探测。
+ *
+ * 三个字段的标签复用即有的 `settings*Label` 词条；`apiKey` 仍是 `type="password"`
+ * （草稿里也不明文显示），`baseUrl` 走 `inputMode="url"`。
+ */
+const DraftField = ({
+  field,
+  spec,
+  draft,
+}: {
+  field: ProviderField
+  spec: ProviderSpec
+  draft: SourceDraftBinding
+}) => {
+  const t = useTranslate()
+  const label =
+    field === 'baseUrl'
+      ? t('settingsBaseUrlLabel')
+      : field === 'apiKey'
+        ? t('settingsApiKeyLabel')
+        : t('settingsModelLabel')
+  const placeholder =
+    field === 'baseUrl'
+      ? spec.defaults?.baseUrl || t('settingsBaseUrlPlaceholder')
+      : field === 'apiKey'
+        ? t('apiKeyPlaceholder')
+        : spec.defaults?.model || t('settingsModelPlaceholder')
+  return (
+    <div className={styles.cell}>
+      <div className={styles.apiKey}>
+        <div className={styles.label}>{label}</div>
+        <div className={styles.apiKeyInput}>
+          <input
+            type={field === 'apiKey' ? 'password' : 'text'}
+            inputMode={field === 'baseUrl' ? 'url' : undefined}
+            placeholder={placeholder}
+            autoComplete="off"
+            spellCheck={false}
+            aria-label={label}
+            data-testid={`settings-source-draft-${field}`}
+            value={draft.values[field]}
+            onChange={(event) => draft.onChange(field, event.target.value)}
+          />
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/**
+ * 草稿形态的连通性探测（#807：**可选**，探测结果不影响「确认使用」）。
+ *
+ * 用草稿里的地址与 Key 打一次 `GET {base}/models`（与设置页那个「测试」同一条实现
+ * `probeProvider`、同一个 15s 探测超时 #771）。失败只说给用户听，不拦按钮：
+ * 中转的 CORS 常常只放行 POST，探不通不代表聊不了。
+ */
+const DraftTestField = ({ spec, draft }: { spec: ProviderSpec; draft: SourceDraftBinding }) => {
+  const t = useTranslate()
+  const [error, setError] = useState<TranslationKey | null>(null)
+  const [testing, setTesting] = useState(false)
+  const [probe, setProbe] = useState<ProviderProbeResult | null>(null)
+  const test = async () => {
+    if (testing) {
+      return
+    }
+    const baseUrl = draft.values.baseUrl.trim() || spec.defaults?.baseUrl || ''
+    const apiKey = draft.values.apiKey.trim()
+    if (!baseUrl) {
+      setError('settingsBaseUrlRequired')
+      setProbe(null)
+      return
+    }
+    if (!apiKey) {
+      setError('settingsTestApiKeyRequired')
+      setProbe(null)
+      return
+    }
+    setError(null)
+    setTesting(true)
+    setProbe(null)
+    try {
+      const result = await probeProvider({ baseUrl, apiKey }, PROBE_TIMEOUT_MS)
+      // #451：只有真拿到成功应答才记「最近一次确认可用」；失败一次都不写
+      if (result.ok) {
+        recordKeySuccess(apiKey)
+      }
+      setProbe(result)
+    } finally {
+      setTesting(false)
+    }
+  }
+  return (
+    <div className={styles.cell}>
+      <div className={styles.apiKey}>
+        <div className={styles.label}>{t('settingsTestLabel')}</div>
+        <div className={styles.apiKeyInput}>
+          <button
+            type="button"
+            className={styles.confirm}
+            disabled={testing}
+            data-testid="settings-source-draft-test"
+            onClick={() => void test()}
+          >
+            {testing ? t('settingsTesting') : t('settingsTest')}
+          </button>
+        </div>
+        {error ? <div className={styles.error}>{t(error)}</div> : null}
+        {probe ? <div className={styles.description}>{describeProbe(t, probe)}</div> : null}
+      </div>
+    </div>
   )
 }
 
@@ -110,6 +283,34 @@ export const ApiConfigFields = ({
  */
 const showsBuiltInModel = (spec: ProviderSpec): boolean =>
   !spec.locked && !isUserField(spec, 'model')
+
+/**
+ * 要不要渲染「内置地址」只读行（#807）。
+ *
+ * 判据与 `showsBuiltInModel` 同构：地址是内置的（`fields` 里没有 baseUrl）但渠道没被锁
+ * （`locked` 的 ours 连地址都不许露）。今天只有 DeepSeek 官方服务走这一支 ——
+ * 票面「官方：地址固定，只填 API Key」里的「固定」必须**看得见**，否则用户会以为漏了一格。
+ */
+const showsBuiltInBaseUrl = (spec: ProviderSpec): boolean =>
+  !spec.locked && !isUserField(spec, 'baseUrl')
+
+/** 内置地址（#807）：只读一行，不提供输入框 —— 地址跟着渠道走，用户改不了 */
+const BuiltInBaseUrlField = ({ spec }: { spec: ProviderSpec }) => {
+  const t = useTranslate()
+  return (
+    <div className={styles.cell}>
+      <div className={styles.row}>
+        <div className={styles.text}>
+          <div className={styles.label}>{t('settingsBaseUrlLabel')}</div>
+          <div className={styles.description}>{t('settingsSourceBaseUrlFixed')}</div>
+        </div>
+        <div className={styles.modelValue} role="status" data-testid="settings-source-base-url-fixed">
+          {readSourceField(spec.kind, 'baseUrl')}
+        </div>
+      </div>
+    </div>
+  )
+}
 
 /**
  * 内置模型（#339）：值来自 spec.defaults / 迁移后的 state，用户改不了 —— 但必须**看得见**。

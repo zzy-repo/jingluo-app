@@ -929,6 +929,24 @@ export const zh = {
   accountConsumeSourceOfficial: 'DeepSeek 官方服务',
   accountConsumeSourceAnthropic: 'Anthropic 协议服务',
   accountConsumeSourceKeyInvalid: 'API Key 无效，请检查后重试',
+  /**
+   * #807：「模型来源」改成**单层手风琴**之后新增的几句话。
+   *
+   * 口径三条：① 行头只有三种状态（✓ 当前使用 / 未配置 / 领取中…），别再加第四种黑话；
+   * ② 打勾必须**同时**有图形与文字（`aria-label` / tooltip 用 `settingsSourceCurrentAria`），
+   *    不许只画一个 ✓ 让人猜；③ 「切换成功了」只给一句轻提示（`settingsSourceSwitched`），
+   * 不在行里写一段解释。
+   */
+  settingsSourceStatusCurrent: '当前使用',
+  settingsSourceStatusUnconfigured: '未配置',
+  settingsSourceStatusClaiming: '领取中…',
+  settingsSourceCurrentAria: '当前使用中',
+  settingsSourceConfirm: '确认使用',
+  settingsSourceBaseUrlFixed: '地址固定，无需填写',
+  settingsSourceSwitched: '已切换到 {name}',
+  settingsSourceRetry: '重试',
+  settingsSourceClaimNeedLogin: '内置服务的 Key 需要登录后领取，请先登录或注册。',
+  settingsSourceClaimNeedLoginAction: '去登录',
   accountConsumeSourcePickHint: '选一个来源后按「保存」，主界面会立刻用它',
   accountConsumeWallet: '我的钱包',
   accountConsumeRemaining: '剩余余额',
@@ -936,9 +954,6 @@ export const zh = {
   accountConsumeHistoryEmpty: '暂无消费记录',
   accountConsumeHistoryEmptyHint: '使用模型后的扣费会显示在这里',
   accountConsumeHistoryMore: '加载更多',
-  accountConsumeConnOk: '正常 {ms} ms',
-  accountConsumeConnIdle: '点一下测试',
-  accountConsumeConnFail: '连接失败 · 重试',
   accountConsumeAccountId: '账号 ID',
   accountConsumeBindEmail: '绑定邮箱',
   accountConsumeLoginMethod: '登录方式',

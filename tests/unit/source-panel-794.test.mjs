@@ -301,11 +301,20 @@ test('[6] 协议分段与其文案消失，而 #727 的三行 IA 一点没变', 
     assert.equal(Object.hasOwn(zh, key), false, `zh 还留着已废弃的词条 ${key}`)
     assert.equal(Object.hasOwn(en, key), false, `en 还留着已废弃的词条 ${key}`)
   }
-  // #727 的三行 IA：第三方服务仍然是一行，只是进去后少了一个控件
+  /**
+   * #727 的三行 IA：第三方服务仍然是一行，只是进去后少了一个控件。
+   *
+   * #807 起这三行从「一屏列表」变成**单层手风琴**，行清单与行头一起搬到了共享模块
+   * （`sourceAccordion.SOURCE_ROWS` / `sourceAccordionView.ts` 的行头 testid）——
+   * 断言的口径不变（**三行一条没少、每行仍是一个可点的行**），只是落点跟着代码走。
+   * 手风琴本身的八条验收见 `tests/unit/source-accordion-807.test.mjs`。
+   */
+  const accordionRows = codeOf('src/components/settings/sourceAccordion.ts')
   assert.match(
-    page,
-    /const SOURCE_OPTIONS: SourceOption\[\] = \['builtin', 'third', 'official'\]/u,
+    accordionRows,
+    /export const SOURCE_ROWS: readonly SourceRowKey\[\] = \['builtin', 'third', 'official'\]/u,
     '三行来源（内置 / 第三方 / 官方）不许被改动'
   )
-  assert.match(page, /settings-source-\$\{option\}/u, '三行仍然是可点的行（每行一个 testid）')
+  const accordionView = codeOf('src/components/settings/sourceAccordionView.ts')
+  assert.match(accordionView, /settings-source-\$\{row\}/u, '三行仍然是可点的行（每行一个 testid）')
 })
