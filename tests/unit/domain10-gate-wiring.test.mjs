@@ -58,6 +58,10 @@ const REQUIRED_CI_GATES = [
   // #609（裁决 #614 决定 3，P0）：webroot 卫生门禁 —— 摘掉它，#601 那种「清单删了、
   // 文件还躺在 /var/www/dl/apk/ 下」的状态就再没有任何机械化检查（静态目录不看清单）。
   'check:webroot-hygiene',
+  // #661：截图引用门禁 —— `docs/ui` 曾只进不出（553 张里 155 张零引用 / 17.4 MiB）。
+  // 摘掉它，「又提交了一批没人引用的截图」就回到没人守：check:doc-refs 不认 png/jpg
+  // （REF_EXT 里没有），check:hygiene 只管本机路径与大文本文件。
+  'check:ui-shots',
 ]
 
 /**

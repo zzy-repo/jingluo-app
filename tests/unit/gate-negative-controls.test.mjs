@@ -398,6 +398,15 @@ const REGISTRY = {
     what: 'CI 往 docs/ 塞一份写着不存在路径的 md → 必 exit 1，删掉后 exit 0',
     mention: /check-doc-refs\.mjs/,
   },
+  // 截图引用门禁（#661：`docs/ui` 553 张里 155 张零引用）：双向都现场注入 ——
+  // ① 删一张被 README 引用的截图（悬空引用）② 塞一张无人引用的截图（孤儿），两者都必须 exit 1，还原后 exit 0。
+  // 和 check:doc-refs / check:i18n 同款：注入的正是它自己扫的东西，放进 ci.yml 成本 ≈2s。
+  'check:ui-shots': {
+    where: '.github/workflows/ci.yml',
+    kind: 'ci',
+    what: 'CI 删一张被 README 引用的截图（悬空）与塞一张无人引用的截图（孤儿）→ 两条都必须 exit 1，还原后 exit 0',
+    mention: /check-ui-shots\.mjs/,
+  },
   // 消费侧调用门禁（#484 §6.5 的脚本，随 #494 落地时没接线，本轮接的线）：对照写在 ci.yml 里现场注入 ——
   // 往 src/ 塞一条**白名单外**的路径字面量（`/api/v1/__gate_neg_not_whitelisted`）→ R3 必 exit 1，
   // 删掉 → exit 0。和 check:doc-refs / check:i18n / check:endpoints 同款：塞的正是脚本自己扫的源码，

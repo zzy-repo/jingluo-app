@@ -194,6 +194,37 @@ jobs:
           node scripts/check-doc-refs.mjs
           echo "负向对照通过：写死路径 → exit 1，删掉 → exit 0"
 
+      # #661：`docs/ui/**` 的截图曾只进不出 —— 553 张里 155 张（17.4 MiB）在仓库任何 tracked
+      # 文本里零命中，既不是关单证据也不在任何 README 的结论表里。check:doc-refs 看不见这件事
+      # （REF_EXT 里没有 png/jpg），所以单开一道：截图必须有出处，出处指到的截图必须还在。
+      # 负向对照两条：删一张被引用的图（悬空）、塞一张没人引用的图（孤儿），都必须 exit 1。
+      - name: 截图引用门禁（check:ui-shots）
+        run: pnpm run check:ui-shots
+
+      - name: 负向对照：孤儿截图 / 悬空引用都必须被 check:ui-shots 拦下
+        run: |
+          set -euo pipefail
+          SHOT=docs/ui/thinking-collapse/before-390-default.png
+          test -f "$SHOT" || { echo "::error::负向对照的基准文件不见了：$SHOT"; exit 1; }
+          # ① 悬空：删掉一张被 README 引用的截图 → 引用指向不存在的文件 → 必须红
+          mv "$SHOT" /tmp/zz-nc-shot.png
+          if node scripts/check-ui-shots.mjs; then
+            mv /tmp/zz-nc-shot.png "$SHOT"
+            echo "::error::负向对照失败：删掉被引用的截图后 check:ui-shots 仍然通过，说明悬空引用没被判"
+            exit 1
+          fi
+          mv /tmp/zz-nc-shot.png "$SHOT"
+          # ② 孤儿：塞一张没有任何引用的截图 → 必须红
+          cp "$SHOT" docs/ui/zz-negative-control-shot.png
+          if node scripts/check-ui-shots.mjs; then
+            rm -f docs/ui/zz-negative-control-shot.png
+            echo "::error::负向对照失败：塞进无人引用的截图后 check:ui-shots 仍然通过，说明孤儿没被判"
+            exit 1
+          fi
+          rm -f docs/ui/zz-negative-control-shot.png
+          node scripts/check-ui-shots.mjs
+          echo "负向对照通过：删被引用的图 → exit 1，塞无人引用的图 → exit 1，还原后 → exit 0"
+
       - name: Type check
         run: pnpm run type
 

@@ -68,7 +68,9 @@ bb3dbf1（`fix/settings-overflow`）建立了 `.cellActions` 包裹 + `min-width
 标题均 1 行，`scrollWidth-clientWidth=0` —— 与修前一致，未被本次改动影响。
 
 原始数字（computed style + bounding box）：`before-wv91-*.json` / `after-wv91-*.json`；
-截图：`before-wv91-{360,390}-{en,zh}.png`、`after-wv91-{360,390}-{en,zh}.png`（设备像素 540/585 宽，即 360dp/390dp）。
+截图：`before-wv91-360-{en,zh}.png`、`before-wv91-390-en.png`、`after-wv91-{360,390}-{en,zh}.png`（设备像素 540/585 宽，即 360dp/390dp）。
+> 390 视口的中文 before 帧**没有**：原句写成 4 张（两档视口 × 两种语言），但仓库历史里 390-zh 那张从来不存在
+> （`git log --all -- docs/ui/settings-cell-wrap/` 查不到该路径），不是 #661 删的。此处按实际在库的 3 张改写。
 
 ### 新版内核对照（Chromium 156，两种语言，修前/修后）
 
