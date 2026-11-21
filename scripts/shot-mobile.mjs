@@ -2866,14 +2866,14 @@ export const PAGES = {
       const historyData = await page.evaluate(() => {
         const body = document.querySelector('[data-testid="account-consume-page"]')
         /**
-         * `account-consume-history` 这个 testid 在页面上有**两份**：钱包里那个「历史消费」行按钮，
-         * 和 `HistoryView` 的根节点。`querySelector` 会拿到行按钮（它里面没有记录行），
-         * 所以这里按「里面真的有记录行」挑那一份。两份同名本身是个小契约缺陷，
-         * 记录在 `historyTestIdCollision` 里（本单只补证据，不改 src）。
+         * 记录列表容器按 **`account-consume-history-list`** 取（#763 把重名拆开了）。
+         * 以前 `account-consume-history` 在页面上有**两份**（钱包里那个「历史消费」行按钮 +
+         * `HistoryView` 的根节点），`querySelector` 会拿到行按钮（它里面没有记录行），
+         * 于是这里曾按「里面真的有记录行」挑那一份。现在按钮与列表各有一个名字，直接取即可；
+         * `testIdNodes` 仍然统计按钮那个名字的节点数 —— 重名回归时会变成 2，能被看出来。
          */
         const historyNodes = Array.from(document.querySelectorAll('[data-testid="account-consume-history"]'))
-        const container =
-          historyNodes.find((node) => node.querySelector('[data-testid="account-consume-history-row"]') !== null) ?? null
+        const container = document.querySelector('[data-testid="account-consume-history-list"]')
         const rows = Array.from(document.querySelectorAll('[data-testid="account-consume-history-row"]')).map((node) =>
           (node.innerText ?? '').replace(/\s+/gu, ' ').trim()
         )

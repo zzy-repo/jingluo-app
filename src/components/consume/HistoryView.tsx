@@ -148,7 +148,14 @@ export const HistoryView = ({ consume, signedIn }: HistoryViewProps) => {
   const groups = groupByDay(state.data.items)
 
   return (
-    <div data-testid="account-consume-history">
+    /**
+     * `account-consume-history-list`（不再叫 `account-consume-history`）：后者的**名字已经被
+     * `AccountConsumePage` 里那个「历史消费」行按钮占着**（点它才进这一页）。两个同值 testid
+     * 会让 `querySelector` / `getByTestId` 拿到哪一个全看挂载顺序 —— 截图脚本为此写过一段
+     * 「挑里面真有记录行的那一个」的绕行代码（`scripts/shot-mobile.mjs` 的历史消费那一段）。
+     * 现在按语义分开：按钮 = 入口，本节点 = 记录列表容器，两边都能直接按名字取。
+     */
+    <div data-testid="account-consume-history-list">
       {groups.map((group, index) => (
         <div key={`${group.day}-${index}`}>
           {index > 0 ? <div className={styles.dividerFull} /> : null}
