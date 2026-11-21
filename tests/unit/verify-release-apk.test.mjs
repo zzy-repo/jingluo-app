@@ -13,6 +13,10 @@
 //   3. **判不出来 ≠ 通过**：缺 aapt2 / 不是 APK / 文件不存在 → **exit 2**（fail-closed，
 //      与 `check-apk-debuggable` 同一口径 —— #60 的事故就是靠「判不出来就当没事」漏出去的）。
 //
+// 第 4 节（#705）另钉一条：期望指纹**只许**从 `config/appIdentity.json` 派生（脚本里不许留任何
+// 字面量，含注释），配置读不到 / 非法 → **exit 2**（fail-closed，绝不回落到内置默认值），并且
+// 「这次比的是哪来的期望值」必须写进结论行与 `--json` 的 `expectCertSource`。
+//
 // 夹具口径（为什么不是把真包拷进仓库）见 `tests/helpers/apk-release-fixtures.mjs` 的文件头：
 // 真包 6.8 MB、四种坏包线上拼不出来，所以清单用域10 的合成编码器现场造，再用 apksigner 真签名。
 // **真 APK 实包**的验证在 `docs/RELEASE-MANUAL.md` §4.6 要求发版前/后各跑一次（1.4.3 的输出抄在那里）。
@@ -31,13 +35,20 @@ import { fileURLToPath } from 'node:url';
 
 import {
   CHECKS,
-  EXPECTED_CERT_SHA256,
+  CERT_SOURCE_CLI,
+  CERT_SOURCE_CONFIG,
   EXIT_FAIL,
   EXIT_OK,
   EXIT_UNKNOWN,
   parseBadgingVersion,
   parseCertDigests,
+  resolveExpectCert,
+  verifyReleaseApk,
 } from '../../scripts/verify-release-apk.mjs';
+import {
+  publishedCertSha256,
+  resolveExpectedCertSha256,
+} from '../../scripts/lib/certFingerprint.mjs';
 import { buildFixtures, cleanupFixtures, skipReason } from '../helpers/apk-release-fixtures.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
@@ -51,6 +62,22 @@ const runCli = (args, { env = {} } = {}) => spawnSync(process.execPath, [CLI, ..
   env: { ...process.env, LANG: process.env.LANG ?? 'zh_CN.UTF-8', ...env },
 });
 const combined = (result) => `${result.stdout ?? ''}${result.stderr ?? ''}`;
+
+/**
+ * 仓库里「已发布证书」的期望值（#705 之后脚本里**没有**它的副本，测试也只从唯一来源读）。
+ * 注意：这是**读配置**，不是把值抄进测试 —— 抄进来就又是第 N 份副本。
+ */
+const CONFIG_CERT = resolveExpectedCertSha256(ROOT).value;
+
+/** 造一个只含 `config/appIdentity.json` 的临时仓库根（证明派生 / 缺失 / 非法三条路径） */
+function makeRoot(identity) {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'verify-apk-root-'));
+  if (identity !== undefined) {
+    fs.mkdirSync(path.join(root, 'config'), { recursive: true });
+    fs.writeFileSync(path.join(root, 'config', 'appIdentity.json'), identity);
+  }
+  return root;
+}
 
 /** 夹具只能在用例里造（声明期造 = CI 上无 SDK 时整文件崩），跑完删 */
 const fixtures = () => buildFixtures();
@@ -70,16 +97,18 @@ test('五件套就是五项，顺序与 id 固定（少一项 = 报告里会少�
   for (const item of CHECKS) assert.match(item.title, /^\d+ /, '每项都要带序号，表格里靠它跟 --json 对齐');
 });
 
-test('默认证书指纹与 config/appIdentity.json 的 expectedCertSha256 一致（Issue #271 的唯一记录点）', () => {
-  // gradle 的 EXPECTED_CERT_SHA256 是从 config/appIdentity.json 派生的（见 android/app/build.gradle），
-  // 所以这里对着那份配置比 —— 脚本里写死的常量一旦漂移，这条立刻红。
-  const identity = JSON.parse(fs.readFileSync(path.join(ROOT, 'config/appIdentity.json'), 'utf8'));
-  assert.match(identity.expectedCertSha256, /^[0-9a-f]{64}$/, 'config/appIdentity.json 里没有可用的 expectedCertSha256');
-  assert.equal(
-    EXPECTED_CERT_SHA256,
-    identity.expectedCertSha256,
-    '脚本里的默认证书指纹与 config/appIdentity.json 不一致：换证书是发布级迁移，不许只改一处',
-  );
+test('脚本里没有证书指纹字面量（#705：第三份副本已删，期望值只能从配置派生）', () => {
+  const script = fs.readFileSync(path.join(ROOT, 'scripts', 'verify-release-apk.mjs'), 'utf8');
+  // 与验收口径同一条：`grep -c "e7c5baee" scripts/verify-release-apk.mjs` 必须是 0。
+  // 注释里留一句「旧值」也不行 —— 下一个人照样会去改注释而不是改配置。
+  assert.equal((script.match(/e7c5baee/g) ?? []).length, 0, '脚本里还有已发布指纹的字面量（含注释）：期望值只许来自 config/appIdentity.json');
+  assert.equal((script.match(/[0-9a-f]{64}/g) ?? []).length, 0, '脚本里还有 64 位 hex 字面量：那就是第 N 份副本');
+  assert.doesNotMatch(script, /EXPECTED_CERT_SHA256\s*=/, '脚本里还有 EXPECTED_CERT_SHA256 赋值（硬编码默认值）');
+  // 唯一来源本身仍然是「已发布证书」：配置被动过 → 这条先红（#702 的闸，别在改脚本时把它弄丢）
+  assert.match(CONFIG_CERT, /^[0-9a-f]{64}$/, 'config/appIdentity.json 里没有可用的 expectedCertSha256');
+  assert.equal(CONFIG_CERT, publishedCertSha256(), '配置里的指纹与 PUBLISHED_IDENTITY 不一致：换证书是发布级迁移，不许只改一处');
+  // 派生结果必须指认来源，不能只给一个「反正有个值」
+  assert.equal(resolveExpectedCertSha256(ROOT).source, CERT_SOURCE_CONFIG);
 });
 
 test('import 校验脚本/check-apk-debuggable 不会顺带跑 CLI（复用方不该被副作用带走）', () => {
@@ -108,10 +137,10 @@ test('解析器：badging 首行的 versionName / versionCode / packageName', ()
 test('解析器：apksigner --print-certs 的 SHA-256（多 signer 全收，十六进制统一小写）', () => {
   const out = [
     'Signer #1 certificate DN: C=US, O=Android, CN=Android Debug',
-    `Signer #1 certificate SHA-256 digest: ${EXPECTED_CERT_SHA256.toUpperCase()}`,
+    `Signer #1 certificate SHA-256 digest: ${CONFIG_CERT.toUpperCase()}`,
     'Signer #1 certificate SHA-1 digest: 1bf254cc4881ca14a32379b7c487de4ad9548b5e',
   ].join('\n');
-  assert.deepEqual(parseCertDigests(out), [EXPECTED_CERT_SHA256]);
+  assert.deepEqual(parseCertDigests(out), [CONFIG_CERT]);
   assert.deepEqual(parseCertDigests('no certs here'), []);
   assert.deepEqual(parseCertDigests(undefined), []);
 });
@@ -275,6 +304,7 @@ test('P5 --json 是结构化结果（workflow / 脚本消费的那份形状）',
   assert.equal(report.conclusion, 'PASS');
   assert.equal(report.variant, 'standard');
   assert.equal(report.expectedCert, built.certA);
+  assert.equal(report.expectCertSource, CERT_SOURCE_CLI, '--expect-cert 显式传入时来源要标 CLI（复核的人靠它）');
   assert.deepEqual(report.checks.map((item) => item.id), ['debuggable', 'variant', 'loopback', 'cert', 'insecure']);
   assert.equal(report.insecure, false, '干净包的 insecure 必须是 false');
   for (const item of report.checks) {
@@ -311,4 +341,156 @@ test('P5 --json 是结构化结果（workflow / 脚本消费的那份形状）',
   assert.equal(insecureRed.ok, false);
   assert.equal(insecureRed.insecure, true);
   assert.deepEqual(insecureRed.failing, ['insecure']);
+});
+
+// ─────────────────── 4. 期望指纹的单一来源 + fail-closed（#705） ───────────────────
+//
+// #705 的问题不是「值写错了」，而是「同一个事实在脚本里有第三份副本」：它被测试钉住所以不会漂移，
+// 但会**诱使下一个人去改脚本而不是改配置**（同根因 #697 / #702 已经各踩过一次）。
+// 所以这一节钉三件事：
+//   1. 脚本里**一个指纹字面量都没有**（含注释），期望值只能从 `config/appIdentity.json` 派生；
+//   2. 派生出来的值**真的在驱动第 4 项**（不是「反正有个值」）；
+//   3. 配置读不到 / 非法 → **exit 2**（判不出来），**绝不**回落到任何内置默认值。
+
+test('C1 不传 --expect-cert：从 config/appIdentity.json 派生，来源点名配置文件', () => {
+  const root = makeRoot(JSON.stringify({ expectedCertSha256: 'a'.repeat(64) }));
+  try {
+    const resolved = resolveExpectCert({ root });
+    assert.equal(resolved.value, 'a'.repeat(64), '配置里的值就是要比对的值，不该被任何默认值顶掉');
+    assert.equal(resolved.source, CERT_SOURCE_CONFIG);
+    assert.equal(resolved.invalid, null);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('C2 --expect-cert 优先于配置（大小写归一），非 64 位 hex 直接判不出来', () => {
+  const root = makeRoot(JSON.stringify({ expectedCertSha256: 'a'.repeat(64) }));
+  try {
+    const resolved = resolveExpectCert({ expectCert: 'B'.repeat(64), root });
+    assert.equal(resolved.value, 'b'.repeat(64), 'apksigner 打印的是小写，传进来的大写要归一');
+    assert.equal(resolved.source, CERT_SOURCE_CLI, '显式传入要标 CLI（不是配置文件）');
+
+    const bad = resolveExpectCert({ expectCert: 'e7c5:baee', root });
+    assert.equal(bad.value, null, '非法 --expect-cert 不许被当成「反正有个值」继续跑');
+    assert.match(bad.invalid, /64 位十六进制/);
+    assert.equal(bad.source, CERT_SOURCE_CLI);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('C3 配置缺失 / 非法 → value = null（判不出来），且不给任何兜底值', () => {
+  const cases = [
+    { name: '配置文件不存在', identity: undefined, expect: /读不到 config\/appIdentity\.json/ },
+    { name: '缺 expectedCertSha256 字段', identity: JSON.stringify({ applicationId: 'x.y' }), expect: /缺失或不是字符串/ },
+    { name: '不是 64 位（63 位）', identity: JSON.stringify({ expectedCertSha256: 'e'.repeat(63) }), expect: /64 位小写十六进制/ },
+    { name: '带冒号的写法（apksigner 的 AA:BB…）', identity: JSON.stringify({ expectedCertSha256: `${'ab:'.repeat(31)}ab` }), expect: /64 位小写十六进制/ },
+    { name: 'JSON 本身就是坏的', identity: '{"expectedCertSha256": ', expect: /读不出来/ },
+  ];
+  for (const item of cases) {
+    const root = makeRoot(item.identity);
+    try {
+      const resolved = resolveExpectCert({ root });
+      assert.equal(resolved.value, null, `${item.name}：判不出来时不许给出任何值（那就是内置默认值）`);
+      assert.match(resolved.invalid ?? '', item.expect, `${item.name}：错误文案要说清为什么读不出来`);
+      assert.equal(resolved.source, CERT_SOURCE_CONFIG, `${item.name}：来源要指认配置文件（人要知道去哪修）`);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  }
+});
+
+test('C4 配置缺失 / 非法 → exit 2、五项全 unknown、文案说清来源与修法（不需要 SDK）', () => {
+  // 期望值判不出来发生在「碰 APK 之前」，所以这里故意拿一个非 APK 路径：能证明是配置这一关先挡住的
+  for (const identity of [undefined, JSON.stringify({ expectedCertSha256: 'z'.repeat(64) })]) {
+    const root = makeRoot(identity);
+    try {
+      const result = verifyReleaseApk({ apk: path.join(ROOT, 'package.json'), root });
+      // 先断言「是期望值这一关挡住的」：少了这条，别的 fail-closed（比如读不到 APK）也会让 exit=2 蒙对
+      assert.match(result.error ?? '', /期望证书指纹判不出来/, '必须是被「期望值判不出来」挡住，不是被别的检查顺带挡住');
+      assert.equal(result.exitCode, EXIT_UNKNOWN, `期望值判不出来必须 exit 2（判不出来），实际 ${result.exitCode}`);
+      assert.equal(result.ok, false);
+      assert.equal(result.expectedCert, null, '判不出来时不许填任何值 —— 填了就等于「内置默认值」还在');
+      assert.equal(result.expectCertSource, CERT_SOURCE_CONFIG);
+      assert.match(result.error, /config\/appIdentity\.json/, '文案要说清期望值该从哪来');
+      assert.match(result.error, /不回落到任何内置默认值/, '文案要说清为什么直接 exit 2');
+      assert.match(result.error, /--expect-cert/, '文案要给修法（临时换指纹的通道）');
+      assert.deepEqual(
+        result.checks.map((item) => item.status),
+        ['unknown', 'unknown', 'unknown', 'unknown', 'unknown'],
+        '判不出来 = 五项全 unknown（不是「证书一项不过」，更不是 pass）',
+      );
+      assert.deepEqual(result.failing, [], '「判不出来」不许表述成「某几项不过」');
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  }
+});
+
+test('C4b 配置缺失 + 真 APK → exit 2（不是 0、也不是 1：不许拿内置默认值继续跑完）', SKIP, () => {
+  const built = fixtures();
+  const root = makeRoot(undefined);
+  try {
+    // 夹具包是临时证书签的（≠ 已发布证书）：若脚本里还留着硬编码默认值，这一条就会一路跑完，
+    // 落在 exit 1（被当成「证书不符」）或 exit 0（恰巧相等）—— 都不是 exit 2。负向对照实测是 exit 1。
+    const result = verifyReleaseApk({ apk: built.apks.clean, root });
+    assert.equal(result.exitCode, EXIT_UNKNOWN, `配置缺失必须 exit 2，实际 ${result.exitCode}（0 = 用了内置默认值跑完，1 = 被当成证书不符）`);
+    assert.match(result.error ?? '', /期望证书指纹判不出来/);
+    assert.deepEqual(
+      result.checks.map((item) => item.status),
+      ['unknown', 'unknown', 'unknown', 'unknown', 'unknown'],
+    );
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('C5 配置里的值真的在驱动第 4 项（换配置 → 同一个包从绿变红）', SKIP, () => {
+  const built = fixtures();
+  const root = makeRoot(JSON.stringify({ expectedCertSha256: built.certA }));
+  try {
+    const green = verifyReleaseApk({ apk: built.apks.clean, root });
+    assert.equal(green.exitCode, EXIT_OK, `配置里放的正是这把证书，必须过：${green.error ?? ''}`);
+    assert.equal(green.expectedCert, built.certA, '期望值必须等于配置里那个（不是任何常量）');
+    assert.equal(green.expectCertSource, CERT_SOURCE_CONFIG);
+    assert.equal(green.checks.find((item) => item.id === 'cert').status, 'pass');
+
+    // 配置改一个值（等价于「另一把证书」）→ 同一个包必须红，且只有 cert 红
+    fs.writeFileSync(path.join(root, 'config', 'appIdentity.json'), JSON.stringify({ expectedCertSha256: built.certB }));
+    const red = verifyReleaseApk({ apk: built.apks.clean, root });
+    assert.equal(red.exitCode, EXIT_FAIL, '配置值变了却没红 = 期望值根本没参与比对');
+    assert.deepEqual(red.failing, ['cert']);
+    assert.equal(red.expectedCert, built.certB);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('C6 CLI 不传 --expect-cert：用仓库配置里的已发布指纹比对，输出点名来源', SKIP, () => {
+  const built = fixtures();
+  // 夹具的包是临时证书签的 ≠ 已发布证书 → 不带 --expect-cert 必须红（说明它真拿配置值比了一次）
+  const result = runCli([built.apks.clean]);
+  assert.equal(result.status, EXIT_FAIL, `不带 --expect-cert 时要用配置里的已发布指纹比对\n${combined(result)}`);
+  assert.match(combined(result), /结论：FAIL（cert 不通过）/);
+  assert.match(combined(result), new RegExp(`cert=${CONFIG_CERT}\\s+来源=config/appIdentity\\.json`), '期望行要标出「值来自配置文件」');
+  assert.match(combined(result), /期望指纹来源：config\/appIdentity\.json/, '结论行要标来源，复核的人才知道比的是哪来的期望值');
+});
+
+test('C7 显式 --expect-cert 压过配置（配置指向另一把证书也按 CLI 值比对）', SKIP, () => {
+  const built = fixtures();
+  const root = makeRoot(JSON.stringify({ expectedCertSha256: built.certB }));
+  try {
+    const cliWins = verifyReleaseApk({ apk: built.apks.clean, root, expectCert: built.certA });
+    assert.equal(cliWins.exitCode, EXIT_OK, '显式传入的值优先级最高');
+    assert.equal(cliWins.expectCertSource, CERT_SOURCE_CLI);
+    assert.equal(cliWins.expectedCert, built.certA);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+  // 原行为不回归：证书不符仍 exit 1 且点名 cert（--json 里也能读出来）
+  const mismatch = verifyReleaseApk({ apk: built.apks.certMismatch, expectCert: built.certA });
+  assert.equal(mismatch.exitCode, EXIT_FAIL);
+  assert.deepEqual(mismatch.failing, ['cert']);
+  assert.equal(mismatch.expectCertSource, CERT_SOURCE_CLI);
 });
