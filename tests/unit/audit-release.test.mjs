@@ -249,6 +249,7 @@ test('正文禁词命中 → exit 1，点名禁词与行号，且不把整行抄
   const body = [
     '## 1.4.8',
     '',
+    // check-endpoints-allow: 这是**被测数据**（正文禁词检测的样本），不是产品端点；本用例就是靠它变红的
     '接口直连 http://140.210.13.146:60010/api/v1 联调即可',
     `- sha256：\`${FAKE_APK_SHA}\``,
     `- 大小：**${FAKE_APK_SIZE}** 字节`,
@@ -365,6 +366,7 @@ test('包内端点清单只报告不判红（含内网地址也 exit 0，但清�
         ok: true,
         hosts: [
           { url: 'https://sub2api.rose7.cn', count: 2, note: null },
+          // check-endpoints-allow: 被测数据（包内端点清单的样本），用于验证只报告不判红
           { url: 'http://140.210.13.146:60010', count: 2, note: null },
           { url: 'http://127.0.0.1:18000', count: 1, note: '回环' },
         ],
