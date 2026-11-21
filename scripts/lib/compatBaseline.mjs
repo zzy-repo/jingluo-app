@@ -133,9 +133,6 @@ export const MIN_ANDROID_SDK = COMPAT_CONFIG.minAndroidSdk
  */
 export const browserslistChromeTarget = (chromium = BASELINE_CHROMIUM) => `chrome >= ${chromium}`
 
-/** 构建 target 的期望值（不含其他浏览器：chrome 是唯一有硬约束的那条） */
-export const browserslistTargets = () => [browserslistChromeTarget()]
-
 /** 从一组 browserslist 条目里读出全部 chrome 下限数字 */
 export const chromeFloorsOf = (targets) =>
   (Array.isArray(targets) ? targets : []).flatMap((target) => {

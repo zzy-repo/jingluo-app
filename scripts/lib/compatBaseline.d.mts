@@ -28,7 +28,6 @@ export declare const PROBE_TIERS: number[]
 export declare const MIN_ANDROID_SDK: number
 
 export declare const browserslistChromeTarget: (chromium?: number) => string
-export declare const browserslistTargets: () => string[]
 export declare const chromeFloorsOf: (targets: unknown) => number[]
 export declare const assertBrowserslist: (targets: unknown, baseline?: number) => number
 export declare const productBrowserslist: (file?: string) => string[]

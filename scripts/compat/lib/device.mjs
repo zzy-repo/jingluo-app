@@ -7,7 +7,7 @@
 //   - 模拟器固定用 SDK 里现有的 35.1.2.0（不要升级，`emulator-37.2.13.bak` 是留给别人的备份）；
 //   - 证据只写 `docs/compat/compat-old/api<NN>/`，本目录只放脚本。
 import { execFileSync, spawn } from 'node:child_process'
-import { appendFileSync, existsSync, mkdirSync, writeFileSync } from 'node:fs'
+import { mkdirSync, writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
 import { MatrixConfigError, matrixConfig } from './matrix-config.mjs'
@@ -83,16 +83,6 @@ export const devices = () =>
     .map((line) => line.trim())
     .filter((line) => line.length > 0)
     .map((line) => line.split(/\s+/))
-
-/** 串行闸门：有设备在跑就直接退出，不抢。 */
-export const requireIdleHost = () => {
-  const list = devices()
-  if (list.length > 0) {
-    throw new Error(
-      `宿主上已有设备在跑（${list.map(([serial, state]) => `${serial}:${state}`).join(', ')}），串行纪律要求先等它结束`
-    )
-  }
-}
 
 export const startEmulator = (avd) => {
   const emulatorPath = requirePath(EMULATOR, 'emulator')
@@ -196,13 +186,6 @@ export const ensureDir = (dir) => {
 export const saveJson = (file, value) => {
   writeFileSync(file, `${JSON.stringify(value, null, 2)}\n`)
   return file
-}
-
-export const appendLog = (file, text) => {
-  if (!existsSync(file)) {
-    writeFileSync(file, '')
-  }
-  appendFileSync(file, text)
 }
 
 /** 截图直接落证据目录（headless 模拟器上 CDP 截图会复用旧帧，所以走 screencap）。 */

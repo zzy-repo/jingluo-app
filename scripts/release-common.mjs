@@ -60,32 +60,6 @@ export class ReleaseEnvError extends Error {
 }
 
 /**
- * 逐个试候选路径，返回第一个存在的（不抛错）
- * @param {...string} candidates
- * @returns {string|null}
- */
-export function firstExisting(...candidates) {
-  for (const c of candidates) {
-    if (!c) continue;
-    try {
-      if (fs.existsSync(c)) return c;
-    } catch {
-      /* 忽略权限等异常，继续下一个候选 */
-    }
-  }
-  return null;
-}
-
-/** 读 JSON；失败抛 ReleaseEnvError（带路径，不含内容） */
-export function readJsonFile(file) {
-  try {
-    return JSON.parse(fs.readFileSync(file, 'utf8'));
-  } catch (e) {
-    throw new ReleaseEnvError(`读不了 JSON：${file}（${e.message}）`);
-  }
-}
-
-/**
  * 读 package.json 的版本号（唯一来源：version → versionName，androidVersionCode → versionCode）
  * @param {string} root 仓库根
  * @returns {{file:string, version:string|null, versionCode:number|null, errors:string[]}}

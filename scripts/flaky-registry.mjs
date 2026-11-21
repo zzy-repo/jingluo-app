@@ -126,13 +126,9 @@ export const emptyRegistry = () => ({
  *
  * 红线（写进每条条目的 `mustNotMask`，落盘可读）：**不许用它掩盖断言失败** ——
  * 断言失败的 `failureType` 是 `testCodeFailure`、stack 在 `tests/…`，三条判据里第二三条必然不命中。
+ *
+ * 下面这个读取器容错：坏条目丢掉，字段补齐（和 `tests` 一样，登记簿坏了不该让整轮起不来）。
  */
-export const INFRA_SIGNATURE_NOTE =
-  '按签名登记（不是文件放行）：登记的是「runner 自己崩了」的证据串（文案 + failureType + stack 位置），' +
-  '命中只触发「判 INFRA + 单文件重跑一次」，重跑仍是同一签名依旧判红（INFRA-FAIL），重跑出断言红则按 TEST_FAIL 上报。' +
-  '这是 runner 问题，不许用来掩盖断言失败（见 tests/helpers/merge-verdict.mjs 与 #611）。'
-
-/** 容错读取 INFRA 签名条目：坏条目丢掉，字段补齐（和 `tests` 一样，登记簿坏了不该让整轮起不来） */
 export const normalizeInfraSignatures = (raw) => {
   const list = Array.isArray(raw) ? raw : []
   return list
@@ -212,16 +208,6 @@ export const normalizeRegistry = (raw) => {
     infraSignatures: normalizeInfraSignatures(raw?.infraSignatures),
     tests,
   }
-}
-
-/** 窗口内（含今天）已经登记过几次 flaky —— 「复发」的判据 */
-export const flakyCountWithin = (entry, windowDays, today) => {
-  if (!entry) return 0
-  const from = new Date(Date.parse(`${today}T00:00:00Z`) - windowDays * MS_PER_DAY)
-  return (entry.history ?? []).filter((stamp) => {
-    const at = Date.parse(stamp.length === 10 ? `${stamp}T00:00:00Z` : stamp)
-    return Number.isFinite(at) && at >= from.getTime()
-  }).length
 }
 
 /**
@@ -587,16 +573,6 @@ export const scanCrossRunner = (records = []) => {
   // 输出顺序稳定（CI 里两份日志/摘要要能逐行对比）
   return found.sort((a, b) => a.commit.localeCompare(b.commit) || a.test.localeCompare(b.test))
 }
-
-/** 三态（#456 §2）：失败必须被明确归到其中一种，不许含糊成「红了」 */
-export const TRI_STATES = Object.freeze(['green', 'flaky', 'runner-dependent', 'true-red'])
-
-export const TRI_STATE_TEXT = Object.freeze({
-  green: '绿',
-  flaky: 'flaky（同 runner 重跑绿）',
-  'runner-dependent': 'runner-dependent（跨 runner 结论不一致）',
-  'true-red': '真红（同 runner 重跑仍红）',
-})
 
 /**
  * 一次结果的三态判定。`runnerDependent` 来自 `scanCrossRunner`（跨 runner 比对），

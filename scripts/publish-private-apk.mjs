@@ -130,7 +130,6 @@ export const APK_SUBDIR = 'apk';
 export const TRANSPORTS = Object.freeze(['ssh', 'local']);
 /** 不可猜测文件名的随机段：5 字节 = 40 bit = 8 个 base32 字符 */
 export const RANDOM_BYTES = 5;
-export const RANDOM_CHARS = 8;
 const BASE32 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
 /** 演练用的假版本号前缀（只有 `0.0.0` 开头才允许 --exercise，除非 --force） */
 const FAKE_VERSION_RE = /^0\.0\.0(?:-|$)/;
