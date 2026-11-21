@@ -200,6 +200,7 @@ npm run test:integration -- --baseline          # 集成全量与基线比对，
 | `check:db-version`（#547 新建） | ✅ CI 注入 | CI 往 `tests/unit/check-ip-version.test.mjs` 追加一行 `indexedDB.open('chat-demo', 99)` → 必 exit 1，且必须报出「文件:行 硬编码版本 99」并指到注入文件（两条都查，防止扫描目录被改窄后仍然 exit≠0），还原后 exit 0；脚本另有 `--selftest`（13 条：注释/字符串放行、变量放行、`openDB<…>` 泛型必报） | `.github/workflows/ci.yml` / `scripts/check-db-version.mjs` |
 | `check:keystore`（#697 修 + 接线） | ✅ 注入 + CI 注入 | 形状四拍：键名错 / 路径错 / 口令错 / 别名错 → exit 1 且点名；缺文件 → exit 2；**指纹不符 → exit 1 且点名「期望 X 实际 Y（来源 config/appIdentity.json）」**（#697 之前这条是死代码：期望值还去 `android/app/build.gradle` 找字面量，而 #271 之后它只记在 `config/appIdentity.json`，于是比较分支永不进入） | `tests/unit/gate-negative-controls.test.mjs`（N8）/ `.github/workflows/ci.yml` |
 | `check:consume-api`（#487 接线） | ✅ CI 注入 | CI 往 `src/` 塞一条**白名单外**的 `/api/v1/**` 路径字面量（`/api/v1/__gate_neg_not_whitelisted`）→ R3 必 exit 1 且指到注入文件，删掉后 exit 0（不用脚本自带的 `--selftest`：那条只证明 R2，白名单 R3 才是主判据） | `.github/workflows/ci.yml` |
+| `check:public-artifact-redaction`（#745 第 3 步新建） | ✅ 自带（单测五拍） | **不在 ci.yml**（发布前手动跑，需要已构建的 APK；不计入本节 32 道计数，见 `docs/RELEASE-CHECKLIST.md` B3b）：临时产物目录里塞内网 IP → exit 1 且点名到 config 字段；端口表从配置动态派生（换配置后旧端口不报、新端口才报）；`--allow-host` + `--allow-port` 双给 → exit 0 且打印放行清单，**只给主机仍然红**；非 zip / 空目录 / 无输入 → exit 2；XML 命名空间与 `redacted.local` 跳过并计数、不误报 | `tests/unit/public-artifact-redaction.test.mjs` |
 
 「登记」不是给人看的注释：`tests/unit/gate-negative-controls.test.mjs` 的 `N6` 用例会读
 `.github/workflows/ci.yml`，**每出现一条 `run: pnpm run <gate>`，登记表里就必须有一条**，否则这个用例红，
@@ -622,7 +623,7 @@ CI 里不要加。负向对照（不入库，需要时手动跑一遍）：造�
    与 `fileTimeoutClasses`（逐文件标注）。**不新建第二份基线**，也不许顺手放宽默认档。
    标注了非默认档的文件**不进合并批次**：批内超时按「一个进程」算，它一慢就会把同批十几个无辜文件一起拖死。
 3. **超时被杀的副作用要认得**：门禁负向对照是「往仓库里塞坏输入 → 必红 → 还原」，进程被 SIGKILL 掐在中间，
-   注入物就留在仓库里（实测：`tests/unit/__gate-neg-dup-copy.test.mjs`），下一次跑会在**正例**上红。
+   注入物就留在仓库里（实测：`tests/unit/__gate-neg-*.test.mjs` —— 注入物的文件名形状），下一次跑会在**正例**上红。
    所以「档位要给够」不只是为了快 —— 掐断一次会污染下一次。发现残留先 `git status` 清干净再下结论。
 
 
