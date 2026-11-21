@@ -28,10 +28,15 @@ curl -sS -o /tmp/aapt2.jar \
 python3 -c 'import zipfile;zipfile.ZipFile("/tmp/aapt2.jar").extract("aapt2","/tmp")'
 install -m 755 /tmp/aapt2 /opt/dl-release/bin/aapt2 && /opt/dl-release/bin/aapt2 version
 
-# 2) 令牌（600，root）
+# 2) 两枚令牌（600，root）—— #641：读令牌与发布令牌分开，互不包含
 install -d -m 700 /etc/dl-release
+#    读令牌：内测包里的那一枚（#622 构建期 DL_PRIVATE_TOKEN 取的就是它），只能读清单/下私有包
 head -c 32 /dev/urandom | base64 | tr -d '\n=+/' | cut -c1-48 > /etc/dl-release/token
-chmod 600 /etc/dl-release/token
+#    发布令牌：写端点专用，只在发布主机/脚本手里，绝不进客户端产物
+openssl rand -hex 32 > /etc/dl-release/publish-token
+chmod 600 /etc/dl-release/token /etc/dl-release/publish-token
+chown root:root /etc/dl-release/token /etc/dl-release/publish-token
+#    两枚必须不同值：同值 = 拆了等于没拆，服务会按「发布令牌未配置」处理（写端点全 401）
 
 # 3) 变体白名单（可选，只给没标记的历史包用）
 install -m 600 deploy/dl-release/artifact-variants.json.example /etc/dl-release/artifact-variants.json

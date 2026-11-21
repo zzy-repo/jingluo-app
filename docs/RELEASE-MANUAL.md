@@ -1022,8 +1022,8 @@ cd android && ./gradlew assembleRelease -PartifactVariant=internal
 - **鉴权 / 取用方式（#621 已上线）**：`deploy/dl-release` 服务提供带令牌的两个**读**端点
   — `GET /api/v1/releases/internal`（清单，仅 internal 条目 + `apkName`/`downloadUrl`）、
   `GET /api/v1/releases/internal/download?file=<basename>.apk`（私有包流式下载）。
-  令牌是**只读令牌** `/etc/dl-release/read-token`（`chmod 600`，与发布令牌分开 —— #641，
-  发布令牌 `/etc/dl-release/token` 只认写端点），写法 `X-DL-Token: <token>` 或
+  令牌是**读令牌** `/etc/dl-release/token`（`chmod 600`；#641 起它就是读令牌，发布令牌另有一枚
+  `/etc/dl-release/publish-token`，只认写端点），写法 `X-DL-Token: <token>` 或
   `Authorization: Bearer <token>`；无令牌/错令牌一律 401，超 60 次/分钟/IP → 429，清单缺失 → 503，
   `file` 带任何路径成分 → 400。Caddy 只把 `/api/v1/releases/*` 反代到 `127.0.0.1:8799`
   （**不**经过 `file_server`）。装了 internal 变体的客户端在**构建期**带 `DL_PRIVATE_MANIFEST`
@@ -1050,8 +1050,8 @@ cd android && ./gradlew assembleRelease -PartifactVariant=internal
 
 | 环节 | 事实 | 出处 |
 | --- | --- | --- |
-| 私有清单 | `GET /api/v1/releases/internal` + `X-DL-Token`（**只读令牌**）：无 token **401**，有 token **200**（只含 internal 条目，附 `apkName` / `downloadUrl`） | #621 / #641 |
-| 私有包 | `GET /api/v1/releases/internal/download?file=<裸名>.apk` + `X-DL-Token`（**只读令牌**）：无 token **401**，有 token **200**（实测 5,428,086 B） | #621 / #641 |
+| 私有清单 | `GET /api/v1/releases/internal` + `X-DL-Token`（**读令牌**）：无 token **401**，有 token **200**（只含 internal 条目，附 `apkName` / `downloadUrl`）；带**发布令牌** → **401** | #621 / #641 |
+| 私有包 | `GET /api/v1/releases/internal/download?file=<裸名>.apk` + `X-DL-Token`（**读令牌**）：无 token **401**，有 token **200**（实测 5,428,086 B）；带**发布令牌** → **401** | #621 / #641 |
 | 客户端 | internal 变体**先读私有清单**，401/429/超时/网络/清单写脏 → **静默回退**公网 `releases.json`（不崩、不弹错） | #622（`17c0733`） |
 | 原生下载 | 下载器白名单头放行 `X-DL-Token`，私有下载 URL 进白名单 | #639（`766236e`） |
 
@@ -1068,13 +1068,13 @@ cd android && ./gradlew assembleRelease -PartifactVariant=internal
 2. 构建环境里给出 `tokenEnv` 指名的那枚令牌（只进环境，**不进 JSON、不进仓库、不进 URL**）：
 
    ```bash
-   DL_PRIVATE_TOKEN="$(ssh aliyun cat /etc/dl-release/read-token)" \
+   DL_PRIVATE_TOKEN="$(ssh aliyun cat /etc/dl-release/token)" \
      INTERNAL_BUILD=1 DIST_OUT=dist-internal node scripts/build.mjs --internal
    ```
 
-   > **只读令牌，不是发布令牌**（#641）。`DL_PRIVATE_TOKEN` 取 `/etc/dl-release/read-token`；
-   > 取错成 `/etc/dl-release/token` 不会立刻报错，但那等于把**发布权限**塞进内测包 ——
-   > 见下面 ④ 的权限矩阵。发布脚本（`scripts/publish-private-apk.mjs`）用的是另一枚，别混。
+   > **读令牌，不是发布令牌**（#641）。`DL_PRIVATE_TOKEN` 取 `/etc/dl-release/token`（读令牌）；
+   > 取错成 `/etc/dl-release/publish-token` 不会立刻报错，但那等于把**发布权限**塞进内测包 ——
+   > 见下面 ④ 的权限矩阵。发布/手工 `curl` 用另一枚，别混。
 
 - `enabled: true` 但构建环境没有令牌 → **构建直接中止**，不会出一个「装了却永远静默走公网」的包。
 - 开关只对 internal 变体生效：standard 产物里 `url` 与令牌都是空串（命中数 0），不会把内测端点广播给公网用户。
@@ -1106,22 +1106,27 @@ cd android && ./gradlew assembleRelease -PartifactVariant=internal
 
 | 令牌 | 文件 | 谁持有 | 能做什么 |
 | --- | --- | --- | --- |
-| **只读令牌** | `/etc/dl-release/read-token`（`chmod 600`，与发布令牌同属主） | **internal 客户端产物**（构建期 `DL_PRIVATE_TOKEN`）、内测设备 | 读清单、下 internal 包。`POST /api/v1/release` / `/api/v1/release/private` → **401** |
-| **发布令牌** | `/etc/dl-release/token`（`chmod 600`） | 发布主机、`scripts/publish-*.mjs`、手工 `curl` | 发布（公网清单 / 私有清单）+ 顺带能读 |
+| **读令牌** | `/etc/dl-release/token`（`chmod 600`，root:root） | **internal 客户端产物**（构建期 `DL_PRIVATE_TOKEN`）、内测设备 | 读清单、下 internal 包。带它打 `POST /api/v1/release` / `/api/v1/release/private` → **401** |
+| **发布令牌** | `/etc/dl-release/publish-token`（`chmod 600`，root:root） | 发布主机、发布脚本、手工 `curl` | 两个写端点。带它读清单/下载 → **401**（两枚互不包含） |
 
-- 写法两种都认：`X-DL-Token: <token>` 或 `Authorization: Bearer <token>`
-  （**写端点只认 `Authorization: Bearer`**，这是 #619 起的既有契约）。
+- 写法：读端点 `X-DL-Token: <token>` 或 `Authorization: Bearer <token>` 都认；
+  **写端点只认 `Authorization: Bearer`**（#619 起的既有契约）。
 - **为什么拆**：内测包一定会把令牌带到设备上（#622 的设计）。拆之前那枚令牌连发布能力一起带出去，
   于是一个内测包泄漏 = 有人能 `POST /api/v1/release` 覆盖**正式分发包**。拆之后泄漏的能力上限只有「读」。
-- **权限矩阵 / 回退策略**（完整版见 `docs/dl-release-api.md` §5e）：
-  `/etc/dl-release/read-token` 不存在或为空时，服务**回退成「读也用发布令牌」**并在启动日志打
-  `read_token="fallback_to_write"` 警告 —— 运维一上线不会把内测读通道打死。
-  回退**只放宽读**：写端点照样只认发布令牌。补上文件 + 重启后日志变成 `read_token="dedicated"`。
-- **轮换只读令牌**（= 重出 internal 包，standard 不受影响）：`docs/dl-release-api.md` §5d
-  「轮换令牌（读端点这一侧）」—— 主机换 `read-token` → 重启服务（确认日志 `dedicated`）→
-  用新只读令牌重打 internal 包 → 按 §14.2 发私有清单。
-  老 internal 包里的令牌此刻已失效：它们会静默回退公网清单（不崩、不报错，只是看不到内测版）。
-- **轮换发布令牌**只影响发布脚本/手工 `curl`，**不需要重出任何客户端包**（客户端从没见过这枚）。
+- **顺序（关键）**：`/etc/dl-release/token` **原地留作读令牌**（已发出的内测包里就是它，不立刻轮换），
+  新建 `/etc/dl-release/publish-token` 当写令牌。这样写能力当场被切断，读不受影响。
+- **fail-closed**：`publish-token` 缺失/为空/与读令牌同值 → 写端点**一律 401**（日志
+  `event=publish_token_missing`），绝不回落成「写也认读令牌」。读令牌缺失 → 服务不启动。
+- **轮换代价**（完整命令见 `docs/dl-release-api.md` §5d/§7）：
+
+| 轮换哪一枚 | 代价 |
+| --- | --- |
+| **读令牌** `/etc/dl-release/token` | **重出 internal 包**：老包立刻读不到私有清单，静默回退公网（standard 包不受影响） |
+| **发布令牌** `/etc/dl-release/publish-token` | **对客户端零影响**：没有任何客户端产物带这枚令牌 |
+
+- **发布走哪条路**：日常私有包发布用 `scripts/publish-private-apk.mjs`，它走 **ssh/scp**
+  （远端 root 直接落盘 + 原子改清单），**本身不需要任何 HTTP 令牌**；只有手工 `curl` 或改走 HTTP 时才用
+  `Authorization: Bearer $(ssh aliyun cat /etc/dl-release/publish-token)`。
 
 #### ⑤ 安装注意（两条，缺一条就会「装不上」或「连不上」）
 

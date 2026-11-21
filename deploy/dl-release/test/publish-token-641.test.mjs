@@ -1,32 +1,38 @@
-// [layer: L1（零外部依赖：真 HTTP 服务 + 真 ZIP/AXML + 假 aapt2） | 耗时: ~4s]
+// [layer: L1（零外部依赖：真 HTTP 服务 + 真 ZIP/AXML + 假 aapt2） | 耗时: ~5s]
 //
-// **读令牌与发布令牌是两枚**（Issue #641）—— 权限矩阵的最小权限断言。
+// **读令牌与发布令牌严格分离**（Issue #641 的 DoD）—— 两枚令牌各管一边，交叉一律 401。
 //
 // 起点（#621 + #622）：私有清单的读端点与发布端点共用一枚令牌 `/etc/dl-release/token`，
-// 而 #622 的设计把这枚令牌**随 internal 包装到测试者设备上**。于是「拿到内测包的人」
-// 手里那枚令牌不只读清单、下私有包，还能 `POST /api/v1/release`（**覆盖正式分发包**）。
-// 读能力随包扩散是可接受的代价，写能力随包扩散不是。
+// 而 #622 把这枚令牌**随 internal 包装到测试者设备上**（构建期 `DL_PRIVATE_TOKEN` → `X-DL-Token`）。
+// 于是「拿到内测包的人」手里那枚令牌不只读清单、下私有包，还能 `POST /api/v1/release`
+// （**覆盖正式分发包**）。读能力随包扩散是可接受的代价，写能力随包扩散不是。
 //
-// 本文件钉住的就是这条边界（**核心断言是第 3 条：只读令牌发布 → 401**）：
+// 落地顺序（不能反）：`/etc/dl-release/token` **保留为读令牌**（已发出的内测包里就是它，
+// 轮换它 = 全员断读），新建 `/etc/dl-release/publish-token` 作为写令牌。这样「写能力随包扩散」
+// 当场被切断，而读不受影响。
 //
-//   | 端点                                     | 只读令牌 | 发布令牌 |
+// 本文件钉住的矩阵（**两个方向都是核心断言，缺一个就等于没拆**）：
+//
+//   | 端点                                     | 读令牌   | 发布令牌 |
 //   | ---------------------------------------- | -------- | -------- |
-//   | GET  /api/v1/releases/internal            | 200      | 200      |
-//   | GET  /api/v1/releases/internal/download   | 200      | 200      |
+//   | GET  /api/v1/releases/internal            | 200      | **401**  |
+//   | GET  /api/v1/releases/internal/download   | 200      | **401**  |
 //   | GET  /api/v1/version                      | 免令牌   | 免令牌   |
 //   | POST /api/v1/release                      | **401**  | 200      |
 //   | POST /api/v1/release/private              | **401**  | 200      |
 //
-// 另外三条同源约束，坏掉任何一条都会让「拆令牌」变成纸面上的：
-//   1. **向后兼容**：`read-token` 不存在（或为空）→ 回退成「读也用发布令牌」，
-//      启动日志打 `read_token="fallback_to_write"`。运维上线不补文件也不会把内测读通道打死。
-//   2. **令牌值不进日志**：日志只有来源文件与长度（本文件有静态断言扫全部 stdout）。
-//   3. **拒收零副作用**：401 之后公网清单 / 私有清单 / APK 目录必须逐字节不变。
+// 同源约束（坏掉任何一条，「拆令牌」就还是纸面上的）：
+//   1. **fail-closed**：`publish-token` 缺失 / 为空 / 与读令牌同值 → **写端点一律 401**，
+//      绝不回落成「写也认读令牌」（那等于把 #622 的泄漏原样复活）。服务照常起，读不受影响。
+//   2. **读令牌缺失 → 服务不启动**（`event=fatal_token`）：读端点没有备胎，起不来比全 401 好排查。
+//   3. **401 同形**：「没令牌」与「令牌不对」的**状态码、code、message 逐字节相同**，不给探测留差异。
+//   4. **令牌值不进日志**：日志只有来源文件与长度（本文件有静态扫描断言）。
+//   5. **拒收零副作用**：401 之后公网清单 / 私有清单 / APK 目录必须逐字节不变。
 //
-// 为什么起真服务端而不是打桩：鉴权在 `server.mjs` 的路由里，判据（读端点认两枚、写端点只认发布令牌）
-// 与「顺序」（鉴权先于一切存在性判断）都是契约本身，打桩验的是复制出来的第二份逻辑。
+// 为什么起真服务端而不是打桩：鉴权在 `server.mjs` 的路由里，判据（读端点只认读、写端点只认发布）
+// 与「顺序」（鉴权先于一切存在性/格式判断）都是契约本身，打桩验的是复制出来的第二份逻辑。
 //
-// 运行：node --test deploy/dl-release/test/read-token-641.test.mjs（或 pnpm run test:dl-release）
+// 运行：node --test deploy/dl-release/test/publish-token-641.test.mjs（或 pnpm run test:dl-release）
 
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
@@ -49,10 +55,10 @@ const LIST = '/api/v1/releases/internal'
 const DOWNLOAD = '/api/v1/releases/internal/download'
 const VERSION = '/api/v1/version'
 
-// 两枚**不同的**令牌：值是假的，但形状与线上一致（42 字符十六进制，见 docs/dl-release-api.md §5d）
-const READ_TOKEN = 'a'.repeat(21).repeat(2)   // 42 字符
-const WRITE_TOKEN = 'b'.repeat(21).repeat(2)  // 42 字符
-assert.notEqual(READ_TOKEN, WRITE_TOKEN)
+// 两枚**不同的**令牌：值是假的，但形状与线上一致（线上是 `openssl rand -hex 21` = 42 字符）
+const READ_TOKEN = 'a'.repeat(21).repeat(2) // 42 字符
+const PUBLISH_TOKEN = 'b'.repeat(21).repeat(2) // 42 字符
+assert.notEqual(READ_TOKEN, PUBLISH_TOKEN)
 assert.equal(READ_TOKEN.length, 42)
 
 const APK_STANDARD = buildApk({ metaData: { [VARIANT_MARKER]: 'standard' }, versionName: '1.4.4', versionCode: 23 })
@@ -78,7 +84,7 @@ function writePrivateApk(dir, name, bytes = 4096) {
 const privateEntry = (apk) => ({
   version: '1.4.3-internal',
   versionCode: 22,
-  releasedAt: '2026-11-21T05:40:00+08:00',
+  releasedAt: '2026-11-21T09:00:00+08:00',
   file: `apk/${apk.name}`,
   size: apk.size,
   md5: apk.md5,
@@ -173,21 +179,20 @@ process.exit(2);
 
 /**
  * 起一台真服务端，目录形状就是线上的形状（私有根在 webroot 之外，否则服务拒绝启动）：
- *   work/webroot/  releases.json + apk/      ← 公网（Caddy file_server 直接服）
- *   work/private/  releases.internal.json + apk/   ← 私有（webroot 之外）
+ *   work/webroot/  releases.json + apk/              ← 公网（Caddy file_server 直接服）
+ *   work/private/  releases.internal.json + apk/     ← 私有（webroot 之外）
  *
- * `readToken`：
- *   · 字符串 → 写 `/etc/dl-release/read-token` 的同位替身文件（DL_READ_TOKEN_FILE 指过去）
- *   · `null` → **不建文件**（回退路径；#641 的向后兼容分支）
- *   · `''`   → 建一个空文件（回退路径的另一半：文件在但没内容）
+ * `readToken` / `publishToken` 的取值语义：
+ *   · 字符串 → 写一个同名替身文件（`DL_TOKEN_FILE` / `DL_PUBLISH_TOKEN_FILE` 指过去）
+ *   · `null` → **不建文件**（缺失路径）
+ *   · `''`   → 建一个空文件（「文件在但没内容」）
  */
 const startServer = async ({
   readToken = READ_TOKEN,
-  writeToken = WRITE_TOKEN,
-  privateApks = ['deepseek-chat-1.4.4-internal.apk'],
+  publishToken = PUBLISH_TOKEN,
   rateLimitMax = 1000,
 } = {}) => {
-  const work = fs.mkdtempSync(path.join(os.tmpdir(), 'read-token-641-'))
+  const work = fs.mkdtempSync(path.join(os.tmpdir(), 'publish-token-641-'))
   const webroot = path.join(work, 'webroot')
   const apkDir = path.join(webroot, 'apk')
   fs.mkdirSync(apkDir, { recursive: true })
@@ -198,15 +203,17 @@ const startServer = async ({
   const privateApkDir = path.join(privateRoot, 'apk')
   fs.mkdirSync(privateApkDir, { recursive: true })
   const privateManifestFile = path.join(privateRoot, 'releases.internal.json')
-  const apks = privateApks.map((n) => writePrivateApk(privateApkDir, n))
+  const apks = [writePrivateApk(privateApkDir, 'deepseek-chat-1.4.4-internal.apk')]
   fs.writeFileSync(privateManifestFile, `${JSON.stringify({
     latest: '1.4.3-internal', releases: apks.map(privateEntry),
   }, null, 2)}\n`)
 
-  const writeTokenFile = path.join(work, 'token')
-  fs.writeFileSync(writeTokenFile, `${writeToken}\n`, { mode: 0o600 })
-  const readTokenFile = path.join(work, 'read-token')
+  const readTokenFile = path.join(work, 'token') // 线上 /etc/dl-release/token
   if (readToken !== null) fs.writeFileSync(readTokenFile, readToken === '' ? '' : `${readToken}\n`, { mode: 0o600 })
+  const publishTokenFile = path.join(work, 'publish-token') // 线上 /etc/dl-release/publish-token
+  if (publishToken !== null) {
+    fs.writeFileSync(publishTokenFile, publishToken === '' ? '' : `${publishToken}\n`, { mode: 0o600 })
+  }
 
   const variantsFile = path.join(work, 'artifact-variants.json')
   fs.writeFileSync(variantsFile, '{"apks":{}}\n')
@@ -220,8 +227,8 @@ const startServer = async ({
   const child = spawn(process.execPath, [SERVER], {
     env: {
       ...process.env,
-      DL_TOKEN_FILE: writeTokenFile,
-      DL_READ_TOKEN_FILE: readTokenFile,
+      DL_TOKEN_FILE: readTokenFile,
+      DL_PUBLISH_TOKEN_FILE: publishTokenFile,
       DL_WEBROOT: webroot,
       DL_APK_DIR: apkDir,
       DL_RELEASES_JSON: releasesFile,
@@ -241,15 +248,26 @@ const startServer = async ({
   const logs = []
   child.stdout.on('data', (chunk) => logs.push(String(chunk)))
   child.stderr.on('data', (chunk) => logs.push(String(chunk)))
+  const exited = new Promise((resolve) => child.once('exit', (code) => resolve(code)))
 
   for (let attempt = 0; ; attempt += 1) {
+    if (child.exitCode !== null) {
+      // 服务没起来：把日志交给调用方（有的用例**期望**起不来，见「读令牌缺失」那条）
+      return {
+        started: false,
+        exitCode: child.exitCode,
+        logs,
+        exited,
+        cleanup: () => fs.rmSync(work, { recursive: true, force: true }),
+        stop: async () => {},
+      }
+    }
     try {
       const res = await fetch(`http://127.0.0.1:${port}/healthz`)
       if (res.ok) break
     } catch {
       /* 还没起来 */
     }
-    if (child.exitCode !== null) throw new Error(`服务退出 code=${child.exitCode}:\n${logs.join('')}`)
     if (attempt > 100) throw new Error(`服务 10s 内没起来:\n${logs.join('')}`)
     await new Promise((resolve) => setTimeout(resolve, 100))
   }
@@ -259,8 +277,8 @@ const startServer = async ({
   /** 两种令牌写法都收（`X-DL-Token` / `Authorization: Bearer`），两处必须同判。 */
   const readWith = (token, p = LIST) =>
     Promise.all([
-      call(p, { headers: { 'X-DL-Token': token } }).then(async (r) => ({ status: r.status, headers: r.headers })),
-      call(p, { headers: { Authorization: `Bearer ${token}` } }).then(async (r) => ({ status: r.status, headers: r.headers })),
+      call(p, { headers: { 'X-DL-Token': token } }).then((r) => ({ status: r.status })),
+      call(p, { headers: { Authorization: `Bearer ${token}` } }).then((r) => ({ status: r.status })),
     ])
 
   /** 发布：默认走 `Authorization: Bearer`（发布脚本从 #619 起就是这么写的）。 */
@@ -283,6 +301,7 @@ const startServer = async ({
   }
 
   return {
+    started: true,
     port,
     work,
     webroot,
@@ -315,6 +334,7 @@ const startServer = async ({
 
 const withServer = async (setup, body) => {
   const ctx = await startServer(setup)
+  assert.equal(ctx.started, true, `服务必须能起来：\n${ctx.logs?.join('') ?? ''}`)
   try {
     await body(ctx)
   } finally {
@@ -323,11 +343,11 @@ const withServer = async (setup, body) => {
   }
 }
 
-// ---------------------------------------------------------------- 只读令牌：能读
-test('只读令牌 → GET 私有清单 200（X-DL-Token 与 Bearer 两种写法同判）', async () => {
+// ---------------------------------------------------------------- 读令牌：能读
+test('读令牌 → GET 私有清单 200（X-DL-Token 与 Bearer 两种写法同判）', async () => {
   await withServer({}, async (ctx) => {
     for (const r of await ctx.readWith(READ_TOKEN, LIST)) {
-      assert.equal(r.status, 200, '只读令牌必须能读清单')
+      assert.equal(r.status, 200, '读令牌必须能读清单（已发出的内测包靠这一枚）')
     }
     const res = await ctx.call(LIST, { headers: { 'X-DL-Token': READ_TOKEN } })
     const body = await res.json()
@@ -337,13 +357,13 @@ test('只读令牌 → GET 私有清单 200（X-DL-Token 与 Bearer 两种写法
   })
 })
 
-test('只读令牌 → GET 私有包下载 200，字节与磁盘一致', async () => {
+test('读令牌 → GET 私有包下载 200，字节与磁盘一致', async () => {
   await withServer({}, async (ctx) => {
     const apk = ctx.apks[0]
     const res = await ctx.call(`${DOWNLOAD}?file=${encodeURIComponent(apk.name)}`, {
       headers: { 'X-DL-Token': READ_TOKEN },
     })
-    assert.equal(res.status, 200, '只读令牌必须能下私有包')
+    assert.equal(res.status, 200, '读令牌必须能下私有包')
     assert.equal(res.headers.get('content-disposition'), `attachment; filename="${apk.name}"`)
     const got = Buffer.from(await res.arrayBuffer())
     assert.equal(got.length, apk.size)
@@ -351,58 +371,49 @@ test('只读令牌 → GET 私有包下载 200，字节与磁盘一致', async (
   })
 })
 
-// ---------------------------------------------------------------- 只读令牌：不能写（核心）
-test('【核心】只读令牌 → POST /api/v1/release = 401，且公网清单与 APK 目录零变化', async () => {
+// ---------------------------------------------------------------- 读令牌：不能写（核心方向 1/2）
+test('【核心】读令牌 → POST /api/v1/release = 401，且公网清单与 APK 目录零变化', async () => {
   await withServer({}, async (ctx) => {
     const before = ctx.snapshot()
-
     const res = await ctx.post('/api/v1/release', { apk: APK_STANDARD, token: READ_TOKEN })
-    assert.equal(res.status, 401, '只读令牌发布公网包必须 401（本单的核心断言）')
+    assert.equal(res.status, 401, '读令牌（= 随内测包分发的那一枚）发布公网包必须 401')
     assert.equal(res.json?.error?.code ?? res.json?.code, 'UNAUTHORIZED')
-    // 回包不许回显令牌 / 也不许解释「只读令牌缺什么权限」（那是给攻击者的提示）
-    assert.ok(!res.text.includes(READ_TOKEN) && !res.text.includes(WRITE_TOKEN), '401 回包不得回显任何令牌')
-
-    // 401 之后什么都没发生过：清单逐字节不变、APK 没落盘、没有 .upload-* 残留
+    // 回包不许回显令牌 / 也不许解释「读令牌缺什么权限」（那是给攻击者的提示）
+    assert.ok(!res.text.includes(READ_TOKEN) && !res.text.includes(PUBLISH_TOKEN), '401 回包不得回显任何令牌')
     assert.deepEqual(ctx.snapshot(), before, '被拒的发布不许改动线上任何字节')
   })
 })
 
-test('只读令牌 → POST /api/v1/release/private = 401，且私有清单与私有目录零变化', async () => {
+test('【核心】读令牌 → POST /api/v1/release/private = 401，且私有清单与私有目录零变化', async () => {
   await withServer({}, async (ctx) => {
     const before = ctx.snapshot()
     const res = await ctx.post('/api/v1/release/private', { apk: APK_INTERNAL, token: READ_TOKEN })
-    assert.equal(res.status, 401, '只读令牌也不许发私有包（它随内测包分发到设备上）')
+    assert.equal(res.status, 401, '读令牌也不许发私有包（它随内测包分发到设备上）')
     assert.equal(res.json?.error?.code ?? res.json?.code, 'UNAUTHORIZED')
     assert.deepEqual(ctx.snapshot(), before, '私有清单/私有目录必须逐字节不变')
   })
 })
 
-test('只读令牌 → 写端点即使是空 body 也先 401（鉴权先于一切格式判断）', async () => {
+// ---------------------------------------------------------------- 发布令牌：不能读（核心方向 2/2）
+test('【核心】发布令牌 → GET 私有清单 401、GET 私有包下载 401（两枚互不包含）', async () => {
   await withServer({}, async (ctx) => {
-    for (const endpoint of ['/api/v1/release', '/api/v1/release/private']) {
-      const res = await ctx.call(endpoint, { method: 'POST', headers: { Authorization: `Bearer ${READ_TOKEN}` } })
-      assert.equal(res.status, 401, `${endpoint}：无 body 也必须先 401，不能先报 400`)
-      assert.equal((await res.json()).error.code, 'UNAUTHORIZED')
+    for (const r of await ctx.readWith(PUBLISH_TOKEN, LIST)) {
+      assert.equal(r.status, 401, '发布令牌不许读私有清单（超集会让两枚边界糊掉，本单明确拒绝）')
     }
-  })
-})
-
-// ---------------------------------------------------------------- 发布令牌：两端点都能用
-test('发布令牌 → GET 私有清单 / 私有包下载 都 200（发布令牌是读的超集）', async () => {
-  await withServer({}, async (ctx) => {
-    for (const r of await ctx.readWith(WRITE_TOKEN, LIST)) assert.equal(r.status, 200)
     const apk = ctx.apks[0]
     const dl = await ctx.call(`${DOWNLOAD}?file=${encodeURIComponent(apk.name)}`, {
-      headers: { 'X-DL-Token': WRITE_TOKEN },
+      headers: { 'X-DL-Token': PUBLISH_TOKEN },
     })
-    assert.equal(dl.status, 200)
-    assert.equal(sha256Of(Buffer.from(await dl.arrayBuffer())), apk.sha256)
+    assert.equal(dl.status, 401, '发布令牌不许下私有包')
+    const body = await dl.json()
+    assert.equal(body.error.code, 'UNAUTHORIZED')
   })
 })
 
+// ---------------------------------------------------------------- 发布令牌：能写
 test('发布令牌 → POST /api/v1/release 200，公网清单被原子更新', async () => {
   await withServer({}, async (ctx) => {
-    const res = await ctx.post('/api/v1/release', { apk: APK_STANDARD, token: WRITE_TOKEN })
+    const res = await ctx.post('/api/v1/release', { apk: APK_STANDARD, token: PUBLISH_TOKEN })
     assert.equal(res.status, 200, `发布令牌必须能发公网包：${res.text}`)
     assert.equal(res.json.target, 'public')
     const manifest = JSON.parse(fs.readFileSync(ctx.releasesFile, 'utf8'))
@@ -416,20 +427,19 @@ test('发布令牌 → POST /api/v1/release 200，公网清单被原子更新', 
 test('发布令牌 → POST /api/v1/release/private 200，私有清单被原子更新', async () => {
   await withServer({}, async (ctx) => {
     const beforePrivateApk = fs.readdirSync(ctx.privateApkDir).sort()
-    const res = await ctx.post('/api/v1/release/private', { apk: APK_INTERNAL, token: WRITE_TOKEN })
+    const res = await ctx.post('/api/v1/release/private', { apk: APK_INTERNAL, token: PUBLISH_TOKEN })
     assert.equal(res.status, 200, `发布令牌必须能发私有包：${res.text}`)
     assert.equal(res.json.target, 'private')
     const manifest = JSON.parse(fs.readFileSync(ctx.privateManifestFile, 'utf8'))
     assert.equal(manifest.latest, '1.4.4')
     assert.ok(manifest.releases.every((r) => r.artifactVariant === 'internal'))
     assert.ok(fs.readdirSync(ctx.privateApkDir).length > beforePrivateApk.length, '私有包必须落进私有目录')
-    assert.match(ctx.logs.join(''), /event=release_private_ok/)
   })
 })
 
-test('发布端点只认 Bearer：发布令牌放在 X-DL-Token 上仍 401（历史契约不变）', async () => {
+test('写端点只认 Bearer：发布令牌放在 X-DL-Token 上仍 401（历史契约不变）', async () => {
   await withServer({}, async (ctx) => {
-    const res = await ctx.post('/api/v1/release', { apk: APK_STANDARD, token: WRITE_TOKEN, header: 'x-dl-token' })
+    const res = await ctx.post('/api/v1/release', { apk: APK_STANDARD, token: PUBLISH_TOKEN, header: 'x-dl-token' })
     assert.equal(res.status, 401, '写路径从 #619 起只收 Authorization: Bearer，本单不改这条')
   })
 })
@@ -445,92 +455,130 @@ test('/api/v1/version 免令牌（两枚令牌都不需要）', async () => {
   })
 })
 
-// ---------------------------------------------------------------- 回退（向后兼容）
-test('read-token 不存在 → 回退：发布令牌照样能读，启动日志打 read_token="fallback_to_write"', async () => {
-  await withServer({ readToken: null }, async (ctx) => {
-    const logs = ctx.logs.join('')
-    assert.match(logs, /read_token="fallback_to_write"/, '回退必须吵：启动日志要有 fallback_to_write')
-    assert.match(logs, /event=read_token_fallback/, '回退要有独立事件，事后翻 journalctl 能查')
-    assert.ok(!logs.includes(READ_TOKEN) && !logs.includes(WRITE_TOKEN), '日志里不许出现令牌明文')
-
-    // 回退态下发布令牌能读（= 老部署的行为，一条内测读通道都不会断）
-    for (const r of await ctx.readWith(WRITE_TOKEN, LIST)) assert.equal(r.status, 200)
-    const apk = ctx.apks[0]
-    const dl = await ctx.call(`${DOWNLOAD}?file=${encodeURIComponent(apk.name)}`, {
-      headers: { 'X-DL-Token': WRITE_TOKEN },
-    })
-    assert.equal(dl.status, 200)
-
-    // 回退**只放宽读**：写端点仍只认发布令牌（回退不是把闸拆了）
-    const write = await ctx.post('/api/v1/release', { apk: APK_STANDARD, token: WRITE_TOKEN })
-    assert.equal(write.status, 200)
-    const stranger = await ctx.post('/api/v1/release', { apk: APK_STANDARD, token: READ_TOKEN })
-    assert.equal(stranger.status, 401, '回退态下「另一枚值」仍然不能发布')
-  })
-})
-
-test('read-token 存在但为空 → 同样回退并告警（不是「空令牌放行一切」）', async () => {
-  await withServer({ readToken: '' }, async (ctx) => {
-    const logs = ctx.logs.join('')
-    assert.match(logs, /read_token="fallback_to_write"/)
-    assert.match(logs, /reason="empty"/)
-
-    // 空值不能当令牌用：随意一个空值/错值都必须 401
-    assert.equal((await ctx.call(LIST, { headers: { 'X-DL-Token': '' } })).status, 401)
-    assert.equal((await ctx.call(LIST, { headers: { 'X-DL-Token': 'nope' } })).status, 401)
-    // 回退后发布令牌能读
-    assert.equal((await ctx.call(LIST, { headers: { 'X-DL-Token': WRITE_TOKEN } })).status, 200)
-  })
-})
-
-test('两枚令牌各自独立：read-token 存在时启动日志报 dedicated，且读仍认发布令牌', async () => {
-  await withServer({}, async (ctx) => {
-    const logs = ctx.logs.join('')
-    assert.match(logs, /event=token_roles/)
-    assert.match(logs, /read_token="dedicated"/, '有 read-token 时不是回退态')
-    assert.ok(!/fallback_to_write/.test(logs), '有 read-token 时不许再打回退警告')
-    // 两枚都能读，但只有发布令牌能写 —— 这是矩阵的两半
-    assert.equal((await ctx.call(LIST, { headers: { 'X-DL-Token': READ_TOKEN } })).status, 200)
-    assert.equal((await ctx.call(LIST, { headers: { 'X-DL-Token': WRITE_TOKEN } })).status, 200)
-    assert.equal((await ctx.post('/api/v1/release', { apk: APK_STANDARD, token: READ_TOKEN })).status, 401)
-  })
-})
-
-// ---------------------------------------------------------------- 错令牌 / 无令牌
-test('错令牌 → 读端点与写端点一律 401（错值与「没有令牌」同形）', async () => {
+// ---------------------------------------------------------------- 无令牌 / 错令牌（同形）
+test('无令牌 → 读端点 401、写端点 401（写端点即使空 body 也先 401）', async () => {
   await withServer({}, async (ctx) => {
     const before = ctx.snapshot()
-    for (const bad of ['not-the-token', `${READ_TOKEN}x`, `${WRITE_TOKEN}x`]) {
+    assert.equal((await ctx.call(LIST)).status, 401)
+    assert.equal((await ctx.call(`${DOWNLOAD}?file=${encodeURIComponent(ctx.apks[0].name)}`)).status, 401)
+    for (const endpoint of ['/api/v1/release', '/api/v1/release/private']) {
+      const res = await ctx.call(endpoint, { method: 'POST' })
+      assert.equal(res.status, 401, `${endpoint}：无 body 也必须先 401，不能先报 400`)
+      assert.equal((await res.json()).error.code, 'UNAUTHORIZED')
+    }
+    assert.deepEqual(ctx.snapshot(), before, '无令牌打一轮，线上字节必须一点没动')
+  })
+})
+
+test('错令牌 → 读端点与写端点一律 401，且与「没令牌」逐字节同形（不区分原因）', async () => {
+  await withServer({}, async (ctx) => {
+    const before = ctx.snapshot()
+    for (const bad of ['not-the-token', `${READ_TOKEN}x`, `${PUBLISH_TOKEN}x`]) {
       assert.equal((await ctx.call(LIST, { headers: { 'X-DL-Token': bad } })).status, 401)
-      const apk = ctx.apks[0]
       assert.equal(
-        (await ctx.call(`${DOWNLOAD}?file=${encodeURIComponent(apk.name)}`, { headers: { 'X-DL-Token': bad } })).status,
+        (await ctx.call(`${DOWNLOAD}?file=${encodeURIComponent(ctx.apks[0].name)}`, { headers: { 'X-DL-Token': bad } }))
+          .status,
         401,
       )
       assert.equal((await ctx.post('/api/v1/release', { apk: APK_STANDARD, token: bad })).status, 401)
       assert.equal((await ctx.post('/api/v1/release/private', { apk: APK_INTERNAL, token: bad })).status, 401)
     }
-    // 无令牌（连头都不带）
-    assert.equal((await ctx.call(LIST)).status, 401)
-    assert.equal((await ctx.post('/api/v1/release', { apk: APK_STANDARD })).status, 401)
+
+    // 「没令牌」与「令牌不对」在**读端点**上必须逐字节相同（状态码 + 回包）
+    const missingRead = await ctx.call(LIST)
+    const wrongRead = await ctx.call(LIST, { headers: { 'X-DL-Token': 'nope' } })
+    assert.equal(missingRead.status, wrongRead.status)
+    assert.equal(await missingRead.text(), await wrongRead.text(), '读端点：缺令牌与错令牌不许有可观察差异')
+
+    // 写端点同理（都走 Authorization: Bearer 通道比较）
+    const missingWrite = await ctx.call('/api/v1/release', { method: 'POST' })
+    const wrongWrite = await ctx.call('/api/v1/release', {
+      method: 'POST', headers: { Authorization: 'Bearer nope' },
+    })
+    assert.equal(missingWrite.status, wrongWrite.status)
+    assert.equal(await missingWrite.text(), await wrongWrite.text(), '写端点：缺令牌与错令牌不许有可观察差异')
+
     assert.deepEqual(ctx.snapshot(), before, '一轮错令牌下来，线上字节必须一点没动')
   })
 })
 
+// ---------------------------------------------------------------- fail-closed：发布令牌缺/空/同值
+test('publish-token 缺失 → 写端点一律 401（fail-closed，不回落读令牌），读端点照常 200', async () => {
+  await withServer({ publishToken: null }, async (ctx) => {
+    const logs = ctx.logs.join('')
+    assert.match(logs, /event=publish_token_missing/, '发布令牌缺失必须吵，事后翻 journalctl 能查')
+    assert.match(logs, /effect="write_endpoints_401"/, '启动日志要说清后果')
+    assert.match(logs, /publish_token="missing"/, 'token_roles 要报 missing')
+    assert.ok(!logs.includes(READ_TOKEN) && !logs.includes(PUBLISH_TOKEN), '日志里不许出现令牌明文')
+
+    // 读通道不受影响（这正是「先保读、再断写」的落地效果）
+    for (const r of await ctx.readWith(READ_TOKEN, LIST)) assert.equal(r.status, 200)
+    assert.equal(
+      (await ctx.call(`${DOWNLOAD}?file=${encodeURIComponent(ctx.apks[0].name)}`, {
+        headers: { 'X-DL-Token': READ_TOKEN },
+      })).status,
+      200,
+    )
+
+    // 写端点：**读令牌也不行**（不许回落）——两个写端点都是 401
+    const before = ctx.snapshot()
+    assert.equal((await ctx.post('/api/v1/release', { apk: APK_STANDARD, token: READ_TOKEN })).status, 401)
+    assert.equal((await ctx.post('/api/v1/release/private', { apk: APK_INTERNAL, token: READ_TOKEN })).status, 401)
+    assert.deepEqual(ctx.snapshot(), before, 'fail-closed 状态下更不允许动线上字节')
+  })
+})
+
+test('publish-token 存在但为空 → 同样 401（不是「空令牌放行一切」）', async () => {
+  await withServer({ publishToken: '' }, async (ctx) => {
+    const logs = ctx.logs.join('')
+    assert.match(logs, /event=publish_token_missing/)
+    assert.match(logs, /reason="empty"/)
+    assert.equal((await ctx.post('/api/v1/release', { apk: APK_STANDARD, token: '' })).status, 401)
+    assert.equal((await ctx.post('/api/v1/release', { apk: APK_STANDARD, token: READ_TOKEN })).status, 401)
+    assert.equal((await ctx.call(LIST, { headers: { 'X-DL-Token': READ_TOKEN } })).status, 200)
+  })
+})
+
+test('publish-token 与读令牌同值 → 写端点 401（拆了等于没拆，按未配置处理）', async () => {
+  await withServer({ publishToken: READ_TOKEN }, async (ctx) => {
+    const logs = ctx.logs.join('')
+    assert.match(logs, /event=publish_token_missing/)
+    assert.match(logs, /reason="same_as_read_token"/)
+    // 同值时若放行，等于 #622 的泄漏原样复活 —— 必须 fail-closed
+    assert.equal((await ctx.post('/api/v1/release', { apk: APK_STANDARD, token: READ_TOKEN })).status, 401)
+    assert.equal((await ctx.call(LIST, { headers: { 'X-DL-Token': READ_TOKEN } })).status, 200)
+  })
+})
+
+test('读令牌缺失 → 服务拒绝启动（event=fatal_token），不静默全 401', async () => {
+  const ctx = await startServer({ readToken: null })
+  try {
+    assert.equal(ctx.started, false, '读令牌文件缺失时服务不许起来')
+    const logs = ctx.logs.join('')
+    assert.match(logs, /event=fatal_token/)
+    assert.notEqual(ctx.exitCode, 0)
+  } finally {
+    await ctx.stop()
+    ctx.cleanup()
+  }
+})
+
+// ---------------------------------------------------------------- 日志不含令牌明文
 test('令牌值绝不进日志：两枚明文在全部 stdout/stderr 里命中数为 0', async () => {
   await withServer({}, async (ctx) => {
-    // 让每种路径都跑一遍（成功读、成功写、被拒的写）
+    // 让每条路径都跑一遍（成功读、被拒的读、成功写、被拒的写）
     await ctx.call(LIST, { headers: { 'X-DL-Token': READ_TOKEN } })
-    await ctx.call(LIST, { headers: { 'X-DL-Token': WRITE_TOKEN } })
+    await ctx.call(LIST, { headers: { 'X-DL-Token': PUBLISH_TOKEN } })
     await ctx.post('/api/v1/release', { apk: APK_STANDARD, token: READ_TOKEN })
-    await ctx.post('/api/v1/release', { apk: APK_STANDARD, token: WRITE_TOKEN })
+    await ctx.post('/api/v1/release', { apk: APK_STANDARD, token: PUBLISH_TOKEN })
     await new Promise((r) => setTimeout(r, 100)) // 等 stdout 落进来
     const logs = ctx.logs.join('')
     assert.ok(logs.length > 0, '日志非空（否则这条断言是空转）')
-    assert.ok(!logs.includes(READ_TOKEN), '只读令牌明文绝不进日志')
-    assert.ok(!logs.includes(WRITE_TOKEN), '发布令牌明文绝不进日志')
+    assert.ok(!logs.includes(READ_TOKEN), '读令牌明文绝不进日志')
+    assert.ok(!logs.includes(PUBLISH_TOKEN), '发布令牌明文绝不进日志')
     // 只打来源与长度
     assert.match(logs, /event=token_loaded/)
+    assert.match(logs, /event=publish_token_loaded/)
     assert.match(logs, /len="42"/)
   })
 })

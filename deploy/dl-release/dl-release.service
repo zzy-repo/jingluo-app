@@ -16,7 +16,12 @@ RestartSec=2
 Environment=NODE_ENV=production
 Environment=DL_LISTEN_HOST=127.0.0.1
 Environment=DL_LISTEN_PORT=8799
+# #641：两枚令牌，互不包含。
+#   读令牌（DL_TOKEN_FILE）内测包里的那一枚：#622 起随 internal 包分发到设备，**只能读**。
+#   发布令牌（DL_PUBLISH_TOKEN_FILE）写端点专用：只在发布主机/脚本手里，**不进任何客户端产物**。
+#   只放路径不放明文 —— unit 文件全世界可读，令牌值不许出现在这里。
 Environment=DL_TOKEN_FILE=/etc/dl-release/token
+Environment=DL_PUBLISH_TOKEN_FILE=/etc/dl-release/publish-token
 Environment=DL_APK_DIR=/var/www/dl/apk
 Environment=DL_RELEASES_JSON=/var/www/dl/releases.json
 # webroot（公网站点根）：只用来判「私有清单/私有包目录不许落在里面」（#609 G1 / #620）

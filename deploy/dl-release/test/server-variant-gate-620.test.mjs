@@ -158,8 +158,11 @@ const startServer = async ({ seed = { latest: '1.4.2', releases: [record()] }, p
   const privateRoot = privateRootInsideWebroot ? path.join(webroot, 'private') : path.join(work, 'private')
 
   const token = `variant-gate-620-${process.pid}-${Date.now()}`
+  // #641：读令牌（token）+ 发布令牌（publish-token），写端点只认后者
   const tokenFile = path.join(work, 'token')
-  fs.writeFileSync(tokenFile, `${token}\n`, { mode: 0o600 })
+  fs.writeFileSync(tokenFile, `${token}-read\n`, { mode: 0o600 })
+  const publishTokenFile = path.join(work, 'publish-token')
+  fs.writeFileSync(publishTokenFile, `${token}\n`, { mode: 0o600 })
   const variantsFile = path.join(work, 'artifact-variants.json')
   fs.writeFileSync(variantsFile, '{"apks":{}}\n')
 
@@ -173,6 +176,7 @@ const startServer = async ({ seed = { latest: '1.4.2', releases: [record()] }, p
     env: {
       ...process.env,
       DL_TOKEN_FILE: tokenFile,
+      DL_PUBLISH_TOKEN_FILE: publishTokenFile,
       DL_WEBROOT: webroot,
       DL_APK_DIR: apkDir,
       DL_RELEASES_JSON: releasesFile,

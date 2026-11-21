@@ -511,7 +511,7 @@ jobs:
       #   · `scripts/check-test-layout.mjs` 有一条带理由的白名单条目，把「枚举不到」判红；
       #   · 这一步按 `pnpm run test:dl-release`（= `node --test deploy/dl-release/test/*.test.mjs`）跑，
       #     纯 Node、无浏览器、不依赖 dist，实测 ~3-7s。不加 continue-on-error：真红必须红。
-      - name: dl-release 用例（deploy/dl-release/test，54 条，纯 Node）
+      - name: dl-release 用例（deploy/dl-release/test，83 条，纯 Node）
         run: pnpm run test:dl-release
 
       # ─────────────── Issue #413：把已经存在但没人按的那几道门禁接进流水线 ───────────────

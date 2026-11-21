@@ -117,8 +117,11 @@ const startServer = async ({ seed = { latest: '1.4.1', releases: [record()] }, b
   const apkDir = path.join(work, 'apk')
   fs.mkdirSync(apkDir)
   const token = `loopback-601-${process.pid}-${Date.now()}`
+  // #641：读/写两枚令牌（写端点只认 publish-token）
   const tokenFile = path.join(work, 'token')
-  fs.writeFileSync(tokenFile, `${token}\n`, { mode: 0o600 })
+  fs.writeFileSync(tokenFile, `${token}-read\n`, { mode: 0o600 })
+  const publishTokenFile = path.join(work, 'publish-token')
+  fs.writeFileSync(publishTokenFile, `${token}\n`, { mode: 0o600 })
   const releasesFile = path.join(work, 'releases.json')
   fs.writeFileSync(releasesFile, `${JSON.stringify(seed, null, 2)}\n`)
   const variantsFile = path.join(work, 'artifact-variants.json')
@@ -145,6 +148,7 @@ exit 0
     env: {
       ...process.env,
       DL_TOKEN_FILE: tokenFile,
+      DL_PUBLISH_TOKEN_FILE: publishTokenFile,
       DL_APK_DIR: apkDir,
       DL_RELEASES_JSON: releasesFile,
       DL_VARIANTS_FILE: variantsFile,

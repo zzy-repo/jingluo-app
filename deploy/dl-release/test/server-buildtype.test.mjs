@@ -255,8 +255,11 @@ async function startServer() {
   const apkDir = path.join(work, 'apk');
   fs.mkdirSync(apkDir);
   const token = `test-token-${process.pid}-${Date.now()}`;
+  // #641：读令牌（token）+ 发布令牌（publish-token），写端点只认后者
   const tokenFile = path.join(work, 'token');
-  fs.writeFileSync(tokenFile, `${token}\n`, { mode: 0o600 });
+  fs.writeFileSync(tokenFile, `${token}-read\n`, { mode: 0o600 });
+  const publishTokenFile = path.join(work, 'publish-token');
+  fs.writeFileSync(publishTokenFile, `${token}\n`, { mode: 0o600 });
   const releasesFile = path.join(work, 'releases.json');
   const variantsFile = path.join(work, 'artifact-variants.json');
   // #620：公网端点只收 artifactVariant="standard" —— 这个夹具的 APK 没有变体标记
@@ -288,6 +291,7 @@ exit 0
     env: {
       ...process.env,
       DL_TOKEN_FILE: tokenFile,
+      DL_PUBLISH_TOKEN_FILE: publishTokenFile,
       DL_APK_DIR: apkDir,
       DL_RELEASES_JSON: releasesFile,
       DL_VARIANTS_FILE: variantsFile,

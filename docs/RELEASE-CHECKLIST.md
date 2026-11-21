@@ -314,8 +314,9 @@ pnpm run release:verify -- --version $V --apk $APK --expect-variant internal
 
 ### 4.1 从哪拿
 
-- 令牌就是 dl-release 服务用来认「谁有权发版」的那枚 Bearer token（服务端存在 `/etc/dl-release/token`，
-  `chmod 600 root:root`，见 `deploy/dl-release/`）。
+- 令牌就是 dl-release 服务用来认「谁有权发版」的那枚 Bearer token（**发布令牌**，服务端存在
+  `/etc/dl-release/publish-token`，`chmod 600 root:root`，见 `deploy/dl-release/`；#641 起读令牌
+  `/etc/dl-release/token` 与它分开，只读令牌**不能**发版）。
 - **按人发放**：在 Issue 里 @ dl-release 维护者（或在团队约定渠道说一句「我要发 X 版本，请给我一枚 release token」），
   由维护者通过私密渠道给你。**不要在 Issue / 聊天群 / 提交里贴令牌**，维护者也不该在那里发。
 - 拿到后**不要**改服务端的 token 文件来「自己造一枚」——那会把别人的令牌一起作废。
@@ -352,8 +353,10 @@ node scripts/release-upload.mjs --apk $APK --dry-run
 ### 4.4 泄露止损（顺序别反）
 
 1. **先轮换**（在 ECS 上，需要 root）：
-   `head -c 32 /dev/urandom | base64 | tr -d '\n=+/' | cut -c1-48 > /etc/dl-release/token`
+   `openssl rand -hex 32 > /etc/dl-release/publish-token && chmod 600 /etc/dl-release/publish-token`
    然后重启/重载 dl-release 服务，让新令牌生效、旧令牌立刻失效。
+   （这是**发布令牌**：轮换它对客户端零影响，不需要重出 internal 包。轮换读令牌 `/etc/dl-release/token`
+   则是另一件事，代价是重出 internal 包 —— 见 `docs/dl-release-api.md` §5d。）
 2. **再通知**所有持有人在各自机器上换成新令牌（旧的已经不能用了）。
 3. **再查**：`releases.json` 最近有没有陌生版本、dl 访问/上传日志里有没有异常来源 IP。
 4. 最后清理把令牌贴出去的那条消息 / 终端历史（`history -d`、CI 里的 masked secret 等）。
