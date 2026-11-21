@@ -47,16 +47,18 @@
 
 | 已删 | 行数 | 说明 |
 | --- | --- | --- |
-| `domain06-07/fakes.mjs` | 62 | 只被上面三个矩阵用例 import；删完即 0 引用 |
+| ~~`domain06-07/fakes.mjs`~~ | 62 | 只被上面三个矩阵用例 import；删完即 0 引用 |
+
+> 该 fixture 随 **#487** 删除（12 个用例一并删，删完即 0 引用），不再需要替代物 —— 阶段③重建的用例各自带桩。
 
 **没有删**的 fixture（`harness.mjs` / `jsx-transform.mjs` / `mini-react.mjs` / `stubs/`）：
 删完 12 个用例后它们仍有活引用 —— `harness.mjs` 被 `domain11-email-entry` / `domain11-email-conflict` 用。
 按 #487「引用不为 0 的不要硬删」，**整个目录不删**；阶段③重建完成后如果 email 那两条也换掉，再回头清。
 
-> **#487 收口（删除三弹层合一后的死代码）追加**：`domain06-07/ours-trail.mjs` 当时被
+> **#487 收口（删除三弹层合一后的死代码）追加**：~~`domain06-07/ours-trail.mjs`~~ 当时被
 > `ours-trail` / `payment-trail-*` 与 `scripts/shot-mobile.mjs` 三处引用；本轮把这 4 个测试文件与
 > 4 个 `payment-trail*`/`card-trail-lookup` 截图场景一起删掉后，它变成 **0 引用**，已随
-> `ours/trail.ts`（时间线数据层）一并删除（253 行）。
+> ~~`ours/trail.ts`~~（时间线数据层）一并删除（253 行）；现状由新页面的 `redeem/history` 与 apia 的 `/api/orders` 两条链路覆盖（见 §4.2 第 14b 行）。
 
 ## 2. 保留了什么（及为什么）
 
@@ -77,9 +79,9 @@
 
 | 目标（#487 表格） | 符号 | `src/` 引用 | 结论 |
 | --- | --- | --- | --- |
-| `invite/api.ts` 的 `/apply` | `applyForKey` | 2（`OursServicesDialog.tsx`） | 不能删 |
-| `invite/api.ts` 的 `/me` | `fetchInviteProfile` | 3（`openFlow.ts`） | 不能删 |
-| `invite/api.ts` 的 `/redeem`（邀请码） | `redeemInviteCode` | 2（`OursServicesDialog.tsx`） | 不能删 |
+| ~~`invite/api.ts`~~ 的 `/apply` | `applyForKey` | 2（`OursServicesDialog.tsx`） | 不能删 |
+| ~~`invite/api.ts`~~ 的 `/me` | `fetchInviteProfile` | 3（`openFlow.ts`） | 不能删 |
+| ~~`invite/api.ts`~~ 的 `/redeem`（邀请码） | `redeemInviteCode` | 2（`OursServicesDialog.tsx`） | 不能删 |
 | 卡密（旧链路） | `redeemCardMigrated` | 2（`OursServicesDialog.tsx`） | 不能删 |
 | `/bind` | `bindExistingKey` / `bindSuccessKey` | 2 / 9 | 不能删 |
 | `/rotate` | `rotateKey` / `rotateSuccessKey` | 3 / 3 | 不能删 |
@@ -88,6 +90,8 @@
 | `invite/fingerprint.ts` | `resolveDeviceFp` / `DEVICE_FP_HEADER` | 3 / 2 | 不能删 |
 | `ours/mask.ts` | `maskTail` / `maskKey` / `maskCard` / `maskDeviceId` | 9 / 4 / 9 / 4（含 `diagnostics/redact.ts`） | **不能删**（引用数 0 才删，这里 4–9） |
 | `ours/**` 的额度账本 | `remaining_points` / `pointsCache` / `remainingPoints` 缓存 | 账本**不存在**：额度只来自 `/me` 的响应，界面不落盘 | 无需删（#484 A4 只需保证重构后仍无本地账本） |
+
+> 上表是 **#487 当时的引用数快照**（「不能删」的判断据此作出）。其中 ~~`invite/api.ts`~~ 已于 **#590** 随 W1-B/C 收口删除（见 §4.1 状态注），相关能力现由 `services/consume/` 目录与 `services/ours/purchases.ts`、`services/ours/paymentRecords.ts` 覆盖。
 
 结论：**旧体系的生产代码与 UI 是一对一绑死的**（`OursServicesDialog.tsx` 2100+ 行是唯一调用方）。
 真正的删除动作在 W1-B/C 改写这个弹层的那一次提交里，早删只会让 `tsc` 红，或者逼着在 W1-D 里先写一个半成品 UI
@@ -111,17 +115,19 @@
 > **没删**：`device.ts` / `fingerprint.ts`（`legacy/migration/collect.ts` 仍在用）、`emailCooldown.ts`
 > （「账户与消费 → 邮箱」面板的倒计时纯函数）、`keyIdentity.ts`（`api/apiConfig.ts` 的 Key 身份记录）。
 > 与 #484 A4 的关系：A4 的 20 处命中里有 16 处在这 6 个文件内（旧设备码体系的额度字段），随文件一起消失。
+>
+> **下表第 1–5、8 项与 §4.2 第 11 / 12 / 14b 项的代码列已按「已删」加删除线**：这些行现在只是删除记录（对应测试随同一批提交删除，现状由 `services/consume/` 与新「账户与消费」页覆盖），不再是待办。
 
 | # | 代码 | 现引用的 UI / 服务 | 同批应删的测试 |
 | --- | --- | --- | --- |
-| 1 | `invite/api.ts`：`applyForKey`、`fetchInviteProfile`、`classifyClaim`、`claimMessageKeyFor`、`runWithDeviceSelfHeal` | `OursServicesDialog.tsx`、`openFlow.ts`、`fingerprint.ts` | `domain06-claim-*`（已删）、`dialog-open-no-apply`、`invite-261-fp-already-claimed`、`invite-device-fingerprint`  **（#590 已删）** |
-| 2 | `invite/api.ts`：`redeemInviteCode`、`normalizeInviteCode`、`isInviteCodeShape`、`parseInviteRules` | `OursServicesDialog.tsx`、`copy.ts` | `ours-invite`、`issue-234-invite-copy`  **（#590 已删）** |
-| 3 | `invite/api.ts`：`redeemCardAtPool`、`redeemCardMigrated`、`REDEEM_POOL_URL`、`POOL_ERROR_KEYS`（本机池 60013） | `OursServicesDialog.tsx`；**目标态改为 `POST /api/v1/redeem`** | `redeem-pool`  **（#590 已删）** |
-| 4 | `invite/bind.ts` 整文件（`/bind`） | `OursServicesDialog.tsx` | `bind-key`  **（#590 已删）** |
-| 5 | `invite/rotate.ts` 整文件（`/rotate`） | `OursServicesDialog.tsx` | `rotate-key`、`rotate-copy-357`、`key-identity-451`（其中 `/rotate` 文案那段）  **（#590 已删）** |
+| 1 | ~~`invite/api.ts`~~：`applyForKey`、`fetchInviteProfile`、`classifyClaim`、`claimMessageKeyFor`、`runWithDeviceSelfHeal` | `OursServicesDialog.tsx`、`openFlow.ts`、`fingerprint.ts` | `domain06-claim-*`（已删）、`dialog-open-no-apply`、`invite-261-fp-already-claimed`、`invite-device-fingerprint`  **（#590 已删）** |
+| 2 | ~~`invite/api.ts`~~：`redeemInviteCode`、`normalizeInviteCode`、`isInviteCodeShape`、`parseInviteRules` | `OursServicesDialog.tsx`、`copy.ts` | `ours-invite`、`issue-234-invite-copy`  **（#590 已删）** |
+| 3 | ~~`invite/api.ts`~~：`redeemCardAtPool`、`redeemCardMigrated`、`REDEEM_POOL_URL`、`POOL_ERROR_KEYS`（本机池 60013） | `OursServicesDialog.tsx`；**目标态改为 `POST /api/v1/redeem`** | `redeem-pool`  **（#590 已删）** |
+| 4 | ~~`invite/bind.ts`~~ 整文件（`/bind`） | `OursServicesDialog.tsx` | `bind-key`  **（#590 已删）** |
+| 5 | ~~`invite/rotate.ts`~~ 整文件（`/rotate`） | `OursServicesDialog.tsx` | `rotate-key`、`rotate-copy-357`、`key-identity-451`（其中 `/rotate` 文案那段）  **（#590 已删）** |
 | 6 | `invite/device.ts` 整文件（device_id 生成 / 持久化 / 备份提示 / 服务端回填） | `OursServicesDialog.tsx`、`main.tsx`、`bind.ts`、`email.ts`、`index.html` | 已随 §1 删除 |
 | 7 | `invite/fingerprint.ts` 整文件（`X-Device-Fp`） | `OursServicesDialog.tsx`、`api.ts` | `invite-device-fingerprint`、`invite-fp-invalid` |
-| 8 | `invite/copy.ts`、`invite/openFlow.ts`（`invite/emailCooldown.ts` **保留**：面板倒计时的纯函数） | `OursServicesDialog.tsx` | 随 1–3  **（#590 已删 copy / openFlow）** |
+| 8 | ~~`invite/copy.ts`、`invite/openFlow.ts`~~（`invite/emailCooldown.ts` **保留**：面板倒计时的纯函数） | `OursServicesDialog.tsx` | 随 1–3  **（#590 已删 copy / openFlow）** |
 | 9 | `ours/customerId.ts` 整文件（cid，按 device_id 认客户） | `paymentRecords.ts`、`main.tsx`、`api/apiConfig.ts` | `domain07-cid-matrix`（已删）、`ours-inapp-buy`、`ours-payment-logs-312` 里的 cid 段 |
 
 ### 4.2 第 2 组：重构后按 A1/A4 复核的死代码（现在没人调，但还挂在 apia 侧）
@@ -129,11 +135,11 @@
 | # | 符号 | 现状 | 处置 |
 | --- | --- | --- | --- |
 | 10 | `ours/api.ts` `fetchPlans` / `formatPlanMeta` / `requestIdForCard` | `src/` 引用 **0**，只有测试在调 | W1-E 定案后二选一：要么接回「套餐」入口，要么连测试一起删 |
-| 11 | `ours/api.ts` `redeemCard`（旧 `/api/redeem`） | 仅被 `invite/api.ts` 的兜底路径调用 | A5 落地（走 `api/v1/redeem`）后删 |
-| 12 | `invite/api.ts` 的 `INVITE_API_BASE`（`config/endpoints.json` 的 `inviteBaseUrl` = `140.210.13.146:60013`） | 8 处（`main.tsx` / `bind.ts` / `rotate.ts` / `email.ts`…） | **A1 的门槛**：`consume` 落地后 `inviteBaseUrl` 必须从配置里消失 |
+| 11 | `ours/api.ts` `redeemCard`（旧 `/api/redeem`） | 仅被 ~~`invite/api.ts`~~ 的兜底路径调用 | A5 落地（走 `api/v1/redeem`）后删 |
+| 12 | ~~`invite/api.ts`~~ 的 `INVITE_API_BASE`（`config/endpoints.json` 的 `inviteBaseUrl` = `140.210.13.146:60013`） | 8 处（`main.tsx` / `bind.ts` / `rotate.ts` / `email.ts`…） | **A1 的门槛**：`consume` 落地后 `inviteBaseUrl` 必须从配置里消失 |
 | 13 | `ours/mask.ts` | **4 个函数仍有 4–9 处引用**（`diagnostics/redact.ts` 也要用） | 不删；#487 的「引用数 0 才删」正是不删的理由 |
 | 14 | `ours/storage.ts` / `ours/paymentRecords.ts` | 支付侧保留（W1-E） | 不删 |
-| 14b | `ours/trail.ts`（时间线数据层 800 行） | **本轮已删**：`src/` 里最后两个引用方（`PaymentTrailDialog` / `PaymentTrailView`）随三弹层合一一起下线，API 侧 `/api/trail` / `/api/order/trail` 也不再有人调（`LEGACY_PATHS` 里那两条豁免同步移除，6 → 4 条） | 已删；新页面走 sub2api 的 `/api/v1/redeem/history` 与 apia 的 `/api/orders`，不复用这条链路 |
+| 14b | ~~`ours/trail.ts`~~（时间线数据层 800 行） | **本轮已删**：`src/` 里最后两个引用方（`PaymentTrailDialog` / `PaymentTrailView`）随三弹层合一一起下线，API 侧 `/api/trail` / `/api/order/trail` 也不再有人调（`LEGACY_PATHS` 里那两条豁免同步移除，6 → 4 条） | 已删；新页面走 sub2api 的 `/api/v1/redeem/history` 与 apia 的 `/api/orders`，不复用这条链路 |
 
 ### 4.3 第 3 组：本单已同步、但阶段③重建时要再改一次的地方
 

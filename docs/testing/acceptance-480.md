@@ -184,7 +184,7 @@ node scripts/shot-mobile.mjs \
 ### B. pdfjs 静态资源路径错配：**真产物里 PDF 解析 100% 失败**（已修）
 
 - 现象：`rspack.config.ts` 把 `pdf.min.js` / `pdf.worker.min.js` 拷到 `static/pdfjs/<basename>`，但注入的 `__PDFJS_ASSET__.script/worker` 是**包内相对路径** `legacy/build/…`；`pdfLoader.ts` 按 `assetDir/script` 拼地址 → 浏览器取
-  `static/pdfjs/legacy/build/pdf.min.js`（404）、`…/pdf.worker.min.js`（404）→「PDF 解析组件加载失败」/ fake worker → `PDF 打开失败，文件可能已损坏`。
+  `static/pdfjs/` 下再叠一层 `legacy/build/` 的 `pdf.min.js`（404）、`pdf.worker.min.js`（404）→「PDF 解析组件加载失败」/ fake worker → `PDF 打开失败，文件可能已损坏`。
 - 为什么一直没人发现：L0 用例把 `pdfLoader.ts` 整个换成了 node 侧加载口，**真产物里那条 `<script src>` 路径从来没被跑过**。是这次的浏览器截图一上手就撞上了。
 - 修法：注入时取 `path.basename(...)`（与 CopyRspackPlugin 的目标名同源），`pdfLoader.ts` 的 `FALLBACK_ASSET` 同步改成同形。修后：worker `200`，同一份 PDF 正常出 `第 2/3 页`。
 - 建议补一条**产物级**回归（本 PR 未加）：build 后断言 `__PDFJS_ASSET__` 里两个文件名在 `dist/static/pdfjs/` 下真实存在。

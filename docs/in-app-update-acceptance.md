@@ -22,6 +22,6 @@
 
 ## 证据与边界
 
-原始轻量证据保存在实施 worktree `.update-evidence/`（不提交 APK、keystore 或诊断原始信息）：device-no-update.json、device-update-confirm.png、device-download.json、permission-denied-return.json、permission-granted-return.json、installer-confirm.xml、installer-result.xml、data-before.json、data-after.json、mobile-360/390/412.json、native-low-code.json。
+原始轻量证据保存在实施 worktree `.update-evidence/`（不提交 APK、keystore 或诊断原始信息）：device-no-update.json、device-update-confirm.png、device-download.json、permission-denied-return.json、permission-granted-return.json、installer-confirm.xml、installer-result.xml、data-before.json、data-after.json、mobile-360.json / mobile-390.json / mobile-412.json（三档视口各一份）、native-low-code.json。
 
 真实下载/权限/安装取消/系统覆盖已执行；**下载中途取消、缓存复用、异包/异签/损坏缓存、网络中断目前为 mock+源码分支覆盖，未逐项设备实测。** code12/13 为隔离 fixture，正式源码版本恢复 beta.4/code11，版本提升交发布流程。已装证书 SHA256 e7c5baee517ca2b2258950e934521f2fad448d00f72f2ff7297bdf4fa00aa8a1；本次未修既有 keystore 路径，避免更换线上证书。fixture CDN 文件由发布协调者清理并核404。
