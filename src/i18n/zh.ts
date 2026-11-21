@@ -881,7 +881,7 @@ export const zh = {
   accountConsumeGroupSource: '模型来源',
   accountConsumeSourceBuiltin: '内置服务',
   accountConsumeSourceThird: '第三方服务',
-  accountConsumeSourceDeepseek: 'DeepSeek 官方服务',
+  accountConsumeSourceOfficial: 'DeepSeek 官方服务',
   accountConsumeSourceAnthropic: 'Anthropic 协议服务',
   accountConsumeSourceKeyInvalid: 'API Key 无效，请检查后重试',
   accountConsumeSourcePickHint: '选一个来源后按「保存」，主界面会立刻用它',
@@ -900,7 +900,6 @@ export const zh = {
   accountConsumeBindEmail: '绑定邮箱',
   accountConsumeLoginMethod: '登录方式',
   accountConsumeLoginMethodEmail: '邮箱登录',
-  accountConsumeSecurity: '账号与安全',
   accountConsumeBuyCta: '购买 / 充值',
   // 余额卡金额位：未登录时的替代文案（**不用 `—` 占位**：30px 下就是一条白杠，看着像坏图，#727）
   accountConsumeBalanceSignedOut: '登录后查看',

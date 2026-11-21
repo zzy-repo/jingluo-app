@@ -16,8 +16,6 @@
  *   `模型调用`          `-¥0.12`  ← 左：名字 16px；右：金额 16px/500，等宽数字，带负号
  *   `14:32`                     ← 时间单独一行（13px / 次级色）
  *
- * 演示数据（#727）：**只 dev 构建**、且「URL 带 `?mock=1` 或未登录」时换成
- * `__mock__/walletDemo.ts` 的五条记录（今天 2 条 / 昨天 2 条 / 前天 1 条），不发任何请求。
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
@@ -94,9 +92,6 @@ const dayLabelText = (day: string, locale: string): string => {
   }).format(at)
 }
 
-/** `?mock=1`（演示数据开关的运行时那一半，dev 那一半写在调用点） */
-const hasMockParam = (): boolean => new URLSearchParams(window.location.search).get('mock') === '1'
-
 type Group = { day: string; rows: QuotaUsageRow[] }
 
 /** 保序分组：服务端已按时间倒序，这里只切段，不重新排序（重排会把「今天」打散） */
@@ -136,21 +131,6 @@ export const HistoryView = ({ consume, signedIn }: HistoryViewProps) => {
 
   const load = useCallback(
     (page: number) => {
-      if (process.env.NODE_ENV !== 'production') {
-        // 演示数据（#727）：dev 构建 +（`?mock=1` 或 未登录）。生产构建这段是死的。
-        if (!signedIn || hasMockParam()) {
-          setState(panelLoading<QuotaUsagePage>())
-          void import('./__mock__/walletDemo.js').then(({ DEMO_USAGE }) => {
-            if (alive.current) {
-              setState({
-                phase: 'ready',
-                data: { items: DEMO_USAGE, page: 1, pages: 1, total: DEMO_USAGE.length },
-              })
-            }
-          })
-          return
-        }
-      }
       if (!signedIn || !source.hasApiKey()) {
         // 没登录 / 没 Key：不发请求，空列表就是这一格的结论
         setState({ phase: 'ready', data: { items: [], page: 1, pages: 0, total: 0 } })

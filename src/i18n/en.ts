@@ -886,7 +886,7 @@ export const en = {
   accountConsumeGroupSource: 'Model source',
   accountConsumeSourceBuiltin: 'Built-in service',
   accountConsumeSourceThird: 'Third-party service',
-  accountConsumeSourceDeepseek: 'DeepSeek official service',
+  accountConsumeSourceOfficial: 'DeepSeek official service',
   accountConsumeSourceAnthropic: 'Anthropic-compatible service',
   accountConsumeSourceKeyInvalid: 'Invalid API key — check it and try again',
   accountConsumeSourcePickHint: 'Pick a source and press Save; the app uses it right away',
@@ -904,7 +904,6 @@ export const en = {
   accountConsumeBindEmail: 'Linked email',
   accountConsumeLoginMethod: 'Sign-in method',
   accountConsumeLoginMethodEmail: 'Email',
-  accountConsumeSecurity: 'Account & security',
   accountConsumeBuyCta: 'Buy / top up',
   // Balance slot when signed out — never a bare em dash (at 30px it reads as a broken image)
   accountConsumeBalanceSignedOut: 'Sign in to view',
