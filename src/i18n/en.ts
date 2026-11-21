@@ -998,7 +998,7 @@ export const en = {
     'That request did not go through. Try again later, and send us this message if it keeps happening.',
   consumeErrNetwork: 'No network connection. Check your connection and try again.',
   consumeErrTimeout: 'The request timed out. Wait a moment and try again.',
-  consumeErrUnsupported: 'This app version does not support that feature. Update to the latest version.',
+  consumeErrUnsupported: 'This environment cannot reach the consume service directly — please test inside the App.',
   consumeErrBadRequest: 'Something in the form is not valid. Check it and try again.',
   consumeErrInvalidResponse:
     'The server sent data we could not read. Try again later, and tell us if it keeps happening.',

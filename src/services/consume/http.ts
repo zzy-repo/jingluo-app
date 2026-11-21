@@ -182,6 +182,43 @@ export const capacitorTransport: ConsumeTransport = async (request) => {
   }
 }
 
+/**
+ * Web 兜底传输：**只为在浏览器里能真跑一遍登录 / 注册**（维护者要在 Web 上测全流程）。
+ *
+ * 语义与 `capacitorTransport` 严格对齐：超时 → `failureOf` 折成 `timeout`，其它异常 → `network`；
+ * 响应头转成**小写 key** 的 `Record<string,string>`（上层靠 `content-type` 分派错误，缺了会误判）；
+ * body 字符串原样发出，`Content-Type` 由 `request.headers` 决定。
+ *
+ * 唯一**有意**与原生不同的地方：`redirect: 'follow'`。跨域下 `manual` 只会把 3xx 原样吐给上层
+ * （`Location` 拿不到），比跟随更难查；原生那边不跟随是因为 `CapacitorHttp` 拿得到状态码。
+ *
+ * 超时用 `AbortController` + `setTimeout` 自己算，不用 `AbortSignal.timeout`
+ * （Chromium 83 / 旧 Safari 没有它）。
+ */
+const webTransport: ConsumeTransport = async (request) => {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), request.timeoutMs)
+  try {
+    const response = await fetch(request.url, {
+      method: request.method,
+      headers: request.headers,
+      // string 原样发出：content-type 由 headers 决定（与 Capacitor 分支同一语义）
+      body: request.body,
+      signal: controller.signal,
+      redirect: 'follow',
+    })
+    const headers: Record<string, string> = {}
+    response.headers.forEach((value, name) => {
+      headers[name.toLowerCase()] = value
+    })
+    return { kind: 'response', status: response.status, text: await response.text(), headers }
+  } catch (error) {
+    return { kind: failureOf(error) }
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
 /** 配置读取失败（缺字段 / 明文 http / 不是绝对地址）：**启动即抛**，不带着错地址跑 */
 export class ConsumeConfigError extends Error {
   readonly missing: readonly string[]
@@ -332,7 +369,10 @@ const defaultHeaders: Record<string, string> = {
  * 请求（401 说明没有产生副作用），而且只重放一次；`onUnauthorized` 没注入时连这一次都没有。
  */
 export const createConsumeHttp = (options: ConsumeHttpOptions = {}): ConsumeHttp => {
-  const transport = options.transport ?? capacitorTransport
+  // 唯一的选择点：原生走 `CapacitorHttp`，非原生（浏览器预览 / 插件缺失）走 fetch 兜底。
+  // `capacitorTransport` 本身**一个字符都没改**。
+  const transport =
+    options.transport ?? (Capacitor.isNativePlatform() ? capacitorTransport : webTransport)
   const endpoints = options.endpoints ?? readConsumeEndpoints()
 
   const url = (path: string, query?: ConsumeRequest['query']): string => {

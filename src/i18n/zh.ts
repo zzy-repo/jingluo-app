@@ -992,7 +992,7 @@ export const zh = {
   consumeErrUnknown: '这次请求没成功，请稍后重试；反复出现请把这条提示反馈给我们',
   consumeErrNetwork: '网络连不上，检查一下网络再试',
   consumeErrTimeout: '请求超时了，稍等一会儿再试',
-  consumeErrUnsupported: '当前版本不支持这个功能，请更新到最新版本',
+  consumeErrUnsupported: '当前环境不支持直连消费服务，请在 App 内测试',
   consumeErrBadRequest: '提交的内容有问题，请检查后重试',
   consumeErrInvalidResponse: '服务返回的数据读不懂，请稍后重试；反复出现请反馈给我们',
   consumeErrUnauthorized: '登录已过期，请重新登录',
