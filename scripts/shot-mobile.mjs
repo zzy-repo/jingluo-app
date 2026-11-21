@@ -2122,6 +2122,143 @@ export const PAGES = {
       })
     },
   },
+  '711-settings-no-memory': {
+    // 与 `before/`（改前对照）并列：默认落 `after/`，两档都在同一目录下
+    dir: 'docs/ui/711-settings-no-memory/after',
+    title: '#711 设置弹窗侧边栏下线「记忆」分组：只剩「通用设置 / 数据管理」两项，且打不开记忆页',
+    // 不 seed 会话：本单只看侧边栏，`seedInPage` 那条路依赖 `DB_VERSION`（main 上脚本还写着 13，
+    // src 已经是 14，任何带 `sessions` 的场景现在都会 VersionError —— 与本单无关，见 PR 的「未测边界」）。
+    run: async (ctx) => {
+      const { page, shot, record, warn } = ctx
+      /**
+       * 横向溢出：`overflowCount` 是本单的硬指标（390 / 360 两档都必须 **0**，口径同 #106），
+       * 每次状态都量一次；非 0 直接抛（`warn` 不进判定，等于没断言）。
+       */
+      const measureOverflow = () =>
+        page.evaluate(() => {
+          const viewportWidth = document.documentElement.clientWidth
+          const overflow = []
+          for (const element of document.querySelectorAll('*')) {
+            const rect = element.getBoundingClientRect()
+            if (rect.width > 0 && rect.right > viewportWidth + 1) {
+              overflow.push({
+                tag: element.tagName,
+                right: Math.round(rect.right),
+                text: (element.textContent ?? '').slice(0, 24),
+              })
+            }
+          }
+          return {
+            viewportWidth,
+            documentScrollWidth: Math.round(document.documentElement.scrollWidth),
+            overflowCount: overflow.length,
+            overflowSamples: overflow.slice(0, 5),
+          }
+        })
+      const overflowSeen = []
+      const requireNoOverflow = async (label) => {
+        const measured = await measureOverflow()
+        overflowSeen.push({ label, overflowCount: measured.overflowCount })
+        if (measured.overflowCount !== 0) {
+          throw new Error(
+            `${label} 出现横向溢出 ${measured.overflowCount} 处：${JSON.stringify(measured.overflowSamples)}`
+          )
+        }
+        return measured
+      }
+
+      /** 侧边栏真相：tab 数量 / 文案 / 当前选中项 / 记忆开关的 testid 命中数 */
+      const readAside = async () => {
+        const tabs = page.getByRole('tab')
+        const texts = (await tabs.allInnerTexts()).map((text) => text.replace(/\s+/gu, ' ').trim())
+        return {
+          tabCount: await tabs.count(),
+          tabTexts: texts,
+          selected: (await page.getByRole('tab', { selected: true }).allInnerTexts()).map((text) =>
+            text.replace(/\s+/gu, ' ').trim()
+          ),
+          memoryTabCount: texts.filter((text) => /记忆|Memory/u.test(text)).length,
+          memoryToggleCount: await page.locator('[data-testid="memory-embedding-toggle"]').count(),
+        }
+      }
+
+      await openSettings(page)
+      const general = await readAside()
+      const dialogText = await page.getByRole('dialog').last().innerText()
+      record('asideGeneral', general)
+      record('dialogText', dialogText.replace(/\s+/gu, ' ').trim().slice(0, 400))
+      record('dialogHasMemoryWord', /记忆/u.test(dialogText))
+      await requireNoOverflow('通用设置')
+
+      // ---- 硬判据：侧边栏只剩两项、没有「记忆」、没有那个 embedding 开关 ----
+      if (general.tabCount !== 2) {
+        throw new Error(`侧边栏应只有 2 项，实际 ${general.tabCount} 项：${JSON.stringify(general.tabTexts)}`)
+      }
+      if (JSON.stringify(general.tabTexts) !== JSON.stringify([S.tabGeneral, S.tabData])) {
+        throw new Error(`侧边栏两项应为「${S.tabGeneral} / ${S.tabData}」，实际 ${JSON.stringify(general.tabTexts)}`)
+      }
+      if (general.memoryTabCount !== 0) {
+        throw new Error(`侧边栏出现了「记忆」项：${JSON.stringify(general.tabTexts)}`)
+      }
+      if (general.memoryToggleCount !== 0) {
+        throw new Error(`DOM 里仍有 memory-embedding-toggle（${general.memoryToggleCount} 个）`)
+      }
+      if (JSON.stringify(general.selected) !== JSON.stringify([S.tabGeneral])) {
+        throw new Error(`默认应落在「${S.tabGeneral}」，实际选中 ${JSON.stringify(general.selected)}`)
+      }
+      await shot('01-侧边栏-通用设置')
+
+      // 侧边栏特写：只看导航条这一块（两项并排、没有第三个 tab）
+      const navBox = await page.getByRole('tablist').first().boundingBox()
+      if (navBox !== null) {
+        await shot('02-侧边栏特写', {
+          clip: {
+            x: Math.max(0, navBox.x - 4),
+            y: Math.max(0, navBox.y - 4),
+            width: Math.min(navBox.width + 8, ctx.size.width),
+            height: navBox.height + 8,
+          },
+        })
+      } else {
+        warn('拿不到侧边栏（role=tablist）的位置，跳过特写')
+      }
+
+      // ---- 剩下那一项仍能打开、面板不是空的 ----
+      await page.getByRole('tab', { name: S.tabData }).click()
+      await page.waitForTimeout(350)
+      const dataPanel = await page.getByRole('tabpanel').first().innerText()
+      const data = await readAside()
+      record('asideData', data)
+      record('dataPanelNonEmpty', dataPanel.trim().length > 20)
+      if (JSON.stringify(data.selected) !== JSON.stringify([S.tabData])) {
+        throw new Error(`点了「${S.tabData}」但选中态不是它：${JSON.stringify(data.selected)}`)
+      }
+      if (dataPanel.trim().length <= 20) {
+        throw new Error(`「${S.tabData}」面板是空的（${dataPanel.length} 字符）`)
+      }
+      // 切到数据管理后依然不许出现记忆开关（两档面板都验一遍）
+      if (data.memoryToggleCount !== 0) {
+        throw new Error(`切到「${S.tabData}」后仍出现 memory-embedding-toggle`)
+      }
+      await requireNoOverflow('数据管理')
+      await shot('03-数据管理')
+
+      // 切回去：general 面板也非空（收窄三元只留一支 general，不能在数据管理之外渲染空白）
+      await page.getByRole('tab', { name: S.tabGeneral }).click()
+      await page.waitForTimeout(350)
+      const generalPanel = await page.getByRole('tabpanel').first().innerText()
+      record('generalPanelNonEmpty', generalPanel.trim().length > 20)
+      record('generalPanelFirstLines', generalPanel.split('\n').filter(Boolean).slice(0, 3))
+      if (generalPanel.trim().length <= 20) {
+        throw new Error(`「${S.tabGeneral}」面板是空的（${generalPanel.length} 字符）`)
+      }
+      await requireNoOverflow('通用设置-回切')
+
+      record('overflowSeen', overflowSeen)
+      record('overflowCount', Math.max(...overflowSeen.map((entry) => entry.overflowCount)))
+    },
+  },
+
   'settings-douyin': {
     dir: 'docs/ui/settings-douyin',
     title: '设置 → 数据管理 → 抖音号：shiro_0824 的胶囊展示（等宽 + 强调色）与点击复制',
