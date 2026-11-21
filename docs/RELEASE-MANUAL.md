@@ -1195,9 +1195,11 @@ pnpm build:internal && npx cap sync android
 cd android && ./gradlew --no-daemon --max-workers=1 assembleRelease -PartifactVariant=internal
 APK=android/app/build/outputs/apk/release/app-release.apk
 
-# 2) 先看要做什么（不落地：不上传、不改清单，但四条硬闸会真跑）
+# 2) 先看要做什么（不落地：不上传、不改清单，但五道闸会真跑）
 #    #637 起私有清单就在私有根下，--private-manifest 与缺省同值 —— 不必再带（留着写全也无害）。
 #    （等价 env：DL_PRIVATE_ROOT / DL_PRIVATE_RELEASES_JSON）
+#    #601 起**默认站点根就是私有根**：`--private-root` 带不带都落在 /opt/dl-private，
+#    公网 webroot（/var/www/dl）**没有默认值**，要写必须显式 `--site-root` + `--allow-public-webroot`。
 PRIV="--private-root /opt/dl-private"
 node scripts/publish-private-apk.mjs --apk $APK --version 1.4.3 --versionCode 22 $PRIV --dry-run
 
@@ -1209,6 +1211,13 @@ node scripts/publish-private-apk.mjs --apk $APK --version 1.4.3 --versionCode 22
 **发到人这一步见 §14.1a**：默认走正式通道（装了 internal 变体的客户端自己从私有清单自动更新，
 不需要你发文件）；只有读端点不可用时才退回 `scp` + `sha256` 复核的人工交接。公网清单里没有这一条。
 
+> **#601 的结构根因与修法**（事故当晚的命令就是上面第 2 步去掉 `$PRIV`）：老脚本
+> `DEFAULT_SITE_ROOT = '/var/www/dl'`，于是「按默认参数跑」等于「往公网 webroot 写内部包」——
+> 备份 + 原子替换公网清单 + APK 落进 `/var/www/dl/apk/`，被外部 IP 下载。现在默认站点根是
+> 私有根 `/opt/dl-private`；公网根没有缺省值，必须显式 `--site-root <dir>` **且**加
+> `--allow-public-webroot`，缺一个就 exit 非 0（闸 A1，见脚本文件头）。静态守卫是
+> `pnpm run check:private-publish-root`（默认根被改回 webroot 形态就红）。
+
 ### 14.3 参数
 
 | 参数 | 默认 | 说明 |
@@ -1218,9 +1227,10 @@ node scripts/publish-private-apk.mjs --apk $APK --version 1.4.3 --versionCode 22
 | `--versionCode <n>` | **必填** | 正整数，必须与 APK 内一致（`DL_PRIVATE_VERSION_CODE`） |
 | `--variant <v>` | `internal` | `internal` \| `standard`；与 `--target` 的匹配由 G1 强制 |
 | `--target <t>` | `private` | `private`（私有清单）\| `public`（公网清单，只收 standard+stable） |
-| `--private-root <dir>` | `/opt/dl-private` | 私有根（`DL_PRIVATE_ROOT`），**必须在 webroot 之外**（G1 会核） |
+| `--private-root <dir>` | `/opt/dl-private` | 私有根（`DL_PRIVATE_ROOT`）= **默认站点根**，必须在 webroot 之外（A1 / G1 都会核；改成 webroot 形态直接拒） |
 | `--private-manifest <path>` | `<private-root>/releases.internal.json` | 私有清单路径（`DL_PRIVATE_RELEASES_JSON`）；**线上就是缺省值 `/opt/dl-private/releases.internal.json`**（#637 起清单在私有根下），一般不用带 |
-| `--webroot <dir>` | `/var/www/dl` | 公网站点根（`--site-root` 是旧名） |
+| `--site-root <dir>`（`--webroot` 同义） | **没有默认值** | 公网站点根。**#601 起公网根没有缺省**：不给就是「没给」，`--target public` 缺它直接 exit 非 0 |
+| `--allow-public-webroot` | 关 | 写公网 webroot 的**确认开关**：与显式 `--site-root` 缺一不可，否则 exit 非 0（闸 A1） |
 | `--transport <t>` | `ssh` | `ssh`（真发布）\| `local`（只读本机目录，**只允许 `--dry-run`**，演练用） |
 | `--changes <text>` | 一行默认说明 | 清单 `changes` 条目，可重复给多条 |
 | `--dry-run` | 关 | 只打印动作与清单条目，**一个字节都不发**（四条硬闸照样跑） |
@@ -1228,12 +1238,13 @@ node scripts/publish-private-apk.mjs --apk $APK --version 1.4.3 --versionCode 22
 | `--skip-apk-validation` | 关 | **只能**配 `--exercise` 或 `--transport local --dry-run`：假文件过不了 aapt2 |
 | `--ssh-host` / `--public-base` / `--aapt2` | `aliyun` / `https://dl.rose7.cn/` / 自动找 | 换分发主机 / aapt2 路径时才动 |
 
-退出码：**0 成功 / 1 校验或执行失败（含四条硬闸）/ 2 参数或环境问题（一个字节都没发）**。
+退出码：**0 成功 / 1 校验或执行失败（含五道闸）/ 2 参数或环境问题（一个字节都没发）**。
 
-### 14.4 四条硬闸（写之前就拒，判据都来自产物/磁盘实况，不来自命令行声明）
+### 14.4 闸 A1 + 四条硬闸（写之前就拒；A1/G1 判命令行 × 路径，G2–G4 判产物/磁盘实况）
 
 | 闸 | 判据 | 为什么必须机械化 |
 | --- | --- | --- |
+| **A1** 根授权（#601 结构根因） | 目标根是 webroot 形态 + `internal`/`prerelease` → 拒；公网目标没**显式** `--site-root` 或没 `--allow-public-webroot` → 拒；私有根既不是 `/opt/dl-private` 也不是显式允许的公网根 → 拒 | 事故那晚的命令**一个根参数都没带**，靠的是老默认值 `/var/www/dl`。默认值错的时候，任何「比对参数」的校验都拦不住 —— 只能要求显式 + 确认，并把默认值本身固定成私有根 |
 | **G1** 目标 × 变体 | 公网清单 + `artifactVariant !== 'standard'`（或 `buildType !== 'stable'`）；私有清单 + 非 `internal`；私有根落进 webroot | 这是 #601 的直接成因：internal 包一旦进公网清单，`file` 字段就是公开直链 |
 | **G2** 回环 `baseUrl` | **从 APK 字节里**读 `consume:{baseUrl:"…"}`（`deploy/dl-release/apk-consume.mjs`），命中 `127.0.0.1` / `127/8` / `localhost` / `::1` → 拒；**读不出来也拒** | 1.4.2 那个包在**任何真机上**都连不上后端（`127.0.0.1` 指向手机自己），只能配 `adb reverse` 联调。当时的构建期校验只拦「release 变体用回环」，`-PartifactVariant=internal` 正好绕过 |
 | **G3** 清单自洽 | 合入后清单登记的每个 `file` 必须在目标 `apk/` 下真的有这个文件（本次待上传那条豁免，上传后由验证补上） | 「清单指向不存在的文件」是 #601 的另一半症状：客户端拿到清单 → 下载 404 → 用户以为是网络问题 |
@@ -1336,7 +1347,17 @@ node scripts/publish-private-apk.mjs --apk /tmp/fake.apk --version 0.0.0 --versi
 | 4 | 回滚后文件 | `FILE_GONE`（真删了） |
 | 5 | 回滚后清单 | `sha256` 与演练前**完全一致**、无 `bak-private` / `tmp-` 残留 |
 
-**② 部署后卫生检查（`check:webroot-hygiene`）**：R1–R3 扫**文件系统**，R4 扫**公网清单内容**
+**② 默认根静态守卫（`check:private-publish-root`，#601）**：上面那条守的是「写完之后的现场」，
+这条守的是**默认值本身** —— 发布脚本的默认站点根不得是 webroot 形态（`/var/www/**`、`www-dl`、
+`public_html` 之类），默认 `--target` 必须是 `private`，`--allow-public-webroot` 确认开关必须在。
+它把这个洞钉在「任何人按默认参数跑都能复现 #601」这一层上：有人把默认值改回 `/var/www/dl`，这条就红。
+
+```bash
+node scripts/check-private-publish-root.mjs            # 或 pnpm run check:private-publish-root
+node scripts/check-private-publish-root.mjs --selftest # 5 种改坏方式逐个「改坏 → 必红 → 正本必绿」
+```
+
+**③ 部署后卫生检查（`check:webroot-hygiene`）**：R1–R3 扫**文件系统**，R4 扫**公网清单内容**
 （#620 的常驻断言：公网清单里的 internal 条目数必须为 0）。
 
 ```bash

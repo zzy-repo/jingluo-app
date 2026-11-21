@@ -569,6 +569,71 @@ jobs:
           rm -rf "$root"
           echo "负向对照通过：R1/R2/R3/R4 各自 → exit 1 且点到注入物，还原 → exit 0"
 
+      # #601 的**结构**根因（上面那条卫生门禁守的是「写完之后的现场」，这条守的是「默认值本身」）：
+      # 事故那晚的命令是 `--version 1.4.2 --variant internal` —— 一个根参数都没带，而老版本
+      # `DEFAULT_SITE_ROOT = '/var/www/dl'`，于是「按默认参数跑」= 把内部包写进公网 webroot。
+      # 现在默认站点根 = 私有根 `/opt/dl-private`；写公网 webroot 必须显式 `--site-root`
+      # **且** 加 `--allow-public-webroot`。门禁是静态 R1–R5 + 行为 B1–B5（import 脚本调纯函数），
+      # 纯文本 + 纯函数：不连 ssh、不碰 /var/www、不发布任何包。
+      - name: 私有发布默认根门禁（check:private-publish-root）
+        run: pnpm run check:private-publish-root
+
+      # 负向对照（同上面几条的写法，**无** continue-on-error）。四拍：
+      # ① 默认参数（不带任何根参数）必须落在私有根 —— 这就是 #601 那晚的命令形态，现在必须 exit 0
+      #    且打印「站点根 /opt/dl-private」；
+      # ② 内置负向对照（5 种改坏方式全判红，正本判绿）；
+      # ③ **真**把默认根改回 `/var/www/dl` → 门禁必须 exit 1 且点到 R2（只证明 exit≠0 不够：
+      #    扫描范围被改窄、脚本恒红，都会让 exit≠0 成立）→ 还原 → 必须 exit 0；
+      # ④ 同一个改坏的默认根下，**发布脚本自己**也必须拒绝（internal 包 × 公网根 = #601 形态）。
+      # 全程只碰工作区里的那个脚本 + $RUNNER_TEMP，`trap` 保证任何失败路径都还原。
+      - name: 负向对照：默认根改回 /var/www/dl → 门禁红 + 脚本拒（还原 → 绿）
+        run: |
+          set -euo pipefail
+          ORIG="$RUNNER_TEMP/ppapk-default-root.orig"
+          cp scripts/publish-private-apk.mjs "$ORIG"
+          restore() { cp "$ORIG" scripts/publish-private-apk.mjs; }
+          trap restore EXIT
+          printf 'PK\x03\x04#601-default-root-probe' > "$RUNNER_TEMP/fake-601.apk"
+          run_publish() {
+            node scripts/publish-private-apk.mjs --transport local --dry-run --skip-apk-validation \
+              --apk "$RUNNER_TEMP/fake-601.apk" --version 1.4.3 --versionCode 22 2>&1
+          }
+
+          # ① 默认参数 → 私有根（#601 的复现命令，现在必须安全）
+          out="$(run_publish)"
+          echo "$out" | grep -qE '站点根 +/opt/dl-private' || {
+            echo "::error::默认参数没有落在私有根（#601 的默认值又回去了）"; echo "$out"; exit 1; }
+          echo "$out" | grep -qE '根授权：私有根 /opt/dl-private' || {
+            echo "::error::默认参数的根授权行不对"; echo "$out"; exit 1; }
+          echo "$out" | grep -qE '私有清单 +/opt/dl-private/releases\.internal\.json' || {
+            echo "::error::默认清单落点不是私有根下的 releases.internal.json"; echo "$out"; exit 1; }
+
+          # ② 内置负向对照
+          node scripts/check-private-publish-root.mjs --selftest
+
+          # ③ 把默认根改回事故当晚的公网 webroot → 门禁必红且点到 R2
+          sed -i "s|export const DEFAULT_PRIVATE_ROOT = '/opt/dl-private';|export const DEFAULT_PRIVATE_ROOT = '/var/www/dl';|" scripts/publish-private-apk.mjs
+          grep -q "export const DEFAULT_PRIVATE_ROOT = '/var/www/dl';" scripts/publish-private-apk.mjs || {
+            echo "::error::负向对照注入失败：没能把默认根改成 /var/www/dl"; exit 1; }
+          if out2="$(node scripts/check-private-publish-root.mjs 2>&1)"; then
+            echo "::error::默认根改回 /var/www/dl 后门禁仍然通过 —— 说明这条判据没有真正生效"; exit 1
+          fi
+          echo "$out2" | grep -q 'R2 默认站点根 / 私有根是 webroot 形态' || {
+            echo "::error::门禁红了但没报 R2："; echo "$out2"; exit 1; }
+
+          # ④ 同一个改坏的默认根下，脚本自己也要拒（internal × 公网根 = #601 形态）
+          if out3="$(run_publish)"; then
+            echo "::error::默认根是 /var/www/dl 时 internal 发布仍然通过（#601 又能复现了）"; exit 1
+          fi
+          echo "$out3" | grep -q '内部包不得写入公网分发根（#601）' || {
+            echo "::error::脚本拒了但没点到 #601："; echo "$out3"; exit 1; }
+
+          # ⑤ 还原 → 必绿
+          restore
+          node scripts/check-private-publish-root.mjs
+          run_publish > /dev/null
+          echo "负向对照通过：默认根 → 私有根（默认参数 exit 0）；改回 /var/www/dl → 门禁红(R2) + 脚本拒；还原 → 绿"
+
       # check:consume-api（#484 §6.5 / #487 W1-A 落地的脚本，本轮接线）：消费侧调用门禁 ——
       #   路径白名单（`/api/v1/**` 等字面量必须在 #484 §三 的表里）/ 地址零副本 / 废弃域 /
       #   明文 http / device_id 作凭据 / 凭据进 query / 原生 BuildConfig 注入。

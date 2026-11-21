@@ -21,21 +21,35 @@
  *   - 客户端取用方式（内置开关）见 docs/RELEASE-MANUAL.md §14：internal 变体在构建期带
  *     `DL_PRIVATE_MANIFEST`，从私有清单取更新；standard 包不含该开关。
  *
- * ## 四条硬闸（**写之前就拒**，一个字节都不发）
+ * ## 五道闸（**写之前就拒**，一个字节都不发）
  *
  * | 闸 | 判据 | 拒绝时 |
  * | --- | --- | --- |
+ * | A1 根授权 | 目标根是 webroot 形态 + internal/prerelease；或公网目标没显式 `--site-root` / 没 `--allow-public-webroot`；或私有根既不是 `/opt/dl-private` 也不是显式允许的公网根 | exit 1 |
  * | G1 目标/变体 | 公网清单 + `artifactVariant !== 'standard'`（或 `buildType !== 'stable'`）；私有清单 + 非 internal | exit 1 |
  * | G2 回环 baseUrl | **APK 字节里**读出的 `consume.baseUrl` 是回环（127.0.0.1 / localhost / ::1 / 127/8） | exit 1 |
  * | G3 清单自洽 | 合入后清单登记的 `file` 在目标 `apk/` 下**不存在**（清单指向不存在的文件） | exit 1 |
  * | G4 孤儿文件 | 目标 `apk/` 下有 `deepseek-chat-*.apk` 却**没登记**在清单里（含调用方自己的残留） | exit 1 |
  *
- * 四条都是「判据来自产物/磁盘实况，不来自命令行声明」。#601 的教训正是：`--variant internal`
- * 只说明操作者的意图，APK 里 `consume.baseUrl=127.0.0.1` 才是事实。
+ * A1 与 G1 都是「命令行声明 × 路径」层面的闸，都在**零 I/O 之前**（不 ssh、不 scp、不读写目标）。
+ * G2–G4 的判据则来自产物/磁盘实况。#601 的教训正是：`--variant internal` 只说明操作者的意图，
+ * APK 里 `consume.baseUrl=127.0.0.1` 才是事实。
+ *
+ * ## #601 的结构根因（A1 挡的就是这个）
+ *
+ * 事故当晚的命令是 `--version 1.4.2 --variant internal` —— **一个根参数都没带**。
+ * 老版本 `:87 DEFAULT_SITE_ROOT = '/var/www/dl'`，于是「按默认参数跑」= 备份 + 原子替换
+ * **公网**清单 + 把 APK 落进 `/var/www/dl/apk/`，被 6 个外部 IP 下载。
+ * 那不是误操作，是**默认值错**。所以现在：
+ *   · 默认站点根 `DEFAULT_SITE_ROOT = DEFAULT_PRIVATE_ROOT = /opt/dl-private`（webroot 之外）；
+ *   · 公网根**没有默认值**（`--site-root`/`--webroot` 不给就是 null），
+ *     且必须再加 `--allow-public-webroot` 才肯写；
+ *   · 静态守卫 `scripts/check-private-publish-root.mjs`（`pnpm check:private-publish-root`）
+ *     钉住「默认根不得是 webroot 形态」这条，改回去就红。
  *
  * ## 用法
  *
- *   # 演练（只读本地目录 / 只读远端，不落地）：四条闸都真跑
+ *   # 演练（只读本地目录 / 只读远端，不落地）：五道闸都真跑
  *   node scripts/publish-private-apk.mjs --apk app-release.apk --version 1.4.3 --versionCode 22 --dry-run
  *
  *   # 本地演练通道（L0/CI 用；不碰任何机器，也不许真发布）
@@ -45,15 +59,20 @@
  *   # 真发布（写私有清单；默认 ssh aliyun）
  *   node scripts/publish-private-apk.mjs --apk app-release.apk --version 1.4.3 --versionCode 22
  *
+ *   # 只有**显式**要动公网 webroot 时才这么写（两样缺一不可；#601 之后默认走不到这里）
+ *   node scripts/publish-private-apk.mjs --target public --site-root /var/www/dl \
+ *     --allow-public-webroot --apk app-release.apk --version 1.4.3 --versionCode 22
+ *
  * 参数（全部可用环境变量给，见 `--help`）：
- *   --target private|public   默认 private。public 只允许 standard + stable（G1）
- *   --private-root <dir>      默认 /opt/dl-private（**必须不在 webroot 内**，G1 会核）
+ *   --target private|public   默认 private。public 只允许 standard + stable（G1）且需要 A1 的双开关
+ *   --private-root <dir>      默认 /opt/dl-private（= 默认站点根；**必须不在 webroot 内**，A1/G1 都会核）
  *   --private-manifest <p>    默认 <private-root>/releases.internal.json（env DL_PRIVATE_RELEASES_JSON）
- *   --webroot <dir>           默认 /var/www/dl（公网站点根）；`--site-root` 是它的旧名
+ *   --site-root <dir>         公网站点根，**没有默认值**（`--webroot` 是同一个参数的新名）
+ *   --allow-public-webroot    写公网 webroot 的确认开关（不给它，public 目标直接 exit 非 0）
  *   --transport ssh|local     默认 ssh。`local` 只读本机目录、只允许 --dry-run（演练用）
  *   --apk/--version/--versionCode/--variant/--changes/--dry-run/--exercise/--force/--ssh-host/--aapt2
  *
- * 退出码：0 成功（含 dry-run / 演练回滚干净）；1 校验或执行失败（含四条硬闸）；2 环境/参数问题
+ * 退出码：0 成功（含 dry-run / 演练回滚干净）；1 校验或执行失败（含五道闸）；2 环境/参数问题
  *
  * ## 令牌（#641：读令牌与发布令牌是两枚，别混）
  *
@@ -110,7 +129,13 @@ export const PUBLIC_ALLOWED_BUILD_TYPES = Object.freeze(['stable']);
 export const FILE_PREFIX = 'deepseek-chat';
 /** DL 主机：`ssh aliyun`（Tailscale 内网，公网 22 打不通） */
 export const DEFAULT_SSH_HOST = 'aliyun';
-/** 公网站点根（webroot）：Caddy 本地直服（/var/www/dl/releases.json、/var/www/dl/apk/*.apk） */
+/**
+ * 公网站点根（webroot）：Caddy 本地直服（/var/www/dl/releases.json、/var/www/dl/apk/*.apk）。
+ *
+ * ⚠️ 自 #601 结构修复起它**不是任何默认值**：只是「显式允许的公网根」的比对基准。
+ * 写这个目录必须同时给 `--site-root`（显式）和 `--allow-public-webroot`（确认开关），
+ * 见 `gatePublishRoot()`。老版本把它当默认站点根，于是「按默认参数跑」= 往公网写内部包。
+ */
 export const DEFAULT_WEBROOT = '/var/www/dl';
 /**
  * 私有根：**故意在 webroot 之外** —— 公网 file_server 够不着（#609 的核心）。
@@ -119,6 +144,37 @@ export const DEFAULT_WEBROOT = '/var/www/dl';
  * 仍可单独指清单路径（#621 留下的口子），缺省回落 `<private-root>/releases.internal.json`。
  */
 export const DEFAULT_PRIVATE_ROOT = '/opt/dl-private';
+/**
+ * **默认站点根 = 私有根**（#601 的结构根因，本常量就是那处修复）。
+ *
+ * 事故链是「`--version 1.4.2 --variant internal` 不带根参数 → 老版本 `DEFAULT_SITE_ROOT`
+ * 是 `/var/www/dl` → 备份 + 原子替换公网清单 → internal 条目进公网 releases.json、
+ * APK 落到 `/var/www/dl/apk/`、被 6 个外部 IP 下载」。也就是说**任何人按默认参数跑都能复现**。
+ * 所以默认站点根只能是私有根；要写公网 webroot 必须显式声明 + 二次确认（`gatePublishRoot`）。
+ */
+export const DEFAULT_SITE_ROOT = DEFAULT_PRIVATE_ROOT;
+/** 站点根的绝对路径口径（与 `--private-root` / `--site-root` 的参数校验同一份） */
+const ABS_DIR_RE = /^\/[A-Za-z0-9._/-]+$/;
+
+/**
+ * 这个路径是不是「webroot 形态」—— 公网静态目录一律算，包括 webroot 的兄弟目录。
+ *
+ * 为什么连 `/var/www/dl-private` 也算：#637 之前线上真出现过「第二个私有根」，
+ * 它不在 `/var/www/dl` **里面**（所以「私有根不得在 webroot 内」那条前缀判断漏掉它），
+ * 但公网 file_server 照样直出 —— #601 的第 4 类口子。判据按「/var/www 家族 + 常见
+ * 静态目录名」来，不按「是否等于某个常量」来（常量只会被下一个人改歪）。
+ *
+ * @param {string|null|undefined} p
+ * @returns {boolean}
+ */
+export function isWebrootPath(p) {
+  if (!p || typeof p !== 'string') return false;
+  const norm = path.posix.normalize(p).replace(/\/+$/, '') || '/';
+  // /var/www 及其整棵子树（/var/www/dl、/var/www/dl-private、/var/www/html …）
+  if (norm === '/var/www' || norm.startsWith('/var/www/')) return true;
+  // 其余常见静态根名：www / www-dl / public_html / htdocs / html（按路径段匹配，不看扩展名）
+  return /(^|\/)(www|www[-_.][^/]*|public_html|htdocs|html)$/.test(norm);
+}
 /** 两种清单的文件名 */
 export const PUBLIC_MANIFEST_NAME = 'releases.json';
 export const PRIVATE_MANIFEST_NAME = 'releases.internal.json';
@@ -368,6 +424,88 @@ export function gateTargetVariant({ target, variant, buildType, webroot, private
 }
 
 /**
+ * A1 —— **根授权闸**（#601 结构根因）：目标根只允许两处，且内部包绝不许落在公网根。
+ *
+ * 这是 G1 之外的**第二道**（G1 判「清单 × 变体」，A1 判「根」）。两道都要有：
+ *   · G1 的「私有根不得在 webroot 内」是**前缀**判断 —— `/var/www/dl-private` 与
+ *     `/var/www/dl` 是兄弟，前缀判断漏得干干净净；A1 按「webroot 形态」判，兄弟也算；
+ *   · G1 管不到「公网目标用了默认 webroot、没走确认开关」这件事（默认值本身就错的时候，
+ *     任何「比对参数」的校验都拦不住 —— 只能要求**显式** + **确认**）。
+ *
+ * 判据（零 I/O，全部是路径字符串 + 命令行声明）：
+ *   1. 目标根是 webroot 形态 且 变体是 internal / buildType 是 prerelease
+ *      → 拒绝：「内部包不得写入公网分发根（#601）」。公网静态目录不看清单，
+ *      清单里没有也照样能下载（这就是 22:14 那次被 6 个外部 IP 下载的原因）。
+ *   2. 目标是 public（写公网 webroot）：必须 **显式** 给 `--site-root`/`--webroot`
+ *      （不许走默认值）**且** 带 `--allow-public-webroot` 确认开关，缺一个就拒绝。
+ *   3. 目标是 private：根必须是私有根（默认 `DEFAULT_SITE_ROOT = /opt/dl-private`）。
+ *      webroot 形态一律拒（防「第三处」：`/var/www/dl-private` 这类兄弟目录）；既不是
+ *      私有根也不是显式允许的公网根 → 拒。
+ *      `--transport local`（**只允许 --dry-run**，没有发布能力，见 parseCli）豁免第 3 条，
+ *      这样 L0/CI 才能在临时目录里正反演练。
+ *
+ * @param {{target:string, variant:string, buildType?:string, webroot?:string|null,
+ *          privateRoot?:string|null, siteRootExplicit?:boolean, allowPublicWebroot?:boolean,
+ *          transport?:string}} opts
+ * @returns {string[]} 错误列表（空 = 通过）
+ */
+export function gatePublishRoot(opts) {
+  const errors = [];
+  const target = opts.target ?? 'private';
+  const variant = opts.variant ?? 'internal';
+  const buildType = opts.buildType;
+  const drilling = opts.transport === 'local';
+  const root = target === 'public' ? opts.webroot : (opts.privateRoot ?? DEFAULT_SITE_ROOT);
+
+  // ① 内部包 / 预发布 × 公网分发根 → 绝不（这条与 target 无关：兄弟目录也算公网根）
+  if (isWebrootPath(root) && (variant === 'internal' || buildType === 'prerelease')) {
+    errors.push(
+      `内部包不得写入公网分发根（#601）：variant=${JSON.stringify(variant)}、buildType=${JSON.stringify(buildType)}，` +
+        `目标根 ${JSON.stringify(root)} 是 webroot 形态 —— 公网 file_server 直出，清单里没有也照样能下载。` +
+        `内部包只能发到私有根 ${DEFAULT_SITE_ROOT}（默认值，webroot 之外）。`,
+    );
+  }
+
+  if (target === 'public') {
+    // ② 写公网 webroot：显式声明 + 确认开关，两样缺一不可
+    if (!root) {
+      errors.push(
+        `公网目标没有默认根：必须显式给 --site-root <dir>（--webroot 是同一个参数，不是默认值）。` +
+          `默认站点根是私有根 ${DEFAULT_SITE_ROOT}（#601）—— 想写公网 webroot 就得自己写出来。`,
+      );
+    } else {
+      if (!isWebrootPath(root)) {
+        errors.push(`公网目标的根必须是 webroot 形态（/var/www/* 等），拿到的是 ${JSON.stringify(root)}（不改目标就改根）`);
+      }
+      if (!opts.siteRootExplicit) {
+        errors.push(`写公网 webroot ${root} 必须显式传 --site-root（或 --webroot）：默认值不算「显式」（#601）`);
+      }
+      if (!opts.allowPublicWebroot) {
+        errors.push(
+          `写公网 webroot ${root} 必须再加 --allow-public-webroot 确认开关（不认，就 exit 非 0）。` +
+            `公网 webroot 是公网直出目录：写进去的东西全世界都能下，这一步不许「顺手」发生。`,
+        );
+      }
+    }
+  } else {
+    // ③ 私有目标：只允许私有根这一处
+    if (isWebrootPath(root)) {
+      errors.push(
+        `私有根 ${JSON.stringify(root)} 是 webroot 形态（webroot 内或它的兄弟目录，如 /var/www/dl-private）：` +
+          `公网 file_server 会把里面的文件原样发出去，「清单里没有」就白搭了（#601，防第三处）。` +
+          `私有根只允许 ${DEFAULT_SITE_ROOT}。`,
+      );
+    } else if (root !== DEFAULT_SITE_ROOT && !drilling) {
+      errors.push(
+        `目标根 ${JSON.stringify(root)} 既不是私有根 ${DEFAULT_SITE_ROOT} 也不是显式允许的公网根 —— ` +
+          '只允许这两处，别开第三处（#601）。演练请用 `--transport local --dry-run`（那条路没有发布能力）。',
+      );
+    }
+  }
+  return errors;
+}
+
+/**
  * G2 —— APK 字节里的 `consume.baseUrl` 是回环 → 拒绝。
  *
  * #601 事故的包在任何真机上都连不上后端（`127.0.0.1` 指向手机自己），只能配 `adb reverse` 联调。
@@ -448,7 +586,9 @@ export function gateOrphanFiles({ manifest, presentFiles, planned = null }) {
 export function targetPaths(opts) {
   const target = opts.target ?? 'private';
   if (target === 'public') {
-    const root = opts.webroot ?? DEFAULT_WEBROOT;
+    // #601：公网根**没有默认值**。给了 DEFAULT_WEBROOT 当缺省，就等于「按默认参数跑 = 写公网」。
+    const root = opts.webroot;
+    if (!root) throw new PublishEnvError('公网目标没有默认根：必须显式 --site-root <dir>（或 --webroot）+ --allow-public-webroot（#601）');
     return {
       target,
       root,
@@ -458,7 +598,7 @@ export function targetPaths(opts) {
       publiclyReadable: true,
     };
   }
-  const root = opts.privateRoot ?? DEFAULT_PRIVATE_ROOT;
+  const root = opts.privateRoot ?? DEFAULT_SITE_ROOT;
   const manifestPath = opts.privateManifest || `${root}/${PRIVATE_MANIFEST_NAME}`;
   return {
     target,
@@ -736,10 +876,11 @@ function help() {
       '  --versionCode <n>      必填（DL_PRIVATE_VERSION_CODE）',
       '  --variant <v>          internal（默认）| standard（DL_PRIVATE_VARIANT）',
       '  --target <t>           private（默认）| public（DL_PRIVATE_TARGET）',
-      '  --private-root <dir>   /opt/dl-private（DL_PRIVATE_ROOT）；必须在 webroot 之外',
+      '  --private-root <dir>   /opt/dl-private（DL_PRIVATE_ROOT）= 默认站点根；必须在 webroot 之外',
       '  --private-manifest <p> <private-root>/releases.internal.json（DL_PRIVATE_RELEASES_JSON）；',
       '                         线上就是缺省值 /opt/dl-private/releases.internal.json（#637 起在私有根下）',
-      '  --webroot <dir>        /var/www/dl（DL_PRIVATE_WEBROOT）；--site-root 是它的旧名',
+      '  --site-root <dir>      公网站点根，**没有默认值**（--webroot 是同一个参数；#601 起默认根是私有根）',
+      '  --allow-public-webroot 写公网 webroot 的确认开关：不给它 + --site-root，公网目标直接 exit 非 0（#601）',
       '  --transport <t>        ssh（默认）| local（只读本机目录，仅 --dry-run）（DL_PRIVATE_TRANSPORT）',
       '  --changes <text>       清单 changes 条目，可重复',
       '  --dry-run              只打印动作与清单条目，不落地（默认是真发布）',
@@ -761,7 +902,7 @@ function readArg(args, flag, envName) {
 
 function parseCli(argv) {
   const args = parseArgs(argv, {
-    flags: ['dry-run', 'exercise', 'skip-apk-validation', 'force', 'help'],
+    flags: ['dry-run', 'exercise', 'skip-apk-validation', 'force', 'help', 'allow-public-webroot'],
     multi: ['changes'],
   });
   if (args.help) {
@@ -775,10 +916,16 @@ function parseCli(argv) {
   const target = readArg(args, 'target', 'DL_PRIVATE_TARGET') || 'private';
   const transport = readArg(args, 'transport', 'DL_PRIVATE_TRANSPORT') || 'ssh';
   const sshHost = readArg(args, 'ssh-host', 'DL_PRIVATE_SSH_HOST') || DEFAULT_SSH_HOST;
-  const webroot = readArg(args, 'webroot', 'DL_PRIVATE_WEBROOT')
-    || readArg(args, 'site-root', 'DL_PRIVATE_SITE_ROOT')
-    || DEFAULT_WEBROOT;
-  const privateRoot = readArg(args, 'private-root', 'DL_PRIVATE_ROOT') || DEFAULT_PRIVATE_ROOT;
+  // ---- 站点根（#601 结构修复）：**公网根没有默认值** ----
+  // 不给 --site-root/--webroot ⇒ webroot 是 null（只有 --target public 才需要它）。
+  // 私有根缺省 = DEFAULT_SITE_ROOT = 私有根：默认参数跑出来的落点必须是 webroot 之外。
+  const webrootArg = readArg(args, 'webroot', 'DL_PRIVATE_WEBROOT')
+    || readArg(args, 'site-root', 'DL_PRIVATE_SITE_ROOT');
+  const siteRootExplicit = webrootArg !== null;
+  const webroot = webrootArg;
+  const privateRoot = readArg(args, 'private-root', 'DL_PRIVATE_ROOT') || DEFAULT_SITE_ROOT;
+  // 写公网 webroot 的确认开关（#601）：光显式给根还不够，得再按一次「我知道这是公网直出目录」
+  const allowPublicWebroot = args['allow-public-webroot'] === true;
   // 清单路径单独可配（#621 留下的口子）：线上 /opt/dl-private/releases.internal.json 就在私有根下（#637），
   // 所以缺省回落 <private-root>/releases.internal.json —— 与 server.mjs 的同名 env 同义。
   const privateManifest = readArg(args, 'private-manifest', 'DL_PRIVATE_RELEASES_JSON') || '';
@@ -796,10 +943,10 @@ function parseCli(argv) {
   if (!VARIANTS.includes(variant)) dieEnv(`--variant 只能是 ${VARIANTS.join('|')}：'${variant}'`);
   if (!TARGETS.includes(target)) dieEnv(`--target 只能是 ${TARGETS.join('|')}：'${target}'`);
   if (!TRANSPORTS.includes(transport)) dieEnv(`--transport 只能是 ${TRANSPORTS.join('|')}：'${transport}'`);
-  for (const [flag, dir] of [['--webroot', webroot], ['--private-root', privateRoot]]) {
-    if (!/^\/[A-Za-z0-9._/-]+$/.test(dir)) dieEnv(`${flag} 必须是绝对路径且不含空格/引号：'${dir}'`);
+  for (const [flag, dir] of [['--site-root/--webroot', webroot], ['--private-root', privateRoot]]) {
+    if (dir && !ABS_DIR_RE.test(dir)) dieEnv(`${flag} 必须是绝对路径且不含空格/引号：'${dir}'`);
   }
-  if (privateManifest && !/^\/[A-Za-z0-9._/-]+$/.test(privateManifest)) {
+  if (privateManifest && !ABS_DIR_RE.test(privateManifest)) {
     dieEnv(`--private-manifest 必须是绝对路径且不含空格/引号：'${privateManifest}'`);
   }
   if (!/^https?:\/\//.test(publicBase)) dieEnv(`--public-base 必须是 http(s) URL：'${publicBase}'`);
@@ -843,6 +990,8 @@ function parseCli(argv) {
     skipApkValidation,
     sshHost,
     webroot,
+    siteRootExplicit,
+    allowPublicWebroot,
     privateRoot,
     privateManifest,
     publicBase,
@@ -852,32 +1001,61 @@ function parseCli(argv) {
 
 async function main() {
   const opts = parseCli(process.argv.slice(2));
-  const target = targetPaths(opts);
   const buildType = buildTypeFor(opts.version);
   const stamp = Math.floor(Date.now() / 1000);
+
+  // ===========================================================================
+  // 闸 1 + 闸 2：根授权（#601 结构根因）
+  //
+  // **零 I/O 之前**：这两道只用「命令行声明 + 路径字符串」，不 ssh、不 scp、不读不写
+  // 任何一个目标字节。APK 的 aapt2 校验、G2 的字节取证、G3/G4 的读目标，全在它们之后。
+  // 顺序上根授权先判（它挡的是「目标根本身就错」），G1 紧随其后（它挡的是「清单 × 变体」），
+  // 两道一起报，别让操作者修一处再撞下一处。
+  // ===========================================================================
+  log.head('0/7 闸 1+2：根授权（默认站点根 = 私有根；公网 webroot 必须显式 + 确认）');
+  const rootVerdict = gatePublishRoot({
+    target: opts.target,
+    variant: opts.variant,
+    buildType,
+    webroot: opts.webroot,
+    privateRoot: opts.privateRoot,
+    siteRootExplicit: opts.siteRootExplicit,
+    allowPublicWebroot: opts.allowPublicWebroot,
+    transport: opts.transport,
+  });
+  const g1 = gateTargetVariant({
+    target: opts.target,
+    variant: opts.variant,
+    buildType,
+    // G1 的「私有根不得在 webroot 内」是前缀判断：没给 --site-root 时按线上 webroot 比，
+    // 这样 `/var/www/dl/private` 这种「不显式声明也照样落在 webroot 里」的形态仍会被拦。
+    webroot: opts.webroot ?? DEFAULT_WEBROOT,
+    privateRoot: opts.privateRoot,
+  });
+  if (rootVerdict.length || g1.length) {
+    die(
+      [...rootVerdict, ...g1],
+      '闸拒绝：默认站点根是私有根 /opt/dl-private；要写公网 webroot 必须显式 --site-root + --allow-public-webroot。\n' +
+        '内部（internal）包绝不进公网分发根（#601）。改目标或改参数，别改闸门。',
+    );
+  }
+
+  const target = targetPaths(opts);
 
   log.head('发布参数');
   log.info(`APK          ${opts.apk}`);
   log.info(`version      ${opts.version}（versionCode ${opts.versionCode}）`);
   log.info(`variant      ${opts.variant}（buildType 由版本号判定 = ${buildType}）`);
   log.info(`target       ${opts.target} → ${target.label}`);
+  log.info(`站点根       ${opts.target === 'public' ? opts.webroot : `${opts.privateRoot}（默认值 = 私有根）`}`);
   log.info(`传输         ${opts.transport === 'local' ? 'local（本机目录，只读演练）' : `ssh ${opts.sshHost}`}`);
   log.info(`模式         ${opts.dryRun ? 'dry-run（不落地）' : opts.exercise ? 'exercise（真上传 + 真改清单 + 立刻回滚）' : '真发布'}`);
 
-  // ---- 0. 硬闸 G1：目标 × 变体 × buildType（最便宜的一条，先判）----
-  log.head('0/7 硬闸 G1：目标清单 × 变体 × 发布渠道');
-  const g1 = gateTargetVariant({
-    target: opts.target,
-    variant: opts.variant,
-    buildType,
-    webroot: opts.webroot,
-    privateRoot: opts.privateRoot,
-  });
-  if (g1.length) die(g1, '硬闸 G1 拒绝：公网清单只收 standard + stable；私有清单只收 internal。改目标或改变体，别改闸门。');
+  log.ok(`根授权：${opts.target === 'public' ? `公网 webroot ${opts.webroot}（显式 --site-root + --allow-public-webroot）` : `私有根 ${opts.privateRoot}（webroot 之外）`} ✓`);
   log.ok(`目标 ${opts.target} 只收 ${TARGET_VARIANT[opts.target]}，本次 ${opts.variant} ✓`);
   if (opts.target === 'public') log.ok(`公网清单 buildType 只收 ${PUBLIC_ALLOWED_BUILD_TYPES.join('|')}，本次 ${buildType} ✓`);
   else {
-    log.ok(`私有根 ${path.resolve(opts.privateRoot)} 在 webroot ${path.resolve(opts.webroot)} 之外 ✓`);
+    log.ok(`私有根 ${path.resolve(opts.privateRoot)} 在 webroot ${path.resolve(opts.webroot ?? DEFAULT_WEBROOT)} 之外 ✓`);
     log.info(`私有清单     ${target.manifestPath}${opts.privateManifest ? '' : '（缺省 = 私有根下；#637 起线上就是这个值）'}`);
   }
 

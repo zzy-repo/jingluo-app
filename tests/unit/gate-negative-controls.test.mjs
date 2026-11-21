@@ -492,6 +492,17 @@ const REGISTRY = {
     what: 'CI 在 $RUNNER_TEMP 造干净 webroot → exit 0；R1 取证残留 / R2 private 目录 / R3 internal 包各自注入 → 必 exit 1 且点到注入物；还原 → exit 0',
     mention: /check-webroot-hygiene\.mjs/,
   },
+  // 默认根守卫（#601 的结构根因）：对照写在 ci.yml 里现场注入 —— ① 默认参数（**一个根参数都不带**，
+  // 就是事故那晚的命令形态）必须落在私有根 `/opt/dl-private`；② 脚本自带 `--selftest`（5 种改坏
+  // 方式全判红、正本判绿）；③ **真**把默认根 sed 回 `/var/www/dl` → 门禁必须 exit 1 且点到 R2
+  // （只证明 exit≠0 不够：判据被改窄、脚本恒红都会让 exit≠0 成立）；④ 同一个改坏的默认根下
+  // 发布脚本自己也要 exit 非 0 并点到 #601；⑤ 还原 → 绿。`trap` 保证任何失败路径都还原。
+  'check:private-publish-root': {
+    where: '.github/workflows/ci.yml',
+    kind: 'ci',
+    what: 'CI：默认参数必落私有根（exit 0）；默认根改回 /var/www/dl → 门禁 exit 1 且报 R2 + 脚本拒并点到 #601；还原 → exit 0（另有 --selftest 5 种改坏方式）',
+    mention: /check-private-publish-root\.mjs/,
+  },
 }
 
 /**

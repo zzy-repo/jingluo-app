@@ -20,12 +20,17 @@ import { test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 
 const {
+  DEFAULT_PRIVATE_ROOT,
+  DEFAULT_SITE_ROOT,
   gateLoopbackConsume,
   gateManifestSelfConsistency,
   gateOrphanFiles,
+  gatePublishRoot,
   gateTargetVariant,
+  isWebrootPath,
   targetPaths,
 } = await import('../../scripts/publish-private-apk.mjs')
+const { analyzeSource } = await import('../../scripts/check-private-publish-root.mjs')
 const { findConsumeBases, inspectConsumeBase, isLoopbackBase, judgeConsumeBase } = await import(
   '../../deploy/dl-release/apk-consume.mjs'
 )
@@ -40,6 +45,7 @@ const {
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 const PUBLISH = path.join(ROOT, 'scripts/publish-private-apk.mjs')
 const HYGIENE = path.join(ROOT, 'scripts/check-webroot-hygiene.mjs')
+const ROOTCHECK = path.join(ROOT, 'scripts/check-private-publish-root.mjs')
 
 /** 临时目录（一次性；本文件结束时整棵删掉） */
 const scratch = () => fs.mkdtempSync(path.join(os.tmpdir(), 'release-safety-gates-'))
@@ -469,4 +475,121 @@ test('卫生门禁 CLI：干净 exit 0 / 脏 exit 1 且点到文件；--selftest
   const self = spawnSync(process.execPath, [HYGIENE, '--selftest'], { cwd: ROOT, encoding: 'utf8' });
   assert.equal(self.status, 0, `--selftest 必须 exit 0\n${self.stdout}${self.stderr}`);
   assert.match(self.stdout, /演练通过/);
+})
+
+// ------------------------------------------------- #601 默认根（闸 A1 + 门禁 check:private-publish-root）
+//
+// 事故当晚的命令是 `--version 1.4.2 --variant internal` —— **一个根参数都没带**，老版本默认根是
+// `/var/www/dl`，于是「按默认参数跑」= 写公网 webroot。下面这几拍钉的是同一件事：
+// 默认参数必须**落不到**公网；要落公网必须显式声明 + 二次确认；改了默认值门禁必须红。
+
+test('#601 闸 A1：默认根 = 私有根 / 公网根没有默认值 / 该拒的根全拒', () => {
+  // 1) 什么都不给 → 私有根（老版本的默认值是 /var/www/dl，这条断言就是那处修复）
+  assert.deepEqual(
+    gatePublishRoot({ target: 'private', variant: 'internal', buildType: 'stable' }),
+    [],
+    '默认参数（internal + 不给根）不许被自家闸拦 —— 它必须落在私有根上',
+  );
+  assert.equal(DEFAULT_SITE_ROOT, '/opt/dl-private', '默认站点根必须是线上私有根（#637）');
+  assert.equal(DEFAULT_SITE_ROOT, DEFAULT_PRIVATE_ROOT, '默认站点根 = 私有根');
+  assert.equal(isWebrootPath(DEFAULT_SITE_ROOT), false, '默认站点根不得是 webroot 形态');
+  assert.equal(targetPaths({ target: 'private' }).manifestPath, '/opt/dl-private/releases.internal.json');
+
+  // 2) 公网根**没有默认值**：不给就抛，别偷偷回落到 /var/www/dl
+  assert.throws(() => targetPaths({ target: 'public' }), /默认根/, 'public 目标缺根必须抛错（不许回落到 DEFAULT_WEBROOT）');
+
+  // 3) internal × 公网根 → 拒，且点到 #601
+  assert.match(
+    gatePublishRoot({ target: 'private', variant: 'internal', buildType: 'stable', privateRoot: '/var/www/dl' }).join('\n'),
+    /内部包不得写入公网分发根（#601）/,
+  );
+  // 4) webroot 的兄弟目录（/var/www/dl-private）也算公网根 —— G1 的前缀判断漏掉它，A1 必须拦住
+  assert.match(
+    gatePublishRoot({ target: 'private', variant: 'internal', buildType: 'stable', privateRoot: '/var/www/dl-private' }).join('\n'),
+    /防第三处/,
+  );
+  // 5) 既不是私有根也不是显式允许的公网根 → 拒（防第三处）
+  assert.match(
+    gatePublishRoot({ target: 'private', variant: 'internal', buildType: 'stable', privateRoot: '/srv/dl-private' }).join('\n'),
+    /第三处/,
+  );
+  // 6) 公网目标：显式根 + 确认开关，缺一不可
+  assert.match(
+    gatePublishRoot({ target: 'public', variant: 'standard', buildType: 'stable', webroot: '/var/www/dl', siteRootExplicit: true }).join('\n'),
+    /--allow-public-webroot/,
+  );
+  assert.match(
+    gatePublishRoot({ target: 'public', variant: 'standard', buildType: 'stable', webroot: '/var/www/dl', allowPublicWebroot: true }).join('\n'),
+    /必须显式传 --site-root/,
+  );
+  // 7) 正例：全都给齐才放行（门禁不许恒红）
+  assert.deepEqual(
+    gatePublishRoot({
+      target: 'public',
+      variant: 'standard',
+      buildType: 'stable',
+      webroot: '/var/www/dl',
+      siteRootExplicit: true,
+      allowPublicWebroot: true,
+    }),
+    [],
+  );
+})
+
+test('发行脚本 闸 A1 负向对照：公网目标缺 --site-root / 缺确认开关 / internal 进公网根 → exit 1', (t) => {
+  const arena = makeArena();
+  t.after(() => cleanup(arena.dir));
+
+  /** 不带任何根参数的调用（默认参数形态；只走闸，不碰目标） */
+  const bare = (extra) =>
+    spawnSync(
+      process.execPath,
+      [PUBLISH, '--transport', 'local', '--dry-run', '--skip-apk-validation', '--apk', arena.okApk,
+        '--version', '1.4.3', '--versionCode', '22', ...extra],
+      { cwd: ROOT, encoding: 'utf8' },
+    );
+
+  // ① 公网目标、一个根参数都不给 → exit 1，理由必须是「公网没有默认根」
+  const noRoot = bare(['--target', 'public']);
+  assert.equal(noRoot.status, 1, `公网目标缺 --site-root 必须 exit 1\n${noRoot.stdout}${noRoot.stderr}`);
+  assert.match(`${noRoot.stdout}${noRoot.stderr}`, /公网目标没有默认根/);
+
+  // ② 有显式根、缺 --allow-public-webroot → exit 1
+  const noAllow = bare(['--target', 'public', '--site-root', arena.web]);
+  assert.equal(noAllow.status, 1, `缺 --allow-public-webroot 必须 exit 1\n${noAllow.stdout}${noAllow.stderr}`);
+  assert.match(`${noAllow.stdout}${noAllow.stderr}`, /--allow-public-webroot/);
+
+  // ③ 双开关齐全但变体是 internal（= #601 事故形态）→ 仍然拒
+  const internal = bare(['--target', 'public', '--site-root', arena.web, '--allow-public-webroot']);
+  assert.equal(internal.status, 1, `internal 包进公网根必须 exit 1\n${internal.stdout}${internal.stderr}`);
+  assert.match(`${internal.stdout}${internal.stderr}`, /内部包不得写入公网分发根（#601）/);
+
+  // ④ 还原（默认参数 + 私有根）→ exit 0
+  const green = publish(arena);
+  assert.equal(green.status, 0, `还原后必须 exit 0\n${green.stdout}${green.stderr}`);
+  assert.match(green.stdout, /根授权：私有根/);
+})
+
+test('门禁 check:private-publish-root：正本 exit 0、--selftest exit 0；默认根改回 /var/www/dl → 静态判据红', () => {
+  const clean = spawnSync(process.execPath, [ROOTCHECK], { cwd: ROOT, encoding: 'utf8' });
+  assert.equal(clean.status, 0, `正本必须 exit 0\n${clean.stdout}${clean.stderr}`);
+  assert.match(clean.stdout, /check:private-publish-root OK/);
+
+  const self = spawnSync(process.execPath, [ROOTCHECK, '--selftest'], { cwd: ROOT, encoding: 'utf8' });
+  assert.equal(self.status, 0, `--selftest 必须 exit 0\n${self.stdout}${self.stderr}`);
+  assert.match(self.stdout, /负向对照通过/);
+
+  // 负向：把默认根改回 #601 的那一行（只改内存里的文本，不动仓库文件）
+  const src = fs.readFileSync(PUBLISH, 'utf8');
+  const reverted = src.replace(
+    /export const DEFAULT_PRIVATE_ROOT = '\/opt\/dl-private';/,
+    "export const DEFAULT_PRIVATE_ROOT = '/var/www/dl';",
+  );
+  assert.notEqual(reverted, src, '负向对照注入失败：源码里找不到 DEFAULT_PRIVATE_ROOT 的缺省值');
+  const violations = analyzeSource(reverted, isWebrootPath);
+  assert.ok(violations.length > 0, '默认根改回公网 webroot 后门禁必须红（否则它就是恒绿的门禁）');
+  assert.ok(
+    violations.some((v) => v.code === 'R2'),
+    `必须报 R2（默认根是 webroot 形态），实际 ${violations.map((v) => v.code).join('/')}`,
+  );
 })

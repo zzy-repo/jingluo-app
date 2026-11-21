@@ -86,6 +86,7 @@
     "check:hardcoded-ports": "node scripts/check-hardcoded-ports.mjs",
     "check:refactor-direction": "node scripts/check-refactor-direction.mjs",
     "check:webroot-hygiene": "node scripts/check-webroot-hygiene.mjs",
+    "check:private-publish-root": "node scripts/check-private-publish-root.mjs",
     "measure:scroll-shift": "node scripts/measure-narrow-scroll-shift.mjs"
   },
   "dependencies": {

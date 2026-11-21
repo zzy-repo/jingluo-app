@@ -49,6 +49,9 @@
 > 3. 校验器（离线）：本文件描述的 public / private 双口径；
 > 4. 卫生门禁（写完之后的巡检）：`scripts/check-webroot-hygiene.mjs` 的 R4 —— 真 webroot 的
 >    `releases.json` 里 internal 条目数必须为 0，读不出来也判红。
+> 5. 默认根守卫（#601）：`scripts/check-private-publish-root.mjs` —— 发布脚本的默认站点根
+>    必须是私有根 `/opt/dl-private`；改回 `/var/www/dl`（或任何 webroot 形态）就红。
+>    理由：事故那晚命令里**一个根参数都没有**，靠的是默认值，所以默认值本身也得被门禁钉住。
 
 ## 2. 单条版本记录
 
