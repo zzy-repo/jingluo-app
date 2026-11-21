@@ -305,7 +305,7 @@ BT=${ANDROID_HOME:-$HOME/android-sdk}/build-tools/${BUILD_TOOLS_VERSION:?先 cp 
   ```
   APK   : android/app/build/outputs/apk/release/app-release.apk
   工具  : build-tools 36.0.0 · auto-max（$ANDROID_HOME；未钉住 BUILD_TOOLS_VERSION，取已装最高档 36.0.0）
-  期望  : variant=standard  cert=e7c5baee517ca2b2258950e934521f2fad448d00f72f2ff7297bdf4fa00aa8a1
+  期望  : variant=standard  cert=e7c5baee517ca2b2258950e934521f2fad448d00f72f2ff7297bdf4fa00aa8a1  来源=config/appIdentity.json
 
   #  检查                             结果     实际
   -  -------------------------------  --------  ------------------------
@@ -323,7 +323,7 @@ BT=${ANDROID_HOME:-$HOME/android-sdk}/build-tools/${BUILD_TOOLS_VERSION:?先 cp 
     md5         : d6660c0168465e1196c03abe8bafaf06
     size        : 6.56 MiB（6875727 字节）
 
-  结论：PASS（5/5 项通过）—— 可以发布。
+  结论：PASS（5/5 项通过）—— 可以发布。（期望指纹来源：config/appIdentity.json）
   ```
 
   红的时候长这样（历史 debug 包 `deepseek-chat-1.2.0.apk`，退出码 `1`）：
@@ -1596,9 +1596,9 @@ SKIP 或每天红一次（"红着红着就没人看"正是本合同类门禁的�
 - **读取实现**：`scripts/lib/certFingerprint.mjs` 的 `resolveExpectedCertSha256()`（#702 / #704 把原先
   两处各自为政的读取收敛到这一处）。三处判据都调它，`verify:apk` 的**缺省**期望值也来自它。
 - **不留副本**（#705）：`scripts/verify-release-apk.mjs` 里那份 `EXPECTED_CERT_SHA256` 字面量默认值
-  已删除。缺省从配置读；读不到就 **exit 2（fail-closed）**，不猜值放行。手工核另一把 key / 包时用
-  `--expect-cert <sha256>`，无仓库上下文（脚本被复制到别处）时用 `--expect-cert` 或
-  `$VERIFY_APK_EXPECT_CERT` 显式给值。
+  已删除。缺省从配置读；读不到 / 格式非法就 **exit 2（fail-closed）**，不猜值放行 —— 因为第 4 项只有
+  这一个判据，「判不出来」要是被当成通过就是假绿灯。手工核另一把 key / 包、或脚本被复制到没有 `config/`
+  的地方时，用 `--expect-cert <sha256>` 显式给值（输出与 `--json` 的 `expectCertSource` 会标 `--expect-cert`）。
 - **改这个值 = 换签名 = 签名迁移**：另开单，同一个 PR 里改 `scripts/lib/appIdentity.mjs` 的
   `PUBLISHED_IDENTITY` + 写清已装用户的迁移方案（新包名 / 应用商店渠道 / 引导重装）。
   **不许**为了让某次发版变绿而改它：签名不同，新包装不上已装用户。
@@ -1622,7 +1622,7 @@ SKIP 或每天红一次（"红着红着就没人看"正是本合同类门禁的�
 ### 16.3 三处判据不符时的输出（长什么样）
 
 ```text
-# 1) 配置侧一致性（release-check 第 4 段）：配置被改了一个字
+# 1) 配置侧一致性（release-check 第 4 段）：配置里的期望值被改了一个字（exit 1）
 [4) 期望证书指纹（发版证据：唯一来源 + 一致性）]
 [FAIL] 期望证书指纹与「已发布证书」不一致（有人在动签名身份）：
        配置   e7c5baee…aa8a2（来源 config/appIdentity.json）
@@ -1632,9 +1632,10 @@ SKIP 或每天红一次（"红着红着就没人看"正是本合同类门禁的�
 [FAIL] 证书指纹不符 —— 这把 key 不是已发布证书
        期望 e7c5baee…aa8a1 实际 fa071271…5652（来源 config/appIdentity.json）
 
-# 3) APK 侧（verify:apk）：包不是那把 key 签的，或期望值被改坏（exit 1）
+# 3) APK 侧（verify:apk）：包不是那把 key 签的（或者期望值给错了，exit 1）
+期望  : variant=standard  cert=ffff…ffff  来源=--expect-cert
 4  签名证书 SHA-256 与期望一致      FAIL     e7c5baee…aa8a1
-结论：FAIL（cert 不通过）—— 禁止发布。
+结论：FAIL（cert 不通过）—— 禁止发布。（期望指纹来源：--expect-cert）
 ```
 
 （`…` 是省略写法，真实输出是完整 64 位；三段都能点名「期望 / 实际 / 来源」，不是只给一个退出码。）
@@ -1645,6 +1646,6 @@ SKIP 或每天红一次（"红着红着就没人看"正是本合同类门禁的�
 找 `EXPECTED_CERT_SHA256 = '<64 hex>'` 字面量。`#271` 把该值搬进 `config/appIdentity.json`（build.gradle
 改成从配置派生）之后它**恒返回 `null`**，于是 `release:check` 里那句「签名证书指纹必须为 …」实际从不生效 ——
 「指纹一致」这条证据**看起来在验、一次都没比过**。同一根因的另一处是 `check-keystore-config.mjs`
-（死读取，#697 修好）。#702（PR #704）删掉这个假读取、补上「配置侧一致性」三段判；#705 再把
-`verify-release-apk.mjs` 里那份**默认值副本**收敛到单一来源。**方向是加严与去重，不是删判据**：
+（死读取，#697 修好）。#702（PR #704）删掉这个假读取、补上「配置侧一致性」三段判；#705（PR #707）
+再把 `verify-release-apk.mjs` 里那份**默认值副本**收敛到单一来源。**方向是加严与去重，不是删判据**：
 任何一次「这条太麻烦，先去掉」的改动，都应该先读 §16.2 那两条路。
