@@ -19,7 +19,11 @@ import {
   type ProviderKind,
   type ProviderSpec,
 } from '../../services/api/providers.js'
-import { probeProvider, type ProviderProbeResult } from '../../services/api/client.js'
+import {
+  PROBE_TIMEOUT_MS,
+  probeProvider,
+  type ProviderProbeResult,
+} from '../../services/api/client.js'
 import { isKeyRejected, shouldAutoProbe, useKeyRejection } from '../../services/api/keyRejection.js'
 import { useIsMobile } from '../../app/viewport.js'
 import { IconButton } from '../base/IconButton.js'
@@ -443,7 +447,11 @@ const ModelField = ({ spec }: { spec: ProviderSpec }) => {
     }
     const id = ++requestId.current
     setStatus('loading')
-    const result = await probeProvider({ baseUrl: baseUrl || defaultBaseUrl, apiKey })
+    // 探测超时显式传入（#771）：它是「地址通不通」的即时反馈，不跟 connectMs（60s）一起放宽
+    const result = await probeProvider(
+      { baseUrl: baseUrl || defaultBaseUrl, apiKey },
+      PROBE_TIMEOUT_MS
+    )
     if (id !== requestId.current) {
       return
     }
@@ -573,7 +581,8 @@ const ConnectionTestField = ({ editor }: { editor: ApiKeyEditor }) => {
     setTesting(true)
     setProbe(null)
     try {
-      const result = await probeProvider({ baseUrl, apiKey })
+      // 探测超时显式传入（#771），理由同上：connectMs 已是 60s，探测仍保持 15s 体感
+      const result = await probeProvider({ baseUrl, apiKey }, PROBE_TIMEOUT_MS)
       // #451：只有真的拿到成功应答才记「最近一次确认可用」；失败一次都不写
       if (result.ok) {
         recordKeySuccess(apiKey)

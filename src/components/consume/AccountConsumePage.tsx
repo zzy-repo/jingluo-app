@@ -29,8 +29,13 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useTranslate, type TranslationKey } from '../../i18n/index.js'
-import { getApiKey, getBaseUrl, setProviderKind, useApiConfig } from '../../services/api/apiConfig.js'
-import { probeProvider } from '../../services/api/client.js'
+import {
+  getApiKey,
+  getBaseUrl,
+  setProviderKind,
+  useApiConfig,
+} from '../../services/api/apiConfig.js'
+import { PROBE_TIMEOUT_MS, probeProvider } from '../../services/api/client.js'
 import type { ConsumeClient, ConsumeUser } from '../../services/consume/index.js'
 import { getConsumeClient } from '../../services/consumeClient.js'
 import { useAuthStatus } from '../../services/auth/useAuthStatus.js'
@@ -171,7 +176,11 @@ export const AccountConsumePage = ({
     setConn({ phase: 'testing' })
     const startedAt = Date.now()
     try {
-      const result = await probeProvider({ baseUrl: getBaseUrl(), apiKey: key })
+      // 探测超时显式传入（#771）：与设置页同一个 15s，不被 connectMs（60s）拖成转圈一分钟
+      const result = await probeProvider(
+        { baseUrl: getBaseUrl(), apiKey: key },
+        PROBE_TIMEOUT_MS
+      )
       if (!alive.current) {
         return
       }
@@ -310,6 +319,22 @@ export const AccountConsumePage = ({
       {/* 未登录 / 恢复中：给「—」，不显示一个来路不明的 0.00 */}
       <div className={styles.balanceValue}>
         {signedIn === null ? '…' : balance === undefined ? '—' : formatCurrency(balance)}
+      </div>
+      {/* 购买 / 充值：**直接进既有的购买页（BuyTab）**，整条链路（取 pay-link → App 内打开收款页 →
+          回跳 → 拉卡密）与错误文案全部复用，不在余额卡里重写第二套（#727）。
+          未登录也**不隐藏**这个入口：可以买，只是卡密要登录后才在这里看得到。 */}
+      <div className={styles.balanceActions}>
+        {signedIn === true ? null : (
+          <span className={styles.balanceHint}>{t('accountConsumeBuySignedOutHint')}</span>
+        )}
+        <Button
+          variant="outlined"
+          size="s"
+          data-testid="account-consume-buy"
+          onClick={() => onNavigate('buy')}
+        >
+          {t('accountConsumeBuyCta')}
+        </Button>
       </div>
       <button
         type="button"

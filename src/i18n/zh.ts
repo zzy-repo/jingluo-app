@@ -900,6 +900,8 @@ export const zh = {
   accountConsumeLoginMethod: '登录方式',
   accountConsumeLoginMethodEmail: '邮箱登录',
   accountConsumeSecurity: '账号与安全',
+  accountConsumeBuyCta: '购买 / 充值',
+  accountConsumeBuySignedOutHint: '登录后可在此查看卡密',
   accountConsumeSignedOutCta: '登录 / 注册',
   accountConsumeEmailUnbound: '未绑定',
   accountConsumeSignOutConfirm: '确定退出？',

@@ -905,6 +905,8 @@ export const en = {
   accountConsumeLoginMethod: 'Sign-in method',
   accountConsumeLoginMethodEmail: 'Email',
   accountConsumeSecurity: 'Account & security',
+  accountConsumeBuyCta: 'Buy / top up',
+  accountConsumeBuySignedOutHint: 'Sign in to see your cards here',
   accountConsumeSignedOutCta: 'Log in / Sign up',
   accountConsumeEmailUnbound: 'Not linked',
   accountConsumeSignOutConfirm: 'Sign out now?',

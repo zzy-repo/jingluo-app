@@ -473,6 +473,21 @@
   margin-right: 0;
 }
 
+/* 余额卡里的「购买 / 充值」行：按钮靠右下，未登录时左边一行小字说明 */
+.balanceActions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  margin-top: 12px;
+}
+
+.balanceHint {
+  margin-right: 10px;
+  color: var(--dsw-alias-label-caption);
+  font-size: 13px;
+  line-height: 18px;
+}
+
 /* 余额卡里的「我的额度」入口（额度并进余额卡，不再占一行） */
 .balanceMore {
   display: inline-flex;
