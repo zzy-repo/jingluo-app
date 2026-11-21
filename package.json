@@ -79,6 +79,7 @@
     "gen:capabilities": "node scripts/gen-capabilities-docs.mjs",
     "check:capabilities-docs": "node scripts/gen-capabilities-docs.mjs --check",
     "check:doc-refs": "node scripts/check-doc-refs.mjs",
+    "check:release-traceability": "node scripts/check-release-traceability.mjs",
     "check:ui-shots": "node scripts/check-ui-shots.mjs",
     "check:limits": "node scripts/check-limits.mjs",
     "check:log-coverage": "node scripts/check-log-coverage.mjs",
