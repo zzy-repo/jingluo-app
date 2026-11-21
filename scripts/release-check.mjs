@@ -17,6 +17,12 @@
  *   6. --manifest 给定 时：本地 versionCode 必须 > 线上 latest.versionCode（防降级 / 防 409）
  *   7. --expect-sha256 给定 时：APK 的 sha256 必须等于它（用来复核「上传后下载回来的包」）
  *
+ * **不校验的：签名证书指纹**（Issue #702）。读一个已签名 APK 的证书指纹要 apksigner（= Android SDK），
+ * 与本脚本「零依赖、任何机器都能跑」的契约冲突；而且再写一份就是给同一判据造第二个实现。
+ * 指纹判据在 keystore 侧 `pnpm run check:keystore`、产物侧 `pnpm run verify:apk`，两处都真的会在
+ * 不符时 exit 1。这里以前那行「签名证书指纹必须为 …」是拿 build.gradle 的字面量拼的，而 #271 之后
+ * 它恒为 null —— 看起来在验、实际没比过，已删除。
+ *
  * 用法：
  *   node scripts/release-check.mjs
  *   node scripts/release-check.mjs --apk android/app/build/outputs/apk/release/app-release.apk --tag v1.4.0-beta.10
@@ -42,7 +48,6 @@ import {
   ReleaseEnvError,
   buildTypeFor,
   changelogHasVersion,
-  expectedCertSha256,
   hashFile,
   inspectApk,
   log,
@@ -70,7 +75,7 @@ function usage() {
     '  -h, --help              本用法',
     '',
     '退出码: 0 通过 / 1 有 FAIL / 2 用法或环境错误',
-    '不做的事: 不构建、不联网上传、不读令牌、不写任何文件。',
+    '不做的事: 不构建、不联网上传、不读令牌、不写任何文件、**不验签名**（要 apksigner；见 pnpm run verify:apk）。',
   ].join('\n');
 }
 
@@ -195,11 +200,12 @@ async function main(argv) {
         fail(`判不出 debuggable（${apkInfo.debuggableReason}）—— 按不通过处理，不许猜着放行`);
       }
 
-      const expectedCert = expectedCertSha256(ROOT);
-      if (expectedCert) {
-        log.info(`签名证书指纹必须为 ${expectedCert}（= /root/.android/debug.keystore，换证书 = 已装用户无法覆盖升级）`);
-        log.info('本脚本不验签名（要 apksigner）：构建机上用 docs/RELEASE-MANUAL.md §4.3 的 apksigner 命令人工确认');
-      }
+      // 证书指纹**不在本脚本判**（Issue #702）。这里原来打的是「签名证书指纹必须为 <64 hex>」，
+      // 而那个值来自 release-common 读 `android/app/build.gradle` 的字面量 —— #271 之后该值只在
+      // config/appIdentity.json 里（build.gradle 改成从配置派生），读出来恒为 null，于是这行提示
+      // 时有时无、「指纹一致」这条证据从没真比过。本脚本的契约是零依赖、不需要 Android SDK
+      // （读不了已签名 APK 里的证书），所以这里只**指路、不断言**：
+      log.info('本脚本不验签名（需 apksigner）：指纹判据 = pnpm run check:keystore（keystore 侧）+ pnpm run verify:apk（APK 侧）');
     }
   }
 

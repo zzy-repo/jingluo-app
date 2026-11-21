@@ -26,7 +26,7 @@
 > 每步给命令 / 成功判据 / 失败回滚，并写清哪些步骤必须人工、哪些必须在签名机上做。
 > 脚本化部分见 §5 之前的三条命令（等价于本手册 §4/§5/§7 的自动化版本，不替代 §4 的人工核对）：
 > `pnpm run release:check`（版本号三处一致 + 产物自检）、`pnpm run release:upload`（multipart 上传，带 `--dry-run`）、
-> `pnpm run release:verify`（复核 `releases.json` 已生效 + 下载件三方 hash 一致）。
+> `pnpm run release:verify`（复核 `releases.json` 已生效 + 下载件三方 hash 一致）；**`release:check` 不验签名**（零依赖、不装 Android SDK，读不了已签名 APK 里的证书）—— 指纹判据在 `check:keystore`（keystore 侧）与 `verify:apk`（产物侧），见 §16。
 
 > 打 tag **不再触发任何 workflow**：`.github/workflows/release.yml` 已改为**手动 `workflow_dispatch`**，
 > 它只做「把已构建、已签名的 APK 挂成 Release 资产 + 校验 debuggable + 写 sha256」，
@@ -200,7 +200,7 @@ cd android && ./gradlew assembleDebug -PallowLoopbackConsume=true   # 只在「�
 
 > **先跑 §4.6 那一条命令**（`pnpm verify:apk <apk>`）：四项判据一次算完、退出码即结论。
 > 下面 4.1～4.5 是同一批判据的**手打版与交叉验证**，留着是因为「换个工具复核一遍」有独立价值
-> （aapt2 的文本输出 vs 脚本从二进制 APK 里读出来的值），但**不要再用它当唯一入口**（Issue #607）。
+> （aapt2 的文本输出 vs 脚本从二进制 APK 里读出来的值），但**不要再用它当唯一入口**（Issue #607）。**签名证书指纹（4.3 / 4.6 的第 4 项）不在 `pnpm run release:check` 里判**（Issue #702：那个自检零依赖、不装 Android SDK，读不出已签名 APK 的证书）：判据是本节 4.3 / 4.6 的 `verify:apk` 与 `pnpm run check:keystore`，期望值的唯一来源是 `config/appIdentity.json` 的 `expectedCertSha256` —— 三处的关系、以及「为什么不在 release:check 里塞一份」见 §16。
 
 ```bash
 APK=android/app/build/outputs/apk/release/app-release.apk
@@ -237,7 +237,7 @@ BT=${ANDROID_HOME:-$HOME/android-sdk}/build-tools/${BUILD_TOOLS_VERSION:?先 cp 
   必须是 `e7c5baee517ca2b2258950e934521f2fad448d00f72f2ff7297bdf4fa00aa8a1`
   （= `/root/.android/debug.keystore`；换证书会让已装用户无法覆盖升级）。
   **不符 → 停止，不得发布**：先查这次是谁签的（`ls -l /root/.android/debug.keystore` 有没有被重建、
-  有没有人改了 `signingConfigs`），修回同一证书再重构建；不要「反正能装上就发」。
+  有没有人改了 `signingConfigs`），修回同一证书再重构建；不要「反正能装上就发」。（这条只能在这里 / §4.6 / `check:keystore` / gradle 指纹闸门里判，**不要在 `release:check` 里再塞一份** —— #702，见 §16。）
 
 - [ ] **4.4 sha256 / size**
 
@@ -1569,3 +1569,29 @@ SKIP 或每天红一次（"红着红着就没人看"正是本合同类门禁的�
 - **`/opt/dl-private/releases.internal.json` 清单本体** —— 清单是唯一真相，只有发布 / 下架流程能改它；
 - **被清单引用的任何文件** —— 不许以「保留策略」的名义删（`/opt/dl-private/apk/` 的 8 个包就是这一类）；
 - **`/opt/dl-private/private/` 目录本身** —— `www-data` 属主、历史路径仍要被追溯，只删里面的文件。
+
+---
+
+## 16. 签名证书指纹：判据归谁管（Issue #702）
+
+**`pnpm run release:check` 不验签名。** 指纹由三处真判据守着，期望值只有一个来源：
+
+| 界面 | 谁判 | 不符时 |
+| --- | --- | --- |
+| 构建期（出包那一刻） | `android/app/build.gradle` 的 `EXPECTED_CERT_SHA256` 闸门（值从 `config/appIdentity.json` 派生） | `assembleRelease` 直接 `GradleException` 中止，包出不来 |
+| keystore 侧（签名材料 / 机器交接） | `pnpm run check:keystore`（`scripts/check-keystore-config.mjs`） | `exit 1`，点名期望值与实际值 |
+| 产物侧（手上这份 APK） | `pnpm run verify:apk <apk>`（`scripts/verify-release-apk.mjs`，走 `apksigner`） | `exit 1`，点名第 4 项 `cert` 不过 |
+
+**唯一的期望值来源**：`config/appIdentity.json` 的 `expectedCertSha256`（#271）。改它 = 换签名 = 签名迁移，
+必须另开单并写清已装用户的迁移方案（新包名 / 应用商店渠道 / 引导重装），**不许**为了让某次发版变绿而改。
+
+**为什么不在 `release:check` 里判（#702 的结论）**：`release:check` 的契约是**零依赖、不需要 Android SDK**
+（任何一台有 node 的机器都能跑，见 [`docs/RELEASE-CHECKLIST.md`](RELEASE-CHECKLIST.md) 的阶段 A）。要从一个
+**已签名**的 APK 里读证书指纹，只能调 `apksigner`、或自己解 APK Signing Block —— 再写一份就是给同一判据造
+**第二个实现**，正是「看起来在验、其实恒 null」这类事故的温床。所以 §4 里只指路、不断言。
+
+> **历史（别再回退）**：`scripts/release-common.mjs` 里曾有一个 `expectedCertSha256(root)`，用正则去
+> `android/app/build.gradle` 找 `EXPECTED_CERT_SHA256 = '<64 hex>'` 字面量。`#271` 把该值搬进
+> `config/appIdentity.json`（build.gradle 改成从配置派生）之后它**恒返回 `null`**，于是 `release:check` 里那句
+> 「签名证书指纹必须为 …」实际从不生效 —— 「指纹一致」这条证据**看起来在验、一次都没比过**（同一根因的另一处
+> 是 `check-keystore-config.mjs`，#697 修好）。#702 删掉了这个假读取，也不再往输出里打指纹全串。

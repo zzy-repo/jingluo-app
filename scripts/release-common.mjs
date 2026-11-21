@@ -9,6 +9,10 @@
  *   - 发布令牌的解析（**只返回来源，绝不返回、打印内容**）
  *   - APK 内元信息（versionName / versionCode / 包名 / 变体标记），零依赖解二进制 AndroidManifest
  *
+ * **故意不在这里的**：证书指纹的读取（Issue #702 删掉了 `expectedCertSha256()`）。
+ * 指纹判据只有一处真实现——keystore 侧 `pnpm run check:keystore`、产物侧 `pnpm run verify:apk`；
+ * 详见本文件下方 `expectedCertSha256` 原来的位置那段说明。
+ *
  * 设计原则：缺 key、缺文件、格式不对时**在发请求之前**就报清楚并退出 2，
  * 不允许「跑到一半失败」留下半个状态（这是 release-apk.sh 被删掉的原因，见 RELEASE.md）。
  */
@@ -285,16 +289,31 @@ export function resolveReleaseToken(opts = {}) {
  */
 export { BUILD_TYPES, BUILD_TYPE_SUFFIX_RE, buildTypeFor, isBuildType } from '../shared/build-types.mjs';
 
-/** 读 android/app/build.gradle 的 EXPECTED_CERT_SHA256（避免指纹在文档里再抄一份） */
-export function expectedCertSha256(root) {
-  const file = path.join(root, 'android', 'app', 'build.gradle');
-  try {
-    const m = /EXPECTED_CERT_SHA256\s*=\s*['"]([0-9a-fA-F]{64})['"]/.exec(fs.readFileSync(file, 'utf8'));
-    return m ? m[1].toLowerCase() : null;
-  } catch {
-    return null;
-  }
-}
+/**
+ * **这里没有 `expectedCertSha256()`**（Issue #702 删除；本文件不提供任何证书指纹读取）。
+ *
+ * 原来这里有一个 `expectedCertSha256(root)`：用正则去 `android/app/build.gradle` 找
+ * `EXPECTED_CERT_SHA256 = '<64 hex>'` 字面量。但 #271 之后那个值只在 `config/appIdentity.json`
+ * 里（build.gradle 改成从配置派生），于是它**恒返回 null** —— `release-check` 拿到 null 只打一句
+ * 提示，「指纹一致」这条证据**看起来在验、其实一次都没比过**。同一判据两个实现、一真一假，
+ * 正是 #285 那一类「第二份真相源」的形态（同一根因的另一处见 #697）。
+ *
+ * 为什么不在这里「补一个能读对的实现」：`release-check` 的契约是**零依赖、不需要 Android SDK**
+ * （`docs/RELEASE-CHECKLIST.md` 把它列成「纯离线比对，任何机器一样」），而要从一个**已签名的
+ * APK** 里读证书指纹，要么调 `apksigner`、要么自己解 APK Signing Block —— 再写一份就等于给同一
+ * 判据造第二个实现，本单恰恰在消除这种状态。所以 `release-check` 明确**不验签名**，指纹判据
+ * 留给已经真在咬的三处，各管一个界面（互不重复、没有第二份值）：
+ *
+ *   - 构建期：`android/app/build.gradle` 的 `EXPECTED_CERT_SHA256` 闸门 —— 证书不符直接
+ *     `GradleException` 中止，release 包根本出不来（期望值从 `config/appIdentity.json` 派生）；
+ *   - keystore 侧：`pnpm run check:keystore`（`scripts/check-keystore-config.mjs`）—— keytool 读出
+ *     的指纹必须等于配置里的期望值，不符 `exit 1` 并点名期望/实际（#697 修好、#702 复核）；
+ *   - 产物侧：`pnpm run verify:apk <apk>`（`scripts/verify-release-apk.mjs`）—— `apksigner` 读 APK
+ *     里的证书指纹，不符 `exit 1`。
+ *
+ * 想知道期望指纹是多少：**唯一来源是 `config/appIdentity.json`**，读它走 `./lib/appIdentity.mjs`
+ * 的 `loadAppIdentity()`（本文件上面的 `PACKAGE_NAME` 就是这么来的）。不要在别处再抄一份。
+ */
 
 /** 解析命令行：--flag value / --flag=value / --bool / 位置参数 */
 export function parseArgs(argv, { flags = [], multi = [] } = {}) {
