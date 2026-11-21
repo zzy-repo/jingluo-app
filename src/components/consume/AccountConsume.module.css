@@ -115,50 +115,57 @@
 
 /* ---------------------------------------------------------------- 卡密列表 */
 
+/* 卡片间距 12px（原型 `.card{margin:0 20px 12px}` —— 内嵌在设置里没有左右外边距，只留纵向间距） */
 .list {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 12px;
   margin: 0;
   padding: 0;
   list-style: none;
   min-width: 0;
 }
 
+/* 一张卡 = 1px 极浅描边 + 16px 内距 + 14px 圆角（原型 `.card`）。
+   内部三段之间的间距用 margin 表达（`.itemMeta` 上下各 10px），不再用 gap。 */
 .item {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 0;
   min-width: 0;
-  padding: 10px 12px;
+  padding: 16px;
   border: 1px solid var(--dsw-alias-border-l2);
-  border-radius: 10px;
+  border-radius: 14px;
 }
 
 .itemTop {
   display: flex;
   flex-wrap: wrap;
   gap: 6px 8px;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
   min-width: 0;
 }
 
+/* 卡密：只上屏 `••••` + 后 4 位；18px / 600 / 字距略宽（原型 `.card .code` 再放大一档） */
 .tail {
   font-family: var(--ds-font-family-code);
-  font-size: 15px;
-  letter-spacing: 0.04em;
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
   color: var(--dsw-alias-label-primary);
   overflow-wrap: anywhere;
 }
 
+/* 状态徽标：未兑换 = 浅灰底灰字；已兑换 = 浅绿底绿字（原型 `.badge` / `.badge.off`） */
 .chip {
   flex: 0 0 auto;
-  padding: 2px 8px;
-  border-radius: 999px;
+  padding: 3px 8px;
+  border-radius: 6px;
   background: var(--dsw-alias-interactive-bg-hover);
   color: var(--dsw-alias-label-secondary);
   font-size: 12px;
+  font-weight: 500;
   line-height: 18px;
 }
 
@@ -167,19 +174,80 @@
   color: var(--dsw-static-green-900);
 }
 
+/* 「套餐名 · 日期」：13px 次级色，上下各 10px（原型 `.card .meta{margin:10px 0}`） */
 .itemMeta {
   display: flex;
   flex-wrap: wrap;
   gap: 4px 10px;
-  font-size: 12px;
+  margin: 10px 0;
+  font-size: 13px;
   line-height: 18px;
-  color: var(--dsw-alias-label-tertiary);
+  color: var(--dsw-alias-label-secondary);
+}
+
+.itemPlan {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .itemActions {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+}
+
+/* 卡片里的两枚胶囊按钮（原型 `.btn-outline`：高 36 / 左右 16 / 圆角 999）。
+   刻意不复用 `base/Button` 的 `.outlined`：#47 把全局次按钮改成了「中性填充、无描边」，
+   而这一屏的原型**就是细描边**（`复制卡密` 描边、`去兑换` 品牌色实心），所以只在本屏内自持一套。 */
+.cardBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  height: 36px;
+  padding: 0 16px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 999px;
+  background: none;
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  font-size: 14px;
+  line-height: 20px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.cardBtn:active {
+  background-color: var(--dsw-alias-interactive-bg-hover);
+}
+
+/* #215：Chromium 83 只认 `:focus`（不写 `:focus-visible`，免得低内核上整条失效） */
+.cardBtn:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--dsw-alias-button-primary-fill);
+}
+
+.cardBtn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* 未兑换的「去兑换」：品牌色实心 */
+.cardBtnPrimary {
+  border-color: transparent;
+  background-color: var(--dsw-alias-button-primary-fill);
+  color: var(--dsw-alias-label-primary-foreground);
+  font-weight: 600;
+}
+
+.cardBtnPrimary:active:not(:disabled) {
+  background-color: var(--dsw-alias-button-primary-hover);
+}
+
+/* 已兑换的「去兑换」：disabled ghost —— 只留一圈极浅边与灰字，不抢「复制卡密」的注意力 */
+.cardBtnGhost {
+  border-color: transparent;
+  color: var(--dsw-alias-label-secondary);
 }
 
 /* ---------------------------------------------------------------- 兑换表单 */
@@ -972,12 +1040,21 @@
   line-height: 18px;
 }
 
+/* 记录行之间 / 分组之间的分隔线：整体仍是「1px 极浅」，但比页面级的 `.divider`（4% 黑）再深一档 ——
+   原型这一屏的线是 `#E5E5EA`，用 4% 在 2x 屏上几乎看不见，分组标题会像悬空。只作用于这一屏。 */
+.history .divider,
+.history .dividerFull {
+  background-color: var(--dsw-alias-border-l2);
+}
+
+/* 金额：负数带 `-`（原型 `-¥0.12`），等宽数字让一列金额的小数点对齐 */
 .recAmount {
   flex-shrink: 0;
   margin-left: 10px;
   font-size: 16px;
   font-weight: 500;
   line-height: 22px;
+  font-variant-numeric: tabular-nums;
 }
 
 /* ---------------------------------------------------------------- 空 / 错 / 加载 */
@@ -1163,11 +1240,7 @@
 }
 
 :global(html[data-flex-gap-fallback]) .list > *:not(:last-child) {
-  margin-bottom: 8px;
-}
-
-:global(html[data-flex-gap-fallback]) .item > *:not(:last-child) {
-  margin-bottom: 6px;
+  margin-bottom: 12px;
 }
 
 :global(html[data-flex-gap-fallback]) .itemTop > *:not(:last-child) {
@@ -1218,5 +1291,9 @@
 
 :global(html[data-flex-gap-fallback]) .authSegmented > *:not(:last-child) {
   margin-right: 3px;
+}
+
+:global(html[data-flex-gap-fallback]) .balanceValue > *:not(:last-child) {
+  margin-right: 12px;
 }
 /* #173-fallback:end */

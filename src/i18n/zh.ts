@@ -687,7 +687,8 @@ export const zh = {
   autoTitlePromptLanguage: '使用消息的语言。',
   autoTitlePromptLength: '目标长度：约 8–14 个中文字符（或 3–5 个英文单词）。',
   autoTitlePromptFallback: '如果消息信息量太少，也要给一个简短的最佳猜测标题（如「打招呼」），不要解释。',
-  oursPayRecordsNotRedeemed: '尚未兑换',
+  // #727「我的卡密」列表上的徽标文案照原型：`未兑换`（原来的「尚未兑换」比徽标长一格，会把卡密挤窄）
+  oursPayRecordsNotRedeemed: '未兑换',
   oursPayRecordsRedeemed: '已兑换',
   oursPayRecordsCopyCard: '复制卡密',
   oursPayRecordsCopied: '卡密已复制',

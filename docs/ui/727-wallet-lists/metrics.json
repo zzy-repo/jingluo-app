@@ -1,0 +1,254 @@
+{
+  "base": "http://100.113.135.55:8099/",
+  "viewports": {
+    "360": {
+      "cards": "360/cards.png",
+      "history": "360/history.png",
+      "overflowCount": 0
+    },
+    "390": {
+      "cards": "390/cards.png",
+      "history": "390/history.png",
+      "overflowCount": 0
+    }
+  },
+  "consoleErrors": [],
+  "overflowCount": 0,
+  "states": {
+    "390/cards": {
+      "screenshot": "390/cards.png",
+      "rowCount": 3,
+      "codes": [
+        "••••RRQY",
+        "••••A3SR",
+        "••••JP9Q"
+      ],
+      "badges": [
+        "已兑换",
+        "已兑换",
+        "未兑换"
+      ],
+      "metas": [
+        "••••RRQY 已兑换 入门包 5 元额度 2026-11-18",
+        "••••A3SR 已兑换 新人特惠 1 元额度 2026-11-18",
+        "••••JP9Q 未兑换 入门包 5 元额度 2026-11-17"
+      ],
+      "rows": [
+        "••••RRQY 已兑换 入门包 5 元额度 2026-11-18 复制卡密 去兑换",
+        "••••A3SR 已兑换 新人特惠 1 元额度 2026-11-18 复制卡密 去兑换",
+        "••••JP9Q 未兑换 入门包 5 元额度 2026-11-17 复制卡密 去兑换"
+      ],
+      "redeemDisabled": [
+        true,
+        true,
+        false
+      ],
+      "cardPadding": "16px",
+      "cardRadius": "14px",
+      "cardBorderWidth": "1px",
+      "cardBorderColor": "rgba(0, 0, 0, 0.08)",
+      "cardGap": 12,
+      "codeFontSize": "18px",
+      "codeFontWeight": "600",
+      "codeLetterSpacing": "1.44px",
+      "badgeRadius": "6px",
+      "badgeBackgroundUsed": "rgb(230, 250, 237)",
+      "badgeColorUsed": "rgb(35, 60, 44)",
+      "copyHeight": 36,
+      "copyRadius": "999px",
+      "copyBorderWidth": "1px",
+      "copyBackground": "rgba(0, 0, 0, 0)",
+      "redeemHeight": 36,
+      "redeemRadius": "999px",
+      "redeemBackground": "rgba(0, 0, 0, 0)",
+      "redeemOpacity": "0.45",
+      "copied": [
+        "K7M4-2VQD-9XTB-RRQY"
+      ],
+      "viewportWidth": 390,
+      "documentScrollWidth": 390,
+      "overflowCount": 0,
+      "overflowSamples": [],
+      "consoleErrors": []
+    },
+    "390/history": {
+      "screenshot": "390/history.png",
+      "rowCount": 5,
+      "groups": [
+        "今天",
+        "昨天",
+        "11月19日"
+      ],
+      "groupFontSize": "13px",
+      "groupColor": "rgb(97, 102, 107)",
+      "rows": [
+        "模型调用 14:32 -¥0.12",
+        "模型调用 11:08 -¥0.20",
+        "模型调用 21:08 -¥0.36",
+        "模型调用 09:41 -¥0.05",
+        "模型调用 09:15 -¥0.08"
+      ],
+      "names": [
+        "模型调用 14:32",
+        "模型调用 11:08",
+        "模型调用 21:08",
+        "模型调用 09:41",
+        "模型调用 09:15"
+      ],
+      "times": [
+        "14:32",
+        "11:08",
+        "21:08",
+        "09:41",
+        "09:15"
+      ],
+      "amounts": [
+        "-¥0.12",
+        "-¥0.20",
+        "-¥0.36",
+        "-¥0.05",
+        "-¥0.08"
+      ],
+      "amountFontSize": "16px",
+      "amountFontWeight": "500",
+      "amountFontVariantNumeric": "tabular-nums",
+      "rowPadding": "13px 20px",
+      "rowBorderWidth": "0px",
+      "emptyState": false,
+      "viewportWidth": 390,
+      "documentScrollWidth": 390,
+      "overflowCount": 0,
+      "overflowSamples": [],
+      "consoleErrors": []
+    },
+    "360/cards": {
+      "screenshot": "360/cards.png",
+      "rowCount": 3,
+      "codes": [
+        "••••RRQY",
+        "••••A3SR",
+        "••••JP9Q"
+      ],
+      "badges": [
+        "已兑换",
+        "已兑换",
+        "未兑换"
+      ],
+      "metas": [
+        "••••RRQY 已兑换 入门包 5 元额度 2026-11-18",
+        "••••A3SR 已兑换 新人特惠 1 元额度 2026-11-18",
+        "••••JP9Q 未兑换 入门包 5 元额度 2026-11-17"
+      ],
+      "rows": [
+        "••••RRQY 已兑换 入门包 5 元额度 2026-11-18 复制卡密 去兑换",
+        "••••A3SR 已兑换 新人特惠 1 元额度 2026-11-18 复制卡密 去兑换",
+        "••••JP9Q 未兑换 入门包 5 元额度 2026-11-17 复制卡密 去兑换"
+      ],
+      "redeemDisabled": [
+        true,
+        true,
+        false
+      ],
+      "cardPadding": "16px",
+      "cardRadius": "14px",
+      "cardBorderWidth": "1px",
+      "cardBorderColor": "rgba(0, 0, 0, 0.08)",
+      "cardGap": 12,
+      "codeFontSize": "18px",
+      "codeFontWeight": "600",
+      "codeLetterSpacing": "1.44px",
+      "badgeRadius": "6px",
+      "badgeBackgroundUsed": "rgb(230, 250, 237)",
+      "badgeColorUsed": "rgb(35, 60, 44)",
+      "copyHeight": 36,
+      "copyRadius": "999px",
+      "copyBorderWidth": "1px",
+      "copyBackground": "rgba(0, 0, 0, 0)",
+      "redeemHeight": 36,
+      "redeemRadius": "999px",
+      "redeemBackground": "rgba(0, 0, 0, 0)",
+      "redeemOpacity": "0.45",
+      "copied": [
+        "K7M4-2VQD-9XTB-RRQY"
+      ],
+      "viewportWidth": 360,
+      "documentScrollWidth": 360,
+      "overflowCount": 0,
+      "overflowSamples": [],
+      "consoleErrors": []
+    },
+    "360/history": {
+      "screenshot": "360/history.png",
+      "rowCount": 5,
+      "groups": [
+        "今天",
+        "昨天",
+        "11月19日"
+      ],
+      "groupFontSize": "13px",
+      "groupColor": "rgb(97, 102, 107)",
+      "rows": [
+        "模型调用 14:32 -¥0.12",
+        "模型调用 11:08 -¥0.20",
+        "模型调用 21:08 -¥0.36",
+        "模型调用 09:41 -¥0.05",
+        "模型调用 09:15 -¥0.08"
+      ],
+      "names": [
+        "模型调用 14:32",
+        "模型调用 11:08",
+        "模型调用 21:08",
+        "模型调用 09:41",
+        "模型调用 09:15"
+      ],
+      "times": [
+        "14:32",
+        "11:08",
+        "21:08",
+        "09:41",
+        "09:15"
+      ],
+      "amounts": [
+        "-¥0.12",
+        "-¥0.20",
+        "-¥0.36",
+        "-¥0.05",
+        "-¥0.08"
+      ],
+      "amountFontSize": "16px",
+      "amountFontWeight": "500",
+      "amountFontVariantNumeric": "tabular-nums",
+      "rowPadding": "13px 20px",
+      "rowBorderWidth": "0px",
+      "emptyState": false,
+      "viewportWidth": 360,
+      "documentScrollWidth": 360,
+      "overflowCount": 0,
+      "overflowSamples": [],
+      "consoleErrors": []
+    }
+  },
+  "asserts": {
+    "cards": [
+      "••••RRQY",
+      "••••A3SR",
+      "••••JP9Q"
+    ],
+    "amountsRegex": "/^-¥\\d+\\.\\d{2}$/",
+    "groups": [
+      "今天",
+      "昨天",
+      "M月D日"
+    ],
+    "copyIsFullCard": true,
+    "overflowCount": 0,
+    "consoleErrors": []
+  },
+  "proto": {
+    "path": "../未分组/wt-727/proto/服务Tab.html",
+    "compare": [
+      "compare-cards-390.png",
+      "compare-history-390.png"
+    ]
+  }
+}

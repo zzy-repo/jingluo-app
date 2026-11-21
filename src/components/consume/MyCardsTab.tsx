@@ -25,7 +25,18 @@
  *
  * 安全：卡密全文只在内存里交给剪贴板，**不进 DOM 文本、不进日志、不进 localStorage**；
  * 列表只渲染后 4 位（`maskCardNo`，与 `mask.ts` 同一口径）。
+ *
+ * 版式（#727 阶段 3，照原型 `服务Tab.html` 的 `screenCards()`）：一张卡 = 1px 极浅描边 + 16px 内距 +
+ * 14px 圆角的盒子；首行「`••••` + 后 4 位（18px/600）」+ 右端状态徽标（已兑换=浅绿底绿字 /
+ * 未兑换=浅灰底灰字）；次行「套餐名 · 日期」（13px 次级色）；末行两枚 36px 胶囊按钮
+ * （`复制卡密` 描边 / `去兑换` 品牌色实心，已兑换那张是禁用态）。卡片之间 12px。
+ *
+ * 演示数据（#727）：**只 dev 构建**、且「URL 带 `?mock=1` 或未登录（没有 API Key）」时，
+ * 列表换成 `__mock__/walletDemo.ts` 里的三张卡 —— 维护者在 8099 上不用真买卡就能看版式。
+ * 生产构建里那句 `process.env.NODE_ENV` 被折成常量 → 分支是死的 → 动态 `import()` 连 chunk 都不产出
+ * （判据：`pnpm build` 后 `grep -r "RRQY" dist/` 0 命中）。
  */
+import clsx from 'clsx'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslate, type TranslationKey } from '../../i18n/index.js'
 import { useApiConfig } from '../../services/api/apiConfig.js'
@@ -80,6 +91,13 @@ const cardIsUsed = (order: PurchaseOrder): boolean =>
 
 const orderDate = (createdAt: number): string => formatDate(createdAt * 1000) ?? ''
 
+/**
+ * 演示数据开关的**运行时那一半**：URL 带 `?mock=1` 时无论登录与否都用 mock（截图 / 联调要能定格）。
+ * 「dev 构建」那一半只在调用点写成 `process.env.NODE_ENV !== 'production'` —— 必须留在 `if` 里、
+ * 且与 `import()` 同一个分支，否则生产构建摇不掉 mock 模块。
+ */
+const hasMockParam = (): boolean => new URLSearchParams(window.location.search).get('mock') === '1'
+
 export type MyCardsTabProps = {
   consume: ConsumeClient
   /** 空态的「前往购买」：切到 Tab 2 */
@@ -114,6 +132,16 @@ export const MyCardsTab = ({ consume, onGoBuy, onNeedLogin, hideListTitle = fals
   }, [])
 
   const loadOrders = useCallback(async () => {
+    if (process.env.NODE_ENV !== 'production') {
+      // 演示数据（#727）：dev 构建 +（`?mock=1` 或 未登录 = 没有 API Key）。生产构建这段是死的。
+      if (apiKey === '' || hasMockParam()) {
+        const { DEMO_CARDS } = await import('./__mock__/walletDemo.js')
+        if (aliveRef.current) {
+          setView({ status: 'ready', orders: DEMO_CARDS })
+        }
+        return
+      }
+    }
     if (apiKey === '') {
       setView({ status: 'error', messageKey: 'oursPurchasesErrKeyMissing', retryable: false })
       return
@@ -279,43 +307,53 @@ export const MyCardsTab = ({ consume, onGoBuy, onNeedLogin, hideListTitle = fals
         {cards.length > 0 ? (
           <>
             <ul className={styles.list}>
-              {cards.map((order) => (
-                <li key={order.outTradeNo} className={styles.item} data-testid="account-consume-card-row">
-                  <div className={styles.itemTop}>
-                    <span className={styles.tail}>{maskCardNo(order.cardNo)}</span>
-                    <span className={cardIsUsed(order) ? `${styles.chip} ${styles.chipUsed}` : styles.chip}>
-                      {t(cardIsUsed(order) ? 'oursPayRecordsRedeemed' : 'oursPayRecordsNotRedeemed')}
-                    </span>
-                  </div>
-                  <div className={styles.itemMeta}>
-                    <span>{order.planName}</span>
-                    <span>{orderDate(order.createdAt)}</span>
-                  </div>
-                  <div className={styles.itemActions}>
-                    <Button
-                      variant="outlined"
-                      size="m"
-                      data-testid="account-consume-card-copy"
-                      onClick={() => void copyCard(order.cardNo ?? '')}
-                    >
-                      {t('oursPayRecordsCopyCard')}
-                    </Button>
-                    <Button
-                      variant="outlined"
-                      size="m"
-                      disabled={busy || cardIsUsed(order)}
-                      onClick={() => {
-                        // 「去兑换」只把卡密填进上面的输入框：兑换是写操作，必须由用户自己点提交
-                        const full = order.cardNo ?? ''
-                        setCode(full)
-                        setRedeem({ status: 'idle' })
-                      }}
-                    >
-                      {t('oursPurchasesGoRedeem')}
-                    </Button>
-                  </div>
-                </li>
-              ))}
+              {cards.map((order) => {
+                const used = cardIsUsed(order)
+                return (
+                  <li key={order.outTradeNo} className={styles.item} data-testid="account-consume-card-row">
+                    <div className={styles.itemTop}>
+                      {/* 上屏只有后 4 位；完整卡号只交给剪贴板（见 copyCard） */}
+                      <span className={styles.tail} data-testid="account-consume-card-code">
+                        {maskCardNo(order.cardNo)}
+                      </span>
+                      <span
+                        className={clsx(styles.chip, used && styles.chipUsed)}
+                        data-testid="account-consume-card-badge"
+                      >
+                        {t(used ? 'oursPayRecordsRedeemed' : 'oursPayRecordsNotRedeemed')}
+                      </span>
+                    </div>
+                    <div className={styles.itemMeta}>
+                      <span className={styles.itemPlan}>{order.planName}</span>
+                      <span className={styles.itemDate}>{orderDate(order.createdAt)}</span>
+                    </div>
+                    <div className={styles.itemActions}>
+                      <button
+                        type="button"
+                        className={styles.cardBtn}
+                        data-testid="account-consume-card-copy"
+                        onClick={() => void copyCard(order.cardNo ?? '')}
+                      >
+                        {t('oursPayRecordsCopyCard')}
+                      </button>
+                      <button
+                        type="button"
+                        className={clsx(styles.cardBtn, used ? styles.cardBtnGhost : styles.cardBtnPrimary)}
+                        data-testid="account-consume-card-redeem"
+                        disabled={busy || used}
+                        onClick={() => {
+                          // 「去兑换」只把卡密填进上面的输入框：兑换是写操作，必须由用户自己点提交
+                          const full = order.cardNo ?? ''
+                          setCode(full)
+                          setRedeem({ status: 'idle' })
+                        }}
+                      >
+                        {t('oursPurchasesGoRedeem')}
+                      </button>
+                    </div>
+                  </li>
+                )
+              })}
             </ul>
           </>
         ) : null}
