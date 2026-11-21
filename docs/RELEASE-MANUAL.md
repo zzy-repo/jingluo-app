@@ -924,14 +924,19 @@ cd android && ./gradlew assembleRelease -PartifactVariant=internal
 `buildConfigField`；**AGP 8 默认关闭 `buildConfig` 特性，必须显式 `buildFeatures { buildConfig true }`**，
 否则这个常量根本不存在，表现为编译期 `cannot find symbol`）。
 
-### ③ 灰度验证：`-PconsumeBase` 临时覆盖，不动配置文件
+### ③ 灰度验证：`CONSUME_BASE_OVERRIDE` 临时覆盖，不动配置文件
 
 ```bash
-cd android && ./gradlew assembleRelease -PartifactVariant=internal \
-  -PconsumeBase=https://<new-host>
+CONSUME_BASE_OVERRIDE=https://<new-host> pnpm build:internal   # 日志必须打印 consume=… (override by CONSUME_BASE_OVERRIDE)
+npx cap sync android                                          # 覆盖值随 dist/ 一起同步进原生工程
+cd android && ./gradlew assembleRelease -PartifactVariant=internal
 ```
 
-覆盖只在这次打包生效，**不落盘、不进仓库**。装这台内测包，按下面五条链路验（顺序即依赖顺序）：
+覆盖只在这次构建生效，**不落盘、不进仓库**。⚠️ **不要用 `-PconsumeBase` 做灰度**：它只写原生侧
+`BuildConfig`，改不到 web 层（真正发请求的那一层），现在会被 gradle 交叉核对直接拦住 ——
+原因与唯一正确路径见下面的「换消费后端地址」小节（#651）。
+
+装这台内测包，按下面五条链路验（顺序即依赖顺序）：
 
 1. `GET /api/v1/settings/public` —— 启动就有结果（注册/邀请/邮箱入口按开关显隐）。
 2. `POST /api/v1/auth/login` → `GET /api/v1/auth/me`；把 access token 手动过期，验 `POST /api/v1/auth/refresh` 能续上。
@@ -964,9 +969,54 @@ cd android && ./gradlew assembleRelease -PartifactVariant=internal
 已发出去的包回滚不了 —— 回滚的实质是「让**旧 host 继续可达**」：sub2api 只要还在旧地址上服务，
 老包的登录/额度/兑换就都还能用。**换 host 不要先拆旧入口**，等新版本覆盖率够了再下线。
 
+### 换消费后端地址：唯一正确路径是 `CONSUME_BASE_OVERRIDE` + 重新 `pnpm build` + `cap sync`（#651）
+
+**先给结论**：换消费后端地址只有一条路 —— 构建期环境变量覆盖 + 重新构建 web 产物 + 同步进原生工程：
+
+```bash
+CONSUME_BASE_OVERRIDE=https://<new-host> pnpm build:internal   # 构建日志打印 consume=<base> (override by CONSUME_BASE_OVERRIDE)
+npx cap sync android                                          # dist/ → android/app/src/main/assets/public/
+cd android && ./gradlew assembleRelease -PartifactVariant=internal
+```
+
+`PAY_BASE_OVERRIDE` 同法作用于支付侧（apia）。长期地址仍应写进 `config/endpoints.json`（唯一事实来源），
+覆盖通道是**灰度 / 临时验证**用的。
+
+| 通道 | 实际改到哪一层 | 能用吗 |
+| --- | --- | --- |
+| `config/endpoints.json` 的 `consume.baseUrl` | web 层 `__ENDPOINTS__` + 原生 `BuildConfig`（同一次构建注入） | ✅ 唯一事实来源 |
+| `CONSUME_BASE_OVERRIDE=https://…`（构建期环境变量） | 同上，**优先级更高**（覆盖配置值）；判据与配置同一套（https / 回环例外 / 废弃域黑名单 / consume≠pay） | ✅ 临时 / 灰度用它 |
+| `-PconsumeBase=https://…`（gradle 属性） | **只** `BuildConfig.CONSUME_BASE`；没有任何 Java/Kotlin 读它 | ❌ 改不到 web 层，会被 gradle 拦住 |
+
+**`-PconsumeBase` 为什么不能用来「临时换地址」**：真正发请求的是 web 层 `__ENDPOINTS__.consume.baseUrl`，
+它在 `pnpm build` 时就内联进 `dist/static/js/main.*.js` 了；`-PconsumeBase` 只写原生侧常量。
+实测（#651）：把这类 override 设成旧池域端口后出包，APK 里该端口命中 **0**、生产域名命中 **1** ——
+即「看起来改了、实际仍打生产」，与 #601 同形，**比直接报错危险得多**。
+
+现在这条假通道不再静默：只要传了 `-PconsumeBase` / `-PpayBase`，gradle 就与 web 产物自述
+（产物根下的 `build-info.json` 里新增的 `endpoints.consume.baseUrl` —— 它由 `pnpm build` 写入、
+`cap sync` 拷进原生工程的 assets/public 目录）交叉核对，**不一致或读不到直接 `BUILD FAILED`**，
+报错里点名上面那条正确路径：
+
+```text
+-PconsumeBase 只影响原生侧 BuildConfig，不会改 web 层（web 层在 pnpm build 时就注入了）。
+当前 APK 的 web 层仍会打 <实际值>。
+要用覆盖值出包：CONSUME_BASE_OVERRIDE=<值> pnpm build:internal && npx cap sync android 之后再 assembleRelease
+```
+
+**换完必须验**（判据与 §14 ④ 同一套，把 `$NEW` 换成覆盖值）：
+
+```bash
+NEW=https://<new-host>
+grep -lF "$NEW" dist/static/js/*.js                                        # 命中 = web 层注入生效
+grep -lF "$NEW" android/app/src/main/assets/public/static/js/*.js          # 命中 = 已 cap sync 进原生工程
+node -e 'console.log(require("./dist/build-info.json").endpoints)'         # 自述文件里记的就是生效值
+```
+
 ### 未测边界（如实记录）
 
-- `-PconsumeBase` 覆盖通道**没有在真实 tag 上跑过**（只在本地 `assembleRelease` 验配置读取与 `BuildConfig` 生成）。
+- `CONSUME_BASE_OVERRIDE` / `-PconsumeBase` 两条通道都**没有在真实 tag 上跑过**（只在本地
+  `pnpm build:internal` + `assembleRelease` 验了注入、校验与拦截，见 #651 的验证记录）。
 - sub2api 的真实 host 至今**未定**（#484 待维护者提供）：本节在新 host 落地前只能验「地址换了」，
   不能验「链路通了」。别把前者写成后者。
 - CORS 是否放行 `https://localhost` 属**部署侧动作**，客户端只能通过「灰度第 3 条」间接观察。

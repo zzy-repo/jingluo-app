@@ -99,7 +99,12 @@
 2. 改之后：`pnpm check:endpoints` + `pnpm check:ip`（两者都会读这份 JSON）→ 重新打包。
 3. **构建期 fail-fast**：base 必须是 `https`；不得命中废弃域黑名单（`140.210.13.146`、`:60013`、旧池域）；
    `consume.baseUrl ≠ pay.baseUrl`；缺字段 / 空值 / 未知键直接中止构建并点名键名与文件行号。
-4. 灰度：`-PconsumeBase=<host>` 只在打包时临时覆盖，**不落盘**（不进 `config/endpoints.json`）。
+4. 灰度 / 临时换地址：**构建期环境变量** `CONSUME_BASE_OVERRIDE=<base>`（支付侧 `PAY_BASE_OVERRIDE`），
+   优先级高于这份 JSON、**不落盘**；判据与配置文件**同一套**（https / 回环例外 / 废弃域黑名单 / consume≠pay）。
+   然后必须重新 `pnpm build` + `npx cap sync android` —— 地址是在 `pnpm build` 时注入 web 层的。
+   ⚠️ **不要用 `-PconsumeBase`**：它只写原生侧 `BuildConfig.CONSUME_BASE`，没有任何 Java/Kotlin 读它，
+   web 层照旧打配置里的地址（#651 实测到的「看起来改了、实际仍打生产」）；现在 gradle 会拿
+   `assets/public/build-info.json` 里的 `endpoints.consume.baseUrl` 交叉核对，不一致直接 `BUILD FAILED`。
    换 host 的完整步骤（改一行 → 重打包 → 灰度验证 → 回滚）见
    [`docs/RELEASE-MANUAL.md`](../docs/RELEASE-MANUAL.md)「换 sub2api host」。
 
