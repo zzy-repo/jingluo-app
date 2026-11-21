@@ -445,6 +445,18 @@ const REGISTRY = {
     what: 'CI 造一对仅大小写不同的模块（src/__GateCaseProbe.ts / src/__gatecaseprobe.ts）→ 必 exit 1，删掉后 exit 0',
     mention: /check-case-collision\.mjs/,
   },
+  // 行尾门禁（#533 最后一块）：对照写在 ci.yml 里现场注入 —— 造一个 CRLF 的 .mjs
+  // （`git add -N` 进索引，因为门禁只认 `git ls-files`）→ 必须 exit 1 且点到「文件:首处行号」，
+  // 删掉 → exit 0。和 check:case-collision 同款：塞的正是脚本自己扫的文件清单，放 ci.yml 里 ≈0.3s。
+  // 为什么不做成 L0 注入：CRLF 是**工作区内容的属性**，要在真仓库里造一份 CRLF 文件再让脚本去扫，
+  // 和 check:doc-refs / check:db-version 一样属于「现场塞坏输入」；脚本另有 `--selftest`
+  // （临时仓库里 CRLF 文本必红、`*.bat` 与二进制必豁免、`--fix` 归一且保留 BOM）。
+  'check:eol': {
+    where: '.github/workflows/ci.yml',
+    kind: 'ci',
+    what: 'CI 造一个 CRLF 的 src/__gateEolProbe.mjs（git add -N 进索引）→ 必 exit 1 且点到 probe:1，删掉后 exit 0',
+    mention: /check-eol\.mjs/,
+  },
   // webroot 卫生门禁（#609 新建，裁决 #614 决定 3 的 P0 项）：对照写在 ci.yml 里现场注入 ——
   // 在 $RUNNER_TEMP 造一个干净 webroot（exit 0），再按 R1/R2/R3 各注入一类脏东西
   // （取证残留 `releases.json.LEAKED-*` / webroot 内的 `private/` / `apk/` 下的 internal 包）→

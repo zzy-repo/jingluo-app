@@ -55,6 +55,41 @@ jobs:
       - name: 仓库卫生（check:hygiene）
         run: pnpm run check:hygiene
 
+      # 行尾门禁（#533）：仓库里的文本文件一律 LF（`.gitattributes` 的 `* text=auto eol=lf`）。
+      # #533 的起点：#323 的 30 个改动文件里 27 个只有行尾不同，「17 个真实冲突」被 CRLF 噪音放大成
+      # 「19 个文件 21 个 hunk」，review 看不出真实改动、git blame 失效。只加 .gitattributes 不够：
+      # `eol=lf` 只在 checkin 时归一，**不会**把已在索引里的 CRLF blob 在 checkout 时转成 LF，
+      # 于是历史 CRLF 会一直躺着（本单第二个 commit 已按索引重写存量）。
+      # 豁免按约定走 `.gitattributes`：`*.bat` / `*.cmd` 是 `-text`（cmd.exe 解析 label/goto 的坑，
+      # 见 android/gradlew.bat），二进制是 `binary` 行 —— 门禁**从 .gitattributes 读**豁免口径，
+      # 不在这里另抄一份。同样是纯文本扫描（`git ls-files --cached --others --exclude-standard`
+      # + 逐文件找首个 CRLF，实测 ~0.4s）。扫未跟踪未忽略的文件是有意的：`printf 'x\r\n' > src/x.mjs`
+      # 这种「刚造出来、还没 add」的探针，正是噪音进仓库前的最后一秒。
+      - name: 行尾（check:eol）
+        run: pnpm run check:eol
+
+      # 负向对照（同 check:case-collision / check:db-version 的写法，**无** continue-on-error）：
+      # 造一个 CRLF 的 .mjs → 门禁必须 exit 1 且点到「文件:首处 CRLF 行号」→ 删掉 → 必须 exit 0。
+      # 探针**故意不 add**（模拟最常见的破法：编辑器把行尾存成 CRLF 就提交了）。
+      # 清理放 trap：任何一拍失败都不把探针留在仓库里（假红比不测更糟）。
+      - name: 负向对照：造一个 CRLF 的 .mjs 必须被 check:eol 拦下
+        run: |
+          set -euo pipefail
+          probe=src/__gateEolProbe.mjs
+          trap 'rm -f "$probe"' EXIT
+          printf 'export const a = 1\r\nexport const b = 2\r\n' > "$probe"
+          if out="$(node scripts/check-eol.mjs 2>&1)"; then
+            echo "$out"
+            echo "::error::负向对照失败：造了 CRLF 的 .mjs 后 check:eol 仍然通过，说明门禁没有真正生效"
+            exit 1
+          fi
+          echo "$out"
+          # 红必须点到「注入的那个文件 + 首处 CRLF 的行号」，否则可能红在别处（比如扫描范围被改宽）
+          echo "$out" | grep -q "${probe}:1: " || { echo "::error::门禁红了但没点到 ${probe}:1（判据没咬住，报错点不对）"; exit 1; }
+          rm -f "$probe"
+          node scripts/check-eol.mjs
+          echo "负向对照通过：CRLF 的 .mjs → exit 1 且点到 文件:行号，删掉 → exit 0"
+
       - name: 重复实现（check:dup-impl）
         run: pnpm run check:dup-impl
 

@@ -106,6 +106,46 @@ timeout 60 env https_proxy=http://127.0.0.1:7897 git ls-remote --heads origin <b
 磁盘卫生（清 `node_modules` 不删 worktree）见
 [`docs/RELEASE-MANUAL.md`](docs/RELEASE-MANUAL.md) 第 10 节第 6 条。
 
+## 行尾（EOL）：提交前必须 LF
+
+`.gitattributes` 定的是 `* text=auto eol=lf` —— **仓库里 git 跟踪的文本文件一律 LF**，
+所以在提交前把编辑器 / IDE 的行尾设成 LF，别提交 CRLF。
+
+为什么这条是硬规矩（#533）：行尾噪音会**假性放大**冲突。#323 的 30 个改动文件里 27 个
+只有行尾不同，`+8126/−7757` 里一大半不是真实改动，于是「17 个真实冲突」变成
+「19 个文件 21 个 hunk」；review 看不清改了什么，`git blame` 也失效。
+
+**Windows 贡献者必看**：把 `core.autocrlf` 设成 `false`（或 `input`），**不要用 `true`**：
+
+```bash
+git config core.autocrlf false    # 推荐：工作区与索引都是 LF
+# 或者
+git config core.autocrlf input    # checkout 不动、checkin 归一为 LF（次选）
+```
+
+`core.autocrlf=true` 会在 checkout 时把 LF 写成 CRLF，于是你本地每个文件都是脏的，
+提交上去又和 Linux/macOS 的人互相打架 —— 这正是 #323 那 27 个文件的来源。
+
+**门禁**（CI 的 checks job 里有这一步，摘不掉）：
+
+```bash
+pnpm run check:eol                     # 有违规 → 打印 文件:首个 CRLF 行号 并 exit 1
+node scripts/check-eol.mjs --fix       # 把违规文本文件原地归一为 LF（只改行尾，保留 BOM 与其余字节）
+node scripts/check-eol.mjs --selftest  # 脚本自带反例：CRLF 文本必红、.bat 与二进制必豁免
+```
+
+**为什么 `*.bat`（`android/gradlew.bat`）豁免 CRLF**：`.gitattributes` 里写的是
+`*.bat -text !eol`，也就是「这类文件不做行尾转换」，工作区与索引里都保留 CRLF。
+原因是 cmd.exe 解析批处理里的 `label` / `goto` 在 LF-only 下有坑（`goto :eof` 这类写法
+会读错行）。同理 `*.cmd`。它们不是「检查漏了」，是**按约定不转** —— 门禁从
+`.gitattributes` 读豁免口径，改 `.gitattributes` 就等于改门禁。
+
+二进制（apk / aab / zip / jar / keystore / png / jpg / bcmap …）同样不判行尾，
+名单来自 `.gitattributes` 的 `binary` 行（新增二进制类型请加在那里，不要在脚本里加）。
+
+**归一行尾的提交必须单独一次**（只改行尾、不改内容），这样以后追历史可以用
+`git blame --ignore-rev <那个 commit>` 直接跳过噪音。存量归一就是这么做的（#533 第二个 commit）。
+
 ## 禁止
 
 - 提交真实 API Key、管理 Token、签名下载链接

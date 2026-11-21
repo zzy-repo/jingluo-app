@@ -8,6 +8,10 @@
 # 规则：除下面明确豁免的路径外，仓库内文本一律 LF —— 提交进 index 时归一为
 # LF，检出到工作区也写 LF，macOS / Linux / Windows / CI 行为一致。
 # Windows 贡献者请设 `git config core.autocrlf false`（或 input），不要用 true。
+#
+# 门禁：`pnpm run check:eol`（scripts/check-eol.mjs）**从本文件读豁免口径** ——
+# 下面写 `binary` 或 `-text` 的扩展名，门禁就不判它们的行尾；改这里 = 改门禁，
+# 不要再往脚本里抄一份名单。
 # ───────────────────────────────────────────────────────────────────────────
 * text=auto eol=lf
 
@@ -42,3 +46,7 @@
 *.xlsx     binary
 *.mp4      binary
 *.webm     binary
+
+# pdf.js 的 CMap 数据（中文 / 日文等 CID 字体映射），由上游工具生成，不手工编辑。
+# #533 正文点名的豁免项之一：里面本来就有 0d 0a 字节，当文本判行尾只会制造假红。
+*.bcmap    binary
