@@ -964,6 +964,12 @@ export const en = {
   consumeRedeemFailed: 'Redemption failed, try again later',
   consumeRedeemCodeUsed: 'This card key was already used',
   consumeRedeemCodeInvalid: 'Invalid card key',
+  // Auto-redeem right after returning from the payment page (#784)
+  walletAutoRedeemNeedSignIn: 'Sign in and the card key is credited automatically',
+  walletAutoRedeemCredited: 'Credited automatically: {amount}',
+  walletAutoRedeemMasked: 'This card key is masked, so it cannot be redeemed automatically; enter the full key manually',
+  walletAutoRedeemFailed: 'Automatic redemption did not complete',
+  walletAutoRedeemDismiss: 'Got it',
 
   // Invites (sub2api aff; the invitation code can only be set once, at sign-up)
   inviteTitle: 'My invites',

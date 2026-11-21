@@ -958,6 +958,12 @@ export const zh = {
   consumeRedeemFailed: '兑换失败，请稍后重试',
   consumeRedeemCodeUsed: '卡密已使用',
   consumeRedeemCodeInvalid: '卡密无效',
+  // 付款回来后的**自动**兑现（#784）：只在收款页关闭那一下发生，不重试、不自动兑打码卡
+  walletAutoRedeemNeedSignIn: '登录后卡密会自动到账',
+  walletAutoRedeemCredited: '已自动到账 {amount}',
+  walletAutoRedeemMasked: '这张卡密是打码的，无法自动兑换，请手动输入完整卡密',
+  walletAutoRedeemFailed: '自动兑换未完成',
+  walletAutoRedeemDismiss: '知道了',
 
   // 邀请（sub2api aff；邀请关系只能在注册时一次填定）
   inviteTitle: '我的邀请',

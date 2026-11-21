@@ -35,6 +35,7 @@ import { fetchPurchases, maskCardNo, PurchaseError } from '../../services/ours/p
 import type { PurchaseOrder } from '../../services/ours/purchases.js'
 import { copyText } from '../../utils/clipboard.js'
 import { afterRedeemed } from './myCardsModel.js'
+import type { WalletAutoRedeemOutcome } from './walletAutoRedeem.js'
 import { formatCurrency } from './panels.js'
 import { formatDate } from '../../utils/format.js'
 import { Button } from '../base/Button.js'
@@ -94,9 +95,26 @@ export type MyCardsTabProps = {
    * （截图脚本 / 面板联调）时不传，行为一字不变。
    */
   hideListTitle?: boolean
+  /**
+   * #784：「付款回来」那一次自动兑现的结局（由 `AccountConsumePage` 持有，只在
+   * `openPayLinkInApp(onClosed)` 之后才会被赋值）。`null` / 不传 = 这次没有自动兑现过。
+   *
+   * 为什么由外层传：自动兑现发生在收款页关闭那一刻，本组件当时可能还没挂载；
+   * 结果必须比组件活得久一点，否则「已自动到账」这句提示会随着 tab 切换而消失。
+   */
+  autoRedeem?: WalletAutoRedeemOutcome | null
+  /** 关掉自动兑现的提示卡片（用户看过了） */
+  onDismissAutoRedeem?: () => void
 }
 
-export const MyCardsTab = ({ consume, onGoBuy, onNeedLogin, hideListTitle = false }: MyCardsTabProps) => {
+export const MyCardsTab = ({
+  consume,
+  onGoBuy,
+  onNeedLogin,
+  hideListTitle = false,
+  autoRedeem = null,
+  onDismissAutoRedeem,
+}: MyCardsTabProps) => {
   const t = useTranslate()
   const apiKey = useApiConfig((state) => state.apiKey)
   const [view, setView] = useState<CardsView>({ status: 'loading' })
@@ -105,6 +123,8 @@ export const MyCardsTab = ({ consume, onGoBuy, onNeedLogin, hideListTitle = fals
   // 乐观锁：兑换请求在飞的时候不许再发一次（两次点击会产生第二个 POST，而它没有幂等键）
   const busyRef = useRef(false)
   const aliveRef = useRef(true)
+  /** 「去兑换」（自动兑现失败 / 打码卡的唯一出口）：只把焦点送到下面那个输入框，**绝不代替用户提交** */
+  const codeInputRef = useRef<HTMLInputElement | null>(null)
 
   useEffect(() => {
     aliveRef.current = true
@@ -208,6 +228,19 @@ export const MyCardsTab = ({ consume, onGoBuy, onNeedLogin, hideListTitle = fals
 
   return (
     <div className={styles.body} data-testid="account-consume-cards">
+      {/* #784：付款回来那一次的自动兑现结论（到账 / 处理中 / 失败 / 打码卡）。
+          卡片放在兑换表单**上面**：用户从收款页回来第一眼要看的是「钱到没到」，
+          而不是先看到输入框以为还要自己输一遍。 */}
+      {autoRedeem === null ? null : (
+        <AutoRedeemNotice
+          outcome={autoRedeem}
+          onManual={() => {
+            setRedeem({ status: 'idle' })
+            codeInputRef.current?.focus()
+          }}
+          onDismiss={onDismissAutoRedeem}
+        />
+      )}
       <section className={styles.section}>
         <h3 className={styles.sectionTitle}>{t('consumeRedeemTitle')}</h3>
         <form
@@ -223,6 +256,7 @@ export const MyCardsTab = ({ consume, onGoBuy, onNeedLogin, hideListTitle = fals
             placeholder={t('consumeRedeemPlaceholder')}
             aria-label={t('consumeRedeemTitle')}
             data-testid="account-consume-redeem-input"
+            ref={codeInputRef}
             autoComplete="off"
             autoCapitalize="characters"
             spellCheck={false}
@@ -392,6 +426,92 @@ const RedeemFeedback = ({
           </Button>
         </div>
       ) : null}
+    </div>
+  )
+}
+
+/**
+ * 「付款回来」那次自动兑现的提示卡片（#784）。
+ *
+ * 四态各一句话，**没有第三句话**：
+ *
+ * | 结局 | 卡片 | 动作 |
+ * | --- | --- | --- |
+ * | `credited`   | 「已自动到账 ¥X」（+ 重新拉到的余额） | 无（钱到了，不需要用户做事） |
+ * | `processing` | 消费层给的 `i18nKey`（「正在确认兑换结果」）+ 服务端原句 | 「去兑换」（手动入口） |
+ * | `failed`     | 「自动兑换未完成」+ 服务端原句 | 「去兑换」 |
+ * | `masked`     | 「卡密已打码，无法自动兑换」+ 打码后的卡号 | 「去兑换」 |
+ *
+ * 两个不许：
+ *  - **不许**给「重试」按钮：这条链路的第二枪必须用户自己走到手动入口按下去（`redeem` 没有幂等键）；
+ *  - **不许**把服务端英文原句当主文案：主文案只认 i18n key，原句作副标题（`#484 §4 第 4 条` 的既有口径，
+ *    #784 要的「文案用后端 message」由这一行承载）。
+ */
+const AutoRedeemNotice = ({
+  outcome,
+  onManual,
+  onDismiss,
+}: {
+  outcome: WalletAutoRedeemOutcome
+  onManual: () => void
+  onDismiss?: () => void
+}) => {
+  const t = useTranslate()
+  const testId = 'account-consume-auto-redeem'
+  if (outcome.kind === 'skipped') {
+    return null
+  }
+  const actions = (
+    <div className={styles.feedbackActions}>
+      <Button variant="outlined" size="m" data-testid="account-consume-auto-redeem-manual" onClick={onManual}>
+        {t('oursPurchasesGoRedeem')}
+      </Button>
+      {onDismiss === undefined ? null : (
+        <Button variant="outlined" size="m" data-testid="account-consume-auto-redeem-dismiss" onClick={onDismiss}>
+          {t('walletAutoRedeemDismiss')}
+        </Button>
+      )}
+    </div>
+  )
+  if (outcome.kind === 'credited') {
+    return (
+      <div className={`${styles.feedback} ${styles.feedbackOk}`} role="status" data-testid={testId}>
+        <span>
+          {outcome.amount === undefined
+            ? t('consumeRedeemSuccess')
+            : t('walletAutoRedeemCredited', { amount: formatCurrency(outcome.amount) })}
+          {/* 余额来自兑换后重拉的那次 `/user/profile`；读不到就不写这一截（不显示一个来路不明的数） */}
+          {outcome.balance === undefined
+            ? ''
+            : ` · ${t('consumeBalanceLabel')} ${formatCurrency(outcome.balance)}`}
+        </span>
+      </div>
+    )
+  }
+  if (outcome.kind === 'masked') {
+    return (
+      <div className={`${styles.feedback} ${styles.feedbackWarn}`} role="status" data-testid={testId}>
+        <span>
+          {/* 服务端已经把中间打码了（`MUSE-****-1234`）：原样显示，不打第二层码也不拼全码 */}
+          {t('walletAutoRedeemMasked')} · {outcome.code}
+        </span>
+        {actions}
+      </div>
+    )
+  }
+  // processing / failed：主文案 i18n key，副标题是后端那句 message
+  return (
+    <div
+      className={`${styles.feedback} ${outcome.kind === 'processing' ? styles.feedbackWarn : styles.feedbackError}`}
+      role={outcome.kind === 'processing' ? 'status' : 'alert'}
+      data-testid={testId}
+    >
+      <span>
+        {/* 主文案只认 `error.i18nKey`（卡密已用 / 不存在 / 会话失效 …各自一句），后面接后端原句 */}
+        {t(outcome.i18nKey)}
+        {outcome.message === '' ? '' : ` · ${outcome.message}`}
+      </span>
+      {actions}
     </div>
   )
 }

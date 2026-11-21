@@ -45,10 +45,12 @@ import { SettingsAuthCard } from './SettingsAuthCard.js'
 import { useAuthStore } from '../../services/auth/store.js'
 import { Button } from '../base/Button.js'
 import { IconChevronRightOutline14 } from '../base/icons.js'
+import { showToast } from '../base/toastState.js'
 import { QuotaPanel } from './index.js'
 import { BuyTab } from './BuyTab.js'
 import { HistoryView } from './HistoryView.js'
 import { MyCardsTab } from './MyCardsTab.js'
+import { runWalletAutoRedeem, type WalletAutoRedeemOutcome } from './walletAutoRedeem.js'
 import { formatCurrency, maskedEmail } from './panels.js'
 import { SourceSheet, sourceKeyOf } from './SourceSheet.js'
 import styles from './AccountConsume.module.css'
@@ -141,6 +143,11 @@ export const AccountConsumePage = ({
   const [balance, setBalance] = useState<number | undefined>(undefined)
   const [walletTick, setWalletTick] = useState(0)
   const [signOutAsk, setSignOutAsk] = useState(false)
+  /**
+   * #784：「付款回来」那一次自动兑现的结局。只有 `openPayLinkInApp` 的 `onClosed` 会写它
+   * （见 `backToCards`）；进钱包页 / 切 tab 都碰不到，所以卡片不会「自己冒出来」。
+   */
+  const [autoRedeem, setAutoRedeem] = useState<WalletAutoRedeemOutcome | null>(null)
   const alive = useRef(true)
 
   useEffect(() => {
@@ -215,11 +222,47 @@ export const AccountConsumePage = ({
     onNeedLogin?.()
   }, [onNavigate, onNeedLogin])
 
-  /** 收款页关掉后回到「我的卡密」（卡密由小铺发到订单上）并让余额重拉一次 */
+  /**
+   * 收款页关掉后回到「我的卡密」（卡密由小铺发到订单上）并让余额重拉一次。
+   *
+   * **#784 的唯一触发点**：本回调只由 `BuyTab` 的 `openPayLinkInApp(url, onClosed)` 里的
+   * `onClosed` 调用（`BuyTab` 的 `onPurchased`），而 `onClosed` 就是「用户从收款页回来了」。
+   * 所以进钱包页 / 进卡密 tab / 挂载组件都**不会**走到这里 —— 自动兑现只在付款回来这一下发生。
+   *
+   * 自动兑现本身不在这里写逻辑：判定与不发第二枪的规则全在 `walletAutoRedeem.ts`（复用既有的
+   * `consume.redeem` 封装，一行兑换逻辑都没有重写）。这里只负责「把结局交给界面」：
+   *  - 未登录 → 一句「登录后自动到账」，不提交；
+   *  - 到账 → toast「已自动到账 ¥X」+ 让余额卡重拉一次；
+   *  - 其余（处理中 / 失败 / 打码卡）→ 卡片 + 「去兑换」手动出口，**没有自动重试**。
+   */
   const backToCards = useCallback(() => {
     onNavigate('cards')
     setWalletTick((tick) => tick + 1)
-  }, [onNavigate])
+    void runWalletAutoRedeem({ client: consume, signedIn: signedIn === true })
+      .then((outcome) => {
+        if (!alive.current) {
+          return
+        }
+        if (outcome.kind === 'skipped') {
+          // 只有「没登录」要说话：其余跳过（历史读不到 / 没有待兑 / 已经兑过）都是「没事发生」
+          if (outcome.reason === 'not-signed-in') {
+            showToast(t('walletAutoRedeemNeedSignIn'))
+          }
+          return
+        }
+        setAutoRedeem(outcome)
+        if (outcome.kind === 'credited') {
+          // 余额变了：再 bump 一次，让余额卡读到兑换后的 `/user/profile`
+          setWalletTick((tick) => tick + 1)
+          showToast(
+            outcome.amount === undefined
+              ? t('consumeRedeemSuccess')
+              : t('walletAutoRedeemCredited', { amount: formatCurrency(outcome.amount) })
+          )
+        }
+      })
+      .catch(() => undefined)
+  }, [consume, onNavigate, signedIn, t])
 
   const SOURCE_LABEL_KEYS: Record<string, TranslationKey> = {
     builtin: 'accountConsumeSourceBuiltin',
@@ -575,6 +618,8 @@ export const AccountConsumePage = ({
         <MyCardsTab
           consume={consume}
           hideListTitle
+          autoRedeem={autoRedeem}
+          onDismissAutoRedeem={() => setAutoRedeem(null)}
           onGoBuy={() => onNavigate('buy')}
           onNeedLogin={needLogin}
         />
