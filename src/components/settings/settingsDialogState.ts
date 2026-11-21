@@ -13,8 +13,15 @@ import {
 import { captureStateSnapshot, recordAction } from '../../services/diagnostics/collector.js'
 import { showToast } from '../base/toastState.js'
 
-/** 设置弹窗的分组：通用设置 / 数据管理 */
-export type SettingsSection = 'general' | 'data'
+/**
+ * 设置弹窗的分组：通用设置 / 记忆 / 数据管理。
+ *
+ * `memory` 是 #398 为「窗口记忆」新增的最小分组：分组归属照 `src/services/memory/` 的模块名
+ * （上游 README 里的 "Window memory"）取，组内只放与记忆有关、且**会往外发数据**的开关
+ * （embedding 是第一条；#399 的按窗口接线条目也归这里），不与「通用设置」的外观项、
+ * 「数据管理」的导入导出 / 服务配置混在一列。默认落地仍是 `general`，老入口一字不改。
+ */
+export type SettingsSection = 'general' | 'memory' | 'data'
 
 /**
  * 「账户与消费」页的四个 tab（#482 三弹层合一 / #487）。

@@ -8,6 +8,7 @@ import {
   IconFollowsystemOutline16,
   IconLightOutline16,
   IconSettingsOutline16,
+  IconThinkOutline16,
   IconUploadOutline14,
 } from '../base/icons.js'
 import {
@@ -32,6 +33,7 @@ import { ImportSkippedDetails, importedMessage, summaryFromCount } from './impor
 import { useIsMobile } from '../../app/viewport.js'
 import { useChatStore, type HistoryImportSummary } from '../../services/chat/store.js'
 import {
+  setEmbeddingEnabled,
   setLocale,
   setEnterKeyMode,
   setReadingFontSize,
@@ -54,7 +56,8 @@ import { Modal } from '../base/Modal.js'
 import { Select } from '../base/Select.js'
 import { showToast } from '../base/toastState.js'
 import { ApiConfigFields, ApiKeyConfirm, useApiKeyEditor } from './ApiConfigFields.js'
-import { useIsOursChannel } from '../../services/api/apiConfig.js'
+import { useApiConfig, useIsOursChannel } from '../../services/api/apiConfig.js'
+import { resolveEmbeddingChannel } from '../../services/api/embedding.js'
 import { AppUpdateField } from './AppUpdateField.js'
 import { ChatBackgroundField } from './ChatBackgroundField.js'
 import { DOUYIN_ACCOUNT_ID, douyinCopyToast } from './douyinAccount.js'
@@ -88,6 +91,13 @@ const sections: { value: SettingsSection; label: TranslationKey; icon: ReactNode
     label: 'settingDialogAsideGeneralOptionLabel',
     icon: <IconSettingsOutline16 />,
   },
+  /**
+   * 「记忆」分组（#398）：当前只有 embedding 开关一行。
+   * 命名依据 = `src/services/memory/` 的模块名（上游 README 的 "Window memory"），
+   * 与 issue 里「窗口记忆」的措辞对齐 —— 不叫「智能 / AI」这种含糊分组，
+   * 因为这一列将来只放会往外发数据的记忆相关开关，#399 的接线条目也归这里。
+   */
+  { value: 'memory', label: 'settingDialogAsideMemoryOptionLabel', icon: <IconThinkOutline16 /> },
   { value: 'data', label: 'settingDialogAsideDataOptionLabel', icon: <IconDataOutline16 /> },
 ]
 
@@ -173,6 +183,11 @@ const SettingsContent = ({ visible }: { visible: boolean }) => {
               <EnterKeySettings />
               {/* 「位置信息」已从设置页移除（1.4.0-beta.1）：location 仍在 store 里读取，
                   只用于 latest_reminder 快照，界面上不再暴露入口。 */}
+            </>
+          ) : section === 'memory' ? (
+            <>
+              {/* 记忆分组（#398）：目前只有 embedding 开关一行 */}
+              <MemoryEmbeddingSetting />
             </>
           ) : (
             <>
@@ -340,6 +355,60 @@ const useHistoryDelete = () => {
     },
     confirm,
   }
+}
+
+/**
+ * 窗口记忆的 embedding 开关（#398）：**默认关闭**。
+ *
+ * 关闭时记忆检索只走本地 BM25，一个外部请求都不发 —— 真正的门在
+ * `services/memory/embeddingGate.ts`（`isEmbeddingEnabled()` / `embed()`），这里只负责
+ * 把用户的选择写进设置存储，组件里**不判「发不发请求」**（两套判断必然漂移）。
+ *
+ * 控件复用：`base/` 下没有 toggle / switch 基础件，所以按仓内布尔开关的既有写法用
+ * `base/Button` + `aria-pressed` + 状态文案（与输入行的深度思考开关、智能搜索开关同一套），
+ * 不新造一个开关组件、也不新增一套开关样式（CSS 一行没动）。
+ *
+ * 打开后若当前渠道根本没有可用的 embedding 凭据，说明位换成**可操作提示**（#398 关闭条件 3）：
+ * 判定只走 `resolveEmbeddingChannel()`（#397 收进 API 层的唯一口径），
+ * 不在这里再写一遍「有没有 Key / 有没有端点」。
+ */
+const MemoryEmbeddingSetting = () => {
+  const t = useTranslate()
+  const embeddingEnabled = useSettings((state) => state.embeddingEnabled)
+  /**
+   * 渠道能不能用：判定只认 `resolveEmbeddingChannel()`（#397 收进 API 层的唯一口径，
+   * 组件里不再写一遍「有没有 Key / 有没有端点」）。放进 `useApiConfig` 的选择器是为了
+   * 跟着渠道 / 地址 / Key / 模型的改动重渲染 —— 选择器返回字符串原语，不会出现
+   * 「每次 getSnapshot 都是新对象」那种重渲染循环。
+   */
+  const channelReason = useApiConfig((state) => resolveEmbeddingChannel(state.model).reason)
+  // 关着的时候一个提示都不给（关闭态是设计的默认形态，不是错误）；开着但打不通才说「缺什么」
+  const status: Status = embeddingEnabled
+    ? channelReason === 'channel-unsupported'
+      ? { key: 'settingDialogMemoryEmbeddingNoEndpoint', error: true }
+      : channelReason
+        ? { key: 'settingDialogMemoryEmbeddingNoCredential', error: true }
+        : null
+    : null
+  return (
+    <SettingCell
+      label={t('settingDialogMemoryEmbeddingLabel')}
+      description={t('settingDialogMemoryEmbeddingDescription')}
+      status={status}
+      action={
+        <Button
+          variant="outlined"
+          size="m"
+          aria-pressed={embeddingEnabled}
+          aria-label={t('settingDialogMemoryEmbeddingLabel')}
+          data-testid="memory-embedding-toggle"
+          onClick={() => setEmbeddingEnabled(!embeddingEnabled)}
+        >
+          {t(embeddingEnabled ? 'settingDialogMemoryEmbeddingOn' : 'settingDialogMemoryEmbeddingOff')}
+        </Button>
+      }
+    />
+  )
 }
 
 const LocaleSetting = () => {

@@ -7,9 +7,15 @@ cross-session or global profile, and nothing is shared between windows.
 - `embedding.js` 已改为 ES module 并走 app 的 API 层（#397）：地址 / 鉴权头 / 超时 / 错误分类都来自
   `src/services/api/`（`embedding.ts` + `client.ts` + `providers.ts` 的 `paths.embedding`）。
   模型、本地推理仍不在 app 内。因此 `embedding.js` 不再能作为 SillyTavern 的 classic script 单独加载。
-- 设置页里的 `embUrl` / `embKey` 两个输入**已不参与请求**（渠道配置接管），随 #398 的开关一起整理。
-- To run inside this app it still needs: a user-facing "use cloud embedding" toggle (#398) and
-  wiring to per-window storage (#399).
+- 设置页里的 `embUrl` / `embKey` 两个输入**已不参与请求**（渠道配置接管）。
+- **开关已就位（#398）**：设置 →「记忆」分组里的 `记忆向量化（embedding）`，**默认关闭**。
+  判定与实际发请求的门在**自研**的 `embeddingGate.ts`（`isEmbeddingEnabled()` / `embed()`）：
+  关闭态任何人调 `embed()` 都在 `fetch` 之前抛 `EmbeddingDisabledError`，一个外部请求都不发。
+  那一个文件不属于 vendored 上游代码（它是我们写在这目录里的门面）。
+- To run inside this app it still needs: wiring to per-window storage (#399)。#399 接线时
+  **`index.js` / `recall.js` / `embedding.js` 这三份上游调用点必须改走 `embeddingGate.embed()`**，
+  否则会出现「一套代码两种判断」。届时建议一并把本目录从 `scripts/lib/vendoredPaths.mjs`
+  的排除名单里拿出来（那才是「真正变成自研代码」的时刻）。
 - `node --test tests/recall.test.cjs` covers recall, budget packing and cache reuse
   （需在**没有 `type: module` 的 package.json** 的目录下跑，见该文件头）。
 

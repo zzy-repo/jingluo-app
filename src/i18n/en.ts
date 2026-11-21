@@ -218,6 +218,7 @@ export const en = {
   settingsLocationCity: 'Select city',
   settingsLocationRegion: 'Select country or region',
   settingDialogAsideGeneralOptionLabel: 'General',
+  settingDialogAsideMemoryOptionLabel: 'Memory',
   settingDialogAsideDataOptionLabel: 'Data',
   avatarMenuSettingsDialogThemeItemLabel: 'Theme',
   avatarMenuSettingsDialogThemeSelectLightOption: 'Light',
@@ -720,6 +721,16 @@ export const en = {
   settingDialogEnterKeySend: 'Enter sends (Shift + Enter for a new line)',
   settingDialogEnterKeyModifierSend: 'Ctrl / ⌘ + Enter sends (Enter for a new line)',
   settingDialogEnterKeyButtonOnly: 'Enter only adds a new line (use the send button)',
+  // Window memory embedding toggle (#398): off by default, zero external requests while off.
+  settingDialogMemoryEmbeddingLabel: 'Memory embedding',
+  settingDialogMemoryEmbeddingDescription:
+    'When on, memory recall calls an external embedding service. When off, nothing leaves this device (recall falls back to local keyword matching). Off by default.',
+  settingDialogMemoryEmbeddingOn: 'On',
+  settingDialogMemoryEmbeddingOff: 'Off',
+  settingDialogMemoryEmbeddingNoEndpoint:
+    'It is on, but the current channel has no embedding endpoint (only OpenAI-compatible channels provide one). Switch to an OpenAI-compatible channel in Data and fill in the service address.',
+  settingDialogMemoryEmbeddingNoCredential:
+    'It is on, but the current channel is missing usable embedding credentials (service address or API key). Complete them in Data, otherwise recall falls back to local keyword matching.',
   // Issue #49: tolerant import — damaged messages are truncated, damaged chats skipped, and the
   // result view has to say which items were dropped and why.
   historyImportedPartial: 'Imported {count} chats, skipped {skipped} damaged items',

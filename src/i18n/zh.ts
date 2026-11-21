@@ -214,6 +214,7 @@ export const zh = {
   settingsLocationCity: '请选择市',
   settingsLocationRegion: '请选择国家或地区',
   settingDialogAsideGeneralOptionLabel: '通用设置',
+  settingDialogAsideMemoryOptionLabel: '记忆',
   settingDialogAsideDataOptionLabel: '数据管理',
   avatarMenuSettingsDialogThemeItemLabel: '主题',
   avatarMenuSettingsDialogThemeSelectLightOption: '浅色',
@@ -706,6 +707,18 @@ export const zh = {
   settingDialogEnterKeySend: '回车发送（Shift + 回车换行）',
   settingDialogEnterKeyModifierSend: 'Ctrl / ⌘ + 回车发送（回车换行）',
   settingDialogEnterKeyButtonOnly: '只换行（点发送按钮才发送）',
+  // 窗口记忆的 embedding 开关（#398）：默认关闭，关闭后零外部请求。
+  // 文案口径与 issue 一致：说清「开 = 会把内容发给外部 embedding 服务」「关 = 完全不联网」，
+  // 别用「智能检索」这种听起来免费的说法。
+  settingDialogMemoryEmbeddingLabel: '记忆向量化（embedding）',
+  settingDialogMemoryEmbeddingDescription:
+    '开启后记忆功能会调用外部 embedding 服务；关闭则完全不联网（记忆检索只在本机做关键词匹配）。默认关闭。',
+  settingDialogMemoryEmbeddingOn: '已开启',
+  settingDialogMemoryEmbeddingOff: '已关闭',
+  settingDialogMemoryEmbeddingNoEndpoint:
+    '已开启，但当前渠道没有 embedding 端点（只有 OpenAI 兼容渠道提供）：请到「数据管理」换成 OpenAI 兼容渠道并填好服务地址。',
+  settingDialogMemoryEmbeddingNoCredential:
+    '已开启，但当前渠道还缺可用的 embedding 凭据（服务地址或 API Key）：请到「数据管理」补齐，否则记忆检索会退化为本地关键词匹配。',
   // Issue #49：导入容错——坏消息截断、坏会话跳过，界面要能说清「丢了哪几条、为什么」
   historyImportedPartial: '已导入 {count} 个会话，跳过 {skipped} 处损坏数据',
   historyImportSkippedTitle: '跳过了 {count} 处损坏数据',

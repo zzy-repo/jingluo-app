@@ -62,6 +62,15 @@ type Settings = {
   search: boolean
   siderCollapsed: boolean
   /**
+   * 窗口记忆的 embedding 开关（#398）。**默认关闭**。
+   *
+   * 关闭时记忆检索只走本地 BM25，一个 embedding 请求都不发 —— 判定与实际发请求的门都在
+   * `services/memory/embeddingGate.ts`（`isEmbeddingEnabled()` / `embed()`），组件与调用方
+   * 不许自己再判一遍。未存过值、存了脏值一律按关闭处理：宁可少发请求，也不能因为「读不到设置」
+   * 就默认替用户联网。
+   */
+  embeddingEnabled: boolean
+  /**
    * 「稍后提醒」的到期时刻（毫秒时间戳，Issue #517）；0 = 没有暂缓。
    *
    * 只由 soft 更新弹窗写入（forced 不许写 —— 强制更新没有「稍后」）。
@@ -85,6 +94,8 @@ const KEYS = {
   enterKeyMode: 'chat-demo:enter-key-mode',
   search: 'chat-demo:search',
   siderCollapsed: 'chat-demo:sider-collapsed',
+  /** 窗口记忆的 embedding 开关（#398，默认关闭）；与其它设置项同一前缀，不另开 store */
+  embeddingEnabled: 'chat-demo:memory-embedding',
   /** 更新弹窗「稍后提醒」的到期时刻（#517）。与其它设置项同一前缀，不另开 store */
   updateSnoozeUntil: 'chat-demo:update-snooze-until',
 } as const
@@ -179,6 +190,13 @@ const initialEnterKeyMode = (): EnterKeyMode => {
 const initialTtsVoice = (): TtsVoice => (read(KEYS.ttsVoice) === 'tide' ? 'tide' : 'stella')
 
 /**
+ * embedding 开关（#398）：**只有存过 'true' 才算开**。
+ * 读不到（从没存过）/ 空串 / 脏值（'1' / 'yes' / 'TRUE' 带空格…）一律 false ——
+ * 「默认关闭」是本单最硬的断言：宁可少发请求，也不能因为读不出设置就替用户默认联网。
+ */
+const initialEmbeddingEnabled = (): boolean => read(KEYS.embeddingEnabled) === 'true'
+
+/**
  * 档位默认值 = 专家模式（开思考）。
  *
  * #363 的线上取证：1516 个请求里 765 个显式 `reasoning_effort=none`、750 个不带任何思考字段、
@@ -227,6 +245,7 @@ export const useSettings = create<Settings>(() => {
     enterKeyMode: initialEnterKeyMode(),
     search: read(KEYS.search) === 'true',
     siderCollapsed: read(KEYS.siderCollapsed) === 'true',
+    embeddingEnabled: initialEmbeddingEnabled(),
     updateSnoozeUntil: initialUpdateSnoozeUntil(),
   }
 })
@@ -294,6 +313,18 @@ export const setSearch = (search: boolean) => {
 export const setSiderCollapsed = (siderCollapsed: boolean) => {
   write(KEYS.siderCollapsed, String(siderCollapsed))
   useSettings.setState({ siderCollapsed })
+}
+
+/**
+ * embedding 开关的唯一写入口（#398）。
+ *
+ * 只写这一个键（`chat-demo:memory-embedding`），与其它设置项同一份 store / 同一套读写；
+ * 真正的「发不发请求」不在这里判 —— 门在 `services/memory/embeddingGate.ts`，
+ * 这里只负责把用户的选择记下来（关掉重开、切渠道都还在）。
+ */
+export const setEmbeddingEnabled = (embeddingEnabled: boolean) => {
+  write(KEYS.embeddingEnabled, String(embeddingEnabled))
+  useSettings.setState({ embeddingEnabled })
 }
 
 /**
