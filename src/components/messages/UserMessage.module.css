@@ -79,9 +79,11 @@
 .editor {
   width: 100%;
   box-sizing: border-box;
-  border: 1px solid var(--dsw-alias-brand-primary);
+  /* #47 无边设计：就地编辑不再用品牌色 1px 描边（深色下那条蓝线最扎眼），
+     改成「浅一档填充 + 一圈柔和光晕」；编辑器一进编辑态就自己聚焦，光晕恒定可见。 */
   border-radius: 22px;
-  background-color: var(--dsw-alias-bg-base);
+  background-color: var(--dsw-alias-bg-skeleton);
+  box-shadow: 0 0 0 2px var(--dsw-alias-interactive-bg-active);
   overflow: hidden;
 }
 

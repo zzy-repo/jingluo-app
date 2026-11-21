@@ -9,22 +9,30 @@
   font-size: 16px;
   line-height: var(--line-height);
   border-radius: 24px;
-  border: 1px solid var(--dsw-alias-border-l2-darkmode-thin);
-  background: var(--dsw-specific-input-major);
+  /* #47 无边设计：输入区不再用 1px 描边描出轮廓，改由「浅一档填充色 + 圆角」承载区域。
+     填充色取自主题 token（深色下是比页底亮一档的中性底色，浅色下是一档浅灰）。 */
+  background: var(--dsw-alias-bg-skeleton);
   overflow: hidden;
+  transition: background-color 0.18s ease;
+
+  /* 聚焦反馈同样不靠描边：填充再深一档（`:focus-within` 在 Chromium 83 可用）。
+     刻意不引入 `:focus-visible`：低内核上它整条失效，键盘态会一点反馈都没有。 */
+  &:focus-within {
+    background: var(--dsw-alias-interactive-bg-active);
+  }
 }
 
 .session {
-  box-shadow:
-    0 4px 10px rgba(0, 0, 0, 0.02),
-    0 2px 4px rgba(0, 0, 0, 0.04);
+  /* #47：原来两层叠影合成一层极轻的投影，深色下投影本来也看不见，一并省掉。 */
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.035);
+
+  [data-ds-dark-theme] & {
+    box-shadow: none;
+  }
 }
 
 .home {
-  box-shadow:
-    0 4px 12px 0 rgba(0, 0, 0, 0.02),
-    0 2px 2px 0 rgba(72, 104, 178, 0.01),
-    0 30px 60px 0 rgba(72, 104, 178, 0.03);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.04);
 
   [data-ds-dark-theme] & {
     box-shadow: none;
@@ -47,9 +55,10 @@
   width: 64px;
   height: 64px;
   border-radius: 16px;
-  border: 1px solid var(--dsw-alias-border-l2);
   overflow: hidden;
-  background-color: var(--dsw-alias-bg-skeleton);
+  /* #47：草稿缩略图同样去描边；底色用「页面级」那一档，在浅色输入区上是抬起的一格白，
+     深色下比输入区底色再深一档，靠明度差站住位置。 */
+  background-color: var(--dsw-alias-bg-base);
 
   img {
     display: block;
@@ -89,9 +98,10 @@
   }
 }
 
-/* 上传失败：红色描边 + 暗色蒙层，可重试时中间为重试图标，原因写在图标下方 */
+/* 上传失败：红色浅底 + 暗色蒙层，可重试时中间为重试图标，原因写在图标下方
+   （#47：不再用红色描边，失败语义由底色与蒙层承担） */
 .attachmentFailed {
-  border-color: var(--dsw-alias-state-error-primary);
+  background-color: var(--dsw-alias-interactive-bg-hover-danger);
 }
 
 .failed {
@@ -299,8 +309,11 @@
   height: 34px;
   padding: 0 12px;
   border-radius: 18px;
-  border: 1px solid var(--dsw-alias-border-l2);
-  background-color: transparent;
+  /* 显式 `border: none`：不写这条，UA 的 `button { border: 2px outset }` 会顶上来（去描边反而多出 2px 黑边） */
+  border: none;
+  /* #47 无边设计：胶囊不再用 1px 描边，未选中态用一档中性填充，选中态用品牌浅底。
+     形状（高 34 / 圆角 18）不动，只换「怎么区分」。 */
+  background-color: var(--dsw-alias-interactive-bg-hover);
   color: var(--dsw-alias-label-primary);
   font: inherit;
   font-size: 13px;
@@ -309,11 +322,11 @@
   white-space: nowrap;
   cursor: pointer;
   user-select: none;
-  transition-property: border, background;
+  transition-property: background;
   transition-duration: 0.2s;
 
   &:hover:not(:disabled) {
-    background-color: var(--dsw-alias-interactive-bg-hover);
+    background-color: var(--dsw-alias-interactive-bg-active);
   }
 
   &:disabled {
@@ -324,7 +337,6 @@
   &.selected {
     background-color: var(--dsw-alias-button-ghost-active-fill);
     color: var(--dsw-alias-brand-text);
-    border-color: var(--dsw-alias-button-ghost-active-border);
 
     &:hover {
       background-color: var(--dsw-alias-button-ghost-active-hover);

@@ -8,9 +8,10 @@
   max-width: 100%;
   min-height: 64px;
   padding: 0 12px 0 14px;
+  /* #47 无边设计：文档卡片去描边，改由「页面级底色 + 16px 圆角」从输入区底色上抬起；
+     深色下它比输入区再深一档，浅色下是抬起的一格白。 */
   border-radius: 16px;
-  border: 1px solid var(--dsw-alias-border-l2);
-  background-color: var(--dsw-specific-input-major);
+  background-color: var(--dsw-alias-bg-base);
   cursor: default;
   transition: background-color 0.2s ease-in-out;
 
@@ -49,8 +50,9 @@
   padding-right: 24px;
 }
 
+/* 失败态不再用红色描边（#47：错误反馈不依赖边框），改成一档浅红底 + 红色状态文案 */
 .failed {
-  border-color: var(--dsw-alias-state-error-primary);
+  background-color: var(--dsw-alias-interactive-bg-hover-danger);
 
   .subCaption {
     color: var(--dsw-alias-state-error-primary);
@@ -132,10 +134,11 @@
   color: var(--dsw-alias-label-secondary);
 }
 
-/* 等待 / 已取消：虚线 + 中性色，一眼看出「还没开始」或「不再进行」，不制造第二个「错误」 */
+/* 等待 / 已取消：中性色状态文案 + 更浅的底，一眼看出「还没开始」或「不再进行」，
+   不制造第二个「错误」（#47：原来那条虚线边框随「去描边」一起去掉） */
 .pending,
 .cancelled {
-  border-style: dashed;
+  background-color: var(--dsw-alias-bg-skeleton);
 
   .statusText {
     color: var(--dsw-alias-label-tertiary);
@@ -152,10 +155,8 @@
   color: var(--dsw-static-green-500);
 }
 
-/* 部分成功：琥珀色描边（右上角角标由调用方给） */
+/* 部分成功：琥珀色状态文案（右上角角标由调用方给；#47 去掉了琥珀色描边） */
 .partial {
-  border-color: var(--dsw-static-amber-500);
-
   .statusText {
     color: var(--dsw-static-amber-600);
   }

@@ -80,14 +80,16 @@
   }
 }
 
+/* #47 无边设计：次按钮不再靠 1px 描边存在，改由一档中性填充表达（悬停再深一档）。
+   `.button` 上那条 `border: 1px solid transparent` 保留 —— 它不画线，只维持盒模型尺寸，
+   深色下原本那圈 `--dsw-alias-border-l2` 才是「到处是线」的主要来源。 */
 .outlined {
   color: var(--dsw-alias-label-primary);
-  background-color: transparent;
-  border-color: var(--dsw-alias-border-l2);
+  background-color: var(--dsw-alias-interactive-bg-hover);
   font-weight: 400;
 
   &:hover:not(:disabled) {
-    background-color: var(--dsw-alias-interactive-bg-hover);
+    background-color: var(--dsw-alias-interactive-bg-active);
   }
 }
 
@@ -102,8 +104,8 @@
 
 .dangerOutlined {
   color: var(--dsw-alias-state-error-primary);
+  /* 危险次按钮：常态只有红字（无边设计不画描边），悬停给一档浅红底做反馈 */
   background-color: transparent;
-  border-color: var(--dsw-alias-state-error-primary);
   font-weight: 400;
 
   &:hover:not(:disabled) {

@@ -1,0 +1,593 @@
+{
+  "label": "before",
+  "viewport": {
+    "width": 390,
+    "height": 844,
+    "key": "390"
+  },
+  "screens": {
+    "home.light": {
+      "composer": {
+        "found": true,
+        "tag": "DIV",
+        "className": "wrapper-ed6f47 home-ed6f47",
+        "rect": {
+          "x": 16,
+          "y": 710,
+          "width": 358,
+          "height": 106
+        },
+        "border": {
+          "top": "1px",
+          "right": "1px",
+          "bottom": "1px",
+          "left": "1px",
+          "color": "rgba(0, 0, 0, 0.1)",
+          "style": "solid"
+        },
+        "borderRadius": "24px",
+        "backgroundColor": "rgb(255, 255, 255)",
+        "boxShadow": "rgba(0, 0, 0, 0.02) 0px 4px 12px 0px, rgba(72, 104, 178, 0.01) 0px 2px 2px 0px, rgba(72, 104, 178, 0.03) 0px 30px 60px 0px"
+      },
+      "borders": {
+        "visible": 2,
+        "items": [
+          {
+            "tag": "div",
+            "className": "wrapper-ed6f47 home-ed6f47",
+            "sides": "Top+Right+Bottom+Left",
+            "width": "1px",
+            "color": "rgba(0, 0, 0, 0.1)",
+            "radius": "24px",
+            "size": "358x106"
+          },
+          {
+            "tag": "button",
+            "className": "toggle-ed6f47 selected-ed6f47",
+            "sides": "Top+Right+Bottom+Left",
+            "width": "1px",
+            "color": "rgb(183, 200, 254)",
+            "radius": "18px",
+            "size": "96x34"
+          }
+        ]
+      },
+      "overflow": {
+        "overflowCount": 0,
+        "documentScrollWidth": 390,
+        "viewport": 390,
+        "samples": []
+      },
+      "shot": "before-light-home.png",
+      "clip": "before-light-home-input.png"
+    },
+    "home-focus.light": {
+      "composer": {
+        "found": true,
+        "tag": "DIV",
+        "className": "wrapper-ed6f47 home-ed6f47",
+        "rect": {
+          "x": 16,
+          "y": 710,
+          "width": 358,
+          "height": 106
+        },
+        "border": {
+          "top": "1px",
+          "right": "1px",
+          "bottom": "1px",
+          "left": "1px",
+          "color": "rgba(0, 0, 0, 0.1)",
+          "style": "solid"
+        },
+        "borderRadius": "24px",
+        "backgroundColor": "rgb(255, 255, 255)",
+        "boxShadow": "rgba(0, 0, 0, 0.02) 0px 4px 12px 0px, rgba(72, 104, 178, 0.01) 0px 2px 2px 0px, rgba(72, 104, 178, 0.03) 0px 30px 60px 0px"
+      },
+      "borders": {
+        "visible": 2,
+        "items": [
+          {
+            "tag": "div",
+            "className": "wrapper-ed6f47 home-ed6f47",
+            "sides": "Top+Right+Bottom+Left",
+            "width": "1px",
+            "color": "rgba(0, 0, 0, 0.1)",
+            "radius": "24px",
+            "size": "358x106"
+          },
+          {
+            "tag": "button",
+            "className": "toggle-ed6f47 selected-ed6f47",
+            "sides": "Top+Right+Bottom+Left",
+            "width": "1px",
+            "color": "rgb(183, 200, 254)",
+            "radius": "18px",
+            "size": "96x34"
+          }
+        ]
+      },
+      "overflow": {
+        "overflowCount": 0,
+        "documentScrollWidth": 390,
+        "viewport": 390,
+        "samples": []
+      },
+      "shot": "before-light-home-focus.png"
+    },
+    "attach.light": {
+      "composer": {
+        "found": true,
+        "tag": "DIV",
+        "className": "wrapper-ed6f47 home-ed6f47",
+        "rect": {
+          "x": 16,
+          "y": 620,
+          "width": 358,
+          "height": 196
+        },
+        "border": {
+          "top": "1px",
+          "right": "1px",
+          "bottom": "1px",
+          "left": "1px",
+          "color": "rgba(0, 0, 0, 0.1)",
+          "style": "solid"
+        },
+        "borderRadius": "24px",
+        "backgroundColor": "rgb(255, 255, 255)",
+        "boxShadow": "rgba(0, 0, 0, 0.02) 0px 4px 12px 0px, rgba(72, 104, 178, 0.01) 0px 2px 2px 0px, rgba(72, 104, 178, 0.03) 0px 30px 60px 0px"
+      },
+      "borders": {
+        "visible": 3,
+        "items": [
+          {
+            "tag": "div",
+            "className": "wrapper-ed6f47 home-ed6f47",
+            "sides": "Top+Right+Bottom+Left",
+            "width": "1px",
+            "color": "rgba(0, 0, 0, 0.1)",
+            "radius": "24px",
+            "size": "358x196"
+          },
+          {
+            "tag": "div",
+            "className": "card-_282ec clickable-_282ec activatable-_282ec done-_282ec",
+            "sides": "Top+Right+Bottom+Left",
+            "width": "1px",
+            "color": "rgba(0, 0, 0, 0.1)",
+            "radius": "16px",
+            "size": "240x78"
+          },
+          {
+            "tag": "button",
+            "className": "toggle-ed6f47 selected-ed6f47",
+            "sides": "Top+Right+Bottom+Left",
+            "width": "1px",
+            "color": "rgb(183, 200, 254)",
+            "radius": "18px",
+            "size": "96x34"
+          }
+        ]
+      },
+      "overflow": {
+        "overflowCount": 0,
+        "documentScrollWidth": 390,
+        "viewport": 390,
+        "samples": []
+      },
+      "shot": "before-light-attach.png"
+    },
+    "chip-off.light": {
+      "composer": {
+        "found": true,
+        "tag": "DIV",
+        "className": "wrapper-ed6f47 home-ed6f47",
+        "rect": {
+          "x": 16,
+          "y": 620,
+          "width": 358,
+          "height": 196
+        },
+        "border": {
+          "top": "1px",
+          "right": "1px",
+          "bottom": "1px",
+          "left": "1px",
+          "color": "rgba(0, 0, 0, 0.1)",
+          "style": "solid"
+        },
+        "borderRadius": "24px",
+        "backgroundColor": "rgb(255, 255, 255)",
+        "boxShadow": "rgba(0, 0, 0, 0.02) 0px 4px 12px 0px, rgba(72, 104, 178, 0.01) 0px 2px 2px 0px, rgba(72, 104, 178, 0.03) 0px 30px 60px 0px"
+      },
+      "borders": {
+        "visible": 3,
+        "items": [
+          {
+            "tag": "div",
+            "className": "wrapper-ed6f47 home-ed6f47",
+            "sides": "Top+Right+Bottom+Left",
+            "width": "1px",
+            "color": "rgba(0, 0, 0, 0.1)",
+            "radius": "24px",
+            "size": "358x196"
+          },
+          {
+            "tag": "div",
+            "className": "card-_282ec clickable-_282ec activatable-_282ec done-_282ec",
+            "sides": "Top+Right+Bottom+Left",
+            "width": "1px",
+            "color": "rgba(0, 0, 0, 0.1)",
+            "radius": "16px",
+            "size": "240x78"
+          },
+          {
+            "tag": "button",
+            "className": "toggle-ed6f47",
+            "sides": "Top+Right+Bottom+Left",
+            "width": "1px",
+            "color": "rgba(0, 0, 0, 0.1)",
+            "radius": "18px",
+            "size": "96x34"
+          }
+        ]
+      },
+      "overflow": {
+        "overflowCount": 0,
+        "documentScrollWidth": 390,
+        "viewport": 390,
+        "samples": []
+      },
+      "shot": "before-light-chip-off.png"
+    },
+    "session.light": {
+      "composer": {
+        "found": true,
+        "tag": "DIV",
+        "className": "wrapper-ed6f47 session-ed6f47",
+        "rect": {
+          "x": 16,
+          "y": 710,
+          "width": 358,
+          "height": 106
+        },
+        "border": {
+          "top": "1px",
+          "right": "1px",
+          "bottom": "1px",
+          "left": "1px",
+          "color": "rgba(0, 0, 0, 0.1)",
+          "style": "solid"
+        },
+        "borderRadius": "24px",
+        "backgroundColor": "rgb(255, 255, 255)",
+        "boxShadow": "rgba(0, 0, 0, 0.02) 0px 4px 10px 0px, rgba(0, 0, 0, 0.04) 0px 2px 4px 0px"
+      },
+      "borders": {
+        "visible": 2,
+        "items": [
+          {
+            "tag": "div",
+            "className": "wrapper-ed6f47 session-ed6f47",
+            "sides": "Top+Right+Bottom+Left",
+            "width": "1px",
+            "color": "rgba(0, 0, 0, 0.1)",
+            "radius": "24px",
+            "size": "358x106"
+          },
+          {
+            "tag": "button",
+            "className": "toggle-ed6f47",
+            "sides": "Top+Right+Bottom+Left",
+            "width": "1px",
+            "color": "rgba(0, 0, 0, 0.1)",
+            "radius": "18px",
+            "size": "96x34"
+          }
+        ]
+      },
+      "overflow": {
+        "overflowCount": 0,
+        "documentScrollWidth": 390,
+        "viewport": 390,
+        "samples": []
+      },
+      "shot": "before-light-session.png",
+      "clip": "before-light-session-input.png"
+    },
+    "home.dark": {
+      "composer": {
+        "found": true,
+        "tag": "DIV",
+        "className": "wrapper-ed6f47 home-ed6f47",
+        "rect": {
+          "x": 16,
+          "y": 710,
+          "width": 358,
+          "height": 106
+        },
+        "border": {
+          "top": "1px",
+          "right": "1px",
+          "bottom": "1px",
+          "left": "1px",
+          "color": "rgba(255, 255, 255, 0.06)",
+          "style": "solid"
+        },
+        "borderRadius": "24px",
+        "backgroundColor": "rgb(44, 44, 46)",
+        "boxShadow": "none"
+      },
+      "borders": {
+        "visible": 2,
+        "items": [
+          {
+            "tag": "div",
+            "className": "wrapper-ed6f47 home-ed6f47",
+            "sides": "Top+Right+Bottom+Left",
+            "width": "1px",
+            "color": "rgba(255, 255, 255, 0.06)",
+            "radius": "24px",
+            "size": "358x106"
+          },
+          {
+            "tag": "button",
+            "className": "toggle-ed6f47 selected-ed6f47",
+            "sides": "Top+Right+Bottom+Left",
+            "width": "1px",
+            "color": "rgb(72, 104, 178)",
+            "radius": "18px",
+            "size": "96x34"
+          }
+        ]
+      },
+      "overflow": {
+        "overflowCount": 0,
+        "documentScrollWidth": 390,
+        "viewport": 390,
+        "samples": []
+      },
+      "shot": "before-dark-home.png",
+      "clip": "before-dark-home-input.png"
+    },
+    "home-focus.dark": {
+      "composer": {
+        "found": true,
+        "tag": "DIV",
+        "className": "wrapper-ed6f47 home-ed6f47",
+        "rect": {
+          "x": 16,
+          "y": 710,
+          "width": 358,
+          "height": 106
+        },
+        "border": {
+          "top": "1px",
+          "right": "1px",
+          "bottom": "1px",
+          "left": "1px",
+          "color": "rgba(255, 255, 255, 0.06)",
+          "style": "solid"
+        },
+        "borderRadius": "24px",
+        "backgroundColor": "rgb(44, 44, 46)",
+        "boxShadow": "none"
+      },
+      "borders": {
+        "visible": 2,
+        "items": [
+          {
+            "tag": "div",
+            "className": "wrapper-ed6f47 home-ed6f47",
+            "sides": "Top+Right+Bottom+Left",
+            "width": "1px",
+            "color": "rgba(255, 255, 255, 0.06)",
+            "radius": "24px",
+            "size": "358x106"
+          },
+          {
+            "tag": "button",
+            "className": "toggle-ed6f47 selected-ed6f47",
+            "sides": "Top+Right+Bottom+Left",
+            "width": "1px",
+            "color": "rgb(72, 104, 178)",
+            "radius": "18px",
+            "size": "96x34"
+          }
+        ]
+      },
+      "overflow": {
+        "overflowCount": 0,
+        "documentScrollWidth": 390,
+        "viewport": 390,
+        "samples": []
+      },
+      "shot": "before-dark-home-focus.png"
+    },
+    "attach.dark": {
+      "composer": {
+        "found": true,
+        "tag": "DIV",
+        "className": "wrapper-ed6f47 home-ed6f47",
+        "rect": {
+          "x": 16,
+          "y": 620,
+          "width": 358,
+          "height": 196
+        },
+        "border": {
+          "top": "1px",
+          "right": "1px",
+          "bottom": "1px",
+          "left": "1px",
+          "color": "rgba(255, 255, 255, 0.06)",
+          "style": "solid"
+        },
+        "borderRadius": "24px",
+        "backgroundColor": "rgb(44, 44, 46)",
+        "boxShadow": "none"
+      },
+      "borders": {
+        "visible": 3,
+        "items": [
+          {
+            "tag": "div",
+            "className": "wrapper-ed6f47 home-ed6f47",
+            "sides": "Top+Right+Bottom+Left",
+            "width": "1px",
+            "color": "rgba(255, 255, 255, 0.06)",
+            "radius": "24px",
+            "size": "358x196"
+          },
+          {
+            "tag": "div",
+            "className": "card-_282ec clickable-_282ec activatable-_282ec done-_282ec",
+            "sides": "Top+Right+Bottom+Left",
+            "width": "1px",
+            "color": "rgba(255, 255, 255, 0.12)",
+            "radius": "16px",
+            "size": "240x78"
+          },
+          {
+            "tag": "button",
+            "className": "toggle-ed6f47 selected-ed6f47",
+            "sides": "Top+Right+Bottom+Left",
+            "width": "1px",
+            "color": "rgb(72, 104, 178)",
+            "radius": "18px",
+            "size": "96x34"
+          }
+        ]
+      },
+      "overflow": {
+        "overflowCount": 0,
+        "documentScrollWidth": 390,
+        "viewport": 390,
+        "samples": []
+      },
+      "shot": "before-dark-attach.png"
+    },
+    "chip-off.dark": {
+      "composer": {
+        "found": true,
+        "tag": "DIV",
+        "className": "wrapper-ed6f47 home-ed6f47",
+        "rect": {
+          "x": 16,
+          "y": 620,
+          "width": 358,
+          "height": 196
+        },
+        "border": {
+          "top": "1px",
+          "right": "1px",
+          "bottom": "1px",
+          "left": "1px",
+          "color": "rgba(255, 255, 255, 0.06)",
+          "style": "solid"
+        },
+        "borderRadius": "24px",
+        "backgroundColor": "rgb(44, 44, 46)",
+        "boxShadow": "none"
+      },
+      "borders": {
+        "visible": 3,
+        "items": [
+          {
+            "tag": "div",
+            "className": "wrapper-ed6f47 home-ed6f47",
+            "sides": "Top+Right+Bottom+Left",
+            "width": "1px",
+            "color": "rgba(255, 255, 255, 0.06)",
+            "radius": "24px",
+            "size": "358x196"
+          },
+          {
+            "tag": "div",
+            "className": "card-_282ec clickable-_282ec activatable-_282ec done-_282ec",
+            "sides": "Top+Right+Bottom+Left",
+            "width": "1px",
+            "color": "rgba(255, 255, 255, 0.12)",
+            "radius": "16px",
+            "size": "240x78"
+          },
+          {
+            "tag": "button",
+            "className": "toggle-ed6f47",
+            "sides": "Top+Right+Bottom+Left",
+            "width": "1px",
+            "color": "rgba(255, 255, 255, 0.12)",
+            "radius": "18px",
+            "size": "96x34"
+          }
+        ]
+      },
+      "overflow": {
+        "overflowCount": 0,
+        "documentScrollWidth": 390,
+        "viewport": 390,
+        "samples": []
+      },
+      "shot": "before-dark-chip-off.png"
+    },
+    "session.dark": {
+      "composer": {
+        "found": true,
+        "tag": "DIV",
+        "className": "wrapper-ed6f47 session-ed6f47",
+        "rect": {
+          "x": 16,
+          "y": 710,
+          "width": 358,
+          "height": 106
+        },
+        "border": {
+          "top": "1px",
+          "right": "1px",
+          "bottom": "1px",
+          "left": "1px",
+          "color": "rgba(255, 255, 255, 0.06)",
+          "style": "solid"
+        },
+        "borderRadius": "24px",
+        "backgroundColor": "rgb(44, 44, 46)",
+        "boxShadow": "rgba(0, 0, 0, 0.02) 0px 4px 10px 0px, rgba(0, 0, 0, 0.04) 0px 2px 4px 0px"
+      },
+      "borders": {
+        "visible": 2,
+        "items": [
+          {
+            "tag": "div",
+            "className": "wrapper-ed6f47 session-ed6f47",
+            "sides": "Top+Right+Bottom+Left",
+            "width": "1px",
+            "color": "rgba(255, 255, 255, 0.06)",
+            "radius": "24px",
+            "size": "358x106"
+          },
+          {
+            "tag": "button",
+            "className": "toggle-ed6f47",
+            "sides": "Top+Right+Bottom+Left",
+            "width": "1px",
+            "color": "rgba(255, 255, 255, 0.12)",
+            "radius": "18px",
+            "size": "96x34"
+          }
+        ]
+      },
+      "overflow": {
+        "overflowCount": 0,
+        "documentScrollWidth": 390,
+        "viewport": 390,
+        "samples": []
+      },
+      "shot": "before-dark-session.png",
+      "clip": "before-dark-session-input.png"
+    }
+  },
+  "consoleErrors": [],
+  "overflowCount": 0,
+  "assertion": "overflowCount === 0 且 consoleErrors 为空"
+}

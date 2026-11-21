@@ -194,7 +194,8 @@
   padding: 6px 8px;
   max-height: 180px;
   overflow: auto;
-  border-left: 2px solid var(--dsw-alias-border-l2);
+  /* #47 区块分隔优先用背景层级：原来那条 2px 左边框换成一块更浅的底色 */
+  background-color: var(--dsw-alias-bg-skeleton);
   font-family: inherit;
   font-size: 12px;
   line-height: 18px;
@@ -237,8 +238,9 @@
   margin-top: 16px;
   padding: 4px 10px 4px 4px;
   border-radius: 100px;
-  border: 1px solid var(--dsw-alias-border-l2);
-  background-color: var(--dsw-alias-bg-base);
+  /* #47 无边设计：来源摘要胶囊去描边，改由「一档中性填充 + 大圆角」承载；
+     hover / 展开态再深一档，仍然不用线。 */
+  background-color: var(--dsw-alias-interactive-bg-hover);
   color: var(--dsw-alias-label-primary);
   font: var(--dsw-font-markdown-small);
   cursor: pointer;
@@ -255,8 +257,8 @@
 
   &:hover,
   &.summaryActive {
-    background-color: var(--dsw-alias-interactive-bg-hover);
-    --search-row-site-logo-color: var(--dsw-alias-interactive-bg-hover);
+    background-color: var(--dsw-alias-interactive-bg-active);
+    --search-row-site-logo-color: var(--dsw-alias-interactive-bg-active);
   }
 }
 

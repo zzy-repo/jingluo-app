@@ -121,9 +121,11 @@ body {
   --dsw-alias-bg-layer-3: var(--dsw-static-neutral-bluish-00);
   --dsw-alias-bg-skeleton: rgba(0, 0, 0, 0.04);
   --dsw-alias-border-inverted: rgba(0, 0, 0, 0);
+  /* #47 无边设计：描边类 token 只降不升 —— 必须留线的地方（表格行、列表分隔）
+     统一收到「极淡」（l2 由 0.1 降到 0.08），在浅色底上仍然看得见但不抢内容。 */
   --dsw-alias-border-l1: rgba(0, 0, 0, 0.04);
   --dsw-alias-border-l2-darkmode-thin: rgba(0, 0, 0, 0.1);
-  --dsw-alias-border-l2: rgba(0, 0, 0, 0.1);
+  --dsw-alias-border-l2: rgba(0, 0, 0, 0.08);
   --dsw-alias-border-l3: rgba(0, 0, 0, 0.12);
   --dsw-alias-brand-primary-invert: var(--dsw-static-blue-500);
   --dsw-alias-brand-primary: var(--dsw-static-blue-500);
@@ -172,10 +174,12 @@ body[data-ds-dark-theme] {
   --dsw-alias-bg-layer-3: var(--dsw-static-neutral-bluish-800);
   --dsw-alias-bg-skeleton: rgba(255, 255, 255, 0.08);
   --dsw-alias-border-inverted: rgba(255, 255, 255, 0.06);
+  /* #47 深色模式优先：深底上白描边最扎眼，l2 由 0.12 收到 0.08、l3 由 0.16 收到 0.12，
+     保留「能看见的分隔」但不再是显眼的线条。 */
   --dsw-alias-border-l1: rgba(255, 255, 255, 0.06);
   --dsw-alias-border-l2-darkmode-thin: rgba(255, 255, 255, 0.06);
-  --dsw-alias-border-l2: rgba(255, 255, 255, 0.12);
-  --dsw-alias-border-l3: rgba(255, 255, 255, 0.16);
+  --dsw-alias-border-l2: rgba(255, 255, 255, 0.08);
+  --dsw-alias-border-l3: rgba(255, 255, 255, 0.12);
   --dsw-alias-brand-primary-invert: var(--dsw-static-neutral-bluish-00);
   --dsw-alias-brand-primary: var(--dsw-static-blue-450);
   --dsw-alias-brand-text: var(--dsw-static-blue-400);

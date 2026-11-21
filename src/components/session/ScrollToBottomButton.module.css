@@ -15,9 +15,9 @@
   bottom: 100%;
   margin-bottom: 10px;
   /* IconButton 本体是单类选择器的透明圆（background-color: transparent）；这里同优先级、
-     靠引入顺序盖成「浮起色 + 描边 + 阴影」，深色主题由同一批令牌自动跟着换 */
+     靠引入顺序盖成「浮起色 + 阴影」，深色主题由同一批令牌自动跟着换。
+     #47 无边设计：去掉那圈 1px 描边，浮起感只由抬升底色与投影表达。 */
   background-color: var(--dsw-alias-button-elevated-fill);
-  border: 1px solid var(--dsw-alias-border-l2);
   color: var(--dsw-alias-label-secondary);
   box-shadow: var(--dsw-shadow-lv3);
   animation: ds-scroll-to-bottom-in var(--motion-duration-fade) var(--motion-ease-ios) backwards;
