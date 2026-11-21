@@ -15,13 +15,20 @@
  * ## 用法
  * ```
  * node scripts/verify-release-apk.mjs <apk> [--variant standard] [--expect-cert <sha256>] \
- *        [--allow-insecure] [--json]
+ *        [--expect-consume-base <url>] [--forbid-host <host>]... [--allow-insecure] [--json]
  * ```
  *   --variant         期望的构建变体（默认 `standard`，可选 `internal`）
  *   --expect-cert     期望的签名证书 SHA-256。不传时**从唯一来源** `config/appIdentity.json` 的
  *                     `expectedCertSha256` 派生（读不到 / 非法 → **exit 2**，不回落到任何内置默认值）。
  *                     **语义（#705 收尾）**：传了它只覆盖「拿哪个值与 APK 比对」，
  *                     **不豁免**配置完整性 —— 配置被删 / 被改时照样 exit≠0。
+ *   --expect-consume-base <url>
+ *                     期望的**包内** `consume.baseUrl`。不传时从唯一来源 `config/endpoints.json` 的
+ *                     `consume.baseUrl` 派生（读不到 / 缺字段 → **exit 2**）；比对是**逐字**的
+ *                     （不规范化尾部斜杠 / 路径前缀 —— `https://apia.ecsafe.cn/staging` 就是它本身）。
+ *   --forbid-host <host>
+ *                     **禁止域**，可重复（如 `--forbid-host sub2api.rose7.cn`）。它与「期望值」是
+ *                     **两个独立维度**：包里的地址命中禁止域就 exit 1，即使期望 == 实际也一样（#763）。
  *   --allow-insecure  明确认可「这是明文联调包」（`INSECURE_CONSUME=true`）：不加就 exit 1
  *   --json            输出结构化结果（workflow / 脚本消费；此时不打印表格）
  *
@@ -40,7 +47,7 @@
  *   3. `assertMatchesPublishedCert`：配置值 ≠ `PUBLISHED_IDENTITY.expectedCertSha256` → **exit 1**，
  *      点名「配置 / 已发布」两个值。
  *
- * ## 五项 + 附加输出
+ * ## 六项 + 附加输出
  * | # | 检查 | 判据 |
  * |---|------|------|
  * | 1 | `debuggable` 不存在或 false | 复用 `check-apk-debuggable.mjs` 的 `evaluateApkDebuggable`（**不重写判定**） |
@@ -48,17 +55,34 @@
  * | 3 | `LOOPBACK_CONSUME` 不存在或 false | 同上；**缺失视为通过**（老包没有这个标记，#601 的闸 2 同口径） |
  * | 4 | 签名证书 SHA-256 == `--expect-cert` | `apksigner verify --print-certs` |
  * | 5 | `INSECURE_CONSUME` 不存在或 false，**或者**带了 `--allow-insecure` | 同上；缺失视为 false（向后兼容）。<br>`true` 且没带 `--allow-insecure` → **exit 1**（明文联调包，禁止公开分发）；<br>带了 → 通过，但结论行强制标 `INSECURE(staging-only)`、`--json` 里 `insecure: true` |
- * | 6 | 附加输出（不算失败项） | `versionName` / `versionCode` / `sha256` / `md5` / `size`，供 Release 正文直用 |
+ * | 6 | 包内 `consume.baseUrl` == 期望值（**且不命中禁止域**） | 读 APK 里的 `assets/public/build-info.json` 的 `endpoints.consume.baseUrl`（#763） |
+ * | — | 附加输出（不算失败项） | `versionName` / `versionCode` / `sha256` / `md5` / `size`，供 Release 正文直用 |
  *
  * 第 5 项为什么存在：`-PallowInsecureConsume=true` 让「明文 http 非回环」的 staging 包打得出来
  * （#651 的发版铁律要求 staging 指向 `http://140.210.13.146:16000`，明文是已知代价），代价是这个包
  * **不能公开分发**。所以放行通道必须留下自证标记，由这道闸把它挡住 —— 打得出来，但发不安静悄悄。
  *
+ * 第 6 项为什么存在（Issue #763）：前五项判的是「包是不是按规矩打的」（变体 / 标记 / 证书），
+ * **没有一项回答「包里那个消费后端地址指向哪」**。于是 1.4.5–1.4.8 四个包都指向了错的实例
+ * （`sub2api.rose7.cn`），而这道闸每次都报 5/5 PASS —— 判据缺一项，绿灯就是假的。
+ *   · **读什么**：APK 内 `assets/public/build-info.json` 的 `endpoints.consume.baseUrl`
+ *     （`rspack.config.ts` 的 BuildInfoPlugin 写的产物自述文件；**比 grep bundle 准** ——
+ *     bundle 里还有别处同名字符串，grep 到的不一定是生效值）；
+ *   · **比什么**：与 `config/endpoints.json` 的 `consume.baseUrl` **逐字**比对（单一来源，
+ *     脚本里**不留第二份常量**；不规范化尾部斜杠 / 路径前缀，`https://apia.ecsafe.cn/staging`
+ *     就是它本身）。`--expect-consume-base <url>` 只覆盖「拿哪个值与 APK 比对」；
+ *   · **禁止域是独立维度**：`--forbid-host <h>`（可重复）命中就 exit 1，**即使期望 == 实际**——
+ *     「期望值被人改成那个错域名」这件事，靠期望值自比是发现不了的；
+ *   · **判不出来就 exit 2**（fail-closed）：build-info 缺失 / 不是 JSON / 没有该字段 / 读不出 zip；
+ *   · **不符就 exit 1**，报告里**两个值都点名**（期望 / 实际）。
+ *
  * ## 退出码（与 `check-apk-debuggable` 同一口径）
- *   0  五项全过（且前门三道配置判据全过）→ 可以发布
- *   1  有项目**明确不过**（读到值、值不对；含「配置 ≠ 已发布断言」「gradle 第二份副本 ≠ 配置」）
+ *   0  六项全过（且前门三道配置判据全过）→ 可以发布
+ *   1  有项目**明确不过**（读到值、值不对；含「配置 ≠ 已发布断言」「gradle 第二份副本 ≠ 配置」
+ *      「包内 consume.baseUrl ≠ 期望值」「包内 consume.baseUrl 命中禁止域」）
  *      → 禁止发布，报告点名是哪一项（前门拦下时 `failing = ['certSources']`，两个值都抄出来）
- *   2  判不出来（缺 aapt2 / apksigner、SDK 没装、不是 APK、清单读不出、配置读不到、`--expect-cert` 非法）
+ *   2  判不出来（缺 aapt2 / apksigner、SDK 没装、不是 APK、清单读不出、配置读不到、`--expect-cert` 非法、
+ *      包内 build-info.json 缺失 / 非 JSON / 无该字段）
  *      → **同样禁止发布**（fail-closed）
  *
  * ## 边界（别夸大）
@@ -87,6 +111,8 @@ import {
 } from '../deploy/dl-release/variant.mjs';
 import { loadBuildEnv, resolveBuildTools, toolchainHint } from './lib/androidTools.mjs';
 import { RE_CERT_SHA256 } from './lib/appIdentity.mjs';
+import { readZipEntry } from '../deploy/dl-release/apk-manifest.mjs';
+import { ENDPOINTS_FILE } from './lib/consumeEndpoints.mjs';
 import {
   CERT_FALLBACK_REL,
   CERT_PRIMARY_REL,
@@ -266,13 +292,138 @@ export function resolveExpectCert(options = {}) {
   return sources;
 }
 
+/**
+ * 第 6 项（Issue #763）的期望值来源标签 —— 写进报告与 `--json` 的 `expectConsumeBaseSource`。
+ *
+ * 这里**没有任何 URL 字面量**：期望值只能来自 `config/endpoints.json`（唯一事实来源，
+ * 与 rspack 注入、gradle 交叉核对读的是同一份），或者由 `--expect-consume-base` 显式覆盖。
+ * 抄一份常量进本文件 = 第二份真相源 —— 改配置不改脚本时，这道闸会拿旧值把错误地址判成绿。
+ */
+export const CONSUME_BASE_SOURCE_CONFIG = 'config/endpoints.json';
+export const CONSUME_BASE_SOURCE_CLI = '--expect-consume-base';
+
+/** 包内产物自述文件（`rspack.config.ts` 的 BuildInfoPlugin 写在 dist 根 → cap sync 拷进 assets/public/） */
+export const BUILD_INFO_ENTRY = 'assets/public/build-info.json';
+
+/**
+ * 解析「这次要比对的期望 consume.baseUrl」与它的来源（Issue #763）。
+ *
+ * 判据：
+ *   · 显式传了 `--expect-consume-base <url>` → 用它（**逐字**，不 trim、不补 `/`）；
+ *   · 否则从 `config/endpoints.json` 的 `consume.baseUrl` 读（`root` 只为复用方 / 单测存在）；
+ *   · **读不到 / 不是合法 JSON / 字段缺失或不是非空字符串 → `ok:false` + exit 2**
+ *     （判不出来就不许放行：期望值猜一个出来，第 6 项就变成假绿灯）。
+ *
+ * 为什么期望值不在这里校验「像不像 URL」：那是 `check:consume-api` / `check:endpoints` 的活，
+ * 而发版闸要做的是**逐字比对包里的值**——目标地址本来就允许带环境前缀（`/staging`），
+ * 任何规范化（去尾斜杠 / 去路径 / 小写化）都会把「打错了前缀」这件事抹平。
+ *
+ * @param {{root?: string, expectConsumeBase?: string|null}} [options]
+ * @returns {{ok: boolean, exitCode: number, value: string|null, source: string,
+ *            invalid: string|null, file: string|null}}
+ */
+export function resolveExpectConsumeBase(options = {}) {
+  const rawCli = typeof options.expectConsumeBase === 'string' ? options.expectConsumeBase : '';
+  if (rawCli !== '') {
+    if (rawCli.trim() === '') {
+      return {
+        ok: false,
+        exitCode: EXIT_UNKNOWN,
+        value: null,
+        source: CONSUME_BASE_SOURCE_CLI,
+        invalid: `--expect-consume-base 是空白字符串（收到 '${rawCli}'）：不知道该比什么，按判不出来处理`,
+        file: null,
+      };
+    }
+    // 逐字用：不 trim、不补尾部斜杠 —— 第 6 项比的是「字节是否一致」，不是「是不是同一台机器」
+    return { ok: true, exitCode: EXIT_OK, value: rawCli, source: CONSUME_BASE_SOURCE_CLI, invalid: null, file: null };
+  }
+
+  const file = options.root ? path.join(options.root, 'config', 'endpoints.json') : ENDPOINTS_FILE;
+  let text;
+  try {
+    text = fs.readFileSync(file, 'utf8');
+  } catch (error) {
+    return {
+      ok: false,
+      exitCode: EXIT_UNKNOWN,
+      value: null,
+      source: CONSUME_BASE_SOURCE_CONFIG,
+      invalid: `读不到 ${file}（${error.code ?? error.message}）：期望值只能来自这份配置，不回落任何内置默认值（#763）`,
+      file,
+    };
+  }
+  let raw;
+  try {
+    raw = JSON.parse(text);
+  } catch (error) {
+    return {
+      ok: false,
+      exitCode: EXIT_UNKNOWN,
+      value: null,
+      source: CONSUME_BASE_SOURCE_CONFIG,
+      invalid: `${file} 不是合法 JSON（${error.message}）：判不出期望值（#763）`,
+      file,
+    };
+  }
+  const value = raw?.consume?.baseUrl;
+  if (typeof value !== 'string' || value.trim() === '') {
+    return {
+      ok: false,
+      exitCode: EXIT_UNKNOWN,
+      value: null,
+      source: CONSUME_BASE_SOURCE_CONFIG,
+      invalid: `${file} 里没有可用的 consume.baseUrl（${value === undefined ? '字段缺失' : `取值 ${JSON.stringify(value)}`}）：判不出期望值（#763）`,
+      file,
+    };
+  }
+  return { ok: true, exitCode: EXIT_OK, value, source: CONSUME_BASE_SOURCE_CONFIG, invalid: null, file };
+}
+
+/** 从 URL 取主机名（小写）；取不出来返回 null（非 URL 值交给原始字符串兜底匹配） */
+function hostOf(value) {
+  try {
+    const hostname = new URL(String(value)).hostname;
+    return hostname ? hostname.toLowerCase().replace(/^\[|\]$/g, '') : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 禁止域命中判定（第 6 项的**独立维度**）。
+ *
+ * 为什么不能只比「期望 == 实际」：1.4.5–1.4.8 那四个包出错时，**期望值和实际值都指向那个错域名**
+ * 也能自比成绿 —— 只要人把期望值一起改掉。所以「这个域名永不许出现在包里」必须单独判一次。
+ * 匹配口径：主机名相等 / 是其子域（`api.x` 命中 `x`），或者字面出现在值里（值不是合法 URL 时兜底）。
+ *
+ * @param {string[]} values 要比对的值（包内实际值 + 期望值）
+ * @param {string[]} forbidHosts 禁止域（已 trim + 小写）
+ * @returns {{host: string, value: string}|null} 命中的那一对；没命中返回 null
+ */
+export function findForbiddenHostHit(values, forbidHosts) {
+  if (!Array.isArray(forbidHosts) || forbidHosts.length === 0) return null;
+  for (const value of values) {
+    if (typeof value !== 'string' || value === '') continue;
+    const host = hostOf(value);
+    const lowered = value.toLowerCase();
+    for (const forbidden of forbidHosts) {
+      const hit = host !== null && (host === forbidden || host.endsWith(`.${forbidden}`));
+      if (hit || lowered.includes(forbidden)) return { host: forbidden, value };
+    }
+  }
+  return null;
+}
+
 /** 检查项状态：pass 通过 / fail 明确不过 / unknown 判不出来（fail-closed） */
 export const STATUS = Object.freeze({ PASS: 'pass', FAIL: 'fail', UNKNOWN: 'unknown' });
 
 /**
- * 五项检查的固定顺序与标题（表格、--json、报错点名都以它为准）。
+ * 六项检查的固定顺序与标题（表格、--json、报错点名都以它为准）。
  * 第 5 项 `insecure` 与第 3 项 `loopback` **并列、语义不合并**：
  *   loopback = 回环地址（真机连不上后端）；insecure = 明文非回环（连得上但不加密，#601 守卫的补正面）。
+ * 第 6 项 `consumeBase` 判的是**包里的消费后端地址指向哪**（Issue #763）——
+ * 前五项都只回答「包是不是按规矩打的」，没有一个回答「它连的是谁」。
  */
 export const CHECKS = Object.freeze([
   { id: 'debuggable', title: '1 debuggable 不存在或 false' },
@@ -280,6 +431,7 @@ export const CHECKS = Object.freeze([
   { id: 'loopback', title: '3 LOOPBACK_CONSUME 不存在或 false' },
   { id: 'cert', title: '4 签名证书 SHA-256 与期望一致' },
   { id: 'insecure', title: '5 INSECURE_CONSUME 不存在或 false' },
+  { id: 'consumeBase', title: '6 包内 consume.baseUrl 与期望一致' },
 ]);
 
 const SCRIPT = path.basename(fileURLToPath(import.meta.url));
@@ -439,8 +591,10 @@ const STATUS_LABEL = {
  * 校验一个 APK。
  *
  * @param {{apk: string, variant?: string, expectCert?: string, env?: NodeJS.ProcessEnv,
- *          buildToolsVersion?: string|null, allowInsecure?: boolean, root?: string}} options
+ *          buildToolsVersion?: string|null, allowInsecure?: boolean, root?: string,
+ *          expectConsumeBase?: string|null, forbidHosts?: string[]}} options
  *   `root`：仓库根（默认本仓）。只有复用方 / 单测会传，用来把配置指向临时目录。
+ *   `expectConsumeBase` / `forbidHosts`：第 6 项（#763），语义见 {@link resolveExpectConsumeBase}。
  * @returns {object} 结构化结果（形状见文件头；`--json` 直接打印它）
  */
 export function verifyReleaseApk(options) {
@@ -449,6 +603,18 @@ export function verifyReleaseApk(options) {
   // 期望指纹前门（#705 收尾）：**先无条件校验配置完整性**（存在 / 64 hex / 无第二份不等副本 /
   // 与已发布断言一致），再决定拿哪个值与 APK 比对。`--expect-cert` 只覆盖后者，不豁免前者。
   const certExpectation = resolveExpectCert({ expectCert: options.expectCert, root: options.root });
+  // 第 6 项的期望值（#763）：同样在碰 APK 之前定下来，读不到就 exit 2（不许猜一个值去比）
+  const consumeExpectation = resolveExpectConsumeBase({
+    root: options.root,
+    expectConsumeBase: options.expectConsumeBase,
+  });
+  // 禁止域（第 6 项的独立维度）：trim + 小写 + 去重，空值丢弃（空串当「没传」比当成通配安全）
+  const forbidHosts = Array.isArray(options.forbidHosts)
+    ? [...new Set(options.forbidHosts
+      .filter((host) => typeof host === 'string')
+      .map((host) => host.trim().toLowerCase())
+      .filter((host) => host !== ''))]
+    : [];
   // 「明文联调包」必须是**显式**认可的一件事：不传就是不许发（见下面第 5 项）
   const allowInsecure = options.allowInsecure === true;
   const apkArg = typeof options.apk === 'string' ? options.apk : '';
@@ -460,6 +626,11 @@ export function verifyReleaseApk(options) {
     expectCertSource: certExpectation.source,
     // 配置里那个值（即便 --expect-cert 覆盖了比对值，它也存在 —— 复核的人要看得出「配置是健康的」）
     configCert: certExpectation.configValue ?? null,
+    // 第 6 项（#763）：期望的包内 consume.baseUrl + 它来自哪里 + 本次的禁止域
+    expectConsumeBase: consumeExpectation.value,
+    expectConsumeBaseSource: consumeExpectation.source,
+    forbidHosts,
+    consumeBase: null,
     allowInsecure,
     insecure: false,
     buildTools: null,
@@ -472,6 +643,19 @@ export function verifyReleaseApk(options) {
   // 复核的人（和 `--json` 消费方）要能看出「这一次比对的期望值经得起配置层复核」，
   // 而不是只有全绿那一份结果里才带这个字段。
   base.certSources = { ok: true, kind: CERT_SOURCES.OK, exitCode: EXIT_OK };
+
+  // 第 6 项的期望值判不出来（配置读不到 / 缺字段 / `--expect-consume-base` 是空白）→ exit 2。
+  // 位置刻意放在「碰 APK 之前」：拿一个猜出来的期望值去比，比出来的绿是假绿（与第 4 项的前门同口径）。
+  if (!consumeExpectation.ok) {
+    return unknownResult(base, [
+      `包内 consume.baseUrl 的期望值判不出来（来源：${consumeExpectation.source}）：`,
+      `  ${consumeExpectation.invalid}`,
+      '',
+      '修法:',
+      '  1) 确认 config/endpoints.json 存在，且 consume.baseUrl 是非空字符串（唯一来源，不许在脚本里写第二份）；',
+      '  2) 只是想临时按别的地址验一下 → 显式传 --expect-consume-base <url>（输出里会标来源）。',
+    ].join('\n'));
+  }
 
   const expectCert = certExpectation.value;
 
@@ -618,7 +802,85 @@ export function verifyReleaseApk(options) {
     checks.push(check('insecure', STATUS.FAIL, '不存在或 false', String(insecureRaw), '标记值不是布尔（gradle 只写 true/false），fail-closed'));
   }
 
-  // ── 6. 附加输出（不算失败项）：Release 正文直接用 ──────────────────────────────────────
+  // ── 6. 包内 consume.baseUrl（Issue #763）───────────────────────────────────────────────
+  //
+  // 读 `assets/public/build-info.json` 的 `endpoints.consume.baseUrl`，**逐字**与期望值比对。
+  // 为什么读 build-info 而不是 grep bundle：bundle 里 `consume` / `baseUrl` 的名字出现多处
+  // （配置对象、类型定义、错误文案），grep 到的那个字符串**不一定**是生效值；build-info 是
+  // `rspack.config.ts` 在 afterEmit 里按注入值写的产物自述文件，一字段一地址。
+  // 为什么要有这一项：1.4.5–1.4.8 四个包都指向了错的实例（#763），而前五项每次都全绿 ——
+  // 「包里连的是谁」从来没人判过。
+  const expectConsumeBase = consumeExpectation.value;
+  let actualConsumeBase = null;
+  let consumeWhy = null;
+  try {
+    const buildInfoBuf = readZipEntry(fs.readFileSync(apk), BUILD_INFO_ENTRY);
+    if (buildInfoBuf === null) {
+      consumeWhy =
+        `APK 里没有 ${BUILD_INFO_ENTRY}：` +
+        'cap sync 没跑 / 产物不是这次 `pnpm build` 出的（没有自述文件就无法证明包里连的是哪台后端）';
+    } else {
+      let buildInfo = null;
+      try {
+        buildInfo = JSON.parse(buildInfoBuf.toString('utf8'));
+      } catch (error) {
+        consumeWhy = `${BUILD_INFO_ENTRY} 不是合法 JSON（${error.message}）：判不出包里的地址`;
+      }
+      // 解析失败时不再往下读字段：否则「非 JSON」会被下一条覆盖成「字段缺失」，理由就丢了
+      const value = buildInfo === null ? undefined : buildInfo?.endpoints?.consume?.baseUrl;
+      if (consumeWhy === null && (typeof value !== 'string' || value === '')) {
+        consumeWhy = `${BUILD_INFO_ENTRY} 里没有 endpoints.consume.baseUrl` +
+          `（${value === undefined ? '字段缺失' : `取值 ${JSON.stringify(value)}`}）：判不出包里的地址`;
+      } else if (consumeWhy === null) {
+        actualConsumeBase = value;
+      }
+    }
+  } catch (error) {
+    consumeWhy = `读 APK 字节 / 解压 ${BUILD_INFO_ENTRY} 失败：${error.message}（判不出来）`;
+  }
+
+  if (consumeWhy !== null) {
+    // 缺自述文件 / 非 JSON / 无字段 = **判不出来**（exit 2，fail-closed）：
+    // 这不是「某一项明确不过」，是「这道闸这次没能回答问题」—— 两种都禁止发布，但报告要分清。
+    checks.push(check('consumeBase', STATUS.UNKNOWN, expectConsumeBase, '判不出来', consumeWhy));
+  } else {
+    base.consumeBase = {
+      expected: expectConsumeBase,
+      actual: actualConsumeBase,
+      source: consumeExpectation.source,
+      forbidHosts,
+      forbiddenHit: null,
+    };
+    // ① 禁止域（独立维度，先判）：期望 == 实际也要能红 —— 否则「把期望值一起改成那个错域名」
+    //    就能自比成绿（1.4.5–1.4.8 的错就是这种形状）。
+    const forbiddenHit = findForbiddenHostHit([actualConsumeBase, expectConsumeBase], forbidHosts);
+    if (forbiddenHit !== null) {
+      base.consumeBase.forbiddenHit = forbiddenHit;
+      const which = forbiddenHit.value === actualConsumeBase ? '包内实际值' : '期望值';
+      checks.push(check(
+        'consumeBase', STATUS.FAIL, expectConsumeBase, actualConsumeBase,
+        `包内 consume.baseUrl（${which}）命中禁止域 '${forbiddenHit.host}'：${forbiddenHit.value}` +
+          ' —— 这个域名永不许进包（#763 的事故域），即使它与期望值一致也判红；' +
+          '请改 config/endpoints.json 里的 consume.baseUrl 重新出包，不要改这道闸',
+      ));
+    } else if (actualConsumeBase !== expectConsumeBase) {
+      // ② 逐字比对：不做任何规范化（不 trim、不补 /、不小写化、不剥路径前缀）——
+      //    `https://apia.ecsafe.cn/staging` 少一个 `/staging` 就是另一台环境，必须红。
+      checks.push(check(
+        'consumeBase', STATUS.FAIL, expectConsumeBase, actualConsumeBase,
+        `包里的 consume.baseUrl 与期望值不符：期望 '${expectConsumeBase}'（来源 ${consumeExpectation.source}），` +
+          `实际 '${actualConsumeBase}'（APK: ${BUILD_INFO_ENTRY}）—— 逐字比对，不做规范化；` +
+          '多半是出包时 `CONSUME_BASE_OVERRIDE` / 构建分支不对，改配置或重新出包，别改期望值',
+      ));
+    } else {
+      checks.push(check(
+        'consumeBase', STATUS.PASS, expectConsumeBase, actualConsumeBase,
+        forbidHosts.length ? `未命中禁止域（${forbidHosts.join(' / ')}）` : null,
+      ));
+    }
+  }
+
+  // ── 附加输出（不算失败项）：Release 正文直接用 ──────────────────────────────────────
   const badging = run(tools.tools.aapt2, ['dump', 'badging', apk]);
   const fromBadging = badging.status === 0 && !badging.error ? parseBadgingVersion(badging.stdout) : {};
   const info = {
@@ -679,6 +941,13 @@ export function formatReport(result) {
     `期望  : variant=${result.variant}  cert=${result.expectedCert ?? '—'}`
       + `  来源=${result.expectCertSource ?? '未确定'}`,
   );
+  // 第 6 项（#763）的期望值也贴在同一块：复核的人要能看出「这次比的是哪个消费后端、
+  // 期望值是配置派生的还是 --expect-consume-base 传的、这次有没有禁止域」。
+  lines.push(
+    `        consume.baseUrl=${result.expectConsumeBase ?? '—'}`
+      + `  来源=${result.expectConsumeBaseSource ?? '未确定'}`
+      + `  禁止域=${(result.forbidHosts ?? []).length ? result.forbidHosts.join(' / ') : '（无）'}`,
+  );
   lines.push('');
   const titleWidth = Math.max(...CHECKS.map((item) => displayWidth(item.title.replace(/^\d+ /, ''))));
   lines.push(`${pad('#', 1)}  ${pad('检查', titleWidth)}  结果     实际`);
@@ -735,15 +1004,17 @@ export function formatReport(result) {
 
 function usage() {
   return [
-    `用法: node scripts/${SCRIPT} <apk> [--variant standard|internal] [--expect-cert <sha256>] [--allow-insecure] [--json]`,
+    `用法: node scripts/${SCRIPT} <apk> [--variant standard|internal] [--expect-cert <sha256>]`,
+    '       [--expect-consume-base <url>] [--forbid-host <host>]... [--allow-insecure] [--json]',
     '',
     '前门（碰 APK 之前，任何情况下都先跑）：期望证书指纹的配置完整性 —— 配置存在 / 64 位 hex /',
     '        与已发布断言一致 / gradle 里没有第二份不等的副本；不健康就 exit≠0。',
     '        --expect-cert 只覆盖「拿哪个值与 APK 比对」，不豁免上面这几条（详见下面「期望证书指纹」）。',
     '',
-    '五项校验：debuggable 不存在或 false / ARTIFACT_VARIANT 与 --variant 一致 /',
+    '六项校验：debuggable 不存在或 false / ARTIFACT_VARIANT 与 --variant 一致 /',
     '          LOOPBACK_CONSUME 不存在或 false / 签名证书 SHA-256 与 --expect-cert 一致 /',
-    '          INSECURE_CONSUME 不存在或 false（为 true 时必须显式加 --allow-insecure，否则 exit 1）',
+    '          INSECURE_CONSUME 不存在或 false（为 true 时必须显式加 --allow-insecure，否则 exit 1） /',
+    '          包内 consume.baseUrl 与期望值**逐字**一致，且不命中禁止域（#763）',
     '附加输出：versionName / versionCode / sha256 / md5 / size（Release 正文直接用）',
     '',
     '--allow-insecure  确认「这是明文联调包」：只给 staging 联调用，结论行会强制标 INSECURE(staging-only)，',
@@ -761,8 +1032,19 @@ function usage() {
     '                  配置被删 / 被改时，即便传了合法指纹也照样 exit≠0（语义自 #705 收尾起）。',
     '                  不传时比对值从配置派生；来源会写进结论行与 --json 的 expectCertSource。',
     '',
-    '退出码: 0 五项全过 / 1 有项目明确不过（报告点名；含配置与已发布断言不等） /',
-    '        2 判不出来（缺 SDK 工具、配置读不到、--expect-cert 非法等，同样禁止发布）',
+    '第 6 项（#763）：包里的消费后端地址指向哪 —— 读 APK 内',
+    `  ${BUILD_INFO_ENTRY} 的 endpoints.consume.baseUrl，与 ${CONSUME_BASE_SOURCE_CONFIG} 的`,
+    '  consume.baseUrl **逐字**比对（不规范化尾部斜杠 / 路径前缀）。',
+    '  · build-info 缺失 / 非 JSON / 无该字段 / APK 读不出 → exit 2（判不出来就不发）；',
+    '  · 与期望值不符 → exit 1，报告点名「期望 / 实际」两个值；',
+    '  · 命中 --forbid-host 的禁止域 → exit 1，**即使期望 == 实际**（禁止域是独立维度）。',
+    '',
+    '--expect-consume-base <url>  只覆盖第 6 项「拿哪个值与 APK 比对」：不传时从配置派生；',
+    '                  来源会写进报告与 --json 的 expectConsumeBaseSource。',
+    '--forbid-host <host>  禁止域，可重复（如 --forbid-host sub2api.rose7.cn）：包里的地址命中就 exit 1。',
+    '',
+    '退出码: 0 六项全过 / 1 有项目明确不过（报告点名；含配置与已发布断言不等） /',
+    '        2 判不出来（缺 SDK 工具、配置读不到、--expect-cert 非法、build-info 读不出等，同样禁止发布）',
   ].join('\n');
 }
 
@@ -771,6 +1053,9 @@ function parseArgs(argv) {
     apk: '',
     variant: 'standard',
     expectCert: null,
+    // 第 6 项（#763）：期望的包内 consume.baseUrl（不传则从 config/endpoints.json 派生）+ 禁止域（可重复）
+    expectConsumeBase: null,
+    forbidHosts: [],
     json: false,
     help: false,
     buildToolsVersion: null,
@@ -790,6 +1075,8 @@ function parseArgs(argv) {
     else if (arg === '--allow-insecure') options.allowInsecure = true;
     else if (arg === '--variant') options.variant = value();
     else if (arg === '--expect-cert') options.expectCert = value();
+    else if (arg === '--expect-consume-base') options.expectConsumeBase = value();
+    else if (arg === '--forbid-host') options.forbidHosts.push(value());
     else if (arg === '--build-tools') options.buildToolsVersion = value();
     else if (arg === '-h' || arg === '--help') options.help = true;
     else if (arg.startsWith('-')) throw new Error(`未知参数: ${arg}`);
@@ -821,6 +1108,8 @@ function main(argv) {
     apk: options.apk,
     variant: options.variant,
     expectCert: options.expectCert ?? undefined,
+    expectConsumeBase: options.expectConsumeBase ?? undefined,
+    forbidHosts: options.forbidHosts,
     buildToolsVersion: options.buildToolsVersion,
     allowInsecure: options.allowInsecure,
   });
@@ -838,7 +1127,10 @@ function main(argv) {
         : result.failing.includes('certSources')
           // 前门拦下（#705 收尾）：措辞要说清「不是 APK 的问题，是期望值本身不可信」，两个值在报告里
           ? '发布校验不通过：期望证书指纹的来源/断言不一致（配置 ≠ 已发布，或 gradle 里还有第二份副本）—— 两个值见上面的报告'
-          : `发布校验不通过：${result.failing.join(' / ')}`)
+          : result.failing.includes('consumeBase')
+            // 第 6 项（#763）：期望 / 实际两个值都在报告的 detail 里，这里只说清「不是包坏了，是地址不对」
+            ? '发布校验不通过：consumeBase —— 包内的消费后端地址与期望值不符，或命中了禁止域（期望 / 实际两个值见上面的报告）'
+            : `发布校验不通过：${result.failing.join(' / ')}`)
       : '发布校验判不出来（fail-closed）';
     console.error(reason);
   }
