@@ -70,6 +70,14 @@ staging 地址是 `http://140.210.13.146:16000`（明文）。它今天撞三道
 
 | # | 层 | 位置 | 判据 | 现象 |
 | --- | --- | --- | --- | --- |
+| ① | 构建期（web 产物） | `scripts/lib/consumeEndpoints.mjs:185`，由 `scripts/build.mjs` 在打包前调用（调用点：`build.mjs` 里 `applyBaseOverrides(config, raw)` 那一处） | `consume.baseUrl` 必须 `https://`，唯一例外是本机回环（`scripts/lib/consumeEndpoints.mjs:164`） | `pnpm build` 在打第一个字节前就中止 |
+| ② | 构建期（gradle） | `android/app/build.gradle:209`（https）+ `android/app/build.gradle:212`（命中废弃域黑名单） | 黑名单 `android/app/build.gradle:141` 里**就含 `140.210.13.146`** | `assembleRelease` 在配置阶段 `GradleException` |
+| ③ | **运行时** | `src/services/consume/http.ts:179` | 同一套判据：非 https 且非回环 → 抛 `ConsumeConfigError` | **App 白屏** |
+
+> **2026-11-21 更新（#693 / #601 守卫的补正面）**：①②③ 三层现在都有**显式放行通道**（staging-only）——
+> web 构建期 `ALLOW_INSECURE_CONSUME=true`、原生构建期 `-PallowInsecureConsume=true`，产物带
+> `INSECURE_CONSUME=true` 自证标记，`pnpm verify:apk` 不带 `--allow-insecure` 直接 exit 1。
+> 也就是说：**不必再为了过①③ 去改配置或拆守卫**；但明文包仍然只许内网 staging 联调，**禁止公开分发**。
 
 ### 3.1 为什么②过不去：那个 IP 本身在黑名单里
 
