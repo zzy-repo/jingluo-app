@@ -241,7 +241,8 @@ const SettingsContent = ({ visible }: { visible: boolean }) => {
                 onNavigate={setAccountPage}
                 sourceConfig={
                   <>
-                    <ApiConfigFields editor={apiKeyEditor} />
+                    {/* 渠道改由「模型来源」里的三个来源 + 协议切换承担，这里不再重复一个下拉 */}
+                    <ApiConfigFields editor={apiKeyEditor} hideProviderKind />
                     {isMobile ? <ApiKeyConfirm editor={apiKeyEditor} /> : null}
                   </>
                 }

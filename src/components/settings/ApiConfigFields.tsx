@@ -68,12 +68,22 @@ type ApiKeyEditor = ReturnType<typeof useApiKeyEditor>
  * baseUrl / model，于是只渲染 API Key 一行；要自己填地址的渠道（Anthropic 协议 / OpenAI 兼容）
  * 渲染三行。切换渠道时界面静默变化，不给能力说明。
  */
-export const ApiConfigFields = ({ editor }: { editor: ApiKeyEditor }) => {
+export const ApiConfigFields = ({
+  editor,
+  hideProviderKind = false,
+}: {
+  editor: ApiKeyEditor
+  /**
+   * #727 阶段 1：设置第三个 tab 里「来源」由三行（内置 / 第三方 / 官方）自己选，
+   * 这一块就不再重复渲染「渠道」下拉 —— 字段本身仍按 `spec.fields` 走，一个字都不改。
+   */
+  hideProviderKind?: boolean
+}) => {
   const kind = useApiConfig((state) => state.kind)
   const spec = getSpec(kind)
   return (
     <>
-      <ProviderKindField />
+      {hideProviderKind ? null : <ProviderKindField />}
       {spec.fields.map((field) => (
         <ApiConfigField key={field} field={field} spec={spec} editor={editor} />
       ))}

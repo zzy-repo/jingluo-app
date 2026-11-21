@@ -817,7 +817,13 @@ export const zh = {
   // 登录注册（sub2api /api/v1/auth）
   sub2authEmail: '邮箱',
   // #727 阶段 1：设置里的登录卡（账号页未登录态 / 模型来源未登录态）
-  settingsOursNeedsLogin: '「内置渠道」需要账号：登录后自动领取托管 Key（也可切回 DeepSeek 官方，只填 API Key 就能用）',
+  // #727 阶段 1：「模型来源」的三个选项 + 第三方渠道的协议切换
+  settingsSourceBuiltin: '内置渠道',
+  settingsSourceThird: '第三方渠道',
+  settingsSourceOfficial: '官方渠道',
+  settingsThirdPartyProtocol: '协议',
+  settingsProtocolOpenai: 'OpenAI 兼容',
+  settingsProtocolAnthropic: 'Anthropic 协议',
   settingsAuthEmailPlaceholder: '请输入邮箱',
   settingsAuthPasswordPlaceholder: '请输入密码（至少 6 位）',
   settingsAuthCodePlaceholder: '请输入验证码',
@@ -825,7 +831,6 @@ export const zh = {
   settingsAuthCountdown: '{seconds}s',
   settingsAuthSkip: '暂不登录',
   settingsAuthHaveAccount: '已有账号？登录',
-  settingsAuthAutoCreateHint: '未注册的邮箱将自动创建账号',
   settingsAuthForgotSent: '重置邮件已发送，请查收邮箱',
   settingsAuthForgotNeedsEmail: '请先填写邮箱，再点「忘记密码」',
   sub2authPassword: '密码',
