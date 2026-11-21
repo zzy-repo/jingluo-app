@@ -75,7 +75,7 @@
 | 文件:行 | 假设内容 | 类别 | 风险 | 处置 |
 | --- | --- | --- | --- | --- |
 | `app/App.module.css:105` | `@supports (height: 100dvh)`，块外 `:104` 有 `height: var(--app-viewport-height, 100vh)` | 2 | 低 | 已有兜底 |
-| `components/chatInput/ChatInput.module.css:258` | `@supports (max-height: 100dvh)`，块外 `:257` 有 `max-height: calc(var(--app-viewport-height, 100vh) - 120px)`（窄屏媒体查询内） | 2 | 低 | 已有兜底 |
+| `components/chatInput/ChatInput.module.css:268` | `@supports (max-height: 100dvh)`，块外 `:267` 有 `max-height: calc(var(--app-viewport-height, 100vh) - 120px)`（窄屏媒体查询内） | 2 | 低 | 已有兜底 |
 | `components/messages/MessageList.module.css:22` | `@supports (scrollbar-gutter: stable both-edges)` 现代内核收回 `overflow-y: auto`（#216），块外 `:16` 有常驻 `overflow-y: scroll` | 2 | 低 | 已有兜底 |
 | `components/messages/MessageList.module.css:74` | `@supports (scrollbar-gutter: stable)` 窄屏收回块（#236），同作用域 `:66` 先写 `overflow-y: scroll` | 2 | 低 | 已有兜底 |
 | `components/settings/AppUpdateField.module.css:24` | `@supports (max-height: 100dvh)`，块外 `:21` 有 `min(70vh, calc(…, 100vh) - 32px)` | 2 | 低 | 已有兜底 |
@@ -212,7 +212,7 @@
 | `app/App.module.css:3,28,77` | `inset: 0` 铺满 | 2 | 低 | 已有兜底（构建期翻译） |
 | `app/ErrorBoundary.module.css:9` | `inset: 0` | 2 | 低 | 已有兜底（构建期翻译） |
 | `components/base/Modal.module.css:4,22` | `inset: 0` | 2 | 低 | 已有兜底（构建期翻译） |
-| `components/chatInput/ChatInput.module.css:68,99` | `inset: 0` | 2 | 低 | 已有兜底（构建期翻译） |
+| `components/chatInput/ChatInput.module.css:77,109` | `inset: 0` | 2 | 低 | 已有兜底（构建期翻译） |
 | `components/chatInput/DragMask.module.css:3` | `inset: 0` | 2 | 低 | 已有兜底（构建期翻译） |
 | `components/chatInput/VoiceButton.module.css:79,90` | `inset: 0` | 2 | 低 | 已有兜底（构建期翻译） |
 | `components/messages/MessageFile.module.css:54` | `inset: 0` | 2 | 低 | 已有兜底（构建期翻译） |
@@ -226,7 +226,7 @@
 | 文件:行 | 假设内容 | 类别 | 风险 | 处置 |
 | --- | --- | --- | --- | --- |
 | `components/base/Toast.module.css:9`<br>`components/markdown/markdown.css:184,195`<br>`components/messages/MessageFile.module.css:88`<br>`components/session/Welcome.module.css:43`<br>`components/settings/AppUpdateField.module.css:21,26,33,40`<br>`components/settings/Settings.module.css:204,209,344,949,963,965`<br>`components/consume/AccountConsume.module.css:10,11`<br>`components/update/UpdateDialog.module.css:19,24,31,38` | CSS `min()` / `max()`（21 处） | 2 | 低 | 无需探测（79 ≤ 83）。另 6 处随文件删除（不计入 21）：~~`components/settings/PaymentRecords.module.css:4,5`~~、~~`components/settings/PaymentTrailDialog.module.css:4,5`~~、~~`components/settings/PurchaseRecordsDialog.module.css:6,7`~~（#561 三弹层合一） |
-| `app/global.css:52`<br>`components/base/Select.module.css:82`<br>`components/chatInput/ChatInput.module.css:223`<br>`components/messages/MessageList.module.css:46`<br>`components/settings/AppUpdateField.module.css:59`<br>`components/settings/Settings.module.css:969`<br>`components/update/UpdateDialog.module.css:53` | `overscroll-behavior[-y]`（7 处） | 2 | 低 | 无需探测（63 ≤ 83） |
+| `app/global.css:52`<br>`components/base/Select.module.css:82`<br>`components/chatInput/ChatInput.module.css:233`<br>`components/messages/MessageList.module.css:46`<br>`components/settings/AppUpdateField.module.css:59`<br>`components/settings/Settings.module.css:969`<br>`components/update/UpdateDialog.module.css:53` | `overscroll-behavior[-y]`（7 处） | 2 | 低 | 无需探测（63 ≤ 83） |
 | `components/base/Toast.module.css:3`<br>`components/session/SessionView.module.css:68`<br>`components/session/Welcome.module.css:152`<br>`components/auth/AuthPages.module.css:16`<br>`components/settings/Settings.module.css:699,949` | `env(safe-area-inset-*)`（6 处） | 2 | 低 | 无需探测（69 ≤ 83）；缺省值一致性见 §5 |
 | `components/messages/AssistantMessage.module.css:152,180`<br>`components/session/MobileHeader.module.css:29`<br>`components/settings/AppUpdateField.module.css:57`<br>`components/settings/Settings.module.css:968`<br>`components/update/UpdateDialog.module.css:51` | `touch-action`（6 处） | 2 | 低 | 无需探测（36 ≤ 83）；#347 / #353 给折叠区开关补了第 5 处，#517 更新弹窗的内容区是第 6 处 |
 | `components/base/Modal.module.css:25`<br>`components/chatInput/DragMask.module.css:12` | `backdrop-filter`（2 处；`DragMask.module.css:11` 另有 `-webkit-backdrop-filter` 前缀版） | 2 | 低 | 无需探测（76 ≤ 83） |
