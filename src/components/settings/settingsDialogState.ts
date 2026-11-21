@@ -14,14 +14,27 @@ import { captureStateSnapshot, recordAction } from '../../services/diagnostics/c
 import { showToast } from '../base/toastState.js'
 
 /**
- * 设置弹窗的分组：通用设置 / 记忆 / 数据管理。
+ * 设置弹窗的分组：通用设置 / 数据管理。
  *
- * `memory` 是 #398 为「窗口记忆」新增的最小分组：分组归属照 `src/services/memory/` 的模块名
- * （上游 README 里的 "Window memory"）取，组内只放与记忆有关、且**会往外发数据**的开关
- * （embedding 是第一条；#399 的按窗口接线条目也归这里），不与「通用设置」的外观项、
- * 「数据管理」的导入导出 / 服务配置混在一列。默认落地仍是 `general`，老入口一字不改。
+ * `memory` 是 #398 为「窗口记忆」加的第三个分组（组内只有 embedding 开关一行）；#711 决定
+ * **下线这个入口**，所以这里直接把它从联合里删掉 —— 收窄而不是「留着值但入口不可达」：
+ * 任何残留引用（文案 key / 渲染分支 / 旧调用方）都会在 `npx tsc` 时报错，而不是变成一段
+ * 谁也点不到、却仍然编译通过的代码。
+ *
+ * 只切 UI 入口：`src/services/memory/**` 与 `settings.embeddingEnabled` 的持久化 / 迁移
+ * **一律不动**（它们不依赖这个类型）。
  */
-export type SettingsSection = 'general' | 'memory' | 'data'
+export type SettingsSection = 'general' | 'data'
+
+/**
+ * 把任意来源的分组值收敛成合法值（#711 兜底）。
+ *
+ * 非法值是真会出现的：小版本回滚 / 旧包里可能留下 `'memory'`，JS 调用方（`open({ section })`
+ * 没有 tsc 把关）也可能塞脏值。设置弹窗**任何时候都要有一块非空面板**，不能因为一个分组
+ * 下线就渲染出空白，所以：只认 `'data'`，其余一律落到 `'general'`（老行为的默认落点）。
+ */
+export const normalizeSettingsSection = (value: unknown): SettingsSection =>
+  value === 'data' ? 'data' : 'general'
 
 /**
  * 「账户与消费」页的四个 tab（#482 三弹层合一 / #487）。
@@ -67,8 +80,11 @@ export const useSettingsDialog = create(() => ({
 }))
 
 export const openSettings = (section: SettingsSection) => {
-  recordAction('nav', 'open-settings', { section })
-  useSettingsDialog.setState({ open: true, section })
+  // #711 兜底：`'memory'` 只可能来自旧版本残留或没跟上的调用方（JS 侧 tsc 管不到）。
+  // 在**写进 store 之前**就收敛，后续所有读 `state.section` 的地方看到的都是合法值。
+  const normalized = normalizeSettingsSection(section)
+  recordAction('nav', 'open-settings', { section: normalized })
+  useSettingsDialog.setState({ open: true, section: normalized })
   void captureStateSnapshot('after-open-settings')
 }
 

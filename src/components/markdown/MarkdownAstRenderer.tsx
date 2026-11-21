@@ -1,4 +1,4 @@
-import { createElement, memo, useLayoutEffect, useMemo, useRef, type ReactNode } from 'react'
+import { createElement, memo, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import clsx from 'clsx'
 import type {
   BlockContent,
@@ -8,6 +8,11 @@ import type {
   Root,
   Table as TableNode,
 } from 'mdast'
+import { useTranslate } from '../../i18n/index.js'
+import { tableToGfm } from '../../services/markdown/toGfm.js'
+import { copyText } from '../../utils/clipboard.js'
+import { IconCheckOutline16, IconCopyOutline16 } from '../base/icons.js'
+import { showToast } from '../base/toastState.js'
 import { CitationLink } from '../search/CitationLink.js'
 import { BEFORE_LIST_CLASS, beforeListClass } from './blockSpacing.js'
 import { CodeBlock } from './CodeBlock.js'
@@ -45,45 +50,69 @@ const List = memo(function List({ node, loading }: { node: ListNode; loading: bo
 
 const Table = memo(function Table({ node }: { node: TableNode }) {
   const columnCount = node.children[0]?.children.length
+  const t = useTranslate()
+  const [copied, setCopied] = useState(false)
+  /** 从 AST 序列化出的 GFM 文本：按钮点一下就把整张表带走（不是 innerText 那种排版碎片） */
+  const gfm = useMemo(() => tableToGfm(node), [node])
   return (
-    <div className="markdown-table-wrapper">
-      <table>
-        {node.children[0] ? (
-          <thead>
-            <tr>
-              {node.children[0].children.map((cell, cellIndex) => {
+    <div className="md-table-block">
+      <div className="markdown-table-wrapper">
+        <table>
+          {node.children[0] ? (
+            <thead>
+              <tr>
+                {node.children[0].children.map((cell, cellIndex) => {
+                  return (
+                    <th key={cellIndex}>
+                      <MarkdownPhrasingContent nodes={cell.children} />
+                    </th>
+                  )
+                })}
+              </tr>
+            </thead>
+          ) : null}
+          {node.children[1] ? (
+            <tbody>
+              {node.children.slice(1).map((row, rowIndex) => {
+                const curColumnCount = row.children.length || 0
                 return (
-                  <th key={cellIndex}>
-                    <MarkdownPhrasingContent nodes={cell.children} />
-                  </th>
+                  <tr key={rowIndex}>
+                    {row.children.map((cell, cellIndex) => {
+                      return (
+                        <td key={cellIndex}>
+                          <MarkdownPhrasingContent nodes={cell.children} />
+                        </td>
+                      )
+                    })}
+                    {/* 补齐到列数 */}
+                    {Array.from({ length: columnCount - curColumnCount }).map((_, idx) => (
+                      <td key={`ptd_${idx}`} />
+                    ))}
+                  </tr>
                 )
               })}
-            </tr>
-          </thead>
-        ) : null}
-        {node.children[1] ? (
-          <tbody>
-            {node.children.slice(1).map((row, rowIndex) => {
-              const curColumnCount = row.children.length || 0
-              return (
-                <tr key={rowIndex}>
-                  {row.children.map((cell, cellIndex) => {
-                    return (
-                      <td key={cellIndex}>
-                        <MarkdownPhrasingContent nodes={cell.children} />
-                      </td>
-                    )
-                  })}
-                  {/* 补齐到列数 */}
-                  {Array.from({ length: columnCount - curColumnCount }).map((_, idx) => (
-                    <td key={`ptd_${idx}`} />
-                  ))}
-                </tr>
-              )
-            })}
-          </tbody>
-        ) : null}
-      </table>
+            </tbody>
+          ) : null}
+        </table>
+      </div>
+      {gfm === '' ? null : (
+        <button
+          type="button"
+          className="md-float-copy md-table-copy"
+          aria-label={t('tableCopy')}
+          title={t('tableCopy')}
+          onClick={async () => {
+            if (!(await copyText(gfm))) {
+              showToast({ key: 'copyFailed' })
+              return
+            }
+            setCopied(true)
+            setTimeout(() => setCopied(false), 1500)
+          }}
+        >
+          {copied ? <IconCheckOutline16 /> : <IconCopyOutline16 />}
+        </button>
+      )}
     </div>
   )
 })

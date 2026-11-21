@@ -64,6 +64,16 @@ export const en = {
   mermaidLoading: 'Rendering diagram...',
   mermaidRenderFail: 'Mermaid rendering failed.',
   mermaidSwitchLabel: 'Toggle between Mermaid diagram and code',
+  /** Language row actions of a code block: line numbers / wrap / download (#486 P0-1, P0-4) */
+  codeLineNumbers: 'Lines',
+  codeWrap: 'Wrap',
+  codeDownload: 'Download code',
+  codeDownloadSaved: 'Saved',
+  codeDownloadFailed: 'Save failed. Please try again.',
+  /** Copy-the-whole-table action above a table; the clipboard gets standard GFM (#486 P0-3) */
+  tableCopy: 'Copy table',
+  /** Copy-the-source action on a formula; reads pure TeX from the katex-mathml annotation (#486 P0-2) */
+  mathCopySource: 'Copy TeX source',
   toolSearchIntro: 'Searching for',
   messageSearching: 'Searching...',
   imageSearching: 'Searching by image...',
@@ -218,7 +228,6 @@ export const en = {
   settingsLocationCity: 'Select city',
   settingsLocationRegion: 'Select country or region',
   settingDialogAsideGeneralOptionLabel: 'General',
-  settingDialogAsideMemoryOptionLabel: 'Memory',
   settingDialogAsideDataOptionLabel: 'Data',
   avatarMenuSettingsDialogThemeItemLabel: 'Theme',
   avatarMenuSettingsDialogThemeSelectLightOption: 'Light',
@@ -721,16 +730,6 @@ export const en = {
   settingDialogEnterKeySend: 'Enter sends (Shift + Enter for a new line)',
   settingDialogEnterKeyModifierSend: 'Ctrl / ⌘ + Enter sends (Enter for a new line)',
   settingDialogEnterKeyButtonOnly: 'Enter only adds a new line (use the send button)',
-  // Window memory embedding toggle (#398): off by default, zero external requests while off.
-  settingDialogMemoryEmbeddingLabel: 'Memory embedding',
-  settingDialogMemoryEmbeddingDescription:
-    'When on, memory recall calls an external embedding service. When off, nothing leaves this device (recall falls back to local keyword matching). Off by default.',
-  settingDialogMemoryEmbeddingOn: 'On',
-  settingDialogMemoryEmbeddingOff: 'Off',
-  settingDialogMemoryEmbeddingNoEndpoint:
-    'It is on, but the current channel has no embedding endpoint (only OpenAI-compatible channels provide one). Switch to an OpenAI-compatible channel in Data and fill in the service address.',
-  settingDialogMemoryEmbeddingNoCredential:
-    'It is on, but the current channel is missing usable embedding credentials (service address or API key). Complete them in Data, otherwise recall falls back to local keyword matching.',
   // Window memory capacity notices (#399): eviction and rejection must be spoken, never silent.
   memoryEvicted:
     'This chat has reached its memory capacity; the {count} oldest entries were removed (this chat only)',

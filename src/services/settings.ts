@@ -43,7 +43,7 @@ export type EnterKeyMode = 'enter-send' | 'modifier-send' | 'button-only'
 
 /**
  * 本机设置，存 localStorage：语言、主题、位置、朗读音色、快速/专家模式（= 深度思考档位）、
- * 思考过程显示方式、智能搜索开关、侧边栏收起状态。
+ * 思考过程显示方式、智能搜索开关、侧边栏收起状态、代码块行号与自动换行（#486 P0-1）。
  * API Key 不再单独存放，改由 providers.ts 的模型服务配置管理（旧 chat-demo:api-key 仅用于迁移）。
  */
 type Settings = {
@@ -78,6 +78,15 @@ type Settings = {
    * 也不必为每个版本各留一条记录。
    */
   updateSnoozeUntil: number
+  /**
+   * 代码块显示行号（issue #486 P0-1）。默认 **关** = 改造前的现状，既有截图基线不动。
+   */
+  codeLineNumbers: boolean
+  /**
+   * 代码块长行自动换行（issue #486 P0-1）。默认 **开** = 改造前 `markdown.css` 里
+   * `.md-code-block > pre { white-space: pre-wrap }` 的实际行为；关掉才切成 `pre` + 横向滚动。
+   */
+  codeWrap: boolean
 }
 
 const KEYS = {
@@ -98,6 +107,10 @@ const KEYS = {
   embeddingEnabled: 'chat-demo:memory-embedding',
   /** 更新弹窗「稍后提醒」的到期时刻（#517）。与其它设置项同一前缀，不另开 store */
   updateSnoozeUntil: 'chat-demo:update-snooze-until',
+  /** 代码块行号（#486 P0-1）。与其它设置项同一前缀，不另开 store */
+  codeLineNumbers: 'chat-demo:code-line-numbers',
+  /** 代码块自动换行（#486 P0-1）。与其它设置项同一前缀，不另开 store */
+  codeWrap: 'chat-demo:code-wrap',
 } as const
 
 const read = (key: string) => {
@@ -229,6 +242,19 @@ const initialUpdateSnoozeUntil = (): number => {
   return Number.isSafeInteger(saved) && saved > 0 ? saved : 0
 }
 
+/**
+ * 代码块行号（#486 P0-1）：**只有存过 'true' 才算开**。
+ * 读不到 / 空串 / 脏值一律关 —— 默认关就是改造前的现状，不能因为「读不出设置」就给所有代码块加行号。
+ */
+const initialCodeLineNumbers = (): boolean => read(KEYS.codeLineNumbers) === 'true'
+
+/**
+ * 代码块自动换行（#486 P0-1）：**只有存过 'false' 才算关**，其余（含从没存过）都按开处理。
+ * 依据是改造前的实际行为：`.md-code-block > pre` 一直是 `white-space: pre-wrap`，
+ * 所以「开」才是既有基线；默认值反过来会改变所有存量代码块的排版。
+ */
+const initialCodeWrap = (): boolean => read(KEYS.codeWrap) !== 'false'
+
 export const useSettings = create<Settings>(() => {
   const chatMode = initialChatMode()
   return {
@@ -247,6 +273,8 @@ export const useSettings = create<Settings>(() => {
     siderCollapsed: read(KEYS.siderCollapsed) === 'true',
     embeddingEnabled: initialEmbeddingEnabled(),
     updateSnoozeUntil: initialUpdateSnoozeUntil(),
+    codeLineNumbers: initialCodeLineNumbers(),
+    codeWrap: initialCodeWrap(),
   }
 })
 
@@ -341,3 +369,15 @@ export const setUpdateSnoozeUntil = (until: number) => {
 
 /** 清掉「稍后提醒」（手动检查拿到新版后重弹 / 排查时用） */
 export const clearUpdateSnooze = () => setUpdateSnoozeUntil(0)
+
+/** 代码块行号开关的唯一写入口（#486 P0-1）：落 localStorage，刷新与切会话都不丢 */
+export const setCodeLineNumbers = (codeLineNumbers: boolean) => {
+  write(KEYS.codeLineNumbers, String(codeLineNumbers))
+  useSettings.setState({ codeLineNumbers })
+}
+
+/** 代码块自动换行开关的唯一写入口（#486 P0-1）：落 localStorage，刷新与切会话都不丢 */
+export const setCodeWrap = (codeWrap: boolean) => {
+  write(KEYS.codeWrap, String(codeWrap))
+  useSettings.setState({ codeWrap })
+}

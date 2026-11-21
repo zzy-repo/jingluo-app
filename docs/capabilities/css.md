@@ -5,17 +5,17 @@
 > - 盘点工具：`scripts/lib/cssAssumptionAudit.mjs`（`auditCssAssumptions(files)` 纯判定函数，不碰盘、不联网、不起浏览器）
 > - 单元测试：`tests/unit/css-assumption-audit.test.mjs`
 > - 盘点日期：2026-11-19 12:19 (+0800)
-> - 快照基准：`171f02f`（`origin/main` tip，2026-11-21 11:39:38 +0800）
-> - 采集时间：2026-11-19 18:55 (+0800)
+> - 快照基准：`376b123`（`origin/main` tip，2026-11-21 16:33:41 +0800）
+> - 采集时间：2026-11-21 16:45 (+0800)
 > - 写盘：`node scripts/gen-capabilities-docs.mjs`（`pnpm gen:capabilities`，`pnpm check:capabilities-docs` 只比对不写）——本文件的机器可读数字与 §1 逐特性计数都由它重算，**别手改**
 
 ## 0. 口径
 
 | 项 | 值 |
 | --- | --- |
-| 扫描范围 | `src/**` 全部源文件 **325** 个（`.css` **46** 个，其中 `*.module.css` **39** 个；其余 `.ts / .tsx / .html` 共 **279** 个） |
-| 口径拆分 | 46 `.css` + 208 `.ts` + 70 `.tsx` + 1 `.html` = 325 |
-| 命中总数 | **339** 处，分布在 **38** 个文件 |
+| 扫描范围 | `src/**` 全部源文件 **328** 个（`.css` **46** 个，其中 `*.module.css` **39** 个；其余 `.ts / .tsx / .html` 共 **282** 个） |
+| 口径拆分 | 46 `.css` + 211 `.ts` + 70 `.tsx` + 1 `.html` = 328 |
+| 命中总数 | **340** 处，分布在 **38** 个文件 |
 | 运行时下限 | WebView **83**（Chromium 83）。**首支持 ≤ 83 的特性一律记「无风险」，与有没有兜底无关** |
 | 构建期因素 | `rspack.config.ts` 用 `builtin:lightningcss-loader`，`targets` 取自 `package.json` 的 `browserslist`（强制含 `chrome >= 83`）。**已被构建期翻译掉的写法不算运行时假设** |
 
@@ -39,7 +39,7 @@
 | flex `gap` | 84 | 104 | 104 | 0 | 0 | 0 | 0 | 兜底已全覆盖（#217 补齐最后 2 处；W1-C1 / W1-C2 的新样式由 `pnpm run gen:gap` 补齐）；`check:gap` 口径见 §2.6 |
 | `min()` / `max()` | 79 | 21 | 0 | 21 | 0 | 0 | 0 | 79 ≤ 83，无风险（W1-C1 弹层宽高上限新增 2 处） |
 | `:has()` | 105 | **0** | 0 | 0 | 0 | 0 | 0 | 16 处已由 #213 清零：改成渲染期显式状态类 `ds-markdown-before-ul` / `ds-markdown-before-ol`，低内核上零特性依赖 |
-| `:focus-visible` | 86 | 16 | 16 | 0 | 0 | 0 | 0 | 16 处全部合规：每处都有同选择器的 `:focus` 兜底 + `:focus:not(:focus-visible)` 收回（#215；W1-C1 的 `.tab` / `.input` 按同一套三件套写）；`pnpm run check:focus` 守住 |
+| `:focus-visible` | 86 | 17 | 17 | 0 | 0 | 0 | 0 | 17 处全部合规：每处都有同选择器的 `:focus` 兜底 + `:focus:not(:focus-visible)` 收回（#215；W1-C1 的 `.tab` / `.input` 按同一套三件套写；#486 的 `.md-float-copy` 新增 1 处，同一套三件套）；`pnpm run check:focus` 守住 |
 | `@supports` 块（9 处 `(height/max-height: 100dvh)` + 2 处 `(scrollbar-gutter: …)`） | 108 | 11 | 11 | 0 | 0 | 0 | 0 | **11/11 前置等价兜底**：9 处有 `vh` 基座；2 处（`MessageList.module.css:22,74`，#216 / #236）有常驻 `overflow-y: scroll` 槽位 |
 | `overscroll-behavior` | 63 | 7 | 0 | 7 | 0 | 0 | 0 | 63 ≤ 83，无风险 |
 | `env(safe-area-inset-*)` | 69 | 6 | 0 | 6 | 0 | 0 | 0 | 69 ≤ 83，无风险（见 §5 的一致性备注） |
@@ -59,7 +59,7 @@
 | `color-mix()` | 111 | 0 | — | — | — | 0 | 0 | 未使用（且 lightningcss 会降级） |
 | `@layer` | 99 | 0 | — | — | — | 0 | 0 | 未使用 |
 | `accent-color` | 93 | 0 | — | — | — | 0 | 0 | 未使用 |
-| **合计** | | **339** | **291** | **42** | **1** | **5** | **0** | |
+| **合计** | | **340** | **292** | **42** | **1** | **5** | **0** | |
 
 > `100dvh` 的每一处声明，**没有一处**落在 `@supports` 之外（`dvh` 裸用命中数为 0）。这是本仓 #13 之后形成的最好的一条既有纪律，也是本次盘点最重要的**正面结论**：`dvh` 这一类零缺陷。
 
@@ -75,7 +75,7 @@
 | 文件:行 | 假设内容 | 类别 | 风险 | 处置 |
 | --- | --- | --- | --- | --- |
 | `app/App.module.css:105` | `@supports (height: 100dvh)`，块外 `:104` 有 `height: var(--app-viewport-height, 100vh)` | 2 | 低 | 已有兜底 |
-| `components/chatInput/ChatInput.module.css:268` | `@supports (max-height: 100dvh)`，块外 `:267` 有 `max-height: calc(var(--app-viewport-height, 100vh) - 120px)`（窄屏媒体查询内） | 2 | 低 | 已有兜底 |
+| `components/chatInput/ChatInput.module.css:258` | `@supports (max-height: 100dvh)`，块外 `:257` 有 `max-height: calc(var(--app-viewport-height, 100vh) - 120px)`（窄屏媒体查询内） | 2 | 低 | 已有兜底 |
 | `components/messages/MessageList.module.css:22` | `@supports (scrollbar-gutter: stable both-edges)` 现代内核收回 `overflow-y: auto`（#216），块外 `:16` 有常驻 `overflow-y: scroll` | 2 | 低 | 已有兜底 |
 | `components/messages/MessageList.module.css:74` | `@supports (scrollbar-gutter: stable)` 窄屏收回块（#236），同作用域 `:66` 先写 `overflow-y: scroll` | 2 | 低 | 已有兜底 |
 | `components/settings/AppUpdateField.module.css:24` | `@supports (max-height: 100dvh)`，块外 `:21` 有 `min(70vh, calc(…, 100vh) - 32px)` | 2 | 低 | 已有兜底 |
@@ -193,7 +193,7 @@
 | 文件:行 | 假设内容 | 类别 | 风险 | 处置 |
 | --- | --- | --- | --- | --- |
 | 39 个 `*.module.css` 共 103 处 | flex 容器上的 `gap` / `row-gap` | 2 | 低 | 已有兜底（`html[data-flex-gap-fallback]` + `margin` 块，由 `pnpm run gen:gap` 生成、`pnpm run check:gap` 逐条产出清单） |
-| `components/markdown/markdown.css:370` | `.md-code-block-switch { display:flex; gap:4px }`，文件不是 CSS Module、原先不在 `check:gap` 扫描范围 | 2 | 低 | **#217 已补**：裸写 `html[data-flex-gap-fallback]` 兜底块（` :global()` 在非 module 文件里非法），扫描范围同时扩到全部 `.css` |
+| `components/markdown/markdown.css:495` | `.md-code-block-switch { display:flex; gap:4px }`，文件不是 CSS Module、原先不在 `check:gap` 扫描范围 | 2 | 低 | **#217 已补**：裸写 `html[data-flex-gap-fallback]` 兜底块（` :global()` 在非 module 文件里非法），扫描范围同时扩到全部 `.css` |
 | `components/messages/ReplyArea.module.css:224` | `.toolBody { display:flex; flex-wrap:wrap; row-gap:6px }`，原先被 `flex-wrap` 排除规则放过 | 2 | 低 | **#217 已补**：`margin-bottom: 6px`；排除规则改为「交叉轴 gap 只在**不换行**时才不需要兜底」 |
 | `components/messages/AssistantMessage.module.css:20,21` | `.waiting { display:flex; flex-wrap:wrap; column-gap:6px; row-gap:2px }`（#328 等待提示可能出现第二行） | 2 | 低 | **#328 已补**：`margin-right: 6px` + `margin-bottom: 2px`，由 `pnpm run gen:gap` 生成 |
 | ~~`components/settings/PaymentTrailDialog.module.css:71,113`~~ | `.tabs { display:flex; flex-wrap:wrap; gap:6px }`（#326 状态筛选页签）与 `.moreError { … gap:8px }`（#326 加载更多失败行） | 2 | 低 | **#561 已随文件删除**（三弹层合一）：两处兜底块随样式表一起删掉，不是漏了 |
@@ -212,7 +212,7 @@
 | `app/App.module.css:3,28,77` | `inset: 0` 铺满 | 2 | 低 | 已有兜底（构建期翻译） |
 | `app/ErrorBoundary.module.css:9` | `inset: 0` | 2 | 低 | 已有兜底（构建期翻译） |
 | `components/base/Modal.module.css:4,22` | `inset: 0` | 2 | 低 | 已有兜底（构建期翻译） |
-| `components/chatInput/ChatInput.module.css:77,109` | `inset: 0` | 2 | 低 | 已有兜底（构建期翻译） |
+| `components/chatInput/ChatInput.module.css:68,99` | `inset: 0` | 2 | 低 | 已有兜底（构建期翻译） |
 | `components/chatInput/DragMask.module.css:3` | `inset: 0` | 2 | 低 | 已有兜底（构建期翻译） |
 | `components/chatInput/VoiceButton.module.css:79,90` | `inset: 0` | 2 | 低 | 已有兜底（构建期翻译） |
 | `components/messages/MessageFile.module.css:54` | `inset: 0` | 2 | 低 | 已有兜底（构建期翻译） |
@@ -226,7 +226,7 @@
 | 文件:行 | 假设内容 | 类别 | 风险 | 处置 |
 | --- | --- | --- | --- | --- |
 | `components/base/Toast.module.css:9`<br>`components/markdown/markdown.css:184,195`<br>`components/messages/MessageFile.module.css:88`<br>`components/session/Welcome.module.css:43`<br>`components/settings/AppUpdateField.module.css:21,26,33,40`<br>`components/settings/Settings.module.css:204,209,344,949,963,965`<br>`components/consume/AccountConsume.module.css:10,11`<br>`components/update/UpdateDialog.module.css:19,24,31,38` | CSS `min()` / `max()`（21 处） | 2 | 低 | 无需探测（79 ≤ 83）。另 6 处随文件删除（不计入 21）：~~`components/settings/PaymentRecords.module.css:4,5`~~、~~`components/settings/PaymentTrailDialog.module.css:4,5`~~、~~`components/settings/PurchaseRecordsDialog.module.css:6,7`~~（#561 三弹层合一） |
-| `app/global.css:52`<br>`components/base/Select.module.css:82`<br>`components/chatInput/ChatInput.module.css:233`<br>`components/messages/MessageList.module.css:46`<br>`components/settings/AppUpdateField.module.css:59`<br>`components/settings/Settings.module.css:969`<br>`components/update/UpdateDialog.module.css:53` | `overscroll-behavior[-y]`（7 处） | 2 | 低 | 无需探测（63 ≤ 83） |
+| `app/global.css:52`<br>`components/base/Select.module.css:82`<br>`components/chatInput/ChatInput.module.css:223`<br>`components/messages/MessageList.module.css:46`<br>`components/settings/AppUpdateField.module.css:59`<br>`components/settings/Settings.module.css:969`<br>`components/update/UpdateDialog.module.css:53` | `overscroll-behavior[-y]`（7 处） | 2 | 低 | 无需探测（63 ≤ 83） |
 | `components/base/Toast.module.css:3`<br>`components/session/SessionView.module.css:68`<br>`components/session/Welcome.module.css:152`<br>`components/auth/AuthPages.module.css:16`<br>`components/settings/Settings.module.css:699,949` | `env(safe-area-inset-*)`（6 处） | 2 | 低 | 无需探测（69 ≤ 83）；缺省值一致性见 §5 |
 | `components/messages/AssistantMessage.module.css:152,180`<br>`components/session/MobileHeader.module.css:29`<br>`components/settings/AppUpdateField.module.css:57`<br>`components/settings/Settings.module.css:968`<br>`components/update/UpdateDialog.module.css:51` | `touch-action`（6 处） | 2 | 低 | 无需探测（36 ≤ 83）；#347 / #353 给折叠区开关补了第 5 处，#517 更新弹窗的内容区是第 6 处 |
 | `components/base/Modal.module.css:25`<br>`components/chatInput/DragMask.module.css:12` | `backdrop-filter`（2 处；`DragMask.module.css:11` 另有 `-webkit-backdrop-filter` 前缀版） | 2 | 低 | 无需探测（76 ≤ 83） |
@@ -284,24 +284,24 @@
 4. `:focus-visible` 的实际可见性风险有一档不确定性：若系统/浏览器默认 focus ring 未被项目 CSS 的 `outline` 规则覆盖，低内核上焦点仍可能可见。需要实测才能定档（已写进 #215 的未测边界）。
 5. 没有统计「同一特性被 lightningcss 部分降级」的情形（例如 `color-mix()` 在低目标下会被翻成静态色）。本次 `color-mix()` 命中为 0，暂无影响。
 
-## 附录 A：嵌套 `&` 命中位置（141 行 / 22 文件，全部构建期展开）
+## 附录 A：嵌套 `&` 命中位置（140 行 / 22 文件，全部构建期展开）
 
-> 行号由 `auditCssAssumptions()` 的实时命中导出（#681 复算，基准 `40a7a38`；#47 又按实时命中重锚了 Button / ChatInput / FileCard / AssistantMessage 四行 —— 输入区新增的 `&:focus-within` 是本单第 141 行）。上一版是 141 行 / 22 文件，且还挂着已删除的 `OursServices.module.css`；本次删掉该行、按复算重排全部行号。
+> 行号由 `auditCssAssumptions()` 的实时命中导出（#681 复算，基准 `40a7a38`）。上一版是 141 行 / 22 文件，且还挂着已删除的 `OursServices.module.css`；本次删掉该行、按复算重排全部行号。
 
 ```
 components/auth/AuthPages.module.css: 102, 106, 115, 119, 209
-components/base/Button.module.css: 22, 27, 36, 40, 44, 77, 90, 99, 110, 114, 120, 124
+components/base/Button.module.css: 22, 27, 36, 40, 44, 77, 88, 97, 108, 112, 118, 122
 components/base/IconButton.module.css: 16, 24, 28, 37, 41, 45
 components/base/Menu.module.css: 30, 43
 components/base/Modal.module.css: 34
 components/base/Select.module.css: 24, 28, 37, 41, 45, 109
 components/base/Toast.module.css: 50
-components/chatInput/ChatInput.module.css: 17, 69, 79, 237, 327, 331, 336, 340, 376, 380
+components/chatInput/ChatInput.module.css: 60, 70, 227, 314, 318, 323, 328, 364, 368
 components/chatInput/VoiceButton.module.css: 34, 40, 44, 53, 57
-components/files/FileCard.module.css: 17, 25, 34, 38, 42
+components/files/FileCard.module.css: 16, 24, 33, 37, 41
 components/markdown/CodeBlock.module.css: 32, 38
 components/markdown/markdown.css: 94
-components/messages/AssistantMessage.module.css: 3, 5, 63, 75, 79, 154, 187, 257, 259
+components/messages/AssistantMessage.module.css: 3, 5, 63, 75, 79, 154, 187, 255, 257
 components/messages/ReplyArea.module.css: 14, 61, 75, 78, 102, 147, 152, 154, 167, 171, 175, 180, 182, 265
 components/messages/UserMessage.module.css: 6, 10, 69
 components/search/SearchPanel.module.css: 51

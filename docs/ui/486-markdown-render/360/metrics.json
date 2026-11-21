@@ -1,0 +1,177 @@
+{
+  "page": "486-markdown-render",
+  "title": "#486 P0：代码块行号 / 自动换行（持久化）、公式源码复制、表格复制 GFM、代码下载",
+  "viewport": 360,
+  "size": "360×740",
+  "shots": [
+    "docs/ui/486-markdown-render/360/486-markdown-render-01-默认-无行号-折行-360.png",
+    "docs/ui/486-markdown-render/360/486-markdown-render-02-行号开-360.png",
+    "docs/ui/486-markdown-render/360/486-markdown-render-03-行号开-换行关-横向滚动-360.png",
+    "docs/ui/486-markdown-render/360/486-markdown-render-04-刷新后开关仍生效-360.png",
+    "docs/ui/486-markdown-render/360/486-markdown-render-05-行号开-换行开-360.png",
+    "docs/ui/486-markdown-render/360/486-markdown-render-06-表格悬停出复制-360.png",
+    "docs/ui/486-markdown-render/360/486-markdown-render-07-表格已复制-360.png",
+    "docs/ui/486-markdown-render/360/486-markdown-render-08-行间公式悬停出复制-360.png",
+    "docs/ui/486-markdown-render/360/486-markdown-render-09-行间公式已复制-360.png",
+    "docs/ui/486-markdown-render/360/486-markdown-render-10-行内公式复制入口-键盘聚焦-360.png",
+    "docs/ui/486-markdown-render/360/486-markdown-render-11-行内公式已复制-360.png",
+    "docs/ui/486-markdown-render/360/486-markdown-render-12-代码已下载-360.png"
+  ],
+  "notes": [],
+  "codeDefault": {
+    "lineNumbers": "false",
+    "wrap": "true",
+    "whiteSpace": "pre-wrap",
+    "gutterItems": 0,
+    "firstLineNo": null,
+    "lastLineNo": null,
+    "preScrollWidth": 320,
+    "preClientWidth": 320,
+    "horizontalScroll": false,
+    "gutterGap": null,
+    "wrappedLine": null
+  },
+  "overflow-default": {
+    "viewportWidth": 360,
+    "documentScrollWidth": 360,
+    "documentOverflow": false,
+    "overflowCount": 0,
+    "overflowSamples": []
+  },
+  "codeLineNumbersOn": {
+    "lineNumbers": "true",
+    "wrap": "true",
+    "whiteSpace": "pre-wrap",
+    "gutterItems": 14,
+    "firstLineNo": "1",
+    "lastLineNo": "14",
+    "preScrollWidth": 320,
+    "preClientWidth": 320,
+    "horizontalScroll": false,
+    "gutterGap": 6.5,
+    "codeColumn": 57.8,
+    "wrappedLine": {
+      "text": "1def summari",
+      "segments": 12,
+      "firstLeft": 57.8,
+      "continuationLeft": 57.8,
+      "delta": 0
+    }
+  },
+  "overflow-line-numbers": {
+    "viewportWidth": 360,
+    "documentScrollWidth": 360,
+    "documentOverflow": false,
+    "overflowCount": 0,
+    "overflowSamples": []
+  },
+  "codeWrapOff": {
+    "lineNumbers": "true",
+    "wrap": "false",
+    "whiteSpace": "pre",
+    "gutterItems": 14,
+    "firstLineNo": "1",
+    "lastLineNo": "14",
+    "preScrollWidth": 1197,
+    "preClientWidth": 320,
+    "horizontalScroll": true,
+    "gutterGap": 6.5,
+    "codeColumn": 57.8,
+    "wrappedLine": {
+      "text": "1def summari",
+      "segments": 12,
+      "firstLeft": 57.8,
+      "continuationLeft": 57.8,
+      "delta": 0
+    }
+  },
+  "overflow-wrap-off": {
+    "viewportWidth": 360,
+    "documentScrollWidth": 360,
+    "documentOverflow": false,
+    "overflowCount": 0,
+    "overflowSamples": []
+  },
+  "codeAfterReload": {
+    "lineNumbers": "true",
+    "wrap": "false",
+    "whiteSpace": "pre",
+    "gutterItems": 14,
+    "firstLineNo": "1",
+    "lastLineNo": "14",
+    "preScrollWidth": 1197,
+    "preClientWidth": 320,
+    "horizontalScroll": true,
+    "gutterGap": 6.5,
+    "codeColumn": 57.8,
+    "wrappedLine": {
+      "text": "1def summari",
+      "segments": 12,
+      "firstLeft": 57.8,
+      "continuationLeft": 57.8,
+      "delta": 0
+    }
+  },
+  "overflow-after-reload": {
+    "viewportWidth": 360,
+    "documentScrollWidth": 360,
+    "documentOverflow": false,
+    "overflowCount": 0,
+    "overflowSamples": []
+  },
+  "codeWrapOnWithLineNumbers": {
+    "lineNumbers": "true",
+    "wrap": "true",
+    "whiteSpace": "pre-wrap",
+    "gutterItems": 14,
+    "firstLineNo": "1",
+    "lastLineNo": "14",
+    "preScrollWidth": 320,
+    "preClientWidth": 320,
+    "horizontalScroll": false,
+    "gutterGap": 6.5,
+    "codeColumn": 57.8,
+    "wrappedLine": {
+      "text": "1def summari",
+      "segments": 12,
+      "firstLeft": 57.8,
+      "continuationLeft": 57.8,
+      "delta": 0
+    }
+  },
+  "overflow-wrap-on": {
+    "viewportWidth": 360,
+    "documentScrollWidth": 360,
+    "documentOverflow": false,
+    "overflowCount": 0,
+    "overflowSamples": []
+  },
+  "tableCopyReveal": {
+    "opacityHidden": "0",
+    "opacityShown": "1"
+  },
+  "tableClipboard": {
+    "text": "| 能力 | 开关位置 | 默认值 |\n| :--- | :---: | ---: |\n| 行号 | 标题栏「行号」 | 关 |\n| 换行 | 标题栏「换行」 | `开` |\n| 公式复制 | 公式右上角 | **悬停出现** |"
+  },
+  "mathClipboard": {
+    "text": "\\int_0^1 x^2\\,\\mathrm{d}x = \\frac{1}{3}"
+  },
+  "inlineMathCopyReveal": {
+    "opacityHidden": "0",
+    "opacityFocused": "1"
+  },
+  "inlineMathClipboard": {
+    "text": "a^2 + b^2 = c^2"
+  },
+  "codeDownload": {
+    "suggestedFilename": "snippet.py",
+    "bytes": 427,
+    "firstLine": "def summarize(items):",
+    "matchesCodeBlock": true
+  },
+  "codeDownloadToast": {
+    "text": "已保存"
+  },
+  "overflowCount": 0,
+  "consoleErrors": []
+}

@@ -1,0 +1,61 @@
+{
+  "page": "711-settings-no-memory",
+  "title": "#711 设置弹窗侧边栏下线「记忆」分组：只剩「通用设置 / 数据管理」两项，且打不开记忆页",
+  "viewport": 360,
+  "size": "360×740",
+  "shots": [
+    "docs/ui/711-settings-no-memory/after/360/711-settings-no-memory-01-侧边栏-通用设置-360.png",
+    "docs/ui/711-settings-no-memory/after/360/711-settings-no-memory-02-侧边栏特写-360.png",
+    "docs/ui/711-settings-no-memory/after/360/711-settings-no-memory-03-数据管理-360.png"
+  ],
+  "notes": [],
+  "asideGeneral": {
+    "tabCount": 2,
+    "tabTexts": [
+      "通用设置",
+      "数据管理"
+    ],
+    "selected": [
+      "通用设置"
+    ],
+    "memoryTabCount": 0,
+    "memoryToggleCount": 0
+  },
+  "dialogText": "设置 通用设置 数据管理 主题 浅色 深色 跟随系统 语言 简体中文 朗读音色 海星（女声） 思考过程 深度思考开启后，思考内容在消息里怎么显示；切换后立即对已打开的会话生效。 折叠 应用更新 当前版本 1.4.4 检查更新 字号 只作用于消息区：聊天正文、思考内容和你自己发的消息；设置面板与输入框不跟着变。 标准 字重 常规 行高 标准 回车键行为 回车发送换行、或只换行靠发送按钮，按你的习惯选；手机软键盘的回车键会跟着变。 回车发送（Shift + 回车换行）",
+  "dialogHasMemoryWord": false,
+  "asideData": {
+    "tabCount": 2,
+    "tabTexts": [
+      "通用设置",
+      "数据管理"
+    ],
+    "selected": [
+      "数据管理"
+    ],
+    "memoryTabCount": 0,
+    "memoryToggleCount": 0
+  },
+  "dataPanelNonEmpty": true,
+  "generalPanelNonEmpty": true,
+  "generalPanelFirstLines": [
+    "主题",
+    "浅色",
+    "深色"
+  ],
+  "overflowSeen": [
+    {
+      "label": "通用设置",
+      "overflowCount": 0
+    },
+    {
+      "label": "数据管理",
+      "overflowCount": 0
+    },
+    {
+      "label": "通用设置-回切",
+      "overflowCount": 0
+    }
+  ],
+  "overflowCount": 0,
+  "consoleErrors": []
+}
