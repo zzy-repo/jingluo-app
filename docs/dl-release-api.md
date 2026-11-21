@@ -265,7 +265,8 @@ openssl rand -hex 32 > /etc/dl-release/publish-token
 chmod 600 /etc/dl-release/publish-token && chown root:root /etc/dl-release/publish-token
 node --check /opt/dl-release/server.mjs && systemctl restart dl-release
 #    重启后 journalctl 应看到 event=token_roles publish_token="enabled"
-#    本地持有 ~/.config/dl-release/publish-token 的人需要同步新值（发布脚本运行时 ssh cat 的不用）
+#    本地缓存过发布令牌的人（`~/.config/dl-release/token` / `DL_RELEASE_TOKEN`）要同步新值；
+#    发布脚本运行时 `ssh cat` 取值的用法不用改
 
 # C) 重出 internal 包（轮换读令牌/首次拆令牌后必须做）
 #    注意取的是**读令牌**，不是发布令牌 —— 取错 = 把写能力又塞回内测包
