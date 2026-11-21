@@ -367,6 +367,16 @@ export const en = {
   uploadUnsupportedFormat:
     'The selected files include unsupported formats. Please convert them and try again. Supported: PDF, DOC, XLSX, PPT, images, text, code, and more.',
   uploadFileStatusFailed: 'Upload failed',
+  uploadFailedSourceMissing:
+    '"{name}" has no local copy left (imported conversations keep file details only), so it was skipped',
+  uploadFailedEndpointMissing: 'Failed to upload "{name}": this channel has no upload endpoint (404)',
+  uploadFailedTooLarge: 'Failed to upload "{name}": the file is over the size limit',
+  uploadFailedNetwork: 'Failed to upload "{name}": network error. Please retry',
+  uploadFailedUnknown: 'Failed to upload "{name}"',
+  attachUnavailableSent:
+    '{names} unavailable on this device (imported conversations keep file details only). This message was sent as text.',
+  attachUnavailableNoText:
+    'The attachments are unavailable on this device and this message has no text, so nothing was sent',
   uploadChannelUnsupported: 'This channel does not support file uploads',
   uploadRetry: '{message}. Click to retry',
   chatInputPlaceholderChat: 'Enter a message',

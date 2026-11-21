@@ -65,6 +65,12 @@ export const UserMessage = memo(function UserMessage({
   // 否则 message.files.length 直接抛 TypeError → 整屏白屏（issue #28）
   const files = asArray(message.files)
   /**
+   * #379：这条消息**发送时**因源缺失被跳过的附件（导入的历史会话只有元信息）。
+   * 它不是错误态 —— 消息已经按剩下的内容发出去了，这里只负责「说清楚是哪几个附件没跟着发」。
+   * 用持久的一行提示而不是 toast：用户回看这条消息时，原因必须还在。
+   */
+  const unavailable = asArray(message.unavailable)
+  /**
    * 文档附件（#480 / #527）与图片附件共用 `files` 这一个字段，靠 `att-` 前缀区分
    * （attachmentService 的 `isAttachmentRefId`，与 manager 的 `isAttachmentId` 同一套约定）。
    *
@@ -108,9 +114,7 @@ export const UserMessage = memo(function UserMessage({
 
   return (
     <div className={clsx(styles.container, isFirst && styles.isFirst)}>
-      {documents.length > 0 ? (
-        <MessageAttachments ids={documents.map((file) => file.id)} />
-      ) : null}
+      {documents.length > 0 ? <MessageAttachments ids={documents.map((file) => file.id)} /> : null}
       {uploads.length > 0 ? (
         <div
           className={clsx(
@@ -125,6 +129,13 @@ export const UserMessage = memo(function UserMessage({
               onRetry={retryUploadId ? () => retryUpload(sessionId, retryUploadId) : null}
             />
           ))}
+        </div>
+      ) : null}
+      {unavailable.length > 0 ? (
+        <div className={styles.unavailable} role="note">
+          {t('attachUnavailableSent', {
+            names: unavailable.map((item) => item.name).join('、'),
+          })}
         </div>
       ) : null}
       {editing ? (

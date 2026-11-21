@@ -96,3 +96,31 @@ export interface ParseOptions {
    */
   timeoutMs?: number
 }
+
+/**
+ * 附件在本机不可用的原因码（#379）。
+ *
+ * 目前只有一个取值：**源缺失** —— 附件元信息在（导出/导入保留了文件名、体积、类别），
+ * 但原件不在本机。导入是唯一来源：整包导出只带图片原件（见 `history/exportArchive.ts`，
+ * 其余附件「仅保留文件信息」），别处删库 / 清缓存也会落到同一状态。
+ *
+ * 单独成码而不是复用 `AttachmentErrorReason`：那个是**解析期**的拒绝原因（格式 / MIME / 超限），
+ * `failed: source-missing` 是解析阶段写进记录的 errorMessage 前缀；这里是**发送期**的判定结果，
+ * 界面按它出文案，两者不能混成一张表。
+ */
+export type UnavailableReason = 'source-missing'
+
+/**
+ * 「本机不可用、只提示不发送」的附件（#379）。
+ *
+ * 落在 user 消息上（`UserMessage.unavailable`），界面据此在消息里给一条持久提示：
+ * 哪个附件、为什么没发。**只描述已经发生的事**（这条消息按纯文字发出去了），
+ * 不是错误态 —— 不要拿它渲染红色失败条，也不要用 toast 一闪而过。
+ */
+export interface UnavailableAttachment {
+  /** 本地附件 id（与 `FileAttachment.id` 同一套，图片历史里就是归档里的文件 id） */
+  id: string
+  /** 展示用文件名（提示里点名用，取自消息里的 `FileAttachment.name`） */
+  name: string
+  reason: UnavailableReason
+}

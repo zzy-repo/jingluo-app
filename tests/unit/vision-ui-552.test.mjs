@@ -205,7 +205,12 @@ test('[5] 入口门禁只查那一张能力表：supportsImage + visionFor，不
 test('[5] 能力表与发送闸同源：base64 渠道不再走 Files API 上传', () => {
   const storeSource = readSource('services/chat/store.ts')
   // 发送前：base64 渠道先本地编码；两条通路都没有才明确报错
-  assert.match(storeSource, /await prepareInlineImages\(sessionId, request, signal\)/)
+  // #379 起多传一个「本轮已判定源缺失、要交给消息提示的附件 id 集合」：编码前就该跳过它们，
+  // 否则这些附件会在这里抛 imageSourceMissing，把整条消息拖垮
+  assert.match(
+    storeSource,
+    /await prepareInlineImages\(sessionId, request, signal, audit\.unavailableIds\)/
+  )
   assert.match(storeSource, /hasImage && !vision\.base64 && !vision\.nativeFile/)
   // 上传循环里跳过内联图片（#360：这条渠道没有上传端点，也不许回落）
   assert.match(storeSource, /file\.isImage && vision\.base64/)

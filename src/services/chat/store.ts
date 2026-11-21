@@ -27,6 +27,14 @@ import {
   collectAttachmentsForRequest,
   stripAttachmentRefs,
 } from '../attachments/requestDocs.js'
+// #379：发送前的附件可用性审计 + 上传失败的点名文案（源缺失不重传、不阻断、不静默）
+import { auditSendableAttachments } from '../attachments/sendAudit.js'
+import type { UnavailableAttachment } from '../attachments/types.js'
+import {
+  AttachmentUploadError,
+  attachmentUploadFailureOf,
+  describeUploadFailure,
+} from '../attachments/uploadFailure.js'
 import {
   captureStateSnapshot,
   errorMeta,
@@ -1271,7 +1279,9 @@ const imageFailure = (error: unknown): unknown =>
 const prepareInlineImages = async (
   sessionId: string,
   request: Request,
-  signal: AbortSignal
+  signal: AbortSignal,
+  /** 本轮已判定「本机没有原件」的附件 id（#379）：它们交给消息里的提示，不在这里当编码失败 */
+  unavailableIds: ReadonlySet<string>
 ): Promise<void> => {
   /**
    * 取原件：刚发出的消息可能还没落盘（`persist` 是异步的），先看内存里的 pendingFiles，
@@ -1293,7 +1303,9 @@ const prepareInlineImages = async (
     return toImagePart(blob)
   }
 
-  const questionImages = request.question.files.filter((file) => file.isImage)
+  const questionImages = request.question.files.filter(
+    (file) => file.isImage && !unavailableIds.has(file.id)
+  )
   if (questionImages.length > LIMITS.images.maxCount) {
     throw new ApiError('protocol', {
       key: 'imageTooMany',
@@ -1322,14 +1334,15 @@ const prepareInlineImages = async (
   let skipped = 0
   for (const [user] of getContextRounds(request.history)) {
     for (const file of user.files) {
-      if (!file.isImage || imagePartOf(file.id)) {
+      // 源缺失的历史图片（#379）不再算「编码失败」：它们已经在发送前的审计里进了消息提示
+      if (!file.isImage || imagePartOf(file.id) || unavailableIds.has(file.id)) {
         continue
       }
       signal.throwIfAborted()
       try {
         putImagePart(file.id, await encode(file))
       } catch {
-        // 历史图片编不出来（导入的图片没有原件 / 超限）：跳过它这一张，不阻断本次发送
+        // 历史图片编不出来（原件损坏 / 超限）：跳过它这一张，不阻断本次发送
         skipped++
       }
     }
@@ -1341,6 +1354,50 @@ const prepareInlineImages = async (
       status: 'error',
     })
   }
+}
+
+/**
+ * #379：把「本机不可用的附件」记到这条 user 消息上。
+ *
+ * 为什么落消息而不是 toast：这是**这条消息的事实**（哪几个附件没跟着发出去），用户回看时必须还在；
+ * toast 一闪而过，用户既看不到是哪个附件，也没法在事后确认「我当时发的到底是文字还是带图」。
+ *
+ * 只在「有变化」时写库：
+ * - 有不可用附件 → 覆盖成最新清单（重发同一个附件时名字/顺序以本轮为准）；
+ * - 一个都不可用、消息上却挂着旧清单（用户后来补回了原件）→ 删掉字段，别留假话。
+ */
+const markUnavailableAttachments = (
+  sessionId: string,
+  messageId: string,
+  unavailable: UnavailableAttachment[]
+) => {
+  const session = getSession(sessionId)
+  const message = session?.messages.find((item) => item.id === messageId)
+  if (message === undefined || message.role !== 'user') {
+    return
+  }
+  const current = message.unavailable ?? []
+  const unchanged =
+    current.length === unavailable.length &&
+    current.every((item, index) => item.id === unavailable[index]?.id)
+  if (unchanged) {
+    return
+  }
+  updateSession(sessionId, (value) => ({
+    ...value,
+    messages: value.messages.map((item) => {
+      if (item.id !== messageId || item.role !== 'user') {
+        return item
+      }
+      if (unavailable.length === 0) {
+        const cleared: UserMessage = { ...item }
+        delete cleared.unavailable
+        return cleared
+      }
+      return { ...item, unavailable: unavailable.map((entry) => ({ ...entry })) }
+    }),
+  }))
+  persist(sessionId)
 }
 
 /**
@@ -1365,14 +1422,54 @@ const prepareFiles = async (sessionId: string, request: Request, signal: AbortSi
    * `base64 = false` 时下面每一条都以**原样**执行 —— 这就是 deepseek 路径零改动的意思。
    */
   const vision = visionFor(getCurrentSpec().kind)
-  const hasImage = request.question.files.some((file) => file.isImage)
+  /**
+   * #379：**发送前的附件可用性审计**（唯一判定处，见 `attachments/sendAudit.ts`）。
+   *
+   * 只看一件事：这一轮请求会引用到的附件里，哪些在本机没有原件。导入会话的附件只有元信息
+   * （ZIP 只带图片原件），所以「源缺失」是**预期状态**而不是异常：它既没有东西可重传，
+   * 也不该把这条消息拖下水。审计结果有三处用途 ——
+   *   · 本轮提问里源缺失的附件：跳过（不补传、不内联），消息按剩下的内容照常发出；
+   *   · 历史轮次里源缺失的附件：本来就不进请求，这里只是把「为什么没发」收集起来；
+   *   · 汇总成 `UnavailableAttachment[]` 落到 user 消息上 → 界面在消息里点名提示
+   *     （不是 toast：用户回头看这条消息时原因还在）。
+   *
+   * 官方渠道的请求体**不受影响**：被跳过的附件本来就没有 `serverId`、也不会拼出 `file_id` 块，
+   * 去掉它们与「它们不存在」逐字节相同（#480 立的规矩）。
+   */
+  const freshIds = new Set((pendingFiles.get(sessionId) ?? []).map((item) => item.id))
+  /**
+   * 这一轮会引用到的全部附件 = 本轮提问 + 历史轮次。
+   * 刻意写成 `for…of` + `push`（不用 `flatMap`）：老内核基线下 `Array.prototype.flatMap` 是
+   * `docs/capabilities/api.md` 里单独记账的一条，为一行便利再添一处命中不值当。
+   */
+  const referencedFiles: FileAttachment[] = [...request.question.files]
+  for (const [user] of getContextRounds(request.history)) {
+    for (const file of user.files) {
+      referencedFiles.push(file)
+    }
+  }
+  const audit = await auditSendableAttachments(referencedFiles, {
+    isOwnUpload: (id) => freshIds.has(id),
+    hasSource: async (id) => (await db.loadFile(id)) !== undefined,
+  })
+  // 源缺失的附件全被跳过、提问又只有它（没有文字）：这条消息没有任何东西可发，明说而不是空发
+  if (
+    request.question.content.trim() === '' &&
+    request.question.files.length > 0 &&
+    request.question.files.every((file) => audit.unavailableIds.has(file.id))
+  ) {
+    throw new ApiError('protocol', { key: 'attachUnavailableNoText' })
+  }
+  const hasImage = request.question.files.some(
+    (file) => file.isImage && !audit.unavailableIds.has(file.id)
+  )
   if (hasImage && !vision.base64 && !vision.nativeFile) {
     // 既不能内联、也没有 Files API：明确报错并提示换渠道，绝不静默丢图（母单 #548）
     throw new ApiError('protocol', { key: 'visionUnsupported' })
   }
   if (vision.base64) {
     // base64 渠道：图片本地编码内联，**一个上传请求都不发**
-    await prepareInlineImages(sessionId, request, signal)
+    await prepareInlineImages(sessionId, request, signal, audit.unavailableIds)
   }
   const serverIds = new Map<string, string>()
   // 停止生成立即生效；上传本身不取消（输入框与其他消息可能共用同一任务），完成后照常写回 serverId
@@ -1381,6 +1478,10 @@ const prepareFiles = async (sessionId: string, request: Request, signal: AbortSi
   })
   const uploads = Promise.allSettled(
     request.question.files.map(async (file) => {
+      // 源缺失（#379）：没有东西可传，跳过 —— 不补传、不阻断，提示已落到消息上
+      if (audit.unavailableIds.has(file.id)) {
+        return
+      }
       // base64 渠道的图片不进 Files API（#360：这条渠道没有上传端点，也不许回落）
       if (file.isImage && vision.base64) {
         return
@@ -1394,13 +1495,19 @@ const prepareFiles = async (sessionId: string, request: Request, signal: AbortSi
          */
         dropImagePart(file.id)
       }
-      const serverId = await ensureServerId(
-        apiKey,
-        file,
-        pendingFiles.get(sessionId)?.find((item) => item.id === file.id)?.blob
-      )
-      if (serverId) {
-        serverIds.set(file.id, serverId)
+      try {
+        const serverId = await ensureServerId(
+          apiKey,
+          file,
+          pendingFiles.get(sessionId)?.find((item) => item.id === file.id)?.blob
+        )
+        if (serverId) {
+          serverIds.set(file.id, serverId)
+        }
+      } catch (error) {
+        // #379：上传失败要说得清是哪个附件（以前只剩一句「上传失败」）。原始错误留在 cause 里，
+        // 上面的重试判定与诊断字段仍然读它，这里只补「哪张图 / 哪个文件」。
+        throw new AttachmentUploadError(file, error)
       }
     })
   )
@@ -1457,6 +1564,15 @@ const prepareFiles = async (sessionId: string, request: Request, signal: AbortSi
     record('chat_send', 'info', 'history attachments not re-uploaded', {
       count: skipped.size,
       reason: 'history',
+    })
+  }
+  // #379：源缺失的附件已经跳过（不重传、不阻断），但**不许静默** —— 把清单落到这条 user 消息上，
+  // 界面在消息里点名提示（哪个附件、为什么没发）。清单为空时顺手清掉旧提示（附件又可用时不留假话）。
+  markUnavailableAttachments(sessionId, request.question.id, audit.unavailable)
+  if (audit.unavailable.length > 0) {
+    record('chat_send', 'warn', 'attachments unavailable at send', {
+      ...buildMeta({ flow: 'chat', stage: 'chat.request', status: 'error' }),
+      retryable: false,
     })
   }
 
@@ -1569,7 +1685,8 @@ export const decideStreamRetry = ({
    * 一律不重发**——重发会重复输出、重复计费，而退避那一层完全不知道用户已经看了半句。
    * 连接/首字两段此时用户还什么都没看到，重发是安全的。
    */
-  const staged = error instanceof ApiError ? shouldRetryStreamTimeout(error.code, receivedContent) : null
+  const staged =
+    error instanceof ApiError ? shouldRetryStreamTimeout(error.code, receivedContent) : null
   if (staged !== null) {
     return staged && attempt < STREAM_RETRY_LIMIT ? 'retry' : 'final'
   }
@@ -1687,8 +1804,7 @@ const withRequestDocuments = async (
        * 这与 issue §9 的公式同形；两边取小（`docBudgetTokens` 也会再取一次小）。
        */
       contextWindowTokens: LIMITS.contextBudget.maxTokens,
-      reservedTokens:
-        estimateTokens(estimateChars(messages) + SYSTEM_PROMPT.length),
+      reservedTokens: estimateTokens(estimateChars(messages) + SYSTEM_PROMPT.length),
     })
     const notice = [...result.warnings, formatDocumentInjection(result)].join('；')
     return { messages: result.messages, notice }
@@ -1926,7 +2042,14 @@ const streamReply = async (sessionId: string, initial: AssistantMessage, request
         })
         finished = true
         break
-      } catch (error) {
+      } catch (rawError) {
+        /**
+         * #379：发送前附件补齐失败时，抛上来的是 `AttachmentUploadError`（里面捆着「哪个附件」
+         * 和原始错误）。界面文案要用前者、重试判定与诊断字段要用后者 —— 在这一处拆开，
+         * 下游（分类 / 重试 / 埋点）继续只看原始错误，不必认识这个包装类。
+         */
+        const uploadFailure = attachmentUploadFailureOf(rawError)
+        const error = uploadFailure === undefined ? rawError : uploadFailure.cause
         if (controller.signal.aborted) {
           reply = settleReply(reply, 'stopped', Date.now())
           const abortedTiming = meter.snapshot()
@@ -2039,14 +2162,19 @@ const streamReply = async (sessionId: string, initial: AssistantMessage, request
           reply = settleReply(reply, 'error', Date.now(), {
             kind: 'upload',
             message: '',
-            localMessage: describeUploadError(error),
+            // #379：说清是哪个附件、为什么 —— 只有拿不到附件上下文时才退回泛化文案
+            localMessage:
+              uploadFailure === undefined
+                ? describeUploadError(error)
+                : describeUploadFailure(uploadFailure.fileName, error),
             retryable: isRetryableApiError(error),
           })
           break
         }
         // 附件失效是 400（补传后才可自愈）：先确认「本来就要再发一次」再补传，避免白清 serverId。
         // 收到过内容块（含丢弃的客户端工具）后不自动重发。
-        const mayRetry = attempt < STREAM_RETRY_LIMIT && !receivedContent && !controller.signal.aborted
+        const mayRetry =
+          attempt < STREAM_RETRY_LIMIT && !receivedContent && !controller.signal.aborted
         const fileRecovered =
           mayRetry &&
           !isRetryableApiError(error) &&

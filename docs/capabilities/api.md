@@ -8,7 +8,7 @@
 | 项目 | 值 |
 | --- | --- |
 | 兼容基线 | Android WebView **83**（Chromium 83.0.4103.106，Android 11 出厂镜像） |
-| 扫描范围 | `src/**` 共 **319** 个文件（**202** `.ts` / 69 `.tsx` / 45 `.css` / 1 `.html` / 2 `.md`） |
+| 扫描范围 | `src/**` 共 **321** 个文件（**204** `.ts` / 69 `.tsx` / 45 `.css` / 1 `.html` / 2 `.md`） |
 | 真值来源 | `scripts/check-bundle-syntax.mjs` 的 `LEGACY_RUNTIME_APIS`、`scripts/compat/matrix-scan.mjs` 的 `RUNTIME_APIS` / `LEGACY_POLYFILLED`、`src/polyfills/legacy.ts`；本单**没有**新建第四份清单 |
 
 - 复核（%s，基准 `f8b8125`，本单 #498 分支 `feat/legacy-migration-tail`）：新增 `src/legacy/migration/**` 5 个源文件（4 个 `.ts`：`claim` / `collect` / `index` / `types`，1 个 `.tsx`：`LegacyMigrationButton`）与 1 个 `.md`（该目录 README），扫描范围 297 → **303** （`.ts` 181 → **185**、`.tsx` 66 → **67**、`.md` 1 → **2**）。新代码只用 `try/catch`、`JSON.parse`、`Object.entries`、`String#includes` 这类基线内能力（`localStorage` 的读取走既有兜底写法），**没有任何一条本表里的 API**，**命中总数仍是 52 处**（31 / 21 / 0）、按 API 分项（15 / 14 / 13 / 4 / 3 / 2 / 1）未变；§二 明细未动。
@@ -68,15 +68,15 @@
 | `src/services/chat/reply.ts:304` | `Array.prototype.flatMap` 存在（Chromium 69，低于基线） | 1 | 低 | —（基线内，无需处置） |
 | `src/services/chat/reply.ts:324` | `Array.prototype.at` 存在（Chromium 92；13 处接收者全是数组，零字符串接收者） | 1 | 中 | 已有兜底 |
 | `src/services/chat/sessionGroups.ts:25` | `Array.prototype.at` 存在（Chromium 92；13 处接收者全是数组，零字符串接收者） | 1 | 中 | 已有兜底 |
-| `src/services/chat/store.ts:172` | `Object.hasOwn` 存在（Chromium 93） | 1 | 中 | 已有兜底 |
-| `src/services/chat/store.ts:177` | `Object.hasOwn` 存在（Chromium 93） | 1 | 中 | 已有兜底 |
-| `src/services/chat/store.ts:323` | `Object.hasOwn` 存在（Chromium 93） | 1 | 中 | 已有兜底 |
-| `src/services/chat/store.ts:343` | `Object.hasOwn` 存在（Chromium 93） | 1 | 中 | 已有兜底 |
-| `src/services/chat/store.ts:590` | `Object.hasOwn` 存在（Chromium 93） | 1 | 中 | 已有兜底 |
-| `src/services/chat/store.ts:1030` | `Array.prototype.at` 存在（Chromium 92；13 处接收者全是数组，零字符串接收者） | 1 | 中 | 已有兜底 |
-| `src/services/chat/store.ts:1126` | `Array.prototype.at` 存在（Chromium 92；13 处接收者全是数组，零字符串接收者） | 1 | 中 | 已有兜底 |
-| `src/services/chat/store.ts:1127` | `Array.prototype.at` 存在（Chromium 92；13 处接收者全是数组，零字符串接收者） | 1 | 中 | 已有兜底 |
-| `src/services/chat/store.ts:1382` | `Promise.allSettled` 存在（Chromium 76，低于基线） | 1 | 低 | —（基线内，无需处置） |
+| `src/services/chat/store.ts:180` | `Object.hasOwn` 存在（Chromium 93） | 1 | 中 | 已有兜底 |
+| `src/services/chat/store.ts:185` | `Object.hasOwn` 存在（Chromium 93） | 1 | 中 | 已有兜底 |
+| `src/services/chat/store.ts:331` | `Object.hasOwn` 存在（Chromium 93） | 1 | 中 | 已有兜底 |
+| `src/services/chat/store.ts:351` | `Object.hasOwn` 存在（Chromium 93） | 1 | 中 | 已有兜底 |
+| `src/services/chat/store.ts:598` | `Object.hasOwn` 存在（Chromium 93） | 1 | 中 | 已有兜底 |
+| `src/services/chat/store.ts:1038` | `Array.prototype.at` 存在（Chromium 92；13 处接收者全是数组，零字符串接收者） | 1 | 中 | 已有兜底 |
+| `src/services/chat/store.ts:1134` | `Array.prototype.at` 存在（Chromium 92；13 处接收者全是数组，零字符串接收者） | 1 | 中 | 已有兜底 |
+| `src/services/chat/store.ts:1135` | `Array.prototype.at` 存在（Chromium 92；13 处接收者全是数组，零字符串接收者） | 1 | 中 | 已有兜底 |
+| `src/services/chat/store.ts:1479` | `Promise.allSettled` 存在（Chromium 76，低于基线） | 1 | 低 | —（基线内，无需处置） |
 | `src/services/chat/view.ts:167` | `String.prototype.trimEnd` 存在（Chromium 66，低于基线） | 1 | 低 | —（基线内，无需处置） |
 | `src/services/chat/view.ts:269` | `Array.prototype.at` 存在（Chromium 92；13 处接收者全是数组，零字符串接收者） | 1 | 中 | 已有兜底 |
 | `src/services/chat/view.ts:275` | `Array.prototype.flatMap` 存在（Chromium 69，低于基线） | 1 | 低 | —（基线内，无需处置） |
@@ -210,3 +210,4 @@ node --test tests/unit/capabilities-docs-sync.test.mjs   # 文档与复算是否
 - 复核（2026-11-20 17:00，基准 `3392efa`，本单 #487 W1-C2 分支 `feat/consume-panels`，「账户与消费」四面板：额度 / 账号 / 邀请 / 邮箱绑定）：新增 6 个 `.ts`（`src/components/consume/{panels,quotaPanel,accountPanel,invitePanel,emailBindPanel}.ts` 与同目录 `index.ts`：纯 `createElement` 展示层 + 判定逻辑）、4 个 `.tsx`（四个容器）与 1 个 `panels.module.css`，扫描范围 281 → **292** 个文件（`.ts` 174 → **180**、`.tsx` 59 → **63**、`.css` 46 → **47**）。新代码只用 `Number.isFinite` / `String#padStart` / `String#includes` / `Array#map` / `Map` / `Set` 这类基线内能力，**没有任何一条本表里的 API**，**命中总数仍是 52 处**（31 / 21 / 0），按 API 分项（15 / 14 / 13 / 4 / 3 / 2 / 1）未变；§二 的 `文件:行` 一处未动。
 - 复核（2026-11-20 17:20，基准 `3392efa`，本单 #487「统一计量单位为元」分支 `chore/unify-currency-cny`）：新增 1 个 `.ts` 源文件（`src/utils/money.ts`：金额/额度的唯一格式化出口 + `CURRENCY_SYMBOLS` 币种映射），扫描范围 281 → **282** 个文件、`.ts` 174 → **175** 个。新文件只用 `Number.isFinite` / `toFixed` / `String#split` / `String#replace`（`\B(?=(\d{3})+(?!\d))` 千分位正则，与既有 `PaymentTrailView` / `ours/api.ts` 同一写法，首次支持远低于 83），**没有任何一条本表里的 API**；`PaymentTrailView.ts` / `PurchaseRecordsView.ts` 里两份逐字重复的 `formatYuan` 收敛到该文件（净减 2 处重复实现，不是新增假设）。**命中总数仍是 52 处**（31 / 21 / 0），分类分布与按 API 分项（15 / 14 / 13 / 4 / 3 / 2 / 1）未变，§二 的 `文件:行` 无需改锚。
 - 合并复核（2026-11-20 17:35，基准 `77cd6e8`，`chore/unify-currency-cny` rebase 到 #505 之后）：两分支文案与实现合并后重新跑 `scripts/lib/apiAssumptionAudit.mjs`，扫描范围 297 个文件（`.ts` **181** / `.tsx` 66 / `.css` 48 / `.html` 1 / `.md` 1），**命中总数 52 处**（31 / 21 / 0），按 API 分项（15 / 14 / 13 / 4 / 3 / 2 / 1）不变；上表「扫描范围」已按复算结果更新，§二 明细未动。
+- 复核（2026-11-21 09:20，基准 `d1175ba`，本单 #379 分支 `fix/379-imported-source-missing`，发送前附件可用性审计 + 上传失败点名文案）：新增 2 个 `.ts` 源文件（`src/services/attachments/sendAudit.ts`：「源缺失 = 只能展示不能发送」的唯一判定处；`src/services/attachments/uploadFailure.ts`：`AttachmentUploadError` + 5 个原因码与文案），扫描范围 319 → **321** 个文件、`.ts` 202 → **204** 个。两个新文件只用 `Map` / `Set` / `for…of` / `startsWith`，**没有任何一条本表里的 API**（`store.ts` 里汇总「本轮 + 历史」附件那段刻意写成 `for…of` + `push`，没有引入 `flatMap`，`Array.prototype.flatMap` 命中数不变）；**命中总数仍是 52 处**，分类分布（31 / 21 / 0）与按 API 分项未变。§二 的 `文件:行` 因 `store.ts` 改 `prepareFiles` 整体下移：`:172/:177/:323/:343/:590/:1030/:1126/:1127/:1382` → **`:180/:185/:331/:351/:598/:1038/:1134/:1135/:1479`**，命中内容与判定一处未变（`host.md` 里 `store.ts` 的 2 条 `AbortController` 锚点同步重锚到 `:1743/:1832`）。

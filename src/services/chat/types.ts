@@ -1,6 +1,7 @@
 import type { TranslationMessage } from '../../i18n/index.js'
 import type { ApiErrorKind } from '../api/client.js'
 import type { KeyFailure } from '../api/keyFailure.js'
+import type { UnavailableAttachment } from '../attachments/types.js'
 import type {
   ChatModel,
   MessageUsage,
@@ -39,6 +40,14 @@ export type UserMessage = MessageBranch & {
   content: string
   files: FileAttachment[]
   createdAt: number
+  /**
+   * 发送时判定「本机不可用」、因而不随这条消息发出去的附件（#379）。
+   *
+   * 导入的历史会话只有元信息（ZIP 只带图片原件），这些附件在发送时没有东西可传。
+   * 它们**不阻断发送**：消息照常按剩下的内容发出，这里只是留一份事实，界面据此在消息里
+   * 点名提示（哪个附件、为什么没发）。空 / 缺省 = 这条消息没有附件被跳过。
+   */
+  unavailable?: UnavailableAttachment[]
 }
 
 /** 思考块：thinking_delta 累积，签名随 signature_delta 到达；历史轮次的思考服务端会丢弃，不回传 */

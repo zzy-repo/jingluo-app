@@ -129,3 +129,22 @@
   margin-right: 8px;
 }
 /* #173-fallback:end */
+
+/* #379：发送时因「本机没有原件」被跳过的附件 —— 一条持久提示，不是错误态。
+   纯排布与配色（右对齐、字号、颜色），不含任何动效属性声明（消息流冻结检查逐行扫新增行）。 */
+.unavailable {
+  max-width: calc(100% - 88px);
+  box-sizing: border-box;
+  margin-bottom: 6px;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-secondary);
+  text-align: right;
+  word-break: break-word;
+}
+
+@media not all and (min-width: 440px) {
+  .unavailable {
+    max-width: calc(100% - 68px);
+  }
+}

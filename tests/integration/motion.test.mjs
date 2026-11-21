@@ -86,6 +86,10 @@ const EXTRA_ANIMATED_PROPS = new Map([
  */
 const MESSAGE_FLOW_ALLOWLIST = new Map([
   [
+    'src/components/messages/UserMessage.module.css',
+    '#379 发送时被跳过的「本机不可用」附件要在**消息里**留一条持久提示（不是 toast）：提示条的文字排法（右对齐、12px、最大宽度）只能写在这个文件的 `.unavailable` 里，样式归属是这个组件的 CSS Module。改动是静态文本的排布与配色，不含任何动效属性声明。',
+  ],
+  [
     'src/components/messages/AssistantMessage.module.css',
     '#346 错误提示条动作按钮命中区 22px → 44×44，纯样式（min-height/min-width/inline-flex/touch-action），无动效改动；#347 / #353 折叠区「查看上游原文」的排版同样只有 margin / border / max-height，无动效',
   ],
@@ -114,7 +118,7 @@ const MESSAGE_FLOW_ALLOWLIST = new Map([
    */
   [
     'src/components/messages/UserMessage.tsx',
-    '#480 / #527 用户消息要带上文档附件卡片（元信息 + 五态 + 警告/失败原因 + 详情抽屉）：`files` 与图片附件共用同一字段、靠 `att-` 前缀分流，渲染点只能在这个文件里；改动只是把 `att-` 的 id 交给 `<AttachmentCard variant="message">`（样式与动效全在 src/components/files/FileCard.module.css 与 src/components/attachments/Attachments.module.css，消息流目录之外），本身没有任何动效声明。\n  #610：编辑态的回车语义与聚焦都只能写在渲染 textarea 的这一处 —— 回车只换行且事件不外泄（fail-safe 的 keydown 处理）、聚焦改成 `focus({ preventScroll: true })`（原生 scroll-into-view 会把长会话甩走）。都是键盘/焦点逻辑，没有一条动效声明。',
+    '#480 / #527 用户消息要带上文档附件卡片（元信息 + 五态 + 警告/失败原因 + 详情抽屉）：`files` 与图片附件共用同一字段、靠 `att-` 前缀分流，渲染点只能在这个文件里；改动只是把 `att-` 的 id 交给 `<AttachmentCard variant="message">`（样式与动效全在 src/components/files/FileCard.module.css 与 src/components/attachments/Attachments.module.css，消息流目录之外），本身没有任何动效声明。\n  #379：「这条消息有几个附件在本机不可用、已按纯文字发送」是**这条消息自己的事实**（`UserMessage.unavailable`），渲染点只能在渲染 user 消息的这里；多出来的只是一个 `role="note"` 的静态文本节点，样式在 UserMessage.module.css，不含任何动效属性声明。\n  #610：编辑态的回车语义与聚焦都只能写在渲染 textarea 的这一处 —— 回车只换行且事件不外泄（fail-safe 的 keydown 处理）、聚焦改成 `focus({ preventScroll: true })`（原生 scroll-into-view 会把长会话甩走）。都是键盘/焦点逻辑，没有一条动效声明。',
   ],
   [
     'src/components/chatInput/ChatInput.tsx',

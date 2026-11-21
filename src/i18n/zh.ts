@@ -352,6 +352,19 @@ export const zh = {
   uploadUnsupportedFormat:
     '上传的文件包含暂未支持的文件格式，请转换文件格式后重试。支持 PDF、DOC、XLSX、PPT、图片、文本、代码等。',
   uploadFileStatusFailed: '上传失败',
+  /**
+   * #379：上传失败必须点名 —— **哪个附件 + 原因**。以前四种完全不同的失败都只剩一句「上传失败」，
+   * 用户不知道该重试、换格式，还是干脆删掉这条附件。
+   */
+  uploadFailedSourceMissing: '附件「{name}」没有可发送的本机原件（导入的历史会话只保留文件信息），已跳过',
+  uploadFailedEndpointMissing: '附件「{name}」上传失败：当前渠道没有上传端点（404）',
+  uploadFailedTooLarge: '附件「{name}」上传失败：文件超过大小上限',
+  uploadFailedNetwork: '附件「{name}」上传失败：网络异常，请重试',
+  uploadFailedUnknown: '附件「{name}」上传失败',
+  /** #379：消息里那条持久提示（不是 toast）——说的是「哪几个附件没跟着发」，不是「发送失败」 */
+  attachUnavailableSent: '{names} 在本机不可用（导入的历史会话只保留文件信息），本条已按纯文字发送',
+  /** #379：附件全被跳过、又没有文字可发时，明说而不是发一条空消息 */
+  attachUnavailableNoText: '附件在本机不可用，且这条消息没有文字内容，未发送',
   /** 该渠道没有 Files API（#303）：入口禁用时的提示，以及上传路径走到这里时的失败原因 */
   uploadChannelUnsupported: '当前渠道不支持文件上传，附件入口已不可用',
   uploadRetry: '{message}，点击重试',
