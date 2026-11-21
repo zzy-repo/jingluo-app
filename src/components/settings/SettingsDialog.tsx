@@ -30,7 +30,6 @@ import {
 import { copyText } from '../../utils/clipboard.js'
 import { saveHistoryArchive } from '../../services/chat/history/saveArchive.js'
 import { ImportSkippedDetails, importedMessage, summaryFromCount } from './importSkipped.js'
-import { useIsMobile } from '../../app/viewport.js'
 import { useChatStore, type HistoryImportSummary } from '../../services/chat/store.js'
 import {
   setLocale,
@@ -54,7 +53,6 @@ import { Button } from '../base/Button.js'
 import { Modal } from '../base/Modal.js'
 import { Select } from '../base/Select.js'
 import { showToast } from '../base/toastState.js'
-import { ApiConfigFields, ApiKeyConfirm, useApiKeyEditor } from './ApiConfigFields.js'
 import { AppUpdateField } from './AppUpdateField.js'
 import { ChatBackgroundField } from './ChatBackgroundField.js'
 import { DOUYIN_ACCOUNT_ID, douyinCopyToast } from './douyinAccount.js'
@@ -99,15 +97,12 @@ const sections: { value: SettingsSection; label: TranslationKey; icon: ReactNode
 
 const SettingsContent = ({ visible }: { visible: boolean }) => {
   const t = useTranslate()
-  const isMobile = useIsMobile()
   // 打开时按调用方指定的分组选中，之后在弹窗内切换
   // #711 兜底：旧版本可能留下 `'memory'`（脏值 / 回滚后再升上来的包）。收窄类型后这种值在
   // 编译期就被挡住，运行期这里再收敛一次，保证任何来源的脏值都落到「通用设置」而不是空白面板。
   const [section, setSection] = useState(() =>
     normalizeSettingsSection(useSettingsDialog.getState().section)
   )
-  // 切换分组不丢失正在输入的 API Key 与导入状态
-  const apiKeyEditor = useApiKeyEditor()
   const historyImport = useHistoryImport()
   const historyDelete = useHistoryDelete()
   // 反馈弹窗：integrity=true 表示从「检查日志完整性」进入，自检面板默认展开
@@ -234,19 +229,10 @@ const SettingsContent = ({ visible }: { visible: boolean }) => {
                   点进去是内容区整体换成 L2（带「返回」）。全部**渲染在设置弹层内部**：
                   不新开弹层、不叠遮罩、不出现第二个 X。
 
-                  渠道 / API Key / 模型 / 连通性测试作为 `sourceConfig` 注入 L2「模型来源」页 ——
-                  它们的编辑状态（`useApiKeyEditor`）属于设置层，内容区不造第二份。 */}
-              <AccountConsumePage
-                page={accountPage}
-                onNavigate={setAccountPage}
-                sourceConfig={
-                  <>
-                    {/* 渠道改由「模型来源」里的三个来源 + 协议切换承担，这里不再重复一个下拉 */}
-                    <ApiConfigFields editor={apiKeyEditor} hideProviderKind />
-                    {isMobile ? <ApiKeyConfirm editor={apiKeyEditor} /> : null}
-                  </>
-                }
-              />
+                  #807：L2「模型来源」是**单层手风琴**，字段（地址 / Key / 模型）的草稿与
+                  「确认使用」都在那一页里（`AccountConsumePage` + `settings/sourceAccordion*`），
+                  所以这里不再注入 `sourceConfig` / 不再持有 API Key 编辑器 —— 一份状态一处。 */}
+              <AccountConsumePage page={accountPage} onNavigate={setAccountPage} />
             </>
           )}
         </div>

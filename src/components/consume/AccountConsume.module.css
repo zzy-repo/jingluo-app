@@ -1013,6 +1013,150 @@
   overflow-wrap: anywhere;
 }
 
+/* ------------------------------------------------- #807 模型来源：单层手风琴 */
+
+/**
+ * 「模型来源」的一屏三行（#807）。行头仍然复用 `.row`（56px、左右 20px、无边设计），
+ * 展开区（`.sourcePanel`）挂在行下面，**同一时间只有一行不是 `hidden`**。
+ *
+ * 动画只做一次 160ms 的轻微上移淡入：`transform` / `opacity` 都不触发重排，
+ * 且 `prefers-reduced-motion: reduce` 下整段关掉（不靠时长补救 —— 关掉才是真的不动）。
+ */
+.sourceGroup {
+  display: flex;
+  flex-direction: column;
+}
+
+.sourceHeader:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.sourceStatus {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  margin-left: 8px;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 15px;
+  line-height: 20px;
+}
+
+.sourceStatusCurrent {
+  color: var(--dsw-alias-label-primary);
+}
+
+/* ✓ 与文字一起出现：图形只做点缀，`aria-label` / `title` 才是它的正式表达 */
+.sourceCheck {
+  margin-right: 4px;
+  color: var(--dsw-alias-label-primary);
+  font-size: 14px;
+  line-height: 20px;
+}
+
+.sourceChevron {
+  display: inline-block;
+  flex-shrink: 0;
+  width: 8px;
+  height: 8px;
+  margin-left: 8px;
+  border-right: 1.5px solid var(--dsw-alias-label-secondary);
+  border-bottom: 1.5px solid var(--dsw-alias-label-secondary);
+  transform: rotate(45deg);
+  transition: transform 160ms ease;
+}
+
+.sourceChevronOpen {
+  transform: rotate(-135deg);
+}
+
+.sourcePanel {
+  padding: 0 20px 12px;
+  animation: sourcePanelIn 160ms ease;
+}
+
+/* `hidden` 是结构上的收起：不是 `display:none` 之外的任何花招，读屏与键盘都拿不到收起的内容 */
+.sourcePanel[hidden] {
+  display: none;
+}
+
+@keyframes sourcePanelIn {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sourceChevron {
+    transition: none;
+  }
+
+  .sourcePanel {
+    animation: none;
+  }
+}
+
+.sourceFields {
+  display: flex;
+  flex-direction: column;
+}
+
+/* 「确认使用」：展开区底部那一个动作（只有第三方 / 官方有；内置服务是行即动作） */
+.sourceConfirm {
+  align-self: flex-start;
+  margin-top: 12px;
+  padding: 8px 20px;
+  border: 0;
+  border-radius: 999px;
+  background-color: var(--dsw-alias-button-primary-fill);
+  color: var(--dsw-alias-label-primary-foreground);
+  font: inherit;
+  font-size: 15px;
+  line-height: 20px;
+  cursor: pointer;
+}
+
+.sourceConfirm:active {
+  opacity: 0.8;
+}
+
+/* 领取失败后的「重试」：比「确认使用」轻一档，它只是再试一次同一个动作 */
+.sourceRetry {
+  margin-top: 8px;
+  padding: 6px 14px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 999px;
+  background: none;
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  font-size: 14px;
+  line-height: 18px;
+  cursor: pointer;
+}
+
+/* 行内提示：说明用一级灰，失败用错误色（都在行内的左内距里，不另加外边距） */
+.sourceHint {
+  margin: 8px 0 0;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 13px;
+  line-height: 18px;
+  overflow-wrap: anywhere;
+}
+
+.sourceError {
+  margin: 8px 0 0;
+  color: var(--dsw-alias-state-error-primary);
+  font-size: 13px;
+  line-height: 18px;
+  overflow-wrap: anywhere;
+}
+
 /* ---------------------------------------------------------------- 底部 sheet */
 
 .mask {

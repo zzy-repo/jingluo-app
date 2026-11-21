@@ -611,17 +611,47 @@ export const setApiKey = (apiKey: string) => {
   })
 }
 
-/** 保存服务地址；非法返回 false 且不写入。空值等于清除（回到内置默认地址） */
-export const setBaseUrl = (baseUrl: string): boolean => {
-  const spec = getCurrentSpec()
+/**
+ * 读**指定来源槽位**已存的那一格（Issue #807）。
+ *
+ * 为什么需要「指定 kind」而不再只读当前生效来源：「模型来源」手风琴里，用户展开的是**正在查看**
+ * 的那一行，它可以不是生效来源（展开 ≠ 生效，见 `sourceAccordion.ts` 文件头）。草稿要把
+ * 「这一行自己的地址/模型」原样取回来，所以按 kind 读；值仍然只从既有的 scoped 键取，
+ * 不新增第二份存储。
+ *
+ * 取不到用户填过的值时才回落到 `spec.defaults`（与 `getBaseUrl` / `getModel` 同一口径）。
+ */
+export const readSourceField = (kind: ProviderKind, field: 'baseUrl' | 'model'): string => {
+  const spec = getSpec(kind)
+  if (!spec.locked) {
+    const stored = field === 'baseUrl' ? storedBaseUrl(kind) : storedModel(kind)
+    if (stored) {
+      return stored
+    }
+  }
+  const fallback = field === 'baseUrl' ? spec.defaults?.baseUrl : spec.defaults?.model
+  return fallback ?? ''
+}
+
+/**
+ * 保存**指定来源槽位**的服务地址；非法返回 false 且不写入。空值等于清除（回到内置默认地址）。
+ *
+ * #807 起 `setBaseUrl(value)` 就是「对生效来源调用它」的简写 —— 字段的落盘位置没变，
+ * 只是多了一个能指向「正在查看但不是生效来源」那一槽的入口。
+ */
+export const setBaseUrlFor = (kind: ProviderKind, baseUrl: string): boolean => {
+  const spec = getSpec(kind)
   if (!isUserField(spec, 'baseUrl')) {
     // 内置地址的渠道（deepseek / ours）：写不进去（设置页也不渲染这一行）
     return false
   }
-  const key = scopedKey('baseUrl', spec.kind)
+  const effective = kind === getProviderKind()
+  const key = scopedKey('baseUrl', kind)
   if (!baseUrl.trim()) {
     write(key, null)
-    useApiConfig.setState({ baseUrl: '' })
+    if (effective) {
+      useApiConfig.setState({ baseUrl: '' })
+    }
     return true
   }
   const value = normalizeBaseUrl(baseUrl)
@@ -630,23 +660,31 @@ export const setBaseUrl = (baseUrl: string): boolean => {
     return false
   }
   write(key, value)
-  useApiConfig.setState({ baseUrl: value })
+  if (effective) {
+    useApiConfig.setState({ baseUrl: value })
+  }
   recordAction('config_change', 'provider-base-url', { result: 'saved', host: readHost(value) })
   void captureStateSnapshot('after-config-change')
   return true
 }
 
-/** 保存模型；空值非法（返回 false），清除请传 null */
-export const setModel = (model: string, reset = false): boolean => {
-  const spec = getCurrentSpec()
+/** 保存服务地址（生效来源）；非法返回 false 且不写入。空值等于清除（回到内置默认地址） */
+export const setBaseUrl = (baseUrl: string): boolean => setBaseUrlFor(getProviderKind(), baseUrl)
+
+/** 保存**指定来源槽位**的模型；空值非法（返回 false），清除请传 `reset` */
+export const setModelFor = (kind: ProviderKind, model: string, reset = false): boolean => {
+  const spec = getSpec(kind)
   if (!isUserField(spec, 'model')) {
     // 内置模型的渠道（deepseek / ours）：写不进去（设置页也不渲染这一行）
     return false
   }
-  const key = scopedKey('model', spec.kind)
+  const effective = kind === getProviderKind()
+  const key = scopedKey('model', kind)
   if (reset) {
     write(key, null)
-    useApiConfig.setState({ model: '' })
+    if (effective) {
+      useApiConfig.setState({ model: '' })
+    }
     return true
   }
   const value = model.trim()
@@ -655,11 +693,17 @@ export const setModel = (model: string, reset = false): boolean => {
     return false
   }
   write(key, value)
-  useApiConfig.setState({ model: value })
+  if (effective) {
+    useApiConfig.setState({ model: value })
+  }
   recordAction('config_change', 'provider-model', { result: 'saved', model: value })
   void captureStateSnapshot('after-config-change')
   return true
 }
+
+/** 保存模型（生效来源）；空值非法（返回 false），清除请传 `reset` */
+export const setModel = (model: string, reset = false): boolean =>
+  setModelFor(getProviderKind(), model, reset)
 
 // ------------------------------------------- 第三方服务的协议自动适配（Issue #794）
 
