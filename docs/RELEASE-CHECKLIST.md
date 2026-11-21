@@ -315,6 +315,51 @@ pnpm run release:verify -- --version $V --apk $APK --expect-variant internal
 
 ---
 
+## 5. 发版自证清单（2026-11-21 事故后收敛，逐条都有事故来源）
+
+> 这一节不是"最佳实践"，是**今天真的踩过的坑**。每条后面标了事故来源，删条目前先读一遍来源。
+
+### 5.1 发布前：产物与配置
+| # | 必须做 | 为什么（事故来源） |
+| --- | --- | --- |
+| P1 | `consume.baseUrl` 指向**项目指定**的网关；改完**跑 `consume*` / `contract-c*` 用例** | 只跑配置门禁不够：端点变更会打穿"断言打的是哪个端点"的用例（#766 后的 6 个红） |
+| P2 | 改**跨切面配置**（`config/endpoints.json`）后，额外跑 `consume-676-*`、`contract-c1*`、`consume-redeem-*` | 同上；这类文件不在默认"配置门禁"集合里 |
+| P3 | 产物 `grep` 自证：目标域名 ≥1、禁用域名 = 0、内网 IP/端口 = 0 | 1.4.5–1.4.8 连续四版都带着被禁用的域名发出去（#745） |
+| P4 | CHANGELOG 只写**这一版真实包含**的改动 | `1.4.7` 的版本 PR 曾把未合入的 UI 写进变更记录 |
+| P5 | 版本号严格递增、`1.4.2` 永不复用 | `androidVersionCode` 递减会导致覆盖安装失败 |
+
+### 5.2 发布前：构建与签名
+| # | 必须做 | 为什么 |
+| --- | --- | --- |
+| B1 | 构建前先跑 `check-keystore-config` | 签名闸会中止构建，提前跑省一次 8 分钟白跑 |
+| B2 | `gradlew` 用 `--no-daemon --max-workers=1`，跑完 `--stop` | 4 核机器上并行构建会把 swap 打满，双方都拿到"随机超时红" |
+| B3 | 产物**恰好 1 个** APK | 多产物会传错文件 |
+
+### 5.3 发布：tag 与 draft
+| # | 必须做 | 为什么 |
+| --- | --- | --- |
+| R1 | **先把版本 PR 合进 main，再把 draft 的 `target_commitish` 指向 main 的合并提交**，然后才 publish | `v1.4.5` / `v1.4.1` 的 tag 落在 PR 分支提交上 → 不在 main 历史（#738 门禁就是为这个） |
+| R2 | `PATCH target_commitish` 必须传**完整 40 位 sha** | 短 sha 会 `422 Validation Failed` |
+| R3 | publish 前**回读 draft 资产 sha256**，与本地一致再发 | 排除"上传损坏 / 传错文件" |
+| R4 | Release 正文：不写裸 IP、不写 `/var/www`、不写私有清单 URL、不写 token | 正文是公网可见面 |
+
+### 5.4 发布后：审计（一条命令）
+```
+pnpm audit:release <tag>          # 十项检查；0=合格 1=不合格 2=判不了
+```
+| 项 | 判据 |
+| --- | --- |
+| tag ∈ `origin/main` | 否则不合格（`v1.4.5` 就是这样被判掉的） |
+| sha256 / size | 正文声明 == 实际字节 |
+| debuggable | apkanalyzer / aapt / `check-apk-debuggable` 三方一致为 0 |
+| 证书 | 等于 `config/appIdentity.json` 的 `expectedCertSha256` |
+| `verify:apk` | 五项全过（`INSECURE_CONSUME=true` 的包必须显式 `--allow-insecure`） |
+| 包内端点清单 | **只报告不判红**：人眼核对"连的是谁"（今天四个版本都栽在这一步没人看） |
+
+### 5.5 一条通用教训
+> **本地验证的覆盖面必须 ≥ 改动的辐射面。**
+> 今天三次自报的错误（`git diff` 推断产物内容、给无法重指的 tag 想重指方案、改配置打穿用例）都是同一个形状：**改了一处，只验了最窄的那一圈**。
+
 ## 3. 哪些必须人工、哪些必须那台机器（不假装全自动）
 
 | 步骤 | 脚本能做吗 | 必须人工 | 必须在 Linux 签名机 | 为什么 |
