@@ -886,7 +886,7 @@ export const en = {
   accountConsumeGroupSource: 'Model source',
   accountConsumeSourceBuiltin: 'Built-in service',
   accountConsumeSourceThird: 'Third-party service',
-  accountConsumeSourceDeepseek: 'DeepSeek official service',
+  accountConsumeSourceOfficial: 'DeepSeek official service',
   accountConsumeSourceAnthropic: 'Anthropic-compatible service',
   accountConsumeSourceKeyInvalid: 'Invalid API key — check it and try again',
   accountConsumeSourcePickHint: 'Pick a source and press Save; the app uses it right away',

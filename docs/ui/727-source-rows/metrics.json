@@ -1,0 +1,369 @@
+{
+  "base": "http://127.0.0.1:8098/",
+  "viewports": {
+    "360": {
+      "list": {
+        "rowLabels": [
+          "内置服务",
+          "第三方服务",
+          "DeepSeek 官方服务"
+        ],
+        "rowHeights": [
+          56,
+          56,
+          56
+        ],
+        "chevrons": [
+          true,
+          true,
+          true
+        ],
+        "hairlineDividers": 2,
+        "groups": [
+          {
+            "label": "对话模式",
+            "texts": [
+              "快速模式",
+              "专家模式"
+            ]
+          }
+        ],
+        "groupsWrappingSourceRows": 0,
+        "buttons": [
+          "",
+          "快速模式",
+          "专家模式",
+          "深度思考",
+          "智能搜索",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "通用设置",
+          "数据管理",
+          "账户与消费",
+          "返回",
+          "内置服务›",
+          "第三方服务›",
+          "DeepSeek 官方服务›"
+        ]
+      },
+      "third": {
+        "hasBack": true,
+        "groups": [
+          {
+            "label": "对话模式",
+            "texts": [
+              "快速模式",
+              "专家模式"
+            ]
+          },
+          {
+            "label": "协议",
+            "texts": [
+              "OpenAI 兼容",
+              "Anthropic 协议"
+            ]
+          }
+        ],
+        "inputs": [
+          "服务地址",
+          "请输入 API Key",
+          "模型"
+        ],
+        "buttons": [
+          "",
+          "快速模式",
+          "专家模式",
+          "深度思考",
+          "",
+          "",
+          "",
+          "",
+          "通用设置",
+          "数据管理",
+          "账户与消费",
+          "返回",
+          "OpenAI 兼容",
+          "Anthropic 协议",
+          "刷新",
+          "测试"
+        ]
+      },
+      "builtinSignedOut": {
+        "buttons": [
+          "",
+          "快速模式",
+          "专家模式",
+          "深度思考",
+          "智能搜索",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "通用设置",
+          "数据管理",
+          "账户与消费",
+          "返回",
+          "登录",
+          "注册",
+          "登录",
+          "暂不登录",
+          "忘记密码？"
+        ],
+        "hasLogin": true,
+        "hasRegister": true
+      }
+    },
+    "390": {
+      "list": {
+        "rowLabels": [
+          "内置服务",
+          "第三方服务",
+          "DeepSeek 官方服务"
+        ],
+        "rowHeights": [
+          56,
+          56,
+          56
+        ],
+        "chevrons": [
+          true,
+          true,
+          true
+        ],
+        "hairlineDividers": 2,
+        "groups": [
+          {
+            "label": "对话模式",
+            "texts": [
+              "快速模式",
+              "专家模式"
+            ]
+          }
+        ],
+        "groupsWrappingSourceRows": 0,
+        "buttons": [
+          "",
+          "快速模式",
+          "专家模式",
+          "深度思考",
+          "智能搜索",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "通用设置",
+          "数据管理",
+          "账户与消费",
+          "返回",
+          "内置服务›",
+          "第三方服务›",
+          "DeepSeek 官方服务›"
+        ]
+      },
+      "third": {
+        "hasBack": true,
+        "groups": [
+          {
+            "label": "对话模式",
+            "texts": [
+              "快速模式",
+              "专家模式"
+            ]
+          },
+          {
+            "label": "协议",
+            "texts": [
+              "OpenAI 兼容",
+              "Anthropic 协议"
+            ]
+          }
+        ],
+        "inputs": [
+          "服务地址",
+          "请输入 API Key",
+          "模型"
+        ],
+        "buttons": [
+          "",
+          "快速模式",
+          "专家模式",
+          "深度思考",
+          "",
+          "",
+          "",
+          "",
+          "通用设置",
+          "数据管理",
+          "账户与消费",
+          "返回",
+          "OpenAI 兼容",
+          "Anthropic 协议",
+          "刷新",
+          "测试"
+        ]
+      },
+      "builtinSignedOut": {
+        "buttons": [
+          "",
+          "快速模式",
+          "专家模式",
+          "深度思考",
+          "智能搜索",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "通用设置",
+          "数据管理",
+          "账户与消费",
+          "返回",
+          "登录",
+          "注册",
+          "登录",
+          "暂不登录",
+          "忘记密码？"
+        ],
+        "hasLogin": true,
+        "hasRegister": true
+      }
+    }
+  },
+  "labelChecks": {},
+  "notes": [],
+  "verdicts": {
+    "rows": [
+      {
+        "viewport": "360",
+        "labels": [
+          "内置服务",
+          "第三方服务",
+          "DeepSeek 官方服务"
+        ],
+        "ok": true,
+        "heights": [
+          56,
+          56,
+          56
+        ],
+        "chevrons": true
+      },
+      {
+        "viewport": "390",
+        "labels": [
+          "内置服务",
+          "第三方服务",
+          "DeepSeek 官方服务"
+        ],
+        "ok": true,
+        "heights": [
+          56,
+          56,
+          56
+        ],
+        "chevrons": true
+      }
+    ],
+    "noSourceGroup": [
+      {
+        "viewport": "360",
+        "groupsWrappingSourceRows": 0,
+        "ok": true
+      },
+      {
+        "viewport": "390",
+        "groupsWrappingSourceRows": 0,
+        "ok": true
+      }
+    ],
+    "thirdSubpage": [
+      {
+        "viewport": "360",
+        "ok": true,
+        "back": true,
+        "protocols": [
+          "OpenAI 兼容",
+          "Anthropic 协议"
+        ],
+        "inputs": [
+          "服务地址",
+          "请输入 API Key",
+          "模型"
+        ]
+      },
+      {
+        "viewport": "390",
+        "ok": true,
+        "back": true,
+        "protocols": [
+          "OpenAI 兼容",
+          "Anthropic 协议"
+        ],
+        "inputs": [
+          "服务地址",
+          "请输入 API Key",
+          "模型"
+        ]
+      }
+    ],
+    "builtinNeedsLogin": [
+      {
+        "viewport": "360",
+        "ok": true,
+        "buttons": [
+          "",
+          "快速模式",
+          "专家模式",
+          "深度思考",
+          "智能搜索",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "通用设置",
+          "数据管理",
+          "账户与消费",
+          "返回",
+          "登录",
+          "注册",
+          "登录",
+          "暂不登录",
+          "忘记密码？"
+        ]
+      },
+      {
+        "viewport": "390",
+        "ok": true,
+        "buttons": [
+          "",
+          "快速模式",
+          "专家模式",
+          "深度思考",
+          "智能搜索",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "通用设置",
+          "数据管理",
+          "账户与消费",
+          "返回",
+          "登录",
+          "注册",
+          "登录",
+          "暂不登录",
+          "忘记密码？"
+        ]
+      }
+    ],
+    "noOverflow": true
+  },
+  "pageErrors": []
+}
