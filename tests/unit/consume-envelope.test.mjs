@@ -278,7 +278,7 @@ test('[13] /api/v1/settings/public 真实 200：开关是 74 个字段里的真�
   assert.equal(result.data.siteName, 'Sub2API')
 })
 
-test('[14][15] 超时从配置读；Key/JWT 只进 header；非原生不发请求', async () => {
+test('[14][15] 超时从配置读；Key/JWT 只进 header；非原生走 fetch 兜底（不再 unsupported）', async () => {
   const calls = []
   const http = createConsumeHttp({
     accessToken: () => 'jwt-abc',
@@ -301,12 +301,23 @@ test('[14][15] 超时从配置读；Key/JWT 只进 header；非原生不发请�
   // query 里塞鉴权参数：当场拒绝（sub2api 会回 400 api_key_in_query_deprecated）
   assert.throws(() => http.url('/v1/usage', { key: 'sk-abc' }), /鉴权参数/)
 
-  // 非原生平台：默认 transport 直接回 unsupported，**不许**退回 WebView fetch（CORS 默认全拒）
-  const nativeOnly = createConsumeHttp({ apiKey: () => 'sk-abc' })
-  const unsupported = await nativeOnly.call({ method: 'GET', path: '/v1/usage' })
-  assert.equal(unsupported.ok, false)
-  assert.equal(unsupported.error.kind, 'network')
-  assert.equal(unsupported.error.i18nKey, 'consumeErrUnsupported')
+  /**
+   * 非原生平台（浏览器预览）：默认 transport 现在**改走 fetch 兜底**（`webTransport`），
+   * 目的是让维护者能在 Web 上真跑登录 / 注册。原生分支（`capacitorTransport`）**一个字都没改**：
+   * 它仍然是原生下的唯一选择，上面那些断言照旧覆盖它。
+   *
+   * 所以这里断言的是新口径：非原生**不再**返回 `unsupported`，而是真的把请求发了出去
+   * （node 里有全局 `fetch`，请求会真的打到配置里的 staging 地址并拿回 401；
+   * 这里只要求「不是 `UNSUPPORTED_PLATFORM`」即可，证明选择点已经切到 fetch）。
+   */
+  const webFallback = createConsumeHttp({ apiKey: () => 'sk-abc' })
+  const webResult = await webFallback.call({ method: 'GET', path: '/v1/usage' })
+  assert.equal(webResult.ok, false, '没有真实上游时仍然失败')
+  assert.notEqual(
+    webResult.error.code,
+    'UNSUPPORTED_PLATFORM',
+    '非原生不再走 unsupported：默认 transport 已切到 fetch 兜底'
+  )
 })
 
 test('[16] 卡密兑换超时：先查历史确认到账，绝不盲目重试', async () => {
