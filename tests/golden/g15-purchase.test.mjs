@@ -215,7 +215,7 @@ test('G15 支付 / 购买：套餐 → 下单（pay-link）→ 回跳 → 卡密
       },
     ],
     // #596：ours 的 Key 只能由服务端下发 —— 种「已领取」形态（Key + 下发标记）
-    storage: { 'chat-demo:provider-kind': 'ours', ...claimedOursStorage(API_KEY) },
+    storage: { 'chat-demo:provider-kind': 'ours', ...(await claimedOursStorage(API_KEY)) },
   })
   try {
     const result = await runGolden(

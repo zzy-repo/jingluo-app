@@ -81,7 +81,7 @@ const CHANNELS = [
     kind: 'ours',
     name: '我们的渠道',
     protocol: 'openai',
-    storage: { 'chat-demo:provider-kind': 'ours', ...claimedOursStorage(KEY) },
+    storage: { 'chat-demo:provider-kind': 'ours', ...(await claimedOursStorage(KEY)) },
   },
 ]
 
