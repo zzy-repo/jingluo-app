@@ -400,7 +400,7 @@ test('N6 包里没有 build-info.json → exit 2（判不出来），且点名�
   );
   assert.match(combined(result), /没有 assets\/public\/build-info\.json/, '文案要点名缺的是哪个文件（人得知道去查哪一步）');
   assert.match(combined(result), /结论：UNKNOWN（判不出来）/, '结论行要说清是「判不出来」，不是「某一项不过」');
-  assert.match(combined(result), /consume\.baseUrl|consume\.baseUrl 与期望一致/, '报告里要指出是第 6 项判不出来');
+  assert.match(combined(result), /6 包内 consume\.baseUrl 与期望一致/, '报告里要指出是第 6 项判不出来（表格里那一行 + 结论下的说明）');
   // --json 里同样要能读出「这一项是 unknown」以及「为什么」
   const report = JSON.parse(runCli([built.apks.noBuildInfo, '--expect-cert', built.certA, '--json']).stdout);
   assert.equal(report.exitCode, EXIT_UNKNOWN);
