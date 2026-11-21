@@ -34,6 +34,7 @@ import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
 import { CURRENT, CHANNEL_BUILD_TYPE, PREVIOUS } from '../helpers/current-version.mjs'
 import { serveDir, ROOT } from '../helpers/env.mjs'
+import { assertNoEgress, installEgressGate } from '../helpers/helpers.mjs'
 
 const require = createRequire(import.meta.url)
 const HARNESS = path.join(ROOT, 'tests/fixtures/update-373')
@@ -346,6 +347,12 @@ try {
       const page = await context.newPage()
       const pageErrors = []
       page.on('pageerror', (error) => pageErrors.push(String(error)))
+      /**
+       * #686：出站总闸，**必须在 `page.goto` 之前**装上（首屏请求一旦发出去就收不回来）。
+       * 本用例的原生 `AppUpdate` 插件与更新清单都是 harness 里注入的本机假实现，
+       * 白名单里只需要被测 harness 自己的 origin（精确 host:port）。
+       */
+      await installEgressGate(page, { appUrl: served.url, allowHosts: [new URL(served.url).host] })
       await page.goto(served.url, { waitUntil: 'domcontentloaded' })
       await page.waitForFunction(() => window.__mounted === true, undefined, { timeout: 10000 })
       let driveError = null
@@ -374,6 +381,8 @@ try {
     }
   }
 } finally {
+  // #686：收尾断言「漏出 = 0」（未登记的出站请求一条都不许有）—— 先断言再关浏览器
+  assertNoEgress(failures)
   await browser.close()
   served.kill()
   await writeFile(path.join(SHOTS, `${PREFIX}-result.json`), `${JSON.stringify(report, null, 2)}\n`)

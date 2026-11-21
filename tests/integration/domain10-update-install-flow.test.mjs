@@ -36,6 +36,7 @@ import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
 import { CURRENT, CHANNEL_BUILD_TYPE, PREVIOUS } from '../helpers/current-version.mjs'
 import { serveDir, ROOT } from '../helpers/env.mjs'
+import { assertNoEgress, installEgressGate } from '../helpers/helpers.mjs'
 
 const require = createRequire(import.meta.url)
 const HERE = path.dirname(fileURLToPath(import.meta.url))
@@ -414,6 +415,12 @@ try {
       const page = await context.newPage()
       const pageErrors = []
       page.on('pageerror', (error) => pageErrors.push(String(error)))
+      /**
+       * #686：出站总闸，**必须在 `page.goto` 之前**装上（首屏请求一旦发出去就收不回来）。
+       * 清单 / 下载 / 安装全走 harness 注入的原生桥（`window.__bridge`），不会真出网；
+       * 白名单里只写被测 harness 自己的 origin（精确 host:port）。
+       */
+      await installEgressGate(page, { appUrl: served.url, allowHosts: [new URL(served.url).host] })
       await page.goto(served.url, { waitUntil: 'domcontentloaded' })
       await page.waitForFunction(() => window.__mounted === true, undefined, { timeout: 15000 })
       let driveError = null
@@ -448,6 +455,8 @@ try {
     }
   }
 } finally {
+  // #686：收尾断言「漏出 = 0」（未登记的出站请求一条都不许有）—— 先断言再关浏览器
+  assertNoEgress(failures)
   await browser.close()
   served.kill()
   if (!process.env.UPDATE_HARNESS_DIST) rmSync(dist, { recursive: true, force: true })

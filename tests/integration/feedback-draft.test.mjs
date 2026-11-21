@@ -11,6 +11,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
 import { serveDist } from '../helpers/runtime.mjs'
+import { assertNoEgress, installEgressGate } from '../helpers/helpers.mjs'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 const out = path.join(root, 'docs/ui/feedback-draft')
@@ -19,11 +20,14 @@ let port = Number(process.env.PORT || 0)
 const DESCRIPTION = '草稿保留回归：输入后点取消'
 const CONTACT = 'draft@example.org'
 const SHOTS = []
+/** #686：出站总闸的收尾断言台账（只加判据，不动原有断言） */
+const egressFailures = []
 
 await mkdir(out, { recursive: true })
 // 进程内静态服务（不再 spawn python3 http.server）
 const server = await serveDist(path.join(root, 'dist'), { port })
 port = Number(new URL(server.url).port)
+const BASE_URL = `http://127.0.0.1:${port}`
 const browser = await chromium.launch({ headless: true })
 
 /** 打开设置 → 数据管理 → 写反馈，返回表单元件 */
@@ -84,12 +88,18 @@ try {
     await context.addInitScript(() => localStorage.setItem('chat-demo:api-key', 'sk-draft-fixture'))
     const consoleErrors = []
     const page = await context.newPage()
+    /**
+     * #686：出站总闸，**必须在 `page.goto` 之前**装上（首屏请求一旦发出去就收不回来，#673 的 g16 就是这么漏的）。
+     * 本用例的反馈通道是 `__diagnostics.setFeedbackTransport` 的进程内假实现，全部通路都在被测产物
+     * 自己的 origin 上；白名单里只写这个 origin（精确 host:port），不写 `*`、不放开回环。
+     */
+    await installEgressGate(page, { appUrl: BASE_URL, allowHosts: [new URL(BASE_URL).host] })
     page.on('console', (message) => {
       if (message.type() === 'error') consoleErrors.push(message.text())
     })
     page.on('pageerror', (error) => consoleErrors.push(String(error)))
 
-    await page.goto(`http://127.0.0.1:${port}/?diag-debug`, { waitUntil: 'domcontentloaded' })
+    await page.goto(`${BASE_URL}/?diag-debug`, { waitUntil: 'domcontentloaded' })
     await page.waitForFunction(() => !!window.__diagnostics)
     await page.evaluate(() => {
       window.__diagnostics.setFeedbackTransport({
@@ -166,6 +176,9 @@ try {
   }
   console.log('\nPASS: #31 草稿 取消保留 / 主动清空（二次确认）/ 提交成功清空 —— 390、360 两档通过')
 } finally {
+  // #686：收尾断言「漏出 = 0」（未登记的出站请求一条都不许有）—— 先断言再关浏览器
+  assertNoEgress(egressFailures)
   await browser.close()
   await server.close()
+  assert.deepEqual(egressFailures, [], `出站漏网：${egressFailures.join('；')}`)
 }

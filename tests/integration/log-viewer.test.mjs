@@ -15,6 +15,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
 import { serveDist } from '../helpers/runtime.mjs'
+import { assertNoEgress, installEgressGate } from '../helpers/helpers.mjs'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 const DIST = path.resolve(root, process.env.LOGVIEW_DIST || 'dist')
@@ -23,6 +24,8 @@ const SHOTS = []
 /** 预览上限（与 FeedbackDialog 的 PREVIEW_LIMIT 对齐；口径文案里的 N 不该超过它） */
 const PREVIEW_LIMIT = 50
 
+/** #686：出站总闸的收尾断言台账（只加判据，不动原有断言） */
+const egressFailures = []
 const MARK = 'LVFIX'
 const LONG_META_CHARS = 5000
 const SECRET_URL = 'https://api.example.com/v1/chat?key=sk-live-SECRET&sig=abc'
@@ -211,6 +214,12 @@ try {
     const pageErrors = []
     const page = await context.newPage()
     page.on('pageerror', (error) => pageErrors.push(String(error)))
+    /**
+     * #686：出站总闸，**必须在 `page.goto` 之前**装上（首屏请求一旦发出去就收不回来）。
+     * 日志是本页 `__diagnostics` 进程内夹具，全部通路都在被测产物自己的 origin 上；
+     * 白名单里只写它（精确 host:port）。
+     */
+    await installEgressGate(page, { appUrl: server.url, allowHosts: [new URL(server.url).host] })
     await page.goto(`${server.url}/?diag-debug`, { waitUntil: 'domcontentloaded' })
     await page.waitForFunction(() => !!window.__diagnostics)
 
@@ -460,6 +469,9 @@ try {
   }
   console.log('\nPASS: #305 日志展示层细化 —— 过滤 / 搜索 / 分组 / 单条复制 / 口径 / 空态 / 负向，390、360 两档通过')
 } finally {
+  // #686：收尾断言「漏出 = 0」（未登记的出站请求一条都不许有）—— 先断言再关浏览器
+  assertNoEgress(egressFailures)
   await browser.close()
   await server.close()
+  assert.deepEqual(egressFailures, [], `出站漏网：${egressFailures.join('；')}`)
 }

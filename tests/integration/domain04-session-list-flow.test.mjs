@@ -19,6 +19,7 @@
 import { chromium } from 'playwright'
 import { DB_NAME, clearAllStores, ensureChatDb, writeSessions } from '../helpers/chat-db.mjs'
 import { serveDir, verifyAppUrl } from '../helpers/env.mjs'
+import { assertNoEgress, installEgressGate } from '../helpers/helpers.mjs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -72,6 +73,12 @@ try {
   browser = await chromium.launch()
   const context = await browser.newContext({ locale: 'zh-CN', viewport: { width: 1280, height: 900 } })
   const page = await context.newPage()
+  /**
+   * #686：出站总闸，**必须在每次 `page.goto` 之前**装上（首屏请求一旦发出去就收不回来）。
+   * 本用例只碰 IndexedDB fixture 与被测产物自己的静态服务；白名单只写它的 origin（精确 host:port）。
+   */
+  const gate = (target) => installEgressGate(target, { appUrl: APP_URL, allowHosts: [new URL(APP_URL).host] })
+  await gate(page)
 
   const resetTo = async (sessions) => {
     await page.goto(APP_URL, { waitUntil: 'domcontentloaded' })
@@ -322,6 +329,7 @@ try {
       deviceScaleFactor: 2,
     })
     const mobilePage = await mobile.newPage()
+    await gate(mobilePage)
     await mobilePage.goto(APP_URL, { waitUntil: 'domcontentloaded' })
     await mobilePage.evaluate(() => {
       window.localStorage.clear()
@@ -391,6 +399,7 @@ try {
       })
     })
     const brokenPage = await broken.newPage()
+    await gate(brokenPage)
     await brokenPage.goto(APP_URL, { waitUntil: 'domcontentloaded' })
     await brokenPage.waitForTimeout(1500)
     const text = await brokenPage.locator('body').innerText()
@@ -405,6 +414,8 @@ try {
     }
   }
 } finally {
+  // #686：收尾断言「漏出 = 0」（未登记的出站请求一条都不许有）—— 先断言再关浏览器
+  assertNoEgress(failures)
   await browser?.close().catch(() => {})
   served?.kill()
 }

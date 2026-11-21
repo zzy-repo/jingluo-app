@@ -27,7 +27,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
 import { defaultDist, verifyAppUrl } from '../helpers/env.mjs'
-import { providerKindTrigger } from '../helpers/helpers.mjs'
+import { assertNoEgress, installEgressGate, providerKindTrigger } from '../helpers/helpers.mjs'
 
 // 证据目录：原来写死 /root/deepseek-app/...（Linux 一次性机器），在任何别的机器上都 ENOENT
 // → 整条用例「用例异常」，属于环境假红。改成相对仓库根解析。
@@ -231,6 +231,15 @@ const context = await browser.newContext({
   permissions: ['microphone'],
 })
 const page = await context.newPage()
+/**
+ * #686：出站总闸，**必须在 `page.goto` 之前**装上（首屏请求一旦发出去就收不回来，#673 的 g16 就是这么漏的）。
+ * 白名单两项，都是精确 host:port：被测产物自身的 origin + 本用例**真起的**本机 mock 上游
+ * （`startMock()` 的 `127.0.0.1:<随机端口>`，「零外网」的被测输入就是它）。
+ */
+await installEgressGate(page, {
+  appUrl: APP_URL,
+  allowHosts: [new URL(APP_URL).host, new URL(mockOk.base).host],
+})
 const consoleErrors = []
 page.on('console', (message) => {
   if (message.type() === 'error') {
@@ -1026,6 +1035,8 @@ try {
   } else {
     ok('8) console error = 0')
   }
+  // #686：收尾断言「漏出 = 0」（未登记的出站请求一条都不许有）—— 先断言再关浏览器
+  assertNoEgress(failures)
   await browser.close()
   mockOk.server.close()
 

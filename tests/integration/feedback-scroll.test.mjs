@@ -6,7 +6,7 @@ import { createServer } from 'node:http'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
-import { withStubbedBackends } from '../helpers/golden.mjs'
+import { assertNoEgress, installEgressGate } from '../helpers/helpers.mjs'
 // 路径一律走 fileURLToPath：Windows 下 pathname 是 /D:/... （前导斜杠 + 盘符），拼出来会变成 D:\D:\...
 const ROOT = fileURLToPath(new URL('../..', import.meta.url))
 const out = fileURLToPath(new URL('../../docs/ui/feedback-scroll/', import.meta.url))
@@ -63,14 +63,24 @@ try {
    * 官方协议打的是 `/anthropic/v1/messages` —— 那条桩从来没命中过，3 次发送是**真打到生产**
    * api.deepseek.com 的（实测 3 次 CONNECT api.deepseek.com:443）。现在按 host + path 打桩，
    * 并在每轮收尾断言「漏出 = 0」。
+   *
+   * #686：改用 `installEgressGate()`（`tests/helpers/helpers.mjs`，`withStubbedBackends` 的薄封装），
+   * 白名单收成**精确 host:port** —— 被测产物自身 `127.0.0.1:<port>` + 桩的 `api.deepseek.com`；
+   * 不再用 `allowLoopback: true`（那是「本机随便哪个回环端口都放行」的宽口径），收尾断言也换成
+   * 与其余文件同一份 `assertNoEgress()`。判据一条没放宽，只有收紧。
    */
-  const guard = await withStubbedBackends(page, { appUrl: BASE_URL, allowLoopback: true })
-  guard.stub({
-    name: 'deepseek-anthropic-messages',
-    host: 'api.deepseek.com',
-    path: /^\/anthropic\/v1\/messages$/,
-    method: 'POST',
-    respond: () => ({ status: 500, headers: { 'content-type': 'text/plain; charset=utf-8' }, body: 'offline' }),
+  await installEgressGate(page, {
+    appUrl: BASE_URL,
+    allowHosts: [new URL(BASE_URL).host],
+    stubs: [
+      {
+        name: 'deepseek-anthropic-messages',
+        host: 'api.deepseek.com',
+        path: /^\/anthropic\/v1\/messages$/,
+        method: 'POST',
+        respond: () => ({ status: 500, headers: { 'content-type': 'text/plain; charset=utf-8' }, body: 'offline' }),
+      },
+    ],
   })
   await page.goto(`${BASE_URL}/?diag-debug`)
   await page.waitForFunction(() => !!window.__diagnostics)
@@ -173,9 +183,9 @@ try {
     results.at(-1).mainRestored={original,restored}
    }
   }
-   // #673：本轮收尾断言 —— 请求一条都不许漏出白名单
+   // #673 / #686：本轮收尾断言 —— 请求一条都不许漏出白名单（总闸统一口径）
    const leaks=[]
-   guard.assertNoLeak({ expect:(label,pass,{expected,actual})=>{ if(!pass) leaks.push(`${label} · 期望=${expected} · 实际=${actual}`) } })
+   assertNoEgress(leaks)
    assert.deepEqual(leaks,[],`出站漏网：${leaks.join('；')}`)
   await context.close()
  }

@@ -28,6 +28,7 @@ import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
 import { CURRENT, CHANNEL_BUILD_TYPE, NEWEST_INSTALLABLE, nextPatch } from '../helpers/current-version.mjs'
 import { serveDir, skipEnv, ROOT } from '../helpers/env.mjs'
+import { assertNoEgress, installEgressGate } from '../helpers/helpers.mjs'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const DIST = path.resolve(ROOT, process.env.DIST_DIR || 'dist')
@@ -123,29 +124,35 @@ const manifestBody = (releases) => JSON.stringify({ releases })
  * （离线环境里表现为 10s 级超时，CI 上表现为「今天红明天绿」）。
  * 跨域 GET 必须自己给 CORS 头，否则浏览器按 CORS 失败处理 —— 那会变成 network 类失败。
  */
-const routeManifest = async (context, plan) => {
+const manifestStubs = (plan) => {
   // 一行可以给 {status, releases} / {status, body} / 一个返回上面两者的函数
   const resolvePlan = (base) => {
     const spec = (base === PRIMARY ? plan.primary : plan.fallback) ?? { status: 200, releases: [] }
     const value = typeof spec === 'function' ? spec() : spec
     return { status: value.status ?? 200, body: value.releases ? manifestBody(value.releases) : (value.body ?? '') }
   }
-  const fulfill = async (route, base) => {
-    const { status, body } = resolvePlan(base)
-    // 跨域 GET 必须自己给 CORS 头，否则浏览器按 CORS 失败处理（会变成 network 类失败，掩盖真正的断言）
-    await route.fulfill({
-      status,
-      headers: {
-        'access-control-allow-origin': '*',
-        'access-control-allow-methods': 'GET',
-        'content-type': 'application/json',
-        'cache-control': 'no-store',
-      },
-      body,
-    })
-  }
-  await context.route(`${PRIMARY}/releases.json`, (route) => fulfill(route, PRIMARY))
-  await context.route(`${FALLBACK}/releases.json`, (route) => fulfill(route, FALLBACK))
+  // #686：从 `context.route` 改成**登记进出站总闸的桩**（host + path 精确匹配）：总闸在 page 级装了
+  // 全量通配路由，page 路由优先于 context 路由，两处各拦一半会让清单请求先被总闸判成「漏出」而 abort。
+  // 应答内容与原 route.fulfill 一致（跨域 GET 必须自己给 CORS 头，否则会变成 network 类失败）。
+  return [PRIMARY, FALLBACK].map((base) => ({
+    name: `${new URL(base).host}/releases.json`,
+    host: new URL(base).host,
+    path: '/releases.json',
+    method: 'GET',
+    respond: () => {
+      const { status, body } = resolvePlan(base)
+      return {
+        status,
+        headers: {
+          'access-control-allow-origin': '*',
+          'access-control-allow-methods': 'GET',
+          'content-type': 'application/json',
+          'cache-control': 'no-store',
+        },
+        body,
+      }
+    },
+  }))
 }
 
 /** 打开 设置 → 应用更新 → 检查更新；`waitFor` 决定等到哪种结论出现 */
@@ -605,10 +612,18 @@ try {
         'chat-demo:provider-kind': 'deepseek',
         ...(scenario.storage ?? {}),
       })
-      await routeManifest(context, scenario.plan)
       const page = await context.newPage()
       const pageErrors = []
       page.on('pageerror', (error) => pageErrors.push(String(error)))
+      /**
+       * #686：出站总闸，**必须在 `page.goto` 之前**装上（首屏请求一旦发出去就收不回来）。
+       * 白名单 = 被测产物自身 origin（精确 host:port）；两台分发机的清单是登记在闸上的桩。
+       */
+      await installEgressGate(page, {
+        appUrl: served.url,
+        allowHosts: [new URL(served.url).host],
+        stubs: manifestStubs(scenario.plan),
+      })
       let driveError = null
       try {
         await page.goto(served.url, { waitUntil: 'domcontentloaded' })
@@ -641,6 +656,8 @@ try {
     }
   }
 } finally {
+  // #686：收尾断言「漏出 = 0」（未登记的出站请求一条都不许有）—— 先断言再关浏览器
+  assertNoEgress(failures)
   await browser.close()
   served.kill()
 }

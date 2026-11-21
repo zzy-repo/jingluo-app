@@ -29,6 +29,7 @@ import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
 import { DB_NAME, clearAllStores, ensureChatDb, writeSessions } from '../helpers/chat-db.mjs'
 import { serveDir, verifyDist } from '../helpers/env.mjs'
+import { assertNoEgress, installEgressGate } from '../helpers/helpers.mjs'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const ROOT = path.resolve(HERE, '../..')
@@ -198,9 +199,15 @@ const until = async (probe, { timeoutMs = 10_000, intervalMs = 80 } = {}) => {
 verifyDist(DIST, { variant: process.env.DIST_VARIANT === 'internal' ? 'internal' : undefined })
 mkdirSync(SHOT_DIR, { recursive: true })
 const server = await serveDir(DIST, { label: '被测产物' })
+/**
+ * #686：出站总闸，**必须在每个 page 的 `page.goto` 之前**装上（首屏请求一旦发出去就收不回来）。
+ * 本用例只碰 IndexedDB fixture 与被测产物自己的静态服务；白名单只写它的 origin（精确 host:port）。
+ */
+const gate = (page) => installEgressGate(page, { appUrl: server.url, allowHosts: [new URL(server.url).host] })
 
 const seed = async (context) => {
   const seeder = await context.newPage()
+  await gate(seeder)
   await seeder.goto(server.url, { waitUntil: 'domcontentloaded' })
   await ensureChatDb(seeder)
   await seeder.evaluate(clearAllStores, { name: DB_NAME })
@@ -311,6 +318,7 @@ const scenario = async ({ label, width, height, isMobile }) => {
   const errors = []
   page.on('console', (message) => message.type() === 'error' && errors.push(message.text()))
   page.on('pageerror', (error) => errors.push(String(error)))
+  await gate(page)
   await page.goto(server.url, { waitUntil: 'domcontentloaded' })
   await openLongSession(page, isMobile)
 
@@ -523,6 +531,8 @@ try {
   await scenario({ label: '360', width: 360, height: 640, isMobile: true })
   await scenario({ label: '1280', width: 1280, height: 900, isMobile: false })
 } finally {
+  // #686：收尾断言「漏出 = 0」（未登记的出站请求一条都不许有）
+  assertNoEgress(failures)
   server.kill()
 }
 

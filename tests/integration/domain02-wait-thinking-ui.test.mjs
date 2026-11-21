@@ -30,6 +30,7 @@ import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
 import { requireDist, serveDist } from '../helpers/runtime.mjs'
 import { verifyAppUrl } from '../helpers/env.mjs'
+import { assertNoEgress, installEgressGate } from '../helpers/helpers.mjs'
 import {
   configureAnthropicChannel,
   startMockUpstream,
@@ -84,6 +85,15 @@ const openChat = async (mock, settings = {}) => {
   mock.state.calls.length = 0
   const context = await browser.newContext({ locale: 'zh-CN', viewport: { width: 1280, height: 800 } })
   const page = await context.newPage()
+  /**
+   * #686：出站总闸，**必须在 `page.goto` 之前**装上（首屏请求一旦发出去就收不回来）。
+   * 白名单两项，都是精确 host:port：被测产物自身的 origin + 本用例**真起的**本机 mock 上游
+   * （流式/思考过程的被测输入就是它，不拿假 SSE 替掉）。
+   */
+  await installEgressGate(page, {
+    appUrl: APP_URL,
+    allowHosts: [new URL(APP_URL).host, new URL(mock.url).host],
+  })
   await page.goto(APP_URL, { waitUntil: 'domcontentloaded' })
   await page.evaluate(() => window.localStorage.clear())
   await configureAnthropicChannel(page, { url: mock.url, apiKey: KEY })
@@ -451,6 +461,8 @@ try {
     }
   }
 } finally {
+  // #686：收尾断言「漏出 = 0」（未登记的出站请求一条都不许有）—— 先断言再关浏览器
+  assertNoEgress(failures)
   await browser.close()
   await server.close()
   await mock.close()

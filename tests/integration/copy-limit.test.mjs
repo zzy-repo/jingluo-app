@@ -27,6 +27,7 @@ import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
 import { DB_NAME, ensureChatDb, writeSessions } from '../helpers/chat-db.mjs'
 import { serveDir, verifyAppUrl } from '../helpers/env.mjs'
+import { assertNoEgress, installEgressGate } from '../helpers/helpers.mjs'
 
 const require = createRequire(import.meta.url)
 
@@ -172,6 +173,13 @@ await context.addInitScript(() => {
   }
 })
 
+/**
+ * #686：出站总闸，**必须在该 page 的 `page.goto` 之前**装上（首屏请求一旦发出去就收不回来）。
+ * 本用例的全部交互（IndexedDB fixture / 复制 / 下载 .txt）都在被测产物自己的 origin 上，
+ * 白名单里只写它（精确 host:port）。
+ */
+const gatePage = (page) => installEgressGate(page, { appUrl: APP_URL, allowHosts: [new URL(APP_URL).host] })
+
 const newPage = async () => {
   const page = await context.newPage()
   const errors = []
@@ -181,6 +189,7 @@ const newPage = async () => {
     }
   })
   page.on('pageerror', (error) => errors.push(String(error)))
+  await gatePage(page)
   await page.goto(APP_URL, { waitUntil: 'domcontentloaded' })
   return { page, errors }
 }
@@ -206,6 +215,7 @@ const copiedLengths = (page) => page.evaluate(() => window.__copied)
 try {
   // 先播种，再每个场景新建 page，让 store 首次 hydration 读到 fixture
   const seeder = await context.newPage()
+  await gatePage(seeder)
   await seeder.goto(APP_URL, { waitUntil: 'domcontentloaded' })
   const seededDb = await ensureChatDb(seeder)
   await seedSessions(seeder, SESSIONS.map(makeSession))
@@ -317,6 +327,8 @@ try {
   failures.push(`用例中断：${reason}`)
   console.error(`  ✗  用例中断（后续场景未执行）：${reason}`)
 } finally {
+  // #686：收尾断言「漏出 = 0」（未登记的出站请求一条都不许有）—— 先断言再关浏览器
+  assertNoEgress(failures)
   await browser.close()
   served.kill()
 }

@@ -26,6 +26,7 @@ import path from 'node:path'
 import { chromium } from 'playwright'
 import { CURRENT, CHANNEL_BUILD_TYPE, NEWEST_INSTALLABLE } from '../helpers/current-version.mjs'
 import { readBuildInfo, serveDir, skipEnv, ROOT } from '../helpers/env.mjs'
+import { assertNoEgress, installEgressGate } from '../helpers/helpers.mjs'
 
 const require = createRequire(import.meta.url)
 /** 截图落点：与仓库既有 UI 取证一致（docs/ui/ 是入库的实拍目录，PR 里直接给路径） */
@@ -57,10 +58,20 @@ const release = (over = {}) => ({
 
 const manifestBody = (releases) => JSON.stringify({ releases })
 
-/** 拦两台分发机的清单（只拦旧机会让首选机真的连出去：CI 上今天绿明天红） */
-const routeManifest = async (context, releases) => {
-  const fulfill = async (route) =>
-    route.fulfill({
+/**
+ * 拦两台分发机的清单（只拦旧机会让首选机真的连出去：CI 上今天绿明天红）。
+ *
+ * #686：从 `context.route` 改成**登记进出站总闸的桩**（host + path 精确匹配）。原因：总闸在 page 级
+ * 装了全量通配路由，page 路由优先于 context 路由，两处各拦一半会让清单请求先被总闸判成「漏出」而 abort。
+ * 桩的应答内容与原 route.fulfill 一字不差；没登记过的 host 仍然记录 + abort + 收尾点名。
+ */
+const manifestStubs = (releases) =>
+  [PRIMARY, FALLBACK].map((base) => ({
+    name: `${new URL(base).host}/releases.json`,
+    host: new URL(base).host,
+    path: '/releases.json',
+    method: 'GET',
+    respond: () => ({
       status: 200,
       headers: {
         'access-control-allow-origin': '*',
@@ -69,10 +80,8 @@ const routeManifest = async (context, releases) => {
         'cache-control': 'no-store',
       },
       body: manifestBody(releases),
-    })
-  await context.route(`${PRIMARY}/releases.json`, fulfill)
-  await context.route(`${FALLBACK}/releases.json`, fulfill)
-}
+    }),
+  }))
 
 /** 打开 设置 → 应用更新（不点检查：进入设置面板本身不触发检查） */
 const openSettings = async (page) => {
@@ -515,11 +524,20 @@ try {
           ...(scenario.preseed ? scenario.preseed(Date.now()) : {}),
         }
       )
-      await routeManifest(context, scenario.releases)
       const page = await context.newPage()
       const pageErrors = []
       page.on('pageerror', (error) => pageErrors.push(String(error)))
       const tag = `${scenario.id}@${viewport.label}${scenario.dark ? '(dark)' : ''}`
+      /**
+       * #686：出站总闸，**必须在 `page.goto` 之前**装上（首屏请求一旦发出去就收不回来）。
+       * 白名单 = 被测产物自身 origin（精确 host:port）；两台分发机的清单是登记在闸上的桩，
+       * 桩没命中的请求一律记录 + abort，收尾断言点名 `host+path`。
+       */
+      await installEgressGate(page, {
+        appUrl: served.url,
+        allowHosts: [new URL(served.url).host],
+        stubs: manifestStubs(scenario.releases),
+      })
       const read = () => page.evaluate(probe)
       try {
         await page.goto(served.url, { waitUntil: 'domcontentloaded' })
@@ -551,6 +569,8 @@ try {
     }
   }
 } finally {
+  // #686：收尾断言「漏出 = 0」（未登记的出站请求一条都不许有）—— 先断言再关浏览器
+  assertNoEgress(failures)
   await browser.close()
   // serveDir 的返回值是 { url, port, kill }（不是 http.Server）—— 用 close() 会静默失效，
   // 静态服务把事件循环吊住，进程永不退出：run-layer 按「文件超时」判红，

@@ -11,6 +11,7 @@
 import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
 import { buildArchiveZip, textPayload } from '../fixtures/domain05/archive-fixture.mjs'
+import { assertNoEgress, installEgressGate } from '../helpers/helpers.mjs'
 
 const APP_URL = process.env.APP_URL || 'http://127.0.0.1:5181'
 // fileURLToPath：Windows 下 pathname 是 /D:/...，当路径用会变成 D:\D:\...
@@ -87,6 +88,13 @@ const openApp = async ({ payload, deferred = false }) => {
     }
   })
   page.on('pageerror', (error) => consoleErrors.push(`pageerror: ${error.message}`))
+  /**
+   * #686：出站总闸，**必须在 `page.goto` 之前**装上（首屏请求一旦发出去就收不回来，#673 的 g16 就是这么漏的）。
+   * 本用例把 CapacitorHttp 整个换成进程内 mock，`https://obs.example.test/...` 那条链接**不会真的出网**；
+   * 白名单里只写被测产物自己的 origin（精确 host:port）。万一 mock 漏了、请求真发出去，总闸会记录 + abort
+   * 并在收尾断言里点名 `host+path`。
+   */
+  await installEgressGate(page, { appUrl: APP_URL, allowHosts: [new URL(APP_URL).host] })
   await page.goto(APP_URL, { waitUntil: 'domcontentloaded' })
   await page.evaluate(() => window.localStorage.clear())
   await page.reload({ waitUntil: 'domcontentloaded' })
@@ -345,6 +353,9 @@ const run = async () => {
     check('console error = 0', consoleErrors.length === 0, consoleErrors.join(' | '))
     await browser.close()
   }
+
+  // #686：收尾断言「漏出 = 0」（未登记的出站请求一条都不许有）
+  assertNoEgress(failures)
 
   if (failures.length > 0) {
     console.error(`\nFAIL 从链接导入（原生链路）：${failures.length} 条断言失败`)
