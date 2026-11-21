@@ -17,6 +17,14 @@ const ANTHROPIC_MODEL = 'claude-relay-model'
 const OPENAI_BASE = 'https://relay-o.example.com'
 const OPENAI_MODEL = 'gpt-relay-model'
 
+/**
+ * 这两个自填渠道的 host 会真的被界面拿去探测（打开设置页时 `GET {base}/v1/models`）。
+ * 用例必须按 **host + path** 给它们打桩，否则探针会一路发到外网（#673 实测：改前每条真出网）。
+ * 在 fixture 里导出 host，避免用例自己再抄一遍字符串。
+ */
+export const ANTHROPIC_HOST = new URL(ANTHROPIC_BASE).host
+export const OPENAI_HOST = new URL(OPENAI_BASE).host
+
 /** 两个自填渠道各自一份配置：切来切去都不许互串（#339 的根因在读取侧） */
 const SCOPED_SEED = {
   'chat-demo:provider-kind': 'anthropic',

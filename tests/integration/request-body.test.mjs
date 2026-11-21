@@ -14,6 +14,7 @@ import {
   fillBaseUrl,
   fillModel,
   finish,
+  assertNoEgress,
   openApp,
   openSettingsDataSection,
   selectProviderKind,
@@ -159,6 +160,9 @@ const waitForBody = async (page, requests, pathRe, timeout = 15000) => {
     await browser.close()
   }
 }
+
+// #673：出站总闸兜底断言（本文件自己收尾、不调 finish()，这里显式兜一次）
+assertNoEgress(failures)
 
 if (failures.length > 0) {
   console.error(`\nFAIL ${name}`)

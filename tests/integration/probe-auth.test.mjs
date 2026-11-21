@@ -22,9 +22,26 @@ import {
 } from '../helpers/helpers.mjs'
 
 const name = 'tests/integration/probe-auth.test.mjs'
-const { browser, page } = await openApp()
+const { browser, page, guard } = await openApp()
 const failures = []
 try {
+  /**
+   * #673：探针本身就是一次真出站 —— 改前这条用例真的 `GET https://api.deepseek.com/models`
+   * 打了生产（实测 1 次 CONNECT api.deepseek.com:443）。用例只断言**请求头**，
+   * 不需要真连一次生产，所以按 host + path 打桩（401 + authentication_error，与线上同形），
+   * 出站由总闸兜住：漏一条就红。
+   */
+  guard.stub({
+    name: 'deepseek-models',
+    host: 'api.deepseek.com',
+    path: '/models',
+    method: 'GET',
+    respond: () => ({
+      status: 401,
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ error: { type: 'authentication_error', message: 'invalid api key' } }),
+    }),
+  })
   await openSettingsDataSection(page)
 
   // 只往输入框里打字，不点「确定」——store 里依旧是空的

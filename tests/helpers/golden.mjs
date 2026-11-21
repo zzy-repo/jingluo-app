@@ -74,6 +74,17 @@ const checkHost = (host, where) => {
   return host
 }
 
+/**
+ * 回环 host 判定（含端口）：`127.0.0.0/8`、`localhost`、`[::1]`。
+ * 只用来给 L1 放行随机端口的本机 mock —— 回环连接不出机器，不算「出网」（#673）。
+ */
+const isLoopbackHost = (host) => {
+  const name = String(host)
+    .replace(/:\d+$/u, '')
+    .replace(/^\[|\]$/gu, '')
+  return name === 'localhost' || name === '::1' || /^127\./u.test(name)
+}
+
 /** stub 的 path 匹配：精确字符串（不含 query）或 RegExp（不留状态，避免 /g 抖动） */
 const matchesPath = (spec, pathname) => {
   if (typeof spec === 'string') {
@@ -168,8 +179,19 @@ const createEgressLedger = ({ allowHosts }) => {
  * `respond(call)` 的 `call` = `{ stub, method, url, host, path, headers, body }`，返回
  * `{ status?, headers?, body? }`（body 可以是 string 或 Buffer）。
  */
-export const withStubbedBackends = async (page, { appUrl = '', stubs = [], allowHosts = [] } = {}) => {
+export const withStubbedBackends = async (
+  page,
+  { appUrl = '', stubs = [], allowHosts = [], allowLoopback = false } = {}
+) => {
   const appHost = appUrl === '' ? '' : new URL(appUrl).host
+  /**
+   * #673：集成层（L1）的 mock 上游大多起在 `127.0.0.1` 的**随机端口**上，端口在写桩时还不知道，
+   * 写不出精确的 `host:port`。所以给 L1 一个 opt-in：**回环地址**（127.0.0.0/8 / localhost / [::1]）
+   * 放行到真服务 —— 回环连接出不了这台机器，本身就不是「出网」。
+   * 放行时把**实际用到的** `host[:port]` 记进白名单（仍然是精确集合，写不出「本机随便哪个端口」）。
+   * golden 不传这个开关，行为与本单之前完全一致。
+   */
+  const loopbackSeen = new Set()
   const guard = {
     appHost,
     stubs: [],
@@ -199,9 +221,15 @@ export const withStubbedBackends = async (page, { appUrl = '', stubs = [], allow
       guard.stubs.push(entry)
       return entry
     },
-    /** 白名单：被测产物自身 + 每条桩的 host + 本机真服务（精确 host，去重） */
+    /** 白名单：被测产物自身 + 每条桩的 host + 本机真服务（精确 host，去重）+ 实际用到的回环 host */
     allowedHosts: () =>
-      [...new Set([appHost, ...guard.stubs.map((stub) => stub.host), ...guard.allowHosts].filter((host) => host !== ''))],
+      [
+        ...new Set(
+          [appHost, ...guard.stubs.map((stub) => stub.host), ...guard.allowHosts, ...loopbackSeen].filter(
+            (host) => host !== ''
+          )
+        ),
+      ],
     assertNoLeak(ctx, step = EGRESS_STEP) {
       guard.asserted = true
       return guard._ledger.assertNoLeak(ctx, step)
@@ -267,6 +295,14 @@ export const withStubbedBackends = async (page, { appUrl = '', stubs = [], allow
     }
     // 本机真起的服务（mock 上游 / mock sub2api）：放行到真服务，host 仍进白名单
     if (guard.allowHosts.includes(target.host)) {
+      ledger.pass(target.host)
+      await route.continue()
+      return
+    }
+    // L1（#673）：回环地址连出不了机器，放行；实际用到的 host[:port] 记进白名单。
+    // 位置在桩匹配**之后** —— 用例给某个回环 host 单独登记了桩时，桩优先。
+    if (allowLoopback && isLoopbackHost(target.host)) {
+      loopbackSeen.add(target.host)
       ledger.pass(target.host)
       await route.continue()
       return

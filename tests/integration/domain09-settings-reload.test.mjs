@@ -19,7 +19,8 @@ import { test } from 'node:test'
 
 import { chromium } from 'playwright'
 import { defaultDist, serveDir, verifyDist } from '../helpers/env.mjs'
-import { FAKE_KEY, RELOAD_CASES } from '../fixtures/domain08-09/reload-matrix.mjs'
+import { withStubbedBackends } from '../helpers/golden.mjs'
+import { ANTHROPIC_HOST, FAKE_KEY, OPENAI_HOST, RELOAD_CASES } from '../fixtures/domain08-09/reload-matrix.mjs'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const ROOT = path.resolve(HERE, '../..')
@@ -188,11 +189,37 @@ test('N6 设置重载 + 渠道凭证隔离：seed 一张表 → reload → 界�
       })
       try {
         const page = await context.newPage()
+        /**
+         * #673：出站总闸 + 探针桩，**都在打开页面之前**装上。
+         * 改前这两条自填渠道的 `GET {base}/v1/models` 探针是真打到外网的
+         * （实测 `GET relay-a.example.com/v1/models` ×2、`GET relay-o.example.com/v1/models` ×2），
+         * 用例里没有任何一处校验它们没连出去。
+         */
+        const guard = await withStubbedBackends(page, { appUrl: served.url, allowLoopback: true })
+        for (const host of [ANTHROPIC_HOST, OPENAI_HOST]) {
+          guard.stub({
+            name: `${host}/v1/models`,
+            host,
+            path: '/v1/models',
+            method: 'GET',
+            respond: () => ({
+              status: 200,
+              headers: { 'content-type': 'application/json' },
+              body: JSON.stringify({ data: [] }),
+            }),
+          })
+        }
         await page.goto(served.url, { waitUntil: 'domcontentloaded' })
         await seed(page, row.seed)
         await page.reload({ waitUntil: 'domcontentloaded' })
         await settle(page, 900)
         const rowFailures = await PROBES[row.probe](page, row.expect)
+        // #673：本行跑完，断言「请求一条都没漏出白名单」——漏出照样记进本行失败
+        guard.assertNoLeak({
+          expect: (label, pass, { expected, actual }) => {
+            if (!pass) rowFailures.push(`${label} · 期望=${expected} · 实际=${actual}`)
+          },
+        })
         if (rowFailures.length === 0) {
           console.log(`  ok   ${row.id} ${row.fn} ${row.label}`)
         } else {

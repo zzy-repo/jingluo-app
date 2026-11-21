@@ -6,6 +6,7 @@ import { createServer } from 'node:http'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
+import { withStubbedBackends } from '../helpers/golden.mjs'
 // 路径一律走 fileURLToPath：Windows 下 pathname 是 /D:/... （前导斜杠 + 盘符），拼出来会变成 D:\D:\...
 const ROOT = fileURLToPath(new URL('../..', import.meta.url))
 const out = fileURLToPath(new URL('../../docs/ui/feedback-scroll/', import.meta.url))
@@ -56,6 +57,21 @@ try {
   const context = await browser.newContext({ viewport:{width,height}, isMobile:true, hasTouch:true, locale:'zh-CN', reducedMotion:'reduce' })
   await context.addInitScript(() => localStorage.setItem('chat-demo:api-key','sk-scroll-local-fixture'))
   const page = await context.newPage()
+  /**
+   * #673：出站总闸 + 上游桩，**都在打开页面之前**装上。
+   * 改前这里只有一条 glob 桩（`**` + `/chat/completions`），而本用例种的是 DeepSeek 官方渠道的 Key，
+   * 官方协议打的是 `/anthropic/v1/messages` —— 那条桩从来没命中过，3 次发送是**真打到生产**
+   * api.deepseek.com 的（实测 3 次 CONNECT api.deepseek.com:443）。现在按 host + path 打桩，
+   * 并在每轮收尾断言「漏出 = 0」。
+   */
+  const guard = await withStubbedBackends(page, { appUrl: BASE_URL, allowLoopback: true })
+  guard.stub({
+    name: 'deepseek-anthropic-messages',
+    host: 'api.deepseek.com',
+    path: /^\/anthropic\/v1\/messages$/,
+    method: 'POST',
+    respond: () => ({ status: 500, headers: { 'content-type': 'text/plain; charset=utf-8' }, body: 'offline' }),
+  })
   await page.goto(`${BASE_URL}/?diag-debug`)
   await page.waitForFunction(() => !!window.__diagnostics)
   await page.evaluate(() => { for(let i=0;i<30;i++) window.__diagnostics.recordError('scroll regression log '+i); window.__diagnostics.setFeedbackTransport({name:'offline',send:async()=>({ok:false,error:'network'})}) })
@@ -146,7 +162,6 @@ try {
     const lockState=await page.evaluate(()=>{const b=getComputedStyle(document.body);return {overflow:b.overflow,attr:document.body.hasAttribute('data-scroll-lock')}})
     assert.equal(lockState.attr,false,'Modal 关闭后 body 无 data-scroll-lock 残留')
     assert.equal(lockState.overflow,baseOverflow,'Modal 关闭后 body overflow 回到基线（无新增滚动锁）')
-    await page.route('**/chat/completions',route=>route.fulfill({status:500,body:'offline'}))
     await page.locator('textarea').last().fill('主页面滚动恢复验证\n'.repeat(80))
     await page.getByRole('button',{name:'发送',exact:true}).tap()
     const scroller=page.locator('[class^="scroll-"]').first()
@@ -158,6 +173,10 @@ try {
     results.at(-1).mainRestored={original,restored}
    }
   }
+   // #673：本轮收尾断言 —— 请求一条都不许漏出白名单
+   const leaks=[]
+   guard.assertNoLeak({ expect:(label,pass,{expected,actual})=>{ if(!pass) leaks.push(`${label} · 期望=${expected} · 实际=${actual}`) } })
+   assert.deepEqual(leaks,[],`出站漏网：${leaks.join('；')}`)
   await context.close()
  }
 } finally {await writeFile(out+(baseline?'before':'after')+'.json',JSON.stringify(results,null,2)); console.log(JSON.stringify(results.map(({name,before,after})=>({name,before,after})),null,2)); await browser.close();server.close()}

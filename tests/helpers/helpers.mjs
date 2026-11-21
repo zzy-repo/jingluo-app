@@ -1,11 +1,38 @@
 // 共享的 Playwright 步骤：打开设置 → 数据管理，并捕获 /models 探测请求。
 import { chromium } from 'playwright'
 import { defaultDist, verifyAppUrl } from './env.mjs'
+// #673：出站总闸复用 golden 层那一套（withStubbedBackends），不另写一份实现。
+import { withStubbedBackends } from './golden.mjs'
 
 // 默认走 127.0.0.1：语音输入用例需要「安全上下文」（localhost/127.0.0.1）才拿到麦克风，
 // 局域网 IP（100.113.135.55）不是安全上下文，按钮会被置灰成「非 HTTPS 页面无法使用语音输入」。
 export const APP_URL = process.env.APP_URL || 'http://127.0.0.1:5181'
 export const FAKE_KEY = 'sk-testkey-0123456789'
+
+/** 本进程里装配过的出站总闸（`finish` / `assertNoEgress` 收尾统一断言一遍） */
+const egressGates = []
+
+/**
+ * 收尾断言：**本进程装配过的每一个总闸**都不许有漏出的请求（#673）。
+ *
+ * 为什么是「兜底」而不是「用例自己写」：`openApp()` 里就装上了闸，本层 9 个文件共用它；
+ * 用例忘了写断言时，漏出去的请求照样把 `failures` 顶红 —— 判据不能靠自觉。
+ * 失败行一句话给出 `METHOD host+path` 与白名单外的 host，与 golden 的口径一致。
+ */
+export const assertNoEgress = (failures, step = '不连真实服务') => {
+  for (const guard of egressGates) {
+    if (guard.asserted) {
+      continue
+    }
+    guard.assertNoLeak({
+      expect: (label, pass, { expected, actual }) => {
+        if (!pass) {
+          failures.push(`${label || step} · 期望=${expected} · 实际=${actual}`)
+        }
+      },
+    })
+  }
+}
 
 /** 启动浏览器并进入「干净」的应用状态：清掉 localStorage 里已保存的配置后重载 */
 export const openApp = async () => {
@@ -21,11 +48,21 @@ export const openApp = async () => {
     permissions: ['microphone'],
   })
   const page = await context.newPage()
+  /**
+   * #673：**桩/总闸必须在 `page.goto` 之前装好**。golden 层 G16 的漏网就是「桩注册晚于打开页面」——
+   * 首屏请求一旦发出去就收不回来了。这里同样把闸装在 goto 前面：未登记的出站一律记录 + abort。
+   * 回环（127.0.0.1 的随机端口 mock）放行，见 `withStubbedBackends` 的 `allowLoopback`。
+   */
+  const guard = await withStubbedBackends(page, {
+    appUrl: APP_URL,
+    allowLoopback: true,
+  })
+  egressGates.push(guard)
   await page.goto(APP_URL, { waitUntil: 'domcontentloaded' })
   await page.evaluate(() => window.localStorage.clear())
   await page.reload({ waitUntil: 'domcontentloaded' })
   await page.waitForTimeout(800)
-  return { browser, page }
+  return { browser, page, guard }
 }
 
 /** 没有 API Key 时应用会自己弹出设置并选中「数据管理」；已弹出就只切分组 */
@@ -70,8 +107,10 @@ export const waitForProbe = async (page, captured, timeoutMs = 15000) => {
   return captured.length > 0
 }
 
-/** 统一的收尾：打印失败原因并以非 0 退出，或用例通过 */
+/** 统一的收尾：出站总闸断言（#673）→ 打印失败原因并以非 0 退出，或用例通过 */
 export const finish = async (browser, name, failures) => {
+  // 先断言再关浏览器：abort/记录都发生在页面还活着的时候
+  assertNoEgress(failures)
   await browser.close()
   if (failures.length > 0) {
     console.error(`\nFAIL ${name}`)
