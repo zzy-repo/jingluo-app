@@ -35,7 +35,7 @@ import {
   setProviderKind,
   useApiConfig,
 } from '../../services/api/apiConfig.js'
-import { PROBE_TIMEOUT_MS, probeProvider } from '../../services/api/client.js'
+import { probeProvider } from '../../services/api/client.js'
 import type { ConsumeClient, ConsumeUser } from '../../services/consume/index.js'
 import { getConsumeClient } from '../../services/consumeClient.js'
 import { useAuthStatus } from '../../services/auth/useAuthStatus.js'
@@ -179,8 +179,7 @@ export const AccountConsumePage = ({
       // 探测超时显式传入（#771）：与设置页同一个 15s，不被 connectMs（60s）拖成转圈一分钟
       const result = await probeProvider(
         { baseUrl: getBaseUrl(), apiKey: key },
-        PROBE_TIMEOUT_MS
-      )
+        )
       if (!alive.current) {
         return
       }
