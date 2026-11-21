@@ -473,39 +473,13 @@
   margin-right: 0;
 }
 
-/* 余额卡里的「购买 / 充值」行：按钮靠右下，未登录时左边一行小字说明 */
-.balanceActions {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  margin-top: 12px;
-}
-
+/* 余额卡里的「购买 / 充值」下面的那句说明：只未登录时出现 */
 .balanceHint {
-  margin-right: 10px;
-  color: var(--dsw-alias-label-caption);
-  font-size: 13px;
-  line-height: 18px;
-}
-
-/* 余额卡里的「我的额度」入口（额度并进余额卡，不再占一行） */
-.balanceMore {
-  display: inline-flex;
-  align-items: center;
-  margin-top: 8px;
-  padding: 4px 0;
-  border: 0;
-  background: none;
+  margin-top: 10px;
   color: var(--dsw-alias-label-secondary);
-  font: inherit;
-  font-size: 14px;
-  line-height: 20px;
-  cursor: pointer;
-}
-
-.balanceMore:focus {
-  outline: none;
-  color: var(--dsw-alias-label-primary);
+  font-size: 12px;
+  line-height: 16px;
+  text-align: center;
 }
 
 /* 下级页面（L2）的二级头：左上角「返回」，标题居中原型版式（#727 阶段 1）。
@@ -797,11 +771,16 @@
 
 /* ---------------------------------------------------------------- 余额卡 */
 
+/* #727 阶段 2：余额卡（剩余余额 → 我的额度 → 购买 / 充值）。
+   底色只用 `--dsw-alias-bg-*` 的一档浅色（`bg-skeleton` 就是那唯一一档：浅色 4% 黑 / 深色 8% 白），
+   **不画描边** —— 呼应 #47 的无边设计：卡片靠底色分层，不靠线。 */
 .balance {
+  display: flex;
+  flex-direction: column;
   margin: 8px 20px 4px;
-  padding: 20px;
+  padding: 18px;
   border-radius: 16px;
-  background-color: var(--dsw-alias-interactive-bg-hover);
+  background-color: var(--dsw-alias-bg-skeleton);
 }
 
 .balanceKey {
@@ -810,11 +789,100 @@
   line-height: 18px;
 }
 
+/* 金额行：28–32px / 600 字重 / 等宽数字（`tabular-nums`）—— 数字换行时不抖，不会把下面的行推开。
+   `—` 占位在这里会变成一根 30px 的白杠（看着像坏图），所以未登录走「登录后查看」，
+   已登录没拿到数走 `¥ 0.00`，两条路都不留空行。 */
 .balanceValue {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
   margin-top: 4px;
-  font-size: 32px;
-  font-weight: 700;
+  min-height: 38px;
+  color: var(--dsw-alias-label-primary);
+  font-size: 30px;
+  font-weight: 600;
   line-height: 38px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 未登录时替代金额的那句：跟金额同一行，但按正文大小读，不抢金额的字号 */
+.balanceValueMuted {
+  color: var(--dsw-alias-label-secondary);
+  font-size: 17px;
+  font-weight: 400;
+  line-height: 24px;
+}
+
+/* 恢复中（`signedIn === null`）：还不知道登没登录，先给一个灰点，别下结论 */
+.balanceValuePending {
+  color: var(--dsw-alias-label-caption);
+}
+
+/* 「登录」出口：整行右端，和左边那句分开读（不是「登录后查看登录」连成一句） */
+.balanceSignIn {
+  margin-left: auto;
+  padding: 2px 0;
+  border: 0;
+  background: none;
+  color: var(--dsw-alias-brand-text);
+  font: inherit;
+  font-size: 15px;
+  font-weight: 500;
+  line-height: 24px;
+  cursor: pointer;
+}
+
+.balanceSignIn:focus {
+  outline: none;
+  opacity: 0.7;
+}
+
+/* 1px 极浅分隔线：把「余额」和下面的动作区断开（用 border-l1，不是自己调个颜色） */
+.balanceRule {
+  flex: none;
+  height: 1px;
+  margin: 12px 0 0;
+  background-color: var(--dsw-alias-border-l1);
+}
+
+/* 「我的额度」：卡里的一个 56px 整宽行（17px 文字），右侧只有箭头 */
+.balanceQuotaRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  height: 56px;
+  padding: 0;
+  border: 0;
+  border-radius: 10px;
+  background: none;
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  font-size: 17px;
+  line-height: 24px;
+  text-align: left;
+  cursor: pointer;
+}
+
+/* #47：聚焦 / 按下用「底色深一档」，不画 outline */
+.balanceQuotaRow:focus {
+  outline: none;
+  background-color: var(--dsw-alias-interactive-bg-hover);
+}
+
+.balanceChevron {
+  color: var(--dsw-alias-label-caption);
+  font-size: 17px;
+  line-height: 24px;
+}
+
+/* 购买 / 充值：整宽 · 48px · 品牌色（主按钮）。它承载的是「充值」这个动作，
+   视觉权重必须高于上面的「我的额度」入口，也不能和它挤在同一行。 */
+.balanceBuy {
+  width: 100%;
+  height: 48px;
+  margin-top: 4px;
+  font-size: 15px;
 }
 
 /* ---------------------------------------------------------------- 账号资料 */

@@ -906,6 +906,8 @@ export const en = {
   accountConsumeLoginMethodEmail: 'Email',
   accountConsumeSecurity: 'Account & security',
   accountConsumeBuyCta: 'Buy / top up',
+  // Balance slot when signed out — never a bare em dash (at 30px it reads as a broken image)
+  accountConsumeBalanceSignedOut: 'Sign in to view',
   accountConsumeBuySignedOutHint: 'Sign in to see your cards here',
   accountConsumeSignedOutCta: 'Log in / Sign up',
   accountConsumeEmailUnbound: 'Not linked',

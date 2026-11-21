@@ -311,38 +311,65 @@ export const AccountConsumePage = ({
     </>
   )
 
-  /** 余额卡：剩余余额（余额卡不是行）；额度收进卡里的一个入口，点它进 L2「我的额度」 */
+  /**
+   * 余额卡（#727 阶段 2 版式）：**余额 → 我的额度 → 购买 / 充值** 三段竖着排，各行有自己的位置。
+   *
+   * 为什么长这样（维护者原话「这个充值太丑了」的四条病灶）：
+   *  1. 余额位**不许再摆一条白色横线**（`—` 占位在 30px 下就是一根白杠，看着像坏图）：
+   *     未登录 → 「登录后查看」+ 可点的「登录」；已登录但服务端还没给数 → `¥ 0.00`；
+   *  2. 购买按钮**整宽独立一行**（品牌色主按钮），不再挤在卡片中部右侧和「我的额度」撞在一起；
+   *  3. 行层次用一条 1px 极浅线 + 56px 行高撑开：余额 / 额度 / 购买三段一眼分得开；
+   *  4. 未登录时按钮**照样可点**（可以买），只是下面留一句「登录后可在此查看卡密」。
+   */
   const balanceCard = (
     <div className={styles.balance} data-testid="account-consume-balance">
       <div className={styles.balanceKey}>{t('accountConsumeRemaining')}</div>
-      {/* 未登录 / 恢复中：给「—」，不显示一个来路不明的 0.00 */}
-      <div className={styles.balanceValue}>
-        {signedIn === null ? '…' : balance === undefined ? '—' : formatCurrency(balance)}
-      </div>
-      {/* 购买 / 充值：**直接进既有的购买页（BuyTab）**，整条链路（取 pay-link → App 内打开收款页 →
-          回跳 → 拉卡密）与错误文案全部复用，不在余额卡里重写第二套（#727）。
-          未登录也**不隐藏**这个入口：可以买，只是卡密要登录后才在这里看得到。 */}
-      <div className={styles.balanceActions}>
-        {signedIn === true ? null : (
-          <span className={styles.balanceHint}>{t('accountConsumeBuySignedOutHint')}</span>
+      <div className={styles.balanceValue} data-testid="account-consume-balance-value">
+        {signedIn === null ? (
+          <span className={styles.balanceValuePending}>…</span>
+        ) : signedIn === false ? (
+          <>
+            <span className={styles.balanceValueMuted}>{t('accountConsumeBalanceSignedOut')}</span>
+            <button
+              type="button"
+              className={styles.balanceSignIn}
+              data-testid="account-consume-balance-signin"
+              onClick={needLogin}
+            >
+              {t('sub2authLogin')} ›
+            </button>
+          </>
+        ) : (
+          formatCurrency(balance ?? 0)
         )}
-        <Button
-          variant="outlined"
-          size="s"
-          data-testid="account-consume-buy"
-          onClick={() => onNavigate('buy')}
-        >
-          {t('accountConsumeBuyCta')}
-        </Button>
       </div>
+      <div className={styles.balanceRule} />
       <button
         type="button"
-        className={styles.balanceMore}
+        className={styles.balanceQuotaRow}
         data-testid="account-consume-tab-quota"
         onClick={() => onNavigate('quota')}
       >
-        {t('accountConsumeTabQuota')} ›
+        <span>{t('accountConsumeTabQuota')}</span>
+        <span className={styles.balanceChevron} aria-hidden="true">
+          ›
+        </span>
       </button>
+      {/* 购买 / 充值：**直接进既有的购买页（BuyTab）**，整条链路（取 pay-link → App 内打开收款页 →
+          回跳 → 拉卡密）与错误文案全部复用，不在余额卡里重写第二套（#727）。 */}
+      <Button
+        variant="primary"
+        size="l"
+        block
+        className={styles.balanceBuy}
+        data-testid="account-consume-buy"
+        onClick={() => onNavigate('buy')}
+      >
+        {t('accountConsumeBuyCta')}
+      </Button>
+      {signedIn === false ? (
+        <div className={styles.balanceHint}>{t('accountConsumeBuySignedOutHint')}</div>
+      ) : null}
     </div>
   )
 

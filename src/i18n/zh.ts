@@ -901,6 +901,8 @@ export const zh = {
   accountConsumeLoginMethodEmail: '邮箱登录',
   accountConsumeSecurity: '账号与安全',
   accountConsumeBuyCta: '购买 / 充值',
+  // 余额卡金额位：未登录时的替代文案（**不用 `—` 占位**：30px 下就是一条白杠，看着像坏图，#727）
+  accountConsumeBalanceSignedOut: '登录后查看',
   accountConsumeBuySignedOutHint: '登录后可在此查看卡密',
   accountConsumeSignedOutCta: '登录 / 注册',
   accountConsumeEmailUnbound: '未绑定',
