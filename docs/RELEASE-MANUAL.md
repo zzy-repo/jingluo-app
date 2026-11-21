@@ -54,6 +54,10 @@
    并 `chmod 600 android/keystore/keystore.properties`。
 2. **过形状门禁。** `pnpm run check:keystore` —— 它会指名「缺哪个键 / 哪个路径不对 / 口令或别名是不是错了」，
    退出码非要先修完再往下（这一步比等 gradle 报「签名不行」快得多）。
+   **它同时核对证书指纹**（#697）：keytool 读出来的 SHA-256 必须等于 `config/appIdentity.json` 的
+   `expectedCertSha256`，不符就 `exit 1` 并打印「期望 X 实际 Y（来源 `config/appIdentity.json`）」——
+   也就是说「拿错 keystore / 换了一把 key」在这一步就能发现，不必等到 gradle 或 `apksigner`。
+   CI 上没有 release keystore，跑的是降级档 `--config-only`（只校验配置与来源一致性，日志里会说明）。
 3. **出包。** `cd android && ./gradlew :app:assembleRelease -PartifactVariant=internal`（**不要** `assembleDebug`，那会出 debuggable 包，见 Issue #60）；
    然后按 §4 那五项人工核对，包括 `apksigner verify --print-certs` 指回 `e7c5baee…`。
 

@@ -234,8 +234,12 @@ jobs:
           keyPasswordRelease=$KEY_PASSWORD
           EOF
           chmod 600 "$ks" android/keystore/keystore.properties
-          # 形状门禁（#272）：键齐全 / 路径存在 / keytool 能打开 / 别名指向一张证书。
-          # 它只读、不打印口令；别名或口令错了在这里就红，而不是在 gradle 深处炸成一句看不清的异常。
+          # 签名凭据门禁（#272 建，#697 修）：键齐全 / 路径存在 / keytool 能打开 / 别名指向一张证书，
+          # 并且**证书 SHA-256 必须等于 config/appIdentity.json 的 expectedCertSha256**（不符 → exit 1，
+          # 打印「期望 X 实际 Y」）。这是发布链上唯一能发现「签名换了一把 key」的自动化检查：
+          # #697 之前它读错位置（build.gradle 字面量），指纹比较分支永不进入，等于空转。
+          # 它只读、不打印口令；口令/别名错、指纹不符都在这里红，而不是在 gradle 深处炸成一句看不清的异常。
+          # 这一档是**全量**（CI 里同一条命令只能跑降级档 --config-only：runner 上没有 release keystore）。
           pnpm run check:keystore
           echo "签名材料就位（keystore 路径与口令均未输出）"
 

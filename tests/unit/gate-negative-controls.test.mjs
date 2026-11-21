@@ -16,7 +16,7 @@
 // #453 的审计把这 33 道门禁判成四态，其中**三道零负向对照**（「判得动但没人知道它判不判得动」）。
 // 本节末尾的 N8/N9/N10 就是给它们各配的一组「破坏 → 必红 → 还原」证明（详见那一段的注释）：
 //
-//   N8  `check:keystore`           —— 键名错 / 路径错 / 口令错 / 别名错 → exit 1 且点名；缺文件 exit 2
+//   N8  `check:keystore`           —— 键名错 / 路径错 / 口令错 / 别名错 / 指纹不符 → exit 1 且点名；缺文件 exit 2
 //   N9  `check:limits`             —— 注入裸阈值 → exit 1 且点名 文件:行:值；镜像常量漂移 → 点名两个不同值
 //   N10 `check:capabilities`       —— `--strict` 注入低内核用法 → exit 1 且点名 文件:行（warn 档同一份注入仍 exit 0）
 //
@@ -399,19 +399,20 @@ const REGISTRY = {
     what: 'CI 往生成目录（assets/**）塞旧池域地址 → 必须仍 exit 0；再塞进 src/ → 必 exit 1；删掉 → exit 0',
     mention: /check-refactor-direction\.mjs/,
   },
-  // 签名凭据形状门禁（#272 的脚本，#453 补的对照）：对照落在本文件 N8 —— 四键 properties 的
-  // 键名错（`storeFileRelease` → `storeFile`）/ `storeFile` 指向不存在的路径 / 口令错 / 别名错
-  // 各自 exit 1 且**点名具体键名与路径**；缺文件 exit 2（与「配错」的 1 区分开，硬要求）。
-  // `unwired: true`：这道门禁至今零 CI 入口 —— 它要本机 `android/keystore/keystore.properties`
-  // （不入库），CI 里必然 exit 2；`tests/unit/domain10-gate-wiring.test.mjs` 的 KNOWN_UNWIRED 有同一份交代。
-  // 也就是说：**判据现在有证明了，但还是没人跑它** —— 这个区别正是 #453 要暴露的东西。
+  // 签名凭据门禁（#272 的脚本，#453 补的对照，#697 修 + 接线）：对照落在本文件 N8 —— 四键
+  // properties 的键名错（`storeFileRelease` → `storeFile`）/ `storeFile` 指向不存在的路径 / 口令错 /
+  // 别名错 / **证书指纹不符** 各自 exit 1 且**点名具体键名、路径、期望与实际指纹**；缺文件 exit 2
+  // （与「配错」的 1 区分开，硬要求）。
+  // #697 之后这道门禁**接进了 ci.yml**（不再是 unwired）：CI 上跑降级档 `--config-only`
+  // （只校验 config/appIdentity.json 的期望值与 build.gradle 的一致性，并把「不验真签名」打在日志里），
+  // 真签名比对在发布机（release.yml 注入签到材料后跑全量）。两条的对照都在 ci.yml 里现场注入。
   'check:keystore': {
     where: 'tests/unit/gate-negative-controls.test.mjs',
     kind: 'inject',
     what:
       '键名错（storeFileRelease→storeFile）/ storeFile 指向不存在的路径 / 口令错 / 别名错 → 各自 exit 1 且点名键名与路径；' +
-      '缺文件 → exit 2 且给出「cp example + 补四键」的修法（N8）',
-    unwired: true,
+      '缺文件 → exit 2 且给出「cp example + 补四键」的修法；**指纹不符 → exit 1 且点名「期望 X 实际 Y（来源 config/appIdentity.json）」**' +
+      '（临时树里再把期望值换成该证书 → exit 0，证明不是恒红）（N8）',
     mention: /check-keystore-config\.mjs/,
   },
   // 运行期阈值单一来源门禁（#275 的脚本，#453 补的对照）：对照落在本文件 N9 —— 往受保护文件
@@ -694,8 +695,11 @@ test('N6 已确认的缺口仍然如实登记（缺口消失时要回来删条�
 //   N9  `check:limits`（阈值单一来源：改一处不改另一处 = 第二份真相源回来了）
 //   N10 `check:capabilities --strict`（低内核白屏的历史事故；warn 档结构上永不 exit 1）
 //
-// 硬约束：**没有一道门禁被删、没有一条判据被放宽**，`scripts/**` 一个字节都不动 ——
-// 注入物全部落在 `mkdtemp` 的临时目录 / 临时副本里，跑完仓库原样（下面的「收尾体检」再兜一遍）。
+// 硬约束：**没有一道门禁被删、没有一条判据被放宽**。注入物全部落在 `mkdtemp` 的临时目录 /
+// 临时副本里，跑完仓库原样（下面的「收尾体检」再兜一遍）。
+// （#697 例外且是**反向**的：`scripts/check-keystore-config.mjs` 被判据加严 —— 指纹不符从「死代码
+//  一句警告都打不出来」改成「exit 1 并点名期望/实际」。本文件只跟着把 N8 那一拍从「钉住现状」
+//  换成真对照，没有放宽任何东西。）
 //
 // 三道都不走 `assertNegativeControl`（原因各写在各段开头）：keystore 的「正例」需要一把真
 // keystore，limits 的注入点是被别的用例读盘的源码（单元层并行），capabilities 的 `--strict`
@@ -707,14 +711,15 @@ test('N6 已确认的缺口仍然如实登记（缺口消失时要回来删条�
 
 /**
  * 为什么 N8 不用统一骨架：这道门禁的最后一拍要 `keytool` 打开 keystore（`--quiet` 之外没有开关能绕），
- * 而 ci.yml 的 `setup-java` 排在 `pnpm test` **之后**（checks job 里 `pnpm test` 在 305 行、
- * setup-java 在 336 行）。所以分成两张表：
+ * 而 ci.yml 的 `setup-java` 排在 `pnpm test` **之后**（checks job 里 unit tests 那一步在前、
+ * setup-java 那一步在后，按步骤名找，不按行号）。所以分成两张表：
  *
  *   · 「不需要 keystore」的三拍 —— 缺文件 / 缺键（键名错） / 路径错。任何环境都必须跑，
  *     而且正是 #272 事故里最难定位的那几种（gradle 报起来长得一模一样）。
- *   · 「需要 keystore」的四拍 —— 真 keystore 正例 / 口令错 / 别名错 / 指纹不符。没有 keytool 时
- *     **照样跑**，但断言换成「门禁 fail-closed」（exit 2 且点名找不到 keytool），并打一条 diagnostic
- *     说明本机限制。不许静默 skip：跳过的对照在 CI 上等于不存在，正是本单要消灭的形态。
+ *   · 「需要 keystore」的四拍 —— 真 keystore 正例 / 口令错 / 别名错 / **指纹不符（#697）**。
+ *     没有 keytool 时**照样跑**，但断言换成「门禁 fail-closed」（exit 2 且点名找不到 keytool），
+ *     并打一条 diagnostic 说明本机限制。不许静默 skip：跳过的对照在 CI 上等于不存在，
+ *     正是本单要消灭的形态。
  */
 const KS_STORE_PASS = 'gateNegStorePass'
 const KS_ALIAS = 'gate-neg-release'
@@ -750,7 +755,22 @@ const findKeytool = () => {
   return null
 }
 
-test('N8 check:keystore：缺键 / 路径错 / 口令错 / 别名错 → exit 1 且点名；缺文件 → exit 2（明确要人配）', (t) => {
+/**
+ * 直接从 keystore 读某别名证书的 SHA-256（小写 hex）。
+ * 为什么测试自己算一遍：④d 要断言「期望 vs 实际」两个值，实际值若从门禁自己的输出里抠，
+ * 就成了「同一条代码路径验自己」；这里用 keytool 原始输出做第三方口径。
+ */
+const readCertSha256 = (keytool, storeFile, alias, pass = KS_STORE_PASS) => {
+  const out = execFileSync(
+    keytool,
+    ['-J-Duser.language=en', '-J-Dfile.encoding=UTF-8', '-list', '-v', '-keystore', storeFile, '-storepass', pass, '-alias', alias],
+    { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 120_000 }
+  )
+  const m = /SHA-?256:\s*([0-9A-Fa-f:]{64,95})/.exec(out)
+  return m ? m[1].replace(/:/g, '').toLowerCase() : null
+}
+
+test('N8 check:keystore：缺键 / 路径错 / 口令错 / 别名错 / 指纹不符 → exit 1 且点名；缺文件 → exit 2（明确要人配）', (t) => {
   const gate = commandOf('check:keystore')
   // 命令行不许被改软：加 `--quiet` 会把「读了哪个文件 / 哪个别名」藏掉，加固定 `--file` 会把
   // 被测对象钉死在某个文件上（那样它就不再检查『本机到底配了没有』）。
@@ -827,13 +847,44 @@ test('N8 check:keystore：缺键 / 路径错 / 口令错 / 别名错 → exit 1 
     { stdio: 'ignore', timeout: 120_000 }
   )
 
-  // ④a 正例：四键齐全 + 真 keystore → exit 0（这一拍才证明后面几个 exit 1 不是恒红）
-  writeProps(ksProps(storeFile))
-  const good = runProps()
-  assert.equal(good.status, 0, `四键齐全 + 真 keystore 必须 exit 0\n${good.out}`)
+  // ④a 正例：四键齐全 + 真 keystore + **期望值对得上** → exit 0
+  // （这一拍才证明后面几个 exit 1 不是恒红。它必须跑在临时树里：真仓库的期望值是已发布证书，
+  //   而这里现造的 keystore 永远对不上 —— #697 之后对不上就是红，这正是新判据。）
+  const probeSha = readCertSha256(keytool, storeFile, KS_ALIAS)
+  assert.ok(probeSha, '应能读出这张临时证书的 SHA-256（后面的指纹拍要用）')
+
+  const scriptSrc = path.join(ROOT, 'scripts/check-keystore-config.mjs')
+  const treeScript = (tree) => {
+    mkdirSync(path.join(tree, 'scripts'), { recursive: true })
+    cpSync(scriptSrc, path.join(tree, 'scripts/check-keystore-config.mjs'))
+  }
+  const writeIdentity = (tree, sha) => {
+    mkdirSync(path.join(tree, 'config'), { recursive: true })
+    writeFileSync(
+      path.join(tree, 'config/appIdentity.json'),
+      `${JSON.stringify({ applicationId: 'com.example.deepseekchat', expectedCertSha256: sha }, null, 2)}\n`
+    )
+  }
+  const writeGradleLiteral = (tree, sha) => {
+    mkdirSync(path.join(tree, 'android/app'), { recursive: true })
+    writeFileSync(path.join(tree, 'android/app/build.gradle'), `def EXPECTED_CERT_SHA256 = '${sha}'\n`)
+  }
+  /** 命令仍然指向 `scripts/check-keystore-config.mjs`（只是它的上一级换成了临时树，ROOT 随之换） */
+  const runInTree = (tree, props) =>
+    run({ bin: process.execPath, args: [path.join(tree, 'scripts/check-keystore-config.mjs'), '--file', props] })
+
+  const tree = scratch('keystore-identity')
+  t.after(() => rmSync(tree, { recursive: true, force: true }))
+  treeScript(tree)
+  writeIdentity(tree, probeSha)
+  const treeProps = path.join(tree, 'keystore.properties')
+  writeFileSync(treeProps, ksProps(storeFile))
+
+  const good = runInTree(tree, treeProps)
+  assert.equal(good.status, 0, `四键齐全 + 真 keystore + 期望值相符必须 exit 0\n${good.out}`)
   assert.match(good.out, /通过: 四个 release 键齐全/, `正例输出要说清「过了什么」\n${good.out}`)
-  const probeSha = (/证书 SHA-256\s*=\s*([0-9a-f]{64})/.exec(good.out) ?? [])[1]
-  assert.ok(probeSha, `正例里应能读出这张证书的 SHA-256（后面的指纹拍要用）\n${good.out}`)
+  assert.ok(good.out.includes(`证书 SHA-256         = ${probeSha}`), `正例必须打出实际指纹\n${good.out}`)
+  assert.ok(good.out.includes('来源 config/appIdentity.json'), `正例要说清期望值是从配置读的（#271 的唯一来源）\n${good.out}`)
 
   // ④b 口令错 → exit 1，且点名「口令打不开」（而不是含糊地说「签名不行」）
   writeProps(ksProps(storeFile, { storePasswordRelease: 'gateNegWrongPass' }))
@@ -847,32 +898,112 @@ test('N8 check:keystore：缺键 / 路径错 / 口令错 / 别名错 → exit 1 
   assert.equal(badAlias.status, 1, `别名错必须 exit 1，实际 ${badAlias.status}\n${badAlias.out}`)
   assert.match(badAlias.out, /别名 `no-such-alias` 在 keystore 里不存在/, `必须点名那个别名\n${badAlias.out}`)
 
-  // ④d 指纹不符：**门禁刻意不判红**（形状门禁 ≠ 签名身份门禁，换证书归 #271 / gradle 的
-  //     `releaseSigningApproved` 管），所以这里如实钉住「它现在的真实行为」，不伪造一条红：
-  //     期望是「exit 0 + ⚠ 点名『这不是已发布证书』并给出期望值」。
-  //     ⚠ 本单发现这条 ⚠ 支路**当前是空转**：expectedCertSha256() 用正则去 build.gradle 里找
-  //     `EXPECTED_CERT_SHA256 = '<64 hex>'` 字面量，而 #271 之后该值已经从 build.gradle 挪到
-  //     `config/appIdentity.json`（build.gradle 只写 `def EXPECTED_CERT_SHA256 = expectedCertSha256Raw`），
-  //     于是 expected 恒为 null、比较分支永不进入 —— 实测下面这把它们自己生成的证书**一句警告都没有**。
-  //     这条断言是**绊线**：修好支路（改成读 config/appIdentity.json）之后它会红，提示把这里换成
-  //     「不符必须点名期望值」的真断言；修之前它也钉住了「现在到底有没有在警告」这个事实。
+  // ④d 指纹不符 → exit 1 且点名期望/实际（#697：这一拍以前钉的是「门禁刻意不判红」）
+  //
+  // 背景：#271 之后期望指纹的唯一来源是 `config/appIdentity.json` 的 `expectedCertSha256`，
+  // 而脚本还在 build.gradle 里找字面量 → 期望恒为 null、比较分支永不进入，那段 `⚠ 指纹不符`
+  // 是**死代码**（当时的断言就是「绑住这个现状」，并留一条绊线）。现在判据是「必须相等」，
+  // 于是这一拍拆成两件事，各自需要不同的「期望值」：
+  //
+  //   · **不符必红**：真仓库 + 真配置。上面这把临时证书的指纹必然 ≠ 已发布证书
+  //     （④a 已经断言过），所以直接跑就能证明「不符 → exit 1 且点名两个值」。
+  //   · **相符必绿**：真仓库的期望值是已发布证书，临时 keystore 永远对不上 —— 于是把脚本与一份
+  //     临时 `config/appIdentity.json` 复制进 mkdtemp 树（脚本的 ROOT 由自身路径推出，扫的就是
+  //     副本），期望值写成这把临时证书的指纹 → exit 0；换第二把 keystore → 又必红。
+  //     **真仓库那份配置一个字节都不动**：它是 #271 的唯一来源，单元层是多文件并行读盘的。
+  const publishedSha = JSON.parse(readFileSync(path.join(ROOT, 'config/appIdentity.json'), 'utf8')).expectedCertSha256.toLowerCase()
+  assert.equal(typeof publishedSha, 'string', 'config/appIdentity.json 里应有 expectedCertSha256')
+
+  // ④d-1 不符必红：真仓库 + 真配置
   writeProps(ksProps(storeFile))
   const mismatch = runProps()
-  assert.equal(mismatch.status, 0, `指纹不符**不是**这道门禁的判据（换证书归 #271），不该 exit≠0\n${mismatch.out}`)
-  assert.match(mismatch.out, new RegExp(`证书 SHA-256\\s*=\\s*${probeSha}`), `必须打出实际指纹\n${mismatch.out}`)
-  assert.doesNotMatch(
-    mismatch.out,
-    /这不是已发布证书/,
-    '指纹告警支路看起来已经修好了（现在会点名「这不是已发布证书」）—— 请把这条断言换成真正向对照：' +
-      '另造一把 key 的 keystore → 必须点名 build.gradle 期望值与实际值两个不同指纹（#453 N8）'
+  assert.equal(mismatch.status, 1, `指纹不符必须 exit 1（#697：以前这里是 exit 0 + 死代码）\n${mismatch.out}`)
+  assert.match(mismatch.out, /证书指纹不符/, `必须明说「指纹不符」\n${mismatch.out}`)
+  assert.ok(
+    mismatch.out.includes(`期望 ${publishedSha} 实际 ${probeSha}`),
+    `必须同时点名期望值与实际值（期望 ${publishedSha} 实际 ${probeSha}）—— 只说「不符」等于让人自己猜\n${mismatch.out}`
   )
-  // 顺带把「它靠什么判期望值」的事实也钉住：值不在 build.gradle 的字面量里了
-  const appIdentity = JSON.parse(readFileSync(path.join(ROOT, 'config/appIdentity.json'), 'utf8'))
-  assert.equal(typeof appIdentity.expectedCertSha256, 'string', 'config/appIdentity.json 里应有 expectedCertSha256')
+  assert.match(
+    mismatch.out,
+    /来源 config\/appIdentity\.json/,
+    `必须点出期望值来自哪（config/appIdentity.json = #271 的唯一来源）\n${mismatch.out}`
+  )
+
+  // ④d-2 / ④d-3：同一个临时树里换第二把 key → 又必红，且期望值仍是**配置里那一个**
+  // 第二把 keystore：与第一把不同的一对密钥 → 指纹必然不同
+  const otherStore = path.join(dir, 'other.p12')
+  execFileSync(
+    keytool,
+    [
+      '-genkeypair', '-keystore', otherStore, '-storetype', 'PKCS12',
+      '-alias', 'gate-neg-other', '-keyalg', 'RSA', '-keysize', '2048', '-validity', '3650',
+      '-dname', 'CN=Gate Neg Second Key, O=dsh',
+      '-storepass', KS_STORE_PASS, '-keypass', KS_STORE_PASS,
+    ],
+    { stdio: 'ignore', timeout: 120_000 }
+  )
+  writeFileSync(treeProps, ksProps(otherStore, { keyAliasRelease: 'gate-neg-other' }))
+  const treeMismatch = runInTree(tree, treeProps)
+  assert.equal(treeMismatch.status, 1, `临时树里换一把 key 也必须 exit 1\n${treeMismatch.out}`)
+  const otherSha = (/实际 ([0-9a-f]{64})/.exec(treeMismatch.out) ?? [])[1]
+  assert.ok(otherSha && otherSha !== probeSha, `报错里应给出第二把 key 的实际指纹（且与第一把不同）\n${treeMismatch.out}`)
+  assert.ok(
+    treeMismatch.out.includes(`期望 ${probeSha} 实际 ${otherSha}`),
+    `点名两个值时必须用**配置里那个期望值**（证明读的是 config/appIdentity.json，不是硬编码某个常量）\n${treeMismatch.out}`
+  )
+
+  // ④d-4 兼容回落（build.gradle 字面量）也必须真咬：只有字面量、没有配置时同样正/反两拍
+  const treeFallback = scratch('keystore-fallback')
+  t.after(() => rmSync(treeFallback, { recursive: true, force: true }))
+  treeScript(treeFallback)
+  writeGradleLiteral(treeFallback, probeSha)
+  const fallbackProps = path.join(treeFallback, 'keystore.properties')
+  writeFileSync(fallbackProps, ksProps(storeFile))
+  const fallbackGood = runInTree(treeFallback, fallbackProps)
+  assert.equal(fallbackGood.status, 0, `只有 build.gradle 字面量时也要能判（老 checkout 的兼容回落）\n${fallbackGood.out}`)
+  assert.match(fallbackGood.out, /来源 android\/app\/build\.gradle/, `回落时必须点出期望值来自 build.gradle\n${fallbackGood.out}`)
+  writeFileSync(fallbackProps, ksProps(otherStore, { keyAliasRelease: 'gate-neg-other' }))
+  const fallbackBad = runInTree(treeFallback, fallbackProps)
+  assert.equal(fallbackBad.status, 1, `兼容回落也必须是真判据（换 key → exit 1）\n${fallbackBad.out}`)
+  assert.ok(fallbackBad.out.includes(`期望 ${probeSha} 实际 ${otherSha}`), `回落档也要点名两个值\n${fallbackBad.out}`)
+
+  // ④d-5 两份来源不一致（配置 vs gradle 字面量）→ exit 1 且点名两个值：第二份真相源不许躺着
+  const treeParity = scratch('keystore-parity')
+  t.after(() => rmSync(treeParity, { recursive: true, force: true }))
+  treeScript(treeParity)
+  writeIdentity(treeParity, probeSha)
+  writeGradleLiteral(treeParity, otherSha)
+  const parityProps = path.join(treeParity, 'keystore.properties')
+  writeFileSync(parityProps, ksProps(storeFile))
+  const parity = runInTree(treeParity, parityProps)
+  assert.equal(parity.status, 1, `两份指纹来源不一致时（配置 ${probeSha} / gradle ${otherSha}）必须 exit 1\n${parity.out}`)
+  assert.match(parity.out, /两份来源且不一致|第二份真相源/, `必须点明「两份来源」这件事\n${parity.out}`)
+  assert.ok(
+    parity.out.includes(probeSha) && parity.out.includes(otherSha),
+    `必须同时点出两个不同的指纹值\n${parity.out}`
+  )
+
+  // ④e CI 降级档：`--config-only` 在**真仓库**上必须 exit 0，且必须把「不校验真签名」打出来
+  // （#697 的接线前提：CI 上没有 release keystore，跑的是这一档。它不许静默 —— 日志里得看见
+  //  「降级」与「校验了什么 / 没校验什么」这两件事，否则又回到「什么都没验还全绿」。）
+  // 两种入参形态都要认：直接 `--config-only`，以及 `pnpm run … -- --config-only` 转进来的 `--` 前缀。
+  for (const extra of [['--config-only'], ['--', '--config-only']]) {
+    const degraded = run(commandOf('check:keystore', extra))
+    assert.equal(degraded.status, 0, `CI 降级档必须 exit 0（入参 ${extra.join(' ')}）\n${degraded.out}`)
+    assert.match(degraded.out, /降级/, `降级档必须自己说明「这是降级模式」（入参 ${extra.join(' ')}）\n${degraded.out}`)
+    assert.match(degraded.out, /不校验真签名/, `降级档必须说清「没验什么」（入参 ${extra.join(' ')}）\n${degraded.out}`)
+    assert.match(
+      degraded.out,
+      /来源 config\/appIdentity\.json/,
+      `降级档必须点出期望值的来源（入参 ${extra.join(' ')}）\n${degraded.out}`
+    )
+  }
+
+  // 已有用例的收尾（④d 之后）：这把临时 keystore 的指纹不该等于已发布证书 —— 否则上面几拍什么都没证明
   assert.notEqual(
-    appIdentity.expectedCertSha256.toLowerCase(),
+    publishedSha,
     probeSha,
-    '这把临时 keystore 的指纹不该等于已发布证书（否则④d 这一拍什么都没证明）'
+    '这把临时 keystore 的指纹不该等于已发布证书（否则 ④d 这一拍什么都没证明）'
   )
 })
 

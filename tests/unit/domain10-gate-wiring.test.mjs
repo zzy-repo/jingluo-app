@@ -58,6 +58,11 @@ const REQUIRED_CI_GATES = [
   // #609（裁决 #614 决定 3，P0）：webroot 卫生门禁 —— 摘掉它，#601 那种「清单删了、
   // 文件还躺在 /var/www/dl/apk/ 下」的状态就再没有任何机械化检查（静态目录不看清单）。
   'check:webroot-hygiene',
+  // #697：签名凭据门禁 —— 摘掉它，「签名换了一把 key」（换证书 = 已装用户无法覆盖升级）就再没有
+  // 自动化检查能发现；它同时也是**唯一**会读 config/appIdentity.json 的 expectedCertSha256 去比对
+  // 真实证书指纹的地方。CI 上跑降级档 `--config-only`（只校验配置与 gradle 的一致性），
+  // 真签名比对在 release.yml 的发布机上跑全量。
+  'check:keystore',
   // #661：截图引用门禁 —— `docs/ui` 曾只进不出（553 张里 155 张零引用 / 17.4 MiB）。
   // 摘掉它，「又提交了一批没人引用的截图」就回到没人守：check:doc-refs 不认 png/jpg
   // （REF_EXT 里没有），check:hygiene 只管本机路径与大文本文件。
@@ -75,7 +80,6 @@ const REQUIRED_CI_GATES = [
 const KNOWN_UNWIRED = {
   'check:identity': '语义由 L0 用例（tests/unit/app-identity.test.mjs 等 3 条）覆盖；脚本本体未接 CI',
   'check:apk': 'release.yml 每次发布对每个产物实跑（需要 apk 路径参数，checks job 里没有产物）',
-  'check:keystore': '需要本机 android/keystore/keystore.properties（不入库），在 CI 里必然 exit 2',
   'check:guard': 'ES5 守卫顺序扫描；存量与 check:legacy 重叠，待定是否合并后接线',
   'check:gap': 'CSS flex gap 兜底扫描；四个 fallback 门禁统一在「阶段③测试重建」后接线',
   'check:focus': 'CSS focus-visible 兜底扫描；同上',

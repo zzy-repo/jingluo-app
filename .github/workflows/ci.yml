@@ -291,6 +291,84 @@ jobs:
           node scripts/check-ui-shots.mjs
           echo "负向对照通过：删被引用的图 → exit 1，塞无人引用的图 → exit 1，还原后 → exit 0"
 
+      # ─────────── Issue #697（P0 发布链）：签名凭据门禁接进流水线 ───────────
+      # 脚本是 #272 建的，但指纹判据一直是半死的：`expectedCertSha256()` 去 build.gradle 找
+      # `EXPECTED_CERT_SHA256 = '<64 hex>'` 字面量，而 #271 之后这个值只在 config/appIdentity.json
+      # 里（build.gradle 改成从配置派生）→ 期望值恒为 null、比较分支永不进入，那段 `⚠ 指纹不符`
+      # 是死代码。于是「这把 key 是不是已发布证书」——换签名唯一能被自动发现的地方——等于不存在。
+      # #697 修好判据（不符 → exit 1 且点名期望/实际，来源 config/appIdentity.json）并在这里接线。
+      #
+      # CI 上**没有** release keystore（secret 只在 release.yml 的「注入签名材料」那一步落盘），
+      # 所以这一步跑显式降级档 `--config-only`：只校验「期望值的来源与一致性」
+      # （config/appIdentity.json 里有合法指纹，且 build.gradle 若还留着副本必须相等），
+      # **不校验真签名**，并把这句事实打进日志 —— 不是静默跳过（静默跳过 = 这道门禁回到空转）。
+      # 真签名在发布机跑全量：release.yml 注入签到材料后 `pnpm run check:keystore`；
+      # 本 job 后面（setup-java 之后）另有一条「临时 key 必须判红」的全量档负向对照。
+      - name: 签名凭据配置门禁（check:keystore，CI 降级档：只校验配置与来源一致性）
+        run: pnpm run check:keystore -- --config-only
+
+      # 负向对照（同 check:doc-refs / check:db-version 的写法，**无** continue-on-error）。两拍：
+      # ① 期望值格式坏掉（63 位 hex）→ 必须 exit 2 且点名 config/appIdentity.json
+      #    （证明期望值真是从这份配置读的，不是别处抄来的常量；格式坏掉也不许「判不出来就放行」）
+      # ② build.gradle 又冒出一份**不同值**的字面量 → 必须 exit 1 且点名两个值
+      #    （第二份真相源的经典形态：一处改了另一处没改，最终「按这份配置过闸、按那份配置构建」）
+      # `trap` 保证任何失败路径都还原；末尾 `git diff --exit-code` 把「还原失败」变成显式红。
+      - name: 负向对照：期望指纹格式坏掉 / 冒出第二份来源都必须被 check:keystore 判红（还原 → 绿）
+        run: |
+          set -euo pipefail
+          gate() { node scripts/check-keystore-config.mjs --config-only; }
+          identity=config/appIdentity.json
+          gradle=android/app/build.gradle
+          id_backup="$RUNNER_TEMP/appIdentity.json.orig"
+          gr_backup="$RUNNER_TEMP/build.gradle.orig"
+          cp "$identity" "$id_backup"
+          cp "$gradle" "$gr_backup"
+          restore() { cp "$id_backup" "$identity"; cp "$gr_backup" "$gradle"; }
+          trap restore EXIT
+
+          # ① 正例：仓库现状必须 exit 0（否则后面两拍的红都是恒红）
+          gate
+
+          # ② 期望值格式坏掉（63 位）→ exit 1/2 都算红，但必须点名 config/appIdentity.json
+          node -e '
+            const fs = require("node:fs");
+            const p = process.argv[1];
+            const d = JSON.parse(fs.readFileSync(p, "utf8"));
+            d.expectedCertSha256 = String(d.expectedCertSha256).slice(0, 63);
+            fs.writeFileSync(p, JSON.stringify(d, null, 2) + "\n");
+          ' "$identity"
+          if out="$(gate 2>&1)"; then
+            echo "$out"
+            echo "::error::负向对照失败：expectedCertSha256 被截成 63 位后 check:keystore 仍然通过（判据没在读配置）"
+            exit 1
+          fi
+          echo "$out"
+          echo "$out" | grep -q 'config/appIdentity.json' || { echo "::error::门禁红了但没点名 config/appIdentity.json（红在别处不算数）"; exit 1; }
+          restore
+
+          # ③ 第二份来源：往 build.gradle 追加一份**不同值**的字面量 → 必须 exit 1 且点名两个值
+          node -e '
+            const fs = require("node:fs");
+            const p = process.argv[2];
+            const expected = JSON.parse(fs.readFileSync(process.argv[1], "utf8")).expectedCertSha256;
+            const other = expected === "f".repeat(64) ? "e".repeat(64) : "f".repeat(64);
+            fs.appendFileSync(p, `\ndef EXPECTED_CERT_SHA256 = \x27${other}\x27\n`);
+          ' "$identity" "$gradle"
+          if out="$(gate 2>&1)"; then
+            echo "$out"
+            echo "::error::负向对照失败：build.gradle 里冒出一份不同值的指纹后 check:keystore 仍然通过（第二份真相源没人管）"
+            exit 1
+          fi
+          echo "$out"
+          echo "$out" | grep -q '两份来源' || { echo "::error::门禁红了但没点明「两份来源」"; exit 1; }
+          echo "$out" | grep -q '来源 android/app/build.gradle' || { echo "::error::门禁红了但没点出 build.gradle 那份副本"; exit 1; }
+          restore
+
+          # ④ 还原 → 必须回到 exit 0，且工作树干净（还原失败在这里显式红，而不是留给下一个人）
+          gate
+          git diff --exit-code -- "$identity" "$gradle"
+          echo "负向对照通过：格式坏掉 → 红且点名配置；冒出第二份来源 → 红且点名两份；还原 → exit 0"
+
       - name: Type check
         run: pnpm run type
 
@@ -337,6 +415,48 @@ jobs:
         with:
           distribution: temurin
           java-version: '21'
+
+      # 负向对照（真 keystore，**无** continue-on-error）：上面那条降级档只验「配置一致性」，
+      # 这一步验**真签名判据本身** —— 全量档要求「keytool 读出来的证书指纹 == 已发布证书」。
+      # 做法：现造一把只在本 job 存在的 keystore（$RUNNER_TEMP）→ 它的证书必然不是已发布证书
+      # → `pnpm run check:keystore` 必须 exit 1，且必须同时点名期望值与实际值（来源 config/appIdentity.json）。
+      # 只证明 exit≠0 不够：脚本恒红、或比较分支根本没进（#697 之前的死代码形态）都会 exit≠0 或 exit 0，
+      # 所以两个值都要命中。「相符 → exit 0」那一拍 CI 上做不到（那等于手里有已发布私钥）——
+      # 由单元层 N8 在临时树里跑（tests/unit/gate-negative-controls.test.mjs），本步骤末尾会打印这句话。
+      # 顺序要求：必须排在 Setup JDK 之后（keytool）。
+      - name: 负向对照（真 keystore）：临时 key 的指纹 ≠ 已发布证书 → check:keystore 必须 exit 1 并点名两个值
+        run: |
+          set -euo pipefail
+          ks="$RUNNER_TEMP/gate-neg-not-published.p12"
+          props="$RUNNER_TEMP/gate-neg-keystore.properties"
+          rm -f "$ks" "$props"
+          keytool -genkeypair -keystore "$ks" -storetype PKCS12 -alias gate-neg-not-published \
+            -keyalg RSA -keysize 2048 -validity 30 -dname "CN=gate neg, O=dsh" \
+            -storepass gateNegPass -keypass gateNegPass > /dev/null 2>&1
+          # 口令只走属性文件（不入日志）：这是本 job 现造的一次性 key，不是发布凭据
+          {
+            printf 'storeFileRelease=%s\n' "$ks"
+            printf 'storePasswordRelease=%s\n' 'gateNegPass'
+            printf 'keyAliasRelease=%s\n' 'gate-neg-not-published'
+            printf 'keyPasswordRelease=%s\n' 'gateNegPass'
+          } > "$props"
+          chmod 600 "$props"
+          if out="$(node scripts/check-keystore-config.mjs --file "$props" 2>&1)"; then
+            echo "$out"
+            echo "::error::负向对照失败：换了一把 key 后 check:keystore 仍然通过 —— 指纹判据在空转（#697 之前它就是这样）"
+            exit 1
+          fi
+          echo "$out"
+          expected="$(node -e 'process.stdout.write(require("./config/appIdentity.json").expectedCertSha256)')"
+          test -n "$expected"
+          # 红必须同时点出「期望值」「实际值」「来源」三件事，否则可能红在别的分支上
+          echo "$out" | grep -q "期望 ${expected} 实际 [0-9a-f]\{64\}" || {
+            echo "::error::门禁红了但没同时点名期望值（${expected}）与实际值"; exit 1; }
+          echo "$out" | grep -q '来源 config/appIdentity.json' || {
+            echo "::error::门禁红了但没点出期望值的来源（config/appIdentity.json）"; exit 1; }
+          echo "$out" | grep -q '证书指纹不符' || { echo "::error::门禁红了但不是因为指纹不符"; exit 1; }
+          echo "负向对照通过：非已发布 key → exit 1 且点名「期望 X 实际 Y（来源 config/appIdentity.json）」；"
+          echo "「相符 → exit 0」那一拍由单元层 N8 在临时树里跑（tests/unit/gate-negative-controls.test.mjs）"
 
       - name: Gradle 缓存（wrapper 发行版 + 依赖；命中后这一步只剩配置时间）
         uses: actions/cache@v4
