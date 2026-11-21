@@ -345,8 +345,14 @@ const BaseUrlField = ({ spec }: { spec: ProviderSpec }) => {
       setValue(normalized)
     }
     setBaseUrl(normalized)
-    // #490：地址改对了，那条「这条消息没有发出」到此为止
-    clearSendConfigBlocked('baseUrl')
+    /**
+     * #490：**改过**这一行之后才撤掉那条「这条消息没有发出」—— 只是点进来又失焦（值没变）不算改，
+     * 否则「地址填成了具体接口」这种（URL 本身合法、保存也成功）会被一次空编辑悄悄洗掉红字。
+     * 真没改的话，下次发送会重新判一遍并再次点出来。
+     */
+    if (normalized !== (stored || fallback)) {
+      clearSendConfigBlocked('baseUrl')
+    }
     return true
   }
 
@@ -411,8 +417,10 @@ const ModelField = ({ spec }: { spec: ProviderSpec }) => {
       return
     }
     setValue(value.trim())
-    // #490：模型改对了，那条「这条消息没有发出」到此为止
-    clearSendConfigBlocked('model')
+    // #490：同上 —— 值真的变了才撤红字（空编辑不算改）
+    if (value.trim() !== (stored || fallback)) {
+      clearSendConfigBlocked('model')
+    }
   }
 
   const loadModels = useCallback(async () => {
