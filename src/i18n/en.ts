@@ -840,9 +840,8 @@ export const en = {
 
   // Sign-in / sign-up (sub2api /api/v1/auth)
   sub2authEmail: 'Email',
-  settingsSourceBuiltin: 'Built-in channel',
-  settingsSourceThird: 'Third-party channel',
-  settingsSourceOfficial: 'Official channel',
+  // #727: the three "model source" options now use the accountConsumeSource* keys
+  // (three-row list wording — no duplicate definitions of the same strings).
   settingsThirdPartyProtocol: 'Protocol',
   settingsProtocolOpenai: 'OpenAI-compatible',
   settingsProtocolAnthropic: 'Anthropic-compatible',

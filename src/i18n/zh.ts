@@ -826,10 +826,8 @@ export const zh = {
   // 登录注册（sub2api /api/v1/auth）
   sub2authEmail: '邮箱',
   // #727 阶段 1：设置里的登录卡（账号页未登录态 / 模型来源未登录态）
-  // #727 阶段 1：「模型来源」的三个选项 + 第三方渠道的协议切换
-  settingsSourceBuiltin: '内置渠道',
-  settingsSourceThird: '第三方渠道',
-  settingsSourceOfficial: '官方渠道',
+  // #727：第三方渠道的协议切换
+  // （「模型来源」的三个选项改走 accountConsumeSource* 词条 —— 三行列表的口径，同一批文案不重复定义）
   settingsThirdPartyProtocol: '协议',
   settingsProtocolOpenai: 'OpenAI 兼容',
   settingsProtocolAnthropic: 'Anthropic 协议',
