@@ -92,6 +92,9 @@ const globToRe = (g) => new RegExp('^' + g.split('*').map(esc).join('[^/]*') + '
 /** 去掉 token 前面粘着的 markdown 标记；但**不**吞掉 glob 的 `*` */
 const stripLead = (t) => t.replace(/^[#[_[\]()`"']+/, '')
 
+/** 本脚本自己不算「引用出处」：`EXEMPT` 里那两条豁免理由中写着文件名，不能因此把图算成被引用 */
+const SELF = 'scripts/check-ui-shots.mjs'
+
 const images = tracked.filter((f) => f.startsWith('docs/ui/') && IMG_RE.test(f))
 const imageSet = new Set(images)
 /** 存在性缓存（图片都在 git 索引里，直接查集合即可，免 次次 stat） */
@@ -100,7 +103,7 @@ const imgOK = imageSet
 /** 读所有 tracked 文本文件（图片跳过；>4 MiB 的跳过 —— docs/ui 下最大约 300 KB） */
 const texts = new Map()
 for (const f of tracked) {
-  if (IMG_RE.test(f)) continue
+  if (IMG_RE.test(f) || f === SELF) continue
   try {
     const abs = path.join(ROOT, f)
     if (fs.statSync(abs).size > 4 * 1024 * 1024) continue
