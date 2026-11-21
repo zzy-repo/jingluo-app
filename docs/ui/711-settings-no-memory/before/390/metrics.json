@@ -1,0 +1,64 @@
+{
+  "page": "711-settings-no-memory-before",
+  "title": "#711 负向对照：改前（origin/main 旧产物）侧边栏有「记忆」这一项，点得开、看得到 embedding 开关",
+  "viewport": 390,
+  "size": "390×844",
+  "shots": [
+    "docs/ui/711-settings-no-memory/before/390/711-settings-no-memory-before-01-侧边栏三项-记忆可打开-390.png",
+    "docs/ui/711-settings-no-memory/before/390/711-settings-no-memory-before-02-侧边栏特写三项-390.png"
+  ],
+  "notes": [],
+  "asideGeneral": {
+    "tabCount": 3,
+    "tabTexts": [
+      "通用设置",
+      "记忆",
+      "数据管理"
+    ],
+    "selected": [
+      "通用设置"
+    ],
+    "memoryTabCount": 1,
+    "memoryToggleCount": 0
+  },
+  "dialogText": "设置 通用设置 记忆 数据管理 主题 浅色 深色 跟随系统 语言 简体中文 朗读音色 海星（女声） 思考过程 深度思考开启后，思考内容在消息里怎么显示；切换后立即对已打开的会话生效。 折叠 应用更新 当前版本 1.4.4 检查更新 字号 只作用于消息区：聊天正文、思考内容和你自己发的消息；设置面板与输入框不跟着变。 标准 字重 常规 行高 标准 回车键行为 回车发送换行、或只换行靠发送按钮，按你的习惯选；手机软键盘的回车键会跟着变。 回车发送（Shift + 回车换行）",
+  "dialogHasMemoryWord": true,
+  "memoryToggleOnMemoryTab": 1,
+  "memoryPanelText": "记忆向量化（embedding） 开启后记忆功能会调用外部 embedding 服务；关闭则完全不联网（记忆检索只在本机做关键词匹配）。默认关闭。 已关闭",
+  "asideData": {
+    "tabCount": 3,
+    "tabTexts": [
+      "通用设置",
+      "记忆",
+      "数据管理"
+    ],
+    "selected": [
+      "数据管理"
+    ],
+    "memoryTabCount": 1,
+    "memoryToggleCount": 0
+  },
+  "dataPanelNonEmpty": true,
+  "generalPanelNonEmpty": true,
+  "generalPanelFirstLines": [
+    "主题",
+    "浅色",
+    "深色"
+  ],
+  "overflowSeen": [
+    {
+      "label": "通用设置",
+      "overflowCount": 0
+    },
+    {
+      "label": "数据管理",
+      "overflowCount": 0
+    },
+    {
+      "label": "通用设置-回切",
+      "overflowCount": 0
+    }
+  ],
+  "overflowCount": 0,
+  "consoleErrors": []
+}
