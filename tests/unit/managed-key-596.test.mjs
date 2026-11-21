@@ -143,11 +143,22 @@ test('[1] Key 行形态：ours = 只读，deepseek / anthropic / openai = 可编
 })
 
 test('[1] 设置页按渠道分支渲染，可编辑那一支的输入框还在（对照）', () => {
+  /**
+   * #800 改了什么：这一块**不再渲染只读 Key 行**（连掩码展示区与「重新领取」一起从 DOM 里拿掉），
+   * 于是这里的断言从「按 apiKeyFieldMode 分支」改成「行清单由 sourceFieldPlan 决定、且没有
+   * ManagedKeyField 这条路」。`ours` 仍然一个 input 都没有 —— #596 的核心结论没变，只是更彻底。
+   * 面板级的 DOM 断言见 `tests/unit/source-panel-800.test.mjs`。
+   */
   const fields = sourceOf('src/components/settings/ApiConfigFields.tsx')
   assert.match(
     fields,
-    /apiKeyFieldMode\(spec\.kind\) === 'managed' \?[\s\S]{0,80}<ManagedKeyField \/>/u,
-    'ApiConfigFields 必须按 apiKeyFieldMode 分支：ours 渲染只读那一块'
+    /sourceFieldRows\(kind\)\.map\(/u,
+    '行清单必须来自 sourceFieldPlan（#800 之后这里是唯一的判定处）'
+  )
+  assert.equal(
+    /ManagedKeyField/u.test(fields),
+    false,
+    '#800：内置服务的只读 Key 行不再由设置页渲染'
   )
   assert.match(fields, /<ApiKeyField editor=\{editor\} \/>/u, '另外三个渠道仍然渲染可编辑的 Key 行')
   assert.match(fields, /type="password"/u, '可编辑那一支的密码输入框不许被一起删掉')
@@ -293,7 +304,12 @@ test('[4] 手填一把「格式完美」的 Key 也过不去：没有下发标�
 })
 
 test('[4] ours 的 401 文案另说一句（没有「重新填写」这条不存在的路）', async () => {
-  assert.match(zh.apiKeyRejectedOurs, /重新领取/u, 'ours 401 的出路只有重新领取')
+  /**
+   * #800：内置服务不再渲染「重新领取」按钮，所以这句话不能再指路到那个按钮 ——
+   * 恢复改成后台自动对齐（启动 / 登录后 / 发送被拦时各一次），文案说的就是「会自己重新对齐」。
+   */
+  assert.match(zh.apiKeyRejectedOurs, /自动/u, 'ours 401 的出路是「自动重新对齐」（按钮已随 #800 删除）')
+  assert.equal(/重新领取|重新填写/u.test(zh.apiKeyRejectedOurs), false, '不许指路到已删除的按钮')
   assert.equal(/未知错误|服务器繁忙/u.test(zh.apiKeyRejectedOurs), false)
   // 接线（#771 之后）：401 该说哪句由 `chat/errorNotice.ts` 的报错矩阵按渠道选 —— 原来那段
   // `store.ts` 里的 `getProviderKind() === 'ours' ? … : …` 三元已经收进表里（表驱动 = 唯一判定处）。

@@ -932,6 +932,22 @@
   padding: 4px 0 12px;
 }
 
+/**
+ * #800：内置服务子页里那句「Key 由服务端下发」的状态文案。
+ *
+ * 这一页在 #800 之后**没有任何 Key 控件**（输入框 / 掩码 /「重新领取」都不渲染），
+ * 全靠这一句说明 Key 从哪来、什么时候会自己对齐；所以它是最轻的说明文字，
+ * 不占行高、不加边框，与字段区的 `.label` 同一套左右内距（20px）。
+ */
+.sourceNote {
+  margin: 0;
+  padding: 12px 20px 0;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 13px;
+  line-height: 18px;
+  overflow-wrap: anywhere;
+}
+
 /* ---------------------------------------------------------------- 底部 sheet */
 
 .mask {

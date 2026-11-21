@@ -448,9 +448,14 @@ export const en = {
   apiKeyInvalidRetry:
     'Invalid API Key. Paste it again, or recover this device key with "Reset quota" under The built-in channel.',
   apiKeyRejected: 'The API key is invalid or expired. Please log in again or re-enter it.',
-  /** #596: on The built-in channel there is nothing to re-enter — re-claim is the only way out */
+  /**
+   * #596 / #800: there is nothing to re-enter on our channel — the only way out is for the server to
+   * issue the key again. Since #800 that recovery is automatic (alignment on start and after sign-in,
+   * plus one more attempt in Settings when a send is blocked), so the copy no longer points at the
+   * removed "Re-claim" button.
+   */
   apiKeyRejectedOurs:
-    'The Our-channel key is no longer valid: tap "Re-claim" in Settings and the server will issue a new one.',
+    'The built-in service key is no longer valid. The app re-aligns it with the server automatically — retry in a moment (reopening the app also triggers an alignment).',
   insufficientBalance: 'Insufficient balance',
   rateLimited: 'Too many requests. Please try again later.',
   ttsPlay: 'Read aloud',
@@ -492,6 +497,14 @@ export const en = {
   settingsManagedKeyBlockedStale:
     'The key has changed — please re-claim: the local key is no longer the one issued by the server, so this message was not sent.',
   settingsManagedKeyClaimFailed: 'Claim failed: {message}',
+  /**
+   * #800: the built-in service sub-page no longer renders a key row at all (no input, no masked
+   * display, no "re-claim"), so these three lines carry the explanation instead. Text only.
+   */
+  settingsBuiltinKeyAuto:
+    'Keys for the built-in service are issued by the server — nothing to fill in here. The app re-aligns with the server on every start.',
+  settingsBuiltinKeySyncing: 'Aligning the key with the server…',
+  settingsBuiltinKeySynced: 'Aligned with the server — current key ends with ···{tail}',
   settingsManagedKeyNeedLogin: 'Sign in under Account & usage → Account first, then claim the key.',
   settingsBaseUrlLabel: 'Service URL',
   settingsBaseUrlPlaceholder: 'e.g. https://your-gateway.example.com',
@@ -842,9 +855,9 @@ export const en = {
   sub2authEmail: 'Email',
   // #727: the three "model source" options now use the accountConsumeSource* keys
   // (three-row list wording — no duplicate definitions of the same strings).
-  settingsThirdPartyProtocol: 'Protocol',
-  settingsProtocolOpenai: 'OpenAI-compatible',
-  settingsProtocolAnthropic: 'Anthropic-compatible',
+  // #794: the third-party protocol segmented control (settingsThirdPartyProtocol /
+  // settingsProtocolOpenai / settingsProtocolAnthropic) is gone — the protocol is derived from
+  // the address and model by services/api/protocolDetect.ts. zh/en deleted together.
   settingsAuthEmailPlaceholder: 'Email',
   settingsAuthPasswordPlaceholder: 'Password (at least 6 characters)',
   settingsAuthCodePlaceholder: 'Verification code',

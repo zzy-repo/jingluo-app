@@ -438,8 +438,13 @@ export const zh = {
   apiKeyInvalidRetry: 'API Key 无效，请重新填写；或在「内置渠道」里用「重置额度」按设备码取回本机 Key',
   /** 上游 401 之后的统一提示（#303 问题 3）：既要说明原因，也要说明下一步怎么修 */
   apiKeyRejected: 'Key 无效或已过期，请重新登录或重新填写',
-  /** #596：我们的渠道没有可填的地方，401 的出路只有一个 —— 重新领取 */
-  apiKeyRejectedOurs: '内置渠道的 Key 已失效：请在设置里点「重新领取」，由服务端重新下发',
+  /**
+   * #596 / #800：我们的渠道没有可填的地方，401 的出路只有「服务端重新下发」。
+   * #800 起不再指路到已删除的「重新领取」按钮：恢复是**自动**的（启动 / 登录时对齐，
+   * 发送前被拦时设置页还会自动再对齐一次），所以这里说的是「稍后重试 / 重开应用」。
+   */
+  apiKeyRejectedOurs:
+    '内置服务的 Key 已失效：应用会自动向服务端重新对齐，稍后重试即可（重开应用也会触发一次对齐）',
   insufficientBalance: '账户余额不足',
   rateLimited: '操作过于频繁，请稍后再试',
   ttsPlay: '朗读',
@@ -481,6 +486,13 @@ export const zh = {
   settingsManagedKeyBlockedStale:
     'Key 已更新，请重新领取：本地这把已经不是服务端下发的那把，这条消息没有发出去。',
   settingsManagedKeyClaimFailed: '领取失败：{message}',
+  /**
+   * #800：内置服务子页**不再渲染 Key 行**（输入框 / 掩码展示区 /「重新领取」全部不渲染），
+   * 所以这三句要替它把话说清：Key 从哪来、什么时候会自己对齐。三句都是纯文案，没有按钮。
+   */
+  settingsBuiltinKeyAuto: '内置服务的 Key 由服务端下发，本机无需填写；每次启动会与服务端自动对齐。',
+  settingsBuiltinKeySyncing: '正在与服务端对齐 Key…',
+  settingsBuiltinKeySynced: '已与服务端对齐，当前 Key 尾号 ···{tail}',
   settingsManagedKeyNeedLogin: '请先在「账户与消费 → 账号」登录，再领取 Key。',
   settingsBaseUrlLabel: '服务地址',
   settingsBaseUrlPlaceholder: '例如 https://your-gateway.example.com',
@@ -826,11 +838,10 @@ export const zh = {
   // 登录注册（sub2api /api/v1/auth）
   sub2authEmail: '邮箱',
   // #727 阶段 1：设置里的登录卡（账号页未登录态 / 模型来源未登录态）
-  // #727：第三方渠道的协议切换
   // （「模型来源」的三个选项改走 accountConsumeSource* 词条 —— 三行列表的口径，同一批文案不重复定义）
-  settingsThirdPartyProtocol: '协议',
-  settingsProtocolOpenai: 'OpenAI 兼容',
-  settingsProtocolAnthropic: 'Anthropic 协议',
+  // #794：第三方服务的协议分段（`settingsThirdPartyProtocol` / `settingsProtocolOpenai` /
+  // `settingsProtocolAnthropic`）已**删除**：用户不再选协议，由地址与模型自动判定
+  // （`services/api/protocolDetect.ts`）。zh/en 成对删除，别只删一边。
   settingsAuthEmailPlaceholder: '请输入邮箱',
   settingsAuthPasswordPlaceholder: '请输入密码（至少 6 位）',
   settingsAuthCodePlaceholder: '请输入验证码',

@@ -25,6 +25,7 @@ import {
   isUserField,
   isProviderKind,
   type ProviderKind,
+  type ProviderProtocol,
   type ProviderSpec,
 } from './providers.js'
 
@@ -77,6 +78,15 @@ export const CONFIG_KEYS = {
    * 在结构上不可能发生。
    */
   serverKey: 'chat-demo:ours-server-key',
+  /**
+   * 第三方服务的协议判定缓存（Issue #794）：`{ "<baseUrl>": { p: 'anthropic'|'openai', at: 毫秒 } }`。
+   *
+   * 只有**兜底探测**（地址主机与模型名都判不出来时的那一次 `GET /v1/models`）的结论落在这里：
+   * 按 baseUrl 存，下次同一条地址直接用，不再探第二遍（issue 的「只探一次、缓存结果」）。
+   * 它不是第二个渠道状态 —— 真正生效的协议始终是 `chat-demo:provider-kind`，
+   * 这里只是「这条地址上次探出来是什么」的备忘录（判定逻辑在 `./protocolDetect.ts`）。
+   */
+  protocolCache: 'chat-demo:protocol-cache',
 } as const
 
 /** 用户自填字段按渠道分开存：chat-demo:base-url:anthropic 这类 */
@@ -649,4 +659,165 @@ export const setModel = (model: string, reset = false): boolean => {
   recordAction('config_change', 'provider-model', { result: 'saved', model: value })
   void captureStateSnapshot('after-config-change')
   return true
+}
+
+// ------------------------------------------- 第三方服务的协议自动适配（Issue #794）
+
+/**
+ * 是不是「第三方服务」那两种协议（`openai` / `anthropic`）。
+ *
+ * #794 之后这两种协议**不再是两个渠道**：用户只填「服务地址 / API Key / 模型」，
+ * 协议由 `./protocolDetect.ts` 按地址主机、模型名、缓存、老配置提示依次判定。
+ * 判定逻辑本身不在这里（本文件只管存取），这里只给出「谁属于第三方服务这一个槽位」。
+ */
+export const isThirdPartyKind = (kind: ProviderKind): kind is ProviderProtocol =>
+  kind === 'anthropic' || kind === 'openai'
+
+/** 第三方协议的另一半（`openai` ↔ `anthropic`）；不是第三方就返回 null */
+const otherThirdPartyKind = (kind: ProviderKind): ProviderKind | null => {
+  if (!isThirdPartyKind(kind)) {
+    return null
+  }
+  return kind === 'openai' ? 'anthropic' : 'openai'
+}
+
+/**
+ * 协议自动判定把当前 kind 从 `openai` 换成 `anthropic`（或反向）时，把「服务地址 / 模型」搬过去。
+ *
+ * 为什么必须搬：这两个字段是按渠道分开存的（`chat-demo:base-url:<渠道>`，见本文件头）。
+ * 协议一换、键一换，用户刚填的地址就会「凭空消失」——那正是 #794 要避免的第二类事故
+ * （「换个协议我填的东西全没了」）。#794 之后这两种协议共用**一个槽位**（用户不再二选一），
+ * 所以这里是「搬」（写新键 + 清旧键），不是「各留一份」：留着两份就会有两份不一致的地址，
+ * 下次判定换回来时谁说了算又成了猜。
+ *
+ * 只搬第三方 ↔ 第三方：官方（`deepseek`）与内置（`ours`）的地址/模型从不参与（前者属于官方端点、
+ * 后者 locked 根本不落盘）。返回是否真的搬了值（用于诊断与单测）。
+ */
+export const adoptThirdPartyConfig = (next: ProviderKind): boolean => {
+  if (!isThirdPartyKind(next)) {
+    return false
+  }
+  const from = otherThirdPartyKind(next)
+  if (from === null) {
+    return false
+  }
+  let moved = false
+  for (const field of ['baseUrl', 'model'] as const) {
+    const target = scopedKey(field, next)
+    if ((read(target) ?? '').trim() !== '') {
+      // 目标键已有值（例如老用户两种协议都填过）：协议是自动判定的，以「刚在用的这一份」为准
+      write(target, null)
+    }
+    const source = (read(scopedKey(field, from)) ?? '').trim()
+    if (source === '') {
+      continue
+    }
+    write(target, source)
+    write(scopedKey(field, from), null)
+    moved = true
+  }
+  if (moved) {
+    recordAction('config_change', 'third-party-adopt', { result: 'saved', from, to: next })
+  }
+  return moved
+}
+
+/** 判定缓存里的一条记录：只留协议与时间（坏数据一律当没有，见 `readCachedProtocol`） */
+type ProtocolCacheEntry = { p: ProviderProtocol; at: number }
+
+/** 缓存最多记多少条地址：够覆盖用户折腾过的几条中转，又不至于把 localStorage 塞满 */
+const PROTOCOL_CACHE_LIMIT = 8
+
+const readProtocolCache = (): Record<string, ProtocolCacheEntry> => {
+  const raw = read(CONFIG_KEYS.protocolCache)
+  if (raw === null || raw.trim() === '') {
+    return {}
+  }
+  try {
+    const parsed: unknown = JSON.parse(raw)
+    if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      return {}
+    }
+    const out: Record<string, ProtocolCacheEntry> = {}
+    for (const [baseUrl, value] of Object.entries(parsed as Record<string, unknown>)) {
+      if (value === null || typeof value !== 'object') {
+        continue
+      }
+      const entry = value as Record<string, unknown>
+      const protocol = entry.p
+      const at = entry.at
+      if ((protocol === 'anthropic' || protocol === 'openai') && typeof at === 'number') {
+        out[baseUrl] = { p: protocol, at }
+      }
+    }
+    return out
+  } catch {
+    return {}
+  }
+}
+
+/** 这条地址上次探测出来的协议；没探过 / 记录坏了都是 null（调用方回落到下一条判据） */
+export const readCachedProtocol = (baseUrl: string): ProviderProtocol | null => {
+  const key = baseUrl.trim()
+  if (key === '') {
+    return null
+  }
+  return readProtocolCache()[key]?.p ?? null
+}
+
+/**
+ * 记下「这条地址探测出来的协议是 X」（#794 的「判定结果落盘缓存，下次直接用」）。
+ *
+ * **只记成功探测的结论**：探测失败不写缓存（写一个猜的值会把下一次的真正探测挡在门外），
+ * 失败时的兜底由调用方按 `openai` 发，不落盘。
+ */
+export const rememberProtocol = (baseUrl: string, protocol: ProviderProtocol): boolean => {
+  const key = baseUrl.trim()
+  if (key === '' || (protocol !== 'anthropic' && protocol !== 'openai')) {
+    return false
+  }
+  const cache: Record<string, ProtocolCacheEntry> = { ...readProtocolCache(), [key]: { p: protocol, at: Date.now() } }
+  // 只留最近的几条：按时间戳排序后重建对象（不 delete 动态键，也顺手把插入顺序理顺）
+  const kept: Record<string, ProtocolCacheEntry> = {}
+  for (const [entryKey, entry] of Object.entries(cache)
+    .sort((left, right) => right[1].at - left[1].at)
+    .slice(0, PROTOCOL_CACHE_LIMIT)) {
+    kept[entryKey] = entry
+  }
+  write(CONFIG_KEYS.protocolCache, JSON.stringify(kept))
+  recordAction('config_change', 'third-party-protocol', {
+    result: 'detected',
+    protocol,
+    host: readHost(key),
+  })
+  return true
+}
+
+/**
+ * 「第三方服务」这一行点进去时，表单该落在哪个协议上（#794 之后两种协议是同一个槽位）。
+ *
+ * 用户不再选协议，所以这个值只影响**读哪一份已存地址/模型**（按渠道分开存的，见文件头）：
+ *  1. 当前 kind 本来就是第三方 → 就用它（来回切来源时不打乱手上的那份）；
+ *  2. 否则看哪一边真存过地址/模型 → 用那一边（老用户配置在 anthropic 槽里，不能让他一进来就看到空表）；
+ *  3. 都没存过 → `openai`（与 `protocolDetect` 的兜底一致：第三方服务默认按 OpenAI 兼容发）。
+ *
+ * 老配置不需要额外迁移：`chat-demo:provider-kind` 本来就是「上次用的协议」，它原值参与
+ * `protocolDetect` 里「沿用既有字段」那一档（issue 说的「旧配置提示」）—— 不新增键，也不改写历史值。
+ *
+ * 只读判定，不写任何状态：真正落盘发生在用户填完之后（以及自动适配判定之后）。
+ */
+export const thirdPartyEntryKind = (): ProviderProtocol => {
+  const current = getProviderKind()
+  if (isThirdPartyKind(current)) {
+    return current
+  }
+  for (const kind of ['anthropic', 'openai'] as const) {
+    if (
+      (read(scopedKey('baseUrl', kind)) ?? '').trim() !== '' ||
+      (read(scopedKey('model', kind)) ?? '').trim() !== ''
+    ) {
+      return kind
+    }
+  }
+  return 'openai'
 }

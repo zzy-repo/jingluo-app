@@ -9,6 +9,7 @@ import {
   normalizeBaseUrl,
 } from './apiConfig.js'
 import { markKeyRejected } from './keyRejection.js'
+import { syncThirdPartyProtocol } from './protocolDetect.js'
 import { OpenAIStreamError, toOpenAIRequest, translateOpenAIStream } from './openaiAdapter.js'
 import { timeoutsFor, type ProviderSpec } from './providers.js'
 import { sessionIdHeaders } from './sessionId.js'
@@ -641,6 +642,15 @@ export async function* streamMessage(
   signal: AbortSignal,
   options?: StreamOptions
 ): AsyncGenerator<MessageStreamEvent> {
+  /**
+   * #794：第三方服务的协议由地址 / 模型自动判定，用户不再选。对齐**必须发生在
+   * `getCurrentSpec()` 之前** —— 路径与鉴权头分两次读 spec 时，中途换协议会拼出
+   * 「A 的路径 + B 的鉴权头」那种请求（`authHeaders` 的注释写着同一条纪律）。
+   *
+   * 这一步是**纯本地同步**的（主机 / 模型 / 判定缓存 / 既有协议字段），一个网络请求都不发、
+   * 也不等任何东西，所以对首条消息零延迟；网络兜底探测在设置页那边后台跑（见 `protocolDetect.ts`）。
+   */
+  syncThirdPartyProtocol()
   ensureBaseUrl()
   const spec = getCurrentSpec()
   if (spec.protocol === 'openai') {

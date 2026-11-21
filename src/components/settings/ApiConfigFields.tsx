@@ -32,8 +32,7 @@ import { useSettings } from '../../services/settings.js'
 import { sendBlockFieldOf, sendBlockMessageKeyOf, type SendBlockField } from '../../services/api/sendConfigCheck.js'
 import { useApiKeyForm } from './useApiKeyForm.js'
 import { clearSendConfigBlocked, useSettingsDialog } from './settingsDialogState.js'
-import { ManagedKeyField } from './ManagedKeyField.js'
-import { apiKeyFieldMode } from './managedKeyView.js'
+import { rendersKeyControls, sourceFieldRows } from './sourceFieldPlan.js'
 import { useTranslate, type TranslationKey } from '../../i18n/index.js'
 import styles from './Settings.module.css'
 
@@ -65,12 +64,17 @@ export const useApiKeyEditor = () => {
 type ApiKeyEditor = ReturnType<typeof useApiKeyEditor>
 
 /**
- * 服务配置区：最上面是「渠道」下拉，下面按 spec.fields 循环渲染输入行，最后是连通性测试。
+ * 服务配置区：最上面是「渠道」下拉，下面按 `sourceFieldRows(kind)` 循环渲染输入行，最后是连通性测试。
  * 新增渠道只需要在 providers.ts 里加一个 spec，这里的 JSX 结构不用改。
  *
  * 渠道决定这一区长什么样：内置地址/模型的渠道（DeepSeek 官方 / 我们的渠道）fields 里没有
  * baseUrl / model，于是只渲染 API Key 一行；要自己填地址的渠道（Anthropic 协议 / OpenAI 兼容）
  * 渲染三行。切换渠道时界面静默变化，不给能力说明。
+ *
+ * #800：`ours`（内置服务）的 Key 由服务端下发，**Key 那一行整行不渲染**
+ * （判定只有一处：`sourceFieldPlan.sourceFieldRows`）。因此这一页在内置服务上不再有
+ * Key 输入框、Key 掩码展示区与「重新领取」—— 领取与恢复全走后台自动对齐
+ * （`managedKeyRuntime.syncManagedKeyFromServer`），详见 `sourceFieldPlan.ts` 的文件头。
  */
 export const ApiConfigFields = ({
   editor,
@@ -88,7 +92,7 @@ export const ApiConfigFields = ({
   return (
     <>
       {hideProviderKind ? null : <ProviderKindField />}
-      {spec.fields.map((field) => (
+      {sourceFieldRows(kind).map((field) => (
         <ApiConfigField key={field} field={field} spec={spec} editor={editor} />
       ))}
       {showsBuiltInModel(spec) ? <BuiltInModelField spec={spec} /> : null}
@@ -173,14 +177,11 @@ const ApiConfigField = ({
   switch (field) {
     case 'apiKey':
       /**
-       * #596：Key 行的形态按渠道分（`apiKeyFieldMode`，唯一判定处）。
-       * 我们的渠道 = 只读 + 「重新领取」，**没有输入框**；另外三个渠道一行都不改（#608 的硬验收）。
+       * #596：Key 行按渠道分形态；#800 起「服务端管理」的那一类**根本不会走到这里**
+       * （`sourceFieldPlan.sourceFieldRows` 已经把 apiKey 从行清单里摘掉，连展示区一起），
+       * 所以这里只剩用户自己填的那一种形态，不再保留只读分支。
        */
-      return apiKeyFieldMode(spec.kind) === 'managed' ? (
-        <ManagedKeyField />
-      ) : (
-        <ApiKeyField editor={editor} />
-      )
+      return <ApiKeyField editor={editor} />
     case 'baseUrl':
       return <BaseUrlField spec={spec} />
     case 'model':
@@ -654,9 +655,10 @@ const describeProbe = (
 export const ApiKeyConfirm = ({ editor: { showInput, form } }: { editor: ApiKeyEditor }) => {
   const t = useTranslate()
   const kind = useApiConfig((state) => state.kind)
-  // #596：我们的渠道没有输入框，底部就不该冒出一个「确定」——它只会把上一次在别的渠道里
-  // 没提交的草稿提交掉（Key 在本仓是四个渠道共用一把，草稿会跨渠道留着）
-  if (apiKeyFieldMode(kind) === 'managed') {
+  // #596 / #800：这一页没有 Key 行（内置服务）时，底部就不该冒出一个「确定」——它只会把上一次
+  // 在别的渠道里没提交的草稿提交掉（Key 在本仓是四个渠道共用一把，草稿会跨渠道留着）。
+  // 判据与「渲染哪些行」同源（`sourceFieldPlan.rendersKeyControls`），不另写一份渠道判断。
+  if (!rendersKeyControls(kind)) {
     return null
   }
   return showInput && form.value.trim() ? (

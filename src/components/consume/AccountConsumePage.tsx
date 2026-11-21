@@ -35,6 +35,7 @@ import {
   getApiKey,
   getBaseUrl,
   setProviderKind,
+  thirdPartyEntryKind,
   useApiConfig,
 } from '../../services/api/apiConfig.js'
 import { PROBE_TIMEOUT_MS, probeProvider } from '../../services/api/client.js'
@@ -42,6 +43,10 @@ import type { ConsumeClient, ConsumeUser } from '../../services/consume/index.js
 import { getConsumeClient } from '../../services/consumeClient.js'
 import { fetchPurchases, type PurchaseOrder } from '../../services/ours/purchases.js'
 import { useAuthStatus } from '../../services/auth/useAuthStatus.js'
+import { managedKeyTail } from '../../services/api/managedKey.js'
+import { detectThirdPartyProtocol } from '../../services/api/protocolDetect.js'
+import { syncManagedKeyFromServer } from '../settings/managedKeyRuntime.js'
+import { clearManagedKeyBlocked, useSettingsDialog } from '../settings/settingsDialogState.js'
 import { SettingsAuthCard } from './SettingsAuthCard.js'
 import { getAccessToken, useAuthStore } from '../../services/auth/store.js'
 import { LegacyMigrationButton } from '../../legacy/migration/LegacyMigrationButton.js'
@@ -80,12 +85,6 @@ const SOURCE_LABEL_KEY: Record<SourceOption, TranslationKey> = {
 }
 
 const SOURCE_OPTIONS: SourceOption[] = ['builtin', 'third', 'official']
-
-/** 第三方服务下的两个协议（既有两个 kind，不新增） */
-const THIRD_PARTY_PROTOCOLS: { kind: 'openai' | 'anthropic'; labelKey: TranslationKey }[] = [
-  { kind: 'openai', labelKey: 'settingsProtocolOpenai' },
-  { kind: 'anthropic', labelKey: 'settingsProtocolAnthropic' },
-]
 
 export type AccountConsumePanelProps = {
   /**
@@ -168,6 +167,63 @@ export const AccountConsumePage = ({
       setSourceRow(null)
     }
   }, [page])
+
+  /**
+   * #794：进入「第三方服务」子页时，在后台把协议判一次（`detectThirdPartyProtocol`）。
+   *
+   * 为什么挂在这里：用户刚在这页填完「服务地址 / 模型」，此刻是唯一能确定「这条地址到底是哪种
+   * 协议」的时刻（判据见 `services/api/protocolDetect.ts`）。本地判据（主机 / 模型 / 缓存）不需要
+   * 任何请求；只有全都说不清时才探一次 `GET /v1/models`（≤3s），结论落盘缓存。
+   *
+   * **不在发送链路上做这件事**：发送链路只用本地判据（`syncThirdPartyProtocol`），
+   * 首条消息零等待；这里探出来的结论下次发送直接命中缓存。界面不参与判定，
+   * 也不因为探测结果跳来跳去（三个字段与协议无关）。
+   */
+  useEffect(() => {
+    if (page !== 'source' || sourceRow !== 'third') {
+      return
+    }
+    void detectThirdPartyProtocol().catch(() => undefined)
+  }, [page, sourceRow])
+
+  /**
+   * #800：内置服务的 **Key 恢复入口**（Key 行连同「重新领取」都不再渲染了）。
+   *
+   * 发送前那道闸发现「本机这把不是服务端那把」时会写 `managedKeyBlocked` 并把设置打开
+   * （`settingsDialogState.ensureApiKey`）。以前这一屏靠用户点「重新领取」收尾；现在没有那个按钮，
+   * 所以由这里**自动**做一次幂等对齐（`syncManagedKeyFromServer`：与服务端核对并按服务端覆盖），
+   * 成功就把提示清掉、把新尾号说出来。未登录 / 网络失败时什么都不做（提示留着，下次进设置再试）——
+   * 登录之后 `App` 的那条对齐也会跑（见 `App.tsx` 里 ours 渠道的对齐 effect）。
+   */
+  const managedKeyBlocked = useSettingsDialog((state) => state.managedKeyBlocked)
+  const [keySync, setKeySync] = useState<'idle' | 'syncing' | 'done'>('idle')
+  useEffect(() => {
+    if (managedKeyBlocked === null || signedIn !== true) {
+      return
+    }
+    let live = true
+    setKeySync('syncing')
+    void syncManagedKeyFromServer()
+      .then((outcome) => {
+        if (!live) {
+          return
+        }
+        if (outcome === 'updated' || outcome === 'unchanged') {
+          clearManagedKeyBlocked()
+          setKeySync('done')
+          return
+        }
+        setKeySync('idle')
+      })
+      .catch(() => {
+        if (live) {
+          setKeySync('idle')
+        }
+      })
+    return () => {
+      live = false
+    }
+  }, [managedKeyBlocked, signedIn])
 
   /**
    * 余额：只读 sub2api 的 `balance`（元）。未登录 / 恢复中**一个请求都不发**（拿 JWT 打只会 401），
@@ -345,6 +401,23 @@ export const AccountConsumePage = ({
     return name.slice(0, 1).toUpperCase() || '—'
   })()
 
+  /**
+   * 内置服务子页里的一句状态（#800）：这一页**没有任何 Key 控件**，所以要把「Key 从哪来」
+   * 说清楚，否则用户只会觉得「Key 的那一行不见了」。三种状态：常态 / 正在自动核对 / 刚对齐完（带新尾号）。
+   * 它是纯文案 —— 没有按钮，也没有输入框：恢复由上面的 effect 自动完成。
+   */
+  const builtinKeyNote = (
+    <div className={styles.viewBody} data-testid="account-consume-builtin-key-note">
+      <p className={styles.sourceNote} data-testid="account-consume-builtin-key-note-text">
+        {keySync === 'syncing'
+          ? t('settingsBuiltinKeySyncing')
+          : keySync === 'done'
+            ? t('settingsBuiltinKeySynced', { tail: managedKeyTail(apiKey) })
+            : t('settingsBuiltinKeyAuto')}
+      </p>
+    </div>
+  )
+
   /** 连通性测试一行（子页的兜底、以及不接 `sourceConfig` 的独立渲染共用同一份 JSX） */
   const connRow = (
     <button
@@ -439,11 +512,15 @@ export const AccountConsumePage = ({
         setSourceRow('official')
         return
       }
-      // 第三方服务：保持当前协议（老用户已选 anthropic 就还是 anthropic），默认 OpenAI 兼容
-      setProviderKind(kind === 'anthropic' ? 'anthropic' : 'openai')
+      /**
+       * 第三方服务（#794）：**不再让人选协议**，所以这里只决定「表单读哪一份已存地址/模型」。
+       * 判定在 `thirdPartyEntryKind`（保持当前第三方协议 → 有数据的那一边 → 老配置提示 → openai），
+       * 真正的协议由发送链路按地址与模型自动适配（`services/api/protocolDetect.ts`）。
+       */
+      setProviderKind(thirdPartyEntryKind())
       setSourceRow('third')
     },
-    [kind, onNavigate, signedIn]
+    [onNavigate, signedIn]
   )
 
   /** 与 `subHeader` 同形，只是标题换成一个自定义词条（例如登录卡出现时这一屏叫「登录」） */
@@ -541,12 +618,15 @@ export const AccountConsumePage = ({
     /**
      * 「模型来源」= **一屏三行**（inset 列表，不是分段控件），每行点进去是**同一容器内的子页**：
      *
-     *   内置服务（kind=ours）       → **只有它判断登录**：未登录 → 登录/注册；已登录 → 托管 Key + 余额入口 + 连通性测试
-     *   第三方服务                   → 协议（OpenAI 兼容 / Anthropic）+ 服务地址 + API Key + 模型 + 连通性测试
+     *   内置服务（kind=ours）       → **只有它判断登录**：未登录 → 登录/注册；已登录 → 余额入口 + 连通性测试
+     *                                （#800：**没有 Key 行** —— 输入框 / 掩码展示区 /「重新领取」全不渲染，
+     *                                 Key 由服务端下发、恢复走后台自动对齐，见 `sourceFieldPlan.ts`）
+     *   第三方服务                   → 服务地址 + API Key + 模型 + 连通性测试（#794：协议不再让人选，
+     *                                 由 `services/api/protocolDetect.ts` 按地址/模型自动判定）
      *   DeepSeek 官方服务（deepseek）→ API Key + 内置模型（只读）+ 连通性测试
      *
-     * 底层仍是既有的 `ProviderKind`：这里只是「三个来源 + 一个协议切换」的入口，
-     * 字段渲染照旧由 `spec.fields` 决定（`ApiConfigFields`），不新增任何渠道状态。
+     * 底层仍是既有的 `ProviderKind`：这里只是「三个来源」的入口，字段渲染照旧由
+     * `ApiConfigFields` 按 `spec` 决定，不新增任何渠道状态。
      */
     if (sourceRow !== null) {
       // 子页：标题就是行名，左上「‹ 返回」只回三行列表 —— 不离开设置这个容器
@@ -584,23 +664,7 @@ export const AccountConsumePage = ({
               <div className={styles.divider} />
             </div>
           ) : null}
-          {sourceRow === 'third' ? (
-            /* 协议是第三方服务自己的事，所以这一组分段只在这个子页里出现 */
-            <div className={styles.authSegmented} role="group" aria-label={t('settingsThirdPartyProtocol')}>
-              {THIRD_PARTY_PROTOCOLS.map((protocol) => (
-                <button
-                  key={protocol.kind}
-                  type="button"
-                  className={kind === protocol.kind ? `${styles.authSeg} ${styles.authSegOn}` : styles.authSeg}
-                  aria-pressed={kind === protocol.kind}
-                  data-testid={`settings-protocol-${protocol.kind}`}
-                  onClick={() => setProviderKind(protocol.kind)}
-                >
-                  {t(protocol.labelKey)}
-                </button>
-              ))}
-            </div>
-          ) : null}
+          {sourceRow === 'builtin' ? builtinKeyNote : null}
           {sourcePage}
           {sheetNode}
         </div>

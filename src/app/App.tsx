@@ -16,6 +16,7 @@ import { MobileHeader } from '../components/session/MobileHeader.js'
 import { Welcome } from '../components/session/Welcome.js'
 import { ensureApiKey } from '../components/settings/settingsDialogState.js'
 import { syncManagedKeyFromServer } from '../components/settings/managedKeyRuntime.js'
+import { useAuthStatus } from '../services/auth/useAuthStatus.js'
 import { useIsOursChannel } from '../services/api/apiConfig.js'
 import { SettingsDialog } from '../components/settings/SettingsDialog.js'
 import { Toast } from '../components/base/Toast.js'
@@ -57,6 +58,8 @@ export const App = () => {
   const backgroundUrl = useChatBackground((state) => state.url)
   // #596：自有渠道的 Key 由服务端下发，进入该渠道时要与本地对齐一次（见下面的 effect）
   const oursChannel = useIsOursChannel()
+  // #800：对齐还需要登录态（领取链路要 JWT）；判断口径与账号面板一致（`authenticated`），不自己造一套
+  const signedIn = useAuthStatus().authenticated
 
   usePreventPageScroll(isMobile)
 
@@ -89,19 +92,23 @@ export const App = () => {
   /**
    * 「我们的渠道」的 Key 由服务端管理（Issue #596）：进入该渠道时对齐一次。
    *
-   * 为什么在启动就对齐、而不是等用户点「重新领取」：事故里那一类是「服务端早换了、
-   * 本机还留着旧的」，等用户点就永远等不到。这里用幂等的领取问一次服务端那把是哪把，
+   * 为什么在启动就对齐、而不是等用户点按钮：事故里那一类是「服务端早换了、
+   * 本机还留着旧的」，等用户操作就永远等不到。这里用幂等的领取问一次服务端那把是哪把，
    * 不一样就覆盖本地（`syncManagedKeyFromServer` 内部完成落盘 + 写下发标记）。
    *
+   * **#800 起它是唯一的恢复入口**（内置服务子页不再有 Key 行与「重新领取」），所以依赖里多了
+   * 登录态：先启动、后登录的用户（#608 允许未登录先逛）登录成功这一刻也要对齐一次，
+   * 否则本机一直没有服务端那把、发送前那道闸会一直拦着，而用户已经没有按钮可点。
+   *
    * 失败（未登录 / 离线 / 服务端异常）**静默**：本机现状不动，发送前那道闸会用标记
-   * 判出「这把不是服务端那把」并拦下来，把话说在设置页而不是启动路径上。
+   * 判出「这把不是服务端那把」并拦下来，并在设置页里自动再对齐一次（见 `AccountConsumePage`）。
    */
   useEffect(() => {
-    if (!oursChannel) {
+    if (!oursChannel || !signedIn) {
       return
     }
     void syncManagedKeyFromServer().catch(() => {})
-  }, [oursChannel])
+  }, [oursChannel, signedIn])
 
   return (
     <>

@@ -13,7 +13,7 @@
  *  2. Key 原文只在内存里过一手，落盘只走 `applyManagedKey`（写 Key + 写标记，同一处）；
  *  3. 日志只记「尾号 / 动作 / 结果」，**不记 Key 原文**（与 #484 §7 同一条红线）。
  */
-import { applyManagedKey, getApiKey, getServerKeyMark } from '../../services/api/apiConfig.js'
+import { applyManagedKey, getApiKey, getServerKeyMark, markServerKey } from '../../services/api/apiConfig.js'
 import {
   claimManagedKey,
   retireManagedKey,
@@ -85,6 +85,12 @@ export const claimManagedKeyForDevice = async (
  * 跳过条件都写在返回值的字符串里，别让它变成静默失败：
  *  - `signed-out`：没有登录态，领取链路要 JWT（此时本机那把只能等用户登录后再领）；
  *  - `failed`：网络/服务端失败 —— 保持本机现状，发送前那道闸会用标记判出「旧 Key」并拦下。
+ *
+ * #800 起这条对齐是**唯一的恢复入口**（内置服务子页不再渲染 Key 行与「重新领取」）：
+ * 所以它必须真的能把两种异常状态都收干净 —— Key 不一致（`stale`）与**标记缺失**
+ * （`unclaimed`：本机有一把、但没有下发标记，例如老版本留下的、或标记被清掉的）。
+ * 后者以前因为「Key 没变」被当成 `unchanged` 跳过，标记永远补不上、发送前的闸就永远拦着，
+ * 而 #800 之后用户已经没有一个「重新领取」可以点 —— 所以这里把「标记缺失」也算成一次对齐。
  */
 export type ManagedKeySyncOutcome = 'updated' | 'unchanged' | 'signed-out' | 'failed'
 
@@ -107,6 +113,16 @@ export const syncManagedKeyFromServer = async (): Promise<ManagedKeySyncOutcome>
     recordAction('config_change', 'ours-managed-key-sync', {
       result: 'updated',
       length: result.data.key.length,
+    })
+    return 'updated'
+  }
+  if (getServerKeyMark() === null) {
+    // Key 对得上但标记不在：补写标记（等价于「确认了服务端那把」），否则发送前永远判 unclaimed
+    markServerKey(result.data.key, result.data.id)
+    recordAction('config_change', 'ours-managed-key-sync', {
+      result: 'updated',
+      length: result.data.key.length,
+      reason: 'mark_missing',
     })
     return 'updated'
   }
