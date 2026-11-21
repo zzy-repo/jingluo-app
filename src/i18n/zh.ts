@@ -685,7 +685,6 @@ export const zh = {
   autoTitlePromptLanguage: '使用消息的语言。',
   autoTitlePromptLength: '目标长度：约 8–14 个中文字符（或 3–5 个英文单词）。',
   autoTitlePromptFallback: '如果消息信息量太少，也要给一个简短的最佳猜测标题（如「打招呼」），不要解释。',
-  oursPayRecordsEntryAction: '查看',
   oursPayRecordsNotRedeemed: '尚未兑换',
   oursPayRecordsRedeemed: '已兑换',
   oursPayRecordsCopyCard: '复制卡密',
@@ -857,6 +856,21 @@ export const zh = {
   accountConsumeTabCards: '我的卡密',
   accountConsumeTabQuota: '我的额度',
   accountConsumeTabAccount: '账号',
+  // #727 阶段 1：整页按原型词汇（34px 大标题 / 56px inset 列表行 / 余额卡 / 底部 sheet / 居中 dialog）。
+  // 新增词条全部 `accountConsume*` 前缀、中英成对；能复用既有文案的（连通性测试、登录、注册、
+  // 已用、取消、不登录也可以…）一律复用，不在这里再写一份。
+  accountConsumeSourceTitle: '模型来源',
+  accountConsumeSourceEditHint: '去设置里填写 API Key 与服务地址',
+  accountConsumeConnIdle: '未测试',
+  accountConsumeConnOk: '正常 {ms} ms',
+  accountConsumeConnKeyInvalid: 'Key 无效',
+  accountConsumeConnError: '网络或配置错',
+  accountConsumeWalletTitle: '我的钱包',
+  accountConsumeBalanceLabel: '剩余余额',
+  accountConsumeHistoryTitle: '历史消费',
+  accountConsumeBuyRow: '购买套餐',
+  accountConsumeSignedOut: '未登录',
+  accountConsumeAuthLater: '暂不登录',
 
   // 拆掉登录墙（#608）：账户降级为「我们的渠道」里的**可选**能力。
   // 口径三条（改文案前先看 #608 / #421）：① 主 CTA 是「填 Key 就能用」，不是「登录」；

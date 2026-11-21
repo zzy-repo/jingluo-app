@@ -596,8 +596,13 @@ const ConnectionTestField = ({ editor }: { editor: ApiKeyEditor }) => {
   )
 }
 
-/** 把连通性测试结果翻成一句可读提示，不抛异常 */
-const describeProbe = (
+/**
+ * 把连通性测试结果翻成一句可读提示，不抛异常。
+ *
+ * 导出给「账户与消费」整页的连通性一行复用（#727）：那一行与设置页的「连通性测试」
+ * 必须是**同一套分类、同一句文案**，否则同一台机器两处说两种话。
+ */
+export const describeProbe = (
   t: ReturnType<typeof useTranslate>,
   probe: ProviderProbeResult
 ): string => {

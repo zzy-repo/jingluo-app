@@ -3,6 +3,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react'
 import {
   IconCopyOutline16,
   IconDarkOutline16,
+  IconDocumentOutline16,
   IconDataOutline16,
   IconDownloadOutline16,
   IconFollowsystemOutline16,
@@ -163,6 +164,23 @@ const SettingsContent = ({ visible }: { visible: boolean }) => {
               {t(item.label)}
             </button>
           ))}
+          {/* 一级入口（#727 阶段 1）：设置 → **一次点击** → 「账户与消费」整页。
+              原来它在「数据管理」分组里还要再点一次；升成导航项后与另外两个分组平级。
+              只在自有渠道下出现（#166）：卡密与套餐来自 apia，别的渠道没有自己的订单。
+              `title` 复用原来的那一句说明（`accountConsumeEntryDescription`），
+              导航项本身放不下第二行字。 */}
+          {oursChannel ? (
+            <button
+              type="button"
+              title={t('accountConsumeEntryDescription')}
+              className={styles.navItem}
+              data-testid="account-consume-open"
+              onClick={() => openAccountConsume('cards')}
+            >
+              <IconDocumentOutline16 />
+              {t('accountConsumeTitle')}
+            </button>
+          ) : null}
         </div>
         <div role="tabpanel" className={styles.content}>
           {section === 'general' ? (
@@ -185,29 +203,9 @@ const SettingsContent = ({ visible }: { visible: boolean }) => {
               <ChatBackgroundField />
               <ImportHistory historyImport={historyImport} disabled={historyBusy} />
               <ExportHistory disabled={historyBusy} />
-              {/* 账户与消费（#482 三弹层合一 / #487）：付款记录 + 我的购买 + 支付记录时间线
-                  三个入口合并成一格，点开是同一个四 tab 页面（我的卡密 / 购买 / 我的额度 / 账号）。
-                  仍然只在自有渠道下出现：卡密与套餐来自 apia，别的渠道没有自己的订单（#166）。
-                  旧 `OursServicesRow`（额度 / 邀请 / 卡密兑换弹层）已退役：额度、账号、邀请、邮箱绑定
-                  全部并进这一页的「我的额度 / 账号」两个 tab，设置里不再有第二个钱入口。 */}
-              {oursChannel ? (
-                <SettingCell
-                  label={t('accountConsumeTitle')}
-                  description={t('accountConsumeEntryDescription')}
-                  status={null}
-                  action={
-                    <Button
-                      variant="outlined"
-                      size="m"
-                      className={styles.cellButton}
-                      data-testid="account-consume-open"
-                      onClick={() => openAccountConsume('cards')}
-                    >
-                      {t('oursPayRecordsEntryAction')}
-                    </Button>
-                  }
-                />
-              ) : null}
+              {/* 「账户与消费」这一格已删（#727 阶段 1）：它升成了设置里的一级入口
+                  （左侧导航第三项，见上方 `navigation` 里的 `account-consume-open`）。
+                  同一个功能只留一个入口 —— 这里再挂一格就是两套入口并存。 */}
               <SettingCell
                 label={t('feedbackCellLabel')}
                 description={t('feedbackCellDescription')}

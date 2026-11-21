@@ -6,72 +6,343 @@
  *  3. 点击区 ≥ 36px（`Button` 的 size="m" 就是 36px），不用 12px 的小链接当主操作。
  */
 
+/* ---------------------------------------------- 整页骨架（#727 原型 .phone / .h1 / .rows / .row）
+
+ * 原型是「整页 + 大标题 + inset 列表行 + 卡片分层 + 底部 sheet / 居中 dialog」，
+ * 这里按同一套词汇落地 —— **不是**把原来的 pill tab 换个颜色（那是两种视觉语言）。
+ * 无边设计（#47）：列表行之间只有 1px 分隔线，不给每行套描边盒子。
+ */
+
+.page {
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  min-width: 0;
+  padding: 4px 0 16px;
+}
+
+/* 原型 `.h1`：34px / 700。设置弹层里那套 17px 小标题用在这里会把「一级页面」缩成一张卡 */
+.h1 {
+  margin: 0 0 12px;
+  padding: 0 20px;
+  color: var(--dsw-alias-label-primary);
+  font-size: 34px;
+  font-weight: 700;
+  line-height: 41px;
+  overflow-wrap: anywhere;
+}
+
+/* 只给读屏与关闭按钮用的标题（视觉标题是上面那个 `.h1`） */
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.rows {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+/* 原型 `.row`：56px 高、左右 20px、字号 17px、左文案 / 右值 */
+.row {
+  display: flex;
+  box-sizing: border-box;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  min-height: 56px;
+  padding: 0 20px;
+  border: 0;
+  background: none;
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  font-size: 17px;
+  line-height: 24px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.row:disabled {
+  cursor: default;
+}
+
+.rowActive {
+  font-weight: 600;
+}
+
+.rowLabel {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rowValue {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 6px;
+  max-width: 60%;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 15px;
+  line-height: 20px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* #215：Chromium 83 不认 `:focus-visible`，三件套写全 */
+.row:focus {
+  outline: 2px solid var(--dsw-alias-brand-primary);
+  outline-offset: -2px;
+}
+
+.row:focus:not(:focus-visible) {
+  outline: none;
+}
+
+.row:focus-visible {
+  outline: 2px solid var(--dsw-alias-brand-primary);
+  outline-offset: -2px;
+}
+
+/* 原型 `.divider`：1px、左边留 20px（`.full` 通栏） */
+.divider {
+  height: 1px;
+  margin-left: 20px;
+  background: var(--dsw-alias-border-l2);
+}
+
+.dividerFull {
+  height: 1px;
+  background: var(--dsw-alias-border-l2);
+}
+
+/* 一行 + 它上面的分隔线：`role="tablist"` 里不许塞非 tab 元素，所以分隔线挂在包裹层上 */
+.rowSlot {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+/* 分组小标题（原型 `.ghead`） */
+.ghead {
+  margin: 8px 0 0;
+  padding: 18px 20px 6px;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 18px;
+}
+
+/* 错误 / 说明行：跟在某一行下面，不是弹窗 */
+.rowError {
+  margin: 0;
+  padding: 0 20px 8px;
+  color: var(--dsw-alias-state-error-primary);
+  font-size: 13px;
+  line-height: 20px;
+  overflow-wrap: anywhere;
+}
+
+.rowHint {
+  margin: 0;
+  padding: 0 20px 8px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 13px;
+  line-height: 20px;
+  overflow-wrap: anywhere;
+}
+
+/* 三态圆点（原型 `.dot` / `.testing` / `.fail`）。圆点永远带 aria-hidden，状态靠文案 */
+.dot {
+  display: inline-block;
+  flex-shrink: 0;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--dsw-alias-label-tertiary);
+}
+
+.dot_idle {
+  background: var(--dsw-alias-label-tertiary);
+}
+
+.dot_testing {
+  background: var(--dsw-static-amber-500);
+}
+
+.dot_ok {
+  background: var(--dsw-static-green-500);
+}
+
+.dot_keyInvalid {
+  background: var(--dsw-alias-state-error-primary);
+}
+
+/* 余额卡（原型 `.balance`）：独立卡片，与列表行区分开 */
+.balance {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  box-sizing: border-box;
+  margin: 0 20px 8px;
+  padding: 20px;
+  border-radius: 16px;
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.balanceKey {
+  color: var(--dsw-alias-label-secondary);
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.balanceValue {
+  color: var(--dsw-alias-label-primary);
+  font-size: 32px;
+  font-weight: 700;
+  line-height: 38px;
+}
+
+.balanceMeta {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 13px;
+  line-height: 18px;
+}
+
+/* 选中的那一块（面板容器）：与上面的列表行隔一档留白，不套描边盒子（#47） */
+.panel {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  margin-top: 12px;
+}
+
+/* ---------------------------------------------- 模型来源：底部 sheet（原型 .mask / .sheet） */
+
+/*
+ * 遮罩铺满**整个视口**（不是弹层内容区）：这一层是 `account-consume-page` 之外的兄弟节点，
+ * 用 fixed 才不会被他自己的滚动容器裁掉。
+ */
+.sheetLayer {
+  position: fixed;
+  inset: 0;
+  z-index: 1150;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+}
+
+.mask {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  background: rgb(0 0 0 / 32%);
+  cursor: pointer;
+}
+
+.sheet {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  max-height: 80vh;
+  overflow-y: auto;
+  padding: 0 0 16px;
+  border-radius: 20px 20px 0 0;
+  background: var(--dsw-alias-bg-layer-2);
+  box-shadow: 0 -8px 24px rgb(0 0 0 / 18%);
+  animation: account-consume-sheet-up 0.22s ease;
+}
+
+.sheetHandle {
+  width: 36px;
+  height: 5px;
+  margin: 8px auto 0;
+  border-radius: 3px;
+  background: var(--dsw-static-neutral-300);
+}
+
+.sheetTitle {
+  padding: 14px 20px 12px;
+  color: var(--dsw-alias-label-primary);
+  font-size: 17px;
+  font-weight: 600;
+  line-height: 24px;
+  text-align: center;
+}
+
+.sheetLink {
+  min-height: 44px;
+  margin: 8px 20px 0;
+  padding: 8px 4px;
+  border: 0;
+  background: none;
+  color: var(--dsw-alias-brand-text);
+  font: inherit;
+  font-size: 15px;
+  line-height: 20px;
+  text-align: center;
+  cursor: pointer;
+}
+
+.sheetCancel {
+  min-height: 56px;
+  border: 0;
+  border-top: 1px solid var(--dsw-alias-border-l2);
+  background: none;
+  color: var(--dsw-alias-brand-text);
+  font: inherit;
+  font-size: 17px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+@keyframes account-consume-sheet-up {
+  from {
+    transform: translateY(100%);
+  }
+
+  to {
+    transform: translateY(0);
+  }
+}
+
+/* 居中 dialog（原型 `.dialog`：300px、radius 20） */
+.authDialog {
+  width: min(340px, calc(100vw - 40px));
+  padding: 20px 20px 16px;
+}
+
+/*
+ * 整页骨架：桌面给 560px 的页，手机端贴满视口宽（原型 .phone 是 375 宽的整页）。
+ * 高度上限仍是视口，内容在 `.main` 里滚。
+ */
 .dialog {
   width: min(560px, calc(100vw - 16px));
-  max-height: min(720px, calc(100vh - 24px));
+  max-height: min(760px, calc(100vh - 24px));
+  padding: 12px 0 0;
 }
 
 .main {
   /* 内容再长也只在弹层内部滚，不把弹层顶出屏幕 */
   overflow-y: auto;
   overflow-x: hidden;
-}
-
-/* ---------------------------------------------------------------- 四个 tab */
-
-.tabs {
-  display: flex;
-  gap: 4px;
-  padding: 4px;
-  border-radius: 10px;
-  background: var(--dsw-alias-interactive-bg-hover);
-}
-
-.tab {
-  flex: 1 1 0;
-  min-width: 0;
-  /* 360px 下四个 tab 各约 84px，中文四个字要能放下：字号收到 13px */
-  padding: 8px 4px;
-  border: 0;
-  border-radius: 8px;
-  background: transparent;
-  color: var(--dsw-alias-label-secondary);
-  font-family: inherit;
-  font-size: 13px;
-  line-height: 18px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  cursor: pointer;
-  transition: background var(--ds-transition-duration) var(--ds-ease-in-out);
-}
-
-.tab:hover {
-  color: var(--dsw-alias-label-primary);
-}
-
-.tabActive {
-  background: var(--dsw-alias-bg-base);
-  color: var(--dsw-alias-label-primary);
-  font-weight: 600;
-  box-shadow: 0 1px 2px rgb(0 0 0 / 8%);
-}
-
-/* #215：WebView 下限 Chromium 83 不认 `:focus-visible`（整条规则被丢弃），所以三件套写全：
-   ① `:focus` 兜底（83 上只有它生效，鼠标点击也会出环，可接受）；② 现代内核用
-   `:focus:not(:focus-visible)` 把鼠标态的环收回；③ `:focus-visible` 交给键盘态。 */
-.tab:focus {
-  outline: 2px solid var(--dsw-alias-brand-primary);
-  outline-offset: 1px;
-}
-
-.tab:focus:not(:focus-visible) {
-  outline: none;
-}
-
-.tab:focus-visible {
-  outline: 2px solid var(--dsw-alias-brand-primary);
-  outline-offset: 1px;
+  padding: 0;
 }
 
 /* ---------------------------------------------------------------- 面板容器 */

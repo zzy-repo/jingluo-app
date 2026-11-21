@@ -95,17 +95,25 @@ export type AuthGateProps = {
   /** 已登录时渲染的内容（整屏形态下接的是整个 App；#608 之后入口不再这么用） */
   children?: ReactNode
   /**
-   * 形态（#608）：
+   * 形态（#608 / #727）：
    *  - `'page'`（默认）：整屏一张卡 —— 独立的登录 / 注册页；
-   *  - `'inline'`：嵌进「账号」面板里的局部卡片 —— 桌面/手机都在设置弹层内部，不占满屏。
-   * 两种形态的**表单与接线完全同一份**（`LoginPage` / `RegisterPage` 只换外层容器），
-   * 差别仅在于「占满一屏」还是「跟着宿主排版」。
+   *  - `'inline'`：嵌进「账号」面板里的局部卡片 —— 桌面/手机都在设置弹层内部，不占满屏；
+   *  - `'dialog'`：放进**居中 dialog**（#727 原型）—— 顶部是一条 segmented（登录 / 注册），
+   *    下面仍是同一份 `LoginPage` / `RegisterPage` 内嵌形态，末尾一句「不登录也可以…」+「暂不登录」。
+   *    三种形态的**表单与接线完全同一份**，差别只在容器与「怎么切登录 / 注册」
+   *    （page / inline 用页面里的链接，dialog 用 segmented —— 原型就是这么分的）。
    */
-  variant?: 'page' | 'inline'
+  variant?: 'page' | 'inline' | 'dialog'
+  /**
+   * 仅 `'dialog'` 用：「暂不登录」这一下的出口（外壳关掉对话框）。
+   * 不传就不渲染那个按钮 —— 没有出口时给一个点了没反应的按钮是更坏的选择。
+   */
+  onDismiss?: () => void
 }
 
-export const AuthGate = ({ children, variant = 'page' }: AuthGateProps) => {
+export const AuthGate = ({ children, variant = 'page', onDismiss }: AuthGateProps) => {
   const inline = variant === 'inline'
+  const dialog = variant === 'dialog'
   const t = useTranslate()
   const authState = useAuthStore((state) => state.state)
   const restored = useAuthStore((state) => state.restored)
@@ -179,7 +187,7 @@ export const AuthGate = ({ children, variant = 'page' }: AuthGateProps) => {
     return (
       <div className={inline ? styles.inlineLoading : styles.gateLoading} role="status" aria-busy="true">
         <span className={styles.gateSpinner} aria-hidden="true" />
-        {/* 局部形态必须有一句人话：面板里单转一个圈，用户不知道在等什么 */}
+        {/* 嵌进宿主的形态必须有一句人话：面板里单转一个圈，用户不知道在等什么 */}
         {inline ? <span className={styles.inlineLoadingText}>{t('accountOptionalChecking')}</span> : null}
       </div>
     )
@@ -192,10 +200,12 @@ export const AuthGate = ({ children, variant = 'page' }: AuthGateProps) => {
   // 「登录已过期」要说清楚原因：不然用户会以为是自己密码填错了
   const noticeKey: TranslationKey | null = authState === 'expired' ? 'sub2authSessionExpired' : null
 
-  if (mode === 'register') {
-    return (
+  // `page` 之外的两种形态都是「嵌进宿主」（#608 的 inline / #727 的居中 dialog）
+  const embedded = !(variant === 'page')
+  const form =
+    mode === 'register' ? (
       <RegisterPage
-        embedded={inline}
+        embedded={embedded}
         flags={flags}
         busy={busy}
         sendingCode={sendingCode}
@@ -204,18 +214,69 @@ export const AuthGate = ({ children, variant = 'page' }: AuthGateProps) => {
         onSendCode={handleSendCode}
         onSwitchToLogin={() => switchTo('login')}
       />
+    ) : (
+      <LoginPage
+        embedded={embedded}
+        // dialog 形态的「切到注册」是上面那条 segmented（原型口径），页面里就不要再放第二个入口
+        showRegisterEntry={!dialog && flags.registrationEnabled}
+        noticeKey={noticeKey}
+        busy={busy}
+        error={error}
+        onSubmit={handleLogin}
+        onSwitchToRegister={() => switchTo('register')}
+      />
     )
+
+  if (!dialog) {
+    return form
   }
 
+  /**
+   * 居中 dialog 形态（#727 原型 `.segmented`）：登录 / 注册用一条分段控件切换，
+   * 底下仍是同一份表单。末尾那句「不登录也可以：在设置里填 API Key 即可使用各渠道」
+   * 是 #608 的定调原文（`accountOptionalHint`，不另写一份）；
+   * 「暂不登录」只在外壳给了出口时出现（`onDismiss`）。
+   */
   return (
-    <LoginPage
-      embedded={inline}
-      showRegisterEntry={flags.registrationEnabled}
-      noticeKey={noticeKey}
-      busy={busy}
-      error={error}
-      onSubmit={handleLogin}
-      onSwitchToRegister={() => switchTo('register')}
-    />
+    <div className={styles.dialogShell} data-testid="auth-dialog">
+      <div className={styles.segmented} role="tablist" aria-label={t('sub2authLogin')}>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={mode === 'login'}
+          data-testid="auth-mode-login"
+          className={mode === 'login' ? `${styles.segment} ${styles.segmentOn}` : styles.segment}
+          onClick={() => switchTo('login')}
+        >
+          {t('sub2authLogin')}
+        </button>
+        {flags.registrationEnabled ? (
+          <button
+            type="button"
+            role="tab"
+            aria-selected={mode === 'register'}
+            data-testid="auth-mode-register"
+            className={mode === 'register' ? `${styles.segment} ${styles.segmentOn}` : styles.segment}
+            onClick={() => switchTo('register')}
+          >
+            {t('sub2authRegister')}
+          </button>
+        ) : null}
+      </div>
+      {form}
+      <p className={styles.dialogHint} data-testid="auth-optional-hint">
+        {t('accountOptionalHint')}
+      </p>
+      {onDismiss === undefined ? null : (
+        <button
+          type="button"
+          className={styles.dialogLater}
+          data-testid="auth-later"
+          onClick={onDismiss}
+        >
+          {t('accountConsumeAuthLater')}
+        </button>
+      )}
+    </div>
   )
 }

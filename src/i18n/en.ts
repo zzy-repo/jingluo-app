@@ -696,7 +696,6 @@ export const en = {
   autoTitlePromptLength: 'Target length: about 8–14 characters for Chinese, or 3–5 words for English.',
   autoTitlePromptFallback:
     'If the message carries too little information, still give a short best-guess title (for example "Greetings"), without explanation.',
-  oursPayRecordsEntryAction: 'View',
   oursPayRecordsNotRedeemed: 'Not redeemed',
   oursPayRecordsRedeemed: 'Redeemed',
   oursPayRecordsCopyCard: 'Copy card code',
@@ -868,6 +867,22 @@ export const en = {
   accountConsumeTabCards: 'My cards',
   accountConsumeTabQuota: 'My quota',
   accountConsumeTabAccount: 'Account',
+  // #727 stage 1: full page laid out with the prototype's vocabulary (34px title / 56px inset rows /
+  // balance card / bottom sheet / centred dialog). Every key keeps the `accountConsume*` prefix and
+  // exists on both sides; wording that already exists (test, log in, sign up, used, cancel, the
+  // "no account needed" line…) is reused instead of being written a second time.
+  accountConsumeSourceTitle: 'Model source',
+  accountConsumeSourceEditHint: 'Set your API key and endpoint in Settings',
+  accountConsumeConnIdle: 'Not tested',
+  accountConsumeConnOk: 'Okay {ms} ms',
+  accountConsumeConnKeyInvalid: 'Invalid key',
+  accountConsumeConnError: 'Network or config error',
+  accountConsumeWalletTitle: 'My wallet',
+  accountConsumeBalanceLabel: 'Balance',
+  accountConsumeHistoryTitle: 'Usage history',
+  accountConsumeBuyRow: 'Buy a plan',
+  accountConsumeSignedOut: 'Not signed in',
+  accountConsumeAuthLater: 'Not now',
 
   // Login wall removed (#608): the account is now an *optional* capability inside "our channels".
   // Three rules: ① the primary call to action is "fill in a Key", not "log in";
