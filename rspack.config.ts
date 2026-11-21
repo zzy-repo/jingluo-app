@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url'
 import { defineConfig } from '@rspack/cli'
 import { rspack, type Configuration } from '@rspack/core'
 import { assertBrowserslist } from './scripts/lib/compatBaseline.mjs'
+import { ENDPOINTS_FILE, applyBaseOverrides, loadConsumePay } from './scripts/lib/consumeEndpoints.mjs'
 import { SEAM_FLAG, SEAM_SESSION, seamEnabled } from './scripts/lib/testAuthSeam.mjs'
 
 const dev = process.env.NODE_ENV !== 'production'
@@ -97,6 +98,19 @@ const endpoints = JSON.parse(readFileSync(new URL('./config/endpoints.json', imp
   // 这里只读、只注入；`enabled:true` 时形状不对会在下面 `privateManifestInjection` 直接中止构建。
   update?: { privateManifest?: { enabled?: boolean; url?: string; tokenEnv?: string } }
 }
+
+/**
+ * web 层地址覆盖（Issue #651）：`CONSUME_BASE_OVERRIDE` / `PAY_BASE_OVERRIDE` > `config/endpoints.json`。
+ *
+ * 为什么这段必须在**注入点**里做，而不是只写在 build.mjs 的日志里：真正发请求的是
+ * `__ENDPOINTS__.consume.baseUrl`，它的值就在这里被 DefinePlugin 内联进产物。`-PconsumeBase`
+ * 只写原生侧 `BuildConfig`，没有任何 Java/Kotlin 读它 —— 「改了 override 却仍打生产」就是这么来的
+ * （#651：override 设成 16000，APK 里 16000 命中 0、生产域名命中 1，形状同 #601）。
+ *
+ * 判据与配置文件同源：`scripts/lib/consumeEndpoints.mjs` 的 `applyBaseOverrides`（https / 本机回环例外 /
+ * 废弃域黑名单 / consume≠pay 全部照旧，非法值直接中止构建）。这里只做「读进来的值换成生效值」。
+ */
+const effectiveConsumePay = applyBaseOverrides(loadConsumePay(ENDPOINTS_FILE), endpoints)
 
 /**
  * PDF 文本解析（Issue #480）：pdfjs 产物**不是**由打包器编译进来的（要经典 `<script src>` 才能过
@@ -273,14 +287,21 @@ export const privateManifestInjection = (
 const appVersion = process.env.APP_VERSION?.trim() || readVersionName()
 
 /**
- * 产物自述文件（build-info.json）：写进输出目录的 variant / main hash / 构建时间 / 版本。
+ * 产物自述文件（build-info.json）：写进输出目录的 variant / main hash / 构建时间 / 版本，
+ * 以及本次产物里 `__ENDPOINTS__` 的 consume / pay 地址（#651 的 gradle 交叉核对读这一节）。
  *
  * 为什么需要：测试（tests/helpers/env.mjs）要能判断「dist 里这份产物是标准包还是内测包、
  * 是不是比源码旧、端口上 serve 的是不是同一份」。没有它就只能靠猜，于是出现
  * 「拿标准包跑内测用例」「5181 端口 serve 的是别的分支产物」这类假红（Issue #19）。
  * 只写一个静态 JSON，不影响运行时代码与部署。
  */
-const buildInfoPlugin = (variant: 'standard' | 'internal', version: string, outPath: string) => ({
+const buildInfoPlugin = (
+  variant: 'standard' | 'internal',
+  version: string,
+  outPath: string,
+  /** 本次产物里 `__ENDPOINTS__` 的后端地址（生效值，可能是环境变量覆盖后的，见 #651） */
+  injectedEndpoints: { consume: { baseUrl: string }; pay: { baseUrl: string } }
+) => ({
   apply(compiler: {
     hooks: { afterEmit: { tapAsync: (name: string, handler: (compilation: unknown, callback: () => void) => void) => void } }
   }) {
@@ -298,6 +319,16 @@ const buildInfoPlugin = (variant: 'standard' | 'internal', version: string, outP
               hash: /^main\.([a-z0-9]+)\.js$/.exec(mainFile)?.[1] ?? null,
               version,
               builtAt: new Date().toISOString(),
+              // 本节是 Issue #651 的判据来源：`android/app/build.gradle` 在检测到
+              // `-PconsumeBase` / `-PpayBase` 时，读**这份文件**（cap sync 拷进
+              // `android/app/src/main/assets/public/`）里记录的 web 层地址去交叉核对。
+              // 不一致 = 原生侧与 web 层打两台不同的后端 → BUILD FAIL，而不是出个
+              // 「看起来改了、实际仍打生产」的包（形状同 #601）。
+              // 只记地址（不含凭据），仍是静态 JSON，不碰运行时代码与部署。
+              endpoints: {
+                consume: { baseUrl: injectedEndpoints.consume.baseUrl },
+                pay: { baseUrl: injectedEndpoints.pay.baseUrl },
+              },
             },
             null,
             2
@@ -429,15 +460,17 @@ export const createConfig = ({
         dlFallbackBase: endpoints.download.fallbackBase,
         // 消费侧 / 支付侧（#484 W1-A）：src/services/consume/** 只从这两组里取地址、前缀与超时，
         // 源码里不许再出现任何后端地址或毫秒数（pnpm check:consume-api 会拦）。
+        // base 取「生效值」：`CONSUME_BASE_OVERRIDE` / `PAY_BASE_OVERRIDE` 优先于配置（#651），
+        // 这是 -PconsumeBase 那条假通道之外**真正**能改到 web 层的入口。
         consume: {
-          baseUrl: endpoints.consume.baseUrl,
-          apiV1Prefix: endpoints.consume.apiV1Prefix,
-          gatewayPrefix: endpoints.consume.gatewayPrefix,
-          timeoutMs: endpoints.consume.timeoutMs,
+          baseUrl: effectiveConsumePay.config.consume.baseUrl,
+          apiV1Prefix: effectiveConsumePay.config.consume.apiV1Prefix,
+          gatewayPrefix: effectiveConsumePay.config.consume.gatewayPrefix,
+          timeoutMs: effectiveConsumePay.config.consume.timeoutMs,
         },
         pay: {
-          baseUrl: endpoints.pay.baseUrl,
-          timeoutMs: endpoints.pay.timeoutMs,
+          baseUrl: effectiveConsumePay.config.pay.baseUrl,
+          timeoutMs: effectiveConsumePay.config.pay.timeoutMs,
         },
         // 老账号额度迁移（#498 的临时尾巴）：整组原样注入（开关 + base + endpoint + 超时），
         // 客户端只从 __ENDPOINTS__.migration 读，源码里不许出现迁移服务的地址或毫秒数。
@@ -466,7 +499,10 @@ export const createConfig = ({
         cmapsDir: pdfjsAsset.cmapsDir,
       }),
     }),
-    buildInfoPlugin(internalBuild ? 'internal' : 'standard', appVersion, outputPath),
+    buildInfoPlugin(internalBuild ? 'internal' : 'standard', appVersion, outputPath, {
+      consume: { baseUrl: effectiveConsumePay.config.consume.baseUrl },
+      pay: { baseUrl: effectiveConsumePay.config.pay.baseUrl },
+    }),
     new rspack.CopyRspackPlugin({
       patterns: [
         { from: path.resolve(root, 'LICENSE'), to: 'LICENSE', toType: 'file' },

@@ -47,6 +47,23 @@ export const DEPRECATED_MARKERS = [
   ':60013', // check-ip-allow: 旧池域端口，出现在任何 base 里都算违规
 ]
 
+/**
+ * web 层地址覆盖通道的环境变量名（Issue #651）。
+ *
+ * 为什么需要它：`-PconsumeBase` 只写 `BuildConfig.CONSUME_BASE`，**没有任何 Java/Kotlin 读它**；
+ * 真正发请求的是 web 层的 `__ENDPOINTS__.consume.baseUrl`，那个值在 `pnpm build` 时就注进产物了。
+ * 于是「-PconsumeBase 出包」得到的是「看起来改了、实际仍打生产」的包（#651 实测：override 设成
+ * 16000，APK 里 16000 命中 0、生产域名命中 1，形状同 #601）。这里给出**真正能改到 web 层**的通道：
+ * 构建期读环境变量改写注入值，优先级 `CONSUME_BASE_OVERRIDE` > `config/endpoints.json`。
+ *
+ * 判据与配置文件同一套（https / 回环例外 / 废弃域黑名单 / consume≠pay），不放宽任何一条。
+ * 名字的唯一出处就是下面这张表 —— 日志、rspack 注入、gradle 交叉核对、文档都引它。
+ */
+export const BASE_OVERRIDE_ENV = Object.freeze({
+  consume: 'CONSUME_BASE_OVERRIDE',
+  pay: 'PAY_BASE_OVERRIDE',
+})
+
 /** 每段允许出现的键（未知键 = 拼错的字段，静默忽略只会让人以为配置生效了） */
 export const CONSUME_KEYS = ['baseUrl', 'apiV1Prefix', 'gatewayPrefix', 'timeoutMs']
 export const PAY_KEYS = ['baseUrl', 'timeoutMs']
@@ -133,10 +150,14 @@ export const collectKeyLines = (text) => {
   return lines
 }
 
-/** 报错前缀：`config/endpoints.json:13 ` （拿不到行号时退回文件名） */
-const where = (lineLines, key) => {
+/**
+ * 报错前缀：`config/endpoints.json:13 ` （拿不到行号时退回文件名）。
+ * `label` 用于**非配置文件**的取值来源（环境变量覆盖，见 `applyBaseOverrides`）：
+ * 那种值没有行号可指，报错前缀换成环境变量名，否则会把人引到一行没问题的配置上。
+ */
+const where = (lineLines, key, label = ENDPOINTS_LABEL) => {
   const line = lineLines?.get(key)
-  return line ? `${ENDPOINTS_LABEL}:${line}` : ENDPOINTS_LABEL
+  return line ? `${ENDPOINTS_LABEL}:${line}` : label
 }
 
 /** 本机回环：只有这几种 host 允许明文 http（本地联调的 sub2api 实例） */
@@ -154,37 +175,37 @@ export const parseBaseUrl = (value) => {
 }
 
 /** 废弃域 / 明文 http 检查（两个 base 共用一段判据，避免两边各写一套） */
-const checkBase = (problems, keyLines, key, value, extraLegacyHosts) => {
-  const label = where(keyLines, key)
+const checkBase = (problems, keyLines, key, value, extraLegacyHosts, label = ENDPOINTS_LABEL) => {
+  const at = where(keyLines, key, label)
   const url = parseBaseUrl(value)
   if (!url) {
-    problems.push(`${label} ${key} 缺失或不是合法的绝对 URL：${JSON.stringify(value)}`)
+    problems.push(`${at} ${key} 缺失或不是合法的绝对 URL：${JSON.stringify(value)}`)
     return null
   }
   if (url.protocol !== 'https:' && !(url.protocol === 'http:' && isLoopbackHost(url.hostname))) {
     problems.push(
-      `${label} ${key} 必须是 https（明文 http 直接中止构建，#484 §6.3）：${value}` +
+      `${at} ${key} 必须是 https（明文 http 直接中止构建，#484 §6.3）：${value}` +
         '（唯一例外是本机回环 127.0.0.1 / localhost，用于本地联调实例）'
     )
   }
   if (url.username || url.password) {
-    problems.push(`${label} ${key} 不许带凭据（user:pass@）：${value}`)
+    problems.push(`${at} ${key} 不许带凭据（user:pass@）：${value}`)
   }
   if (url.search || url.hash) {
-    problems.push(`${label} ${key} 只能是「https://主机[:端口]」，不许带查询串 / 片段：${value}`)
+    problems.push(`${at} ${key} 只能是「https://主机[:端口]」，不许带查询串 / 片段：${value}`)
   }
   if (url.pathname !== '/' && url.pathname !== '') {
     problems.push(
-      `${label} ${key} 只能是「https://主机[:端口]」，不许带路径：${value}` +
+      `${at} ${key} 只能是「https://主机[:端口]」，不许带路径：${value}` +
         '（两套前缀由 apiV1Prefix / gatewayPrefix 拼，写在 base 上会拼成双份）'
     )
   }
   if (value.trim().endsWith('/')) {
-    problems.push(`${label} ${key} 末尾不要带 /：${value}（拼 /api/v1/... 会变成 //api/v1/...）`)
+    problems.push(`${at} ${key} 末尾不要带 /：${value}（拼 /api/v1/... 会变成 //api/v1/...）`)
   }
   for (const marker of [...DEPRECATED_MARKERS, ...extraLegacyHosts]) {
     if (typeof value === 'string' && value.includes(marker)) {
-      problems.push(`${label} ${key} 命中废弃域黑名单 ${marker}（旧池域已下线，#484 §七）：${value}`)
+      problems.push(`${at} ${key} 命中废弃域黑名单 ${marker}（旧池域已下线，#484 §七）：${value}`)
     }
   }
   return url
@@ -365,5 +386,72 @@ export const loadConsumePay = (file = ENDPOINTS_FILE) => {
       baseUrl: raw.pay.baseUrl.trim(),
       timeoutMs: Object.freeze({ ...raw.pay.timeoutMs }),
     }),
+  })
+}
+
+/** 比较两个 base 是否「同一个地址」：忽略末尾 `/` 与大小写（与 gradle 侧的判据同口径） */
+export const normalizeBaseForCompare = (value) =>
+  (typeof value === 'string' ? value.trim() : '').replace(/\/+$/, '').toLowerCase()
+
+/**
+ * 把环境变量里的覆盖值套到已校验的 `consume` / `pay` 上（Issue #651）。
+ *
+ * 语义：**优先级 `CONSUME_BASE_OVERRIDE` > `config/endpoints.json`**（`PAY_BASE_OVERRIDE` 同理）。
+ * 这是 web 层**唯一真正有效**的换地址通道：`__ENDPOINTS__.consume.baseUrl` 在 `pnpm build` 时
+ * 就注进产物了，`-PconsumeBase` 只写原生侧 `BuildConfig`、没有任何 Java/Kotlin 读它（#651）。
+ *
+ * 判据与配置文件**同一套**（`checkBase` + consume≠pay），一条都不放宽：
+ *   https（本机回环例外）、不带凭据 / 查询串 / 路径 / 末尾 `/`、不命中废弃域黑名单、
+ *   `consume` 与 `pay` 生效值不许相同。
+ *
+ * 返回 `{ config, overrides }`：
+ *   - `config`：覆盖后的冻结配置（字段与 `loadConsumePay` 一致，供 rspack 注入）；
+ *   - `overrides`：本次真正生效的覆盖（`{ consume?: string, pay?: string }`），构建日志据此打印
+ *     `consume=<base> (override by CONSUME_BASE_OVERRIDE)`，让人**一眼看出这份产物不是配置里的地址**。
+ */
+export const applyBaseOverrides = (config, raw = {}, env = process.env) => {
+  const legacyHosts = readLegacyHosts(raw)
+  const problems = []
+  const overrides = {}
+
+  /** 取某一段的生效 base：环境变量（去掉首尾空白）优先，空值等同于没传 */
+  const pickBase = (section) => {
+    const envName = BASE_OVERRIDE_ENV[section]
+    const provided = env?.[envName]
+    const fromConfig = config[section].baseUrl
+    if (typeof provided !== 'string' || provided.trim() === '') return fromConfig
+    const value = provided.trim()
+    overrides[section] = value
+    // 判据复用配置文件那一套：不另写一份校验，也不放宽任何一条
+    checkBase(problems, null, `${section}.baseUrl`, value, legacyHosts, envName)
+    return value
+  }
+
+  const consumeBaseUrl = pickBase('consume')
+  const payBaseUrl = pickBase('pay')
+
+  // 两个后端职责不能混的判据，对**生效值**再判一次（覆盖后可能撞车，而配置里并不相同）
+  if (normalizeBaseForCompare(consumeBaseUrl) === normalizeBaseForCompare(payBaseUrl)) {
+    const source = overrides.consume
+      ? BASE_OVERRIDE_ENV.consume
+      : overrides.pay
+        ? BASE_OVERRIDE_ENV.pay
+        : ENDPOINTS_LABEL
+    problems.push(
+      `${source} consume.baseUrl 与 pay.baseUrl 相同（${consumeBaseUrl}）：` +
+        '消费侧（sub2api）与支付侧（apia）是两个后端，职责不能混（#484 §6.3）'
+    )
+  }
+
+  if (problems.length > 0) {
+    throw new Error(`构建期 base 覆盖不合法（判据与 ${ENDPOINTS_LABEL} 同源）：\n  - ${problems.join('\n  - ')}`)
+  }
+
+  return Object.freeze({
+    config: Object.freeze({
+      consume: Object.freeze({ ...config.consume, baseUrl: consumeBaseUrl }),
+      pay: Object.freeze({ ...config.pay, baseUrl: payBaseUrl }),
+    }),
+    overrides: Object.freeze({ ...overrides }),
   })
 }

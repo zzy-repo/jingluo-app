@@ -19,9 +19,16 @@
  * 环境变量（原样透传，与改前一致）：
  *   DIST_OUT=dist-xxx   输出目录（默认 dist）
  *   APP_VERSION=...     覆盖 build-info 里的版本号
+ *   CONSUME_BASE_OVERRIDE=https://…   覆盖 **web 层** `__ENDPOINTS__.consume.baseUrl`（#651）：
+ *                       优先级高于 `config/endpoints.json`，判据与配置同一套（https / 回环例外 /
+ *                       废弃域黑名单 / consume≠pay）。这是唯一真正能改到 web 层的通道 ——
+ *                       `-PconsumeBase` 只写原生侧 BuildConfig，没有任何 Java/Kotlin 读它。
+ *   PAY_BASE_OVERRIDE=https://…       同上，作用于 `pay.baseUrl`。
  *
  * 构建前会先过 `config/endpoints.json` 的 consume / pay 两段校验（#484 §6.3）：
  * https、废弃域黑名单、两个 base 不许相同、缺字段 / 未知键（报键名 + 行号）→ 一律中止。
+ * 现场用 `CONSUME_BASE_OVERRIDE` / `PAY_BASE_OVERRIDE` 覆盖时，覆盖值走**同一套**判据
+ * （`applyBaseOverrides`）—— 非法值照样中止，绝不「配置合法、覆盖值乱来」地出包（#651）。
  * 说明：输出目录由 DIST_OUT 决定，清空的也是该目录本身（改前无论 DIST_OUT 是什么都清 dist/）。
  */
 
@@ -32,7 +39,13 @@ import path from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 
-import { ENDPOINTS_LABEL, loadConsumePay, placeholderNotice } from './lib/consumeEndpoints.mjs';
+import {
+  BASE_OVERRIDE_ENV,
+  ENDPOINTS_LABEL,
+  applyBaseOverrides,
+  loadConsumePay,
+  placeholderNotice,
+} from './lib/consumeEndpoints.mjs';
 import { SEAM_FLAG, scanForSeam, seamEnabled } from './lib/testAuthSeam.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -57,16 +70,43 @@ function die(msg) {
  */
 function checkConsumeEndpoints() {
   let config;
+  let raw;
   try {
     config = loadConsumePay(path.join(ROOT, ENDPOINTS_LABEL));
+    raw = JSON.parse(fs.readFileSync(path.join(ROOT, ENDPOINTS_LABEL), 'utf8'));
   } catch (error) {
     die(error && error.message ? error.message : String(error));
   }
-  const notice = placeholderNotice(JSON.parse(fs.readFileSync(path.join(ROOT, ENDPOINTS_LABEL), 'utf8')));
+
+  // web 层地址覆盖通道（#651）：`CONSUME_BASE_OVERRIDE` > `config/endpoints.json`，判据同一套。
+  // 这是**唯一**能真正改到 web 层 `__ENDPOINTS__.consume.baseUrl` 的入口 —— `-PconsumeBase`
+  // 只写原生侧 BuildConfig、没有任何 Java/Kotlin 读它（gradle 侧另有交叉核对，见 build.gradle）。
+  let resolved;
+  try {
+    resolved = applyBaseOverrides(config, raw);
+  } catch (error) {
+    die(error && error.message ? error.message : String(error));
+  }
+  const effective = resolved.config;
+
+  const notice = placeholderNotice({ consume: { baseUrl: effective.consume.baseUrl } });
   if (notice) process.stderr.write(`[build][WARN] ${notice}\n`);
-  log(`consume=${config.consume.baseUrl} (${config.consume.apiV1Prefix} | ${config.consume.gatewayPrefix})`);
-  log(`pay=${config.pay.baseUrl}`);
-  return config;
+  // 生效值里带着「谁提供的」：覆盖了就写 `(override by CONSUME_BASE_OVERRIDE)`，
+  // 别让「以为改了地址、其实没改」这种事故（#651 / #601 同形）再从日志上重演。
+  const line = (section, extra) => {
+    const overridden = resolved.overrides[section];
+    const by = overridden ? ` (override by ${BASE_OVERRIDE_ENV[section]})` : '';
+    log(`${section}=${effective[section].baseUrl}${by}${extra}`);
+    if (overridden) {
+      log(
+        `${BASE_OVERRIDE_ENV[section]}=${overridden} 覆盖 ${ENDPOINTS_LABEL} 的 ${section}.baseUrl` +
+          `（配置值 ${config[section].baseUrl}）：本次产物只认覆盖值`
+      );
+    }
+  };
+  line('consume', ` (${effective.consume.apiV1Prefix} | ${effective.consume.gatewayPrefix})`);
+  line('pay', '');
+  return effective;
 }
 
 /** 本地解析 @rspack/cli 的 bin，不经过 npx / shell（npx 会按需向网络拉包，版本不锚定） */
