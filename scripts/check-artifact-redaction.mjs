@@ -3,7 +3,7 @@
  * check-artifact-redaction.mjs —— 公开发布物里**不得出现内网地址**（Issue #745）。
  *
  * 为什么要有它：`v1.4.5` / `v1.4.6` 的公开发布 APK 里 grep 得到
- * `http://140.210.13.146:60010` / `:60012/feedback` / `:60013` / `http://62.106.70.167:8888`
+ * `http://140.210.13.146:60010` / `:60012/feedback` / `:60013` / `http://已下线主机（见 config.endpoints.legacyHosts）:8888`
  * —— 来源是 `config/endpoints.json` 的历史 baseUrl 与「已下线主机重写表」字面量被打进 bundle。
  * 正文早就禁写裸 IP（那道门做得很好），但**包内没人管**；而包被下载后是长期留存的。
  *
@@ -16,8 +16,8 @@
  *
  * ## 扫什么
  * - RFC1918 / 回环 / 链路本地 IPv4（`10/8`、`172.16/12`、`192.168/16`、`127/8`、`169.254/16`）
- * - 显式内网主机表（`INTERNAL_HOSTS`：今天这批 `140.210.13.146` / `62.106.70.167`）
- * - 内网端口（`INTERNAL_PORTS`：`60010` `60012` `60013` `8888`）
+ * - 显式内网主机表（`INTERNAL_HOSTS`：从 `config/endpoints.json` 的 `allowedHosts` + `legacyHosts` + 各 URL 主机派生，不写死）
+ * - 内网端口（`INTERNAL_PORTS`：从 `allowedPorts` + 各 URL 显式端口派生，不写死）
  * - 只扫**产物**（`dist/**` 或 APK 里的 `assets/public/**`），不扫源码（源码里出现是正常的：
  *   配置源本来就在仓库里，问题只在"被固化进可分发的 bundle"）。
  *
@@ -38,14 +38,66 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import process from 'node:process'
 
+import { ENDPOINTS_FILE } from './lib/endpointsSchema.mjs'
+
 const ROOT = path.resolve(import.meta.dirname, '..')
 const BASELINE_REL = 'config/artifact-redaction-baseline.json'
 const BASELINE = path.join(ROOT, BASELINE_REL)
 
 /** 今天已知的内网主机（#745）。新增内网机器时加这里，**不要**改成"只按私网段匹配就够"。 */
-const INTERNAL_HOSTS = ['140.210.13.146', '62.106.70.167']
-/** 今天已知的内网端口。 */
-const INTERNAL_PORTS = ['60010', '60012', '60013', '8888']
+/**
+ * 内网主机 / 端口**从 `config/endpoints.json` 派生，不写死第二个真相源**。
+ * （原先这里写死了白名单主机与 legacy 主机字面量、以及四个端口 —— 那违反
+ *  `check-hardcoded-ip` 的规矩「线上主机只能来自 allowedHosts」，会让 main 红。）
+ */
+const ENDPOINTS = JSON.parse(readFileSync(ENDPOINTS_FILE, 'utf8'))
+
+const collectUrls = (node, out = []) => {
+  if (typeof node === 'string') {
+    if (/^https?:\/\//.test(node)) out.push(node)
+    return out
+  }
+  if (Array.isArray(node)) {
+    for (const item of node) collectUrls(item, out)
+    return out
+  }
+  if (node && typeof node === 'object') {
+    for (const value of Object.values(node)) collectUrls(value, out)
+  }
+  return out
+}
+
+const INTERNAL_HOSTS = [
+  ...new Set([
+    ...(ENDPOINTS.allowedHosts ?? []),
+    ...(ENDPOINTS.legacyHosts ?? []),
+    ...collectUrls(ENDPOINTS)
+      .map((url) => {
+        try {
+          return new URL(url).hostname
+        } catch {
+          return null
+        }
+      })
+      .filter((host) => host && /^\d{1,3}(?:\.\d{1,3}){3}$/.test(host)),
+  ]),
+].sort()
+/** 内网端口：allowedPorts + 上述地址里显式声明的端口。 */
+const INTERNAL_PORTS = [
+  ...new Set([
+    ...(ENDPOINTS.allowedPorts ?? []).map(String),
+    ...collectUrls(ENDPOINTS)
+      .map((url) => {
+        try {
+          const parsed = new URL(url)
+          return parsed.port || null
+        } catch {
+          return null
+        }
+      })
+      .filter(Boolean),
+  ]),
+].sort()
 
 /** 扫哪些扩展名：bundle 只有这些里面可能有地址字面量 */
 const SCAN_EXT = new Set(['.js', '.mjs', '.css', '.html', '.json'])
