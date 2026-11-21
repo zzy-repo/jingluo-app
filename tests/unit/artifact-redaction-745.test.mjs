@@ -37,15 +37,16 @@ const mkArtifact = (body) => {
   return dir
 }
 
-/** 与 checkout 里的基线保持一致的「合法存量」样本 —— 若基线改了，这里要跟着改（故意的：逼同步） */
+/**
+ * 与 checkout 里的基线保持一致的「合法存量」样本 —— 若基线改了，这里要跟着改（故意的：逼同步）。
+ *
+ * #745 第二步之后基线只剩 2 条（5 → 2）：`feedbackUrl` 那条、`legacyHosts` 那条。
+ * 这些行**必须**写出地址字面量才能证明「基线内的存量不判红」，所以整行带
+ * `check-endpoints-allow`（理由：门禁用例的夹具，不是可执行的地址副本）。
+ */
 const BASELINE_SAMPLE = [
-  'var a = "http://140.210.13.146:60010";',
-  'var b = "http://140.210.13.146:60010";',
-  'var c = "http://140.210.13.146:60012";',
-  'var d = "http://140.210.13.146:60012";',
-  'var e = "http://140.210.13.146:60013";',
-  'var f = "http://62.106.70.167:8888";',
-  'var g = "http://62.106.70.167:8888";',
+  'var c = "http://140.210.13.146:60012";', // check-endpoints-allow: 门禁用例夹具，证明基线内存量不判红
+  'var d = "http://140.210.13.146:60012";', // check-endpoints-allow: 同上（count=2 才对齐基线）
   'var h = ["62.106.70.167"];',
   'var i = ["62.106.70.167"];',
 ].join('\n')
@@ -74,7 +75,8 @@ test('[2] 产物里新塞一条内网地址 → exit 1 且点名（这是门禁�
 })
 
 test('[2b] 基线内条目次数变多 → 也判红（同一个地址被固化更多份也是退化）', () => {
-  const dir = mkArtifact(`${BASELINE_SAMPLE}\nvar more = "http://140.210.13.146:60013";\nvar more2 = "http://140.210.13.146:60013";\n`)
+  // check-endpoints-allow: 门禁用例夹具（基线内条目再固化一份 → 必须判红）
+  const dir = mkArtifact(`${BASELINE_SAMPLE}\nvar more = "http://140.210.13.146:60012";\nvar more2 = "http://140.210.13.146:60012";\n`)
   try {
     const { code, out } = run(['--dir', dir])
     assert.equal(code, 1, `应判红，实际 exit=${code}\n${out}`)
@@ -85,7 +87,7 @@ test('[2b] 基线内条目次数变多 → 也判红（同一个地址被固化�
 })
 
 test('[3] 基线条目在产物里消失 → 只 WARN 不红（只减不增，但提示清理基线）', () => {
-  const dir = mkArtifact('var clean = "https://sub2api.rose7.cn";\n')
+  const dir = mkArtifact('var clean = "https://example.invalid";\n')
   try {
     const { code, out } = run(['--dir', dir])
     assert.equal(code, 0, `应通过（只剩 WARN），实际 exit=${code}\n${out}`)
