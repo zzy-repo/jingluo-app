@@ -22,7 +22,8 @@
 
 ### 1.1 只发 GitHub Release
 
-发布渠道只有一个：GitHub 的 Release 页面。`docs/RELEASE-MANUAL.md:439` 那一节是正式渠道的写法；
+发布渠道只有一个：GitHub 的 Release 页面。`docs/RELEASE-MANUAL.md` 的 §6.1「发 GitHub Release（正式渠道）」
+那一节是正式渠道的写法（锚点用章节名，不用行号：上方每加一行它就会指到别处）；
 `v1.4.3` 之后 dl 分发机不再是发布渠道（#614 决定 2）。
 
 ### 1.2 dl 侧零写入
