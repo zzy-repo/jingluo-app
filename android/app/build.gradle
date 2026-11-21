@@ -228,6 +228,77 @@ if (providers.gradleProperty('consumeBase').present || providers.gradleProperty(
 }
 
 // ---------------------------------------------------------------------------
+// 闸 0：`-PconsumeBase` / `-PpayBase` 不许「静默骗人」（Issue #651）
+//
+// 事故形状：这两个属性只写 `BuildConfig.CONSUME_BASE` / `BuildConfig.PAY_BASE`，而**没有任何
+// Java/Kotlin 读它们**；真正发请求的是 web 层 `__ENDPOINTS__.consume.baseUrl`，那个值在
+// `pnpm build` 时就注进产物、再由 `npx cap sync android` 拷到
+// `android/app/src/main/assets/public/`。于是「-PconsumeBase 出包」得到的是一份
+// 「看起来改了、实际仍打生产」的包（#651 实测：override 设成旧池域端口，APK 里该端口命中 0、
+// 生产域名命中 1 —— 与 #601 同形）。这比直接报错危险得多，所以把两端接起来：
+//
+//   一旦用了 `-PconsumeBase` / `-PpayBase`，就必须与 **web 产物自述**一致
+//   （`assets/public/build-info.json` 的 `endpoints.<段>.baseUrl`，由 rspack 构建时写入）；
+//   不一致、或自述里没有这一节（= 这份 web 产物不是当前构建链出的）→ BUILD FAIL。
+//
+// 报错必须给出唯一正确路径：`CONSUME_BASE_OVERRIDE` + 重新 `pnpm build` + `cap sync`。
+// 判据只读产物里记录的值，不重算、不猜。环境变量名与 `scripts/lib/consumeEndpoints.mjs` 的
+// `BASE_OVERRIDE_ENV` 是同一对（改那边要同步改这里）。
+// ---------------------------------------------------------------------------
+def WEB_LAYER_BUILD_INFO = 'app/src/main/assets/public/build-info.json'
+def CONSUME_BASE_ENV_VAR = 'CONSUME_BASE_OVERRIDE'
+def PAY_BASE_ENV_VAR = 'PAY_BASE_OVERRIDE'
+def webBuildInfoFile = rootProject.file(WEB_LAYER_BUILD_INFO)
+
+/** 比较用的归一化：忽略末尾 `/` 与大小写（与 `normalizeBaseForCompare` 同口径） */
+def normalizeBaseForCompare = { String value ->
+    return (value == null ? '' : value.trim()).replaceAll('/+$', '').toLowerCase()
+}
+
+/** 读 web 产物自述里记录的后端地址；文件缺失 / 没有该字段 → null（调用方按「核对不了」处理） */
+def webLayerBaseUrl = { String section ->
+    if (!webBuildInfoFile.exists()) {
+        return null
+    }
+    def info
+    try {
+        info = new groovy.json.JsonSlurper().parse(webBuildInfoFile)
+    } catch (Exception e) {
+        throw new GradleException("[consume] 解析 web 产物自述 ${WEB_LAYER_BUILD_INFO} 失败：${e.message}")
+    }
+    def endpointsSection = (info instanceof Map) ? info.get('endpoints') : null
+    def sectionConfig = (endpointsSection instanceof Map) ? endpointsSection.get(section) : null
+    def recorded = (sectionConfig instanceof Map) ? sectionConfig.get('baseUrl') : null
+    return recorded?.toString()?.trim() ?: null
+}
+
+// 核对结果在这里**攒着**，等 `android{}` 求值完再抛（理由与闸 1 相同，见文件末尾）：
+// 在文件顶部直接 throw 会让 AGP 追加一条「project ':app' does not specify compileSdk」的二次错误，
+// 把读日志的人引到完全无关的方向去。
+def webLayerCrossCheckFailures = []
+
+def crossCheckNativeAgainstWebLayer = { String section, String propName, String overrideEnvName, String nativeValue ->
+    if (!providers.gradleProperty(propName).present) {
+        return
+    }
+    def webValue = webLayerBaseUrl(section)
+    if (webValue != null && normalizeBaseForCompare(webValue) == normalizeBaseForCompare(nativeValue)) {
+        logger.lifecycle("[consume] -P${propName} 与 web 层注入值一致（${WEB_LAYER_BUILD_INFO}）：原生侧与 web 层打的是同一个后端")
+        return
+    }
+    def webLayerActual = (webValue != null)
+        ? "'${webValue}'"
+        : "读不到（${WEB_LAYER_BUILD_INFO} 不存在，或里面没有 endpoints.${section}.baseUrl：这份 web 产物不是当前构建链出来的，先 pnpm build + npx cap sync android）"
+    webLayerCrossCheckFailures.add(
+        "[consume] -P${propName} 只影响原生侧 BuildConfig，不会改 web 层（web 层在 pnpm build 时就注入了）。\n" +
+        "当前 APK 的 web 层仍会打 ${webLayerActual}。\n" +
+        "要用覆盖值出包：${overrideEnvName}=${nativeValue} pnpm build:internal && npx cap sync android 之后再 assembleRelease"
+    )
+}
+crossCheckNativeAgainstWebLayer('consume', 'consumeBase', CONSUME_BASE_ENV_VAR, consumeBase)
+crossCheckNativeAgainstWebLayer('pay', 'payBase', PAY_BASE_ENV_VAR, payBase)
+
+// ---------------------------------------------------------------------------
 // 闸 1：回环地址只能用于本地联调，不可分发（Issue #601）
 //
 // 事故：1.4.2（versionCode 21）的 **internal** 包把 `consume.baseUrl = http://127.0.0.1:18000`
@@ -646,6 +717,13 @@ android {
 }
 
 // ---------------------------------------------------------------------------
+// 闸 0 的抛出点（同闸 1：放在 `android{}` 之后，报错才只有这一条）。
+// ---------------------------------------------------------------------------
+if (!webLayerCrossCheckFailures.isEmpty()) {
+    throw new GradleException(webLayerCrossCheckFailures.join('\n\n'))
+}
+
+// ---------------------------------------------------------------------------
 // 闸 1 的判定放在文件末尾（android{} 之后）是有意的：报错要**只有这一条**。
 // 若在文件顶部直接 throw，`android{}` 不会被求值 → AGP 会追加一条
 // 「project ':app' does not specify compileSdk」的二次错误，把读日志的人引到错的方向去。
@@ -666,7 +744,8 @@ ${lines}
               BuildConfig.LOOPBACK_CONSUME=true，dl-release 的上传接口据此 400 LOOPBACK_BUILD_REJECTED
               ——**打得出来，但传不上去**。
            2) 要出可分发的包：把上面这些键换成 https 生产地址（生产 host 见 #482；临时覆盖用
-              -PconsumeBase=https://… / -PpayBase=https://…，发布后按约定记 CHANGELOG）。
+              CONSUME_BASE_OVERRIDE=https://… / PAY_BASE_OVERRIDE=https://… **重新 pnpm build + cap sync**
+              —— 这两个环境变量才改得到 web 层，-PconsumeBase 只写原生侧常量、会被闸 0 拦下，见 #651）。
 """.stripIndent())
 }
 if (loopbackConsumeMarker == 'true') {
