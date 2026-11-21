@@ -111,24 +111,7 @@
   margin: 6px 10px 10px;
 }
 
-/* #173-fallback:start —— 由 node scripts/gen-flex-gap-fallback.mjs 生成，勿手改（issue #173） */
-:global(html[data-flex-gap-fallback]) .files > *:not(:last-child) {
-  margin-right: 10px;
-  margin-bottom: 10px;
-}
 
-:global(html[data-flex-gap-fallback]) .bottom > *:not(:last-child) {
-  margin-right: 10px;
-}
-
-:global(html[data-flex-gap-fallback]) .actions > *:not(:last-child) {
-  margin-right: 10px;
-}
-
-:global(html[data-flex-gap-fallback]) .editorActions > *:not(:last-child) {
-  margin-right: 8px;
-}
-/* #173-fallback:end */
 
 /* #379：发送时因「本机没有原件」被跳过的附件 —— 一条持久提示，不是错误态。
    纯排布与配色（右对齐、字号、颜色），不含任何动效属性声明（消息流冻结检查逐行扫新增行）。 */
@@ -148,3 +131,22 @@
     max-width: calc(100% - 68px);
   }
 }
+
+/* #173-fallback:start —— 由 node scripts/gen-flex-gap-fallback.mjs 生成，勿手改（issue #173） */
+:global(html[data-flex-gap-fallback]) .files > *:not(:last-child) {
+  margin-right: 10px;
+  margin-bottom: 10px;
+}
+
+:global(html[data-flex-gap-fallback]) .bottom > *:not(:last-child) {
+  margin-right: 10px;
+}
+
+:global(html[data-flex-gap-fallback]) .actions > *:not(:last-child) {
+  margin-right: 10px;
+}
+
+:global(html[data-flex-gap-fallback]) .editorActions > *:not(:last-child) {
+  margin-right: 8px;
+}
+/* #173-fallback:end */

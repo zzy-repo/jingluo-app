@@ -114,7 +114,9 @@ export const UserMessage = memo(function UserMessage({
 
   return (
     <div className={clsx(styles.container, isFirst && styles.isFirst)}>
-      {documents.length > 0 ? <MessageAttachments ids={documents.map((file) => file.id)} /> : null}
+      {documents.length > 0 ? (
+        <MessageAttachments ids={documents.map((file) => file.id)} />
+      ) : null}
       {uploads.length > 0 ? (
         <div
           className={clsx(
