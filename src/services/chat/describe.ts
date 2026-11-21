@@ -6,7 +6,9 @@ import {
   parseSupportedModels,
   UPSTREAM_HTML_CODE,
 } from '../api/errors.js'
+import { getBaseUrl, getProviderKind } from '../api/apiConfig.js'
 import { classifyKeyFailure, type KeyFailure, type KeyFailureKind } from '../api/keyFailure.js'
+import { getSpec } from '../api/providers.js'
 import { buildReplyErrorReport, buildUpstreamSnippet } from './replyErrorReport.js'
 import type { AssistantMessage } from './types.js'
 
@@ -98,6 +100,30 @@ const keyFailureText = (failure: KeyFailure): string => {
   return `${reason}${tail}；${translate('replyApiKeyQuotaNote')}`
 }
 
+/**
+ * 诊断里「我们发的是什么」（#353 第 2 点）：渠道 / 模型 / 接口。
+ *
+ * 为什么在渲染时算而不是随消息落盘：这三样都是**当前配置**，用户点「复制诊断信息」时
+ * 要的正是「我现在这套配置 + 这条上游报错」的组合；重新渲染时读到的与设置页里看到的一致，
+ * 不会出现「诊断里说 A、设置页写着 B」。`model` 例外 —— 它来自消息本身（`reply.model`），
+ * 因为内置渠道的残留值与导入的历史回复都可能与设置页显示的不同，那种差异正是要看到的。
+ *
+ * 任何一项取不到就整项省略（`undefined`）：诊断文本宁可少一行，也不写占位符骗人。
+ * 接口地址原样交出，由 `scrubReportText` 收敛成「协议//host/***」（查询串里的签名参数必须抹掉）。
+ */
+const configSnapshot = (model?: string | null) => {
+  const modelName = model?.trim() || undefined
+  try {
+    const spec = getSpec(getProviderKind())
+    // 报告正文是中文产物（标题与字段名都是中文，见 replyErrorReport.ts），渠道名取中文标签；
+    // `kind` 一并写出，客服按 id 对渠道最省事，也不受翻译改名影响。
+    return { provider: `${spec.label.zh}（${spec.kind}）`, model: modelName, endpoint: getBaseUrl() }
+  } catch {
+    // 配置还没初始化（首屏 / 历史导入）：只交模型名，渠道与接口整行省略
+    return { model: modelName }
+  }
+}
+
 /** 回复出错或未正常结束时展示的提示 */
 export const describeReply = (reply: AssistantMessage): Notice | null => {
   if (reply.status === 'error' && reply.error) {
@@ -140,6 +166,9 @@ export const describeReply = (reply: AssistantMessage): Notice | null => {
         message: reply.error?.detail
           ? `${reply.error?.message ?? ''}\n${reply.error.detail}`.trim()
           : reply.error?.message,
+        // 可执行的核对项（#353 第 2 点）：渠道 / 模型 / 接口。三样都取自当前配置，
+        // 只有「贴回去能被复现」这层用处；取值失败不影响诊断本身，缺哪行就不写哪行。
+        ...configSnapshot(reply.model),
       })
     // 历史补传错误刷新后仍需说明原因，恢复沿用附件卡片或重新生成。
     if (kind === 'upload') {

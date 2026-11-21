@@ -191,14 +191,16 @@ const ROWS = [
     copy: true,
   },
   {
-    label: '429 限流（临时故障，文案说可以重试）',
+    // #347 补状态码：429 以前只说「请求过于频繁」，用户贴进反馈时无从自证；
+    // 现在文案里带 `HTTP 429`，且仍然写「可以重试」（与终态错误的「不要重试」区分）
+    label: '429 限流（临时故障，文案带状态码且说可以重试）',
     status: 429,
     message: 'rate limit reached for requests',
     condition: 'rateLimited',
     key: 'replyRateLimited',
     params: {},
     action: undefined,
-    showsStatus: false,
+    showsStatus: true,
     fold: false,
     copy: false,
   },
@@ -415,4 +417,95 @@ test('复制诊断：含 status / code / request_id / 时间，且不含 Key 与
   assert.match(text, /上游 request_id: req-9f3a71c2d8/, 'request_id 单列一行')
   assert.doesNotMatch(text, /sk-live-0123456789abcdef/, 'API Key 必须被抹掉')
   assert.doesNotMatch(text, /你好|聊天正文/, '不含用户正文')
+})
+
+/**
+ * #347 / #353 补的两件事（本 PR）：
+ *  1. 「复制诊断信息」里补**可执行的核对项**（渠道 / 模型 / 接口）—— #353 第 2 点原文就要求
+ *     「当前渠道：OpenAI 兼容 / 模型：xxx / 接口：xxx」；
+ *  2. 上游原文里同时出现 `sk-` / `Bearer` / URL 查询串时，**折叠区与复制诊断两条出口**都不得漏原值。
+ *
+ * 断言里的「原值」用**哨兵串**（`sk-live-…` / `Bearer sk-…` / `?key=…`），一旦哪条出口漏了脱敏，
+ * 这里会直接把那段字符串打出来。
+ */
+const SECRET_IN_UPSTREAM =
+  'invalid request: upstream 401 relay key sk-live-2f4c9a1b8d3e7f6051a2b3c4d5e6f708 ' +
+  'Authorization: Bearer sk-live-2f4c9a1b8d3e7f6051a2b3c4d5e6f708 ' +
+  'see https://gw.example.com/v1/messages?key=SECRET_QUERY_9917&sig=SECRET_SIG_4411 ' +
+  '(request id: req-abc12345)'
+
+test('上游 400 + 原文含 sk- / Bearer / URL 查询串：折叠区与复制诊断都不漏原值', () => {
+  const notice = noticeOf({
+    status: 400,
+    code: 'invalid_request_error',
+    message: SECRET_IN_UPSTREAM,
+    model: 'deepseek-flash',
+  })
+  assert.ok(notice)
+  // ① 主文案：HTTP 码 + 定性（请求被上游拒绝，不是网络 / 服务端问题）+ 不要重试
+  assert.match(notice.text, /HTTP 400/, '主文案带状态码')
+  assert.match(notice.text, /上游/, '主文案说清是上游拒绝')
+  assert.match(notice.text, /不是网络问题/, '定性：不是网络问题')
+  assert.match(notice.text, /不是我们服务端故障/, '定性：不是我们服务端的问题')
+  assert.match(notice.text, /不要重试/, '4xx 不引导重试')
+  assert.doesNotMatch(notice.text, /可以重新生成/, '4xx 不许说「可以重新生成」这类无效建议')
+  // ② 折叠区（上游原文，已脱敏）
+  const fold = notice.upstream ?? ''
+  assert.match(fold, /HTTP 400/, '折叠区第一行带状态码')
+  // ③ 两条出口都不得出现原值
+  const copy = notice.diagnostics ?? ''
+  for (const [label, text] of [
+    ['折叠区', fold],
+    ['复制诊断', copy],
+    ['主文案', notice.text],
+  ]) {
+    assert.ok(text.length > 0 || label === '主文案', `${label} 要有内容`)
+    assert.doesNotMatch(text, /sk-live-2f4c9a1b8d3e7f6051a2b3c4d5e6f708/, `${label} 漏了 API Key`)
+    assert.doesNotMatch(text, /SECRET_QUERY_9917/, `${label} 漏了 URL 查询串里的 key`)
+    assert.doesNotMatch(text, /SECRET_SIG_4411/, `${label} 漏了 URL 查询串里的签名`)
+    assert.doesNotMatch(text, /Bearer sk-/, `${label} 漏了 Bearer 头`)
+  }
+  // 英文原文只进折叠区，不进主文案（#324 口径没被这次改动弄丢）
+  assert.ok(!notice.text.includes('invalid request: upstream 401 relay'), '英文原文不许进主文案')
+})
+
+test('复制诊断：含 HTTP 码 / 渠道 / 模型 / 接口 / 时间，且不含密钥（#353 第 2 点）', () => {
+  const notice = noticeOf({
+    status: 400,
+    code: 'invalid_request_error',
+    message: SECRET_IN_UPSTREAM,
+    model: 'deepseek-flash',
+  })
+  const text = notice?.diagnostics ?? ''
+  assert.ok(text, '4xx 要给「复制诊断信息」')
+  assert.match(text, /^DeepSeek 回答失败诊断/, '第一行是标题')
+  assert.match(text, /HTTP 状态: 400/, '① 有 HTTP 码')
+  // ② 渠道：必须点名到具体渠道（label + kind），否则「模型不被支持」判不出来
+  assert.match(text, /^渠道: .+（(?:deepseek|anthropic|openai|ours)）$/m, '② 有渠道（标签 + kind）')
+  // ③ 模型：写的是**请求里那个字符串**，不是「未记录」之类的占位
+  assert.match(text, /^模型: deepseek-flash$/m, '③ 有本次实际请求的模型名')
+  // ④ 接口：完整 URL 收敛成「协议//host/***」，查询串一律抹掉
+  assert.match(text, /^接口: https?:\/\/[^\s/]+\/\*\*\*$/m, '④ 有接口地址（已收敛到 host）')
+  // ⑤ 时间
+  assert.match(text, /^时间: \d{4}-\d{2}-\d{2}T/m, '⑤ 有时间')
+  // ⑥ 不含密钥
+  assert.doesNotMatch(text, /sk-live-2f4c9a1b8d3e7f6051a2b3c4d5e6f708/, '不含 API Key')
+  assert.doesNotMatch(text, /SECRET_QUERY_9917|SECRET_SIG_4411/, '不含查询串里的密钥')
+})
+
+test('回归护栏：4xx 各档都不许落回「未知错误」兜底（负向对照的常驻断言）', () => {
+  const unknown = translate('replyUnknownError')
+  // 只要 `kind:'http'` 那一档（describe.ts 的 badRequest / upstreamRejected / 未识别有据可查）
+  // 被删掉任何一个分支，这里就会退回兜底文案 → 红。
+  for (const row of [
+    { status: 400, message: 'invalid request: unsupported file type' },
+    { status: 403, message: 'Forbidden: this key has no access to the model' },
+    { status: 422, code: 'invalid_request_error', message: 'max_tokens: invalid value' },
+  ]) {
+    const notice = noticeOf(row)
+    assert.ok(notice, `HTTP ${row.status} 必须给出一条提示`)
+    assert.notEqual(notice.text, unknown, `HTTP ${row.status} 不许退回「未知错误」`)
+    // 兜底文案里那句「可以重新生成」是 4xx 上最没用的建议，一并钉住
+    assert.doesNotMatch(notice.text, /可以重新生成/, `HTTP ${row.status} 不许建议重新生成`)
+  }
 })

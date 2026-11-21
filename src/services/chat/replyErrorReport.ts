@@ -40,6 +40,20 @@ export type ReplyErrorReportInput = {
   kind: string
   /** 上游原文（只进这段诊断，不上界面主文案） */
   message?: string
+  /**
+   * 当前渠道（#353 第 2 点）：**同一个模型名在不同渠道的支持列表不一样**，
+   * 「模型名不被支持」这件事只有把渠道一起贴出来才判得清。传 `label（kind）` 形态。
+   */
+  provider?: string
+  /**
+   * 本次请求实际发出的模型名（#353 第 2 点）。
+   *
+   * 与「用户以为的模型」可能不是同一个：内置渠道的残留值、导入的历史回复都见过这种情况，
+   * 所以这里记的是**请求里那个字符串**，不是设置页显示的那个。
+   */
+  model?: string
+  /** 接口地址（#353 第 2 点）；完整 URL 由 `scrubReportText` 收敛成「协议//host/***」 */
+  endpoint?: string
   /** 出错时间（ms），默认取当前时刻 */
   at?: number
 }
@@ -74,6 +88,25 @@ export const buildReplyErrorReport = (input: ReplyErrorReportInput): string => {
   // 上游给了 request_id 就单列一行（#347）：对服务端日志时不用再让用户手工截取
   if (requestId) {
     lines.push(`上游 request_id: ${requestId}`)
+  }
+  /**
+   * 可执行的核对项（#353 第 2 点）：渠道 / 模型 / 接口。
+   *
+   * 以前这段诊断只有「上游回了什么」，没有「我们发的是什么」—— 反馈群里看到 400 原文
+   * 之后还得反问用户「你用的是哪个渠道、模型填的什么」。这三行把它们补齐，
+   * 三者的值一律来自**当次请求的真实配置**，不做二次概括。
+   */
+  const provider = input.provider?.trim()
+  const model = input.model?.trim()
+  const endpoint = input.endpoint?.trim()
+  if (provider) {
+    lines.push(`渠道: ${provider}`)
+  }
+  if (model) {
+    lines.push(`模型: ${model}`)
+  }
+  if (endpoint) {
+    lines.push(`接口: ${endpoint}`)
   }
   if (detail) {
     lines.push(`上游原文: ${truncate(detail, MAX_LINE_CHARS)}`)

@@ -122,7 +122,12 @@ export const en = {
     'Insufficient balance or quota. Cannot continue generating (do not retry; top up first).',
   /** Top-up entry inside the quota notice (#299): reuses the quota & card dialog */
   quotaTopUpEntry: 'Top up / Redeem a card',
-  replyRateLimited: 'Too many requests (temporary rate limit, retryable). Please try again later.',
+  /**
+   * Rate limit (#347: the status code now shows): 429 is a **retryable** temporary failure,
+   * and this copy must stay distinguishable from the terminal "do not retry" errors.
+   */
+  replyRateLimited:
+    'Too many requests (HTTP 429, temporary rate limit, retryable). Please try again later.',
   completionServerBusyToast: 'Server busy, please try again later.',
   /** Server-busy error in a reply (#324): states explicitly that retrying may work */
   replyServerBusy:
@@ -151,10 +156,10 @@ export const en = {
   replyModelUnknownName: 'not recorded',
   /** Other rejected requests (#347): 400 / 422 where the upstream named no field */
   replyBadRequest:
-    'Invalid request parameters ({status}): retrying will not help — check the model and endpoint settings (do not retry).',
+    'Invalid request parameters ({status}): the upstream refused this request (not a network problem, not an outage on our side). Retrying will not help — check the model and endpoint settings (do not retry).',
   /** Invalid field, and the upstream named which one (#347 / #353) */
   replyParamInvalid:
-    'Invalid request parameters ({status}): the upstream rejected the field “{field}”. Retrying will not help (do not retry).',
+    'Invalid request parameters ({status}): the upstream rejected the field “{field}” — this request was refused upstream (not a network problem, not an outage on our side). Retrying will not help (do not retry).',
   /** Other rejected 4xx (#347): 403 / 404 / 405 / 409 / 415 — no guessing at the cause */
   replyUpstreamRejected:
     'The upstream rejected this request ({status}): retrying will not help (do not retry). Expand the upstream message below to see why, or tap “Copy diagnostics” and send it to us.',
