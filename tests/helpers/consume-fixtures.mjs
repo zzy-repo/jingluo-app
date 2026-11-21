@@ -105,8 +105,31 @@ export const textReply = (status, text, contentType = 'text/plain') => ({
   headers: { 'content-type': contentType },
 })
 
-/** 绝对 URL → 路径 + 查询（断言「打的是哪个端点」时不受注入 base 影响） */
-export const pathOf = (url) => url.replace(/^https?:\/\/[^/]+/, '')
+/**
+ * 端点环境前缀（如 `/staging`）：来自注入的 `__ENDPOINTS__.consume.baseUrl` 的 pathname。
+ * 网关可能部署在子路径下（P0 裁决 2026-11-21：`https://apia.ecsafe.cn/staging`），
+ * 此时真实 URL 是 `/staging/api/v1/...`，但用例要断言的是「**打的哪个端点**」，与环境前缀无关。
+ * 没有注入、或 base 不带路径时返回 ''（行为与历史完全一致）。
+ */
+export const envPrefixOf = () => {
+  const base = globalThis.__ENDPOINTS__?.consume?.baseUrl
+  if (typeof base !== 'string') return ''
+  try {
+    const pathname = new URL(base).pathname.replace(/\/+$/, '')
+    return pathname === '' || pathname === '/' ? '' : pathname
+  } catch {
+    return ''
+  }
+}
+
+/** 去掉环境前缀，得到「端点路径」（断言用） */
+export const endpointPathOf = (path) => {
+  const prefix = envPrefixOf()
+  return prefix !== '' && path.startsWith(prefix) ? path.slice(prefix.length) : path
+}
+
+/** 绝对 URL → **端点路径** + 查询（剥掉 host 与端点环境前缀，断言「打的是哪个端点」时与部署形态无关） */
+export const pathOf = (url) => endpointPathOf(url.replace(/^https?:\/\/[^/]+/, ''))
 
 /**
  * 可编程假 transport：`handler(request)` 决定这次回什么，同时把请求按顺序记进 `calls`。
