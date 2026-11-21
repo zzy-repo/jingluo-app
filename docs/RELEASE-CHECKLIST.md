@@ -298,6 +298,27 @@ pnpm run release:verify -- --version $V --apk $APK --expect-variant internal
 - 失败回滚：退出码 1 → **不许对外宣布发布完成**；若 tag 已经打了，按 §6 撤 tag + Release；
   线上文件与记录不一致时要找 ECS 维护者撤下该版本（dl 侧是 append-only，见 §6）。
 
+#### E1b. 一条命令审计「这个 tag 是否合格」（发布后必跑）
+
+```bash
+pnpm audit:release v$V                 # 十项判据 + 包内端点清单
+pnpm audit:release v$V --expect-version $V   # 再加一条「包内 versionName == $V」
+```
+
+- 做：`scripts/audit-release.mjs` 把以前**手工**串的那一串（下载资产 → sha256 三工具 → debuggable 三判据 →
+  证书指纹 → `verify:apk` 五件套 → tag 是否 ∈ `origin/main` → 正文禁词 → 包内端点清单）折成一张表、一个退出码。
+  它**只读** GitHub（`gh release view` / `gh release download`），不 publish、不删、不改 release。
+- 成功判据：最后一行是 `结论: PASS —— v$V 合格`，退出码 0。WARN 不算红（比如正文没写 sha256）：
+  那只说明正文该补，不改变「这版合格」的结论。
+- 失败判据：退出码 1 = 有判据**明确不过**（正文声明与资产实际不一致 / 资产多于 1 个 / tag 不在 main /
+  debuggable / 证书 / 五件套 / 正文禁词 / 版本号对不上）；退出码 2 = **判不了**（release 还是 draft、
+  资产下不下来、缺 SDK 的 `aapt`/`apkanalyzer`、缺 `scripts/check-release-traceability.mjs`）。
+  判不了同样不许宣布「合格」，报告最后一段会点名**该去哪个单跟进**（附本清单的判据表见该脚本文件头的表格）。
+- 需要什么：`gh` 已登录 + Android SDK（`aapt`/`aapt2`/`apksigner`/`apkanalyzer`）+ 本地有这个 tag
+  （`git fetch --force --tags origin`）。跑完临时目录自动删除，`--keep` 可保留资产供排查。
+- 与 E1 的分工：E1 判「dl 上的记录与文件对不对」，E1b 判「**GitHub 上这个 tag 的发布物**合不合格」
+  （签名 / debuggable / 正文声明 / 溯源一网打尽）。两条都跑才算发布后自检完整。
+
 #### E2. 手动更新一次（真机或模拟器）
 
 ```bash
@@ -412,6 +433,7 @@ node scripts/release-upload.mjs --apk $APK --dry-run
 | `curl -X POST https://dl.rose7.cn/api/v1/release ...`（公网端点） | 正式包上传：服务端自己再判一次 `standard`+`stable`，否则 `400 VARIANT_NOT_PUBLIC` / `400 BUILD_TYPE_NOT_PUBLIC`（#620：脚本闸挡不住 HTTP 上传，所以接口也拒） | ✅ | ❌ |
 | `node scripts/check-apk-debuggable.mjs $APK` | 单独查 debuggable（已有的 Issue #60 闸门） | ❌ | ❌ |
 | `pnpm run verify:apk -- $APK` | **发布四件套一条命令**（#607）：debuggable / 变体标记 / 回环标记 / 证书指纹，附 versionName·versionCode·sha256·md5·size；`--variant internal` 验内测包、`--json` 给 workflow | ❌ | ✅（要 `aapt2`/`apksigner`，即 Android SDK build-tools） |
+| `pnpm audit:release v$V` | **已发布的 tag 是否合格**一条命令（发布后审计）：release 已发布 / 资产恰好 1 个 / tag ∈ `origin/main` / sha256+size 与正文一致 / debuggable 三判据 / 证书 / 五件套 / 正文禁词 / 包内端点清单；`--expect-version` 再断言包内 versionName | ❌ | ✅（要 `aapt`/`aapt2`/`apksigner`/`apkanalyzer`） |
 
 三个 `release:*` 脚本的退出码统一为：**0 通过 / 1 不通过 / 2 用法或环境错误（什么都没发生）**。
 

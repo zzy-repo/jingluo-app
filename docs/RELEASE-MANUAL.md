@@ -585,6 +585,29 @@ curl -fsSL -o /tmp/dl-$V.apk https://dl.rose7.cn/apk/deepseek-chat-$V.apk \
 `pnpm run release:verify` 复核的是 **dl 清单**（现仅用于 internal/私有包与历史版本），
 它不校验 GitHub Release 资产 —— 资产那一条始终靠上面的 `gh release download` + `sha256sum` 人工确认。
 
+### 7.1 一条命令把这个 tag 全部查完（`pnpm audit:release`）
+
+上面这一节是「hash 对不对」。但「这个已发布的 tag 到底合不合格」不止 hash：还有签名证书、`debuggable`、
+资产个数、正文里有没有漏内网地址、tag 在不在 `origin/main` 历史里。这些以前是**手工**一条条串的
+（1.4.7 / 1.4.8 各跑了一遍，每遍 10+ 分钟且容易漏），现在折成一条命令：
+
+```bash
+pnpm audit:release v$V                      # 十项判据 + 包内端点清单
+pnpm audit:release v$V --expect-version $V   # 再加一条：包内 versionName == v$V
+```
+
+判据表（任一 FAIL → 退出码 1；判不了 → 退出码 2）与 `--json` 的字段形状写在
+`scripts/audit-release.mjs` 的文件头；执行清单里的对应步骤见 `docs/RELEASE-CHECKLIST.md` 的 E1b。
+
+三条边界，先说清楚：
+
+- **只读**：只用 `gh release view` / `gh release download`，不 publish、不删、不**改** release；
+  正文该改、资产该删，脚本只**点名**并告诉你该去哪个单跟进。
+- **不判 UI**：「包里有没有这个功能」要看界面，属于 §8 的烟测；本命令只回答
+  「连的是谁 / 签名是谁 / 摘要对不对 / tag 在不在主线」。
+- **端点清单只报告不判红**：包里出现内网地址该不该算问题，由 `check:public-artifact-redaction`（#745）判；
+  `audit:release` 重复判一遍只会制造第二份判据。
+
 ---
 
 ## 8. 步骤 7 — 装模拟器烟测（串行，一次只开一台）

@@ -41,6 +41,7 @@
     "check:icon": "node scripts/check-icon-edges.mjs",
     "check:apk": "node scripts/check-apk-debuggable.mjs",
     "verify:apk": "node scripts/verify-release-apk.mjs",
+    "audit:release": "node scripts/audit-release.mjs",
     "check:keystore": "node scripts/check-keystore-config.mjs",
     "check:manifest": "node scripts/check-manifest-fixtures.mjs",
     "check:retention": "node scripts/check-retention.mjs",
