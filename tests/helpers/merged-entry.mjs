@@ -97,7 +97,7 @@ if (!files.length) {
 }
 const resolved = []
 for (const file of files) {
-  const absolute = file.startsWith('/') ? file : path.join(ROOT, file)
+  const absolute = path.isAbsolute(file) ? file : path.join(ROOT, file)
   if (!existsSync(absolute)) {
     console.error(`合并批次里登记了不存在的文件：${file}`)
     process.exit(2)

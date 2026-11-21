@@ -31,7 +31,7 @@ import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { test } from 'node:test'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { runMergedBatch } from '../helpers/runtime.mjs'
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
@@ -109,6 +109,26 @@ test('#501 ① 合并批次里断言失败必须判 FAIL，同批真绿的仍报
   assert.equal(result.code, 1, `有红就必须 exit=1（#501 的原始形态是 exit=0 + 全 PASS）\n${result.out}`)
   // 不许出现「账本不自洽」的降级噪音：正常批次的逐文件计数必须与 node 的报告完全对齐
   assert.doesNotMatch(result.out, /判定不可信/, `正常批次不该触发「账本不自洽」兜底\n${result.out}`)
+})
+
+test('#725 合并入口同时接受仓库相对路径和原生绝对路径，缺文件仍 exit 2', async (t) => {
+  const dir = await makeSandbox(t)
+  const entry = path.join(dir, 'tests/helpers/merged-entry.mjs')
+  // 沙箱 runtime 会为批次提供 TAP，并剥掉父测试进程的 Node IPC 环境变量。
+  const { runMergedBatch: runSandboxBatch } = await import(pathToFileURL(path.join(dir, 'tests/helpers/runtime.mjs')).href)
+  const result = await runSandboxBatch([
+    'tests/unit/zz-fail-probe.test.mjs',
+    path.join(dir, 'tests/unit/zz-pass-probe.test.mjs'),
+  ], { cwd: dir, output: false })
+
+  assert.match(result.output, /<< FILE tests\/unit\/zz-fail-probe\.test\.mjs FAIL tests=1 pass=0 fail=1/)
+  assert.match(result.output, /<< FILE tests\/unit\/zz-pass-probe\.test\.mjs PASS tests=1 pass=1 fail=0/)
+  assert.equal(result.code, 1, `混合路径批次应执行两个探针，由断言失败决定 exit 1\n${result.output}`)
+  assert.doesNotMatch(result.output, /合并批次里登记了不存在的文件/)
+
+  const missing = await run(entry, [path.join(dir, 'tests/unit/missing.test.mjs')], { cwd: dir })
+  assert.equal(missing.code, 2, `真实缺失文件仍应 exit 2\n${missing.out}`)
+  assert.match(missing.out, /合并批次里登记了不存在的文件/)
 })
 
 test('#501 ② 用例体里看不见的失败（t.plan 数量不符 / 钩子抛错）也必须判 FAIL', async (t) => {
