@@ -65,11 +65,14 @@ export {
   type ConsumeHttpOptions,
   type ConsumeMethod,
   type ConsumeRawResponse,
+  type ConsumeRefreshDecision,
   type ConsumeRequest,
   type ConsumeTimeoutClass,
   type ConsumeTransport,
   type ConsumeTransportRequest,
   type ConsumeTransportResult,
+  type ConsumeUnauthorizedHandler,
+  type ConsumeUnauthorizedInfo,
 } from './http.js'
 
 // ── 错误 ─────────────────────────────────────────────────────────────────

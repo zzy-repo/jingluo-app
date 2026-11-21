@@ -8,9 +8,10 @@
 | 项目 | 值 |
 | --- | --- |
 | 兼容基线 | Android WebView **83**（Chromium 83.0.4103.106，Android 11 出厂镜像） |
-| 扫描范围 | `src/**` 共 **330** 个文件（**211** `.ts` / 70 `.tsx` / 46 `.css` / 1 `.html` / 2 `.md`） |
+| 扫描范围 | `src/**` 共 **332** 个文件（**213** `.ts` / 70 `.tsx` / 46 `.css` / 1 `.html` / 2 `.md`） |
 | 真值来源 | `scripts/check-bundle-syntax.mjs` 的 `LEGACY_RUNTIME_APIS`、`scripts/compat/matrix-scan.mjs` 的 `RUNTIME_APIS` / `LEGACY_POLYFILLED`、`src/polyfills/legacy.ts`；本单**没有**新建第四份清单 |
 
+- 复核（2026-11-21 18:04 +0800，基准 `d38c437`，本单 #740 第一步分支 `feat/740-token-refresh-behavior`）：新增 `src/services/auth/sessionCache.ts` 与 `src/services/auth/accountCaches.ts` 2 个 `.ts`（账号级缓存的登记表与清单，切号清理用），扫描范围 330 → **332** 个文件（`.ts` 211 → **213**）；新文件只用 `Map` / `try…catch` / `typeof` 这类基线内能力，**没有任何一条本表里的 API**，**命中总数仍是 52 处**（31 / 21 / 0）、按 API 分项未变；§二 明细未动。
 - 复核（2026-11-21 16:45 (+0800)，基准 `376b123`，本单 #486 分支 `feat/486-markdown-render-p0`）：新增 `src/services/markdown/**` 3 个 `.ts`（`codeLines.ts` 行号切行 + 下载文件名、`toGfm.ts` 表格 → GFM、`mathSource.ts` 公式 TeX 源码读取），扫描范围 327 → **330** 个文件（`.ts` 208 → **211**）。新文件只用 `String#indexOf` / `String#slice` / `Array#push` / `Object.prototype.hasOwnProperty.call` / `Range` 之外的 `Element#querySelector`…这类基线内能力，**没有任何一条本表里的 API**（`Object.hasOwn` 特意换成 `Object.prototype.hasOwnProperty.call`，不进类别 1），**命中总数仍是 52 处**（31 / 21 / 0）、按 API 分项未变；§二 明细未动。
 - 复核（2026-11-21 12:44，基准 `8d87347`，本单 #676 分支 `docs/676-contract-audit`）：新增 `src/components/consume/myCardsModel.ts` 1 个 `.ts`（兑换后重拉 `/user/profile` 的纯函数，为「有没有真的拉」留一处可断言的位置），扫描范围 326 → **327** 个文件（`.ts` 207 → **208**）。新文件只用 `Promise` / `typeof` / `Number.isFinite` / 对象字面量这类基线内能力，**没有任何一条本表里的 API**，**命中总数仍是 52 处**（31 / 21 / 0）、按 API 分项未变；§二 明细未动。
 - 复核（2026-11-21 11:56，基准 `171f02f`，本单 #679 分支 `fix/consume-confirm-effect-679`）：新增 `src/services/consume/confirmEffect.ts` 1 个 `.ts`（写操作的「效果确认」小工具），扫描范围 325 → **326** 个文件（`.ts` 206 → **207**）。新文件只用 `Array#find` / `Object.keys` / `Promise` / 解构这类基线内能力，**没有任何一条本表里的 API**，**命中总数仍是 52 处**（31 / 21 / 0）、按 API 分项未变；§二 明细未动（改动都落在既有命中行之后）。

@@ -17,6 +17,11 @@
  *   - Key / JWT **只进 `Authorization` 请求头**；URL 里出现 `key` / `api_key` / `token` /
  *     `access_token` 一律当场抛错（sub2api 会回 400 `api_key_in_query_deprecated`，那是客户端 bug）；
  *   - 本文件不打印任何请求头或请求体；错误文案由上层按 i18n key 出，不带 token / 卡密原文。
+ *
+ * 「401 → 单飞刷新 → 重放一次」（#740 ①）：本层**不做**刷新，也不 import 身份层 —— 它只提供一个
+ * 注入点 `onUnauthorized`，由身份层（`services/auth/store.ts` 的 `handleUnauthorized`）决定
+ * 「换到新凭据了吗、能不能重放」。这样刷新策略只有一份、单飞（同一时刻一次 `/auth/refresh`）也只有一份，
+ * 而这一层仍然只认识状态码。重放**只重放一次**：重放后的 401 原样交上去，绝不进「刷新 → 401 → 刷新」的循环。
  */
 
 import { Capacitor, CapacitorHttp } from '@capacitor/core'
@@ -71,6 +76,13 @@ export type ConsumeRawResponse = {
   contentType: string
   /** 只在 status === 0 时有值 */
   failure?: 'timeout' | 'network' | 'unsupported'
+  /**
+   * **只在「401 + 换凭据没换成」时有值**（#740 ①）：把「刷新失败的两种性质」带到上层。
+   *  - `expired`  ：刷新被服务端拒（401 / `REFRESH_TOKEN_EXPIRED`）—— 身份层已清态，界面该回登录；
+   *  - `retryable`：刷新是网络 / 5xx 失败 —— **本地 token 还留着**，这次 401 只是「这次没换成」，
+   *                 `call()` 会把 `error.retryable` 置 true（原来 401 一律不可重试，这条是唯一的例外）。
+   */
+  refreshFailure?: 'expired' | 'retryable'
 }
 
 /** 传输层入参（不含任何业务语义，测试可以直接断言它） */
@@ -90,6 +102,43 @@ export type ConsumeTransportResult =
 
 /** 传输层：默认原生 CapacitorHttp；单测注入假 transport（不发真请求） */
 export type ConsumeTransport = (request: ConsumeTransportRequest) => Promise<ConsumeTransportResult>
+
+/**
+ * 401 换凭据的**决策**（#740 ①，由身份层给）：
+ *  - `retry`     ：已经换到新凭据 → 本层把原请求**重放一次**；
+ *  - `expired`   ：刷新被服务端拒（401 / `REFRESH_TOKEN_EXPIRED`）→ 会话已清，别再试；
+ *  - `retryable` ：刷新因网络 / 5xx 没成功，**本地 token 保留** → 这次 401 原样交上去但标成可重试。
+ */
+export type ConsumeRefreshDecision = 'retry' | 'expired' | 'retryable'
+
+/**
+ * 交给 `onUnauthorized` 的现场信息：**只有路由与动作**，没有任何凭据 ——
+ * 身份层不需要、也不许拿它去记日志 / 埋点（#387 红线：token 类一律不进日志）。
+ */
+export type ConsumeUnauthorizedInfo = {
+  method: ConsumeMethod
+  path: string
+}
+
+/**
+ * 「业务请求 401 了，要不要换凭据再来一次」的钩子。**由身份层注入**（`auth/store.ts`），
+ * 本层不知道 refresh_token 在哪、也不碰存储。
+ * 钩子抛异常时按「没换成、也不可重试」处理（原 401 原样交上去），见 `request()` 的 catch。
+ */
+export type ConsumeUnauthorizedHandler = (
+  info: ConsumeUnauthorizedInfo
+) => Promise<ConsumeRefreshDecision> | ConsumeRefreshDecision
+
+/**
+ * **绝不触发刷新**的路径：登录 / 注册 / 刷新自己 401 时不能去刷新（登录失败 ≠ 会话过期），
+ * 否则「密码输错」会被当成「token 过期」把本地会话清掉（#740 ①行 7）。
+ */
+const NO_REFRESH_PATHS = new Set([
+  '/api/v1/auth/login',
+  '/api/v1/auth/login/2fa',
+  '/api/v1/auth/register',
+  '/api/v1/auth/refresh',
+])
 
 /** URL 里不许出现的鉴权参数名（#484 §2.1：sub2api 对 query 里的 key 直接 400） */
 const FORBIDDEN_QUERY_KEYS = ['key', 'api_key', 'apikey', 'token', 'access_token', 'refresh_token']
@@ -232,6 +281,11 @@ export type ConsumeHttpOptions = {
   apiKey?: () => string | undefined
   /** 端点覆盖（默认读 `__ENDPOINTS__.consume`；只给测试用） */
   endpoints?: ConsumeEndpoints
+  /**
+   * 业务请求拿到 **401** 时的换凭据钩子（#740 ①②）：身份层注入，本层不认识 refresh_token。
+   * 不给 = 老行为（401 原样抛给上层）。只在「JWT 通道 + 非登录/注册/刷新路径」时被调用。
+   */
+  onUnauthorized?: ConsumeUnauthorizedHandler
 }
 
 export type ConsumeHttp = {
@@ -271,8 +325,11 @@ const defaultHeaders: Record<string, string> = {
 
 /**
  * 创建传输实例。
- * 注意：**不做任何重试**。重试策略按端点分类（#484 §4.3），写在各自的业务模块里 ——
+ * 注意：**不做任何业务重试**。重试策略按端点分类（#484 §4.3），写在各自的业务模块里 ——
  * 传输出错就重发一次是这个仓库最贵的教训之一（卡密重复兑换、Key 重复创建都是这么来的）。
+ *
+ * 唯一的例外是「401 → 换凭据 → **重放一次**」（#740）：它重试的是**同一个**已经被服务端明确拒绝的
+ * 请求（401 说明没有产生副作用），而且只重放一次；`onUnauthorized` 没注入时连这一次都没有。
  */
 export const createConsumeHttp = (options: ConsumeHttpOptions = {}): ConsumeHttp => {
   const transport = options.transport ?? capacitorTransport
@@ -301,7 +358,11 @@ export const createConsumeHttp = (options: ConsumeHttpOptions = {}): ConsumeHttp
     return token ? { kind: 'jwt', token } : null
   }
 
-  const request = async (req: ConsumeRequest): Promise<ConsumeRawResponse> => {
+  /**
+   * 发**一次**（不带任何 401 逻辑）：把这次的 `auth` 一起交回去 ——
+   * 「这次 401 是不是 JWT 引起的」只能在这里判断（网关 sk- Key 的 401 不该去换 JWT）。
+   */
+  const send = async (req: ConsumeRequest): Promise<{ raw: ConsumeRawResponse; auth: ConsumeAuth | null }> => {
     const timeoutMs = endpoints.timeoutMs[timeoutClassOf(req)]
     const headers: Record<string, string> = { ...defaultHeaders }
     const auth = resolveAuth(req)
@@ -311,7 +372,7 @@ export const createConsumeHttp = (options: ConsumeHttpOptions = {}): ConsumeHttp
     if (body !== undefined) {headers['content-type'] = 'application/json'}
     const result = await transport({ method: req.method, url: url(req.path, req.query), headers, body, timeoutMs })
     if (result.kind !== 'response') {
-      return { status: 0, ok: false, text: '', json: null, headers: {}, contentType: '', failure: result.kind }
+      return { raw: { status: 0, ok: false, text: '', json: null, headers: {}, contentType: '', failure: result.kind }, auth }
     }
     let json: unknown = null
     if (result.text.trim() !== '') {
@@ -322,19 +383,64 @@ export const createConsumeHttp = (options: ConsumeHttpOptions = {}): ConsumeHttp
       }
     }
     return {
-      status: result.status,
-      ok: result.status >= 200 && result.status < 300,
-      text: result.text,
-      json,
-      headers: result.headers,
-      contentType: (result.headers['content-type'] ?? '').split(';')[0].trim().toLowerCase(),
+      auth,
+      raw: {
+        status: result.status,
+        ok: result.status >= 200 && result.status < 300,
+        text: result.text,
+        json,
+        headers: result.headers,
+        contentType: (result.headers['content-type'] ?? '').split(';')[0].trim().toLowerCase(),
+      },
     }
+  }
+
+  /**
+   * 这次响应要不要去换凭据？四条同时成立才换（#740 ①）：
+   *  1. 状态码是 **401**（403 是权限不足，刷新解决不了）；
+   *  2. 这次请求带的是 **JWT**（sk- Key 的 401 与账号会话无关，拿 JWT 去重放只会更乱）；
+   *  3. 路径**不是**登录 / 注册 / 刷新自己（见 `NO_REFRESH_PATHS`）；
+   *  4. 身份层真的注入了钩子（没注入 = 老行为，401 原样交上去）。
+   */
+  const shouldTryRefresh = (req: ConsumeRequest, tried: { raw: ConsumeRawResponse; auth: ConsumeAuth | null }): boolean =>
+    req.path !== '' &&
+    tried.raw.status === 401 &&
+    tried.auth?.kind === 'jwt' &&
+    !NO_REFRESH_PATHS.has(req.path) &&
+    typeof options.onUnauthorized === 'function'
+
+  const request = async (req: ConsumeRequest): Promise<ConsumeRawResponse> => {
+    const first = await send(req)
+    if (!shouldTryRefresh(req, first)) {
+      return first.raw
+    }
+    let decision: ConsumeRefreshDecision
+    try {
+      decision = await (options.onUnauthorized as ConsumeUnauthorizedHandler)({
+        method: req.method,
+        path: req.path,
+      })
+    } catch {
+      // 钩子自己炸了（身份层不该抛，抛了也不能把业务请求带崩）：按「这次没换成」处理，
+      // 但**不加** `retryable` 标记 —— 那是刷新「因为网络没成」的专用语义，不是「钩子写错了」。
+      return first.raw
+    }
+    if (decision === 'retry') {
+      // **只重放一次**：这次重放拿的是新 token（`resolveAuth` 每次现取），若又 401 就原样交上去，
+      // 不再问钩子 —— 防「刷新 → 401 → 刷新」的死循环（#740 ①）。
+      return (await send(req)).raw
+    }
+    return { ...first.raw, refreshFailure: decision }
   }
 
   const call = async <T>(req: ConsumeRequest & { unwrap?: 'panel' | 'bare' }): Promise<ConsumeCallResult<T>> => {
     const raw = await request(req)
     const unwrap = req.unwrap ?? (req.path.startsWith(endpoints.apiV1Prefix) ? 'panel' : 'bare')
-    if (!raw.ok) {return { ok: false, error: parseSub2ApiError(raw, { path: req.path }), raw }}
+    if (!raw.ok) {
+      const error = parseSub2ApiError(raw, { path: req.path })
+      // 401 + 刷新因网络 / 5xx 没成：**这次可以重试**（`error` 其余字段保持 401 语义不变，界面照常提示重新登录）。
+      return { ok: false, error: raw.refreshFailure === 'retryable' ? { ...error, retryable: true } : error, raw }
+    }
     // 空响应（204 / DELETE）也是成功：面板接口的 data 可能整个省掉
     if (raw.status === 204 || raw.text.trim() === '') {return { ok: true, data: undefined as T, status: raw.status, raw }}
     if (unwrap === 'bare') {
