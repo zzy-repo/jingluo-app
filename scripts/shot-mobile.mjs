@@ -33,7 +33,7 @@ import { chromium } from 'playwright'
 
 // 消费层（sub2api）地址同样来自 `config/endpoints.json`（#274）：#608 的已登录态要点打桩，
 // 这里不许写字面量端口，否则本机改了 `config/endpoints.json` 之后这张截图会静默打到别处。
-import { consumeApiV1Prefix, consumeBaseUrl, inviteBaseUrl } from './lib/endpoints.mjs'
+import { chatBaseUrl, consumeApiV1Prefix, consumeBaseUrl, consumeGatewayPrefix, inviteBaseUrl } from './lib/endpoints.mjs'
 // #386 的「流式中」截图要把 streaming 这个状态撑开：用同一份 ours 上游契约回 SSE（含 CORS 头），
 // 只是刻意延后 4 秒再回，好在上翻之后再截。
 import { OURS_CHAT_PATH, OURS_CORS, openAiSse } from '../tests/fixtures/domain03-04/ours-upstream.mjs'
@@ -105,7 +105,12 @@ const SHOT_ACCOUNT_USER = {
 const nativeBridgeStub = () => {
   window.androidBridge = { postMessage: () => {} }
   window.Capacitor = {
-    PluginHeaders: [{ name: 'CapacitorHttp', methods: [{ name: 'request', rtype: 'promise' }] }],
+    // `request` 供消费层（`consume/http.ts` 只走 CapacitorHttp.request）；
+    // `get` 供连通性探测（`api/client.ts` 的 `probeProvider` 在原生平台走 `CapacitorHttp.get`）。
+    // 只多声明一个方法，两者都由下面的 `nativePromise` 转成一次 fetch，不改任何产品行为。
+    PluginHeaders: [
+      { name: 'CapacitorHttp', methods: [{ name: 'request', rtype: 'promise' }, { name: 'get', rtype: 'promise' }] },
+    ],
     nativePromise: async (plugin, method, options) => {
       if (plugin !== 'CapacitorHttp') {
         return {}
@@ -2428,6 +2433,415 @@ export const PAGES = {
           width: Math.min(box.width + 8, ctx.size.width),
           height: box.height + 8,
         },
+      })
+    },
+  },
+
+  '727-consume-page': {
+    dir: 'docs/ui/727-consume-page',
+    title:
+      '#727 验收取证（对 main 上的实现拍）：设置 →「账户与消费」一级入口整页 —— 模型来源底部 sheet / 连通性正常态 / 我的钱包余额卡 / 我的卡密 / 历史消费 / 账号（未登录 segmented 卡片 + 已登录资料）· 390 与 360 两档',
+    sessions: () => [makeReadingSession()],
+    // 入口只在自有渠道出现（#166）：卡密与套餐来自 apia，别的渠道没有自己的订单
+    providerKind: 'ours',
+    mockPurchases: {
+      totalPaidYuan: 40,
+      orders: [
+        {
+          out_trade_no: 'CP202611200000727',
+          plan_id: 'standard',
+          plan_name: '标准包 500万 token',
+          plan_points: 3900,
+          amount_yuan: 39,
+          status: 'FULFILLED',
+          status_text: '已完成',
+          card_no: 'MUSE-7270-0000-0000-RRQY',
+          card_status: 'used',
+          redeem_state: 'redeemed',
+          created_at: 1795055400,
+          paid_at: 1795055460,
+        },
+        {
+          out_trade_no: 'CP202611180000728',
+          plan_id: 'starter',
+          plan_name: '入门包 5 元额度',
+          plan_points: 500,
+          amount_yuan: 5,
+          status: 'FULFILLED',
+          status_text: '已完成',
+          card_no: 'MUSE-7270-0000-0000-JP9Q',
+          card_status: 'leased',
+          redeem_state: 'issued',
+          created_at: 1794882600,
+          paid_at: 1794882660,
+        },
+      ],
+    },
+    run: async (ctx) => {
+      const { page, shot, record, warn } = ctx
+      const reply = (body, status = 200) => ({
+        status,
+        headers: { 'content-type': 'application/json', 'access-control-allow-origin': '*' },
+        body: JSON.stringify(body),
+      })
+      const preflight = {
+        status: 204,
+        headers: {
+          'access-control-allow-origin': '*',
+          'access-control-allow-headers': 'authorization,accept,content-type,x-session-id',
+          'access-control-allow-methods': 'GET,POST,PUT,DELETE,OPTIONS',
+          'access-control-max-age': '600',
+        },
+      }
+      /** 消费层统一信封（`services/consume/http.ts` 只认 `{code,message,data}`） */
+      const envelope = (data) => reply({ code: 0, message: 'success', data })
+      /** 横向溢出硬指标（#106 口径）：本页要求 390 / 360 两档每个状态都是 0 */
+      const measureOverflow = () =>
+        page.evaluate(() => {
+          const viewportWidth = document.documentElement.clientWidth
+          const overflow = []
+          for (const element of document.querySelectorAll('*')) {
+            const rect = element.getBoundingClientRect()
+            if (rect.width > 0 && rect.right > viewportWidth + 1) {
+              overflow.push({ tag: element.tagName, right: Math.round(rect.right), text: (element.textContent ?? '').slice(0, 24) })
+            }
+          }
+          return {
+            viewportWidth,
+            documentScrollWidth: Math.round(document.documentElement.scrollWidth),
+            overflowCount: overflow.length,
+            overflowSamples: overflow.slice(0, 5),
+          }
+        })
+      const overflowSeen = []
+      const requireNoOverflow = async (label) => {
+        const measured = await measureOverflow()
+        overflowSeen.push({ label, overflowCount: measured.overflowCount })
+        if (measured.overflowCount !== 0) {
+          throw new Error(`${label} 出现横向溢出 ${measured.overflowCount} 处：${JSON.stringify(measured.overflowSamples)}`)
+        }
+        return measured
+      }
+
+      // 未登录 → 已登录：同一台机器上翻态，接口才给数据（与真实的 `restoreAuth()` 时序一致）
+      let signedIn = false
+      await page.route(`${consumeBaseUrl}${consumeApiV1Prefix}/**`, async (route) => {
+        if (route.request().method() === 'OPTIONS') {
+          await route.fulfill(preflight)
+          return
+        }
+        const { pathname } = new URL(route.request().url())
+        if (pathname.endsWith('/settings/public')) {
+          await route.fulfill(
+            envelope({ registration_enabled: true, email_verify_enabled: false, invitation_code_enabled: true })
+          )
+          return
+        }
+        if (!signedIn) {
+          await route.fulfill(reply({ code: 401, message: 'unauthorized' }, 401))
+          return
+        }
+        if (pathname.endsWith('/auth/me') || pathname.endsWith('/user/profile')) {
+          await route.fulfill(envelope(SHOT_ACCOUNT_USER))
+          return
+        }
+        if (pathname.endsWith('/keys')) {
+          await route.fulfill(
+            envelope({
+              items: [
+                { id: 11, name: '主力 Key', key: 'sk-shot-mobile-fixture-0000', status: 'active', quota: 5000000, quota_used: 1250000, created_at: '2026-11-01T10:00:00+08:00' },
+              ],
+              total: 1,
+              page: 1,
+              page_size: 20,
+              pages: 1,
+            })
+          )
+          return
+        }
+        if (pathname.endsWith('/user/aff')) {
+          await route.fulfill(
+            envelope({ aff_code: 'SHOT727', aff_count: 2, aff_quota: 12.5, aff_frozen_quota: 0, aff_history_quota: 12.5 })
+          )
+          return
+        }
+        // 消费记录（`/api/v1/usage` 一族）：给两条，让「历史消费」不是空态
+        if (pathname.includes('/usage')) {
+          await route.fulfill(
+            envelope({
+              items: [
+                { id: 1, model: 'deepseek-v4.1-flash', created_at: '2026-11-21T14:32:00+08:00', cost: 0.12, requests: 1 },
+                { id: 2, model: 'deepseek-v4.1-flash', created_at: '2026-11-20T21:08:00+08:00', cost: 0.36, requests: 1 },
+              ],
+              total: 2,
+              page: 1,
+              pages: 1,
+            })
+          )
+          return
+        }
+        await route.fulfill(envelope({ items: [], total: 0, page: 1, pages: 0 }))
+      })
+      // 余额链（`GET /v1/usage`，sk- Key 通道，**裸 JSON 不套信封**）：`usage.total.actual_cost` 才是「已用」
+      await page.route(`${consumeBaseUrl}${consumeGatewayPrefix}/**`, async (route) => {
+        if (route.request().method() === 'OPTIONS') {
+          await route.fulfill(preflight)
+          return
+        }
+        await route.fulfill(
+          reply({
+            mode: 'unrestricted',
+            isValid: true,
+            balance: 128.5,
+            remaining: 128.5,
+            unit: 'CNY',
+            rate_limits: [],
+            usage: { total: { requests: 12, input_tokens: 1000, output_tokens: 500, total_tokens: 1500, actual_cost: 12.34 } },
+            quota: { limit: 0, used: 0, remaining: 0, unit: 'CNY' },
+            days_until_expiry: 27,
+          })
+        )
+      })
+      // 连通性：点下去才发请求（复用 `probeProvider` → GET /v1/models）
+      await page.route(`${chatBaseUrl}/v1/models`, async (route) => {
+        if (route.request().method() === 'OPTIONS') {
+          await route.fulfill(preflight)
+          return
+        }
+        await route.fulfill(reply({ data: [{ id: 'deepseek-v4.1-flash' }, { id: 'deepseek-v4.1-pro' }] }))
+      })
+
+      // 打桩装好之后 reload：`settings/public`（注册开关）与登录恢复都在**首屏**读。
+      // `nativeBridgeStub` 只提供传输（消费层只走 CapacitorHttp），不绕登录、不给产物留旁路。
+      await page.addInitScript(nativeBridgeStub)
+      await page.reload({ waitUntil: 'domcontentloaded' })
+      await page.locator('textarea').first().waitFor({ state: 'visible', timeout: 15000 })
+      await page.waitForTimeout(400)
+
+      /** 打开设置 → 点**一次**「账户与消费」（一级入口）→ 整页 */
+      const openConsumePage = async (label, entryShot) => {
+        await openSettings(page)
+        const entry = page.locator(S.accountConsumeOpen)
+        await entry.waitFor({ state: 'visible', timeout: 15000 })
+        if (entryShot !== undefined) {
+          await page.waitForTimeout(400)
+          await shot(entryShot)
+        }
+        const entryCount = await entry.count()
+        record(label, { entryCount, entryText: (await entry.innerText()).replace(/\s+/gu, ' ').trim() })
+        if (entryCount !== 1) {
+          throw new Error(`设置里「账户与消费」入口有 ${entryCount} 个，必须恰好 1 个（不许两套入口并存）`)
+        }
+        await entry.click()
+        await page.locator('[data-testid="account-consume-page"]').waitFor({ state: 'visible', timeout: 15000 })
+        await page.waitForTimeout(600)
+      }
+
+      const readHome = () =>
+        page.evaluate(() => {
+          const text = (selector) => {
+            const node = document.querySelector(selector)
+            return node === null ? null : (node.innerText ?? '').replace(/\s+/gu, ' ').trim()
+          }
+          // 34px 大标题（`.pageTitle`）：按「算出来的字号」找，不猜 DOM 层级
+          const title = Array.from(document.querySelectorAll('[role="dialog"] *')).find((node) => {
+            const text = (node.textContent ?? '').trim()
+            return text === '账户与消费' && getComputedStyle(node).fontSize === '34px'
+          })
+          const rows = Array.from(document.querySelectorAll('[data-testid^="account-consume-tab-"]')).map((node) => ({
+            text: (node.textContent ?? '').replace(/\s+/gu, ' ').trim(),
+            height: Math.round(node.getBoundingClientRect().height),
+            selected: node.getAttribute('aria-selected'),
+          }))
+          return {
+            titleFontSize: title === null ? null : getComputedStyle(title).fontSize,
+            source: text('[data-testid="account-consume-source"]'),
+            conn: text('[data-testid="account-consume-conn-state"]'),
+            balance: text('[data-testid="account-consume-balance"]'),
+            rows,
+            tabCount: rows.length,
+          }
+        })
+
+      // ── ① 一级入口 + 整页（未登录）─────────────────────────────────────
+      await openConsumePage('entry', '00-settings-entry')
+      const home = await readHome()
+      record('signedOutHome', { ...home, ...(await requireNoOverflow('整页（未登录）')) })
+      if (home.tabCount !== 4) {
+        throw new Error(`四个分区入口应当都在，只有 ${home.tabCount} 个`)
+      }
+      const shortRow = home.rows.filter((row) => row.height < 56)
+      if (shortRow.length > 0) {
+        warn(`有 ${shortRow.length} 行的行高不足 56px：${JSON.stringify(shortRow)}`)
+      }
+      await shot('01-page-home-signed-out')
+
+      // ── ② 模型来源：底部 sheet ─────────────────────────────────────────
+      await page.getByTestId('account-consume-source').click()
+      await page.locator('[data-testid="account-consume-source-sheet"]').waitFor({ state: 'visible', timeout: 10000 })
+      await page.waitForTimeout(400)
+      const sheet = await page.evaluate(() => {
+        const node = document.querySelector('[data-testid="account-consume-source-sheet"]')
+        const rect = node === null ? null : node.getBoundingClientRect()
+        // 只数「可选项」（四个来源），不含 mask / cancel / save 这几个同前缀的兄弟节点
+        const options = Array.from(node?.querySelectorAll('[data-testid^="account-consume-source-"][aria-pressed]') ?? []).map(
+          (item) => (item.textContent ?? '').replace(/\s+/gu, ' ').trim()
+        )
+        return {
+          options,
+          bottomGap: rect === null ? null : Math.round(document.documentElement.clientHeight - rect.bottom),
+          width: rect === null ? null : Math.round(rect.width),
+          viewport: document.documentElement.clientWidth,
+        }
+      })
+      record('sourceSheet', { ...sheet, ...(await requireNoOverflow('模型来源 sheet')) })
+      if (sheet.options.length !== 4) {
+        throw new Error(`模型来源选项应当等于既有 ProviderKind 的 4 条，拿到 ${sheet.options.length} 条`)
+      }
+      await shot('02-source-sheet')
+      await page.getByTestId('account-consume-source-cancel').click()
+      await page.waitForTimeout(300)
+
+      // ── ③ 连通性：点一下才有结果（复用既有 probeProvider）────────────────
+      await page.getByTestId('account-consume-conn').click()
+      await page.waitForFunction(
+        () => {
+          const node = document.querySelector('[data-testid="account-consume-conn-state"]')
+          const text = node === null ? '' : (node.textContent ?? '')
+          return !text.includes('测试中') && !text.includes('未测试')
+        },
+        { timeout: 15000 }
+      )
+      await page.waitForTimeout(300)
+      const conn = await page.evaluate(() => {
+        const node = document.querySelector('[data-testid="account-consume-conn-state"]')
+        const dot = node === null ? null : node.querySelector('i')
+        return {
+          text: node === null ? null : (node.textContent ?? '').replace(/\s+/gu, ' ').trim(),
+          dotColor: dot === null ? null : getComputedStyle(dot).backgroundColor,
+        }
+      })
+      record('connectivity', { ...conn, ...(await requireNoOverflow('连通性（正常）')) })
+      if (conn.text === null || !conn.text.includes('ms')) {
+        throw new Error(`连通性没有落到「正常 N ms」：${String(conn.text)}`)
+      }
+      await shot('03-connectivity-ok')
+
+      // ── ④ 我的卡密（脱敏 + badge + 动作；完整卡密不进 DOM）──────────────
+      await page.getByTestId('account-consume-tab-cards').click()
+      await page.locator('[data-testid="account-consume-card-row"]').first().waitFor({ state: 'visible', timeout: 15000 })
+      await page.waitForTimeout(400)
+      const cards = await page.evaluate(() => {
+        const rows = Array.from(document.querySelectorAll('[data-testid="account-consume-card-row"]'))
+        return {
+          count: rows.length,
+          leaksFullCard: (document.body.innerText ?? '').includes('MUSE-7270-0000-0000-RRQY'),
+          actions: Array.from(rows[0]?.querySelectorAll('button') ?? []).map((node) => (node.textContent ?? '').trim()),
+        }
+      })
+      record('cards', { ...cards, ...(await requireNoOverflow('我的卡密')) })
+      if (cards.leaksFullCard) {
+        throw new Error('完整卡密进了 DOM 文本（只许脱敏显示，全文只进剪贴板）')
+      }
+      await shot('04-cards')
+
+      // ── ⑤ 历史消费（`HistoryView`，按日期分组）──────────────────────────
+      await page.getByTestId('account-consume-history').click()
+      await page.waitForTimeout(900)
+      const history = await page.evaluate(() => {
+        const body = document.querySelector('[data-testid="account-consume-page"]')
+        return { text: body === null ? null : (body.innerText ?? '').replace(/\s+/gu, ' ').trim().slice(0, 400) }
+      })
+      record('history', { ...history, ...(await requireNoOverflow('历史消费')) })
+      await shot('05-history')
+
+      // ── ⑥ 账号（未登录）：登录 / 注册入口 + segmented，**不是登录墙** ────────
+      await page.getByTestId('account-consume-tab-account').click()
+      await page.locator('[data-testid="account-optional-notice"]').waitFor({ state: 'visible', timeout: 15000 })
+      await page.waitForTimeout(500)
+      const signedOut = await page.evaluate(() => {
+        const text = (selector) => {
+          const node = document.querySelector(selector)
+          return node === null ? null : (node.innerText ?? '').replace(/\s+/gu, ' ').trim()
+        }
+        const card = document.querySelector('[data-testid="account-auth-card"]')
+        return {
+          notice: text('[data-testid="account-optional-notice"]'),
+          fillKey: document.querySelectorAll('[data-testid="account-fill-key"]').length,
+          authCard: card === null ? 0 : 1,
+          segments: ['login', 'register'].filter(
+            (key) => document.querySelector(`[data-testid="auth-segmented-${key}"]`) !== null
+          ),
+          passwordFields: document.querySelectorAll('input[type="password"]').length,
+        }
+      })
+      record('accountSignedOut', { ...signedOut, ...(await requireNoOverflow('账号（未登录）')) })
+      if (!String(signedOut.notice ?? '').includes('不登录也可以')) {
+        throw new Error(`账号分区未登录态没有「不登录也可以」那句：${String(signedOut.notice)}`)
+      }
+      if (signedOut.segments.length !== 2) {
+        throw new Error(`登录 / 注册的 segmented 应当是两段，拿到 ${JSON.stringify(signedOut.segments)}`)
+      }
+      await shot('06-account-signed-out')
+
+      // ── ⑦ 已登录态：落盘凭据 → reload → 后台恢复真的跑一遍 ────────────────
+      signedIn = true
+      await page.evaluate(({ persisted }) => {
+        localStorage.setItem('chat-demo:auth-token', persisted)
+        // 来源保持 ours（入口只在自有渠道出现，reload 后还要能重新进这一页）
+        localStorage.setItem('chat-demo:provider-kind', 'ours')
+      }, {
+        persisted: JSON.stringify({
+          v: 1,
+          token: { accessToken: 'shot-mobile-access-token', tokenType: 'Bearer', expiresAt: Date.now() + 86_400_000 },
+          user: { id: 2, email: 'demo@example.com', username: 'demo', role: 'user', emailVerified: true },
+        }),
+      })
+      await page.reload({ waitUntil: 'domcontentloaded' })
+      await page.locator('textarea').first().waitFor({ state: 'visible', timeout: 15000 })
+      await openConsumePage('entrySignedIn')
+      const signedInHome = await readHome()
+      record('signedInHome', { ...signedInHome, ...(await requireNoOverflow('整页（已登录）')) })
+      if (!String(signedInHome.balance ?? '').includes('128.50')) {
+        throw new Error(`余额卡没有显示服务端余额（`/v1/usage` 的 balance）：${String(signedInHome.balance)}`)
+      }
+      await shot('07-page-home-signed-in')
+
+      await page.getByTestId('account-consume-tab-account').click()
+      await page.locator('[data-testid="account-consume-profile"]').waitFor({ state: 'visible', timeout: 15000 })
+      await page.waitForTimeout(500)
+      const signedInAccount = await page.evaluate(() => {
+        const text = (selector) => {
+          const node = document.querySelector(selector)
+          return node === null ? null : (node.innerText ?? '').replace(/\s+/gu, ' ').trim()
+        }
+        return {
+          profile: text('[data-testid="account-consume-profile"]'),
+          accountId: text('[data-testid="account-consume-id"]'),
+          bindEmail: text('[data-testid="account-consume-bind-email"]'),
+          loginMethod: text('[data-testid="account-consume-login-method"]'),
+          signOut: document.querySelectorAll('[data-testid="account-consume-signout"]').length,
+          hasSignedOutNotice: document.querySelector('[data-testid="account-optional-notice"]') !== null,
+          tokenOnScreen: (document.body.innerText ?? '').includes('shot-mobile-access-token'),
+        }
+      })
+      record('accountSignedIn', { ...signedInAccount, ...(await requireNoOverflow('账号（已登录）')) })
+      // 资料头显示的是**服务端脱敏后的**邮箱（`d•••@example.com`）：只断言它确实落在资料头里，
+      // 不去要求明文（明文邮箱上屏本身就是 #484 §七 要避免的）
+      if (!String(signedInAccount.profile ?? '').includes('@example.com')) {
+        throw new Error(`已登录态资料头没有邮箱：${String(signedInAccount.profile)}`)
+      }
+      if (signedInAccount.tokenOnScreen) {
+        throw new Error('JWT 字面量出现在界面文本上（#484 §七 第 4 条）')
+      }
+      await shot('08-account-signed-in')
+
+      // 顶层标量：`metrics.json` 里直接能读到 `overflowCount`（#727 的硬指标，两档都必须是 0）
+      record('overflowCount', Math.max(...overflowSeen.map((item) => item.overflowCount)))
+      record('overflow', {
+        overflowCount: Math.max(...overflowSeen.map((item) => item.overflowCount)),
+        assertion: 'overflowCount === 0（390 / 360 两档，每个状态各量一次）',
+        states: overflowSeen,
       })
     },
   },

@@ -1,0 +1,201 @@
+{
+  "page": "727-consume-page",
+  "title": "#727 验收取证（对 main 上的实现拍）：设置 →「账户与消费」一级入口整页 —— 模型来源底部 sheet / 连通性正常态 / 我的钱包余额卡 / 我的卡密 / 历史消费 / 账号（未登录 segmented 卡片 + 已登录资料）· 390 与 360 两档",
+  "viewport": 390,
+  "size": "390×844",
+  "shots": [
+    "docs/ui/727-consume-page/390/727-consume-page-00-settings-entry-390.png",
+    "docs/ui/727-consume-page/390/727-consume-page-01-page-home-signed-out-390.png",
+    "docs/ui/727-consume-page/390/727-consume-page-02-source-sheet-390.png",
+    "docs/ui/727-consume-page/390/727-consume-page-03-connectivity-ok-390.png",
+    "docs/ui/727-consume-page/390/727-consume-page-04-cards-390.png",
+    "docs/ui/727-consume-page/390/727-consume-page-05-history-390.png",
+    "docs/ui/727-consume-page/390/727-consume-page-06-account-signed-out-390.png",
+    "docs/ui/727-consume-page/390/727-consume-page-07-page-home-signed-in-390.png",
+    "docs/ui/727-consume-page/390/727-consume-page-08-account-signed-in-390.png"
+  ],
+  "notes": [],
+  "entry": {
+    "entryCount": 1,
+    "entryText": "账户与消费"
+  },
+  "signedOutHome": {
+    "titleFontSize": "34px",
+    "source": "模型来源 内置服务 ›",
+    "conn": "点一下测试",
+    "balance": "剩余余额 —",
+    "rows": [
+      {
+        "text": "我的卡密›",
+        "height": 56,
+        "selected": "true"
+      },
+      {
+        "text": "我的额度›",
+        "height": 56,
+        "selected": "false"
+      },
+      {
+        "text": "购买›",
+        "height": 56,
+        "selected": "false"
+      },
+      {
+        "text": "账号与安全登录 / 注册",
+        "height": 56,
+        "selected": "false"
+      }
+    ],
+    "tabCount": 4,
+    "viewportWidth": 390,
+    "documentScrollWidth": 390,
+    "overflowCount": 0,
+    "overflowSamples": []
+  },
+  "sourceSheet": {
+    "options": [
+      "内置服务确定",
+      "第三方服务",
+      "DeepSeek 官方服务",
+      "Anthropic 协议服务"
+    ],
+    "bottomGap": 8,
+    "width": 358,
+    "viewport": 390,
+    "viewportWidth": 390,
+    "documentScrollWidth": 390,
+    "overflowCount": 0,
+    "overflowSamples": []
+  },
+  "connectivity": {
+    "text": "正常 14 ms",
+    "dotColor": "rgb(34, 197, 94)",
+    "viewportWidth": 390,
+    "documentScrollWidth": 390,
+    "overflowCount": 0,
+    "overflowSamples": []
+  },
+  "cards": {
+    "count": 2,
+    "leaksFullCard": false,
+    "actions": [
+      "复制卡密",
+      "去兑换"
+    ],
+    "viewportWidth": 390,
+    "documentScrollWidth": 390,
+    "overflowCount": 0,
+    "overflowSamples": []
+  },
+  "history": {
+    "text": "模型来源 内置服务 › 连通性测试 正常 14 ms 我的钱包 剩余余额 — 我的卡密 › 历史消费 › 我的额度 › 购买 › 暂无消费记录 使用模型后的扣费会显示在这里 账号 账号与安全 登录 / 注册",
+    "viewportWidth": 390,
+    "documentScrollWidth": 390,
+    "overflowCount": 0,
+    "overflowSamples": []
+  },
+  "accountSignedOut": {
+    "notice": "不登录也可以：在设置里填 API Key 即可使用各渠道 当前未登录 —— 只填 Key 也能正常聊天",
+    "fillKey": 1,
+    "authCard": 1,
+    "segments": [
+      "login",
+      "register"
+    ],
+    "passwordFields": 1,
+    "viewportWidth": 390,
+    "documentScrollWidth": 390,
+    "overflowCount": 0,
+    "overflowSamples": []
+  },
+  "entrySignedIn": {
+    "entryCount": 1,
+    "entryText": "账户与消费"
+  },
+  "signedInHome": {
+    "titleFontSize": "34px",
+    "source": "模型来源 内置服务 ›",
+    "conn": "点一下测试",
+    "balance": "剩余余额 ¥128.50",
+    "rows": [
+      {
+        "text": "我的卡密›",
+        "height": 56,
+        "selected": "true"
+      },
+      {
+        "text": "我的额度›",
+        "height": 56,
+        "selected": "false"
+      },
+      {
+        "text": "购买›",
+        "height": 56,
+        "selected": "false"
+      },
+      {
+        "text": "账号与安全›",
+        "height": 56,
+        "selected": "false"
+      }
+    ],
+    "tabCount": 4,
+    "viewportWidth": 390,
+    "documentScrollWidth": 390,
+    "overflowCount": 0,
+    "overflowSamples": []
+  },
+  "accountSignedIn": {
+    "profile": "D demo d•••@example.com",
+    "accountId": "账号 ID 00000002",
+    "bindEmail": "绑定邮箱 d•••@example.com",
+    "loginMethod": "登录方式 邮箱登录",
+    "signOut": 1,
+    "hasSignedOutNotice": false,
+    "tokenOnScreen": false,
+    "viewportWidth": 390,
+    "documentScrollWidth": 390,
+    "overflowCount": 0,
+    "overflowSamples": []
+  },
+  "overflowCount": 0,
+  "overflow": {
+    "overflowCount": 0,
+    "assertion": "overflowCount === 0（390 / 360 两档，每个状态各量一次）",
+    "states": [
+      {
+        "label": "整页（未登录）",
+        "overflowCount": 0
+      },
+      {
+        "label": "模型来源 sheet",
+        "overflowCount": 0
+      },
+      {
+        "label": "连通性（正常）",
+        "overflowCount": 0
+      },
+      {
+        "label": "我的卡密",
+        "overflowCount": 0
+      },
+      {
+        "label": "历史消费",
+        "overflowCount": 0
+      },
+      {
+        "label": "账号（未登录）",
+        "overflowCount": 0
+      },
+      {
+        "label": "整页（已登录）",
+        "overflowCount": 0
+      },
+      {
+        "label": "账号（已登录）",
+        "overflowCount": 0
+      }
+    ]
+  },
+  "consoleErrors": []
+}
