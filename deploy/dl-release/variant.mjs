@@ -26,6 +26,14 @@ export const DEFAULT_MARKER = 'com.example.deepseekchat.ARTIFACT_VARIANT';
 export const DEFAULT_LOOPBACK_MARKER = 'com.example.deepseekchat.LOOPBACK_CONSUME';
 
 /**
+ * 明文 consume 标记名（Issue #601 守卫的补正面）：`android/app/build.gradle` 在
+ * `-PallowInsecureConsume=true` 且地址真是「明文 http 非回环」时写 `<meta-data …="true">`。
+ * 读取方是 `scripts/verify-release-apk.mjs` 的第 5 项（不带 `--allow-insecure` 直接 exit 1）。
+ * 与 LOOPBACK_CONSUME **并列且语义不合并**：回环 = 真机连不上后端；明文非回环 = 连得上但流量不加密。
+ */
+export const DEFAULT_INSECURE_MARKER = 'com.example.deepseekchat.INSECURE_CONSUME';
+
+/**
  * 解析 `aapt2 dump xmltree <apk> --file AndroidManifest.xml` 的输出，抽出**全部**
  * `<meta-data android:name=… android:value=…>`。
  *

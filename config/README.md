@@ -99,7 +99,12 @@
 2. 改之后：`pnpm check:endpoints` + `pnpm check:ip`（两者都会读这份 JSON）→ 重新打包。
 3. **构建期 fail-fast**：base 必须是 `https`；不得命中废弃域黑名单（`140.210.13.146`、`:60013`、旧池域）；
    `consume.baseUrl ≠ pay.baseUrl`；缺字段 / 空值 / 未知键直接中止构建并点名键名与文件行号。
-4. 灰度 / 临时换地址：**构建期环境变量** `CONSUME_BASE_OVERRIDE=<base>`（支付侧 `PAY_BASE_OVERRIDE`），
+4. staging 明文联调（`http://`，#601 守卫的补正面）：非回环明文默认**仍然中止**；确实要做 staging 联调包时
+   **两层一起显式放行** —— `ALLOW_INSECURE_CONSUME=true`（web 构建期）**且**
+   `-PallowInsecureConsume=true`（原生构建期），产物会带 `INSECURE_CONSUME=true` 标记（staging-only，
+   `verify:apk` 不带 `--allow-insecure` 直接 exit 1）。只认字面 `true`；本 JSON 里的生产值**不许**改。
+   完整命令链见 [`docs/RELEASE-MANUAL.md`](../docs/RELEASE-MANUAL.md)「staging 明文联调包」。
+5. 灰度 / 临时换地址：**构建期环境变量** `CONSUME_BASE_OVERRIDE=<base>`（支付侧 `PAY_BASE_OVERRIDE`），
    优先级高于这份 JSON、**不落盘**；判据与配置文件**同一套**（https / 回环例外 / 废弃域黑名单 / consume≠pay）。
    然后必须重新 `pnpm build` + `npx cap sync android` —— 地址是在 `pnpm build` 时注入 web 层的。
    ⚠️ **不要用 `-PconsumeBase`**：它只写原生侧 `BuildConfig.CONSUME_BASE`，没有任何 Java/Kotlin 读它，
@@ -121,7 +126,7 @@
 | 项 | 落地值 / 口径 |
 | --- | --- |
 | 当前 `consume.baseUrl` | **`http://127.0.0.1:18000`** —— 本地联调实例（维护者 2026-11-20 明确：联调与 base URL 都以本地实例为准）。**生产 host 待维护者提供**，出正式包前必须换掉 |
-| https 规则 | 两个 base 一律 https；**唯一例外是本机回环**（`127.0.0.1` / `localhost` / `[::1]`）。非回环的明文 `http://` 仍然中止构建 |
+| https 规则 | 两个 base 一律 https；**默认唯一例外是本机回环**（`127.0.0.1` / `localhost` / `[::1]`）。非回环的明文 `http://` 仍然中止构建。staging 明文联调包必须**显式**放行（`ALLOW_INSECURE_CONSUME=true` + `-PallowInsecureConsume=true`），产物带 `INSECURE_CONSUME=true` 自证标记且禁止公开分发（#601 / #651） |
 | 校验在哪 | `scripts/lib/consumeEndpoints.mjs`（`scripts/build.mjs` 打包前跑）与 `android/app/build.gradle` 的 `[consume]` 段，**同一套判据**；门禁 `pnpm check:consume-api` 再独立跑一遍 |
 
 **一处需要更正上面的说法**：`consume.baseUrl` / `pay.baseUrl` 的 host **不需要**加进 `allowedHosts`。

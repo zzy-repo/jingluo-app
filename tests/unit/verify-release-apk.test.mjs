@@ -1,11 +1,15 @@
 // [layer: unit | 纯 Node + 本机 Android SDK build-tools（缺工具时**声明期** SKIP）| 耗时: ~20s]
 //
-// 「发布 APK 四件套校验」的用例（Issue #607）。被测脚本：`scripts/verify-release-apk.mjs`。
+// 「发布 APK 五件套校验」的用例（Issue #607；第 5 项 INSECURE_CONSUME 是 #601 守卫的补正面）。
+// 被测脚本：`scripts/verify-release-apk.mjs`。
 //
 // 这个文件要回答的只有三个问题，别把它写成「脚本能跑」：
-//   1. **四项都在**：debuggable / ARTIFACT_VARIANT / LOOPBACK_CONSUME / 证书 —— 少一项就是「四件套」三个字在骗人；
-//   2. **每项都会真的红**：四种坏包（debuggable / 变体不对 / 回环标记 / 换签证书）各自 **exit 1**，
-//      并且**点名**是哪一项挂了（`结论：FAIL（debuggable 不通过）` 这行，不是「反正红了」）；
+//   1. **五项都在**：debuggable / ARTIFACT_VARIANT / LOOPBACK_CONSUME / 证书 / INSECURE_CONSUME
+//      —— 少一项就是「五件套」三个字在骗人；
+//   2. **每项都会真的红**：五种坏包（debuggable / 变体不对 / 回环标记 / 换签证书 / 明文联调包没带
+//      --allow-insecure）各自 **exit 1**，并且**点名**是哪一项挂了（`结论：FAIL（debuggable 不通过）`
+//      这行，不是「反正红了」）；反过来，明文联调包带 `--allow-insecure` 必须过、且结论行标
+//      `INSECURE(staging-only)`（打得出来，但别读成「可以公开发布」）；
 //   3. **判不出来 ≠ 通过**：缺 aapt2 / 不是 APK / 文件不存在 → **exit 2**（fail-closed，
 //      与 `check-apk-debuggable` 同一口径 —— #60 的事故就是靠「判不出来就当没事」漏出去的）。
 //
@@ -59,10 +63,10 @@ const SKIP_REASON = skipReason();
  */
 const SKIP = SKIP_REASON ? { skip: SKIP_REASON } : {};
 
-// ────────────────────────────── 1. 「四项都在」与常量一致性（不需要 SDK） ──────────────────────────────
+// ────────────────────────────── 1. 「五项都在」与常量一致性（不需要 SDK） ──────────────────────────────
 
-test('四件套就是四项，顺序与 id 固定（少一项 = 报告里会少一行）', () => {
-  assert.deepEqual(CHECKS.map((item) => item.id), ['debuggable', 'variant', 'loopback', 'cert']);
+test('五件套就是五项，顺序与 id 固定（少一项 = 报告里会少一行）', () => {
+  assert.deepEqual(CHECKS.map((item) => item.id), ['debuggable', 'variant', 'loopback', 'cert', 'insecure']);
   for (const item of CHECKS) assert.match(item.title, /^\d+ /, '每项都要带序号，表格里靠它跟 --json 对齐');
 });
 
@@ -160,27 +164,27 @@ test('文件不存在 / 少参数 / 变体名非法 → exit 2 且给用法', ()
 // ────────────────────────────── 3. 正例 + 四种负向对照（需要 SDK：真签名夹具） ──────────────────────────────
 //
 // `expect.code` = 退出码；`expect.conclusion` = 「结论」行必须**点名**的那一项
-// （正例是 `PASS（4/4 项通过）`，负例是 `FAIL（<id> 不通过）`）——「红了但不知道红在哪」不算咬住。
+// （正例是 `PASS（5/5 项通过）`，负例是 `FAIL（<id> 不通过）`）——「红了但不知道红在哪」不算咬住。
 
 const ROWS = [
   {
     id: 'P1',
     what: '干净 standard 包（LOOPBACK_CONSUME=false）：四项全绿',
     fixture: 'clean',
-    expect: { code: EXIT_OK, conclusion: /结论：PASS（4\/4 项通过）/ },
+    expect: { code: EXIT_OK, conclusion: /结论：PASS（5\/5 项通过）—— 可以发布。/ },
   },
   {
     id: 'P2',
     what: '老包没有 LOOPBACK_CONSUME 标记 → 缺失视为通过（不误伤历史包）',
     fixture: 'noLoopback',
-    expect: { code: EXIT_OK, conclusion: /结论：PASS（4\/4 项通过）/, also: /标记缺失（视为 false）/ },
+    expect: { code: EXIT_OK, conclusion: /结论：PASS（5\/5 项通过）/, also: /标记缺失（视为 false）/ },
   },
   {
     id: 'P3',
     what: '--variant internal 验 internal 包 → 通过（变体是参数，不是写死 standard）',
     fixture: 'internal',
     args: ['--variant', 'internal'],
-    expect: { code: EXIT_OK, conclusion: /结论：PASS（4\/4 项通过）/, also: /internal/ },
+    expect: { code: EXIT_OK, conclusion: /结论：PASS（5\/5 项通过）/, also: /internal/ },
   },
   {
     id: 'N1',
@@ -205,6 +209,27 @@ const ROWS = [
     what: '证书不是期望那把（换签了）→ exit 1，且点名 cert',
     fixture: 'certMismatch',
     expect: { code: EXIT_FAIL, conclusion: /结论：FAIL（cert 不通过）/, also: /FAIL\s+[0-9a-f]{64}/ },
+  },
+  {
+    id: 'N5',
+    what: 'INSECURE_CONSUME=true（明文联调包）不带 --allow-insecure → exit 1，且点名 insecure + 「禁止公开分发」',
+    fixture: 'insecureTrue',
+    expect: {
+      code: EXIT_FAIL,
+      conclusion: /结论：FAIL（insecure 不通过）/,
+      also: /明文联调包，禁止公开分发/,
+    },
+  },
+  {
+    id: 'P6',
+    what: '同一个明文联调包 + --allow-insecure → 通过，但结论行强制标 INSECURE(staging-only)',
+    fixture: 'insecureTrue',
+    args: ['--allow-insecure'],
+    expect: {
+      code: EXIT_OK,
+      conclusion: /结论：PASS（5\/5 项通过）—— \*\*INSECURE\(staging-only\)\*\*/,
+      also: /禁止公开分发/,
+    },
   },
 ];
 
@@ -250,7 +275,8 @@ test('P5 --json 是结构化结果（workflow / 脚本消费的那份形状）',
   assert.equal(report.conclusion, 'PASS');
   assert.equal(report.variant, 'standard');
   assert.equal(report.expectedCert, built.certA);
-  assert.deepEqual(report.checks.map((item) => item.id), ['debuggable', 'variant', 'loopback', 'cert']);
+  assert.deepEqual(report.checks.map((item) => item.id), ['debuggable', 'variant', 'loopback', 'cert', 'insecure']);
+  assert.equal(report.insecure, false, '干净包的 insecure 必须是 false');
   for (const item of report.checks) {
     assert.equal(item.status, 'pass', `${item.id} 应为 pass：${JSON.stringify(item)}`);
     assert.ok(item.title, '每项都要带 title（--json 消费方靠它做提示）');
@@ -271,4 +297,18 @@ test('P5 --json 是结构化结果（workflow / 脚本消费的那份形状）',
   assert.equal(redReport.conclusion, 'FAIL');
   assert.deepEqual(redReport.failing, ['debuggable']);
   assert.equal(redReport.checks.find((item) => item.id === 'debuggable').status, 'fail');
+
+  // 明文联调包：--json 里必须能直接读出 `insecure: true`（workflow 靠它决定「只发内网 / 不许公开」）
+  const insecureJson = JSON.parse(runCli([
+    built.apks.insecureTrue, '--expect-cert', built.certA, '--allow-insecure', '--json',
+  ]).stdout);
+  assert.equal(insecureJson.ok, true);
+  assert.equal(insecureJson.insecure, true);
+  assert.equal(insecureJson.allowInsecure, true);
+  assert.equal(insecureJson.checks.find((item) => item.id === 'insecure').status, 'pass');
+  // 没带 --allow-insecure 时：同一份 JSON 也要能读出「为什么红」，而不是只有退出码
+  const insecureRed = JSON.parse(runCli([built.apks.insecureTrue, '--expect-cert', built.certA, '--json']).stdout);
+  assert.equal(insecureRed.ok, false);
+  assert.equal(insecureRed.insecure, true);
+  assert.deepEqual(insecureRed.failing, ['insecure']);
 });

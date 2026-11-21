@@ -68,9 +68,15 @@ staging 地址是 `http://140.210.13.146:16000`（明文）。它今天撞三道
 
 | # | 层 | 位置 | 判据 | 现象 |
 | --- | --- | --- | --- | --- |
-| ① | 构建期（web 产物） | `scripts/lib/consumeEndpoints.mjs:185`，由 `scripts/build.mjs:71` 在打包前调用（调用点 `scripts/build.mjs:139`） | `consume.baseUrl` 必须 `https://`，唯一例外是本机回环（`scripts/lib/consumeEndpoints.mjs:164`） | `pnpm build` 在打第一个字节前就中止 |
-| ② | 构建期（gradle） | `android/app/build.gradle:209`（https）+ `android/app/build.gradle:212`（命中废弃域黑名单） | 黑名单 `android/app/build.gradle:141` 里**就含 `140.210.13.146`** | `assembleRelease` 在配置阶段 `GradleException` |
-| ③ | **运行时** | `src/services/consume/http.ts:179` | 同一套判据：非 https 且非回环 → 抛 `ConsumeConfigError` | **App 白屏** |
+| ① | 构建期（web 产物） | `scripts/lib/consumeEndpoints.mjs:239`，由 `scripts/build.mjs:79` 在打包前调用（调用点 `scripts/build.mjs:167`） | `consume.baseUrl` 必须 `https://`，唯一例外是本机回环（`scripts/lib/consumeEndpoints.mjs:199`） | `pnpm build` 在打第一个字节前就中止 |
+| ② | 构建期（gradle） | `android/app/build.gradle:242`（https）+ `android/app/build.gradle:254`（命中废弃域黑名单） | 黑名单 `android/app/build.gradle:141` 里**就含 `140.210.13.146`** | `assembleRelease` 在配置阶段 `GradleException` |
+| ③ | **运行时** | `src/services/consume/http.ts:189` | 同一套判据：非 https 且非回环 → 抛 `ConsumeConfigError` | **App 白屏** |
+
+> **2026-11-21 更新（PR #693 / #601 守卫的补正面）**：①②③ 三层现在都有**显式放行通道**（staging-only）——
+> web 构建期 `ALLOW_INSECURE_CONSUME=true`、原生构建期 `-PallowInsecureConsume=true`，产物带
+> `INSECURE_CONSUME=true` 自证标记，`pnpm verify:apk` 不带 `--allow-insecure` 直接 exit 1。三层的语义与
+> 完整命令链见 `docs/RELEASE-MANUAL.md` 的「staging 明文联调包」一节。也就是说：**不必再为了过① 去改配置
+> 或拆守卫**；但明文包仍然只许内网 staging 联调，禁止公开分发。
 
 ### 3.1 为什么②过不去：那个 IP 本身在黑名单里
 
@@ -80,12 +86,12 @@ staging 地址是 `http://140.210.13.146:16000`（明文）。它今天撞三道
 
 ### 3.1b 地址是怎么进产物的（#691 之后，先搞清楚再谈解锁）
 
-改地址有两条通道，**只有一条能改到真正发请求的那一层**（`docs/RELEASE-MANUAL.md:972` 是同一结论）：
+改地址有两条通道，**只有一条能改到真正发请求的那一层**（`docs/RELEASE-MANUAL.md:976` 是同一结论）：
 
 | 通道 | 改到哪 | 能不能用 |
 | --- | --- | --- |
-| `CONSUME_BASE_OVERRIDE=<值> pnpm build`（构建期环境变量，`scripts/lib/consumeEndpoints.mjs:62`） | web 产物里的 `__ENDPOINTS__.consume.baseUrl` | ✅ **唯一正确路径**；判据与配置文件同一套（所以照样要过①） |
-| `-PconsumeBase=<值>`（gradle 属性） | 只有原生侧 `BuildConfig.CONSUME_BASE`，没有任何 Java/Kotlin 读它 | ❌ 现在会被**闸 0**拦下：gradle 把 `-PconsumeBase` 与 web 产物自述交叉核对，不一致直接 `BUILD FAILED`（`android/app/build.gradle:722`） |
+| `CONSUME_BASE_OVERRIDE=<值> pnpm build`（构建期环境变量，`scripts/lib/consumeEndpoints.mjs:67`） | web 产物里的 `__ENDPOINTS__.consume.baseUrl` | ✅ **唯一正确路径**；判据与配置文件同一套（所以照样要过①） |
+| `-PconsumeBase=<值>`（gradle 属性） | 只有原生侧 `BuildConfig.CONSUME_BASE`，没有任何 Java/Kotlin 读它 | ❌ 现在会被**闸 0**拦下：gradle 把 `-PconsumeBase` 与 web 产物自述交叉核对，不一致直接 `BUILD FAILED`（`android/app/build.gradle:807`） |
 
 也就是说：**用 `-PconsumeBase` 出包得到的是一份「看起来改了、实际仍打生产」的包**（#651 实测），
 这条缝已被 #691 封住。本 runbook 一律走 `CONSUME_BASE_OVERRIDE`。
@@ -94,7 +100,7 @@ staging 地址是 `http://140.210.13.146:16000`（明文）。它今天撞三道
 
 `src/main.tsx:100` 是**模块级**调用 `getConsumeClient()`；它一路同步走到
 `src/services/consume/index.ts:180` →`src/services/consume/http.ts:268` 读配置，
-配置非法就在**模块求值阶段**抛异常（`src/services/consume/http.ts:179`）。
+配置非法就在**模块求值阶段**抛异常（`src/services/consume/http.ts:189`）。
 入口模块抛异常 = React 一个字节都没渲染 = 白屏，且界面上没有任何提示（用户只看到空白页）。
 
 也就是说：**②放宽了能出包，但包装上去必定白屏**。②和③必须同时处理，见 §4 的「三层同源」。
@@ -111,7 +117,7 @@ staging 地址是 `http://140.210.13.146:16000`（明文）。它今天撞三道
 | 项 | 内容 |
 | --- | --- |
 | 前提 | staging 有 TLS 反代，前端拿一个**域名**的 https 地址（例：`https://staging-<名字>.<域>`），不能用 IP（见 §3.1） |
-| 客户端改动 | **零**：`http.ts` 的运行时判据对 https 天然放行（`src/services/consume/http.ts:179`），不新增 flag、不新增标记 |
+| 客户端改动 | **零**：`http.ts` 的运行时判据对 https 天然放行（`src/services/consume/http.ts:189`），不新增 flag、不新增标记 |
 | 地址怎么进产物 | `CONSUME_BASE_OVERRIDE=https://<staging-域名> pnpm build`（零仓库改动，§3.1b）；**不要**用 `-PconsumeBase`（闸 0 会拦），也**不必**改 `config/endpoints.json`（`config/endpoints.json:22` 保持生产值） |
 | 好处 | 三处判据一行代码都不用动，没有「放宽后忘了收回」的风险 |
 | 代价 | 要有人把 staging 的证书 / 域名做出来（运维动作，不在本仓库） |
@@ -123,9 +129,9 @@ B 的本质是「**承认这个包不能分发**」，所以必须三层一起�
 
 | 层 | 要落的改动 | 为什么不能省 |
 | --- | --- | --- |
-| 构建期（web） | `scripts/lib/consumeEndpoints.mjs:185` 增加「显式放行明文」的通道（flag），仅当该 flag 打开时放行非回环 `http://` | ①不改，`pnpm build` 直接中止 |
-| 构建期（gradle） | `android/app/build.gradle:209` / `:212` 同步同一 flag（`140.210.13.146` 在 `:141` 黑名单里） | ②不改，`assembleRelease` 中止 |
-| 运行时 | `src/services/consume/http.ts:179` 的同一 flag 必须**编译进产物**并生效 | ③不改，**装上去白屏**（§3.2） |
+| 构建期（web） | `scripts/lib/consumeEndpoints.mjs:239` 增加「显式放行明文」的通道（flag），仅当该 flag 打开时放行非回环 `http://` | ①不改，`pnpm build` 直接中止 |
+| 构建期（gradle） | `android/app/build.gradle:242` / `:212` 同步同一 flag（`140.210.13.146` 在 `:141` 黑名单里） | ②不改，`assembleRelease` 中止 |
+| 运行时 | `src/services/consume/http.ts:189` 的同一 flag 必须**编译进产物**并生效 | ③不改，**装上去白屏**（§3.2） |
 | APK 内标记 | 新 `<meta-data …INSECURE_CONSUME="true">`，与现有两项同风格（`android/app/src/main/AndroidManifest.xml:31`、`:38`） | 让「这个包是明文后端」成为**产物内的事实**，可被检察；改标记必须重签名 |
 | 校验脚本 | `scripts/verify-release-apk.mjs` 增加放行参数（今天**没有**这个参数，见 `scripts/verify-release-apk.mjs:16` 的用法行） | 不加，`verify:apk` 会把任意明文后端包判成 fail，人就会去绕过门禁 |
 

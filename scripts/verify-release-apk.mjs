@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 /**
- * verify-release-apk.mjs —— **发布 APK 四件套**一条命令校验（Issue #607 沉淀，#630 的 workflow 内联版）。
+ * verify-release-apk.mjs —— **发布 APK 五件套**一条命令校验（Issue #607 沉淀，#630 的 workflow 内联版；
+ * 第 5 项 `INSECURE_CONSUME` 是 Issue #601 守卫的补正面 —— staging 明文联调包的自证标记）。
  *
  * ## 为什么要有它（今天真踩过）
  *   · `v1.4.3` 发出去之后，是靠人**手打 5 条命令**（aapt2 badging / xmltree / apksigner / sha256 /
@@ -9,27 +10,34 @@
  *     全在内：漏的不是某一次操作，是「没有一条能一键复算的判据」；
  *   · 现有 `scripts/check-apk-debuggable.mjs` 只查 debuggable，其余三项（变体 / 回环标记 / 证书）
  *     散在 `docs/RELEASE-MANUAL.md` 的手打命令和 `.github/workflows/release.yml` 里，**别人用不上**。
- * 所以这里把四项做成同一张表：任何 lane、任何 APK，一条命令、一个退出码。
+ * 所以这里把判据做成同一张表：任何 lane、任何 APK，一条命令、一个退出码。
  *
  * ## 用法
  * ```
- * node scripts/verify-release-apk.mjs <apk> [--variant standard] [--expect-cert <sha256>] [--json]
+ * node scripts/verify-release-apk.mjs <apk> [--variant standard] [--expect-cert <sha256>] \
+ *        [--allow-insecure] [--json]
  * ```
- *   --variant       期望的构建变体（默认 `standard`，可选 `internal`）
- *   --expect-cert   期望的签名证书 SHA-256（默认取下面的 `EXPECTED_CERT_SHA256`，与仓库那份一致）
- *   --json          输出结构化结果（workflow / 脚本消费；此时不打印表格）
+ *   --variant         期望的构建变体（默认 `standard`，可选 `internal`）
+ *   --expect-cert     期望的签名证书 SHA-256（默认取下面的 `EXPECTED_CERT_SHA256`，与仓库那份一致）
+ *   --allow-insecure  明确认可「这是明文联调包」（`INSECURE_CONSUME=true`）：不加就 exit 1
+ *   --json            输出结构化结果（workflow / 脚本消费；此时不打印表格）
  *
- * ## 四项 + 附加输出
+ * ## 五项 + 附加输出
  * | # | 检查 | 判据 |
  * |---|------|------|
  * | 1 | `debuggable` 不存在或 false | 复用 `check-apk-debuggable.mjs` 的 `evaluateApkDebuggable`（**不重写判定**） |
  * | 2 | `ARTIFACT_VARIANT == --variant` | `aapt2 dump xmltree --file AndroidManifest.xml` 的 meta-data |
  * | 3 | `LOOPBACK_CONSUME` 不存在或 false | 同上；**缺失视为通过**（老包没有这个标记，#601 的闸 2 同口径） |
  * | 4 | 签名证书 SHA-256 == `--expect-cert` | `apksigner verify --print-certs` |
- * | 5 | 附加输出（不算失败项） | `versionName` / `versionCode` / `sha256` / `md5` / `size`，供 Release 正文直用 |
+ * | 5 | `INSECURE_CONSUME` 不存在或 false，**或者**带了 `--allow-insecure` | 同上；缺失视为 false（向后兼容）。<br>`true` 且没带 `--allow-insecure` → **exit 1**（明文联调包，禁止公开分发）；<br>带了 → 通过，但结论行强制标 `INSECURE(staging-only)`、`--json` 里 `insecure: true` |
+ * | 6 | 附加输出（不算失败项） | `versionName` / `versionCode` / `sha256` / `md5` / `size`，供 Release 正文直用 |
+ *
+ * 第 5 项为什么存在：`-PallowInsecureConsume=true` 让「明文 http 非回环」的 staging 包打得出来
+ * （#651 的发版铁律要求 staging 指向 `http://140.210.13.146:16000`，明文是已知代价），代价是这个包
+ * **不能公开分发**。所以放行通道必须留下自证标记，由这道闸把它挡住 —— 打得出来，但发不安静悄悄。
  *
  * ## 退出码（与 `check-apk-debuggable` 同一口径）
- *   0  四项全过 → 可以发布
+ *   0  五项全过 → 可以发布
  *   1  有项目**明确不过**（读到值、值不对）→ 禁止发布，报告点名是哪一项
  *   2  判不出来（缺 aapt2 / apksigner、SDK 没装、不是 APK、清单读不出）→ **同样禁止发布**（fail-closed）
  *
@@ -37,7 +45,7 @@
  *   · 不依赖网络、不修改 APK（只读 + `fs.statSync`）；
  *   · 证书指纹是「这次出包用的是不是那把已发布 key」，不等于「包里的 JS 没被人改过」——
  *     那属于产物审计，不在这张表里；
- *   · 第 2/3 项要 `aapt2`，第 4 项要 `apksigner`，两者都从 `$ANDROID_HOME/build-tools/<版本>/` 取
+ *   · 第 2/3/5 项要 `aapt2`，第 4 项要 `apksigner`，两者都从 `$ANDROID_HOME/build-tools/<版本>/` 取
  *     （优先级见 `scripts/lib/androidTools.mjs`：钉住的版本 > 已装最高档），找不到就 exit 2。
  */
 
@@ -49,6 +57,7 @@ import { fileURLToPath } from 'node:url';
 
 import { evaluateApkDebuggable } from './check-apk-debuggable.mjs';
 import {
+  DEFAULT_INSECURE_MARKER,
   DEFAULT_LOOPBACK_MARKER,
   DEFAULT_MARKER,
   VARIANTS,
@@ -70,12 +79,17 @@ export const EXPECTED_CERT_SHA256 = 'e7c5baee517ca2b2258950e934521f2fad448d00f72
 /** 检查项状态：pass 通过 / fail 明确不过 / unknown 判不出来（fail-closed） */
 export const STATUS = Object.freeze({ PASS: 'pass', FAIL: 'fail', UNKNOWN: 'unknown' });
 
-/** 四项检查的固定顺序与标题（表格、--json、报错点名都以它为准） */
+/**
+ * 五项检查的固定顺序与标题（表格、--json、报错点名都以它为准）。
+ * 第 5 项 `insecure` 与第 3 项 `loopback` **并列、语义不合并**：
+ *   loopback = 回环地址（真机连不上后端）；insecure = 明文非回环（连得上但不加密，#601 守卫的补正面）。
+ */
 export const CHECKS = Object.freeze([
   { id: 'debuggable', title: '1 debuggable 不存在或 false' },
   { id: 'variant', title: '2 ARTIFACT_VARIANT 与期望一致' },
   { id: 'loopback', title: '3 LOOPBACK_CONSUME 不存在或 false' },
   { id: 'cert', title: '4 签名证书 SHA-256 与期望一致' },
+  { id: 'insecure', title: '5 INSECURE_CONSUME 不存在或 false' },
 ]);
 
 const SCRIPT = path.basename(fileURLToPath(import.meta.url));
@@ -113,6 +127,7 @@ function unknownResult(base, error) {
     ...base,
     ok: false,
     exitCode: EXIT_UNKNOWN,
+    insecure: false,
     conclusion: EXIT_LABEL[EXIT_UNKNOWN],
     checks: CHECKS.map((item) => check(item.id, STATUS.UNKNOWN, '—', '未校验', error)),
     failing: [],
@@ -182,18 +197,22 @@ const STATUS_LABEL = {
  * 校验一个 APK。
  *
  * @param {{apk: string, variant?: string, expectCert?: string, env?: NodeJS.ProcessEnv,
- *          buildToolsVersion?: string|null}} options
+ *          buildToolsVersion?: string|null, allowInsecure?: boolean}} options
  * @returns {object} 结构化结果（形状见文件头；`--json` 直接打印它）
  */
 export function verifyReleaseApk(options) {
   const env = options.env ?? process.env;
   const expectedVariant = options.variant ?? 'standard';
   const expectCert = String(options.expectCert ?? EXPECTED_CERT_SHA256).toLowerCase();
+  // 「明文联调包」必须是**显式**认可的一件事：不传就是不许发（见下面第 5 项）
+  const allowInsecure = options.allowInsecure === true;
   const apkArg = typeof options.apk === 'string' ? options.apk : '';
   const base = {
     apk: apkArg,
     variant: expectedVariant,
     expectedCert: expectCert,
+    allowInsecure,
+    insecure: false,
     buildTools: null,
     info: {},
   };
@@ -305,7 +324,43 @@ export function verifyReleaseApk(options) {
     checks.push(check('cert', STATUS.PASS, expectCert, digests.join(', '), null));
   }
 
-  // ── 5. 附加输出（不算失败项）：Release 正文直接用 ──────────────────────────────────────
+  // ── 5. 明文联调包标记（INSECURE_CONSUME）：与 LOOPBACK_CONSUME 并列、判据独立 ──────────────
+  //
+  // 语义（#601 守卫的补正面）：`-PallowInsecureConsume=true` 让「明文 http 非回环」的 staging 包
+  // 打得出来，代价是**不能公开分发**。构建期把 `INSECURE_CONSUME=true` 写进 AndroidManifest，
+  // 这里就是那个标记的读取点：不显式 `--allow-insecure` 一律 exit 1 —— 打得出来，但发不安静悄悄。
+  // 老包没有这个字段 → 视为 false（向后兼容，与第 3 项同口径）。
+  const insecureMarker = meta.get(DEFAULT_INSECURE_MARKER);
+  const insecureRaw = insecureMarker && typeof insecureMarker.value === 'string'
+    ? insecureMarker.value.trim().toLowerCase()
+    : (insecureMarker ? '<非字符串>' : null);
+  const insecureIsTrue = insecureRaw === 'true' || insecureRaw === '1';
+  base.insecure = xmltreeOk && insecureIsTrue;
+  if (!xmltreeOk) {
+    checks.push(check('insecure', STATUS.UNKNOWN, '不存在或 false', '判不出来', xmltreeWhy));
+  } else if (!insecureMarker) {
+    checks.push(check('insecure', STATUS.PASS, '不存在或 false', '标记缺失（视为 false）', null));
+  } else if (insecureRaw === 'false' || insecureRaw === '0') {
+    checks.push(check('insecure', STATUS.PASS, '不存在或 false', insecureRaw, null));
+  } else if (insecureIsTrue) {
+    if (allowInsecure) {
+      checks.push(check(
+        'insecure', STATUS.PASS, '不存在或 false', `${insecureRaw}（--allow-insecure 已确认：staging-only）`,
+        '明文联调包：仅限内网 staging 联调，禁止公开分发 / 禁止进公开清单',
+      ));
+    } else {
+      checks.push(check(
+        'insecure', STATUS.FAIL, '不存在或 false', insecureRaw,
+        '这是明文联调包，禁止公开分发（构建期用了 -PallowInsecureConsume=true，consume/pay 的 base 是非回环明文 http，流量不加密）。'
+          + '确认只做 staging 联调就显式加 --allow-insecure；要公开发布请换成 https 重新出包',
+      ));
+    }
+  } else {
+    // 只认 true/false 两种语义；其余一律按不过处理（发布闸门不做「可能是 false」的猜测）
+    checks.push(check('insecure', STATUS.FAIL, '不存在或 false', String(insecureRaw), '标记值不是布尔（gradle 只写 true/false），fail-closed'));
+  }
+
+  // ── 6. 附加输出（不算失败项）：Release 正文直接用 ──────────────────────────────────────
   const badging = run(tools.tools.aapt2, ['dump', 'badging', apk]);
   const fromBadging = badging.status === 0 && !badging.error ? parseBadgingVersion(badging.stdout) : {};
   const info = {
@@ -370,7 +425,16 @@ export function formatReport(result) {
   lines.push(`  size        : ${info.sizeHuman ?? '—'}`);
   lines.push('');
   if (result.conclusion === 'PASS') {
-    lines.push(`结论：PASS（${result.checks.length}/${result.checks.length} 项通过）—— 可以发布。`);
+    // 明文联调包（INSECURE_CONSUME=true + --allow-insecure）：通过，但结论行**强制**带 INSECURE(staging-only)
+    // —— 这一行是贴进 Release 正文 / 分发说明的，不能让它读起来像「可以公开发布」。
+    if (result.insecure) {
+      lines.push(
+        `结论：PASS（${result.checks.length}/${result.checks.length} 项通过）—— **INSECURE(staging-only)**：`
+          + '明文 http 联调包，只许内网 staging 联调用，禁止公开分发（--allow-insecure 已由操作者确认）。',
+      );
+    } else {
+      lines.push(`结论：PASS（${result.checks.length}/${result.checks.length} 项通过）—— 可以发布。`);
+    }
   } else if (result.conclusion === 'FAIL') {
     const detail = result.checks.filter((item) => item.status === STATUS.FAIL);
     lines.push(`结论：FAIL（${result.failing.join(' / ')} 不通过）—— 禁止发布。`);
@@ -392,19 +456,31 @@ export function formatReport(result) {
 
 function usage() {
   return [
-    `用法: node scripts/${SCRIPT} <apk> [--variant standard|internal] [--expect-cert <sha256>] [--json]`,
+    `用法: node scripts/${SCRIPT} <apk> [--variant standard|internal] [--expect-cert <sha256>] [--allow-insecure] [--json]`,
     '',
-    '四项校验：debuggable 不存在或 false / ARTIFACT_VARIANT 与 --variant 一致 /',
-    '          LOOPBACK_CONSUME 不存在或 false / 签名证书 SHA-256 与 --expect-cert 一致',
+    '五项校验：debuggable 不存在或 false / ARTIFACT_VARIANT 与 --variant 一致 /',
+    '          LOOPBACK_CONSUME 不存在或 false / 签名证书 SHA-256 与 --expect-cert 一致 /',
+    '          INSECURE_CONSUME 不存在或 false（为 true 时必须显式加 --allow-insecure，否则 exit 1）',
     '附加输出：versionName / versionCode / sha256 / md5 / size（Release 正文直接用）',
     '',
-    '退出码: 0 四项全过 / 1 有项目明确不过（报告点名） / 2 判不出来（缺 SDK 工具等，同样禁止发布）',
+    '--allow-insecure  确认「这是明文联调包」：只给 staging 联调用，结论行会强制标 INSECURE(staging-only)，',
+    '                  禁止公开分发；不带它时，带 INSECURE_CONSUME=true 标记的包一律 exit 1',
+    '',
+    '退出码: 0 五项全过 / 1 有项目明确不过（报告点名） / 2 判不出来（缺 SDK 工具等，同样禁止发布）',
     `默认证书: ${EXPECTED_CERT_SHA256}`,
   ].join('\n');
 }
 
 function parseArgs(argv) {
-  const options = { apk: '', variant: 'standard', expectCert: null, json: false, help: false, buildToolsVersion: null };
+  const options = {
+    apk: '',
+    variant: 'standard',
+    expectCert: null,
+    json: false,
+    help: false,
+    buildToolsVersion: null,
+    allowInsecure: false,
+  };
   const rest = [];
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
@@ -416,6 +492,7 @@ function parseArgs(argv) {
     // `pnpm run verify:apk -- <apk>` 会把 `--` 原样透传过来（npm 会吞掉）；两种都接受
     if (arg === '--') continue;
     else if (arg === '--json') options.json = true;
+    else if (arg === '--allow-insecure') options.allowInsecure = true;
     else if (arg === '--variant') options.variant = value();
     else if (arg === '--expect-cert') options.expectCert = value();
     else if (arg === '--build-tools') options.buildToolsVersion = value();
@@ -450,6 +527,7 @@ function main(argv) {
     variant: options.variant,
     expectCert: options.expectCert ?? undefined,
     buildToolsVersion: options.buildToolsVersion,
+    allowInsecure: options.allowInsecure,
   });
 
   if (options.json) {
@@ -460,7 +538,9 @@ function main(argv) {
   // 非 JSON 模式下把「为什么不过」同时写到 stderr，方便 workflow 的 ::error:: 与 grep 抓
   if (result.exitCode !== EXIT_OK && !options.json) {
     const reason = result.conclusion === 'FAIL'
-      ? `发布校验不通过：${result.failing.join(' / ')}`
+      ? (result.failing.includes('insecure') && !result.allowInsecure
+        ? '发布校验不通过：insecure —— 这是明文联调包，禁止公开分发（确认只做 staging 联调请加 --allow-insecure）'
+        : `发布校验不通过：${result.failing.join(' / ')}`)
       : '发布校验判不出来（fail-closed）';
     console.error(reason);
   }

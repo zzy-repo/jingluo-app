@@ -287,7 +287,8 @@ BT=${ANDROID_HOME:-$HOME/android-sdk}/build-tools/${BUILD_TOOLS_VERSION:?先 cp 
   | 2 | `ARTIFACT_VARIANT == --variant`（默认 `standard`） | `aapt2 dump xmltree --file AndroidManifest.xml` 读 meta-data |
   | 3 | `LOOPBACK_CONSUME` 不存在或 false | 同上；**标记缺失视为通过**（与 #601 闸 2 同口径：老包没有这个标记，不误伤历史包） |
   | 4 | 签名证书 SHA-256 == `--expect-cert` | `apksigner verify --print-certs`；默认值 = §4.3 那个已发布证书 |
-  | 5 | 附加输出（不算失败项） | `versionName` / `versionCode` / `sha256` / `md5` / `size`，直接抄进 Release 正文 |
+  | 5 | `INSECURE_CONSUME` 不存在或 false（**或者带了 `--allow-insecure`**） | 同上；缺失视为 false（老包向后兼容）。<br>`true` 且没带 `--allow-insecure` → **exit 1**（明文联调包，禁止公开分发）；带了 → 通过，但结论行强制标 `INSECURE(staging-only)`、`--json` 里 `insecure: true` |
+  | 6 | 附加输出（不算失败项） | `versionName` / `versionCode` / `sha256` / `md5` / `size`，直接抄进 Release 正文 |
 
   `aapt2` / `apksigner` 从 `$ANDROID_HOME/build-tools/<版本>/` 取：**钉住的 `BUILD_TOOLS_VERSION`
   优先，没钉才取已装最高档**（输出里会标 `auto-max`，提醒你核对工具可能不是出包那一个）。
@@ -306,6 +307,7 @@ BT=${ANDROID_HOME:-$HOME/android-sdk}/build-tools/${BUILD_TOOLS_VERSION:?先 cp 
   2  ARTIFACT_VARIANT 与期望一致      PASS     standard
   3  LOOPBACK_CONSUME 不存在或 false  PASS     false
   4  签名证书 SHA-256 与期望一致      PASS     e7c5baee517ca2b2258950e934521f2fad448d00f72f2ff7297bdf4fa00aa8a1
+  5  INSECURE_CONSUME 不存在或 false  PASS     false
 
   附加输出（Release 正文可直接用，不算失败项）
     packageName : com.example.deepseekchat
@@ -315,7 +317,7 @@ BT=${ANDROID_HOME:-$HOME/android-sdk}/build-tools/${BUILD_TOOLS_VERSION:?先 cp 
     md5         : d6660c0168465e1196c03abe8bafaf06
     size        : 6.56 MiB（6875727 字节）
 
-  结论：PASS（4/4 项通过）—— 可以发布。
+  结论：PASS（5/5 项通过）—— 可以发布。
   ```
 
   红的时候长这样（历史 debug 包 `deepseek-chat-1.2.0.apk`，退出码 `1`）：
@@ -335,11 +337,13 @@ BT=${ANDROID_HOME:-$HOME/android-sdk}/build-tools/${BUILD_TOOLS_VERSION:?先 cp 
   | `FAIL（debuggable 不通过）` | 这是 `assembleDebug` 的产物（Issue #60） | 回 §3 用 `assembleRelease` 重新出包，别上传 |
   | `FAIL（variant 不通过）` | 变体标记与 web 构建不同源，或标记缺失（历史包） | `build:internal` ↔ `-PartifactVariant=internal`、`build` ↔ 默认 standard，同源重打 |
   | `FAIL（loopback 不通过）` | 带 `-PallowLoopbackConsume=true` 的回环包（#601）：真机连不上后端 | 把 `config/endpoints.json` 的 base 换成生产 https 地址后重打 |
+  | `FAIL（insecure 不通过）` | 带 `INSECURE_CONSUME=true` 的**明文联调包**（`-PallowInsecureConsume=true` + `ALLOW_INSECURE_CONSUME=true`，staging-only）：流量不加密，**禁止公开分发** | 只做内网 staging 联调就显式加 `--allow-insecure`（结论行会标 `INSECURE(staging-only)`）；要公开发布就换成 https 重新出包 |
   | `FAIL（cert 不通过）` | 换了签名证书 → 已装用户无法覆盖升级 | 按 §1 把 release 三项指回 `/root/.android/debug.keystore`；**不许**改指纹常量 |
   | `UNKNOWN`（exit 2） | 判不出来：缺 SDK 工具 / 不是 APK / 清单读不出 | 按提示装 build-tools 或拿对文件——**判不出来等于不通过** |
 
   **这条判据自己会红吗？** 会，有负向对照：`node --test tests/unit/verify-release-apk.test.mjs`
-  现场造四种坏包（debuggable / 变体不对 / 回环标记 / 换签证书），逐个断言 `exit 1` 且点名对应检查项；
+  现场造五种坏包（debuggable / 变体不对 / 回环标记 / 换签证书 / 明文联调包没带 `--allow-insecure`），
+  逐个断言 `exit 1` 且点名对应检查项；
   另外两条断言「缺 aapt2 → exit 2」「不是 APK → exit 2」。
 
   同一套判据在 `.github/workflows/release.yml` 里是内联的另一份（#630 的写法，尚未合并）——
@@ -1012,6 +1016,49 @@ grep -lF "$NEW" dist/static/js/*.js                                        # 命
 grep -lF "$NEW" android/app/src/main/assets/public/static/js/*.js          # 命中 = 已 cap sync 进原生工程
 node -e 'console.log(require("./dist/build-info.json").endpoints)'         # 自述文件里记的就是生效值
 ```
+
+### staging 明文联调包（`http://` + `INSECURE_CONSUME`，staging-only，#601 / #651）
+
+staging 的 sub2api 只在**明文** `http://<staging-ip>:16000` 上提供服务（16000 = staging，明文是已知且
+接受的代价，包按 `prerelease` 发）。默认判据是「https，唯一例外是本机回环」，所以这种包必须**显式**
+放行 —— 而且**三层都要放行**，少一层就是「打得出来、装上一开就白屏」的坏包（#601 的形状）：
+
+| 层 | 载体 | 开关 | 产物落点 |
+| --- | --- | --- | --- |
+| ① 原生构建期 | `android/app/build.gradle`（闸 1b） | `-PallowInsecureConsume=true`（或环境变量 `ALLOW_INSECURE_CONSUME=true`） | APK 的 `<meta-data …INSECURE_CONSUME="true">` + `BuildConfig.INSECURE_CONSUME` |
+| ② web 构建期 | `scripts/lib/consumeEndpoints.mjs` / `rspack.config.ts` | `ALLOW_INSECURE_CONSUME=true` | `__ENDPOINTS__.insecureConsume = true`（`dist/static/js/main.*.js`） |
+| ③ 运行时 | `src/services/consume/http.ts` | 读 ② 的注入标记（运行时读不到 `-P` / env） | 只有标记为 true 才不抛 `ConsumeConfigError` |
+
+完整一条命令链（**两个开关必须一起给**，`CONSUME_BASE_OVERRIDE` 与 `-PconsumeBase` 取值必须一致，
+否则 gradle 的闸 0 交叉核对会直接 BUILD FAILED）：
+
+```bash
+export ALLOW_INSECURE_CONSUME=true
+export CONSUME_BASE_OVERRIDE=http://<staging-ip>:16000
+pnpm build                             # ② web 层：放行明文 + 注入 insecureConsume=true
+npx cap sync android                   # 把 dist 与 build-info.json 拷进原生工程
+cd android
+./gradlew assembleRelease -PallowInsecureConsume=true   # ① 原生层：闸 1b 放行 + 写 INSECURE_CONSUME 标记
+```
+
+换地址仍然只走 `CONSUME_BASE_OVERRIDE`（上面「换消费后端地址」那一节的结论不变）。若你**也**想让原生侧
+`BuildConfig.CONSUME_BASE` 跟着写同一个值，可以额外传 gradle 属性 `-PconsumeBase=<与 CONSUME_BASE_OVERRIDE 完全相同的值>`
+—— 两侧不一致会被 gradle 的闸 0 交叉核对直接拦下（`-PconsumeBase` 单独用仍然是那条假通道，别拿它换地址）。
+
+只认字面 `true`：写 `=yes` / `=1` / `=false` 一律报错（逃生舱不能靠拼写猜）。**没传 flag 时口径一字不变**：
+非回环明文仍在配置阶段中止，文案里给出上面这条解法。
+
+产物自证与验收入口（`verify:apk` 第 5 项）：
+
+```bash
+pnpm verify:apk <apk>                  # INSECURE_CONSUME=true → exit 1：明文联调包，禁止公开分发
+pnpm verify:apk <apk> --allow-insecure # exit 0，但结论行强制标 INSECURE(staging-only)，--json 里 insecure: true
+```
+
+传了 flag 但地址其实是生产 https → **不写标记**（不误标），`verify:apk` 照旧 5/5 全绿。
+老包没有这个字段 → 视为 `false`（向后兼容，与 `LOOPBACK_CONSUME` 同口径）。三个标记
+（`ARTIFACT_VARIANT` / `LOOPBACK_CONSUME` / `INSECURE_CONSUME`）**并列、语义不合并**：回环 =
+真机连不上后端，明文非回环 = 连得上但流量不加密。
 
 ### 未测边界（如实记录）
 

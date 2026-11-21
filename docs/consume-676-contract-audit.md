@@ -167,10 +167,10 @@ staging 上两者会打架（账户 `balance=2.02`，Key 侧 403，见第五节�
 
 | # | 拦截点 | 证据 | 后果 |
 | --- | --- | --- | --- |
-| 1 | **构建前 fail-fast**（web 包） | `scripts/lib/consumeEndpoints.mjs:187`「必须是 https（明文 http 直接中止构建）」；`:208` 命中 `DEPRECATED_MARKERS`（含 `140.210.13.146`，`:45`） | `pnpm build` 直接中止 |
-| 2 | **gradle（原生侧）** | `android/app/build.gradle:210`「必须是 https（唯一例外是本机回环）」；`:214`「命中废弃域黑名单」；黑名单本体 `:141 CONSUME_DEPRECATED_MARKERS = ['140.210.13.146', ':60013']` | `assembleRelease` 直接 FAILURE |
-| 3 | **运行时**（真机上） | `src/services/consume/http.ts:179-183` 同一条规则 → 抛 `ConsumeConfigError`；`src/main.tsx:100` 是**模块级** `getConsumeClient()` | 万一绕过前两层出了包，App **启动即抛**（白屏），不是「登录失败」 |
-| 4 | **`-PconsumeBase` 根本到不了 web 包** | `-PconsumeBase` 只写 `BuildConfig.CONSUME_BASE`（`android/app/build.gradle:665`），而 `grep -rn CONSUME_BASE android/app/src/main/java/` → **0 命中**（java 侧没人读）；WebView 里的 `__ENDPOINTS__.consume.baseUrl` 是 **rspack 打包时**从 `config/endpoints.json` 注入的（`rspack.config.ts:465-474`） | 即使解开前三条，WebView 仍然打**生产** `https://sub2api.rose7.cn`。**#651 已封这条缝**：web 层改用 `CONSUME_BASE_OVERRIDE` / `PAY_BASE_OVERRIDE`（优先级 > 配置），且 gradle 会把 `-PconsumeBase` 与 web 产物自述交叉核对，不一致 `BUILD FAILED`（`android/app/build.gradle:723`） |
+| 1 | **构建前 fail-fast**（web 包） | `scripts/lib/consumeEndpoints.mjs:239`「必须是 https（明文 http 直接中止构建）」；`:269` 命中 `DEPRECATED_MARKERS`（含 `140.210.13.146`，`:50`） | `pnpm build` 直接中止 |
+| 2 | **gradle（原生侧）** | `android/app/build.gradle:242`「非回环明文 → `insecureBases` 记录、由闸 1b 判定」；`:254`「命中废弃域黑名单」；黑名单本体 `:141 CONSUME_DEPRECATED_MARKERS = ['140.210.13.146', ':60013']` | `assembleRelease` 直接 FAILURE |
+| 3 | **运行时**（真机上） | `src/services/consume/http.ts:187-194` 同一条规则 → 抛 `ConsumeConfigError`；`src/main.tsx:100` 是**模块级** `getConsumeClient()` | 万一绕过前两层出了包，App **启动即抛**（白屏），不是「登录失败」 |
+| 4 | **`-PconsumeBase` 根本到不了 web 包** | `-PconsumeBase` 只写 `BuildConfig.CONSUME_BASE`（`android/app/build.gradle:746`），而 `grep -rn CONSUME_BASE android/app/src/main/java/` → **0 命中**（java 侧没人读）；WebView 里的 `__ENDPOINTS__.consume.baseUrl` 是 **rspack 打包时**从 `config/endpoints.json` 注入的（`rspack.config.ts:485-494`） | 即使解开前三条，WebView 仍然打**生产** `https://sub2api.rose7.cn`。**#651 已封这条缝**：web 层改用 `CONSUME_BASE_OVERRIDE` / `PAY_BASE_OVERRIDE`（优先级 > 配置），且 gradle 会把 `-PconsumeBase` 与 web 产物自述交叉核对，不一致 `BUILD FAILED`（`android/app/build.gradle:807`） |
 
 **本单实测复现（第 3 层）**：
 

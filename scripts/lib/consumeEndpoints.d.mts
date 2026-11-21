@@ -22,6 +22,21 @@ export declare const TIMEOUT_MAX_MS: number
 /** 覆盖通道的环境变量名（`CONSUME_BASE_OVERRIDE` / `PAY_BASE_OVERRIDE`） */
 export declare const BASE_OVERRIDE_ENV: Readonly<{ consume: string; pay: string }>
 
+/** 明文联调包放行开关的环境变量名（`ALLOW_INSECURE_CONSUME`；原生侧同名开关是 `-PallowInsecureConsume=true`） */
+export declare const ALLOW_INSECURE_ENV: string
+
+/** 放行开关的解析结果：`error` 非空 = 「设了但不合法」，调用方必须中止（只认字面 true） */
+export type AllowInsecureParse = Readonly<{ allowInsecure: boolean; error: string | null }>
+
+export declare const parseAllowInsecure: (raw: unknown) => AllowInsecureParse
+export declare const allowInsecureFromEnv: (env?: Record<string, string | undefined>) => AllowInsecureParse
+
+/** `validateConsumePay` / `checkBase` 的放宽选项（只放宽「明文 + 旧池域」两条） */
+export type InsecureFlags = {
+  allowInsecure?: boolean
+  onNotice?: (message: string) => void
+}
+
 export type ConsumeSection = {
   baseUrl: string
   apiV1Prefix: string
@@ -46,11 +61,12 @@ export declare const collectKeyLines: (text: string) => Map<string, number>
 export declare const isLoopbackHost: (hostname: string) => boolean
 export declare const parseBaseUrl: (value: unknown) => URL | null
 export declare const normalizeBaseForCompare: (value: unknown) => string
-export declare const validateConsumePay: (raw: unknown, text?: string) => string[]
+export declare const validateConsumePay: (raw: unknown, text?: string, options?: InsecureFlags) => string[]
 export declare const placeholderNotice: (raw: unknown) => string | null
-export declare const loadConsumePay: (file?: string) => ConsumePayConfig
+export declare const loadConsumePay: (file?: string, options?: InsecureFlags) => ConsumePayConfig
 export declare const applyBaseOverrides: (
   config: ConsumePayConfig,
   raw?: unknown,
-  env?: Record<string, string | undefined>
+  env?: Record<string, string | undefined>,
+  options?: InsecureFlags
 ) => BaseOverrideResult

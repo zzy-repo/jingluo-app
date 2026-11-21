@@ -24,6 +24,12 @@
  *                       废弃域黑名单 / consume≠pay）。这是唯一真正能改到 web 层的通道 ——
  *                       `-PconsumeBase` 只写原生侧 BuildConfig，没有任何 Java/Kotlin 读它。
  *   PAY_BASE_OVERRIDE=https://…       同上，作用于 `pay.baseUrl`。
+ *   ALLOW_INSECURE_CONSUME=true       staging 明文联调包的显式放行（#601 守卫的补正面）：
+ *                       放行「非回环明文 http」与「废弃域黑名单」两条判据，并往产物注入
+ *                       `__ENDPOINTS__.insecureConsume = true`（**运行时**据此才肯接受明文，
+ *                       否则 `services/consume/http.ts` 在模块级调用处抛错 → 冷启动白屏）。
+ *                       只认字面 true；产物是 staging-only，禁止公开分发（`pnpm verify:apk` 会拦）。
+ *                       原生侧同名开关是 gradle 的 `-PallowInsecureConsume=true`，两者必须一起传。
  *
  * 构建前会先过 `config/endpoints.json` 的 consume / pay 两段校验（#484 §6.3）：
  * https、废弃域黑名单、两个 base 不许相同、缺字段 / 未知键（报键名 + 行号）→ 一律中止。
@@ -40,8 +46,10 @@ import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 
 import {
+  ALLOW_INSECURE_ENV,
   BASE_OVERRIDE_ENV,
   ENDPOINTS_LABEL,
+  allowInsecureFromEnv,
   applyBaseOverrides,
   loadConsumePay,
   placeholderNotice,
@@ -69,10 +77,19 @@ function die(msg) {
  * 占位地址（`*.invalid`）不算错，但每次都打一行警告 —— 出正式包前必须换掉。
  */
 function checkConsumeEndpoints() {
+  // 明文放行开关（#601 守卫的补正面）：只认字面 true，非法取值直接中止 ——
+  // 与 gradle 的 -PallowInsecureConsume 同一条规则（逃生舱不能靠拼写猜）。
+  const allowInsecure = allowInsecureFromEnv();
+  if (allowInsecure.error) die(allowInsecure.error);
+  const insecureOptions = {
+    allowInsecure: allowInsecure.allowInsecure,
+    onNotice: (msg) => process.stderr.write(`[build][WARN] ${msg}\n`),
+  };
+
   let config;
   let raw;
   try {
-    config = loadConsumePay(path.join(ROOT, ENDPOINTS_LABEL));
+    config = loadConsumePay(path.join(ROOT, ENDPOINTS_LABEL), insecureOptions);
     raw = JSON.parse(fs.readFileSync(path.join(ROOT, ENDPOINTS_LABEL), 'utf8'));
   } catch (error) {
     die(error && error.message ? error.message : String(error));
@@ -83,11 +100,22 @@ function checkConsumeEndpoints() {
   // 只写原生侧 BuildConfig、没有任何 Java/Kotlin 读它（gradle 侧另有交叉核对，见 build.gradle）。
   let resolved;
   try {
+    // 覆盖值走同一套判据（含「明文放行」）：staging 覆盖成 http://…:16000 时，
+    // 只有 ALLOW_INSECURE_CONSUME=true 才放行（见 consumeEndpoints.checkBase；开关由
+    // applyBaseOverrides 自己按 process.env 解析，与上面那次解析是同一个函数）。
     resolved = applyBaseOverrides(config, raw);
   } catch (error) {
     die(error && error.message ? error.message : String(error));
   }
   const effective = resolved.config;
+
+  if (allowInsecure.allowInsecure) {
+    process.stderr.write(
+      `[build][WARN] ${ALLOW_INSECURE_ENV}=true：本次产物允许明文 http 后端（staging-only）。\n` +
+        '[build][WARN] 产物会注入 insecureConsume=true，APK 侧写 INSECURE_CONSUME=true —— ' +
+        '只许内网联调，禁止公开分发（pnpm verify:apk 不带 allow-insecure 会 exit 1）。\n'
+    );
+  }
 
   const notice = placeholderNotice({ consume: { baseUrl: effective.consume.baseUrl } });
   if (notice) process.stderr.write(`[build][WARN] ${notice}\n`);

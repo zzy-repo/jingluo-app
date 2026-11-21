@@ -37,6 +37,14 @@
              注意：老包没有这一条，读不到按历史行为放行 —— 所以这条要长期留着，别删。 -->
         <meta-data android:name="${applicationId}.LOOPBACK_CONSUME" android:value="${loopbackConsume}" />
 
+        <!-- 明文 consume 标记（Issue #601 守卫的补正面 → `verify:apk` 第 5 项的读取点）：只有显式
+             -PallowInsecureConsume=true 且地址真的是「明文 http 非回环」时，build.gradle 才写 "true"。
+             语义与上一条并列、**不合并**：回环 = 真机连不上后端；明文非回环 = 连得上但流量不加密。
+             读到 true 的包是 staging 联调包（staging-only）：`pnpm run verify:apk` 不带
+             allow-insecure 开关时直接 exit 1，点名「明文联调包，禁止公开分发」。
+             注意：老包没有这一条，读不到按 false 处理（向后兼容，与 LOOPBACK_CONSUME 同口径）。 -->
+        <meta-data android:name="${applicationId}.INSECURE_CONSUME" android:value="${insecureConsume}" />
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"

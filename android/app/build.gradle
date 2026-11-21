@@ -194,7 +194,40 @@ payConfig.keySet().each { k ->
     }
 }
 
+// ---------------------------------------------------------------------------
+// 闸 1b 的开关先读（Issue #601 守卫的补正面）：`-PallowInsecureConsume=true`。
+//
+// 为什么先读：下面的 `readConsumeBase` 只**记录**「明文非回环」，放不放行由文件末尾的闸 1b 决定
+// （与闸 1 同一形状：命中集合在顶部算、中止在文件末尾 throw —— 那里报错才只有一条）。
+//
+// 两个入口，同一语义（只认字面 true）：
+//   · `-PallowInsecureConsume=true` —— 原生侧命令行（本文件）；
+//   · 环境变量 `ALLOW_INSECURE_CONSUME=true` —— web 侧（scripts/build.mjs / rspack.config.ts）用的那个，
+//     这里也认一份，免得「web 侧放了、原生侧忘了传 -P」出一只半套包（装上就白屏的那种）。
+// 写 `yes` / `1` / `True` / 甚至 `false` 一律报错：逃生舱不能靠拼写猜 —— 「以为开了」和「其实没开」
+// 会变成同一种现象，产物标记也就不可审计了（与 `-PallowLoopbackConsume` 同一条理由，#601）。
+// ---------------------------------------------------------------------------
+def ALLOW_INSECURE_PROP = 'allowInsecureConsume'
+def ALLOW_INSECURE_ENV = 'ALLOW_INSECURE_CONSUME'
+def insecureFlagSources = [
+    ["-P${ALLOW_INSECURE_PROP}", providers.gradleProperty(ALLOW_INSECURE_PROP).orNull?.trim()],
+    [ALLOW_INSECURE_ENV, (System.getenv(ALLOW_INSECURE_ENV) ?: '').trim()],
+]
+insecureFlagSources.each { source ->
+    def raw = source[1]
+    if (raw != null && raw != '' && raw != 'true') {
+        throw new GradleException(
+            "[consume] ${source[0]} 只接受字面 true（收到 '${raw}'）：" +
+            '这个开关决定「明文 http 的包能不能出、以及产物要不要打上 INSECURE_CONSUME=true 自证标记」，' +
+            '不能靠拼写猜（#601）。要关掉就**不传** / **不设**，别写 false / =0 / =no。'
+        )
+    }
+}
+def allowInsecureConsume = insecureFlagSources.any { it[1] == 'true' }
+
 // base：https 或本机回环；不带路径 / 查询串 / 凭据；不命中废弃域
+// 「明文非回环」这里**不中止**，只留给文件末尾的闸 1b 判定（三个 key 共用一条文案、一次列全）。
+def insecureBases = [:]
 def readConsumeBase = { String section, String propName, List<String> legacyHosts ->
     def fromProp = providers.gradleProperty(propName).orNull?.trim()
     def fromConfig = endpointsJson[section].baseUrl?.toString()?.trim()
@@ -207,11 +240,21 @@ def readConsumeBase = { String section, String propName, List<String> legacyHost
     }
     def isLoopback = value ==~ /http:\/\/(?:127\.0\.0\.1|localhost|\[::1\])(?::\d+)?/
     if (!value.startsWith('https://') && !isLoopback) {
-        failConsume("${section}.baseUrl", "必须是 https（唯一例外是本机回环 127.0.0.1 / localhost）：'${value}'")
+        // 判据保留在这里（唯一来源），只是把「中止还是放行」交给闸 1b —— 见文件末尾。
+        insecureBases["${section}.baseUrl"] = value.toString()
     }
     (CONSUME_DEPRECATED_MARKERS + legacyHosts).each { marker ->
         if (value.contains(marker.toString())) {
-            failConsume("${section}.baseUrl", "命中废弃域黑名单 ${marker}（旧池域已下线）：'${value}'")
+            if (allowInsecureConsume) {
+                // staging 主机就是「那台旧池域机器」（地址由构建参数传入，本文件不写死）：不豁免这条，flag 传了也构建不出来。
+                // 豁免**只**发生在显式 flag 下，且日志留痕；产物侧另有 INSECURE_CONSUME 标记与 verify:apk 兜底。
+                logger.warn("[consume] ${section}.baseUrl 命中废弃域黑名单 ${marker}，已按 -P${ALLOW_INSECURE_PROP}=true 显式豁免：'${value}'")
+            } else {
+                // 文案必须同时给出「默认为什么拦」与「staging 联调怎么显式放行」，否则读日志的人只会去拆守卫。
+                failConsume("${section}.baseUrl", "命中废弃域黑名单 ${marker}（旧池域已下线）：'${value}'" +
+                    "（staging 联调包确实要用这台旧机器时，显式传 -P${ALLOW_INSECURE_PROP}=true 放行；" +
+                    '产物会带 INSECURE_CONSUME=true 标记，禁止公开分发）')
+            }
         }
     }
     return value.toString()
@@ -364,6 +407,38 @@ def loopbackBases = [:]
 }
 // 产物标记：只有「确实有回环地址」且「确实显式放行」才写 true（闸 2 读的就是它）
 def loopbackConsumeMarker = (loopbackBases.isEmpty() || !allowLoopbackConsume) ? 'false' : 'true'
+
+// ---------------------------------------------------------------------------
+// 闸 1b：明文（http）非回环地址的**显式放行通道** + 产物自证标记 INSECURE_CONSUME
+//      （#601 守卫的补正面；#651 的发版铁律要求 staging 包指向**明文 staging 主机**，地址见 -PconsumeBase）
+//
+// 问题形状：staging 联调包要指向**明文 staging 主机**（非回环、非 https；端口由 staging 侧决定），明文 HTTP 是
+// 已知且接受的代价，包按 prerelease 发），而判据是「https 或本机回环」—— 上面 `readConsumeBase`
+// 的 https 判据会**正确**拦下这种包。麻烦不在「拦错了」，而在「没有第二条路」：唯一的放宽手段
+// 是去拆掉那条判据，而那正是 #601 事故的形状（守卫一拆，回环地址也跟着自由了）。
+//
+// 所以这里给一条与闸 1 **完全对称**的通道：`-PallowInsecureConsume=true`（开关解析在文件顶部，
+// 只认字面 true）。三条语义，缺一条这通道就没有审计价值：
+//   1) 只对「真正是明文 **且** 非回环」的 key 放行；回环仍归 `-PallowLoopbackConsume`，
+//      两个 flag 互不替代（各自的标记也各自写，三个标记并列，不合并语义）；
+//   2) 放行时把 `<meta-data ...INSECURE_CONSUME="true">` + `BuildConfig.INSECURE_CONSUME=true`
+//      写进产物 —— 包自己带证，`pnpm run verify:apk` 读到它就不许「悄悄发布」（第 5 项检查）；
+//   3) 传了 flag 但地址其实是生产 https → **不写标记**（不误标），否则每个正常发布包都会被打成
+//      「明文联调包」，标记就失去意义。
+// migration.baseUrl 不走 `readConsumeBase`（那个只校验 consume / pay 的形态），但它同样会进 web 产物，
+// 所以在这里按同一个判据补上 —— 口径与闸 1 的 migration 处理一致（开关关着就不算）。
+//
+// 三层一致（缺一层就是「装上了但一开就白屏」的坏包，形状同 #601）：
+//   ① 原生构建期 = 本文件（BuildConfig + APK meta-data）
+//   ② web 构建期 = scripts/lib/consumeEndpoints.mjs + rspack.config.ts（ALLOW_INSECURE_CONSUME=true
+//      → 注入 __ENDPOINTS__.insecureConsume）
+//   ③ 运行时 = src/services/consume/http.ts（按 ② 的注入标记才肯接受明文；main.tsx 是模块级调用）
+// ---------------------------------------------------------------------------
+if (migrationBaseForGate && migrationBaseForGate.startsWith('http://') && !isLoopbackBase(migrationBaseForGate)) {
+    insecureBases['migration.baseUrl'] = migrationBaseForGate
+}
+// 产物标记：只有「确实存在明文非回环 base」且「确实传了 -PallowInsecureConsume=true」才写 true
+def insecureConsumeMarker = (insecureBases.isEmpty() || !allowInsecureConsume) ? 'false' : 'true'
 
 // 超时档位：正整数 + 单调递增（read ≤ write [≤ redeem]）。gradle 这一侧只校验、不进 BuildConfig ——
 // 前端用 __ENDPOINTS__.consume.timeoutMs，原生侧不需要毫秒数（请求都由 CapacitorHttp 发）。
@@ -640,7 +715,13 @@ android {
         // loopbackConsume：闸 1 的产物标记（Issue #601），只有显式 -PallowLoopbackConsume=true
         // 且地址真的是回环时才写 true；AndroidManifest 里的 <meta-data …LOOPBACK_CONSUME> 用它，
         // 闸 2（deploy/dl-release）读同一处标记。
-        manifestPlaceholders = [artifactVariant: updateVariant, loopbackConsume: loopbackConsumeMarker]
+        // insecureConsume：闸 1b 的产物标记（Issue #601 补正面），只有显式 -PallowInsecureConsume=true
+        // 且地址真的是明文非回环时才写 true；verify-release-apk 的第 5 项读它（同一个占位符，同一处）。
+        manifestPlaceholders = [
+            artifactVariant : updateVariant,
+            loopbackConsume : loopbackConsumeMarker,
+            insecureConsume : insecureConsumeMarker,
+        ]
         // 唯一来源：仓库根 package.json（见文件顶部）
         versionCode appVersionCode.toInteger()
         versionName appVersionName
@@ -667,6 +748,10 @@ android {
         // 回环构建标记（Issue #601）：进度 / 诊断页据此提醒「这个包只能本地联调」，
         // 上传侧的硬门禁看的是 AndroidManifest 里同名 meta-data（BuildConfig 进 dex，服务端读不到）。
         buildConfigField "boolean", "LOOPBACK_CONSUME", "${loopbackConsumeMarker}"
+        // 明文联调包标记（Issue #601 补正面）：与 LOOPBACK_CONSUME 并列、语义不合并 ——
+        // 回环 = 真机连不上后端；明文非回环 = 连得上但流量不加密（staging-only，禁止公开分发）。
+        // 读取方是 `scripts/verify-release-apk.mjs` 的第 5 项（读 AndroidManifest 里那条 meta-data）。
+        buildConfigField "boolean", "INSECURE_CONSUME", "${insecureConsumeMarker}"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -751,6 +836,38 @@ ${lines}
 if (loopbackConsumeMarker == 'true') {
     logger.warn("""[consume] -P${ALLOW_LOOPBACK_PROP}=true：本次产物含回环地址（${loopbackBases.keySet().join(', ')}），
 [consume] 已写入 LOOPBACK_CONSUME=true 标记：只许本地联调，禁止上传 dl / 禁止分发（#601）。""")
+}
+
+// ---------------------------------------------------------------------------
+// 闸 1b 的判定（与闸 1 同一位置、同一形状：命中集合在顶部算，这里只负责「命中且没放行就中止」）。
+// 放在 android{} 之后是为了报错只有这一条（否则 AGP 会追加一条 compileSdk 的二次错误，见闸 1 的注释）。
+// ---------------------------------------------------------------------------
+if (!insecureBases.isEmpty() && !allowInsecureConsume) {
+    def lines = insecureBases.collect { key, value -> "         · ${key} = ${value}  （config/endpoints.json${lineOfKey(key.toString())}）" }.join('\n')
+    throw new GradleException("""
+[consume] 明文 http 地址（且不是本机回环）不可分发 —— 已中止本次构建（Issue #601 的守卫，默认口径不变）。
+${lines}
+         为什么拦：这类地址的流量在公网**不加密**（令牌 / 额度 / 订单都在里面），包一旦被当成发布包发出去，
+                 和你把凭据写在明信片上寄走没有区别。默认判据始终是「https，唯一例外是本机回环」。
+         这不是「猜你要干什么」的地方：staging 联调确实需要明文，但它必须是**显式**的一件事。
+         解法（二选一）：
+           1) staging 联调包（staging-only，按 prerelease 发）：显式声明这次就是要明文 ——
+                  ./gradlew <task> -P${ALLOW_INSECURE_PROP}=true
+              产物会写入 <meta-data ${'$'}{applicationId}.INSECURE_CONSUME="true"> 与
+              BuildConfig.INSECURE_CONSUME=true；`pnpm run verify:apk <apk>` 读到该标记时，
+              不带 allow-insecure 开关直接 exit 1（点名「明文联调包，禁止公开分发」）。
+              **注意：web 层也要同时放行** —— 出包前用
+                  ALLOW_INSECURE_CONSUME=true CONSUME_BASE_OVERRIDE=<同一个明文地址> pnpm build
+              再 npx cap sync android，否则 web 层仍拒明文、包装上一开就白屏（main.tsx 是模块级调用）。
+           2) 要出可分发的包：把这些键换成 https（生产 host 见 #482；临时覆盖用
+              CONSUME_BASE_OVERRIDE=https://… / PAY_BASE_OVERRIDE=https://… **重新 pnpm build + cap sync**）。
+         注意：本 flag 与 -P${ALLOW_LOOPBACK_PROP} 互不替代 —— 回环地址仍归那条通道管。
+""".stripIndent())
+}
+if (insecureConsumeMarker == 'true') {
+    logger.warn("""[consume] -P${ALLOW_INSECURE_PROP}=true：本次产物含明文 http 地址（${insecureBases.keySet().join(', ')}），
+[consume] 已写入 INSECURE_CONSUME=true 标记：这是 staging 联调包（staging-only），禁止公开分发；
+[consume] `pnpm run verify:apk` 会要求额外传 allow-insecure 才放行（#601 / #651）。""")
 }
 
 repositories {

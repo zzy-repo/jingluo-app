@@ -26,6 +26,8 @@ import { resolveBuildTools } from '../../scripts/lib/androidTools.mjs';
 export const VARIANT_MARKER = 'com.example.deepseekchat.ARTIFACT_VARIANT';
 /** 回环标记名（与 #601 的 LOOPBACK_CONSUME 一致） */
 export const LOOPBACK_MARKER = 'com.example.deepseekchat.LOOPBACK_CONSUME';
+/** 明文联调包标记名（#601 守卫的补正面：INSECURE_CONSUME） */
+export const INSECURE_MARKER = 'com.example.deepseekchat.INSECURE_CONSUME';
 
 const KEYSTORE_PASS = 'android';
 
@@ -146,9 +148,17 @@ export function buildFixtures() {
   /** 清单变体 → 合成 APK 参数（元数据按真实 gradle 的写法给） */
   const specs = {
     // 干净 standard 包：loopback 显式 false（真实 1.4.3 就是这种形状）
-    clean: { debuggable: false, metaData: { [VARIANT_MARKER]: 'standard', [LOOPBACK_MARKER]: false } },
-    // 老包：没有 LOOPBACK_CONSUME 这个标记（#601 之前的所有产物）
+    clean: {
+      debuggable: false,
+      metaData: { [VARIANT_MARKER]: 'standard', [LOOPBACK_MARKER]: false, [INSECURE_MARKER]: false },
+    },
+    // 老包：没有 LOOPBACK_CONSUME / INSECURE_CONSUME 这两个标记（#601 之前的所有产物）
     noLoopback: { debuggable: false, metaData: { [VARIANT_MARKER]: 'standard' } },
+    // 明文联调包：-PallowInsecureConsume=true 的产物（INSECURE_CONSUME=true，与真机 APK 同形）
+    insecureTrue: {
+      debuggable: false,
+      metaData: { [VARIANT_MARKER]: 'standard', [LOOPBACK_MARKER]: false, [INSECURE_MARKER]: true },
+    },
     // 变体是 internal（内测包）
     internal: { debuggable: false, metaData: { [VARIANT_MARKER]: 'internal', [LOOPBACK_MARKER]: false } },
     // 回环包：-PallowLoopbackConsume=true 的产物（布尔 true，与真机 APK 同形）

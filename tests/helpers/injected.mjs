@@ -51,6 +51,9 @@ import {
  * `__ENDPOINTS__`，因为另外两个的取值是按用例来的，兜底层不能抢先占住。
  */
 const ENDPOINTS = Object.freeze({
+  // 明文联调包标记（#601 守卫的补正面）：默认 **false** —— 单测跑的是「默认拒绝非回环明文」这条路径。
+  // 要验放行分支的用例自己覆盖 `globalThis.__ENDPOINTS__`（见 tests/unit/insecure-consume-seam.test.mjs）。
+  insecureConsume: false,
   chatBaseUrl,
   inviteBaseUrl,
   feedbackUrl,

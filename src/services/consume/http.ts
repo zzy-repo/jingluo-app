@@ -173,12 +173,23 @@ export const readConsumeEndpoints = (): ConsumeEndpoints => {
     throw new ConsumeConfigError(`__ENDPOINTS__.consume 缺字段或为空：${missing.join(' / ')}`, missing)
   }
   const baseUrl = (consume.baseUrl as string).trim()
-  // https 是默认要求；**唯一例外**是本机回环（本地联调的 sub2api 实例就是回环上的明文，只有本机可达）。
+  // https 是默认要求；**唯一例外（默认）**是本机回环（本地联调的 sub2api 实例就是回环上的明文，只有本机可达）。
   // 非回环的明文 http 一律拒绝：那等于把 Key 交给中间人（#484 §6.3 / §七 第 5 条）。
+  //
+  // 第二个例外是「产物自证」的 staging 明文联调包（Issue #601 守卫的补正面 / #651）：构建期
+  // `ALLOW_INSECURE_CONSUME=true`（原生侧同名开关 `-PallowInsecureConsume=true`）会往 `__ENDPOINTS__`
+  // 注入 `insecureConsume: true`，与 APK 里的 `INSECURE_CONSUME` meta-data、`BuildConfig.INSECURE_CONSUME`
+  // **同源同一件事**。运行时不像构建期能读 -P / 环境变量，所以判据只能是产物里的标记：
+  // 没有标记就一律拒绝，绝不按「这地址看起来是联调机」去猜。
+  //
+  // 这一层不是可选的：`src/main.tsx` 在**模块级**就调 `getConsumeClient()`，这里 throw 的后果是
+  // 「装上了但一开就白屏」—— 只放行构建期、不放行运行时，产出的是 #601 形状的坏包（发出去不能用）。
+  const insecureConsume = (injected as { insecureConsume?: boolean } | undefined)?.insecureConsume === true
   const loopback = /^http:\/\/(?:127\.0\.0\.1|localhost|\[::1\])(?::\d+)?$/i.test(baseUrl)
-  if (!baseUrl.toLowerCase().startsWith('https://') && !loopback) {
+  if (!baseUrl.toLowerCase().startsWith('https://') && !loopback && !insecureConsume) {
     throw new ConsumeConfigError(
-      `__ENDPOINTS__.consume.baseUrl 必须是 https（明文 http 一律拒绝，#484 §6.3）：${baseUrl}`,
+      `__ENDPOINTS__.consume.baseUrl 必须是 https（明文 http 一律拒绝，#484 §6.3）：${baseUrl}` +
+        '（staging 明文联调包要用 ALLOW_INSECURE_CONSUME=true 出包，产物会带 INSECURE_CONSUME=true 标记且禁止公开分发）',
       ['consume.baseUrl']
     )
   }

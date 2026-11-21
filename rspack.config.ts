@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url'
 import { defineConfig } from '@rspack/cli'
 import { rspack, type Configuration } from '@rspack/core'
 import { assertBrowserslist } from './scripts/lib/compatBaseline.mjs'
-import { ENDPOINTS_FILE, applyBaseOverrides, loadConsumePay } from './scripts/lib/consumeEndpoints.mjs'
+import { ENDPOINTS_FILE, allowInsecureFromEnv, applyBaseOverrides, loadConsumePay } from './scripts/lib/consumeEndpoints.mjs'
 import { SEAM_FLAG, SEAM_SESSION, seamEnabled } from './scripts/lib/testAuthSeam.mjs'
 
 const dev = process.env.NODE_ENV !== 'production'
@@ -111,6 +111,22 @@ const endpoints = JSON.parse(readFileSync(new URL('./config/endpoints.json', imp
  * 废弃域黑名单 / consume≠pay 全部照旧，非法值直接中止构建）。这里只做「读进来的值换成生效值」。
  */
 const effectiveConsumePay = applyBaseOverrides(loadConsumePay(ENDPOINTS_FILE), endpoints)
+
+/**
+ * 明文联调包标记（Issue #601 守卫的补正面）：`ALLOW_INSECURE_CONSUME=true` → 注入
+ * `__ENDPOINTS__.insecureConsume = true`，**运行时**（`src/services/consume/http.ts`）据此才肯
+ * 接受非回环的明文 http base（默认一律抛 `ConsumeConfigError`）。
+ *
+ * 为什么要进产物：运行时读不到 `-P` / 环境变量，只能读构建期注入的常量。少了这一条，staging 明文包
+ * 会「构建通过、装上就白屏」—— `src/main.tsx` 在**模块级**就调 `getConsumeClient()`（#601 的形状）。
+ * 与原生侧的 `BuildConfig.INSECURE_CONSUME` / APK 里的同名 meta-data 是**同一件事的三处落点**。
+ * 判据用 `consumeEndpoints.mjs` 的同一个解析函数（只认字面 true），非法取值在这里直接中止构建。
+ */
+const allowInsecureParsed = allowInsecureFromEnv()
+if (allowInsecureParsed.error) {
+  throw new Error(`[consume] ${allowInsecureParsed.error}`)
+}
+const insecureConsume = allowInsecureParsed.allowInsecure
 
 /**
  * PDF 文本解析（Issue #480）：pdfjs 产物**不是**由打包器编译进来的（要经典 `<script src>` 才能过
@@ -451,6 +467,10 @@ export const createConfig = ({
       __APP_VERSION_CODE__: JSON.stringify(readVersionCode()),
       // 服务端端点（config/endpoints.json）：源码里只用 __ENDPOINTS__.chatBaseUrl 这类写法
       __ENDPOINTS__: JSON.stringify({
+        // 明文联调包标记（#601 守卫的补正面）：true = 本产物允许明文 http base（staging-only，
+        // 禁止公开分发；APK 侧的 INSECURE_CONSUME meta-data / BuildConfig 由 build.gradle 写）。
+        // 默认 false —— 运行时对非回环明文一律抛 ConsumeConfigError（见 services/consume/http.ts）。
+        insecureConsume,
         chatBaseUrl: endpoints.chatBaseUrl,
         inviteBaseUrl: endpoints.inviteBaseUrl,
         feedbackUrl: endpoints.feedbackUrl,

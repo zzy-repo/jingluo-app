@@ -35,6 +35,14 @@ declare const __APP_VERSION_CODE__: number
  * 非打包环境（`node --test` 直接 import .ts）由 tests/helpers/injected.mjs 兜底注入。
  */
 declare const __ENDPOINTS__: {
+  /**
+   * 明文联调包标记（Issue #601 守卫的补正面 / #651）：构建期 `ALLOW_INSECURE_CONSUME=true` 时为 true。
+   * **这是运行时的唯一判据** —— `services/consume/http.ts` 只在它为 true 时才肯接受非回环的明文
+   * `http://` base（否则抛 `ConsumeConfigError`，而 `src/main.tsx` 是模块级调用 → 冷启动白屏）。
+   * 与原生侧的 `BuildConfig.INSECURE_CONSUME` / APK 里的 `INSECURE_CONSUME` meta-data 同源。
+   * 默认 false；为 true 的产物是 staging-only，禁止公开分发（`pnpm verify:apk` 会拦）。
+   */
+  readonly insecureConsume: boolean
   readonly chatBaseUrl: string
   readonly inviteBaseUrl: string
   readonly feedbackUrl: string

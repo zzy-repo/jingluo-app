@@ -21,6 +21,11 @@
  *      **唯一例外**：本机回环（`127.0.0.1` / `localhost` / `[::1]`）。本地联调的 sub2api 实例就是
  *      `http://127.0.0.1:<port>`（维护者 2026-11-20 明确：联调与 base URL 都以本地实例为准）。
  *      例外只对回环成立：任何**非回环**的 `http://` 仍然中止构建 —— 明文出网等于把 Key 交给中间人。
+ *   1b. **显式放行通道**（#601 守卫的补正面）：环境变量 `ALLOW_INSECURE_CONSUME=true` 时，非回环明文
+ *      与「废弃域黑名单」两条按显式放行处理；产物由构建期打上 `INSECURE_CONSUME=true` 自证标记
+ *      （staging-only，`verify:apk` 不带 `--allow-insecure` 直接 exit 1）。**只认字面 true**：
+ *      `yes` / `1` / `false` 一律按配置错误处理 —— 逃生舱不能靠拼写猜。
+ *      未设置（默认）→ 与以前逐字一致：非回环明文仍然中止。原生侧同一开关是 `-PallowInsecureConsume=true`。
  *   2. base 不得命中废弃域黑名单（`140.210.13.146` / `:60013` / `legacyHosts` 里的旧机器）；
  *   3. `consume.baseUrl` 与 `pay.baseUrl` 不得相同（两个后端职责不能混）；
  *   4. 缺字段 / 空值 / 未知键 → 报出**键名 + 文件行号**。
@@ -63,6 +68,36 @@ export const BASE_OVERRIDE_ENV = Object.freeze({
   consume: 'CONSUME_BASE_OVERRIDE',
   pay: 'PAY_BASE_OVERRIDE',
 })
+
+/**
+ * 非回环明文的**显式放行通道**（Issue #601 守卫的补正面；#651 的发版铁律要求 staging 包指向
+ * 明文 staging 主机，地址由构建参数传入）。与 gradle 侧的 `-PallowInsecureConsume=true` 是同一件事的两个入口：
+ *   · 原生构建期（`-P`）：`android/app/build.gradle` 读，管 BuildConfig + APK 里的 `INSECURE_CONSUME`；
+ *   · web 构建期（本文件读的环境变量）：`scripts/build.mjs` / `rspack.config.ts` 读，管产物里的
+ *     `__ENDPOINTS__.insecureConsume`（**运行时**据此才肯接受明文，见 `src/services/consume/http.ts`）。
+ * 两个入口必须一起传，否则会出「原生侧放了、web 侧还是拒」或反过来的半套包（装上就白屏）。
+ */
+export const ALLOW_INSECURE_ENV = 'ALLOW_INSECURE_CONSUME'
+
+/**
+ * 解析放行开关的取值（**只认字面 true**，与 gradle 的 `-PallowInsecureConsume` 同一条规则）。
+ * 返回 `{ allowInsecure, error }`：`error` 非空表示「设了但不合法」，调用方必须中止，不许猜。
+ */
+export const parseAllowInsecure = (raw) => {
+  if (raw === undefined || raw === null) return { allowInsecure: false, error: null }
+  const value = String(raw).trim()
+  if (value === '') return { allowInsecure: false, error: null }
+  if (value === 'true') return { allowInsecure: true, error: null }
+  return {
+    allowInsecure: false,
+    error:
+      `${ALLOW_INSECURE_ENV} 只接受字面 true（收到 '${value}'）：这个开关决定「明文 http 的包能不能出、` +
+      '以及产物要不要打上 INSECURE_CONSUME 自证标记」，不能靠拼写猜（#601）。要关掉就不设置它，别写 false / 0 / yes。',
+  }
+}
+
+/** 从环境变量读放行开关（默认 `process.env`，便于用例注入） */
+export const allowInsecureFromEnv = (env = process.env) => parseAllowInsecure(env?.[ALLOW_INSECURE_ENV])
 
 /** 每段允许出现的键（未知键 = 拼错的字段，静默忽略只会让人以为配置生效了） */
 export const CONSUME_KEYS = ['baseUrl', 'apiV1Prefix', 'gatewayPrefix', 'timeoutMs']
@@ -174,19 +209,39 @@ export const parseBaseUrl = (value) => {
   }
 }
 
-/** 废弃域 / 明文 http 检查（两个 base 共用一段判据，避免两边各写一套） */
-const checkBase = (problems, keyLines, key, value, extraLegacyHosts, label = ENDPOINTS_LABEL) => {
+/**
+ * 废弃域 / 明文 http 检查（两个 base 共用一段判据，避免两边各写一套）。
+ *
+ * `options.allowInsecure === true`（来自 `ALLOW_INSECURE_CONSUME=true`；gradle 侧同名开关是
+ * `-PallowInsecureConsume=true`）时，只放宽两条**与「明文联调」同源**的判据：
+ *   · 非回环明文 http；
+ *   · 废弃域黑名单命中（staging 机往往就是那台旧 IP —— 不豁免这条，flag 传了也构建不出来）。
+ * 形态判据（凭据 / 查询串 / 路径 / 末尾斜杠）、`consume ≠ pay`、超时档位**一条都不放宽**。
+ * 放宽时通过 `options.onNotice(消息)` 上报（构建期打 warning，日志里留痕），绝不静默。
+ */
+const checkBase = (problems, keyLines, key, value, extraLegacyHosts, label = ENDPOINTS_LABEL, options = {}) => {
   const at = where(keyLines, key, label)
+  const allowInsecure = options.allowInsecure === true
+  const notice = typeof options.onNotice === 'function' ? options.onNotice : () => {}
   const url = parseBaseUrl(value)
   if (!url) {
     problems.push(`${at} ${key} 缺失或不是合法的绝对 URL：${JSON.stringify(value)}`)
     return null
   }
   if (url.protocol !== 'https:' && !(url.protocol === 'http:' && isLoopbackHost(url.hostname))) {
-    problems.push(
-      `${at} ${key} 必须是 https（明文 http 直接中止构建，#484 §6.3）：${value}` +
-        '（唯一例外是本机回环 127.0.0.1 / localhost，用于本地联调实例）'
-    )
+    if (allowInsecure) {
+      notice(
+        `${at} ${key} 是非回环明文 ${value}：已按 ${ALLOW_INSECURE_ENV}=true 显式放行` +
+          '（staging-only；产物会打 INSECURE_CONSUME=true，禁止公开分发）'
+      )
+    } else {
+      problems.push(
+        `${at} ${key} 必须是 https（明文 http 直接中止构建，#484 §6.3）：${value}` +
+          '（唯一例外是本机回环 127.0.0.1 / localhost，用于本地联调实例）' +
+          `（staging 联调包确实要明文时：显式设 ${ALLOW_INSECURE_ENV}=true，原生侧同时传 ` +
+          '-PallowInsecureConsume=true；产物会带 INSECURE_CONSUME=true 标记，禁止公开分发）'
+      )
+    }
   }
   if (url.username || url.password) {
     problems.push(`${at} ${key} 不许带凭据（user:pass@）：${value}`)
@@ -205,6 +260,12 @@ const checkBase = (problems, keyLines, key, value, extraLegacyHosts, label = END
   }
   for (const marker of [...DEPRECATED_MARKERS, ...extraLegacyHosts]) {
     if (typeof value === 'string' && value.includes(marker)) {
+      if (allowInsecure) {
+        // staging 主机往往就是「那台旧池域机器」（地址由构建参数传入，本文件不写死）：不放宽这条，flag 传了也构建不出来。
+        // 放宽**只**发生在显式 flag 下，且日志留痕；产物侧另有 INSECURE_CONSUME 标记与 verify:apk 兜底。
+        notice(`${at} ${key} 命中废弃域黑名单 ${marker}，已按 ${ALLOW_INSECURE_ENV}=true 显式豁免：${value}`)
+        continue
+      }
       problems.push(`${at} ${key} 命中废弃域黑名单 ${marker}（旧池域已下线，#484 §七）：${value}`)
     }
   }
@@ -251,13 +312,29 @@ const checkTimeouts = (problems, keyLines, section, value, keys) => {
 }
 
 /**
+ * 把「明文放行开关」归一成 `checkBase` 认的那份 options（**只认字面 true**）。
+ * 显式入参 > 环境变量；环境变量设了但取值不合法 → 带 `error`，由调用方记成一条硬错误。
+ */
+const resolveInsecureFlags = (options = {}) => {
+  const onNotice = typeof options.onNotice === 'function' ? options.onNotice : () => {}
+  if (options.allowInsecure !== undefined) {
+    return { allowInsecure: options.allowInsecure === true, onNotice, error: null }
+  }
+  const fromEnv = allowInsecureFromEnv()
+  return { allowInsecure: fromEnv.allowInsecure, onNotice, error: fromEnv.error }
+}
+
+/**
  * 校验 `consume` / `pay` 两段，返回问题清单（空数组 = 通过）。
  * `text` 是配置文件原文（用于行号）；不传就没有行号，其它判据不变。
  */
-export const validateConsumePay = (raw, text = '') => {
+export const validateConsumePay = (raw, text = '', options = {}) => {
   const keyLines = text ? collectKeyLines(text) : null
   const problems = []
   if (!isPlainObject(raw)) return [`${ENDPOINTS_LABEL} 不是 JSON 对象`]
+  // 明文放行开关（#601 守卫的补正面）：显式传进来的优先（用例 / 构建脚本），否则读环境变量（只认字面 true）。
+  const flags = resolveInsecureFlags(options)
+  if (flags.error) problems.push(`${ENDPOINTS_LABEL} ${flags.error}`)
 
   // `consume` 段：sub2api（账号 / 额度 / 卡密兑换 / Key 管理）
   const consume = raw.consume
@@ -276,7 +353,7 @@ export const validateConsumePay = (raw, text = '') => {
     for (const key of CONSUME_KEYS) {
       if (!(key in consume)) problems.push(`${where(keyLines, `consume.${key}`)} consume.${key} 缺失`)
     }
-    consumeUrl = checkBase(problems, keyLines, 'consume.baseUrl', consume.baseUrl, readLegacyHosts(raw))
+    consumeUrl = checkBase(problems, keyLines, 'consume.baseUrl', consume.baseUrl, readLegacyHosts(raw), ENDPOINTS_LABEL, flags)
     if (consume.apiV1Prefix !== EXPECTED_API_V1_PREFIX) {
       problems.push(
         `${where(keyLines, 'consume.apiV1Prefix')} consume.apiV1Prefix 必须是 ${EXPECTED_API_V1_PREFIX}：` +
@@ -309,7 +386,7 @@ export const validateConsumePay = (raw, text = '') => {
     for (const key of PAY_KEYS) {
       if (!(key in pay)) problems.push(`${where(keyLines, `pay.${key}`)} pay.${key} 缺失`)
     }
-    payUrl = checkBase(problems, keyLines, 'pay.baseUrl', pay.baseUrl, readLegacyHosts(raw))
+    payUrl = checkBase(problems, keyLines, 'pay.baseUrl', pay.baseUrl, readLegacyHosts(raw), ENDPOINTS_LABEL, flags)
     checkTimeouts(problems, keyLines, 'pay', pay.timeoutMs, PAY_TIMEOUT_KEYS)
   }
 
@@ -363,7 +440,7 @@ const readLegacyHosts = (raw) => {
  * 读盘 + 校验，不合法立刻抛（构建期 fail-fast 的唯一入口）。
  * 返回冻结对象：`consume` / `pay` 两段，字段名与 JSON 一一对应。
  */
-export const loadConsumePay = (file = ENDPOINTS_FILE) => {
+export const loadConsumePay = (file = ENDPOINTS_FILE, options = {}) => {
   const text = readFileSync(file, 'utf8')
   let raw
   try {
@@ -371,7 +448,7 @@ export const loadConsumePay = (file = ENDPOINTS_FILE) => {
   } catch (error) {
     throw new Error(`${ENDPOINTS_LABEL} 不是合法 JSON：${error instanceof Error ? error.message : String(error)}`)
   }
-  const problems = validateConsumePay(raw, text)
+  const problems = validateConsumePay(raw, text, options)
   if (problems.length > 0) {
     throw new Error(`${ENDPOINTS_LABEL} 的 consume / pay 两段不合法：\n  - ${problems.join('\n  - ')}`)
   }
@@ -409,10 +486,17 @@ export const normalizeBaseForCompare = (value) =>
  *   - `overrides`：本次真正生效的覆盖（`{ consume?: string, pay?: string }`），构建日志据此打印
  *     `consume=<base> (override by CONSUME_BASE_OVERRIDE)`，让人**一眼看出这份产物不是配置里的地址**。
  */
-export const applyBaseOverrides = (config, raw = {}, env = process.env) => {
+export const applyBaseOverrides = (config, raw = {}, env = process.env, options = {}) => {
   const legacyHosts = readLegacyHosts(raw)
   const problems = []
   const overrides = {}
+  // 覆盖值走**同一套**判据，包括「明文放行」那一条（#601 守卫的补正面）：staging 覆盖成
+  // 明文 staging 主机时，只有 ALLOW_INSECURE_CONSUME=true 才放行；
+  // 没这个开关，覆盖值照样按 https 判据中止（与配置文件里的值同等待遇，不放宽）。
+  const flags = resolveInsecureFlags({ ...options, onNotice: options.onNotice ?? ((msg) => process.stderr.write(`[build][WARN] ${msg}\n`)) })
+  if (flags.error) {
+    throw new Error(`构建期 base 覆盖不合法（判据与 ${ENDPOINTS_LABEL} 同源）：\n  - ${flags.error}`)
+  }
 
   /** 取某一段的生效 base：环境变量（去掉首尾空白）优先，空值等同于没传 */
   const pickBase = (section) => {
@@ -423,7 +507,7 @@ export const applyBaseOverrides = (config, raw = {}, env = process.env) => {
     const value = provided.trim()
     overrides[section] = value
     // 判据复用配置文件那一套：不另写一份校验，也不放宽任何一条
-    checkBase(problems, null, `${section}.baseUrl`, value, legacyHosts, envName)
+    checkBase(problems, null, `${section}.baseUrl`, value, legacyHosts, envName, flags)
     return value
   }
 
