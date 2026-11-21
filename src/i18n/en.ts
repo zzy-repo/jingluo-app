@@ -960,6 +960,11 @@ export const en = {
   // Email not verified yet (`EMAIL_VERIFY_REQUIRED`): name the next step instead of "try again later"
   consumeErrEmailVerifyRequired: 'Please verify your email first',
   consumeErrNotEnabled: 'This feature is not enabled yet. Contact support to enable it.',
+  // A write returned 2xx but with no evidence (#660: email bind 200 + empty body, and the profile
+  // recheck has no masked email either): the result is unknown, not success — always give the next step.
+  consumeErrBindUnconfirmed: 'The binding result is unconfirmed. Retry, or check the account page later.',
+  // The line under a confirmed failure: HTTP status + the redacted upstream text (rendered by errorBlock)
+  consumeErrUpstreamDetail: 'Server response: {detail}',
   // ---------------------------------------------------------------------------
   // W1-C2 account/consume panels (quota / account / invites / email binding, #487).
   // The `consumeErr*` error wording already landed in #504, so it is not redefined here;

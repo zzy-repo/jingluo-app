@@ -59,6 +59,14 @@ export type ConsumeUser = {
   identities?: Record<string, ConsumeIdentity>
   /** 账户邮箱是否已绑定（`identities.email.bound` 的便捷投影） */
   emailBound?: boolean
+  /**
+   * 服务端下发的**脱敏**邮箱（`email_masked`，如 `a***@b.co`）。
+   *
+   * 存在时界面直接显示它，**不再**在客户端二次打码（`a***@b.co` 再过一遍 `maskedEmail`
+   * 会变成 `a•••***@b.co`）。没有这个字段时仍按 `email` 在本地脱敏 —— 两种下发形态都认。
+   * 绑定成功的判据也读它（见 `services/consume/email.ts` 的 `bindEmail`，#660）。
+   */
+  emailMasked?: string
 }
 
 /** 一个身份绑定项（字段名保持服务端原样，界面只读不写） */
@@ -129,6 +137,11 @@ const asRecord = (value: unknown): Record<string, unknown> =>
 export const toConsumeUser = (value: unknown): ConsumeUser => {
   const user = asRecord(value)
   const out: ConsumeUser = { id: num(user.id) ?? 0, email: str(user.email) }
+  // `email_masked` 原样带出去（是**已经脱敏**的值，界面不能再打一次码）
+  const emailMasked = str(user.email_masked)
+  if (emailMasked.trim() !== '') {
+    out.emailMasked = emailMasked
+  }
   if (typeof user.username === 'string') {
     out.username = user.username
   }

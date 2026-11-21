@@ -11,6 +11,8 @@
 //
 // 文件尾部四张 **D11-B1…B4 边界表**（Issue #448）补的是「服务端没说清」的输入：已绑但不知道邮箱 /
 // 形状判定 / 表外状态码与空体 / 附加字段是垃圾值。四张表合计 12 行 —— 正常路径不在这里重测。
+// 第五张 **D11-B5**（Issue #660）钉「绑定成功的判据」：200 + 空体不算成功，必须有脱敏邮箱
+// （响应体里有，或回查 `/user/profile` 拿得到），否则一律失败且界面不许出现「绑定成功」。
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 
@@ -33,6 +35,7 @@ const {
 const { emailCooldownRemaining } = await import('../../src/services/invite/emailCooldown.ts')
 const { createConsumeHttp } = await import('../../src/services/consume/http.ts')
 const { bindEmail, sendBindEmailCode, unbindProvider } = await import('../../src/services/consume/email.ts')
+const { getProfile } = await import('../../src/services/consume/auth.ts')
 
 const ok = (data) => ({ ok: true, status: 200, raw: {}, data })
 
@@ -522,4 +525,177 @@ test('D11-B4 附加字段垃圾值 → 全 null（绝不编造 0）', async (t) 
     const sent = await sendBindEmailCode(http, 'a@b.co')
     assert.equal('retryAfterMs' in sent.error, false, `Retry-After「${junk}」不许被折成 0`)
   }
+})
+
+// ====================================================== #660 绑定成功判据（D11-B5）
+//
+// 病灶（#660）：`POST /user/account-bindings/email` 回 **200 + 空响应体**时，客户端只看 200 就判成功，
+// 界面显示「已绑定」而脱敏邮箱是空的 —— 用户以为绑好了，换机时取不回账号（那正是邮箱绑定的唯一价值）。
+//
+// 这张表钉的是**成功判据**：必须拿到可显示的脱敏邮箱 ——
+//   ① 响应体里有 `email_masked`（实测形态只有 `email`，两种都认）；或
+//   ② 回查一次 `GET /user/profile` 拿得到；两者都没有 → **必须是失败**，且界面不许出现「绑定成功」。
+// 断言全部走真 `createConsumeHttp` + 假 transport（真 service / 真面板 / 零真请求），
+// 所以「回查只发 1 次」是**数请求**数出来的，不是靠读代码。
+
+/** 面板信封的成功体（`{code:0,message,data}`，`data` 缺省 = 200 + 空体的等价形态） */
+const panelOk = (data) => JSON.stringify(data === undefined ? { code: 0, message: 'success' } : { code: 0, message: 'success', data })
+
+const jsonReply = (status, body) => ({
+  kind: 'response',
+  status,
+  text: body,
+  headers: { 'content-type': 'application/json' },
+})
+
+const emptyReply = (status) => ({ kind: 'response', status, text: '', headers: {} })
+
+/**
+ * 一条「绑定 + 回查」链：`bind` 与 `profile` 各自给一个假响应，按 URL 分派。
+ * 计数口径：`profileCalls` 只数 `/api/v1/user/profile`（回查），`bindCalls` 数 POST。
+ */
+const bindChainOf = ({ bind, profile }) => {
+  const calls = []
+  const http = createConsumeHttp({
+    accessToken: () => 'jwt-660-test',
+    transport: async (request) => {
+      calls.push(request)
+      return request.url.includes('/api/v1/user/profile') ? profile : bind
+    },
+  })
+  const source = {
+    settings: { get: async () => ok({ emailVerifyEnabled: false }) },
+    auth: { profile: () => getProfile(http) },
+    email: {
+      sendCode: (email) => sendBindEmailCode(http, email),
+      bind: (input) => bindEmail(http, input),
+      unbind: () => unbindProvider(http, 'email'),
+    },
+  }
+  return {
+    source,
+    http,
+    calls,
+    bindCalls: () => calls.filter((item) => item.url.endsWith('/api/v1/user/account-bindings/email')).length,
+    profileCalls: () => calls.filter((item) => item.url.includes('/api/v1/user/profile')).length,
+  }
+}
+
+const BIND_VERDICT_ROWS = [
+  {
+    what: '200 + 响应体里有 email_masked → 判成功，显示服务端脱敏值（省一次请求）',
+    bind: jsonReply(200, panelOk({ id: 2, email: '', email_masked: 'a***@b.co' })),
+    profile: jsonReply(200, panelOk({ id: 2, email: '' })),
+    expect: { ok: true, shown: 'a***@b.co', profileCalls: 0 },
+  },
+  {
+    what: '200 + 只有 email（实测下发形态）→ 判成功，本地脱敏',
+    bind: jsonReply(200, panelOk({ id: 2, email: 'a@b.co', identities: { email: { provider: 'email', bound: true } } })),
+    profile: jsonReply(200, panelOk({ id: 2, email: '' })),
+    expect: { ok: true, shown: 'a•••@b.co', profileCalls: 0 },
+  },
+  {
+    what: '200 + 空响应体 + 回查 profile 有 email_masked → 判成功（回查兜住）',
+    bind: emptyReply(200),
+    profile: jsonReply(200, panelOk({ id: 2, email: '', email_masked: 'a***@b.co' })),
+    expect: { ok: true, shown: 'a***@b.co', profileCalls: 1 },
+  },
+  {
+    what: '200 + 空响应体 + 回查 profile 没有脱敏邮箱（只有 bound:true）→ 判失败，不显示「已绑定」',
+    bind: emptyReply(200),
+    profile: jsonReply(200, panelOk({ id: 2, email: '', identities: { email: { provider: 'email', bound: true } } })),
+    expect: { ok: false, unconfirmed: true, i18nKey: 'consumeErrBindUnconfirmed', profileCalls: 1 },
+  },
+  {
+    what: '200 + 空响应体 + 回查本身失败（500）→ 仍是「结果未确认」，不判成功',
+    bind: emptyReply(200),
+    profile: jsonReply(500, '{"code":500,"message":"internal error"}'),
+    expect: { ok: false, unconfirmed: true, i18nKey: 'consumeErrBindUnconfirmed', profileCalls: 1 },
+  },
+  {
+    what: '400 + INVALID_VERIFY_CODE → 走既有文案（不回归），附 HTTP 码 + 脱敏原文',
+    bind: jsonReply(400, '{"code":400,"message":"verify code is incorrect","reason":"INVALID_VERIFY_CODE"}'),
+    profile: jsonReply(200, panelOk({ id: 2, email: '' })),
+    expect: { ok: false, i18nKey: 'consumeErrEmailCodeInvalid', profileCalls: 0, detail: ['HTTP 400', 'INVALID_VERIFY_CODE', 'verify code is incorrect'] },
+  },
+  {
+    what: '409 + EMAIL_ALREADY_BOUND → 既有兜底文案不变，附 HTTP 码 + 脱敏原文',
+    bind: jsonReply(409, '{"code":409,"message":"email already bound","reason":"EMAIL_ALREADY_BOUND"}'),
+    profile: jsonReply(200, panelOk({ id: 2, email: '' })),
+    expect: { ok: false, i18nKey: 'consumeErrUnknown', profileCalls: 0, detail: ['HTTP 409', 'EMAIL_ALREADY_BOUND', 'email already bound'] },
+  },
+]
+
+test('D11-B5 绑定成功判据：没有脱敏邮箱就不算成功（空体回查兜底，只查一次）', async (t) => {
+  for (const row of BIND_VERDICT_ROWS) {
+    await t.test(row.what, async () => {
+      const { source, bindCalls, profileCalls } = bindChainOf(row)
+
+      // 起点：面板已加载、未绑定、处于填写态（`runBindEmail` 只负责「提交 → 结果」这一段）
+      let state = reduceEmailBind(initialEmailBindState(), {
+        type: 'info',
+        state: { phase: 'ready', data: toEmailBindInfo({ id: 2, email: '' }, { emailVerifyEnabled: false }) },
+      })
+      state = reduceEmailBind(state, { type: 'mode', mode: 'form' })
+      for (const event of await runBindEmail(source, 'a@b.co', '123456')) {
+        state = reduceEmailBind(state, event)
+      }
+
+      // 先判「用户看到什么」（负向对照改回只看 200 时，红的应该是这一句，不是计数）
+      const markup = emailRender(state, 0)
+      if (row.expect.ok === true) {
+        assert.equal(state.actionError, null, '成功时不该有错误')
+        assert.equal(state.notice, 'bound')
+        assert.equal(state.mode, 'view', '成功回到展示态')
+        assert.equal(hasTestId(markup, 'email-bind-notice'), true)
+        assert.equal(markup.includes(translate('emailBindSuccess')), true)
+        const line = textOf(markup, 'email-bind-current')
+        assert.equal(line.includes(row.expect.shown), true, `脱敏邮箱必须是「${row.expect.shown}」，实际「${line}」`)
+        assert.equal(hasTestId(markup, 'email-bind-start'), false, '已绑定后不再给「绑定邮箱」入口')
+      } else {
+      // 失败面：既不许说「绑定成功」，也不许把状态改成已绑定
+      assert.equal(state.notice, null, '失败 / 未确认时不许显示「绑定成功」')
+      assert.equal(state.actionError.i18nKey, row.expect.i18nKey)
+      assert.equal(markup.includes(translate('emailBindSuccess')), false, 'UI 不许出现「绑定成功」')
+      assert.equal(textOf(markup, 'email-bind-current').includes(translate('emailBindNotBound')), true, '状态仍是未绑定（不自称已绑定）')
+      assert.equal(state.mode, 'form', '失败后留在填写态，用户可以直接重试')
+
+      if (row.expect.unconfirmed === true) {
+        const copy = textOf(markup, 'email-bind-action-error')
+        assert.equal(copy.includes(translate('consumeErrBindUnconfirmed')), true, '文案必须说清「结果未确认」')
+        assert.equal(copy.includes('重试'), true, '文案必须给下一步：重试')
+        assert.equal(copy.includes('账号页'), true, '文案必须给下一步：到账号页查看')
+        assert.equal(hasTestId(markup, 'email-bind-action-error-detail'), false, '结果未知时不贴上游细节（服务端没有可信结论）')
+      }
+      if (row.expect.detail !== undefined) {
+        const detail = textOf(markup, 'email-bind-action-error-detail')
+        for (const part of row.expect.detail) {
+          assert.equal(detail.includes(part), true, `上游细节里必须有「${part}」，实际「${detail}」`)
+        }
+      }
+      }
+
+      // 计数断言：绑定只发一次；回查（若需要）**恰好一次** —— 一次失败不许放大成多次写后查询
+      assert.equal(bindCalls(), 1, '绑定请求只发一次（这一层不做重试）')
+      assert.equal(profileCalls(), row.expect.profileCalls, `回查 /user/profile 的请求数必须是 ${row.expect.profileCalls}`)
+    })
+  }
+})
+
+/**
+ * 同一张表的**服务层**反面：判据住在 `bindEmail` 里，绕过面板直接调也必须是失败。
+ *
+ * （面板只是渲染 `ok:false`；如果判据只在视图里，任何别的调用方都会重新踩回 #660。）
+ */
+test('D11-B5b 服务层：200 + 空体且回查没有脱敏邮箱 → bindEmail 自己就得是 ok:false', async () => {
+  const { http, profileCalls } = bindChainOf({
+    bind: emptyReply(200),
+    profile: jsonReply(200, panelOk({ id: 2, email: '' })),
+  })
+  const result = await bindEmail(http, { email: 'a@b.co', code: '123456' })
+  assert.equal(result.ok, false, '只看 200 的判据必须已经不在了')
+  assert.equal(result.error.i18nKey, 'consumeErrBindUnconfirmed')
+  assert.equal(result.error.retryable, true, '结果未知可以重试')
+  assert.equal(result.raw.status, 200, '原始状态码留着（排查用）')
+  assert.equal(profileCalls(), 1, '回查只发 1 次')
 })

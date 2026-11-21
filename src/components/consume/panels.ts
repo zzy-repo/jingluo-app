@@ -57,6 +57,12 @@ export type PanelError = {
   needLogin: boolean
   /** 排查用（不进 DOM）：服务端码或 `HTTP_<status>` */
   code: string
+  /**
+   * 已确认失败的**上游细节**（`HTTP 409 · EMAIL_ALREADY_BOUND · …`，原文先过 `redactUpstreamText`）。
+   *
+   * 只在「服务端明确拒绝」时给（#660）：结果未知的那种失败没有可信的上游结论，不往界面上放。
+   */
+  detail?: string
 }
 
 /** 异步区段的三态：加载中 / 有数据 / 失败（空列表是「有数据」而不是失败，#484 §4.5 第 9 条） */
@@ -280,6 +286,14 @@ export const errorBlock = (
     'div',
     { className: c.error, 'data-testid': testId },
     createElement('p', { className: c.errorText }, t(error.i18nKey, error.params)),
+    // 上游细节单独一行：文案已经脱敏 + 截断，不参与 errorText 的 i18n 拼接
+    error.detail === undefined
+      ? null
+      : createElement(
+          'p',
+          { className: c.hint, 'data-testid': `${testId}-detail` },
+          t('consumeErrUpstreamDetail', { detail: error.detail })
+        ),
     error.needLogin ? createElement('p', { className: c.hint }, t('consumeNeedLogin')) : null,
     canRetry
       ? createElement(

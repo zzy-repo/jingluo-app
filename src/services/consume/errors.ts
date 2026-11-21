@@ -97,6 +97,11 @@ export type ConsumeMessageKey =
   | 'consumeErrEmailCodeInvalid'
   | 'consumeErrEmailVerifyRequired'
   | 'consumeErrNotEnabled'
+  /**
+   * 写操作拿到 2xx 但**证据不足**（#660）：邮箱绑定 200 + 空体、回查 `/user/profile`
+   * 也没有脱敏邮箱。这是「结果未知」，不是「已经成了」——文案必须给下一步（重试 / 去账号页看）。
+   */
+  | 'consumeErrBindUnconfirmed'
 
 /** 归一化错误：界面只认这几项，其中 `i18nKey` 是唯一该上屏的东西 */
 export type Sub2ApiError = {

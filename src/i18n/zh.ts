@@ -940,6 +940,11 @@ export const zh = {
   // 邮箱没验证（`EMAIL_VERIFY_REQUIRED`）：说清「下一步做什么」——先去验证，不是稍后重试
   consumeErrEmailVerifyRequired: '请先完成邮箱验证',
   consumeErrNotEnabled: '这个功能还没开放，请联系客服开通',
+  // 写操作 2xx 但**证据不足**（#660：邮箱绑定 200 + 空体、回查也没有脱敏邮箱）：
+  // 这是「结果未知」，不是「已经成了」——文案必须给出下一步（重试 / 去账号页核对）。
+  consumeErrBindUnconfirmed: '绑定结果未确认，请重试或稍后在账号页查看',
+  // 「已确认失败」时附在文案下面的那一行：HTTP 码 + 脱敏后的服务端原文（`panels.ts` 的 errorBlock 渲染）
+  consumeErrUpstreamDetail: '服务端返回：{detail}',
   // ---------------------------------------------------------------------------
   // W1-C2 四个面板（额度 / 账号 / 邀请 / 邮箱绑定，#487）：
   //   1. `consumeErr*` 的 27 条错误文案已由 #504 落地（W1-A 收尾），本单**不重复定义**；
