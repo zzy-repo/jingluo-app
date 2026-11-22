@@ -168,7 +168,6 @@ export const AuthGate = ({ children, variant = 'page', segmented = false }: Auth
       email: values.email,
       password: values.password,
       verifyCode: values.verifyCode,
-      invitationCode: values.invitationCode,
     })
   }
 

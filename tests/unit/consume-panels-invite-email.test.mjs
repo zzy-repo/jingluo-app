@@ -133,9 +133,14 @@ test('L1 邀请面板：邀请码可复制 + 人数 + 返利 ¥，且没有「�
   assert.equal(textOf(markup, 'invite-rebate').includes('¥2.50'), true, `返利应显示 ¥2.50，实际 ${textOf(markup, 'invite-rebate')}`)
   assert.equal(markup.includes('$'), false, '返利不许出现美元符号（口径统一为 CNY）')
 
-  // ③ 语义：邀请码只在注册时填，返利按比例结算 —— 没有「立刻到账 / 积分」
-  assert.equal(markup.includes(translate('inviteCodeAtRegister')), true)
-  assert.equal(zh.inviteCodeAtRegister, '注册时填写邀请码（可选）')
+  // ③ 语义（#841）：面板里**不再有**「注册时填写邀请码」与「返利按…% 结算」两句说明
+  //    （文案 key 已从 zh / en 删除；有比例数据也不渲染）—— 没有「立刻到账 / 积分」
+  assert.equal('inviteCodeAtRegister' in zh, false, 'zh 里的 inviteCodeAtRegister 已删')
+  assert.equal('inviteRebateRate' in zh, false, 'zh 里的 inviteRebateRate 已删')
+  assert.equal(hasTestId(markup, 'invite-semantics'), false)
+  assert.equal(hasTestId(markup, 'invite-rate'), false)
+  assert.equal(markup.includes('注册时填写邀请码'), false)
+  assert.equal(markup.includes('结算'), false, '返利比例说明整句不渲染')
   for (const banned of ['积分', '立刻', '马上到账', '立即领取', '领取奖励']) {
     assert.equal(markup.includes(banned), false, `邀请面板不许出现旧语义「${banned}」`)
   }

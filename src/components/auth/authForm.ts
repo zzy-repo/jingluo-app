@@ -20,7 +20,7 @@
 export const MIN_PASSWORD_LENGTH = 8
 
 /** 出问题的字段 */
-export type AuthField = 'email' | 'password' | 'confirmPassword' | 'verifyCode' | 'invitationCode'
+export type AuthField = 'email' | 'password' | 'confirmPassword' | 'verifyCode'
 
 /** 为什么出问题（reason 不直接上屏，上屏走 `issueMessageKey`） */
 export type AuthIssueReason =
@@ -64,7 +64,6 @@ export type RegisterValues = {
   password: string
   confirmPassword: string
   verifyCode?: string
-  invitationCode?: string
 }
 
 /** 登录只需要非空 + 邮箱格式（密码长度由服务端判，本地拦下来只会让「老账号短密码」登不进去） */

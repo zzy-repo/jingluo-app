@@ -50,6 +50,7 @@ import type { ConsumeClient, ConsumeUser } from '../../services/consume/index.js
 import { getConsumeClient } from '../../services/consumeClient.js'
 import { MY_ORDERS_DEFAULT_PAGE_SIZE, type ConsumeMyOrder } from '../../services/consume/orders.js'
 import { useAuthStatus } from '../../services/auth/useAuthStatus.js'
+import { useAuthFlags } from '../../services/auth/flags.js'
 import { managedKeyTail } from '../../services/api/managedKey.js'
 import { detectThirdPartyProtocol } from '../../services/api/protocolDetect.js'
 import { syncManagedKeyFromServer } from '../settings/managedKeyRuntime.js'
@@ -133,6 +134,8 @@ export const AccountConsumePage = ({
   const t = useTranslate()
   const consume = useMemo(() => injected ?? getConsumeClient(), [injected])
   const auth = useAuthStatus()
+  // #839：「填写邀请码」入口跟 `settings/public.invitation_code_enabled`（服务端说了算，本地不留第二份开关）
+  const authFlags = useAuthFlags()
   const authUser = auth.user ?? user
   /**
    * 登录态三档（#608）：`null` = 启动恢复还没跑完。恢复期间既没有 token 也没有 user，
@@ -819,7 +822,12 @@ export const AccountConsumePage = ({
           否则就成了「客户端第二份开关」（#484 §3.1d）。
         */}
         <div className={styles.viewBody} data-testid="account-consume-invite">
-          <InvitePanel consume={consume} signedIn={signedIn === true} onSignIn={needLogin} />
+          <InvitePanel
+            consume={consume}
+            signedIn={signedIn === true}
+            onSignIn={needLogin}
+            canBind={authFlags.invitationCodeEnabled}
+          />
         </div>
 
         {/* 退出登录（红字行，原型 `.logout`）：动作就是既有的 auth store `signOut()`，不另写一套 */}

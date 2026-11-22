@@ -881,9 +881,6 @@ export const zh = {
   settingsAuthForgotNeedsEmail: '请先填写邮箱，再点「忘记密码」',
   // #797：注册的「确认密码」与密码可见切换
   settingsAuthConfirmPlaceholder: '请再次输入密码',
-  // #819：注册分段的「邀请码（可选）」——只在 settings/public 的 invitation_code_enabled 为真时出现
-  // （注册后无法补填：sub2api 没有「登录后补邀请码」的端点，见 inviteCodeAtRegister 那条说明）
-  settingsAuthInvitePlaceholder: '邀请码（可选）',
   /** 两次输入不一致（只在客户端校验，不上服务端；提交前就拦下） */
   settingsAuthPasswordMismatch: '两次输入的密码不一致',
   /** 眼睛按钮的可访问名（说的是「点了会发生什么」：现在隐藏 → 「显示密码」） */
@@ -1038,13 +1035,17 @@ export const zh = {
   walletAutoRedeemFailed: '自动兑换未完成',
   walletAutoRedeemDismiss: '知道了',
 
-  // 邀请（sub2api aff；邀请关系只能在注册时一次填定）
+  // 邀请（sub2api aff；邀请关系在「我的邀请」里一次性绑定，#839 / #842）
   inviteTitle: '我的邀请',
   inviteCode: '邀请码',
   inviteCopyCode: '复制邀请码',
   inviteCount: '已邀请人数',
   inviteRebateBalance: '返利余额',
-  inviteCodeAtRegister: '注册时填写邀请码（可选）',
+  inviteBindTitle: '填写邀请码',
+  inviteBindPlaceholder: '输入朋友的邀请码',
+  inviteBindSubmit: '绑定',
+  inviteBindDone: '已绑定邀请人',
+  inviteBindOnce: '邀请码只能绑定一次，绑定后不能修改',
   inviteCodeInvalid: '邀请码无效',
   inviteDisabled: '邀请功能未开放',
 
@@ -1092,6 +1093,7 @@ export const zh = {
   consumeErrCardUsed: '这张卡密已经被用过了，额度没到账请联系客服',
   consumeRedeemProcessing: '正在确认兑换结果',
   consumeErrInvitationInvalid: '邀请码无效，请核对后再填',
+  consumeErrAffiliateAlreadyBound: '你已经绑定过邀请人，不能再改',
   consumeErrEmailCodeInvalid: '验证码不对或已过期，请重新获取',
   // 邮箱没验证（`EMAIL_VERIFY_REQUIRED`）：说清「下一步做什么」——先去验证，不是稍后重试
   consumeErrEmailVerifyRequired: '请先完成邮箱验证',
@@ -1150,8 +1152,7 @@ export const zh = {
   consumeLogoutConfirm: '退出后需要重新登录才能继续使用，确认退出吗？',
   consumeLogoutSuccess: '已退出登录',
 
-  // 邀请面板（返利按消费额的比例以「元」结算，邀请关系只在注册时一次填定）
-  inviteRebateRate: '返利按下线消费额的 {percent}% 结算，结算后计入返利余额',
+  // 邀请面板（返利按消费额的比例以「元」结算；#841 起面板不再展示比例说明）
   inviteRebateFrozen: '其中 {amount} 冻结中',
 
   // 邮箱绑定面板（`email_verify_enabled=false` 时不再强调「必须先验证」）

@@ -894,8 +894,6 @@ export const en = {
   settingsAuthForgotNeedsEmail: 'Enter your email first, then tap "Forgot password"',
   // #797: confirm password on sign-up + show/hide password toggles
   settingsAuthConfirmPlaceholder: 'Re-enter your password',
-  // #819: optional invitation code on sign-up (only when settings/public says invitation_code_enabled)
-  settingsAuthInvitePlaceholder: 'Invitation code (optional)',
   /** The two entries differ (client-side check only — never sent to the server; blocked before submit) */
   settingsAuthPasswordMismatch: 'The two passwords do not match',
   /** Eye button accessible name — it names the action: hidden now → "Show password" */
@@ -1042,7 +1040,11 @@ export const en = {
   inviteCopyCode: 'Copy invitation code',
   inviteCount: 'Invited users',
   inviteRebateBalance: 'Rebate balance',
-  inviteCodeAtRegister: 'Invitation code (optional)',
+  inviteBindTitle: 'Enter an invitation code',
+  inviteBindPlaceholder: "Enter a friend's invitation code",
+  inviteBindSubmit: 'Link',
+  inviteBindDone: 'Inviter linked',
+  inviteBindOnce: 'An invitation code can only be linked once and cannot be changed afterwards',
   inviteCodeInvalid: 'Invalid invitation code',
   inviteDisabled: 'Invites are not available',
 
@@ -1092,6 +1094,7 @@ export const en = {
   consumeErrCardUsed: 'This card key has already been used. Contact support if the balance did not arrive.',
   consumeRedeemProcessing: 'Confirming the redemption result',
   consumeErrInvitationInvalid: 'Invalid invitation code. Check it and try again.',
+  consumeErrAffiliateAlreadyBound: 'You have already linked an inviter and cannot change it',
   consumeErrEmailCodeInvalid: 'The verification code is wrong or has expired. Request a new one.',
   // Email not verified yet (`EMAIL_VERIFY_REQUIRED`): name the next step instead of "try again later"
   consumeErrEmailVerifyRequired: 'Please verify your email first',
@@ -1142,7 +1145,6 @@ export const en = {
   consumeNeedLogin: 'Your session expired, please log in again',
   consumeLogoutConfirm: 'You will need to log in again to keep using the app. Log out?',
   consumeLogoutSuccess: 'Logged out',
-  inviteRebateRate: 'Rebates pay {percent}% of what your invitees spend, credited to the rebate balance',
   inviteRebateFrozen: '{amount} of it is frozen',
   emailBindNotBound: 'No email bound yet',
   emailBindCodeLabel: 'Verification code',

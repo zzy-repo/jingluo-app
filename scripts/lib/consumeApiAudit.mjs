@@ -29,6 +29,8 @@ export const PATH_WHITELIST = [
   // §3.1b 邀请
   '/api/v1/auth/validate-invitation-code',
   '/api/v1/user/aff',
+  // #842：登录后绑定邀请人（后端新接口；#839 把邀请码从注册表单挪到「我的邀请」）
+  '/api/v1/user/aff/bind',
   // §3.1c 邮箱绑定
   '/api/v1/user/account-bindings/email/send-code',
   '/api/v1/user/account-bindings/email',

@@ -1,10 +1,11 @@
 /**
  * 注册页（W1-B 前半，Issue #487）—— 纯展示 + 本地校验，**不认识 store、不发请求**。
  *
- * 两个字段由服务端开关决定出不出现（#484 §3.1c / §3.1d：「客户端所有『入口是否显示』都由
+ * 验证码行由服务端开关决定出不出现（#484 §3.1c / §3.1d：「客户端所有『入口是否显示』都由
  * `settings/public` 决定，本地不写死」）：
- *  - `emailVerifyEnabled` → 验证码行 + 「发送验证码」按钮（服务端 `/auth/send-verify-code`，5/min）；
- *  - `invitationCodeEnabled` → 邀请码行（**可选**：邀请关系只能在注册时填一次，#484 §3.1b）。
+ *  - `emailVerifyEnabled` → 验证码行 + 「发送验证码」按钮（服务端 `/auth/send-verify-code`，5/min）。
+ *
+ * **注册不再填邀请码**（#839）：邀请人改在登录后的「我的邀请」里一次性绑定。
  *
  * 冷却秒数「不写死文案里的数字」：提示句是 `sub2authCodeSent`，`{seconds}` 由这里的倒计时注入。
  * 服务端限流是 5/min，所以本地冷却取 60s（服务端仍然说了算 —— 早发只会拿回 rate_limited）。
@@ -57,7 +58,6 @@ export const RegisterPage = ({
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [verifyCode, setVerifyCode] = useState('')
-  const [invitationCode, setInvitationCode] = useState('')
   const [issues, setIssues] = useState<AuthIssue[]>([])
   const [cooldown, setCooldown] = useState(0)
 
@@ -83,7 +83,7 @@ export const RegisterPage = ({
     if (busy) {
       return
     }
-    const found = validateRegister({ email, password, confirmPassword, verifyCode, invitationCode })
+    const found = validateRegister({ email, password, confirmPassword, verifyCode })
     setIssues(found)
     if (found.length > 0) {
       return
@@ -93,11 +93,6 @@ export const RegisterPage = ({
       password,
       confirmPassword,
       verifyCode: flags.emailVerifyEnabled ? verifyCode.trim() : undefined,
-      // 邀请码是可选的：空串不传，免得服务端把 "" 当成一个无效邀请码
-      invitationCode:
-        flags.invitationCodeEnabled && invitationCode.trim() !== ''
-          ? invitationCode.trim()
-          : undefined,
     })
   }
 
@@ -233,23 +228,6 @@ export const RegisterPage = ({
               }}
             />
           </label>
-
-          {flags.invitationCodeEnabled ? (
-            <label className={styles.field}>
-              <span className={styles.label}>{t('inviteCode')}</span>
-              <input
-                className={styles.input}
-                type="text"
-                name="invitationCode"
-                autoComplete="off"
-                autoCapitalize="characters"
-                spellCheck={false}
-                value={invitationCode}
-                onChange={(event) => setInvitationCode(event.target.value)}
-              />
-              <span className={styles.hint}>{t('inviteCodeAtRegister')}</span>
-            </label>
-          ) : null}
 
           <div className={styles.actions}>
             <Button type="submit" variant="primary" size="l" block disabled={busy} aria-busy={busy}>

@@ -110,8 +110,8 @@ const inviteRender = (state) =>
     })
   )
 
-/** 注册卡视图（只注入测试关心的开关；其余通道给空实现） */
-const authCardRender = (state, { invitationCodeEnabled }) =>
+/** 注册卡视图（其余通道给空实现；#839 起视图不再有邀请码开关） */
+const authCardRender = (state) =>
   markupOf(
     SettingsAuthCardView({
       t: translate,
@@ -126,7 +126,6 @@ const authCardRender = (state, { invitationCodeEnabled }) =>
       errorKey: null,
       registrationLoaded: true,
       registrationEnabled: true,
-      invitationCodeEnabled,
       onEvent() {},
       onSubmit() {},
       onSendCode() {},
@@ -179,15 +178,17 @@ test('① 账号 L2 页真的挂了 <InvitePanel>（不再只出现在文档注�
     /<InvitePanel\b[^>]*\bconsume=\{consume\}[^>]*\bsignedIn=\{signedIn === true\}[^>]*\bonSignIn=\{needLogin\}/s,
     'props 口径保持原样：consume / signedIn（严格 true 才算已登录）/ onSignIn（页面既有登录出口）'
   )
+  // #839：多了一个 `canBind`，值就是服务端开关本身（页面只转手，不做判断）
+  assert.match(branch, /\bcanBind=\{authFlags\.invitationCodeEnabled\}/, '#839：入口开关只转手，不加本地判断')
   // 顺序：资料区之后、退出登录之前（底稿的版式口径）
   const profile = branch.indexOf('account-consume-profile')
   const signOut = branch.indexOf('data-testid="account-consume-signout"')
   assert.ok(profile > 0 && signOut > 0, '账号页的资料区 / 退出登录行都得在')
   assert.ok(profile < mount && mount < signOut, '邀请面板要夹在资料区与退出登录之间')
-  // 反面：页面里不许抄第二份开关（开关只有面板内侧那一处，见 #484 §3.1d）
+  // 反面：页面里不许抄第二份开关判断（#484 §3.1d）。#839 起唯一允许的引用是把服务端开关原样递给 `canBind`
   assert.ok(
-    !/invitationCodeEnabled|affiliateEnabled/.test(branch),
-    '页面里不许出现本地开关判断 —— 开关语义留在 invitePanelModel 里'
+    !/affiliateEnabled/.test(branch) && (branch.match(/invitationCodeEnabled/g) ?? []).length === 1,
+    '页面里只许有 canBind={authFlags.invitationCodeEnabled} 这一处引用，不许再写别的开关判断'
   )
 })
 
@@ -259,68 +260,28 @@ test('② 未登录 → 一律引导态（与开关无关，且不发请求）',
   assert.ok(hasTestId(markup, 'invite-signed-out'), '未登录给引导，不是错误也不是隐藏')
 })
 
-// ─────────────────────────────────────────────────────────── ③ 注册补邀请码字段（开关开）
+// ───────────────────────────────────────────────────────── ③ #839 注册表单没有邀请码
 
-test('③ invitation_code_enabled=true → 注册分段多一行「邀请码（可选）」，提交体含 invitation_code', async () => {
-  const markup = authCardRender(registerState(), { invitationCodeEnabled: true })
-  assert.ok(hasTestId(markup, 'settings-auth-invitation'), '注册分段要有邀请码输入（testid: settings-auth-invitation）')
-  assert.match(markup, /邀请码（可选）/, '占位文案是「邀请码（可选）」')
-  // 只在注册分段：登录 tab 没有这一行（邀请关系只能在注册时填一次）
-  const loginMarkup = authCardRender(
-    { ...initialAuthCardState('login'), email: 'invitee@example.com', password: 'secret123' },
-    { invitationCodeEnabled: true }
-  )
-  assert.ok(!hasTestId(loginMarkup, 'settings-auth-invitation'), '登录分段不出现邀请码')
+test('③ #839：注册分段没有邀请码输入，提交体也不含 invitation_code（哪怕 state 被塞了值）', async () => {
+  const markup = authCardRender(registerState())
+  assert.ok(!hasTestId(markup, 'settings-auth-invitation'), '注册分段不再有邀请码输入')
+  assert.ok(!markup.includes('邀请码（可选）'), '连占位文案都不该出现')
+  assert.equal(/inviteCodeAtRegister|settingsAuthInvitePlaceholder/.test(readSource('src/i18n/zh.ts')), false, 'zh 里的两条旧文案已删')
 
-  // 输入能进 state（与验证码同一条事件通路），切 tab 也不会丢
-  const typed = reduceAuthCard(registerState(), { type: 'invitation-code', value: 'INV819' })
-  assert.equal(typed.invitationCode, 'INV819')
-  const backToRegister = reduceAuthCard(
-    reduceAuthCard(typed, { type: 'mode', mode: 'login' }),
-    { type: 'mode', mode: 'register' }
-  )
-  assert.equal(backToRegister.invitationCode, 'INV819', '注册 → 登录 → 注册 不该把码弄丢')
+  // 事件与 state 字段也已移除：旧事件落到 reducer 里是无效果的
+  const state = reduceAuthCard(registerState(), { type: 'invitation-code', value: 'INV819' })
+  assert.equal('invitationCode' in state, false, 'state 里没有 invitationCode 字段')
 
-  // 提交：submitAuthCard → AuthTransport.register → consume.auth.register → 真 http（全链路）
   const scene = registerScene()
   const events = await submitAuthCard(
     { signUp: scene.register, signIn: async () => ({}), forgotPassword: async () => ({}) },
-    typed,
+    { ...registerState(), invitationCode: 'INV819' },
     { submitting: false, registrationLoaded: true, registrationEnabled: true, invitationCodeEnabled: true }
   )
-  assert.deepEqual(events, [{ type: 'form-submitted' }], '注册请求发出后落「已提交」')
+  assert.deepEqual(events, [{ type: 'form-submitted' }], '注册请求照常发出')
   assert.deepEqual(scene.sequence(), ['POST /api/v1/auth/register'], '只打注册这一条')
   const body = JSON.parse(scene.calls[0].body)
-  assert.equal(body.invitation_code, 'INV819', '请求体里的字段名是 snake_case invitation_code')
+  assert.equal('invitation_code' in body, false, '请求体里没有 invitation_code 这个键')
   assert.equal(body.email, 'invitee@example.com')
   assert.equal('confirmPassword' in body, false, '确认密码仍然不进请求体（#797）')
-})
-
-// ───────────────────────────────────────────────────────── ④ 开关 false 时不渲染、也不进请求体
-
-test('④ invitation_code_enabled=false → 没有这一行，请求体也不含 invitation_code（哪怕 state 有值）', async () => {
-  const markup = authCardRender(registerState({ invitationCode: 'INV819' }), { invitationCodeEnabled: false })
-  assert.ok(!hasTestId(markup, 'settings-auth-invitation'), '开关关着 → 这一行不渲染（与现状一致）')
-  assert.ok(!markup.includes('邀请码（可选）'), '连占位文案都不该出现')
-
-  const scene = registerScene()
-  await submitAuthCard(
-    { signUp: scene.register, signIn: async () => ({}), forgotPassword: async () => ({}) },
-    registerState({ invitationCode: 'INV819' }),
-    { submitting: false, registrationLoaded: true, registrationEnabled: true, invitationCodeEnabled: false }
-  )
-  const body = JSON.parse(scene.calls[0].body)
-  assert.equal('invitation_code' in body, false, '开关关着 → 请求体里没有 invitation_code 这个键')
-  assert.equal(body.email, 'invitee@example.com', '注册本身照常发（开关只管邀请码这一栏）')
-})
-
-test('④ 开关开但留空 → 也不进请求体（「可选」不是「必填」）', async () => {
-  const scene = registerScene()
-  await submitAuthCard(
-    { signUp: scene.register, signIn: async () => ({}), forgotPassword: async () => ({}) },
-    registerState(),
-    { submitting: false, registrationLoaded: true, registrationEnabled: true, invitationCodeEnabled: true }
-  )
-  const body = JSON.parse(scene.calls[0].body)
-  assert.equal('invitation_code' in body, false, '没填就不传这个键（不是传空串）')
 })

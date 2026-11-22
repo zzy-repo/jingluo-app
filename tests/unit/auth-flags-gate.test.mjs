@@ -158,7 +158,7 @@ test('email_verify_enabled=false → 不强调「必须先验证邮箱」（=tru
   assert.equal(off.includes(translate('sub2authEmailVerifyRequired')), false)
 })
 
-test('接线：注册入口 / 邀请码行 / 验证码行只受 flags 控制（页面里没有第二份写死的开关）', () => {
+test('接线：注册入口 / 验证码行只受 flags 控制；注册页不再有邀请码行（#839）', () => {
   const gate = sourceOf('src/components/auth/AuthGate.tsx')
   const login = sourceOf('src/components/auth/LoginPage.tsx')
   const register = sourceOf('src/components/auth/RegisterPage.tsx')
@@ -166,9 +166,9 @@ test('接线：注册入口 / 邀请码行 / 验证码行只受 flags 控制（�
   // ① 登录页的注册入口由 `showRegisterEntry` 控制，gate 传的是开关本身
   assert.match(gate, /showRegisterEntry=\{flags\.registrationEnabled\}/)
   assert.match(login, /showRegisterEntry \?/)
-  // ② 注册页的验证码行 / 邀请码行由 flags 控制
+  // ② 注册页的验证码行由 flags 控制；邀请码行已整条移走（#839：改在「我的邀请」里绑定）
   assert.match(register, /flags\.emailVerifyEnabled \?/)
-  assert.match(register, /flags\.invitationCodeEnabled \?/)
+  assert.equal(/invitationCode/.test(register), false, '注册页不许再有邀请码')
   // ③ 不许有人把它们写死成 true（这条是「改坏 → 变红」的落点）
   for (const [file, source] of [
     ['AuthGate.tsx', gate],

@@ -3,11 +3,13 @@
  *
  *   POST /api/v1/auth/validate-invitation-code   公共（10/min）：注册前预校验邀请码
  *   GET  /api/v1/user/aff                        JWT：我的邀请（返利按**比例**结算，金额单位是元）
+ *   POST /api/v1/user/aff/bind                   JWT：登录后绑定邀请人（#842 契约，**后端待上线**）
  *
- * 语义（#484 §3.1b「UI 要跟着改」）：
- *  - 邀请关系**只能在注册时一次填定**（sub2api 没有「登录后补填邀请码」的端点）；
- *  - 所以这个模块的两个能力分别是「注册页先把码验一下」与「我的邀请页展示返利统计」，
- *    不存在「填码立刻得积分」那条旧玩法（`circular_invite` / `already_redeemed` 旧文案作废）。
+ * 语义（#484 §3.1b「UI 要跟着改」，#839 之后）：
+ *  - 邀请关系在「我的邀请」里**一次性绑定**；注册表单不再填邀请码（#839）；
+ *  - 上游 sub2api 原生没有登录后绑定的端点，`/user/aff/bind` 是 #842 向后端提的新接口，
+ *    **接口没上线前**调用会拿到 404（`consumeErrNotFound`）—— 界面如实显示，不假装成功；
+ *  - 不存在「填码立刻得积分」那条旧玩法（`circular_invite` / `already_redeemed` 旧文案作废）。
  */
 
 import type { ConsumeCallResult, ConsumeHttp } from './http.js'
@@ -64,6 +66,29 @@ export const validateInvitationCode = (
       const check: ConsumeInvitationCheck = { valid: body.valid === true }
       if (typeof body.error_code === 'string' && body.error_code !== '') {check.errorCode = body.error_code}
       return { ...result, data: check }
+    })
+
+/**
+ * 登录后绑定邀请人（#842 契约）：`{ code }` → 200 `{ inviter_id? }`。
+ *
+ * 一次性：已绑定再调返回 409 `AFFILIATE_ALREADY_BOUND`（不是「改绑」）。码在这里统一去空白并转大写
+ * （服务端也会归一，这里先做是为了让「复制进来带空格」的输入不白白吃一次限流 / 一次 400）。
+ * 失败不抛错，`ok:false` 的 `error.i18nKey` 直接上屏。
+ */
+export const bindInviter = (http: ConsumeHttp, code: string): Promise<ConsumeCallResult<{ inviterId?: number }>> =>
+  http
+    .call<unknown>({
+      method: 'POST',
+      path: '/api/v1/user/aff/bind',
+      body: { code: code.trim().toUpperCase() },
+      timeout: 'write',
+    })
+    .then((result) => {
+      if (!result.ok) {return result}
+      const body = asRecord(result.data)
+      const data: { inviterId?: number } = {}
+      if (typeof body.inviter_id === 'number') {data.inviterId = body.inviter_id}
+      return { ...result, data }
     })
 
 /** 我的邀请（JWT）：`aff_code` / `aff_count` / `aff_quota` 是界面要的三个数 */

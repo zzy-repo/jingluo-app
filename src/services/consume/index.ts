@@ -30,7 +30,7 @@
  *   3. 卡密兑换**绝不盲目重试** —— 先查历史核对到账，再决定要不要让用户重试。
  */
 
-import { getAffiliate, validateInvitationCode } from './aff.js'
+import { bindInviter, getAffiliate, validateInvitationCode } from './aff.js'
 import {
   forgotPassword,
   getProfile,
@@ -162,6 +162,7 @@ export {
   type ConsumeRedeemResult,
 } from './redeem.js'
 export {
+  bindInviter,
   getAffiliate,
   validateInvitationCode,
   type ConsumeAffiliate,
@@ -243,6 +244,8 @@ export const createConsumeClient = (options: ConsumeClientOptions = {}) => {
     aff: {
       validateInvitationCode: (code: string) => validateInvitationCode(http, code),
       detail: () => getAffiliate(http),
+      /** 登录后绑定邀请人（#839 / #842）：一次性，已绑定返回 `AFFILIATE_ALREADY_BOUND` */
+      bind: (code: string) => bindInviter(http, code),
     },
     email: {
       sendCode: (email: string) => sendBindEmailCode(http, email),

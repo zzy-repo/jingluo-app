@@ -94,6 +94,7 @@ export type ConsumeMessageKey =
   | 'consumeErrCardUsed'
   | 'consumeRedeemProcessing'
   | 'consumeErrInvitationInvalid'
+  | 'consumeErrAffiliateAlreadyBound'
   | 'consumeErrEmailCodeInvalid'
   | 'consumeErrEmailVerifyRequired'
   | 'consumeErrNotEnabled'
@@ -193,6 +194,10 @@ export const CONSUME_ERROR_KEYS: Record<string, { kind: ConsumeErrorKind; i18nKe
   API_KEY_INVALID_CHARS: { kind: 'key', i18nKey: 'consumeErrBadRequest' },
   INVITATION_CODE_INVALID: { kind: 'bad_request', i18nKey: 'consumeErrInvitationInvalid' },
   INVITATION_CODE_DISABLED: { kind: 'bad_request', i18nKey: 'consumeErrNotEnabled' },
+  // #842：`POST /user/aff/bind` 的三个业务码（上游 `affiliate_service.go` 已有前两个，第三个是新接口要求加的）
+  AFFILIATE_CODE_INVALID: { kind: 'bad_request', i18nKey: 'consumeErrInvitationInvalid' },
+  AFFILIATE_ALREADY_BOUND: { kind: 'bad_request', i18nKey: 'consumeErrAffiliateAlreadyBound' },
+  AFFILIATE_DISABLED: { kind: 'bad_request', i18nKey: 'consumeErrNotEnabled' },
   INVALID_VERIFY_CODE: { kind: 'bad_request', i18nKey: 'consumeErrEmailCodeInvalid' },
   VERIFY_CODE_INVALID: { kind: 'bad_request', i18nKey: 'consumeErrEmailCodeInvalid' },
   // 邮箱还没验证（实测存在，契约 §4.1 漏列；#512 记录的缺口 2）：
