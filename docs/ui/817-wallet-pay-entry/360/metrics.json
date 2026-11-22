@@ -1,0 +1,39 @@
+{
+  "page": "wallet-head",
+  "title": "#817「我的钱包」页首一行：余额卡（剩余余额）+ 付款入口同一行；390 / 360 两档不横向溢出、余额数字完整",
+  "viewport": 360,
+  "size": "360×740",
+  "shots": [
+    "docs/ui/817-wallet-pay-entry/360/wallet-head.png"
+  ],
+  "notes": [
+    "markup 来自 walletHeaderView.ts 的真渲染（renderToStaticMarkup），CSS 来自 src/app/theme.css + AccountConsume.module.css；",
+    "外层壳只复刻 Settings.module.css 的三条：弹层 24px 内距 / .content padding 0 24px / margin-right: -24px（内容宽 = 视口 − 72）；",
+    "rowCount = 1 表示余额卡与付款入口的中线差 < 2px（同一行）；折行时入口掉到下一行、仍靠右（margin-left: auto）。"
+  ],
+  "documentScrollWidth": 360,
+  "documentClientWidth": 360,
+  "head": {
+    "clientWidth": 288,
+    "left": 48,
+    "scrollWidth": 288,
+    "rowCount": 1,
+    "cardWidth": 195,
+    "payWidth": 81,
+    "payRight": 336,
+    "payTop": 57,
+    "cardTop": 27
+  },
+  "balance": {
+    "text": "¥128.50",
+    "clipped": false,
+    "wrapped": false,
+    "lineHeight": 38,
+    "height": 38,
+    "fontSize": "32px"
+  },
+  "pay": {
+    "text": "去支付 ›",
+    "height": 40
+  }
+}

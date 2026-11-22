@@ -6,7 +6,8 @@
 //
 //   1. 打开设置并选中第三个 tab「账户与消费」（面包屑：设置 → 账户与消费 → 我的卡密 / 我的额度 / 账号）；
 //   2. 落哪个 tab 由调用方指定，**缺省是 `cards`（我的卡密）** —— 付款回跳就是为了让用户看到卡密；
-//   3. 消息流两个 CTA 的目标 tab 固定：额度不足 → `quota`（我的额度），Key 失效 → `account`（账号）；
+//   3. 消息流两个 CTA 的目标 tab 固定：额度不足 → `wallet`（我的钱包；#817 之前指 `quota`，
+//      那一页已随入口一起删掉），Key 失效 → `account`（账号）；
 //   4. 关掉设置不清 tab（下一步落在哪一页由调用方决定）；再打开仍能落在上一次指定的 tab 上，
 //      不会「偷偷跳回卡密」；
 //   5. 旧出口（`oursOpen` / `openOursServices`）必须真的不存在 —— 删除要可断言，不是「大概删了」。
@@ -37,7 +38,9 @@ const reset = () => {
   state.useSettingsDialog.setState({
     open: false,
     section: 'general',
-    accountConsumeTab: 'cards',
+    // #817：缺省 `null` = 落在 L1 列表页（「从侧栏点进来」/「Key 守卫打开设置」的落点）；
+    // 落到某一页只由 `openAccountConsume(tab)` 指定。
+    accountConsumeTab: null,
     apiKeyFormatBlocked: false,
   })
 }
@@ -51,16 +54,25 @@ test('openAccountConsume() 缺省落「我的卡密」（付款回跳：让用�
   assert.equal(now.accountConsumeTab, 'cards', '缺省 tab 必须是我的卡密')
 })
 
-test('消息流两个 CTA 的 tab：额度不足 → quota，Key 失效 → account', () => {
+test('消息流两个 CTA 的 tab：额度不足 → wallet，Key 失效 → account', () => {
   reset()
-  state.openAccountConsume('quota')
-  assert.equal(state.useSettingsDialog.getState().accountConsumeTab, 'quota', '额度不足要落在「我的额度」')
+  state.openAccountConsume('wallet')
+  assert.equal(state.useSettingsDialog.getState().accountConsumeTab, 'wallet', '额度不足要落在「我的钱包」（#817：额度页已删）')
   reset()
   state.openAccountConsume('account')
   assert.equal(state.useSettingsDialog.getState().accountConsumeTab, 'account', 'Key 失效要落在「账号」')
   reset()
   state.openAccountConsume('buy')
   assert.equal(state.useSettingsDialog.getState().accountConsumeTab, 'buy', '购买 tab 也能直接指过去')
+})
+
+test('缺省落点是 L1（`null`）：从侧栏 / Key 守卫打开设置不该被塞进某个下级页面', () => {
+  reset()
+  assert.equal(
+    state.useSettingsDialog.getState().accountConsumeTab,
+    null,
+    '没有调用 openAccountConsume 时，这一格是 null（= L1 列表页）'
+  )
 })
 
 test('关掉设置不清 tab；再次打开还落在同一个 tab', () => {
@@ -75,10 +87,10 @@ test('关掉设置不清 tab；再次打开还落在同一个 tab', () => {
 
   // 换一个 tab 再来一轮：证明「不重置」不是碰巧等于缺省值 `cards`
   reset()
-  state.openAccountConsume('quota')
+  state.openAccountConsume('wallet')
   state.closeSettings()
   state.openSettings('account')
-  assert.equal(state.useSettingsDialog.getState().accountConsumeTab, 'quota', '再打开仍落在上一次的 quota')
+  assert.equal(state.useSettingsDialog.getState().accountConsumeTab, 'wallet', '再打开仍落在上一次的 wallet')
 })
 
 test('旧出口已删除：oursOpen / openOursServices / setOursServicesOpen 一个都不剩', () => {
@@ -95,11 +107,11 @@ test('旧出口已删除：oursOpen / openOursServices / setOursServicesOpen 一
 
 test('closeSettings 只关设置：不清 tab，也不再需要「二级页开合」这个开关', () => {
   reset()
-  state.openAccountConsume('quota')
+  state.openAccountConsume('wallet')
   state.closeSettings()
   const now = state.useSettingsDialog.getState()
   assert.equal(now.open, false, '设置关掉')
-  assert.equal(now.accountConsumeTab, 'quota', '关掉只改开合，不重置 tab')
+  assert.equal(now.accountConsumeTab, 'wallet', '关掉只改开合，不重置 tab')
   // #727 阶段 1：内容常驻第三个 tab 内部，没有第二层容器 —— 那个开关必须真的删掉（可断言，不是「大概删了」）。
   // 留着它只会有两种下场：要么成了没人读的死字段，要么有人再拿它开一层弹窗（维护者明确否掉）。
   assert.equal('accountConsumeOpen' in now, false, '旧「二级页开合」字段已随弹层删除')

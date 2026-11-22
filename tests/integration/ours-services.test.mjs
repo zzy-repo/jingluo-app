@@ -145,8 +145,11 @@ try {
   await panel.waitFor({ state: 'visible', timeout: 10000 })
   ok('点「账户与消费」打开的是新页面')
   eq(await oldDialog(), 0, '打开后也没有旧弹层')
-  for (const tab of ['cards', 'buy', 'quota', 'account']) {
-    eq(await page.getByTestId(`account-consume-tab-${tab}`).count(), 1, `tab「${tab}」存在`)
+  // #817：「我的额度」这一页已删（余额卡里的入口也删了），四 tab 的老口径收成三个可达入口 ——
+  // 卡密 / 购买 / 账号都在 L2，L1 上是「模型来源 / 我的钱包 / 账号」三行。
+  eq(await page.getByTestId('account-consume-tab-quota').count(), 0, '「我的额度」入口已删（#817）')
+  for (const tab of ['cards', 'account']) {
+    eq(await page.getByTestId(`account-consume-tab-${tab}`).count(), 1, `入口「${tab}」存在`)
   }
   // 默认落在「我的卡密」：付款回跳（openAccountConsume() 的缺省 tab）就是为了让用户看到卡密
   eq(
@@ -155,11 +158,16 @@ try {
     '默认落在「我的卡密」tab（付款回跳的目标）'
   )
 
-  // ---------- [C] 另两个 tab 各自上屏（消息流两个 CTA 的目标） ----------
-  console.log('\n[C] tab 切换')
-  await page.getByTestId('account-consume-tab-quota').click()
+  // ---------- [C] 另两页各自上屏（消息流两个 CTA 的目标） ----------
+  console.log('\n[C] 页内切换')
+  // #817：「我的额度」页没了，CTA 落在钱包页（页首 = 余额卡 + 付款入口）
+  await page.getByTestId('account-consume-wallet').click()
   await page.waitForTimeout(600)
-  truthy((await page.getByTestId('account-consume-page').innerText()).length > 0, '「我的额度」tab 有内容')
+  truthy(
+    (await page.getByTestId('account-consume-wallet-head').count()) > 0,
+    '「我的钱包」页有余额卡 + 付款入口那一行'
+  )
+  await page.getByTestId('account-consume-back').click()
   await page.getByTestId('account-consume-tab-account').click()
   await page.waitForTimeout(600)
   truthy((await page.getByTestId('account-consume-page').innerText()).length > 0, '「账号」tab 有内容')

@@ -307,7 +307,7 @@ test('G16 账户可选：不登录首屏可用 → 只填 Key 能收发 → 账�
           ctx.abort('切渠道后重新进主界面', '欢迎页 / 会话列表可见', `body=${brief(await bodyText(page))}`)
         }
 
-        // ── 4. 未登录时「我的额度」是引导态（不报错、不空白）────────────────────
+        // ── 4. 未登录时「我的额度」是引导态（#817：整页已删，这一拍改断**入口不存在**）──
         ctx.begin('未登录的额度 tab')
         // 前置条件：这一页（「账户与消费」入口）只在**自有渠道**下出现（#166 / #562 的判据没变）。
         // 第 2 步为了打本地 mock 上游走的是 anthropic 渠道，这里把渠道切到 ours 再 reload ——
@@ -326,21 +326,24 @@ test('G16 账户可选：不登录首屏可用 → 只填 Key 能收发 → 账�
           ctx.abort('设置 → 数据管理里有「账户与消费」入口', '入口按钮存在', `body=${brief(await page.getByRole('dialog').innerText())}`)
         }
         await entry.click()
-        if (!(await waitFor(page, async () => (await page.getByTestId('account-consume-tab-quota').count()) > 0))) {
-          ctx.abort('「账户与消费」页打开', '四个 tab 在位', `body=${brief(await bodyText(page))}`)
+        if (!(await waitFor(page, async () => (await page.getByTestId('account-consume-wallet').count()) > 0))) {
+          ctx.abort('「账户与消费」页打开', 'L1 三行（模型来源 / 我的钱包 / 账号）在位', `body=${brief(await bodyText(page))}`)
         }
-        await page.getByTestId('account-consume-tab-quota').click()
-        const guide = page.getByTestId('quota-signed-out')
-        const guideShown = await waitFor(page, async () => (await guide.count()) > 0)
-        const quotaPanelText = (await page.getByTestId('quota-panel').innerText().catch(() => '')).replace(/\s+/gu, ' ').trim()
-        ctx.expect('未登录的「我的额度」给引导而不是报错', guideShown && (await page.getByTestId('quota-error').count()) === 0, {
-          expected: 'quota-signed-out 出现，且没有 quota-error',
-          actual: brief(quotaPanelText),
-        })
-        ctx.expect('引导里有「去登录」的出口（不是死路）', (await page.getByTestId('quota-sign-in').count()) === 1, {
-          expected: 'quota-sign-in ×1',
-          actual: `${await page.getByTestId('quota-sign-in').count()} 个`,
-        })
+        // #817：「我的额度」整页退场（余额卡里的入口一起删了），未登录引导态那一套 `quota-*` 节点
+        // 一并消失。这一拍只断「它真的不在了」；头像/登录这一档的引导态由账号页
+        // （下面第 4 拍 + `tests/unit/consume-panels-quota.test.mjs` 的模型层）继续覆盖。
+        await page.getByTestId('account-consume-wallet').click()
+        const walletHeadShown = await waitFor(page, async () => (await page.getByTestId('account-consume-wallet-head').count()) > 0)
+        ctx.expect(
+          '未登录的钱包页：余额卡给「—」/「…」，且「我的额度」入口与面板都已删除',
+          walletHeadShown &&
+            (await page.getByTestId('account-consume-tab-quota').count()) === 0 &&
+            (await page.getByTestId('quota-panel').count()) === 0,
+          {
+            expected: 'account-consume-wallet-head 出现；account-consume-tab-quota ×0；quota-panel ×0',
+            actual: `head=${walletHeadShown} entry=${await page.getByTestId('account-consume-tab-quota').count()} panel=${await page.getByTestId('quota-panel').count()}`,
+          }
+        )
 
         // ── 4. 账号 tab：不登录也能用的说明 + 局部登录 / 注册卡 ─────────────────
         ctx.begin('账号 tab（未登录）')

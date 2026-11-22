@@ -7,24 +7,31 @@
  *     ├─ Tab1 通用设置
  *     ├─ Tab2 数据管理     → 聊天背景 / 导入 / 导出 / 反馈日志 / 删除
  *     └─ Tab3 账户与消费   ← 本文件
- *         L1（列表页，页首就是余额卡）
- *           ├─ 余额卡：剩余余额 ¥x.xx（+ 卡内「我的额度」入口）
+ *         L1（列表页：模型来源 / 我的钱包 / 账号 三行）
  *           ├─ 模型来源        → 行（右侧当前来源名）→ L2 页：**单层手风琴**（#807）
  *           │                     三行行头（内置服务 / 第三方服务 / DeepSeek 官方服务），
  *           │                     同一时间只展开一行；展开区里是该来源自己的字段 + 「确认使用」，
  *           │                     **没有 L3 子页、没有返回**。展开 ≠ 生效（详见下面第 6 条）
- *           ├─ 我的卡密        → 行 → L2 页（卡密列表 + 兑换卡密）
- *           ├─ 历史消费        → 行 → L2 页（消费记录）
+ *           ├─ 我的钱包        → 行 → L2 页，页首**同一行**：余额卡（剩余余额 ¥x.xx）+ 付款入口
+ *           │                            （#817：入口只是换页，付款仍是既有 `BuyTab`）
+ *           │                     ├─ 我的卡密  → 行 → L2 页（卡密列表 + 兑换卡密）
+ *           │                     └─ 历史消费  → 行 → L2 页（消费记录）
  *           └─ 账号            → 行 → L2 页（资料 / 账号 ID / 绑定邮箱 / 登录方式 / 退出登录）
+ *
+ * #817：「我的额度」这一页**整页退场**（余额卡里那个入口删掉，`'quota'` 不再在 `AccountSubPage`
+ * 里）。额度相关的两块信息各有去处：余额还在钱包页首的余额卡里，已用 / 消费明细在「历史消费」
+ * （`HistoryView` 复用 `quotaPanelModel.ts` 的解析）。消息流「额度用完 → 去充值」的 CTA 因此改指
+ * **钱包页**（`openAccountConsume('wallet')`，见 `messages/AssistantMessage.tsx`）。
  *
  * 六条硬约定：
  *  1. **不自带外壳**：没有 `Modal`、没有遮罩、没有第二个 X —— 头部 / 关闭按钮全部复用设置的；
- *  2. **子行是「进入下一级页面」**（购买 / 卡密 / 额度 / 历史 / 账号仍是这样）：`page` 由外层
+ *  2. **子行是「进入下一级页面」**（购买 / 卡密 / 历史 / 账号仍是这样）：`page` 由外层
  *     （设置弹层）持有，非 `null` 时内容区整体替换。**唯一的例外是「模型来源」**：它是同一页里的
  *     手风琴（#807），展开某一行不换页、也不出现第三个「返回」；
  *  3. **不做第二份客户端**：一个 `ConsumeClient`，默认用全应用共享的 `getConsumeClient()`；
- *  4. **面板逻辑原样复用**：卡密 / 购买 / 额度还是 `MyCardsTab` / `BuyTab` /
- *     `QuotaPanel` 那三个既有组件，本文件只负责「把它们放到原型的位置上」；
+ *  4. **面板逻辑原样复用**：卡密 / 购买仍是 `MyCardsTab` / `BuyTab` 那两个既有组件
+ *     （#817 之后「我的额度」没有挂载点，`QuotaPanel` 本体保留在 `consume/index.ts` 的出口上），
+ *     本文件只负责「把它们放到原型的位置上」；
  *  5. L1 只留**一行**「模型来源」（右侧显示当前来源名）；它点进去是**手风琴**（每行 56px、
  *     左右 20px、1px 极浅下边框、右侧箭头，**不是分段控件**）：点行头只展开它自己的字段区
  *     （服务地址 / API Key / 模型 + 「确认使用」），不再有第三层页面。
@@ -54,11 +61,12 @@ import { useLegacyMigrationResult } from '../../legacy/migration/resultState.js'
 import { Button } from '../base/Button.js'
 import { IconChevronRightOutline14 } from '../base/icons.js'
 import { showToast } from '../base/toastState.js'
-import { QuotaPanel } from './index.js'
 import { BuyTab } from './BuyTab.js'
 import { HistoryView } from './HistoryView.js'
 import { MyCardsTab } from './MyCardsTab.js'
 import { runWalletAutoRedeem, type WalletAutoRedeemOutcome } from './walletAutoRedeem.js'
+import { WALLET_PAY_ENTRY_PAGE, landAfterPayReturn } from './walletPayFlow.js'
+import { WalletHeaderView } from './walletHeaderView.js'
 import { formatCurrency, maskedEmail } from './panels.js'
 import { sourceKeyOf } from './SourceSheet.js'
 import { ApiConfigFields, type SourceDraftBinding } from '../settings/ApiConfigFields.js'
@@ -93,7 +101,7 @@ import styles from './AccountConsume.module.css'
  * 类型放在这里而不是设置的状态层：它只描述「这一页内部展示什么」，进出都由内容区自己点，
  * 不参与 `openSettings` / 付款回跳那套跨模块状态。
  */
-export type AccountSubPage = 'wallet' | 'source' | 'cards' | 'buy' | 'quota' | 'history' | 'account'
+export type AccountSubPage = 'wallet' | 'source' | 'cards' | 'buy' | 'history' | 'account'
 
 export type AccountConsumePanelProps = {
   /**
@@ -391,7 +399,12 @@ export const AccountConsumePage = ({
    *
    * **#784 的唯一触发点**：本回调只由 `BuyTab` 的 `openPayLinkInApp(url, onClosed)` 里的
    * `onClosed` 调用（`BuyTab` 的 `onPurchased`），而 `onClosed` 就是「用户从收款页回来了」。
-   * 所以进钱包页 / 进卡密 tab / 挂载组件都**不会**走到这里 —— 自动兑现只在付款回来这一下发生。
+   * 所以进钱包页 / 进卡密页 / 挂载组件都**不会**走到这里 —— 自动兑现只在付款回来这一下发生。
+   *
+   * #817：换页那一句收进了 `landAfterPayReturn()`（`walletPayFlow.ts`），落点是
+   * `WALLET_PAY_RETURN_PAGE = 'cards'` —— 从钱包页首的付款入口进去付款，回来同样停在卡密页
+   * （两个入口共用同一段 `BuyTab`，所以只有这一处落点）。**Web 分支不在这条链上**：
+   * 非原生环境 `openPayLinkInApp` 返回 false、`onClosed` 不触发，界面停在购买页给可读提示。
    *
    * 自动兑现本身不在这里写逻辑：判定与不发第二枪的规则全在 `walletAutoRedeem.ts`（复用既有的
    * `consume.redeem` 封装，一行兑换逻辑都没有重写）。这里只负责两件事：
@@ -402,7 +415,8 @@ export const AccountConsumePage = ({
    *     + 让余额卡重拉一次；其余（处理中 / 失败 / 打码卡）→ 卡片 + 「去兑换」手动出口，**没有自动重试**。
    */
   const backToCards = useCallback(() => {
-    onNavigate('cards')
+    // 落点只有一份判定（`walletPayFlow.ts`）：收款页关掉之后停在「我的卡密」
+    landAfterPayReturn(onNavigate)
     setWalletTick((tick) => tick + 1)
     const loadOrders =
       apiKey.trim() === ''
@@ -504,23 +518,20 @@ export const AccountConsumePage = ({
       </p>
     </div>
   )
-  /** 余额卡：剩余余额（余额卡不是行）；额度收进卡里的一个入口，点它进 L2「我的额度」 */
-  const balanceCard = (
-    <div className={styles.balance} data-testid="account-consume-balance">
-      <div className={styles.balanceKey}>{t('accountConsumeRemaining')}</div>
-      {/* 未登录 / 恢复中：给「—」，不显示一个来路不明的 0.00 */}
-      <div className={styles.balanceValue}>
-        {signedIn === null ? '…' : balance === undefined ? '—' : formatCurrency(balance)}
-      </div>
-      <button
-        type="button"
-        className={styles.balanceMore}
-        data-testid="account-consume-tab-quota"
-        onClick={() => onNavigate('quota')}
-      >
-        {t('accountConsumeTabQuota')} ›
-      </button>
-    </div>
+  /**
+   * 页首那一行：**余额卡 + 付款入口**（#817）。
+   *
+   * 版式与三态文案都在 `walletHeaderView.ts`（`.ts`，裸 Node 可渲染，用例按 markup 断言），
+   * 这里只注入数据与那一个换页动作 —— 付款本身仍是既有 `BuyTab`，本文件一行付款逻辑都不写。
+   */
+  const walletHeader = (
+    <WalletHeaderView
+      t={t}
+      styles={styles}
+      signedIn={signedIn}
+      balance={balance}
+      onPay={() => onNavigate(WALLET_PAY_ENTRY_PAGE)}
+    />
   )
 
   /** L2 页标题（`root` 没有）：与行文案同一批词条，不新写中文 */
@@ -529,7 +540,6 @@ export const AccountConsumePage = ({
     source: 'accountConsumeGroupSource',
     cards: 'accountConsumeTabCards',
     buy: 'oursPayTitle',
-    quota: 'accountConsumeTabQuota',
     history: 'accountConsumeHistory',
     account: 'accountConsumeTabAccount',
   }
@@ -566,13 +576,13 @@ export const AccountConsumePage = ({
     </div>
   )
 
-  // ───────────────────────────── L2：我的钱包（余额卡 + 我的卡密 / 历史消费） ──────
+  // ───────────────── L2：我的钱包（余额卡 + 付款入口 / 我的卡密 / 历史消费） ──────
   if (page === 'wallet') {
     return (
       <div className={`${styles.page} ${styles.embedded}`} data-testid="account-consume-page">
         {subHeader('wallet', null)}
-        {/* 余额卡放在这一页的最上面 */}
-        {balanceCard}
+        {/* 页首一行：余额卡 + 付款入口（#817，同一行；窄屏放不下就整块折行） */}
+        {walletHeader}
         <div className={styles.rows}>
           <button
             type="button"
@@ -702,18 +712,6 @@ export const AccountConsumePage = ({
         {subHeader('buy', 'wallet')}
         <div className={styles.viewBody}>
         <BuyTab onPurchased={backToCards} />
-        </div>
-      </div>
-    )
-  }
-
-  // ───────────────────────────── L2：我的额度（用量） ────────────────────────────
-  if (page === 'quota') {
-    return (
-      <div className={`${styles.page} ${styles.embedded}`} data-testid="account-consume-page">
-        {subHeader('quota', 'wallet')}
-        <div className={styles.viewBody}>
-        <QuotaPanel consume={consume} onNeedLogin={needLogin} signedIn={signedIn} onSignIn={needLogin} />
         </div>
       </div>
     )

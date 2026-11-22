@@ -230,23 +230,27 @@ try {
     if (/请求过于频繁/.test(text)) {
       bad('[2] 额度不足被说成「请求过于频繁」')
     }
-    // 自有渠道的这个 CTA 现在打开「账户与消费」页的**「我的额度」tab**（#562：旧「额度与卡密」
-    // 弹层已退役，`openOursServices()` 换成 `openAccountConsume('quota')`）。
+    // 自有渠道的这个 CTA 打开「账户与消费」页并落在**「我的钱包」**（#817）。
+    //
+    // 判定口径的演变：#562 起是 `openAccountConsume('quota')`（落在「我的额度」tab），#817 把
+    // 「我的额度」整页删掉（余额卡里的入口也删了），CTA 改指钱包页 —— 页首就是余额卡 + 付款入口，
+    // 往下是「我的卡密」。「落点真的生效」这半条由 `tests/unit/wallet-pay-entry-817.test.mjs` ④
+    // 在 store 层钉住（`accountConsumeTab === 'wallet'`），这里只断端到端能看到钱包页首。
     const entry = page.getByRole('button', { name: /去充值|兑换卡密|前往充值|Top up/ })
     if ((await entry.count()) === 0) {
       bad('[2] 提示里没有「去充值 / 兑换卡密」按钮')
     } else {
       await entry.first().click()
       await page.getByTestId('account-consume-page').waitFor({ state: 'visible', timeout: 10000 })
-      const quotaSelected = await page
-        .getByTestId('account-consume-tab-quota')
-        .getAttribute('aria-selected')
-      if (quotaSelected !== 'true') {
-        bad(`[2] 额度不足的 CTA 没有落在「我的额度」tab（aria-selected=${quotaSelected}）`)
+      const onWalletPage = (await page.getByTestId('account-consume-wallet-head').count()) > 0
+      if (!onWalletPage) {
+        bad('[2] 额度不足的 CTA 没有落在「我的钱包」（account-consume-wallet-head 不出现）')
+      } else if ((await page.getByTestId('account-consume-tab-quota').count()) > 0) {
+        bad('[2] 「我的额度」入口还在 —— #817 之后它必须删掉')
       } else if ((await page.getByTestId('ours-services-dialog').count()) > 0) {
         bad('[2] 旧「额度与卡密」弹层还在 —— #562 之后不该再出现')
       } else {
-        ok('[2] CTA 打开「账户与消费」页并落在「我的额度」tab（旧弹层已退役）')
+        ok('[2] CTA 打开「账户与消费」页并落在「我的钱包」（#817：额度页已删，旧弹层已退役）')
       }
     }
   }

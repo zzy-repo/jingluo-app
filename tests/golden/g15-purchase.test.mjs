@@ -296,19 +296,20 @@ test('G15 支付 / 购买：套餐 → 下单（pay-link）→ 回跳 → 卡密
           actual: copied ? brief(String(clip[clip.length - 1])) : '（剪贴板没收到任何内容）',
         })
 
-        // ── 6. 额度来源：sub2api 的 usage.total.actual_cost（不是本地账本）────────────
-        ctx.begin('额度来源')
-        await page.getByTestId('account-consume-tab-quota').click()
-        const spentRow = page.getByTestId('quota-spent')
-        const spentReady = await waitFor(page, async () => (await spentRow.count()) > 0)
-        if (!spentReady) {
-          ctx.abort('「我的额度」读到 sub2api 额度', 'quota-spent 出现', bodyEvidence(await page.getByTestId('account-consume-page').innerText()))
-        }
-        const spentText = (await spentRow.innerText()).replace(/\s+/gu, ' ').trim()
-        ctx.expect('已用 = usage.total.actual_cost（¥12.34，不是 quota.used 的 ¥0.00）', spentText.includes('¥12.34') && !spentText.includes('¥0.00'), {
-          expected: '¥12.34',
-          actual: brief(spentText),
-        })
+        // ── 6. 「我的额度」面板：**已随 #817 整页退场**（余额卡里的入口一起删了）──────────
+        //
+        // 这一拍原来点 `account-consume-tab-quota` 断「已用 = usage.total.actual_cost（¥12.34）」。
+        // #817 之后产品里**没有这个面板了**，端到端也就没有可断的界面 —— 同一份口径（`spent`
+        // 而不是恒为 0 的 `quota.used`）改由 `tests/unit/consume-panels-quota.test.mjs`（模型层，
+        // 真 `quotaPanelModel` + 真 `renderToStaticMarkup`）与 `HistoryView` 的消费记录继续钉住。
+        // 这里不假装断过了：只断言那一页**真的不在了**，死链不会悄悄回来。
+        ctx.begin('额度面板已退场')
+        ctx.expect(
+          '「我的额度」入口与页面都已删除（#817）',
+          (await page.getByTestId('account-consume-tab-quota').count()) === 0 &&
+            (await page.getByTestId('quota-spent').count()) === 0,
+          { expected: 'account-consume-tab-quota ×0 且 quota-spent ×0', actual: `entry=${await page.getByTestId('account-consume-tab-quota').count()} spent=${await page.getByTestId('quota-spent').count()}` }
+        )
 
         // ── 7. 链路守卫：谁发请求、谁没发 ─────────────────────────────────────────
         ctx.begin('链路守卫')

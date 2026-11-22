@@ -110,10 +110,17 @@ const SettingsContent = ({ visible }: { visible: boolean }) => {
   /**
    * 账户与消费里当前打开的下级页面（`null` = L1 列表页，见 `AccountConsumePage`）。
    *
-   * 放在这里而不是内容区里：进了 L2（我的卡密 / 历史消费 / 账号 / 我的额度）时，tab 3 顶上的
+   * 放在这里而不是内容区里：进了 L2（我的钱包 / 我的卡密 / 历史消费 / 账号）时，tab 3 顶上的
    * 「模型来源」配置区要让位 —— 内容区整体换成下级页面，且切换 tab 要回到 L1。
+   *
+   * **初值来自 `openAccountConsume(tab)`**（#817）：付款回跳 / 消息流 CTA 都靠它直接落到某一页；
+   * `null`（默认）= 从侧栏点进来 / Key 守卫打开设置，落在 L1。只在挂载时读一次 ——
+   * `SettingsContent` 每次开合都会重新挂载（`SettingsDialog` 不在 `mounted` 时返回 null），
+   * 所以「打开设置落在请求的那一页」与「弹层内自己换页」两件事互不干扰。
    */
-  const [accountPage, setAccountPage] = useState<AccountSubPage | null>(null)
+  const [accountPage, setAccountPage] = useState<AccountSubPage | null>(
+    () => useSettingsDialog.getState().accountConsumeTab
+  )
   const replacingHistory = useChatStore((state) => state.importingHistory)
   const historyBusy = historyImport.busy || historyDelete.busy || replacingHistory
   // 覆盖确认 / 删除确认叠在设置之上时，设置层的 X 与点击遮罩一律不可用：

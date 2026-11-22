@@ -473,26 +473,6 @@
   margin-right: 0;
 }
 
-/* 余额卡里的「我的额度」入口（额度并进余额卡，不再占一行） */
-.balanceMore {
-  display: inline-flex;
-  align-items: center;
-  margin-top: 8px;
-  padding: 4px 0;
-  border: 0;
-  background: none;
-  color: var(--dsw-alias-label-secondary);
-  font: inherit;
-  font-size: 14px;
-  line-height: 20px;
-  cursor: pointer;
-}
-
-.balanceMore:focus {
-  outline: none;
-  color: var(--dsw-alias-label-primary);
-}
-
 /* 下级页面（L2）的二级头：左上角「返回」，标题居中原型版式（#727 阶段 1）。
    右上角**没有** X —— 关闭按钮是设置弹层自己的，这里不再出第二个。 */
 .subHeader {
@@ -865,6 +845,59 @@
   font-size: 32px;
   font-weight: 700;
   line-height: 38px;
+}
+
+/**
+ * #817：「我的钱包」页首一行 —— **余额卡 + 付款入口**。
+ *
+ * 窄屏纪律（360 / 390 两档都量过，见 `docs/ui/817-wallet-pay-entry/`）：
+ *  · 卡是这一行的主体（`flex: 1 1 auto` 吃掉剩余宽度），入口 `flex: 0 0 auto` 贴右；
+ *  · 卡 `min-width: min-content` —— `¥128.50` 这种不可断的数字**绝不会**被压成两行或被截断
+ *    （压不下去时下面的 `flex-wrap` 会让**整块**折行，而不是把数字挤断）；
+ *  · 这一行**没有** `overflow-x`：放不下就折行（入口掉到第二行、仍靠右），不做横向滚动。
+ */
+.walletHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin: 8px 0 4px;
+}
+
+/* 卡在这一行里不再自带左右外边距（它是行的一格，不是独立卡片） */
+.walletHead .balance {
+  flex: 1 1 auto;
+  min-width: min-content;
+  margin: 0;
+}
+
+/* 付款入口：与「去支付」同一档的实心按钮，尺寸够手指点（40px 高），文案不换行 */
+.walletPay {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  margin-left: auto;
+  padding: 0 14px;
+  min-height: 40px;
+  border: 0;
+  border-radius: 12px;
+  background-color: var(--dsw-alias-button-primary-fill);
+  color: var(--dsw-alias-label-primary-foreground);
+  font: inherit;
+  font-size: 15px;
+  line-height: 20px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.walletPay:focus {
+  outline: none;
+  background-color: var(--dsw-alias-button-primary-hover);
+}
+
+.walletPayChevron {
+  margin-left: 4px;
+  font-style: normal;
 }
 
 /* ---------------------------------------------------------------- 账号资料 */

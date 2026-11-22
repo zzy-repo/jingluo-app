@@ -175,10 +175,13 @@ export const AssistantMessage = memo(function AssistantMessage({
                 <>
                   {' '}
                   {oursChannel ? (
+                    // #817：原来指 `openAccountConsume('quota')`，但「我的额度」那一页已随入口一起删掉
+                    // （余额卡里的入口没了、子页也退场）。改指**钱包页**：页首就是余额卡 + 付款入口，
+                    // 再往下是「我的卡密」——「额度用完 → 去充值 / 兑换卡密」一步都不多走。
                     <button
                       type="button"
                       className={styles.noticeAction}
-                      onClick={() => openAccountConsume('quota')}
+                      onClick={() => openAccountConsume('wallet')}
                     >
                       {t('quotaTopUpEntry')}
                     </button>

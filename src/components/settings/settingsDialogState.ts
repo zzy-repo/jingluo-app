@@ -43,12 +43,15 @@ export const normalizeSettingsSection = (value: unknown): SettingsSection =>
   value === 'data' ? 'data' : value === 'account' ? 'account' : 'general'
 
 /**
- * 「账户与消费」页的四个 tab（#482 三弹层合一 / #487）。
+ * 「账户与消费」页里**打开时要落在哪一页**（#482 三弹层合一 / #487 / #817）。
  *
  * 类型放在这里而不是页面组件里：`settingsDialogState` 要能被消息流（额度不足 / Key 失效的 CTA）
- * 与付款回跳直接调用，**组件不许反向被状态层 import**（页面自己从这里取同一个类型）。
+ * 直接调用，**组件不许反向被状态层 import**（页面自己从这里取同一个类型）。
+ *
+ * #817：`'quota'`（我的额度）整页退场 —— 入口删了、子页也删了，所以这里跟着收窄。
+ * 「额度用完 → 去充值」的 CTA 改指 `'wallet'`（钱包页首就是余额卡 + 付款入口）。
  */
-export type AccountConsumeTab = 'cards' | 'buy' | 'quota' | 'account'
+export type AccountConsumeTab = 'wallet' | 'cards' | 'buy' | 'account'
 
 /** 设置弹窗：侧边栏底部、没有 API Key 时的操作与 401 提示都可以打开；section 为打开时选中的分组 */
 export const useSettingsDialog = create(() => ({
@@ -57,13 +60,21 @@ export const useSettingsDialog = create(() => ({
   /**
    * 「账户与消费」里要落在哪一页（#482 三弹层合一 / #487；#727 阶段 1 改成「切到第三个 tab」）。
    *
-   * 放在这里而不是组件本地 state：付款回跳（?no=&order_token=）要能直接指到「我的卡密」，
-   * 消息流里的额度不足 / Key 失效 CTA 也要能指到别的页。
+   * 放在这里而不是组件本地 state：付款回跳要能直接指到「我的卡密」，消息流里的额度不足 /
+   * Key 失效 CTA 也要能指到别的页。
+   *
+   * **`null` = 落在 L1 列表页**（模型来源 / 我的钱包 / 账号三行）——这是「从设置侧栏点进来」
+   * 与「Key 守卫把设置打开」两种默认情况的落点：用户还没表达要看哪一页。
+   * `openAccountConsume(tab)` 才把它指到某一页（缺省 `'cards'`）。
+   *
+   * #817 修正：#727 重构 `AccountConsumePage` 的 `page`/`onNavigate` 之后，这个字段一度**没人读**
+   * ——CTA 的落点静默退化成 L1（「额度不足 → 去充值」其实没到指定页）。现在由 `SettingsDialog`
+   * 在挂载时读它当 `accountPage` 的初值（一处读，口径与注释一致）。
    *
    * **不再有「打开独立页」的开关**：这里只是「切到第三个 tab + 落在哪一页」，
    * 内容永远渲染在设置弹层内部（维护者口径：不弹第二层窗口）。
    */
-  accountConsumeTab: 'cards' as AccountConsumeTab,
+  accountConsumeTab: null as AccountConsumeTab | null,
   /**
    * 这次打开设置是**发送前拦截**触发的（Issue #451 第 2 点）：Key 已填但格式明显不对，
    * 消息根本没发出去。设置页据此在 API Key 那一行直接说出原因，而不是让用户以为「又没填 Key」。
@@ -137,15 +148,16 @@ export const clearSendConfigBlocked = (field?: SendBlockField) => {
 }
 
 /**
- * 切到设置里的第三个 tab（账户与消费）并落在指定子页（#482 三弹层合一 / #487 / #727）。
+ * 切到设置里的第三个 tab（账户与消费）并落在指定子页（#482 三弹层合一 / #487 / #727 / #817）。
  *
- * 三个既有入口共用这一个出口，只是落的子页不同：
- *   - 付款回跳（`?no=&order_token=`）：`cards`（默认）—— 回跳就是为了让用户看到卡密；
- *   - 消息流「额度不足 → 去充值 / 兑换卡密」CTA：`quota`；
+ * 两个既有入口共用这一个出口，只是落的子页不同：
+ *   - 付款回跳：`cards`（默认）—— 回跳就是为了让用户看到卡密；
+ *   - 消息流「额度不足 → 去充值 / 兑换卡密」CTA：`wallet`（#817：原来指 `quota`，
+ *     那一页已删；钱包页首就是余额卡 + 付款入口，充值/兑换都在一步之内）；
  *   - 消息流「Key 失效 → 查看额度」CTA：`account`（换 Key / 核对账号都在这一页）。
  *
  * 打开设置并**选中第三个 tab**（账户与消费），落在指定子页：
- * 面包屑是「设置 → 账户与消费 → 我的卡密 / 我的额度 / 账号」。内容渲染在设置弹层内部，
+ * 面包屑是「设置 → 账户与消费 → 我的钱包 / 我的卡密 / 购买 / 账号」。内容渲染在设置弹层内部，
  * 不再抬高 zIndex 叠一层独立弹窗（维护者口径：#727 阶段 1 只许有一个容器）。
  */
 export const openAccountConsume = (tab: AccountConsumeTab = 'cards') => {

@@ -2124,12 +2124,13 @@ export const PAGES = {
       record('buyOpen', { text: (await buyStatus.innerText()).replace(/\s+/g, ' ').trim() })
       await shot('04-buy-open-unavailable')
 
-      // ⑦ Tab 3「我的额度」/ Tab 4「账号」：面板本体来自 W1-C2（`components/consume/index.ts`），
-      //    截出来证明外壳把同一个客户端与登录出口递下去了（面板自己拉数据，这里只等它出终态）
-      await page.getByTestId('account-consume-tab-quota').click()
-      await page.waitForSelector('[data-testid="account-consume-page"]', { timeout: 10000 })
+      // ⑦ #817：「我的额度」整页退场（余额卡里的入口也删了）—— 这一拍改成钱包页首：
+      //    余额卡 + 付款入口**同一行**（`account-consume-wallet-head`）。
+      //    `docs/ui/account-consume/` 里那张 `05-quota-panel` 是 #487 时代的历史取证，不重截。
+      await page.getByTestId('account-consume-wallet').click()
+      await page.getByTestId('account-consume-wallet-head').waitFor({ state: 'visible', timeout: 10000 })
       await page.waitForTimeout(900)
-      await shot('05-quota-panel')
+      await shot('05-wallet-head')
       await page.getByTestId('account-consume-tab-account').click()
       await page.waitForTimeout(900)
       await shot('06-account-panel')
@@ -3899,27 +3900,40 @@ export const PAGES = {
       }
       await shot('03-signed-out-inline-login-card')
 
-      // ── ③ 「我的额度」（未登录）＝引导态，不是报错也不是空白 ─────────────────
-      await page.getByTestId('account-consume-tab-quota').click()
-      await page.locator('[data-testid="quota-signed-out"]').waitFor({ state: 'visible', timeout: 10000 })
+      // ── ③ 钱包页首（未登录）：余额卡给「—」/「…」+ 付款入口在同一行 ────────────
+      //    #817 之前这一拍截的是「我的额度」未登录引导态；那个面板已整页删除，
+      //    现在断的是新页首（余额卡 + 付款入口），并顺手证明额度入口真的不在了。
+      await page.getByTestId('account-consume-wallet').click()
+      await page.locator('[data-testid="account-consume-wallet-head"]').waitFor({ state: 'visible', timeout: 10000 })
       await page.waitForTimeout(400)
-      const quotaSignedOut = await page.evaluate(() => {
-        const guide = document.querySelector('[data-testid="quota-signed-out"]')
+      const walletHead = await page.evaluate(() => {
+        const head = document.querySelector('[data-testid="account-consume-wallet-head"]')
+        const card = document.querySelector('[data-testid="account-consume-balance"]')
+        const pay = document.querySelector('[data-testid="account-consume-wallet-pay"]')
         return {
-          guide: guide === null ? null : (guide.innerText ?? '').replace(/\s+/gu, ' ').trim(),
-          // 未登录**不许**画成错误态（那正是拆墙前的老样子）
-          errors: document.querySelectorAll('[data-testid="quota-error"]').length,
-          signIn: document.querySelectorAll('[data-testid="quota-sign-in"]').length,
+          headText: head === null ? null : (head.innerText ?? '').replace(/\s+/gu, ' ').trim(),
+          // 入口与余额卡必须是**同一行**（y 轴中点差在 2px 内）
+          sameRow:
+            card !== null &&
+            pay !== null &&
+            Math.abs(
+              card.getBoundingClientRect().top + card.getBoundingClientRect().height / 2 -
+                (pay.getBoundingClientRect().top + pay.getBoundingClientRect().height / 2)
+            ) < 2,
+          quotaEntries: document.querySelectorAll('[data-testid="account-consume-tab-quota"]').length,
         }
       })
-      record('signedOutQuotaTab', { ...quotaSignedOut, ...(await requireNoOverflow('额度 tab（未登录）')) })
-      if (quotaSignedOut.guide === null || !quotaSignedOut.guide.includes('登录后')) {
-        throw new Error(`未登录的额度面板没有引导文案：${String(quotaSignedOut.guide)}`)
+      record('signedOutWalletHead', { ...walletHead, ...(await requireNoOverflow('钱包页首（未登录）')) })
+      if (walletHead.headText === null || !walletHead.headText.includes('剩余余额')) {
+        throw new Error(`钱包页首没有余额卡：${String(walletHead.headText)}`)
       }
-      if (quotaSignedOut.errors !== 0) {
-        throw new Error('未登录的额度面板画成了错误态（应当给引导）')
+      if (walletHead.sameRow !== true) {
+        throw new Error('余额卡与付款入口不在同一行（#817 的版式契约）')
       }
-      await shot('04-signed-out-quota-guide')
+      if (walletHead.quotaEntries !== 0) {
+        throw new Error(`「我的额度」入口还在（#817 之后必须删掉），实际 ${walletHead.quotaEntries} 个`)
+      }
+      await shot('04-signed-out-wallet-head')
 
       // ── ④ 已登录态：写落盘凭据 → reload → 后台恢复真的跑一次 ────────────────
       signedIn = true
