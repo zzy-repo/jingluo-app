@@ -131,7 +131,9 @@ test('GET /api/v1/version：不需要令牌，sha256 == 仓库里 server.mjs 的
 
 test('sha256 启动时算一次并缓存：文件被替换后端点仍报启动时那份', async () => {
   // 复制一份可执行的目录树（server 会 import 同目录 variant/apk-manifest/release-target 与
-  // shared/build-types；#620 起多了 release-target.mjs —— 少拷一个服务就起不来，这条用例会红）
+  // shared/build-types + shared/artifact-name；#620 起多了 release-target.mjs —— 少拷一个就会红。
+  // #836 起服务还要读 `../../config/appIdentity.json` 的 artifactPrefix（产物文件名前缀的唯一来源），
+  // 所以整仓布局里的那份配置也必须一起拷 —— 这正是「独立部署单元至少要带哪几个文件」的清单）
   const tree = fs.mkdtempSync(path.join(os.tmpdir(), 'dl-version-tree-'))
   const dlDir = path.join(tree, 'deploy/dl-release')
   fs.mkdirSync(dlDir, { recursive: true })
@@ -140,6 +142,9 @@ test('sha256 启动时算一次并缓存：文件被替换后端点仍报启动�
     fs.copyFileSync(path.join(ROOT, 'deploy/dl-release', f), path.join(dlDir, f))
   }
   fs.copyFileSync(path.join(ROOT, 'shared/build-types.mjs'), path.join(tree, 'shared/build-types.mjs'))
+  fs.copyFileSync(path.join(ROOT, 'shared/artifact-name.mjs'), path.join(tree, 'shared/artifact-name.mjs'))
+  fs.mkdirSync(path.join(tree, 'config'), { recursive: true })
+  fs.copyFileSync(path.join(ROOT, 'config/appIdentity.json'), path.join(tree, 'config/appIdentity.json'))
   const copy = path.join(dlDir, 'server.mjs')
   const bootHash = sha256File(copy)
 

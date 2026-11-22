@@ -36,10 +36,19 @@ import path from 'node:path'
 import test from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { buildApk } from '../../../tests/fixtures/domain10/apk-fixture.mjs'
+import { artifactFileName } from '../../../shared/artifact-name.mjs'
 import { loopbackFromManifest, metaDataFromManifest, readZipEntry } from '../apk-manifest.mjs'
 import { DEFAULT_LOOPBACK_MARKER } from '../variant.mjs'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
+
+// #836：产物文件名前缀的唯一来源是 config/appIdentity.json 的 artifactPrefix。
+// 断言「落盘成什么名字」必须**跟着配置走**，不许再写一份字面量 —— 否则改名时用例会先绿后红，
+// 或者更糟：用例永远绿，而线上名字已经换了。
+const ARTIFACT_PREFIX = JSON.parse(
+  fs.readFileSync(path.resolve(HERE, '../../../config/appIdentity.json'), 'utf8'),
+).artifactPrefix
+const apkNameOf = (version) => artifactFileName({ prefix: ARTIFACT_PREFIX, version })
 const ROOT = path.resolve(HERE, '..', '..', '..')
 const SERVER = path.join(ROOT, 'deploy/dl-release/server.mjs')
 const MARKER = DEFAULT_LOOPBACK_MARKER
@@ -263,8 +272,8 @@ test('L2 回环标记缺失（历史包）→ 200 放行：不因读不到标记
     const manifest = JSON.parse(fs.readFileSync(ctx.releasesFile, 'utf8'))
     assert.equal(manifest.latest, '1.4.2', '放行的包必须真的入库')
     assert.ok(
-      fs.readdirSync(ctx.apkDir).includes('deepseek-chat-1.4.2.apk'),
-      `放行的包必须真的落盘，实际 ${fs.readdirSync(ctx.apkDir).join(',')}`,
+      fs.readdirSync(ctx.apkDir).includes(apkNameOf('1.4.2')),
+      `放行的包必须真的落盘（${apkNameOf('1.4.2')}），实际 ${fs.readdirSync(ctx.apkDir).join(',')}`,
     )
     assert.notDeepEqual(fs.readdirSync(ctx.apkDir), before.apk, '200 时 apk 目录应有新文件（对照组）')
     assert.match(ctx.logs.join(''), /loopback_marker.*reason="marker_absent"/, '放行也要留证据：读不到标记')

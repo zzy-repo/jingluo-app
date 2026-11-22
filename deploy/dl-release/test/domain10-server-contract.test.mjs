@@ -40,8 +40,17 @@ import path from 'node:path'
 import test from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { buildApk } from '../../../tests/fixtures/domain10/apk-fixture.mjs'
+import { artifactFileName } from '../../../shared/artifact-name.mjs'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
+
+// #836：产物文件名前缀的唯一来源是 config/appIdentity.json 的 artifactPrefix。
+// 断言「落盘成什么名字」必须**跟着配置走**，不许再写一份字面量 —— 否则改名时用例会先绿后红，
+// 或者更糟：用例永远绿，而线上名字已经换了。
+const ARTIFACT_PREFIX = JSON.parse(
+  fs.readFileSync(path.resolve(HERE, '../../../config/appIdentity.json'), 'utf8'),
+).artifactPrefix
+const apkNameOf = (version) => artifactFileName({ prefix: ARTIFACT_PREFIX, version })
 const ROOT = path.resolve(HERE, '..', '..', '..')
 const SERVER = path.join(ROOT, 'deploy/dl-release/server.mjs')
 const MARKER = 'com.example.deepseekchat.ARTIFACT_VARIANT'
@@ -448,8 +457,8 @@ const CONTRACT = [
       assert.deepEqual(manifest.releases.map((item) => item.versionCode), [18], '清单里只该剩下这一条记录')
       // 落盘的 APK 文件名由服务端解析出的 versionName 决定（不采信客户端文件名）
       assert.ok(
-        fs.readdirSync(ctx.apkDir).includes('deepseek-chat-1.4.0.apk'),
-        `APK 应落成 deepseek-chat-1.4.0.apk，实际 ${fs.readdirSync(ctx.apkDir).join(',')}`
+        fs.readdirSync(ctx.apkDir).includes(apkNameOf('1.4.0')),
+        `APK 应落成 ${apkNameOf('1.4.0')}（前缀取自 config/appIdentity.json），实际 ${fs.readdirSync(ctx.apkDir).join(',')}`
       )
     },
   },

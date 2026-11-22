@@ -29,7 +29,7 @@
  * | G1 目标/变体 | 公网清单 + `artifactVariant !== 'standard'`（或 `buildType !== 'stable'`）；私有清单 + 非 internal | exit 1 |
  * | G2 回环 baseUrl | **APK 字节里**读出的 `consume.baseUrl` 是回环（127.0.0.1 / localhost / ::1 / 127/8） | exit 1 |
  * | G3 清单自洽 | 合入后清单登记的 `file` 在目标 `apk/` 下**不存在**（清单指向不存在的文件） | exit 1 |
- * | G4 孤儿文件 | 目标 `apk/` 下有 `deepseek-chat-*.apk` 却**没登记**在清单里（含调用方自己的残留） | exit 1 |
+ * | G4 孤儿文件 | 目标 `apk/` 下有本仓产物（`<artifactPrefix>-*.apk`，含历史前缀 `deepseek-chat-*.apk`）却**没登记**在清单里（含调用方自己的残留） | exit 1 |
  *
  * A1 与 G1 都是「命令行声明 × 路径」层面的闸，都在**零 I/O 之前**（不 ssh、不 scp、不读写目标）。
  * G2–G4 的判据则来自产物/磁盘实况。#601 的教训正是：`--variant internal` 只说明操作者的意图，
@@ -114,6 +114,8 @@ import { validate as validateReleasesSchema } from './validate-releases-manifest
 import { parseVariantFromXmltree } from '../deploy/dl-release/variant.mjs';
 // consume.baseUrl 的取证（Issue #609 G2）：读 APK 字节，不读命令行、不读 config
 import { inspectConsumeBase, judgeConsumeBase } from '../deploy/dl-release/apk-consume.mjs';
+// 产物文件名（#836）：前缀唯一来源 config/appIdentity.json，拼法唯一实现在 shared/artifact-name.mjs
+import { apkArtifactRegExp, artifactPrefix, buildArtifactFileName } from './lib/artifactName.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -125,8 +127,12 @@ export const TARGETS = Object.freeze(['private', 'public']);
 export const TARGET_VARIANT = Object.freeze({ private: 'internal', public: 'standard' });
 /** 公网清单只收 stable（裁决 #614 决定 2/3：dl 不再是正式渠道，只留 standard 历史条目） */
 export const PUBLIC_ALLOWED_BUILD_TYPES = Object.freeze(['stable']);
-/** 文件名前缀：与既有的 19 个 APK 同构（`apk/<prefix>-<version>...apk`） */
-export const FILE_PREFIX = 'deepseek-chat';
+/**
+ * 文件名前缀：唯一来源是 `config/appIdentity.json` 的 `artifactPrefix`（Issue #836）。
+ * 这里只把它转出来给测试/调用方用，**不许**在脚本里再写一次字面量
+ * （`pnpm check:artifact-prefix` 会扫出来）。
+ */
+export const FILE_PREFIX = artifactPrefix();
 /** DL 主机：`ssh aliyun`（Tailscale 内网，公网 22 打不通） */
 export const DEFAULT_SSH_HOST = 'aliyun';
 /**
@@ -191,8 +197,11 @@ const BASE32 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
 const FAKE_VERSION_RE = /^0\.0\.0(?:-|$)/;
 /** APK 下载时的 Content-Type（Caddy 由 mime 表给，实测如此） */
 const APK_CONTENT_TYPE = 'application/vnd.android.package-archive';
-/** 目标 apk/ 下「本仓产物」的文件名形态（G4 只看这些，别把人家放的 README 当孤儿） */
-const ARTIFACT_FILE_RE = new RegExp(`^${APK_SUBDIR}/${FILE_PREFIX}-[A-Za-z0-9._-]+\\.apk$`);
+/**
+ * 目标 apk/ 下「本仓产物」的文件名形态（G4 只看这些，别把人家放的 README 当孤儿）。
+ * 当前前缀 + 历史前缀（`deepseek-chat`）：见 `shared/artifact-name.mjs` 的说明。
+ */
+const ARTIFACT_FILE_RE = apkArtifactRegExp();
 
 /** 参数/环境不满足 → exit 2（不是发布失败，是还没开始就做不了） */
 export class PublishEnvError extends Error {
@@ -236,14 +245,16 @@ export function randomSuffix(bytes = RANDOM_BYTES) {
 }
 
 /**
- * 生成文件名（不含目录）：`deepseek-chat-<version>-<variant>-<8位随机>.apk`
+ * 生成文件名（不含目录）：`<artifactPrefix>-<version>-<variant>-<8位随机>.apk`
+ * 前缀唯一来源是 `config/appIdentity.json` 的 `artifactPrefix`（Issue #836，#271 的同一份配置），
+ * 拼法本身在 `shared/artifact-name.mjs`。
  * @param {{version:string, variant:string, suffix:string}} p
  */
 export function buildFileName({ version, variant, suffix }) {
   if (!RE_VERSION.test(String(version))) throw new PublishEnvError(`version 格式非法：${version}`);
   if (!VARIANTS.includes(variant)) throw new PublishEnvError(`variant 只能是 ${VARIANTS.join('|')}：${variant}`);
   if (!/^[A-Z2-7]{8}$/.test(String(suffix))) throw new PublishEnvError(`随机段必须正好 8 个 base32 字符：${suffix}`);
-  return `${FILE_PREFIX}-${version}-${variant}-${suffix}.apk`;
+  return buildArtifactFileName({ version: String(version), variant, suffix: String(suffix) });
 }
 
 /** 清单里的 file 字段（相对目标根的路径，与既有 19 条同构） */
@@ -551,7 +562,10 @@ export function gateManifestSelfConsistency({ manifest, presentFiles, planned = 
 }
 
 /**
- * G4 —— 孤儿文件：目标 `apk/` 下有本仓产物（`apk/deepseek-chat-*.apk`）却没登记在清单里。
+ * G4 —— 孤儿文件：目标 `apk/` 下有本仓产物（`apk/<artifactPrefix>-*.apk`）却没登记在清单里。
+ *
+ * 「本仓产物」**同时认历史前缀** `deepseek-chat-*`（#836 改名前的 12 个老包）：老包躺在
+ * `apk/` 下却没登记，和 #601 的形态一模一样 —— 改名不该让这道闸对老文件失明。
  *
  * 为什么是**拒绝**而不是警告：#601 的处置经验是「光从清单里删掉不够，文件必须移出 webroot」
  * —— 只要文件还在那儿，任何知道/猜到 URL 的人都能下载（静态目录不看清单）。

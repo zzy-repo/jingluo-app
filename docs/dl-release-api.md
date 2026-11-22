@@ -101,7 +101,7 @@ curl -sS -X POST https://dl.rose7.cn/api/v1/release \
 {
   "ok": true,
   "target": "public",
-  "url": "https://dl.rose7.cn/apk/deepseek-chat-1.4.0.apk",
+  "url": "https://dl.rose7.cn/apk/jingluo-chat-1.4.0.apk",
   "latest": "1.4.0",
   "md5": "9f2c...（服务端自己算的）",
   "sha256": "70ffd8...（服务端自己算的）",
@@ -116,7 +116,7 @@ curl -sS -X POST https://dl.rose7.cn/api/v1/release \
 {
   "ok": true,
   "target": "private",
-  "file": "apk/deepseek-chat-1.4.0-beta.10.apk",
+  "file": "apk/jingluo-chat-1.4.0-beta.10.apk",
   "latest": "1.4.0-beta.10",
   "md5": "...", "sha256": "...",
   "artifactVariant": "internal", "artifactVariantSource": "apk-manifest"
@@ -170,12 +170,26 @@ curl -sS -X POST https://dl.rose7.cn/api/v1/release \
 
 ## 5. 副作用
 
-- APK 落到目标目录：公网端点 → `/var/www/dl/apk/deepseek-chat-<version>.apk`；私有端点 →
-  `/opt/dl-private/apk/deepseek-chat-<version>.apk`（私有根 `DL_PRIVATE_ROOT=/opt/dl-private`，webroot 之外）。文件名由**服务端解析出的
-  versionName** 决定，先写 `.upload-*` 临时文件再 `rename`，同一文件系统内原子替换。
+- APK 落到目标目录：公网端点 → `/var/www/dl/apk/<artifactPrefix>-<version>.apk`（当前 = `jingluo-chat-<version>.apk`）；
+  私有端点 → `/opt/dl-private/apk/<artifactPrefix>-<version>.apk`（私有根 `DL_PRIVATE_ROOT=/opt/dl-private`，webroot 之外）。
+  文件名由**服务端解析出的 versionName** 决定，先写 `.upload-*` 临时文件再 `rename`，同一文件系统内原子替换。
+  **前缀不写在服务端代码里**（#836）：服务端启动时读 `config/appIdentity.json` 的 `artifactPrefix`
+  （线上路径 `/etc/dl-release/appIdentity.json`，见 `deploy/README.md`），读不到就不启动 —— 免得新老命名静默混用。
+  2026-11 之前的老包仍叫 `deepseek-chat-<version>.apk` 且**不改名**，见 §5c。
 - 目标清单原子更新（公网 → `releases.json`；私有 → `releases.internal.json`）：同目录临时文件 → `fsync` → `rename` → `fsync` 目录。结构保持 `latest` + `releases[]`（`version` / `versionCode` / `releasedAt` / `file` / `size` / `md5` / `sha256` / `changes` / `buildType` / `breaking`，
 变体可判定时再加 `artifactVariant` + `artifactVariantSource`，判不出来就**不写**该字段），按 `versionCode` 降序，新版本在首位。
 - 失败路径不写任何生产文件（临时文件即删）。
+
+## 5c. 产物文件名前缀与历史资产（#836）
+
+- 新产物的文件名前缀由 `config/appIdentity.json` 的 `artifactPrefix` 决定，**当前值是 `jingluo-chat`**
+  （此前是 `deepseek-chat`）。服务端、发布脚本、CI、校验器全部从这一处派生，代码里不再有第二份字面量
+  （门禁 `pnpm check:artifact-prefix`）。
+- **历史资产不改名、不删除**：dl（`/var/www/dl/apk/`）与 62（`62.106.70.167:/var/www/dl/apk/`）上
+  2026-11 之前的 12 个包仍叫 `deepseek-chat-*.apk`，清单里老条目的 `file` 字段原样保留。
+- **混用是安全的**：客户端按清单的 `file` 字段拼下载地址（`src/services/updateManifest.ts` 的
+  `releaseUrl()` / `downloadTarget()`），**从不**拿 `version` 拼文件名 —— 所以「老条目指老名字、
+  新条目指新名字」并存不会有任何一条 404。清单校验器对两种前缀的 `file` 都判「与 version 同构」。
 
 ## 5b. 构建变体与白名单（2026-11 新增）
 
@@ -389,7 +403,8 @@ GitHub Release，dl 只是历史分发，所以「发 Release」不再由 tag pu
 
 1. 校验输入 `tag` 存在且形如 `v<version>`（不存在 → 提示先 push tag）；
 2. 校验 **tag 指向的 commit** 里 `package.json` 的 `version` == tag 版本、`androidVersionCode` 为正整数；
-3. 取 APK 字节：`apk_url`（https 直链）→ 已有 Release 的 `.apk` 资产 → `https://dl.rose7.cn/apk/deepseek-chat-<ver>.apk`
+3. 取 APK 字节：`apk_url`（https 直链）→ 已有 Release 的 `.apk` 资产 → `https://dl.rose7.cn/apk/<artifactPrefix>-<ver>.apk`
+   （当前 `jingluo-chat`；#836 之前的版本是 `deepseek-chat`，那个回退路径对老版本仍然有效）
    依次尝试；算 `sha256` / `md5` / size。**这里只是取字节，不做任何清单校验**，**不在 CI 里构建 APK**；
 4. `node scripts/check-apk-debuggable.mjs`：debuggable 包或判不出来 → 拒（fail-closed）；
 5. 由 `CHANGELOG.md` 同版本小节生成 notes，并把 sha256 写进正文；

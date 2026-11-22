@@ -35,6 +35,10 @@ import { pathToFileURL } from 'node:url';
 
 // buildType 的唯一定义在 shared/build-types.mjs（Issue #330）——校验器不再自带一份数组。
 import { BUILD_TYPES, isBuildType } from '../shared/build-types.mjs';
+// 产物文件名前缀的唯一来源是 config/appIdentity.json 的 artifactPrefix（Issue #836）：
+// 「file 与 version 同构」这条提示必须按当前前缀判，否则改名后每条新记录都会假告警。
+import { LEGACY_ARTIFACT_PREFIXES } from '../shared/artifact-name.mjs';
+import { artifactPrefix } from './lib/artifactName.mjs';
 
 const RE_VERSION = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.]+)?$/;
 const RE_SHA256 = /^[0-9a-f]{64}$/;
@@ -113,8 +117,16 @@ export function validate(data, options = {}) {
     } else {
       if (seenFile.has(r.file)) E(`${at}: file 重复`);
       seenFile.add(r.file);
-      if (typeof r.version === 'string' && r.file !== `apk/deepseek-chat-${r.version}.apk`) {
-        W(`${at}: file 与 version 不同构（App 侧必须用 file 拼 URL，不能用 version）: ${r.file}`);
+      // 「file 与 version 同构」：标准包叫 `apk/<prefix>-<version>.apk`。前缀既可以是当前的
+      // （config 的 artifactPrefix），也可以是**历史前缀** —— #836 之前的 12 个老包不改名，
+      // 老条目的 file 保持原样（客户端按 file 下载）。私有包带变体与随机段，本就不同构，这里不判。
+      if (typeof r.version === 'string') {
+        const sameShape = [artifactPrefix()]
+          .concat(LEGACY_ARTIFACT_PREFIXES)
+          .some((prefix) => r.file === `apk/${prefix}-${r.version}.apk`);
+        if (!sameShape) {
+          W(`${at}: file 与 version 不同构（App 侧必须用 file 拼 URL，不能用 version）: ${r.file}`);
+        }
       }
     }
 

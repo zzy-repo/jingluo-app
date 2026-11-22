@@ -453,7 +453,9 @@ git push origin v1.4.0-beta.9
 
 ```bash
 V=1.4.3                                     # 不带 v
-APK=deepseek-chat-$V.apk
+# 产物名：前缀唯一来源是 config/appIdentity.json 的 artifactPrefix（当前 jingluo-chat，#836）。
+# 用 CLI 算，别手抄 —— 手抄就是第二份字面量，下次改名它不会跟着动。
+APK=$(node scripts/artifact-name.mjs --version "$V")     # → jingluo-chat-$V.apk
 SHA=$(sha256sum $APK | awk '{print $1}')
 CODE=$(python3 -c 'import json;print(json.load(open("package.json"))["androidVersionCode"])')
 COMMIT=$(git rev-list -n1 v$V)
@@ -484,7 +486,7 @@ gh release create v$V $APK \
 
 - Release 正文至少要写：`version` / `versionCode` / 构建 commit / 资产文件名 / size / **sha256**。
 - 版本号含 `-beta` / `-rc` 时加 `--prerelease`。
-- 已经有 Release 要换包：`gh release upload v$V deepseek-chat-$V.apk --clobber`。
+- 已经有 Release 要换包：`gh release upload v$V "$APK" --clobber`（`$APK` 同上面那条 CLI 算出来的名字）。
 
 **做法 B（可选）：手动触发 workflow 帮你建/补。** Actions → `Release` → Run workflow：
 
@@ -578,7 +580,8 @@ sha256sum /tmp/gh-$V/*.apk               # 必须 == §4.4 本地构建产物的
 但**它不是发版前置**：1.4.3 起 dl 上不再有新版本，比对不到不是失败。
 
 ```bash
-curl -fsSL -o /tmp/dl-$V.apk https://dl.rose7.cn/apk/deepseek-chat-$V.apk \
+# 老版本（#836 之前的包）仍在老名字下；新版本用新前缀。前缀取自 config/appIdentity.json：
+curl -fsSL -o /tmp/dl-$V.apk "https://dl.rose7.cn/apk/$(node scripts/artifact-name.mjs --version "$V")" \
   && sha256sum /tmp/dl-$V.apk             # 与本地一致才算过；404 说明这版没进 dl（1.4.3+ 的正常状态）
 ```
 
@@ -1231,7 +1234,8 @@ pnpm verify:apk <apk> --allow-insecure # exit 0，但结论行强制标 INSECURE
 
 ```
 /opt/dl-private/                                    ← 私有根（唯一）：webroot 之外，file_server 够不着
-├── apk/deepseek-chat-<ver>-internal-<8位随机>.apk   ← 私有包（清单里的 file 就是这里的 basename）
+├── apk/jingluo-chat-<ver>-internal-<8位随机>.apk   ← 私有包（清单里的 file 就是这里的 basename）
+│                                                     历史老包叫 deepseek-chat-*，#836 之后不改名、不删除
 ├── private/<16hex>/<…>.apk                         ← #601 事故包的取证归档（12 个，不进任何清单，端点不给下载）
 └── releases.internal.json                          ← 私有清单（只有 internal 条目，latest = 最新内测版）
 ```
@@ -1472,7 +1476,7 @@ node scripts/publish-private-apk.mjs --apk $APK --version 1.4.3 --versionCode 22
 | **G1** 目标 × 变体 | 公网清单 + `artifactVariant !== 'standard'`（或 `buildType !== 'stable'`）；私有清单 + 非 `internal`；私有根落进 webroot | 这是 #601 的直接成因：internal 包一旦进公网清单，`file` 字段就是公开直链 |
 | **G2** 回环 `baseUrl` | **从 APK 字节里**读 `consume:{baseUrl:"…"}`（`deploy/dl-release/apk-consume.mjs`），命中 `127.0.0.1` / `127/8` / `localhost` / `::1` → 拒；**读不出来也拒** | 1.4.2 那个包在**任何真机上**都连不上后端（`127.0.0.1` 指向手机自己），只能配 `adb reverse` 联调。当时的构建期校验只拦「release 变体用回环」，`-PartifactVariant=internal` 正好绕过 |
 | **G3** 清单自洽 | 合入后清单登记的每个 `file` 必须在目标 `apk/` 下真的有这个文件（本次待上传那条豁免，上传后由验证补上） | 「清单指向不存在的文件」是 #601 的另一半症状：客户端拿到清单 → 下载 404 → 用户以为是网络问题 |
-| **G4** 孤儿文件 | 目标 `apk/` 下有 `deepseek-chat-*.apk` 却没登记在清单里 → 拒（**不是警告**） | 只要文件还在目录里，猜到 URL 就能下载；「有文件、没条目」= 已经泄漏了一半 |
+| **G4** 孤儿文件 | 目标 `apk/` 下有**本仓产物**（`<artifactPrefix>-*.apk`，**含历史前缀** `deepseek-chat-*.apk`）却没登记在清单里 → 拒（**不是警告**） | 只要文件还在目录里，猜到 URL 就能下载；「有文件、没条目」= 已经泄漏了一半。判据同时认历史前缀 —— 改名不该让这道闸对老包失明 |
 
 四条都可以用本地临时目录演练，不需要任何机器（`--transport local --dry-run`），
 对照用例见 `tests/unit/release-safety-gates.test.mjs`，CI 里也各有一条现场注入的对照。
@@ -1503,7 +1507,8 @@ node scripts/publish-private-apk.mjs --apk $APK --version 1.4.3 --versionCode 22
 
 ### 14.5 清单是公开的 → 文件名等于公开（**原来那句「不可猜测就安全」是错的，已删除**）
 
-历史写法是：私有包用 `deepseek-chat-<version>-<variant>-<8位随机>.apk`，随机段 40 bit，
+文件名是 `<artifactPrefix>-<version>-<variant>-<8位随机>.apk`（当前前缀 `jingluo-chat`；#836 之前的
+历史包是 `deepseek-chat-...`，不改名不删除），随机段 40 bit，
 「别人顺着版本号猜不到」。**这条推理在公网清单存在的前提下完全不成立** ——
 清单里就写着 `file` 字段，拿到清单的人直接读文件名。
 #601 之后随机段仍然保留，但只为了两件小事：同一版本重发不撞名、历史文件名继续可用。
@@ -1523,7 +1528,7 @@ node scripts/publish-private-apk.mjs --apk $APK --version 1.4.3 --versionCode 22
 
 ```bash
 adb uninstall com.example.deepseekchat            # 先卸掉公共渠道那个
-adb install deepseek-chat-1.4.3-internal-XXXXXXXX.apk
+adb install jingluo-chat-1.4.3-internal-XXXXXXXX.apk
 ```
 
 ⚠️ **回环包不许走分发**（G2 会拒）。要真机连本地后端，请自己 `adb install` 本地构建的产物，
@@ -1541,10 +1546,10 @@ adb install deepseek-chat-1.4.3-internal-XXXXXXXX.apk
 # 1) 恢复清单（原子 mv）—— 清单与包现在同在私有根下（#637 收敛）
 ssh aliyun 'mv -f /opt/dl-private/releases.internal.json.bak-private-<epoch> /opt/dl-private/releases.internal.json'
 # 2) 删掉上传的包
-ssh aliyun 'rm -f /opt/dl-private/apk/deepseek-chat-<version>-internal-<8位随机>.apk'
+ssh aliyun 'rm -f /opt/dl-private/apk/jingluo-chat-<version>-internal-<8位随机>.apk'
 # 3) 复核：文件没了、清单与发布前逐字节一致
 ssh aliyun 'sha256sum /opt/dl-private/releases.internal.json'
-ssh aliyun 'test -e /opt/dl-private/apk/deepseek-chat-<version>-internal-<8位随机>.apk && echo FILE_LEFT || echo FILE_GONE'
+ssh aliyun 'test -e /opt/dl-private/apk/jingluo-chat-<version>-internal-<8位随机>.apk && echo FILE_LEFT || echo FILE_GONE'
 ```
 
 真发布时脚本会把这两条回滚命令**原样打印在最后**（连 epoch 一起），照抄即可。
@@ -1796,3 +1801,53 @@ exit=1
 （#705 裁决 / #714 落地）
 
 对照：只改配置一处时，这条绊线与「配置 == `PUBLISHED_IDENTITY`」两条会**同时**红 —— 那一遍是 §16.3 第 1 段的输出。
+
+---
+
+## 17. 产物文件名前缀：一处改，全部跟着走（Issue #836）
+
+**一句话**：安装包产物从 `deepseek-chat-<version>.apk` 改名为 **`jingluo-chat-<version>.apk`**。
+应用显示名（`鲸落` / `Whale Fall`）与 `applicationId` **一个字都没动**；将来要改那两项，也只需要改
+`config/appIdentity.json` 一处。
+
+### 17.1 唯一来源
+
+| 字段 | 管什么 | 改它的后果 |
+| --- | --- | --- |
+| `applicationId` / `namespace` | Android 包名 = **设备指纹输入**（账号身份） | 换包名 = 全老设备变新用户，**必须**连迁移方案一起做（§16、`check:identity`） |
+| `label.zh` / `label.en` | 桌面图标名 / 任务切换器名 | 旧机升级后图标改名（可见变更） |
+| `artifactPrefix` | **产物文件名前缀**（本次 = `jingluo-chat`） | 只影响新产物的文件名，不影响已装用户、不影响签名与账号 |
+| `expectedCertSha256` | 已发布签名证书 | 换证书 = 已装用户无法覆盖升级（§16） |
+
+派生关系（都不许再写字面量，门禁 `pnpm check:artifact-prefix` 会拦）：
+
+```
+config/appIdentity.json ──artifactPrefix──┬─→ scripts/publish-private-apk.mjs（私有包名）
+                                          ├─→ scripts/artifact-name.mjs（CI / 手工发版取名字）
+                                          ├─→ deploy/dl-release/server.mjs（接口落盘名）
+                                          ├─→ scripts/validate-releases-manifest.mjs（file 与 version 同构判定）
+                                          └─→ 发布控制台 /opt/dl-console/server.mjs（镜像到 /etc/default/dl-console 的 ARTIFACT_PREFIX）
+```
+
+### 17.2 历史资产：不改名、不删除
+
+- dl（`/var/www/dl/apk/`）与 62（`62.106.70.167:/var/www/dl/apk/`）上 2026-11 之前的 12 个包
+  仍叫 `deepseek-chat-*.apk`；清单里老条目的 `file` 字段**原样保留**。
+- **混用是安全的**：客户端按清单的 `file` 字段拼下载地址
+  （`src/services/updateManifest.ts` 的 `releaseUrl()` / `downloadTarget()`），**从不**用 `version` 拼文件名。
+  所以「老条目指老名字、新条目指新名字」并存不会有任何一条 404。
+- **孤儿检测仍然认老前缀**（G4）：老包躺在 `apk/` 下却没登记，和 #601 的形态一模一样 —— 改名不该让这道闸失明。
+
+### 17.3 发布前的自检
+
+```bash
+node scripts/artifact-name.mjs --version 1.5.0        # → jingluo-chat-1.5.0.apk（前缀来自配置）
+pnpm check:artifact-prefix                            # P1–P5：配置 / 生产者零字面量 / 生成与识别一致
+node scripts/check-artifact-prefix.mjs --selftest      # 负向对照：改回 deepseek-chat 必须红
+```
+
+发布控制台上，落盘名与 `meta.json` 的 `fileName` 同步为 `jingluo-chat-<version>.apk`；
+清单里的 `file` 由它派生（`apk/jingluo-chat-<version>.apk`）。前缀从 `/etc/default/dl-console` 的
+`ARTIFACT_PREFIX` 读（缺失 / 非法 / 写成历史前缀 → 控制台**拒绝启动**），改完按 §12 的姿势
+`node --check` → 重启 → `curl -s https://ra.rose7.cn/healthz` 验收，启动日志里会打印
+`产物文件名前缀 ARTIFACT_PREFIX=jingluo-chat`。

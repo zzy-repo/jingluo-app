@@ -23,10 +23,19 @@
  *   - `config/appIdentity.json` 的包名/应用名/证书指纹必须与 `PUBLISHED_IDENTITY` 一致；
  *   - `allowInsecureUpdateTransport === false` 时，更新链路的清单/下载地址里不许有 `http://`；
  *   - `res/values/strings.xml` 不许再声明那四个由 `resValue` 生成的字符串（否则资源重复）。
+ *
+ * 另有一个字段不是「身份」但住在同一份配置里：`artifactPrefix`（Issue #836 scope ①）—— 安装包
+ * **产物文件名**的前缀（`jingluo-chat-<version>.apk`）。它和身份字段放一起的唯一理由是
+ * 「客户端装的是谁」这件事只有一处可改：应用名 / 包名 / 证书 / 产物名全部在这份 JSON 里。
+ * 它**不**参与 `PUBLISHED_IDENTITY` 断言（改名不影响设备指纹与签名，不属于「换身份」），
+ * 由 `scripts/check-artifact-prefix.mjs`（`pnpm check:artifact-prefix`）单独钉住。
  */
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+// 名字的拼法只有一份实现（shared/artifact-name.mjs，发布脚本 / 分发接口 / 校验器共用）：
+// 本模块只负责「从唯一来源读出前缀并校验」，不负责拼字符串。
+import { isArtifactPrefix, isLegacyArtifactPrefix } from '../../shared/artifact-name.mjs'
 
 /** 仓库根（本文件在 <root>/scripts/lib/ 下） */
 export const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
@@ -72,6 +81,7 @@ export const validateAppIdentity = (value) => {
     'applicationId',
     'namespace',
     'label',
+    'artifactPrefix',
     'expectedCertSha256',
     'allowInsecureUpdateTransport',
   ])
@@ -103,6 +113,23 @@ export const validateAppIdentity = (value) => {
     for (const key of Object.keys(label)) {
       if (!['zh', 'en'].includes(key)) problems.push(`label 里有未知语言 "${key}"（目前只认 zh / en）`)
     }
+  }
+  // artifactPrefix（#836）：产物文件名前缀。语法与「不许用历史前缀生成新名字」两条都判，
+  // 否则 `deepseek-chat` 会被静默放回来（那就是这次改名被悄悄撤销）。
+  const prefix = value.artifactPrefix
+  if (typeof prefix !== 'string' || prefix.trim() === '') {
+    problems.push('artifactPrefix 必须是非空字符串（安装包产物文件名前缀，例如 jingluo-chat）')
+  } else if (prefix !== prefix.trim()) {
+    problems.push(`artifactPrefix 首尾不许有空白：'${prefix}'`)
+  } else if (!isArtifactPrefix(prefix)) {
+    problems.push(
+      `artifactPrefix 只能是「小写字母/数字 + 连字符」的短横线格式（例如 jingluo-chat）：'${prefix}'`,
+    )
+  } else if (isLegacyArtifactPrefix(prefix)) {
+    problems.push(
+      `artifactPrefix 不能是历史前缀 '${prefix}'（#836 已改名，历史包保持原名不再新增；` +
+        '改回去等于撤销这次改名）',
+    )
   }
   const cert = value.expectedCertSha256
   if (typeof cert !== 'string' || !RE_CERT_SHA256.test(cert)) {
@@ -144,6 +171,7 @@ export const loadAppIdentity = (root = REPO_ROOT) => {
     applicationId: parsed.applicationId.trim(),
     namespace: parsed.namespace.trim(),
     label: { zh: parsed.label.zh, en: parsed.label.en },
+    artifactPrefix: parsed.artifactPrefix.trim(),
     expectedCertSha256: parsed.expectedCertSha256,
     allowInsecureUpdateTransport: parsed.allowInsecureUpdateTransport,
   }

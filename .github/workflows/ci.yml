@@ -789,6 +789,59 @@ jobs:
           rm -rf "$root"
           echo "负向对照通过：R1/R2/R3/R4 各自 → exit 1 且点到注入物，还原 → exit 0"
 
+      # 产物文件名前缀门禁（#836 scope ①）：安装包产物名从 `deepseek-chat-<ver>.apk` 改成
+      # `jingluo-chat-<ver>.apk`，前缀的唯一来源是 config/appIdentity.json 的 artifactPrefix。
+      # 这道门禁守的是「改名改了一半」—— 那种失败方式不红：CI 产新名、脚本还产老名、接口又一套，
+      # 三者各自都能跑绿（客户端按清单的 file 字段下载，不按版本号拼名字），直到有人按名字对账。
+      # 判据 P1–P5：配置合法且不退回历史前缀 / 生产者代码零字面量（剥注释后扫）/
+      # 发布脚本与 CI CLI 同串 / file 字段两条实现同串 / 孤儿检测仍认得历史老包。
+      # 纯本地（import 真模块调纯函数 + 扫文本），不连 ssh、不构建 APK，实测 < 2s。
+      - name: 产物文件名前缀门禁（check:artifact-prefix）
+        run: pnpm run check:artifact-prefix
+
+      # 负向对照（同上面几条的写法，**无** continue-on-error）。三拍：
+      # ① 内置负向对照（配置改回历史前缀 → P1 红；CI/脚本里塞回字面量 → P2 红；正本绿）；
+      # ② **真**把 config 的 artifactPrefix 改回 `deepseek-chat` → 门禁必须 exit 1 且点到 P1
+      #    （只证明 exit≠0 不够：判据被改窄、脚本恒红都会让 exit≠0 成立）→ 还原 → 必须 exit 0；
+      # ③ 改回老前缀期间，私有发布脚本自己也算不出老名字（名字跟着配置走，不是抄在脚本里）。
+      # `trap` 保证任何失败路径都还原。
+      - name: 负向对照：artifactPrefix 改回 deepseek-chat 必须被 check:artifact-prefix 拦下（还原 → 绿）
+        run: |
+          set -euo pipefail
+          ORIG="$RUNNER_TEMP/appIdentity-artifact-prefix.orig"
+          cp config/appIdentity.json "$ORIG"
+          restore() { cp "$ORIG" config/appIdentity.json; }
+          trap restore EXIT
+
+          # ① 内置负向对照（正本必须绿 + 三种改坏的样子必须红）
+          node scripts/check-artifact-prefix.mjs --selftest
+
+          # ② 真把唯一来源改回历史前缀 → 门禁必红且点到 P1
+          sed -i 's/"artifactPrefix": "jingluo-chat"/"artifactPrefix": "deepseek-chat"/' config/appIdentity.json
+          grep -q '"artifactPrefix": "deepseek-chat"' config/appIdentity.json || {
+            echo "::error::负向对照注入失败：没能把 artifactPrefix 改回 deepseek-chat"; exit 1; }
+          if out="$(node scripts/check-artifact-prefix.mjs 2>&1)"; then
+            echo "::error::artifactPrefix 改回 deepseek-chat 后门禁仍然通过 —— 这条判据没有真正生效"; exit 1
+          fi
+          echo "$out"
+          echo "$out" | grep -q 'P1' || { echo "::error::门禁红了但没报 P1（判据没咬住）"; exit 1; }
+          echo "$out" | grep -q 'artifactPrefix' || { echo "::error::门禁红了但没点到 artifactPrefix"; exit 1; }
+
+          # ③ 改回老前缀期间，发布脚本算出的名字必须跟着配置一起退回老前缀
+          #    （= 名字真的从配置派生，而不是脚本里另抄了一份）
+          legacy_name="$(node scripts/artifact-name.mjs --version 0.0.1 2>/dev/null || true)"
+          if [ -n "$legacy_name" ]; then
+            echo "::error::artifactPrefix 是历史前缀时就该拒绝出名字，实际打出了：$legacy_name"; exit 1
+          fi
+
+          # ④ 还原 → 必绿
+          restore
+          node scripts/check-artifact-prefix.mjs
+          name="$(node scripts/artifact-name.mjs --version 0.0.1)"
+          test "$name" = "jingluo-chat-0.0.1.apk" || {
+            echo "::error::还原后的产物名不对：$name（应为 jingluo-chat-0.0.1.apk）"; exit 1; }
+          echo "负向对照通过：artifactPrefix 改回 deepseek-chat → 门禁红(P1) 且出不了名字；还原 → 绿且产物名 jingluo-chat-0.0.1.apk"
+
       # #601 的**结构**根因（上面那条卫生门禁守的是「写完之后的现场」，这条守的是「默认值本身」）：
       # 事故那晚的命令是 `--version 1.4.2 --variant internal` —— 一个根参数都没带，而老版本
       # `DEFAULT_SITE_ROOT = '/var/www/dl'`，于是「按默认参数跑」= 把内部包写进公网 webroot。

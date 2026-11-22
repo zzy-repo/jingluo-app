@@ -35,6 +35,8 @@
     "check:hygiene": "node scripts/check-repo-hygiene.mjs",
     "check:eol": "node scripts/check-eol.mjs",
     "check:identity": "node scripts/check-identity.mjs",
+    "check:artifact-prefix": "node scripts/check-artifact-prefix.mjs",
+    "artifact-name": "node scripts/artifact-name.mjs",
     "check:endpoints": "node scripts/check-endpoints.mjs",
     "check:consume-api": "node scripts/check-consume-api.mjs",
     "check:test-seam": "node scripts/check-test-seam.mjs",

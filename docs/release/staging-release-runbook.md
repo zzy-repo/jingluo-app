@@ -10,7 +10,7 @@
 | 项 | 值 |
 | --- | --- |
 | tag | `v1.4.4-staging`（**必须 prerelease**） |
-| 资产名 | `deepseek-chat-1.4.4-staging.apk`（名字里必须带 `-staging`） |
+| 资产名 | `jingluo-chat-1.4.4-staging.apk`（名字里必须带 `-staging`） |
 | 渠道 | **只发 GitHub Release** |
 | dl 侧 | **零写入**（不写 `releases.json`、不上 `/apk/`、不动 `latest`、不动 `download.primaryBase`） |
 | 版本源 | `package.json` 的 `version` / `androidVersionCode`（唯一来源） |
@@ -158,7 +158,7 @@ grep -c 'INSECURE_CONSUME\|allow-insecure' scripts/verify-release-apk.mjs  # ≥
 
 > G3 / G4 / G5 跑的就是 §6.1–§6.3 那同一套命令：先在一个 commit 上把门跑绿（证明「能出包」），
 > 再在 §6 里对**要发布的那份产物**重跑并留证。所以 G5 里的 `$APK` 指的是 §6.2 改名后的
-> `deepseek-chat-1.4.4-staging.apk`；只跑 G5 而不跑 §6.2 的人，会在第一步（文件不存在）就停住 ——
+> `jingluo-chat-1.4.4-staging.apk`；只跑 G5 而不跑 §6.2 的人，会在第一步（文件不存在）就停住 ——
 > 这是有意的。
 
 ### G1 #676 契约已完成（记 PR / commit）
@@ -390,7 +390,7 @@ mapfile -t APKS < <(ls -1 android/app/build/outputs/apk/release/*.apk 2>/dev/nul
 if [ "${#APKS[@]}" -ne 1 ]; then
   echo "FAIL: release 输出目录里有 ${#APKS[@]} 个 APK，无法确定发哪个"; printf '%s\n' "${APKS[@]}"; exit 1
 fi
-APK="deepseek-chat-1.4.4-staging.apk"
+APK="jingluo-chat-1.4.4-staging.apk"
 cp "${APKS[0]}" "$APK"
 ls -l "$APK"
 ```
@@ -436,7 +436,7 @@ cat > notes.md <<'EOF'
 
 - versionName: `1.4.4`
 - versionCode: `23`
-- 资产: `deepseek-chat-1.4.4-staging.apk`
+- 资产: `jingluo-chat-1.4.4-staging.apk`
 - 大小: <SIZE> bytes
 - SHA-256: `<SHA256>`
 - 包内 ARTIFACT_VARIANT: `standard`；`application-debuggable` 计数为 0
@@ -446,8 +446,8 @@ cat > notes.md <<'EOF'
 
 下载后先核对指纹，再安装（下面两行是终端命令，逐行跑）：
 
-    sha256sum deepseek-chat-1.4.4-staging.apk                       # 应等于上面的 SHA-256
-    apksigner verify --print-certs deepseek-chat-1.4.4-staging.apk  # digest 应等于上面的证书指纹
+    sha256sum jingluo-chat-1.4.4-staging.apk                       # 应等于上面的 SHA-256
+    apksigner verify --print-certs jingluo-chat-1.4.4-staging.apk  # digest 应等于上面的证书指纹
 EOF
 
 sed -i "s/<SHA256>/$SHA256/; s/<SIZE>/$SIZE/" notes.md
@@ -514,7 +514,7 @@ gh release view "$TAG" --json tagName,isDraft,isPrerelease,targetCommitish \
 
 ```bash
 REPO=zzy-repo/deepseek-app
-curl -fL -o /tmp/pub.apk "https://github.com/$REPO/releases/download/v1.4.4-staging/deepseek-chat-1.4.4-staging.apk"
+curl -fL -o /tmp/pub.apk "https://github.com/$REPO/releases/download/v1.4.4-staging/jingluo-chat-1.4.4-staging.apk"
 sha256sum /tmp/pub.apk | awk '{print $1}'      # 必须等于 $SHA256
 stat -c%s /tmp/pub.apk                          # 必须等于 $SIZE
 
@@ -536,7 +536,7 @@ grep -c 'staging（预发布）构建，禁止当作正式版分发' /tmp/pub-bo
 【v1.4.4-staging 发布回报】解锁分支：A / B（二选一，写选定）
 1) tag：v1.4.4-staging（prerelease=true，draft=false，target=MERGE_SHA=<sha>）
    合并 commit / PR：<PR 号> <sha>
-2) 资产名：deepseek-chat-1.4.4-staging.apk（资产数=1）
+2) 资产名：jingluo-chat-1.4.4-staging.apk（资产数=1）
    size：<SIZE> bytes
 3) sha256：<SHA256>
    三处一致：sha256sum=<同> / node crypto=<同> / openssl dgst=<同>

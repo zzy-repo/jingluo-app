@@ -51,13 +51,22 @@ install -m 600 deploy/dl-release/artifact-variants.json.example /etc/dl-release/
 ssh aliyun 'install -d -m 755 /opt/dl-private /opt/dl-private/apk'
 scp deploy/dl-release/server.mjs deploy/dl-release/variant.mjs deploy/dl-release/apk-manifest.mjs \
     deploy/dl-release/release-target.mjs aliyun:/opt/dl-release/
+# #836：产物文件名前缀的唯一来源。服务端不写死前缀，启动时按下面的顺序找这份配置：
+#   env DL_APP_IDENTITY_FILE → <server.mjs>/../../config/appIdentity.json（整仓布局）→ /etc/dl-release/appIdentity.json
+# 这台机器只有 4 个文件的部署布局，所以线上必须把配置放成 /etc/dl-release/appIdentity.json。
+# 读不到 → 服务**不启动**（fatal_artifact_prefix），这是有意的：宁可接口缺席，也不要它自己猜个前缀
+# 把新包写成老名字（那种错没人发现，直到有人按名字对账）。
+scp config/appIdentity.json aliyun:/etc/dl-release/appIdentity.json
+ssh aliyun 'chmod 644 /etc/dl-release/appIdentity.json'
 scp deploy/dl-release/dl-release.service aliyun:/etc/systemd/system/dl-release.service
 ssh aliyun 'node --check /opt/dl-release/server.mjs && systemctl daemon-reload && systemctl restart dl-release'
 ssh aliyun 'systemctl is-active dl-release; journalctl -u dl-release -n 5 --no-pager'
 ```
 
 > `server.mjs` 依赖同目录的 `variant.mjs` / `apk-manifest.mjs` / `release-target.mjs`，**四个文件一起传**
-> （`release-target.mjs` 是 #620 的接口层变体闸），否则服务起不来。
+> （`release-target.mjs` 是 #620 的接口层变体闸），否则服务起不来。另外还依赖 `shared/build-types.mjs`
+> 与 `shared/artifact-name.mjs`（线上在 `/shared/`，随首次部署一起放好的那两个文件）——
+> 少任何一个都是**启动失败**而不是「跑起来但少个功能」。
 > 服务启动时会核「私有根不在 webroot 内」，配错（比如把 `DL_PRIVATE_ROOT` 指到 `/var/www/dl/private`）
 > 会直接拒绝启动并打 `fatal_private_root_in_webroot`。
 > Caddy 片段见 `caddy-dl-api.conf`（粘进已有 `handle @dl` 内，validate → reload，禁止 restart）；
@@ -89,10 +98,10 @@ DL_WEBROOT=/var/www/dl node scripts/check-webroot-hygiene.mjs  # 分发机上扫
 # 样本要求：APK_STANDARD / APK_INTERNAL 必须**非 debuggable**（debuggable 包会被 Issue #60 的闸先拒，
 # 用它验变体闸等于什么都没验）；APK_NO_MARKER 同理，缺合格样本时脚本打印 SKIP 原因而不是假绿。
 AAPT2=/path/aapt2 \
-APK_STANDARD=/path/deepseek-chat-1.4.0.apk \
-APK_INTERNAL=/path/deepseek-chat-1.4.0-beta.10.apk \
+APK_STANDARD=/path/jingluo-chat-1.4.0.apk \
+APK_INTERNAL=/path/jingluo-chat-1.4.0-beta.10.apk \
 APK_NO_MARKER=/path/no-marker-history.apk \
-APK_DEBUGGABLE=/path/deepseek-chat-1.4.0-beta.8.apk \
+APK_DEBUGGABLE=/path/jingluo-chat-1.4.0-beta.8.apk \
 bash deploy/dl-release/test/offline-check.sh
 ```
 

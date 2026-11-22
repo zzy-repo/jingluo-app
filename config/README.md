@@ -11,6 +11,22 @@
 | `scripts/lib/appIdentity.mjs` | 全部字段 | `loadAppIdentity()`，各处 Node 脚本共用 |
 | `scripts/release-common.mjs` / `scripts/compat/lib/device.mjs` / `scripts/compat/run-p2.sh` | `applicationId` | 全部经 `loadAppIdentity()` / 同一份 JSON 派生 |
 | `scripts/check-identity.mjs`（`pnpm check:identity`） | 全部字段 | 门禁：字面量漂移 + 已发布身份 + 明文传输 |
+| `scripts/lib/artifactName.mjs` / `scripts/artifact-name.mjs` | `artifactPrefix` | 产物文件名（`jingluo-chat-<version>.apk`）的唯一拼法入口，发布脚本 / CI / 分发接口共用 |
+| `deploy/dl-release/server.mjs` | `artifactPrefix` | 接口落盘名（线上读 `/etc/dl-release/appIdentity.json`）；读不到不启动 |
+| `scripts/check-artifact-prefix.mjs`（`pnpm check:artifact-prefix`） | `artifactPrefix` | 门禁：前缀不许退回历史值、生产者零字面量、生成与识别一致（#836） |
+
+## `artifactPrefix`：产物文件名前缀（#836）
+
+`artifactPrefix` 不是「身份」——它只决定**安装包产物叫什么名字**（`jingluo-chat-<version>.apk`），
+不影响设备指纹、签名、已装用户。之所以放在这份配置里：维护者改应用名 / 包名 / 产物名时，
+希望三件事在同一屏里看得见、一处改。
+
+它的约束由 `pnpm check:artifact-prefix` 单独守（不参与 `PUBLISHED_IDENTITY` 断言）：
+
+- 语法：小写字母/数字 + 连字符（`jingluo-chat`）；
+- **不许是历史前缀** `deepseek-chat` —— 改回去等于撤销 #836；
+- 生产者（发布脚本 / CI / 分发接口 / 校验器）不许再写一份字面量；
+- 历史资产（dl / 62 上已有的 `deepseek-chat-*.apk`）**不改名不删除**，识别侧要同时认老前缀。
 
 ## 为什么这四项是「身份」而不是普通配置
 
