@@ -871,6 +871,9 @@ export const zh = {
   settingsAuthForgotNeedsEmail: '请先填写邮箱，再点「忘记密码」',
   // #797：注册的「确认密码」与密码可见切换
   settingsAuthConfirmPlaceholder: '请再次输入密码',
+  // #819：注册分段的「邀请码（可选）」——只在 settings/public 的 invitation_code_enabled 为真时出现
+  // （注册后无法补填：sub2api 没有「登录后补邀请码」的端点，见 inviteCodeAtRegister 那条说明）
+  settingsAuthInvitePlaceholder: '邀请码（可选）',
   /** 两次输入不一致（只在客户端校验，不上服务端；提交前就拦下） */
   settingsAuthPasswordMismatch: '两次输入的密码不一致',
   /** 眼睛按钮的可访问名（说的是「点了会发生什么」：现在隐藏 → 「显示密码」） */
@@ -923,9 +926,9 @@ export const zh = {
 
   // 「账户与消费」页（#482 三弹层合一 / #487 W1-C1）：一个页面四个 tab。
   // 标题与三个 tab 名在词条骨架里没有对应项，这里最小新增；Tab 2「购买」复用 oursPayTitle。
-  // #817：`accountConsumeTabQuota`（我的额度）随那一页一起删掉；它已经没有任何引用（`check:i18n` R4）。
   accountConsumeTitle: '账户与消费',
   accountConsumeTabCards: '我的卡密',
+  accountConsumeTabQuota: '我的额度',
   accountConsumeTabAccount: '账号',
   // #727：这一页重排成「一级整页 + 四个分区」（模型来源 / 连通性测试 / 我的钱包 / 账号）。
   // 分区名与行文案都走词条：原型里的 34px 大标题 / 56px inset 行 / 底部 sheet / 居中 dialog

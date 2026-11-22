@@ -885,6 +885,8 @@ export const en = {
   settingsAuthForgotNeedsEmail: 'Enter your email first, then tap "Forgot password"',
   // #797: confirm password on sign-up + show/hide password toggles
   settingsAuthConfirmPlaceholder: 'Re-enter your password',
+  // #819: optional invitation code on sign-up (only when settings/public says invitation_code_enabled)
+  settingsAuthInvitePlaceholder: 'Invitation code (optional)',
   /** The two entries differ (client-side check only — never sent to the server; blocked before submit) */
   settingsAuthPasswordMismatch: 'The two passwords do not match',
   /** Eye button accessible name — it names the action: hidden now → "Show password" */
@@ -930,9 +932,9 @@ export const en = {
   sub2authTwoFactorHint: 'Two-factor authentication is on, enter the 6-digit code from your authenticator app',
 
   // "Account & billing" page (three dialogs → one page, #482 / W1-C1 #487)
-  // #817: `accountConsumeTabQuota` (My quota) removed together with that sub-page.
   accountConsumeTitle: 'Account & billing',
   accountConsumeTabCards: 'My cards',
+  accountConsumeTabQuota: 'My quota',
   accountConsumeTabAccount: 'Account',
   // #727: the page is now "one full page + four sections" (model source / connectivity / wallet / account).
   accountConsumeGroupSource: 'Model source',

@@ -69,6 +69,8 @@ export type AuthCardState = {
   /** 确认密码：**只在客户端**，永远不进请求体（#797） */
   confirmPassword: string
   verifyCode: string
+  /** 邀请码（#819）：**只在注册分段、且 `invitation_code_enabled === true`** 时才有这一栏；可留空 */
+  invitationCode: string
   /** 密码框是否明文（两个框各自独立；不持久化，提交 / 切 tab / 离开卡片即回隐藏） */
   passwordVisible: boolean
   confirmVisible: boolean
@@ -88,6 +90,8 @@ export type AuthCardEvent =
   | { type: 'password'; value: string }
   | { type: 'confirm'; value: string }
   | { type: 'verify-code'; value: string }
+  /** 邀请码（#819）：与验证码同一条通路，只是它只在开关开着时才渲染 */
+  | { type: 'invitation-code'; value: string }
   /** 点眼睛：`field` 决定切哪个框（两个框各自独立，#797 允许二选一，这里选独立） */
   | { type: 'toggle'; field: 'password' | 'confirm' }
   | { type: 'confirm-blur' }
@@ -108,6 +112,7 @@ export const initialAuthCardState = (mode: AuthCardMode = 'login'): AuthCardStat
   password: '',
   confirmPassword: '',
   verifyCode: '',
+  invitationCode: '',
   passwordVisible: false,
   confirmVisible: false,
   confirmTouched: false,
@@ -128,6 +133,8 @@ export const reduceAuthCard = (state: AuthCardState, event: AuthCardEvent): Auth
         email: state.email,
         password: state.password,
         verifyCode: state.verifyCode,
+        // 邀请码也带过去：注册 → 误点登录 → 再点回注册，不该让用户重敲一遍
+        invitationCode: state.invitationCode,
       }
     case 'step':
       if (state.step === event.step) {
@@ -149,6 +156,8 @@ export const reduceAuthCard = (state: AuthCardState, event: AuthCardEvent): Auth
       return { ...state, confirmPassword: event.value, confirmTouched: true }
     case 'verify-code':
       return { ...state, verifyCode: event.value }
+    case 'invitation-code':
+      return { ...state, invitationCode: event.value }
     case 'toggle':
       return event.field === 'password'
         ? { ...state, passwordVisible: !state.passwordVisible }
@@ -213,7 +222,11 @@ export const authCardCanSubmit = (state: AuthCardState, submitting: boolean): bo
 /** 卡里唯一会发请求的四个口子（真机是 `useAuthStore` 的三个动作 + `consume.auth.forgotPassword`） */
 export type AuthCardSource = {
   signIn: (input: { email: string; password: string }) => Promise<unknown>
-  signUp: (input: { email: string; password: string; verifyCode?: string }) => Promise<unknown>
+  /**
+   * 注册。`invitationCode` 是 #819 补回来的可选字段：`AuthRegisterInput` / `toRegisterBody`
+   * 早就认识它（落成请求体的 `invitation_code`），缺的一直是「表单里没有这一栏、调用方也不传」。
+   */
+  signUp: (input: { email: string; password: string; verifyCode?: string; invitationCode?: string }) => Promise<unknown>
   forgotPassword: (input: { email: string }) => Promise<ConsumeCallResult<unknown>>
 }
 
@@ -222,6 +235,12 @@ export type AuthCardSubmitContext = {
   /** `settings/public` 是否已经拉到（没拉到时不做本地拦截，交给服务端判 —— #484 §3.1d） */
   registrationLoaded: boolean
   registrationEnabled: boolean
+  /**
+   * `settings/public.invitation_code_enabled`（#819）。**只有严格 true 才把邀请码放进请求体**：
+   * 关着的时候这一栏根本不渲染，这里再挡一次是为了「填表期间开关被改 / 其它入口塞了值」这种情况
+   * 也不越过开关（与 `flags.ts` 的保守默认同一口径）。
+   */
+  invitationCodeEnabled: boolean
 }
 
 /**
@@ -249,8 +268,20 @@ export const submitAuthCard = async (
       return [{ type: 'notice', notice: 'sub2authRegistrationDisabled' }]
     }
     const verifyCode = state.verifyCode.trim()
-    // 确认密码**不进请求体**：服务端要的只有 email / password / verify_code
-    await source.signUp(verifyCode === '' ? { email, password: state.password } : { email, password: state.password, verifyCode })
+    // 确认密码**不进请求体**：服务端要的只有 email / password / verify_code / invitation_code
+    const input: { email: string; password: string; verifyCode?: string; invitationCode?: string } = {
+      email,
+      password: state.password,
+    }
+    if (verifyCode !== '') {
+      input.verifyCode = verifyCode
+    }
+    // #819：邀请码只在开关开着时才进请求体（关着时这一栏不渲染，值是空的也一并省略）
+    const invitationCode = state.invitationCode.trim()
+    if (ctx.invitationCodeEnabled && invitationCode !== '') {
+      input.invitationCode = invitationCode
+    }
+    await source.signUp(input)
     return [{ type: 'form-submitted' }]
   }
   await source.signIn({ email, password: state.password })
@@ -317,6 +348,8 @@ export type SettingsAuthCardViewProps = {
   errorKey: TranslationKey | null
   registrationLoaded: boolean
   registrationEnabled: boolean
+  /** #819：`settings/public.invitation_code_enabled` —— 只有 true 才多渲染一行「邀请码（可选）」 */
+  invitationCodeEnabled: boolean
   onEvent: (event: AuthCardEvent) => void
   onSubmit: () => void
   onSendCode: () => void
@@ -546,6 +579,27 @@ export const SettingsAuthCardView = (props: SettingsAuthCardViewProps): ReactNod
       })
     : null
 
+  /**
+   * 邀请码（#819）：**只在注册分段、且服务端开关为真时**渲染，与 `RegisterPage.tsx` 那一行同一口径
+   * （开关 false → 连一行都不出现，而不是置灰）。它是**可选**的：留空就不进请求体。
+   */
+  const invitationRow =
+    registering && props.invitationCodeEnabled
+      ? createElement('input', {
+          className: c.authInput,
+          type: 'text',
+          autoComplete: 'off',
+          autoCapitalize: 'characters',
+          spellCheck: false,
+          placeholder: t('settingsAuthInvitePlaceholder'),
+          'aria-label': t('inviteCode'),
+          'data-testid': 'settings-auth-invitation',
+          value: state.invitationCode,
+          onChange: (event: { currentTarget: HTMLInputElement }) =>
+            props.onEvent({ type: 'invitation-code', value: event.currentTarget.value }),
+        })
+      : null
+
   return createElement(
     'div',
     { className: c.authCard, 'data-testid': 'settings-auth-card' },
@@ -554,6 +608,7 @@ export const SettingsAuthCardView = (props: SettingsAuthCardViewProps): ReactNod
     codeRow,
     passwordField,
     confirmField,
+    invitationRow,
     createElement(
       Button,
       {
