@@ -90,18 +90,20 @@ test('L1 开关：settings/public → flags 六行（含失败与未接线）', 
   setPublicSettingsReader(null)
 })
 
-test('invitation_code_enabled=false → 邀请面板整块不渲染（不是占位、不是报错）', async () => {
+/**
+ * #819-v2（2026-11-22）：这条用例的口径**反过来了**，原因写清楚 ——
+ *
+ * 旧口径把 `invitation_code_enabled` 当成邀请面板的总闸（"返利数据拿得到也要隐藏"）。但那个开关的语义是
+ * 「**注册页**能不能填邀请码」，面板要展示的邀请码 / 人数 / 返利余额全部由 `GET /user/aff` 直接给；
+ * staging 实测正是 `invitation_code_enabled=false` + `/user/aff` 200 有真数据，于是维护者与群用户
+ * 都看不到邀请码（本单要修的 bug）。
+ *
+ * 所以这里改成钉「解耦」：开关 false 时，**只要 aff 给了邀请码，面板就照常渲染**；
+ * 而「开关决定注册页那一行」的口径由 `invitation-code`/`settingsAuthCardModel` 那一组用例继续钉
+ * （本文件上面的 flags 六行也在钉：`invitation_code_enabled=false` → `invitationCodeEnabled=false`）。
+ */
+test('invitation_code_enabled=false 只关注册页那一行，不再让邀请面板消失（#819-v2）', async () => {
   const source = {
-    settings: {
-      get: async () => ({
-        ok: true,
-        status: 200,
-        raw: {},
-        data: { invitationCodeEnabled: false },
-      }),
-    },
-    // 返利数据**拿得到**也要隐藏：开关是总闸，不是「有数据就显示」的提示位。
-    // （`loadInvite` 刻意并行读开关与返利，所以这里不假设「关着就不发第二个请求」。）
     aff: {
       detail: async () => ({
         ok: true,
@@ -112,11 +114,12 @@ test('invitation_code_enabled=false → 邀请面板整块不渲染（不是占�
     },
   }
   const state = await loadInvite(source)
-  assert.deepEqual(state, { phase: 'hidden' })
+  assert.equal(state.phase, 'ready', 'aff 有码 → 面板可见（与 invitation_code_enabled 无关）')
   const markup = markupOf(
     InvitePanelView({ t: translate, c: classNames, Button: ButtonStub, state, copied: false, onCopy() {}, onRetry() {} })
   )
-  assert.equal(markup, '', 'hidden 必须是 null（整块不渲染），而不是一行「功能未开放」')
+  assert.notEqual(markup, '', '面板必须渲染出来（这正是本单修复的那个「什么都没有」）')
+  assert.match(markup, /MOCK-CODE/u, '邀请码要真的上屏')
 })
 
 test('email_verify_enabled=false → 不强调「必须先验证邮箱」（=true 时才出现那一行）', () => {

@@ -1,11 +1,21 @@
 /**
- * 「我的邀请」面板（W1-C2 #487 / 契约 §3.1b）。
+ * 「我的邀请」面板（W1-C2 #487 / 契约 §3.1b；**可见性口径见 #819-v2**）。
  *
  * 语义必须如实表达（旧文案已删，别写回来）：
  *  · 邀请码**只能在注册时填一次**（sub2api 没有「登录后补填邀请码」的端点，见契约 §3.7）；
  *  · 返利是**按比例结算**的金额（元，CNY），进「返利余额」，不是「填码立刻得积分」；
- *  · `settings/public.invitationCodeEnabled === false` → 整块**隐藏**（不是置灰、不是报错）：
- *    部署方没开这个功能，界面上就不该出现一个永远点不动的入口（契约 §3.1d）。
+ *  · **面板可见性 = 已登录 + `GET /user/aff` 成功且真的给了一个 `aff_code`**（下面 §可见性）。
+ *
+ * ## 可见性（#819-v2 —— 上一版把两件事绑在一起了）
+ *
+ * 曾经这里用 `settings/public.invitation_code_enabled` 当整块的开关，于是 staging 上
+ * `invitation_code_enabled=false` / `affiliate_enabled=false` 而 `GET /user/aff` 明明 200 且有真数据
+ * （`aff_code` / `aff_count` / `effective_rebate_rate_percent`）时，面板被判 `hidden` → **整块不出现**。
+ * 两个开关的语义本来就不同，别再把它们当同一件事：
+ *  · `invitation_code_enabled` = **注册页那一行「邀请码（可选）」填不填**（`RegisterPage` / `SettingsAuthCard`）；
+ *  · `affiliate_enabled` = 返利体系开关（本面板不读它）；
+ *  · 本面板要展示的东西（我的邀请码 / 已邀请人数 / 返利余额）**由 `GET /user/aff` 直接给**。
+ * 所以这里**不读 `settings/public`**：能拿到 `aff` 数据就展示，拿不到才是失败态。
  *
  * 也就是说这里没有任何「领奖 / 兑换 / 立即到账」的动作 —— 面板只做两件事：展示邀请码（可复制）、
  * 展示已邀请人数与返利余额。多一个按钮都意味着我们在承诺服务端没有的能力。
@@ -13,7 +23,7 @@
 
 import { createElement, type ReactNode } from 'react'
 
-import type { ConsumeAffiliate, ConsumeCallResult, ConsumePublicSettings } from '../../services/consume/index.js'
+import type { ConsumeAffiliate, ConsumeCallResult } from '../../services/consume/index.js'
 import {
   copyRow,
   errorBlock,
@@ -27,9 +37,8 @@ import {
   type PanelBlockProps,
 } from './panels.js'
 
-/** 面板要用到的客户端子集（`settings.public` 是「入口显不显示」的唯一来源） */
+/** 面板要用到的客户端子集：**只有** `aff.detail()`（可见性不再读 `settings/public`，见文件头） */
 export type InviteSource = {
-  settings: { get: () => Promise<ConsumeCallResult<ConsumePublicSettings>> }
   aff: { detail: () => Promise<ConsumeCallResult<ConsumeAffiliate>> }
 }
 
@@ -46,39 +55,28 @@ export type InviteDetail = {
 }
 
 /**
- * `hidden` = 功能未开（整块不渲染），`signedOut` = 没登录（引导态，不发请求），
+ * `hidden` = 这条链路上没有可展示的东西（未拿到 `aff` 数据），`signedOut` = 没登录（引导态，不发请求），
  * 与「加载失败」是三件不同的事（#608：没登录不是错误）。
  */
 export type InviteState = { phase: 'hidden' } | { phase: 'signedOut' } | PanelAsync<InviteDetail>
 
 /**
- * 未登录时的状态（#608）。
+ * 未登录时的状态（#608）—— 引导态，**不发任何请求**（`aff.detail()` 需要 JWT，打了只会 401）。
  *
- * 判据只用 `settings/public` 的开关（公开接口，启动时就读到了，不需要账号）：
- * 部署方没开邀请 → 整块隐藏（与已登录路径同一口径，不因为「没登录」就露一个死入口）；
- * 开了 → 引导态「登录后可查看邀请」。**不发任何请求**（`aff.detail()` 需要 JWT，打了只会 401）。
+ * #819-v2：这里**不再**先看 `invitation_code_enabled`。那个开关管的是注册页能不能填码，
+ * 与「登录后有没有邀请码可看」无关（凭 `settings/public` 判一个只有登录后才知道的事实，本来也判不准）。
  */
-export const inviteStateSignedOut = (flags: { invitationCodeEnabled: boolean }): InviteState =>
-  flags.invitationCodeEnabled ? { phase: 'signedOut' } : { phase: 'hidden' }
+export const inviteStateSignedOut = (): InviteState => ({ phase: 'signedOut' })
 
 /**
- * 面板的**初始态**（#830 —— #819 的二次修复：先渲染后查开关，于是"闪一下就没"）。
+ * 面板的**初始态**（#830 —— 先渲染后查开关是"闪一下就没"的病灶；#819-v2 之后更难写错）。
  *
- * 病灶：#819 把面板挂回账号页后，容器的 `useState` 直接把初值写成 `{ phase: 'loading' }`
- * —— 那是「假设开关开着」（#209 那类假设）。开关为 false 的部署上，第一帧先画出
- * 86px 高的「我的邀请 / Loading…」骨架，等 `loadInvite()` 的 `settings/public` 回来再落
- * `hidden`，于是用户看到一次**可见 → 消失**的抖动（实测可见 ~48ms / 4 帧）。
- *
- * 正确顺序是「**先有开关结论，再决定挂不挂**」：
- *  · 已经确认开着（`settings/public` 的本地镜像 `loaded` 且为 true）→ 从 `loading` 起跳（骨架）；
- *  · 开着以外的任何情况（读到 false / 还没读到 / 读失败）→ 从 `hidden` 起跳，
- *    第一帧 DOM 里就没有任何 `invite-*` 节点，等结论回来才可能变 `ready` / `failed`。
- *
- * 注意这里读的是**同一份** `settings/public` 镜像（`services/auth/flags.ts`），不是客户端第二份开关
- * （#484 §3.1d 禁的是后者）：镜像没读到时只会让面板晚几帧出现，不会放出一个本来不该有的入口。
+ * 不变的硬要求：**第一帧不许出现任何 `invite-*` 节点**，除非它一定会变成内容。
+ * 现在可见性的真值来自 `GET /user/aff`（异步），初始态因此恒为 `hidden`，等结论回来**一次**落
+ * `ready`（数据态）或 `failed`（重试）；不存在"先骨架、后被抹掉"的回落路径。
+ * 骨架（`loading`）仍留在类型与视图里（重试等场景可用），但**初始态不许是它**。
  */
-export const initialInviteState = (flags: { invitationCodeEnabled: boolean }): InviteState =>
-  flags.invitationCodeEnabled ? { phase: 'loading' } : { phase: 'hidden' }
+export const initialInviteState = (): InviteState => ({ phase: 'hidden' })
 
 export const toInviteDetail = (affiliate: ConsumeAffiliate): InviteDetail => {
   const detail: InviteDetail = {
@@ -93,22 +91,25 @@ export const toInviteDetail = (affiliate: ConsumeAffiliate): InviteDetail => {
   return detail
 }
 
+/** 服务端真的给了邀请码才算「有东西可展示」（空串 / 只有空白 → 不放出空壳面板） */
+export const hasInviteCode = (code: string | undefined | null): boolean =>
+  typeof code === 'string' && code.trim() !== ''
+
 /**
- * 先读开关、再读返利（两个都只读，并行）。
+ * 读返利（#819-v2：**只读 `GET /user/aff`**，不再并行读 `settings/public`）。
  *
- * 开关读不出来 → 失败态 + 重试（**不猜**）：猜「开着」会在关闭的部署上露出死入口，
- * 猜「关着」会让正常部署的用户以为自己的邀请码没了。
+ *  · 成功且带 `aff_code` → `ready`（面板可见，内容照旧）；
+ *  · 成功但没有 `aff_code`（空串）→ `hidden`（没有可展示的邀请码，不摆一个「—」的空壳）；
+ *  · 请求失败 → `failed` + 重试（**不猜**：猜「有」会在真出错的部署上摆假数据，猜「没有」会让
+ *    用户以为自己的邀请码没了 —— 这条是 #819 的病根，别退回「读开关失败就隐藏」）。
  */
 export const loadInvite = async (source: InviteSource): Promise<InviteState> => {
-  const [settings, affiliate] = await Promise.all([source.settings.get(), source.aff.detail()])
-  if (!settings.ok) {
-    return { phase: 'failed', error: toPanelError(settings.error) }
-  }
-  if (!settings.data.invitationCodeEnabled) {
-    return { phase: 'hidden' }
-  }
+  const affiliate = await source.aff.detail()
   if (!affiliate.ok) {
     return { phase: 'failed', error: toPanelError(affiliate.error) }
+  }
+  if (!hasInviteCode(affiliate.data.affCode)) {
+    return { phase: 'hidden' }
   }
   return panelReady(toInviteDetail(affiliate.data))
 }

@@ -234,13 +234,11 @@ test('额度未登录：引导态（不是报错、不是空白），且一个�
   assert.deepEqual(signInCalls, ['sign-in'], '点「去登录」必须真的交给外壳（切到账号 tab）')
 })
 
-test('邀请未登录：引导态而不是报错；功能没开则整块隐藏', () => {
-  assert.deepEqual(inviteStateSignedOut({ invitationCodeEnabled: true }), { phase: 'signedOut' })
-  assert.deepEqual(
-    inviteStateSignedOut({ invitationCodeEnabled: false }),
-    { phase: 'hidden' },
-    '部署方没开邀请：未登录也不许露一个死入口（与已登录路径同一口径）'
-  )
+test('邀请未登录：引导态而不是报错（#819-v2：不再先看 invitation_code_enabled）', () => {
+  // #819-v2（2026-11-22）：旧口径让未登录态也先看 `invitation_code_enabled`，于是开关为 false 的部署上
+  // 未登录用户连「登录后可查看邀请」都看不到。那个开关只关注册页那一行，与「登录后有没有邀请码可看」无关
+  // （未登录时本来就无从判断，凭公开开关猜只会猜错）。所以这里固定为引导态，请求仍然一条都不发。
+  assert.deepEqual(inviteStateSignedOut(), { phase: 'signedOut' })
 
   const markup = markupOf(
     InvitePanelView({

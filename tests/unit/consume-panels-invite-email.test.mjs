@@ -107,7 +107,7 @@ const emailSourceOf = ({ bound = false, email = 'ui@mock.local', sendCode, bind 
 
 test('L1 邀请面板：邀请码可复制 + 人数 + 返利 ¥，且没有「填码立刻得积分」的旧语义', async () => {
   const source = {
-    settings: { get: async () => ok({ invitationCodeEnabled: true }) },
+    // #819-v2：`loadInvite` 只读 `aff.detail()`（可见性 = 已登录 + aff 给了邀请码），不再传 settings
     aff: {
       detail: async () =>
         ok({

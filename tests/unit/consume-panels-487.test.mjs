@@ -617,8 +617,11 @@ test('账号：删除成功 / 退出登录的事件与「要重新登录」判�
 
 // ------------------------------------------------------------------ 4. 邀请面板
 
+/**
+ * 邀请面板的假客户端。#819-v2：`loadInvite` **只**读 `aff.detail()`（可见性 = 已登录 + aff 给了邀请码），
+ * 所以这里不再有 `settings` 这一支 —— 想造「没有邀请码」就用 `aff` 回一个 `affCode: ''`。
+ */
 const inviteSource = (over = {}) => ({
-  settings: { get: over.settings ?? (async () => ok({ invitationCodeEnabled: true, emailVerifyEnabled: true })) },
   aff: {
     detail:
       over.aff ??
@@ -636,9 +639,15 @@ const inviteSource = (over = {}) => ({
   },
 })
 
-test('邀请：开关关掉时整块隐藏（返回 null，不是置灰）', async () => {
+test('邀请：服务端没给邀请码时整块隐藏（返回 null，不是置灰）', async () => {
+  // #819-v2：原来的判据是 `invitation_code_enabled=false`（那个开关只关注册页），现在改成
+  // 「aff 没给 aff_code」—— 这是同一件事的更准版：面板整块内容就是邀请码，没码就没有可展示的东西。
+  // 等价断言保留：hidden → 视图返回 null（不是置灰、不是占位）。
   const state = await loadInvite(
-    inviteSource({ settings: async () => ok({ invitationCodeEnabled: false, emailVerifyEnabled: true }) })
+    inviteSource({
+      aff: async () =>
+        ok({ userId: 1, affCode: '', affCount: 0, affQuota: 0, affFrozenQuota: 0, affHistoryQuota: 0, invitees: [] }),
+    })
   )
   assert.deepEqual(state, { phase: 'hidden' })
   assert.equal(InvitePanelView({ t, c, Button, state, copied: false, onCopy: () => {}, onRetry: () => {} }), null)
@@ -663,19 +672,21 @@ test('邀请：邀请码 / 人数 / 返利余额（USD）如实展示，语义�
   assert.ok(!hasTestId(markup, 'invite-claim'), '没有「领取」按钮（服务端没有这个能力）')
 })
 
-test('邀请：开关读不出来 → 失败 + 可重试（不猜开关）', async () => {
-  const state = await loadInvite(inviteSource({ settings: async () => fail() }))
+test('邀请：aff 读不出来 → 失败 + 可重试（不猜「有」也不猜「没有」）', async () => {
+  // #819-v2：失败态的来源从「开关读不出来」换成「aff 读不出来」—— 判据换了、失败语义没换（不猜）。
+  const state = await loadInvite(inviteSource({ aff: async () => fail() }))
   assert.equal(state.phase, 'failed')
   assert.equal(state.error.retryable, true)
   const markup = html(InvitePanelView({ t, c, Button, state, copied: false, onCopy: () => {}, onRetry: () => {} }))
   assert.ok(hasTestId(markup, 'panel-retry'))
 })
 
-test('邀请：返利接口失败时开关仍然生效（hidden 优先于错误）', async () => {
-  const hidden = await loadInvite(
-    inviteSource({ settings: async () => ok({ invitationCodeEnabled: false, emailVerifyEnabled: true }), aff: async () => fail() })
-  )
-  assert.deepEqual(hidden, { phase: 'hidden' })
+test('邀请：aff 失败就是失败态（不再有「开关关掉 → 用 hidden 盖住错误」）', async () => {
+  // #819-v2：旧的「hidden 优先于错误」是绑开关的副作用。现在没有开关可挡：读不到 aff 就如实说失败 + 重试，
+  // 否则真出错的部署上会静默消失（那正是本单要修的观感）。
+  const state = await loadInvite(inviteSource({ aff: async () => fail() }))
+  assert.equal(state.phase, 'failed')
+  assert.equal(state.error.retryable, true)
 })
 
 // ------------------------------------------------------------------ 5. 邮箱绑定面板

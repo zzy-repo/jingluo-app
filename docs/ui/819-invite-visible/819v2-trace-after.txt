@@ -1,0 +1,34 @@
+── 360×740 · dist=dist · consume=https://apia.ecsafe.cn/staging · label=after
+帧数=110 首次可见 t=57ms 峰值节点=8 回落（>0 之后归 0）t=null
+  t=   0ms  节点数= 0  高度=  0px
+  t=  30ms  节点数= 0  高度=  0px
+  t=  80ms  节点数= 8  高度=220px
+  t= 200ms  节点数= 8  高度=220px
+  t= 600ms  节点数= 8  高度=220px
+  t=1500ms  节点数= 8  高度=220px
+  DOM invite-* = [invite-panel, invite-code-value, invite-code-copy, invite-stats, invite-count, invite-rebate, invite-semantics, invite-rate]
+  邀请码="6EFT6PUQ4JSY"  已邀请="已邀请人数 0"  返利余额="返利余额 ¥0.00"  比例="返利按下线消费额的 20% 结算，结算后计入返利余额"
+  面板高度=220px  复制按钮=1  未登录引导=0
+  注册页 invitation_code_enabled=false → settings-auth-invitation 行数=0  表单里出现「邀请码」=false（不回归：应为 0/false）
+  注册页 invitation_code_enabled=true  → settings-auth-invitation 行数=1  表单里出现「邀请码」=false（灵敏性对照：应为 1/true）
+    开关 true 时那一行 DOM：<input class="authInput-_025ed" type="text" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="邀请码（可选）" aria-label="邀请码" data-testid="settings-auth-invitation" value="">
+  /api/v1 请求=["GET /staging/api/v1/settings/public","GET /staging/api/v1/settings/public","POST /staging/api/v1/auth/login","GET /staging/api/v1/keys","GET /staging/api/v1/user/aff","POST /staging/api/v1/keys","GET /staging/api/v1/keys","POST /staging/api/v1/keys","GET /staging/api/v1/settings/public","GET /staging/api/v1/keys","POST /staging/api/v1/keys","GET /staging/api/v1/keys","POST /staging/api/v1/keys","GET /staging/api/v1/user/aff"]
+
+── 390×844 · dist=dist · consume=https://apia.ecsafe.cn/staging · label=after
+帧数=109 首次可见 t=85ms 峰值节点=8 回落（>0 之后归 0）t=null
+  t=   0ms  节点数= 0  高度=  0px
+  t=  30ms  节点数= 0  高度=  0px
+  t=  80ms  节点数= 0  高度=  0px
+  t= 200ms  节点数= 8  高度=220px
+  t= 600ms  节点数= 8  高度=220px
+  t=1500ms  节点数= 8  高度=220px
+  DOM invite-* = [invite-panel, invite-code-value, invite-code-copy, invite-stats, invite-count, invite-rebate, invite-semantics, invite-rate]
+  邀请码="6EFT6PUQ4JSY"  已邀请="已邀请人数 0"  返利余额="返利余额 ¥0.00"  比例="返利按下线消费额的 20% 结算，结算后计入返利余额"
+  面板高度=220px  复制按钮=1  未登录引导=0
+  注册页 invitation_code_enabled=false → settings-auth-invitation 行数=0  表单里出现「邀请码」=false（不回归：应为 0/false）
+  注册页 invitation_code_enabled=true  → settings-auth-invitation 行数=1  表单里出现「邀请码」=false（灵敏性对照：应为 1/true）
+    开关 true 时那一行 DOM：<input class="authInput-_025ed" type="text" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="邀请码（可选）" aria-label="邀请码" data-testid="settings-auth-invitation" value="">
+  /api/v1 请求=["GET /staging/api/v1/settings/public","GET /staging/api/v1/settings/public","POST /staging/api/v1/auth/login","GET /staging/api/v1/keys","GET /staging/api/v1/user/aff","POST /staging/api/v1/keys","GET /staging/api/v1/keys","POST /staging/api/v1/keys","GET /staging/api/v1/settings/public","GET /staging/api/v1/keys","POST /staging/api/v1/keys","GET /staging/api/v1/keys","POST /staging/api/v1/keys","GET /staging/api/v1/user/aff"]
+
+── 未登录时（真登录之前，同一台浏览器）invite-* = [invite-panel, invite-signed-out, invite-sign-in] 引导=1
+── 登录后资料头="Q qa819 2•••@qq.com"

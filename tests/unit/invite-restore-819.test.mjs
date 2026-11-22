@@ -11,19 +11,26 @@
 // 本单按 C 类修复：**恢复挂载 + 注册补邀请码字段，开关语义一个字不改**。
 //
 // 四张表（`①`/`②` 是面板侧，`③`/`④` 是注册表单侧）：
-//   ① 已登录 + `invitation_code_enabled=true` → 账号页渲染 `invite-*` 节点，且真的打 `GET /user/aff`；
-//   ② 开关 false → **整块隐藏**（DOM 里没有任何 `invite-*`），且不发 / 不渲染（口径见下）；
+//   ① 已登录 → 账号页渲染 `invite-*` 节点，且真的（且**只**）打 `GET /user/aff`；
+//   ② 可见性判据 = 已登录 + `GET /user/aff` 成功且带 `aff_code`；`invitation_code_enabled=false`
+//      **不再**让面板消失（staging 实测正是这个组合：开关 false、`/user/aff` 200 有真数据），
+//      只有「服务端没给邀请码」才落 `hidden`；
 //   ③ `invitation_code_enabled=true` → 注册分段多一行「邀请码（可选）」，提交体含 `invitation_code`；
 //   ④ 开关 false → 那一行不渲染，**哪怕 state 里有值**请求体也不含 `invitation_code`。
+//
+// **#819-v2（本文件的第二次口径变更，2026-11-22）**：上一版把面板可见性绑在
+// `invitation_code_enabled` 上，于是「注册页能不能填码」= 「登录后有没有邀请码可看」，两个语义被混成一个；
+// staging 上开关 false + `/user/aff` 200（`aff_code` 有值）→ 面板判 `hidden` → 维护者与群用户都看不到邀请码。
+// 现在可见性只看 aff 那条链路，`invitation_code_enabled` **只**管注册页那一行（① ② 改判据，③ ④ 一字未动）。
 //
 // 为什么 ① 里的「账号页真的挂了面板」要读源码断言：`.tsx` 在裸 Node 里 import 不了（本仓库 L1 口径），
 // 页面外壳本身也只做「选 tab + 递 props」。所以拆成两半并各自可证伪：
 //   · 源码断言 = 挂载点存在且 props 口径不变（删掉挂载 → 立刻红，见本单负向对照）；
 //   · 模型/视图断言 = 真 `loadInvite` 打真端点 + 真视图渲染出 `invite-*`。
 //
-// 关于 ② 的「不发请求」：`loadInvite` 刻意**并行**读开关与返利（`invitePanelModel.ts` 文件头：
-// 开关读不出来就失败态重试、不猜），所以开关关着时 `GET /user/aff` 仍会发出去，只是结果被丢弃、
-// 面板落 `hidden`。这是 #487 既定口径，本单不改成串行（改了等于顺手改行为），断言按现状钉。
+// 关于 ② 的请求口径：`loadInvite` **只**读 `GET /user/aff`（#819-v2 起不再并行读 `settings/public` ——
+// 那个开关已经不参与可见性判断，继续读它只会让「面板显不显示」看起来又跟开关有关）。断言从
+// 「两条只读端点各打一次」收紧成「只打 aff 这一条」：少打一条是更强的钉法，不是放宽。
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
@@ -184,14 +191,14 @@ test('① 账号 L2 页真的挂了 <InvitePanel>（不再只出现在文档注�
   )
 })
 
-test('① 已登录 + 开关 true → 渲染 invite-* 节点，且真的打了 GET /api/v1/user/aff', async () => {
+test('① 已登录 → 渲染 invite-* 节点，且只打了 GET /api/v1/user/aff（不再问开关）', async () => {
   const scene = inviteScene({ invitationCodeEnabled: true })
-  const state = await loadInvite({ settings: scene.consume.settings, aff: scene.consume.aff })
-  assert.equal(state.phase, 'ready', '开关开 + 已登录 → 数据态')
+  const state = await loadInvite({ aff: scene.consume.aff })
+  assert.equal(state.phase, 'ready', '已登录 + aff 有码 → 数据态')
   assert.deepEqual(
     scene.sequence().sort(),
-    ['GET /api/v1/settings/public', 'GET /api/v1/user/aff'],
-    '两条只读端点各打一次（邀请这条链路真的跑起来了）'
+    ['GET /api/v1/user/aff'],
+    '只打 aff 这一条只读端点（邀请这条链路真的跑起来了，#819-v2 起不再读 settings/public）'
   )
   const affCall = scene.calls.find((request) => pathOf(request.url).startsWith('/api/v1/user/aff'))
   assert.equal(affCall.headers.authorization, `Bearer ${JWT}`, '`/user/aff` 要带 JWT（只进头，不进 query）')
@@ -207,26 +214,49 @@ test('① 已登录 + 开关 true → 渲染 invite-* 节点，且真的打了 G
 
 // ───────────────────────────────────────────────────── ② 开关 false / 未登录都用同一口径
 
-test('② 开关 false → 整块隐藏：DOM 里没有任何 invite-* 节点', async () => {
+test('② `invitation_code_enabled=false`（staging 实测组合）→ 面板**照旧出现**：可见性不再被开关决定', async () => {
+  // 现场事实（维护者给的）：settings/public 里 invitation_code_enabled=false、affiliate_enabled=false，
+  // 但 GET /user/aff 200 且 aff_code 有值。旧判据在这里落 hidden → 整块消失（本单要修的 bug）。
   const scene = inviteScene({ invitationCodeEnabled: false })
-  const state = await loadInvite({ settings: scene.consume.settings, aff: scene.consume.aff })
-  assert.deepEqual(state, { phase: 'hidden' }, '`invitation_code_enabled=false` → hidden（不是置灰、不是报错）')
+  const state = await loadInvite({ aff: scene.consume.aff })
+  assert.equal(state.phase, 'ready', 'aff 有码 → 数据态（开关为 false 也一样）')
+
+  const markup = inviteRender(state)
+  assert.ok(hasTestId(markup, 'invite-panel'), '面板外壳必须在')
+  assert.match(textOf(markup, 'invite-code-value'), /INV819/, '邀请码要真的上屏（不再是"整块消失"）')
+  assert.ok(hasTestId(markup, 'invite-stats'), '已邀请人数 / 返利余额块必须在')
+
+  // 反向钉：这条路径**不许**再问 settings/public（否则可见性又和开关耦合回去了）
+  assert.deepEqual(scene.sequence(), ['GET /api/v1/user/aff'], '开关 false 时也只打 aff 一条（不读 settings/public）')
+})
+
+test('② 拿到 aff 但服务端没给 aff_code → 才是 hidden（没有可展示的邀请码，不摆空壳）', async () => {
+  const scene = inviteScene({ invitationCodeEnabled: true, aff: { ...AFF, aff_code: '' } })
+  const state = await loadInvite({ aff: scene.consume.aff })
+  assert.deepEqual(state, { phase: 'hidden' }, 'aff 成功但没有邀请码 → hidden（不是置灰、不是报错）')
 
   const markup = inviteRender(state)
   assert.equal(markup, '', 'hidden 时面板返回 null（容器那一层什么都不渲染）')
   assert.ok(!markup.includes('invite-'), 'DOM 里不许出现任何 invite-* 节点')
-
-  // 现状口径（刻意并行）：开关关着时 aff 这条仍会发出去，只是结果被丢弃 —— 断言按现状钉，
-  // 免得下一个人以为「关着就不发」而把 loadInvite 改成串行（那是行为变更，不属本单）。
-  assert.ok(
-    scene.sequence().includes('GET /api/v1/user/aff'),
-    'parallel 读取现状：aff 仍发一次（复用 #487 的既定口径）'
-  )
 })
 
-test('② 未登录 + 开关 false → 连引导态都不给（与已登录路径同一口径）', () => {
-  assert.deepEqual(inviteStateSignedOut({ invitationCodeEnabled: false }), { phase: 'hidden' })
-  assert.deepEqual(inviteStateSignedOut({ invitationCodeEnabled: true }), { phase: 'signedOut' })
+test('② aff 请求失败 → failed（不猜「有」也不猜「没有」）#819 的病根', async () => {
+  const state = await loadInvite({
+    aff: {
+      detail: async () => ({
+        ok: false,
+        error: { status: 503, code: 'HTTP_503', i18nKey: 'consumeErrServerUnavailable', retryable: true },
+      }),
+    },
+  })
+  assert.equal(state.phase, 'failed', '读不到 aff → 失败态 + 重试（不是 hidden，否则用户以为自己的码没了）')
+  assert.ok(hasTestId(inviteRender(state), 'invite-error'), '失败态要渲染可重试的错误块')
+})
+
+test('② 未登录 → 一律引导态（与开关无关，且不发请求）', () => {
+  assert.deepEqual(inviteStateSignedOut(), { phase: 'signedOut' })
+  const markup = inviteRender(inviteStateSignedOut())
+  assert.ok(hasTestId(markup, 'invite-signed-out'), '未登录给引导，不是错误也不是隐藏')
 })
 
 // ─────────────────────────────────────────────────────────── ③ 注册补邀请码字段（开关开）
