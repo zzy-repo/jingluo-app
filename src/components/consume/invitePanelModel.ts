@@ -183,23 +183,6 @@ export const InvitePanelView = (props: InvitePanelViewProps): ReactNode => {
         )
       )
     }
-    // 语义说明：邀请码只在注册时填；返利按比例结算（没有「立刻得积分」这回事）
-    body.push(
-      createElement(
-        'p',
-        { className: c.hint, 'data-testid': 'invite-semantics' },
-        t('inviteCodeAtRegister')
-      )
-    )
-    if (state.data.ratePercent !== undefined) {
-      body.push(
-        createElement(
-          'p',
-          { className: c.hint, 'data-testid': 'invite-rate' },
-          t('inviteRebateRate', { percent: state.data.ratePercent })
-        )
-      )
-    }
   }
   return panelShell(c, t('inviteTitle'), body, 'invite-panel')
 }

@@ -1151,7 +1151,6 @@ export const zh = {
   consumeLogoutSuccess: '已退出登录',
 
   // 邀请面板（返利按消费额的比例以「元」结算，邀请关系只在注册时一次填定）
-  inviteRebateRate: '返利按下线消费额的 {percent}% 结算，结算后计入返利余额',
   inviteRebateFrozen: '其中 {amount} 冻结中',
 
   // 邮箱绑定面板（`email_verify_enabled=false` 时不再强调「必须先验证」）

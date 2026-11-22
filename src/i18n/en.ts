@@ -1142,7 +1142,6 @@ export const en = {
   consumeNeedLogin: 'Your session expired, please log in again',
   consumeLogoutConfirm: 'You will need to log in again to keep using the app. Log out?',
   consumeLogoutSuccess: 'Logged out',
-  inviteRebateRate: 'Rebates pay {percent}% of what your invitees spend, credited to the rebate balance',
   inviteRebateFrozen: '{amount} of it is frozen',
   emailBindNotBound: 'No email bound yet',
   emailBindCodeLabel: 'Verification code',
