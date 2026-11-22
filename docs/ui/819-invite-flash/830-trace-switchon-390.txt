@@ -1,0 +1,25 @@
+拦截后的开关（页面内实测）: {"invitation_code_enabled":true,"affiliate_enabled":true} 登录: {"alreadySignedIn":false}
+
+### 开关 true · 390px · 第 1 次进入账号页
+| 时刻 | invite-* 节点数 | invite-panel 高度(px) | 采样于 t(ms) |
+|---|---|---|---|
+| t=0ms | 0 | 0 | 0.1 |
+| t=30ms | 0 | 0 | 25.4 |
+| t=80ms | 1 | 86 | 75.1 |
+| t=200ms | 8 | 268 | 192 |
+| t=600ms | 8 | 268 | 592.2 |
+| t=1500ms | 8 | 268 | 1492.1 |
+帧统计：110 帧 / 可见 106 帧 / 首次可见 t=44.8ms / 末次可见 t=1791.7ms / 可见时长 ≈1746.9ms / 峰值高度 268px / 消失后高度 null
+
+### 开关 true · 390px · 第 2 次进入账号页
+| 时刻 | invite-* 节点数 | invite-panel 高度(px) | 采样于 t(ms) |
+|---|---|---|---|
+| t=0ms | 0 | 0 | 0.5 |
+| t=30ms | 0 | 0 | 15.9 |
+| t=80ms | 1 | 86 | 67 |
+| t=200ms | 8 | 268 | 199.6 |
+| t=600ms | 8 | 268 | 599.9 |
+| t=1500ms | 8 | 268 | 1499.6 |
+帧统计：110 帧 / 可见 106 帧 / 首次可见 t=49.6ms / 末次可见 t=1799.5ms / 可见时长 ≈1749.9ms / 峰值高度 268px / 消失后高度 null
+最终形态: {"nodes":["invite-panel","invite-code-value","invite-code-copy","invite-stats","invite-count","invite-rebate","invite-semantics","invite-rate"],"height":268,"text":"My invitesInvitation code6EFT6PUQ4JSYCopy invitation codeInvited users0Rebate balance¥0.00Invitation code (optional)Reba"}
+console.error: 0 []
