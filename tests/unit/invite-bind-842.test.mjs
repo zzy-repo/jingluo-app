@@ -70,14 +70,14 @@ const bindCalls = (rec) => rec.calls.filter((c) => c.method === 'POST' && pathOf
 
 // ------------------------------------------------------------------ bindInviter（服务层）
 
-test('mock 契约测试 842：bindInviter 成功 → POST /user/aff/bind，body {code}，带 JWT，返回 inviterId', async () => {
+test('mock 契约测试 842：bindInviter 成功 → POST /user/aff/bind，body {aff_code}，带 JWT，返回 inviterId', async () => {
   const { rec, http } = scene({ onBind: () => panelOk({ inviter_id: 123 }) })
   const result = await bindInviter(http, 'ABCD1234')
   assert.equal(result.ok, true)
   assert.deepEqual(result.data, { inviterId: 123 })
   assert.equal(bindCalls(rec).length, 1)
   const call = bindCalls(rec)[0]
-  assert.deepEqual(JSON.parse(call.body), { code: 'ABCD1234' })
+  assert.deepEqual(JSON.parse(call.body), { aff_code: 'ABCD1234' })
   assert.equal(call.headers.Authorization ?? call.headers.authorization, 'Bearer jwt-842-test')
 })
 
@@ -131,7 +131,7 @@ test('mock 契约测试 842：runBindInviter 小写输入自动转大写后才�
   const { rec, consume } = scene({ onBind: () => panelOk({ inviter_id: 5 }), affs: [AFF_BOUND] })
   const outcome = await runBindInviter({ aff: consume.aff }, '  abcd1234 ')
   assert.equal(outcome.kind, 'bound')
-  assert.deepEqual(JSON.parse(bindCalls(rec)[0].body), { code: 'ABCD1234' })
+  assert.deepEqual(JSON.parse(bindCalls(rec)[0].body), { aff_code: 'ABCD1234' })
 })
 
 test('mock 契约测试 842：runBindInviter 非法字符 / 长度不对 → 不发任何请求，提示格式', async () => {
