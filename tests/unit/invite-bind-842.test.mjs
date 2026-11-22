@@ -7,7 +7,7 @@
 //   409 {"code":409,"message":"…","reason":"AFFILIATE_ALREADY_BOUND" | "AFFILIATE_INVITER_FULL"}
 //   401 {"code":"UNAUTHORIZED","message":"Authorization header is required"}       （中间件，没有 reason）
 //   400 空码 {"code":400,"message":"Invalid request: Key: 'BindAffiliateInviterRequest.AffCode' …"}（没有 reason）
-// staging 上 affiliate_enabled=false，成功 / 409 / 名额满 / 码无效四条路径真实联调不到，只有这里的 mock 覆盖。
+// 成功 / 409 已绑定 / 码无效 / 401 已在 staging 真实联调通过（后端 sub2api-private#20）；名额满只有这里的 mock 覆盖。
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
@@ -308,8 +308,7 @@ test('mock 契约测试 842：inviter_id 为 0 视为未绑定', async () => {
   assert.equal(inviteBindMode({ enabled: true, state, bound: false }), 'form')
 })
 
-test('mock 契约测试 842：开关关闭 → 整个区块不出现（没有任何 invite-bind-* 节点）', async () => {
-  assert.equal(INVITE_BIND_ENABLED, false, '默认必须关闭：后端接口未上线')
+test('mock 契约测试 842：开关关闭（enabled:false）→ 整个区块不出现（没有任何 invite-bind-* 节点）', async () => {
   for (const aff of [AFF_UNBOUND, AFF_BOUND]) {
     const state = await readyState(aff)
     const mode = inviteBindMode({ enabled: false, state, bound: false })
@@ -318,6 +317,26 @@ test('mock 契约测试 842：开关关闭 → 整个区块不出现（没有任
     assert.ok(!markup.includes('invite-bind'), '关闭时 DOM 里不许有 invite-bind-*')
     assert.ok(hasTestId(markup, 'invite-code-value'), '面板其余内容照旧')
   }
+})
+
+test('mock 契约测试 842：入口常量为 true → 按常量值驱动的面板里入口存在', async () => {
+  assert.equal(INVITE_BIND_ENABLED, true, '入口已打开：后端接口已在 staging 联调通过')
+  const state = await readyState(AFF_UNBOUND)
+  const mode = inviteBindMode({ enabled: INVITE_BIND_ENABLED, state, bound: false })
+  assert.equal(mode, 'form')
+  const markup = renderPanel(state, mode)
+  assert.ok(hasTestId(markup, 'invite-bind-form'), '常量为 true → 「入口存在」')
+  assert.ok(hasTestId(markup, 'invite-bind-input'))
+  assert.ok(hasTestId(markup, 'invite-bind-submit'))
+})
+
+test('mock 契约测试 842：inviter_id 缺失 / null / 0 都视为未绑定（form），正整数才是 bound', async () => {
+  for (const aff of [AFF_UNBOUND, { ...AFF_UNBOUND, inviter_id: null }, { ...AFF_UNBOUND, inviter_id: 0 }]) {
+    const state = await readyState(aff)
+    assert.equal(inviteBindMode({ enabled: true, state, bound: false }), 'form', `inviter_id=${JSON.stringify(aff.inviter_id)}`)
+  }
+  const bound = await readyState({ ...AFF_UNBOUND, inviter_id: 1 })
+  assert.equal(inviteBindMode({ enabled: true, state: bound, bound: false }), 'bound')
 })
 
 test('mock 契约测试 842：非数据态（hidden / 未登录 / 加载失败）即使开关打开也不出现入口', async () => {
@@ -365,11 +384,11 @@ test('mock 契约测试 842：白名单含 POST /api/v1/user/aff/bind', () => {
   assert.ok(PATH_WHITELIST.includes(BIND_PATH))
 })
 
-test('mock 契约测试 842：InvitePanel 的入口默认值取 INVITE_BIND_ENABLED（不是写死 true）', () => {
+test('mock 契约测试 842：InvitePanel 的入口默认值取 INVITE_BIND_ENABLED（不是写死 true）；常量为 true', () => {
   const source = readFileSync(new URL('../../src/components/consume/InvitePanel.tsx', import.meta.url), 'utf8')
   assert.match(source, /bindEnabled = INVITE_BIND_ENABLED/u)
   const model = readFileSync(new URL('../../src/components/consume/inviteBindModel.ts', import.meta.url), 'utf8')
-  assert.match(model, /export const INVITE_BIND_ENABLED = false\b/u)
+  assert.match(model, /export const INVITE_BIND_ENABLED = true\b/u)
   const mounts = readFileSync(new URL('../../src/components/consume/AccountConsumePage.tsx', import.meta.url), 'utf8')
   assert.ok(!/bindEnabled/u.test(mounts), '挂载点不得传 bindEnabled 上线入口')
 })
@@ -405,4 +424,28 @@ test('mock 契约测试 842：提交中 → 按钮文案「提交中…」+ disa
   assert.ok(!idle.includes(zh.inviteBindSubmitting))
   assert.notEqual(zh.inviteBindSubmitting, zh.inviteBindSubmit)
   assert.notEqual(en.inviteBindSubmitting, en.inviteBindSubmit)
+})
+
+// 回滚守卫：把常量改回 false（= 回滚方法）后，按常量值驱动的面板里**没有任何 invite-bind-* 节点**。
+// 做法：把 inviteBindModel.ts 里的常量改成 false 写成同目录临时副本，真 import 后用它的常量渲染，用完删除。
+test('mock 契约测试 842：把 INVITE_BIND_ENABLED 改回 false → 无入口（回滚守卫，真 import 改后的源码）', async () => {
+  const { writeFileSync, unlinkSync } = await import('node:fs')
+  const dir = new URL('../../src/components/consume/', import.meta.url)
+  const original = readFileSync(new URL('inviteBindModel.ts', dir), 'utf8')
+  const rolledBack = original.replace(/export const INVITE_BIND_ENABLED = true\b/u, 'export const INVITE_BIND_ENABLED = false')
+  assert.notEqual(rolledBack, original, '源码里必须有 `INVITE_BIND_ENABLED = true` 这一行可被回滚')
+  const tmp = new URL(`inviteBindModel.rollback-${process.pid}.tmp.ts`, dir)
+  writeFileSync(tmp, rolledBack)
+  try {
+    const mod = await import(tmp.href)
+    assert.equal(mod.INVITE_BIND_ENABLED, false)
+    for (const aff of [AFF_UNBOUND, AFF_BOUND]) {
+      const state = await readyState(aff)
+      const mode = mod.inviteBindMode({ enabled: mod.INVITE_BIND_ENABLED, state, bound: false })
+      assert.equal(mode, 'hidden')
+      assert.ok(!renderPanel(state, mode).includes('invite-bind'), '回滚后 DOM 里不许有 invite-bind-*')
+    }
+  } finally {
+    unlinkSync(tmp)
+  }
 })

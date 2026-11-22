@@ -1,8 +1,8 @@
 /**
  * 「我的邀请」里的「登录后填写邀请人」区块（Issue #842 契约 / #839）。
  *
- * **后端接口 `POST /api/v1/user/aff/bind` 目前不存在**：前端按 #842 的契约先做，用 mock 测试，不以真实接口验收。
- * 所以入口由 {@link INVITE_BIND_ENABLED} **默认关闭**（见该常量的注释：怎么打开、为什么不做运行时探测）。
+ * 后端 `POST /api/v1/user/aff/bind` 已在 staging 联调通过（成功 / 已绑定 409 / 无效码 400 / 无 token 401 真实走通；
+ * 名额已满 `AFFILIATE_INVITER_FULL` 只有单测）。入口由 {@link INVITE_BIND_ENABLED} 控制（当前 true；回滚见该常量注释）。
  *
  * 分层沿用 `invitePanelModel.ts` / `emailBindPanelModel.ts`：本文件是**纯函数 + 纯渲染**，状态判定都写在这里，
  * 容器（`InvitePanel.tsx`）只负责持有状态、把输入与点击接进来。
@@ -32,17 +32,17 @@ import { loadInvite, type InviteState } from './invitePanelModel.js'
 import type { PanelBlockProps } from './panels.js'
 
 /**
- * 入口总开关（**默认 `false`**）。
+ * 入口总开关（**当前 `true`：已在 staging 真实联调通过，见后端 sub2api-private#20；回滚 = 把它改回 `false` 再发版**）。
  *
  * 为什么是一个常量而不是特性开关体系：仓库里没有「客户端特性开关」机制 ——
  * `invitation_code_enabled` / `affiliate_enabled` 是**服务端** `settings/public` 的字段，管的是注册页与返利体系，
  * 且 #819-v2 已明确面板可见性不再读它们；也**不对不存在的接口做运行时探测**（探测 404 等于把「没上线」猜成「没开」）。
  * 所以用最小的常量，不新建配置体系。
  *
- * 怎么打开：后端 `POST /api/v1/user/aff/bind` 在 staging 上线并验收后，把这一行改成 `true`（一行改动即上线入口）。
- * 测试里不改它：所有判定函数都接收 `enabled` 入参，单测显式传 true / false。
+ * 怎么关：把这一行改回 `false`（一行改动即撤入口，DOM 里不再有任何 `invite-bind-*`）。
+ * 测试里不改它：所有判定函数都接收 `enabled` 入参，单测显式传 true / false；另有用例钉死常量当前值。
  */
-export const INVITE_BIND_ENABLED = false
+export const INVITE_BIND_ENABLED = true
 
 /** 4–32 位 `A-Z0-9_-`（与 #842 契约里 `BindInviterByCode` 的格式校验一致；这里只为少发请求，后端才是权威） */
 const INVITE_CODE_PATTERN = /^[A-Z0-9_-]{4,32}$/u

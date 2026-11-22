@@ -245,7 +245,7 @@ export const createConsumeClient = (options: ConsumeClientOptions = {}) => {
     aff: {
       validateInvitationCode: (code: string) => validateInvitationCode(http, code),
       detail: () => getAffiliate(http),
-      /** 登录后绑定邀请人（#842；后端接口未上线，入口由 `INVITE_BIND_ENABLED` 默认关闭） */
+      /** 登录后绑定邀请人（#842；入口由 `INVITE_BIND_ENABLED` 控制） */
       bind: (code: string) => bindInviter(http, code),
     },
     email: {
