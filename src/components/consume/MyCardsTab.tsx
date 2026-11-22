@@ -1,11 +1,24 @@
 /**
- * Tab 1「我的卡密」（#482 三弹层合一 / #487 W1-C1）—— 数据来自 **apia**（`GET /api/orders`），
- * 兑换走 **sub2api**（`POST /api/v1/redeem`，经 `consume.redeem.redeem`）。
+ * Tab 1「我的卡密」（#482 三弹层合一 / #487 W1-C1 / **#834 数据源换新**）。
  *
- * 两个后端各管一段（#484 §1），所以本文件里同时出现两条调用链，它们**不许互相顶替**：
+ * 两条调用链，都在 **sub2api**（同一条 JWT 通道），但职责仍然分开：
  *
- *   列表   `fetchPurchases()`（`services/ours/purchases.ts`，apia，Bearer API Key）
- *   兑换   `consume.redeem.redeem({ code })`（`services/consume/redeem.ts`，sub2api，JWT）
+ *   列表   `consume.orders.my()`（`services/consume/orders.ts` → `GET /api/v1/payment/orders/my`）
+ *   兑换   `consume.redeem.redeem({ code })`（`services/consume/redeem.ts` → `POST /api/v1/redeem`）
+ *
+ * 为什么要换（#834）：旧数据源是 apia 的 `GET /api/orders`（`fetchPurchases`，Bearer sk- Key）。
+ * 账号迁到 sub2api 之后，那把 Key 在 apia 侧不存在 —— 实测真 Key 打旧接口恒 `401 UNAUTHORIZED`，
+ * 于是列表永远空白（同一个原因还让 #784 的自动兑现一个请求都发不出去）。新接口带登录态 JWT，
+ * 与兑换同一条通道，所以这里**没有 API Key 这一层**：登录了就能看。
+ *
+ * 新契约（票面）：`data.items[] / total / page / page_size / pages`，每条订单有
+ * `out_trade_no`、`status`、`amount`（到账额度 元）、`created_at`、`recharge_code`（**只有 COMPLETED 才有**）。
+ * 于是本文件的三条口径：
+ *
+ *  1. **卡号**：有 `recharge_code` 才渲染卡号节点（`maskCardNo` 掩码；复制按钮交出去的仍是完整卡号），
+ *     没有就不渲染、也不报错（非 COMPLETED 的订单本来就没有卡）—— 渲染细节在 `myCardsListView.ts`；
+ *  2. **状态文案自己映射**：新接口**没有 `plan_name` / `status_text`**，界面按 `status` 取 i18n key；
+ *  3. **不显示「是否已兑换」**：新接口不回答这件事（#834 边界），所以卡片上只有状态、没有「已兑换」标签。
  *
  * 兑换的四态（#484 §3.4 / §5，全仓最不能写错的一段）：
  *
@@ -22,31 +35,36 @@
  * 兑换成功之后**必须重拉 `/api/v1/user/profile`**（#676 §五：余额进 `user.balance`，不再是某把 Key 的
  * `quota`）。这一段在 `myCardsModel.ts` 的 `afterRedeemed()` 里，本文件只负责把读到的余额显示一行 ——
  * 组件里写 setState 断言不了「有没有真的拉」，契约就变成口头承诺。
+ * 兑换成功后**重拉一次列表**（`loadOrders`）的不变行为也保留：卡密页要反映服务端的最新状态。
  *
  * 安全：卡密全文只在内存里交给剪贴板，**不进 DOM 文本、不进日志、不进 localStorage**；
  * 列表只渲染后 4 位（`maskCardNo`，与 `mask.ts` 同一口径）。
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { useTranslate, type TranslationKey } from '../../i18n/index.js'
-import { useApiConfig } from '../../services/api/apiConfig.js'
+import { useTranslate } from '../../i18n/index.js'
 import type { Sub2ApiError } from '../../services/consume/errors.js'
 import type { ConsumeClient } from '../../services/consume/index.js'
-import { fetchPurchases, maskCardNo, PurchaseError } from '../../services/ours/purchases.js'
-import type { PurchaseOrder } from '../../services/ours/purchases.js'
+import { MY_ORDERS_DEFAULT_PAGE_SIZE, type ConsumeMyOrder } from '../../services/consume/orders.js'
 import { copyText } from '../../utils/clipboard.js'
 import { afterRedeemed } from './myCardsModel.js'
+import { CardsListView } from './myCardsListView.js'
+import { localPanelError, toPanelError, type PanelError } from './panels.js'
 import type { WalletAutoRedeemOutcome } from './walletAutoRedeem.js'
 import { formatCurrency } from './panels.js'
-import { formatDate } from '../../utils/format.js'
 import { Button } from '../base/Button.js'
 import { showToast } from '../base/toastState.js'
 import styles from './AccountConsume.module.css'
 
-/** 列表态：只有四种，不要再多分一档「正在刷新」（刷新就是 `loading` + 保留旧数据） */
+/**
+ * 列表态：只有三种，不要再多分一档「正在刷新」（刷新就是 `loading` + 保留旧数据）。
+ *
+ * 错误只存上屏要用的三样（`PanelError`：文案 key / 能不能重试 / 要不要重新登录）——
+ * 服务端 message 是英文原句，绝不上屏（#484 §4 第 4 条）。
+ */
 type CardsView =
   | { status: 'loading' }
-  | { status: 'ready'; orders: PurchaseOrder[] }
-  | { status: 'error'; messageKey: TranslationKey; retryable: boolean }
+  | { status: 'ready'; orders: ConsumeMyOrder[] }
+  | { status: 'error'; error: PanelError }
 
 /**
  * 兑换态：与 `ConsumeRedeemOutcome` 四态一一对应，外加 idle / busy。
@@ -63,23 +81,6 @@ type RedeemView =
   /** 已核对「未到账」：给重试按钮，点了才带 `retryAfterConfirm: true` 再发一次 */
   | { status: 'pending'; code: string }
   | { status: 'failed'; error: Sub2ApiError }
-
-/** apia 的失败分类 → 既有文案 key（`oursPurchasesErr*` 与 purchases.ts 的 `PurchaseErrorKind` 一一对应） */
-const PURCHASE_ERROR_KEYS: Record<string, TranslationKey> = {
-  keyMissing: 'oursPurchasesErrKeyMissing',
-  unauthorized: 'oursPurchasesErrUnauthorized',
-  rateLimited: 'oursPurchasesErrRateLimited',
-  timeout: 'oursPurchasesErrTimeout',
-  network: 'oursPurchasesErrNetwork',
-  server: 'oursPurchasesErrServer',
-  rejected: 'oursPurchasesErrRejected',
-  badResponse: 'oursPurchasesErrBadResponse',
-}
-
-const cardIsUsed = (order: PurchaseOrder): boolean =>
-  order.redeemState === 'redeemed' || order.cardStatus === 'used'
-
-const orderDate = (createdAt: number): string => formatDate(createdAt * 1000) ?? ''
 
 export type MyCardsTabProps = {
   consume: ConsumeClient
@@ -116,7 +117,6 @@ export const MyCardsTab = ({
   onDismissAutoRedeem,
 }: MyCardsTabProps) => {
   const t = useTranslate()
-  const apiKey = useApiConfig((state) => state.apiKey)
   const [view, setView] = useState<CardsView>({ status: 'loading' })
   const [code, setCode] = useState('')
   const [redeem, setRedeem] = useState<RedeemView>({ status: 'idle' })
@@ -133,30 +133,35 @@ export const MyCardsTab = ({
     }
   }, [])
 
+  /**
+   * 拉一页订单（`GET /api/v1/payment/orders/my`，JWT）。
+   *
+   * 不用 `try/catch` 兜「Key 没填」这种前置条件：新数据源没有 Key 这一层，未登录时
+   * 消费层会把 401 归一成 `kind: 'auth'` + `i18nKey: consumeErrUnauthorized`，
+   * 界面按 `error.needLogin` 给登录出口即可（不再自建一张错误码 → 文案的平行表）。
+   */
   const loadOrders = useCallback(async () => {
-    if (apiKey === '') {
-      setView({ status: 'error', messageKey: 'oursPurchasesErrKeyMissing', retryable: false })
+    setView({ status: 'loading' })
+    let result: Awaited<ReturnType<ConsumeClient['orders']['my']>>
+    try {
+      result = await consume.orders.my({ page: 1, pageSize: MY_ORDERS_DEFAULT_PAGE_SIZE })
+    } catch {
+      // 配置缺失这类「连请求都没发出去」的意外：按未知失败上屏，不给重试（重试也一样）
+      if (aliveRef.current) {
+        setView({ status: 'error', error: localPanelError('oursPurchasesErrUnknown') })
+      }
       return
     }
-    setView({ status: 'loading' })
-    try {
-      const page = await fetchPurchases({ apiKey, limit: 20, offset: 0 })
-      if (aliveRef.current) {
-        setView({ status: 'ready', orders: page.orders })
-      }
-    } catch (error) {
-      if (!aliveRef.current) {
-        return
-      }
-      const kind = error instanceof PurchaseError ? error.kind : 'unknown'
-      setView({
-        status: 'error',
-        messageKey: PURCHASE_ERROR_KEYS[kind] ?? 'oursPurchasesErrUnknown',
-        // 只有「再来一次有意义」的分类才给重试按钮（401/gut 的 Key 问题重试一万次也一样）
-        retryable: kind === 'timeout' || kind === 'network' || kind === 'server' || kind === 'rateLimited',
-      })
+    if (!aliveRef.current) {
+      return
     }
-  }, [apiKey])
+    if (result.ok) {
+      setView({ status: 'ready', orders: result.data.items })
+      return
+    }
+    // 文案只认 `error.i18nKey`，重试按钮只按 `error.retryable` 出现（401 重试一万次也一样）
+    setView({ status: 'error', error: toPanelError(result.error) })
+  }, [consume])
 
   useEffect(() => {
     void loadOrders()
@@ -224,7 +229,7 @@ export const MyCardsTab = ({
   )
 
   const busy = redeem.status === 'busy'
-  const cards = view.status === 'ready' ? view.orders.filter((order) => order.cardNo !== null) : []
+  const orders = view.status === 'ready' ? view.orders : []
 
   return (
     <div className={styles.body} data-testid="account-consume-cards">
@@ -288,17 +293,23 @@ export const MyCardsTab = ({
         ) : null}
         {view.status === 'error' ? (
           <div className={styles.state}>
-            <p className={styles.stateText}>{t(view.messageKey)}</p>
-            {view.retryable ? (
-              <div className={styles.stateActions}>
-                <Button variant="outlined" size="m" onClick={() => void loadOrders()}>
+            <p className={styles.stateText}>{t(view.error.i18nKey, view.error.params)}</p>
+            <div className={styles.stateActions}>
+              {view.error.retryable ? (
+                <Button variant="outlined" size="m" data-testid="account-consume-cards-retry" onClick={() => void loadOrders()}>
                   {t('oursPurchasesRetry')}
                 </Button>
-              </div>
-            ) : null}
+              ) : null}
+              {/* 数据源是登录态（JWT）：未登录时唯一的出路是去登录，不是重试 */}
+              {view.error.needLogin && onNeedLogin !== undefined ? (
+                <Button variant="outlined" size="m" data-testid="account-consume-cards-login" onClick={onNeedLogin}>
+                  {t('sub2authLogin')}
+                </Button>
+              ) : null}
+            </div>
           </div>
         ) : null}
-        {view.status === 'ready' && cards.length === 0 ? (
+        {view.status === 'ready' && orders.length === 0 ? (
           <div className={styles.state}>
             <p className={styles.stateText}>{t('oursPurchasesEmpty')}</p>
             {onGoBuy ? (
@@ -310,49 +321,21 @@ export const MyCardsTab = ({
             ) : null}
           </div>
         ) : null}
-        {cards.length > 0 ? (
-          <>
-            <ul className={styles.list}>
-              {cards.map((order) => (
-                <li key={order.outTradeNo} className={styles.item} data-testid="account-consume-card-row">
-                  <div className={styles.itemTop}>
-                    <span className={styles.tail}>{maskCardNo(order.cardNo)}</span>
-                    <span className={cardIsUsed(order) ? `${styles.chip} ${styles.chipUsed}` : styles.chip}>
-                      {t(cardIsUsed(order) ? 'oursPayRecordsRedeemed' : 'oursPayRecordsNotRedeemed')}
-                    </span>
-                  </div>
-                  <div className={styles.itemMeta}>
-                    <span>{order.planName}</span>
-                    <span>{orderDate(order.createdAt)}</span>
-                  </div>
-                  <div className={styles.itemActions}>
-                    <Button
-                      variant="outlined"
-                      size="m"
-                      data-testid="account-consume-card-copy"
-                      onClick={() => void copyCard(order.cardNo ?? '')}
-                    >
-                      {t('oursPayRecordsCopyCard')}
-                    </Button>
-                    <Button
-                      variant="outlined"
-                      size="m"
-                      disabled={busy || cardIsUsed(order)}
-                      onClick={() => {
-                        // 「去兑换」只把卡密填进上面的输入框：兑换是写操作，必须由用户自己点提交
-                        const full = order.cardNo ?? ''
-                        setCode(full)
-                        setRedeem({ status: 'idle' })
-                      }}
-                    >
-                      {t('oursPurchasesGoRedeem')}
-                    </Button>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          </>
-        ) : null}
+        {orders.length === 0 ? null : (
+          <CardsListView
+            t={t}
+            c={styles}
+            Button={Button}
+            orders={orders}
+            busy={busy}
+            onCopy={(full) => void copyCard(full)}
+            onRedeem={(full) => {
+              // 「去兑换」只把卡密填进上面的输入框：兑换是写操作，必须由用户自己点提交
+              setCode(full)
+              setRedeem({ status: 'idle' })
+            }}
+          />
+        )}
       </section>
     </div>
   )

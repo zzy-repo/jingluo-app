@@ -737,8 +737,6 @@ export const zh = {
   autoTitlePromptLanguage: '使用消息的语言。',
   autoTitlePromptLength: '目标长度：约 8–14 个中文字符（或 3–5 个英文单词）。',
   autoTitlePromptFallback: '如果消息信息量太少，也要给一个简短的最佳猜测标题（如「打招呼」），不要解释。',
-  oursPayRecordsNotRedeemed: '尚未兑换',
-  oursPayRecordsRedeemed: '已兑换',
   oursPayRecordsCopyCard: '复制卡密',
   oursPayRecordsCopied: '卡密已复制',
   // Issue #45：请求统一超时的提示（与网络失败、4xx/5xx 分开说）
@@ -800,15 +798,15 @@ export const zh = {
   oursPurchasesEmpty: '还没有购买记录。购买套餐后，这里会列出每一笔。',
   oursPurchasesRetry: '重试',
   oursPurchasesGoRedeem: '去兑换',
-  oursPurchasesErrKeyMissing: '填写 API Key 后可以查看这个账号的购买记录',
-  oursPurchasesErrUnauthorized: 'API Key 无效或已过期，请重新填写后再试',
-  oursPurchasesErrRateLimited: '查询太频繁了，请稍后再试',
-  oursPurchasesErrTimeout: '查询超时了，请检查网络后重试',
-  oursPurchasesErrNetwork: '网络连接失败，请检查网络后重试',
-  oursPurchasesErrServer: '服务器暂时无法处理，请稍后重试',
-  oursPurchasesErrRejected: '订单查询被拒绝，请稍后重试',
-  oursPurchasesErrBadResponse: '返回的数据无法解析，请稍后重试',
   oursPurchasesErrUnknown: '购买记录查询失败，请稍后重试',
+  // #834：「我的卡密」的状态文案由界面按 `status` 自己映射（新接口没有 status_text）
+  consumeOrderStatusCompleted: '已完成',
+  consumeOrderStatusPending: '待支付',
+  consumeOrderStatusExpired: '已过期',
+  consumeOrderStatusCancelled: '已取消',
+  consumeOrderStatusFailed: '支付失败',
+  consumeOrderStatusRefunded: '已退款',
+  consumeOrderStatusUnknown: '状态未知',
   // 兜底页出口文案（issue #180 / #104）。与 src/index.html 内联的 COPY 表逐字一致，
   // tests/unit/compat-guard-diagnostics.test.mjs 会比对两侧 —— 改文案必须两边同时改。
   //

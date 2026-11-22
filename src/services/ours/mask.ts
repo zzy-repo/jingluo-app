@@ -22,6 +22,15 @@ export const maskKey = (key: string): string => maskTail(key, 6)
 export const maskCard = (cardNo: string): string => maskTail(cardNo, 4)
 
 /**
+ * 卡号**展示**口径：`null` → `''`，其余只留尾 4 位（`MUSE-3CYP-5NA3-AHSE-A3SR` → `••••A3SR`）。
+ *
+ * 与 `maskCard` 的唯一区别就是「没有卡号」这一态：列表里没有 `recharge_code` 的订单不该被渲染成
+ * `••••`（那看着像「有卡但打码了」）。实现只有这一份 —— `services/ours/purchases.ts` 从这里再导出
+ * （#158 的旧口径不许出现第二份拷贝）。
+ */
+export const maskCardNo = (cardNo: string | null): string => (cardNo === null ? '' : maskCard(cardNo))
+
+/**
  * 设备码脱敏（尾 4 位）。
  * 设备码只在用户自己的设置页里完整可见（他能复制、能备份）；
  * 一旦要进日志、诊断或错误文案，就只能用这个。

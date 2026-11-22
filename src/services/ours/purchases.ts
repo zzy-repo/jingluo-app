@@ -19,7 +19,6 @@
 import { record } from '../diagnostics/collector.js'
 import { buildMeta } from '../diagnostics/fields.js'
 import type { LogMeta } from '../diagnostics/types.js'
-import { maskCard } from './mask.js'
 import { OURS_API_BASE, type OursHttpRequest, type OursTransport } from './api.js'
 import { httpTransport } from './transport.js'
 
@@ -350,10 +349,13 @@ export const parsePurchasePage = (value: unknown, fallback?: { limit: number; of
 }
 
 // ------------------------------------------------------------------ 展示
-/** 卡号只显示后 4 位：`MUSE-3CYP-5NA3-AHSE-A3SR` → `••••A3SR`；null / 空 → '' */
-export function maskCardNo(cardNo: string | null): string {
-  return cardNo === null ? '' : maskCard(cardNo)
-}
+/**
+ * 卡号只显示后 4 位：`MUSE-3CYP-5NA3-AHSE-A3SR` → `••••A3SR`；null / 空 → ''。
+ *
+ * #834 之后实现搬到了 `ours/mask.ts`（「我的卡密」的列表渲染层不 import 整条 apia 传输栈），
+ * 这里保留同名再导出 —— 既有调用点与单测一字不改，遮蔽口径仍然只有一份。
+ */
+export { maskCardNo } from './mask.js'
 
 /** 还有下一页：offset + orders.length < total */
 export function hasNextPage(page: PurchasePage): boolean {

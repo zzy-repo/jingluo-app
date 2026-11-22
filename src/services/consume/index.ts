@@ -46,6 +46,7 @@ import {
 import { bindEmail, sendBindEmailCode, unbindProvider } from './email.js'
 import { createConsumeHttp, type ConsumeHttp, type ConsumeHttpOptions } from './http.js'
 import { createKey, deleteKey, getKey, listKeys, updateKey } from './keys.js'
+import { listMyOrders } from './orders.js'
 import { getRedeemHistory, redeemCode } from './redeem.js'
 import { getGatewayUsage, getKeyDailyUsage, getUsageDashboard, getUsageStats, listUsage } from './usage.js'
 
@@ -137,6 +138,19 @@ export {
   type ConsumeUsageQuery,
 } from './usage.js'
 export {
+  isCompletedOrder,
+  listMyOrders,
+  MY_ORDER_COMPLETED,
+  MY_ORDERS_DEFAULT_PAGE_SIZE,
+  MY_ORDERS_MAX_PAGE_SIZE,
+  parseMyOrder,
+  parseMyOrdersPage,
+  rechargeCodeOf,
+  type ConsumeMyOrder,
+  type ConsumeMyOrdersPage,
+  type ConsumeMyOrdersQuery,
+} from './orders.js'
+export {
   getRedeemHistory,
   matchesRedeemCode,
   redeemCode,
@@ -213,6 +227,13 @@ export const createConsumeClient = (options: ConsumeClientOptions = {}) => {
       stats: (query?: Parameters<typeof getUsageStats>[1]) => getUsageStats(http, query),
       dashboard: (view: string, query?: Parameters<typeof getUsageDashboard>[2]) => getUsageDashboard(http, view, query),
       keyDaily: (keyId: number, query?: Parameters<typeof getKeyDailyUsage>[2]) => getKeyDailyUsage(http, keyId, query),
+    },
+    orders: {
+      /**
+       * 「我的卡密」的唯一数据源（#834）：`GET /api/v1/payment/orders/my`（JWT）。
+       * 返回 `ok: false` 时不抛错 —— 界面按 `error.i18nKey` 出文案、按 `error.retryable` 决定给不给重试。
+       */
+      my: (query?: Parameters<typeof listMyOrders>[1]) => listMyOrders(http, query),
     },
     redeem: {
       /** 兑换（幂等补偿版）：返回 `redeemed` / `pending` / `processing` / `failed` 四态 */
