@@ -1,0 +1,669 @@
+TAP version 13
+# Subtest: [1] 官方渠道：附件上传/删除都打到 {base}/anthropic/v1/files，不再拼 {messages}/files
+ok 1 - [1] 官方渠道：附件上传/删除都打到 {base}/anthropic/v1/files，不再拼 {messages}/files
+  ---
+  duration_ms: 123.970723
+  type: 'test'
+  ...
+# Subtest: [2] 没有 Files API 的渠道：本地判失败，一个请求都不发
+not ok 2 - [2] 没有 Files API 的渠道：本地判失败，一个请求都不发
+  ---
+  duration_ms: 2.392331
+  type: 'test'
+  location: '/tmp/wt-main-819/tests/unit/attachment-endpoint-303.test.mjs:96:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly equal:
+    + actual - expected
+    
+    + 'This channel does not support file uploads'
+    - '当前渠道不支持文件上传，附件入口已不可用'
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: '当前渠道不支持文件上传，附件入口已不可用'
+  actual: 'This channel does not support file uploads'
+  operator: 'strictEqual'
+  stack: |-
+    Object.<anonymous> (file:///tmp/wt-main-819/tests/unit/attachment-endpoint-303.test.mjs:107:14)
+    expectedException (node:assert:576:17)
+    expectsError (node:assert:701:21)
+    Function.rejects (node:assert:767:3)
+    async TestContext.<anonymous> (file:///tmp/wt-main-819/tests/unit/attachment-endpoint-303.test.mjs:102:3)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: [3] baseUrl 已带 /v1：不再拼成 /v1/v1/...
+ok 3 - [3] baseUrl 已带 /v1：不再拼成 /v1/v1/...
+  ---
+  duration_ms: 6.985098
+  type: 'test'
+  ...
+# Subtest: [4] 重试策略：4xx（429 除外）不重试，429 / 5xx / 超时 / 断网才重试
+ok 4 - [4] 重试策略：4xx（429 除外）不重试，429 / 5xx / 超时 / 断网才重试
+  ---
+  duration_ms: 4.169619
+  type: 'test'
+  ...
+# Subtest: [5] 真实请求计数：404 只发 1 次；429 / 502 才按上限退避重试
+ok 5 - [5] 真实请求计数：404 只发 1 次；429 / 502 才按上限退避重试
+  ---
+  duration_ms: 67.637543
+  type: 'test'
+  ...
+# Subtest: [6] 真实上传任务：404 一次收尾，卡片标记不可重试
+ok 6 - [6] 真实上传任务：404 一次收尾，卡片标记不可重试
+  ---
+  duration_ms: 2.32055
+  type: 'test'
+  ...
+# Subtest: 四份盘点文档都写了快照基准 commit 与采集时间
+ok 7 - 四份盘点文档都写了快照基准 commit 与采集时间
+  ---
+  duration_ms: 2.420686
+  type: 'test'
+  ...
+# Subtest: api.md 的扫描范围与统计表与实时复算一致
+not ok 8 - api.md 的扫描范围与统计表与实时复算一致
+  ---
+  duration_ms: 3.493881
+  type: 'test'
+  location: '/tmp/wt-main-819/tests/unit/capabilities-docs-sync.test.mjs:171:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    api.md 扫描范围的文件数与实时清点不一致
+    + actual - expected
+    
+      [
+    +   336,
+    +   214,
+    -   349,
+    -   227,
+        73,
+        46,
+        1,
+        2
+      ]
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    0: 349
+    1: 227
+    2: 73
+    3: 46
+    4: 1
+    5: 2
+  actual:
+    0: 336
+    1: 214
+    2: 73
+    3: 46
+    4: 1
+    5: 2
+  operator: 'deepStrictEqual'
+  stack: |-
+    TestContext.<anonymous> (file:///tmp/wt-main-819/tests/unit/capabilities-docs-sync.test.mjs:177:10)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async startSubtestAfterBootstrap (node:internal/test_runner/harness:296:3)
+  ...
+# Subtest: api.md 的按 API 分项表覆盖全部命中的 API 且计数一致
+ok 9 - api.md 的按 API 分项表覆盖全部命中的 API 且计数一致
+  ---
+  duration_ms: 1.050056
+  type: 'test'
+  ...
+# Subtest: api.md 逐条命中表的行数与每个 文件:行 都对得上复算
+not ok 10 - api.md 逐条命中表的行数与每个 文件:行 都对得上复算
+  ---
+  duration_ms: 1.017296
+  type: 'test'
+  location: '/tmp/wt-main-819/tests/unit/capabilities-docs-sync.test.mjs:227:1'
+  failureType: 'testCodeFailure'
+  error: 'api.md §二 记了 src/app/App.tsx:44，但复算在该行没有命中'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: true
+  actual: false
+  operator: '=='
+  stack: |-
+    TestContext.<anonymous> (file:///tmp/wt-main-819/tests/unit/capabilities-docs-sync.test.mjs:243:14)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: css.md 的扫描范围、命中总数与逐特性统计与实时复算一致
+not ok 11 - css.md 的扫描范围、命中总数与逐特性统计与实时复算一致
+  ---
+  duration_ms: 1.056521
+  type: 'test'
+  location: '/tmp/wt-main-819/tests/unit/capabilities-docs-sync.test.mjs:269:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    css.md 扫描范围的文件数与实时清点不一致
+    + actual - expected
+    
+      [
+    +   334,
+    -   347,
+        46,
+        39,
+    +   288
+    -   301
+      ]
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    0: 347
+    1: 46
+    2: 39
+    3: 301
+  actual:
+    0: 334
+    1: 46
+    2: 39
+    3: 288
+  operator: 'deepStrictEqual'
+  stack: |-
+    TestContext.<anonymous> (file:///tmp/wt-main-819/tests/unit/capabilities-docs-sync.test.mjs:276:10)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: css.md 明细小节里的每一个 文件:行 都在该行真有命中
+not ok 12 - css.md 明细小节里的每一个 文件:行 都在该行真有命中
+  ---
+  duration_ms: 1.322662
+  type: 'test'
+  location: '/tmp/wt-main-819/tests/unit/capabilities-docs-sync.test.mjs:316:1'
+  failureType: 'testCodeFailure'
+  error: 'css.md §2.1 记了 components/settings/Settings.module.css:907，但复算在该行没有命中'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: true
+  actual: false
+  operator: '=='
+  stack: |-
+    TestContext.<anonymous> (file:///tmp/wt-main-819/tests/unit/capabilities-docs-sync.test.mjs:322:14)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: css.md 的假阳性清单与复算的 falsePositives 一致
+ok 13 - css.md 的假阳性清单与复算的 falsePositives 一致
+  ---
+  duration_ms: 0.63627
+  type: 'test'
+  ...
+# Subtest: host.md 的扫描范围、命中总数与风险分布与实时复算一致
+not ok 14 - host.md 的扫描范围、命中总数与风险分布与实时复算一致
+  ---
+  duration_ms: 0.62236
+  type: 'test'
+  location: '/tmp/wt-main-819/tests/unit/capabilities-docs-sync.test.mjs:343:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    host.md 扫描范围的文件数与复算不一致
+    + actual - expected
+    
+      [
+    +   288
+    -   301
+      ]
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    0: 301
+  actual:
+    0: 288
+  operator: 'deepStrictEqual'
+  stack: |-
+    TestContext.<anonymous> (file:///tmp/wt-main-819/tests/unit/capabilities-docs-sync.test.mjs:348:10)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: host.md 的按能力统计表覆盖全部能力且计数一致
+not ok 15 - host.md 的按能力统计表覆盖全部能力且计数一致
+  ---
+  duration_ms: 1.014038
+  type: 'test'
+  location: '/tmp/wt-main-819/tests/unit/capabilities-docs-sync.test.mjs:359:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    host.md「Body.text/arrayBuffer」的命中 / 分类计数与复算不一致
+    + actual - expected
+    
+      [
+    +   25,
+    +   12,
+    -   26,
+        13,
+    -   13,
+        0,
+        0
+      ]
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    0: 26
+    1: 13
+    2: 13
+    3: 0
+    4: 0
+  actual:
+    0: 25
+    1: 12
+    2: 13
+    3: 0
+    4: 0
+  operator: 'deepStrictEqual'
+  stack: |-
+    TestContext.<anonymous> (file:///tmp/wt-main-819/tests/unit/capabilities-docs-sync.test.mjs:370:12)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: host.md 的「0 命中清单」确实全是 0 命中
+ok 16 - host.md 的「0 命中清单」确实全是 0 命中
+  ---
+  duration_ms: 0.964827
+  type: 'test'
+  ...
+# Subtest: behavior.md 盘点表的行数与处置 / 风险分布自洽，且与合计行一致
+ok 17 - behavior.md 盘点表的行数与处置 / 风险分布自洽，且与合计行一致
+  ---
+  duration_ms: 0.605503
+  type: 'test'
+  ...
+# Subtest: behavior.md 的四条假设结论仍是复算的「成立」
+ok 18 - behavior.md 的四条假设结论仍是复算的「成立」
+  ---
+  duration_ms: 0.265929
+  type: 'test'
+  ...
+# Subtest: 402：归到额度档，不混进网络类与泛业务类
+ok 19 - 402：归到额度档，不混进网络类与泛业务类
+  ---
+  duration_ms: 2.709253
+  type: 'test'
+  ...
+# Subtest: 429 + insufficient_quota：认上游 code，归额度档而不是限流档
+ok 20 - 429 + insufficient_quota：认上游 code，归额度档而不是限流档
+  ---
+  duration_ms: 0.577675
+  type: 'test'
+  ...
+# Subtest: 400 + code：网关把额度不足放进 400 也认出来
+ok 21 - 400 + code：网关把额度不足放进 400 也认出来
+  ---
+  duration_ms: 5.97717
+  type: 'test'
+  ...
+# Subtest: 只有 message 没有 code：文案里说余额/额度不足也能认出（含中文）
+ok 22 - 只有 message 没有 code：文案里说余额/额度不足也能认出（含中文）
+  ---
+  duration_ms: 1.167995
+  type: 'test'
+  ...
+# Subtest: 流内 error 帧（没有状态码）带着额度 code 也归额度档
+ok 23 - 流内 error 帧（没有状态码）带着额度 code 也归额度档
+  ---
+  duration_ms: 0.325818
+  type: 'test'
+  ...
+# Subtest: 负向：502 / 网络断开 / 超时 / 普通 400 的分类与可重试性一点不变
+ok 24 - 负向：502 / 网络断开 / 超时 / 普通 400 的分类与可重试性一点不变
+  ---
+  duration_ms: 4.353054
+  type: 'test'
+  ...
+# Subtest: 额度不足：真实 store 一次都不重试，界面给明确文案 + 充值动作，诊断单独打标
+not ok 25 - 额度不足：真实 store 一次都不重试，界面给明确文案 + 充值动作，诊断单独打标
+  ---
+  duration_ms: 113.355755
+  type: 'test'
+  location: '/tmp/wt-main-819/tests/unit/quota-exhausted.test.mjs:269:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly equal:
+    + actual - expected
+    
+    + 'Insufficient balance or quota. Cannot continue generating (do not retry; top up first).'
+    - '余额或额度不足，无法继续生成（不要重试，充值后再发）'
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: '余额或额度不足，无法继续生成（不要重试，充值后再发）'
+  actual: 'Insufficient balance or quota. Cannot continue generating (do not retry; top up first).'
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (file:///tmp/wt-main-819/tests/unit/quota-exhausted.test.mjs:286:10)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: 402：同一条链路给出同样的文案与充值动作
+not ok 26 - 402：同一条链路给出同样的文案与充值动作
+  ---
+  duration_ms: 13.233719
+  type: 'test'
+  location: '/tmp/wt-main-819/tests/unit/quota-exhausted.test.mjs:299:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly equal:
+    + actual - expected
+    
+    + 'Insufficient balance or quota. Cannot continue generating (do not retry; top up first).'
+    - '余额或额度不足，无法继续生成（不要重试，充值后再发）'
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: '余额或额度不足，无法继续生成（不要重试，充值后再发）'
+  actual: 'Insufficient balance or quota. Cannot continue generating (do not retry; top up first).'
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (file:///tmp/wt-main-819/tests/unit/quota-exhausted.test.mjs:304:10)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: 负向：502 仍按上限重试，界面仍是「服务器繁忙」
+not ok 27 - 负向：502 仍按上限重试，界面仍是「服务器繁忙」
+  ---
+  duration_ms: 23.849287
+  type: 'test'
+  location: '/tmp/wt-main-819/tests/unit/quota-exhausted.test.mjs:308:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly equal:
+    + actual - expected
+    
+    + 'Server busy — a temporary failure, the reply did not finish. You can retry (tap regenerate).'
+    - '服务器繁忙，属于临时故障，回答没有完成，可以重试（点重新生成）'
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: '服务器繁忙，属于临时故障，回答没有完成，可以重试（点重新生成）'
+  actual: 'Server busy — a temporary failure, the reply did not finish. You can retry (tap regenerate).'
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (file:///tmp/wt-main-819/tests/unit/quota-exhausted.test.mjs:314:10)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: 负向：普通 400 不重试，落到参数错误档（\#324 之前这里是「未知错误」），不打额度标记
+not ok 28 - 负向：普通 400 不重试，落到参数错误档（\#324 之前这里是「未知错误」），不打额度标记
+  ---
+  duration_ms: 9.126391
+  type: 'test'
+  location: '/tmp/wt-main-819/tests/unit/quota-exhausted.test.mjs:318:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly equal:
+    + actual - expected
+    
+    + 'Invalid request parameters (HTTP 400): the upstream rejected the field “max_tokens” — this request was refused upstream (not a network problem, not an outage on our side). Retrying will not help (do not retry).'
+    - '请求参数有误（HTTP 400）：上游指出字段「max_tokens」不合法 —— 这是请求被上游拒绝（不是网络问题，也不是我们服务端故障），重试不会有变化（不要重试）'
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: '请求参数有误（HTTP 400）：上游指出字段「max_tokens」不合法 —— 这是请求被上游拒绝（不是网络问题，也不是我们服务端故障），重试不会有变化（不要重试）'
+  actual: 'Invalid request parameters (HTTP 400): the upstream rejected the field “max_tokens” — this request was refused upstream (not a network problem, not an outage on our side). Retrying will not help (do not retry).'
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (file:///tmp/wt-main-819/tests/unit/quota-exhausted.test.mjs:329:10)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: 负向：网络断开仍重试并给出网络异常文案
+not ok 29 - 负向：网络断开仍重试并给出网络异常文案
+  ---
+  duration_ms: 14.715891
+  type: 'test'
+  location: '/tmp/wt-main-819/tests/unit/quota-exhausted.test.mjs:342:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly equal:
+    + actual - expected
+    
+    + 'The request never left the app (offline, DNS failure, or blocked by CORS) — the upstream is not slow. Check your network or proxy, then tap “regenerate”.'
+    - '网络请求没有发出去（断网、DNS 解析失败或被跨域拦截），不是上游慢：检查网络或代理后点「重新生成」再试'
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: '网络请求没有发出去（断网、DNS 解析失败或被跨域拦截），不是上游慢：检查网络或代理后点「重新生成」再试'
+  actual: 'The request never left the app (offline, DNS failure, or blocked by CORS) — the upstream is not slow. Check your network or proxy, then tap “regenerate”.'
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (file:///tmp/wt-main-819/tests/unit/quota-exhausted.test.mjs:347:10)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: 负向：超时仍重试，报超时文案
+ok 30 - 负向：超时仍重试，报超时文案
+  ---
+  duration_ms: 372.789901
+  type: 'test'
+  ...
+# Subtest: 额度正常：回答照常渲染，没有额度提示、没有额度日志
+ok 31 - 额度正常：回答照常渲染，没有额度提示、没有额度日志
+  ---
+  duration_ms: 24.333488
+  type: 'test'
+  ...
+# Subtest: 中英文案成对：额度文案与充值入口两个 key 都有
+ok 32 - 中英文案成对：额度文案与充值入口两个 key 都有
+  ---
+  duration_ms: 3.642015
+  type: 'test'
+  ...
+# Subtest: 断网 / 分发机不可达 → network，且文案说可重试
+ok 33 - 断网 / 分发机不可达 → network，且文案说可重试
+  ---
+  duration_ms: 1.986728
+  type: 'test'
+  ...
+# Subtest: 更新服务回 404 / 502 → service：状态码进文案，但 4xx 不引导重试、5xx 才引导
+ok 34 - 更新服务回 404 / 502 → service：状态码进文案，但 4xx 不引导重试、5xx 才引导
+  ---
+  duration_ms: 0.353516
+  type: 'test'
+  ...
+# Subtest: 清单 200 但不是合法 JSON / 记录不合法 → manifest，且文案明说不会靠重试好转
+ok 35 - 清单 200 但不是合法 JSON / 记录不合法 → manifest，且文案明说不会靠重试好转
+  ---
+  duration_ms: 0.442111
+  type: 'test'
+  ...
+# Subtest: 签名 / 校验不符 → integrity；下载中断 → download，两者可重试性不同
+ok 36 - 签名 / 校验不符 → integrity；下载中断 → download，两者可重试性不同
+  ---
+  duration_ms: 0.38156
+  type: 'test'
+  ...
+# Subtest: \#373：integrity 下六个上游码各有各的原因，不再统一说成「大小或 SHA-256 不符」
+ok 37 - \#373：integrity 下六个上游码各有各的原因，不再统一说成「大小或 SHA-256 不符」
+  ---
+  duration_ms: 0.344792
+  type: 'test'
+  ...
+# Subtest: \#373：文案 zh/en 成对——同一个码两种语言都有，且各自是那个语言
+ok 38 - \#373：文案 zh/en 成对——同一个码两种语言都有，且各自是那个语言
+  ---
+  duration_ms: 0.573739
+  type: 'test'
+  ...
+# Subtest: 无可用版本 / 已取消 / 环境缺渠道 各有独立说法，且不冒充故障
+ok 39 - 无可用版本 / 已取消 / 环境缺渠道 各有独立说法，且不冒充故障
+  ---
+  duration_ms: 0.397603
+  type: 'test'
+  ...
+# Subtest: 表外的异常归 unknown（不许猜成网络或数据问题）
+ok 40 - 表外的异常归 unknown（不许猜成网络或数据问题）
+  ---
+  duration_ms: 0.415436
+  type: 'test'
+  ...
+# Subtest: 用户可见的那句话里不许出现地址、协议头、堆栈或 Error 前缀
+ok 41 - 用户可见的那句话里不许出现地址、协议头、堆栈或 Error 前缀
+  ---
+  duration_ms: 0.5611
+  type: 'test'
+  ...
+# Subtest: 诊断文本：字段齐、地址只到 host、上游短码与可重试性可判读
+not ok 42 - 诊断文本：字段齐、地址只到 host、上游短码与可重试性可判读
+  ---
+  duration_ms: 2.827114
+  type: 'test'
+  location: '/tmp/wt-main-819/tests/unit/update-failure.test.mjs:211:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly equal:
+    + actual - expected
+    
+    + 'jingluo.nekoai.com.cn → dl.rose7.cn'
+    - '62.106.70.167:8888 → dl.rose7.cn'
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: '62.106.70.167:8888 → dl.rose7.cn'
+  actual: 'jingluo.nekoai.com.cn → dl.rose7.cn'
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (file:///tmp/wt-main-819/tests/unit/update-failure.test.mjs:232:10)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: S0 基线：配置 = 已发布断言、gradle 从配置派生 → 前门 exit 0（否则下面三拍的红是假红）
+not ok 43 - S0 基线：配置 = 已发布断言、gradle 从配置派生 → 前门 exit 0（否则下面三拍的红是假红）
+  ---
+  duration_ms: 158.086503
+  type: 'test'
+  location: '/tmp/wt-main-819/tests/unit/verify-release-apk-cert-sources.test.mjs:132:1'
+  failureType: 'testCodeFailure'
+  error: '红的原因是后面的 APK 那一项（临时树里没有 APK）'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+  actual: |-
+    APK   : no-such.apk
+    期望  : variant=standard  cert=e7c5baee517ca2b2258950e934521f2fad448d00f72f2ff7297bdf4fa00aa8a1  来源=config/appIdentity.json
+            consume.baseUrl=—  来源=config/endpoints.json  禁止域=（无）
+    
+    #  检查                             结果     实际
+    -  -------------------------------  --------  ------------------------
+    1  debuggable 不存在或 false        UNKNOWN  未校验
+    2  ARTIFACT_VARIANT 与期望一致      UNKNOWN  未校验
+    3  LOOPBACK_CONSUME 不存在或 false  UNKNOWN  未校验
+    4  签名证书 SHA-256 与期望一致      UNKNOWN  未校验
+    5  INSECURE_CONSUME 不存在或 false  UNKNOWN  未校验
+    6  包内 consume.baseUrl 与期望一致  UNKNOWN  未校验
+    
+    附加输出（Release 正文可直接用，不算失败项）
+      packageName : —
+      versionName : —
+      versionCode : —
+      sha256      : —
+      md5         : —
+      size        : —
+    
+    结论：UNKNOWN（判不出来）—— 按禁止发布处理（fail-closed）。（期望指纹来源：config/appIdentity.json）
+      包内 consume.baseUrl 的期望值判不出来（来源：config/endpoints.json）：
+        读不到 /tmp/verify-apk-cert-sources-3ZQGQx/config/endpoints.json（ENOENT）：期望值只能来自这份配置，不回落任何内置默认值（#763）
+      
+      修法:
+        1) 确认 config/endpoints.json 存在，且 consume.baseUrl 是非空字符串（唯一来源，不许在脚本里写第二份）；
+        2) 只是想临时按别的地址验一下 → 显式传 --expect-consume-base <url>（输出里会标来源）。
+    FAILING=[]
+    
+  operator: 'match'
+  stack: |-
+    TestContext.<anonymous> (file:///tmp/wt-main-819/tests/unit/verify-release-apk-cert-sources.test.mjs:144:10)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.start (node:internal/test_runner/test:944:17)
+    startSubtestAfterBootstrap (node:internal/test_runner/harness:296:17)
+  ...
+# Subtest: S1 配置改一个字符 → exit 1，点名「配置 / 已发布」两个值；还原后 exit 0
+ok 44 - S1 配置改一个字符 → exit 1，点名「配置 / 已发布」两个值；还原后 exit 0
+  ---
+  duration_ms: 171.722608
+  type: 'test'
+  ...
+# Subtest: S2 删掉 expectedCertSha256 → exit 2，点名文件 + 字段，且不回落到任何 64 位默认值；还原后 exit 0
+ok 45 - S2 删掉 expectedCertSha256 → exit 2，点名文件 + 字段，且不回落到任何 64 位默认值；还原后 exit 0
+  ---
+  duration_ms: 145.356937
+  type: 'test'
+  ...
+# Subtest: S2b 同一状态 + 传一个合法 --expect-cert → 仍然 exit≠0（--expect-cert 不豁免配置完整性）
+ok 46 - S2b 同一状态 + 传一个合法 --expect-cert → 仍然 exit≠0（--expect-cert 不豁免配置完整性）
+  ---
+  duration_ms: 143.353704
+  type: 'test'
+  ...
+# Subtest: S2c 整份配置删掉、只在 gradle 里留字面量 → 仍 exit 2（verify:apk 只认配置，不认兼容回落）
+ok 47 - S2c 整份配置删掉、只在 gradle 里留字面量 → 仍 exit 2（verify:apk 只认配置，不认兼容回落）
+  ---
+  duration_ms: 150.181181
+  type: 'test'
+  ...
+# Subtest: S3 gradle 里造第二份副本且与配置不等 → exit 1，点名两个值；还原后 exit 0
+ok 48 - S3 gradle 里造第二份副本且与配置不等 → exit 1，点名两个值；还原后 exit 0
+  ---
+  duration_ms: 142.402176
+  type: 'test'
+  ...
+# Subtest: S3b 两份副本相等（gradle 仍是旧写法但值相同）→ exit 0（不许把「有副本」本身判红）
+ok 49 - S3b 两份副本相等（gradle 仍是旧写法但值相同）→ exit 0（不许把「有副本」本身判红）
+  ---
+  duration_ms: 67.330349
+  type: 'test'
+  ...
+# Subtest: S4 这些用例只动 /tmp：仓库里的 config 与 gradle 仍是「配置 = 已发布、gradle 无字面量」
+ok 50 - S4 这些用例只动 /tmp：仓库里的 config 与 gradle 仍是「配置 = 已发布、gradle 无字面量」
+  ---
+  duration_ms: 0.637717
+  type: 'test'
+  ...
+# Subtest: S5 --help 写清了前门与 --expect-cert 的新语义（判据变了，文档必须跟着变）
+ok 51 - S5 --help 写清了前门与 --expect-cert 的新语义（判据变了，文档必须跟着变）
+  ---
+  duration_ms: 67.772588
+  type: 'test'
+  ...
+1..51
+# tests 51
+# suites 0
+# pass 37
+# fail 14
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 2207.978099

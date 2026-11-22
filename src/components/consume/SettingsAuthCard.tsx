@@ -120,9 +120,11 @@ export const SettingsAuthCard = ({ consume, onSkip }: SettingsAuthCardProps) => 
         submitting,
         registrationLoaded: flags.loaded,
         registrationEnabled: flags.registrationEnabled,
+        // #819：邀请码只在服务端开着的时候才进请求体（开关关着时这一行也不渲染）
+        invitationCodeEnabled: flags.invitationCodeEnabled,
       })
     )
-  }, [run, source, state, submitting, flags.loaded, flags.registrationEnabled])
+  }, [run, source, state, submitting, flags.loaded, flags.registrationEnabled, flags.invitationCodeEnabled])
 
   const requestCode = useCallback(() => {
     if (sendingCode || countdown > 0 || state.email.trim() === '') {
@@ -154,6 +156,7 @@ export const SettingsAuthCard = ({ consume, onSkip }: SettingsAuthCardProps) => 
       errorKey={error === null ? null : error.messageKey}
       registrationLoaded={flags.loaded}
       registrationEnabled={flags.registrationEnabled}
+      invitationCodeEnabled={flags.invitationCodeEnabled}
       onEvent={dispatch}
       onSubmit={submit}
       onSendCode={requestCode}

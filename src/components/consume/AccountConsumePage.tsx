@@ -15,7 +15,7 @@
  *           │                     **没有 L3 子页、没有返回**。展开 ≠ 生效（详见下面第 6 条）
  *           ├─ 我的卡密        → 行 → L2 页（卡密列表 + 兑换卡密）
  *           ├─ 历史消费        → 行 → L2 页（消费记录）
- *           └─ 账号            → 行 → L2 页（资料 / 账号 ID / 绑定邮箱 / 登录方式 / 退出登录）
+ *           └─ 账号            → 行 → L2 页（资料 / 账号 ID / 绑定邮箱 / 登录方式 / 邀请 / 退出登录）
  *
  * 六条硬约定：
  *  1. **不自带外壳**：没有 `Modal`、没有遮罩、没有第二个 X —— 头部 / 关闭按钮全部复用设置的；
@@ -23,8 +23,9 @@
  *     （设置弹层）持有，非 `null` 时内容区整体替换。**唯一的例外是「模型来源」**：它是同一页里的
  *     手风琴（#807），展开某一行不换页、也不出现第三个「返回」；
  *  3. **不做第二份客户端**：一个 `ConsumeClient`，默认用全应用共享的 `getConsumeClient()`；
- *  4. **面板逻辑原样复用**：卡密 / 购买 / 额度还是 `MyCardsTab` / `BuyTab` /
- *     `QuotaPanel` 那三个既有组件，本文件只负责「把它们放到原型的位置上」；
+ *  4. **面板逻辑原样复用**：卡密 / 购买 / 额度 / 邀请还是 `MyCardsTab` / `BuyTab` /
+ *     `QuotaPanel` / `InvitePanel` 那四个既有组件，本文件只负责「把它们放到原型的位置上」
+ *     （邀请面板的挂载点在账号 L2 页，见那里的注释 —— #819 把它从「只写在文档里」恢复成真挂载）；
  *  5. L1 只留**一行**「模型来源」（右侧显示当前来源名）；它点进去是**手风琴**（每行 56px、
  *     左右 20px、1px 极浅下边框、右侧箭头，**不是分段控件**）：点行头只展开它自己的字段区
  *     （服务地址 / API Key / 模型 + 「确认使用」），不再有第三层页面。
@@ -54,7 +55,7 @@ import { useLegacyMigrationResult } from '../../legacy/migration/resultState.js'
 import { Button } from '../base/Button.js'
 import { IconChevronRightOutline14 } from '../base/icons.js'
 import { showToast } from '../base/toastState.js'
-import { QuotaPanel } from './index.js'
+import { InvitePanel, QuotaPanel } from './index.js'
 import { BuyTab } from './BuyTab.js'
 import { HistoryView } from './HistoryView.js'
 import { MyCardsTab } from './MyCardsTab.js'
@@ -799,6 +800,21 @@ export const AccountConsumePage = ({
             <SettingsAuthCard consume={consume} onSkip={() => onNavigate('source')} />
           </div>
         )}
+
+        {/*
+          邀请（#819 恢复挂载）：`6d7ab635`（#788）把账号 L2 页改成手写三行时，原本挂在
+          `AccountPanel` 里的 `<InvitePanel …/>` 一起没了 —— 这条链路从此**一次 `GET /user/aff` 都没打过**。
+          这里按原来的口径把面板挂回来：`consume` 是页面那一个客户端，`signedIn` 是页面的登录态三档
+          （`true` 才算已登录），`onSignIn` 复用页面的登录出口。
+
+          **开关语义一点没动**：`invitation_code_enabled` / `affiliate_enabled` 没开时，面板自己落
+          `hidden`（`invitePanelModel.ts` 的 `loadInvite` / `inviteStateSignedOut`）→ 整块不渲染；
+          已登录才发 `GET /user/aff`，未登录只给引导（#608 的口径）。所以这里**不加**任何本地开关判断，
+          否则就成了「客户端第二份开关」（#484 §3.1d）。
+        */}
+        <div className={styles.viewBody} data-testid="account-consume-invite">
+          <InvitePanel consume={consume} signedIn={signedIn === true} onSignIn={needLogin} />
+        </div>
 
         {/* 退出登录（红字行，原型 `.logout`）：动作就是既有的 auth store `signOut()`，不另写一套 */}
         {signedIn === true ? (
