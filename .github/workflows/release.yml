@@ -278,7 +278,10 @@ jobs:
             printf '%s\n' "$apk_src"
             exit 1
           fi
-          apk="deepseek-chat-${version}.apk"
+          # 产物文件名（#836）：前缀只从 config/appIdentity.json 的 artifactPrefix 取，
+          # 这里**不再**写 `deepseek-chat-${version}.apk` —— 那种第二份字面量会让「改一次名」
+          # 变成「改了一半」：CI 绿的、线上清单里的、GitHub 资产上的三个名字各说各话。
+          apk="$(node scripts/artifact-name.mjs --version "$version")"
           cp "$apk_src" "$apk"
           echo "待发布产物: $apk（$(stat -c%s "$apk") bytes）"
 

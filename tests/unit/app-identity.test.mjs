@@ -138,6 +138,9 @@ const makeTree = ({ configPatch = {}, files = {} } = {}) => {
   // 默认给 https 版本，专测明文闸门的用例会自己覆盖它。
   fs.writeFileSync(path.join(root, 'config/endpoints.json'), JSON.stringify(ENDPOINTS_FIXTURE, null, 2))
   fs.cpSync(path.join(REPO_ROOT, 'scripts/lib/appIdentity.mjs'), path.join(root, 'scripts/lib/appIdentity.mjs'))
+  // #836：appIdentity.mjs 现在 import shared/artifact-name.mjs（产物文件名前缀的拼法），沙箱里也要有它
+  fs.mkdirSync(path.join(root, 'shared'), { recursive: true })
+  fs.cpSync(path.join(REPO_ROOT, 'shared/artifact-name.mjs'), path.join(root, 'shared/artifact-name.mjs'))
   // 更新链路扫描源：默认为 https，避免它干扰其它断言
   fs.writeFileSync(
     path.join(root, 'src/services/updateManifest.ts'),

@@ -113,6 +113,9 @@ import { inspectApkDebugState, inspectApkLoopback } from './apk-manifest.mjs';
 // buildType 的枚举只有一处定义（Issue #330）——服务端不再自带字符串数组，
 // 也不再把 Gradle 构建类型（release/debug）当发布渠道。
 import { BUILD_TYPES, buildTypeFor, isBuildType } from '../../shared/build-types.mjs';
+// 产物文件名的拼法只有一份实现（#836）：前缀来自 config/appIdentity.json 的 artifactPrefix，
+// 服务端**不许**自己写一份 `'<prefix>-<version>.apk'` 字面量。
+import { artifactFileName, isArtifactPrefix, isLegacyArtifactPrefix } from '../../shared/artifact-name.mjs';
 // 发布目标 × 变体 × 渠道的判定（Issue #620）：纯函数、可单测，接口层与脚本层同口径。
 import {
   TARGETS,
@@ -150,6 +153,69 @@ const PUBLIC_BASE = process.env.DL_PUBLIC_BASE || 'https://dl.rose7.cn';
 const AAPT2 = process.env.DL_AAPT2 || '/opt/dl-release/bin/aapt2';
 
 const REQUIRED_PACKAGE = process.env.DL_REQUIRED_PACKAGE || 'com.example.deepseekchat';
+
+/**
+ * 产物文件名前缀（Issue #836 scope ①）：唯一来源 = `config/appIdentity.json` 的 `artifactPrefix`。
+ *
+ * 为什么不写成一枚带默认值的常量：文件名前缀是「这个 App 出的包叫什么」，与
+ * applicationId / label / 证书指纹住在同一份配置里（#271）。本服务是**独立部署单元**
+ * （只拷 4 个文件到 /opt/dl-release），所以按下面的顺序找那份配置：
+ *   1) env `DL_APP_IDENTITY_FILE` —— 显式指路（换布局时用）；
+ *   2) 整仓/同机布局：`<本文件>/../../config/appIdentity.json`（本地测试、整仓部署都能命中）；
+ *   3) 线上布局：`/etc/dl-release/appIdentity.json`（部署时从仓库拷一份，见 deploy/README.md）。
+ * 三处都读不到 → **启动失败**：宁可发布接口缺席，也不要一个「自己猜文件名」的服务把新包写成
+ * 老前缀（那种错没人会发现，直到有人按名字对不上账）。
+ */
+const APP_IDENTITY_CANDIDATES = [
+  process.env.DL_APP_IDENTITY_FILE,
+  path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../config/appIdentity.json'),
+  '/etc/dl-release/appIdentity.json',
+].filter((p) => typeof p === 'string' && p !== '');
+
+/** 读唯一来源里的 artifactPrefix；读不到/不合法 → 抛（启动期 fail-closed） */
+function loadArtifactPrefix() {
+  const tried = [];
+  for (const file of APP_IDENTITY_CANDIDATES) {
+    let text;
+    try {
+      text = fs.readFileSync(file, 'utf8');
+    } catch (e) {
+      tried.push(`${file}（${e.code || e.message}）`);
+      continue;
+    }
+    let parsed;
+    try {
+      parsed = JSON.parse(text);
+    } catch (e) {
+      throw new Error(`${file} 不是合法 JSON：${e.message}`);
+    }
+    const prefix = parsed === null || typeof parsed !== 'object' ? undefined : parsed.artifactPrefix;
+    if (!isArtifactPrefix(prefix)) {
+      throw new Error(`${file} 的 artifactPrefix 不合法：${JSON.stringify(prefix)}（要 jingluo-chat 这种小写连字符格式）`);
+    }
+    if (isLegacyArtifactPrefix(prefix)) {
+      throw new Error(
+        `${file} 的 artifactPrefix 是历史前缀 ${prefix}（#836 已改名为 jingluo-chat）：` +
+          '本服务拒绝据此生成新文件名，否则新老命名会静默混用',
+      );
+    }
+    return { prefix, source: file };
+  }
+  throw new Error(
+    `读不到 config/appIdentity.json（产物前缀的唯一来源）。找过：${tried.join(' / ')}。` +
+      '线上请把仓库的 config/appIdentity.json 拷到 /etc/dl-release/appIdentity.json（见 deploy/README.md）',
+  );
+}
+
+let artifactIdentity;
+try {
+  artifactIdentity = loadArtifactPrefix();
+} catch (e) {
+  // 启动期 fail-closed（与 fatal_token / fatal_private_root_in_webroot 同一姿态）
+  log('fatal_artifact_prefix', { error: e.message });
+  process.exit(1);
+}
+const ARTIFACT_PREFIX = artifactIdentity.prefix;
 const MAX_APK_BYTES = 50 * 1024 * 1024;          // APK 本体硬上限 50MB
 const MAX_BODY_BYTES = MAX_APK_BYTES + 6 * 1024 * 1024; // 含 multipart 边界的总上限
 const RATE_LIMIT_MAX = Number(process.env.DL_RATE_LIMIT_MAX || 2);
@@ -673,7 +739,7 @@ async function writeJsonAtomic(targetPath, obj) {
  * 只是把事故从 500 变成 200。
  *
  * @param {unknown} file 清单里的 `file` 字段或 `?file=` 参数
- * @returns {string|null} 合法 basename（如 `deepseek-chat-1.4.0-internal.apk`），否则 null
+ * @returns {string|null} 合法 basename（如 `<artifactPrefix>-1.4.0-internal.apk`），否则 null
  */
 function privateApkBasename(file) {
   if (typeof file !== 'string') return null;
@@ -817,7 +883,7 @@ async function handlePrivateDownload(req, res, ip, url) {
   const asked = url.searchParams.get('file');
   if (!asked || !asked.trim()) {
     log('private_download_reject', { ip, reason: 'missing_file' });
-    return fail(res, 400, 'BAD_FILE_NAME', '缺少 file 参数（私有包文件名，如 deepseek-chat-1.4.0-internal.apk）');
+    return fail(res, 400, 'BAD_FILE_NAME', '缺少 file 参数（私有包文件名，如 <artifactPrefix>-1.4.0-internal.apk）');
   }
   const name = privateApkBasename(asked);
   // 下载入口只收裸 basename（`apk/<name>` 前缀是清单里的形状，不是请求参数的形状）
@@ -1114,7 +1180,7 @@ async function handleRelease(req, res, ip, target) {
   // (9) 先算出新条目与「新条目 + 现有清单」的合并结果，并在**落盘前**整份校验（Issue #330 / #620）
   // 顺序是有意的：校验放在 rename 之前，脏清单时 APK 也不落盘，不会留下
   // 「目录里有新包、清单没收录」的半成品。buildType 已在 (7c) 定过（含渠道门禁）。
-  const fileName = `deepseek-chat-${versionName}.apk`;
+  const fileName = artifactFileName({ prefix: ARTIFACT_PREFIX, version: versionName });
   const finalPath = path.join(target.apkDir, fileName);
   const relFile = `apk/${fileName}`;
 
@@ -1327,6 +1393,8 @@ server.listen(LISTEN_PORT, LISTEN_HOST, async () => {
   });
   // 启动指纹也进日志：事后翻 journalctl 就能对上「那段时间跑的是哪一版」
   log('version_fingerprint', { sha256: SELF_SHA256, builtAt: STARTED_AT, node: process.version });
+  // 产物前缀与它的来源也进启动日志（#836）：「线上出的包叫什么名字」不该靠翻代码确认
+  log('artifact_prefix', { prefix: ARTIFACT_PREFIX, source: artifactIdentity.source });
   const allow = await readVariantAllowlist();
   log('variant_config', { marker: VARIANT_MARKER, file: VARIANTS_FILE, entries: Object.keys(allow).length });
 });

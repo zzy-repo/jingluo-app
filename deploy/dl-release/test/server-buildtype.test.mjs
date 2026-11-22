@@ -30,8 +30,17 @@ import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 import { ATTR_DEBUGGABLE_RES_ID } from '../apk-manifest.mjs';
+import { artifactFileName } from '../../../shared/artifact-name.mjs'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
+// #836：产物文件名前缀的唯一来源是 config/appIdentity.json 的 artifactPrefix。
+// 断言「落盘成什么名字」必须**跟着配置走**，不许再写一份字面量 —— 否则改名时用例会先绿后红，
+// 或者更糟：用例永远绿，而线上名字已经换了。
+const ARTIFACT_PREFIX = JSON.parse(
+  fs.readFileSync(path.resolve(HERE, '../../../config/appIdentity.json'), 'utf8'),
+).artifactPrefix
+const apkNameOf = (version) => artifactFileName({ prefix: ARTIFACT_PREFIX, version })
+
 const SERVER = path.resolve(HERE, '..', 'server.mjs');
 
 // ------------------------------------------------- 最小 AXML / ZIP（造一个真 APK）
@@ -460,5 +469,8 @@ test('清单干净 + 合法 buildType → 200，且落盘的清单整份合法',
   const man = JSON.parse(fs.readFileSync(ctx.releasesFile, 'utf8'));
   assert.equal(man.latest, '1.8.0');
   assert.deepEqual(man.releases.map((x) => x.buildType), ['stable', 'stable']);
-  assert.ok(fs.existsSync(path.join(ctx.apkDir, 'deepseek-chat-1.8.0.apk')), 'APK 应已落盘');
+  assert.ok(
+    fs.existsSync(path.join(ctx.apkDir, apkNameOf('1.8.0'))),
+    `APK 应已落盘（${apkNameOf('1.8.0')}）`,
+  );
 });

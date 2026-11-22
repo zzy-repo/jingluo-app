@@ -209,9 +209,9 @@ DL_WEBROOT=/var/www/dl node scripts/check-webroot-hygiene.mjs
 # 服务端行为（真 APK 打真服务端，临时目录，不碰线上）
 node --test deploy/dl-release/test/*.test.mjs
 AAPT2=/path/to/aapt2 \
-APK_STANDARD=/path/deepseek-chat-1.4.0.apk \
-APK_INTERNAL=/path/deepseek-chat-1.4.0-beta.10.apk \
+APK_STANDARD=/path/jingluo-chat-1.4.0.apk \
+APK_INTERNAL=/path/jingluo-chat-1.4.0-beta.10.apk \
 APK_NO_MARKER=/path/no-marker-history.apk \
-APK_DEBUGGABLE=/path/deepseek-chat-1.4.0-beta.8.apk \
+APK_DEBUGGABLE=/path/jingluo-chat-1.4.0-beta.8.apk \
 bash deploy/dl-release/test/offline-check.sh
 ```

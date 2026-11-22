@@ -39,7 +39,17 @@ import { fileURLToPath } from 'node:url'
 import { buildApk } from '../../../tests/fixtures/domain10/apk-fixture.mjs'
 import { validate as validateManifest } from '../../../scripts/validate-releases-manifest.mjs'
 
+import { artifactFileName } from '../../../shared/artifact-name.mjs'
+
 const HERE = path.dirname(fileURLToPath(import.meta.url))
+// #836：产物文件名前缀的唯一来源是 config/appIdentity.json 的 artifactPrefix。
+// 断言「落盘成什么名字」必须**跟着配置走**，不许再写一份字面量 —— 否则改名时用例会先绿后红，
+// 或者更糟：用例永远绿，而线上名字已经换了。
+const ARTIFACT_PREFIX = JSON.parse(
+  fs.readFileSync(path.resolve(HERE, '../../../config/appIdentity.json'), 'utf8'),
+).artifactPrefix
+const apkNameOf = (version) => artifactFileName({ prefix: ARTIFACT_PREFIX, version })
+
 const ROOT = path.resolve(HERE, '..', '..', '..')
 const SERVER = path.join(ROOT, 'deploy/dl-release/server.mjs')
 const APK_MANIFEST = path.join(ROOT, 'deploy/dl-release/apk-manifest.mjs')
@@ -408,9 +418,12 @@ test('V5 私网端点收 internal 包 → 200 写私有清单，公网清单 sha
       '同一份私有清单在公网口径下必须判红（两种口径确实互斥）',
     )
     // 私有包落在 webroot 之外的私有目录
-    assert.ok(fs.existsSync(path.join(ctx.privateApkDir, 'deepseek-chat-1.4.3.apk')), '私有包应落在私有 apk 目录')
     assert.ok(
-      !fs.existsSync(path.join(ctx.apkDir, 'deepseek-chat-1.4.3.apk')),
+      fs.existsSync(path.join(ctx.privateApkDir, apkNameOf('1.4.3'))),
+      `私有包应落在私有 apk 目录（${apkNameOf('1.4.3')}）`,
+    )
+    assert.ok(
+      !fs.existsSync(path.join(ctx.apkDir, apkNameOf('1.4.3'))),
       '私有包绝不许落在 webroot 的 apk/ 下',
     )
     assert.match(ctx.logs.join(''), /release_private_ok/)

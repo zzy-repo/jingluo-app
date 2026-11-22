@@ -47,6 +47,9 @@
 ```bash
 V=1.4.0-beta.10            # 本次要发的版本，必须等于 package.json 的 version
 APK=android/app/build/outputs/apk/release/app-release.apk
+# 产物对外文件名（Release 资产名 / dl 上的文件名）：前缀来自 config/appIdentity.json 的
+# artifactPrefix（当前 jingluo-chat，#836）。永远用 CLI 算，别手抄名字：
+ASSET=$(node scripts/artifact-name.mjs --version "$V")   # → jingluo-chat-$V.apk
 ```
 
 ### 阶段 A｜定版本（Windows 侧 / 任意机器）
@@ -293,7 +296,8 @@ gh run list --workflow release.yml --limit 3     # 手动触发的那一条
 gh release view v$V --repo zzy-repo/deepseek-app
 ```
 
-- 成功判据：`release.yml` 这次的 run 是 `success`；`gh release view` 显示 tag `v$V` 且带一个 `.apk` 资产，
+- 成功判据：`release.yml` 这次的 run 是 `success`；`gh release view` 显示 tag `v$V` 且带一个 `.apk` 资产
+  （名字 = 上面 CLI 算出的 `$ASSET`，前缀跟着 `config/appIdentity.json` 的 `artifactPrefix` 走；#836 之前的历史包叫 `deepseek-chat-*`，不改名），
   资产大小等于 `releases.json` 里的 `size`。
 - 失败回滚：
   - run 失败且日志是「`releases.json` 里没有这个版本」→ 说明 C 阶段没生效，回去做 C，然后删 tag 重打；

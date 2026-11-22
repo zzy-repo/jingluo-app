@@ -600,6 +600,19 @@ const REGISTRY = {
     what: 'CI：默认参数必落私有根（exit 0）；默认根改回 /var/www/dl → 门禁 exit 1 且报 R2 + 脚本拒并点到 #601；还原 → exit 0（另有 --selftest 5 种改坏方式）',
     mention: /check-private-publish-root\.mjs/,
   },
+  // 产物文件名前缀门禁（#836 新建）：对照写在 ci.yml 里现场注入 —— 三段。
+  // ① 脚本自带 `--selftest`：配置改回历史前缀 → P1 红、CI/脚本里塞回字面量 → P2 红、正本判绿；
+  // ② **真**把唯一来源 `config/appIdentity.json` 的 artifactPrefix 改回 `deepseek-chat`
+  //    → 门禁必 exit 1 且点到 P1（只证明 exit≠0 不够：判据被改窄、脚本恒红都会让 exit≠0 成立）；
+  // ③ 同一时刻 `node scripts/artifact-name.mjs`（CI 与发布脚本共用的取名入口）必须算不出名字
+  //    —— 这条钉住「名字真的从配置派生」，而不是脚本里另抄一份（抄了的话这里照样能出老名字）。
+  // 还原 → 必须 exit 0，且产物名回到 `jingluo-chat-<ver>.apk`。
+  'check:artifact-prefix': {
+    where: '.github/workflows/ci.yml',
+    kind: 'ci',
+    what: 'CI 把 config 的 artifactPrefix 改回 deepseek-chat → 门禁 exit 1 且报 P1、取名入口拒绝出名字；还原 → exit 0 且产物名 jingluo-chat-<ver>.apk（另有 --selftest 三种改坏方式）',
+    mention: /check-artifact-prefix\.mjs/,
+  },
   // 发布溯源门禁（v1.4.5 事故新建）：tag 指向 PR 分支提交 `d5391944`，而 main 上同题提交是 squash 后的
   // `b43d5559` —— `git merge-base --is-ancestor v1.4.5 origin/main` 退出码 1。当时 30+ 道门禁全绿，
   // 因为是它们看的都是「产物」与「工作区」，**没有一道问过「这个 tag 在不在 main 上」**。
@@ -936,6 +949,9 @@ test('N8 check:keystore：缺键 / 路径错 / 口令错 / 别名错 / 指纹不
     // #702：期望指纹的读取逻辑已抽到 `scripts/lib/certFingerprint.mjs`（唯一实现），临时树也必须有它。
     // 少了这一份，脚本会在 import 期就 MODULE_NOT_FOUND —— 那不是「判据坏了」，是树造得不完整。
     cpSync(path.join(ROOT, 'scripts/lib'), path.join(tree, 'scripts/lib'), { recursive: true })
+    // #836：`scripts/lib/appIdentity.mjs` 现在还 import `shared/artifact-name.mjs`（产物文件名拼法），
+    // 临时树同样要带上 —— 同一个「树造得不完整 → MODULE_NOT_FOUND」的坑，别再踩第二遍。
+    cpSync(path.join(ROOT, 'shared'), path.join(tree, 'shared'), { recursive: true })
   }
   const writeIdentity = (tree, sha) => {
     mkdirSync(path.join(tree, 'config'), { recursive: true })
