@@ -39,7 +39,10 @@ const SEMANTIC_KINDS = ['auth', 'quota', 'rate_limit', 'redeem', 'key', 'server'
 /** 归一结果里**必须**有的字段（少一个，界面就得回去看来源） */
 const REQUIRED_FIELDS = ['kind', 'code', 'message', 'retryable']
 /** 允许出现的附加字段（排查用；多出别的字段说明有人在往出口塞私有信息） */
-const OPTIONAL_FIELDS = ['status', 'envelope', 'i18nKey', 'reason', 'retryAfterMs', 'nonJson']
+// `showServerMessage`（#840）：只给「卡密兑换终态拒绝」置位 —— 那个码的 message 由后端按
+// `Accept-Language` 本地化，界面要直接显示它（关闭条件 1/3）。它不是排查字段，是上屏开关，
+// 所以带**固定语义**入白名单，而不是让每个码自己发明一个。
+const OPTIONAL_FIELDS = ['status', 'envelope', 'i18nKey', 'reason', 'retryAfterMs', 'nonJson', 'showServerMessage']
 
 /**
  * 五套信封 + 传输层的**实测样本**（`tests/fixtures/consume/*.json`，采集于 2026-11-20）。

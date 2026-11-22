@@ -41,7 +41,7 @@
  * 列表只渲染后 4 位（`maskCardNo`，与 `mask.ts` 同一口径）。
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { useTranslate } from '../../i18n/index.js'
+import { useTranslate, type TranslationKey } from '../../i18n/index.js'
 import type { Sub2ApiError } from '../../services/consume/errors.js'
 import type { ConsumeClient } from '../../services/consume/index.js'
 import { MY_ORDERS_DEFAULT_PAGE_SIZE, type ConsumeMyOrder } from '../../services/consume/orders.js'
@@ -70,7 +70,9 @@ type CardsView =
  * 兑换态：与 `ConsumeRedeemOutcome` 四态一一对应，外加 idle / busy。
  *
  * `processing` / `pending` / `failed` 都把消费层给的 `Sub2ApiError` 带在手上 ——
- * 上屏只认 `error.i18nKey`（#484 §4 第 4 条：`message` 是英文原句，绝不上屏）。
+ * 上屏默认只认 `error.i18nKey`（#484 §4 第 4 条：`message` 是英文原句，绝不上屏）；
+ * **唯一的例外是 #840 的卡密终态拒绝**（`showServerMessage`）：那个码的 `message` 由后端按
+ * `Accept-Language` 本地化，正是 #840 要求「409 直接显示响应 message」的那一条（见 `redeemErrorText`）。
  */
 type RedeemView =
   | { status: 'idle' }
@@ -342,9 +344,21 @@ export const MyCardsTab = ({
 }
 
 /**
+ * 兑换结果上屏的那一句。
+ *
+ * 默认按 `error.i18nKey` 出前端文案（服务端英文原句不上屏，#484 §4 第 4 条）；
+ * **#840 的例外**：卡密终态拒绝（`REDEEM_CODE_USED` / `REDEEM_CODE_ALREADY_REDEEMED` /
+ * `REDEEM_CODE_DISABLED` / `REDEEM_CODE_EXPIRED` / `REDEEM_CODE_NOT_FOUND`）带
+ * `showServerMessage`，那句 message 是后端按 `Accept-Language` 本地化好的，直接显示。
+ */
+const redeemErrorText = (t: (key: TranslationKey) => string, error: Sub2ApiError): string =>
+  error.showServerMessage === true && error.message.trim() !== '' ? error.message : t(error.i18nKey)
+
+/**
  * 兑换结果的四态反馈条。
  *
- * 单独拆出来只为一件事：**每一态只有一句话 + 最多两个动作**，不允许拼「服务端 message」，
+ * 单独拆出来只为一件事：**每一态只有一句话 + 最多两个动作**，不允许拼「服务端 message」
+ * （唯一例外：#840 的卡密终态拒绝，那句 `message` 是后端本地化好的，见 `redeemErrorText`），
  * 也不允许出现「重试」以外的手段（换卡、重复提交都要用户自己改主意）。
  */
 const RedeemFeedback = ({
@@ -401,7 +415,9 @@ const RedeemFeedback = ({
   }
   return (
     <div className={`${styles.feedback} ${styles.feedbackError}`} role="alert" data-testid={testId}>
-      <span>{t(view.error.i18nKey)}</span>
+      {/* #840：卡密的终态业务拒绝（含 409 REDEEM_CODE_USED / REDEEM_CODE_ALREADY_REDEEMED）
+          直接显示服务端本地化的 `message`，不再因为「历史里有这张卡」翻成「兑换成功」 */}
+      <span>{redeemErrorText(t, view.error)}</span>
       {view.error.kind === 'auth' && onNeedLogin ? (
         <div className={styles.feedbackActions}>
           <Button variant="outlined" size="m" onClick={onNeedLogin}>

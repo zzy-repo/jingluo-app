@@ -21,6 +21,11 @@
  *        （契约 §4 的异步形状）：同样先查一次 history，**只有核对确认到账才回 `redeemed`**，
  *        否则回 `processing`（不给 `canRetry` —— 服务端已经接了单，再打一枪就是重复兑换）。
  *
+ * #840 补的第 ⑦ 条（这条是重复兑换显示成功的根因）：
+ *   **`4xx` 一律是终态，不回查历史。** `409 REDEEM_CODE_USED`（别人已兑换 / 自己以前兑换）与
+ *   `409 REDEEM_CODE_ALREADY_REDEEMED`（本人已兑换）直接按失败返回、直接显示服务端 `message`。
+ *   历史里「有这张卡」证明不了「这一次成功」—— 它同样能证明「这张卡以前就兑换过」。
+ *
  * 另外两条：
  *   - 卡密原文只在请求体里出现，**不进日志、不进 query、不落任何上报字段**（只露尾 4 位由 UI 自己 mask）；
  *   - 到账语义是「余额 / 并发 / 订阅进了 sub2api 账号」，不是客户端账本 —— 客户端不缓存额度（#484 §4.5 第 10 条）；
@@ -28,7 +33,7 @@
  *     **不是**刷新某把 Key 的 `quota`（#676 §五 / §九 第 3 条：余额口径统一为元，Key 的旧额度已迁进 balance）。
  */
 
-import { isRedeemLocked, isRedeemUsed, type Sub2ApiError } from './errors.js'
+import { isRedeemLocked, type Sub2ApiError } from './errors.js'
 import type { ConsumeCallResult, ConsumeHttp } from './http.js'
 
 /** 兑换成功体（`redeem_handler.go` 的 `{message, type, value, new_balance?, new_concurrency?}`） */
@@ -63,7 +68,7 @@ export type ConsumeCreditedCheck = 'credited' | 'not_credited' | 'unknown'
 export type ConsumeRedeemOutcome =
   | {
       kind: 'redeemed'
-      /** 判定依据：`response` = 服务端直接回了到账；`history` = 查历史确认已到账（超时 / 409 / 202 受理态都走这条） */
+      /** 判定依据：`response` = 服务端直接回了到账；`history` = 查历史确认已到账（超时 / 连不上 / 5xx / 202 受理态走这条） */
       credited: 'response' | 'history'
       result: ConsumeRedeemResult
       /**
@@ -322,34 +327,31 @@ const interpret = async (
   // 「正在处理」不是失败：禁止提示换卡，也不重试（锁释放前再打只会更慢）
   if (isRedeemLocked(error)) {return { kind: 'processing', error }}
 
-  // 「已用过」可能是自己上一次成功（没有幂等键）→ 必须先查历史再定性
-  if (isRedeemUsed(error)) {
-    const verified = await verifyCredited(http, code)
-    if (verified === 'credited') {
-      return {
-        kind: 'redeemed',
-        credited: 'history',
-        result: { message: error.message, type: '', value: 0 },
-        refreshProfile: true,
-      }
-    }
-    return { kind: 'failed', error, verified }
+  /**
+   * **#840：4xx 一律是终态，不回查历史。**
+   *
+   * 历史回查原本是给「网络超时、请求其实成功了」兜底的，但它分不清两件事：
+   *   · 这次兑换成功了，只是响应丢了；
+   *   · 这张卡**以前**就兑换过，这次是重复点击。
+   * 两种情况下历史里都有这张卡，于是 409 `REDEEM_CODE_USED` 被当成「自己上次成功」判成功 ——
+   * 页面显示「兑换成功」，余额却没变。现在起：只有**没拿到结论**的失败才去核对
+   * （传输层失败 `status === 0` / 5xx），4xx（含 `REDEEM_CODE_USED` /
+   * `REDEEM_CODE_ALREADY_REDEEMED` / `REDEEM_CODE_DISABLED` / `REDEEM_CODE_EXPIRED` /
+   * `REDEEM_CODE_NOT_FOUND` / 429）直接按失败返回，界面显示服务端 `message`。
+   */
+  if (error.status !== 0 && error.status < 500) {
+    return { kind: 'failed', error, verified: 'unknown' }
   }
 
-  // 传输层 / 5xx：结果不可知 → 查历史，未到账才允许（由用户确认后）重试
-  if (error.retryable) {
-    const verified = await verifyCredited(http, code)
-    if (verified === 'credited') {
-      return {
-        kind: 'redeemed',
-        credited: 'history',
-        result: { message: error.message, type: '', value: 0 },
-        refreshProfile: true,
-      }
+  // 传输层（超时 / 连不上）/ 5xx：结果不可知 → 查历史，未到账才允许（由用户确认后）重试
+  const verified = await verifyCredited(http, code)
+  if (verified === 'credited') {
+    return {
+      kind: 'redeemed',
+      credited: 'history',
+      result: { message: error.message, type: '', value: 0 },
+      refreshProfile: true,
     }
-    return { kind: 'pending', error, verified, retried, canRetry: true }
   }
-
-  // 明确的业务失败（码不存在 / 过期 / 参数错）：不重试，也不去猜
-  return { kind: 'failed', error, verified: 'unknown' }
+  return { kind: 'pending', error, verified, retried, canRetry: true }
 }

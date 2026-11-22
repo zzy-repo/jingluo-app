@@ -1090,6 +1090,9 @@ export const zh = {
   consumeErrCardNotFound: '没找到这张卡密，请核对后再输入',
   consumeErrCardNotFoundOrExpired: '卡密不存在或已过期，请核对后再输入',
   consumeErrCardUsed: '这张卡密已经被用过了，额度没到账请联系客服',
+  // #840：本人重复兑换（服务端 message 优先上屏，这两句是 message 缺失时的兜底）
+  consumeErrCardAlreadyRedeemed: '你已兑换过这张卡密',
+  consumeErrCardDisabled: '该卡密已作废',
   consumeRedeemProcessing: '正在确认兑换结果',
   consumeErrInvitationInvalid: '邀请码无效，请核对后再填',
   consumeErrEmailCodeInvalid: '验证码不对或已过期，请重新获取',

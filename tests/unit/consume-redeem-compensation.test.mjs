@@ -16,7 +16,8 @@
 // 覆盖（每行注释标明它盯的是哪条分支）：
 //   R1 超时 + history 命中 → 不重发，按「已到账」返回     R2 超时 + history 未命中 → pending（不自动第二枪）
 //   R3 用户确认后重试一次 → 恰好 2 发，且第二发之前有核对  R4 history 本身失败 → 停手报「待确认」，仍不重发
-//   R5 409 已用过 + history 命中 → 是**自己上次成功**       R6 409 已用过 + history 未命中 → 明确「未到账」
+//   R5 409 已用过 + history 命中 → **#840 起仍是失败**（4xx 不回查历史，命中也不判成功）
+//   R6 409 已用过（历史里没有 / 有）→ 一律失败、不重试、不查历史
 //   R7 明确的业务失败（卡密不存在）→ 不查历史、不重试、也不给 pending
 //   R8 202 受理态（`{code:0,message:"accepted"}` / `status:"processing"`）→ **不是** redeemed：
 //      先查一次 history，未命中给 processing（不 failed、不带 canRetry）
@@ -118,7 +119,7 @@ const ROWS = [
   },
   {
     id: 'R5',
-    what: '409 REDEEM_CODE_USED + history 命中 → 是**自己上次成功**，按已到账返回，不是「兑换失败」',
+    what: '#840：409 REDEEM_CODE_USED + history 命中 → **仍是失败**（历史里有这张卡证明不了「这一次成功」）',
     run: async () => {
       const scene = scenario({
         post: () => jsonReply(409, { code: 409, message: 'code already used', reason: 'REDEEM_CODE_USED' }),
@@ -126,16 +127,16 @@ const ROWS = [
       })
       const outcome = await redeemCode(scene.http, { code: CODE })
       assert.equal(scene.countOf('POST'), 1)
-      assert.deepEqual(scene.sequence(), [REDEEM_POST, HISTORY_GET], '409 也不许直接判失败：必须先核对')
-      assert.equal(outcome.kind, 'redeemed')
-      assert.equal(outcome.credited, 'history')
-      assert.equal(outcome.refreshProfile, true, '兑换成功后要重拉 /user/profile 刷余额（#676 §五）')
-      assert.equal(outcome.refreshUsage, undefined, '旧字段名 refreshUsage 已废弃：它指的是刷 /v1/usage，口径是 Key 的 quota')
+      assert.deepEqual(scene.sequence(), [REDEEM_POST], '4xx 是终态：一次 history 都不许发（重复兑换被误判成功的根因）')
+      assert.equal(outcome.kind, 'failed')
+      assert.notEqual(outcome.kind, 'redeemed')
+      assert.equal(outcome.error.code, 'REDEEM_CODE_USED')
+      assert.equal('refreshProfile' in outcome, false, '失败不重拉 /user/profile（余额没变，重拉只会让人以为到了）')
     },
   },
   {
     id: 'R6',
-    what: '409 REDEEM_CODE_USED + history 未命中 → 明确「未到账」（verified:"not_credited"），不重试',
+    what: '409 REDEEM_CODE_USED + history 未命中 → 同样直接失败（没核对过，就不能声称「未到账」）',
     run: async () => {
       const scene = scenario({
         post: () => jsonReply(409, { code: 409, message: 'code already used', reason: 'REDEEM_CODE_USED' }),
@@ -143,8 +144,9 @@ const ROWS = [
       })
       const outcome = await redeemCode(scene.http, { code: CODE })
       assert.equal(scene.countOf('POST'), 1, '409 是终态：重发只会再拿一个 409')
+      assert.deepEqual(scene.sequence(), [REDEEM_POST])
       assert.equal(outcome.kind, 'failed')
-      assert.equal(outcome.verified, 'not_credited', '结论来自核对，不是凭 409 猜的')
+      assert.equal(outcome.verified, 'unknown', '没查历史就没有到账结论，不许写成 not_credited')
       assert.equal(outcome.kind === 'failed' ? outcome.error.code : '', 'REDEEM_CODE_USED')
     },
   },

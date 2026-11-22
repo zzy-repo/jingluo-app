@@ -1090,6 +1090,9 @@ export const en = {
   consumeErrCardNotFound: 'No such card key. Check it and try again.',
   consumeErrCardNotFoundOrExpired: 'That card key does not exist or has expired. Check it and try again.',
   consumeErrCardUsed: 'This card key has already been used. Contact support if the balance did not arrive.',
+  // #840: redeem-by-self duplicate (the server message is shown first; these are the fallbacks)
+  consumeErrCardAlreadyRedeemed: 'You have already redeemed this card key.',
+  consumeErrCardDisabled: 'This card key has been voided.',
   consumeRedeemProcessing: 'Confirming the redemption result',
   consumeErrInvitationInvalid: 'Invalid invitation code. Check it and try again.',
   consumeErrEmailCodeInvalid: 'The verification code is wrong or has expired. Request a new one.',

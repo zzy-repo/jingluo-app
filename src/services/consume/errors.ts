@@ -92,6 +92,8 @@ export type ConsumeMessageKey =
   | 'consumeErrCardNotFound'
   | 'consumeErrCardNotFoundOrExpired'
   | 'consumeErrCardUsed'
+  | 'consumeErrCardAlreadyRedeemed'
+  | 'consumeErrCardDisabled'
   | 'consumeRedeemProcessing'
   | 'consumeErrInvitationInvalid'
   | 'consumeErrEmailCodeInvalid'
@@ -138,6 +140,15 @@ export type Sub2ApiError = {
   i18nKey: ConsumeMessageKey
   /** 响应不是 JSON（text/plain）：调用方据此知道「不要指望有 code」 */
   nonJson?: true
+  /**
+   * **这条错误的 `message` 可以直接上屏**（#840）。
+   *
+   * 只对卡密兑换的终态业务拒绝置位：后端把 `REDEEM_CODE_*` 的 `message` 按请求的
+   * `Accept-Language` 本地化（「你已兑换过这张卡密」/「该卡密已被兑换」），比前端按码猜一句更准，
+   * 也正是 #840 关闭条件 1/3 要求「直接显示响应 `message`」的那一条。
+   * 其余错误仍只按 `i18nKey` 出文案（服务端英文句子随版本改，不上屏）。
+   */
+  showServerMessage?: true
 }
 
 /** 错误码 → `{kind, i18nKey}` 映射表（面板 `reason`、中间件字符串、网关小写码共用一张） */
@@ -186,6 +197,11 @@ export const CONSUME_ERROR_KEYS: Record<string, { kind: ConsumeErrorKind; i18nKe
   REDEEM_CODE_NOT_FOUND: { kind: 'redeem', i18nKey: 'consumeErrCardNotFound' },
   REDEEM_CODE_EXPIRED: { kind: 'redeem', i18nKey: 'consumeErrCardNotFoundOrExpired' },
   REDEEM_CODE_USED: { kind: 'redeem', i18nKey: 'consumeErrCardUsed' },
+  // #840：本人重复兑换（「别人已兑换过」才是 USED）。后端为它单开了一个码，
+  // 前端必须按**失败**展示，不许再靠「历史里有这张卡」兜成成功。
+  REDEEM_CODE_ALREADY_REDEEMED: { kind: 'redeem', i18nKey: 'consumeErrCardAlreadyRedeemed' },
+  // #840 补齐：已作废（表里原有的 4 个 409/404 码之一，此前映射表漏了，会掉进 HTTP 兜底文案）
+  REDEEM_CODE_DISABLED: { kind: 'redeem', i18nKey: 'consumeErrCardDisabled' },
   REDEEM_CODE_LOCKED: { kind: 'redeem', i18nKey: 'consumeRedeemProcessing' },
   REDEEM_RATE_LIMITED: { kind: 'rate_limit', i18nKey: 'consumeErrRateLimited' },
   API_KEY_EXISTS: { kind: 'key', i18nKey: 'consumeErrKeyExists' },
@@ -200,6 +216,18 @@ export const CONSUME_ERROR_KEYS: Record<string, { kind: ConsumeErrorKind; i18nKe
   // 不许掉到 `consumeErrUnknown`（「这次请求没成功」= 用户照着做也没用）。
   EMAIL_VERIFY_REQUIRED: { kind: 'auth', i18nKey: 'consumeErrEmailVerifyRequired' },
 }
+
+/**
+ * 兑换的**终态业务拒绝**（#840）：这些码的 `message` 后端已按 `Accept-Language` 本地化，直接上屏。
+ * `REDEEM_CODE_LOCKED`（「正在处理」）**不在**这张表里 —— 它不是失败，界面按 `consumeRedeemProcessing` 出。
+ */
+const REDEEM_TERMINAL_CODES = new Set([
+  'REDEEM_CODE_USED',
+  'REDEEM_CODE_ALREADY_REDEEMED',
+  'REDEEM_CODE_DISABLED',
+  'REDEEM_CODE_EXPIRED',
+  'REDEEM_CODE_NOT_FOUND',
+])
 
 /** 缺口记录：映射表覆盖不到的服务端码（#484 §四「覆盖不到时打日志并上报缺口」） */
 export type ConsumeErrorGap = {
@@ -395,10 +423,11 @@ export const parseSub2ApiError = (
   }
 
   const kind = mapped?.kind ?? kindFromStatus(raw.status)
+  const errorCode = code === '' ? `HTTP_${raw.status}` : code
   return {
     kind,
     // 面板整数 code 没带 reason 时，code 用状态码表示（`HTTP_404`），不把 404 当业务码
-    code: code === '' ? `HTTP_${raw.status}` : code,
+    code: errorCode,
     reason,
     message: message || raw.text.trim().slice(0, 200),
     status: raw.status,
@@ -407,6 +436,10 @@ export const parseSub2ApiError = (
     envelope,
     ...(retryAfterMs === undefined ? {} : { retryAfterMs }),
     i18nKey: mapped?.i18nKey ?? keyFromStatus(raw.status),
+    // #840：兑换的终态业务拒绝上屏后端本地化 message（见 Sub2ApiError.showServerMessage）
+    ...(REDEEM_TERMINAL_CODES.has(errorCode) && raw.status >= 400 && raw.status < 500 && message !== ''
+      ? { showServerMessage: true as const }
+      : {}),
   }
 }
 
@@ -426,5 +459,10 @@ export const isSessionError = (error: Sub2ApiError): boolean =>
 /** 卡密「正在处理」不是失败（#484 §4.4：禁止提示换卡） */
 export const isRedeemLocked = (error: Sub2ApiError): boolean => error.code === 'REDEEM_CODE_LOCKED'
 
-/** 卡密「已用过」：可能是自己上一次成功，文案必须提示「若已到账请刷新余额」 */
+/**
+ * 卡密「已用过」（别人已兑换，或这张卡以前就兑换过）。
+ *
+ * **#840 起它只是「认出这个码」，不再触发历史回查**：`redeem.ts` 对 4xx 一律按终态失败返回
+ * （回查分不清「本次成功但响应丢了」和「这张卡以前就兑换过」，正是重复兑换显示成功的根因）。
+ */
 export const isRedeemUsed = (error: Sub2ApiError): boolean => error.code === 'REDEEM_CODE_USED'

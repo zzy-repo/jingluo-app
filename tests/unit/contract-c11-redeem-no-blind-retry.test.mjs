@@ -14,13 +14,17 @@
 // 推论（Y8 锁的那条）：`202 {code:0,message:"accepted"}` / `status:"accepted|processing|pending"`
 // 是「结果不确定」的一种，**2xx ≠ 到账**；没经过 history 核对就回「已到账」同样违反 ②。
 //
+// **#840 对 ② 的范围做了收窄**：② 只适用于「结果不确定」的那几种（超时 / 连不上 / 5xx / 202 受理态）。
+// `4xx` 是**确定**的结论（服务端明确拒绝了），一律终态失败、不回查历史 —— 因为「历史里有这张卡」
+// 分不清「本次成功但响应丢了」和「这张卡以前就兑换过」，正是重复兑换被判成功的根因。Y7 锁这一条。
+//
 // 与 `consume-redeem-compensation.test.mjs`（L0）的分工：L0 钉的是**当前实现**的分支走法，
 // 这里钉的是**接口承诺**（换实现也要过）。所以本文件按「调用方观察到的结论 + 调用序列」写，
 // 不碰内部函数名，也不断言四态之外的东西。
 //
 // 负向验证（本单实测）：把 `redeemCode` 里的「先 history 再确认重发」改成「先重试」→ Y1/Y6 红；
-// 把 409 直接判成失败（不查 history）→ Y7 红；把 `interpret` 的 pending 改成 failed → Y4/Y5 红；
-// 把 202 直接判成 redeemed（不查 history）→ Y8 红。
+// 把 `interpret` 的 pending 改成 failed → Y4/Y5 红；把 202 直接判成 redeemed（不查 history）→ Y8 红；
+// 把 `4xx` 也塞回「先查 history 再定性」→ Y7 红（#840 的回归点）。
 //
 //   node --test tests/unit/contract-c11-redeem-no-blind-retry.test.mjs
 import assert from 'node:assert/strict'
@@ -94,7 +98,8 @@ const ROWS = [
     id: 'Y3',
     what: '核对命中 → 结论「已到账」，并提示刷新余额（界面不需要再发一次兑换）',
     run: async () => {
-      for (const first of ['timeout', '5xx', '409-used']) {
+      // #840 起 409 不再回查历史，所以「核对命中」只发生在结果不确定的那两种首发上
+      for (const first of ['timeout', '5xx']) {
         const { outcome, postCount } = await runScene({ first, history: () => jsonReply(200, HISTORY_HIT) })
         assert.equal(postCount, 1, `${first}：核对命中时不许重发`)
         assert.equal(outcome.kind, 'redeemed', `${first}：核对命中就是已到账`)
@@ -132,7 +137,8 @@ const ROWS = [
     what: '顺序承诺：第二次 POST 之前**一定**有一次 history 查询（6 个场景矩阵逐条断言序列）',
     run: async () => {
       const matrix = []
-      for (const first of ['timeout', '5xx', '409-used']) {
+      // #840：409 不回查历史（4xx 是终态），所以「第二发前必有核对」只在结果不确定的首发上有意义
+      for (const first of ['timeout', '5xx']) {
         for (const history of [() => jsonReply(200, HISTORY_HIT), () => jsonReply(200, HISTORY_MISS)]) {
           matrix.push({ first, history })
         }
@@ -150,19 +156,22 @@ const ROWS = [
   },
   {
     id: 'Y7',
-    what: '409 已用过：必须核对后才给结论（命中→已到账；未命中→明确未到账，不说「失败原因不明」）',
+    what: '#840：409 已用过 = 确定结论 → **不回查历史**、不判成功、不重试；服务端 message 可上屏',
     run: async () => {
+      // 关键回归：历史里**有**这张卡（旧实现正是靠它翻成「已到账」）也不许判成功
       const hit = await runScene({ first: '409-used', history: () => jsonReply(200, HISTORY_HIT) })
-      assert.equal(hit.postCount, 1)
-      assert.deepEqual(hit.sequence, [POST, HISTORY], '409 也不许直接判失败：先核对')
-      assert.equal(hit.outcome.kind, 'redeemed')
+      assert.equal(hit.postCount, 1, '409 是终态，重发只会再拿一个 409')
+      assert.deepEqual(hit.sequence, [POST], '4xx 一律不回查历史：#840 的根因就是这一步')
+      assert.equal(hit.outcome.kind, 'failed', '别人已兑换 / 自己以前兑换 = 失败，不是「已到账」')
+      assert.equal(hit.outcome.error.code, 'REDEEM_CODE_USED')
+      assert.equal(hit.outcome.error.showServerMessage, true, '界面显示后端本地化的 message')
+      assert.equal(hit.outcome.error.i18nKey, 'consumeErrCardUsed', 'message 缺失时的兜底文案')
 
+      // 历史不命中（老实现给 pending / failed-verified）也不许再去猜：序列仍然只有一发
       const miss = await runScene({ first: '409-used', history: () => jsonReply(200, HISTORY_MISS) })
-      assert.equal(miss.postCount, 1, '409 是终态，重发只会再拿一个 409')
-      assert.deepEqual(miss.sequence, [POST, HISTORY])
+      assert.deepEqual(miss.sequence, [POST])
       assert.equal(miss.outcome.kind, 'failed')
-      assert.equal(miss.outcome.verified, 'not_credited', '结论来自核对结果，不是凭 409 猜')
-      assert.equal(miss.outcome.error.i18nKey, 'consumeErrCardUsed', '文案要提示「若余额已增加无需重复兑换」')
+      assert.equal(miss.outcome.verified, 'unknown', '没核对过就不许声称「未到账」')
     },
   },
   {

@@ -61,7 +61,24 @@ export type ConsumeMyOrder = {
   paymentType: string
   /** 订单对应的卡号；**只有 `status=COMPLETED` 才可能有**，缺失 / 空串一律 null */
   rechargeCode: string | null
+  /**
+   * 卡密的兑换状态（#840）：`issued` 已发放未兑换、`redeemed` 已兑换、
+   * `void` 已作废、`expired` 已过期。
+   *
+   * 契约上这是**可选**字段（#834 的 orders/my 原本不回答「兑没兑过」，#840 起才补上），
+   * 所以老服务端 / 认不出的值时**这个键根本不出现**（不是 `null`）—— 与 `redeemable` 同一口径：
+   * 「服务端没表态」就少一个键，界面沿用「有卡号就能兑」的老判定（`isOrderRedeemable`）。
+   */
+  redeemState?: MyOrderRedeemState
+  /**
+   * 服务端说的「这张卡现在可以直接兑换」。
+   * **契约里只在 `true` 时出现**；缺失（`undefined`）= 服务端不表态，由界面按 `redeemState` 判。
+   */
+  redeemable?: boolean
 }
+
+/** 卡密兑换状态（与后端 `redeem_state` 一一对应，#840） */
+export type MyOrderRedeemState = 'issued' | 'redeemed' | 'void' | 'expired'
 
 export type ConsumeMyOrdersPage = {
   items: ConsumeMyOrder[]
@@ -85,6 +102,14 @@ export const MY_ORDER_COMPLETED = 'COMPLETED'
 
 /** 每页默认条数（服务端默认也是 20） */
 export const MY_ORDERS_DEFAULT_PAGE_SIZE = 20
+
+/** 认识的 `redeem_state`（#840）：认不出的值一律 `null`，当成「服务端没表态」，不猜 */
+export const MY_ORDER_REDEEM_STATES: readonly MyOrderRedeemState[] = [
+  'issued',
+  'redeemed',
+  'void',
+  'expired',
+]
 
 /** 服务端上限：超过一律夹到 100（与 `keys` / `usage` 的分页口径一致） */
 export const MY_ORDERS_MAX_PAGE_SIZE = 100
@@ -221,6 +246,39 @@ const clampPageSize = (value: unknown): number => {
 export const isCompletedOrder = (order: Pick<ConsumeMyOrder, 'status'>): boolean =>
   order.status.trim().toUpperCase() === MY_ORDER_COMPLETED
 
+/** `redeem_state` 解析：只认四个已知值（顺序即优先级不需要 —— 它是枚举，不是标志位），别的一律 null */
+const parseRedeemState = (raw: string): MyOrderRedeemState | null => {
+  const normalized = raw.trim().toLowerCase()
+  return MY_ORDER_REDEEM_STATES.find((state) => state === normalized) ?? null
+}
+
+/**
+ * 这张卡现在能不能「去兑换」（#840 关闭条件 5）。
+ *
+ * 口径（与后端契约 `redeem_state` / `redeemable` 一一对应）：
+ *   · `void`（已作废）/ `expired`（已过期）/ `redeemed`（已兑换）→ **一概不给兑换入口**；
+ *   · `redeemable === true`（服务端明确说能兑）→ 给；
+ *   · `redeemable === false`（服务端明确说不能兑）→ 不给；
+ *   · 两个字段都没有（老服务端 / #834 时期的 response）→ 沿用「有卡号就能兑」的老判定，
+ *     否则这条改动会把所有未兑换的卡都锁死；
+ *   · 没有卡号（非 COMPLETED 订单）→ 不给（本来也没有可提交的东西）。
+ */
+export const isOrderRedeemable = (order: ConsumeMyOrder): boolean => {
+  if (rechargeCodeOf(order) === '') {
+    return false
+  }
+  if (order.redeemState === 'void' || order.redeemState === 'expired' || order.redeemState === 'redeemed') {
+    return false
+  }
+  if (order.redeemable === true) {
+    return true
+  }
+  if (order.redeemable === false) {
+    return false
+  }
+  return true
+}
+
 /**
  * 单条订单解析：字段名以 snake_case 为准（服务端实际给的），camelCase 兜底。
  *
@@ -240,6 +298,10 @@ export const parseMyOrder = (value: unknown): ConsumeMyOrder | null => {
   const rawCode = readString(record, ['recharge_code', 'rechargeCode'])
   const amountYuan = readNumber(record, ['amount', 'amount_yuan', 'amountYuan'])
   const payAmountYuan = readNumber(record, ['pay_amount', 'payAmount'])
+  // #840：`redeemable` 契约上是「只在 true 时出现」；显式 false 也认，**缺失留 undefined**
+  // （把「缺失」当 false 会让所有未兑换的卡都长不出兑换按钮）
+  const redeemable = record.redeemable === true ? true : record.redeemable === false ? false : undefined
+  const redeemState = parseRedeemState(readString(record, ['redeem_state', 'redeemState']))
   return {
     outTradeNo: readString(record, ['out_trade_no', 'outTradeNo']),
     status,
@@ -252,6 +314,9 @@ export const parseMyOrder = (value: unknown): ConsumeMyOrder | null => {
     // 客户端这边也不允许别的状态带卡号（真出现就是服务端 bug，按「还没有卡」处理更安全 ——
     // 既不会把没付钱的卡展示给用户，也不会让自动兑现去兑一张未完成的单）
     rechargeCode: rawCode === '' || !isCompletedOrder({ status }) ? null : rawCode,
+    // #840：`redeem_state` 认不出 / 缺失 → 不带这个键（老服务端不回答这件事，别假装它答了 null）
+    ...(redeemState === null ? {} : { redeemState }),
+    ...(redeemable === undefined ? {} : { redeemable }),
   }
 }
 

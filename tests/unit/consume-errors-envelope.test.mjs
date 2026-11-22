@@ -210,12 +210,13 @@ const MAPPING_ROWS = [
   },
   {
     id: 'M4',
-    what: 'REDEEM_CODE_USED → consumeErrCardUsed（可能是自己上次成功 → 文案要提示核对余额）',
+    what: 'REDEEM_CODE_USED → consumeErrCardUsed + message 可上屏（#840：它只是「认出这个码」，不再触发历史回查）',
     run: () => {
       const error = parseSub2ApiError(jsonRaw(409, { code: 409, message: 'code already used', reason: 'REDEEM_CODE_USED' }))
       assert.equal(error.kind, 'redeem')
       assert.equal(error.i18nKey, 'consumeErrCardUsed')
-      assert.equal(isRedeemUsed(error), true, 'redeem.ts 靠它走「先查历史」而不是直接判失败')
+      assert.equal(isRedeemUsed(error), true, '只是错误码识别用；4xx 的走向由 redeem.ts 统一按终态失败处理')
+      assert.equal(error.showServerMessage, true, '后端本地化的 message 直接上屏（#840 关闭条件 1）')
       assert.equal(error.retryable, false)
     },
   },

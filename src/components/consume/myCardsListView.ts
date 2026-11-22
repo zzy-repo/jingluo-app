@@ -25,6 +25,7 @@ import { createElement, type ReactNode } from 'react'
 import type { TranslationKey } from '../../i18n/index.js'
 import {
   isCompletedOrder,
+  isOrderRedeemable,
   rechargeCodeOf,
   type ConsumeMyOrder,
 } from '../../services/consume/orders.js'
@@ -78,6 +79,8 @@ const cardRow = (props: CardsListViewProps, order: ConsumeMyOrder, index: number
   const { t, c, Button, busy, onCopy, onRedeem } = props
   const code = rechargeCodeOf(order)
   const completed = isCompletedOrder(order)
+  // #840 关闭条件 5：`issued` + `redeemable` 才给「去兑换」；`void` / `expired` / `redeemed` 不给
+  const canRedeem = isOrderRedeemable(order)
   const statusText = t(orderStatusKeyOf(order.status))
   const amountText = formatCurrency(order.amountYuan)
   const timeText = formatDateTime(order.createdAt)
@@ -132,9 +135,10 @@ const cardRow = (props: CardsListViewProps, order: ConsumeMyOrder, index: number
             },
             t('oursPayRecordsCopyCard')
           ),
-      code === ''
-        ? null
-        : createElement(
+      // #840：只有「还能兑」的卡才长这个按钮 —— `void`（已作废）/ `expired`（已过期）/
+      // `redeemed`（已兑换）/ 服务端说 `redeemable:false` 的，一概不出现（关闭条件 5）
+      canRedeem
+        ? createElement(
             Button,
             {
               key: 'redeem',
@@ -146,6 +150,7 @@ const cardRow = (props: CardsListViewProps, order: ConsumeMyOrder, index: number
             },
             t('oursPurchasesGoRedeem')
           )
+        : null
     )
   )
 }
