@@ -3,8 +3,8 @@
  *
  * 链路（#484 §3.5，一条都不能省，也都不能自己造）：
  *
- *   套餐列表  `GET /api/plans`     （`fetchPlans`，全线下架时返回空表 = 正常状态，不是失败）
- *   下单      `GET /api/pay-link`  （`fetchPayLink`，**每次现取**；我们不建单、不读 302 Location）
+ *   下单      `GET /api/v1/pay-link`（`fetchPayLink`，新网关，base = `consume.baseUrl`，**每次现取**；
+ *             我们不建单、不读 302 Location；#861 起不再请求已下线的 `/api/plans`）
  *   收款页    `openPayLinkInApp()` （App 内 popover 打开；Web / 没有插件 → 返回 false，界面给可读提示）
  *   关页后    `onPurchased()`      → 回到 Tab 1 并重新拉订单（卡密由小铺直接发到订单上）
  *
@@ -18,17 +18,10 @@
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslate, type TranslationKey } from '../../i18n/index.js'
-import { fetchPayLink, fetchPlans, formatPlanPrice } from '../../services/ours/api.js'
-import type { OursPlan } from '../../services/ours/api.js'
+import { fetchPayLink } from '../../services/ours/api.js'
 import { httpTransport, openPayLinkInApp } from '../../services/ours/transport.js'
 import { Button } from '../base/Button.js'
 import styles from './AccountConsume.module.css'
-
-type PlansView =
-  | { status: 'loading' }
-  | { status: 'ready'; plans: OursPlan[] }
-  | { status: 'empty' }
-  | { status: 'error'; messageKey: TranslationKey }
 
 type PayView = { status: 'idle' } | { status: 'busy' } | { status: 'error'; messageKey: TranslationKey }
 
@@ -42,7 +35,6 @@ export type BuyTabProps = {
 
 export const BuyTab = ({ onPurchased }: BuyTabProps) => {
   const t = useTranslate()
-  const [plans, setPlans] = useState<PlansView>({ status: 'loading' })
   const [pay, setPay] = useState<PayView>({ status: 'idle' })
   // 收款页是外部浏览器视图：同一时刻只允许一条「取地址 + 打开」在飞，避免连点开出两个收款页
   const payBusyRef = useRef(false)
@@ -54,27 +46,6 @@ export const BuyTab = ({ onPurchased }: BuyTabProps) => {
       aliveRef.current = false
     }
   }, [])
-
-  const loadPlans = useCallback(async () => {
-    setPlans({ status: 'loading' })
-    const state = await fetchPlans(httpTransport)
-    if (!aliveRef.current) {
-      return
-    }
-    if (state.status === 'success') {
-      setPlans({ status: 'ready', plans: state.plans })
-      return
-    }
-    if (state.status === 'empty') {
-      setPlans({ status: 'empty' })
-      return
-    }
-    setPlans({ status: 'error', messageKey: state.messageKey })
-  }, [])
-
-  useEffect(() => {
-    void loadPlans()
-  }, [loadPlans])
 
   /** 取地址 → App 内打开 → 关页回调。地址每次现取，不在客户端缓存（小铺随时换链接） */
   const openCheckout = useCallback(async () => {
@@ -120,57 +91,15 @@ export const BuyTab = ({ onPurchased }: BuyTabProps) => {
     <div className={styles.body} data-testid="account-consume-buy">
       <p className={styles.hint}>{t('oursPayHint')}</p>
 
-      {plans.status === 'loading' ? (
-        <div className={styles.state} aria-busy>
-          <p className={styles.stateText}>{t('oursPlansLoading')}</p>
+      <div className={styles.state}>
+        {/* 套餐全线下架是正常状态（#331）：只剩一个入口，说清「去哪儿买」 */}
+        <p className={styles.stateText}>{t('oursPayEmpty')}</p>
+        <div className={styles.stateActions}>
+          <Button size="m" data-testid="account-consume-buy-open" disabled={payBusy} onClick={() => void openCheckout()}>
+            {payBusy ? t('oursPayBusy') : t('oursPayAction')}
+          </Button>
         </div>
-      ) : null}
-
-      {plans.status === 'error' ? (
-        <div className={styles.state}>
-          <p className={styles.stateText}>{t(plans.messageKey)}</p>
-          <div className={styles.stateActions}>
-            <Button variant="outlined" size="m" onClick={() => void loadPlans()}>
-              {t('oursPurchasesRetry')}
-            </Button>
-          </div>
-        </div>
-      ) : null}
-
-      {plans.status === 'empty' ? (
-        <div className={styles.state}>
-          {/* 套餐全线下架是正常状态（#331）：说清「去哪儿买」，而不是报「加载失败」 */}
-          <p className={styles.stateText}>{t('oursPayEmpty')}</p>
-          <div className={styles.stateActions}>
-            <Button size="m" data-testid="account-consume-buy-open" disabled={payBusy} onClick={() => void openCheckout()}>
-              {payBusy ? t('oursPayBusy') : t('oursPayAction')}
-            </Button>
-          </div>
-        </div>
-      ) : null}
-
-      {plans.status === 'ready' ? (
-        <ul className={styles.plans}>
-          {plans.plans.map((plan) => (
-            <li key={plan.id} className={styles.plan} data-testid="account-consume-buy-plan">
-              <span className={styles.planText}>
-                <span className={styles.planName}>{plan.name}</span>
-                {/* 计量单位统一成「元」：只显示 `¥39.00`（`formatPlanPrice` 是 apia 侧唯一的价格格式器，
-                    不在界面里再写一份 `toFixed`），不写「积分」也不出现 `$`。 */}
-                <span className={styles.planMeta}>{formatPlanPrice(plan)}</span>
-              </span>
-              <Button
-                size="m"
-                disabled={payBusy}
-                data-testid="account-consume-buy-open"
-                onClick={() => void openCheckout()}
-              >
-                {payBusy ? t('oursPayBusy') : t('oursBuyAction')}
-              </Button>
-            </li>
-          ))}
-        </ul>
-      ) : null}
+      </div>
 
       {pay.status === 'error' ? (
         <div className={`${styles.feedback} ${styles.feedbackError}`} role="alert" data-testid="account-consume-buy-status">

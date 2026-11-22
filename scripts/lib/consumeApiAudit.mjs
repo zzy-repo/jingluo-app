@@ -52,8 +52,9 @@ export const PATH_WHITELIST = [
   // 列表空白且自动兑现一个请求都发不出去。新接口是 JWT 面板通道，与 /api/v1/redeem 同一条。
   '/api/v1/payment/orders/my',
   // §3.5 支付（apia）：只负责买卡
-  '/api/plans',
-  '/api/pay-link',
+  // #861：收款页地址改走新网关（`consume.baseUrl`）的 `/api/v1/pay-link`（无需登录，GET）；
+  // 旧 apia 的 `/api/plans`（已下线）与 `/api/pay-link`（旧 cardpay，502）退出白名单
+  '/api/v1/pay-link',
   '/api/orders',
   '/api/card/trail',
   // §3.6 网关（聊天）：模型调用「及各家兼容路径」，取值来自 src/services/api/providers.ts

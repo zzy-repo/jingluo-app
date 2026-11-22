@@ -7,10 +7,11 @@
  * 「发了什么请求、怎么解释响应」。
  *
  * 服务端契约（2026-11-19 实测，地址取 `__ENDPOINTS__.pay.baseUrl`，全站 HTTPS）：
- *   GET  /api/plans                      → { plans: [{ id, name, price, points, currency, enabled }] }
- *                                          价格与积分由服务端决定，App 不得硬编码
- *                                          （Issue #331：套餐全线下架，现返回 {"plans": []}）
- *   GET  /api/pay-link                   → { ok, url, note } —— 联动小铺固定收款页地址
+ *   GET  /api/v1/pay-link                → { ok, url, note } —— 联动小铺固定收款页地址
+ *                                          （#861：旧 apia 的 /api/pay-link 已 502；新网关地址取
+ *                                          `__ENDPOINTS__.consume.baseUrl`，不是 pay.baseUrl；
+ *                                          503 {code:'PAY_LINK_NOT_CONFIGURED'} = 收款页地址未配置）
+ *   价格与积分的格式化（formatPlanPrice / formatPlanMeta）保留；`/api/plans` 已不再调用（#861）
  *   POST /api/redeem {card_no, api_key, request_id}
  *                                        → { ok, card_no, points, api_key, sync }
  *                                          202 CREDIT_PENDING 是「处理中」，不是失败
@@ -49,7 +50,6 @@ export const OURS_API_BASE = __ENDPOINTS__.pay.baseUrl
 
 /** 各接口的读超时（毫秒）；超时与网络错误在状态里分开，文案也不同 */
 export const OURS_TIMEOUTS = {
-  plans: 10000,
   keyProbe: 10000,
   redeem: 15000,
   /** Issue #331：收款页地址是一个只读的小接口，给 10s 足够（超时与网络错误分开给文案） */
@@ -112,6 +112,8 @@ export type OursMessageKey =
   | 'oursErrPlanMissing'
   /** Issue #331：收款通道（联动小铺收款页）不可用 / 没能在 App 内打开 */
   | 'oursPayUnavailable'
+  /** Issue #861：新网关 503 PAY_LINK_NOT_CONFIGURED（后台还没配收款页地址） */
+  | 'oursPayNotConfigured'
   | 'oursPayOpenFailed'
   | 'oursErrCustomerNeedsKey'
   | 'oursErrNetwork'
@@ -281,16 +283,6 @@ export type OursPlan = {
   enabled: boolean
 }
 
-export type OursPlansState =
-  | { status: 'success'; plans: OursPlan[] }
-  /**
-   * 套餐列表为空。**不是失败**：Issue #331 之后套餐已全线下架，服务端就是返回 `{"plans": []}`，
-   * 把它报成「加载失败」会让用户以为是自己网络坏了、反复重试。
-   * 调用方应当展示「套餐列表已下架，点『前往购买』到联动小铺选购」这类空态，购买入口照常可用。
-   */
-  | { status: 'empty' }
-  | { status: 'error'; messageKey: OursMessageKey }
-
 /**
  * 价格文案：`¥3.00`。币种按后端下发的 `currency` **按值渲染**（`CNY`→`¥`，认不得的退化成
  * `3.00 ABC`），符号映射只在 `src/utils/money.ts` 的 `CURRENCY_SYMBOLS` 里写一份。
@@ -301,89 +293,20 @@ export const formatPlanPrice = (plan: OursPlan): string => formatMoney(plan.pric
 export const formatPlanMeta = (plan: OursPlan, unit: string): string =>
   `${formatPlanPrice(plan)} · ${formatPoints(plan.points, unit)}`
 
-const parsePlan = (value: unknown): OursPlan | null => {
-  const record = asRecord(value)
-  const id = readString(record, 'id')
-  if (id === '' || record === null) {
-    return null
-  }
-  return {
-    id,
-    name: readString(record, 'name') || id,
-    price: readNumber(record, 'price') ?? 0,
-    points: readNumber(record, 'points') ?? readNumber(record, 'quota') ?? 0,
-    currency: readString(record, 'currency') || 'CNY',
-    enabled: record.enabled !== false,
-  }
-}
-
-/** 拉套餐：GET /api/plans（价格与积分以服务端为准，前端不写死） */
-export const fetchPlans = async (transport: OursTransport): Promise<OursPlansState> => {
-  const startedAt = Date.now()
-  /** 最近一次拿到 HTTP 状态码（连不上 / 超时没有状态码，就不写这个键） */
-  let httpStatus: number | undefined
-  /**
-   * 出口埋点（#312）：401 / 503 / 空列表 / JSON 坏在界面上全收敛成一句 `oursPlansFailed`，
-   * 只有日志能分开「套餐下架（empty）」与「真的拉失败了（error）」。失败另记一条 warning
-   * 带 `reason`（= 文案 key），这样「是哪种失败」不用再从 msg 里猜。
-   */
-  const settle = (state: OursPlansState): OursPlansState => {
-    const base = {
-      ...buildMeta({
-        stage: 'quota.plans',
-        durationMs: Date.now() - startedAt,
-        ...(httpStatus === undefined ? {} : { status: httpStatus }),
-      }),
-      result: state.status,
-    }
-    if (state.status === 'error') {
-      record('warning', 'warn', 'ours plans failed', { ...base, reason: state.messageKey })
-      return state
-    }
-    record('nav', 'info', 'ours plans fetched', {
-      ...base,
-      count: state.status === 'success' ? state.plans.length : 0,
-    })
-    return state
-  }
-  const result = await transport({
-    method: 'GET',
-    url: `${OURS_API_BASE}/api/plans`,
-    headers: { Accept: 'application/json' },
-    timeoutMs: OURS_TIMEOUTS.plans,
-    followRedirects: false,
-  })
-  if (result.kind !== 'response') {
-    return settle({ status: 'error', messageKey: transportFailure(result) })
-  }
-  httpStatus = result.status
-  if (!isSuccessStatus(result.status)) {
-    return settle({ status: 'error', messageKey: 'oursPlansFailed' })
-  }
-  const parsed = parseJson(result.text)
-  if (!parsed.ok) {
-    return settle({ status: 'error', messageKey: 'oursPlansFailed' })
-  }
-  const raw = asRecord(parsed.value)?.plans
-  if (!Array.isArray(raw)) {
-    return settle({ status: 'error', messageKey: 'oursPlansFailed' })
-  }
-  const plans = raw
-    .map(parsePlan)
-    .filter((plan): plan is OursPlan => plan !== null && plan.enabled)
-  // 空列表是「套餐已下架」这个正常状态，不是错误（#331）：别让界面读成「加载失败」
-  return settle(plans.length === 0 ? { status: 'empty' } : { status: 'success', plans })
-}
-
 // ------------------------------------------------------------------ 收款页（Issue #331）
 
 /**
- * 联动小铺固定收款页地址：`GET /api/pay-link`。
+ * 联动小铺固定收款页地址：`GET /api/v1/pay-link`（新网关，无需登录）。
+ *
+ * **基地址取 `__ENDPOINTS__.consume.baseUrl`**（#861）：旧 cardpay 的 `pay.baseUrl/api/pay-link`
+ * 在 2026-11-22 停机切换后恒 502；新网关与账号 / 兑换同一个 base，源码里不写任何环境路径。
+ * 懒读（每次调用才读）：单测与联调可以按用例替换 `__ENDPOINTS__`，不留缓存副本。
  *
  * 只取地址，不建单：付款与发卡都由联动小铺负责，我们这边**没有订单**、也不轮询。
  * 地址**每次都现取**：小铺随时可能换链接，写死在客户端等于发版才能改价。
  */
-export const payLinkUrl = (): string => `${OURS_API_BASE}/api/pay-link`
+export const payLinkUrl = (): string =>
+  `${__ENDPOINTS__.consume.baseUrl.trim().replace(/\/+$/, '')}/api/v1/pay-link`
 
 export type OursPayLinkState =
   | { status: 'ok'; url: string; note: string }
@@ -391,12 +314,13 @@ export type OursPayLinkState =
 
 /**
  * 取收款页地址。每种失败都给可读文案，界面上绝不停在白屏：
- *  - 503 / `ok:false` / 其它非 2xx → 「收款通道暂不可用，请稍后再试」（oursPayUnavailable）
+ *  - 503 + `code:PAY_LINK_NOT_CONFIGURED` → 「收款页暂未开通」（oursPayNotConfigured，#861）
+ *  - 其它 503 / 502 / `ok:false` / 其它非 2xx → 「收款通道暂不可用，请稍后再试」（oursPayUnavailable）
  *  - 连不上 / 超时               → 复用 oursErrNetwork / oursErrTimeout（可重试）
  *  - 非法 JSON / 缺 url / 非 https → 同样按「通道不可用」处理：地址不可信就绝不打开
  *
- * **必须走 `OursTransport`（原生 CapacitorHttp），不能裸 fetch**：`/api/pay-link`
- * 与 `/api/plans` 一样**不返回 `Access-Control-Allow-Origin`**（实测响应头只有
+ * **必须走 `OursTransport`（原生 CapacitorHttp），不能裸 fetch**：`/api/v1/pay-link`
+ * 与旧 `/api/plans` 一样**不返回 `Access-Control-Allow-Origin`**（实测响应头只有
  * Server / Date / Content-Type / Content-Length / Connection）。在 App 的 WebView 里
  * （origin 是 `https://localhost`）裸 `fetch()` 会被 CORS 拦成 `Failed to fetch`，
  * 而原生网络栈不受同源策略约束 —— 这也是本渠道所有取数都只走 transport 的原因。
@@ -439,7 +363,16 @@ export const fetchPayLink = async (transport: OursTransport): Promise<OursPayLin
   }
   httpStatus = result.status
   if (!isSuccessStatus(result.status)) {
-    return settle({ status: 'error', messageKey: 'oursPayUnavailable' })
+    // #861：503 + PAY_LINK_NOT_CONFIGURED 是「后台没配地址」，与网关 502 / 其它 5xx 分开给文案
+    const failure = parseJson(result.text)
+    const failureCode = failure.ok ? readString(asRecord(failure.value), 'code') : ''
+    return settle({
+      status: 'error',
+      messageKey:
+        result.status === 503 && failureCode === 'PAY_LINK_NOT_CONFIGURED'
+          ? 'oursPayNotConfigured'
+          : 'oursPayUnavailable',
+    })
   }
   const parsed = parseJson(result.text)
   if (!parsed.ok) {

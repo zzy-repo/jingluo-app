@@ -60,6 +60,7 @@ type ConsumeCallResult<T> =
 | `usage` | `getGatewayUsage` | `GET /v1/usage` | **sk- Key** | ✅ |
 | | `listUsage` / `getUsageStats` / `getUsageDashboard` / `getKeyDailyUsage` | `GET /api/v1/usage*`、`/user/api-keys/:id/usage/daily` | JWT | ✅ |
 | `orders` | `listMyOrders`（**「我的卡密」的唯一数据源**，#834） | `GET /api/v1/payment/orders/my` | JWT | ✅ 只读 |
+| `pay-link`（#861，住在 `src/services/ours/api.ts` 的 `fetchPayLink`） | `payLinkUrl` / `fetchPayLink` | `GET /api/v1/pay-link` | 无（匿名） | ✅ 只读；`503 PAY_LINK_NOT_CONFIGURED` = 收款页地址未配置 |
 | `redeem` | `redeemCode` | `POST /api/v1/redeem` | JWT | ❌ **绝不盲重试** |
 | | `getRedeemHistory` / `verifyCredited` | `GET /api/v1/redeem/history` | JWT | ✅ |
 | `aff` | `validateInvitationCode` | `POST /api/v1/auth/validate-invitation-code` | 无 | ❌ |

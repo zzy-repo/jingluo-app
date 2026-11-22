@@ -681,6 +681,7 @@ export const zh = {
   oursPayEmpty: '套餐列表已下架，点「前往购买」到联动小铺页面选购即可。',
   oursPayHint: '在 App 内打开联动小铺收款页；付款后由小铺直接发放卡密，关掉页面就回到这里。',
   oursPayUnavailable: '收款通道暂不可用，请稍后再试',
+  oursPayNotConfigured: '收款页暂未开通，请稍后再试',
   oursPayOpenFailed: '没能在 App 内打开收款页，请稍后再试',
   oursRedeemAction: '兑换',
   oursRedeemSuccess: '兑换成功，+{points}',

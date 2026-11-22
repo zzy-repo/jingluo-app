@@ -688,6 +688,7 @@ export const en = {
   oursPayEmpty: 'The plan list has been retired. Tap “Go to purchase” to pick a plan on the shop page.',
   oursPayHint: 'Opens the shop checkout page inside the app. The shop delivers the card code right after payment; close the page and you are back here.',
   oursPayUnavailable: 'Payment channel is temporarily unavailable, please try again later',
+  oursPayNotConfigured: 'The checkout page is not available yet, please try again later',
   oursPayOpenFailed: 'Could not open the checkout page inside the app, please try again later',
   oursRedeemAction: 'Redeem',
   oursRedeemSuccess: 'Redeemed. +{points}',
