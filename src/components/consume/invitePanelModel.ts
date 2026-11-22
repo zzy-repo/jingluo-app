@@ -52,6 +52,8 @@ export type InviteDetail = {
   frozenBalance: number
   /** 生效返利比例（百分数）；服务端没给就不编一个 */
   ratePercent?: number
+  /** 已绑定的邀请人 id（`GET /user/aff` 的 `inviter_id`，#842）；**只用来判「已绑定」，不展示**；没绑就不带 */
+  inviterId?: number
 }
 
 /**
@@ -88,6 +90,9 @@ export const toInviteDetail = (affiliate: ConsumeAffiliate): InviteDetail => {
   if (affiliate.effectiveRebateRatePercent !== undefined) {
     detail.ratePercent = affiliate.effectiveRebateRatePercent
   }
+  if (affiliate.inviterId !== undefined) {
+    detail.inviterId = affiliate.inviterId
+  }
   return detail
 }
 
@@ -121,6 +126,8 @@ export type InvitePanelViewProps = PanelBlockProps & {
   onRetry: () => void
   /** 未登录态的「去登录」出口（由外壳切到账号 tab / 打开局部登录卡） */
   onSignIn?: () => void
+  /** 「填写邀请人」区块（#842，由 `inviteBindModel.InviteBindView` 渲染；开关关或没有就不传）：只在数据态出现 */
+  bindSlot?: ReactNode
 }
 
 /** 邀请面板（纯渲染）。`hidden` 时返回 `null` —— 由容器直接不挂载 */
@@ -200,6 +207,9 @@ export const InvitePanelView = (props: InvitePanelViewProps): ReactNode => {
         )
       )
     }
+  }
+  if (state.phase === 'ready' && props.bindSlot) {
+    body.push(props.bindSlot)
   }
   return panelShell(c, t('inviteTitle'), body, 'invite-panel')
 }

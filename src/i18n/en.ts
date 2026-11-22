@@ -1046,6 +1046,20 @@ export const en = {
   inviteCodeInvalid: 'Invalid invitation code',
   inviteDisabled: 'Invites are not available',
 
+  // Fill in an inviter after sign-in (#842 contract-first; entry is off by default, see inviteBindModel.ts)
+  inviteBindLabel: "Inviter's invitation code",
+  inviteBindPlaceholder: 'Enter invitation code',
+  inviteBindSubmit: 'Submit',
+  inviteBindHint: "Enter the code of the person who invited you. It can only be set once and cannot be changed afterwards",
+  inviteBindDone: 'Inviter linked',
+  inviteBindDoneHint: 'The invitation is recorded and cannot be changed',
+  inviteBindErrFormat: 'The code must be 4–32 letters, digits, underscores or hyphens',
+  inviteBindErrInvalid: 'Invalid invitation code. Check it and try again (you cannot use your own code)',
+  inviteBindErrDisabled: 'Invites are not available yet',
+  inviteBindErrUnauthorized: 'Your session has expired. Sign in again and retry',
+  inviteBindErrRateLimited: 'Too many attempts. Try again later',
+  inviteBindErrFailed: 'Could not link the inviter. Try again later',
+
   // Email binding (sub2api account-bindings)
   emailBindBind: 'Bind email',
   emailBindChange: 'Change email',
