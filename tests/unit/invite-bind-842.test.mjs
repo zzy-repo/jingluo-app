@@ -308,8 +308,10 @@ test('mock 契约测试 842：inviter_id 为 0 视为未绑定', async () => {
   assert.equal(inviteBindMode({ enabled: true, state, bound: false }), 'form')
 })
 
-test('mock 契约测试 842：开关关闭 → 整个区块不出现（没有任何 invite-bind-* 节点）', async () => {
-  assert.equal(INVITE_BIND_ENABLED, false, '默认必须关闭：后端接口未上线')
+test('mock 契约测试 842：开关关闭（显式 enabled:false）→ 整个区块不出现（没有任何 invite-bind-* 节点）', async () => {
+  // golive：常量的默认值从 false 改成 true（开通那一刻的唯一入口改动），断言方向随之翻转；
+  // 下面「关闭 → 整块不出现」的断言一条没动：它显式传 `enabled: false`，与常量取值无关。
+  assert.equal(INVITE_BIND_ENABLED, true, 'golive：后端已联调通过，默认打开')
   for (const aff of [AFF_UNBOUND, AFF_BOUND]) {
     const state = await readyState(aff)
     const mode = inviteBindMode({ enabled: false, state, bound: false })
@@ -365,11 +367,11 @@ test('mock 契约测试 842：白名单含 POST /api/v1/user/aff/bind', () => {
   assert.ok(PATH_WHITELIST.includes(BIND_PATH))
 })
 
-test('mock 契约测试 842：InvitePanel 的入口默认值取 INVITE_BIND_ENABLED（不是写死 true）', () => {
+test('mock 契约测试 842：InvitePanel 的入口默认值取 INVITE_BIND_ENABLED（读常量，不在组件 / 挂载点写死）', () => {
   const source = readFileSync(new URL('../../src/components/consume/InvitePanel.tsx', import.meta.url), 'utf8')
   assert.match(source, /bindEnabled = INVITE_BIND_ENABLED/u)
   const model = readFileSync(new URL('../../src/components/consume/inviteBindModel.ts', import.meta.url), 'utf8')
-  assert.match(model, /export const INVITE_BIND_ENABLED = false\b/u)
+  assert.match(model, /export const INVITE_BIND_ENABLED = true\b/u, 'golive：常量是 true；回滚 = 改回 false 再发版')
   const mounts = readFileSync(new URL('../../src/components/consume/AccountConsumePage.tsx', import.meta.url), 'utf8')
   assert.ok(!/bindEnabled/u.test(mounts), '挂载点不得传 bindEnabled 上线入口')
 })

@@ -47,8 +47,8 @@ export type InvitePanelProps = {
   /** 未登录态「去登录」的出口 */
   onSignIn?: () => void
   /**
-   * 「填写邀请人」入口（#842）。缺省读 `INVITE_BIND_ENABLED`（**默认 false**：后端接口未上线，见 `inviteBindModel.ts`）；
-   * 只给截图 / 联调临时打开用，不要在挂载点传 `true` 上线。
+   * 「填写邀请人」入口（#842）。缺省读 `INVITE_BIND_ENABLED`（见 `inviteBindModel.ts`；回滚 = 把常量改回 `false` 再发版）；
+   * 只给截图 / 联调临时覆盖用，不要在挂载点传值。
    */
   bindEnabled?: boolean
 }
