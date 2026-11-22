@@ -80,9 +80,17 @@ export type InviteBindMode = 'hidden' | 'form' | 'bound'
  *  · 开关关 → `hidden`（**没有任何 `invite-bind-*` 节点**）；
  *  · 面板还不是数据态（未登录 / 加载中 / 失败 / 无邀请码）→ `hidden`（没有可绑定的账号上下文）；
  *  · `GET /user/aff` 的 `inviter_id` 有值（正整数），或本地已确认绑定 → `bound`（只读）；
- *  · 其余 → `form`（输入框 + 提交）。
+ *  · 其余 → `form`（输入框 + 提交）；但 `affiliateClosed`（`settings/public.affiliate_enabled` **明确为 false**，#860）
+ *    → `hidden`：此时 bind 必然 400 `AFFILIATE_DISABLED`，不给用户看一个注定失败的输入框。
+ *    **只影响这个填写区**：面板其余内容仍只由 `GET /user/aff` 决定（#838 / #819-v2），已绑定的只读提示也不受影响。
  */
-export const inviteBindMode = (input: { enabled: boolean; state: InviteState; bound: boolean }): InviteBindMode => {
+export const inviteBindMode = (input: {
+  enabled: boolean
+  state: InviteState
+  bound: boolean
+  /** 只有服务端明确写了 `affiliate_enabled:false` 才为 true；没读到 / 缺字段 / true / 不传 → 不算关闭 */
+  affiliateClosed?: boolean
+}): InviteBindMode => {
   if (!input.enabled || input.state.phase !== 'ready') {
     return 'hidden'
   }
@@ -91,7 +99,7 @@ export const inviteBindMode = (input: { enabled: boolean; state: InviteState; bo
   if (input.bound || (typeof inviterId === 'number' && inviterId > 0)) {
     return 'bound'
   }
-  return 'form'
+  return input.affiliateClosed === true ? 'hidden' : 'form'
 }
 
 // ------------------------------------------------------------------ 错误映射

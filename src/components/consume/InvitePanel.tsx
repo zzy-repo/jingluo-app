@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'r
 
 import { useTranslate } from '../../i18n/index.js'
 import type { ConsumeClient } from '../../services/consume/index.js'
+import { useAuthFlags } from '../../services/auth/flags.js'
 import { copyText } from '../../utils/clipboard.js'
 import { Button } from '../base/Button.js'
 import {
@@ -81,6 +82,9 @@ export const InvitePanel = ({
   const [bind, dispatchBind] = useReducer(reduceInviteBind, undefined, initialInviteBindState)
   const transferSource = useMemo<InviteTransferSource>(() => ({ aff: consume.aff }), [consume])
   const [transfer, dispatchTransfer] = useReducer(reduceInviteTransfer, undefined, initialInviteTransferState)
+  // #860：`affiliate_enabled` 只管「填写邀请人」入口，且只在服务端**明确写了 false** 时才藏（读失败 / 缺字段不算）；
+  // 面板可见性仍只看 `GET /user/aff`（#838 / #819-v2），不看它。
+  const affiliateClosed = useAuthFlags((flags) => flags.affiliateDisabled)
   const alive = useRef(true)
   const recheckAttempt = useRef(0)
 
@@ -184,7 +188,7 @@ export const InvitePanel = ({
     })
   }, [transfer.busy, transferSource, onBalance])
 
-  const bindMode = inviteBindMode({ enabled: bindEnabled, state, bound: bind.bound })
+  const bindMode = inviteBindMode({ enabled: bindEnabled, state, bound: bind.bound, affiliateClosed })
   const bindSlot = InviteBindView({
     t,
     c: styles,

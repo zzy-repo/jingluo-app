@@ -26,6 +26,15 @@ export type AuthFlags = {
   emailVerifyEnabled: boolean
   /** 是否启用邀请码：true → 注册表单显示「邀请码（可选）」 */
   invitationCodeEnabled: boolean
+  /**
+   * 服务端**明确写了** `affiliate_enabled: false`（#860）。**只**用来决定邀请面板里「填写邀请人」入口显不显示
+   * （关闭时 `aff/bind` 必然 400 `AFFILIATE_DISABLED`）。**不是**面板可见性开关：面板可见性只看 `GET /user/aff`（#838 / #819-v2）。
+   *
+   * 为什么不是 `!affiliateEnabled`：读取失败时生产 reader 返回 `null`（不抛错），`loadAuthFlags` 仍会落 `loaded: true`
+   * + 全 false —— 若按「不是 true 就关闭」，`settings/public` 偶发超时就会把填写入口误藏。所以这里**只认明确的 false**：
+   * 没读到 / 字段缺失 / 非布尔，一律 `false`（= 不关闭，表单照常，后端才是权威）。
+   */
+  affiliateDisabled: boolean
 }
 
 /**
@@ -38,6 +47,7 @@ export const CONSERVATIVE_AUTH_FLAGS: AuthFlags = Object.freeze({
   registrationEnabled: false,
   emailVerifyEnabled: false,
   invitationCodeEnabled: false,
+  affiliateDisabled: false,
 })
 
 /**
@@ -79,6 +89,7 @@ export const parseAuthFlags = (raw: unknown): AuthFlags => {
     registrationEnabled: source.registration_enabled === true || source.registrationEnabled === true,
     emailVerifyEnabled: source.email_verify_enabled === true || source.emailVerifyEnabled === true,
     invitationCodeEnabled: source.invitation_code_enabled === true || source.invitationCodeEnabled === true,
+    affiliateDisabled: source.affiliate_enabled === false || source.affiliateEnabled === false,
   }
 }
 
