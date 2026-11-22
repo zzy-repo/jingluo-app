@@ -98,7 +98,7 @@ const response = (status, body) => ({
 console.log('\n[A] fetchPayLink：GET /api/pay-link，200 才回地址')
 {
   truthy(typeof api.fetchPayLink === 'function', 'api.ts 导出 fetchPayLink')
-  eq(api.payLinkUrl(), `${api.OURS_API_BASE}/api/pay-link`, 'payLinkUrl() 拼的是 /api/pay-link')
+  eq(api.payLinkUrl(), `${__ENDPOINTS__.consume.baseUrl}/api/v1/pay-link`, 'payLinkUrl() 拼的是 /api/pay-link')
 
   const { calls, transport: fake } = fakeTransport([
     response(200, { ok: true, url: SHOP_URL, note: SHOP_NOTE }),
@@ -110,7 +110,7 @@ console.log('\n[A] fetchPayLink：GET /api/pay-link，200 才回地址')
 
   const request = calls[0] ?? {}
   eq(request.method, 'GET', '只读接口用 GET')
-  eq(request.url, `${api.OURS_API_BASE}/api/pay-link`, '请求地址就是 /api/pay-link')
+  eq(request.url, `${__ENDPOINTS__.consume.baseUrl}/api/v1/pay-link`, '请求地址就是 /api/pay-link')
   eq(request.headers?.Accept, 'application/json', '要 JSON（HTML 收银台不是这个接口）')
   eq(request.followRedirects, false, '不跟随跳转（跟着 302 会被带去别处）')
   eq(request.timeoutMs, api.OURS_TIMEOUTS.payLink, '超时用 payLink 那一档')
@@ -121,7 +121,8 @@ console.log('\n[A] fetchPayLink：GET /api/pay-link，200 才回地址')
 console.log('\n[B] 负向分支：一律「收款通道暂不可用」，网络 / 超时另给可重试文案')
 {
   const cases = [
-    { label: '503 PAY_LINK_NOT_CONFIGURED', reply: response(503, { code: 'PAY_LINK_NOT_CONFIGURED', message: '收款页地址未配置' }) },
+    { label: '503 无业务码（网关 / 其它 503）', reply: response(503, { message: 'busy' }) },
+    { label: '502 Bad Gateway（旧 cardpay 停机后的现象）', reply: response(502, '<html>502</html>') },
     { label: '500', reply: response(500, { message: 'boom' }) },
     { label: '200 + ok:false', reply: response(200, { ok: false }) },
     { label: '200 + 非法 JSON', reply: response(200, '<html>not json</html>') },
@@ -152,7 +153,7 @@ console.log('\n[B] 负向分支：一律「收款通道暂不可用」，网络 
   await api.fetchPayLink(fake)
   eq(calls.length, 2, '失败后可以重试（每次都是一次 GET，不写任何状态）')
   truthy(
-    calls.every((item) => item.method === 'GET' && item.url.endsWith('/api/pay-link')),
+    calls.every((item) => item.method === 'GET' && item.url.endsWith('/api/v1/pay-link')),
     '重试仍然是同一个只读 GET /api/pay-link'
   )
 }
@@ -214,7 +215,7 @@ console.log('\n[D] 打不开 / Web：返回 false，不崩、不整页跳走')
 // ---------------------------------------------------------------- [E] 源码体检
 console.log('\n[E] 源码体检：不建单、不轮询、不写死地址、不出现「支付成功」')
 {
-  truthy(/\/api\/pay-link/u.test(apiSource), 'api.ts 里拼 /api/pay-link')
+  truthy(/\/api\/v1\/pay-link/u.test(apiSource), 'api.ts 里拼 /api/v1/pay-link')
   truthy(!/wzyp\.cn|DIWOOHLR/u.test(apiSource), 'api.ts 没有写死收款页地址')
   truthy(!/wzyp\.cn|DIWOOHLR/u.test(transportSource), 'transport 没有写死收款页地址')
   truthy(!/wzyp\.cn|DIWOOHLR/u.test(buyTabSource), '「购买」tab 没有写死收款页地址')

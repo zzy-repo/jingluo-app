@@ -28,7 +28,6 @@ const { en } = await import('../../src/i18n/en.ts')
 const oursApi = await import('../../src/services/ours/api.ts')
 const {
   fetchPayLink,
-  fetchPlans,
   formatPlanMeta,
   formatPlanPrice,
   formatPoints,
@@ -59,44 +58,16 @@ const REAL_LOCATION = `https://pay.xiaodouap.cn/submit.php?pid=10268375&type=ali
 
 const { failures, checks, ok, bad, eq, truthy } = createSelfCheck()
 
-// ---------------------------------------------------------------- [1] 套餐
-console.log('\n[1] 套餐：价格与积分取服务端，渲染模板可拼')
+// ---------------------------------------------------------------- [1] 套餐价格文案（#861 起不再请求 /api/plans）
+console.log('\n[1] 价格 / 额度文案格式化（套餐接口已下线，只留纯函数）')
 {
-  const plansBody = {
-    plans: [
-      { id: 'p1', name: '入门包 100万 token', price: 3.0, points: 300, currency: 'CNY', enabled: true },
-      { id: 'p2', name: '标准包 500万 token', price: 39.0, points: 3900, currency: 'CNY', enabled: true },
-      { id: 'p3', name: '停售', price: 1, points: 100, currency: 'CNY', enabled: false },
-    ],
-  }
-  const { transport, calls } = fakeTransport([json(200, plansBody)])
-  const state = await fetchPlans(transport)
-  eq(calls.length, 1, '只请求一次')
-  eq(calls[0].method, 'GET', 'method')
-  eq(calls[0].url, `${OURS_API_BASE}/api/plans`, '套餐 URL')
+  const plan = { id: 'p1', name: '入门包 100万 token', price: 3.0, points: 300, currency: 'CNY', enabled: true }
   eq(OURS_API_BASE, 'https://apia.ecsafe.cn', '卡密服务走 HTTPS')
-  eq(state.status, 'success', '状态')
-  eq(state.plans.length, 2, 'enabled=false 的套餐被过滤')
-  eq(state.plans[0].price, 3, '价格来自服务端（p1 = 3）')
-  eq(state.plans[0].points, 300, '积分来自服务端（p1 = 300）')
-  eq(formatPlanPrice(state.plans[0]), '¥3.00', '价格文案')
-  // #487：单位统一为元（100 积分 = 1 元），300 积分 = ¥3.00；断言强度不变，只是期望值跟着单位改
-  eq(formatPoints(state.plans[0].points, zh.oursPointsUnit), '3.00 元', '额度文案（元）')
-  // 套餐行渲染就是这一个纯函数（界面直接用它，不再拼 i18n 模板）
-  eq(formatPlanMeta(state.plans[0], zh.oursPointsUnit), '¥3.00 · 3.00 元', '套餐行渲染文案（元）')
-  const broken = await fetchPlans(fakeTransport([{ kind: 'response', status: 200, text: 'nope' }]).transport)
-  eq(broken.status, 'error', '非法 JSON → error')
-  eq(broken.messageKey, 'oursPlansFailed', '非法 JSON 文案 key')
-  const down = await fetchPlans(fakeTransport([{ kind: 'network' }]).transport)
-  eq(zh[down.messageKey], '网络不可用，请稍后重试', '断网文案')
-  // #331：套餐全线下架，服务端就是返回 {"plans": []} —— 这是空态，不是「加载失败」
-  const empty = await fetchPlans(fakeTransport([json(200, { plans: [] })]).transport)
-  eq(empty.status, 'empty', '{"plans": []} → status=empty（不是 error，别报「加载失败」）')
-  eq(Object.hasOwn(empty, 'messageKey'), false, '空态不带错误文案 key（不会上屏「套餐加载失败」）')
-  const allDisabled = await fetchPlans(
-    fakeTransport([json(200, { plans: [{ id: 'p1', price: 3, points: 300, enabled: false }] })]).transport
-  )
-  eq(allDisabled.status, 'empty', '全部 enabled=false 也按空态处理（界面同样不能露出空卡片列表）')
+  eq(formatPlanPrice(plan), '¥3.00', '价格文案')
+  // #487：单位统一为元（100 积分 = 1 元），300 积分 = ¥3.00
+  eq(formatPoints(plan.points, zh.oursPointsUnit), '3.00 元', '额度文案（元）')
+  eq(formatPlanMeta(plan, zh.oursPointsUnit), '¥3.00 · 3.00 元', '套餐行渲染文案（元）')
+  eq(typeof oursApiModule.fetchPlans, 'undefined', 'api.ts 不再导出 fetchPlans（#861：/api/plans 已下线）')
 }
 
 // ---------------------------------------------------------------- [2] 额度按元显示
@@ -302,7 +273,6 @@ console.log('\n[7] 脱敏与「不写 console」')
   console.info = spy
   try {
     await probeApiKey(KEY, fakeTransport([json(200, { api_key: KEY, valid: true })]).transport)
-    await fetchPlans(fakeTransport([json(200, { plans: [{ id: 'p1', price: 3, points: 300 }] })]).transport)
     await fetchPayLink(
       fakeTransport([json(200, { ok: true, url: 'https://wzyp.cn/shop/abc', note: '外部收款页' })]).transport
     )

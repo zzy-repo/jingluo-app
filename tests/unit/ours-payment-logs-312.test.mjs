@@ -6,7 +6,7 @@
 //   node tests/unit/ours-payment-logs-312.test.mjs
 //
 // 覆盖：
-//   [1] 六个节点各留一条带 stage 的日志（balance / plans / pay / redeem / cid / orders）
+//   [1] 五个节点各留一条带 stage 的日志（balance / plans / pay / redeem / cid / orders）
 //       时间线节点（trail / order）随旧支付 UI 一起下线（#487 三弹层合一的收口），不再断言
 //   [2] 每条 meta ≥2 个键（MIN_META_KEYS），且键都落在采集层白名单里（sanitizeMeta 不静默丢键）
 //   [3] 脱敏：完整 Key / 完整卡密 / 单号明文 / 收款页地址 / device_id 一个字都不进日志
@@ -63,9 +63,6 @@ const firstOf = (stage) => quotaLogs().find((entry) => entry.meta?.stage === sta
 const exerciseAllNodes = async () => {
   // 额度：Key 被服务端拒
   await api.probeApiKey(KEY, once(json(401, { valid: false, api_key: KEY })))
-  // 套餐：503 + 下架空列表
-  await api.fetchPlans(once(raw(503, 'busy')))
-  await api.fetchPlans(once(json(200, { plans: [] })))
   // 收款页：取到了 + 打不开
   await api.fetchPayLink(once(json(200, { ok: true, url: SHOP_URL, note: 'n' })))
   await api.fetchPayLink(once(json(503, { ok: false })))
@@ -92,7 +89,6 @@ test('六个节点各留一条带 stage 的日志，meta 都够用且键在白�
   const logs = quotaLogs()
   const expected = [
     'quota.balance',
-    'quota.plans',
     'quota.pay',
     'quota.redeem',
     'quota.cid',
@@ -123,9 +119,9 @@ test('六个节点各留一条带 stage 的日志，meta 都够用且键在白�
       assert.ok(allowed, `${stage} 用了白名单外的键 ${key}（sanitizeMeta 会静默丢弃）`)
     }
   }
-  // 失败分支也要有：套餐 503、收款页 503、兑换 409、记录页 badResponse
+  // 失败分支也要有：收款页 503、兑换 409、记录页 badResponse
   const warnings = logs.filter((entry) => entry.level === 'warn')
-  assert.ok(warnings.length >= 4, `失败分支的 warning 至少 4 条，实际 ${warnings.length}`)
+  assert.ok(warnings.length >= 3, `失败分支的 warning 至少 3 条，实际 ${warnings.length}`)
 })
 
 test('脱敏铁律：凭证原文、收款页地址、设备码一个都不进日志', async () => {

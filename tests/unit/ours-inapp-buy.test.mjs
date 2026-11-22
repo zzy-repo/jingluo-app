@@ -142,7 +142,7 @@ console.log('\n[A] 源码体检：购买入口 = /api/pay-link + Browser.open（
   truthy(/browserFinished/u.test(transportSource), '传输层监听 browserFinished（用户关掉收款页 = 回到 App）')
   truthy(typeof transport.openPayLinkInApp === 'function', '传输层导出 openPayLinkInApp（App 内打开收款页）')
   truthy(/presentationStyle/u.test(transportSource) && /popover/u.test(transportSource), '用 presentationStyle: popover 打开（iOS 卡片式 / Android 全屏都在 App 内）')
-  truthy(/\/api\/pay-link/u.test(apiSource), 'api.ts 调 /api/pay-link 取地址（不写死收款页地址）')
+  truthy(/\/api\/v1\/pay-link/u.test(apiSource), 'api.ts 调 /api/v1/pay-link 取地址（不写死收款页地址）')
   truthy(typeof api.fetchPayLink === 'function', 'api.ts 导出 fetchPayLink（503 / ok:false / 非法 JSON 都转成可读文案）')
   truthy(!/wzyp\.cn\/shop/u.test(apiSource) && !/wzyp\.cn\/shop/u.test(buyTabSource), '源码里没有写死的收款页地址')
 
@@ -152,9 +152,8 @@ console.log('\n[A] 源码体检：购买入口 = /api/pay-link + Browser.open（
   truthy(!/window\.open\(/u.test(buyTabSource), '购买 tab 里没有 window.open')
   truthy(!/<a\s[^>]*href=/u.test(buyTabSource), '购买 tab 里没有 <a href> 式的购买入口')
   truthy(!/createBuyOrder|pollOrder|startInAppPay/u.test(buyTabSource), '不再建单、不再轮询订单（/api/buy 与 pollOrder 的调用点已移除）')
-  // 口径变化（#487 W1-C1）：旧弹层 #331 之后只剩「前往购买」空态；新「购买」tab 恢复了套餐列表
-  // （`GET /api/plans` → `fetchPlans`，价格由 `formatPlanPrice` 统一成元），所以这一条从「不许取」反过来断「必须取」。
-  truthy(buyTabSource.includes('fetchPlans'), '「购买」tab 用 fetchPlans 拉套餐（GET /api/plans）')
+  // #861：套餐接口 /api/plans 已下线，购买 tab 只剩一个入口按钮
+  truthy(!buyTabSource.includes('fetchPlans'), '「购买」tab 不再调用 fetchPlans（#861）')
   truthy(buyTabSource.includes("t('oursPayAction')"), '按钮文案走 i18n（oursPayAction）')
   truthy(buyTabSource.includes("t('oursPayEmpty')"), '空态说明走 i18n（oursPayEmpty：列表为空也有说明，不是白屏）')
   truthy(buyTabSource.includes("t('oursPayHint')"), '入口说明走 i18n（oursPayHint）')
@@ -175,12 +174,12 @@ console.log('\n[B] 传输层：JSON 接口走 CapacitorHttp，不跟随重定向
   cap().httpReply = () => ({ status: 200, data: JSON.stringify({ ok: true, url: PAY_URL }), headers: {} })
   const result = await transport.httpTransport({
     method: 'GET',
-    url: 'https://apia.ecsafe.cn/api/pay-link',
+    url: 'https://gateway.example.test/api/v1/pay-link',
     headers: { Accept: 'application/json' },
     timeoutMs: 10000,
     followRedirects: false,
   })
-  eq(cap().http.length, 1, 'GET /api/pay-link 走了 CapacitorHttp（有正文可解析）')
+  eq(cap().http.length, 1, 'GET /api/v1/pay-link 走了 CapacitorHttp（有正文可解析）')
   truthy(result.kind === 'response' && result.text.includes('https://'), '正文原样回到调用方')
   eq(cap().locations.length, 0, '业务接口不再走 CheckoutBrowser.resolveLocation（那条通路已随 /buy 删除）')
 
@@ -189,7 +188,7 @@ console.log('\n[B] 传输层：JSON 接口走 CapacitorHttp，不跟随重定向
   cap().httpReply = () => ({ status: 302, data: '', headers: { Location: 'https://pay.example.com/x' } })
   const redirected = await transport.httpTransport({
     method: 'GET',
-    url: 'https://apia.ecsafe.cn/api/pay-link',
+    url: 'https://gateway.example.test/api/v1/pay-link',
     headers: { Accept: 'application/json' },
     timeoutMs: 10000,
     followRedirects: false,
@@ -289,9 +288,9 @@ console.log('\n[D] 停用建单链路：src 里没有任何路径还会打 /api/
     'services/ours/inAppPay.ts 已删除（建单 → 收银台 → 轮询的编排不再存在）'
   )
   eq(
-    sources.filter((item) => item.code.includes('/api/pay-link')).map((item) => item.file),
+    sources.filter((item) => item.code.includes('/api/v1/pay-link')).map((item) => item.file),
     ['services/ours/api.ts'],
-    '/api/pay-link 只在 api.ts 里拼（界面拿到的是现取的地址，不自己拼 URL）'
+    '/api/v1/pay-link 只在 api.ts 里拼（界面拿到的是现取的地址，不自己拼 URL）'
   )
   eq(
     sources.filter((item) => item.code.includes('apia.ecsafe.cn')).map((item) => item.file).filter((file) => file.startsWith('components/')),
