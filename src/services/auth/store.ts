@@ -532,8 +532,16 @@ export const handleUnauthorized = async (info: ConsumeUnauthorizedInfo): Promise
 }
 
 /**
- * 退出登录：先尽力让服务端把该账号的会话全部作废（`revoke-all-sessions`），**再**清本地。
- * 顺序不能反 —— 反了就没有 JWT 可发了，服务端会话会留在那儿。
+ * 退出登录：**本地立刻清**，服务端作废在后台尽力而为（#839）。
+ *
+ * 为什么不再 `await` 撤销（原来是「先等 `revoke-all-sessions` + 回查，再清本地」）：撤销请求加回查各有
+ * 超时（write 档 20s / read 档 10s），网络慢或服务端挂住时，用户点完「退出」界面要纹丝不动半分钟，
+ * 看上去就是「退不出去」。退出的本地语义不该受服务端快慢影响。
+ *
+ * 顺序仍然是「先发撤销、再清本地」：请求在**同步段**里取走当前 JWT（`http.ts` 的 `send` 在第一个 `await`
+ * 之前就解析了 `Authorization`），所以紧接着清态不会让它变成匿名请求。这一点由 `signout-839.test.mjs`
+ * 的 T5 钉住（撤销请求必须带旧 token）；将来要是 http 层改成延迟取 token，T5 会红。
+ * 撤销结果不影响本地：成功 / 失败 / 超时都不回写登录态（`clearSession` 已把代次 +1）。
  *
  * 端点说明（#740 ④ 写的是 `POST /api/v1/auth/logout`）：客户端**刻意**调
  * `POST /api/v1/auth/revoke-all-sessions`，理由与实测见 `docs/consume-676-contract-audit.md` §D-676-2
@@ -546,9 +554,10 @@ export const handleUnauthorized = async (info: ConsumeUnauthorizedInfo): Promise
 const signOut = async (): Promise<void> => {
   if (transport) {
     try {
-      await transport.logout()
+      // 不 await：失败 / 超时都只是「服务端没确认」，本地照样退
+      void transport.logout().catch(() => undefined)
     } catch {
-      // 退出这件事不能因为网络失败而退不掉：服务端没作废成功也照样清本地
+      // 传输层同步抛错也不能拦住退出
     }
   }
   clearSession('unauthenticated')
