@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react'
 
 import { useTranslate } from '../../i18n/index.js'
 import type { ConsumeClient } from '../../services/consume/index.js'
@@ -12,6 +12,15 @@ import {
   type InviteSource,
   type InviteState,
 } from './invitePanelModel.js'
+import {
+  INVITE_BIND_ENABLED,
+  InviteBindView,
+  initialInviteBindState,
+  inviteBindMode,
+  reduceInviteBind,
+  runBindInviter,
+  type InviteBindSource,
+} from './inviteBindModel.js'
 import styles from './panels.module.css'
 
 /**
@@ -37,11 +46,21 @@ export type InvitePanelProps = {
   signedIn?: boolean
   /** 未登录态「去登录」的出口 */
   onSignIn?: () => void
+  /**
+   * 「填写邀请人」入口（#842）。缺省读 `INVITE_BIND_ENABLED`（**默认 false**：后端接口未上线，见 `inviteBindModel.ts`）；
+   * 只给截图 / 联调临时打开用，不要在挂载点传 `true` 上线。
+   */
+  bindEnabled?: boolean
 }
 
 const COPIED_MS = 2000
 
-export const InvitePanel = ({ consume, signedIn = true, onSignIn }: InvitePanelProps) => {
+export const InvitePanel = ({
+  consume,
+  signedIn = true,
+  onSignIn,
+  bindEnabled = INVITE_BIND_ENABLED,
+}: InvitePanelProps) => {
   const t = useTranslate()
   const source = useMemo<InviteSource>(() => ({ aff: consume.aff }), [consume])
   /**
@@ -50,6 +69,8 @@ export const InvitePanel = ({ consume, signedIn = true, onSignIn }: InvitePanelP
    */
   const [state, setState] = useState<InviteState>(() => initialInviteState())
   const [copied, setCopied] = useState(false)
+  const bindSource = useMemo<InviteBindSource>(() => ({ aff: consume.aff }), [consume])
+  const [bind, dispatchBind] = useReducer(reduceInviteBind, undefined, initialInviteBindState)
   const alive = useRef(true)
 
   useEffect(() => {
@@ -97,5 +118,33 @@ export const InvitePanel = ({ consume, signedIn = true, onSignIn }: InvitePanelP
     })
   }, [state])
 
-  return InvitePanelView({ t, c: styles, Button, state, copied, onCopy, onRetry: reload, onSignIn })
+  const onBindSubmit = useCallback(() => {
+    if (bind.busy) {
+      return
+    }
+    dispatchBind({ type: 'submit' })
+    void runBindInviter(bindSource, bind.draft).then((outcome) => {
+      if (!alive.current) {
+        return
+      }
+      dispatchBind({ type: 'outcome', outcome })
+      // 成功 / 409：用重新拉到的 `GET /user/aff` 刷新面板（拉失败就保持原样，只靠本地 `bound` 切只读）
+      if (outcome.kind === 'bound' && outcome.reloaded !== null) {
+        setState(outcome.reloaded)
+      }
+    })
+  }, [bind.busy, bind.draft, bindSource])
+
+  const bindMode = inviteBindMode({ enabled: bindEnabled, state, bound: bind.bound })
+  const bindSlot = InviteBindView({
+    t,
+    c: styles,
+    Button,
+    mode: bindMode,
+    state: bind,
+    onDraft: (value) => dispatchBind({ type: 'draft', value }),
+    onSubmit: onBindSubmit,
+  })
+
+  return InvitePanelView({ t, c: styles, Button, state, copied, onCopy, onRetry: reload, onSignIn, bindSlot })
 }

@@ -1048,6 +1048,20 @@ export const zh = {
   inviteCodeInvalid: '邀请码无效',
   inviteDisabled: '邀请功能未开放',
 
+  // 登录后填写邀请人（#842 契约先行；入口默认关闭，见 inviteBindModel.ts）
+  inviteBindLabel: '邀请人的邀请码',
+  inviteBindPlaceholder: '输入邀请码',
+  inviteBindSubmit: '提交',
+  inviteBindHint: '填写邀请你的人的邀请码。只能绑定一次，绑定后不能修改',
+  inviteBindDone: '已绑定邀请人',
+  inviteBindDoneHint: '邀请关系已建立，不能修改',
+  inviteBindErrFormat: '邀请码应为 4–32 位字母、数字、下划线或连字符',
+  inviteBindErrInvalid: '邀请码无效，请检查后重试（也不能填自己的邀请码）',
+  inviteBindErrDisabled: '邀请功能暂未开放',
+  inviteBindErrUnauthorized: '登录已失效，请重新登录后再试',
+  inviteBindErrRateLimited: '操作太频繁，请稍后再试',
+  inviteBindErrFailed: '绑定失败，请稍后重试',
+
   // 邮箱绑定（sub2api account-bindings）
   emailBindBind: '绑定邮箱',
   emailBindChange: '更换邮箱',
