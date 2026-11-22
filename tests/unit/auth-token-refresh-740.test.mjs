@@ -411,20 +411,25 @@ test('L1 #839：revoke-all-sessions 返回 500 → 本地照样全清（access +
   assert.equal(useAuthStore.getState().state, 'unauthenticated')
 })
 
-test('L1 #839：revoke-all-sessions 一直挂起 → 落盘凭据立刻清，且在等待上限内回到未登录', async () => {
+test('L1 #839：revoke-all-sessions 一直挂起 → 落盘凭据与内存态都同步清掉，signOut 不等撤销', async () => {
   // 真实现象（真 staging + dist，把该请求 hold 住）：改前 UI 要等写超时 20s + 回查才退出，
   // 这期间关页 / 重开，盘上的 token 还在 → 被 `restoreAuth` 拉回已登录。
   const backend = createBackend({ revoke: () => new Promise(() => {}) })
   installSession(backend)
 
+  const startedAt = Date.now()
   const pending = useAuthStore.getState().signOut()
   // 还没 await：同步阶段盘上就必须没有凭据（此刻关页 / 重启也不会恢复登录态）
   assert.equal(storage.value, null, '挂起期间，落盘凭据已经清掉')
   const revokeCall = backend.calls.all.find((call) => call.path === '/api/v1/auth/revoke-all-sessions')
   assert.equal(revokeCall.authorization, 'Bearer at-old', '撤销请求仍然带着退出前的 JWT')
+  // 新语义（#844 并入）：内存态也在同步段里清掉，不再等撤销
+  assert.equal(useAuthStore.getState().token, null, '内存里的 token 同步段就清掉（界面不等服务端）')
+  assert.equal(useAuthStore.getState().state, 'unauthenticated')
 
   await pending
-  assert.equal(useAuthStore.getState().token, null, '等待上限到了就清内存态，不被挂起的请求拖住')
+  assert.ok(Date.now() - startedAt < 500, 'signOut 不被挂起的撤销请求拖住')
+  assert.equal(useAuthStore.getState().token, null)
   assert.equal(useAuthStore.getState().state, 'unauthenticated')
   assert.equal(storage.value, null)
 })
