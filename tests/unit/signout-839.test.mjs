@@ -118,3 +118,12 @@ test('T5 撤销请求带的是退出前的 token（先清本地也不能变成�
   assert.ok(revoke, '服务端作废仍然要发')
   assert.equal(revoke.authorization, 'Bearer at-1', '必须是退出前的 JWT，否则服务端会话留着没作废')
 })
+
+test('T6 后台撤销回 401：不触发刷新、不把「已退出」改写成「登录过期」', async () => {
+  const calls = install({ revoke: () => json(401, { code: 'UNAUTHORIZED', message: 'x' }), profile: () => json(401, { code: 'UNAUTHORIZED', message: 'x' }) })
+  await useAuthStore.getState().signOut()
+  await tick()
+  assert.equal(useAuthStore.getState().state, 'unauthenticated', '不能被改成 expired')
+  assert.equal(useAuthStore.getState().error, null)
+  assert.ok(!calls.includes('/api/v1/auth/refresh'), '没有 token 可刷，更不该发刷新请求')
+})

@@ -513,6 +513,11 @@ export const refreshSessionOnce = (): Promise<SessionRefreshOutcome> => {
  */
 const refreshSession = async (): Promise<boolean> => (await refreshSessionOnce()) === 'refreshed'
 
+/** 退出时后台撤销请求的路径（与 `consume/auth.ts` 的 `revokeAllSessions` 一致） */
+const SIGN_OUT_REVOKE_PATH = '/api/v1/auth/revoke-all-sessions'
+/** 还没落地的「退出时撤销」个数：>0 时该路径的 401 不触发刷新（见 `handleUnauthorized`） */
+let signOutRevokesInFlight = 0
+
 /**
  * 消费层 401 钩子（#740 ①②）：`createConsumeHttp({ onUnauthorized: handleUnauthorized })`。
  *
@@ -524,6 +529,12 @@ export const handleUnauthorized = async (info: ConsumeUnauthorizedInfo): Promise
   // 而且 #387 的红线是「凭据类与可识别信息不进日志」—— 一个「哪个接口 401 了」的埋点很容易
   // 顺手把 header 一起带进去。只回答「换没换成」。
   void info
+  // #839：退出时后台发出的 revoke-all-sessions 若回 401，本地早已清空（甚至已经登了另一个号）。
+  // 此时**不许**走刷新：没有 token 会被 `performRefresh` 记成 `expired`（把「已退出」改写成「登录过期」），
+  // 已登了 B 则会拿 B 的 refresh_token 换新 JWT 再重放，等于用 B 的凭据撤销 B 的全部会话。
+  if (info.path === SIGN_OUT_REVOKE_PATH && signOutRevokesInFlight > 0) {
+    return 'expired'
+  }
   const outcome = await refreshSessionOnce()
   if (outcome === 'refreshed') {
     return 'retry'
@@ -556,7 +567,13 @@ const signOut = async (): Promise<void> => {
     try {
       // 必须先于 `clearSession` 调用：JWT 在这一步的同步段里就被取走（见上方注释与 T5）。
       // 不 await：失败 / 超时都只是「服务端没确认」，本地照样退
-      void transport.logout().catch(() => undefined)
+      signOutRevokesInFlight += 1
+      void transport
+        .logout()
+        .catch(() => undefined)
+        .finally(() => {
+          signOutRevokesInFlight -= 1
+        })
     } catch {
       // 传输层同步抛错也不能拦住退出
     }
