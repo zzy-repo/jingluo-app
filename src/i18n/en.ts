@@ -744,8 +744,6 @@ export const en = {
   autoTitlePromptLength: 'Target length: about 8–14 characters for Chinese, or 3–5 words for English.',
   autoTitlePromptFallback:
     'If the message carries too little information, still give a short best-guess title (for example "Greetings"), without explanation.',
-  oursPayRecordsNotRedeemed: 'Not redeemed',
-  oursPayRecordsRedeemed: 'Redeemed',
   oursPayRecordsCopyCard: 'Copy card code',
   oursPayRecordsCopied: 'Card code copied',
   // Issue #45: unified request timeout notice (kept apart from network failure and 4xx/5xx)
@@ -811,15 +809,15 @@ export const en = {
   oursPurchasesEmpty: 'No purchases yet. Once you buy a plan, every order shows up here.',
   oursPurchasesRetry: 'Retry',
   oursPurchasesGoRedeem: 'Redeem now',
-  oursPurchasesErrKeyMissing: 'Enter an API Key to see the purchases of this account',
-  oursPurchasesErrUnauthorized: 'This API Key is invalid or expired. Enter it again and retry.',
-  oursPurchasesErrRateLimited: 'Too many lookups. Please try again in a moment.',
-  oursPurchasesErrTimeout: 'The lookup timed out. Check your network and retry.',
-  oursPurchasesErrNetwork: 'Network unreachable. Check your network and retry.',
-  oursPurchasesErrServer: 'The server cannot handle this right now. Please retry later.',
-  oursPurchasesErrRejected: 'The order lookup was rejected. Please retry later.',
-  oursPurchasesErrBadResponse: 'The response could not be parsed. Please retry later.',
   oursPurchasesErrUnknown: 'Could not load your purchases. Please retry later.',
+  // #834: order status labels are mapped in the client (the new endpoint has no status_text)
+  consumeOrderStatusCompleted: 'Completed',
+  consumeOrderStatusPending: 'Awaiting payment',
+  consumeOrderStatusExpired: 'Expired',
+  consumeOrderStatusCancelled: 'Cancelled',
+  consumeOrderStatusFailed: 'Payment failed',
+  consumeOrderStatusRefunded: 'Refunded',
+  consumeOrderStatusUnknown: 'Unknown status',
   // Boot-guard copy (#180 / #104). Identical to the inline COPY table in src/index.html;
   // tests/unit/compat-guard-diagnostics.test.mjs compares both sides.
   //

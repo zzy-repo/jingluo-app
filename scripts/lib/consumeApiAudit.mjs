@@ -45,6 +45,10 @@ export const PATH_WHITELIST = [
   // §3.4 卡密兑换
   '/api/v1/redeem',
   '/api/v1/redeem/history',
+  // §3.1d 我的订单（#834）：账号迁到 sub2api 之后，「我的卡密」与自动兑现的**唯一**数据源。
+  // 旧实现打的是 apia 的 `/api/orders`（Bearer sk- Key），迁移后那把 Key 在 apia 侧不存在 → 恒 401，
+  // 列表空白且自动兑现一个请求都发不出去。新接口是 JWT 面板通道，与 /api/v1/redeem 同一条。
+  '/api/v1/payment/orders/my',
   // §3.5 支付（apia）：只负责买卡
   '/api/plans',
   '/api/pay-link',

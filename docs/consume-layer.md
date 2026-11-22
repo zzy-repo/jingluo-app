@@ -59,13 +59,16 @@ type ConsumeCallResult<T> =
 | | `deleteKey` | `DELETE /api/v1/keys/:id` | JWT | ✅ 404 视为已完成 |
 | `usage` | `getGatewayUsage` | `GET /v1/usage` | **sk- Key** | ✅ |
 | | `listUsage` / `getUsageStats` / `getUsageDashboard` / `getKeyDailyUsage` | `GET /api/v1/usage*`、`/user/api-keys/:id/usage/daily` | JWT | ✅ |
+| `orders` | `listMyOrders`（**「我的卡密」的唯一数据源**，#834） | `GET /api/v1/payment/orders/my` | JWT | ✅ 只读 |
 | `redeem` | `redeemCode` | `POST /api/v1/redeem` | JWT | ❌ **绝不盲重试** |
 | | `getRedeemHistory` / `verifyCredited` | `GET /api/v1/redeem/history` | JWT | ✅ |
 | `aff` | `validateInvitationCode` | `POST /api/v1/auth/validate-invitation-code` | 无 | ❌ |
 | | `getAffiliate` | `GET /api/v1/user/aff` | JWT | ✅ |
 | `email` | `sendBindEmailCode` / `bindEmail` / `unbindProvider` | `POST /api/v1/user/account-bindings/email/send-code`、`…/email`、`DELETE …/:provider` | JWT | ❌ / ⚠️ |
 
-白名单**之外**一律禁止（含 `/api/v1/admin/**`、`/api/v1/payment/**`）。新增能力走 #484 重新评审。
+白名单**之外**一律禁止（含 `/api/v1/admin/**`，以及 `/api/v1/payment/**` 里除 `orders/my` 之外的路径）。
+新增能力走 #484 重新评审 —— 唯一的例外登记在 #834：`GET /api/v1/payment/orders/my` 是「我的卡密」
+与自动兑现的数据源（旧数据源 apia `/api/orders` 在账号迁移后恒 401，见该单正文）。
 
 ## 三点五、写操作的「效果确认」：2xx ≠ 生效（#679）
 

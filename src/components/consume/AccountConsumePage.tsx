@@ -48,7 +48,7 @@ import { useTranslate, type TranslationKey } from '../../i18n/index.js'
 import { useApiConfig } from '../../services/api/apiConfig.js'
 import type { ConsumeClient, ConsumeUser } from '../../services/consume/index.js'
 import { getConsumeClient } from '../../services/consumeClient.js'
-import { fetchPurchases, type PurchaseOrder } from '../../services/ours/purchases.js'
+import { MY_ORDERS_DEFAULT_PAGE_SIZE, type ConsumeMyOrder } from '../../services/consume/orders.js'
 import { useAuthStatus } from '../../services/auth/useAuthStatus.js'
 import { managedKeyTail } from '../../services/api/managedKey.js'
 import { detectThirdPartyProtocol } from '../../services/api/protocolDetect.js'
@@ -409,22 +409,30 @@ export const AccountConsumePage = ({
    *
    * 自动兑现本身不在这里写逻辑：判定与不发第二枪的规则全在 `walletAutoRedeem.ts`（复用既有的
    * `consume.redeem` 封装，一行兑换逻辑都没有重写）。这里只负责两件事：
-   *  1. 把**数据源**接进去 —— #784 修正后「哪些卡还没兑」只问 `GET /api/orders`
-   *     （`fetchPurchases`，`redeemState === 'issued'` = 未兑换）；没有 apiKey 就不注入，
-   *     自动兑现那边连请求都不会发；
+   *  1. 把**数据源**接进去 —— #834 起「我买了什么、卡发了没」与「我的卡密」同一个接口：
+   *     `consume.orders.my()`（`GET /api/v1/payment/orders/my`，JWT）。**不再需要 apiKey** ——
+   *     旧接口 apia `GET /api/orders` 要的是 apia 签发的 sk- Key，账号迁移后恒 401（#834 的现场）；
+   *     没有登录态就不注入，自动兑现那边连请求都不会发；
    *  2. 把结局交给界面：未登录 → 一句「登录后自动到账」，不提交；到账 → toast「已自动到账 ¥X」
-   *     + 让余额卡重拉一次；其余（处理中 / 失败 / 打码卡）→ 卡片 + 「去兑换」手动出口，**没有自动重试**。
+   *     + 让余额卡重拉一次；其余（处理中 / 失败 / 打码卡 / 这张卡已经兑过）→ 静默或卡片 + 「去兑换」
+   *     手动出口，**没有自动重试**。
    */
   const backToCards = useCallback(() => {
     // 落点只有一份判定（`walletPayFlow.ts`）：收款页关掉之后停在「我的卡密」
     landAfterPayReturn(onNavigate)
     setWalletTick((tick) => tick + 1)
     const loadOrders =
-      apiKey.trim() === ''
+      signedIn !== true
         ? undefined
         : () =>
-            fetchPurchases({ apiKey, limit: 20, offset: 0 }).then(
-              (page): PurchaseOrder[] => page.orders
+            consume.orders.my({ page: 1, pageSize: MY_ORDERS_DEFAULT_PAGE_SIZE }).then(
+              (result): ConsumeMyOrder[] => {
+                if (!result.ok) {
+                  // 抛出去：自动兑现那边要能把「订单拉不到」和「没有待兑」在日志里分开（skipped:orders-failed）
+                  throw new Error(`orders/my failed: ${result.error.code}`)
+                }
+                return result.data.items
+              }
             )
     void runWalletAutoRedeem({
       client: consume,
@@ -454,7 +462,7 @@ export const AccountConsumePage = ({
         }
       })
       .catch(() => undefined)
-  }, [apiKey, consume, onNavigate, signedIn, t])
+  }, [consume, onNavigate, signedIn, t])
 
   const SOURCE_LABEL_KEYS: Record<string, TranslationKey> = {
     builtin: 'accountConsumeSourceBuiltin',
