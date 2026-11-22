@@ -821,7 +821,7 @@ export const AccountConsumePage = ({
         */}
         {signedIn === true ? (
           <div className={styles.viewBody} data-testid="account-consume-invite">
-            <InvitePanel consume={consume} signedIn={signedIn === true} onSignIn={needLogin} />
+            <InvitePanel consume={consume} signedIn={signedIn === true} onSignIn={needLogin} onBalance={setBalance} />
           </div>
         ) : null}
 

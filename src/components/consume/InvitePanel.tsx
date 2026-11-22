@@ -7,10 +7,15 @@ import { Button } from '../base/Button.js'
 import {
   InvitePanelView,
   initialInviteState,
+  initialInviteTransferState,
   inviteStateSignedOut,
   loadInvite,
+  nextRecheckDelay,
+  reduceInviteTransfer,
+  runTransfer,
   type InviteSource,
   type InviteState,
+  type InviteTransferSource,
 } from './invitePanelModel.js'
 import {
   INVITE_BIND_ENABLED,
@@ -51,6 +56,8 @@ export type InvitePanelProps = {
    * 挂载点不传它，开关只在常量处改。
    */
   bindEnabled?: boolean
+  /** 划转成功后用响应里的新余额刷新外面显示的余额（#860）；不传 = 只刷新面板自己 */
+  onBalance?: (balance: number) => void
 }
 
 const COPIED_MS = 2000
@@ -60,6 +67,7 @@ export const InvitePanel = ({
   signedIn = true,
   onSignIn,
   bindEnabled = INVITE_BIND_ENABLED,
+  onBalance,
 }: InvitePanelProps) => {
   const t = useTranslate()
   const source = useMemo<InviteSource>(() => ({ aff: consume.aff }), [consume])
@@ -71,7 +79,10 @@ export const InvitePanel = ({
   const [copied, setCopied] = useState(false)
   const bindSource = useMemo<InviteBindSource>(() => ({ aff: consume.aff }), [consume])
   const [bind, dispatchBind] = useReducer(reduceInviteBind, undefined, initialInviteBindState)
+  const transferSource = useMemo<InviteTransferSource>(() => ({ aff: consume.aff }), [consume])
+  const [transfer, dispatchTransfer] = useReducer(reduceInviteTransfer, undefined, initialInviteTransferState)
   const alive = useRef(true)
+  const recheckAttempt = useRef(0)
 
   useEffect(() => {
     alive.current = true
@@ -98,6 +109,25 @@ export const InvitePanel = ({
     }
     reload()
   }, [reload, signedIn])
+
+  // #860：迁移约 5 秒后才到账。首读全是 0 才补读（最多两次，非零即止）；换号 / 退出时计数归零
+  useEffect(() => {
+    recheckAttempt.current = 0
+  }, [signedIn])
+  useEffect(() => {
+    if (!signedIn) {
+      return
+    }
+    const delay = nextRecheckDelay(state, recheckAttempt.current)
+    if (delay === null) {
+      return
+    }
+    const timer = setTimeout(() => {
+      recheckAttempt.current += 1
+      reload()
+    }, delay)
+    return () => clearTimeout(timer)
+  }, [state, signedIn, reload])
 
   useEffect(() => {
     if (!copied) {
@@ -135,6 +165,25 @@ export const InvitePanel = ({
     })
   }, [bind.busy, bind.draft, bindSource])
 
+  const onTransfer = useCallback(() => {
+    if (transfer.busy) {
+      return
+    }
+    dispatchTransfer({ type: 'submit' })
+    void runTransfer(transferSource).then((outcome) => {
+      if (!alive.current) {
+        return
+      }
+      dispatchTransfer({ type: 'outcome', outcome })
+      if (outcome.kind === 'done') {
+        onBalance?.(outcome.balance)
+        if (outcome.reloaded !== null) {
+          setState(outcome.reloaded)
+        }
+      }
+    })
+  }, [transfer.busy, transferSource, onBalance])
+
   const bindMode = inviteBindMode({ enabled: bindEnabled, state, bound: bind.bound })
   const bindSlot = InviteBindView({
     t,
@@ -146,5 +195,16 @@ export const InvitePanel = ({
     onSubmit: onBindSubmit,
   })
 
-  return InvitePanelView({ t, c: styles, Button, state, copied, onCopy, onRetry: reload, onSignIn, bindSlot })
+  return InvitePanelView({
+    t,
+    c: styles,
+    Button,
+    state,
+    copied,
+    onCopy,
+    onRetry: reload,
+    onSignIn,
+    bindSlot,
+    transfer: { state: transfer, onTransfer },
+  })
 }

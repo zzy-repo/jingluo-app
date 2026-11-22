@@ -23,7 +23,13 @@
 
 import { createElement, type ReactNode } from 'react'
 
-import type { ConsumeAffiliate, ConsumeCallResult } from '../../services/consume/index.js'
+import type { TranslationKey } from '../../i18n/index.js'
+import type {
+  ConsumeAffiliate,
+  ConsumeAffiliateTransfer,
+  ConsumeCallResult,
+  Sub2ApiError,
+} from '../../services/consume/index.js'
 import {
   copyRow,
   errorBlock,
@@ -54,7 +60,12 @@ export type InviteDetail = {
   ratePercent?: number
   /** 已绑定的邀请人 id（`GET /user/aff` 的 `inviter_id`，#842）；**只用来判「已绑定」，不展示**；没绑就不带 */
   inviterId?: number
+  /** 剩余邀请名额（`invite_remaining`，#860）：`0` = 已满，`-1` = 不限；服务端没给就不带。上限是后台设置，**不在客户端写死或推算** */
+  remaining?: number
 }
+
+/** 名额已满：只认服务端给的 `invite_remaining === 0`（`-1` 不限、缺省都不算满） */
+export const isInviteFull = (detail: Pick<InviteDetail, 'remaining'>): boolean => detail.remaining === 0
 
 /**
  * `hidden` = 这条链路上没有可展示的东西（未拿到 `aff` 数据），`signedOut` = 没登录（引导态，不发请求），
@@ -93,7 +104,88 @@ export const toInviteDetail = (affiliate: ConsumeAffiliate): InviteDetail => {
   if (affiliate.inviterId !== undefined) {
     detail.inviterId = affiliate.inviterId
   }
+  if (affiliate.inviteRemaining !== undefined) {
+    detail.remaining = affiliate.inviteRemaining
+  }
   return detail
+}
+
+// ------------------------------------------------------------------ 迁移延迟（#860 第 4 条坑）
+
+/**
+ * 旧用户迁移是异步的：注册后约 5 秒 `aff_count` / 返利才到账，而账号页在注册成功的同一刻就挂载面板，
+ * 首读拿到的是「全 0」。所以首读是全 0 时再补读（只补这种情形，非零就不再打）。两次补读的间隔（毫秒），
+ * 用完即止；不是轮询。
+ */
+export const INVITE_MIGRATION_RECHECK_MS: readonly number[] = [6000, 15000]
+
+/** 首读「全是 0」= 可能还没迁完（既没人数也没返利也没冻结，且没绑邀请人） */
+export const looksUnmigrated = (detail: InviteDetail): boolean =>
+  detail.count === 0 &&
+  detail.rebateBalance === 0 &&
+  detail.frozenBalance === 0 &&
+  (detail.inviterId === undefined || detail.inviterId <= 0)
+
+/** 第 `attempt`（从 0 起）次补读该等多久；`null` = 不用补读（已有数据 / 次数用完 / 不是数据态） */
+export const nextRecheckDelay = (state: InviteState, attempt: number): number | null => {
+  if (state.phase !== 'ready' || !looksUnmigrated(state.data)) {
+    return null
+  }
+  return INVITE_MIGRATION_RECHECK_MS[attempt] ?? null
+}
+
+// ------------------------------------------------------------------ 划转（#860：mock 契约，无真实响应样本）
+
+export type InviteTransferState = {
+  busy: boolean
+  /** 最近一次划转已成功（以响应里的数字 `balance` 为准） */
+  done: boolean
+  errorKey: TranslationKey | null
+}
+
+export const initialInviteTransferState = (): InviteTransferState => ({ busy: false, done: false, errorKey: null })
+
+export type InviteTransferSource = {
+  aff: {
+    transfer: () => Promise<ConsumeCallResult<ConsumeAffiliateTransfer>>
+    detail: () => Promise<ConsumeCallResult<ConsumeAffiliate>>
+  }
+}
+
+export type InviteTransferOutcome =
+  /** 成功：`balance` 是响应里的新余额；`reloaded` = 重拉 `GET /user/aff` 的数据态（拉失败为 `null`，面板保持原样） */
+  | { kind: 'done'; balance: number; reloaded: InviteState | null }
+  | { kind: 'failed'; key: TranslationKey }
+
+/** 失败文案：401 = 登录失效，其余一律通用失败（划转没有任何实测错误码，不发明、不展示服务端 message） */
+export const transferErrorKey = (error: Pick<Sub2ApiError, 'code' | 'status'>): TranslationKey =>
+  error.status === 401 || error.code === 'UNAUTHORIZED' ? 'inviteBindErrUnauthorized' : 'inviteTransferFailed'
+
+/**
+ * 划转一次：`POST /user/aff/transfer` → 成功才重拉 `GET /user/aff`。
+ * **成功 = 2xx 且响应里 `balance` 是数字**；2xx 但没有数字 `balance` 一律当失败，绝不显示成功。
+ */
+export const runTransfer = async (source: InviteTransferSource): Promise<InviteTransferOutcome> => {
+  const result = await source.aff.transfer()
+  if (!result.ok) {
+    return { kind: 'failed', key: transferErrorKey(result.error) }
+  }
+  if (!result.data.confirmed || result.data.balance === undefined) {
+    return { kind: 'failed', key: 'inviteTransferFailed' }
+  }
+  const next = await loadInvite({ aff: { detail: source.aff.detail } })
+  return { kind: 'done', balance: result.data.balance, reloaded: next.phase === 'ready' ? next : null }
+}
+
+export type InviteTransferEvent = { type: 'submit' } | { type: 'outcome'; outcome: InviteTransferOutcome }
+
+export const reduceInviteTransfer = (_state: InviteTransferState, event: InviteTransferEvent): InviteTransferState => {
+  if (event.type === 'submit') {
+    return { busy: true, done: false, errorKey: null }
+  }
+  return event.outcome.kind === 'done'
+    ? { busy: false, done: true, errorKey: null }
+    : { busy: false, done: false, errorKey: event.outcome.key }
 }
 
 /** 服务端真的给了邀请码才算「有东西可展示」（空串 / 只有空白 → 不放出空壳面板） */
@@ -128,6 +220,8 @@ export type InvitePanelViewProps = PanelBlockProps & {
   onSignIn?: () => void
   /** 「填写邀请人」区块（#842，由 `inviteBindModel.InviteBindView` 渲染；开关关或没有就不传）：只在数据态出现 */
   bindSlot?: ReactNode
+  /** 划转返利（#860）：不传 = 没有划转区块（其它挂载点 / 旧调用不受影响） */
+  transfer?: { state: InviteTransferState; onTransfer: () => void }
 }
 
 /** 邀请面板（纯渲染）。`hidden` 时返回 `null` —— 由容器直接不挂载 */
@@ -189,6 +283,38 @@ export const InvitePanelView = (props: InvitePanelViewProps): ReactNode => {
           t('inviteRebateFrozen', { amount: formatCurrency(state.data.frozenBalance) })
         )
       )
+    }
+    // #860：服务端说名额已满（`invite_remaining === 0`）→ 提示别再发码；上限数字不写（后台设置，随时会变）
+    if (isInviteFull(state.data)) {
+      body.push(createElement('p', { className: c.hint, 'data-testid': 'invite-full' }, t('inviteFull')))
+    }
+    if (props.transfer) {
+      const { state: transfer, onTransfer } = props.transfer
+      if (state.data.rebateBalance > 0) {
+        body.push(
+          createElement(
+            'div',
+            { className: c.actions },
+            createElement(
+              Button,
+              { size: 's', variant: 'outlined', disabled: transfer.busy, testId: 'invite-transfer', onClick: onTransfer },
+              t(transfer.busy ? 'inviteTransferring' : 'inviteTransfer')
+            )
+          )
+        )
+      }
+      if (transfer.done) {
+        body.push(createElement('p', { className: c.hint, 'data-testid': 'invite-transfer-done' }, t('inviteTransferDone')))
+      }
+      if (transfer.errorKey !== null) {
+        body.push(
+          createElement(
+            'div',
+            { className: c.error, role: 'alert', 'data-testid': 'invite-transfer-error' },
+            createElement('p', { className: c.errorText }, t(transfer.errorKey))
+          )
+        )
+      }
     }
   }
   if (state.phase === 'ready' && props.bindSlot) {
