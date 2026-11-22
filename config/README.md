@@ -68,9 +68,9 @@
 
 | 字段 | 用途 | 谁读它 | 换机器时改哪一行 |
 | --- | --- | --- | --- |
-| `chatBaseUrl` / `inviteBaseUrl` / `feedbackUrl` | 旧池域三兄弟：**邀请额度 / 反馈上传仍在用**；`chatBaseUrl` 自 #812 起**不再是推理地址**（见下面 consume 一节：推理与登录同环境） | `rspack.config.ts` → `__ENDPOINTS__`；`scripts/lib/endpoints.mjs` | 改这三行 + 同步 `allowedHosts` / `allowedPorts`（`pnpm check:endpoints` 会拦） |
+| `feedbackUrl` | 旧池域**反馈上传**（唯一还在用的旧池地址；新网关上 `/feedback` 返回 502，没有后继，见 #869）。`chatBaseUrl` / `inviteBaseUrl` 已随 #869 删除：对话 / 登录 / 购买链接统一走 `consume.baseUrl`（见下面 consume 一节） | `rspack.config.ts` → `__ENDPOINTS__`；`scripts/lib/endpoints.mjs` | 改这一行 + 同步 `allowedHosts` / `allowedPorts`（`pnpm check:endpoints` 会拦） |
 | `legacyHosts` | 已下线**聊天**主机的重写表 | `src/services/api/apiConfig.ts` 的 `LEGACY_HOSTS` | **别删**（删了老用户本地存的旧地址就失联）；换机时把旧主机加进来 |
-| `allowedHosts` / `allowedPorts` | `check:ip` 豁免名单 / 端口白名单 | 两个门禁脚本 | 与上面三份地址一起改 |
+| `allowedHosts` / `allowedPorts` | `check:ip` 豁免名单 / 端口白名单（旧池 IP + 网关域名 `apia.ecsafe.cn:443`；只收域名与既有旧池 IP，不收通配） | 两个门禁脚本 | 与 `feedbackUrl` / 网关 BASE 一起改 |
 | `download.primaryBase` | **分发首选机**（清单 `releases.json` + `/apk/`） | Web：`__ENDPOINTS__.dlPrimaryBase`（`updateManifest.ts`）；原生：`BuildConfig.DL_PRIMARY`（`UpdateEndpoint.java`） | **换分发机只改这一行** |
 | `download.fallbackBase` | **分发回退机**（所有历史版本的最后兜底） | `__ENDPOINTS__.dlFallbackBase` / `BuildConfig.DL_FALLBACK` | 换回退机才改 |
 
@@ -146,10 +146,11 @@
 | 校验在哪 | `scripts/lib/consumeEndpoints.mjs`（`scripts/build.mjs` 打包前跑）与 `android/app/build.gradle` 的 `[consume]` 段，**同一套判据**；门禁 `pnpm check:consume-api` 再独立跑一遍 |
 
 **一处需要更正上面的说法**：`consume.baseUrl` / `pay.baseUrl` 的 host **不需要**加进 `allowedHosts`。
-`allowedHosts` 只服务旧池域那三份地址（`chatBaseUrl` / `inviteBaseUrl` / `feedbackUrl`）与 `check:ip` 的豁免，
-它们的判据是「同一台机器 + 端口白名单」；`consume` / `pay` 是另外两台机器，走自己的判据
-（https / 废弃域黑名单 / 两者不许相同）。把新域名塞进 `allowedHosts` 反而会让 `check:endpoints`
-判「三个端点不在同一台机器上」变红。
+**#869 更新**：App 只配置一个网关 BASE（`consume.baseUrl`，`pay.baseUrl` 暂时与它相同，等最后一个旧 cardpay 读取方迁走后删除 `pay` 段）。
+`allowedHosts` / `allowedPorts` 现在登记两类东西：旧池反馈地址（`feedbackUrl`）与网关域名（`apia.ecsafe.cn`、443）。
+原来的「三个端点必须在同一台机器」判据已删除，改成「每个地址的 `主机:端口` 都登记在白名单里，网关不许是裸 IP」。
+`consume.baseUrl` 与 `pay.baseUrl` 仍不许相同，**唯一例外**是两者都等于统一网关 BASE（`scripts/lib/consumeEndpoints.mjs` 的
+`UNIFIED_GATEWAY_BASE`，`build.gradle` 同口径）。`/staging` 前缀只是兼容入口，新代码不要再写。
 
 其余落地细节（接口白名单、错误信封、幂等规则、字段实测状态）见
 [`docs/consume-layer.md`](../docs/consume-layer.md) 与

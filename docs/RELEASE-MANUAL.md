@@ -760,8 +760,8 @@ npm run test:e2e         # e2e（含真实上游用例，需要 E2E_API_KEY）
 
 | 类 | 例子（字段名，值看配置） | 为什么 | 处置 |
 | --- | --- | --- | --- |
-| **产品端点**（客户端真要连） | `chatBaseUrl`、`consume.baseUrl`、`pay.baseUrl`、`download.fallbackBase` | 删了产品就废；它出现在产物里是**功能需要**，不是泄漏 | **必须保留**，不许"清零"；命中打 `[OK-ENDPOINT]`，**不判红** |
-| **无用的旧池地址** | `inviteBaseUrl`（旧 invite 已随 #604 删除）、`feedbackUrl`（裁决归旧池，删前先 grep 调用方）、`legacyHosts[]`、`allowedHosts[]` 里的旧 IP | 已经没人请求它 —— 留在包里只剩"告诉别人这台机器在哪" | **清零**，命中打 `[FAIL-LEGACY]`，**exit 1** |
+| **产品端点**（客户端真要连） | `consume.baseUrl`（#869 起取代已删除的 `chatBaseUrl`）、`pay.baseUrl`、`download.fallbackBase` | 删了产品就废；它出现在产物里是**功能需要**，不是泄漏 | **必须保留**，不许"清零"；命中打 `[OK-ENDPOINT]`，**不判红** |
+| **无用的旧池地址** | `feedbackUrl`（裁决归旧池，#869 后唯一还在配置里的旧池地址；`inviteBaseUrl` 已删除，删前先 grep 调用方）、`legacyHosts[]`、`allowedHosts[]` 里的旧 IP | 已经没人请求它 —— 留在包里只剩"告诉别人这台机器在哪" | **清零**，命中打 `[FAIL-LEGACY]`，**exit 1** |
 | **未登记裸 IP** | 其它：配置里查不到，或登记在一个既不是产品端点也不是旧池的字段上（例如 `download.primaryBase`，归属仍在裁决） | 不知道它是干什么的，就不能替人猜它有用 | 打 `[FAIL-UNREGISTERED]`，**exit 1**（宁可红，等裁决） |
 | **争议域名**（待裁决） | `sub2api.rose7.cn`：`#624` 说它是生产 https 实例，11:12 裁决说与本项目无关 | 两边的结论都还在桌上，门禁**不替裁决投票** | 打 `[WARN-DISPUTED]` + 点名，**不计入红**，等 #745 的 A/B/C 裁决 |
 

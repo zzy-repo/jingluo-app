@@ -164,8 +164,8 @@ pnpm run check:public-artifact-redaction -- $APK
 
   | 标签 | 是什么 | 处置 |
   | --- | --- | --- |
-  | `[OK-ENDPOINT]` | **产品端点**：客户端真要连（`chatBaseUrl` / `pay.baseUrl` / `download.fallbackBase`） | **保留**，出现在产物里是功能需要，不是泄漏 |
-  | `[FAIL-LEGACY]` | **旧池地址**：已下线 / 没有调用方（`inviteBaseUrl`、`feedbackUrl`、`legacyHosts[]`、`allowedHosts[]`、`allowedPorts[]`） | **清零**：先 grep 调用方，确认 0 处再删 |
+  | `[OK-ENDPOINT]` | **产品端点**：客户端真要连（`consume.baseUrl` / `pay.baseUrl` / `download.fallbackBase`；#869 起 `chatBaseUrl` 已删除） | **保留**，出现在产物里是功能需要，不是泄漏 |
+  | `[FAIL-LEGACY]` | **旧池地址**：已下线 / 没有调用方（`feedbackUrl`、`legacyHosts[]`、`allowedHosts[]`、`allowedPorts[]`） | **清零**：先 grep 调用方，确认 0 处再删 |
   | `[FAIL-UNREGISTERED]` | **未登记 / 未裁决**：配置里查不到，或登记在一个既不是产品端点也不是旧池的字段上（如 `download.primaryBase`，裁决未定） | **清零**：要么登记并裁决归类，要么从产物里摘掉 |
   | `[WARN-DISPUTED]` | **争议域名**：`sub2api.rose7.cn`（`#624` 说生产实例 vs 11:12 说无关） | **不动**：等 #745 的 A/B/C 裁决，门禁不替裁决投票 |
 
