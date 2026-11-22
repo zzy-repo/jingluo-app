@@ -21,15 +21,23 @@ import { test } from 'node:test'
 import katex from 'katex'
 import { loadTsModule } from '../helpers/dom-env.mjs'
 
-const { planMathRender, splitMathBlocks, downgradeMathSource, hasRenderLeak } = await loadTsModule(
-  'src/services/markdown/mathBlocks.ts'
-)
+const {
+  planMathRender,
+  splitMathBlocks,
+  downgradeMathSource,
+  hasRenderLeak,
+  probeUnsupportedCommands,
+  resetCapabilityCache,
+} = await loadTsModule('src/services/markdown/mathBlocks.ts')
 
 /** 与组件里 `MathFormula.tsx` 完全相同的选项：throwOnError 开、strict 关、displayMode 开 */
 const render = (tex) =>
   katex.renderToString(tex, { throwOnError: true, strict: false, displayMode: true })
 
 const readSource = (relative) => readFileSync(new URL(`../../${relative}`, import.meta.url), 'utf8')
+
+/** 真探测出来的「不可用命令」集合（不是按版本号猜的） */
+const UNSUPPORTED = probeUnsupportedCommands(render)
 
 /**
  * 票面那段「美化4.1（安卓深色）」的输出：`\sf` + 4 个用 `\\[2pt]` 隔开的模块，
@@ -72,6 +80,51 @@ test('T1 票面宏的支持矩阵与实测一致（KaTeX 0.16，strict: false）
   }
 })
 
+test('T1b 探测结果就是「真渲染失败/出残渣」的那些命令，raisebox 靠残渣被识破', () => {
+  // 不认识的命令：抛 ParseError
+  for (const name of ['scalebox', 'rotatebox', 'resizebox', 'parbox', 'vspace']) {
+    assert.ok(UNSUPPORTED.includes(name), `${name} 应当被探测判为不可用`)
+  }
+  // `\raisebox` 是「认识但读错参数」：不抛错，靠残渣探测才抓得到
+  assert.ok(UNSUPPORTED.includes('raisebox'), '`\\raisebox{1pt}[0pt][0pt]{x}` 会打出 `[0pt][0pt]`，必须判为不可用')
+  // 票面里明确支持的宏不该出现在集合里（探测没误伤）
+  for (const name of ['text', 'textcolor', 'colorbox', 'rule', 'hspace', 'smash', 'sf']) {
+    assert.ok(!UNSUPPORTED.includes(name), `${name} 是支持的，不该被降级`)
+  }
+})
+
+test('T1d 判定跟着实现走，不跟着版本号走：换一个「认识 \\scalebox」的渲染器就不该再降级它', () => {
+  resetCapabilityCache()
+  /** 假装未来的 KaTeX 支持了 `\\scalebox`：把它当普通分组渲染 */
+  const futureRender = (tex) => render(tex.replace(/\\scalebox\{[^{}]*\}(\[[^\]]*\])?/gu, ''))
+  const futureUnsupported = probeUnsupportedCommands(futureRender)
+  assert.ok(!futureUnsupported.includes('scalebox'), '实现支持了就不该再列进「不可用」')
+  // 于是也不再改写它
+  assert.equal(
+    downgradeMathSource('\\scalebox{1.2}[1.2]{A}', futureUnsupported).tex,
+    '\\scalebox{1.2}[1.2]{A}',
+    '探测说可用，就不许动用户源码'
+  )
+  // 恢复真实探测结果，后面的用例不受影响
+  resetCapabilityCache()
+  assert.ok(probeUnsupportedCommands(render).includes('scalebox'), '换回真渲染器后仍是不可用（KaTeX 0.16）')
+})
+
+test('T1c 探测缓存生效：第二次调用不再重新渲染（#209：运行期只探一次）', () => {
+  let calls = 0
+  const countingRender = (tex) => {
+    calls += 1
+    return render(tex)
+  }
+  resetCapabilityCache()
+  probeUnsupportedCommands(countingRender)
+  const firstPass = calls
+  calls = 0
+  probeUnsupportedCommands(countingRender)
+  assert.equal(calls, 0, '第二次调用必须直接读缓存，不再渲染')
+  assert.ok(firstPass > 10, '第一次要把每个可疑命令都真渲染一遍')
+})
+
 test('T2 只在顶层 `\\\\` 分块，`\\text{a\\\\b}` 与 `\\\\[2pt]` 的间距参数都不影响分块', () => {
   assert.deepEqual(splitMathBlocks('a\\\\b\\\\c'), ['a', 'b', 'c'], '顶层 `\\\\` 要分块')
   assert.deepEqual(splitMathBlocks('a\\\\[2pt]b'), ['a', 'b'], '`\\\\[2pt]` 的间距参数要被吃掉')
@@ -105,11 +158,13 @@ test('T3 A 方案把整段救回来：四个模块各占一行，整段不再炸
   }
 })
 
-test('T3c 单行公式被 A 方案动过时仍走整块渲染，只是多一句「已简化」提示', () => {
+test('T3c 单块公式也能被救回来：映射后渲染成功，并给出「已简化」提示', () => {
   const plan = planMathRender('\\raisebox{70pt}[0pt][0pt]{\\text{A}}', render)
-  assert.equal(plan.mode, 'katex', '只有一块时没必要拆，整块渲染 + 提示即可')
-  assert.equal(plan.simplified, true)
-  assert.equal(hasRenderLeak(plan.html), false)
+  assert.equal(plan.mode, 'degraded', '需要改写源码时走降级视图（提示与原文开关都在这里）')
+  assert.equal(plan.parts.length, 1, '只有一块')
+  assert.equal(plan.parts[0].kind, 'rendered', '映射之后应当渲染成功')
+  assert.equal(hasRenderLeak(plan.parts[0].html), false)
+  assert.deepEqual(plan.approximated, ['\\raisebox'], '要告诉界面「已简化」')
 })
 
 test('T3b 关掉 A 方案（不映射）时，也只有失败的那一块降级，其余照常渲染', () => {
@@ -151,18 +206,18 @@ test('T4 A 方案等价映射：丢缩放/旋转/宽度保留内容，纯位置�
     ['\\raisebox{70pt}[0pt][0pt]{\\rotatebox{15}{o}}', '{{o}}', '\\rotatebox'],
   ]
   for (const [source, expected, name] of cases) {
-    const result = downgradeMathSource(source)
+    const result = downgradeMathSource(source, UNSUPPORTED)
     assert.equal(result.tex, expected, `${name} 的映射结果不对`)
     assert.ok(result.approximated.includes(name), `${name} 要出现在 approximated 里`)
   }
   // 小位移是正常微调，必须原样保留（不能被「夹断」误伤）
-  const micro = downgradeMathSource('\\raisebox{2pt}{A}')
+  const micro = downgradeMathSource('\\raisebox{2pt}{A}', UNSUPPORTED)
   assert.equal(micro.tex, '\\raisebox{2pt}{A}', '2pt 的微调不该被当成绝对定位')
   assert.deepEqual(micro.approximated, [], '没有改写的就不该报「已简化」')
   // 表外的命令原样保留（宁可不救，也不改坏内容）
   const untouched = '\\frac{1}{2}+\\hspace{-1em}'
-  assert.equal(downgradeMathSource(untouched).tex, untouched)
-  assert.deepEqual(downgradeMathSource(untouched).approximated, [])
+  assert.equal(downgradeMathSource(untouched, UNSUPPORTED).tex, untouched)
+  assert.deepEqual(downgradeMathSource(untouched, UNSUPPORTED).approximated, [])
 })
 
 test('T5 正常公式仍走整块一次渲染，aligned 里的 `\\\\` 不许被拆开', () => {
@@ -239,9 +294,8 @@ test('T9 残渣探测：`\\raisebox` 的可选参数会被 KaTeX 当文字打出
   assert.equal(hasRenderLeak(clean), false, '正常 `\\raisebox` 不是残渣')
   // 走完 plan：整段只有这一处，映射后应当渲染成功、且结果干净
   const plan = planMathRender('\\raisebox{70pt}[0pt][0pt]{\\text{A}}', render)
-  assert.equal(plan.mode, 'katex')
-  assert.equal(plan.simplified, true)
-  assert.equal(hasRenderLeak(plan.html), false)
+  assert.equal(plan.mode, 'degraded')
+  assert.equal(hasRenderLeak(plan.parts[0].html), false)
   // 映射关掉时不能把残渣当成功：应当降级成原文 + 可读提示
   const raw = planMathRender('\\raisebox{70pt}[0pt][0pt]{\\text{A}}', render, { downgrade: false })
   assert.equal(raw.mode, 'degraded', '残渣不许当渲染成功端给用户')
