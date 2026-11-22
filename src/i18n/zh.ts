@@ -72,6 +72,16 @@ export const zh = {
   tableCopy: '复制表格',
   /** 公式右上角的「复制 TeX 源码」：从 katex-mathml 的 annotation 取纯 TeX（#486 P0-2） */
   mathCopySource: '复制 TeX 源码',
+  /** #821：气泡美化包常用 KaTeX 没有的排版宏（\scalebox 等），失败的模块降级成这句提示 */
+  mathUnsupportedBlock: '这一行用了不支持的排版命令',
+  /** #821：折叠里显示该模块的 TeX 原文 */
+  mathSourceToggle: '查看原文',
+  /** #821：折叠里解释 KaTeX 报的错 */
+  mathUnsupportedReason: '原因：',
+  /** #821：A 方案做过等价映射（丢缩放 / 丢旋转）时的一句总提示 */
+  mathSimplified: '部分排版命令已简化显示',
+  /** #821：这块没抛错，但 KaTeX 把排版参数当文字打出来了（`[0pt][0pt]`） */
+  mathIgnoredArgs: '排版参数未生效，可能是 KaTeX 不支持这一写法',
   toolSearchIntro: '搜索',
   messageSearching: '搜索中...',
   imageSearching: '图像搜索中...',

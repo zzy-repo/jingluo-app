@@ -467,6 +467,112 @@
   position: relative;
 }
 
+/*
+ * #821：KaTeX 渲染不了的模块降级视图。
+ *
+ * 硬约束是**不许把页面撑宽**（390 / 360 两档都不能横向溢出）：原文是等宽字体的长串 TeX，
+ * 默认不换行，所以这里 `pre-wrap` + `overflow-wrap: anywhere` 强制在任意位置断开；
+ * 容器自己可以横向滚（与 `.ds-markdown-math.katex-display` 的口径一致），不把宽度传给页面。
+ */
+.md-math-degraded {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: auto;
+}
+
+.md-math-degraded-inline {
+  display: inline-flex;
+  flex-direction: row;
+  align-items: baseline;
+  gap: 2px;
+  vertical-align: baseline;
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.md-math-degraded-line,
+.md-math-degraded-part {
+  display: block;
+  max-width: 100%;
+}
+
+.md-math-degraded-note {
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 16px;
+  text-align: center;
+}
+
+.md-math-unsupported {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  box-sizing: border-box;
+  max-width: 100%;
+  min-width: 0;
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: var(--dsw-alias-markdown-inline-code);
+  text-align: left;
+}
+
+.md-math-unsupported-inline {
+  display: inline;
+  min-width: 0;
+}
+
+.md-math-unsupported-note {
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.md-math-unsupported-detail {
+  max-width: 100%;
+  min-width: 0;
+
+  > summary {
+    color: var(--dsw-alias-label-secondary);
+    font-size: 12px;
+    line-height: 16px;
+    cursor: pointer;
+  }
+}
+
+.md-math-unsupported-source {
+  display: block;
+  box-sizing: border-box;
+  max-width: 100%;
+  margin-top: 2px;
+  padding: 4px 6px;
+  border-radius: 6px;
+  background: var(--dsw-alias-markdown-code-block);
+  color: inherit;
+  font-family: var(--ds-font-family-code);
+  font-size: 12px;
+  line-height: 16px;
+  /* 长 TeX 串必须能断，否则 360 档会把页面撑宽 */
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.md-math-unsupported-reason {
+  display: block;
+  margin-top: 2px;
+  color: var(--dsw-alias-label-secondary);
+  font-family: var(--ds-font-family-code);
+  font-size: 12px;
+  line-height: 16px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 .md-math-inline {
   position: relative;
 }

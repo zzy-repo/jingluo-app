@@ -75,6 +75,16 @@ export const en = {
   tableCopy: 'Copy table',
   /** Copy-the-source action on a formula; reads pure TeX from the katex-mathml annotation (#486 P0-2) */
   mathCopySource: 'Copy TeX source',
+  /** #821: bubble-style prompts use macros KaTeX lacks (\scalebox …); failed modules degrade to this */
+  mathUnsupportedBlock: 'This line uses unsupported typesetting commands',
+  /** #821: reveal the module's raw TeX inside the collapsible */
+  mathSourceToggle: 'Show source',
+  /** #821: explain what KaTeX reported inside the collapsible */
+  mathUnsupportedReason: 'Reason: ',
+  /** #821: one-line notice when option-A equivalence mapping dropped scaling / rotation */
+  mathSimplified: 'Some typesetting commands were simplified',
+  /** #821: this block did not error out, but KaTeX printed the arguments as text (`[0pt][0pt]`) */
+  mathIgnoredArgs: 'Typesetting arguments were ignored — KaTeX may not support this form',
   toolSearchIntro: 'Searching for',
   messageSearching: 'Searching...',
   imageSearching: 'Searching by image...',

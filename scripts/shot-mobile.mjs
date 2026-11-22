@@ -1636,6 +1636,138 @@ const makeMarkdownSession = () => {
   }
 }
 
+
+// ---------------------------------------------------------------- #821 KaTeX 不支持宏
+
+/** 会话标题：截图里靠它进会话 */
+const KATEX_821_SESSION_TITLE = '截图-KaTeX-不支持宏-821'
+
+/**
+ * 票面「美化4.1（安卓深色）」的真实输出：一个用排版宏「画」出来的气泡卡片。
+ *
+ * `\sf` 开无衬线，四个模块用 `\\[2pt]` 分隔：标题栏（`\colorbox` 底色 + `\raisebox` 叠头像 +
+ * `\rule` 画分隔线）／名字行（`\scalebox` 缩放 + 时间戳）／气泡正文（`\smash` + `\rotatebox`
+ * 角标）／已读行。**`\scalebox` 与 `\rotatebox` 是 KaTeX 没有的命令**，改动前一个就把整块
+ * 打成 ParseError → 整块换成原文（一屏反斜杠）。
+ */
+const KATEX_821_BEAUTY = [
+  '\\[',
+  '\\sf',
+  '\\colorbox{#1e1e20}{\\textcolor{#e6e6e6}{\\text{  DeepSeek  }}}\\hspace{-0.33em}\\raisebox{70pt}[0pt][0pt]{\\text{◖◗}}\\hspace{-2em}\\rule{30em}{0pt}',
+  '\\\\[2pt]',
+  '\\scalebox{1.2}[1.2]{\\text{小助手}}\\hspace{-0.33em}\\colorbox{#2b2b2b}{\\text{\\textcolor{#fff}{ 今天 14:02 }}}',
+  '\\\\[6pt]',
+  '\\smash{\\text{◖◗}}\\hspace{-0.33em}\\colorbox{#2b2b2b}{\\text{\\textcolor{#e6e6e6}{ 你好，我是助手 }}}\\raisebox{70pt}[0pt][0pt]{\\rotatebox{15}{\\text{o}}}',
+  '\\\\[2pt]',
+  '\\rule{30em}{0pt}\\hspace{-2em}\\text{\\textcolor{#888}{已读}}',
+  '\\]',
+].join('\n')
+
+const makeKatex821Session = () => {
+  const now = Date.now()
+  return {
+    id: 'shot-katex-821',
+    title: KATEX_821_SESSION_TITLE,
+    createdAt: now,
+    updatedAt: now + 2000,
+    messages: [
+      userMessage('shot-katex-821-u1', '用美化4.1（安卓深色）给我排一条气泡消息。', now),
+      assistantMessage(
+        'shot-katex-821-a1',
+        [
+          {
+            type: 'text',
+            text: [
+              '美化4.1（安卓深色）排出来的气泡：',
+              KATEX_821_BEAUTY,
+              '行内那次也要稳住：$\\scalebox{1.2}{\\text{行内}} 不该整段变成源码$，正常公式 $a^2+b^2=c^2$ 仍然照常渲染。',
+              // 第二段：A 方案救不回来的命令（KaTeX 没有 tikz 环境）—— 走 B/C 的降级分支
+              [
+                '\\[',
+                '\\rule{20em}{0.4pt}',
+                '\\\\[2pt]',
+                '\\begin{tikzpicture}\\draw (0,0)--(1,1);\\end{tikzpicture}',
+                '\\\\[2pt]',
+                '\\text{上一行是画图命令，KaTeX 没有实现}',
+                '\\]',
+              ].join('\n'),
+            ].join('\n\n'),
+          },
+        ],
+        now + 1
+      ),
+    ],
+  }
+}
+
+/** 页面里量一遍：渲染了哪些、泄露了哪些、有没有横向溢出 */
+const KATEX_821_PROBE = () => {
+  // 改动前渲染失败时根本没有 `.md-math-block`（整块被换成 `<p>` 原文），所以按「公式容器」取
+  const mathBlocks = Array.from(document.querySelectorAll('.ds-markdown-math, .ds-markdown-paragraph'))
+  /**
+   * 源码外露的判据：**可见文本**里出现 TeX 命令。两个例外必须先摘掉，否则会误报：
+   * `.md-math-unsupported`（降级块里本来就该显示原文）与 `.katex-mathml`（KaTeX 藏起来的 MathML annotation）。
+   */
+  const visibleTextOf = (element) => {
+    const clone = element.cloneNode(true)
+    // 内联 script 的源码在 textContent 里也算「文字」，会把 `\btoken` 这种误报成外露的 TeX
+    for (const node of clone.querySelectorAll('.md-math-unsupported, .katex-mathml, script, style')) {
+      node.remove()
+    }
+    return clone.textContent ?? ''
+  }
+  /** 只看正文（`.ds-markdown`）：改动前失败时正文是 `<p>` 原文，也在里面 */
+  const bodyText = () => {
+    const marks = Array.from(document.querySelectorAll('.ds-markdown'))
+    return marks.length > 0 ? marks.map(visibleTextOf).join(' ') : visibleTextOf(document.body)
+  }
+  const leakedCommands = (bodyText().match(/\\[a-zA-Z]{3,}/gu) ?? []).sort()
+  /** 尺寸参数残渣（`\raisebox` 的可选参数曾被当文字打出来） */
+  const leakedSizes =
+    bodyText().match(/\[\s*[-+]?\d+(?:\.\d+)?\s*(?:pt|em|ex|mm|cm|px)\s*\]/gu) ?? []
+  const scrollable = /(auto|scroll|overlay)/
+  const absorbed = (element) => {
+    let node = element.parentElement
+    while (node !== null) {
+      if (scrollable.test(getComputedStyle(node).overflowX)) {
+        return true
+      }
+      node = node.parentElement
+    }
+    return false
+  }
+  let overflowCount = 0
+  let worst = 0
+  for (const element of document.querySelectorAll('body *')) {
+    const excess = element.getBoundingClientRect().right - document.documentElement.clientWidth
+    if (excess > 1 && !absorbed(element)) {
+      overflowCount += 1
+      worst = Math.max(worst, Math.round(excess))
+    }
+  }
+  return {
+    mathBlockCount: mathBlocks.length,
+    /** KaTeX 自己的红字错误块：改动前后都应该是 0（改动前是原文，不是红字） */
+    katexErrorBlocks: document.querySelectorAll('.katex-error').length,
+    /** 真正渲染出来的 KaTeX 子树（MathML 存在 = 渲染成功） */
+    katexSubtrees: document.querySelectorAll('.katex-mathml').length,
+    /** 降级视图里的「能渲染的模块」行数 */
+    degradedLines: document.querySelectorAll('.md-math-degraded-line').length,
+    /** 降级视图里的「这一行用了不支持的排版命令」块数 */
+    unsupportedBlocks: document.querySelectorAll('.md-math-unsupported').length,
+    /** 可折叠的「查看原文」入口（B/C 方案的兜底开关） */
+    sourceToggles: document.querySelectorAll('.md-math-unsupported-detail > summary').length,
+    /** 近似提示（A 方案做过映射时出现） */
+    simplifiedNotes: document.querySelectorAll('.md-math-degraded-note').length,
+    leakedCommands,
+    leakedSizes,
+    documentScrollWidth: document.documentElement.scrollWidth,
+    viewportWidth: document.documentElement.clientWidth,
+    overflowCount,
+    worstOverflowPx: worst,
+  }
+}
+
 export const PAGES = {
   'header-scroll-top': {
     dir: 'docs/ui/106-mobile-header-scroll-top',
@@ -4001,6 +4133,83 @@ export const PAGES = {
         assertion: 'overflowCount === 0（390 / 360 两档，每个状态各量一次）',
         states: overflowSeen,
       })
+    },
+  },
+
+  'katex-unsupported-821': {
+    dir: 'docs/ui/821-katex-macros',
+    title: '#821 KaTeX 不支持宏（美化包气泡）：按模块降级、可读原文、390/360 不横向溢出',
+    sessions: () => [makeKatex821Session()],
+    run: async (ctx) => {
+      const { page, shot, record, warn } = ctx
+      // KaTeX 的「No character metrics」是 console.warn（不是 error），单收一份用来解释 ◖◗
+      const warnings = []
+      page.on('console', (message) => {
+        if (message.type() === 'warning') warnings.push(message.text())
+      })
+      await openSession(page, KATEX_821_SESSION_TITLE)
+      // KaTeX 是懒加载的：等「出结果」——渲染成功 / 降级提示 / 或（改动前那种）原文段落
+      await page
+        .waitForFunction(
+          () =>
+            document.querySelector('.katex-mathml') !== null ||
+            document.querySelector('.md-math-unsupported') !== null ||
+            /\\[a-zA-Z]{3,}/u.test(document.body === null ? '' : document.body.innerText),
+          undefined,
+          { timeout: 20000 }
+        )
+        .catch(() => warn('20s 内没有任何结果：页面可能还停在 KaTeX 加载中'))
+      await page.waitForTimeout(400)
+
+      const probe = await page.evaluate(KATEX_821_PROBE)
+      record('render', probe)
+      record('katexWarnings', [...new Set(warnings)].slice(0, 5))
+      await shot('01-full')
+      const mathBox = await page.locator('.md-math-block, .ds-markdown').first().boundingBox()
+      if (mathBox !== null) {
+        await shot('02-bubble-closeup', {
+          clip: {
+            x: 0,
+            y: Math.max(0, mathBox.y - 8),
+            width: ctx.size.width,
+            height: Math.min(mathBox.height + 16, ctx.size.height - 8),
+          },
+        })
+      }
+      // 「查看原文」开关：有降级块就能展开，展开后再截一张
+      const toggle = page.locator('.md-math-unsupported-detail > summary').first()
+      if ((await toggle.count()) > 0) {
+        await toggle.click()
+        await page.waitForTimeout(250)
+        await shot('03-source-toggle-opened')
+      }
+
+      if (probe.overflowCount > 0) {
+        throw new Error(
+          `横向溢出 ${probe.overflowCount} 处（最宽多出 ${probe.worstOverflowPx}px）：${ctx.size.label}`
+        )
+      }
+      if (probe.katexErrorBlocks > 0) {
+        throw new Error(`出现 ${probe.katexErrorBlocks} 个 katex-error 红字错误块`)
+      }
+      if (probe.leakedCommands.length > 0 || probe.leakedSizes.length > 0) {
+        throw new Error(
+          `源码外露：气泡里露出 ${probe.leakedCommands.length} 个 TeX 命令、${probe.leakedSizes.length} 处尺寸残渣（${[...probe.leakedCommands, ...probe.leakedSizes].slice(0, 6).join(' ')}）`
+        )
+      }
+      if (probe.katexSubtrees === 0) {
+        throw new Error('一个 KaTeX 子树都没有：气泡完全没渲染出来')
+      }
+      if (probe.simplifiedNotes === 0) {
+        throw new Error('丢过缩放/旋转却没有「部分排版命令已简化显示」提示')
+      }
+      // 第二段里有一个 KaTeX 真没有的命令（tikz 环境）：必须降级成可读提示 + 「查看原文」
+      if (probe.unsupportedBlocks === 0) {
+        throw new Error('整段不可渲染时没有降级成可读提示（应该出现「这一行用了不支持的排版命令」）')
+      }
+      if (probe.sourceToggles !== probe.unsupportedBlocks) {
+        throw new Error(`降级块数量与「查看原文」开关对不上：${probe.unsupportedBlocks} vs ${probe.sourceToggles}`)
+      }
     },
   },
 

@@ -1,0 +1,32 @@
+{
+  "page": "katex-unsupported-821",
+  "title": "#821 KaTeX 不支持宏（美化包气泡）：按模块降级、可读原文、390/360 不横向溢出",
+  "viewport": 360,
+  "size": "360×740",
+  "shots": [
+    "docs/ui/821-katex-macros/360/katex-unsupported-821-01-full-360.png",
+    "docs/ui/821-katex-macros/360/katex-unsupported-821-02-bubble-closeup-360.png",
+    "docs/ui/821-katex-macros/360/katex-unsupported-821-03-source-toggle-opened-360.png"
+  ],
+  "notes": [],
+  "render": {
+    "mathBlockCount": 4,
+    "katexErrorBlocks": 0,
+    "katexSubtrees": 8,
+    "degradedLines": 6,
+    "unsupportedBlocks": 1,
+    "sourceToggles": 1,
+    "simplifiedNotes": 1,
+    "leakedCommands": [],
+    "leakedSizes": [],
+    "documentScrollWidth": 360,
+    "viewportWidth": 360,
+    "overflowCount": 0,
+    "worstOverflowPx": 0
+  },
+  "katexWarnings": [
+    "No character metrics for '◖' in style 'Main-Regular' and mode 'text'",
+    "No character metrics for '◗' in style 'Main-Regular' and mode 'text'"
+  ],
+  "consoleErrors": []
+}
