@@ -3,6 +3,7 @@
  *
  *   POST /api/v1/auth/validate-invitation-code   公共（10/min）：注册前预校验邀请码
  *   GET  /api/v1/user/aff                        JWT：我的邀请（返利按**比例**结算，金额单位是元）
+ *   POST /api/v1/user/aff/transfer               JWT：把全部可划转返利转入余额（#860；**没有真实响应样本**，只有 mock 契约）
  *
  * 语义（#484 §3.1b「UI 要跟着改」）：
  *  - 邀请关系**只能在注册时一次填定**（sub2api 没有「登录后补填邀请码」的端点）；
@@ -26,6 +27,13 @@ export type ConsumeInvitationCheck = { valid: boolean; errorCode?: string }
  */
 export type ConsumeAffiliateBind = { bound: boolean }
 
+/**
+ * 划转返利到余额的成功体（#860 契约：`data: { transferred_quota, balance }`，**没有任何真实响应样本**）。
+ * `confirmed` 只有响应体里 `balance` 是有限数字才为 `true`（界面要用它刷新余额）；
+ * 2xx 但没有数字 `balance` 一律 `confirmed: false`，调用方不得显示成功。`transferredQuota` 单位是元，缺省就不带。
+ */
+export type ConsumeAffiliateTransfer = { confirmed: boolean; balance?: number; transferredQuota?: number }
+
 /** 我的邀请（`AffiliateDetail`）：`affQuota` / `affFrozenQuota` / `affHistoryQuota` 单位是 **元** */
 export type ConsumeAffiliate = {
   userId: number
@@ -41,6 +49,8 @@ export type ConsumeAffiliate = {
   affHistoryQuota: number
   /** 生效返利比例（百分数，例如 10 表示 10%） */
   effectiveRebateRatePercent?: number
+  /** 剩余邀请名额：`0` = 已满，`-1` = 不限（#860）；服务端没给就不带，**不在客户端推算上限** */
+  inviteRemaining?: number
   /** 下线列表（字段随服务端版本变，原样保留） */
   invitees: unknown[]
 }
@@ -96,6 +106,28 @@ export const bindInviter = (http: ConsumeHttp, code: string): Promise<ConsumeCal
       return { ...result, data: { bound: body.bound === true } }
     })
 
+/**
+ * 把全部可划转返利转入余额（JWT，#860：`POST /api/v1/user/aff/transfer`，无请求体）。
+ * 写操作，**不自动重试**；成功 = 2xx 且 `data.balance` 是数字（见 {@link ConsumeAffiliateTransfer}）。
+ * 失败的 `reason` 没有任何实测样本，这里不发明错误码，调用方只按 401 / 其余通用失败分派。
+ */
+export const transferAffiliate = (http: ConsumeHttp): Promise<ConsumeCallResult<ConsumeAffiliateTransfer>> =>
+  http
+    .call<unknown>({ method: 'POST', path: '/api/v1/user/aff/transfer', timeout: 'write' })
+    .then((result) => {
+      if (!result.ok) {return result}
+      const body = asRecord(result.data)
+      const out: ConsumeAffiliateTransfer = { confirmed: false }
+      if (typeof body.balance === 'number' && Number.isFinite(body.balance)) {
+        out.confirmed = true
+        out.balance = body.balance
+      }
+      if (typeof body.transferred_quota === 'number' && Number.isFinite(body.transferred_quota)) {
+        out.transferredQuota = body.transferred_quota
+      }
+      return { ...result, data: out }
+    })
+
 const toAffiliate = (value: unknown): ConsumeAffiliate => {
   const body = asRecord(value)
   const invitees = Array.isArray(body.invitees) ? body.invitees : []
@@ -110,5 +142,6 @@ const toAffiliate = (value: unknown): ConsumeAffiliate => {
   }
   if (typeof body.inviter_id === 'number') {out.inviterId = body.inviter_id}
   if (typeof body.effective_rebate_rate_percent === 'number') {out.effectiveRebateRatePercent = body.effective_rebate_rate_percent}
+  if (typeof body.invite_remaining === 'number' && Number.isFinite(body.invite_remaining)) {out.inviteRemaining = body.invite_remaining}
   return out
 }

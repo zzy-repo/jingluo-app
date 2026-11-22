@@ -65,6 +65,7 @@ type ConsumeCallResult<T> =
 | `aff` | `validateInvitationCode` | `POST /api/v1/auth/validate-invitation-code` | 无 | ❌ |
 | | `getAffiliate` | `GET /api/v1/user/aff` | JWT | ✅ |
 | | `bindInviter`（#842，**契约先行、后端未上线，入口默认关闭**） | `POST /api/v1/user/aff/bind` | JWT | ❌ 写操作 |
+| | `transferAffiliate`（#860，**只有 mock 契约，没有真实响应样本**） | `POST /api/v1/user/aff/transfer` | JWT | ❌ 写操作 |
 | `email` | `sendBindEmailCode` / `bindEmail` / `unbindProvider` | `POST /api/v1/user/account-bindings/email/send-code`、`…/email`、`DELETE …/:provider` | JWT | ❌ / ⚠️ |
 
 白名单**之外**一律禁止（含 `/api/v1/admin/**`，以及 `/api/v1/payment/**` 里除 `orders/my` 之外的路径）。

@@ -31,6 +31,8 @@ export const PATH_WHITELIST = [
   '/api/v1/user/aff',
   // #842：登录后绑定邀请人（契约先行，后端未上线；前端入口默认关闭）
   '/api/v1/user/aff/bind',
+  // #860：把全部可划转返利转入余额（只有 mock 契约，没有真实响应样本）
+  '/api/v1/user/aff/transfer',
   // §3.1c 邮箱绑定
   '/api/v1/user/account-bindings/email/send-code',
   '/api/v1/user/account-bindings/email',
