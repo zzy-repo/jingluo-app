@@ -478,20 +478,27 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 6px;
   max-width: 100%;
   min-width: 0;
   overflow-x: auto;
+}
+
+/* 行距用 margin 给：老内核的 flex `gap` 会「API 说支持、实际不生效」（#173），不依赖它 */
+.md-math-degraded > * + * {
+  margin-top: 6px;
 }
 
 .md-math-degraded-inline {
   display: inline-flex;
   flex-direction: row;
   align-items: baseline;
-  gap: 2px;
   vertical-align: baseline;
   max-width: 100%;
   overflow-x: auto;
+
+  > * + * {
+    margin-left: 2px;
+  }
 }
 
 .md-math-degraded-line,
@@ -511,7 +518,6 @@
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 2px;
   box-sizing: border-box;
   max-width: 100%;
   min-width: 0;

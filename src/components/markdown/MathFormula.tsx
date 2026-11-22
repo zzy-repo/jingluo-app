@@ -185,7 +185,6 @@ const MathDegraded = memo(function MathDegraded({
 
 export const MathBlock = memo(function MathBlock({ value }: { value: string }) {
   const plan = useMathRender(value, false)
-  const t = useTranslate()
   const hostRef = useRef<HTMLSpanElement>(null)
   // KaTeX 还没加载完：先给原文，和改动前完全一致（加载完会重渲染）
   if (plan === null) {
@@ -201,7 +200,6 @@ export const MathBlock = memo(function MathBlock({ value }: { value: string }) {
   }
   return (
     <span className="katex-display ds-markdown-math md-math-block" ref={hostRef}>
-      {plan.simplified && <span className="md-math-degraded-note">{t('mathSimplified')}</span>}
       <span className="katex" dangerouslySetInnerHTML={{ __html: plan.html }}></span>
       <MathCopyButton hostRef={hostRef} fallback={value} />
     </span>
