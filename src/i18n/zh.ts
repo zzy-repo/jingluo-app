@@ -883,7 +883,6 @@ export const zh = {
   settingsAuthConfirmPlaceholder: '请再次输入密码',
   // #819：注册分段的「邀请码（可选）」——只在 settings/public 的 invitation_code_enabled 为真时出现
   // （注册后无法补填：sub2api 没有「登录后补邀请码」的端点，见 inviteCodeAtRegister 那条说明）
-  settingsAuthInvitePlaceholder: '邀请码（可选）',
   /** 两次输入不一致（只在客户端校验，不上服务端；提交前就拦下） */
   settingsAuthPasswordMismatch: '两次输入的密码不一致',
   /** 眼睛按钮的可访问名（说的是「点了会发生什么」：现在隐藏 → 「显示密码」） */
