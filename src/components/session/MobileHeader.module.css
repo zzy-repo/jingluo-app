@@ -9,6 +9,14 @@
 
 /* Issue #106：标题区是「双击回到首条消息」的点击目标。
    内容盒高 = 60 - 12 - 4 = 44px，正好满足 44px 最小点击目标（390 / 360 两档一样高）。 */
+/* #831 来源徽标槽位：只占自然宽度，标题区（flex: 1）自己让位，不靠 flex gap（#173） */
+.badgeSlot {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  margin-left: 4px;
+}
+
 .titleButton {
   display: flex;
   align-items: center;

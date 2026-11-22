@@ -4,6 +4,7 @@ import { useTranslate } from '../../i18n/index.js'
 import { IconPanelLeftOutline16, IconSettingsOutline16, NewChatIcon } from '../base/icons.js'
 import { setSiderCollapsed } from '../../services/settings.js'
 import { groupSessions } from '../../services/chat/sessionGroups.js'
+import { parentTitleOf } from '../../services/chat/sessionBranch.js'
 import { BackupError, exportHistory } from '../../services/chat/backup.js'
 import { saveHistoryArchive } from '../../services/chat/history/saveArchive.js'
 import { newChat, removeSession, useChatStore } from '../../services/chat/store.js'
@@ -31,6 +32,19 @@ export const Sider = ({ mobile = false }: { mobile?: boolean }) => {
     const result = groupSessions(unpinned, now, t)
     return pinned.length > 0 ? [{ key: 'pinned', label: t('sessionPinnedGroup'), sessions: pinned }, ...result] : result
   }, [sessions, now, t])
+  /**
+   * #831：分支来源徽标要显示的父会话标题（`null` = 父会话不在本机 → 降级「来源已不在本机」）。
+   * 一次 `Map` 算好传给每一行，比让每行自己订阅整个列表便宜：列表里 N 条会话时不会 N 次线性扫。
+   */
+  const parentTitles = useMemo(() => {
+    const titles = new Map<string, string | null>()
+    for (const session of sessions) {
+      if (session.branchOf !== undefined) {
+        titles.set(session.id, parentTitleOf(session.branchOf, sessions))
+      }
+    }
+    return titles
+  }, [sessions])
   const [deleting, setDeleting] = useState<SessionSummary | null>(null)
   const [deletePending, setDeletePending] = useState(false)
   // #390 选择性导出：进入「选择」模式后逐条勾选，只导出勾中的会话（包格式与全量导出一致）。
@@ -172,6 +186,7 @@ export const Sider = ({ mobile = false }: { mobile?: boolean }) => {
                   key={session.id}
                   session={session}
                   active={session.id === activeId}
+                  parentTitle={parentTitles.get(session.id)}
                   selecting={selecting}
                   selected={selectedSet.has(session.id)}
                   onToggle={toggleSelected}

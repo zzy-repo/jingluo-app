@@ -384,6 +384,19 @@ export const toLocalSessionResult = (file: SessionFile): LocalSessionResult => {
     updatedAt: time(file.updated_at),
     messages: tree.messages,
     rootMessageId: tree.rootMessageId,
+    // #831：分支来源原样带回。**父会话在不在本机不影响导入** —— 徽标层面降级为
+    // 「来源已不在本机」（见 components/session/SessionBranchBadge.tsx），不是导入失败。
+    ...(file.branch_of === undefined
+      ? {}
+      : {
+          branchOf: {
+            sessionId: file.branch_of.session_id,
+            createdAt: time(file.branch_of.created_at),
+            ...(file.branch_of.message_id === null
+              ? {}
+              : { messageId: file.branch_of.message_id }),
+          },
+        }),
   }
   const images = new Map<string, string>()
   let filesBroken = false

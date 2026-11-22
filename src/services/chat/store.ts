@@ -73,6 +73,7 @@ import {
   prepareDraftMessage,
 } from './drafts.js'
 import { createLatestReminder } from './latestReminder.js'
+import { branchPointOf, planBranchSession, type BranchPoint } from './sessionBranch.js'
 import {
   applyEvent,
   canContinueReply,
@@ -870,6 +871,79 @@ export const selectSession = (id: string) => {
     void ensureSessionLoaded(id)
     trimSessionCache()
   }
+}
+
+/**
+ * #831 会话级分支的请求：`messageId` 缺省 = 完整分支（整条会话复制），给了 = 从该消息处节点分支。
+ * 两种都只读父会话（`sessionBranch.ts` 的 `planBranchSession()` 复制可见消息），父会话不动。
+ */
+export type SessionBranchRequest = { sessionId: string; messageId?: string }
+
+/**
+ * 预览分叉点（#831 第 2 条）：确认弹层创建前要显示「将从第 N 条消息处分支，之后的 M 条不会带入」。
+ *
+ * 会话可能还没进缓存（用户在会话列表里直接点「从此会话分支」），所以先确保详情加载完成；
+ * 分叉点算不出来（消息已被删 / 数据损坏）返回 null，调用方据此**放弃这次分支**，不猜位置。
+ */
+export const previewSessionBranch = async (
+  request: SessionBranchRequest
+): Promise<BranchPoint | null> => {
+  if (get().importingHistory) {
+    return null
+  }
+  await ensureSessionLoaded(request.sessionId)
+  const session = getSession(request.sessionId)
+  if (session === undefined) {
+    return null
+  }
+  return branchPointOf(session, request.messageId)
+}
+
+/**
+ * 造一条分支会话（#831）：**复制**父会话当前可见的消息（节点分支只带分叉点及之前），
+ * 落库成功后才切到新会话 —— 写入失败时不留一条「界面上有、库里没有」的幽灵会话。
+ *
+ * 三条边界（用例 ①③④⑤ 逐条断言）：
+ *  1. `title` 由调用方给（默认 `<原标题>（分支）`，用户在确认弹层里可当场改）；
+ *  2. **不传 `files`**：图片原件与文档附件记录一条都不复制，两侧引用同一批 id（按引用共享）；
+ *  3. 父会话的标题 / 消息 / `updatedAt` 与它的落库记录一律不动（复制不是移动）。
+ */
+export const createSessionBranch = async (
+  request: SessionBranchRequest & { title: string }
+): Promise<string | null> => {
+  if (get().importingHistory || deletingSessions.has(request.sessionId)) {
+    return null
+  }
+  await ensureSessionLoaded(request.sessionId)
+  const source = getSession(request.sessionId)
+  if (source === undefined) {
+    return null
+  }
+  const now = Date.now()
+  const plan = planBranchSession({
+    source,
+    messageId: request.messageId,
+    id: createId(),
+    title: request.title,
+    createdAt: now,
+  })
+  if (plan === null) {
+    return null
+  }
+  try {
+    await db.saveSession(plan.session)
+  } catch (error) {
+    db.reportStorageError('branch session')(error)
+    return null
+  }
+  touchSession(plan.session.id)
+  set((state) => ({
+    sessions: sortSessions([toSessionSummary(plan.session), ...state.sessions]),
+    sessionCache: { ...state.sessionCache, [plan.session.id]: plan.session },
+    activeId: plan.session.id,
+  }))
+  trimSessionCache()
+  return plan.session.id
 }
 
 export const pinSession = (id: string) => {

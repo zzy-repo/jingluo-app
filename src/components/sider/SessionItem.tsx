@@ -2,6 +2,7 @@ import clsx from 'clsx'
 import { memo, useState } from 'react'
 import { useTranslate } from '../../i18n/index.js'
 import {
+  IconBranchOutline16,
   IconCheckOutline16,
   IconEditOutline16,
   IconEllipsisOutline16,
@@ -12,12 +13,15 @@ import { pinSession, renameSession, selectSession } from '../../services/chat/st
 import type { SessionSummary } from '../../services/chat/types.js'
 import { IconButton } from '../base/IconButton.js'
 import { Menu } from '../base/Menu.js'
+import { SessionBranchBadge } from '../session/SessionBranchBadge.js'
+import { openSessionBranchDialog } from '../session/sessionBranchState.js'
 import { closeMobileSider } from './mobileSiderState.js'
 import styles from './SessionItem.module.css'
 
 export const SessionItem = memo(function SessionItem({
   session,
   active,
+  parentTitle,
   selecting = false,
   selected = false,
   onToggle,
@@ -25,6 +29,12 @@ export const SessionItem = memo(function SessionItem({
 }: {
   session: SessionSummary
   active: boolean
+  /**
+   * #831：父会话标题（列表里的来源徽标用）。`null` / 缺省 = 父会话不在本机 → 徽标降级
+   * 「来源已不在本机」。由 `Sider` 用当前列表算好传进来：每行自己去订阅整个列表会在
+   * 「新建 / 改名」时把 N 行全部重渲染一遍。
+   */
+  parentTitle?: string | null
   /** #390：列表处于「选择」模式时，整条会话变成可勾选项，点击切换勾选而不是打开会话。 */
   selecting?: boolean
   selected?: boolean
@@ -86,6 +96,8 @@ export const SessionItem = memo(function SessionItem({
       }}
     >
       <div className={styles.title}>{displayTitle}</div>
+      {/* #831：来源徽标（普通会话不渲染）。降级态由 `parentTitle === null` 表达 */}
+      <SessionBranchBadge origin={session.branchOf} parentTitle={parentTitle === undefined ? null : parentTitle} />
       {session.pinnedAt !== undefined ? <span className={styles.pin} title={t('sessionPinnedLabel')} aria-label={t('sessionPinnedLabel')}><IconPinOutline16 /></span> : null}
       <div className={styles.action} onClick={(event) => event.stopPropagation()}>
         <Menu
@@ -101,6 +113,13 @@ export const SessionItem = memo(function SessionItem({
               label: t('sessionItemMenuRenameOption'),
               icon: <IconEditOutline16 />,
               onSelect: () => setEditing(true),
+            },
+            {
+              // #831：完整分支（整条会话复制成一条新会话）。节点分支的入口在回答下方
+              key: 'branch',
+              label: t('sessionBranchMenuOption'),
+              icon: <IconBranchOutline16 />,
+              onSelect: () => openSessionBranchDialog({ sessionId: session.id }),
             },
             {
               key: 'delete',

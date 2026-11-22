@@ -15,6 +15,13 @@
   background: var(--dsw-alias-bg-base);
 }
 
+/* #831 分支会话的附件降级提示：与消息区同宽，横向内边距跟标题栏对齐 */
+.branchNoticeWrap {
+  flex-shrink: 0;
+  box-sizing: border-box;
+  padding: 0 18px;
+}
+
 .title {
   max-width: 480px;
   padding: 8px 12px;

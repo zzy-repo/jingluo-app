@@ -51,7 +51,7 @@
 | 编辑消息 | ✅可用 —— 编辑后新增同父版本，附件沿用（`store.ts` 的 `editMessage()`、`UserMessage.tsx` 的编辑态（`editMessage()`）） | ✅可用 —— 同上 | ✅可用 —— 同上 |
 | 消息分支（切换版本） | ✅可用 —— 纯本地 `branches.ts`，不依赖上游任何字段（`branches.ts:40-117`、`BranchSwitcher.tsx:28-30`） | ✅可用 —— 同上 | ✅可用 —— 同上 |
 | 继续生成 | ✅可用 —— assistant prefill，本轮思考与签名一并回传（`reply.ts:350-362,261-264`） | ✅可用 —— 原生 prefill，语义完全一致 | ⚠️部分 —— OpenAI 没有 prefill 字段，只能把 assistant 消息挂到 messages 末尾碰运气续写（`openaiAdapter.ts:77-86`） |
-| 复制 | ✅可用 —— 本地拼接全部 text 块（`AssistantMessage.tsx:145`、`reply.ts:163-164`） | ✅可用 —— 同上 | ✅可用 —— 同上 |
+| 复制 | ✅可用 —— 本地拼接全部 text 块（`AssistantMessage.tsx:146`、`reply.ts:163-164`） | ✅可用 —— 同上 | ✅可用 —— 同上 |
 | Markdown/KaTeX/Mermaid 渲染 | ✅可用 —— 全本地渲染（AST → 组件），与上游无关（`Markdown.tsx:1-20`、`MathFormula.tsx:1-10`、`MermaidDiagram.tsx` 的 `MermaidDiagram`） | ✅可用 —— 同上 | ✅可用 —— 同上 |
 | 会话管理（新建/重命名/删除） | ✅可用 —— IndexedDB 本地 CRUD（`Sider.tsx:66-75,121`、`SessionItem.tsx:29,63-70`、`store.ts` 的 `renameSession()` / `removeSession()` / `sendMessage()`） | ✅可用 —— 同上 | ✅可用 —— 同上 |
 | 历史导入导出 | ✅可用 —— ZIP 导入/导出纯本地，含附件（`SettingsDialog.tsx:470,517`、`history/zipWriter.ts`） | ✅可用 —— 同上 | ✅可用 —— 同上 |
@@ -101,7 +101,7 @@
 
 - **为什么做不到**：**主动砍掉**。`title:{enabled:true}` 是 DeepSeek 私有请求字段，标题从 `message_delta.delta.title` 回来（`store.ts` 的 `title:{enabled:true}` + `event.delta.title`、`parseEvent.ts:208-224`）。`caps.title=false` 后请求不带该字段，`session.title` 永远为空，侧边栏回落到「未命名对话」（`SessionItem.tsx:23`）。代码里**没有任何本地生成标题的兜底**（`store.ts` 全文只有 `renameSession` 会写 title）。
 - **变通办法与代价**：本地生成——首轮回答结束后用同一上游再发一条廉价请求（「给这段对话起 6 字标题」），或在客户端直接截首条提问前 N 字。代价：多一次计费请求（且要处理"标题请求失败不能污染会话"）；截断方案质量差、中英混排难看；还要加节流（现有 `titleRequests` Set 只服务于服务端标题，`src/services/chat/store.ts:79`）。
-- **未来补的话依赖**：一次额外的轻量补全调用 + 一套「标题只写一次、手动重命名后不再覆盖」的规则（规则已有：`src/services/chat/store.ts:1056` 的 `session.title ? session : ...`、`src/services/chat/store.ts:1848`）。
+- **未来补的话依赖**：一次额外的轻量补全调用 + 一套「标题只写一次、手动重命名后不再覆盖」的规则（规则已有：`src/services/chat/store.ts:2090` 的 `session.title ? session : ...`、`src/services/chat/store.ts:1855`）。
 
 ### 2.4 服务端内容安全审核（Anthropic ⚠️ / OpenAI ⚠️）
 
@@ -158,7 +158,7 @@
 | 基础文本对话 | `POST {baseUrl}{paths.messages}`（`apiConfig.ts` 的 `getMessagesUrl()`）；`model` / `system` / `messages`（`streamMessage(...)` 的 `model` / `system` / `messages`）；鉴权 `x-api-key` 或 `Bearer`（`client.ts:381-401`） | `message_start` / `content_block_*` / `message_delta` / `message_stop`（`parseEvent.ts:175-231`） | `ChatInput.tsx:180-210`（输入区）、`MessageList.tsx`、`ReplyArea.tsx:71-105` |
 | 流式输出 | `stream:true`（`client.ts:284`）；OpenAI 侧 `stream:true` + `stream_options.include_usage`（`openaiAdapter.ts` 的 `toOpenAIRequest()`：`stream` / `stream_options`） | `content_block_delta` → `text_delta`（`parseEvent.ts:155-156`、`reply.ts:148`）；rAF 节流刷新（`store.ts` 的 `applyEvent()` + `requestAnimationFrame(flush)`） | `useThrottleMarkdownRender.ts`、`AssistantMessage.tsx:60-100` |
 | 深度思考 | `thinking:{type:'enabled', budget_tokens?}`（`requestBody.ts` 的 `buildMessageBody()`：`gates.reasoning_param` 决定开不开、`gates.thinking_budget` + `spec.thinkingBudget` 决定带不带预算）；OpenAI 侧按 `reasoningParam` 翻译成 `reasoning_effort` / `thinking:{type:'enabled'}`，`none` 档照旧丢弃（`openaiAdapter.ts` 的 `reasoningFields()`） | `thinking` block + `thinking_delta` / `signature_delta`（`parseEvent.ts:42-49,157-160`、`reply.ts:103-108`） | `ThinkingToggle.ts`（开关，`ChatInput.tsx` 挂载）、`ReplyArea.tsx:77-133`（思考步骤） |
-| 联网搜索 | `tools:[{type:'deepseek_web_search'}]`（`store.ts` 的 `serverTools()`）；门控 `gates.tools`（`providers.ts:187`、`store.ts` 的 `gates.tools`） | `server_tool_use(kind:search/deep_search)` + `web_search_tool_result`（`parseEvent.ts:50-113`）→ `searchResults`（`view.ts:197-205,345`） | `ChatInput.tsx:229-242`（开关）、`AssistantMessage.tsx:127-140`（来源摘要）、`SearchPanel.tsx:9-35`、`SourceCard.tsx:14-30`、`CitationLink.tsx:10-26` |
+| 联网搜索 | `tools:[{type:'deepseek_web_search'}]`（`store.ts` 的 `serverTools()`）；门控 `gates.tools`（`providers.ts:187`、`store.ts` 的 `gates.tools`） | `server_tool_use(kind:search/deep_search)` + `web_search_tool_result`（`parseEvent.ts:50-113`）→ `searchResults`（`view.ts:197-205,345`） | `ChatInput.tsx:229-242`（开关）、`AssistantMessage.tsx:128-141`（来源摘要）、`SearchPanel.tsx:9-35`、`SourceCard.tsx:14-30`、`CitationLink.tsx:10-26` |
 | 阅读链接 | `tools:[{type:'deepseek_read_url'}]` 恒定下发（`store.ts` 的 `serverTools()`（`deepseek_read_url`）），同受 `gates.tools` 门控 | `web_fetch_tool_result(kind:read_link)` + `signature`（`parseEvent.ts:114-140`、`reply.ts:229-239`） | `ReplyArea.tsx:159,381-391`（ReadLinkRow）、`PageLink` 子组件 |
 | 自动标题 | `title:{enabled:true}`（`store.ts` 的 `title:{enabled:true}`、`providers.ts:188`） | `message_delta.delta.title`（`parseEvent.ts:219-224`）→ `session.title`（`store.ts` 的 `event.delta.title`） | `SessionItem.tsx:23`（空标题回落 `untitledChat`）、`store.ts` 的 `renameSession()`（手动重命名） |
 | 用户元信息 | `messages` 里的 `{role:'latest_reminder'}`（`reply.ts` 的 `foldReminders()` / `toRequestMessages()`）；不支持时折进 `system`（`store.ts` 的 `toRequestBody()`） | 无（只上行，响应不体现） | 无 UI；来源 `latestReminder.ts:19-30`、`services/location.ts` |
@@ -169,8 +169,8 @@
 | 重新生成 | 重新构造请求（同一 `question`，`history` 截到前一轮） | 全新一轮 block | `AssistantMessage.tsx` 的 `regenerateReply` 按钮（`store.ts` 的 `regenerateReply()`） |
 | 编辑消息 | 同上（`question` 内容替换） | 同上 | `UserMessage.tsx` 的编辑态（`editMessage()`）（`store.ts` 的 `editMessage()`） |
 | 消息分支 | 无（纯本地） | 无（纯本地） | `BranchSwitcher.tsx:28-30`（`branches.ts:40-117`、`branches.ts` 的 `MessageVersions` / `selectVersion()`） |
-| 继续生成 | 尾部 assistant 消息（prefill）：`reply.ts:350-362`；OpenAI 只能原样排在末尾（`openaiAdapter.ts:77-86`） | 新事件继续追加到原有 block（`reply.ts:120`（`applyEvent()`）的 `blockIndexes` 映射） | `AssistantMessage.tsx:160-173`（`src/services/chat/store.ts:1063-1081`） |
-| 复制 | 无 | 本地拼接 text block（`reply.ts:163-164`） | `AssistantMessage.tsx:145`、`CopyButton.tsx` |
+| 继续生成 | 尾部 assistant 消息（prefill）：`reply.ts:350-362`；OpenAI 只能原样排在末尾（`openaiAdapter.ts:77-86`） | 新事件继续追加到原有 block（`reply.ts:120`（`applyEvent()`）的 `blockIndexes` 映射） | `AssistantMessage.tsx:161-174`（`src/services/chat/store.ts:1063-1081`） |
+| 复制 | 无 | 本地拼接 text block（`reply.ts:163-164`） | `AssistantMessage.tsx:146`、`CopyButton.tsx` |
 | Markdown/KaTeX/Mermaid | 无 | 无（纯本地渲染） | `Markdown.tsx:1-20`、`MarkdownAstRenderer.tsx`、`MathFormula.tsx:1-10`、`MermaidDiagram.tsx` 的 `MermaidDiagram`、`CodeBlock.tsx` |
 | 会话管理 | 无（IndexedDB） | 无 | `Sider.tsx:66-75,121`、`SessionItem.tsx:23-70`、`src/services/chat/store.ts` 的 `renameSession()` / `removeSession()` / `sendMessage()`（`null` 会话即新建） |
 | 历史导入导出 | 无（ZIP 本地） | 无 | `SettingsDialog.tsx` 的「数据管理」分组、`history/zipWriter.ts`、`history/importArchive.ts` |

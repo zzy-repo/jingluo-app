@@ -13,9 +13,9 @@
 
 | 项 | 值 |
 | --- | --- |
-| 扫描范围 | `src/**` 全部源文件 **349** 个（`.css` **47** 个，其中 `*.module.css` **40** 个；其余 `.ts / .tsx / .html` 共 **302** 个） |
-| 口径拆分 | 47 `.css` + 227 `.ts` + 74 `.tsx` + 1 `.html` = 349 |
-| 命中总数 | **353** 处，分布在 **39** 个文件 |
+| 扫描范围 | `src/**` 全部源文件 **360** 个（`.css` **48** 个，其中 `*.module.css` **41** 个；其余 `.ts / .tsx / .html` 共 **312** 个） |
+| 口径拆分 | 48 `.css` + 234 `.ts` + 77 `.tsx` + 1 `.html` = 360 |
+| 命中总数 | **356** 处，分布在 **40** 个文件 |
 | 运行时下限 | WebView **83**（Chromium 83）。**首支持 ≤ 83 的特性一律记「无风险」，与有没有兜底无关** |
 | 构建期因素 | `rspack.config.ts` 用 `builtin:lightningcss-loader`，`targets` 取自 `package.json` 的 `browserslist`（强制含 `chrome >= 83`）。**已被构建期翻译掉的写法不算运行时假设** |
 
@@ -35,8 +35,8 @@
 
 | 特性 | 首支持 Chromium | 命中 | 已有兜底 | 无风险 | 可接受降级 | 真实缺陷 | 假阳性 | 结论 |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| 嵌套 `&` | — （构建期） | 143 | 143 | 0 | 0 | 0 | 0 | lightningcss 按 `chrome >= 83` 展开，非运行时假设 |
-| flex `gap` | 84 | 107 | 107 | 0 | 0 | 0 | 0 | 兜底已全覆盖（#217 补齐最后 2 处；W1-C1 / W1-C2 的新样式由 `pnpm run gen:gap` 补齐）；`check:gap` 口径见 §2.6 |
+| 嵌套 `&` | — （构建期） | 145 | 145 | 0 | 0 | 0 | 0 | lightningcss 按 `chrome >= 83` 展开，非运行时假设 |
+| flex `gap` | 84 | 108 | 108 | 0 | 0 | 0 | 0 | 兜底已全覆盖（#217 补齐最后 2 处；W1-C1 / W1-C2 的新样式由 `pnpm run gen:gap` 补齐）；`check:gap` 口径见 §2.6 |
 | `min()` / `max()` | 79 | 26 | 0 | 26 | 0 | 0 | 0 | 79 ≤ 83，无风险（W1-C1 弹层宽高上限新增 2 处） |
 | `:has()` | 105 | **0** | 0 | 0 | 0 | 0 | 0 | 16 处已由 #213 清零：改成渲染期显式状态类 `ds-markdown-before-ul` / `ds-markdown-before-ol`，低内核上零特性依赖 |
 | `:focus-visible` | 86 | 17 | 17 | 0 | 0 | 0 | 0 | 17 处全部合规：每处都有同选择器的 `:focus` 兜底 + `:focus:not(:focus-visible)` 收回（#215；W1-C1 的 `.tab` / `.input` 按同一套三件套写；#486 的 `.md-float-copy` 新增 1 处，同一套三件套）；`pnpm run check:focus` 守住 |
@@ -59,7 +59,7 @@
 | `color-mix()` | 111 | 0 | — | — | — | 0 | 0 | 未使用（且 lightningcss 会降级） |
 | `@layer` | 99 | 0 | — | — | — | 0 | 0 | 未使用 |
 | `accent-color` | 93 | 0 | — | — | — | 0 | 0 | 未使用 |
-| **合计** | | **353** | **298** | **49** | **1** | **5** | **0** | |
+| **合计** | | **356** | **301** | **49** | **1** | **5** | **0** | |
 
 > `100dvh` 的每一处声明，**没有一处**落在 `@supports` 之外（`dvh` 裸用命中数为 0）。这是本仓 #13 之后形成的最好的一条既有纪律，也是本次盘点最重要的**正面结论**：`dvh` 这一类零缺陷。
 
@@ -227,7 +227,7 @@
 | --- | --- | --- | --- | --- |
 | `components/base/Toast.module.css:9`<br>`components/markdown/markdown.css:184,195`<br>`components/messages/MessageFile.module.css:88`<br>`components/session/Welcome.module.css:43`<br>`components/settings/AppUpdateField.module.css:21,26,33,40`<br>`components/settings/Settings.module.css:204,209,344,949,963,965`<br>`components/consume/AccountConsume.module.css:324,325,326`<br>`components/update/UpdateDialog.module.css:19,24,31,38` | CSS `min()` / `max()`（21 处） | 2 | 低 | 无需探测（79 ≤ 83）。另 6 处随文件删除（不计入 21）：~~`components/settings/PaymentRecords.module.css:4,5`~~、~~`components/settings/PaymentTrailDialog.module.css:4,5`~~、~~`components/settings/PurchaseRecordsDialog.module.css:6,7`~~（#561 三弹层合一） |
 | `app/global.css:52`<br>`components/base/Select.module.css:82`<br>`components/chatInput/ChatInput.module.css:233`<br>`components/messages/MessageList.module.css:46`<br>`components/settings/AppUpdateField.module.css:59`<br>`components/settings/Settings.module.css:969`<br>`components/update/UpdateDialog.module.css:53` | `overscroll-behavior[-y]`（7 处） | 2 | 低 | 无需探测（63 ≤ 83） |
-| `components/base/Toast.module.css:3`<br>`components/session/SessionView.module.css:68`<br>`components/session/Welcome.module.css:152`<br>`components/auth/AuthPages.module.css:16`<br>`components/settings/Settings.module.css:699,949` | `env(safe-area-inset-*)`（6 处） | 2 | 低 | 无需探测（69 ≤ 83）；缺省值一致性见 §5 |
+| `components/base/Toast.module.css:3`<br>`components/session/SessionView.module.css:75`<br>`components/session/Welcome.module.css:152`<br>`components/auth/AuthPages.module.css:16`<br>`components/settings/Settings.module.css:699,949` | `env(safe-area-inset-*)`（6 处） | 2 | 低 | 无需探测（69 ≤ 83）；缺省值一致性见 §5 |
 | `components/messages/AssistantMessage.module.css:152,180`<br>`components/session/MobileHeader.module.css:29`<br>`components/settings/AppUpdateField.module.css:57`<br>`components/settings/Settings.module.css:968`<br>`components/update/UpdateDialog.module.css:51` | `touch-action`（6 处） | 2 | 低 | 无需探测（36 ≤ 83）；#347 / #353 给折叠区开关补了第 5 处，#517 更新弹窗的内容区是第 6 处 |
 | `components/base/Modal.module.css:25`<br>`components/chatInput/DragMask.module.css:12` | `backdrop-filter`（2 处；`DragMask.module.css:11` 另有 `-webkit-backdrop-filter` 前缀版） | 2 | 低 | 无需探测（76 ≤ 83） |
 | `components/base/Modal.module.css:95` | `:where(.content)[data-motion-state='closed']` | 2 | 低 | 可接受降级（88 > 83，只丢收起动画） |
@@ -271,7 +271,7 @@
 - `src/services/uploadExts.ts:747` 的 `'svh'` 是文件扩展名白名单里的一项，不是 `svh` 长度单位。
 - `src/index.html` **没有任何 CSS**：它只有 ES5 时代的启动守卫（`Promise` / `fetch` / `ResizeObserver` / `CSS.escape` / `Intl.DisplayNames` 等 API 探测 + 12 秒启动超时），属于类别 1 的范围。
 - 仓库根的 `index.html`（APK 下载落地页，不进打包）`:12` 有一处 `env(safe-area-inset-bottom)`，**没有 `0px` 缺省值**。该页在外部浏览器里打开，不跑在 WebView 83 上，且 `env()` 首支持 Chromium 69，**无风险**。
-- `env(safe-area-inset-*)` 的缺省值写法不一致：`Settings.module.css` 里 `max(22px, env(safe-area-inset-bottom, 0px))` 那一处写了 `, 0px`，而 `Toast.module.css:3`、`SessionView.module.css:68`、`Welcome.module.css:152`、`Settings.module.css` 里 `padding-bottom: env(safe-area-inset-bottom)` 那一处（只有 `env()`，没有缺省值）与根 `src/index.html`（那里根本没有 `env()` 用法）都没写。`env()` 的缺省值不写时按 `0px` 处理，**不构成缺陷**，仅记录为一致性备注。
+- `env(safe-area-inset-*)` 的缺省值写法不一致：`Settings.module.css` 里 `max(22px, env(safe-area-inset-bottom, 0px))` 那一处写了 `, 0px`，而 `Toast.module.css:3`、`SessionView.module.css:75`、`Welcome.module.css:152`、`Settings.module.css` 里 `padding-bottom: env(safe-area-inset-bottom)` 那一处（只有 `env()`，没有缺省值）与根 `src/index.html`（那里根本没有 `env()` 用法）都没写。`env()` 的缺省值不写时按 `0px` 处理，**不构成缺陷**，仅记录为一致性备注。
 - `src/app/theme.ts:6,26,27,58`、`src/components/messages/ReadingBars.tsx:104,106`、`src/utils/usePresence.ts:18` 用 `matchMedia` 做媒体查询判断 —— 探的是**媒体查询结果**而不是 CSS 特性支持度，不属于本类。
 - `src/services/diagnostics/collector.ts:689` 的注释与 `:718` 的 `getComputedStyle(...).display` 用于诊断事实收集（判断元素是否可见），同一文件内有布局盒实测，判定为正确姿态。
 - **`CSS.supports` 现在藏在包装函数后面**：#212 统一能力探测后，`src/utils/capabilities.ts:107-114` 的 `cssSupports()` 先取 `host.CSS` 再以绑定形式调用 `css.supports(property, value)`，字面量不是 `CSS.supports(`，静态扫描抓不到（`src/services/diagnostics/capabilityTruth.ts` 里 `capabilities.dvh = cssSupports('height', '100dvh')` 就是这样间接调用的）。记为探测盲区，见 §6 第 2 条。

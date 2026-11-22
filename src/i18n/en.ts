@@ -1247,4 +1247,24 @@ export const en = {
   sendBlockedNoCredentials:
     'You are not signed in and no model provider is available, so this message was not sent. Sign in or pick a model provider first.',
   sendBlockedPickProvider: 'Choose provider',
+  // #831 session-level branch (fork a stored chat into an independent new chat; not the same thing as
+  // the in-chat message versions behind `BranchSwitcher`)
+  sessionBranchMenuOption: 'Branch from this chat',
+  sessionBranchFromMessage: 'Branch from this message',
+  sessionBranchDialogTitle: 'Branch chat',
+  sessionBranchConfirmFull:
+    'Copy the whole chat ({count} messages) into a new chat. Later changes do not affect each other',
+  sessionBranchConfirmNode:
+    'Branching at message {kept}. The {dropped} message(s) after it will not be carried over',
+  sessionBranchAttachmentsNote: 'Attachments are shared by reference; file contents are not copied',
+  sessionBranchNameLabel: 'New chat name',
+  sessionBranchCreate: 'Create branch',
+  sessionBranchCreateFailed: 'The branch was not created. Try again later',
+  sessionBranchTitleSuffix: ' (branch)',
+  sessionBranchBadge: 'Branch',
+  sessionBranchBadgeFrom: 'Branched from "{title}"',
+  sessionBranchSourceMissing: 'Source is not on this device',
+  sessionBranchOpenParent: 'Go to source chat',
+  sessionBranchAttachmentMissing:
+    'Attachment unavailable: {count} attachment(s) have no file on this device. You can keep chatting',
 } satisfies Record<keyof typeof zh, string>

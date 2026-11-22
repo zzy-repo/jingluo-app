@@ -1,0 +1,56 @@
+{
+  "page": "831-session-branch",
+  "title": "#831 会话级分支：列表来源徽标（两态）/ 节点分支确认弹层 / 新会话详情 / 完整分支入口",
+  "viewport": 360,
+  "size": "360×740",
+  "shots": [
+    "docs/ui/831-session-branch/360/831-session-branch-01-列表-来源徽标两态-360.png",
+    "docs/ui/831-session-branch/360/831-session-branch-02-节点分支-确认弹层-360.png",
+    "docs/ui/831-session-branch/360/831-session-branch-03-新会话详情-徽标与跳回父会话-360.png",
+    "docs/ui/831-session-branch/360/831-session-branch-04-点徽标跳回父会话-360.png",
+    "docs/ui/831-session-branch/360/831-session-branch-05-完整分支-确认弹层-360.png"
+  ],
+  "notes": [],
+  "listBadges": [
+    {
+      "state": "source-missing",
+      "text": "来源已不在本机",
+      "tooltip": "来源已不在本机"
+    },
+    {
+      "state": "branch",
+      "text": "分支",
+      "tooltip": "分支自「截图-分支父会话」"
+    }
+  ],
+  "overflow:会话列表": {
+    "viewportWidth": 360,
+    "overflowCount": 0,
+    "samples": []
+  },
+  "nodeConfirm": "将从第 4 条消息处分支，之后的 2 条不会带入",
+  "defaultName": "截图-分支父会话（分支）",
+  "overflow:节点分支确认弹层": {
+    "viewportWidth": 360,
+    "overflowCount": 0,
+    "samples": []
+  },
+  "createdDetail": {
+    "title": "截图-分叉出来的新会话",
+    "badgeState": "branch",
+    "badgeText": "分支"
+  },
+  "overflow:新会话详情": {
+    "viewportWidth": 360,
+    "overflowCount": 0,
+    "samples": []
+  },
+  "jumpedBackTo": "截图-分支父会话",
+  "fullConfirm": "将整条会话（6 条消息）复制成一条新会话；之后的改动互不影响",
+  "overflow:完整分支确认弹层": {
+    "viewportWidth": 360,
+    "overflowCount": 0,
+    "samples": []
+  },
+  "consoleErrors": []
+}

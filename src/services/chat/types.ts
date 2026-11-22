@@ -139,6 +139,29 @@ export type AssistantMessage = MessageBranch & {
 
 export type Message = UserMessage | AssistantMessage
 
+/**
+ * 会话级分支的来源（#831）：这条会话是从哪条会话的哪条消息处**分叉**出来的。
+ *
+ * 与 `MessageBranch`（消息级分支，同一会话内的多个回答版本）是两件事：
+ *   - 消息级分支改的是**同一条会话**的消息树（`branches.ts`，不动库结构）；
+ *   - 会话级分支造的是**另一条独立会话**（独立 id、独立的标题 / 消息 / 记忆 / 删除生命周期），
+ *     这里只留下「我从哪来」，供列表徽标、详情跳回与归档往返使用。
+ *
+ * 缺省（`undefined`）= 不是分支出来的普通会话。字段是**可选新增**：老数据没有它，
+ * IndexedDB 是 schemaless 的，因此不需要回填（迁移只新增索引，见 `db.ts`）。
+ */
+export type SessionBranchOrigin = {
+  /** 父会话 id */
+  sessionId: string
+  /**
+   * 节点分支的分叉点：父会话里**最后一条被带入**的消息 id（第 N 条）。
+   * 缺省 = 完整分支（整条会话复制，没有丢弃任何消息）。
+   */
+  messageId?: string
+  /** 分支创建时间（毫秒时间戳） */
+  createdAt: number
+}
+
 export type Session = {
   id: string
   title: string
@@ -150,10 +173,15 @@ export type Session = {
   rootMessageId?: string | null
   /** 时间戳表示置顶顺序；缺省表示未置顶。 */
   pinnedAt?: number
+  /** #831 会话级分支的来源；缺省表示不是分支出来的会话。 */
+  branchOf?: SessionBranchOrigin
 }
 
 /** 会话列表元数据；消息只在打开会话时加载。 */
-export type SessionSummary = Pick<Session, 'id' | 'title' | 'createdAt' | 'updatedAt' | 'pinnedAt'>
+export type SessionSummary = Pick<
+  Session,
+  'id' | 'title' | 'createdAt' | 'updatedAt' | 'pinnedAt' | 'branchOf'
+>
 
 /** 显式提取字段，避免将完整会话的消息带进列表。 */
 export const toSessionSummary = (session: SessionSummary): SessionSummary => ({
@@ -162,4 +190,6 @@ export const toSessionSummary = (session: SessionSummary): SessionSummary => ({
   createdAt: session.createdAt,
   updatedAt: session.updatedAt,
   ...(session.pinnedAt === undefined ? {} : { pinnedAt: session.pinnedAt }),
+  // 复制一份：摘要与详情各自持有来源信息，谁也别借着共享对象改到对方的字段
+  ...(session.branchOf === undefined ? {} : { branchOf: { ...session.branchOf } }),
 })
