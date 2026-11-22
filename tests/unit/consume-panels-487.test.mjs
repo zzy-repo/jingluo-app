@@ -653,7 +653,7 @@ test('邀请：服务端没给邀请码时整块隐藏（返回 null，不是置
   assert.equal(InvitePanelView({ t, c, Button, state, copied: false, onCopy: () => {}, onRetry: () => {} }), null)
 })
 
-test('邀请：邀请码 / 人数 / 返利余额（USD）如实展示，语义写清「注册时填、按比例结算」', async () => {
+test('邀请：邀请码 / 人数 / 返利余额（USD）如实展示，不再渲染比例说明与注册提示（#841）', async () => {
   const state = await loadInvite(inviteSource())
   assert.equal(state.phase, 'ready')
   assert.deepEqual(toInviteDetail({ userId: 1, affCode: 'X', affCount: 1, affQuota: 0.5, affFrozenQuota: 0, affHistoryQuota: 0, invitees: [] }), {
@@ -666,8 +666,8 @@ test('邀请：邀请码 / 人数 / 返利余额（USD）如实展示，语义�
   assert.ok(markup.includes('INV-9F2C'))
   assert.ok(markup.includes(t('inviteCount')))
   assert.ok(markup.includes(formatCurrency(1.23)))
-  assert.ok(markup.includes(t('inviteCodeAtRegister')), '必须说清邀请码只在注册时填')
-  assert.ok(markup.includes(t('inviteRebateRate', { percent: 10 })))
+  assert.equal(hasTestId(markup, 'invite-semantics'), false, '#841：「注册时填写邀请码」提示已从面板删除')
+  assert.equal(hasTestId(markup, 'invite-rate'), false, '#841：返利比例说明已从面板删除')
   assert.ok(!/立刻|马上得/.test(markup), '不许出现「立刻得积分」这类旧玩法')
   assert.ok(!hasTestId(markup, 'invite-claim'), '没有「领取」按钮（服务端没有这个能力）')
 })
