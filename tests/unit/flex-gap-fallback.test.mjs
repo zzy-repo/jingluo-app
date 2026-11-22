@@ -170,7 +170,7 @@ test('#217 真实仓库的扫描文件数等于 src 下 .css 文件数', async (
   assert.equal(audit.cssFiles, await countCss(SRC), '扫描口径必须和真实文件数一致，否则守卫报的 OK 不可信')
   assert.equal(
     audit.cssModules,
-    39,
-    'CSS Module 数（#209 口径 38 + #386 ScrollToBottomButton + #499 AuthPages + #502 四面板 + #505 账户消费页 − #487 删掉三个旧弹层 + #480 附件卡片/解析进度 − #562 删掉 OursServices.module.css + #517 UpdateDialog）变了就要同步 docs/capabilities/css.md'
+    40,
+    'CSS Module 数（#209 口径 38 + #386 ScrollToBottomButton + #499 AuthPages + #502 四面板 + #505 账户消费页 − #487 删掉三个旧弹层 + #480 附件卡片/解析进度 − #562 删掉 OursServices.module.css + #517 UpdateDialog + #818 ImagePreview）变了就要同步 docs/capabilities/css.md'
   )
 })

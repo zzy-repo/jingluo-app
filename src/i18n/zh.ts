@@ -425,6 +425,8 @@ export const zh = {
   imageEncodeFailed: '图片编码失败，请重试或换一张',
   imageSourceMissing: '这张图片的本地原件已丢失，无法发送，请重新添加',
   imageTooMany: '单条消息最多 {count} 张图片',
+  /** #818：气泡里的图片改走应用内预览层，点开按钮的无障碍名称 */
+  imagePreviewOpen: '查看大图',
   imageTotalTooLarge: '本轮图片总量超过 {size}MB，请减少图片数量',
   /** base64 渠道（#551）根本没有上传端点：非图片文件在这类渠道上只能明说发不了 */
   uploadImageOnly: '当前渠道只支持发送图片，文档附件请切换到支持的渠道',

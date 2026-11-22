@@ -1,0 +1,71 @@
+/* #818 应用内图片预览（见 ImagePreview.tsx）
+   要求：全屏遮罩 + 图片 `max-width: 100%; max-height: 100%; object-fit: contain` + 点击 / Esc 关闭。
+   动效只有遮罩的 opacity 淡入（不碰 width/height/top/left 这类布局属性）；reduced-motion 下直接不播。 */
+.overlay {
+  position: fixed;
+  inset: 0;
+  /* 高于 Modal 的 1000：预览是从消息里点开的，不能被任何弹窗压在下面 */
+  z-index: 1200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  /* 留一圈边距，图片不贴边；max-width/max-height 的 100% 是**这个盒子**的内容盒 */
+  padding: 12px;
+  background-color: rgba(0, 0, 0, 0.88);
+  animation: ds-image-preview-fade-in 160ms ease-out backwards;
+}
+
+/* 深色遮罩下的图片本体：等比缩到屏幕内，永不超出视口（不裁切、不拉伸）。
+   适配**只靠** `max-width/max-height: 100%` + `width/height: auto`（老内核都认），
+   `object-fit: contain` 是双保险 —— 见 ImagePreview.tsx 里 `detectObjectFit()` 的说明。 */
+.image {
+  display: block;
+  max-width: 100%;
+  max-height: 100%;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  /* 图片本身不是按钮，但整层可点关闭；避免长按选中拖影 */
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
+/* 探测到内核不认 `object-fit` 时的纯尺寸方案（#209：不押在「应该支持」上）：
+   与 .image 一样只写限宽限高 + auto，额外把 object-fit 整条去掉，避免留下一条被忽略的声明当噪音。
+   两套写法的渲染结果在「不强制宽高」的前提下本来就一致，这条兜底是给「以后有人给 .image 加上
+   固定宽高」的情况留的活口。 */
+.imageNoFit {
+  display: block;
+  max-width: 100%;
+  max-height: 100%;
+  width: auto;
+  height: auto;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
+/* 右上角关闭：深色遮罩上给白，44×44 命中区由 IconButton 的 size="xl" 提供 */
+.close {
+  position: absolute;
+  top: max(8px, env(safe-area-inset-top, 0px));
+  right: max(8px, env(safe-area-inset-right, 0px));
+  color: var(--dsw-static-neutral-bluish-00);
+  background-color: rgba(0, 0, 0, 0.45);
+}
+
+@keyframes ds-image-preview-fade-in {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .overlay {
+    animation: none;
+  }
+}

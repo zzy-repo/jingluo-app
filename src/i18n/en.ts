@@ -435,6 +435,7 @@ export const en = {
   imageSourceMissing:
     'The local copy of this image is gone, so it cannot be sent. Please add it again.',
   imageTooMany: 'A message can include at most {count} images.',
+  imagePreviewOpen: 'View full size',
   imageTotalTooLarge: 'Images in this message exceed {size} MB in total. Please send fewer images.',
   uploadImageOnly: 'This channel can only send images. Switch to a supported channel for documents.',
   visionUnsupported: 'This channel does not support images. Switch to a channel or model that does.',

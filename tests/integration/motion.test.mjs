@@ -140,11 +140,11 @@ const MESSAGE_FLOW_ALLOWLIST = new Map([
    */
   [
     'src/components/messages/MessageFile.tsx',
-    '#552 走 base64 内联的图要在正常态标出「真正发出去的格式与体积」（例 WEBP · 218 KB）：渲染点只能在这个文件里。改动只是同步查一次 `imagePartOf()` 缓存 + 多一个 `<span className={styles.meta}>`，无动效声明',
+    '#552 走 base64 内联的图要在正常态标出「真正发出去的格式与体积」（例 WEBP · 218 KB）：渲染点只能在这个文件里。改动只是同步查一次 `imagePartOf()` 缓存 + 多一个 `<span className={styles.meta}>`，无动效声明\n  #818：正常态的 `<a target="_blank">`（点开直接开原件）换成 `<button>` + 应用内预览 `ImagePreview`（组件与样式都在 `src/components/base/`，消息流目录之外）——「点哪里打开这张图」只能写在渲染这张图的地方；改动里没有一条 transition / animation / transform。',
   ],
   [
     'src/components/messages/MessageFile.module.css',
-    '#552 上面那个标签的样式（`.meta`：绝对定位贴在底部渐变上、复用既有 `--message-file-reason-display` 收起规则）；纯静态样式，无 transition / animation / transform',
+    '#552 上面那个标签的样式（`.meta`：绝对定位贴在底部渐变上、复用既有 `--message-file-reason-display` 收起规则）；纯静态样式，无 transition / animation / transform\n  #818：气泡图片的默认尺寸从写死的 `120px` 改成 `min(120px, 27vw)`（随屏宽自适应），纯声明改动，仍无过渡 / 动画。',
   ],
   [
     'src/components/messages/MessageFile.module.css.d.ts',

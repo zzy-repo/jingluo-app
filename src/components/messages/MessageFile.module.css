@@ -4,8 +4,17 @@
   justify-content: center;
   flex-shrink: 0;
   box-sizing: border-box;
-  width: var(--message-file-image-size, 120px);
-  height: var(--message-file-image-size, 120px);
+  /* #818：气泡里的图片**随屏宽自适应**。原来默认写死 120px（不随屏宽变化）。
+     实测（390×844 / 360×740，长边 4000px 的图）：120px 在 360 宽下虽然只占屏宽 33%、
+     没有横向溢出，但四张图整行占掉 320/360 = 88.9% 屏宽，且窄屏下比例明显偏大。
+     现在默认 `min(120px, 27vw)`：宽屏维持原 120px 上限，窄屏按屏宽缩一档
+     （390 → 105px、360 → 97px、320 → 86px），4 张图在 360 宽下 3 张一行放得下
+     （3×97 + 2×10 间距 = 311 ≤ 320 的行宽）。仍是方块 + `object-fit: cover`。
+     混排文档时由 UserMessage.module.css 的 `.filesWithDocuments` 覆盖成 64px，口径不变。
+     `min()` 首支持 Chromium 79，运行时下限 83；同仓 Welcome.module.css 的
+     `min(280px, 68vw)` 是同一写法。 */
+  width: var(--message-file-image-size, min(120px, 27vw));
+  height: var(--message-file-image-size, min(120px, 27vw));
   padding: 0;
   overflow: hidden;
   border-radius: 16px;
