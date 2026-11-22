@@ -1395,3 +1395,14 @@
   margin-right: 3px;
 }
 /* #173-fallback:end */
+
+/* #173（#209 能力探测纪律）：老内核上 flex `gap` 会静默不生效，这里给 .walletHead 兜底
+   —— 主轴 12px 用 margin-right、交叉轴 8px 用 margin-bottom，与上面的 `gap: 8px 12px` 对齐。
+   规则写在文件末尾，确保覆盖 `.walletHead .balance { margin: 0 }`。 */
+:global(html[data-flex-gap-fallback]) .walletHead > * {
+  margin-bottom: 8px;
+}
+
+:global(html[data-flex-gap-fallback]) .walletHead > *:not(:last-child) {
+  margin-right: 12px;
+}
