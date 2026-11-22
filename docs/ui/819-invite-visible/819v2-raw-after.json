@@ -1,0 +1,3440 @@
+{
+  "label": "after",
+  "dist": "dist",
+  "consumeBase": "https://apia.ecsafe.cn/staging",
+  "port": 32897,
+  "signedOutPanel": {
+    "inviteNodes": [
+      "invite-panel",
+      "invite-signed-out",
+      "invite-sign-in"
+    ],
+    "inviteNodeCount": 3,
+    "panelHeight": 186,
+    "panelText": "我的邀请 登录后可查看邀请 邀请码与返利跟着账号走；不登录不影响聊天 去登录",
+    "title": null,
+    "code": null,
+    "count": null,
+    "rebate": null,
+    "rate": null,
+    "semantics": null,
+    "copyButton": 0,
+    "signedOutGuide": 1,
+    "profile": null,
+    "registrationRow": 0
+  },
+  "afterLoginProfile": {
+    "inviteNodes": [
+      "invite-panel",
+      "invite-code-value",
+      "invite-code-copy",
+      "invite-stats",
+      "invite-count",
+      "invite-rebate",
+      "invite-semantics",
+      "invite-rate"
+    ],
+    "inviteNodeCount": 8,
+    "panelHeight": 220,
+    "panelText": "我的邀请 邀请码 6EFT6PUQ4JSY 复制邀请码 已邀请人数 0 返利余额 ¥0.00 注册时填写邀请码（可选） 返利按下线消费额的 20% 结算，结算后计入返利余额",
+    "title": null,
+    "code": "6EFT6PUQ4JSY",
+    "count": "已邀请人数 0",
+    "rebate": "返利余额 ¥0.00",
+    "rate": "返利按下线消费额的 20% 结算，结算后计入返利余额",
+    "semantics": "注册时填写邀请码（可选）",
+    "copyButton": 1,
+    "signedOutGuide": 0,
+    "profile": "Q qa819 2•••@qq.com",
+    "registrationRow": 0
+  },
+  "samples360": [
+    {
+      "t": 0,
+      "n": 0,
+      "h": 0,
+      "ids": []
+    },
+    {
+      "t": 7,
+      "n": 0,
+      "h": 0,
+      "ids": []
+    },
+    {
+      "t": 24,
+      "n": 0,
+      "h": 0,
+      "ids": []
+    },
+    {
+      "t": 42,
+      "n": 0,
+      "h": 0,
+      "ids": []
+    },
+    {
+      "t": 57,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 75,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 90,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 107,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 124,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 140,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 157,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 174,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 190,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 207,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 224,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 241,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 257,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 274,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 291,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 307,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 324,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 341,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 357,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 374,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 391,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 407,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 424,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 441,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 457,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 474,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 490,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 507,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 524,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 540,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 557,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 574,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 591,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 607,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 624,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 640,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 657,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 674,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 691,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 707,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 724,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 741,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 757,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 774,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 791,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 807,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 824,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 840,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 857,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 874,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 891,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 907,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 924,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 941,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 957,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 974,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 991,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 1007,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 1024,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 1041,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 1057,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 1074,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 1091,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 1107,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 1124,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 1141,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 1157,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 1174,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 1191,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 1207,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 1224,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 1241,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 1258,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 1274,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 1291,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 1309,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 1324,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 1341,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 1357,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 1374,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 1391,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 1407,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 1424,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 1441,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 1457,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 1474,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 1491,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 1507,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 1524,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 1540,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 1557,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 1574,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 1591,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 1607,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 1624,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 1640,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 1657,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 1674,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 1690,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 1707,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 1724,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 1741,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 1757,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 1774,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 1791,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 1807,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    }
+  ],
+  "frames360": [
+    {
+      "t": 0,
+      "n": 0,
+      "h": 0
+    },
+    {
+      "t": 30,
+      "n": 0,
+      "h": 0
+    },
+    {
+      "t": 80,
+      "n": 8,
+      "h": 220
+    },
+    {
+      "t": 200,
+      "n": 8,
+      "h": 220
+    },
+    {
+      "t": 600,
+      "n": 8,
+      "h": 220
+    },
+    {
+      "t": 1500,
+      "n": 8,
+      "h": 220
+    }
+  ],
+  "fallback360": null,
+  "firstVisible360": 57,
+  "peak360": 8,
+  "panel360": {
+    "inviteNodes": [
+      "invite-panel",
+      "invite-code-value",
+      "invite-code-copy",
+      "invite-stats",
+      "invite-count",
+      "invite-rebate",
+      "invite-semantics",
+      "invite-rate"
+    ],
+    "inviteNodeCount": 8,
+    "panelHeight": 220,
+    "panelText": "我的邀请 邀请码 6EFT6PUQ4JSY 复制邀请码 已邀请人数 0 返利余额 ¥0.00 注册时填写邀请码（可选） 返利按下线消费额的 20% 结算，结算后计入返利余额",
+    "title": null,
+    "code": "6EFT6PUQ4JSY",
+    "count": "已邀请人数 0",
+    "rebate": "返利余额 ¥0.00",
+    "rate": "返利按下线消费额的 20% 结算，结算后计入返利余额",
+    "semantics": "注册时填写邀请码（可选）",
+    "copyButton": 1,
+    "signedOutGuide": 0,
+    "profile": "Q qa819 2•••@qq.com",
+    "registrationRow": 0
+  },
+  "requests360": [
+    "GET /staging/api/v1/settings/public",
+    "GET /staging/api/v1/settings/public",
+    "POST /staging/api/v1/auth/login",
+    "GET /staging/api/v1/keys",
+    "GET /staging/api/v1/user/aff",
+    "POST /staging/api/v1/keys",
+    "GET /staging/api/v1/keys",
+    "POST /staging/api/v1/keys",
+    "GET /staging/api/v1/settings/public",
+    "GET /staging/api/v1/keys",
+    "POST /staging/api/v1/keys",
+    "GET /staging/api/v1/keys",
+    "POST /staging/api/v1/keys",
+    "GET /staging/api/v1/user/aff"
+  ],
+  "samples390": [
+    {
+      "t": 1,
+      "n": 0,
+      "h": 0,
+      "ids": []
+    },
+    {
+      "t": 10,
+      "n": 0,
+      "h": 0,
+      "ids": []
+    },
+    {
+      "t": 27,
+      "n": 0,
+      "h": 0,
+      "ids": []
+    },
+    {
+      "t": 67,
+      "n": 0,
+      "h": 0,
+      "ids": []
+    },
+    {
+      "t": 85,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 102,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 110,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 127,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 144,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 161,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 177,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 194,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 210,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 227,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 244,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 260,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 277,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 294,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 310,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 327,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 344,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 361,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 377,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 394,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 410,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 427,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 444,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 461,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 477,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 494,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 510,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 527,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 544,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 560,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 577,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 594,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 611,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 627,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 644,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 661,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 677,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 694,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 710,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 727,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 744,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 760,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 777,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 794,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 810,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 827,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 844,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 861,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 877,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 894,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 911,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 927,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 944,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 960,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 977,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 994,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 1010,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 1027,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 1044,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 1061,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 1077,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 1094,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 1110,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 1127,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 1144,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 1160,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 1177,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 1194,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 1210,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 1227,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 1244,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 1260,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 1277,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 1294,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 1311,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 1327,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 1344,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 1360,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 1377,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 1394,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 1410,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 1427,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 1444,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 1460,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 1477,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 1494,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 1511,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 1527,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 1544,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 1560,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 1577,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 1594,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 1611,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 1627,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 1644,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 1661,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 1677,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 1694,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 1710,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 1727,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 1744,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 1760,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 1777,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 1794,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    },
+    {
+      "t": 1810,
+      "n": 8,
+      "h": 220,
+      "ids": [
+        "invite-panel",
+        "invite-code-value",
+        "invite-code-copy",
+        "invite-stats",
+        "invite-count",
+        "invite-rebate",
+        "invite-semantics",
+        "invite-rate"
+      ]
+    }
+  ],
+  "frames390": [
+    {
+      "t": 0,
+      "n": 0,
+      "h": 0
+    },
+    {
+      "t": 30,
+      "n": 0,
+      "h": 0
+    },
+    {
+      "t": 80,
+      "n": 0,
+      "h": 0
+    },
+    {
+      "t": 200,
+      "n": 8,
+      "h": 220
+    },
+    {
+      "t": 600,
+      "n": 8,
+      "h": 220
+    },
+    {
+      "t": 1500,
+      "n": 8,
+      "h": 220
+    }
+  ],
+  "fallback390": null,
+  "firstVisible390": 85,
+  "peak390": 8,
+  "panel390": {
+    "inviteNodes": [
+      "invite-panel",
+      "invite-code-value",
+      "invite-code-copy",
+      "invite-stats",
+      "invite-count",
+      "invite-rebate",
+      "invite-semantics",
+      "invite-rate"
+    ],
+    "inviteNodeCount": 8,
+    "panelHeight": 220,
+    "panelText": "我的邀请 邀请码 6EFT6PUQ4JSY 复制邀请码 已邀请人数 0 返利余额 ¥0.00 注册时填写邀请码（可选） 返利按下线消费额的 20% 结算，结算后计入返利余额",
+    "title": null,
+    "code": "6EFT6PUQ4JSY",
+    "count": "已邀请人数 0",
+    "rebate": "返利余额 ¥0.00",
+    "rate": "返利按下线消费额的 20% 结算，结算后计入返利余额",
+    "semantics": "注册时填写邀请码（可选）",
+    "copyButton": 1,
+    "signedOutGuide": 0,
+    "profile": "Q qa819 2•••@qq.com",
+    "registrationRow": 0
+  },
+  "requests390": [
+    "GET /staging/api/v1/settings/public",
+    "GET /staging/api/v1/settings/public",
+    "POST /staging/api/v1/auth/login",
+    "GET /staging/api/v1/keys",
+    "GET /staging/api/v1/user/aff",
+    "POST /staging/api/v1/keys",
+    "GET /staging/api/v1/keys",
+    "POST /staging/api/v1/keys",
+    "GET /staging/api/v1/settings/public",
+    "GET /staging/api/v1/keys",
+    "POST /staging/api/v1/keys",
+    "GET /staging/api/v1/keys",
+    "POST /staging/api/v1/keys",
+    "GET /staging/api/v1/user/aff"
+  ],
+  "registerOff360": {
+    "row": 0,
+    "rowHtml": null,
+    "mentionsInvite": false
+  },
+  "registerOn360": {
+    "row": 1,
+    "rowHtml": "<input class=\"authInput-_025ed\" type=\"text\" autocomplete=\"off\" autocapitalize=\"characters\" spellcheck=\"false\" placeholder=\"邀请码（可选）\" aria-label=\"邀请码\" data-testid=\"settings-auth-invitation\" value=\"\">",
+    "mentionsInvite": false
+  },
+  "registerOff390": {
+    "row": 0,
+    "rowHtml": null,
+    "mentionsInvite": false
+  },
+  "registerOn390": {
+    "row": 1,
+    "rowHtml": "<input class=\"authInput-_025ed\" type=\"text\" autocomplete=\"off\" autocapitalize=\"characters\" spellcheck=\"false\" placeholder=\"邀请码（可选）\" aria-label=\"邀请码\" data-testid=\"settings-auth-invitation\" value=\"\">",
+    "mentionsInvite": false
+  }
+}

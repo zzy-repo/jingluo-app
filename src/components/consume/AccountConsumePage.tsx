@@ -813,9 +813,9 @@ export const AccountConsumePage = ({
           这里按原来的口径把面板挂回来：`consume` 是页面那一个客户端，`signedIn` 是页面的登录态三档
           （`true` 才算已登录），`onSignIn` 复用页面的登录出口。
 
-          **开关语义一点没动**：`invitation_code_enabled` / `affiliate_enabled` 没开时，面板自己落
-          `hidden`（`invitePanelModel.ts` 的 `loadInvite` / `inviteStateSignedOut`）→ 整块不渲染；
-          已登录才发 `GET /user/aff`，未登录只给引导（#608 的口径）。所以这里**不加**任何本地开关判断，
+          **面板可见性只看这条链路自己的数据**（#819-v2）：已登录 → 发 `GET /user/aff`，成功且带邀请码就展示，
+          失败才落失败态；未登录只给引导，不发请求（#608 的口径）。`settings/public` 里那两个与「注册」有关的
+          开关**不参与**这里的判断（它们管注册页的邀请码行），所以这一层**不加**任何本地开关判断，
           否则就成了「客户端第二份开关」（#484 §3.1d）。
         */}
         <div className={styles.viewBody} data-testid="account-consume-invite">
