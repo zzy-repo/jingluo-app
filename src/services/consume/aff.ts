@@ -19,8 +19,12 @@ import type { ConsumeCallResult, ConsumeHttp } from './http.js'
  */
 export type ConsumeInvitationCheck = { valid: boolean; errorCode?: string }
 
-/** 登录后绑定邀请码的成功体（#842）：`inviter_id` 可选；契约明确**不返回**邀请人邮箱等个人信息 */
-export type ConsumeAffiliateBind = { inviterId?: number }
+/**
+ * 登录后绑定邀请码的成功体（#842 / #856 实测）：`200 {"code":0,"data":{"bound":true}}`。
+ * **没有 `inviter_id`**（也不返回邀请人任何个人信息）；是否已绑定以成功后重拉 `GET /user/aff` 的 `inviter_id` 为准。
+ * `bound` 只有响应体里**字面是 `true`** 才为 `true`，缺省 / 其他值一律 `false`（调用方不得当成功）。
+ */
+export type ConsumeAffiliateBind = { bound: boolean }
 
 /** 我的邀请（`AffiliateDetail`）：`affQuota` / `affFrozenQuota` / `affHistoryQuota` 单位是 **元** */
 export type ConsumeAffiliate = {
@@ -76,12 +80,12 @@ export const getAffiliate = (http: ConsumeHttp): Promise<ConsumeCallResult<Consu
     .then((result) => (result.ok ? { ...result, data: toAffiliate(result.data) } : result))
 
 /**
- * 登录后绑定邀请人（JWT，#842 契约：`POST /api/v1/user/aff/bind`，body `{"aff_code": "<邀请码>"}`）。
+ * 登录后绑定邀请人（JWT，#856 实测契约：`POST /api/v1/user/aff/bind`，body `{"aff_code": "<邀请码>"}`，成功体 `{"bound":true}`）。
  *
  * 写操作，**不自动重试**；调用方负责客户端轻量校验（trim + 转大写 + 4–32 位 `A-Z0-9_-`），这里原样发出 `aff_code`。
  * 请求体字段名与后端注册接口一致（`aff_code`，不是 `code`），见 sub2api-private#19。
- * 失败按 `error.code` 分派（`AFFILIATE_CODE_INVALID` / `AFFILIATE_ALREADY_BOUND` / `AFFILIATE_DISABLED` /
- * `UNAUTHORIZED`；429 没有 code，只看状态码），**只有 `ok: true` 才是成功**。
+ * 失败按 `reason` 分派（`AFFILIATE_CODE_INVALID` / `AFFILIATE_DISABLED`（400，不按状态码）/ `AFFILIATE_ALREADY_BOUND` /
+ * `AFFILIATE_INVITER_FULL`；401 是中间件的 `UNAUTHORIZED`，没有 reason），**成功 = 2xx 且 `data.bound === true`**。
  */
 export const bindInviter = (http: ConsumeHttp, code: string): Promise<ConsumeCallResult<ConsumeAffiliateBind>> =>
   http
@@ -89,9 +93,7 @@ export const bindInviter = (http: ConsumeHttp, code: string): Promise<ConsumeCal
     .then((result) => {
       if (!result.ok) {return result}
       const body = asRecord(result.data)
-      const out: ConsumeAffiliateBind = {}
-      if (typeof body.inviter_id === 'number') {out.inviterId = body.inviter_id}
-      return { ...result, data: out }
+      return { ...result, data: { bound: body.bound === true } }
     })
 
 const toAffiliate = (value: unknown): ConsumeAffiliate => {

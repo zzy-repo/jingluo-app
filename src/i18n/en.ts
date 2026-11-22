@@ -1055,6 +1055,7 @@ export const en = {
   inviteBindDoneHint: 'The invitation is recorded and cannot be changed',
   inviteBindErrFormat: 'The code must be 4–32 letters, digits, underscores or hyphens',
   inviteBindErrInvalid: 'Invalid invitation code. Check it and try again (you cannot use your own code)',
+  inviteBindErrFull: 'This inviter has no invitation slots left. Try a different code',
   inviteBindErrDisabled: 'Invites are not available yet',
   inviteBindErrUnauthorized: 'Your session has expired. Sign in again and retry',
   inviteBindErrRateLimited: 'Too many attempts. Try again later',

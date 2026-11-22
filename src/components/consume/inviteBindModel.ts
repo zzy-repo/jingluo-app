@@ -9,8 +9,13 @@
  *
  * 口径：
  *  · 客户端只做**轻量校验**（trim + 转大写；4–32 位 `A-Z0-9_-`）以少发无意义请求，**后端才是权威**；
- *    不发明错误码，错误只按 `error.code`（429 没有 code，按状态码）映射到文案，认不出的一律「绑定失败」；
- *  · **只有 `ok: true` 才算成功**；`AFFILIATE_ALREADY_BOUND`（409）= 其实已绑定过 → 切只读并重新拉 `GET /user/aff`；
+ *    空码 / 非法格式在客户端拦住，不发请求（后端对空码回的 400 没有 `reason`，只会落到通用失败）；
+ *  · 不发明错误码，错误按 `error.reason`（面板信封）映射到文案，**不按 HTTP 状态码**（`AFFILIATE_DISABLED` 现为 400、
+ *    以后可能改 403）；中间件的 401 没有 reason，按 `code: UNAUTHORIZED` / 状态码；认不出的（含无 reason 的 400、5xx）
+ *    一律「绑定失败」，**永不把服务端 `message` 原文给用户**；
+ *  · **成功 = 2xx 且 `data.bound === true`**（#856 实测：成功体没有 `inviter_id`）；成功后重拉 `GET /user/aff`，
+ *    以其 `inviter_id` 非空判断已绑定。2xx 但 `bound` 不是 `true` 一律当失败；
+ *  · `AFFILIATE_ALREADY_BOUND`（409）= 其实已绑定过 → 切只读并重新拉 `GET /user/aff`；
  *  · 已绑定只读：只表示「已绑定邀请人」，**不显示邀请人任何个人信息**（接口也不给）。
  */
 
@@ -91,23 +96,25 @@ export const inviteBindMode = (input: { enabled: boolean; state: InviteState; bo
 
 // ------------------------------------------------------------------ 错误映射
 
-/** 绑定失败 → 文案 key + 是否其实已绑定。**只认 `error.code`（429 / 401 无 code 时按状态码）**，永不匹配 `message` */
+/** 绑定失败 → 文案 key + 是否其实已绑定。**只认 `error.reason`（没有 reason 时认中间件的 `code`）**，永不匹配 `message`、不按 HTTP 状态码区分业务错误 */
 export type InviteBindFailure = { key: TranslationKey; alreadyBound: boolean }
 
-export const mapBindError = (error: Pick<Sub2ApiError, 'code' | 'status'>): InviteBindFailure => {
-  switch (error.code) {
+export const mapBindError = (error: Pick<Sub2ApiError, 'code' | 'status'> & { reason?: string }): InviteBindFailure => {
+  switch (error.reason ?? error.code) {
     case 'AFFILIATE_CODE_INVALID':
       return { key: 'inviteBindErrInvalid', alreadyBound: false }
     case 'AFFILIATE_ALREADY_BOUND':
       return { key: 'inviteBindDone', alreadyBound: true }
     case 'AFFILIATE_DISABLED':
       return { key: 'inviteBindErrDisabled', alreadyBound: false }
+    case 'AFFILIATE_INVITER_FULL':
+      return { key: 'inviteBindErrFull', alreadyBound: false }
     case 'UNAUTHORIZED':
       return { key: 'inviteBindErrUnauthorized', alreadyBound: false }
     default:
       break
   }
-  // 429 限流没有 `code` 字段（见 `services/consume/errors.ts` 文件头），只能按状态码分支
+  // 后端目前**没有**限流（#856），这条只是通用分支：真有 429（无 code 字段，见 `services/consume/errors.ts` 文件头）时给「稍后再试」
   if (error.status === 429) {
     return { key: 'inviteBindErrRateLimited', alreadyBound: false }
   }
@@ -146,6 +153,10 @@ export const runBindInviter = async (source: InviteBindSource, raw: string): Pro
   }
   const result = await source.aff.bind(checked.code)
   if (result.ok) {
+    // 成功 = 2xx 且 `data.bound === true`；2xx 但没有 bound:true（体不对）不是成功，绝不切只读
+    if (!result.data.bound) {
+      return { kind: 'failed', key: 'inviteBindErrFailed' }
+    }
     return { kind: 'bound', alreadyBound: false, reloaded: await reload(source) }
   }
   const failure = mapBindError(result.error)

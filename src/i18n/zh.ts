@@ -1057,6 +1057,7 @@ export const zh = {
   inviteBindDoneHint: '邀请关系已建立，不能修改',
   inviteBindErrFormat: '邀请码应为 4–32 位字母、数字、下划线或连字符',
   inviteBindErrInvalid: '邀请码无效，请检查后重试（也不能填自己的邀请码）',
+  inviteBindErrFull: '这位邀请人的邀请名额已满，请换一个邀请码',
   inviteBindErrDisabled: '邀请功能暂未开放',
   inviteBindErrUnauthorized: '登录已失效，请重新登录后再试',
   inviteBindErrRateLimited: '操作太频繁，请稍后再试',
