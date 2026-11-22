@@ -44,7 +44,7 @@ import {
   type ResolvedUpdatePolicy,
 } from '../../services/updatePolicy.js'
 import { UpdateDialog } from '../update/UpdateDialog.js'
-import { buildUpdateReport, hostOf, releaseHosts } from '../../services/updateReport.js'
+import { buildUpdateReport, hostOf, primaryReleaseHost } from '../../services/updateReport.js'
 import dialogStyles from './AppUpdateField.module.css'
 import styles from './Settings.module.css'
 
@@ -685,7 +685,7 @@ export const AppUpdateField = () => {
           {/*
            * 诊断区（#310）：失败时用户说不出任何有效信息，反馈单只能一轮往返。
            * 这里只放「用户本来就知道、且截图里能对得上」的事实：版本、渠道、更新服务、最近检查时间。
-           * 地址只到 host（首选项 → 回退项），不含路径与 query。
+           * 地址只到 host（界面只显示主地址；备用地址只在可复制的诊断报告里），不含路径与 query。
            */}
           <div className={dialogStyles.diagnostics} data-testid="update-diagnostics">
             <dl className={dialogStyles.facts}>
@@ -702,7 +702,7 @@ export const AppUpdateField = () => {
               </div>
               <div>
                 <dt>更新服务</dt>
-                <dd>{releaseHosts()}</dd>
+                <dd>{primaryReleaseHost()}</dd>
               </div>
               {base !== DEFAULT_RELEASE_BASE ? (
                 <div>

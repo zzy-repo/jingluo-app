@@ -1,5 +1,5 @@
 import { scrubReportText } from '../app/errorReport.js'
-import { RELEASE_BASES } from './updateManifest.js'
+import { FALLBACK_RELEASE_BASE, PRIMARY_RELEASE_BASE, RELEASE_BASES } from './updateManifest.js'
 
 /**
  * 「检查更新」弹窗里的**诊断文本**（Issue #310）。
@@ -47,6 +47,12 @@ export const hostOf = (value: string | undefined): string => {
 /** 首选 → 回退的分发顺序，只写 host */
 export const releaseHosts = (): string => RELEASE_BASES.map((base) => hostOf(base)).join(' → ')
 
+/**
+ * 界面用：只给主更新地址的 host。备用地址（旧版本只认的那台）不在界面出现，
+ * 失败回退照旧由 `RELEASE_BASES` 的顺序驱动，这里只管「显示什么」。
+ */
+export const primaryReleaseHost = (): string => hostOf(PRIMARY_RELEASE_BASE)
+
 const timeLine = (at: number | undefined): string => {
   if (at === undefined || !Number.isFinite(at)) {
     return '时间: 尚未检查'
@@ -68,7 +74,9 @@ export const buildUpdateReport = (facts: UpdateReportFacts): string => {
   if (facts.code !== undefined && facts.code !== '') {
     lines.push(`上游短码: ${facts.code}`)
   }
-  lines.push(`更新服务: ${releaseHosts()}`)
+  lines.push(
+    `更新服务: 主 ${hostOf(PRIMARY_RELEASE_BASE)}；备（兼容旧版本）${hostOf(FALLBACK_RELEASE_BASE)}`
+  )
   if (facts.base !== undefined && facts.base !== '') {
     lines.push(`本次生效: ${hostOf(facts.base)}`)
   }

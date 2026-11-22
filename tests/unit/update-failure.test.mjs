@@ -229,5 +229,8 @@ test('诊断文本：字段齐、地址只到 host、上游短码与可重试性
   }
   assert.equal(hostOf(undefined), 'unknown')
   assert.equal(hostOf('not a url'), 'unknown')
-  assert.equal(releaseHosts(), '62.106.70.167:8888 → dl.rose7.cn')
+  assert.equal(
+    releaseHosts(),
+    `${new URL(__ENDPOINTS__.dlPrimaryBase).host} → ${new URL(__ENDPOINTS__.dlFallbackBase).host}`
+  )
 })
