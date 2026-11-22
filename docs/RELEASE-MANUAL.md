@@ -1,3 +1,5 @@
+> **接手发布先看 [`docs/release/HOWTO-RELEASE.md`](release/HOWTO-RELEASE.md)**：从构建、签名、验证到经发布控制台（https://ra.rose7.cn）发到 dl 与 62 的完整流程与踩坑清单。
+
 # 发版手册（纯手动清单）
 
 适用：从 `1.4.0-beta.8` 起。发布 = 按本清单一步步做，**没有一键脚本**。
