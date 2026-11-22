@@ -34,7 +34,7 @@ import { existsSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
-import { chatBaseUrl, legacyHosts } from '../../scripts/lib/endpoints.mjs'
+import { consumeBaseUrl, legacyHosts } from '../../scripts/lib/endpoints.mjs'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 /** 仓库根（tests/helpers/ → ../..） */
@@ -186,8 +186,7 @@ export const installEndpointsGlobals = ({
   resetLogRecords = true,
 } = {}) => {
   globalThis.__ENDPOINTS__ ??= Object.freeze({
-    chatBaseUrl,
-    inviteBaseUrl: 'https://invite.test.invalid',
+    consume: Object.freeze({ baseUrl: consumeBaseUrl }),
     feedbackUrl: 'https://feedback.test.invalid',
     legacyHosts: Object.freeze([...legacyHosts]),
     allowedHosts: Object.freeze([]),

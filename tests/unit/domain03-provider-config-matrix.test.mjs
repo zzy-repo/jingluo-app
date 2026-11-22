@@ -23,7 +23,7 @@ import assert from 'node:assert/strict'
 import { registerHooks } from 'node:module'
 import { test } from 'node:test'
 
-import { chatBaseUrl, legacyHosts } from '../../scripts/lib/endpoints.mjs'
+import { consumeBaseUrl, legacyHosts } from '../../scripts/lib/endpoints.mjs'
 
 const collectorStub = new URL('../fixtures/domain03-04/collector.mjs', import.meta.url).href
 
@@ -47,8 +47,7 @@ registerHooks({
 
 // 打包期注入的常量（rspack DefinePlugin）：标准构建 → 默认渠道 deepseek
 globalThis.__ENDPOINTS__ ??= Object.freeze({
-  chatBaseUrl,
-  inviteBaseUrl: 'https://invite.test.invalid',
+  consume: Object.freeze({ baseUrl: consumeBaseUrl }),
   feedbackUrl: 'https://feedback.test.invalid',
   legacyHosts: Object.freeze([...legacyHosts]),
   allowedHosts: Object.freeze([]),

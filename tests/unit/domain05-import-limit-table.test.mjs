@@ -56,10 +56,9 @@ installHooks((specifier, parent) => {
 })
 
 // 打包期 DefinePlugin 常量：裸 Node 里没有，backup.ts 会经 diagnostics 读到（同其它单测做法）
-const { chatBaseUrl, legacyHosts } = await import('../../scripts/lib/endpoints.mjs')
+const { consumeBaseUrl, legacyHosts } = await import('../../scripts/lib/endpoints.mjs')
 globalThis.__ENDPOINTS__ ??= Object.freeze({
-  chatBaseUrl,
-  inviteBaseUrl: 'https://invite.test.invalid',
+  consume: Object.freeze({ baseUrl: consumeBaseUrl }),
   feedbackUrl: 'https://feedback.test.invalid',
   legacyHosts: Object.freeze([...legacyHosts]),
 })

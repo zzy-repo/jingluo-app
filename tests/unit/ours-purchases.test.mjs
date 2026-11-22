@@ -22,6 +22,7 @@ installTsResolve({
 })
 
 const purchases = await import('../../src/services/ours/purchases.ts')
+const { payBaseUrl } = await import('../../scripts/lib/endpoints.mjs')
 const {
   PurchaseError,
   PURCHASES_DEFAULT_LIMIT,
@@ -389,7 +390,7 @@ test('走真实 transport：Key 只在 Authorization 头，URL 里只有 limit/o
     assert.equal(new URL(url).searchParams.get('status'), 'fulfilled')
     assert.equal(new URL(url).searchParams.get('limit'), '10')
     assert.equal(new URL(url).searchParams.get('offset'), '20')
-    assert.equal(new URL(url).origin, 'https://apia.ecsafe.cn')
+    assert.equal(new URL(url).origin, new URL(payBaseUrl).origin)
   } finally {
     globalThis.fetch = realFetch
   }

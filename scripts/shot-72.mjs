@@ -2,7 +2,7 @@
 import { chromium } from 'playwright'
 import fs from 'node:fs'
 
-import { inviteBaseUrl } from './lib/endpoints.mjs'
+import { payBaseUrl } from './lib/endpoints.mjs'
 import { matrixConfig, viewportFor } from './compat/lib/matrix-config.mjs'
 
 const OUT = 'docs/ui/redeem-migrate'
@@ -53,18 +53,15 @@ const run = async (width, height, tag) => {
     { key: KEY, device: DEVICE }
   )
   const page = await context.newPage()
-  // 只拦两套后端（截图用固定报文，不代表真实服务返回）
-  await context.route(`${inviteBaseUrl}/**`, async (route) => {
+  // 只拦网关（#869 单一 BASE：邀请与套餐原来是两个地址，现在是同一个 origin，所以合成一条路由、按路径分流；
+  // 截图用固定报文，不代表真实服务返回）
+  await context.route(`${payBaseUrl}/**`, async (route) => {
     const url = route.request().url()
+    if (url.includes('/api/plans')) return route.fulfill(json(200, PLANS))
     if (url.includes('/me')) return route.fulfill(json(200, PROFILE))
     if (url.includes('/apply')) return route.fulfill(json(201, PROFILE))
     if (url.includes('/redeem-card')) return route.fulfill(json(202, { code: 'CREDIT_PENDING' }))
     return route.fulfill(json(404, { error: { code: 'not_found', message: 'no route' } }))
-  })
-  await context.route('https://apia.ecsafe.cn/**', async (route) => {
-    const url = route.request().url()
-    if (url.includes('/api/plans')) return route.fulfill(json(200, PLANS))
-    return route.fulfill(json(404, { code: 'NOT_FOUND', message: 'no route' }))
   })
 
   await page.goto('http://localhost:8095/', { waitUntil: 'domcontentloaded' })

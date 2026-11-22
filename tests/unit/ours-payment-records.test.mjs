@@ -8,6 +8,7 @@
 // #507：`__ENDPOINTS__` 全局兜底 —— 装载即挂（幂等）。单跑本文件（不经 run-layer 的 `--import` 预加载）也不会
 // `ReferenceError: __ENDPOINTS__ is not defined`；走门禁时与预加载是同一份模块，无副作用叠加。
 import '../helpers/injected.mjs'
+import { payBaseUrl } from '../../scripts/lib/endpoints.mjs'
 
 import { registerHooks } from 'node:module'
 import { readdirSync, readFileSync } from 'node:fs'
@@ -73,7 +74,7 @@ const TOKEN_2 = 'Qq7w1ZtNeWmRkPvCyGuHjXbA4dEsF3Ln'
 const cashierUrl = (outTradeNo, orderToken) =>
   'https://pay.xiaodouap.cn/submit.php?pid=1001' +
   `&out_trade_no=${outTradeNo}&money=0.10` +
-  `&return_url=${encodeURIComponent(`https://apia.ecsafe.cn/return?no=${outTradeNo}&order_token=${orderToken}`)}`
+  `&return_url=${encodeURIComponent(`${payBaseUrl}/return?no=${outTradeNo}&order_token=${orderToken}`)}`
 
 const fakeStorage = () => {
   const map = new Map()
@@ -192,7 +193,7 @@ if (records === null) {
   ])
   const fetched = await records.fetchPaymentRecords('sk-live-test', okTransport.transport, storage)
   eq(fetched.kind, 'ok', '4.1 拉取成功')
-  eq(okTransport.calls[0]?.url, 'https://apia.ecsafe.cn/api/orders', '4.2 打的是 /api/orders')
+  eq(okTransport.calls[0]?.url, `${payBaseUrl}/api/orders`, '4.2 打的是 /api/orders')
   eq(okTransport.calls[0]?.headers?.Authorization, 'Bearer sk-live-test', '4.3 带 Bearer Key')
   if (fetched.kind === 'ok') {
     eq(fetched.data.customerId, 10, '4.4 顺带拿到 customer_id')

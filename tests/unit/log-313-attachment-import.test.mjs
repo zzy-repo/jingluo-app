@@ -132,8 +132,8 @@ registerHooks({
 // ---------------------------------------------------------------- 浏览器环境替身
 
 globalThis.__API_ORIGIN__ = 'https://api.deepseek.com'
-// 构建期注入的端点表（`endpointKeyFromUrl` 靠它把地址归到 chatBaseUrl / inviteBaseUrl / feedbackUrl）
-globalThis.__ENDPOINTS__ = { chatBaseUrl: 'https://api.deepseek.com' }
+// 构建期注入的端点表（`endpointKeyFromUrl` 靠它把地址归到 chatBaseUrl（= consume.baseUrl 的 origin）/ feedbackUrl）
+globalThis.__ENDPOINTS__ = { consume: { baseUrl: 'https://api.deepseek.com' } }
 globalThis.__INTERNAL_BUILD__ = false
 globalThis.__log = { entries: [] }
 /** 跨用例留档：最后一条用例要对**全部**产出的日志做「meta 至少 2 个键」的体检 */

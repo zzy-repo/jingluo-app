@@ -27,6 +27,7 @@ import {
   selectProviderKind,
 } from '../helpers/helpers.mjs'
 import { verifyAppUrl } from '../helpers/env.mjs'
+import { payBaseUrl } from '../../scripts/lib/endpoints.mjs'
 
 const name = 'tests/integration/ours-services.test.mjs'
 
@@ -74,7 +75,7 @@ const wireMock = async (page) => {
   })
 
   // 支付侧：套餐空列表（#331 之后套餐可以全线下架，界面必须给可读空态而不是报错）
-  await page.route('https://apia.ecsafe.cn/**', async (route) => {
+  await page.route(`${payBaseUrl}/**`, async (route) => {
     const url = new URL(route.request().url())
     if (url.pathname.includes('/api/plans')) {
       await route.fulfill(json(200, { plans: [] }))

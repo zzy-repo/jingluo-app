@@ -175,10 +175,20 @@ test('B3 构建期脚本：放行只覆盖「明文 + 旧池域」两条 —— 
     validateConsumePay(withPath, '', { allowInsecure: true }).some((line) => /会拼成双份前缀/.test(line)),
     '带路径仍然要拒（放行不等于不校验形状）',
   )
-  const sameAsPay = { ...CONFIG, consume: { ...CONFIG.consume, baseUrl: CONFIG.pay.baseUrl } }
+  // #869：两者都是统一网关 BASE 时相等是被允许的；**不是** BASE 的相等（放行开关也救不了）仍然要拒
+  const sameNonBase = {
+    ...CONFIG,
+    consume: { ...CONFIG.consume, baseUrl: 'https://same-non-base.test' },
+    pay: { ...CONFIG.pay, baseUrl: 'https://same-non-base.test' },
+  }
   assert.ok(
-    validateConsumePay(sameAsPay, '', { allowInsecure: true }).some((line) => /相同/.test(line)),
-    'consume 与 pay 相同仍然要拒',
+    validateConsumePay(sameNonBase, '', { allowInsecure: true }).some((line) => /相同/.test(line)),
+    'consume 与 pay 相同（且不是统一网关 BASE）仍然要拒',
+  )
+  const sameUnified = { ...CONFIG, consume: { ...CONFIG.consume, baseUrl: CONFIG.pay.baseUrl } }
+  assert.ok(
+    !validateConsumePay(sameUnified, '', { allowInsecure: true }).some((line) => /相同/.test(line)),
+    '两者都是统一网关 BASE 的相等是 #869 的有意例外',
   )
 })
 
@@ -234,7 +244,7 @@ test('P0-1 allowInsecure + 路径前缀 /staging：硬错误里不再出现「�
 })
 
 test('P0-2 https + 路径前缀 /staging（正式形态）：零硬错误，且不需要明文放行', () => {
-  const raw = { ...CONFIG, consume: { ...CONFIG.consume, baseUrl: 'https://apia.ecsafe.cn/staging' } }
+  const raw = { ...CONFIG, consume: { ...CONFIG.consume, baseUrl: `${CONFIG.consume.baseUrl}/staging` } }
   const problems = validateConsumePay(raw, '')
   assert.deepEqual(problems, [], `https + /staging 应当完全合法：${problems.join(' | ')}`)
 })

@@ -26,6 +26,7 @@ installTsResolve()
 const { zh } = await import('../../src/i18n/zh.ts')
 const { en } = await import('../../src/i18n/en.ts')
 const oursApi = await import('../../src/services/ours/api.ts')
+const { payBaseUrl } = await import('../../scripts/lib/endpoints.mjs')
 const {
   fetchPayLink,
   formatPlanMeta,
@@ -62,7 +63,8 @@ const { failures, checks, ok, bad, eq, truthy } = createSelfCheck()
 console.log('\n[1] 价格 / 额度文案格式化（套餐接口已下线，只留纯函数）')
 {
   const plan = { id: 'p1', name: '入门包 100万 token', price: 3.0, points: 300, currency: 'CNY', enabled: true }
-  eq(OURS_API_BASE, 'https://apia.ecsafe.cn', '卡密服务走 HTTPS')
+  eq(OURS_API_BASE, payBaseUrl, '卡密服务地址 = 配置里的 pay.baseUrl')
+  eq(OURS_API_BASE.startsWith('https://'), true, '卡密服务走 HTTPS')
   eq(formatPlanPrice(plan), '¥3.00', '价格文案')
   // #487：单位统一为元（100 积分 = 1 元），300 积分 = ¥3.00
   eq(formatPoints(plan.points, zh.oursPointsUnit), '3.00 元', '额度文案（元）')

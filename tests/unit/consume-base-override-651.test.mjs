@@ -97,11 +97,31 @@ test('V2：命中废弃域黑名单 → 抛（旧池域 IP / 旧池域端口都�
   expectThrows({ [BASE_OVERRIDE_ENV.consume]: 'https://sub2api.example.test:60013' }, /命中废弃域黑名单/)
 })
 
-test('V3：覆盖后与 pay 相同 → 抛（两个后端职责不能混）', () => {
-  expectThrows({ [BASE_OVERRIDE_ENV.consume]: config.pay.baseUrl }, /与 pay\.baseUrl 相同/)
+test('V3：覆盖后与 pay 相同 → 抛（两个后端职责不能混；#869 唯一例外是两者都等于统一网关 BASE）', () => {
+  // 不是统一网关 BASE 的相等一律照拒：两边都覆盖成同一个非 BASE 地址
   expectThrows(
     { [BASE_OVERRIDE_ENV.consume]: 'https://same.test', [BASE_OVERRIDE_ENV.pay]: 'https://same.test' },
     /与 pay\.baseUrl 相同/
+  )
+  // 只有一边是统一网关 BASE、另一边被覆盖成别的地址 → 不相等，不涉及例外，照常通过
+  const split = applyBaseOverrides(config, raw, { [BASE_OVERRIDE_ENV.pay]: 'https://pay-only.test' })
+  assert.equal(split.config.pay.baseUrl, 'https://pay-only.test')
+})
+
+test('V3b（#869）：consume 与 pay 都是统一网关 BASE 时允许相等；偏离 BASE 的相等照拒', () => {
+  assert.equal(config.consume.baseUrl, config.pay.baseUrl, '前提：当前配置里两者就是同一个统一 BASE')
+  // 覆盖成**同一个统一 BASE**：放行（例外只对这一个值成立）
+  const same = applyBaseOverrides(config, raw, { [BASE_OVERRIDE_ENV.consume]: config.pay.baseUrl })
+  assert.equal(same.config.consume.baseUrl, same.config.pay.baseUrl)
+  // 只覆盖 pay 为非 BASE、consume 也覆盖成同一个非 BASE：相等但不是 BASE → 拒
+  expectThrows(
+    { [BASE_OVERRIDE_ENV.consume]: 'https://not-the-base.test', [BASE_OVERRIDE_ENV.pay]: 'https://not-the-base.test' },
+    /与 pay\.baseUrl 相同/
+  )
+  // 只把 consume 覆盖成非 BASE（pay 仍是 BASE）：不相等，通过
+  assert.equal(
+    applyBaseOverrides(config, raw, { [BASE_OVERRIDE_ENV.consume]: 'https://consume-only.test' }).config.consume.baseUrl,
+    'https://consume-only.test'
   )
 })
 

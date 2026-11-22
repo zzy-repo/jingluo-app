@@ -38,7 +38,7 @@ import {
   consumeBaseUrl,
   consumeGatewayPrefix,
   inferenceBaseUrl,
-  inviteBaseUrl,
+  payBaseUrl,
 } from './lib/endpoints.mjs'
 // #386 的「流式中」截图要把 streaming 这个状态撑开：用同一份 ours 上游契约回 SSE（含 CORS 头），
 // 只是刻意延后 4 秒再回，好在上翻之后再截。
@@ -75,8 +75,9 @@ const FIXTURE_API_KEY = 'sk-shot-mobile-fixture-0000'
  * #235：套餐 / 档案都是只读接口，打桩地址与集成测试同一份（明文邀请服 + 卡密主站）。
  * 邀请服地址来自 config/endpoints.json（#274），这里不再写字面量。
  */
-const SHOT_INVITE_API = inviteBaseUrl
-const SHOT_CARD_API = 'https://apia.ecsafe.cn'
+// #869 单一 BASE：邀请与卡密原来是两个地址，现在同一个 origin（Playwright 后注册的路由先匹配，具体路径优先于 `/**` 兜底）。
+const SHOT_INVITE_API = payBaseUrl
+const SHOT_CARD_API = payBaseUrl
 
 /**
  * #608「账号」tab 截图用的假账号：字段名与 sub2api 的 `User` DTO 一致（snake_case），

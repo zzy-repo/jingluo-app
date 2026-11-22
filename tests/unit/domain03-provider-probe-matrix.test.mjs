@@ -18,7 +18,7 @@
 import assert from 'node:assert/strict'
 import { fixtureUrl, installEndpointsGlobals, installTsResolve } from '../helpers/dom-env.mjs'
 
-import { chatBaseUrl } from '../../scripts/lib/endpoints.mjs'
+import { consumeBaseUrl } from '../../scripts/lib/endpoints.mjs'
 import { test } from 'node:test'
 
 // 装配走公共入口（#408 收尾批）：原生桥 `domain03-04/capacitor.mjs`（N3-B 要覆盖 native 传输分支，
@@ -244,8 +244,8 @@ test('N3-B 探测协议矩阵（表驱动 21 行）', async (t) => {
       id: '18',
       channel: 'ours',
       kind: 'ours',
-      baseUrl: chatBaseUrl,
-      url: `${chatBaseUrl}/v1/models`,
+      baseUrl: consumeBaseUrl,
+      url: `${consumeBaseUrl}/v1/models`,
       headers: { authorization: `Bearer ${KEY}` },
       forbidden: ['x-api-key', 'anthropic-version'],
     },
@@ -275,11 +275,11 @@ test('N3-B 探测协议矩阵（表驱动 21 行）', async (t) => {
       status: 200,
       data: { data: [{ id: 'native-model' }] },
     })
-    const result = await client.probeProvider({ baseUrl: chatBaseUrl, apiKey: KEY })
+    const result = await client.probeProvider({ baseUrl: consumeBaseUrl, apiKey: KEY })
     expectProbe(result, { ok: true, status: 200, models: ['native-model'] })
     assert.equal(calls.length, 0, '原生平台不该走 fetch（WebView 里没有 CORS，直连会全红）')
     assert.equal(globalThis.__nativeCalls.length, 1)
-    assert.equal(globalThis.__nativeCalls[0].url, `${chatBaseUrl}/v1/models`)
+    assert.equal(globalThis.__nativeCalls[0].url, `${consumeBaseUrl}/v1/models`)
     assert.equal(headerOf(globalThis.__nativeCalls[0].headers, 'authorization'), `Bearer ${KEY}`)
   })
 
@@ -290,7 +290,7 @@ test('N3-B 探测协议矩阵（表驱动 21 行）', async (t) => {
       status: 401,
       data: { error: { message: 'native says no' } },
     })
-    const result = await client.probeProvider({ baseUrl: chatBaseUrl, apiKey: KEY })
+    const result = await client.probeProvider({ baseUrl: consumeBaseUrl, apiKey: KEY })
     expectProbe(result, { ok: false, status: 401, reason: 'http', message: 'native says no' })
     assert.equal(rejection.isKeyRejected(), true)
   })
@@ -299,7 +299,7 @@ test('N3-B 探测协议矩阵（表驱动 21 行）', async (t) => {
     seed('ours')
     globalThis.__nativePlatform = true
     globalThis.__nativeGet = () => new Promise(() => {})
-    const result = await client.probeProvider({ baseUrl: chatBaseUrl, apiKey: KEY }, 25)
+    const result = await client.probeProvider({ baseUrl: consumeBaseUrl, apiKey: KEY }, 25)
     expectProbe(result, { ok: false, reason: 'timeout', models: [] })
   })
 })

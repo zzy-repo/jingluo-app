@@ -23,7 +23,7 @@ import { registerHooks } from 'node:module'
 import { test } from 'node:test'
 
 // 端点地址唯一来源：config/endpoints.json（#274）
-import { chatBaseUrl, legacyHosts } from '../../scripts/lib/endpoints.mjs'
+import { consumeBaseUrl, legacyHosts } from '../../scripts/lib/endpoints.mjs'
 
 // 与打包器一致：源码内部用 .js 说明符指向 .ts 文件
 registerHooks({
@@ -41,8 +41,7 @@ registerHooks({
 
 // 非打包环境兜底：runner 一般已经用 --import tests/helpers/injected.mjs 注入过，这里只补缺失的那份
 globalThis.__ENDPOINTS__ ??= Object.freeze({
-  chatBaseUrl,
-  inviteBaseUrl: 'https://invite.test.invalid',
+  consume: Object.freeze({ baseUrl: consumeBaseUrl }),
   feedbackUrl: 'https://feedback.test.invalid',
   legacyHosts: Object.freeze([...legacyHosts]),
   allowedHosts: Object.freeze([]),

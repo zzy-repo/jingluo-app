@@ -205,10 +205,11 @@ test('C 负向用例：超长 / 带密钥的 URL / 非原始类型 → 截断或
 })
 
 test('D 端点键：只写 config/endpoints.json 的键，认不出来给 other', async () => {
-  const { chatBaseUrl, feedbackUrl, inviteBaseUrl } = globalThis.__ENDPOINTS__
-  assert.equal(endpointKeyFromUrl(`${chatBaseUrl}/v1/messages`), 'chatBaseUrl')
+  const { consume, feedbackUrl } = globalThis.__ENDPOINTS__
+  const gateway = consume.baseUrl
+  assert.equal(endpointKeyFromUrl(`${gateway}/v1/messages`), 'chatBaseUrl', '统一网关（consume.baseUrl 的 origin）= 对话端点')
   assert.equal(endpointKeyFromUrl(`${feedbackUrl}?x=1`), 'feedbackUrl')
-  assert.equal(endpointKeyFromUrl(`${inviteBaseUrl}/api`), 'inviteBaseUrl')
+  assert.equal(endpointKeyFromUrl('http://invite.test.invalid/api'), 'other', '已删除的 inviteBaseUrl 地址认不出来 → other')
   assert.equal(endpointKeyFromUrl('https://api.deepseek.com/v1/messages'), 'other', '自填地址 → other')
   assert.equal(endpointKeyFromUrl('/v1/messages'), 'other', '相对路径认不出来 → other')
   assert.equal(endpointKeyFromUrl(''), 'other', '空地址不抛，给 other')
@@ -216,7 +217,7 @@ test('D 端点键：只写 config/endpoints.json 的键，认不出来给 other'
   const saved = globalThis.__ENDPOINTS__
   globalThis.__ENDPOINTS__ = undefined
   try {
-    assert.equal(endpointKeyFromUrl(`${chatBaseUrl}/v1/messages`), 'other')
+    assert.equal(endpointKeyFromUrl(`${gateway}/v1/messages`), 'other')
   } finally {
     globalThis.__ENDPOINTS__ = saved
   }

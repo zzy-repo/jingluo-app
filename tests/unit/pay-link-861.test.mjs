@@ -90,7 +90,15 @@ console.log('\n[A] mock 测试：请求路径与基地址取自 consume 配置')
   const original = globalThis.__ENDPOINTS__
   truthy(typeof original.consume?.baseUrl === 'string' && original.consume.baseUrl !== '', '测试注入里有 consume.baseUrl')
   eq(api.payLinkUrl(), `${original.consume.baseUrl}/api/v1/pay-link`, '默认：consume.baseUrl + /api/v1/pay-link')
-  truthy(!api.payLinkUrl().startsWith(`${original.pay.baseUrl}/api/`), '不再拼 pay.baseUrl（旧 cardpay 域，502）')
+  // #869 之后 consume 与 pay 是同一个统一 BASE，字符串前缀已无法区分「来自哪个字段」。
+  // 所以改成注入一个**不同的** pay.baseUrl（旧 cardpay 域），证明链接只跟 consume 走、完全不读 pay.baseUrl。
+  {
+    const legacyPay = 'https://legacy-cardpay.example.test'
+    globalThis.__ENDPOINTS__ = { ...original, pay: { ...original.pay, baseUrl: legacyPay } }
+    truthy(!api.payLinkUrl().startsWith(`${legacyPay}/`), '不再拼 pay.baseUrl（旧 cardpay 域，502）')
+    eq(api.payLinkUrl(), `${original.consume.baseUrl}/api/v1/pay-link`, 'pay.baseUrl 变了，链接不变：只取 consume')
+    globalThis.__ENDPOINTS__ = original
+  }
 
   globalThis.__ENDPOINTS__ = {
     ...original,

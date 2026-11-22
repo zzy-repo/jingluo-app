@@ -65,8 +65,7 @@ export const recordError = (message, fields = {}) => {
 const installGlobals = () => {
   // 打包期注入（rspack DefinePlugin）：标准构建 → 默认渠道 deepseek
   globalThis.__ENDPOINTS__ ??= Object.freeze({
-    chatBaseUrl: 'https://chat.test.invalid',
-    inviteBaseUrl: 'https://invite.test.invalid',
+    consume: Object.freeze({ baseUrl: 'https://chat.test.invalid' }),
     feedbackUrl: 'https://feedback.test.invalid',
     legacyHosts: Object.freeze([]),
     allowedHosts: Object.freeze([]),

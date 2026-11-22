@@ -57,12 +57,11 @@ export const placeholders = (text) => [...String(text).matchAll(/\{(\w+)\}/g)].m
  * 与其它单测同一套做法（值从 scripts/lib/endpoints.mjs 取，不在测试里另写一份地址）。
  */
 export const installBuildDefines = async () => {
-  const { chatBaseUrl, downloadFallbackBase, downloadPrimaryBase, legacyHosts } = await import(
+  const { consumeBaseUrl, downloadFallbackBase, downloadPrimaryBase, legacyHosts } = await import(
     '../../../scripts/lib/endpoints.mjs'
   )
   globalThis.__ENDPOINTS__ ??= Object.freeze({
-    chatBaseUrl,
-    inviteBaseUrl: 'https://invite.test.invalid',
+    consume: Object.freeze({ baseUrl: consumeBaseUrl }),
     feedbackUrl: 'https://feedback.test.invalid',
     legacyHosts: Object.freeze([...legacyHosts]),
     // 分发地址（Issue #269）：域 5 不测更新链路，只保持注入形状与真实构建一致

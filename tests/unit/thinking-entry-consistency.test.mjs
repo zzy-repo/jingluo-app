@@ -41,7 +41,7 @@ globalThis.localStorage = {
   removeItem: (key) => storage.delete(key),
 }
 globalThis.__API_ORIGIN__ ??= 'https://api.deepseek.com'
-globalThis.__ENDPOINTS__ ??= { chatBaseUrl: 'https://ours.test.invalid' }
+globalThis.__ENDPOINTS__ ??= { consume: { baseUrl: 'https://ours.test.invalid' } }
 globalThis.INTERNAL_BUILD = false
 
 const { createElement } = await import('react')

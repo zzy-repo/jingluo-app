@@ -99,7 +99,7 @@ registerHooks({
 
 globalThis.__API_ORIGIN__ = 'https://api.deepseek.com'
 globalThis.__INTERNAL_BUILD__ = false
-globalThis.__ENDPOINTS__ = { chatBaseUrl: 'https://api.deepseek.com' }
+globalThis.__ENDPOINTS__ = { consume: { baseUrl: 'https://api.deepseek.com' } }
 globalThis.__log = { entries: [] }
 globalThis.__imported = []
 globalThis.__importCount = 3

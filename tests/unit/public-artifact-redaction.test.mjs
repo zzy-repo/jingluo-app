@@ -93,21 +93,19 @@ const runGate = (args) => {
  * 一份「联调用」的临时端点配置：内网 IP + 几个高位端口，与真实配置无关（地址全是假的）。
  *
  * 五个端口的用途各不相同，**别合并** —— 每个端口就是一类判定样本：
- *   7001 `chatBaseUrl`      产品端点（客户端真要连的聊天后端）
- *   7002 `inviteBaseUrl` / `feedbackUrl`  旧池（一个删了调用方、一个裁决归旧池）
+ *   7001 `consume.baseUrl` 产品端点（统一网关 BASE，#869）
+ *   7002 `feedbackUrl`     旧池（裁决归旧池）
  *   7004 `pay.baseUrl`      产品端点，且**域名 + 内网端口**（"既像产品端点又像内网端口"）
  *   7005 只在 `allowedPorts` 里 —— 端口表派生的内网端口，背后没有任何端点 → 旧池
  *   7006 `download.primaryBase` 登记了但**没裁决**归类 → 未裁决（与真实配置同形，判红）
  */
 const TEMP_ENDPOINTS = {
-  chatBaseUrl: 'http://10.11.12.13:7001',
-  inviteBaseUrl: 'http://10.11.12.13:7002',
   feedbackUrl: 'http://10.11.12.13:7002/feedback',
   legacyHosts: ['10.11.12.13'],
   allowedHosts: ['10.11.12.13'],
   allowedPorts: [7001, 7002, 7004, 7005],
   pay: { baseUrl: 'https://pay.rose7.cn:7004' },
-  consume: { baseUrl: 'https://consume.example.test' },
+  consume: { baseUrl: 'http://10.11.12.13:7001' },
   download: { primaryBase: 'http://10.11.12.13:7006', fallbackBase: 'https://dl.example.test' },
 }
 
@@ -336,10 +334,10 @@ test('T5 XML 命名空间与占位域名不误报，但要计数打印（不静�
 
 test('T6 不传 --config 时读的就是 config/endpoints.json（地址在运行时拼，不在测试里抄一份）', () => {
   const raw = JSON.parse(fs.readFileSync(ENDPOINTS, 'utf8'))
-  // 用**旧池**那个字段（`inviteBaseUrl`），不是产品端点：产品端点现在按功能需要放行（T7），
+  // 用**旧池**那个字段（`feedbackUrl`，#869 之后 `inviteBaseUrl` 已从配置删除），不是产品端点：产品端点现在按功能需要放行（T7），
   // 拿它当「必须红」的样本就测不出真配置被读到了。
-  const invite = raw.inviteBaseUrl
-  assert.ok(invite, 'config/endpoints.json 里应当有 inviteBaseUrl（旧池样本）')
+  const invite = raw.feedbackUrl
+  assert.ok(invite, 'config/endpoints.json 里应当有 feedbackUrl（旧池样本）')
   const address = new URL(invite).host
 
   const work = scratch()
@@ -398,7 +396,7 @@ test('T7 只有产品端点 → exit 0，且逐个点名来源字段 [OK-ENDPOIN
       /\[OK-ENDPOINT\][^\n]*pay\.rose7\.cn:7004/,
       '产品端点 + 内网端口同时成立时，按产品端点算'
     )
-    assert.match(green.stdout, /config\.endpoints\.chatBaseUrl/, '逐个打印来源字段（chatBaseUrl）')
+    assert.match(green.stdout, /config\.endpoints\.consume\.baseUrl/, '逐个打印来源字段（consume.baseUrl）')
     assert.match(green.stdout, /config\.endpoints\.pay\.baseUrl/, '逐个打印来源字段（pay.baseUrl）')
     assert.match(green.stdout, /产品端点 2 条（允许）/, '汇总行要有四类计数')
     assert.match(green.stdout, /旧池地址 0 条（必须清）/, '旧池为 0 也要写出来（不静默）')
@@ -422,7 +420,7 @@ test('T8 旧池地址 → exit 1 且 [FAIL-LEGACY]（点名 legacyHosts[0]，提
     assert.equal(red.code, EXIT.LEAK, `旧池命中必须 exit 1，实际 exit=${red.code}\n${red.stdout}`)
     assert.match(red.stdout, /\[FAIL-LEGACY\][^\n]*http:\/\/10\.11\.12\.13:7002/, 'URL 形态的旧池要逐条点名')
     assert.match(red.stdout, /\[FAIL-LEGACY\][^\n]*legacyHosts\[0\]/, '裸主机那一条要点名到 legacyHosts[0]')
-    assert.match(red.stdout, /inviteBaseUrl/, '要点名它出自哪个字段')
+    assert.match(red.stdout, /feedbackUrl/, '要点名它出自哪个字段')
     assert.match(red.stdout, /grep 调用方/, '要提示「先 grep 调用方 0 处再删」')
     assert.match(red.stdout, /旧池地址 2 条（必须清）/, '汇总行要摊开旧池条数')
     assert.match(red.stderr, /清不掉的地址/, 'stderr 要有一句人能看懂的结论')
@@ -476,9 +474,8 @@ test('T11 同一地址不得同时进 OK 与 FAIL：产品端点优先，并打�
     // 同一个 `主机:端口` 在配置里既是产品端点、又是旧池（现实里 `62.106.70.167` 就有两副面孔）
     const config = work.writeConfig({
       ...TEMP_ENDPOINTS,
-      chatBaseUrl: 'http://10.21.22.23:7101',
+      consume: { baseUrl: 'http://10.21.22.23:7101' },
       feedbackUrl: 'http://10.21.22.23:7101/feedback',
-      inviteBaseUrl: 'http://10.21.22.23:7102',
       legacyHosts: ['10.21.22.23'],
       allowedHosts: ['10.21.22.23'],
       allowedPorts: [7101, 7102],

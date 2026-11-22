@@ -30,7 +30,6 @@
 import { SEAM_SESSION } from '../../scripts/lib/testAuthSeam.mjs'
 import {
   allowedHosts,
-  chatBaseUrl,
   consumeApiV1Prefix,
   consumeBaseUrl,
   consumeGatewayPrefix,
@@ -38,7 +37,6 @@ import {
   downloadFallbackBase,
   downloadPrimaryBase,
   feedbackUrl,
-  inviteBaseUrl,
   legacyHosts,
   payBaseUrl,
   payTimeouts,
@@ -54,8 +52,6 @@ const ENDPOINTS = Object.freeze({
   // 明文联调包标记（#601 守卫的补正面）：默认 **false** —— 单测跑的是「默认拒绝非回环明文」这条路径。
   // 要验放行分支的用例自己覆盖 `globalThis.__ENDPOINTS__`（见 tests/unit/insecure-consume-seam.test.mjs）。
   insecureConsume: false,
-  chatBaseUrl,
-  inviteBaseUrl,
   feedbackUrl,
   legacyHosts: Object.freeze([...legacyHosts]),
   allowedHosts: Object.freeze([...allowedHosts]),

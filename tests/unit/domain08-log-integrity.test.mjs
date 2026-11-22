@@ -21,7 +21,7 @@ import { registerHooks } from 'node:module'
 import { fileURLToPath } from 'node:url'
 import { test } from 'node:test'
 
-import { chatBaseUrl, legacyHosts } from '../../scripts/lib/endpoints.mjs'
+import { consumeBaseUrl, legacyHosts } from '../../scripts/lib/endpoints.mjs'
 
 const collectorStub = new URL('../fixtures/domain08-09/collector-stub.mjs', import.meta.url).href
 registerHooks({
@@ -48,8 +48,7 @@ registerHooks({
 })
 
 globalThis.__ENDPOINTS__ ??= Object.freeze({
-  chatBaseUrl,
-  inviteBaseUrl: 'https://invite.test.invalid',
+  consume: Object.freeze({ baseUrl: consumeBaseUrl }),
   feedbackUrl: 'https://feedback.test.invalid',
   legacyHosts: Object.freeze([...legacyHosts]),
   allowedHosts: Object.freeze([]),

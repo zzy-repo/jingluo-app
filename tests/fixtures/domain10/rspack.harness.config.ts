@@ -22,8 +22,6 @@ const pkg = JSON.parse(readFileSync(path.join(root, 'package.json'), 'utf8')) as
   browserslist?: string[]
 }
 const endpoints = JSON.parse(readFileSync(path.join(root, 'config/endpoints.json'), 'utf8')) as {
-  chatBaseUrl: string
-  inviteBaseUrl: string
   feedbackUrl: string
   legacyHosts: string[]
   /** 分发地址（Issue #269）：updateManifest.ts 顶层读 __ENDPOINTS__.dl*，缺了就是 undefined base */
@@ -78,8 +76,6 @@ const config: Configuration = {
       __APP_VERSION__: JSON.stringify(pkg.version ?? '1.4.0-beta.10'),
       __APP_VERSION_CODE__: JSON.stringify(Number(pkg.androidVersionCode ?? 17)),
       __ENDPOINTS__: JSON.stringify({
-        chatBaseUrl: endpoints.chatBaseUrl,
-        inviteBaseUrl: endpoints.inviteBaseUrl,
         feedbackUrl: endpoints.feedbackUrl,
         legacyHosts: endpoints.legacyHosts,
         dlPrimaryBase: endpoints.download.primaryBase,

@@ -36,7 +36,7 @@ registerHooks({
 
 // providers.ts 顶层读构建期注入的端点表（ours 渠道的 defaults.baseUrl），
 // 经 apiConfig.ts 间接读 __API_ORIGIN__：两者都要先挂到 globalThis
-globalThis.__ENDPOINTS__ = { chatBaseUrl: 'https://chat.test.invalid' }
+globalThis.__ENDPOINTS__ = { consume: { baseUrl: 'https://chat.test.invalid' } }
 globalThis.__API_ORIGIN__ = 'https://api.test.invalid'
 globalThis.INTERNAL_BUILD = false
 
