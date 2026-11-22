@@ -1,25 +1,23 @@
 {
-  "chatBaseUrl": "http://140.210.13.146:60010",
-  "inviteBaseUrl": "http://140.210.13.146:60013",
   "feedbackUrl": "http://140.210.13.146:60012/feedback",
   "legacyHosts": [
     "123.207.199.196",
     "62.106.70.167"
   ],
   "allowedHosts": [
-    "140.210.13.146"
+    "140.210.13.146",
+    "apia.ecsafe.cn"
   ],
   "allowedPorts": [
-    60010,
     60012,
-    60013
+    443
   ],
   "download": {
     "primaryBase": "http://jingluo.nekoai.com.cn",
     "fallbackBase": "https://dl.rose7.cn"
   },
   "consume": {
-    "baseUrl": "https://apia.ecsafe.cn/staging",
+    "baseUrl": "https://apia.ecsafe.cn",
     "apiV1Prefix": "/api/v1",
     "gatewayPrefix": "/v1",
     "timeoutMs": {

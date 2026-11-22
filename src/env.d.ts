@@ -23,11 +23,10 @@ declare const __APP_VERSION_CODE__: number
 /**
  * 服务端端点表，唯一来源是仓库根的 `config/endpoints.json`（Issue #274），
  * 由 rspack.config.ts 的 DefinePlugin 在构建期注入：
- *   - `chatBaseUrl`   旧池域（邀请 / 反馈同一台机器）。**#812 起不再是推理地址**：
- *                     `ours.defaults.baseUrl` 改为从 `consume.baseUrl` 派生
- *                     （`services/api/environment.ts` 的 `inferenceBaseUrl`）——
+ *   - `consume.baseUrl` **统一网关 BASE**（#869）：登录 / 推理 / 购买链接都走它，App 只配置这一个 BASE。
+ *                     `ours.defaults.baseUrl` 从它派生（`services/api/environment.ts` 的 `inferenceBaseUrl`，#812）——
  *                     推理必须与登录同环境，同环境是构造出来的，不是靠人记的纪律。
- *   - `inviteBaseUrl` 邀请 / 额度 / 卡密服务（invite/api.ts 的 INVITE_API_BASE）
+ *                     `chatBaseUrl` / `inviteBaseUrl` 已随 #869 删除。
  *   - `feedbackUrl`   反馈上传（diagnostics/config.ts 的 LEGACY_FEEDBACK_URL）
  *   - `legacyHosts`   已下线主机重写表（apiConfig.ts 的 LEGACY_HOSTS）
  *   - `dlPrimaryBase` / `dlFallbackBase` 分发首选机 / 回退机（updateManifest.ts 的
@@ -46,8 +45,6 @@ declare const __ENDPOINTS__: {
    * 默认 false；为 true 的产物是 staging-only，禁止公开分发（`pnpm verify:apk` 会拦）。
    */
   readonly insecureConsume: boolean
-  readonly chatBaseUrl: string
-  readonly inviteBaseUrl: string
   readonly feedbackUrl: string
   readonly legacyHosts: readonly string[]
   readonly dlPrimaryBase: string

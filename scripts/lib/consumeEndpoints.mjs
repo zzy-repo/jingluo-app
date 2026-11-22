@@ -27,7 +27,8 @@
  *      `yes` / `1` / `false` 一律按配置错误处理 —— 逃生舱不能靠拼写猜。
  *      未设置（默认）→ 与以前逐字一致：非回环明文仍然中止。原生侧同一开关是 `-PallowInsecureConsume=true`。
  *   2. base 不得命中废弃域黑名单（`140.210.13.146` / `:60013` / `legacyHosts` 里的旧机器）；
- *   3. `consume.baseUrl` 与 `pay.baseUrl` 不得相同（两个后端职责不能混）；
+ *   3. `consume.baseUrl` 与 `pay.baseUrl` 不得相同（两个后端职责不能混）。**唯一例外**（#869 单一 BASE）：
+ *      两者都等于统一网关 BASE `UNIFIED_GATEWAY_BASE` 时允许相等；只有一边是它、或两边相等但不是它，照旧拒；
  *   4. 缺字段 / 空值 / 未知键 → 报出**键名 + 文件行号**。
  */
 
@@ -108,6 +109,16 @@ export const CONSUME_TIMEOUT_KEYS = ['read', 'write', 'redeem']
 export const PAY_TIMEOUT_KEYS = ['read', 'write']
 
 /** 两个前缀是 sub2api 路由的既有事实（`router.go` 的 `/api/v1` group 与 `gateway.go` 的 `/v1` group） */
+/**
+ * 统一网关 BASE（#869）：App 只配置这一个 BASE，登录 / 推理 / 购买链接（consume）与尚未迁完的
+ * 旧 cardpay 读取方（pay）都指向它。`consume ≠ pay` 的相等例外只对这一个值成立。
+ *
+ * 为什么例外而不是删规则：规则要防的是「两个后端被配成同一个地址而没人察觉」。#869 之后
+ * 同一个地址是**有意为之**，但仍要防「换成别的地址时只改了一边 / 两边误撞」—— 所以相等必须
+ * 恰好等于这个登记值。最后一个 pay 读取方迁走（见 PR 缺口清单）后，这个例外连同 `pay` 段一起删。
+ */
+// check-endpoints-allow: 这是 consume≠pay 例外的登记值（门禁判据），不是第二份可调地址；换网关域名时与 config/endpoints.json、build.gradle 一起改
+export const UNIFIED_GATEWAY_BASE = 'https://apia.ecsafe.cn'
 export const EXPECTED_API_V1_PREFIX = '/api/v1'
 export const EXPECTED_GATEWAY_PREFIX = '/v1'
 
@@ -402,10 +413,10 @@ export const validateConsumePay = (raw, text = '', options = {}) => {
     checkTimeouts(problems, keyLines, 'pay', pay.timeoutMs, PAY_TIMEOUT_KEYS)
   }
 
-  // 两个后端职责不能混（#484 §6.3 第 3 条）
+  // 两个后端职责不能混（#484 §6.3 第 3 条）；唯一例外：两者都是统一网关 BASE（#869，见 UNIFIED_GATEWAY_BASE）
   if (consumeUrl && payUrl) {
     const normalize = (url) => `${url.protocol}//${url.host}${url.pathname}`.replace(/\/+$/, '').toLowerCase()
-    if (normalize(consumeUrl) === normalize(payUrl)) {
+    if (normalize(consumeUrl) === normalize(payUrl) && !bothUnifiedBase(consumeUrl.href, payUrl.href)) {
       problems.push(
         `${where(keyLines, 'consume.baseUrl')} consume.baseUrl 与 pay.baseUrl 相同：${consumeUrl.href}` +
           '（消费侧与支付侧是两个后端，职责不能混）'
@@ -482,6 +493,11 @@ export const loadConsumePay = (file = ENDPOINTS_FILE, options = {}) => {
 export const normalizeBaseForCompare = (value) =>
   (typeof value === 'string' ? value.trim() : '').replace(/\/+$/, '').toLowerCase()
 
+/** consume 与 pay 是否**都**等于统一网关 BASE（#869）：这是 consume≠pay 规则唯一的放行条件 */
+export const bothUnifiedBase = (consumeBase, payBase) =>
+  normalizeBaseForCompare(consumeBase) === normalizeBaseForCompare(UNIFIED_GATEWAY_BASE) &&
+  normalizeBaseForCompare(payBase) === normalizeBaseForCompare(UNIFIED_GATEWAY_BASE)
+
 /**
  * 把环境变量里的覆盖值套到已校验的 `consume` / `pay` 上（Issue #651）。
  *
@@ -527,7 +543,10 @@ export const applyBaseOverrides = (config, raw = {}, env = process.env, options 
   const payBaseUrl = pickBase('pay')
 
   // 两个后端职责不能混的判据，对**生效值**再判一次（覆盖后可能撞车，而配置里并不相同）
-  if (normalizeBaseForCompare(consumeBaseUrl) === normalizeBaseForCompare(payBaseUrl)) {
+  if (
+    normalizeBaseForCompare(consumeBaseUrl) === normalizeBaseForCompare(payBaseUrl) &&
+    !bothUnifiedBase(consumeBaseUrl, payBaseUrl)
+  ) {
     const source = overrides.consume
       ? BASE_OVERRIDE_ENV.consume
       : overrides.pay

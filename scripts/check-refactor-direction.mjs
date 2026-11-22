@@ -85,6 +85,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
+import { bothUnifiedBase } from './lib/consumeEndpoints.mjs'
 import { isCommentOnlyLine } from './lib/textLines.mjs'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
@@ -874,9 +875,13 @@ const checkA6 = (corpus, root) => {
       ok: consumeHttps,
     })
     sub.push({ what: `pay.baseUrl 是 https 或回环（当前 ${stats.payBase ?? '缺失'}）`, ok: payHttps })
+    // #869 单一 BASE：唯一例外是两者都等于统一网关 BASE（判据与 consumeEndpoints.mjs 同源，不另写一份）；
+    // 其余相等一律照红 —— 规则没有放宽，只是登记了一个有理由的例外。
     const distinct =
-      Boolean(stats.consumeBase) && Boolean(stats.payBase) && stats.consumeBase !== stats.payBase
-    sub.push({ what: 'consume 与 pay 不指向同一个 base（职责不能混）', ok: distinct })
+      Boolean(stats.consumeBase) &&
+      Boolean(stats.payBase) &&
+      (stats.consumeBase !== stats.payBase || bothUnifiedBase(stats.consumeBase, stats.payBase))
+    sub.push({ what: 'consume 与 pay 不指向同一个 base（职责不能混；#869 例外：两者都是统一网关 BASE）', ok: distinct })
 
     if (!stats.consume) {
       hints.push(
@@ -887,7 +892,7 @@ const checkA6 = (corpus, root) => {
     if (!stats.pay) {
       hints.push(
         `${ENDPOINTS_FILE} 缺 \`pay\` 组：` +
-          '`{ baseUrl: "https://apia.ecsafe.cn", timeoutMs: { read, write } }`（apia 只负责买，不改协议）。',
+          '`{ baseUrl: <与 consume.baseUrl 同一个网关 BASE，#869>, timeoutMs: { read, write } }`（apia 只负责买，不改协议）。',
       )
     }
     if (stats.consumeBase && !consumeHttps) {
@@ -900,7 +905,7 @@ const checkA6 = (corpus, root) => {
       hints.push('pay.baseUrl 必须是 https（唯一例外是本机回环）：明文 http 直接中止构建（#484 §6.3）。')
     }
     if (!distinct && stats.consumeBase && stats.payBase) {
-      hints.push('consume.baseUrl 与 pay.baseUrl 不许相同：一个卖卡、一个消费，职责不能混（#484 §6.3）。')
+      hints.push('consume.baseUrl 与 pay.baseUrl 不许相同（唯一例外：两者都是统一网关 BASE，#869）：一个卖卡、一个消费，职责不能混（#484 §6.3）。')
     }
   }
 
@@ -1094,8 +1099,6 @@ const selftestA6 = () => {
     fs.mkdirSync(path.join(dir, 'src'), { recursive: true })
     fs.mkdirSync(path.join(dir, 'config'), { recursive: true })
     const config = {
-      chatBaseUrl: 'https://chat.example.com',
-      inviteBaseUrl: 'https://chat.example.com',
       feedbackUrl: 'https://chat.example.com/feedback',
       legacyHosts: ['legacy.example.com'],
       allowedHosts: ['chat.example.com'],

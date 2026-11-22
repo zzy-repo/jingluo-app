@@ -73,8 +73,6 @@ const readVersionName = (): string => pkg.version?.trim() ?? ''
  * 它与主机/端口白名单自洽。这里只读、只注入，不做任何改写。
  */
 const endpoints = JSON.parse(readFileSync(new URL('./config/endpoints.json', import.meta.url), 'utf8')) as {
-  chatBaseUrl: string
-  inviteBaseUrl: string
   feedbackUrl: string
   legacyHosts: string[]
   download: { primaryBase: string; fallbackBase: string }
@@ -465,14 +463,12 @@ export const createConfig = ({
       __INTERNAL_BUILD__: JSON.stringify(internalBuild),
       __APP_VERSION__: JSON.stringify(appVersion),
       __APP_VERSION_CODE__: JSON.stringify(readVersionCode()),
-      // 服务端端点（config/endpoints.json）：源码里只用 __ENDPOINTS__.chatBaseUrl 这类写法
+      // 服务端端点（config/endpoints.json）：源码里只用 __ENDPOINTS__.feedbackUrl / consume.baseUrl 这类写法
       __ENDPOINTS__: JSON.stringify({
         // 明文联调包标记（#601 守卫的补正面）：true = 本产物允许明文 http base（staging-only，
         // 禁止公开分发；APK 侧的 INSECURE_CONSUME meta-data / BuildConfig 由 build.gradle 写）。
         // 默认 false —— 运行时对非回环明文一律抛 ConsumeConfigError（见 services/consume/http.ts）。
         insecureConsume,
-        chatBaseUrl: endpoints.chatBaseUrl,
-        inviteBaseUrl: endpoints.inviteBaseUrl,
         feedbackUrl: endpoints.feedbackUrl,
         legacyHosts: endpoints.legacyHosts,
         // 分发地址（Issue #269）：源码只写 __ENDPOINTS__.dlPrimaryBase，打包前替换一次

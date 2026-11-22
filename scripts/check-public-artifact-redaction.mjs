@@ -5,7 +5,7 @@
  * ## 为什么要有它
  *
  * #745 的事实（2026-11-21 实测，不是推测）：`deepseek-chat-1.4.5.apk` 与 `1.4.6.apk` 的 bundle 里
- * 都 grep 得到 `chatBaseUrl` / `inviteBaseUrl` / `feedbackUrl` 那三个「内网 IP + 高位端口」的地址
+ * 都 grep 得到 `chatBaseUrl` / `inviteBaseUrl` / `feedbackUrl` 那三个「内网 IP + 高位端口」的地址（#869 起前两个已从配置删除，只剩 `feedbackUrl`）
  * 与 `download.primaryBase` 那个分发地址（具体值看 `config/endpoints.json`，本脚本不复述 ——
  * 复述一遍就成了 `check:ip` 要抓的第二份字面量）。来源是 `config/endpoints.json`：内网联调用的
  * 裸 IP + 高位端口被 `DefinePlugin` 原样打进了 `assets/public/static/js/main.<hash>.js`，
@@ -38,8 +38,8 @@
  *
  * | 类 | 判据（可机械判定） | 输出 | 计入红？ |
  * | --- | --- | --- | --- |
- * | **产品端点** | 命中地址的**来源字段** ∈ `PRODUCT_ENDPOINT_FIELDS`（`chatBaseUrl` / `pay.baseUrl` / `download.fallbackBase`）—— 客户端真要连它，删了功能就废 | `[OK-ENDPOINT]` | **否** |
- * | **旧池地址** | 来源字段 ∈ `LEGACY_FIELDS`（`inviteBaseUrl` / `feedbackUrl` / `legacyHosts[]` / `allowedHosts[]` / `allowedPorts[]`）—— 已下线或没有调用方 | `[FAIL-LEGACY]` | **是** |
+ * | **产品端点** | 命中地址的**来源字段** ∈ `PRODUCT_ENDPOINT_FIELDS`（`consume.baseUrl` / `pay.baseUrl` / `download.fallbackBase`）—— 客户端真要连它，删了功能就废 | `[OK-ENDPOINT]` | **否** |
+ * | **旧池地址** | 来源字段 ∈ `LEGACY_FIELDS`（`feedbackUrl` / `legacyHosts[]` / `allowedHosts[]` / `allowedPorts[]`）—— 已下线或没有调用方 | `[FAIL-LEGACY]` | **是** |
  * | **未登记 / 未裁决** | 其它：配置里根本没登记，或登记在一个**既不在产品端点表、也不在旧池表**的字段上 | `[FAIL-UNREGISTERED]` | **是** |
  * | **争议域名** | 主机 ∈ `DISPUTED_HOSTS`（目前只有 `sub2api.rose7.cn`） | `[WARN-DISPUTED]` | **否**（等 #745 的 A/B/C 裁决） |
  *
@@ -63,7 +63,7 @@
  *
  * 读 `config/endpoints.json`（唯一事实来源，路径来自 `scripts/lib/endpointsSchema.mjs` 的
  * `ENDPOINTS_FILE`）：
- *   · `allowedHosts` / `allowedPorts` / `chatBaseUrl` / `inviteBaseUrl` / `feedbackUrl` /
+ *   · `allowedHosts` / `allowedPorts` / `consume.baseUrl` / `feedbackUrl` /
  *     `legacyHosts` / `download.primaryBase` 全部递归遍历，凡是「字符串里是 http(s) URL」或
  *     「裸四段十进制」的，记进**内网地址表**（带字段名，用于点名）；`allowedPorts` 里的整数记进
  *     内网端口表。换机器只改那份 JSON，这里不用同步。
@@ -153,13 +153,12 @@ const RED_CLASSES = Object.freeze([CLASS.LEGACY, CLASS.UNREGISTERED])
  * 产品端点字段：客户端真要连的服务，`config/endpoints.json` 里这几个字段的值出现在产物里
  * **是功能需要，不是泄漏**（指挥台 11:12 裁决第 4 条）。只写字段名，地址值仍在配置里。
  *
- * 为什么 `consume.baseUrl` 不在这张表里：它的域名 `sub2api.rose7.cn` 目前是**争议域名**
- * （`#624` 说生产实例 vs 指挥台 11:12 说无关，等 #745 的 A/B/C 裁决）。裁决为「生产实例」
- * 之后再把它加进来 —— 那时它会走 `[OK-ENDPOINT]`；在那之前它走 `[WARN-DISPUTED]`，
- * **一个地址只许落一类**，所以这里先不写，免得同一条命中两头都算。
+ * `consume.baseUrl`（#869）：统一网关 BASE，登录 / 推理 / 购买链接都连它，是产品端点。它取代了已删除的
+ * `chatBaseUrl`。此前它不在表里，是因为旧域名 `sub2api.rose7.cn` 是**争议域名**（`DISPUTED_HOSTS`）；
+ * 现在配置里的 base 是 `apia.ecsafe.cn`，与 `pay.baseUrl` 同主机，同一个地址只落「产品端点」一类。
  */
 export const PRODUCT_ENDPOINT_FIELDS = new Map([
-  ['chatBaseUrl', '客户端真连的聊天后端（src/services/api/providers.ts）'],
+  ['consume.baseUrl', '统一网关 BASE：登录 / 推理 / 购买链接（src/services/api/environment.ts，#869）'],
   ['pay.baseUrl', '买卡支付（src/services/ours/api.ts）'],
   ['download.fallbackBase', '分发回退机（src/services/updateManifest.ts）'],
 ])
@@ -173,7 +172,6 @@ export const PRODUCT_ENDPOINT_FIELDS = new Map([
  * 它。这个矛盾还没裁决，所以**判红而不是猜绿**：猜绿等于替裁决投票，猜红只是保持现状。
  */
 export const LEGACY_FIELDS = new Map([
-  ['inviteBaseUrl', '旧 invite 已随 #604 删除，调用方 0 处'],
   ['feedbackUrl', '指挥台 11:12 裁决归入旧池（删前先 grep 调用方 0 处）'],
   ['legacyHosts', '已下线主机重写表：这些主机只用来「被拒绝」，没有调用方'],
   ['allowedHosts', '白名单里的旧 IP：给 check:ip 放行源码用，客户端并不连它'],
@@ -419,7 +417,7 @@ const keysForPort = (policy, port) => policy.ports.get(port) ?? []
 /**
  * 找「这个地址出自配置哪些字段」：**端口优先**，主机次之，端口表兜底。
  *
- * 为什么不能只按主机找：`chatBaseUrl` / `inviteBaseUrl` / `feedbackUrl` 是**同一台机器**的三个端口，
+ * 为什么不能只按主机找：旧池机器上曾有 `chatBaseUrl` / `inviteBaseUrl` / `feedbackUrl` 三个端口（#869 后只剩一个），
  * 只看主机分不开它们；反过来同一台旧机也有**两副面孔** —— `legacyHosts[]` 里的裸主机（要拒的旧机）
  * 与 `download.primaryBase` 的「主机 + 端口」（正在用的分发机），只看主机同样分不开。
  * 所以按这个顺序退让：
@@ -477,7 +475,7 @@ export function classifyAddress(policy, { host = '', port = null } = {}) {
   }
   if (legacy.length) {
     // 理由只归给**第一个**字段（那是这条地址的主要出处）；其余同族字段只点名，
-    // 免得把「inviteBaseUrl 的删除理由」误安到 feedbackUrl 头上。
+    // 免得把某一个字段的理由误安到另一个字段头上。
     const others = legacy.length > 1 ? `；同一条也登记在 ${legacy.slice(1).map((key) => `config.endpoints.${key}`).join(' / ')}` : ''
     return {
       className: CLASS.LEGACY,

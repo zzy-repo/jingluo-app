@@ -150,40 +150,30 @@ export const isStage = (value: unknown): value is Stage =>
 // ---------------------------------------------------------------- 端点键
 
 /**
- * 端点键：对应 `config/endpoints.json` 的顶层键，**不写完整 URL**（地址写进日志就等于泄漏中转地址，
- * 也没法跨版本聚合）。`other` = 用户自填地址（自建 / 中转），只靠 `url.host` 区分。
+ * 端点键，**不写完整 URL**（地址写进日志就等于泄漏中转地址，也没法跨版本聚合）。
+ *   - `chatBaseUrl`：统一网关（`consume.baseUrl` 的 origin，#869）。这是**日志里的取值**，沿用旧名是为了
+ *     跨版本仍能聚合；`config/endpoints.json` 里已经没有同名键（#869 删除，网关只剩 consume 一个 BASE）。
+ *   - `feedbackUrl`：对应 `config/endpoints.json` 的同名键（旧池反馈上传）。
+ *   - `other`：用户自填地址（自建 / 中转），只靠 `url.host` 区分。
+ * 旧版本日志里的 `inviteBaseUrl` 取值没有调用方，读到时按 `other` 处理。
  */
-export type EndpointKey = 'chatBaseUrl' | 'inviteBaseUrl' | 'feedbackUrl' | 'other'
+export type EndpointKey = 'chatBaseUrl' | 'feedbackUrl' | 'other'
 
-export const ENDPOINT_KEYS: readonly EndpointKey[] = [
-  'chatBaseUrl',
-  'inviteBaseUrl',
-  'feedbackUrl',
-  'other',
-]
+export const ENDPOINT_KEYS: readonly EndpointKey[] = ['chatBaseUrl', 'feedbackUrl', 'other']
 
 export const isEndpointKey = (value: unknown): value is EndpointKey =>
   typeof value === 'string' && (ENDPOINT_KEYS as readonly string[]).includes(value)
 
-/** 构建期注入的端点表（非打包环境没有就退化成空表，绝不能因此抛） */
-type EndpointTable = Partial<Record<Exclude<EndpointKey, 'other'>, string>>
-
-const readEndpointTable = (): EndpointTable => {
+/** 构建期注入的反馈上传地址（非打包环境没有就退化成 null，绝不能因此抛） */
+const readFeedbackUrl = (): string | null => {
   try {
     if (typeof __ENDPOINTS__ === 'undefined' || !__ENDPOINTS__) {
-      return {}
+      return null
     }
-    const table = __ENDPOINTS__ as unknown as Record<string, unknown>
-    const out: EndpointTable = {}
-    for (const key of ['chatBaseUrl', 'inviteBaseUrl', 'feedbackUrl'] as const) {
-      const value = table[key]
-      if (typeof value === 'string' && value) {
-        out[key] = value
-      }
-    }
-    return out
+    const value = (__ENDPOINTS__ as unknown as Record<string, unknown>).feedbackUrl
+    return typeof value === 'string' && value ? value : null
   } catch {
-    return {}
+    return null
   }
 }
 
@@ -198,8 +188,8 @@ const originOf = (value: string): string | null => {
 }
 
 /**
- * 登录环境（`consume.baseUrl`）的 origin（#812）：`ours` 的推理就打在它上面，所以日志里
- * 这一台机器上的请求仍然是**对话端点**。读不到（非打包环境 / 注入不全）返回 null。
+ * 统一网关（`consume.baseUrl`）的 origin（#812 / #869）：`ours` 的登录与推理都打在它上面，所以日志里
+ * 这一台机器上的请求就是**对话端点**。读不到（非打包环境 / 注入不全）返回 null。
  */
 const consumeOrigin = (): string | null => {
   try {
@@ -217,7 +207,7 @@ const consumeOrigin = (): string | null => {
  * 把一次请求的地址映射成端点键。相对路径（同源请求）按当前页面 origin 兜底 —— 与 `redactHost` 同口径。
  * 认不出来一律 `other`：宁可粗一档，也不把一个自建中转错标成官方端点。
  *
- * #812：`consume.baseUrl` 的 origin 也算**对话端点**，因为 `ours` 的推理地址就是它
+ * #812 / #869：`consume.baseUrl` 的 origin 是**对话端点**（`chatBaseUrl` 取值），因为 `ours` 的推理地址就是它
  * （同环境是构造出来的，见 `services/api/environment.ts`）。不认这一条，线上所有 chat 请求
  * 都会掉进 `other`，排查时反而看不出「打的是哪台机器」。
  */
@@ -226,12 +216,9 @@ export const endpointKeyFromUrl = (url: string): EndpointKey => {
   if (!origin) {
     return 'other'
   }
-  const table = readEndpointTable()
-  for (const key of ['chatBaseUrl', 'inviteBaseUrl', 'feedbackUrl'] as const) {
-    const base = table[key]
-    if (base && originOf(base) === origin) {
-      return key
-    }
+  const feedback = readFeedbackUrl()
+  if (feedback && originOf(feedback) === origin) {
+    return 'feedbackUrl'
   }
   return consumeOrigin() === origin ? 'chatBaseUrl' : 'other'
 }

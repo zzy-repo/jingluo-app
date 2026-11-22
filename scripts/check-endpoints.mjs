@@ -39,7 +39,13 @@ import { readdirSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import { DOWNLOAD_FIELDS, ENDPOINTS_FILE, URL_FIELDS, validateEndpoints } from './lib/endpointsSchema.mjs'
+import {
+  DOWNLOAD_FIELDS,
+  ENDPOINTS_FILE,
+  GATEWAY_FIELDS,
+  URL_FIELDS,
+  validateEndpoints,
+} from './lib/endpointsSchema.mjs'
 import { isCommentOnlyLine } from './lib/textLines.mjs'
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
@@ -134,8 +140,15 @@ const main = () => {
 
   // 端点地址的两种写法都算「字面量副本」：整段 URL 与 `主机:端口`
   const needles = new Set()
-  for (const field of URL_FIELDS) {
-    const value = typeof raw?.[field] === 'string' ? raw[field].trim() : ''
+  // 旧池地址（feedbackUrl）+ 网关 BASE（consume / pay，#869）。网关 BASE 必须留在被扫对象里：
+  // 删掉 chatBaseUrl 之后，若这里只剩 feedbackUrl，网关地址的字面量副本就没有任何门禁在查了（等于放松匹配）。
+  const needleValues = [
+    ...URL_FIELDS.map((field) => (typeof raw?.[field] === 'string' ? raw[field].trim() : '')),
+    ...GATEWAY_FIELDS.map(([section, key]) =>
+      typeof raw?.[section]?.[key] === 'string' ? raw[section][key].trim() : ''
+    ),
+  ]
+  for (const value of needleValues) {
     if (!value) continue
     needles.add(value)
     try {
@@ -247,7 +260,7 @@ const main = () => {
   log(
     `端点配置检查通过：扫了 ${files.length} 个代码文件（${SCAN_DIRS.join(' / ')}）+ ` +
       `${clientFiles.length} 个客户端文件（${CLIENT_DIRS.join(' / ')} / ${CLIENT_FILES.join(' / ')}），` +
-      `地址零副本、废弃占位 0 处；聊天 ${raw.chatBaseUrl} / 邀请 ${raw.inviteBaseUrl} / 反馈 ${raw.feedbackUrl}；` +
+      `地址零副本、废弃占位 0 处；网关 BASE ${raw.consume?.baseUrl} / 反馈 ${raw.feedbackUrl}；` +
       `分发首选 ${raw.download.primaryBase} / 回退 ${raw.download.fallbackBase}（换分发机只改 download.primaryBase 一处）。`
   )
   process.exit(0)

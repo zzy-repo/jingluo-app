@@ -75,24 +75,20 @@ export const sameEndpointEnvironment = (a: string, b: string): boolean => {
 export type InferenceEndpointTable = {
   /** 登录环境（消费层 / 推理共用同一份部署，见 `config/README.md` 的 consume 一节） */
   consume?: { baseUrl?: string } | undefined
-  /** 旧池域的推理地址（#274 时代的独立字段；#812 起**不再**用于推理，只作兜底） */
-  chatBaseUrl?: string | undefined
 }
 
 /**
  * `ours` 渠道的推理地址 —— **只从登录环境派生**（#812）。
  *
- * 优先级只有两级：
- *  1. `consume.baseUrl`（登录环境，真产物一定有：`rspack.config.ts` 注入 + gradle 交叉核对）；
- *  2. 没有注入 `consume` 时退回 `chatBaseUrl`：这是老夹具 / 非打包环境的兜底，
- *     **不是**「两个地址都行」—— 真产物里第 1 级永远命中，第 2 级只在注入不完整时出现。
+ * 只有一级：`consume.baseUrl`（统一网关 BASE，真产物一定有：`rspack.config.ts` 注入 + gradle 交叉核对）。
+ * #869 删除了 `chatBaseUrl`，所以不再有「退回另一份地址」的兜底；没有注入 `consume` 时返回空串，
+ * 由调用方按「没配置」处理（fail-closed，不猜别的地址）。
  *
  * 尾斜杠在这里去掉一次：`joinUrl()` 只负责路径拼接，不该同时兼顾 base 的写法。
  */
 export const inferenceBaseUrl = (table: InferenceEndpointTable): string => {
   const consume = typeof table.consume?.baseUrl === 'string' ? table.consume.baseUrl.trim() : ''
-  const chat = typeof table.chatBaseUrl === 'string' ? table.chatBaseUrl.trim() : ''
-  return (consume !== '' ? consume : chat).replace(/\/+$/, '')
+  return consume.replace(/\/+$/, '')
 }
 
 /**

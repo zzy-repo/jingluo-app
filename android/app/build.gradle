@@ -126,7 +126,7 @@ if (providers.gradleProperty('dlPrimaryBase').present || providers.gradlePropert
 // 判据与 scripts/lib/consumeEndpoints.mjs 一一对应（改那边要同步改这里）：
 //   1) 必须 https —— **唯一例外**是本机回环（127.0.0.1 / localhost / [::1]），本地联调实例就是明文；
 //   2) 不得命中废弃域黑名单（旧池域 IP / 旧池域端口 / legacyHosts）；
-//   3) consume.baseUrl 与 pay.baseUrl 不得相同（两个后端职责不能混）；
+//   3) consume.baseUrl 与 pay.baseUrl 不得相同（两个后端职责不能混）；唯一例外：两者都是统一网关 BASE（#869）；
 //   4) 缺字段 / 未知键 / 空值 → 一律中止，并打印**键名 + 配置文件行号**。
 // 带着错地址出包只会在真机上表现为「登录一直失败」或「额度转圈」，比构建失败难查得多。
 // ---------------------------------------------------------------------------
@@ -279,8 +279,14 @@ def readConsumeBase = { String section, String propName, List<String> legacyHost
 def consumeLegacyHosts = (endpointsJson.legacyHosts instanceof List) ? endpointsJson.legacyHosts.collect { it.toString().trim() } : []
 def consumeBase = readConsumeBase('consume', 'consumeBase', consumeLegacyHosts)
 def payBase = readConsumeBase('pay', 'payBase', consumeLegacyHosts)
-if (consumeBase.replaceAll('/+$', '') == payBase.replaceAll('/+$', '')) {
-    failConsume('pay.baseUrl', "与 consume.baseUrl 相同（'${payBase}'）：消费侧与支付侧是两个后端，职责不能混")
+// 唯一例外（#869 单一 BASE）：两者都等于统一网关 BASE 时允许相等；与 scripts/lib/consumeEndpoints.mjs 的
+// UNIFIED_GATEWAY_BASE / bothUnifiedBase 同口径（改那边要同步改这里，#773）。
+// 这个值是**门禁判据**，不是第二份可调地址：换网关域名时两处一起改，漏改一边会让相等被拒、构建变红。
+def CONSUME_UNIFIED_GATEWAY_BASE = 'https://apia.ecsafe.cn'
+def consumeNormalized = consumeBase.replaceAll('/+$', '').toLowerCase()
+def payNormalized = payBase.replaceAll('/+$', '').toLowerCase()
+if (consumeNormalized == payNormalized && !(consumeNormalized == CONSUME_UNIFIED_GATEWAY_BASE && payNormalized == CONSUME_UNIFIED_GATEWAY_BASE)) {
+    failConsume('pay.baseUrl', "与 consume.baseUrl 相同（'${payBase}'）：消费侧与支付侧是两个后端，职责不能混（唯一例外：两者都是统一网关 BASE ${CONSUME_UNIFIED_GATEWAY_BASE}，#869）")
 }
 if (providers.gradleProperty('consumeBase').present || providers.gradleProperty('payBase').present) {
     logger.warn('[consume] 本次用 -P 覆盖了 config/endpoints.json：产物里的后端地址不在仓库里，发布后在 CHANGELOG 记一笔')

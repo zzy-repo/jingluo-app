@@ -14,6 +14,8 @@ export declare const CONSUME_KEYS: readonly string[]
 export declare const PAY_KEYS: readonly string[]
 export declare const CONSUME_TIMEOUT_KEYS: readonly string[]
 export declare const PAY_TIMEOUT_KEYS: readonly string[]
+/** 统一网关 BASE（#869）：consume ≠ pay 规则唯一允许相等的值 */
+export declare const UNIFIED_GATEWAY_BASE: string
 export declare const EXPECTED_API_V1_PREFIX: string
 export declare const EXPECTED_GATEWAY_PREFIX: string
 export declare const TIMEOUT_MIN_MS: number
@@ -61,6 +63,8 @@ export declare const collectKeyLines: (text: string) => Map<string, number>
 export declare const isLoopbackHost: (hostname: string) => boolean
 export declare const parseBaseUrl: (value: unknown) => URL | null
 export declare const normalizeBaseForCompare: (value: unknown) => string
+/** consume 与 pay 是否都等于统一网关 BASE（#869）：consume≠pay 规则唯一的放行条件 */
+export declare const bothUnifiedBase: (consumeBase: unknown, payBase: unknown) => boolean
 export declare const validateConsumePay: (raw: unknown, text?: string, options?: InsecureFlags) => string[]
 export declare const placeholderNotice: (raw: unknown) => string | null
 export declare const loadConsumePay: (file?: string, options?: InsecureFlags) => ConsumePayConfig

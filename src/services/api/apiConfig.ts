@@ -165,7 +165,7 @@ const readHost = (baseUrl: string): string => {
  * - 第二代：beta.8 及之前的对话上游（现行地址见 providers.ts 的 ours.defaults）
  *
  * 用户本地存过这些地址的话，升级后它们已经不通了；读到即视为「没配过」，
- * 回落到当前 spec 的内置默认（对话上游 = config/endpoints.json 的 chatBaseUrl）。
+ * 回落到当前 spec 的内置默认（对话上游 = config/endpoints.json 的 consume.baseUrl，#869）。
  *
  * 名单本身来自 config/endpoints.json 的 `legacyHosts`（#274）：它是**旧域名重写表**，
  * 迁移一次加一行，删了会让老配置失联，所以只搬来源、不删不缩。

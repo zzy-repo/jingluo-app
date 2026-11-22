@@ -6,17 +6,19 @@
  * fail-fast 入口（脚本/测试 import 它就不该带着错地址继续跑）。门禁只能拿到纯校验部分，
  * 所以这里既没有副作用，也不 import 任何读文件的模块。
  *
- * 校验项（对应 Issue #274 的验收）：
- *   1. 三份地址是绝对 http(s) URL；
+ * 校验项（对应 Issue #274 的验收，#869 起结构改了）：
+ *   1. 旧池地址（`URL_FIELDS`，现在只剩 `feedbackUrl`）是绝对 http(s) URL；
  *   2. 主机在 `allowedHosts` 里 —— 报「配置里的主机与白名单不一致」；
  *   3. 端口在 `allowedPorts` 里 —— 报「配置里的端口与白名单不一致」（负向 2：只改端口不改白名单必须红）；
  *   4. `legacyHosts`（已下线重写表）与 `allowedHosts` 不重叠；
- *   5. 三个端点在同一台机器上（本单的前提：一台机器、三个端口）。
+ *   5. 网关 BASE（`consume.baseUrl` / `pay.baseUrl`，#869 单一 BASE）：主机:端口也要登记在同两份白名单里，
+ *      且不许是裸 IP（回环的本地联调实例除外）。原来的「三个端点在同一台机器上」不再成立：
+ *      旧池机器只剩反馈上传，网关是另一台机器（域名），硬把它们判成同机只会逼人把网关写回 IP。
  *
  * 校验项（对应 Issue #269，见 `validateDownload`）：
  *   6. `download.primaryBase` / `download.fallbackBase` 存在，且只能是「协议://主机[:端口]」；
  *   7. 回退机必须走 https；两个 base 不许相同（回退要有意义）。
- *   分发地址**不进** `URL_FIELDS`：第 5 条要求三个端点同机，而分发机是另一台机器。
+ *   分发地址**不进** `URL_FIELDS`：分发机是另一台机器，并进去只会让「换分发机」把服务端配置一起改坏。
  */
 
 import path from 'node:path'
@@ -27,14 +29,30 @@ const LIB_DIR = path.dirname(fileURLToPath(import.meta.url))
 /** 配置文件的规范位置：仓库根的 `config/endpoints.json` */
 export const ENDPOINTS_FILE = path.resolve(LIB_DIR, '..', '..', 'config', 'endpoints.json')
 
-/** 三个地址字段（顺序即报错顺序；「三个端口同一台机器」指的就是它们） */
-export const URL_FIELDS = ['chatBaseUrl', 'inviteBaseUrl', 'feedbackUrl']
+/**
+ * 旧池地址字段（顺序即报错顺序）。#869 之后只剩 `feedbackUrl`：对话 / 邀请都已迁到统一网关 BASE
+ * （`consume.baseUrl`），`chatBaseUrl` / `inviteBaseUrl` 随之删除。
+ */
+export const URL_FIELDS = ['feedbackUrl']
+
+/**
+ * 网关 BASE 字段（#869 单一 BASE）：形态（https / 前缀 / 废弃域）由 `consumeEndpoints.mjs` 判，
+ * 这里只判「主机:端口登记在白名单里、不是裸 IP」。
+ */
+export const GATEWAY_FIELDS = [
+  ['consume', 'baseUrl'],
+  ['pay', 'baseUrl'],
+]
+
+const IPV4 = /^d{1,3}(?:.d{1,3}){3}$/u
+/** 本机回环：本地联调实例（`http://127.0.0.1:18000`）是既有例外，不要求登记白名单 */
+const isLoopbackHost = (host) => host === 'localhost' || host === '[::1]' || host === '::1' || /^127./u.test(host)
 
 /**
  * 分发地址字段（Issue #269，顺序即报错顺序）。
  *
- * 为什么不并进 `URL_FIELDS`：第 6 条校验要求「三个端点在同一台机器上」，而分发机是另一台机器
- * （清单 + `/apk/`）。并进去只会让「换分发机」把服务端配置一起改坏。
+ * 为什么不并进 `URL_FIELDS`：分发机是另一台机器（清单 + `/apk/`）。
+ * 并进去只会让「换分发机」把服务端配置一起改坏。
  */
 export const DOWNLOAD_FIELDS = ['primaryBase', 'fallbackBase']
 
@@ -114,7 +132,7 @@ export const validateEndpoints = (raw) => {
   if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return ['配置不是 JSON 对象']
   const problems = []
 
-  // 1. 三个地址字段必须是绝对 http(s) URL
+  // 1. 旧池地址字段必须是绝对 http(s) URL
   const urls = new Map()
   for (const field of URL_FIELDS) {
     const url = parseUrl(raw[field])
@@ -134,7 +152,7 @@ export const validateEndpoints = (raw) => {
   if (!isHostList(raw.legacyHosts)) problems.push('legacyHosts 必须是非空字符串数组（已下线主机重写表）')
   if (!isPortList(raw.allowedPorts)) problems.push('allowedPorts 必须是非空整数数组（端口白名单）')
 
-  // 3. 主机白名单：三个地址的主机都得在名单里
+  // 3. 主机白名单：旧池地址的主机都得在名单里
   if (isHostList(raw.allowedHosts)) {
     const allowed = new Set(raw.allowedHosts.map((h) => h.trim()))
     for (const [field, url] of urls) {
@@ -147,7 +165,7 @@ export const validateEndpoints = (raw) => {
     }
   }
 
-  // 4. 端口白名单：三个地址的端口都得在名单里（负向 2：只改端口不改白名单 → 红）
+  // 4. 端口白名单：旧池地址的端口都得在名单里（负向 2：只改端口不改白名单 → 红）
   if (isPortList(raw.allowedPorts)) {
     const allowed = new Set(raw.allowedPorts)
     for (const [field, url] of urls) {
@@ -171,13 +189,29 @@ export const validateEndpoints = (raw) => {
     }
   }
 
-  // 6. 三个端口必须是同一台机器（本单的前提：一台机器、三个端口）
-  if (urls.size === URL_FIELDS.length) {
-    const hosts = [...new Set([...urls.values()].map((url) => url.hostname))]
-    if (hosts.length > 1) {
+  // 6. 网关 BASE（#869 单一 BASE）：主机:端口登记在白名单里，且不是裸 IP。
+  //    取代原来的「三个端点同一台机器」：旧池机器只剩反馈上传，网关是另一台机器（域名），
+  //    所以这里不再要求同机，改成「每个地址都得登记」—— 换网关域名而忘了登记白名单照样红。
+  //    只收紧、不放宽：https 与废弃域仍由 consumeEndpoints.mjs 判，这里不接受通配或额外裸 IP。
+  for (const [section, key] of GATEWAY_FIELDS) {
+    const field = `${section}.${key}`
+    const url = parseUrl(raw[section]?.[key])
+    if (!url) continue // 缺失 / 不合法由 consumeEndpoints.mjs 报，这里不重复
+    if (url.protocol === 'http:' && isLoopbackHost(url.hostname)) continue
+    if (IPV4.test(url.hostname)) {
+      problems.push(`${field} 不许是裸 IP：${url.hostname}（网关 BASE 必须是域名，#869）`)
+      continue
+    }
+    if (isHostList(raw.allowedHosts) && !raw.allowedHosts.some((h) => h.trim() === url.hostname)) {
       problems.push(
-        `三个端点不在同一台机器上：${URL_FIELDS.map((field) => `${field}=${urls.get(field).hostname}`).join(', ')}` +
-          '（确实要拆机器就先改 config/endpoints.json 与这条校验，并在这里写明理由）'
+        `配置里的主机与白名单不一致：${field} 的主机 ${url.hostname} 不在 allowedHosts ` +
+          `[${raw.allowedHosts.map((h) => h.trim()).join(', ')}] 里（换网关域名要同时改地址与 allowedHosts）`
+      )
+    }
+    if (isPortList(raw.allowedPorts) && !raw.allowedPorts.includes(portOf(url))) {
+      problems.push(
+        `配置里的端口与白名单不一致：${field} 的端口 ${portOf(url)} 不在 allowedPorts ` +
+          `[${raw.allowedPorts.join(', ')}] 里`
       )
     }
   }
