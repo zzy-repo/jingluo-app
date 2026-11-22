@@ -1,0 +1,26 @@
+登录结果: {"alreadySignedIn":false}
+
+### 改后（先等开关） · 360px · 第 1 次进入账号页
+| 时刻 | invite-* 节点数 | invite-panel 高度(px) | 采样于 t(ms) |
+|---|---|---|---|
+| t=0ms | 0 | 0 | 0.5 |
+| t=30ms | 0 | 0 | 29 |
+| t=80ms | 0 | 0 | 78.8 |
+| t=200ms | 0 | 0 | 195.6 |
+| t=600ms | 0 | 0 | 595.6 |
+| t=1500ms | 0 | 0 | 1495.5 |
+帧统计：110 帧 / 可见 0 帧 / 首次可见 t=nullms / 末次可见 t=nullms / 可见时长 ≈0ms / 峰值高度 0px / 消失后高度 null
+
+### 改后（先等开关） · 360px · 第 2 次进入账号页
+| 时刻 | invite-* 节点数 | invite-panel 高度(px) | 采样于 t(ms) |
+|---|---|---|---|
+| t=0ms | 0 | 0 | 0.1 |
+| t=30ms | 0 | 0 | 25.4 |
+| t=80ms | 0 | 0 | 75.5 |
+| t=200ms | 0 | 0 | 192.4 |
+| t=600ms | 0 | 0 | 592.4 |
+| t=1500ms | 0 | 0 | 1492.1 |
+帧统计：110 帧 / 可见 0 帧 / 首次可见 t=nullms / 末次可见 t=nullms / 可见时长 ≈0ms / 峰值高度 0px / 消失后高度 null
+
+服务端开关: {"invitation_code_enabled":false,"affiliate_enabled":false}
+页面 console.error 条数: 0 []

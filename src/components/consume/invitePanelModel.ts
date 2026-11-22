@@ -61,6 +61,25 @@ export type InviteState = { phase: 'hidden' } | { phase: 'signedOut' } | PanelAs
 export const inviteStateSignedOut = (flags: { invitationCodeEnabled: boolean }): InviteState =>
   flags.invitationCodeEnabled ? { phase: 'signedOut' } : { phase: 'hidden' }
 
+/**
+ * 面板的**初始态**（#830 —— #819 的二次修复：先渲染后查开关，于是"闪一下就没"）。
+ *
+ * 病灶：#819 把面板挂回账号页后，容器的 `useState` 直接把初值写成 `{ phase: 'loading' }`
+ * —— 那是「假设开关开着」（#209 那类假设）。开关为 false 的部署上，第一帧先画出
+ * 86px 高的「我的邀请 / Loading…」骨架，等 `loadInvite()` 的 `settings/public` 回来再落
+ * `hidden`，于是用户看到一次**可见 → 消失**的抖动（实测可见 ~48ms / 4 帧）。
+ *
+ * 正确顺序是「**先有开关结论，再决定挂不挂**」：
+ *  · 已经确认开着（`settings/public` 的本地镜像 `loaded` 且为 true）→ 从 `loading` 起跳（骨架）；
+ *  · 开着以外的任何情况（读到 false / 还没读到 / 读失败）→ 从 `hidden` 起跳，
+ *    第一帧 DOM 里就没有任何 `invite-*` 节点，等结论回来才可能变 `ready` / `failed`。
+ *
+ * 注意这里读的是**同一份** `settings/public` 镜像（`services/auth/flags.ts`），不是客户端第二份开关
+ * （#484 §3.1d 禁的是后者）：镜像没读到时只会让面板晚几帧出现，不会放出一个本来不该有的入口。
+ */
+export const initialInviteState = (flags: { invitationCodeEnabled: boolean }): InviteState =>
+  flags.invitationCodeEnabled ? { phase: 'loading' } : { phase: 'hidden' }
+
 export const toInviteDetail = (affiliate: ConsumeAffiliate): InviteDetail => {
   const detail: InviteDetail = {
     code: affiliate.affCode,
