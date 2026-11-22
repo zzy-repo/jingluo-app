@@ -45,6 +45,11 @@ import type { ConsumeCallResult, ConsumeHttp } from './http.js'
  * `recharge_code` → `rechargeCode`（**去重键就是 `outTradeNo`，语义等价于旧契约里的「订单号」**）。
  */
 export type ConsumeMyOrder = {
+  /**
+   * 服务端 `id`（数字）。**可选**：老后端 / 认不出就不带这个键。
+   * 负数 id 是「用户自己兑换产生的记录」（`payment_type=redeem_code`、`out_trade_no=redeem-<n>`），不是订单。
+   */
+  id?: number
   /** `out_trade_no`：一单一条，自动兑现的本地去重键 */
   outTradeNo: string
   /** 服务端原样状态字（大写枚举）；认不出就用原文，判定只认 `COMPLETED` */
@@ -302,7 +307,9 @@ export const parseMyOrder = (value: unknown): ConsumeMyOrder | null => {
   // （把「缺失」当 false 会让所有未兑换的卡都长不出兑换按钮）
   const redeemable = record.redeemable === true ? true : record.redeemable === false ? false : undefined
   const redeemState = parseRedeemState(readString(record, ['redeem_state', 'redeemState']))
+  const id = readNumber(record, ['id'])
   return {
+    ...(id === null ? {} : { id }),
     outTradeNo: readString(record, ['out_trade_no', 'outTradeNo']),
     status,
     amountYuan: roundYuan(amountYuan === null ? 0 : amountYuan),

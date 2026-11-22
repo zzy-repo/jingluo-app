@@ -373,7 +373,12 @@ test('⑦ 接线：列表与自动兑现都走 `consume.orders.my()`，两处都
   const auto = codeOf(AUTO_REDEEM)
   assert.ok(auto.includes("from '../../services/consume/orders.js'"), '自动兑现读的是新契约的类型与判定')
   assert.equal(auto.includes('fetchPurchases'), false, '自动兑现内不再有旧数据源')
-  assert.equal(auto.includes('redeemState'), false, '不再依赖「卡是否已兑换」这个旧字段（新接口没有）')
+  // #840 跟进：自动兑现现在**允许读** `redeemState`，但只能用作「非 issued 才排除」，不能回到 #834 之前的
+  // 「必须 redeemState === 'issued' 才兑」（那会在老服务端没有这个字段时把所有卡都锁死）。
+  // 原断言（整个文件不许出现 redeemState）的本意就是后者，这里改成直接钉住它：
+  assert.equal(/===\s*'issued'/u.test(auto), false, '不再把 `=== \'issued\'` 当成待兑的必要条件（字段缺失必须仍可兑）')
+  assert.equal(/redeemState\s*(?:===|==)/u.test(auto), false, '不再对旧字段做正向相等判定')
+  assert.ok(/state\s*!==\s*undefined\s*&&\s*state\s*!==\s*null\s*&&\s*state\s*!==\s*'issued'/u.test(auto), '读 redeemState 时必须先判缺失（缺失 = 没表态 = 不排除）')
   assert.equal(auto.includes('.cardNo'), false, '不再读旧契约的 `cardNo` 字段（新字段是 recharge_code → rechargeCode）')
   assert.ok(auto.includes('redeem.history('), '已兑过就跳过：靠既有 getRedeemHistory 交叉比对（#834 边界的做法）')
 

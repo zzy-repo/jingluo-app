@@ -73,16 +73,57 @@ export const HISTORY_PAGE_SIZE = 50
 /** 打码痕迹：`*`（契约里的 `MUSE-****-1234`）与 `mask.ts` 的实心点（`••••A3SR`）都算 */
 const MASK_MARKERS = ['*', '•'] as const
 
+/** `isPendingOrder` 读的字段：新增的几项全是可选（老后端缺字段 = 不触发对应的排除） */
+type PendingGateOrder = Pick<ConsumeMyOrder, 'status' | 'rechargeCode'> &
+  Partial<Pick<ConsumeMyOrder, 'id' | 'outTradeNo' | 'paymentType' | 'redeemState' | 'redeemable'>>
+
+/** 用户自己兑换产生的流水（`GET orders/my` 会把它和订单混在一起返回），不是订单 */
+const REDEEM_RECORD_PAYMENT_TYPE = 'redeem_code'
+const REDEEM_RECORD_TRADE_NO_PREFIX = 'redeem-'
+
 /**
- * 一条订单上能不能自动兑 —— 判据只看**形状**，不猜内容：
- * `status === 'COMPLETED'`（#834 新契约：只有已完成的订单才发卡号）、`recharge_code` 非空、
- * 且没被打码。
+ * 这条记录是不是「兑换记录」而不是订单：`payment_type=redeem_code`、`id` 为负数、
+ * `out_trade_no` 以 `redeem-` 开头，**任一成立**即是。字段缺失 / 类型不对（#209）= 该条不触发。
+ */
+const isRedeemRecord = (order: PendingGateOrder): boolean => {
+  const paymentType: unknown = order.paymentType
+  if (typeof paymentType === 'string' && paymentType.trim().toLowerCase() === REDEEM_RECORD_PAYMENT_TYPE) {
+    return true
+  }
+  const id: unknown = order.id
+  if (typeof id === 'number' && id < 0) {
+    return true
+  }
+  const tradeNo: unknown = order.outTradeNo
+  return typeof tradeNo === 'string' && tradeNo.trim().toLowerCase().indexOf(REDEEM_RECORD_TRADE_NO_PREFIX) === 0
+}
+
+/**
+ * 服务端明确表态「这张卡现在不能兑」：`redeem_state` 存在且不是 `issued`，
+ * 或 `redeemable` 存在且不为 `true`。两个字段都缺失 = 没表态 = 不排除（旧后端行为不变）。
+ */
+const isDeclaredNotRedeemable = (order: PendingGateOrder): boolean => {
+  const state: unknown = order.redeemState
+  if (state !== undefined && state !== null && state !== 'issued') {
+    return true
+  }
+  const redeemable: unknown = order.redeemable
+  return redeemable !== undefined && redeemable !== null && redeemable !== true
+}
+
+/**
+ * 一条订单上能不能自动兑 —— 判据：
+ * `status === 'COMPLETED'`（#834 新契约：只有已完成的订单才发卡号）、`recharge_code` 非空、没被打码，
+ * **并且**（#840 跟进）不是兑换记录、服务端没说「不能兑」。
  *
  * 为什么不再要求「32 位 hex」：真实卡号是服务端发的（`MUSE-3CYP-5NA3-AHSE-A3SR` 这类带分隔符的形态），
  * 形状白名单一旦写窄，真卡会被自己挡在门外 —— 而「打码与否」才是这里唯一必须判断的事。
  */
-export const isPendingOrder = (order: Pick<ConsumeMyOrder, 'status' | 'rechargeCode'>): boolean => {
+export const isPendingOrder = (order: PendingGateOrder): boolean => {
   if (!isCompletedOrder(order)) {
+    return false
+  }
+  if (isRedeemRecord(order) || isDeclaredNotRedeemable(order)) {
     return false
   }
   const code = rechargeCodeOf(order)
@@ -120,9 +161,7 @@ const orderTime = (order: Pick<ConsumeMyOrder, 'paidAt' | 'createdAt'>): number 
  * 服务端已经按 `created_at desc` 给了，但这里**自己再排一次**：判定不许依赖别人给的顺序
  * （翻页 / 过滤 / 后端改排序都可能在某一版把顺序弄丢）。
  */
-export const pickPendingOrder = <
-  T extends Pick<ConsumeMyOrder, 'status' | 'rechargeCode' | 'paidAt' | 'createdAt'>,
->(
+export const pickPendingOrder = <T extends PendingGateOrder & Pick<ConsumeMyOrder, 'paidAt' | 'createdAt'>>(
   orders: readonly T[]
 ): T | null => {
   let picked: T | null = null
