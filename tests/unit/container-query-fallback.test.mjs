@@ -160,9 +160,17 @@ test('⑦ 等价性：窄档内容盒 = 64 - 2×1px = 62px ≤ 原阈值 63px，
   assert.ok(/box-sizing: border-box/u.test(file.match(/\.image \{[^}]*\}/u)?.[0] ?? ''))
   assert.ok(/border: 1px solid/u.test(file.match(/\.image \{[^}]*\}/u)?.[0] ?? ''))
   assert.ok(/flex-shrink: 0/u.test(file.match(/\.image \{[^}]*\}/u)?.[0] ?? ''))
-  assert.ok(
-    (file.match(/--message-file-image-size, 120px\)/gu) ?? []).length === 2,
-    '缩略图宽度默认档是 120px（宽 + 高各一处）',
+  // #818：默认档不再是写死的 120px，而是随屏宽自适应的 `min(120px, <N>vw)`（宽 + 高各一处，仍是方块）。
+  // #214 的不变量不变：**唯一**的非默认窄档仍然是 64px —— 下面的 overrides 检查守着这一点。
+  assert.equal(
+    (file.match(/--message-file-image-size, min\(120px, \d+vw\)\)/gu) ?? []).length,
+    2,
+    '缩略图默认档应该是 min(120px, <N>vw)（宽 + 高各一处，#818）',
+  )
+  assert.equal(
+    (file.match(/--message-file-image-size, 120px\)/gu) ?? []).length,
+    0,
+    '#818 之后不该再有写死 120px 的默认档（默认档必须随屏宽变化）',
   )
 
   // `--message-file-image-size` 的非默认值只出现在一处，就是 64px 的窄档

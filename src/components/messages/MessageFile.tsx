@@ -5,6 +5,7 @@ import { describeSentImage, useUploads } from '../../services/attachments.js'
 import { imagePartBytes, imagePartOf } from '../../services/attachments/imageSource.js'
 import { loadFile } from '../../services/chat/db.js'
 import type { FileAttachment } from '../../services/chat/types.js'
+import { ImagePreview } from '../base/ImagePreview.js'
 import { IconPhotoErrorFill20, IconRefreshOutline16 } from '../base/icons.js'
 import { Tooltip } from '../base/Tooltip.js'
 import { FileCard } from '../files/FileCard.js'
@@ -44,7 +45,10 @@ const useUploadState = (file: FileAttachment) =>
 
 /**
  * 消息里的附件：
- * - 图片：纯图片显示 120×120 缩略图，与文件混排时为 64×64；上传中显示 loading 蒙层，
+ * - 图片：纯图片显示随屏宽自适应的缩略图（`min(120px, 27vw)`，390 宽约 105px、360 宽约 97px，
+ *   见 MessageFile.module.css 的 #818 说明），与文件混排时为 64×64；点开走应用内预览
+ *   （`base/ImagePreview.tsx`：全屏遮罩 + contain），不再是 `target="_blank"` 直接开原件。
+ *   上传中显示 loading 蒙层，
  *   上传失败显示品牌色描边 + 中心重试图标（可重试）或 photo-error 图标（不可重试）。
  *   走 base64 内联通路的图（#552）在正常态额外标出**发出去的格式与体积**（例：`WEBP · 218 KB`），
  *   因为压缩后的字节和用户手上的原件不是一回事，这一点不能瞒着。
@@ -61,6 +65,8 @@ export const MessageFile = ({
   const t = useTranslate()
   const url = useFileUrl(file.id)
   const [failedUrl, setFailedUrl] = useState<string | null>(null)
+  /** #818：点开大图走应用内预览层；`target="_blank"` 会把未缩放的原件丢给新页面/WebView */
+  const [previewOpen, setPreviewOpen] = useState(false)
   const upload = useUploadState(file)
   /**
    * 这张图**真正发出去的形态**（#552）：编码产物在选图阶段就进了 `imageSource` 的缓存
@@ -150,19 +156,24 @@ export const MessageFile = ({
       )
     }
 
-    // 正常态：链接到原件
+    // 正常态：点开走应用内预览（#818）
     return url ? (
-      <a
-        className={clsx(styles.image, styles.imageThumb)}
-        href={url}
-        target="_blank"
-        rel="noreferrer"
-        title={file.name}
-      >
-        {preview}
-        {/* 压缩过的图发出去是 webp、字节也比原件小：底部渐变上写清楚，与失败原因同一套样式 */}
-        {sentLabel ? <span className={styles.meta}>{sentLabel}</span> : null}
-      </a>
+      <>
+        <button
+          type="button"
+          className={clsx(styles.image, styles.imageThumb)}
+          title={file.name}
+          aria-label={t('imagePreviewOpen')}
+          onClick={() => setPreviewOpen(true)}
+        >
+          {preview}
+          {/* 压缩过的图发出去是 webp、字节也比原件小：底部渐变上写清楚，与失败原因同一套样式 */}
+          {sentLabel ? <span className={styles.meta}>{sentLabel}</span> : null}
+        </button>
+        {previewOpen ? (
+          <ImagePreview src={url} alt={file.name} onClose={() => setPreviewOpen(false)} />
+        ) : null}
+      </>
     ) : (
       // 原件还没加载出来（极短暂）
       <div className={styles.image} />

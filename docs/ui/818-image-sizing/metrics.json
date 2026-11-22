@@ -1,0 +1,453 @@
+{
+  "issue": "#818",
+  "tool": "playwright chromium headless (deviceScaleFactor=2, isMobile, hasTouch, locale=zh-CN)",
+  "subject": "现场生成的真 PNG：竖 3000×4000 / 横 4000×3000（长边 ≥ 4000px）",
+  "judgement": "元素宽度 / 屏宽 > 0.8，或 scrollWidth > clientWidth 判「过大」",
+  "capabilityPrinciple": "#209：能力靠探测不靠假设。间距、object-fit 均为运行时实测/读回，不是「CSS 里写了」当结论",
+  "viewports": {
+    "390": {
+      "size": "390×844",
+      "②气泡-单图": {
+        "before": {
+          "imageSize": "120×120",
+          "elementTag": "a",
+          "hrefTargetBlank": "_blank",
+          "ratioOfScreen": 0.308,
+          "rowWidth": 120,
+          "tilesPerRow": [
+            1
+          ],
+          "measuredGapPx": [],
+          "computedObjectFit": "cover",
+          "shellOverflow": false,
+          "documentOverflow": false
+        },
+        "after": {
+          "imageSize": "105.3×105.3",
+          "elementTag": "button",
+          "hrefTargetBlank": null,
+          "ratioOfScreen": 0.27,
+          "rowWidth": 105.3,
+          "tilesPerRow": [
+            1
+          ],
+          "measuredGapPx": [],
+          "computedObjectFit": "cover",
+          "shellOverflow": false,
+          "documentOverflow": false
+        }
+      },
+      "②气泡-四图": {
+        "before": {
+          "imageSize": "120×120",
+          "elementTag": "a",
+          "hrefTargetBlank": "_blank",
+          "ratioOfScreen": 0.308,
+          "rowWidth": 350,
+          "tilesPerRow": [
+            2,
+            2
+          ],
+          "measuredGapPx": [
+            10,
+            10
+          ],
+          "computedObjectFit": "cover",
+          "shellOverflow": false,
+          "documentOverflow": false
+        },
+        "after": {
+          "imageSize": "105.3×105.3",
+          "elementTag": "button",
+          "hrefTargetBlank": null,
+          "ratioOfScreen": 0.27,
+          "rowWidth": 350,
+          "tilesPerRow": [
+            3,
+            1
+          ],
+          "measuredGapPx": [
+            10,
+            10
+          ],
+          "computedObjectFit": "cover",
+          "shellOverflow": false,
+          "documentOverflow": false
+        }
+      },
+      "②气泡-图+文档混排": {
+        "before": {
+          "imageSize": "64×64",
+          "elementTag": "a",
+          "hrefTargetBlank": "_blank",
+          "ratioOfScreen": 0.164,
+          "rowWidth": 350,
+          "tilesPerRow": [
+            2
+          ],
+          "measuredGapPx": [
+            10
+          ],
+          "computedObjectFit": "cover",
+          "shellOverflow": false,
+          "documentOverflow": false
+        },
+        "after": {
+          "imageSize": "64×64",
+          "elementTag": "button",
+          "hrefTargetBlank": null,
+          "ratioOfScreen": 0.164,
+          "rowWidth": 350,
+          "tilesPerRow": [
+            2
+          ],
+          "measuredGapPx": [
+            10
+          ],
+          "computedObjectFit": "cover",
+          "shellOverflow": false,
+          "documentOverflow": false
+        }
+      },
+      "①草稿缩略图": {
+        "before": {
+          "thumbs": [
+            [
+              64,
+              64
+            ],
+            [
+              64,
+              64
+            ],
+            [
+              64,
+              64
+            ]
+          ],
+          "ratiosOfScreen": [
+            0.164,
+            0.164,
+            0.164
+          ],
+          "measuredGapPx": [
+            10,
+            10
+          ],
+          "row": {
+            "className": "attachments-ed6f47",
+            "width": 358,
+            "scrollWidth": 358,
+            "clientWidth": 358,
+            "overflowX": "auto",
+            "overflow": false,
+            "overflowsScreen": false
+          },
+          "documentOverflow": false
+        },
+        "after": {
+          "thumbs": [
+            [
+              64,
+              64
+            ],
+            [
+              64,
+              64
+            ],
+            [
+              64,
+              64
+            ]
+          ],
+          "ratiosOfScreen": [
+            0.164,
+            0.164,
+            0.164
+          ],
+          "measuredGapPx": [
+            10,
+            10
+          ],
+          "row": {
+            "className": "attachments-ed6f47",
+            "width": 358,
+            "scrollWidth": 358,
+            "clientWidth": 358,
+            "overflowX": "auto",
+            "overflow": false,
+            "overflowsScreen": false
+          },
+          "documentOverflow": false
+        }
+      },
+      "③点开大图": {
+        "before": {
+          "openedNewPage": true,
+          "newPageViewportWidthPx": 3000,
+          "newPageImgWidthPx": 3000,
+          "newPageImgScaled": false,
+          "inAppLayer": null,
+          "previewImg": null,
+          "objectFitProbeAttr": null,
+          "closedByEsc": null,
+          "closedByBackdropClick": null
+        },
+        "after": {
+          "openedNewPage": false,
+          "newPageViewportWidthPx": null,
+          "newPageImgWidthPx": null,
+          "newPageImgScaled": null,
+          "inAppLayer": {
+            "tag": "div",
+            "className": "overlay-_9410e",
+            "role": "dialog",
+            "testid": "image-preview",
+            "width": 390,
+            "height": 844,
+            "background": "rgba(0, 0, 0, 0.88)"
+          },
+          "previewImg": {
+            "width": 366,
+            "height": 488,
+            "objectFit": "contain",
+            "maxWidth": "100%",
+            "maxHeight": "100%",
+            "naturalWidth": 3000,
+            "naturalHeight": 4000,
+            "insideViewport": true,
+            "aspectRatio": 0.75,
+            "sourceAspectRatio": 0.75
+          },
+          "objectFitProbeAttr": "contain",
+          "closedByEsc": true,
+          "closedByBackdropClick": true
+        }
+      }
+    },
+    "360": {
+      "size": "360×740",
+      "②气泡-单图": {
+        "before": {
+          "imageSize": "120×120",
+          "elementTag": "a",
+          "hrefTargetBlank": "_blank",
+          "ratioOfScreen": 0.333,
+          "rowWidth": 120,
+          "tilesPerRow": [
+            1
+          ],
+          "measuredGapPx": [],
+          "computedObjectFit": "cover",
+          "shellOverflow": false,
+          "documentOverflow": false
+        },
+        "after": {
+          "imageSize": "97.19×97.19",
+          "elementTag": "button",
+          "hrefTargetBlank": null,
+          "ratioOfScreen": 0.27,
+          "rowWidth": 97.19,
+          "tilesPerRow": [
+            1
+          ],
+          "measuredGapPx": [],
+          "computedObjectFit": "cover",
+          "shellOverflow": false,
+          "documentOverflow": false
+        }
+      },
+      "②气泡-四图": {
+        "before": {
+          "imageSize": "120×120",
+          "elementTag": "a",
+          "hrefTargetBlank": "_blank",
+          "ratioOfScreen": 0.333,
+          "rowWidth": 320,
+          "tilesPerRow": [
+            2,
+            2
+          ],
+          "measuredGapPx": [
+            10,
+            10
+          ],
+          "computedObjectFit": "cover",
+          "shellOverflow": false,
+          "documentOverflow": false
+        },
+        "after": {
+          "imageSize": "97.19×97.19",
+          "elementTag": "button",
+          "hrefTargetBlank": null,
+          "ratioOfScreen": 0.27,
+          "rowWidth": 320,
+          "tilesPerRow": [
+            3,
+            1
+          ],
+          "measuredGapPx": [
+            10,
+            10
+          ],
+          "computedObjectFit": "cover",
+          "shellOverflow": false,
+          "documentOverflow": false
+        }
+      },
+      "②气泡-图+文档混排": {
+        "before": {
+          "imageSize": "64×64",
+          "elementTag": "a",
+          "hrefTargetBlank": "_blank",
+          "ratioOfScreen": 0.178,
+          "rowWidth": 320,
+          "tilesPerRow": [
+            2
+          ],
+          "measuredGapPx": [
+            10
+          ],
+          "computedObjectFit": "cover",
+          "shellOverflow": false,
+          "documentOverflow": false
+        },
+        "after": {
+          "imageSize": "64×64",
+          "elementTag": "button",
+          "hrefTargetBlank": null,
+          "ratioOfScreen": 0.178,
+          "rowWidth": 320,
+          "tilesPerRow": [
+            2
+          ],
+          "measuredGapPx": [
+            10
+          ],
+          "computedObjectFit": "cover",
+          "shellOverflow": false,
+          "documentOverflow": false
+        }
+      },
+      "①草稿缩略图": {
+        "before": {
+          "thumbs": [
+            [
+              64,
+              64
+            ],
+            [
+              64,
+              64
+            ],
+            [
+              64,
+              64
+            ]
+          ],
+          "ratiosOfScreen": [
+            0.178,
+            0.178,
+            0.178
+          ],
+          "measuredGapPx": [
+            10,
+            10
+          ],
+          "row": {
+            "className": "attachments-ed6f47",
+            "width": 328,
+            "scrollWidth": 328,
+            "clientWidth": 328,
+            "overflowX": "auto",
+            "overflow": false,
+            "overflowsScreen": false
+          },
+          "documentOverflow": false
+        },
+        "after": {
+          "thumbs": [
+            [
+              64,
+              64
+            ],
+            [
+              64,
+              64
+            ],
+            [
+              64,
+              64
+            ]
+          ],
+          "ratiosOfScreen": [
+            0.178,
+            0.178,
+            0.178
+          ],
+          "measuredGapPx": [
+            10,
+            10
+          ],
+          "row": {
+            "className": "attachments-ed6f47",
+            "width": 328,
+            "scrollWidth": 328,
+            "clientWidth": 328,
+            "overflowX": "auto",
+            "overflow": false,
+            "overflowsScreen": false
+          },
+          "documentOverflow": false
+        }
+      },
+      "③点开大图": {
+        "before": {
+          "openedNewPage": true,
+          "newPageViewportWidthPx": 3001,
+          "newPageImgWidthPx": 3000,
+          "newPageImgScaled": false,
+          "inAppLayer": null,
+          "previewImg": null,
+          "objectFitProbeAttr": null,
+          "closedByEsc": null,
+          "closedByBackdropClick": null
+        },
+        "after": {
+          "openedNewPage": false,
+          "newPageViewportWidthPx": null,
+          "newPageImgWidthPx": null,
+          "newPageImgScaled": null,
+          "inAppLayer": {
+            "tag": "div",
+            "className": "overlay-_9410e",
+            "role": "dialog",
+            "testid": "image-preview",
+            "width": 360,
+            "height": 740,
+            "background": "rgba(0, 0, 0, 0.88)"
+          },
+          "previewImg": {
+            "width": 336,
+            "height": 448,
+            "objectFit": "contain",
+            "maxWidth": "100%",
+            "maxHeight": "100%",
+            "naturalWidth": 3000,
+            "naturalHeight": 4000,
+            "insideViewport": true,
+            "aspectRatio": 0.75,
+            "sourceAspectRatio": 0.75
+          },
+          "objectFitProbeAttr": "contain",
+          "closedByEsc": true,
+          "closedByBackdropClick": true
+        }
+      }
+    }
+  },
+  "consoleErrors": {
+    "before": [],
+    "after": []
+  }
+}
