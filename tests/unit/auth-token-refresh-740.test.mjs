@@ -95,7 +95,7 @@ const refreshExpired = () => json(401, { code: 401, message: 'refresh token expi
  * 这样「重放是否真的带了新 token」也被顺带钉住了。
  * `login` 默认成功（回 B 的会话），[7] 那行要「登录自己 401」时显式覆盖。
  */
-const createBackend = ({ refresh = refreshOk, business, login } = {}) => {
+const createBackend = ({ refresh = refreshOk, business, login, revoke } = {}) => {
   const calls = { refresh: [], business: [], all: [] }
   const businessReply =
     business ??
@@ -123,7 +123,7 @@ const createBackend = ({ refresh = refreshOk, business, login } = {}) => {
       return loginReply()
     }
     if (pathname === '/api/v1/auth/revoke-all-sessions') {
-      return panelOk({ message: 'ok' })
+      return revoke ? revoke() : panelOk({ message: 'ok' })
     }
     calls.business.push({ path: pathname, authorization })
     return businessReply(authorization, calls.business.length)
@@ -390,6 +390,43 @@ test('L1 #740 ④：A 退出 → 登 B，A 的缓存键全部被清', async () =
   } finally {
     unregisterSessionCache('fake-account-balance')
   }
+})
+
+// ------------------------------------------------------------------ [9] #839 退出登录
+
+test('L1 #839：revoke-all-sessions 返回 500 → 本地照样全清（access + refresh + 内存 + 落盘）', async () => {
+  const backend = createBackend({ revoke: serverError })
+  installSession(backend)
+
+  await useAuthStore.getState().signOut()
+
+  assert.equal(
+    backend.calls.all.filter((call) => call.path === '/api/v1/auth/revoke-all-sessions').length,
+    1,
+    '前提：服务端撤销确实被尝试了一次'
+  )
+  assert.equal(storage.value, null, '落盘凭据（access + refresh 同一个键）必须清')
+  assert.equal(useAuthStore.getState().token, null, '内存里的 token 必须清')
+  assert.equal(useAuthStore.getState().user, null)
+  assert.equal(useAuthStore.getState().state, 'unauthenticated')
+})
+
+test('L1 #839：revoke-all-sessions 一直挂起 → 落盘凭据立刻清，且在等待上限内回到未登录', async () => {
+  // 真实现象（真 staging + dist，把该请求 hold 住）：改前 UI 要等写超时 20s + 回查才退出，
+  // 这期间关页 / 重开，盘上的 token 还在 → 被 `restoreAuth` 拉回已登录。
+  const backend = createBackend({ revoke: () => new Promise(() => {}) })
+  installSession(backend)
+
+  const pending = useAuthStore.getState().signOut()
+  // 还没 await：同步阶段盘上就必须没有凭据（此刻关页 / 重启也不会恢复登录态）
+  assert.equal(storage.value, null, '挂起期间，落盘凭据已经清掉')
+  const revokeCall = backend.calls.all.find((call) => call.path === '/api/v1/auth/revoke-all-sessions')
+  assert.equal(revokeCall.authorization, 'Bearer at-old', '撤销请求仍然带着退出前的 JWT')
+
+  await pending
+  assert.equal(useAuthStore.getState().token, null, '等待上限到了就清内存态，不被挂起的请求拖住')
+  assert.equal(useAuthStore.getState().state, 'unauthenticated')
+  assert.equal(storage.value, null)
 })
 
 // ------------------------------------------------------------------ 硬约束静态自查
