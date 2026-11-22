@@ -814,13 +814,16 @@ export const AccountConsumePage = ({
           （`true` 才算已登录），`onSignIn` 复用页面的登录出口。
 
           **面板可见性只看这条链路自己的数据**（#819-v2）：已登录 → 发 `GET /user/aff`，成功且带邀请码就展示，
-          失败才落失败态；未登录只给引导，不发请求（#608 的口径）。`settings/public` 里那两个与「注册」有关的
+          失败才落失败态。**未登录整块不渲染**（维护者明确要求：登录页不显示「我的邀请」；#608 §3 写过
+          未登录给引导，但这里从未真的渲染过）。`settings/public` 里那两个与「注册」有关的
           开关**不参与**这里的判断（它们管注册页的邀请码行），所以这一层**不加**任何本地开关判断，
           否则就成了「客户端第二份开关」（#484 §3.1d）。
         */}
-        <div className={styles.viewBody} data-testid="account-consume-invite">
-          <InvitePanel consume={consume} signedIn={signedIn === true} onSignIn={needLogin} />
-        </div>
+        {signedIn === true ? (
+          <div className={styles.viewBody} data-testid="account-consume-invite">
+            <InvitePanel consume={consume} signedIn={signedIn === true} onSignIn={needLogin} />
+          </div>
+        ) : null}
 
         {/* 退出登录（红字行，原型 `.logout`）：动作就是既有的 auth store `signOut()`，不另写一套 */}
         {signedIn === true ? (

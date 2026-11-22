@@ -253,10 +253,32 @@ test('② aff 请求失败 → failed（不猜「有」也不猜「没有」）#
   assert.ok(hasTestId(inviteRender(state), 'invite-error'), '失败态要渲染可重试的错误块')
 })
 
-test('② 未登录 → 一律引导态（与开关无关，且不发请求）', () => {
+test('② 未登录 → 面板模型落引导态且不发请求；账号页的挂载处被登录守卫包住（不再向未登录用户展示）', () => {
+  // 保留项（原断言不变）：面板模型层面，未登录是「引导态」，不是错误也不是隐藏。
   assert.deepEqual(inviteStateSignedOut(), { phase: 'signedOut' })
   const markup = inviteRender(inviteStateSignedOut())
-  assert.ok(hasTestId(markup, 'invite-signed-out'), '未登录给引导，不是错误也不是隐藏')
+  assert.ok(hasTestId(markup, 'invite-signed-out'), '模型层的未登录态仍是引导（模型保留、无害）')
+
+  // 保留项（「不发请求」）：InvitePanel 的 effect 里，`!signedIn` 分支在 reload() 之前 return。
+  const panel = stripComments(readSource('src/components/consume/InvitePanel.tsx'))
+  const guardAt = panel.indexOf('if (!signedIn)')
+  const reloadAt = panel.indexOf('reload()', guardAt)
+  const returnAt = panel.indexOf('return', guardAt)
+  assert.ok(guardAt > 0 && returnAt > guardAt && returnAt < reloadAt, '未登录分支必须先 return，再走 reload()（发 GET /user/aff）')
+
+  // 改写项：原「账号页未登录时出现引导」→ 新契约（维护者要求登录页不显示「我的邀请」）下的反向断言：
+  // 账号页里 `<InvitePanel` 之前紧邻的是 `signedIn === true ? (` 守卫，未登录分支是 `: null`。
+  const page = stripComments(readSource('src/components/consume/AccountConsumePage.tsx'))
+  const mount = page.indexOf('<InvitePanel')
+  assert.ok(mount > 0, '挂载仍在（本单只加守卫，不拆挂载）')
+  const before = page.slice(Math.max(0, mount - 200), mount)
+  assert.match(
+    before,
+    /\{signedIn === true \? \(\s*<div className=\{styles\.viewBody\} data-testid="account-consume-invite">\s*$/u,
+    '挂载点必须直接包在 signedIn === true 守卫里'
+  )
+  const after = page.slice(mount, mount + 300)
+  assert.match(after, /<\/div>\s*\) : null\}/u, '守卫的 else 分支是 null：未登录账号页不渲染邀请面板')
 })
 
 // ─────────────────────────────────────────────────────────── ③ 注册补邀请码字段（开关开）
