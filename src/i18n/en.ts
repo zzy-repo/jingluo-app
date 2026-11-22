@@ -944,7 +944,6 @@ export const en = {
   // "Account & billing" page (three dialogs → one page, #482 / W1-C1 #487)
   accountConsumeTitle: 'Account & billing',
   accountConsumeTabCards: 'My cards',
-  accountConsumeTabQuota: 'My quota',
   accountConsumeTabAccount: 'Account',
   // #727: the page is now "one full page + four sections" (model source / connectivity / wallet / account).
   accountConsumeGroupSource: 'Model source',
