@@ -19,6 +19,9 @@ import type { ConsumeCallResult, ConsumeHttp } from './http.js'
  */
 export type ConsumeInvitationCheck = { valid: boolean; errorCode?: string }
 
+/** 登录后绑定邀请码的成功体（#842）：`inviter_id` 可选；契约明确**不返回**邀请人邮箱等个人信息 */
+export type ConsumeAffiliateBind = { inviterId?: number }
+
 /** 我的邀请（`AffiliateDetail`）：`affQuota` / `affFrozenQuota` / `affHistoryQuota` 单位是 **元** */
 export type ConsumeAffiliate = {
   userId: number
@@ -71,6 +74,24 @@ export const getAffiliate = (http: ConsumeHttp): Promise<ConsumeCallResult<Consu
   http
     .call<unknown>({ method: 'GET', path: '/api/v1/user/aff', timeout: 'read' })
     .then((result) => (result.ok ? { ...result, data: toAffiliate(result.data) } : result))
+
+/**
+ * 登录后绑定邀请人（JWT，#842 契约：`POST /api/v1/user/aff/bind`，body `{"code": "<邀请码>"}`）。
+ *
+ * 写操作，**不自动重试**；调用方负责客户端轻量校验（trim + 转大写 + 4–32 位 `A-Z0-9_-`），这里原样发出 `code`。
+ * 失败按 `error.code` 分派（`AFFILIATE_CODE_INVALID` / `AFFILIATE_ALREADY_BOUND` / `AFFILIATE_DISABLED` /
+ * `UNAUTHORIZED`；429 没有 code，只看状态码），**只有 `ok: true` 才是成功**。
+ */
+export const bindInviter = (http: ConsumeHttp, code: string): Promise<ConsumeCallResult<ConsumeAffiliateBind>> =>
+  http
+    .call<unknown>({ method: 'POST', path: '/api/v1/user/aff/bind', body: { code }, timeout: 'write' })
+    .then((result) => {
+      if (!result.ok) {return result}
+      const body = asRecord(result.data)
+      const out: ConsumeAffiliateBind = {}
+      if (typeof body.inviter_id === 'number') {out.inviterId = body.inviter_id}
+      return { ...result, data: out }
+    })
 
 const toAffiliate = (value: unknown): ConsumeAffiliate => {
   const body = asRecord(value)
