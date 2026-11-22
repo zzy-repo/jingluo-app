@@ -1050,6 +1050,7 @@ export const en = {
   inviteBindLabel: "Inviter's invitation code",
   inviteBindPlaceholder: 'Enter invitation code',
   inviteBindSubmit: 'Submit',
+  inviteBindSubmitting: 'Submitting…',
   inviteBindHint: "Enter the code of the person who invited you. It can only be set once and cannot be changed afterwards",
   inviteBindDone: 'Inviter linked',
   inviteBindDoneHint: 'The invitation is recorded and cannot be changed',

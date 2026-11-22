@@ -243,8 +243,15 @@ export const InviteBindView = (props: InviteBindViewProps): ReactNode => {
       }),
       createElement(
         Button,
-        { size: 's', variant: 'primary', disabled: state.busy, testId: 'invite-bind-submit', onClick: props.onSubmit },
-        t('inviteBindSubmit')
+        {
+          size: 's',
+          variant: 'primary',
+          disabled: state.busy,
+          // 提交中：按钮文案换成「提交中…」（同时 disabled），别让用户只看到一个变灰的「提交」
+          testId: 'invite-bind-submit',
+          onClick: props.onSubmit,
+        },
+        t(state.busy ? 'inviteBindSubmitting' : 'inviteBindSubmit')
       )
     ),
     state.errorKey === null

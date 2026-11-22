@@ -388,3 +388,21 @@ test('mock 契约测试 842：inviteBind* 文案 zh / en 成对，且不含原�
   assert.notEqual(zh.inviteBindErrDisabled, zh.inviteBindErrFailed, 'DISABLED 单独一条文案，不是通用失败')
   assert.notEqual(en.inviteBindErrDisabled, en.inviteBindErrFailed)
 })
+
+// B 自检发现（提交中按钮文案仍是「提交」，只剩一个变灰的按钮）：提交中按钮换成进行中文案（同时 disabled）；输入框禁用。
+test('mock 契约测试 842：提交中 → 按钮文案「提交中…」+ disabled，输入框禁用；空闲时文案是「提交」', () => {
+  const render = (busy) =>
+    markupOf(
+      InviteBindView({ t: translate, c: classNames, Button: ButtonStub, mode: 'form', state: { ...initialInviteBindState(), draft: 'ABCD1234', busy }, onDraft() {}, onSubmit() {} })
+    )
+  const busyMarkup = render(true)
+  assert.ok(textOf(busyMarkup, 'invite-bind-submit').includes(zh.inviteBindSubmitting))
+  assert.ok(!/>提交</u.test(busyMarkup), '提交中按钮不再显示空闲文案「提交」')
+  assert.match(busyMarkup, /data-testid="invite-bind-submit"[^>]*disabled|disabled[^>]*data-testid="invite-bind-submit"/u)
+  assert.match(busyMarkup, /data-testid="invite-bind-input"[^>]*disabled|disabled[^>]*data-testid="invite-bind-input"/u)
+  const idle = render(false)
+  assert.ok(/>提交</u.test(idle), '空闲时按钮文案是「提交」')
+  assert.ok(!idle.includes(zh.inviteBindSubmitting))
+  assert.notEqual(zh.inviteBindSubmitting, zh.inviteBindSubmit)
+  assert.notEqual(en.inviteBindSubmitting, en.inviteBindSubmit)
+})

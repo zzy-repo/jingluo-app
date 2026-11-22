@@ -1,0 +1,806 @@
+[
+  {
+    "vp": "390",
+    "name": "6 未登录：没有 invite-bind-* 节点",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "vp": "390",
+    "name": "6 未登录：没有 invite-panel（#846）",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "vp": "390",
+    "name": "6 登录后初始不闪（#830）：节点只出现一次、没有出现后消失",
+    "ok": true,
+    "detail": "trace=--->PF-"
+  },
+  {
+    "vp": "390",
+    "name": "1 未绑定：输入框 + 提交按钮 + 「只能绑定一次」说明",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "vp": "390",
+    "name": "8 输入框有 aria-label 或关联 label",
+    "ok": true,
+    "detail": "aria-label=\"邀请人的邀请码\""
+  },
+  {
+    "vp": "390",
+    "name": "8 输入框 autocomplete=off",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "vp": "390",
+    "name": "2 非法字符/过短/过长/空：一个 bind 请求都没发",
+    "ok": true,
+    "detail": "发出 0 个"
+  },
+  {
+    "vp": "390",
+    "name": "2 格式错误文案是人话",
+    "ok": true,
+    "detail": "邀请码应为 4–32 位字母、数字、下划线或连字符"
+  },
+  {
+    "vp": "390",
+    "name": "8 错误信息 role=alert",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "vp": "390",
+    "name": "2 再次输入时错误提示清除",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "vp": "390",
+    "name": "5 邀请码无效(400 CODE_INVALID)：文案是人话",
+    "ok": true,
+    "detail": "邀请码无效，请检查后重试（也不能填自己的邀请码）"
+  },
+  {
+    "vp": "390",
+    "name": "5 邀请码无效(400 CODE_INVALID)：没有切到「已绑定」",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "vp": "390",
+    "name": "5 邀请码无效(400 CODE_INVALID)：可重试（输入框与按钮可用，输入保留）",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "vp": "390",
+    "name": "5 邀请码无效(400 CODE_INVALID)：页面没有原始 AFFILIATE_ 字符串",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "vp": "390",
+    "name": "5 邀请码无效(400 CODE_INVALID)：没有显示服务端 message 原文",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "vp": "390",
+    "name": "5 功能未开(400 DISABLED)：文案是人话",
+    "ok": true,
+    "detail": "邀请功能暂未开放"
+  },
+  {
+    "vp": "390",
+    "name": "5 功能未开(400 DISABLED)：没有切到「已绑定」",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "vp": "390",
+    "name": "5 功能未开(400 DISABLED)：可重试（输入框与按钮可用，输入保留）",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "vp": "390",
+    "name": "5 功能未开(400 DISABLED)：页面没有原始 AFFILIATE_ 字符串",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "vp": "390",
+    "name": "5 功能未开(400 DISABLED)：没有显示服务端 message 原文",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "vp": "390",
+    "name": "5 名额已满(409 INVITER_FULL)：文案是人话",
+    "ok": true,
+    "detail": "这位邀请人的邀请名额已满，请换一个邀请码"
+  },
+  {
+    "vp": "390",
+    "name": "5 名额已满(409 INVITER_FULL)：没有切到「已绑定」",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "vp": "390",
+    "name": "5 名额已满(409 INVITER_FULL)：可重试（输入框与按钮可用，输入保留）",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "vp": "390",
+    "name": "5 名额已满(409 INVITER_FULL)：页面没有原始 AFFILIATE_ 字符串",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "vp": "390",
+    "name": "5 名额已满(409 INVITER_FULL)：没有显示服务端 message 原文",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "vp": "390",
+    "name": "5 限流(429，非契约，通用分支)：文案是人话",
+    "ok": true,
+    "detail": "操作太频繁，请稍后再试"
+  },
+  {
+    "vp": "390",
+    "name": "5 限流(429，非契约，通用分支)：没有切到「已绑定」",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "vp": "390",
+    "name": "5 限流(429，非契约，通用分支)：可重试（输入框与按钮可用，输入保留）",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "vp": "390",
+    "name": "5 限流(429，非契约，通用分支)：页面没有原始 AFFILIATE_ 字符串",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "vp": "390",
+    "name": "5 限流(429，非契约，通用分支)：没有显示服务端 message 原文",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "vp": "390",
+    "name": "5 服务端 500：文案是人话",
+    "ok": true,
+    "detail": "绑定失败，请稍后重试"
+  },
+  {
+    "vp": "390",
+    "name": "5 服务端 500：没有切到「已绑定」",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "vp": "390",
+    "name": "5 服务端 500：可重试（输入框与按钮可用，输入保留）",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "vp": "390",
+    "name": "5 服务端 500：页面没有原始 AFFILIATE_ 字符串",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "vp": "390",
+    "name": "5 服务端 500：没有显示服务端 message 原文",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "vp": "390",
+    "name": "5 无 reason 的 400：文案是人话",
+    "ok": true,
+    "detail": "绑定失败，请稍后重试"
+  },
+  {
+    "vp": "390",
+    "name": "5 无 reason 的 400：没有切到「已绑定」",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "vp": "390",
+    "name": "5 无 reason 的 400：可重试（输入框与按钮可用，输入保留）",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "vp": "390",
+    "name": "5 无 reason 的 400：页面没有原始 AFFILIATE_ 字符串",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "vp": "390",
+    "name": "5 无 reason 的 400：没有显示服务端 message 原文",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "vp": "390",
+    "name": "5 网络断开：文案是人话",
+    "ok": true,
+    "detail": "绑定失败，请稍后重试"
+  },
+  {
+    "vp": "390",
+    "name": "5 网络断开：没有切到「已绑定」",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "vp": "390",
+    "name": "5 网络断开：可重试（输入框与按钮可用，输入保留）",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "vp": "390",
+    "name": "5 网络断开：页面没有原始 AFFILIATE_ 字符串",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "vp": "390",
+    "name": "5 网络断开：没有显示服务端 message 原文",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "vp": "390",
+    "name": "3 提交中：按钮禁用",
+    "ok": true,
+    "detail": "{\"inputDisabled\":true,\"btnDisabled\":true,\"btnText\":\"提交中…\",\"ariaDisabled\":null,\"ariaBusy\":null}"
+  },
+  {
+    "vp": "390",
+    "name": "3 提交中：输入框不可再改",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "vp": "390",
+    "name": "3 提交中：按钮有进行中文案（与「提交」不同）",
+    "ok": true,
+    "detail": "按钮文案=\"提交中…\""
+  },
+  {
+    "vp": "390",
+    "name": "8 提交中按钮 disabled 或 aria-disabled",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "vp": "390",
+    "name": "3 提交中重复点击不发第二个请求",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "vp": "390",
+    "name": "4 成功后切到「已绑定邀请人」只读",
+    "ok": true,
+    "detail": "已绑定邀请人 /  / 邀请关系已建立，不能修改"
+  },
+  {
+    "vp": "390",
+    "name": "4 没有显示任何邀请人个人信息（无 123 / 邮箱 / 邀请人 id）",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "vp": "390",
+    "name": "4 成功：页面没有原始 AFFILIATE_ 字符串",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "vp": "390",
+    "name": "4 成功：没有显示服务端 message 原文",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "vp": "390",
+    "name": "6 刷新后仍是已绑定只读",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "vp": "390",
+    "name": "5 已绑定(409 ALREADY_BOUND)：切只读、没有错误提示",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "vp": "390",
+    "name": "5 已绑定(409)：重新拉了 GET /user/aff",
+    "ok": true,
+    "detail": "GET /user/aff × 1"
+  },
+  {
+    "vp": "390",
+    "name": "5 已绑定(409)：页面没有原始 AFFILIATE_ 字符串",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "vp": "390",
+    "name": "5 已绑定(409)：没有显示服务端 message 原文",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "vp": "390",
+    "name": "7 窄屏不溢出：documentElement scrollWidth===clientWidth",
+    "ok": true,
+    "detail": "{\"docScroll\":390,\"docClient\":390,\"bodyScroll\":390,\"bodyClient\":390,\"panelScroll\":340,\"panelClient\":340,\"scrollerScroll\":342,\"scrollerClient\":342,\"panelRight\":366,\"innerWidth\":390}"
+  },
+  {
+    "vp": "390",
+    "name": "7 窄屏不溢出：invite-panel scrollWidth===clientWidth",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "vp": "390",
+    "name": "7 窄屏不溢出：面板右边界不超出视口",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "vp": "390",
+    "name": "7 输入框与按钮同一行、不挤断（按钮单行、不重叠）",
+    "ok": true,
+    "detail": "{\"input\":{\"l\":39,\"r\":285,\"t\":699,\"b\":739,\"w\":246,\"h\":40},\"btn\":{\"l\":293,\"r\":351,\"t\":703,\"b\":735,\"w\":58,\"h\":32}}"
+  },
+  {
+    "vp": "390",
+    "name": "7 输入框宽度够用（≥ 150px）",
+    "ok": true,
+    "detail": "w=246"
+  },
+  {
+    "vp": "390",
+    "name": "7 「我的邀请」统计区与表单上下分开、不重叠",
+    "ok": true,
+    "detail": "{\"form\":{\"l\":39,\"r\":351,\"t\":663,\"b\":791,\"w\":312,\"h\":128},\"rebate\":{\"l\":199,\"r\":351,\"t\":603,\"b\":659,\"w\":152,\"h\":56}}"
+  },
+  {
+    "vp": "390",
+    "name": "7 键盘弹起（视口缩到 439px 模拟，非真实软键盘）：点按聚焦后输入框与提交按钮完整在可视区内",
+    "ok": true,
+    "detail": "{\"top\":277,\"bottom\":317,\"vh\":439,\"btnTop\":281,\"btnBottom\":313}"
+  },
+  {
+    "vp": "390",
+    "name": "8 全程无 pageerror",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "vp": "360",
+    "name": "6 未登录：没有 invite-bind-* 节点",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "vp": "360",
+    "name": "6 未登录：没有 invite-panel（#846）",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "vp": "360",
+    "name": "6 登录后初始不闪（#830）：节点只出现一次、没有出现后消失",
+    "ok": true,
+    "detail": "trace=--->PF-"
+  },
+  {
+    "vp": "360",
+    "name": "1 未绑定：输入框 + 提交按钮 + 「只能绑定一次」说明",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "vp": "360",
+    "name": "8 输入框有 aria-label 或关联 label",
+    "ok": true,
+    "detail": "aria-label=\"邀请人的邀请码\""
+  },
+  {
+    "vp": "360",
+    "name": "8 输入框 autocomplete=off",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "vp": "360",
+    "name": "2 非法字符/过短/过长/空：一个 bind 请求都没发",
+    "ok": true,
+    "detail": "发出 0 个"
+  },
+  {
+    "vp": "360",
+    "name": "2 格式错误文案是人话",
+    "ok": true,
+    "detail": "邀请码应为 4–32 位字母、数字、下划线或连字符"
+  },
+  {
+    "vp": "360",
+    "name": "8 错误信息 role=alert",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "vp": "360",
+    "name": "2 再次输入时错误提示清除",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "vp": "360",
+    "name": "5 邀请码无效(400 CODE_INVALID)：文案是人话",
+    "ok": true,
+    "detail": "邀请码无效，请检查后重试（也不能填自己的邀请码）"
+  },
+  {
+    "vp": "360",
+    "name": "5 邀请码无效(400 CODE_INVALID)：没有切到「已绑定」",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "vp": "360",
+    "name": "5 邀请码无效(400 CODE_INVALID)：可重试（输入框与按钮可用，输入保留）",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "vp": "360",
+    "name": "5 邀请码无效(400 CODE_INVALID)：页面没有原始 AFFILIATE_ 字符串",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "vp": "360",
+    "name": "5 邀请码无效(400 CODE_INVALID)：没有显示服务端 message 原文",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "vp": "360",
+    "name": "5 功能未开(400 DISABLED)：文案是人话",
+    "ok": true,
+    "detail": "邀请功能暂未开放"
+  },
+  {
+    "vp": "360",
+    "name": "5 功能未开(400 DISABLED)：没有切到「已绑定」",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "vp": "360",
+    "name": "5 功能未开(400 DISABLED)：可重试（输入框与按钮可用，输入保留）",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "vp": "360",
+    "name": "5 功能未开(400 DISABLED)：页面没有原始 AFFILIATE_ 字符串",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "vp": "360",
+    "name": "5 功能未开(400 DISABLED)：没有显示服务端 message 原文",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "vp": "360",
+    "name": "5 名额已满(409 INVITER_FULL)：文案是人话",
+    "ok": true,
+    "detail": "这位邀请人的邀请名额已满，请换一个邀请码"
+  },
+  {
+    "vp": "360",
+    "name": "5 名额已满(409 INVITER_FULL)：没有切到「已绑定」",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "vp": "360",
+    "name": "5 名额已满(409 INVITER_FULL)：可重试（输入框与按钮可用，输入保留）",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "vp": "360",
+    "name": "5 名额已满(409 INVITER_FULL)：页面没有原始 AFFILIATE_ 字符串",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "vp": "360",
+    "name": "5 名额已满(409 INVITER_FULL)：没有显示服务端 message 原文",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "vp": "360",
+    "name": "5 限流(429，非契约，通用分支)：文案是人话",
+    "ok": true,
+    "detail": "操作太频繁，请稍后再试"
+  },
+  {
+    "vp": "360",
+    "name": "5 限流(429，非契约，通用分支)：没有切到「已绑定」",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "vp": "360",
+    "name": "5 限流(429，非契约，通用分支)：可重试（输入框与按钮可用，输入保留）",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "vp": "360",
+    "name": "5 限流(429，非契约，通用分支)：页面没有原始 AFFILIATE_ 字符串",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "vp": "360",
+    "name": "5 限流(429，非契约，通用分支)：没有显示服务端 message 原文",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "vp": "360",
+    "name": "5 服务端 500：文案是人话",
+    "ok": true,
+    "detail": "绑定失败，请稍后重试"
+  },
+  {
+    "vp": "360",
+    "name": "5 服务端 500：没有切到「已绑定」",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "vp": "360",
+    "name": "5 服务端 500：可重试（输入框与按钮可用，输入保留）",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "vp": "360",
+    "name": "5 服务端 500：页面没有原始 AFFILIATE_ 字符串",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "vp": "360",
+    "name": "5 服务端 500：没有显示服务端 message 原文",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "vp": "360",
+    "name": "5 无 reason 的 400：文案是人话",
+    "ok": true,
+    "detail": "绑定失败，请稍后重试"
+  },
+  {
+    "vp": "360",
+    "name": "5 无 reason 的 400：没有切到「已绑定」",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "vp": "360",
+    "name": "5 无 reason 的 400：可重试（输入框与按钮可用，输入保留）",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "vp": "360",
+    "name": "5 无 reason 的 400：页面没有原始 AFFILIATE_ 字符串",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "vp": "360",
+    "name": "5 无 reason 的 400：没有显示服务端 message 原文",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "vp": "360",
+    "name": "5 网络断开：文案是人话",
+    "ok": true,
+    "detail": "绑定失败，请稍后重试"
+  },
+  {
+    "vp": "360",
+    "name": "5 网络断开：没有切到「已绑定」",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "vp": "360",
+    "name": "5 网络断开：可重试（输入框与按钮可用，输入保留）",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "vp": "360",
+    "name": "5 网络断开：页面没有原始 AFFILIATE_ 字符串",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "vp": "360",
+    "name": "5 网络断开：没有显示服务端 message 原文",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "vp": "360",
+    "name": "3 提交中：按钮禁用",
+    "ok": true,
+    "detail": "{\"inputDisabled\":true,\"btnDisabled\":true,\"btnText\":\"提交中…\",\"ariaDisabled\":null,\"ariaBusy\":null}"
+  },
+  {
+    "vp": "360",
+    "name": "3 提交中：输入框不可再改",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "vp": "360",
+    "name": "3 提交中：按钮有进行中文案（与「提交」不同）",
+    "ok": true,
+    "detail": "按钮文案=\"提交中…\""
+  },
+  {
+    "vp": "360",
+    "name": "8 提交中按钮 disabled 或 aria-disabled",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "vp": "360",
+    "name": "3 提交中重复点击不发第二个请求",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "vp": "360",
+    "name": "4 成功后切到「已绑定邀请人」只读",
+    "ok": true,
+    "detail": "已绑定邀请人 /  / 邀请关系已建立，不能修改"
+  },
+  {
+    "vp": "360",
+    "name": "4 没有显示任何邀请人个人信息（无 123 / 邮箱 / 邀请人 id）",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "vp": "360",
+    "name": "4 成功：页面没有原始 AFFILIATE_ 字符串",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "vp": "360",
+    "name": "4 成功：没有显示服务端 message 原文",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "vp": "360",
+    "name": "6 刷新后仍是已绑定只读",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "vp": "360",
+    "name": "5 已绑定(409 ALREADY_BOUND)：切只读、没有错误提示",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "vp": "360",
+    "name": "5 已绑定(409)：重新拉了 GET /user/aff",
+    "ok": true,
+    "detail": "GET /user/aff × 1"
+  },
+  {
+    "vp": "360",
+    "name": "5 已绑定(409)：页面没有原始 AFFILIATE_ 字符串",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "vp": "360",
+    "name": "5 已绑定(409)：没有显示服务端 message 原文",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "vp": "360",
+    "name": "7 窄屏不溢出：documentElement scrollWidth===clientWidth",
+    "ok": true,
+    "detail": "{\"docScroll\":360,\"docClient\":360,\"bodyScroll\":360,\"bodyClient\":360,\"panelScroll\":310,\"panelClient\":310,\"scrollerScroll\":312,\"scrollerClient\":312,\"panelRight\":336,\"innerWidth\":360}"
+  },
+  {
+    "vp": "360",
+    "name": "7 窄屏不溢出：invite-panel scrollWidth===clientWidth",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "vp": "360",
+    "name": "7 窄屏不溢出：面板右边界不超出视口",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "vp": "360",
+    "name": "7 输入框与按钮同一行、不挤断（按钮单行、不重叠）",
+    "ok": true,
+    "detail": "{\"input\":{\"l\":39,\"r\":255,\"t\":682,\"b\":722,\"w\":216,\"h\":40},\"btn\":{\"l\":263,\"r\":321,\"t\":686,\"b\":718,\"w\":58,\"h\":32}}"
+  },
+  {
+    "vp": "360",
+    "name": "7 输入框宽度够用（≥ 150px）",
+    "ok": true,
+    "detail": "w=216"
+  },
+  {
+    "vp": "360",
+    "name": "7 「我的邀请」统计区与表单上下分开、不重叠",
+    "ok": true,
+    "detail": "{\"form\":{\"l\":39,\"r\":321,\"t\":628,\"b\":794,\"w\":282,\"h\":166},\"rebate\":{\"l\":184,\"r\":321,\"t\":568,\"b\":624,\"w\":137,\"h\":56}}"
+  },
+  {
+    "vp": "360",
+    "name": "7 键盘弹起（视口缩到 385px 模拟，非真实软键盘）：点按聚焦后输入框与提交按钮完整在可视区内",
+    "ok": true,
+    "detail": "{\"top\":250,\"bottom\":290,\"vh\":385,\"btnTop\":254,\"btnBottom\":286}"
+  },
+  {
+    "vp": "360",
+    "name": "8 全程无 pageerror",
+    "ok": true,
+    "detail": ""
+  }
+]

@@ -1052,6 +1052,7 @@ export const zh = {
   inviteBindLabel: '邀请人的邀请码',
   inviteBindPlaceholder: '输入邀请码',
   inviteBindSubmit: '提交',
+  inviteBindSubmitting: '提交中…',
   inviteBindHint: '填写邀请你的人的邀请码。只能绑定一次，绑定后不能修改',
   inviteBindDone: '已绑定邀请人',
   inviteBindDoneHint: '邀请关系已建立，不能修改',
