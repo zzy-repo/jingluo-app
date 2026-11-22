@@ -1,7 +1,7 @@
 import { useTranslate } from '../../i18n/index.js'
 import clsx from 'clsx'
 import { memo } from 'react'
-import { IconRefreshOutline16, IconWarningOutline16 } from '../base/icons.js'
+import { IconBranchOutline16, IconRefreshOutline16, IconWarningOutline16 } from '../base/icons.js'
 import { describeReply } from '../../services/chat/describe.js'
 import { canContinueReply } from '../../services/chat/reply.js'
 import {
@@ -25,6 +25,7 @@ import { Button } from '../base/Button.js'
 import { Markdown } from '../markdown/Markdown.js'
 import { SiteThumbnails } from '../search/SiteLogo.js'
 import { toggleSearchPanel, useSearchPanel } from '../search/searchPanelState.js'
+import { openSessionBranchDialog } from '../session/sessionBranchState.js'
 import { ReadAloudButton } from './ReadAloudButton.js'
 import { CopyButton } from './CopyButton.js'
 import { copyText as copyToClipboard } from '../../utils/clipboard.js'
@@ -280,6 +281,16 @@ export const AssistantMessage = memo(function AssistantMessage({
         <div className={styles.bottom}>
           <BranchSwitcher versions={versions} disabled={busy} onSelect={onSelectVersion} />
           <div className={clsx(styles.actions, isLast && styles.alwaysShow)}>
+            {/* #831 节点分支：从**这条回答**处分叉出一条独立会话（分叉点之后的消息不带入）。
+                放在回答的动作区里，与「复制 / 朗读 / 重新生成」同一行 —— 用户想分叉时看着的就是
+                这一轮对话，不必先回列表再找回第几条。 */}
+            <IconButton
+              icon={<IconBranchOutline16 />}
+              tooltip={t('sessionBranchFromMessage')}
+              tooltipPlacement="bottom"
+              data-testid="session-branch-from-message"
+              onClick={() => openSessionBranchDialog({ sessionId, messageId: message.id })}
+            />
             {copyText ? <CopyButton text={copyText} /> : null}
             {responseText && !refused ? (
               <ReadAloudButton messageId={message.id} text={responseText} />

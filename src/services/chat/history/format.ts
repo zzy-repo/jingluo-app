@@ -25,6 +25,24 @@ export type SessionIndexEntry = {
 }
 
 /** chat_sessions/{session_id}.json */
+/**
+ * #831 会话级分支的来源（可选）：这条会话是从哪条会话的哪条消息处**分叉**出来的。
+ *
+ * 与 `ChatMessage.parent_id`（同一会话内的消息级分支）不是一件事：这里描述的是
+ * **两条会话之间**的关系。归档必须带上它，否则「导出 → 导入到另一台设备」之后
+ * 分支会话就退化成一条来历不明的普通会话（#307 / #390 的往返契约）。
+ *
+ * `message_id` 为 null = 完整分支（整条会话复制，没有丢弃消息）；
+ * 非 null = 节点分支的分叉点（父会话里最后一条被带入的消息）。
+ * 父会话不在那台设备上时**照样能导入**：徽标降级为「来源已不在本机」，由界面判定，不阻断导入。
+ */
+export type SessionBranchOf = {
+  session_id: string
+  message_id: string | null
+  created_at: Iso8601Utc
+}
+
+/** chat_sessions/{session_id}.json */
 export type SessionFile = {
   id: string
   title: string | null
@@ -35,6 +53,8 @@ export type SessionFile = {
   updated_at: Iso8601Utc
   /** 消息树，分支靠 parent_id */
   messages: ChatMessage[]
+  /** #831 可选：会话级分支的来源。老归档没有这个字段，新归档带上它 */
+  branch_of?: SessionBranchOf
 }
 
 export type ChatRole = 'USER' | 'ASSISTANT'

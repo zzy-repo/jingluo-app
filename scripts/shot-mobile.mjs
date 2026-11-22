@@ -64,8 +64,11 @@ export const DEFAULT_DIST = 'dist'
  * #399 把库升到 v14（新增窗口记忆 `sessionMemory` + `sessionId` 索引）之后，这个常量停在了 13：
  * 冷启动的 warmer 页会先把库按 14 建出来，`seedInPage` 再 `open(…, 13)` 直接 VersionError ——
  * 于是**全部 `--page` 场景一条都跑不起来**（与 #486 无关，存量问题）。常量必须跟着 `db.ts` 走。
+ *
+ * #831 把库升到 v15（`sessionSummaries` 新增 `branchOf` 索引）时它还是 14 —— 同一条坑，
+ * 顺手一起跟上了：**任何一次 DB_VERSION 变更都必须改这里**，否则带 `sessions` 的截图场景全灭。
  */
-export const DB_VERSION = 14
+export const DB_VERSION = 15
 /** 假 Key：只喂给界面让「服务配置」不是空态；订单接口被 route 拦掉，不会真的发出去 */
 const FIXTURE_API_KEY = 'sk-shot-mobile-fixture-0000'
 /**
@@ -348,6 +351,10 @@ const seedInPage = async ({ sessions, version }) => {
       if (!summaries.indexNames.contains('fileIds')) {
         summaries.createIndex('fileIds', 'fileIds', { multiEntry: true })
       }
+      // #831：`branchOf` 索引（`src/services/chat/db.ts` 的 v14 → v15 迁移里同一个 keyPath）
+      if (!summaries.indexNames.contains('branchOf')) {
+        summaries.createIndex('branchOf', 'branchOf.sessionId')
+      }
       if (!opened.objectStoreNames.contains('appAssets')) {
         opened.createObjectStore('appAssets', { keyPath: 'key' })
       }
@@ -365,6 +372,8 @@ const seedInPage = async ({ sessions, version }) => {
         createdAt: session.createdAt,
         updatedAt: session.updatedAt,
         fileIds: [],
+        // #831：分支会话的来源徽标读的就是摘要上的 branchOf —— 不写进来，截图里就永远看不到徽标
+        ...(session.branchOf === undefined ? {} : { branchOf: session.branchOf }),
       })
     }
     tx.oncomplete = () => resolve()
@@ -416,6 +425,67 @@ const makeLongSession = () => {
     messages,
   }
 }
+
+/**
+ * #831 截图样本：父会话（3 轮 6 条）+ 它的**完整分支** + 一条父会话不在本机的分支。
+ *
+ * 三条会话覆盖徽标的两态与「跳回父会话」：父子都在 → 徽标「分支」可点；
+ * 父会话不在这台设备（导入到别的机器 / 父会话被删）→ 徽标降级「来源已不在本机」（不可点）。
+ */
+export const BRANCH_PARENT_TITLE = '截图-分支父会话'
+export const BRANCH_CHILD_TITLE = '截图-分支父会话（分支）'
+export const BRANCH_ORPHAN_TITLE = '截图-父会话不在本机'
+
+const BRANCH_ROUNDS = [
+  ['这一轮先问：会话级分支和消息级分支有什么区别？', '消息级分支是同一条会话里的多个回答版本；会话级分支是另起一条独立会话，两边互不影响。'],
+  ['那从中间某条消息分叉呢？', '分叉点之后的消息不会带入新会话，确认弹层里会写明「之后的 M 条不会带入」。'],
+  ['附件会被复制一份吗？', '不会。附件按 id / sha256 按引用共享，存储里只有一份；原件不在本机时降级成「附件不可用」。'],
+]
+
+const branchMessages = (prefix) => {
+  const now = Date.now()
+  return BRANCH_ROUNDS.flatMap(([question, answer], index) => [
+    userMessage(`shot-831-${prefix}-u${index}`, question, now + index * 2000),
+    assistantMessage(
+      `shot-831-${prefix}-a${index}`,
+      [{ type: 'text', text: answer }],
+      now + index * 2000 + 900
+    ),
+  ])
+}
+
+const makeBranchParent = () => ({
+  id: 'shot-831-parent',
+  title: BRANCH_PARENT_TITLE,
+  createdAt: Date.now() - 60000,
+  updatedAt: Date.now() - 60000 + 6000,
+  messages: branchMessages('parent'),
+})
+
+const makeBranchChild = () => ({
+  id: 'shot-831-child',
+  title: BRANCH_CHILD_TITLE,
+  createdAt: Date.now() - 30000,
+  updatedAt: Date.now() - 30000 + 6000,
+  messages: branchMessages('child'),
+  branchOf: { sessionId: 'shot-831-parent', createdAt: Date.now() - 30000 },
+})
+
+const makeBranchOrphan = () => ({
+  id: 'shot-831-orphan',
+  title: BRANCH_ORPHAN_TITLE,
+  createdAt: Date.now() - 20000,
+  updatedAt: Date.now() - 20000,
+  messages: [
+    userMessage('shot-831-orphan-u0', '这个包是从另一台设备导过来的', Date.now() - 20000),
+    assistantMessage(
+      'shot-831-orphan-a0',
+      [{ type: 'text', text: '父会话不在本机，徽标降级为「来源已不在本机」，导入本身是成功的。' }],
+      Date.now() - 19000
+    ),
+  ],
+  branchOf: { sessionId: 'shot-831-missing-parent', createdAt: Date.now() - 20000 },
+})
 
 /** #102 用的阅读样本会话：正文里放一句带标记的话，量字号时按这句话找元素 */
 export const READING_SAMPLE_MARKER = '字号样本：这一行用来对比阅读设置的档位。'
@@ -4550,6 +4620,167 @@ export const PAGES = {
       if (worstOverflow !== 0) {
         throw new Error(`横向溢出最大值 ${worstOverflow}，两档都必须是 0`)
       }
+    },
+  },
+
+  /**
+   * #831 会话级分支：一张图一件事，两档宽度都跑。
+   *   01 列表里的来源徽标两态（「分支」/「来源已不在本机」）
+   *   02 节点分支的确认弹层（必须写明「之后的 M 条不会带入」）+ 默认名可当场改
+   *   03 新会话详情（徽标 + 点回父会话）
+   *   04 点徽标真的回到父会话
+   *   05 完整分支入口（列表「更多」→「从此会话分支」）的确认弹层
+   */
+  '831-session-branch': {
+    dir: 'docs/ui/831-session-branch',
+    title: '#831 会话级分支：列表来源徽标（两态）/ 节点分支确认弹层 / 新会话详情 / 完整分支入口',
+    sessions: () => [makeBranchParent(), makeBranchChild(), makeBranchOrphan()],
+    run: async (ctx) => {
+      const { page, shot, record } = ctx
+
+      /** 横向溢出：本单硬指标（390 / 360 两档都必须 0，口径同 #106 / #711） */
+      const measureOverflow = () =>
+        page.evaluate(() => {
+          const viewportWidth = document.documentElement.clientWidth
+          const overflow = []
+          for (const element of document.querySelectorAll('*')) {
+            const rect = element.getBoundingClientRect()
+            if (rect.width > 0 && rect.right > viewportWidth + 1) {
+              overflow.push({
+                tag: element.tagName,
+                right: Math.round(rect.right),
+                text: (element.textContent ?? '').slice(0, 24),
+              })
+            }
+          }
+          return {
+            viewportWidth,
+            overflowCount: overflow.length,
+            samples: overflow.slice(0, 5),
+          }
+        })
+      const requireNoOverflow = async (label) => {
+        const measured = await measureOverflow()
+        record(`overflow:${label}`, measured)
+        if (measured.overflowCount !== 0) {
+          throw new Error(`${label} 出现横向溢出 ${measured.overflowCount} 处：${JSON.stringify(measured.samples)}`)
+        }
+      }
+
+      /** 会话列表里所有来源徽标的两态 */
+      const badgeStates = () =>
+        page.evaluate(() =>
+          Array.from(document.querySelectorAll('[data-testid="session-branch-badge"]')).map((node) => ({
+            state: node.getAttribute('data-branch-state'),
+            text: (node.textContent ?? '').trim(),
+            tooltip: node.getAttribute('title'),
+          }))
+        )
+
+      // ---- 01 列表：两态徽标 ----
+      await openSiderIfNeeded(page)
+      const badges = await badgeStates()
+      record('listBadges', badges)
+      await requireNoOverflow('会话列表')
+      const normal = badges.filter((item) => item.state === 'branch')
+      const missing = badges.filter((item) => item.state === 'source-missing')
+      // 三条会话里只有两条是分支出来的（父亲会话本身没有徽标）
+      if (normal.length !== 1 || missing.length !== 1) {
+        throw new Error(`徽标两态数量不对（branch ${normal.length} / missing ${missing.length}）：${JSON.stringify(badges)}`)
+      }
+      if (!normal.every((item) => item.text === '分支')) {
+        throw new Error(`正常态徽标文案不是「分支」：${JSON.stringify(normal)}`)
+      }
+      if (!missing.every((item) => item.text === '来源已不在本机')) {
+        throw new Error(`降级态徽标文案不是「来源已不在本机」：${JSON.stringify(missing)}`)
+      }
+      await shot('01-列表-来源徽标两态')
+
+      // ---- 02 节点分支：从第 2 轮回答处（消息列表第 4 条）分叉 ----
+      await openSession(page, BRANCH_PARENT_TITLE)
+      await page.locator('[data-testid="session-branch-from-message"]').nth(1).click()
+      const confirm = page.locator('[data-testid="session-branch-confirm"]')
+      await confirm.waitFor({ state: 'visible', timeout: 8000 })
+      const nodeConfirm = (await confirm.innerText()).replace(/\s+/gu, ' ').trim()
+      record('nodeConfirm', nodeConfirm)
+      if (!/之后的 2 条不会带入/u.test(nodeConfirm)) {
+        throw new Error(`节点分支确认文案没写清被丢弃的条数：${nodeConfirm}`)
+      }
+      const nameInput = page.locator('[data-testid="session-branch-name-input"]')
+      const defaultName = await nameInput.inputValue()
+      record('defaultName', defaultName)
+      if (defaultName !== BRANCH_CHILD_TITLE) {
+        throw new Error(`默认命名不是「${BRANCH_CHILD_TITLE}」：${defaultName}`)
+      }
+      await requireNoOverflow('节点分支确认弹层')
+      await shot('02-节点分支-确认弹层')
+
+      // ---- 03 当场改名 + 创建 → 新会话详情 ----
+      const renamed = '截图-分叉出来的新会话'
+      await nameInput.fill(renamed)
+      await page.locator('[data-testid="session-branch-create"]').click()
+      const openParent = page.locator('[data-testid="session-branch-open-parent"]')
+      await openParent.waitFor({ state: 'visible', timeout: 10000 })
+      await page.waitForTimeout(500)
+      const created = await page.evaluate(() => {
+        const badge = document.querySelector('[data-testid="session-branch-badge"]')
+        const title = document.querySelector('button[aria-label*="回到首条消息"] span')
+        return {
+          title: title === null ? null : (title.textContent ?? '').trim(),
+          badgeState: badge === null ? null : badge.getAttribute('data-branch-state'),
+          badgeText: badge === null ? null : (badge.textContent ?? '').trim(),
+        }
+      })
+      record('createdDetail', created)
+      await requireNoOverflow('新会话详情')
+      if (created.title !== renamed || created.badgeState !== 'branch') {
+        throw new Error(`新会话详情不对：${JSON.stringify(created)}`)
+      }
+      await shot('03-新会话详情-徽标与跳回父会话')
+
+      // ---- 04 点详情里的徽标真的回到父会话 ----
+      await openParent.click()
+      await page.waitForTimeout(700)
+      const jumped = await page.evaluate(() => {
+        const title = document.querySelector('button[aria-label*="回到首条消息"] span')
+        return title === null ? null : (title.textContent ?? '').trim()
+      })
+      record('jumpedBackTo', jumped)
+      if (jumped !== BRANCH_PARENT_TITLE) {
+        throw new Error(`点徽标没回到父会话，当前标题：${jumped}`)
+      }
+      await shot('04-点徽标跳回父会话')
+
+      // ---- 05 完整分支入口：列表「更多」→「从此会话分支」 ----
+      await openSiderIfNeeded(page)
+      await page.evaluate((title) => {
+        const leaf = Array.from(document.querySelectorAll('div')).find(
+          (node) => node.children.length === 0 && (node.textContent ?? '').trim() === title
+        )
+        if (leaf === undefined) {
+          throw new Error(`找不到会话行：${title}`)
+        }
+        let row = leaf
+        while (row !== null && row.querySelector('button[aria-label="更多"]') === null) {
+          row = row.parentElement
+        }
+        if (row === null) {
+          throw new Error('找不到该行的「更多」按钮')
+        }
+        row.querySelector('button[aria-label="更多"]').click()
+      }, BRANCH_PARENT_TITLE)
+      await page.getByRole('menuitem', { name: '从此会话分支' }).click()
+      await page.locator('[data-testid="session-branch-confirm"]').waitFor({ state: 'visible', timeout: 8000 })
+      const fullConfirm = (await page.locator('[data-testid="session-branch-confirm"]').innerText())
+        .replace(/\s+/gu, ' ')
+        .trim()
+      record('fullConfirm', fullConfirm)
+      if (!/6 条消息/u.test(fullConfirm)) {
+        throw new Error(`完整分支确认文案没写消息条数：${fullConfirm}`)
+      }
+      await requireNoOverflow('完整分支确认弹层')
+      await shot('05-完整分支-确认弹层')
+      await page.getByRole('button', { name: '取消', exact: true }).click()
     },
   },
 }

@@ -5,6 +5,7 @@ import {
   type FileEntry,
   type Fragment,
   type SearchResult,
+  type SessionBranchOf,
   type SessionFile,
   type SessionIndexEntry,
 } from './format.js'
@@ -249,8 +250,41 @@ export const readSessionIndex: Read<SessionIndexEntry[]> = list((value) => {
   }
 })
 
+const branchOf: Read<SessionBranchOf> = (value) => {
+  const item = record(value)
+  return {
+    session_id: sessionId(item.session_id),
+    message_id: nullable(string)(item.message_id),
+    created_at: time(item.created_at),
+  }
+}
+
+/**
+ * #831 分支来源是**可选**字段，而且坏了不许连累整条会话：
+ *  - 老归档没有它 → 正常导入（当作普通会话）；
+ *  - 有但形状不对 → 丢掉这一项，会话照常导入（与「单个内容片段不兼容」同一口径）。
+ *
+ * 为什么不像容器字段那样直接失败：`branch_of` 只影响列表徽标与「跳回父会话」，
+ * 把它当成致命错误等于「一个展示用字段坏了就丢整条会话」。而降级态本来就有：
+ * 父会话不在本机时徽标显示「来源已不在本机」，导入不会失败（#831 第 7 条）。
+ */
+const optionalBranchOf: Read<SessionBranchOf | undefined> = (value) => {
+  if (value === undefined) {
+    return undefined
+  }
+  try {
+    return branchOf(value)
+  } catch (error) {
+    if (error instanceof BackupError) {
+      return undefined
+    }
+    throw error
+  }
+}
+
 export const readSessionFile: Read<SessionFile> = (value) => {
   const item = record(value)
+  const origin = optionalBranchOf(item.branch_of)
   return {
     id: sessionId(item.id),
     title: nullable(string)(item.title),
@@ -259,5 +293,6 @@ export const readSessionFile: Read<SessionFile> = (value) => {
     inserted_at: time(item.inserted_at),
     updated_at: time(item.updated_at),
     messages: list(message)(item.messages),
+    ...(origin === undefined ? {} : { branch_of: origin }),
   }
 }

@@ -356,6 +356,23 @@ export const IconWarningOutline16 = () => (
   </svg>
 )
 
+export const IconBranchOutline16 = () => (
+  // #831：会话级分支的图标（两个节点连成一条分叉）。
+  // 只用直线 + 圆，不用 mask / defs：低内核（Chromium 83）与导出到静态 HTML 都没有差异。
+  <svg width={16} height={16} viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <path d="M4 5.3V10.7" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+    <path
+      d="M4 8h2.4c2 0 3.1 1 3.6 2.6"
+      stroke="currentColor"
+      strokeWidth="1.3"
+      strokeLinecap="round"
+    />
+    <circle cx="4" cy="3.4" r="1.9" stroke="currentColor" strokeWidth="1.3" />
+    <circle cx="4" cy="12.6" r="1.9" stroke="currentColor" strokeWidth="1.3" />
+    <circle cx="12" cy="12.6" r="1.9" stroke="currentColor" strokeWidth="1.3" />
+  </svg>
+)
+
 export const IconBrowseOutline16 = () => (
   <svg width={16} height={16} viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
     <path d="M11.2426 4.80473V6.10551H4.75819V4.80473H11.2426Z" fill="currentColor" />

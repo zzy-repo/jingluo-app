@@ -6,7 +6,7 @@
 //   VersionError: The requested version (12) is less than the existing version (13)
 //
 // 于是两个 L1 文件在建库那一步就中断（CI run 44723070855 / job 136243482814 真红，重跑仍红）。
-// 写死的版本号不是「一次笔误」，是同一个 bug 的复制品 —— 以后每次加 store 都要有人记得改两处。
+// 写死的版本号不是「一次笔误」，是同一个 bug 的复制品 —— 以后每次加 store / 索引都要有人记得改两处。
 // 所以这里定三件事：
 //
 //   1. **版本号与库名只有一个来源**：`src/services/chat/db.ts` 导出的 `DB_VERSION` / `DB_NAME`。
@@ -37,7 +37,7 @@ const chatDb = await loadTsModule('src/services/chat/db.ts')
 /** 应用库名（`chat-demo`），来自 `src/services/chat/db.ts` 的 `DB_NAME` —— 用例里不许再写字面量。 */
 export const DB_NAME = chatDb.DB_NAME
 
-/** 应用当前库版本（v13），来自 `src/services/chat/db.ts` 的 `DB_VERSION` —— 用例里不许再写字面量。 */
+/** 应用当前库版本（v15），来自 `src/services/chat/db.ts` 的 `DB_VERSION` —— 用例里不许再写字面量。 */
 export const DB_VERSION = chatDb.DB_VERSION
 
 /**

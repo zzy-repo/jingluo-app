@@ -1252,4 +1252,24 @@ export const zh = {
   sendBlockedNoCredentials:
     '还没有登录，也没有可用的模型渠道，这条消息没有发出：请先登录或选择模型渠道后再发送',
   sendBlockedPickProvider: '去选择渠道',
+  // #831 会话级分支（把历史会话分叉成一条独立的新会话；与消息级分支的 `BranchSwitcher` 不是同一件事）
+  // 入口文案：会话列表「更多」菜单 / 消息回答下方按钮
+  sessionBranchMenuOption: '从此会话分支',
+  sessionBranchFromMessage: '从此消息分支',
+  // 确认弹层
+  sessionBranchDialogTitle: '分支会话',
+  sessionBranchConfirmFull: '将整条会话（{count} 条消息）复制成一条新会话；之后的改动互不影响',
+  sessionBranchConfirmNode: '将从第 {kept} 条消息处分支，之后的 {dropped} 条不会带入',
+  sessionBranchAttachmentsNote: '附件按引用共享，不会复制文件本体',
+  sessionBranchNameLabel: '新会话名称',
+  sessionBranchCreate: '创建分支',
+  sessionBranchCreateFailed: '分支没有创建成功，请稍后重试',
+  // 默认命名后缀与列表 / 详情徽标
+  sessionBranchTitleSuffix: '（分支）',
+  sessionBranchBadge: '分支',
+  sessionBranchBadgeFrom: '分支自「{title}」',
+  sessionBranchSourceMissing: '来源已不在本机',
+  sessionBranchOpenParent: '回到来源会话',
+  // 附件降级（父会话被删 / 换设备导入后原件不在本机）：明说不可用，但不报错、不阻断对话
+  sessionBranchAttachmentMissing: '附件不可用：有 {count} 个附件在本机找不到原件，继续对话不受影响',
 } as const

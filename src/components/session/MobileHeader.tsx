@@ -1,4 +1,4 @@
-import { type KeyboardEvent, useCallback, useRef } from 'react'
+import { type KeyboardEvent, type ReactNode, useCallback, useRef } from 'react'
 import { IconMenuOutline20, IconNewChatOutline20 } from '../base/icons.js'
 import { useTranslate } from '../../i18n/index.js'
 import { newChat } from '../../services/chat/store.js'
@@ -14,7 +14,14 @@ import styles from './MobileHeader.module.css'
  * 消息**（键盘 Enter / 空格等价）。单击不绑定任何行为，所以双击不会连带触发单击逻辑；
  * 没有标题（欢迎页）时不渲染标题区，手势自然不生效。
  */
-export const MobileHeader = ({ title }: { title?: string }) => {
+export const MobileHeader = ({
+  title,
+  badge,
+}: {
+  title?: string
+  /** #831：会话来源徽标（分支会话才有）。放在标题右边，太挤时由 CSS 隐藏文字只留图标 */
+  badge?: ReactNode
+}) => {
   const t = useTranslate()
   const headerRef = useRef<HTMLDivElement>(null)
   const onTitleDoubleClick = useCallback(() => {
@@ -56,6 +63,7 @@ export const MobileHeader = ({ title }: { title?: string }) => {
               {t('scrollToFirstMessageHint')}
             </span>
           </button>
+          {badge === undefined ? null : <span className={styles.badgeSlot}>{badge}</span>}
           <IconButton
             size="xl"
             tone="primary"

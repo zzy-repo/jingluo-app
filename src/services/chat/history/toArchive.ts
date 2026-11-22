@@ -265,6 +265,17 @@ export const toSessionFile = (original: Session, exportImage: ExportImage): Sess
     inserted_at: iso(session.createdAt),
     updated_at: iso(session.updatedAt),
     messages,
+    // #831：会话级分支的来源必须随归档走（#307 / #390 往返契约）。
+    // 不是分支出来的会话**不写这个字段**（可选字段缺省 = 普通会话，与老包同形）。
+    ...(session.branchOf === undefined
+      ? {}
+      : {
+          branch_of: {
+            session_id: session.branchOf.sessionId,
+            message_id: session.branchOf.messageId === undefined ? null : session.branchOf.messageId,
+            created_at: iso(session.branchOf.createdAt),
+          },
+        }),
   }
 }
 

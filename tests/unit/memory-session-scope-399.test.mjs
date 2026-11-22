@@ -777,9 +777,23 @@ test('T8 DB 迁移不变量：v13 旧库升级后旧 store / 旧数据一条不�
     assert.ok(after.stores.includes(store), `旧 store ${store} 在升级后不见了`)
   }
 
-  // ④ 索引：旧索引不变，新 store 的索引就是 sessionId
+  // ④ 索引：**旧索引一个不少**，只允许新增下面这张表里登记过的新索引。
+  //
+  // 为什么不再写「一字不动」：v14 → v15（#831 会话级分支）在 `sessionSummaries` 上新增了
+  // `branchOf` 索引（`branchOf.sessionId`，列表按「来源父会话」查分支）。本用例守的是
+  // 「升级不许丢 / 不许改旧东西」，不是「schema 永远不长大」—— 所以新增索引必须在这里登记，
+  // 谁要给老 store 加索引就得改这张表（改的时候顺手看一眼会不会踩到旧数据）。
+  const ADDED_INDEXES = { sessionSummaries: ['branchOf'] }
   for (const store of before.stores) {
-    assert.deepEqual(after.indexes[store], before.indexes[store], `${store} 的索引被改动`)
+    const added = ADDED_INDEXES[store] ?? []
+    assert.deepEqual(
+      after.indexes[store].filter((name) => !added.includes(name)),
+      before.indexes[store].filter((name) => !added.includes(name)),
+      `${store} 的旧索引被改动`
+    )
+    for (const name of added) {
+      assert.ok(after.indexes[store].includes(name), `${store} 缺新增索引 ${name}`)
+    }
   }
   assert.deepEqual(after.indexes.sessionMemory, ['sessionId'])
 

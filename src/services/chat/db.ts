@@ -27,10 +27,22 @@ import { toSessionSummary, type Session, type SessionSummary } from './types.js'
  * 所以升级时**不从消息重建**：老用户升上来记忆是空的，第一次写记忆时才建条目。
  * 「旧 store / 旧数据一条不动」由 `tests/unit/memory-session-scope-399.test.mjs` 的 T7 钉住。
  *
+ * v14 → v15（#831 会话级分支）：只**新增**一个索引 —— `sessionSummaries` 上的 `branchOf`
+ * （keyPath `branchOf.sessionId`），让「从哪条会话分叉出来的」在列表层可查（徽标降级判定、
+ * 跳回父会话、以及将来的「本会话的分支」列表），不必把全部摘要读进内存再扫。
+ *
+ * 为什么**不**新建 store、也不回填旧记录：分支来源是会话记录上一个**可选字段**（`branchOf`，
+ * 见 `types.ts`），IndexedDB 是 schemaless 的 —— 老记录没有这个字段照样读得出来，只是不进这条索引
+ * （IndexedDB 对缺键的记录天然跳过索引项）。因此升级不搬家、不改写、不需要「补字段」这一步。
+ *
+ * 升级回调全程 `objectStoreNames.contains()` / `indexNames.contains()` 守卫（#209）：
+ * 同一个回调**重复执行**不会抛错（`createIndex` 重复建会抛 ConstraintError），
+ * v12 → v15 的跨版本升级也能一步到位 —— 由 `tests/unit/session-branch-831.test.mjs` 的 ⑦ 钉住。
+ *
  * **导出给测试用**（#547）：`tests/helpers/chat-db.mjs` 从这里取 `DB_VERSION` / `DB_NAME`，
  * L1 集成用例的 fixture 不再各写一份「12」「13」—— 版本号只有这一处来源，加 store 时改这里就够了。
  */
-export const DB_VERSION = 14
+export const DB_VERSION = 15
 
 /** IndexedDB 库名；只在这里出现一次，测试夹具同样从这里取（#547）。 */
 export const DB_NAME = 'chat-demo'
@@ -122,7 +134,8 @@ interface ChatDB extends DBSchema {
   sessionSummaries: {
     key: string
     value: StoredSessionSummary
-    indexes: { fileIds: string }
+    /** fileIds：删会话时判断原件是否还有主；branchOf：#831 按「来源父会话」查分支 */
+    indexes: { fileIds: string; branchOf: string }
   }
   /** 当前使用的文件原件 */
   files: { key: string; value: StoredFile }
@@ -205,6 +218,15 @@ export const upgradeChatDB = (
     : db.createObjectStore('sessionSummaries', { keyPath: 'id' })
   if (!summaries.indexNames.contains('fileIds')) {
     summaries.createIndex('fileIds', 'fileIds', { multiEntry: true })
+  }
+  /**
+   * #831 会话级分支（v14 → v15）：`branchOf.sessionId` 索引。
+   *
+   * 用 `indexNames.contains()` 守卫是**可重复执行**的前提（#209：不假设字段 / 索引存在）；
+   * 老记录没有 `branchOf` 字段 → 不进索引，读起来与升级前完全一样，不需要回填。
+   */
+  if (!summaries.indexNames.contains('branchOf')) {
+    summaries.createIndex('branchOf', 'branchOf.sessionId')
   }
   // 应用素材（聊天背景等）单独一个 store：只新增，不重建、不清空已有会话/原件
   if (!db.objectStoreNames.contains('appAssets')) {

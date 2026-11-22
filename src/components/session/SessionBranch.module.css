@@ -1,0 +1,145 @@
+/**
+ * #831 会话级分支的界面件：来源徽标 / 附件降级提示 / 分支确认弹层。
+ *
+ * 间距一律用 `margin`，不用 flex `gap`：
+ *   - Chromium 83（Android 11 出厂 WebView）没有 flex gap（#173），
+ *   - `check:gap` 门禁也要求每条非零 gap 都有兜底，新增的这几处没必要给自己找麻烦。
+ */
+
+/* ───────────────────────────── 来源徽标（列表 + 详情共用） ───────────────────────────── */
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  box-sizing: border-box;
+  max-width: 160px;
+  height: 18px;
+  margin-left: 6px;
+  padding: 0 6px;
+  border-radius: 6px;
+  background-color: var(--dsw-specific-sidebar-nav-item-hover);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 11px;
+  line-height: 18px;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.badgeIcon {
+  display: inline-flex;
+  flex-shrink: 0;
+  margin-right: 3px;
+}
+
+.badgeText {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* 降级态（来源已不在本机）：虚线边框 —— 与实心的正常徽标区分开，但不做成错误红 */
+.badgeMissing {
+  border: 1px dashed var(--dsw-alias-border-l2);
+  background-color: transparent;
+  color: var(--dsw-alias-label-secondary);
+}
+
+/* 可点的徽标（详情页「回到来源会话」）：视觉上仍是徽标，语义上是按钮 */
+.badgeButton {
+  display: inline-flex;
+  align-items: center;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  color: inherit;
+  font: inherit;
+
+  &:active {
+    opacity: 0.7;
+  }
+}
+
+.badgeButton .badge {
+  margin-left: 8px;
+}
+
+/* ───────────────────────────── 附件降级提示（会话级，一条） ───────────────────────────── */
+
+.attachmentNotice {
+  display: flex;
+  align-items: center;
+  box-sizing: border-box;
+  margin: 0 0 8px;
+  padding: 6px 10px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 10px;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.attachmentNoticeIcon {
+  display: inline-flex;
+  flex-shrink: 0;
+  margin-right: 6px;
+}
+
+/* ───────────────────────────── 分支确认弹层 ───────────────────────────── */
+
+.dialogBody {
+  box-sizing: border-box;
+}
+
+.confirm {
+  margin: 0 0 12px;
+  color: var(--dsw-alias-label-primary);
+  font-size: 14px;
+  line-height: 22px;
+}
+
+.note {
+  margin: 0 0 12px;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.fieldLabel {
+  display: block;
+  margin: 0 0 6px;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.nameInput {
+  box-sizing: border-box;
+  width: 100%;
+  height: 40px;
+  padding: 0 10px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 10px;
+  background-color: var(--dsw-specific-input-major);
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  font-size: 14px;
+  outline: none;
+
+  &:focus {
+    border-color: var(--dsw-alias-brand-primary);
+  }
+}
+
+@media not all and (min-width: 768px) {
+  .nameInput {
+    height: 44px;
+    padding: 0 12px;
+    font-size: 16px;
+  }
+
+  .badge {
+    max-width: 120px;
+  }
+}

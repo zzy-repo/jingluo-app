@@ -12,6 +12,7 @@ import {
 import { SearchPanel } from '../components/search/SearchPanel.js'
 import { closeSearchPanel } from '../components/search/searchPanelState.js'
 import { SessionView } from '../components/session/SessionView.js'
+import { SessionBranchDialog } from '../components/session/SessionBranchDialog.js'
 import { MobileHeader } from '../components/session/MobileHeader.js'
 import { Welcome } from '../components/session/Welcome.js'
 import { ensureApiKey } from '../components/settings/settingsDialogState.js'
@@ -178,6 +179,8 @@ export const App = () => {
         <SearchPanel />
       </div>
       <SettingsDialog />
+      {/* #831 会话级分支的确认弹层：两个入口（列表「更多」/ 回答下方）共用这一份 */}
+      <SessionBranchDialog />
       <Toast />
     </>
   )
