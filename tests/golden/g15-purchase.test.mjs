@@ -2,7 +2,7 @@
 //
 // 黄金回归 · 域「支付 / 购买」（C 线，#567；设计定调见 #404；**替代已随 W1-D 删掉的 `g07-quota-purchase`**）：
 //
-//   打开「账户与消费」→ 套餐列表 → 下单（`/api/pay-link`）→ 回跳 → 拿到卡密 → 一键复制
+//   打开「账户与消费」→ 购买入口 → 下单（新网关 `/api/v1/pay-link`，#861）→ 回跳 → 拿到卡密 → 一键复制
 //
 // 为什么只有这一段：黄金层是「用户主路径还在不在」的哨兵，不是分支矩阵。购买域的分支细节
 // （套餐空表 / 通道不可用 / 重试按钮 / 兑换四态 / 支付记录时间线）分别在 L0
@@ -15,7 +15,7 @@
 //   ③ 没有走已下线的 `/buy` 建单链路（`/buy` 请求数 = 0，#331 之后那条路整条删掉了）；
 //   ④ 额度显示来源是 **sub2api**：`spent = usage.total.actual_cost`，**不是**本地账本
 //      （断言没有读邀请服务的 `remaining_points`）；
-//   ⑤ 支付侧走 **apia**：`/api/plans` 与 `/api/pay-link` 各 ≥1 次；**sub2api 不参与下单**。
+//   ⑤ 收款页地址走新网关 `GET /api/v1/pay-link`（#861，`/api/plans` 已下线、请求数 = 0）；卡密订单仍在 apia。
 //
 // 后端全桩、且**一个真请求都不发**：`window.Capacitor` 换成一层原生桥替身（与 G5/G11 同一手法），
 // 所有取数都经 `CapacitorHttp.request` 落到本文件的 route 表上 —— apia（套餐 / 收款页 / 订单）与
@@ -39,9 +39,8 @@ const API_KEY = 'sk-golden-g15-000000000000000015'
 /** 卡密：后 4 位用于「列表只露尾」，全文只允许出现在剪贴板里 */
 const CARD_NO = 'CARD-GOLD-0000-0000-WXYZ'
 const CARD_TAIL = '••••WXYZ'
-/** 套餐（金额单位是「元」，apia 下发的值，客户端不硬编码） */
+/** 订单上的套餐名（只用于卡密订单的展示字段） */
 const PLAN_NAME = '月卡'
-const PLAN_PRICE = '¥39.00'
 /** 额度：`usage.total.actual_cost` 才是「已用」；`quota.used` 实测恒为 0，用它就会显示 ¥0.00 */
 const ACTUAL_COST = 12.34
 const QUOTA_USED_DECOY = 0
@@ -106,18 +105,6 @@ const purchaseBridgeStub = ({ cardNo, planName, actualCost, quotaUsed, balance }
     state.calls.push({ method, host: url.host, path: url.pathname })
     // ── 支付侧（apia）：套餐 / 收款页 / 订单 ──────────────────────────────
     if (url.host === 'apia.ecsafe.cn') {
-      if (url.pathname === '/api/plans') {
-        return json(200, {
-          plans: [
-            { id: 'g15-month', name: planName, price: 39, points: 3900, currency: 'CNY', enabled: true },
-          ],
-        })
-      }
-      if (url.pathname === '/api/pay-link') {
-        // 取到收款页地址 = 这一单已经交给小铺；之后卡密会挂到订单上
-        state.paid = true
-        return json(200, { ok: true, url: 'https://pay.example.com/g15', note: '' })
-      }
       if (url.pathname === '/api/orders') {
         // 付款前没有卡密（空列表 = 正常态），付款后同一条订单带上卡密
         return json(200, {
@@ -133,6 +120,12 @@ const purchaseBridgeStub = ({ cardNo, planName, actualCost, quotaUsed, balance }
         return json(200, { api_key: '…0015', valid: true })
       }
       return json(404, { code: 'not_found', message: `no route ${url.pathname}` })
+    }
+    // ── 新网关（#861）：收款页地址 `GET {consume.baseUrl}/api/v1/pay-link`（无需登录）──────
+    if (url.pathname.endsWith('/api/v1/pay-link')) {
+      // 取到收款页地址 = 这一单已经交给小铺；之后卡密会挂到订单上
+      state.paid = true
+      return json(200, { ok: true, url: 'https://pay.example.com/g15', note: '' })
     }
     // ── 消费侧（sub2api）：额度 ────────────────────────────────────────────
     if (url.pathname === '/v1/usage') {
@@ -240,25 +233,20 @@ test('G15 支付 / 购买：套餐 → 下单（pay-link）→ 回跳 → 卡密
           ctx.abort('「账户与消费」页打开', '四个 tab 都在', bodyEvidence(await bodyText(page)))
         }
 
-        // ── 2. 套餐列表：apia 下发的套餐渲染出来（价格由服务端定，界面不硬编码）──────
-        ctx.begin('套餐列表')
+        // ── 2. 购买入口：#861 起套餐接口已下线，购买 tab 只剩「前往购买」──────────────
+        ctx.begin('购买入口')
         await page.getByTestId('account-consume-tab-buy').click()
-        const planRow = page.getByTestId('account-consume-buy-plan').first()
-        if (!(await waitFor(page, async () => (await planRow.count()) > 0))) {
-          ctx.abort('购买 tab 有套餐列表', `1 条套餐（${PLAN_NAME}）`, bodyEvidence(await page.getByTestId('account-consume-page').innerText()))
+        const buyOpen = page.getByTestId('account-consume-buy-open').first()
+        if (!(await waitFor(page, async () => (await buyOpen.count()) > 0))) {
+          ctx.abort('购买 tab 有购买入口', '「前往购买」按钮', bodyEvidence(await page.getByTestId('account-consume-page').innerText()))
         }
-        const planText = (await planRow.innerText()).replace(/\s+/gu, ' ').trim()
-        ctx.expect('套餐名与价格都来自 apia（不是客户端兜底的空表）', planText.includes(PLAN_NAME) && planText.includes(PLAN_PRICE), {
-          expected: `${PLAN_NAME} ${PLAN_PRICE}`,
-          actual: brief(planText),
-        })
 
-        // ── 3. 下单：点「去支付」→ 取收款页地址（/api/pay-link）→ 收款页被打开 ───────
+        // ── 3. 下单：点「去支付」→ 取收款页地址（/api/v1/pay-link）→ 收款页被打开 ───────
         ctx.begin('下单（pay-link）')
         await page.getByTestId('account-consume-buy-open').first().click()
         const paid = await waitFor(page, () => page.evaluate(() => window.__goldenPurchase.paid === true))
         if (!paid) {
-          ctx.abort('点「去支付」后现取收款页地址', 'GET /api/pay-link ≥1 次', bodyEvidence(await page.getByTestId('account-consume-page').innerText()))
+          ctx.abort('点「去支付」后现取收款页地址', 'GET /api/v1/pay-link ≥1 次', bodyEvidence(await page.getByTestId('account-consume-page').innerText()))
         }
         // 收款页的打开是**后置条件**：监听先挂上、再 open（`openPayLinkInApp` 的顺序保证），
         // 所以等到这两件事都发生再断言「真的在 App 内打开了」，而不是只看到 pay-link 就往下走。
@@ -319,29 +307,24 @@ test('G15 支付 / 购买：套餐 → 下单（pay-link）→ 回跳 → 卡密
         /** 已下线的建单链路（#331 删掉了 cid / order_token 那一套）：`/buy` 与它下面的任何路径 */
         const isBuyChain = (entry) => /^\/buy(\/|$)/u.test(entry.path)
         /** 下单两条命令（套餐 / 收款页）：只许出现在 apia 上 */
-        const isOrderCommand = (entry) => entry.path === '/api/plans' || entry.path === '/api/pay-link'
+        const isPayLink = (entry) => entry.path.endsWith('/api/v1/pay-link')
 
         ctx.expect('没有走已下线的 /buy 建单链路（请求数为 0）', countCalls(calls, isBuyChain) === 0, {
           expected: '/buy 请求数 = 0',
           actual: `${countCalls(calls, isBuyChain)} 次（${brief(paths, 200)}）`,
         })
-        ctx.expect('套餐来自 apia：GET /api/plans ≥1 次', countCalls(calls, onApia('/api/plans')) >= 1, {
-          expected: '≥1 次',
-          actual: `${countCalls(calls, onApia('/api/plans'))} 次（${brief(paths, 200)}）`,
+        ctx.expect('不再请求已下线的 /api/plans 与旧 apia 的 /api/pay-link（请求数为 0）', countCalls(calls, (entry) => entry.path === '/api/plans' || onApia('/api/pay-link')(entry)) === 0, {
+          expected: '0 次',
+          actual: brief(paths, 200),
         })
-        ctx.expect('下单来自 apia：GET /api/pay-link ≥1 次', countCalls(calls, onApia('/api/pay-link')) >= 1, {
+        ctx.expect('下单来自新网关：GET /api/v1/pay-link ≥1 次', countCalls(calls, isPayLink) >= 1, {
           expected: '≥1 次',
-          actual: `${countCalls(calls, onApia('/api/pay-link'))} 次（${brief(paths, 200)}）`,
+          actual: `${countCalls(calls, isPayLink)} 次（${brief(paths, 200)}）`,
         })
         ctx.expect('卡密来自 apia 的订单接口：GET /api/orders ≥1 次', countCalls(calls, onApia('/api/orders')) >= 1, {
           expected: '≥1 次',
           actual: `${countCalls(calls, onApia('/api/orders'))} 次（${brief(paths, 200)}）`,
         })
-        ctx.expect(
-          'sub2api 不参与下单（plans / pay-link 一次都没打到它）',
-          countCalls(calls, (entry) => entry.host !== 'apia.ecsafe.cn' && isOrderCommand(entry)) === 0,
-          { expected: '非 apia 主机上 0 次 plans/pay-link', actual: brief(paths, 200) }
-        )
         ctx.expect(
           '额度不是本地账本：没读邀请服务的 /me（remaining_points 那条老路）',
           countCalls(calls, (entry) => entry.path === '/me') === 0,
