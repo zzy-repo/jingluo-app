@@ -895,7 +895,6 @@ export const en = {
   // #797: confirm password on sign-up + show/hide password toggles
   settingsAuthConfirmPlaceholder: 'Re-enter your password',
   // #819: optional invitation code on sign-up (only when settings/public says invitation_code_enabled)
-  settingsAuthInvitePlaceholder: 'Invitation code (optional)',
   /** The two entries differ (client-side check only — never sent to the server; blocked before submit) */
   settingsAuthPasswordMismatch: 'The two passwords do not match',
   /** Eye button accessible name — it names the action: hidden now → "Show password" */
