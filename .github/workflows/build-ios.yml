@@ -1,0 +1,89 @@
+name: Build iOS
+
+# iOS 平台编译验证（Issue #873）
+# 目的：验证 Capacitor iOS 工程能正常编译，不要求签名、不要求上传产物
+# 触发时机：PR / main 分支提交 / 手动触发
+
+on:
+  pull_request:
+    paths:
+      - 'ios/**'
+      - 'src/**'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - 'capacitor.config.ts'
+      - '.github/workflows/build-ios.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'ios/**'
+      - 'src/**'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - 'capacitor.config.ts'
+      - '.github/workflows/build-ios.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+concurrency:
+  group: build-ios-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: 编译 iOS App（simulator / Debug）
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+          run_install: false
+
+      - name: Setup Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build Web assets
+        run: pnpm build
+
+      - name: Sync Capacitor iOS
+        run: pnpm exec cap sync ios
+
+      - name: Build iOS for simulator
+        working-directory: ios/App
+        run: |
+          set -euo pipefail
+          xcodebuild \
+            -scheme App \
+            -sdk iphonesimulator \
+            -configuration Debug \
+            -destination 'platform=iOS Simulator,name=iPhone 15' \
+            build \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO
+
+      - name: Verify build artifacts
+        run: |
+          set -euo pipefail
+          if [[ ! -d "ios/App/build/Build/Products/Debug-iphonesimulator/App.app" ]]; then
+            echo "::error::App.app 未生成，编译可能失败"
+            exit 1
+          fi
+          echo "✓ App.app 存在，编译成功"
