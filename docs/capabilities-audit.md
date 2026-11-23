@@ -85,17 +85,17 @@ lane 的 PR 都替别人还没修完的缺陷变红、互相卡死；而缺陷�
 
 | Issue | 类别 | 事项 | 状态 |
 | --- | --- | --- | --- |
-| [#210](https://github.com/zzy-repo/deepseek-app/issues/210) | 3 | 诊断采集层无条件替换 `window.fetch`，CapacitorHttp 接管后采集与流式同时失真 | OPEN |
-| [#211](https://github.com/zzy-repo/deepseek-app/issues/211) | 3 | `readBytesOf` 靠 `Number('') === 0` 巧合避开 `clone().text()`，bytes 恒为 0 且兜底分支阻塞流式响应 | OPEN |
-| [#213](https://github.com/zzy-repo/deepseek-app/issues/213) | 2 | `:has()` 16 处无兜底（实测已 0 处） | CLOSED |
-| [#214](https://github.com/zzy-repo/deepseek-app/issues/214) | 2 | `MessageFile` 用 `@container` + `container-type` 按宽度隐藏失败原因，83 上整块丢弃 | OPEN |
-| [#215](https://github.com/zzy-repo/deepseek-app/issues/215) | 2 | `:focus-visible` 13 处没有 `:focus` 回退，键盘焦点环完全不可见 | OPEN |
-| [#216](https://github.com/zzy-repo/deepseek-app/issues/216) | 2 | `MessageList` 依赖 `scrollbar-gutter` 稳定滚动条槽，83 不支持导致横向跳动 | CLOSED（`check:gutter` 缺兜底 0） |
-| [#217](https://github.com/zzy-repo/deepseek-app/issues/217) | 2 | flex `gap` 兜底守卫有盲区：非 module 的 `markdown.css`、`flex-wrap` 容器不在 `check:gap` 范围 | CLOSED（口径已统一为 44 / 37 / 111 / 3） |
-| [#218](https://github.com/zzy-repo/deepseek-app/issues/218) | 2 | `findScrollableAncestor` 把「声明了 `overflow:auto`」当成「能滚」，只读声明值无实测回读 | CLOSED |
-| [#219](https://github.com/zzy-repo/deepseek-app/issues/219) | 1 | `src/index.html` 启动守卫假设 `Intl.DisplayNames` 必须存在，缺失时启动被拦死 | CLOSED |
-| [#220](https://github.com/zzy-repo/deepseek-app/issues/220) | 1 | 诊断能力探测跑在入口 polyfill 之后，`Object.hasOwn` / `toSorted` / `at` 探针恒为 `true` | CLOSED |
-| [#221](https://github.com/zzy-repo/deepseek-app/issues/221) | 1 | `src/polyfills/legacy.ts` 注释假设原生 `String.prototype.at` 按 code point 取值（实测按码元） | CLOSED |
+| [#210](https://github.com/zzy-repo/jingluo-app/issues/210) | 3 | 诊断采集层无条件替换 `window.fetch`，CapacitorHttp 接管后采集与流式同时失真 | OPEN |
+| [#211](https://github.com/zzy-repo/jingluo-app/issues/211) | 3 | `readBytesOf` 靠 `Number('') === 0` 巧合避开 `clone().text()`，bytes 恒为 0 且兜底分支阻塞流式响应 | OPEN |
+| [#213](https://github.com/zzy-repo/jingluo-app/issues/213) | 2 | `:has()` 16 处无兜底（实测已 0 处） | CLOSED |
+| [#214](https://github.com/zzy-repo/jingluo-app/issues/214) | 2 | `MessageFile` 用 `@container` + `container-type` 按宽度隐藏失败原因，83 上整块丢弃 | OPEN |
+| [#215](https://github.com/zzy-repo/jingluo-app/issues/215) | 2 | `:focus-visible` 13 处没有 `:focus` 回退，键盘焦点环完全不可见 | OPEN |
+| [#216](https://github.com/zzy-repo/jingluo-app/issues/216) | 2 | `MessageList` 依赖 `scrollbar-gutter` 稳定滚动条槽，83 不支持导致横向跳动 | CLOSED（`check:gutter` 缺兜底 0） |
+| [#217](https://github.com/zzy-repo/jingluo-app/issues/217) | 2 | flex `gap` 兜底守卫有盲区：非 module 的 `markdown.css`、`flex-wrap` 容器不在 `check:gap` 范围 | CLOSED（口径已统一为 44 / 37 / 111 / 3） |
+| [#218](https://github.com/zzy-repo/jingluo-app/issues/218) | 2 | `findScrollableAncestor` 把「声明了 `overflow:auto`」当成「能滚」，只读声明值无实测回读 | CLOSED |
+| [#219](https://github.com/zzy-repo/jingluo-app/issues/219) | 1 | `src/index.html` 启动守卫假设 `Intl.DisplayNames` 必须存在，缺失时启动被拦死 | CLOSED |
+| [#220](https://github.com/zzy-repo/jingluo-app/issues/220) | 1 | 诊断能力探测跑在入口 polyfill 之后，`Object.hasOwn` / `toSorted` / `at` 探针恒为 `true` | CLOSED |
+| [#221](https://github.com/zzy-repo/jingluo-app/issues/221) | 1 | `src/polyfills/legacy.ts` 注释假设原生 `String.prototype.at` 按 code point 取值（实测按码元） | CLOSED |
 
 合计 11 条：**7 条 closed、4 条 open**（#210 #211 #214 #215）。
 

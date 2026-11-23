@@ -1,6 +1,6 @@
 # #676 契约逐节核对表（客户端侧）
 
-> 对象：`zzy-repo/deepseek-app` 的客户端（`src/**`）
+> 对象：`zzy-repo/jingluo-app` 的客户端（`src/**`）
 > 依据：issue **#676**《[契约] 邮箱注册改造：客户端需对接的全部外部接口》（八节）+ #651 的「发版铁律」前置门第 1 条
 > 核对日期：2026-11-21｜基线：`origin/main@8d87347`
 > 服务端实例：`http://140.210.13.146:16000`（staging，`sub2api_staging`，`settings/public.version = 0.2.20`）

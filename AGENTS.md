@@ -5,7 +5,7 @@
 ## 必读
 
 - Issue 规范：[`docs/ISSUE-STANDARD.md`](docs/ISSUE-STANDARD.md)
-- 协作流程（认领 / 分支 / 验收）：[`docs/CONTRIBUTING-ISSUES.md`](https://github.com/zzy-repo/deepseek-app/blob/test/429-error-mapping/docs/CONTRIBUTING-ISSUES.md)
+- 协作流程（认领 / 分支 / 验收）：[`docs/CONTRIBUTING-ISSUES.md`](https://github.com/zzy-repo/jingluo-app/blob/test/429-error-mapping/docs/CONTRIBUTING-ISSUES.md)
 
 ## 三条硬规则
 

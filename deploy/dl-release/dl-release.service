@@ -1,6 +1,6 @@
 [Unit]
 Description=dl-release — APK 发布接口 (dl.rose7.cn/api/v1/release)
-Documentation=https://github.com/zzy-repo/deepseek-app/blob/main/docs/dl-release-api.md
+Documentation=https://github.com/zzy-repo/jingluo-app/blob/main/docs/dl-release-api.md
 After=network-online.target
 Wants=network-online.target
 

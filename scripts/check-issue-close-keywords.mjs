@@ -159,7 +159,7 @@ const SELF_TEST_CASES = [
   { body: 'CLOSES: #362', want: [362] },
   { body: 'fixes #362, resolves #362', want: [362, 362] },
   { body: 'Fixes octo-org/octo-repo#100', want: [100] },
-  { body: 'Resolves https://github.com/zzy-repo/deepseek-app/issues/362', want: [362] },
+  { body: 'Resolves https://github.com/zzy-repo/jingluo-app/issues/362', want: [362] },
   { body: 'Refs #362', want: [] },
   { body: '这个 PR 关闭了 #362 的一部分', want: [] },
   // 模板里的提醒写成 #N（不是数字）→ 不该命中

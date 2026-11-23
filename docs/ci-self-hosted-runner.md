@@ -28,7 +28,7 @@
 
 | 事实 | 值 | 怎么核的 |
 | --- | --- | --- |
-| 仓库可见性 | **private** | `gh api repos/zzy-repo/deepseek-app --jq .private` → `true` |
+| 仓库可见性 | **private** | `gh api repos/zzy-repo/jingluo-app --jq .private` → `true` |
 | 单次 run 的 job 数 | **9** | `checks` ×1 + `golden` ×1 + `integration` ×6（分片 1/6…6/6）+ `flaky-cross-runner` ×1 |
 | 单次 run 的 runner-分钟 | **≈24** | 按 P0 报告的实测口径（9 job × 约 2.7 分钟均值） |
 | 当日 run 次数 | **100+** | 见 #651 P0 报告 |
@@ -115,7 +115,7 @@ tar xzf "${TARBALL}"
 
 ```bash
 # 需要对该仓库有 admin 权限（你自己的 PAT/gh 登录即可）
-gh api -X POST repos/zzy-repo/deepseek-app/actions/runners/registration-token --jq .token
+gh api -X POST repos/zzy-repo/jingluo-app/actions/runners/registration-token --jq .token
 ```
 
 落地时**只放进当前 shell 的环境变量**，不进命令行参数（argv 会出现在 `ps` 和历史里）：
@@ -123,7 +123,7 @@ gh api -X POST repos/zzy-repo/deepseek-app/actions/runners/registration-token --
 ```bash
 read -rsp "registration token: " TOKEN; echo          # 交互式读入，不回显
 ./config.sh --unattended \
-  --url https://github.com/zzy-repo/deepseek-app \
+  --url https://github.com/zzy-repo/jingluo-app \
   --token "$TOKEN" \
   --name aliyun-dl-release \
   --labels dl-release \
@@ -298,7 +298,7 @@ journalctl -u actions-runner -n 30 --no-pager
 
 ```bash
 # 先确认空闲：busy=false
-gh api repos/zzy-repo/deepseek-app/actions/runners \
+gh api repos/zzy-repo/jingluo-app/actions/runners \
   --jq '.runners[] | {name,status,busy}'
 
 # 看占用
@@ -312,7 +312,7 @@ find /var/lib/actions-runner/_work -mindepth 1 -maxdepth 1 -exec rm -rf {} +
 
 ```bash
 # 定期跑；status 应为 online
-gh api repos/zzy-repo/deepseek-app/actions/runners \
+gh api repos/zzy-repo/jingluo-app/actions/runners \
   --jq '.runners[] | select(.name=="aliyun-dl-release") | "\(.name) status=\(.status) busy=\(.busy)"'
 ```
 
@@ -337,7 +337,7 @@ gh api repos/zzy-repo/deepseek-app/actions/runners \
 
 ```bash
 # 列出失败/未启动的 run（按时间倒序），先看清单再决定重跑哪些
-gh run list --repo zzy-repo/deepseek-app --workflow=ci.yml --limit 100 \
+gh run list --repo zzy-repo/jingluo-app --workflow=ci.yml --limit 100 \
   --json databaseId,conclusion,headSha,createdAt,displayTitle \
   --jq '.[] | select(.conclusion=="failure") | "\(.databaseId)\t\(.createdAt)\t\(.headSha[0:7])\t\(.displayTitle)"'
 

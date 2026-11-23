@@ -269,7 +269,7 @@ git push origin v$V
 
 - 成功判据：`git ls-remote --tags origin v$V` 能看到这个 tag（不依赖本地缓存）。
 - 失败回滚：**只删刚推上去的、没被发布过的 tag**：`git push --delete origin v$V && git tag -d v$V`；
-  若 Release 已经建出来了，先 `gh release delete v$V --repo zzy-repo/deepseek-app --yes` 再删 tag。
+  若 Release 已经建出来了，先 `gh release delete v$V --repo zzy-repo/jingluo-app --yes` 再删 tag。
   **绝不把已存在的 tag 强推到别的 commit**（`-f` 会让已下载过的人拿到不一致的内容）。
 
 #### D2. 发 GitHub Release（正式渠道，二选一）
@@ -279,7 +279,7 @@ git push origin v$V
 ```bash
 sha256sum $APK                              # 记下来，写进 Release 正文
 gh release create v$V $APK \
-  --repo zzy-repo/deepseek-app --title v$V \
+  --repo zzy-repo/jingluo-app --title v$V \
   --notes-file /tmp/notes-$V.md            # 正文含 version / versionCode / commit / sha256
 ```
 
@@ -293,7 +293,7 @@ gh run list --workflow release.yml --limit 3     # 手动触发的那一条
 两端都看：
 
 ```bash
-gh release view v$V --repo zzy-repo/deepseek-app
+gh release view v$V --repo zzy-repo/jingluo-app
 ```
 
 - 成功判据：`release.yml` 这次的 run 是 `success`；`gh release view` 显示 tag `v$V` 且带一个 `.apk` 资产
@@ -517,7 +517,7 @@ node scripts/release-upload.mjs --apk $APK --dry-run
 | C `401 UNAUTHORIZED` | 令牌错/被撤销 | 按 §4 换令牌 | 不要重复试同一枚 |
 | C 成功但包是错的 | 内容不对 / 变体错 | dl 侧是 **append-only**：**不能删**。发一个 `versionCode` 更大的修复版本（走 A→E）覆盖 `latest`，必要时找 ECS 维护者把记录标 `breaking` | 已经下载到的用户只能靠新版本修 |
 | D tag 推错 commit（CI 还没建 Release） | `release.yml` 失败 | `git push --delete origin v$V && git tag -d v$V`，改完重打 | tag 还没「出厂」，可以删 |
-| D Release 已建但版本有问题 | 用户能下到坏包 | **先** `gh release delete v$V --repo zzy-repo/deepseek-app --yes`，**再**删 tag | 顺序反了会留下指向 404 的 Release |
+| D Release 已建但版本有问题 | 用户能下到坏包 | **先** `gh release delete v$V --repo zzy-repo/jingluo-app --yes`，**再**删 tag | 顺序反了会留下指向 404 的 Release |
 | E `release:verify` FAIL | 记录缺失 / hash 不一致 | 不许宣布完成；按上一条撤 Release + tag；找 ECS 维护者处理线上文件 | 线上文件与记录不一致时，是服务端要修数据 |
 | E 烟测装不上/白屏 | 覆盖安装失败、启动白屏 | 撤 tag + Release，`releases.json` 的 `latest` 需要回退到上一版（需 ECS 权限） | 这是唯一需要动服务端的状态 |
 

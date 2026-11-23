@@ -513,7 +513,7 @@ gh release view "$TAG" --json tagName,isDraft,isPrerelease,targetCommitish \
 ### 6.6 发布后核对（公网侧）
 
 ```bash
-REPO=zzy-repo/deepseek-app
+REPO=zzy-repo/jingluo-app
 curl -fL -o /tmp/pub.apk "https://github.com/$REPO/releases/download/v1.4.4-staging/jingluo-chat-1.4.4-staging.apk"
 sha256sum /tmp/pub.apk | awk '{print $1}'      # 必须等于 $SHA256
 stat -c%s /tmp/pub.apk                          # 必须等于 $SIZE

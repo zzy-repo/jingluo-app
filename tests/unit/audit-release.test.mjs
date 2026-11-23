@@ -79,7 +79,7 @@ function makeFakeApk(name = 'deepseek-chat-1.4.8.apk') {
 function stubTraceability({ ancestor = true, commonAncestor = null } = {}) {
   return {
     MAIN_REF: 'origin/main',
-    deriveRepo: () => ({ repo: 'zzy-repo/deepseek-app', source: 'stub:origin' }),
+    deriveRepo: () => ({ repo: 'zzy-repo/jingluo-app', source: 'stub:origin' }),
     resolveTagCommit: (tag) => ({ commit: FAKE_COMMIT, objectType: 'commit', objectSha: FAKE_COMMIT, tag }),
     ancestry: () => ({ ancestor, commonAncestor }),
   };

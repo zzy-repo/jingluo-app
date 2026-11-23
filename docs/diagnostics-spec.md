@@ -1,6 +1,6 @@
 # 诊断日志规范：一条合格日志的最小字段集
 
-> 母单 [#301](https://github.com/zzy-repo/deepseek-app/issues/301)。本文只写**判据与字段契约**，
+> 母单 [#301](https://github.com/zzy-repo/jingluo-app/issues/301)。本文只写**判据与字段契约**，
 > 不重复采集层实现细节（那是 `src/services/diagnostics/` 的注释与 `docs/diagnostics-coverage-audit.md` 的活）。
 >
 > 判据只有一条：**一条日志能不能回答「发生了什么 / 在哪一步 / 怎么办」**。答不上就是不够细。

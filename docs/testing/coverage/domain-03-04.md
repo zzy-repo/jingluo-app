@@ -22,7 +22,7 @@ Issue: #362（[TRACK] 功能点收集与分层测试覆盖盘点）
 
 | 项 | 值 |
 | --- | --- |
-| 仓库 / 工作区 | `zzy-repo/deepseek-app`，工作区 `issue-336` |
+| 仓库 / 工作区 | `zzy-repo/jingluo-app`，工作区 `issue-336` |
 | 分支 / 提交 | `ci/wire-manifest-log-gates` @ `3de42e3`（2026-11-19 盘点） |
 | 测试文件存量 | unit 116 / integration 35 / e2e 2 / device 1 / regression 12 / adversarial 1 |
 | 统一入口 | `node tests/run-layer.mjs <unit\|integration\|e2e\|device\|all>` |

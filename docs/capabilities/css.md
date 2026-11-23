@@ -253,13 +253,13 @@
 
 | 单号 | 特性 / 形态 | 命中 | 风险 | 一句话 |
 | --- | --- | --- | --- | --- |
-| [#213](https://github.com/zzy-repo/deepseek-app/issues/213) | `:has()` | 16 | 中 | 低内核上整条选择器列表被丢，标题与列表间距退回默认值 |
-| [#214](https://github.com/zzy-repo/deepseek-app/issues/214) | `@container` + `container-type` | 2 | 中 | 已修：容器查询整块被丢，窄缩略图上仍渲染两行失败原因；判据换成自定义属性 `--message-file-reason-display`，`src` 里容器查询归零 |
-| [#215](https://github.com/zzy-repo/deepseek-app/issues/215) | `:focus-visible` | 13 | 中 | 已修：每处补 `:focus` 兜底 + `:focus:not(:focus-visible)` 收回，`check:focus` 守住不回流 |
-| [#216](https://github.com/zzy-repo/deepseek-app/issues/216) | `scrollbar-gutter` | 2 | 中 | 声明被丢，滚动条出现/消失瞬间消息列表横向跳动 |
-| [#236](https://github.com/zzy-repo/deepseek-app/issues/236) | `scrollbar-gutter`（#216 的 follow-up） | 1 | 中 | 窄屏滚动容器 `.scroll` 换手后没继承 #216 的兜底，classic 滚动条出现时仍跳 15px |
-| [#217](https://github.com/zzy-repo/deepseek-app/issues/217) | flex `gap` 兜底覆盖面 | 2 | 中 | 已修：`check:gap` 扫全部 `.css`，`flex-wrap` 排除规则改为「不换行才排除」 |
-| [#218](https://github.com/zzy-repo/deepseek-app/issues/218) | `getComputedStyle` 声明回读 | 1 | **高** | 已修：`viewport.ts:55` 补实测回读，复算 `falsePositives` 归零（§3 的第 1 条） |
+| [#213](https://github.com/zzy-repo/jingluo-app/issues/213) | `:has()` | 16 | 中 | 低内核上整条选择器列表被丢，标题与列表间距退回默认值 |
+| [#214](https://github.com/zzy-repo/jingluo-app/issues/214) | `@container` + `container-type` | 2 | 中 | 已修：容器查询整块被丢，窄缩略图上仍渲染两行失败原因；判据换成自定义属性 `--message-file-reason-display`，`src` 里容器查询归零 |
+| [#215](https://github.com/zzy-repo/jingluo-app/issues/215) | `:focus-visible` | 13 | 中 | 已修：每处补 `:focus` 兜底 + `:focus:not(:focus-visible)` 收回，`check:focus` 守住不回流 |
+| [#216](https://github.com/zzy-repo/jingluo-app/issues/216) | `scrollbar-gutter` | 2 | 中 | 声明被丢，滚动条出现/消失瞬间消息列表横向跳动 |
+| [#236](https://github.com/zzy-repo/jingluo-app/issues/236) | `scrollbar-gutter`（#216 的 follow-up） | 1 | 中 | 窄屏滚动容器 `.scroll` 换手后没继承 #216 的兜底，classic 滚动条出现时仍跳 15px |
+| [#217](https://github.com/zzy-repo/jingluo-app/issues/217) | flex `gap` 兜底覆盖面 | 2 | 中 | 已修：`check:gap` 扫全部 `.css`，`flex-wrap` 排除规则改为「不换行才排除」 |
+| [#218](https://github.com/zzy-repo/jingluo-app/issues/218) | `getComputedStyle` 声明回读 | 1 | **高** | 已修：`viewport.ts:55` 补实测回读，复算 `falsePositives` 归零（§3 的第 1 条） |
 
 > **本轮复算仍然记 5 处 `真实缺陷` 的只有 `scrollbar-gutter`**（`MessageList.module.css:17 / :22 / :37 / :74 / :77`）：静态判定器不认「常驻 `overflow-y: scroll`」这种跨属性等价兜底，也不区分 `@supports (scrollbar-gutter: …)` 是探测还是收回块，所以 5 行全部落进 `真实缺陷`。人工核对 + `pnpm run check:gutter` 的结论是 3 处声明都已覆盖、2 处 `@supports` 就是收回块本身（明细见 §2.5）。**这条不改判定规则**，把口径写清楚比改宽规则重要——改宽会顺手放过真正没兜底的写法。
 

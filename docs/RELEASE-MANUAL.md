@@ -481,7 +481,7 @@ cat > /tmp/notes-$V.md <<EOF
 EOF
 
 gh release create v$V $APK \
-  --repo zzy-repo/deepseek-app \
+  --repo zzy-repo/jingluo-app \
   --title v$V \
   --notes-file /tmp/notes-$V.md
 ```
@@ -637,7 +637,7 @@ adb logcat -d | tail -50
 | 对象 | 操作 |
 | --- | --- |
 | dl 上的 APK / `releases.json` | 发布接口只增不删，需运维 `ssh aliyun` 操作（`/var/www/dl/`）。改回 `latest` 会让已升级用户降级，先想清楚 |
-| GitHub Release | `gh release delete v<ver> --repo zzy-repo/deepseek-app --yes`（或先改 draft 下架） |
+| GitHub Release | `gh release delete v<ver> --repo zzy-repo/jingluo-app --yes`（或先改 draft 下架） |
 | tag | 先删 Release 再删 tag：`git push origin :refs/tags/v<ver>` + `git tag -d v<ver>`；**不 force 改已有 tag** |
 | 发布 commit | `git revert <commit>`；仓库有并行改动，**禁止 `git reset --hard`** |
 | 发布服务端（`server.mjs` / `variant.mjs`） | 用 §12.2 第 1 步的备份盖回去再重启，回滚后照样要过 §12.3 的三方 sha256 比对（见 §12.4） |

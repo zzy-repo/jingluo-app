@@ -57,12 +57,12 @@
 
 | Issue | 标题 | 处理 |
 | --- | --- | --- |
-| [#794](https://github.com/zzy-repo/deepseek-app/issues/794) | [settings-ui] 模型来源：取消第三方服务的 OpenAI / Anthropic 消息格式选择，改为自动适配 | 已修复（1.4.12 起已包含）：移除协议选择控件，按服务地址主机 / 模型名（`claude*`）/ 上次判定缓存 / 既有配置依次判定，兜底 OpenAI 兼容 |
-| [#797](https://github.com/zzy-repo/deepseek-app/issues/797) | [auth] 注册时增加「确认密码」与密码可见切换，防止输错密码导致无法登录 | 已修复（1.4.12 起已包含）：确认密码三处共用同一判据，不一致不发请求、不进请求体；密码眼睛切换 aria 完整、不丢内容与光标 |
-| [#800](https://github.com/zzy-repo/deepseek-app/issues/800) | [settings-ui] 模型来源：选中「内置服务」后不应显示 API Key 及「重新领取」组件 | 已修复（1.4.12 起已包含；本版由 #807 的手风琴形态吸收）：内置服务下 Key 区与「重新领取」结构上不渲染，恢复能力改为登录后后台自动对齐 |
-| [#803](https://github.com/zzy-repo/deepseek-app/issues/803) | 登录/注册成功后自动建 Key，没拿到则再试一次 | 已修复：会话建立钩子在 login / register 两个时机各通知一次 → 自动领 Key；失败自动重试一次，仍失败给出可见提示可再试 |
-| [#807](https://github.com/zzy-repo/deepseek-app/issues/807) | [settings-ui] 模型来源重构：改为单层手风琴，内置服务点击即领取 key，增加「确认使用」与打勾标识 | 已修复：单层手风琴，点内置服务行即领 Key，行内「确认使用」+ 打勾标识标出当前在用；协议自动适配沿用 #794 判定 |
-| [#795](https://github.com/zzy-repo/deepseek-app/issues/795) | [auth] 缺少「忘记密码」流程：用户忘记密码后无法找回或重置 | **部分完成**：登录卡已接「忘记密码」→ 发送重置邮件；**重置页（邮件深链）未做** —— App 未配 app-link、服务端重置链接指向面板页面，本 App 收不到；服务端 SMTP 未配时原样展示其后端 message |
+| [#794](https://github.com/zzy-repo/jingluo-app/issues/794) | [settings-ui] 模型来源：取消第三方服务的 OpenAI / Anthropic 消息格式选择，改为自动适配 | 已修复（1.4.12 起已包含）：移除协议选择控件，按服务地址主机 / 模型名（`claude*`）/ 上次判定缓存 / 既有配置依次判定，兜底 OpenAI 兼容 |
+| [#797](https://github.com/zzy-repo/jingluo-app/issues/797) | [auth] 注册时增加「确认密码」与密码可见切换，防止输错密码导致无法登录 | 已修复（1.4.12 起已包含）：确认密码三处共用同一判据，不一致不发请求、不进请求体；密码眼睛切换 aria 完整、不丢内容与光标 |
+| [#800](https://github.com/zzy-repo/jingluo-app/issues/800) | [settings-ui] 模型来源：选中「内置服务」后不应显示 API Key 及「重新领取」组件 | 已修复（1.4.12 起已包含；本版由 #807 的手风琴形态吸收）：内置服务下 Key 区与「重新领取」结构上不渲染，恢复能力改为登录后后台自动对齐 |
+| [#803](https://github.com/zzy-repo/jingluo-app/issues/803) | 登录/注册成功后自动建 Key，没拿到则再试一次 | 已修复：会话建立钩子在 login / register 两个时机各通知一次 → 自动领 Key；失败自动重试一次，仍失败给出可见提示可再试 |
+| [#807](https://github.com/zzy-repo/jingluo-app/issues/807) | [settings-ui] 模型来源重构：改为单层手风琴，内置服务点击即领取 key，增加「确认使用」与打勾标识 | 已修复：单层手风琴，点内置服务行即领 Key，行内「确认使用」+ 打勾标识标出当前在用；协议自动适配沿用 #794 判定 |
+| [#795](https://github.com/zzy-repo/jingluo-app/issues/795) | [auth] 缺少「忘记密码」流程：用户忘记密码后无法找回或重置 | **部分完成**：登录卡已接「忘记密码」→ 发送重置邮件；**重置页（邮件深链）未做** —— App 未配 app-link、服务端重置链接指向面板页面，本 App 收不到；服务端 SMTP 未配时原样展示其后端 message |
 
 ### 变更摘要
 
