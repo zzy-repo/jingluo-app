@@ -6,9 +6,9 @@
 // （跨域 GET，自己给 CORS 头）。这条链路的判定（解析 / 整份拒收 / 筛选 / 排序 / 文案）都在
 // `src/services/**` 里，L0 已由 N1 的矩阵钉住；这里要钉的是**只有真 DOM 才成立**的部分：
 //   · 打开弹窗即自动检查，先「正在检查更新…」再给结论（F10-01）
-//   · 结论文案要说清渠道 / 当前版本 / 为什么没有可装的记录（F10-11）
+//   · 结论文案要说清当前版本 / 为什么没有可装的记录（F10-11）
 //   · 失败文案按类别给出「要不要重试」，且不泄露 IP / 堆栈（F10-10）
-//   · 切渠道后**自动重查**，请求地址不随渠道变化（F10-07）
+//   · （#876 已删）切渠道后**自动重查**这一组：渠道功能下线，只剩一档
 //   · 网页预览（非 Android）把「确认下载」降级成 `<a href>`，且 href 拼在**真的回了清单**的 base 上（F10-13 / F10-02）
 //   · 更新说明很长时内容区独立滚动、最后一条可达、底部按钮不被挤出（F10-14，390 与 360 两档）
 //
@@ -29,13 +29,18 @@ import { chromium } from 'playwright'
 import { CURRENT, CHANNEL_BUILD_TYPE, NEWEST_INSTALLABLE, nextPatch } from '../helpers/current-version.mjs'
 import { serveDir, skipEnv, ROOT } from '../helpers/env.mjs'
 import { assertNoEgress, installEgressGate } from '../helpers/helpers.mjs'
+import { downloadFallbackBase, downloadPrimaryBase } from '../../scripts/lib/endpoints.mjs'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const DIST = path.resolve(ROOT, process.env.DIST_DIR || 'dist')
 
-/** 两台分发机（与 src/services/updateManifest.ts 的 RELEASE_BASES 同源） */
-const PRIMARY = 'http://62.106.70.167:8888'
-const FALLBACK = 'https://dl.rose7.cn'
+/*
+ * 两台分发机：**从 config/endpoints.json 读**（经 scripts/lib/endpoints.mjs），不再抄字面量。
+ * 以前这里写死了 `http://62.106.70.167:8888`，换域名（#791）之后没跟着改 —— 桩全部落空，
+ * 用例红在「清单取不到」而不是红在它想验的那件事上。地址只有一处真相源，测试也不例外。
+ */
+const PRIMARY = downloadPrimaryBase
+const FALLBACK = downloadFallbackBase
 
 /**
  * #412：预置的「上次成功时间」= 1 小时前。取固定相对时间而不是写死某一天：
@@ -44,16 +49,11 @@ const FALLBACK = 'https://dl.rose7.cn'
  */
 const CACHE_SAVED_AT = Date.now() - 60 * 60 * 1000
 
-/**
- * 默认更新渠道由**版本号**决定（`x.y.z` → stable、`x.y.z-beta.N` → prerelease，见
- * `src/components/settings/AppUpdateField.tsx` 的 readUpdateChannel 初值）。用例不许写死
- * 「默认是预发布」：1.4.3 起是 stable，写死会让清单记录被渠道过滤掉（看起来像「没有新版本」）。
+/*
+ * #876：渠道维度已从界面删除（固定只收 stable），所以本文件不再有 DEFAULT_CHANNEL /
+ * 切渠道 / 渠道持久化三组用例。`CHANNEL_BUILD_TYPE` 仍要 import：夹具用它决定线上那条
+ * 记录标成哪一档（当前 = stable），避免夹具被档位筛掉而红在别的地方。
  */
-const DEFAULT_CHANNEL = CHANNEL_BUILD_TYPE
-const OTHER_CHANNEL = DEFAULT_CHANNEL === 'stable' ? 'prerelease' : 'stable'
-/** 渠道名（与 AppUpdateField 的 CHANNEL_LABEL 同源，只在本文件做断言用） */
-const CHANNEL_LABEL_ZH = { stable: '稳定版', prerelease: '稳定版与预发布版' }
-const DEFAULT_LABEL_ZH = CHANNEL_LABEL_ZH[DEFAULT_CHANNEL]
 const NEW_VERSION = NEWEST_INSTALLABLE.version
 const RELEASE_FILE = `apk/deepseek-chat-${NEW_VERSION}.apk`
 
@@ -64,31 +64,11 @@ const release = (over = {}) => ({
   size: 5452595,
   file: RELEASE_FILE,
   changes: ['修复重试与离线提示', '下载失败不再残留满格进度'],
-  buildType: DEFAULT_CHANNEL,
+  buildType: CHANNEL_BUILD_TYPE,
   artifactVariant: 'standard',
   sha256: 'a'.repeat(64),
   ...over,
 })
-
-/**
- * C5 / C9 用的两条记录 —— 关键在**渠道可见性不对称**：`stable` 记录在两个渠道都能装，
- * `prerelease` 记录只在「稳定版与预发布版」渠道能装。所以把 versionCode 更高的那条做成
- * prerelease 记录，切渠道后**选中的版本号一定会变**（这才是「渠道真的生效」的硬证据，
- * 比原来的「切过去就查不到包」更强，也不依赖当前版本是 beta 还是正式版）。
- */
-const STABLE_RECORD = release({
-  version: nextPatch(CURRENT.version, 2),
-  versionCode: CURRENT.versionCode + 1,
-  buildType: 'stable',
-})
-const PRERELEASE_RECORD = release({
-  version: nextPatch(CURRENT.version, 3),
-  versionCode: CURRENT.versionCode + 2,
-  buildType: 'prerelease',
-})
-/** 渠道 → 会被选中的版本号：stable 只认 stable 记录；prerelease 两者都认，取 versionCode 最高的 */
-const PICKED_BY_CHANNEL = { stable: STABLE_RECORD.version, prerelease: PRERELEASE_RECORD.version }
-const TWO_CHANNEL_RECORDS = [STABLE_RECORD, PRERELEASE_RECORD]
 
 /** CHANGELOG 1.4.0-beta.10 的 23 条真实说明（F10-14 长内容档就用它把内容塞满） */
 const CHANGES_LONG = [
@@ -153,6 +133,28 @@ const manifestStubs = (plan) => {
       }
     },
   }))
+}
+
+/**
+ * 应用启动时会读 `GET /api/v1/settings/public`（邀请 / 付费开关，#860 #869）。
+ * 它与更新链路无关，但 egress 闸对「白名单外的 host」是零容忍的 —— 不登记它，
+ * 本文件每一格都会顶着一条 `未登记请求：apia.ecsafe.cn` 的失败。
+ * 这里只给一个最小信封（开关全关），让闸把注意力留给真正想拦的东西。
+ */
+const SETTINGS_PUBLIC_STUB = {
+  name: 'apia.ecsafe.cn/api/v1/settings/public',
+  host: 'apia.ecsafe.cn',
+  path: '/api/v1/settings/public',
+  method: 'GET',
+  respond: () => ({
+    status: 200,
+    headers: {
+      'access-control-allow-origin': '*',
+      'content-type': 'application/json',
+      'cache-control': 'no-store',
+    },
+    body: JSON.stringify({ data: { affiliate_enabled: false, purchase_enabled: false } }),
+  }),
 }
 
 /** 打开 设置 → 应用更新 → 检查更新；`waitFor` 决定等到哪种结论出现 */
@@ -230,7 +232,6 @@ const probe = () => {
         ? null
         : { text: (node.textContent ?? '').trim(), href: node.getAttribute('href') ?? null }
     })(),
-    channel: dialog === null ? null : (dialog.querySelector('select')?.value ?? null),
     dialogBox: dialog === null ? null : (() => {
       const rect = dialog.getBoundingClientRect()
       return { top: round(rect.top), bottom: round(rect.bottom), height: round(rect.height) }
@@ -287,7 +288,7 @@ const swipeToBottom = async ({ page, cdp, height, limit = 14 }) => {
  *   id / f10 / name     标识与覆盖的功能点
  *   plan                route 剧本（primary / fallback 各自的 status + releases）
  *   waitFor             等到哪一句结论出现（不绑死整段文案的措辞）
- *   drive(page)         额外动作（切渠道 / 触摸滚动）
+ *   drive(page)         额外动作（触摸滚动等）
  *   assert(probe)       断言
  *   viewports           在哪些视口跑（默认只有 390）
  */
@@ -311,11 +312,16 @@ const SCENARIOS = [
         `${PRIMARY}/${RELEASE_FILE}`,
         `链接应拼在真的回了清单的 base（首选机）上，实际 ${p.linkHref}`
       )
-      // F10-12：诊断区四个事实（版本 / 渠道 / 更新服务 / 最近检查）都在
-      for (const keyword of ['当前版本', '更新渠道', '更新服务', '最近检查']) {
+      // F10-12：诊断区三个事实（版本 / 更新服务 / 最近检查）都在。
+      // #876 起「更新渠道」这一行删除（恒为同一值，纯噪音）。
+      for (const keyword of ['当前版本', '更新服务', '最近检查']) {
         assert.ok(p.diagnostics.includes(keyword), `诊断区应有「${keyword}」：${p.diagnostics}`)
       }
-      assert.ok(p.diagnostics.includes(DEFAULT_LABEL_ZH), `诊断区要说清当前渠道：${p.diagnostics}`)
+      assert.equal(
+        p.diagnostics.includes('更新渠道'),
+        false,
+        `诊断区不该再有「更新渠道」（#876 已删）：${p.diagnostics}`
+      )
       assert.equal(
         p.diagnostics.includes('已回退备用分发机'),
         false,
@@ -345,13 +351,13 @@ const SCENARIOS = [
   {
     id: 'C3',
     f10: ['F10-11'],
-    name: '无新版：说清渠道 / 当前版本 / 「另有 N 条不可用」',
+    name: '无新版：说清当前版本 / 「另有 N 条不可用」，且不冒充「已是最新」',
     plan: {
       primary: {
         releases: [
           // 候选（versionCode 更高）但缺 sha256 → 不可作为更新目标
           release({ versionCode: CURRENT.versionCode + 2, sha256: undefined }),
-          // 候选但缺渠道标记 → 同样不可用
+          // 候选但缺变体标记 → 同样不可用
           release({ versionCode: CURRENT.versionCode + 3, artifactVariant: undefined }),
         ],
       },
@@ -364,7 +370,6 @@ const SCENARIOS = [
         p.status.includes(`当前版本 ${CURRENT.version}`),
         `文案必须带当前版本（用户报障时唯一能对上的信息）：${p.status}`
       )
-      assert.ok(p.status.includes(DEFAULT_LABEL_ZH), `文案必须带渠道名：${p.status}`)
       assert.match(p.status, /另有 2 条/, `两条不可用记录要被数出来：${p.status}`)
       assert.equal(p.hasConfirmDownloadButton, false, '没有可装版本时不该出现下载/安装按钮')
       assert.equal(p.linkHref, null, '没有可装版本时不该有下载链接')
@@ -378,7 +383,6 @@ const SCENARIOS = [
     waitFor: /更新服务返回了 HTTP 503/,
     assert: (p) => {
       assert.match(p.status, /更新服务返回了 HTTP 503/, `应点出状态码：${p.status}`)
-      assert.ok(p.status.includes(DEFAULT_LABEL_ZH), '失败文案也要说清是哪个渠道')
       assert.match(p.status, /重新检查/, '要告诉用户「可以再试一次」')
       // 文案纪律：不带 URL / IP / 堆栈 / Error 前缀
       assert.doesNotMatch(p.status, /\d+\.\d+\.\d+\.\d+/, `文案不许出现 IP：${p.status}`)
@@ -399,40 +403,8 @@ const SCENARIOS = [
       assert.equal(p.manual?.text, '手动下载最新版', `失败态应给「手动下载最新版」入口：${JSON.stringify(p.manual)}`)
       assert.equal(
         p.manual?.href,
-        'https://dl.rose7.cn/',
-        `没有缓存时手动下载应指向公开下载站首页，实际 ${p.manual?.href}`
-      )
-    },
-  },
-  {
-    id: 'C5',
-    f10: ['F10-07'],
-    name: `切渠道自动重查：${DEFAULT_CHANNEL} 选中 ${PICKED_BY_CHANNEL[DEFAULT_CHANNEL]} → ${OTHER_CHANNEL} 选中 ${PICKED_BY_CHANNEL[OTHER_CHANNEL]}，请求地址不变`,
-    plan: {
-      // 两条记录各属一个渠道：切渠道后「选中的版本号」必须跟着变（渠道真的参与筛选）
-      primary: { releases: TWO_CHANNEL_RECORDS },
-      fallback: { status: 500 },
-    },
-    waitFor: PICKED_BY_CHANNEL[DEFAULT_CHANNEL],
-    drive: async (page) => {
-      // 默认渠道跟着版本号走（正式版 = stable / 内测版 = prerelease）
-      const select = page.getByRole('combobox')
-      await page.getByText(PICKED_BY_CHANNEL[DEFAULT_CHANNEL]).first().waitFor({ timeout: 15000 })
-      await select.selectOption(OTHER_CHANNEL)
-      // 切渠道即自动重查（不需要再点「检查更新」）：等另一个渠道选中的版本出现
-      await page.getByText(PICKED_BY_CHANNEL[OTHER_CHANNEL]).first().waitFor({ timeout: 15000 })
-      await select.selectOption(DEFAULT_CHANNEL)
-      await page.getByText(PICKED_BY_CHANNEL[DEFAULT_CHANNEL]).first().waitFor({ timeout: 15000 })
-    },
-    assert: (p, extra) => {
-      // 两次切换各触发一次请求，且请求的都是同一台机器的同一个 URL（渠道只影响筛选）
-      assert.ok(extra.requests.length >= 3, `切渠道应自动重查（应有 ≥3 次清单请求），实际 ${extra.requests.length}`)
-      const urls = new Set(extra.requests.map((item) => item.url))
-      assert.deepEqual([...urls], [`${PRIMARY}/releases.json`], `渠道不影响请求地址（只影响筛选），实际请求过：${[...urls].join(', ')}`)
-      assert.equal(
-        p.title,
-        PICKED_BY_CHANNEL[DEFAULT_CHANNEL],
-        `切回默认渠道后应重新选中该渠道可装的版本，实际 ${p.title}`
+        `${PRIMARY}/`,
+        `没有缓存时手动下载应指向主分发机的下载站首页（#876），实际 ${p.manual?.href}`
       )
     },
   },
@@ -529,34 +501,7 @@ const SCENARIOS = [
         false,
         `脏缓存必须整份丢弃（不许展示半份）：${p.cacheFallback}`
       )
-      assert.equal(p.manual?.href, 'https://dl.rose7.cn/', `脏缓存时手动下载退回下载站首页，实际 ${p.manual?.href}`)
-    },
-  },
-  {
-    id: 'C9',
-    f10: ['F10-07'],
-    name: `渠道选择持久化：切到「${CHANNEL_LABEL_ZH[OTHER_CHANNEL]}」后重开设置（含刷新页面）仍是它`,
-    plan: { primary: { releases: TWO_CHANNEL_RECORDS }, fallback: { status: 500 } },
-    waitFor: PICKED_BY_CHANNEL[DEFAULT_CHANNEL],
-    drive: async (page) => {
-      // 默认渠道跟着版本号走；先切到另一个渠道并等它选中的版本出现
-      await page.getByRole('combobox').selectOption(OTHER_CHANNEL)
-      await page.getByText(PICKED_BY_CHANNEL[OTHER_CHANNEL]).first().waitFor({ timeout: 15000 })
-      // 「重开设置」= 刷新整页后重新进设置 → 应用更新：渠道必须还是用户选的那个
-      await page.reload({ waitUntil: 'domcontentloaded' })
-      await page.waitForTimeout(600)
-      await openUpdateDialog(page, { waitFor: PICKED_BY_CHANNEL[OTHER_CHANNEL] })
-    },
-    assert: (p) => {
-      assert.equal(p.channel, OTHER_CHANNEL, `重开设置后渠道选择丢了（#412 第 3 项）：实际 ${p.channel}`)
-      assert.equal(
-        p.title,
-        PICKED_BY_CHANNEL[OTHER_CHANNEL],
-        `结论行 / 选中的版本必须跟着持久化的渠道走，实际 ${p.title}`
-      )
-      // 注：「发现新版本」这句结论行本身不带渠道名（只有无包 / 失败两类文案才带），
-      // 所以这里用「选中的版本号」钉渠道是否生效 —— 比文案断言更硬。
-      assert.match(p.status, /发现新版本/, `该渠道下有可装版本：${p.status}`)
+      assert.equal(p.manual?.href, `${PRIMARY}/`, `脏缓存时手动下载退回下载站首页，实际 ${p.manual?.href}`)
     },
   },
 ]
@@ -622,7 +567,7 @@ try {
       await installEgressGate(page, {
         appUrl: served.url,
         allowHosts: [new URL(served.url).host],
-        stubs: manifestStubs(scenario.plan),
+        stubs: [...manifestStubs(scenario.plan), SETTINGS_PUBLIC_STUB],
       })
       let driveError = null
       try {

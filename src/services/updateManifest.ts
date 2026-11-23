@@ -8,10 +8,14 @@ import { isBuildType, type BuildType } from '../../shared/build-types.mjs'
 import { parseUpdatePolicy, type UpdatePolicy } from './updatePolicy.js'
 
 /**
- * 分发端点（Issue #268 / #269）。首选新静态分发机（裸 HTTP，无域名无 TLS），不可达才回退旧机。
+ * 分发端点（Issue #268 / #269）。首选新静态分发机，不可达才回退旧机。
  * 顺序写死在 RELEASE_BASES 里，不做随机或轮询。
- * 裸 HTTP 之所以可接受：APK 签名由 Android 安装器强制校验，下载前后还会比对 SHA-256、
- * 包名与 versionCode，明文只能让更新失败或被抑制。
+ *
+ * **两台都必须 https（Issue #876）**：首选机过去写的是裸 `http://`，而 Caddy 会对明文口回
+ * `308` 强制升级 HTTPS，客户端两侧又都禁止跟随重定向（本文件 `fetchManifestText` 的
+ * `redirect:'error'`、原生 `AppUpdatePlugin` 的 `setInstanceFollowRedirects(false)`）——
+ * 于是首选这一跳 **100% 必败**，每次检查更新都白打一次再回退旧机。明文没有任何收益，
+ * 只会让「首选机是否可用」这件事在日志里永远看不出来。
  *
  * **本文件不留任何地址字面量**：唯一来源是 `config/endpoints.json` 的
  * `download.primaryBase` / `download.fallbackBase`，构建期由 rspack 的 DefinePlugin 注入
@@ -58,19 +62,20 @@ export interface UpdateRelease {
  * 背景：清单里 `1.4.1` 只发了 `standard` 变体、`1.4.0` 只发了 `internal` 变体，而
  * `selectUpdate` 要求 `artifactVariant` 完全相等 —— 于是装了 internal 的用户**没有任何候选**，
  * 界面只能说「已是最新」。那不是「已是最新」，是**这条渠道的包没发**（变体维度断链）。
- * 这里把「为什么没有」一起返回，让界面给一句能行动的话（手动下载正式版 / 切渠道），
+ * 这里把「为什么没有」一起返回，让界面给一句能行动的话（手动下载正式版），
  * 而不是笼统的「已是最新」。
  *
  * 注意：跨变体**安装**是产品决策（原生 `verify()` 的 `VARIANT_MISMATCH` 仍然拦截），
  * 本单只做解释，不放开候选筛选。
+ *
+ * Issue #876：`prerelease-filtered` 这一档**已删除**。它存在的前提是「用户能在两个更新渠道之间切」，
+ * 而渠道功能已下线（固定只收 stable），于是「有更高的预发布包」根本不是一条可行动的原因。
  */
 export type UpdateReason =
   /** 本机是 internal 包，清单里更高的版本只有 `standard` 包（#377 的现场） */
   | 'no-internal-variant'
   /** 对称情形：本机是 standard 包，清单里更高的版本只有 `internal` 包 */
   | 'no-standard-variant'
-  /** 有更高的同变体包，但都是预发布，当前渠道只接受稳定版 */
-  | 'prerelease-filtered'
   /** 渠道内确实没有比当前更高的记录 */
   | 'up-to-date'
 
@@ -189,20 +194,12 @@ const installable = (row: UpdateRelease): boolean =>
  * 没有候选时的原因（Issue #377）。**只在这一格真的说不清时才给 reason**：
  * 若只是「有更高记录但缺渠道 / SHA256」，`incomplete > 0` 已经在说这件事（界面已有对应文案），
  * 不在这里重复一遍。
+ *
+ * #876 之后这里不再需要 channel：进入本函数时候选已经只是 stable 档，所以「同变体、字段齐全却
+ * 一个都没进候选」只可能是**变体维度断链**（1.4.0 internal / 1.4.1 standard 那种）。
  */
-const reasonOf = (
-  aboveCurrent: UpdateRelease[],
-  variant: ArtifactVariant,
-  channel: UpdateChannel
-): UpdateReason => {
-  // 1) 同变体、字段齐全，却一个都没进候选 → 只可能是被「仅稳定版」挡掉的预发布
-  if (
-    channel === 'stable' &&
-    aboveCurrent.some((row) => row.artifactVariant === variant && installable(row))
-  ) {
-    return 'prerelease-filtered'
-  }
-  // 2) 变体维度断链：更高的版本里有能装的包，但不是本机这个变体（#377 的 1.4.0 internal / 1.4.1 standard）
+const reasonOf = (aboveCurrent: UpdateRelease[], variant: ArtifactVariant): UpdateReason => {
+  // 变体维度断链：更高的版本里有能装的包，但不是本机这个变体（#377 的 1.4.0 internal / 1.4.1 standard）
   const otherVariant = aboveCurrent.filter(
     (row) => installable(row) && row.artifactVariant !== variant
   )
@@ -211,23 +208,29 @@ const reasonOf = (
       ? 'no-standard-variant'
       : 'no-internal-variant'
   }
-  // 3) 渠道内确实没有更高的版本
+  // 渠道内确实没有更高的版本
   return 'up-to-date'
 }
 
+/**
+ * 选一个可装版本。
+ *
+ * Issue #876：**不再有「更新渠道」入参**。用户侧只有一档（等价于原来的「稳定版」），
+ * 所以候选固定为「`buildType === 'stable'` 或历史记录缺 `buildType`」，`prerelease` 条目
+ * 一律不参与。manifest 的 `buildType` 字段与判定**保留**——数据契约不变，只是没有选择了。
+ */
 export const selectUpdate = (
   releases: UpdateRelease[],
   currentCode: number,
-  variant: ArtifactVariant,
-  channel: UpdateChannel
+  variant: ArtifactVariant
 ): UpdateSelection => {
   if (!Number.isSafeInteger(currentCode) || currentCode <= 0) {
     throw new Error('INVALID_CURRENT_VERSION')
   }
-  // 高于当前版本的全部记录（先不过渠道）：区分「没有更高版本」和「有但被渠道过滤」
+  // 高于当前版本的全部记录
   const aboveCurrent = releases.filter((row) => row.versionCode > currentCode)
   const candidates = aboveCurrent.filter(
-    (row) => row.buildType === undefined || channel === 'prerelease' || row.buildType === 'stable'
+    (row) => row.buildType === undefined || row.buildType === 'stable'
   )
   const eligible = candidates.filter(
     (row) => row.artifactVariant === variant && row.sha256 && row.buildType
@@ -250,7 +253,7 @@ export const selectUpdate = (
   // 「有记录但缺渠道 / SHA256」由 incomplete 说清；其余情况给可解释的 reason（#377）
   return incomplete > 0
     ? { release: undefined, incomplete }
-    : { release: undefined, incomplete, reason: reasonOf(aboveCurrent, variant, channel) }
+    : { release: undefined, incomplete, reason: reasonOf(aboveCurrent, variant) }
 }
 
 export type ManifestSource = 'public' | 'private'
@@ -547,16 +550,12 @@ export const downloadTarget = (
 }
 
 // ---------------------------------------------------------------------------
-// 渠道选择的持久化（Issue #412 第 3 项）
+// 存储介质（供下面的清单快照缓存用）
 //
-// #309 的原始验收里有一条「切到『仅稳定版』后，选择要不要记住」，#310 只做了「切渠道自动重查」，
-// 没做持久化 —— 用户每次重开设置都回到按版本号猜的默认值（内测包 → 预发布），
-// 于是「我把渠道切到稳定版了」这件事在界面上根本不成立。这里只做一件小事：
-// **存的只有 stable / prerelease 两档，脏值一律回落默认**，读写失败不抛（隐私模式 / 裁剪构建）。
+// Issue #876：原来这里还管「更新渠道」的持久化（`chat-demo:update-channel`），渠道功能下线后
+// 那三个导出（UPDATE_CHANNEL_KEY / readUpdateChannel / saveUpdateChannel）一并删除。
+// 老版本留在用户机器上的那个键不再有人读，也不需要清理：它不影响任何判定。
 // ---------------------------------------------------------------------------
-
-/** 「更新渠道」选择的存储键：与其它设置项同一前缀（`chat-demo:`），只是这一项归更新链路管 */
-export const UPDATE_CHANNEL_KEY = 'chat-demo:update-channel'
 
 /**
  * 只需要 localStorage 的三个方法：测试可以直接塞一个 Map 替身，
@@ -581,45 +580,6 @@ const storageOf = (storage?: StorageLike | null): StorageLike | undefined => {
     return typeof localStorage === 'undefined' ? undefined : localStorage
   } catch {
     return undefined
-  }
-}
-
-/**
- * 读「上次选的渠道」。没存过 / 存的是脏值（`release`、空串、旧版本留下的别的写法）→ 返回 `fallback`。
- *
- * 脏值不回落成 `prerelease` 而是回落到调用方给的默认值：默认值按「装的是不是预发布包」算，
- * 比任何硬编码的猜测都更接近用户的实际处境。
- */
-export const readUpdateChannel = (
-  fallback: UpdateChannel,
-  storage?: StorageLike | null
-): UpdateChannel => {
-  try {
-    const saved = storageOf(storage)?.getItem(UPDATE_CHANNEL_KEY)
-    return isBuildType(saved) ? saved : fallback
-  } catch {
-    return fallback
-  }
-}
-
-/** 写「选的渠道」：成功与否都返回布尔（调用方不需要 try/catch），脏值直接拒写 */
-export const saveUpdateChannel = (
-  channel: UpdateChannel,
-  storage?: StorageLike | null
-): boolean => {
-  if (!isBuildType(channel)) {
-    return false
-  }
-  const target = storageOf(storage)
-  if (!target) {
-    return false
-  }
-  try {
-    target.setItem(UPDATE_CHANNEL_KEY, channel)
-    return true
-  } catch {
-    // 配额满 / 隐私模式：选择只在本次会话生效，不把界面带崩
-    return false
   }
 }
 
@@ -775,17 +735,26 @@ export const clearManifestSnapshot = (storage?: StorageLike | null): void => {
 /**
  * 「手动下载最新版」的兜底地址：清单拉不到时唯一还能给用户的出口。
  *
- * 用**公开下载站首页**（旧机 `dl.rose7.cn` 是 Caddy 的 file_server，页面会随每次发布更新），
- * 而不是某条记录里的 file —— 检查失败时我们连清单都没拿到，拼不出可信的 file 路径。
+ * 用**公开下载站首页**（Caddy 的 file_server，页面会随每次发布更新），而不是某条记录里的 file ——
+ * 检查失败时我们连清单都没拿到，拼不出可信的 file 路径。
+ *
+ * Issue #876：指向**主**分发机（`jingluo.nekoai.com.cn`），不再是旧机 `dl.rose7.cn`。
+ * 两台是同一台机器的两个域名（同 IP、同 webroot、同内容），所以拿哪个都能下到同一批文件；
+ * 统一到主分发机是为了让「界面上只出现一个下载站地址」这件事成立（配合 #872 的只显示主地址）。
  */
-export const RELEASE_HOME_URL = `${FALLBACK_RELEASE_BASE}/`
+export const RELEASE_HOME_URL = `${PRIMARY_RELEASE_BASE}/`
 
 /**
  * 「手动下载最新版」的目标（Issue #412 第 2 项）：检查失败时用户唯一还能走的路。
  *
- *  - 有快照 → 用**同一套筛选**（变体 × 渠道 × 当前版本）从快照里挑出最新可装的那条 `file`，
- *    拼在「当初真的回了清单的那个 base」上（拼错机器就是 404）；
+ *  - 有快照 → 用**同一套筛选**（变体 × 当前版本）从快照里挑出最新可装的那条 `file`；
  *  - 没有快照 / 挑不出来（变体断链、只剩预发布、缺 SHA256）→ 公开下载站首页。
+ *
+ * Issue #876：直链也统一拼在**主**分发机上，不再用 `snapshot.base`。
+ * 理由：`snapshot.base` 只记录「当初是哪台回了清单」，那不是用户该去哪下的结论；
+ * 而两台分发机同 IP 同 webroot，`/apk/<file>` 两边都在（实测 `https://jingluo.nekoai.com.cn/apk/…`
+ * 与 `https://dl.rose7.cn/apk/…` 都 200）。代价写在 #876 的边界里：若失败原因正是主分发机挂了，
+ * 这条直链同样打不开（此时它和兜底首页是同一种结局，不会更糟）。
  *
  * 为什么放在服务层而不是组件里：这是**纯判定**，「什么时候给文件直链、什么时候退首页」值得被
  * 单测钉住；放在 JSX 里就只能靠集成测试隔着 DOM 猜。
@@ -798,14 +767,13 @@ export interface ManualDownloadTarget {
 
 export const manualDownloadTarget = (
   snapshot: ManifestSnapshot | undefined,
-  current: { code: number; variant: ArtifactVariant },
-  channel: UpdateChannel
+  current: { code: number; variant: ArtifactVariant }
 ): ManualDownloadTarget => {
   if (snapshot) {
     try {
-      const picked = selectUpdate(snapshot.rows, current.code, current.variant, channel)
+      const picked = selectUpdate(snapshot.rows, current.code, current.variant)
       if (picked.release) {
-        return { url: releaseUrl(picked.release.file, snapshot.base), fromCache: true }
+        return { url: releaseUrl(picked.release.file, PRIMARY_RELEASE_BASE), fromCache: true }
       }
     } catch {
       // 同一版本号两条不同 file（AMBIGUOUS_RELEASE）/ 路径不合法：宁可不猜，退到下载站首页

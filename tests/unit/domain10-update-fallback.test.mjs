@@ -18,10 +18,6 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
 import { installTsResolve, loadTsModule } from '../helpers/dom-env.mjs'
-// #501 暴露：这里原来手写了一份 stable / prerelease 字面量，等于给 buildType 枚举又抄了一份 ——
-// 被 releases-manifest-buildtype.test.mjs 的「单一真相源」硬门禁抓到。枚举只从 shared/ 拿。
-import { BUILD_TYPES } from '../../shared/build-types.mjs'
-
 installTsResolve()
 
 const {
@@ -31,15 +27,12 @@ const {
   MANIFEST_CACHE_VERSION,
   PRIMARY_RELEASE_BASE,
   RELEASE_HOME_URL,
-  UPDATE_CHANNEL_KEY,
   fetchManifest,
   manualDownloadTarget,
   parseManifest,
   readManifestSnapshot,
-  readUpdateChannel,
   releaseUrl,
   saveManifestSnapshot,
-  saveUpdateChannel,
   clearManifestSnapshot,
   selectUpdate,
 } = await loadTsModule('src/services/updateManifest.ts')
@@ -92,7 +85,13 @@ const table = (rows, check) => {
 }
 
 // ---------------------------------------------------------------------------
-// C. 渠道下拉语义（表驱动）
+// C. 档位固定（#876：渠道功能下线，用户侧只剩一档 = 原来的「稳定版」）
+//
+// 原来这一节是「渠道下拉语义」表驱动：切渠道 → 候选结论跟着变。渠道删掉之后，能钉的只剩两件事：
+//   ① 请求仍然只有一个地址（`/releases.json`，档位从来不是请求参数）——防止下一个人以为
+//      「选了稳定版就该去 /stable/releases.json」；
+//   ② `buildType: 'prerelease'` 的记录**永远**不进候选（哪怕它是内测包、哪怕它 code 更高）。
+// 第 ② 条的后果（内测 beta 包目前没有候选）单独由 private-manifest-622 的用例钉住。
 // ---------------------------------------------------------------------------
 
 /** #377 现场：1.4.1 只发 standard、1.4.0 只发 internal（变体维度断链） */
@@ -105,76 +104,50 @@ const COMPLETE = [
 ]
 /** 只发了更高的预发布内测包 */
 const BETA_ONLY = [rel('1.4.1-beta.1', 21, 'internal', 'prerelease'), rel('1.4.0', 19, 'internal', 'prerelease')]
-/** 同变体下「稳定版 code 20」与「预发布 code 21」并存：切渠道会真的换掉被选中的那一条 */
+/** 同变体下「稳定版 code 20」与「预发布 code 21」并存：档位真的在筛 */
 const STABLE_AND_BETA = [
   rel('1.4.0-beta.2', 21, 'standard', 'prerelease'),
   rel('1.4.0', 20, 'standard', 'stable'),
 ]
 
-/**
- * 一行 = 一份清单 × 一台已装包 → 两个渠道各自的**期望结论**。
- * `expect.<channel>.code` = 期望选中的 versionCode（undefined = 没有候选）；`reason` 同时断言。
- */
+/** 一行 = 一份清单 × 一台已装包 → 唯一的期望结论（#876：没有 channel 维度了） */
 const CHANNEL_ROWS = [
   {
     id: 'S1',
-    what: '只发了更高的预发布内测包：仅稳定版 → 没有候选（prerelease-filtered），预发布 → 选中它',
+    what: '#876 后果：更高只有预发布内测包 → 没有候选，reason=up-to-date（预发布不进候选）',
     manifest: BETA_ONLY,
     installed: 19,
     variant: 'internal',
-    expect: {
-      stable: { code: undefined, reason: 'prerelease-filtered' },
-      prerelease: { code: 21, reason: undefined },
-    },
+    expect: { code: undefined, reason: 'up-to-date' },
   },
   {
     id: 'S2',
-    what: '变体维度断链（#377）：两个渠道都没有候选，reason 必须说「内测包没发」而不是「已是最新」',
+    what: '变体维度断链（#377）：没有候选，reason 必须说「内测包没发」而不是「已是最新」',
     manifest: BROKEN,
     installed: 19,
     variant: 'internal',
-    expect: {
-      stable: { code: undefined, reason: 'no-internal-variant' },
-      prerelease: { code: undefined, reason: 'no-internal-variant' },
-    },
+    expect: { code: undefined, reason: 'no-internal-variant' },
   },
   {
     id: 'S3',
-    what: '变体发齐：切渠道不改变被选中的版本（internal 的 1.4.1 在两个渠道都该被选中）',
-    manifest: COMPLETE,
-    installed: 19,
-    variant: 'internal',
-    expect: {
-      stable: { code: 20, reason: undefined },
-      prerelease: { code: 20, reason: undefined },
-    },
-  },
-  {
-    id: 'S4',
-    what: '稳定版与预发布并存：仅稳定版选 20、预发布渠道选 21 —— 下拉真的改变候选结论',
+    what: '稳定版与预发布并存 → 跳过预发布，选中稳定那条（code 20，不是 21）',
     manifest: STABLE_AND_BETA,
     installed: 19,
     variant: 'standard',
-    expect: {
-      stable: { code: 20, reason: undefined },
-      prerelease: { code: 21, reason: undefined },
-    },
+    expect: { code: 20, reason: undefined },
   },
   {
-    id: 'S5',
-    what: '真·最新：两个渠道都没有更高版本，reason=up-to-date（不许冒充断链）',
-    manifest: [rel('1.4.0', 19, 'internal', 'stable')],
+    id: 'S4',
+    what: '变体发齐 → 内测包装到 internal 的 1.4.1（这一格坏了就是 #377 复发）',
+    manifest: COMPLETE,
     installed: 19,
     variant: 'internal',
-    expect: {
-      stable: { code: undefined, reason: 'up-to-date' },
-      prerelease: { code: undefined, reason: 'up-to-date' },
-    },
+    expect: { code: 20, reason: undefined },
   },
 ]
 
-/** 与组件里的一条检查等价：**同一个请求**（清单地址与渠道无关）→ 解析 → 按渠道筛选 */
-const runCheck = async (row, channel) => {
+/** 与组件里的一条检查等价：同一个请求（清单地址与档位无关）→ 解析 → 筛选 */
+const runCheck = async (row) => {
   const urls = []
   const request = async (url) => {
     urls.push(String(url))
@@ -183,125 +156,31 @@ const runCheck = async (row, channel) => {
   const fetched = await fetchManifest(new AbortController().signal, request)
   return {
     urls,
-    selection: selectUpdate(fetched.rows, row.installed, row.variant, channel),
+    selection: selectUpdate(fetched.rows, row.installed, row.variant),
   }
 }
 
-test('#412 C 渠道下拉语义：请求参数不随渠道变、候选结论必须随渠道变（表驱动）', async () => {
-  /**
-   * 「切渠道是不是真的影响了请求参数」——答案是**不**：清单只有一份（`/releases.json`），
-   * 渠道纯粹是客户端筛选维度。两件事都要钉住，免得下一个人以为「切渠道 = 换个地址」，
-   * 于是去加一个不存在的 `/stable/releases.json`。
-   */
+test('#876 C 档位固定为 stable：清单只有一个地址，prerelease 条目永远不进候选（表驱动）', async () => {
   const requested = new Set()
   for (const row of CHANNEL_ROWS) {
-    for (const channel of BUILD_TYPES) {
-      const result = await runCheck(row, channel)
-      for (const url of result.urls) {
-        requested.add(url)
-      }
-      table([{ id: `${row.id}/${channel}`, what: row.what }], ({ id }) => {
-        const expected = row.expect[channel]
-        assert.equal(
-          result.selection.release?.versionCode,
-          expected.code,
-          `${id}：候选结论不对（选中 ${result.selection.release?.version ?? '无'}）`
-        )
-        assert.equal(result.selection.reason, expected.reason, `${id}：无候选的原因不对`)
-      })
+    const result = await runCheck(row)
+    for (const url of result.urls) {
+      requested.add(url)
     }
+    table([row], (item) => {
+      assert.equal(
+        result.selection.release?.versionCode,
+        item.expect.code,
+        `${item.id}：候选结论不对（选中 ${result.selection.release?.version ?? '无'}）`
+      )
+      assert.equal(result.selection.reason, item.expect.reason, `${item.id}：无候选的原因不对`)
+    })
   }
   assert.deepEqual(
     [...requested],
     [`${PRIMARY_RELEASE_BASE}/releases.json`],
-    `两个渠道 × 五份清单只该请求同一个地址（渠道不参与请求构造），实际请求过：${[...requested].join(', ')}`
+    `四份清单只该请求同一个地址（档位不参与请求构造），实际请求过：${[...requested].join(', ')}`
   )
-})
-
-test('#412 C 仅稳定版必须过滤掉 prerelease 条目（逐条扫描，不只看被选中的那条）', async () => {
-  const rows = parseManifest({ releases: STABLE_AND_BETA })
-  const stable = selectUpdate(rows, 19, 'standard', 'stable')
-  assert.equal(stable.release?.version, '1.4.0', '仅稳定版应选到稳定版 1.4.0')
-  assert.equal(stable.release?.buildType, 'stable', '仅稳定版不许选出 buildType=prerelease 的记录')
-  const beta = selectUpdate(rows, 19, 'standard', 'prerelease')
-  assert.equal(beta.release?.version, '1.4.0-beta.2', '预发布渠道应选到 code 更高的预发布')
-  assert.equal(beta.release?.buildType, 'prerelease', '预发布渠道应选到 prerelease 记录')
-})
-
-// ---------------------------------------------------------------------------
-// C. 选择的持久化（重开设置是否保留）
-// ---------------------------------------------------------------------------
-
-const PERSIST_ROWS = [
-  {
-    id: 'P1',
-    what: '没存过 → 回落到调用方给的默认值（内测包默认预发布）',
-    stored: undefined,
-    fallback: 'prerelease',
-    expected: 'prerelease',
-  },
-  {
-    id: 'P2',
-    what: '存过 stable → 以用户的为准（这才是「切到仅稳定版」真的生效）',
-    stored: 'stable',
-    fallback: 'prerelease',
-    expected: 'stable',
-  },
-  {
-    id: 'P3',
-    what: '存过 prerelease → 正式包上也不回落（用户主动要看预发布）',
-    stored: 'prerelease',
-    fallback: 'stable',
-    expected: 'prerelease',
-  },
-  {
-    id: 'P4',
-    what: '脏值 buildType:"release"（#330 的非法枚举）→ 回落默认，不当渠道用',
-    stored: 'release',
-    fallback: 'stable',
-    expected: 'stable',
-  },
-  {
-    id: 'P5',
-    what: '空串 → 回落默认（空串不是「用户选了 Stable」，是没写成功）',
-    stored: '',
-    fallback: 'prerelease',
-    expected: 'prerelease',
-  },
-  {
-    id: 'P6',
-    what: '旧版本留下的 JSON 形状 → 回落默认（不猜字段）',
-    stored: '{"channel":"stable"}',
-    fallback: 'prerelease',
-    expected: 'prerelease',
-  },
-]
-
-test('#412 C 渠道选择的读写：脏值回落、键名走 chat-demo: 前缀', () => {
-  table(PERSIST_ROWS, (row) => {
-    const storage = memoryStorage(row.stored === undefined ? {} : { [UPDATE_CHANNEL_KEY]: row.stored })
-    assert.equal(readUpdateChannel(row.fallback, storage), row.expected, `${row.id} ${row.what}`)
-  })
-  assert.ok(UPDATE_CHANNEL_KEY.startsWith('chat-demo:'), '渠道选择的键必须是 chat-demo: 前缀')
-})
-
-test('#412 C 渠道选择持久化：写进去的立刻能读回来（= 重开设置仍保留），存储坏了也不抛', () => {
-  const storage = memoryStorage()
-  assert.equal(saveUpdateChannel('stable', storage), true, '写 stable 应成功')
-  assert.equal(readUpdateChannel('prerelease', storage), 'stable', '同一个 storage 上应读回 stable')
-  // 「重开设置」= 组件重新挂载后重新读一次：同一个 storage 对象、重新调用读函数
-  assert.equal(readUpdateChannel('prerelease', storage), 'stable', '重开设置后仍应是 stable')
-  assert.equal(saveUpdateChannel('release', storage), false, '非法渠道值必须拒写')
-  assert.equal(readUpdateChannel('prerelease', storage), 'stable', '拒写之后旧值不能被覆盖')
-
-  // 配额满 / 隐私模式：写失败返回 false，读仍给默认值，**不抛**
-  const broken = memoryStorage({}, { failOn: 'set' })
-  assert.equal(saveUpdateChannel('stable', broken), false, 'setItem 抛错时必须返回 false 而不是把异常抛出去')
-  assert.equal(readUpdateChannel('prerelease', broken), 'prerelease', '写失败后读到默认值')
-
-  // 没有 localStorage 也没有传入 storage（纯 Node 裸跑 / 裁剪构建）：退化成不持久化
-  assert.equal(readUpdateChannel('stable'), 'stable', '无存储介质时读默认值')
-  assert.equal(saveUpdateChannel('stable'), false, '无存储介质时写应返回 false')
 })
 
 // ---------------------------------------------------------------------------
@@ -457,21 +336,19 @@ const manualRows = [
     what: '有缓存且能选出可装版本 → 直链指向那条记录的 file，拼在**缓存里的那个 base** 上',
     snapshot: { savedAt: SAVED_AT, base: PRIMARY_RELEASE_BASE, rows: parseManifest({ releases: COMPLETE }) },
     current: { code: 19, variant: 'internal' },
-    channel: 'stable',
     url: `${PRIMARY_RELEASE_BASE}/apk/deepseek-chat-1.4.1.apk`,
     fromCache: true,
   },
   {
     id: 'M2',
-    what: '缓存来自回退机 → 直链必须拼在旧机上（拼首选机会 404）',
+    what: '#876：缓存来自回退机，直链也统一拼在**主**分发机上（两台同机同 webroot，两边都有这个文件）',
     snapshot: {
       savedAt: SAVED_AT,
       base: 'https://dl.rose7.cn',
       rows: parseManifest({ releases: COMPLETE }),
     },
     current: { code: 19, variant: 'internal' },
-    channel: 'stable',
-    url: 'https://dl.rose7.cn/apk/deepseek-chat-1.4.1.apk',
+    url: `${PRIMARY_RELEASE_BASE}/apk/deepseek-chat-1.4.1.apk`,
     fromCache: true,
   },
   {
@@ -479,16 +356,14 @@ const manualRows = [
     what: '变体断链（缓存里没有本机变体的包）→ 退到下载站首页，不许把 standard 包塞给 internal',
     snapshot: { savedAt: SAVED_AT, base: PRIMARY_RELEASE_BASE, rows: parseManifest({ releases: BROKEN }) },
     current: { code: 19, variant: 'internal' },
-    channel: 'stable',
     url: RELEASE_HOME_URL,
     fromCache: false,
   },
   {
     id: 'M4',
-    what: '仅稳定版 + 缓存里只有更高的预发布 → 退到下载站首页（不把预发布包当稳定版发出去）',
+    what: '缓存里只有更高的预发布 → 退到下载站首页（预发布不进候选，不把它当稳定版发出去）',
     snapshot: { savedAt: SAVED_AT, base: PRIMARY_RELEASE_BASE, rows: parseManifest({ releases: BETA_ONLY }) },
     current: { code: 19, variant: 'internal' },
-    channel: 'stable',
     url: RELEASE_HOME_URL,
     fromCache: false,
   },
@@ -497,7 +372,6 @@ const manualRows = [
     what: '完全没有缓存 → 退到下载站首页（失败态唯一还能走的路）',
     snapshot: undefined,
     current: { code: 19, variant: 'internal' },
-    channel: 'prerelease',
     url: RELEASE_HOME_URL,
     fromCache: false,
   },
@@ -505,7 +379,7 @@ const manualRows = [
 
 test('#412 B 手动下载兜底：能选到就给直链、选不到就退下载站首页（表驱动）', () => {
   table(manualRows, (row) => {
-    const target = manualDownloadTarget(row.snapshot, row.current, row.channel)
+    const target = manualDownloadTarget(row.snapshot, row.current)
     assert.equal(target.url, row.url, `${row.id} ${row.what}`)
     assert.equal(target.fromCache, row.fromCache, `${row.id} 来源标记不对`)
   })

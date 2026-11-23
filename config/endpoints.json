@@ -11,7 +11,7 @@
     443
   ],
   "download": {
-    "primaryBase": "http://jingluo.nekoai.com.cn",
+    "primaryBase": "https://jingluo.nekoai.com.cn",
     "fallbackBase": "https://dl.rose7.cn"
   },
   "consume": {

@@ -18,9 +18,12 @@ export interface UpdateReportFacts {
   version: string
   /** 当前 versionCode */
   versionCode?: number
-  /** 渠道的中文名 */
-  channel: string
-  /** 是否 Android 原生更新通道 */
+  /**
+   * 是否 Android 原生更新通道
+   *
+   * Issue #876：这里原来还有 `channel`（渠道的中文名）。渠道功能下线后删掉，
+   * 诊断文本里不再有「渠道: 稳定版」这一行——它恒为同一个值，只会占位置。
+   */
   native: boolean
   /** 最近一次检查的时刻（ms） */
   checkedAt?: number
@@ -66,7 +69,6 @@ export const buildUpdateReport = (facts: UpdateReportFacts): string => {
   const lines = [
     'DeepSeek 应用内更新诊断',
     `版本: ${facts.version || 'unknown'}${facts.versionCode === undefined ? '' : ` (${facts.versionCode})`}`,
-    `渠道: ${facts.channel}`,
     `通道: ${facts.native ? 'Android 原生更新' : '网页预览（仅下载链接）'}`,
     timeLine(facts.checkedAt),
     `结论: ${facts.outcome === undefined || facts.outcome === '' ? '尚未检查' : facts.outcome}`,
