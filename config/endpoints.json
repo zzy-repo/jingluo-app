@@ -1,15 +1,13 @@
 {
-  "feedbackUrl": "http://140.210.13.146:60012/feedback",
+  "feedbackUrl": "https://apia.ecsafe.cn/feedback",
   "legacyHosts": [
     "123.207.199.196",
     "62.106.70.167"
   ],
   "allowedHosts": [
-    "140.210.13.146",
     "apia.ecsafe.cn"
   ],
   "allowedPorts": [
-    60012,
     443
   ],
   "download": {
