@@ -57,10 +57,10 @@
 
 | Issue | 标题 | 处理 |
 | --- | --- | --- |
-| [#794](https://github.com/zzy-repo/deepseek-app/issues/794) | [settings-ui] 模型来源：取消第三方服务的 OpenAI / Anthropic 消息格式选择，改为自动适配 | 已修复：移除协议选择控件，改为按服务地址主机 / 模型名（`claude*`）/ 上次判定缓存 / 既有配置依次判定，兜底 OpenAI 兼容；发送链路只做本地同步判定 |
-| [#795](https://github.com/zzy-repo/deepseek-app/issues/795) | [auth] 缺少「忘记密码」流程：用户忘记密码后无法找回或重置 | **部分完成**：登录卡已接上「忘记密码」→ 发送重置邮件；**重置页（邮件深链）未做** —— App 未配 app-link，服务端重置链接指向面板页面，本 App 收不到。后端未配 SMTP 时原样展示其后端 message |
-| [#797](https://github.com/zzy-repo/deepseek-app/issues/797) | [auth] 注册时增加「确认密码」与密码可见切换，防止输错密码导致无法登录 | 已修复：确认密码在客户端三处共用同一判据校验（不一致不发请求、不进请求体）+ 密码眼睛切换（aria 完整、切换不丢内容与光标、不持久化） |
-| [#800](https://github.com/zzy-repo/deepseek-app/issues/800) | [settings-ui] 模型来源：选中「内置服务」后不应显示 API Key 及「重新领取」组件 | 已修复：内置服务下 Key 区与「重新领取」按钮**结构上不渲染**；「重新领取」的恢复能力改为启动 / 登录后**后台自动对齐**（含「Key 对得上但缺下发标记」的历史状态），不再需要用户手点 |
+| [#794](https://github.com/zzy-repo/jingluo-app/issues/794) | [settings-ui] 模型来源：取消第三方服务的 OpenAI / Anthropic 消息格式选择，改为自动适配 | 已修复：移除协议选择控件，改为按服务地址主机 / 模型名（`claude*`）/ 上次判定缓存 / 既有配置依次判定，兜底 OpenAI 兼容；发送链路只做本地同步判定 |
+| [#795](https://github.com/zzy-repo/jingluo-app/issues/795) | [auth] 缺少「忘记密码」流程：用户忘记密码后无法找回或重置 | **部分完成**：登录卡已接上「忘记密码」→ 发送重置邮件；**重置页（邮件深链）未做** —— App 未配 app-link，服务端重置链接指向面板页面，本 App 收不到。后端未配 SMTP 时原样展示其后端 message |
+| [#797](https://github.com/zzy-repo/jingluo-app/issues/797) | [auth] 注册时增加「确认密码」与密码可见切换，防止输错密码导致无法登录 | 已修复：确认密码在客户端三处共用同一判据校验（不一致不发请求、不进请求体）+ 密码眼睛切换（aria 完整、切换不丢内容与光标、不持久化） |
+| [#800](https://github.com/zzy-repo/jingluo-app/issues/800) | [settings-ui] 模型来源：选中「内置服务」后不应显示 API Key 及「重新领取」组件 | 已修复：内置服务下 Key 区与「重新领取」按钮**结构上不渲染**；「重新领取」的恢复能力改为启动 / 登录后**后台自动对齐**（含「Key 对得上但缺下发标记」的历史状态），不再需要用户手点 |
 
 > 本版不含 `1.4.11` 之外的其它 issue：`git log v1.4.11..<出包 commit>` 里带 issue 号的提交只有上面四条（其余是版本号与本仓库的 PR 编号）。
 

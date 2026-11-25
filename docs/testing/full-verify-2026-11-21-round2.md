@@ -7,7 +7,7 @@
 > 且**首轮那道设计性红 `check-refactor-direction` 已经转绿**（A1–A6 PASS，A7 MANUAL）。
 > `pnpm build` OK；`assembleRelease -PartifactVariant=internal` 本机**实跑出包**（6.57 MiB），
 > `debuggable=false（attr_absent）`、`aapt2 ... grep -c application-debuggable` = **0**、`verify:apk` **5/5 PASS**。
-> 同 commit 的 main CI（run [44879309351](https://github.com/zzy-repo/deepseek-app/actions/runs/44879309351)）**9 个 job 全 success**。
+> 同 commit 的 main CI（run [44879309351](https://github.com/zzy-repo/jingluo-app/actions/runs/44879309351)）**9 个 job 全 success**。
 > 本地测试层串行 **≈24 分 17 秒**（首轮 ≈20 分 50 秒，**+3 分 27 秒全部来自新增用例**：unit +27 文件、integration +3 文件、golden +3 文件、server +6 文件、门禁 +6 道）。
 
 ---
@@ -251,7 +251,7 @@ sha256=963630be6433651af206ad36db4860adbc9c883238b7c2cd55fa60804f75e71e  size=6.
 
 | 项 | 值 |
 | --- | --- |
-| run | [44879309351](https://github.com/zzy-repo/deepseek-app/actions/runs/44879309351)（attempt 1） |
+| run | [44879309351](https://github.com/zzy-repo/jingluo-app/actions/runs/44879309351)（attempt 1） |
 | 结论 | **success**（9 / 9 job success，`2026-11-21T07:14:28Z → 07:20:12Z`） |
 | 并行墙钟 | **344 s ≈ 5 分 44 秒** |
 | runner 分钟合计 | **1933 s ≈ 32 分 13 秒** |

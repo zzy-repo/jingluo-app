@@ -2,7 +2,7 @@
 
 > 回答三个问题：**这块地址搬过几次？这次怎么搬的？旧机下线那天用户会看到什么？**
 > 客户端侧改动在 PR #186（已合并 `fab625b`），决策与实测记录在
-> [#181](https://github.com/zzy-repo/deepseek-app/issues/181)。本文是**发布/运维视角**的那份。
+> [#181](https://github.com/zzy-repo/jingluo-app/issues/181)。本文是**发布/运维视角**的那份。
 
 ## 1. 三代地址
 

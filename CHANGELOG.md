@@ -41,8 +41,8 @@
 
 | Issue | 标题 | 状态 | 实现摘要 |
 | --- | --- | --- | --- |
-| [#812](https://github.com/zzy-repo/deepseek-app/issues/812) | [auth] 注册后后端已兜底建 Key，客户端「查到已有 Key」分支没把它用起来，提示 Key 无效 | 已修复 | 查重命中即**取回明文并生效**（不再提示 Key 无效）；推理地址与登录环境收敛为同一处派生（`inferenceBaseUrl` 只从 `consume.baseUrl` 来），失败提示带上 Key 前缀与地址便于定位 |
-| [#813](https://github.com/zzy-repo/deepseek-app/issues/813) | [输入框] 官方渠道下删除「语音输入」和「文档上传」入口，仅保留最右边的文件上传 | 已修复 | 官方渠道工具栏精简为只剩最右的文件上传（语音 / 文档入口结构上不渲染）；草稿里残留的文档引用改为给「移除附件」的**出路**，不再是「当前渠道不支持」的死局 |
+| [#812](https://github.com/zzy-repo/jingluo-app/issues/812) | [auth] 注册后后端已兜底建 Key，客户端「查到已有 Key」分支没把它用起来，提示 Key 无效 | 已修复 | 查重命中即**取回明文并生效**（不再提示 Key 无效）；推理地址与登录环境收敛为同一处派生（`inferenceBaseUrl` 只从 `consume.baseUrl` 来），失败提示带上 Key 前缀与地址便于定位 |
+| [#813](https://github.com/zzy-repo/jingluo-app/issues/813) | [输入框] 官方渠道下删除「语音输入」和「文档上传」入口，仅保留最右边的文件上传 | 已修复 | 官方渠道工具栏精简为只剩最右的文件上传（语音 / 文档入口结构上不渲染）；草稿里残留的文档引用改为给「移除附件」的**出路**，不再是「当前渠道不支持」的死局 |
 
 
 ## 1.4.13 (2026-11-22) — 登录后自动领 Key + 模型来源改单层手风琴
@@ -59,12 +59,12 @@
 
 | Issue | 标题 | 状态 | 实现摘要 |
 | --- | --- | --- | --- |
-| [#794](https://github.com/zzy-repo/deepseek-app/issues/794) | [settings-ui] 模型来源：取消第三方服务的 OpenAI / Anthropic 消息格式选择，改为自动适配 | 已修复 | 移除协议选择控件，改为按服务地址主机 / 模型名（`claude*`）/ 上次判定缓存 / 既有配置依次判定，兜底 OpenAI 兼容。**1.4.12 起已包含** |
-| [#797](https://github.com/zzy-repo/deepseek-app/issues/797) | [auth] 注册时增加「确认密码」与密码可见切换，防止输错密码导致无法登录 | 已修复 | 确认密码客户端三处共用同一判据（不一致不发请求、不进请求体）+ 密码眼睛切换（aria 完整、不丢内容与光标、不持久化）。**1.4.12 起已包含** |
-| [#800](https://github.com/zzy-repo/deepseek-app/issues/800) | [settings-ui] 模型来源：选中「内置服务」后不应显示 API Key 及「重新领取」组件 | 已修复 | 内置服务下 Key 区与「重新领取」结构上不渲染；恢复能力改为登录后后台自动对齐（**本版由 #807 的手风琴形态吸收**）。**1.4.12 起已包含** |
-| [#803](https://github.com/zzy-repo/deepseek-app/issues/803) | 登录/注册成功后自动建 Key，没拿到则再试一次 | 已修复 | 会话建立钩子（login / register 两个时机各通知一次）→ 自动领 Key；失败自动重试一次，仍失败给出可见 banner 可手动再试 |
-| [#807](https://github.com/zzy-repo/deepseek-app/issues/807) | [settings-ui] 模型来源重构：改为单层手风琴，内置服务点击即领取 key，增加「确认使用」与打勾标识 | 已修复 | 模型来源改为单层手风琴：点内置服务行即领取 Key，行内「确认使用」+ 打勾标识；协议自动适配沿用 #794 的判定 |
-| [#795](https://github.com/zzy-repo/deepseek-app/issues/795) | [auth] 缺少「忘记密码」流程：用户忘记密码后无法找回或重置 | **部分完成** | 登录卡已接「忘记密码」→ 发送重置邮件；**重置页（邮件深链）未做** —— App 未配 app-link，服务端重置链接指向面板页面，本 App 收不到；服务端 SMTP 未配时原样展示其后端 message |
+| [#794](https://github.com/zzy-repo/jingluo-app/issues/794) | [settings-ui] 模型来源：取消第三方服务的 OpenAI / Anthropic 消息格式选择，改为自动适配 | 已修复 | 移除协议选择控件，改为按服务地址主机 / 模型名（`claude*`）/ 上次判定缓存 / 既有配置依次判定，兜底 OpenAI 兼容。**1.4.12 起已包含** |
+| [#797](https://github.com/zzy-repo/jingluo-app/issues/797) | [auth] 注册时增加「确认密码」与密码可见切换，防止输错密码导致无法登录 | 已修复 | 确认密码客户端三处共用同一判据（不一致不发请求、不进请求体）+ 密码眼睛切换（aria 完整、不丢内容与光标、不持久化）。**1.4.12 起已包含** |
+| [#800](https://github.com/zzy-repo/jingluo-app/issues/800) | [settings-ui] 模型来源：选中「内置服务」后不应显示 API Key 及「重新领取」组件 | 已修复 | 内置服务下 Key 区与「重新领取」结构上不渲染；恢复能力改为登录后后台自动对齐（**本版由 #807 的手风琴形态吸收**）。**1.4.12 起已包含** |
+| [#803](https://github.com/zzy-repo/jingluo-app/issues/803) | 登录/注册成功后自动建 Key，没拿到则再试一次 | 已修复 | 会话建立钩子（login / register 两个时机各通知一次）→ 自动领 Key；失败自动重试一次，仍失败给出可见 banner 可手动再试 |
+| [#807](https://github.com/zzy-repo/jingluo-app/issues/807) | [settings-ui] 模型来源重构：改为单层手风琴，内置服务点击即领取 key，增加「确认使用」与打勾标识 | 已修复 | 模型来源改为单层手风琴：点内置服务行即领取 Key，行内「确认使用」+ 打勾标识；协议自动适配沿用 #794 的判定 |
+| [#795](https://github.com/zzy-repo/jingluo-app/issues/795) | [auth] 缺少「忘记密码」流程：用户忘记密码后无法找回或重置 | **部分完成** | 登录卡已接「忘记密码」→ 发送重置邮件；**重置页（邮件深链）未做** —— App 未配 app-link，服务端重置链接指向面板页面，本 App 收不到；服务端 SMTP 未配时原样展示其后端 message |
 
 
 ## 1.4.12 (2026-11-21) — 注册确认密码 + 忘记密码入口 + 模型来源两处收口（协议自动适配 / 内置服务不再露 Key）

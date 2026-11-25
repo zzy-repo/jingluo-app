@@ -57,7 +57,7 @@
  *   node scripts/audit-release.mjs v1.4.8 --expect-version 1.4.8
  *   node scripts/audit-release.mjs v1.4.8-staging --allow-insecure     # 明文联调包
  *   node scripts/audit-release.mjs v1.4.8 --json                       # 机器可读
- *   node scripts/audit-release.mjs v1.4.8 --repo zzy-repo/deepseek-app  # 显式仓库（默认从 origin 派生）
+ *   node scripts/audit-release.mjs v1.4.8 --repo zzy-repo/jingluo-app  # 显式仓库（默认从 origin 派生）
  *   node scripts/audit-release.mjs v1.4.8 --keep                       # 保留下载的资产（排查用）
  *   pnpm audit:release v1.4.8
  *

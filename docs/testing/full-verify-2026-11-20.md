@@ -146,7 +146,7 @@ baseline 比对：本次失败 0 / 基线登记红 0 / 新增失败 0 / 已转�
 | 口径 | 值 | 说明 |
 | --- | --- | --- |
 | 本地串行（本单实跑） | **≈1250 s ≈ 20 分 50 秒** | tsc 2.1 + oxlint 0.2 + unit 54.8 + unit(--jobs 1) 94.0 + regression 3.6 + server 2.8 + 标准产物构建 3.0 + golden 11.0 + 三变体构建 8.0 + integration 1055.3 + 门禁前构建 4.0 + 门禁 11.5 |
-| CI 并行墙钟（同 commit） | **271 s ≈ 4 分 31 秒** | [run 44742857267](https://github.com/zzy-repo/deepseek-app/actions/runs/44742857267)，`2026-11-20T13:16:23Z → 13:20:57Z`，结论 success |
+| CI 并行墙钟（同 commit） | **271 s ≈ 4 分 31 秒** | [run 44742857267](https://github.com/zzy-repo/jingluo-app/actions/runs/44742857267)，`2026-11-20T13:16:23Z → 13:20:57Z`，结论 success |
 | CI runner 分钟合计 | 1446 s ≈ 24 分 06 秒 | 9 个 job 的时长之和（含各 job 自己的 setup/install） |
 
 CI 各 job 时长（最近一次 main run）：

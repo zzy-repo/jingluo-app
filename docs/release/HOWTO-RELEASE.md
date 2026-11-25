@@ -1,6 +1,6 @@
 # 发布流程手册：从构建、签名、验证到发布到 GitHub 与公网
 
-> 本文同时是 GitHub issue「[发布流程] 从构建、签名、验证到发布到 GitHub 与公网（发布控制台 ra.rose7.cn）完整手册」的正文，仓库副本：[docs/release/HOWTO-RELEASE.md](https://github.com/zzy-repo/deepseek-app/blob/main/docs/release/HOWTO-RELEASE.md)。**发布控制台入口：https://ra.rose7.cn** 。凭据与解密口令在该 issue 的「凭据」评论里，不在本文。
+> 本文同时是 GitHub issue「[发布流程] 从构建、签名、验证到发布到 GitHub 与公网（发布控制台 ra.rose7.cn）完整手册」的正文，仓库副本：[docs/release/HOWTO-RELEASE.md](https://github.com/zzy-repo/jingluo-app/blob/main/docs/release/HOWTO-RELEASE.md)。**发布控制台入口：https://ra.rose7.cn** 。凭据与解密口令在该 issue 的「凭据」评论里，不在本文。
 
 ## 我只想发布一个版本，最短路径
 
@@ -90,7 +90,7 @@ cd android && ./gradlew assembleRelease --no-daemon --max-workers=1
 
 ```bash
 export https_proxy=http://127.0.0.1:7890 http_proxy=http://127.0.0.1:7890
-gh api "repos/zzy-repo/deepseek-app/releases?per_page=30" \
+gh api "repos/zzy-repo/jingluo-app/releases?per_page=30" \
   --jq '.[]|select(.draft==false)|"\(.tag_name)\t\(.prerelease)\t\(.body|capture("versionCode[^0-9]{0,8}(?<c>[0-9]+)")?.c // "?")"' | head -8
 # v1.4.19  true   38
 # v1.4.18  true   37
@@ -188,22 +188,22 @@ sha256sum "$APK"
 export https_proxy=http://127.0.0.1:7890 http_proxy=http://127.0.0.1:7890
 V=1.4.20; APK=jingluo-chat-$V.apk
 # 1) 先建 draft（REST，布尔值必须用 -F，-f 会把 true 当字符串 → 422）
-gh api -X POST repos/zzy-repo/deepseek-app/releases \
+gh api -X POST repos/zzy-repo/jingluo-app/releases \
   -f tag_name=v$V -f name="jingluo-chat $V" -F body=@/tmp/notes-$V.md \
   -F draft=true -F prerelease=false --jq '.id'
 # 2) 上传资产
-gh release upload v$V "$APK" --repo zzy-repo/deepseek-app
+gh release upload v$V "$APK" --repo zzy-repo/jingluo-app
 # 3) 下载回来重算 sha256：curl 直取私有仓库资产只会得到 9 字节 "Not Found"
-gh release download v$V --repo zzy-repo/deepseek-app --pattern '*.apk' --dir /tmp/gh-$V --clobber
+gh release download v$V --repo zzy-repo/jingluo-app --pattern '*.apk' --dir /tmp/gh-$V --clobber
 sha256sum /tmp/gh-$V/*.apk          # 必须等于本地 APK 的 sha256
 # 4) 转正式（也可以直接用 REST PATCH draft=false）
-gh release edit v$V --repo zzy-repo/deepseek-app --draft=false
+gh release edit v$V --repo zzy-repo/jingluo-app --draft=false
 # 5) 核对
-gh api repos/zzy-repo/deepseek-app/releases/latest --jq .tag_name
+gh api repos/zzy-repo/jingluo-app/releases/latest --jq .tag_name
 ```
 
 - 本次我实际跑过的只有只读的第 3 步和第 5 步（对 v1.4.19：下载回来 sha256 为 `af648ea6…a5e4`，与构建产物一致；`curl -L` 直取资产 URL 返回 9 字节 `Not Found`）。建 draft、上传、转正式是写操作，**未核实**。
-- 开 PR 与合并一律走 REST：`gh pr create` 在本仓库报权限错。`gh api -X POST repos/zzy-repo/deepseek-app/pulls -f title=… -f head=… -f base=main -F body=@file`，等 `mergeable` 为 true 后 `gh api -X PUT repos/zzy-repo/deepseek-app/pulls/<n>/merge -f merge_method=squash --jq .sha`。
+- 开 PR 与合并一律走 REST：`gh pr create` 在本仓库报权限错。`gh api -X POST repos/zzy-repo/jingluo-app/pulls -f title=… -f head=… -f base=main -F body=@file`，等 `mergeable` 为 true 后 `gh api -X PUT repos/zzy-repo/jingluo-app/pulls/<n>/merge -f merge_method=squash --jq .sha`。
 - **`prerelease=true` 的 Release 不会成为 `releases/latest`**。核对：现在 `releases/latest` 是 `v1.4.16`（正式版），而 v1.4.17、v1.4.18、v1.4.19 都是 prerelease。
 - **带「后端新错误码生产未上线」依赖的版本必须设为 prerelease**，并在正文最前面写「仅供测试，不要推给用户」（v1.4.19 正是这样做的）。
 - 正文模板（参照 v1.4.19）：元信息表（versionName / versionCode / 文件名 / 大小 / SHA-256 / MD5）、「本版相对上一版的变化」（带 issue 链接，**诚实标注「已完成」「部分完成」「只有单测、未真实验证」**）、「沿用」「仍在等后端」、「运行配置（公开部分）」、验收（verify 结果）。
@@ -435,7 +435,7 @@ git checkout -- android/capacitor.settings.gradle
 
 | 对象 | 凭什么访问 | 能做什么 |
 | --- | --- | --- |
-| GitHub 仓库 `zzy-repo/deepseek-app`（私有） | 本机 `gh` 已登录 `zzy-repo`（admin / push） | 读写代码、issue、PR、Release。开 PR 与合并走 REST |
+| GitHub 仓库 `zzy-repo/jingluo-app`（私有） | 本机 `gh` 已登录 `zzy-repo`（admin / push） | 读写代码、issue、PR、Release。开 PR 与合并走 REST |
 | aliyun（发布控制台、Caddy、dl） | `ssh -i ~/.ssh/aliyun_macos.pem root@aliyun`（`/root/.ssh/config` 里 `Host aliyun`） | root。控制台目录 `/opt/dl-console`，凭据文件 `/etc/default/dl-console`，Caddy `/opt/caddy` |
 | 发布控制台 `https://ra.rose7.cn` | `UPLOAD_TOKEN`（上传）、`OPERATOR_PIN`（发布 / 删除）、`DOWNLOAD_SECRET`（测试下载链接） | 上传只进待发布；发布与删除要口令。三者都在加密包里与 issue「凭据」评论里 |
 | 62 节点 `62.106.70.167` | `ssh -i ~/.ssh/shiro.pem -o IdentitiesOnly=yes root@62.106.70.167`（**`/root/.ssh/config` 里的 `Host shiro` 指向 150.158.54.163，是另一台机器，别混**） | root。上面跑 `dl-mirror.timer`（每 15 秒拉取 dl）。**只读查看即可，不要手改 `/var/www/dl`** |
