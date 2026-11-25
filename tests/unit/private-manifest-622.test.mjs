@@ -38,11 +38,17 @@ const TOKEN = 'tok-622-should-stay-in-header'
 /** 已装版本（都低于两份清单里的候选，保证「能不能选中」不是版本号挡的） */
 const INSTALLED = 18
 
+/*
+ * #876：渠道档位固定成「只收 stable」之后，`buildType: 'prerelease'` 不再进候选。
+ * 本文件的夹具默认值因此从 'prerelease' 改成 'stable' —— 否则每一格都会因为「条目被档位筛掉」
+ * 变红，测不到私有清单链路本身（零请求 / base / 来源 / 不被二次过滤）。
+ * 「prerelease 内测包当前没有候选」这个后果单独由文件末尾那条用例钉住，不许悄悄消失。
+ */
 const row = (overrides) => ({
   version: '1.4.0',
   versionCode: 19,
   artifactVariant: 'internal',
-  buildType: 'prerelease',
+  buildType: 'stable',
   size: 5_000_000,
   file: 'apk/deepseek-chat-1.4.0-internal.apk',
   changes: ['1.4.0 的说明'],
@@ -126,7 +132,7 @@ const CASES = [
     source: 'public',
     check: ({ result }) => {
       assert.equal(result.rows.length, 1, '拿到的是公网清单')
-      assert.equal(selectUpdate(result.rows, INSTALLED, 'internal', 'prerelease').release, undefined,
+      assert.equal(selectUpdate(result.rows, INSTALLED, 'internal').release, undefined,
         '公网清单里没有 internal 条目 —— 这正是 #377 的现场')
     },
   },
@@ -139,7 +145,7 @@ const CASES = [
     privateCalls: 0,
     source: 'public',
     check: ({ result }) => {
-      const picked = selectUpdate(result.rows, INSTALLED, 'standard', 'stable')
+      const picked = selectUpdate(result.rows, INSTALLED, 'standard')
       assert.equal(picked.release?.versionCode, 20, 'standard 变体照常从公网清单选中 1.4.1')
     },
   },
@@ -154,7 +160,7 @@ const CASES = [
     check: ({ result, fetch }) => {
       assert.equal(result.base, 'https://dl.rose7.cn', 'base 必须是回了清单那台机器（拼 file 用）')
       assert.equal(fetch.public().length, 0, '私有清单拿到了就不该再打公网')
-      const picked = selectUpdate(result.rows, INSTALLED, 'internal', 'prerelease')
+      const picked = selectUpdate(result.rows, INSTALLED, 'internal')
       assert.equal(picked.release?.versionCode, 19, 'internal 变体终于有候选了（#377 的解法）')
       assert.equal(picked.release?.artifactVariant, 'internal')
     },
@@ -168,9 +174,9 @@ const CASES = [
     privateCalls: 1,
     source: 'public',
     check: ({ result }) => {
-      const std = selectUpdate(result.rows, INSTALLED, 'standard', 'stable')
+      const std = selectUpdate(result.rows, INSTALLED, 'standard')
       assert.equal(std.release?.versionCode, 20, '回退后公网清单照常选出 standard')
-      const internal = selectUpdate(result.rows, INSTALLED, 'internal', 'prerelease')
+      const internal = selectUpdate(result.rows, INSTALLED, 'internal')
       assert.equal(internal.release, undefined)
       assert.equal(internal.reason, 'no-internal-variant', 'internal 侧给可解释的 reason，不是异常')
     },
@@ -185,7 +191,7 @@ const CASES = [
     source: 'public',
     check: ({ result }) => {
       assert.equal(result.rows.length, 1)
-      assert.equal(selectUpdate(result.rows, INSTALLED, 'standard', 'stable').release?.versionCode, 20)
+      assert.equal(selectUpdate(result.rows, INSTALLED, 'standard').release?.versionCode, 20)
     },
   },
   {
@@ -216,7 +222,7 @@ const CASES = [
     source: 'private',
     check: ({ result }) => {
       assert.equal(result.rows.length, 2, 'fetchManifest 不做变体过滤（筛选只有 selectUpdate 一份）')
-      const picked = selectUpdate(result.rows, INSTALLED, 'internal', 'prerelease')
+      const picked = selectUpdate(result.rows, INSTALLED, 'internal')
       assert.equal(picked.release?.versionCode, 19, 'standard 条目再新也不能装到 internal 包上')
       assert.equal(picked.release?.artifactVariant, 'internal')
     },
@@ -402,6 +408,25 @@ test('私有清单复用公网那套解析与筛选（不写第二份）：parse
   assert.equal(rows[0].artifactVariant, 'internal')
   assert.equal(rows[0].sha256?.length, 64)
   assert.equal(Object.hasOwn(rows[0], 'downloadUrl'), false, '服务端附加字段不进 UpdateRelease')
-  assert.equal(selectUpdate(rows, INSTALLED, 'internal', 'prerelease').release?.versionCode, 19)
-  assert.equal(selectUpdate(rows, INSTALLED, 'standard', 'stable').release, undefined)
+  assert.equal(selectUpdate(rows, INSTALLED, 'internal').release?.versionCode, 19)
+  assert.equal(selectUpdate(rows, INSTALLED, 'standard').release, undefined)
+})
+
+/*
+ * #876 的已知后果（不许悄悄消失）：线上内测包都是 beta 版本（`buildType: 'prerelease'`），
+ * 而渠道档位固定成「只收 stable」后，它们**一个都进不了候选** —— 也就是说 internal 变体目前
+ * 没有自动更新路径（#377 的原症状会以更难发现的形式回来）。
+ *
+ * 这条用例不判对错，只把现状钉死：等维护者在 #876 决定「internal 变体要不要不受档位过滤」
+ * 时，这个断言会跟着一起改。红/绿都说明有人在看这件事。
+ */
+test('#876 后果：beta 内测包（buildType=prerelease）在固定 stable 档下没有任何候选', async () => {
+  const rows = parseManifest(
+    JSON.parse(privateBody([row({ buildType: 'prerelease' })]))
+  )
+  const picked = selectUpdate(rows, INSTALLED, 'internal')
+  assert.equal(picked.release, undefined, 'prerelease 的内测包不是候选（现状，待 #876 决策）')
+  // 同一份记录只要标成 stable 就立刻可选 —— 证明挡它的是档位，不是变体、不是缺字段
+  const asStable = parseManifest(JSON.parse(privateBody([row({ buildType: 'stable' })])))
+  assert.equal(selectUpdate(asStable, INSTALLED, 'internal').release?.versionCode, 19)
 })

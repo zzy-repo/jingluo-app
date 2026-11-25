@@ -15,15 +15,12 @@ import {
   parseManifest,
   manualDownloadTarget,
   readManifestSnapshot,
-  readUpdateChannel,
   releaseUrl,
   saveManifestSnapshot,
-  saveUpdateChannel,
   selectUpdate,
   DEFAULT_RELEASE_BASE,
   type ArtifactVariant,
   type ManifestSnapshot,
-  type UpdateChannel,
   type UpdateRelease,
 } from '../../services/updateManifest.js'
 import { useTranslate } from '../../i18n/index.js'
@@ -50,15 +47,6 @@ import dialogStyles from './AppUpdateField.module.css'
 import styles from './Settings.module.css'
 
 const sizeText = (bytes: number) => `${(bytes / 1024 / 1024).toFixed(1)} MB`
-
-/**
- * 渠道名（双语对）：#310 之后失败文案里会写清「哪个渠道」，所以只写一次；
- * #373 起文案分 zh/en，渠道名不能只有中文，否则英文句子里会嵌一段中文。
- */
-const CHANNEL_LABEL: Record<UpdateChannel, { zh: string; en: string }> = {
-  stable: { zh: '稳定版', en: 'Stable' },
-  prerelease: { zh: '稳定版与预发布版', en: 'Stable + pre-release' },
-}
 
 /** 最近检查时间：只到秒（用户在截图里对得上就够了） */
 const clockText = (at: number | undefined): string => {
@@ -144,13 +132,6 @@ export const AppUpdateField = () => {
   /** #412：新增文案走 i18n（zh/en 成对，check:i18n 的 R1/R2/R4 会盯着） */
   const t = useTranslate()
   const [opened, setOpened] = useState(false)
-  /**
-   * 渠道默认值按「装的是不是预发布包」猜；**用户选过就以用户的为准**（#412 第 3 项）——
-   * 以前这里只有猜测，于是「我把渠道切到稳定版了」在重开设置后根本不成立。
-   */
-  const [channel, setChannel] = useState<UpdateChannel>(() =>
-    readUpdateChannel(/-/.test(bundledApp().version) ? 'prerelease' : 'stable')
-  )
   const [release, setRelease] = useState<UpdateRelease>()
   /** 本次清单实际生效的分发机：相对 file 必须拼在它上面（回退到旧机后别拼新机域名）。 */
   const [base, setBase] = useState<string>(DEFAULT_RELEASE_BASE)
@@ -228,9 +209,8 @@ export const AppUpdateField = () => {
    * 异常 → 界面文案（#310）：分类在 services/updateFailure.ts，这里只负责把结果写到界面上，
    * 同一份 `UpdateFailureView` 既给状态行，也给「复制诊断信息」。
    */
-  const showFailure = (error: unknown, activeChannel: UpdateChannel, version: string) => {
+  const showFailure = (error: unknown, version: string) => {
     const view = describeUpdateFailure(classifyUpdateError(error), {
-      channel: CHANNEL_LABEL[activeChannel],
       version,
       locale: lang,
     })
@@ -239,9 +219,7 @@ export const AppUpdateField = () => {
     return view
   }
   const checking = useRef(false)
-  const check = async (nextChannel?: UpdateChannel) => {
-    // 切渠道后自动重查（issue #310 验收）：这时 state 里的 channel 还是旧值，必须用入参
-    const activeChannel = nextChannel ?? channel
+  const check = async () => {
     if (checking.current) {
       return
     }
@@ -276,7 +254,6 @@ export const AppUpdateField = () => {
           endpointKey: 'other',
           durationMs: timer.lap(),
         }),
-        source: activeChannel,
         native,
       })
     try {
@@ -304,7 +281,7 @@ export const AppUpdateField = () => {
       installedRef.current = { code: current.versionCode, variant }
       // 清单拿到了就存一份快照：下次失败时它就是唯一的兜底（写不进去不影响本次检查）
       saveManifestSnapshot({ rows, base: effectiveBase })
-      const result = selectUpdate(rows, current.versionCode, variant, activeChannel)
+      const result = selectUpdate(rows, current.versionCode, variant)
       if (controller.signal.aborted) {
         return
       }
@@ -317,7 +294,6 @@ export const AppUpdateField = () => {
           endpointKey: 'other',
           durationMs: Date.now() - startedAt,
         }),
-        source: activeChannel,
         result: result.release ? 'update-available' : 'up-to-date',
         // #377：没有候选时把「为什么没有」也记进日志——排查时不用再靠用户复述文案
         reason: result.reason ?? 'none',
@@ -346,7 +322,6 @@ export const AppUpdateField = () => {
         // #377：`reason` 把「本机变体在清单里断链」与「确实已是最新」分开——前者要给的是
         // 「手动下载正式版」这种能行动的结论，不是「已是最新」。
         const view = describeUpToDate({
-          channel: CHANNEL_LABEL[activeChannel],
           version,
           locale: lang,
           incomplete: result.incomplete,
@@ -369,13 +344,12 @@ export const AppUpdateField = () => {
               endpointKey: 'other',
               durationMs: Date.now() - startedAt,
             }),
-            source: activeChannel,
             native,
             upstreamCode: classifyUpdateError(error).code,
           },
           error
         )
-        showFailure(error, activeChannel, bundledApp().version)
+        showFailure(error, bundledApp().version)
         /**
          * #412 第 1 项：失败时不再只剩一句「检查失败」。
          * 上次成功拉到的清单还在 localStorage 里，读出来给用户看（标注缓存时间 + 「可能不是最新」），
@@ -430,7 +404,6 @@ export const AppUpdateField = () => {
           fromCache: result.cached,
           speedBps: result.cached ? undefined : bytesPerSecond(release.size, duration),
         }),
-        source: channel,
         native,
       })
       if (!controller.signal.aborted) {
@@ -447,7 +420,7 @@ export const AppUpdateField = () => {
           setMessage('已取消下载，可重新下载。')
         } else {
           // 下载 / 校验失败也要说清是哪一类（#310）：签名不符与断流对用户意味着不同的下一步
-          const view = showFailure(error, channel, release.version)
+          const view = showFailure(error, release.version)
           const partial = progressRef.current?.received
           if (partial !== undefined && partial > 0 && view.kind === 'download') {
             setMessage(
@@ -486,7 +459,7 @@ export const AppUpdateField = () => {
         setReady(false)
         // 安装阶段的校验失败 = 缓存的包不可信：按钮会回到「确认下载」，同样不能留满格进度（#373 场景 B2）
         setProgress(undefined)
-        showFailure(error, channel, release.version)
+        showFailure(error, release.version)
       }
     } finally {
       if (mounted.current) {
@@ -515,7 +488,6 @@ export const AppUpdateField = () => {
       buildUpdateReport({
         version: bundledApp().version,
         versionCode: bundledApp().versionCode,
-        channel: CHANNEL_LABEL[channel].zh,
         native,
         checkedAt,
         outcome: outcome?.text,
@@ -530,7 +502,7 @@ export const AppUpdateField = () => {
    * `manualDownloadTarget`（纯函数、单测钉住）：有缓存就给最新可装那条记录的直链，
    * 没有就退到公开下载站首页。组件这里只负责「怎么打开」。
    */
-  const manual = manualDownloadTarget(snapshot, installedRef.current, channel)
+  const manual = manualDownloadTarget(snapshot, installedRef.current)
   /**
    * 原生侧用 App 内嵌浏览器打开（与 #331 的「前往购买」同一条通道）；插件缺失 / 打不开时
    * 留在弹窗里给一句可读提示，不做 `window.open` / `location` 兜底（整页跳走就等于把设置界面弄丢）。
@@ -625,27 +597,6 @@ export const AppUpdateField = () => {
             )
           }
         >
-          <label>
-            更新渠道{' '}
-            <select
-              value={channel}
-              disabled={busy}
-              onChange={(event) => {
-                const next = event.target.value as UpdateChannel
-                setChannel(next)
-                setRelease(undefined)
-                setReady(false)
-                // #412 第 3 项：选择要记住（否则「切到仅稳定版」重开设置就不成立了）。
-                // 写失败（隐私模式 / 配额满）只影响下次默认值，不影响本次检查。
-                saveUpdateChannel(next)
-                // 切渠道后自动重查（#310 验收）：不再让用户再点一次「检查更新」
-                void check(next)
-              }}
-            >
-              <option value="stable">稳定版</option>
-              <option value="prerelease">稳定版与预发布版</option>
-            </select>
-          </label>
           <p role="status" aria-live="polite">
             {message}
           </p>
@@ -671,7 +622,6 @@ export const AppUpdateField = () => {
                   {cachedPreview.map((row) => (
                     <li key={`${row.versionCode}-${row.file}`}>
                       {row.version} · {sizeText(row.size)}
-                      {row.buildType ? ` · ${CHANNEL_LABEL[row.buildType][lang]}` : ''}
                     </li>
                   ))}
                 </ul>
@@ -722,10 +672,6 @@ export const AppUpdateField = () => {
                   {bundledApp().version}
                   {bundledApp().versionCode > 0 ? `（${bundledApp().versionCode}）` : ''}
                 </dd>
-              </div>
-              <div>
-                <dt>更新渠道</dt>
-                <dd>{CHANNEL_LABEL[channel][lang]}</dd>
               </div>
               <div>
                 <dt>更新服务</dt>

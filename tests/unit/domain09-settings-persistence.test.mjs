@@ -80,7 +80,7 @@ const seed = (row, spec) => {
 /** 一行 × 一个合法值的落盘期望：声明的键 + 写入口顺带写的兼容键 */
 const expectedStores = (row, item) => ({ [row.keys[0]]: item.store, ...(item.also ?? {}) })
 
-const { SETTING_ROWS, UPDATE_CHANNEL_CONTRACT, DEFAULT_KIND } = await import(
+const { SETTING_ROWS, DEFAULT_KIND } = await import(
   '../fixtures/domain08-09/settings-matrix.mjs'
 )
 
@@ -148,41 +148,30 @@ test('N2-c 冷启动读回：合法值重启后还在（13 个 chat-demo 键族�
   assert.deepEqual(failures, [])
 })
 
-test('N2-d 更新渠道：键归更新链路（chat-demo:update-channel），初值仍按包版本号推断', async () => {
-  // 随 556067a（#470，#412 第 3 项）变更：这条原来断言「更新渠道不持久化、文件里没有任何存储痕迹」。
-  // #412 有意让「切到仅稳定版」被记住（否则重开设置就回到按包版本号猜的默认值），所以口径改成：
-  //   - 推断仍是兜底：初值 = readUpdateChannel(版本号里有没有 `-` ? prerelease : stable)；
-  //   - 读写**只许**走 updateManifest.ts（键与脏值回落都在那儿），组件里不许直接摸存储。
-  const source = readFileSync(
+test('N2-d 更新渠道已下线（#876）：src 里不许再有 chat-demo:update-channel，也没有渠道下拉', async () => {
+  /*
+   * 这条原来断言的是「更新渠道的初值按包版本号推断、读写只许走 updateManifest.ts」。
+   * #876 把渠道功能整体下线（固定只收 stable），于是断言方向反过来：
+   * 现在要防的是「有人顺手把这个概念加回来」——键、下拉、readUpdateChannel 都不许再出现。
+   */
+  const component = readFileSync(
     fileURLToPath(new URL('../../src/components/settings/AppUpdateField.tsx', import.meta.url)),
     'utf8'
   )
-  assert.match(
-    source,
-    UPDATE_CHANNEL_CONTRACT.derive,
-    `更新渠道的初值必须仍以包版本号推断作兜底（${UPDATE_CHANNEL_CONTRACT.file}）`
-  )
-  // 注释里出现 `localStorage` / `chat-demo:` 是正常的（在讲缓存来源），只剥注释后再查真正的读写
-  const code = source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/[^\n]*/g, '$1')
-  for (const forbidden of UPDATE_CHANNEL_CONTRACT.forbidden) {
-    assert.doesNotMatch(code, forbidden, `更新渠道的存储读写必须走 service，组件里不许自己摸：${forbidden}`)
-  }
-
-  // ① 键声明在更新链路而不是设置矩阵：整个 src/ 里只有一处写这个字面量
   const service = readFileSync(
-    fileURLToPath(new URL(`../../${UPDATE_CHANNEL_CONTRACT.service.file}`, import.meta.url)),
+    fileURLToPath(new URL('../../src/services/updateManifest.ts', import.meta.url)),
     'utf8'
   )
-  assert.match(
-    service,
-    new RegExp(`UPDATE_CHANNEL_KEY = '${UPDATE_CHANNEL_CONTRACT.service.key}'`),
-    `更新渠道的键必须声明在 ${UPDATE_CHANNEL_CONTRACT.service.file}`
-  )
-  assert.doesNotMatch(
-    service,
-    /readUpdateChannel\(\s*\)/,
-    'readUpdateChannel 必须要求调用方给 fallback：脏值要回落到「按包版本号推断」，不能回落到硬编码猜测'
-  )
+  // ① 服务层：渠道持久化的三个导出必须彻底消失（不是「没人调用」，是「不存在」）
+  for (const gone of ['UPDATE_CHANNEL_KEY', 'readUpdateChannel', 'saveUpdateChannel']) {
+    assert.doesNotMatch(service, new RegExp(`export const ${gone}\\b`), `${gone} 必须从 updateManifest.ts 删掉（#876）`)
+  }
+  // ② 组件层：没有渠道下拉，也没有把渠道写进诊断 / 事件的地方
+  const code = component.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/[^\n]*/g, '$1')
+  assert.doesNotMatch(code, /<select/, '「更新渠道」下拉必须已删除（#876）')
+  assert.doesNotMatch(code, /CHANNEL_LABEL|saveUpdateChannel|readUpdateChannel/, '渠道相关标识必须已删除（#876）')
+  // ③ 仍要有「手动下载最新版」这个出口：删渠道 ≠ 删兜底
+  assert.match(component, /manualDownloadTarget\(/, '删渠道时不许顺手把「手动下载最新版」的兜底出口一起删掉')
 
   // ② 数据层：把 12 个设置写一遍，存储里不应冒出任何 update/channel 键（这一项不归设置矩阵管）
   storage.clear()

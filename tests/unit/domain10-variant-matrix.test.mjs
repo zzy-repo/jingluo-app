@@ -1,6 +1,6 @@
 // [layer: unit | 纯 Node，无浏览器无网络 | 耗时: <1s]
 //
-// 域10 L0 —— **变体 × 渠道矩阵**（Issue #377，父单 #373 / #362 域10「更新链路」）。
+// 域10 L0 —— **变体矩阵**（Issue #377，父单 #373 / #362 域10「更新链路」；#876 去掉渠道维度）。
 //
 // 要回答的问题：`selectUpdate()` 在「已装变体 × 更新渠道」的每一格里，给出的
 // 是**能行动**的结论，还是笼统的「已是最新」。
@@ -13,7 +13,7 @@
 // 请手动下载正式版」。**没有**放开跨变体候选（原生 `verify()` 的 `VARIANT_MISMATCH` 仍拦截，
 // 发一个 internal 变体的 1.4.1 属于构建任务，见 issue 正文）。
 //
-// 一张表（`ROWS`）覆盖 2 变体 × 2 渠道，外加三条真实断链/过滤场景；`test()` 只负责把行注册出去，
+// 一张表（`ROWS`）覆盖两个变体的断链/过滤场景（#876 之后没有渠道维度）；`test()` 只负责把行注册出去，
 // 断言集中在 `verify(row)`：加一行 = 加一行数据，不新写一套判定逻辑（#369 的模板）。
 
 // #507：`__ENDPOINTS__` 全局兜底 —— 装载即挂（幂等）。单跑本文件（不经 run-layer 的 `--import` 预加载）也不会
@@ -68,66 +68,65 @@ const INTERNAL_PRERELEASE_ONLY = [
 /**
  * 一张表：`installed` = 本机已装（versionCode 已含在内），`expect` 是这一格该给出的结论。
  * `reason: undefined` 表示「这一格有 release，不需要解释」。
+ *
+ * #876：`installed.channel` 列已删除（渠道功能下线，只剩一档 = 原来的「稳定版」），
+ * 所以 V1/V2、V4/V5 这种「同一格换个渠道再看一遍」的行合并了；原来靠渠道过滤造出来的两格
+ * 现在改成「预发布记录不参与筛选」的显式断言（V3 / V5），后果写在那里。
  */
 const ROWS = [
   {
     id: 'V1',
-    name: 'internal × 预发布渠道：清单只有 standard 的 1.4.1 → 说清「内测包没发」',
-    installed: { code: 19, variant: 'internal', channel: 'prerelease' },
+    name: 'internal：清单只有 standard 的 1.4.1 → 说清「内测包没发」，而不是「已是最新」',
+    installed: { code: 19, variant: 'internal' },
     releases: LIVE,
     expect: { version: undefined, reason: 'no-internal-variant', incomplete: 0 },
-    // 界面必须给出「手动下载正式版」这个动作，而不是「已是最新」
-    message: /内测/,
+    // 界面必须给出「手动下载最新版」这个动作，而不是「已是最新」
+    message: /手动下载最新版/,
     messageNot: /已是最新/,
   },
   {
     id: 'V2',
-    name: 'internal × 仅稳定版：同上（1.4.1 是 stable/standard）',
-    installed: { code: 19, variant: 'internal', channel: 'stable' },
+    name: 'internal 装的更低（1.4.0-beta.10）：同一份清单也是断链 → 原因跟着变体走，不跟着已装版本走',
+    installed: { code: 17, variant: 'internal' },
     releases: LIVE,
     expect: { version: undefined, reason: 'no-internal-variant', incomplete: 0 },
-    message: /手动下载正式版/,
+    message: /内测/,
     messageNot: /已是最新/,
   },
   {
     id: 'V3',
-    name: 'internal（beta.10）× 仅稳定版：这一格先被渠道过滤（1.4.0 是预发布）→ 提示切渠道',
-    installed: { code: 17, variant: 'internal', channel: 'stable' },
+    name: 'standard：能看到 1.4.1（对照：正式包用户没有断链）',
+    installed: { code: 19, variant: 'standard' },
     releases: LIVE,
-    expect: { version: undefined, reason: 'prerelease-filtered', incomplete: 0 },
-    message: /稳定版与预发布版/,
-    messageNot: /手动下载正式版/,
+    expect: { version: '1.4.1', reason: undefined, incomplete: 0 },
   },
   {
     id: 'V4',
-    name: 'standard × 仅稳定版：能看到 1.4.1（对照：正式包用户没有断链）',
-    installed: { code: 19, variant: 'standard', channel: 'stable' },
-    releases: LIVE,
-    expect: { version: '1.4.1', reason: undefined, incomplete: 0 },
+    name: '#876 后果：internal 更高的只剩预发布内测包 → 档位只收 stable，结论是「已是最新」',
+    installed: { code: 19, variant: 'internal' },
+    releases: INTERNAL_PRERELEASE_ONLY,
+    expect: { version: undefined, reason: 'up-to-date', incomplete: 0 },
+    // 现状（待 #876 决策）：内测 beta 包在固定 stable 档下没有候选，文案只能说「已是最新」。
+    // 这条断言不是认可这个产品结论，是把当前行为钉住 —— 一旦改规则（internal 不受档位过滤），
+    // 这里会立刻变红，提醒必须同步改文案与验收。
+    message: /已是最新/,
+    messageNot: /手动下载最新版/,
   },
   {
     id: 'V5',
-    name: 'standard × 预发布渠道：稳定版候选照旧可见（预发布渠道包含稳定版）',
-    installed: { code: 19, variant: 'standard', channel: 'prerelease' },
-    releases: LIVE,
+    name: '#876：预发布与稳定并存 → 跳过预发布、选中稳定那条（档位真的在筛）',
+    installed: { code: 19, variant: 'internal' },
+    releases: [
+      row('1.4.2-beta.1', 22, 'internal', 'prerelease'),
+      row('1.4.1', 21, 'internal', 'stable'),
+    ],
     expect: { version: '1.4.1', reason: undefined, incomplete: 0 },
-  },
-  {
-    id: 'V6',
-    name: 'internal × 仅稳定版：更高的 internal 包只有预发布 → 说清「切渠道就能看到」',
-    installed: { code: 19, variant: 'internal', channel: 'stable' },
-    releases: INTERNAL_PRERELEASE_ONLY,
-    expect: { version: undefined, reason: 'prerelease-filtered', incomplete: 0 },
-    message: /已是最新/,
-    messageNot: /手动下载正式版/,
   },
 ]
 
-const ZH = { zh: '稳定版与预发布版', en: 'Stable + pre-release' }
-
 const verify = (row) => {
   const rows = parseManifest({ releases: row.releases })
-  const picked = selectUpdate(rows, row.installed.code, row.installed.variant, row.installed.channel)
+  const picked = selectUpdate(rows, row.installed.code, row.installed.variant)
   assert.equal(picked.release?.version, row.expect.version, `${row.id} release`)
   assert.equal(picked.reason, row.expect.reason, `${row.id} reason`)
   assert.equal(picked.incomplete, row.expect.incomplete, `${row.id} incomplete`)
@@ -138,7 +137,6 @@ const verify = (row) => {
   // 文案层必须真的换了说法（#377 的验收：不是笼统的「已是最新」）
   if (row.message !== undefined) {
     const view = describeUpToDate({
-      channel: ZH,
       version: '1.4.0',
       locale: 'zh',
       incomplete: picked.incomplete,
@@ -157,7 +155,7 @@ for (const row of ROWS) {
 
 test('表外补充：真正的最新 / 只有内测包 / 缺字段，三种兜底各说各的', () => {
   // 1) 渠道内确实没有更高的版本
-  assert.deepEqual(selectUpdate(parseManifest({ releases: LIVE }), 20, 'standard', 'stable'), {
+  assert.deepEqual(selectUpdate(parseManifest({ releases: LIVE }), 20, 'standard'), {
     release: undefined,
     incomplete: 0,
     reason: 'up-to-date',
@@ -165,12 +163,12 @@ test('表外补充：真正的最新 / 只有内测包 / 缺字段，三种兜�
   // 2) 对称情形：正式包用户遇到「只有内测包」的版本
   const internalOnly = [row('1.4.1', 21, 'internal', 'stable')]
   assert.equal(
-    selectUpdate(parseManifest({ releases: internalOnly }), 19, 'standard', 'stable').reason,
+    selectUpdate(parseManifest({ releases: internalOnly }), 19, 'standard').reason,
     'no-standard-variant'
   )
   // 3) 缺渠道 / 缺 SHA256 的记录仍由 incomplete 说清，不另给 reason（避免两套解释打架）
   const legacy = [row('1.5.0', 21, 'internal', 'stable', { sha256: undefined })]
-  assert.deepEqual(selectUpdate(parseManifest({ releases: legacy }), 19, 'internal', 'stable'), {
+  assert.deepEqual(selectUpdate(parseManifest({ releases: legacy }), 19, 'internal'), {
     release: undefined,
     incomplete: 1,
   })

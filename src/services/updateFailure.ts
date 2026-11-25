@@ -183,9 +183,13 @@ export interface FailureText {
 
 /** 文案上下文：只放用户已经知道的信息（渠道名、当前版本、记录数），不放地址 */
 export interface UpdateFailureContext {
-  /** 渠道名的双语对（「稳定版」/「稳定版与预发布版」），不写地址 */
-  channel: FailureText
-  /** 当前版本号，例如 1.4.0-beta.10 */
+  /**
+   * 当前版本号，例如 1.4.0-beta.10
+   *
+   * Issue #876：「更新渠道」已下线（固定只收 stable），所以这里不再有 `channel`。
+   * 文案里也不再出现「渠道「稳定版」」这种恒为同一值的空话——用户能从这句话里读到的信息只有
+   * 「更新服务有问题」，渠道名对它是噪音。
+   */
   version: string
   /** 清单里缺渠道 / 缺 SHA256 的记录数：用来区分「确实没新版」与「有记录但不敢装」 */
   incomplete?: number
@@ -272,34 +276,29 @@ const INTEGRITY_FALLBACK: FailureText = {
 
 const integrityDetail = (code: string): FailureText => INTEGRITY_DETAIL[code] ?? INTEGRITY_FALLBACK
 
-const detailOf = (
-  failure: UpdateFailure,
-  ctx: UpdateFailureContext,
-  lang: FailureLocale
-): FailureText => {
-  const channel = ctx.channel[lang]
+const detailOf = (failure: UpdateFailure, ctx: UpdateFailureContext): FailureText => {
   switch (failure.kind) {
     case 'network':
       return {
-        zh: `连不上更新服务（渠道「${channel}」）——可能是设备网络不通，也可能是更新服务器暂时不可用。`,
-        en: `Cannot reach the update service (channel "${channel}") — either the device has no working network, or the update server is temporarily unavailable.`,
+        zh: '连不上更新服务——可能是设备网络不通，也可能是更新服务器暂时不可用。',
+        en: 'Cannot reach the update service — either the device has no working network, or the update server is temporarily unavailable.',
       }
     case 'service': {
       const status = Number(HTTP_CODE_SHAPE.exec(failure.code)?.[1] ?? 0)
       return status >= 500
         ? {
-            zh: `更新服务返回了 HTTP ${status}（渠道「${channel}」）——分发机这一侧临时出错。`,
-            en: `The update service returned HTTP ${status} (channel "${channel}") — the distribution host is temporarily failing.`,
+            zh: `更新服务返回了 HTTP ${status}——分发机这一侧临时出错。`,
+            en: `The update service returned HTTP ${status} — the distribution host is temporarily failing.`,
           }
         : {
-            zh: `更新服务返回了 HTTP ${status}（渠道「${channel}」）——渠道地址可能配错，或这个渠道还没在这台分发机上发布。`,
-            en: `The update service returned HTTP ${status} (channel "${channel}") — the channel address may be wrong, or this channel has not been published on that host.`,
+            zh: `更新服务返回了 HTTP ${status}——分发地址可能配错，或这个版本还没在这台分发机上发布。`,
+            en: `The update service returned HTTP ${status} — the distribution address may be wrong, or this build has not been published on that host.`,
           }
     }
     case 'manifest':
       return {
-        zh: `更新服务返回的版本信息读不出来（渠道「${channel}」），格式不符合约定。这是更新服务一侧的数据问题，不是你设备的问题。`,
-        en: `The release information returned by the update service could not be read (channel "${channel}"). This is a data problem on the update service side, not your device.`,
+        zh: '更新服务返回的版本信息读不出来，格式不符合约定。这是更新服务一侧的数据问题，不是你设备的问题。',
+        en: 'The release information returned by the update service could not be read. This is a data problem on the update service side, not your device.',
       }
     case 'integrity':
       return integrityDetail(failure.code)
@@ -309,7 +308,7 @@ const detailOf = (
         en: 'The download was interrupted — the network dropped or changed, or the device ran out of storage. The partial file is not used.',
       }
     case 'no-version':
-      return noVersionDetail(ctx, lang)
+      return noVersionDetail(ctx)
     case 'env':
       return {
         zh: '当前安装包缺少渠道标识（内测 / 正式），客户端无法判断该装哪个版本，因此不会贸然下载。',
@@ -330,40 +329,35 @@ const detailOf = (
 
 /**
  * 「无可用版本」的真实原因，一行一句话（#310 → #377）：
- *   · 有记录但缺渠道 / SHA256 → `incomplete`（不敢装，与「没有」是两件事）
+ *   · 有记录但缺变体标记 / SHA256 → `incomplete`（不敢装，与「没有」是两件事）
  *   · 本机变体在清单里断链（#377）→ 说清是「内测包没发 / 只有内测包」，并给出下一步
- *   · 同变体包只有预发布、渠道只接受稳定版 → 说清「切渠道就能看到」
- *   · 其余 → 渠道内确实没有更高的版本
+ *   · 其余 → 确实没有更高的版本
+ *
+ * #876：`prerelease-filtered` 那一支已删除（渠道功能下线，没有「切渠道就能看到」这回事）。
  */
-const noVersionDetail = (ctx: UpdateFailureContext, lang: FailureLocale): FailureText => {
-  const channel = ctx.channel[lang]
+const noVersionDetail = (ctx: UpdateFailureContext): FailureText => {
   const incomplete = ctx.incomplete ?? 0
   if (incomplete > 0) {
     return {
-      zh: `当前版本 ${ctx.version}，渠道「${channel}」下没有可直接安装的新版本：另有 ${incomplete} 条发布记录缺少渠道或 SHA256，未作为更新目标。`,
-      en: `Current version ${ctx.version}, channel "${channel}": there is no directly installable newer build; ${incomplete} more release record(s) lack a channel or SHA256 and were not used.`,
+      zh: `当前版本 ${ctx.version}，没有可直接安装的新版本：另有 ${incomplete} 条发布记录缺少变体标记或 SHA256，未作为更新目标。`,
+      en: `Current version ${ctx.version}: there is no directly installable newer build; ${incomplete} more release record(s) lack a variant marker or SHA256 and were not used.`,
     }
   }
   switch (ctx.reason) {
     case 'no-internal-variant':
       return {
-        zh: `当前版本 ${ctx.version}，渠道「${channel}」下没有可直接安装的新版本：本机装的是内测（internal）包，而清单里更高的版本只有正式（standard）包，内测包还没发布。请手动下载正式版安装包覆盖安装；不愿换渠道就等内测包发布后再检查（更新服务地址见下方诊断信息）。`,
-        en: `Current version ${ctx.version}, channel "${channel}": there is no directly installable newer build — this device runs the internal build, but the newer release records are standard builds only and no internal build has been published. Download the stable APK and install it manually, or wait for an internal build (update hosts are listed under Diagnostics below).`,
+        zh: `当前版本 ${ctx.version}：本机装的是内测（internal）包，而清单里更高的版本只有正式（standard）包，内测包还没发布。请用下方「手动下载最新版」装正式包覆盖安装，或等内测包发布后再检查。`,
+        en: `Current version ${ctx.version}: this device runs the internal build, but the newer release records are standard builds only and no internal build has been published. Use "Download the latest version" below to install the standard package manually, or check again once an internal build is published.`,
       }
     case 'no-standard-variant':
       return {
-        zh: `当前版本 ${ctx.version}，渠道「${channel}」下没有可直接安装的新版本：清单里更高的版本只有内测（internal）包，没有正式（standard）包；内测包不能覆盖正式包。请等正式版发布后再检查更新。`,
-        en: `Current version ${ctx.version}, channel "${channel}": there is no directly installable newer build — the newer release records are internal builds only and there is no standard build; an internal package cannot update a standard install. Check again once a stable build is published.`,
-      }
-    case 'prerelease-filtered':
-      return {
-        zh: `当前版本 ${ctx.version}，渠道「${channel}」已是最新：清单里有更高的预发布版本，但当前渠道只接受稳定版。需要的话把「更新渠道」切到「稳定版与预发布版」再检查。`,
-        en: `Current version ${ctx.version}, channel "${channel}": already up to date — higher pre-release builds exist, but the current channel only accepts stable builds. Switch "Update channel" to "Stable + pre-release" and check again.`,
+        zh: `当前版本 ${ctx.version}：清单里更高的版本只有内测（internal）包，没有正式（standard）包；内测包不能覆盖正式包。请等正式版发布后再检查更新。`,
+        en: `Current version ${ctx.version}: the newer release records are internal builds only and there is no standard build; an internal package cannot update a standard install. Check again once a stable build is published.`,
       }
     default:
       return {
-        zh: `当前版本 ${ctx.version}，渠道「${channel}」已是最新，该渠道没有更高的版本。`,
-        en: `Current version ${ctx.version}, channel "${channel}": already up to date, the channel has no higher version.`,
+        zh: `当前版本 ${ctx.version}：已是最新，没有更高的版本。`,
+        en: `Current version ${ctx.version}: already up to date, there is no higher version.`,
       }
   }
 }
@@ -375,7 +369,7 @@ export const describeUpdateFailure = (
 ): UpdateFailureView => {
   const lang: FailureLocale = ctx.locale ?? 'zh'
   const label = LABELS[failure.kind][lang]
-  const detail = detailOf(failure, ctx, lang)[lang]
+  const detail = detailOf(failure, ctx)[lang]
   // 「无可用版本」「已取消」不是故障：不摆重试失败的口吻，直接说清现状
   const hint =
     failure.kind === 'no-version' || failure.kind === 'cancelled'

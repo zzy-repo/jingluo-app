@@ -65,7 +65,7 @@ test('③ AppUpdateField 接线：界面改用 primaryReleaseHost，不再直接
 })
 
 test('④ 诊断报告里主与备都在，且写明备是兼容旧版本', () => {
-  const report = buildUpdateReport({ version: '1.0.0', channel: 'stable', native: false })
+  const report = buildUpdateReport({ version: '1.0.0', native: false })
   assert.ok(report.includes(primaryHost), report)
   assert.ok(report.includes(fallbackHost), report)
   assert.ok(report.includes(`主 ${primaryHost}`), report)

@@ -27,7 +27,10 @@ registerHooks({
 const { selectUpdate } = await import('../../src/services/updateManifest.ts')
 
 const sha = 'a'.repeat(64)
-const row = (version, versionCode, variant = 'internal', buildType = 'prerelease') => ({
+// #876：渠道功能下线后只剩一档（等价原「稳定版」），`buildType: 'prerelease'` 不再进候选。
+// 本文件测的是「旧 WebView 没有 toSorted 时 selectUpdate 仍可用」，version/buildType 只是夹具，
+// 所以默认值跟着改成 'stable'——否则夹具会全部落在被筛掉的那一档，用例测不到排序本身。
+const row = (version, versionCode, variant = 'internal', buildType = 'stable') => ({
   version,
   versionCode,
   artifactVariant: variant,
@@ -47,7 +50,7 @@ test('去掉 Array.prototype.toSorted 后 selectUpdate 仍可用（旧 WebView �
     assert.equal(typeof [].toSorted, 'undefined', '前置：toSorted 已被删除')
     const releases = [row('1.4.0-beta.5', 12), row('1.4.0-beta.6', 13), row('1.4.0-beta.7', 14, 'standard')]
     const before = releases.map((r) => r.versionCode)
-    const picked = selectUpdate(releases, 12, 'internal', 'prerelease')
+    const picked = selectUpdate(releases, 12, 'internal')
     assert.equal(picked.release.version, '1.4.0-beta.6', '应选中同 variant 的最高 code')
     assert.equal(picked.incomplete, 0)
     assert.deepEqual(releases.map((r) => r.versionCode), before, '不能原地修改入参数组')
@@ -62,7 +65,7 @@ test('同 code 歧义仍报 AMBIGUOUS_RELEASE（删除 toSorted 后同样成立�
   delete Array.prototype.toSorted
   try {
     const releases = [row('1.4.0-beta.6', 13), row('1.4.0-beta.6-hotfix', 13)]
-    assert.throws(() => selectUpdate(releases, 12, 'internal', 'prerelease'), /AMBIGUOUS_RELEASE/)
+    assert.throws(() => selectUpdate(releases, 12, 'internal'), /AMBIGUOUS_RELEASE/)
   } finally {
     Array.prototype.toSorted = original
   }

@@ -40,33 +40,39 @@ const row = (extra = {}) => ({
   ...extra,
 })
 const rows = (...items) => parseManifest({ latest: 'irrelevant', releases: items })
-test('strict code ordering, variant isolation, stable/prerelease are independent of variants', () => {
-  assert.equal(selectUpdate(rows(row()), 11, 'internal', 'stable').release.versionCode, 12)
-  assert.equal(selectUpdate(rows(row()), 12, 'internal', 'stable').release, undefined)
-  assert.equal(selectUpdate(rows(row()), 13, 'internal', 'stable').release, undefined)
-  assert.equal(selectUpdate(rows(row()), 11, 'standard', 'stable').release, undefined)
+test('strict code ordering, variant isolation, prerelease never becomes a candidate (#876)', () => {
+  assert.equal(selectUpdate(rows(row()), 11, 'internal').release.versionCode, 12)
+  assert.equal(selectUpdate(rows(row()), 12, 'internal').release, undefined)
+  assert.equal(selectUpdate(rows(row()), 13, 'internal').release, undefined)
+  assert.equal(selectUpdate(rows(row()), 11, 'standard').release, undefined)
+  /*
+   * #876：渠道功能下线后只剩一档（等价于原来的「稳定版」），`buildType: 'prerelease'` 永远不进候选。
+   * 三个字段都要断言：「没有可装版本」不等于「数据不完整」，也不等于「清单坏了」——
+   * 预发布包被跳过是本单的预期行为，所以 incomplete 必须是 0、reason 必须是 up-to-date。
+   */
   const prerelease = row({ buildType: 'prerelease', version: '0.1-beta.1', versionCode: 13 })
-  assert.equal(selectUpdate(rows(prerelease), 11, 'internal', 'stable').release, undefined)
-  assert.equal(
-    selectUpdate(rows(prerelease, row()), 11, 'internal', 'prerelease').release.versionCode,
-    13
-  )
+  const onlyPrerelease = selectUpdate(rows(prerelease), 11, 'internal')
+  assert.equal(onlyPrerelease.release, undefined)
+  assert.equal(onlyPrerelease.incomplete, 0)
+  assert.equal(onlyPrerelease.reason, 'up-to-date')
+  // 同一份清单里还有一条稳定记录时，稳定记录照常被选中（预发布那条不影响判定）
+  assert.equal(selectUpdate(rows(prerelease, row()), 11, 'internal').release.versionCode, 12)
 })
 test('legacy rows are visible but not eligible; no MD5 fallback', () => {
   const legacy = row({ artifactVariant: undefined, sha256: undefined, md5: 'b'.repeat(32) })
   const parsed = rows(legacy)
   assert.equal(parsed.length, 1)
-  assert.deepEqual(selectUpdate(parsed, 11, 'internal', 'prerelease'), {
+  assert.deepEqual(selectUpdate(parsed, 11, 'internal'), {
     release: undefined,
     incomplete: 1,
   })
   assert.equal(
-    selectUpdate(rows(row({ sha256: undefined })), 11, 'internal', 'stable').release,
+    selectUpdate(rows(row({ sha256: undefined })), 11, 'internal').release,
     undefined
   )
   assert.equal(rows(row({ buildType: undefined }))[0].buildType, undefined)
   assert.equal(
-    selectUpdate(rows(row({ buildType: undefined })), 11, 'internal', 'prerelease').release,
+    selectUpdate(rows(row({ buildType: undefined })), 11, 'internal').release,
     undefined
   )
   for (const extra of [
@@ -74,7 +80,7 @@ test('legacy rows are visible but not eligible; no MD5 fallback', () => {
     { sha256: 'BAD' },
     { sha256: 'A'.repeat(64) },
   ]) {
-    assert.equal(selectUpdate(rows(row(extra)), 11, 'internal', 'stable').release, undefined)
+    assert.equal(selectUpdate(rows(row(extra)), 11, 'internal').release, undefined)
   }
 })
 test('malformed records and ambiguous maximum code fail closed', () => {
@@ -87,7 +93,7 @@ test('malformed records and ambiguous maximum code fail closed', () => {
   ]) {
     assert.throws(() => rows(row(extra)))
   }
-  assert.throws(() => selectUpdate(rows(row(), row()), 11, 'internal', 'stable'))
+  assert.throws(() => selectUpdate(rows(row(), row()), 11, 'internal'))
 })
 test('relative APK path only: no credentials, traversal, absolute URLs, queries or encodings', () => {
   assert.equal(releaseUrl(row().file), `${PRIMARY_RELEASE_BASE}/apk/deepseek-chat-1.5.0.apk`)

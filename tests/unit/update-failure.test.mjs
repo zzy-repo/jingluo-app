@@ -29,8 +29,8 @@ const { buildUpdateReport, hostOf, releaseHosts } = await import(
   '../../src/services/updateReport.ts'
 )
 
-// #373 起 channel 是双语对（渠道名要跟着文案语言走，否则英文句子里会嵌一段中文）
-const ctx = { channel: { zh: '稳定版与预发布版', en: 'Stable + pre-release' }, version: '1.4.0-beta.10' }
+// #876：上下文里不再有 channel（渠道功能下线，文案也不再写「渠道「稳定版」」这种恒为定值的话）
+const ctx = { version: '1.4.0-beta.10' }
 const view = (error) => describeUpdateFailure(classifyUpdateError(error), ctx)
 
 test('断网 / 分发机不可达 → network，且文案说可重试', () => {
@@ -172,7 +172,7 @@ test('无可用版本 / 已取消 / 环境缺渠道 各有独立说法，且不�
   assert.doesNotMatch(upToDate.text, /重新检查|反馈/, '没新版不是故障，不该引导重试或反馈')
 
   const partial = describeUpToDate({ ...ctx, incomplete: 3 })
-  assert.match(partial.text, /3 条发布记录缺少渠道或 SHA256/, partial.text)
+  assert.match(partial.text, /3 条发布记录缺少变体标记或 SHA256/, partial.text)
   assert.doesNotMatch(partial.text, /」\s/, '中文之间不要出现多余空格')
 
   const cancelled = view(Object.assign(new Error('Cancelled'), { name: 'AbortError' }))
@@ -212,14 +212,13 @@ test('诊断文本：字段齐、地址只到 host、上游短码与可重试性
   const report = buildUpdateReport({
     version: '1.4.0-beta.10',
     versionCode: 17,
-    channel: '稳定版与预发布版',
     native: false,
     checkedAt: Date.UTC(2026, 10, 19, 11, 2, 33),
     outcome: view(new Error('MANIFEST_NETWORK')).text,
     code: 'MANIFEST_NETWORK',
     base: 'https://dl.rose7.cn/apk/deepseek-chat-1.5.0.apk?token=leak',
   })
-  for (const line of ['DeepSeek 应用内更新诊断', '版本: 1.4.0-beta.10 (17)', '渠道: 稳定版与预发布版', '通道: 网页预览', '上游短码: MANIFEST_NETWORK']) {
+  for (const line of ['DeepSeek 应用内更新诊断', '版本: 1.4.0-beta.10 (17)', '通道: 网页预览', '上游短码: MANIFEST_NETWORK']) {
     assert.ok(report.includes(line), `缺少「${line}」\n${report}`)
   }
   assert.match(report, /2026-11-19T11:02:33\.000Z/)
