@@ -57,7 +57,10 @@ export type Page<T> = {
 export type PageQuery = {
   /** 上一页最后一条的主键；缺省 = 从头开始 */
   after?: string
-  /** 本页最多多少条；缺省由实现定（文档里写明），调用方不该依赖「不传就全给」 */
+  /**
+   * 本页最多多少条；**缺省由实现定**（IDB 现状一次给全、SQLite 取 999）。
+   * 调用方**不得**依赖「不传就全给」：要全量就顺着 `next` 读完（#926 决定 1）。
+   */
   limit?: number
 }
 
@@ -161,7 +164,8 @@ export type SessionRepo = {
   listBranchesOf(parentSessionId: string): Promise<readonly SessionSummary[]>
 
   /**
-   * 逐条读全部会话（主键升序）。替代 `attachments/manager.ts` 里
+   * 逐条读全部会话（主键升序 —— **UTF-16 码元序**，与 IDB 原生序一致；SQLite 端主键列用
+   * UTF-16BE 编码以保证同一序）。替代 `attachments/manager.ts` 里
    * 为「收集仍被消息引用的附件 id」手写的 `openCursor()`。
    * 一次只给一页，避免把整库历史读进内存（那正是现状写游标的理由）。
    */
@@ -394,7 +398,10 @@ export type StorageBackend = StorageRepos & {
    */
   runAtomic<T>(work: AtomicWork<T>, options?: AtomicOptions): Promise<T>
 
-  /** 关闭连接。之后任何方法调用都应抛 `StorageUnavailableError`。幂等。 */
+  /**
+   * 关闭连接。之后**仓储读写与 `runAtomic` 一律抛 `StorageUnavailableError`**；
+   * `health()` / `probe()` 是探针，不抛（分别返回 `{ok:false,...}` 与对应结论）。幂等。
+   */
   close(): Promise<void>
 
   /** 现在能不能用。不抛错。 */

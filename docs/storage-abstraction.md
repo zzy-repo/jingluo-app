@@ -292,3 +292,19 @@ import `chat/db.ts` / `attachments/store.ts` 的存取导出，或直接使用 `
 | Q4 自证伪 | 用例内含检测器自检（违规写法必须被抓到，合规写法不许误报）；人工负向对照：往 `appAssets.ts` 注入 `import { loadFile } from './db.js'` 与往 `MessageFile.tsx` 注入 `indexedDB` 记号，均变红并点名文件，还原后转绿。 |
 | 归属 / 红了第一件事 | storage-callers（#910）。点名的文件改走 `getStorage()`；确属实现细节的才进豁免清单并写原因。 |
 | 豁免载体（台账 5.2 补一行） | `tests/fixtures/storage/storage-boundary-exemptions.json`：到期判据 = 条目不再违规即判红；只许缩不许涨（`MAX_EXEMPTIONS`）。 |
+
+## 7. #926 语义定案（2026-11-27，收敛阶段，原则：保持现有业务行为、不引入静默截断/扩大删除/虚报持久化）
+
+| # | 条目 | 决定 | 理由 |
+|---|---|---|---|
+| 1 | `PageQuery.limit` 缺省 | 实现可自定上限（IDB 现状是一次给全；SQLite 用 999），**调用方不得依赖「不传就全给」**，要全量就顺着 `next` 读完 | 契约套件已按此改写（顺 `next` 读），两个后端都能过 |
+| 2 | `listKeys` / `listFull` 的「主键升序」 | 按 **UTF-16 码元序**（JS 字符串 `<` 的序）。IDB 原生如此；SQLite 主键列用 UTF-16BE BLOB 编码，`memcmp` 序与之一致 | 换后端不改调用方；避免 `WHERE key > ?` 在含 BMP 外字符时漏行/重复（#921 实测） |
+| 3 | `close()` 之后 | 仓储读写与 `runAtomic` 一律 reject `StorageUnavailableError`；`health()` 返回 `{ok:false,initFailure:'unavailable'}`，`probe()` 不抛 | 「不得静默返回空结果」优先；把 `health/probe` 排除在「一律抛」之外是因为它们是探针 |
+| 4 | `runAtomic` 参与的 store | 实现自定（IDB 固定 9 个 store 的 readwrite；SQLite 一个 `BEGIN IMMEDIATE`）。**回调只拿到 `AtomicRepos`**，7 个自带事务边界的方法类型上不存在 | 接口不承诺后端做不到的事 |
+| 5 | `runAtomic` 内的读写可见性 | read-your-writes 在本批内可见；嵌套 `runAtomic` 必须被拒绝（IDB 与 SQLite 均已实现拒绝）；并发批的排队顺序不作承诺 | 与现状一致，且两个后端可做到 |
+| 6 | 空包 `commit` / `merge` 覆盖语义 | **保持现状**（IDB 行为）：空暂存的 `commit` 会清空正式会话/摘要/记忆/聊天原件并返回 `[]`；`merge` 覆盖是整条替换（本地 `pinnedAt` 丢失、旧原件成孤儿） | 这是现状事实，改它会改变业务行为；已作为「看似 bug」登记，需要单独决策 |
+| 7 | `StorageProbe.persisted` | 宿主没有 `navigator.storage` 时为 `undefined`；有则是布尔 | 与 IDB 现状一致 |
+
+**两条 IDB 后端偏离（不是契约写错）**：`blobs.putMany` 非全成全败、`runAtomic` 嵌套未拒绝 → 已修复嵌套拒绝（`AtomicRepos` + 实现拒绝）；`putMany` 的非原子性登记在契约的 `knownDeviations`，收口到 #930。
+
+> 结论：除「空包 commit/merge」按现状保留外，其余六条在 IDB 与 SQLite 两侧均已对齐；契约套件的 `knownDeviations` 只减不增。
