@@ -170,6 +170,27 @@ const UNIT_SOLO = new Set([
   // 与其赌切片，不如按 runner 自己的口径单列（`installImportEnv` 那套装配没有可用的去重钩子）。
   'import-quota-progress.test.mjs',
 
+  // #906（存储仓储化的特征化测试）：本文件临时改写 `IDBObjectStore.prototype.put/delete` 注入写失败、
+  // 在「缺能力」用例里临时删 `globalThis.indexedDB`，并独占 `chat/db.ts` 的模块级连接单例（用例间只清数据）。
+  // 机制类别：进程级全局 + 原型 mock + 模块级单例 —— 同批文件共用这些，合批会互相打到对方的写入与数据。
+  'storage-char-session.test.mjs',
+
+  // #906（IndexedDB 后端冒烟）：经 `getStorage()` 走 `chat/db.ts` 的模块级连接单例，且最后一条用例会
+  // `close()` 掉这条共享连接再重开；同批文件共用同一份单例与同一个库，合批会互相关掉对方的连接、
+  // 把别人的数据混进本文件的「空库」。机制类别：模块级单例 + 共享库 —— 与上一条同类，单列最诚实。
+  'storage-idb-backend.test.mjs',
+
+  // #906（其余四个特征化测试）：同一类机制 —— 都经 `chat/db.ts` 的模块级连接单例读写真 fake-indexeddb，
+  // 且会换掉/还原 `globalThis.indexedDB`（lifecycle 还用 MockTimers 与 `?inst=N` 多实例）。
+  // 实测（合批 `--only storage-`）：blob-attach 批内红 14 条、单跑全绿（「No objectStore named appAssets」，
+  // 即吃到同批文件换过的库）；批次进程在 lifecycle 的 MockTimers 用例之后以 exit 7 退出，
+  // staging / staging-rollback / storage-failure 没跑到收尾行，被降级串行重跑才绿（DEGRADED 7 > 5，按回归处理）。
+  // 单列最诚实；error-table 是纯函数真值表，不碰库，继续合批。
+  'storage-char-blob-attach.test.mjs',
+  'storage-char-lifecycle.test.mjs',
+  'storage-char-staging.test.mjs',
+  'storage-char-staging-rollback.test.mjs',
+
   // ── #513：实测「批内红 → 单跑绿」，且在进程内**不可修**的那一批 ────────────────────────────
   //
   // 先说清为什么不可修（这是本单花最久的一段，结论有实测支撑）：
