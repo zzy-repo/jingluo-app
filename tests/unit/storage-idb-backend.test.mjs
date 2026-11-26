@@ -263,3 +263,21 @@ test('[close] 幂等；关闭后各仓储方法抛 StorageUnavailableError，重
   const again = await storage.openIndexedDbStorage()
   assert.equal(await again.sessions.get('x'), undefined)
 })
+
+test('[故障注入] IndexedDB 不可用时 getStorage 抛 StorageUnavailableError，不缓存失败、不回退内存', async () => {
+  storage.setStorageForTests(null)
+  const saved = globalThis.indexedDB
+  delete globalThis.indexedDB
+  try {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      await assert.rejects(
+        () => storage.getStorage(),
+        (error) => error instanceof db.StorageUnavailableError
+      )
+    }
+  } finally {
+    globalThis.indexedDB = saved
+  }
+  const recovered = await storage.getStorage()
+  assert.equal(await recovered.sessions.get('nope'), undefined, '环境恢复后下一次调用重新打开成功（失败未被缓存）')
+})
