@@ -154,7 +154,11 @@ export type NetFailureInput = {
 
 /** 原生栈异常文本 → phase 的三组特征（大小写不敏感） */
 const DNS_TEXT =
-  /unknownhost|unable to resolve host|no address associated with hostname|nodename nor servname|getaddrinfo|enotfound|eai_again/i
+  // `err_name_not_resolved` 是 Chromium / WebView 的 net 错误串（`net::ERR_NAME_NOT_RESOLVED`）。
+  // 加它是因为 #895 取证时实测到：**浏览器把这条打印到 console，却不让页面 JS 看到**
+  // （`fetch` 只给 `Failed to fetch`，见 docs/ui 的 dns 截图）。但只要某个宿主 / 原生桥把
+  // net:: 串带进异常文本（Android WebView 的 CapacitorHttp 就会），这一条就能立刻归成 dns。
+  /unknownhost|unable to resolve host|no address associated with hostname|nodename nor servname|getaddrinfo|enotfound|eai_again|err_name_not_resolved/i
 const TLS_TEXT =
   /sslhandshake|sslpeerunverified|sslhandshakeexception|certpath|certpathvalidator|certificate|trust anchor|err_cert|err_ssl|tls handshake|handshake failed/i
 const TCP_TEXT =

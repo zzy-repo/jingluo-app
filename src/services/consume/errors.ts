@@ -29,6 +29,7 @@
  * 界面上永远不直接显示服务端的 `message`（英文句子、随版本改），只显示本文件给的 i18n key。
  */
 
+import type { NetFailurePhase } from '../net/networkPhase.js'
 import type { ConsumeRawResponse } from './http.js'
 
 /**
@@ -149,6 +150,18 @@ export type Sub2ApiError = {
    * 其余错误仍只按 `i18nKey` 出文案（服务端英文句子随版本改，不上屏）。
    */
   showServerMessage?: true
+  /**
+   * **分段归因**（#895 follow-up）：这次「没拿到响应」到底卡在 DNS / TCP / TLS 的哪一段。
+   *
+   * 为什么值得单独一个字段：`kind` 只有 `network | timeout | …` 这几档粗粒度，
+   * 而 `network` 底下三种情况的**修法完全不同**（改 DNS？换网络？查证书 / 换地址？）。
+   * 登录、额度、卡密三条链路都在用户最没法自助排查的位置上，多这一个字段才说得清。
+   *
+   * 与既有契约的关系：**纯新增、可缺省**。`kind` / `code` / `i18nKey` / `retryable` 一个字没动 ——
+   * 业务链路与界面文案继续按它们分支；取不到（web 端 `fetch` 只给 `Failed to fetch`）就
+   * `undefined`，绝不编一个 `tcp` 出来（#895 第 4 条纪律）。
+   */
+  phase?: NetFailurePhase
 }
 
 /** 错误码 → `{kind, i18nKey}` 映射表（面板 `reason`、中间件字符串、网关小写码共用一张） */
@@ -393,6 +406,8 @@ export const parseSub2ApiError = (
       retryable: true,
       envelope: 'none',
       i18nKey: failure === 'timeout' ? 'consumeErrTimeout' : 'consumeErrNetwork',
+      // 只有真判出来才写（`raw.net` 缺省 = 老替身 transport / 没有证据）；`code` / `i18nKey` 不变
+      ...(raw.net?.phase === undefined ? {} : { phase: raw.net.phase }),
     }
   }
 

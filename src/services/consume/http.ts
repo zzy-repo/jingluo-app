@@ -30,6 +30,7 @@
 
 import { Capacitor, CapacitorHttp } from '@capacitor/core'
 
+import { classifyNetFailure, type NetFailureMeta } from '../net/networkPhase.js'
 import { parseSub2ApiError, type Sub2ApiError } from './errors.js'
 
 /** 一条 base 上的两套路由（之间**没有**重写规则，见 #484 §4.1 第 3 条） */
@@ -81,6 +82,14 @@ export type ConsumeRawResponse = {
   /** 只在 status === 0 时有值 */
   failure?: 'timeout' | 'network' | 'unsupported'
   /**
+   * **分段归因**（#895 follow-up）：只在 `status === 0` 时有值，由 `failureOf()` 产出。
+   *
+   * 为什么要带上整个 meta 而不是只带 phase：上层（`consume/errors.ts`）只取 `phase`，
+   * 但诊断日志迟早要 `evidence`（凭什么判的）—— 三处各判一遍必然会分叉（见 #895 文件头）。
+   * 可选字段：老调用点 / 老替身 transport 不传它就等于「没有证据」，不影响任何既有形状。
+   */
+  net?: NetFailureMeta
+  /**
    * **只在「401 + 换凭据没换成」时有值**（#740 ①）：把「刷新失败的两种性质」带到上层。
    *  - `expired`  ：刷新被服务端拒（401 / `REFRESH_TOKEN_EXPIRED`）—— 身份层已清态，界面该回登录；
    *  - `retryable`：刷新是网络 / 5xx 失败 —— **本地 token 还留着**，这次 401 只是「这次没换成」，
@@ -111,8 +120,8 @@ export type ConsumeTransportResult =
        */
       location?: string
     }
-  | { kind: 'timeout' }
-  | { kind: 'network' }
+  | { kind: 'timeout'; net?: NetFailureMeta }
+  | { kind: 'network'; net?: NetFailureMeta }
   | { kind: 'unsupported' }
 
 /** 传输层：默认原生 CapacitorHttp；单测注入假 transport（不发真请求） */
@@ -160,11 +169,26 @@ const FORBIDDEN_QUERY_KEYS = ['key', 'api_key', 'apikey', 'token', 'access_token
 
 const TIMEOUT_HINTS = ['timeout', 'timed out', 'time out']
 
-/** 把 CapacitorHttp / fetch 抛出的异常折成「超时」还是「连不上」 */
-const failureOf = (error: unknown): 'timeout' | 'network' => {
+/**
+ * 把 CapacitorHttp / fetch 抛出的异常折成「超时 / 连不上」**加上分段归因**（#895 follow-up）。
+ *
+ * 改前这里只回答一个问题（超时还是连不上），于是原生栈抛上来的
+ * `UnknownHostException` / `ConnectException` / `SSLHandshakeException`
+ * 全部被折成 `'network'` —— DNS / TCP / TLS 的原话是在**这一层**被扔掉的。
+ * 现在把异常原文原样交给 `classifyNetFailure()`（判据只有一份，不在这里另写正则）：
+ * 判得出就写 phase，判不出就 `undefined`，**不硬塞一个 tcp 冒充知道**。
+ *
+ * `kind` 的口径一个字没改（超时 → `timeout`，其余 → `network`）：
+ * 上层按 `kind` 分支、按 `code` 决定文案，这次只是多带一份证据上去。
+ */
+const failureOf = (error: unknown): { kind: 'timeout' | 'network'; net: NetFailureMeta } => {
   const text = error instanceof Error ? `${error.name} ${error.message}` : String(error)
   const lower = text.toLowerCase()
-  return lower.includes('abort') || TIMEOUT_HINTS.some((hint) => lower.includes(hint)) ? 'timeout' : 'network'
+  const timedOut = lower.includes('abort') || TIMEOUT_HINTS.some((hint) => lower.includes(hint))
+  return {
+    kind: timedOut ? 'timeout' : 'network',
+    net: classifyNetFailure({ nativeMessage: text }),
+  }
 }
 
 /**
@@ -215,7 +239,8 @@ const nativeRequest = async (request: ConsumeTransportRequest): Promise<ConsumeT
     const text = typeof response.data === 'string' ? response.data : JSON.stringify(response.data ?? null)
     return responseResult(response.status, text, headers)
   } catch (error) {
-    return { kind: failureOf(error) }
+    const failure = failureOf(error)
+    return { kind: failure.kind, net: failure.net }
   }
 }
 
@@ -257,7 +282,8 @@ const webRequest = async (request: ConsumeTransportRequest): Promise<ConsumeTran
     response.headers.forEach((value, name) => {headers[name.toLowerCase()] = value})
     return responseResult(response.status, await response.text(), headers)
   } catch (error) {
-    return { kind: failureOf(error) }
+    const failure = failureOf(error)
+    return { kind: failure.kind, net: failure.net }
   } finally {
     clearTimeout(timer)
   }
@@ -476,7 +502,19 @@ export const createConsumeHttp = (options: ConsumeHttpOptions = {}): ConsumeHttp
     if (body !== undefined) {headers['content-type'] = 'application/json'}
     const result = await transport({ method: req.method, url: url(req.path, req.query), headers, body, timeoutMs })
     if (result.kind !== 'response') {
-      return { raw: { status: 0, ok: false, text: '', json: null, headers: {}, contentType: '', failure: result.kind }, auth }
+      return {
+        auth,
+        raw: {
+          status: 0,
+          ok: false,
+          text: '',
+          json: null,
+          headers: {},
+          contentType: '',
+          failure: result.kind,
+          ...('net' in result && result.net !== undefined ? { net: result.net } : {}),
+        },
+      }
     }
     let json: unknown = null
     if (result.text.trim() !== '') {
