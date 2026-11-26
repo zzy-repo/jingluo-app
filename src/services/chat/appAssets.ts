@@ -1,4 +1,4 @@
-import { deleteAppAsset, loadAppAsset, saveAppAsset } from './db.js'
+import { getStorage } from '../storage/index.js'
 
 /** 聊天背景图固定使用的素材 key：全局一份，与会话无关。 */
 export const CHAT_BACKGROUND_KEY = 'chat-background'
@@ -83,17 +83,17 @@ export const compressChatBackground = async (file: File): Promise<Blob> => {
 
 /** 读取已保存的背景图原件；未设置时返回 null。 */
 export const readChatBackground = async (): Promise<Blob | null> =>
-  (await loadAppAsset(CHAT_BACKGROUND_KEY))?.blob ?? null
+  (await (await getStorage()).assets.get(CHAT_BACKGROUND_KEY))?.blob ?? null
 
 /** 压缩后写入 IndexedDB，返回压缩结果供界面立即生效。 */
 export const writeChatBackground = async (file: File): Promise<Blob> => {
   const blob = await compressChatBackground(file)
-  await saveAppAsset(CHAT_BACKGROUND_KEY, blob)
+  await (await getStorage()).assets.put(CHAT_BACKGROUND_KEY, blob)
   return blob
 }
 
 export const clearChatBackground = async (): Promise<void> => {
-  await deleteAppAsset(CHAT_BACKGROUND_KEY)
+  await (await getStorage()).assets.delete(CHAT_BACKGROUND_KEY)
 }
 
 /**
@@ -103,7 +103,7 @@ export const clearChatBackground = async (): Promise<void> => {
  * 动到设置页的「默认背景」，反过来也一样。
  */
 export const readSessionBackground = async (sessionId: string): Promise<Blob | null> =>
-  (await loadAppAsset(sessionBackgroundKey(sessionId)))?.blob ?? null
+  (await (await getStorage()).assets.get(sessionBackgroundKey(sessionId)))?.blob ?? null
 
 /**
  * 写入**已经压缩好**的会话背景图。
@@ -114,10 +114,10 @@ export const readSessionBackground = async (sessionId: string): Promise<Blob | n
  * 不给会话图另开一套参数 —— 两套参数意味着「同一张图设成默认背景和设成会话背景，体积差一倍」。
  */
 export const saveSessionBackgroundAsset = async (sessionId: string, blob: Blob): Promise<void> => {
-  await saveAppAsset(sessionBackgroundKey(sessionId), blob)
+  await (await getStorage()).assets.put(sessionBackgroundKey(sessionId), blob)
 }
 
 /** 删除该会话的自定义图（「恢复默认」清掉会话覆盖时一并调用）。 */
 export const clearSessionBackground = async (sessionId: string): Promise<void> => {
-  await deleteAppAsset(sessionBackgroundKey(sessionId))
+  await (await getStorage()).assets.delete(sessionBackgroundKey(sessionId))
 }
