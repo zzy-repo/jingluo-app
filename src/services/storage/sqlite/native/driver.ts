@@ -376,7 +376,22 @@ export const openNativeSqlite: OpenSqlDatabase = async (options) => {
     await bridge.open({ name })
   } catch (error) {
     const shape = errorShapeOf(error)
-    throw new InfraError(shape.kind, shape.message)
+    /**
+     * 上一次 WebView 上下文（页面 reload / 渲染进程被回收）留下的连接还挂在原生侧：
+     * 插件按名字登记连接，`open` 撞名会 reject `database already open`（真机复现：
+     * committed 之后 reload → 闸门 blocked「sqlite database cannot be opened (already open)」）。
+     * 这里先关掉那条陈旧连接再重试一次；再失败才抛。
+     */
+    if (!/already open/iu.test(shape.message)) {
+      throw new InfraError(shape.kind, shape.message)
+    }
+    await bridge.close({ name }).catch(() => {})
+    try {
+      await bridge.open({ name })
+    } catch (retryError) {
+      const retryShape = errorShapeOf(retryError)
+      throw new InfraError(retryShape.kind, retryShape.message)
+    }
   }
 
   return createNativeSqliteDatabase(name, bridge)
