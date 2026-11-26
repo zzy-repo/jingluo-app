@@ -1488,4 +1488,8 @@ export const zh = {
   sessionBranchOpenParent: '回到来源会话',
   // 附件降级（父会话被删 / 换设备导入后原件不在本机）：明说不可用，但不报错、不阻断对话
   sessionBranchAttachmentMissing: '附件不可用：有 {count} 个附件在本机找不到原件，继续对话不受影响',
+  // #909 Storage Protection：库从有到无（被系统清除）
+  dataLostTitle: '本机的聊天记录已被系统清除（此前约有 {count} 条会话）',
+  dataLostNoSnapshot: '本机没有可用的快照，无法自动恢复。如果之前导出过备份，可在「设置」里导入历史会话。',
+  dataLostDismiss: '知道了，不再提示',
 } as const

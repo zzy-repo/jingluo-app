@@ -16,6 +16,7 @@ import {
   type SaveBannerTier,
   type StorageInitFailure,
 } from '../services/chat/db.js'
+import { DataLostBanner } from '../components/protection/DataLostBanner.js'
 import { SearchPanel } from '../components/search/SearchPanel.js'
 import { closeSearchPanel } from '../components/search/searchPanelState.js'
 import { SessionView } from '../components/session/SessionView.js'
@@ -282,6 +283,7 @@ export const App = () => {
               ) : null}
             </div>
           ) : null}
+          <DataLostBanner className={styles.saveError} />
           <div className={styles.content}>
             {siderCollapsed ? <CollapsedSider /> : null}
             {!ready || (activeId !== null && !session) ? (

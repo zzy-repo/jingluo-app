@@ -1470,4 +1470,8 @@ export const en = {
   sessionBranchOpenParent: 'Go to source chat',
   sessionBranchAttachmentMissing:
     'Attachment unavailable: {count} attachment(s) have no file on this device. You can keep chatting',
+  dataLostTitle: 'Your chats on this device were cleared by the system (about {count} chats before)',
+  dataLostNoSnapshot:
+    'No snapshot is available on this device, so nothing can be restored automatically. If you exported a backup before, import it from Settings.',
+  dataLostDismiss: 'Got it, stop showing this',
 } satisfies Record<keyof typeof zh, string>

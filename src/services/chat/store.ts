@@ -67,6 +67,13 @@ import {
 } from './branches.js'
 import * as db from './db.js'
 import {
+  protectionAcknowledgeLoss,
+  protectionAfterExplicitChange,
+  protectionAfterSave,
+  protectionCheckAtStartup,
+  type DataLostInfo,
+} from '../protection/index.js'
+import {
   clearAllDrafts,
   clearDraft,
   clearSentDraft,
@@ -154,6 +161,8 @@ type ChatState = {
   initFailure: db.StorageInitFailure | null
   /** 历史导入或全部删除期间锁定交互，提交成功前仍展示原有记录。 */
   importingHistory: boolean
+  /** #909：启动时判定「本机库从有到无」（被系统清除）；非 null 时界面必须提示，不得只显示干净欢迎页 */
+  dataLost: DataLostInfo | null
   /** 仅列表元数据，按 updatedAt 降序；流式消息更新不会改变此数组。 */
   sessions: SessionSummary[]
   sessionCache: Record<string, Session>
@@ -197,6 +206,7 @@ export const useChatStore = create<ChatState>(() => ({
   initError: false,
   initFailure: null,
   importingHistory: false,
+  dataLost: null,
   sessions: [],
   sessionCache: {},
   sessionLoadErrors: {},
@@ -655,6 +665,8 @@ const persist = (sessionId: string) => {
         )
       }
     }
+    // #909：会话已提交 → 抬高高水位（只升不降，不阻塞、不抛）
+    protectionAfterSave()
     if (outcome.degradedFiles.length === 0) {
       if (pendingFiles.get(sessionId) === files) {
         pendingFiles.delete(sessionId)
@@ -781,6 +793,12 @@ export const saveSessionBackground = async (
   return false
 }
 
+/** #909：用户在横幅里确认「知道了」：清掉提示，高水位按当前实际数重置 */
+export const dismissDataLost = async (): Promise<void> => {
+  await protectionAcknowledgeLoss()
+  set({ dataLost: null })
+}
+
 export const retrySaveSessions = () => {
   if (!get().importingHistory) {
     unsavedSessions.forEach(persist)
@@ -867,7 +885,14 @@ export const initChat = (): Promise<void> => {
     try {
       const summaries = await db.loadSessionSummaries()
       if (epoch === historyEpoch) {
-        set({ ready: true, sessions: sortSessions(summaries) })
+        // #909：库里没有会话时，先判「是不是被系统清掉了」再放行欢迎页；有会话时只更新高水位，不拖慢首屏。
+        const dataLost = summaries.length === 0 ? await protectionCheckAtStartup() : null
+        if (summaries.length > 0) {
+          void protectionCheckAtStartup()
+        }
+        if (epoch === historyEpoch) {
+          set({ ready: true, sessions: sortSessions(summaries), dataLost })
+        }
       }
     } catch (error) {
       if (epoch === historyEpoch) {
@@ -1155,6 +1180,8 @@ export const importHistoryInto = async (
         activeId: activeId !== null && summaries.some((item) => item.id === activeId) ? activeId : null,
       })
     }
+    // #909：整包替换 / 合并 commit 之后按实际数更新高水位（覆盖「清空历史」：空替换也走这里）
+    void protectionAfterExplicitChange()
     return summary
   } finally {
     set({ importingHistory: false })
@@ -1327,6 +1354,8 @@ const removeSessionData = async (id: string): Promise<boolean> => {
       return false
     }
     await db.deleteSession(id)
+    // #909：用户显式删除 → 高水位按实际数更新，删光不会被当成「被系统清除」
+    void protectionAfterExplicitChange()
     // 本单：会话没了，它自己的背景图也不该留在 IndexedDB 里（`appAssets` 按 sessionId 存 key，
     // 不清就是一条永远读不到、也永远算在占用里的孤儿 blob）。删库失败不影响删会话本身。
     await removeSessionBackground(id).catch(db.reportStorageError('delete session background'))
