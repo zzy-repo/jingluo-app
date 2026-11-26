@@ -73,7 +73,7 @@ import {
   type StorageInitFailure,
   type StoredFile,
 } from './db.js'
-import { getStorage } from '../storage/index.js'
+import { getStorage, peekStorage, type StorageBackend } from '../storage/index.js'
 import {
   clearAllDrafts,
   clearDraft,
@@ -387,6 +387,16 @@ const roundFiles = (request: Request) => request.question.files
 const sameSummary = (a: SessionSummary, b: SessionSummary) =>
   a.title === b.title && a.createdAt === b.createdAt && a.updatedAt === b.updatedAt
 
+/**
+ * 在存储后端上跑一次调用。后端已打开时**同步**调用（与迁移前直调 `db.saveSession/pinSession/renameSession`
+ * 同一个 tick 发出写请求，pagehide / 切后台 flush 与「先 pin 再立即读」的先后顺序不变）；
+ * 还没打开时才退回 `getStorage().then(...)`（那时本来就要先等打开）。
+ */
+const withStorage = <T,>(run: (storage: StorageBackend) => Promise<T>): Promise<T> => {
+  const opened = peekStorage()
+  return opened === undefined ? getStorage().then(run) : run(opened)
+}
+
 const sessionAccess = new Map<string, number>()
 const unsavedSessions = new Set<string>()
 /** 保存失败时保留原件，重试成功后才释放。 */
@@ -691,7 +701,7 @@ const persist = (sessionId: string) => {
     // 同步发起落盘（与改造前一致：调用方在同一 tick 里就能看到写请求），同步抛出也转成 rejection
     const invoked = (() => {
       try {
-        return getStorage().then((storage) =>
+        return withStorage((storage) =>
           storage.sessions.save(session, files, { keepFileIds: keepFileIds() })
         )
       } catch (error) {
@@ -720,7 +730,7 @@ const persist = (sessionId: string) => {
    * 既不写库也不报错 —— 内存里看着一切正常，其实什么都没落盘）。现在改成从库里读回来再写；
    * 读不回来才标失败 —— 「读不回来」与「本来就没事」必须能分开。
    */
-  return Promise.resolve(getStorage().then((storage) => storage.sessions.get(sessionId)))
+  return Promise.resolve(withStorage((storage) => storage.sessions.get(sessionId)))
     .catch((error: unknown) => {
       reportStorageError('read session for persist')(error)
       return undefined
@@ -1285,9 +1295,9 @@ export const pinSession = (id: string) => {
       state.sessions.map((item) => (item.id === id ? { ...item, pinnedAt } : item))
     ),
   }))
-  void getStorage()
-    .then((storage) => storage.sessions.pin(id, pinnedAt))
-    .catch(reportStorageError('pin session'))
+  void withStorage((storage) => storage.sessions.pin(id, pinnedAt)).catch(
+    reportStorageError('pin session')
+  )
 }
 
 export const renameSession = (id: string, title: string) => {
@@ -1310,9 +1320,9 @@ export const renameSession = (id: string, title: string) => {
         session.id === id ? { ...session, title } : session
       ),
     }))
-    void getStorage()
-      .then((storage) => storage.sessions.rename(id, title))
-      .catch(reportStorageError('rename session'))
+    void withStorage((storage) => storage.sessions.rename(id, title)).catch(
+      reportStorageError('rename session')
+    )
   }
 }
 
