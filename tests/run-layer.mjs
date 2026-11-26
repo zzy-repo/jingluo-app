@@ -180,6 +180,11 @@ const UNIT_SOLO = new Set([
   // 把别人的数据混进本文件的「空库」。机制类别：模块级单例 + 共享库 —— 与上一条同类，单列最诚实。
   'storage-idb-backend.test.mjs',
 
+  // #915（迁移引擎的 IDB 只读源）：把 IDBObjectStore / IDBCursor / IDBDatabase.transaction 的原型方法临时桩成
+  // 抛错或记录，并独占 `chat/db.ts` 的模块级连接单例与共享 fake-indexeddb 库。机制类别：进程级原型 mock +
+  // 模块级单例（与上一条同类，技术债见 docs/sqlite-migration-plan.md 第 6 节）。其余 migration-engine-* 是纯内存用例，继续合批。
+  'migration-engine-raw.test.mjs',
+
   // #906（其余四个特征化测试）：同一类机制 —— 都经 `chat/db.ts` 的模块级连接单例读写真 fake-indexeddb，
   // 且会换掉/还原 `globalThis.indexedDB`（lifecycle 还用 MockTimers 与 `?inst=N` 多实例）。
   // 实测（合批 `--only storage-`）：blob-attach 批内红 14 条、单跑全绿（「No objectStore named appAssets」，
@@ -190,6 +195,12 @@ const UNIT_SOLO = new Set([
   'storage-char-lifecycle.test.mjs',
   'storage-char-staging.test.mjs',
   'storage-char-staging-rollback.test.mjs',
+
+  // #906（存储契约套件的 IDB runner）：与上面同一类机制。它在用例里临时补丁 `IDBObjectStore.prototype` 的
+  // put/add/delete/clear（故障注入）、临时把 `globalThis.indexedDB` 置空（「宿主无存储」用例），还会用
+  // `DB_VERSION + 1` 造「库比代码新」并 `deleteDatabase`，且独占 `chat/db.ts` 的模块级连接单例。
+  // 实测（并进 16 个一批）：批次进程以 exit 7 退出（fake-indexeddb 的 Map 追踪溢出），被降级串行才绿。单列最诚实。
+  'storage-contract-idb.test.mjs',
 
   // ── #513：实测「批内红 → 单跑绿」，且在进程内**不可修**的那一批 ────────────────────────────
   //
