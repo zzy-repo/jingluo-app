@@ -209,9 +209,10 @@
 | 升级被其它连接挡住超时 | 抛 `StorageBlockedError` | IDB 后端（SQLite 无此概念，不抛） |
 | 库版本比代码新 | 抛 `StorageVersionTooNewError` | 两个后端 |
 
-重试策略不变，也不是接口的事：`quota` 清一次孤儿再试一次，`clone` 剔一次字段再试一次，
-其余不重试（`db.ts` `writeSessionRecord` 的两条自愈）。自愈留在兼容层，仓储方法本身不重试 ——
-重试要不要做是调用策略，塞进仓储会让「一次调用」的语义变模糊。
+重试策略不变：`quota` 清一次孤儿再试一次，`clone` 剔一次字段再试一次，其余不重试
+（`db.ts` `writeSessionRecord` 的两条自愈）。**【决定 2026-11-26】`SessionRepo.save` 内含这两次自愈**，
+`SaveSessionOutcome` 原样返回；孤儿清扫（`sweepOrphanFiles`）是 IDB 实现的内部细节，不进接口。
+理由：目标是行为零变化，且 `save` 的返回值本来就是「自愈之后的结果」；SQLite 实现按同样口径自带自愈。
 
 ## 5. `db.ts` 之外泄漏 IDB 语义的位置
 
@@ -262,5 +263,5 @@ import 了 `db.ts` 的文件共 14 个（任务书列了 12 个，另有 `chat/h
    理由：选择依赖运行环境（Capacitor 壳里 WebView 也有 IndexedDB），而环境探测属于实现阶段。
 
 6. **自愈（清孤儿重试、剔字段重试）放哪。**
-   默认决定：留在兼容层，不进仓储方法（第 4 节末尾）。
-   理由：重试是调用策略；放进仓储后「一次 `save`」到底写了几次就说不清，测试也无法分别断言。
+   **决定（覆盖原默认）：进 `SessionRepo.save`**（第 4 节末尾）。原默认「留兼容层」会让 `save` 的返回值与
+   现状 `saveSession` 不一致，违背零行为变化；`sweepOrphanFiles` 因此不需要进接口。
