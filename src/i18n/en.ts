@@ -39,6 +39,7 @@ export const en = {
   sessionLoadFailed: 'Unable to load this chat. Please try again.',
   sessionSaveFailedRetryable: "This chat didn't save to this device. Tap retry.",
   sessionSaveFailedQuota: 'Not enough local storage. Free up space or export a backup, then retry.',
+  sessionSaveLowSpace: 'Storage is almost full, so new content may not be saved. Free up space or export a backup',
   sessionSaveFailedUnavailable: "This environment can't save to this device. Use the app instead.",
   attachmentSaveFailed: "Attachments didn't save to this device and may be missing after a refresh (retry).",
   storageBlockedByOtherTab: 'Another tab is holding local storage. Close the other pages and try again.',

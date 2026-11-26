@@ -10,6 +10,7 @@
  */
 import { InfraError } from '../capability/errors.js'
 import { reportProtectionFailure } from './diagnostics.js'
+import { createFreeSpace, type FreeSpaceResult } from './freeSpace.js'
 import { createHighwater, detectDataLoss, type Highwater } from './highwater.js'
 import { createSnapshots, type SnapshotWriteResult, type Snapshots } from './snapshot.js'
 import { createStorageAccess } from './storageAccess.js'
@@ -20,6 +21,8 @@ export type { DataLostInfo } from './types.js'
 export type Protection = {
   readonly highwater: Highwater
   readonly snapshots: Snapshots
+  /** 保存前读剩余空间（缓存 10s）：ok / low / unknown，unknown 不得当成「足够」 */
+  checkFreeSpace(): Promise<FreeSpaceResult>
   checkAtStartup(): Promise<DataLostInfo | null>
   /** saveSession 成功后：抬高水位 + 尝试快照（节流）。返回快照结果，调用方一般不需要等 */
   afterSave(options?: { flush?: boolean }): Promise<SnapshotWriteResult | null>
@@ -32,6 +35,7 @@ export type Protection = {
 export const createProtection = (deps: ProtectionDeps): Protection => {
   const highwater = createHighwater(deps)
   const snapshots = createSnapshots(deps)
+  const freeSpace = createFreeSpace(deps)
 
   const guarded = async <T>(stage: string, run: () => Promise<T>, fallback: T): Promise<T> => {
     try {
@@ -136,6 +140,7 @@ export const createProtection = (deps: ProtectionDeps): Protection => {
   return {
     highwater,
     snapshots,
+    checkFreeSpace: freeSpace.check,
     checkAtStartup,
     afterSave,
     flushSnapshot: () => afterSave({ flush: true }),
@@ -195,6 +200,12 @@ export const protectionCheckAtStartup = async (): Promise<DataLostInfo | null> =
 export const protectionAfterSave = (): void => {
   void getProtection().then((protection) => protection?.afterSave())
 }
+
+/** 保存前读剩余空间；保护层不可用时返回 null（= 不知道，调用方保持现状） */
+export const protectionCheckFreeSpace = async (): Promise<FreeSpaceResult | null> =>
+  (await getProtection())?.checkFreeSpace() ?? null
+
+export type { FreeSpaceResult } from './freeSpace.js'
 
 /** 切后台 / 会话结束：绕过快照节流（fire-and-forget） */
 export const protectionFlushSnapshot = (): void => {

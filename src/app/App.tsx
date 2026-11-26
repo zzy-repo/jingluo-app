@@ -103,7 +103,7 @@ export const App = () => {
    * 保存失败横幅的**档位**（P0）：`unavailable` > `quota` > 可重试。
    * 选档与文案映射都是纯函数（`db.selectSaveBannerTier` / `db.SAVE_BANNER_MESSAGE`），L0 直接可测。
    */
-  const saveTier = useChatStore((state) => selectSaveBannerTier(state.sessionSaveErrors))
+  const saveTier = useChatStore((state) => selectSaveBannerTier(state.sessionSaveErrors, state.lowSpace))
   /**
    * 附件降级（会话已落盘、blob 没写进去）：单独提示，绝不冒充「这段对话没存到本机」。
    * 档位与文案：配额不足时说「本机存储空间不足…」（用户的动作就是清理后重试），

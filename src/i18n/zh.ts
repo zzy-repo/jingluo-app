@@ -36,6 +36,7 @@ export const zh = {
   sessionLoadFailed: '对话加载失败，请重试',
   sessionSaveFailedRetryable: '这段对话没存到本机，点重试',
   sessionSaveFailedQuota: '本机存储空间不足，清理或导出备份后重试',
+  sessionSaveLowSpace: '存储空间不足，新内容可能无法保存。请清理空间或先导出备份',
   sessionSaveFailedUnavailable: '当前环境无法保存到本机，建议用 App 打开',
   attachmentSaveFailed: '附件没能存进本机，刷新后可能看不到（可重试）',
   storageBlockedByOtherTab: '另一个标签页占用了本机存储，请关闭其它页面后重试',

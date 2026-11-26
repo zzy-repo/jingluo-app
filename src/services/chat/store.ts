@@ -71,6 +71,7 @@ import {
   protectionAfterExplicitChange,
   protectionAfterSave,
   protectionCheckAtStartup,
+  protectionCheckFreeSpace,
   protectionFlushSnapshot,
   type DataLostInfo,
 } from '../protection/index.js'
@@ -164,6 +165,8 @@ type ChatState = {
   importingHistory: boolean
   /** #909：启动时判定「本机库从有到无」（被系统清除）；非 null 时界面必须提示，不得只显示干净欢迎页 */
   dataLost: DataLostInfo | null
+  /** #909：私有目录剩余空间低于阈值（读不到时保持原值，不当成「足够」） */
+  lowSpace: boolean
   /** 仅列表元数据，按 updatedAt 降序；流式消息更新不会改变此数组。 */
   sessions: SessionSummary[]
   sessionCache: Record<string, Session>
@@ -208,6 +211,7 @@ export const useChatStore = create<ChatState>(() => ({
   initFailure: null,
   importingHistory: false,
   dataLost: null,
+  lowSpace: false,
   sessions: [],
   sessionCache: {},
   sessionLoadErrors: {},
@@ -632,6 +636,12 @@ const persist = (sessionId: string) => {
   }
   const epoch = historyEpoch
   const files = pendingFiles.get(sessionId)
+  // #909：保存前读剩余空间（缓存 10s，不阻塞落盘）；读不到（unknown）保持原状，不当成「足够」
+  void protectionCheckFreeSpace().then((space) => {
+    if (space !== null && space.status !== 'unknown' && get().lowSpace !== (space.status === 'low')) {
+      set({ lowSpace: space.status === 'low' })
+    }
+  })
 
   /** 落盘之后的状态收敛：缓存路径与「从库里读回来再写」路径共用这一份 */
   const settled = (session: Session, fromCache: boolean, outcome: db.SaveSessionOutcome) => {

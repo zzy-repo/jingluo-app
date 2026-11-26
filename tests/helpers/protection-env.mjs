@@ -14,7 +14,7 @@ export const loadProtection = async () => {
     ],
   })
   globalThis.__log = { records: [], events: [], actions: [] }
-  const [memoryFs, fsTypes, index, highwater, constants, diagnostics, snapshot] = await Promise.all([
+  const [memoryFs, fsTypes, index, highwater, constants, diagnostics, snapshot, freeSpace] = await Promise.all([
     loadTsModule('src/services/fs/memoryFs.ts'),
     loadTsModule('src/services/fs/types.ts'),
     loadTsModule('src/services/protection/index.ts'),
@@ -22,8 +22,9 @@ export const loadProtection = async () => {
     loadTsModule('src/services/protection/constants.ts'),
     loadTsModule('src/services/protection/diagnostics.ts'),
     loadTsModule('src/services/protection/snapshot.ts'),
+    loadTsModule('src/services/protection/freeSpace.ts'),
   ])
-  return { ...memoryFs, ...fsTypes, ...index, ...highwater, ...constants, ...diagnostics, ...snapshot }
+  return { ...memoryFs, ...fsTypes, ...index, ...highwater, ...constants, ...diagnostics, ...snapshot, ...freeSpace }
 }
 
 export const makeSession = (id, extra = {}) => ({
