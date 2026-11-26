@@ -386,6 +386,25 @@ test('已出内容后空闲超时：报 idle_timeout，只补 1 次且正文只�
 // ---------------------------------------------------------------------------
 // [4] 正常流式：三段定时器都不许留
 // ---------------------------------------------------------------------------
+test('错误正文读取期间停止：收尾为 stopped，不触发重试', async () => {
+  const { LIMITS } = await import('../../src/services/limits.ts')
+  const originalBodyMs = LIMITS.requestTimeouts.errorBodyMs
+  LIMITS.requestTimeouts.errorBodyMs = 100
+  try {
+    const { calls, reply } = await runRound({ respond: () => {
+      realSetTimeout(() => store.stopReply(useChatStore.getState().activeId), 10)
+      return new Response(new ReadableStream({ start() {} }), {
+        status: 502, headers: { 'Content-Type': 'application/json' },
+      })
+    } })
+    assert.equal(calls, 1, '用户停止后不能重发')
+    assert.equal(reply.status, 'stopped')
+    assert.equal(reply.error, undefined)
+  } finally {
+    LIMITS.requestTimeouts.errorBodyMs = originalBodyMs
+  }
+})
+
 test('正常流式：三段定时器都被清理，没有残留 timer', async () => {
   /** 当前进程里活着的 setTimeout 数量 */
   const liveTimeouts = () => process.getActiveResourcesInfo().filter((name) => name === 'Timeout').length

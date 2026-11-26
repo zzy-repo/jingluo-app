@@ -63,6 +63,8 @@ export const LIMITS = {
     connectMs: 60_000,
     firstTokenMs: 30_000,
     idleMs: 60_000,
+    /** Total budget for reading an error or unexpected non-SSE response body. */
+    errorBodyMs: 10_000,
     /**
      * **首字预算的渠道覆盖表**（#568 第 3 条）：一个渠道一行，只写与上面默认值不同的项。
      *
@@ -96,6 +98,7 @@ export const LIMITS = {
    * 15s 是改前的实际体感值（connectMs 的原值），也是 `settingsTestTimeout` 文案的依据。
    */
   probeTimeoutMs: 15_000,
+  errorBody: { maxBytes: 64 * 1024, htmlMaxBytes: 4 * 1024, diagnosticChars: 320 },
   /** 自动重试的最多次数（不含首次请求）：附件补传、断网、5xx、超时共用这一个上限（#105） */
   streamRetryLimit: 2,
   /** 退避基数，第 n 次重试等待 2^n 倍 */

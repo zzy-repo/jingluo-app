@@ -182,6 +182,7 @@ export const zh = {
    */
   replyNetworkUnreachable: '这条消息没发出去呜 (´；ω；`) 点「重新生成」再试一次呢',
   replyStreamInterrupted: '网络中途跑掉啦 (´；ω；`) 已经收到的都在，点「重新生成」再试一次',
+  upstreamErrorBodyIncomplete: '上游返回 {status}，错误详情未能完整读取',
   /** 空响应（#324）：上游 200 却什么内容都没给，换条连接通常就好 */
   replyEmptyStream: '对方这次什么都没说就走了 ( •̥́ ˍ •̀ू ) 点「重新生成」再叫它一次',
   /** 内容安全拦截（#324）：原文重发一定还是被拦 —— 不可重试由 `errorNotice` 表保证 */

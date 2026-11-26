@@ -72,7 +72,7 @@ declare const __API_ORIGIN__: string
 | 3 | `src/env.d.ts:9 ⇒ declare const __API_ORIGIN__: string` | `declare const __API_ORIGIN__: string` | 类型声明 |
 | 4 | ~~`src/services/api/client.ts:13`~~ `export const API_ORIGIN = __API_ORIGIN__` | 已删除（常量搬走）→ 现在是 `src/services/api/apiConfig.ts:57 ⇒ export const DEFAULT_BASE_URL: string = __API_ORIGIN__` | 兜底值（不再是「唯一取值点」） |
 | 5 | ~~`src/services/api/client.ts:15`~~ `` const ANTHROPIC_BASE_URL = `${API_ORIGIN}/anthropic/v1` `` | 已删除：Anthropic 地址现在由 `getCurrentSpec().paths` 拼（`src/services/api/apiConfig.ts:586 ⇒ export const getToolsBaseUrl`） | 派生于 provider spec |
-| 6 | `src/services/api/client.ts:453 ⇒ await request(joinUrl(baseUrl, spec.paths.models)` | `` request(joinUrl(baseUrl, spec.paths.models), …) ``（在 `client.ts:449 ⇒ export const verifyApiKey` 里） | 派生（verifyApiKey） |
+| 6 | `src/services/api/client.ts:471 ⇒ await request(joinUrl(baseUrl, spec.paths.models)` | `` request(joinUrl(baseUrl, spec.paths.models), …) ``（在 `verifyApiKey` 里） | 派生（verifyApiKey） |
 | 7 | `src/services/api/speech.ts:1 ⇒ import { getBaseUrl, getToolsBaseUrl } from './apiConfig.js'` | `import { getBaseUrl, getToolsBaseUrl } from './apiConfig.js'` | 跨模块引用（已改为走 apiConfig） |
 | 8 | ~~`src/services/api/speech.ts:9`~~ `` const TOOLS_BASE_URL = `${API_ORIGIN}/v1/tools` `` | 已删除 → `src/services/api/apiConfig.ts:586 ⇒ export const getToolsBaseUrl` | 派生 |
 

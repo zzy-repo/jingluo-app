@@ -189,6 +189,7 @@ export const en = {
    */
   replyNetworkUnreachable: 'This message didn’t go out (´；ω；`) tap “Regenerate” and let’s try once more',
   replyStreamInterrupted: 'The network ran off mid-answer (´；ω；`) everything that arrived is still here — tap “Regenerate” to try again',
+  upstreamErrorBodyIncomplete: 'The upstream returned {status}, but its error details could not be read completely',
   /** Empty stream (#324): the upstream returned 200 but no content at all */
   replyEmptyStream: 'They said nothing this time and just left ( •̥́ ˍ •̀ू ) tap “Regenerate” to call them back',
   /** Content safety block (#324): resending the same text gets blocked again — non-retryable via `errorNotice` */

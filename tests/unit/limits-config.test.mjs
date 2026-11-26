@@ -80,6 +80,7 @@ const ORIGINAL_VALUES = {
     connectMs: 60000,
     firstTokenMs: 30000,
     idleMs: 60000,
+    errorBodyMs: 10000,
     channels: {
       deepseek: { thinkingFirstTokenMs: 90000 },
       anthropic: { thinkingFirstTokenMs: 120000 },
@@ -87,6 +88,8 @@ const ORIGINAL_VALUES = {
       openai: { thinkingFirstTokenMs: 45000 },
     },
   },
+  // Error-body limits prevent unfinished error responses from waiting indefinitely.
+  errorBody: { maxBytes: 64 * 1024, htmlMaxBytes: 4 * 1024, diagnosticChars: 320 },
   streamRetryLimit: 2,
   retryBaseDelayMs: 1000,
   contextBudget: { maxTokens: 120_000, maxRounds: 200 },

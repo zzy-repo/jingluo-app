@@ -23,6 +23,8 @@ import {
   type StreamBudgets,
 } from './sse.js'
 import { LIMITS } from '../limits.js'
+import { readErrorBody, type ErrorBodyReadResult } from './errorBody.js'
+import { redactUpstreamText } from '../diagnostics/redact.js'
 import type {
   ApiErrorBody,
   CreateMessageRequest,
@@ -174,13 +176,24 @@ const readUpstreamCode = (body: unknown): string | undefined => {
   return typeof top === 'string' && top.trim() !== '' ? top.trim() : undefined
 }
 
+const errorBodyDetail = (body: ErrorBodyReadResult): string | undefined => {
+  if (body.reason === 'complete') {
+    return undefined
+  }
+  const summary = `body-read: ${body.reason}, receivedBytes=${body.receivedBytes}, retainedBytes=${body.retainedBytes}`
+  const snippet = redactUpstreamText(body.text).slice(0, LIMITS.errorBody.diagnosticChars)
+  return snippet ? `${summary}\n${snippet}` : summary
+}
+
 const readErrorResponse = async (
   response: Response,
   kind: 'http' | 'protocol' = 'http',
-  fallback = response.statusText
+  fallback = response.statusText,
+  signal?: AbortSignal | null
 ): Promise<ApiError> => {
-  const text = await response.text().catch(() => '')
-  let message = text || fallback
+  const bodyRead = await readErrorBody(response, { signal })
+  const text = bodyRead.text
+  let message: string | TranslationMessage = text || fallback
   let upstreamCode: string | undefined
   try {
     const body: unknown = JSON.parse(text)
@@ -189,9 +202,11 @@ const readErrorResponse = async (
     }
     upstreamCode = readUpstreamCode(body)
   } catch {
-    // 非 JSON 响应体直接展示原文
+    if (bodyRead.reason !== 'complete') {
+      message = { key: 'upstreamErrorBodyIncomplete', params: { status: response.status } }
+    }
   }
-  return new ApiError(kind, message, response.status, undefined, undefined, upstreamCode)
+  return new ApiError(kind, message, response.status, undefined, errorBodyDetail(bodyRead), upstreamCode)
 }
 
 /**
@@ -210,12 +225,15 @@ const isHtmlResponse = (response: Response): boolean =>
  * 既能让用户主动展开核对，又不会把一屏 HTML 糊到界面上。
  */
 const HTML_SNIPPET_CHARS = 200
-const htmlResponseDetail = async (response: Response): Promise<string> => {
+const htmlResponseDetail = async (response: Response, signal?: AbortSignal | null): Promise<string> => {
   const contentType = (response.headers.get('Content-Type') ?? '').trim() || '（上游未给出）'
-  const body = await response.text().catch(() => '')
+  const bodyRead = await readErrorBody(response, { signal, maxBytes: LIMITS.errorBody.htmlMaxBytes })
+  const body = redactUpstreamText(bodyRead.text)
   // 换行 / 连续空白折叠成单空格：HTML 源码里的缩进会把 200 字预算全吃掉
   const head = body.replace(/\s+/g, ' ').trim().slice(0, HTML_SNIPPET_CHARS)
-  return head ? `content-type: ${contentType}\n${head}` : `content-type: ${contentType}`
+  const detail = head ? `content-type: ${contentType}\n${head}` : `content-type: ${contentType}`
+  const summary = errorBodyDetail({ ...bodyRead, text: '' })
+  return summary ? `${detail}\n${summary}` : detail
 }
 
 /**
@@ -370,7 +388,7 @@ export const request = async (
       response.status,
       'upstream_returned_html',
       // 折叠区的响应摘要（#434）：content-type + 正文前 200 字
-      await htmlResponseDetail(response)
+      await htmlResponseDetail(response, callerSignal)
     )
   }
   if (!response.ok) {
@@ -379,7 +397,7 @@ export const request = async (
     if (response.status === 401) {
       markKeyRejected('request')
     }
-    throw await readErrorResponse(response)
+    throw await readErrorResponse(response, 'http', response.statusText, callerSignal)
   }
   return response
 }
@@ -597,7 +615,7 @@ async function* streamOpenAIMessage(
   options?.onHeaders?.()
   const contentType = response.headers.get('Content-Type') ?? ''
   if (!response.body || !contentType.includes('text/event-stream')) {
-    throw await readErrorResponse(response, 'protocol', '')
+    throw await readErrorResponse(response, 'protocol', '', signal)
   }
   try {
     for await (const event of translateOpenAIStream(
@@ -673,7 +691,7 @@ export async function* streamMessage(
   options?.onHeaders?.()
   const contentType = response.headers.get('Content-Type') ?? ''
   if (!response.body || !contentType.includes('text/event-stream')) {
-    throw await readErrorResponse(response, 'protocol', '')
+    throw await readErrorResponse(response, 'protocol', '', signal)
   }
   /**
    * 收到的 SSE 数据帧数（#324）：只用来在流结束时区分「一个帧都没来（空流）」
