@@ -78,8 +78,62 @@ export type ReplyErrorReportInput = {
   userAction?: string
   /** 各段耗时（毫秒）；取不到的段在文本里写「—」，不写 0 */
   timings?: NetTimings
+  /**
+   * 失败后那次「只判路」探测的结论摘要（#899）：`outcome` / 花掉多少毫秒 / 是否与原始证据冲突。
+   *
+   * 为什么要单独一行而不是塞进「失败分段」：这两件事说的不是一回事 ——
+   * 「失败分段」是**这次失败的结论**（**可能判不出**），「探测」是**我们为了能判出来额外做的一件事**。
+   * 混成一句，读的人就分不清「判不出（平台限制）」和「探测后判定为 tls」的区别（#899 必做 3）。
+   */
+  probe?: { outcome?: string; elapsedMs?: number; conflict?: boolean }
   /** 出错时间（ms），默认取当前时刻 */
   at?: number
+}
+
+/**
+ * 探测**真的拿到了分段证据**时，那句话怎么说（#899）。
+ * 只有这三个 phase 会走这里：探测只允许细分 dns / tcp / tls，其余一律回来仍是「判不出」。
+ */
+const PROBE_SEGMENT_COPY: Record<string, string> = {
+  dns: '名字没解开',
+  tcp: '名字解开了、连接没建起来',
+  tls: '连上了、TLS 握手没过',
+}
+
+/**
+ * 「探测」那一行的文本（#899 必做 3）。
+ *
+ * 四种「没有结论」的理由必须写成四句不同的话 —— 尤其是
+ * **「平台限制拿不到证据」**与**「探测也超时」**：前者是我们没能力，后者是那一枪没打准，
+ * 下一轮排查该做的事完全不同（换宿主的桥 / 换个时间段复现）。
+ */
+const probeReportLine = (input: ReplyErrorReportInput): string | undefined => {
+  const probe = input.probe
+  if (probe === undefined || typeof probe.outcome !== 'string' || probe.outcome === '') {
+    return undefined
+  }
+  const elapsed =
+    typeof probe.elapsedMs === 'number' && Number.isFinite(probe.elapsedMs)
+      ? `（${Math.round(probe.elapsedMs)}ms）`
+      : ''
+  const segment = input.evidence === 'probe' ? PROBE_SEGMENT_COPY[input.phase ?? ''] : undefined
+  const conflict = probe.conflict === true ? '；与原始证据不一致，以原始证据为准' : ''
+  if (segment !== undefined) {
+    return (
+      `探测: 失败，但分段证据显示「${segment}」${elapsed} → 据此判定为 ${input.phase}` +
+      '（分段耗时里的 dns / tcp / tls 三段取自这一枪）'
+    )
+  }
+  if (probe.outcome === 'reached') {
+    return `探测: 已通${elapsed} → 刚才那一下是瞬时抖动，不是某一段坏了`
+  }
+  if (probe.outcome === 'timeout') {
+    return `探测: 也超时${elapsed} → 判不出（不猜某一段）`
+  }
+  if (probe.outcome === 'unsupported') {
+    return '探测: 本环境不支持（没有 fetch / 地址不是绝对 URL）→ 判不出'
+  }
+  return `探测: 失败，但平台限制拿不到分段证据（失败请求的 resource timing 全为 0）${elapsed} → 判不出${conflict}`
 }
 
 /**
@@ -171,6 +225,14 @@ export const buildReplyErrorReport = (input: ReplyErrorReportInput): string => {
   const timingsLine = timingsReportLine(input.timings)
   if (timingsLine !== undefined) {
     lines.push(timingsLine)
+  }
+  /**
+   * 探测那一行（#899）：**只有真探测过才写**。没探测（业务失败 / 老记录 / 非请求层失败）
+   * 就不占版面 —— 诊断里多一行「没做的事」只会让读的人以为我们试过。
+   */
+  const probeLine = probeReportLine(input)
+  if (probeLine !== undefined) {
+    lines.push(probeLine)
   }
   // 参数快照：只列「有值的原始标量」，不猜语义、不做单位换算（换算留给读的人）
   const paramLine = Object.entries(input.params ?? {})

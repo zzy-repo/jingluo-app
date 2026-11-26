@@ -66,7 +66,9 @@ const TIMER_EARLY_TOLERANCE_MS = 5
 const installHangingFetch = () => {
   const calls = []
   globalThis.fetch = (_url, init) => {
-    calls.push(init)
+    // 连 url 一起记下来（#899）：失败后会有一次**后台探测**打同源根路径，
+    // 「这条请求有没有被重发」必须按 URL 分账，否则探测会被误算成「重发了」。
+    calls.push({ ...init, url: _url })
     return new Promise((_resolve, reject) => {
       const signal = init?.signal
       if (!signal) {
@@ -157,8 +159,20 @@ test('永不 resolve 的请求：超时后必须拒绝，错误可与网络失�
     elapsed >= 40 - TIMER_EARLY_TOLERANCE_MS && elapsed < 1500,
     `应在 40ms 预算处收口（实际 ${elapsed}ms）`
   )
-  assert.equal(calls.length, 1, '只发一次请求，超时后不再重发')
-  assert.equal(calls[0].signal.aborted, true, '超时必须真的中断底层 fetch（不留悬挂连接）')
+  const sameUrlCalls = calls.filter((call) => call.url === URL_OK)
+  assert.equal(sameUrlCalls.length, 1, '同一条请求只发一次，超时后不再重发')
+  assert.equal(sameUrlCalls[0].signal.aborted, true, '超时必须真的中断底层 fetch（不留悬挂连接）')
+  /**
+   * #899：判不出时会在**后台**补一次「只判路」的探测 —— 它不是重发业务请求：
+   * 打的是**同源根路径**、只发一次、自带 ≤2s 盖子。这里把这条代价写进断言，
+   * 免得以后有人把「探测」当成「悄悄重试了一条会计费的请求」。
+   */
+  const probeCalls = calls.filter((call) => call.url !== URL_OK)
+  assert.ok(probeCalls.length <= 1, `探测最多一次，实际 ${probeCalls.length} 次`)
+  for (const call of probeCalls) {
+    assert.equal(call.method, 'HEAD', '探测必须是 HEAD：不下载正文、不产生副作用')
+    assert.equal(new URL(call.url).pathname, '/', '探测只打同源根路径，不重发业务请求')
+  }
 })
 
 test('三类失败互不混淆：超时 / 网络失败 / 4xx / 5xx', async () => {

@@ -68,7 +68,7 @@ const client = await import('../../src/services/api/client.ts')
 const { ApiError, streamMessage } = client
 const { classifyApiError, isRetryableApiError } = await import('../../src/services/api/errors.ts')
 const { applyEvent, settleReply } = await import('../../src/services/chat/reply.ts')
-const { describeReply } = await import('../../src/services/chat/describe.ts')
+const { describeReply, diagnosticsTextOf } = await import('../../src/services/chat/describe.ts')
 const { translate } = await import('../../src/i18n/index.ts')
 const { setApiKey, setBaseUrl, setModel, setProviderKind } = await import(
   '../../src/services/api/apiConfig.ts'
@@ -424,7 +424,7 @@ test('阈值的默认值有据可依，且可配置；非法值回默认（不�
 // 但「超时几秒」是排查必需的信息 —— 它改从「复制诊断信息」里出现（界面软、排查硬）。
 // ─────────────────────────────────────────────────────────────────────────────
 test('诊断留底：界面不显示超时秒数了，数字必须出现在诊断里', async () => {
-  const { describeReply } = await import('../../src/services/chat/describe.ts')
+  const { describeReply, diagnosticsTextOf } = await import('../../src/services/chat/describe.ts')
   const notice = describeReply({
     id: 'm-idle',
     role: 'assistant',
@@ -439,5 +439,10 @@ test('诊断留底：界面不显示超时秒数了，数字必须出现在诊�
   assert.ok(notice, '空闲超时必须有提示')
   assert.doesNotMatch(notice.text, /\{seconds\}/, '占位符不许漏到界面')
   assert.doesNotMatch(notice.text, /30\s*秒/, '定稿文案不再显示秒数')
-  assert.match(notice.diagnostics ?? '', /^参数: seconds=30/m, `诊断里要留底，实际：\n${notice.diagnostics}`)
+  // #899 起 `diagnostics` 可能是函数（探测结论晚到，点按钮那一刻才算）：统一走 `diagnosticsTextOf`
+  assert.match(
+    diagnosticsTextOf(notice.diagnostics),
+    /^参数: seconds=30/m,
+    `诊断里要留底，实际：\n${diagnosticsTextOf(notice.diagnostics)}`
+  )
 })

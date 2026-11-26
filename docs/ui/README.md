@@ -165,6 +165,36 @@ Chromium 把 `net::ERR_NAME_NOT_RESOLVED` **只打印到 console，不给页面 
 `UnknownHostException` / `ConnectException` / `SSLHandshakeException` 原文，走同一套 `classifyNetFailure()`。
 要补 web 侧，见母单 #894 的 #899。
 
+## 失败后那次「只判路」的探测（#899）的 390 / 360 取证
+
+脚本：`scripts/shot-net-probe-899.mjs`（现跑现拍，真 `dist` 产物 + 本机 mock 上游，装配复用
+`tests/helpers/golden.mjs`）。图上展开的是**点应用自己的「复制诊断信息」按钮后写进剪贴板的原文**。
+
+| 文件 | 故障注入 | 诊断里实际读到 |
+| --- | --- | --- |
+| `net-probe-tls-390.png` / `net-probe-tls-360.png` | `route.abort('failed')` + 探测桩给「握手中断了」 | `失败分段: tls（依据 probe；建议 check-endpoint）` + `探测: 失败，但分段证据显示「连上了、TLS 握手没过」` |
+| `net-probe-dns-390.png` / `net-probe-dns-360.png` | `route.abort('namenotresolved')` + 探测桩给「解析开始了没结束」 | `失败分段: dns（依据 probe；建议 check-network）` + `探测: 失败，但分段证据显示「名字没解开」` |
+
+**这两张图证明了什么、没证明什么（读之前先看这段）**：
+
+- 证明的是**拿到分段证据之后**，整条链路（判定 → `ApiError.net` → 诊断文案 → 界面按钮）是对的，
+  且「判不出」与「判出 dns/tls」两句文案**确实不同**；
+- **没有**证明「web 上现在就能判出 dns/tls」。#899 复测（Chromium 1248 / Firefox 1572，
+  真 DNS 失败、真 connection refused、真自签证书握手失败三种各跑一遍）：**失败请求的
+  `PerformanceResourceTiming` 分段全是 0**，浏览器不给页面 JS。所以真机上今天拿不到这份证据，
+  探测桩模拟的是「原生桥 / 未来 API 能给」的那一类宿主。
+
+**改前 → 改后（同一脚本、同一台机器）**：改前诊断只有 `失败分段: 判不出（依据 none）`
+一行，读的人分不清「没试过」与「试过了、平台给不出」；改后多一行 `探测:`，把四种「没有结论」
+的理由分开写（已通=瞬时抖动 / 平台限制拿不到证据 / 探测也超时 / 本环境不支持）。
+
+**还剩哪些判不出（逐条）**：
+
+1. 真实 web（Chromium / Firefox）上探测本身也拿不到分段 —— 诊断写「平台限制拿不到分段证据」；
+2. 探测自己撞上 2s 盖子 —— 写「探测也超时」，**不猜**成 tcp；
+3. 探测通了（瞬时抖动）—— 不细分，写「刚才那一下是瞬时抖动」；
+4. **刷新之后**：落盘的是失败当刻的快照，探测结论晚到（≤2s），回看时回到「判不出」。
+
 ## 控制面失败不阻断数据面（#898 第二步）的 390 / 360 取证
 
 脚本：`scripts/shot-send-degrade-898.mjs`（现跑现拍，真 `dist` 产物）。场景：`provider-kind=ours` +

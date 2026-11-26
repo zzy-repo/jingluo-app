@@ -90,6 +90,7 @@ import { waitDeadlines } from './waitStage.js'
 import { composeWaitNotice, needsUpload, type WaitHint, type WaitStage } from './waitStage.js'
 import { removeSessionBackground } from './background.js'
 import type { SessionBackground } from './sessionBackground.js'
+import type { NetFailureMeta } from '../net/networkPhase.js'
 import type { MergePlan, ImportMode } from './history/mergeSessions.js'
 import type { ImportSkip } from './history/toLocal.js'
 import { shouldRetryStreamTimeout, streamTimeoutStageOf } from './timeoutPolicy.js'
@@ -459,6 +460,30 @@ const updateSession = (id: string, update: (session: Session) => Session) =>
           ),
     }
   })
+
+/**
+ * 失败记录的 `net` 字段：**直接把请求层的 meta 对象交出去**（#895 落盘 / #899 按引用）。
+ *
+ * 为什么要按引用而不是复制一份：探测结论是**晚到**的（失败后最多 2s 才落定，见
+ * `services/net/phaseProbe.ts`），而这条记录在失败当刻就要写盘。复制一份的话，晚到的探测
+ * 就再也补不进这条记录 —— 用户点「复制诊断信息」时看到的仍是「失败分段: 判不出」，
+ * 那正是 #899 要补的缺口。所以这里只补两段**本轮计时器**更准的耗时，其余原样带过。
+ *
+ * 代价（写清楚，不装看不见）：IndexedDB 里存的是**写盘那一刻的快照**，所以刷新之后再回看，
+ * 探测结论不在（诊断会回到「判不出」）。宁可不补，也不在落盘时编一个探测结论。
+ */
+const netRecordOf = (
+  net: NetFailureMeta,
+  failedTiming: { firstTokenMs: number | null; totalMs: number }
+): NonNullable<NonNullable<AssistantMessage['error']>['net']> => {
+  const record = net as NonNullable<NonNullable<AssistantMessage['error']>['net']>
+  record.timings = {
+    ...(net.timings ?? {}),
+    firstByteMs: failedTiming.firstTokenMs ?? net.timings?.firstByteMs ?? null,
+    totalMs: failedTiming.totalMs,
+  }
+  return record
+}
 
 const updateReply = (sessionId: string, reply: AssistantMessage) =>
   updateSession(sessionId, (session) => ({
@@ -2862,20 +2887,7 @@ const streamReply = async (sessionId: string, initial: AssistantMessage, request
              * `diagnostics/timing.ts` 的 meter），它比 resource timing 更准（起点是「请求发出」
              * 而不是「fetch 被调用」）；DNS / TCP / TLS 三段只有 resource timing 有，取不到就是 null。
              */
-            ...(error.net
-              ? {
-                  net: {
-                    ...(error.net.phase === undefined ? {} : { phase: error.net.phase }),
-                    evidence: error.net.evidence,
-                    userAction: error.net.userAction,
-                    timings: {
-                      ...(error.net.timings ?? {}),
-                      firstByteMs: failedTiming.firstTokenMs ?? error.net.timings?.firstByteMs ?? null,
-                      totalMs: failedTiming.totalMs,
-                    },
-                  },
-                }
-              : {}),
+            ...(error.net ? { net: netRecordOf(error.net, failedTiming) } : {}),
             localMessage: notice,
           })
         } else {

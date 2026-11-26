@@ -53,7 +53,7 @@ const {
   parseSupportedModels,
 } = await import('../../src/services/api/errors.ts')
 const { applyEvent, settleReply } = await import('../../src/services/chat/reply.ts')
-const { describeReply } = await import('../../src/services/chat/describe.ts')
+const { describeReply, diagnosticsTextOf } = await import('../../src/services/chat/describe.ts')
 const { buildReplyErrorReport } = await import('../../src/services/chat/replyErrorReport.ts')
 const { translate } = await import('../../src/i18n/index.ts')
 const { useSettings } = await import('../../src/services/settings.ts')
@@ -346,7 +346,8 @@ test('[6] 兜底文案带状态码 + 上游短码 + 可复制诊断，且不含�
   assert.doesNotMatch(notice.text, /totally new upstream failure shape/, '长英文原文不上界面')
   assert.ok(notice.diagnostics, '带「复制诊断信息」的内容')
 
-  const diagnostics = notice.diagnostics
+  // #899 起 `diagnostics` 可能是函数（探测结论晚到）：统一走 `diagnosticsTextOf`
+  const diagnostics = diagnosticsTextOf(notice.diagnostics)
   assert.match(diagnostics, /HTTP 状态: 418/, '诊断里有状态码')
   assert.match(diagnostics, /上游 code: weird_upstream_code/, '诊断里有上游短码')
   assert.match(diagnostics, /环节: http/, '诊断里说明了失败发生在哪个环节')

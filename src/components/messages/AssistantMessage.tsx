@@ -2,7 +2,7 @@ import { useTranslate } from '../../i18n/index.js'
 import clsx from 'clsx'
 import { memo } from 'react'
 import { IconBranchOutline16, IconRefreshOutline16, IconWarningOutline16 } from '../base/icons.js'
-import { describeReply } from '../../services/chat/describe.js'
+import { describeReply, diagnosticsTextOf } from '../../services/chat/describe.js'
 import { canContinueReply } from '../../services/chat/reply.js'
 import {
   continueReply,
@@ -264,7 +264,9 @@ export const AssistantMessage = memo(function AssistantMessage({
                     type="button"
                     className={styles.noticeAction}
                     onClick={() => {
-                      void copyToClipboard(notice.diagnostics as string).then((ok: boolean) => {
+                      // #899：诊断文本可能是函数 —— 失败后的探测结论是晚到的，
+                      // 这里**点的那一刻**才算，用户拿到的才是当前最全的那一份。
+                      void copyToClipboard(diagnosticsTextOf(notice.diagnostics)).then((ok: boolean) => {
                         showToast({ key: ok ? 'errorScreenCopied' : 'errorScreenCopyFailed' })
                       })
                     }}

@@ -39,7 +39,7 @@ globalThis.__log = { records: [], events: [], actions: [] }
 const { classifyErrorSignature, parseErrorField } = await import(
   '../../src/services/api/errors.ts'
 )
-const { describeReply } = await import('../../src/services/chat/describe.ts')
+const { describeReply, diagnosticsTextOf } = await import('../../src/services/chat/describe.ts')
 const { buildUpstreamSnippet } = await import('../../src/services/chat/replyErrorReport.ts')
 const { translate } = await import('../../src/i18n/index.ts')
 const { useSettings } = await import('../../src/services/settings.ts')
@@ -463,7 +463,8 @@ test('上游 400 + 原文含 sk- / Bearer / URL 查询串：折叠区与复制�
   const fold = notice.upstream ?? ''
   assert.match(fold, /HTTP 400/, '折叠区第一行带状态码')
   // ③ 两条出口都不得出现原值
-  const copy = notice.diagnostics ?? ''
+  // #899 起 `diagnostics` 可能是函数（探测结论晚到）：统一走 `diagnosticsTextOf`
+  const copy = diagnosticsTextOf(notice.diagnostics)
   for (const [label, text] of [
     ['折叠区', fold],
     ['复制诊断', copy],
@@ -486,7 +487,7 @@ test('复制诊断：含 HTTP 码 / 渠道 / 模型 / 接口 / 时间，且不�
     message: SECRET_IN_UPSTREAM,
     model: 'deepseek-flash',
   })
-  const text = notice?.diagnostics ?? ''
+  const text = diagnosticsTextOf(notice?.diagnostics)
   assert.ok(text, '4xx 要给「复制诊断信息」')
   assert.match(text, /^DeepSeek 回答失败诊断/, '第一行是标题')
   assert.match(text, /HTTP 状态: 400/, '① 有 HTTP 码')

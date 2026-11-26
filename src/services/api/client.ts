@@ -26,9 +26,11 @@ import { LIMITS } from '../limits.js'
 import {
   classifyNetFailure,
   isOfflineNow,
+  type NetFailureInput,
   type NetFailureMeta,
   type ResourcePhases,
 } from '../net/networkPhase.js'
+import { resourcePhasesOf, startNetProbe } from '../net/phaseProbe.js'
 import type {
   ApiErrorBody,
   CreateMessageRequest,
@@ -295,38 +297,10 @@ export const getStreamIdleTimeout = (): number =>
 /**
  * 取这个 URL 的 `PerformanceResourceTiming` 分段（#895）。
  *
- * 为什么要有它：浏览器 `fetch` 失败时只给一句 `TypeError: Failed to fetch`，
- * DNS / TCP / TLS 一概不区分；而 `PerformanceResourceTiming` 会留下「哪一段开始了、
- * 哪一段没结束」。**但它不是保证存在的**：对失败的请求，Chromium 有时不给 entry，
- * 跨域还要 `Timing-Allow-Origin`。所以拿不到就返回 `undefined`，判不出就写判不出。
- *
- * 只取最后一条：同一 URL 的重复请求（重试）会把新 entry 追加在后面，最后一条才是这次的。
+ * 实现已经搬到 `net/phaseProbe.ts`：失败后的那次探测读的是**同一份数据**
+ * （#899 起它是 `resourcePhasesOf` 的唯一实现，本文件从那里 import）。
+ * 两份实现迟早会分叉，而分叉的那天已经发过版。
  */
-const resourcePhasesOf = (url: string): ResourcePhases | undefined => {
-  try {
-    const perf = (globalThis as { performance?: Performance }).performance
-    if (perf === undefined || typeof perf.getEntriesByName !== 'function') {
-      return undefined
-    }
-    const entries = perf.getEntriesByName(url, 'resource')
-    const entry = entries[entries.length - 1] as PerformanceResourceTiming | undefined
-    if (entry === undefined) {
-      return undefined
-    }
-    return {
-      domainLookupStart: entry.domainLookupStart,
-      domainLookupEnd: entry.domainLookupEnd,
-      connectStart: entry.connectStart,
-      connectEnd: entry.connectEnd,
-      secureConnectionStart: entry.secureConnectionStart,
-      requestStart: entry.requestStart,
-      responseStart: entry.responseStart,
-    }
-  } catch {
-    // 老 WebView 没有 resource timing / 调用被安全策略拒：按「没有证据」处理
-    return undefined
-  }
-}
 
 /**
  * 空闲超时（#568 起 code = `idle_timeout`，之前叫 `stream_idle`）：上游连上了、正文也开始了，
@@ -371,17 +345,60 @@ const firstTokenTimedOut = (firstTokenMs: number, detail?: string): ApiError =>
  * #895：这一段**只到「响应头没来」为止**，它可能是 DNS、TCP 也可能是 TLS。所以归因要带
  * `timing` 进去 —— 有 `PerformanceResourceTiming` 证据就按「开始了没结束」的那一段判，
  * 没有就诚实地留在「判不出」（`phase: undefined`），绝不硬塞一个 `tcp`。
+ *
+ * #899：`url` 只用来给**后台探测**指路（探测要打同一台机器的最小路径）。
  */
-const requestTimedOut = (timeoutMs: number, detail?: string, timing?: ResourcePhases): ApiError =>
-  new ApiError(
+const requestTimedOut = (
+  timeoutMs: number,
+  detail?: string,
+  timing?: ResourcePhases,
+  url?: string
+): ApiError => {
+  const inputs = { ...(timing === undefined ? {} : { timing }), code: 'connect_timeout' }
+  return new ApiError(
     'timeout',
     { key: 'requestTimeout', params: { seconds: Math.max(1, Math.round(timeoutMs / 1000)) } },
     undefined,
     'connect_timeout',
     detail,
     undefined,
-    classifyNetFailure({ ...(timing === undefined ? {} : { timing }), code: 'connect_timeout' })
+    url === undefined
+      ? classifyNetFailure(inputs)
+      : probeLateNetPhase(classifyNetFailure(inputs), inputs, url)
   )
+}
+
+/**
+ * **判不出时补一次后台探测**（#899）。
+ *
+ * 只在 `phase === undefined` 时才发这一枪 —— 已经判出来的结论（offline / abort / http /
+ * first_byte / idle / 原生异常 / resource timing）一律不需要旁证，探测也没有资格改它们。
+ *
+ * 结论**晚到**，所以写回的是**同一个 meta 对象**：`ApiError.net` 与它同引用，
+ * 诊断在用户点「复制诊断信息」时才读，那时探测已经落定（≪2s，见 `net/phaseProbe.ts`）。
+ * 这里**不 await**：让错误提示等 2 秒等于拿主流程给诊断垫背。
+ */
+const probeLateNetPhase = (
+  meta: NetFailureMeta,
+  inputs: NetFailureInput,
+  url: string
+): NetFailureMeta => {
+  if (meta.phase !== undefined) {
+    return meta
+  }
+  startNetProbe(url, (result) => {
+    // 用**同一份现场**重判一次：探测只补 `phase` / `evidence` / `probe`，别的字段口径不变
+    const next = classifyNetFailure({ ...inputs, probe: result })
+    /**
+     * 分段耗时**合并**而不是覆盖：探测只带来 `dns / tcp / tls` 三段，
+     * 而调用方（`chat/store.ts` 的分段计时器）随后补的 `firstByteMs` / `totalMs` 已经在 meta 上了
+     * —— 直接 `Object.assign` 会把「合计 3085ms」抹成「—」，诊断反而更差。
+     */
+    const timings = { ...(meta.timings ?? {}), ...(next.timings ?? {}) }
+    Object.assign(meta, next, Object.keys(timings).length > 0 ? { timings } : {})
+  })
+  return meta
+}
 
 export type RequestOptions = {
   /** 覆盖本次请求的预算（毫秒）；不传用 getRequestTimeout()。0 / 负数按默认值处理 */
@@ -423,10 +440,16 @@ export const request = async (
     const timing = resourcePhasesOf(url)
     const nativeMessage = error instanceof Error ? `${error.name}: ${error.message}` : String(error)
     if (timedOut) {
-      throw requestTimedOut(timeoutMs, nativeMessage, timing)
+      throw requestTimedOut(timeoutMs, nativeMessage, timing, url)
     }
     if (callerSignal?.aborted) {
       throw error
+    }
+    const inputs = {
+      ...(timing === undefined ? {} : { timing }),
+      // 系统层没网要排在「异常文本」前面：飞行模式下 fetch 也只会给一句 Failed to fetch
+      offline: isOfflineNow(),
+      nativeMessage,
     }
     throw new ApiError(
       'network',
@@ -435,12 +458,8 @@ export const request = async (
       undefined,
       undefined,
       undefined,
-      classifyNetFailure({
-        ...(timing === undefined ? {} : { timing }),
-        // 系统层没网要排在「异常文本」前面：飞行模式下 fetch 也只会给一句 Failed to fetch
-        offline: isOfflineNow(),
-        nativeMessage,
-      })
+      // #899：判不出时在**后台**补一次只判路的探测（不 await、不阻塞这里的抛出）
+      probeLateNetPhase(classifyNetFailure(inputs), inputs, url)
     )
   } finally {
     // 响应头已到：立刻撤掉预算，长回答的正文读取不受影响。

@@ -73,6 +73,7 @@ export type NetFailurePhase = (typeof NET_FAILURE_PHASES)[number]
  *  - `timeout-code`    三段超时的 `ApiError.code`
  *  - `native-message`  原生栈异常文本（`UnknownHostException` 一类）
  *  - `resource-timing` `PerformanceResourceTiming` 显示走到了哪一段
+ *  - `probe`           **失败后那次只判路的探测**给出的分段证据（#899；见 `net/phaseProbe.ts`）
  *  - `none`            判不出
  */
 export type NetPhaseEvidence =
@@ -82,7 +83,38 @@ export type NetPhaseEvidence =
   | 'timeout-code'
   | 'native-message'
   | 'resource-timing'
+  | 'probe'
   | 'none'
+
+/**
+ * 探测的四种结论（#899）。**只有 `failed` + 分段证据**才可能细分 dns/tcp/tls；
+ * 其余三种都是「没有结论」的不同理由，分开写是为了让诊断能说清「是没试过、还是试过了判不出」。
+ */
+export const NET_PROBE_OUTCOMES = ['reached', 'failed', 'timeout', 'unsupported'] as const
+
+export type NetProbeOutcome = (typeof NET_PROBE_OUTCOMES)[number]
+
+/**
+ * 判定要用的**探测证据**（`net/phaseProbe.ts` 的返回值里被本模块读到的字段）。
+ * 刻意只声明这几个字段：本模块是零依赖的判据模块，不反向 import 探测实现。
+ */
+export type NetProbeEvidence = {
+  outcome: NetProbeOutcome
+  elapsedMs?: number
+  /** 宿主给的 `PerformanceResourceTiming` 分段；全 0 / 缺字段都不算证据 */
+  timing?: ResourcePhases
+}
+
+/** 进诊断的探测摘要（比 `NetProbeEvidence` 少一个 `timing`：那一段已经折进 `timings` 了） */
+export type NetProbeInfo = {
+  outcome: NetProbeOutcome
+  elapsedMs?: number
+  /**
+   * 探测结论与**原始证据**不一致时为 `true`（#899 必做 2）。
+   * 不一致时一律以原始证据为准，但这件事必须写进诊断 —— 静默丢掉就等于骗读的人。
+   */
+  conflict?: boolean
+}
 
 /**
  * 给用户的**下一步**（诊断里写一句，界面文案仍由 `chat/errorNotice.ts` 的表决定）。
@@ -121,6 +153,8 @@ export type NetFailureMeta = {
   retryable: boolean
   userAction: NetUserAction
   timings?: NetTimings
+  /** 失败后那次探测的结论摘要（#899）：只在真的探测过时才有 */
+  probe?: NetProbeInfo
 }
 
 /**
@@ -150,6 +184,11 @@ export type NetFailureInput = {
   nativeMessage?: string
   /** `PerformanceResourceTiming` 的分段（拿不到就不传） */
   timing?: ResourcePhases
+  /**
+   * 失败后那次**只判路**的探测结果（#899）。它只被用来把「判不出」细分成 dns/tcp/tls，
+   * 排在本文件判定顺序的**最后一步** —— 既有证据一律压过它（见 `withProbe`）。
+   */
+  probe?: NetProbeEvidence
 }
 
 /** 原生栈异常文本 → phase 的三组特征（大小写不敏感） */
@@ -277,9 +316,17 @@ export const netTimingsOf = (timing: ResourcePhases | undefined): NetTimings => 
  * 4. 首字 / 空闲两段超时 → `first_byte` / `idle`（这两段是确定的，不需要再猜）；
  * 5. 原生异常文本 → `dns` / `tls` / `tcp`；
  * 6. `PerformanceResourceTiming` → 按「开始了没结束」的那一段；
- * 7. `connect_timeout` → 只到这步才用它，且**没有任何 timing 证据时判不出**（不硬塞 tcp）。
+ * 7. `connect_timeout` → 只到这步才用它，且**没有任何 timing 证据时判不出**（不硬塞 tcp）；
+ * 8. **失败后那次探测**（#899）→ 只在 1~7 全都没有结论时才被采信（见 `withProbe`）。
+ *
+ * 第 8 步的位置是**结构性的**，不是「记得先判断」：`withProbe` 只在
+ * `phase === undefined` 时才动手，所以探测在代码形状上就不可能推翻 1~7。
  */
-export const classifyNetFailure = (input: NetFailureInput = {}): NetFailureMeta => {
+export const classifyNetFailure = (input: NetFailureInput = {}): NetFailureMeta =>
+  withProbe(decideNetFailure(input), input.probe)
+
+/** 1~7：只看**当次失败自己带来的**证据（探测不在这里 —— 它是后续补的旁证） */
+const decideNetFailure = (input: NetFailureInput = {}): NetFailureMeta => {
   if (input.aborted === true) {
     return { phase: 'abort', evidence: 'abort', retryable: false, userAction: 'none' }
   }
@@ -363,6 +410,70 @@ export const classifyNetFailure = (input: NetFailureInput = {}): NetFailureMeta 
 
   // 什么证据都没有：按「临时故障、可以再试」处理（与改前 `network` 档一致），但 phase 不编
   return { phase: undefined, evidence: 'none', retryable: true, userAction: 'none' }
+}
+
+/**
+ * 探测只允许把这三种 phase 交出来（#899 必做 2：**只能细分 dns/tcp/tls**）。
+ * `http` / `first_byte` 这类只有「真拿到了响应」才成立，探测拿到了响应就已经是 `reached`。
+ */
+const probeTransportPhaseOf = (probe: NetProbeEvidence | undefined): NetFailurePhase | undefined => {
+  if (probe === undefined || probe.outcome !== 'failed') {
+    // `reached` / `timeout` / `unsupported` 都**不构成**「卡在某一段」的证据
+    return undefined
+  }
+  const phase = phaseFromTiming(probe.timing)
+  return phase === 'dns' || phase === 'tcp' || phase === 'tls' ? phase : undefined
+}
+
+/**
+ * 第 8 步：把**失败后那次探测**的结论折进判定（#899）。
+ *
+ * 三条规则，顺序就是优先级：
+ *  1. **只在 `phase === undefined` 时细分**。1~7 里任何一条给了结论，探测都只被记下来
+ *     （`meta.probe`），绝不改 `phase` / `evidence` —— 「既有判定一律压过探测」在代码形状上成立，
+ *     不靠调用方自觉。
+ *  2. **只有分段证据才算数**。探测「失败」不等于判得出：web 上失败请求的 resource timing
+ *     全为 0，`probeTransportPhaseOf` 会返回 `undefined`，这时候就老实写「判不出」，
+ *     并且 `probe.outcome` 让诊断能说「这是试过了、平台给不出」而不是「没试过」。
+ *  3. **冲突以原始证据为准，但要写下来**。探测说 tls、原始 timing 说 tcp → 保留 `tcp`，
+ *     在 `meta.probe.conflict` 标真；探测通了、原始证据说卡在 tls → 同样标。
+ */
+const withProbe = (
+  meta: NetFailureMeta,
+  probe: NetProbeEvidence | undefined
+): NetFailureMeta => {
+  if (probe === undefined) {
+    return meta
+  }
+  const summary: NetProbeInfo = {
+    outcome: probe.outcome,
+    ...(probe.elapsedMs === undefined ? {} : { elapsedMs: probe.elapsedMs }),
+  }
+  const fromProbe = probeTransportPhaseOf(probe)
+  if (meta.phase === undefined) {
+    if (fromProbe === undefined) {
+      // 探测没给出分段证据：phase 继续是「判不出」，但把「试过了」这件事留下
+      return { ...meta, probe: summary }
+    }
+    return {
+      ...meta,
+      phase: fromProbe,
+      evidence: 'probe',
+      retryable: true,
+      userAction: actionOf(fromProbe),
+      // 分段耗时**合并**而不是替换：`dns / tcp / tls` 三段只有探测拿得到，
+      // 而 `firstByteMs / totalMs` 是调用方自己的分段计时器给的 —— 替换会把后者抹掉。
+      ...(probe.timing === undefined
+        ? {}
+        : { timings: { ...(meta.timings ?? {}), ...netTimingsOf(probe.timing) } }),
+      probe: summary,
+    }
+  }
+  const conflict =
+    fromProbe !== undefined
+      ? fromProbe !== meta.phase
+      : probe.outcome === 'reached' && isTransportPhase(meta.phase)
+  return { ...meta, probe: conflict ? { ...summary, conflict: true } : summary }
 }
 
 /** 这个 meta 说的是不是「网络本身没通」（传输档）：`api/errors.ts` 据此决定要不要读它 */

@@ -161,6 +161,19 @@ export type AssistantMessage = MessageBranch & {
         firstByteMs?: number | null
         totalMs?: number | null
       }
+      /**
+       * 失败后那次「只判路」探测的结论摘要（#899 母单 #894）：`reached` / `failed` /
+       * `timeout` / `unsupported`，加探测自己花掉的毫秒，以及「与原始证据是否不一致」。
+       *
+       * 为什么要落盘：诊断里「判不出」有两种含义 —— **试过了、平台给不出证据** 与 **没试过**。
+       * 只有把「试过」这件事记下来，读反馈的人才不会把前者当成我们没做功课。
+       * 注意它是**失败当刻**的快照：探测结论晚到（≤2s），刷新后回看可能没有这一项。
+       */
+      probe?: {
+        outcome?: string
+        elapsedMs?: number
+        conflict?: boolean
+      }
     }
   }
 }

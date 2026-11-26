@@ -23,6 +23,16 @@ import {
 } from './streamBreakout.js'
 import type { AssistantMessage } from './types.js'
 
+/**
+ * 取「复制诊断信息」的文本（#899）。
+ *
+ * `diagnostics` 可能是**函数**：失败后那次「只判路」的探测是**晚到**的（≤2s），
+ * 文本要等用户真点按钮时才算，否则永远是渲染那一刻的快照（「判不出」）。
+ * 所有读它的地方（界面按钮 / 用例）都走这里，别各自写一遍 `typeof === 'function'`。
+ */
+export const diagnosticsTextOf = (diagnostics: string | (() => string) | undefined): string =>
+  typeof diagnostics === 'function' ? diagnostics() : (diagnostics ?? '')
+
 export type Notice = {
   text: string
   /** 模板答复使用正文样式；其余统一为红色错误提示。 */
@@ -50,8 +60,13 @@ export type Notice = {
    *
    * 只有「上游确实给了可自证的信息」时才存在 —— 真未知（无状态码、无上游 code、
    * 也没有可读文案）不给它：那种情况复制出去也只是一句「未知错误」，没有诊断价值。
+   *
+   * #899 起它可以是**函数**：失败后那次「只判路」的探测是**晚到**的（≤2s），
+   * 而这条提示在失败当刻就渲染好了。写死成字符串的话，用户点按钮时拿到的永远是
+   * 渲染那一刻的快照（「判不出」），探测结论永远进不来 —— 那就等于白做。
+   * 传函数 = 「等你真的点按钮时再算」，界面侧一处 `typeof === 'function'` 兜住。
    */
-  diagnostics?: string
+  diagnostics?: string | (() => string)
   /**
    * 折叠区里的**上游原文**（#347 / #353）：
    * 状态码 + 上游短码 + 首段原文（截断到 200 字、已脱敏）。
@@ -237,6 +252,8 @@ export const describeReply = (reply: AssistantMessage): Notice | null => {
               ...(net.evidence === undefined ? {} : { evidence: net.evidence }),
               ...(net.userAction === undefined ? {} : { userAction: net.userAction }),
               ...(net.timings === undefined ? {} : { timings: net.timings }),
+              // #899：探测结论摘要 —— 「判不出」到底是「平台限制」还是「没试过」，靠这一项分
+              ...(net.probe === undefined ? {} : { probe: net.probe }),
             }),
       })
     // 历史补传错误刷新后仍需说明原因，恢复沿用附件卡片或重新生成。
@@ -298,7 +315,7 @@ export const describeReply = (reply: AssistantMessage): Notice | null => {
       return {
         text: localized || translate('replyStreamInterrupted'),
         regenerate,
-        diagnostics: diagnosticsOf(),
+        diagnostics: diagnosticsOf,
         tone: breakout('interrupted'),
       }
     }
@@ -307,13 +324,13 @@ export const describeReply = (reply: AssistantMessage): Notice | null => {
       return {
         text: localized || translate('replyWaitingStalled'),
         regenerate,
-        diagnostics: diagnosticsOf(),
+        diagnostics: diagnosticsOf,
         tone: breakout('idle'),
       }
     }
     if (kind === 'network') {
       // 网络不可达 / DNS / 跨域（#771 第 2 类）：明说「不是上游慢」，再给下一步
-      return { text: translate('replyNetworkUnreachable'), regenerate, diagnostics: diagnosticsOf() }
+      return { text: translate('replyNetworkUnreachable'), regenerate, diagnostics: diagnosticsOf }
     }
     // 上游说「上下文太长」（#122）：这不是重试能解决的，给能照着做的建议
     if (status === 413 || isContextLimitMessage(upstreamMessage)) {
@@ -343,7 +360,7 @@ export const describeReply = (reply: AssistantMessage): Notice | null => {
           // 「换 Key 会影响额度归属」：光说不够，给一个**不动 Key** 就能核对账号的入口
           quotaAction: true,
           upstream: upstreamOf(),
-          diagnostics: diagnosticsOf(),
+          diagnostics: diagnosticsOf,
         }
       }
       case 'insufficientBalance':
@@ -393,7 +410,7 @@ export const describeReply = (reply: AssistantMessage): Notice | null => {
           text: localized || translate('replyUpstreamRefusal'),
           // 没有 action:'settings'（这是内容问题，不是配置问题）
           regenerate: true,
-          diagnostics: diagnosticsOf(),
+          diagnostics: diagnosticsOf,
         }
       case 'badRequest': {
         // 参数 / 字段不合法（400 / 422，#324 / #347 / #353）：重试不会有变化。
@@ -409,7 +426,7 @@ export const describeReply = (reply: AssistantMessage): Notice | null => {
             text: readable.text,
             ...(settingsEntry ? { action: settingsEntry } : {}),
             regenerate: false,
-            diagnostics: diagnosticsOf(),
+            diagnostics: diagnosticsOf,
           }
         }
         return {
@@ -420,7 +437,7 @@ export const describeReply = (reply: AssistantMessage): Notice | null => {
           // 参数错重发不会有变化（#771）：先改设置，再重新生成
           regenerate: false,
           upstream: upstreamOf(),
-          diagnostics: diagnosticsOf(),
+          diagnostics: diagnosticsOf,
         }
       }
       case 'upstreamRejected': {
@@ -431,14 +448,14 @@ export const describeReply = (reply: AssistantMessage): Notice | null => {
             text: readable.text,
             regenerate: false,
             upstream: upstreamOf(),
-            diagnostics: diagnosticsOf(),
+            diagnostics: diagnosticsOf,
           }
         }
         return {
           text: translate('replyUpstreamRejected', { status: statusLabel(status) }),
           regenerate: false,
           upstream: upstreamOf(),
-          diagnostics: diagnosticsOf(),
+          diagnostics: diagnosticsOf,
         }
       }
       case 'upstreamReturnedHtml':
@@ -450,7 +467,7 @@ export const describeReply = (reply: AssistantMessage): Notice | null => {
           // 打到了网关 / 路径不对：重发多少次都是同一份 HTML
           regenerate: false,
           upstream: upstreamOf(),
-          diagnostics: diagnosticsOf(),
+          diagnostics: diagnosticsOf,
         }
       case 'emptyStream':
         // 200 却没有任何内容（#324）：说「空响应、可重试」，不要含糊成「未知错误」
@@ -467,7 +484,7 @@ export const describeReply = (reply: AssistantMessage): Notice | null => {
           return {
             ...readable,
             regenerate,
-            ...(kind === 'timeout' ? { diagnostics: diagnosticsOf() } : {}),
+            ...(kind === 'timeout' ? { diagnostics: diagnosticsOf } : {}),
           }
         }
         const upstreamCode = reply.error.upstreamCode?.trim() ?? ''
@@ -494,7 +511,7 @@ export const describeReply = (reply: AssistantMessage): Notice | null => {
           // 长英文原文不上主文案，但用户**主动展开**能看到（#347）：这就是「至少显示状态码 +
           // 上游首句」的落点，也是以前只能翻日志才看得到的那段话
           upstream: upstreamOf(),
-          diagnostics: diagnosticsOf(),
+          diagnostics: diagnosticsOf,
         }
       }
     }
