@@ -36,6 +36,7 @@ import { record, recordAction } from '../diagnostics/collector.js'
 import { buildMeta } from '../diagnostics/fields.js'
 import { formatMoney, formatMoneyValue, formatYuan, pointsToYuan } from '../../utils/money.js'
 import { maskKey, maskTail } from './mask.js'
+import { timeoutBudget } from '../net/timeoutBudget.js'
 
 export { maskCard, maskDeviceId, maskKey, maskTail } from './mask.js'
 
@@ -244,7 +245,8 @@ export const probeApiKey = async (apiKey: string, transport: OursTransport): Pro
     method: 'GET',
     url: `${OURS_API_BASE}/api/balance`,
     headers: { Authorization: `Bearer ${key}`, Accept: 'application/json' },
-    timeoutMs: OURS_TIMEOUTS.keyProbe,
+    // #896 3a：取值走运行期策略源（默认值仍是 OURS_TIMEOUTS，一个数字没动）
+    timeoutMs: timeoutBudget.pay('keyProbe', OURS_TIMEOUTS.keyProbe),
     followRedirects: false,
   })
   if (result.kind !== 'response') {
@@ -346,7 +348,7 @@ export const fetchPayLink = async (transport: OursTransport): Promise<OursPayLin
     method: 'GET',
     url: payLinkUrl(),
     headers: { Accept: 'application/json' },
-    timeoutMs: OURS_TIMEOUTS.payLink,
+    timeoutMs: timeoutBudget.pay('payLink', OURS_TIMEOUTS.payLink),
     followRedirects: false,
   })
   if (result.kind !== 'response') {

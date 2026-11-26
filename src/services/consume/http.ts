@@ -31,6 +31,7 @@
 import { Capacitor, CapacitorHttp } from '@capacitor/core'
 
 import { classifyNetFailure, type NetFailureMeta } from '../net/networkPhase.js'
+import { timeoutBudget } from '../net/timeoutBudget.js'
 import { parseSub2ApiError, type Sub2ApiError } from './errors.js'
 
 /** 一条 base 上的两套路由（之间**没有**重写规则，见 #484 §4.1 第 3 条） */
@@ -373,10 +374,15 @@ export const readConsumeEndpoints = (): ConsumeEndpoints => {
     baseUrl: baseUrl.trim().replace(/\/+$/, ''),
     apiV1Prefix: consume.apiV1Prefix as string,
     gatewayPrefix: consume.gatewayPrefix as string,
+    /**
+     * 超时的**取值**走运行期策略源（#896 3a）：默认值仍然是上面校验过的
+     * `__ENDPOINTS__.consume.timeoutMs`（一个数字没动），但多了一层运行期覆盖
+     * （弱网模式 / 联调 / 用例），不必为此重新构建产物。
+     */
     timeoutMs: {
-      read: consume.timeoutMs?.read as number,
-      write: consume.timeoutMs?.write as number,
-      redeem: consume.timeoutMs?.redeem as number,
+      read: timeoutBudget.consume('read'),
+      write: timeoutBudget.consume('write'),
+      redeem: timeoutBudget.consume('redeem'),
     },
   }
 }
@@ -493,7 +499,9 @@ export const createConsumeHttp = (options: ConsumeHttpOptions = {}): ConsumeHttp
    * 「这次 401 是不是 JWT 引起的」只能在这里判断（网关 sk- Key 的 401 不该去换 JWT）。
    */
   const send = async (req: ConsumeRequest): Promise<{ raw: ConsumeRawResponse; auth: ConsumeAuth | null }> => {
-    const timeoutMs = endpoints.timeoutMs[timeoutClassOf(req)]
+    // 每次请求都问一次运行期策略源（#896 3a）：默认值仍是这个实例的 `endpoints.timeoutMs`
+    const timeoutClass = timeoutClassOf(req)
+    const timeoutMs = timeoutBudget.consume(timeoutClass, endpoints.timeoutMs[timeoutClass])
     const headers: Record<string, string> = { ...defaultHeaders }
     const auth = resolveAuth(req)
     if (auth) {headers.authorization = `Bearer ${auth.kind === 'jwt' ? auth.token : auth.key}`}
