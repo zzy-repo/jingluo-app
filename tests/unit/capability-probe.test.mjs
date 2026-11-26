@@ -131,3 +131,32 @@ test('插件 reject code → kind', () => {
   assert.equal(infraKindOfRejection({ code: 'IO' }), 'unknown')
   assert.equal(infraKindOfRejection(undefined), 'unknown')
 })
+
+// #910 真机复现（emulator API 30 + AppFileSystem）：Capacitor 的插件 Proxy 上永远有
+// `checkPermissions`，插件没实现时调用会 reject `Cannot convert undefined or null to object`。
+// 那不是「运行时故障」，是「这个插件没有权限概念」—— 判成 runtime-failed 会让整个模块不可用
+// （实测后果：迁移直接停在「状态文件读不了」，而磁盘和插件都是好的）。
+test('插件没实现 checkPermissions（reject 一个非权限错）→ 跳过该步，不判死', async () => {
+  const bridge = {
+    capabilities: async () => ({ methods: ['writeAtomic'] }),
+    checkPermissions: async () => {
+      throw new TypeError('Cannot convert undefined or null to object')
+    },
+  }
+  const result = await probeNativePlugin(NAME, { bridge, methods: ['writeAtomic'] })
+  assert.deepEqual(result, { available: true })
+
+  // 反例：真的拒绝授权仍然判 permission-denied
+  resetProbeCache()
+  const denied = await probeNativePlugin(NAME, {
+    bridge: {
+      capabilities: async () => ({ methods: ['writeAtomic'] }),
+      checkPermissions: async () => {
+        throw Object.assign(new Error('User denied'), { code: 'PERMISSION' })
+      },
+    },
+    methods: ['writeAtomic'],
+  })
+  assert.equal(denied.available, false)
+  assert.equal(denied.reason, 'permission-denied')
+})

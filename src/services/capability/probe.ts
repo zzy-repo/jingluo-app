@@ -71,6 +71,24 @@ export const probeStatic = (name: string): ProbeResult => {
   return { available: true }
 }
 
+/**
+ * 这个 reject 是不是「用户拒绝授权」。
+ *
+ * 只认两种证据：错误码 `PERMISSION`（Android 插件约定）或文案里出现 denied / 拒绝 / 权限。
+ * 其余（未实现方法、Proxy 上的空方法、参数拼接失败）都不算 —— 见 `checkPermissions` 那段的注释。
+ */
+const isPermissionDenial = (error: unknown): boolean => {
+  if (typeof error !== 'object' || error === null) {
+    return false
+  }
+  const code = (error as { code?: unknown }).code
+  if (code === 'PERMISSION') {
+    return true
+  }
+  const message = String((error as { message?: unknown }).message ?? '')
+  return /denied|deny|拒绝|权限/iu.test(message)
+}
+
 export const probeNativePlugin = async (name: string, options: ProbeOptions = {}): Promise<ProbeResult> => {
   const staticResult = probeStatic(name)
   if (!staticResult.available) {
@@ -96,14 +114,33 @@ export const probeNativePlugin = async (name: string, options: ProbeOptions = {}
   }
 
   if (bridge && typeof bridge.checkPermissions === 'function') {
+    /**
+     * 权限这一步只在插件**真的实现了** `checkPermissions` 时才有意义。
+     *
+     * Capacitor 的做法是：插件没实现某个方法时，`Plugins.X.method()` 仍是一个存在的方法
+     * （Proxy 上永远有 `checkPermissions`），调用后由桥 reject。实测（#910 真机 AppFileSystem）：
+     * reject 的是 `Cannot convert undefined or null to object` —— 看起来像运行时故障，实际上
+     * 这个插件**不需要权限**。把它当 `runtime-failed` 会让整个模块被判不可用（真机复现：
+     * 迁移直接停在「状态文件读不了」，而磁盘与插件都是好的）。
+     *
+     * 判定口径：只有**明确的权限拒绝**才算 `permission-denied`（错误码 PERMISSION / 形如
+     * 「User denied」的文案，或返回对象里有非 granted 的项）；其余异常一律视为
+     * 「这个插件没有权限概念」→ 跳过，交给后面的 ping 去证伪。
+     */
     try {
       const permissions = await bridge.checkPermissions()
-      const refused = Object.keys(permissions).filter((key) => permissions[key] !== 'granted')
+      const refused =
+        typeof permissions === 'object' && permissions !== null
+          ? Object.keys(permissions).filter((key) => permissions[key] !== 'granted')
+          : []
       if (refused.length > 0) {
         return { available: false, reason: 'permission-denied', detail: refused.join(',') }
       }
     } catch (error) {
-      return { available: false, reason: 'runtime-failed', detail: `checkPermissions() failed: ${detailOf(error)}` }
+      if (isPermissionDenial(error)) {
+        return { available: false, reason: 'permission-denied', detail: detailOf(error) }
+      }
+      // 插件没有权限概念 / 未实现该方法：跳过，不判死
     }
   }
 
