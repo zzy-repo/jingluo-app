@@ -199,6 +199,19 @@ const UNIT_SOLO = new Set([
   'storage-char-staging.test.mjs',
   'storage-char-staging-rollback.test.mjs',
 
+  // #916（迁移状态机/闸门/路由/预检/恢复/编排）：同一类机制 —— 都经 `helpers/migration-switch/kit.mjs`
+  // 在模块顶层 `installTsResolve` 并一次性 `loadTsModule` 共享同一份迁移模块实例，且
+  // `migration-switch-barrier.test.mjs` 会装/拆全局 `indexedDB`（reset 时清掉 14 个全局）。
+  // 实测（合批 `--only migration-switch`）：6/7 个文件批内红、单跑全绿，报 `indexedDB is not defined`
+  // 与「路由结论读到上一个文件留下的 engine」；DEGRADED 6 > 5，按回归处理。
+  // `migration-switch-barrier.test.mjs` 自己装拆干净，继续合批。单列最诚实。
+  'migration-switch-gate.test.mjs',
+  'migration-switch-orchestrator.test.mjs',
+  'migration-switch-preflight.test.mjs',
+  'migration-switch-restore.test.mjs',
+  'migration-switch-router.test.mjs',
+  'migration-switch-state.test.mjs',
+
   // #906（存储契约套件的 IDB runner）：与上面同一类机制。它在用例里临时补丁 `IDBObjectStore.prototype` 的
   // put/add/delete/clear（故障注入）、临时把 `globalThis.indexedDB` 置空（「宿主无存储」用例），还会用
   // `DB_VERSION + 1` 造「库比代码新」并 `deleteDatabase`，且独占 `chat/db.ts` 的模块级连接单例。
