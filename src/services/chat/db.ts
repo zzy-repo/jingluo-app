@@ -347,10 +347,30 @@ export const selectSaveBannerTier = (
   return tier
 }
 
+/** #909：保存横幅的显示档 = 三档写失败 + 「空间不足」预警（还没写失败，只是剩余空间低于阈值） */
+export type SaveBannerDisplay = SaveBannerTier | 'lowSpace'
+
+/**
+ * 在三档写失败之上叠加空间预警：**真实的写失败永远优先**，预警只在当前没有任何失败时才显示。
+ * 三档的选档、文案映射与重试口径（`selectSaveBannerTier` / `SAVE_BANNER_MESSAGE` / `saveBannerRetryable`）一字未改。
+ */
+export const selectSaveBannerDisplay = (
+  errors: Record<string, StorageFailure | boolean | undefined> | null | undefined,
+  lowSpace: boolean
+): SaveBannerDisplay | null => selectSaveBannerTier(errors) ?? (lowSpace ? 'lowSpace' : null)
+
+export const bannerMessageKey = (tier: SaveBannerDisplay): SaveBannerMessageKey =>
+  tier === 'lowSpace' ? 'sessionSaveLowSpace' : SAVE_BANNER_MESSAGE[tier]
+
+/** 预警档也不给重试：没有东西失败，重试没有意义，用户的动作是腾空间 / 导出备份 */
+export const bannerRetryable = (tier: SaveBannerDisplay): boolean =>
+  tier !== 'lowSpace' && saveBannerRetryable(tier)
+
 export type SaveBannerMessageKey =
   | 'sessionSaveFailedRetryable'
   | 'sessionSaveFailedQuota'
   | 'sessionSaveFailedUnavailable'
+  | 'sessionSaveLowSpace'
 
 /** 档位 → i18n key（zh/en 成对存在，`check-i18n` 的 R1/R4 会盯住） */
 export const SAVE_BANNER_MESSAGE: Record<SaveBannerTier, SaveBannerMessageKey> = {

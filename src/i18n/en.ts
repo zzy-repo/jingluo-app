@@ -39,6 +39,7 @@ export const en = {
   sessionLoadFailed: 'Unable to load this chat. Please try again.',
   sessionSaveFailedRetryable: "This chat didn't save to this device. Tap retry.",
   sessionSaveFailedQuota: 'Not enough local storage. Free up space or export a backup, then retry.',
+  sessionSaveLowSpace: 'Storage is almost full, so new content may not be saved. Free up space or export a backup',
   sessionSaveFailedUnavailable: "This environment can't save to this device. Use the app instead.",
   attachmentSaveFailed: "Attachments didn't save to this device and may be missing after a refresh (retry).",
   storageBlockedByOtherTab: 'Another tab is holding local storage. Close the other pages and try again.',
@@ -1470,4 +1471,22 @@ export const en = {
   sessionBranchOpenParent: 'Go to source chat',
   sessionBranchAttachmentMissing:
     'Attachment unavailable: {count} attachment(s) have no file on this device. You can keep chatting',
+  dataLostTitle: 'Your chats on this device were cleared by the system (about {count} chats before)',
+  dataLostNoSnapshot:
+    'No snapshot is available on this device, so nothing can be restored automatically. If you exported a backup before, import it from Settings.',
+  dataLostDismiss: 'Got it, stop showing this',
+  dataLostRestoreHeading: 'Restore from one of these snapshots:',
+  dataLostSnapshotRow: '{time} · {count} chats',
+  dataLostSnapshotBroken: '{time} · damaged, cannot be restored',
+  dataLostRestore: 'Restore',
+  dataLostConfirm:
+    'Replace the chats on this device with this snapshot? The current state is backed up first. A snapshot holds chat text only. Images and attachment files are not in it and will be unavailable after restoring.',
+  dataLostConfirmYes: 'Confirm restore',
+  dataLostRestoring: 'Restoring… {done}/{total}',
+  dataLostRestored: 'Restored {count} chats from the snapshot',
+  dataLostRestoreCancelled: 'Restore cancelled. Nothing on this device was changed',
+  dataLostRestoreCorrupt: 'This snapshot is damaged and was not restored. Nothing on this device was changed',
+  dataLostRestoreIncompatible: 'This snapshot comes from a newer app version. Update the app first. Nothing on this device was changed',
+  dataLostRestoreBackupFailed: 'Could not back up the current state first (maybe not enough space), so it stopped. Nothing on this device was changed',
+  dataLostRestoreFailed: 'Restore failed. Nothing on this device was changed',
 } satisfies Record<keyof typeof zh, string>

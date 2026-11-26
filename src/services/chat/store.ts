@@ -75,6 +75,19 @@ import {
 } from './db.js'
 import { getStorage, peekStorage, type StorageBackend } from '../storage/index.js'
 import {
+  protectionAcknowledgeLoss,
+  protectionAfterExplicitChange,
+  protectionAfterSave,
+  protectionCheckAtStartup,
+  protectionCheckFreeSpace,
+  protectionFlushSnapshot,
+  protectionHealSummaries,
+  protectionRestore,
+  type DataLostInfo,
+  type RestoreOptions,
+  type RestoreResult,
+} from '../protection/index.js'
+import {
   clearAllDrafts,
   clearDraft,
   clearSentDraft,
@@ -162,6 +175,10 @@ type ChatState = {
   initFailure: StorageInitFailure | null
   /** 历史导入或全部删除期间锁定交互，提交成功前仍展示原有记录。 */
   importingHistory: boolean
+  /** #909：启动时判定「本机库从有到无」（被系统清除）；非 null 时界面必须提示，不得只显示干净欢迎页 */
+  dataLost: DataLostInfo | null
+  /** #909：私有目录剩余空间低于阈值（读不到时保持原值，不当成「足够」） */
+  lowSpace: boolean
   /** 仅列表元数据，按 updatedAt 降序；流式消息更新不会改变此数组。 */
   sessions: SessionSummary[]
   sessionCache: Record<string, Session>
@@ -205,6 +222,8 @@ export const useChatStore = create<ChatState>(() => ({
   initError: false,
   initFailure: null,
   importingHistory: false,
+  dataLost: null,
+  lowSpace: false,
   sessions: [],
   sessionCache: {},
   sessionLoadErrors: {},
@@ -639,6 +658,12 @@ const persist = (sessionId: string) => {
   }
   const epoch = historyEpoch
   const files = pendingFiles.get(sessionId)
+  // #909：保存前读剩余空间（缓存 10s，不阻塞落盘）；读不到（unknown）保持原状，不当成「足够」
+  void protectionCheckFreeSpace().then((space) => {
+    if (space !== null && space.status !== 'unknown' && get().lowSpace !== (space.status === 'low')) {
+      set({ lowSpace: space.status === 'low' })
+    }
+  })
 
   /** 落盘之后的状态收敛：缓存路径与「从库里读回来再写」路径共用这一份 */
   const settled = (session: Session, fromCache: boolean, outcome: SaveSessionOutcome) => {
@@ -673,6 +698,8 @@ const persist = (sessionId: string) => {
         )
       }
     }
+    // #909：会话已提交 → 抬高高水位（只升不降，不阻塞、不抛）
+    protectionAfterSave()
     if (outcome.degradedFiles.length === 0) {
       if (pendingFiles.get(sessionId) === files) {
         pendingFiles.delete(sessionId)
@@ -801,6 +828,19 @@ export const saveSessionBackground = async (
   return false
 }
 
+/**
+ * #909：从快照恢复（走整包替换通道 `importHistoryInto(…,'overwrite')`：中止流、等空闲、单事务提交、失败清暂存）。
+ * 调用方（横幅）必须先让用户确认。恢复成功后 `importHistoryInto` 会清掉 `dataLost` 并按实际数更新高水位。
+ */
+export const restoreFromSnapshot = (name: string, options: Omit<RestoreOptions, 'commit'>): Promise<RestoreResult> =>
+  protectionRestore(name, { ...options, commit: (write) => importHistoryInto(write, 'overwrite') })
+
+/** #909：用户在横幅里确认「知道了」：清掉提示，高水位按当前实际数重置 */
+export const dismissDataLost = async (): Promise<void> => {
+  await protectionAcknowledgeLoss()
+  set({ dataLost: null })
+}
+
 export const retrySaveSessions = () => {
   if (!get().importingHistory) {
     unsavedSessions.forEach(persist)
@@ -822,6 +862,8 @@ export const bindChatPersistence = () => {
         persist(id)
       }
     }
+    // #909：切后台 / 页面隐藏时绕过快照节流补一份（fire-and-forget，不挡 pagehide）
+    protectionFlushSnapshot()
   }
   const onVisibilityChange = () => {
     if (document.visibilityState === 'hidden') {
@@ -885,9 +927,30 @@ export const initChat = (): Promise<void> => {
   set({ initError: false, initFailure: null })
   initTask = (async () => {
     try {
-      const summaries = await (await getStorage()).sessions.listSummaries()
+      const storage = await getStorage()
+      let summaries = await storage.sessions.listSummaries()
+      // #909：摘要为空时先自愈（会话正文还在、只是列表数据源没了），读回来再判「是不是被清掉了」
+      if (summaries.length === 0 && epoch === historyEpoch) {
+        const healed = await protectionHealSummaries(0)
+        if (healed?.status === 'healed') {
+          summaries = await storage.sessions.listSummaries()
+        }
+      }
       if (epoch === historyEpoch) {
-        set({ ready: true, sessions: sortSessions(summaries) })
+        // #909：库里没有会话时，先判「是不是被系统清掉了」再放行欢迎页；有会话时只更新高水位，不拖慢首屏。
+        const dataLost = summaries.length === 0 ? await protectionCheckAtStartup() : null
+        if (summaries.length > 0) {
+          void protectionCheckAtStartup()
+          // #909：摘要非空但条数对不上会话数：首屏之后后台复检，修好了再刷新列表
+          void protectionHealSummaries(summaries.length).then(async (healed) => {
+            if (healed?.status === 'healed' && epoch === historyEpoch) {
+              set({ sessions: sortSessions(await (await getStorage()).sessions.listSummaries()) })
+            }
+          })
+        }
+        if (epoch === historyEpoch) {
+          set({ ready: true, sessions: sortSessions(summaries), dataLost })
+        }
       }
     } catch (error) {
       if (epoch === historyEpoch) {
@@ -1175,6 +1238,10 @@ export const importHistoryInto = async (
         activeId: activeId !== null && summaries.some((item) => item.id === activeId) ? activeId : null,
       })
     }
+    // #909：整包替换 / 合并 commit 之后按实际数更新高水位（覆盖「清空历史」：空替换也走这里）
+    // 用户的导入 / 恢复已经替换了本机数据：待处理的「库丢失」提示到此为止
+    set({ dataLost: null })
+    void protectionAfterExplicitChange()
     return summary
   } finally {
     set({ importingHistory: false })
@@ -1351,6 +1418,8 @@ const removeSessionData = async (id: string): Promise<boolean> => {
       return false
     }
     await (await getStorage()).sessions.delete(id)
+    // #909：用户显式删除 → 高水位按实际数更新，删光不会被当成「被系统清除」
+    void protectionAfterExplicitChange()
     // 本单：会话没了，它自己的背景图也不该留在 IndexedDB 里（`appAssets` 按 sessionId 存 key，
     // 不清就是一条永远读不到、也永远算在占用里的孤儿 blob）。删库失败不影响删会话本身。
     await removeSessionBackground(id).catch(reportStorageError('delete session background'))

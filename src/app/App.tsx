@@ -10,12 +10,15 @@ import {
   useChatStore,
 } from '../services/chat/store.js'
 import {
-  SAVE_BANNER_MESSAGE,
+  bannerMessageKey,
+  bannerRetryable,
   saveBannerRetryable,
+  selectSaveBannerDisplay,
   selectSaveBannerTier,
   type SaveBannerTier,
   type StorageInitFailure,
 } from '../services/chat/db.js'
+import { DataLostBanner } from '../components/protection/DataLostBanner.js'
 import { SearchPanel } from '../components/search/SearchPanel.js'
 import { closeSearchPanel } from '../components/search/searchPanelState.js'
 import { SessionView } from '../components/session/SessionView.js'
@@ -102,7 +105,7 @@ export const App = () => {
    * 保存失败横幅的**档位**（P0）：`unavailable` > `quota` > 可重试。
    * 选档与文案映射都是纯函数（`db.selectSaveBannerTier` / `db.SAVE_BANNER_MESSAGE`），L0 直接可测。
    */
-  const saveTier = useChatStore((state) => selectSaveBannerTier(state.sessionSaveErrors))
+  const saveTier = useChatStore((state) => selectSaveBannerDisplay(state.sessionSaveErrors, state.lowSpace))
   /**
    * 附件降级（会话已落盘、blob 没写进去）：单独提示，绝不冒充「这段对话没存到本机」。
    * 档位与文案：配额不足时说「本机存储空间不足…」（用户的动作就是清理后重试），
@@ -253,9 +256,9 @@ export const App = () => {
         >
           {saveTier ? (
             <div className={styles.saveError} role="alert">
-              <span>{t(SAVE_BANNER_MESSAGE[saveTier])}</span>
+              <span>{t(bannerMessageKey(saveTier))}</span>
               {/* `unavailable`（这个环境根本写不进去）**不给重试**：点了也是同一个结果 */}
-              {saveBannerRetryable(saveTier) ? (
+              {bannerRetryable(saveTier) ? (
                 <Button
                   variant="outlined"
                   size="s"
@@ -282,6 +285,7 @@ export const App = () => {
               ) : null}
             </div>
           ) : null}
+          <DataLostBanner className={styles.saveError} />
           <div className={styles.content}>
             {siderCollapsed ? <CollapsedSider /> : null}
             {!ready || (activeId !== null && !session) ? (
