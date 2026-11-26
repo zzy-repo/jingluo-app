@@ -87,4 +87,15 @@ export const registerIdbOnly = (suite) => {
     assert.equal(page.next, null)
     assert.deepEqual(ids(page.items).slice(0, 2), ['s000', 's001'])
   })
+
+  S('[idbOnly][分类] 底层 DOMException 名到四档：QuotaExceededError→quota、DataCloneError→clone、UnknownError / NotSupportedError→unavailable、InvalidStateError / 其余→unknown ← docs §4 / char-session 分类；不进契约：输入是 IDB 的错误名，SQLite 的底层错误码（如 SQLITE_FULL）另有映射', async ({ errorClasses: c }) => {
+    const named = (name) => Object.assign(new Error(name), { name })
+    assert.equal(c.classify(named('QuotaExceededError')), 'quota')
+    assert.equal(c.classify(named('DataCloneError')), 'clone')
+    assert.equal(c.classify(named('UnknownError')), 'unavailable')
+    assert.equal(c.classify(named('NotSupportedError')), 'unavailable')
+    assert.equal(c.classify(named('InvalidStateError')), 'unknown')
+    assert.equal(c.classify(named('SomethingElse')), 'unknown')
+    assert.equal(c.classify('不是 Error'), 'unknown')
+  }, { needs: ['errorClasses'] })
 }

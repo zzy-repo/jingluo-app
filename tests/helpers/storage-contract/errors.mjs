@@ -62,17 +62,6 @@ export const register = (suite) => {
     assert.equal(c.classify(new c.StorageBlockedError()), 'unknown')
   }, { needs: ['errorClasses'] })
 
-  S('[errors][分类] 底层错误名到四档：Quota→quota、DataClone→clone、Unknown/NotSupported→unavailable、InvalidState / 其余→unknown ← docs §4 / char-session 分类', async ({ errorClasses: c }) => {
-    const named = (name) => Object.assign(new Error(name), { name })
-    assert.equal(c.classify(named('QuotaExceededError')), 'quota')
-    assert.equal(c.classify(named('DataCloneError')), 'clone')
-    assert.equal(c.classify(named('UnknownError')), 'unavailable')
-    assert.equal(c.classify(named('NotSupportedError')), 'unavailable')
-    assert.equal(c.classify(named('InvalidStateError')), 'unknown')
-    assert.equal(c.classify(named('SomethingElse')), 'unknown')
-    assert.equal(c.classify('不是 Error'), 'unknown')
-  }, { needs: ['errorClasses'] })
-
   // ------------------------------------------------------------ open 失败（runner 造条件）
   S('[errors][open] 宿主没有存储能力：reject StorageUnavailableError，不返回「空后端」也不退到内存 ← types:OpenStorage / infra-standards', async ({ errorClasses: c, openErrors }) => {
     const reason = await openErrors.unavailable()

@@ -138,13 +138,22 @@ export const register = (suite) => {
     assert.deepEqual((await allItems((q) => backend.blobs.listKeys(q))), ['a', 'b'])
   })
 
-  S('[atomic][边界] 批里组合附件元数据与原件：回滚后两边都不留（add 自身是原子单元）← types:AttachmentRepo.add', async ({ backend }) => {
+  S('[atomic][边界] 批里组合附件元数据（put）与原件（blobs.putMany）：回滚后两边都不留 ← types:AtomicRepos（add 自带边界，不在批内）', async ({ backend }) => {
+    const sha = 'c'.repeat(64)
     await assert.rejects(backend.runAtomic(async (repos) => {
-      await repos.attachments.add({ id: 'a1', filename: 'a', mimeType: 'text/plain', size: 1, sha256: 'c'.repeat(64), status: 'pending', createdAt: 1 }, blobOf('x', 'text/plain'))
+      await repos.blobs.putMany([{ id: attKey(sha), blob: blobOf('x', 'text/plain') }])
+      await repos.attachments.put({ id: 'a1', filename: 'a', mimeType: 'text/plain', size: 1, sha256: sha, localPath: attKey(sha), status: 'pending', createdAt: 1 })
       throw new Error('x')
     }))
     assert.deepEqual(await backend.attachments.list(), [])
-    assert.equal(await backend.blobs.get(attKey('c'.repeat(64))), undefined)
+    assert.equal(await backend.blobs.get(attKey(sha)), undefined)
     assert.deepEqual(await allItems((q) => backend.blobs.listKeys(q)), [])
+  })
+
+  S('[atomic][边界] 批内可用的仓储面：AtomicRepos 不含 add / remove / sweepOrphans / removeUnreferenced / updateFileTypes / commit / merge ← types:AtomicRepos「编译期拒绝」', async ({ backend }) => {
+    await backend.runAtomic(async (repos) => {
+      for (const name of ['add', 'remove', 'sweepOrphans', 'removeUnreferenced']) assert.equal(typeof repos.attachments[name] === 'function' ? 'present' : 'absent', 'absent', `attachments.${name} 不应出现在批内`)
+      for (const name of ['updateFileTypes', 'commit', 'merge']) assert.equal(typeof repos.staging[name] === 'function' ? 'present' : 'absent', 'absent', `staging.${name} 不应出现在批内`)
+    })
   })
 }
