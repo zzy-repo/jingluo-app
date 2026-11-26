@@ -1,0 +1,106 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#ffffff"><title>鲸落</title><style>
+      /*
+        兜底页样式（issue #104 / #180）。刻意只用 WebView 69 也能解析的老 CSS：
+        没有自定义属性、没有 :has() / @container / :where()、没有 flex —— 因为「能进到这里」
+        的用户内核本来就可能低于本项目声明的下限（Chrome 83）。样式放这里而不是内联 cssText，
+        是因为卡片现在多了按钮、手动复制框与折叠区，逐个写内联串既难读也容易漏。
+      */
+      #compatibility-error {
+        margin: 24px 16px;
+        padding: 16px;
+        border: 1px solid #f0b8b8;
+        border-radius: 12px;
+        background: #fff7f7;
+        color: #7b2020;
+        font: 15px/1.6 sans-serif;
+        white-space: pre-line;
+        word-break: break-word;
+      }
+      #compatibility-error[hidden] {
+        display: none;
+      }
+      #compatibility-actions {
+        margin: 0 16px;
+      }
+      #compatibility-actions[hidden] {
+        display: none;
+      }
+      #compatibility-copy {
+        display: block;
+        width: 100%;
+        padding: 12px;
+        border: 0;
+        border-radius: 10px;
+        background: #b93a3a;
+        color: #ffffff;
+        font-size: 15px;
+        font-weight: 600;
+        -webkit-appearance: none;
+      }
+      #compatibility-copy-hint {
+        margin: 8px 0 0;
+        color: #2f6b2f;
+        font-size: 13px;
+        line-height: 1.6;
+        white-space: pre-line;
+      }
+      #compatibility-copy-hint[hidden] {
+        display: none;
+      }
+      #compatibility-copy-hint.compatibility-failed {
+        color: #b93a3a;
+      }
+      #compatibility-copy-fallback {
+        display: block;
+        width: 100%;
+        box-sizing: border-box;
+        margin-top: 10px;
+        padding: 10px;
+        border: 1px solid #f0b8b8;
+        border-radius: 8px;
+        color: #7b2020;
+        font: 12px/1.5 monospace;
+        white-space: pre-wrap;
+        word-break: break-all;
+      }
+      #compatibility-copy-fallback[hidden] {
+        display: none;
+      }
+      #compatibility-detail {
+        margin: 0 16px 24px;
+        color: #6b4a4a;
+        font-size: 12px;
+      }
+      #compatibility-detail[hidden] {
+        display: none;
+      }
+      #compatibility-detail-summary {
+        padding: 8px 0;
+        color: #b93a3a;
+        cursor: pointer;
+      }
+      #compatibility-detail-body {
+        margin: 0;
+        padding: 10px;
+        border: 1px solid #f3d6d6;
+        border-radius: 8px;
+        background: #ffffff;
+        font: 11px/1.5 monospace;
+        white-space: pre-wrap;
+        word-break: break-all;
+      }
+    </style><meta content="2.0.1" name="application-version"><script defer src="static/js/main.8914ba53.js"></script><link href="static/css/main.4725e1c5.css" rel="stylesheet"></head><body><div id="root">
+      <div id="compatibility-error" hidden></div>
+      <div id="compatibility-actions" hidden>
+        <button type="button" id="compatibility-copy"></button>
+        <p id="compatibility-copy-hint" hidden></p>
+        <textarea id="compatibility-copy-fallback" readonly rows="8" hidden></textarea>
+      </div>
+      <details id="compatibility-detail" hidden>
+        <summary id="compatibility-detail-summary"></summary>
+        <pre id="compatibility-detail-body"></pre>
+      </details>
+    </div>
+    
+    <script>!function(){var e={"zh-CN":{title:"页面启动失败",lead:"这个页面需要更新版本的 Android System WebView（或浏览器）才能正常打开。",leadBlocked:"本机系统浏览器内核过旧（{version}），低于本应用的最低要求 {min}，无法解析本应用的页面脚本。请更新 Android System WebView（推荐 {recommended} 及以上）后重新打开本应用。",leadOld:"本机系统浏览器内核偏旧（{version}），低于推荐的 {recommended}。部分功能可能不完整，建议更新 Android System WebView。",upgradePath:"升级路径：设置 → 应用 → Android System WebView → 更新（或在应用商店搜索「Android System WebView」），完成后重新打开本应用。",missing:"缺少的运行环境能力：{apis}",runtimeError:"页面脚本在启动时出错，没能启动。",timeout:"页面脚本 12 秒内没有启动（内核过旧或资源加载失败）。",envApp:"App 版本：{version}",envEngine:"内核版本：{version}",envEngineUnknown:"内核版本：无法从浏览器标识里解析出来",envAndroid:"Android 版本：{version}",envStage:"失败阶段：{stage}",envTime:"时间：{time}",envDevice:"设备码：{code}（已脱敏）",stageMissing:"启动检查未通过（缺少必要能力）",stageRuntime:"业务脚本启动时报错",stageTimeout:"业务脚本 12 秒内未启动",copy:"复制环境信息",copied:"已复制，可直接粘贴到反馈里",copyManual:"复制未成功：请长按下面的信息手动复制",details:"技术细节",truncated:"…（已截断）",howTo:"更新方法：在应用商店里搜索「Android System WebView」并更新，然后重新打开本应用。",footer:"若更新后仍然失败，请反馈上面的内核版本与本页截图。"},"en-US":{title:"This page could not start",lead:"This page needs a newer Android System WebView (or browser) to open properly.",leadBlocked:"This device's system WebView engine ({version}) is below this app's minimum requirement {min} and cannot parse the app's page scripts. Update Android System WebView (recommended {recommended} or newer) and reopen this app.",leadOld:"This device's system WebView engine ({version}) is older than the recommended {recommended}. Some features may be missing; updating Android System WebView is advised.",upgradePath:'To update: Settings → Apps → Android System WebView → Update (or search "Android System WebView" in your app store), then reopen this app.',missing:"Missing runtime features: {apis}",runtimeError:"A script error stopped this page from starting.",timeout:"The page script did not start within 12 seconds (outdated engine or failed to load).",envApp:"App version: {version}",envEngine:"Engine version: {version}",envEngineUnknown:"Engine version: could not be read from the browser identifier",envAndroid:"Android version: {version}",envStage:"Failed stage: {stage}",envTime:"Time: {time}",envDevice:"Device code: {code} (masked)",stageMissing:"Startup check failed (missing required features)",stageRuntime:"App script failed at startup",stageTimeout:"App script did not start within 12 seconds",copy:"Copy environment info",copied:"Copied — paste it into your report",copyManual:"Copy failed — long-press the text below to copy it",details:"Technical details",truncated:"…(truncated)",howTo:'To update: open your app store, search for "Android System WebView" and update it, then reopen this app.',footer:"If it still fails after updating, report the engine version above with a screenshot of this page."}},n=[["Promise",function(){return window.Promise}],["fetch",function(){return window.fetch}],["URL",function(){return window.URL}],["AbortController",function(){return window.AbortController}],["TextDecoder",function(){return window.TextDecoder}],["ResizeObserver",function(){return window.ResizeObserver}],["CSS.escape",function(){return window.CSS&&window.CSS.escape}],["Object.defineProperty",function(){return Object.defineProperty}],["Array.prototype.forEach",function(){return Array.prototype.forEach}],["Map",function(){return window.Map}],["Set",function(){return window.Set}],["WeakMap",function(){return window.WeakMap}]],t=/^[A-Za-z0-9._:-]{8,128}$/,r="unknown",i=[[/sk-[A-Za-z0-9_-]{20,}/g,"sk-***"],[/Bearer\s+\S+/g,"Bearer ***"],[/Signature=[^&]*/g,"Signature=***"],[/AccessKeyId=[^&]*/g,"AccessKeyId=***"],[/\btoken=[^&\s]*/g,"token=***"]],o=Date.now();function a(e,n){return String(e).replace(/\{(\w+)\}/g,function(e,t){var r=n[t];return"string"==typeof r?r:e})}function s(e){var n=null;try{n=document.getElementById(e)}catch(e){return null}return n&&"number"==typeof n.nodeType?n:null}function d(e){return e<10?"0"+e:String(e)}function c(e){var n,t=String(e);for(n=0;n<i.length;n+=1)t=t.replace(i[n][0],i[n][1]);return String(t).replace(/https?:\/\/[^\s]+/g,function(e){return e.split("#")[0].split("?")[0]})}function u(e,n){var t=s("compatibility-copy-hint");t&&(t.textContent=n?e.copied:e.copyManual,t.className=n?"":"compatibility-failed",t.hidden=!1)}function l(e,n){var t=s("compatibility-copy-fallback"),r=!1;if(t)try{t.value=e,t.hidden=!1,"function"==typeof t.focus&&t.focus(),"function"==typeof t.select&&t.select(),"function"==typeof t.setSelectionRange&&t.setSelectionRange(0,e.length),"function"==typeof document.execCommand&&(r=!0===document.execCommand("copy"))}catch(e){r=!1}r&&t&&(t.hidden=!0),u(n,r)}function p(){return!0===window.__DEEPSEEK_BOOTED__}function m(n,i,o){var p=document.getElementById("compatibility-error");if(p&&!1!==p.hidden){var m,g,f,h,v,w,y=e[function(){try{var e=window.localStorage&&window.localStorage.getItem("chat-demo:locale");if("zh-CN"===e||"en-US"===e)return e}catch(e){}var n="";try{var t=window.navigator;n=t&&(t.language||t.languages&&t.languages[0])||""}catch(e){}return n?0===String(n).toLowerCase().indexOf("zh")?"zh-CN":"en-US":"zh-CN"}()]||e["zh-CN"],b=function(){try{var e=window.navigator;return e&&e.userAgent||""}catch(e){return""}}(),S=function(e){var n=/(?:Chrome|Chromium)\/([0-9]+(?:\.[0-9]+)*)/.exec(e),t=n?n[1]:null,r=null,i=null;if(t){var o=t.split(".");isNaN(r=parseInt(o[0],10))?(r=null,i=null):i=o.length>1?r+"."+o[1]:r+".0"}var a=/Android\s+([0-9]+(?:\.[0-9]+)*)/i.exec(e);return{version:t,major:r,short:i,android:a?a[1]:null,isWebView:/;\s*wv\)/.test(e)}}(b),A=function(){try{if("function"!=typeof document.querySelector)return null;var e=document.querySelector('meta[name="application-version"]');if(!e||"function"!=typeof e.getAttribute)return null;var n=e.getAttribute("content");return n?String(n):null}catch(e){return null}}(),E=function(){var e=null;try{e=window.localStorage&&window.localStorage.getItem("chat-demo:ours-device-id")}catch(e){return null}if(!e||"string"!=typeof e)return null;var n=e.trim();return t.test(n)?"••••"+n.slice(-4):null}(),T=Date.now(),C="missing-api"===i?y.stageMissing:"runtime-error"===i?y.stageRuntime:y.stageTimeout,V=null!==S.major&&S.major<83,W=null!==S.major&&S.major<80,k=o&&o.missing?o.missing:[],x={branch:n,code:i,message:o&&"string"==typeof o.message?o.message:"",missing:k,url:o&&"string"==typeof o.url?o.url:null,line:o&&"number"==typeof o.line?o.line:null,col:o&&"number"==typeof o.col?o.col:null,ua:b,webviewVersion:S.version,engineVersion:S.version,engineMajor:S.major,engineShort:S.short,androidVersion:S.android,isWebView:S.isWebView,appVersion:A,deviceTail:E,stage:C,at:T},j=[y.title,W?a(y.leadBlocked,{version:S.short,min:String(80),recommended:String(83)}):V?a(y.leadOld,{version:S.short,recommended:String(83)}):y.lead,a(y.envApp,{version:A||r}),S.version?a(y.envEngine,{version:S.version}):y.envEngineUnknown,a(y.envAndroid,{version:S.android?S.android:r}),a(y.envStage,{stage:C})];E&&j.push(a(y.envDevice,{code:E})),j.push(a(y.envTime,{time:(m=new Date(T)).getFullYear()+"-"+d(m.getMonth()+1)+"-"+d(m.getDate())+" "+d(m.getHours())+":"+d(m.getMinutes())+":"+d(m.getSeconds())})),"missing-api"===i?j.push(a(y.missing,{apis:k.join(", ")})):"runtime-error"===i?j.push(y.runtimeError):j.push(y.timeout),j.push(V?y.upgradePath:y.howTo),j.push(y.footer);var I=j.join("\n"),M=(g=["code: "+x.code,"branch: "+x.branch],x.message&&g.push("message: "+x.message),x.url&&g.push("url: "+x.url+" (line "+x.line+", col "+x.col+")"),x.missing.length&&g.push("missing: "+x.missing.join(", ")),g.push("ua: "+x.ua),c(g.join("\n"))),D=(f=c(I+"\n\n"+M),h=y.truncated,f.length<=4e3?f:f.slice(0,4e3-h.length)+h);x.text=I,x.technical=M,x.copyText=D;try{window.__DEEPSEEK_COMPATIBILITY_ERROR__=x}catch(e){}try{window.console&&window.console.error&&window.console.error("[boot-guard] "+i+" "+JSON.stringify(x))}catch(e){}p.hidden=!1,p.textContent=I,function(e,n){var t=s("compatibility-detail"),r=s("compatibility-detail-body");if(t&&r&&"open"in t){var i=s("compatibility-detail-summary");i&&(i.textContent=n.details),r.textContent=e,t.hidden=!1}}(M,y),v=s("compatibility-actions"),w=s("compatibility-copy"),v&&(v.hidden=!1),w&&(w.textContent=y.copy,w.addEventListener("click",function(){!function(e,n){var t=null;try{t=window.navigator&&window.navigator.clipboard}catch(e){t=null}if(t&&"function"==typeof t.writeText)try{var r=t.writeText(e);if(r&&"function"==typeof r.then)return void r.then(function(){u(n,!0)},function(){l(e,n)})}catch(e){}l(e,n)}(D,y)},!1))}}for(var g=[],f=0;f<n.length;f+=1){var h=n[f];try{h[1]()||g.push(h[0])}catch(e){g.push(h[0])}}g.length&&m("①","missing-api",{missing:g}),window.addEventListener("error",function(e){p()||m("②","runtime-error",{message:e&&"string"==typeof e.message?e.message:"资源加载失败",url:e&&"string"==typeof e.filename?e.filename:null,line:e&&"number"==typeof e.lineno?e.lineno:null,col:e&&"number"==typeof e.colno?e.colno:null})},!0),window.addEventListener("unhandledrejection",function(){p()||m("②","runtime-error",{message:"unhandledrejection"})});var v=setInterval(function(){var e=document.getElementById("compatibility-error");e&&!e.hidden||p()?clearInterval(v):Date.now()-o>12e3&&(clearInterval(v),m("③","boot-timeout",{}))},1e3)}()</script>
+    <noscript>需要启用 JavaScript 才能使用。</noscript></body></html>

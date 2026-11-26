@@ -1,0 +1,15 @@
+{
+  "variant": "standard",
+  "main": "main.8914ba53.js",
+  "hash": "8914ba53",
+  "version": "2.0.1",
+  "builtAt": "2026-11-26T08:33:07.479Z",
+  "endpoints": {
+    "consume": {
+      "baseUrl": "https://apia.ecsafe.cn"
+    },
+    "pay": {
+      "baseUrl": "https://apia.ecsafe.cn"
+    }
+  }
+}

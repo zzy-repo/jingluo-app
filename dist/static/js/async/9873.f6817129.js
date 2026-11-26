@@ -1,0 +1,1 @@
+"use strict";(globalThis.rspackChunkdeepseek_app=globalThis.rspackChunkdeepseek_app||[]).push([[9873],{4840(e,s,p){p.d(s,{Browser:()=>r});let r=(0,p(3598).F3)("Browser",{web:()=>p.e(55).then(p.bind(p,6010)).then(e=>new e.BrowserWeb)})}}]);
