@@ -85,7 +85,7 @@ importers:
         specifier: ^8.6.2
         version: 8.6.2
       '@capacitor/ios':
-        specifier: 8.6.2
+        specifier: ^8.6.2
         version: 8.6.2(@capacitor/core@8.6.2)
       '@rspack/cli':
         specifier: 2.0.2
