@@ -90,9 +90,9 @@ export const base64ToBytes = (text: string): Uint8Array => {
       }
       triple = (triple << 6) | value
     }
-    if (o < out.length) out[o++] = (triple >> 16) & 255
-    if (o < out.length) out[o++] = (triple >> 8) & 255
-    if (o < out.length) out[o++] = triple & 255
+    if (o < out.length) {out[o++] = (triple >> 16) & 255}
+    if (o < out.length) {out[o++] = (triple >> 8) & 255}
+    if (o < out.length) {out[o++] = triple & 255}
   }
   return out
 }
@@ -171,10 +171,10 @@ export const encodeDoc = (value: unknown, options: { allowBlobs: boolean }): Enc
       case 'undefined':
         return { [TAG]: 'undefined' }
       case 'number':
-        if (Number.isNaN(current)) return { [TAG]: 'nan' }
-        if (current === Infinity) return { [TAG]: 'inf', v: 1 }
-        if (current === -Infinity) return { [TAG]: 'inf', v: -1 }
-        if (Object.is(current, -0)) return { [TAG]: 'negzero' }
+        if (Number.isNaN(current)) {return { [TAG]: 'nan' }}
+        if (current === Infinity) {return { [TAG]: 'inf', v: 1 }}
+        if (current === -Infinity) {return { [TAG]: 'inf', v: -1 }}
+        if (Object.is(current, -0)) {return { [TAG]: 'negzero' }}
         return current
       case 'bigint':
         return { [TAG]: 'bigint', v: current.toString() }
@@ -184,7 +184,7 @@ export const encodeDoc = (value: unknown, options: { allowBlobs: boolean }): Enc
       default:
         break
     }
-    if (current === null) return null
+    if (current === null) {return null}
     const object = current as object
     if (stack.has(object)) {
       throw new SqliteCodecError('循环引用', path)
@@ -393,9 +393,9 @@ export const decodeDoc = (json: string, blobBytes: ReadonlyMap<number, DecodedBl
 export const blobSlotsOf = (json: string): number[] => {
   const slots: number[] = []
   const walk = (node: unknown): void => {
-    if (node === null || typeof node !== 'object') return
+    if (node === null || typeof node !== 'object') {return}
     if (Array.isArray(node)) {
-      for (const item of node) walk(item)
+      for (const item of node) {walk(item)}
       return
     }
     const record = node as Record<string, unknown>
@@ -404,14 +404,14 @@ export const blobSlotsOf = (json: string): number[] => {
       return
     }
     if (record[TAG] === 'obj') {
-      for (const [, member] of record.v as [string, unknown][]) walk(member)
+      for (const [, member] of record.v as [string, unknown][]) {walk(member)}
       return
     }
     if (record[TAG] === 'map' || record[TAG] === 'set') {
       walk(record.v)
       return
     }
-    for (const key of Object.keys(record)) walk(record[key])
+    for (const key of Object.keys(record)) {walk(record[key])}
   }
   walk(JSON.parse(json) as unknown)
   return slots

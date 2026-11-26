@@ -34,7 +34,7 @@ const AT_OF: Partial<Record<RawStoreName, string>> = {
  */
 const withAt = async <T>(store: RawStoreName, params: readonly SqlValue[], work: (params: readonly SqlValue[]) => Promise<T>): Promise<T> => {
   const at = AT_OF[store]
-  if (at === undefined) return work(params)
+  if (at === undefined) {return work(params)}
   try {
     return await work([...params, { __at: at } as unknown as SqlValue])
   } catch (error) {

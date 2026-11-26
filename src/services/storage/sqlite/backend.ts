@@ -24,7 +24,7 @@ import { createAssetRepo } from './repos/assets.js'
 import { createAttachmentRepo } from './repos/attachments.js'
 import { createMemoryRepo } from './repos/memory.js'
 import { createStagingRepo } from './repos/staging.js'
-import type { AtomicOptions, AtomicRepos, StorageBackend, StorageHealth, StorageProbe } from '../types.js'
+import type { AtomicRepos, StorageBackend, StorageHealth, StorageProbe } from '../types.js'
 
 /** 标记「当前正处在某个 runAtomic 的回调里」，用来拒绝嵌套。 */
 const nested = new AsyncLocalStorage<boolean>()
@@ -109,7 +109,7 @@ export const openSqliteStorage = async (openDb: OpenSqlite): Promise<StorageBack
     memory: guarded(repos.memory, assertOpen),
     staging: guarded(repos.staging, assertOpen),
 
-    runAtomic: async (work, _options?: AtomicOptions) => {
+    runAtomic: async (work) => {
       assertOpen()
       // 不允许嵌套：回调里再调 runAtomic 直接拒绝（types.ts「实现必须拒绝」），外层事务随之回滚。
       if (nested.getStore() === true) {

@@ -83,9 +83,9 @@ export const createAttachmentRepo = (runner: Runner): AttachmentRepo => ({
         status: draft.status,
         createdAt: Date.now(),
       }
-      if (draft.totalPages !== undefined) record.totalPages = draft.totalPages
-      if (draft.extractedPages !== undefined) record.extractedPages = draft.extractedPages
-      if (draft.warnings !== undefined && draft.warnings.length > 0) record.warnings = draft.warnings
+      if (draft.totalPages !== undefined) {record.totalPages = draft.totalPages}
+      if (draft.extractedPages !== undefined) {record.extractedPages = draft.extractedPages}
+      if (draft.warnings !== undefined && draft.warnings.length > 0) {record.warnings = draft.warnings}
       await putRow(ex, 'attachmentTexts', record.key, record)
       return record
     }),
