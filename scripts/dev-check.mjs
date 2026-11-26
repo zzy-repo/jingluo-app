@@ -212,6 +212,12 @@ const GATES = [
   { id: 'check:focus', where: 'content', why: ':focus-visible 没兜底 → 键盘焦点看不见' },
   { id: 'check:gutter', where: 'content', why: 'scrollbar-gutter 没等价实现 → 换手时布局跳动' },
   { id: 'check:limits', where: 'content', why: '上限常量没有收敛到配置' },
+  {
+    id: 'check:bare-const',
+    where: 'content',
+    fix: '请求级策略搬进 REQUEST_POLICY + LIMITS；确实不是策略的登记进脚本 ALLOW（带 reason + 承接单）',
+    why: '策略表之外再写一个裸超时/重试常量 → 同一件事两个答案，改一处是否生效取决于谁问哪个问题（#894/#896）',
+  },
   { id: 'check:icon', where: 'content', why: '图标四边留白不齐 → 桌面图标发虚' },
   { id: 'check:manifest', where: 'content', why: '公网/私有 fixture 清单漂移（含事故清单断言）' },
   {
