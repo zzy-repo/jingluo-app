@@ -1488,4 +1488,29 @@ export const zh = {
   sessionBranchOpenParent: '回到来源会话',
   // 附件降级（父会话被删 / 换设备导入后原件不在本机）：明说不可用，但不报错、不阻断对话
   sessionBranchAttachmentMissing: '附件不可用：有 {count} 个附件在本机找不到原件，继续对话不受影响',
+  // #916 / #910：存储迁移页（启动闸门）。原则：永远说明「原数据没有丢」，失败给明确原因与出路，不显示空白欢迎页
+  storageMigrationTitle: '正在升级本机数据存储',
+  storageMigrationDescription: '正在把对话与文件复制到新的存储里，期间请不要关闭应用。原来的数据不会被删除。',
+  storageMigrationPhasePreflight: '正在检查可用空间',
+  storageMigrationPhaseBackup: '正在备份原数据',
+  storageMigrationPhaseCopy: '正在复制数据',
+  storageMigrationPhaseVerify: '正在校验复制结果',
+  storageMigrationPhaseCommit: '正在完成切换',
+  storageMigrationPercent: '{percent}%',
+  storageMigrationSizeHint: '预计数据 {size} MB，升级期间至少需要 {need} MB 可用空间',
+  storageMigrationFailedTitle: '升级没有完成',
+  storageMigrationFailedBody: '你的原数据没有丢失，仍然保存在原处。可以重试，也可以先继续使用原数据。',
+  storageMigrationFailSpace: '原因：可用空间不足。请清理手机空间后重试。',
+  storageMigrationFailTooLarge: '原因：数据量超过一次升级的上限。请先在设置里导出备份，再联系我们。',
+  storageMigrationFailUnknownSpace: '原因：无法确认可用空间，为安全起见没有开始升级。',
+  storageMigrationFailGeneric: '原因：{message}',
+  storageMigrationRetry: '重试',
+  storageMigrationContinue: '继续使用（原数据未丢失）',
+  storageMigrationBlockedTitle: '暂时无法打开本机数据',
+  storageMigrationBlockedAfterCommit:
+    '数据已经升级到新的存储，但新存储现在打不开。为避免读到过期的旧数据，应用先停在这里。你的数据没有被删除，重载应用通常可以恢复；仍然不行请复制诊断信息联系我们。',
+  storageMigrationBlockedDecision:
+    '检测到两份升级进度记录互相矛盾，应用不会自行猜测以免弄丢数据。你的数据没有被删除，请复制诊断信息联系我们处理。',
+  storageMigrationBlockedMigrating: '数据升级正在进行，请稍候。',
+  storageMigrationBlockedDetail: '详情：{detail}',
 } as const

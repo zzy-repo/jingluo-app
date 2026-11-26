@@ -39,5 +39,6 @@ export const buildMigrationDeps = (
   clock: systemClock,
   sha256: sha256Text,
   sqliteFileExists: () => runtime.sqliteFileExists(),
+  ...(runtime.bumpLegacyIdbVersion ? { bumpLegacyIdbVersion: runtime.bumpLegacyIdbVersion } : {}),
   ...extra,
 })

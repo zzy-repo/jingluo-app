@@ -93,7 +93,7 @@ test('预检：freeBytes 未知 → 不迁移（unsupported），没碰源、没
 
 test('预检：空间 < 源×3 + 余量 → insufficient-space，不开始；恰好够则开始（负向对照）', async () => {
   const need = requiredFreeBytes(1000)
-  assert.equal(need, 3000 + mods.config.SPACE_MARGIN_MIN_BYTES)
+  assert.equal(need, 3000 + mods.limits.LIMITS.storageMigration.reserveBytes)
   await withEnv({ freeBytes: need - 1 }, async (env) => {
     const result = await runMigration(env.deps())
     assert.equal(result.failure.code, 'insufficient-space')

@@ -165,3 +165,15 @@ test('源码里 getStorage() 不含内存实现的返回路径', async () => {
   const text = readFileSync(new URL('../../src/services/storage/index.ts', import.meta.url), 'utf8')
   assert.doesNotMatch(text, /memory|Memory/u)
 })
+
+test('getStorage 自己的迁移防线独立成立：路由结论已缓存为 sqlite，迁移标记置位时仍抛 StorageMigratingError', async () => {
+  setup()
+  runtimeMod.configureStorageRuntime(runtimeOf(env))
+  runtimeMod.setEngineChoice({ engine: 'sqlite' })
+  assert.equal((await storage.getStorage()).__kind, 'sqlite')
+  storage.resetStorageRouting()
+  runtimeMod.setMigrationRunning(true)
+  await assert.rejects(storage.getStorage(), (error) => error.name === 'StorageMigratingError')
+  runtimeMod.setMigrationRunning(false)
+  assert.equal((await storage.getStorage()).__kind, 'sqlite')
+})

@@ -63,15 +63,24 @@ export type SqliteWitness = {
   absent?: boolean
 }
 
+/**
+ * `MigrationState`（共享契约，不改）的结构兼容扩展：`verified → committed` 之间显式记录屏障子步骤。
+ *  - `legacyBarrier: 'started'`：已决定并开始升旧 IDB 版本（可能已生效，也可能没有）；
+ *  - `legacyBarrier: 'done'`：升版完成并确认可打开。
+ * 它不是阶段（阶段仍是 `verified`），重入看到它就**直接继续提交步**，不回 idle、不回复制。
+ */
+export type LegacyBarrierStep = 'started' | 'done'
+export type MigrationStateX = MigrationState & { legacyBarrier?: LegacyBarrierStep }
+
 export type WitnessOutcome =
-  | { kind: 'use'; state: MigrationState }
+  | { kind: 'use'; state: MigrationStateX }
   /** 状态文件缺失但 SQLite 见证已切换：以 SQLite 为真源，须把重建的状态写回去。 */
-  | { kind: 'rebuild-committed'; state: MigrationState }
+  | { kind: 'rebuild-committed'; state: MigrationStateX }
   /**
    * 状态文件停在 `verified`，但 SQLite 已写入 `committed_at` 且 `migrated_from` 与状态里的源指纹一致：
    * 这正是「先写 meta、再写状态文件」之间被杀的窗口，不是矛盾。补写 `committed` 即可。
    */
-  | { kind: 'finish-commit'; state: MigrationState }
+  | { kind: 'finish-commit'; state: MigrationStateX }
   /** 状态文件损坏且 SQLite 未见证切换：当作 idle，损坏文件保留。 */
   | { kind: 'idle-keep-corrupt' }
   /** 两处见证互相矛盾：不得猜，交给用户。 */
@@ -82,9 +91,9 @@ export type StateFile = MigrationState & { checksum: string }
 
 export type StateStore = {
   /** 读盘上的状态文件。缺失 → undefined；内容损坏 → `{ corrupt: true }`（文件不动）。 */
-  read(): Promise<MigrationState | { corrupt: true } | undefined>
+  read(): Promise<MigrationStateX | { corrupt: true } | undefined>
   /** 原子写：`seq` 由调用方在状态里维护，这里只补校验和。 */
-  write(state: MigrationState): Promise<void>
+  write(state: MigrationStateX): Promise<void>
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -152,7 +161,7 @@ const parseBackup = (value: unknown): MigrationState['backup'] => {
 /**
  * 校验一份解码后的状态。校验失败返回 undefined —— 调用方据此判定「损坏」，不得猜测修复。
  */
-export const parseMigrationState = (value: unknown): MigrationState | undefined => {
+export const parseMigrationState = (value: unknown): MigrationStateX | undefined => {
   if (!isRecord(value)) {
     return undefined
   }
@@ -170,7 +179,13 @@ export const parseMigrationState = (value: unknown): MigrationState | undefined 
   ) {
     return undefined
   }
-  const state: MigrationState = { schema: 1, phase, seq, updatedAt, engineVersion }
+  const state: MigrationStateX = { schema: 1, phase, seq, updatedAt, engineVersion }
+  if (value.legacyBarrier !== undefined) {
+    if (value.legacyBarrier !== 'started' && value.legacyBarrier !== 'done') {
+      return undefined
+    }
+    state.legacyBarrier = value.legacyBarrier
+  }
   if (value.startedAt !== undefined) {
     if (typeof value.startedAt !== 'number' || !Number.isFinite(value.startedAt)) {
       return undefined
@@ -227,7 +242,8 @@ const canonical = (value: unknown): string => {
 
 /** 校验和覆盖的正文：去掉 checksum 字段后的规范化 JSON。 */
 export const stateChecksumBody = (file: Record<string, unknown>): string => {
-  const { checksum: _checksum, ...rest } = file
+  const rest: Record<string, unknown> = { ...file }
+  delete rest.checksum
   return canonical(rest)
 }
 
@@ -247,7 +263,7 @@ export const freshState = (now: number): MigrationState => ({
  * @param witness SQLite `meta` 的读取结果
  */
 export const reconcileWitnesses = (
-  file: MigrationState | { corrupt: true } | undefined,
+  file: MigrationStateX | { corrupt: true } | undefined,
   witness: SqliteWitness,
   now: number,
 ): WitnessOutcome => {
@@ -325,7 +341,7 @@ export const readSqliteWitness = async (open: () => Promise<SqlDatabase>): Promi
 }
 
 export const createStateStore = (fs: AppFileSystem, sha256: Sha256Text): StateStore => {
-  const read = async (): Promise<MigrationState | { corrupt: true } | undefined> => {
+  const read = async (): Promise<MigrationStateX | { corrupt: true } | undefined> => {
     const text = await fs.readText(STATE_PATH)
     if (text === undefined) {
       return undefined
@@ -347,7 +363,7 @@ export const createStateStore = (fs: AppFileSystem, sha256: Sha256Text): StateSt
     return parsed ?? { corrupt: true }
   }
 
-  const write = async (state: MigrationState): Promise<void> => {
+  const write = async (state: MigrationStateX): Promise<void> => {
     const body = canonical(state)
     const checksum = await sha256(body)
     const file: Record<string, unknown> = { ...state, checksum }

@@ -279,6 +279,18 @@ export const LIMITS = {
    * 所以那边保留字面量，由 `tests/unit/limits-config.test.mjs` 断言两处相等。
    */
   bootDeadlineMs: 12000,
+  /**
+   * Native SQLite 迁移的预检阈值（#910 / #916，docs/sqlite-migration-plan.md §4）。
+   * `S` = `RawStoreSource.estimateBytes()`（只许偏高）；备份体积按 `S` 计（迁移期磁盘 = 源 + 备份 + 目标，ADR-0910）。
+   * - 拒绝线：`freeBytes < 2×S + 备份(S) + reserveBytes` → `insufficient-space`，不开始；
+   * - 警告线：`S > warnBytes` → 迁移页显示预计体积与所需空间（不拒绝）；
+   * - 硬上界：`S > maxBytes` → 直接拒绝并提示先导出（超出 Android 单库与备份的现实上限）。
+   */
+  storageMigration: {
+    reserveBytes: 268_435_456,
+    warnBytes: 209_715_200,
+    maxBytes: 2_147_483_648,
+  },
 } as const
 
 /** 字节 → MB（四舍五入的整数），只用于文案提示；换算集中在这里，别处不再写 1024 */

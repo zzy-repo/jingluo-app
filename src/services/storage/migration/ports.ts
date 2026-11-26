@@ -42,6 +42,8 @@ export type MigrationProgress = {
   phase: MigrationPhase
   /** 0–100，粗略：按阶段加权，复制阶段按已完成 store 数 */
   percent: number
+  /** 预检算出后附带：源估算体积 / 所需可用空间 / 是否越过警告线（迁移页据此展示） */
+  preflight?: { estimateBytes: number; requiredBytes: number; warn: boolean }
 }
 
 /** 编排器的全部依赖。全部注入：生产接线在 `runtime.ts`，测试直接传内存实现。 */
@@ -60,6 +62,12 @@ export type MigrationDeps = {
   onProgress?: (progress: MigrationProgress) => void
   /** SQLite 主库文件是否已存在；缺省视为存在。用于「没迁移过就不顺手创建一个空库」。 */
   sqliteFileExists?: () => Promise<boolean>
+  /**
+   * 回滚保护（**默认关闭**，不传即不执行；是否启用待用户确认，见 #916）：`committed` 之前把旧 IDB 版本升到更高，
+   * 使手动装回旧 APK 时旧代码因版本过低打不开它、而不是静默读过期数据。实现必须**自己确认升级后能打开**，
+   * 且**幂等**（重入会再调一次）。顺序固定：校验通过 → 本函数 → 写 SQLite meta → 写 state.json committed。
+   */
+  bumpLegacyIdbVersion?: () => Promise<void>
   /** 仅测试：每个阶段边界调用；抛出带 `killed: true` 的对象即模拟进程被杀（编排器不处理、不落 failed）。 */
   hooks?: { boundary?: (name: string) => void | Promise<void> }
 }

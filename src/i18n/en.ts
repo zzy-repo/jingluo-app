@@ -1470,4 +1470,32 @@ export const en = {
   sessionBranchOpenParent: 'Go to source chat',
   sessionBranchAttachmentMissing:
     'Attachment unavailable: {count} attachment(s) have no file on this device. You can keep chatting',
+  // #916 / #910: storage migration page (startup gate). Always say the original data is intact; failures show a reason and a way out
+  storageMigrationTitle: 'Upgrading local data storage',
+  storageMigrationDescription:
+    'Your chats and files are being copied into the new storage. Please keep the app open. Your original data is not deleted.',
+  storageMigrationPhasePreflight: 'Checking free space',
+  storageMigrationPhaseBackup: 'Backing up your original data',
+  storageMigrationPhaseCopy: 'Copying data',
+  storageMigrationPhaseVerify: 'Verifying the copy',
+  storageMigrationPhaseCommit: 'Finishing the switch',
+  storageMigrationPercent: '{percent}%',
+  storageMigrationSizeHint: 'About {size} MB of data. At least {need} MB of free space is needed during the upgrade',
+  storageMigrationFailedTitle: 'The upgrade did not finish',
+  storageMigrationFailedBody:
+    'Your original data is not lost and is still where it was. You can retry, or keep using the original data for now.',
+  storageMigrationFailSpace: 'Reason: not enough free space. Free up space on your phone and retry.',
+  storageMigrationFailTooLarge:
+    'Reason: the data is larger than one upgrade can handle. Export a backup in Settings first, then contact us.',
+  storageMigrationFailUnknownSpace: 'Reason: free space could not be determined, so the upgrade was not started.',
+  storageMigrationFailGeneric: 'Reason: {message}',
+  storageMigrationRetry: 'Retry',
+  storageMigrationContinue: 'Keep using (original data is safe)',
+  storageMigrationBlockedTitle: 'Local data cannot be opened right now',
+  storageMigrationBlockedAfterCommit:
+    'Your data was upgraded to the new storage, but the new storage cannot be opened now. To avoid showing outdated data, the app stops here. Nothing was deleted. Reloading usually helps; if not, copy the diagnostics and contact us.',
+  storageMigrationBlockedDecision:
+    'Two upgrade progress records contradict each other. The app will not guess, to avoid losing data. Nothing was deleted. Please copy the diagnostics and contact us.',
+  storageMigrationBlockedMigrating: 'The data upgrade is in progress. Please wait.',
+  storageMigrationBlockedDetail: 'Details: {detail}',
 } satisfies Record<keyof typeof zh, string>

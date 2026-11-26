@@ -4,6 +4,7 @@ import './polyfills/legacy.js'
 import { createRoot } from 'react-dom/client'
 import { App } from './app/App.js'
 import { ErrorBoundary } from './app/ErrorBoundary.js'
+import { MigrationGate } from './components/migration/MigrationGate.js'
 import { setupTheme } from './app/theme.js'
 import { setupReading } from './app/reading.js'
 import { readDiagnosticsFacts } from './app/diagnosticsContext.js'
@@ -165,6 +166,9 @@ if (typeof __TEST_AUTH_STATE__ === 'undefined') {
 // 根部包一层错误边界：渲染期异常不再是整屏白屏，而是一张可读的错误页（issue #28）
 createRoot(document.getElementById('root') as HTMLElement).render(
   <ErrorBoundary>
-    <App />
+    {/* 存储启动闸门（#916）：真源确定之前 <App/> 不挂载，store 第一次读库一定在它之后 */}
+    <MigrationGate>
+      <App />
+    </MigrationGate>
   </ErrorBoundary>
 )

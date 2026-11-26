@@ -21,6 +21,11 @@ export type StorageRuntime = {
   /** 旧库（IndexedDB）的只读原始源。 */
   openIdbSource(): RawStoreSource
   engine: MigrationEnginePort
+  /**
+   * 防降级屏障（可选，缺省 = 不升旧 IDB 版本）。真实实现是 `idb/legacyBarrier.ts` 的 `bumpLegacyIdbVersion`，
+   * 由接线处决定是否注入；只会在迁移编排器的 `verified` 之后、`committed` 之前被调用，普通应用启动不会触发。
+   */
+  bumpLegacyIdbVersion?: () => Promise<void>
   /** 主库文件是否已存在（避免为了「看一眼」创建空库）。 */
   sqliteFileExists(): Promise<boolean>
 }

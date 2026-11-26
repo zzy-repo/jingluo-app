@@ -20,6 +20,7 @@ export const mods = {
   router: await loadTsModule('src/services/storage/router.ts'),
   schema: await loadTsModule('src/services/storage/sqlite/schema.ts'),
   memoryFs: await loadTsModule('src/services/fs/memoryFs.ts'),
+  limits: await loadTsModule('src/services/limits.ts'),
 }
 export const STORES = mods.types.RAW_STORE_NAMES
 

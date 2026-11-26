@@ -14,8 +14,5 @@ export const STATE_PATH = `${STATE_DIR}/state.json`
 /** SQLite 真源库名（由 `OpenSqlDatabase` 解析到应用私有目录）。 */
 export const MAIN_DB_NAME = 'deepseek-app.db'
 
-/** 空间预检余量：`源估算×2 + 备份(≈源估算) + max(余量下限, 源估算×10%)`。 */
-export const SPACE_MARGIN_MIN_BYTES = 64 * 1024 * 1024
-
 /** 备份库文件名前缀：`storage-engine/backup-<ts>.db`。 */
 export const BACKUP_PREFIX = 'backup-'

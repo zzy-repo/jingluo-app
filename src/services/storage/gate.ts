@@ -25,7 +25,12 @@ type BlockedChoice = Extract<StorageEngineChoice, { engine: 'blocked' }>
 export type GateView =
   | { kind: 'checking' }
   | { kind: 'ready' }
-  | { kind: 'migrating'; phase: MigrationPhase; percent: number }
+  | {
+      kind: 'migrating'
+      phase: MigrationPhase
+      percent: number
+      preflight?: { estimateBytes: number; requiredBytes: number; warn: boolean }
+    }
   | { kind: 'failed'; failure: MigrationFailure }
   | { kind: 'blocked'; reason: BlockedChoice['reason']; detail?: string }
 
@@ -91,7 +96,11 @@ const runMigrationUi = async (runtime: StorageRuntime): Promise<GateView> => {
   try {
     const outcome = await runMigration(
       buildMigrationDeps(runtime, {
-        onProgress: ({ phase, percent }) => publish({ kind: 'migrating', phase, percent }),
+        onProgress: ({ phase, percent, preflight }) => {
+          // 预检信息只在预检时发一次，后续阶段沿用，迁移页一直能显示体积提示
+          const kept = preflight ?? (view.kind === 'migrating' ? view.preflight : undefined)
+          publish({ kind: 'migrating', phase, percent, ...(kept ? { preflight: kept } : {}) })
+        },
       }),
     )
     setMigrationRunning(false)
