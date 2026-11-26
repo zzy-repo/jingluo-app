@@ -151,6 +151,11 @@
       "name": "渠道与模型",
       "doc": "docs/testing/coverage/domain-03-04.md",
       "paths": {
+        "src/services/net/**": [
+          "tests/unit/net-*.test.mjs",
+          "tests/unit/api-request-timeout.test.mjs",
+          "tests/unit/diagnostics-stream-timing.test.mjs"
+        ],
         "src/services/api/**": [
           "tests/unit/provider-*.test.mjs",
           "tests/unit/openai-adapter.test.mjs",

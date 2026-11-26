@@ -15,6 +15,7 @@
  */
 import { scrubReportText } from '../../app/errorReport.js'
 import { redactUpstreamText, truncate } from '../diagnostics/redact.js'
+import type { NetTimings } from '../net/networkPhase.js'
 
 /** 单行最长字符数：与 #104 的 errorReport 同一量级，够看清又不刷屏 */
 const MAX_LINE_CHARS = 240
@@ -63,8 +64,44 @@ export type ReplyErrorReportInput = {
    * 所以从界面上撤下来，但要在诊断里留一份——界面软、排查硬。
    */
   params?: Record<string, unknown>
+  /**
+   * **分段归因**（#895 / 母单 #894）：卡在哪一段、凭什么判出来、建议下一步。
+   *
+   * 为什么必须进这份文本：用户把「连不上」贴进 Issue 时，我们以前无法区分
+   * 「他没网」「域名解析不了」「证书不对」「上游接了但不吐字」——四种情况的修法完全不同，
+   * 而这四个结论**只有失败当次**能拿到（事后重放不复现）。
+   */
+  phase?: string
+  /** 判据（`NetPhaseEvidence`）：诊断里写出来，读的人才知道这个结论有多硬 */
+  evidence?: string
+  /** 建议的下一步（`NetUserAction`）；`none` / 缺省不写这一句 */
+  userAction?: string
+  /** 各段耗时（毫秒）；取不到的段在文本里写「—」，不写 0 */
+  timings?: NetTimings
   /** 出错时间（ms），默认取当前时刻 */
   at?: number
+}
+
+/**
+ * 分段耗时的**一行文本**（#895）。取不到的段写「—」，**绝不写 0** ——
+ * 0 的意思是「这一段没花时间」，与「拿不到这个数」是两件事；写 0 会让读诊断的人
+ * 误判成「DNS 是瞬间完成的」。字段顺序固定，便于人工比对与单测断言。
+ */
+const timingsReportLine = (timings?: NetTimings): string | undefined => {
+  if (timings === undefined) {
+    return undefined
+  }
+  const ms = (value: number | null | undefined): string =>
+    typeof value === 'number' && Number.isFinite(value) ? `${Math.round(value)}ms` : '—'
+  const parts = [
+    `dns=${ms(timings.dnsMs)}`,
+    `tcp=${ms(timings.tcpMs)}`,
+    `tls=${ms(timings.tlsMs)}`,
+    `等待响应头=${ms(timings.waitMs)}`,
+    `首字节=${ms(timings.firstByteMs)}`,
+    `合计=${ms(timings.totalMs)}`,
+  ]
+  return `分段耗时: ${parts.join(' ')}`
 }
 
 /**
@@ -116,6 +153,24 @@ export const buildReplyErrorReport = (input: ReplyErrorReportInput): string => {
   }
   if (endpoint) {
     lines.push(`接口: ${endpoint}`)
+  }
+  /**
+   * 分段归因（#895）：**判不出也要写「判不出」**。
+   *
+   * 只在请求层给了 `phase` / `evidence` 时才写这两行 —— 业务失败（401 / 额度 / 参数）
+   * 没有「网络卡在哪」这回事，硬写一行「失败分段: —」只会让诊断变成噪音。
+   */
+  const phase = input.phase?.trim()
+  const evidence = input.evidence?.trim()
+  if (phase !== undefined || evidence !== undefined) {
+    const action = input.userAction?.trim()
+    const suffix = action !== undefined && action !== '' && action !== 'none' ? `；建议 ${action}` : ''
+    const judge = evidence !== undefined && evidence !== '' ? `依据 ${evidence}` : '依据 none'
+    lines.push(`失败分段: ${phase !== undefined && phase !== '' ? phase : '判不出'}（${judge}${suffix}）`)
+  }
+  const timingsLine = timingsReportLine(input.timings)
+  if (timingsLine !== undefined) {
+    lines.push(timingsLine)
   }
   // 参数快照：只列「有值的原始标量」，不猜语义、不做单位换算（换算留给读的人）
   const paramLine = Object.entries(input.params ?? {})

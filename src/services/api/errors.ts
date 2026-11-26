@@ -612,6 +612,23 @@ export const isRetryableApiError = (error: unknown): boolean => {
   if (stagedTimeout !== null) {
     return stagedTimeout
   }
+  /**
+   * #895：**phase 归因优先于「按文案 / 状态码猜」**。错误对象上带了分段结论时，直接采信它
+   * —— 那是请求层当场看到的事实（原生栈说 `UnknownHostException`、resource timing 说
+   * 「连接建了但没响应头」），比这里拿 `message` 正则去猜准得多。
+   *
+   * 两个边界，缺一不可：
+   *  - 只在 `phase !== undefined` 时采信。判不出（`phase: undefined`）必须**回落**到改前的
+   *    判定流程 —— 否则等于用「不知道」去改结论，那是另一种编；
+   *  - `abort` 档的 `retryable` 是 `false`，所以「用户取消」在任何调用点都不会被自动重发
+   *    （母单 #894 已内化的第 4 条纪律，这里只是让它有一条机器判据）。
+   *
+   * `http` 档的可重试性与下面 `isRetryableStatus` 逐条相等（429 / 5xx 重试，其余 4xx 不重试），
+   * 由 `tests/unit/net-failure-phase-895.test.mjs` [3][7] 钉住。
+   */
+  if (error.net !== undefined && error.net.phase !== undefined) {
+    return error.net.retryable
+  }
   // 其它超时等价于「这一轮没等到响应」：重试是有效的，不能因为没状态码就归到 other。
   // 空闲超时（#150）同理：换一条连接通常就好了，用户不必自己点重试
   if (error.kind === 'timeout' || error.kind === 'idle') {

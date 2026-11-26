@@ -2823,6 +2823,26 @@ const streamReply = async (sessionId: string, initial: AssistantMessage, request
                   }),
                 }
               : {}),
+            /**
+             * 分段归因（#895）：随消息落盘，「复制诊断信息」才在刷新 / 换设备之后还说得清
+             * 当时卡在哪一段。`firstByteMs` / `totalMs` 用**本轮的分段计时器**（
+             * `diagnostics/timing.ts` 的 meter），它比 resource timing 更准（起点是「请求发出」
+             * 而不是「fetch 被调用」）；DNS / TCP / TLS 三段只有 resource timing 有，取不到就是 null。
+             */
+            ...(error.net
+              ? {
+                  net: {
+                    ...(error.net.phase === undefined ? {} : { phase: error.net.phase }),
+                    evidence: error.net.evidence,
+                    userAction: error.net.userAction,
+                    timings: {
+                      ...(error.net.timings ?? {}),
+                      firstByteMs: failedTiming.firstTokenMs ?? error.net.timings?.firstByteMs ?? null,
+                      totalMs: failedTiming.totalMs,
+                    },
+                  },
+                }
+              : {}),
             localMessage: notice,
           })
         } else {

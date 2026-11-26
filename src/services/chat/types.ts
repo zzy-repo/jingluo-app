@@ -137,6 +137,31 @@ export type AssistantMessage = MessageBranch & {
     keyFailure?: KeyFailure
     /** 仅 upload：重新上传是否可能成功（网络、限流、服务端繁忙）；过大、格式不支持为 false */
     retryable?: boolean
+    /**
+     * **分段归因**（#895 / 母单 #894）：这次失败卡在 DNS / TCP / TLS / HTTP / 首字节 / 空闲 /
+     * 取消的哪一段，凭什么判出来，各段耗时多少。
+     *
+     * 为什么要落盘：这四个结论**只有失败当次**能拿到（事后重放不复现），而用户点
+     * 「复制诊断信息」往往是在刷新之后、甚至换设备之后。可选新增字段，IndexedDB 是
+     * schemaless 的，老消息没有它就是 `undefined`，不需要回填也不需要升版本。
+     */
+    net?: {
+      /** `NetFailurePhase`；缺省 = 判不出（见 `services/net/networkPhase.ts` 文件头） */
+      phase?: string
+      /** 判据 `NetPhaseEvidence` */
+      evidence?: string
+      /** 建议下一步 `NetUserAction` */
+      userAction?: string
+      /** 各段耗时（毫秒）；取不到的段是 `null`，不写 0 */
+      timings?: {
+        dnsMs?: number | null
+        tcpMs?: number | null
+        tlsMs?: number | null
+        waitMs?: number | null
+        firstByteMs?: number | null
+        totalMs?: number | null
+      }
+    }
   }
 }
 

@@ -23,6 +23,12 @@ import {
   type StreamBudgets,
 } from './sse.js'
 import { LIMITS } from '../limits.js'
+import {
+  classifyNetFailure,
+  isOfflineNow,
+  type NetFailureMeta,
+  type ResourcePhases,
+} from '../net/networkPhase.js'
 import type {
   ApiErrorBody,
   CreateMessageRequest,
@@ -91,6 +97,17 @@ export class ApiError extends Error {
    * 用来认「额度用完」这一类各家写法不统一的情况（#299）。
    */
   readonly upstreamCode?: string
+  /**
+   * **分段归因**（#895 / 母单 #894）：这次失败卡在 DNS / TCP / TLS / HTTP / 首字节 / 空闲 /
+   * 取消的哪一段，凭什么判出来的，以及各段耗时。
+   *
+   * 为什么挂在错误对象上而不是只写日志：`api/errors.ts` 的重试判定、`chat/describe.ts` 的
+   * 「复制诊断信息」、`chat/store.ts` 的失败埋点都要读同一个结论 —— 三处各判一遍就会出现
+   * 「日志说 dns、界面说连不上、重试按另一套」。
+   *
+   * `undefined` = 这条错误不来自网络（或旧版本落盘的错误），调用方**必须**回落到改前的判定。
+   */
+  readonly net?: NetFailureMeta
 
   constructor(
     kind: ApiErrorKind,
@@ -98,7 +115,8 @@ export class ApiError extends Error {
     status?: number,
     code?: ApiErrorCode,
     detail?: string,
-    upstreamCode?: string
+    upstreamCode?: string,
+    net?: NetFailureMeta
   ) {
     // 字段逐个赋值（不用 TS 参数属性）：单测直接在 Node 里 import 这个模块跑真代码。
     super(typeof message === 'string' ? message : translate(message.key, message.params))
@@ -108,6 +126,7 @@ export class ApiError extends Error {
     this.code = code
     this.detail = detail
     this.upstreamCode = upstreamCode
+    this.net = net
     this.localMessage = typeof message === 'string' ? undefined : message
   }
 }
@@ -274,6 +293,42 @@ export const getStreamIdleTimeout = (): number =>
   streamIdleTimeoutOverride ?? timeoutsFor(getCurrentSpec()).idleMs
 
 /**
+ * 取这个 URL 的 `PerformanceResourceTiming` 分段（#895）。
+ *
+ * 为什么要有它：浏览器 `fetch` 失败时只给一句 `TypeError: Failed to fetch`，
+ * DNS / TCP / TLS 一概不区分；而 `PerformanceResourceTiming` 会留下「哪一段开始了、
+ * 哪一段没结束」。**但它不是保证存在的**：对失败的请求，Chromium 有时不给 entry，
+ * 跨域还要 `Timing-Allow-Origin`。所以拿不到就返回 `undefined`，判不出就写判不出。
+ *
+ * 只取最后一条：同一 URL 的重复请求（重试）会把新 entry 追加在后面，最后一条才是这次的。
+ */
+const resourcePhasesOf = (url: string): ResourcePhases | undefined => {
+  try {
+    const perf = (globalThis as { performance?: Performance }).performance
+    if (perf === undefined || typeof perf.getEntriesByName !== 'function') {
+      return undefined
+    }
+    const entries = perf.getEntriesByName(url, 'resource')
+    const entry = entries[entries.length - 1] as PerformanceResourceTiming | undefined
+    if (entry === undefined) {
+      return undefined
+    }
+    return {
+      domainLookupStart: entry.domainLookupStart,
+      domainLookupEnd: entry.domainLookupEnd,
+      connectStart: entry.connectStart,
+      connectEnd: entry.connectEnd,
+      secureConnectionStart: entry.secureConnectionStart,
+      requestStart: entry.requestStart,
+      responseStart: entry.responseStart,
+    }
+  } catch {
+    // 老 WebView 没有 resource timing / 调用被安全策略拒：按「没有证据」处理
+    return undefined
+  }
+}
+
+/**
  * 空闲超时（#568 起 code = `idle_timeout`，之前叫 `stream_idle`）：上游连上了、正文也开始了，
  * 但连续一段时间没有新数据。
  *
@@ -288,7 +343,10 @@ const streamIdleTimedOut = (idleMs: number, detail?: string): ApiError =>
     { key: 'replyIdleTimeout', params: { seconds: Math.max(1, Math.round(idleMs / 1000)) } },
     undefined,
     'idle_timeout',
-    detail ?? `no data for ${idleMs}ms`
+    detail ?? `no data for ${idleMs}ms`,
+    undefined,
+    // #895：这一段是**确定的**（空闲预算到点了），不需要再猜，直接给 phase
+    classifyNetFailure({ code: 'idle_timeout' })
   )
 
 /**
@@ -301,17 +359,28 @@ const firstTokenTimedOut = (firstTokenMs: number, detail?: string): ApiError =>
     { key: 'replyFirstTokenTimeout', params: { seconds: Math.max(1, Math.round(firstTokenMs / 1000)) } },
     undefined,
     'first_token_timeout',
-    detail ?? `no sse event within ${firstTokenMs}ms`
+    detail ?? `no sse event within ${firstTokenMs}ms`,
+    undefined,
+    // #895：响应头已到、第一个事件没来 —— 这一段是确定的（不是 DNS/TCP/TLS 的问题）
+    classifyNetFailure({ code: 'first_token_timeout' })
   )
 
-/** 连接段超时（发起到响应头）：与「没到达服务端」「4xx/5xx」分开，它有自己的 code / 文案 */
-const requestTimedOut = (timeoutMs: number, detail?: string): ApiError =>
+/**
+ * 连接段超时（发起到响应头）：与「没到达服务端」「4xx/5xx」分开，它有自己的 code / 文案。
+ *
+ * #895：这一段**只到「响应头没来」为止**，它可能是 DNS、TCP 也可能是 TLS。所以归因要带
+ * `timing` 进去 —— 有 `PerformanceResourceTiming` 证据就按「开始了没结束」的那一段判，
+ * 没有就诚实地留在「判不出」（`phase: undefined`），绝不硬塞一个 `tcp`。
+ */
+const requestTimedOut = (timeoutMs: number, detail?: string, timing?: ResourcePhases): ApiError =>
   new ApiError(
     'timeout',
     { key: 'requestTimeout', params: { seconds: Math.max(1, Math.round(timeoutMs / 1000)) } },
     undefined,
     'connect_timeout',
-    detail
+    detail,
+    undefined,
+    classifyNetFailure({ ...(timing === undefined ? {} : { timing }), code: 'connect_timeout' })
   )
 
 export type RequestOptions = {
@@ -350,13 +419,29 @@ export const request = async (
   try {
     response = await fetch(url, { ...init, signal: controller.signal })
   } catch (error) {
+    // #895：失败时先把「走到哪一段」的证据收集起来（只在这条路径上取，成功路径零开销）
+    const timing = resourcePhasesOf(url)
+    const nativeMessage = error instanceof Error ? `${error.name}: ${error.message}` : String(error)
     if (timedOut) {
-      throw requestTimedOut(timeoutMs, error instanceof Error ? error.message : String(error))
+      throw requestTimedOut(timeoutMs, nativeMessage, timing)
     }
     if (callerSignal?.aborted) {
       throw error
     }
-    throw new ApiError('network', error instanceof Error ? error.message : String(error))
+    throw new ApiError(
+      'network',
+      error instanceof Error ? error.message : String(error),
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      classifyNetFailure({
+        ...(timing === undefined ? {} : { timing }),
+        // 系统层没网要排在「异常文本」前面：飞行模式下 fetch 也只会给一句 Failed to fetch
+        offline: isOfflineNow(),
+        nativeMessage,
+      })
+    )
   } finally {
     // 响应头已到：立刻撤掉预算，长回答的正文读取不受影响。
     // 调用方自己的 abort 监听要留着——它得继续管正文读取（用户点停止要能真的断开），

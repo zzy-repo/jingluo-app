@@ -167,6 +167,8 @@ const configSnapshot = (model?: string | null) => {
 export const describeReply = (reply: AssistantMessage): Notice | null => {
   if (reply.status === 'error' && reply.error) {
     const { kind, status, localMessage } = reply.error
+    /** #895：分段归因（在闭包里用，所以在这里先取出来 —— 闭包里 TS 不再收窄 `reply.error`） */
+    const net = reply.error.net
     // 导入的历史可能来自不同版本；不识别的文案沿用保存时的原文。
     const localized =
       localMessage && isTranslationKey(localMessage.key)
@@ -222,6 +224,20 @@ export const describeReply = (reply: AssistantMessage): Notice | null => {
         ...configSnapshot(reply.model),
         // 界面走软文案后，`{seconds}` 这类占位符不再入句；数字从诊断里留一份（见入参注释）
         params: localMessage?.params,
+        /**
+         * 分段归因（#895）：卡在哪一段 / 凭什么判出来 / 各段耗时。
+         * 只有请求层给了 `net` 才有 —— 业务失败（401 / 额度 / 参数）没有「网络卡在哪」这回事，
+         * 硬写一行只会让诊断变噪音。判不出 phase 时**照写 evidence**：
+         * 「这条是 connect_timeout，但没有 timing 证据」本身就是要告诉排查者的信息。
+         */
+        ...(net === undefined
+          ? {}
+          : {
+              ...(net.phase === undefined ? {} : { phase: net.phase }),
+              ...(net.evidence === undefined ? {} : { evidence: net.evidence }),
+              ...(net.userAction === undefined ? {} : { userAction: net.userAction }),
+              ...(net.timings === undefined ? {} : { timings: net.timings }),
+            }),
       })
     // 历史补传错误刷新后仍需说明原因，恢复沿用附件卡片或重新生成。
     if (kind === 'upload') {
