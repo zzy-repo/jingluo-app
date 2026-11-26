@@ -190,12 +190,13 @@ const asParams = (params) => {
  * 只留给故障注入的 `at` 过滤用。真实原生驱动不会收到它（只在 node 测试驱动里处理）。
  */
 const splitAt = (params) => {
-  const p = asParams(params ?? [])
-  const last = params?.[params.length - 1]
-  if (last !== null && typeof last === 'object' && !(last instanceof Uint8Array) && typeof last?.__at === 'string') {
-    return { params: p.slice(0, -1), at: last.__at }
-  }
-  return { params: p, at: undefined }
+  // 先剥标记再校验：`asParams` 会拒绝对象参数，而标记本身就是对象 —— 顺序反了会让每条带标记的
+  // 写都报「参数 #N 不是合法 SqlValue（object）」（#912 联调时真实踩到，SQLite 契约全红）。
+  const list = params ?? []
+  const last = list[list.length - 1]
+  const marked = last !== null && typeof last === 'object' && !(last instanceof Uint8Array) && typeof last?.__at === 'string'
+  const rest = marked ? list.slice(0, -1) : list
+  return { params: asParams(rest), at: marked ? last.__at : undefined }
 }
 
 const plainRow = (row) => ({ ...row })

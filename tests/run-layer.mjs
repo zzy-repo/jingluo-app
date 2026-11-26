@@ -220,6 +220,11 @@ const UNIT_SOLO = new Set([
   // 同类机制（进程级全局 + 模块单例），单列最诚实。
   'storage-pagehide-flush.test.mjs',
 
+  // #910（SQLite 契约 runner）：与 IDB runner 同类 —— 两套 runner 都会给库句柄装故障注入钩子、
+  // 并各自加载 `storage/sqlite/*` 与 `chat/db.ts` 的模块实例；合批时互相吃到对方的钩子/单例
+  // （实测：单跑 PASS，`--only storage-` 批内红）。单列最诚实。
+  'storage-contract-sqlite.test.mjs',
+
   // #906（存储契约套件的 IDB runner）：与上面同一类机制。它在用例里临时补丁 `IDBObjectStore.prototype` 的
   // put/add/delete/clear（故障注入）、临时把 `globalThis.indexedDB` 置空（「宿主无存储」用例），还会用
   // `DB_VERSION + 1` 造「库比代码新」并 `deleteDatabase`，且独占 `chat/db.ts` 的模块级连接单例。
