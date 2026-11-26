@@ -29,7 +29,7 @@
  */
 
 import { nativeOnlyTransport } from '../../services/consume/http.js'
-import { timeoutBudget } from '../../services/net/timeoutBudget.js'
+import { transportBudgetOf } from '../../services/net/requestPolicy.js'
 import { collectLegacyIdentity, isIdentityEmpty } from './collect.js'
 import { CLAIM_STATUSES, type ClaimResult, type LegacyIdentity } from './types.js'
 
@@ -262,8 +262,8 @@ export const claimLegacyMigration = async (token: string): Promise<ClaimResult> 
       headers: { accept: 'application/json', 'content-type': 'application/json' },
       // 字段名只在 toBackendPayload() 里出现（后端契约对齐时只改那一个函数）
       body: JSON.stringify(toBackendPayload(identity, jwt)),
-      // #896 3a：取值走运行期策略源（默认值仍是配置里的 migration.timeoutMs）
-      timeoutMs: timeoutBudget.migration(config.timeoutMs),
+      // #896 3c-1：取值走单一策略源（默认值仍是配置里的 migration.timeoutMs）
+      timeoutMs: transportBudgetOf('migration', config.timeoutMs),
     })
 
     if (outcome.kind !== 'response') {

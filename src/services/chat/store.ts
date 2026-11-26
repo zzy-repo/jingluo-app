@@ -113,12 +113,12 @@ const SESSION_CACHE_LIMIT = 5
  * 自动重试的最多次数（不含首次请求）：附件补传、断网、5xx、超时共用这一个上限。
  *
  * #896 起不再直接读 `LIMITS`：这个数字属于**流式请求的重试策略**，现在只有一处出处
- * （`net/requestPolicy.ts` 的 `stream.retry.maxAttempts`）。`LIMITS` 仍是那个数字的**家**，
+ * （`net/requestPolicy.ts` 的 `stream.retry`）。`LIMITS` 仍是那个数字的**家**，
  * 但它到调用点之间多了一层「这是哪一类请求」的语义。
  */
-export const STREAM_RETRY_LIMIT = REQUEST_POLICY.stream.retry.maxAttempts
+export const STREAM_RETRY_LIMIT = REQUEST_POLICY.stream.retry
 /** 退避基数，第 n 次重试等待 2^n 倍；连续失败达到上限就放弃，把原始报错展示出来 */
-const RETRY_BASE_DELAY = REQUEST_POLICY.stream.retry.backoffMs
+const RETRY_BASE_DELAY = REQUEST_POLICY.stream.backoff
 
 /**
  * 按当前服务类型的 spec 组装 system 与 messages：

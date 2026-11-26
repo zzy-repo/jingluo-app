@@ -28,7 +28,8 @@
  * 临时目录里解析不到依赖，对照就会退化成「导入失败也算通过」—— 那比没有对照更糟。
  *
  * 所以两边的**数值**由用例守住：`tests/unit/request-class-policy-896.test.mjs` 的 [P9] 断言
- * 本矩阵每一行的 `retryable / requiresNoContent` 与 `REQUEST_POLICY.stream.retry` 逐字相等
+ * 本矩阵每一行的 `retryable / requiresNoContent` 与 `REQUEST_POLICY.stream` 的
+ * `retry / requiresNoContent` 逐字相等
  * （改一边不改另一边必红）。语义的**唯一出处**仍是策略表，这里只是它在本模块的投影。
  */
 /** 三段超时的机器可读错误码：与 `ApiError.code` 是同一批字符串（`api/client.ts`） */

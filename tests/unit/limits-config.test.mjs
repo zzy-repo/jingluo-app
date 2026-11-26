@@ -89,6 +89,18 @@ const ORIGINAL_VALUES = {
   },
   streamRetryLimit: 2,
   retryBaseDelayMs: 1000,
+  /**
+   * #896 3c-1 **新增**的一组（不是搬家项）：断流的静默补试档。
+   * 这四个值原住在 `chat/streamBreakout.ts` 的五个 `STREAM_BREAK_*` 常量里（值一个没改），
+   * 现在搬进 `LIMITS` 是为了让「同一类请求的补试档」只有一处 —— 手抄在这里的理由同上：
+   * 改了阈值必须两边一起改，否则本用例当场红。
+   */
+  streamBreakout: {
+    silentAttempts: 5,
+    silentBudgetMs: 60000,
+    partialAttempts: 1,
+    partialMaxChars: 150,
+  },
   contextBudget: { maxTokens: 120_000, maxRounds: 200 },
   /**
    * #399 **新增**的一组（不是搬家项）：窗口记忆的每会话容量双限。

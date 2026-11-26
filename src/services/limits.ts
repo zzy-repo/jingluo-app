@@ -100,6 +100,29 @@ export const LIMITS = {
   streamRetryLimit: 2,
   /** 退避基数，第 n 次重试等待 2^n 倍 */
   retryBaseDelayMs: 1000,
+  /**
+   * 断流（stream break）的**静默补试档**（#896 3c-1：从 `chat/streamBreakout.ts` 的五个私有常量搬来，值一个没改）。
+   *
+   * 为什么搬到 `LIMITS`：这些数字本来就是「运行期阈值」，只是以前住在判定函数旁边。
+   * 而同一件事在策略表里还有一份（`REQUEST_POLICY.stream.retry = streamRetryLimit = 2`），
+   * 两处都能改、都能编译通过，改哪一处生效取决于「谁问了哪个问题」—— 那正是 #896 要收掉的东西。
+   *
+   * 为什么**不能**与 `streamRetryLimit` 合并成一个数：
+   *  - `streamRetryLimit`（2 次）是**看得见**的重试，界面会说「正在第 N 次重试（共 2 次）」；
+   *  - 这一档（5 次）是**静默**补试，用户一个字都没看到时不说话，成了就当无事发生。
+   * 混用只有两种结局：静默补试被砍到 2 次（弱网恢复率下降），或 #105 的通用重试被放大到 5 次
+   * （请求量翻倍）。所以两个数必须分开，只是现在住在同一张表里，改一处能看见全部。
+   */
+  streamBreakout: {
+    /** 首字节前断开（`receivedChars === 0`）的静默补试上限：5 次 */
+    silentAttempts: 5,
+    /** 静默补试的总时长预算（60s）：超了立刻停，次数没用完也不许再发 */
+    silentBudgetMs: 60_000,
+    /** 首字节后断开、内容 `< partialMaxChars` 时的补试上限：1 次（要丢掉半截，代价高） */
+    partialAttempts: 1,
+    /** 「内容已经够多就不补试」的阈值：150 字，口径是严格小于（149 补、150 不补） */
+    partialMaxChars: 150,
+  },
   /** 请求侧上下文预算双闸：token 估算上限 + 轮次上限（#122） */
   contextBudget: { maxTokens: 120_000, maxRounds: 200 },
   /**

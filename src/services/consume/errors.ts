@@ -171,7 +171,7 @@ export type Sub2ApiError = {
  * 改前是 `kind === 'server' || kind === 'rate_limit'` —— 与本仓另外三处的 429 口径各不相同。
  * 注意这里只回答**能不能重试**（界面上给不给「重试」按钮 / 调用方要不要排队补偿），
  * 消费链路**不自动重发**：那一类属于 `control`（卡密 / 建 Key / 扣费有不可撤销的副作用），
- * 表里 `control.retry.maxAttempts === 0` 把这条产品决定写死在一处（`#484 §4.3`）。
+ * 表里 `control.retry === 0`（`idempotent: false`）把这条产品决定写死在一处（`#484 §4.3`）。
  */
 export const consumeRetryableOf = (kind: ConsumeErrorKind): boolean => {
   // 只回答「这个类别值不值得让用户/调用方再试一次」；**不**回答「要不要自动重发」（见上面注释）。

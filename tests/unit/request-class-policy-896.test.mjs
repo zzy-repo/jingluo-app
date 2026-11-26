@@ -44,13 +44,14 @@ const FAILURES = ['timeout', 'offline', 'server5xx', 'rateLimited', 'cancelled']
 test('[P1] 三个类都定义了七件事（connect / firstByte / idle / total / retry / backoff / idempotent）', () => {
   for (const cls of REQUEST_CLASSES) {
     const row = REQUEST_POLICY[cls]
-    for (const field of ['connectMs', 'firstByteMs', 'idleMs', 'totalMs']) {
+    // #896 3c-1：字段从 `retry.maxAttempts / retry.backoffMs` 提到行首
+    // （`retry / backoff / backoffFactor / idempotent`）—— 与 `net/timeoutBudget.ts` 合并后
+    // 的单一策略源同形：一行读得完「多少毫秒、几次、怎么退避、能不能重发」。
+    for (const field of ['connect', 'firstByte', 'idle', 'total', 'retry', 'backoff', 'backoffFactor']) {
       assert.equal(typeof row[field], 'number', `${cls}.${field} 必须是数字`)
     }
-    for (const field of ['maxAttempts', 'backoffMs', 'backoffFactor']) {
-      assert.equal(typeof row.retry[field], 'number', `${cls}.retry.${field} 必须是数字`)
-    }
-    assert.equal(typeof row.retry.idempotent, 'boolean', `${cls}.retry.idempotent 必须是布尔`)
+    assert.equal(typeof row.idempotent, 'boolean', `${cls}.idempotent 必须是布尔`)
+    assert.equal(typeof row.requiresNoContent, 'boolean', `${cls}.requiresNoContent 必须是布尔`)
   }
   assert.deepEqual([...REQUEST_CLASSES], ['control', 'data', 'stream'], '三个类就是这三个，不许悄悄加')
 })
@@ -191,8 +192,8 @@ test('[P7] 四层读同一份 429 口径：api/errors、auth/flags、consume 不
 
   // 层 4：流式三段超时矩阵不许出现第二套口径
   const streamRow = policy.REQUEST_POLICY.stream
-  assert.equal(streamRow.retry.requiresNoContent, true, '流式：出过内容就不重发')
-  assert.equal(streamRow.retry.maxAttempts > 0, true, '流式：确实会重发（不是标记了事）')
+  assert.equal(streamRow.requiresNoContent, true, '流式：出过内容就不重发')
+  assert.equal(streamRow.retry > 0, true, '流式：确实会重发（不是标记了事）')
 })
 
 test('[P8] ApiError 上的 429 走到同一个结论（不靠调用点各判一遍）', () => {
@@ -210,18 +211,18 @@ test('[P8] ApiError 上的 429 走到同一个结论（不靠调用点各判一�
 
 test('[P9] 流式三段超时矩阵与策略表逐字相等（改一边不改另一边必红）', async () => {
   const { STREAM_TIMEOUT_POLICIES } = await import('../../src/services/chat/timeoutPolicy.ts')
-  const streamRetry = REQUEST_POLICY.stream.retry
+  const streamRow = REQUEST_POLICY.stream
   // `chat/timeoutPolicy.ts` 故意不 import 本表（它要被负向对照整份复制到临时目录，
   // 有了 import 注入件就解析不到依赖），所以这份一致性由这条用例守。
   for (const row of STREAM_TIMEOUT_POLICIES) {
     assert.equal(
       row.retryable,
-      streamRetry.idempotent && retryableFailure('timeout'),
+      streamRow.idempotent && retryableFailure('timeout'),
       `${row.code}：矩阵的 retryable 必须与表里的 stream 类一致`
     )
     assert.equal(
       row.requiresNoContent,
-      streamRetry.requiresNoContent,
+      streamRow.requiresNoContent,
       `${row.code}：矩阵的 requiresNoContent 必须与表里的 stream 类一致`
     )
   }
