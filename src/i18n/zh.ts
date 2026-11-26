@@ -553,7 +553,6 @@ export const zh = {
   latestReminderLanguage: '中文',
   settingsLocaleZhCN: '简体中文',
   settingsLocaleEnUS: 'English',
-
   // ---------- 服务配置（渠道 / API Key / 服务地址 / 模型） ----------
   settingsProviderKindLabel: '渠道',
   settingsProviderKindKeyHint: '切换渠道后，请确认 API Key 是否适用',
@@ -644,7 +643,6 @@ export const zh = {
    */
   upstreamReturnedHtml:
     '上游返回的是网页而不是数据，通常是网关或代理出错（接口地址填错了也会这样）；重试同一个请求不会有变化（不要重试），展开下面的响应摘要可以看到返回的内容类型与前 200 字',
-
   // ---------- 聊天背景 ----------
   /** 全局默认背景（本单改名：语义从「聊天背景」变成「新会话的默认背景」） */
   settingsChatBackground: '默认背景',
@@ -655,7 +653,6 @@ export const zh = {
   settingsChatBackgroundCleared: '已清除，聊天区域恢复默认背景',
   settingsChatBackgroundFailed: '图片处理失败，请换一张 JPG/PNG 图片再试',
   settingsChatBackgroundClearConfirm: '确认清除当前聊天背景？',
-
   // ---------- 聊天设置（本单） ----------
   chatSettings: '聊天设置',
   chatSettingsPrompt: '自定义提示词',
@@ -680,7 +677,6 @@ export const zh = {
   chatBackgroundReset: '恢复默认',
   chatBackgroundSave: '保存设置',
   chatBackgroundNeedImage: '请先选一张图片',
-
   // ---------- 反馈与日志 ----------
   feedbackCellLabel: '反馈与日志',
   feedbackCellDescription: '提交问题反馈时会附上最近的操作日志（已在本机脱敏），不包含对话内容与 API Key',
@@ -750,7 +746,6 @@ export const zh = {
   feedbackErrorServer: '服务端异常，请稍后再试',
   feedbackErrorRejected: '反馈被服务端拒绝，请检查内容后重试',
   feedbackErrorUnknown: '上传失败，请稍后重试',
-
   feedbackIntegrityCheck: '检查日志完整性',
   feedbackIntegrityTitle: '日志完整性自检',
   feedbackIntegrityCount: '条数：{count}（上限 500，保留最近 30 分钟）',
@@ -997,7 +992,6 @@ export const zh = {
   // 只新增、不改上面的既有文案；语义依据 #482（支付与消费拆分）与 #484（sub2api 客户端约束）。
   // 这批 key 在 UI 线落地前没有被引用是预期的，已登记到 scripts/check-i18n.mjs 的 ORPHAN_BASELINE。
   // ---------------------------------------------------------------------------
-
   // 登录注册（sub2api /api/v1/auth）
   sub2authEmail: '邮箱',
   // #727 阶段 1：设置里的登录卡（账号页未登录态 / 模型来源未登录态）
@@ -1116,7 +1110,6 @@ export const zh = {
   /** 服务端 `reason:"USER_NOT_ACTIVE"`（403）：密码是对的，但账号被停用（#735 实测复现） */
   sub2authUserNotActive: '账号已被停用，请联系管理员',
   sub2authTwoFactorHint: '这个账号已开启两步验证，请输入验证器里的 6 位验证码',
-
   // 「账户与消费」页（#482 三弹层合一 / #487 W1-C1）：一个页面四个 tab。
   // 标题与三个 tab 名在词条骨架里没有对应项，这里最小新增；Tab 2「购买」复用 oursPayTitle。
   accountConsumeTitle: '账户与消费',
@@ -1162,7 +1155,6 @@ export const zh = {
   accountConsumeLoginMethodEmail: '邮箱登录',
   accountConsumeSignedOutCta: '登录 / 注册',
   accountConsumeSignOutConfirm: '确定退出？',
-
   // 拆掉登录墙（#608）：账户降级为「我们的渠道」里的**可选**能力。
   // 口径三条（改文案前先看 #608 / #421）：① 主 CTA 是「填 Key 就能用」，不是「登录」；
   // ② 不登录失去的只有账单类信息，聊天 / Key / 导入导出一样不少；③ 不许写「账号更安全」这类夸大。
@@ -1184,7 +1176,6 @@ export const zh = {
   quotaNeedLoginBody: '额度按账号结算；只想聊天的话，在设置里填 Key 即可',
   inviteNeedLoginTitle: '登录后可查看邀请',
   inviteNeedLoginBody: '邀请码与返利跟着账号走；不登录不影响聊天',
-
   // 账户与消费（金额单位是元：1 元 = 1 额度，无 USD；展示走 utils/money.ts，客户端不做汇率）
   consumeBalance: '¥{amount}',
   consumeBalanceApprox: '约合 ¥{amount}',
@@ -1203,7 +1194,6 @@ export const zh = {
   consumeKeyCopied: 'Key 已复制',
   consumeDeleteKey: '删除 Key',
   consumeDeleteConfirm: '删除后不可恢复，确认删除这个 Key 吗？',
-
   // 卡密兑换（沿用「兑换卡密」措辞，见 #482 第三节）
   consumeRedeemTitle: '兑换卡密',
   consumeRedeemPlaceholder: '请输入卡密',
@@ -1220,7 +1210,6 @@ export const zh = {
   walletAutoRedeemMasked: '这张卡密是打码的，无法自动兑换，请手动输入完整卡密',
   walletAutoRedeemFailed: '自动兑换未完成',
   walletAutoRedeemDismiss: '知道了',
-
   // 邀请（sub2api aff；邀请关系只能在注册时一次填定）
   inviteTitle: '我的邀请',
   inviteCode: '邀请码',
@@ -1235,7 +1224,6 @@ export const zh = {
   inviteCodeAtRegister: '注册时填写邀请码（可选）',
   inviteCodeInvalid: '邀请码无效',
   inviteDisabled: '邀请功能未开放',
-
   // 登录后填写邀请人（#842 契约先行；入口默认关闭，见 inviteBindModel.ts）
   inviteBindLabel: '邀请人的邀请码',
   inviteBindPlaceholder: '输入邀请码',
@@ -1251,7 +1239,6 @@ export const zh = {
   inviteBindErrUnauthorized: '登录已失效，请重新登录后再试',
   inviteBindErrRateLimited: '操作太频繁，请稍后再试',
   inviteBindErrFailed: '绑定失败，请稍后重试',
-
   // 邮箱绑定（sub2api account-bindings）
   emailBindBind: '绑定邮箱',
   emailBindChange: '更换邮箱',
@@ -1261,7 +1248,6 @@ export const zh = {
   emailBindSuccess: '绑定成功',
   emailBindUnbindSuccess: '解绑成功',
   emailBindFailed: '绑定失败，请稍后重试',
-
   // sub2api 归一化错误的**上屏文案**（#487：`src/services/consume/errors.ts` 的 `ConsumeMessageKey`
   // 一条不落，共 27 条）。消费层只回 key、不拼文案，所以这里就是「用户能看到的那句话」的唯一来源。
   // 写文案的三条规矩（#484 §4.4 的语义口径）：
@@ -1325,7 +1311,6 @@ export const zh = {
   // ---------------------------------------------------------------------------
   /** 卡密「已用过」= 可能正是自己上一次成功：先让用户核对余额，不要直接说失败 */
   /** `REDEEM_CODE_LOCKED` 是「处理中」不是失败（#484 §4.4：禁止提示换卡 / 重复提交） */
-
   // 额度面板（唯一入口是 sk- Key 的 /v1/usage；余额只在内存里跟着响应走）
   /** 「余额」标签：`consumeBalance` 是金额模板（`${amount}`），不是标签，别混用 */
   consumeBalanceLabel: '余额',
@@ -1340,7 +1325,6 @@ export const zh = {
   consumeTokensCount: '{count} 令牌',
   consumeNoKeyTitle: '还没有可用的 Key',
   consumeNoKeyBody: '余额和用量都要用 Key 才能查。请到「账号」标签页创建一把 Key。',
-
   // 账号面板（Key 创建后只完整显示一次是安全设计，必须在界面上说清）
   consumeAccountTitle: '账号',
   consumeProfileTitle: '账号资料',
@@ -1356,10 +1340,8 @@ export const zh = {
   consumeNeedLogin: '登录状态已失效，请重新登录',
   consumeLogoutConfirm: '退出后需要重新登录才能继续使用，确认退出吗？',
   consumeLogoutSuccess: '已退出登录',
-
   // 邀请面板（返利按消费额的比例以「元」结算，邀请关系只在注册时一次填定）
   inviteRebateFrozen: '其中 {amount} 冻结中',
-
   // 邮箱绑定面板（`email_verify_enabled=false` 时不再强调「必须先验证」）
   emailBindNotBound: '尚未绑定邮箱',
   emailBindCodeLabel: '验证码',
@@ -1507,4 +1489,29 @@ export const zh = {
   dataLostRestoreIncompatible: '这份快照来自更新版本的应用，请先更新应用，本机数据没有改动',
   dataLostRestoreBackupFailed: '没能先备份当前状态（可能是空间不足），已停止，本机数据没有改动',
   dataLostRestoreFailed: '恢复失败，本机数据没有改动',
+  // #916 / #910：存储迁移页（启动闸门）。原则：永远说明「原数据没有丢」，失败给明确原因与出路，不显示空白欢迎页
+  storageMigrationTitle: '正在升级本机数据存储',
+  storageMigrationDescription: '正在把对话与文件复制到新的存储里，期间请不要关闭应用。原来的数据不会被删除。',
+  storageMigrationPhasePreflight: '正在检查可用空间',
+  storageMigrationPhaseBackup: '正在备份原数据',
+  storageMigrationPhaseCopy: '正在复制数据',
+  storageMigrationPhaseVerify: '正在校验复制结果',
+  storageMigrationPhaseCommit: '正在完成切换',
+  storageMigrationPercent: '{percent}%',
+  storageMigrationSizeHint: '预计数据 {size} MB，升级期间至少需要 {need} MB 可用空间',
+  storageMigrationFailedTitle: '升级没有完成',
+  storageMigrationFailedBody: '你的原数据没有丢失，仍然保存在原处。可以重试，也可以先继续使用原数据。',
+  storageMigrationFailSpace: '原因：可用空间不足。请清理手机空间后重试。',
+  storageMigrationFailTooLarge: '原因：数据量超过一次升级的上限。请先在设置里导出备份，再联系我们。',
+  storageMigrationFailUnknownSpace: '原因：无法确认可用空间，为安全起见没有开始升级。',
+  storageMigrationFailGeneric: '原因：{message}',
+  storageMigrationRetry: '重试',
+  storageMigrationContinue: '继续使用（原数据未丢失）',
+  storageMigrationBlockedTitle: '暂时无法打开本机数据',
+  storageMigrationBlockedAfterCommit:
+    '数据已经升级到新的存储，但新存储现在打不开。为避免读到过期的旧数据，应用先停在这里。你的数据没有被删除，重载应用通常可以恢复；仍然不行请复制诊断信息联系我们。',
+  storageMigrationBlockedDecision:
+    '检测到两份升级进度记录互相矛盾，应用不会自行猜测以免弄丢数据。你的数据没有被删除，请复制诊断信息联系我们处理。',
+  storageMigrationBlockedMigrating: '数据升级正在进行，请稍候。',
+  storageMigrationBlockedDetail: '详情：{detail}',
 } as const

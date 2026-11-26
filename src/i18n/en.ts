@@ -1,5 +1,4 @@
 import type { zh } from './zh.js'
-
 export const en = {
   welcomeMessageChat250808: 'How can I help you?',
   contentCaveat: 'AI-generated, for reference only',
@@ -562,7 +561,6 @@ export const en = {
   latestReminderLanguage: 'English',
   settingsLocaleZhCN: 'Simplified Chinese',
   settingsLocaleEnUS: 'English',
-
   // ---------- Service config (channel / API Key / service URL / model) ----------
   settingsProviderKindLabel: 'Channel',
   settingsProviderKindKeyHint: 'Check that your API Key still applies after switching channels',
@@ -650,7 +648,6 @@ export const en = {
    */
   upstreamReturnedHtml:
     'The upstream returned a web page instead of data, which usually means the gateway or proxy failed (a wrong endpoint URL looks the same). Retrying the same request will not change anything; expand the response summary below to see the content type and the first 200 characters.',
-
   // ---------- Chat background ----------
   /** 全局默认背景（本单改名：语义从「聊天背景」变成「新会话的默认背景」） */
   settingsChatBackground: 'Default background',
@@ -662,7 +659,6 @@ export const en = {
   settingsChatBackgroundCleared: 'Cleared; the chat area is back to default',
   settingsChatBackgroundFailed: 'Could not process this image; try a JPG or PNG',
   settingsChatBackgroundClearConfirm: 'Remove the current chat background?',
-
   // ---------- 聊天设置（本单） ----------
   chatSettings: 'Chat settings',
   chatSettingsPrompt: 'Custom prompt',
@@ -687,7 +683,6 @@ export const en = {
   chatBackgroundReset: 'Reset to default',
   chatBackgroundSave: 'Save settings',
   chatBackgroundNeedImage: 'Choose an image first',
-
   // ---------- Feedback & logs ----------
   feedbackCellLabel: 'Feedback & logs',
   feedbackCellDescription:
@@ -758,7 +753,6 @@ export const en = {
   feedbackErrorServer: 'Server error; try again later',
   feedbackErrorRejected: 'The server rejected this report; check the content and retry',
   feedbackErrorUnknown: 'Upload failed; try again later',
-
   feedbackIntegrityCheck: 'Check log coverage',
   feedbackIntegrityTitle: 'Log coverage self-check',
   feedbackIntegrityCount: 'Entries: {count} (max 500, last 30 minutes)',
@@ -1007,7 +1001,6 @@ export const en = {
   // These keys have no caller until the UI lands, which is expected and registered in
   // scripts/check-i18n.mjs ORPHAN_BASELINE.
   // ---------------------------------------------------------------------------
-
   // Sign-in / sign-up (sub2api /api/v1/auth)
   sub2authEmail: 'Email',
   // #727: the three "model source" options now use the accountConsumeSource* keys
@@ -1113,7 +1106,6 @@ export const en = {
   /** Server `reason:"USER_NOT_ACTIVE"` (403): the password is right but the account is disabled (#735) */
   sub2authUserNotActive: 'This account has been disabled. Please contact the administrator.',
   sub2authTwoFactorHint: 'Two-factor authentication is on, enter the 6-digit code from your authenticator app',
-
   // "Account & billing" page (three dialogs → one page, #482 / W1-C1 #487)
   accountConsumeTitle: 'Account & billing',
   accountConsumeTabCards: 'My cards',
@@ -1150,7 +1142,6 @@ export const en = {
   accountConsumeLoginMethodEmail: 'Email',
   accountConsumeSignedOutCta: 'Log in / Sign up',
   accountConsumeSignOutConfirm: 'Sign out now?',
-
   // Login wall removed (#608): the account is now an *optional* capability inside "the built-in channels".
   // Three rules: ① the primary call to action is "fill in a Key", not "log in";
   // ② what you lose without an account is billing views only — chat / Keys / import-export stay;
@@ -1173,7 +1164,6 @@ export const en = {
   quotaNeedLoginBody: 'Balance is billed per account; to chat only, just fill in a Key in Settings',
   inviteNeedLoginTitle: 'Log in to see your invites',
   inviteNeedLoginBody: 'Invite code and rebates live with the account; chat works without it',
-
   // Account and consumption (amounts are in yuan: 1 yuan = 1 credit; rendering goes through utils/money.ts — no FX on the client)
   consumeBalance: '¥{amount}',
   consumeBalanceApprox: 'About ¥{amount}',
@@ -1192,7 +1182,6 @@ export const en = {
   consumeKeyCopied: 'Key copied',
   consumeDeleteKey: 'Delete Key',
   consumeDeleteConfirm: 'This cannot be undone. Delete this Key?',
-
   // Card-key redemption (keeps the existing "card key" wording, see #482)
   consumeRedeemTitle: 'Redeem card key',
   consumeRedeemPlaceholder: 'Enter the card key',
@@ -1209,7 +1198,6 @@ export const en = {
   walletAutoRedeemMasked: 'This card key is masked, so it cannot be redeemed automatically; enter the full key manually',
   walletAutoRedeemFailed: 'Automatic redemption did not complete',
   walletAutoRedeemDismiss: 'Got it',
-
   // Invites (sub2api aff; the invitation code can only be set once, at sign-up)
   inviteTitle: 'My invites',
   inviteCode: 'Invitation code',
@@ -1224,7 +1212,6 @@ export const en = {
   inviteCodeAtRegister: 'Invitation code (optional)',
   inviteCodeInvalid: 'Invalid invitation code',
   inviteDisabled: 'Invites are not available',
-
   // Fill in an inviter after sign-in (#842 contract-first; entry is off by default, see inviteBindModel.ts)
   inviteBindLabel: "Inviter's invitation code",
   inviteBindPlaceholder: 'Enter invitation code',
@@ -1240,7 +1227,6 @@ export const en = {
   inviteBindErrUnauthorized: 'Your session has expired. Sign in again and retry',
   inviteBindErrRateLimited: 'Too many attempts. Try again later',
   inviteBindErrFailed: 'Could not link the inviter. Try again later',
-
   // Email binding (sub2api account-bindings)
   emailBindBind: 'Bind email',
   emailBindChange: 'Change email',
@@ -1250,7 +1236,6 @@ export const en = {
   emailBindSuccess: 'Email bound',
   emailBindUnbindSuccess: 'Email unbound',
   emailBindFailed: 'Binding failed, try again later',
-
   // On-screen copy for the normalized sub2api errors (#487): one key for every `ConsumeMessageKey`
   // in `src/services/consume/errors.ts` (27 of them). The consume layer only returns keys, so this
   // block is the single source of the sentence a user actually reads. Same three rules as zh.ts:
@@ -1489,4 +1474,32 @@ export const en = {
   dataLostRestoreIncompatible: 'This snapshot comes from a newer app version. Update the app first. Nothing on this device was changed',
   dataLostRestoreBackupFailed: 'Could not back up the current state first (maybe not enough space), so it stopped. Nothing on this device was changed',
   dataLostRestoreFailed: 'Restore failed. Nothing on this device was changed',
+  // #916 / #910: storage migration page (startup gate). Always say the original data is intact; failures show a reason and a way out
+  storageMigrationTitle: 'Upgrading local data storage',
+  storageMigrationDescription:
+    'Your chats and files are being copied into the new storage. Please keep the app open. Your original data is not deleted.',
+  storageMigrationPhasePreflight: 'Checking free space',
+  storageMigrationPhaseBackup: 'Backing up your original data',
+  storageMigrationPhaseCopy: 'Copying data',
+  storageMigrationPhaseVerify: 'Verifying the copy',
+  storageMigrationPhaseCommit: 'Finishing the switch',
+  storageMigrationPercent: '{percent}%',
+  storageMigrationSizeHint: 'About {size} MB of data. At least {need} MB of free space is needed during the upgrade',
+  storageMigrationFailedTitle: 'The upgrade did not finish',
+  storageMigrationFailedBody:
+    'Your original data is not lost and is still where it was. You can retry, or keep using the original data for now.',
+  storageMigrationFailSpace: 'Reason: not enough free space. Free up space on your phone and retry.',
+  storageMigrationFailTooLarge:
+    'Reason: the data is larger than one upgrade can handle. Export a backup in Settings first, then contact us.',
+  storageMigrationFailUnknownSpace: 'Reason: free space could not be determined, so the upgrade was not started.',
+  storageMigrationFailGeneric: 'Reason: {message}',
+  storageMigrationRetry: 'Retry',
+  storageMigrationContinue: 'Keep using (original data is safe)',
+  storageMigrationBlockedTitle: 'Local data cannot be opened right now',
+  storageMigrationBlockedAfterCommit:
+    'Your data was upgraded to the new storage, but the new storage cannot be opened now. To avoid showing outdated data, the app stops here. Nothing was deleted. Reloading usually helps; if not, copy the diagnostics and contact us.',
+  storageMigrationBlockedDecision:
+    'Two upgrade progress records contradict each other. The app will not guess, to avoid losing data. Nothing was deleted. Please copy the diagnostics and contact us.',
+  storageMigrationBlockedMigrating: 'The data upgrade is in progress. Please wait.',
+  storageMigrationBlockedDetail: 'Details: {detail}',
 } satisfies Record<keyof typeof zh, string>

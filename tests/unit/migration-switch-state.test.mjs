@@ -1,0 +1,139 @@
+// [layer: unit | 依赖: node:sqlite + 内存 FS | 耗时: <3s]
+//
+// #916：状态文件读写、校验和、损坏/缺失、双见证收敛规则（纯函数）。
+import assert from 'node:assert/strict'
+import { test } from 'node:test'
+import { makeEnv, mods, sha256 } from '../helpers/migration-switch/kit.mjs'
+
+const { reconcileWitnesses, freshState, createStateStore, parseMigrationState } = mods.state
+const T = 5000
+const at = (phase, extra = {}) => ({ ...freshState(1), phase, seq: 3, ...extra })
+
+test('开关常量默认 false（合并不改变线上行为）', () => {
+  assert.equal(mods.config.NATIVE_SQLITE_MIGRATION_ENABLED, false)
+})
+
+test('规则1：状态文件缺失 + SQLite 有 committed_at → 以 SQLite 为真源并重建 committed', () => {
+  const out = reconcileWitnesses(undefined, { committedAt: '4242' }, T)
+  assert.equal(out.kind, 'rebuild-committed')
+  assert.equal(out.state.phase, 'committed')
+  // 负向对照：SQLite 没有见证 → 不得凭空 committed
+  assert.equal(reconcileWitnesses(undefined, {}, T).kind, 'use')
+  assert.equal(reconcileWitnesses(undefined, {}, T).state.phase, 'idle')
+})
+
+test('规则2：状态文件损坏 + SQLite 无 committed → idle 且保留损坏文件', () => {
+  assert.deepEqual(reconcileWitnesses({ corrupt: true }, {}, T), { kind: 'idle-keep-corrupt' })
+  // 库文件根本不存在也一样
+  assert.deepEqual(reconcileWitnesses({ corrupt: true }, { absent: true }, T), { kind: 'idle-keep-corrupt' })
+})
+
+test('规则3：两处见证矛盾 → blocked，不猜（逐种矛盾）', () => {
+  const cases = [
+    [at('committed'), {}, 'state-file-committed-but-sqlite-meta-missing'],
+    [at('copying'), { committedAt: '1' }, 'state-file-copying-but-sqlite-meta-committed'],
+    [at('failed'), { committedAt: '1' }, 'state-file-failed-but-sqlite-meta-committed'],
+    [at('idle'), { committedAt: '1' }, 'state-file-idle-but-sqlite-meta-committed'],
+    [{ corrupt: true }, { committedAt: '1' }, 'state-file-corrupt-and-sqlite-meta-committed'],
+    [{ corrupt: true }, { unavailable: true }, 'state-file-corrupt-and-sqlite-unreadable'],
+    [undefined, { unavailable: true }, 'state-file-missing-and-sqlite-unreadable'],
+  ]
+  for (const [file, witness, detail] of cases) {
+    assert.deepEqual(reconcileWitnesses(file, witness, T), { kind: 'blocked', detail })
+  }
+})
+
+test('例外：verified + meta 已 committed 且指纹一致 = 写 meta 与写状态之间被杀，补写而不是矛盾', () => {
+  const file = at('verified', { sourceFingerprint: 'fp' })
+  assert.equal(reconcileWitnesses(file, { committedAt: '1', migratedFrom: 'fp' }, T).kind, 'finish-commit')
+  // 负向对照：指纹对不上就是矛盾
+  assert.equal(reconcileWitnesses(file, { committedAt: '1', migratedFrom: 'other' }, T).kind, 'blocked')
+})
+
+test('committed 且库打不开/不存在：不是矛盾，原样交给路由判 sqlite-unavailable-after-commit', () => {
+  for (const witness of [{ unavailable: true }, { absent: true }, { committedAt: '1' }]) {
+    assert.equal(reconcileWitnesses(at('committed'), witness, T).kind, 'use')
+  }
+})
+
+test('正常阶段原样通过', () => {
+  for (const phase of ['idle', 'preflight', 'backing-up', 'backup-verified', 'copying', 'verifying', 'verified', 'failed']) {
+    assert.equal(reconcileWitnesses(at(phase), {}, T).kind, 'use', phase)
+  }
+})
+
+test('写/读往返；带 checksum；seq 保留', async () => {
+  const env = makeEnv()
+  try {
+    const store = createStateStore(env.fs, sha256)
+    await store.write(at('copying', { checkpoints: [{ store: 'sessions', lastKey: 's2', done: false }], sourceFingerprint: 'x' }))
+    const back = await store.read()
+    assert.equal(back.phase, 'copying')
+    assert.equal(back.seq, 3)
+    assert.deepEqual(back.checkpoints, [{ store: 'sessions', lastKey: 's2', done: false }])
+    assert.match(await env.fs.readText('storage-engine/state.json'), /"checksum":"[0-9a-f]{64}"/)
+    assert.equal(await createStateStore(mods.memoryFs.createMemoryFs(), sha256).read(), undefined)
+  } finally {
+    env.cleanup()
+  }
+})
+
+test('状态文件各种损坏都读成 corrupt（不抛、不猜）', async () => {
+  const env = makeEnv()
+  try {
+    const store = createStateStore(env.fs, sha256)
+    await store.write(at('copying'))
+    const good = await env.fs.readText('storage-engine/state.json')
+    const bad = {
+      '截断': good.slice(0, good.length - 7),
+      '非 JSON': 'not json',
+      '空文件': '',
+      '数组': '[]',
+      '改了字段（校验和不符）': good.replace('"phase":"copying"', '"phase":"committed"'),
+      '缺校验和': good.replace(/,?"checksum":"[0-9a-f]+"/u, ''),
+      '阶段名未知': JSON.stringify({ ...JSON.parse(good), phase: 'weird' }),
+    }
+    for (const [name, text] of Object.entries(bad)) {
+      await env.fs.writeAtomic('storage-engine/state.json', text)
+      assert.deepEqual(await store.read(), { corrupt: true }, name)
+    }
+    // 负向对照：原文写回就是正常的
+    await env.fs.writeAtomic('storage-engine/state.json', good)
+    assert.equal((await store.read()).phase, 'copying')
+  } finally {
+    env.cleanup()
+  }
+})
+
+test('校验和不能被「改字段后重算」之外的方式绕过；parse 拒绝类型错误', () => {
+  assert.equal(parseMigrationState({ ...freshState(1), seq: -1 }), undefined)
+  assert.equal(parseMigrationState({ ...freshState(1), checkpoints: [{ store: 'nope', done: true }] }), undefined)
+  assert.equal(parseMigrationState({ ...freshState(1), failure: { code: 'x', message: 'm', at: 1 } }), undefined)
+  assert.ok(parseMigrationState(freshState(1)))
+})
+
+test('原子写失败（ENOSPC）不破坏旧状态', async () => {
+  const env = makeEnv()
+  try {
+    const store = createStateStore(env.fs, sha256)
+    await store.write(at('copying'))
+    env.fs.injectEnospc()
+    await assert.rejects(() => store.write(at('verified')))
+    assert.equal((await store.read()).phase, 'copying')
+  } finally {
+    env.cleanup()
+  }
+})
+
+test('损坏文件被保留：preserveCorruptState 另存原字节，原文件不动', async () => {
+  const env = makeEnv()
+  try {
+    await env.fs.writeAtomic('storage-engine/state.json', '{garbage')
+    const saved = await mods.state.preserveCorruptState(env.fs, 77)
+    assert.equal(saved, 'storage-engine/state.corrupt-77.json')
+    assert.equal(await env.fs.readText(saved), '{garbage')
+    assert.equal(await env.fs.readText('storage-engine/state.json'), '{garbage')
+  } finally {
+    env.cleanup()
+  }
+})

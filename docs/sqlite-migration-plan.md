@@ -43,11 +43,17 @@
 
 `preflight → backing-up → backup-verified → copying → verifying → verified → committed`；任何一步失败 → `failed`（真源仍是 IDB，带原因，下次启动可重试，也可手动重试）。
 
-- preflight：可用空间 ≥ `(源估算体积 × 2) + 备份体积 + 余量`；记录源指纹（各 store 计数 + 主键集合哈希）。
-- backup：把 9 个 store 原样导出成独立备份（清单含每个文件的 sha256），读回校验后才进入下一步。备份放在 `storage-engine/backup-<ts>/`，**不自动删除**。
+- preflight（阈值只在 `LIMITS.storageMigration`，S = `estimateBytes()`，只许偏高）：
+  - 拒绝线：`freeBytes < 2×S + 备份(S) + 256MB` → `insufficient-space`，**不开始**；`freeBytes()` 不可得 → `unsupported`，不迁移；
+  - 警告线：`S > 200MB` → 迁移页显示预计体积与所需空间（不拒绝）；
+  - 硬上界：`S > 2GB` → `unsupported`（`source-too-large`），提示先导出，不迁移；
+  - 三条线的边界（刚好等于 / 少 1 字节）由 `tests/unit/migration-switch-preflight.test.mjs` 钉住；记录源指纹（各 store 计数 + 主键集合哈希）。
+- backup：用 `engine.copyAll` 把源复制进**独立文件的** SQLite 库 `storage-engine/backup-<ts>.db`，再用 `verifyAll` 对**源**校验（不是对目标），通过才写 `backup-verified`；清单 `backup-<ts>.manifest.json`（库内 `integrity_check` + 逐 store 计数/指纹，自带 sha256）。`AppFileSystem` 取不到库文件字节，故不用文件 sha256。**永不自动删除**。
 - copy：按 store、按主键升序分批 upsert（幂等），每批后写检查点；中断后从检查点续。续跑前重算源指纹，变了判 `source-changed` 重来。
 - verify：全量对比计数、主键集合、内容哈希（Blob 比字节 sha256，其余比规范化后的字段）、引用关系与语义不变量。
-- commit：校验通过后，先写 SQLite `meta`，再写状态文件 `committed`。两处见证不一致按 D4/D5 规则收敛。
+- commit：写 `committed` 前复核 `integrity_check` + 逐 store 计数 + 源指纹未变。顺序固定：**校验通过 → （可选）防降级屏障 → 写 SQLite `meta` → 写状态文件 `committed`**。两处见证不一致按 D4/D5 规则收敛。
+  - 防降级屏障（IDB 升到 v16，用户条件批准，#916 评论 7196902445）：经依赖注入 `bumpLegacyIdbVersion`，**默认不注入**；只在 `verified` 之后、`committed` 之前执行；真实实现 `storage/idb/legacyBarrier.ts` 只做空 `upgrade` 的 `indexedDB.open(name, 16)` 并确认可再次打开，不含任何删除/清空调用（静态断言）。状态机在 `verified` 阶段内记录子步骤 `legacyBarrier: started → done`：升版前后强杀、满盘、状态写入失败，重入都从提交步继续，**不回 idle、不重做复制**；`started` 一旦落盘即视为「升版可能已生效」，此后失败不写 `failed`。开关关闭、校验未通过、预检拒绝、普通应用更新都**不会**调用它（负向对照见 `migration-switch-barrier.test.mjs`）。
+  - 还原到新设备（`storage-engine/` 被排除出云备份）：`state.json` 缺失且无 SQLite 见证 → 当 `idle` 重新迁移；遗留的无 `committed` 见证的半个主库视为自己的半成品，清行重来。
 
 ## 5. 故障注入点（`migration-audit` 负责）
 
