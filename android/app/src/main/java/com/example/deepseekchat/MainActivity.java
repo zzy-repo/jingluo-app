@@ -60,6 +60,8 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(ExternalFilePlugin.class);
         // 应用内部文件系统（#907）：私有目录 app-fs/，供 Storage Protection 使用
         registerPlugin(AppFileSystemPlugin.class);
+        // 应用私有目录内的强持久化 SQLite（#913）：私有目录 storage-engine/，供 Storage Module 使用
+        registerPlugin(AppSqlitePlugin.class);
         super.onCreate(savedInstanceState);
         installRenderProcessGoneGuard();
         ExternalFilePlugin.capture(this, getIntent());

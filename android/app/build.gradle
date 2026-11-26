@@ -904,6 +904,9 @@ dependencies {
     implementation "androidx.coordinatorlayout:coordinatorlayout:$androidxCoordinatorLayoutVersion"
     implementation "androidx.core:core-splashscreen:$coreSplashScreenVersion"
     implementation project(':capacitor-android')
+    // AppSqlitePlugin（#913）：bundled SQLite 3.50.1 自带 .so，不依赖框架 android.database.sqlite，
+    // 可在连接级配置 synchronous=FULL（框架 WAL 路径会将写连接降为 NORMAL）。minSdk 23 < 本工程 24，兼容。
+    implementation "androidx.sqlite:sqlite-bundled-android:2.6.2"
     testImplementation "junit:junit:$junitVersion"
     androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
     androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"
