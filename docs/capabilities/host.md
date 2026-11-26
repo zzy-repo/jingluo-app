@@ -4,9 +4,9 @@
 >
 > **快照基准：`77720a32`**（`origin/main` tip，2026-11-25 21:57:52 +0800）· 采集时间：2026-11-25 23:54 (+0800)
 >
-> **扫描范围**：`src/**` 的 **409** 个源文件。
+> **扫描范围**：`src/**` 的 **411** 个源文件。
 >
-> 拆分：`.ts` **321** / `.tsx` 87 / `.html` 1 = 409（#487 W1-A 新增 `src/services/consume/**` 9 个 `.ts`，W1-B 新增 `src/services/auth/**` 5 个 `.ts` 与 `src/components/auth/**` 3 个 `.tsx`，W1-C2 新增 `src/components/consume/**` 的 7 个面板文件，W1-C1 再新增 3 个 `.tsx`，「统一计量」再新增 `src/utils/money.ts` 1 个 `.ts`，「迁移尾巴」再新增 `src/legacy/migration/**` 4 个 `.ts` 与 1 个 `.tsx`，W1-B 后半再新增 `src/services/consumeClient.ts` 与 `src/components/auth/AccountRow.tsx`）。上一版写 190，是缺了 `#237`（`fetch` 通道计数、`readBytesOf`）与 `#243`（设备指纹）新增的 5 个文件。
+> 拆分：`.ts` **323** / `.tsx` 87 / `.html` 1 = 411（#487 W1-A 新增 `src/services/consume/**` 9 个 `.ts`，W1-B 新增 `src/services/auth/**` 5 个 `.ts` 与 `src/components/auth/**` 3 个 `.tsx`，W1-C2 新增 `src/components/consume/**` 的 7 个面板文件，W1-C1 再新增 3 个 `.tsx`，「统一计量」再新增 `src/utils/money.ts` 1 个 `.ts`，「迁移尾巴」再新增 `src/legacy/migration/**` 4 个 `.ts` 与 1 个 `.tsx`，W1-B 后半再新增 `src/services/consumeClient.ts` 与 `src/components/auth/AccountRow.tsx`）。上一版写 190，是缺了 `#237`（`fetch` 通道计数、`readBytesOf`）与 `#243`（设备指纹）新增的 5 个文件。
 >
 > **本盘点只审计、只出单、只做工具，不修任何代码。** 每条真实漏洞都另开独立 Issue（见「真实漏洞与拆单」），修复在各自单里做，不在 #209 的 PR 里改产品代码。
 >
@@ -36,7 +36,7 @@
 
 ## 盘点表
 
-**总计 168 条命中**（`已有兜底` 89 / `无风险` 61 / `真实漏洞` 5 / `需动态验证` 13）；风险分布：高 4、中 14、低 150。
+**总计 169 条命中**（`已有兜底` 89 / `无风险` 61 / `真实漏洞` 5 / `需动态验证` 14）；风险分布：高 4、中 15、低 150。
 
 | 文件:行 | 假设内容 | 类别 | 风险(高/中/低) | 处置(已有兜底/需探测/需动态验证/拆单) |
 | --- | --- | --- | --- | --- |
@@ -197,6 +197,7 @@
 | `src/services/storage/migration/hash.ts:177` | Body.text/arrayBuffer 引入于 Chrome 76，83 必有 | 3 | 低 | 已有兜底 |
 | `src/services/storage/migration/hash.ts:181` | FileReader 引入于 Chrome 6，83 必有 | 3 | 低 | 已有兜底 |
 | `src/services/storage/sqlite/blobStore.ts:40` | Body.text/arrayBuffer 引入于 Chrome 76，83 必有 | 3 | 低 | 已有兜底 |
+| `src/services/storage/sqlite/native/driver.ts:78` | registerPlugin 一定返回代理对象，但原生侧没注册时调用只会 reject；插件在不在要探测 | 3 | 中 | 需动态验证 |
 | `src/services/storage/sqlite/repos/errors.ts:46` | 配额溢出只能靠捕获 QuotaExceededError 区分「满了」和「不可用」 | 3 | 低 | 已有兜底 |
 | `src/services/updateGate.ts:326` | AbortController 引入于 Chrome 66，83 必有（启动守卫也把它列进 REQUIRED） | 3 | 低 | 已有兜底 |
 | `src/services/updateManifest.ts:395` | Body.text/arrayBuffer 引入于 Chrome 76，83 必有 | 3 | 低 | 已有兜底 |
@@ -285,8 +286,8 @@
 | `AbortController` | 21 | 21 | 0 | 0 | 0 |
 | `Capacitor.isNativePlatform` | 15 | 2 | 13 | 0 | 0 |
 | `URL.revokeObjectURL` | 11 | 2 | 9 | 0 | 0 |
+| `Capacitor.registerPlugin` | 9 | 1 | 0 | 0 | 8 |
 | `URL.createObjectURL` | 9 | 3 | 6 | 0 | 0 |
-| `Capacitor.registerPlugin` | 8 | 1 | 0 | 0 | 7 |
 | `Capacitor.getPlatform` | 6 | 2 | 4 | 0 | 0 |
 | `ResizeObserver` | 5 | 5 | 0 | 0 | 0 |
 | `matchMedia` | 5 | 1 | 4 | 0 | 0 |
@@ -307,7 +308,7 @@
 | `canvas.toDataURL` | 1 | 0 | 1 | 0 | 0 |
 | `fetch 响应体 clone` | 1 | 0 | 0 | 1 | 0 |
 
-**总计 168 条命中**（`已有兜底` 89 / `无风险` 61 / `真实漏洞` 5 / `需动态验证` 13）；风险分布：高 4、中 14、低 150。
+**总计 169 条命中**（`已有兜底` 89 / `无风险` 61 / `真实漏洞` 5 / `需动态验证` 14）；风险分布：高 4、中 15、低 150。
 
 ## 未覆盖的边界
 
