@@ -205,6 +205,9 @@ const UNIT_SOLO = new Set([
   // 实测（合批 `--only migration-switch`）：6/7 个文件批内红、单跑全绿，报 `indexedDB is not defined`
   // 与「路由结论读到上一个文件留下的 engine」；DEGRADED 6 > 5，按回归处理。
   // `migration-switch-barrier.test.mjs` 自己装拆干净，继续合批。单列最诚实。
+  // barrier 自己会装/拆 globalThis.indexedDB，且经 kit.mjs 注册 `@capacitor/core` 解析钩子 ——
+  // 合批时会把「只有 registerPlugin 的桩」传染给同批后续文件（实测 ours-api / ours-payment-* 整片红）。
+  'migration-switch-barrier.test.mjs',
   'migration-switch-gate.test.mjs',
   'migration-switch-orchestrator.test.mjs',
   'migration-switch-preflight.test.mjs',

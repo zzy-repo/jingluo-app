@@ -8,7 +8,17 @@ import { dirname, join } from 'node:path'
 import { installTsResolve, loadTsModule } from '../dom-env.mjs'
 import { createNodeOpenSqlDatabase, makeTempSqliteDir } from '../storage-sqlite/nodeSqliteDriver.mjs'
 
-installTsResolve({ stubs: { '@capacitor/core': 'data:text/javascript,export const registerPlugin=(name)=>({__plugin:name})' } })
+// 桩必须与 `tests/fixtures/chat-stubs/capacitor.mjs` 同形（Capacitor / registerPlugin / CapacitorHttp）：
+// `run-layer` 的解析钩子只增不减、先注册者胜，缺一个导出就会让同批后续文件在实例化阶段报
+// 「does not provide an export named 'X'」（实测：ours-api / ours-payment-* 因此整片变红）。
+const CAPACITOR_STUB = 'data:text/javascript,' + encodeURIComponent(
+  [
+    'export const Capacitor = { isNativePlatform: () => false, getPlatform: () => "web", isPluginAvailable: () => false }',
+    'export const registerPlugin = (name) => ({ __plugin: name })',
+    'export const CapacitorHttp = { get: () => { throw new Error("单测不应该走原生桥") }, post: () => { throw new Error("单测不应该走原生桥") }, request: () => { throw new Error("单测不应该走原生桥") } }',
+  ].join('\n')
+)
+installTsResolve({ stubs: { '@capacitor/core': CAPACITOR_STUB } })
 
 export const mods = {
   config: await loadTsModule('src/services/storage/migration/config.ts'),
