@@ -502,7 +502,13 @@ export const collectReferencedAttachmentIds = async (): Promise<Set<string>> => 
   const referenced = new Set<string>()
   const storage = await getStorage()
   // 一页一页读，不把整库历史读进内存（与原来手写游标的理由相同）
-  for (let page = await storage.sessions.listFull(); ; page = await storage.sessions.listFull({ after: page.next ?? undefined })) {
+  // 不传 limit 会一次读完整库（listFull 的默认语义），所以固定一页 20 条
+  const PAGE = 20
+  for (
+    let page = await storage.sessions.listFull({ limit: PAGE });
+    ;
+    page = await storage.sessions.listFull({ limit: PAGE, after: page.next ?? undefined })
+  ) {
     for (const session of page.items) {
       for (const message of session.messages) {
         if (message.role !== 'user') {
