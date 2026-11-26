@@ -11,6 +11,7 @@
 import { InfraError } from '../capability/errors.js'
 import { reportProtectionFailure } from './diagnostics.js'
 import { createHighwater, detectDataLoss, type Highwater } from './highwater.js'
+import { createSnapshots, type SnapshotWriteResult, type Snapshots } from './snapshot.js'
 import { createStorageAccess } from './storageAccess.js'
 import type { DataLostInfo, ProtectionDeps } from './types.js'
 
@@ -18,14 +19,19 @@ export type { DataLostInfo } from './types.js'
 
 export type Protection = {
   readonly highwater: Highwater
+  readonly snapshots: Snapshots
   checkAtStartup(): Promise<DataLostInfo | null>
-  afterSave(): Promise<void>
+  /** saveSession 成功后：抬高水位 + 尝试快照（节流）。返回快照结果，调用方一般不需要等 */
+  afterSave(options?: { flush?: boolean }): Promise<SnapshotWriteResult | null>
+  /** 会话结束 / 切后台：绕过节流写一份快照 */
+  flushSnapshot(): Promise<SnapshotWriteResult | null>
   afterExplicitChange(): Promise<void>
   acknowledgeLoss(): Promise<void>
 }
 
 export const createProtection = (deps: ProtectionDeps): Protection => {
   const highwater = createHighwater(deps)
+  const snapshots = createSnapshots(deps)
 
   const guarded = async <T>(stage: string, run: () => Promise<T>, fallback: T): Promise<T> => {
     try {
@@ -39,6 +45,15 @@ export const createProtection = (deps: ProtectionDeps): Protection => {
     }
   }
 
+  /**
+   * 当前会话数。摘要是小记录，读它便宜；摘要为 0 时才分页数真会话（空库 / 摘要缺失两种情形，
+   * 都不会很大）。摘要多于会话（幽灵摘要）只会让高水位偏高一点，`summaries 自愈` 会把它收敛。
+   */
+  const currentCount = async (): Promise<number> => {
+    const summaries = await deps.storage.countSummaries()
+    return summaries > 0 ? summaries : deps.storage.countSessions()
+  }
+
   const checkAtStartup = (): Promise<DataLostInfo | null> =>
     guarded(
       'startup-check',
@@ -46,7 +61,7 @@ export const createProtection = (deps: ProtectionDeps): Protection => {
         if (!deps.storage.available()) {
           return null
         }
-        const [count, { mark }] = await Promise.all([deps.storage.countSessions(), highwater.read()])
+        const [count, { mark }] = await Promise.all([currentCount(), highwater.read()])
         const verdict = detectDataLoss(count, mark)
         if (verdict.lost) {
           if (verdict.fresh) {
@@ -63,24 +78,40 @@ export const createProtection = (deps: ProtectionDeps): Protection => {
       null
     )
 
-  let saving: Promise<void> | undefined
+  let saving: Promise<SnapshotWriteResult | null> | undefined
   let dirty = false
-  const raise = async (): Promise<void> => {
+  let pendingFlush = false
+  const raise = async (): Promise<SnapshotWriteResult | null> => {
+    let snapshot: SnapshotWriteResult | null = null
     do {
+      const flush = pendingFlush
       dirty = false
+      pendingFlush = false
       await guarded(
         'highwater-after-save',
         async () => {
           if (deps.storage.available()) {
-            await highwater.write(await deps.storage.countSessions())
+            await highwater.write(await currentCount())
           }
         },
         undefined
       )
+      // 快照读的是「现在」的库：合并期间又有保存就再来一轮，最后一轮的结果才算数
+      snapshot = await guarded('snapshot-after-save', () => snapshots.write({ force: flush }), {
+        status: 'failed',
+        kind: 'unknown',
+      })
     } while (dirty)
+    return snapshot
   }
-  /** 保存很频繁：同一时刻只跑一个，期间的再次调用合并成「跑完再来一次」 */
-  const afterSave = (): Promise<void> => {
+  /**
+   * 保存很频繁：同一时刻只跑一个，期间的再次调用合并成「跑完再来一次」，
+   * 全部返回同一个 promise —— 调用方 fire-and-forget，不占输入路径。
+   */
+  const afterSave = (options: { flush?: boolean } = {}): Promise<SnapshotWriteResult | null> => {
+    if (options.flush) {
+      pendingFlush = true
+    }
     if (saving) {
       dirty = true
       return saving
@@ -96,7 +127,7 @@ export const createProtection = (deps: ProtectionDeps): Protection => {
       stage,
       async () => {
         if (deps.storage.available()) {
-          await highwater.write(await deps.storage.countSessions(), { explicit: true, clearLost: true })
+          await highwater.write(await currentCount(), { explicit: true, clearLost: true })
         }
       },
       undefined
@@ -104,8 +135,10 @@ export const createProtection = (deps: ProtectionDeps): Protection => {
 
   return {
     highwater,
+    snapshots,
     checkAtStartup,
     afterSave,
+    flushSnapshot: () => afterSave({ flush: true }),
     afterExplicitChange: () => settle('highwater-after-explicit'),
     acknowledgeLoss: () => settle('highwater-acknowledge'),
   }
@@ -161,6 +194,11 @@ export const protectionCheckAtStartup = async (): Promise<DataLostInfo | null> =
 /** saveSession 成功后调用（fire-and-forget） */
 export const protectionAfterSave = (): void => {
   void getProtection().then((protection) => protection?.afterSave())
+}
+
+/** 切后台 / 会话结束：绕过快照节流（fire-and-forget） */
+export const protectionFlushSnapshot = (): void => {
+  void getProtection().then((protection) => protection?.flushSnapshot())
 }
 
 /** 用户显式删除 / 清空 / 导入提交后调用：高水位按实际数更新，待处理的丢失一并清掉 */

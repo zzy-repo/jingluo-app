@@ -71,6 +71,7 @@ import {
   protectionAfterExplicitChange,
   protectionAfterSave,
   protectionCheckAtStartup,
+  protectionFlushSnapshot,
   type DataLostInfo,
 } from '../protection/index.js'
 import {
@@ -820,6 +821,8 @@ export const bindChatPersistence = () => {
         persist(id)
       }
     }
+    // #909：切后台 / 页面隐藏时绕过快照节流补一份（fire-and-forget，不挡 pagehide）
+    protectionFlushSnapshot()
   }
   const onVisibilityChange = () => {
     if (document.visibilityState === 'hidden') {

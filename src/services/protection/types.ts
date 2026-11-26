@@ -1,9 +1,10 @@
 import type { AppFileSystem } from '../fs/types.js'
+import type { Session, SessionSummary } from '../chat/types.js'
 
 /**
  * Storage Protection 需要的存储能力（窄接口）。
  *
- * 实现只有 `storageAccess.ts` 一个文件（protection/** 里唯一碰 `chat/db.ts` 的地方），
+ * 实现只有 `storageAccess.ts` 一个文件（protection/** 里唯一碰存储的地方，且只经 `getStorage()`），
  * #906 的 Storage Module 合入后只需把那一个文件换成 `getStorage()`。
  * 其余模块只依赖这个接口，所以单测可以注入内存实现。
  */
@@ -12,8 +13,19 @@ export interface ProtectionStorage {
   readonly schemaVersion: number
   /** IndexedDB 是否可用；不可用时保护层整体跳过（主流程自己会报「读库失败」） */
   available(): boolean
-  /** `sessions` store 的记录数（不是摘要数） */
+  /** `sessions` store 的记录数（不是摘要数；分页读，不一次把全部会话放进内存） */
   countSessions(): Promise<number>
+  /** 摘要条数（便宜，只读摘要；摘要可能与会话不一致，所以只能当下界） */
+  countSummaries(): Promise<number>
+  /** 全部会话正文（瘦快照的数据来源；调用方负责剔除 blob） */
+  loadSessions(): Promise<Session[]>
+  /** 全部摘要 */
+  loadSummaries(): Promise<SessionSummary[]>
+  /** 按 sessions 重建全部摘要：单原子批、幂等；返回会话数 */
+  rebuildSummaries(): Promise<number>
+  /** 恢复通道：清空导入暂存 / 写一条暂存会话（提交由 store 的 importHistoryInto 负责） */
+  clearStaging(): Promise<void>
+  stageSession(session: Session): Promise<void>
 }
 
 /** Web 端高水位标记的存放处（localStorage 的最小子集）；原生端不使用它 */

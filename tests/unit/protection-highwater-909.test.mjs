@@ -18,55 +18,24 @@
 //   node tests/run-layer.mjs unit --only protection-highwater-909
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { chatCollectorStub, chatStub, installTsResolve, loadTsModule } from '../helpers/dom-env.mjs'
+import { loadProtection, localStore, makeSession, memoryStorage, records, resetRecords, setupProtection } from '../helpers/protection-env.mjs'
 
-installTsResolve({
-  stubs: [
-    [/^@capacitor\/core$/, chatStub('capacitor.mjs')],
-    [/diagnostics\/collector\.js$/, chatCollectorStub()],
-  ],
-})
-globalThis.__log = { records: [], events: [], actions: [] }
+const P = await loadProtection()
+const { FsError, createMemoryFs, detectDataLoss, HIGHWATER_PATH, HIGHWATER_LOCAL_KEY, resetProtectionDiagnosticsForTests } = P
 
-const { createMemoryFs } = await loadTsModule('src/services/fs/memoryFs.ts')
-const { FsError } = await loadTsModule('src/services/fs/types.ts')
-const { createProtection } = await loadTsModule('src/services/protection/index.ts')
-const { detectDataLoss } = await loadTsModule('src/services/protection/highwater.ts')
-const { HIGHWATER_PATH, HIGHWATER_LOCAL_KEY } = await loadTsModule('src/services/protection/constants.ts')
-const { resetProtectionDiagnosticsForTests } = await loadTsModule('src/services/protection/diagnostics.ts')
-
-const memoryStorage = (sessions) => ({
-  schemaVersion: 15,
-  available: () => true,
-  countSessions: async () => sessions.value,
-})
-
-const localStore = () => {
-  const map = new Map()
-  return {
-    map,
-    getItem: (key) => (map.has(key) ? map.get(key) : null),
-    setItem: (key, value) => map.set(key, String(value)),
-  }
-}
-
-let now = 1_700_000_000_000
-const clock = () => now
-
+/** 会话数 → 假库：用 n 条占位会话；`env.count.value = k` 时按 k 重建 */
+const fill = (n) => Array.from({ length: n }, (_, index) => makeSession(`s${index}`))
 const setup = ({ native, sessions = 0 } = {}) => {
-  const fs = createMemoryFs()
-  if (!native) {
-    fs.supported = false
+  const env = setupProtection(P, { native, sessions: fill(sessions) })
+  const count = {
+    get value() {
+      return env.state.sessions.length
+    },
+    set value(n) {
+      env.state.sessions = fill(n)
+    },
   }
-  const count = { value: sessions }
-  const local = localStore()
-  const protection = createProtection({ fs, storage: memoryStorage(count), now: clock, local })
-  return { fs, count, local, protection }
-}
-
-const records = () => globalThis.__log.records
-const resetRecords = () => {
-  records().length = 0
+  return { ...env, count }
 }
 
 test('D1 新装：无标记、库为空 → 不报，也不写标记（0 条没有信息量）', async () => {
@@ -86,14 +55,14 @@ test('D2 用户自己删光：显式路径把标记更新成 0 → 下次启动�
 
 test('D3 被系统清除：库归零但标记还在 → 判定丢失，且「忽略后新建会话」下次启动仍报', async () => {
   const env = setup({ native: true, sessions: 4 })
-  now += 1000
+  env.now.value += 1000
   await env.protection.afterSave()
   // 系统整库删除：库没了，原生标记（独立于 WebView 存储）还在
   env.count.value = 0
   const lost = await env.protection.checkAtStartup()
   assert.deepEqual(
     { expected: lost?.expectedSessions, at: lost?.lastSeenAt },
-    { expected: 4, at: now },
+    { expected: 4, at: env.now.value },
     '必须报出丢失前的会话数与时间'
   )
   // 用户没处理，只是新建了一条会话
@@ -184,8 +153,7 @@ test('N4 Web 端 localStorage 被清：无标记，不报（已知盲区）', as
 test('N5 Web 端无 localStorage：写入返回 unsupported（可区分），不抛、不假装成功', async () => {
   const fs = createMemoryFs()
   fs.supported = false
-  const { createHighwater } = await loadTsModule('src/services/protection/highwater.ts')
-  const highwater = createHighwater({ fs, storage: memoryStorage({ value: 1 }), now: clock, local: undefined })
+  const highwater = P.createHighwater({ fs, storage: memoryStorage({ sessions: fill(1) }), now: () => 1, local: undefined })
   const result = await highwater.write(1)
   assert.deepEqual({ status: result.status, changed: result.changed }, { status: 'unsupported', changed: false })
 })
