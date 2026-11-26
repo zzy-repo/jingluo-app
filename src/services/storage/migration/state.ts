@@ -10,7 +10,7 @@
  *   3. 两处见证矛盾（状态文件说没切、SQLite 说已切，或反过来）→ `blocked: needs-user-decision`，不猜。
  */
 import type { SqlDatabase } from '../sqlite/driver.js'
-import { META_KEYS, readMeta } from '../sqlite/schema.js'
+import { META_KEYS, STORE_TABLES, readMeta } from '../sqlite/schema.js'
 import type { AppFileSystem } from '../../fs/types.js'
 import { STATE_DIR, STATE_PATH, MIGRATION_ENGINE_VERSION, MAIN_DB_NAME } from './config.js'
 import type { Clock, Sha256Text } from './ports.js'
@@ -63,6 +63,15 @@ export type SqliteWitness = {
   absent?: boolean
   /** 打不开的原因（诊断用；只进 blocked 详情，不参与判定）。 */
   unavailableReason?: string
+  /**
+   * 库里**有没有已迁移的业务数据**（读 `sessions` 的条数）。
+   *
+   * 为什么需要：迁移备份是在 `committed` **之前**拍的，里面还没有 `meta.committed_at`。
+   * 用户用这份备份覆盖主库来恢复时，状态文件说 committed、见证人说没有 —— 旧逻辑判「矛盾」并 block，
+   * 于是**没有一个可用的恢复路径**（真机复现，见 #924）。库里真有数据这件事本身比一行元数据更强，
+   * 所以把「有数据」记为独立事实，交给下面的收敛规则用。
+   */
+  hasData?: boolean
 }
 
 /**
@@ -302,10 +311,20 @@ export const reconcileWitnesses = (
     return { kind: 'idle-keep-corrupt' }
   }
   if (fileState.phase === 'committed') {
-    // 库不存在/打不开不是矛盾：留给路由判 sqlite-unavailable-after-commit。读得到却没有 committed_at 才是矛盾。
-    return witness.unavailable === true || witness.absent === true || sqliteSaysCommitted
-      ? { kind: 'use', state: fileState }
-      : { kind: 'blocked', detail: 'state-file-committed-but-sqlite-meta-missing' }
+    // 库不存在/打不开不是矛盾：留给路由判 sqlite-unavailable-after-commit。
+    if (witness.unavailable === true || witness.absent === true || sqliteSaysCommitted) {
+      return { kind: 'use', state: fileState }
+    }
+    /**
+     * 状态说 committed、见证人却没有 `committed_at`，但**库里有业务数据**：这是「用户用迁移备份
+     * 覆盖主库恢复」或「commit 写完 meta 前掉电」的结果。库里真有数据比一行元数据更强，
+     * 判为已切换并补写见证（`finish-commit`），否则用户被永久 block、没有任何恢复路径（#924）。
+     * 库里没有数据时仍然是矛盾 → block（不猜、不覆盖）。
+     */
+    if (witness.hasData === true) {
+      return { kind: 'finish-commit', state: fileState }
+    }
+    return { kind: 'blocked', detail: 'state-file-committed-but-sqlite-meta-missing' }
   }
   if (sqliteSaysCommitted) {
     if (
@@ -338,11 +357,27 @@ export const readSqliteWitness = async (open: () => Promise<SqlDatabase>): Promi
   try {
     const committedAt = await readMeta(db, META_KEYS.committedAt)
     const migratedFrom = await readMeta(db, META_KEYS.migratedFrom)
-    return { committedAt, migratedFrom }
+    const hasData = await hasBusinessData(db)
+    return { committedAt, migratedFrom, hasData }
   } catch {
     return {}
   } finally {
     await db.close().catch(() => {})
+  }
+}
+
+/**
+ * 库里有业务数据吗（`sessions` 有行）。
+ *
+ * 只读一条 `count(*)`：表不存在或读失败一律当作「没有数据」（那是空库/半成品库的正常表现）。
+ */
+const hasBusinessData = async (db: SqlDatabase): Promise<boolean> => {
+  try {
+    const rows = await db.all(`SELECT count(*) AS c FROM ${STORE_TABLES.sessions.table}`)
+    const value = rows[0]?.c
+    return typeof value === 'number' ? value > 0 : Number(value ?? 0) > 0
+  } catch {
+    return false
   }
 }
 

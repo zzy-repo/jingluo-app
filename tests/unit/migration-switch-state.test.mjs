@@ -137,3 +137,19 @@ test('损坏文件被保留：preserveCorruptState 另存原字节，原文件�
     env.cleanup()
   }
 })
+
+// #924 真机复现：迁移备份是在 committed **之前**拍的，所以里面没有 meta.committed_at。
+// 用户用这份备份覆盖主库恢复时：状态文件说 committed、见证人说「没有 committed_at」。
+// 旧规则判「矛盾」并 block —— 于是没有任何恢复路径。库里**真有数据**比一行元数据更强，判为已切换。
+test('规则8：状态 committed + 见证人没有 committed_at，但库里有数据 → finish-commit（可恢复），不是 block', () => {
+  const state = { ...freshState(1), phase: 'committed', seq: 5 }
+  const out = reconcileWitnesses(state, { hasData: true }, T)
+  assert.equal(out.kind, 'finish-commit')
+})
+
+test('规则8 反例：状态 committed + 见证人没有 committed_at + 库里没数据 → 仍然 block（不猜、不覆盖）', () => {
+  const state = { ...freshState(1), phase: 'committed', seq: 5 }
+  const out = reconcileWitnesses(state, { hasData: false }, T)
+  assert.equal(out.kind, 'blocked')
+  assert.equal(out.detail, 'state-file-committed-but-sqlite-meta-missing')
+})
