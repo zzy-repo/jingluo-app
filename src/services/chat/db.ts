@@ -318,22 +318,20 @@ export const normalizeStorageFailure = (value: unknown): StorageFailure | undefi
 }
 
 /** 横幅档位（三档，与文案一一对应；`unavailable` 不给重试按钮） */
-/** `lowSpace`（#909）：还没写失败，但剩余空间已低于阈值，提前警告；只在没有任何真实失败时才显示 */
-export type SaveBannerTier = 'retry' | 'quota' | 'unavailable' | 'lowSpace'
+export type SaveBannerTier = 'retry' | 'quota' | 'unavailable'
 
 export const saveBannerTierOf = (kind: StorageFailureKind): SaveBannerTier =>
   kind === 'unavailable' ? 'unavailable' : kind === 'quota' ? 'quota' : 'retry'
 
 /** 严重度：会话级失败同时有多种原因时，**最严重的那条**决定文案（`unavailable` > `quota` > 可重试） */
-const TIER_SEVERITY: Record<SaveBannerTier, number> = { lowSpace: -1, retry: 0, quota: 1, unavailable: 2 }
+const TIER_SEVERITY: Record<SaveBannerTier, number> = { retry: 0, quota: 1, unavailable: 2 }
 
 /** 纯函数（L0 可单测）：从 `sessionSaveErrors`（含旧布尔值）里选出横幅档位。 */
 export const selectSaveBannerTier = (
-  errors: Record<string, StorageFailure | boolean | undefined> | null | undefined,
-  lowSpace = false
+  errors: Record<string, StorageFailure | boolean | undefined> | null | undefined
 ): SaveBannerTier | null => {
   if (!errors) {
-    return lowSpace ? 'lowSpace' : null
+    return null
   }
   let tier: SaveBannerTier | null = null
   for (const value of Object.values(errors)) {
@@ -346,9 +344,27 @@ export const selectSaveBannerTier = (
       tier = next
     }
   }
-  // #909：真实的写失败永远优先；空间告警只在「当前没有任何失败」时才显示
-  return tier ?? (lowSpace ? 'lowSpace' : null)
+  return tier
 }
+
+/** #909：保存横幅的显示档 = 三档写失败 + 「空间不足」预警（还没写失败，只是剩余空间低于阈值） */
+export type SaveBannerDisplay = SaveBannerTier | 'lowSpace'
+
+/**
+ * 在三档写失败之上叠加空间预警：**真实的写失败永远优先**，预警只在当前没有任何失败时才显示。
+ * 三档的选档、文案映射与重试口径（`selectSaveBannerTier` / `SAVE_BANNER_MESSAGE` / `saveBannerRetryable`）一字未改。
+ */
+export const selectSaveBannerDisplay = (
+  errors: Record<string, StorageFailure | boolean | undefined> | null | undefined,
+  lowSpace: boolean
+): SaveBannerDisplay | null => selectSaveBannerTier(errors) ?? (lowSpace ? 'lowSpace' : null)
+
+export const bannerMessageKey = (tier: SaveBannerDisplay): SaveBannerMessageKey =>
+  tier === 'lowSpace' ? 'sessionSaveLowSpace' : SAVE_BANNER_MESSAGE[tier]
+
+/** 预警档也不给重试：没有东西失败，重试没有意义，用户的动作是腾空间 / 导出备份 */
+export const bannerRetryable = (tier: SaveBannerDisplay): boolean =>
+  tier !== 'lowSpace' && saveBannerRetryable(tier)
 
 export type SaveBannerMessageKey =
   | 'sessionSaveFailedRetryable'
@@ -361,12 +377,10 @@ export const SAVE_BANNER_MESSAGE: Record<SaveBannerTier, SaveBannerMessageKey> =
   retry: 'sessionSaveFailedRetryable',
   quota: 'sessionSaveFailedQuota',
   unavailable: 'sessionSaveFailedUnavailable',
-  lowSpace: 'sessionSaveLowSpace',
 }
 
 /** `unavailable` 档位**不显示重试按钮**：环境写不进去，点了也是同一个结果。 */
-/** `lowSpace` 也不给重试：没有东西失败，重试没有意义，用户的动作是腾空间 / 导出备份 */
-export const saveBannerRetryable = (tier: SaveBannerTier): boolean => tier !== 'unavailable' && tier !== 'lowSpace'
+export const saveBannerRetryable = (tier: SaveBannerTier): boolean => tier !== 'unavailable'
 
 // ---------------------------------------------------------------- 不可克隆字段的兜底剔除
 

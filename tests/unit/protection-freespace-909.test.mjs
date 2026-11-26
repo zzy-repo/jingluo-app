@@ -75,22 +75,29 @@ test('L4 非 native：unknown（Web 没有私有目录，不能说「足够」�
   assert.deepEqual(await space.check(), { status: 'unknown' })
 })
 
-test('B1 横幅选档：lowSpace 只在没有真实失败时出现，不改变原三档', () => {
-  assert.equal(db.selectSaveBannerTier({}, true), 'lowSpace')
-  assert.equal(db.selectSaveBannerTier(null, true), 'lowSpace')
-  assert.equal(db.selectSaveBannerTier({}, false), null)
-  assert.equal(db.selectSaveBannerTier({}), null, '旧调用（不传第二个参数）行为不变')
+test('B1 横幅选档：lowSpace 只在没有真实失败时出现；三档原函数一字未变', () => {
+  assert.equal(db.selectSaveBannerDisplay({}, true), 'lowSpace')
+  assert.equal(db.selectSaveBannerDisplay(null, true), 'lowSpace')
+  assert.equal(db.selectSaveBannerDisplay({}, false), null)
   for (const [kind, tier] of [['quota', 'quota'], ['unavailable', 'unavailable'], ['unknown', 'retry']]) {
-    assert.equal(db.selectSaveBannerTier({ a: { kind } }, true), tier, `${kind} 失败优先于空间告警`)
-    assert.equal(db.selectSaveBannerTier({ a: { kind } }), tier, `${kind} 旧口径不变`)
+    assert.equal(db.selectSaveBannerDisplay({ a: { kind } }, true), tier, `${kind} 失败优先于空间预警`)
+    assert.equal(db.selectSaveBannerTier({ a: { kind } }), tier, `${kind} 旧选档口径不变`)
   }
+  assert.equal(db.selectSaveBannerTier({}), null, '三档函数不认识 lowSpace')
+  assert.deepEqual({ ...db.SAVE_BANNER_MESSAGE }, {
+    retry: 'sessionSaveFailedRetryable',
+    quota: 'sessionSaveFailedQuota',
+    unavailable: 'sessionSaveFailedUnavailable',
+  })
 })
 
 test('B2 lowSpace 档不给重试，文案 zh/en 成对且 zh 点明「新内容可能无法保存」', () => {
-  assert.equal(db.saveBannerRetryable('lowSpace'), false)
-  assert.equal(db.saveBannerRetryable('quota'), true)
-  const key = db.SAVE_BANNER_MESSAGE.lowSpace
+  assert.equal(db.bannerRetryable('lowSpace'), false)
+  assert.equal(db.bannerRetryable('quota'), true)
+  assert.equal(db.bannerRetryable('unavailable'), false)
+  const key = db.bannerMessageKey('lowSpace')
   assert.equal(key, 'sessionSaveLowSpace')
+  assert.equal(db.bannerMessageKey('quota'), 'sessionSaveFailedQuota')
   assert.match(zh[key], /存储空间不足，新内容可能无法保存/u)
   assert.ok(en[key].length > 0)
 })
