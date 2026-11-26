@@ -303,7 +303,9 @@ export const ensureApiKey = () => {
  *  3. **返回 false**：调用方据此不再往下走 —— 请求数为 0 是这条拦截的全部价值。
  *
  * 与另外两道门的分工（不重复判定、不互相顶替）：
- *  - `ensureSendPrerequisites`：**身份**有没有（登录态 / 一把能用的 Key）—— 两样都没有才拦；
+ *  - `ensureSendPrerequisites`：**身份**有没有（登录态 / **本地有一把 Key**）—— 两样都没有才拦。
+ *    #898 第二步把「有一把能用的 Key」放宽成「本地有一把 Key」：否则 `ensureApiKey` 放行、它拦住，
+ *    用户手里明明有 Key 却看到「I don't know you yet — Choose provider」（实测就是这一步卡住的）；
  *  - `ensureApiKey`：Key 有没有、像不像、是不是服务端发的那把（#374 / #451 / #596）——
  *    已登录（或已有一把好 Key）时仍由它说「去填 Key / 去领取 / 格式不对」；
  *  - `ensureSendConfig`：地址与模型填得对不对（#490）。
@@ -315,8 +317,18 @@ export const ensureApiKey = () => {
 export const ensureSendPrerequisites = (): boolean => {
   const verdict = checkSendPrerequisites({
     authenticated: getAuthSnapshot().state === 'authenticated',
-    // 「能用的 Key」与发送时那一份口径相同：`ok` 才放行（`missing` / `format` / `claim` / `stale` 都不算）
-    hasUsableKey: checkApiKeyBeforeSend() === 'ok',
+    // 「有身份」= **本地确实有一把 Key**，不只是「判定为 ok」（#898 第二步）。
+    //
+    // 为什么口径必须放宽到「本地有」：`checkApiKeyBeforeSend()` 把 `claim` / `stale`（控制面这一次
+    // 没成，本地那把还在）判成「不可用」，而 `ensureApiKey` 已经在 #898 第一步对这两种放行了
+    // （有 Key 就试发一次）。若这里仍按 `ok` 判，就会出现**第一道放行、第二道拦住**：用户明明
+    // 手上有一把 Key，点发送却得到「I don't know you yet — Choose provider」（#898 实测的那条
+    // 提示），而该发生的事是「先按本地 Key 试发一次」。
+    // `format`（有 Key 但明显不像）同样放行到这里 —— 由 `ensureApiKey` 用它自己那句
+    // 「Key 格式不对」去说，比这里一句笼统的「登录或选渠道」更准确（两道门各说各的字段）。
+    // `missing`（一把 Key 都没有）仍然落到下面的拦截：那种情况下「去领取 / 去填 Key」确实是
+    // 一句做不到的话，该给的是「登录或选渠道」（#793 的本意，未被 #898 改动）。
+    hasUsableKey: checkApiKeyBeforeSend() === 'ok' || getApiKey().trim() !== '',
   })
   if (verdict.ok) {
     return true

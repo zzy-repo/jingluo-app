@@ -14,15 +14,30 @@
  *
  * 端口一律走 `APP_URL`（`check-hardcoded-ports` 的口径）：不写死。
  *
- * ## ⚠ 当前状态：**红**（2026-11-26 实测，不要当成「已验证」）
+ * ## 当前状态：**绿**（2026-11-26 实测，四组合全过；红/绿与承重证据见下）
  *
- * 在 `ours + 未登录` 的环境里，消息**仍然发不出去**，但拦住它的**不是** `ensureApiKey()`
- * 了（#898 已改），而是它的下一道闸门 `ensureSendConfig()` / `checkSendPrerequisites()`（#793）：
- * 提示是「I don't know you yet — Choose provider」。也就是说 #898 的验收
- * 「控制面失败时有本地 Key 的用户仍能正常发消息」**还差一步**，第二步在这个脚本里被卡住。
+ * ## 改前 → 改后（同一个脚本，同一台机器，2026-11-26）
  *
- * 保留这个脚本（而不是删掉）的理由：它把那条第二步**跑给你看**了 —— 改前改后截图一模一样，
- * 恰恰证明「只改 `ensureApiKey` 不够」。见 issue #898 的评论。
+ *   改前（只有 #898 第一步，`ensureApiKey` 放行）：四组合全红 ——
+ *     `sent=false`，提示是 `I don't know you yet (｡•́︿•̀｡) Choose provider`，
+ *     也就是**下一道**闸门 `checkSendPrerequisites()`（#793）拦住了。
+ *   改后：四组合全绿 —— `sent=true`、`settingsOpen=0`、提示含「试发 / Sending once」，
+ *     并显示上游回来的明确原因（`This API Key is invalid or has been deleted … ends with ghij`）。
+ *
+ * 承重证明（ablation）：把 `hasUsableKey` 单独改回 `checkApiKeyBeforeSend() === 'ok'`、其余不动
+ * → 立刻退回 `I don't know you yet — Choose provider`。所以第二步的改动是**真的有用**，
+ * 不是「顺手改了也没坏」。
+ *
+ * ## 第二步为什么不止一处改动
+ *
+ * 光改 `checkSendPrerequisites` 的入参**不够**：`ours + 未登录` 冷启动时，`restoreAuth()` 走
+ * 「盘上没有会话」那一支 → `clearSession('unauthenticated')` → `purgeSessionCaches()` →
+ * `ours-managed-key.purge()` 把 `chat-demo:api-key` 直接**删掉**（实测：domcontentloaded 时
+ * localStorage 里已经是 null，而 `provider-kind` 还在）。于是任何一道闸门都读不到 Key，
+ * 用户拿到的是「控制面抖一下 = 凭据没了」。修法见 `auth/store.ts` 的 `clearSession` 第三参：
+ * **只有「真的退出过」才清账号级缓存**，冷启动从来没有会话时不清。
+ *
+ * 保留这个脚本（而不是删掉）的理由：它把这条链路**跑给你看**，任何一步回退都会让它重新变红。
  */
 import { mkdir } from 'node:fs/promises'
 import path from 'node:path'
@@ -45,10 +60,13 @@ const seed = ({ mode, localKey, staleFingerprint }) => {
   localStorage.setItem('chat-demo:provider-kind', 'ours')
   localStorage.setItem('chat-demo:api-key', localKey)
   if (mode === 'stale') {
+    // 形状必须是 `ServerKeyMark`（`apiConfig.ts` 的 `isServerKeyMark` 只认 `fingerprint` / `tail` / `at`）。
+    // 曾写成 `{ f: … }` → 校验不过 → 标记读成 null → 判 `claim`，于是 stale / claim 两张图字节相同
+    // （2026-11-26 实测 md5 一致才发现）。字段名错在这里不会报错，只会让取证悄悄少一档。
     localStorage.setItem(
       'chat-demo:ours-server-key',
       JSON.stringify({
-        f: staleFingerprint,
+        fingerprint: staleFingerprint,
         tail: 'wxyz',
         at: Date.now(),
         id: 7,

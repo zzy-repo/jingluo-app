@@ -123,8 +123,11 @@ export const SEND_PREREQ_TABLE: Record<
  * 判据是**合取**（issue 原文「无登录态 **且** 无可用渠道/Key」）：
  *  - 已登录：放行 —— 我们的渠道可以现领 Key，自填渠道也可能只是还没填 Key（那条由
  *    `ensureApiKey` 用「去填 Key」的口径拦，两个提示不该互相顶替）；
- *  - 未登录但有一把**能用**的 Key（`apiConfig.checkApiKeyBeforeSend() === 'ok'`）：放行 ——
- *    自填渠道本来就是「拿自己的 Key 直接发」，跟登录没关系。
+ *  - 未登录但**本地有一把 Key**（`apiConfig.checkApiKeyBeforeSend()` 为 `ok`，或为 `claim` /
+ *    `stale` / `format` 但 `getApiKey()` 非空）：放行 —— 自填渠道本来就是「拿自己的 Key 直接发」，
+ *    跟登录没关系。**#898 第二步之后口径是「本地有」而不是「判定为 ok」**：控制面（自动领 Key）
+ *    抖一下不该把数据面（发消息）堵死，Key 到底能不能用由上游那一枪回答，格式问题由
+ *    `ensureApiKey` 单独说（见 `settingsDialogState.ts` 调用点）。
  * 只有「两样都没有」时才拦：那时的请求只会带着空 `x-api-key` / `Authorization` 打上游，
  * 换回一个 401，界面转圈到超时也说不清该干什么。
  *

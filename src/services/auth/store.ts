@@ -338,12 +338,25 @@ const applySession = (session: AuthSession, reason: AuthSessionEstablishedReason
  */
 const clearSession = (
   next: Extract<AuthState, 'unauthenticated' | 'expired'>,
-  error: AuthError | null = null
+  error: AuthError | null = null,
+  /**
+   * 是否连**账号级缓存**一起清（默认清）。
+   *
+   * 唯一传 `false` 的地方是「冷启动时盘上从来没有会话」（{@link restoreAuth} 的 `!persisted` 分支）：
+   * 那一支不是「退出」，而是「这台机器上还没有过账号」—— 没有可退的会话，就没有跨账号残留可清。
+   * 以前这里一律清，于是 `ours` 渠道的用户**每次冷启动**都会被 `ours-managed-key` 的 purge 抹掉
+   * 本地那把 Key（#898 实测：`localStorage['chat-demo:api-key']` 在 domcontentloaded 时就已经是 null），
+   * 结果是「控制面抖一下 → 本地凭据被删 → 发送被拦 → 提示去选渠道」，而用户手上本来有 Key。
+   * 真正的切号风险（A 退出、B 登录）走的是 `signOut()` / 续期失败那两条，仍然清（默认值不变）。
+   */
+  options: { purgeAccountCaches?: boolean } = {}
 ): void => {
   // 代次 +1：这一代之后的刷新结果一律作废（迟到的刷新不许把刚清掉的凭据写回去）
   sessionEpoch += 1
   tokenStorage.write(null)
-  purgeSessionCaches()
+  if (options.purgeAccountCaches !== false) {
+    purgeSessionCaches()
+  }
   // #498 的临时尾巴（@remove-after 1.6.0）：迁移结果是账号维度的展示值，切号必须清
   clearLegacyMigrationResult()
   useAuthStore.setState({
@@ -674,7 +687,10 @@ export const restoreAuth = async (): Promise<void> => {
   restoring = (async () => {
     const persisted = readPersisted()
     if (!persisted) {
-      clearSession('unauthenticated')
+      // 冷启动「从来没有过会话」：只把状态归零，**不清账号级缓存**（#898 第二步）。
+      // 清的是「上一个账号的残留」，而这一支根本没有上一个账号 —— 但它曾经顺手把 `ours`
+      // 渠道的本地 Key 一起抹掉，让「控制面没回应」变成「凭据没了」。
+      clearSession('unauthenticated', null, { purgeAccountCaches: false })
       return
     }
     useAuthStore.setState({

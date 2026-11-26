@@ -164,3 +164,21 @@ Chromium 把 `net::ERR_NAME_NOT_RESOLVED` **只打印到 console，不给页面 
 诊断里写「失败分段: 判不出（依据 none）」。原生（APK / CapacitorHttp）能拿到
 `UnknownHostException` / `ConnectException` / `SSLHandshakeException` 原文，走同一套 `classifyNetFailure()`。
 要补 web 侧，见母单 #894 的 #899。
+
+## 控制面失败不阻断数据面（#898 第二步）的 390 / 360 取证
+
+脚本：`scripts/shot-send-degrade-898.mjs`（现跑现拍，真 `dist` 产物）。场景：`provider-kind=ours` +
+未登录 + 本地有一把 Key，两条控制面判档各一组 —— `stale`（服务端下发标记与本地不一致）与
+`claim`（没确认过服务端下发的那把）。四组合**全部**：消息发出去了、设置层没有被自动打开、
+出现保守提示（「Sending once with the local key」）、并显示上游回来的明确原因。
+
+| 文件 | 判档 | 实际看到 |
+| --- | --- | --- |
+| `send-degrade-898-stale-390.png` / `send-degrade-898-stale-360.png` | `stale` | 提示「The local key may differ from the one the server currently has. Sending once with the local key…」+ 上游 401 原文（`This API Key is invalid or has been deleted … ends with ghij`） |
+| `send-degrade-898-claim-390.png` / `send-degrade-898-claim-360.png` | `claim` | 提示「The server-issued key hasn't been confirmed yet. Sending once with the local key…」+ 同上上游原因 |
+
+改前（只有 #898 第一步）同一脚本四组合全红：`sent=false`，提示是 `I don't know you yet (｡•́︿•̀｡) Choose provider`
+—— 拦住它的是**下一道**闸门 `checkSendPrerequisites()`，不是 `ensureApiKey()`。
+
+本机没有真实上游，所以「成功」的形态是「请求发出去了 + 得到**明确的失败原因**」，不是「拿到正常回答」；
+这一点按 #898 的验收口径写明，不当作「联网可用」的证据。
