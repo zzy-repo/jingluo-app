@@ -11,6 +11,7 @@
 import { InfraError } from '../capability/errors.js'
 import { reportProtectionFailure } from './diagnostics.js'
 import { createFreeSpace, type FreeSpaceResult } from './freeSpace.js'
+import { createHeal, type HealResult } from './heal.js'
 import { createHighwater, detectDataLoss, type Highwater } from './highwater.js'
 import { createRestore, type RestorableSnapshot, type RestoreOptions, type RestoreResult } from './restore.js'
 import { createSnapshots, type SnapshotWriteResult, type Snapshots } from './snapshot.js'
@@ -24,6 +25,8 @@ export type Protection = {
   readonly snapshots: Snapshots
   /** 保存前读剩余空间（缓存 10s）：ok / low / unknown，unknown 不得当成「足够」 */
   checkFreeSpace(): Promise<FreeSpaceResult>
+  /** 摘要自愈：摘要数与会话数不一致就按 sessions 原子重建。不抛 */
+  healSummaries(knownSummaries?: number): Promise<HealResult>
   listRestorable(): Promise<RestorableSnapshot[]>
   restore(name: string, options: RestoreOptions): Promise<RestoreResult>
   checkAtStartup(): Promise<DataLostInfo | null>
@@ -40,6 +43,7 @@ export const createProtection = (deps: ProtectionDeps): Protection => {
   const snapshots = createSnapshots(deps)
   const freeSpace = createFreeSpace(deps)
   const restoring = createRestore(deps, snapshots)
+  const healing = createHeal(deps)
 
   const guarded = async <T>(stage: string, run: () => Promise<T>, fallback: T): Promise<T> => {
     try {
@@ -149,6 +153,7 @@ export const createProtection = (deps: ProtectionDeps): Protection => {
     highwater,
     snapshots,
     checkFreeSpace: freeSpace.check,
+    healSummaries: healing.heal,
     listRestorable: restoring.list,
     restore: restoring.restore,
     checkAtStartup,
@@ -210,6 +215,12 @@ export const protectionCheckAtStartup = async (): Promise<DataLostInfo | null> =
 export const protectionAfterSave = (): void => {
   void getProtection().then((protection) => protection?.afterSave())
 }
+
+/** 启动自愈摘要：保护层不可用时返回 null（= 没做，调用方保持现状） */
+export const protectionHealSummaries = async (knownSummaries?: number): Promise<HealResult | null> =>
+  (await getProtection())?.healSummaries(knownSummaries) ?? null
+
+export type { HealResult } from './heal.js'
 
 /** 可恢复的快照列表（Web / 不支持 / 保护层不可用 = 空列表） */
 export const protectionListRestorable = async (): Promise<RestorableSnapshot[]> =>

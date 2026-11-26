@@ -161,7 +161,7 @@ const UNIT_SOLO = new Set([
   'attachment-preserve-import-531.test.mjs',
   // #909：与上一条同机制 —— 顶层装 fake-indexeddb 全局并占用 `chat/db.ts` 的模块级连接单例（经真 `getStorage()` 读写），
   // 同批别的文件的假库 / 全局清理会让它读不到 `indexedDB`，它的全局又会漏给后面的文件。单列一个进程。
-  'protection-storage-909.test.mjs',
+  'protection-storage-909.test.mjs', 'protection-heal-909.test.mjs',
   // 同理：本文件在模块顶层装自己的 fetch / localStorage 替身并断言「实际发出的 URL」，
   // 同批其它文件对 fetch 的改写/还原会让它在批内打到真上游（CI 实测打到 api.deepseek.com 吃 401）。
   'attachment-endpoint-303.test.mjs',

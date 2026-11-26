@@ -73,6 +73,7 @@ import {
   protectionCheckAtStartup,
   protectionCheckFreeSpace,
   protectionFlushSnapshot,
+  protectionHealSummaries,
   protectionRestore,
   type DataLostInfo,
   type RestoreOptions,
@@ -906,12 +907,25 @@ export const initChat = (): Promise<void> => {
   set({ initError: false, initFailure: null })
   initTask = (async () => {
     try {
-      const summaries = await db.loadSessionSummaries()
+      let summaries = await db.loadSessionSummaries()
+      // #909：摘要为空时先自愈（会话正文还在、只是列表数据源没了），读回来再判「是不是被清掉了」
+      if (summaries.length === 0 && epoch === historyEpoch) {
+        const healed = await protectionHealSummaries(0)
+        if (healed?.status === 'healed') {
+          summaries = await db.loadSessionSummaries()
+        }
+      }
       if (epoch === historyEpoch) {
         // #909：库里没有会话时，先判「是不是被系统清掉了」再放行欢迎页；有会话时只更新高水位，不拖慢首屏。
         const dataLost = summaries.length === 0 ? await protectionCheckAtStartup() : null
         if (summaries.length > 0) {
           void protectionCheckAtStartup()
+          // #909：摘要非空但条数对不上会话数：首屏之后后台复检，修好了再刷新列表
+          void protectionHealSummaries(summaries.length).then(async (healed) => {
+            if (healed?.status === 'healed' && epoch === historyEpoch) {
+              set({ sessions: sortSessions(await db.loadSessionSummaries()) })
+            }
+          })
         }
         if (epoch === historyEpoch) {
           set({ ready: true, sessions: sortSessions(summaries), dataLost })
