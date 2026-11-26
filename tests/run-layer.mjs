@@ -191,6 +191,12 @@ const UNIT_SOLO = new Set([
   'storage-char-staging.test.mjs',
   'storage-char-staging-rollback.test.mjs',
 
+  // #906（存储契约套件的 IDB runner）：与上面同一类机制。它在用例里临时补丁 `IDBObjectStore.prototype` 的
+  // put/add/delete/clear（故障注入）、临时把 `globalThis.indexedDB` 置空（「宿主无存储」用例），还会用
+  // `DB_VERSION + 1` 造「库比代码新」并 `deleteDatabase`，且独占 `chat/db.ts` 的模块级连接单例。
+  // 实测（并进 16 个一批）：批次进程以 exit 7 退出（fake-indexeddb 的 Map 追踪溢出），被降级串行才绿。单列最诚实。
+  'storage-contract-idb.test.mjs',
+
   // ── #513：实测「批内红 → 单跑绿」，且在进程内**不可修**的那一批 ────────────────────────────
   //
   // 先说清为什么不可修（这是本单花最久的一段，结论有实测支撑）：
