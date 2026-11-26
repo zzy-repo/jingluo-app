@@ -71,6 +71,10 @@ const REQUIRED_CI_GATES = [
   // 门禁优化第 7 条（#892）：豁免登记契约 —— 摘掉它，六份「允许它先这样」的表就回到「注释纪律」：
   // reason 可以空、承接单可以是已关闭的单、没有到期日、跑绿了也没人删。判据见 docs/testing/exemptions.md。
   'check:exemptions',
+  // #873：iOS 工程版本号同源 —— 摘掉它，iOS 那侧就回到「Xcode 模板写死的 1.0 / 1」，
+  // 而 Android 走 package.json（version / androidVersionCode）。实测漂移 2.0.1/41 vs 1.0/1 时
+  // type / lint / 全部 L0–L1 / APK 出包**全绿**，所以没有别的门禁能发现它。
+  'check:ios-version',
 ]
 
 /**

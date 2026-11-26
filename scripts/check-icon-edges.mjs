@@ -18,6 +18,9 @@ import { fileURLToPath } from 'node:url';
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const RES = join(ROOT, 'android', 'app', 'src', 'main', 'res');
 const DOCS_ICON = join(ROOT, 'docs', 'ui', 'app-icon', 'icon-512.png');
+// #873：iOS 侧同一张 AppIcon（`cap add ios` 默认给的是 Capacitor 模板图，
+// 换成品牌图后必须过同一条白边判据 —— 否则「Android 换对了、iOS 还是贴边/模板图」没人看得见）。
+const IOS_ICON = join(ROOT, 'ios', 'App', 'App', 'Assets.xcassets', 'AppIcon.appiconset', 'AppIcon-512@2x.png');
 const EDGE = 2;
 
 function decodePng(buf) {
@@ -133,6 +136,7 @@ function targets() {
   }
   list.sort();
   if (existsSync(DOCS_ICON)) list.push(DOCS_ICON);
+  if (existsSync(IOS_ICON)) list.push(IOS_ICON);
   return list;
 }
 

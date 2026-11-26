@@ -393,6 +393,15 @@ const REGISTRY = {
     what: '入口产物塞 ||= → 真实下限 85 高于声明 80 必 exit 1；声明值调到 79 → 同样必红',
   },
   'check:legacy': { where: '.github/workflows/ci.yml', kind: 'ci', what: 'CI 往产物副本追加 ?. / ??= 后必须红' },
+  // #873：iOS 工程版本号同源。对照落在 ci.yml（现场把 pbxproj 的 MARKETING_VERSION 按事故原样
+  // 改回模板值 1.0 → 必须 exit 1 且点到「那个文件 + 那个值」→ 还原 → 必须 exit 0）。
+  // 为什么不能只靠脚本自带的反例：这条门禁的价值全在「有人真的在 CI 里跑它」，
+  // 被换成 `--warn` / 被摘掉步骤时，脚本自己再健康也不会红。
+  'check:ios-version': {
+    where: '.github/workflows/ci.yml',
+    kind: 'ci',
+    what: 'CI 把 pbxproj 的 MARKETING_VERSION 改回 1.0 → 必红且点到注入处，还原 → 必绿',
+  },
   'check:redact': { where: '.github/workflows/ci.yml', kind: 'ci', what: 'CI 跑 `check-redact.mjs --selftest`（脱敏器换成恒等函数必须红）' },
   'check:test-layout': { where: 'tests/unit/gate-negative-controls.test.mjs', kind: 'inject', what: '造一个跑不到的用例（孤立子目录）' },
   'check:test-duplication': { where: 'tests/unit/gate-negative-controls.test.mjs', kind: 'inject', what: '整份复制一份用例文件' },

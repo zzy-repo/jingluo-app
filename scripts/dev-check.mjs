@@ -182,6 +182,12 @@ const GATES = [
     why: 'applicationId / 应用名被改散（config/appIdentity.json 是唯一来源）',
   },
   {
+    id: 'check:ios-version',
+    where: 'content',
+    fix: 'pnpm run ios:version（改版本号请改 package.json，别手改 pbxproj）',
+    why: 'iOS 工程版本号与 package.json 漂了（App Store 拒收重复 build 号 / 两端版本对不上）',
+  },
+  {
     id: 'check:artifact-prefix',
     where: 'content',
     why: '产物文件名前缀不一致 → 更新检查与下载对不上',

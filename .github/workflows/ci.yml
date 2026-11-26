@@ -119,6 +119,41 @@ jobs:
           node scripts/check-eol.mjs
           echo "负向对照通过：CRLF 的 .mjs → exit 1 且点到 文件:行号，删掉 → exit 0"
 
+      # iOS 工程版本号门禁（#873）：`cap add ios` 生成的是 Xcode 模板的
+      # `MARKETING_VERSION = 1.0` / `CURRENT_PROJECT_VERSION = 1`，而仓库的版本号唯一来源是
+      # package.json 的 `version` / `androidVersionCode`（Android 由 build.gradle 自己去读）。
+      # iOS 没有这条链（xcodebuild 不读 JSON），于是实测漂成「package.json 2.0.1/41，iOS 1.0/1」——
+      # 而 `pnpm type` / `lint` / 全部 L0–L1 / APK 出包**全绿**，因为没人读过那个 pbxproj。
+      # 后果是用户能感知的：App Store 拒收重复 build 号、两端版本号对不上导致「用户报的版本」查不清。
+      # 纯文本比对（读 package.json + pbxproj，< 100ms），跟着最便宜的那批放在前面。
+      - name: iOS 工程版本号同源（check:ios-version）
+        run: pnpm run check:ios-version
+
+      # 负向对照（同 check:eol / check:case-collision 的写法，**无** continue-on-error）：
+      # 把 pbxproj 的 MARKETING_VERSION 按 #873 事故原样改回 1.0 → 必须 exit 1，
+      # 且报错要点到「那个文件 + 注入的值」→ 还原 → 必须 exit 0。
+      # 还原放 trap：任何一拍失败都不把改坏的 pbxproj 留在工作树里（假红比不测更糟）。
+      - name: 负向对照：把 pbxproj 的 MARKETING_VERSION 改回模板值必须被 check:ios-version 拦下
+        run: |
+          set -euo pipefail
+          pbxproj=ios/App/App.xcodeproj/project.pbxproj
+          cp "$pbxproj" "$pbxproj.gateprobe"
+          trap 'mv -f "$pbxproj.gateprobe" "$pbxproj"' EXIT
+          node scripts/check-ios-version.mjs
+          node -e 'const fs=require("fs"),f=process.argv[1];fs.writeFileSync(f,fs.readFileSync(f,"utf8").replace(/^(\s*MARKETING_VERSION = )[^;]+(;)$/gm,(m,a,b)=>a+"1.0"+b))' "$pbxproj"
+          if out="$(node scripts/check-ios-version.mjs 2>&1)"; then
+            echo "$out"
+            echo "::error::负向对照失败：把 MARKETING_VERSION 改回 1.0 后 check:ios-version 仍然通过，说明门禁没有真正生效"
+            exit 1
+          fi
+          echo "$out"
+          # 红必须点到「注入的那个文件 + 注入的那个值」，否则可能红在别处（比如判据被换成了别的东西）
+          echo "$out" | grep -q "project.pbxproj:.*MARKETING_VERSION = 1.0" || { echo "::error::门禁红了但没点到注入处（判据没咬住，报错点不对）"; exit 1; }
+          mv -f "$pbxproj.gateprobe" "$pbxproj"
+          trap - EXIT
+          node scripts/check-ios-version.mjs
+          echo "负向对照通过：MARKETING_VERSION 改回 1.0 → exit 1 且点到注入处，还原 → exit 0"
+
       - name: 重复实现（check:dup-impl）
         run: pnpm run check:dup-impl
 

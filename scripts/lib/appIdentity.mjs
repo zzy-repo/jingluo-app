@@ -202,6 +202,15 @@ export const IDENTITY_LITERAL_ALLOWED = Object.freeze([
   /^android\/app\/src\/(?:main|test)\/java\//,
   // 服务端分发件：与 App 不同部署单元，本单边界不动（marker 默认值另单跟进）
   /^deploy\//,
+  // #873：iOS 壳里由 `cap add/sync ios` **生成**的三处（来源仍是 capacitor.config.ts ← appIdentity.json）。
+  // 它们不进 git（ios/.gitignore 已忽略），但**只要本地 sync 过就在磁盘上** —— 不放行的话，
+  // 谁生成过 iOS 工程，谁本地 `pnpm dev-check` / `check:identity` 就凭空变红，而 CI 全绿
+  // （CI 上没有这些文件），这正是最难查的那类「只有我这儿红」。
+  // 真正守住已入库那份身份的是 `check:ios-version`（同一份生成物被版本/身份脚本盯着）
+  // 与「pbxproj 由 cap 生成、不经人手」这条约定，不是这里的放行。
+  /^ios\/App\/App\/capacitor\.config\.json$/,
+  /^ios\/App\/App\/config\.xml$/,
+  /^ios\/App\/App\/public\//,
 ])
 
 /** 扫描时跳过的目录名 / 前缀（依赖、产物、构建缓存） */
