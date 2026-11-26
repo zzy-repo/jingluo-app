@@ -100,6 +100,14 @@ HEAD 也是 15（`db.ts:46`）。**迁移版本不再升 IDB 版本**（计划 D
 
 另有一个与回滚无关但同根的问题，留给 schema 设计：**SQLite TEXT 列对 JS 字符串不是无损的**。本审计用 Node 22.23.4 的 `node:sqlite` 实测，写入再读回：含 `\u0000` 的字符串在 NUL 处被截断（`"a\u0000b"` → `"a"`），孤立代理项被替换成 U+FFFD（`"a\ud800b"` → `"a\ufffdb"`）。两者都是 JS 字符串的合法值，IndexedDB 原样保存。若目标 schema 用 TEXT 存主键或正文，迁移会静默丢数据，且校验器若用同样的 TEXT 读回就**发现不了**（两边都是坏的）。见 `docs/sqlite-schema.md` 是否已规定「字符串以 JSON 或 BLOB 形式落库」——本审计不改那份文档，但 oracle 与数据集已把这两个值列为必测项。
 
+**主键列同样受影响，而且后果是丢行而不是丢字符（node:sqlite 实测，Node 22.23.4）**：
+
+- 两个不同的孤立代理项键 `'a\ud800b'` 与 `'a\udc00b'` 写入 `TEXT PRIMARY KEY` 后只剩 **1 行**（都被换成 U+FFFD，后写覆盖先写，upsert 不报错）。
+- 含 NUL 的键 `'id\u0000x'` 与 `'id\u0000y'` 都被截成 `'id'`，**两行并成一个键**，值被覆盖。
+- 排序不同：SQLite 对 TEXT 按 UTF-8 字节序，IndexedDB 与 JS 按 UTF-16 码元序。`['～'(U+FF5E), '😀'(U+1F600), 'a']` 在 SQLite 是 `a, ～, 😀`，在 IDB 是 `a, 😀, ～`。契约要求 `readBatch` 按「主键升序」分页、`after` 为上一页 `next`（不含）。若后端用 `WHERE key > ? ORDER BY key` 分页，而迁移引擎用 JS 比较去续迁/比对检查点，**会漏行或重复行**，且只在含 BMP 以上字符与 U+E000–U+FFFF 字符并存的键上出现，普通测试数据碰不到。
+
+实际用户键多为 `crypto.randomUUID()` 或 `attachment-<hex>`，现实风险低，但 IndexedDB 允许任意字符串键，导入包里的会话 id 来自外部文件。建议 schema 层二选一：主键列存 UTF-16 码元的无损编码（如 hex 或 BLOB），并让 `ORDER BY` 的序与 JS 序一致；或者在迁移预检里**显式扫描并拒绝**含孤立代理项 / NUL / 与 JS 序不一致的键，报 `unsupported`，不要静默并行。`dataset.mjs` 的 `exoticKeys: true` 选项造的就是这类键，`oracle.mjs` 按 JS 序检查「主键严格升序」，所以按 UTF-8 序返回的后端会被判 `source-contract`。
+
 ## 4. 数据量与预检阈值
 
 ### 4.1 最坏情况体积（从 `src/services/limits.ts` 与 `db.ts` 推出）
@@ -148,6 +156,6 @@ S = 2GB 时峰值约 **2 + 2 + 2.6 + 0.25 ≈ 6.9GB**。这是设计上界，不
 
 1. **D6 是否允许只升版本号**（3.4 第 1 条）。这是回滚保护里唯一论证成立的方案，但它触碰已定决策，本审计不实施。
 2. **SQLite 库文件的落点**（`getDatabasePath()` 还是 `getFilesDir()`）必须在写第一个字节之前定，因为备份排除规则要按路径写，而排除规则必须随第一个写这些文件的版本发布。
-3. **字符串落库形式**（TEXT 会丢 NUL 与孤立代理项，实测见 3.4）。若 schema 已规定用 JSON/BLOB，请在 `sqlite-schema.md` 里写明「TEXT 不可用于可能含 NUL 或孤立代理项的字段」；否则这是一个会静默丢数据的缺陷。
+3. **字符串与主键落库形式**（TEXT 会丢 NUL 与孤立代理项，主键会并行丢行、排序与 JS 不同，实测见 3.4 末尾）。若 schema 已规定用 JSON/BLOB，请在 `sqlite-schema.md` 里写明「TEXT 不可用于可能含 NUL 或孤立代理项的字段」；否则这是一个会静默丢数据的缺陷。
 4. 预检的三个阈值（拒绝线公式、200MB 警告、2GB 硬上界）是否采纳，采纳的话进 `LIMITS`。
 5. 已发布 APK 实物的 `capacitor.config.json` 抽查（1 节的未知项）由谁做。
