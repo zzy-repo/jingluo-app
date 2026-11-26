@@ -256,7 +256,9 @@ export const runMigration = async (deps: MigrationDeps): Promise<MigrationOutcom
         if (isKilled(error) || error instanceof MigrationStepError) {
           throw error
         }
-        throw new MigrationStepError('copy-failed', messageOf(error), { cause: error })
+        const failure = new MigrationStepError('copy-failed', messageOf(error))
+        failure.cause = error
+        throw failure
       })
       await save({ phase: 'verifying', checkpoints: done })
     }
@@ -269,7 +271,9 @@ export const runMigration = async (deps: MigrationDeps): Promise<MigrationOutcom
         if (isKilled(error)) {
           throw error
         }
-        throw new MigrationStepError('verify-failed', messageOf(error), { cause: error })
+        const failure = new MigrationStepError('verify-failed', messageOf(error))
+        failure.cause = error
+        throw failure
       })
       if (!report.ok) {
         const bad = report.stores

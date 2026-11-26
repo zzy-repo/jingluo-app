@@ -65,7 +65,11 @@ export const mapSqlError = (error: unknown): unknown => {
   }
   // `unavailable` 档里不是 IO/损坏的（驱动在连接已关 / 事务超时时报 unavailable）也归 unavailable
   const name = error.kind === 'unavailable' && nameOfCode(error.code) !== 'StorageUnavailableError' ? 'StorageUnavailableError' : nameOfCode(error.code)
-  return new SqliteStorageError(name, `${error.code}: ${error.message}`, error.code, error.kind, { cause: error })
+  // 不传 `{ cause }` 构造参数：`new Error(msg, { cause })` 要 Chromium 93+（WebView 83 静默失效），
+  // 按仓库既有写法（capability/errors.ts）先建错再赋值。
+  const failure = new SqliteStorageError(name, `${error.code}: ${error.message}`, error.code, error.kind)
+  failure.cause = error
+  return failure
 }
 
 /** 原件校验不符（块缺失 / 长度或哈希不一致）：不返回残缺字节，按 unavailable 抛。 */

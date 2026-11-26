@@ -212,6 +212,11 @@ const UNIT_SOLO = new Set([
   'migration-switch-router.test.mjs',
   'migration-switch-state.test.mjs',
 
+  // #917（pagehide / 切后台 flush）：换掉 `globalThis.document` / `window` 并挂 `globalThis.__peek`，
+  // 且被测是 `chat/store.ts` 的模块级单例。实测全量批内红（3 条全红）、单跑全绿 —— 与同族 chat 用例
+  // 同类机制（进程级全局 + 模块单例），单列最诚实。
+  'storage-pagehide-flush.test.mjs',
+
   // #906（存储契约套件的 IDB runner）：与上面同一类机制。它在用例里临时补丁 `IDBObjectStore.prototype` 的
   // put/add/delete/clear（故障注入）、临时把 `globalThis.indexedDB` 置空（「宿主无存储」用例），还会用
   // `DB_VERSION + 1` 造「库比代码新」并 `deleteDatabase`，且独占 `chat/db.ts` 的模块级连接单例。

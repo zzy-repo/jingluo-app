@@ -116,7 +116,10 @@ export const createBackup = async (deps: MigrationDeps, sourceFingerprint: strin
     if (error instanceof MigrationStepError || (typeof error === 'object' && error !== null && (error as { killed?: unknown }).killed === true)) {
       throw error
     }
-    throw new MigrationStepError('backup-failed', error instanceof Error ? error.message : String(error), { cause: error })
+    // `new Error(msg, { cause })` 要 Chromium 93+（WebView 83 静默不生效），按仓库既有写法直接赋值
+    const failure = new MigrationStepError('backup-failed', error instanceof Error ? error.message : String(error))
+    failure.cause = error
+    throw failure
   }
 }
 
