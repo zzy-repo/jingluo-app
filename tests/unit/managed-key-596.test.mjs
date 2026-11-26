@@ -236,14 +236,28 @@ test('[3] ours + 没有 Key：发送被拦，设置页说「请先领取 Key」'
   dialogState.closeSettings()
 })
 
-test('[3] 发送那一次一定拦，而且**任何一次都不弹设置层**（启动期那次调用已删）', () => {
-  // 手上有 Key（没有下发标记）：发送被拦 + 一条通知，设置层不出现
+test('[3] 本地**没有** Key 时一定拦，而且**任何一次都不弹设置层**（启动期那次调用已删）', () => {
+  /**
+   * #898 改了这里：本地**有** Key 时不再是「拦」（见下一个用例），
+   * 但「本地一把都没有」这一条必须仍然拦 —— 它是 #898 明确允许保留的唯一一条阻断（没有可用凭据）。
+   * 「任何一次都不弹设置层」这条产品决定（2026-11-25）一个字没变。
+   */
+  // 手上有 Key（没有下发标记）：**#898 之后放行试发一次**（改前断言 false）
   reset()
   apiConfig.setProviderKind('ours')
   apiConfig.setApiKey(HAND_KEY) // 有一把、但没有下发标记（老版本残留 / 手填）
-  assert.equal(dialogState.ensureApiKey(), false, '发送那一次一定拦')
-  assert.equal(dialogState.useSettingsDialog.getState().open, false, '拦下也不弹设置层')
-  assert.equal(dialogState.useSettingsDialog.getState().managedKeyBlocked, 'unclaimed')
+  assert.equal(
+    dialogState.ensureApiKey(),
+    true,
+    '#898：控制面没确认、但本地有一把 Key → 先按本地 Key 试发一次'
+  )
+  assert.equal(dialogState.useSettingsDialog.getState().open, false, '放行也不弹设置层')
+  assert.equal(
+    dialogState.useSettingsDialog.getState().managedKeyBlocked,
+    null,
+    '放行不许留「被拦」标记'
+  )
+  assert.deepEqual(useToast.getState().message, { key: 'settingsManagedKeyClaimDegraded' })
 
   // 一个 Key 都没有：同样只发通知（改前这里断言的是「没有 Key 时启动就打开设置」）
   reset()
@@ -302,12 +316,20 @@ test('[4] ours + 本地这把与服务端不一致：判成 stale，提示重新
     '与本机记录的服务端那把不一致 → stale（否则就是「用旧 Key 发出去换 401」）'
   )
   assert.equal(apiConfig.checkApiKeyBeforeSend(), 'stale')
-  assert.equal(dialogState.ensureApiKey(), false, 'stale 必须拦下')
+  /**
+   * #898 改了这里：`stale` 且**本地有 Key** → 放行试发一次，不再发车前拦（改前断言 false）。
+   *
+   * #596 当初选择「拦」的理由是「别让用户 401 之后以为服务器繁忙」。那条理由的下半句
+   * （文案不许掩盖）现在由 `send-degrade-stale-898.test.mjs` 的 [D5] 守着：
+   * 降级文案必须说清「试发一次 / 失败后去重新领取」，不许出现「服务器繁忙 / 未知错误」。
+   */
+  assert.equal(dialogState.ensureApiKey(), true, '#898：stale + 本地有 Key → 试发一次')
   assert.equal(
     dialogState.useSettingsDialog.getState().managedKeyBlocked,
-    'stale',
-    '设置页要知道这次是「Key 已更新」'
+    null,
+    '放行就不该留「被拦」标记'
   )
+  assert.deepEqual(useToast.getState().message, { key: 'settingsManagedKeyStaleDegraded' })
 
   const markup = viewMarkup({ verdict: 'stale', tail: 'abcd', blocked: 'stale' })
   const blocked = textOf(markup, 'settings-managed-key-blocked')

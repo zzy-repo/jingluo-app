@@ -581,6 +581,16 @@ export const zh = {
     '请先领取 Key：这条消息没有发出去。内置渠道的 Key 由服务端下发，不能手填。',
   settingsManagedKeyBlockedStale:
     'Key 已更新，请重新领取：本地这把已经不是服务端下发的那把，这条消息没有发出去。',
+  /**
+   * #898：控制面（自动领 Key）这一次没成，但本地有 Key —— **先按本地 Key 试发一次**。
+   *
+   * 两句都必须守住「不承诺成功」：说清「试发」与「失败后怎么办」，不写「已经成功」「一定能用」；
+   * 也不许回到 #596 第 1 条事故的说法（「服务器繁忙 / 未知错误」把 401 掩盖掉）。
+   */
+  settingsManagedKeyStaleDegraded:
+    '本地 Key 可能不是服务端当前那把，先按本地 Key 试发一次；如果失败，请到「账户与消费」重新领取。',
+  settingsManagedKeyClaimDegraded:
+    '还没确认过服务端下发的 Key，先按本地 Key 试发一次；如果失败，请到「账户与消费」领取。',
   settingsManagedKeyClaimFailed: '领取失败：{message}',
   /**
    * #800：内置服务子页**不再渲染 Key 行**（输入框 / 掩码展示区 /「重新领取」全部不渲染），

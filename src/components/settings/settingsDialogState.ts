@@ -198,6 +198,11 @@ const openSettingsFromHint = () => {
  *  4. `claim`（#596）→ 本机没有服务端下发的那把 Key（没领过 / 手填的 / 老版本留下的）；
  *  5. `stale`（#596）→ 本机这把与服务端下发标记不一致（服务端换过了）。
  *
+ * **第 4/5 条在 #898 之后分成两半**（这是本文件唯一一处「判定档位相同、处置不同」）：
+ *  - 本地**有** Key → **放行试发一次** + 保守提示（控制面失败不阻断数据面）；诊断记
+ *    `degrade-send-managed-key`。这是 #898 的验收项，不许改回「一律拦」；
+ *  - 本地**没有** Key → 仍然拦（#898 只允许保留「本地完全没有凭据」与「服务端明确拒绝」两条）。
+ *
  * 第 4/5 条**刻意不使用**「服务器繁忙」「未知错误」这类掩盖性说法：那正是 #596 第 1 条事故里
  * 用户被误导的原因（本地存着旧 Key，服务端换了，401 被读成「服务器忙」）。
  *
@@ -228,13 +233,39 @@ export const ensureApiKey = () => {
     return false
   }
   if (status === 'claim' || status === 'stale') {
+    const localKey = getApiKey().trim()
+    /**
+     * **降级优先**（#898，母单 #894 的「控制面不可达不阻断数据面」）。
+     *
+     * 只要本地**有一把** Key，就先按它试发一次：控制面（自动领 Key）这一次没成，
+     * 不该把数据面（发消息）一起堵死 —— #898 正文里的用户实证就是 `sk-3c5…` 已经在本地，
+     * 界面仍提示「这条消息暂时发不出去」。
+     *
+     * 与 #596 的冲突是明摆着的，解法写在这里：**放行，但让 401 说话**。
+     * 所以两条约束不许退：
+     *  1. 提示文案保守（「先按本地 Key 试发一次；失败就去重新领取」），**不承诺成功**；
+     *  2. 诊断里留痕（`degrade-send-managed-key` + 档位 + 长度，Key 原文不进日志），
+     *     出问题时能查出「这一次是降级发出去的」。
+     * 任一失守，#898 就退回成 #596 第 1 条事故（用户一直 401 却以为是服务器繁忙）。
+     */
+    if (localKey !== '') {
+      recordAction('nav', 'degrade-send-managed-key', {
+        reason: status,
+        length: localKey.length,
+      })
+      showToast(
+        { key: status === 'stale' ? 'settingsManagedKeyStaleDegraded' : 'settingsManagedKeyClaimDegraded' },
+        { action: { key: 'openSettingsEntry', run: openSettingsFromHint } }
+      )
+      return true
+    }
     const blocked = status === 'stale' ? 'stale' : 'unclaimed'
-    // 「我们的渠道」的 Key 只能由服务端下发（#596）：这两种状态下本地那把**一定**不是服务端那把，
-    // 发出去只会换回一次 401。先在诊断里留痕（只记判定档位与长度，Key 原文不进日志），再发通知。
+    // 走到这里 = **本地一把 Key 都没有**：这是 #898 明确允许保留的阻断之一（没有可用凭据）。
+    // 先在诊断里留痛（只记判定档位与长度，Key 原文不进日志），再发通知。
     recordConfigRejection('apiKey', status)
     recordAction('nav', 'block-send-managed-key', {
       reason: status,
-      length: getApiKey().length,
+      length: localKey.length,
     })
     useSettingsDialog.setState({ managedKeyBlocked: blocked })
     showToast(

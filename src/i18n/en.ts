@@ -590,6 +590,14 @@ export const en = {
     'Claim a key first: this message was not sent. The Our-channel key is issued by the server and cannot be typed in.',
   settingsManagedKeyBlockedStale:
     'The key has changed — please re-claim: the local key is no longer the one issued by the server, so this message was not sent.',
+  /**
+   * #898: the control plane (auto key claim) failed this time but a local key exists — send once
+   * with it. Both lines must avoid promising success: say "try once" and what to do if it fails.
+   */
+  settingsManagedKeyStaleDegraded:
+    'The local key may differ from the one the server currently has. Sending once with the local key; if it fails, re-claim it under Account & Usage.',
+  settingsManagedKeyClaimDegraded:
+    "The server-issued key hasn't been confirmed yet. Sending once with the local key; if it fails, claim one under Account & Usage.",
   settingsManagedKeyClaimFailed: 'Claim failed: {message}',
   /**
    * #800: the built-in service sub-page no longer renders a key row at all (no input, no masked
