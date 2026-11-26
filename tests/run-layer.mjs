@@ -170,6 +170,11 @@ const UNIT_SOLO = new Set([
   // 与其赌切片，不如按 runner 自己的口径单列（`installImportEnv` 那套装配没有可用的去重钩子）。
   'import-quota-progress.test.mjs',
 
+  // #906（存储仓储化的特征化测试）：本文件临时改写 `IDBObjectStore.prototype.put/delete` 注入写失败、
+  // 在「缺能力」用例里临时删 `globalThis.indexedDB`，并独占 `chat/db.ts` 的模块级连接单例（用例间只清数据）。
+  // 机制类别：进程级全局 + 原型 mock + 模块级单例 —— 同批文件共用这些，合批会互相打到对方的写入与数据。
+  'storage-char-session.test.mjs',
+
   // ── #513：实测「批内红 → 单跑绿」，且在进程内**不可修**的那一批 ────────────────────────────
   //
   // 先说清为什么不可修（这是本单花最久的一段，结论有实测支撑）：
