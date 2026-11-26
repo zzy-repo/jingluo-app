@@ -145,7 +145,8 @@ const makeBlob = async (ctx, index, size, type) => {
 export const SCALES = Object.freeze({
   small: { sessions: 12, messagesPer: [0, 6], images: 4, docs: 3, memoriesPer: [0, 4], largeMB: 0, longTextUnits: 20_000 },
   medium: { sessions: 160, messagesPer: [0, 30], images: 40, docs: 25, memoriesPer: [0, 20], largeMB: 0, longTextUnits: 300_000 },
-  large: { sessions: 400, messagesPer: [0, 40], images: 60, docs: 40, memoriesPer: [0, 30], largeMB: 220, longTextUnits: 1_000_000 },
+  // large：附件总量 ≥ largeMB（默认 220MB，由补足循环保证），文本量取「几万条消息」量级而不是堆满内存
+  large: { sessions: 400, messagesPer: [0, 40], images: 9, docs: 3, memoriesPer: [0, 30], largeMB: 220, longTextUnits: 60_000 },
 })
 
 export const scaleFromEnv = (env = process.env) => {
