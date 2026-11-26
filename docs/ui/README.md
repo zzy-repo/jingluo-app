@@ -145,3 +145,22 @@ git grep -n -F 1.4.0-beta.1-settings-apikey.png -- '*.md' '*.json' '*.html' '*.t
 
 > 视觉说明：三个预设（远山 / 渐变 / 森林）是 **CSS 渐变近似**，仓库里没有对应素材；
 > 换成正式图片只需把 `src/services/chat/sessionBackground.ts` 的 `PRESET_BACKGROUND_GRADIENTS` 换成 `url("…")`。
+
+## 网络失败分阶段归因（#895）的 390 / 360 取证
+
+4 种故障注入 × 2 档宽度，由 `/tmp/net-phase-shots.mjs` 现跑现拍（真 `dist` 产物 + 本机 mock 上游，
+装配复用 `tests/helpers/golden.mjs`）；诊断文本取自**点应用自己的「复制诊断信息」按钮**后写进剪贴板的原文。
+
+| 文件 | 注入 | 实际 phase |
+| --- | --- | --- |
+| `net-phase-offline-390.png` / `net-phase-offline-360.png` | `context.setOffline(true)` 后发消息 | `offline`（依据 `offline`，建议 check-network） |
+| `net-phase-dns-390.png` / `net-phase-dns-360.png` | `page.route` → `route.abort('namenotresolved')` | **判不出**（`evidence: none`）—— 见下方已知边界 |
+| `net-phase-tls-390.png` / `net-phase-tls-360.png` | `page.route` → `route.abort('failed')`（握手失败形态） | **判不出**（`evidence: none`）—— 同上 |
+| `net-phase-firstbyte-390.png` / `net-phase-firstbyte-360.png` | 真 HTTP：响应头到了、正文一个字节不写 → 首字预算 30s 到点 | `first_byte`（依据 `timeout-code`） |
+
+已知边界（不是伪造）：浏览器 `fetch` 失败只给 `TypeError: Failed to fetch`，
+Chromium 把 `net::ERR_NAME_NOT_RESOLVED` **只打印到 console，不给页面 JS**，
+且失败的请求不产生 `PerformanceResourceTiming` entry —— 所以 web 端 DNS / TCP / TLS 三档**判不出**，
+诊断里写「失败分段: 判不出（依据 none）」。原生（APK / CapacitorHttp）能拿到
+`UnknownHostException` / `ConnectException` / `SSLHandshakeException` 原文，走同一套 `classifyNetFailure()`。
+要补 web 侧，见母单 #894 的 #899。

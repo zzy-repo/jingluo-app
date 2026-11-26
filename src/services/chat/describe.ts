@@ -457,8 +457,18 @@ export const describeReply = (reply: AssistantMessage): Notice | null => {
         return { text: translate('replyEmptyStream') }
       default: {
         // 未识别的错误（#324）：可读的中文原文照常展示，其余升级为「能自证」的提示。
+        //
+        // #895：三段超时（`kind === 'timeout'`，即「发起到响应头」那一段）会走到这里，
+        // 而且它**总是**带一句我们自己的中文文案（`replyFirstTokenTimeout` 等），于是命中了
+        // 「可读原文直接展示」这条快路 —— 快路原来不带 `diagnostics`，结果恰恰是最需要
+        // 「卡在哪一段」的那一档在界面上没有「复制诊断信息」（取证时实测：首字超时只剩一句
+        // 「快了快了，骗你是小狗」，phase 与分段耗时无处可取）。这里把它补上。
         if (readable) {
-          return { ...readable, regenerate }
+          return {
+            ...readable,
+            regenerate,
+            ...(kind === 'timeout' ? { diagnostics: diagnosticsOf() } : {}),
+          }
         }
         const upstreamCode = reply.error.upstreamCode?.trim() ?? ''
         const hasStatus = typeof status === 'number'
