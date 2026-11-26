@@ -21,6 +21,7 @@
  */
 
 import { create } from 'zustand'
+import { failureOfStatus, retryableFailure } from '../net/requestPolicy.js'
 
 /** 本单用到的三个开关（§3.1d 里还有 turnstile / 验证码站点 key 等，W1-C 需要时再加） */
 export type AuthFlags = {
@@ -260,8 +261,18 @@ const statusOfThrown = (error: unknown): number | null => {
   return null
 }
 
-/** 4xx = 服务端明确拒绝（重试无意义）；其余（无状态 / 5xx / 超时）都值得再试 */
-const isRetryableStatus = (status: number | null): boolean => !(status !== null && status >= 400 && status < 500)
+/**
+ * 这次读失败要不要再试一次（#896：**不再自己写一份 4xx 判据**）。
+ *
+ * 改前这里是 `!(status >= 400 && status < 500)` —— 一句话把 **429 也算进了「服务端说你不对」**，
+ * 于是同一个 429 在设置页不重试、在聊天层重试（`api/errors` 判它可重试）。限流是**临时**的，
+ * 等一会儿真有额度；「其余 4xx 不重试」与它分开，判据统一在 `net/requestPolicy.ts`。
+ *
+ * 类取 `data`：读开关是幂等只读请求，重发不会造成任何副作用（重试次数与退避仍由本文件的
+ * `FLAGS_RETRY` 决定：300~800ms 带抖动，那是「怎么等」，不是「等多久」）。
+ */
+export const isRetryableStatus = (status: number | null): boolean =>
+  retryableFailure(failureOfStatus(status))
 
 /** 一次「调用 reader」的结局（抛错不进控制流，统一归一成数据） */
 type ReadOutcome = { ok: true; raw: unknown } | { ok: false; status: number | null }

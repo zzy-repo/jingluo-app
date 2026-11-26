@@ -1,4 +1,5 @@
 import { shouldRetryStreamTimeout } from '../chat/timeoutPolicy.js'
+import { failureOfStatus, retryableFailure } from '../net/requestPolicy.js'
 import { ApiError } from './client.js'
 
 /**
@@ -594,7 +595,10 @@ export const classifyApiError = (error: unknown): ApiErrorCondition => {
  *   在两小时里打了 2059 次 404，占网关日志 86%）。
  */
 export const isRetryableStatus = (status: number | undefined): boolean =>
-  status === 429 || (status ?? 0) >= 500
+  // #896：状态码 → 能不能重试由 `net/requestPolicy.ts` 唯一决定（429 与 5xx 可，其余 4xx 不可）。
+  // 改前这里写的是 `status === 429 || status >= 500` —— 与 `auth/flags` 那份 4xx 判据打架，
+  // 两处「同一件事两个答案」正是 #896 要收掉的东西。
+  retryableFailure(failureOfStatus(status))
 
 /** 重试可能成功的情况：网络、超时、断流、限流、服务端繁忙；参数、鉴权、额度不足重试无用 */
 export const isRetryableApiError = (error: unknown): boolean => {

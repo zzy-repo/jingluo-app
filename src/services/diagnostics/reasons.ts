@@ -1,3 +1,5 @@
+import { failureOfStatus, retryableFailure } from '../net/failureKind.js'
+
 /**
  * 失败原因的**机器可读字典**（母单 #301 / 维度 3「可读性分层」+ 维度 2「结构化字段」）。
  *
@@ -245,7 +247,21 @@ export const retryableFor = (reason: LogReason, status?: number | string): boole
     return preset
   }
   const code = typeof status === 'number' ? status : Number(status)
-  return Number.isFinite(code) ? code >= 500 : false
+  if (!Number.isFinite(code)) {
+    return false
+  }
+  /**
+   * #896：状态码这一段读**同一份判据**（`net/failureKind.ts`，零依赖纯模块 —— 本文件
+   * 「不认识 collector / transport / 业务代码」那条纪律因此没有被破坏）。
+   *
+   * 改前这里是 `code >= 500`：**429 被算成不可重试**，而 `api/errors` 说可、`auth/flags` 说不可、
+   * 这里又说不可 —— 同一个 429 三个答案。现在 5xx 与 429 可、其余 4xx 不可，全仓一个答案。
+   *
+   * 注意本函数回答的是「界面该不该劝用户再点一次」，**不是**「我们要不要自动再发一次」：
+   * `REASON_RETRYABLE.cancelled = true`（用户取消后他自己想再来一次当然可以）与
+   * `retryableFailure('cancelled') = false`（我们绝不自动再发）是两个问题，不冲突。
+   */
+  return retryableFailure(failureOfStatus(code))
 }
 
 /**

@@ -30,6 +30,7 @@
  */
 
 import type { NetFailurePhase } from '../net/networkPhase.js'
+import { retryableFailure } from '../net/requestPolicy.js'
 import type { ConsumeRawResponse } from './http.js'
 
 /**
@@ -162,6 +163,27 @@ export type Sub2ApiError = {
    * `undefined`，绝不编一个 `tcp` 出来（#895 第 4 条纪律）。
    */
   phase?: NetFailurePhase
+}
+
+/**
+ * 消费链路的「这次失败值不值得再试」（#896）：口径统一在 `net/requestPolicy.ts`。
+ *
+ * 改前是 `kind === 'server' || kind === 'rate_limit'` —— 与本仓另外三处的 429 口径各不相同。
+ * 注意这里只回答**能不能重试**（界面上给不给「重试」按钮 / 调用方要不要排队补偿），
+ * 消费链路**不自动重发**：那一类属于 `control`（卡密 / 建 Key / 扣费有不可撤销的副作用），
+ * 表里 `control.retry.maxAttempts === 0` 把这条产品决定写死在一处（`#484 §4.3`）。
+ */
+export const consumeRetryableOf = (kind: ConsumeErrorKind): boolean => {
+  // 只回答「这个类别值不值得让用户/调用方再试一次」；**不**回答「要不要自动重发」（见上面注释）。
+  // 注意不能只看状态码：`503 + MCP_OAUTH_NOT_CONFIGURED` 的 kind 是 `unknown`（功能根本没开），
+  // 按状态码会把它误判成「上游临时故障，稍后重试」—— 用例 `consume-envelope` 的 [9] 钉的就是这条。
+  if (kind === 'server') {
+    return retryableFailure('server5xx')
+  }
+  if (kind === 'rate_limit') {
+    return retryableFailure('rateLimited')
+  }
+  return false
 }
 
 /** 错误码 → `{kind, i18nKey}` 映射表（面板 `reason`、中间件字符串、网关小写码共用一张） */
@@ -422,7 +444,7 @@ export const parseSub2ApiError = (
       code: `HTTP_${raw.status}`,
       message: raw.text.trim().slice(0, 200),
       status: raw.status,
-      retryable: kind === 'server' || kind === 'rate_limit',
+      retryable: consumeRetryableOf(kind),
       envelope: 'text',
       nonJson: true,
       ...(retryAfterMs === undefined ? {} : { retryAfterMs }),
@@ -447,7 +469,7 @@ export const parseSub2ApiError = (
     message: message || raw.text.trim().slice(0, 200),
     status: raw.status,
     // 重试有意义 = 传输层 / 5xx / 429；业务失败（401/403/404/409）重试只会更糟
-    retryable: kind === 'server' || kind === 'rate_limit',
+    retryable: consumeRetryableOf(kind),
     envelope,
     ...(retryAfterMs === undefined ? {} : { retryAfterMs }),
     i18nKey: mapped?.i18nKey ?? keyFromStatus(raw.status),

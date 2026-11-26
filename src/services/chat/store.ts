@@ -55,6 +55,7 @@ import { REASON } from '../diagnostics/reasons.js'
 import { createStreamMeter, streamTimingMeta } from '../diagnostics/timing.js'
 import { requestGates, type ProviderKind } from '../api/providers.js'
 import { LIMITS, mbOf } from '../limits.js'
+import { REQUEST_POLICY, canAutoRetry, failureOfStatus } from '../net/requestPolicy.js'
 import { useSettings } from '../settings.js'
 import { generateSessionTitle } from './autoTitle.js'
 import { estimateChars, estimateTokens } from './contextBudget.js'
@@ -108,10 +109,16 @@ import {
 
 /** 保留最近打开的详情；当前会话、生成中及尚未成功保存的会话不淘汰。 */
 const SESSION_CACHE_LIMIT = 5
-/** 自动重试的最多次数（不含首次请求）：附件补传、断网、5xx、超时共用这一个上限 */
-export const STREAM_RETRY_LIMIT = LIMITS.streamRetryLimit
+/**
+ * 自动重试的最多次数（不含首次请求）：附件补传、断网、5xx、超时共用这一个上限。
+ *
+ * #896 起不再直接读 `LIMITS`：这个数字属于**流式请求的重试策略**，现在只有一处出处
+ * （`net/requestPolicy.ts` 的 `stream.retry.maxAttempts`）。`LIMITS` 仍是那个数字的**家**，
+ * 但它到调用点之间多了一层「这是哪一类请求」的语义。
+ */
+export const STREAM_RETRY_LIMIT = REQUEST_POLICY.stream.retry.maxAttempts
 /** 退避基数，第 n 次重试等待 2^n 倍；连续失败达到上限就放弃，把原始报错展示出来 */
-const RETRY_BASE_DELAY = LIMITS.retryBaseDelayMs
+const RETRY_BASE_DELAY = REQUEST_POLICY.stream.retry.backoffMs
 
 /**
  * 按当前服务类型的 spec 组装 system 与 messages：
@@ -2154,12 +2161,38 @@ export const decideStreamRetry = ({
   const staged =
     error instanceof ApiError ? shouldRetryStreamTimeout(error.code, receivedContent) : null
   if (staged !== null) {
-    return staged && attempt < STREAM_RETRY_LIMIT ? 'retry' : 'final'
+    // #896：次数、退避、内容三条判据都在策略表里（stream 类），这里只把现场交进去
+    return canAutoRetry({ cls: 'stream', failure: 'timeout', attempt, receivedContent })
+      ? 'retry'
+      : 'final'
   }
   if (receivedContent || attempt >= STREAM_RETRY_LIMIT) {
     return 'final'
   }
-  return isRetryableApiError(error) || fileRecovered ? 'retry' : 'final'
+  /**
+   * #896：非超时的失败也走同一张表 —— 但**先问业务判据，再问表**，顺序不能反。
+   *
+   * `isRetryableApiError` 里有业务档（额度用完是终态、内容审核是终态…），这些不是「传输失败」，
+   * 表里也不该有它们的位置；`canAutoRetry` 只回答「这一类请求还能不能再发一次」
+   * （次数上限、幂等性、出没出过内容）。
+   *
+   * 反过来的例子是真实存在的：**429 + `insufficient_quota`** 看着是「限流、可重试」，
+   * 但它其实是额度终态 —— 只问表会重发 3 次（这条红线由
+   * `tests/unit/quota-exhausted.test.mjs` 的「一次都不重试」钉住）。
+   */
+  /**
+   * 附件失效补传（400 + `file_id` 失效）：它**不是**「传输失败值得再试」，而是
+   * 「这次请求的参数已经变了」（文件重新传上去了）。所以它不走传输表，只受 #105 那两条
+   * 通用护栏约束（次数上限 + 已出过内容不重发）。
+   */
+  if (fileRecovered) {
+    return !receivedContent && attempt < STREAM_RETRY_LIMIT ? 'retry' : 'final'
+  }
+  if (!isRetryableApiError(error)) {
+    return 'final'
+  }
+  const failure = error instanceof ApiError ? failureOfStatus(error.status) : 'unknown'
+  return canAutoRetry({ cls: 'stream', failure, attempt, receivedContent }) ? 'retry' : 'final'
 }
 
 /** #105 通用档的退避：`基值 × 2^attempt`（断流档**不用**这个，见下面的 waitForRetry） */

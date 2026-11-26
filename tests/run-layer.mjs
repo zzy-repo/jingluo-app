@@ -137,6 +137,9 @@ const UNIT_SOLO = new Set([
   // 自己那份夹具，这几个文件要的导出不在里面）。批次里会红、单跑必绿 —— 单列，省得每轮都触发
   // 一次「批内红 → 单文件重跑」的兜底（兜底仍然保留，见 runUnit 里那段）。
   'app-update.test.mjs', 'domain09-config-migration-invariants.test.mjs', 'enter-key-mode.test.mjs',
+  // #895 / #896：本文件给 `@capacitor/core` 换了一份「可切换原生 / Web」的替身（断言原生分支的
+  // DNS/TCP/TLS 归因），批内会被前一个文件的替身短路 → 批内红、单跑绿。与上面那三个同一个成因。
+  'consume-net-phase-895.test.mjs',
   // pay-link 是「自收摊脚本 + 依赖自己是主脚本」的那类：并进批次时它的顶层检查会被同批文件
   // 提前触发的模块缓存短路（实测批内 7ms 跑完、退出码 0/1 不稳定），单列最诚实。
   'pay-link.test.mjs',

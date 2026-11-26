@@ -13,8 +13,8 @@
 
 | 项 | 值 |
 | --- | --- |
-| 扫描范围 | `src/**` 全部源文件 **402** 个（`.css` **52** 个，其中 `*.module.css` **44** 个；其余 `.ts / .tsx / .html` 共 **350** 个） |
-| 口径拆分 | 52 `.css` + 264 `.ts` + 85 `.tsx` + 1 `.html` = 402 |
+| 扫描范围 | `src/**` 全部源文件 **405** 个（`.css` **52** 个，其中 `*.module.css` **44** 个；其余 `.ts / .tsx / .html` 共 **353** 个） |
+| 口径拆分 | 52 `.css` + 267 `.ts` + 85 `.tsx` + 1 `.html` = 405 |
 | 命中总数 | **385** 处，分布在 **43** 个文件 |
 | 运行时下限 | WebView **83**（Chromium 83）。**首支持 ≤ 83 的特性一律记「无风险」，与有没有兜底无关** |
 | 构建期因素 | `rspack.config.ts` 用 `builtin:lightningcss-loader`，`targets` 取自 `package.json` 的 `browserslist`（强制含 `chrome >= 83`）。**已被构建期翻译掉的写法不算运行时假设** |
@@ -274,7 +274,7 @@
 - `src/services/uploadExts.ts:747` 的 `'svh'` 是文件扩展名白名单里的一项，不是 `svh` 长度单位。
 - `src/index.html` **没有任何 CSS**：它只有 ES5 时代的启动守卫（`Promise` / `fetch` / `ResizeObserver` / `CSS.escape` / `Intl.DisplayNames` 等 API 探测 + 12 秒启动超时），属于类别 1 的范围。
 - 仓库根的 `index.html`（APK 下载落地页，不进打包）`:12` 有一处 `env(safe-area-inset-bottom)`，**没有 `0px` 缺省值**。该页在外部浏览器里打开，不跑在 WebView 83 上，且 `env()` 首支持 Chromium 69，**无风险**。
-- `env(safe-area-inset-*)` 的缺省值写法不一致：`Settings.module.css` 里 `max(22px, env(safe-area-inset-bottom, 0px))` 那一处写了 `, 0px`，而 `Toast.module.css:3`、`SessionView.module.css:75`、`Welcome.module.css:152`、`Settings.module.css` 里 `padding-bottom: env(safe-area-inset-bottom)` 那一处（只有 `env()`，没有缺省值）与根 `src/index.html`（那里根本没有 `env()` 用法）都没写。`env()` 的缺省值不写时按 `0px` 处理，**不构成缺陷**，仅记录为一致性备注。
+- `env(safe-area-inset-*)` 的缺省值写法不一致：`Settings.module.css` 里 `max(22px, env(safe-area-inset-bottom, 0px))` 那一处写了 `, 0px`，而 `Toast.module.css:3`、`SessionView.module.css:90`、`Welcome.module.css:152`、`Settings.module.css` 里 `padding-bottom: env(safe-area-inset-bottom)` 那一处（只有 `env()`，没有缺省值）与根 `src/index.html`（那里根本没有 `env()` 用法）都没写。`env()` 的缺省值不写时按 `0px` 处理，**不构成缺陷**，仅记录为一致性备注。
 - `src/app/theme.ts:6,26,27,58`、`src/components/messages/ReadingBars.tsx:104,106`、`src/utils/usePresence.ts:18` 用 `matchMedia` 做媒体查询判断 —— 探的是**媒体查询结果**而不是 CSS 特性支持度，不属于本类。
 - `src/services/diagnostics/collector.ts:689` 的注释与 `:718` 的 `getComputedStyle(...).display` 用于诊断事实收集（判断元素是否可见），同一文件内有布局盒实测，判定为正确姿态。
 - **`CSS.supports` 现在藏在包装函数后面**：#212 统一能力探测后，`src/utils/capabilities.ts:107-114` 的 `cssSupports()` 先取 `host.CSS` 再以绑定形式调用 `css.supports(property, value)`，字面量不是 `CSS.supports(`，静态扫描抓不到（`src/services/diagnostics/capabilityTruth.ts` 里 `capabilities.dvh = cssSupports('height', '100dvh')` 就是这样间接调用的）。记为探测盲区，见 §6 第 2 条。

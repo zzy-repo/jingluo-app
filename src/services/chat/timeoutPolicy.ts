@@ -21,6 +21,16 @@
  * 断言生产用例的期望必须被打破）。引入任何依赖都会让那次变异导入失败，对照就成了摆设。
  */
 
+/**
+ * **为什么不 import `net/requestPolicy.ts`**（#896 之后仍然如此）：
+ * 本文件被 `tests/unit/chat-staged-timeout-568.test.mjs` 的**负向对照**整份复制到临时目录、
+ * 改一行再导入（那是「这条断言对它敏感吗」的唯一证据）。一旦这里有了 import，注入件在
+ * 临时目录里解析不到依赖，对照就会退化成「导入失败也算通过」—— 那比没有对照更糟。
+ *
+ * 所以两边的**数值**由用例守住：`tests/unit/request-class-policy-896.test.mjs` 的 [P9] 断言
+ * 本矩阵每一行的 `retryable / requiresNoContent` 与 `REQUEST_POLICY.stream.retry` 逐字相等
+ * （改一边不改另一边必红）。语义的**唯一出处**仍是策略表，这里只是它在本模块的投影。
+ */
 /** 三段超时的机器可读错误码：与 `ApiError.code` 是同一批字符串（`api/client.ts`） */
 export type StreamTimeoutCode = 'connect_timeout' | 'first_token_timeout' | 'idle_timeout'
 
