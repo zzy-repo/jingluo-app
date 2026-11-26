@@ -32,10 +32,7 @@ import { parseDocxFile } from './parsers/docx.js'
 import { isPdfParseError, parsePdfFile } from './parsers/pdf.js'
 import { parseTxtFile } from './parsers/txt.js'
 import { sha256Hex } from './sha256.js'
-import {
-  attachmentTextKey,
-  readAttachmentBlob,
-} from './store.js'
+import { attachmentTextKey } from './store.js'
 import type { DocumentAttachment, ParseOptions, ParsedDocument } from './types.js'
 import type { StoredAttachmentText } from '../chat/db.js'
 
@@ -264,7 +261,7 @@ const runParse = async (
   parserVersion: string,
   options?: ParseOptions
 ): Promise<DocumentAttachment> => {
-  const blob = await readAttachmentBlob(record.localPath)
+  const blob = await (await getStorage()).blobs.get(record.localPath)
   if (blob === undefined) {
     // 原件不见了（存储被清理 / 库被外部改动；#531 之后**不再是**整包导入的结果：
     // `commitStaging()` 替换 `files` 时会保留 `attachment-` 前缀的原件）。
