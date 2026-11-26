@@ -54,7 +54,7 @@ export const isBlobOwner = (store: string): store is BlobOwner =>
 
 /** 一张「主键 + doc」的表，外加该表自己的派生列。 */
 const docTable = (table: string, keyColumn: string, extraColumns: readonly string[]): string => {
-  const columns = [`${keyColumn} TEXT PRIMARY KEY`, ...extraColumns, 'doc TEXT NOT NULL']
+  const columns = [`${keyColumn} BLOB PRIMARY KEY`, ...extraColumns, 'doc TEXT NOT NULL']
   return `CREATE TABLE ${table} (\n  ${columns.join(',\n  ')}\n)`
 }
 
@@ -70,21 +70,21 @@ const MIGRATION_V1: readonly string[] = [
   value TEXT NOT NULL
 )`,
   docTable('sessions', 'id', []),
-  docTable('session_summaries', 'id', ['branch_of TEXT']),
+  docTable('session_summaries', 'id', ['branch_of BLOB']),
   docTable('files', 'id', []),
   docTable('sessions_staging', 'id', []),
   docTable('files_staging', 'id', []),
   docTable('app_assets', 'key', []),
-  docTable('attachments', 'id', ['sha256 TEXT NOT NULL', 'parsed_text_path TEXT']),
-  docTable('attachment_texts', 'key', ['sha256 TEXT NOT NULL']),
-  docTable('session_memory', 'id', ['session_id TEXT NOT NULL', 'created_at INTEGER NOT NULL']),
-  // IDB sessionSummaries.fileIds 的 multiEntry 索引：拆成关联表，重复值保留重复行（count 口径对齐）
+  docTable('attachments', 'id', ['sha256 BLOB', 'parsed_text_path BLOB']),
+  docTable('attachment_texts', 'key', ['sha256 BLOB']),
+  docTable('session_memory', 'id', ['session_id BLOB', 'created_at INTEGER']),
+  // IDB sessionSummaries.fileIds 的 multiEntry 索引：拆成关联表。IDB 的 multiEntry 会对数组去重，这里主键同样去重
   `CREATE TABLE session_summary_file_ids (
-  summary_id TEXT NOT NULL,
-  file_id    TEXT NOT NULL,
-  ord        INTEGER NOT NULL
-)`,
-  'CREATE INDEX session_summary_file_ids_by_file ON session_summary_file_ids (file_id, summary_id)',
+  file_id    BLOB NOT NULL,
+  summary_id BLOB NOT NULL,
+  PRIMARY KEY (file_id, summary_id)
+) WITHOUT ROWID`,
+  'CREATE INDEX session_summary_file_ids_by_summary ON session_summary_file_ids (summary_id)',
   // 缺 branchOf 的记录不进索引（IDB 对缺键记录跳过索引项）
   'CREATE INDEX session_summaries_branch_of ON session_summaries (branch_of) WHERE branch_of IS NOT NULL',
   'CREATE INDEX attachments_sha256 ON attachments (sha256)',
@@ -96,7 +96,7 @@ const MIGRATION_V1: readonly string[] = [
   // storage / file_path 为将来「原件落文件系统」预留：本期恒为 'sqlite-chunks' / NULL。
   `CREATE TABLE blob_meta (
   owner     TEXT NOT NULL,
-  id        TEXT NOT NULL,
+  id        BLOB NOT NULL,
   total     INTEGER NOT NULL,
   chunks    INTEGER NOT NULL,
   sha256    TEXT NOT NULL,
@@ -107,7 +107,7 @@ const MIGRATION_V1: readonly string[] = [
 )`,
   `CREATE TABLE blob_chunks (
   owner TEXT NOT NULL,
-  id    TEXT NOT NULL,
+  id    BLOB NOT NULL,
   seq   INTEGER NOT NULL,
   len   INTEGER NOT NULL,
   data  BLOB NOT NULL,
