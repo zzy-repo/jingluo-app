@@ -2,7 +2,7 @@
  * protection/** 与存储之间**唯一**的接触面（规范 §7）：只经 Storage Module 的公开入口 `getStorage()`，
  * 不 import `chat/db.ts`（#917 的 storage-boundary 门禁）。
  */
-import { getStorage } from '../storage/index.js'
+import { getStorage, isStorageAvailable } from '../storage/index.js'
 import type { Session } from '../chat/types.js'
 import type { ProtectionStorage } from './types.js'
 
@@ -62,7 +62,7 @@ const rebuildSummaries = async (): Promise<number> => {
 
 export const createStorageAccess = (): ProtectionStorage => ({
   schemaVersion: PROTECTION_SCHEMA_VERSION,
-  available: () => typeof indexedDB !== 'undefined',
+  available: isStorageAvailable,
   countSessions: async () => {
     let count = 0
     await eachSessionPage((page) => {

@@ -16,6 +16,7 @@ import { createHighwater, detectDataLoss, type Highwater } from './highwater.js'
 import { createRestore, type RestorableSnapshot, type RestoreOptions, type RestoreResult } from './restore.js'
 import { SNAPSHOT_MIN_INTERVAL_MS } from './constants.js'
 import { createSnapshots, type SnapshotWriteResult, type Snapshots } from './snapshot.js'
+import { isStorageAvailable } from '../storage/index.js'
 import { createStorageAccess } from './storageAccess.js'
 import type { DataLostInfo, ProtectionDeps } from './types.js'
 
@@ -199,7 +200,7 @@ export const getProtection = async (): Promise<Protection | null> => {
     return instance
   }
   try {
-    if (typeof indexedDB === 'undefined') {
+    if (!isStorageAvailable()) {
       return null
     }
     const { getFs } = await import('../fs/index.js')

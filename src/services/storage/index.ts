@@ -68,6 +68,13 @@ export const getStorage = (): Promise<StorageBackend> => {
  */
 export const peekStorage = (): StorageBackend | undefined => override ?? resolved ?? undefined
 
+/**
+ * 同步判断「当前宿主有没有可用的持久化存储后端」（能力探测，不触发打开）。
+ * 默认后端是 IndexedDB，所以看 `indexedDB` 是否存在；注入了替身后端时视为可用。
+ * 业务与 protection 层用它代替自己 `typeof indexedDB`，SQLite 后端落地后只改这一处。
+ */
+export const isStorageAvailable = (): boolean => override !== null || typeof indexedDB !== 'undefined'
+
 /** 测试用：注入替身后端；传 `null` 恢复默认并丢弃缓存的单例（不关闭它）。 */
 export const setStorageForTests = (backend: StorageBackend | null): void => {
   override = backend
