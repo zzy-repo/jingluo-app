@@ -11,8 +11,11 @@ export const MIGRATION_ENGINE_VERSION = 1
 
 export const STATE_DIR = 'storage-engine'
 export const STATE_PATH = `${STATE_DIR}/state.json`
-/** SQLite 真源库名（由 `OpenSqlDatabase` 解析到应用私有目录）。 */
-export const MAIN_DB_NAME = 'deepseek-app.db'
+/**
+ * SQLite 真源库名（由 `OpenSqlDatabase` 解析到应用私有目录）。
+ * **不带 `.db`**：原生插件的库名白名单是 `[a-z0-9-]+`，后缀由插件补。
+ */
+export const MAIN_DB_NAME = 'deepseek-app'
 
 /** 备份库文件名前缀：`storage-engine/backup-<ts>.db`。 */
 export const BACKUP_PREFIX = 'backup-'

@@ -293,7 +293,7 @@ const createNativeSqliteDatabase = (name: string, bridge: AppSqliteBridge): SqlD
         throw new InfraError('unavailable', 'connection is inside a transaction')
       }
       try {
-        return await bridge.backupTo({ name, path: destRelativePath })
+        return await bridge.backupTo({ name, path: nativeBackupPathOf(destRelativePath) })
       } catch (error) {
         const shape = errorShapeOf(error)
         throw new InfraError(shape.kind, shape.message)
@@ -345,20 +345,41 @@ const createNativeSqliteDatabase = (name: string, bridge: AppSqliteBridge): SqlD
 }
 
 /** 探测并打开 Native SQLite。如果不可用就抛 InfraError（不降级）。 */
+/**
+ * 迁移层传给 `openSqlite` 的 `name` 是「相对路径」（`storage-engine/backup-<ts>.db`），
+ * 而原生插件的库名白名单只有 `[a-z0-9-]+`（目录固定为 `files/storage-engine/`，后缀固定 `.db`）。
+ * 这里做一次规范化：取 basename、去掉 `.db`，不合规就抛明确错误（不静默改名到别处）。
+ * 例：`deepseek-app` / `deepseek-app.db` / `storage-engine/backup-1795.db` → `deepseek-app` / `backup-1795`。
+ */
+const nativeNameOf = (name: string): string => {
+  const base = name.slice(name.lastIndexOf('/') + 1).replace(/\.db$/u, '')
+  if (!/^[a-z0-9-]+$/u.test(base)) {
+    throw new InfraError('unsupported', `sqlite database name must match [a-z0-9-]+ after normalization: ${JSON.stringify(name)}`)
+  }
+  return base
+}
+
+/**
+ * `backupTo` 的路径同样按「相对 `storage-engine/`」解释：迁移层写的是 `storage-engine/x.db`，
+ * 插件已经以该目录为根，去掉前缀，避免落到 `storage-engine/storage-engine/`。
+ */
+const nativeBackupPathOf = (path: string): string => path.replace(/^storage-engine\//u, '')
+
 export const openNativeSqlite: OpenSqlDatabase = async (options) => {
   const bridge = getNativeBridge()
   const ready = createReadyGate(bridge)
 
   await ready()
 
+  const name = nativeNameOf(options.name)
   try {
-    await bridge.open({ name: options.name })
+    await bridge.open({ name })
   } catch (error) {
     const shape = errorShapeOf(error)
     throw new InfraError(shape.kind, shape.message)
   }
 
-  return createNativeSqliteDatabase(options.name, bridge)
+  return createNativeSqliteDatabase(name, bridge)
 }
 
 /**

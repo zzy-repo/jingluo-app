@@ -78,7 +78,10 @@ export const resolveStorageEngine = async (deps: RouterDeps): Promise<StorageEng
   const { outcome, witness } = loaded
   switch (outcome.kind) {
     case 'blocked':
-      return blocked('needs-user-decision', outcome.detail)
+      return blocked(
+        'needs-user-decision',
+        witness.unavailableReason === undefined ? outcome.detail : `${outcome.detail} (${witness.unavailableReason})`
+      )
     case 'rebuild-committed':
     case 'finish-commit':
       return { engine: 'sqlite' }
@@ -90,7 +93,12 @@ export const resolveStorageEngine = async (deps: RouterDeps): Promise<StorageEng
   const { state } = outcome
   if (state.phase === 'committed') {
     return witness.unavailable === true || witness.absent === true
-      ? blocked('sqlite-unavailable-after-commit', witness.absent ? 'sqlite database file is missing' : 'sqlite database cannot be opened')
+      ? blocked(
+          'sqlite-unavailable-after-commit',
+          witness.absent
+            ? 'sqlite database file is missing'
+            : `sqlite database cannot be opened${witness.unavailableReason ? ` (${witness.unavailableReason})` : ''}`
+        )
       : { engine: 'sqlite' }
   }
   if (state.phase === 'failed') {

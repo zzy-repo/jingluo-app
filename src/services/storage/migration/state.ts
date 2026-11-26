@@ -61,6 +61,8 @@ export type SqliteWitness = {
   unavailable?: boolean
   /** 库文件根本不存在。 */
   absent?: boolean
+  /** 打不开的原因（诊断用；只进 blocked 详情，不参与判定）。 */
+  unavailableReason?: string
 }
 
 /**
@@ -326,8 +328,12 @@ export const readSqliteWitness = async (open: () => Promise<SqlDatabase>): Promi
   let db: SqlDatabase
   try {
     db = await open()
-  } catch {
-    return { unavailable: true }
+  } catch (error) {
+    // 把原因带出来：闸门的 blocked 详情会显示它，否则「库打不开」在真机上完全无法归因
+    return {
+      unavailable: true,
+      ...(error instanceof Error ? { unavailableReason: `${error.name}: ${error.message}` } : {}),
+    }
   }
   try {
     const committedAt = await readMeta(db, META_KEYS.committedAt)
