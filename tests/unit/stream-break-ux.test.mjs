@@ -44,6 +44,12 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 
+import { installResolveHooks } from '../helpers/contract.mjs'
+
+// #896 3c-2：`chat/streamBreakout.ts` 现在读 `net/requestPolicy.ts` 的 `stream` 策略
+// （五个数字不再自己写），所以这里需要 `.js → .ts` 的解析钩子 —— 与其它跨模块单测同一套。
+installResolveHooks()
+
 const read = (path) => readFileSync(new URL(path, import.meta.url), 'utf8')
 
 const {

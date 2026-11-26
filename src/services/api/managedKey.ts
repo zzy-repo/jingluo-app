@@ -42,6 +42,7 @@
  * 纯逻辑：不碰 DOM、不读存储、不发请求（`ManagedKeySource` 由调用方注入），Node 单测可直接 import。
  */
 import type { ConsumeApiKey, ConsumeCallResult, ConsumePage, Sub2ApiError } from '../consume/index.js'
+import { requestPolicyOf } from '../net/requestPolicy.js'
 import { keyFingerprint } from '../invite/keyIdentity.js'
 import type { ProviderKind } from './providers.js'
 
@@ -301,12 +302,18 @@ export type ManagedKeyEnsureFailure = {
 export type ManagedKeyEnsureResult = ManagedKeyEnsureSuccess | ManagedKeyEnsureFailure
 
 /**
- * 自动重试上限：**首次 + 一次重试**（#803 第 9 条「只自动重试一次，不许无限循环」）。
+ * 自动重试上限：**首次 + 一次补发**（#803 第 9 条「只自动重试一次，不许无限循环」）。
  *
- * 写成常量而不是散在循环条件里：这条上限是验收项，用例直接 import 它断言，
- * 将来谁想改成 3 次必须同时改用例，改不动就是没读见这行注释。
+ * #896 3c-3：这个数不再写死在本文件，而是 `1 + REQUEST_POLICY.control.dedupeRetry`。
+ *
+ * **它是特例，不是「control 类可以重试」**：`control.retry` 仍然是 `0`（一般控制类一次都不补发
+ * —— 卡密重复兑换、扣费重复提交都是重试重出来的，#484 §4.3）。本流程敢补发一次，靠的是
+ * 「每次尝试都先 `GET /api/v1/keys` 查重、`POST` 用设备固定名（服务端按 name 去重）」这个
+ * **结构上的幂等**，所以表里给这一族单独留了一个口子 `dedupeRetry`。
+ *
+ * 导出名保留：既有用例直接 import 它断言，将来谁想改次数必须改策略表并同时改用例。
  */
-export const MANAGED_KEY_MAX_ATTEMPTS = 2
+export const MANAGED_KEY_MAX_ATTEMPTS = 1 + requestPolicyOf('control').dedupeRetry
 
 /** 换凭据的结局（与 `auth/store.ts` 的 `SessionRefreshOutcome` 同形；本层不 import 身份层） */
 export type ManagedKeyRefreshOutcome = 'refreshed' | 'expired' | 'retryable'

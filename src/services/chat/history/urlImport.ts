@@ -1,7 +1,8 @@
 import { Capacitor, CapacitorHttp, type HttpResponse } from '@capacitor/core'
 import { errorMeta, record, recordAction, recordEvent, redactUrl } from '../../diagnostics/collector.js'
 import { buildMeta } from '../../diagnostics/fields.js'
-import { isLogReason, REASON, retryableFor } from '../../diagnostics/reasons.js'
+import { REASON } from '../../diagnostics/reasons.js'
+import { retryableFailure, type RequestFailureKind } from '../../net/failureKind.js'
 import { bytesPerSecond } from '../../diagnostics/timing.js'
 import { importHistory } from '../backup.js'
 import { LIMITS } from '../../limits.js'
@@ -474,25 +475,46 @@ const monotonicNow = (): number => {
 const elapsedSince = (startedAt: number): number => Math.max(0, Math.round(monotonicNow() - startedAt))
 
 /**
- * 再试一次有没有用（#313）：链路类（超时 / 断流 / 停滞 / 预算 / 网络 / 空包）可重试；
- * 包本身坏了、地址永久无效、403 过期/签名错误都不可 —— 重试只会再等一遍。
+ * 导入下载的失败原因 → 全仓统一的失败类型（**唯一的映射处**，#896 3c-5）。
  *
- * **迁移中**（#301 维度 3）：取值在 `reasons.ts` 字典里的走统一默认值 `retryableFor()`，
- * 下面这份名单只剩「还没迁移的历史取值」（`interrupted` / `unreachable` 等）。
- * 名单本身只能缩不能涨：新原因一律进字典，别再往这里加词。
+ * 改前这里是两份判定的叠加：取值在 `reasons.ts` 字典里的走 `retryableFor()`，
+ * 不在字典里的走本文件另一份 `RETRYABLE_FAILURES` 名单 —— 同一件事两个答案，
+ * 而且名单本身还得靠注释约束「只能缩不能涨」。现在只留这张映射：结论由
+ * `net/failureKind.ts` 的 `retryableFailure()` 给（全仓唯一判据）。
+ *
+ * 口径（与改前逐格相等，`tests/unit/url-import-policy-896.test.mjs` 钉住）：
+ *  - 等待类（超时 / 停滞 / 预算耗尽 / 中途断流）→ `timeout`：换一次可能就过去了；
+ *  - 连不上类（断网 / 不可达 / 拒绝连接）→ `offline`：同上，多半是暂时的；
+ *  - 内容不完整（空包 / 半截）→ `empty`：换个块大小重来能续上；
+ *  - 其余（403 签名/过期、永久性地址错误、HTTP 4xx、不是 zip）→ `client4xx`：
+ *    重试拿到的是同一份结果，#313 说的「别劝用户再点一次」就是这一档。
+ *
+ * 导入是 **`data` 类**（幂等下载，重发最多多花一点流量），所以这里不需要问「是不是 control」。
  */
-const RETRYABLE_FAILURES = new Set([
-  'timeout',
-  'interrupted',
-  'network',
-  'offline',
-  'unreachable',
-  'refused',
-  'stalled',
-  'deadline',
-  'empty',
-  'incomplete',
-])
+const FAILURE_OF_DOWNLOAD_REASON: Record<string, RequestFailureKind> = {
+  [REASON.timeout]: 'timeout',
+  [REASON.stalled]: 'timeout',
+  [REASON.deadline]: 'timeout',
+  interrupted: 'timeout',
+  [REASON.network]: 'offline',
+  [REASON.offline]: 'offline',
+  [REASON.refused]: 'offline',
+  unreachable: 'offline',
+  [REASON.empty]: 'empty',
+  [REASON.incomplete]: 'empty',
+}
+
+/** 不在上表里的一律按「重发拿到同一份结果」处理（与 4xx 同理） */
+const DOWNLOAD_FAILURE_FALLBACK: RequestFailureKind = 'client4xx'
+
+/**
+ * 这一次下载失败「再试一次有没有用」（#313）。
+ *
+ * 注意这是**给界面**的意思（要不要给「重试」按钮），导入不会自己悄悄重发整段。
+ * 分块补传（`CHUNK_RETRIES`）读的是 `data` 类的策略，不经过这里。
+ */
+export const importDownloadRetryableOf = (reason: string): boolean =>
+  retryableFailure(FAILURE_OF_DOWNLOAD_REASON[reason] ?? DOWNLOAD_FAILURE_FALLBACK)
 
 /** 下载失败必录：阶段 + 已下载字节 + 耗时 + 错误原文（回查「导入没反应」靠这条）。 */
 const recordDownloadFailure = (
@@ -513,8 +535,8 @@ const recordDownloadFailure = (
       flow: 'import',
       stage: 'import.download',
       status: 'error',
-      // 字典里的原因用全链路统一的默认可重试性；历史取值继续走本地名单（两者对同一取值的结论一致）
-      retryable: isLogReason(reason) ? retryableFor(reason) : RETRYABLE_FAILURES.has(reason),
+      // 可重试性只有一个判据（`net/failureKind.ts`），本文件只负责 reason → 失败类型
+      retryable: importDownloadRetryableOf(reason),
       durationMs: elapsedSince(startedAt),
     }),
     // error.msg 一律给：没有异常对象时用失败原因兜底，日志里不留空字段（#19）

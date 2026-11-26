@@ -33,8 +33,30 @@
  * 也不存在「两份内容」的错觉；弱网 / 上游抖动绝大多数在前两三次就恢复。而一旦已经出字，
  * 重发的代价就变成「用户把同一段再看一遍」，所以内容越多越不许重发（150 字是那条线）。
  *
- * 纯模块，不 import 任何东西：判定要能在 L0 用例里直接跑真代码（同 `timeoutPolicy.ts` 的先例）。
+ * ## 那五个 `STREAM_BREAK_*` 常量去哪了（#896 3c-1）
+ *
+ * 改前本文件自己定义 `STREAM_BREAK_RETRY_LIMIT = 5` / `STREAM_BREAK_RETRY_BUDGET_MS = 60_000` /
+ * `STREAM_BREAK_PARTIAL_MAX_CHARS = 150` / 退避序列 —— 而「同一类（stream）的补试档」在
+ * `net/requestPolicy.ts` 里还有一份（`retry = streamRetryLimit = 2`）。两处都能改、都能编译通过，
+ * 改哪一处生效取决于「谁问了哪个问题」，这就是 #896 要收掉的东西。
+ *
+ * 现在**数字只在 `LIMITS.streamBreakout` 写一次**，`REQUEST_POLICY.stream.silent` 是它的策赂投影，
+ * 本文件通过 {@link silentRetryOf} 读那一行；下面五个导出名保留，是为了让调用点与既有用例
+ * （`stream-break-ux.test.mjs` / `domain02-chat-anomaly.test.mjs`）一行都不用改 ——
+ * 它们是**同一份策略的只读视图**，不再是可以各改各的常量。
+ *
+ * 与 `timeoutPolicy.ts` 的区别（那条「不 import 任何东西」的纪律**不**适用于本文件）：
+ * `timeoutPolicy.ts` 会被 `chat-staged-timeout-568.test.mjs` 整份复制到临时目录做负向对照，
+ * 有了 import 就解析不到依赖；本文件没有那个用途，所以可以（也应该）直接读策略表。
  */
+
+import { silentRetryDelayMs, silentRetryOf } from '../net/requestPolicy.js'
+
+/**
+ * 这一类（`stream`）此刻生效的静默补试档 —— 本文件唯一的数字来源。
+ * 它在模块加载时取一次：策略表是编译期常量（重试语义不许运行期改，那是产品决定）。
+ */
+const SILENT = silentRetryOf('stream')
 
 /** 断流两档：连接断掉（interrupted）与连上了但不动（idle） */
 export type StreamBreakoutKind = 'interrupted' | 'idle'
@@ -91,50 +113,48 @@ export type StreamBreakoutDecision = {
 }
 
 /**
- * 首字节前断开的静默重试上限（**5** 次）。
+ * 首字节前断开的静默补试上限（**5** 次）—— 取自 `REQUEST_POLICY.stream.silent.attempts`
+ * （数字本身在 `LIMITS.streamBreakout.silentAttempts`）。
  *
- * 与 `LIMITS.streamRetryLimit`（2 次，弱网 / 5xx / 连接超时共用）**故意分开**：那一档的重试
- * 会显示「正在第 N 次重试（共 2 次）」，而这一档要的是「悄悄再试几次，成了就当无事发生；
- * 不成再说话」。混用一个数字，要么静默重试被砍成 2 次（弱网恢复率下降），要么把 #105
- * 的通用重试放大到 5 次（请求量炸开）。
+ * 与「看得见的重试」（`streamRetryLimit` = 2 次）**故意分开**：那一档会显示
+ * 「正在第 N 次重试（共 2 次）」，这一档要的是「悄悄再试几次，成了就当无事发生；不成再说话」。
+ * 混用一个数字，要么静默补试被砍成 2 次（弱网恢复率下降），要么把 #105 的通用重试
+ * 放大到 5 次（请求量炸开）。两条理由都写在策略表里，本文件只读结论。
  */
-export const STREAM_BREAK_RETRY_LIMIT = 5
+export const STREAM_BREAK_RETRY_LIMIT = SILENT.attempts
 
 /** 首字节后断开的补试上限（**1** 次：这次重发要丢掉已经收到的半截，代价高，只补一次） */
-export const STREAM_BREAK_PARTIAL_RETRY_LIMIT = 1
+export const STREAM_BREAK_PARTIAL_RETRY_LIMIT = SILENT.partialAttempts
 
 /**
  * 断流重试的**总时长预算**（60s）：从点发送算到「还要不要再发一次」。
  * 它不是「单次请求超时」，而是「用户愿意为这一条回答等多久」——超了就给提示让他决定。
  */
-export const STREAM_BREAK_RETRY_BUDGET_MS = 60_000
+export const STREAM_BREAK_RETRY_BUDGET_MS = SILENT.budgetMs
 
 /**
  * 「已经有内容」这一档的**阈值**（150 字）：`receivedChars < 150` 才允许补一次。
  * 口径是**严格小于**：149 补、150 不补（单测钉死，免得边界漂移）。
  */
-export const STREAM_BREAK_PARTIAL_MAX_CHARS = 150
+export const STREAM_BREAK_PARTIAL_MAX_CHARS = SILENT.partialMaxChars
 
 /**
  * 退避序列（毫秒）：1s / 2s / 4s / 8s，用完最后一个就**封顶**在 8s。
  *
- * 为什么不是 `base × 2^attempt` 一直翻：5 次重试若一路翻倍，末次要等 16s、总退避 31s，
+ * 为什么不是 `base × 2^attempt` 一直翻：5 次补试若一路翻倍，末次要等 16s、总退避 31s，
  * 用户在小半分钟里看不到任何东西，而 60s 预算一撞就白等；反过来固定 1s 又会在上游
  * 短暂抖动时把 5 次全烧完。1→2→4→8（然后 8）是「前两次快速补救、后面放慢」的折中。
+ * 序列由 `LIMITS.retryBaseDelayMs` 的 1/2/4/8 倍算出，不是另抄一份字面量。
  */
-export const STREAM_BREAK_RETRY_DELAYS_MS: readonly number[] = [1000, 2000, 4000, 8000]
+export const STREAM_BREAK_RETRY_DELAYS_MS: readonly number[] = SILENT.delaysMs
 
 /** 这个 kind 是不是断流两档之一（其余一律不是本文件的裁决对象） */
 export const isStreamBreakoutKind = (kind: string | undefined): kind is StreamBreakoutKind =>
   kind === 'interrupted' || kind === 'idle'
 
 /** 第 `retriedCount` 次重试（0 起）该等多久：序列用完就封顶，绝不指数爆炸 */
-export const streamBreakRetryDelayMs = (retriedCount: number): number => {
-  const index = Number.isFinite(retriedCount) ? Math.max(0, Math.trunc(retriedCount)) : 0
-  return STREAM_BREAK_RETRY_DELAYS_MS[
-    Math.min(index, STREAM_BREAK_RETRY_DELAYS_MS.length - 1)
-  ] as number
-}
+export const streamBreakRetryDelayMs = (retriedCount: number): number =>
+  silentRetryDelayMs(retriedCount)
 
 /** 什么都不做的判定（非断流档、以及「已经收口」的档共用） */
 const noRetry = (

@@ -55,6 +55,12 @@ export const OURS_TIMEOUTS = {
   redeem: 15000,
   /** Issue #331：收款页地址是一个只读的小接口，给 10s 足够（超时与网络错误分开给文案） */
   payLink: 10000,
+  /**
+   * 购买记录那一页（`ours/purchases.ts`，槽位 `pay.orders`）：#158 提到该接口对 62.106
+   * 有一次跨机调用（换 customer_id），弱网下可能慢 1~3 秒，所以用 12s 而不是 10s。
+   * #896 3c-4 从 `purchases.ts` 搬来，值一个没改。
+   */
+  orders: 12000,
 } as const
 
 /**

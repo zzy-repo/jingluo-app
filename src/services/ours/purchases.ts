@@ -19,7 +19,8 @@
 import { record } from '../diagnostics/collector.js'
 import { buildMeta } from '../diagnostics/fields.js'
 import type { LogMeta } from '../diagnostics/types.js'
-import { OURS_API_BASE, type OursHttpRequest, type OursTransport } from './api.js'
+import { retryableFailure, type RequestFailureKind } from '../net/failureKind.js'
+import { OURS_API_BASE, OURS_TIMEOUTS, type OursHttpRequest, type OursTransport } from './api.js'
 import { httpTransport } from './transport.js'
 
 // ------------------------------------------------------------------ 类型（界面依赖这些名字）
@@ -70,8 +71,11 @@ export const PURCHASES_MAX_LIMIT = 100
 /**
  * 读超时 12s：Issue #158 提到该接口对 62.106 有一次跨机调用（换 customer_id），
  * 弱网下可能慢 1~3 秒，用 /buy 那档 12s 而不是 10s，避免把「慢」误报成「超时」。
+ *
+ * #896 3c-4：数字搬到 `OURS_TIMEOUTS.orders`（与 `ours/api.ts` 的其它槽位同一张表），
+ * 本文件只留名字。槽位 `pay.orders` 归 `data` 类（只读查询，幂等）。
  */
-export const PURCHASES_TIMEOUT_MS = 12000
+export const PURCHASES_TIMEOUT_MS = OURS_TIMEOUTS.orders
 
 /** 五个合法状态（其余一律归 failed，原文保留在 statusText 里） */
 export const PURCHASE_STATUSES: readonly PurchaseStatus[] = [
@@ -101,7 +105,31 @@ export type PurchaseErrorKind =
   | 'rateLimited'
   | 'badResponse'
 
-const RETRYABLE_KINDS: readonly PurchaseErrorKind[] = ['network', 'timeout', 'server', 'rateLimited']
+/**
+ * `PurchaseErrorKind` → 全仓统一的失败类型（**唯一的映射处**）。
+ *
+ * #896 3c-4：改前这里另有一份 `RETRYABLE_KINDS = ['network','timeout','server','rateLimited']`，
+ * 与 `net/failureKind.ts` 的判据**平行存在** —— 同一个 429 在两处各判一次，改一处不改另一处
+ * 就出现「界面给了重试按钮但判定说不该重试」。现在只保留映射，结论统一由
+ * `retryableFailure()` 给。
+ *
+ * 两处**刻意**的映射，写出来是为了以后不用再猜：
+ *  - `badResponse`（2xx 但不是预期的 JSON 结构）→ `client4xx`：这是**契约形状**不匹配，
+ *    重发拿到的是同一份坏响应，与 4xx 同理（改前它就在不可重试那一档）。
+ *    注意它与 `failureOfStatus(200)` 的 `empty`（「成功壳子但没内容」）不是同一件事。
+ *  - `network` → `offline`：传输层不可用，与系统层没网同一档。
+ */
+const FAILURE_OF_PURCHASE_KIND: Record<PurchaseErrorKind, RequestFailureKind> = {
+  keyMissing: 'client4xx',
+  unauthorized: 'client4xx',
+  rejected: 'client4xx',
+  network: 'offline',
+  timeout: 'timeout',
+  server: 'server5xx',
+  rateLimited: 'rateLimited',
+  badResponse: 'client4xx',
+}
+
 const NEEDS_KEY_KINDS: readonly PurchaseErrorKind[] = ['keyMissing', 'unauthorized']
 
 export class PurchaseError extends Error {
@@ -127,9 +155,15 @@ export class PurchaseError extends Error {
     this.detail = options.detail
   }
 
-  /** 重试可能有用（网络 / 超时 / 5xx / 限流） */
+  /**
+   * 重试可能有用（网络 / 超时 / 5xx / 限流）—— 结论来自 `net/failureKind.ts` 的**唯一判据**，
+   * 本文件只负责把 `kind` 映射过去（见 `FAILURE_OF_PURCHASE_KIND`）。
+   *
+   * 注意这是**给界面的**意思（「要不要给用户一个重试按钮」），不是「我们要不要自动再发」——
+   * 后者恒为否：订单/支付链路属于 `control` 语义，`canAutoRetry` 一律 false。
+   */
   get retryable(): boolean {
-    return RETRYABLE_KINDS.includes(this.kind)
+    return retryableFailure(FAILURE_OF_PURCHASE_KIND[this.kind])
   }
 
   /** 要用户重新填 Key（没填 / 401 / 403），重试没用 */

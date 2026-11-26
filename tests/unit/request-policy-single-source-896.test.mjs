@@ -74,6 +74,7 @@ test('[S1] 七个传输槽位都能回报自己属于哪个类（改前：这个
       'consume.write',
       'migration',
       'pay.keyProbe',
+      'pay.orders',
       'pay.payLink',
       'pay.redeem',
     ],
@@ -97,7 +98,7 @@ test('[S1] 七个传输槽位都能回报自己属于哪个类（改前：这个
     assert.equal(TRANSPORT_SLOTS[slot].cls, 'control', `${slot} 有不可撤销副作用，必须归 control`)
   }
   // 只读的档是 data：重发最多多花一点流量
-  for (const slot of /** @type {const} */ (['consume.read', 'pay.keyProbe'])) {
+  for (const slot of /** @type {const} */ (['consume.read', 'pay.keyProbe', 'pay.orders'])) {
     assert.equal(TRANSPORT_SLOTS[slot].cls, 'data', `${slot} 是只读查询，归 data`)
   }
 })

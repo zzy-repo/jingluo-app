@@ -70,6 +70,22 @@ export type RequestPolicy = {
   total: number
   /** 自动重发上限（**不含**首发）；`0` = 一次都不自动发 */
   retry: number
+  /**
+   * 「**先查重再写**」型控制操作的补发上限（**不含**首发）；`0` = 没有这种形态。
+   *
+   * 为什么它与 `retry` 是两个数而不是一个（这是 #896 3c-3 必须写清的语义）：
+   *
+   *  - `retry` 是**一般策略**：「这一类请求失败后，要不要自己再发一次」。`control` 的值是 `0`
+   *    —— 卡密重复兑换、扣费重复提交都是重试重出来的（#484 §4.3），所以一般控制类一次都不补发。
+   *  - `dedupeRetry` 是**特例**：只给「每次尝试都先 GET 查重、且写入用设备/业务固定名
+   *    （服务端按 name 去重）」的那一族操作。它的安全性不来自「control 可以重试」，而来自
+   *    「这一次补发在结构上不可能产生第二份副作用」。
+   *
+   * 今天用它的只有 `api/managedKey.ts`（领取 / 换 Key：先 `GET /api/v1/keys` 查重，
+   * 再用设备固定名 `POST /keys`）。**想给新的调用点用这个口子，先回答一个问题**：
+   * 「补发时怎么保证不会多产生一份副作用？」答不上来就用 `retry = 0`。
+   */
+  dedupeRetry: number
   /** 退避基数（毫秒）：第 n 次重发等 `backoff × backoffFactor^n` */
   backoff: number
   backoffFactor: number
@@ -135,6 +151,8 @@ export const REQUEST_POLICY: Record<RequestClass, RequestPolicy> = {
     idle: 0,
     total: 0,
     retry: 0,
+    // 特例口子：只给「先查重再写」型控制操作（见类型注释）。一般控制类仍是 retry = 0。
+    dedupeRetry: 1,
     backoff: BACKOFF,
     backoffFactor: BACKOFF_FACTOR,
     idempotent: false,
@@ -153,6 +171,8 @@ export const REQUEST_POLICY: Record<RequestClass, RequestPolicy> = {
     idle: 0,
     total: 0,
     retry: LIMITS.streamRetryLimit,
+    // 数据类走的是 `retry` 那一个数（幂等，重发只多花流量），不需要这个特例口子
+    dedupeRetry: 0,
     backoff: BACKOFF,
     backoffFactor: BACKOFF_FACTOR,
     idempotent: true,
@@ -171,6 +191,7 @@ export const REQUEST_POLICY: Record<RequestClass, RequestPolicy> = {
     idle: LIMITS.requestTimeouts.idleMs,
     total: 0,
     retry: LIMITS.streamRetryLimit,
+    dedupeRetry: 0,
     backoff: BACKOFF,
     backoffFactor: BACKOFF_FACTOR,
     idempotent: true,
@@ -208,6 +229,8 @@ export const TRANSPORT_SLOTS = {
   'pay.redeem': { cls: 'control' },
   /** 取收款页地址（只读小接口），但属于支付链路，保守归 control */
   'pay.payLink': { cls: 'control' },
+  /** 购买记录（`ours/purchases.ts`）那一页：只读查询，重发最多多拉一页 */
+  'pay.orders': { cls: 'data' },
   /** 旧版数据迁移的那一次调用：落库，不可撤销 */
   migration: { cls: 'control' },
 } as const satisfies Record<string, { cls: RequestClass }>
