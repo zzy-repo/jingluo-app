@@ -98,7 +98,8 @@ const driverError = (kind, message, code = 'OTHER') => new SqliteDriverError({ k
 // ---------------------------------------------------------------- 故障注入
 
 const toInjected = (spec, fallbackMessage) => {
-  if (spec instanceof Error) return mapSqliteError(spec)
+  // 注入的 Error 实例原样抛出（例如名为 DataCloneError 的错误：驱动层本不会产出，由调用方测试自造）
+  if (spec instanceof Error) return spec
   const shape = typeof spec === 'string' ? { code: spec } : { ...(spec ?? {}) }
   const code = shape.code ?? 'SQLITE_FULL'
   return new SqliteDriverError({
@@ -184,6 +185,19 @@ const asParams = (params) => {
   return params
 }
 
+/**
+ * 测试专用的「写点标记」参数：仓储在语句参数末尾追加 `{ __at: 'session' | ... }`，驱动把它从绑定参数里剥掉，
+ * 只留给故障注入的 `at` 过滤用。真实原生驱动不会收到它（只在 node 测试驱动里处理）。
+ */
+const splitAt = (params) => {
+  const p = asParams(params ?? [])
+  const last = params?.[params.length - 1]
+  if (last !== null && typeof last === 'object' && !(last instanceof Uint8Array) && typeof last?.__at === 'string') {
+    return { params: p.slice(0, -1), at: last.__at }
+  }
+  return { params: p, at: undefined }
+}
+
 const plainRow = (row) => ({ ...row })
 
 const STMT_CACHE_MAX = 200
@@ -235,11 +249,11 @@ export const openNodeSqliteDatabase = async (options = {}) => {
 
   const execRun = (sql, params) => {
     assertOpen()
-    const p = asParams(params)
+    const { params: p, at } = splitAt(params)
     faults.state.runs += 1
     const n = faults.state.runs
     const injected = consumeRule(faults.state.runRules, (rule) =>
-      rule.predicate ? rule.predicate(sql, p) : rule.at === n,
+      rule.predicate ? rule.predicate(sql, p, at) : rule.at === n,
     )
     if (injected) throw injected
     if (faults.state.diskFull && !isReadSql(sql)) throw faults.state.diskFull
@@ -253,7 +267,7 @@ export const openNodeSqliteDatabase = async (options = {}) => {
 
   const execAll = (sql, params) => {
     assertOpen()
-    const p = asParams(params)
+    const { params: p } = splitAt(params)
     faults.state.alls += 1
     const n = faults.state.alls
     const injected = consumeRule(faults.state.allRules, (rule) => rule.at === n)

@@ -97,25 +97,47 @@ export const base64ToBytes = (text: string): Uint8Array => {
   return out
 }
 
-// ---------------------------------------------------------------- 主键 / 派生列的字符串校验
+// ---------------------------------------------------------------- 键编码（UTF-16BE BLOB）
 
 /**
- * 直接绑定进 TEXT 列的字符串（主键、派生列）必须能原样往返：
- *  - 含 NUL（U+0000）：SQLite 的 C 字符串接口会在 NUL 处截断（`node:sqlite` 实测 `'x\0y'` 读回 `'x'`）；
- *  - 孤立代理项：UTF-8 编不出来，会被替换成 U+FFFD。
- * 两者都会让两个不同的键撞成同一个，所以直接拒绝。`doc` 走 JSON，NUL 与孤立代理项都被转义，不受此限。
+ * 主键与「按值等值/排序」的派生列一律存 **UTF-16BE 字节的 BLOB**，不存 TEXT。三个原因（都有实测）：
+ *  1. NUL：SQLite 的 TEXT 经 C 字符串接口会在 U+0000 处截断（`'id\0x'` 与 `'id\0y'` 并成 `'id'`）；
+ *  2. 孤立代理项：UTF-8 编不出来，被替换成 U+FFFD（`'a\uD800b'` 与 `'a\uDC00b'` 撞成一行）；
+ *  3. 排序：TEXT 按 UTF-8 字节序（= 码点序）比较，JS / IDB 按 UTF-16 码元序，
+ *     二者在「增补平面字符 vs U+E000–U+FFFF」上相反（`'～'` 与 `'😀'`）。
+ * BLOB 按 memcmp 比较，UTF-16BE 的 memcmp 序**恰好等于** JS 字符串的 `<` 序，且任何码元序列（含孤立代理项、NUL）
+ * 都可逆。所以 `ORDER BY k` / `WHERE k > ?` 与 IDB 的主键升序、引擎按 JS 序记录的检查点完全一致。
  */
-const LONE_SURROGATE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/
-
-export const assertSafeText = (value: string, what: string): string => {
-  if (value.includes('\u0000')) {
-    throw new SqliteCodecError(`${what} 含 NUL 字符，SQLite 文本列无法无损保存`, what)
+export const encodeKey = (value: string): Uint8Array => {
+  const out = new Uint8Array(value.length * 2)
+  for (let i = 0; i < value.length; i += 1) {
+    const unit = value.charCodeAt(i)
+    out[i * 2] = unit >>> 8
+    out[i * 2 + 1] = unit & 0xff
   }
-  if (LONE_SURROGATE.test(value)) {
-    throw new SqliteCodecError(`${what} 含孤立代理项，UTF-8 无法无损保存`, what)
-  }
-  return value
+  return out
 }
+
+export const decodeKey = (bytes: Uint8Array): string => {
+  if (bytes.length % 2 !== 0) {
+    throw new SqliteCodecError('键的字节数不是偶数，不是 UTF-16BE', '')
+  }
+  const CHUNK = 4096
+  let out = ''
+  for (let start = 0; start < bytes.length; start += CHUNK * 2) {
+    const end = Math.min(bytes.length, start + CHUNK * 2)
+    const units: number[] = []
+    for (let i = start; i < end; i += 2) {
+      units.push(((bytes[i] ?? 0) << 8) | (bytes[i + 1] ?? 0))
+    }
+    out += String.fromCharCode(...units)
+  }
+  return out
+}
+
+/** 绑定参数里把可空的键值编码（`undefined`/`null` → `null`）。 */
+export const keyParam = (value: string | undefined | null): Uint8Array | null =>
+  value === undefined || value === null ? null : encodeKey(value)
 
 // ---------------------------------------------------------------- 编码
 
@@ -259,8 +281,8 @@ export const encodeDoc = (value: unknown, options: { allowBlobs: boolean }): Enc
 
 // ---------------------------------------------------------------- 解码
 
-/** 一个 Blob 槽位还原所需的字节（已校验长度与哈希）。 */
-export type DecodedBlobBytes = { bytes: Uint8Array; mime: string }
+/** 一个 Blob 槽位还原所需的字节（已由 blobStore 校验长度与哈希）。分块原样交给 Blob，不拼成一整块。 */
+export type DecodedBlobBytes = { parts: readonly Uint8Array[]; mime: string }
 
 const defineOwn = (target: object, key: string, value: unknown): void => {
   Object.defineProperty(target, key, { value, enumerable: true, writable: true, configurable: true })
@@ -352,7 +374,7 @@ export const decodeDoc = (json: string, blobBytes: ReadonlyMap<number, DecodedBl
           return fail(`缺少 Blob 槽位 ${slot} 的字节`)
         }
         const mime = typeof record.mime === 'string' ? record.mime : stored.mime
-        const parts = [stored.bytes.buffer.slice(stored.bytes.byteOffset, stored.bytes.byteOffset + stored.bytes.byteLength)] as BlobPart[]
+        const parts = stored.parts as unknown as BlobPart[]
         const file = record.file as { name?: unknown; lastModified?: unknown } | undefined
         if (file !== undefined && typeof File === 'function') {
           return new File(parts, String(file.name), { type: mime, lastModified: Number(file.lastModified) })
