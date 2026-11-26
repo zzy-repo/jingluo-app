@@ -108,7 +108,8 @@ globalThis.__lifecycle = { order: [], maxActive: 0 }
 const errorsStub = new URL('../fixtures/import-archive-stubs/errors.mjs', import.meta.url).href
 
 installHooks((specifier, parent) => {
-  if (specifier === './errors.js' || specifier === './history/errors.js') {
+  // 只在 chat/backup.ts 导入时才重定向到 import-archive-stubs，不要全局拦截
+  if ((specifier === './errors.js' || specifier === './history/errors.js') && parent.includes('/chat/backup.ts')) {
     return errorsStub
   }
   if (specifier === '@capacitor/core') {
