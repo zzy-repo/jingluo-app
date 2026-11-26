@@ -69,3 +69,25 @@ cd android && flock /tmp/android-build.lock ./gradlew assembleDebug --no-daemon 
 #   3) adb shell "run-as com.example.deepseekchat cat files/storage-engine/deepseek-app.db" > /tmp/devdb/deepseek-app.db
 node scripts/migration-device-verify.mjs
 ```
+
+## 6. 第二轮（#924 / #925 设备端）补充结论
+
+| 场景 | 行为 | 结论 |
+|---|---|---|
+| 主库文件被删 | 闸门 `blocked`：「本地数据打不开…**什么也没删**」，详情 `state-file-committed-but-sqlite-meta-missing` | ✅ 不显示空白欢迎页、不自动重建 |
+| 主库被写成垃圾字节 | 闸门 `blocked`（详情 `sqlite database cannot be opened`） | ✅ 不静默、不删 |
+| `state.json` 写成非法 JSON | 闸门 `failed`：「升级没有完成…**原数据没有丢失**，可以重试」 | ✅ 显式提示 |
+| `sessionSummaries` 整表被清（正文还在） | 启动后自愈：summaries 0 → 5；二次启动仍 5（幂等） | ✅ #909 自愈在 SQLite 真源上生效 |
+| 迁移备份可用性 | `backup-*.db` `integrity_check=ok`、sessions=5；覆盖回主库后独立校验 **ok=true** | ✅ 备份是真实可用的恢复源 |
+| 高水位标记 | `files/app-fs/protection/highwater.json`（原生私有目录，不依赖 localStorage） | ✅ |
+| **committed 后 IDB 零读写** | CDP 按库名分桶计数：`chat-demo` **0 次 open / 0 读写**；只有 `chat-diagnostics`（独立诊断库）有写 | ✅ D5 成立 |
+
+### 第二轮修掉的缺陷（设备复现）
+
+8. **迁移备份恢复被永久 block**：备份是 `committed` 之前拍的，没有 `meta.committed_at`；恢复后「状态说 committed、见证人说没有」被判矛盾 → 无恢复路径。改为「库里有业务数据即判 `finish-commit`」，无数据仍 block（不猜）。回归用例：`migration-switch-state` 规则8 正例/反例。
+9. **WebView reload 后打不开库**：原生侧残留上一次上下文的连接 → `database already open` → 闸门 blocked。适配器改为撞名先 `close` 再重试一次。
+
+### 本节仍未验证（环境所限）
+
+- **快照生成与恢复的设备端验证**：设备上没有触发应用内保存（数据是迁移进来的，环境里没有可用 Key/模型驱动一次真实保存），`files/app-fs/protection/` 目前只有 `highwater.json`。因此快照「实际覆盖范围」来自代码与单测（不含附件原件、思考块、记忆），RPO 上界按 #909 定义（节流 15s + 一次写入），**未在设备上实测**。
+- 掉电耐久性、真机、iOS：同上。
