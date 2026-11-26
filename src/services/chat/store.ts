@@ -65,7 +65,15 @@ import {
   selectVersion,
   type SessionDamageReporter,
 } from './branches.js'
-import * as db from './db.js'
+import {
+  reportStorageError,
+  type FileDegradation,
+  type SaveSessionOutcome,
+  type StorageFailure,
+  type StorageInitFailure,
+  type StoredFile,
+} from './db.js'
+import { getStorage, peekStorage, type StorageBackend } from '../storage/index.js'
 import {
   clearAllDrafts,
   clearDraft,
@@ -151,7 +159,7 @@ type ChatState = {
    * 这两种都**不该**复用「加载失败请重试」——前者要用户去关别的页面，后者要用户更新应用，
    * 重试一万次都是同一个结果。`null` = 没有这一类失败。
    */
-  initFailure: db.StorageInitFailure | null
+  initFailure: StorageInitFailure | null
   /** 历史导入或全部删除期间锁定交互，提交成功前仍展示原有记录。 */
   importingHistory: boolean
   /** 仅列表元数据，按 updatedAt 降序；流式消息更新不会改变此数组。 */
@@ -161,9 +169,9 @@ type ChatState = {
   /**
    * 会话没存到本机的原因（P0）。**值从布尔改成结构化分类**（`quota` / `clone` / `unavailable` / `unknown`），
    * 因为不同原因的文案与「要不要给重试按钮」完全不同；`boolean` 只为兼容旧值读取保留
-   * （旧值 `true` 一律当可重试档，见 `db.normalizeStorageFailure`）。
+   * （旧值 `true` 一律当可重试档，见 `normalizeStorageFailure`）。
    */
-  sessionSaveErrors: Record<string, db.StorageFailure | boolean>
+  sessionSaveErrors: Record<string, StorageFailure | boolean>
   /**
    * 附件降级（事务 B 失败）：**会话已经落盘**，坏的只是这些附件的 blob。
    * 与 `sessionSaveErrors` 分开存：混在一起会让「对话丢了」和「图看不清」用同一句话提示，
@@ -187,7 +195,7 @@ type ChatState = {
 
 /** 附件降级：会话在、原件不在（只记 id / 字节数 / 分类，不存正文） */
 export type DegradedAttachments = {
-  failure: db.StorageFailure
+  failure: StorageFailure
   ids: string[]
   bytes: number
 }
@@ -379,10 +387,20 @@ const roundFiles = (request: Request) => request.question.files
 const sameSummary = (a: SessionSummary, b: SessionSummary) =>
   a.title === b.title && a.createdAt === b.createdAt && a.updatedAt === b.updatedAt
 
+/**
+ * 在存储后端上跑一次调用。后端已打开时**同步**调用（与迁移前直调 `db.saveSession/pinSession/renameSession`
+ * 同一个 tick 发出写请求，pagehide / 切后台 flush 与「先 pin 再立即读」的先后顺序不变）；
+ * 还没打开时才退回 `getStorage().then(...)`（那时本来就要先等打开）。
+ */
+const withStorage = <T,>(run: (storage: StorageBackend) => Promise<T>): Promise<T> => {
+  const opened = peekStorage()
+  return opened === undefined ? getStorage().then(run) : run(opened)
+}
+
 const sessionAccess = new Map<string, number>()
 const unsavedSessions = new Set<string>()
 /** 保存失败时保留原件，重试成功后才释放。 */
-const pendingFiles = new Map<string, db.StoredFile[]>()
+const pendingFiles = new Map<string, StoredFile[]>()
 /**
  * 服务端刚判失效、等着本轮重传的附件（本地 id → 附件）。
  * 只有「本来就有 file_id、被服务端判失效」的附件会登记在这里：原件在我们手上、当初上传成功过，
@@ -463,7 +481,7 @@ const updateReply = (sessionId: string, reply: AssistantMessage) =>
     ),
   }))
 
-const attachmentBytesOf = (files: db.StoredFile[] | undefined): number =>
+const attachmentBytesOf = (files: StoredFile[] | undefined): number =>
   (files ?? []).reduce(
     (sum, file) => sum + (typeof file.blob?.size === 'number' ? file.blob.size : 0),
     0
@@ -482,7 +500,7 @@ const reportedDegradations = new Set<string>()
 /** 「兜底剔除救回来了」只报一次：这个事实不会随保存成功而失效，同一个坏字段不该每次落盘都报 */
 const reportedRecoveries = new Set<string>()
 
-const failureAsError = (failure: db.StorageFailure): Error => {
+const failureAsError = (failure: StorageFailure): Error => {
   const error = new Error(failure.message ?? failure.kind)
   error.name = failure.name ?? 'StorageFailure'
   return error
@@ -512,7 +530,7 @@ const clearDegraded = (sessionId: string) =>
  */
 const markSaveFailure = (
   sessionId: string,
-  failure: db.StorageFailure,
+  failure: StorageFailure,
   step: string,
   stats: { messages: number; attachmentBytes: number; strippedFields?: readonly string[] }
 ) => {
@@ -544,7 +562,7 @@ const markSaveFailure = (
  */
 const markDegradedAttachments = (
   sessionId: string,
-  degraded: db.FileDegradation[],
+  degraded: FileDegradation[],
   messages: number
 ) => {
   const bytes = degraded.reduce((sum, item) => sum + item.bytes, 0)
@@ -576,7 +594,7 @@ const markDegradedAttachments = (
  * 测试替身（`tests/fixtures/**` 的假 db）不必为实现两个错误类埋单，而真实现的
  * `StorageBlockedError` / `StorageVersionTooNewError` 自带 `initFailure`（见 `db.ts`）。
  */
-const initFailureOf = (error: unknown): db.StorageInitFailure | null => {
+const initFailureOf = (error: unknown): StorageInitFailure | null => {
   const bag = (typeof error === 'object' && error !== null ? error : {}) as {
     initFailure?: unknown
     name?: unknown
@@ -594,10 +612,10 @@ const initFailureOf = (error: unknown): db.StorageInitFailure | null => {
 }
 
 /** `saveSession()` 的兜底形状：替身 / 老实现可能什么都不返回 */
-const EMPTY_OUTCOME: db.SaveSessionOutcome = { failure: null, degradedFiles: [], strippedFields: [] }
+const EMPTY_OUTCOME: SaveSessionOutcome = { failure: null, degradedFiles: [], strippedFields: [] }
 
 /** 落盘过程本身抛出（不是 `outcome.failure`）时的兜底分类：只可能是替身或未预料的代码路径 */
-const failureOfThrown = (error: unknown, stores: string): db.StorageFailure => {
+const failureOfThrown = (error: unknown, stores: string): StorageFailure => {
   const bag = (typeof error === 'object' && error !== null ? error : {}) as {
     name?: unknown
     message?: unknown
@@ -623,7 +641,7 @@ const persist = (sessionId: string) => {
   const files = pendingFiles.get(sessionId)
 
   /** 落盘之后的状态收敛：缓存路径与「从库里读回来再写」路径共用这一份 */
-  const settled = (session: Session, fromCache: boolean, outcome: db.SaveSessionOutcome) => {
+  const settled = (session: Session, fromCache: boolean, outcome: SaveSessionOutcome) => {
     if (epoch !== historyEpoch) {
       return undefined
     }
@@ -683,7 +701,9 @@ const persist = (sessionId: string) => {
     // 同步发起落盘（与改造前一致：调用方在同一 tick 里就能看到写请求），同步抛出也转成 rejection
     const invoked = (() => {
       try {
-        return db.saveSession(session, files, { keepFileIds: keepFileIds() })
+        return withStorage((storage) =>
+          storage.sessions.save(session, files, { keepFileIds: keepFileIds() })
+        )
       } catch (error) {
         return Promise.reject(error)
       }
@@ -691,7 +711,7 @@ const persist = (sessionId: string) => {
     return Promise.resolve(invoked)
       .then((raw) => settled(session, fromCache, raw ?? EMPTY_OUTCOME))
       .catch((error: unknown) => {
-        db.reportStorageError('save session')(error)
+        reportStorageError('save session')(error)
         if (epoch === historyEpoch && (!fromCache || getSession(sessionId) !== undefined)) {
           markSaveFailure(sessionId, failureOfThrown(error, 'sessions,sessionSummaries'), 'save session', {
             messages: session.messages.length,
@@ -710,9 +730,9 @@ const persist = (sessionId: string) => {
    * 既不写库也不报错 —— 内存里看着一切正常，其实什么都没落盘）。现在改成从库里读回来再写；
    * 读不回来才标失败 —— 「读不回来」与「本来就没事」必须能分开。
    */
-  return Promise.resolve(db.loadSession(sessionId))
+  return Promise.resolve(withStorage((storage) => storage.sessions.get(sessionId)))
     .catch((error: unknown) => {
-      db.reportStorageError('read session for persist')(error)
+      reportStorageError('read session for persist')(error)
       return undefined
     })
     .then((session) => {
@@ -865,14 +885,14 @@ export const initChat = (): Promise<void> => {
   set({ initError: false, initFailure: null })
   initTask = (async () => {
     try {
-      const summaries = await db.loadSessionSummaries()
+      const summaries = await (await getStorage()).sessions.listSummaries()
       if (epoch === historyEpoch) {
         set({ ready: true, sessions: sortSessions(summaries) })
       }
     } catch (error) {
       if (epoch === historyEpoch) {
         set({ initError: true, initFailure: initFailureOf(error) })
-        db.reportStorageError('read local sessions')(error)
+        reportStorageError('read local sessions')(error)
       }
     } finally {
       if (epoch === historyEpoch) {
@@ -919,7 +939,7 @@ const ensureSessionLoaded = (id: string): Promise<void> => {
   sessionLoads.set(id, load)
   load.promise = (async () => {
     try {
-      const stored = await db.loadSession(id)
+      const stored = await (await getStorage()).sessions.get(id)
       if (epoch !== historyEpoch || sessionLoads.get(id) !== load) {
         return
       }
@@ -942,7 +962,7 @@ const ensureSessionLoaded = (id: string): Promise<void> => {
     } catch (error) {
       if (epoch === historyEpoch && sessionLoads.get(id) === load) {
         set((state) => ({ sessionLoadErrors: { ...state.sessionLoadErrors, [id]: true } }))
-        db.reportStorageError('read session')(error)
+        reportStorageError('read session')(error)
       }
     } finally {
       if (sessionLoads.get(id) === load) {
@@ -1071,16 +1091,16 @@ export const importHistoryInto = async (
     initTask = undefined
     sessionLoads.clear()
     await waitForIdle()
-    await db.clearStaging()
+    await (await getStorage()).staging.clear()
     type Committed = { summaries: SessionSummary[]; plan: MergePlan | null }
     /** 提交暂存：整包覆盖是「清空 + 整体搬入」，增量模式是「按冲突口径合并」。 */
     const commit = async (): Promise<Committed> => {
       if (mode === 'overwrite') {
-        return { summaries: await db.commitStaging(), plan: null }
+        return { summaries: await (await getStorage()).staging.commit(), plan: null }
       }
-      const plan = await db.mergeStaging(mode)
+      const plan = await (await getStorage()).staging.merge(mode)
       // 合并后本地会话是「原有的 + 新增的」，与包内会话数无关，必须重新读一遍列表。
-      return { summaries: await db.loadSessionSummaries(), plan }
+      return { summaries: await (await getStorage()).sessions.listSummaries(), plan }
     }
     let committed: Committed
     let skipped: ImportSkip[] = []
@@ -1092,7 +1112,7 @@ export const importHistoryInto = async (
       // 此时按「能导入的先导入」提交已写入部分，不整包回滚。
       const partial = skippedOf(error)
       if (partial === null || partial.staged <= 0) {
-        await db.clearStaging().catch(db.reportStorageError('clear unfinished history replacement'))
+        await (await getStorage()).staging.clear().catch(reportStorageError('clear unfinished history replacement'))
         throw error
       }
       skipped = partial.skipped
@@ -1103,7 +1123,7 @@ export const importHistoryInto = async (
       try {
         committed = await commit()
       } catch (commitError) {
-        await db.clearStaging().catch(db.reportStorageError('clear unfinished history replacement'))
+        await (await getStorage()).staging.clear().catch(reportStorageError('clear unfinished history replacement'))
         throw commitError
       }
     }
@@ -1246,9 +1266,9 @@ export const createSessionBranch = async (
     return null
   }
   try {
-    await db.saveSession(plan.session)
+    await (await getStorage()).sessions.save(plan.session)
   } catch (error) {
-    db.reportStorageError('branch session')(error)
+    reportStorageError('branch session')(error)
     return null
   }
   touchSession(plan.session.id)
@@ -1275,7 +1295,9 @@ export const pinSession = (id: string) => {
       state.sessions.map((item) => (item.id === id ? { ...item, pinnedAt } : item))
     ),
   }))
-  void db.pinSession(id, pinnedAt).catch(db.reportStorageError('pin session'))
+  void withStorage((storage) => storage.sessions.pin(id, pinnedAt)).catch(
+    reportStorageError('pin session')
+  )
 }
 
 export const renameSession = (id: string, title: string) => {
@@ -1298,7 +1320,9 @@ export const renameSession = (id: string, title: string) => {
         session.id === id ? { ...session, title } : session
       ),
     }))
-    void db.renameSession(id, title).catch(db.reportStorageError('rename session'))
+    void withStorage((storage) => storage.sessions.rename(id, title)).catch(
+      reportStorageError('rename session')
+    )
   }
 }
 
@@ -1326,10 +1350,10 @@ const removeSessionData = async (id: string): Promise<boolean> => {
     if (epoch !== historyEpoch) {
       return false
     }
-    await db.deleteSession(id)
+    await (await getStorage()).sessions.delete(id)
     // 本单：会话没了，它自己的背景图也不该留在 IndexedDB 里（`appAssets` 按 sessionId 存 key，
     // 不清就是一条永远读不到、也永远算在占用里的孤儿 blob）。删库失败不影响删会话本身。
-    await removeSessionBackground(id).catch(db.reportStorageError('delete session background'))
+    await removeSessionBackground(id).catch(reportStorageError('delete session background'))
     if (epoch !== historyEpoch) {
       return true
     }
@@ -1358,7 +1382,7 @@ const removeSessionData = async (id: string): Promise<boolean> => {
     }))
     return true
   } catch (error) {
-    db.reportStorageError('delete session')(error)
+    reportStorageError('delete session')(error)
     return false
   } finally {
     deletingSessions.delete(id)
@@ -1664,7 +1688,7 @@ const ensureServerId = async (
   apiKey: string,
   file: FileAttachment,
   /**
-   * 内存里的原件（本轮刚发出的附件）：`persist` 是异步的，`db.loadFile()` 可能还读不到。
+   * 内存里的原件（本轮刚发出的附件）：`persist` 是异步的，`getStorage().blobs.get()` 可能还读不到。
    * 少了这一手，刚发出的图在某些时序下会拿不到 `serverId` → `toFileBlocks()` 直接不产块 →
    * **静默丢图**（#548 明令禁止）。
    */
@@ -1677,7 +1701,7 @@ const ensureServerId = async (
   if (task?.status === 'done') {
     return task.serverId
   }
-  const blob = direct ?? (await db.loadFile(file.id))
+  const blob = direct ?? (await (await getStorage()).blobs.get(file.id))
   if (!blob) {
     return null
   }
@@ -1737,7 +1761,7 @@ const prepareInlineImages = async (
    */
   const blobOf = async (id: string): Promise<Blob | undefined> => {
     const pending = pendingFiles.get(sessionId)?.find((item) => item.id === id)?.blob
-    return pending ?? (await db.loadFile(id))
+    return pending ?? (await (await getStorage()).blobs.get(id))
   }
   const encode = async (file: FileAttachment): Promise<ImagePart> => {
     const cached = imagePartOf(file.id)
@@ -1916,7 +1940,7 @@ const prepareFiles = async (sessionId: string, request: Request, signal: AbortSi
   }
   const audit = await auditSendableAttachments(referencedFiles, {
     isOwnUpload: (id) => freshIds.has(id),
-    hasSource: async (id) => (await db.loadFile(id)) !== undefined,
+    hasSource: async (id) => (await (await getStorage()).blobs.get(id)) !== undefined,
   })
   // 源缺失的附件全被跳过、提问又只有它（没有文字）：这条消息没有任何东西可发，明说而不是空发
   if (

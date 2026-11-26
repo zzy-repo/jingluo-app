@@ -1,4 +1,4 @@
-import * as db from '../db.js'
+import { getStorage } from '../../storage/index.js'
 import type { Session } from '../types.js'
 import { fail } from './errors.js'
 import { EXPORT_FORMAT_VERSION, type Manifest, type SessionIndexEntry } from './format.js'
@@ -67,7 +67,7 @@ export const exportArchive = async (
       if (message.role === 'user') {
         for (const file of message.files) {
           if (file.isImage && !originals.has(file.id)) {
-            originals.set(file.id, await db.loadFile(file.id))
+            originals.set(file.id, await (await getStorage()).blobs.get(file.id))
           }
         }
       }
