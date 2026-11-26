@@ -45,7 +45,7 @@ import {
   useChatStore,
   type HistoryImportSummary,
 } from '../../services/chat/store.js'
-import { addStagingSession } from '../../services/chat/db.js'
+import { getStorage } from '../../services/storage/index.js'
 import { readDeepSeekShare } from '../../services/chat/history/deepseekShare.js'
 import {
   setLocale,
@@ -1743,7 +1743,7 @@ const ImportShare = ({ disabled }: { disabled: boolean }) => {
         setStatus({ key: 'shareBusy', error: true })
         return
       }
-      await importHistoryInto(() => addStagingSession(session), 'skip')
+      await importHistoryInto(() => getStorage().then((storage) => storage.staging.addSession(session)), 'skip')
       selectSession(session.id)
       setLink('')
       // 既有文案：已导入 1 个会话（不新增 key）

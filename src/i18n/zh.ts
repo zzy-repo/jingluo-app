@@ -36,6 +36,7 @@ export const zh = {
   sessionLoadFailed: '对话加载失败，请重试',
   sessionSaveFailedRetryable: '这段对话没存到本机，点重试',
   sessionSaveFailedQuota: '本机存储空间不足，清理或导出备份后重试',
+  sessionSaveLowSpace: '存储空间不足，新内容可能无法保存。请清理空间或先导出备份',
   sessionSaveFailedUnavailable: '当前环境无法保存到本机，建议用 App 打开',
   attachmentSaveFailed: '附件没能存进本机，刷新后可能看不到（可重试）',
   storageBlockedByOtherTab: '另一个标签页占用了本机存储，请关闭其它页面后重试',
@@ -1488,4 +1489,22 @@ export const zh = {
   sessionBranchOpenParent: '回到来源会话',
   // 附件降级（父会话被删 / 换设备导入后原件不在本机）：明说不可用，但不报错、不阻断对话
   sessionBranchAttachmentMissing: '附件不可用：有 {count} 个附件在本机找不到原件，继续对话不受影响',
+  // #909 Storage Protection：库从有到无（被系统清除）
+  dataLostTitle: '本机的聊天记录已被系统清除（此前约有 {count} 条会话）',
+  dataLostNoSnapshot: '本机没有可用的快照，无法自动恢复。如果之前导出过备份，可在「设置」里导入历史会话。',
+  dataLostDismiss: '知道了，不再提示',
+  dataLostRestoreHeading: '可从以下快照恢复：',
+  dataLostSnapshotRow: '{time} · {count} 条会话',
+  dataLostSnapshotBroken: '{time} · 已损坏，无法恢复',
+  dataLostRestore: '恢复',
+  dataLostConfirm:
+    '用这份快照替换本机现有的聊天记录？替换前会先备份当前状态。快照只含聊天文字，图片和附件原件不在其中，恢复后这些原件不可用。',
+  dataLostConfirmYes: '确认恢复',
+  dataLostRestoring: '正在恢复… {done}/{total}',
+  dataLostRestored: '已从快照恢复 {count} 条会话',
+  dataLostRestoreCancelled: '已取消恢复，本机数据没有改动',
+  dataLostRestoreCorrupt: '这份快照已损坏，没有恢复，本机数据没有改动',
+  dataLostRestoreIncompatible: '这份快照来自更新版本的应用，请先更新应用，本机数据没有改动',
+  dataLostRestoreBackupFailed: '没能先备份当前状态（可能是空间不足），已停止，本机数据没有改动',
+  dataLostRestoreFailed: '恢复失败，本机数据没有改动',
 } as const

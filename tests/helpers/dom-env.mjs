@@ -35,6 +35,7 @@ import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
 import { consumeBaseUrl, legacyHosts } from '../../scripts/lib/endpoints.mjs'
+import { isStorageIndexSpecifier, storageOverDbUrl } from './storage-stub.mjs'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 /** 仓库根（tests/helpers/ → ../..） */
@@ -209,11 +210,16 @@ export const installSessionMatrixEnv = () => {
       [/^@capacitor\/core$/, fixtureUrl('domain03-04/capacitor.mjs')],
       [/diagnostics\/collector\.js$/, fixtureUrl('domain03-04/collector.mjs')],
     ],
-    onResolve: (specifier, context) => (
-      specifier === './db.js' && String(context.parentURL ?? '').endsWith('/chat/store.ts')
-        ? fixtureUrl('domain03-04/session-db.mjs')
-        : undefined
-    ),
+    onResolve: (specifier, context) => {
+      const parent = String(context.parentURL ?? '')
+      if (specifier === './db.js' && parent.endsWith('/chat/store.ts')) {
+        return fixtureUrl('domain03-04/session-db.mjs')
+      }
+      if (isStorageIndexSpecifier(specifier) && parent.endsWith('/chat/store.ts')) {
+        return storageOverDbUrl(fixtureUrl('domain03-04/session-db.mjs'))
+      }
+      return undefined
+    },
   })
   installEndpointsGlobals()
 }
@@ -299,9 +305,16 @@ export const installChatEnv = ({ db = chatFakeDb(), collector = chatCollectorStu
       [/diagnostics\/collector\.js$/, collector],
       ...(Array.isArray(stubs) ? stubs : Object.entries(stubs)),
     ],
-    onResolve: (specifier, context) => (
-      specifier === './db.js' && String(context.parentURL ?? '').endsWith('/chat/store.ts') ? db : undefined
-    ),
+    onResolve: (specifier, context) => {
+      const parent = String(context.parentURL ?? '')
+      if (specifier === './db.js' && parent.endsWith('/chat/store.ts')) {
+        return db
+      }
+      if (isStorageIndexSpecifier(specifier) && parent.endsWith('/chat/store.ts')) {
+        return storageOverDbUrl(db)
+      }
+      return undefined
+    },
   })
   return { stub: chatStub, db, collector }
 }

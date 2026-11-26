@@ -22,6 +22,7 @@
 import '../helpers/injected.mjs'
 
 import { test } from 'node:test'
+import { isStorageIndexSpecifier, storageOverDbUrl } from '../helpers/storage-stub.mjs'
 import { installBuildDefines, installHooks, stubOf } from '../fixtures/domain05/hooks.mjs'
 import { expectDeepEqual, expectEqual, expectOk, runTable } from '../fixtures/domain05/table.mjs'
 
@@ -118,6 +119,12 @@ installHooks((specifier, parent) => {
   }
   if (specifier === './db.js' && parent.endsWith('/chat/backup.ts')) {
     return `data:text/javascript,${encodeURIComponent(backupDBSource)}`
+  }
+  if (isStorageIndexSpecifier(specifier) && parent.endsWith('/chat/store.ts')) {
+    return storageOverDbUrl(`data:text/javascript,${encodeURIComponent(storeDBSource)}`)
+  }
+  if (isStorageIndexSpecifier(specifier) && parent.endsWith('/chat/backup.ts')) {
+    return storageOverDbUrl(`data:text/javascript,${encodeURIComponent(backupDBSource)}`)
   }
   if (specifier === './store.js' && parent.endsWith('/chat/backup.ts')) {
     return `data:text/javascript,${encodeURIComponent(backupStoreSource)}`

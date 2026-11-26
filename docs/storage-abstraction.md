@@ -265,3 +265,30 @@ import 了 `db.ts` 的文件共 14 个（任务书列了 12 个，另有 `chat/h
 6. **自愈（清孤儿重试、剔字段重试）放哪。**
    **决定（覆盖原默认）：进 `SessionRepo.save`**（第 4 节末尾）。原默认「留兼容层」会让 `save` 的返回值与
    现状 `saveSession` 不一致，违背零行为变化；`sweepOrphanFiles` 因此不需要进接口。
+
+## 7. 架构门禁（#910 storage-callers）
+
+`tests/unit/storage-boundary.test.mjs`（单元测试形态，**不是**新增 CI 步骤）断言：`src/` 里除
+`src/services/storage/**`、`src/services/chat/db.ts` 自身与豁免清单之外，没有任何文件
+import `chat/db.ts` / `attachments/store.ts` 的存取导出，或直接使用 `indexedDB` /
+`openChatTransaction` / `runChatStoreRequest` / `getChatDB` / `idb`。纯函数、错误类、常量、
+类型与原件键口径（见测试里的 `PURE_DB_EXPORTS` / `PURE_STORE_EXPORTS`）可以继续直接取。
+
+豁免清单：`tests/fixtures/storage/storage-boundary-exemptions.json`，只许缩不许涨
+（测试里 `MAX_EXEMPTIONS`），条目不再违规时测试判红要求删条目。当前两条：
+`attachments/store.ts`（IDB 后端的实现细节，SQLite 后端落地后并入 `storage/idb/`）、
+`diagnostics/collector.ts`（独立诊断库，不迁，见第 5 节）。
+
+### 台账登记草稿（供 lead 决定，**未改** `docs/testing/gates-ledger.md`）
+
+门禁形态是 `tests/unit` 下的一个用例，不新增 `scripts/check-*.mjs`、`package.json` 别名与 `ci.yml` 步骤，
+所以台账第 3.2 节五样里只适用第 5、2 两项；是否仍要登记由 lead 定。若登记，按第 3.1 节四问：
+
+| 问 | 草稿 |
+| --- | --- |
+| Q1 事故 | 因为曾经有人在业务文件里直调 `db.ts` / 直开 IDB 事务，Native 迁到 SQLite 后这些调用仍读写旧 IDB，用户新写的数据落进「不再是真源」的库，更新后历史对不上（D5：`committed` 之后真源只有 SQLite）。 |
+| Q2 证据 | 迁移前 `src/` 有 12 个文件直调 `db.ts`/`store.ts`（#906 第 5 节列 14 个，含 2 个只用纯函数的）；本 PR 逐个迁走。尚无线上事故，这是**预防性**门禁，按 Q2 口径可能被打回，请 lead 判断是否登记。 |
+| Q3 为什么现有门禁防不住 | `infra-boundary.test.mjs` 只管 `native/` 与 `storage/**` 内部的依赖方向，不管业务层绕过 `getStorage()`；`check:db-version` 只守版本号来源。 |
+| Q4 自证伪 | 用例内含检测器自检（违规写法必须被抓到，合规写法不许误报）；人工负向对照：往 `appAssets.ts` 注入 `import { loadFile } from './db.js'` 与往 `MessageFile.tsx` 注入 `indexedDB` 记号，均变红并点名文件，还原后转绿。 |
+| 归属 / 红了第一件事 | storage-callers（#910）。点名的文件改走 `getStorage()`；确属实现细节的才进豁免清单并写原因。 |
+| 豁免载体（台账 5.2 补一行） | `tests/fixtures/storage/storage-boundary-exemptions.json`：到期判据 = 条目不再违规即判红；只许缩不许涨（`MAX_EXEMPTIONS`）。 |

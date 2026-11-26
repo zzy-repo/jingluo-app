@@ -159,6 +159,9 @@ const UNIT_SOLO = new Set([
   // 后面再 import 一次是模块缓存命中（副作用不会重跑），于是本文件直接拿到 `indexedDB is not defined`。
   // 这条要的正是**真 IndexedDB**（桩掉 db 就等于把被测物换成替身），单列一个进程最诚实。
   'attachment-preserve-import-531.test.mjs',
+  // #909：与上一条同机制 —— 顶层装 fake-indexeddb 全局并占用 `chat/db.ts` 的模块级连接单例（经真 `getStorage()` 读写），
+  // 同批别的文件的假库 / 全局清理会让它读不到 `indexedDB`，它的全局又会漏给后面的文件。单列一个进程。
+  'protection-storage-909.test.mjs', 'protection-heal-909.test.mjs',
   // 同理：本文件在模块顶层装自己的 fetch / localStorage 替身并断言「实际发出的 URL」，
   // 同批其它文件对 fetch 的改写/还原会让它在批内打到真上游（CI 实测打到 api.deepseek.com 吃 401）。
   'attachment-endpoint-303.test.mjs',
@@ -179,6 +182,11 @@ const UNIT_SOLO = new Set([
   // `close()` 掉这条共享连接再重开；同批文件共用同一份单例与同一个库，合批会互相关掉对方的连接、
   // 把别人的数据混进本文件的「空库」。机制类别：模块级单例 + 共享库 —— 与上一条同类，单列最诚实。
   'storage-idb-backend.test.mjs',
+
+  // #915（迁移引擎的 IDB 只读源）：把 IDBObjectStore / IDBCursor / IDBDatabase.transaction 的原型方法临时桩成
+  // 抛错或记录，并独占 `chat/db.ts` 的模块级连接单例与共享 fake-indexeddb 库。机制类别：进程级原型 mock +
+  // 模块级单例（与上一条同类，技术债见 docs/sqlite-migration-plan.md 第 6 节）。其余 migration-engine-* 是纯内存用例，继续合批。
+  'migration-engine-raw.test.mjs',
 
   // #906（其余四个特征化测试）：同一类机制 —— 都经 `chat/db.ts` 的模块级连接单例读写真 fake-indexeddb，
   // 且会换掉/还原 `globalThis.indexedDB`（lifecycle 还用 MockTimers 与 `?inst=N` 多实例）。

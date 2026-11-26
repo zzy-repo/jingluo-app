@@ -1,0 +1,15 @@
+{
+  "note": "storage-boundary.test.mjs 的显式豁免清单。只许缩不许涨（测试里有条目数上限）；条目一旦不再违规，测试会判红要求删条目。",
+  "entries": [
+    {
+      "file": "src/services/attachments/store.ts",
+      "reason": "IDB 后端的实现细节：AttachmentRepo 的 IDB 实现就是它（storage/idb/backend.ts 与 txRepos.ts 转调它），本身必须直接开事务。",
+      "followUp": "#906：SQLite 后端落地后，把它并入 storage/idb/ 目录，此条删除"
+    },
+    {
+      "file": "src/services/diagnostics/collector.ts",
+      "reason": "诊断日志是独立的 IndexedDB 库 chat-diagnostics（单 store，独立生命周期），不在 #906 的九个 store 里（docs/storage-abstraction.md 第 5 节：不迁）。",
+      "followUp": "#906：不迁；只要诊断库不进 Storage 接口，这条就保留"
+    }
+  ]
+}

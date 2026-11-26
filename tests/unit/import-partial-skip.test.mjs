@@ -12,6 +12,7 @@ import '../helpers/injected.mjs'
 
 import assert from 'node:assert/strict'
 import { registerHooks } from 'node:module'
+import { isStorageIndexSpecifier, storageOverDbUrl } from '../helpers/storage-stub.mjs'
 import { test } from 'node:test'
 
 // 假 db：IndexedDB 在裸 Node 里不存在，这里只替换存储边界，store.ts 的提交 / 回滚逻辑仍是真实代码。
@@ -69,6 +70,10 @@ export const fail = (key, params) => {
 
 registerHooks({
   resolve(specifier, context, nextResolve) {
+    // 业务层改走 getStorage()（#917）：放在 nextResolve 之前，免得被同批先注册的 .js→.ts 兜底抢先
+    if (isStorageIndexSpecifier(specifier) && String(context.parentURL ?? '').endsWith('/chat/store.ts')) {
+      return { url: storageOverDbUrl(fakeDB), shortCircuit: true }
+    }
     try {
       return nextResolve(specifier, context)
     } catch (error) {
