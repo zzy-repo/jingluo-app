@@ -19,6 +19,7 @@ import '../helpers/injected.mjs'
 
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
+import { isStorageIndexSpecifier, storageOverDbUrl } from '../helpers/storage-stub.mjs'
 import { strFromU8, unzipSync } from 'fflate'
 import { installBuildDefines, installHooks } from '../fixtures/domain05/hooks.mjs'
 
@@ -80,6 +81,12 @@ installHooks((specifier, parent) => {
   }
   if (specifier === '../db.js' && parent.endsWith('/history/importArchive.ts')) {
     return stagingDb
+  }
+  if (isStorageIndexSpecifier(specifier) && parent.endsWith('/history/exportArchive.ts')) {
+    return storageOverDbUrl(exportDb)
+  }
+  if (isStorageIndexSpecifier(specifier) && parent.endsWith('/history/importArchive.ts')) {
+    return storageOverDbUrl(stagingDb)
   }
   return null
 })

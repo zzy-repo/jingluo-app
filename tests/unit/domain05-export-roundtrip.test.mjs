@@ -20,6 +20,7 @@ import '../helpers/injected.mjs'
 
 import { registerHooks } from 'node:module'
 import { test } from 'node:test'
+import { isStorageIndexSpecifier, storageOverDbUrl } from '../helpers/storage-stub.mjs'
 import { indexBytes, manifestBytes, png, sessionJson, zipFile } from '../fixtures/domain05/archive.mjs'
 import { installBuildDefines, installHooks, stubOf } from '../fixtures/domain05/hooks.mjs'
 import { expectEqual, expectOk, runTable } from '../fixtures/domain05/table.mjs'
@@ -58,6 +59,11 @@ installHooks((specifier, parent) => {
     // exportArchive.ts 与 importArchive.ts 的存储边界是同一个替身
     if (parent.endsWith('/history/exportArchive.ts') || parent.endsWith('/history/importArchive.ts')) {
       return fakeDB
+    }
+  }
+  if (isStorageIndexSpecifier(specifier)) {
+    if (parent.endsWith('/history/exportArchive.ts') || parent.endsWith('/history/importArchive.ts')) {
+      return storageOverDbUrl(fakeDB)
     }
   }
   if (specifier === '@capacitor/core') {

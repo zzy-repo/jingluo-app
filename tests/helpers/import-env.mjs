@@ -18,6 +18,7 @@
 // 需要额外替身（例如 domains05 的 zipReader 观测点）就传 `extraStubs`，口径同 `installTsResolve`。
 
 import { fixtureUrl, inlineModule, installTsResolve } from './dom-env.mjs'
+import { isStorageIndexSpecifier, storageOverDbUrl } from './storage-stub.mjs'
 
 /** 导入域 errors.ts 的等价替身 URL（`import-archive-stubs/errors.mjs`） */
 export const importErrorsStub = () => fixtureUrl('import-archive-stubs/errors.mjs')
@@ -66,10 +67,15 @@ export const installImportEnv = ({ db, extraStubs = [] } = {}) => {
   }
   installTsResolve({
     stubs: [['./errors.js', importErrorsStub()], ...extraStubs],
-    onResolve: (specifier, context) => (
-      specifier === '../db.js' && String(context.parentURL ?? '').endsWith('/history/importArchive.ts')
-        ? db
-        : undefined
-    ),
+    onResolve: (specifier, context) => {
+      const parent = String(context.parentURL ?? '')
+      if (specifier === '../db.js' && parent.endsWith('/history/importArchive.ts')) {
+        return db
+      }
+      if (isStorageIndexSpecifier(specifier) && parent.endsWith('/history/importArchive.ts')) {
+        return storageOverDbUrl(db)
+      }
+      return undefined
+    },
   })
 }

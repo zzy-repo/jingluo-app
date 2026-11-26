@@ -14,6 +14,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { fixtureUrl, inlineModule, installTsResolve, loadTsModule, setupDom } from '../helpers/dom-env.mjs'
+import { isStorageIndexSpecifier, storageOverDbUrl } from '../helpers/storage-stub.mjs'
 
 // 假 db：IndexedDB 在裸 Node 里不存在。换掉存储落点，但 store 照旧 saveSession / loadSession。
 const fakeDB = inlineModule(`
@@ -68,6 +69,9 @@ installTsResolve({
     // 假 db 只换 store 的落点（其它模块的 './db.js' 照旧走真代码）
     if (specifier === './db.js' && String(context.parentURL ?? '').endsWith('/chat/store.ts')) {
       return fakeDB
+    }
+    if (isStorageIndexSpecifier(specifier) && String(context.parentURL ?? '').endsWith('/chat/store.ts')) {
+      return storageOverDbUrl(fakeDB)
     }
     return undefined
   },
