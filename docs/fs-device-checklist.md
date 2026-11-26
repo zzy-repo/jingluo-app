@@ -10,7 +10,7 @@
 | # | 项目 | 步骤 | 期望 | 结果 |
 |---|------|------|------|------|
 | 1 | 探测 | 冷启动后 `getFs().supported` | `true`；首次 I/O 前 `capabilities()` 含 6 个方法，`ping` 通过 | 未执行 |
-| 2 | 写入往返 | `writeAtomic('t/a.txt','你好')` → `readText` | 读回一致；`run-as <pkg> ls files/app-fs/t` 只有 `a.txt` | 未执行 |
+| 2 | 写入往返 | 在子目录下写一个文本文件再 readText | 读回内容一致；`run-as <pkg> ls files/app-fs` 里该子目录只有一个文件 | 未执行 |
 | 3 | 二进制 / 大文件 | 写 5MB 随机字节 → `read` | 逐字节一致；耗时与内存无 OOM（WebView 不崩） | 未执行 |
 | 4 | 覆盖 | 同路径写两次，第二次更短 | 读回第二次内容，无旧内容尾巴 | 未执行 |
 | 5 | 不存在 / list / remove | `read` 不存在 → `undefined`；`list('nope')` → `[]`；`remove` 不存在不抛；`remove` 目录递归 | 全部符合 | 未执行 |

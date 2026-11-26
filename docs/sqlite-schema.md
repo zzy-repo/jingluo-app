@@ -226,7 +226,7 @@ IDB 值是 `StoredSessionSummary = SessionSummary & { fileIds: string[] }`，**�
 4. 缺键保持缺键、`undefined` 值保持 `undefined` 值：编码不把 `undefined` 补成 `null`，读回 `Object.keys` 与源一致（Node 22 实测 `structuredClone` 保留 `undefined` 值的键，见 §1）。
 5. 键顺序保留（JSON.stringify 的插入顺序）；IDB 结构化克隆同样保留字符串键顺序。
 
-验证（测试尚未写，随交付 6 提交）：`tests/unit/storage-sqlite-roundtrip.test.mjs` 将用覆盖 §5 全部字段、含旧字段与边界值的
+验证（测试尚未写，随交付 6 提交）：往返用例（tests/unit 下的 storage-sqlite-roundtrip，随交付提交）将用覆盖 §5 全部字段、含旧字段与边界值的
 9 个 store 样本走 `sink.writeBatch → source.readBatch`，与原值深度相等（Blob 比字节、Date 比时间、
 `undefined` 比缺键）。
 

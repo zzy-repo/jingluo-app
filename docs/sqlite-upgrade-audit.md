@@ -6,22 +6,22 @@
 
 ## 1. 应用标识、WebView Origin 与旧库可达性
 
-WebView 的 IndexedDB 按 Origin 隔离。本工程是 Capacitor 壳，Origin = `server.androidScheme` + `server.hostname`（缺省 `https://localhost`，见 `node_modules/@capacitor/android` 的 `CapConfig.java:38-39`，默认 `hostname="localhost"`、`androidScheme="https"`，且 schema 校验只允许 `http`/`https`）。**任一变化都等于换库**：旧 IDB 在新版本里打不开。
+WebView 的 IndexedDB 按 Origin 隔离。本工程是 Capacitor 壳，Origin = `server.androidScheme` + `server.hostname`（缺省 `https://localhost`，见 `@capacitor/android` 的 `CapConfig`（依赖包内源码，不入本仓），默认 `hostname="localhost"`、`androidScheme="https"`，且 schema 校验只允许 `http`/`https`）。**任一变化都等于换库**：旧 IDB 在新版本里打不开。
 
 逐版本核对（每个 `v*` tag 上对 `capacitor.config.ts`、`config/appIdentity.json`、`android/app/build.gradle`、`AndroidManifest.xml` 跑 `git show` / `git grep`）：
 
 | 维度 | 结论 | 证据 |
 |---|---|---|
 | `applicationId` / `namespace` / `appId` | **安全** | 从第一个有 Android 工程的 tag（`v1.1.0`，2026-11-17）到 `v1.4.21`，全部是 `com.example.deepseekchat`，无一例外。`git log` 全历史里这个字符串只出现过这一个值（`build.gradle` 19 次、`appIdentity.json` 12 次，`uniq` 后只有一个）。`build.gradle` 无 `applicationIdSuffix`、无 `productFlavors`（`artifactVariant` 只进 manifest 元数据，不进包名）。iOS `PRODUCT_BUNDLE_IDENTIFIER` 同值（`ios/App/App.xcodeproj/project.pbxproj:312,333`），但 iOS 工程 2026-11-26 才入库（`6322eeb1`），**没有已发布的 iOS 版本**。 |
-| `server.hostname` / `androidScheme` / `iosScheme` / `server.url` / `allowNavigation` | **安全**（源码层面） | 全部 tag 的 `capacitor.config.ts` 都没有 `server` 块（`git log -S` 全历史 0 命中）。生成物 `android/app/src/main/assets/capacitor.config.json` 被 `android/.gitignore:99` 忽略、不入库，所以**无法从 git 证明已发布 APK 里的生成物没有被构建机改过**——这是下面「未知」的来源。 |
+| `server.hostname` / `androidScheme` / `iosScheme` / `server.url` / `allowNavigation` | **安全**（源码层面） | 全部 tag 的 `capacitor.config.ts` 都没有 `server` 块（`git log -S` 全历史 0 命中）。生成物 `capacitor.config.json`（`android/app/src/main/assets/` 下，被 `android/.gitignore` 忽略）、不入库，所以**无法从 git 证明已发布 APK 里的生成物没有被构建机改过**——这是下面「未知」的来源。 |
 | WebView 数据目录（`setDataDirectorySuffix`、自定义 WebView 存储路径） | **安全**（源码层面） | `android/app/src/main/java` 全历史 0 处 `setDataDirectorySuffix` / `WebView.setDataDirectory`。`MainActivity` 继承 `BridgeActivity`，用默认 WebView。 |
-| 签名证书 | **安全，但有一个必须守住的前提** | `build.gradle:504-507` 的注释写明：历史上 `keystore.properties` 路径写错（`rootProject.file("../keystore/...")` 指向从未存在的目录），**已发布包全部由 AGP 默认的 `/root/.android/debug.keystore` 签出**，指纹 `e7c5baee517ca2b2258950e934521f2fad448d00f72f2ff7297bdf4fa00aa8a1`，该值从 `v1.4.1`（`appIdentity.json` 入库）到 HEAD 未变。换证书 = Android 拒绝覆盖安装 = 用户只能卸载重装 = 私有目录（含 IDB）被删。`build.gradle` 已有 release 构建的指纹闸门，**迁移版本的发布包必须继续用这把钥匙签**。 |
+| 签名证书 | **安全，但有一个必须守住的前提** | `android/app/build.gradle` 的 release 签名段注释写明：历史上 `keystore.properties` 路径写错（`rootProject.file("../keystore/...")` 指向从未存在的目录），**已发布包全部由 AGP 默认的 `/root/.android/debug.keystore` 签出**，指纹 `e7c5baee517ca2b2258950e934521f2fad448d00f72f2ff7297bdf4fa00aa8a1`，该值从 `v1.4.1`（`appIdentity.json` 入库）到 HEAD 未变。换证书 = Android 拒绝覆盖安装 = 用户只能卸载重装 = 私有目录（含 IDB）被删。`build.gradle` 已有 release 构建的指纹闸门，**迁移版本的发布包必须继续用这把钥匙签**。 |
 | Capacitor 版本 | **安全** | `pnpm-lock.yaml` 在 `v1.1.0` 与 `v2.0.0` 都锁定 `@capacitor/android@8.6.2`；`package.json` 各 tag 都是 `^8.6.2`。没有跨大版本升级带来的 WebView 存储布局变化。 |
 | 库名 | **安全** | `DB_NAME = 'chat-demo'`（`db.ts:49`），`v1.1.0` 时写死同名（`openDB('chat-demo', …)`）。改名同样等于换库。 |
 
 **未知（需要 lead 安排，本审计做不到）**：
 
-1. 已发布 APK 实物里的 `assets/capacitor.config.json` 没有入库。源码缺省值稳定，但构建机若注入过 `server.hostname`，git 看不出来。建议对每个已分发版本的 APK 解包核对该文件（`aapt`/`unzip` 即可，不需要真机）。
+1. 已发布 APK 实物的 `capacitor.config.json`（APK 产物内路径，不在仓库里）没有入库。源码缺省值稳定，但构建机若注入过 `server.hostname`，git 看不出来。建议对每个已分发版本的 APK 解包核对该文件（`aapt`/`unzip` 即可，不需要真机）。
 2. 覆盖安装时 Android 对 WebView 数据目录的保留是平台行为，不是本仓库能证明的。源码没有主动迁移/清理该目录的代码（全历史 0 处），这是目前能给的全部证据。
 3. `v0.1.0` / `v0.1.1` / `v0.1.2` / `v0.1.3` / `v1.0.0` 这五个 tag **没有 `android/` 目录**（纯 Web 构建）。若它们曾被当作网页发出去，那些用户的 IDB 在网页 Origin 下，与 App 的 `https://localhost` 不是同一个库——这不是升级会弄丢，是**本来就不是同一份数据**。是否有人在用网页版，仓库无法回答。
 
@@ -32,7 +32,7 @@ WebView 的 IndexedDB 按 Origin 隔离。本工程是 Capacitor 壳，Origin = 
 `AndroidManifest.xml` 从 `v1.1.0` 到 HEAD 每一版都是 `android:allowBackup="true"`，且**从未有过** `android:fullBackupContent` 或 `android:dataExtractionRules`（全历史 grep 0 命中）。默认行为是「什么都备」：
 
 - WebView 的 IndexedDB 在 `app_webview/`，属 `data/data/<pkg>/` 私有目录，在默认备份范围内。
-- 迁移后的 SQLite 库与 `storage-engine/state.json` 都落在 `getFilesDir()` 下（`AppFileSystemPlugin.java:41` 用 `getFilesDir()/app-fs`；SQLite 若用默认 `getDatabasePath()` 则在 `databases/`，同样在备份范围内——**具体落点要等 native-sqlite 定，见末尾决策点**）。
+- 迁移后的 SQLite 库与 `<getFilesDir()>/storage-engine/state.json`（设备运行期目录，不在仓库里）都在应用私有目录下（`AppFileSystemPlugin.java:41` 用 `getFilesDir()/app-fs`；SQLite 若用默认 `getDatabasePath()` 则在 `databases/`，同样在备份范围内——**具体落点要等 native-sqlite 定，见末尾决策点**）。
 - 没有任何规则能表达「这几个文件必须同一时刻一起备、一起还原」。
 
 后果：Auto Backup 是按文件、按各自的修改时间增量上传的，还原时每个文件取它自己的最新版本。一次备份周期里 `state.json` 已是 `committed` 而 SQLite 库还是上一周期的副本（或反过来：库是新的、状态文件是旧的），还原出来就是**两份见证各自正确、合在一起矛盾**，而且可能和同时还原出来的旧 IDB 也不是同一时刻的。这正是计划 §4 的「两份见证矛盾」场景，只是触发者不是崩溃而是系统备份。
@@ -143,7 +143,7 @@ HEAD 也是 15（`db.ts:46`）。**迁移版本不再升 IDB 版本**（计划 D
 
 S = 2GB 时峰值约 **2 + 2 + 2.6 + 0.25 ≈ 6.9GB**。这是设计上界，不是典型值；典型用户（几十 MB）按同一公式只需要几百 MB。
 
-内存：复制按批走，内存峰值应为「一批的行 + 一个 Blob 的分块缓冲」，与 S 无关。**危险点是全量读**：`loadSessionSummaries`（`db.ts:850` 的 `getAll()`）、校验器若把一个 store 的主键全量物化、备份若整库读进内存，都会在大库上 OOM。预检通过不等于内存安全，校验与备份必须流式（oracle 也是按批比较，见 `oracle.mjs`）。
+内存：复制按批走，内存峰值应为「一批的行 + 一个 Blob 的分块缓冲」，与 S 无关。**危险点是全量读**：`loadSessionSummaries`（`src/services/chat/db.ts` 里那个 `sessions` 的 `getAll()`）、校验器若把一个 store 的主键全量物化、备份若整库读进内存，都会在大库上 OOM。预检通过不等于内存安全，校验与备份必须流式（oracle 也是按批比较，见 `oracle.mjs`）。
 
 ### 4.3 预检阈值建议
 

@@ -10,7 +10,7 @@
 | D1 | 迁移在**启动期、业务 UI 挂载之前**跑，期间显示阻塞的迁移页；路由层对写入另设防线（`StorageMigratingError`） | 「暂停业务写入」靠启动顺序保证，不靠各调用方自觉 |
 | D2 | 源 = IDB 原始行（`RawStoreSource`，保留全部字段与 Blob），不经过业务仓储接口读 | 业务接口可能不暴露某些历史字段，经它复制会丢字段 |
 | D3 | 二进制原件存 SQLite 的**分块 BLOB**（每块 ≤512KiB，带 sha256 与总长），不存外部文件 | Android `CursorWindow` 单行约 2MB 上限，整块大 BLOB 读不出来；单库文件让备份（`VACUUM INTO`）与事务一致。代价是库体积，由磁盘预检承担 |
-| D4 | 迁移状态机权威副本在原生私有目录 `storage-engine/state.json`（经 `AppFileSystem.writeAtomic`）；SQLite `meta` 表是第二见证人 | 高水位同口径：不依赖 WebView 存储 |
+| D4 | 迁移状态机权威副本在原生私有目录 `<getFilesDir()>/storage-engine/state.json`（设备运行期目录，不在仓库里；经 `AppFileSystem.writeAtomic` 写入）；SQLite `meta` 表是第二见证人 | 高水位同口径：不依赖 WebView 存储 |
 | D5 | `committed` 之前真源 = IDB，之后 = SQLite，**永不回退**。`committed` 后 SQLite 打不开 → `blocked`，不静默读旧 IDB | 旧 IDB 在 committed 后不再更新，读它等于丢数据 |
 | D6 | 本期**不删除**旧 IDB，不改它的 schema，不写入它 | 用户要求；删除需单独确认 |
 | D7 | 能力判定走 `capability/probe.ts`：原生 + 插件已注册 + 方法齐全 + `AppFileSystem` 可用 + 可用空间足够。任一不满足留在 IDB，并记录原因，不报错 | 统一规范第 3 条 |
@@ -29,7 +29,7 @@
 | 模块 | 分支 | 名下路径 |
 |---|---|---|
 | sqlite-schema | `feat/910-schema` | `docs/sqlite-schema.md`、`storage/sqlite/{schema,backend,raw,mapping}*.ts`、`storage/sqlite/repos/**`、`tests/helpers/storage-sqlite/**` |
-| native-sqlite（先 Android；iOS 待有空闲名额再接） | `feat/910-native` | `android/**` 的 AppSqlite 插件、`ios/**`、`storage/sqlite/native/**`、`docs/sqlite-native-checklist.md` |
+| native-sqlite（先 Android；iOS 待有空闲名额再接） | `feat/910-native` | `android/**` 的 AppSqlite 插件、`ios/**`、`storage/sqlite/native/**`、随 #913 交付的设备侧验收清单（尚未写） |
 | migration-engine | `feat/910-engine` | `storage/migration/{copy,verify,hash}.ts`、`storage/idb/raw.ts` |
 | switch-recovery | `feat/910-switch` | `storage/migration/{state,backup,orchestrator,recovery}.ts`、`storage/{router,index}.ts`、迁移页组件与 i18n |
 | storage-callers | `feat/910-callers` | 14 个调用方文件、`tests/unit/storage-boundary*.test.mjs`、门禁台账条目 |

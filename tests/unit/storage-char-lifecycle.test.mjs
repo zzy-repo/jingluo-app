@@ -454,10 +454,10 @@ test('blocked 超时之后对方才放手：迟到的连接被立刻 close()（�
   blocker.close()
   await flush()
   assert.equal(state.status, 'rejected', '已判负的 promise 不会翻案')
-  assert.deepEqual(await indexedDB.databases(), [{ name: 'chat-demo', version: 15 }], '升级其实在对方放手后完成了')
-  // 若迟到连接没被关掉，下面这次升到 v16 会收到 blocked
+  assert.deepEqual(await indexedDB.databases(), [{ name: 'chat-demo', version: db.DB_VERSION }], '升级其实在对方放手后完成了')
+  // 若迟到连接没被关掉，下面这次再升一版会收到 blocked（版本号从 DB_VERSION 推，不写死）
   let blockedAgain = false
-  const next = await openDB('chat-demo', 16, { blocked: () => { blockedAgain = true } })
+  const next = await openDB('chat-demo', db.DB_VERSION + 1, { blocked: () => { blockedAgain = true } })
   next.close()
   assert.equal(blockedAgain, false, '迟到连接已被 close()')
 })
