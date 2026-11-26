@@ -68,6 +68,10 @@ const REQUIRED_CI_GATES = [
   // 摘掉它，「又提交了一批没人引用的截图」就回到没人守：check:doc-refs 不认 png/jpg
   // （REF_EXT 里没有），check:hygiene 只管本机路径与大文本文件。
   'check:ui-shots',
+  // 母单 #894 / 子单 #896：**策略表之外的裸超时 / 重试常量** —— 摘掉它，
+  // `STREAM_BREAK_RETRY_LIMIT = 5`（92770fad 的原句）这种「策略表写 2、调用方写 5」的第二份真相源
+  // 就又回到没人守的状态：check:limits 看不见这件事（不在 WATCHED 名单 + 只认 ≥4 位数字）。
+  'check:bare-const',
   // 门禁优化第 7 条（#892）：豁免登记契约 —— 摘掉它，六份「允许它先这样」的表就回到「注释纪律」：
   // reason 可以空、承接单可以是已关闭的单、没有到期日、跑绿了也没人删。判据见 docs/testing/exemptions.md。
   'check:exemptions',

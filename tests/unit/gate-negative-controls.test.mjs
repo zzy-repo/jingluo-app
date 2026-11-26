@@ -502,6 +502,18 @@ const REGISTRY = {
     unwired: true,
     mention: /check-limits\.mjs/,
   },
+  // 母单 #894 / 子单 #896：策略表之外的裸超时 / 重试常量。对照是**脚本自带的 `--selftest` 四拍**
+  // （① 合规样本绿 → ② 注入 `STREAM_BREAK_RETRY_LIMIT = 5` 必红且点名 文件:行:值 → ③ 白名单样本
+  // 与诊断元数据 `{ attempt: 1 }` 必绿 → ④ 豁免登记了却没出现 必红），随 `check:audit-selftest` 跑。
+  // 为什么不能只靠 `--selftest`：那证明脚本会红，不证明**接线**没被改软 —— 后者由
+  // `tests/unit/domain10-gate-wiring.test.mjs` 的 REQUIRED_CI_GATES 守。
+  'check:bare-const': {
+    where: 'scripts/check-bare-const.mjs',
+    kind: 'builtin',
+    what:
+      '自带 `--selftest` 四拍：合规样本必绿 / 注入 `STREAM_BREAK_RETRY_LIMIT = 5` 必红且点名 文件:行:值 / ' +
+      '白名单样本与诊断元数据必绿 / 豁免账不平必红（8 条断言）',
+  },
   'check:capabilities': {
     // #453 之前这里登记成 `scripts/check-capabilities.mjs` + `kind: 'builtin'`（「自带 --strict 档」），
     // 那其实**不是负向对照**：没人注入过东西，没人见过它红。现在换成真对照（本文件 N10）——

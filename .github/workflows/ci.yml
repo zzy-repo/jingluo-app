@@ -642,6 +642,20 @@ jobs:
       - name: 硬编码 IP 检查（check:ip）
         run: pnpm run check:ip
 
+      # ─────────── 母单 #894 / 子单 #896：**策略表之外不许再写一个超时 / 重试的裸常量** ───────────
+      # 事故（证据可复现）：`git show 92770fad:src/services/chat/streamBreakout.ts` 里
+      #   `STREAM_BREAK_RETRY_LIMIT = 5`，而同一类请求的重试上限在 `net/requestPolicy.ts` 的策略表里
+      #   写的是 2 —— 两处都能编译，改一处是否生效取决于「谁问哪个问题」，用户看到的「还试几次」
+      #   在两条链路上是两个答案。
+      # 为什么 check:limits 防不住：① 它的扫描面是手写清单 WATCHED，本轮迁移的 streamBreakout /
+      #   managedKey / purchases 三个文件从来不在名单里；② 它的判据是「≥4 位数字」，`retry: 5`
+      #   这种一位数是它永远看不见的形态。
+      # 范围有意只到窄口径（src/services/net/** + 本轮迁移的 4 个文件）；扩到全 src/** 归 #903。
+      # 负向对照四拍在脚本自带（`--selftest`，随 check:audit-selftest 跑），接线断言在
+      # tests/unit/domain10-gate-wiring.test.mjs。
+      - name: 策略常量单源（check:bare-const）
+        run: pnpm run check:bare-const
+
       # ─────────────── Issue #609（裁决 #614 决定 3，P0 发布安全）：webroot 卫生门禁 ───────────────
       # #601 事故的处置经验：光「把那条 internal 条目从 releases.json 里删掉」**不够** ——
       # 文件还躺在 /var/www/dl/apk/ 下，而静态目录不看清单，猜到 URL 就能下载。
