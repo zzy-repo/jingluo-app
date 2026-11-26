@@ -14,6 +14,7 @@ import { createFreeSpace, type FreeSpaceResult } from './freeSpace.js'
 import { createHeal, type HealResult } from './heal.js'
 import { createHighwater, detectDataLoss, type Highwater } from './highwater.js'
 import { createRestore, type RestorableSnapshot, type RestoreOptions, type RestoreResult } from './restore.js'
+import { SNAPSHOT_MIN_INTERVAL_MS } from './constants.js'
 import { createSnapshots, type SnapshotWriteResult, type Snapshots } from './snapshot.js'
 import { createStorageAccess } from './storageAccess.js'
 import type { DataLostInfo, ProtectionDeps } from './types.js'
@@ -36,6 +37,11 @@ export type Protection = {
   flushSnapshot(): Promise<SnapshotWriteResult | null>
   afterExplicitChange(): Promise<void>
   acknowledgeLoss(): Promise<void>
+}
+
+const defaultSchedule = (run: () => void, delayMs: number): void => {
+  const timer = setTimeout(run, delayMs)
+  ;(timer as unknown as { unref?: () => void }).unref?.()
 }
 
 export const createProtection = (deps: ProtectionDeps): Protection => {
@@ -93,6 +99,7 @@ export const createProtection = (deps: ProtectionDeps): Protection => {
   let saving: Promise<SnapshotWriteResult | null> | undefined
   let dirty = false
   let pendingFlush = false
+  let trailing = false
   const raise = async (): Promise<SnapshotWriteResult | null> => {
     let snapshot: SnapshotWriteResult | null = null
     do {
@@ -118,6 +125,15 @@ export const createProtection = (deps: ProtectionDeps): Protection => {
             kind: 'unknown',
           })
     } while (dirty)
+    // 尾部快照：被节流挡掉的那次保存不能就此没人管 —— 否则「最后一次保存」可能一直没有快照覆盖（RPO 无上界）。
+    // 补一次：节流窗口过后再写（期间若又有保存 / 切后台写过了，这次发现间隔未到会再被节流，不会重复写）。
+    if (snapshot?.status === 'throttled' && !trailing) {
+      trailing = true
+      ;(deps.schedule ?? defaultSchedule)(() => {
+        trailing = false
+        void afterSave()
+      }, SNAPSHOT_MIN_INTERVAL_MS)
+    }
     return snapshot
   }
   /**

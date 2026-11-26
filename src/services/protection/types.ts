@@ -36,6 +36,8 @@ export type ProtectionDeps = {
   now: () => number
   /** 只在 `fs.supported === false`（Web）时使用；缺省 = 连 localStorage 都没有 */
   local: LocalMarkerStore | undefined
+  /** 尾部快照的定时器（测试注入；缺省 = setTimeout 且 unref，不拖住进程退出） */
+  schedule?: (run: () => void, delayMs: number) => void
 }
 
 /** 「库从有到无」的判定结果：给 store / 横幅用 */

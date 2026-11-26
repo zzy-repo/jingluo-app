@@ -87,14 +87,14 @@ export const localStore = () => {
   }
 }
 
-export const setupProtection = (P, { native = true, sessions = [], now = { value: 1_700_000_000_000 }, freeBytes } = {}) => {
+export const setupProtection = (P, { native = true, sessions = [], now = { value: 1_700_000_000_000 }, freeBytes, schedule } = {}) => {
   const fs = P.createMemoryFs(freeBytes === undefined ? {} : { freeBytes })
   if (!native) {
     fs.supported = false
   }
   const state = { sessions, available: true }
   const local = localStore()
-  const protection = P.createProtection({ fs, storage: memoryStorage(state), now: () => now.value, local })
+  const protection = P.createProtection({ fs, storage: memoryStorage(state), now: () => now.value, local, schedule })
   return { fs, state, local, now, protection }
 }
 

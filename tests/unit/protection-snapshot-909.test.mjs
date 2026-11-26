@@ -153,3 +153,26 @@ test('F4 轮转时 remove 失败：新快照已写成，但结果必须可区分
   assert.equal((await env.protection.snapshots.write()).status, 'written')
   assert.equal((await names(env)).length, SNAPSHOT_KEEP)
 })
+
+test('T1 尾部快照：被节流挡掉的保存会补一次，最后一次保存也有快照覆盖（RPO 有上界）', async () => {
+  const timers = []
+  const env = setup({ schedule: (run, delay) => timers.push({ run, delay }) })
+  assert.equal((await env.protection.afterSave())?.status, 'written')
+  assert.equal(timers.length, 0, '写成功不需要补')
+  env.state.sessions.push(makeSession('late'))
+  env.now.value += 1000
+  assert.equal((await env.protection.afterSave())?.status, 'throttled')
+  assert.deepEqual(timers.map((timer) => timer.delay), [SNAPSHOT_MIN_INTERVAL_MS])
+  // 连续被节流只排一个定时器
+  env.now.value += 1000
+  await env.protection.afterSave()
+  assert.equal(timers.length, 1)
+  // 定时器触发时窗口已过：补写，且这份包含最后一次保存的数据
+  env.now.value += SNAPSHOT_MIN_INTERVAL_MS
+  timers[0].run()
+  await new Promise((resolve) => setImmediate(resolve))
+  await new Promise((resolve) => setImmediate(resolve))
+  const latest = (await env.protection.snapshots.list())[0]
+  const file = await env.protection.snapshots.read(latest.name)
+  assert.deepEqual(file.data.map((session) => session.id), ['a', 'b', 'late'])
+})
