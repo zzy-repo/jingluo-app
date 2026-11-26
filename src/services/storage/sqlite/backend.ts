@@ -7,7 +7,6 @@
  * 失败模型与 `getChatDB()` 一致：`StorageUnavailableError` / `StorageBlockedError` /
  * `StorageVersionTooNewError`。运行期错误经 `repos/errors.ts` 映射进 `StorageFailure` 四档。
  */
-import { AsyncLocalStorage } from 'node:async_hooks'
 import {
   StorageBlockedError,
   StorageUnavailableError,
@@ -27,7 +26,15 @@ import { createStagingRepo } from './repos/staging.js'
 import type { AtomicRepos, StorageBackend, StorageHealth, StorageProbe } from '../types.js'
 
 /** 标记「当前正处在某个 runAtomic 的回调里」，用来拒绝嵌套。 */
-const nested = new AsyncLocalStorage<boolean>()
+/**
+ * 「当前是否已在某个 runAtomic 里」的标记。
+ *
+ * 为什么不用 `node:async_hooks` 的 `AsyncLocalStorage`：本文件会进 Web 包（`wiring.ts` 静态 import），
+ * 而 rspack 解析不了 `node:async_hooks`，构建直接失败。语义上也不需要它 —— SQLite 后端只有**一条**写连接，
+ * `BEGIN IMMEDIATE` 本来就是串行的，一个布尔标记足以表达「回调里又调了 runAtomic」。
+ * 用 try/finally 复位，异常路径也归零。
+ */
+let atomicDepth = 0
 
 export type OpenSqlite = () => Promise<SqlDatabase>
 
@@ -112,10 +119,15 @@ export const openSqliteStorage = async (openDb: OpenSqlite): Promise<StorageBack
     runAtomic: async (work) => {
       assertOpen()
       // 不允许嵌套：回调里再调 runAtomic 直接拒绝（types.ts「实现必须拒绝」），外层事务随之回滚。
-      if (nested.getStore() === true) {
+      if (atomicDepth > 0) {
         throw new Error('runAtomic 不允许嵌套')
       }
-      return db.transaction((tx) => nested.run(true, () => work(buildRepos(joinedRunner(tx), 'atomic') as AtomicRepos)))
+      atomicDepth += 1
+      try {
+        return await db.transaction((tx) => work(buildRepos(joinedRunner(tx), 'atomic') as AtomicRepos))
+      } finally {
+        atomicDepth -= 1
+      }
     },
 
     close: async () => {
