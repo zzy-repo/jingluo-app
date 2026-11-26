@@ -451,11 +451,13 @@ export const MobileSider = () => {
   return (
     <>
       <div
+        data-sider-swipe="close"
         className={clsx(styles.drawerMask, visible ? styles.drawerMaskOpen : styles.drawerHidden)}
         onClick={closeMobileSider}
         aria-hidden="true"
       />
       <div
+        data-sider-swipe="close"
         className={clsx(styles.drawer, visible ? styles.drawerOpen : styles.drawerClosed)}
         data-motion-state={visible ? 'open' : 'closed'}
         data-enter={enterAnim ? 'true' : undefined}

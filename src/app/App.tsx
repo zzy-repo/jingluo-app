@@ -46,6 +46,7 @@ import { Button } from '../components/base/Button.js'
 import { stopReadAloud } from '../services/speech/readAloud.js'
 import { CollapsedSider } from '../components/sider/CollapsedSider.js'
 import { closeMobileSider } from '../components/sider/mobileSiderState.js'
+import { bindAndroidSiderSwipe } from '../components/sider/androidSiderSwipe.js'
 import { MobileSider, Sider } from '../components/sider/Sider.js'
 import { UpdateDialog } from '../components/update/UpdateDialog.js'
 import { snoozeStartupUpdatePrompt, startUpdateGate, useUpdateGate } from '../services/updateGateState.js'
@@ -147,6 +148,10 @@ export const App = () => {
   const signedIn = useAuthStatus().authenticated
 
   usePreventPageScroll(isMobile)
+  useEffect(() => {
+    if (!isMobile || !frameRef.current) return
+    return bindAndroidSiderSwipe(frameRef.current)
+  }, [frameRef, isMobile, activeId])
 
   useEffect(() => {
     document.documentElement.lang = locale
