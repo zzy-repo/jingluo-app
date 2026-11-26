@@ -69,9 +69,12 @@ export type PageQuery = {
  * 约束（写进类型，免得实现时再发明）：
  * - 回调里**只能**调用各仓储方法，不能再调 `runAtomic`（嵌套事务各后端语义不同，IDB 没有嵌套）；
  * - 回调抛出的任何错误 → 本批整体回滚，错误原样抛给 `runAtomic` 的调用方；
- * - 回调的返回值在提交成功后原样返回。
+ * - 回调的返回值在提交成功后原样返回；
+ * - 回调拿到的是 `AtomicRepos`，**不是**完整的 `StorageRepos`：只含「能挂到调用方事务上」的方法。
+ *   带自有原子边界、内部自己开事务的复合操作（见 `AtomicRepos` 的注释）在类型上就不存在，
+ *   编译期拒绝，而不是运行期抛错。接口不承诺任何后端做不到的事务语义。
  */
-export type AtomicWork<T> = (repos: StorageRepos) => Promise<T>
+export type AtomicWork<T> = (repos: AtomicRepos) => Promise<T>
 
 /**
  * 原子批的选项。
@@ -345,7 +348,7 @@ export type StagingRepo = {
 
 // ---------------------------------------------------------------- 聚合
 
-/** `runAtomic` 回调与 `StorageBackend` 上各仓储的同一批成员。 */
+/** `StorageBackend` 上各仓储的同一批成员。 */
 export type StorageRepos = {
   sessions: SessionRepo
   blobs: BlobRepo
@@ -353,6 +356,24 @@ export type StorageRepos = {
   attachments: AttachmentRepo
   memory: MemoryRepo
   staging: StagingRepo
+}
+
+/**
+ * `runAtomic` 回调里可用的仓储：`StorageRepos` 去掉 7 个**自带原子边界**的复合方法。
+ *
+ * 去掉的原因：这些方法各自定义了事务范围（含「引用计数后再删」「整包替换」「判定+搬运」），
+ * 嵌进调用方事务会让「原子单元」含义不明（IDB 端现有实现自己开事务，也无法挂接）。
+ * 需要它们时在 `runAtomic` 之外单独调用，其原子性由方法自身保证。
+ *   - `attachments`：`add` / `remove` / `sweepOrphans` / `removeUnreferenced`
+ *   - `staging`：`updateFileTypes` / `commit` / `merge`
+ */
+export type AtomicRepos = {
+  sessions: SessionRepo
+  blobs: BlobRepo
+  assets: AssetRepo
+  attachments: Omit<AttachmentRepo, 'add' | 'remove' | 'sweepOrphans' | 'removeUnreferenced'>
+  memory: MemoryRepo
+  staging: Omit<StagingRepo, 'updateFileTypes' | 'commit' | 'merge'>
 }
 
 /**

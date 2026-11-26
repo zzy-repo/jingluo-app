@@ -58,7 +58,7 @@ import type {
   StorageBackend,
   StorageHealth,
   StorageProbe,
-  StorageRepos,
+  AtomicRepos,
 } from '../types.js'
 import { ALL_STORES, asAllTx, runInTransaction } from './txRepos.js'
 
@@ -66,7 +66,7 @@ import { ALL_STORES, asAllTx, runInTransaction } from './txRepos.js'
 const withTx = async <const Names extends readonly (typeof ALL_STORES)[number][], T>(
   stores: Names,
   mode: 'readonly' | 'readwrite',
-  work: (repos: StorageRepos) => Promise<T>
+  work: (repos: AtomicRepos) => Promise<T>
 ): Promise<T> => runInTransaction(asAllTx(await openChatTransaction(stores, mode)), work)
 
 const sessions: SessionRepo = {
