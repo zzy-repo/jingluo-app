@@ -73,7 +73,10 @@ import {
   protectionCheckAtStartup,
   protectionCheckFreeSpace,
   protectionFlushSnapshot,
+  protectionRestore,
   type DataLostInfo,
+  type RestoreOptions,
+  type RestoreResult,
 } from '../protection/index.js'
 import {
   clearAllDrafts,
@@ -804,6 +807,13 @@ export const saveSessionBackground = async (
   return false
 }
 
+/**
+ * #909：从快照恢复（走整包替换通道 `importHistoryInto(…,'overwrite')`：中止流、等空闲、单事务提交、失败清暂存）。
+ * 调用方（横幅）必须先让用户确认。恢复成功后 `importHistoryInto` 会清掉 `dataLost` 并按实际数更新高水位。
+ */
+export const restoreFromSnapshot = (name: string, options: Omit<RestoreOptions, 'commit'>): Promise<RestoreResult> =>
+  protectionRestore(name, { ...options, commit: (write) => importHistoryInto(write, 'overwrite') })
+
 /** #909：用户在横幅里确认「知道了」：清掉提示，高水位按当前实际数重置 */
 export const dismissDataLost = async (): Promise<void> => {
   await protectionAcknowledgeLoss()
@@ -1194,6 +1204,8 @@ export const importHistoryInto = async (
       })
     }
     // #909：整包替换 / 合并 commit 之后按实际数更新高水位（覆盖「清空历史」：空替换也走这里）
+    // 用户的导入 / 恢复已经替换了本机数据：待处理的「库丢失」提示到此为止
+    set({ dataLost: null })
     void protectionAfterExplicitChange()
     return summary
   } finally {

@@ -178,7 +178,13 @@ export const createHighwater = (deps: ProtectionDeps) => {
     return { status: 'written', changed: true, source }
   }
 
-  return { read, write, source }
+  /** 标记里是否有待处理的「库从有到无」；读一次后用本进程缓存，不为每次保存跨桥 */
+  const lostPending = async (): Promise<boolean> => {
+    const mark = (known ?? (await read())).mark
+    return mark?.lost !== undefined
+  }
+
+  return { read, write, source, lostPending }
 }
 
 export type Highwater = ReturnType<typeof createHighwater>

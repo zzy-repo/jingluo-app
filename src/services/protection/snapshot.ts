@@ -9,11 +9,12 @@
  *  - 写入由调用方放在空闲 / 后台（`protectionAfterSave` 是 fire-and-forget），这里本身不阻塞输入。
  */
 import { InfraError, type InfraErrorKind } from '../capability/errors.js'
-import type { Session, SessionSummary } from '../chat/types.js'
+import type { Session, SessionBranchOrigin, SessionSummary } from '../chat/types.js'
 import { sha256OfText } from './checksum.js'
 import {
   SNAPSHOT_DIR,
   SNAPSHOT_FORMAT_VERSION,
+  PRE_RESTORE_KEEP,
   SNAPSHOT_KEEP,
   SNAPSHOT_MIN_INTERVAL_MS,
 } from './constants.js'
@@ -40,6 +41,9 @@ export type SnapshotSession = {
   updatedAt: number
   pinnedAt?: number
   customSystemPrompt?: string
+  /** 消息树的根；缺省 = 线性会话（与 Session 同口径，`null` = 空会话） */
+  rootMessageId?: string | null
+  branchOf?: SessionBranchOrigin
   messages: SnapshotMessage[]
 }
 
@@ -56,7 +60,11 @@ export type SnapshotFile = {
   checksum: string
 }
 
-export type SnapshotStatus = 'written' | 'throttled' | 'unsupported' | 'quota' | 'failed'
+/** auto = 保存后自动快照；pre-restore = 恢复前对当前库状态的备份（单独轮转，不挤占 auto 的名额） */
+export type SnapshotKind = 'auto' | 'pre-restore'
+
+/** suspended：已判定库丢失、待用户处理时暂停自动快照（避免新数据把还能恢复的旧快照轮转掉） */
+export type SnapshotStatus = 'written' | 'throttled' | 'suspended' | 'unsupported' | 'quota' | 'failed'
 
 export type SnapshotWriteResult = {
   status: SnapshotStatus
@@ -84,6 +92,8 @@ export const toSnapshotSession = (session: Session): SnapshotSession => ({
   updatedAt: session.updatedAt,
   ...(session.pinnedAt === undefined ? {} : { pinnedAt: session.pinnedAt }),
   ...(session.customSystemPrompt === undefined ? {} : { customSystemPrompt: session.customSystemPrompt }),
+  ...(session.rootMessageId === undefined ? {} : { rootMessageId: session.rootMessageId }),
+  ...(session.branchOf === undefined ? {} : { branchOf: session.branchOf }),
   messages: session.messages.map((message): SnapshotMessage => {
     const branch = {
       ...(message.parentId === undefined ? {} : { parentId: message.parentId }),
@@ -147,17 +157,25 @@ export const parseSnapshot = async (text: string): Promise<SnapshotFile | null> 
   return (await sha256OfText(JSON.stringify(rest))) === checksum ? (raw as SnapshotFile) : null
 }
 
-const NAME = /^(\d+)\.json$/u
+const NAME = /^(pre-restore-)?(\d+)\.json$/u
+const PREFIX: Record<SnapshotKind, string> = { auto: '', 'pre-restore': 'pre-restore-' }
+const KEEP: Record<SnapshotKind, number> = { auto: SNAPSHOT_KEEP, 'pre-restore': PRE_RESTORE_KEEP }
+
+export type SnapshotEntry = { name: string; kind: SnapshotKind; at: number; size: number }
 
 export const createSnapshots = (deps: ProtectionDeps) => {
   let lastWrittenAt = 0
 
-  const list = async (): Promise<{ name: string; at: number; size: number }[]> => {
-    const found: { name: string; at: number; size: number }[] = []
+  const list = async (kind?: SnapshotKind): Promise<SnapshotEntry[]> => {
+    const found: SnapshotEntry[] = []
     for (const entry of await deps.fs.list(SNAPSHOT_DIR)) {
       const match = NAME.exec(entry.name)
-      if (match) {
-        found.push({ name: entry.name, at: Number(match[1]), size: entry.size })
+      if (!match) {
+        continue
+      }
+      const entryKind: SnapshotKind = match[1] === undefined ? 'auto' : 'pre-restore'
+      if (kind === undefined || kind === entryKind) {
+        found.push({ name: entry.name, kind: entryKind, at: Number(match[2]), size: entry.size })
       }
     }
     return found.sort((left, right) => right.at - left.at)
@@ -178,9 +196,9 @@ export const createSnapshots = (deps: ProtectionDeps) => {
     return parsed
   }
 
-  const rotate = async (keepName: string): Promise<void> => {
-    const entries = await list()
-    const doomed = entries.filter((entry) => entry.name !== keepName).slice(SNAPSHOT_KEEP - 1)
+  const rotate = async (kind: SnapshotKind, keepName: string): Promise<void> => {
+    const entries = await list(kind)
+    const doomed = entries.filter((entry) => entry.name !== keepName).slice(KEEP[kind] - 1)
     for (const entry of doomed) {
       await deps.fs.remove(`${SNAPSHOT_DIR}/${entry.name}`)
     }
@@ -190,12 +208,13 @@ export const createSnapshots = (deps: ProtectionDeps) => {
    * 写一份快照。
    * `force`：会话结束 / 切后台时绕过 15s 节流（仍受「内容没变就不写」约束：调用方决定）。
    */
-  const write = async (options: { force?: boolean } = {}): Promise<SnapshotWriteResult> => {
+  const write = async (options: { force?: boolean; kind?: SnapshotKind } = {}): Promise<SnapshotWriteResult> => {
     if (!deps.fs.supported) {
       return { status: 'unsupported' }
     }
+    const kind = options.kind ?? 'auto'
     const at = deps.now()
-    if (!options.force && at - lastWrittenAt < SNAPSHOT_MIN_INTERVAL_MS) {
+    if (kind === 'auto' && !options.force && at - lastWrittenAt < SNAPSHOT_MIN_INTERVAL_MS) {
       return { status: 'throttled' }
     }
     const [sessions, summaries] = await Promise.all([deps.storage.loadSessions(), deps.storage.loadSummaries()])
@@ -208,17 +227,19 @@ export const createSnapshots = (deps: ProtectionDeps) => {
       data: sessions.map(toSnapshotSession),
     }
     const text = await serialize(file)
-    const name = `${at}.json`
+    const name = `${PREFIX[kind]}${at}.json`
     try {
       await deps.fs.writeAtomic(`${SNAPSHOT_DIR}/${name}`, encoder.encode(text))
-      await rotate(name)
+      await rotate(kind, name)
     } catch (error) {
       reportProtectionFailure('snapshot-write', error, { 'protection.sessions': sessions.length })
       const kind = kindOf(error)
       const mapped: InfraErrorKind = kind === 'quota' || kind === 'permission' || kind === 'unsupported' ? kind : 'unknown'
       return { status: mapped === 'quota' ? 'quota' : 'failed', kind: mapped, sessions: sessions.length }
     }
-    lastWrittenAt = at
+    if (kind === 'auto') {
+      lastWrittenAt = at
+    }
     return { status: 'written', file: name, sessions: sessions.length }
   }
 

@@ -1493,4 +1493,18 @@ export const zh = {
   dataLostTitle: '本机的聊天记录已被系统清除（此前约有 {count} 条会话）',
   dataLostNoSnapshot: '本机没有可用的快照，无法自动恢复。如果之前导出过备份，可在「设置」里导入历史会话。',
   dataLostDismiss: '知道了，不再提示',
+  dataLostRestoreHeading: '可从以下快照恢复：',
+  dataLostSnapshotRow: '{time} · {count} 条会话',
+  dataLostSnapshotBroken: '{time} · 已损坏，无法恢复',
+  dataLostRestore: '恢复',
+  dataLostConfirm:
+    '用这份快照替换本机现有的聊天记录？替换前会先备份当前状态。快照只含聊天文字，图片和附件原件不在其中，恢复后这些原件不可用。',
+  dataLostConfirmYes: '确认恢复',
+  dataLostRestoring: '正在恢复… {done}/{total}',
+  dataLostRestored: '已从快照恢复 {count} 条会话',
+  dataLostRestoreCancelled: '已取消恢复，本机数据没有改动',
+  dataLostRestoreCorrupt: '这份快照已损坏，没有恢复，本机数据没有改动',
+  dataLostRestoreIncompatible: '这份快照来自更新版本的应用，请先更新应用，本机数据没有改动',
+  dataLostRestoreBackupFailed: '没能先备份当前状态（可能是空间不足），已停止，本机数据没有改动',
+  dataLostRestoreFailed: '恢复失败，本机数据没有改动',
 } as const

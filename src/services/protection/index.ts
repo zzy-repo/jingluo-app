@@ -12,6 +12,7 @@ import { InfraError } from '../capability/errors.js'
 import { reportProtectionFailure } from './diagnostics.js'
 import { createFreeSpace, type FreeSpaceResult } from './freeSpace.js'
 import { createHighwater, detectDataLoss, type Highwater } from './highwater.js'
+import { createRestore, type RestorableSnapshot, type RestoreOptions, type RestoreResult } from './restore.js'
 import { createSnapshots, type SnapshotWriteResult, type Snapshots } from './snapshot.js'
 import { createStorageAccess } from './storageAccess.js'
 import type { DataLostInfo, ProtectionDeps } from './types.js'
@@ -23,6 +24,8 @@ export type Protection = {
   readonly snapshots: Snapshots
   /** 保存前读剩余空间（缓存 10s）：ok / low / unknown，unknown 不得当成「足够」 */
   checkFreeSpace(): Promise<FreeSpaceResult>
+  listRestorable(): Promise<RestorableSnapshot[]>
+  restore(name: string, options: RestoreOptions): Promise<RestoreResult>
   checkAtStartup(): Promise<DataLostInfo | null>
   /** saveSession 成功后：抬高水位 + 尝试快照（节流）。返回快照结果，调用方一般不需要等 */
   afterSave(options?: { flush?: boolean }): Promise<SnapshotWriteResult | null>
@@ -36,6 +39,7 @@ export const createProtection = (deps: ProtectionDeps): Protection => {
   const highwater = createHighwater(deps)
   const snapshots = createSnapshots(deps)
   const freeSpace = createFreeSpace(deps)
+  const restoring = createRestore(deps, snapshots)
 
   const guarded = async <T>(stage: string, run: () => Promise<T>, fallback: T): Promise<T> => {
     try {
@@ -101,10 +105,14 @@ export const createProtection = (deps: ProtectionDeps): Protection => {
         undefined
       )
       // 快照读的是「现在」的库：合并期间又有保存就再来一轮，最后一轮的结果才算数
-      snapshot = await guarded('snapshot-after-save', () => snapshots.write({ force: flush }), {
-        status: 'failed',
-        kind: 'unknown',
-      })
+      // 已判定「库从有到无」、等用户处理期间暂停自动快照：新数据不该把还能恢复的旧快照轮转掉
+      const suspended = await guarded('snapshot-suspend-check', () => highwater.lostPending(), false)
+      snapshot = suspended
+        ? { status: 'suspended' }
+        : await guarded('snapshot-after-save', () => snapshots.write({ force: flush }), {
+            status: 'failed',
+            kind: 'unknown',
+          })
     } while (dirty)
     return snapshot
   }
@@ -141,6 +149,8 @@ export const createProtection = (deps: ProtectionDeps): Protection => {
     highwater,
     snapshots,
     checkFreeSpace: freeSpace.check,
+    listRestorable: restoring.list,
+    restore: restoring.restore,
     checkAtStartup,
     afterSave,
     flushSnapshot: () => afterSave({ flush: true }),
@@ -200,6 +210,16 @@ export const protectionCheckAtStartup = async (): Promise<DataLostInfo | null> =
 export const protectionAfterSave = (): void => {
   void getProtection().then((protection) => protection?.afterSave())
 }
+
+/** 可恢复的快照列表（Web / 不支持 / 保护层不可用 = 空列表） */
+export const protectionListRestorable = async (): Promise<RestorableSnapshot[]> =>
+  (await getProtection())?.listRestorable() ?? []
+
+/** 从快照恢复。调用方（UI）必须先让用户确认；`commit` 由 store 注入整包替换通道 */
+export const protectionRestore = async (name: string, options: RestoreOptions): Promise<RestoreResult> =>
+  (await getProtection())?.restore(name, options) ?? { status: 'failed', kind: 'unsupported' }
+
+export type { RestorableSnapshot, RestoreOptions, RestoreProgress, RestoreResult } from './restore.js'
 
 /** 保存前读剩余空间；保护层不可用时返回 null（= 不知道，调用方保持现状） */
 export const protectionCheckFreeSpace = async (): Promise<FreeSpaceResult | null> =>

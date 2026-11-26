@@ -14,7 +14,7 @@ export const loadProtection = async () => {
     ],
   })
   globalThis.__log = { records: [], events: [], actions: [] }
-  const [memoryFs, fsTypes, index, highwater, constants, diagnostics, snapshot, freeSpace] = await Promise.all([
+  const [memoryFs, fsTypes, index, highwater, constants, diagnostics, snapshot, freeSpace, restore] = await Promise.all([
     loadTsModule('src/services/fs/memoryFs.ts'),
     loadTsModule('src/services/fs/types.ts'),
     loadTsModule('src/services/protection/index.ts'),
@@ -23,8 +23,9 @@ export const loadProtection = async () => {
     loadTsModule('src/services/protection/diagnostics.ts'),
     loadTsModule('src/services/protection/snapshot.ts'),
     loadTsModule('src/services/protection/freeSpace.ts'),
+    loadTsModule('src/services/protection/restore.ts'),
   ])
-  return { ...memoryFs, ...fsTypes, ...index, ...highwater, ...constants, ...diagnostics, ...snapshot, ...freeSpace }
+  return { ...memoryFs, ...fsTypes, ...index, ...highwater, ...constants, ...diagnostics, ...snapshot, ...freeSpace, ...restore }
 }
 
 export const makeSession = (id, extra = {}) => ({
@@ -71,9 +72,6 @@ export const memoryStorage = (state) => {
       state.summaries = undefined
       return state.sessions.length
     },
-    clearStaging: async () => {
-      state.staging = []
-    },
     stageSession: async (session) => {
       ;(state.staging ??= []).push(structuredClone(session))
     },
@@ -103,4 +101,24 @@ export const setupProtection = (P, { native = true, sessions = [], now = { value
 export const records = () => globalThis.__log.records
 export const resetRecords = () => {
   records().length = 0
+}
+
+/**
+ * 整包替换通道的内存模拟（语义对齐 `importHistoryInto(write,'overwrite')`）：清暂存 → write → 一次性替换 → 清暂存；
+ * write / 提交任一失败：清暂存并原样抛出，`state.sessions` 一个字不动。
+ */
+export const makeCommit = (state, { failAfterWrite = false } = {}) => async (write) => {
+  state.staging = []
+  try {
+    await write()
+    if (failAfterWrite) {
+      throw new Error('injected commit failure')
+    }
+    state.sessions = (state.staging ?? []).map((session) => structuredClone(session))
+    state.summaries = undefined
+  } catch (error) {
+    state.staging = []
+    throw error
+  }
+  state.staging = []
 }

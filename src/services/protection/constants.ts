@@ -12,6 +12,8 @@ export const SNAPSHOT_DIR = 'snapshots'
 export const SNAPSHOT_KEEP = 5
 export const SNAPSHOT_MIN_INTERVAL_MS = 15_000
 export const SNAPSHOT_FORMAT_VERSION = 1
+/** 「恢复前」备份保留份数（与自动快照分开轮转，免得被后续自动快照挤掉） */
+export const PRE_RESTORE_KEEP = 2
 
 /** 满盘保护：私有目录所在分区剩余空间低于它，保存横幅升到「存储空间不足」档（默认 64 MiB）。 */
 export const FREE_SPACE_MIN_BYTES = 64 * 1024 * 1024

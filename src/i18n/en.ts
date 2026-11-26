@@ -1475,4 +1475,18 @@ export const en = {
   dataLostNoSnapshot:
     'No snapshot is available on this device, so nothing can be restored automatically. If you exported a backup before, import it from Settings.',
   dataLostDismiss: 'Got it, stop showing this',
+  dataLostRestoreHeading: 'Restore from one of these snapshots:',
+  dataLostSnapshotRow: '{time} · {count} chats',
+  dataLostSnapshotBroken: '{time} · damaged, cannot be restored',
+  dataLostRestore: 'Restore',
+  dataLostConfirm:
+    'Replace the chats on this device with this snapshot? The current state is backed up first. A snapshot holds chat text only. Images and attachment files are not in it and will be unavailable after restoring.',
+  dataLostConfirmYes: 'Confirm restore',
+  dataLostRestoring: 'Restoring… {done}/{total}',
+  dataLostRestored: 'Restored {count} chats from the snapshot',
+  dataLostRestoreCancelled: 'Restore cancelled. Nothing on this device was changed',
+  dataLostRestoreCorrupt: 'This snapshot is damaged and was not restored. Nothing on this device was changed',
+  dataLostRestoreIncompatible: 'This snapshot comes from a newer app version. Update the app first. Nothing on this device was changed',
+  dataLostRestoreBackupFailed: 'Could not back up the current state first (maybe not enough space), so it stopped. Nothing on this device was changed',
+  dataLostRestoreFailed: 'Restore failed. Nothing on this device was changed',
 } satisfies Record<keyof typeof zh, string>

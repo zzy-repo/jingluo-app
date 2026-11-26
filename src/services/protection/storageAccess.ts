@@ -80,6 +80,5 @@ export const createStorageAccess = (): ProtectionStorage => ({
   },
   loadSummaries: async () => (await getStorage()).sessions.listSummaries(),
   rebuildSummaries,
-  clearStaging: async () => (await getStorage()).staging.clear(),
   stageSession: async (session) => (await getStorage()).staging.addSession(session),
 })

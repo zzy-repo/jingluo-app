@@ -23,8 +23,7 @@ export interface ProtectionStorage {
   loadSummaries(): Promise<SessionSummary[]>
   /** 按 sessions 重建全部摘要：单原子批、幂等；返回会话数 */
   rebuildSummaries(): Promise<number>
-  /** 恢复通道：清空导入暂存 / 写一条暂存会话（提交由 store 的 importHistoryInto 负责） */
-  clearStaging(): Promise<void>
+  /** 恢复通道：写一条导入暂存会话（清暂存与提交由 store 的 importHistoryInto 负责） */
   stageSession(session: Session): Promise<void>
 }
 
