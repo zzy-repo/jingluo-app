@@ -10,7 +10,7 @@
  *  - 幂等：库已经 ≥ 目标版本（重入）视为已完成；之后必须能再次打开才算成功。
  *  - 只由迁移编排器在 `verified` 之后、写 SQLite meta 之前，经依赖注入调用；普通应用启动不会调用。
  */
-import { DB_NAME, DB_VERSION } from '../../chat/db.js'
+import { DB_NAME, DB_VERSION, getChatDB } from '../../chat/db.js'
 
 /** 屏障版本 = 当前库版本 + 1（现为 16）。版本号的唯一来源仍是 `db.ts` 的 `DB_VERSION`。 */
 export const LEGACY_BARRIER_VERSION = DB_VERSION + 1
@@ -43,8 +43,21 @@ const openAt = (name: string, version: number | undefined): Promise<IDBDatabase>
     }
   })
 
-/** 升到屏障版本并确认能再次打开。失败抛错（编排器因此不写 committed）。 */
+/**
+ * 升到屏障版本并确认能再次打开。失败抛错（编排器因此不写 committed）。
+ *
+ * **必须先关掉本进程自己那条 IDB 连接**：迁移期间 `db.ts` 的共享连接是活的（源就是经它读的），
+ * 而另一个连接持有旧版本会让 `open(…, 16)` 永远 `blocked` —— 真机实测就是这样失败的
+ * （`legacy idb barrier: open blocked by another connection`，数据库与备份都已就绪）。
+ * 关掉之后 `openChatTransaction` 的 InvalidStateError 重连逻辑不受影响（它本来就会重开），
+ * 而 `committed` 之后 IDB 不再被读写（D5）。
+ */
 export const bumpLegacyIdbVersion = async (name: string = DB_NAME): Promise<void> => {
+  await getChatDB()
+    .then((db) => {
+      db.close()
+    })
+    .catch(() => {})
   try {
     const db = await openAt(name, LEGACY_BARRIER_VERSION)
     db.close()
