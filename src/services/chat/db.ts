@@ -179,7 +179,7 @@ const referencedFileIds = (session: Session): string[] => [
   ),
 ]
 
-const storedSummary = (session: Session): StoredSessionSummary => ({
+export const storedSummary = (session: Session): StoredSessionSummary => ({
   ...toSessionSummary(session),
   fileIds: referencedFileIds(session),
 })
