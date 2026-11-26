@@ -7,11 +7,11 @@
 //   3) node scripts/migration-device-verify.mjs
 //
 // 判据不经过 Storage 仓储实现（只用 raw 读口 + 本文件自己的规范化序列化），也不看 UI。
+/* eslint-disable no-console -- 命令行验收脚本，输出就是结果 */
 import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 const { loadTsModule, installTsResolve } = await import('../tests/helpers/dom-env.mjs')
 installTsResolve({ stubs: { '@capacitor/core': 'data:text/javascript,export const registerPlugin=()=>({})' } })
-const { DatabaseSync } = await import('node:sqlite')
 
 const DUMP = process.env.IDB_DUMP ?? '/tmp/idb-before.json'
 const DIR = process.env.DEVICE_DB_DIR ?? '/tmp/devdb'
@@ -26,25 +26,25 @@ const { createSqliteRawSource } = await loadTsModule('src/services/storage/sqlit
 const src = createSqliteRawSource(db)
 
 const ser = (v) => {
-  if (v instanceof Blob) return { __blob: null }
-  if (v instanceof Date) return { __date: v.getTime() }
-  if (v instanceof ArrayBuffer) return { __blob: Array.from(new Uint8Array(v)) }
-  if (ArrayBuffer.isView(v)) return { __blob: Array.from(new Uint8Array(v.buffer)) }
-  if (Array.isArray(v)) return v.map(ser)
+  if (v instanceof Blob) {return { __blob: null }}
+  if (v instanceof Date) {return { __date: v.getTime() }}
+  if (v instanceof ArrayBuffer) {return { __blob: Array.from(new Uint8Array(v)) }}
+  if (ArrayBuffer.isView(v)) {return { __blob: Array.from(new Uint8Array(v.buffer)) }}
+  if (Array.isArray(v)) {return v.map(ser)}
   if (v && typeof v === 'object') {
     const o = {}
-    for (const k of Object.keys(v).sort()) o[k] = ser(v[k])
+    for (const k of Object.keys(v).sort()) {o[k] = ser(v[k])}
     return o
   }
   return v
 }
 // Blob → 字节（异步）
 const serAsync = async (v) => {
-  if (v instanceof Blob) return { __blob: Array.from(new Uint8Array(await v.arrayBuffer())) }
-  if (Array.isArray(v)) { const a = []; for (const x of v) a.push(await serAsync(x)); return a }
+  if (v instanceof Blob) {return { __blob: Array.from(new Uint8Array(await v.arrayBuffer())) }}
+  if (Array.isArray(v)) { const a = []; for (const x of v) {a.push(await serAsync(x));} return a }
   if (v && typeof v === 'object' && !(v instanceof Date)) {
     const o = {}
-    for (const k of Object.keys(v).sort()) o[k] = await serAsync(v[k])
+    for (const k of Object.keys(v).sort()) {o[k] = await serAsync(v[k])}
     return o
   }
   return ser(v)
@@ -59,8 +59,8 @@ for (const store of STORES) {
   let after
   for (;;) {
     const page = await src.readBatch(store, after, 100)
-    for (const r of page.rows) rows.push({ key: String(r.key), value: await serAsync(r.value) })
-    if (page.next === undefined) break
+    for (const r of page.rows) {rows.push({ key: String(r.key), value: await serAsync(r.value) })}
+    if (page.next === undefined) {break}
     after = page.next
   }
   rows.sort((a,b)=> a.key < b.key ? -1 : a.key > b.key ? 1 : 0)
@@ -69,9 +69,9 @@ for (const store of STORES) {
   const diff = []
   for (const w of want) {
     const t = rows.find(r => r.key === w.key)
-    if (!t) continue
+    if (!t) {continue}
     const a = JSON.stringify(w.value), b = JSON.stringify(t.value)
-    if (a !== b) diff.push({ key: w.key, idb: createHash('sha256').update(a).digest('hex').slice(0,12), sqlite: createHash('sha256').update(b).digest('hex').slice(0,12) })
+    if (a !== b) {diff.push({ key: w.key, idb: createHash('sha256').update(a).digest('hex').slice(0,12), sqlite: createHash('sha256').update(b).digest('hex').slice(0,12) })}
   }
   const good = missing.length === 0 && extra.length === 0 && diff.length === 0
   ok &&= good
