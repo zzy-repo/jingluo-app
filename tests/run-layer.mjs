@@ -180,6 +180,11 @@ const UNIT_SOLO = new Set([
   // 把别人的数据混进本文件的「空库」。机制类别：模块级单例 + 共享库 —— 与上一条同类，单列最诚实。
   'storage-idb-backend.test.mjs',
 
+  // #915（迁移引擎的 IDB 只读源）：把 IDBObjectStore / IDBCursor / IDBDatabase.transaction 的原型方法临时桩成
+  // 抛错或记录，并独占 `chat/db.ts` 的模块级连接单例与共享 fake-indexeddb 库。机制类别：进程级原型 mock +
+  // 模块级单例（与上一条同类，技术债见 docs/sqlite-migration-plan.md 第 6 节）。其余 migration-engine-* 是纯内存用例，继续合批。
+  'migration-engine-raw.test.mjs',
+
   // #906（其余四个特征化测试）：同一类机制 —— 都经 `chat/db.ts` 的模块级连接单例读写真 fake-indexeddb，
   // 且会换掉/还原 `globalThis.indexedDB`（lifecycle 还用 MockTimers 与 `?inst=N` 多实例）。
   // 实测（合批 `--only storage-`）：blob-attach 批内红 14 条、单跑全绿（「No objectStore named appAssets」，
