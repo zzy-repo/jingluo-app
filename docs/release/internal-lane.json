@@ -1,0 +1,20 @@
+{
+  "_doc": "内测分发台账 —— 覆盖升级的硬断言的唯一数据源。build-apk.sh 在 BUILD_VARIANT=internal 时读它，断言 package.json 的 androidVersionCode 严格大于 lastDistributedVersionCode，并断言签名证书指纹仍以 certSha256Prefix 开头。每对外分发一个内测包，就在这里把刚发出去的那一版挪进 history、把 lastDistributedVersionCode 改成它 —— 这是台账，不是愿望清单：只记真的交到内测用户手上的版本。",
+  "_rule": "用户规则（2026-11-27 拍板）：每次对外分发新内测 APK，versionCode 必须递增（44 → 45 → 46 …）；versionName 可以维持 2.0.1。目的是避免版本混淆、保证已装用户能直接覆盖升级（无须卸载重装、保留全部历史数据）。",
+  "_whyCert": "换签名证书会让已装用户无法覆盖升级（Android 只允许同证书的更新包覆盖安装）。所以证书指纹也是覆盖升级判据的一部分，不是「安全设置」。",
+  "_runner": "node scripts/check-internal-lane.mjs  （或由 build-apk.sh release + BUILD_VARIANT=internal 自动调用）",
+  "certSha256Prefix": "e7c5baee",
+  "lastDistributedVersionCode": 43,
+  "history": [
+    {
+      "versionCode": 42,
+      "versionName": "2.0.1",
+      "note": "首个开启 SQLite 迁移的内测包（桌面留档 jingluo-v2.0.1-vc42-internal-sqlite.apk）"
+    },
+    {
+      "versionCode": 43,
+      "versionName": "2.0.1",
+      "note": "已按用户口径算作可分发给内测用户的版本（用户要求 vc42 / vc43 都能直接覆盖升级到新版），但未作为交付版发出"
+    }
+  ]
+}

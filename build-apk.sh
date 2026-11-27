@@ -15,6 +15,9 @@
 # 可选环境变量:
 #   SKIP_WEB_BUILD=1   跳过 pnpm build（复用现有 dist/）
 #   ANDROID_HOME=...   覆盖 SDK 路径（其次 $ANDROID_SDK_ROOT，兜底 $HOME/android-sdk）
+#   COPY_TO_DESKTOP=1  校验通过后把产物拷到桌面（文件名 jingluo-v<version>-vc<code>-<variant>.apk），
+#                      并打印 SHA-256 —— 交付给内测用户的那一份就取这里，别去 build/outputs 里翻。
+#   DELIVER_DIR=...    覆盖落盘目录（默认 ~/Desktop）
 #   ALLOW_LOOPBACK_CONSUME=1
 #                      显式允许「回环地址」出包（只给本地联调，Issue #601）。不设时，只要
 #                      consume/pay/migration 的 base 是 127.0.0.1 / localhost / ::1 就构建失败。
@@ -25,8 +28,16 @@
 #   · 构建后 `scripts/verify-release-apk.mjs`：六项（debuggable / 变体跨层同源 / 回环 / 证书 /
 #     明文标记 / 包内 consume.baseUrl + 主机白名单）+ 版本号断言（package.json ↔ APK）。
 #     红 = 禁止上传 dl / 禁止分发，产物留在原地但打不进发布流程。
-#   BUILD_VARIANT=standard|staging
-#                      发布变体（默认 standard = 对外）。staging = 预发布联调包：
+#   BUILD_VARIANT=standard|staging|internal
+#                      发布变体（默认 standard = 对外）。**internal = 内测包**（当前内测主线的唯一出包方式）：
+#                      web 层走 `pnpm run build:internal`（产物自带 variant=internal 自述），
+#                      gradle 侧自动带 INTERNAL_BUILD=1（= -PartifactVariant=internal），
+#                      verify:apk 按 `--variant internal` 判。**内测包额外多跑一道
+#                      `scripts/check-internal-lane.mjs`（覆盖升级硬断言：versionCode 严格递增 +
+#                      证书指纹不变），它是用户拍板的规则，不是可选建议。**
+#                      一次完整的内测出包命令（见 docs/release/INTERNAL-APK.md）：
+#                        BUILD_VARIANT=internal ./build-apk.sh release
+#                      staging = 预发布联调包：
 #                      web 层走 `pnpm run build:staging`（`--staging --allow-insecure`，产物落 dist/），
 #                      gradle 侧自动带 `-PconsumeBase=<config/endpoints.staging.json 的 consume.baseUrl>`
 #                      与 `-PallowInsecureConsume=true`（闸 0 交叉核对 + 闸 1b 明文放行）。
@@ -54,8 +65,8 @@ esac
 # 不复制两份构建逻辑 —— 变体只决定「web 用哪条 pnpm 脚本」与「gradle 多带哪几个 -P」。
 BUILD_VARIANT="${BUILD_VARIANT:-standard}"
 case "$BUILD_VARIANT" in
-  standard|staging) ;;
-  *) echo "[build-apk][ERROR] 未知 BUILD_VARIANT: $BUILD_VARIANT （只支持 standard / staging）" >&2; exit 2 ;;
+  standard|staging|internal) ;;
+  *) echo "[build-apk][ERROR] 未知 BUILD_VARIANT: $BUILD_VARIANT （只支持 standard / staging / internal）" >&2; exit 2 ;;
 esac
 
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -88,6 +99,19 @@ REQUIRED_JAVA_MAJOR="${REQUIRED_JAVA_MAJOR:-21}"
 REQUIRED_NODE_MAJOR="${REQUIRED_NODE_MAJOR:-22}"
 
 # ---------------------------------------------------------------- 1. 环境准备
+# SDK 定位：export > build.env > 兜底探测（只在本机常见位置命中时才用，并打日志说明取自哪里）。
+# 加这一层是因为「build.env 没建」的表现是 `找不到 Android SDK: /home/...` —— 在 Windows/MSYS 上
+# 那条兜底路径根本不存在，人看到的第一反应是自己先 export 一遍，于是每次出包都靠记忆。
+if [ -z "${ANDROID_HOME:-}" ] && [ -z "${ANDROID_SDK_ROOT:-}" ]; then
+  for _probe in "$HOME/android-sdk" "/d/android-sdk" "$HOME/AppData/Local/Android/Sdk" "$HOME/Android/Sdk" /usr/local/android-sdk; do
+    if [ -d "$_probe" ] && [ -d "$_probe/build-tools" ]; then
+      ANDROID_HOME="$_probe"
+      printf '\033[1;33m[build-apk] 未声明 ANDROID_HOME，自动探测命中 %s（建议写进 build.env 固定下来）\033[0m\n' "$_probe" >&2
+      break
+    fi
+  done
+  unset _probe
+fi
 export ANDROID_HOME="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-$HOME/android-sdk}}"
 export ANDROID_SDK_ROOT="$ANDROID_HOME"
 [ -d "$ANDROID_HOME" ] || die "找不到 Android SDK: $ANDROID_HOME （把路径写进 build.env 的 ANDROID_HOME，或 export ANDROID_HOME；见 build.env.example）"
@@ -161,7 +185,16 @@ log "版本号（package.json）: ${PKG_VERSION_NAME} (versionCode ${PKG_VERSION
 # 否则 standard）。注意 **staging 不是原生侧变体**：它只是 web 层 profile + 明文放行，产物标记仍是
 # standard（见 android/app/build.gradle 的 updateVariant / CI 里 `verify:apk --variant standard`）。
 NATIVE_VARIANT=standard
-[ "${INTERNAL_BUILD:-}" = "1" ] && NATIVE_VARIANT=internal
+if [ "$BUILD_VARIANT" = "internal" ]; then
+  # 一个变量贯通 web / gradle / verify（同 staging 的道理）：出半套包（web 标 internal、原生标 standard）
+  # 会在 verify:apk 第 2 项「变体跨层同源」当场红，但那时已经白跑了几分钟构建。
+  export INTERNAL_BUILD=1
+  NATIVE_VARIANT=internal
+fi
+# 注意：这里**不能**写成 `[ ... ] && VAR=...` —— 在本机 MSYS bash 下，`set -e` 会让整条 AND 列表
+# 的非零返回值直接终止脚本（2026-11-27 实测：条件不成立 → 脚本在第 5 步之前无声退出，exit 1，
+# 日志里只留下上一条 log 行，看不出死在哪）。全部改成显式 if。
+if [ "${INTERNAL_BUILD:-}" = "1" ]; then NATIVE_VARIANT=internal; fi
 
 # local.properties：把 SDK 路径钉进 Gradle（该文件已 gitignore）。
 # 内容不变就不重写，避免和 IDE 里那份来回打架（Issue #273 现状第 3 条）。
@@ -231,6 +264,25 @@ if [ "$MODE" = "release" ]; then
   fi
 fi
 
+# ----------------------------------- 2b-2. 内测包的覆盖升级硬断言（用户规则）
+# 用户拍板（2026-11-27）：每次对外分发新内测 APK，versionCode 必须递增（44 → 45 → 46 …），
+# versionName 可以维持 2.0.1；签名证书必须不变 —— 否则已装用户无法覆盖升级（Android 只允许同证书
+# 且 versionCode 不降的更新包覆盖安装），用户明确要求「已装 vc42 / vc43 都能直接覆盖，无须卸载重装」。
+# 数据源是 docs/release/internal-lane.json（内测分发台账）。放在这里的原因与 2b 相同：
+# 这是最便宜的失败点，不该等 web 构建 + gradle 跑完几分钟才红。
+if [ "$BUILD_VARIANT" = "internal" ] && [ "$MODE" = "release" ]; then
+  log "步骤 2b-2：内测覆盖升级硬断言（versionCode 必须递增 + 证书指纹不变）"
+  if ! node "$PROJECT_ROOT/scripts/check-internal-lane.mjs"; then
+    die "内测覆盖升级判据不通过，已中止（还没开始 web 构建）。
+  两条硬规则（用户拍板，不许绕过）：
+    · versionCode 必须严格大于 docs/release/internal-lane.json 的 lastDistributedVersionCode
+      —— 同号或降号的包装不上，已装用户会得到「应用未安装」；
+    · 签名证书必须是已发布的那把 —— 换签等于让所有已装用户无法覆盖升级。
+  修法：改 package.json 的 androidVersionCode（versionName 可不变）；证书问题去修签名材料，
+  不要改台账里的 certSha256Prefix。"
+  fi
+fi
+
 # ------------------------------------- 2c. staging 变体的期望 consume base（唯一解析点）
 # gradle 的 -PconsumeBase 与构建后 verify:apk 的 --expect-consume-base **必须同一个值**：
 # 它是「这次出包应该连哪台后端」的唯一期望。各读一次就会出现「gradle 按 A 打、校验按 B 比」。
@@ -251,6 +303,12 @@ fi
 # ------------------------------------------------------------ 3. 前端构建产物
 if [ "${SKIP_WEB_BUILD:-0}" = "1" ] && [ -f "$PROJECT_ROOT/dist/index.html" ]; then
   log "SKIP_WEB_BUILD=1，复用现有 dist/（请自行确认这份 dist/ 就是 $BUILD_VARIANT 变体的产物）"
+elif [ "$BUILD_VARIANT" = "internal" ]; then
+  # internal：`pnpm run build:internal` = `node scripts/build.mjs --internal`
+  #   · 产物落 dist/（build.mjs 只有 staging 默认落 dist-pre），带 build-info.json 的 variant=internal
+  #   · INTERNAL_BUILD=1 同时注入 web 层与（上面的）gradle 侧，跨层同源才过得了 verify:apk 第 2 项
+  log "步骤 3：pnpm run build:internal（internal 变体 → dist/）"
+  INTERNAL_BUILD=1 pnpm run build:internal
 elif [ "$BUILD_VARIANT" = "staging" ]; then
   # staging：`pnpm run build:staging` = `node scripts/build.mjs --staging --allow-insecure`
   #   · --staging        读 config/endpoints.staging.json（预发布明文 consume 地址）
@@ -280,9 +338,23 @@ else
 fi
 
 cd "$ANDROID_DIR"
-chmod +x ./gradlew
+# gradle 启动方式（踩过的坑）：在 Windows/MSYS 下 `./gradlew` 会报
+#   `Error: Unable to access jarfile D;/jingluo-worktrees/.../gradle-wrapper.jar`
+# —— 那只 shell 脚本把路径按 POSIX 形态塞给 java，java 把 `D:/` 的冒号当盘符分隔符读坏。
+# 直接用 java 跑 wrapper 的主类就绕开这层转换，两个平台同一条路：
+#   java -classpath <wrapper jar> org.gradle.wrapper.GradleWrapperMain <args...>
+# 找不到 wrapper jar 才退回 ./gradlew（Linux/CI 那条路行为不变）。
+GRADLE_WRAPPER_JAR="$ANDROID_DIR/gradle/wrapper/gradle-wrapper.jar"
+if [ -f "$GRADLE_WRAPPER_JAR" ]; then
+  GRADLE_CMD=("$JAVA_HOME/bin/java" -classpath "$GRADLE_WRAPPER_JAR" org.gradle.wrapper.GradleWrapperMain)
+  log "gradle 启动：java -classpath gradle-wrapper.jar GradleWrapperMain（避开 Windows 下 ./gradlew 的 jar 路径转换问题）"
+else
+  chmod +x ./gradlew
+  GRADLE_CMD=("./gradlew")
+  log "gradle 启动：./gradlew（未找到 $GRADLE_WRAPPER_JAR）"
+fi
 GRADLE_ARGS=("$GRADLE_TASK" "--console=plain")
-[ "$EXTRA_ARG" = "--clean" ] && GRADLE_ARGS=("clean" "${GRADLE_ARGS[@]}")
+if [ "$EXTRA_ARG" = "--clean" ]; then GRADLE_ARGS=("clean" "${GRADLE_ARGS[@]}"); fi
 # 回环地址逃生舱（Issue #601）：只给本地联调。显式设为 1 才转发 -PallowLoopbackConsume=true；
 # 转发后产物带 LOOPBACK_CONSUME 标记，dl-release 会 400 LOOPBACK_BUILD_REJECTED 拒收。
 if [ "${ALLOW_LOOPBACK_CONSUME:-0}" = "1" ]; then
@@ -304,8 +376,8 @@ if [ "$BUILD_VARIANT" = "staging" ]; then
   printf '\033[1;33m[build-apk][警告] BUILD_VARIANT=staging：产物指向预发布后端 %s（明文），带 INSECURE_CONSUME 标记 → 只许内网联调，禁止公开分发\033[0m\n' "$STAGING_CONSUME_BASE" >&2
 fi
 
-log "步骤 5：./gradlew ${GRADLE_ARGS[*]}"
-./gradlew "${GRADLE_ARGS[@]}"
+log "步骤 5：${GRADLE_CMD[*]} ${GRADLE_ARGS[*]}"
+"${GRADLE_CMD[@]}" "${GRADLE_ARGS[@]}"
 
 APK_PATH="$APK_DIR/$APK_NAME"
 [ -f "$APK_PATH" ] || die "构建结束但未找到 APK: $APK_PATH"
@@ -365,6 +437,8 @@ else
 fi
 printf 'APK 绝对路径 : %s\n' "$APK_PATH"
 printf 'APK 大小     : %s (%s bytes)\n' "$APK_SIZE" "$APK_BYTES"
+APK_SHA256="$(sha256sum "$APK_PATH" | cut -d' ' -f1)"
+printf 'SHA-256      : %s\n' "$APK_SHA256"
 printf '构建变体     : %s%s\n' "$BUILD_VARIANT" "$([ "$BUILD_VARIANT" = staging ] && echo '（staging-only，禁止公开分发）' || echo '')"
 printf 'build-tools  : %s（钉住档位，不走通配）\n' "$BUILD_TOOLS_VERSION"
 # aapt2 只从钉住档位取：人工核对的工具与出包工具必须是同一个（Issue #273 现状第 4 条）
@@ -372,4 +446,15 @@ if [ -x "$AAPT2_BIN" ]; then
   printf '包名/版本    : %s\n' "$("$AAPT2_BIN" dump badging "$APK_PATH" 2>/dev/null | grep -E "^package:" || echo 'n/a')"
 fi
 printf '安装命令     : adb install -r "%s"\n' "$APK_PATH"
+
+# 交付落盘（COPY_TO_DESKTOP=1）：内测用户拿到的那一份必须是**校验过的这一份**，别二次拷贝
+# build/outputs 里的同名文件（gradle 下次构建会原地覆盖它，人却以为还是原来那个）。
+if [ "${COPY_TO_DESKTOP:-0}" = "1" ]; then
+  DELIVER_DIR="${DELIVER_DIR:-$HOME/Desktop}"
+  mkdir -p "$DELIVER_DIR"
+  DELIVER_NAME="jingluo-v${PKG_VERSION_NAME}-vc${PKG_VERSION_CODE}-${BUILD_VARIANT}.apk"
+  cp -f "$APK_PATH" "$DELIVER_DIR/$DELIVER_NAME"
+  printf '交付副本     : %s\n' "$DELIVER_DIR/$DELIVER_NAME"
+  printf '交付副本 SHA : %s\n' "$(sha256sum "$DELIVER_DIR/$DELIVER_NAME" | cut -d' ' -f1)"
+fi
 printf '\033[1;32m==============================================\033[0m\n'
