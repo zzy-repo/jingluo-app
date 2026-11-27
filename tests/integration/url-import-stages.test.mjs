@@ -148,7 +148,16 @@ const browser = await chromium.launch()
     Blob.prototype.arrayBuffer = function arrayBuffer(...args) {
       const read = nativeArrayBuffer.apply(this, args)
       // 只在「导入阶段」掐：校验/解析阶段（还没出现进度文案）的读照常放行，否则导入根本起不来。
-      if (!gate.armed || gate.held || !/正在导入…/.test(document.body.innerText)) {
+      //
+      // #406 的闸原先只要求「文案出现过」，于是它掐住的必然是 **n = 0** 的那一次读：
+      // `importArchive` 在 `stage = 'importing'` 时先 `emitProgress()` 一次（此时 `sessions = 0`，
+      // 界面就是「正在导入… 0/300」），紧接着第一个条目（manifest）的读就被挂住 —— 那一刻一条会话
+      // 都还没写进暂存。于是 case 10 的 `written > 0` **恒假**（实测「0/300」），
+      // 「暂存已清空」那条断言也因为从来没写过东西而变成空断言。
+      // 现在只在**已经写过、还没写完**时掐：进度里的 n = 已写进暂存的会话数，
+      // n ≥ 1 且 n < 总数才是真正要验的取消竞态窗口。
+      const writing = /正在导入… [1-9]\d*\//.test(document.body.innerText)
+      if (!gate.armed || gate.held || !writing) {
         return read
       }
       gate.held = true
@@ -334,6 +343,18 @@ const dbCounts = (page) =>
  */
 const urlImportButton = (page) => page.getByTestId('history-import-url-start')
 
+/**
+ * 「从链接导入」失败后那个「重试」。
+ *
+ * 不能按名字整页取：`#935` 起「数据管理」页多了一块「本地存储」自查，那里也有一个「重试」
+ * （产品给了 testid `storage-status-retry-button`）。按名字整页取会撞成 `strict mode violation`
+ * ——实测 `getByRole('button', { name: '重试', exact: true })` 解析到 2 个元素，整个文件在
+ * case 8 的点击处异常退出，case 9~18 一条都没跑到。
+ * 「从链接导入」这个重试没有 testid（同一行里的「导入」有：`history-import-url-start`），
+ * 所以按「名字是重试 **且** 没有 testid」取：不依赖 DOM 顺序，也不依赖样式类名。
+ */
+const urlImportRetry = (page) => page.locator('button:not([data-testid])').filter({ hasText: /^重试$/ })
+
 /** 填链接 → 点「导入」→ 确认弹窗点「确认导入」。 */
 const startUrlImport = async (page, { url = ZIP_URL, confirm = true } = {}) => {
   await page.getByLabel('从链接导入').fill(url)
@@ -346,12 +367,46 @@ const startUrlImport = async (page, { url = ZIP_URL, confirm = true } = {}) => {
   return dialog
 }
 
+/**
+ * 采样用的页面文案，**先把「本地存储」自查块从可见树里摘掉再读**。
+ *
+ * 为什么必须摘：本文件所有「等到终态」的判据都是**整页文案**匹配（`/已导入|失败|断开|超时/`、
+ * `/已导入|失败/` …）。`#935` 在「数据管理」页末尾加了一块只读自查（`StorageStatusSection`），
+ * 它的文案常驻「失败」「重试」——「只在启动升级失败之后可以重试」。
+ * 于是第一个采样点就命中「失败」，轮询立刻结束，进度与终态断言全部落空。
+ *
+ * 实测（case 1，`#935` 之后的 main）：`sampleUntil` 只采到 1 个点、文案停在
+ * 「正在下载… 已下载 0B」，而 `window.__capMock.calls` 已经发出 2 次 Range 请求
+ * （`bytes=0-4095`、`bytes=4096-27726`）——下载正常在推进，是采样提前收工把它判成了「没进度」。
+ * 同一个原因连带 10 个用例 14 条断言一起红（case 1/2/3b/12/13/14/15/16 …）。
+ *
+ * 所以按**身份**剪：取这个自查块内几个 testid 的最近公共祖先（= 该块的根）临时 `display:none`，
+ * 读完立刻还原。不按文案剪（文案会变）、也不放宽任何断言口径（其余文案一个字都没动）。
+ * 块被删掉时（找不到 testid）什么都不做，行为回到直接读整页。
+ */
+const pageText = (page) =>
+  page.evaluate(() => {
+    const first = document.querySelector('[data-testid="storage-status-backend"]')
+    const last = document.querySelector('[data-testid="storage-status-retry"]')
+    let block = null
+    if (first && last) {
+      let node = first
+      while (node && node !== document.body && !node.contains(last)) node = node.parentElement
+      block = node && node !== document.body ? node : null
+    }
+    const previous = block ? block.style.display : ''
+    if (block) block.style.display = 'none'
+    const text = document.body.innerText.replace(/\s+/g, ' ')
+    if (block) block.style.display = previous
+    return text
+  })
+
 /** 轮询界面文本，直到 stop 命中；返回带时间戳的采样。 */
 const sampleUntil = async (page, stop, timeoutMs = 40_000, intervalMs = 120) => {
   const startedAt = Date.now()
   const samples = []
   for (;;) {
-    const text = (await page.evaluate(() => document.body.innerText)).replace(/\s+/g, ' ')
+    const text = await pageText(page)
     samples.push({ t: Date.now() - startedAt, text })
     if (stop(text)) {
       return { samples, text, elapsed: Date.now() - startedAt }
@@ -479,7 +534,8 @@ const run = async () => {
       text.slice(0, 200)
     )
     check(`报错耗时 < 15s（实测 ${elapsed}ms）`, elapsed < 15_000, `${elapsed}ms`)
-    check('出现「重试」按钮', (await page.getByRole('button', { name: '重试', exact: true }).count()) === 1)
+    // 按「名字是重试且无 testid」取：同一页「本地存储」还有另一个「重试」（见 urlImportRetry）
+    check('出现「重试」按钮', (await urlImportRetry(page).count()) === 1)
     check('会话数仍为 0', (await dbCounts(page)).sessions === 0)
     check('console error = 0', consoleErrors.length === 0, consoleErrors.join(' | '))
     await page.screenshot({ path: `${SHOT_DIR}/offline.png` })
@@ -570,7 +626,7 @@ const run = async () => {
     await page.getByText(/不是有效的 ZIP 文件/).waitFor({ timeout: 20_000 })
     check('先提示「该链接不是有效的 ZIP 文件」', (await page.getByText(/不是有效的 ZIP 文件/).count()) > 0)
     // 换成正常包后再点「重试」：证明重试会重新走完整流程（不是只回设置页）
-    await page.getByRole('button', { name: '重试', exact: true }).click()
+    await urlImportRetry(page).click()
     const dialog = page.getByRole('dialog', { name: /确认导入历史对话/ })
     await dialog.waitFor({ timeout: 5000 })
     check('重试打开确认弹窗（重新走流程）', (await dialog.count()) === 1)
@@ -622,9 +678,7 @@ const run = async () => {
       timeoutMs: 20_000,
       intervalMs: 20,
     })
-    const at = /正在导入… (\d+)\/(\d+) 个会话/.exec(
-      (await page.evaluate(() => document.body.innerText)).replace(/\s+/g, ' ')
-    )
+    const at = /正在导入… (\d+)\/(\d+) 个会话/.exec(await pageText(page))
     const written = Number(at?.[1] ?? -1)
     const total = Number(at?.[2] ?? -1)
     if (held.ok) {
@@ -635,7 +689,7 @@ const run = async () => {
     // 等终态（不再「正在导入」且暂存为 0），不固定 sleep
     const settled = await until(
       async () => {
-        const text = (await page.evaluate(() => document.body.innerText)).replace(/\s+/g, ' ')
+        const text = await pageText(page)
         const counts = await dbCounts(page)
         return {
           ok: !/正在导入…/.test(text) && counts.sessionsStaging === 0 && counts.filesStaging === 0,
@@ -646,13 +700,17 @@ const run = async () => {
       { timeoutMs: 30_000 }
     )
     const counts = settled.counts
-    check(
-      `取消落在导入中段（${written}/${total}）`,
-      held.ok && written > 0 && written < total,
-      held.ok
-        ? `取消时进度已经 ${written}/${total}：整包在取消之前就写完了（取消竞态窗口没兜住）`
-        : '导入阶段的读包没有被掐住（__importGate 没命中）：整包在点取消之前就跑完了'
-    )
+    /**
+     * 失败说明要说清**闸掐在哪**：改前只要 `written > 0` 不成立就一律写「整包在取消之前就写完了」，
+     * 而 0/300 的真实含义是「闸掐在一条都没写的时候」——归因错一次，排查就会从「闸的位置」
+     * 跑到「导入是不是太快」上去（#902 的这条红就是这么被误读的）。
+     */
+    const offTarget = !held.ok
+      ? '导入阶段的读包没有被掐住（__importGate 没命中）：整包在点取消之前就跑完了'
+      : written === 0
+        ? `闸掐在「一条都还没写」的位置（${written}/${total}）：取消点没落进竞态窗口，暂存清空断言会变成空的`
+        : `取消时进度已经 ${written}/${total}：整包在取消之前就写完了（取消竞态窗口没兜住）`
+    check(`取消落在导入中段（${written}/${total}）`, held.ok && written > 0 && written < total, offTarget)
     check('会话数不变（未被替换）', counts.sessions === 0, JSON.stringify(counts))
     check(
       '暂存已清空（无脏数据）',
