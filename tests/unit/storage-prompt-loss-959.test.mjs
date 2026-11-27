@@ -194,3 +194,161 @@ test('B #959 失败态只在「内存与盘重新一致」时清，不在「打�
     assert.equal(bannerTier(), null)
   })
 })
+
+/**
+ * 版本校验（#959 B）。
+ *
+ * 判据是「**这次写进去的版本 == 当前内存版本**」才清失败态 —— 也就是「盘上确实等于内存」，
+ * 而不是「这次写成功了」。配套两条：
+ *  · 每会话一条写链，保证「提交顺序 == 版本顺序」（`withStorage()` 在库没打开时会推迟提交）；
+ *  · 轮到自己时快照已被内存超越 → **升级成最新内存**或**跳过**，绝不把旧快照写到盘上。
+ */
+test('C #959 落盘版本校验：不清新失败、不写旧数据', async (t) => {
+  /** 手动放行的存储调用：`hold()` 返回 controller，`release(value)` 才让它完成 */
+  const gate = () => {
+    let release
+    const promise = new Promise((resolve) => {
+      release = resolve
+    })
+    return { promise, release }
+  }
+
+  await t.test('C1 版本相等才清：一次失败 → 之后一次**写进去的就是当前内存**的成功 → 横幅消失', async () => {
+    let writes = 0
+    reset(
+      { sessions: [summaryOf('c1')], cache: { c1: sessionOf('c1') } },
+      {
+        loadSession: async (id) => sessionOf(id),
+        saveSession: async () => {
+          if (writes === 0) {
+            writes += 1
+            throw fullDiskDomException()
+          }
+          writes += 1
+        },
+      }
+    )
+    assert.equal(await chat.saveSessionPrompt('c1', '第一版'), false)
+    assert.ok(state().sessionSaveErrors.c1, '第一次失败，横幅必须在')
+
+    assert.equal(await chat.saveSessionPrompt('c1', '第一版'), true, '同一个值再存一次，这次成功')
+    assert.equal(writes, 2, '确实写了第二次')
+    assert.equal(state().sessionSaveErrors.c1, undefined, '盘上就是当前内存 → 那条失败已经不成立')
+    assert.equal(bannerTier(), null)
+  })
+
+  await t.test('C2 旧写入成功不得清掉更新的失败：写进去的版本 < 当前内存版本 → 横幅必须还在', async () => {
+    const first = gate()
+    const second = gate()
+    let calls = 0
+    reset(
+      { sessions: [summaryOf('c2')], cache: { c2: sessionOf('c2') } },
+      {
+        loadSession: async (id) => sessionOf(id),
+        saveSession: async (session) => {
+          calls += 1
+          await (calls === 1 ? first.promise : second.promise)
+          return undefined
+        },
+      }
+    )
+    // 上一次落盘失败留下的条目（例如置顶 / 改名的失败，或更早一次正文失败）
+    chat.useChatStore.setState({ sessionSaveErrors: { c2: { kind: 'quota', stores: 'sessions', at: 1 } } })
+
+    const writingV1 = chat.saveSessionPrompt('c2', '第一版')
+    await settle()
+    assert.equal(calls, 1, '第一次写已经在飞')
+    // 写在飞的时候用户又改了：内存版本被推高，这次写携带的版本开始落后于内存
+    const writingV2 = chat.saveSessionPrompt('c2', '第二版')
+    await settle()
+
+    first.release(undefined)
+    assert.equal(await writingV1, true, '先发起的那次写自己成功了')
+    assert.ok(
+      state().sessionSaveErrors.c2,
+      '但它的版本 < 当前内存版本（盘落后于内存）—— 这时候清掉失败态就是「旧请求成功后错误地清除新状态」'
+    )
+    assert.equal(bannerTier(), 'quota', '横幅必须还在')
+
+    // 轮到「当前内存版本」的那次写：它成功之后才是内存 == 盘，这时才该清
+    second.release(undefined)
+    assert.equal(await writingV2, true)
+    assert.equal(state().sessionSaveErrors.c2, undefined, '写进去的是当前内存版本 → 可以清')
+  })
+
+  await t.test('C3 旧快照不覆盖新数据：排队的旧快照被跳过、落盘顺序与版本顺序一致，盘上最终是最新值', async () => {
+    const saves = []
+    reset(
+      { sessions: [summaryOf('c3')], cache: { c3: sessionOf('c3') } },
+      {
+        loadSession: async (id) => sessionOf(id),
+        saveSession: async (session) => {
+          saves.push(session.customSystemPrompt)
+          return undefined
+        },
+      }
+    )
+
+    // ① 旧快照绝不落盘：第一次写在飞时用户连改两次 → 排队的旧快照必须**被跳过**，不许先写后覆盖
+    const inFlight = gate()
+    reset(
+      { sessions: [summaryOf('c3')], cache: { c3: sessionOf('c3') } },
+      {
+        loadSession: async (id) => sessionOf(id),
+        saveSession: async (session) => {
+          saves.push(session.customSystemPrompt)
+          if (saves.length === 1) {
+            await inFlight.promise
+          }
+          return undefined
+        },
+      }
+    )
+    const writing1 = chat.saveSessionPrompt('c3', 'v1')
+    await settle()
+    assert.equal(saves.length, 1, '第一次写已经在飞（存储已打开时同一 tick 就发起，这条纪律不变）')
+    const writing2 = chat.saveSessionPrompt('c3', 'v2')
+    const writing3 = chat.saveSessionPrompt('c3', 'v3')
+    await settle()
+    assert.equal(saves.length, 1, '后面两次排在写链上，还没开始')
+    inFlight.release(undefined)
+    await Promise.all([writing1, writing2, writing3])
+    await settle()
+    assert.deepEqual(
+      saves,
+      ['v1', 'v3'],
+      '落盘序列里**不许出现 v2**：它轮到时内存已是 v3，被升级成最新值；v3 那次再轮到时盘上已是 v3，直接跳过'
+    )
+    assert.equal(cached('c3').customSystemPrompt, 'v3')
+
+    // ② 已经在飞的那次写（旧版本）与之后的写：完成顺序必须与版本顺序一致，盘上最终是新数据
+    const disk = makeDisk()
+    const slow = gate()
+    saves.length = 0
+    reset(
+      { sessions: [summaryOf('c3b')], cache: { c3b: sessionOf('c3b') } },
+      {
+        loadSession: async (id) => sessionOf(id),
+        saveSession: async (session) => {
+          saves.push(session.customSystemPrompt)
+          if (saves.length === 1) {
+            await slow.promise
+          }
+          disk.set(session.id, { ...session })
+          return undefined
+        },
+      }
+    )
+    const writingOld = chat.saveSessionPrompt('c3b', '旧值')
+    await settle()
+    const writingNew = chat.saveSessionPrompt('c3b', '新值')
+    await settle()
+    assert.equal(saves.length, 1, '第二次写被排在写链后面，还没开始')
+    slow.release(undefined)
+    await Promise.all([writingOld, writingNew])
+    await settle()
+
+    assert.deepEqual(saves, ['旧值', '新值'], '落盘顺序与版本顺序一致（旧快照绝不会最后落盘把新数据覆盖）')
+    assert.equal(disk.get('c3b')?.customSystemPrompt, '新值', '盘上最终是新值')
+  })
+})
