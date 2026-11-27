@@ -14,9 +14,27 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
-import { installTsResolve, loadTsModule, setupDom } from '../helpers/dom-env.mjs'
+import { fixtureUrl, installTsResolve, loadTsModule, setupDom } from '../helpers/dom-env.mjs'
 
-installTsResolve()
+/**
+ * **本文件自己钉住 `@capacitor/core` 的替身**（不要退回裸 `installTsResolve()`）。
+ *
+ * 现象：单跑 14/14 绿，跑 `node tests/run-layer.mjs unit` 时整份文件 `<加载失败>`
+ * （0 用例、14ms）：`The requested module '@capacitor/core' does not provide an export named
+ * 'registerPlugin'`。根因是**进程级**的解析 hook + **共用替身**：run-layer 把多个文件合进同一个
+ * 进程，同批的 `storage-save-tier-938.test.mjs`（经 `store-storage-env.mjs`）先把
+ * `@capacitor/core` 换成了 `domain03-04/capacitor.mjs` 那份替身；本文件经
+ * `updateGate.ts → appUpdate.ts` 要 `registerPlugin`，谁先装谁生效，于是读到的是别人装的替身。
+ *
+ * 修法（与 `math-blocks-821` 的 `resetCapabilityCache()` 同一类：把「这份结论属于哪个环境」钉回本文件）：
+ * 在 top-level 显式装同一份替身，不再依赖「批内谁先跑」。被测对象仍是真 `updateGate.ts`；
+ * `installed` / `isAndroid` / `request` / `storage` 全部由用例注入，替身只负责「被 import 时不炸」。
+ * 没有放宽任何断言、没有 skip、没改判据。
+ */
+const installNativeBridgeStub = () =>
+  installTsResolve({ stubs: [[/^@capacitor\/core$/, fixtureUrl('domain03-04/capacitor.mjs')]] })
+
+installNativeBridgeStub()
 
 /** 存储替身：只在内存里，用例之间互不影响（每个用例自己 new 一份） */
 const memoryStorage = () => {
