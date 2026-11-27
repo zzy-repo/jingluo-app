@@ -36,15 +36,17 @@ import {
   parseManifest,
   parseManifestFileName,
   parseStatusFile,
+  planRetention,
   restoreNeedBytes,
   spaceForWrite,
-  selectPrunable,
   statusFileToJson,
   type BackupErrorCode,
   type BackupFailureKind,
   type BackupManifest,
+  type BackupOrigin,
   type BackupStatusFile,
 } from './backupCore.js'
+import { SAFETY_RETENTION_KEEP } from './limits.js'
 import {
   BackupStorageUnavailableError,
   availableBytes,
@@ -439,6 +441,7 @@ type BackupOptions = {
 const writeBackupFiles = async (
   id: string,
   payload: Payload,
+  origin: BackupOrigin,
   onProgress?: Progress
 ): Promise<BackupManifest> => {
   const createdAt = new Date()
@@ -464,6 +467,9 @@ const writeBackupFiles = async (
     attachments: attachmentRef,
     data_summary: { sessions: payload.sessions, attachments: payload.attachmentCount },
     verified: true,
+    // 来源标记落进清单（#1005）：扫目录时能重新认出「哪几份是恢复前的安全备份」，
+    // 不依赖写下它们的那次调用还记不记得
+    origin,
   }
   // 清单**最后写**：它的存在 = 「这份备份完整」的提交标记
   onProgress?.(1, 1, 'verify')
@@ -474,27 +480,78 @@ const writeBackupFiles = async (
   return manifest
 }
 
-/** 写完后按保留策略清理旧份（只在新备份写入并校验成功之后才会走到这里）。 */
-const pruneOldBackups = async (): Promise<void> => {
-  const { backups } = await scanBackups()
-  const doomed = selectPrunable(
-    backups.map((backup) => backup.item),
-    RETENTION_KEEP
-  )
-  if (doomed.length === 0) {
+/**
+ * 保留清理（#1005）。**永不抛错**。
+ *
+ * 为什么必须吞掉异常：清理是**收尾动作**。旧实现在 `runBackupOnce` 的 try 里 `await` 它，
+ * 一旦清理（扫描 / 删除）抛错就掉进失败分支，而那条分支会把**刚写好并校验通过的那份备份**
+ * 连同清单一起删掉 —— 用户看到的是「备份失败」，实际是「备份成功后被清理逻辑自己删了」。
+ *
+ * `scope`：
+ *  - `all`    —— 常规备份成功之后：常规组按 `RETENTION_KEEP`、安全组按 `SAFETY_RETENTION_KEEP`；
+ *  - `safety` —— 恢复路径：**只动安全组**，绝不顺手删常规备份（能少删就少删）。
+ *
+ * 每个文件名**最多删一次**（去重 + 每份备份只留一条失败记录）：删不掉的文件不该在一次清理里
+ * 被反复尝试，也不该把诊断日志刷成一串同样的异常。
+ */
+const applyRetention = async (scope: 'all' | 'safety'): Promise<void> => {
+  let backups: ScannedBackup[]
+  try {
+    backups = (await scanBackups()).backups
+  } catch (error) {
+    logDiagnostic('error', 'backup: prune scan failed', { action: 'backup-prune', scope }, error)
     return
   }
-  for (const id of doomed) {
-    const target = backups.find((backup) => backup.item.id === id)
+  const byId = new Map(backups.map((backup) => [backup.item.id, backup]))
+  const facts = backups.map((backup) => ({
+    id: backup.item.id,
+    createdAtUtc: backup.item.createdAtUtc,
+    sizeBytes: backup.item.sizeBytes,
+    checksumOk: backup.item.checksumOk,
+    // 清单里的来源标记：读不到清单时按常规备份对待（见 `BackupOrigin` 的注释）
+    origin: backup.manifest?.origin,
+  }))
+  const plan = planRetention(facts, {
+    regularKeep: RETENTION_KEEP,
+    safetyKeep: SAFETY_RETENTION_KEEP,
+  })
+  const ids = new Set(scope === 'all' ? [...plan.regular, ...plan.safety] : plan.safety)
+  const attempted = new Set<string>()
+  for (const id of ids) {
+    const target = byId.get(id)
     if (!target) {
       continue
     }
+    let failed = 0
+    let firstError: unknown = null
     for (const name of target.fileNames) {
-      await removeFile(name).catch((error: unknown) => {
-        logDiagnostic('error', 'backup: prune failed', { action: 'backup-prune' }, error)
-      })
+      if (attempted.has(name)) {
+        continue
+      }
+      attempted.add(name)
+      const error = await removeFile(name).then(
+        () => null,
+        (cause: unknown) => cause
+      )
+      if (error !== null) {
+        failed += 1
+        firstError ??= error
+      }
     }
-    logDiagnostic('info', 'backup: pruned old backup', { action: 'backup-prune' })
+    if (failed === 0) {
+      logDiagnostic('info', 'backup: pruned old backup', {
+        action: 'backup-prune',
+        scope,
+        origin: target.manifest?.origin ?? 'unknown',
+      })
+      continue
+    }
+    logDiagnostic(
+      'error',
+      'backup: prune failed',
+      { action: 'backup-prune', scope, failedFiles: failed },
+      firstError
+    )
   }
 }
 
@@ -578,7 +635,7 @@ const runBackupOnce = async (
   const taken = new Set(existing.map((item) => item.id))
   const id = uniqueBackupId(taken, new Date())
   try {
-    const manifest = await writeBackupFiles(id, payload, onProgress)
+    const manifest = await writeBackupFiles(id, payload, trigger, onProgress)
     logDiagnostic('info', 'backup: written', {
       action: 'backup-write',
       trigger,
@@ -587,7 +644,9 @@ const runBackupOnce = async (
     })
     if (options.prune) {
       onProgress?.(1, 1, 'cleanup')
-      await pruneOldBackups()
+      // 清理只在这里发生：**新备份已经落盘且清单已写**（= 提交标记）之后。
+      // `applyRetention` 自己吞异常，删不掉旧份也绝不把这次成功改判成失败。
+      await applyRetention('all')
     }
     await writeStatusFile({
       ...(await readStatusFile()),
@@ -790,6 +849,10 @@ export const restoreBackup = (id: string, onProgress?: Progress): Promise<Restor
         logDiagnostic('error', 'restore: safety backup verify failed', { action: 'backup-restore' }, error)
         throw new BackupError('safety-backup-failed', 'safety', true)
       })
+      // #1005：安全备份的容量上限。**必须放在这里**——新安全备份已经落盘、已经整档校验通过，
+      // 这时才允许清掉更早的安全备份（先删后写会让「这次恢复中途失败」变成无路可退）。
+      // 只动安全组：恢复不该顺手把用户的常规备份删掉（能少删就少删）。
+      await applyRetention('safety')
     }
 
     // ② 读回归档（分块）
