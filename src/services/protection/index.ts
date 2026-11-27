@@ -27,6 +27,8 @@ export type Protection = {
   readonly snapshots: Snapshots
   /** 保存前读剩余空间（缓存 10s）：ok / low / unknown，unknown 不得当成「足够」 */
   checkFreeSpace(): Promise<FreeSpaceResult>
+  /** 写失败之后**绕开缓存**重读剩余空间（#938）：失败是「现在真的写不进去」的铁证，不能等 10s 缓存过期 */
+  refreshFreeSpace(): Promise<FreeSpaceResult>
   /** 摘要自愈：摘要数与会话数不一致就按 sessions 原子重建。不抛 */
   healSummaries(knownSummaries?: number): Promise<HealResult>
   listRestorable(): Promise<RestorableSnapshot[]>
@@ -186,6 +188,7 @@ export const createProtection = (deps: ProtectionDeps): Protection => {
     highwater,
     snapshots,
     checkFreeSpace: freeSpace.check,
+    refreshFreeSpace: freeSpace.refresh,
     healSummaries: healing.heal,
     listRestorable: restoring.list,
     restore: restoring.restore,
@@ -268,6 +271,10 @@ export type { RestorableSnapshot, RestoreOptions, RestoreProgress, RestoreResult
 /** 保存前读剩余空间；保护层不可用时返回 null（= 不知道，调用方保持现状） */
 export const protectionCheckFreeSpace = async (): Promise<FreeSpaceResult | null> =>
   (await getProtection())?.checkFreeSpace() ?? null
+
+/** 写失败之后绕开缓存重读剩余空间（#938）；保护层不可用时返回 null */
+export const protectionRefreshFreeSpace = async (): Promise<FreeSpaceResult | null> =>
+  (await getProtection())?.refreshFreeSpace() ?? null
 
 export type { FreeSpaceResult } from './freeSpace.js'
 
