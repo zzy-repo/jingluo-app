@@ -262,7 +262,11 @@ export const getStatus = async (): Promise<BackupStatus> => {
  * 状态的内存镜像：`status.json` 写不进去时（例如磁盘满，写状态本身也会失败）依然能报告
  * 「上次失败是哪一类」—— 失败提示不该因为盘满而变成「一切正常」。
  */
-let memoryStatus: BackupStatusFile = { last_success_at_utc: null, last_error: null }
+let memoryStatus: BackupStatusFile = {
+  last_success_at_utc: null,
+  last_restore_at_utc: null,
+  last_error: null,
+}
 
 const readStatusFile = async (): Promise<BackupStatusFile> => {
   if (!isBackupStorageAvailable()) {
@@ -272,6 +276,7 @@ const readStatusFile = async (): Promise<BackupStatusFile> => {
   const parsed = parseStatusFile(text)
   return {
     last_success_at_utc: parsed.last_success_at_utc ?? memoryStatus.last_success_at_utc,
+    last_restore_at_utc: parsed.last_restore_at_utc ?? memoryStatus.last_restore_at_utc,
     last_error: parsed.last_error ?? memoryStatus.last_error,
   }
 }
@@ -499,7 +504,11 @@ const runBackupOnce = async (
       onProgress?.(1, 1, 'cleanup')
       await pruneOldBackups()
     }
-    await writeStatusFile({ last_success_at_utc: manifest.created_at_utc, last_error: null })
+    await writeStatusFile({
+      ...(await readStatusFile()),
+      last_success_at_utc: manifest.created_at_utc,
+      last_error: null,
+    })
     return {
       id,
       createdAtUtc: manifest.created_at_utc,
@@ -548,8 +557,8 @@ const verifyBackup = async (manifest: BackupManifest): Promise<void> => {
   }
 }
 
-/** 把 `<id>.attachments.zip` 里的原件与元数据写回库（尽力而为：失败只留痕）。 */
-const restoreAttachments = async (blob: Blob, name: string): Promise<void> => {
+/** 把 `<id>.attachments.zip` 里的原件与元数据写回库；返回实际写回的原件数。 */
+const restoreAttachments = async (blob: Blob, name: string): Promise<number> => {
   const [{ readArchive, readEntry }, store, db] = await Promise.all([
     import('../chat/history/zipReader.js'),
     import('../attachments/store.js'),
@@ -576,6 +585,7 @@ const restoreAttachments = async (blob: Blob, name: string): Promise<void> => {
   for (const row of rows) {
     await store.putAttachment(row)
   }
+  return blobs.length
 }
 
 /**
@@ -589,7 +599,14 @@ const restoreAttachments = async (blob: Blob, name: string): Promise<void> => {
  *  4. `attachments` —— 附件原件与元数据写回（尽力而为，失败只留痕，不影响会话恢复）；
  *  5. `restore` —— 走既有导入链路（暂存 + 一次性提交），失败时正式数据不变。
  */
-export const restoreBackup = (id: string, onProgress?: Progress): Promise<void> =>
+export type RestoreResult = {
+  /** 附件（图片 / 文档原件）是否真的写回来了；false 时 UI 必须提示「会话回来了、附件没回来」 */
+  attachmentsRestored: boolean
+  /** 这份备份里应有的附件件数（来自清单 `data_summary.attachments`） */
+  attachmentCount: number
+}
+
+export const restoreBackup = (id: string, onProgress?: Progress): Promise<RestoreResult> =>
   runExclusive(async () => {
     if (!isBackupStorageAvailable()) {
       throw new BackupError('unsupported', 'verify', true)
@@ -634,24 +651,8 @@ export const restoreBackup = (id: string, onProgress?: Progress): Promise<void> 
       onProgress: (done, total, stage) => onProgress?.(done, total, stage),
     })
 
-    // ③ 附件原件（尽力而为）
-    if (manifest.attachments) {
-      try {
-        const packed = await readFileBlob({
-          name: manifest.attachments.name,
-          sizeBytes: manifest.attachments.sizeBytes,
-          onProgress: (done, total, stage) => onProgress?.(done, total, stage),
-        })
-        await restoreAttachments(packed, manifest.attachments.name)
-        logDiagnostic('info', 'restore: attachments restored', { action: 'backup-restore' })
-      } catch (error) {
-        logDiagnostic('error', 'restore: attachments failed (sessions still restored)', {
-          action: 'backup-restore',
-        }, error)
-      }
-    }
-
-    // ④ 会话数据：走既有导入链路（暂存 + 一次性提交），失败时正式数据不变
+    // ③ **先恢复会话**：走既有导入链路（暂存 + 一次性提交），失败时正式数据不变。
+    //    顺序不能反过来 —— 先写附件再导入会话，一旦导入失败就会留下一批没有归属的附件块。
     const { importHistory } = await import('../chat/backup.js')
     const file = new File([archive], manifest.archive.name, { type: 'application/zip' })
     try {
@@ -665,8 +666,31 @@ export const restoreBackup = (id: string, onProgress?: Progress): Promise<void> 
       logDiagnostic('error', 'restore: import failed', { action: 'backup-restore' }, error)
       throw new BackupError(failure.code, 'restore', true)
     }
-    await writeStatusFile({ last_success_at_utc: new Date().toISOString(), last_error: null })
+
+    // ④ 附件原件与元数据（会话之后，尽力而为）：失败**不抛错**（会话已经恢复，抛错是错的状态），
+    //    但必须对外可见 —— `attachmentsRestored: false` 就是 UI 提示「附件没回来」的依据。
+    let attachmentsRestored = manifest.attachments === null
+    if (manifest.attachments) {
+      try {
+        const packed = await readFileBlob({
+          name: manifest.attachments.name,
+          sizeBytes: manifest.attachments.sizeBytes,
+          onProgress: (done, total, stage) => onProgress?.(done, total, stage),
+        })
+        const restored = await restoreAttachments(packed, manifest.attachments.name)
+        attachmentsRestored = true
+        logDiagnostic('info', 'restore: attachments restored', { action: 'backup-restore', restored })
+      } catch (error) {
+        attachmentsRestored = false
+        logDiagnostic('error', 'restore: attachments failed (sessions restored)', {
+          action: 'backup-restore',
+        }, error)
+      }
+    }
+    // 只推进 `last_restore_at_utc`：恢复不是备份，「最近备份时间」不许被一次恢复改写成现在
+    await writeStatusFile({ ...(await readStatusFile()), last_restore_at_utc: new Date().toISOString() })
     onProgress?.(1, 1, 'done')
+    return { attachmentsRestored, attachmentCount: manifest.data_summary.attachments }
   })
 
 export const isBackupSupported = (): boolean => isBackupStorageAvailable()

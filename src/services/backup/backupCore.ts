@@ -84,9 +84,15 @@ export type BackupManifest = {
   verified: boolean
 }
 
-/** `status.json`：跨重启保留的「上次成功 / 上次失败分类」，不含任何原始异常信息。 */
+/**
+ * `status.json`：跨重启保留的「上次**备份**成功 / 上次失败分类」，不含任何原始异常信息。
+ *
+ * `last_restore_at_utc` 是**独立字段**：恢复过一次不代表「刚做过备份」，界面上的「最近备份时间」
+ * 只能由真正写完并校验的备份推进 —— 恢复不许篡改它。
+ */
 export type BackupStatusFile = {
   last_success_at_utc: string | null
+  last_restore_at_utc: string | null
   last_error: string | null
 }
 
@@ -223,7 +229,7 @@ export const manifestToJson = (manifest: BackupManifest): string =>
 
 /** `status.json` 解析：读不出来就当「没有历史」，不因此阻断备份。 */
 export const parseStatusFile = (text: string | null): BackupStatusFile => {
-  const empty: BackupStatusFile = { last_success_at_utc: null, last_error: null }
+  const empty: BackupStatusFile = { last_success_at_utc: null, last_restore_at_utc: null, last_error: null }
   if (!text) {
     return empty
   }
@@ -239,6 +245,8 @@ export const parseStatusFile = (text: string | null): BackupStatusFile => {
   return {
     last_success_at_utc:
       typeof parsed.last_success_at_utc === 'string' ? parsed.last_success_at_utc : null,
+    last_restore_at_utc:
+      typeof parsed.last_restore_at_utc === 'string' ? parsed.last_restore_at_utc : null,
     last_error: typeof parsed.last_error === 'string' ? parsed.last_error : null,
   }
 }
@@ -246,6 +254,7 @@ export const parseStatusFile = (text: string | null): BackupStatusFile => {
 export const statusFileToJson = (status: BackupStatusFile): string =>
   JSON.stringify({
     last_success_at_utc: status.last_success_at_utc,
+    last_restore_at_utc: status.last_restore_at_utc,
     last_error: status.last_error,
   })
 
