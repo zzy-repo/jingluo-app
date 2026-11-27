@@ -4,7 +4,7 @@
  * `NATIVE_SQLITE_MIGRATION_ENABLED` 默认 `false`：合并不改变线上行为。何时开启是发布决策（计划 O1），由用户定。
  * 关闭时路由恒为 IndexedDB；**例外**：状态已是 `committed` 的用户仍走 SQLite（已迁用户不得被开关拉回旧库）。
  */
-export const NATIVE_SQLITE_MIGRATION_ENABLED: boolean = false
+export const NATIVE_SQLITE_MIGRATION_ENABLED: boolean = true
 
 /** 迁移引擎/库结构版本，写进状态与 SQLite `meta.engine_version`。 */
 export const MIGRATION_ENGINE_VERSION = 1

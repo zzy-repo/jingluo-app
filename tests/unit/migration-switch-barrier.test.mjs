@@ -18,7 +18,7 @@ installFakeIdbGlobals()
 // 但迁移开关保持关闭，只有内测 APK 分支才是 true。
 // 任何人翻转 config.ts 时必须同步来这里翻转 EXPECTED_SWITCH，
 // 这就是双写校验的意义：让"无意翻转"变红，让"有意翻转"留下痕迹。
-const EXPECTED_SWITCH = false // ← main 口径：不向全量用户开启迁移（内测分支为 true）
+const EXPECTED_SWITCH = true // ← 内测分支口径：向本包用户开启迁移（main 必须为 false）
 const barrier = await loadTsModule('src/services/storage/idb/legacyBarrier.ts')
 const dbMod = await loadTsModule('src/services/chat/db.ts')
 const gate = await loadTsModule('src/services/storage/gate.ts')
