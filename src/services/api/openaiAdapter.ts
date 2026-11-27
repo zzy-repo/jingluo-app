@@ -219,6 +219,17 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 
 const isString = (value: unknown): value is string => typeof value === 'string'
 
+/**
+ * 错误帧原文进 `ApiError.detail` 的预算（#929）：与「上游返回网页」的响应摘要
+ * （`client.ts` 的 `HTML_SNIPPET_CHARS`）同一个 200 字口径 —— detail 会落进日志与折叠区，
+ * 上游偶尔会回一整页 HTML 当错误帧，不能原样塞进去。
+ */
+const ERROR_FRAME_SNIPPET_CHARS = 200
+
+/** 错误帧原文 → 单行摘要（换行折叠成空格，超预算截断） */
+const frameSnippet = (data: string): string =>
+  data.replace(/\s+/g, ' ').trim().slice(0, ERROR_FRAME_SNIPPET_CHARS)
+
 const num = (value: unknown): number =>
   typeof value === 'number' && Number.isFinite(value) ? value : 0
 
@@ -249,11 +260,28 @@ export const readUsage = (value: unknown): MessageUsage | null => {
   }
 }
 
-/** 流里明确下发了错误帧（部分中转在断流前回 `{"error":{...}}`），交给 client.ts 转成 ApiError */
+/**
+ * 流里明确下发了错误帧（部分中转在断流前回 `{"error":{...}}`），交给 client.ts 转成 ApiError。
+ *
+ * #929：**错误帧里的机器可读码必须跟着一起走**。改前这里只传 `message`，于是
+ * `client.ts` 只能造出一个「没有任何证据」的 `ApiError('stream', ...)`：
+ * 上层（`errors.ts` 的分类、`errorNotice.ts` 的文案表）拿不到 code，一律落到
+ * 「未知错误」——今日 631 条 `status_code=200` 的失败里 604 条是这么变成「未知」的。
+ * Anthropic 协议那一路早就带了（`readUpstreamCode`），这里补齐同一条口径。
+ */
 export class OpenAIStreamError extends Error {
-  constructor(message: string) {
+  /**
+   * 错误帧里的上游短码：`error.code` ?? `error.type`（前者是网关写法，后者是 OpenAI 官方写法）。
+   * 两个都没有时是 undefined —— 不编造，与 `client.ts` 的 `readUpstreamCode` 同一判据。
+   */
+  readonly upstreamCode?: string
+  /** 错误帧原文（整行 data），只进 `ApiError.detail` 给日志与折叠区，不进主文案 */
+  readonly detail?: string
+  constructor(message: string, upstreamCode?: string, detail?: string) {
     super(message)
     this.name = 'OpenAIStreamError'
+    this.upstreamCode = upstreamCode
+    this.detail = detail
   }
 }
 
@@ -377,8 +405,19 @@ export async function* translateOpenAIStream(
     }
     if (isString(payload.error) || isRecord(payload.error)) {
       const detail = isRecord(payload.error) ? payload.error : {}
+      /**
+       * #929：把错误帧里的 `code` / `type` 一起抛出去。
+       * 顺序与 `client.ts` 的 `readUpstreamCode` 一致（code 优先，type 兜底）；
+       * 空串 / 非字符串当作没有 —— 上游偶尔写 `"code": ""`，那种情况不能当成证据。
+       * 原文（`data`）一并带上：上层拿不到可读原因时，折叠区与诊断里至少还有它。
+       */
+      const upstreamCode = [detail.code, detail.type].find(
+        (candidate) => isString(candidate) && candidate.trim() !== ''
+      )
       throw new OpenAIStreamError(
-        isString(detail.message) ? detail.message : JSON.stringify(payload.error)
+        isString(detail.message) ? detail.message : JSON.stringify(payload.error),
+        isString(upstreamCode) ? upstreamCode.trim() : undefined,
+        frameSnippet(data)
       )
     }
     // 首个能解析的 chunk 就开消息，即使它只带 role，正文稍后才到
