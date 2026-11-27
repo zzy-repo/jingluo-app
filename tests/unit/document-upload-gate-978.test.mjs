@@ -93,8 +93,13 @@ test('[绿 3] 接线：能力从 docInjectionFor 读，上传循环里有文档�
   )
 })
 
-test('[红→绿] 文档早退必须排在 ensureServerId 之前（删掉闸即失败）', () => {
-  const gate = UPLOAD_LOOP.indexOf('if (!file.isImage && !documents.nativeFile)')
+test('[红→绿] 文档早退必须排在 ensureServerId 之前（删掉/挪后即失败）', () => {
+  const GATE = 'if (!file.isImage && !documents.nativeFile)'
+  // 重复出现次数先钉死为 1：`indexOf` 只取首个匹配，注释里抄一行同款原文也能骗过位置比较
+  // （变异实测：闸挪到 ensureServerId 之后 + 上方抄一句同款注释 ⇒ 只比位置会 6/6 假绿）
+  const occurrences = UPLOAD_LOOP.split(GATE).length - 1
+  assert.equal(occurrences, 1, `文档闸在上传循环里必须恰好出现 1 次，实际 ${occurrences} 次`)
+  const gate = UPLOAD_LOOP.indexOf(GATE)
   const upload = UPLOAD_LOOP.indexOf('await ensureServerId(')
   const imageSkip = UPLOAD_LOOP.indexOf('if (file.isImage && vision.base64)')
   assert.ok(gate >= 0, '文档闸不在上传循环里')
