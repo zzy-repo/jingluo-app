@@ -80,6 +80,7 @@ import {
   useSettingsDialog,
   type SettingsSection,
 } from './settingsDialogState.js'
+import { StorageStatusSection } from './StorageStatusSection.js'
 import {
   ACCOUNT_SUB_PAGE_TITLES,
   AccountConsumePage,
@@ -449,6 +450,8 @@ const SettingsContent = ({ visible }: { visible: boolean }) => {
               }
             />
           </SettingsCard>
+          {/* 内测自查：当前真源 + 迁移状态 + 主动重试。纯只读，见 `StorageStatusSection` 注释 */}
+          <StorageStatusSection />
         </>
       )
     }

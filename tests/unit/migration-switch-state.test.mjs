@@ -5,12 +5,17 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { makeEnv, mods, sha256 } from '../helpers/migration-switch/kit.mjs'
 
+// 本文件守的是「开关值只能被有意识地改动」。
+// main 上必须是 false（合并不改变线上行为）；本分支 release/v2.0.1-internal
+// 为内测真机验证有意开启为 true。任何人翻转 config.ts 时必须同步来这里翻转 EXPECTED_SWITCH，
+// 这就是双写校验的意义：让"无意翻转"变红，让"有意翻转"留下痕迹。
+const EXPECTED_SWITCH = true // ← 本分支 release/v2.0.1-internal
+
 const { reconcileWitnesses, freshState, createStateStore, parseMigrationState } = mods.state
 const T = 5000
 const at = (phase, extra = {}) => ({ ...freshState(1), phase, seq: 3, ...extra })
-
-test('开关常量默认 false（合并不改变线上行为）', () => {
-  assert.equal(mods.config.NATIVE_SQLITE_MIGRATION_ENABLED, false)
+test('开关值与 EXPECTED_SWITCH 一致（防无意翻转：翻 config.ts 必须同步翻测试里的 EXPECTED_SWITCH）', () => {
+  assert.equal(mods.config.NATIVE_SQLITE_MIGRATION_ENABLED, EXPECTED_SWITCH)
 })
 
 test('规则1：状态文件缺失 + SQLite 有 committed_at → 以 SQLite 为真源并重建 committed', () => {

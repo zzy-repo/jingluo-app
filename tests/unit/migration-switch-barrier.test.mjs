@@ -13,6 +13,11 @@ import { loadTsModule } from '../helpers/dom-env.mjs'
 import { killAt, makeEngine, makeEnv, mainRows, mods, snapshotOf } from '../helpers/migration-switch/kit.mjs'
 
 installFakeIdbGlobals()
+// 本文件守的是「开关值只能被有意识地改动」。
+// main 上必须是 false（合并不改变线上行为）；本分支 release/v2.0.1-internal
+// 为内测真机验证有意开启为 true。任何人翻转 config.ts 时必须同步来这里翻转 EXPECTED_SWITCH，
+// 这就是双写校验的意义：让"无意翻转"变红，让"有意翻转"留下痕迹。
+const EXPECTED_SWITCH = true // ← 本分支 release/v2.0.1-internal
 const barrier = await loadTsModule('src/services/storage/idb/legacyBarrier.ts')
 const dbMod = await loadTsModule('src/services/chat/db.ts')
 const gate = await loadTsModule('src/services/storage/gate.ts')
@@ -163,14 +168,36 @@ const gateRuntime = (env, bump) => ({
   bumpLegacyIdbVersion: bump,
 })
 
-test('【负向对照】开关关闭（默认）：启动闸门不跑迁移，bump 不会被调用', async () => {
+test('【双写校验】启动闸门是否迁移跟随开关常量（不传 enabled 即读 config 常量）：开则正式迁移、bump 恰一次；关则不动 IDB、bump 零次', async () => {
   const env = makeEnv()
   try {
     fsIndex.setFsForTests(env.fs)
     let calls = 0
     runtimeMod.configureStorageRuntime(gateRuntime(env, async () => { calls += 1 }))
-    assert.equal(mods.config.NATIVE_SQLITE_MIGRATION_ENABLED, false)
-    assert.deepEqual(await gate.ensureStorageReady(), { kind: 'ready' })
+    assert.equal(mods.config.NATIVE_SQLITE_MIGRATION_ENABLED, EXPECTED_SWITCH)
+    const view = await gate.ensureStorageReady()
+    assert.equal(calls, EXPECTED_SWITCH ? 1 : 0)
+    if (EXPECTED_SWITCH) {
+      // 开关开 = 正式迁移：终态是成功提示（真源已 sqlite），确认后才放行进 App
+      assert.deepEqual(view, { kind: 'succeeded' })
+      assert.equal((await env.readState())?.phase, 'committed')
+      assert.deepEqual(gate.acknowledgeGateNotice(), { kind: 'ready' })
+    } else {
+      assert.deepEqual(view, { kind: 'ready' })
+      assert.equal(await env.readState(), undefined, '没有写任何状态')
+    }
+  } finally {
+    env.cleanup()
+  }
+})
+
+test('【负向对照】显式 enabled:false：即使开关常量为开，启动闸门不跑迁移，bump 不会被调用', async () => {
+  const env = makeEnv()
+  try {
+    fsIndex.setFsForTests(env.fs)
+    let calls = 0
+    runtimeMod.configureStorageRuntime(gateRuntime(env, async () => { calls += 1 }))
+    assert.deepEqual(await gate.ensureStorageReady({ enabled: false }), { kind: 'ready' })
     assert.equal(calls, 0)
     assert.equal(await env.readState(), undefined)
   } finally {
@@ -202,8 +229,10 @@ test('开关开 + 校验通过：闸门经 runtime 注入的 bump 被调用恰�
       log.push(`bump meta-rows=${(await db.all('SELECT key FROM meta')).length} state=${(await env.readState()).phase}`)
       await db.close()
     }))
-    assert.deepEqual(await gate.ensureStorageReady({ enabled: true }), { kind: 'ready' })
+    // 迁移通过真校验 → 成功提示态（确认后才 ready）；本条关心的是 bump 的时机，与提示态无关
+    assert.deepEqual(await gate.ensureStorageReady({ enabled: true }), { kind: 'succeeded' })
     assert.deepEqual(log, ['bump meta-rows=0 state=verified'])
+    assert.deepEqual(gate.acknowledgeGateNotice(), { kind: 'ready' })
   } finally {
     env.cleanup()
   }
