@@ -452,3 +452,64 @@ test('[7] 状态文件写入失败：盘上旧 status.json 原文仍在且可解
   assert.notEqual(overwrittenText, beforeText, '状态文件必须能被同名替换成新内容')
   assert.equal(core.parseStatusFile(overwrittenText).last_success_at_utc, third.createdAtUtc)
 })
+
+/* --------------------- [8] 空间类过时结论自愈（设备实测：腾出空间后仍说「没空间」） */
+
+// 场景：压盘 → 点「立即备份」→ `last_error:"space"`；把盘清干净之后，状态行必须不再念
+// 「存储空间不足」。但**盘上是事实**：`status.json` 里那笔 `space` 允许留着（用户确实
+// 在那一刻失败过），归零只发生在「播报层」（`getStatus()`），不改写盘上记录。
+
+test('[8a] 空间真的不够：`space` 照报（不许因为「想自愈」把真话吞掉）', async () => {
+  reset()
+  await api.runBackup('manual')
+  freeBytesValue = 0
+  await assert.rejects(api.runBackup('manual'), (error) => {
+    assert.equal(error.code, 'space')
+    return true
+  })
+  // 盘上记的是事实分类
+  assert.equal(core.parseStatusFile(committed.get(STATUS_NAME).toString('utf8')).last_error, 'space')
+
+  const status = await api.getStatus()
+  assert.equal(status.enoughForNext, false)
+  assert.equal(status.lastError, 'space', '当前实际空间不够时，必须继续报 space')
+})
+
+test('[8b] 盘已腾出空间：过时的 `space` 结论不再播报，且不改写盘上事实', async () => {
+  reset()
+  await api.runBackup('manual')
+  freeBytesValue = 0
+  await assert.rejects(api.runBackup('manual'), (error) => {
+    assert.equal(error.code, 'space')
+    return true
+  })
+
+  // 用户清理了空间（设备实测里这一步之后状态行仍然显示「空间不足」）
+  freeBytesValue = 1024 * 1024 * 1024
+  const status = await api.getStatus()
+  assert.equal(status.enoughForNext, true)
+  assert.equal(status.lastError, null, '空间已经够用时，`space` 不是当前状态')
+
+  // 诚实性：盘上的记录没被改写成「一切正常」
+  assert.equal(
+    core.parseStatusFile(committed.get(STATUS_NAME).toString('utf8')).last_error,
+    'space',
+    '盘上应保留那次失败的事实，归零只发生在播报层'
+  )
+})
+
+test('[8c] `empty` 的过时判定不变：与当前空间无关，仍然不播报', async () => {
+  reset()
+  await api.runBackup('manual')
+  globalThis.__nextSessions = 0
+  await assert.rejects(api.runBackup('auto'), (error) => {
+    assert.equal(error.code, 'empty')
+    return true
+  })
+  assert.equal((await api.getStatus()).lastError, null)
+  // 盘不够时也不该把 `empty` 退化成「一条当前状态」（不该和 space 绑在一起）
+  freeBytesValue = 0
+  const status = await api.getStatus()
+  assert.equal(status.enoughForNext, false)
+  assert.equal(status.lastError, null)
+})
