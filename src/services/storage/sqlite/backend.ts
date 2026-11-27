@@ -15,7 +15,7 @@ import {
 } from '../../chat/db.js'
 import type { SqlDatabase } from './driver.js'
 import { applySchema, readUserVersion, SCHEMA_VERSION } from './schema.js'
-import { joinedRunner, topRunner, type Runner } from './repos/context.js'
+import { joinedRunner, serializeOn, topRunner, type Runner } from './repos/context.js'
 import { guarded } from './repos/shared.js'
 import { createSessionRepo } from './repos/sessions.js'
 import { createBlobRepo } from './repos/blobs.js'
@@ -124,7 +124,10 @@ export const openSqliteStorage = async (openDb: OpenSqlite): Promise<StorageBack
       }
       atomicDepth += 1
       try {
-        return await db.transaction((tx) => work(buildRepos(joinedRunner(tx), 'atomic') as AtomicRepos))
+        // 整包写也走单连接串行闸（#951）：它绕过了 `topRunner.tx`，不排队就会和并发的持久化撞上
+        return await serializeOn(db, () =>
+          db.transaction((tx) => work(buildRepos(joinedRunner(tx), 'atomic') as AtomicRepos)),
+        )
       } finally {
         atomicDepth -= 1
       }
