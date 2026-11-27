@@ -279,6 +279,21 @@ export const LIMITS = {
    * 所以那边保留字面量，由 `tests/unit/limits-config.test.mjs` 断言两处相等。
    */
   bootDeadlineMs: 12000,
+  /**
+   * 「数据备份与恢复」（#993 任务 3）的阈值。
+   *
+   * - `spaceWarnBytes`：备份占用到这个量就主动提醒「占得有点多了」，也是「空间偏大」的分界线。
+   *   500 MiB 与一次整包备份的典型体积（历史会话 + 附件）同一量级：低于它提醒等于噪音，
+   *   高于它才值得让用户去清旧份。
+   * - `nextEstimateBytes`：还没有任何一份备份时，估算「下一次备份大概要多少」用的保守值。
+   *   有了历史备份之后按上一份的实际体积估（见 `services/backup/backupApi.ts`），不再用这个数。
+   * - `autoIntervalMs`：自动备份的最小间隔（24 小时）。启动时超过这个间隔才自动跑一次。
+   */
+  backup: {
+    spaceWarnBytes: 500 * 1024 * 1024,
+    nextEstimateBytes: 32 * 1024 * 1024,
+    autoIntervalMs: 24 * 60 * 60 * 1000,
+  },
 } as const
 
 /** 字节 → MB（四舍五入的整数），只用于文案提示；换算集中在这里，别处不再写 1024 */

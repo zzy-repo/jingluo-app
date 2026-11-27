@@ -49,6 +49,7 @@ import { closeMobileSider } from '../components/sider/mobileSiderState.js'
 import { MobileSider, Sider } from '../components/sider/Sider.js'
 import { UpdateDialog } from '../components/update/UpdateDialog.js'
 import { snoozeStartupUpdatePrompt, startUpdateGate, useUpdateGate } from '../services/updateGateState.js'
+import { maybeAutoBackup } from '../services/backup/backupScheduler.js'
 import { bundledApp } from '../services/appUpdate.js'
 import styles from './App.module.css'
 
@@ -164,6 +165,16 @@ export const App = () => {
     void loadSessionBackground(activeId)
   }, [activeId])
   useEffect(bindChatPersistence, [])
+  /**
+   * 自动备份（#993 任务 3）：本地数据就绪后看一眼「开关开着、距上次成功超过一天、空间够」，
+   * 三条都成立才真跑一次。判定与容错都在 `maybeAutoBackup` 里面（它永不抛错），
+   * 这里不写第二份条件，也不等它 —— 备份不该阻塞首屏。
+   */
+  useEffect(() => {
+    if (ready) {
+      void maybeAutoBackup()
+    }
+  }, [ready])
 
   // 搜索结果面板只属于当前会话
   useEffect(closeSearchPanel, [activeId])
