@@ -74,7 +74,30 @@ cd "$PROJECT_ROOT"
 ANDROID_DIR="$PROJECT_ROOT/android"
 
 log() { printf '\n\033[1;36m[build-apk] %s\033[0m\n' "$*"; }
+
 die() { printf '\n\033[1;31m[build-apk][ERROR] %s\033[0m\n' "$*" >&2; exit 1; }
+
+# ------------------------------- 0. 环境隔离：发布构建**不许**带登录接缝
+#
+# `TEST_AUTH_SEAM=1` 是**测试专用**开关（L1 / 黄金回归需要「启动即已登录」）：打开后
+# `AuthGate` 直接进已登录态、不读盘、不续期、不调 `me()`。这个变量一旦漏进发布构建，
+# 打出来的包等于把「绕过登录」的开关发给用户 —— 比任何功能缺陷都严重，所以：
+#   · 这里**直接拒跑**（不是警告、不是自动 unset）：带着它构建说明环境的来源有问题，
+#     静默清掉会让人以为「刚才那次是干净的」；
+#   · 打印它的实际取值，让「我当时到底带没带」有据可查；
+#   · 另有第 7 项产物校验（`scripts/check-apk-seam.mjs`）兜底扫包内标记。
+if [ -n "${TEST_AUTH_SEAM:-}" ]; then
+  if [ "$MODE" = "release" ]; then
+    die "环境里有 TEST_AUTH_SEAM='${TEST_AUTH_SEAM}' —— 发布构建禁止带登录接缝。
+  这个开关会让 AuthGate 直接进已登录态（不读盘、不续期、不调 me()），出了这个包 = 鉴权绕过。
+  L1 / 黄金回归用的测试产物请单独构建：
+    TEST_AUTH_SEAM=1 pnpm run build:internal   （或 DIST_OUT=dist-standard / dist-scroll）
+  跑本脚本前先把它清掉（新开一个 shell / unset TEST_AUTH_SEAM），再重跑。"
+  fi
+  printf '\033[1;33m[build-apk][警告] 环境里有 TEST_AUTH_SEAM=%s：这是 debug 产物，只许本地/模拟器烟测，禁止当发布包分发\033[0m\n' "$TEST_AUTH_SEAM" >&2
+else
+  log "环境隔离检查：TEST_AUTH_SEAM 未设置（发布构建一律不带接缝）"
+fi
 
 # ------------------------------------------------- 0. 读构建环境声明（build.env）
 # 生效顺序：同名环境变量 > build.env > 脚本内兜底默认值。
@@ -417,6 +440,20 @@ if [ "$MODE" = "release" ]; then
      · 变体 / 地址不对 → 改出包参数或 config，重新出包；
      · 版本号不对 → package.json 的 version / androidVersionCode 才是唯一来源，改完重出包。
   产物留在原地供排查（$APK_PATH），但它不是发布包。"
+  fi
+
+  # ---- 第 7 项：包内**不许**有登录接缝（#487 W1-B / #510；vc44 起为硬断言）
+  #
+  # 前六项验的是产物形态，没有任何一项会去看「包里那坨 web 资产是怎么构建的」。
+  # 而带接缝的包 = AuthGate 直接进已登录态 = 鉴权绕过，分发给用户是最严重的那类事故。
+  # 判据只扫文本条目（web 资产）；扫不到任何文本条目 = 判不出来（exit 2），照样 die。
+  log "步骤 7：包内登录接缝检查（第 7 项；命中 = 禁止分发）"
+  if ! node "$PROJECT_ROOT/scripts/check-apk-seam.mjs" "$APK_PATH"; then
+    die "第 7 项不通过：APK 里带着登录接缝标记（test-token-not-real / __TEST_AUTH_STATE__）。
+  APK: $APK_PATH
+  这个包启动即已登录、不调 me()、不续期 —— 分发出去等于把「绕过登录」的开关发给用户。
+  修法：确认构建环境里没有 TEST_AUTH_SEAM（`env | grep TEST_AUTH_SEAM` 应为空），重新出包。
+  **不要**为了过这一项去删标记或改判据。"
   fi
 else
   # debug 产物天生 debuggable：不是发布包，只做提示（仍然跑同一份判定，不另抄一份）
