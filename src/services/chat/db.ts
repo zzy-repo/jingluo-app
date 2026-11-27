@@ -15,6 +15,15 @@ import {
 import { isAttachmentBlobKey } from '../attachments/blobKeys.js'
 import type { DocumentAttachment } from '../attachments/types.js'
 import { toSessionSummary, type Session, type SessionSummary } from './types.js'
+import {
+  classifyStorageFailure,
+  errorMessageOf,
+  errorNameOf,
+  normalizeStorageFailure,
+  storageFailureOf,
+  type StorageFailure,
+  type StorageFailureKind,
+} from './storageFailure.js'
 
 /**
  * IndexedDB 存储结构版本；新增或调整存储、索引时递增。
@@ -193,129 +202,23 @@ const abortTransaction = (tx: { abort(): void }) => {
 }
 
 // ---------------------------------------------------------------- 存储写失败分级（P0 事故修复）
-
-/**
- * 本机写失败的**四类**。判定只认 `error.name`（`message` 各引擎写法不一致，靠它猜必错），
- * 分类决定两件事：**要不要重试 / 要不要自愈**、以及**横幅说什么**。
- *
- * | kind | 触发 | 自愈动作 | 用户能做什么 |
- * | --- | --- | --- | --- |
- * | `quota` | `QuotaExceededError`（超配额）、Firefox 的 `NS_ERROR_DOM_QUOTA_REACHED` | 清孤儿 blob 后重试一次 | 清理 / 导出备份后重试 |
- * | `clone` | `DataCloneError`：会话里混进了函数 / symbol 等不可结构化克隆的值 | 剔除坏字段后重试一次 | 重试（程序自己会修） |
- * | `unavailable` | 宿主没有 IndexedDB（`StorageUnavailableError`）、WebKit 写 blob 抛的 `UnknownError`、`NotSupportedError`、`StorageVersionTooNewError` | 无 | 换 App / 换环境，重试没用 |
- * | `unknown` | 其余，含 `InvalidStateError`（连接正在关闭，重连后能再试）与 `StorageBlockedError` | 重连后再试 | 重试 |
- *
- * 为什么 `UnknownError` 归 `unavailable` 而不是 `unknown`：WebKit 在写 blob 时抛
- * `UnknownError`（配额 / 权限 / 沙箱三者它都不区分），实测**同一份数据重试一万次也一样失败**，
- * 把它当「可重试」只会让用户反复点重试。这正是「清后台后记录消失、Web 端与手表端同时复现」的
- * 现场：写不进去 + 库被系统淘汰，两个原因叠在一起。
- */
-export type StorageFailureKind = 'quota' | 'clone' | 'unavailable' | 'unknown'
-
-/** 一次写失败的结构化描述（**只含元数据**：分类 / error.name / message / store，不含会话内容）。 */
-export type StorageFailure = {
-  kind: StorageFailureKind
-  /** 原始 `error.name`（`DataCloneError` / `QuotaExceededError` / `UnknownError` …） */
-  name?: string
-  /** 原始 `error.message`，截断到 200 字符；引擎给的都是固定句式，不带用户正文 */
-  message?: string
-  /** 失败涉及的 object store（逗号分隔）：定级时「哪一段没写进去」比「失败了」有用 */
-  stores?: string
-  at?: number
-}
-
-export const STORAGE_FAILURE_KINDS: readonly StorageFailureKind[] = [
-  'quota',
-  'clone',
-  'unavailable',
-  'unknown',
-]
-
-export const isStorageFailureKind = (value: unknown): value is StorageFailureKind =>
-  typeof value === 'string' && (STORAGE_FAILURE_KINDS as readonly string[]).includes(value)
-
-const errorNameOf = (error: unknown): string | undefined => {
-  if (typeof error === 'object' && error !== null) {
-    const name = (error as { name?: unknown }).name
-    if (typeof name === 'string' && name.length > 0) {
-      return name
-    }
-  }
-  return undefined
-}
-
-const errorMessageOf = (error: unknown): string | undefined => {
-  if (typeof error === 'object' && error !== null) {
-    const message = (error as { message?: unknown }).message
-    if (typeof message === 'string' && message.length > 0) {
-      return message
-    }
-  }
-  if (typeof error === 'string' && error.length > 0) {
-    return error
-  }
-  return undefined
-}
-
-/** 纯函数（L0 可单测）：`error` → 四类之一。不碰 DOM、不碰 IndexedDB，只看 `name`。 */
-export const classifyStorageFailure = (error: unknown): StorageFailureKind => {
-  switch (errorNameOf(error)) {
-    case 'DataCloneError':
-      return 'clone'
-    case 'QuotaExceededError':
-    case 'NS_ERROR_DOM_QUOTA_REACHED':
-      return 'quota'
-    // WebKit 写 Blob 失败：不区分配额 / 权限 / 沙箱，只能整体判成「这个环境写不进去」
-    case 'UnknownError':
-    case 'NotSupportedError':
-    case 'SecurityError':
-    case 'StorageUnavailableError':
-    case 'StorageVersionTooNewError':
-      return 'unavailable'
-    default:
-      // 含 InvalidStateError（连接正在关闭：重连后可以再试）与 StorageBlockedError（另一标签页占着：
-      // 关掉它再试就行）—— 两者都**不是**环境缺能力，别拿「建议用 App 打开」赶人
-      return 'unknown'
-  }
-}
-
-const FAILURE_MESSAGE_MAX = 200
-
-/** `error` → 可直接落库 / 进诊断包的 `StorageFailure`（纯函数）。 */
-export const storageFailureOf = (error: unknown, stores?: string): StorageFailure => {
-  const failure: StorageFailure = { kind: classifyStorageFailure(error), at: Date.now() }
-  const name = errorNameOf(error)
-  if (name) {
-    failure.name = name
-  }
-  const message = errorMessageOf(error)
-  if (message) {
-    failure.message = message.slice(0, FAILURE_MESSAGE_MAX)
-  }
-  if (stores) {
-    failure.stores = stores
-  }
-  return failure
-}
-
-/**
- * 读旧值兼容：P0 之前的 `sessionSaveErrors` 是 `Record<id, boolean>`，
- * `true` 只表示「这条会话没存上」，没有分类。**旧值一律当可重试档**（`unknown`）读 ——
- * 不能因为「不知道原因」就把用户的会话判成「当前环境无法保存」（那个档位不给重试按钮）。
- */
-export const normalizeStorageFailure = (value: unknown): StorageFailure | undefined => {
-  if (value === true) {
-    return { kind: 'unknown' }
-  }
-  if (typeof value !== 'object' || value === null) {
-    return undefined
-  }
-  const candidate = value as Partial<StorageFailure>
-  return {
-    ...candidate,
-    kind: isStorageFailureKind(candidate.kind) ? candidate.kind : 'unknown',
-  } as StorageFailure
-}
+//
+// 判定规则与结构化描述搬到了 `./storageFailure.js`（#937 / #938）：那套东西是纯函数、有两个调用方
+// （本模块的写入路径 + `chat/store.ts` 的抛出路径），而 store 的 L0 用例会把 `./db.js` 整个换成内存假库，
+// 规则留在本模块里就等于「谁 import 谁就得连假库一起改」，恰恰会把 #938 的被测对象挡在替身后面。
+// 这里原样转出，既有 import 路径（本模块内部、`storage/sqlite/repos/*`、组件、用例）一律不用动。
+export {
+  STORAGE_FAILURE_KINDS,
+  classifyStorageFailure,
+  errorMessageOf,
+  errorNameOf,
+  isSpaceFullError,
+  isStorageFailureKind,
+  normalizeStorageFailure,
+  storageFailureOf,
+  type StorageFailure,
+  type StorageFailureKind,
+} from './storageFailure.js'
 
 /** 横幅档位（三档，与文案一一对应；`unavailable` 不给重试按钮） */
 export type SaveBannerTier = 'retry' | 'quota' | 'unavailable'
