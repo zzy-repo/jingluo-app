@@ -85,11 +85,11 @@
 | `src/services/chat/store.ts:462` | `Object.hasOwn` 存在（Chromium 93） | 1 | 中 | 已有兜底 |
 | `src/services/chat/store.ts:482` | `Object.hasOwn` 存在（Chromium 93） | 1 | 中 | 已有兜底 |
 | `src/services/chat/store.ts:520` | `Array.prototype.flatMap` 存在（Chromium 69，低于基线） | 1 | 低 | —（基线内，无需处置） |
-| `src/services/chat/store.ts:1077` | `Object.hasOwn` 存在（Chromium 93） | 1 | 中 | 已有兜底 |
-| `src/services/chat/store.ts:1697` | `Array.prototype.at` 存在（Chromium 92；13 处接收者全是数组，零字符串接收者） | 1 | 中 | 已有兜底 |
-| `src/services/chat/store.ts:1793` | `Array.prototype.at` 存在（Chromium 92；13 处接收者全是数组，零字符串接收者） | 1 | 中 | 已有兜底 |
-| `src/services/chat/store.ts:1794` | `Array.prototype.at` 存在（Chromium 92；13 处接收者全是数组，零字符串接收者） | 1 | 中 | 已有兜底 |
-| `src/services/chat/store.ts:2169` | `Promise.allSettled` 存在（Chromium 76，低于基线） | 1 | 低 | —（基线内，无需处置） |
+| `src/services/chat/store.ts:1081` | `Object.hasOwn` 存在（Chromium 93） | 1 | 中 | 已有兜底 |
+| `src/services/chat/store.ts:1701` | `Array.prototype.at` 存在（Chromium 92；13 处接收者全是数组，零字符串接收者） | 1 | 中 | 已有兜底 |
+| `src/services/chat/store.ts:1797` | `Array.prototype.at` 存在（Chromium 92；13 处接收者全是数组，零字符串接收者） | 1 | 中 | 已有兜底 |
+| `src/services/chat/store.ts:1798` | `Array.prototype.at` 存在（Chromium 92；13 处接收者全是数组，零字符串接收者） | 1 | 中 | 已有兜底 |
+| `src/services/chat/store.ts:2173` | `Promise.allSettled` 存在（Chromium 76，低于基线） | 1 | 低 | —（基线内，无需处置） |
 | `src/services/chat/view.ts:167` | `String.prototype.trimEnd` 存在（Chromium 66，低于基线） | 1 | 低 | —（基线内，无需处置） |
 | `src/services/chat/view.ts:269` | `Array.prototype.at` 存在（Chromium 92；13 处接收者全是数组，零字符串接收者） | 1 | 中 | 已有兜底 |
 | `src/services/chat/view.ts:275` | `Array.prototype.flatMap` 存在（Chromium 69，低于基线） | 1 | 低 | —（基线内，无需处置） |
