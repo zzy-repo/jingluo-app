@@ -160,19 +160,54 @@ test('#940 readTextColumn：4.4M 汉字（13.2MB UTF-8）分块读回，逐字�
   await db.close()
 })
 
+// ⚠️ 这条用例 2026-11-27 被查出**是空转的**，已重写（原版见 git 历史）：
+// 原版文本只有 ~14 KB、远小于 4 MiB 上限 → `readColumnBytes` 第一步「一次直读」就成功了，
+// `chunkBytes` 从头到尾**一次都没被用过**，「块边界劈开多字节字符」这条路径从未执行。
+// 门禁是绿的，但它保护的东西没被验证过 —— 与 #946 那 12 条 doc-refs 同型（门禁存在 ≠ 规则生效）。
+// 现在把驱动上限压到 64 B **强制**走分块，并用调用次数把「真的分块了」钉住：
+//   · 直读必须发生且撞上限（否则又退化成假验证）；
+//   · `SUBSTR` 调用次数必须等于 ceil(总长/块长) 且 > 1（按字节切，不是一次拿全）。
 test('#940 readTextColumn：块边界劈开汉字 / emoji 也不出错（按字节切）', async () => {
-  const { db } = await openDb({ maxResultBytes: CAP })
+  const SMALL_CAP = 64
+  const { db } = await openDb({ maxResultBytes: SMALL_CAP })
   const table = STORE_TABLES.sessionSummaries.table
-  const text = `开头🙂${'汉字混排'.repeat(1200)}尾巴😀`
+  // 3 字节汉字 + 4 字节 emoji 混排：任何 >1 的块长都会在某个字符中间断开
+  const text = `开🙂${'汉字混排'.repeat(20)}尾😀`
+  const total = bytesOf(text)
+  assert.ok(total > SMALL_CAP, '前提：这一列的字节数确实超过驱动上限（否则不会走分块）')
   await db.run(`INSERT INTO ${table} (id, doc) VALUES (?, ?)`, ['mix', text])
-  for (const chunkBytes of [1, 2, 3, 7, 13, 1000, 4097]) {
-    const read = await paged.readTextColumn(
-      db,
-      { table, column: 'doc', where: 'id = ?', params: ['mix'] },
-      { chunkBytes },
-    )
+
+  for (const chunkBytes of [1, 2, 3, 4, 5, 7, 13]) {
+    const stats = { direct: 0, substr: 0 }
+    /** 只替换 `all`，其余走真驱动：`readColumnBytes` 的入参就是 `Pick<SqlTx,'all'>`。 */
+    const exec = {
+      all: async (sql, params) => {
+        if (sql.includes('SUBSTR')) stats.substr += 1
+        else if (sql.includes(' AS v')) stats.direct += 1
+        return db.all(sql, params)
+      },
+    }
+    const spec = { table, column: 'doc', where: 'id = ?', params: ['mix'] }
+    const read = await paged.readTextColumn(exec, spec, { chunkBytes })
     assert.equal(read.value, text, `chunkBytes=${chunkBytes} 时内容必须一致`)
+    assert.equal(bytesOf(read.value), total, `chunkBytes=${chunkBytes} 时字节数必须一致`)
+    assert.equal(stats.direct, 1, `chunkBytes=${chunkBytes}：必须先尝试一次直读（并撞上限），否则这条用例又成了空转`)
+    assert.equal(
+      stats.substr,
+      Math.ceil(total / chunkBytes),
+      `chunkBytes=${chunkBytes}：SUBSTR 段数应等于 ceil(${total}/${chunkBytes})`,
+    )
+    assert.ok(stats.substr > 1, `chunkBytes=${chunkBytes}：必须真的切成多段才叫验过分块路径`)
   }
+
+  // 字节级同一性：分块读回的 BLOB 与原文 UTF-8 的 sha256 必须相等（重组没有错位/丢字节）
+  const EXPECTED = createHash('sha256').update(Buffer.from(text, 'utf8')).digest('hex')
+  const blob = await paged.readBlobColumn(
+    db,
+    { table, column: 'doc', where: 'id = ?', params: ['mix'] },
+    { chunkBytes: 1 },
+  )
+  assert.equal(createHash('sha256').update(blob.value).digest('hex'), EXPECTED, '分块重组的 sha256 必须与原文相同')
   await db.close()
 })
 
