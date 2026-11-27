@@ -126,6 +126,41 @@ push(
     ? `ok（台账最大 ${last}）`
     : `台账 lastDistributedVersionCode=${last} 小于 history 里出现过的 ${Math.max(...historyCodes)}：台账自相矛盾，先修台账`,
 )
+// 「同一二进制被认定为正式发布候选版」（RC）这件事也必须可自证：
+//   · 被认定为 RC 的号必须真的分发过（在 history 里）—— 没发出去的号谈不上 RC；
+//   · 认定必须带证据指针：日期 + 证据文件 + A–E 五项各自结论，且五项一个都不能缺；
+//   · 五项里有 FAIL 就不许自称 RC（「认定」不等于「乐观」）。
+// 只写 releaseCandidate: true 的条目在这里过不去 —— 那就是个没人验的备注字段。
+const rcEntries = history.filter((item) => item && typeof item === 'object' && item.releaseCandidate)
+if (rcEntries.length > 0) {
+  const RC_KEYS = ['A', 'B', 'C', 'D', 'E']
+  const RC_VERDICTS = ['PASS', 'FAIL', 'N/A', '未验']
+  const problems = []
+  for (const entry of rcEntries) {
+    const rc = entry.releaseCandidate
+    const code = entry.versionCode
+    if (typeof rc !== 'object' || rc === null) {
+      problems.push(`vc${code} 的 releaseCandidate 不是对象（写 true 不算认定）`)
+      continue
+    }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(rc.decidedAt || ''))) problems.push(`vc${code} 缺 decidedAt（YYYY-MM-DD）`)
+    if (typeof rc.evidenceFile !== 'string' || rc.evidenceFile.trim() === '') problems.push(`vc${code} 缺 evidenceFile（哪张验收表）`)
+    const items = rc.items && typeof rc.items === 'object' ? rc.items : {}
+    for (const key of RC_KEYS) {
+      const verdict = items[key]
+      if (!RC_VERDICTS.includes(verdict)) problems.push(`vc${code} 的验收项 ${key} 结论缺失或非法（${JSON.stringify(verdict)}）`)
+      else if (verdict === 'FAIL') problems.push(`vc${code} 的验收项 ${key} 是 FAIL —— 有 FAIL 就不是 RC`)
+    }
+  }
+  push(
+    `正式发布候选版（RC）的认定可追溯（${rcEntries.map((e) => `vc${e.versionCode}`).join(' / ')}）`,
+    problems.length === 0,
+    problems.length === 0
+      ? `ok（带日期 + 证据文件 + A–E 五项结论；同一个二进制不重复入账）`
+      : `不允许：${problems.join('；')}`,
+  )
+}
+
 if (withdrawnCodes.length > 0) {
   push(
     `撤回/未分发的号都在当前构建号之前（${withdrawnCodes.join(' / ')} < ${rawCode}）`,
