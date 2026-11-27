@@ -250,7 +250,10 @@ export const getStatus = async (): Promise<BackupStatus> => {
     enabled: true,
     running,
     lastSuccessAtUtc: statusFile.last_success_at_utc,
-    lastError: statusFile.last_error,
+    // `empty` 不是错误，是「当时没有记录可备」这个**过时**的历史结论。把它当当前状态播报，
+    // 会在用户后来已经写了对话时仍然显示「当前没有可备份的聊天记录」（实测踩到）。
+    // 真正按「空」处理的地方是用户按「立即备份」时抛出的 `empty`，界面在那一刻才说这句话。
+    lastError: statusFile.last_error === 'empty' ? null : statusFile.last_error,
     totalBytes: items.reduce((sum, item) => sum + item.sizeBytes, 0),
     count: items.length,
     freeBytes: free ?? 0,

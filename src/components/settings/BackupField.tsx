@@ -266,17 +266,21 @@ export const RestoreModals = ({ flow }: { flow: BackupRestoreFlow }) => {
               </div>
             ) : null}
             <div className={styles.description}>{t('backupRestoreConfirmIntegrity')}</div>
-            <div className={styles.progressBlock}>
-              <StatusText
-                view={statusView({
-                  status: null,
-                  phase: flow.phase,
-                  done: flow.progress.done,
-                  total: flow.progress.total,
-                  failure: flow.failure,
-                })}
-              />
-            </div>
+            {/* 只在真的在跑 / 真的失败了才占一行：idle 时 statusView 会因为 status=null
+                返回「暂时读不到备份情况」，那句话在确认弹窗里与上面「完整性检查：通过」自相矛盾 */}
+            {flow.phase !== 'idle' || flow.failure !== null ? (
+              <div className={styles.progressBlock}>
+                <StatusText
+                  view={statusView({
+                    status: null,
+                    phase: flow.phase,
+                    done: flow.progress.done,
+                    total: flow.progress.total,
+                    failure: flow.failure,
+                  })}
+                />
+              </div>
+            ) : null}
           </div>
         </Modal>
       )}
