@@ -621,7 +621,21 @@ async function* streamOpenAIMessage(
       throw streamIdleTimedOut(error.idleMs, error.message)
     }
     if (error instanceof OpenAIStreamError) {
-      throw new ApiError('stream', error.message)
+      /**
+       * #929：错误帧里的上游短码与原文**必须带上**（改前这里只传 message）。
+       * 少了 `upstreamCode`，`classifyErrorSignature` / `errorNotice.ts` 就没有任何证据，
+       * 一条「上游明确拒绝（附件类型不支持 / 附件过大 / 额度用完…）」只能显示成「未知错误」。
+       * 口径与上面 Anthropic 分支的 `readUpstreamCode(payload)` 完全一致：
+       * 没有 code 时仍是 undefined，不自造。
+       */
+      throw new ApiError(
+        'stream',
+        error.message,
+        undefined,
+        undefined,
+        error.detail,
+        error.upstreamCode
+      )
     }
     if (error instanceof ApiError || signal.aborted) {
       throw error
