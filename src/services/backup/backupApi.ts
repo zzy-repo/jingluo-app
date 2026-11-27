@@ -488,13 +488,22 @@ const writeBackupFiles = async (
  * 连同清单一起删掉 —— 用户看到的是「备份失败」，实际是「备份成功后被清理逻辑自己删了」。
  *
  * `scope`：
- *  - `all`    —— 常规备份成功之后：常规组按 `RETENTION_KEEP`、安全组按 `SAFETY_RETENTION_KEEP`；
- *  - `safety` —— 恢复路径：**只动安全组**，绝不顺手删常规备份（能少删就少删）。
+ *  - `all`    —— 常规备份成功之后，以及**恢复成功之后**（#1006）：常规组按 `RETENTION_KEEP`、
+ *               安全组按 `SAFETY_RETENTION_KEEP`。恢复也必须走这一档：老清单没有 `origin` 字段、
+ *               一律按常规备份处理，只清安全组的话「恢复完」的总量收不到 3+2（设备实测 5 → 6 → 7）；
+ *  - `safety` —— 恢复流程**前半段**：新安全备份刚写完并整档校验通过、还没开始恢复时先压安全组上限。
+ *               **只动安全组**：这条路上还什么都没恢复，绝不能顺手删常规备份（可能是这次的恢复目标）。
  *
  * 每个文件名**最多删一次**（去重 + 每份备份只留一条失败记录）：删不掉的文件不该在一次清理里
  * 被反复尝试，也不该把诊断日志刷成一串同样的异常。
+ *
+ * `exemptIds`（#1006）：**这次操作必须留住的那几份**（恢复路径 = 用户选中的那份备份）。
+ * 恢复流程的两个清理触发点**都必须传**：① 前半段的 `safety` 一档在 ② 读归档**之前**跑，
+ * 不传豁免就可能「用户点了恢复 X、代码在读 X 之前把 X 删了」；② 末尾的 `all` 一档同理
+ * （用户要回到的就是那份）。有没有第三个触发点？加一处就传一次 —— 唯一入口
+ * `planRetention` 的签名把 `exemptIds` 放在必读位置，忘了传时读起来就是「这里允许删掉恢复目标」。
  */
-const applyRetention = async (scope: 'all' | 'safety'): Promise<void> => {
+const applyRetention = async (scope: 'all' | 'safety', exemptIds?: readonly string[]): Promise<void> => {
   let backups: ScannedBackup[]
   try {
     backups = (await scanBackups()).backups
@@ -514,8 +523,12 @@ const applyRetention = async (scope: 'all' | 'safety'): Promise<void> => {
   const plan = planRetention(facts, {
     regularKeep: RETENTION_KEEP,
     safetyKeep: SAFETY_RETENTION_KEEP,
+    ...(exemptIds === undefined ? {} : { exemptIds }),
   })
-  const ids = new Set(scope === 'all' ? [...plan.regular, ...plan.safety] : plan.safety)
+  const exempt = new Set(exemptIds ?? [])
+  const ids = new Set(
+    (scope === 'all' ? [...plan.regular, ...plan.safety] : plan.safety).filter((id) => !exempt.has(id))
+  )
   const attempted = new Set<string>()
   for (const id of ids) {
     const target = byId.get(id)
@@ -644,7 +657,8 @@ const runBackupOnce = async (
     })
     if (options.prune) {
       onProgress?.(1, 1, 'cleanup')
-      // 清理只在这里发生：**新备份已经落盘且清单已写**（= 提交标记）之后。
+      // 常规备份成功后的清理只在这里发生（恢复成功后的总量收口见 `restoreBackup` 的 ⑤）：
+      // **新备份已经落盘且清单已写**（= 提交标记）之后。
       // `applyRetention` 自己吞异常，删不掉旧份也绝不把这次成功改判成失败。
       await applyRetention('all')
     }
@@ -852,7 +866,9 @@ export const restoreBackup = (id: string, onProgress?: Progress): Promise<Restor
       // #1005：安全备份的容量上限。**必须放在这里**——新安全备份已经落盘、已经整档校验通过，
       // 这时才允许清掉更早的安全备份（先删后写会让「这次恢复中途失败」变成无路可退）。
       // 只动安全组：恢复不该顺手把用户的常规备份删掉（能少删就少删）。
-      await applyRetention('safety')
+      // #1006：`id` = **用户这次选中的那份备份**，必须豁免 —— 它可能正好是最老的安全备份，
+      // 而它的归档要到 ② 才读：不豁免就会出现「点了恢复 X，程序在读 X 之前把 X 删了」。
+      await applyRetention('safety', [id])
     }
 
     // ② 读回归档（分块）
@@ -901,6 +917,26 @@ export const restoreBackup = (id: string, onProgress?: Progress): Promise<Restor
     }
     // 只推进 `last_restore_at_utc`：恢复不是备份，「最近备份时间」不许被一次恢复改写成现在
     await writeStatusFile({ ...(await readStatusFile()), last_restore_at_utc: new Date().toISOString() })
+
+    // ⑤ 总量收口（#1006）：**两组都清**，让「恢复完立刻看设置页」就是 3 常规 + 2 安全 = 5 份。
+    //
+    // 为什么必须两组都清：清理常规组原本**只在「常规备份成功」时**发生（`runBackup` → `prune: true`），
+    // 而盘上老版本的清单没有 `origin` 字段、按约定一律算常规备份 —— 于是老用户升级后只要不点
+    // 「立即备份」，连着恢复几次就得到 5 → 6 → 7 份（设备实测），而设置页显示的是真实份数，
+    // 用户看到的就是「清理没生效」。
+    //
+    // 为什么必须放在这里（恢复 ②③④ 全部成功之后）：常规组里就有**这次正在恢复的那份备份**，
+    // 先清后恢复会把它删掉（「恢复失败」+ 用户失去唯一能回去的那份）。安全组的上限仍由前半段
+    // 那次 `applyRetention('safety')` 提前压住：恢复中途失败时总量也不会无上限地涨。
+    //
+    // 清理失败**不得**把这次恢复改判成失败：恢复已经成功了就是成功，`applyRetention` 自己吞异常，
+    // 这里再兜一层（防止将来有人往里加会抛错的逻辑）。
+    // 同样豁免 `id`：用户要回到的就是那份，恢复路径任何一个清理触发点都不许把它列为候选。
+    try {
+      await applyRetention('all', [id])
+    } catch (error) {
+      logDiagnostic('error', 'restore: prune after restore failed', { action: 'backup-prune' }, error)
+    }
     onProgress?.(1, 1, 'done')
     return { attachmentsRestored, attachmentCount: manifest.data_summary.attachments }
   })
