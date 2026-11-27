@@ -7,10 +7,11 @@ import { setupDom, loadTsModule } from '../helpers/dom-env.mjs'
 import { makeEngine, makeEnv, mods } from '../helpers/migration-switch/kit.mjs'
 
 // 本文件守的是「开关值只能被有意识地改动」。
-// main 上必须是 false（合并不改变线上行为）；本分支 release/v2.0.1-internal
-// 为内测真机验证有意开启为 true。任何人翻转 config.ts 时必须同步来这里翻转 EXPECTED_SWITCH，
+// main 上必须是 false（合并不改变线上行为）：本 PR 把内测分支的交互补全搬进 main，
+// 但迁移开关保持关闭，只有内测 APK 分支才是 true。
+// 任何人翻转 config.ts 时必须同步来这里翻转 EXPECTED_SWITCH，
 // 这就是双写校验的意义：让"无意翻转"变红，让"有意翻转"留下痕迹。
-const EXPECTED_SWITCH = true // ← 本分支 release/v2.0.1-internal
+const EXPECTED_SWITCH = false // ← main 口径：不向全量用户开启迁移（内测分支为 true）
 
 // 路由结论从 EXPECTED_SWITCH 派生，不写死 'sqlite' / 'indexeddb'：
 // 开关开 = 会启动迁移 → 迁移成功后走 sqlite；开关关 = 不迁移 → 留在 indexeddb。
