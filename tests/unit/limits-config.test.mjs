@@ -136,10 +136,15 @@ const ORIGINAL_VALUES = {
    * #993（本轮「原生备份/恢复」）**新增**的一组，不是搬家项：备份占用的提醒阈值 / 无历史时的
    * 体积预估 / 自动备份最小间隔。手抄在这里的原因与上面各组一致 —— 「改了阈值必须两边一起改」，
    * 免得这组数字在 `limits.ts` 里悄悄漂（本文件不引用 `LIMITS` 自己，就是为了能真的抓住漂移）。
+   *
+   * `nextEstimateBytes` 登记时**顺带纠了一处两个来源**：它原来是 32 MiB 且没人用，而真正生效的是
+   * `services/backup/backupCore.ts` 里另一份 `MIN_ESTIMATE_BYTES = 8 MiB` 字面量（同一件事、
+   * 数值对不上）。现在 `backupCore` 直接取 `LIMITS.backup.nextEstimateBytes`，值取当时真正生效的
+   * 8 MiB —— 这次收敛不改行为。
    */
   backup: {
     spaceWarnBytes: 500 * 1024 * 1024,
-    nextEstimateBytes: 32 * 1024 * 1024,
+    nextEstimateBytes: 8 * 1024 * 1024,
     autoIntervalMs: 24 * 60 * 60 * 1000,
   },
   /**

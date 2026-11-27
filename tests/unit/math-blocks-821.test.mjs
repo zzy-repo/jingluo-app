@@ -36,7 +36,17 @@ const render = (tex) =>
 
 const readSource = (relative) => readFileSync(new URL(`../../${relative}`, import.meta.url), 'utf8')
 
-/** 真探测出来的「不可用命令」集合（不是按版本号猜的） */
+/**
+ * 真探测出来的「不可用命令」集合（不是按版本号猜的）。
+ *
+ * **必须先 `resetCapabilityCache()`**：`probeUnsupportedCommands` 的缓存是**进程级单例**
+ * （运行期只探一次，见 #209），而 run-layer 会把多个用例文件合并进同一个进程跑。
+ * 同批的 `katex-beautify-xss-862.test.mjs` 早一步调过 `planMathRender()`，它注入的渲染器先做了
+ * `normalizeBeautifyMath()` 变换 —— 探针源码被它改写过，于是 `\scalebox` / `\raisebox` 在那份
+ * 缓存里都是「可用」。不先清掉，本文件的 T1b / T4 读到的是**别人渲染器**的探测结论（批内红、
+ * 单跑绿）。清缓存不改任何断言口径，只是把「这份结论属于哪个渲染器」重新钉回本文件。
+ */
+resetCapabilityCache()
 const UNSUPPORTED = probeUnsupportedCommands(render)
 
 /**
