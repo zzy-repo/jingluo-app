@@ -2,6 +2,7 @@ import * as db from '../db.js'
 import { BackupError, fail } from './errors.js'
 import type { SessionIndexEntry } from './format.js'
 import { INDEX_PATH, MANIFEST_PATH, USER_PATH, parseSessionPath, sessionFilesDir } from './paths.js'
+import { formatImportBytes } from './importLimit.js'
 import { checkImportSpace, insufficientSpaceParams } from './quotaPrecheck.js'
 import { checkManifest, readSessionFile, readSessionIndex } from './schema.js'
 import { toLocalSessionResult, type ImportSkip } from './toLocal.js'
@@ -232,7 +233,13 @@ export const importArchive = async (
     emitProgress()
     const space = await checkImportSpace(layout.inflatedBytes)
     if (!space.ok) {
-      fail('historyImportInsufficientSpace', insufficientSpaceParams(space))
+      // 两档拒绝文案，互不替代（#1002 第二轮）：
+      //  · 可信来源说不够 → 「空间不足」+ 需要 / 可用 / 还差 三个真数字；
+      //  · 读不到空间且负载大 → 「暂时无法确认剩余空间」，**不许**说成空间不足（那是另一回事）。
+      if (space.reason === 'insufficient') {
+        fail('historyImportInsufficientSpace', insufficientSpaceParams(space))
+      }
+      fail('historyImportSpaceUnverifiable', { size: formatImportBytes(space.need) })
     }
     stage = 'importing'
     emitProgress()

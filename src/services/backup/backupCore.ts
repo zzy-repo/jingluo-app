@@ -18,7 +18,12 @@
  * **清单最后写**：它的存在就是「这份备份完整」的提交标记 —— 没有清单的归档一律不当成备份
  * （半截产物不会对外宣称「已受保护」）。
  */
-import { normalizeFreeBytes } from '../storage.js'
+import {
+  judgeWriteSpace,
+  SMALL_WRITE_BYTES,
+  WRITE_AMPLIFICATION_FACTOR,
+  type WriteSpaceVerdict,
+} from '../storage.js'
 
 import { LIMITS } from '../limits.js'
 
@@ -59,6 +64,8 @@ export type BackupErrorCode =
   | 'safety-backup-failed'
   | 'corrupt'
   | 'space'
+  /** 读不到剩余空间（原生 `freeBytes` 不可用）、负载又大到不能拿试错换：**不是**空间不足 */
+  | 'space-unverifiable'
   | 'interrupted'
   | 'unknown'
   | 'empty'
@@ -347,14 +354,18 @@ export const selectPrunable = (items: readonly BackupFacts[], keep: number): str
 }
 
 /**
- * 下一份备份的体积预估下限（有历史时用）：最近一份 × 1.2（余量），再兜一个 8MB 地板。
+ * 下一份备份的体积预估下限（**有历史时**用）：最近一份 × 1.2（余量），再兜一个 8MB 地板。
  *
  * 「一份历史都没有」的那一档**不走这个数**，走 `LIMITS.backup.nextEstimateBytes`
  * （配置里的保守值，见 `services/limits.ts` 该组注释）——那个阈值原先只写在配置里、
  * 没有任何消费方，`tests/unit/limits-config.test.mjs` 的「每个叶子都被引用」正是用来抓这类
- * 「看起来可配、其实没人读」的漏接（本轮 #993 就是被它抓到的）。
+ * 「看起来可配、其实没人读」的漏接（#993 就是被它抓到的）。
+ *
+ * 这个 8MB 现在**不是这里的私有数字**：它同时是「空间未知时还能拿试错换一次机会」的小负载上限，
+ * 唯一来源在 `storage.ts` 的 `SMALL_WRITE_BYTES`（那里写着为什么是 8MiB）。#1002 起两者共用一份，
+ * 数值未变（8MiB），只是不再各写一遍。
  */
-export const MIN_ESTIMATE_BYTES = 8 * 1024 * 1024
+export const MIN_ESTIMATE_BYTES = SMALL_WRITE_BYTES
 
 export const estimateNextBytes = (items: readonly BackupFacts[]): number => {
   const latest = [...items].sort(createdDesc)[0]
@@ -365,19 +376,37 @@ export const estimateNextBytes = (items: readonly BackupFacts[]): number => {
 }
 
 /**
- * 空间是否够写下一份。**「未知」一律按「够」处理**：读不到空间（`null`）、读到脏值
- * （NaN / Infinity / 负数 / 超过 2^53-1）都不许阻断备份 —— 那是「把读不到变成没空间」，
- * 设备实测的表现正是「盘已经腾出来了，界面仍说空间不足」。
+ * 空间判据（#1002）：**未知不再一律按「够」处理**。
  *
- * 未知时允许尝试，真失败再按其**真实原因**分类（原生 `NO_SPACE` → `space`）；
- * 相反，可信的「0 字节」与「差一个字节」照拦 —— 不吞真话。
+ * 旧口径「读不到空间就放行」在设备上炸过：`estimate()` 报着漂亮数字、真实只剩 6MB，
+ * 20MB 包一路写到底，LevelDB 半条记录 → Chromium 判损坏 → 整库重建，48 个会话没了。
+ * 所以现在按负载分级（判据全在 `storage.judgeWriteSpace`，这里只决定「要不要写」）：
+ *
+ * - 原生 `freeBytes` 可信 → 由它定生死；
+ * - 读不到 / 脏值 → 预估 ≤ `MIN_ESTIMATE_BYTES`（8MiB）才允许尝试，超过就**拒绝**（说「读不到空间」，
+ *   不说「空间不足」）；
+ * - 真失败再按**真实原因**分类（原生 `NO_SPACE` → `space`）；可信的「0 字节」照拦，不吞真话。
+ *
+ * 需要区分「不够」与「读不到」的调用方用 {@link spaceForWrite} 拿完整结论，
+ * 只想知道能不能写的用本函数。
  */
-export const hasRoomForNext = (freeBytes: number | null, neededBytes: number): boolean => {
-  const free = normalizeFreeBytes(freeBytes)
-  if (free === null) {
-    return true
-  }
-  // 需要的量读不懂时同样不阻断（调用方的预估永远是有限数，这里只防跨界传入的脏值）。
-  const need = Number.isFinite(neededBytes) && neededBytes > 0 ? neededBytes : 0
-  return free >= need
+export const hasRoomForNext = (freeBytes: number | null, neededBytes: number): boolean =>
+  judgeWriteSpace(neededBytes, { nativeFree: freeBytes }).ok
+
+/** 完整结论（调用方据此选文案：`insufficient` 说空间不足，`unverifiable` 说读不到空间）。 */
+export const spaceForWrite = (freeBytes: number | null, neededBytes: number): WriteSpaceVerdict =>
+  judgeWriteSpace(neededBytes, { nativeFree: freeBytes })
+
+/**
+ * 恢复一份备份要落多少字节（含写放大）：归档 + 附件都要先解出来再写回库，
+ * 所以按 `(archive + attachments) × WRITE_AMPLIFICATION_FACTOR` 估。
+ *
+ * 旧实现在恢复路径上**只**用了「安全备份」那一份的预估（`estimateNextBytes`），
+ * 等于把恢复自己要写的那 43MB 附件算成 0 —— 那次事故正是附件写到底。
+ */
+export const restoreNeedBytes = (manifest: BackupManifest): number => {
+  const archive = manifest.archive.sizeBytes
+  const attachments = manifest.attachments?.sizeBytes ?? 0
+  const kept = (value: number): number => (Number.isFinite(value) && value > 0 ? value : 0)
+  return Math.ceil((kept(archive) + kept(attachments)) * WRITE_AMPLIFICATION_FACTOR)
 }

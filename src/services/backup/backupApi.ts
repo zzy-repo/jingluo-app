@@ -28,14 +28,16 @@ import {
   attachmentsFileName,
   backupIdOf,
   classifyFailure,
-  MIN_ESTIMATE_BYTES,
   estimateNextBytes,
   hasRoomForNext,
   manifestFileName,
   manifestToJson,
+  MIN_ESTIMATE_BYTES,
   parseManifest,
   parseManifestFileName,
   parseStatusFile,
+  restoreNeedBytes,
+  spaceForWrite,
   selectPrunable,
   statusFileToJson,
   type BackupErrorCode,
@@ -77,7 +79,7 @@ export type BackupStatus = {
   lastError: string | null
   totalBytes: number
   count: number
-  /** 原生私有目录的可用字节；读不到时为 0（`enoughForNext` 仍按未知处理） */
+  /** 原生私有目录的可用字节；读不到时为 0（真值 `null` 已由 `enoughForNext` 的分级吃掉） */
   freeBytes: number
   enoughForNext: boolean
 }
@@ -540,14 +542,21 @@ const runBackupOnce = async (
   })
   const existing = backups.map((backup) => backup.item)
   const free = await availableBytes()
-  if (!hasRoomForNext(free, estimateNextBytes(existing))) {
-    logDiagnostic('error', 'backup: not enough space', {
+  const needed = estimateNextBytes(existing)
+  // 判据见 `backupCore.hasRoomForNext` / `storage.judgeWriteSpace`：原生 `freeBytes` 是唯一可信来源，
+  // 读不到时**按负载分级**（小负载放行、大负载拒绝），拒绝也要分「空间不足」与「读不到空间」两档文案。
+  const gate = spaceForWrite(free, needed)
+  if (!gate.ok) {
+    logDiagnostic('error', 'backup: space check failed', {
       action: 'backup-preflight',
       trigger,
       freeBytes: free ?? -1,
+      needBytes: needed,
+      verdict: gate.reason,
     })
-    await writeStatusFile({ ...(await readStatusFile()), last_error: 'space' })
-    throw new BackupError('space', 'preflight', true)
+    const code = gate.reason === 'insufficient' ? 'space' : 'space-unverifiable'
+    await writeStatusFile({ ...(await readStatusFile()), last_error: code })
+    throw new BackupError(code, 'preflight', true)
   }
   onProgress?.(0, 1, 'export')
   const payload = await buildPayload(onProgress).catch(async (error: unknown) => {
@@ -727,6 +736,29 @@ export const restoreBackup = (id: string, onProgress?: Progress): Promise<Restor
     const manifest = target.manifest
     onProgress?.(0, 1, 'verify')
     await verifyBackup(manifest)
+
+    // ①' 空间判据（#1002 第二轮）：恢复自己也要落盘 —— 归档解出来 + 附件写回库，
+    //     按 `restoreNeedBytes`（含写放大 2×）判，**不能**只依赖下面「安全备份」那一份的预估：
+    //     设备事故里正是安全备份过了，恢复要写的 43MB 附件把盘写到底 → LevelDB 半条记录 → 整库重建。
+    //     判据与导入同一条线（`storage.judgeWriteSpace`）：原生 `freeBytes` 可信就用它，
+    //     读不到时小负载放行、大负载拒绝，并且「读不到空间」与「空间不足」是两档文案。
+    const needForRestore = restoreNeedBytes(manifest)
+    const freeForRestore = await availableBytes()
+    const restoreGate = spaceForWrite(freeForRestore, needForRestore)
+    if (!restoreGate.ok) {
+      logDiagnostic('error', 'restore: space check failed', {
+        action: 'backup-restore',
+        needBytes: needForRestore,
+        freeBytes: freeForRestore ?? -1,
+        verdict: restoreGate.reason,
+      })
+      // 还什么都没动（校验只读），所以 currentDataIntact = true
+      throw new BackupError(
+        restoreGate.reason === 'insufficient' ? 'space' : 'space-unverifiable',
+        'preflight',
+        true
+      )
+    }
 
     // ① 先保护现有数据：安全备份失败 ⇒ 立即中止，不动任何现有数据
     onProgress?.(0, 1, 'safety')

@@ -4,6 +4,7 @@
 //
 // 顺序必须是「先补两个短板，再提上限」，所以本文件的断言也是这个顺序：
 //   ① 导入前剩余空间预检：不够就**在写第一条会话之前**拒绝，一个会话都不许入库；
+//      （#1002 第二轮）可信来源只有原生 `freeBytes`，`estimate()` 只作否决；空间未知时按负载分级——
 //   ② 进度与取消：进度只由真实条目/会话计数推进（不许定时器），取消后不留半截数据；
 //   ③ 上限常量：500MiB、导出上限自动跟随、解压闸 ≥ 4 倍。
 //
@@ -61,7 +62,11 @@ const { message, sessionBytes, manifestBytes, indexBytes, zipFileOf } = await im
 )
 const { importArchive } = await import('../../src/services/chat/history/importArchive.ts')
 const { readArchiveLayout } = await import('../../src/services/chat/history/zipReader.ts')
-const { setImportSpaceNoteSink } = await import('../../src/services/chat/history/quotaPrecheck.ts')
+const { setImportSpaceNoteSink, setNativeFreeBytesReader } = await import(
+  '../../src/services/chat/history/quotaPrecheck.ts'
+)
+const { WRITE_AMPLIFICATION_FACTOR } = await import('../../src/services/storage.ts')
+const { translate } = await import('../../src/i18n/index.ts')
 const {
   DEFAULT_MAX_IMPORT_BYTES,
   IMPORT_QUOTA_SAFETY_FACTOR,
@@ -111,6 +116,15 @@ const estimateOf = ({ quota, free }) => ({
   estimate: async () => ({ quota, usage: quota - free }),
 })
 
+/**
+ * 装原生 `freeBytes()` 的读数口（**唯一可信来源**）。`bytes === null` = 原生读不到。
+ * 不装的时候默认走动态 import（裸 Node 里 `availableBytes()` 返回 null = 未知）。
+ */
+const withNativeFree = (bytes) => {
+  setNativeFreeBytesReader(async () => bytes)
+  return () => setNativeFreeBytesReader(undefined)
+}
+
 /** 每次用例前把暂存与计数器清干净（假 db 是进程级单例）。 */
 const resetStaging = () => {
   db.stagingSessions.length = 0
@@ -142,8 +156,10 @@ test('① 空间不足：在写第一个会话之前拒绝，一个会话都没�
 
   const file = archiveOf(['s1', 's2', 's3'])
   const layout = await readArchiveLayout(file)
+  // 需求 = 解压总量 × 安全系数 × 写放大（暂存 + 提交两份），见 storage.WRITE_AMPLIFICATION_FACTOR
+  const need = Math.ceil(layout.inflatedBytes * IMPORT_QUOTA_SAFETY_FACTOR * WRITE_AMPLIFICATION_FACTOR)
   // 只留一半的余量：需要的空间一定大于它
-  const free = Math.floor((layout.inflatedBytes * IMPORT_QUOTA_SAFETY_FACTOR) / 2)
+  const free = Math.floor(need / 2)
   t.after(withStorage(estimateOf({ quota: 1000 * MB, free })))
 
   const { error } = await runImport(file, { onProgress: (p) => seen.push(p) })
@@ -152,8 +168,7 @@ test('① 空间不足：在写第一个会话之前拒绝，一个会话都没�
   assert.equal(error.key, 'historyImportInsufficientSpace', '错误码要能分辨「空间不足」和「包太大」')
 
   // 文案：三个数字都是插值出来的，一个写死的 MB 数都不许有
-  const need = Math.ceil(layout.inflatedBytes * IMPORT_QUOTA_SAFETY_FACTOR)
-  assert.equal(error.params.need, formatImportBytes(need), '需要多少（解压后总量 × 安全系数）')
+  assert.equal(error.params.need, formatImportBytes(need), '需要多少（解压后总量 × 安全系数 × 写放大）')
   assert.equal(error.params.free, formatImportBytes(free), '当前可用多少')
   assert.equal(error.params.short, formatImportBytes(need - free), '还差多少')
   assert.match(error.message, /还差/, '文案要说出「还差多少」')
@@ -183,6 +198,7 @@ test('① 空间不足：在写第一个会话之前拒绝，一个会话都没�
   assert.ok(rejected, '空间不足要在诊断里留一条')
   assert.equal(rejected.fields['import.need.bytes'], need)
   assert.equal(rejected.fields['import.free.bytes'], free)
+  assert.equal(rejected.fields['import.space.decidedBy'], 'estimate', '这一档的否决来自 estimate（原生读不到）')
 })
 
 test('① 反向：空间充足 → 正常导入（预检不许把正常包误杀）', async (t) => {
@@ -192,8 +208,9 @@ test('① 反向：空间充足 → 正常导入（预检不许把正常包误�
 
   const file = archiveOf(['s1', 's2', 's3'])
   const layout = await readArchiveLayout(file)
-  // 恰好等于需求：边界不缩水（写成 > 就会误拒）
-  const free = Math.ceil(layout.inflatedBytes * IMPORT_QUOTA_SAFETY_FACTOR)
+  // 原生读数恰好等于需求：边界不缩水（写成 > 就会误拒）
+  const free = Math.ceil(layout.inflatedBytes * IMPORT_QUOTA_SAFETY_FACTOR * WRITE_AMPLIFICATION_FACTOR)
+  t.after(withNativeFree(free))
   t.after(withStorage(estimateOf({ quota: 1000 * MB, free })))
 
   const { error, result } = await runImport(file)
@@ -338,8 +355,10 @@ test('④ 需求按「解压后总量 × 系数」算，不是归档字节数', 
     )
     assert.equal(
       error.params.need,
-      formatImportBytes(Math.ceil(layout.inflatedBytes * IMPORT_QUOTA_SAFETY_FACTOR)),
-      'need 必须来自解压后总量 × 系数'
+      formatImportBytes(
+        Math.ceil(layout.inflatedBytes * IMPORT_QUOTA_SAFETY_FACTOR * WRITE_AMPLIFICATION_FACTOR)
+      ),
+      'need 必须来自解压后总量 × 系数（含写放大）'
     )
     assert.notEqual(error.params.need, formatImportBytes(Math.ceil(file.size * IMPORT_QUOTA_SAFETY_FACTOR)))
     assert.equal(db.counts.addStagingSession, 0)
@@ -350,7 +369,10 @@ test('④ 需求按「解压后总量 × 系数」算，不是归档字节数', 
   // 反向：给够解压后总量对应的余量 → 同一个包放行
   resetStaging()
   const restore2 = withStorage(
-    estimateOf({ quota: 1000 * MB, free: Math.ceil(layout.inflatedBytes * IMPORT_QUOTA_SAFETY_FACTOR) })
+    estimateOf({
+      quota: 1000 * MB,
+      free: Math.ceil(layout.inflatedBytes * IMPORT_QUOTA_SAFETY_FACTOR * WRITE_AMPLIFICATION_FACTOR),
+    })
   )
   try {
     const { error } = await runImport(file)
@@ -539,4 +561,160 @@ test('⑦ 直链导入的时间预算按新上限重算（≥ 60 分钟，且与
     required >= MIN_ACCEPTABLE_BYTES_PER_SEC,
     `所需最低带宽 ${Math.round(required)}B/s 低于门槛 ${MIN_ACCEPTABLE_BYTES_PER_SEC}`
   )
+})
+
+// ---------------------------------- ⑥ 空间判据分级（#1002 第二轮：estimate 不证明写盘安全）
+
+/**
+ * 设备二次事故：`estimate()` 报着**正常值**（quota 3.7GB / usage 45.6MB），真实剩余只有 6MB；
+ * 20MB 包一路写到底 → LevelDB 半条记录（`Corruption: partial record`）→ Chromium 判损坏并重建 →
+ * 43MB 附件、48 个会话全丢。所以判据改成：
+ *
+ *  - **唯一可信来源** = 原生 `freeBytes`（`setNativeFreeBytesReader` 注入的就是它那条链）；
+ *  - `estimate()` 只做否决（说「不够」可信，说「够」不作数）；
+ *  - 空间未知 → 小负载放行（≤ `SMALL_WRITE_BYTES`）、大负载拒绝，且拒绝文案**不许**说「空间不足」。
+ *
+ * 大负载用「高压缩比 + 400 万字节正文」的包造：解压后 ~4MB，乘 2.5 ≈ 10MB > 8MiB 分级线。
+ */
+const largeArchive = () => archiveOf(['big1'], { compress: true, content: 'A'.repeat(4_000_000) })
+
+test('⑥a 大负载 + 空间未知 → 拒绝，文案是「无法确认剩余空间」而不是「空间不足」', async (t) => {
+  resetStaging()
+  const notes = []
+  setImportSpaceNoteSink((note) => notes.push(note))
+  t.after(() => setImportSpaceNoteSink(undefined))
+  t.after(withNativeFree(null))
+  // 连 estimate 都没有：两个来源全未知
+  t.after(withStorage(undefined))
+
+  const file = largeArchive()
+  const layout = await readArchiveLayout(file)
+  const need = Math.ceil(layout.inflatedBytes * IMPORT_QUOTA_SAFETY_FACTOR * WRITE_AMPLIFICATION_FACTOR)
+  assert.ok(need > 8 * MB, `前置：这一包的 need（${formatImportBytes(need)}）必须落在大负载档`)
+
+  const { error } = await runImport(file)
+
+  assert.equal(error?.name, 'BackupError', '必须明确失败，不许静默跳过')
+  assert.equal(
+    error.key,
+    'historyImportSpaceUnverifiable',
+    '错误码要能分辨「读不到空间」与「空间不足」'
+  )
+  assert.equal(error.params.size, formatImportBytes(need), '文案要说清这次大约要多少（插值）')
+  // 文案纪律：这一档**不许**说成空间不足
+  assert.doesNotMatch(error.message, /空间不足|还差|请先清理/, `读不到空间 ≠ 没空间（实际：${error.message}）`)
+  assert.match(error.message, /无法确认|重启应用/, '要给出可照做的下一步')
+  assert.doesNotMatch(
+    translate('historyImportSpaceUnverifiable', { size: '10MB' }),
+    /空间不足|还差/,
+    '文案资源本身也不许出现「空间不足」'
+  )
+
+  // 一个会话都不许落盘
+  assert.equal(db.counts.addStagingSession, 0)
+  assert.equal(db.stagingSessions.length, 0)
+  assert.equal(db.counts.saveStagingFiles, 0)
+
+  const note = notes.find((item) => item.fields['import.quota.state'] === 'unverifiable')
+  assert.ok(note, '这一档要留痕')
+  assert.equal(note.fields['import.space.tier'], 'large')
+  assert.equal(note.fields['import.space.source'], 'none')
+})
+
+test('⑥b 大负载 + 原生明确不足 → 拒绝，文案**才是**「空间不足」（真数字来自原生）', async (t) => {
+  resetStaging()
+  const notes = []
+  setImportSpaceNoteSink((note) => notes.push(note))
+  t.after(() => setImportSpaceNoteSink(undefined))
+
+  const file = largeArchive()
+  const layout = await readArchiveLayout(file)
+  const need = Math.ceil(layout.inflatedBytes * IMPORT_QUOTA_SAFETY_FACTOR * WRITE_AMPLIFICATION_FACTOR)
+  // 现场值：盘里只剩 6MB
+  const free = 6 * MB
+  t.after(withNativeFree(free))
+  // estimate 同时报着「很宽裕」，也不许影响判定
+  t.after(withStorage(estimateOf({ quota: 3700 * MB, free: 3650 * MB })))
+
+  const { error } = await runImport(file)
+
+  assert.equal(error?.key, 'historyImportInsufficientSpace')
+  assert.equal(error.params.need, formatImportBytes(need))
+  assert.equal(error.params.free, formatImportBytes(free), '报的可用空间必须是原生真数字')
+  assert.equal(error.params.short, formatImportBytes(need - free))
+  assert.match(error.message, /空间不足|还差/, '可信来源说不够时要说实话')
+  assert.equal(db.counts.addStagingSession, 0)
+
+  const note = notes.find((item) => item.fields['import.quota.state'] === 'insufficient')
+  assert.ok(note)
+  assert.equal(note.fields['import.space.decidedBy'], 'native', '这一档是原生下的判断')
+  assert.equal(note.fields['import.free.bytes'], free)
+})
+
+test('⑥c 大负载 + 原生够用 → 放行（原生说够就是够，estimate 说什么都不影响）', async (t) => {
+  resetStaging()
+  setImportSpaceNoteSink(() => {})
+  t.after(() => setImportSpaceNoteSink(undefined))
+
+  const file = largeArchive()
+  const layout = await readArchiveLayout(file)
+  const need = Math.ceil(layout.inflatedBytes * IMPORT_QUOTA_SAFETY_FACTOR * WRITE_AMPLIFICATION_FACTOR)
+  t.after(withNativeFree(need))
+  // estimate 是脏值：原生可信时不许把它带坏
+  t.after(withStorage({ estimate: async () => ({ quota: 1000 * MB, usage: 18_446_744_073_709_552_000 }) }))
+
+  const { error } = await runImport(file)
+  assert.equal(error, null, `原生说够就必须能导（实际 ${error?.key}）`)
+  assert.equal(db.stagingSessions.length, 1)
+})
+
+test('⑥d 小负载 + 空间未知 → 放行（试错代价可控），诊断记 small 档', async (t) => {
+  resetStaging()
+  const notes = []
+  setImportSpaceNoteSink((note) => notes.push(note))
+  t.after(() => setImportSpaceNoteSink(undefined))
+  t.after(withNativeFree(null))
+  t.after(withStorage(undefined))
+
+  const { error } = await runImport(archiveOf(['s1', 's2']))
+  assert.equal(error, null, '小包不该被「读不到空间」拦住')
+  assert.equal(db.stagingSessions.length, 2)
+  const note = notes.find((item) => item.fields['import.quota.state'] === 'unmeasurable')
+  assert.ok(note)
+  assert.equal(note.fields['import.space.tier'], 'small')
+})
+
+test('⑥e estimate 脏值 + 原生可信 → 以原生为准（两个方向都不许被 estimate 翻盘）', async (t) => {
+  const file = largeArchive()
+  const layout = await readArchiveLayout(file)
+  const need = Math.ceil(layout.inflatedBytes * IMPORT_QUOTA_SAFETY_FACTOR * WRITE_AMPLIFICATION_FACTOR)
+  const dirty = { estimate: async () => ({ quota: 1000 * MB, usage: 18_446_744_073_709_552_000 }) }
+
+  // 方向一：原生够 + estimate 脏 → 放行
+  resetStaging()
+  setImportSpaceNoteSink(() => {})
+  t.after(() => setImportSpaceNoteSink(undefined))
+  const restoreEnough = withNativeFree(need)
+  const restoreDirty = withStorage(dirty)
+  try {
+    const { error } = await runImport(file)
+    assert.equal(error, null, 'estimate 脏值不许把可信的原生读数带成「拒绝」')
+    assert.equal(db.stagingSessions.length, 1)
+  } finally {
+    restoreEnough()
+    restoreDirty()
+  }
+
+  // 方向二：原生不够 + estimate 看着很宽裕 → 仍然拒绝
+  resetStaging()
+  const restoreShort = withNativeFree(MB)
+  const restorePlenty = withStorage(estimateOf({ quota: 3700 * MB, free: 3650 * MB }))
+  try {
+    const { error } = await runImport(file)
+    assert.equal(error?.key, 'historyImportInsufficientSpace', 'estimate 说够不作数，原生说不够就是不够')
+    assert.equal(db.counts.addStagingSession, 0)
+  } finally {
+    restoreShort()
+    restorePlenty()
+  }
 })

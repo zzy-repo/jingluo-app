@@ -17,9 +17,10 @@
  * ## 算法（需求怎么估）
  *
  * ```
- * need  = ceil(中央目录里全部条目声明的解压尺寸之和 × IMPORT_QUOTA_SAFETY_FACTOR)
- * free  = quota - usage          （navigator.storage.estimate()）
- * 拒绝   = need > free
+ * need  = ceil(解压总量 × IMPORT_QUOTA_SAFETY_FACTOR × WRITE_AMPLIFICATION_FACTOR)
+ * free  = 原生 freeBytes()                       ← 唯一可信来源
+ *       ↳ 读不到时：estimate() 的 quota-usage      ← 只用于否决（说「不够」可信，说「够」不作数）
+ * 拒绝   = need > free（可信来源） / 读不到空间且 need > SMALL_WRITE_BYTES（分级拒绝）
  * ```
  *
  * - **不用归档字节数当需求**：归档字节数只是下载体积，真正要落盘的是解压后的会话 JSON + 图片原件。
@@ -28,21 +29,22 @@
  *   所以**在读第一个字节之前**就能判定。
  * - 安全系数见 `importLimit.IMPORT_QUOTA_SAFETY_FACTOR` 的注释（含为什么不是 1.0）。
  *
- * ## 能力探测：探测不到就放行
+ * ## 空间判据：两个来源、四个分支（#1002 第二轮）
  *
- * `navigator.storage.estimate()` 在三种环境下不存在 / 不可用：老 WebView（本仓兼容下限 Chrome 83
- * 有，但 Android System WebView 可能被系统降级）、隐私 / 无痕模式、以及被企业策略关掉 StorageManager
- * 的宿主。**不能因为「估不出来」就把人拦住** —— 那是把可用性换成了保守。所以：
+ * 设备现场推翻了口径「`estimate()` 通过 = 写盘安全」：那次 `estimate()` 报的是**正常值**
+ * （quota 3.7GB / usage 45.6MB），真实剩余只有 6MB，20MB 包把盘写到底，LevelDB 半条记录
+ * → Chromium 判损坏并重建 → 43MB 附件、48 个会话全丢。所以判据改成：
  *
  * | 探测结果 | 判定 | 说明 |
  * | --- | --- | --- |
- * | 拿不到 `quota`（无 API / 抛错 / 字段缺失 / 非正数） | **放行**（`unmeasurable`） | 并在诊断里记一条 `import.quota.unmeasurable` |
- * | 拿到的数字是**脏值**（`usage` 超过 2^53-1 / `usage > quota` / `NaN` / `Infinity` / 负数） | **放行**（`unmeasurable`） | 收口规则见 `services/storage.ts`；#1002 设备实测的 UINT64_MAX 就是这一档 |
- * | `need <= free` | 放行（`sufficient`） | 不记日志，避免每次导入都刷一条 |
- * | `need > free` | **拒绝**（`insufficient`） | 报还差多少 / 当前可用多少，并在诊断里记一条 |
+ * | 原生 `freeBytes()` 可信，`need <= free` | 放行（`sufficient`） | 不看 `estimate()` 说什么 |
+ * | 原生 `freeBytes()` 可信，`need > free` | **拒绝**（`insufficient`） | 三个数字都是原生的真数字 |
+ * | 原生读不到，但 `estimate()` 可信且**明确不够** | **拒绝**（`insufficient`） | 保守方向：这个上限本身也是硬顶，越过它照样写不进去 |
+ * | 都读不到 / `estimate()` 只是「看着够」 | `need <= SMALL_WRITE_BYTES` 放行（`unmeasurable-small`）<br>`need` 更大 → **拒绝**（`unverifiable`） | 大负载不能拿试错换：文案说「暂时无法确认剩余空间」，**不说**「空间不足」 |
  *
- * 「脏值 → 未知 → 放行」这条是**契约**而不是兜底：旧实现把脏 `usage` 折算成「当前可用 0 字节」，
- * 于是盘里明明有 4.8GB 可用、界面却说「还差 23.9MB」并拒绝一切导入（#1002，重启 App 才恢复）。
+ * 「脏值 / 读不到」仍然绝不折算成「0 字节可用」（那是第一轮 #1002 的 bug：盘里 4.8GB，
+ * 界面却报「还差 23.9MB」并拒绝一切导入）。收口与分级全在 `services/storage.ts` 的
+ * `judgeWriteSpace`，这里只负责探测两个来源、把结论翻译成导入侧的错误码。
  *
  * 放行不等于不管：`db.ts` 的 `QuotaExceededError` 兜底（`quota` 档 + 孤儿 blob 清理后重试一次）
  * **原样保留**，预检只是把「本来会炸在 80%」的那部分提前到 0%。
@@ -57,13 +59,17 @@
  */
 import { IMPORT_QUOTA_SAFETY_FACTOR, formatImportBytes } from './importLimit.js'
 import {
-  isTrustworthySpace,
+  judgeWriteSpace,
+  normalizeFreeBytes,
   normalizeStorageEstimate,
+  WRITE_AMPLIFICATION_FACTOR,
   type StorageSpace,
+  type WriteSpaceProbe,
+  type WriteSpaceVerdict,
 } from '../../storage.js'
 
-/** 宿主提供的剩余空间（`estimate()` 只是估计，永远当参考值用；收口规则见 `services/storage.ts`）。 */
-export type { StorageSpace }
+/** `estimate()` 的可信测量 / 判定输入：都在 `services/storage.ts` 收口。 */
+export type { StorageSpace, WriteSpaceProbe }
 
 /** 诊断条目：`message` 是给人看的一句话，`fields` 只放数字 / 短字符串，不含任何归档内容。 */
 export type ImportSpaceNote = {
@@ -107,14 +113,14 @@ const storageManager = (): StorageManager | undefined => {
 }
 
 /**
- * 读当前可用空间。**任何一步拿不到、或者拿到的数字不可信就返回 `undefined`**（= 探测不到，调用方放行）：
- * 没有 `storage`、没有 `estimate`、`estimate()` 抛错、`quota` 缺失 / 非正数、
- * 以及**脏值**（`usage` 超过 2^53-1 / `usage > quota` / `NaN` / `Infinity` / 负数）。
+ * 读 `estimate()` 的**辅助信号**。**任何一步拿不到、或者拿到的数字不可信就返回 `undefined`**：
+ * 没有 `storage`、没有 `estimate`、`estimate()` 抛错、`quota` 缺失 / 非正数、以及**脏值**
+ * （`usage` 超过 2^53-1 / `usage > quota` / `NaN` / `Infinity` / 负数）。
  *
  * 脏值不许折算成 `usage = 0`：那等于「宿主报了个读不懂的数 → 判定当前可用 0 字节」，
- * 也就是 #1002 的现场（盘里还有 4.8GB，导入却被全部拒绝）。
+ * 也就是第一轮 #1002 的现场（盘里还有 4.8GB，导入却被全部拒绝）。
  */
-export const probeStorageSpace = async (): Promise<StorageSpace | undefined> => {
+export const probeEstimateSpace = async (): Promise<StorageSpace | undefined> => {
   const storage = storageManager()
   if (storage === undefined || typeof storage.estimate !== 'function') {
     return undefined
@@ -126,62 +132,119 @@ export const probeStorageSpace = async (): Promise<StorageSpace | undefined> => 
   }
 }
 
-/** 一次判定的结果：`ok=false` 时三个数字都已算好，直接进文案。 */
-export type ImportSpaceVerdict =
-  | { ok: true; reason: 'sufficient'; need: number; free: number }
-  | { ok: true; reason: 'unmeasurable'; need: number }
-  | { ok: false; reason: 'insufficient'; need: number; free: number; short: number }
+/** 原生可用字节的读数口（返回 `null` = 读不到 / 脏值）。 */
+export type NativeFreeBytesReader = () => Promise<number | null>
+
+let nativeFreeReader: NativeFreeBytesReader | undefined
 
 /**
- * 纯函数（L0 可单测）：解压后总量 + 探测到的空间 → 判定。
+ * 注入原生 `freeBytes` 的读数口（用例与其它层用）。不传 = 回到默认的**动态 import**。
  *
- * `space` 探测不到、或这份测量本身不可信（`isTrustworthySpace` 为 false）→ 放行。这条分支是
- * **契约**，不是兜底：「估不出来就把人拦住」会把老 WebView 变成完全不能导入，比空间不足更糟；
- * 而「脏值折成 0 可用」正是 #1002 的 bug（一次脏读 → 拒绝一切导入）。
+ * 为什么默认走动态 import：`history/**` 的单测全在裸 Node 里跑，静态 import 原生出口会把
+ * `@capacitor/core` 拉进依赖图（与 `diagnostics` 同一个理由，见文件头），十几个既有用例都要补替身。
+ */
+export const setNativeFreeBytesReader = (reader?: NativeFreeBytesReader): void => {
+  nativeFreeReader = reader
+}
+
+/**
+ * 读原生 `freeBytes()`（**唯一可信来源**）。三条纪律：
+ *  - Web / 老壳 / 插件缺失 → `null`（未知），不抛错；
+ *  - 脏值（NaN / Infinity / 负数 / 超过 2^53-1）→ `null`，与 `estimate()` 同一把尺子；
+ *  - 读不到不等于 0：调用方按「未知」分级处理，见 `judgeWriteSpace`。
+ */
+export const probeNativeFree = async (): Promise<number | null> => {
+  const reader = nativeFreeReader
+  if (reader !== undefined) {
+    try {
+      return normalizeFreeBytes(await reader())
+    } catch {
+      return null
+    }
+  }
+  try {
+    const mod = await import('../../backup/nativeBackupFs.js')
+    return normalizeFreeBytes(await mod.availableBytes())
+  } catch {
+    return null
+  }
+}
+
+/** 两个来源一起探：原生是主，`estimate()` 只填来当否决信号。 */
+export const probeWriteSpace = async (): Promise<WriteSpaceProbe> => {
+  const [nativeFree, estimate] = await Promise.all([probeNativeFree(), probeEstimateSpace()])
+  return { nativeFree, estimateFree: estimate === undefined ? null : estimate.free }
+}
+
+/** 一次判定的结果：与 `storage.judgeWriteSpace` 同一套分支（`ok=false` 时数字已算好，直接进文案）。 */
+export type ImportSpaceVerdict = WriteSpaceVerdict
+
+/**
+ * 纯函数（L0 可单测）：解压后总量 + 两个来源的读数 → 判定。
+ *
+ * `need` 已经含**写放大**（暂存 + 提交两份）与安全系数，所以判的是「这次导入真正要落多少」，
+ * 不是「包有多大」。分级与来源优先级全在 `judgeWriteSpace`，这里只负责把解压总量换算成 need。
  */
 export const judgeImportSpace = (
   inflatedBytes: number,
-  space: StorageSpace | undefined
+  probe: WriteSpaceProbe
 ): ImportSpaceVerdict => {
   const safeInflated = Number.isFinite(inflatedBytes) && inflatedBytes > 0 ? inflatedBytes : 0
-  const need = Math.ceil(safeInflated * IMPORT_QUOTA_SAFETY_FACTOR)
-  if (!isTrustworthySpace(space)) {
-    return { ok: true, reason: 'unmeasurable', need }
+  const need = Math.ceil(safeInflated * IMPORT_QUOTA_SAFETY_FACTOR * WRITE_AMPLIFICATION_FACTOR)
+  return judgeWriteSpace(need, probe)
+}
+
+/** 诊断口径：`unmeasurable`（放行）/ `unverifiable`（拒绝）都带着「哪一档」的细分。 */
+const reportVerdict = (inflatedBytes: number, probe: WriteSpaceProbe, verdict: ImportSpaceVerdict): void => {
+  const source =
+    probe.nativeFree !== null && probe.nativeFree !== undefined
+      ? 'native'
+      : probe.estimateFree !== null && probe.estimateFree !== undefined
+        ? 'estimate'
+        : 'none'
+  const fields: Record<string, string | number | boolean> = {
+    'import.inflated.bytes': inflatedBytes,
+    'import.need.bytes': verdict.need,
+    'import.space.source': source,
   }
-  if (space.free >= need) {
-    return { ok: true, reason: 'sufficient', need, free: space.free }
+  if (verdict.reason === 'insufficient') {
+    fields['import.quota.state'] = 'insufficient'
+    fields['import.space.decidedBy'] = verdict.source
+    fields['import.free.bytes'] = verdict.free
+    fields['import.short.bytes'] = verdict.short
+  } else if (verdict.reason === 'unmeasurable-small') {
+    // 口径不变：诊断面板按 `import.quota.state` 分档，「哪一档负载」另开字段
+    fields['import.quota.state'] = 'unmeasurable'
+    fields['import.space.tier'] = 'small'
+  } else if (verdict.reason === 'unverifiable') {
+    fields['import.quota.state'] = 'unverifiable'
+    fields['import.space.tier'] = 'large'
+  } else {
+    fields['import.quota.state'] = 'sufficient'
+    fields['import.free.bytes'] = verdict.free
   }
-  return { ok: false, reason: 'insufficient', need, free: space.free, short: need - space.free }
+  report({
+    message:
+      verdict.ok
+        ? verdict.reason === 'sufficient'
+          ? 'import: quota precheck passed'
+          : 'import: quota precheck skipped (space unknown, small payload)'
+        : verdict.reason === 'insufficient'
+          ? 'import: quota precheck rejected'
+          : 'import: quota precheck rejected (space unknown, large payload)',
+    fields,
+  })
 }
 
 /**
  * 预检入口：探测 + 判定 + 留痕。**返回判定**，不抛错 —— 抛不抛、抛什么由调用方决定
- * （`importArchive` 用 `historyImportInsufficientSpace`，两条导入链路因此共用同一套文案）。
+ * （`importArchive` 用 `historyImportInsufficientSpace` / `historyImportSpaceUnverifiable`
+ * 两种文案，两条导入链路因此共用同一套判断）。
  */
 export const checkImportSpace = async (inflatedBytes: number): Promise<ImportSpaceVerdict> => {
-  const space = await probeStorageSpace()
-  const verdict = judgeImportSpace(inflatedBytes, space)
-  if (verdict.reason === 'unmeasurable') {
-    report({
-      message: 'import: quota precheck skipped (storage.estimate unavailable)',
-      fields: {
-        'import.quota.state': 'unmeasurable',
-        'import.inflated.bytes': inflatedBytes,
-        'import.need.bytes': verdict.need,
-      },
-    })
-  } else if (verdict.reason === 'insufficient') {
-    report({
-      message: 'import: quota precheck rejected',
-      fields: {
-        'import.quota.state': 'insufficient',
-        'import.inflated.bytes': inflatedBytes,
-        'import.need.bytes': verdict.need,
-        'import.free.bytes': verdict.free,
-        'import.short.bytes': verdict.short,
-      },
-    })
-  }
+  const probe = await probeWriteSpace()
+  const verdict = judgeImportSpace(inflatedBytes, probe)
+  reportVerdict(inflatedBytes, probe, verdict)
   return verdict
 }
 
@@ -190,7 +253,7 @@ export const checkImportSpace = async (inflatedBytes: number): Promise<ImportSpa
  * 文案里一个写死的 MB 数字都不许有。
  */
 export const insufficientSpaceParams = (
-  verdict: Extract<ImportSpaceVerdict, { ok: false }>
+  verdict: Extract<ImportSpaceVerdict, { reason: 'insufficient' }>
 ): { need: string; free: string; short: string } => ({
   need: formatImportBytes(verdict.need),
   free: formatImportBytes(verdict.free),

@@ -407,6 +407,8 @@ export const en = {
   historyImportFinalizingCount: 'Finishing up… {processed}/{total} chats done',
   historyImportProgressHint:
     'Keep this page open while importing. Cancel stops it right away, clears the temporary data, and leaves your local chats untouched.',
+  historyImportSpaceUnverifiable:
+    'Unable to confirm the free space on this device, so the large import was paused (nothing was written). Restart the app and try again, or use a smaller export file — your local chats are untouched.',
   historyImportInsufficientSpace:
     'Not enough free space: this import needs about {need}, but only {free} is available ({short} short). Free up space or use a smaller export file and try again — nothing has been imported and your local chats are untouched.',
   importTraceTitle: 'Import details ({count})',
@@ -497,6 +499,10 @@ export const en = {
   backupStatusEmpty: 'There are no chats to back up right now',
   backupStatusUnsupported: 'This environment does not support backing up to this device',
   backupStatusSpace: 'Not enough storage space to back up right now',
+  backupStatusSpaceUnverifiable:
+    'Unable to confirm the free space on this device, so the large backup was paused (existing backups are untouched). Restart the app and try again.',
+  backupStatusRestoreSpaceUnverifiable:
+    'Unable to confirm the free space on this device, so the restore did not start (your current data is untouched). Restart the app and try again.',
   backupStatusInterrupted: 'The last backup did not finish. Your existing backups are unaffected.',
   backupStatusCorrupt: 'This backup is damaged and cannot be restored',
   backupStatusRestoreFailedIntact: 'Restore did not finish. Your current data is still on this device.',

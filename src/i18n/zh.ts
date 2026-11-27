@@ -395,6 +395,8 @@ export const zh = {
   historyImportFinalizingCount: '正在收尾… 已完成 {processed}/{total} 个会话',
   historyImportProgressHint:
     '导入期间请保持页面打开；点「取消」会立刻停止，已写入的临时数据会被清理，本地会话不会变成半截。',
+  historyImportSpaceUnverifiable:
+    '暂时无法确认本机剩余空间，大文件导入已暂停（这次没有写入任何数据）。请重启应用后重试，或换一个更小的导出包；本机会话未受影响。',
   historyImportInsufficientSpace:
     '设备剩余空间不足：这次导入大约需要 {need}，当前可用 {free}，还差 {short}。请先清理存储空间，或换一个更小的导出包再试（尚未开始导入，本地会话未受影响）。',
   importTraceTitle: '导入详情（{count} 条）',
@@ -487,6 +489,10 @@ export const zh = {
   backupStatusEmpty: '当前没有可备份的聊天记录',
   backupStatusUnsupported: '当前环境不支持备份到本机存储',
   backupStatusSpace: '存储空间不足，暂时无法备份',
+  backupStatusSpaceUnverifiable:
+    '暂时无法确认本机剩余空间，大文件备份已暂停（已有备份未受影响）。请重启应用后重试。',
+  backupStatusRestoreSpaceUnverifiable:
+    '暂时无法确认本机剩余空间，这次恢复没有开始（原有数据未受影响）。请重启应用后重试。',
   backupStatusInterrupted: '上次备份没有完成，已有备份未被影响',
   backupStatusCorrupt: '备份文件损坏，无法用于恢复',
   backupStatusRestoreFailedIntact: '恢复没有完成，原有数据仍然保存在设备上',
