@@ -25,8 +25,26 @@ export type Runner = {
  * 而重试自己也是扇出（并发），于是**点几次都失败**。
  *
  * 排队不是吞异常：每一次调用仍然执行，失败的仍然抛给上层；排队只保证它们**互相不撞**。
- * 事务内部不要再调顶层 runner（那是 `joinedRunner` 的活儿）：这种写法在本闸之前就是直接报
- * 「nested transactions not supported」，现在它会**等待**，所以别这么写。
+ *
+ * ## 不变量：本闸**不可重入**
+ *
+ * 一个任务进闸之后，它的 `work()` 内部**禁止**再调 `topRunner.direct` / `topRunner.tx`
+ * （同一个 db）。原因是构造性的：重入时 `queues.get(db)` 拿到的队尾就是**自己这次尚未
+ * resolve 的 promise**，`tail.then(work)` 于是排在「等自己」上 → **永久挂起**。
+ *
+ * 这条为什么危险：改前这种写法是**直接报错**（原生侧 `guardIdle()` 抛
+ * `connection is inside a transaction`、JS 侧 `db.transaction()` 抛
+ * `nested transactions not supported`），可恢复、有栈可查；进闸之后它变成**等不到头的
+ * 等待**，生产现场只表现为「应用卡住」，没有日志、没有栈，只能杀进程。
+ *
+ * 所以：**事务 / `runAtomic` 回调内部只能使用传进来的 `ex`（或 `tx`）句柄**，读和写都走它
+ * ——那正是 `joinedRunner(tx)` 的职责（直通 `work(tx)`，不过闸，见下）。回调里也不许回头
+ * 调外层的 `storage.<repo>` 门面，那条路用的就是 `topRunner`。
+ *
+ * 这条不变量靠「约定 + 静态护栏」守住，不靠运行期检测：浏览器没有 `AsyncLocalStorage`，
+ * 运行期无法区分「任务内重入」与「外部并发」——两者在调用点上都是「当前有一次 work 在飞」，
+ * 而外部并发正是本闸要排队放行的正常情况（`chat/store.ts` 的持久化就是扇出）。误判成重入
+ * 会把这个闸修好的问题原样打回去。护栏见 `tests/unit/serialization-invariants-951.test.mjs`。
  */
 const queues = new WeakMap<SqlDatabase, Promise<unknown>>()
 
