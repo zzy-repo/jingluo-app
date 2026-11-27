@@ -304,7 +304,29 @@ test('[3] 空库：拒绝备份，历史备份一条不删不变', async () => {
   })
   assert.deepEqual(filesOf(first.id), before)
   assert.equal((await api.listBackups()).length, 1)
-  assert.equal((await api.getStatus()).lastError, 'empty')
+  // 空库拒绝备份这件事由上面抛出的 `empty` 承担；`getStatus()` **不再**把这条历史结论
+  // 当「当前状态」播报（设备实测：用户后来写了对话，设置页仍显示「当前没有可备份的聊天记录」）
+  assert.equal((await api.getStatus()).lastError, null)
+})
+
+/* ------------------------------------------------- [6] 丢库的机器：空库也要能恢复 */
+
+test('[6] 本机 0 会话时恢复必须能进行（安全备份遇空库只跳过，不中止）', async () => {
+  reset()
+  const first = await api.runBackup('manual')
+  // 模拟丢库：本机一条会话都没有
+  globalThis.__nextSessions = 0
+  await assert.rejects(api.runBackup('auto'), (error) => {
+    assert.equal(error.code, 'empty')
+    return true
+  })
+  // 这正是恢复功能存在的理由：空库时不能因为「没有数据可做安全备份」就拒绝恢复
+  await api.restoreBackup(first.id)
+  assert.equal(importCalls.length, 1)
+  assert.equal(importCalls[0].mode, 'overwrite')
+  // 空库没东西可保护，所以不该多出一份空的安全备份
+  assert.equal((await api.listBackups()).length, 1)
+  assert.equal((await api.getStatus()).lastError, null)
 })
 
 /* ------------------------------------------------------------------ [4] 恢复前必须先安全备份 */

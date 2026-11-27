@@ -56,6 +56,7 @@ import {
   type NativeFileEntry,
 } from './nativeBackupFs.js'
 import type { DocumentAttachment } from '../attachments/types.js'
+import type { StoredAttachmentText } from '../chat/db.js'
 
 /** 列表里的一条备份：**只有界面需要的四个业务字段 + 会话数**，不含路径与校验值。 */
 export type BackupItem = {
@@ -363,6 +364,22 @@ const packAttachments = async (
     }
     onProgress?.(index + 1, rows.length, 'attachments')
   }
+  // 解析全文是**派生缓存**，但 `manager.getText()` 只读缓存、**不会重解析**（见其实现），
+  // 所以不带走它，恢复后文档原件虽然在、正文却再也读不到 —— 模型那边等于没有这份文档。
+  // 它是内容寻址的幂等记录（`sha256:parserVersion`），一起打包不会让包变大太多。
+  const texts: StoredAttachmentText[] = []
+  for (const row of rows) {
+    const record = await store.readAttachmentTextRecord(row.parsedTextPath)
+    if (record) {
+      texts.push(record)
+    }
+  }
+  if (texts.length > 0) {
+    entries.push({
+      name: 'texts.json',
+      blob: new Blob([JSON.stringify(texts)], { type: 'application/json' }),
+    })
+  }
   const { writeArchive } = await import('../chat/history/zipWriter.js')
   return { blob: await writeArchive(entries), count }
 }
@@ -570,6 +587,7 @@ const restoreAttachments = async (blob: Blob, name: string): Promise<number> => 
   const file = new File([blob], name, { type: 'application/zip' })
   const blobs: { id: string; blob: Blob }[] = []
   let rows: DocumentAttachment[] = []
+  let texts: StoredAttachmentText[] = []
   for await (const entry of readArchive(file)) {
     if (entry.path === 'attachments.json') {
       const parsed: unknown = JSON.parse(await (await readEntry(entry)).text())
@@ -578,15 +596,43 @@ const restoreAttachments = async (blob: Blob, name: string): Promise<number> => 
       }
       continue
     }
+    // 老备份没有 texts.json：恢复原件与元数据即可，正文缺失与「解析缓存被清」等价
+    if (entry.path === 'texts.json') {
+      const parsed: unknown = JSON.parse(await (await readEntry(entry)).text())
+      if (Array.isArray(parsed)) {
+        texts = parsed as StoredAttachmentText[]
+      }
+      continue
+    }
     if (entry.path.endsWith('.bin')) {
       blobs.push({ id: entry.path.slice(0, -'.bin'.length), blob: await readEntry(entry) })
     }
   }
+  // 归档里的 blob 不带 MIME（zip 条目不存类型），这里按元数据里的 mimeType 补回去，
+  // 否则恢复出来的原件是 `type: ''`，缩略图 / 打开查看会按未知类型处理
+  const mimeOf = new Map(rows.map((row) => [row.localPath, row.mimeType]))
   if (blobs.length > 0) {
-    await db.saveFiles(blobs)
+    await db.saveFiles(
+      blobs.map(({ id, blob: raw }) => {
+        const type = mimeOf.get(id)
+        return { id, blob: type ? new Blob([raw], { type }) : raw }
+      })
+    )
   }
   for (const row of rows) {
     await store.putAttachment(row)
+  }
+  for (const record of texts) {
+    await store.writeAttachmentTextRecord({
+      sha256: record.sha256,
+      parserVersion: record.parserVersion,
+      text: record.text,
+      characterCount: record.characterCount,
+      status: record.status,
+      totalPages: record.totalPages,
+      extractedPages: record.extractedPages,
+      warnings: record.warnings,
+    })
   }
   return blobs.length
 }
