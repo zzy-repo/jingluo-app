@@ -13,6 +13,7 @@ import {
 import type { Session, SessionSummary } from '../../../chat/types.js'
 import type { SessionRepo } from '../../types.js'
 import { encodeKey } from '../mapping.js'
+import { queryAll } from '../paged.js'
 import type { Runner } from './context.js'
 import {
   allKeys,
@@ -54,7 +55,10 @@ const writeSession = async (ex: Ex, session: Session): Promise<void> => {
 /** 清掉没有任何会话引用的孤儿原件（尽力而为，失败不抛）。避开 `keep` 与 `attachment-` 前缀。 */
 const sweepOrphanFiles = (runner: Runner, keep: ReadonlySet<string>): Promise<number> =>
   runner.tx(async (ex) => {
-    const referenced = new Set((await ex.all('SELECT DISTINCT file_id AS f FROM session_summary_file_ids')).map((row) => keyOf(row.f)))
+    // #940：引用表行数随会话量增长 → 分页取全（键很小，但行数无上限）
+    const referenced = new Set(
+      (await queryAll(ex, 'SELECT DISTINCT file_id AS f FROM session_summary_file_ids')).map((row) => keyOf(row.f)),
+    )
     const doomed = (await allKeys(ex, 'files')).filter(
       (key) => !referenced.has(key) && !keep.has(key) && !isAttachmentBlobKey(key),
     )
@@ -208,16 +212,18 @@ export const createSessionRepo = (runner: Runner, mode: 'top' | 'atomic'): Sessi
           await deleteRow(ex, 'files', id)
         }
       }
-      const memoryKeys = (await ex.all('SELECT id FROM session_memory WHERE session_id = ?', [encodeKey(sessionId)])).map((row) =>
-        keyOf(row.id),
-      )
+      const memoryKeys = (
+        await queryAll(ex, 'SELECT id FROM session_memory WHERE session_id = ?', [encodeKey(sessionId)])
+      ).map((row) => keyOf(row.id))
       await deleteRows(ex, 'sessionMemory', memoryKeys)
     }),
 
   listReferencing: (fileId) =>
     runner.direct(async (ex) =>
       (
-        await ex.all('SELECT summary_id AS s FROM session_summary_file_ids WHERE file_id = ? ORDER BY summary_id', [encodeKey(fileId)])
+        await queryAll(ex, 'SELECT summary_id AS s FROM session_summary_file_ids WHERE file_id = ? ORDER BY summary_id', [
+          encodeKey(fileId),
+        ])
       ).map((row) => keyOf(row.s)),
     ),
 

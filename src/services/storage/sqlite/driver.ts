@@ -27,13 +27,32 @@ export type SqlErrorCode =
   | 'SQLITE_CONSTRAINT'
   | 'SQLITE_IOERR'
   | 'OTHER'
+  | typeof RESULT_TOO_LARGE
+  | typeof RESULT_INCOMPLETE
 
 export type SqlErrorShape = { kind: InfraErrorKind; code: SqlErrorCode; message: string }
+
+/**
+ * 「单次结果超出原生上限」（#940）。与 SQLite 自身的错误码不同级：它是**适配层造出来的**限制，
+ * 必须能被上层稳定分类（用户可见文案归 `migration/failure-class.ts`，本层只保证 code 稳定）。
+ */
+export const RESULT_TOO_LARGE = 'RESULT_TOO_LARGE'
+
+/** 「分页/分块没取完却被当成取完了」（#940）：对账不上就抛它，绝不把部分结果当成功返回。 */
+export const RESULT_INCOMPLETE = 'RESULT_INCOMPLETE'
+
+/** 一页分页结果。`done` 只在**真读到结果集末尾**时为 `true`；`nextOffset` 是下一页的起始偏移。 */
+export type SqlPage = { rows: SqlRow[]; done: boolean; nextOffset: number }
+
+/** 分页请求：行窗口（原生按字节预算还会提前收口，见 `allPaged`）。 */
+export type SqlPageQuery = { limit: number; offset: number }
 
 /** 一个事务内的操作面。只能在 `transaction()` 的回调里用，回调结束即失效。 */
 export type SqlTx = {
   run(sql: string, params?: readonly SqlValue[]): Promise<SqlRunResult>
   all(sql: string, params?: readonly SqlValue[]): Promise<SqlRow[]>
+  /** 事务内的分页读，契约同 `SqlDatabase.allPaged`（#940）。 */
+  allPaged(sql: string, params?: readonly SqlValue[], page?: SqlPageQuery): Promise<SqlPage>
 }
 
 export type SqlDriverInfo = {
@@ -49,6 +68,19 @@ export type SqlDriverInfo = {
 export type SqlDatabase = {
   run(sql: string, params?: readonly SqlValue[]): Promise<SqlRunResult>
   all(sql: string, params?: readonly SqlValue[]): Promise<SqlRow[]>
+
+  /**
+   * 分页读（#940）：把「一次查询要把全部结果攒进一个数组」的旧语义拆成可控窗口。
+   *
+   * 契约（两侧都必须守住）：
+   *  - `done === true` 仅在**读到结果集末尾**时为真；没读完不许 true。
+   *  - `done === false` 时 `rows.length >= 1`，且 `nextOffset > offset`（调用方据此循环，不会死循环）。
+   *  - 原生还有一层字节预算：再加一行就会越过 `MAX_RESULT_BYTES` 时**提前收口**（`done:false`），
+   *    所以 `rows.length` 可能小于 `limit`；**只有「第一行本身就超预算」才抛 `RESULT_TOO_LARGE`**。
+   *  - 不传 `page` 等价于 `all()`（整段返回，超限抛 `RESULT_TOO_LARGE`）。
+   *  - `sql` 必须是 SELECT：分页由原生 `SELECT * FROM (sql) LIMIT ? OFFSET ?` 实现。
+   */
+  allPaged(sql: string, params?: readonly SqlValue[], page?: SqlPageQuery): Promise<SqlPage>
 
   /**
    * 交互式写事务（BEGIN IMMEDIATE … COMMIT）。回调抛错 → ROLLBACK 并原样抛出。

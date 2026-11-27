@@ -7,10 +7,11 @@
 import type { RawStoreName } from '../../migration/types.js'
 import type { Page, PageQuery } from '../../types.js'
 import type { SqlValue } from '../driver.js'
-import { isDriverError, type SqliteStorageError } from './errors.js'
+import { isDriverError, isResultTooLarge, type SqliteStorageError } from './errors.js'
 import { deleteBlob, readBlobBytes, writeBlob, type BlobExec } from '../blobStore.js'
 import { blobSlotsOf, decodeDoc, decodeKey, encodeDoc, encodeKey, keyParam, SqliteCodecError, type DecodedBlobBytes } from '../mapping.js'
 import { integrityError } from './errors.js'
+import { queryAll, readTextColumn } from '../paged.js'
 import { isBlobOwner, STORE_TABLES } from '../schema.js'
 
 export type Ex = BlobExec
@@ -143,9 +144,40 @@ const hydrate = async (ex: Ex, store: RawStoreName, key: string, json: string): 
 
 export const getRow = async <T = unknown>(ex: Ex, store: RawStoreName, key: string): Promise<T | undefined> => {
   const { table, keyColumn } = STORE_TABLES[store]
-  const rows = await ex.all(`SELECT doc FROM ${table} WHERE ${keyColumn} = ?`, [encodeKey(key)])
-  const row = rows[0]
-  return row === undefined ? undefined : ((await hydrate(ex, store, key, String(row.doc))) as T)
+  // #940：`doc` 单列可能自己就超过原生 4 MiB（一条超长会话）→ 走分块读，总长对不上就抛，不返回残缺 doc
+  const read = await readTextColumn(ex, { table, column: 'doc', where: `${keyColumn} = ?`, params: [encodeKey(key)] })
+  if (!read.found || read.value === null) {
+    return undefined
+  }
+  return (await hydrate(ex, store, key, read.value)) as T
+}
+
+/** 这一行的 doc 文本（分块读，见 `getRow`）；没有这一行 / doc 为 NULL 时 `undefined`。 */
+const docOf = async (ex: Ex, store: RawStoreName, key: string): Promise<string | undefined> => {
+  const { table, keyColumn } = STORE_TABLES[store]
+  const read = await readTextColumn(ex, { table, column: 'doc', where: `${keyColumn} = ?`, params: [encodeKey(key)] })
+  return read.found && read.value !== null ? read.value : undefined
+}
+
+/**
+ * 多行直读撞上原生上限时的退路（#940）：只读键（可安全分页），再逐行取 doc（单列分块）。
+ * 行序与直读一致（同样 `ORDER BY 键`），所以结果可预期。
+ */
+const rowsByKeys = async (
+  ex: Ex,
+  store: RawStoreName,
+  keys: readonly string[],
+): Promise<unknown[]> => {
+  const out: unknown[] = []
+  for (const key of keys) {
+    const doc = await docOf(ex, store, key)
+    if (doc === undefined) {
+      // 键是从同一张表同一条语句里取出来的，读不到 doc 只能是并发删除或实现 bug：不能静默少给
+      throw integrityError(`${store}/${key} 在键页里存在，但读不到 doc`)
+    }
+    out.push(await hydrate(ex, store, key, doc))
+  }
+  return out
 }
 
 export const hasRow = async (ex: Ex, store: RawStoreName, key: string): Promise<boolean> => {
@@ -200,6 +232,8 @@ const limitOf = (query: PageQuery | undefined): number | undefined => {
 /**
  * 主键升序的一页键。不传 `limit` = 全部（docs §6.3 的保守取值，#926 待 lead 定案）。
  * `next` = 本页最后一个键；没有更多时为 null（整倍数时不多给空页）。
+ *
+ * #940：键本身很小，但**全表键（不传 limit）**在超大库上一样能越过原生上限 → 撞限时改走 `queryAll` 诚实分页。
  */
 export const pageKeys = async (ex: Ex, store: RawStoreName, query?: PageQuery): Promise<Page<string>> => {
   const { table, keyColumn } = STORE_TABLES[store]
@@ -215,7 +249,16 @@ export const pageKeys = async (ex: Ex, store: RawStoreName, query?: PageQuery): 
     sql += ' LIMIT ?'
     params.push(limit + 1)
   }
-  const keys = (await ex.all(sql, params)).map((row) => keyOf(row.k))
+  let keys: string[]
+  try {
+    keys = (await ex.all(sql, params)).map((row) => keyOf(row.k))
+  } catch (error) {
+    if (!isResultTooLarge(error)) {
+      throw error
+    }
+    // 分页口取同一条 SQL（含 LIMIT），只有真到末尾才结束
+    keys = (await queryAll(ex, sql, params, { pageRows: Math.max(1, limit ?? 512) })).map((row) => keyOf(row.k))
+  }
   if (limit === undefined || keys.length <= limit) {
     return { items: keys, next: null }
   }
@@ -238,7 +281,17 @@ export const pageRows = async (ex: Ex, store: RawStoreName, query?: PageQuery): 
     sql += ' LIMIT ?'
     params.push(limit + 1)
   }
-  const rows = await ex.all(sql, params)
+  let rows
+  try {
+    rows = await ex.all(sql, params)
+  } catch (error) {
+    if (!isResultTooLarge(error)) {
+      throw error
+    }
+    // #940：这一页装不下（多条大 doc 或一条巨 doc）→ 只取键，再逐行分块读
+    const keys = await pageKeys(ex, store, query)
+    return { items: await rowsByKeys(ex, store, keys.items), next: keys.next }
+  }
   const hasMore = limit !== undefined && rows.length > limit
   const page = hasMore ? rows.slice(0, limit) : rows
   const items: unknown[] = []
@@ -271,17 +324,30 @@ export const deleteRows = async (ex: Ex, store: RawStoreName, keys: readonly str
   }
 }
 
-/** 条件查询：`where` 只来自仓储内部的常量片段，值走绑定参数。按主键升序，返回还原后的行值（以 doc 为准）。 */
+/**
+ * 条件查询：`where` 只来自仓储内部的常量片段，值走绑定参数。按主键升序，返回还原后的行值（以 doc 为准）。
+ *
+ * #940：这类「一次把整个 store 的 doc 都带回来」的查询是最容易越界的一类（例如附件清单全量）。
+ * 撞上原生上限时退化成「只取键 + 逐行分块读」，结果集与直读完全一致，只是多几次查询。
+ */
 export const selectRows = async <T = unknown>(
   ex: Ex,
   store: RawStoreName,
   where?: { sql: string; params: SqlValue[]; orderBy?: string },
 ): Promise<T[]> => {
   const { table, keyColumn } = STORE_TABLES[store]
-  const rows = await ex.all(
-    `SELECT ${keyColumn} AS k, doc FROM ${table}${where ? ` WHERE ${where.sql}` : ''} ORDER BY ${where?.orderBy ?? keyColumn}`,
-    where?.params ?? [],
-  )
+  const selectSql = `SELECT ${keyColumn} AS k, doc FROM ${table}${where ? ` WHERE ${where.sql}` : ''} ORDER BY ${where?.orderBy ?? keyColumn}`
+  let rows
+  try {
+    rows = await ex.all(selectSql, where?.params ?? [])
+  } catch (error) {
+    if (!isResultTooLarge(error)) {
+      throw error
+    }
+    const keySql = `SELECT ${keyColumn} AS k FROM ${table}${where ? ` WHERE ${where.sql}` : ''} ORDER BY ${where?.orderBy ?? keyColumn}`
+    const keys = (await queryAll(ex, keySql, where?.params ?? [])).map((row) => keyOf(row.k))
+    return (await rowsByKeys(ex, store, keys)) as T[]
+  }
   const out: T[] = []
   for (const row of rows) {
     out.push((await hydrate(ex, store, keyOf(row.k), String(row.doc))) as T)

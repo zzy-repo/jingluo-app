@@ -11,13 +11,14 @@
  *
  * 将来原件落文件系统时，只需把本文件换成「文件 + 元数据」实现（`storage` 列区分），上层不变。
  */
-import type { SqlTx } from './driver.js'
+import type { SqlRow, SqlTx } from './driver.js'
 import { encodeKey } from './mapping.js'
-import { integrityError } from './repos/errors.js'
+import { isResultTooLarge, integrityError } from './repos/errors.js'
+import { readColumnBytes } from './paged.js'
 import { Sha256Stream } from './repos/sha256Stream.js'
 import { BLOB_CHUNK_BYTES, BLOB_STORAGE_SQLITE_CHUNKS, type BlobOwner } from './schema.js'
 
-export type BlobExec = Pick<SqlTx, 'run' | 'all'>
+export type BlobExec = Pick<SqlTx, 'run' | 'all' | 'allPaged'>
 
 /** 一次读多少块：4 × 512 KiB = 2 MiB，不超过 Android `CursorWindow` 的窗口量级。 */
 const READ_BATCH_CHUNKS = 4
@@ -54,6 +55,33 @@ export const writeBlob = async (exec: BlobExec, owner: BlobOwner, id: string, bl
   )
 }
 
+/**
+ * 退路（#940）：`SELECT … data` 一页就撞原生上限时，逐块读。
+ * 先只取 `seq`/`len`（极小），再按列分块取 `data`，长度对账交给 `readColumnBytes`。
+ */
+const readChunkRowByRow = async (
+  exec: BlobExec,
+  owner: BlobOwner,
+  id: string,
+  fromSeq: number,
+): Promise<SqlRow[]> => {
+  const heads = await exec.all(
+    'SELECT seq, len FROM blob_chunks WHERE owner = ? AND id = ? AND seq >= ? ORDER BY seq LIMIT ?',
+    [owner, encodeKey(id), fromSeq, READ_BATCH_CHUNKS],
+  )
+  const out: SqlRow[] = []
+  for (const head of heads) {
+    const seq = num(head.seq)
+    const read = await readColumnBytes(
+      exec,
+      { table: 'blob_chunks', column: 'data', where: 'owner = ? AND id = ? AND seq = ?', params: [owner, encodeKey(id), seq] },
+      { chunkBytes: BLOB_CHUNK_BYTES },
+    )
+    out.push({ seq: head.seq ?? null, len: head.len ?? null, data: read.found ? read.value : null })
+  }
+  return out
+}
+
 /** 读一个原件的字节（分块，已校验）。不存在返回 `undefined`。 */
 export const readBlobBytes = async (exec: BlobExec, owner: BlobOwner, id: string): Promise<StoredBlobBytes | undefined> => {
   const metaRows = await exec.all(
@@ -74,10 +102,19 @@ export const readBlobBytes = async (exec: BlobExec, owner: BlobOwner, id: string
   let bytes = 0
   let expectedSeq = 0
   while (expectedSeq < chunks) {
-    const rows = await exec.all(
-      'SELECT seq, len, data FROM blob_chunks WHERE owner = ? AND id = ? AND seq >= ? ORDER BY seq LIMIT ?',
-      [owner, encodeKey(id), expectedSeq, READ_BATCH_CHUNKS],
-    )
+    let rows: Record<string, unknown>[]
+    try {
+      rows = await exec.all(
+        'SELECT seq, len, data FROM blob_chunks WHERE owner = ? AND id = ? AND seq >= ? ORDER BY seq LIMIT ?',
+        [owner, encodeKey(id), expectedSeq, READ_BATCH_CHUNKS],
+      )
+    } catch (error) {
+      // #940：旧库（或更粗的分块）里单块本身就可能越过原生 4 MiB 上限 → 这一块按列分块读，别整条链失败
+      if (!isResultTooLarge(error)) {
+        throw error
+      }
+      rows = await readChunkRowByRow(exec, owner, id, expectedSeq)
+    }
     if (rows.length === 0) {
       throw integrityError(`${owner}/${id} 缺块：期望 ${chunks} 块，读到 ${expectedSeq} 块`)
     }

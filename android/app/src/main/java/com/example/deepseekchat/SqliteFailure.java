@@ -20,6 +20,13 @@ final class SqliteFailure extends Exception {
     static final String UNAVAILABLE = "unavailable";
     static final String UNKNOWN = "unknown";
 
+    /**
+     * 稳定码（#940）：「单次结果超出 {@link AppSqlitePlugin#MAX_RESULT_BYTES}」。
+     * 它不是 SQLite 的错误码，是适配层自己的限制，但必须能被上层稳定分类，
+     * 所以走 {@code code} 而不是 message 文本（用户可见文案由 TS 侧按 code 映射）。
+     */
+    static final String RESULT_TOO_LARGE = "RESULT_TOO_LARGE";
+
     /** androidx.sqlite 的异常文本："Error code: %d, message: %s" */
     private static final Pattern ERROR_CODE = Pattern.compile("Error code: (\\d+)");
 
@@ -39,6 +46,18 @@ final class SqliteFailure extends Exception {
 
     static SqliteFailure of(String kind, String message) {
         return new SqliteFailure(kind, "OTHER", false, message, null, -1);
+    }
+
+    /**
+     * 单次结果（或单行）超出 {@link #MAX_RESULT_BYTES}（#940）。
+     * kind 仍是 {@code unknown}（既有口径不变），但 {@code code} 换成稳定码，
+     * 上层据此分类，不再靠匹配 message 文案。
+     */
+    static SqliteFailure resultTooLarge() {
+        return new SqliteFailure(UNKNOWN, RESULT_TOO_LARGE, false,
+                "result exceeds " + AppSqlitePlugin.MAX_RESULT_BYTES
+                        + " bytes; refusing to truncate (use limit/offset paging or read the column in chunks)",
+                null, -1);
     }
 
     SqliteFailure withIndex(int statementIndex) {
