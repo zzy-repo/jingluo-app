@@ -222,7 +222,7 @@
 - `installFetchHook()` 里真正 await 体积的那一行（不是 `bytes:` 字段了，写法已改成先落变量）—— 在把 `response` 交还调用方**之前** await；正因为这一行，`readBytesOf` 里任何会等到流关闭的读法都会卡住 SSE（见 #211）：`src/services/diagnostics/collector.ts:1161 ⇒ const responseBytes = await readBytesOf(response)`；
 - 页面级替换：`src/services/diagnostics/collector.ts:1214 ⇒ window.fetch = patched as unknown as typeof window.fetch`；
 - `installCapacitorHttpHook()` —— 另外再包一层 `CapacitorHttp.get/post/…`：`src/services/diagnostics/collector.ts:1276 ⇒ const installCapacitorHttpHook = (): void => {`；
-- `installHooks()` —— 由 `initCollector()` 在启动时调用，只有显式传 `installHooks: false` 才不装 → 生产包里这层包装**一直是活的**：定义 `src/services/diagnostics/collector.ts:1505 ⇒ const installHooks = (): void => {`，开关 `src/services/diagnostics/collector.ts:1629 ⇒ if (options.installHooks !== false) {`，入口链路 `src/main.tsx:76 ⇒ void initDiagnostics({ facts: readDiagnosticsFacts })` → `initDiagnostics()` → `initCollector()`。
+- `installHooks()` —— 由 `initCollector()` 在启动时调用，只有显式传 `installHooks: false` 才不装 → 生产包里这层包装**一直是活的**：定义 `src/services/diagnostics/collector.ts:1505 ⇒ const installHooks = (): void => {`，开关 `src/services/diagnostics/collector.ts:1629 ⇒ if (options.installHooks !== false) {`，入口链路 `src/main.tsx:78 ⇒ void initDiagnostics({ facts: readDiagnosticsFacts })` → `initDiagnostics()` → `initCollector()`。
 
 **Capacitor 侧会在什么条件下再换一次：** Capacitor Android 运行时的 `native-bridge`（**不是本仓文件**，在 @capacitor/android 里）先存 `win.CapacitorWebFetch = window.fetch`，再 `window.fetch = async (…) => …`，整段由 `doPatchHttp` 控制；Android 上 `doPatchHttp` 要求 `CapacitorHttp.isEnabled()`，而它读的是 `plugins.CapacitorHttp.enabled`（默认 `false`）。**本仓 `capacitor.config.ts` 没有这个条目，所以今天 fetch 还是原生的。** 风险不在「现在就挂」，而在于：
 
