@@ -13,6 +13,7 @@ import {
   type GateView,
   type MigrationSpaceShortfall,
 } from '../../services/storage/gate.js'
+import { copyPlanOf, diagnosticTextOf } from '../../services/storage/migration/failure-class.js'
 import styles from './MigrationGate.module.css'
 
 /**
@@ -22,8 +23,10 @@ import styles from './MigrationGate.module.css'
  *  - `checking`：什么都不画（一次异步判定，没有注册迁移运行时时是同一个微任务内结束）。
  *  - `migrating`：阻塞页 + 阶段 + 百分比 + 体积/空间数字 + 「保持前台」提醒。
  *  - `succeeded`：**真校验通过后**的一次性成功提示（「已完成迁移并通过完整性校验」），确认或短暂停留后进 App。
- *  - `failed`：明确原因；`interrupted` 与 `insufficient-space` 各有专属说明与出路（继续升级 / 重新检测 / 继续用原数据）。
- *  - `unsupported`：本机暂不支持存储升级，明确告知一次（仍用 IndexedDB，不影响使用），确认后进 App。
+ *  - `failed`：**全部文案与入口来自 `migration/failure-class.ts` 的分类结论**（#940）：
+ *    档位说「出了什么事」、数据状态说「我的数据现在怎么样」、入口说「下一步怎么办」；
+ *    原始异常只进诊断日志与「复制诊断」，不上屏幕。
+ *  - `unsupported`：本机暂不支持存储升级，明确告知一次（仍用旧存储，不影响使用），确认后进 App。
  *  - `blocked`：明确说明 + 重载 / 复制诊断信息；**绝不**落到空白欢迎页。
  */
 
@@ -194,41 +197,84 @@ export const MigrationView = ({
   }
 
   if (view.kind === 'failed') {
-    const code = view.failure.code
-    // 场景 2：空间不足。三个数字 + 清理指引 + 「重新检测」（独立入口，重新走 ensureStorageReady/preflight）。
-    if (code === 'insufficient-space') {
-      const space = view.space
-      const cleanup = space === undefined ? undefined : cleanupBytesOf(space)
-      const spaceLines: string[] = []
-      if (space !== undefined && space.freeBytes !== undefined) {
-        spaceLines.push(t('storageMigrationSpaceFree', { free: formatBytes(space.freeBytes) }))
-        spaceLines.push(t('storageMigrationSpaceNeed', { need: formatBytes(space.requiredBytes) }))
-        if (cleanup !== undefined) {
-          spaceLines.push(t('storageMigrationSpaceCleanup', { cleanup: formatBytes(cleanup) }))
-        }
+    // 失败页的文案与入口**只**来自分类器（`migration/failure-class.ts`）：
+    // 档位说「出了什么事」，数据状态说「我的数据现在怎么样」，入口说「下一步怎么办」。
+    // `view.failure.message` 是原始异常原文，只在诊断日志与「复制诊断」里出现，**不上屏幕**。
+    const plan = copyPlanOf(view.classification)
+    const space = plan.tier === 'space' ? view.space : undefined
+    const cleanup = space === undefined ? undefined : cleanupBytesOf(space)
+    const spaceLines: string[] = []
+    if (space !== undefined && space.freeBytes !== undefined) {
+      spaceLines.push(t('storageMigrationSpaceFree', { free: formatBytes(space.freeBytes) }))
+      spaceLines.push(t('storageMigrationSpaceNeed', { need: formatBytes(space.requiredBytes) }))
+      if (cleanup !== undefined) {
+        spaceLines.push(t('storageMigrationSpaceCleanup', { cleanup: formatBytes(cleanup) }))
       }
-      const onCopyGuide = async () => {
-        const ok = await copyText([...spaceLines, t('storageMigrationSpaceGuide')].join('\n'))
-        setCopy(ok ? 'done' : 'failed')
-      }
-      return (
-        <div className={styles.screen} role="alert" data-testid="migration-gate-failed">
-          <div className={styles.card}>
-            <div className={styles.title}>{t('storageMigrationSpaceTitle')}</div>
-            <div className={styles.description}>{t('storageMigrationSpaceBody')}</div>
+    }
+    const onCopyGuide = async () => {
+      const ok = await copyText([...spaceLines, t('storageMigrationSpaceGuide')].join('\n'))
+      setCopy(ok ? 'done' : 'failed')
+    }
+    const onCopyDiagnostics = async () => {
+      const ok = await copyText(diagnosticTextOf(view.classification))
+      setCopy(ok ? 'done' : 'failed')
+    }
+    return (
+      <div
+        className={styles.screen}
+        role="alert"
+        data-testid="migration-gate-failed"
+        data-failure-tier={plan.tier}
+      >
+        <div className={styles.card}>
+          <div className={styles.title}>{t(plan.titleKey)}</div>
+          <div className={styles.description}>{t(plan.bodyKey)}</div>
+          {spaceLines.length > 0 && (
             <div className={styles.numbers} data-testid="migration-gate-space-numbers">
-              {spaceLines.length > 0
-                ? spaceLines.map((line) => <div key={line}>{line}</div>)
-                : <div>{t('storageMigrationFailSpace')}</div>}
+              {spaceLines.map((line) => (
+                <div key={line}>{line}</div>
+              ))}
             </div>
+          )}
+          {spaceLines.length > 0 && (
             <div className={styles.guide} data-testid="migration-gate-space-guide">
               <div className={styles.guideTitle}>{t('storageMigrationSpaceGuideTitle')}</div>
               <div className={styles.guideBody}>{t('storageMigrationSpaceGuide')}</div>
             </div>
-            <div className={styles.actions}>
+          )}
+          <div className={styles.hint} data-testid="migration-gate-failure-data">
+            {t(plan.dataKey)}
+          </div>
+          {plan.showUninstallWarning && (
+            <div className={styles.danger} data-testid="migration-gate-interrupted-warning">
+              {t('storageMigrationInterruptedWarning')}
+            </div>
+          )}
+          <div className={styles.hint} data-testid="migration-gate-failure-next">
+            {t(plan.nextKey)}
+          </div>
+          <div className={styles.actions}>
+            {plan.showRetry && (
+              <Button size="m" block data-testid="migration-gate-retry" onClick={onRetry}>
+                {t('storageMigrationRetry')}
+              </Button>
+            )}
+            {plan.showRecheck && (
               <Button size="m" block data-testid="migration-gate-recheck" onClick={onRecheck}>
                 {t('storageMigrationRecheck')}
               </Button>
+            )}
+            {plan.primaryAction === 'continue' && (
+              <Button size="m" block data-testid="migration-gate-continue" onClick={onContinue}>
+                {t('storageMigrationKeepOriginal')}
+              </Button>
+            )}
+            {plan.showContinue && plan.primaryAction !== 'continue' && (
+              <Button variant="outlined" size="m" block data-testid="migration-gate-continue" onClick={onContinue}>
+                {t('storageMigrationKeepOriginal')}
+              </Button>
+            )}
+            {spaceLines.length > 0 && (
               <Button variant="outlined" size="m" block data-testid="migration-gate-copy-guide" onClick={() => void onCopyGuide()}>
                 {t(
                   copy === 'done'
@@ -238,60 +284,18 @@ export const MigrationView = ({
                       : 'storageMigrationSpaceGuideCopy',
                 )}
               </Button>
-              <Button variant="outlined" size="m" block data-testid="migration-gate-defer" onClick={onContinue}>
-                {t('storageMigrationSpaceDefer')}
+            )}
+            {(plan.showDiagnostics || plan.showUninstallWarning) && (
+              <Button variant="outlined" size="m" block data-testid="migration-gate-copy-diagnostics" onClick={() => void onCopyDiagnostics()}>
+                {t(
+                  copy === 'done'
+                    ? 'errorScreenCopied'
+                    : copy === 'failed'
+                      ? 'errorScreenCopyFailed'
+                      : 'errorScreenCopyDiagnostics',
+                )}
               </Button>
-            </div>
-          </div>
-        </div>
-      )
-    }
-
-    // 场景 4：迁移被中断（abort / 进程被杀后的重入）。专属说明 + 明确「不要卸载 / 不要清除数据」。
-    if (code === 'interrupted') {
-      return (
-        <div className={styles.screen} role="alert" data-testid="migration-gate-interrupted">
-          <div className={styles.card}>
-            <div className={styles.title}>{t('storageMigrationInterruptedTitle')}</div>
-            <div className={styles.description}>{t('storageMigrationInterruptedBody')}</div>
-            <div className={styles.danger} data-testid="migration-gate-interrupted-warning">
-              {t('storageMigrationInterruptedWarning')}
-            </div>
-            <div className={styles.actions}>
-              <Button size="m" block data-testid="migration-gate-retry" onClick={onRetry}>
-                {t('storageMigrationInterruptedAction')}
-              </Button>
-              <Button variant="outlined" size="m" block data-testid="migration-gate-continue" onClick={onContinue}>
-                {t('storageMigrationInterruptedLater')}
-              </Button>
-            </div>
-          </div>
-        </div>
-      )
-    }
-
-    const reason =
-      code === 'unsupported' && view.failure.message.startsWith('source-too-large')
-        ? t('storageMigrationFailTooLarge')
-        : code === 'unsupported'
-          ? t('storageMigrationFailUnknownSpace')
-          : t('storageMigrationFailGeneric', { message: view.failure.message })
-    return (
-      <div className={styles.screen} role="alert" data-testid="migration-gate-failed">
-        <div className={styles.card}>
-          <div className={styles.title}>{t('storageMigrationFailedTitle')}</div>
-          <div className={styles.description}>{t('storageMigrationFailedBody')}</div>
-          <code className={styles.detail}>{reason}</code>
-          <div className={styles.actions}>
-            <Button size="m" block data-testid="migration-gate-retry" onClick={onRetry}>
-              {t('storageMigrationRetry')}
-            </Button>
-            <Button variant="outlined" size="m" block data-testid="migration-gate-recheck" onClick={onRecheck}>
-              {t('storageMigrationRecheck')}
-            </Button>
-            <Button variant="outlined" size="m" block data-testid="migration-gate-continue" onClick={onContinue}>
-              {t('storageMigrationContinue')}
-            </Button>
+            )}
           </div>
         </div>
       </div>

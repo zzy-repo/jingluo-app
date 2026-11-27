@@ -1523,18 +1523,12 @@ export const zh = {
   storageMigrationSuccessAction: '开始使用',
   // 场景 3：本机暂时不具备存储升级能力，明确告知一次后继续用原存储，不影响使用
   storageMigrationUnsupportedTitle: '这台设备暂时不支持存储升级',
-  storageMigrationUnsupportedBody: '应用会继续使用原来的存储方式（IndexedDB），聊天记录和附件都在，不影响正常使用。',
+  storageMigrationUnsupportedBody: '应用会继续使用原来的存储方式，聊天记录和附件都在，不影响正常使用。',
   storageMigrationUnsupportedHint: '系统或应用更新之后，下次启动会自动再检查一次。',
   storageMigrationUnsupportedAction: '知道了，继续',
   // 场景 4：迁移被中断（切后台被杀 / 主动中断）。绝不引导卸载或清数据
-  storageMigrationInterruptedTitle: '数据升级还没有完成',
-  storageMigrationInterruptedBody: '升级在完成之前被打断了，你的数据仍然保存在原来的存储里，没有丢失。点「继续升级」可以把它做完。',
   storageMigrationInterruptedWarning: '请不要卸载应用，也不要在系统设置里清除应用数据 —— 那会把原始数据一起删掉。',
-  storageMigrationInterruptedAction: '继续升级',
-  storageMigrationInterruptedLater: '暂时继续使用原数据',
-  // 场景 2：空间不足。三个数（可用 / 所需 / 建议清理）+ 清理指引 + 重新检测
-  storageMigrationSpaceTitle: '手机可用空间不足，升级没有开始',
-  storageMigrationSpaceBody: '升级需要在这台手机上再腾出一些空间。清理之后点「重新检测」就能继续，你的数据没有被改动。',
+  // 场景 2：空间不足。三个数（可用 / 所需 / 建议清理）+ 清理指引 + 重试
   storageMigrationSpaceFree: '当前可用空间：{free}',
   storageMigrationSpaceNeed: '本次升级所需空间：{need}',
   storageMigrationSpaceCleanup: '建议再清理：{cleanup}',
@@ -1544,16 +1538,38 @@ export const zh = {
   storageMigrationSpaceGuideCopy: '复制这段指引',
   storageMigrationSpaceGuideCopied: '指引已复制',
   storageMigrationSpaceGuideCopyFailed: '复制失败，请对着屏幕手动操作',
-  storageMigrationSpaceDefer: '暂时不升级，继续使用原数据',
   storageMigrationRecheck: '重新检测',
-  storageMigrationFailedTitle: '升级没有完成',
-  storageMigrationFailedBody: '你的原数据没有丢失，仍然保存在原处。可以重试，也可以先继续使用原数据。',
-  storageMigrationFailSpace: '原因：可用空间不足。请清理手机空间后重试。',
-  storageMigrationFailTooLarge: '原因：数据量超过一次升级的上限。请先在设置里导出备份，再联系我们。',
-  storageMigrationFailUnknownSpace: '原因：无法确认可用空间，为安全起见没有开始升级。',
-  storageMigrationFailGeneric: '原因：{message}',
   storageMigrationRetry: '重试',
-  storageMigrationContinue: '继续使用（原数据未丢失）',
+  // #940：失败页的**唯一**文案出口（档位 → 标题 + 发生了什么）由
+  // `src/services/storage/migration/failure-class.ts` 决定，再按数据状态补一句「我的数据现在怎么样」、
+  // 按入口补一句「下一步怎么办」。原则：
+  //  - 界面上一律人话，不出现原始英文异常、类名、堆栈、SQL、表名、后端名、字节数上限；
+  //  - 只有确认旧库仍是真源、且没被这次升级改动（`storageMigrationDataIntact`）才敢承诺「可以正常使用」；
+  //  - 具体字节数只在「空间不足」档用（可用 / 所需 / 建议清理），那是用户要采取行动的依据。
+  storageMigrationFailureSpaceTitle: '存储空间不足',
+  storageMigrationFailureSpaceBody: '这次升级需要更多空余空间，暂时没有完成。',
+  storageMigrationFailureTooLargeTitle: '数据量太大，这次升级没有完成',
+  storageMigrationFailureTooLargeBody: '有一段数据超过了单次能搬的上限，这次没有搬完就停下来了。应用会分段搬运，重试一次通常能接着搬；如果一直停在这一步，也可以先继续使用原来的存储。',
+  storageMigrationFailureCorruptTitle: '数据读取失败',
+  storageMigrationFailureCorruptBody: '迁移时发现有些数据读不出来，已经停止迁移，以免影响你现在的聊天记录。',
+  storageMigrationFailureIoTitle: '读写没有成功',
+  storageMigrationFailureIoBody: '迁移过程中读写没有完成，已经停下来了。',
+  storageMigrationFailureUnsupportedTitle: '这次升级在这台设备上无法完成',
+  storageMigrationFailureUnsupportedBody: '应用尝试了这次升级，但当前版本没法在这台设备上完成它，已经停下来了。',
+  storageMigrationFailureInterruptedTitle: '升级被打断了',
+  storageMigrationFailureInterruptedBody: '升级在完成之前被打断了，已经停下来等你决定。',
+  storageMigrationFailureUnknownTitle: '升级没有完成',
+  storageMigrationFailureUnknownBody: '出现了一个我们还不知道原因的问题，已经停下来，没有继续往下写。',
+  // 「我的数据现在怎么样」：四句话按**状态**选一句，不按错误文案选
+  storageMigrationDataIntact: '你原来的聊天记录仍然在原来的存储里，没有被这次升级改动，可以正常使用。',
+  storageMigrationDataPartial: '新存储里有未完成的写入；你原来的聊天记录仍然在，没有被删除。',
+  storageMigrationDataCommitted: '新存储里已经是主要数据，旧存储里的是升级前的副本。',
+  storageMigrationDataUnknown: '这次没能确认数据的当前状态。请不要卸载应用，也不要在系统设置里清除应用数据。',
+  // 「下一步怎么办」：由分类器给出的入口决定，一次失败只有一个主按钮
+  storageMigrationNextRetry: '点「重试」可以再试一次；也可以先继续使用原来的存储。',
+  storageMigrationNextRecheck: '点「重新检测」看看现在的状态。',
+  storageMigrationNextContinue: '可以继续使用原来的存储，聊天记录和附件都在那里，不影响正常使用。',
+  storageMigrationKeepOriginal: '继续使用原来的存储',
   storageMigrationBlockedTitle: '暂时无法打开本机数据',
   storageMigrationBlockedAfterCommit:
     '数据已经升级到新的存储，但新存储现在打不开。为避免读到过期的旧数据，应用先停在这里。你的数据没有被删除，重载应用通常可以恢复；仍然不行请复制诊断信息联系我们。',
