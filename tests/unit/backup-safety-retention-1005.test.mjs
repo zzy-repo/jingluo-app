@@ -319,6 +319,33 @@ test('[A5] 清单来源标记往返：老清单没有 `origin`，新清单带上
   assert.equal(core.parseManifest({ ...onDisk, origin: 'weird' }).origin, undefined)
 })
 
+test('[A6] 时间读不出来的可用备份不许占「最新」保护位（可信时间最新的那份必须留下）', async () => {
+  // 回归（穷举查出来的真缺陷）：`createdDesc` 曾经返回 `NaN`（`Date.parse` 读不出来），
+  // 而 `Array#sort` 遇到 `NaN` 比较器**顺序不作保证**（V8 里原地不动）——
+  // 于是「时间读不出来」的那份**稳坐 sorted[0] 的『最新』保护位**，真正最新的那份
+  // 被排到上限之外删掉。这条用例就是钉住那一类：**不许删掉可信时间里最新的那份**。
+  const undated = {
+    id: 'b-undated',
+    createdAtUtc: 'not-a-date',
+    sizeBytes: 10,
+    checksumOk: true,
+    origin: 'manual',
+  }
+  const items = [undated, item('b-reg-9', 9, 'manual'), item('b-reg-10', 10, 'manual'), item('b-reg-11', 11, 'manual')]
+  const doomed = core.selectPrunable(items, 2)
+  assert.ok(!doomed.includes('b-reg-11'), '可信时间最新（11 点）的那份不许被删')
+  assert.ok(!doomed.includes('b-reg-10'), '次新的那份也不在候选里')
+  assert.deepEqual(doomed, ['b-reg-9', 'b-undated'], '只清最老的 9 点那份与「判不出时间」的那份')
+
+  // 同一类问题的另一面：不可信时间排在最后，**任何**上限下都不会抢走保护位
+  for (let keep = 1; keep <= 3; keep += 1) {
+    assert.ok(!core.selectPrunable(items, keep).includes('b-reg-11'), `keep=${keep} 时最新一份都不许被删`)
+  }
+  // 安全组同理（`newestFirst` 早就是这个语义，这里一并钉住）
+  const safetyItems = [{ ...undated, id: 'b-s-undated', origin: 'safety' }, item('b-safe-9', 9, 'safety')]
+  assert.ok(!core.selectPrunableSafety(safetyItems, 1).includes('b-safe-9'))
+})
+
 /* ------------------------------------------------------------------ [B] 3 安全 + 1 常规 */
 
 test('[B] 3 份安全 + 1 份常规：新备份成功后安全只剩最近 2 份，常规一份不少', async () => {

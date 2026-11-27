@@ -354,30 +354,43 @@ export const isBackupFailureKind = (value: string): value is BackupFailureKind =
   value === 'unsupported' ||
   value === 'unknown'
 
-const createdDesc = (a: BackupFacts, b: BackupFacts): number =>
-  Date.parse(b.createdAtUtc) - Date.parse(a.createdAtUtc)
-
 /**
  * 时间戳的**可信来源**：清单里的 `created_at_utc`。解析不出来就返回 null。
  *
  * 为什么不拿 `readdir` 顺序或原生 `mtime`：目录顺序在真机上不稳定（排序不是契约），而 `mtime`
- * 会被复制 / 搬家改写。**判不出时间的东西一律不参与清理**（见 `selectPrunableSafety`）——
- * 把「不知道多老」当成「最老」来删，正是数据安全最不该犯的错。
+ * 会被复制 / 搬家改写。**判不出时间的东西绝不许占「最新」的位置**（见下面的 `createdDesc`）。
  */
 const trustedCreatedAt = (item: BackupFacts): number | null => {
   const parsed = Date.parse(item.createdAtUtc)
   return Number.isNaN(parsed) ? null : parsed
 }
 
-/** 按可信时间倒序（新的在前）；时间不可信的排在最后（调用方另行决定要不要动它）。 */
-const newestFirst = (items: readonly BackupFacts[]): BackupFacts[] =>
-  [...items].sort((a, b) => (trustedCreatedAt(b) ?? Number.NEGATIVE_INFINITY) - (trustedCreatedAt(a) ?? Number.NEGATIVE_INFINITY))
+/**
+ * 保留策略里**唯一**的排序语义：按可信时间倒序（新的在前）。
+ *
+ * ⚠️ 这里曾经是 `Date.parse(b) - Date.parse(a)`：只要有一边的时刻读不出来，比较器就返回 `NaN`，
+ * 而 `Array#sort` 的契约是「比较器返回正 / 负 / 0」，拿到 `NaN` 时**顺序不作任何保证**
+ * （V8 里等于「原地不动」）。后果不是排序难看，而是**保护位被占**：一份「时间读不出来」的备份
+ * 可能稳坐在 `sorted[0]` 这个「最新，永不删」的位置上，真正最新的那份被排到上限之外删掉 ——
+ * `selectPrunable` 注释里「最新的一份永不删」那句承诺当场失效（穷举实测 40720/271440 组合）。
+ *
+ * 现在两个入口（`selectPrunable` / `estimateNextBytes` 用 `createdDesc`，安全组用 `newestFirst`）
+ * 共用这一份语义：**不可信时间 = 最老，永远排最后**。
+ */
+const createdDesc = (a: BackupFacts, b: BackupFacts): number =>
+  (trustedCreatedAt(b) ?? Number.NEGATIVE_INFINITY) -
+  (trustedCreatedAt(a) ?? Number.NEGATIVE_INFINITY)
+
+/** 按可信时间倒序（新的在前）排好的数组；时间不可信的排在最后（调用方另行决定要不要动它）。 */
+const newestFirst = (items: readonly BackupFacts[]): BackupFacts[] => [...items].sort(createdDesc)
 
 /**
  * 保留策略：按时间倒序保留最新的 `keep` 份**常规备份**，返回**可以删**的 id。
  *
  * 三条硬约束：
- *  1. **最新的一份永不删**（它就是刚写成功的那份，也是恢复前的安全备份）；
+ *  1. **最新的一份永不删**（它就是刚写成功的那份，也是恢复前的安全备份）。「最新」只按清单里的
+ *     **可信时间**算，排序语义见 `createdDesc`：时间读不出来的项排最后，**占不到这个保护位**
+ *     （实盘上「读不出时间」= 清单读不出来 = `checksumOk: false`，本来也不是可恢复项）；
  *  2. 删完之后必须**至少还剩一份校验通过的备份** —— 「唯一有效备份」不许被静默删掉；
  *  3. 只返回 id，删不删由调用方在「新备份已写入并校验」之后才执行（顺序不能反）。
  *
