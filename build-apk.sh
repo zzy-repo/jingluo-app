@@ -161,7 +161,9 @@ log "版本号（package.json）: ${PKG_VERSION_NAME} (versionCode ${PKG_VERSION
 # 否则 standard）。注意 **staging 不是原生侧变体**：它只是 web 层 profile + 明文放行，产物标记仍是
 # standard（见 android/app/build.gradle 的 updateVariant / CI 里 `verify:apk --variant standard`）。
 NATIVE_VARIANT=standard
-[ "${INTERNAL_BUILD:-}" = "1" ] && NATIVE_VARIANT=internal
+# 注意：这一行必须是 if 而不是 `[ ... ] && x=y` —— 后者在 INTERNAL_BUILD 不等于 1 时
+# 整个 AND-OR 列表返回 1，配合 `set -e` 会让脚本在 standard 模式下**静默退出**（无任何报错）。
+if [ "${INTERNAL_BUILD:-}" = "1" ]; then NATIVE_VARIANT=internal; fi
 
 # local.properties：把 SDK 路径钉进 Gradle（该文件已 gitignore）。
 # 内容不变就不重写，避免和 IDE 里那份来回打架（Issue #273 现状第 3 条）。
