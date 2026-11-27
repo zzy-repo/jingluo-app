@@ -11,6 +11,7 @@ import {
   type BackupStatus,
 } from '../../services/backup/backupApi.js'
 import {
+  BACKUP_LIST_PREVIEW,
   canRestoreBackup,
   canRunBackup,
   failureOf,
@@ -18,6 +19,7 @@ import {
   formatWhen,
   itemLine,
   lastBackupText,
+  restoreListWindow,
   spaceValue,
   spaceView,
   statusView,
@@ -154,7 +156,7 @@ export const useBackupRestore = ({ onFinished }: { onFinished?: () => void } = {
       setFinished(true)
       onFinished?.()
     } catch (error) {
-      setFailure({ ...failureOf(error), action: 'restore' })
+      setFailure({ ...failureOf(error), action: 'restore', atUtc: new Date().toISOString() })
     } finally {
       busy.current = false
       setPhase('idle')
@@ -184,8 +186,23 @@ export type BackupRestoreFlow = ReturnType<typeof useBackupRestore>
 export const RestoreModals = ({ flow }: { flow: BackupRestoreFlow }) => {
   const t = useTranslate()
   const busy = flow.phase !== 'idle'
-  /** 列表最多显示 5 条：这里不是管理页，翻长列表不是它的职责 */
-  const shown = (flow.items ?? []).slice(0, 5)
+  /**
+   * 列表默认露 5 条（这里不是管理页，一屏铺满不是它的职责），**但差额必须能被点开**。
+   *
+   * 设置页「备份占用空间」一格显示的是**盘上真实份数**（`spaceValue` 的 `count`，核心侧扫描结果）。
+   * 界面上那两处一旦不一致，用户看到的结论就是「备份丢了」——#1007 缺陷 1 的设备现场是
+   * 盘上 7 份、恢复列表 5 条，那两行「就是这么看起来消失的」。所以「露几条」可以截，
+   * 「有没有」不许截：截断只发生在 `restoreListWindow` 里，并且它同时算出「还有 N 份」的 N。
+   */
+  const [expanded, setExpanded] = useState(false)
+  const list = restoreListWindow(flow.items ?? [], expanded)
+  // 每次关掉列表都回到默认的「5 条 + 还有 N 份」：把上次展开的状态带到下一次，
+  // 会让用户以为列表本来就这么长
+  useEffect(() => {
+    if (!flow.picking) {
+      setExpanded(false)
+    }
+  }, [flow.picking])
   return (
     <>
       {flow.picking ? (
@@ -197,11 +214,11 @@ export const RestoreModals = ({ flow }: { flow: BackupRestoreFlow }) => {
         >
           {flow.items === null ? (
             <div className={styles.description}>{t('sessionLoading')}</div>
-          ) : shown.length === 0 ? (
+          ) : list.shown.length === 0 ? (
             <div className={styles.description}>{t('backupRestoreEmpty')}</div>
           ) : (
             <div>
-              {shown.map((item) => (
+              {list.shown.map((item) => (
                 <div
                   key={item.id}
                   className={clsx(styles.cell, styles.row)}
@@ -229,6 +246,31 @@ export const RestoreModals = ({ flow }: { flow: BackupRestoreFlow }) => {
                   </div>
                 </div>
               ))}
+              {list.hiddenCount > 0 ? (
+                <div className={styles.cellActions}>
+                  <Button
+                    variant="outlined"
+                    size="m"
+                    className={styles.cellButton}
+                    data-testid="backup-restore-more"
+                    onClick={() => setExpanded(true)}
+                  >
+                    {t('backupRestoreMore', { count: list.hiddenCount })}
+                  </Button>
+                </div>
+              ) : expanded && list.shown.length > BACKUP_LIST_PREVIEW ? (
+                <div className={styles.cellActions}>
+                  <Button
+                    variant="outlined"
+                    size="m"
+                    className={styles.cellButton}
+                    data-testid="backup-restore-less"
+                    onClick={() => setExpanded(false)}
+                  >
+                    {t('backupRestoreCollapse')}
+                  </Button>
+                </div>
+              ) : null}
             </div>
           )}
         </Modal>
@@ -296,12 +338,22 @@ export const BackupField = () => {
   const [phase, setPhase] = useState<BackupPhase>('idle')
   const [progress, setProgress] = useState({ done: 0, total: 0 })
   const [failure, setFailure] = useState<FailureRecord | null>(null)
+  /**
+   * 本会话里**最近一次成功操作**的时间（备份成功 / 恢复成功都算）。
+   *
+   * 只为了把早于它的那次失败判成旧话：设备现场是「低空间备份失败 → 恢复成功」之后，
+   * 状态行同时挂着「存储空间不足，暂时无法备份」和「已恢复完成」，盘上 `status.json` 的
+   * `last_error` 却早已是 null —— 盘上事实是好的，UI 在说旧话（#1007 缺陷 2）。
+   * 判据在 `backupView.failureIsStale` 里，这里只负责把证据（成功时间）传下去。
+   */
+  const [succeededAtUtc, setSucceededAtUtc] = useState<string | null>(null)
   const [notice, setNotice] = useState<{ key: TranslationKey; params?: TranslationParams } | null>(
     null
   )
   const busy = useRef(false)
   const restore = useBackupRestore({
     onFinished: () => {
+      setSucceededAtUtc(new Date().toISOString())
       setNotice({ key: 'backupRestoreDone' })
       void refresh()
     },
@@ -331,9 +383,10 @@ export const BackupField = () => {
     setNotice(null)
     try {
       const item = await runBackup('manual', (done, total) => setProgress({ done, total }))
+      setSucceededAtUtc(new Date().toISOString())
       setNotice({ key: 'backupNowDone', params: { size: formatSize(item.sizeBytes) } })
     } catch (error) {
-      setFailure({ ...failureOf(error), action: 'backup' })
+      setFailure({ ...failureOf(error), action: 'backup', atUtc: new Date().toISOString() })
     } finally {
       busy.current = false
       setPhase('idle')
@@ -347,6 +400,7 @@ export const BackupField = () => {
     done: progress.done,
     total: progress.total,
     failure: failure ?? restore.failure,
+    succeededAtUtc,
   })
   const space = spaceView(status)
   const last = lastBackupText(status)

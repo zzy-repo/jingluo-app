@@ -514,6 +514,8 @@ export const zh = {
   backupRestoreItemLine: '{time} · {size} · {count} 个对话',
   backupRestoreItemLineNoCount: '{time} · {size}',
   backupRestoreUnusable: '这份备份不完整，无法用于恢复',
+  backupRestoreMore: '还有 {count} 份',
+  backupRestoreCollapse: '收起',
   backupRestoreConfirmTitle: '恢复前请确认',
   backupRestoreConfirmReplace: '将用这份备份替换本机当前数据。',
   backupRestoreConfirmSafety: '恢复前会先为当前数据做一份安全备份，万一恢复失败可以回到现在的状态。',

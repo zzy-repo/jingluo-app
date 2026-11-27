@@ -1,0 +1,11 @@
+{
+  "viewport": {
+    "width": 360,
+    "height": 740
+  },
+  "overflowX": false,
+  "statusLine": "当前状态\n一切正常",
+  "spaceLine": "备份占用空间\n56 MB（共 7 份）",
+  "restoreItems": 5,
+  "hasMore": null
+}

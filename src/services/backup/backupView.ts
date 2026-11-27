@@ -40,8 +40,15 @@ export type BackupFailure = {
   currentDataIntact: boolean
 }
 
-/** 一次交互留下的失败：除了分类，还记着它发生在哪一段（备份 / 恢复的文案完全不同） */
-export type FailureRecord = BackupFailure & { action: Exclude<BackupPhase, 'idle'> }
+/**
+ * 一次交互留下的失败：除了分类，还记着它发生在哪一段（备份 / 恢复的文案完全不同），
+ * 以及**它发生在什么时候** —— 后来成功过就说明这句话成了旧话（见 `failureIsStale`，#1007）。
+ */
+export type FailureRecord = BackupFailure & {
+  action: Exclude<BackupPhase, 'idle'>
+  /** 这次失败发生在什么时候（UTC ISO）。解析不出来按「还没被成功覆盖」处理 */
+  atUtc: string
+}
 
 export type ActionText = { key: TranslationKey; params?: TranslationParams; error?: boolean }
 
@@ -136,10 +143,75 @@ export const progressPercent = (done: number, total: number): number | null => {
 }
 
 /**
+ * 那次交互失败**还算不算当前状态**（#1007 缺陷 2）。
+ *
+ * 判据只有一条：**失败之后有没有一次成功的操作**。有 → 盘上事实已经好了，那句话是旧话；
+ * 没有 → 一个字节都不许少说（「存储空间不足」这类真话必须继续报）。
+ *
+ * 为什么"成功过"就算数，而不看 `status.json`：恢复成功**不改写** `status.json` 的
+ * `last_error`（`backupApi.ts` 恢复分支只推进 `last_restore_at_utc`），所以盘上会长期留着
+ * 一条早已不成立的失败分类；设备现场就是「盘上事实是好的，UI 在说旧话」。**盘上一个字节都
+ * 不改**：那次失败确实发生过，归零只发生在播报层。
+ *
+ * 与 `backupApi.getStatus` 里 `isStaleErrorCode` 是**同一条口径的两半**，别混用、别互相替代：
+ *   · `isStaleErrorCode` 拿**当前实际空间**复核盘上 `last_error` 里的 `space`（盘真的够用了 → 不播报）；
+ *   · 这里拿**之后真的成功过**复核界面记着的那次失败（操作真的成了 → 不播报）。
+ * 本条只在「盘上事实好转之后」收声：成功时间必须**不早于**失败时间；时间戳读不出来一律
+ * 按「还该报」处理 —— 宁可多说一句，也不静默吞掉一条真失败。
+ */
+export const failureIsStale = (
+  failure: FailureRecord | null,
+  succeededAtUtc: string | null
+): boolean => {
+  if (failure === null || succeededAtUtc === null) {
+    return false
+  }
+  const succeededAt = Date.parse(succeededAtUtc)
+  const failedAt = Date.parse(failure.atUtc)
+  if (!Number.isFinite(succeededAt) || !Number.isFinite(failedAt)) {
+    return false
+  }
+  return succeededAt >= failedAt
+}
+
+/**
+ * 恢复列表「露几条 / 还有几条」（#1007 缺陷 1）。
+ *
+ * 为什么不是直接 `slice(0, 5)`：设置页「备份占用空间」一格显示的是**盘上真实份数**
+ * （`spaceValue` 的 `count`，来自核心侧扫描），列表被静默截断之后，多出来的那几份在界面上
+ * **看起来消失了** —— 设备实测：盘上 7 份、恢复列表 5 条，用户以为丢了两份。对备份功能来说，
+ * "看起来丢了"比"多显示一行"糟得多。
+ *
+ * 所以截断只能发生在「露几条」上，**不能发生在「有没有」上**：`hiddenCount > 0` 时界面必须
+ * 给一个能点开的入口，且 `shown + hiddenCount === 盘上份数` 是这条不变量。
+ * 「共 N 份」那个真实数字**一个字节都不改** —— 迁就列表去改它，等于承认列表才是权威。
+ */
+export const BACKUP_LIST_PREVIEW = 5
+
+export type RestoreListWindow = {
+  /** 当前状态下露出来的那几条（默认前 `BACKUP_LIST_PREVIEW` 条，展开后是全部） */
+  shown: readonly BackupItem[]
+  /** 还没露出来、必须靠入口说出来的份数 */
+  hiddenCount: number
+}
+
+export const restoreListWindow = (
+  items: readonly BackupItem[],
+  expanded: boolean
+): RestoreListWindow =>
+  expanded || items.length <= BACKUP_LIST_PREVIEW
+    ? { shown: items, hiddenCount: 0 }
+    : { shown: items.slice(0, BACKUP_LIST_PREVIEW), hiddenCount: items.length - BACKUP_LIST_PREVIEW }
+
+/**
  * 「当前状态」那一行说什么。
  *
  * 优先级：正在跑（带进度）> 这次交互的失败 > 上次失败（来自 `lastError`）> 从没备份过 > 一切正常。
  * 上次失败要看得出分类（空间不足 / 没做完 / 读取不到），**不能只写「失败」**。
+ *
+ * `succeededAtUtc` = 本会话里**最近一次成功操作**的时间（备份成功 / 恢复成功都算）。它只做一件事：
+ * 把早于它的那次交互失败判成旧话（见 `failureIsStale`），免得「存储空间不足」和「已恢复完成」
+ * 在同一行里并存。**它不影响盘上 `lastError` 的播报** —— 那条归 `getStatus` 的 `isStaleErrorCode`。
  */
 export const statusView = ({
   status,
@@ -147,12 +219,14 @@ export const statusView = ({
   done,
   total,
   failure,
+  succeededAtUtc = null,
 }: {
   status: BackupStatus | null
   phase: BackupPhase
   done: number
   total: number
   failure: FailureRecord | null
+  succeededAtUtc?: string | null
 }): StatusView => {
   if (phase !== 'idle') {
     const percent = progressPercent(done, total)
@@ -166,7 +240,7 @@ export const statusView = ({
           : 'backupStatusRestoring'
     return { key, params: percent === null ? undefined : { percent }, percent }
   }
-  if (failure !== null) {
+  if (failure !== null && !failureIsStale(failure, succeededAtUtc)) {
     return failureText(failure, failure.action)
   }
   if (status === null) {

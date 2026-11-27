@@ -524,6 +524,8 @@ export const en = {
   backupRestoreItemLine: '{time} · {size} · {count} chats',
   backupRestoreItemLineNoCount: '{time} · {size}',
   backupRestoreUnusable: 'This backup is incomplete and cannot be restored',
+  backupRestoreMore: '{count} more',
+  backupRestoreCollapse: 'Show fewer',
   backupRestoreConfirmTitle: 'Confirm restore',
   backupRestoreConfirmReplace: 'This backup will replace the current data on this device.',
   backupRestoreConfirmSafety:

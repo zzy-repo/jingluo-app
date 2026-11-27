@@ -1,0 +1,11 @@
+{
+  "viewport": {
+    "width": 360,
+    "height": 740
+  },
+  "overflowX": false,
+  "statusLine": "当前状态\n存储空间不足，暂时无法备份",
+  "spaceLine": "备份占用空间\n3 KB（共 2 份）\n设备剩余空间不足，可能无法完成备份",
+  "restoreItems": 0,
+  "hasMore": null
+}
