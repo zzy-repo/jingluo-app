@@ -73,6 +73,9 @@ import {
   type StorageInitFailure,
   type StoredFile,
 } from './db.js'
+// 失败分级从纯函数模块取（#938）：不从 `./db.js` 要 —— 那样每个把 `./db.js` 换成内存假库的
+// L0 用例都得跟着补一个导出，而分类规则本身正是被测对象，不该被替身挡住
+import { storageFailureOf } from './storageFailure.js'
 import { getStorage, peekStorage, type StorageBackend } from '../storage/index.js'
 import {
   protectionAcknowledgeLoss,
@@ -82,6 +85,7 @@ import {
   protectionCheckFreeSpace,
   protectionFlushSnapshot,
   protectionHealSummaries,
+  protectionRefreshFreeSpace,
   protectionRestore,
   type DataLostInfo,
   type RestoreOptions,
@@ -421,6 +425,11 @@ const unsavedSessions = new Set<string>()
 /** 保存失败时保留原件，重试成功后才释放。 */
 const pendingFiles = new Map<string, StoredFile[]>()
 /**
+ * 不走 `persist()` 的元数据写入（置顶 / 改名）的重放队列，键 `会话 id|步骤`（#937）。
+ * 失败一次就放进来，`retrySaveSessions()`（横幅「重试」）会再跑一次 —— 否则那个按钮对这条路是空点击。
+ */
+const pendingMetadataWrites = new Map<string, () => void>()
+/**
  * 服务端刚判失效、等着本轮重传的附件（本地 id → 附件）。
  * 只有「本来就有 file_id、被服务端判失效」的附件会登记在这里：原件在我们手上、当初上传成功过，
  * 重传是自愈（换服务地址后旧 file_id 全失效就是这条路径），不属于「重传历史记录」。
@@ -633,21 +642,29 @@ const initFailureOf = (error: unknown): StorageInitFailure | null => {
 /** `saveSession()` 的兜底形状：替身 / 老实现可能什么都不返回 */
 const EMPTY_OUTCOME: SaveSessionOutcome = { failure: null, degradedFiles: [], strippedFields: [] }
 
-/** 落盘过程本身抛出（不是 `outcome.failure`）时的兜底分类：只可能是替身或未预料的代码路径 */
-const failureOfThrown = (error: unknown, stores: string): StorageFailure => {
-  const bag = (typeof error === 'object' && error !== null ? error : {}) as {
-    name?: unknown
-    message?: unknown
-  }
-  const name = typeof bag.name === 'string' ? bag.name : undefined
-  const message = typeof bag.message === 'string' ? bag.message : undefined
-  return {
-    kind: 'unknown',
-    ...(name === undefined ? {} : { name }),
-    ...(message === undefined ? {} : { message: message.slice(0, 200) }),
-    stores,
-    at: Date.now(),
-  }
+/**
+ * 落盘过程本身抛出（不是 `outcome.failure`）时的分类。
+ *
+ * #938：这里**不能**写死 `kind: 'unknown'`。满盘时最常走的恰好是这条抛出路径 ——
+ * 库都打不开（`indexedDB.open` 抛 `DOMException: Encountered full disk while opening backing store`），
+ * 写死成 unknown 就是「可重试」档，横幅让用户点一个必然再失败的「Retry」。
+ * 交给 `storageFailureOf()` 走与 `outcome.failure` 同一条分类规则（含满盘文案兜底）。
+ */
+const failureOfThrown = (error: unknown, stores: string): StorageFailure => storageFailureOf(error, stores)
+
+/**
+ * 写失败后**立刻**重读一次剩余空间（#938，绕开 `FREE_SPACE_CACHE_MS`）。
+ *
+ * 保存前那次 `protectionCheckFreeSpace()` 命中的可能是几分钟前的读数：满盘发生在那之后时，
+ * 横幅会停在「上次读到的 ok」上，而失败本身才是「现在真的写不进去」的铁证。
+ * 读不到（`unknown`）保持原值 —— 不知道不等于「空间够」。
+ */
+const refreshLowSpace = (): void => {
+  void protectionRefreshFreeSpace().then((space) => {
+    if (space !== null && space.status !== 'unknown' && get().lowSpace !== (space.status === 'low')) {
+      set({ lowSpace: space.status === 'low' })
+    }
+  })
 }
 
 const persist = (sessionId: string) => {
@@ -677,6 +694,11 @@ const persist = (sessionId: string) => {
         attachmentBytes: attachmentBytesOf(files),
         strippedFields: outcome.strippedFields,
       })
+      // #938：失败之后再读一次空间。写失败是「现在真的没有空间」的证据，
+      // 保存前那次读数可能早就过期了（缓存 10s，且满盘往往发生在两次保存之间）
+      if (outcome.failure.kind === 'quota') {
+        refreshLowSpace()
+      }
       return false
     }
     if (outcome.strippedFields.length > 0) {
@@ -739,11 +761,15 @@ const persist = (sessionId: string) => {
       .then((raw) => settled(session, fromCache, raw ?? EMPTY_OUTCOME))
       .catch((error: unknown) => {
         reportStorageError('save session')(error)
+        const failure = failureOfThrown(error, 'sessions,sessionSummaries')
         if (epoch === historyEpoch && (!fromCache || getSession(sessionId) !== undefined)) {
-          markSaveFailure(sessionId, failureOfThrown(error, 'sessions,sessionSummaries'), 'save session', {
+          markSaveFailure(sessionId, failure, 'save session', {
             messages: session.messages.length,
             attachmentBytes: attachmentBytesOf(files),
           })
+        }
+        if (failure.kind === 'quota') {
+          refreshLowSpace()
         }
         return false
       })
@@ -842,8 +868,14 @@ export const dismissDataLost = async (): Promise<void> => {
 }
 
 export const retrySaveSessions = () => {
-  if (!get().importingHistory) {
-    unsavedSessions.forEach(persist)
+  if (get().importingHistory) {
+    return
+  }
+  unsavedSessions.forEach(persist)
+  // #937：置顶 / 改名不经过 `persist()`（它们没有「正文待落盘」这回事），所以横幅的「重试」
+  // 必须单独把它们重放一遍，否则那个按钮对这条路是个空点击
+  for (const replay of [...pendingMetadataWrites.values()]) {
+    replay()
   }
 }
 
@@ -1348,6 +1380,83 @@ export const createSessionBranch = async (
   return plan.session.id
 }
 
+/**
+ * 未进 `sessionCache` 的会话，置顶 / 改名走的是「改一行列表元数据 + 写库」的老路径，
+ * **不经过 `persist()`** —— 于是既不 `markSaveFailure()`（不进 `sessionSaveErrors`，横幅不出现），
+ * 也不跑 `protectionCheckFreeSpace()`。满盘时实测：界面把会话挪进「Pinned chats」、库里什么都没变、
+ * 用户零提示（#937 的现场：`[storage] pin session failed [object DOMException]` 只进了 console）。
+ *
+ * 这里把这条路径收进与 `persist()` **同一套**失败上报，不引入新状态机：
+ *  · 失败 → `reportStorageError()`（现场日志，保持原样）+ `markSaveFailure()`（横幅 + 诊断包）；
+ *  · 失败 → 把乐观更新**回滚**。未缓存会话没有别的待存内容，留一个库里不存在的新值，
+ *    「重启后状态与界面一致」这条验收就通不过（已缓存会话走 `persist()`，那条语义不变）；
+ *  · 失败 → 这次写入进 `pendingMetadataWrites`，腾出空间后点横幅「重试」真的会再写一次。
+ */
+const writeSessionMetadata = (options: {
+  id: string
+  step: 'pin session' | 'rename session'
+  write: (storage: StorageBackend) => Promise<unknown>
+  /** 失败回滚：只回滚「界面上还是本次写的那个值」的情况，别人后来写的值不许被抹掉 */
+  revert: () => void
+  /** 重放：把同一次写入按原参数再走一遍（含新的乐观更新） */
+  retry: () => void
+}): void => {
+  const { id, step } = options
+  const invoked = (() => {
+    try {
+      return withStorage(options.write)
+    } catch (error) {
+      // 同步抛出（连接已关闭 / 库打不开）也要走失败上报，不许越出这条链
+      return Promise.reject(error)
+    }
+  })()
+  void Promise.resolve(invoked).then(
+    () => {
+      pendingMetadataWrites.delete(`${id}|${step}`)
+      // 只清这一次的失败态：会话若还有没落盘的正文（`unsavedSessions`），那条失败仍然成立
+      if (!unsavedSessions.has(id)) {
+        clearSaveFailure(id)
+      }
+    },
+    (error: unknown) => {
+      reportStorageError(step)(error)
+      options.revert()
+      const failure = failureOfThrown(error, 'sessions,sessionSummaries')
+      markSaveFailure(id, failure, step, {
+        messages: getSession(id)?.messages.length ?? 0,
+        attachmentBytes: 0,
+      })
+      pendingMetadataWrites.set(`${id}|${step}`, options.retry)
+      if (failure.kind === 'quota') {
+        refreshLowSpace()
+      }
+    }
+  )
+}
+
+/** 置顶的乐观更新 + 落库；`previous` 只用于失败回滚 */
+const playPin = (id: string, pinnedAt: number | undefined, previous: number | undefined): void => {
+  set((state) => ({
+    sessions: sortSessions(
+      state.sessions.map((item) => (item.id === id ? { ...item, pinnedAt } : item))
+    ),
+  }))
+  writeSessionMetadata({
+    id,
+    step: 'pin session',
+    write: (storage) => storage.sessions.pin(id, pinnedAt),
+    revert: () =>
+      set((state) => ({
+        sessions: sortSessions(
+          state.sessions.map((item) =>
+            item.id === id && item.pinnedAt === pinnedAt ? { ...item, pinnedAt: previous } : item
+          )
+        ),
+      })),
+    retry: () => playPin(id, pinnedAt, previous),
+  })
+}
+
 export const pinSession = (id: string) => {
   if (get().importingHistory || deletingSessions.has(id)) {
     return
@@ -1356,15 +1465,7 @@ export const pinSession = (id: string) => {
   if (!session) {
     return
   }
-  const pinnedAt = session.pinnedAt === undefined ? Date.now() : undefined
-  set((state) => ({
-    sessions: sortSessions(
-      state.sessions.map((item) => (item.id === id ? { ...item, pinnedAt } : item))
-    ),
-  }))
-  void withStorage((storage) => storage.sessions.pin(id, pinnedAt)).catch(
-    reportStorageError('pin session')
-  )
+  playPin(id, session.pinnedAt === undefined ? Date.now() : undefined, session.pinnedAt)
 }
 
 export const renameSession = (id: string, title: string) => {
@@ -1381,16 +1482,30 @@ export const renameSession = (id: string, title: string) => {
   if (getSession(id)) {
     updateSession(id, (session) => ({ ...session, title }))
     persist(id)
-  } else {
-    set((state) => ({
-      sessions: state.sessions.map((session) =>
-        session.id === id ? { ...session, title } : session
-      ),
-    }))
-    void withStorage((storage) => storage.sessions.rename(id, title)).catch(
-      reportStorageError('rename session')
-    )
+    return
   }
+  playRename(id, title, get().sessions.find((item) => item.id === id)?.title ?? '')
+}
+
+/** 改名的乐观更新 + 落库（未缓存会话）；`previous` 只用于失败回滚 */
+const playRename = (id: string, title: string, previous: string): void => {
+  set((state) => ({
+    sessions: state.sessions.map((session) =>
+      session.id === id ? { ...session, title } : session
+    ),
+  }))
+  writeSessionMetadata({
+    id,
+    step: 'rename session',
+    write: (storage) => storage.sessions.rename(id, title),
+    revert: () =>
+      set((state) => ({
+        sessions: state.sessions.map((session) =>
+          session.id === id && session.title === title ? { ...session, title: previous } : session
+        ),
+      })),
+    retry: () => playRename(id, title, previous),
+  })
 }
 
 /**
@@ -1432,6 +1547,9 @@ const removeSessionData = async (id: string): Promise<boolean> => {
     sessionAccess.delete(id)
     unsavedSessions.delete(id)
     pendingFiles.delete(id)
+    // 会话已经删了：它的置顶 / 改名重放也要撤掉，否则「重试」会往一个不存在的会话上再写一次
+    pendingMetadataWrites.delete(`${id}|pin session`)
+    pendingMetadataWrites.delete(`${id}|rename session`)
     clearDraft(id)
     set((state) => ({
       sessions: state.sessions.filter((session) => session.id !== id),
