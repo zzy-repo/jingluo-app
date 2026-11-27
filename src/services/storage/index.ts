@@ -28,7 +28,24 @@ const openRouted = async (): Promise<StorageBackend> => {
   if (runtime === undefined) {
     return openIndexedDbStorage()
   }
-  const choice = getEngineChoice() ?? (await resolveStorageEngine(buildRouterDeps(runtime)))
+  const cached = getEngineChoice()
+  /**
+   * #986 写侧护栏（读侧的同类约束是 `router.ts` 决策表第 3 / 6 条）。
+   *
+   * 「缓存里的结论」只代表**上一次判定的那一刻**。`indexeddb` 这个结论尤其不能长期信任：它可以在
+   * 迁移提交之后（状态文件写了 `committed`、或库写了 `meta.committed_at`）继续被用着 —— 那时
+   * 再打开 IDB 就是**往一份冻结的旧快照里写**：界面报「保存成功」，真源却一个字都没收到，
+   * 下次启动按 `committed` 走 SQLite，用户刚写的东西凭空消失。这正是读侧已经堵住、
+   * 写侧一直没堵的那个缺口。
+   *
+   * 所以 `indexeddb` 不缓存：要写库之前重新问一遍路由，它说 `sqlite` / `blocked` 就照它办，
+   * **绝不回退**；只有它**再次**说 `indexeddb` 才放行。（`sqlite` / `blocked` 不含「会不会回退」
+   * 的风险，可以放心复用缓存，省掉每次读同一条结论的开销。）
+   */
+  const choice =
+    cached !== undefined && cached.engine !== 'indexeddb'
+      ? cached
+      : await resolveStorageEngine(buildRouterDeps(runtime))
   if (choice.engine === 'blocked') {
     if (choice.reason === 'migrating') {
       throw new StorageMigratingError()

@@ -545,7 +545,9 @@ test('[接线] 页面用同一份状态机与视图，且**只有运行时**能�
   // 手动领取与登录自动领取共享一次操作，另外两个显式操作直接切换。
   const rt = codeOf('src/components/settings/sourceAccordionRuntime.ts')
   assert.match(rt, /await ensureDeviceBuiltinKey\('select'\)/u)
-  assert.equal((rt.match(/setProviderKind\(/gu) ?? []).length, 2, '只有已有内置密钥时的选择、手动确认其它来源会直接切换')
+  // 3 处 = 内置服务选择 / 手动确认其它来源 / **确认失败时的整体回滚**（#986：写不进去就退回原来源，
+  // 不允许留在「界面新渠道、磁盘旧渠道」）。回滚这一处不是新增的切换入口，是把切换撤销。
+  assert.equal((rt.match(/setProviderKind\(/gu) ?? []).length, 3, '内置选择 / 确认另一来源 / 确认失败时回滚')
   assert.match(rt, /if \(!options\.signedIn\)/u, '未登录必须在最前面拦下（不调接口）')
 })
 

@@ -599,11 +599,39 @@ export const getFilesUrl = (): string | null => {
 /** 当前渠道是否支持附件上传（入口显隐与提示都看它，不再只看 caps.vision） */
 export const supportsFileUpload = (): boolean => Boolean(getCurrentSpec().paths.files)
 
-/** 保存渠道并立即生效（路径、鉴权头、输入行、能力入口随之切换）；API Key 保持不动（共用一把） */
-export const setProviderKind = (kind: ProviderKind) => {
+/**
+ * 渠道切换 / Key 落盘失败时的诊断留痕。
+ *
+ * 只记「写失败」这件事本身：Key 原文一个字都不进日志（与 `updateApiKeyState` 同一口径）。
+ * 为什么必须记：写不进去时内存态**一个字都不改**（界面继续显示旧渠道 / 旧 Key），
+ * 用户看到的只是「点了没反应」；有这条 `config_change / rejected:storage`，
+ * 才能从诊断里区分「没生效」与「生效了但上游不认」。
+ */
+const recordWriteRejected = (
+  action: 'provider-kind' | 'provider-api-key' | 'provider-base-url' | 'provider-model'
+): void => {
+  recordAction('config_change', action, { result: 'rejected', reason: 'storage' })
+}
+
+/**
+ * 保存渠道并立即生效（路径、鉴权头、输入行、能力入口随之切换）；API Key 保持不动（共用一把）。
+ *
+ * #986：**先落盘、成功才改内存态**，返回 `false` = 这次没写成。
+ *
+ * 旧写法丢掉了 `write()` 的返回值：localStorage 写失败（无痕 / 配额满 / 分区受限，见
+ * `docs/capabilities/host.md`）时，磁盘上仍是旧渠道，而 `useApiConfig` 已经切到新渠道 ——
+ * 界面显示新渠道、请求却按旧渠道（`getProviderKind()` 读磁盘）发出去，用户发出去的内容
+ * 落在了他以为已经切走的那个服务商那里，而且没有任何一处能看出来。
+ * 现在写失败 = 内存态不动：界面继续显示旧渠道，与磁盘一致。
+ */
+export const setProviderKind = (kind: ProviderKind): boolean => {
   const next = isProviderKind(kind) ? kind : DEFAULT_PROVIDER_KIND
-  write(CONFIG_KEYS.kind, next)
+  if (!write(CONFIG_KEYS.kind, next)) {
+    recordWriteRejected('provider-kind')
+    return false
+  }
   updateProviderState(next)
+  return true
 }
 
 const updateProviderState = (next: ProviderKind): void => {
@@ -613,12 +641,23 @@ const updateProviderState = (next: ProviderKind): void => {
   void captureStateSnapshot('after-config-change')
 }
 
-/** 保存 API Key；空值等于清除（回到未配置状态） */
-export const setApiKey = (apiKey: string) => {
+/**
+ * 保存 API Key；空值等于清除（回到未配置状态）。
+ *
+ * #986：与 `setProviderKind` 同一条纪律 —— **落盘成功才改内存态**，返回 `false` = 没写成。
+ * 旧写法丢掉 `write()` 的返回值：写失败时界面（`useApiConfig.apiKey`）显示的是刚粘贴的新 Key，
+ * 而磁盘上还是上一把 —— 发送时按磁盘取 Key，等于「界面上一把、实际用另一把」，
+ * 用户按界面判断「我换过 Key 了」，实际发出去的仍是旧的（或已失效的）那把。
+ */
+export const setApiKey = (apiKey: string): boolean => {
   const value = apiKey.trim()
   const previous = getApiKey()
-  write(CONFIG_KEYS.apiKey, value || null)
+  if (!write(CONFIG_KEYS.apiKey, value || null)) {
+    recordWriteRejected('provider-api-key')
+    return false
+  }
   updateApiKeyState(value, previous)
+  return true
 }
 
 const updateApiKeyState = (value: string, previous: string): void => {
@@ -683,7 +722,11 @@ export const setBaseUrlFor = (kind: ProviderKind, baseUrl: string): boolean => {
   const effective = kind === getProviderKind()
   const key = scopedKey('baseUrl', kind)
   if (!baseUrl.trim()) {
-    write(key, null)
+    // #986：落盘失败就不动内存态（否则界面显示「已清空」、磁盘上地址还在）
+    if (!write(key, null)) {
+      recordWriteRejected('provider-base-url')
+      return false
+    }
     if (effective) {
       useApiConfig.setState({ baseUrl: '' })
     }
@@ -694,7 +737,10 @@ export const setBaseUrlFor = (kind: ProviderKind, baseUrl: string): boolean => {
     recordAction('config_change', 'provider-base-url', { result: 'invalid', reason: 'normalize' })
     return false
   }
-  write(key, value)
+  if (!write(key, value)) {
+    recordWriteRejected('provider-base-url')
+    return false
+  }
   if (effective) {
     useApiConfig.setState({ baseUrl: value })
   }
@@ -716,7 +762,11 @@ export const setModelFor = (kind: ProviderKind, model: string, reset = false): b
   const effective = kind === getProviderKind()
   const key = scopedKey('model', kind)
   if (reset) {
-    write(key, null)
+    // #986：落盘失败就不动内存态
+    if (!write(key, null)) {
+      recordWriteRejected('provider-model')
+      return false
+    }
     if (effective) {
       useApiConfig.setState({ model: '' })
     }
@@ -727,7 +777,10 @@ export const setModelFor = (kind: ProviderKind, model: string, reset = false): b
     recordAction('config_change', 'provider-model', { result: 'invalid', reason: 'empty' })
     return false
   }
-  write(key, value)
+  if (!write(key, value)) {
+    recordWriteRejected('provider-model')
+    return false
+  }
   if (effective) {
     useApiConfig.setState({ model: value })
   }

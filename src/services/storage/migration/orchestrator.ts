@@ -17,6 +17,7 @@ import { createBackup, readBackupManifest } from './backup.js'
 import { LIMITS } from '../../limits.js'
 import { MAIN_DB_NAME, MIGRATION_ENGINE_VERSION } from './config.js'
 import { MigrationStepError, isKilled } from './errors.js'
+import { MAIN_DB_PRESENCE_UNKNOWN_DETAIL, assertNever, resolveMainDbTouch } from './presence.js'
 import type { MigrationDeps, SqliteTarget } from './ports.js'
 import { createStateStore, hasBusinessData, loadMigrationState, preserveCorruptState, type MigrationStateX } from './state.js'
 import {
@@ -126,6 +127,12 @@ type MainDbProbe =
   | { state: 'absent' }
   | { state: 'ok'; committedAt?: string; hasData: boolean }
   | { state: 'unreadable' }
+  /**
+   * #986：连「主库文件在不在」都没查出来（`sqliteFileExists()` 自己抛错）。
+   * 与 `unreadable`（文件在、读不出来）分开记：两者都**不允许**动手，但现场的修法完全不同
+   * （一个是查不到文件系统，一个是库打不开），混成一个值会让诊断说不清。
+   */
+  | { state: 'unknown' }
 
 /**
  * #980 护栏 B（写侧）的第一步：**只读**探一次主库。
@@ -134,9 +141,19 @@ type MainDbProbe =
  * 打不开 / 读失败一律返回 undefined —— 调用方据此「不猜」，不会拿到一个乐观结论。
  */
 const inspectMainDb = async (deps: MigrationDeps): Promise<MainDbProbe> => {
-  // `sqliteFileExists` 读不到/抛错时按「文件在」处理：那只会让结论变保守（走 openSqlite 再判一次）
-  const exists = deps.sqliteFileExists === undefined ? true : await deps.sqliteFileExists().catch(() => true)
-  if (!exists) {
+  /**
+   * #986：存在性判定改走 `presence.ts` 的三态唯一入口。
+   *
+   * 旧写法 `deps.sqliteFileExists().catch(() => true)` 是 fail-open：检查自己失败 → 当成「文件在」
+   * → 仍然 `openSqlite()` → 驱动为不存在的库**创建一个空库** → 探针读到「没有 committed_at、
+   * 没有业务数据」，下游据此放行清库。也就是说「查不出来」这件事本身被翻译成了「干净、可以清」。
+   * 现在 `unknown` 不 open，直接返回 `{ state: 'unknown' }`，调用方一律停下来。
+   */
+  const touch = await resolveMainDbTouch(deps.sqliteFileExists, 'clear')
+  if (!touch.allow) {
+    return { state: 'unknown' }
+  }
+  if (touch.presence === 'absent') {
     // 文件不存在 = 全新安装。**这条必须放行**，否则新用户永远迁不了
     return { state: 'absent' }
   }
@@ -251,6 +268,10 @@ export const runMigration = async (deps: MigrationDeps): Promise<MigrationOutcom
     // 读不出来 ≠ 空的。这条以前会被跳过（undefined 直接被 `!== undefined` 放行）
     return { status: 'blocked', detail: MAIN_DB_UNREADABLE_DETAIL }
   }
+  if (mainProbe.state === 'unknown') {
+    // #986：连文件在不在都没查出来 —— 与「读不出来」同等处置（不动手），但详情分开写，便于归因
+    return { status: 'blocked', detail: MAIN_DB_PRESENCE_UNKNOWN_DETAIL }
+  }
   if (
     mainProbe.state === 'ok' &&
     state.sourceFingerprint === undefined &&
@@ -289,13 +310,24 @@ export const runMigration = async (deps: MigrationDeps): Promise<MigrationOutcom
   const clearOwnTarget = async (): Promise<void> => {
     const live = await inspectMainDb(deps)
     // 三态都要显式落到一个分支上：只有「文件不存在」和「读到了、且没有 committed_at」才允许清。
-    if (live.state === 'unreadable') {
-      throw new MainDbRefusalError(MAIN_DB_UNREADABLE_DETAIL)
-    }
-    if (live.state === 'ok' && live.committedAt !== undefined) {
-      // 不抛 `sqlite-unavailable`：那会被分类器翻成「原生数据库不可用」，用户照着去查存储权限，
-      // 而真实原因是「我们检测到已提交的数据、主动停止覆盖」。
-      throw new MainDbRefusalError(MAIN_DB_COMMITTED_DETAIL)
+    // #986：分支穷尽交给编译器（`assertNever`）—— 以后给探针加第四种结论却漏判，这里编不过。
+    switch (live.state) {
+      case 'unreadable':
+        throw new MainDbRefusalError(MAIN_DB_UNREADABLE_DETAIL)
+      case 'unknown':
+        // 查不出来 ≠ 可以清。`openSqlite` 会为不存在的库创建空库，绝不能在「不知道」时走到那儿。
+        throw new MainDbRefusalError(MAIN_DB_PRESENCE_UNKNOWN_DETAIL)
+      case 'ok':
+        if (live.committedAt !== undefined) {
+          // 不抛 `sqlite-unavailable`：那会被分类器翻成「原生数据库不可用」，用户照着去查存储权限，
+          // 而真实原因是「我们检测到已提交的数据、主动停止覆盖」。
+          throw new MainDbRefusalError(MAIN_DB_COMMITTED_DETAIL)
+        }
+        break
+      case 'absent':
+        break
+      default:
+        assertNever(live)
     }
     await (await openMain()).sink.clearAll()
   }
@@ -344,7 +376,13 @@ export const runMigration = async (deps: MigrationDeps): Promise<MigrationOutcom
     } else if (state.sourceFingerprint === undefined) {
       // 全新开始（含「状态文件丢了、但上次留下半个主库」）：没有 committed 见证的主库只可能是我们自己的半成品，清行重来
       // #980：库里有业务行的那种「丢档」上面已经 return blocked 了，能走到这里的库是空的或不存在。
-      if ((await deps.sqliteFileExists?.()) === true) {
+      // #986：这里原来直接读 `sqliteFileExists()` 的布尔值 —— 检查失败（抛错）会让判断整个跳过，
+      // 「可能有半成品目标」被静默放过。改走同一处三态判定：absent 才跳过，present 先清，unknown 停下来。
+      const touch = await resolveMainDbTouch(deps.sqliteFileExists, 'clear')
+      if (!touch.allow) {
+        throw new MainDbRefusalError(touch.detail)
+      }
+      if (touch.presence === 'present') {
         await clearOwnTarget()
       }
       await save({ phase: 'preflight', sourceFingerprint: fingerprint })
@@ -423,6 +461,15 @@ export const runMigration = async (deps: MigrationDeps): Promise<MigrationOutcom
     aborted()
     if (state.phase === 'verified') {
       await boundary('enter:commit')
+      /**
+       * #986「切换」：这也是破坏性动作 —— 真源一旦切到 SQLite 就没有回退路径（IDB 从此只做只读
+       * 旧源，见 `idb/legacyBarrier.ts`）。所以切换前和清库前用**同一个**判定：主库文件在不在
+       * 查不出来（`unknown`）就不切。旧代码在切换这一步没有存在性前置，直接写 `meta.committed_at`。
+       */
+      const switchTouch = await resolveMainDbTouch(deps.sqliteFileExists, 'switch')
+      if (!switchTouch.allow) {
+        throw new MainDbRefusalError(switchTouch.detail)
+      }
       const db = main
       if (!db) {
         throw new MigrationStepError('sqlite-unavailable', 'target database is not open')

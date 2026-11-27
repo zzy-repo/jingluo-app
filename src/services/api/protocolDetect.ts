@@ -145,8 +145,9 @@ const applyProtocol = (protocol: ProviderProtocol): boolean => {
     return false
   }
   adoptThirdPartyConfig(protocol)
-  setProviderKind(protocol)
-  return true
+  // #986：`setProviderKind` 现在会返回「落盘成功与否」。写不进去时不能声称「已经换成这个协议」——
+  // 否则调用方会按新协议发请求，而磁盘上的 kind 还是旧的（两边不一致）。
+  return setProviderKind(protocol)
 }
 
 export type ProtocolProbeInput = {

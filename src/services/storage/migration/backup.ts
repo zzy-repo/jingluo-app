@@ -13,6 +13,7 @@ import type { SqlDatabase } from '../sqlite/driver.js'
 import { META_KEYS } from '../sqlite/schema.js'
 import { BACKUP_PREFIX, MAIN_DB_NAME, MIGRATION_ENGINE_VERSION, STATE_DIR } from './config.js'
 import { MigrationStepError } from './errors.js'
+import { resolveMainDbTouch } from './presence.js'
 import type { MigrationDeps, MigrationEnginePort, SqliteTarget } from './ports.js'
 import { canonicalJson } from './state.js'
 import { RAW_STORE_NAMES, type MigrationState, type RawStoreName } from './types.js'
@@ -144,15 +145,29 @@ export const readBackupManifest = async (
 
 export type RestoreResult =
   | { ok: true; preRestoreBackup: string | undefined; restoredFrom: string }
-  | { ok: false; reason: 'not-confirmed' | 'no-backup' | 'backup-invalid' | 'current-unbackupable' | 'main-unopenable' | 'copy-failed'; detail?: string }
+  | {
+      ok: false
+      reason:
+        | 'not-confirmed'
+        | 'no-backup'
+        | 'backup-invalid'
+        | 'current-unbackupable'
+        | 'main-unopenable'
+        | 'copy-failed'
+        /** #986：主库文件在不在查不出来（`unknown`）→ 不恢复。绝不 open 一个可能不存在的库。 */
+        | 'presence-unknown'
+      detail?: string
+    }
 
 /**
  * 从迁移前备份恢复 SQLite 真源。**只在用户明确确认后**调用（`confirmed: true`），不碰 IDB、不删任何文件。
  *
  *  1. 校验备份：清单校验和、库完整性、逐 store 计数、指纹与清单一致；不过 → 拒绝。
- *  2. 先备份当前 SQLite 主库（`backupTo` → `storage-engine/pre-restore-<ts>.db`）；做不到 → 拒绝，不动当前库。
+ *  2. **能不能碰主库**（#986）：主库文件在不在查不出来（`unknown`）→ 拒绝（`presence-unknown`），
+ *     一个字节都不动。这条判定与迁移 / 清库 / 切换共用 `presence.ts` 的同一个三态函数。
+ *  3. 先备份当前 SQLite 主库（`backupTo` → `storage-engine/pre-restore-<ts>.db`）；做不到 → 拒绝，不动当前库。
  *     主库根本打不开 → 拒绝（`main-unopenable`），原文件原样留给人工处理，不就地改写一个坏库。
- *  3. 把备份内容经引擎复制进主库（upsert，不先清空），再对备份校验；通过后补写 `meta`。
+ *  4. 把备份内容经引擎复制进主库（upsert，不先清空），再对备份校验；通过后补写 `meta`。
  */
 export const restoreFromBackup = async (
   deps: MigrationDeps,
@@ -194,7 +209,15 @@ export const restoreFromBackup = async (
   } catch (error) {
     return { ok: false, reason: 'backup-invalid', detail: error instanceof Error ? error.message : String(error) }
   }
-  // 2. 先备份当前状态
+  // 2. 先确认「现在能不能碰主库」—— #986：恢复和迁移/清库/切换用**同一处**三态判定。
+  //    旧代码这里是直接 `openSqlite`（没有存在性前置）：打开一个不存在的库会创建空库，
+  //    接着 `clearAll()` 一个空库、再把备份写进去 —— 看起来成功，实际是拿「查不出文件系统」
+  //    换「一次静默的重建」。查不出来就停下来，原文件原样留给人工处理。
+  const touch = await resolveMainDbTouch(deps.sqliteFileExists, 'restore')
+  if (!touch.allow) {
+    return { ok: false, reason: 'presence-unknown', detail: touch.detail }
+  }
+  // 3. 先备份当前状态
   const at = deps.clock.now()
   const preRestore = `${STATE_DIR}/pre-restore-${at}.db`
   let mainOpened: SqlDatabase
@@ -213,7 +236,7 @@ export const restoreFromBackup = async (
     } catch (error) {
       return { ok: false, reason: 'current-unbackupable', detail: error instanceof Error ? error.message : String(error) }
     }
-    // 3. 把备份复制进主库
+    // 4. 把备份复制进主库
     try {
       const mainTarget = await deps.createTarget(mainOpened)
       await withDb(deps, backup.dir, async (backupDb) => {

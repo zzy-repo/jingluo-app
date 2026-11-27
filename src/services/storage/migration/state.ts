@@ -13,6 +13,7 @@ import type { SqlDatabase } from '../sqlite/driver.js'
 import { META_KEYS, STORE_TABLES, readMeta } from '../sqlite/schema.js'
 import type { AppFileSystem } from '../../fs/types.js'
 import { STATE_DIR, STATE_PATH, MIGRATION_ENGINE_VERSION, MAIN_DB_NAME } from './config.js'
+import { MAIN_DB_PRESENCE_UNKNOWN_DETAIL, resolveMainDbTouch } from './presence.js'
 import type { Clock, Sha256Text } from './ports.js'
 import type { OpenSqlDatabase } from '../sqlite/driver.js'
 import type { MigrationCheckpoint, MigrationFailure, MigrationPhase, MigrationState } from './types.js'
@@ -61,6 +62,15 @@ export type SqliteWitness = {
   unavailable?: boolean
   /** 库文件根本不存在。 */
   absent?: boolean
+  /**
+   * #986：**连「库文件在不在」都没查出来**（`sqliteFileExists()` 自己抛错）。
+   *
+   * 与 `absent`（确认没有）、`unavailable`（文件在、打不开）是三个不同的事实，不能互相折算：
+   *  - 折成 `absent` → 把「可能存在的已提交库」当成全新安装，正是「已提交却回退 IndexedDB」的入口；
+   *  - 折成「存在」→ 会去 `openSqlite`，而打开一个不存在的库**会创建空库**，凭空造出一个见证。
+   * 收敛时见到它一律 `blocked`（不猜、不动手）。
+   */
+  presenceUnknown?: boolean
   /** 打不开的原因（诊断用；只进 blocked 详情，不参与判定）。 */
   unavailableReason?: string
   /**
@@ -291,6 +301,17 @@ export const reconcileWitnesses = (
   const fileCorrupt = file !== undefined && 'corrupt' in file
   const fileState = file === undefined || 'corrupt' in file ? undefined : file
 
+  /**
+   * #986：主库文件在不在都没查出来 → 不猜。
+   *
+   * 四个分支（文件缺失 / 损坏 / committed / 其它阶段）在这里全都不能放行：任何一条放行都会落到
+   * 「拿未知去换用户数据」（重迁、清库、或把已提交用户送回冻结的旧 IDB 快照）。
+   * 这也是 `readFilePresence` 里那句「不打开可能不存在的库」的执行侧：`unknown` 连 open 都不会发生。
+   */
+  if (witness.presenceUnknown === true) {
+    return { kind: 'blocked', detail: MAIN_DB_PRESENCE_UNKNOWN_DETAIL }
+  }
+
   if (file === undefined) {
     if (sqliteSaysCommitted) {
       return {
@@ -458,11 +479,22 @@ export type LoadedState = {
 /** 读两个见证人并收敛。路由与编排器共用，保证两边对「现在是什么状态」只有一个答案。 */
 export const loadMigrationStateDetailed = async (deps: LoadDeps): Promise<LoadedState> => {
   const file = await createStateStore(deps.fs, deps.sha256).read()
-  // 主库文件不存在就不去打开它：打开一个不存在的库会创建空库，而空库不是见证。
-  const exists = deps.sqliteFileExists ? await deps.sqliteFileExists().catch(() => true) : true
-  const witness: SqliteWitness = exists
-    ? await readSqliteWitness(() => deps.openSqlite({ name: MAIN_DB_NAME }))
-    : { absent: true }
+  /**
+   * 主库文件不存在就不去打开它：打开一个不存在的库会创建空库，而空库不是见证。
+   *
+   * #986：这条理由要成立，「文件在不在」就必须是三态（`presence.ts`）。旧写法是
+   * `await deps.sqliteFileExists().catch(() => true)` —— 检查自己失败时按「文件在」处理，
+   * 于是照样 `openSqlite`，上面这句话当场失效：一次失败的检查会**造出一个空库**，
+   * 而空库读回来的见证是「没有 committed_at、没有业务数据」，下游据此把可能已提交的用户
+   * 当成全新安装（回退 IDB）或当成可清空的半成品。
+   * 现在 `unknown` 直接不 open，见证人记为 `presenceUnknown`，`reconcileWitnesses` 见它就 `blocked`。
+   */
+  const touch = await resolveMainDbTouch(deps.sqliteFileExists, 'migrate')
+  const witness: SqliteWitness = !touch.allow
+    ? { presenceUnknown: true }
+    : touch.presence === 'present'
+      ? await readSqliteWitness(() => deps.openSqlite({ name: MAIN_DB_NAME }))
+      : { absent: true }
   return { outcome: reconcileWitnesses(file, witness, deps.clock.now()), witness, file }
 }
 
