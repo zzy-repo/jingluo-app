@@ -628,23 +628,35 @@ export const restoreBackup = (id: string, onProgress?: Progress): Promise<Restor
 
     // ① 先保护现有数据：安全备份失败 ⇒ 立即中止，不动任何现有数据
     onProgress?.(0, 1, 'safety')
-    let safety: BackupItem
+    //    ⚠️ 「本机没有任何记录」不算安全备份失败：丢库、新装、被清空时正是**最需要恢复**的场景，
+    //    那时没有数据可保护，硬按「安全备份失败」中止会让恢复功能在最该工作的时候拒绝工作
+    //    （设备实测：IndexedDB 被清空后点恢复，只得到「为了不影响当前数据，本次恢复没有开始」，
+    //    数据仍然是 0）。反过来，真有数据却备份不出来，仍然一律中止。
+    let safety: BackupItem | null = null
     try {
       safety = await runBackupOnce('safety', onProgress, { prune: false })
     } catch (error) {
-      logDiagnostic('error', 'restore: safety backup failed', { action: 'backup-restore' }, error)
-      throw new BackupError('safety-backup-failed', 'safety', true)
+      if (backupFailure(error, 'backup').code === 'empty') {
+        logDiagnostic('info', 'restore: nothing to protect, skip safety backup', {
+          action: 'backup-restore',
+        })
+      } else {
+        logDiagnostic('error', 'restore: safety backup failed', { action: 'backup-restore' }, error)
+        throw new BackupError('safety-backup-failed', 'safety', true)
+      }
     }
-    const safetyFiles = await scanBackups()
-    const safetyEntry = safetyFiles.backups.find((backup) => backup.item.id === safety.id)
-    if (!safetyEntry?.manifest) {
-      logDiagnostic('error', 'restore: safety backup missing after write', { action: 'backup-restore' })
-      throw new BackupError('safety-backup-failed', 'safety', true)
+    if (safety !== null) {
+      const safetyFiles = await scanBackups()
+      const safetyEntry = safetyFiles.backups.find((backup) => backup.item.id === safety?.id)
+      if (!safetyEntry?.manifest) {
+        logDiagnostic('error', 'restore: safety backup missing after write', { action: 'backup-restore' })
+        throw new BackupError('safety-backup-failed', 'safety', true)
+      }
+      await verifyBackup(safetyEntry.manifest).catch((error: unknown) => {
+        logDiagnostic('error', 'restore: safety backup verify failed', { action: 'backup-restore' }, error)
+        throw new BackupError('safety-backup-failed', 'safety', true)
+      })
     }
-    await verifyBackup(safetyEntry.manifest).catch((error: unknown) => {
-      logDiagnostic('error', 'restore: safety backup verify failed', { action: 'backup-restore' }, error)
-      throw new BackupError('safety-backup-failed', 'safety', true)
-    })
 
     // ② 读回归档（分块）
     onProgress?.(0, manifest.archive.sizeBytes, 'read')
