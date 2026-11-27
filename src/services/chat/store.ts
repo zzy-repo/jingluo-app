@@ -733,6 +733,8 @@ const persist = (sessionId: string) => {
     if (!fromCache) {
       // 从库里读回来的：内存里没有正文，不存在「还有新改动没落盘」的可能
       unsavedSessions.delete(sessionId)
+      // #959：这一步之后内存 == 盘，之前那条「没存到本机」已经变成假话，必须撤掉
+      clearSaveFailure(sessionId)
     } else if (getSession(sessionId) === session) {
       unsavedSessions.delete(sessionId)
       clearSaveFailure(sessionId)
@@ -818,19 +820,24 @@ export const saveSessionPrompt = async (id: string, draft: string) => {
   }
   const prompt = draft || undefined
   updateSession(id, current => ({ ...current, customSystemPrompt: prompt }))
-  if (await persist(id)) {
-    return true
-  }
-  updateSession(id, current => current.customSystemPrompt === prompt
-    ? { ...current, customSystemPrompt: session.customSystemPrompt }
-    : current)
-  return false
+  /**
+   * #959：落盘失败时**不回滚**内存。
+   *
+   * 回滚会把用户刚打的字从内存里抹掉，而 `persist()` 已经把这条会话留在 `unsavedSessions` 里；
+   * 于是内存 = 旧值、盘 = 旧值、「待落盘」集合里却还挂着它 —— 用户点横幅「重试」，
+   * `retrySaveSessions()` 跑 `persist(id)`，写的是**内存里的旧值**，「重试成功」、横幅消失，
+   * 而新提示词从来没有落过盘。提示词只有内存与盘两份副本，回滚 = 两份都成旧值。
+   *
+   * 与正文同一套纪律：留在内存 + 留在 `unsavedSessions` + 横幅提示，重试（或下一次落盘）
+   * 自然会把它写上去。返回值语义因此是「**未落盘**」，不再保证「内存未变」。
+   */
+  return (await persist(id)) === true
 }
 
 /**
  * 保存会话级聊天背景（本单）：`undefined` = **清掉覆盖、回到全局默认**（「恢复默认」走这条）。
  *
- * 与 `saveSessionPrompt` 同一套纪律（先改内存里的会话、再落盘、落盘失败就回滚），
+ * 与 `saveSessionPrompt` 同一套纪律（先改内存里的会话、再落盘、**失败不回滚**，#959），
  * 区别只在于字段是「三种来源 + 淡化 + 模糊」的复合值。图片本体不在这里写 ——
  * 它按 `chat-background:session:<id>` 存在 `appAssets`，由 `applySessionBackground` 负责，
  * 本函数只管这层 JSON 字段，于是「删图」与「清覆盖」是两个独立动作，谁也不会把对方弄坏。
@@ -844,14 +851,8 @@ export const saveSessionBackground = async (
     return false
   }
   updateSession(id, current => ({ ...current, background }))
-  if (await persist(id)) {
-    return true
-  }
-  // 落盘失败：只回滚「还是我写的那份」的会话，别把别人随后写进去的新值抹掉
-  updateSession(id, current => (current.background === background
-    ? { ...current, background: session.background }
-    : current))
-  return false
+  // #959：同一缺陷的第二处（见 `saveSessionPrompt`）：失败即丢弃用户的选择，同样是数据丢失
+  return (await persist(id)) === true
 }
 
 /**
@@ -1050,6 +1051,9 @@ const ensureSessionLoaded = (id: string): Promise<void> => {
       const session = sameSummary(settled, summary) ? settled : { ...settled, ...summary }
       touchSession(id)
       set((state) => ({ sessionCache: { ...state.sessionCache, [id]: session } }))
+      // #959：这一步是「真的从盘里读回来了」——内存与盘重新一致，之前那条「没存到本机」不再成立。
+      // （缓存命中时根本不会走到这里，所以它不会变成「打开会话就清」）
+      clearSaveFailure(id)
       if (session !== stored) {
         persist(id)
       }
