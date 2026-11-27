@@ -13,7 +13,7 @@
 import assert from 'node:assert/strict'
 import { afterEach, test } from 'node:test'
 import { loadTsModule } from '../helpers/dom-env.mjs'
-import { makeEngine, makeEnv, mods } from '../helpers/migration-switch/kit.mjs'
+import { makeEngine, makeEnv, makeRuntime } from '../helpers/migration-switch/kit.mjs'
 
 const gate = await loadTsModule('src/services/storage/gate.ts')
 const runtimeMod = await loadTsModule('src/services/storage/migration/runtime.ts')
@@ -23,19 +23,6 @@ const diagnostics = await loadTsModule('src/services/diagnostics/index.ts')
 const fc = await loadTsModule('src/services/storage/migration/failure-class.ts')
 const { zh } = await loadTsModule('src/i18n/zh.ts')
 const { en } = await loadTsModule('src/i18n/en.ts')
-
-const SQLITE_BACKEND = { __kind: 'sqlite', close: async () => {}, health: async () => ({}), probe: async () => ({}) }
-
-const runtimeOf = (env, over = {}) => ({
-  isSqliteAvailable: () => true,
-  openSqlite: env.openSqlite,
-  createTarget: (db) => mods.schema && import('../helpers/migration-switch/kit.mjs').then((k) => k.createTarget(db)),
-  openSqliteBackend: async () => SQLITE_BACKEND,
-  openIdbSource: () => env.source,
-  engine: makeEngine(),
-  sqliteFileExists: env.sqliteFileExists,
-  ...over,
-})
 
 let env
 const setup = (options) => {
@@ -88,7 +75,7 @@ const logEntries = () => diagnostics.getDiagnosticsSnapshot().logs ?? []
 test('空间不足（真跑失败）：文案零泄漏 + 敢承诺数据完好 + 只给一个主入口「重试」', async () => {
   const clean = diagnostics.getDiagnosticsLogCount()
   setup({ freeBytes: 1 })
-  runtimeMod.configureStorageRuntime(runtimeOf(env))
+  runtimeMod.configureStorageRuntime(makeRuntime(env))
   const view = await gate.ensureStorageReady({ enabled: true })
   assert.equal(view.kind, 'failed')
 
@@ -129,7 +116,7 @@ test('复制阶段抛原始英文异常：档位归「数据量太大」、屏�
   const base = makeEngine()
   let copyCalls = 0
   runtimeMod.configureStorageRuntime(
-    runtimeOf(env, {
+    makeRuntime(env, {
       engine: {
         ...base,
         // 第一次 copyAll 是备份（写独立备份文件），第二次才是搬主目标库 —— 让主复制炸。
@@ -173,7 +160,7 @@ test('复制阶段抛原始英文异常：档位归「数据量太大」、屏�
 
 test('状态确认不了时不给「重试」：retryMigration 直接拒绝（按钮不是摆设，是真挡在服务层）', async () => {
   setup({ freeBytes: 1 })
-  runtimeMod.configureStorageRuntime(runtimeOf(env))
+  runtimeMod.configureStorageRuntime(makeRuntime(env))
   const view = await gate.ensureStorageReady({ enabled: true })
   assert.equal(view.kind, 'failed')
   // 手工把结论改成「不可重试」（等价于坏库 / 本机不支持这两个档位的结论）

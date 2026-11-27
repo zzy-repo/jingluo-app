@@ -145,6 +145,33 @@ export const makeEngine = ({ failCopyAt, failVerify } = {}) => {
   return engine
 }
 
+/**
+ * sqlite 后端桩：闸门与设置页读的是同一个「后端句柄」形状。
+ * （`migration-switch-gate` 与 `migration-gate-940` 两处曾各写一份逐字相同的装配样板，
+ * `check:test-duplication` 会点名，所以放这里共用。）
+ */
+export const SQLITE_BACKEND = {
+  __kind: 'sqlite',
+  close: async () => {},
+  health: async () => ({}),
+  probe: async () => ({}),
+}
+
+/**
+ * 存储运行时配置的装配：默认全绿，`over` 覆盖单点（换引擎桩 / 换 isSqliteAvailable …）。
+ * `env` 必须是 `makeEnv()` 的产物。
+ */
+export const makeRuntime = (env, over = {}) => ({
+  isSqliteAvailable: () => true,
+  openSqlite: env.openSqlite,
+  createTarget: (db) => mods.schema && createTarget(db),
+  openSqliteBackend: async () => SQLITE_BACKEND,
+  openIdbSource: () => env.source,
+  engine: makeEngine(),
+  sqliteFileExists: env.sqliteFileExists,
+  ...over,
+})
+
 /** createTarget 桩：schema（含 meta）+ 一张 raw_rows 表；sqlite-schema 的 createSqliteRawSink 就绪后换真的。 */
 export const createTarget = async (db) => {
   await mods.schema.applySchema(db)
