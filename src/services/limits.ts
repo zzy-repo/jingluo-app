@@ -285,13 +285,17 @@ export const LIMITS = {
    * - `spaceWarnBytes`：备份占用到这个量就主动提醒「占得有点多了」，也是「空间偏大」的分界线。
    *   500 MiB 与一次整包备份的典型体积（历史会话 + 附件）同一量级：低于它提醒等于噪音，
    *   高于它才值得让用户去清旧份。
-   * - `nextEstimateBytes`：还没有任何一份备份时，估算「下一次备份大概要多少」用的保守值。
-   *   有了历史备份之后按上一份的实际体积估（见 `services/backup/backupApi.ts`），不再用这个数。
+   * - `nextEstimateBytes`：还没有任何一份备份时，估算「下一次备份大概要多少」用的保守值，
+   *   同时也是「下一份至少按多大算」的下限。有了历史备份之后按上一份的实际体积估
+   *   （见 `services/backup/backupCore.ts` 的 `estimateNextBytes`），不再用这个数。
+   *   **单一来源**：`backupCore.ts` 的 `MIN_ESTIMATE_BYTES` 直接取本项，那里不再留字面量。
+   *   值取「当时真正生效的 8 MiB」（`backupCore` 原有的 `MIN_ESTIMATE_BYTES = 8 * 1024 * 1024`），
+   *   所以这次收敛**不改行为**；此前 32 MiB 那一版没有任何消费方（死值）。
    * - `autoIntervalMs`：自动备份的最小间隔（24 小时）。启动时超过这个间隔才自动跑一次。
    */
   backup: {
     spaceWarnBytes: 500 * 1024 * 1024,
-    nextEstimateBytes: 32 * 1024 * 1024,
+    nextEstimateBytes: 8 * 1024 * 1024,
     autoIntervalMs: 24 * 60 * 60 * 1000,
   },
 } as const

@@ -20,7 +20,6 @@
  */
 import {
   judgeWriteSpace,
-  SMALL_WRITE_BYTES,
   WRITE_AMPLIFICATION_FACTOR,
   type WriteSpaceVerdict,
 } from '../storage.js'
@@ -354,18 +353,20 @@ export const selectPrunable = (items: readonly BackupFacts[], keep: number): str
 }
 
 /**
- * 下一份备份的体积预估下限（**有历史时**用）：最近一份 × 1.2（余量），再兜一个 8MB 地板。
+ * 下一份备份的体积预估下限（**有历史时**用）：最近一份 × 1.2（余量），再兜一个 8MiB 地板。
  *
- * 「一份历史都没有」的那一档**不走这个数**，走 `LIMITS.backup.nextEstimateBytes`
- * （配置里的保守值，见 `services/limits.ts` 该组注释）——那个阈值原先只写在配置里、
- * 没有任何消费方，`tests/unit/limits-config.test.mjs` 的「每个叶子都被引用」正是用来抓这类
- * 「看起来可配、其实没人读」的漏接（#993 就是被它抓到的）。
+ * 下限的**唯一来源**是 `LIMITS.backup.nextEstimateBytes`（#275 的纪律：阈值字面量只许写在
+ * `services/limits.ts`）。这里原来有两份来源、数值还对不上 —— 一份是本文的
+ * `8 * 1024 * 1024` 字面量，另一份是 `LIMITS` 里没人读的 32 MiB；#993 收敛成一处，
+ * 取当时**真正生效**的 8 MiB，行为中性。
  *
- * 这个 8MB 现在**不是这里的私有数字**：它同时是「空间未知时还能拿试错换一次机会」的小负载上限，
- * 唯一来源在 `storage.ts` 的 `SMALL_WRITE_BYTES`（那里写着为什么是 8MiB）。#1002 起两者共用一份，
- * 数值未变（8MiB），只是不再各写一遍。
+ * 数值上它必须仍然等于 `storage.ts` 的 `SMALL_WRITE_BYTES`（#1002 的小负载分级线）：
+ * 空间未知时「预估 ≤ 分级线才允许试」这条口径依赖两者相等，
+ * `tests/unit/storage-estimate-dirty.test.mjs` 用 `hasRoomForNext(null, MIN_ESTIMATE_BYTES)`
+ * 正反两例钉住了这个等式；`limits-config` 的冻结表则钉住了 LIMITS 这一项不许悄悄漂。
+ * 「一份历史都没有」的那一档同样走 `LIMITS.backup.nextEstimateBytes`。
  */
-export const MIN_ESTIMATE_BYTES = SMALL_WRITE_BYTES
+export const MIN_ESTIMATE_BYTES = LIMITS.backup.nextEstimateBytes
 
 export const estimateNextBytes = (items: readonly BackupFacts[]): number => {
   const latest = [...items].sort(createdDesc)[0]
