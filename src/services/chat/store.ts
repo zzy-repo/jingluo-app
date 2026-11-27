@@ -2103,6 +2103,18 @@ const prepareFiles = async (sessionId: string, request: Request, signal: AbortSi
    */
   const vision = visionFor(getCurrentSpec().kind)
   /**
+   * 本渠道的文档通路（#978，与上面同出一张能力表 `providerCapability.docInjectionFor()`）。
+   *
+   * `nativeFile = false` 的意思是「**本仓库对该渠道没有可用的原生文档上传实现**」——四个已登记
+   * 渠道（deepseek / anthropic / openai / ours）与未知渠道在表里全是 `false`，所以「上传文档」
+   * 这条通路在任何渠道都不该被走到：文档要么走文本注入（`textInjection`），要么在
+   * `sendMessage` 的 `acceptsDocuments()` 闸就被拒。
+   *
+   * 判据只从能力表读（#978 的硬要求）：这里绝不写第二套「按类型 / 按渠道名」的判断，
+   * 否则就是把同一个错误换个地方犯 —— 根因正是有人只读了 `image.nativeFile`，没读这一条。
+   */
+  const documents = docInjectionFor(getCurrentSpec().kind)
+  /**
    * #379：**发送前的附件可用性审计**（唯一判定处，见 `attachments/sendAudit.ts`）。
    *
    * 只看一件事：这一轮请求会引用到的附件里，哪些在本机没有原件。导入会话的附件只有元信息
@@ -2177,6 +2189,21 @@ const prepareFiles = async (sessionId: string, request: Request, signal: AbortSi
       }
       // base64 渠道的图片不进 Files API（#360：这条渠道没有上传端点，也不许回落）
       if (file.isImage && vision.base64) {
+        return
+      }
+      /**
+       * #978：本渠道没有原生文档上传实现就**不上传文档**。
+       *
+       * 修之前，这条路径只跳过「图片走 base64」的那一档，文档既不命中上面两条、也没人问过
+       * `documents.nativeFile`，于是被送进 `ensureServerId()` → `uploadAttachment()`：**向一个
+       * 能力表明确写着「收不了文档」的渠道上传文档**，失败即整条消息 `kind:'upload'`
+       * （界面显示「上传失败」）。默认内置渠道（`ours`）上，任何 DOCX / PDF / TXT 都必然失败。
+       *
+       * 跳过之后文档不会丢：`textInjection` 的渠道由 `withRequestDocuments()` 注入正文
+       * （`#480 §9`），`acceptsDocuments() === false` 的渠道在 `sendMessage` 就被拒，
+       * 两条路都与「有没有 `serverId`」「有没有 `file_id` 块」无关。
+       */
+      if (!file.isImage && !documents.nativeFile) {
         return
       }
       if (file.isImage) {
