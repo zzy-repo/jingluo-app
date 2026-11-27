@@ -159,6 +159,9 @@ const UNIT_SOLO = new Set([
   // 后面再 import 一次是模块缓存命中（副作用不会重跑），于是本文件直接拿到 `indexedDB is not defined`。
   // 这条要的正是**真 IndexedDB**（桩掉 db 就等于把被测物换成替身），单列一个进程最诚实。
   'attachment-preserve-import-531.test.mjs',
+  // #909：与上一条同机制 —— 顶层装 fake-indexeddb 全局并占用 `chat/db.ts` 的模块级连接单例（经真 `getStorage()` 读写），
+  // 同批别的文件的假库 / 全局清理会让它读不到 `indexedDB`，它的全局又会漏给后面的文件。单列一个进程。
+  'protection-storage-909.test.mjs', 'protection-heal-909.test.mjs',
   // 同理：本文件在模块顶层装自己的 fetch / localStorage 替身并断言「实际发出的 URL」，
   // 同批其它文件对 fetch 的改写/还原会让它在批内打到真上游（CI 实测打到 api.deepseek.com 吃 401）。
   'attachment-endpoint-303.test.mjs',
@@ -169,6 +172,64 @@ const UNIT_SOLO = new Set([
   // 这一族的六个文件今天只是因为 16 个一批的切片位置没撞上；本文件插进来正好撞上。
   // 与其赌切片，不如按 runner 自己的口径单列（`installImportEnv` 那套装配没有可用的去重钩子）。
   'import-quota-progress.test.mjs',
+
+  // #906（存储仓储化的特征化测试）：本文件临时改写 `IDBObjectStore.prototype.put/delete` 注入写失败、
+  // 在「缺能力」用例里临时删 `globalThis.indexedDB`，并独占 `chat/db.ts` 的模块级连接单例（用例间只清数据）。
+  // 机制类别：进程级全局 + 原型 mock + 模块级单例 —— 同批文件共用这些，合批会互相打到对方的写入与数据。
+  'storage-char-session.test.mjs',
+
+  // #906（IndexedDB 后端冒烟）：经 `getStorage()` 走 `chat/db.ts` 的模块级连接单例，且最后一条用例会
+  // `close()` 掉这条共享连接再重开；同批文件共用同一份单例与同一个库，合批会互相关掉对方的连接、
+  // 把别人的数据混进本文件的「空库」。机制类别：模块级单例 + 共享库 —— 与上一条同类，单列最诚实。
+  'storage-idb-backend.test.mjs',
+
+  // #915（迁移引擎的 IDB 只读源）：把 IDBObjectStore / IDBCursor / IDBDatabase.transaction 的原型方法临时桩成
+  // 抛错或记录，并独占 `chat/db.ts` 的模块级连接单例与共享 fake-indexeddb 库。机制类别：进程级原型 mock +
+  // 模块级单例（与上一条同类，技术债见 docs/sqlite-migration-plan.md 第 6 节）。其余 migration-engine-* 是纯内存用例，继续合批。
+  'migration-engine-raw.test.mjs',
+
+  // #906（其余四个特征化测试）：同一类机制 —— 都经 `chat/db.ts` 的模块级连接单例读写真 fake-indexeddb，
+  // 且会换掉/还原 `globalThis.indexedDB`（lifecycle 还用 MockTimers 与 `?inst=N` 多实例）。
+  // 实测（合批 `--only storage-`）：blob-attach 批内红 14 条、单跑全绿（「No objectStore named appAssets」，
+  // 即吃到同批文件换过的库）；批次进程在 lifecycle 的 MockTimers 用例之后以 exit 7 退出，
+  // staging / staging-rollback / storage-failure 没跑到收尾行，被降级串行重跑才绿（DEGRADED 7 > 5，按回归处理）。
+  // 单列最诚实；error-table 是纯函数真值表，不碰库，继续合批。
+  'storage-char-blob-attach.test.mjs',
+  'storage-char-lifecycle.test.mjs',
+  'storage-char-staging.test.mjs',
+  'storage-char-staging-rollback.test.mjs',
+
+  // #916（迁移状态机/闸门/路由/预检/恢复/编排）：同一类机制 —— 都经 `helpers/migration-switch/kit.mjs`
+  // 在模块顶层 `installTsResolve` 并一次性 `loadTsModule` 共享同一份迁移模块实例，且
+  // `migration-switch-barrier.test.mjs` 会装/拆全局 `indexedDB`（reset 时清掉 14 个全局）。
+  // 实测（合批 `--only migration-switch`）：6/7 个文件批内红、单跑全绿，报 `indexedDB is not defined`
+  // 与「路由结论读到上一个文件留下的 engine」；DEGRADED 6 > 5，按回归处理。
+  // `migration-switch-barrier.test.mjs` 自己装拆干净，继续合批。单列最诚实。
+  // barrier 自己会装/拆 globalThis.indexedDB，且经 kit.mjs 注册 `@capacitor/core` 解析钩子 ——
+  // 合批时会把「只有 registerPlugin 的桩」传染给同批后续文件（实测 ours-api / ours-payment-* 整片红）。
+  'migration-switch-barrier.test.mjs',
+  'migration-switch-gate.test.mjs',
+  'migration-switch-orchestrator.test.mjs',
+  'migration-switch-preflight.test.mjs',
+  'migration-switch-restore.test.mjs',
+  'migration-switch-router.test.mjs',
+  'migration-switch-state.test.mjs',
+
+  // #917（pagehide / 切后台 flush）：换掉 `globalThis.document` / `window` 并挂 `globalThis.__peek`，
+  // 且被测是 `chat/store.ts` 的模块级单例。实测全量批内红（3 条全红）、单跑全绿 —— 与同族 chat 用例
+  // 同类机制（进程级全局 + 模块单例），单列最诚实。
+  'storage-pagehide-flush.test.mjs',
+
+  // #910（SQLite 契约 runner）：与 IDB runner 同类 —— 两套 runner 都会给库句柄装故障注入钩子、
+  // 并各自加载 `storage/sqlite/*` 与 `chat/db.ts` 的模块实例；合批时互相吃到对方的钩子/单例
+  // （实测：单跑 PASS，`--only storage-` 批内红）。单列最诚实。
+  'storage-contract-sqlite.test.mjs',
+
+  // #906（存储契约套件的 IDB runner）：与上面同一类机制。它在用例里临时补丁 `IDBObjectStore.prototype` 的
+  // put/add/delete/clear（故障注入）、临时把 `globalThis.indexedDB` 置空（「宿主无存储」用例），还会用
+  // `DB_VERSION + 1` 造「库比代码新」并 `deleteDatabase`，且独占 `chat/db.ts` 的模块级连接单例。
+  // 实测（并进 16 个一批）：批次进程以 exit 7 退出（fake-indexeddb 的 Map 追踪溢出），被降级串行才绿。单列最诚实。
+  'storage-contract-idb.test.mjs',
 
   // ── #513：实测「批内红 → 单跑绿」，且在进程内**不可修**的那一批 ────────────────────────────
   //

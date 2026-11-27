@@ -8,7 +8,7 @@
 | 项目 | 值 |
 | --- | --- |
 | 兼容基线 | Android WebView **83**（Chromium 83.0.4103.106，Android 11 出厂镜像） |
-| 扫描范围 | `src/**` 共 **404** 个文件（**264** `.ts` / 85 `.tsx` / 52 `.css` / 1 `.html` / 2 `.md`） |
+| 扫描范围 | `src/**` 共 **466** 个文件（**323** `.ts` / 87 `.tsx` / 53 `.css` / 1 `.html` / 2 `.md`） |
 | 真值来源 | `scripts/check-bundle-syntax.mjs` 的 `LEGACY_RUNTIME_APIS`、`scripts/compat/matrix-scan.mjs` 的 `RUNTIME_APIS` / `LEGACY_POLYFILLED`、`src/polyfills/legacy.ts`；本单**没有**新建第四份清单 |
 
 - 复核（2026-11-21 18:04 +0800，基准 `d38c437`，本单 #740 第一步分支 `feat/740-token-refresh-behavior`）：新增 `src/services/auth/sessionCache.ts` 与 `src/services/auth/accountCaches.ts` 2 个 `.ts`（账号级缓存的登记表与清单，切号清理用），扫描范围 330 → **332** 个文件（`.ts` 211 → **213**）；新文件只用 `Map` / `try…catch` / `typeof` 这类基线内能力，**没有任何一条本表里的 API**，**命中总数仍是 52 处**（31 / 21 / 0）、按 API 分项未变；§二 明细未动。
@@ -21,12 +21,12 @@
 
 | 类别 | 含义 | 命中数 |
 | --- | --- | --- |
-| **类别 1 / 依赖入口 polyfill**（`entry-polyfill`） | 首次支持 > 83，但 `src/polyfills/legacy.ts` 会补齐（靠 `src/main.tsx` 的第一条 import 生效） | **36** |
-| **基线内**（`baseline`） | 首次支持 ≤ 83，WebView 83 原生自带 | **25** |
+| **类别 1 / 依赖入口 polyfill**（`entry-polyfill`） | 首次支持 > 83，但 `src/polyfills/legacy.ts` 会补齐（靠 `src/main.tsx` 的第一条 import 生效） | **38** |
+| **基线内**（`baseline`） | 首次支持 ≤ 83，WebView 83 原生自带 | **27** |
 | **真漏洞**（`uncovered`） | 首次支持 > 83 且没有任何兜底 | **0** |
-| 合计 | | **61** |
+| 合计 | | **65** |
 
-类别 1 命中总数 **61 处**：36 处依赖入口 polyfill、25 处落在基线内、**0 处裸调用无兜底**。
+类别 1 命中总数 **65 处**：38 处依赖入口 polyfill、27 处落在基线内、**0 处裸调用无兜底**。
 
 > 文件数 +2 是 #306 新增 `src/services/diagnostics/fields.ts` 与 `timing.ts` 两个源文件；**命中总数仍是 51**（两文件里没有类别 1 命中），§二 的 `文件:行` 已按位移后的行号重算。
 
@@ -40,12 +40,12 @@
 2. 兜底本身规矩：幂等（重复 install 方法引用不变）、不覆盖原生实现（新版内核等于什么都没做）、无第三方依赖、只用 ≤ ES2020 语法（自己不能被降级目标反噬）；
 3. **缺口**：这条「必须第一个 import」的顺序约束目前只靠注释和单测，没有构建期门禁（产物里若 legacy chunk 被排到调用方之后就会重演 #39 的 beta.8 白屏）。构建期校验归 `scripts/check-capabilities.mjs`（另一条 lane 的工作），本条只记录缺口，不在本单实现。
 
-## 二、逐条命中（61 处）
+## 二、逐条命中（65 处）
 
 | 文件:行 | 假设内容 | 类别 | 风险(高/中/低) | 处置(已有兜底/需探测/需动态验证/拆单) |
 | --- | --- | --- | --- | --- |
-| `src/app/App.tsx:120` | `Object.hasOwn` 存在（Chromium 93） | 1 | 中 | 已有兜底 |
-| `src/app/App.tsx:129` | `Object.hasOwn` 存在（Chromium 93） | 1 | 中 | 已有兜底 |
+| `src/app/App.tsx:123` | `Object.hasOwn` 存在（Chromium 93） | 1 | 中 | 已有兜底 |
+| `src/app/App.tsx:132` | `Object.hasOwn` 存在（Chromium 93） | 1 | 中 | 已有兜底 |
 | `src/components/base/Modal.tsx:104` | `Array.prototype.at` 存在（Chromium 92；13 处接收者全是数组，零字符串接收者） | 1 | 中 | 已有兜底 |
 | `src/components/chatInput/ChatInput.tsx:80` | `Object.hasOwn` 存在（Chromium 93） | 1 | 中 | 已有兜底 |
 | `src/components/markdown/MermaidDiagram.tsx:49` | `String.prototype.trimEnd` 存在（Chromium 66，低于基线） | 1 | 低 | —（基线内，无需处置） |
@@ -64,8 +64,8 @@
 | `src/services/appUpdate.ts:65` | `crypto.randomUUID` 存在（Chromium 92） | 1 | 中 | 已有兜底 |
 | `src/services/chat/backup.ts:72` | `Object.hasOwn` 存在（Chromium 93） | 1 | 中 | 已有兜底 |
 | `src/services/chat/db.ts:176` | `Array.prototype.flatMap` 存在（Chromium 69，低于基线） | 1 | 低 | —（基线内，无需处置） |
-| `src/services/chat/db.ts:403` | `structuredClone` 存在（Chromium 98；这一行就是 `typeof structuredClone !== 'function'` 的能力探测本身 —— 探不到直接回退，等于自带兜底） | 1 | 中 | 已有兜底 |
-| `src/services/chat/db.ts:1384` | `Array.prototype.flatMap` 存在（Chromium 69，低于基线） | 1 | 低 | —（基线内，无需处置） |
+| `src/services/chat/db.ts:423` | `structuredClone` 存在（Chromium 98；这一行就是 `typeof structuredClone !== 'function'` 的能力探测本身 —— 探不到直接回退，等于自带兜底） | 1 | 中 | 已有兜底 |
+| `src/services/chat/db.ts:1404` | `Array.prototype.flatMap` 存在（Chromium 69，低于基线） | 1 | 低 | —（基线内，无需处置） |
 | `src/services/chat/history/deepseekShare.ts:149` | `Array.prototype.flatMap` 存在（Chromium 69，低于基线） | 1 | 低 | —（基线内，无需处置） |
 | `src/services/chat/history/deepseekShare.ts:208` | `Array.prototype.flatMap` 存在（Chromium 69，低于基线） | 1 | 低 | —（基线内，无需处置） |
 | `src/services/chat/history/toArchive.ts:61` | `Array.prototype.flatMap` 存在（Chromium 69，低于基线） | 1 | 低 | —（基线内，无需处置） |
@@ -80,16 +80,16 @@
 | `src/services/chat/reply.ts:304` | `Array.prototype.flatMap` 存在（Chromium 69，低于基线） | 1 | 低 | —（基线内，无需处置） |
 | `src/services/chat/reply.ts:324` | `Array.prototype.at` 存在（Chromium 92；13 处接收者全是数组，零字符串接收者） | 1 | 中 | 已有兜底 |
 | `src/services/chat/sessionGroups.ts:25` | `Array.prototype.at` 存在（Chromium 92；13 处接收者全是数组，零字符串接收者） | 1 | 中 | 已有兜底 |
-| `src/services/chat/store.ts:219` | `Object.hasOwn` 存在（Chromium 93） | 1 | 中 | 已有兜底 |
-| `src/services/chat/store.ts:224` | `Object.hasOwn` 存在（Chromium 93） | 1 | 中 | 已有兜底 |
-| `src/services/chat/store.ts:416` | `Object.hasOwn` 存在（Chromium 93） | 1 | 中 | 已有兜底 |
-| `src/services/chat/store.ts:436` | `Object.hasOwn` 存在（Chromium 93） | 1 | 中 | 已有兜底 |
-| `src/services/chat/store.ts:474` | `Array.prototype.flatMap` 存在（Chromium 69，低于基线） | 1 | 低 | —（基线内，无需处置） |
-| `src/services/chat/store.ts:962` | `Object.hasOwn` 存在（Chromium 93） | 1 | 中 | 已有兜底 |
-| `src/services/chat/store.ts:1486` | `Array.prototype.at` 存在（Chromium 92；13 处接收者全是数组，零字符串接收者） | 1 | 中 | 已有兜底 |
-| `src/services/chat/store.ts:1582` | `Array.prototype.at` 存在（Chromium 92；13 处接收者全是数组，零字符串接收者） | 1 | 中 | 已有兜底 |
-| `src/services/chat/store.ts:1583` | `Array.prototype.at` 存在（Chromium 92；13 处接收者全是数组，零字符串接收者） | 1 | 中 | 已有兜底 |
-| `src/services/chat/store.ts:1945` | `Promise.allSettled` 存在（Chromium 76，低于基线） | 1 | 低 | —（基线内，无需处置） |
+| `src/services/chat/store.ts:246` | `Object.hasOwn` 存在（Chromium 93） | 1 | 中 | 已有兜底 |
+| `src/services/chat/store.ts:251` | `Object.hasOwn` 存在（Chromium 93） | 1 | 中 | 已有兜底 |
+| `src/services/chat/store.ts:453` | `Object.hasOwn` 存在（Chromium 93） | 1 | 中 | 已有兜底 |
+| `src/services/chat/store.ts:473` | `Object.hasOwn` 存在（Chromium 93） | 1 | 中 | 已有兜底 |
+| `src/services/chat/store.ts:511` | `Array.prototype.flatMap` 存在（Chromium 69，低于基线） | 1 | 低 | —（基线内，无需处置） |
+| `src/services/chat/store.ts:1045` | `Object.hasOwn` 存在（Chromium 93） | 1 | 中 | 已有兜底 |
+| `src/services/chat/store.ts:1579` | `Array.prototype.at` 存在（Chromium 92；13 处接收者全是数组，零字符串接收者） | 1 | 中 | 已有兜底 |
+| `src/services/chat/store.ts:1675` | `Array.prototype.at` 存在（Chromium 92；13 处接收者全是数组，零字符串接收者） | 1 | 中 | 已有兜底 |
+| `src/services/chat/store.ts:1676` | `Array.prototype.at` 存在（Chromium 92；13 处接收者全是数组，零字符串接收者） | 1 | 中 | 已有兜底 |
+| `src/services/chat/store.ts:2038` | `Promise.allSettled` 存在（Chromium 76，低于基线） | 1 | 低 | —（基线内，无需处置） |
 | `src/services/chat/view.ts:167` | `String.prototype.trimEnd` 存在（Chromium 66，低于基线） | 1 | 低 | —（基线内，无需处置） |
 | `src/services/chat/view.ts:269` | `Array.prototype.at` 存在（Chromium 92；13 处接收者全是数组，零字符串接收者） | 1 | 中 | 已有兜底 |
 | `src/services/chat/view.ts:275` | `Array.prototype.flatMap` 存在（Chromium 69，低于基线） | 1 | 低 | —（基线内，无需处置） |
@@ -104,6 +104,10 @@
 | `src/services/markdown/highlight.ts:101` | `Object.hasOwn` 存在（Chromium 93） | 1 | 中 | 已有兜底 |
 | `src/services/markdown/highlight.ts:105` | `Object.hasOwn` 存在（Chromium 93） | 1 | 中 | 已有兜底 |
 | `src/services/markdown/parse.ts:64` | `Array.prototype.flatMap` 存在（Chromium 69，低于基线） | 1 | 低 | —（基线内，无需处置） |
+| `src/services/storage/sqlite/mapping.ts:47` | `Object.hasOwn` 存在（Chromium 93） | 1 | 中 | 已有兜底 |
+| `src/services/storage/sqlite/mapping.ts:314` | `Object.hasOwn` 存在（Chromium 93） | 1 | 中 | 已有兜底 |
+| `src/services/storage/sqlite/repos/shared.ts:10` | `Array.prototype.flatMap` 存在（Chromium 69，低于基线） | 1 | 低 | —（基线内，无需处置） |
+| `src/services/storage/sqlite/repos/staging.ts:103` | `Array.prototype.flatMap` 存在（Chromium 69，低于基线） | 1 | 低 | —（基线内，无需处置） |
 | `src/utils/id.ts:5` | `crypto.randomUUID` 存在（Chromium 92） | 1 | 中 | 已有兜底 |
 
 风险口径：`uncovered` = 高（低内核直接抛异常）；`entry-polyfill` = 中（能用，但正确性依赖入口顺序这一条无门禁的约定）；`baseline` = 低（WebView 83 原生具备）。
@@ -112,8 +116,8 @@
 
 | API | 首次支持 | 命中 | 涉及文件 | 判定 | 已兜底 |
 | --- | --- | --- | --- | --- | --- |
-| `Array.prototype.flatMap` | 69 | 19 | 11 | `baseline` | 否 |
-| `Object.hasOwn` | 93 | 18 | 9 | `entry-polyfill` | 是 |
+| `Array.prototype.flatMap` | 69 | 21 | 13 | `baseline` | 否 |
+| `Object.hasOwn` | 93 | 20 | 10 | `entry-polyfill` | 是 |
 | `Array.prototype.at / String.prototype.at` | 92 | 13 | 9 | `entry-polyfill` | 是 |
 | `crypto.randomUUID` | 92 | 4 | 4 | `entry-polyfill` | 是 |
 | `Intl.DisplayNames` | 81 | 3 | 1 | `baseline` | 否 |
@@ -202,7 +206,7 @@ node --test tests/unit/capabilities-docs-sync.test.mjs   # 文档与复算是否
 - CSS 单位 / 交互行为 / 平台桥接三类假设分属类别 2 / 4 / 3，不在本文档范围。
 
 ## 复核记录
-- 复核（2026-11-25，基准 `77720a32`，单元 `gate/last2`，本条只为把 `capabilities-docs-sync` 的两条红处理掉）：**数字全部由生成器重算**（`node scripts/gen-capabilities-docs.mjs`）。扫描范围 390 → **395** 个文件（`.ts` 253 → **258**，来自公告弹窗 / 官方分享导入 / 存储链路那几批新 `.ts`），命中总数 55 → **60 处**（`entry-polyfill` 36 / `baseline` 24 / `uncovered` 0）。新增 5 处命中落在 4 个文件：`announcements/readGate.ts:78`（`Object.hasOwn`）、`chat/history/deepseekShare.ts:149,208`（`Array.prototype.flatMap`）、`chat/store.ts:472`（`Array.prototype.flatMap`）、`chat/db.ts:403`（`structuredClone`，是 `typeof structuredClone !== 'function'` 的能力探测本身）。§三 缺的 `structuredClone` 行这次**由生成器补上**：脚本以前只改「文档里已有的行」的计数、不补行，于是实时复算多出一个 API 时整行缺席，只有单测的「漏记了这些 API」会红；现在缺行由 `API.byApi` 直接补、并按命中数降序重排整表。
+- 复核（2026-11-25，基准 `77720a32`，单元 `gate/last2`，本条只为把 `capabilities-docs-sync` 的两条红处理掉）：**数字全部由生成器重算**（`node scripts/gen-capabilities-docs.mjs`）。扫描范围 390 → **395** 个文件（`.ts` 253 → **258**，来自公告弹窗 / 官方分享导入 / 存储链路那几批新 `.ts`），命中总数 55 → **60 处**（`entry-polyfill` 36 / `baseline` 24 / `uncovered` 0）。新增 5 处命中落在 4 个文件：`announcements/readGate.ts:78`（`Object.hasOwn`）、`chat/history/deepseekShare.ts:149,208`（`Array.prototype.flatMap`）、`chat/store.ts` 的 `keepFileIds`（`Array.prototype.flatMap`）、`chat/db.ts:403`（`structuredClone`，是 `typeof structuredClone !== 'function'` 的能力探测本身）。§三 缺的 `structuredClone` 行这次**由生成器补上**：脚本以前只改「文档里已有的行」的计数、不补行，于是实时复算多出一个 API 时整行缺席，只有单测的「漏记了这些 API」会红；现在缺行由 `API.byApi` 直接补、并按命中数降序重排整表。
 
 - 复核（2026-11-20 18:20，基准 `553cddd`，本单 #487 W1-B 后半分支 `feat/auth-gate-wiring`）：新增 `src/services/consumeClient.ts`（`.ts`）与 `src/components/auth/AccountRow.tsx`（`.tsx`），扫描范围 303 → **305** 个文件（`.ts` 185 → **186**、`.tsx` 67 → **68**）。新代码只用基线内能力（`??=` / `Number.isFinite` / 既有 zustand store），**没有任何一条本表里的 API**，**命中总数仍是 52 处**（31 / 21 / 0）、按 API 分项（15 / 14 / 13 / 4 / 3 / 2 / 1）未变；§二 明细未动。
 - 复核（2026-11-19 18:32，基准 `452debb`，本单 #303 分支 HEAD `204bd6e`）：新增 1 个 `.ts` 源文件（`src/services/api/keyRejection.ts`，401 判死后的 Key 指纹与停止自动探测的状态）与 `tests/` 侧新增用例，扫描范围 247 → **248** 个文件、`.ts` 147 → **148** 个。新文件只用 `charCodeAt` / `toString(16)` / `URL` 解析与 `zustand` 的 `create`，**没有任何一条本表里的 API**，**命中总数仍是 51 处**，分类分布（31 / 20 / 0）、按 API 分项（3 / 14 / 14 / 13 / 4 / 2 / 1）与 §二 的 `文件:行` 均未变（`src/services/api/client.ts`、`src/services/chat/store.ts` 的改动都在既有命中行之后）。

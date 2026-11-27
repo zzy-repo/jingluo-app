@@ -151,6 +151,8 @@ const ORIGINAL_VALUES = {
     maxHeadBytes: 262_144,
   },
   bootDeadlineMs: 12000,
+  // #916 **新增**的一组（不是搬家项）：Native SQLite 迁移预检阈值（256MiB / 200MiB / 2GiB），逐值固定
+  storageMigration: { reserveBytes: 268_435_456, warnBytes: 209_715_200, maxBytes: 2_147_483_648 },
 }
 
 /** LIMITS 的叶子（点分路径），用于「每项都有人用」的检查 */

@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Android 12+ 数据提取规则（#913）：storage-engine/ 整体排除出云备份与设备迁移。
+  
+  库文件（storage-engine/*.db）与状态文件（storage-engine/state.json）在不同时间点被还原会导致
+  状态机回到 idle，重新迁移。与 backup_rules.xml（Android ≤11）配合，实现跨版本一致性。
+-->
+<data-extraction-rules>
+  <cloud-backup>
+    <exclude domain="file" path="storage-engine" />
+    <!-- 状态/快照在 files/app-fs/ 下，必须与库一起排除（#910 D4） -->
+    <exclude domain="file" path="app-fs" />
+  </cloud-backup>
+  <device-transfer>
+    <exclude domain="file" path="storage-engine" />
+    <exclude domain="file" path="app-fs" />
+  </device-transfer>
+</data-extraction-rules>

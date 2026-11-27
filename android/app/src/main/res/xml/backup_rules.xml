@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Android ≤11 完整备份排除规则（#913）：storage-engine/ 整体排除出 Auto Backup。
+  
+  与 data_extraction_rules.xml（Android 12+）配合，storage-engine/ 目录在所有版本都不会被
+  云备份还原到新设备，避免 SQLite 库文件与状态文件在不同时间点被还原造成状态机不一致。
+-->
+<full-backup-content>
+  <exclude domain="file" path="storage-engine" />
+  <!-- 状态/快照在 AppFileSystem 的根（files/app-fs/）下：库不备份而状态被备份 = 还原后状态机以为已切换却没有库。
+       两者必须同时排除。（#910 D4） -->
+  <exclude domain="file" path="app-fs" />
+</full-backup-content>

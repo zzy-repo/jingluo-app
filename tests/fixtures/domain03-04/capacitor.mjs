@@ -9,6 +9,10 @@ export const Capacitor = {
   isNativePlatform: () => globalThis.__nativePlatform === true,
 }
 
+export const registerPlugin = (name) => ({
+  __plugin: name,
+})
+
 export const CapacitorHttp = {
   get: async (options) => {
     globalThis.__nativeCalls.push({ method: 'GET', url: options.url, headers: options.headers })

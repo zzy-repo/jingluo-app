@@ -16,7 +16,7 @@
 //   行 1 正常首屏                     → F1-01
 //   行 2 会话列表读抛错               → F1-03（失败分支：文案 + 重试入口）
 //   行 3 单条会话详情读抛错           → F1-04（失败分支 + 重试后恢复）
-//   行 4 会话详情已丢失（只有摘要）   → F1-04（缺失分支：仍是可读错误，不是永久 loading）
+//   行 4 会话详情已丢失（摘要还在）   → F1-04（缺失分支：仍是可读错误，不是永久 loading）
 //   行 5 列表读失败后点重试           → F1-03（重试分支：重读成功，列表回来）
 //
 // 跑法（先 pnpm build 生成标准包；本脚本自起临时端口服务）：
@@ -29,8 +29,8 @@ import { requireDist, serveDist } from '../helpers/runtime.mjs'
 import { verifyAppUrl } from '../helpers/env.mjs'
 import { assertNoEgress, installEgressGate } from '../helpers/helpers.mjs'
 import {
+  dropSessionDetail,
   installFaultPatch,
-  orphanSummary,
   seedSessions,
   sessionEntry,
   setFault,
@@ -101,7 +101,7 @@ const waitForGone = (page, part, timeout = 15_000) =>
   waitFor(page, async () => !(await bodyText(page)).includes(part), timeout)
 
 /** 首启：干净 localStorage（+ 预置 Key，避免 F1-09 的设置弹层盖住首屏），并等 App 建好库 */
-const boot = async ({ entries, fault }) => {
+const boot = async ({ entries, fault, dropDetail }) => {
   const context = await browser.newContext({ locale: 'zh-CN', viewport: { width: 1280, height: 800 } })
   const page = await context.newPage()
   /**
@@ -125,6 +125,12 @@ const boot = async ({ entries, fault }) => {
   await setFault(page, fault)
   await page.reload({ waitUntil: 'domcontentloaded' })
   await page.waitForTimeout(500)
+  // 等启动期摘要自愈跑完（#909）再把正文抽掉：否则自愈会顺手把「正文没了」的摘要当幽灵清掉，
+  // 用户在列表里根本看不到这一条，F1-04 的「详情已丢失」分支就无从验证（#933）。
+  if (dropDetail !== undefined) {
+    await page.waitForTimeout(800)
+    await dropSessionDetail(page, dropDetail)
+  }
   return { context, page }
 }
 
@@ -169,7 +175,7 @@ const ROWS = [
   {
     id: '行 2 会话列表读抛错',
     covers: ['F1-03'],
-    fault: { store: 'sessionSummaries', times: 1 },
+    fault: { store: 'sessionSummaries', op: 'getAll', times: 1 },
     async run(page) {
       expect(await waitForText(page, LIST_FAILED), `F1-03 列表读失败给出可读文案「${LIST_FAILED}」`)
       expect(
@@ -185,7 +191,7 @@ const ROWS = [
   {
     id: '行 3 单条会话详情读抛错',
     covers: ['F1-04'],
-    fault: { store: 'sessions', times: 1 },
+    fault: { store: 'sessions', op: 'get', times: 1 },
     async run(page) {
       // 列表读得到（store 名区分，不会连带失败）
       expect(await waitForText(page, '会话甲'), 'F1-04 前置：列表正常渲染')
@@ -208,9 +214,12 @@ const ROWS = [
     id: '行 4 会话详情已丢失',
     covers: ['F1-04'],
     fault: null,
-    extraEntries: [orphanSummary({ id: 'sess-bing', title: '会话丙', at: NOW - 10_000 })],
+    // 启动时三条都完整（摘要数 = 会话数，自愈不会动手），启动完成后再抽掉丙的正文，
+    // 模拟「列表还在、详情已经读不出来」——正文在启动后丢失（存储损坏 / 被系统清掉）。
+    extraEntries: [sessionEntry({ id: 'sess-bing', title: '会话丙', question: '旧问题丙', answer: '旧回答丙', at: NOW - 10_000 })],
+    dropDetail: 'sess-bing',
     async run(page) {
-      expect(await waitForText(page, '会话丙'), 'F1-04 前置：孤儿摘要出现在列表里')
+      expect(await waitForText(page, '会话丙'), 'F1-04 前置：正文已丢失的会话仍在列表里')
       await clickSession(page, '会话丙')
       expect(
         await waitForText(page, DETAIL_FAILED),
@@ -233,7 +242,7 @@ const ROWS = [
   {
     id: '行 5 列表读失败后点重试',
     covers: ['F1-03'],
-    fault: { store: 'sessionSummaries', times: 1 },
+    fault: { store: 'sessionSummaries', op: 'getAll', times: 1 },
     async run(page) {
       expect(await waitForText(page, LIST_FAILED), 'F1-03 前置：列表读失败')
       await clickRetry(page)
@@ -252,7 +261,11 @@ try {
     console.log(`\n-- ${row.id}（覆盖 ${row.covers.join(' / ')}）`)
     let context
     try {
-      const booted = await boot({ entries: [...ENTRIES, ...(row.extraEntries ?? [])], fault: row.fault })
+      const booted = await boot({
+        entries: [...ENTRIES, ...(row.extraEntries ?? [])],
+        fault: row.fault,
+        dropDetail: row.dropDetail,
+      })
       context = booted.context
       await row.run(booted.page)
       console.log(`   ${row.id}：${checks.current} 条断言通过（覆盖 ${row.covers.join(' / ')}）`)

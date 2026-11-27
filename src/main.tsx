@@ -4,6 +4,8 @@ import './polyfills/legacy.js'
 import { createRoot } from 'react-dom/client'
 import { App } from './app/App.js'
 import { ErrorBoundary } from './app/ErrorBoundary.js'
+import { MigrationGate } from './components/migration/MigrationGate.js'
+import { installStorageRuntime } from './services/storage/wiring.js'
 import { setupTheme } from './app/theme.js'
 import { setupReading } from './app/reading.js'
 import { readDiagnosticsFacts } from './app/diagnosticsContext.js'
@@ -162,9 +164,15 @@ if (typeof __TEST_AUTH_STATE__ === 'undefined') {
   void loadAuthFlags()
 }
 
+// 存储运行时接线（#910）：把原生 SQLite / 迁移引擎注册进路由。没装 = 恒走 IndexedDB（与合并前一致）。
+installStorageRuntime()
+
 // 根部包一层错误边界：渲染期异常不再是整屏白屏，而是一张可读的错误页（issue #28）
 createRoot(document.getElementById('root') as HTMLElement).render(
   <ErrorBoundary>
-    <App />
+    {/* 存储启动闸门（#916）：真源确定之前 <App/> 不挂载，store 第一次读库一定在它之后 */}
+    <MigrationGate>
+      <App />
+    </MigrationGate>
   </ErrorBoundary>
 )
