@@ -206,7 +206,7 @@ const abortTransaction = (tx: { abort(): void }) => {
 // 判定规则与结构化描述搬到了 `./storageFailure.js`（#937 / #938）：那套东西是纯函数、有两个调用方
 // （本模块的写入路径 + `chat/store.ts` 的抛出路径），而 store 的 L0 用例会把 `./db.js` 整个换成内存假库，
 // 规则留在本模块里就等于「谁 import 谁就得连假库一起改」，恰恰会把 #938 的被测对象挡在替身后面。
-// 这里原样转出，既有 import 路径（本模块内部、`storage/sqlite/repos/*`、组件、用例）一律不用动。
+// 这里原样转出，既有 import 路径（本模块内部、组件、用例）一律不用动。
 export {
   STORAGE_FAILURE_KINDS,
   classifyStorageFailure,
