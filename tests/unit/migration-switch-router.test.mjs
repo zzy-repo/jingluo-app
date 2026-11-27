@@ -109,13 +109,16 @@ test('两处见证矛盾 → blocked:needs-user-decision', async () => {
   })
 })
 
-test('状态文件损坏且无 SQLite 见证 → 仍是 IDB（idle）；损坏且 SQLite 已见证 → blocked', async () => {
+test('状态文件损坏且无 SQLite 见证 → 仍是 IDB（idle）；损坏且 SQLite 已见证 → sqlite（#980 反转旧口径）', async () => {
   await withEnv({}, async (env) => {
     await env.fs.writeAtomic('storage-engine/state.json', 'garbage')
     assert.equal((await resolveStorageEngine(env.routerDeps())).engine, 'indexeddb')
     await migrated(env)
     await env.fs.writeAtomic('storage-engine/state.json', 'garbage')
-    assert.equal((await resolveStorageEngine(env.routerDeps())).engine, 'blocked')
+    // #980 护栏 A（行为经用户拍板反转）：旧口径是 blocked —— 那等于「库已经提交过」的用户
+    // 每次冷启动都被一张整屏页挡在门外，而损坏的状态文件不改变「库里有 committed_at」这个事实。
+    // 现在按 `rebuild-committed` 同一个道理走 sqlite：库自证已提交，它就是真源。
+    assert.deepEqual(await resolveStorageEngine(env.routerDeps()), { engine: 'sqlite' })
   })
 })
 

@@ -268,6 +268,14 @@ export const freshState = (now: number): MigrationState => ({
 })
 
 /**
+ * `blocked` 详情的两个具名常量（#980）：路由要按**含义**分流，不能靠字符串散落在两处各写一遍。
+ *
+ * - `CORRUPT_BUT_COMMITTED_DETAIL`：状态文件坏了，但库自证 `committed_at` 在 → 读侧护栏 A 的依据
+ * - `AMBIGUOUS_STATE_DETAIL`：状态文件坏/缺失而库里已有业务数据 → 读侧护栏 B（宁可停下也不猜）
+ */
+export const CORRUPT_BUT_COMMITTED_DETAIL = 'state-file-corrupt-and-sqlite-meta-committed'
+
+/**
  * 双见证收敛。纯函数：不读盘、不写盘、不猜。
  *
  * @param file 状态文件的读取结果：正常状态 / 损坏 / 缺失
@@ -301,7 +309,7 @@ export const reconcileWitnesses = (
   }
   if (fileCorrupt) {
     if (sqliteSaysCommitted) {
-      return { kind: 'blocked', detail: 'state-file-corrupt-and-sqlite-meta-committed' }
+      return { kind: 'blocked', detail: CORRUPT_BUT_COMMITTED_DETAIL }
     }
     return witness.unavailable === true
       ? { kind: 'blocked', detail: 'state-file-corrupt-and-sqlite-unreadable' }
