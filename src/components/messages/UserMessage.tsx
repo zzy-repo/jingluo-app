@@ -76,6 +76,10 @@ export const UserMessage = memo(function UserMessage({
    * 用持久的一行提示而不是 toast：用户回看这条消息时，原因必须还在。
    */
   const unavailable = asArray(message.unavailable)
+  /** 缺原件（导入会话的常态，不是故障） */
+  const missingSources = unavailable.filter((file) => file.reason !== 'source-unreadable')
+  /** 本机读不出来（存储层报错：#955 起单独成一组，不许和「缺原件」混成一句话） */
+  const unreadableSources = unavailable.filter((file) => file.reason === 'source-unreadable')
   /**
    * 文档附件（#480 / #527）与图片附件共用 `files` 这一个字段，靠 `att-` 前缀区分
    * （attachmentService 的 `isAttachmentRefId`，与 manager 的 `isAttachmentId` 同一套约定）。
@@ -168,8 +172,21 @@ export const UserMessage = memo(function UserMessage({
                   )}
                 </>
               ) : <p>{t('attachOlderNotice')}</p>}
-              <strong>{t('attachMissingList', { count: unavailable.length })}</strong>
-              <ul>{unavailable.map((file) => <li key={file.id}>{file.name}</li>)}</ul>
+              {/* #955：两种「没跟着发」必须分开说 —— 「本机没有原件」是导入会话的常态，
+                  「本机读不出来」是本机存储出了问题，混成一句会把后者藏起来。 */}
+              {missingSources.length > 0 && (
+                <>
+                  <strong>{t('attachMissingList', { count: missingSources.length })}</strong>
+                  <ul>{missingSources.map((file) => <li key={file.id}>{file.name}</li>)}</ul>
+                </>
+              )}
+              {unreadableSources.length > 0 && (
+                <>
+                  <strong>{t('attachUnreadableList', { count: unreadableSources.length })}</strong>
+                  <ul>{unreadableSources.map((file) => <li key={file.id}>{file.name}</li>)}</ul>
+                  <p>{t('attachUnreadableHint')}</p>
+                </>
+              )}
             </div>
           </details>
         </div>

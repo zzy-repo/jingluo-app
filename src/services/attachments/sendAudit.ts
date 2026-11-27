@@ -40,6 +40,14 @@ export type AttachmentAudit = {
   unavailable: UnavailableAttachment[]
   /** `unavailable` 的 id 集合：发送链路按它跳过，免得每处再判一次、判法还各不相同 */
   unavailableIds: Set<string>
+  /**
+   * 查原件时**存储层抛错**的那些附件（#955）。
+   *
+   * 它们已经按「本机读不出来」进了 `unavailable`（`reason: 'source-unreadable'`），这里额外把
+   * 原始错误带出来，交给调用方进诊断日志 —— 判定要继续（消息照发），但**错误不许被吞**：
+   * 读不出来是后端坏了，不是用户没导入原件，排查时必须能落到是哪一层、什么错。
+   */
+  readErrors: { id: string; error: unknown }[]
 }
 
 export type AttachmentAuditOptions = {
@@ -48,7 +56,13 @@ export type AttachmentAuditOptions = {
    * 是 → 一律算可发送：它的问题属于「上传失败」，要由上传环节点名报错，不在这里被悄悄跳过。
    */
   isOwnUpload: (id: string) => boolean
-  /** 本机有没有可上传的原件（调用方查 IndexedDB 的 files 表） */
+  /**
+   * 本机有没有可上传的原件（调用方查 IndexedDB 的 files 表）。
+   *
+   * **允许抛错**（#955）：抛错按「本机读不出来」处理（`source-unreadable`），不进请求、
+   * 不阻断发送，原始错误经 `readErrors` 交给调用方记诊断。判定这一层不许有「一次读失败
+   * 就让整条消息发不出去」的分支。
+   */
   hasSource: (id: string) => Promise<boolean>
 }
 
@@ -70,7 +84,10 @@ export const auditSendableAttachments = async (
   const sendable: FileAttachment[] = []
   const unavailable: UnavailableAttachment[] = []
   const unavailableIds = new Set<string>()
+  const readErrors: { id: string; error: unknown }[] = []
   const checked = new Map<string, boolean>()
+  /** 读原件时抛过错的 id：决定这次「没跟着发」是说成读不出来，还是说成没有原件 */
+  const unreadable = new Set<string>()
 
   for (const file of files) {
     if (file.serverId || isAttachmentId(file.id) || options.isOwnUpload(file.id)) {
@@ -79,7 +96,25 @@ export const auditSendableAttachments = async (
     }
     let hasSource = checked.get(file.id)
     if (hasSource === undefined) {
-      hasSource = await options.hasSource(file.id)
+      try {
+        hasSource = await options.hasSource(file.id)
+      } catch (error) {
+        /**
+         * #955：**查原件失败 = 读不出来，不是「消息不许发」**。
+         *
+         * 这条链以前没有 try/catch，于是「本机有没有原件」这一次读抛出的任何错误（IDB 读失败、
+         * SQLite 分块校验失败、`getStorage()` 拒绝）都会一路冒到 `prepareFiles` 之外，被当成
+         * 「附件补齐失败」→ 界面只剩一句泛化的「上传失败」（`describe.ts` 的 `kind === 'upload'`
+         * 档），而且两次尝试之间没有任何状态变化，重试永远无效。
+         *
+         * 历史附件本来就**不进本轮请求**（它们是既有消息记录），所以读不出来最多意味着
+         * 「这条消息带不上它」—— 该提示就提示，但绝不该拖死用户这一条文字消息。
+         * 原始错误进 `readErrors`，由调用方记诊断，不许静默。
+         */
+        unreadable.add(file.id)
+        readErrors.push({ id: file.id, error })
+        hasSource = false
+      }
       checked.set(file.id, hasSource)
     }
     if (hasSource) {
@@ -88,9 +123,13 @@ export const auditSendableAttachments = async (
     }
     if (!unavailableIds.has(file.id)) {
       unavailableIds.add(file.id)
-      unavailable.push({ id: file.id, name: file.name, reason: 'source-missing' })
+      unavailable.push({
+        id: file.id,
+        name: file.name,
+        reason: unreadable.has(file.id) ? 'source-unreadable' : 'source-missing',
+      })
     }
   }
 
-  return { sendable, unavailable, unavailableIds }
+  return { sendable, unavailable, unavailableIds, readErrors }
 }
