@@ -356,11 +356,18 @@ const packAttachments = async (
     },
   ]
   let count = 0
+  // 原件是**内容寻址**的（`attachment-<sha256>`）：同一个文件被添加两次就是两条元数据、同一个
+  // `localPath`。按 `localPath` 去重，否则归档里会出现同名的两个条目，`writeArchive` 直接以
+  // 「Invalid history archive entry」拒绝整次备份（设备实测：同一份 docx 加两次后备份全挂）。
+  const packed = new Set<string>()
   for (const [index, row] of rows.entries()) {
-    const blob = await store.readAttachmentBlob(row.localPath).catch(() => undefined)
-    if (blob) {
-      entries.push({ name: `${row.localPath}.bin`, blob })
-      count += 1
+    if (!packed.has(row.localPath)) {
+      const blob = await store.readAttachmentBlob(row.localPath).catch(() => undefined)
+      if (blob) {
+        entries.push({ name: `${row.localPath}.bin`, blob })
+        packed.add(row.localPath)
+        count += 1
+      }
     }
     onProgress?.(index + 1, rows.length, 'attachments')
   }
@@ -368,9 +375,11 @@ const packAttachments = async (
   // 所以不带走它，恢复后文档原件虽然在、正文却再也读不到 —— 模型那边等于没有这份文档。
   // 它是内容寻址的幂等记录（`sha256:parserVersion`），一起打包不会让包变大太多。
   const texts: StoredAttachmentText[] = []
+  const seenText = new Set<string>()
   for (const row of rows) {
     const record = await store.readAttachmentTextRecord(row.parsedTextPath)
-    if (record) {
+    if (record && !seenText.has(record.key)) {
+      seenText.add(record.key)
       texts.push(record)
     }
   }
@@ -473,6 +482,21 @@ const backupFailure = (error: unknown, stage: string): BackupError => {
 }
 
 /**
+ * 预检 / 打包阶段的失败收口（写第一份文件之前的任何异常）。
+ *
+ * 这两步原先**完全裸奔**：异常原样抛给 UI，既没有 `code` 也没有 `stage`，`failureOf()` 只能归成
+ * `unknown`，界面于是播报「暂时读不到备份情况」—— 它想说的其实是「这次备份失败、原因分不出来」。
+ * 更要命的是此时 `status.json` 一个字节都不写、诊断日志里也没有一条，点完「立即备份」什么痕迹都不留。
+ *
+ * 归到 `interrupted` 是真的：这一阶段一份备份文件都没写，已有备份逐字节未变。
+ */
+const preflightFailure = (error: unknown, trigger: string, step: string): BackupError => {
+  logDiagnostic('error', `backup: ${step} failed`, { action: 'backup-preflight', trigger }, error)
+  const kind = classifyFailure(error)
+  return new BackupError(kind === 'unknown' ? 'interrupted' : (kind as BackupErrorCode), step, true)
+}
+
+/**
  * 一次备份（内部实现）：预检空间 → 打包 → 原子写归档 / 附件 → 清单 → 清理旧份 → 记状态。
  *
  * `trigger` 只影响诊断日志里的字段（自动 / 手动 / 恢复前的安全备份共用这一份实现）。
@@ -485,7 +509,11 @@ const runBackupOnce = async (
   if (!isBackupStorageAvailable()) {
     throw new BackupError('unsupported', 'preflight', true)
   }
-  const { backups } = await scanBackups()
+  const { backups } = await scanBackups().catch(async (error: unknown) => {
+    const failure = preflightFailure(error, trigger, 'scan')
+    await writeStatusFile({ ...(await readStatusFile()), last_error: failure.code })
+    throw failure
+  })
   const existing = backups.map((backup) => backup.item)
   const free = await availableBytes()
   if (!hasRoomForNext(free, estimateNextBytes(existing))) {
@@ -498,7 +526,11 @@ const runBackupOnce = async (
     throw new BackupError('space', 'preflight', true)
   }
   onProgress?.(0, 1, 'export')
-  const payload = await buildPayload(onProgress)
+  const payload = await buildPayload(onProgress).catch(async (error: unknown) => {
+    const failure = preflightFailure(error, trigger, 'export')
+    await writeStatusFile({ ...(await readStatusFile()), last_error: failure.code })
+    throw failure
+  })
   if (payload.sessions === 0) {
     // 异常空库保护：空库的「备份」保护不了任何东西；更不能让它挤掉历史有效备份
     logDiagnostic('error', 'backup: empty library, refused', {
