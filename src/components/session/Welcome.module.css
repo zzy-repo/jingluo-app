@@ -4,6 +4,27 @@
   display: flex;
 }
 
+/* 疑似丢库的提示条（#993 任务 3）：只在「零会话 + 有可用备份」时出现 */
+.backupLost {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  box-sizing: border-box;
+  max-width: 100%;
+  margin-bottom: 16px;
+  padding: 8px 12px;
+  border: 1px solid var(--dsw-alias-border-l);
+  border-radius: 12px;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.backupLostText {
+  margin-right: 12px;
+}
+
 .welcome {
   display: flex;
   flex-direction: column;

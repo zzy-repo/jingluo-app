@@ -478,6 +478,8 @@ export const en = {
   deleteAllSessionsModalDescription:
     'Locally saved attachments and unsent drafts will also be deleted.',
   /** Data backup & restore (#993 task 3) — plain language only, no storage internals. */
+  backupLostHint: 'No chats were found on this device, but a usable backup is available',
+  backupLostAction: 'Restore',
   backupSectionTitle: 'Backup & restore',
   backupAutoLabel: 'Automatic backup',
   backupAutoOn: 'On',

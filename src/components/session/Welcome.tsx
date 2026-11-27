@@ -6,6 +6,7 @@ import { getSpec } from '../../services/api/providers.js'
 import { useApiConfig } from '../../services/api/apiConfig.js'
 import { setChatMode, useSettings, type ChatMode } from '../../services/settings.js'
 import { ChatInput } from '../chatInput/ChatInput.js'
+import { BackupLostBanner } from './BackupLostBanner.js'
 import { ChatSettings, ChatSettingsButton } from './ChatSettings.js'
 import { MobileHeader } from './MobileHeader.js'
 import styles from './Welcome.module.css'
@@ -108,6 +109,8 @@ export const Welcome = () => {
         <div className={styles.personaAction}>{settingsButton}</div>}
       {settingsOpen && <ChatSettings onClose={() => setSettingsOpen(false)} />}
       <div className={styles.welcome}>
+        {/* 零会话 + 有可用备份时提示「本机没有找到聊天记录，但检测到有可用备份」 */}
+        <BackupLostBanner />
         <div className={styles.hero}>
           <div className={styles.greeting}>{t('welcomeMessageChat250808')}</div>
           <ModeSwitch />
