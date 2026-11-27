@@ -351,4 +351,83 @@ test('C #959 落盘版本校验：不清新失败、不写旧数据', async (t) 
     assert.deepEqual(saves, ['旧值', '新值'], '落盘顺序与版本顺序一致（旧快照绝不会最后落盘把新数据覆盖）')
     assert.equal(disk.get('c3b')?.customSystemPrompt, '新值', '盘上最终是新值')
   })
+
+  /**
+   * C4 —— 这条是「跳过判据」的**另一面**，也是它最容易误伤的一处：
+   * 会话从盘上读回、发现损坏（`messages: null` → 归一化成 `[]`）→ 内存**修好了**，但盘上还是坏的。
+   * 若读回时把 `persistedVersion` 也抬成「内存修好后的那一版」，紧接着的修复回写就会命中
+   * 「盘上已是最新 → 跳过」—— **修复只活在内存里，盘上永远留着损坏数据**，而且用户看不到任何报错。
+   * 所以：修好的内容必须算**新版本**（只抬 `sessionVersion`），必须真的回写一次。
+   */
+  await t.test('C4 读回时修复过的会话必须回写盘（修复不许只活在内存里）', async () => {
+    const disk = makeDisk()
+    reset(
+      // 不进 cache ⇒ 走「冷缓存读回」这条路（C1–C3 全在缓存命中路径上，覆盖不到这里）
+      { sessions: [summaryOf('c4')] },
+      {
+        loadSession: async (id) => sessionOf(id, { messages: null, rootMessageId: undefined }),
+        saveSession: async (session) => {
+          disk.set(session.id, { ...session })
+        },
+      }
+    )
+
+    chat.selectSession('c4')
+    await settle()
+
+    assert.deepEqual(cached('c4').messages, [], '内存里已修复（messages: null → []）')
+    assert.equal(
+      state().sessionLoadErrors.c4 ?? false,
+      false,
+      '修好的会话照常可用，不算加载失败'
+    )
+    assert.equal(
+      callsOf('saveSession').length,
+      1,
+      '修复必须回写盘 —— 吞掉这一次，盘上永远留着损坏数据（每次打开都修一遍内存，永远修不好盘）'
+    )
+    assert.deepEqual(
+      disk.get('c4')?.messages,
+      [],
+      '盘上拿到的必须是**修复后**的内容 —— 只断言内存不够，这个 bug 的特征正是「内存对、盘上没动」'
+    )
+  })
+
+  /**
+   * C4b —— C4 的加固版：**这条会话的版本号已经存在过**（先编辑落过盘 → 缓存被逐出 → 再冷读回损坏）。
+   * 只靠「新 id 惰性分配一个更大的版本号」在 C4 里能侥幸通过；一旦版本号有残留，
+   * 「修复后必须算新版本」这件事就只能靠**显式抬版本**保证 —— 少了它，回写会被跳过，修复又只活在内存里。
+   */
+  await t.test('C4b 版本号有残留时也必须回写（先编辑过 → 缓存被逐出 → 再读回损坏）', async () => {
+    const disk = makeDisk()
+    let damaged = false
+    reset(
+      { sessions: [summaryOf('c4b')], cache: { c4b: sessionOf('c4b') } },
+      {
+        loadSession: async (id) =>
+          damaged ? sessionOf(id, { messages: null, rootMessageId: undefined }) : sessionOf(id),
+        saveSession: async (session) => {
+          disk.set(session.id, { ...session })
+        },
+      }
+    )
+    // 先正常编辑一次：这条会话因此有了版本号，也确实落过盘
+    assert.equal(await chat.saveSessionPrompt('c4b', '编辑过'), true)
+    const writesBefore = callsOf('saveSession').length
+    assert.equal(writesBefore, 1, '第一次编辑真的写了盘')
+
+    // 缓存被逐出（`trimSessionCache` / 内存压力等），再打开时走冷读，且盘上这条已经损坏
+    chat.useChatStore.setState({ sessionCache: {} })
+    damaged = true
+    chat.selectSession('c4b')
+    await settle()
+
+    assert.deepEqual(cached('c4b')?.messages, [], '内存里已修复')
+    assert.equal(
+      callsOf('saveSession').length,
+      writesBefore + 1,
+      '版本号有残留时更不能省这次回写：少了版本提升，它会命中「盘上已最新 → 跳过」'
+    )
+    assert.deepEqual(disk.get('c4b')?.messages, [], '盘上也是修复后的内容')
+  })
 })

@@ -1147,12 +1147,24 @@ const ensureSessionLoaded = (id: string): Promise<void> => {
       set((state) => ({ sessionCache: { ...state.sessionCache, [id]: session } }))
       // #959：这一步是「真的从盘里读回来了」——内存与盘重新一致，之前那条「没存到本机」不再成立。
       // （缓存命中时根本不会走到这里，所以它不会变成「打开会话就清」）
-      // B 项：内存与盘都在这一刻对齐到同一个版本号，之后任何改动都会把内存版本推高。
-      const loadedVersion = nextStateVersion()
-      sessionVersion.set(id, loadedVersion)
-      persistedVersion.set(id, loadedVersion)
+      /**
+       * #959 B：读回后的版本。**注意两个量的语义不同，不能「对齐成同一个号」当成一件事办**：
+       *  · `persistedVersion` = **盘上**已经写到第几版 —— 这里盘上确实就是刚读回来的那一版；
+       *  · `sessionVersion`   = **内存里**现在是第几版 —— 只有内存内容与盘一致时才等于前者。
+       * 下面 `if (session !== stored)` 分支里，归一化/修复让**内存前进了、盘上没有**，
+       * 那时必须只抬 `sessionVersion`，绝不能顺手把 `persistedVersion` 也抬上去 ——
+       * 那等于对系统撒谎说「盘上已是最新」，紧接着的修复回写会被写链的「盘上已最新 → 跳过」吞掉，
+       * 盘上永远留着损坏数据（每次打开都「修一次内存」，却永远修不好盘，还没有任何报错）。
+       */
+      const diskVersion = nextStateVersion()
+      persistedVersion.set(id, diskVersion)
+      if (session === stored) {
+        sessionVersion.set(id, diskVersion)
+      }
       clearSaveFailure(id)
       if (session !== stored) {
+        /** 修复过的内容是一个**新版本**，必须落盘：只抬内存版本，盘上版本保持不动 */
+        sessionVersion.set(id, nextStateVersion())
         persist(id)
       }
       trimSessionCache()
