@@ -12,102 +12,27 @@
 // `BackupFilePlugin.java`：`<name>.part` → 校验 → rename）、以及 `chat/backup.js`
 // （`exportHistory` / `importHistory`）—— 真实实现要 IndexedDB + zustand，不在 L0 里跑。
 import assert from 'node:assert/strict'
-import { createHash } from 'node:crypto'
 import { test } from 'node:test'
 
+import { backupBridge } from '../helpers/backup-bridge.mjs'
 import { installTsResolve, inlineModule, loadTsModule } from '../helpers/dom-env.mjs'
 
 /* ------------------------------------------------------------------ 原生桥替身（内存文件系统） */
 
-/** 已提交的文件：name → 字节 */
-const committed = new Map()
-/** 正在写的临时文件 */
-let pending = null
-let freeBytesValue = 1024 * 1024 * 1024
 /**
- * 唯一允许同名替换的文件（原生侧白名单，见 `BackupFilePlugin.OVERWRITABLE_NAME`）。
- * 这里写死一份，测试里再与 `core.STATUS_FILE_NAME` 对齐 —— 两边一旦漂开必须红。
+ * 内存文件系统那一套（`<name>.part` → 校验 → rename、白名单覆盖、失败注入、删除计数）在
+ * `helpers/backup-bridge.mjs` 里，与 `backup-safety-retention-1005.test.mjs` 共用同一份：
+ * 两份逐字副本会同时踩两个门 —— `check:test-duplication` R1（基线只减不增），以及合并批次里
+ * 抢同一个 `globalThis.__bridge`（进程级，谁后装谁生效 → 后跑的文件拿到别人的替身，假红）。
+ *
+ * `ctl` 是段落旋钮：`ctl.freeBytes` 剩余空间、`ctl.failMode`/`ctl.failName` 失败注入、
+ * `ctl.pending` 正在写的临时文件。
  */
-const STATUS_NAME = 'status.json'
+const native = backupBridge
+const { bridge, committed, STATUS_NAME } = native
+const ctl = native.state
 
-/** 失败注入：'chunk' 写块失败 / 'verify' 收尾校验失败 / null 正常 */
-let failMode = null
-/** 只让这一个文件名的写块失败（null = 不限文件）：用来单独打挂 `status.json` 那一笔 */
-let failName = null
-
-const hex = (bytes) => createHash('sha256').update(bytes).digest('hex')
-
-const codedError = (code, message = code) => Object.assign(new Error(message), { code })
-
-const pendingBytes = () => Buffer.concat(pending ? pending.chunks : [])
-
-const bridge = {
-  begin: async ({ name, allowOverwrite }) => {
-    // 语义照抄原生 `begin`：默认拒绝同名覆盖，唯一例外是「调用方明确要求 + 名字在白名单里」
-    const mayOverwrite = allowOverwrite === true && name === STATUS_NAME
-    if (committed.has(name) && !mayOverwrite) {
-      throw codedError('TARGET_EXISTS')
-    }
-    pending = { name, chunks: [], mayOverwrite }
-    return { name }
-  },
-  writeChunk: async ({ data }) => {
-    if (failMode === 'chunk' && (failName === null || pending?.name === failName)) {
-      throw codedError('WRITE_FAILED', '写入备份失败')
-    }
-    pending.chunks.push(Buffer.from(data, 'base64'))
-  },
-  finish: async ({ name }) => {
-    if (!pending) {
-      throw codedError('NO_WRITE')
-    }
-    if (failMode === 'verify') {
-      pending = null
-      throw codedError('CHECKSUM_MISMATCH', '校验值与落盘内容不一致')
-    }
-    const bytes = pendingBytes()
-    const mayOverwrite = pending.mayOverwrite
-    pending = null
-    // 原生 `finish` 在 rename 之前还会再查一次：非白名单目标即使走到这里也不许覆盖
-    if (committed.has(name) && !mayOverwrite) {
-      throw codedError('TARGET_EXISTS', '同名备份已存在')
-    }
-    committed.set(name, bytes)
-    return { name, sizeBytes: bytes.length, sha256: hex(bytes) }
-  },
-  abort: async () => {
-    pending = null
-  },
-  list: async () => ({
-    files: [...committed.entries()].map(([name, bytes]) => ({
-      name,
-      sizeBytes: bytes.length,
-      mtimeMs: Date.now(),
-    })),
-  }),
-  readChunk: async ({ name, offset, length }) => {
-    const bytes = committed.get(name)
-    if (!bytes) {
-      throw codedError('NOT_FOUND')
-    }
-    const slice = bytes.subarray(offset, Math.min(offset + length, bytes.length))
-    return { data: Buffer.from(slice).toString('base64'), eof: offset + slice.length >= bytes.length }
-  },
-  hash: async ({ name }) => {
-    const bytes = committed.get(name)
-    if (!bytes) {
-      throw codedError('NOT_FOUND')
-    }
-    return { sha256: hex(bytes), sizeBytes: bytes.length }
-  },
-  remove: async ({ name }) => {
-    committed.delete(name)
-  },
-  freeBytes: async () => ({ bytes: freeBytesValue }),
-}
-
-globalThis.__bridge = bridge
-globalThis.__native = true
+native.install()
 
 /* ------------------------------------------------------------------ chat 侧替身（导出 / 导入） */
 
@@ -170,11 +95,7 @@ const core = await loadTsModule('src/services/backup/backupCore.ts')
 const api = await loadTsModule('src/services/backup/backupApi.ts')
 
 const reset = () => {
-  committed.clear()
-  pending = null
-  failMode = null
-  failName = null
-  freeBytesValue = 1024 * 1024 * 1024
+  native.reset()
   globalThis.__nextSessions = 3
   globalThis.__exportFails = false
   globalThis.__importFails = false
@@ -251,7 +172,7 @@ test('[1] 写块失败：旧备份逐字节不变，失败分类为 interrupted'
   assert.equal(first.checksumOk, true)
   assert.equal(first.sessionCount, 3)
 
-  failMode = 'chunk'
+  ctl.failMode = 'chunk'
   await assert.rejects(api.runBackup('manual'), (error) => {
     assert.equal(error.name, 'BackupError')
     assert.equal(error.code, 'interrupted')
@@ -280,7 +201,7 @@ test('[1b] 收尾校验失败：不产出新备份，旧档仍在', async () => 
   reset()
   const first = await api.runBackup('manual')
   const before = filesOf(first.id)
-  failMode = 'verify'
+  ctl.failMode = 'verify'
   await assert.rejects(api.runBackup('auto'), (error) => {
     assert.equal(error.code, 'corrupt')
     assert.equal(error.currentDataIntact, true)
@@ -424,11 +345,11 @@ test('[7] 状态文件写入失败：盘上旧 status.json 原文仍在且可解
 
   // 只打挂 status.json 这一笔写块：备份本体照常成功，坏掉的只有状态这一份小文件
   await new Promise((resolve) => setTimeout(resolve, 5))
-  failMode = 'chunk'
-  failName = STATUS_NAME
+  ctl.failMode = 'chunk'
+  ctl.failName = STATUS_NAME
   const second = await api.runBackup('manual')
-  failMode = null
-  failName = null
+  ctl.failMode = null
+  ctl.failName = null
   assert.notEqual(second.createdAtUtc, first.createdAtUtc, '两次时间戳相同会让下面的「文本没变」变成空断言')
 
   // 断言必须看**盘上的原始文本**：`readStatusFile` 会与内存镜像 `memoryStatus` 合并，
@@ -462,7 +383,7 @@ test('[7] 状态文件写入失败：盘上旧 status.json 原文仍在且可解
 test('[8a] 空间真的不够：`space` 照报（不许因为「想自愈」把真话吞掉）', async () => {
   reset()
   await api.runBackup('manual')
-  freeBytesValue = 0
+  ctl.freeBytes = 0
   await assert.rejects(api.runBackup('manual'), (error) => {
     assert.equal(error.code, 'space')
     return true
@@ -478,14 +399,14 @@ test('[8a] 空间真的不够：`space` 照报（不许因为「想自愈」把�
 test('[8b] 盘已腾出空间：过时的 `space` 结论不再播报，且不改写盘上事实', async () => {
   reset()
   await api.runBackup('manual')
-  freeBytesValue = 0
+  ctl.freeBytes = 0
   await assert.rejects(api.runBackup('manual'), (error) => {
     assert.equal(error.code, 'space')
     return true
   })
 
   // 用户清理了空间（设备实测里这一步之后状态行仍然显示「空间不足」）
-  freeBytesValue = 1024 * 1024 * 1024
+  ctl.freeBytes = 1024 * 1024 * 1024
   const status = await api.getStatus()
   assert.equal(status.enoughForNext, true)
   assert.equal(status.lastError, null, '空间已经够用时，`space` 不是当前状态')
@@ -508,7 +429,7 @@ test('[8c] `empty` 的过时判定不变：与当前空间无关，仍然不播�
   })
   assert.equal((await api.getStatus()).lastError, null)
   // 盘不够时也不该把 `empty` 退化成「一条当前状态」（不该和 space 绑在一起）
-  freeBytesValue = 0
+  ctl.freeBytes = 0
   const status = await api.getStatus()
   assert.equal(status.enoughForNext, false)
   assert.equal(status.lastError, null)

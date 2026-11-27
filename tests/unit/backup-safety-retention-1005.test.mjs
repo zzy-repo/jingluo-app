@@ -16,90 +16,25 @@
 // `chat/backup.js`（`exportHistory` / `importHistory`）、`diagnostics/collector.js`（这里额外记录调用，
 // 用来数清理失败到底刷了几条日志）。
 import assert from 'node:assert/strict'
-import { createHash } from 'node:crypto'
 import { test } from 'node:test'
 
+import { backupBridge } from '../helpers/backup-bridge.mjs'
 import { installTsResolve, inlineModule, loadTsModule } from '../helpers/dom-env.mjs'
 
 /* ------------------------------------------------------------------ 原生桥替身（内存文件系统） */
 
-/** 已提交的文件：name → 字节 */
-const committed = new Map()
-/** 正在写的临时文件 */
-let pending = null
-/** 唯一允许同名替换的文件（原生侧白名单，见 `BackupFilePlugin.OVERWRITENAME`） */
-const STATUS_NAME = 'status.json'
-/** `remove` 被调用的次数（name → 次数）：用来钉「同一个文件不许被反复尝试删除」 */
-const removeCalls = new Map()
-/** 这些文件名删除时抛错（清理失败的注入点） */
-const removeFails = new Set()
+/**
+ * 与 `backup-core-993.test.mjs` 共用 `helpers/backup-bridge.mjs` 那一份（语义、白名单、
+ * 失败注入都在里面）。两份逐字副本同时踩 `check:test-duplication` R1 与合并批次的
+ * `globalThis.__bridge` 抢占（后装的生效 → 假红）。
+ *
+ * 本文件多用的两个观测点也在同一份里：`removeCalls`（同一文件被尝试删几次）、
+ * `removeFails`（删这些名字就抛错）。
+ */
+const native = backupBridge
+const { bridge, committed, removeCalls, removeFails } = native
 
-const hex = (bytes) => createHash('sha256').update(bytes).digest('hex')
-const codedError = (code, message = code) => Object.assign(new Error(message), { code })
-const pendingBytes = () => Buffer.concat(pending ? pending.chunks : [])
-
-const bridge = {
-  begin: async ({ name, allowOverwrite }) => {
-    const mayOverwrite = allowOverwrite === true && name === STATUS_NAME
-    if (committed.has(name) && !mayOverwrite) {
-      throw codedError('TARGET_EXISTS')
-    }
-    pending = { name, chunks: [], mayOverwrite }
-    return { name }
-  },
-  writeChunk: async ({ data }) => {
-    pending.chunks.push(Buffer.from(data, 'base64'))
-  },
-  finish: async ({ name }) => {
-    if (!pending) {
-      throw codedError('NO_WRITE')
-    }
-    const bytes = pendingBytes()
-    const mayOverwrite = pending.mayOverwrite
-    pending = null
-    if (committed.has(name) && !mayOverwrite) {
-      throw codedError('TARGET_EXISTS')
-    }
-    committed.set(name, bytes)
-    return { name, sizeBytes: bytes.length, sha256: hex(bytes) }
-  },
-  abort: async () => {
-    pending = null
-  },
-  list: async () => ({
-    files: [...committed.entries()].map(([name, bytes]) => ({
-      name,
-      sizeBytes: bytes.length,
-      mtimeMs: Date.now(),
-    })),
-  }),
-  readChunk: async ({ name, offset, length }) => {
-    const bytes = committed.get(name)
-    if (!bytes) {
-      throw codedError('NOT_FOUND')
-    }
-    const slice = bytes.subarray(offset, Math.min(offset + length, bytes.length))
-    return { data: Buffer.from(slice).toString('base64'), eof: offset + slice.length >= bytes.length }
-  },
-  hash: async ({ name }) => {
-    const bytes = committed.get(name)
-    if (!bytes) {
-      throw codedError('NOT_FOUND')
-    }
-    return { sha256: hex(bytes), sizeBytes: bytes.length }
-  },
-  remove: async ({ name }) => {
-    removeCalls.set(name, (removeCalls.get(name) ?? 0) + 1)
-    if (removeFails.has(name)) {
-      throw codedError('WRITE_FAILED', '删除失败')
-    }
-    committed.delete(name)
-  },
-  freeBytes: async () => ({ bytes: 1024 * 1024 * 1024 }),
-}
-
-globalThis.__bridge = bridge
-globalThis.__native = true
+native.install()
 
 /* ------------------------------------------------------------------ 诊断调用记录 */
 
@@ -173,10 +108,7 @@ const api = await loadTsModule('src/services/backup/backupApi.ts')
 const limits = await loadTsModule('src/services/backup/limits.ts')
 
 const reset = () => {
-  committed.clear()
-  pending = null
-  removeCalls.clear()
-  removeFails.clear()
+  native.reset()
   diagCalls.length = 0
   importCalls.length = 0
   globalThis.__nextSessions = 3
