@@ -6,6 +6,7 @@
 //   [3] 异常空库不覆盖历史备份（空库既不写新份，也不清理任何旧份）；
 //   [4] 恢复前必须先做安全备份，安全备份失败就中止（`safety-backup-failed`）；
 //   [5] 保留策略：份数上限、最新一份永不删、唯一有效备份不许删。
+//   [7] 状态文件写入失败时，盘上旧 `status.json` 原文仍在且可解析（不会整份消失）。
 //
 // 替身范围：`@capacitor/core`（能力探测 + 插件桥）、`BackupFile` 桥（内存文件系统，语义照抄
 // `BackupFilePlugin.java`：`<name>.part` → 校验 → rename）、以及 `chat/backup.js`
@@ -23,8 +24,16 @@ const committed = new Map()
 /** 正在写的临时文件 */
 let pending = null
 let freeBytesValue = 1024 * 1024 * 1024
+/**
+ * 唯一允许同名替换的文件（原生侧白名单，见 `BackupFilePlugin.OVERWRITABLE_NAME`）。
+ * 这里写死一份，测试里再与 `core.STATUS_FILE_NAME` 对齐 —— 两边一旦漂开必须红。
+ */
+const STATUS_NAME = 'status.json'
+
 /** 失败注入：'chunk' 写块失败 / 'verify' 收尾校验失败 / null 正常 */
 let failMode = null
+/** 只让这一个文件名的写块失败（null = 不限文件）：用来单独打挂 `status.json` 那一笔 */
+let failName = null
 
 const hex = (bytes) => createHash('sha256').update(bytes).digest('hex')
 
@@ -33,24 +42,35 @@ const codedError = (code, message = code) => Object.assign(new Error(message), {
 const pendingBytes = () => Buffer.concat(pending ? pending.chunks : [])
 
 const bridge = {
-  begin: async ({ name }) => {
-    if (committed.has(name)) {
+  begin: async ({ name, allowOverwrite }) => {
+    // 语义照抄原生 `begin`：默认拒绝同名覆盖，唯一例外是「调用方明确要求 + 名字在白名单里」
+    const mayOverwrite = allowOverwrite === true && name === STATUS_NAME
+    if (committed.has(name) && !mayOverwrite) {
       throw codedError('TARGET_EXISTS')
     }
-    pending = { name, chunks: [] }
+    pending = { name, chunks: [], mayOverwrite }
     return { name }
   },
   writeChunk: async ({ data }) => {
-    if (failMode === 'chunk') {
+    if (failMode === 'chunk' && (failName === null || pending?.name === failName)) {
       throw codedError('WRITE_FAILED', '写入备份失败')
     }
     pending.chunks.push(Buffer.from(data, 'base64'))
   },
   finish: async ({ name }) => {
-    const bytes = pendingBytes()
-    pending = null
+    if (!pending) {
+      throw codedError('NO_WRITE')
+    }
     if (failMode === 'verify') {
+      pending = null
       throw codedError('CHECKSUM_MISMATCH', '校验值与落盘内容不一致')
+    }
+    const bytes = pendingBytes()
+    const mayOverwrite = pending.mayOverwrite
+    pending = null
+    // 原生 `finish` 在 rename 之前还会再查一次：非白名单目标即使走到这里也不许覆盖
+    if (committed.has(name) && !mayOverwrite) {
+      throw codedError('TARGET_EXISTS', '同名备份已存在')
     }
     committed.set(name, bytes)
     return { name, sizeBytes: bytes.length, sha256: hex(bytes) }
@@ -153,6 +173,7 @@ const reset = () => {
   committed.clear()
   pending = null
   failMode = null
+  failName = null
   freeBytesValue = 1024 * 1024 * 1024
   globalThis.__nextSessions = 3
   globalThis.__exportFails = false
@@ -385,4 +406,49 @@ test('[5] 第 4 份成功后才清理旧份，最新一份保留', async () => {
   // 被清理的那份文件也真的从盘上消失（不是只从列表里藏起来）
   assert.equal(filesOf(made[0].id).archive, undefined)
   assert.equal(filesOf(made[0].id).manifest, undefined)
+})
+
+/* --------------------------------------- [7] 状态文件写入失败不整份消失（#993 回归） */
+
+test('[7] 状态文件写入失败：盘上旧 status.json 原文仍在且可解析', async () => {
+  reset()
+  assert.equal(STATUS_NAME, core.STATUS_FILE_NAME, '替身的白名单名字必须与真实状态文件名一致')
+
+  const first = await api.runBackup('manual')
+  const beforeBytes = committed.get(STATUS_NAME)
+  assert.ok(beforeBytes, '一次成功备份后应留下 status.json')
+  const beforeText = beforeBytes.toString('utf8')
+  const beforeParsed = core.parseStatusFile(beforeText)
+  assert.equal(beforeParsed.last_success_at_utc, first.createdAtUtc)
+  assert.equal(beforeParsed.last_error, null)
+
+  // 只打挂 status.json 这一笔写块：备份本体照常成功，坏掉的只有状态这一份小文件
+  await new Promise((resolve) => setTimeout(resolve, 5))
+  failMode = 'chunk'
+  failName = STATUS_NAME
+  const second = await api.runBackup('manual')
+  failMode = null
+  failName = null
+  assert.notEqual(second.createdAtUtc, first.createdAtUtc, '两次时间戳相同会让下面的「文本没变」变成空断言')
+
+  // 断言必须看**盘上的原始文本**：`readStatusFile` 会与内存镜像 `memoryStatus` 合并，
+  // `getStatus()` 在状态文件已经消失的情况下照样报得出来（假绿），所以这里不碰它。
+  const afterBytes = committed.get(STATUS_NAME)
+  assert.ok(afterBytes, '状态文件写入失败后，旧 status.json 不该从盘上消失')
+  const afterText = afterBytes.toString('utf8')
+  assert.equal(afterText, beforeText, '旧状态文本应逐字节不变')
+  assert.equal(
+    core.parseStatusFile(afterText).last_success_at_utc,
+    first.createdAtUtc,
+    '盘上旧文本必须仍可解析成上一份有效状态'
+  )
+
+  // 反向验证：状态写入这条路确实会覆盖同一个文件 —— 否则上面「文本没变」只是因为它根本没写过
+  await new Promise((resolve) => setTimeout(resolve, 5))
+  const third = await api.runBackup('manual')
+  const overwritten = committed.get(STATUS_NAME)
+  assert.ok(overwritten, '成功写入后 status.json 应在盘上')
+  const overwrittenText = overwritten.toString('utf8')
+  assert.notEqual(overwrittenText, beforeText, '状态文件必须能被同名替换成新内容')
+  assert.equal(core.parseStatusFile(overwrittenText).last_success_at_utc, third.createdAtUtc)
 })
