@@ -12,7 +12,7 @@ import { InfraError } from '../capability/errors.js'
 import { reportProtectionFailure } from './diagnostics.js'
 import { createFreeSpace, type FreeSpaceResult } from './freeSpace.js'
 import { createHeal, type HealResult } from './heal.js'
-import { createHighwater, detectDataLoss, type Highwater } from './highwater.js'
+import { createHighwater, detectDataLoss, evidenceFromSnapshots, type Highwater, type HighwaterMark } from './highwater.js'
 import { createRestore, type RestorableSnapshot, type RestoreOptions, type RestoreResult } from './restore.js'
 import { SNAPSHOT_MIN_INTERVAL_MS } from './constants.js'
 import { createSnapshots, type SnapshotWriteResult, type Snapshots } from './snapshot.js'
@@ -73,6 +73,14 @@ export const createProtection = (deps: ProtectionDeps): Protection => {
     return summaries > 0 ? summaries : deps.storage.countSessions()
   }
 
+  /**
+   * #936：库为空、而高水位标记又不可信（没有 / 被写成 0 条）时，用磁盘上仍**校验通过**的快照当第二证据。
+   * 只在「库为空」这一条冷路径上读（正常启动不付这份开销）；损坏的快照由 `list()` 逐份校验后标
+   * `valid=false`，既不进证据、也不进恢复入口。
+   */
+  const snapshotEvidence = (mark: HighwaterMark | null): Promise<{ sessions: number; at: number } | null> =>
+    guarded('startup-snapshot-evidence', async () => evidenceFromSnapshots(mark, await restoring.list()), null)
+
   const checkAtStartup = (): Promise<DataLostInfo | null> =>
     guarded(
       'startup-check',
@@ -89,9 +97,17 @@ export const createProtection = (deps: ProtectionDeps): Protection => {
           }
           return { expectedSessions: verdict.expectedSessions, lastSeenAt: verdict.lastSeenAt }
         }
-        if (count > 0) {
-          await highwater.write(count)
+        if (count === 0) {
+          // #936：标记只有「0 条」或「没有」时，它分不出「全新用户」和「库被系统清掉」（满盘时标记自己也会
+          // 写坏 / 被写成 0）。磁盘上还有有效快照就说明本机确实有过数据 —— 按丢失处理，横幅与恢复入口才出得来。
+          const evidence = await snapshotEvidence(mark)
+          if (evidence !== null) {
+            await guarded('highwater-mark-lost', () => highwater.write(count, { markLost: evidence.sessions }), null)
+            return { expectedSessions: evidence.sessions, lastSeenAt: evidence.at }
+          }
+          return null
         }
+        await highwater.write(count)
         return null
       },
       null
