@@ -422,6 +422,64 @@ const withStorage = <T,>(run: (storage: StorageBackend) => Promise<T>): Promise<
 
 const sessionAccess = new Map<string, number>()
 const unsavedSessions = new Set<string>()
+/**
+ * #959 B：会话的**内存版本号**与**已落盘版本号**，判据是「这次写进去的版本 == 当前内存版本」。
+ *
+ * 为什么必须是新增的单调序号（而不是现成的量）：
+ *  · **`updatedAt` 不能用**：`updateSession()` 不集中 bump 时间戳，各调用点自己写，还有一批路径根本不写
+ *    （所以它连「改过没有」都不可靠，更别说「谁更新」）；
+ *  · **墙钟不能用**：系统时钟被改 / NTP 回拨会把「谁更新」判反，而判反的后果是**吃掉一次真实的新失败**
+ *    —— 横幅消失、盘上没有用户刚才那次改动、界面还告诉他存好了；
+ *  · 序号只在**本进程内**比较，不落盘、不进 IDB schema：冷启动后内存与盘都从盘重读、天然一致，
+ *    跨进程没有可比的版本，也不需要有。
+ */
+let stateSeq = 0
+const nextStateVersion = () => ++stateSeq
+/** 内存里这条会话的版本；`updateSession()` 每产出新对象就取一个新号 */
+const sessionVersion = new Map<string, number>()
+/** 已经确认写进盘里的版本（`save()` 成功返回后才更新） */
+const persistedVersion = new Map<string, number>()
+/**
+ * 每会话一条写链：保证「提交顺序 == 版本顺序」。
+ *
+ * `withStorage()` 在库还没打开时是 `getStorage().then(run)` —— 快照对象同步抓取、**提交被推迟**；
+ * 期间用户改出的新版本可能先落盘，旧快照后到就把新数据整行覆盖（`sessions.save` 是整行 REPLACE，
+ * 而且**不报错**，用户以为存好了）。串行之后，旧快照轮到自己时要么被合并成最新内存、要么直接跳过。
+ */
+const writeChains = new Map<string, Promise<unknown>>()
+
+/** 懒分配：第一次碰到这条会话就给它一个版本号，之后每次内存变更再加一个 */
+const versionOf = (sessionId: string) => {
+  const known = sessionVersion.get(sessionId)
+  if (known !== undefined) {
+    return known
+  }
+  const fresh = nextStateVersion()
+  sessionVersion.set(sessionId, fresh)
+  return fresh
+}
+
+const enqueueWrite = <T,>(sessionId: string, task: () => Promise<T>): Promise<T> => {
+  const previous = writeChains.get(sessionId)
+  /**
+   * 队里没人时**立即发起**（不是排到微任务里）：存储已打开时，「同一 tick 就调到后端」是既有纪律 ——
+   * pagehide / visibilitychange(hidden) 的 flush 靠它，页面正在关的那一下不能多等一个微任务。
+   * 只有真的有一次写在飞时才排队，那时顺序才需要保证。
+   */
+  const next = previous === undefined ? task() : previous.then(task, task)
+  // 前一次失败不能卡死后一次
+  const tail = next.then(
+    () => undefined,
+    () => undefined
+  )
+  writeChains.set(sessionId, tail)
+  void tail.then(() => {
+    if (writeChains.get(sessionId) === tail) {
+      writeChains.delete(sessionId)
+    }
+  })
+  return next
+}
 /** 保存失败时保留原件，重试成功后才释放。 */
 const pendingFiles = new Map<string, StoredFile[]>()
 /**
@@ -487,6 +545,9 @@ const updateSession = (id: string, update: (session: Session) => Session) =>
     if (session === previous) {
       return state
     }
+    // #959 B：内存里换了新对象 → 取一个新版本号。写链靠它判「这份快照是不是最新的」，
+    // 清除判据靠它判「写进去的是不是当前内存」。
+    sessionVersion.set(id, nextStateVersion())
     return {
       sessionCache: { ...state.sessionCache, [id]: session },
       sessions: sameSummary(previous, session)
@@ -683,7 +744,12 @@ const persist = (sessionId: string) => {
   })
 
   /** 落盘之后的状态收敛：缓存路径与「从库里读回来再写」路径共用这一份 */
-  const settled = (session: Session, fromCache: boolean, outcome: SaveSessionOutcome) => {
+  const settled = (
+    session: Session,
+    fromCache: boolean,
+    outcome: SaveSessionOutcome,
+    version: number
+  ) => {
     if (epoch !== historyEpoch) {
       return undefined
     }
@@ -730,16 +796,24 @@ const persist = (sessionId: string) => {
     } else {
       markDegradedAttachments(sessionId, outcome.degradedFiles, session.messages.length)
     }
-    if (!fromCache) {
-      // 从库里读回来的：内存里没有正文，不存在「还有新改动没落盘」的可能
+    // #959 B：这段内容确实进了盘（只升不降）
+    if (version > (persistedVersion.get(sessionId) ?? 0)) {
+      persistedVersion.set(sessionId, version)
+    }
+    /**
+     * 清除判据（#959 B）：**这次写进去的版本 == 当前内存版本**才清 —— 也就是「盘上确实等于内存」。
+     * 只靠「这次写成功了」不够：写入期间内存可能又变了（用户接着改 / 流式收尾），
+     * 那时盘落后于内存，之前那条「没存到本机」仍然是实话，横幅与重试入口都必须留着。
+     */
+    if (version === versionOf(sessionId)) {
       unsavedSessions.delete(sessionId)
-      // #959：这一步之后内存 == 盘，之前那条「没存到本机」已经变成假话，必须撤掉
       clearSaveFailure(sessionId)
-    } else if (getSession(sessionId) === session) {
-      unsavedSessions.delete(sessionId)
-      clearSaveFailure(sessionId)
-      reportedSaveFailures.clear()
-      trimSessionCache()
+      if (fromCache) {
+        reportedSaveFailures.clear()
+        trimSessionCache()
+      }
+    } else {
+      unsavedSessions.add(sessionId)
     }
     // 附件降级时**留在待保存集合里**：点「重试」会再写一次这批 blob
     if (outcome.degradedFiles.length > 0) {
@@ -749,24 +823,43 @@ const persist = (sessionId: string) => {
   }
 
   const save = (session: Session, fromCache: boolean) => {
-    // 同步发起落盘（与改造前一致：调用方在同一 tick 里就能看到写请求），同步抛出也转成 rejection
-    const invoked = (() => {
-      try {
-        return withStorage((storage) =>
-          storage.sessions.save(session, files, { keepFileIds: keepFileIds() })
-        )
-      } catch (error) {
-        return Promise.reject(error)
+    // 这份 `session` 对象取自内存那一刻的版本号
+    const snapshotVersion = versionOf(sessionId)
+    /**
+     * 排进这条会话自己的写链（#959 B）：**提交顺序 == 版本顺序**。
+     * 光有版本号挡不住「旧快照后到把新数据整行覆盖」—— `withStorage()` 在库没打开时会推迟提交，
+     * 而 `sessions.save` 是整行 REPLACE、覆盖了也不报错。串行之后旧快照轮到自己时只有两种结局：
+     * 被升级成最新内存（绝不落旧数据），或者直接跳过。
+     */
+    return enqueueWrite(sessionId, async (): Promise<boolean> => {
+      // ① 盘上已经是这一版或更新（更晚的那次写入先落盘了）→ **跳过写入**，绝不覆盖新数据
+      if (snapshotVersion <= (persistedVersion.get(sessionId) ?? 0)) {
+        // 内存里若还有更新的内容没落盘，就如实返回「未落盘」（调用方据此决定是否留着草稿/横幅）
+        return versionOf(sessionId) <= (persistedVersion.get(sessionId) ?? 0)
       }
-    })()
-    return Promise.resolve(invoked)
-      .then((raw) => settled(session, fromCache, raw ?? EMPTY_OUTCOME))
-      .catch((error: unknown) => {
+      // ② 排到时内存已经是更新的一版 → 这次写升级成**最新内存**，不把旧快照写到盘上
+      const latest = snapshotVersion < versionOf(sessionId) ? getSession(sessionId) : undefined
+      const payload = latest ?? session
+      const writtenVersion = latest ? versionOf(sessionId) : snapshotVersion
+      // 同步发起落盘（与改造前一致：调用方在同一 tick 里就能看到写请求），同步抛出也转成 rejection
+      const invoked = (() => {
+        try {
+          return withStorage((storage) =>
+            storage.sessions.save(payload, files, { keepFileIds: keepFileIds() })
+          )
+        } catch (error) {
+          return Promise.reject(error)
+        }
+      })()
+      try {
+        const raw = await invoked
+        return settled(payload, fromCache, raw ?? EMPTY_OUTCOME, writtenVersion) === true
+      } catch (error) {
         reportStorageError('save session')(error)
         const failure = failureOfThrown(error, 'sessions,sessionSummaries')
         if (epoch === historyEpoch && (!fromCache || getSession(sessionId) !== undefined)) {
           markSaveFailure(sessionId, failure, 'save session', {
-            messages: session.messages.length,
+            messages: payload.messages.length,
             attachmentBytes: attachmentBytesOf(files),
           })
         }
@@ -774,7 +867,8 @@ const persist = (sessionId: string) => {
           refreshLowSpace()
         }
         return false
-      })
+      }
+    })
   }
 
   if (cached !== undefined) {
@@ -1053,8 +1147,24 @@ const ensureSessionLoaded = (id: string): Promise<void> => {
       set((state) => ({ sessionCache: { ...state.sessionCache, [id]: session } }))
       // #959：这一步是「真的从盘里读回来了」——内存与盘重新一致，之前那条「没存到本机」不再成立。
       // （缓存命中时根本不会走到这里，所以它不会变成「打开会话就清」）
+      /**
+       * #959 B：读回后的版本。**注意两个量的语义不同，不能「对齐成同一个号」当成一件事办**：
+       *  · `persistedVersion` = **盘上**已经写到第几版 —— 这里盘上确实就是刚读回来的那一版；
+       *  · `sessionVersion`   = **内存里**现在是第几版 —— 只有内存内容与盘一致时才等于前者。
+       * 下面 `if (session !== stored)` 分支里，归一化/修复让**内存前进了、盘上没有**，
+       * 那时必须只抬 `sessionVersion`，绝不能顺手把 `persistedVersion` 也抬上去 ——
+       * 那等于对系统撒谎说「盘上已是最新」，紧接着的修复回写会被写链的「盘上已最新 → 跳过」吞掉，
+       * 盘上永远留着损坏数据（每次打开都「修一次内存」，却永远修不好盘，还没有任何报错）。
+       */
+      const diskVersion = nextStateVersion()
+      persistedVersion.set(id, diskVersion)
+      if (session === stored) {
+        sessionVersion.set(id, diskVersion)
+      }
       clearSaveFailure(id)
       if (session !== stored) {
+        /** 修复过的内容是一个**新版本**，必须落盘：只抬内存版本，盘上版本保持不动 */
+        sessionVersion.set(id, nextStateVersion())
         persist(id)
       }
       trimSessionCache()
@@ -1551,6 +1661,9 @@ const removeSessionData = async (id: string): Promise<boolean> => {
     sessionAccess.delete(id)
     unsavedSessions.delete(id)
     pendingFiles.delete(id)
+    // #959 B：会话没了，版本号也一并丢掉（留着只会让同 id 的重建撞上旧版本）
+    sessionVersion.delete(id)
+    persistedVersion.delete(id)
     // 会话已经删了：它的置顶 / 改名重放也要撤掉，否则「重试」会往一个不存在的会话上再写一次
     pendingMetadataWrites.delete(`${id}|pin session`)
     pendingMetadataWrites.delete(`${id}|rename session`)
