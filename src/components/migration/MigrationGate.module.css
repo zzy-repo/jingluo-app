@@ -56,11 +56,17 @@
   background-color: var(--dsw-alias-markdown-inline-code);
 }
 
+/* 进度只动 transform（#933）：以前把进度写进 `width` 并在 `transition: width` 上过渡 —— 这是
+   布局属性，每帧都要重排，会被 tests/integration/motion.test.mjs 的 [4] 判红。现在条子固定占满
+   轨道，进度靠 `transform: scaleX(百分比)` 表达：合成层内缩放，不触发布局。 */
 .bar {
+  width: 100%;
   height: 100%;
   border-radius: 4px;
   background-color: var(--dsw-alias-label-primary);
-  transition: width 0.2s linear;
+  transform: scaleX(0);
+  transform-origin: left center;
+  transition: transform 0.2s linear;
 }
 
 .percent {

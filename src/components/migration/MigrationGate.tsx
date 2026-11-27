@@ -94,7 +94,7 @@ export const MigrationView = ({
             aria-valuemax={100}
             aria-valuenow={view.percent}
           >
-            <div className={styles.bar} style={{ width: `${view.percent}%` }} />
+            <div className={styles.bar} style={{ transform: `scaleX(${view.percent / 100})` }} />
           </div>
           <div className={styles.percent} data-testid="migration-gate-percent">
             {t('storageMigrationPercent', { percent: view.percent })}
