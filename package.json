@@ -92,6 +92,7 @@
     "check:release-traceability": "node scripts/check-release-traceability.mjs",
     "check:ui-shots": "node scripts/check-ui-shots.mjs",
     "check:limits": "node scripts/check-limits.mjs",
+    "check:backup-retention": "node scripts/check-backup-retention-invariant.mjs",
     "check:log-coverage": "node scripts/check-log-coverage.mjs",
     "check:redact": "node scripts/check-redact.mjs",
     "check:hardcoded-ports": "node scripts/check-hardcoded-ports.mjs",
