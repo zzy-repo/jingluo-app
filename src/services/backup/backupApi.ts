@@ -496,8 +496,14 @@ const writeBackupFiles = async (
  *
  * 每个文件名**最多删一次**（去重 + 每份备份只留一条失败记录）：删不掉的文件不该在一次清理里
  * 被反复尝试，也不该把诊断日志刷成一串同样的异常。
+ *
+ * `exemptIds`（#1006）：**这次操作必须留住的那几份**（恢复路径 = 用户选中的那份备份）。
+ * 恢复流程的两个清理触发点**都必须传**：① 前半段的 `safety` 一档在 ② 读归档**之前**跑，
+ * 不传豁免就可能「用户点了恢复 X、代码在读 X 之前把 X 删了」；② 末尾的 `all` 一档同理
+ * （用户要回到的就是那份）。有没有第三个触发点？加一处就传一次 —— 唯一入口
+ * `planRetention` 的签名把 `exemptIds` 放在必读位置，忘了传时读起来就是「这里允许删掉恢复目标」。
  */
-const applyRetention = async (scope: 'all' | 'safety'): Promise<void> => {
+const applyRetention = async (scope: 'all' | 'safety', exemptIds?: readonly string[]): Promise<void> => {
   let backups: ScannedBackup[]
   try {
     backups = (await scanBackups()).backups
@@ -517,8 +523,12 @@ const applyRetention = async (scope: 'all' | 'safety'): Promise<void> => {
   const plan = planRetention(facts, {
     regularKeep: RETENTION_KEEP,
     safetyKeep: SAFETY_RETENTION_KEEP,
+    ...(exemptIds === undefined ? {} : { exemptIds }),
   })
-  const ids = new Set(scope === 'all' ? [...plan.regular, ...plan.safety] : plan.safety)
+  const exempt = new Set(exemptIds ?? [])
+  const ids = new Set(
+    (scope === 'all' ? [...plan.regular, ...plan.safety] : plan.safety).filter((id) => !exempt.has(id))
+  )
   const attempted = new Set<string>()
   for (const id of ids) {
     const target = byId.get(id)
@@ -856,7 +866,9 @@ export const restoreBackup = (id: string, onProgress?: Progress): Promise<Restor
       // #1005：安全备份的容量上限。**必须放在这里**——新安全备份已经落盘、已经整档校验通过，
       // 这时才允许清掉更早的安全备份（先删后写会让「这次恢复中途失败」变成无路可退）。
       // 只动安全组：恢复不该顺手把用户的常规备份删掉（能少删就少删）。
-      await applyRetention('safety')
+      // #1006：`id` = **用户这次选中的那份备份**，必须豁免 —— 它可能正好是最老的安全备份，
+      // 而它的归档要到 ② 才读：不豁免就会出现「点了恢复 X，程序在读 X 之前把 X 删了」。
+      await applyRetention('safety', [id])
     }
 
     // ② 读回归档（分块）
@@ -919,8 +931,9 @@ export const restoreBackup = (id: string, onProgress?: Progress): Promise<Restor
     //
     // 清理失败**不得**把这次恢复改判成失败：恢复已经成功了就是成功，`applyRetention` 自己吞异常，
     // 这里再兜一层（防止将来有人往里加会抛错的逻辑）。
+    // 同样豁免 `id`：用户要回到的就是那份，恢复路径任何一个清理触发点都不许把它列为候选。
     try {
-      await applyRetention('all')
+      await applyRetention('all', [id])
     } catch (error) {
       logDiagnostic('error', 'restore: prune after restore failed', { action: 'backup-prune' }, error)
     }

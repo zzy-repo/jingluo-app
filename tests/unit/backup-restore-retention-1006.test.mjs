@@ -16,6 +16,9 @@
 //   [3] 只剩 1 份可恢复备份（其余校验不过）→ **一份都不删**（底线优先于上限）；
 //   [4] 清理抛错（`remove` 抛错）→ 恢复**仍然成功**，删不掉的留着，常规组的清理确实跑过；
 //   [5] 恢复**失败**时不许清理 → 常规备份一份都不能少（「不能先删后恢复」）。
+//   [6] 恢复目标自己超上限 → **必须豁免**（用户点了「恢复 X」，不许在读 X 之前把 X 删掉）；
+//   [7] 目标不在候选里 → 清理行为与原来逐字一致（豁免不会顺带保护别的备份）；
+//   [8] 纯逻辑：`exemptIds` 是硬排除，且缺省 / 传空数组时计划与原来完全相同（备份路径不受影响）。
 //
 // 替身与 `backup-core-993` / `backup-safety-retention-1005` 共用 `helpers/backup-bridge.mjs`（进程内
 // 唯一的那一份）：`removeCalls` / `removeFails` 就是这里观测「清理到底动了谁」的两个窗口。
@@ -334,4 +337,101 @@ test('[5] 恢复失败（导入抛错）：常规备份一份都不许被清掉�
   }
   // 失败路径也不把这次写下的安全备份删掉（它是下一次的退路）
   assert.equal(ids.filter((id) => !id.startsWith('b-old-') && !id.startsWith('b-saf-1')).length, 1)
+})
+
+/* ------------------------------------------------------------------ [6] 恢复目标必须豁免（先红后绿） */
+
+test('[6] 目标正好是最老的安全备份且超上限：恢复成功，目标文件必须还在（不许在读它之前删它）', async () => {
+  reset()
+  // 用户要从一份**较老的安全备份**恢复，而安全组已经超上限：按上限该删的恰好是它自己
+  seed({ id: 'b-saf-09', isoTime: at(9), origin: 'safety' })
+  seed({ id: 'b-saf-10', isoTime: at(10), origin: 'safety' })
+  seed({ id: 'b-saf-11', isoTime: at(11), origin: 'safety' })
+
+  const result = await api.restoreBackup('b-saf-09')
+
+  // ① 恢复必须成功：`restoreBackup` 在清理之后才去读它的归档，目标被删 = 这次恢复必然失败
+  assert.deepEqual(result, { attachmentsRestored: true, attachmentCount: 0 })
+  assert.equal(importCalls.length, 1, '恢复真的跑完了（导入被调用一次）')
+  // ② 目标的两个文件一个字节都不许少
+  assert.ok(idsOnDisk().includes('b-saf-09'), '用户选中的那份备份不许被清理删掉')
+  assert.ok(committed.has(core.archiveFileName('b-saf-09')), '目标的归档必须还在')
+  assert.ok(committed.has(core.manifestFileName('b-saf-09')), '目标的清单必须还在')
+  assert.equal(removeCalls.get(core.archiveFileName('b-saf-09')), undefined, '连尝试删都不许')
+  assert.equal(removeCalls.get(core.manifestFileName('b-saf-09')), undefined, '连尝试删都不许')
+  // ③ 豁免是**硬排除**、不是取消清理：超上限的其它项照清（10 点那份）
+  assert.ok(!idsOnDisk().includes('b-saf-10'), '除豁免项之外，超上限的照样被清掉')
+  // ④ 最新一份（这次恢复写下的安全备份）也在，且总量 = 豁免保住的那份 + 上限内的两份
+  assert.ok(idsOnDisk().includes((await api.listBackups())[0].id), '最新的一份永不删')
+  assert.equal(idsOnDisk().length, 3, '3 份安全备份：被豁免的目标 + 11 点 + 新写的那份')
+  assert.equal((await api.getStatus()).lastError, null)
+})
+
+/* ------------------------------------------------------------------ [7] 目标不在候选里：行为不变（回归） */
+
+test('[7] 目标不在超上限候选里：清理行为与原来逐字一致（豁免不会顺带保护别人）', async () => {
+  reset()
+  seed({ id: 'b-reg-09', isoTime: at(9), origin: 'manual' })
+  seed({ id: 'b-reg-10', isoTime: at(10), origin: 'auto' })
+  seed({ id: 'b-reg-11', isoTime: at(11), origin: 'manual' })
+  seed({ id: 'b-saf-12', isoTime: at(12), origin: 'safety' })
+  seed({ id: 'b-saf-13', isoTime: at(13), origin: 'safety' })
+  seed({ id: 'b-saf-14', isoTime: at(14), origin: 'safety' })
+
+  await api.restoreBackup('b-reg-11')
+
+  const ids = idsOnDisk()
+  // 安全组 4 份 > K=2 → 清最老的两份（12 / 13），与「没有豁免参数」时一样
+  assert.ok(!ids.includes('b-saf-12'))
+  assert.ok(!ids.includes('b-saf-13'))
+  assert.ok(ids.includes('b-saf-14'), '只有目标被豁免，其它超上限项照旧清')
+  assert.ok(ids.includes('b-reg-11'), '目标（常规组）本来就不在候选里，照旧保留')
+  assert.equal(ids.length, 5, '3 常规 + 2 安全')
+  assert.deepEqual(
+    [...removeCalls.keys()].sort(),
+    [12, 13].flatMap((hour) => [
+      core.archiveFileName(`b-saf-${hour}`),
+      core.manifestFileName(`b-saf-${hour}`),
+    ]).sort(),
+    '删除集合 = 超上限的那两份安全备份，一个文件都不多'
+  )
+})
+
+/* ------------------------------------------------------------------ [8] 豁免参数本身（纯逻辑） */
+
+test('[8] exemptIds 是硬排除，且缺省 / 传空数组时行为与原来逐字一致', async () => {
+  const fact = (id, hour, origin, checksumOk = true) => ({
+    id,
+    createdAtUtc: at(hour),
+    sizeBytes: 10,
+    checksumOk,
+    ...(origin === undefined ? {} : { origin }),
+  })
+  const table = [
+    [fact('b-1', 9, undefined), fact('b-2', 10, 'manual'), fact('b-3', 11, 'auto'), fact('b-4', 12, 'manual')],
+    [fact('b-s1', 9, 'safety'), fact('b-s2', 10, 'safety'), fact('b-s3', 11, 'safety'), fact('b-s4', 12, 'safety')],
+    [fact('b-1', 9, undefined), fact('b-s1', 10, 'safety'), fact('b-s2', 11, 'safety'), fact('b-x', 12, undefined, false)],
+  ]
+  // ① 缺省 / 空数组 = 原行为（备份路径不传豁免，绝不能因此改变任何一份的清理结果）
+  for (const items of table) {
+    for (const keep of [{ regularKeep: 1, safetyKeep: 1 }, { regularKeep: 2, safetyKeep: 2 }, { regularKeep: 3, safetyKeep: 1 }]) {
+      const base = core.planRetention(items, keep)
+      assert.deepEqual(core.planRetention(items, { ...keep, exemptIds: [] }), base)
+      assert.deepEqual(core.planRetention(items, { ...keep, exemptIds: undefined }), base)
+    }
+  }
+  // ② 硬排除：不管超上限多少、时间戳多老，豁免项一律不进候选（两组都验证）
+  const many = Array.from({ length: 6 }, (_, index) => fact(`b-${index}`, 9 + index, 'manual'))
+  const regularPlan = core.planRetention(many, { regularKeep: 1, safetyKeep: 2, exemptIds: ['b-0', 'b-5'] })
+  assert.deepEqual(
+    [...regularPlan.regular].sort(),
+    ['b-1', 'b-2', 'b-3', 'b-4'],
+    '最老的 b-0 被豁免、最新的 b-5 本来就不删'
+  )
+  const safeties = Array.from({ length: 5 }, (_, index) => fact(`b-s${index}`, 9 + index, 'safety'))
+  const safetyPlan = core.planRetention(safeties, { regularKeep: 3, safetyKeep: 1, exemptIds: ['b-s0', 'b-s1'] })
+  assert.deepEqual([...safetyPlan.safety].sort(), ['b-s2', 'b-s3'], '两份最老的安全备份都被硬排除')
+  // ③ 豁免不在候选里的 id：计划完全不变（豁免只做减法，不会凭空多删）
+  const untouched = core.planRetention(many, { regularKeep: 2, safetyKeep: 2, exemptIds: ['b-4'] })
+  assert.deepEqual(untouched, core.planRetention(many, { regularKeep: 2, safetyKeep: 2 }))
 })

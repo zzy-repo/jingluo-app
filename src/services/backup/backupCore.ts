@@ -478,14 +478,29 @@ export type RetentionPlan = { regular: string[]; safety: string[] }
  *
  * `regular` 与 `safety` 各自算，但两条底线的判定都看**全量**（不只是自己那一组）——
  * 「至少剩一份可用的备份」是整台设备级别的事实，不是分组级别的事实。
+ *
+ * `exemptIds`（#1006）：**这次操作必须留住的那几份**（恢复路径 = 用户选中的那份备份）。
+ * 语义是**硬排除**：不管超出上限多少、不管时间戳多老，这些 id 一律不进删除候选。
+ * 为什么不能靠「它就是最新那份，本来就受保护」：用户完全可以从一份**最老的安全备份**恢复，
+ * 那时它正好排在超上限那一档 —— 而 `backupApi` 的恢复流程在清理发生时**还没读过它的归档**，
+ * 于是「用户点了恢复 X、程序在读 X 之前把 X 删了」。
+ *
+ * 只做减法：豁免只会让删除集合变**小**，所以两条底线（删完至少剩一份 `checksumOk`、
+ * 可信时间最新的那份不删）仍然成立 —— `scripts/check-backup-retention-invariant.mjs` 的
+ * 穷举口径不变；单测另外钉住「`exemptIds` 缺省 / 传空数组」时行为与原来逐字一致，
+ * 备份路径（不传豁免）因此完全不受影响。
  */
 export const planRetention = (
   items: readonly BackupFacts[],
-  options: { regularKeep: number; safetyKeep: number }
-): RetentionPlan => ({
-  regular: selectPrunable(items, options.regularKeep),
-  safety: selectPrunableSafety(items, options.safetyKeep),
-})
+  options: { regularKeep: number; safetyKeep: number; exemptIds?: readonly string[] }
+): RetentionPlan => {
+  const exempt = new Set(options.exemptIds ?? [])
+  const withoutExempt = (ids: readonly string[]) => ids.filter((id) => !exempt.has(id))
+  return {
+    regular: withoutExempt(selectPrunable(items, options.regularKeep)),
+    safety: withoutExempt(selectPrunableSafety(items, options.safetyKeep)),
+  }
+}
 
 /**
  * 下一份备份的体积预估下限（**有历史时**用）：最近一份 × 1.2（余量），再兜一个 8MiB 地板。
