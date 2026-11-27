@@ -284,7 +284,7 @@ fi
 cd "$ANDROID_DIR"
 chmod +x ./gradlew
 GRADLE_ARGS=("$GRADLE_TASK" "--console=plain")
-[ "$EXTRA_ARG" = "--clean" ] && GRADLE_ARGS=("clean" "${GRADLE_ARGS[@]}")
+if [ "$EXTRA_ARG" = "--clean" ]; then GRADLE_ARGS=("clean" "${GRADLE_ARGS[@]}"); fi
 # 回环地址逃生舱（Issue #601）：只给本地联调。显式设为 1 才转发 -PallowLoopbackConsume=true；
 # 转发后产物带 LOOPBACK_CONSUME 标记，dl-release 会 400 LOOPBACK_BUILD_REJECTED 拒收。
 if [ "${ALLOW_LOOPBACK_CONSUME:-0}" = "1" ]; then
