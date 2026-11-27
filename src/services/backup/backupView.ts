@@ -213,11 +213,17 @@ export const canRestoreBackup = (
   phase: BackupPhase,
   items: readonly BackupItem[] | null
 ): boolean => {
-  if (phase !== 'idle' || status === null || status.running) {
+  if (phase !== 'idle') {
+    return false
+  }
+  // 状态读不到**不能连恢复一起否掉**：状态文件坏掉往往和数据出事同时发生，而恢复要的
+  // 证据是「这份备份校验过」，不是「状态文件还读得出来」。设备实测的丢库现场里，
+  // 这条判断会让最该用的那个按钮变成灰的。
+  if (status !== null && status.running) {
     return false
   }
   if (items === null) {
-    return status.count > 0
+    return status !== null && status.count > 0
   }
   return items.some((item) => item.checksumOk)
 }
