@@ -2,6 +2,7 @@
   "_doc": "内测分发台账 —— 覆盖升级的硬断言的唯一数据源。build-apk.sh 在 BUILD_VARIANT=internal 时读它，断言 package.json 的 androidVersionCode 严格大于 lastDistributedVersionCode，并断言签名证书指纹仍以 certSha256Prefix 开头。每对外分发一个内测包，就在这里把刚发出去的那一版挪进 history、把 lastDistributedVersionCode 改成它 —— 这是台账，不是愿望清单：只记真的交到内测用户手上的版本。",
   "_rule": "用户规则（2026-11-27 拍板）：每次对外分发新内测 APK，versionCode 必须递增（44 → 45 → 46 …）；versionName 可以维持 2.0.1。目的是避免版本混淆、保证已装用户能直接覆盖升级（无须卸载重装、保留全部历史数据）。",
   "_whyCert": "换签名证书会让已装用户无法覆盖升级（Android 只允许同证书的更新包覆盖安装）。所以证书指纹也是覆盖升级判据的一部分，不是「安全设置」。",
+  "_withdrawnRule": "撤回/未分发的版本不进 history —— history 与 lastDistributedVersionCode 只记「真的交到内测用户手上」的版本，把没发出去的号塞进 history 会同时破坏「历史连续」和「strictly greater」两条断言的意义。构建过但被判定不得分发的版本记进 withdrawn[]，字段：versionCode / versionName / builtAt / sha256 / commit / distributed / reason。check-internal-lane.mjs 会断言：withdrawn 的号必须小于当前构建号、且不得出现在 history 里。",
   "_runner": "node scripts/check-internal-lane.mjs  （或由 build-apk.sh release + BUILD_VARIANT=internal 自动调用）",
   "certSha256Prefix": "e7c5baee",
   "lastDistributedVersionCode": 43,
@@ -15,6 +16,18 @@
       "versionCode": 43,
       "versionName": "2.0.1",
       "note": "已按用户口径算作可分发给内测用户的版本（用户要求 vc42 / vc43 都能直接覆盖升级到新版），但未作为交付版发出"
+    }
+  ],
+  "withdrawn": [
+    {
+      "versionCode": 44,
+      "versionName": "2.0.1",
+      "builtAt": "2026-11-27T07:58:29.243Z",
+      "sha256": "98ae3db0ee54c994c1e4fb55a70cd6a97334280db0510def38966e0b17960229",
+      "commit": "0f516b76adbe3b9f1c43ab5aaa3dd1b690232049（ship44 = 打包层 0214a58b + #971 head e94651e1）",
+      "distributed": false,
+      "reason": "#980：state.json 自校验失败会回退读 IndexedDB，并对主库 9 个 store 执行 clearAll()，而备份只备 IDB 源、不备主库 → 不可逆数据丢失。按用户口径「已知存在数据丢失的版本不得分发」，本包构建完成但撤回，未交到任何内测用户手上。",
+      "decidedAt": "2026-11-27"
     }
   ]
 }

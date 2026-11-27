@@ -86,7 +86,17 @@ const history = Array.isArray(ledger.history) ? ledger.history : []
 const historyCodes = history
   .map((item) => (item && typeof item === 'object' ? item.versionCode : null))
   .filter((code) => Number.isInteger(code))
+// 撤回 / 未分发的版本：不进 history（history 只记真的发出去的），但要能解释「号去哪了」。
+// 断言两条：① 撤回的号必须小于当前构建号（不许把未来的号先标成撤回）；
+//          ② 撤回的号不得出现在 history 里（否则台账自相矛盾：既说发过又说没发）。
+const withdrawnEntries = Array.isArray(ledger.withdrawn) ? ledger.withdrawn.filter((item) => item && typeof item === 'object') : []
+const withdrawnCodes = withdrawnEntries.map((item) => item.versionCode).filter((code) => Number.isInteger(code))
+
 const chain = [...new Set([...historyCodes, last, rawCode])].sort((a, b) => a - b)
+const chainLabel = [...new Set([...chain, ...withdrawnCodes])]
+  .sort((a, b) => a - b)
+  .map((code) => (withdrawnCodes.includes(code) && code !== last && code !== rawCode ? `${code}(撤回·未分发)` : String(code)))
+  .join(' → ')
 
 const prefix = typeof ledger.certSha256Prefix === 'string' ? ledger.certSha256Prefix.trim().toLowerCase() : ''
 if (!/^[0-9a-f]{8,64}$/.test(prefix)) {
@@ -104,7 +114,7 @@ push(
   `versionCode 严格大于上一次分发（${rawCode} > ${last}）`,
   rawCode > last,
   rawCode > last
-    ? `ok（覆盖升级链 ${chain.join(' → ')}）`
+    ? `ok（覆盖升级链 ${chainLabel}）`
     : `不允许：${rawCode} ≤ ${last}。每次对外分发新内测包 versionCode 必须递增（${last} → ${last + 1}）。` +
       `已装 vc${last} 的用户装不上同号或降号的包 —— 那条路只会得到「应用未安装」。` +
       `修法：把 package.json 的 androidVersionCode 改成 ${last + 1} 或更大；versionName 可以继续是 ${versionName}。`,
@@ -116,6 +126,24 @@ push(
     ? `ok（台账最大 ${last}）`
     : `台账 lastDistributedVersionCode=${last} 小于 history 里出现过的 ${Math.max(...historyCodes)}：台账自相矛盾，先修台账`,
 )
+if (withdrawnCodes.length > 0) {
+  push(
+    `撤回/未分发的号都在当前构建号之前（${withdrawnCodes.join(' / ')} < ${rawCode}）`,
+    withdrawnCodes.every((code) => code < rawCode),
+    withdrawnCodes.every((code) => code < rawCode)
+      ? `ok（台账 withdrawn[] 记的是「构建过但没发出去」的版本，不进 history、不参与递增断言）`
+      : `不允许：withdrawn[] 里出现了 ${withdrawnCodes.filter((code) => code >= rawCode).join(' / ')} ≥ 当前构建号 ${rawCode} —— 未来的号还没构建，谈不上撤回`,
+  )
+  const clash = withdrawnCodes.filter((code) => historyCodes.includes(code))
+  push(
+    `撤回的号没有同时出现在 history 里（自相矛盾检查）`,
+    clash.length === 0,
+    clash.length === 0
+      ? `ok（history 只含已分发：${historyCodes.join(' / ') || '无'}）`
+      : `不允许：${clash.join(' / ')} 同时在 history（说发过）和 withdrawn（说没发）里 —— 先确认到底发没发，别两头都写`,
+  )
+}
+
 push(
   `签名证书仍是已发布的那把（expectedCertSha256 以 ${prefix} 开头）`,
   cert.startsWith(prefix),
@@ -135,6 +163,7 @@ if (jsonOut) {
         versionCode: rawCode,
         lastDistributedVersionCode: last,
         chain,
+        withdrawn: withdrawnCodes,
         checks,
       },
       null,

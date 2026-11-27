@@ -18,7 +18,7 @@ BUILD_VARIANT=internal COPY_TO_DESKTOP=1 ./build-apk.sh release
 APK 绝对路径 : …/android/app/build/outputs/apk/release/app-release.apk
 APK 大小     : 12M (12027616 bytes)
 SHA-256      : 0c27550f…
-交付副本     : <桌面>/jingluo-v2.0.1-vc44-internal.apk
+交付副本     : <桌面>/jingluo-v2.0.1-vc45-internal-<短hash>.apk
 ```
 
 ## 1. 它按顺序做了什么（每一步都是硬闸，红就停）
@@ -101,7 +101,7 @@ node scripts/check-internal-lane.mjs --version-code 45   # 预演「如果要打
 2. **版本号断言不是「未判」**：结论行必须写 `pass`，且 `versionCode` / `versionName` 与 `package.json` 一致
    （`build-apk.sh` 步骤 6 会自动带上 `--expect-version-*`；手跑 `verify-release-apk` 时漏了这两个参数就会「未判」——
    「未判」不算通过，报告里会明写）；
-3. `check-internal-lane` 结论 **PASS**，且链是递增的（`42 → 43 → 44`）；
+3. `check-internal-lane` 结论 **PASS**，且链是递增的（`42 → 43 → 45`；若中间有「构建过但撤回、从未分发」的号，`withdrawn[]` 里会标注，链上显示成 `44(撤回·未分发)`）；
 4. 交付物三件齐：**APK（桌面上那一份）+ commit sha + SHA-256**。
 
 ## 5. 已知风险怎么写（别自己发挥）
