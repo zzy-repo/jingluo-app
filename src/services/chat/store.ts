@@ -2129,6 +2129,19 @@ const prepareFiles = async (sessionId: string, request: Request, signal: AbortSi
     isOwnUpload: (id) => freshIds.has(id),
     hasSource: async (id) => (await (await getStorage()).blobs.get(id)) !== undefined,
   })
+  /**
+   * #955：查原件的读失败**不阻断发送**（审计里已经按 `source-unreadable` 跳过它），但绝不许静默 ——
+   * 那是本机存储层出了问题（读不出来 ≠ 当初没导入原件），排查时要能落到具体错误。
+   */
+  if (audit.readErrors.length > 0) {
+    const first = audit.readErrors[0].error
+    record('chat_send', 'warn', 'history attachment source unreadable', {
+      count: audit.readErrors.length,
+      reason: 'history',
+      status: 'error',
+      ...errorMeta(first),
+    })
+  }
   // 源缺失的附件全被跳过、提问又只有它（没有文字）：这条消息没有任何东西可发，明说而不是空发
   if (
     request.question.content.trim() === '' &&
