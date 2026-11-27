@@ -18,7 +18,7 @@ BUILD_VARIANT=internal COPY_TO_DESKTOP=1 ./build-apk.sh release
 APK 绝对路径 : …/android/app/build/outputs/apk/release/app-release.apk
 APK 大小     : 12M (12027616 bytes)
 SHA-256      : 0c27550f…
-交付副本     : C:/Users/<你>/Desktop/jingluo-v2.0.1-vc44-internal.apk
+交付副本     : <桌面>/jingluo-v2.0.1-vc44-internal.apk
 ```
 
 ## 1. 它按顺序做了什么（每一步都是硬闸，红就停）
@@ -34,6 +34,7 @@ SHA-256      : 0c27550f…
 | 4 | `pnpm exec cap sync android` → 把 `dist/` 同步进原生工程 | 见 §3 坑 ① |
 | 5 | gradle `assembleRelease`（`INTERNAL_BUILD=1`，见 §3 坑 ③ 的启动方式） | 原生编译 / 签名 / 变体闸门 |
 | 6 | `scripts/verify-release-apk.mjs` 六项 + 版本号断言（`--variant internal`，带 `--expect-version-code/--expect-version-name`） | 见 §4 |
+| **6b** | **`scripts/check-apk-seam.mjs`：包内登录接缝标记必须 0 命中（第 7 项）** | **命中 = 鉴权绕过，禁止分发** |
 | 7 | 打分横幅 + SHA-256 +（`COPY_TO_DESKTOP=1` 时）落桌面副本 | — |
 
 ## 2. 覆盖升级硬断言（用户拍板，2026-11-27）
@@ -59,7 +60,7 @@ node scripts/check-internal-lane.mjs --version-code 45   # 预演「如果要打
 为什么不从线上清单自动取上一个 versionCode：内测包**不进公网 `releases.json`**
 （[`../releases-manifest.md`](../releases-manifest.md) §1 明确废止了 internal 条目），本机没有可信来源。
 
-## 3. 三个必踩的坑（都已在脚本里处理，改动脚本时别退回去）
+## 3. 四个必踩的坑（都已在脚本里处理，改动脚本时别退回去）
 
 ① **`git reset --hard` 会冲掉 `android/capacitor.settings.gradle`**，之后直接跑 gradle 会得到
 `No matching variant`。原因：这个文件是 `cap sync` 按本机 `node_modules` 路径生成的。
@@ -78,8 +79,21 @@ node scripts/check-internal-lane.mjs --version-code 45   # 预演「如果要打
 （两个平台同一条路），找不到 wrapper jar 才退回 `./gradlew`。
 
 ④ 首次在一台新机器上出包：`cp build.env.example build.env`，填 `ANDROID_HOME` 与 `BUILD_TOOLS_VERSION`
-（本机：`D:/android-sdk` + `35.0.0`）。`build.env` 已被 gitignore。没建时脚本会自动探测几个常见位置并打警告，
+（本机：`<android-sdk>` + `35.0.0`）。`build.env` 已被 gitignore。没建时脚本会自动探测几个常见位置并打警告，
 但**别依赖探测**——把它固定下来。
+
+⑤ **两套构建必须物理隔离：交付 APK 禁接缝，L1 测试产物必须带接缝。**
+`TEST_AUTH_SEAM=1` 会让 `AuthGate` 直接进已登录态（不读盘、不续期、不调 `me()`）：
+
+| 用途 | 是否带接缝 | 怎么建 |
+| --- | --- | --- |
+| 交付 APK | **禁止** | `BUILD_VARIANT=internal COPY_TO_DESKTOP=1 ./build-apk.sh release`（环境里**不能**有 `TEST_AUTH_SEAM`） |
+| L1 测试产物 | **必须** | `TEST_AUTH_SEAM=1 …` 分别出 `dist` / `dist-standard` / `dist-scroll` |
+
+- 环境里带着 `TEST_AUTH_SEAM` 跑 `build-apk.sh release` → **脚本直接拒跑**（不是警告、不是自动 unset：静默清掉会让人以为「刚才那次是干净的」）。
+- 包内兜底断言（**第 7 项**）：`node scripts/check-apk-seam.mjs <apk>` 扫包内文本条目，`test-token-not-real` / `__TEST_AUTH_STATE__` 两个标记**必须 0 命中**；扫不到文本条目算「判不出来」（exit 2），**不是 PASS**。
+- 顺序：**先出不带接缝的 APK（干净环境），再出带接缝的测试产物** —— 反过来容易让环境残留污染 APK。
+- L1 产物必须在**最终 commit** 上构建：`src` 的 mtime 比产物 `builtAt` 新会触发 `SKIP(env) 构建产物陈旧`（无 bypass），而 `SKIP` **不计为通过**。
 
 ## 4. 出包后必须逐条确认（贴给别人时也贴这四条）
 
@@ -101,4 +115,5 @@ node scripts/check-internal-lane.mjs --version-code 45   # 预演「如果要打
 - 内测分发台账：[`internal-lane.json`](./internal-lane.json)
 - 覆盖升级判据实现：[`../../scripts/check-internal-lane.mjs`](../../scripts/check-internal-lane.mjs)
 - 六项校验实现：[`../../scripts/verify-release-apk.mjs`](../../scripts/verify-release-apk.mjs)
+- 第 7 项（包内无登录接缝）实现：[`../../scripts/check-apk-seam.mjs`](../../scripts/check-apk-seam.mjs)（标记唯一出处：`scripts/lib/testAuthSeam.mjs` 的 `SEAM_MARKERS`）
 - 签名材料与指纹迁移规划：[`../RELEASE-MANUAL.md`](../RELEASE-MANUAL.md) §1
