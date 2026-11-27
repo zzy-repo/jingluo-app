@@ -436,7 +436,9 @@ export const AccountConsumePage = ({
   const onConfirmSourceRow = useCallback(
     (row: DraftRowKey) => {
       const result = confirmSourceRow(row, sourceState.drafts[row])
-      if (result.kind === 'invalid') {
+      if (result.kind !== 'applied') {
+        // `invalid`（校验不过）与 `not-saved`（#986：本机存储写不进去、已整体回滚）走同一条提示通道：
+        // 行内红字 + 不弹「已切换」toast。两者的区别只在文案（`messageKey` 由运行时给）。
         dispatchSource({ type: 'submit-failed', row, field: result.field, messageKey: result.messageKey })
         return
       }

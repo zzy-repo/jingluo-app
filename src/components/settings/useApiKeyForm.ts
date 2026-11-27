@@ -18,8 +18,14 @@ export const useApiKeyForm = (
   const [value, setValue] = useState('')
   const [verifying, setVerifying] = useState(false)
   const [failure, setFailure] = useState<{ cause: unknown } | null>(null)
+  /**
+   * #986：本机**没存下**这把 Key（`setApiKey` 返回 false）。与「校验失败」是两件事，文案也不同：
+   * 这里既没有网络往返、也不该让用户去怀疑 Key 本身。旧代码把 `setApiKey` 的返回值丢了，
+   * 写不进去时界面照样收起输入框、显示刚粘贴的 Key，而磁盘上还是上一把。
+   */
+  const [notSaved, setNotSaved] = useState(false)
   const cause = failure?.cause
-  const error =
+  const classifiedError =
     failure === null
       ? null
       : classifyApiError(cause) === 'unauthorized'
@@ -37,6 +43,9 @@ export const useApiKeyForm = (
                     : String(cause),
             })
 
+  // #986：没存下来就直说「本机没存下」，不要拿「校验失败」的文案冒充（那会让用户去怀疑 Key 本身）
+  const error = notSaved ? t('settingsManagedKeyFailStorage') : classifiedError
+
   const submit = async () => {
     const apiKey = value.trim()
     if (!apiKey || verifying) {
@@ -46,7 +55,15 @@ export const useApiKeyForm = (
     // 之前的顺序是先 await verifyApiKey 再 setApiKey，只要 GET /models 失败
     // （离线、上游宕机、CORS/明文 HTTP 被拦、把校验地址填错…），Key 就一个字都不会写进
     // localStorage，于是每次启动 ensureApiKey() 都判成「没配 Key」，设置页反复弹出、发送被拦。
-    setApiKey(apiKey)
+    if (!setApiKey(apiKey)) {
+      // #986：落盘失败 —— 不假装保存成功，也不去校验（校验过了也存不下），直接说「没存下」。
+      // 内存态与磁盘都没变（`setApiKey` 先落盘、失败不动内存态），界面继续显示旧 Key。
+      setNotSaved(true)
+      setFailure(null)
+      onFailed?.()
+      return
+    }
+    setNotSaved(false)
     // #451：只有新 Key 不再是「格式明显不对」那一条，才把发送前拦截留下的提示撤掉
     // （又贴了一把同样坏的 Key 的话，那句「这条消息没有发出去」仍然成立，不能撤）
     if (checkApiKeyBeforeSend() === 'ok') {

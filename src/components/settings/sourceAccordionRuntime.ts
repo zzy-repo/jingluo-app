@@ -163,6 +163,12 @@ export const selectBuiltin = (): void => {
 /** 「确认使用」的结局 */
 export type ConfirmSourceResult =
   | { kind: 'invalid'; field: DraftErrorField; messageKey: TranslationKey }
+  /**
+   * #986：校验过了，但**本机存储没写进去**（`setApiKey` / `setProviderKind` 等返回 false）。
+   * 与 `invalid` 分开是为了实话实说：这不是「你填错了」，是「这台设备存不下」。
+   * 走到这里时**磁盘与内存态都已经回到点之前**（下面的整体回滚），一个字都没留下。
+   */
+  | { kind: 'not-saved'; field: DraftErrorField; messageKey: TranslationKey }
   | { kind: 'applied'; row: DraftRowKey; providerKind: ProviderKind; draft: SourceDraft }
 
 /**
@@ -170,7 +176,10 @@ export type ConfirmSourceResult =
  *
  *  - 校验不过 → `invalid`（行内红字，**生效来源一个字都不动**，草稿照旧留着）；
  *  - 校验通过 → 先切槽位（`setProviderKind`，因为 `setBaseUrlFor` 要知道写给哪个 kind），
- *    再落盘地址 / 模型 / Key —— 落盘全走既有的 scoped 键，不新增存储。
+ *    再落盘地址 / 模型 / Key —— 落盘全走既有的 scoped 键，不新增存储；
+ *  - 落盘失败 → `not-saved`（#986）：**整体回滚**到点之前，绝不留在「半个新渠道」的状态。
+ *    旧写法把四个 `write()` 的返回值全丢了：kind 写失败时磁盘上是旧渠道、界面上是新渠道，
+ *    用户接着发出去的内容按旧渠道走 —— 「切了但没生效」既没提示也没有留痕。
  */
 export const confirmSourceRow = (row: DraftRowKey, draft: SourceDraft): ConfirmSourceResult => {
   const check = checkSourceDraft(row, draft)
@@ -197,12 +206,36 @@ export const confirmSourceRow = (row: DraftRowKey, draft: SourceDraft): ConfirmS
     return { kind: 'invalid', field: check.field, messageKey: check.messageKey }
   }
   const kind: ProviderKind = row === 'third' ? thirdRowKind() : 'deepseek'
-  setProviderKind(kind)
+  // 回滚用的现场：点这一下之前的生效来源 + 目标槽位的地址/模型 + 共用那把 Key。
+  // 全部只从既有存储读（`readSourceField` / `getApiKey`），不留第二份状态。
+  const previousKind = getProviderKind()
+  const previousApiKey = getApiKey()
+  const slotBefore =
+    row === 'third' ? { baseUrl: readSourceField(kind, 'baseUrl'), model: readSourceField(kind, 'model') } : undefined
+  let saved = setProviderKind(kind)
   if (row === 'third') {
     // 官方服务的地址 / 模型是内置的（`spec.fields` 里没有这两格），写不进去也不该写
-    setBaseUrlFor(kind, check.draft.baseUrl)
-    setModelFor(kind, check.draft.model)
+    saved = setBaseUrlFor(kind, check.draft.baseUrl) && saved
+    saved = setModelFor(kind, check.draft.model) && saved
   }
-  setApiKey(check.draft.apiKey)
+  saved = setApiKey(check.draft.apiKey) && saved
+  if (!saved) {
+    /**
+     * #986 整体回滚：任何一格没写成 → 把这次已经写进去的也退回去，绝不留
+     * 「界面新渠道 / 磁盘旧渠道」。三件事：目标槽位的地址/模型、生效来源、共用那把 Key。
+     * 回滚本身再失败也只能到此为止（此时确实无处可退），但诊断里至少留下每条 `rejected` 记录。
+     */
+    if (slotBefore !== undefined) {
+      setBaseUrlFor(kind, slotBefore.baseUrl)
+      setModelFor(kind, slotBefore.model)
+    }
+    setProviderKind(previousKind)
+    setApiKey(previousApiKey)
+    return {
+      kind: 'not-saved',
+      field: row === 'third' ? 'baseUrl' : 'apiKey',
+      messageKey: 'settingsManagedKeyFailStorage',
+    }
+  }
   return { kind: 'applied', row, providerKind: kind, draft: check.draft }
 }
