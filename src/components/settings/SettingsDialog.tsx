@@ -71,6 +71,7 @@ import { Modal } from '../base/Modal.js'
 import { Select } from '../base/Select.js'
 import { showToast } from '../base/toastState.js'
 import { AppUpdateField, AppVersionField } from './AppUpdateField.js'
+import { BackupField } from './BackupField.js'
 import { ChatBackgroundField } from './ChatBackgroundField.js'
 import { DOUYIN_ACCOUNT_ID, douyinCopyToast } from './douyinAccount.js'
 import { FeedbackDialog } from './FeedbackDialog.js'
@@ -448,6 +449,12 @@ const SettingsContent = ({ visible }: { visible: boolean }) => {
                 </Button>
               }
             />
+          </SettingsCard>
+          {/* 数据备份与恢复（#993 任务 3）：单独一张卡，落在「数据管理」页里，
+              不新增一级行、不新增二级页 —— 用户在这个位置就能看到「有没有备份 / 什么时候 /
+              占多少 / 怎么恢复」四件事。 */}
+          <SettingsCard>
+            <BackupField />
           </SettingsCard>
         </>
       )

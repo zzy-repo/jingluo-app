@@ -88,6 +88,11 @@ type Settings = {
    * `.md-code-block > pre { white-space: pre-wrap }` 的实际行为；关掉才切成 `pre` + 横向滚动。
    */
   codeWrap: boolean
+  /**
+   * 自动备份开关（#993 任务 3）。**默认开**（产品口径）：备份是「数据丢了还能回来」的唯一保障，
+   * 让用户先手动打开等于默认不保护。关掉后不再自动跑，但「立即备份」照常可用。
+   */
+  autoBackup: boolean
 }
 
 const KEYS = {
@@ -112,6 +117,8 @@ const KEYS = {
   codeLineNumbers: 'chat-demo:code-line-numbers',
   /** 代码块自动换行（#486 P0-1）。与其它设置项同一前缀，不另开 store */
   codeWrap: 'chat-demo:code-wrap',
+  /** 自动备份开关（#993）。与其它设置项同一前缀，不另开 store */
+  autoBackup: 'chat-demo:auto-backup',
 } as const
 
 const read = (key: string) => {
@@ -257,6 +264,12 @@ const initialCodeLineNumbers = (): boolean => read(KEYS.codeLineNumbers) === 'tr
  */
 const initialCodeWrap = (): boolean => read(KEYS.codeWrap) !== 'false'
 
+/**
+ * 自动备份开关（#993 任务 3）：**只有存过 'false' 才算关**，其余（含从没存过）都按开处理。
+ * 备份是「数据丢了还能回来」的兜底，默认关等于默认不保护用户数据。
+ */
+const initialAutoBackup = (): boolean => read(KEYS.autoBackup) !== 'false'
+
 export const useSettings = create<Settings>(() => {
   const chatMode = initialChatMode()
   return {
@@ -277,6 +290,7 @@ export const useSettings = create<Settings>(() => {
     updateSnoozeUntil: initialUpdateSnoozeUntil(),
     codeLineNumbers: initialCodeLineNumbers(),
     codeWrap: initialCodeWrap(),
+    autoBackup: initialAutoBackup(),
   }
 })
 
@@ -382,4 +396,13 @@ export const setCodeLineNumbers = (codeLineNumbers: boolean) => {
 export const setCodeWrap = (codeWrap: boolean) => {
   write(KEYS.codeWrap, String(codeWrap))
   useSettings.setState({ codeWrap })
+}
+
+/**
+ * 自动备份开关的唯一写入口（#993 任务 3）：只记用户的选择，什么时候真的跑备份由
+ * `services/backup/backupApi.ts` 的 `maybeAutoBackup()` 判（间隔看 `LIMITS.backup.autoIntervalMs`）。
+ */
+export const setAutoBackup = (autoBackup: boolean) => {
+  write(KEYS.autoBackup, String(autoBackup))
+  useSettings.setState({ autoBackup })
 }
