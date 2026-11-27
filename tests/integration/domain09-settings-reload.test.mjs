@@ -31,7 +31,7 @@ import { test } from 'node:test'
 
 import { chromium } from 'playwright'
 import { defaultDist, serveDir, verifyDist } from '../helpers/env.mjs'
-import { assertNoEgress, installEgressGate, openSettingsPage, openSourceRow, SETTINGS_ROW } from '../helpers/helpers.mjs'
+import { assertNoEgress, installEgressGate, openSettingsPage, openSettingsRoot, openSourceRow, SETTINGS_ROW } from '../helpers/helpers.mjs'
 import { ANTHROPIC_HOST, FAKE_KEY, OPENAI_HOST, RELOAD_CASES } from '../fixtures/domain08-09/reload-matrix.mjs'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
@@ -47,18 +47,27 @@ const seed = async (page, values) => {
   }, values)
 }
 
-const openSettings = async (page) => {
-  if ((await page.getByRole('dialog').count()) === 0) {
-    await page.getByRole('button', { name: /设置|Settings/ }).last().click()
-  }
-  await settle(page)
-  return page.getByRole('dialog').last()
-}
+/**
+ * 设置弹层：按**内容里的身份**取（与 `tests/helpers/helpers.mjs` 同一口径），不按标题文案、
+ * 也不按 `role=dialog` 的 DOM 顺序。
+ *
+ * 这里原先写的是
+ *   `getByRole('button', { name: /设置|Settings/ }).last().click()`
+ * 而首屏有**两个**可访问名里带「设置」的按钮：侧栏底部那个「设置」（进设置弹层）与输入框旁边的
+ * 「聊天设置」（进**单个聊天**的设置面板）。子串正则会命中后者，`.last()` 又只有 DOM 顺序，
+ * 于是「打开设置」静默打开了聊天设置面板 —— 一级列表与「通用」页都没渲染，下面按名字取的
+ * 选择器一律 0 个（那个面板里没有它们）。R5 / R6 / R7 三条就是这么红的：
+ * 断言本身没错，是**导航口径漂移**。走 helper 后「整串可访问名 = 设置」+ 已在二级页先退回一级列表
+ * 都由它保证，断言一个字不动。
+ */
+const settingsDialog = (page) =>
+  page.locator('[role="dialog"]:has([data-testid="settings-list"], [data-testid^="settings-page-"])')
 
-const openGeneralTab = async (page) => {
-  const tab = page.getByTestId('settings-row-general')
-  if ((await tab.count()) > 0) await tab.first().click()
-  await settle(page, 400)
+/** 打开设置 →「应用 → 通用」（语言 / 思考过程 / 回车键行为三行都在这一页） */
+const openGeneralPage = async (page) => {
+  await openSettingsPage(page, SETTINGS_ROW.general)
+  await settle(page, 300)
+  return settingsDialog(page).last()
 }
 
 /** 打开「设置 → 账户与消费 → 模型来源」（#807 起渠道/Key 字段都在这一页） */
@@ -120,8 +129,7 @@ const PROBES = {
   },
 
   async select(page, expect) {
-    await openSettings(page)
-    await openGeneralTab(page)
+    await openGeneralPage(page)
     const label = await readSelectLabel(page, expect.ariaLabel)
     if (label === null) return [`设置页找不到「${expect.ariaLabel}」选择器`]
     if (!label.includes(expect.label)) return [`选择器显示「${label}」，期望包含「${expect.label}」`]
@@ -132,8 +140,7 @@ const PROBES = {
     const failures = []
     const hint = await page.locator('textarea').first().getAttribute('enterKeyHint')
     if (hint !== expect.enterKeyHint) failures.push(`输入框 enterKeyHint=${hint}，期望 ${expect.enterKeyHint}`)
-    await openSettings(page)
-    await openGeneralTab(page)
+    await openGeneralPage(page)
     const label = await readSelectLabel(page, expect.ariaLabel)
     if (label === null || !label.includes(expect.label)) {
       failures.push(`回车行为选择器显示「${label}」，期望包含「${expect.label}」`)
@@ -199,7 +206,9 @@ const PROBES = {
   },
 
   async locale(page, expect) {
-    const dialog = await openSettings(page)
+    await openSettingsRoot(page)
+    await settle(page)
+    const dialog = settingsDialog(page).last()
     const title = (await dialog.innerText()).split('\n')[0]?.trim() ?? ''
     if (title !== expect.settingsTitle) {
       return [`设置弹窗标题「${title}」，期望「${expect.settingsTitle}」（locale 没被界面消费）`]
