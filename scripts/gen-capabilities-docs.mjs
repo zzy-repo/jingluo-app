@@ -38,7 +38,16 @@
  * **不生成**（人的判断，脚本一个字都不碰）：结论列、复核记录、真实漏洞拆单、已知边界、「0 命中清单」
  * 里的备注、css.md §2.x 明细表的分节叙述。数字对不上时脚本只报「哪一格漂了」，不替人下结论。
  *
- * 退出码：`0` 一致 / 已写盘；`1` `--check` 发现漂移；`2` 环境错误（找不到 `src/` 或锚点行）。
+ * 退出码：`0` 一致 / 已写盘；`1` `--check` 发现漂移（含正文内联 `文件:行` 断言不符）；
+ * `2` 环境错误（找不到 `src/`、锚点行，或 `check-doc-refs` 自己跑不动）。
+ *
+ * ## 两关（#946）
+ *
+ * 第一关：本脚本**自己生成**的那几张表与实时复算逐格比对（原来只有这一关）。
+ * 第二关：`docs/capabilities/*.md` 正文里**人写的内联引用**（`src/x.ts:12 ⇒ 这段代码`）。
+ * 第一关看不见它们 —— #944 往 `collector.ts` 插 10 行，12 处内联引用集体 +10，`--check`
+ * 却打印「✔ 一致」，把 CI 焊死在 `check:doc-refs` 那一步。第二关直接复用 `check-doc-refs`
+ * 的判据（不自己实现第二套口径），并且**写盘模式下能唯一定位的自动重锚**。
  */
 import fs from 'node:fs'
 import path from 'node:path'
@@ -49,6 +58,12 @@ import { auditApiAssumptions, summarize as summarizeApi } from './lib/apiAssumpt
 import { auditCssAssumptions, collectSources } from './lib/cssAssumptionAudit.mjs'
 import { auditHostCapabilities, CAPABILITY_RULES } from './lib/hostCapabilityAudit.mjs'
 import { isVendored } from './lib/vendoredPaths.mjs'
+import {
+  applyInlineRefEdits,
+  CAPABILITY_DOC_PREFIX,
+  filterCapabilityDocFails,
+  planInlineRefFixes,
+} from './lib/inlineDocRefs.mjs'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 export const ROOT = path.resolve(HERE, '..')
@@ -644,6 +659,99 @@ const stampHeader = (doc, sha) => {
   return changes
 }
 
+// ---------------------------------------------------------------- 第二关：正文内联 `文件:行` 断言（#946）
+
+const CAPABILITY_DOC_GATE = path.join(HERE, 'check-doc-refs.mjs')
+
+/**
+ * 跑一遍 `check-doc-refs --json`，取 `docs/capabilities/` 下的硬失败。
+ *
+ * 判据只有门禁一份：这里不做任何「看起来对」的自行判断，否则生成器说一致、门禁说红的老毛病
+ * 会以另一种形式回来（#946 的实测：`--check` 打印「✔ 三份表与实时复算一致」的同时，
+ * `check:doc-refs` 在 `docs/capabilities/host.md` 上红 12 条）。
+ */
+const capabilityDocRefFails = () => {
+  let stdout = ''
+  try {
+    stdout = execFileSync(process.execPath, [CAPABILITY_DOC_GATE, '--json'], {
+      cwd: ROOT,
+      encoding: 'utf8',
+      maxBuffer: 32 * 1024 * 1024,
+      env: { ...process.env, CHECK_DOC_REFS_ROOT: ROOT },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+  } catch (error) {
+    // 门禁有硬失败时 exit 1，`execFileSync` 会抛：stdout 仍在 error.stdout 上，不算环境错误
+    stdout = typeof error?.stdout === 'string' ? error.stdout : ''
+  }
+  if (!stdout.trim().startsWith('{')) {
+    throw new AnchorError('第二关取不到 check-doc-refs 的 JSON（门禁自己跑不动了），这不是文档的问题')
+  }
+  return filterCapabilityDocFails(JSON.parse(stdout).fails)
+}
+
+/**
+ * 写盘模式下的自动重锚：只改「文档声明的那行原文在目标文件里全文唯一」的引用，
+ * 找不到或不唯一的留给 `reportInlineRefFails` 点名（要人判断，不猜）。
+ */
+const reanchorInlineRefs = (fails) => {
+  const readTarget = (target) => {
+    const abs = path.join(ROOT, target)
+    if (!fs.existsSync(abs)) return null
+    try {
+      return fs.readFileSync(abs, 'utf8')
+    } catch {
+      return null
+    }
+  }
+  const byDoc = new Map()
+  for (const edit of planInlineRefFixes(fails, readTarget)) {
+    const name = path.posix.relative(CAPABILITY_DOC_PREFIX, edit.doc)
+    if (!name || name.includes('/')) continue
+    if (!byDoc.has(name)) byDoc.set(name, [])
+    byDoc.get(name).push(edit)
+  }
+
+  let fixed = 0
+  for (const [name, edits] of byDoc) {
+    const doc = readDoc(name)
+    const byLine = new Map()
+    for (const edit of edits) {
+      if (!byLine.has(edit.docLine)) byLine.set(edit.docLine, [])
+      byLine.get(edit.docLine).push(edit)
+    }
+    let touched = false
+    for (const [docLine, lineEdits] of byLine) {
+      const result = applyInlineRefEdits(doc.lines[docLine - 1], lineEdits)
+      if (result === null) continue
+      doc.lines[docLine - 1] = result.text
+      fixed += result.applied
+      touched = true
+    }
+    if (touched) writeDoc(name, doc)
+  }
+  return fixed
+}
+
+/** 第二关的失败文本：每条都带「现在在几行」或「指到空行」的原因，外加下一步。 */
+const inlineRefFailText = (fails) => {
+  const detail = fails.map(
+    (fail) => `  ${fail.doc}:${fail.docLine}  ${fail.raw}${fail.message ? `\n      ${fail.message}` : ''}`,
+  )
+  return (
+    `✖ docs/capabilities 正文里有 ${fails.length} 处 \`文件:行\` 断言对不上（check:doc-refs 会红，CI 会停在这一步）：\n` +
+    `${detail.join('\n')}\n` +
+    '  修法：能唯一定位的跑 node scripts/gen-capabilities-docs.mjs 会自动重锚；\n' +
+    '  其余按上面的「现在在 N 行」手动改；指到空行 / 结构行的改用函数名或常量名定位（别换成章节标题）。'
+  )
+}
+
+/** 写盘模式下的第二关收尾：还有人对不上就点名并 exit 1，不静默成功。 */
+const reportInlineRefFails = (fails) => {
+  console.error(inlineRefFailText(fails))
+  return 1
+}
+
 // ---------------------------------------------------------------- CLI
 
 const main = () => {
@@ -700,12 +808,28 @@ const main = () => {
     }
   }
 
+  // 第二关（#946）：正文内联 `文件:行` 断言。写盘模式下先自动重锚能唯一定位的，再自检。
+  let refFails = capabilityDocRefFails()
+  if (!check && refFails.length > 0) {
+    const fixed = reanchorInlineRefs(refFails)
+    if (fixed > 0) {
+      console.log(`  docs/capabilities 正文内联 \`文件:行\` 重锚：${fixed} 处（源码插行 / 删行导致的行号漂移）`)
+      refFails = capabilityDocRefFails()
+    }
+  }
+
   if (check) {
+    // 两关的失败**一起**报：只报第一关会让人以为「重算一次就好」，而正文内联引用不是重算能解决的
+    const problems = []
     if (drift > 0) {
-      console.error(`✖ docs/capabilities 与实时复算不一致（${drift} 处）\n${report.join('\n')}\n跑 node scripts/gen-capabilities-docs.mjs 重算。`)
+      problems.push(`✖ docs/capabilities 与实时复算不一致（${drift} 处）\n${report.join('\n')}`)
+    }
+    if (refFails.length > 0) problems.push(inlineRefFailText(refFails))
+    if (problems.length > 0) {
+      console.error(`${problems.join('\n\n')}\n\n跑 node scripts/gen-capabilities-docs.mjs 重算（正文里能唯一定位的引用会自动重锚）。`)
       return 1
     }
-    console.log(`✔ docs/capabilities 三份表与实时复算一致${sha ? `（抬头基准 ${sha}）` : ''}`)
+    console.log(`✔ docs/capabilities 三份表与实时复算一致，正文 \`文件:行\` 断言也逐条落地${sha ? `（抬头基准 ${sha}）` : ''}`)
     return 0
   }
 
@@ -717,6 +841,7 @@ const main = () => {
   )
   console.log(`  host.md 明细表重锚：${STATS.hostStaleRefs} 条旧 \`文件:行\` 指不到实时命中，已按复算重写`)
   if (report.length > 0) console.log(report.join('\n'))
+  if (refFails.length > 0) return reportInlineRefFails(refFails)
   return 0
 }
 
