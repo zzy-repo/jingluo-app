@@ -25,6 +25,8 @@ export type BackupFailureKind =
   | 'safety-backup-failed'
   | 'corrupt'
   | 'space'
+  /** 读不到剩余空间、负载又大：**不是**「空间不足」，文案必须分开（#1002 第二轮） */
+  | 'space-unverifiable'
   | 'interrupted'
   /** 没有可备份的记录：**正常状态**，不是失败，别标红 */
   | 'empty'
@@ -52,6 +54,7 @@ const KNOWN: readonly BackupFailureKind[] = [
   'safety-backup-failed',
   'corrupt',
   'space',
+  'space-unverifiable',
   'interrupted',
   'empty',
   'unsupported',
@@ -96,9 +99,11 @@ export const failureText = (failure: BackupFailure, phase: Exclude<BackupPhase, 
     const key: TranslationKey =
       failure.kind === 'space'
         ? 'backupStatusSpace'
-        : failure.kind === 'interrupted'
-          ? 'backupStatusInterrupted'
-          : 'backupStatusUnavailable'
+        : failure.kind === 'space-unverifiable'
+          ? 'backupStatusSpaceUnverifiable'
+          : failure.kind === 'interrupted'
+            ? 'backupStatusInterrupted'
+            : 'backupStatusUnavailable'
     return { key, error: true, percent: null }
   }
   if (failure.kind === 'unsupported') {
@@ -110,6 +115,10 @@ export const failureText = (failure: BackupFailure, phase: Exclude<BackupPhase, 
   // 备份包本身坏了要说「这份备份用不了」，这是**动作层面的结论**，优先于「当前数据还在不在」
   if (failure.kind === 'corrupt') {
     return { key: 'backupStatusCorrupt', error: true, percent: null }
+  }
+  // 读不到空间 ≠ 空间不足：这一档要告诉用户「没法确认」，并说清**这次什么都没动**
+  if (failure.kind === 'space-unverifiable') {
+    return { key: 'backupStatusRestoreSpaceUnverifiable', error: true, percent: null }
   }
   if (failure.currentDataIntact) {
     return { key: 'backupStatusRestoreFailedIntact', error: true, percent: null }
