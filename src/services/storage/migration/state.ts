@@ -274,6 +274,7 @@ export const freshState = (now: number): MigrationState => ({
  * - `AMBIGUOUS_STATE_DETAIL`：状态文件坏/缺失而库里已有业务数据 → 读侧护栏 B（宁可停下也不猜）
  */
 export const CORRUPT_BUT_COMMITTED_DETAIL = 'state-file-corrupt-and-sqlite-meta-committed'
+export const AMBIGUOUS_STATE_DETAIL = 'state-file-ambiguous-but-sqlite-has-data'
 
 /**
  * 双见证收敛。纯函数：不读盘、不写盘、不猜。
@@ -374,19 +375,36 @@ export const readSqliteWitness = async (open: () => Promise<SqlDatabase>): Promi
   }
 }
 
+/** 「表不存在」= 库结构还没建（空库/半成品库的正常表现），不等于读失败。 */
+const isMissingTable = (error: unknown): boolean =>
+  /no such table/iu.test(error instanceof Error ? error.message : String(error))
+
 /**
- * 库里有业务数据吗（`sessions` 有行）。
+ * 库里有业务数据吗 —— **九张 store 表任意一张有行**即算有。
  *
- * 只读一条 `count(*)`：表不存在或读失败一律当作「没有数据」（那是空库/半成品库的正常表现）。
+ * 为什么不再只看 `sessions`：`chat/db.ts` 的引用计数保证「删会话不等于删文件」，
+ * 孤儿原件（`files` / `attachments` / `attachmentTexts`）本来就可能单独存在。
+ * 只数会话会把这类库判成「空库」，而「空库」在下游意味着「可以清空重来」——
+ * 这正是 #980 要堵的那一类（会话删了、附件原件还在的库会被清掉）。
+ *
+ * 读失败一律当作**有数据**（保守）：这个判断唯一的用途是「要不要动手清库/要不要拦」，
+ * 拿不准时必须偏向不动手。唯独「表不存在」例外 —— 那不是读失败，是结构还没建，按空处理。
  */
-const hasBusinessData = async (db: SqlDatabase): Promise<boolean> => {
-  try {
-    const rows = await db.all(`SELECT count(*) AS c FROM ${STORE_TABLES.sessions.table}`)
-    const value = rows[0]?.c
-    return typeof value === 'number' ? value > 0 : Number(value ?? 0) > 0
-  } catch {
-    return false
+export const hasBusinessData = async (db: SqlDatabase): Promise<boolean> => {
+  for (const store of Object.values(STORE_TABLES)) {
+    try {
+      const rows = await db.all(`SELECT count(*) AS c FROM ${store.table}`)
+      const value = rows[0]?.c
+      if ((typeof value === 'number' ? value : Number(value ?? 0)) > 0) {
+        return true
+      }
+    } catch (error) {
+      if (!isMissingTable(error)) {
+        return true
+      }
+    }
   }
+  return false
 }
 
 export const createStateStore = (fs: AppFileSystem, sha256: Sha256Text): StateStore => {
@@ -430,7 +448,12 @@ export type LoadDeps = {
   sqliteFileExists?: () => Promise<boolean>
 }
 
-export type LoadedState = { outcome: WitnessOutcome; witness: SqliteWitness }
+export type LoadedState = {
+  outcome: WitnessOutcome
+  witness: SqliteWitness
+  /** 状态文件的读取原值（#980：路由要区分「文件在但坏了」与「文件就没有」，两者失效条件不同） */
+  file: MigrationStateX | { corrupt: true } | undefined
+}
 
 /** 读两个见证人并收敛。路由与编排器共用，保证两边对「现在是什么状态」只有一个答案。 */
 export const loadMigrationStateDetailed = async (deps: LoadDeps): Promise<LoadedState> => {
@@ -440,7 +463,7 @@ export const loadMigrationStateDetailed = async (deps: LoadDeps): Promise<Loaded
   const witness: SqliteWitness = exists
     ? await readSqliteWitness(() => deps.openSqlite({ name: MAIN_DB_NAME }))
     : { absent: true }
-  return { outcome: reconcileWitnesses(file, witness, deps.clock.now()), witness }
+  return { outcome: reconcileWitnesses(file, witness, deps.clock.now()), witness, file }
 }
 
 export const loadMigrationState = async (deps: LoadDeps): Promise<WitnessOutcome> =>

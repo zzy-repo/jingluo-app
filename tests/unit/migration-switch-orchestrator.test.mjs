@@ -3,7 +3,7 @@
 // #916：编排器状态机转移、预检、断点续迁、杀进程重入、失败后 IDB 不变、幂等。
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { killAt, makeEngine, makeEnv, mainRows, mods, snapshotOf } from '../helpers/migration-switch/kit.mjs'
+import { createTarget, killAt, makeEngine, makeEnv, mainRows, mods, snapshotOf } from '../helpers/migration-switch/kit.mjs'
 
 const { runMigration, requiredFreeBytes } = mods.orchestrator
 
@@ -265,5 +265,118 @@ test('abort 信号 → failed/interrupted，IDB 不变', async () => {
     controller.abort()
     const result = await runMigration(env.deps({ signal: controller.signal }))
     assert.equal(result.failure.code, 'interrupted')
+  })
+})
+
+// ---------------------------------------------------------------- #980 护栏 B（写侧）
+//
+// 用户口径：「迁移状态不明确时**禁止**清空主库」（是禁止，不是「先备份再清」）。
+// 这三条用例守的是同一件事：**无法证明 committed 时，`clearAll` 根本不发生**。
+
+const seedUserRows = async (env) => {
+  const { db } = await env.mainTarget()
+  // 见证人读的是 schema 里的真 `sessions` 表（不是内存桩的 raw_rows），所以直接往里写一行
+  await db.run('INSERT INTO sessions (id, doc) VALUES (?, ?)', [Buffer.from('s1'), JSON.stringify({ id: 's1', title: '用户的会话' })])
+  await db.close()
+}
+
+test('#980 护栏 B：状态文件损坏 + 主库有业务数据 + 无见证 → blocked，一行都不删、状态文件不重写', async () => {
+  await withEnv({}, async (env) => {
+    await seedUserRows(env)
+    await env.fs.writeAtomic('storage-engine/state.json', '{broken')
+    const before = await mainRows(env)
+    const result = await runMigration(env.deps())
+    assert.equal(result.status, 'blocked')
+    assert.equal(result.detail, mods.orchestrator.MAIN_DB_AMBIGUOUS_DETAIL)
+    // ① 主库没被清空（这是用户验收的核心：状态异常不清空主库）
+    assert.equal(await mainRows(env), before)
+    // ② 状态文件没被改写成 idle（保留现场，下次还能查）
+    assert.equal(await env.fs.readText('storage-engine/state.json'), '{broken')
+    // ③ 没有重跑迁移：不产生新备份、不写 meta
+    const names = (await env.fs.list('storage-engine')).map((entry) => entry.name)
+    assert.equal(names.some((name) => name.startsWith('backup-')), false)
+    const { db } = await env.mainTarget()
+    const meta = await db.all('SELECT key FROM meta ORDER BY key')
+    await db.close()
+    assert.deepEqual(meta, [])
+  })
+})
+
+test('#980 护栏 B：状态文件缺失 + 主库有业务数据 + 无见证 → blocked（不再当作全新安装重迁一遍）', async () => {
+  await withEnv({}, async (env) => {
+    await seedUserRows(env)
+    const before = await mainRows(env)
+    const result = await runMigration(env.deps())
+    assert.equal(result.status, 'blocked')
+    assert.equal(result.detail, mods.orchestrator.MAIN_DB_AMBIGUOUS_DETAIL)
+    assert.equal(await mainRows(env), before)
+    // 全新安装（没有库文件）不受影响：那条路径由其它用例覆盖
+    assert.equal((await env.fs.list('storage-engine')).some((entry) => entry.name.startsWith('backup-')), false)
+  })
+})
+
+test('#980 护栏 B 最后一道：清空前一刻发现主库已被提交 → 拒绝清空并失败（不覆盖已提交的库）', async () => {
+  await withEnv({}, async (env) => {
+    // 造「上次迁移没做完、这次要清掉自己的半成品重来」的局面（源指纹已记录，说明库里的行是我们自己写的），
+    // 主库里有我们的半成品行；随后源指纹变化 → 走到 clearOwnTarget
+    await env.writeState({ phase: 'failed', seq: 3, sourceFingerprint: 'fp-stale', failure: { code: 'verify-failed', message: 'x', at: 1 } })
+    await seedUserRows(env)
+    const before = await mainRows(env)
+    // 模拟并发提交：入口判定之后、真正 clearAll 之前，库里的 meta 出现 committed_at
+    let opens = 0
+    const racingOpen = async (options) => {
+      const db = await env.openSqlite(options)
+      opens += 1
+      if (opens > 1 && options.name === mods.config.MAIN_DB_NAME) {
+        await db.run("INSERT OR REPLACE INTO meta (key, value) VALUES ('committed_at', '1795753487411')")
+      }
+      return db
+    }
+    const result = await runMigration(env.deps({ openSqlite: racingOpen }))
+    // 不是「迁移失败」，是「拒绝覆盖」：blocked + 自解释详情，绝不能显示成「原生数据库不可用」
+    assert.equal(result.status, 'blocked')
+    assert.equal(result.detail, mods.orchestrator.MAIN_DB_COMMITTED_DETAIL)
+    // 行还在：护栏宁可让这次迁移失败，也不清一份已提交的库
+    assert.equal(await mainRows(env), before)
+  })
+})
+
+test('#980 护栏 B：主库文件存在但读不出来 → blocked，且 clearAll 一次都没被调用（fail-open 已堵）', async () => {
+  await withEnv({}, async (env) => {
+    await seedUserRows(env) // 库里确有业务行：文件在、且不是空壳
+    // 状态文件本身是好的（否则会先被收敛阶段以 state-file-* 的理由挡住，测不到探针这条）
+    await env.writeState({ phase: 'copying', seq: 2, sourceFingerprint: 'fp-1' })
+    let clears = 0
+    const spyTarget = async (db) => {
+      const target = await createTarget(db)
+      return {
+        ...target,
+        sink: {
+          ...target.sink,
+          clearAll: async () => {
+            clears += 1
+            await target.sink.clearAll()
+          },
+        },
+      }
+    }
+    const result = await runMigration(
+      env.deps({
+        // 「文件存在但打不开」：瞬时锁 / 权限 / 损坏都可能长这样，探针必须判成 unreadable
+        openSqlite: async () => {
+          throw new Error('database is locked')
+        },
+        createTarget: spyTarget,
+      }),
+    )
+    assert.equal(result.status, 'blocked')
+    assert.equal(result.detail, mods.orchestrator.MAIN_DB_UNREADABLE_DETAIL)
+    // 关键断言：不是「blocked 就算过」，而是证明**一次都没清**
+    assert.equal(clears, 0)
+    // 现场还在（seedUserRows 写的是真 `sessions` 表，不是内存桩的 raw_rows）
+    const { db } = await env.mainTarget()
+    const rows = await db.all('SELECT id FROM sessions')
+    await db.close()
+    assert.equal(rows.length, 1)
   })
 })

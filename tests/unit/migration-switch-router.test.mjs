@@ -122,6 +122,36 @@ test('状态文件损坏且无 SQLite 见证 → 仍是 IDB（idle）；损坏�
   })
 })
 
+test('#980 护栏 B：状态文件损坏、库里已有业务数据、无 committed 见证 → blocked（不迁不清）', async () => {
+  await withEnv({}, async (env) => {
+    // 造一个「有行但没有 meta.committed_at」的主库：正是「谁写的这些行无法证明」的局面
+    const { db } = await env.mainTarget()
+    // 直接往真表写一行：见证人读的是 `sessions` 表（schema 里的真表），不是内存桩的 raw_rows
+    await db.run("INSERT INTO sessions (id, doc) VALUES (?, ?)", [Buffer.from('s1'), JSON.stringify({ id: 's1', title: '用户的会话' })])
+    await db.close() // Windows 上不关句柄会让临时目录删不掉（cleanup EBUSY）
+    await env.fs.writeAtomic('storage-engine/state.json', 'garbage')
+    assert.deepEqual(await resolveStorageEngine(env.routerDeps()), {
+      engine: 'blocked',
+      reason: 'needs-user-decision',
+      detail: mods.state.AMBIGUOUS_STATE_DETAIL,
+    })
+  })
+})
+
+test('#980 护栏 B：状态文件缺失、库里已有业务数据、无 committed 见证 → blocked（不迁不清）', async () => {
+  await withEnv({}, async (env) => {
+    const { db } = await env.mainTarget()
+    await db.run("INSERT INTO sessions (id, doc) VALUES (?, ?)", [Buffer.from('s1'), JSON.stringify({ id: 's1' })])
+    await db.close() // Windows 上不关句柄会让临时目录删不掉（cleanup EBUSY）
+    // 状态文件根本没有：旧代码当作全新安装重迁一遍（第一件事就是清空主库）
+    assert.deepEqual(await resolveStorageEngine(env.routerDeps()), {
+      engine: 'blocked',
+      reason: 'needs-user-decision',
+      detail: mods.state.AMBIGUOUS_STATE_DETAIL,
+    })
+  })
+})
+
 test('migrating/failed 阶段：以 IDB 为真源', async () => {
   await withEnv({}, async (env) => {
     await env.writeState({ phase: 'copying', seq: 2 })
@@ -135,5 +165,19 @@ test('迁移在本进程内运行 → blocked:migrating', async () => {
   await withEnv({}, async (env) => {
     const choice = await resolveStorageEngine(env.routerDeps({ migrationRunning: () => true }))
     assert.deepEqual(choice, { engine: 'blocked', reason: 'migrating' })
+  })
+})
+
+test('#980 F1：状态文件损坏 + 只有孤儿原件（无会话、无 committed） → 仍然 blocked（不再判成空库去清）', async () => {
+  await withEnv({}, async (env) => {
+    const { db } = await env.mainTarget()
+    await db.run('INSERT INTO files (id, doc) VALUES (?, ?)', [Buffer.from('f1'), JSON.stringify({ id: 'f1' })])
+    await db.close()
+    await env.fs.writeAtomic('storage-engine/state.json', 'garbage')
+    assert.deepEqual(await resolveStorageEngine(env.routerDeps()), {
+      engine: 'blocked',
+      reason: 'needs-user-decision',
+      detail: mods.state.AMBIGUOUS_STATE_DETAIL,
+    })
   })
 })

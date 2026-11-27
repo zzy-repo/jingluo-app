@@ -20,7 +20,12 @@
 import type { AppFileSystem } from '../fs/types.js'
 import type { OpenSqlDatabase } from './sqlite/driver.js'
 import type { Clock, Sha256Text } from './migration/ports.js'
-import { CORRUPT_BUT_COMMITTED_DETAIL, createStateStore, loadMigrationStateDetailed } from './migration/state.js'
+import {
+  AMBIGUOUS_STATE_DETAIL,
+  CORRUPT_BUT_COMMITTED_DETAIL,
+  createStateStore,
+  loadMigrationStateDetailed,
+} from './migration/state.js'
 import type { StorageEngineChoice } from './migration/types.js'
 
 export type RouterDeps = {
@@ -79,6 +84,19 @@ export const resolveStorageEngine = async (deps: RouterDeps): Promise<StorageEng
     return blocked('needs-user-decision', `state-unreadable: ${error instanceof Error ? error.message : String(error)}`)
   }
   const { outcome, witness } = loaded
+  /**
+   * #980 护栏 B（读侧）：状态文件**不明确**（坏了，或根本没有）而库里**已经有业务数据**。
+   *
+   * 这种局面下「谁写的这些行」无法证明：可能是半成品迁移，也可能是已迁移的真实用户数据。
+   * 旧行为是当作全新安装重新迁一遍 —— 而重跑的第一件事就是 `clearAll()` 主库（见编排器的护栏 B），
+   * 等于拿「读不懂的状态文件」去换「可能真实的用户数据」。按用户口径：**宁停不猜**，
+   * 停下来、保留现场、告知用户，绝不自动重迁。
+   */
+  const stateFileUnclear =
+    outcome.kind === 'idle-keep-corrupt' || (outcome.kind === 'use' && loaded.file === undefined)
+  if (stateFileUnclear && witness.hasData === true) {
+    return blocked('needs-user-decision', AMBIGUOUS_STATE_DETAIL)
+  }
   switch (outcome.kind) {
     case 'blocked':
       /**
