@@ -639,6 +639,9 @@ const EXTRA_KEYS: readonly string[] = [
   // `navigator.storage.persisted()` 的结果：整库有没有被批准「持久化」。
   // false 表示随时可能被系统整体淘汰（此时界面可能一条错都没有，只是列表空了）。
   'storage.persisted',
+  // 当前真源引擎（sqlite / indexeddb / blocked / unknown）。设置页刻意不展示引擎名（面向普通用户），
+  // 但排查「数据到底写进哪个后端」必须能看到 —— 所以它只出现在诊断快照里。
+  'storage.engine',
   'action',
   // 续传标记：urlImport 早就在写 `resume: 'yes' | 'no'`，但一直不在白名单里 —— 生产日志里
   // 这个键被整条丢掉，「这次是不是从断点接着下」查不出来（#313 的「续传」要求）
