@@ -17,6 +17,7 @@ import { endpointKeyFromUrl, sanitizeMeta } from './fields.js'
 import { bytesPerSecond } from './timing.js'
 import { readCapabilityTruth } from './capabilityTruth.js'
 import { isFetchPatched } from '../../utils/capabilities.js'
+import { normalizeStorageEstimate } from '../storage.js'
 
 /**
  * 采集层：只负责「记什么」。
@@ -608,10 +609,14 @@ const defaultFacts: SnapshotFacts = {
   configured: false,
 }
 
+/**
+ * 快照里的「已占用字节」。收口规则见 `services/storage.ts`：脏值（设备实测 `usage ≈ UINT64_MAX`）
+ * 当**未知**（`undefined`），不把读不懂的数写进诊断包 —— 否则下游会把 1.8e19 当真实占用算。
+ */
 const readStorageBytes = async (): Promise<number | undefined> => {
   try {
-    const estimate = await navigator.storage.estimate()
-    return typeof estimate.usage === 'number' ? estimate.usage : undefined
+    const space = normalizeStorageEstimate(await navigator.storage.estimate())
+    return space?.usage
   } catch {
     return undefined
   }

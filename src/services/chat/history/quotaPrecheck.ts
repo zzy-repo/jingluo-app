@@ -37,8 +37,12 @@
  * | 探测结果 | 判定 | 说明 |
  * | --- | --- | --- |
  * | 拿不到 `quota`（无 API / 抛错 / 字段缺失 / 非正数） | **放行**（`unmeasurable`） | 并在诊断里记一条 `import.quota.unmeasurable` |
+ * | 拿到的数字是**脏值**（`usage` 超过 2^53-1 / `usage > quota` / `NaN` / `Infinity` / 负数） | **放行**（`unmeasurable`） | 收口规则见 `services/storage.ts`；#1002 设备实测的 UINT64_MAX 就是这一档 |
  * | `need <= free` | 放行（`sufficient`） | 不记日志，避免每次导入都刷一条 |
  * | `need > free` | **拒绝**（`insufficient`） | 报还差多少 / 当前可用多少，并在诊断里记一条 |
+ *
+ * 「脏值 → 未知 → 放行」这条是**契约**而不是兜底：旧实现把脏 `usage` 折算成「当前可用 0 字节」，
+ * 于是盘里明明有 4.8GB 可用、界面却说「还差 23.9MB」并拒绝一切导入（#1002，重启 App 才恢复）。
  *
  * 放行不等于不管：`db.ts` 的 `QuotaExceededError` 兜底（`quota` 档 + 孤儿 blob 清理后重试一次）
  * **原样保留**，预检只是把「本来会炸在 80%」的那部分提前到 0%。
@@ -52,9 +56,14 @@
  * 同时留一个 `setImportSpaceNoteSink()` 注入口给用例断言「该记的那条真的记了」。
  */
 import { IMPORT_QUOTA_SAFETY_FACTOR, formatImportBytes } from './importLimit.js'
+import {
+  isTrustworthySpace,
+  normalizeStorageEstimate,
+  type StorageSpace,
+} from '../../storage.js'
 
-/** 宿主提供的剩余空间（`estimate()` 只是估计，永远当参考值用）。 */
-export type StorageSpace = { quota: number; usage: number; free: number }
+/** 宿主提供的剩余空间（`estimate()` 只是估计，永远当参考值用；收口规则见 `services/storage.ts`）。 */
+export type { StorageSpace }
 
 /** 诊断条目：`message` 是给人看的一句话，`fields` 只放数字 / 短字符串，不含任何归档内容。 */
 export type ImportSpaceNote = {
@@ -98,9 +107,12 @@ const storageManager = (): StorageManager | undefined => {
 }
 
 /**
- * 读当前可用空间。**任何一步拿不到就返回 `undefined`**（= 探测不到，调用方放行）：
- * 没有 `storage`、没有 `estimate`、`estimate()` 抛错、`quota` 缺失 / 非正数。
- * `usage` 缺失按 0 处理（比按 quota 处理宽松：宁可放行）。
+ * 读当前可用空间。**任何一步拿不到、或者拿到的数字不可信就返回 `undefined`**（= 探测不到，调用方放行）：
+ * 没有 `storage`、没有 `estimate`、`estimate()` 抛错、`quota` 缺失 / 非正数、
+ * 以及**脏值**（`usage` 超过 2^53-1 / `usage > quota` / `NaN` / `Infinity` / 负数）。
+ *
+ * 脏值不许折算成 `usage = 0`：那等于「宿主报了个读不懂的数 → 判定当前可用 0 字节」，
+ * 也就是 #1002 的现场（盘里还有 4.8GB，导入却被全部拒绝）。
  */
 export const probeStorageSpace = async (): Promise<StorageSpace | undefined> => {
   const storage = storageManager()
@@ -108,15 +120,7 @@ export const probeStorageSpace = async (): Promise<StorageSpace | undefined> => 
     return undefined
   }
   try {
-    const estimate = await storage.estimate()
-    const quota = estimate?.quota
-    if (typeof quota !== 'number' || !Number.isFinite(quota) || quota <= 0) {
-      return undefined
-    }
-    const rawUsage = estimate?.usage
-    const usage =
-      typeof rawUsage === 'number' && Number.isFinite(rawUsage) && rawUsage > 0 ? rawUsage : 0
-    return { quota, usage, free: Math.max(0, quota - usage) }
+    return normalizeStorageEstimate(await storage.estimate())
   } catch {
     return undefined
   }
@@ -131,8 +135,9 @@ export type ImportSpaceVerdict =
 /**
  * 纯函数（L0 可单测）：解压后总量 + 探测到的空间 → 判定。
  *
- * `space === undefined`（探测不到）→ 放行。这条分支是**契约**，不是兜底：
- * 「估不出来就把人拦住」会把老 WebView 变成完全不能导入，比空间不足更糟。
+ * `space` 探测不到、或这份测量本身不可信（`isTrustworthySpace` 为 false）→ 放行。这条分支是
+ * **契约**，不是兜底：「估不出来就把人拦住」会把老 WebView 变成完全不能导入，比空间不足更糟；
+ * 而「脏值折成 0 可用」正是 #1002 的 bug（一次脏读 → 拒绝一切导入）。
  */
 export const judgeImportSpace = (
   inflatedBytes: number,
@@ -140,7 +145,7 @@ export const judgeImportSpace = (
 ): ImportSpaceVerdict => {
   const safeInflated = Number.isFinite(inflatedBytes) && inflatedBytes > 0 ? inflatedBytes : 0
   const need = Math.ceil(safeInflated * IMPORT_QUOTA_SAFETY_FACTOR)
-  if (space === undefined) {
+  if (!isTrustworthySpace(space)) {
     return { ok: true, reason: 'unmeasurable', need }
   }
   if (space.free >= need) {

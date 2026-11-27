@@ -1,4 +1,5 @@
 import { Capacitor, registerPlugin } from '@capacitor/core'
+import { normalizeFreeBytes } from '../storage.js'
 
 /**
  * 原生备份目录的文件出口（Issue #993 任务 2）。
@@ -237,14 +238,18 @@ export const removeFile = async (name: string): Promise<void> => {
   await bridge.remove({ name })
 }
 
-/** 可用字节数；原生读不到时返回 `null`（调用方按「未知」处理，不要当成 0）。 */
+/**
+ * 可用字节数；原生读不到、或读到的数不可信（NaN / Infinity / 负数 / 超过 2^53-1 的脏值）时返回
+ * `null`（调用方按「未知」处理，**不要当成 0**）。收口规则与 `estimate()` 同一把尺子，见
+ * `services/storage.ts`。
+ */
 export const availableBytes = async (): Promise<number | null> => {
   if (!isBackupStorageAvailable()) {
     return null
   }
   try {
     const { bytes } = await bridge.freeBytes()
-    return typeof bytes === 'number' && Number.isFinite(bytes) && bytes >= 0 ? bytes : null
+    return normalizeFreeBytes(bytes)
   } catch {
     return null
   }

@@ -18,6 +18,7 @@
  * **清单最后写**：它的存在就是「这份备份完整」的提交标记 —— 没有清单的归档一律不当成备份
  * （半截产物不会对外宣称「已受保护」）。
  */
+import { normalizeFreeBytes } from '../storage.js'
 
 import { LIMITS } from '../limits.js'
 
@@ -363,6 +364,20 @@ export const estimateNextBytes = (items: readonly BackupFacts[]): number => {
   return Math.max(MIN_ESTIMATE_BYTES, Math.ceil(latest.sizeBytes * 1.2))
 }
 
-/** 空间是否够写下一份：`null`（未知）按「够」处理，避免因为读不到空间就阻断备份。 */
-export const hasRoomForNext = (freeBytes: number | null, neededBytes: number): boolean =>
-  freeBytes === null ? true : freeBytes >= neededBytes
+/**
+ * 空间是否够写下一份。**「未知」一律按「够」处理**：读不到空间（`null`）、读到脏值
+ * （NaN / Infinity / 负数 / 超过 2^53-1）都不许阻断备份 —— 那是「把读不到变成没空间」，
+ * 设备实测的表现正是「盘已经腾出来了，界面仍说空间不足」。
+ *
+ * 未知时允许尝试，真失败再按其**真实原因**分类（原生 `NO_SPACE` → `space`）；
+ * 相反，可信的「0 字节」与「差一个字节」照拦 —— 不吞真话。
+ */
+export const hasRoomForNext = (freeBytes: number | null, neededBytes: number): boolean => {
+  const free = normalizeFreeBytes(freeBytes)
+  if (free === null) {
+    return true
+  }
+  // 需要的量读不懂时同样不阻断（调用方的预估永远是有限数，这里只防跨界传入的脏值）。
+  const need = Number.isFinite(neededBytes) && neededBytes > 0 ? neededBytes : 0
+  return free >= need
+}

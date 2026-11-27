@@ -254,6 +254,63 @@ test('③b 有 storage 但 estimate 缺失 / 抛错 / 字段不合法 → 同样
   }
 })
 
+// ------------------------------------------- ③c 脏值：读不到 ≠ 没空间（#1002，设备实测）
+
+/**
+ * 现场：模拟器上把盘写满 → 清空填充文件 → **不重启 App**，`estimate()` 返回
+ * `usage = 18446744073709552000`（接近 UINT64_MAX 的脏值）。旧实现算出「当前可用 0B」，
+ * 于是**拒绝一切导入**；同一时刻 `stat -f` 实测可用 4.8GB，重启 App 后 `usage = 161084`。
+ *
+ * 契约：这些输入一律判成**未知**（`unmeasurable`），并按「未知不阻断」放行 ——
+ * 绝不许折成「0 字节可用」，也不许拿 `quota` 顶上冒充。
+ */
+test('③c 脏值（UINT64_MAX usage / usage>quota / NaN / Infinity / 负数 / quota≤0）→ 判未知，放行', async (t) => {
+  const notes = []
+  setImportSpaceNoteSink((note) => notes.push(note))
+  t.after(() => setImportSpaceNoteSink(undefined))
+
+  const quota = 1000 * MB
+  // 设备实测的原值：`Number` 里它是 1.8446744073709552e19，远超 2^53-1
+  const uint64Max = 18_446_744_073_709_552_000
+  const cases = [
+    ['usage = UINT64_MAX（设备实测脏值）', { quota, usage: uint64Max }],
+    ['usage > quota', { quota, usage: quota + 1 }],
+    ['usage = NaN', { quota, usage: Number.NaN }],
+    ['usage = Infinity', { quota, usage: Number.POSITIVE_INFINITY }],
+    ['usage = -1', { quota, usage: -1 }],
+    ['usage 字段缺失', { quota }],
+    ['quota = 0', { quota: 0, usage: 0 }],
+    ['quota = -1', { quota: -1, usage: 0 }],
+    ['quota = UINT64_MAX', { quota: uint64Max, usage: 0 }],
+    ['quota = NaN', { quota: Number.NaN, usage: 0 }],
+  ]
+
+  for (const [label, value] of cases) {
+    resetStaging()
+    const restore = withStorage({ estimate: async () => value })
+    try {
+      const { error } = await runImport(archiveOf(['d1', 'd2']))
+      assert.equal(
+        error,
+        null,
+        `${label}：脏值必须判成「未知」并放行，不许算成「当前可用 0B」再拒绝（实际 ${error?.key}）`
+      )
+      assert.equal(db.stagingSessions.length, 2, `${label}：正常导入`)
+    } finally {
+      restore()
+    }
+  }
+
+  // 诊断口径：每一次都是 unmeasurable；一次 `insufficient` 都不许出现
+  const states = notes.map((note) => note.fields['import.quota.state'])
+  assert.ok(states.length >= cases.length, `每个脏值用例都要留一条诊断（实际 ${states.length} 条）`)
+  assert.deepEqual(
+    states.filter((state) => state !== 'unmeasurable'),
+    [],
+    `脏值只许记 unmeasurable，不许记成 insufficient（实际 ${JSON.stringify(states)}）`
+  )
+})
+
 // ------------------------------------------------------------------ ④ 需求按解压后总量算
 
 test('④ 需求按「解压后总量 × 系数」算，不是归档字节数', async (t) => {

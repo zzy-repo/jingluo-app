@@ -13,6 +13,7 @@ import {
   type SessionRef,
 } from './history/mergeSessions.js'
 import { isAttachmentBlobKey } from '../attachments/blobKeys.js'
+import { normalizeStorageEstimate } from '../storage.js'
 import type { DocumentAttachment } from '../attachments/types.js'
 import { toSessionSummary, type Session, type SessionSummary } from './types.js'
 import {
@@ -483,14 +484,20 @@ export const isStoragePersisted = async (): Promise<boolean | undefined> => {
   }
 }
 
+/**
+ * 读一次占用 / 额度，**只用于留痕与「该腾多少」的参考**，不拿它当写不写得进去的判据。
+ *
+ * 收口规则见 `services/storage.ts`：脏值（设备实测 `usage ≈ UINT64_MAX`）一律当**未知**
+ * 返回 `undefined`，诊断里就是 `usage ?` —— 不许把读不懂的数当成真实占用记进日志。
+ */
 const estimateStorage = async (): Promise<{ usage?: number; quota?: number } | undefined> => {
   const storage = storageManager()
   if (!storage || typeof storage.estimate !== 'function') {
     return undefined
   }
   try {
-    const estimate = await storage.estimate()
-    return { usage: estimate.usage, quota: estimate.quota }
+    const space = normalizeStorageEstimate(await storage.estimate())
+    return space === undefined ? undefined : { usage: space.usage, quota: space.quota }
   } catch {
     return undefined
   }
