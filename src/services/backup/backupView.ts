@@ -161,7 +161,8 @@ export const statusView = ({
     return failureText(failure, failure.action)
   }
   if (status === null) {
-    return { key: 'backupStatusUnavailable', error: true, percent: null }
+    // 「读不到状态」与「上次备份没成功」是两件事，混用一句话会让用户以为状态坏了
+    return { key: 'backupStatusReadFailed', error: true, percent: null }
   }
   if (status.lastError !== null) {
     return failureText({ kind: lastErrorKind(status.lastError), currentDataIntact: false }, 'backup')
