@@ -133,6 +133,10 @@ test('备份包损坏时不给恢复，直接说无法用于恢复', () => {
   )
   assert.equal(canRestoreBackup(status({ count: 1 }), 'idle', [item({ checksumOk: false })]), false)
   assert.equal(canRestoreBackup(status({ count: 1 }), 'idle', null), true)
+  // 状态读不到时，只要列表里有一份校验通过的备份，恢复必须还能点（丢库现场最需要的那个按钮）
+  assert.equal(canRestoreBackup(null, 'idle', [item({ checksumOk: true })]), true)
+  assert.equal(canRestoreBackup(null, 'idle', [item({ checksumOk: false })]), false)
+  assert.equal(canRestoreBackup(null, 'idle', null), false)
 })
 
 test('占满 500 MB 才提醒，剩余空间不够的提醒优先', () => {
