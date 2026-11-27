@@ -100,15 +100,20 @@ export interface ParseOptions {
 /**
  * 附件在本机不可用的原因码（#379）。
  *
- * 目前只有一个取值：**源缺失** —— 附件元信息在（导出/导入保留了文件名、体积、类别），
- * 但原件不在本机。导入是唯一来源：整包导出只带图片原件（见 `history/exportArchive.ts`，
- * 其余附件「仅保留文件信息」），别处删库 / 清缓存也会落到同一状态。
+ * 两个取值，**不要合并**（#955）：
+ *
+ *  - `source-missing` **源缺失** —— 附件元信息在（导出/导入保留了文件名、体积、类别），
+ *    但原件不在本机。导入是唯一来源：整包导出只带图片原件（见 `history/exportArchive.ts`，
+ *    其余附件「仅保留文件信息」），别处删库 / 清缓存也会落到同一状态。**这是预期状态**。
+ *  - `source-unreadable` **本机读不出来** —— 原件记录应该还在（库里有一条），但读它的时候
+ *    存储层抛错（IDB 读失败 / SQLite 分块校验失败 / 后端打不开）。这是**本机存储出了问题**，
+ *    与「当初就没导出原件」不是一回事：前者要能指着日志去查后端，后者不用查。
  *
  * 单独成码而不是复用 `AttachmentErrorReason`：那个是**解析期**的拒绝原因（格式 / MIME / 超限），
  * `failed: source-missing` 是解析阶段写进记录的 errorMessage 前缀；这里是**发送期**的判定结果，
  * 界面按它出文案，两者不能混成一张表。
  */
-export type UnavailableReason = 'source-missing'
+export type UnavailableReason = 'source-missing' | 'source-unreadable'
 
 /**
  * 「本机不可用、只提示不发送」的附件（#379）。

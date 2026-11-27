@@ -481,6 +481,9 @@ export const zh = {
   attachUnavailableSent: '附件详情 · 已跳过 {count} 个',
   attachAvailableList: '发送时可用（{count}）',
   attachMissingList: '缺少原件，已跳过（{count}）',
+  /** #955：本机存储读不出原件（不是「当初没导入原件」），单独成一组，别和上面那句混用 */
+  attachUnreadableList: '本机读取失败，已跳过（{count}）',
+  attachUnreadableHint: '这几份附件的原件还在本机，但读取时报错了。消息已照常发出，可以稍后重试或查看诊断日志。',
   attachOlderNotice: '此历史消息仅记录了跳过的附件。',
   /** #379：附件全被跳过、又没有文字可发时，明说而不是发一条空消息 */
   attachUnavailableNoText: '附件在本机不可用，且这条消息没有文字内容，未发送',

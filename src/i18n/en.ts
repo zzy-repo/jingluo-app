@@ -493,6 +493,9 @@ export const en = {
   attachUnavailableSent: 'Attachment details · skipped {count}',
   attachAvailableList: 'Available at send time ({count})',
   attachMissingList: 'Missing file, skipped ({count})',
+  attachUnreadableList: 'Could not read from this device, skipped ({count})',
+  attachUnreadableHint:
+    'These files are still stored on this device, but reading them failed. Your message was sent as usual; retry later or check the diagnostic logs.',
   attachOlderNotice: 'Only skipped attachments were recorded for this older message.',
   attachUnavailableNoText:
     'The attachments are unavailable on this device and this message has no text, so nothing was sent',
