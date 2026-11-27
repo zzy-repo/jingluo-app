@@ -24,11 +24,18 @@
  *    现在明确告知一次（localStorage 记一笔），确认后照旧用 IndexedDB，不拦人。
  */
 import { getFs } from '../fs/index.js'
+import { recordError } from '../diagnostics/index.js'
 import { NATIVE_SQLITE_MIGRATION_ENABLED } from './migration/config.js'
 import { buildMigrationDeps, buildRouterDeps } from './migration/deps.js'
+import { classifyFailure, dataStateOf, type FailureClassification } from './migration/failure-class.js'
 import { parseSpaceMessage, runMigration } from './migration/orchestrator.js'
 import { getStorageRuntime, setEngineChoice, setMigrationRunning, type StorageRuntime } from './migration/runtime.js'
-import type { MigrationFailure, MigrationPhase, StorageEngineChoice } from './migration/types.js'
+import type {
+  MigrationCheckpoint,
+  MigrationFailure,
+  MigrationPhase,
+  StorageEngineChoice,
+} from './migration/types.js'
 import { resolveStorageEngine } from './router.js'
 
 type BlockedChoice = Extract<StorageEngineChoice, { engine: 'blocked' }>
@@ -62,7 +69,11 @@ export type GateView =
   | { kind: 'migrating'; phase: MigrationPhase; percent: number; preflight?: MigrationSpace }
   /** 迁移真校验通过后的成功提示（只有 `status:'committed'` 会走到这里），确认或短暂停留后进 App */
   | { kind: 'succeeded' }
-  | { kind: 'failed'; failure: MigrationFailure; space?: MigrationSpaceShortfall }
+  /**
+   * 迁移失败。`classification` 是失败页的**唯一**文案与入口来源（见 `migration/failure-class.ts`）：
+   * `failure.message` 只进诊断日志，**绝不**上界面。`space` 只在空间不足档给（三个数字 + 清理指引）。
+   */
+  | { kind: 'failed'; failure: MigrationFailure; classification: FailureClassification; space?: MigrationSpaceShortfall }
   /** 本机暂不支持存储升级：明确告知一次，继续用 IndexedDB，不影响正常使用 */
   | { kind: 'unsupported' }
   | { kind: 'blocked'; reason: BlockedChoice['reason']; detail?: string }
@@ -225,15 +236,94 @@ const runMigrationUi = async (runtime: StorageRuntime): Promise<GateView> => {
       return settle(after)
     }
     const shortfall = shortfallOf(outcome.failure, space, freeAtStart)
-    publish({ kind: 'failed', failure: outcome.failure, ...(shortfall !== undefined ? { space: shortfall } : {}) })
+    // 走到这里 = 路由重新收敛过双见证，并明确说真源仍是 IndexedDB（`migration-failed-fallback-allowed`）。
+    // 这是「敢不敢说原数据还在」的**唯一**依据：不是错误文案，也不是我们愿不愿意相信。
+    const classification = classifyFailure({
+      code: outcome.failure.code,
+      error: outcome.failure,
+      stage: outcome.state.phase,
+      // `store` = 失败时正在搬（或最后搬完）的那个存储分区。原始异常的 `cause` 在编排器内部就被
+      // 折成 `MigrationFailure{code,message}` 了，gate 拿不到，所以这里取状态快照里的检查点。
+      store: inProgressStoreOf(outcome.state.checkpoints),
+      state: dataStateOf({
+        truthSource: after.engine === 'indexeddb' ? 'idb' : 'unknown',
+        phase: outcome.state.phase,
+        checkpoints: outcome.state.checkpoints,
+        legacyBarrier: outcome.state.legacyBarrier,
+        failureCode: outcome.failure.code,
+      }),
+    })
+    recordFailureDiagnostics(classification)
+    publish({
+      kind: 'failed',
+      failure: outcome.failure,
+      classification,
+      ...(shortfall !== undefined ? { space: shortfall } : {}),
+    })
     return view
   } catch (error) {
     setMigrationRunning(false)
-    publish({
-      kind: 'failed',
-      failure: { code: 'unknown', message: error instanceof Error ? error.message : String(error), at: Date.now() },
-    })
+    const failure: MigrationFailure = {
+      code: 'unknown',
+      message: error instanceof Error ? error.message : String(error),
+      at: Date.now(),
+    }
+    // 这一路连「迁移跑到了哪一步」都不知道（编排器本体抛出来了）：一律按「无法确认」处置，
+    // 不给重试、不承诺数据完好，只重新检测 + 复制诊断。
+    const classification = classifyFailure({ code: 'unknown', error, stage: 'unknown' })
+    recordFailureDiagnostics(classification)
+    publish({ kind: 'failed', failure, classification })
     return view
+  }
+}
+
+/**
+ * 失败时「正在处理哪个分区」：优先取第一个还没搬完的检查点，没有就取最后一个。
+ * 只用于诊断日志（用户看不到），拿不到就留空 —— 不猜。
+ */
+const inProgressStoreOf = (checkpoints: readonly MigrationCheckpoint[] | undefined): string => {
+  if (checkpoints === undefined || checkpoints.length === 0) {
+    return ''
+  }
+  const inProgress = checkpoints.find((entry) => entry.done !== true)
+  const picked = inProgress ?? checkpoints[checkpoints.length - 1]
+  return typeof picked?.store === 'string' ? picked.store : ''
+}
+
+/**
+ * 失败诊断（#940 性质 4）：用户看不到的东西一个不少地落进诊断日志 ——
+ * 原始 code / 原始 message / 原始类名 / 阶段 / store / 数据状态快照。
+ *
+ * 走既有的 `src/services/diagnostics` 通道（`recordError`），**不新建采集体系**。
+ * 键必须是诊断 schema 里已放行的（`fields.ts` 的 `META_KEYS` / 点号族），否则会被
+ * `sanitizeMeta` 整条丢掉 —— 这里用的是：
+ *  · `upstreamCode`：原始失败码（`copy-failed` / `SQLITE_CORRUPT` …）；
+ *  · `error.msg` / `error.name`：原始异常原文与类名（只有诊断看得到）；
+ *  · `retryable`：机器可读的「这次失败再试一次有没有用」，与界面入口同源；
+ *  · `error.detail`：状态快照（阶段 / store / 档位 / 真源 / 是否写过目标库 / 旧库是否动过）。
+ *
+ * 写日志本身失败也不能影响失败处置（诊断是附加品，不是前置条件）。
+ */
+const recordFailureDiagnostics = (classification: FailureClassification): void => {
+  try {
+    const { diagnostics } = classification
+    recordError('storage migration failed', {
+      upstreamCode: diagnostics.code === '' ? 'none' : diagnostics.code,
+      retryable: classification.allowRetry,
+      'error.msg': diagnostics.message,
+      'error.name': diagnostics.name === '' ? 'none' : diagnostics.name,
+      'error.detail': [
+        `stage=${diagnostics.stage || 'unknown'}`,
+        `store=${diagnostics.store || 'unknown'}`,
+        `tier=${diagnostics.tier}`,
+        `dataTruth=${diagnostics.dataTruth}`,
+        `truthSource=${diagnostics.truthSource}`,
+        `targetWritten=${diagnostics.targetWritten}`,
+        `legacyBumped=${diagnostics.legacyBumped}`,
+      ].join(' '),
+    })
+  } catch {
+    // 诊断写不进去只影响排查，不影响用户看到的结论
   }
 }
 
@@ -252,7 +342,9 @@ export const ensureStorageReady = (options: GateOptions = {}): Promise<GateView>
 /** 用户点「重试」：同一启动内的再一次迁移（手动触发，不是自动循环）。 */
 export const retryMigration = async (): Promise<GateView> => {
   const runtime = 'runtime' in lastOptions ? lastOptions.runtime : getStorageRuntime()
-  if (runtime === undefined || view.kind !== 'failed') {
+  // 不可重试的档位（数据损坏 / 本机不支持）界面本来就不显示「重试」，这里再挡一次：
+  // 重试只会再撞同一面墙，把按钮做出来等于骗用户点。
+  if (runtime === undefined || view.kind !== 'failed' || !view.classification.allowRetry) {
     return view
   }
   inFlight = runMigrationUi(runtime)

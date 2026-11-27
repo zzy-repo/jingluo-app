@@ -1508,19 +1508,11 @@ export const en = {
   storageMigrationSuccessAction: 'Start using',
   storageMigrationUnsupportedTitle: 'This device does not support the storage upgrade yet',
   storageMigrationUnsupportedBody:
-    'The app will keep using the original storage (IndexedDB). Your chats and attachments are all there and nothing is affected.',
+    'The app will keep using the original storage. Your chats and attachments are all there and nothing is affected.',
   storageMigrationUnsupportedHint: 'After a system or app update, the check will run again on the next launch.',
   storageMigrationUnsupportedAction: 'Got it, continue',
-  storageMigrationInterruptedTitle: 'The data upgrade did not finish',
-  storageMigrationInterruptedBody:
-    'The upgrade was interrupted before it finished. Your data is still in the original storage and nothing was lost. Tap "Continue upgrade" to finish it.',
   storageMigrationInterruptedWarning:
     'Please do not uninstall the app or clear its data in system settings — that would delete the original data too.',
-  storageMigrationInterruptedAction: 'Continue upgrade',
-  storageMigrationInterruptedLater: 'Keep using the original data for now',
-  storageMigrationSpaceTitle: 'Not enough free space, the upgrade did not start',
-  storageMigrationSpaceBody:
-    'The upgrade needs more free space on this phone. Free up some space and tap "Check again" to continue; your data was not changed.',
   storageMigrationSpaceFree: 'Free space now: {free}',
   storageMigrationSpaceNeed: 'Space needed for this upgrade: {need}',
   storageMigrationSpaceCleanup: 'Suggested additional cleanup: {cleanup}',
@@ -1530,18 +1522,44 @@ export const en = {
   storageMigrationSpaceGuideCopy: 'Copy these steps',
   storageMigrationSpaceGuideCopied: 'Steps copied',
   storageMigrationSpaceGuideCopyFailed: 'Could not copy, please follow the steps on screen',
-  storageMigrationSpaceDefer: 'Skip for now and keep using the original data',
   storageMigrationRecheck: 'Check again',
-  storageMigrationFailedTitle: 'The upgrade did not finish',
-  storageMigrationFailedBody:
-    'Your original data is not lost and is still where it was. You can retry, or keep using the original data for now.',
-  storageMigrationFailSpace: 'Reason: not enough free space. Free up space on your phone and retry.',
-  storageMigrationFailTooLarge:
-    'Reason: the data is larger than one upgrade can handle. Export a backup in Settings first, then contact us.',
-  storageMigrationFailUnknownSpace: 'Reason: free space could not be determined, so the upgrade was not started.',
-  storageMigrationFailGeneric: 'Reason: {message}',
   storageMigrationRetry: 'Retry',
-  storageMigrationContinue: 'Keep using (original data is safe)',
+  // #940: the only text outlet for the failure page (tier → title + what happened) is decided by
+  // `src/services/storage/migration/failure-class.ts`; the data-state line and the next-step line
+  // are added from the actual state. Rules: plain language only (no raw exception, class name,
+  // stack, SQL, table, backend name or byte cap), and the "still usable" promise only when the
+  // original storage is confirmed to still be the source of truth and untouched by this upgrade.
+  storageMigrationFailureSpaceTitle: 'Not enough storage space',
+  storageMigrationFailureSpaceBody: 'This upgrade needs more free space, so it has not finished yet.',
+  storageMigrationFailureTooLargeTitle: 'The data was too large, so the upgrade did not finish',
+  storageMigrationFailureTooLargeBody: 'One batch of data was too large, so the copy stopped before it finished.',
+  storageMigrationFailureCorruptTitle: 'Could not read your data',
+  storageMigrationFailureCorruptBody:
+    'The upgrade found some data it could not read and stopped, so your current chats are not affected.',
+  storageMigrationFailureIoTitle: 'A read or write did not succeed',
+  storageMigrationFailureIoBody: 'A read or write could not be completed during the upgrade, so it stopped.',
+  storageMigrationFailureUnsupportedTitle: 'This upgrade cannot be completed on this device',
+  storageMigrationFailureUnsupportedBody:
+    'The app tried the upgrade, but this version cannot complete it on this device, so it stopped.',
+  storageMigrationFailureInterruptedTitle: 'The upgrade was interrupted',
+  storageMigrationFailureInterruptedBody:
+    'The upgrade was interrupted before it finished and is now waiting for you.',
+  storageMigrationFailureUnknownTitle: 'The upgrade did not finish',
+  storageMigrationFailureUnknownBody:
+    'Something we cannot identify went wrong, so the upgrade stopped and did not keep writing.',
+  storageMigrationDataIntact:
+    'Your original chats are still in the original storage, unchanged by this upgrade, and remain usable.',
+  storageMigrationDataPartial:
+    'The new storage holds an unfinished copy; your original chats are still there and were not deleted.',
+  storageMigrationDataCommitted:
+    'The new storage now holds the main data; the original storage holds the copy from before the upgrade.',
+  storageMigrationDataUnknown:
+    'The current state of your data could not be confirmed. Please do not uninstall the app or clear its app data in system settings.',
+  storageMigrationNextRetry: 'Tap "Retry" to try again, or keep using the original storage for now.',
+  storageMigrationNextRecheck: 'Tap "Check again" to see the current state.',
+  storageMigrationNextContinue:
+    'You can keep using the original storage; your chats and attachments are all there and nothing is affected.',
+  storageMigrationKeepOriginal: 'Keep using the original storage',
   storageMigrationBlockedTitle: 'Local data cannot be opened right now',
   storageMigrationBlockedAfterCommit:
     'Your data was upgraded to the new storage, but the new storage cannot be opened now. To avoid showing outdated data, the app stops here. Nothing was deleted. Reloading usually helps; if not, copy the diagnostics and contact us.',
