@@ -303,10 +303,12 @@ test('按钮文案里不再带「原数据未丢失」这类承诺（承诺改�
 
 // ---------------------------------------------------------------- 分类口径（真实链路的三种反直觉之处）
 
-test('code 优先：RESULT_TOO_LARGE / SQLITE_FULL / SQLITE_CORRUPT / SQLITE_BUSY / interrupted 各就各位', () => {
+test('code 优先：RESULT_TOO_LARGE / RESULT_INCOMPLETE / SQLITE_FULL / SQLITE_CORRUPT / SQLITE_BUSY / interrupted 各就各位', () => {
   const cases = {
     RESULT_TOO_LARGE: 'too-large',
     SQLITE_TOOBIG: 'too-large',
+    // #949 新增的稳定码：分页/分块没取全 → 这次没搬全，可重试（不是 unknown）
+    RESULT_INCOMPLETE: 'io',
     SQLITE_FULL: 'space',
     ENOSPC: 'space',
     'insufficient-space': 'space',

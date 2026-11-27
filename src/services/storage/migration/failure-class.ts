@@ -324,6 +324,8 @@ const CODE_TIER: Record<string, FailureTier> = {
   NOT_ENOUGH_SPACE: 'space',
   // 单次读写量过大（>4 MiB 那条就是这里；分页在 #940 的另一半）
   RESULT_TOO_LARGE: 'too-large',
+  // 分页/分块没取全（#949 的另一个稳定码）：宁可报错不给半截数据 → 当作「这次没搬全」，可重试
+  RESULT_INCOMPLETE: 'io',
   ROW_TOO_LARGE: 'too-large',
   VALUE_TOO_LARGE: 'too-large',
   PAYLOAD_TOO_LARGE: 'too-large',

@@ -1549,7 +1549,7 @@ export const zh = {
   storageMigrationFailureSpaceTitle: '存储空间不足',
   storageMigrationFailureSpaceBody: '这次升级需要更多空余空间，暂时没有完成。',
   storageMigrationFailureTooLargeTitle: '数据量太大，这次升级没有完成',
-  storageMigrationFailureTooLargeBody: '有一段数据太大，这次没有搬完，已经停下来了。',
+  storageMigrationFailureTooLargeBody: '有一段数据超过了单次能搬的上限，这次没有搬完就停下来了。应用会分段搬运，重试一次通常能接着搬；如果一直停在这一步，也可以先继续使用原来的存储。',
   storageMigrationFailureCorruptTitle: '数据读取失败',
   storageMigrationFailureCorruptBody: '迁移时发现有些数据读不出来，已经停止迁移，以免影响你现在的聊天记录。',
   storageMigrationFailureIoTitle: '读写没有成功',

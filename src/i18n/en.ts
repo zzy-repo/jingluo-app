@@ -1532,7 +1532,7 @@ export const en = {
   storageMigrationFailureSpaceTitle: 'Not enough storage space',
   storageMigrationFailureSpaceBody: 'This upgrade needs more free space, so it has not finished yet.',
   storageMigrationFailureTooLargeTitle: 'The data was too large, so the upgrade did not finish',
-  storageMigrationFailureTooLargeBody: 'One batch of data was too large, so the copy stopped before it finished.',
+  storageMigrationFailureTooLargeBody: 'One piece of data was above what can be moved in a single step, so the copy stopped partway. The app moves data in smaller parts, so trying again usually continues; if it keeps stopping here, you can also keep using the original storage for now.',
   storageMigrationFailureCorruptTitle: 'Could not read your data',
   storageMigrationFailureCorruptBody:
     'The upgrade found some data it could not read and stopped, so your current chats are not affected.',
