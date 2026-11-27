@@ -10,6 +10,7 @@ import type { RawPage, RawRow, RawStoreName, RawStoreSink, RawStoreSource } from
 import type { SqlDatabase } from './driver.js'
 import { blobTotalBytes } from './blobStore.js'
 import { decodeKey, encodeKey } from './mapping.js'
+import { queryAll } from './paged.js'
 import { mapSqlError } from './repos/errors.js'
 import { clearStore, countRows, getRow, keyOf, putRow, type Ex } from './repos/rows.js'
 import { STORE_TABLES } from './schema.js'
@@ -65,12 +66,16 @@ export const createSqliteRawSource = (db: SqlDatabase): RawStoreSource => ({
       const { table, keyColumn } = STORE_TABLES[store]
       const params = after === undefined ? [limit + 1] : [encodeKey(after), limit + 1]
       const where = after === undefined ? '' : `WHERE ${keyColumn} > ?`
-      const rows = await ex.all(`SELECT ${keyColumn} AS k FROM ${table} ${where} ORDER BY ${keyColumn} LIMIT ?`, params)
+      // #940：键页本身很小，但调用方可能一次要很多页的量 → 用分页口读，只有真到末尾才结束
+      const rows = await queryAll(ex, `SELECT ${keyColumn} AS k FROM ${table} ${where} ORDER BY ${keyColumn} LIMIT ?`, params, {
+        pageRows: Math.max(1, limit + 1),
+      })
       const hasMore = rows.length > limit
       const pageRows = hasMore ? rows.slice(0, limit) : rows
       const out: RawRow[] = []
       for (const row of pageRows) {
         const key = keyOf(row.k)
+        // 逐行取 doc：单条会话的 messages 可能自己就 >4 MiB，`getRow` 内部按列分块并校验总长
         const value = await getRow(ex, store, key)
         if (value !== undefined) {
           out.push({ key, value })

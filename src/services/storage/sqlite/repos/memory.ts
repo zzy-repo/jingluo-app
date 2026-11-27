@@ -2,6 +2,7 @@
 import type { StoredSessionMemory } from '../../../chat/db.js'
 import type { MemoryRepo } from '../../types.js'
 import { encodeKey } from '../mapping.js'
+import { queryAll } from '../paged.js'
 import type { Runner } from './context.js'
 import { deleteRow, deleteRows, getRow, keyOf, putRow, selectRows } from './rows.js'
 import { memoryId } from './shared.js'
@@ -32,7 +33,10 @@ export const createMemoryRepo = (runner: Runner): MemoryRepo => ({
   clearSession: (sessionId) => {
     memoryId(sessionId, '')
     return runner.tx(async (ex) => {
-      const keys = (await ex.all('SELECT id FROM session_memory WHERE session_id = ?', [encodeKey(sessionId)])).map((row) => keyOf(row.id))
+      // #940：一个会话的记忆条数没有硬上限 → 走分页口取全，别让键列表自己撞原生上限
+      const keys = (await queryAll(ex, 'SELECT id FROM session_memory WHERE session_id = ?', [encodeKey(sessionId)])).map(
+        (row) => keyOf(row.id),
+      )
       await deleteRows(ex, 'sessionMemory', keys)
       return keys.length
     })

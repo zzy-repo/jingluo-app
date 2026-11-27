@@ -205,13 +205,18 @@ const STMT_CACHE_MAX = 200
 
 /**
  * 打开一个 Node 测试库。
- * @param {{ path?: string, dir?: string, name?: string, busyTimeoutMs?: number, backupDir?: string }} [options]
+ * @param {{ path?: string, dir?: string, name?: string, busyTimeoutMs?: number, backupDir?: string, maxResultBytes?: number }} [options]
  *   `path` 绝对路径；或 `dir`+`name`；都不给 = 内存库。
+ *   `maxResultBytes` 给了就按原生口径（TEXT 记 UTF-16 码元数 / BLOB 记原始长度 / 加列名长度）模拟
+ *   #940 的「单次结果超限」：`all` 直接抛 `code: 'RESULT_TOO_LARGE'`，`allPaged` 按字节预算提前收口。
  */
 export const openNodeSqliteDatabase = async (options = {}) => {
   const filePath = options.path ?? (options.dir ? join(options.dir, options.name ?? 'app.db') : undefined)
   const inMemory = filePath === undefined || filePath === ':memory:'
   const busyTimeoutMs = options.busyTimeoutMs ?? REQUIRED_BUSY_TIMEOUT_MS
+  // #940：给了 `maxResultBytes` 就按原生口径模拟「单次结果超限 → RESULT_TOO_LARGE」；
+  // 不给（默认）就等于无限，既有用例行为不变。
+  const maxResultBytes = options.maxResultBytes ?? Number.POSITIVE_INFINITY
   const faults = createFaults()
   const als = new AsyncLocalStorage()
 
@@ -274,9 +279,12 @@ export const openNodeSqliteDatabase = async (options = {}) => {
     const injected = consumeRule(faults.state.allRules, (rule) => rule.at === n)
     if (injected) throw injected
     try {
-      return prepare(sql)
+      const rows = prepare(sql)
         .all(...p)
         .map(plainRow)
+      // #940：不分页的旧路径也要能复现「超限就报错、绝不截断」
+      if (nativeResultBytesOf(rows) > maxResultBytes) throw tooLarge()
+      return rows
     } catch (error) {
       throw mapSqliteError(error)
     }
@@ -291,6 +299,72 @@ export const openNodeSqliteDatabase = async (options = {}) => {
       return rule.error
     }
     return undefined
+  }
+
+  // ---------------------------------------------------------------- #940 结果体积上限
+
+  /** 原生 `AppSqlitePlugin.queryOn` 的字节累加口径，逐字一份（与 `paged.ts` 的 `nativeResultBytes` 同源）。 */
+  const encodedBytesOf = (value) => {
+    if (value === null || value === undefined) return 4
+    if (typeof value === 'number') return Number.isInteger(value) ? 20 : 24
+    if (typeof value === 'string') return value.length
+    if (value instanceof Uint8Array || value instanceof ArrayBuffer || ArrayBuffer.isView(value)) return value.byteLength
+    return 4
+  }
+
+  const rowBytesOf = (row) => {
+    let bytes = 2
+    for (const [name, value] of Object.entries(row)) {
+      bytes += encodedBytesOf(value) + name.length
+    }
+    return bytes
+  }
+
+  const nativeResultBytesOf = (rows) => rows.reduce((sum, row) => sum + rowBytesOf(row), 2)
+
+  const tooLarge = () =>
+    driverError(
+      'unknown',
+      `result exceeds ${maxResultBytes} bytes; refusing to truncate (模拟原生 #940 上限)`,
+      'RESULT_TOO_LARGE',
+    )
+
+  /** 分页包装：与原生一致，`SELECT * FROM (原 SQL) LIMIT ? OFFSET ?`（列名/顺序原样保留）。 */
+  const pagedSql = (sql) => `SELECT * FROM (${sql.trim().replace(/;+$/, '')}) LIMIT ? OFFSET ?`
+
+  /**
+   * #940 分页读：语义与原生 `queryOn(limit, offset)` 逐条对齐 ——
+   * 字节预算先于行数预算生效（提前收口，`done=false`），第一行就超预算则抛 `RESULT_TOO_LARGE`，
+   * `done` 只在真到末尾时为 true。
+   */
+  const execPaged = (sql, params, page) => {
+    assertOpen()
+    if (!page) {
+      return { rows: execAll(sql, params), done: true, nextOffset: 0 }
+    }
+    faults.state.alls += 1
+    const { limit, offset } = page
+    let fetched
+    try {
+      fetched = prepare(pagedSql(sql))
+        .all(...splitAt(params).params, limit + 1, offset)
+        .map(plainRow)
+    } catch (error) {
+      throw mapSqliteError(error)
+    }
+    const rows = []
+    let bytes = 2
+    for (const row of fetched) {
+      if (rows.length >= limit) break
+      const rowBytes = rowBytesOf(row)
+      if (bytes + rowBytes > maxResultBytes) {
+        if (rows.length === 0) throw tooLarge()
+        break
+      }
+      rows.push(row)
+      bytes += rowBytes
+    }
+    return { rows, done: fetched.length === rows.length, nextOffset: offset + rows.length }
   }
 
   const begin = () => {
@@ -376,6 +450,10 @@ export const openNodeSqliteDatabase = async (options = {}) => {
       if (state.dead) throw driverError('unavailable', '事务已结束或已超时回滚，tx 失效')
       return execAll(sql, params)
     },
+    allPaged: async (sql, params, page) => {
+      if (state.dead) throw driverError('unavailable', '事务已结束或已超时回滚，tx 失效')
+      return execPaged(sql, params, page)
+    },
   })
 
   /** @type {import('../../../src/services/storage/sqlite/driver.js').SqlDatabase} */
@@ -387,6 +465,10 @@ export const openNodeSqliteDatabase = async (options = {}) => {
     all: (sql, params) => {
       rejectInsideTx('all')
       return exclusive(async () => execAll(sql, params))
+    },
+    allPaged: (sql, params, page) => {
+      rejectInsideTx('allPaged')
+      return exclusive(async () => execPaged(sql, params, page))
     },
 
     transaction: (work, txOptions) => {

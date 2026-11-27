@@ -344,6 +344,14 @@ const utf8Bytes = (text: string): number => {
 /** 每个属性 / 元素额外记的结构开销（JSON 引号、冒号、逗号、列映射的行头）。 */
 const NODE_OVERHEAD = 8
 
+/**
+ * 二进制值**过桥时**的体积（#940 实测）：二进制不能直接塞进 JSON，桥把它编成 base64
+ * （`{$b64: "…"}`），体积放大到 4/3 —— 一个 4 MiB 的 Blob 过桥实得 5592458 字节，
+ * 按 `blob.size` 估只有 4194478，差 25%。
+ * 分批预算要管的是「这一批真正压在 WebView / 原生堆上多少」，所以按过桥形态估。
+ */
+const bridgeBinaryBytes = (raw: number): number => 4 * Math.ceil(raw / 3)
+
 /** 一个值落盘后大约占多少字节。不抛错（不认识的类型按 64 字节记）；Blob 记其 `size`，不读内容。 */
 export const estimateValueBytes = (value: unknown, seen: WeakSet<object> = new WeakSet()): number => {
   if (value === null || value === undefined) {
@@ -369,13 +377,13 @@ export const estimateValueBytes = (value: unknown, seen: WeakSet<object> = new W
   seen.add(object)
   const tag = tagOf(object)
   if (tag === 'Blob' || tag === 'File') {
-    return (object as Blob).size + 64
+    return bridgeBinaryBytes((object as Blob).size) + 64
   }
   if (tag === 'ArrayBuffer') {
-    return (object as ArrayBuffer).byteLength + 16
+    return bridgeBinaryBytes((object as ArrayBuffer).byteLength) + 16
   }
   if (ArrayBuffer.isView(object)) {
-    return object.byteLength + 16
+    return bridgeBinaryBytes(object.byteLength) + 16
   }
   if (tag === 'Date') {
     return 32

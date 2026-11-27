@@ -15,28 +15,48 @@ import { InfraError } from '../../../capability/errors.js'
 import type {
   SqlDatabase,
   SqlErrorShape,
+  SqlPage,
   SqlRow,
   SqlTx,
   SqlValue,
   OpenSqlDatabase,
 } from '../driver.js'
+import { RESULT_TOO_LARGE } from '../driver.js'
+import { resultTooLargeError } from '../repos/errors.js'
 
 /**
  * 与 `AppSqlitePlugin.java` 一一对应的桥接口。
  * {@code error.data} 里携带 {@code kind} / {@code code} / {@code retryable} / {@code message}；
  * {@code error.index}（可选）标记批中出错语句下标。
+ *
+ * {@code all} / {@code txAll} 的 {@code limit} / {@code offset}（#940）：可选的分页窗口。
+ * 带了就返回 {@code { rows, done, nextOffset }}（{@code done} 只在真读到末尾为 true）；
+ * 不带就是旧行为（整段返回，超限 reject {@code RESULT_TOO_LARGE}）。
  */
 export interface AppSqliteBridge {
   open(options: { name: string }): Promise<void>
   run(options: { name: string; sql: string; params?: unknown[] }): Promise<{ changes: number }>
-  all(options: { name: string; sql: string; params?: unknown[] }): Promise<{ rows: SqlRow[] }>
+  all(options: {
+    name: string
+    sql: string
+    params?: unknown[]
+    limit?: number
+    offset?: number
+  }): Promise<{ rows: SqlRow[]; done?: boolean; nextOffset?: number }>
   batch(options: {
     name: string
     statements: readonly { sql: string; params?: unknown[] }[]
   }): Promise<{ results: { changes: number }[] }>
   txBegin(options: { name: string; txTimeoutMs?: number }): Promise<{ token: string }>
   txRun(options: { name: string; token: string; sql: string; params?: unknown[] }): Promise<{ changes: number }>
-  txAll(options: { name: string; token: string; sql: string; params?: unknown[] }): Promise<{ rows: SqlRow[] }>
+  txAll(options: {
+    name: string
+    token: string
+    sql: string
+    params?: unknown[]
+    limit?: number
+    offset?: number
+  }): Promise<{ rows: SqlRow[]; done?: boolean; nextOffset?: number }>
   txCommit(options: { name: string; token: string }): Promise<void>
   txRollback(options: { name: string; token: string }): Promise<void>
   backupTo(options: { name: string; path: string }): Promise<{ bytes: number }>
@@ -77,23 +97,52 @@ const REQUIRED_METHODS = [
 
 const getNativeBridge = (): AppSqliteBridge => registerPlugin<AppSqliteBridge>(APP_SQLITE_PLUGIN_NAME)
 
-/** 过桥 Promise 拒绝 → SqlErrorShape（kind / code / message / retryable）。 */
+/**
+ * 过桥 Promise 拒绝 → SqlErrorShape（kind / code / message / retryable）。
+ *
+ * 原生 `call.reject(message, capacitorCode, ex, data)` 把 `kind` / `code` / `retryable` 放进 `error.data`，
+ * 顶层 `code` 是 Capacitor 自己的 `QUOTA` / `UNAVAILABLE` / `UNKNOWN`（#940 之前这里读顶层，
+ * 于是所有原生错误在 TS 侧都变成 `code: 'UNKNOWN'`，`RESULT_TOO_LARGE` 这类稳定码根本传不上来）。
+ * 现在优先读 `error.data`，再退回顶层，保持对老形态的容忍。
+ */
 const errorShapeOf = (error: unknown): SqlErrorShape => {
-  const data = typeof error === 'object' && error !== null ? (error as Record<string, unknown>) : {}
-  const kind = typeof data.kind === 'string' ? data.kind : infraKindOfRejection(error)
+  const outer = typeof error === 'object' && error !== null ? (error as Record<string, unknown>) : {}
+  const nested =
+    typeof outer.data === 'object' && outer.data !== null ? (outer.data as Record<string, unknown>) : {}
+  const kind =
+    typeof nested.kind === 'string'
+      ? nested.kind
+      : typeof outer.kind === 'string'
+        ? outer.kind
+        : infraKindOfRejection(error)
   const code =
-    typeof data.code === 'string'
-      ? (data.code as SqlErrorShape['code'])
-      : typeof data.kind === 'string'
-        ? (data.kind as SqlErrorShape['code'])
-        : 'OTHER'
+    typeof nested.code === 'string'
+      ? (nested.code as SqlErrorShape['code'])
+      : typeof nested.kind === 'string'
+        ? (nested.kind as SqlErrorShape['code'])
+        : typeof outer.code === 'string'
+          ? (outer.code as SqlErrorShape['code'])
+          : 'OTHER'
   const message =
-    typeof data.message === 'string'
-      ? data.message
-      : typeof error === 'object' && error !== null && (error as { message?: unknown }).message
-        ? String((error as { message?: unknown }).message)
+    typeof nested.message === 'string'
+      ? nested.message
+      : typeof outer.message === 'string'
+        ? outer.message
         : String(error)
   return { kind: kind as SqlErrorShape['kind'], code, message }
+}
+
+/**
+ * 拒绝 → 抛出。两条分支：
+ *  - `RESULT_TOO_LARGE`（#940）：抛带稳定 `code` 的错误，上层（分类映射 / 诊断）只认 code；
+ *  - 其余：沿用原有 `InfraError(kind, message)` 口径。
+ */
+const rethrowSqlError = (error: unknown): never => {
+  const shape = errorShapeOf(error)
+  if (shape.code === RESULT_TOO_LARGE) {
+    throw resultTooLargeError(shape.message, { cause: error })
+  }
+  throw new InfraError(shape.kind, shape.message)
 }
 
 /**
@@ -193,6 +242,23 @@ interface ActiveTx {
   tx: SqlTx
 }
 
+/** 分页返回 → `SqlPage`。老桥不回 `done` 时按「整段返回」理解（等价旧行为），不假装还有下一页。 */
+const pageOf = (
+  result: { rows: SqlRow[]; done?: boolean; nextOffset?: number },
+  page: { limit: number; offset: number } | undefined,
+): SqlPage => {
+  const rows = result.rows.map(decodeRow)
+  if (page === undefined) {
+    return { rows, done: true, nextOffset: rows.length }
+  }
+  const done = typeof result.done === 'boolean' ? result.done : rows.length < page.limit
+  const nextOffset =
+    typeof result.nextOffset === 'number' && Number.isFinite(result.nextOffset)
+      ? result.nextOffset
+      : page.offset + rows.length
+  return { rows, done, nextOffset }
+}
+
 /** 创建 {@code SqlTx} 面：只能在回调里用，回调结束或超时立刻失效。 */
 const createTx = (name: string, token: string, bridge: AppSqliteBridge): SqlTx => ({
   async run(sql, params) {
@@ -202,6 +268,16 @@ const createTx = (name: string, token: string, bridge: AppSqliteBridge): SqlTx =
   async all(sql, params) {
     const result = await bridge.txAll({ name, token, sql, params: encodeParams(params) })
     return result.rows.map(decodeRow)
+  },
+  async allPaged(sql, params, page) {
+    const result = await bridge.txAll({
+      name,
+      token,
+      sql,
+      params: encodeParams(params),
+      ...(page === undefined ? {} : { limit: page.limit, offset: page.offset }),
+    })
+    return pageOf(result, page)
   },
 })
 
@@ -216,8 +292,7 @@ const createNativeSqliteDatabase = (name: string, bridge: AppSqliteBridge): SqlD
       try {
         return await bridge.run({ name, sql, params: encodeParams(params) })
       } catch (error) {
-        const shape = errorShapeOf(error)
-        throw new InfraError(shape.kind, shape.message)
+        throw rethrowSqlError(error)
       }
     },
 
@@ -229,8 +304,24 @@ const createNativeSqliteDatabase = (name: string, bridge: AppSqliteBridge): SqlD
         const result = await bridge.all({ name, sql, params: encodeParams(params) })
         return result.rows.map(decodeRow)
       } catch (error) {
-        const shape = errorShapeOf(error)
-        throw new InfraError(shape.kind, shape.message)
+        throw rethrowSqlError(error)
+      }
+    },
+
+    async allPaged(sql, params, page) {
+      if (activeTx) {
+        throw new InfraError('unavailable', 'connection is inside a transaction; use tx methods')
+      }
+      try {
+        const result = await bridge.all({
+          name,
+          sql,
+          params: encodeParams(params),
+          ...(page === undefined ? {} : { limit: page.limit, offset: page.offset }),
+        })
+        return pageOf(result, page)
+      } catch (error) {
+        throw rethrowSqlError(error)
       }
     },
 
@@ -248,8 +339,7 @@ const createNativeSqliteDatabase = (name: string, bridge: AppSqliteBridge): SqlD
         })
         return result.results
       } catch (error) {
-        const shape = errorShapeOf(error)
-        throw new InfraError(shape.kind, shape.message)
+        throw rethrowSqlError(error)
       }
     },
 
@@ -262,8 +352,7 @@ const createNativeSqliteDatabase = (name: string, bridge: AppSqliteBridge): SqlD
         const beginResult = await bridge.txBegin({ name, txTimeoutMs: options?.txTimeoutMs })
         token = beginResult.token
       } catch (error) {
-        const shape = errorShapeOf(error)
-        throw new InfraError(shape.kind, shape.message)
+        throw rethrowSqlError(error)
       }
 
       const tx = createTx(name, token, bridge)
@@ -283,8 +372,7 @@ const createNativeSqliteDatabase = (name: string, bridge: AppSqliteBridge): SqlD
         if (error instanceof InfraError) {
           throw error
         }
-        const shape = errorShapeOf(error)
-        throw new InfraError(shape.kind, shape.message)
+        throw rethrowSqlError(error)
       }
     },
 
@@ -295,8 +383,7 @@ const createNativeSqliteDatabase = (name: string, bridge: AppSqliteBridge): SqlD
       try {
         return await bridge.backupTo({ name, path: nativeBackupPathOf(destRelativePath) })
       } catch (error) {
-        const shape = errorShapeOf(error)
-        throw new InfraError(shape.kind, shape.message)
+        throw rethrowSqlError(error)
       }
     },
 
@@ -308,8 +395,7 @@ const createNativeSqliteDatabase = (name: string, bridge: AppSqliteBridge): SqlD
         const result = await bridge.integrityCheck({ name })
         return result.problems
       } catch (error) {
-        const shape = errorShapeOf(error)
-        throw new InfraError(shape.kind, shape.message)
+        throw rethrowSqlError(error)
       }
     },
 
@@ -325,8 +411,7 @@ const createNativeSqliteDatabase = (name: string, bridge: AppSqliteBridge): SqlD
           kind: result.kind,
         }
       } catch (error) {
-        const shape = errorShapeOf(error)
-        throw new InfraError(shape.kind, shape.message)
+        throw rethrowSqlError(error)
       }
     },
 
@@ -337,8 +422,7 @@ const createNativeSqliteDatabase = (name: string, bridge: AppSqliteBridge): SqlD
       try {
         await bridge.close({ name })
       } catch (error) {
-        const shape = errorShapeOf(error)
-        throw new InfraError(shape.kind, shape.message)
+        throw rethrowSqlError(error)
       }
     },
   }

@@ -56,7 +56,14 @@ public class AppSqlitePlugin extends Plugin {
     private static final int BUSY_TIMEOUT_MS = 5000;
     /** 默认事务超时：JS 回调失联时原生自动回滚，避免写事务永久占住连接。 */
     private static final long DEFAULT_TX_TIMEOUT_MS = 30_000L;
-    /** 单次 {@code all} 的结果上限：超过即报错，绝不静默截断。512KiB 分块 + 元数据远低于此。 */
+    /**
+     * 单次 {@code all} 的结果上限：超过即报错，绝不静默截断。
+     *
+     * <p>配 {@code limit/offset} 分页时语义变成**每页上限**：再加一行就会越界就提前收口
+     * （{@code done=false}），只有「第一行本身就超」才抛 {@link SqliteFailure#RESULT_TOO_LARGE}。
+     * 注意这个「字节」是**本方法自己的累加口径**（TEXT 记 UTF-16 码元数、BLOB 记原始长度不含 base64、
+     * 每列再加列名长度），它**不等于**真实过桥的 JSON 体积（实测量级见 #940：中文正文 ×2.86、BLOB ×1.33）。
+     */
     static final int MAX_RESULT_BYTES = 4 * 1024 * 1024;
     /** JS 安全整数上限：超出的整数无法无损过桥，直接拒绝。 */
     private static final long MAX_SAFE_INTEGER = 9007199254740991L;
@@ -281,7 +288,8 @@ public class AppSqlitePlugin extends Plugin {
     public void all(PluginCall call) {
         dispatch(call, call.getString("name"), connection -> {
             guardIdle(connection);
-            return queryOn(connection.raw, call.getString("sql"), call.getArray("params"));
+            return queryOn(connection.raw, call.getString("sql"), call.getArray("params"),
+                    call.getInt("limit"), call.getInt("offset"));
         });
     }
 
@@ -358,7 +366,8 @@ public class AppSqlitePlugin extends Plugin {
         dispatch(call, call.getString("name"), connection -> {
             Transaction transaction = transactionOf(call.getString("token"));
             requireSame(transaction, connection);
-            return queryOn(connection.raw, call.getString("sql"), call.getArray("params"));
+            return queryOn(connection.raw, call.getString("sql"), call.getArray("params"),
+                    call.getInt("limit"), call.getInt("offset"));
         });
     }
 
@@ -616,34 +625,104 @@ public class AppSqlitePlugin extends Plugin {
         return result;
     }
 
-    /** 执行一条查询，结果按列名编码成行数组；超过 {@link #MAX_RESULT_BYTES} 直接报错，不截断。 */
-    private static JSObject queryOn(SQLiteConnection raw, String sql, JSONArray params) throws Exception {
+    /**
+     * 执行一条查询，结果按列名编码成行数组。
+     *
+     * <p>不带分页参数（{@code limit == null}）时保持旧行为：整段结果一次返回，超过
+     * {@link #MAX_RESULT_BYTES} 就抛 {@link SqliteFailure#RESULT_TOO_LARGE}（不截断）。
+     *
+     * <p>带 {@code limit/offset}（#940）时返回 {@code {rows, done, nextOffset}}：
+     * <ul>
+     *   <li>{@code done} 只在**真读到结果集末尾**时为 {@code true}；</li>
+     *   <li>字节预算先于行数预算生效：再加一行就会越界 → 立刻收口，{@code done=false}，
+     *       这一行留给下一页（{@code nextOffset = offset + rows.length()}）；</li>
+     *   <li>第一行本身就超预算 → 抛 {@code RESULT_TOO_LARGE}（分页救不了单行，调用方要改按列分块）；</li>
+     *   <li>{@code done=false} 时保证 {@code rows} 非空，调用方的循环不会空转。</li>
+     * </ul>
+     * 分页用 {@code SELECT * FROM (<原始 SQL>) LIMIT ? OFFSET ?} 实现，所以传进来的必须是 SELECT
+     * （含 {@code WITH … SELECT}）；不是 SELECT 的语句会由 SQLite 报语法错，不会静默返回部分结果。
+     */
+    private static JSObject queryOn(SQLiteConnection raw, String sql, JSONArray params,
+                                    Integer limit, Integer offset) throws Exception {
         if (sql == null || sql.trim().isEmpty()) {
             throw SqliteFailure.of(SqliteFailure.UNKNOWN, "sql is empty");
         }
+        boolean paged = limit != null && offset != null;
+        if (!paged && (limit != null || offset != null)) {
+            throw SqliteFailure.of(SqliteFailure.UNKNOWN, "limit and offset must be given together");
+        }
+        if (paged && (limit <= 0 || offset < 0)) {
+            throw SqliteFailure.of(SqliteFailure.UNKNOWN, "limit must be positive and offset must be >= 0");
+        }
+        String effectiveSql = paged ? pagedSelect(sql) : sql;
+        JSONArray bound = params;
+        if (paged) {
+            JSONArray extended = new JSONArray();
+            if (params != null) {
+                for (int index = 0; index < params.length(); index += 1) {
+                    extended.put(params.get(index));
+                }
+            }
+            extended.put(limit);
+            extended.put(offset);
+            bound = extended;
+        }
         JSArray rows = new JSArray();
         int bytes = 2;
-        try (SQLiteStatement statement = raw.prepare(sql)) {
-            bind(statement, params);
+        boolean done = true;
+        try (SQLiteStatement statement = raw.prepare(effectiveSql)) {
+            bind(statement, bound);
             int columns = statement.getColumnCount();
             while (statement.step()) {
                 JSObject row = new JSObject();
+                int rowBytes = 2;
                 for (int column = 0; column < columns; column += 1) {
                     Encoded value = encode(statement, column);
                     row.put(statement.getColumnName(column), value.json);
-                    bytes += value.bytes + statement.getColumnName(column).length();
+                    rowBytes += value.bytes + statement.getColumnName(column).length();
+                }
+                if (!paged) {
+                    rows.put(row);
+                    bytes += rowBytes;
+                    if (bytes > MAX_RESULT_BYTES) {
+                        throw SqliteFailure.resultTooLarge();
+                    }
+                    continue;
+                }
+                if (bytes + rowBytes > MAX_RESULT_BYTES) {
+                    if (rows.length() == 0) {
+                        // 单行就超预算：分页永远读不完，必须让调用方改走按列分块
+                        throw SqliteFailure.resultTooLarge();
+                    }
+                    // 这一行留给下一页，done 必须诚实地为 false
+                    done = false;
+                    break;
                 }
                 rows.put(row);
-                bytes += 2;
-                if (bytes > MAX_RESULT_BYTES) {
-                    throw SqliteFailure.of(SqliteFailure.UNKNOWN,
-                            "result exceeds " + MAX_RESULT_BYTES + " bytes; refusing to truncate");
+                bytes += rowBytes;
+                if (rows.length() >= limit) {
+                    // 多探一行才能诚实地回答「还有没有」：探到的这一行不返回，下一页从它开始
+                    done = !statement.step();
+                    break;
                 }
             }
         }
         JSObject result = new JSObject();
         result.put("rows", rows);
+        if (paged) {
+            result.put("done", done);
+            result.put("nextOffset", offset + rows.length());
+        }
         return result;
+    }
+
+    /** 分页包装：去掉结尾分号后套一层子查询，列名与顺序原样保留。 */
+    private static String pagedSelect(String sql) {
+        String trimmed = sql.trim();
+        while (trimmed.endsWith(";")) {
+            trimmed = trimmed.substring(0, trimmed.length() - 1).trim();
+        }
+        return "SELECT * FROM (" + trimmed + ") LIMIT ? OFFSET ?";
     }
 
     /** 过桥后的一个值：放进 JSON 的形态，以及它占用的字节估算（用于结果上限）。 */
