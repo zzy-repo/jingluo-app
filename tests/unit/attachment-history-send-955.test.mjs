@@ -35,6 +35,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 
 import { installChatHostStubs } from '../helpers/chat-host-stubs.mjs'
+import { anthropicStream } from '../helpers/anthropic-sse.mjs'
 
 const SESSION_ID = 'hist-955'
 /** 历史附件：服务端判过失效、`serverId` 已被清成 null（`reuploadInvalidatedFiles` 的产物） */
@@ -121,42 +122,7 @@ const { useChatStore, initChat, selectSession, sendMessage } = store
 const realSetTimeout = globalThis.setTimeout
 const delay = (ms) => new Promise((resolve) => realSetTimeout(resolve, ms))
 
-const encoder = new TextEncoder()
 const ANSWER = '收到，我们接着聊。'
-
-/** deepseek（Anthropic 协议）的 SSE：少一个事件都拿不到正文 */
-const anthropicStream = (text) => () =>
-  new Response(
-    new ReadableStream({
-      start(controller) {
-        const send = (payload) => controller.enqueue(encoder.encode(`data: ${JSON.stringify(payload)}\n\n`))
-        send({
-          type: 'message_start',
-          message: {
-            id: 'msg-955',
-            type: 'message',
-            role: 'assistant',
-            model: 'deepseek-flash',
-            content: [],
-            stop_reason: null,
-            stop_sequence: null,
-            usage: { input_tokens: 100, output_tokens: 0 },
-          },
-        })
-        send({ type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } })
-        send({ type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text } })
-        send({ type: 'content_block_stop', index: 0 })
-        send({
-          type: 'message_delta',
-          delta: { stop_reason: 'end_turn', stop_sequence: null },
-          usage: { output_tokens: 20 },
-        })
-        send({ type: 'message_stop' })
-        controller.close()
-      },
-    }),
-    { status: 200, headers: { 'Content-Type': 'text/event-stream' } }
-  )
 
 const uploads = []
 const chats = []
@@ -178,10 +144,10 @@ globalThis.fetch = async (url, init) => {
     body = {}
   }
   if (body?.max_tokens !== undefined) {
-    return anthropicStream('会话标题')()
+    return anthropicStream('会话标题')
   }
   chats.push({ url: target, raw, body })
-  return anthropicStream(ANSWER)()
+  return anthropicStream(ANSWER)
 }
 
 const awaitLoaded = async (sessionId, timeoutMs = 5000) => {
