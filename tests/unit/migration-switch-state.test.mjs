@@ -159,3 +159,28 @@ test('规则8 反例：状态 committed + 见证人没有 committed_at + 库里�
   assert.equal(out.kind, 'blocked')
   assert.equal(out.detail, 'state-file-committed-but-sqlite-meta-missing')
 })
+
+// ---------------------------------------------------------------- #980 F1
+//
+// 「库里有业务数据吗」只看 `sessions` 是错的：引用计数保证「删会话不等于删文件」，
+// 孤儿原件（files/attachments/attachmentTexts）本来就可能单独存在。只数会话会把这类库
+// 判成空库，而空库在下游意味着「可以清空重来」。
+test('#980 F1：hasBusinessData 覆盖全部 store 表——只有孤儿原件、没有会话也算有数据', async () => {
+  const env = makeEnv()
+  try {
+    const { db } = await env.mainTarget()
+    // 只有 files 有行，sessions 为空
+    await db.run('INSERT INTO files (id, doc) VALUES (?, ?)', [Buffer.from('f1'), JSON.stringify({ id: 'f1' })])
+    assert.equal(await mods.state.hasBusinessData(db), true)
+    // 只有 attachments 有行
+    await db.run('DELETE FROM files')
+    await db.run('INSERT INTO attachments (id, sha256, parsed_text_path, doc) VALUES (?, NULL, NULL, ?)', [Buffer.from('a1'), JSON.stringify({ id: 'a1' })])
+    assert.equal(await mods.state.hasBusinessData(db), true)
+    // 全空才是 false
+    await db.run('DELETE FROM attachments')
+    assert.equal(await mods.state.hasBusinessData(db), false)
+    await db.close()
+  } finally {
+    env.cleanup()
+  }
+})

@@ -11,14 +11,14 @@
  *  - `committed` 的写入顺序：先 SQLite `meta`，再状态文件；写之前再做一次 integrityCheck 与逐 store 计数复核。
  *  - 全部依赖注入（`MigrationDeps`）；本文件不碰平台、不 import `@capacitor/*`。
  */
-import { META_KEYS } from '../sqlite/schema.js'
+import { META_KEYS, readMeta } from '../sqlite/schema.js'
 import type { SqlDatabase } from '../sqlite/driver.js'
 import { createBackup, readBackupManifest } from './backup.js'
 import { LIMITS } from '../../limits.js'
 import { MAIN_DB_NAME, MIGRATION_ENGINE_VERSION } from './config.js'
 import { MigrationStepError, isKilled } from './errors.js'
 import type { MigrationDeps, SqliteTarget } from './ports.js'
-import { createStateStore, loadMigrationState, preserveCorruptState, type MigrationStateX } from './state.js'
+import { createStateStore, hasBusinessData, loadMigrationState, preserveCorruptState, type MigrationStateX } from './state.js'
 import {
   RAW_STORE_NAMES,
   type MigrationCheckpoint,
@@ -91,7 +91,74 @@ export const parseSpaceMessage = (message: string): { requiredBytes: number; fre
   return Number.isSafeInteger(requiredBytes) && Number.isSafeInteger(freeBytes) ? { requiredBytes, freeBytes } : undefined
 }
 
-/** 预检的纯判定，供单测钉边界：返回 undefined = 通过，否则是失败码与说明。 */
+/** #980 护栏 B 的 blocked 详情：状态不明确，拒绝动主库。 */
+export const MAIN_DB_AMBIGUOUS_DETAIL = 'state-ambiguous-refuse-to-clear-main-db'
+/** #980 护栏 B 最后一道的 blocked 详情：清空前发现主库已提交，停止覆盖。 */
+export const MAIN_DB_COMMITTED_DETAIL = 'main-db-committed-refuse-to-overwrite'
+/** #980 护栏 B：状态不明确且主库读不出来 → 停下来，绝不当作「空库」清掉。 */
+export const MAIN_DB_UNREADABLE_DETAIL = 'state-ambiguous-main-db-unreadable'
+
+/**
+ * 「拿不准，拒绝动主库」的专用错误类型。
+ *
+ * 为什么不是普通 `MigrationStepError`：那是「迁移失败」的载体，会被分类器翻成
+ * `sqlite-unavailable` →「原生数据库不可用」，与真实原因（我们主动保护数据）完全相反。
+ * 它只在本文件内部用于跳过后面的清空逻辑，由 `catch` 转成 `blocked`，并把 `detail` 原样带上面。
+ */
+class MainDbRefusalError extends Error {
+  readonly detail: string
+
+  constructor(detail: string) {
+    super(detail)
+    this.name = 'MainDbRefusalError'
+    this.detail = detail
+  }
+}
+
+/**
+ * 主库探针的**三态**结论（#980）。
+ *
+ * 关键点：`absent`（文件不存在 = 全新安装，安全）与 `unreadable`（文件在、但读不出来 = **拿不准**）
+ * 绝不能混成同一个值。上一版两者都返回 `undefined`，调用方于是把「读不出来」当成「没有 committed」，
+ * 继续往下清库 —— 那正是这道防线最不该犯的错（拿不准时必须偏向**不动手**）。
+ */
+type MainDbProbe =
+  | { state: 'absent' }
+  | { state: 'ok'; committedAt?: string; hasData: boolean }
+  | { state: 'unreadable' }
+
+/**
+ * #980 护栏 B（写侧）的第一步：**只读**探一次主库。
+ *
+ * 库文件不存在就不去打开它（打开一个不存在的库会创建空库，而空库不是证据）。
+ * 打不开 / 读失败一律返回 undefined —— 调用方据此「不猜」，不会拿到一个乐观结论。
+ */
+const inspectMainDb = async (deps: MigrationDeps): Promise<MainDbProbe> => {
+  // `sqliteFileExists` 读不到/抛错时按「文件在」处理：那只会让结论变保守（走 openSqlite 再判一次）
+  const exists = deps.sqliteFileExists === undefined ? true : await deps.sqliteFileExists().catch(() => true)
+  if (!exists) {
+    // 文件不存在 = 全新安装。**这条必须放行**，否则新用户永远迁不了
+    return { state: 'absent' }
+  }
+  let db: SqlDatabase | undefined
+  try {
+    db = await deps.openSqlite({ name: MAIN_DB_NAME })
+    const committedAt = await readMeta(db, META_KEYS.committedAt)
+    // 「有没有业务数据」只有一处实现（state.ts 的 hasBusinessData，覆盖全部九张 store 表）：
+    // 迁移侧的拦截与见证人的判定必须用同一个口径，否则两边会各说各话。
+    const hasData = await hasBusinessData(db)
+    return { state: 'ok', ...(committedAt === undefined ? {} : { committedAt }), hasData }
+  } catch {
+    // 文件在、但打不开/读不出来：可能是别人的库、可能是瞬时锁 —— 都**拿不准**，不当作可清
+    return { state: 'unreadable' }
+  } finally {
+    await db?.close().catch(() => {})
+  }
+}
+
+/**
+ * 预检的纯判定，供单测钉边界：返回 undefined = 通过，否则是失败码与说明。
+ */
 export const judgePreflight = (
   estimate: number,
   free: number | undefined,
@@ -166,6 +233,32 @@ export const runMigration = async (deps: MigrationDeps): Promise<MigrationOutcom
     return { status: 'committed', state }
   }
 
+  /**
+   * ---- #980 护栏 B（写侧）：状态不明确时**禁止清空主库、禁止重跑**，保留现场交用户。----
+   *
+   * 「状态不明确」= 我们无法证明主库里那些行是谁写的。落在这里的两种局面：
+   *   1. 状态文件损坏且没有 `committed_at` 见证（`idle-keep-corrupt`）——上面已把状态换成全新的 idle，
+   *      但库里的行就无从解释了；
+   *   2. 状态文件缺失 / 全新状态（没有 `sourceFingerprint`）。
+   * 这两种局面在旧代码里都会走到 `clearAll()` 再从头复制一遍 —— 那等于用「读不懂的状态文件」
+   * 换「可能真实的用户数据」，而且 `clearAll` 只清主库、备份只覆盖 IDB 源（`backup.ts`），
+   * 被清掉的行没有任何副本。按用户口径：状态不明确就**停下来**，不迁、不清、不覆盖。
+   *
+   * 「主库是全新的」不受影响：库文件不存在 → 探不到事实；库是空的 → 没有 committed、没有业务行。
+   */
+  const mainProbe = await inspectMainDb(deps)
+  if (mainProbe.state === 'unreadable') {
+    // 读不出来 ≠ 空的。这条以前会被跳过（undefined 直接被 `!== undefined` 放行）
+    return { status: 'blocked', detail: MAIN_DB_UNREADABLE_DETAIL }
+  }
+  if (
+    mainProbe.state === 'ok' &&
+    state.sourceFingerprint === undefined &&
+    (mainProbe.committedAt !== undefined || mainProbe.hasData)
+  ) {
+    return { status: 'blocked', detail: MAIN_DB_AMBIGUOUS_DETAIL }
+  }
+
   let main: SqlDatabase | undefined
   let metaWritten = false
   let legacyBumped = false
@@ -185,6 +278,26 @@ export const runMigration = async (deps: MigrationDeps): Promise<MigrationOutcom
     if (deps.signal?.aborted) {
       throw new MigrationStepError('interrupted', 'aborted')
     }
+  }
+  /**
+   * #980 护栏 B（写侧）的最后一道：**清空主库之前**再核一次见证。
+   *
+   * 入口那道判定用的是启动那一刻的事实；走到这里说明中途要「清掉自己的半成品重来」。
+   * 万一这期间库里出现了 `committed_at`（另一个进程 / 上一次运行刚提交完），那就不是半成品：
+   * 拒绝清空，让这次迁移失败并报错 —— 宁可失败，也不覆盖一份已提交的库。
+   */
+  const clearOwnTarget = async (): Promise<void> => {
+    const live = await inspectMainDb(deps)
+    // 三态都要显式落到一个分支上：只有「文件不存在」和「读到了、且没有 committed_at」才允许清。
+    if (live.state === 'unreadable') {
+      throw new MainDbRefusalError(MAIN_DB_UNREADABLE_DETAIL)
+    }
+    if (live.state === 'ok' && live.committedAt !== undefined) {
+      // 不抛 `sqlite-unavailable`：那会被分类器翻成「原生数据库不可用」，用户照着去查存储权限，
+      // 而真实原因是「我们检测到已提交的数据、主动停止覆盖」。
+      throw new MainDbRefusalError(MAIN_DB_COMMITTED_DETAIL)
+    }
+    await (await openMain()).sink.clearAll()
   }
 
   try {
@@ -220,8 +333,7 @@ export const runMigration = async (deps: MigrationDeps): Promise<MigrationOutcom
     let restarted = false
     if (state.sourceFingerprint !== undefined && state.sourceFingerprint !== fingerprint) {
       // 源在两次运行之间变了：清掉**自己创建的**目标，从头来（备份文件留着，不删）
-      const own = await openMain()
-      await own.sink.clearAll()
+      await clearOwnTarget()
       restarted = true
       await save({
         phase: 'preflight',
@@ -231,15 +343,15 @@ export const runMigration = async (deps: MigrationDeps): Promise<MigrationOutcom
       })
     } else if (state.sourceFingerprint === undefined) {
       // 全新开始（含「状态文件丢了、但上次留下半个主库」）：没有 committed 见证的主库只可能是我们自己的半成品，清行重来
+      // #980：库里有业务行的那种「丢档」上面已经 return blocked 了，能走到这里的库是空的或不存在。
       if ((await deps.sqliteFileExists?.()) === true) {
-        await (await openMain()).sink.clearAll()
+        await clearOwnTarget()
       }
       await save({ phase: 'preflight', sourceFingerprint: fingerprint })
     }
     if (resumingFromFailure && (priorCode === 'verify-failed' || priorCode === 'sqlite-unavailable')) {
       // 目标被判不可信：清掉自己的目标，复制从头
-      const own = await openMain()
-      await own.sink.clearAll()
+      await clearOwnTarget()
       await save({ phase: 'preflight', checkpoints: undefined })
     }
 
@@ -366,6 +478,11 @@ export const runMigration = async (deps: MigrationDeps): Promise<MigrationOutcom
   } catch (error) {
     if (isKilled(error)) {
       throw error
+    }
+    // 护栏 B 的最后一道拦下的不是「迁移失败」，是「拒绝覆盖已提交的库」：转成 blocked，别写 failed 状态，
+    // 也别让用户看到「原生数据库不可用」那种会把人带偏的文案。
+    if (error instanceof MainDbRefusalError) {
+      return { status: 'blocked', detail: error.detail }
     }
     const failure: MigrationFailure = {
       code: failureCodeOf(error),

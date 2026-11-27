@@ -7,7 +7,10 @@
  *   3. 状态文件说 `committed` 而原生 SQLite 不可用 → blocked: sqlite-unavailable-after-commit（**绝不回退 IDB**）
  *   4. 原生 SQLite 不可用                          → indexeddb: native-not-ready
  *   5. 双见证收敛：矛盾 → blocked: needs-user-decision（不猜）
- *   6. committed（含「状态文件缺失但 SQLite 已见证」「已写 meta 未写状态」）
+ *   5b.（#980 护栏 B）状态文件坏/缺失 + 库里已有业务数据 → blocked: needs-user-decision
+ *        （状态不明确时**不迁、不清**，保留现场交用户；绝不「那就重新迁一遍」）
+ *   6. committed（含「状态文件缺失但 SQLite 已见证」「已写 meta 未写状态」
+ *        「**状态文件损坏**但库自证 committed_at」）
  *        → 库打得开且有 `committed_at` → sqlite；否则 blocked: sqlite-unavailable-after-commit
  *   7. failed → indexeddb: migration-failed-fallback-allowed；其余阶段 / idle → indexeddb: native-not-ready
  *
@@ -17,7 +20,12 @@
 import type { AppFileSystem } from '../fs/types.js'
 import type { OpenSqlDatabase } from './sqlite/driver.js'
 import type { Clock, Sha256Text } from './migration/ports.js'
-import { createStateStore, loadMigrationStateDetailed } from './migration/state.js'
+import {
+  AMBIGUOUS_STATE_DETAIL,
+  CORRUPT_BUT_COMMITTED_DETAIL,
+  createStateStore,
+  loadMigrationStateDetailed,
+} from './migration/state.js'
 import type { StorageEngineChoice } from './migration/types.js'
 
 export type RouterDeps = {
@@ -76,8 +84,32 @@ export const resolveStorageEngine = async (deps: RouterDeps): Promise<StorageEng
     return blocked('needs-user-decision', `state-unreadable: ${error instanceof Error ? error.message : String(error)}`)
   }
   const { outcome, witness } = loaded
+  /**
+   * #980 护栏 B（读侧）：状态文件**不明确**（坏了，或根本没有）而库里**已经有业务数据**。
+   *
+   * 这种局面下「谁写的这些行」无法证明：可能是半成品迁移，也可能是已迁移的真实用户数据。
+   * 旧行为是当作全新安装重新迁一遍 —— 而重跑的第一件事就是 `clearAll()` 主库（见编排器的护栏 B），
+   * 等于拿「读不懂的状态文件」去换「可能真实的用户数据」。按用户口径：**宁停不猜**，
+   * 停下来、保留现场、告知用户，绝不自动重迁。
+   */
+  const stateFileUnclear =
+    outcome.kind === 'idle-keep-corrupt' || (outcome.kind === 'use' && loaded.file === undefined)
+  if (stateFileUnclear && witness.hasData === true) {
+    return blocked('needs-user-decision', AMBIGUOUS_STATE_DETAIL)
+  }
   switch (outcome.kind) {
     case 'blocked':
+      /**
+       * #980 护栏 A：状态文件坏了，但库自己写了 `meta.committed_at` —— 真源已经是 SQLite。
+       *
+       * 这与上面 `rebuild-committed`（文件缺失但库自证 committed）是**同一个道理**，只是文件还在、内容读不懂。
+       * 旧行为是 `needs-user-decision`，用户每次冷启动都被一张整屏页挡在门外；
+       * 而文件损坏不改变「库已经提交过」这个事实，回退 IDB 更是读一份冻结的旧快照。
+       * 所以：用 sqlite。状态文件本身不在这里重写（那是编排器的事，本函数只回答「读写哪个库」）。
+       */
+      if (outcome.detail === CORRUPT_BUT_COMMITTED_DETAIL) {
+        return { engine: 'sqlite' }
+      }
       return blocked(
         'needs-user-decision',
         witness.unavailableReason === undefined ? outcome.detail : `${outcome.detail} (${witness.unavailableReason})`

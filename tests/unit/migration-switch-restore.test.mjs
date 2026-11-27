@@ -106,3 +106,30 @@ test('主库损坏打不开 → main-unopenable，不删不重建', async () => 
     assert.equal(await env.sqliteFileExists(), true)
   })
 })
+
+// ---------------------------------------------------------------- #980 F3
+//
+// 恢复路径**刻意不设防**：用户点了「恢复」，语义就是要覆盖主库。
+// 但必须有 pre-restore 备份（见上一条用例）。这条用例钉住「恢复仍然清空后重灌」——
+// 否则将来有人把迁移侧的 `clearOwnTarget()` 顺手套到恢复路径上，恢复功能会静默坏掉
+// （前置检查发现主库有 committed_at → 拒绝清空 → 「恢复」变成什么都没做）。
+test('#980 F3：用户主动恢复仍然「清空后重灌」（迁移路径设防，恢复路径刻意不设防）', async () => {
+  await withMigrated(async (env, backup) => {
+    // 备份之后又产生了主库独有的内容（备份里没有）：恢复完成后它们必须消失
+    const { db, target } = await env.mainTarget()
+    await target.sink.writeBatch('sessions', [{ key: 'after-backup', value: { id: 'after-backup' } }])
+    await db.run("DELETE FROM raw_rows WHERE store='sessions' AND k='s1'")
+    await db.close()
+    const result = await mods.backup.restoreFromBackup(env.deps(), { confirmed: true, backup })
+    assert.equal(result.ok, true)
+    const { db: main, target: t } = await env.mainTarget()
+    const rows = (await t.source.readBatch('sessions', undefined, 50)).rows.map((row) => row.key)
+    await main.close()
+    // ① 备份里没有的行被清掉了（= 真的先清空，而不是「合并」）
+    assert.equal(rows.includes('after-backup'), false)
+    // ② 备份里的行回来了
+    assert.ok(rows.includes('s1'))
+    // ③ 主库内容与备份一致（九张 store 全等，不只是 sessions）
+    assert.equal(await mainRows(env), await snapshotOf(env.source))
+  })
+})
