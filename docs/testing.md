@@ -113,7 +113,107 @@ node scripts/check-hardcoded-ports.mjs --strict   # 有警告即退出 1（接�
 
 > `SKIP(env)` 只表示「这次没法验证」，**不是通过**。要发版就必须让这些用例在正确产物上真跑一遍。
 
-## 5. 基线比对（`--baseline`）
+## 5. 跑之前先自证输入形态（2026-11-27）
+
+今天在同一批用例上连着踩了四次，**错误形状是同一条**：拿一个**没有自证过的输入**去验证行为，
+于是红也不作数、绿也不作数。四次里最贵的一次是「9 条已经修好的用例，被验成了 5 红 1 flaky」，
+差一点就回头去改断言。
+
+跑之前先按这个清单自证，四条缺一不可：
+
+```bash
+# ① 产物带登录接缝？（三个变体都要，任一命中即算）
+grep -rl "test-token-not-real" dist/ dist-standard/ dist-scroll/
+# ② 产物与源码同源？（记录 builtAt 与 HEAD，别只记目录名）
+cat dist/build-info.json; git rev-parse HEAD
+# ③ 跨 worktree 复用同一份产物时，源码真的一致？
+git diff --quiet <base> <head> -- src/ && echo "src 完全一致 ✅"
+# ④ 推上去了？四处一致才算（见 ④）
+git rev-parse HEAD; git rev-parse origin/<branch>; git ls-remote --heads origin <branch>
+```
+
+### 5.1 L1 产物必须带 `TEST_AUTH_SEAM=1`，三个变体都要
+
+CI 的配方（job 级 env 在 `.github/workflows/ci.yml:1502`，三份变体的构建在
+`.github/workflows/ci.yml:1581`）—— 注释写明「DefinePlugin 内联假会话，**AuthGate 直接放行**」。
+
+**不带接缝的产物不是「差一点」，是废的**：AuthGate 不放行 → 首屏停在落地页 → 落地页会去拉
+分发机上的 `releases.json` / `announcements.json`（地址来自 `config/endpoints.json` 的 `download` 段）
+→ 用例报出来的是**极具误导性**的断言：
+
+```
+AssertionError: 出站漏网：不连真实服务 · 期望=0 次未登记请求；
+允许的 host = {127.0.0.1:46823、apia.ecsafe.cn}
+实际=7 次未登记请求：GET apia.ecsafe.cn/api/v1/settings/public、
+GET jingluo.nekoai.com.cn/announcements.json、GET jingluo.nekoai.com.cn/releases.json 等 5 条；
+白名单外的 host：jingluo.nekoai.com.cn、dl.rose7.cn
+   at tests/integration/log-viewer.test.mjs:485
+```
+
+看这条会以为「用例的出站闸写错了」或「main 新增了网络请求」——**真实原因在产物**。
+实测对照（同一批 9 个文件、同一条命令）：无接缝产物 **5 红 1 flaky**，带接缝产物 **9/9 PASS、
+零 SKIP、零 flaky**；其中 `diagnostics` 那次 `PASS(flaky)` 也是假的（首跑两条
+`net_response 记录异常 … releases.json → 200`，产物修好后一次通过）。
+
+**判据**（`grep` 先跑，再跑用例）：
+
+```bash
+grep -rl "test-token-not-real" dist/ dist-standard/ dist-scroll/   # 每个目录至少 1 个文件命中
+```
+
+`scripts/lib/testAuthSeam.mjs:60` 的 `SEAM_MARKERS` 是 `['__TEST_AUTH_STATE__', 'test-token-not-real']`，
+判定用的是 `SEAM_MARKERS.find(...)`（`scripts/lib/testAuthSeam.mjs:100`）—— **命中任意一个即算带接缝**，
+不是「两个都必须有」。`__TEST_AUTH_STATE__` 是运行期挂在 `window` 上的名字，压缩改名或被 tree-shake
+掉都正常，**实测三个变体都是 0 命中**；`test-token-not-real`（`scripts/lib/testAuthSeam.mjs:36`）是
+字符串常量，压缩不动它，**它才是可靠指示**。不要因为前者 0 命中就断定「构建坏了」，也**不要为了凑它去改构建**。
+
+### 5.2 别拿 `build-info.json` 的 `variant` 当产物形态判据
+
+`{"variant": "internal"}` 只说明**变体**，**不说明带没带接缝**。上面那次 5 红，就是拿
+`variant=internal` 当成了「产物没问题」。**一个字段名字像答案，不等于它是答案。**
+
+固定顺序（四步）：
+
+```
+checkout 定版 → 构建（TEST_AUTH_SEAM=1）→ grep 接缝标记 → 跑用例 → 记录 builtAt 与 HEAD
+```
+
+### 5.3 跨 worktree 复用同一份产物：先证同源，再归一 mtime
+
+`tests/helpers/env.mjs:118` 会拿 `src/**/*.tsx?|css` 与 `rspack.config.ts` 的**最新 mtime**
+和产物 `builtAt` 比，源码更新就 `SKIP(env) 构建产物陈旧`，**且没有 bypass 开关**。
+所以复用必须两条一起做：
+
+```bash
+git diff --quiet <base> <head> -- src/ && echo "src 完全一致 ✅"     # ① 先证同源
+find src -type f \( -name '*.ts' -o -name '*.tsx' -o -name '*.css' \) \
+  -exec touch -t <构建时刻之前> {} +                                  # ② 再归一 mtime
+```
+
+顺序同样重要：**先 checkout/构建，后构建产物**。反过来 checkout 会刷新 `src` mtime，产物立刻被判陈旧。
+
+两个附带坑：
+- `--case` 跑单文件时，**别指望 `DIST_DIR` 一定进到子进程**；给 worktree 建
+  `dist` / `dist-standard` / `dist-scroll` 软链指向同一份产物，等效且不依赖变量透传。
+- 拆软链时别把共享的 `node_modules` 一起递归删掉（软链要拆链接，不是删目录）。
+
+### 5.4 推完必须现查，不能拿旧输出当证据
+
+同一天两次把「本地 rebase 完成」当成了「已推」，其中一次还写进了报告说「已推、已复核」，
+被 `gh pr view <n> --json headRefOid` 抓出远端仍停在旧 sha。`--force-with-lease` 的 lease 值给错
+只会 `rejected (stale info)`（不会静默成功），但**手上的旧 `ls-remote` 输出会让人以为推上去了**。
+
+```bash
+git fetch origin --prune
+git rev-parse HEAD                          # 本地
+git rev-parse origin/<branch>               # fetch 之后的跟踪分支
+git ls-remote --heads origin <branch>       # 真实远端
+gh pr view <n> --json headRefOid --jq .headRefOid
+```
+
+**四处一致才算推上去了**。推广成一句通用纪律：**报告里的每个数字都必须当场测出来，不能是记忆里的。**
+
+## 6. 基线比对（`--baseline`）
 
 `tests/integration-baseline.json` 记录每个文件的期望状态：
 
@@ -146,7 +246,7 @@ node scripts/check-hardcoded-ports.mjs --strict   # 有警告即退出 1（接�
 判定原则：**只用「相对基线没有新增失败」做门禁**，不要求基线本身全绿；
 但 `known-red` 必须带原因与 Issue，修好后从清单里删掉（否则 `FIXED?` 会一直提醒）。
 
-## 6. flaky：失败自动重跑一次 + 登记 + 隔离（#406）
+## 7. flaky：失败自动重跑一次 + 登记 + 隔离（#406）
 
 跑集成层时**每个失败用例会自动重跑 1 次**（`--no-retry` 关闭）。三种结局：
 
@@ -169,7 +269,7 @@ node tests/run-layer.mjs integration --case quota-exhausted.test.mjs   # --case 
 > `GITHUB_STEP_SUMMARY`。登记簿在 CI 里是 ephemeral 的（跑完即弃），PR 上能查的是 job summary 与
 > `l1-report-*.json` 这两个留痕出口。
 
-### 6.1 例外：INFRA（runner 自己崩了，#611）
+### 7.1 例外：INFRA（runner 自己崩了，#611）
 
 `node --test` 父进程反序列化子进程 IPC 消息失败（`Unable to deserialize cloned data…` +
 `failureType: 'uncaughtException'` + stack 在 `node:internal/test_runner`，三条同时命中）时，
@@ -185,7 +285,7 @@ node tests/run-layer.mjs integration --case quota-exhausted.test.mjs   # --case 
 `tests/flaky-registry.json` 的 `infraSignatures`（**按签名登记，不放行任何文件**）；负向对照见
 `tests/unit/runner-infra-classify-611.test.mjs` 与 `docs/TESTING-POLICY.md` §11.9。
 
-## 7. 当前基线（2026-11-20，origin/main@1114607 / 1.4.0-beta.10 线）
+## 8. 当前基线（2026-11-20，origin/main@1114607 / 1.4.0-beta.10 线）
 
 - 45 个集成文件：**44 条期望通过 + 1 条 known-red**（`tests/integration-baseline.json` 登记 39 条，
   其余文件没有条目 = 按 `pass` 判）。
@@ -208,7 +308,7 @@ Total 45: PASS 44, FAIL 1, SKIP(env) 0, NODE-SKIP 0; elapsed 1063887ms
   `url-import-stages` / `full-acceptance` / `feedback-scroll`）逐条归因为「断言过时」或
   「测试自身 bug」，改测试后转绿并删除条目；归因与证据见 Issue #406 的评论。
 
-## 8. 排查顺序（红了一个文件时）
+## 9. 排查顺序（红了一个文件时）
 
 1. 看 runner 打印的 `↳` 原因：`SKIP(env)` 说明是环境，先按提示准备产物/端口，别改代码。
 2. 真 `FAIL`：先确认 `dist`/`dist-standard` 是**这次**构建的（`cat dist-standard/build-info.json` 看 `builtAt`）。
@@ -217,7 +317,7 @@ Total 45: PASS 44, FAIL 1, SKIP(env) 0, NODE-SKIP 0; elapsed 1063887ms
 4. 怀疑产品缺陷 → 保留失败、开 Issue，并在 `integration-baseline.json` 里登记 `known-red` + 原因。
 5. 单文件复现：`APP_URL=… node tests/integration/<名字>.test.mjs`；跑完清掉自己起的服务。
 
-## 9. 相关
+## 10. 相关
 
 - 分层与门禁分级：`docs/TESTING-POLICY.md`
 - 门禁自身的负向对照（新增门禁前必读）：`docs/TESTING-POLICY.md` 第 9 节 + `tests/gates/README.md`
