@@ -19,6 +19,8 @@
  * （半截产物不会对外宣称「已受保护」）。
  */
 
+import { LIMITS } from '../limits.js'
+
 /** 清单格式版本；恢复前用它判「这份备份是不是这个版本写的」。 */
 export const BACKUP_FORMAT_VERSION = 1
 
@@ -343,13 +345,20 @@ export const selectPrunable = (items: readonly BackupFacts[], keep: number): str
   return deletable.map((item) => item.id)
 }
 
-/** 下一份备份的体积预估：最近一份 × 1.2（余量），没有历史时用 8MB 下限。 */
+/**
+ * 下一份备份的体积预估下限（有历史时用）：最近一份 × 1.2（余量），再兜一个 8MB 地板。
+ *
+ * 「一份历史都没有」的那一档**不走这个数**，走 `LIMITS.backup.nextEstimateBytes`
+ * （配置里的保守值，见 `services/limits.ts` 该组注释）——那个阈值原先只写在配置里、
+ * 没有任何消费方，`tests/unit/limits-config.test.mjs` 的「每个叶子都被引用」正是用来抓这类
+ * 「看起来可配、其实没人读」的漏接（本轮 #993 就是被它抓到的）。
+ */
 export const MIN_ESTIMATE_BYTES = 8 * 1024 * 1024
 
 export const estimateNextBytes = (items: readonly BackupFacts[]): number => {
   const latest = [...items].sort(createdDesc)[0]
   if (!latest || latest.sizeBytes <= 0) {
-    return MIN_ESTIMATE_BYTES
+    return LIMITS.backup.nextEstimateBytes
   }
   return Math.max(MIN_ESTIMATE_BYTES, Math.ceil(latest.sizeBytes * 1.2))
 }
