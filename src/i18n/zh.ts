@@ -468,6 +468,8 @@ export const zh = {
    * 完整性校验的算法名、原始英文报错；失败原因一律是分类化的人话，技术细节只进诊断日志。
    * 所以这里没有「校验和 / 哈希」这类说法，统一叫「完整性检查」。
    */
+  backupLostHint: '本机没有找到聊天记录，但检测到有可用备份',
+  backupLostAction: '去恢复',
   backupSectionTitle: '数据备份与恢复',
   backupAutoLabel: '自动备份',
   backupAutoOn: '已开启',

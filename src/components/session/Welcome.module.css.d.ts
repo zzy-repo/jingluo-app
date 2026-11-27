@@ -1,4 +1,6 @@
 declare const styles: {
+  readonly "backupLost": string;
+  readonly "backupLostText": string;
   readonly "container": string;
   readonly "personaAction": string;
   readonly "welcome": string;
