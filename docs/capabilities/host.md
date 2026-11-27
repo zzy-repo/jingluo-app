@@ -4,9 +4,9 @@
 >
 > **快照基准：`77720a32`**（`origin/main` tip，2026-11-25 21:57:52 +0800）· 采集时间：2026-11-25 23:54 (+0800)
 >
-> **扫描范围**：`src/**` 的 **413** 个源文件。
+> **扫描范围**：`src/**` 的 **414** 个源文件。
 >
-> 拆分：`.ts` **324** / `.tsx` 88 / `.html` 1 = 413（#487 W1-A 新增 `src/services/consume/**` 9 个 `.ts`，W1-B 新增 `src/services/auth/**` 5 个 `.ts` 与 `src/components/auth/**` 3 个 `.tsx`，W1-C2 新增 `src/components/consume/**` 的 7 个面板文件，W1-C1 再新增 3 个 `.tsx`，「统一计量」再新增 `src/utils/money.ts` 1 个 `.ts`，「迁移尾巴」再新增 `src/legacy/migration/**` 4 个 `.ts` 与 1 个 `.tsx`，W1-B 后半再新增 `src/services/consumeClient.ts` 与 `src/components/auth/AccountRow.tsx`）。上一版写 190，是缺了 `#237`（`fetch` 通道计数、`readBytesOf`）与 `#243`（设备指纹）新增的 5 个文件。
+> 拆分：`.ts` **325** / `.tsx` 88 / `.html` 1 = 414（#487 W1-A 新增 `src/services/consume/**` 9 个 `.ts`，W1-B 新增 `src/services/auth/**` 5 个 `.ts` 与 `src/components/auth/**` 3 个 `.tsx`，W1-C2 新增 `src/components/consume/**` 的 7 个面板文件，W1-C1 再新增 3 个 `.tsx`，「统一计量」再新增 `src/utils/money.ts` 1 个 `.ts`，「迁移尾巴」再新增 `src/legacy/migration/**` 4 个 `.ts` 与 1 个 `.tsx`，W1-B 后半再新增 `src/services/consumeClient.ts` 与 `src/components/auth/AccountRow.tsx`）。上一版写 190，是缺了 `#237`（`fetch` 通道计数、`readBytesOf`）与 `#243`（设备指纹）新增的 5 个文件。
 >
 > **本盘点只审计、只出单、只做工具，不修任何代码。** 每条真实漏洞都另开独立 Issue（见「真实漏洞与拆单」），修复在各自单里做，不在 #209 的 PR 里改产品代码。
 >
@@ -86,8 +86,8 @@
 | `src/services/api/client.ts:182` | Body.text/arrayBuffer 引入于 Chrome 76，83 必有 | 3 | 低 | 已有兜底 |
 | `src/services/api/client.ts:215` | Body.text/arrayBuffer 引入于 Chrome 76，83 必有（#434 折叠区的响应摘要：`response.text()` 读正文前 200 字） | 3 | 低 | 已有兜底 |
 | `src/services/api/client.ts:335` | AbortController 引入于 Chrome 66，83 必有（启动守卫也把它列进 REQUIRED） | 3 | 低 | 已有兜底 |
-| `src/services/api/client.ts:782` | AbortController 引入于 Chrome 66，83 必有（启动守卫也把它列进 REQUIRED） | 3 | 低 | 已有兜底 |
-| `src/services/api/client.ts:793` | @capacitor/core 随包发布，函数一定在；它回答的是「跑在壳里吗」不是「插件在吗」 | 3 | 低 | 已有兜底 |
+| `src/services/api/client.ts:796` | AbortController 引入于 Chrome 66，83 必有（启动守卫也把它列进 REQUIRED） | 3 | 低 | 已有兜底 |
+| `src/services/api/client.ts:807` | @capacitor/core 随包发布，函数一定在；它回答的是「跑在壳里吗」不是「插件在吗」 | 3 | 低 | 已有兜底 |
 | `src/services/api/client.ts:827` | Body.text/arrayBuffer 引入于 Chrome 76，83 必有 | 3 | 低 | 已有兜底 |
 | `src/services/api/embedding.ts:194` | Body.text/arrayBuffer 引入于 Chrome 76，83 必有 | 3 | 低 | 已有兜底 |
 | `src/services/api/protocolDetect.ts:189` | AbortController 引入于 Chrome 66，83 必有（启动守卫也把它列进 REQUIRED） | 3 | 低 | 已有兜底 |
@@ -200,9 +200,9 @@
 | `src/services/storage/gate.ts:306` | localStorage 在无痕 / 配额满 / 分区存储受限时抛错，写入必须自带 try…catch | 3 | 低 | 已有兜底 |
 | `src/services/storage/migration/hash.ts:177` | Body.text/arrayBuffer 引入于 Chrome 76，83 必有 | 3 | 低 | 已有兜底 |
 | `src/services/storage/migration/hash.ts:181` | FileReader 引入于 Chrome 6，83 必有 | 3 | 低 | 已有兜底 |
-| `src/services/storage/sqlite/blobStore.ts:40` | Body.text/arrayBuffer 引入于 Chrome 76，83 必有 | 3 | 低 | 已有兜底 |
-| `src/services/storage/sqlite/native/driver.ts:78` | registerPlugin 一定返回代理对象，但原生侧没注册时调用只会 reject；插件在不在要探测 | 3 | 中 | 需动态验证 |
-| `src/services/storage/sqlite/repos/errors.ts:46` | 配额溢出只能靠捕获 QuotaExceededError 区分「满了」和「不可用」 | 3 | 低 | 已有兜底 |
+| `src/services/storage/sqlite/blobStore.ts:41` | Body.text/arrayBuffer 引入于 Chrome 76，83 必有 | 3 | 低 | 已有兜底 |
+| `src/services/storage/sqlite/native/driver.ts:98` | registerPlugin 一定返回代理对象，但原生侧没注册时调用只会 reject；插件在不在要探测 | 3 | 中 | 需动态验证 |
+| `src/services/storage/sqlite/repos/errors.ts:61` | 配额溢出只能靠捕获 QuotaExceededError 区分「满了」和「不可用」 | 3 | 低 | 已有兜底 |
 | `src/services/updateGate.ts:326` | AbortController 引入于 Chrome 66，83 必有（启动守卫也把它列进 REQUIRED） | 3 | 低 | 已有兜底 |
 | `src/services/updateManifest.ts:395` | Body.text/arrayBuffer 引入于 Chrome 76，83 必有 | 3 | 低 | 已有兜底 |
 | `src/utils/capabilities.ts:218` | isPluginAvailable 是判断「原生侧到底注册没注册这个插件」的唯一手段 | 3 | 低 | 已有兜底 |
@@ -220,13 +220,13 @@
 
 **页面上换掉 `window.fetch` 的代码在 `src/services/diagnostics/collector.ts`。** 下面每处都用**两把锚**：先写函数名 / 唯一片段（给人看，行号漂了也找得到），再写 `路径:行 ⇒ 片段`（给门禁咬）。**不再写 `:1234` 这种没文件名的裸行号** —— 它不构成引用 token，`check:doc-refs` 结构性看不见（见 `docs/gates/audit-debt.md`「门禁看不见的写法」），行号漂到空行上也没人知道。
 
-- `let inNativeHttp` —— 注释写的是「CapacitorHttp 内部会走 fetch：用它做重入标记」，即采集层自己知道 fetch 可能不是原生的：`src/services/diagnostics/collector.ts:916 ⇒ let inNativeHttp = 0`；
-- `readBytesOf()`（定义 `src/services/diagnostics/collector.ts:987 ⇒ export const readBytesOf = async (response: Response): Promise<number> => {`）—— 体积读取三档：`Content-Length` 声明值 → 流式响应（`text/event-stream`）主动放弃、报 `BYTES_UNMEASURABLE` → 其余才 `response.clone().text()` 实测（见 #211，已修；「没有这个头」不再被当成 0 字节，是 `parseContentLength()` 的事：`src/services/diagnostics/collector.ts:965 ⇒ const parseContentLength = (raw: string | null): number | null => {`）；
-- `installFetchHook()` 里的**两句**，今天已不相邻 —— 别再拿「/」并列写成一处（旧写法就是这么失效的）：先只判 fetch 在不在 `src/services/diagnostics/collector.ts:1114 ⇒ if (typeof window === 'undefined' || typeof window.fetch !== 'function') {`；再 `src/services/diagnostics/collector.ts:1128 ⇒ const original = window.fetch.bind(window)` —— 把当时那个函数当作「原生 fetch」；
-- `installFetchHook()` 里真正 await 体积的那一行（不是 `bytes:` 字段了，写法已改成先落变量）—— 在把 `response` 交还调用方**之前** await；正因为这一行，`readBytesOf` 里任何会等到流关闭的读法都会卡住 SSE（见 #211）：`src/services/diagnostics/collector.ts:1161 ⇒ const responseBytes = await readBytesOf(response)`；
-- 页面级替换：`src/services/diagnostics/collector.ts:1214 ⇒ window.fetch = patched as unknown as typeof window.fetch`；
-- `installCapacitorHttpHook()` —— 另外再包一层 `CapacitorHttp.get/post/…`：`src/services/diagnostics/collector.ts:1276 ⇒ const installCapacitorHttpHook = (): void => {`；
-- `installHooks()` —— 由 `initCollector()` 在启动时调用，只有显式传 `installHooks: false` 才不装 → 生产包里这层包装**一直是活的**：定义 `src/services/diagnostics/collector.ts:1505 ⇒ const installHooks = (): void => {`，开关 `src/services/diagnostics/collector.ts:1629 ⇒ if (options.installHooks !== false) {`，入口链路 `src/main.tsx:78 ⇒ void initDiagnostics({ facts: readDiagnosticsFacts })` → `initDiagnostics()` → `initCollector()`。
+- `let inNativeHttp` —— 注释写的是「CapacitorHttp 内部会走 fetch：用它做重入标记」，即采集层自己知道 fetch 可能不是原生的：`src/services/diagnostics/collector.ts:926 ⇒ let inNativeHttp = 0`；
+- `readBytesOf()`（定义 `src/services/diagnostics/collector.ts:997 ⇒ export const readBytesOf = async (response: Response): Promise<number> => {`）—— 体积读取三档：`Content-Length` 声明值 → 流式响应（`text/event-stream`）主动放弃、报 `BYTES_UNMEASURABLE` → 其余才 `response.clone().text()` 实测（见 #211，已修；「没有这个头」不再被当成 0 字节，是 `parseContentLength()` 的事：`src/services/diagnostics/collector.ts:975 ⇒ const parseContentLength = (raw: string | null): number | null => {`）；
+- `installFetchHook()` 里的**两句**，今天已不相邻 —— 别再拿「/」并列写成一处（旧写法就是这么失效的）：先只判 fetch 在不在 `src/services/diagnostics/collector.ts:1124 ⇒ if (typeof window === 'undefined' || typeof window.fetch !== 'function') {`；再 `src/services/diagnostics/collector.ts:1138 ⇒ const original = window.fetch.bind(window)` —— 把当时那个函数当作「原生 fetch」；
+- `installFetchHook()` 里真正 await 体积的那一行（不是 `bytes:` 字段了，写法已改成先落变量）—— 在把 `response` 交还调用方**之前** await；正因为这一行，`readBytesOf` 里任何会等到流关闭的读法都会卡住 SSE（见 #211）：`src/services/diagnostics/collector.ts:1171 ⇒ const responseBytes = await readBytesOf(response)`；
+- 页面级替换：`src/services/diagnostics/collector.ts:1224 ⇒ window.fetch = patched as unknown as typeof window.fetch`；
+- `installCapacitorHttpHook()` —— 另外再包一层 `CapacitorHttp.get/post/…`：`src/services/diagnostics/collector.ts:1286 ⇒ const installCapacitorHttpHook = (): void => {`；
+- `installHooks()` —— 由 `initCollector()` 在启动时调用，只有显式传 `installHooks: false` 才不装 → 生产包里这层包装**一直是活的**：定义 `src/services/diagnostics/collector.ts:1515 ⇒ const installHooks = (): void => {`，开关 `src/services/diagnostics/collector.ts:1639 ⇒ if (options.installHooks !== false) {`，入口链路 `src/main.tsx:78 ⇒ void initDiagnostics({ facts: readDiagnosticsFacts })` → `initDiagnostics()` → `initCollector()`。
 
 **Capacitor 侧会在什么条件下再换一次：** Capacitor Android 运行时的 `native-bridge`（**不是本仓文件**，在 @capacitor/android 里）先存 `win.CapacitorWebFetch = window.fetch`，再 `window.fetch = async (…) => …`，整段由 `doPatchHttp` 控制；Android 上 `doPatchHttp` 要求 `CapacitorHttp.isEnabled()`，而它读的是 `plugins.CapacitorHttp.enabled`（默认 `false`）。**本仓 `capacitor.config.ts` 没有这个条目，所以今天 fetch 还是原生的。** 风险不在「现在就挂」，而在于：
 
@@ -241,8 +241,8 @@
 
 | 结论 | 位置 | 风险 | Issue |
 | --- | --- | --- | --- |
-| 页面级替换 `window.fetch`，并默认它是原生的 | `src/services/diagnostics/collector.ts:1117 ⇒ const channel = detectFetchChannel(window.fetch)`（同族两个通道判定常量：`src/services/diagnostics/collector.ts:1067 ⇒ const BRIDGE_SOURCE_HINT`、`src/services/diagnostics/collector.ts:1063 ⇒ const ENGINE_NATIVE_HINT`；通道识别正则 `src/utils/capabilities.ts:256`） | 高 | #210 |
-| `readBytesOf()` 的 `response.clone().text()` 兜底：`bytes` 读不到时**今天**报「不可测」（`BYTES_UNMEASURABLE` = -1），不再拿 0 顶替「量不出来」；流式响应在碰 body 之前就放弃（#211 之前它会等到流关闭、把 SSE 卡住） | `src/services/diagnostics/collector.ts:996 ⇒ const text = await response.clone().text()`（调用点 `src/services/diagnostics/collector.ts:1161`；哨兵值 `src/services/diagnostics/collector.ts:944 ⇒ export const BYTES_UNMEASURABLE = -1`） | 中 | #211（已修） |
+| 页面级替换 `window.fetch`，并默认它是原生的 | `src/services/diagnostics/collector.ts:1127 ⇒ const channel = detectFetchChannel(window.fetch)`（同族两个通道判定常量：`src/services/diagnostics/collector.ts:1077 ⇒ const BRIDGE_SOURCE_HINT`、`src/services/diagnostics/collector.ts:1073 ⇒ const ENGINE_NATIVE_HINT`；通道识别正则 `src/utils/capabilities.ts:256`） | 高 | #210 |
+| `readBytesOf()` 的 `response.clone().text()` 兜底：`bytes` 读不到时**今天**报「不可测」（`BYTES_UNMEASURABLE` = -1），不再拿 0 顶替「量不出来」；流式响应在碰 body 之前就放弃（#211 之前它会等到流关闭、把 SSE 卡住） | `src/services/diagnostics/collector.ts:1006 ⇒ const text = await response.clone().text()`（调用点 `src/services/diagnostics/collector.ts:1161`；哨兵值 `src/services/diagnostics/collector.ts:954 ⇒ export const BYTES_UNMEASURABLE = -1`） | 中 | #211（已修） |
 
 两条都按类别 3 的规矩拆成独立 Issue 修复；#209 的 PR 只带扫描器、本文件与单测。
 
@@ -254,7 +254,7 @@
 
 - `Intl.DisplayNames`（2 处：`src/index.html:120`、`src/services/diagnostics/capabilityTruth.ts:80`）：Chrome 81 才有，落在 83 之内，但语言数据（ICU）齐不齐要看具体机型；`src/index.html` 启动守卫已把它列进 `REQUIRED`，探不到会画提示页。
   **口径留痕**：`src/index.html:120` 那一行是**注释**（注释里写着「不检查 Intl.DisplayNames」），扫描器只做字面量匹配，注释行也算命中——为保住「0 命中就是真的 0 命中」，这条不一致不改规则，在这里写明。
-- `Capacitor.registerPlugin`（6 处：`src/services/appUpdate.ts:42`、`src/services/diagnostics/collector.ts:504`、`src/services/diagnostics/collector.ts:1577 ⇒ Capacitor.registerPlugin`、`src/services/exportText.ts:19`、`src/services/invite/fingerprint.ts:232`、`src/components/settings/AppUpdateField.tsx:111` 的 `registerPlugin('Browser')`）：`registerPlugin` 永远返回代理对象，插件没注册时只会在调用时 reject。`isPluginAvailable` 全仓只有 2 处（`src/utils/capabilities.ts:218` / `:223` 的 `hasPlugin()`，`#212` 的统一探测口），也就是说**没有一处**把 `registerPlugin` 的注册结果做成正面探测——`hasPlugin()` 回答的是「这个插件能不能用」，不是「刚才那次注册成功了没有」。已人工核对：`android/app/src/main/java/com/example/deepseekchat/MainActivity.java:49-52` 注册了 4 个插件，Java 侧 `@PluginMethod` 名字与 JS 调用一一对应，**没有名字对不上的情况**；所有调用点也都有 `try…catch` 降级。但「插件注册失败 / 被裁剪 / 旧版本 APK 没有这个插件」这条路径仍无正面探测。本轮 #243 新增的 `DeviceFingerprint`（`invite/fingerprint.ts` 的 `registerPlugin`）也计入这几处；`CheckoutBrowser`（原 `ours/transport.ts:37`，`/buy` 收银台的原生桥）已随 #331 的旧支付链路停用一起删除，那条 `需动态验证` 命中不再存在。
+- `Capacitor.registerPlugin`（6 处：`src/services/appUpdate.ts:42`、`src/services/diagnostics/collector.ts:504`、`src/services/diagnostics/collector.ts:1587 ⇒ Capacitor.registerPlugin`、`src/services/exportText.ts:19`、`src/services/invite/fingerprint.ts:232`、`src/components/settings/AppUpdateField.tsx:111` 的 `registerPlugin('Browser')`）：`registerPlugin` 永远返回代理对象，插件没注册时只会在调用时 reject。`isPluginAvailable` 全仓只有 2 处（`src/utils/capabilities.ts:218` / `:223` 的 `hasPlugin()`，`#212` 的统一探测口），也就是说**没有一处**把 `registerPlugin` 的注册结果做成正面探测——`hasPlugin()` 回答的是「这个插件能不能用」，不是「刚才那次注册成功了没有」。已人工核对：`android/app/src/main/java/com/example/deepseekchat/MainActivity.java:49-52` 注册了 4 个插件，Java 侧 `@PluginMethod` 名字与 JS 调用一一对应，**没有名字对不上的情况**；所有调用点也都有 `try…catch` 降级。但「插件注册失败 / 被裁剪 / 旧版本 APK 没有这个插件」这条路径仍无正面探测。本轮 #243 新增的 `DeviceFingerprint`（`invite/fingerprint.ts` 的 `registerPlugin`）也计入这几处；`CheckoutBrowser`（原 `ours/transport.ts:37`，`/buy` 收银台的原生桥）已随 #331 的旧支付链路停用一起删除，那条 `需动态验证` 命中不再存在。
 - `canvas.toBlob`（1 处：`src/services/chat/appAssets.ts:60`）：回调可能拿到 `null`，个别 WebView 上不触发。
 - `new AudioContext({ sampleRate })`（1 处：`src/services/speech/readAloud.ts:92`）：采样率选项与自动播放策略在真机上表现不一致。
 - `visualViewport`：API 在（Chrome 61），键盘弹出后的 `resize` / `scroll` 时序与去抖仍需真机确认（这一条是人工补记，扫描器的结论本来就在 `已有兜底` 里）。
