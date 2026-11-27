@@ -36,7 +36,6 @@ export const zh = {
   sessionLoadFailed: '对话加载失败，请重试',
   sessionSaveFailedRetryable: '这段对话没存到本机，点重试',
   sessionSaveFailedQuota: '本机存储空间不足，清理或导出备份后重试',
-  sessionSaveLowSpace: '存储空间不足，新内容可能无法保存。请清理空间或先导出备份',
   sessionSaveFailedUnavailable: '当前环境无法保存到本机，建议用 App 打开',
   attachmentSaveFailed: '附件没能存进本机，刷新后可能看不到（可重试）',
   storageBlockedByOtherTab: '另一个标签页占用了本机存储，请关闭其它页面后重试',
@@ -461,6 +460,62 @@ export const zh = {
   deleteAllSessions: '删除所有对话',
   deleteAllSessionsModalTitle: '删除后，所有对话都将被清空且无法找回',
   deleteAllSessionsModalDescription: '本地保存的附件及未发送的草稿也将被删除。',
+  /**
+   * 「数据备份与恢复」（#993 任务 3）。
+   *
+   * 口径（产品方 2026-11-27 定）：界面**只回答四件事** —— 有没有备份 / 什么时候备份的 /
+   * 占了多少空间 / 怎么恢复。文案里**不许出现技术词**：存储实现名、表结构与版本、文件路径、
+   * 完整性校验的算法名、原始英文报错；失败原因一律是分类化的人话，技术细节只进诊断日志。
+   * 所以这里没有「校验和 / 哈希」这类说法，统一叫「完整性检查」。
+   */
+  backupLostHint: '本机没有找到聊天记录，但检测到有可用备份',
+  backupLostAction: '去恢复',
+  backupSectionTitle: '数据备份与恢复',
+  backupAutoLabel: '自动备份',
+  backupAutoOn: '已开启',
+  backupAutoOff: '已关闭',
+  backupAutoDescription: '开启后，应用会自动保存一份备份；备份只保存在这台设备上',
+  backupLastLabel: '最近一次备份',
+  backupLastNone: '还没有备份',
+  backupStatusLabel: '当前状态',
+  backupStatusIdle: '一切正常',
+  backupStatusNever: '还没有备份过，建议现在备份一次',
+  backupStatusRunning: '正在备份… {percent}%',
+  backupStatusRunningNoPercent: '正在备份…',
+  backupStatusRestoring: '正在恢复… {percent}%',
+  backupStatusRestoringNoPercent: '正在恢复…',
+  backupStatusEmpty: '当前没有可备份的聊天记录',
+  backupStatusUnsupported: '当前环境不支持备份到本机存储',
+  backupStatusSpace: '存储空间不足，暂时无法备份',
+  backupStatusInterrupted: '上次备份没有完成，已有备份未被影响',
+  backupStatusCorrupt: '备份文件损坏，无法用于恢复',
+  backupStatusRestoreFailedIntact: '恢复没有完成，原有数据仍然保存在设备上',
+  backupStatusRestoreFailedUnknown: '恢复过程中出现问题，请在这里检查当前数据',
+  backupStatusAborted: '为了不影响当前数据，本次恢复没有开始',
+  backupStatusUnavailable: '暂时读不到备份情况，请稍后再试',
+  backupSpaceLabel: '备份占用空间',
+  backupSpaceValue: '{size}（共 {count} 份）',
+  backupSpaceNone: '还没有占用空间',
+  backupSpaceNudge: '备份已占用 {size}，空间紧张时可能无法继续自动备份',
+  backupSpaceBlocked: '设备剩余空间不足，可能无法完成备份',
+  backupNow: '立即备份',
+  backupNowBusy: '备份中…',
+  backupNowDone: '备份完成，已保存 {size}',
+  backupRestore: '恢复备份',
+  backupRestorePickTitle: '选择要恢复的备份',
+  backupRestoreEmpty: '还没有可以恢复的备份',
+  backupRestoreItemLine: '{time} · {size} · {count} 个对话',
+  backupRestoreItemLineNoCount: '{time} · {size}',
+  backupRestoreUnusable: '这份备份不完整，无法用于恢复',
+  backupRestoreConfirmTitle: '恢复前请确认',
+  backupRestoreConfirmReplace: '将用这份备份替换本机当前数据。',
+  backupRestoreConfirmSafety: '恢复前会先为当前数据做一份安全备份，万一恢复失败可以回到现在的状态。',
+  backupRestoreConfirmTime: '备份时间：{time}',
+  backupRestoreConfirmSize: '备份大小：{size}',
+  backupRestoreConfirmCount: '备份内容：{count} 个对话',
+  backupRestoreConfirmIntegrity: '完整性检查：通过',
+  backupRestoreConfirmAction: '确认恢复',
+  backupRestoreDone: '已恢复完成',
   historyDeleting: '删除中...',
   historyDeleted: '删除成功',
   historyDeleteFailed: '删除失败，请重试',
@@ -556,6 +611,7 @@ export const zh = {
   latestReminderLanguage: '中文',
   settingsLocaleZhCN: '简体中文',
   settingsLocaleEnUS: 'English',
+
   // ---------- 服务配置（渠道 / API Key / 服务地址 / 模型） ----------
   settingsProviderKindLabel: '渠道',
   settingsProviderKindKeyHint: '切换渠道后，请确认 API Key 是否适用',
@@ -646,6 +702,7 @@ export const zh = {
    */
   upstreamReturnedHtml:
     '上游返回的是网页而不是数据，通常是网关或代理出错（接口地址填错了也会这样）；重试同一个请求不会有变化（不要重试），展开下面的响应摘要可以看到返回的内容类型与前 200 字',
+
   // ---------- 聊天背景 ----------
   /** 全局默认背景（本单改名：语义从「聊天背景」变成「新会话的默认背景」） */
   settingsChatBackground: '默认背景',
@@ -656,6 +713,7 @@ export const zh = {
   settingsChatBackgroundCleared: '已清除，聊天区域恢复默认背景',
   settingsChatBackgroundFailed: '图片处理失败，请换一张 JPG/PNG 图片再试',
   settingsChatBackgroundClearConfirm: '确认清除当前聊天背景？',
+
   // ---------- 聊天设置（本单） ----------
   chatSettings: '聊天设置',
   chatSettingsPrompt: '自定义提示词',
@@ -680,6 +738,7 @@ export const zh = {
   chatBackgroundReset: '恢复默认',
   chatBackgroundSave: '保存设置',
   chatBackgroundNeedImage: '请先选一张图片',
+
   // ---------- 反馈与日志 ----------
   feedbackCellLabel: '反馈与日志',
   feedbackCellDescription: '提交问题反馈时会附上最近的操作日志（已在本机脱敏），不包含对话内容与 API Key',
@@ -749,6 +808,7 @@ export const zh = {
   feedbackErrorServer: '服务端异常，请稍后再试',
   feedbackErrorRejected: '反馈被服务端拒绝，请检查内容后重试',
   feedbackErrorUnknown: '上传失败，请稍后重试',
+
   feedbackIntegrityCheck: '检查日志完整性',
   feedbackIntegrityTitle: '日志完整性自检',
   feedbackIntegrityCount: '条数：{count}（上限 500，保留最近 30 分钟）',
@@ -995,6 +1055,7 @@ export const zh = {
   // 只新增、不改上面的既有文案；语义依据 #482（支付与消费拆分）与 #484（sub2api 客户端约束）。
   // 这批 key 在 UI 线落地前没有被引用是预期的，已登记到 scripts/check-i18n.mjs 的 ORPHAN_BASELINE。
   // ---------------------------------------------------------------------------
+
   // 登录注册（sub2api /api/v1/auth）
   sub2authEmail: '邮箱',
   // #727 阶段 1：设置里的登录卡（账号页未登录态 / 模型来源未登录态）
@@ -1113,6 +1174,7 @@ export const zh = {
   /** 服务端 `reason:"USER_NOT_ACTIVE"`（403）：密码是对的，但账号被停用（#735 实测复现） */
   sub2authUserNotActive: '账号已被停用，请联系管理员',
   sub2authTwoFactorHint: '这个账号已开启两步验证，请输入验证器里的 6 位验证码',
+
   // 「账户与消费」页（#482 三弹层合一 / #487 W1-C1）：一个页面四个 tab。
   // 标题与三个 tab 名在词条骨架里没有对应项，这里最小新增；Tab 2「购买」复用 oursPayTitle。
   accountConsumeTitle: '账户与消费',
@@ -1158,6 +1220,7 @@ export const zh = {
   accountConsumeLoginMethodEmail: '邮箱登录',
   accountConsumeSignedOutCta: '登录 / 注册',
   accountConsumeSignOutConfirm: '确定退出？',
+
   // 拆掉登录墙（#608）：账户降级为「我们的渠道」里的**可选**能力。
   // 口径三条（改文案前先看 #608 / #421）：① 主 CTA 是「填 Key 就能用」，不是「登录」；
   // ② 不登录失去的只有账单类信息，聊天 / Key / 导入导出一样不少；③ 不许写「账号更安全」这类夸大。
@@ -1179,6 +1242,7 @@ export const zh = {
   quotaNeedLoginBody: '额度按账号结算；只想聊天的话，在设置里填 Key 即可',
   inviteNeedLoginTitle: '登录后可查看邀请',
   inviteNeedLoginBody: '邀请码与返利跟着账号走；不登录不影响聊天',
+
   // 账户与消费（金额单位是元：1 元 = 1 额度，无 USD；展示走 utils/money.ts，客户端不做汇率）
   consumeBalance: '¥{amount}',
   consumeBalanceApprox: '约合 ¥{amount}',
@@ -1197,6 +1261,7 @@ export const zh = {
   consumeKeyCopied: 'Key 已复制',
   consumeDeleteKey: '删除 Key',
   consumeDeleteConfirm: '删除后不可恢复，确认删除这个 Key 吗？',
+
   // 卡密兑换（沿用「兑换卡密」措辞，见 #482 第三节）
   consumeRedeemTitle: '兑换卡密',
   consumeRedeemPlaceholder: '请输入卡密',
@@ -1213,6 +1278,7 @@ export const zh = {
   walletAutoRedeemMasked: '这张卡密是打码的，无法自动兑换，请手动输入完整卡密',
   walletAutoRedeemFailed: '自动兑换未完成',
   walletAutoRedeemDismiss: '知道了',
+
   // 邀请（sub2api aff；邀请关系只能在注册时一次填定）
   inviteTitle: '我的邀请',
   inviteCode: '邀请码',
@@ -1227,6 +1293,7 @@ export const zh = {
   inviteCodeAtRegister: '注册时填写邀请码（可选）',
   inviteCodeInvalid: '邀请码无效',
   inviteDisabled: '邀请功能未开放',
+
   // 登录后填写邀请人（#842 契约先行；入口默认关闭，见 inviteBindModel.ts）
   inviteBindLabel: '邀请人的邀请码',
   inviteBindPlaceholder: '输入邀请码',
@@ -1242,6 +1309,7 @@ export const zh = {
   inviteBindErrUnauthorized: '登录已失效，请重新登录后再试',
   inviteBindErrRateLimited: '操作太频繁，请稍后再试',
   inviteBindErrFailed: '绑定失败，请稍后重试',
+
   // 邮箱绑定（sub2api account-bindings）
   emailBindBind: '绑定邮箱',
   emailBindChange: '更换邮箱',
@@ -1251,6 +1319,7 @@ export const zh = {
   emailBindSuccess: '绑定成功',
   emailBindUnbindSuccess: '解绑成功',
   emailBindFailed: '绑定失败，请稍后重试',
+
   // sub2api 归一化错误的**上屏文案**（#487：`src/services/consume/errors.ts` 的 `ConsumeMessageKey`
   // 一条不落，共 27 条）。消费层只回 key、不拼文案，所以这里就是「用户能看到的那句话」的唯一来源。
   // 写文案的三条规矩（#484 §4.4 的语义口径）：
@@ -1314,6 +1383,7 @@ export const zh = {
   // ---------------------------------------------------------------------------
   /** 卡密「已用过」= 可能正是自己上一次成功：先让用户核对余额，不要直接说失败 */
   /** `REDEEM_CODE_LOCKED` 是「处理中」不是失败（#484 §4.4：禁止提示换卡 / 重复提交） */
+
   // 额度面板（唯一入口是 sk- Key 的 /v1/usage；余额只在内存里跟着响应走）
   /** 「余额」标签：`consumeBalance` 是金额模板（`${amount}`），不是标签，别混用 */
   consumeBalanceLabel: '余额',
@@ -1328,6 +1398,7 @@ export const zh = {
   consumeTokensCount: '{count} 令牌',
   consumeNoKeyTitle: '还没有可用的 Key',
   consumeNoKeyBody: '余额和用量都要用 Key 才能查。请到「账号」标签页创建一把 Key。',
+
   // 账号面板（Key 创建后只完整显示一次是安全设计，必须在界面上说清）
   consumeAccountTitle: '账号',
   consumeProfileTitle: '账号资料',
@@ -1343,8 +1414,10 @@ export const zh = {
   consumeNeedLogin: '登录状态已失效，请重新登录',
   consumeLogoutConfirm: '退出后需要重新登录才能继续使用，确认退出吗？',
   consumeLogoutSuccess: '已退出登录',
+
   // 邀请面板（返利按消费额的比例以「元」结算，邀请关系只在注册时一次填定）
   inviteRebateFrozen: '其中 {amount} 冻结中',
+
   // 邮箱绑定面板（`email_verify_enabled=false` 时不再强调「必须先验证」）
   emailBindNotBound: '尚未绑定邮箱',
   emailBindCodeLabel: '验证码',
@@ -1474,110 +1547,4 @@ export const zh = {
   sessionBranchOpenParent: '回到来源会话',
   // 附件降级（父会话被删 / 换设备导入后原件不在本机）：明说不可用，但不报错、不阻断对话
   sessionBranchAttachmentMissing: '附件不可用：有 {count} 个附件在本机找不到原件，继续对话不受影响',
-  // #909 Storage Protection：库从有到无（被系统清除）
-  dataLostTitle: '本机的聊天记录已被系统清除（此前约有 {count} 条会话）',
-  dataLostNoSnapshot: '本机没有可用的快照，无法自动恢复。如果之前导出过备份，可在「设置」里导入历史会话。',
-  dataLostDismiss: '知道了，不再提示',
-  dataLostRestoreHeading: '可从以下快照恢复：',
-  dataLostSnapshotRow: '{time} · {count} 条会话',
-  dataLostSnapshotBroken: '{time} · 已损坏，无法恢复',
-  dataLostRestore: '恢复',
-  dataLostConfirm:
-    '用这份快照替换本机现有的聊天记录？替换前会先备份当前状态。快照只含聊天文字，图片和附件原件不在其中，恢复后这些原件不可用。',
-  dataLostConfirmYes: '确认恢复',
-  dataLostRestoring: '正在恢复… {done}/{total}',
-  dataLostRestored: '已从快照恢复 {count} 条会话',
-  dataLostRestoreCancelled: '已取消恢复，本机数据没有改动',
-  dataLostRestoreCorrupt: '这份快照已损坏，没有恢复，本机数据没有改动',
-  dataLostRestoreIncompatible: '这份快照来自更新版本的应用，请先更新应用，本机数据没有改动',
-  dataLostRestoreBackupFailed: '没能先备份当前状态（可能是空间不足），已停止，本机数据没有改动',
-  dataLostRestoreFailed: '恢复失败，本机数据没有改动',
-  // #916：数据丢失横幅的「重新检测」与「导出诊断反馈」（ux2 的横幅引用，文案由本文件统一提供）
-  dataLostRecheck: '重新检测',
-  dataLostRecheckUnknown: '这次没能检测出结果，无法确认数据状态；本机数据没有被改动。',
-  dataLostRecheckStillLost: '仍检测到数据缺失：此前约有 {count} 条会话，目前还没有恢复。',
-  dataLostFeedback: '导出诊断并反馈',
-  // #916：设置页「本地存储」自查（ux2 的设置页引用）
-  storageStatusSection: '本地存储',
-  storageStatusMigrationLabel: '数据升级',
-  storageStatusRetryLabel: '重新尝试升级',
-  storageStatusMigrated: '已完成升级',
-  storageStatusNotMigrated: '暂未升级',
-  storageStatusFailed: '升级失败',
-  storageStatusMigrating: '升级中',
-  storageStatusUnavailable: '暂不可用',
-  storageStatusUnknown: '正在检测',
-  // #916 / #910：存储迁移页（启动闸门）。原则：永远说明「原数据没有丢」，失败给明确原因与出路，不显示空白欢迎页
-  storageMigrationTitle: '正在升级本机数据存储',
-  storageMigrationDescription: '正在把对话与文件复制到新的存储里，期间请不要关闭应用。原来的数据不会被删除。',
-  storageMigrationPhasePreflight: '正在检查可用空间',
-  storageMigrationPhaseBackup: '正在备份原数据',
-  storageMigrationPhaseCopy: '正在复制数据',
-  storageMigrationPhaseVerify: '正在校验复制结果',
-  storageMigrationPhaseCommit: '正在完成切换',
-  storageMigrationPercent: '{percent}%',
-  storageMigrationSizeHint: '预计数据 {size}，升级期间至少需要 {need} 可用空间',
-  storageMigrationProgressSpace: '预计数据 {size}，本次升级需要可用空间 {need}，当前可用 {free}',
-  storageMigrationKeepForeground: '请保持应用在前台，不要强制关闭应用，升级会在后台继续。',
-  // 场景 6：只有「真校验通过」之后才会出现（committed 的唯一来源是 report.ok + integrity_check + 逐 store 计数复核）
-  storageMigrationSuccessTitle: '数据升级完成',
-  storageMigrationSuccessBody: '聊天记录及附件已完成迁移，并通过完整性校验。',
-  storageMigrationSuccessNext: '接下来会直接使用新的存储，不会再执行这次升级。',
-  storageMigrationSuccessAction: '开始使用',
-  // 场景 3：本机暂时不具备存储升级能力，明确告知一次后继续用原存储，不影响使用
-  storageMigrationUnsupportedTitle: '这台设备暂时不支持存储升级',
-  storageMigrationUnsupportedBody: '应用会继续使用原来的存储方式，聊天记录和附件都在，不影响正常使用。',
-  storageMigrationUnsupportedHint: '系统或应用更新之后，下次启动会自动再检查一次。',
-  storageMigrationUnsupportedAction: '知道了，继续',
-  // 场景 4：迁移被中断（切后台被杀 / 主动中断）。绝不引导卸载或清数据
-  storageMigrationInterruptedWarning: '请不要卸载应用，也不要在系统设置里清除应用数据 —— 那会把原始数据一起删掉。',
-  // 场景 2：空间不足。三个数（可用 / 所需 / 建议清理）+ 清理指引 + 重试
-  storageMigrationSpaceFree: '当前可用空间：{free}',
-  storageMigrationSpaceNeed: '本次升级所需空间：{need}',
-  storageMigrationSpaceCleanup: '建议再清理：{cleanup}',
-  storageMigrationSpaceGuideTitle: '前往系统设置清理空间',
-  storageMigrationSpaceGuide:
-    '打开手机的「设置 → 应用 → 本应用 → 存储」，先清理缓存；再删掉不再需要的大文件、相册里的视频，或卸载长期不用的应用。',
-  storageMigrationSpaceGuideCopy: '复制这段指引',
-  storageMigrationSpaceGuideCopied: '指引已复制',
-  storageMigrationSpaceGuideCopyFailed: '复制失败，请对着屏幕手动操作',
-  storageMigrationRecheck: '重新检测',
-  storageMigrationRetry: '重试',
-  // #940：失败页的**唯一**文案出口（档位 → 标题 + 发生了什么）由
-  // `src/services/storage/migration/failure-class.ts` 决定，再按数据状态补一句「我的数据现在怎么样」、
-  // 按入口补一句「下一步怎么办」。原则：
-  //  - 界面上一律人话，不出现原始英文异常、类名、堆栈、SQL、表名、后端名、字节数上限；
-  //  - 只有确认旧库仍是真源、且没被这次升级改动（`storageMigrationDataIntact`）才敢承诺「可以正常使用」；
-  //  - 具体字节数只在「空间不足」档用（可用 / 所需 / 建议清理），那是用户要采取行动的依据。
-  storageMigrationFailureSpaceTitle: '存储空间不足',
-  storageMigrationFailureSpaceBody: '这次升级需要更多空余空间，暂时没有完成。',
-  storageMigrationFailureTooLargeTitle: '数据量太大，这次升级没有完成',
-  storageMigrationFailureTooLargeBody: '有一段数据超过了单次能搬的上限，这次没有搬完就停下来了。应用会分段搬运，重试一次通常能接着搬；如果一直停在这一步，也可以先继续使用原来的存储。',
-  storageMigrationFailureCorruptTitle: '数据读取失败',
-  storageMigrationFailureCorruptBody: '迁移时发现有些数据读不出来，已经停止迁移，以免影响你现在的聊天记录。',
-  storageMigrationFailureIoTitle: '读写没有成功',
-  storageMigrationFailureIoBody: '迁移过程中读写没有完成，已经停下来了。',
-  storageMigrationFailureUnsupportedTitle: '这次升级在这台设备上无法完成',
-  storageMigrationFailureUnsupportedBody: '应用尝试了这次升级，但当前版本没法在这台设备上完成它，已经停下来了。',
-  storageMigrationFailureInterruptedTitle: '升级被打断了',
-  storageMigrationFailureInterruptedBody: '升级在完成之前被打断了，已经停下来等你决定。',
-  storageMigrationFailureUnknownTitle: '升级没有完成',
-  storageMigrationFailureUnknownBody: '出现了一个我们还不知道原因的问题，已经停下来，没有继续往下写。',
-  // 「我的数据现在怎么样」：四句话按**状态**选一句，不按错误文案选
-  storageMigrationDataIntact: '你原来的聊天记录仍然在原来的存储里，没有被这次升级改动，可以正常使用。',
-  storageMigrationDataPartial: '新存储里有未完成的写入；你原来的聊天记录仍然在，没有被删除。',
-  storageMigrationDataCommitted: '新存储里已经是主要数据，旧存储里的是升级前的副本。',
-  storageMigrationDataUnknown: '这次没能确认数据的当前状态。请不要卸载应用，也不要在系统设置里清除应用数据。',
-  // 「下一步怎么办」：由分类器给出的入口决定，一次失败只有一个主按钮
-  storageMigrationNextRetry: '点「重试」可以再试一次；也可以先继续使用原来的存储。',
-  storageMigrationNextRecheck: '点「重新检测」看看现在的状态。',
-  storageMigrationNextContinue: '可以继续使用原来的存储，聊天记录和附件都在那里，不影响正常使用。',
-  storageMigrationKeepOriginal: '继续使用原来的存储',
-  storageMigrationBlockedTitle: '暂时无法打开本机数据',
-  storageMigrationBlockedAfterCommit:
-    '数据已经升级到新的存储，但新存储现在打不开。为避免读到过期的旧数据，应用先停在这里。你的数据没有被删除，重载应用通常可以恢复；仍然不行请复制诊断信息联系我们。',
-  storageMigrationBlockedDecision:
-    '检测到两份升级进度记录互相矛盾，应用不会自行猜测以免弄丢数据。你的数据没有被删除，请复制诊断信息联系我们处理。',
-  storageMigrationBlockedMigrating: '数据升级正在进行，请稍候。',
-  storageMigrationBlockedDetail: '详情：{detail}',
 } as const

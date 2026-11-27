@@ -6,7 +6,7 @@ import { createServer } from 'node:http'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
-import { assertNoEgress, installEgressGate, openSettingsPage, SETTINGS_ROW } from '../helpers/helpers.mjs'
+import { assertNoEgress, installEgressGate } from '../helpers/helpers.mjs'
 // 路径一律走 fileURLToPath：Windows 下 pathname 是 /D:/... （前导斜杠 + 盘符），拼出来会变成 D:\D:\...
 const ROOT = fileURLToPath(new URL('../..', import.meta.url))
 /**
@@ -93,10 +93,8 @@ try {
   await page.waitForFunction(() => !!window.__diagnostics)
   await page.evaluate(() => { for(let i=0;i<30;i++) window.__diagnostics.recordError('scroll regression log '+i); window.__diagnostics.setFeedbackTransport({name:'offline',send:async()=>({ok:false,error:'network'})}) })
   const baseOverflow=await page.evaluate(()=>getComputedStyle(document.body).overflow)
-  // #902：进设置走辅助层唯一那条真实路径（窄屏先「打开边栏」→ 底部「设置」）。旧写法
-  // `getByRole('button',{name:/设置|Settings/}).last()` 在 360/393 窄屏命中的是聊天头部
-  // 「聊天设置」—— 它压在抽屉遮罩底下，`.tap()` 30s 超时。
-  await openSettingsPage(page, SETTINGS_ROW.data)
+  if (!await page.getByRole('dialog').count()) { await page.getByRole('button',{name:/边栏|菜单|sidebar|menu/i}).first().tap(); await page.getByRole('button',{name:/设置|Settings/}).last().tap() }
+  await page.getByTestId('settings-row-data').first().tap()
   await page.getByRole('button',{name:'写反馈',exact:true}).tap()
   await page.locator('#feedback-description').waitFor()
   const form = page.getByRole('dialog').last()

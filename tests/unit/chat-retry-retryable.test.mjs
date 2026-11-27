@@ -21,7 +21,6 @@ import '../helpers/injected.mjs'
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { registerHooks } from 'node:module'
-import { isStorageIndexSpecifier, storageOverDbUrl } from '../helpers/storage-stub.mjs'
 
 const stub = (name) => new URL(`../fixtures/chat-stubs/${name}`, import.meta.url).href
 
@@ -61,10 +60,6 @@ registerHooks({
     }
     if (/diagnostics\/collector\.js$/.test(specifier)) {
       return { url: collectorStub, shortCircuit: true }
-    }
-    // 业务层改走 getStorage()（#917）：放在 nextResolve 之前，免得被同批先注册的 .js→.ts 兜底抢先
-    if (isStorageIndexSpecifier(specifier) && String(context.parentURL ?? '').endsWith('/chat/store.ts')) {
-      return { url: storageOverDbUrl(fakeDB), shortCircuit: true }
     }
     try {
       return nextResolve(specifier, context)

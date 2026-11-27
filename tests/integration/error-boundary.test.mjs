@@ -21,8 +21,6 @@ import { chromium } from 'playwright'
 // #596：内测构建默认渠道是 ours，Key 只能由服务端下发 —— 种「已领取」形态
 import { seedClaimedApiKey } from '../helpers/ours-claim.mjs'
 import { serveDist } from '../helpers/runtime.mjs'
-// #902：设置入口统一走辅助层的真实路径（整串可访问名锚定侧栏「设置」）
-import { openSettingsPage, SETTINGS_ROW } from '../helpers/helpers.mjs'
 import { buildArchive } from '../fixtures/domain05/archive-fixture.mjs'
 import { installBuiltinKeyClaimStub } from '../fixtures/consume-gateway-stubs/builtin-key-claim.mjs'
 
@@ -129,9 +127,17 @@ const seedViaImport = async (page, { keepConfirmOpen = false } = {}) => {
   const dir = await mkdtemp(path.join(tmpdir(), 'deepseek-error-boundary-'))
   const zipPath = path.join(dir, 'deepseek_data.zip')
   await writeFile(zipPath, zip)
-  // #902：走辅助层唯一那条真实路径。旧口径 `/设置|Settings/` + `.last()` 命中聊天头部
-  // 「聊天设置」，点开的是聊天设置弹层 → 下面的 `settings-row-data` 30s 超时。
-  await openSettingsPage(page, SETTINGS_ROW.data)
+  if ((await page.getByRole('dialog').count()) === 0) {
+    await page
+      .getByRole('button', { name: /设置|Settings/ })
+      .last()
+      .click()
+    await page.waitForTimeout(300)
+  }
+  await page
+    .getByTestId('settings-row-data')
+    .first()
+    .click()
   const keyInput = page.locator('input[type="password"]').first()
   if (await keyInput.count()) {
     await keyInput.fill(FAKE_KEY)

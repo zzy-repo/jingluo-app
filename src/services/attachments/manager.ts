@@ -16,8 +16,7 @@
 import { createId } from '../../utils/id.js'
 import { readBlobBuffer } from '../../utils/readBlob.js'
 import { estimateTokens } from '../chat/contextBudget.js'
-import { reportStorageError } from '../chat/db.js'
-import { getStorage } from '../storage/index.js'
+import { openChatTransaction, reportStorageError } from '../chat/db.js'
 import { recordError } from '../diagnostics/collector.js'
 import { AttachmentAddError, type AttachmentAddStage } from './addError.js'
 import {
@@ -32,9 +31,20 @@ import { parseDocxFile } from './parsers/docx.js'
 import { isPdfParseError, parsePdfFile } from './parsers/pdf.js'
 import { parseTxtFile } from './parsers/txt.js'
 import { sha256Hex } from './sha256.js'
-import { attachmentTextKey } from './store.js'
+import {
+  attachmentTextKey,
+  getAttachment,
+  listAttachments,
+  putAttachment,
+  readAttachmentBlob,
+  readAttachmentTextRecord,
+  removeAttachment,
+  removeUnreferencedAttachments,
+  saveNewAttachment,
+  sweepOrphanStorage,
+  writeAttachmentTextRecord,
+} from './store.js'
 import type { DocumentAttachment, ParseOptions, ParsedDocument } from './types.js'
-import type { StoredAttachmentText } from '../chat/db.js'
 
 /** 附件 id 前缀：消息里只存 id，带前缀才能在历史数据里一眼认出「这是文档附件引用」 */
 const ATTACHMENT_ID_PREFIX = 'att-'
@@ -221,7 +231,7 @@ const OVERFLOW_WARNING = (characterCount: number): string =>
 /** 用缓存全文还原附件记录：字段与首次解析结果一致，不是「只有正文」的半份数据 */
 const recordFromCache = (
   record: DocumentAttachment,
-  cached: StoredAttachmentText,
+  cached: NonNullable<Awaited<ReturnType<typeof readAttachmentTextRecord>>>,
   parserVersion: string
 ): DocumentAttachment => {
   const next: DocumentAttachment = {
@@ -261,7 +271,7 @@ const runParse = async (
   parserVersion: string,
   options?: ParseOptions
 ): Promise<DocumentAttachment> => {
-  const blob = await (await getStorage()).blobs.get(record.localPath)
+  const blob = await readAttachmentBlob(record.localPath)
   if (blob === undefined) {
     // 原件不见了（存储被清理 / 库被外部改动；#531 之后**不再是**整包导入的结果：
     // `commitStaging()` 替换 `files` 时会保留 `attachment-` 前缀的原件）。
@@ -273,13 +283,13 @@ const runParse = async (
       parserVersion,
     }
     delete lost.parsedTextPath
-    await (await getStorage()).attachments.put(lost)
+    await putAttachment(lost)
     reportStorageError('parse attachment source')(new Error(lost.errorMessage))
     return lost
   }
 
   // 状态机中间态落库：页面刷新 / 崩溃后能看出这条卡在解析中，可以重试
-  await (await getStorage()).attachments.put({ ...record, status: 'parsing', parserVersion })
+  await putAttachment({ ...record, status: 'parsing', parserVersion })
 
   try {
     const parser = parsers[extension]
@@ -296,7 +306,7 @@ const runParse = async (
     if (characterCount > ATTACHMENT_LIMITS.maxExtractedChars) {
       outcome.warnings.push(OVERFLOW_WARNING(characterCount))
     }
-    const stored = await (await getStorage()).attachments.writeText({
+    const stored = await writeAttachmentTextRecord({
       sha256: record.sha256,
       parserVersion,
       text: result.text,
@@ -325,7 +335,7 @@ const runParse = async (
     if (outcome.warnings.length > 0) {
       next.warnings = outcome.warnings
     }
-    await (await getStorage()).attachments.put(next)
+    await putAttachment(next)
     return next
   } catch (error) {
     const failed: DocumentAttachment = {
@@ -335,7 +345,7 @@ const runParse = async (
       parserVersion,
     }
     delete failed.parsedTextPath
-    await (await getStorage()).attachments.put(failed)
+    await putAttachment(failed)
     reportStorageError('parse attachment')(error)
     return failed
   }
@@ -357,10 +367,10 @@ const parseRecord = async (
   }
 
   // 去重：同一文件 + 同一解析器版本只解析一次（重名/改名的同内容文件共用这一份）
-  const cached = await (await getStorage()).attachments.readText(cacheKey)
+  const cached = await readAttachmentTextRecord(cacheKey)
   if (cached !== undefined) {
     const next = recordFromCache(record, cached, parserVersion)
-    await (await getStorage()).attachments.put(next)
+    await putAttachment(next)
     return next
   }
 
@@ -418,7 +428,7 @@ export class AttachmentManager {
         createdAt: Date.now(),
       }
       stage = 'attachment.store'
-      return await (await getStorage()).attachments.add(draft, source)
+      return await saveNewAttachment(draft, source)
     } catch (cause) {
       const error = new AttachmentAddError(stage, cause)
       recordError('document attachment add failed', { stage, 'error.name': error.causeName })
@@ -428,7 +438,7 @@ export class AttachmentManager {
 
   /** 解析：`pending → parsing → success | partial | failed`，异常一律落 `failed` + `errorMessage` */
   async parse(id: string, options?: ParseOptions): Promise<DocumentAttachment> {
-    const record = await (await getStorage()).attachments.get(id)
+    const record = await getAttachment(id)
     if (record === undefined) {
       throw new AttachmentError('not-found', `attachment not found: ${id}`)
     }
@@ -437,23 +447,23 @@ export class AttachmentManager {
 
   /** 删元数据 + 全文 + 原件（后两者在引用计数归零时才删） */
   async remove(id: string): Promise<void> {
-    await (await getStorage()).attachments.remove(id)
+    await removeAttachment(id)
   }
 
   /** 取值入口（ContextBuilder / 注入侧用）：未解析、失败、正文缺失都返回 undefined，不抛错 */
   async getText(id: string): Promise<string | undefined> {
-    const record = await (await getStorage()).attachments.get(id)
-    const cached = await (await getStorage()).attachments.readText(record?.parsedTextPath)
+    const record = await getAttachment(id)
+    const cached = await readAttachmentTextRecord(record?.parsedTextPath)
     return cached?.text
   }
 
   /** 元数据入口：去重（sha256）、展示（filename / size）、状态与告警都从这里取 */
   async getMeta(id: string): Promise<DocumentAttachment | undefined> {
-    return (await getStorage()).attachments.get(id)
+    return getAttachment(id)
   }
 
   async list(): Promise<DocumentAttachment[]> {
-    return [...(await (await getStorage()).attachments.list())]
+    return listAttachments()
   }
 
   /**
@@ -468,9 +478,9 @@ export class AttachmentManager {
   async sweepOrphans(referenced?: ReadonlySet<string>): Promise<number> {
     let removed = 0
     if (referenced !== undefined) {
-      removed += await (await getStorage()).attachments.removeUnreferenced(referenced)
+      removed += await removeUnreferencedAttachments(referenced)
     }
-    removed += await (await getStorage()).attachments.sweepOrphans()
+    removed += await sweepOrphanStorage()
     return removed
   }
 }
@@ -500,29 +510,19 @@ export const getMeta = (id: string): Promise<DocumentAttachment | undefined> =>
  */
 export const collectReferencedAttachmentIds = async (): Promise<Set<string>> => {
   const referenced = new Set<string>()
-  const storage = await getStorage()
-  // 一页一页读，不把整库历史读进内存（与原来手写游标的理由相同）
-  // 不传 limit 会一次读完整库（listFull 的默认语义），所以固定一页 20 条
-  const PAGE = 20
-  for (
-    let page = await storage.sessions.listFull({ limit: PAGE });
-    ;
-    page = await storage.sessions.listFull({ limit: PAGE, after: page.next ?? undefined })
-  ) {
-    for (const session of page.items) {
-      for (const message of session.messages) {
-        if (message.role !== 'user') {
-          continue
-        }
-        for (const file of message.files) {
-          if (isAttachmentId(file.id)) {
-            referenced.add(file.id)
-          }
+  const tx = await openChatTransaction(['sessions'])
+  for (let cursor = await tx.store.openCursor(); cursor; cursor = await cursor.continue()) {
+    for (const message of cursor.value.messages) {
+      if (message.role !== 'user') {
+        continue
+      }
+      for (const file of message.files) {
+        if (isAttachmentId(file.id)) {
+          referenced.add(file.id)
         }
       }
     }
-    if (page.next === null) {
-      return referenced
-    }
   }
+  await tx.done
+  return referenced
 }

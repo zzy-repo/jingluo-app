@@ -27,7 +27,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { chromium } from 'playwright'
 import { buildArchiveZip } from '../fixtures/domain05/archive-fixture.mjs'
-import { assertNoEgress, installEgressGate, openSettingsPage, SETTINGS_ROW } from '../helpers/helpers.mjs'
+import { assertNoEgress, installEgressGate } from '../helpers/helpers.mjs'
 import { BUILTIN_KEY_CLAIM_STUB } from '../fixtures/consume-gateway-stubs/builtin-key-claim.mjs'
 
 
@@ -93,9 +93,13 @@ const run = async () => {
   await page.reload({ waitUntil: 'domcontentloaded' })
   await page.waitForTimeout(800)
 
-  // #902：走辅助层唯一那条真实路径（整串可访问名锚定侧栏「设置」）。旧口径
-  // `/设置|Settings/` + `.last()` 命中聊天头部「聊天设置」，`settings-row-data` 永远不出现。
-  await openSettingsPage(page, SETTINGS_ROW.data)
+  if ((await page.getByRole('dialog').count()) === 0) {
+    await page
+      .getByRole('button', { name: /设置|Settings/ })
+      .last()
+      .click()
+  }
+  await page.getByTestId('settings-row-data').first().click()
 
   const exportButton = page.getByRole('button', { name: '下载', exact: true })
   const fileInput = page.locator('input[type="file"][accept*="zip"]')

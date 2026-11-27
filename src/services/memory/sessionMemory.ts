@@ -51,8 +51,7 @@
 
 import type { LinkedMessage } from '../../i18n/index.js'
 import type { EmbeddingResult } from '../api/embedding.js'
-import type { StoredSessionMemory } from '../chat/db.js'
-import { getStorage } from '../storage/index.js'
+import { openChatTransaction, runChatStoreRequest, type StoredSessionMemory } from '../chat/db.js'
 import { record } from '../diagnostics/collector.js'
 import { LIMITS, kbOf } from '../limits.js'
 import { EmbeddingDisabledError, embed, isEmbeddingEnabled } from './embeddingGate.js'
@@ -234,11 +233,10 @@ export const saveMemoryEntry = async (
   }
 
   const now = Date.now()
-  const storage = await getStorage()
-  // 读旧值 / 算淘汰集 / 写新值与删淘汰项在同一个原子单元里（runAtomic），与改造前同一事务的语义一致；
-  // 回调里只能 await 存储调用（不要塞别的异步，否则 IDB 事务会提前提交）。
-  const result = await storage.runAtomic(async (repos) => {
-    const existing = await repos.memory.get(sessionId, input.key)
+  const tx = await openChatTransaction(['sessionMemory'], 'readwrite')
+  const run = async (): Promise<{ entry: MemoryEntry; evictedKeys: string[] }> => {
+    const store = tx.objectStore('sessionMemory')
+    const existing = await store.get(id)
     // 覆盖写保留 createdAt（这条记忆什么时候第一次出现），只推进 updatedAt（淘汰排序用）
     const createdAt = existing === undefined ? now : existing.createdAt
     const row: StoredSessionMemory = {
@@ -257,16 +255,22 @@ export const saveMemoryEntry = async (
         row.model = input.model
       }
     }
+    await store.put(row)
 
-    // 候选集只来自本会话（仓储按 sessionId 隔离）—— 跨会话淘汰在这里不可能发生。
-    // 新行按「已写入」计入候选（改造前是先 put 再扫，扫到的就是新值）。
+    // 候选集只来自本会话（`sessionId` 索引）—— 跨会话淘汰在这里不可能发生
     const rows: { id: string; key: string; updatedAt: number; bytes: number }[] = []
-    for (const item of await repos.memory.listBySession(sessionId)) {
-      if (item.id !== id) {
-        rows.push({ id: item.id, key: item.key, updatedAt: item.updatedAt, bytes: item.bytes })
-      }
+    for (
+      let cursor = await store.index('sessionId').openCursor(sessionId);
+      cursor;
+      cursor = await cursor.continue()
+    ) {
+      rows.push({
+        id: String(cursor.primaryKey),
+        key: cursor.value.key,
+        updatedAt: cursor.value.updatedAt,
+        bytes: cursor.value.bytes,
+      })
     }
-    rows.push({ id, key: input.key, updatedAt: now, bytes })
     let totalBytes = 0
     for (const item of rows) {
       totalBytes += item.bytes
@@ -277,7 +281,6 @@ export const saveMemoryEntry = async (
       a.updatedAt === b.updatedAt ? (a.id < b.id ? -1 : 1) : a.updatedAt - b.updatedAt
     )
     const evictedKeys: string[] = []
-    const evictIds: string[] = []
     for (const item of order) {
       if (
         count <= LIMITS.memory.maxEntriesPerSession &&
@@ -289,14 +292,26 @@ export const saveMemoryEntry = async (
         // 刚写的那条不淘汰自己：它的字节数上面已单独判过，留着它才能保证「写成功 = 读得到」
         continue
       }
-      evictIds.push(item.id)
+      await store.delete(item.id)
       count -= 1
       totalBytes -= item.bytes
       evictedKeys.push(item.key)
     }
-    await repos.memory.put(row, evictIds)
     return { entry: toEntry(row), evictedKeys }
-  })
+  }
+
+  let result: { entry: MemoryEntry; evictedKeys: string[] }
+  try {
+    const [outcome] = await Promise.all([run(), tx.done])
+    result = outcome
+  } catch (error) {
+    try {
+      tx.abort()
+    } catch {
+      // 事务已因请求失败中止
+    }
+    throw error
+  }
 
   if (result.evictedKeys.length > 0) {
     // 淘汰**必须**给提示（不是静默丢）：toast 一句 + 诊断日志一条，两个都要
@@ -323,15 +338,19 @@ export const readMemoryEntry = async (
   key: string
 ): Promise<MemoryEntry | undefined> => {
   assertSessionId(sessionId)
-  const row = await (await getStorage()).memory.get(sessionId, key)
+  const row = await runChatStoreRequest('sessionMemory', 'readonly', (store) =>
+    store.get(memoryEntryId(sessionId, key))
+  )
   return row === undefined ? undefined : toEntry(row)
 }
 
 /** 读一个会话的全部记忆，按 `createdAt` 升序（= 上游 chunk 的写入顺序） */
 export const listMemoryEntries = async (sessionId: string): Promise<MemoryEntry[]> => {
   assertSessionId(sessionId)
-  const rows = await (await getStorage()).memory.listBySession(sessionId)
-  return [...rows]
+  const rows = await runChatStoreRequest('sessionMemory', 'readonly', (store) =>
+    store.index('sessionId').getAll(sessionId)
+  )
+  return rows
     .sort((a, b) => (a.createdAt === b.createdAt ? (a.id < b.id ? -1 : 1) : a.createdAt - b.createdAt))
     .map(toEntry)
 }
@@ -339,7 +358,18 @@ export const listMemoryEntries = async (sessionId: string): Promise<MemoryEntry[
 /** 删一条记忆；返回是否真删掉了（用于「覆盖写 / 重复删」这类断言） */
 export const deleteMemoryEntry = async (sessionId: string, key: string): Promise<boolean> => {
   assertSessionId(sessionId)
-  return (await getStorage()).memory.delete(sessionId, key)
+  const id = memoryEntryId(sessionId, key)
+  const tx = await openChatTransaction(['sessionMemory'], 'readwrite')
+  const run = async (): Promise<boolean> => {
+    const store = tx.objectStore('sessionMemory')
+    if ((await store.count(id)) === 0) {
+      return false
+    }
+    await store.delete(id)
+    return true
+  }
+  const [deleted] = await Promise.all([run(), tx.done])
+  return deleted
 }
 
 /**
@@ -351,5 +381,22 @@ export const deleteMemoryEntry = async (sessionId: string, key: string): Promise
  */
 export const clearSessionMemory = async (sessionId: string): Promise<number> => {
   assertSessionId(sessionId)
-  return (await getStorage()).memory.clearSession(sessionId)
+  const tx = await openChatTransaction(['sessionMemory'], 'readwrite')
+  const run = async (): Promise<number> => {
+    const store = tx.objectStore('sessionMemory')
+    const keys: string[] = []
+    for (
+      let cursor = await store.index('sessionId').openKeyCursor(sessionId);
+      cursor;
+      cursor = await cursor.continue()
+    ) {
+      keys.push(String(cursor.primaryKey))
+    }
+    for (const key of keys) {
+      await store.delete(key)
+    }
+    return keys.length
+  }
+  const [removed] = await Promise.all([run(), tx.done])
+  return removed
 }

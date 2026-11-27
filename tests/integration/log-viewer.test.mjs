@@ -15,7 +15,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
 import { serveDist } from '../helpers/runtime.mjs'
-import { assertNoEgress, installEgressGate, openSettingsPage, SETTINGS_ROW } from '../helpers/helpers.mjs'
+import { assertNoEgress, installEgressGate } from '../helpers/helpers.mjs'
 import { BUILTIN_KEY_CLAIM_STUB } from '../fixtures/consume-gateway-stubs/builtin-key-claim.mjs'
 
 
@@ -81,18 +81,11 @@ const seedLogs = () => {
 
 /** 打开 设置 → 数据管理 → 写反馈，返回反馈对话框 */
 const openFeedback = async (page) => {
-  /**
-   * #902：进设置走辅助层唯一那条真实路径。
-   *
-   * 旧写法 `getByRole('button', { name: /设置|Settings/ }).last()` 在本用例的 390/360 窄屏下
-   * 命中的是**聊天头部的「聊天设置」**（`chat-settings-open`）—— 它压在抽屉遮罩
-   * （`drawerMaskOpen`，z-index 799）底下，于是报「`drawerMask…drawerMaskOpen` intercepts
-   * pointer events」30s 超时。这不是抽屉遮罩的缺陷，是点错了按钮：抽屉展开后底部那个
-   * 可访问名整串等于「设置」的按钮才是入口，遮罩盖不到它。
-   *
-   * 辅助层已经把「窄屏先点『打开边栏』再点底部『设置』」这一步收进去了，用例不再重复拼。
-   */
-  await openSettingsPage(page, SETTINGS_ROW.data)
+  if ((await page.getByRole('dialog').count()) === 0) {
+    await page.getByRole('button', { name: /边栏|菜单|sidebar|menu/i }).first().click()
+    await page.getByRole('button', { name: /设置|Settings/ }).last().click()
+  }
+  await page.getByTestId('settings-row-data').first().click()
   await page.getByRole('button', { name: /写反馈/ }).first().click()
   const form = page.locator('[role="dialog"]:has(#feedback-description)')
   await form.locator('#feedback-description').waitFor({ state: 'visible' })

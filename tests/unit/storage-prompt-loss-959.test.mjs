@@ -40,7 +40,9 @@ const { chat, db, reset } = await loadStoreEnv()
 
 const state = () => chat.useChatStore.getState()
 const cached = (id) => state().sessionCache[id]
-const bannerTier = () => db.selectSaveBannerDisplay(state().sessionSaveErrors, state().lowSpace)
+// 纯 IndexedDB 基线上没有「空间不足预警」档（`selectSaveBannerDisplay(errors, lowSpace)` 与
+// `lowSpace` 状态属 #931 配套），横幅档位直接取三档写失败的那一档 —— 断言意图不变。
+const bannerTier = () => db.selectSaveBannerTier(state().sessionSaveErrors)
 
 /** 假「盘」：只在用例装配的 `saveSession` 里写，用来断言**真的**写了什么 */
 const makeDisk = () => new Map()
@@ -65,7 +67,7 @@ test('A #959 提示词 / 背景保存失败不得丢弃用户输入（回滚 = �
     // 这是有意的分工，不是这里漏钉档位。
     assert.notEqual(bannerTier(), null, '横幅必须出现（不是「没报错就算过」）')
     assert.equal(
-      db.bannerRetryable(db.selectSaveBannerTier(state().sessionSaveErrors)),
+      db.saveBannerRetryable(db.selectSaveBannerTier(state().sessionSaveErrors)),
       true,
       '而且必须是可重试档 —— 不可重试的话用户没有任何补存入口'
     )
@@ -167,7 +169,7 @@ test('B #959 失败态只在「内存与盘重新一致」时清，不在「打�
       'retry',
       '内存里还有未落盘正文、盘上还没有 —— 这时候清掉横幅 = 把唯一的重试入口藏起来，比不清更糟'
     )
-    assert.equal(db.bannerRetryable(db.selectSaveBannerTier(state().sessionSaveErrors)), true, '重试按钮必须还在')
+    assert.equal(db.saveBannerRetryable(db.selectSaveBannerTier(state().sessionSaveErrors)), true, '重试按钮必须还在')
   })
 
   await t.test('B2 成功从盘重读收敛 → 之前那条旧失败必须被清掉（内存 == 盘，断言变假）', async () => {

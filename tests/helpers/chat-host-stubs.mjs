@@ -12,7 +12,6 @@
 //
 // 需要自己造 `__log` 之类全局的用例，可以在调用后用 `globalThis.__log` 读写（本模块已初始化）。
 import { registerHooks } from 'node:module'
-import { isStorageIndexSpecifier, storageOverDbUrl } from './storage-stub.mjs'
 
 const stub = (name) => new URL(`../fixtures/chat-stubs/${name}`, import.meta.url).href
 
@@ -131,10 +130,6 @@ export const installChatHostStubs = (options = {}) => {
       const parent = String(context.parentURL ?? '')
       if (specifier === './db.js' && parent.endsWith('/chat/store.ts')) {
         return { url: fakeDB, shortCircuit: true }
-      }
-      // 业务层改走 getStorage()（#917）：同一份内存 db 经适配夹具继续当唯一的存储替身
-      if (isStorageIndexSpecifier(specifier) && parent.endsWith('/chat/store.ts')) {
-        return { url: storageOverDbUrl(fakeDB), shortCircuit: true }
       }
       try {
         return nextResolve(specifier, context)

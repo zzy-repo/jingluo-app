@@ -4,10 +4,6 @@ export const Capacitor = {
   isNativePlatform: () => false,
 }
 
-export const registerPlugin = (name) => ({
-  __plugin: name,
-})
-
 export const CapacitorHttp = {
   get: () => {
     throw new Error('单测不应该走原生桥')

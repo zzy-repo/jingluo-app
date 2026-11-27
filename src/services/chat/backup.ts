@@ -2,7 +2,7 @@ import { formatDate } from '../../utils/format.js'
 import { captureStateSnapshot, errorMeta, record, recordAction, recordEvent } from '../diagnostics/collector.js'
 import { buildMeta, type Stage } from '../diagnostics/fields.js'
 import { createStageTimer } from '../diagnostics/timing.js'
-import { getStorage } from '../storage/index.js'
+import * as db from './db.js'
 import { fail } from './history/errors.js'
 import { formatImportBytes, maxImportMegabytes, resolveMaxImportBytes } from './history/importLimit.js'
 import { parseSessionPath } from './history/paths.js'
@@ -71,7 +71,7 @@ export const exportHistory = (
       for (const summary of exportable) {
         const session = Object.hasOwn(sessionCache, summary.id)
           ? sessionCache[summary.id]
-          : await (await getStorage()).sessions.get(summary.id)
+          : await db.loadSession(summary.id)
         if (!session) {
           throw new Error(`History session disappeared during export: ${summary.id}`)
         }

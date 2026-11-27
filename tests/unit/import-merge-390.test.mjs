@@ -18,7 +18,6 @@ import '../helpers/injected.mjs'
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { strToU8, zipSync } from 'fflate'
-import { isStorageIndexSpecifier, storageOverDbUrl } from '../helpers/storage-stub.mjs'
 
 /** 假 db：只实现 store 提交路径需要的那几个函数；索引层（IndexedDB）在裸 Node 里不存在。 */
 const fakeDB = `data:text/javascript,${encodeURIComponent(`
@@ -104,12 +103,6 @@ installTsResolve({
     }
     if (specifier === '../db.js' && parent.endsWith('/history/importArchive.ts')) {
       return archiveStagingDB
-    }
-    if (isStorageIndexSpecifier(specifier) && parent.endsWith('/chat/store.ts')) {
-      return storageOverDbUrl(fakeDB)
-    }
-    if (isStorageIndexSpecifier(specifier) && parent.endsWith('/history/importArchive.ts')) {
-      return storageOverDbUrl(archiveStagingDB)
     }
     return undefined
   },

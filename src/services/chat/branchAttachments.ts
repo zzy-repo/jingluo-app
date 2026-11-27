@@ -11,13 +11,13 @@
  * 让用户看到一句明确的话，而不是一个转圈或者一片白（#831 第 6 条）。
  */
 import { isAttachmentId } from '../attachments/manager.js'
-import { getStorage } from '../storage/index.js'
+import { getAttachment } from '../attachments/store.js'
+import { loadFile } from './db.js'
 
 /** 附件在本机是否可用；读库失败由调用方（`unavailableAttachmentIds`）按「不可用」收口 */
 export const attachmentAvailable = async (id: string): Promise<boolean> => {
-  const storage = await getStorage()
   if (isAttachmentId(id)) {
-    return (await storage.attachments.get(id)) !== undefined
+    return (await getAttachment(id)) !== undefined
   }
-  return (await storage.blobs.get(id)) !== undefined
+  return (await loadFile(id)) !== undefined
 }

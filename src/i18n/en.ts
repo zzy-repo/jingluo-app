@@ -1,4 +1,5 @@
 import type { zh } from './zh.js'
+
 export const en = {
   welcomeMessageChat250808: 'How can I help you?',
   contentCaveat: 'AI-generated, for reference only',
@@ -38,7 +39,6 @@ export const en = {
   sessionLoadFailed: 'Unable to load this chat. Please try again.',
   sessionSaveFailedRetryable: "This chat didn't save to this device. Tap retry.",
   sessionSaveFailedQuota: 'Not enough local storage. Free up space or export a backup, then retry.',
-  sessionSaveLowSpace: 'Storage is almost full, so new content may not be saved. Free up space or export a backup',
   sessionSaveFailedUnavailable: "This environment can't save to this device. Use the app instead.",
   attachmentSaveFailed: "Attachments didn't save to this device and may be missing after a refresh (retry).",
   storageBlockedByOtherTab: 'Another tab is holding local storage. Close the other pages and try again.',
@@ -477,6 +477,56 @@ export const en = {
   deleteAllSessionsModalTitle: 'Once deleted, all chats will be cleared and cannot be recovered.',
   deleteAllSessionsModalDescription:
     'Locally saved attachments and unsent drafts will also be deleted.',
+  /** Data backup & restore (#993 task 3) — plain language only, no storage internals. */
+  backupLostHint: 'No chats were found on this device, but a usable backup is available',
+  backupLostAction: 'Restore',
+  backupSectionTitle: 'Backup & restore',
+  backupAutoLabel: 'Automatic backup',
+  backupAutoOn: 'On',
+  backupAutoOff: 'Off',
+  backupAutoDescription: 'When on, the app saves a backup automatically. Backups stay on this device.',
+  backupLastLabel: 'Last backup',
+  backupLastNone: 'No backup yet',
+  backupStatusLabel: 'Status',
+  backupStatusIdle: 'All good',
+  backupStatusNever: 'No backup yet — you may want to make one now',
+  backupStatusRunning: 'Backing up… {percent}%',
+  backupStatusRunningNoPercent: 'Backing up…',
+  backupStatusRestoring: 'Restoring… {percent}%',
+  backupStatusRestoringNoPercent: 'Restoring…',
+  backupStatusEmpty: 'There are no chats to back up right now',
+  backupStatusUnsupported: 'This environment does not support backing up to this device',
+  backupStatusSpace: 'Not enough storage space to back up right now',
+  backupStatusInterrupted: 'The last backup did not finish. Your existing backups are unaffected.',
+  backupStatusCorrupt: 'This backup is damaged and cannot be restored',
+  backupStatusRestoreFailedIntact: 'Restore did not finish. Your current data is still on this device.',
+  backupStatusRestoreFailedUnknown: 'Something went wrong while restoring. Please check your current data here.',
+  backupStatusAborted: 'Restore did not start, so your current data stays untouched',
+  backupStatusUnavailable: 'Backup status is unavailable right now. Please try again later.',
+  backupSpaceLabel: 'Space used by backups',
+  backupSpaceValue: '{size} ({count} total)',
+  backupSpaceNone: 'No space used yet',
+  backupSpaceNudge: 'Backups take {size}. If space runs low, automatic backups may pause.',
+  backupSpaceBlocked: 'This device is low on free space, so the backup may not finish',
+  backupNow: 'Back up now',
+  backupNowBusy: 'Backing up…',
+  backupNowDone: 'Backup complete ({size})',
+  backupRestore: 'Restore',
+  backupRestorePickTitle: 'Choose a backup to restore',
+  backupRestoreEmpty: 'There are no backups to restore yet',
+  backupRestoreItemLine: '{time} · {size} · {count} chats',
+  backupRestoreItemLineNoCount: '{time} · {size}',
+  backupRestoreUnusable: 'This backup is incomplete and cannot be restored',
+  backupRestoreConfirmTitle: 'Confirm restore',
+  backupRestoreConfirmReplace: 'This backup will replace the current data on this device.',
+  backupRestoreConfirmSafety:
+    'Before restoring, the app first makes a safety backup of your current data, so you can go back to how things are now if the restore fails.',
+  backupRestoreConfirmTime: 'Backup time: {time}',
+  backupRestoreConfirmSize: 'Backup size: {size}',
+  backupRestoreConfirmCount: 'Backup contains: {count} chats',
+  backupRestoreConfirmIntegrity: 'Integrity check: passed',
+  backupRestoreConfirmAction: 'Restore now',
+  backupRestoreDone: 'Restore complete',
   historyDeleting: 'Deleting...',
   historyDeleted: 'Successfully deleted.',
   historyDeleteFailed: 'Failed to delete chats. Please try again.',
@@ -564,6 +614,7 @@ export const en = {
   latestReminderLanguage: 'English',
   settingsLocaleZhCN: 'Simplified Chinese',
   settingsLocaleEnUS: 'English',
+
   // ---------- Service config (channel / API Key / service URL / model) ----------
   settingsProviderKindLabel: 'Channel',
   settingsProviderKindKeyHint: 'Check that your API Key still applies after switching channels',
@@ -651,6 +702,7 @@ export const en = {
    */
   upstreamReturnedHtml:
     'The upstream returned a web page instead of data, which usually means the gateway or proxy failed (a wrong endpoint URL looks the same). Retrying the same request will not change anything; expand the response summary below to see the content type and the first 200 characters.',
+
   // ---------- Chat background ----------
   /** 全局默认背景（本单改名：语义从「聊天背景」变成「新会话的默认背景」） */
   settingsChatBackground: 'Default background',
@@ -662,6 +714,7 @@ export const en = {
   settingsChatBackgroundCleared: 'Cleared; the chat area is back to default',
   settingsChatBackgroundFailed: 'Could not process this image; try a JPG or PNG',
   settingsChatBackgroundClearConfirm: 'Remove the current chat background?',
+
   // ---------- 聊天设置（本单） ----------
   chatSettings: 'Chat settings',
   chatSettingsPrompt: 'Custom prompt',
@@ -686,6 +739,7 @@ export const en = {
   chatBackgroundReset: 'Reset to default',
   chatBackgroundSave: 'Save settings',
   chatBackgroundNeedImage: 'Choose an image first',
+
   // ---------- Feedback & logs ----------
   feedbackCellLabel: 'Feedback & logs',
   feedbackCellDescription:
@@ -756,6 +810,7 @@ export const en = {
   feedbackErrorServer: 'Server error; try again later',
   feedbackErrorRejected: 'The server rejected this report; check the content and retry',
   feedbackErrorUnknown: 'Upload failed; try again later',
+
   feedbackIntegrityCheck: 'Check log coverage',
   feedbackIntegrityTitle: 'Log coverage self-check',
   feedbackIntegrityCount: 'Entries: {count} (max 500, last 30 minutes)',
@@ -1004,6 +1059,7 @@ export const en = {
   // These keys have no caller until the UI lands, which is expected and registered in
   // scripts/check-i18n.mjs ORPHAN_BASELINE.
   // ---------------------------------------------------------------------------
+
   // Sign-in / sign-up (sub2api /api/v1/auth)
   sub2authEmail: 'Email',
   // #727: the three "model source" options now use the accountConsumeSource* keys
@@ -1109,6 +1165,7 @@ export const en = {
   /** Server `reason:"USER_NOT_ACTIVE"` (403): the password is right but the account is disabled (#735) */
   sub2authUserNotActive: 'This account has been disabled. Please contact the administrator.',
   sub2authTwoFactorHint: 'Two-factor authentication is on, enter the 6-digit code from your authenticator app',
+
   // "Account & billing" page (three dialogs → one page, #482 / W1-C1 #487)
   accountConsumeTitle: 'Account & billing',
   accountConsumeTabCards: 'My cards',
@@ -1145,6 +1202,7 @@ export const en = {
   accountConsumeLoginMethodEmail: 'Email',
   accountConsumeSignedOutCta: 'Log in / Sign up',
   accountConsumeSignOutConfirm: 'Sign out now?',
+
   // Login wall removed (#608): the account is now an *optional* capability inside "the built-in channels".
   // Three rules: ① the primary call to action is "fill in a Key", not "log in";
   // ② what you lose without an account is billing views only — chat / Keys / import-export stay;
@@ -1167,6 +1225,7 @@ export const en = {
   quotaNeedLoginBody: 'Balance is billed per account; to chat only, just fill in a Key in Settings',
   inviteNeedLoginTitle: 'Log in to see your invites',
   inviteNeedLoginBody: 'Invite code and rebates live with the account; chat works without it',
+
   // Account and consumption (amounts are in yuan: 1 yuan = 1 credit; rendering goes through utils/money.ts — no FX on the client)
   consumeBalance: '¥{amount}',
   consumeBalanceApprox: 'About ¥{amount}',
@@ -1185,6 +1244,7 @@ export const en = {
   consumeKeyCopied: 'Key copied',
   consumeDeleteKey: 'Delete Key',
   consumeDeleteConfirm: 'This cannot be undone. Delete this Key?',
+
   // Card-key redemption (keeps the existing "card key" wording, see #482)
   consumeRedeemTitle: 'Redeem card key',
   consumeRedeemPlaceholder: 'Enter the card key',
@@ -1201,6 +1261,7 @@ export const en = {
   walletAutoRedeemMasked: 'This card key is masked, so it cannot be redeemed automatically; enter the full key manually',
   walletAutoRedeemFailed: 'Automatic redemption did not complete',
   walletAutoRedeemDismiss: 'Got it',
+
   // Invites (sub2api aff; the invitation code can only be set once, at sign-up)
   inviteTitle: 'My invites',
   inviteCode: 'Invitation code',
@@ -1215,6 +1276,7 @@ export const en = {
   inviteCodeAtRegister: 'Invitation code (optional)',
   inviteCodeInvalid: 'Invalid invitation code',
   inviteDisabled: 'Invites are not available',
+
   // Fill in an inviter after sign-in (#842 contract-first; entry is off by default, see inviteBindModel.ts)
   inviteBindLabel: "Inviter's invitation code",
   inviteBindPlaceholder: 'Enter invitation code',
@@ -1230,6 +1292,7 @@ export const en = {
   inviteBindErrUnauthorized: 'Your session has expired. Sign in again and retry',
   inviteBindErrRateLimited: 'Too many attempts. Try again later',
   inviteBindErrFailed: 'Could not link the inviter. Try again later',
+
   // Email binding (sub2api account-bindings)
   emailBindBind: 'Bind email',
   emailBindChange: 'Change email',
@@ -1239,6 +1302,7 @@ export const en = {
   emailBindSuccess: 'Email bound',
   emailBindUnbindSuccess: 'Email unbound',
   emailBindFailed: 'Binding failed, try again later',
+
   // On-screen copy for the normalized sub2api errors (#487): one key for every `ConsumeMessageKey`
   // in `src/services/consume/errors.ts` (27 of them). The consume layer only returns keys, so this
   // block is the single source of the sentence a user actually reads. Same three rules as zh.ts:
@@ -1459,115 +1523,4 @@ export const en = {
   sessionBranchOpenParent: 'Go to source chat',
   sessionBranchAttachmentMissing:
     'Attachment unavailable: {count} attachment(s) have no file on this device. You can keep chatting',
-  dataLostTitle: 'Your chats on this device were cleared by the system (about {count} chats before)',
-  dataLostNoSnapshot:
-    'No snapshot is available on this device, so nothing can be restored automatically. If you exported a backup before, import it from Settings.',
-  dataLostDismiss: 'Got it, stop showing this',
-  dataLostRestoreHeading: 'Restore from one of these snapshots:',
-  dataLostSnapshotRow: '{time} · {count} chats',
-  dataLostSnapshotBroken: '{time} · damaged, cannot be restored',
-  dataLostRestore: 'Restore',
-  dataLostConfirm:
-    'Replace the chats on this device with this snapshot? The current state is backed up first. A snapshot holds chat text only. Images and attachment files are not in it and will be unavailable after restoring.',
-  dataLostConfirmYes: 'Confirm restore',
-  dataLostRestoring: 'Restoring… {done}/{total}',
-  dataLostRestored: 'Restored {count} chats from the snapshot',
-  dataLostRestoreCancelled: 'Restore cancelled. Nothing on this device was changed',
-  dataLostRestoreCorrupt: 'This snapshot is damaged and was not restored. Nothing on this device was changed',
-  dataLostRestoreIncompatible: 'This snapshot comes from a newer app version. Update the app first. Nothing on this device was changed',
-  dataLostRestoreBackupFailed: 'Could not back up the current state first (maybe not enough space), so it stopped. Nothing on this device was changed',
-  dataLostRestoreFailed: 'Restore failed. Nothing on this device was changed',
-  dataLostRecheck: 'Check again',
-  dataLostRecheckUnknown:
-    'The check returned no result, so the data state cannot be confirmed. Nothing on this device was changed',
-  dataLostRecheckStillLost:
-    'Data is still missing: there were about {count} chats before, and they have not been restored yet',
-  dataLostFeedback: 'Export diagnostics and report',
-  storageStatusSection: 'Local storage',
-  storageStatusMigrationLabel: 'Data upgrade',
-  storageStatusRetryLabel: 'Try the upgrade again',
-  storageStatusMigrated: 'Upgraded',
-  storageStatusNotMigrated: 'Not upgraded yet',
-  storageStatusFailed: 'Upgrade failed',
-  storageStatusMigrating: 'Upgrading',
-  storageStatusUnavailable: 'Unavailable for now',
-  storageStatusUnknown: 'Checking',
-  // #916 / #910: storage migration page (startup gate). Always say the original data is intact; failures show a reason and a way out
-  storageMigrationTitle: 'Upgrading local data storage',
-  storageMigrationDescription:
-    'Your chats and files are being copied into the new storage. Please keep the app open. Your original data is not deleted.',
-  storageMigrationPhasePreflight: 'Checking free space',
-  storageMigrationPhaseBackup: 'Backing up your original data',
-  storageMigrationPhaseCopy: 'Copying data',
-  storageMigrationPhaseVerify: 'Verifying the copy',
-  storageMigrationPhaseCommit: 'Finishing the switch',
-  storageMigrationPercent: '{percent}%',
-  storageMigrationSizeHint: 'About {size} of data. At least {need} of free space is needed during the upgrade',
-  storageMigrationProgressSpace: 'About {size} of data, {need} of free space needed, {free} currently available',
-  storageMigrationKeepForeground: 'Keep the app in the foreground and do not force close it. The upgrade continues in the background.',
-  storageMigrationSuccessTitle: 'Data upgrade complete',
-  storageMigrationSuccessBody: 'Chats and attachments have been migrated and passed the integrity check.',
-  storageMigrationSuccessNext: 'The app will now use the new storage; this upgrade will not run again.',
-  storageMigrationSuccessAction: 'Start using',
-  storageMigrationUnsupportedTitle: 'This device does not support the storage upgrade yet',
-  storageMigrationUnsupportedBody:
-    'The app will keep using the original storage. Your chats and attachments are all there and nothing is affected.',
-  storageMigrationUnsupportedHint: 'After a system or app update, the check will run again on the next launch.',
-  storageMigrationUnsupportedAction: 'Got it, continue',
-  storageMigrationInterruptedWarning:
-    'Please do not uninstall the app or clear its data in system settings — that would delete the original data too.',
-  storageMigrationSpaceFree: 'Free space now: {free}',
-  storageMigrationSpaceNeed: 'Space needed for this upgrade: {need}',
-  storageMigrationSpaceCleanup: 'Suggested additional cleanup: {cleanup}',
-  storageMigrationSpaceGuideTitle: 'Free up space in system settings',
-  storageMigrationSpaceGuide:
-    'Open "Settings → Apps → this app → Storage" and clear the cache first; then delete large files and videos you no longer need, or uninstall apps you rarely use.',
-  storageMigrationSpaceGuideCopy: 'Copy these steps',
-  storageMigrationSpaceGuideCopied: 'Steps copied',
-  storageMigrationSpaceGuideCopyFailed: 'Could not copy, please follow the steps on screen',
-  storageMigrationRecheck: 'Check again',
-  storageMigrationRetry: 'Retry',
-  // #940: the only text outlet for the failure page (tier → title + what happened) is decided by
-  // `src/services/storage/migration/failure-class.ts`; the data-state line and the next-step line
-  // are added from the actual state. Rules: plain language only (no raw exception, class name,
-  // stack, SQL, table, backend name or byte cap), and the "still usable" promise only when the
-  // original storage is confirmed to still be the source of truth and untouched by this upgrade.
-  storageMigrationFailureSpaceTitle: 'Not enough storage space',
-  storageMigrationFailureSpaceBody: 'This upgrade needs more free space, so it has not finished yet.',
-  storageMigrationFailureTooLargeTitle: 'The data was too large, so the upgrade did not finish',
-  storageMigrationFailureTooLargeBody: 'One piece of data was above what can be moved in a single step, so the copy stopped partway. The app moves data in smaller parts, so trying again usually continues; if it keeps stopping here, you can also keep using the original storage for now.',
-  storageMigrationFailureCorruptTitle: 'Could not read your data',
-  storageMigrationFailureCorruptBody:
-    'The upgrade found some data it could not read and stopped, so your current chats are not affected.',
-  storageMigrationFailureIoTitle: 'A read or write did not succeed',
-  storageMigrationFailureIoBody: 'A read or write could not be completed during the upgrade, so it stopped.',
-  storageMigrationFailureUnsupportedTitle: 'This upgrade cannot be completed on this device',
-  storageMigrationFailureUnsupportedBody:
-    'The app tried the upgrade, but this version cannot complete it on this device, so it stopped.',
-  storageMigrationFailureInterruptedTitle: 'The upgrade was interrupted',
-  storageMigrationFailureInterruptedBody:
-    'The upgrade was interrupted before it finished and is now waiting for you.',
-  storageMigrationFailureUnknownTitle: 'The upgrade did not finish',
-  storageMigrationFailureUnknownBody:
-    'Something we cannot identify went wrong, so the upgrade stopped and did not keep writing.',
-  storageMigrationDataIntact:
-    'Your original chats are still in the original storage, unchanged by this upgrade, and remain usable.',
-  storageMigrationDataPartial:
-    'The new storage holds an unfinished copy; your original chats are still there and were not deleted.',
-  storageMigrationDataCommitted:
-    'The new storage now holds the main data; the original storage holds the copy from before the upgrade.',
-  storageMigrationDataUnknown:
-    'The current state of your data could not be confirmed. Please do not uninstall the app or clear its app data in system settings.',
-  storageMigrationNextRetry: 'Tap "Retry" to try again, or keep using the original storage for now.',
-  storageMigrationNextRecheck: 'Tap "Check again" to see the current state.',
-  storageMigrationNextContinue:
-    'You can keep using the original storage; your chats and attachments are all there and nothing is affected.',
-  storageMigrationKeepOriginal: 'Keep using the original storage',
-  storageMigrationBlockedTitle: 'Local data cannot be opened right now',
-  storageMigrationBlockedAfterCommit:
-    'Your data was upgraded to the new storage, but the new storage cannot be opened now. To avoid showing outdated data, the app stops here. Nothing was deleted. Reloading usually helps; if not, copy the diagnostics and contact us.',
-  storageMigrationBlockedDecision:
-    'Two upgrade progress records contradict each other. The app will not guess, to avoid losing data. Nothing was deleted. Please copy the diagnostics and contact us.',
-  storageMigrationBlockedMigrating: 'The data upgrade is in progress. Please wait.',
-  storageMigrationBlockedDetail: 'Details: {detail}',
 } satisfies Record<keyof typeof zh, string>

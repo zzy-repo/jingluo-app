@@ -3,8 +3,8 @@ import { useEffect, useState } from 'react'
 import { useTranslate } from '../../i18n/index.js'
 import { describeSentImage, useUploads } from '../../services/attachments.js'
 import { imagePartBytes, imagePartOf } from '../../services/attachments/imageSource.js'
+import { loadFile } from '../../services/chat/db.js'
 import type { FileAttachment } from '../../services/chat/types.js'
-import { getStorage } from '../../services/storage/index.js'
 import { ImagePreview } from '../base/ImagePreview.js'
 import { IconPhotoErrorFill20, IconRefreshOutline16 } from '../base/icons.js'
 import { Tooltip } from '../base/Tooltip.js'
@@ -17,14 +17,12 @@ const useFileUrl = (id: string) => {
   useEffect(() => {
     let objectUrl: string | null = null
     let cancelled = false
-    getStorage()
-      .then((storage) => storage.blobs.get(id))
-      .then((blob) => {
-        if (!cancelled) {
-          objectUrl = blob ? URL.createObjectURL(blob) : null
-          setFileUrl({ id, url: objectUrl })
-        }
-      })
+    loadFile(id).then((blob) => {
+      if (!cancelled) {
+        objectUrl = blob ? URL.createObjectURL(blob) : null
+        setFileUrl({ id, url: objectUrl })
+      }
+    })
     return () => {
       cancelled = true
       if (objectUrl) {

@@ -45,7 +45,7 @@ import {
   useChatStore,
   type HistoryImportSummary,
 } from '../../services/chat/store.js'
-import { getStorage } from '../../services/storage/index.js'
+import { addStagingSession } from '../../services/chat/db.js'
 import { readDeepSeekShare } from '../../services/chat/history/deepseekShare.js'
 import {
   setLocale,
@@ -71,6 +71,7 @@ import { Modal } from '../base/Modal.js'
 import { Select } from '../base/Select.js'
 import { showToast } from '../base/toastState.js'
 import { AppUpdateField, AppVersionField } from './AppUpdateField.js'
+import { BackupField } from './BackupField.js'
 import { ChatBackgroundField } from './ChatBackgroundField.js'
 import { DOUYIN_ACCOUNT_ID, douyinCopyToast } from './douyinAccount.js'
 import { FeedbackDialog } from './FeedbackDialog.js'
@@ -80,7 +81,6 @@ import {
   useSettingsDialog,
   type SettingsSection,
 } from './settingsDialogState.js'
-import { StorageStatusSection } from './StorageStatusSection.js'
 import {
   ACCOUNT_SUB_PAGE_TITLES,
   AccountConsumePage,
@@ -450,8 +450,12 @@ const SettingsContent = ({ visible }: { visible: boolean }) => {
               }
             />
           </SettingsCard>
-          {/* 内测自查：当前真源 + 迁移状态 + 主动重试。纯只读，见 `StorageStatusSection` 注释 */}
-          <StorageStatusSection />
+          {/* 数据备份与恢复（#993 任务 3）：单独一张卡，落在「数据管理」页里，
+              不新增一级行、不新增二级页 —— 用户在这个位置就能看到「有没有备份 / 什么时候 /
+              占多少 / 怎么恢复」四件事。 */}
+          <SettingsCard>
+            <BackupField />
+          </SettingsCard>
         </>
       )
     }
@@ -1746,7 +1750,7 @@ const ImportShare = ({ disabled }: { disabled: boolean }) => {
         setStatus({ key: 'shareBusy', error: true })
         return
       }
-      await importHistoryInto(() => getStorage().then((storage) => storage.staging.addSession(session)), 'skip')
+      await importHistoryInto(() => addStagingSession(session), 'skip')
       selectSession(session.id)
       setLink('')
       // 既有文案：已导入 1 个会话（不新增 key）

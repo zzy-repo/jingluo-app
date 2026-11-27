@@ -16,7 +16,7 @@
 // 被测页面：DIST_DIR 内测产物与 STANDARD_DIST_DIR 标准产物；只读复用，默认随机 loopback 端口。
 import { serveDist, requireDist } from '../helpers/runtime.mjs'
 import { verifyAppUrl } from '../helpers/env.mjs'
-import { fillApiKey, fillBaseUrl, openApiConfigSection, openSettingsPage, selectProviderKind, SETTINGS_ROW } from '../helpers/helpers.mjs'
+import { fillApiKey, fillBaseUrl, openApiConfigSection, selectProviderKind } from '../helpers/helpers.mjs'
 import { OURS_CHAT_PATH } from '../fixtures/domain03-04/ours-upstream.mjs'
 // #596：内测构建默认渠道是 ours，Key 只能由服务端下发 —— 种「已领取」形态（Key + 下发标记）
 import { oursServerKeyMark } from '../helpers/ours-claim.mjs'
@@ -120,10 +120,10 @@ const readLogs = (page) =>
   page.evaluate(() => window.__diagnostics.getDiagnosticsSnapshot().logs)
 
 const openDataSection = async (page) => {
-  // #902：走辅助层唯一那条真实路径。旧写法 `/设置|Settings/` 子串 + `.last()` 会点到
-  // 聊天头部的「聊天设置」（`chat-settings-open`），于是 `settings-list` 永远不出现 →
-  // 下一行 `settings-row-data` 30s 超时。
-  await openSettingsPage(page, SETTINGS_ROW.data)
+  if ((await page.getByRole('dialog').count()) === 0) {
+    await page.getByRole('button', { name: /设置|Settings/ }).last().click()
+  }
+  await page.getByTestId('settings-row-data').first().click()
   await page.waitForTimeout(300)
 }
 

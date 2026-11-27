@@ -588,14 +588,6 @@ export type SnapshotFacts = {
   model: string
   view: string
   configured: boolean
-  /**
-   * 当前真源存储引擎（`'sqlite'` / `'indexeddb'` / `'blocked'` / `'unknown'`）。
-   *
-   * 为什么放在诊断里而不是设置页：引擎名属于技术实现，普通用户看不懂也无法据此做决定，
-   * 而换存储实现是产品要保留的自由度；但排查「数据到底写进哪个后端」时必须能看到它。
-   * 用户看不到、导出诊断能看到，正好。
-   */
-  storageEngine: string
 }
 
 export type FactsProvider = () => SnapshotFacts | Promise<SnapshotFacts>
@@ -614,7 +606,6 @@ const defaultFacts: SnapshotFacts = {
   model: UNKNOWN,
   view: UNKNOWN,
   configured: false,
-  storageEngine: UNKNOWN,
 }
 
 const readStorageBytes = async (): Promise<number | undefined> => {
@@ -665,7 +656,6 @@ export const captureStateSnapshot = async (reason: string): Promise<LogEntry> =>
     model: facts.model,
     view: facts.view,
     configured: facts.configured,
-    'storage.engine': facts.storageEngine,
     ...(storageBytes === undefined ? {} : { storageBytes }),
     ...(storagePersisted === undefined ? {} : { 'storage.persisted': storagePersisted }),
   })

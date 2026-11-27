@@ -6,7 +6,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
 import { buildArchiveZip } from '../fixtures/domain05/archive-fixture.mjs'
-import { assertNoEgress, installEgressGate, openSettingsPage, SETTINGS_ROW } from '../helpers/helpers.mjs'
+import { assertNoEgress, installEgressGate } from '../helpers/helpers.mjs'
 import { BUILTIN_KEY_CLAIM_STUB } from '../fixtures/consume-gateway-stubs/builtin-key-claim.mjs'
 
 
@@ -67,9 +67,16 @@ const run = async () => {
   await page.evaluate(() => window.localStorage.clear())
   await page.reload({ waitUntil: 'domcontentloaded' })
   await page.waitForTimeout(800)
-  // #902：走辅助层唯一那条真实路径。旧口径 `/设置|Settings/` + `.last()` 命中聊天头部
-  // 「聊天设置」，`settings-row-data` 永远不出现 → 30s 超时。
-  await openSettingsPage(page, SETTINGS_ROW.data)
+  if ((await page.getByRole('dialog').count()) === 0) {
+    await page
+      .getByRole('button', { name: /设置|Settings/ })
+      .last()
+      .click()
+  }
+  await page
+    .getByTestId('settings-row-data')
+    .first()
+    .click()
 
   console.log('\n[web 1] 网页端不渲染「从链接导入」入口，并给出替代提示')
   check('URL 输入框数量 = 0', (await page.locator('input[type="url"]').count()) === 0)

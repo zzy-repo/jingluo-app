@@ -67,15 +67,7 @@ test('main.tsx 不再用 AuthGate 包住整个应用：直接渲染 <App/>', () 
     false,
     '入口连 AuthGate 都不该 import：它只在账号区内部使用'
   )
-  // #910/#916：入口新增「存储启动闸门」MigrationGate（真源确定之前 <App/> 不挂载）。
-  // 它**不是**登录墙（不读登录态、不换整屏），所以本条的核心仍然成立：AuthGate 不在入口，
-  // <App/> 仍在 <ErrorBoundary> 之内直接渲染。结构改为 ErrorBoundary → MigrationGate → App。
-  assert.match(
-    main,
-    /<ErrorBoundary>[\s\S]*?<MigrationGate>[\s\S]*?<App \/>[\s\S]*?<\/MigrationGate>[\s\S]*?<\/ErrorBoundary>/u,
-    '入口必须是 ErrorBoundary → MigrationGate → <App/>（错误边界保留；闸门只决定存储真源）'
-  )
-  assert.equal(/<AuthGate[\s/>]/u.test(main), false, '登录墙仍然不许出现在入口里')
+  assert.match(main, /<ErrorBoundary>\s*<App \/>\s*<\/ErrorBoundary>/u, '入口必须直接渲染 <App/>（错误边界保留）')
 })
 
 test('启动恢复是后台静默：不 await、失败吞咽、不挡首屏', () => {

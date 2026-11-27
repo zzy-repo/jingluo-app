@@ -4,10 +4,6 @@ export const Capacitor = {
   isNativePlatform: () => globalThis.__native?.native === true,
 }
 
-export const registerPlugin = (name) => ({
-  __plugin: name,
-})
-
 export const CapacitorHttp = {
   get: (options) => {
     const native = globalThis.__native

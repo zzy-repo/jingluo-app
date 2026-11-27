@@ -1,14 +1,19 @@
-// 「真 store + 假存储 + 假保护层」的最小装配（#937 / #938）。
+// 「真 store + 假存储」的最小装配（#937 / #938）。
 //
 // 为什么要有它：这两单要断言的是**同一条链路**上的两个位置 ——
 //   ① `chat/store.ts` 把写库失败交给 `markSaveFailure()`（横幅 / 诊断）而不是 `console.error` 后吞掉；
-//   ② 失败之后 `protectionRefreshFreeSpace()` 是否立刻被调、`lowSpace` 是否跟着更新。
-// 前者要「存储这一侧说了什么、什么时候说」（`tests/fixtures/domain03-04/session-db.mjs`），
-// 后者要一层可记账的保护层替身。两份用例逐字抄一遍装配会被 `check:test-duplication` 的 R1 判红，
-// 所以收在这里；**store / db 都是真代码**，替身只落在三个边界上：
+//   ② 「错误 → 档位」这一段（`failureOfThrown()` / `classifyStorageFailure()`）走的是与
+//      `outcome.failure` **同一条**分类规则，不写死 `unknown`。
+// 前者要「存储这一侧说了什么、什么时候说」（`tests/fixtures/domain03-04/session-db.mjs`）。
+// 两份用例逐字抄一遍装配会被 `check:test-duplication` 的 R1 判红，所以收在这里；
+// **store / db 都是真代码**，替身只落在一个边界上：
 //   · `chat/store.ts` 的 `./db.js` → 内存假 db（`__db` 可注入失败）
-//   · `chat/store.ts` 的 `../storage/index.js` → `storage-over-db`（转调同一份假 db）
-//   · `chat/store.ts` 的 `../protection/index.js` → 记账替身（`__protection.calls`）
+//
+// 与 origin/main 上同名文件的差异（Issue #992，纯 IndexedDB 基线）：那份还要替身
+// `../storage/index.js`（后端抽象）与 `../protection/index.js`（数据保护层）——
+// 两者都属 #931 的 Storage Module，在本基线上**不存在**，所以这两条 onResolve 已去掉，
+// 写库一律直接走 `./db.js`。随之去掉的还有 `protectionRefreshFreeSpace()` 那条
+// 「失败后绕缓存重读剩余空间」的记账（基线没有 `lowSpace` 这个概念）。
 //
 // 用法（hook 必须在**动态** import 之前装好，所以本模块导出的是 async 装载函数）：
 //
@@ -16,37 +21,11 @@
 //   const { chat, db, callsOf, reset } = await loadStoreEnv()
 import {
   fixtureUrl,
-  inlineModule,
   installEndpointsGlobals,
   installTsResolve,
   loadTsModule,
   setupDom,
 } from './dom-env.mjs'
-import { isStorageIndexSpecifier, storageOverDbUrl } from './storage-stub.mjs'
-
-/**
- * 保护层替身：只记账，不碰文件系统。
- * `free` 是 `protectionCheckFreeSpace()`（保存前那次，走 10s 缓存的）的回答；
- * `refresh` 是 `protectionRefreshFreeSpace()`（写失败后绕过缓存的那次）的回答。
- * 两个分开给，才能验「失败后用的是刷新值，不是缓存值」。
- */
-const PROTECTION_STUB = inlineModule(`
-const host = () => (globalThis.__protection ??= {})
-const answer = (name, key) => {
-  host().calls.push(name)
-  return host()[key] ?? { status: 'ok', freeBytes: 1e12 }
-}
-export const protectionCheckFreeSpace = async () => answer('checkFreeSpace', 'free')
-export const protectionRefreshFreeSpace = async () => answer('refreshFreeSpace', 'refresh')
-export const protectionCheckAtStartup = async () => null
-export const protectionAfterSave = () => {}
-export const protectionAfterExplicitChange = async () => {}
-export const protectionHealSummaries = async () => null
-export const protectionListRestorable = async () => []
-export const protectionRestore = async () => ({ status: 'failed', kind: 'unsupported' })
-export const protectionAcknowledgeLoss = async () => {}
-export const protectionFlushSnapshot = () => {}
-`)
 
 const SESSION_DB = fixtureUrl('domain03-04/session-db.mjs')
 
@@ -67,9 +46,6 @@ export const freshDb = (overrides = {}) => {
 }
 
 export const callsOf = (name) => globalThis.__db.calls.filter((entry) => entry.name === name)
-
-/** 保护层替身被调用的次序（`checkFreeSpace` / `refreshFreeSpace`） */
-export const protectionCalls = () => globalThis.__protection.calls
 
 export const logRecords = () => globalThis.__log.records
 
@@ -102,7 +78,6 @@ export const fullDiskDomException = () => {
 export const noSpaceLeftError = () => Object.assign(new Error('ENOSPC: no space left on device'), { code: 'ENOSPC' })
 
 export const loadStoreEnv = async () => {
-  globalThis.__protection = { calls: [], free: { status: 'ok', freeBytes: 1e12 }, refresh: { status: 'ok', freeBytes: 1e12 } }
   installTsResolve({
     stubs: [
       [/^@capacitor\/core$/, fixtureUrl('domain03-04/capacitor.mjs')],
@@ -115,12 +90,6 @@ export const loadStoreEnv = async () => {
       }
       if (specifier === './db.js') {
         return SESSION_DB
-      }
-      if (specifier === '../protection/index.js') {
-        return PROTECTION_STUB
-      }
-      if (isStorageIndexSpecifier(specifier)) {
-        return storageOverDbUrl(SESSION_DB)
       }
       return undefined
     },
@@ -138,7 +107,6 @@ export const loadStoreEnv = async () => {
   const db = await loadTsModule('src/services/chat/db.ts')
   const reset = ({ sessions = [], cache = {}, activeId = null, streaming = {} } = {}, dbOverrides = {}) => {
     freshDb(dbOverrides)
-    globalThis.__protection.calls = []
     globalThis.__log.records = []
     chat.useChatStore.setState({
       ready: true,
@@ -149,7 +117,6 @@ export const loadStoreEnv = async () => {
       sessionLoadErrors: {},
       sessionSaveErrors: {},
       degradedAttachments: {},
-      lowSpace: false,
       activeId,
       streaming,
       importSkipped: [],

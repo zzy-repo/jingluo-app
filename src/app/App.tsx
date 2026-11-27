@@ -10,15 +10,12 @@ import {
   useChatStore,
 } from '../services/chat/store.js'
 import {
-  bannerMessageKey,
-  bannerRetryable,
+  SAVE_BANNER_MESSAGE,
   saveBannerRetryable,
-  selectSaveBannerDisplay,
   selectSaveBannerTier,
   type SaveBannerTier,
   type StorageInitFailure,
 } from '../services/chat/db.js'
-import { DataLostBanner } from '../components/protection/DataLostBanner.js'
 import { SearchPanel } from '../components/search/SearchPanel.js'
 import { closeSearchPanel } from '../components/search/searchPanelState.js'
 import { SessionView } from '../components/session/SessionView.js'
@@ -52,6 +49,7 @@ import { closeMobileSider } from '../components/sider/mobileSiderState.js'
 import { MobileSider, Sider } from '../components/sider/Sider.js'
 import { UpdateDialog } from '../components/update/UpdateDialog.js'
 import { snoozeStartupUpdatePrompt, startUpdateGate, useUpdateGate } from '../services/updateGateState.js'
+import { maybeAutoBackup } from '../services/backup/backupScheduler.js'
 import { bundledApp } from '../services/appUpdate.js'
 import styles from './App.module.css'
 
@@ -105,7 +103,7 @@ export const App = () => {
    * 保存失败横幅的**档位**（P0）：`unavailable` > `quota` > 可重试。
    * 选档与文案映射都是纯函数（`db.selectSaveBannerTier` / `db.SAVE_BANNER_MESSAGE`），L0 直接可测。
    */
-  const saveTier = useChatStore((state) => selectSaveBannerDisplay(state.sessionSaveErrors, state.lowSpace))
+  const saveTier = useChatStore((state) => selectSaveBannerTier(state.sessionSaveErrors))
   /**
    * 附件降级（会话已落盘、blob 没写进去）：单独提示，绝不冒充「这段对话没存到本机」。
    * 档位与文案：配额不足时说「本机存储空间不足…」（用户的动作就是清理后重试），
@@ -167,6 +165,16 @@ export const App = () => {
     void loadSessionBackground(activeId)
   }, [activeId])
   useEffect(bindChatPersistence, [])
+  /**
+   * 自动备份（#993 任务 3）：本地数据就绪后看一眼「开关开着、距上次成功超过一天、空间够」，
+   * 三条都成立才真跑一次。判定与容错都在 `maybeAutoBackup` 里面（它永不抛错），
+   * 这里不写第二份条件，也不等它 —— 备份不该阻塞首屏。
+   */
+  useEffect(() => {
+    if (ready) {
+      void maybeAutoBackup()
+    }
+  }, [ready])
 
   // 搜索结果面板只属于当前会话
   useEffect(closeSearchPanel, [activeId])
@@ -256,9 +264,9 @@ export const App = () => {
         >
           {saveTier ? (
             <div className={styles.saveError} role="alert">
-              <span>{t(bannerMessageKey(saveTier))}</span>
+              <span>{t(SAVE_BANNER_MESSAGE[saveTier])}</span>
               {/* `unavailable`（这个环境根本写不进去）**不给重试**：点了也是同一个结果 */}
-              {bannerRetryable(saveTier) ? (
+              {saveBannerRetryable(saveTier) ? (
                 <Button
                   variant="outlined"
                   size="s"
@@ -285,7 +293,6 @@ export const App = () => {
               ) : null}
             </div>
           ) : null}
-          <DataLostBanner className={styles.saveError} />
           <div className={styles.content}>
             {siderCollapsed ? <CollapsedSider /> : null}
             {!ready || (activeId !== null && !session) ? (

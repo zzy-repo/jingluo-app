@@ -58,10 +58,9 @@ public class MainActivity extends BridgeActivity {
         // 冷启动的那条路 **不依赖 Capacitor 的 handleOnNewIntent 转发**，这里把初始 intent 直接
         // 交给插件；热启动走下面的 onNewIntent。两条路都由插件按签名去重，不会重复导入。
         registerPlugin(ExternalFilePlugin.class);
-        // 应用内部文件系统（#907）：私有目录 app-fs/，供 Storage Protection 使用
-        registerPlugin(AppFileSystemPlugin.class);
-        // 应用私有目录内的强持久化 SQLite（#913）：私有目录 storage-engine/，供 Storage Module 使用
-        registerPlugin(AppSqlitePlugin.class);
+        // 原生备份文件出口（Issue #993 任务 2）：备份写到 App 私有目录，与 WebView 的 IndexedDB
+        // 两套生命周期 —— 库被系统清掉时备份还在。原子写入 / 分块 / 校验都在插件里。
+        registerPlugin(BackupFilePlugin.class);
         super.onCreate(savedInstanceState);
         installRenderProcessGoneGuard();
         ExternalFilePlugin.capture(this, getIntent());

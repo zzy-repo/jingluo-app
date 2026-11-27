@@ -15,7 +15,6 @@ import '../helpers/injected.mjs'
 import assert from 'node:assert/strict'
 import { registerHooks } from 'node:module'
 import { test } from 'node:test'
-import { isStorageIndexSpecifier, storageOverDbUrl } from '../helpers/storage-stub.mjs'
 import { asTypescript, installBuildDefines, placeholders, render } from '../fixtures/domain05/hooks.mjs'
 
 const dataUrl = (source) => `data:text/javascript,${encodeURIComponent(source)}`
@@ -52,9 +51,6 @@ registerHooks({
     if (specifier === '../../diagnostics/collector.js') return { url: collectorStub, shortCircuit: true }
     if (specifier === './db.js' && parent.endsWith('/chat/backup.ts')) return { url: dbStub, shortCircuit: true }
     if (specifier === '../db.js' && parent.includes('/history/')) return { url: dbStub, shortCircuit: true }
-    if (isStorageIndexSpecifier(specifier) && (parent.endsWith('/chat/backup.ts') || parent.includes('/history/'))) {
-      return { url: storageOverDbUrl(dbStub), shortCircuit: true }
-    }
     if (specifier === './store.js' && parent.endsWith('/chat/backup.ts')) return { url: storeStub, shortCircuit: true }
     // 源码里的相对导入写的是 `.js`（NodeNext 约定），实际文件是 `.ts`
     const typescript = asTypescript(specifier, context.parentURL)

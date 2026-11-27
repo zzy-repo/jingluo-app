@@ -22,7 +22,6 @@
 import '../helpers/injected.mjs'
 
 import { test } from 'node:test'
-import { isStorageIndexSpecifier, storageOverDbUrl } from '../helpers/storage-stub.mjs'
 import { installBuildDefines, installHooks, stubOf } from '../fixtures/domain05/hooks.mjs'
 import { expectDeepEqual, expectEqual, expectOk, runTable } from '../fixtures/domain05/table.mjs'
 
@@ -108,8 +107,7 @@ globalThis.__lifecycle = { order: [], maxActive: 0 }
 const errorsStub = new URL('../fixtures/import-archive-stubs/errors.mjs', import.meta.url).href
 
 installHooks((specifier, parent) => {
-  // 只在 chat/backup.ts 导入时才重定向到 import-archive-stubs，不要全局拦截
-  if ((specifier === './errors.js' || specifier === './history/errors.js') && parent.includes('/chat/backup.ts')) {
+  if (specifier === './errors.js' || specifier === './history/errors.js') {
     return errorsStub
   }
   if (specifier === '@capacitor/core') {
@@ -120,12 +118,6 @@ installHooks((specifier, parent) => {
   }
   if (specifier === './db.js' && parent.endsWith('/chat/backup.ts')) {
     return `data:text/javascript,${encodeURIComponent(backupDBSource)}`
-  }
-  if (isStorageIndexSpecifier(specifier) && parent.endsWith('/chat/store.ts')) {
-    return storageOverDbUrl(`data:text/javascript,${encodeURIComponent(storeDBSource)}`)
-  }
-  if (isStorageIndexSpecifier(specifier) && parent.endsWith('/chat/backup.ts')) {
-    return storageOverDbUrl(`data:text/javascript,${encodeURIComponent(backupDBSource)}`)
   }
   if (specifier === './store.js' && parent.endsWith('/chat/backup.ts')) {
     return `data:text/javascript,${encodeURIComponent(backupStoreSource)}`

@@ -1,21 +1,7 @@
 import { getApiKey, getModel, useApiConfig } from '../services/api/apiConfig.js'
 import { useChatStore } from '../services/chat/store.js'
 import type { SnapshotFacts } from '../services/diagnostics/collector.js'
-import { getEngineChoice } from '../services/storage/migration/runtime.js'
 import { asArray } from '../utils/safeArray.js'
-
-/**
- * 当前真源引擎，**只进诊断、不进设置页**（设置页刻意不展示 SQLite / IndexedDB 这类技术名）。
- * 快照常在错误路径上被调用，所以这里一律兜底成 `'unknown'`，绝不因为读路由结论再抛一次（issue #28）。
- */
-const readStorageEngine = (): string => {
-  try {
-    return getEngineChoice()?.engine ?? 'unknown'
-  } catch {
-    return 'unknown'
-  }
-}
-
 
 /**
  * 应用侧的「当前状态」读取器：采集层只认这个函数的形状，不认识 chat store / apiConfig。
@@ -43,6 +29,5 @@ export const readDiagnosticsFacts = (): SnapshotFacts => {
     model: getModel() || 'unset',
     view: dialogOpen ? 'dialog' : chat.activeId ? 'session' : 'welcome',
     configured: Boolean(getApiKey()),
-    storageEngine: readStorageEngine(),
   }
 }

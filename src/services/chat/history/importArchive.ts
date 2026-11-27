@@ -1,4 +1,4 @@
-import { getStorage } from '../../storage/index.js'
+import * as db from '../db.js'
 import { BackupError, fail } from './errors.js'
 import type { SessionIndexEntry } from './format.js'
 import { INDEX_PATH, MANIFEST_PATH, USER_PATH, parseSessionPath, sessionFilesDir } from './paths.js'
@@ -25,7 +25,7 @@ import {
  */
 const clearStagingAfterCancel = async (): Promise<void> => {
   try {
-    await (await getStorage()).staging.clear()
+    await db.clearStaging()
   } catch {
     // 见上：清理是尽力而为，取消本身必须照常结束。
   }
@@ -219,7 +219,7 @@ export const importArchive = async (
     }
     const data = await readEntry(entry)
     const type = imageType(new Uint8Array(await data.slice(0, 16).arrayBuffer()))
-    await (await getStorage()).staging.putFiles([{ id, blob: new Blob([data], { type }) }])
+    await db.saveStagingFiles([{ id, blob: new Blob([data], { type }) }])
     stored.set(id, type)
     emitProgress(stored.size)
   }
@@ -283,7 +283,7 @@ export const importArchive = async (
         for (const [imagePath, id] of local.images) {
           images.set(imagePath, id)
         }
-        await (await getStorage()).staging.addSession(local.session)
+        await db.addStagingSession(local.session)
         emitProgress()
       } else if (path === INDEX_PATH && !index) {
         index = readSessionIndex(await readJson(entry))
@@ -340,6 +340,6 @@ export const importArchive = async (
   ) {
     fail('backupIncomplete')
   }
-  await (await getStorage()).staging.updateFileTypes(stored)
+  await db.updateStagingFileTypes(stored)
   return { skipped }
 }

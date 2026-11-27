@@ -280,16 +280,19 @@ export const LIMITS = {
    */
   bootDeadlineMs: 12000,
   /**
-   * Native SQLite 迁移的预检阈值（#910 / #916，docs/sqlite-migration-plan.md §4）。
-   * `S` = `RawStoreSource.estimateBytes()`（只许偏高）；备份体积按 `S` 计（迁移期磁盘 = 源 + 备份 + 目标，ADR-0910）。
-   * - 拒绝线：`freeBytes < 2×S + 备份(S) + reserveBytes` → `insufficient-space`，不开始；
-   * - 警告线：`S > warnBytes` → 迁移页显示预计体积与所需空间（不拒绝）；
-   * - 硬上界：`S > maxBytes` → 直接拒绝并提示先导出（超出 Android 单库与备份的现实上限）。
+   * 「数据备份与恢复」（#993 任务 3）的阈值。
+   *
+   * - `spaceWarnBytes`：备份占用到这个量就主动提醒「占得有点多了」，也是「空间偏大」的分界线。
+   *   500 MiB 与一次整包备份的典型体积（历史会话 + 附件）同一量级：低于它提醒等于噪音，
+   *   高于它才值得让用户去清旧份。
+   * - `nextEstimateBytes`：还没有任何一份备份时，估算「下一次备份大概要多少」用的保守值。
+   *   有了历史备份之后按上一份的实际体积估（见 `services/backup/backupApi.ts`），不再用这个数。
+   * - `autoIntervalMs`：自动备份的最小间隔（24 小时）。启动时超过这个间隔才自动跑一次。
    */
-  storageMigration: {
-    reserveBytes: 268_435_456,
-    warnBytes: 209_715_200,
-    maxBytes: 2_147_483_648,
+  backup: {
+    spaceWarnBytes: 500 * 1024 * 1024,
+    nextEstimateBytes: 32 * 1024 * 1024,
+    autoIntervalMs: 24 * 60 * 60 * 1000,
   },
 } as const
 

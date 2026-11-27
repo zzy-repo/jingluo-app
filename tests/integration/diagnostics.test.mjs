@@ -27,9 +27,6 @@ import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import { chromium } from 'playwright'
 import { serveDir, verifyAppUrl, verifyDist } from '../helpers/env.mjs'
-// #902：设置入口走辅助层那**一条**真实路径（按「整串可访问名」锚定侧栏「设置」），
-// 不再在用例里手写 `/设置|Settings/` + `.last()` —— 那个口径会命中「聊天设置」（见 helpers.mjs 顶部注释）。
-import { SETTINGS_ROW, openSettingsPage } from '../helpers/helpers.mjs'
 import { installBuiltinKeyClaimStub } from '../fixtures/consume-gateway-stubs/builtin-key-claim.mjs'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
@@ -556,9 +553,10 @@ try {
   console.log('\n[7] UI：设置 → 反馈与日志 → 提交')
   const b = await openPage({ collectConsoleErrors: true })
   const ui = b.page
-  // #902：「设置 → 数据管理」由辅助层走真实路径（整串可访问名锚定侧栏「设置」，
-  // 不再用 `/设置|Settings/` 子串 + `.last()` —— 那个口径会点到聊天头部的「聊天设置」）。
-  await openSettingsPage(ui, SETTINGS_ROW.data)
+  if ((await ui.getByRole('dialog').count()) === 0) {
+    await ui.getByRole('button', { name: /设置|Settings/ }).last().click()
+  }
+  await ui.getByTestId('settings-row-data').first().click()
   await ui.waitForTimeout(300)
   const row = ui.getByText('反馈与日志').first()
   check((await row.count()) > 0, '设置页有「反馈与日志」一行', '设置页没有「反馈与日志」')

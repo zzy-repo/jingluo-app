@@ -188,7 +188,7 @@ const referencedFileIds = (session: Session): string[] => [
   ),
 ]
 
-export const storedSummary = (session: Session): StoredSessionSummary => ({
+const storedSummary = (session: Session): StoredSessionSummary => ({
   ...toSessionSummary(session),
   fileIds: referencedFileIds(session),
 })
@@ -206,7 +206,7 @@ const abortTransaction = (tx: { abort(): void }) => {
 // 判定规则与结构化描述搬到了 `./storageFailure.js`（#937 / #938）：那套东西是纯函数、有两个调用方
 // （本模块的写入路径 + `chat/store.ts` 的抛出路径），而 store 的 L0 用例会把 `./db.js` 整个换成内存假库，
 // 规则留在本模块里就等于「谁 import 谁就得连假库一起改」，恰恰会把 #938 的被测对象挡在替身后面。
-// 这里原样转出，既有 import 路径（本模块内部、`storage/sqlite/repos/*`、组件、用例）一律不用动。
+// 这里原样转出，既有 import 路径（本模块内部、组件、用例）一律不用动。
 export {
   STORAGE_FAILURE_KINDS,
   classifyStorageFailure,
@@ -250,30 +250,10 @@ export const selectSaveBannerTier = (
   return tier
 }
 
-/** #909：保存横幅的显示档 = 三档写失败 + 「空间不足」预警（还没写失败，只是剩余空间低于阈值） */
-export type SaveBannerDisplay = SaveBannerTier | 'lowSpace'
-
-/**
- * 在三档写失败之上叠加空间预警：**真实的写失败永远优先**，预警只在当前没有任何失败时才显示。
- * 三档的选档、文案映射与重试口径（`selectSaveBannerTier` / `SAVE_BANNER_MESSAGE` / `saveBannerRetryable`）一字未改。
- */
-export const selectSaveBannerDisplay = (
-  errors: Record<string, StorageFailure | boolean | undefined> | null | undefined,
-  lowSpace: boolean
-): SaveBannerDisplay | null => selectSaveBannerTier(errors) ?? (lowSpace ? 'lowSpace' : null)
-
-export const bannerMessageKey = (tier: SaveBannerDisplay): SaveBannerMessageKey =>
-  tier === 'lowSpace' ? 'sessionSaveLowSpace' : SAVE_BANNER_MESSAGE[tier]
-
-/** 预警档也不给重试：没有东西失败，重试没有意义，用户的动作是腾空间 / 导出备份 */
-export const bannerRetryable = (tier: SaveBannerDisplay): boolean =>
-  tier !== 'lowSpace' && saveBannerRetryable(tier)
-
 export type SaveBannerMessageKey =
   | 'sessionSaveFailedRetryable'
   | 'sessionSaveFailedQuota'
   | 'sessionSaveFailedUnavailable'
-  | 'sessionSaveLowSpace'
 
 /** 档位 → i18n key（zh/en 成对存在，`check-i18n` 的 R1/R4 会盯住） */
 export const SAVE_BANNER_MESSAGE: Record<SaveBannerTier, SaveBannerMessageKey> = {

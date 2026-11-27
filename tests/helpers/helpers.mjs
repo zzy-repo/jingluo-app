@@ -246,61 +246,21 @@ const stepError = (step, expected, actual, walked = []) => {
 }
 
 /**
- * 侧栏的**展开**按钮（移动端 / 侧栏收起时用）。
- *
- * 为什么需要它：窄屏（≤ 断点）侧栏是**抽屉**，未展开时抽屉里的节点根本不在 DOM 上
- * （实测 390/360 宽：`getByRole('button', { name: /^设置$/ })` 命中 **0** 个，
- * `getByRole('button', { name: /^打开边栏$/ })` 命中 1 个）。用例想「点设置」必须先像用户那样
- * 点一下展开按钮 —— 这不是放宽，而是把用户真实走的那一步补上。
- *
- * 只认**展开**语义（`打开边栏` / `Open sidebar`），不认「收起边栏」：侧栏已经展开时再去点收起
- * 只会把它收掉，那是反向操作，宁可报错说清现场。
- */
-const SIDER_EXPAND = /^(打开边栏|Open sidebar)$/
-
-/**
  * 打开设置弹层，落在**一级列表**（`settings-list`）。
  *
  * 侧栏那个「设置」按钮没有 testid（产品侧未给），所以按**整串可访问名**锚定 —— 不用
  * `name: /设置/` 子串（会命中「设置」二字出现在别的按钮里的情况）、也不靠 `.last()` 的 DOM 顺序。
  * 已经在设置里（任意二级页）时不重复点，先一层层「返回」回到一级列表。
- *
- * ## 为什么必须「整串」+ 不许 `.last()`（#902 A 组的根因）
- *
- * 首屏侧栏里现在有两个可访问名都**含**「设置」的按钮：底部「设置」（无 testid）与聊天头部的
- * 「聊天设置」（`chat-settings-open`）。旧口径 `getByRole('button', { name: /设置|Settings/ }).last()`
- * 命中的是后者 —— 桌面端点开「聊天设置」弹层（`settings-list` 永远不出现 → `settings-row-data`
- * 30s 超时），窄屏下那个按钮压在抽屉遮罩（`drawerMaskOpen`，z-index 799）底下 → 点击被拦。
- * 一处子串选择器，两种超时表现，9 个文件同时红。
  */
 export const openSettingsRoot = async (page) => {
   const walked = []
   if ((await settingsDialog(page).count()) === 0) {
     const entry = page.getByRole('button', { name: /^设置$|^Settings$/ })
-    // 窄屏抽屉未展开：先点「打开边栏」，再重新找「设置」
     if ((await entry.count()) === 0) {
-      const expand = page.getByRole('button', { name: SIDER_EXPAND })
-      if ((await expand.count()) > 0) {
-        await expand.first().click()
-        walked.push('点「打开边栏」展开抽屉')
-        if (!(await waitUntil(async () => (await entry.count()) > 0))) {
-          throw stepError(
-            '打开设置（展开抽屉后点侧栏底部「设置」）',
-            '展开抽屉后出现一个可访问名整串等于「设置」的按钮',
-            `展开后仍是 ${await entry.count()} 个：抽屉渲染出来了但底部「设置」没跟着出来`,
-            walked
-          )
-        }
-      }
-    }
-    if ((await entry.count()) === 0) {
-      const seen = await page
-        .getByRole('button')
-        .evaluateAll((nodes) => nodes.map((node) => node.getAttribute('aria-label') || node.innerText || ''))
       throw stepError(
         '打开设置（点侧栏底部「设置」）',
-        '一个可访问名整串等于「设置」的按钮（窄屏先「打开边栏」）',
-        `0 个：侧栏没渲染 / 窄屏抽屉展不开 / 首屏还没画完；当前按钮=${seen.filter(Boolean).join(' | ') || '（一个都没有）'}`,
+        '一个可访问名整串等于「设置」的按钮',
+        '0 个：侧栏没渲染 / 窄屏被收起 / 首屏还没画完',
         walked
       )
     }
