@@ -28,6 +28,7 @@ export const mods = {
   orchestrator: await loadTsModule('src/services/storage/migration/orchestrator.ts'),
   errors: await loadTsModule('src/services/storage/migration/errors.ts'),
   router: await loadTsModule('src/services/storage/router.ts'),
+  presence: await loadTsModule('src/services/storage/migration/presence.ts'),
   schema: await loadTsModule('src/services/storage/sqlite/schema.ts'),
   memoryFs: await loadTsModule('src/services/fs/memoryFs.ts'),
   limits: await loadTsModule('src/services/limits.ts'),
