@@ -13,7 +13,9 @@ const INFLATE_CHUNK_BYTES = 8 * 1024
 const MAX_INFLATE_RATIO = 200
 // 比值闸只对解压后 ≥ 16MiB 的条目生效：小条目里上千倍的比值是正常现象
 // （10MB 全是同一字符的合法会话约 500:1，拦它属于误杀）。炸弹的体积也是几十 MB 起步。
-const RATIO_MIN_OUTPUT_BYTES = 16 * 1024 * 1024
+// 导出给 `quotaPrecheck`：#1003 里同一个量级判断还要用在「空间未知时敢不敢试一次」上
+// ——「小于 16MiB 的导入值得试一次，再大就不能拿整库去赌」。
+export const RATIO_MIN_OUTPUT_BYTES = 16 * 1024 * 1024
 // 解压后总量闸：归档字节数的导入上限是 500MiB（importLimit.DEFAULT_MAX_IMPORT_BYTES），
 // 正常备份解压后 ≲ 3 倍，这里留到 4 倍（2GiB）。按中央目录声明的解压尺寸累计，
 // 因此在读第一个字节之前就能拒绝「声明尺寸撒谎 / 条目极多」的包。

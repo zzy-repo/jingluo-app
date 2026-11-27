@@ -20,7 +20,7 @@
  * need  = ceil(解压总量 × IMPORT_QUOTA_SAFETY_FACTOR × WRITE_AMPLIFICATION_FACTOR)
  * free  = 原生 freeBytes()                       ← 唯一可信来源
  *       ↳ 读不到时：estimate() 的 quota-usage      ← 只用于否决（说「不够」可信，说「够」不作数）
- * 拒绝   = need > free（可信来源） / 读不到空间且 need > SMALL_WRITE_BYTES（分级拒绝）
+ * 拒绝   = need > free（可信来源） / 读不到空间且 need > SMALL_IMPORT_NEED_BYTES（分级拒绝，= 负载 16MiB）
  * ```
  *
  * - **不用归档字节数当需求**：归档字节数只是下载体积，真正要落盘的是解压后的会话 JSON + 图片原件。
@@ -40,7 +40,7 @@
  * | 原生 `freeBytes()` 可信，`need <= free` | 放行（`sufficient`） | 不看 `estimate()` 说什么 |
  * | 原生 `freeBytes()` 可信，`need > free` | **拒绝**（`insufficient`） | 三个数字都是原生的真数字 |
  * | 原生读不到，但 `estimate()` 可信且**明确不够** | **拒绝**（`insufficient`） | 保守方向：这个上限本身也是硬顶，越过它照样写不进去 |
- * | 都读不到 / `estimate()` 只是「看着够」 | `need <= SMALL_WRITE_BYTES` 放行（`unmeasurable-small`）<br>`need` 更大 → **拒绝**（`unverifiable`） | 大负载不能拿试错换：文案说「暂时无法确认剩余空间」，**不说**「空间不足」 |
+ * | 都读不到 / `estimate()` 只是「看着够」 | 负载 ≤ 16MiB（`SMALL_IMPORT_PAYLOAD_BYTES`）放行（`unmeasurable-small`）<br>更大 → **拒绝**（`unverifiable`） | 大负载不能拿试错换：文案说「暂时无法确认剩余空间」，**不说**「空间不足」 |
  *
  * 「脏值 / 读不到」仍然绝不折算成「0 字节可用」（那是第一轮 #1002 的 bug：盘里 4.8GB，
  * 界面却报「还差 23.9MB」并拒绝一切导入）。收口与分级全在 `services/storage.ts` 的
@@ -58,6 +58,7 @@
  * 同时留一个 `setImportSpaceNoteSink()` 注入口给用例断言「该记的那条真的记了」。
  */
 import { IMPORT_QUOTA_SAFETY_FACTOR, formatImportBytes } from './importLimit.js'
+import { RATIO_MIN_OUTPUT_BYTES } from './zipReader.js'
 import {
   judgeWriteSpace,
   normalizeFreeBytes,
@@ -67,6 +68,24 @@ import {
   type WriteSpaceProbe,
   type WriteSpaceVerdict,
 } from '../../storage.js'
+
+/**
+ * 「空间未知时值得试一次」的**负载**界线：沿用解压闸的最小条目量级（`zipReader` 的 16MiB）。
+ *
+ * 为什么不直接用 `storage.SMALL_WRITE_BYTES`（8MiB）：那是「一次写入失败的代价可控」的口径，
+ * 而**导入**这条链路上还有一条既有契约 —— `tests/unit/import-hardening.test.mjs`
+ * 「10MB 全是同一字符的合法会话照常导入」（Issue #153 的负向对照：高压缩比但体量小的合法包
+ * 不许误杀）。10MB 的包在未知空间下按 8MiB 口径会被拒，那条契约就红了（实测 `aa5f3e25` 上红）。
+ *
+ * 16MiB 是仓库自己的「值得防的量级」判断（同样出自解压闸），并且远小于官方导出包（约 20MB）：
+ * 现场那个把盘写到底的包仍然落在**拒绝**这一档，而 10MB 的合法包照常导入。
+ */
+export const SMALL_IMPORT_PAYLOAD_BYTES = RATIO_MIN_OUTPUT_BYTES
+
+/** `SMALL_IMPORT_PAYLOAD_BYTES` 换算成 `judgeWriteSpace` 要的 `need`（含安全系数与写放大）。 */
+const SMALL_IMPORT_NEED_BYTES = Math.ceil(
+  SMALL_IMPORT_PAYLOAD_BYTES * IMPORT_QUOTA_SAFETY_FACTOR * WRITE_AMPLIFICATION_FACTOR
+)
 
 /** `estimate()` 的可信测量 / 判定输入：都在 `services/storage.ts` 收口。 */
 export type { StorageSpace, WriteSpaceProbe }
@@ -187,11 +206,12 @@ export type ImportSpaceVerdict = WriteSpaceVerdict
  */
 export const judgeImportSpace = (
   inflatedBytes: number,
-  probe: WriteSpaceProbe
+  probe: WriteSpaceProbe,
+  smallCapBytes: number = SMALL_IMPORT_NEED_BYTES
 ): ImportSpaceVerdict => {
   const safeInflated = Number.isFinite(inflatedBytes) && inflatedBytes > 0 ? inflatedBytes : 0
   const need = Math.ceil(safeInflated * IMPORT_QUOTA_SAFETY_FACTOR * WRITE_AMPLIFICATION_FACTOR)
-  return judgeWriteSpace(need, probe)
+  return judgeWriteSpace(need, probe, smallCapBytes)
 }
 
 /** 诊断口径：`unmeasurable`（放行）/ `unverifiable`（拒绝）都带着「哪一档」的细分。 */
@@ -203,6 +223,13 @@ const reportVerdict = (inflatedBytes: number, probe: WriteSpaceProbe, verdict: I
         ? 'estimate'
         : 'none'
   const fields: Record<string, string | number | boolean> = {
+    // 前两个键是采集层白名单里的（`flow` / `stage` / `bytes`）：只写 `import.*` 点号键的话，
+    // `sanitizeMeta` 会把整条 meta 丢干净（白名单里没有这些点号键），日志就成了「有文案没有字段」。
+    // 实测：从链接导入这条链路一旦开始留痕，`tests/unit/log-313-attachment-import.test.mjs`
+    // 的「全量体检」就会红 —— 它要求每条日志的 meta 至少 2 个键。
+    flow: 'import',
+    stage: 'import.check',
+    bytes: verdict.need,
     'import.inflated.bytes': inflatedBytes,
     'import.need.bytes': verdict.need,
     'import.space.source': source,

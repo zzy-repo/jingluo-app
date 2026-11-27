@@ -124,9 +124,12 @@ test('A：206 缺 Content-Range 时 total 必须未知，且不能只拿到 4KB 
   assert.equal(records('import_error').length, 0, '成功路径不应记录失败')
 })
 
-test('B：206 带 Content-Range bytes a-b/21195845 → total 取 total 段', async () => {
+test('B：206 带 Content-Range bytes a-b/12345678 → total 取 total 段', async () => {
   resetEnv()
-  const total = 21195845
+  // 体积要明显区别于「这一块的长度」（4KB），但必须落在「空间未知也值得试一次」的负载线
+  // （`SMALL_IMPORT_PAYLOAD_BYTES` = 16MiB）以内：裸 Node 里没有 navigator.storage，
+  // 超过这条线的包在空间未知时会被下载前的空间闸拒掉（#1003），那就测不到 Content-Range 解析了。
+  const total = 12_345_678
   const source = zipBytes(total)
   serveChunks(source, ({ from, end }) => ({
     'Content-Range': `bytes ${from}-${end}/${total}`,

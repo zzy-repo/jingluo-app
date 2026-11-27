@@ -21,6 +21,7 @@ import {
   resolveMaxImportBytes,
   DEFAULT_MAX_IMPORT_BYTES,
 } from './importLimit.js'
+import { checkImportSpace, insufficientSpaceParams } from './quotaPrecheck.js'
 
 /**
  * 直链导入：用原生 HTTP 下载 ZIP 后交给既有的文件导入链路（importHistory）。
@@ -1037,6 +1038,39 @@ const downloadArchive = async (
   let delivered = false
   /** 失败是否属于「字节没问题、只是链路断了」：只有这类才值得留着续传 */
   let resumableFailure = false
+  /** 空间闸只判一次（拿到第一个可信的「这次要落多少」就判），之后不再重复探测。 */
+  let spaceChecked = false
+  /**
+   * **先判空间、再落盘**（#1003 的 P0）。
+   *
+   * 现场（emulator-5554，2026-11-27 12:12–12:19）：从链接导入 20MB 的包，分块进 `chunks` →
+   * `new File(chunks)`（Chromium 会把大 Blob 落到盘上）→ **之后**才走到 `chat/backup.ts` →
+   * `importArchive.ts` 的预检。也就是说空间判断发生在写入之后，而那一刻
+   * `navigator.storage.estimate()` 报的是漂亮数字（quota 3.7GB / usage 45.6MB），真实可用 6MB。
+   * 盘被写到底 → LevelDB 半条记录 → Chromium 判 IDB 损坏并重建 → 43MB 附件目录消失、48 个会话全丢。
+   *
+   * 判据不在这里新写：`quotaPrecheck.checkImportSpace` → `storage.judgeWriteSpace`
+   * （原生 `freeBytes` 唯一可信；`estimate()` 只作否决；未知按负载分级）。这里只保证
+   * **它发生在把字节交给 Blob 之前**。下载前只拿得到包体（声明体积），它是真正落盘量的**下限**；
+   * 解压后的准确量由 `importArchive` 再判一次（那里有中央目录里的 inflatedBytes）。
+   */
+  const gateDownloadSpace = async (payloadBytes: number): Promise<void> => {
+    if (spaceChecked) {
+      return
+    }
+    spaceChecked = true
+    const space = await checkImportSpace(payloadBytes)
+    if (space.ok) {
+      return
+    }
+    if (space.reason === 'insufficient') {
+      fail('historyImportInsufficientSpace', insufficientSpaceParams(space))
+    }
+    // 「读不到空间」≠「没空间」：文案必须分开，不许把用户赶去清无用空间（见 quotaPrecheck 文件头）。
+    // `size` 与 importArchive 那一档同义（都是判定里的 `need`，含安全系数与写放大），
+    // 同一个错误码在两处给同一个含义，别让「这次要多少」有两个口径。
+    fail('historyImportSpaceUnverifiable', { size: formatSize(space.need) })
+  }
   let chunkSize = FIRST_CHUNK_BYTES
   let lastTraceBytes = 0
   let lastTracePercent = -1
@@ -1101,6 +1135,12 @@ const downloadArchive = async (
             tooLarge(maxBytes, declared, correlationId)
           }
         }
+      }
+      // 空间闸（#1003）：**这一块字节进 chunks 之前**就判。体积上限（tooLarge）仍然排第一 ——
+      // 「包本身就太大」是用户的错，不该被空间提示盖掉。服务端不给长度时 `state.total` 仍是
+      // undefined，这里跳过，由下面「组装 File 之前」那一次兜底（那时 `state.downloaded` 就是整包体积）。
+      if (state.total !== undefined) {
+        await gateDownloadSpace(state.total)
       }
       const bytes = toBytes(data, maxBytes, state.correlationId)
       data = null
@@ -1189,6 +1229,10 @@ const downloadArchive = async (
       }),
     })
     delivered = true
+    // 兜底空间闸（#1003）：服务端没给过长度时，循环里那一次没跑；这里在**组装 File 之前**
+    // 用真实下到的字节数再判一次。宁可这次白下，也不要让 Chromium 把几十 MB 的 Blob 落到盘上
+    // 才发现写不进去（那正是整库丢失的现场）。
+    await gateDownloadSpace(state.downloaded)
     const file = new File(chunks, ARCHIVE_NAME, { type: 'application/zip' })
     chunks.length = 0
     return file

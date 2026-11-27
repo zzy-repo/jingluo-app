@@ -62,7 +62,7 @@ const { message, sessionBytes, manifestBytes, indexBytes, zipFileOf } = await im
 )
 const { importArchive } = await import('../../src/services/chat/history/importArchive.ts')
 const { readArchiveLayout } = await import('../../src/services/chat/history/zipReader.ts')
-const { setImportSpaceNoteSink, setNativeFreeBytesReader } = await import(
+const { setImportSpaceNoteSink, setNativeFreeBytesReader, SMALL_IMPORT_PAYLOAD_BYTES } = await import(
   '../../src/services/chat/history/quotaPrecheck.ts'
 )
 const { WRITE_AMPLIFICATION_FACTOR } = await import('../../src/services/storage.ts')
@@ -572,11 +572,15 @@ test('⑦ 直链导入的时间预算按新上限重算（≥ 60 分钟，且与
  *
  *  - **唯一可信来源** = 原生 `freeBytes`（`setNativeFreeBytesReader` 注入的就是它那条链）；
  *  - `estimate()` 只做否决（说「不够」可信，说「够」不作数）；
- *  - 空间未知 → 小负载放行（≤ `SMALL_WRITE_BYTES`）、大负载拒绝，且拒绝文案**不许**说「空间不足」。
+ *  - 空间未知 → 小负载放行（≤ `SMALL_IMPORT_PAYLOAD_BYTES`，16MiB）、大负载拒绝，
+ *    且拒绝文案**不许**说「空间不足」。
  *
- * 大负载用「高压缩比 + 400 万字节正文」的包造：解压后 ~4MB，乘 2.5 ≈ 10MB > 8MiB 分级线。
+ * 大负载用「未压缩 + 20MB 正文」的包造（现场那个包就是 20MB）：解压后 ~20MB，落在分级线之上。
+ * 不能再用「高压缩比 + 400 万字节」那招：4MB 的正文没有超过 16MiB 的负载线
+ * （那是 Issue #153 负向对照要求「照常导入」的量级，见 `import-hardening.test.mjs`）；
+ * 而 20MB 全同一字符 + 压缩会撞上解压闸的比值上限（`RATIO_MIN_OUTPUT_RATIO`），造不出合法包。
  */
-const largeArchive = () => archiveOf(['big1'], { compress: true, content: 'A'.repeat(4_000_000) })
+const largeArchive = () => archiveOf(['big1'], { compress: false, content: 'A'.repeat(20 * 1024 * 1024) })
 
 test('⑥a 大负载 + 空间未知 → 拒绝，文案是「无法确认剩余空间」而不是「空间不足」', async (t) => {
   resetStaging()
@@ -590,7 +594,10 @@ test('⑥a 大负载 + 空间未知 → 拒绝，文案是「无法确认剩余�
   const file = largeArchive()
   const layout = await readArchiveLayout(file)
   const need = Math.ceil(layout.inflatedBytes * IMPORT_QUOTA_SAFETY_FACTOR * WRITE_AMPLIFICATION_FACTOR)
-  assert.ok(need > 8 * MB, `前置：这一包的 need（${formatImportBytes(need)}）必须落在大负载档`)
+  assert.ok(
+    layout.inflatedBytes > SMALL_IMPORT_PAYLOAD_BYTES,
+    `前置：解压量（${formatImportBytes(layout.inflatedBytes)}）必须落在大负载档（> ${formatImportBytes(SMALL_IMPORT_PAYLOAD_BYTES)}）`
+  )
 
   const { error } = await runImport(file)
 
