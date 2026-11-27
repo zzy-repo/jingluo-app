@@ -232,8 +232,15 @@ export const listBackups = async (): Promise<BackupItem[]> => {
  * 历史遗留的「过时结论」：`empty`（上一轮空库拒绝）和空串（脏数据）都不是当前状态。
  * 留着它们会让状态行播报一件早就不是事实的事（设备实测：用户后来写了对话，仍显示
  * 「当前没有可备份的聊天记录」）。
+ *
+ * `space` 也是过时结论，但它的时效要靠**当前实际空间**复核：`status.json` 只记「那一刻
+ * 盘不够」，用户把盘清干净之后这句话就不再成立（设备实测：腾出空间后状态行仍显示
+ * 「存储空间不足，暂时无法备份」，直到下一次备份成功才消失）。所以 `space` 只在
+ * `enoughForNext === false`（现在仍然不够）时才作为当前状态播报 —— 盘真的不够时照报，
+ * 不吞真话。
  */
-const isStaleErrorCode = (code: string | null): boolean => code === 'empty' || code === ''
+const isStaleErrorCode = (code: string | null, enoughForNext: boolean): boolean =>
+  code === 'empty' || code === '' || (code === 'space' && enoughForNext)
 
 export const getStatus = async (): Promise<BackupStatus> => {
   const statusFile = await readStatusFile()
@@ -254,6 +261,7 @@ export const getStatus = async (): Promise<BackupStatus> => {
     availableBytes(),
   ])
   const items = backups.map((backup) => backup.item)
+  const enoughForNext = hasRoomForNext(free, estimateNextBytes(items))
   return {
     enabled: true,
     running,
@@ -261,11 +269,13 @@ export const getStatus = async (): Promise<BackupStatus> => {
     // `empty` 不是错误，是「当时没有记录可备」这个**过时**的历史结论。把它当当前状态播报，
     // 会在用户后来已经写了对话时仍然显示「当前没有可备份的聊天记录」（实测踩到）。
     // 真正按「空」处理的地方是用户按「立即备份」时抛出的 `empty`，界面在那一刻才说这句话。
-    lastError: isStaleErrorCode(statusFile.last_error) ? null : statusFile.last_error,
+    // `space` 同理：拿「现在的空间」复核，够用了就不再播报（盘上 `status.json` 不改写 ——
+    // 那次失败确实发生过，归零只发生在播报层）。
+    lastError: isStaleErrorCode(statusFile.last_error, enoughForNext) ? null : statusFile.last_error,
     totalBytes: items.reduce((sum, item) => sum + item.sizeBytes, 0),
     count: items.length,
     freeBytes: free ?? 0,
-    enoughForNext: hasRoomForNext(free, estimateNextBytes(items)),
+    enoughForNext,
   }
 }
 
