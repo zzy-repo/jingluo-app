@@ -304,11 +304,18 @@ const writeStatusFile = async (status: BackupStatusFile): Promise<void> => {
 
 /**
  * 状态文件是**唯一允许覆盖**的文件：它是可变状态而不是备份（备份文件一律不覆盖，见原生插件）。
- * 覆盖方式仍然是「临时文件 → 校验 → rename」：先删旧名再写，半截状态不会被读到。
+ *
+ * 覆盖方式仍然是「临时文件 → 校验 → rename」：**不预删旧文件**，靠 `rename(2)` 原子替换 ——
+ * 旧状态在 rename 成功前一秒都还在盘上。历史上的写法是「先 `removeFile` 再写」，一旦写入在
+ * 中间失败（磁盘满 / 校验不符），状态文件就整份消失，剩下一台「什么都不知道」的机器。
  */
 const replaceFileAtomically = async (name: string, text: string): Promise<void> => {
-  await removeFile(name).catch(() => {})
-  await writeFileAtomically({ name, blob: new Blob([text], { type: 'application/json' }) })
+  await writeFileAtomically({
+    name,
+    blob: new Blob([text], { type: 'application/json' }),
+    // 只有状态文件走白名单覆盖；别的名字在原生侧仍会被 TARGET_EXISTS 拒掉
+    allowOverwrite: name === STATUS_FILE_NAME,
+  })
 }
 
 // ---------------------------------------------------------------- 备份

@@ -26,7 +26,10 @@ import java.util.regex.Pattern;
  * <ul>
  *   <li>半截文件永远叫 {@code .part}，不会被 {@link #list} 列出来（JS 侧不认它，也就不会当成备份）；</li>
  *   <li>失败只删 {@code .part}，<b>不动任何已提交的文件</b> —— 上一份有效备份一个字节都不受影响；</li>
- *   <li>同名目标已存在时直接拒绝（{@code TARGET_EXISTS}），绝不覆盖已有备份。</li>
+ *   <li>同名目标已存在时直接拒绝（{@code TARGET_EXISTS}），绝不覆盖已有备份。**唯一例外**是
+ *       可变状态文件 {@code status.json}（见 {@link #OVERWRITABLE_NAME}）：调用方必须同时
+ *       显式传 {@code allowOverwrite} 且名字恰好在白名单里，才允许同名替换，替换仍走
+ *       {@code rename(2)}，旧状态在 rename 成功前一直可读。</li>
  * </ul>
  *
  * <p><b>分块</b>：沿用 {@link ExportTextPlugin} 的二进制分块思路（base64 过桥，块大小由 JS 定，
@@ -55,6 +58,15 @@ public class BackupFilePlugin extends Plugin {
     /** 校验 / 摘要计算的缓冲区：64KiB，与 ExternalFilePlugin 同一个量级 */
     private static final int DIGEST_BUFFER = 64 * 1024;
     private static final Pattern SAFE_NAME = Pattern.compile("[A-Za-z0-9][A-Za-z0-9._-]{0,127}");
+    /**
+     * <b>唯一</b>允许同名替换的文件：状态文件是可变状态，不是备份。
+     *
+     * <p>白名单写死在这里，不是调用方能拧的开关 —— 备份归档（{@code .zip} / 清单）永远拿不到
+     * 覆盖权限，即使 JS 侧传了 {@code allowOverwrite} 也照样 {@code TARGET_EXISTS}。
+     * 替换发生在 {@link #finish} 的 {@code renameTo}，是 {@code rename(2)} 的原子替换：
+     * 旧状态在 rename 成功之前一直可读，任何一步失败都只会丢掉 {@code .part}。
+     */
+    private static final String OVERWRITABLE_NAME = "status.json";
 
     /* ------------------------------------------------------------------ 进行中的写入会话 */
     private File activePart;
@@ -62,6 +74,8 @@ public class BackupFilePlugin extends Plugin {
     private FileOutputStream activeOutput;
     private MessageDigest activeDigest;
     private long activeBytes;
+    /** 本次会话是否被授权同名替换（在 {@link #begin} 时判过白名单，{@link #finish} 只认这个结论） */
+    private boolean activeOverwrite;
 
     /** 备份目录；不存在时创建。失败交给调用方按 IO 错误处理。 */
     private File dir() {
@@ -84,6 +98,10 @@ public class BackupFilePlugin extends Plugin {
     /**
      * 开始写一份新文件：先建 {@code <name>.part}，顺便清理超过 1 小时的残留临时文件。
      * 同一时刻只允许一个写入会话（JS 侧本来也是串行的，这里再兜一层，避免两次写交错进同一个 .part）。
+     *
+     * <p>同名目标已存在时拒绝（{@code TARGET_EXISTS}），例外只有 {@link #OVERWRITABLE_NAME}：
+     * 调用方显式传 {@code allowOverwrite=true} 且名字恰好等于状态文件时才放行（见 {@link #mayOverwrite}）。
+     * 放行也只是「不提前拒绝」—— 覆盖真正发生在 {@link #finish} 的 rename。
      */
     @PluginMethod
     public synchronized void begin(PluginCall call) {
@@ -97,7 +115,9 @@ public class BackupFilePlugin extends Plugin {
             call.reject("备份文件名不合法", "INVALID_NAME");
             return;
         }
-        if (target.exists()) {
+        boolean allowOverwrite = Boolean.TRUE.equals(call.getBoolean("allowOverwrite", false));
+        boolean overwrite = mayOverwrite(name, allowOverwrite);
+        if (target.exists() && !overwrite) {
             call.reject("同名备份已存在", "TARGET_EXISTS");
             return;
         }
@@ -109,6 +129,7 @@ public class BackupFilePlugin extends Plugin {
             activeName = name;
             activeOutput = output;
             activeBytes = 0;
+            activeOverwrite = overwrite;
             activeDigest = MessageDigest.getInstance("SHA-256");
         } catch (Exception error) {
             discard();
@@ -118,6 +139,14 @@ public class BackupFilePlugin extends Plugin {
         JSObject result = new JSObject();
         result.put("name", name);
         call.resolve(result);
+    }
+
+    /**
+     * 是否允许同名替换：<b>调用方明确要求</b> 且 <b>名字在白名单里</b>，两者缺一不可。
+     * 所以 JS 侧即使把 {@code allowOverwrite} 当真传给归档或清单，也只会拿到 {@code TARGET_EXISTS}。
+     */
+    private static boolean mayOverwrite(String name, boolean allowOverwrite) {
+        return allowOverwrite && OVERWRITABLE_NAME.equals(name);
     }
 
     /** 追加一块（{@code data} 是 base64；原生侧 {@code Base64.DEFAULT} 解码，容忍换行）。 */
@@ -189,11 +218,13 @@ public class BackupFilePlugin extends Plugin {
             return;
         }
         File target = new File(dir(), name);
-        if (target.exists()) {
+        // 会话在 begin 时已经判过白名单；这里的再检查保证「非白名单名字永远不覆盖」不依赖调用顺序
+        if (target.exists() && !activeOverwrite) {
             discard();
             call.reject("同名备份已存在", "TARGET_EXISTS");
             return;
         }
+        // rename(2)：同目录内原子替换 —— 旧文件在 rename 成功之前一直完好，失败就只剩 .part 被删
         if (!part.renameTo(target)) {
             discard();
             call.reject("备份落盘失败", "RENAME_FAILED");
@@ -204,6 +235,7 @@ public class BackupFilePlugin extends Plugin {
         activeOutput = null;
         activeDigest = null;
         activeBytes = 0;
+        activeOverwrite = false;
         JSObject result = new JSObject();
         result.put("name", name);
         result.put("sizeBytes", bytes);
@@ -367,6 +399,7 @@ public class BackupFilePlugin extends Plugin {
         activeName = null;
         activeDigest = null;
         activeBytes = 0;
+        activeOverwrite = false;
     }
 
     /** 清理进程被杀留下的临时文件（超过 TTL 的） */

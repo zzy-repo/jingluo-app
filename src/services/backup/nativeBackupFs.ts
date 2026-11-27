@@ -20,7 +20,8 @@ export type NativeFileEntry = { name: string; sizeBytes: number; mtimeMs: number
 export type WrittenFile = { name: string; sizeBytes: number; sha256: string }
 
 interface BackupFileBridge {
-  begin(options: { name: string }): Promise<{ name: string }>
+  /** `allowOverwrite` 只为状态文件而存在：原生侧只对白名单名字（`status.json`）放行同名替换。 */
+  begin(options: { name: string; allowOverwrite?: boolean }): Promise<{ name: string }>
   writeChunk(options: { data: string }): Promise<void>
   finish(options: { name: string }): Promise<WrittenFile>
   abort(): Promise<void>
@@ -101,16 +102,21 @@ const fromBase64 = (data: string): Uint8Array => {
  *
  * 任何一步失败都 `abort()` 只删临时文件再抛出 —— 上一份有效备份不受影响。
  * 返回的 `sha256` 是原生侧对落盘内容重算的结果，上层把它写进清单。
+ *
+ * `allowOverwrite` **只给状态文件用**（它是可变状态，不是备份）：原生侧收到 true 也只是「不再因
+ * 同名而提前拒绝」，名字不在白名单里照样 `TARGET_EXISTS`。真正的替换发生在 `finish` 的
+ * `rename(2)`，rename 成功之前旧文件一直可读 —— 所以任何一步失败都不会让旧文件消失。
  */
 export const writeFileAtomically = async (options: {
   name: string
   blob: Blob
   onProgress?: NativeProgress
+  allowOverwrite?: boolean
 }): Promise<WrittenFile> => {
   requireNative()
-  const { name, blob, onProgress } = options
+  const { name, blob, onProgress, allowOverwrite } = options
   const total = blob.size
-  await bridge.begin({ name })
+  await bridge.begin({ name, allowOverwrite: allowOverwrite === true })
   try {
     let chunks = 0
     for (let offset = 0; offset < total; offset += CHUNK_BYTES) {
