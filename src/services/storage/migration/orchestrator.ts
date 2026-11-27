@@ -68,6 +68,29 @@ const messageOf = (error: unknown): string => (error instanceof Error ? error.me
 export const requiredFreeBytes = (sourceEstimate: number): number =>
   sourceEstimate * 2 + sourceEstimate + LIMITS.storageMigration.reserveBytes
 
+/**
+ * `insufficient-space` 的失败说明：**这里生成、这里解析**（`parseSpaceMessage` 紧跟其后）。
+ *
+ * 为什么保留原始字节数而不直接写成人话：这条 message 会落进 `state.json` 供诊断，机器可读比好看重要。
+ * 迁移页要的是「可用 / 所需 / 建议清理」三个数，它通过 `parseSpaceMessage` 拿到**判定那一刻**的 need/have ——
+ * 比失败后再读一次磁盘可靠（那时候用户可能已经清过、或者正在清）。
+ */
+export const spaceFailureMessage = (requiredBytes: number, freeBytes: number): string =>
+  `need ${requiredBytes} bytes free, have ${freeBytes}`
+
+const SPACE_MESSAGE_PATTERN = /need (\d+) bytes free, have (\d+)/u
+
+/** `spaceFailureMessage` 的逆运算；不是这条说明（例如复制中途磁盘写满的 quota 错误）就返回 undefined。 */
+export const parseSpaceMessage = (message: string): { requiredBytes: number; freeBytes: number } | undefined => {
+  const matched = SPACE_MESSAGE_PATTERN.exec(message)
+  if (matched === null) {
+    return undefined
+  }
+  const requiredBytes = Number(matched[1])
+  const freeBytes = Number(matched[2])
+  return Number.isSafeInteger(requiredBytes) && Number.isSafeInteger(freeBytes) ? { requiredBytes, freeBytes } : undefined
+}
+
 /** 预检的纯判定，供单测钉边界：返回 undefined = 通过，否则是失败码与说明。 */
 export const judgePreflight = (
   estimate: number,
@@ -81,7 +104,7 @@ export const judgePreflight = (
   }
   const required = requiredFreeBytes(estimate)
   if (free < required) {
-    return { code: 'insufficient-space', message: `need ${required} bytes free, have ${free}` }
+    return { code: 'insufficient-space', message: spaceFailureMessage(required, free) }
   }
   return undefined
 }

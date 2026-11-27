@@ -5,6 +5,13 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { makeEnv, mods } from '../helpers/migration-switch/kit.mjs'
 
+// 本文件守的是「开关值只能被有意识地改动」。
+// main 上必须是 false（合并不改变线上行为）：本 PR 把内测分支的交互补全搬进 main，
+// 但迁移开关保持关闭，只有内测 APK 分支才是 true。
+// 任何人翻转 config.ts 时必须同步来这里翻转 EXPECTED_SWITCH，
+// 这就是双写校验的意义：让"无意翻转"变红，让"有意翻转"留下痕迹。
+const EXPECTED_SWITCH = false // ← main 口径：不向全量用户开启迁移（内测分支为 true）
+
 const { resolveStorageEngine } = mods.router
 
 const withEnv = async (options, body) => {
@@ -77,10 +84,10 @@ test('负向对照：未 committed 时同样的故障（SQLite 不可用）不�
   })
 })
 
-test('开关关闭不影响路由：已 committed 仍走 SQLite（路由不读开关；开关只管闸门是否启动迁移）', async () => {
+test('开关值与 EXPECTED_SWITCH 一致（防无意翻转），且开关取值不影响路由：已 committed 仍走 SQLite（路由不读开关；开关只管闸门是否启动迁移）', async () => {
   await withEnv({}, async (env) => {
     await migrated(env)
-    assert.equal(mods.config.NATIVE_SQLITE_MIGRATION_ENABLED, false)
+    assert.equal(mods.config.NATIVE_SQLITE_MIGRATION_ENABLED, EXPECTED_SWITCH)
     assert.deepEqual(await resolveStorageEngine(env.routerDeps()), { engine: 'sqlite' })
   })
 })

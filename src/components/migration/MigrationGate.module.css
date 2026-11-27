@@ -83,6 +83,62 @@
   color: var(--dsw-alias-label-caption);
 }
 
+/* 「请保持应用在前台」这类提醒：不是错误，但比 hint 更该被看见 */
+.warning {
+  margin-top: 12px;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+/* 会丢数据的提醒（别卸载、别清数据）：用错误色，和普通说明区分开 */
+.danger {
+  margin-top: 16px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background-color: var(--dsw-alias-interactive-bg-hover-danger);
+  color: var(--dsw-alias-label-error);
+  font-size: 13px;
+  line-height: 20px;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+/* 空间不足页的三个数（可用 / 所需 / 建议清理），一行一个，窄屏也不挤 */
+.numbers {
+  margin-top: 16px;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--dsw-alias-label-primary);
+}
+
+.numbers > div + div {
+  margin-top: 4px;
+}
+
+/* 「前往系统设置清理空间」的指引块：可读、可复制（本机没有打开系统设置的桥，见组件注释） */
+.guide {
+  margin-top: 16px;
+  padding: 10px 12px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.guideTitle {
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 20px;
+}
+
+.guideBody {
+  margin-top: 4px;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-secondary);
+}
+
 .detail {
   display: block;
   box-sizing: border-box;
