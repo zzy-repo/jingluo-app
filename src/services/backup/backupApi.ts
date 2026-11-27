@@ -228,6 +228,13 @@ export const listBackups = async (): Promise<BackupItem[]> => {
 }
 
 /** 设置页状态。任何一步读不到都退化成「未知 / 0」，不抛错 —— 状态行不该把设置页拖崩。 */
+/**
+ * 历史遗留的「过时结论」：`empty`（上一轮空库拒绝）和空串（脏数据）都不是当前状态。
+ * 留着它们会让状态行播报一件早就不是事实的事（设备实测：用户后来写了对话，仍显示
+ * 「当前没有可备份的聊天记录」）。
+ */
+const isStaleErrorCode = (code: string | null): boolean => code === 'empty' || code === ''
+
 export const getStatus = async (): Promise<BackupStatus> => {
   const statusFile = await readStatusFile()
   if (!isBackupStorageAvailable()) {
@@ -254,7 +261,7 @@ export const getStatus = async (): Promise<BackupStatus> => {
     // `empty` 不是错误，是「当时没有记录可备」这个**过时**的历史结论。把它当当前状态播报，
     // 会在用户后来已经写了对话时仍然显示「当前没有可备份的聊天记录」（实测踩到）。
     // 真正按「空」处理的地方是用户按「立即备份」时抛出的 `empty`，界面在那一刻才说这句话。
-    lastError: statusFile.last_error === 'empty' ? null : statusFile.last_error,
+    lastError: isStaleErrorCode(statusFile.last_error) ? null : statusFile.last_error,
     totalBytes: items.reduce((sum, item) => sum + item.sizeBytes, 0),
     count: items.length,
     freeBytes: free ?? 0,
