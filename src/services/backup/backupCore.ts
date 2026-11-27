@@ -70,6 +70,28 @@ export type BackupErrorCode =
   | 'empty'
   | 'unsupported'
 
+/**
+ * 这份备份是**谁触发的**（#1005）：`safety` = 恢复前自动为「当前数据」写下的那一份。
+ *
+ * 为什么必须落进清单，而不是靠调用方传个布尔值记住：改这一版之前，安全备份在盘上与常规备份
+ * **完全无法区分**（同一命名规则、同一归档格式、清单里没有任何字段），「安全备份不参与常规保留
+ * 清理」这件事只存在于 `runBackupOnce(…, { prune: false })` 这一次调用的栈帧里。进程一重启、
+ * 或者换一条调用路径扫目录，盘上那些安全备份就再没人认得 —— 它们于是**无上限堆积**
+ * （设备实测：两次恢复，3 份 → 5 份 zip / 约 226MB，而磁盘写满正是本版整库丢失事故的根因）。
+ *
+ * 写进清单之后，它是**落盘的、随时可重建的事实**：任何一次扫目录都能分出哪几份是安全备份，
+ * 清理也就不再依赖「当时那次调用记不记得」。
+ */
+export type BackupOrigin = 'auto' | 'manual' | 'safety'
+
+const BACKUP_ORIGINS: readonly BackupOrigin[] = ['auto', 'manual', 'safety']
+
+/** 清单里的来源标记：只认这三个词，其余（含老清单的「没有这个字段」）一律 null = 常规备份。 */
+const parseOrigin = (value: unknown): BackupOrigin | null =>
+  typeof value === 'string' && (BACKUP_ORIGINS as readonly string[]).includes(value)
+    ? (value as BackupOrigin)
+    : null
+
 /** 一份备份里的文件引用：名字 + 字节数 + 整档 sha256（`sizeBytes` 用于「便宜的一致性检查」）。 */
 export type BackupFileRef = { name: string; sizeBytes: number; sha256: string }
 
@@ -91,6 +113,11 @@ export type BackupManifest = {
   attachments: BackupFileRef | null
   data_summary: BackupSummary
   verified: boolean
+  /**
+   * 谁触发的这份备份；**老清单没有这个字段**（那时不分安全 / 常规）。
+   * 缺省 = 按常规备份对待：既不加倍保护，也不额外豁免清理。
+   */
+  origin?: BackupOrigin
 }
 
 /**
@@ -132,7 +159,14 @@ export const parseManifestFileName = (name: string): string | null => {
 }
 
 /** 保留策略 / 列表用的最小结构（避免让纯逻辑依赖契约层的类型）。 */
-export type BackupFacts = { id: string; createdAtUtc: string; sizeBytes: number; checksumOk: boolean }
+export type BackupFacts = {
+  id: string
+  createdAtUtc: string
+  sizeBytes: number
+  checksumOk: boolean
+  /** 见 {@link BackupOrigin}；缺省（老清单 / 清单读不出来）= 常规备份 */
+  origin?: BackupOrigin
+}
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -199,6 +233,7 @@ export const parseManifest = (value: unknown): BackupManifest | null => {
   if (value.attachments !== null && value.attachments !== undefined && !attachments) {
     return null
   }
+  const origin = parseOrigin(value.origin)
   return {
     backup_format_version: BACKUP_FORMAT_VERSION,
     id,
@@ -207,6 +242,9 @@ export const parseManifest = (value: unknown): BackupManifest | null => {
     attachments,
     data_summary: summary,
     verified: value.verified === true,
+    // 只在**真的有标记**时才把键放进去：老清单解析回来必须还是它原来的样子
+    // （`tests/unit/backup-core-993.test.mjs` 的往返断言就是钉这一点的）
+    ...(origin === null ? {} : { origin }),
   }
 }
 
@@ -234,6 +272,8 @@ export const manifestToJson = (manifest: BackupManifest): string =>
       attachments: manifest.data_summary.attachments,
     },
     verified: manifest.verified,
+    // 同上：老清单（没有来源标记）序列化回来也不许多出一个 `origin`
+    ...(manifest.origin === undefined ? {} : { origin: manifest.origin }),
   })
 
 /** `status.json` 解析：读不出来就当「没有历史」，不因此阻断备份。 */
@@ -318,16 +358,37 @@ const createdDesc = (a: BackupFacts, b: BackupFacts): number =>
   Date.parse(b.createdAtUtc) - Date.parse(a.createdAtUtc)
 
 /**
- * 保留策略：按时间倒序保留最新的 `keep` 份，返回**可以删**的 id。
+ * 时间戳的**可信来源**：清单里的 `created_at_utc`。解析不出来就返回 null。
+ *
+ * 为什么不拿 `readdir` 顺序或原生 `mtime`：目录顺序在真机上不稳定（排序不是契约），而 `mtime`
+ * 会被复制 / 搬家改写。**判不出时间的东西一律不参与清理**（见 `selectPrunableSafety`）——
+ * 把「不知道多老」当成「最老」来删，正是数据安全最不该犯的错。
+ */
+const trustedCreatedAt = (item: BackupFacts): number | null => {
+  const parsed = Date.parse(item.createdAtUtc)
+  return Number.isNaN(parsed) ? null : parsed
+}
+
+/** 按可信时间倒序（新的在前）；时间不可信的排在最后（调用方另行决定要不要动它）。 */
+const newestFirst = (items: readonly BackupFacts[]): BackupFacts[] =>
+  [...items].sort((a, b) => (trustedCreatedAt(b) ?? Number.NEGATIVE_INFINITY) - (trustedCreatedAt(a) ?? Number.NEGATIVE_INFINITY))
+
+/**
+ * 保留策略：按时间倒序保留最新的 `keep` 份**常规备份**，返回**可以删**的 id。
  *
  * 三条硬约束：
  *  1. **最新的一份永不删**（它就是刚写成功的那份，也是恢复前的安全备份）；
  *  2. 删完之后必须**至少还剩一份校验通过的备份** —— 「唯一有效备份」不许被静默删掉；
  *  3. 只返回 id，删不删由调用方在「新备份已写入并校验」之后才执行（顺序不能反）。
+ *
+ * #1005 起：`origin === 'safety'` 的备份**不数进这个名额**。它们原先也算在 `RETENTION_KEEP`
+ * 里 —— 于是「恢复两次」会让常规备份被安全备份挤掉，而安全备份自己又完全不受上限约束
+ * （`prune: false`），两头都不对。现在两组各按各的上限（常规 `RETENTION_KEEP`、
+ * 安全 `SAFETY_RETENTION_KEEP`），总数第一次有了上界。
  */
 export const selectPrunable = (items: readonly BackupFacts[], keep: number): string[] => {
   const limit = Math.max(1, Math.floor(keep))
-  const sorted = [...items].sort(createdDesc)
+  const sorted = [...items].filter((item) => item.origin !== 'safety').sort(createdDesc)
   if (sorted.length <= limit) {
     return []
   }
@@ -351,6 +412,67 @@ export const selectPrunable = (items: readonly BackupFacts[], keep: number): str
   }
   return deletable.map((item) => item.id)
 }
+
+/**
+ * 两条**任何清理都不许破**的底线（#1005）：
+ *  1. **最新的一份校验通过的备份永不删** —— 它可能就是用户此刻唯一能回去的地方，
+ *     哪怕它自己被排到了「超出上限」的那一档（时间戳并列 / 时钟倒退 / 上限被改小）；
+ *  2. 删完之后必须**至少还剩一份校验通过的备份**。算下来一份都不剩就**一份都别删**
+ *     （这里刻意比常规组更保守：常规组会「救回一份」，安全组选择「干脆不动」——
+ *     安全备份是恢复失败时的退路，宁可多占一份空间，也不要在退路问题上赌）。
+ *
+ * 「校验通过」用 `checksumOk`：清单能解析 + 声明的每个文件都在 + 字节数与清单一致。
+ */
+const guardLastUsable = (items: readonly BackupFacts[], ids: readonly string[]): string[] => {
+  if (ids.length === 0) {
+    return []
+  }
+  const planned = new Set(ids)
+  const newestUsable = newestFirst(items.filter((item) => item.checksumOk))[0]
+  if (newestUsable) {
+    planned.delete(newestUsable.id)
+  }
+  const survivors = items.filter((item) => item.checksumOk && !planned.has(item.id))
+  if (survivors.length === 0) {
+    return []
+  }
+  return ids.filter((id) => planned.has(id))
+}
+
+/**
+ * **安全备份**的清理候选（#1005）：按清单里的时间倒序保留最近 `keep` 份，其余给出去。
+ *
+ * 与常规组的区别（每一条都是「宁多留」）：
+ *  - 只看 `origin === 'safety'` 的项，绝不顺手删常规备份；
+ *  - 时间读不出来的项**不参与清理**（判不出新旧就别删）；
+ *  - 底线冲突时**一份都不删**，不像常规组那样「救回一份、其余照删」。
+ */
+export const selectPrunableSafety = (items: readonly BackupFacts[], keep: number): string[] => {
+  const limit = Math.max(1, Math.floor(keep))
+  const dated = items.filter((item) => item.origin === 'safety' && trustedCreatedAt(item) !== null)
+  const candidates = newestFirst(dated).slice(limit)
+  return guardLastUsable(
+    items,
+    candidates.map((item) => item.id)
+  )
+}
+
+/** 一次清理要删哪些 id（两组分开给：调用方按场景决定动不动常规组）。 */
+export type RetentionPlan = { regular: string[]; safety: string[] }
+
+/**
+ * 一次完整的保留计划（唯一入口；`backupApi` 只调用这一个函数）。
+ *
+ * `regular` 与 `safety` 各自算，但两条底线的判定都看**全量**（不只是自己那一组）——
+ * 「至少剩一份可用的备份」是整台设备级别的事实，不是分组级别的事实。
+ */
+export const planRetention = (
+  items: readonly BackupFacts[],
+  options: { regularKeep: number; safetyKeep: number }
+): RetentionPlan => ({
+  regular: selectPrunable(items, options.regularKeep),
+  safety: selectPrunableSafety(items, options.safetyKeep),
+})
 
 /**
  * 下一份备份的体积预估下限（**有历史时**用）：最近一份 × 1.2（余量），再兜一个 8MiB 地板。
