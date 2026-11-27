@@ -30,6 +30,8 @@ import path from 'node:path'
 import { strFromU8, strToU8, unzipSync, zipSync } from 'fflate'
 import { chromium } from 'playwright'
 import { buildArchiveZip } from '../fixtures/domain05/archive-fixture.mjs'
+// #902：设置入口统一走辅助层的真实路径（整串可访问名锚定侧栏「设置」）
+import { openSettingsPage, SETTINGS_ROW } from '../helpers/helpers.mjs'
 
 const APP_URL = process.env.APP_URL || 'http://127.0.0.1:5181'
 /** 假域名：所有请求都被 page.route 接住，不会出网 */
@@ -277,16 +279,9 @@ const run = async () => {
   )
 
   const importZip = async (zipPath, title) => {
-    if ((await page.getByRole('dialog').count()) === 0) {
-      await page
-        .getByRole('button', { name: /设置|Settings/ })
-        .last()
-        .click()
-    }
-    await page
-      .getByTestId('settings-row-data')
-      .first()
-      .click()
+    // #902：走辅助层唯一那条真实路径。旧口径 `/设置|Settings/` + `.last()` 命中聊天头部
+    // 「聊天设置」，点开的是聊天设置弹层 → 下面的 `settings-row-data` 30s 超时。
+    await openSettingsPage(page, SETTINGS_ROW.data)
     await page.locator('input[type="file"][accept*="zip"]').setInputFiles(zipPath)
     const confirm = page.getByRole('dialog', { name: /确认导入历史对话/ })
     await confirm.waitFor({ timeout: 20000 })

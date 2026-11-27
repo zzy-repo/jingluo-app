@@ -23,7 +23,7 @@ import { test } from 'node:test'
 
 import { chromium } from 'playwright'
 import { defaultDist, serveDir, verifyDist } from '../helpers/env.mjs'
-import { assertNoEgress, installEgressGate } from '../helpers/helpers.mjs'
+import { assertNoEgress, installEgressGate, openSettingsPage, SETTINGS_ROW } from '../helpers/helpers.mjs'
 import { KNOWN_GAPS, NEGATIVE_CASES, TOAST } from '../fixtures/domain08-09/feedback-negative-cases.mjs'
 import { BUILTIN_KEY_CLAIM_STUB } from '../fixtures/consume-gateway-stubs/builtin-key-claim.mjs'
 
@@ -91,12 +91,10 @@ const openFeedbackDialog = async (page, appUrl) => {
   await page.evaluate(() => window.localStorage.clear())
   await page.reload({ waitUntil: 'domcontentloaded' })
   await settle(page)
-  if ((await page.getByRole('dialog').count()) === 0) {
-    await page.getByRole('button', { name: /设置|Settings/ }).last().click()
-  }
-  await settle(page)
-  const dataTab = page.getByTestId('settings-row-data')
-  if ((await dataTab.count()) > 0) await dataTab.first().click()
+  // #902：进设置走辅助层唯一那条真实路径。旧写法 `/设置|Settings/` 子串 + `.last()` 命中聊天头部
+  // 「聊天设置」—— 弹层里没有 `settings-row-data`，旧代码用 `if (count > 0)` 把它悄悄吞掉，
+  // 接着去点「写反馈」就成了 30s 超时（红在「点不到」，不是「负向分支不对」）。
+  await openSettingsPage(page, SETTINGS_ROW.data)
   await page.waitForTimeout(300)
   await page.getByRole('button', { name: /写反馈/ }).first().click()
   await settle(page)
