@@ -1,7 +1,7 @@
 {
   "name": "deepseek-app",
-  "version": "2.0.2",
-  "androidVersionCode": 46,
+  "version": "2.0.1",
+  "androidVersionCode": 47,
   "description": "基于 DeepSeek API 的静态聊天示例。",
   "license": "MIT",
   "private": true,
